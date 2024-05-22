@@ -54,7 +54,8 @@ extern "C"
 {
 #endif /* __cplusplus */
 
-#include <linux/wakelock.h>
+#include <linux/device.h>
+#include <linux/pm_wakeup.h>
 #include <linux/printk.h>
 #include <linux/suspend.h>
 #include <linux/workqueue.h>
@@ -196,7 +197,7 @@ struct modem_reset_ctrl
 	struct work_struct  work_reset;
 	struct work_struct  work_power_off;
 	struct work_struct  work_power_on;
-	struct wake_lock wake_lock;
+	struct wakeup_source wake_lock;
 	struct notifier_block pm_notify;
 	struct completion suspend_completion;
 	IPC_INT_LEV_E ipc_send_irq_wakeup_ccore;

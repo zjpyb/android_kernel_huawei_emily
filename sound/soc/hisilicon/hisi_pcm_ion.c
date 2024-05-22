@@ -9,7 +9,6 @@
 * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 * GNU General Public License for more details.
 */
-
 #include <linux/err.h>
 #include <linux/mutex.h>
 #include <linux/dma-buf.h>
@@ -19,6 +18,7 @@
 #include <linux/platform_device.h>
 #include <linux/of_device.h>
 #include <linux/syscalls.h>
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
 #include <linux/hisi/hisi_ion.h>
 #include "hisi_snd_log.h"
 #include "hisi_pcm_ion.h"
@@ -124,4 +124,5 @@ fail_attach:
 	sys_close(shared_fd);
 	return ERR_PTR(-EFAULT);
 }
+#endif
 

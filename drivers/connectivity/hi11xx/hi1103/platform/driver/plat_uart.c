@@ -351,7 +351,7 @@ STATIC void ps_tty_receive(struct tty_struct *tty, const uint8 *data,
 {
 #ifdef PLATFORM_DEBUG_ENABLE
     struct timeval tv;
-    struct rtc_time tm;
+    struct rtc_time tm = {0};
     uint64  tmp;
     char filename[60] = {0};
 #endif

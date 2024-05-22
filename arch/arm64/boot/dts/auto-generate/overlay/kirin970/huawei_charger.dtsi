@@ -24,6 +24,17 @@
 		charger_removed_dsm = <0>;
 		status = "disabled";
 	};
+
+	vbus_channel_charger: vbus_channel_charger {
+		compatible = "huawei,vbus_channel_charger";
+		status = "ok";
+	};
+
+	vbus_channel_boost_gpio: vbus_channel_boost_gpio {
+		compatible = "huawei,vbus_channel_boost_gpio";
+		status = "disabled";
+	};
+
 	power_thermalzone: power_thermalzone {
 		compatible = "huawei,power_thermalzone";
 		status = "disabled";
@@ -40,10 +51,6 @@
 		compatible = "huawei,wireless_charger";
 		status = "disabled";
 	};
-	wireless_otg: wireless_otg {
-		compatible = "huawei,wireless_otg";
-		status = "disabled";
-	};
 	boost_5v: boost_5v {
 		compatible = "huawei,boost_5v";
 		status = "disabled";
@@ -57,6 +64,7 @@
 	};
 	ovp_channel_switch: ovp_channel_switch {
 		compatible = "huawei,ovp_channel_switch";
+		gpio_low_by_set_input = <1>;
 		status = "disabled";
 	};
 	ncp3902_channel_switch: ncp3902_channel_switch {
@@ -68,6 +76,7 @@
 		status = "disabled";
 	};
 	direct_charger: direct_charger{
+		need_wired_sw_off = <1>;
 		compensate_r = <0>;
 		use_5A = <0>;
 		scp_cable_detect_enable = <0>;
@@ -87,6 +96,7 @@
 		vol_err_th = <150>;
 		full_path_res_max = <120>;
 		standard_cable_full_path_res_max = <160>;
+		ctc_cable_full_path_res_max = <320>;
 		max_current_for_none_standard_cable = <3000>;
 		adaptor_leakage_current_th = <300>;
 		stage_need_to_jump = "-1";

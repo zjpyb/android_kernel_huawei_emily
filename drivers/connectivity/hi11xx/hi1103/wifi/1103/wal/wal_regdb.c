@@ -12,6 +12,7 @@ extern "C" {
   1 头文件包含
 *****************************************************************************/
 #include "wal_regdb.h"
+#include "oam_ext_if.h"
 
 #undef  THIS_FILE_ID
 #define THIS_FILE_ID OAM_FILE_ID_WAL_REGDB_C
@@ -204,8 +205,14 @@ OAL_CONST oal_ieee80211_regdomain_stru* wal_regdb_find_db_etc(oal_int8 *pc_str)
         }
 
     }
-
+    /* 找不到国家码信息时，返回一个特定国家码 */
+#if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
+    OAM_WARNING_LOG4(0, OAM_SF_ANY, "{wal_regdb_find_db_etc::regdomain %c,%c was not found,return default regdomain %c,%c.}\r\n",
+            pc_str[0], pc_str[1], reg_regdb_etc[HI1103_SPECIFIC_COUNTRY_CODE_IDX]->alpha2[0], reg_regdb_etc[HI1103_SPECIFIC_COUNTRY_CODE_IDX]->alpha2[1]);
+    return reg_regdb_etc[HI1103_SPECIFIC_COUNTRY_CODE_IDX];
+#else
     return OAL_PTR_NULL;
+#endif
 }
 #endif
 

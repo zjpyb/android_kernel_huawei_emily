@@ -28,9 +28,6 @@
 
 #include "../lcdkit/lcdkit1.0/include/lcdkit_ext.h"
 #define HUAWEI_CHARGER_FB	/*define HUAWEI_CHARGER_FB here to enable charger notify callback*/
-#if defined(HUAWEI_CHARGER_FB)
-//#include <linux/hisi/usb/hisi_usb.h>
-#endif
 /* marco define*/
 #ifndef strict_strtoul
 #define strict_strtoul kstrtoul
@@ -63,7 +60,6 @@
 #define SYNA_3718_FW_UPDATA_FLAG "synaptics3718_fw_updata_flag"
 #define SYNA_3718_TP_PRESSURE_FLAG "synaptics3718_Tp_Pressure_flag"
 #define LDO29_980_DEFAULT_ON_FLAG "LDO29_980_default_on_flag"
-//#define ANTI_FALSE_TOUCH_STRING_NUM 27
 #define ANTI_FALSE_TOUCH_FEATURE_ALL "feature_all"
 #define ANTI_FALSE_TOUCH_FEATURE_RESEND_POINT "feature_resend_point"
 #define ANTI_FALSE_TOUCH_FEATURE_ORIT_SUPPORT "feature_orit_support"
@@ -217,6 +213,8 @@
 #define TS_SWITCH_SCENE_EXIT	4
 #define TS_SWITCH_FM_ENABLE		1
 #define TS_SWITCH_FM_DISABLE	2
+
+#define TS_SWITCH_ROI_DELAY_ENABLE	1
 
 enum ts_scene_code {
 	TS_SWITCH_SCENE_3 = 3,
@@ -463,21 +461,21 @@ enum ts_rawdata_arange_type{
 #define KEY_F26 196
 enum ts_gesture_num
 {
-    //	TS_NUM_TOTAL = 12, /* total gesture numbers  */
-    TS_DOUBLE_CLICK = KEY_F1, /*0.Double tap:KEY_F1*/
-    TS_SLIDE_L2R = KEY_F2, /*1.Single finger slide from left to right:KEY_F2*/
-    TS_SLIDE_R2L = KEY_F3, /*2.Single finger slide from right to left:KEY_F3*/
-    TS_SLIDE_T2B = KEY_F4, /*3.Single finger slide from top to bottom:KEY_F4*/
-    TS_SLIDE_B2T = KEY_F5, /*4.Single finger slide from bottom to top:KEY_F5*/
-    TS_CIRCLE_SLIDE = KEY_F7, /*5.Single finger slide circle:KEY_F7*/
-    TS_LETTER_c = KEY_F8, /*6.Single finger write letter c*:KEY_F8*/
-    TS_LETTER_e = KEY_F9, /*7.Single finger write letter e:KEY_F9*/
-    TS_LETTER_m = KEY_F10, /*8.Single finger write letter m:KEY_F10*/
-    TS_LETTER_w = KEY_F11, /*9.Single finger write letter w:KEY_F11*/
-    TS_PALM_COVERED = KEY_F12, /*10.Palm off screen:KEY_F12*/
+    TS_DOUBLE_CLICK = KEY_F1,    /*0.Double tap:KEY_F1*/
+    TS_SLIDE_L2R = KEY_F2,    /*1.Single finger slide from left to right:KEY_F2*/
+    TS_SLIDE_R2L = KEY_F3,    /*2.Single finger slide from right to left:KEY_F3*/
+    TS_SLIDE_T2B = KEY_F4,    /*3.Single finger slide from top to bottom:KEY_F4*/
+    TS_SLIDE_B2T = KEY_F5,    /*4.Single finger slide from bottom to top:KEY_F5*/
+    TS_CIRCLE_SLIDE = KEY_F7,    /*5.Single finger slide circle:KEY_F7*/
+    TS_LETTER_c = KEY_F8,    /*6.Single finger write letter c*:KEY_F8*/
+    TS_LETTER_e = KEY_F9,    /*7.Single finger write letter e:KEY_F9*/
+    TS_LETTER_m = KEY_F10,    /*8.Single finger write letter m:KEY_F10*/
+    TS_LETTER_w = KEY_F11,    /*9.Single finger write letter w:KEY_F11*/
+    TS_PALM_COVERED = KEY_F12,    /*10.Palm off screen:KEY_F12*/
     TS_KEY_IRON = KEY_F26,
     TS_GESTURE_INVALID = 0xFF,/*FF.No gesture*/
 };
+
 enum ts_gesture_enable_bit
 {
     GESTURE_DOUBLE_CLICK = 0,
@@ -780,7 +778,7 @@ struct ts_glove_info
     u8 glove_switch;
     int op_action;
     int status;
-    u16 glove_switch_addr;
+    u32 glove_switch_addr;
     u16 glove_switch_bit;
 };
 
@@ -790,7 +788,7 @@ struct ts_holster_info
     u8 holster_switch;
     int op_action;
     int status;
-    u16 holster_switch_addr;
+    u32 holster_switch_addr;
     u16 holster_switch_bit;
 };
 
@@ -800,7 +798,7 @@ struct ts_roi_info
     u8 roi_switch;
     int op_action;
     int status;
-    u16 roi_control_addr;
+    u32 roi_control_addr;
     u8 roi_control_bit;
     u16 roi_data_addr;
 };
@@ -821,7 +819,7 @@ struct ts_easy_wakeup_info
 {
     enum ts_sleep_mode sleep_mode;
     int off_motion_on;
-    int easy_wakeup_gesture;
+    unsigned int easy_wakeup_gesture;
     int easy_wakeup_flag;
     int palm_cover_flag;
     int palm_cover_control;
@@ -1207,6 +1205,8 @@ struct ts_kit_device_data
 	int fp_tp_report_touch_minor_event;
 	int support_crc_err_do_reset;
 	u8 rawdata_newformatflag;   // 0 - old format   1 - new format
+	unsigned int roi_delay_flag;
+	u8 download_fw_incharger; // 0 - not support    1 - support
 };
 
 struct ts_bus_info
@@ -1246,6 +1246,7 @@ struct ts_kit_platform_data
     u32 fp_tp_enable;
     u32 register_charger_notifier;
     u32 hide_plain_id;
+	u32 glove_mode_rw_disable;
     u32 touch_switch_need_process;
     u8 panel_id;
     unsigned int udfp_enable_flag;
@@ -1253,6 +1254,9 @@ struct ts_kit_platform_data
     unsigned int spi_mode;
     unsigned int cs_reset_low_delay;
     unsigned int cs_reset_high_delay;
+#if defined(HUAWEI_CHARGER_FB)
+    struct notifier_block charger_detect_notify;
+#endif
     struct device_node* node;
     struct i2c_client* client;
     struct spi_device *spi;
@@ -1287,11 +1291,9 @@ struct ts_kit_platform_data
 #if defined (CONFIG_HUAWEI_DSM)
     struct ts_dsm_info dsm_info;
 #endif
-#if defined(HUAWEI_CHARGER_FB)
-    struct notifier_block charger_detect_notify;
-#endif
 };
 
+bool tp_get_prox_status(void);
 int ts_kit_power_control_notify(enum ts_pm_type pm_type,  int timeout);
 void ts_kit_thread_stop_notify(void);
 int  ts_kit_put_one_cmd(struct ts_cmd_node * cmd, int timeout);

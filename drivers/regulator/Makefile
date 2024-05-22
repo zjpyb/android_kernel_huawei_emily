@@ -122,4 +122,5 @@ obj-$(CONFIG_HISI_REGULATOR_HI3660) += hisi_kirin960_regulator.o
 obj-$(CONFIG_HISI_CHARGER_REGULATOR) += hisi_charger_regulator.o
 obj-$(CONFIG_REGULATOR_IP_DEBUG) +=hisi_regulator_ip_debug.o
 obj-$(CONFIG_HISI_REGULATOR_DEBUG) +=hisi_regulator_debug.o
+obj-$(CONFIG_HISI_REGULATOR_VIVOBUS) += hisi_regulator_vivobus.o
 ccflags-$(CONFIG_REGULATOR_DEBUG) += -DDEBUG

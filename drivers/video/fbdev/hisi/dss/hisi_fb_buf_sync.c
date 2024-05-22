@@ -12,8 +12,9 @@
 */
 
 #include "hisi_fb.h"
-
+/*lint -e574, -e429*/
 #define HISI_DSS_LAYERBUF_FREE	"hisifb%d-layerbuf-free"
+
 ////////////////////////////////////////////////////////////////////////////////
 //
 // layerbuffer handle, for online compose
@@ -33,10 +34,13 @@ static bool  hisi_check_parameter_valid(struct hisi_fb_data_type *hisifd,
 		HISI_FB_ERR("plock_list is NULL!\n");
 		return false;
 	}
-	if (NULL == hisifd->ion_client) {
-		HISI_FB_ERR("ion_client is NULL!\n");
+
+#if CONFIG_ION_ALLOC_BUFFER
+	if (NULL == hisifd->buffer_client) {
+		HISI_FB_ERR("buffer_client is NULL!\n");
 		return false;
 	}
+#endif
 
 	return true;
 }
@@ -50,11 +54,15 @@ int hisifb_layerbuf_lock(struct hisi_fb_data_type *hisifd,
 	int i = 0;
 	int m = 0;
 	struct hisifb_layerbuf *node = NULL;
-	struct ion_handle *ionhnd = NULL;
-	struct iommu_map_format iommu_format;
-	bool add_tail = false;
 	bool has_map_iommu;
+	bool add_tail = false;
 	bool parameter_valid;
+#if CONFIG_ION_ALLOC_BUFFER
+	struct ion_handle *buf_handle = NULL;
+	struct iommu_map_format iommu_format;
+#else
+	struct dma_buf *buf_handle = NULL;
+#endif
 
 	parameter_valid = hisi_check_parameter_valid(hisifd, pov_req, plock_list);
 	if (parameter_valid == false) {
@@ -68,12 +76,18 @@ int hisifb_layerbuf_lock(struct hisi_fb_data_type *hisifd,
 		for (i = 0; i < pov_h_block->layer_nums; i++) {
 			layer = &(pov_h_block->layer_infos[i]);
 			add_tail = false;
-			ionhnd = NULL;
+			buf_handle = NULL;
 			has_map_iommu = false;
 
-			if (layer->dst_rect.y < pov_h_block->ov_block_rect.y)
+			if (layer->dst_rect.y < pov_h_block->ov_block_rect.y) {
 				continue;
+			}
 
+			if (layer->need_cap & (CAP_DIM | CAP_BASE | CAP_PURE_COLOR)) {
+				continue;
+			}
+
+#if CONFIG_ION_ALLOC_BUFFER
 			if (layer->img.shared_fd < 0)
 				continue;
 
@@ -86,19 +100,15 @@ int hisifb_layerbuf_lock(struct hisi_fb_data_type *hisifd,
 			}
 
 			if (layer->img.shared_fd >= 0) {
-			#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0)
-				ionhnd = ion_import_dma_buf_fd(hisifd->ion_client, layer->img.shared_fd);
-			#else
-				ionhnd = ion_import_dma_buf(hisifd->ion_client, layer->img.shared_fd);
-			#endif
-				if (IS_ERR(ionhnd)) {
-					ionhnd = NULL;
+				buf_handle = ion_import_dma_buf_fd(hisifd->buffer_client, layer->img.shared_fd);
+				if (IS_ERR(buf_handle)) {
+					buf_handle = NULL;
 					HISI_FB_ERR("fb%d, layer_idx%d, failed to ion_import_dma_buf, shared_fd=%d!\n",
 						hisifd->index, i, layer->img.shared_fd);
 				} else {
 					if (layer->img.mmu_enable == 1) {
 						memset(&iommu_format, 0, sizeof(struct iommu_map_format));
-						if (ion_map_iommu(hisifd->ion_client, ionhnd, &iommu_format)) {
+						if (ion_map_iommu(hisifd->buffer_client, buf_handle, &iommu_format)) {
 							HISI_FB_ERR("fb%d, layer_idx%d, failed to ion_map_iommu, shared_fd=%d!\n",
 								hisifd->index, i, layer->img.shared_fd);
 						} else {
@@ -109,24 +119,38 @@ int hisifb_layerbuf_lock(struct hisi_fb_data_type *hisifd,
 					add_tail = true;
 				}
 			}
-
+#else
+			buf_handle = hisi_dss_get_dmabuf(layer->img.shared_fd);
+			if (buf_handle) {
+				add_tail = true;
+			} else {
+				continue;
+			}
+#endif
 			if (add_tail) {
 				node = kzalloc(sizeof(struct hisifb_layerbuf), GFP_KERNEL);
 				if (node == NULL) {
 					HISI_FB_ERR("fb%d, layer_idx%d, failed to kzalloc!\n",
 						hisifd->index, layer->layer_idx);
 
-					if (ionhnd) {
-						ion_free(hisifd->ion_client, ionhnd);
-						ionhnd = NULL;
+					if (buf_handle) {
+					#if CONFIG_ION_ALLOC_BUFFER
+						if (has_map_iommu) {
+							ion_unmap_iommu(hisifd->buffer_client, buf_handle);
+							has_map_iommu = false;
+						}
+						ion_free(hisifd->buffer_client, buf_handle);
+					#else
+						hisi_dss_put_dmabuf(buf_handle);
+					#endif
+						buf_handle = NULL;
 					}
-
 					continue;
 				}
 
 				node->shared_fd = layer->img.shared_fd;
 				node->frame_no = pov_req->frame_no;
-				node->ion_handle = ionhnd;
+				node->buffer_handle = buf_handle;
 				node->has_map_iommu = has_map_iommu;
 				node->timeline = 0;
 				//mmbuf
@@ -139,9 +163,9 @@ int hisifb_layerbuf_lock(struct hisi_fb_data_type *hisifd,
 				list_add_tail(&node->list_node, plock_list);
 
 				if (g_debug_layerbuf_sync) {
-					HISI_FB_INFO("fb%d, frame_no=%d, layer_idx(%d), shared_fd=%d, ion_handle=%pK, "
+					HISI_FB_INFO("fb%d, frame_no=%d, layer_idx(%d), shared_fd=%d, buffer_handle=%pK, "
 						"has_map_iommu=%d, timeline=%d, mmbuf(0x%x, %d).\n",
-						hisifd->index, node->frame_no, i, node->shared_fd, node->ion_handle,
+						hisifd->index, node->frame_no, i, node->shared_fd, node->buffer_handle,
 						node->has_map_iommu, node->timeline,
 						node->mmbuf.addr, node->mmbuf.size);
 				}
@@ -162,10 +186,7 @@ void hisifb_layerbuf_flush(struct hisi_fb_data_type *hisifd,
 		HISI_FB_ERR("hisifd is NULL");
 		return;
 	}
-	if (NULL == hisifd->ion_client) {
-		HISI_FB_ERR("ion_client is NULL");
-		return;
-	}
+
 	if (NULL == plock_list) {
 		HISI_FB_ERR("plock_list is NULL");
 		return;
@@ -189,10 +210,12 @@ void hisifb_layerbuf_unlock(struct hisi_fb_data_type *hisifd,
 		HISI_FB_ERR("hisifd is NULL");
 		return;
 	}
-	if (NULL == hisifd->ion_client) {
-		HISI_FB_ERR("hisifd->ion_client is NULL");
+#if CONFIG_ION_ALLOC_BUFFER
+	if (NULL == hisifd->buffer_client) {
+		HISI_FB_ERR("hisifd->buffer_client is NULL");
 		return;
 	}
+#endif
 	if (NULL == hisifd->mmbuf_gen_pool) {
 		HISI_FB_ERR("hisifd->mmbuf_gen_pool is NULL");
 		return;
@@ -206,18 +229,23 @@ void hisifb_layerbuf_unlock(struct hisi_fb_data_type *hisifd,
 		list_del(&node->list_node);
 
 		if (g_debug_layerbuf_sync) {
-			HISI_FB_INFO("fb%d, frame_no=%d, share_fd=%d, ion_handle=%pK, has_map_iommu=%d, "
+			HISI_FB_INFO("fb%d, frame_no=%d, share_fd=%d, buffer_handle=%pK, has_map_iommu=%d, "
 				"timeline=%d, mmbuf(0x%x, %d).vir_addr = 0x%llx, chn_idx = %d\n",
-				hisifd->index, node->frame_no, node->shared_fd, node->ion_handle, node->has_map_iommu,
+				hisifd->index, node->frame_no, node->shared_fd, node->buffer_handle, node->has_map_iommu,
 				node->timeline, node->mmbuf.addr, node->mmbuf.size, node->vir_addr, node->chn_idx);
 		}
 
 		node->timeline = 0;
-		if (node->ion_handle) {
+		if (node->buffer_handle) {
+		#if CONFIG_ION_ALLOC_BUFFER
 			if (node->has_map_iommu) {
-				ion_unmap_iommu(hisifd->ion_client, node->ion_handle);
+				ion_unmap_iommu(hisifd->buffer_client, node->buffer_handle);
 			}
-			ion_free(hisifd->ion_client, node->ion_handle);
+			ion_free(hisifd->buffer_client, node->buffer_handle);
+		#else
+			hisi_dss_put_dmabuf(node->buffer_handle);
+		#endif
+			node->buffer_handle = NULL;
 		}
 		kfree(node);
 	}
@@ -262,10 +290,6 @@ static void hisifb_layerbuf_unlock_work(struct work_struct *work)
 		HISI_FB_ERR("hisifd is NULL");
 		return;
 	}
-	if (NULL == hisifd->ion_client) {
-		HISI_FB_ERR("hisifd->ion_client is NULL");
-		return;
-	}
 
 	INIT_LIST_HEAD(&free_list);
 	down(&pbuf_sync->layerbuf_sem);
@@ -292,11 +316,15 @@ int hisifb_offline_layerbuf_lock(struct hisi_fb_data_type *hisifd,
 	uint32_t i = 0;
 	uint32_t m = 0;
 	struct hisifb_layerbuf *node = NULL; //lint !e429
-	struct ion_handle *ionhnd = NULL;
-	struct iommu_map_format iommu_format;
 	bool add_tail = false;
 	bool has_map_iommu = false;
 	bool parameter_valid;
+#if CONFIG_ION_ALLOC_BUFFER
+	struct ion_handle *buf_handle = NULL;
+	struct iommu_map_format iommu_format;
+#else
+	struct dma_buf *buf_handle = NULL;
+#endif
 
 	parameter_valid = hisi_check_parameter_valid(hisifd, pov_req, plock_list);
 	if (parameter_valid == false) {
@@ -304,20 +332,17 @@ int hisifb_offline_layerbuf_lock(struct hisi_fb_data_type *hisifd,
 	}
 
 	wb_layer4block = &(pov_req->wb_layer_infos[0]);
+#if CONFIG_ION_ALLOC_BUFFER
 	if (wb_layer4block->dst.shared_fd >= 0) {
-		#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0)
-			ionhnd = ion_import_dma_buf_fd(hisifd->ion_client, wb_layer4block->dst.shared_fd);
-		#else
-			ionhnd = ion_import_dma_buf(hisifd->ion_client, wb_layer4block->dst.shared_fd);
-		#endif
-			if (IS_ERR(ionhnd)) {
-				ionhnd = NULL;
+			buf_handle = ion_import_dma_buf_fd(hisifd->buffer_client, wb_layer4block->dst.shared_fd);
+			if (IS_ERR(buf_handle)) {
+				buf_handle = NULL;
 				HISI_FB_ERR("fb%d, wb_layer4block failed to ion_import_dma_buf, shared_fd=%d!\n",
 					hisifd->index, wb_layer4block->dst.shared_fd);
 			} else {
 				if (wb_layer4block->dst.mmu_enable == 1) {
 					memset(&iommu_format, 0, sizeof(struct iommu_map_format));
-					if (ion_map_iommu(hisifd->ion_client, ionhnd, &iommu_format)) {
+					if (ion_map_iommu(hisifd->buffer_client, buf_handle, &iommu_format)) {
 						HISI_FB_ERR("fb%d, wb_layer4block failed to ion_import_dma_buf, shared_fd=%d!\n",
 							hisifd->index, wb_layer4block->dst.shared_fd);
 					} else {
@@ -327,25 +352,36 @@ int hisifb_offline_layerbuf_lock(struct hisi_fb_data_type *hisifd,
 				add_tail = true;
 			}
 	}
+#else
+	buf_handle = hisi_dss_get_dmabuf(wb_layer4block->dst.shared_fd);
+	if (buf_handle) {
+		add_tail = true;
+	}
+#endif
 
 	if (add_tail) {
 		node = kzalloc(sizeof(struct hisifb_layerbuf), GFP_KERNEL);
 		if (node == NULL) {
-			if (ionhnd) {
+			if (buf_handle) {
+			#if CONFIG_ION_ALLOC_BUFFER
 				if (has_map_iommu) {
-					ion_unmap_iommu(hisifd->ion_client, ionhnd);
+					ion_unmap_iommu(hisifd->buffer_client, buf_handle);
 					has_map_iommu = false;
 				}
-				ion_free(hisifd->ion_client, ionhnd);
-				ionhnd = NULL;
+				ion_free(hisifd->buffer_client, buf_handle);
+			#else
+				hisi_dss_put_dmabuf(buf_handle);
+			#endif
+				buf_handle = NULL;
 			}
 			HISI_FB_ERR("fb%d, wb_layer4block failed to kzalloc!\n", hisifd->index);
 			return -EINVAL;
 		}
 
 		node->shared_fd = wb_layer4block->dst.shared_fd;
-		node->ion_handle = ionhnd;
+		node->buffer_handle = buf_handle;
 		node->has_map_iommu = has_map_iommu;
+		node->timeline = 2;
 
 		//mmbuf
 		node->mmbuf.addr = wb_layer4block->dst.mmbuf_base;
@@ -355,9 +391,9 @@ int hisifb_offline_layerbuf_lock(struct hisi_fb_data_type *hisifd,
 		node->chn_idx = wb_layer4block->chn_idx;
 
 		list_add_tail(&node->list_node, plock_list);
-		if (g_debug_offline_layerbuf_sync) {
-			HISI_FB_INFO("fb%d, shared_fd=%d, ion_handle=%pK, has_map_iommu=%d, mmbuf(0x%x, %d).\n",
-				hisifd->index, node->shared_fd, node->ion_handle,
+		if (g_debug_layerbuf_sync) {
+			HISI_FB_INFO("fb%d, shared_fd=%d, buffer_handle=%pK, has_map_iommu=%d, mmbuf(0x%x, %d).\n",
+				hisifd->index, node->shared_fd, node->buffer_handle,
 				node->has_map_iommu, node->mmbuf.addr, node->mmbuf.size);
 		}
 	}
@@ -369,12 +405,18 @@ int hisifb_offline_layerbuf_lock(struct hisi_fb_data_type *hisifd,
 		for (i = 0; i < pov_h_block->layer_nums; i++) {
 			layer = &(pov_h_block->layer_infos[i]);
 			add_tail = false;
-			ionhnd = NULL;
+			buf_handle = NULL;
 			has_map_iommu = false;
 
-			if (layer->dst_rect.y < pov_h_block->ov_block_rect.y)
+			if (layer->dst_rect.y < pov_h_block->ov_block_rect.y) {
 				continue;
+			}
 
+			if (layer->need_cap & (CAP_DIM | CAP_BASE | CAP_PURE_COLOR)) {
+				continue;
+			}
+
+#if CONFIG_ION_ALLOC_BUFFER
 			if (layer->img.shared_fd < 0)
 				continue;
 
@@ -387,19 +429,15 @@ int hisifb_offline_layerbuf_lock(struct hisi_fb_data_type *hisifd,
 			}
 
 			if (layer->img.shared_fd >= 0) {
-			#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0)
-				ionhnd = ion_import_dma_buf_fd(hisifd->ion_client, layer->img.shared_fd);
-			#else
-				ionhnd = ion_import_dma_buf(hisifd->ion_client, layer->img.shared_fd);
-			#endif
-				if (IS_ERR(ionhnd)) {
-					ionhnd = NULL;
+				buf_handle = ion_import_dma_buf_fd(hisifd->buffer_client, layer->img.shared_fd);
+				if (IS_ERR(buf_handle)) {
+					buf_handle = NULL;
 					HISI_FB_ERR("fb%d, layer_idx%d, failed to ion_import_dma_buf, shared_fd=%d!\n",
 						hisifd->index, i, layer->img.shared_fd);
 				} else {
 					if (layer->img.mmu_enable == 1) {
 						memset(&iommu_format, 0, sizeof(struct iommu_map_format));
-						if (ion_map_iommu(hisifd->ion_client, ionhnd, &iommu_format)) {
+						if (ion_map_iommu(hisifd->buffer_client, buf_handle, &iommu_format)) {
 							HISI_FB_ERR("fb%d, layer_idx%d, failed to ion_map_iommu, shared_fd=%d!\n",
 								hisifd->index, i, layer->img.shared_fd);
 						} else {
@@ -409,17 +447,28 @@ int hisifb_offline_layerbuf_lock(struct hisi_fb_data_type *hisifd,
 					add_tail = true;
 				}
 			}
-
+#else
+			buf_handle = hisi_dss_get_dmabuf(layer->img.shared_fd);
+			if (buf_handle) {
+				add_tail = true;
+			} else {
+				continue;
+			}
+#endif
 			if (add_tail) {
 				node = kzalloc(sizeof(struct hisifb_layerbuf), GFP_KERNEL); //lint !e423
 				if (node == NULL) {
-					if (ionhnd) {
+					if (buf_handle) {
+					#if CONFIG_ION_ALLOC_BUFFER
 						if (has_map_iommu) {
-							ion_unmap_iommu(hisifd->ion_client, ionhnd);
+							ion_unmap_iommu(hisifd->buffer_client, buf_handle);
 							has_map_iommu = false;
 						}
-						ion_free(hisifd->ion_client, ionhnd);
-						ionhnd = NULL;
+						ion_free(hisifd->buffer_client, buf_handle);
+					#else
+						hisi_dss_put_dmabuf(buf_handle);
+					#endif
+						buf_handle = NULL;
 					}
 					HISI_FB_ERR("fb%d, layer_idx%d, failed to kzalloc!\n",
 						hisifd->index, layer->layer_idx);
@@ -427,8 +476,9 @@ int hisifb_offline_layerbuf_lock(struct hisi_fb_data_type *hisifd,
 				}
 
 				node->shared_fd = layer->img.shared_fd;
-				node->ion_handle = ionhnd;
+				node->buffer_handle = buf_handle;
 				node->has_map_iommu = has_map_iommu;
+				node->timeline = 2;
 
 				//mmbuf
 				node->mmbuf.addr = layer->img.mmbuf_base;
@@ -439,9 +489,9 @@ int hisifb_offline_layerbuf_lock(struct hisi_fb_data_type *hisifd,
 
 				list_add_tail(&node->list_node, plock_list);
 
-				if (g_debug_offline_layerbuf_sync) {
-					HISI_FB_INFO("fb%d, shared_fd=%d, ion_handle=%pK, has_map_iommu=%d, mmbuf(0x%x, %d).\n",
-						hisifd->index, node->shared_fd, node->ion_handle,
+				if (g_debug_layerbuf_sync) {
+					HISI_FB_INFO("fb%d, shared_fd=%d, buffer_handle=%pK, has_map_iommu=%d, mmbuf(0x%x, %d).\n",
+						hisifd->index, node->shared_fd, node->buffer_handle,
 						node->has_map_iommu, node->mmbuf.addr, node->mmbuf.size);
 				}
 			}
@@ -451,41 +501,6 @@ int hisifb_offline_layerbuf_lock(struct hisi_fb_data_type *hisifd,
 	return 0;
 }
 /*lint +e429*/
-void hisifb_offline_layerbuf_unlock(struct hisi_fb_data_type *hisifd,
-	struct list_head *pfree_list)
-{
-	struct hisifb_layerbuf *node, *_node_;
-
-	if (NULL == hisifd) {
-		HISI_FB_ERR("hisifd is NULL");
-		return;
-	}
-	if (NULL == hisifd->ion_client) {
-		HISI_FB_ERR("hisifd->ion_client is NULL");
-		return;
-	}
-	if (NULL == pfree_list) {
-		HISI_FB_ERR("pfree_list is NULL");
-		return;
-	}
-
-	list_for_each_entry_safe(node, _node_, pfree_list, list_node) {
-		list_del(&node->list_node);
-		if (g_debug_offline_layerbuf_sync) {
-			HISI_FB_INFO("fb%d, share_fd=%d, ion_handle=%pK, has_map_iommu=%d, "
-				"mmbuf(0x%x, %d).vir_addr = 0x%llx, chn_idx = %d\n",
-				hisifd->index, node->shared_fd, node->ion_handle, node->has_map_iommu,
-				node->mmbuf.addr, node->mmbuf.size, node->vir_addr, node->chn_idx);
-		}
-		if (node->ion_handle) {
-			if (node->has_map_iommu) {
-				ion_unmap_iommu(hisifd->ion_client, node->ion_handle);
-			}
-			ion_free(hisifd->ion_client, node->ion_handle);
-		}
-		kfree(node);
-	}
-}
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -570,12 +585,6 @@ int hisifb_buf_sync_create_fence(struct hisi_fb_data_type *hisifd, dss_overlay_t
 		return -EINVAL;
 	}
 
-	if (hisifd->index != PRIMARY_PANEL_IDX) {
-		pov_req->release_fence = -1;
-		pov_req->retire_fence = -1;
-		return 0;
-	}
-
 	buf_sync_ctrl = &hisifd->buf_sync_ctrl;
 	value = buf_sync_ctrl->timeline_max + buf_sync_ctrl->threshold + 1;
 	release_fence = hisifb_buf_create_fence(hisifd, buf_sync_ctrl,
@@ -650,6 +659,11 @@ void hisifb_buf_sync_suspend(struct hisi_fb_data_type *hisifd)
 		return;
 	}
 	buf_sync_ctrl = &hisifd->buf_sync_ctrl;
+	if (NULL == buf_sync_ctrl->timeline) {
+		HISI_FB_ERR("buf_sync_ctrl->timeline is NULL");
+		return;
+	}
+
 	spin_lock_irqsave(&buf_sync_ctrl->refresh_lock, flags);
 	if ((buf_sync_ctrl->timeline->next_value - buf_sync_ctrl->timeline->value) > 0) {
 		val = buf_sync_ctrl->timeline->next_value - buf_sync_ctrl->timeline->value;
@@ -658,7 +672,8 @@ void hisifb_buf_sync_suspend(struct hisi_fb_data_type *hisifd)
 	hisi_dss_resync_timeline(buf_sync_ctrl->timeline);
 	hisi_dss_resync_timeline(buf_sync_ctrl->timeline_retire);
 
-	buf_sync_ctrl->timeline_max += val;
+	//buf_sync_ctrl->timeline_max += val;
+	buf_sync_ctrl->timeline_max = buf_sync_ctrl->timeline->next_value + 1;
 	buf_sync_ctrl->refresh = 0;
 
 	spin_unlock_irqrestore(&buf_sync_ctrl->refresh_lock, flags);
@@ -688,7 +703,7 @@ void hisifb_buf_sync_close_fence(dss_overlay_t *pov_req)
 	}
 }
 
-int hisifb_buf_sync_handle_offline(struct hisi_fb_data_type *hisifd, dss_overlay_t *pov_req)
+int hisifb_buf_sync_handle(struct hisi_fb_data_type *hisifd, dss_overlay_t *pov_req)
 {
 	dss_overlay_block_t *pov_h_block_infos = NULL;
 	dss_overlay_block_t *pov_h_block = NULL;
@@ -735,42 +750,6 @@ int hisifb_buf_sync_handle_offline(struct hisi_fb_data_type *hisifd, dss_overlay
 	return 0;
 }
 
-int hisifb_buf_sync_handle(struct hisi_fb_data_type *hisifd, dss_overlay_t *pov_req)
-{
-	dss_overlay_block_t *pov_h_block_infos = NULL;
-	dss_overlay_block_t *pov_h_block = NULL;
-	dss_layer_t *layer = NULL;
-	int i = 0;
-	int m = 0;
-
-	if (NULL == hisifd) {
-		HISI_FB_ERR("hisifd is NULL");
-		return -EINVAL;
-	}
-	if (NULL == pov_req) {
-		HISI_FB_ERR("pov_req is NULL");
-		return -EINVAL;
-	}
-
-	pov_h_block_infos = (dss_overlay_block_t *)(pov_req->ov_block_infos_ptr);
-	for (m = 0; m < pov_req->ov_block_nums; m++) {
-		pov_h_block = &(pov_h_block_infos[m]);
-
-		for (i = 0; i < pov_h_block->layer_nums; i++) {
-			layer = &(pov_h_block->layer_infos[i]);
-
-			if (layer->dst_rect.y < pov_h_block->ov_block_rect.y)
-				continue;
-
-			if (layer->acquire_fence >= 0) {
-				hisifb_buf_sync_wait(layer->acquire_fence);
-			}
-		}
-	}
-
-	return 0;
-}
-
 void hisifb_buf_sync_signal(struct hisi_fb_data_type *hisifd)
 {
 	int val = 0;
@@ -783,6 +762,10 @@ void hisifb_buf_sync_signal(struct hisi_fb_data_type *hisifd)
 		return;
 	}
 	buf_sync_ctrl = &hisifd->buf_sync_ctrl;
+	if (hisifd->index == AUXILIARY_PANEL_IDX) {
+		queue_work(buf_sync_ctrl->free_layerbuf_queue, &(buf_sync_ctrl->free_layerbuf_work));
+		return;
+	}
 
 	spin_lock(&buf_sync_ctrl->refresh_lock);
 	if (buf_sync_ctrl->refresh) {
@@ -833,7 +816,8 @@ void hisifb_buf_sync_register(struct platform_device *pdev)
 
 	HISI_FB_DEBUG("fb%d, +.\n", hisifd->index);
 	buf_sync_ctrl = &hisifd->buf_sync_ctrl;
-
+	buf_sync_ctrl->timeline = NULL;
+	buf_sync_ctrl->timeline_retire = NULL;
 	buf_sync_ctrl->fence_name = "dss-fence";
 
 	buf_sync_ctrl->threshold = 0;
@@ -843,18 +827,20 @@ void hisifb_buf_sync_register(struct platform_device *pdev)
 	buf_sync_ctrl->timeline_max = 1;
 	spin_lock_init(&buf_sync_ctrl->refresh_lock);
 
-	snprintf(tmp_name, sizeof(tmp_name), "hisi_dss_fb%d", hisifd->index);
-	buf_sync_ctrl->timeline = hisi_dss_create_timeline(tmp_name);
-	if (buf_sync_ctrl->timeline == NULL) {
-		HISI_FB_ERR("cannot create release fence time line\n");
-		return ; /* -ENOMEM */
-	}
+	if (hisifd->index != AUXILIARY_PANEL_IDX) {
+		snprintf(tmp_name, sizeof(tmp_name), "hisi_dss_fb%d", hisifd->index);
+		buf_sync_ctrl->timeline = hisi_dss_create_timeline(tmp_name);
+		if (buf_sync_ctrl->timeline == NULL) {
+			HISI_FB_ERR("cannot create release fence time line\n");
+			return ; /* -ENOMEM */
+		}
 
-	snprintf(tmp_name, sizeof(tmp_name), "hisi_dss_fb%d_retire", hisifd->index);
-	buf_sync_ctrl->timeline_retire = hisi_dss_create_timeline(tmp_name);
-	if (buf_sync_ctrl->timeline_retire == NULL) {
-		HISI_FB_ERR("cannot create retire fence time line\n");
-		return ; /* -ENOMEM */
+		snprintf(tmp_name, sizeof(tmp_name), "hisi_dss_fb%d_retire", hisifd->index);
+		buf_sync_ctrl->timeline_retire = hisi_dss_create_timeline(tmp_name);
+		if (buf_sync_ctrl->timeline_retire == NULL) {
+			HISI_FB_ERR("cannot create retire fence time line\n");
+			return ; /* -ENOMEM */
+		}
 	}
 
 	// handle free layerbuf
@@ -909,3 +895,4 @@ void hisifb_buf_sync_unregister(struct platform_device *pdev)
 
 	HISI_FB_DEBUG("fb%d, -.\n", hisifd->index);
 }
+/*lint +e574, +e429*/

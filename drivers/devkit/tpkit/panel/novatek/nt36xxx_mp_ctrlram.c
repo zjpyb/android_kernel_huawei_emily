@@ -234,7 +234,7 @@ static unsigned long str_to_hex(char *p)
 	do {
 		dig = p[--length];
 		dig = dig < 'a' ? (dig - '0') : (dig - 'a' + 0xa);
-		hex |= (dig << shift);
+		hex |= ((unsigned long)dig << shift);
 		shift += 4;
 	} while (length);
 	return hex;
@@ -250,12 +250,16 @@ return:
 static int32_t nvt_check_asr_error(void)
 {
 	uint8_t buf[4] = {0};
+	int32_t ret = 0;
 
 	//---write i2c cmds to ASR error flag---
 	buf[0] = 0xFF;
 	buf[1] = 0x01;
 	buf[2] = 0xF6;
-	novatek_ts_kit_write(I2C_FW_Address, buf, 3);
+	ret = novatek_ts_kit_write(I2C_FW_Address, buf, 3);
+	if (ret < 0)
+		TS_LOG_ERR("%s: error, bus_write fail, ret=%d\n",
+			__func__, ret);
 
 	//---read ASR error flag---
 	buf[0] = 0x96;
@@ -279,23 +283,29 @@ return:
 static void nvt_clean_asr_error_flag(void)
 {
 	uint8_t buf[4] = {0};
+	int32_t ret = 0;
 
 	//---write i2c cmds to ASR error flag---
 	buf[0] = 0xFF;
 	buf[1] = 0x01;
 	buf[2] = 0xF6;
-	novatek_ts_kit_write(I2C_FW_Address, buf, 3);
+	ret = novatek_ts_kit_write(I2C_FW_Address, buf, 3);
+	if (ret < 0)
+		TS_LOG_ERR("%s: error, bus_write fail, ret=%d\n", __func__, ret);
 
 	//---clean ASR error flag---
 	buf[0] = 0x96;
 	buf[1] = 0x00;
 	buf[2] = 0x00;
-	novatek_ts_kit_write(I2C_FW_Address, buf, 3);
+	ret = novatek_ts_kit_write(I2C_FW_Address, buf, 3);
+	if (ret < 0)
+		TS_LOG_ERR("%s: error, bus_write fail, ret=%d\n", __func__, ret);
 }
 
 static int32_t nvt_load_mp_ctrlram_ini(void)
 {
 	int32_t retval = 0;
+	int ret = 0;
 	struct file *fp = NULL;
 	char *fbufp = NULL; // buffer for content of file
 	mm_segment_t org_fs;
@@ -314,7 +324,7 @@ static int32_t nvt_load_mp_ctrlram_ini(void)
 #else
 	snprintf(file_path, sizeof(file_path), "/odm/etc/firmware/ts/%s_short_open.ini", novatek_kit_project_id);
 #endif
-		
+
 	org_fs = get_fs();
 	set_fs(KERNEL_DS);
 
@@ -352,7 +362,7 @@ static int32_t nvt_load_mp_ctrlram_ini(void)
 			fbufp[stat.size] = 0;
 			ptr = fbufp;
 
-			while ( ptr && (ptr < (fbufp + stat.size))) {
+			while (ptr < (fbufp + stat.size)) {
 				if (ctrl_ram_item == E_System_Init_CTRLRAMTableStartAddress) {
 					ptr = strstr(ptr, "[System_Init]");
 					if (ptr == NULL) {
@@ -367,7 +377,9 @@ static int32_t nvt_load_mp_ctrlram_ini(void)
 						goto exit_free;
 					}
 					copy_this_line(ctrlram_data_buf, ptr);
-					sscanf(ctrlram_data_buf, "CTRLRAMTableStartAddress=%127s", ctrlram_item_str);
+					ret = sscanf(ctrlram_data_buf, "CTRLRAMTableStartAddress=%127s", ctrlram_item_str);
+					if (ret != 1)
+						TS_LOG_ERR("%s:sscanf failed.\n", __func__);
 					System_Init_CTRLRAMTableStartAddress = str_to_hex(ctrlram_item_str + 2); // skip "0x"
 					TS_LOG_INFO("System_Init_CTRLRAMTableStartAddress = 0x%08X\n", System_Init_CTRLRAMTableStartAddress);
 				} else if (ctrl_ram_item == E_TableType0_GLOBAL_Addr) {
@@ -384,7 +396,9 @@ static int32_t nvt_load_mp_ctrlram_ini(void)
 						goto exit_free;
 					}
 					copy_this_line(ctrlram_data_buf, ptr);
-					sscanf(ctrlram_data_buf, "GLOBAL_Addr=%127s", ctrlram_item_str);
+					ret = sscanf(ctrlram_data_buf, "GLOBAL_Addr=%127s", ctrlram_item_str);
+					if (ret != 1)
+						TS_LOG_ERR("%s: sscanf failed.\n", __func__);
 					TableType0_GLOBAL_Addr = str_to_hex(ctrlram_item_str + 2); // skip "0x"
 					TS_LOG_INFO("TableType0_GLOBAL_Addr = 0x%08X\n", TableType0_GLOBAL_Addr);
 					TableType0_GLOBAL_Addr = TableType0_GLOBAL_Addr - 0x10000;
@@ -402,7 +416,9 @@ static int32_t nvt_load_mp_ctrlram_ini(void)
 						goto exit_free;
 					}
 					copy_this_line(ctrlram_data_buf, ptr);
-					sscanf(ctrlram_data_buf, "GLOBAL_Addr=%127s", ctrlram_item_str);
+					ret = sscanf(ctrlram_data_buf, "GLOBAL_Addr=%127s", ctrlram_item_str);
+					if (ret != 1)
+						TS_LOG_ERR("%s: sscanf failed.\n", __func__);
 					TableType1_GLOBAL_Addr = str_to_hex(ctrlram_item_str + 2); // skip "0x"
 					TS_LOG_INFO("TableType1_GLOBAL_Addr = 0x%08X\n", TableType1_GLOBAL_Addr);
 					TableType1_GLOBAL_Addr = TableType1_GLOBAL_Addr - 0x10000;
@@ -421,7 +437,9 @@ static int32_t nvt_load_mp_ctrlram_ini(void)
 					}
 					ptr++; // skip first byte '\n'
 					copy_this_line(ctrlram_data_buf, ptr);
-					sscanf(ctrlram_data_buf, "RAW_BASE_ADDR=%127s", ctrlram_item_str);
+					ret = sscanf(ctrlram_data_buf, "RAW_BASE_ADDR=%127s", ctrlram_item_str);
+					if (ret != 1)
+						TS_LOG_ERR("%s: sscanf failed.\n", __func__);
 					TableType0_GLOBAL0_RAW_BASE_ADDR = str_to_hex(ctrlram_item_str + 2); // skip "0x"
 					TS_LOG_INFO("TableType0_GLOBAL0_RAW_BASE_ADDR = 0x%08X\n", TableType0_GLOBAL0_RAW_BASE_ADDR);
 					TableType0_GLOBAL0_RAW_BASE_ADDR = TableType0_GLOBAL0_RAW_BASE_ADDR | 0x10000;
@@ -440,7 +458,9 @@ static int32_t nvt_load_mp_ctrlram_ini(void)
 					}
 					ptr++; // skip first byte '\n'
 					copy_this_line(ctrlram_data_buf, ptr);
-					sscanf(ctrlram_data_buf, "RAW_BASE_ADDR=%127s", ctrlram_item_str);
+					ret = sscanf(ctrlram_data_buf, "RAW_BASE_ADDR=%127s", ctrlram_item_str);
+					if (ret != 1)
+						TS_LOG_ERR("%s: sscanf failed.\n", __func__);
 					TableType1_GLOBAL0_RAW_BASE_ADDR = str_to_hex(ctrlram_item_str + 2); // skip "0x"
 					TS_LOG_INFO("TableType1_GLOBAL0_RAW_BASE_ADDR = 0x%08X\n", TableType1_GLOBAL0_RAW_BASE_ADDR);
 					TableType1_GLOBAL0_RAW_BASE_ADDR = TableType1_GLOBAL0_RAW_BASE_ADDR | 0x10000;
@@ -453,18 +473,18 @@ static int32_t nvt_load_mp_ctrlram_ini(void)
 					break;
 				}
 			}
-
-        } else {
-            TS_LOG_ERR("%s: retval=%d, read_ret=%d, fbufp=%p, stat.size=%lld\n", __func__, retval, read_ret, fbufp, stat.size);
-            retval = -3;
-            goto exit_free;
-        }
-    } else {
-        TS_LOG_ERR("%s: failed to get file stat, retval = %d\n", __func__, retval);
-        retval = -4;
-        goto exit_free;
-    }
-
+		} else {
+			TS_LOG_ERR("%s: ret=%d, read=%d, fbufp=%pK, stat.size=%lld\n",
+				__func__, retval, read_ret, fbufp, stat.size);
+			retval = -3; /* error code */
+			goto exit_free;
+		}
+	} else {
+		TS_LOG_ERR("%s: failed to get file stat, retval = %d\n",
+			__func__, retval);
+		retval = -4; /* error code */
+		goto exit_free;
+	}
 exit_free:
 	set_fs(org_fs);
 	if (fbufp) {
@@ -496,11 +516,13 @@ static int32_t nvt_load_mp_ctrlram_bin(void)
 
 	TS_LOG_INFO("%s:++\n", __func__);
 #ifdef BOARD_VENDORIMAGE_FILE_SYSTEM_TYPE
-	snprintf(file_path, sizeof(file_path), "/product/etc/firmware/ts/%s_short_open.bin", novatek_kit_project_id);	
+	snprintf(file_path, sizeof(file_path), "/product/etc/firmware/ts/%s_short_open.bin",
+		novatek_kit_project_id);
 #else
-	snprintf(file_path, sizeof(file_path), "/odm/etc/firmware/ts/%s_short_open.bin", novatek_kit_project_id);	
+	snprintf(file_path, sizeof(file_path), "/odm/etc/firmware/ts/%s_short_open.bin",
+		novatek_kit_project_id);
 #endif
-		
+
 	org_fs = get_fs();
 	set_fs(KERNEL_DS);
 
@@ -561,7 +583,7 @@ static int32_t nvt_load_mp_ctrlram_bin(void)
 				CtrlRAM_test_cmd[i].addr = ctrlram_cur_addr;
 				CtrlRAM_test_cmd[i].len = 4;
 				CtrlRAM_test_cmd[i].data[0] = *(ptr + (4 * i));
-				CtrlRAM_test_cmd[i].data[1] = *(ptr + (4 * i) + 1); 
+				CtrlRAM_test_cmd[i].data[1] = *(ptr + (4 * i) + 1);
 				CtrlRAM_test_cmd[i].data[2] = *(ptr + (4 * i) + 2);
 				CtrlRAM_test_cmd[i].data[3] = *(ptr + (4 * i) + 3);
 				//if (i < 10) {
@@ -571,7 +593,8 @@ static int32_t nvt_load_mp_ctrlram_bin(void)
 			}
 
 		} else {
-			TS_LOG_ERR("%s: retval=%d, read_ret=%d, fbufp=%p, stat.size=%lld\n", __func__, retval, read_ret, fbufp, stat.size);
+			TS_LOG_ERR("%s: ret=%d, read=%d, fbufp=%pK, stat.size=%lld\n",
+				__func__, retval, read_ret, fbufp, stat.size);
 			retval = -3;
 			goto exit_free;
 		}
@@ -673,7 +696,10 @@ static int32_t nvt_load_mp_signal_gen_setting(void)
 						goto exit_free;
 					}
 					copy_this_line(signal_gen_buf, ptr);
-					sscanf(signal_gen_buf, "SignalNum=%d", &SignalGen_test_cmd_num);
+					retval = sscanf(signal_gen_buf, "SignalNum=%d", &SignalGen_test_cmd_num);
+					if (retval != 1)
+						TS_LOG_ERR("%s: sscanf failed.\n",
+							__func__);
 					TS_LOG_INFO("SignalGen_test_cmd_num = %d\n", SignalGen_test_cmd_num);
 					if (SignalGen_test_cmd) {
 						vfree(SignalGen_test_cmd);
@@ -724,7 +750,9 @@ static int32_t nvt_load_mp_signal_gen_setting(void)
 						goto exit_free;
 					}
 					copy_this_line(signal_gen_buf, ptr);
-					sscanf(signal_gen_buf, "SignalNum=%d", &SignalGen2_test_cmd_num);
+					retval = sscanf(signal_gen_buf, "SignalNum=%d", &SignalGen2_test_cmd_num);
+					if (retval != 1)
+						TS_LOG_INFO("%s: sscanf is failed.\n", __func__);
 					TS_LOG_INFO("SignalGen2_test_cmd_num = %d\n", SignalGen2_test_cmd_num);
 					if (SignalGen2_test_cmd) {
 						vfree(SignalGen2_test_cmd);
@@ -772,7 +800,8 @@ static int32_t nvt_load_mp_signal_gen_setting(void)
 			}
 
 		} else {
-			TS_LOG_ERR("%s: retval=%d, read_ret=%d, fbufp=%p, stat.size=%lld\n", __func__, retval, read_ret, fbufp, stat.size);
+			TS_LOG_ERR("%s: ret=%d, read=%d, fbufp=%pK, stat.size=%lld\n",
+				__func__, retval, read_ret, fbufp, stat.size);
 			retval = -3;
 			goto exit_free;
 		}
@@ -807,6 +836,7 @@ return:
 static int32_t nvt_set_adc_oper(void)
 {
 	uint8_t buf[4] = {0};
+	int32_t ret;
 	int32_t i, j;
 	const int32_t retry_adc_oper = 10;
 	const int32_t retry_adc_status = 10;
@@ -816,19 +846,22 @@ static int32_t nvt_set_adc_oper(void)
 		buf[0] = 0xFF;
 		buf[1] = 0x01;
 		buf[2] = 0xF4;
-		novatek_ts_kit_write(I2C_FW_Address, buf, 3);
-
+		ret = novatek_ts_kit_write(I2C_FW_Address, buf, 3);
+		if (ret < 0)
+			TS_LOG_ERR("%s: error, bus_write fail, ret=%d\n", __func__, ret);
 		//---write i2c cmds to clear ADC operation---
 		buf[0] = 0x4C;
 		buf[1] = 0x00;
-		novatek_ts_kit_write(I2C_FW_Address, buf, 2);
-
+		ret = novatek_ts_kit_write(I2C_FW_Address, buf, 2);
+		if (ret < 0)
+			TS_LOG_ERR("%s: error, bus_write fail, ret=%d\n", __func__, ret);
 		msleep(10);
 		//---write i2c cmds to set ADC operation---
 		buf[0] = 0x4C;
 		buf[1] = 0x01;
-		novatek_ts_kit_write(I2C_FW_Address, buf, 2);
-
+		ret = novatek_ts_kit_write(I2C_FW_Address, buf, 2);
+		if (ret < 0)
+			TS_LOG_ERR("%s: error, bus_write fail, ret=%d\n", __func__, ret);
 		for (j = 0; j < retry_adc_status; j++) {
 			//---read ADC status---
 			buf[0] = 0x4C;
@@ -867,6 +900,7 @@ return:
 static void nvt_write_test_cmd(struct test_cmd *cmds, int32_t cmd_num)
 {
 	int32_t i = 0;
+	int32_t ret;
 	int32_t j = 0;
 	uint8_t buf[64];
 
@@ -879,7 +913,9 @@ static void nvt_write_test_cmd(struct test_cmd *cmds, int32_t cmd_num)
 		for (j = 0; j < cmds[i].len; j++) {
 			buf[1 + j] = cmds[i].data[j];
 		}
-		novatek_ts_kit_write(I2C_FW_Address, buf, 1 + cmds[i].len);
+		ret = novatek_ts_kit_write(I2C_FW_Address, buf, 1 + cmds[i].len);
+		if (ret < 0)
+			TS_LOG_ERR("%s: error, bus_write fail, ret=%d\n", __func__, ret);
 
 /*
 		//---read test cmds (debug)---
@@ -896,7 +932,7 @@ static void nvt_write_test_cmd(struct test_cmd *cmds, int32_t cmd_num)
 
 static int32_t nvt_set_memory(uint32_t addr, uint8_t data)
 {
-	int32_t ret = 0;
+	int32_t ret;
 	uint8_t buf[64] = {0};
 
 	//---set xdata index---
@@ -928,7 +964,7 @@ static int32_t nvt_set_memory(uint32_t addr, uint8_t data)
 
 static int32_t nvt_get_memory(uint32_t addr, uint8_t *data)
 {
-	int32_t ret = 0;
+	int32_t ret;
 	uint8_t buf[64] = {0};
 
 	//---set xdata index---
@@ -1317,6 +1353,7 @@ return:
 *******************************************************/
 static int32_t nvt_read_open(void)
 {
+	int32_t ret;
 	int32_t i = 0;
 	int32_t x = 0;
 	int32_t y = 0;
@@ -1360,7 +1397,9 @@ static int32_t nvt_read_open(void)
 			buf[0] = 0xFF;
 			buf[1] = 0x01;
 			buf[2] = (uint8_t)(((TableType1_GLOBAL0_RAW_BASE_ADDR + y * IC_X_CFG_SIZE * 2) & 0xFF00) >> 8);
-			novatek_ts_kit_write(I2C_FW_Address, buf, 3);
+			ret = novatek_ts_kit_write(I2C_FW_Address, buf, 3);
+			if (ret)
+				TS_LOG_ERR("%s: i2c write error\n", __func__);
 		} else {
 			nvt_set_page(TableType1_GLOBAL0_RAW_BASE_ADDR + y * IC_X_CFG_SIZE * 2);
 		}
@@ -1409,6 +1448,7 @@ static int32_t nvt_read_open(void)
 
 static int8_t nvt_switch_FreqHopEnDis(uint8_t FreqHopEnDis)
 {
+	int32_t retval;
 	uint8_t buf[8] = {0};
 	uint8_t retry = 0;
 	int8_t ret = 0;
@@ -1422,7 +1462,10 @@ static int8_t nvt_switch_FreqHopEnDis(uint8_t FreqHopEnDis)
 		//---switch FreqHopEnDis---
 		buf[0] = EVENT_MAP_HOST_CMD;
 		buf[1] = FreqHopEnDis;
-		novatek_ts_kit_write(I2C_FW_Address, buf, 2);
+		retval = novatek_ts_kit_write(I2C_FW_Address, buf, 2);
+		if (retval < 0)
+			TS_LOG_ERR("%s: error, bus_write fail, ret=%d\n",
+				__func__, retval);
 
 		msleep(35);
 
@@ -1615,6 +1658,7 @@ static int32_t nvt_read_noise(void)
 }
 static void nvt_enable_short_test(void)
 {
+	int32_t ret;
 	uint8_t buf[8] = {0};
 
 	//---set xdata index to EVENT BUF ADDR---
@@ -1626,7 +1670,9 @@ static void nvt_enable_short_test(void)
 	buf[2] = 0xAA;
 	buf[3] = 0x02;
 	buf[4] = 0x00;
-	novatek_ts_kit_write(I2C_FW_Address, buf, 5);
+	ret = novatek_ts_kit_write(I2C_FW_Address, buf, 5);
+	if (ret < 0)
+		TS_LOG_ERR("%s: error, bus_write fail, ret=%d\n", __func__, ret);
 }
 
 static int32_t nvt_polling_hand_shake_status(void)
@@ -1672,6 +1718,7 @@ static int32_t nvt_polling_hand_shake_status(void)
 
 static void nvt_tddi_enable_noise_collect(int32_t frame_num)
 {
+	int32_t ret;
 	uint8_t buf[8] = {0};
 
 	//---set xdata index to EVENT BUF ADDR---
@@ -1679,7 +1726,10 @@ static void nvt_tddi_enable_noise_collect(int32_t frame_num)
 		buf[0] = NVTTDDI_DOUBLE_F_CMD;
 		buf[1] = (nvt_ts->mmap->EVENT_BUF_ADDR >> 16) & 0xFF;
 		buf[2] = (nvt_ts->mmap->EVENT_BUF_ADDR >> 8) & 0xFF;
-		novatek_ts_kit_write(I2C_FW_Address, buf, NVTTDDI_THREE_BYTES_LENGTH);
+		ret = novatek_ts_kit_write(I2C_FW_Address, buf, NVTTDDI_THREE_BYTES_LENGTH);
+		if(ret < 0){
+			TS_LOG_ERR("%s: error, bus_write fail, ret=%d\n", __func__, ret);
+		}
 	} else {
 		nvt_set_page(nvt_ts->mmap->EVENT_BUF_ADDR | EVENT_MAP_HOST_CMD);
 	}
@@ -1690,19 +1740,24 @@ static void nvt_tddi_enable_noise_collect(int32_t frame_num)
 	buf[2] = NVTTDDI_DOUBLE_A_CMD;
 	buf[3] = frame_num;
 	buf[4] = NVTTDDI_DOUBLE_ZERO_CMD;
-	novatek_ts_kit_write(I2C_FW_Address, buf, NVTTDDI_FIVE_BYTES_LENGTH);
+	ret = novatek_ts_kit_write(I2C_FW_Address, buf, NVTTDDI_FIVE_BYTES_LENGTH);
+	if (ret < 0)
+		TS_LOG_ERR("%s: error, bus_write fail, ret=%d\n", __func__, ret);
 }
 
 static void nvt_tddi_enable_open_test(void)
 {
 	uint8_t buf[8] = {0};
+	int32_t ret;
 
 	//---set xdata index to EVENT BUF ADDR---
-	if(nvt_ts->btype == TS_BUS_I2C) {
+	if (nvt_ts->btype == TS_BUS_I2C) {
 		buf[0] = NVTTDDI_DOUBLE_F_CMD;
 		buf[1] = (nvt_ts->mmap->EVENT_BUF_ADDR >> 16) & 0xFF;
 		buf[2] = (nvt_ts->mmap->EVENT_BUF_ADDR >> 8) & 0xFF;
-		novatek_ts_kit_write(I2C_FW_Address, buf, NVTTDDI_THREE_BYTES_LENGTH);
+		ret = novatek_ts_kit_write(I2C_FW_Address, buf, NVTTDDI_THREE_BYTES_LENGTH);
+		if (ret < 0)
+			TS_LOG_ERR("%s: error, bus_write fail, ret=%d\n", __func__, ret);
 	} else {
 		nvt_set_page(nvt_ts->mmap->EVENT_BUF_ADDR | EVENT_MAP_HOST_CMD);
 	}
@@ -1713,7 +1768,9 @@ static void nvt_tddi_enable_open_test(void)
 	buf[2] = NVTTDDI_DOUBLE_A_CMD;
 	buf[3] = NVTTDDI_ZERO_TWO_CMD;
 	buf[4] = NVTTDDI_DOUBLE_ZERO_CMD;
-	novatek_ts_kit_write(I2C_FW_Address, buf, NVTTDDI_FIVE_BYTES_LENGTH);
+	ret = novatek_ts_kit_write(I2C_FW_Address, buf, NVTTDDI_FIVE_BYTES_LENGTH);
+	if (ret < 0)
+		TS_LOG_ERR("%s: error, bus_write fail, ret=%d\n", __func__, ret);
 }
 
 #define NVT_TDDI_ABS(x) (x >= 0 ? x : (-x))
@@ -1851,6 +1908,7 @@ return:
 *******************************************************/
 static int32_t nvt_tddi_read_fw_open(void)
 {
+	int32_t ret;
 	uint32_t raw_pipe_addr = NO_ERR;
 	int32_t x = NO_ERR;
 	int32_t y = NO_ERR;
@@ -1870,8 +1928,7 @@ static int32_t nvt_tddi_read_fw_open(void)
 	}
 
 	if (FLAG_EXIST == nvt_ts->nvttddi_channel_flag) {
-		if (*(nvt_ts->NvtTddi_X_Channel) > U8_MAX || *(nvt_ts->NvtTddi_X_Channel) < U8_MIN ||
-			*(nvt_ts->NvtTddi_Y_Channel) > U8_MAX || *(nvt_ts->NvtTddi_Y_Channel) < U8_MIN) {
+		if (*(nvt_ts->NvtTddi_X_Channel) > U8_MAX || *(nvt_ts->NvtTddi_Y_Channel) > U8_MAX ) {
 			TS_LOG_ERR("%s: data conversion failed!\n", __func__);
 			return -EINVAL;
 		} else {
@@ -1914,7 +1971,10 @@ static int32_t nvt_tddi_read_fw_open(void)
 			buf[0] = NVTTDDI_DOUBLE_F_CMD;
 			buf[1] = (uint8_t)(HIGHT_EIGHT_BITS(raw_pipe_addr + y * IC_X_CFG_SIZE * NVTTDDI_MULTIPLY_2_NUM));
 			buf[2] = (uint8_t)(MIDDLE_EIGHT_BITS(raw_pipe_addr + y * IC_X_CFG_SIZE * NVTTDDI_MULTIPLY_2_NUM));
-			novatek_ts_kit_write(I2C_FW_Address, buf, NVTTDDI_THREE_BYTES_LENGTH);
+			ret = novatek_ts_kit_write(I2C_FW_Address, buf, NVTTDDI_THREE_BYTES_LENGTH);
+			if (ret < 0)
+				TS_LOG_ERR("%s: error, bus_write fail, ret=%d\n",
+					__func__, ret);
 		} else {
 			nvt_set_page(raw_pipe_addr + y * IC_X_CFG_SIZE * NVTTDDI_MULTIPLY_2_NUM);
 		}
@@ -1958,7 +2018,7 @@ static int nvt_get_threshold_from_csvfile(int columns, int rows, char* target_na
 {
 	char file_path[100] = {0};
 	char file_name[64] = {0};
-	int ret = 0;
+	int ret;
 	int result = 0;
 
 	TS_LOG_INFO("%s called\n", __func__);
@@ -2644,11 +2704,14 @@ int32_t nvt_kit_selftest(struct ts_rawdata_info *info)
 	char test_2_result[4]={0};
 	char test_3_result[4]={0};
 	char test_4_result[4]={0};
-	int32_t noise_ret = NO_ERR;
-	int32_t open_ret = NO_ERR;
 	uint8_t x_channel_size = 0;
 	uint8_t y_channel_size = 0;
+	uint32_t bytes_of_array;
+	unsigned long timer_start = 0;
+	unsigned long timer_end = 0;
+	uint32_t start_p = 0;
 
+	timer_start = jiffies;
 	if (NULL == info || NULL == nvt_ts) {
 		TS_LOG_ERR("%s: param error\n", __FUNCTION__);
 		return -EINVAL;
@@ -2661,8 +2724,7 @@ int32_t nvt_kit_selftest(struct ts_rawdata_info *info)
 
 	TS_LOG_INFO("%s: nvt_ts->nvttddi_channel_flag=%d\n", __func__, nvt_ts->nvttddi_channel_flag);
 	if (FLAG_EXIST == nvt_ts->nvttddi_channel_flag) {
-		if (*(nvt_ts->NvtTddi_X_Channel) > U8_MAX || *(nvt_ts->NvtTddi_X_Channel) < U8_MIN ||
-			*(nvt_ts->NvtTddi_Y_Channel) > U8_MAX || *(nvt_ts->NvtTddi_Y_Channel) < U8_MIN) {
+		if (*(nvt_ts->NvtTddi_X_Channel) > U8_MAX || *(nvt_ts->NvtTddi_Y_Channel) > U8_MAX ) {
 			TS_LOG_ERR("%s: data conversion failed!\n", __func__);
 			return -EINVAL;
 		}else {
@@ -2679,8 +2741,6 @@ int32_t nvt_kit_selftest(struct ts_rawdata_info *info)
 		return -ERESTARTSYS;
 	}
 	//---For Debug : Test Time, Mallon 20160907---
-	unsigned long timer_start=0,timer_end=0;
-	timer_start=jiffies;
 	//---print criteria ,mallon 20161012-----
 	if(nvt_ts->print_criteria == true) {
 		nvt_print_criteria();
@@ -2835,7 +2895,6 @@ int32_t nvt_kit_selftest(struct ts_rawdata_info *info)
 		nvt_kit_fw_update_boot_spi(nvt_ts->fw_name);
 	}
 
-	uint32_t bytes_of_array;
 	//---Copy Data to info->buff---
 	if(nvt_ts->criteria_threshold_flag){
 
@@ -2848,7 +2907,7 @@ int32_t nvt_kit_selftest(struct ts_rawdata_info *info)
 			bytes_of_array = x_channel_size*y_channel_size*sizeof(int);
 			memcpy(&info->buff[CHANNEL_NUM], RawData_FWMutual, bytes_of_array);
 
-			uint32_t start_p = x_channel_size * y_channel_size + CHANNEL_NUM;
+			start_p = x_channel_size * y_channel_size + CHANNEL_NUM;
 			memcpy(&info->buff[start_p], RawData_Diff, bytes_of_array);
 
 			start_p = x_channel_size * y_channel_size*2 + CHANNEL_NUM;
@@ -2871,7 +2930,7 @@ int32_t nvt_kit_selftest(struct ts_rawdata_info *info)
 			bytes_of_array = (X_Channel*(uint64_t)Y_Channel*sizeof(int));
 			memcpy(&info->buff[CHANNEL_NUM], RawData_FWMutual, bytes_of_array);
 
-			uint32_t start_p = X_Channel * Y_Channel + CHANNEL_NUM;
+			start_p = X_Channel * Y_Channel + CHANNEL_NUM;
 			memcpy(&info->buff[start_p], RawData_Diff, bytes_of_array);
 
 			start_p = X_Channel * Y_Channel*2 + CHANNEL_NUM;

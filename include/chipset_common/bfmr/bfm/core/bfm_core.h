@@ -50,6 +50,56 @@ struct bfmr_boot_fail_info
     bfmr_bootfail_addl_info_t addl_info;
 };
 
+struct bfmr_dbrd_ioctl_block {
+	unsigned int kbytes;
+	int number; // compatible with brd's brd_number
+};
+
+#define BFMR_SIZE_DISK_NAME 32
+#define BFMR_SIZE_BOOTDEVICE_PROD_INFO 64
+
+/* ioctl data structure */
+struct bfmr_storage_rochk_iocb {
+	unsigned int data;
+};
+
+struct bfmr_bootdisk_wp_status_iocb {
+	char disk_name[BFMR_SIZE_DISK_NAME];
+	unsigned int use_name;
+	unsigned int write_prot;
+};
+
+struct bfmr_storage_rofa_info_iocb {
+	unsigned int mode;
+	unsigned int round;
+	unsigned int method;
+};
+
+struct bfmr_disk_info {
+	char name[BFMR_SIZE_DISK_NAME];
+	int major;
+	int minor;
+	unsigned long long capacity;
+	unsigned int write_prot;
+};
+
+struct bfmr_bootdevice_disk_info_iocb {
+	unsigned int in_cnt;
+	unsigned int out_cnt;
+	struct bfmr_disk_info info_arr[0];
+} __packed;
+
+struct bfmr_bootdevice_prod_info_iocb {
+	char prod_info[BFMR_SIZE_BOOTDEVICE_PROD_INFO];
+};
+
+typedef struct
+{
+    bfr_recovery_method_e recovery_method;
+    bfmr_detail_boot_stage_e boot_stage;
+    bfmr_selfheal_code_e selfheal_code;
+} bfmr_recovery_method_maptable_t;
+
 
 /*----export macroes-----------------------------------------------------------------*/
 
@@ -65,6 +115,15 @@ struct bfmr_boot_fail_info
 #define BFMR_GET_DEV_PATH _IOR(BFMR_IOCTL_BASE, 9, struct bfmr_dev_path)
 #define BFMR_ENABLE_CTRL _IOW(BFMR_IOCTL_BASE, 10, int)
 #define BFMR_ACTION_TIMER_CTL _IOW(BFMR_IOCTL_BASE, 11, struct action_ioctl_data)
+#define BFMR_IOC_CREATE_DYNAMIC_RAMDISK _IOWR(BFMR_IOCTL_BASE, 12, struct bfmr_dbrd_ioctl_block)
+#define BFMR_IOC_DELETE_DYNAMIC_RAMDISK _IOW(BFMR_IOCTL_BASE, 13, struct bfmr_dbrd_ioctl_block)
+#define BFMR_IOC_CHECK_BOOTDISK_WP _IOWR(BFMR_IOCTL_BASE, 14, struct bfmr_bootdisk_wp_status_iocb)
+#define BFMR_IOC_ENABLE_MONITOR   _IOW(BFMR_IOCTL_BASE, 15, struct bfmr_storage_rochk_iocb)
+#define BFMR_IOC_DO_STORAGE_WRTRY _IOWR(BFMR_IOCTL_BASE, 16, struct bfmr_storage_rochk_iocb)
+#define BFMR_IOC_GET_STORAGE_ROFA_INFO _IOWR(BFMR_IOCTL_BASE, 17, struct bfmr_storage_rofa_info_iocb)
+#define BFMR_IOC_GET_BOOTDEVICE_DISK_COUNT _IOWR(BFMR_IOCTL_BASE, 18, struct bfmr_storage_rochk_iocb)
+#define BFMR_IOC_GET_BOOTDEVICE_DISK_INFO _IOWR(BFMR_IOCTL_BASE, 19, struct bfmr_bootdevice_disk_info_iocb)
+#define BFMR_IOC_GET_BOOTDEVICE_PROD_INFO _IOWR(BFMR_IOCTL_BASE, 20, struct bfmr_bootdevice_prod_info_iocb)
 
 
 /*----global variables----------------------------------------------------------------*/

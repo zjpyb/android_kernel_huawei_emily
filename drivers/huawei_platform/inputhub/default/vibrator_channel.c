@@ -138,7 +138,7 @@ struct {
     { 33, {0x2C,0,0,0,0,0,0,0},200},
 };
 
-static int vibrator_enable(struct led_classdev *cdev, int value);
+static void vibrator_enable(struct led_classdev *cdev, enum led_brightness value);
 static void vibrator_set_time(int val);
 
 static void vibrator_operate_reg(char reg, char rw_state, char write_regval, char* read_regval)
@@ -241,16 +241,16 @@ static read_info_t vibrator_send_cali_test_cmd(char* cmd, int len, RET_TYPE *rty
 	}
 	return pkg_mcu;
 }
-static int vibrator_off(void)
+static void vibrator_off(void)
 {
 	vibrator_set_time(VIB_OFF);
 	vibrator_shake = 0;
 }
-static void vibra_set_work(void)
+static void vibra_set_work(struct work_struct *work)
 {
 	vibrator_set_time(vib_time);
 }
-static void haptics_play_effect(void)
+static void haptics_play_effect(struct work_struct *work)
 {
 	unsigned char haptics_val[VIB_TEST_CMD_LEN] = {0};
 	RET_TYPE vib_return_calibration = RET_INIT;
@@ -354,8 +354,8 @@ static ssize_t vibrator_calib_store(struct device *dev,
 static ssize_t vibrator_calib_show(struct device *dev,
 				   struct device_attribute *attr, char *buf)
 {
-	hwlog_info("vibrator check vib calibrate result\n");
 	int val = vib_calib_result;
+	hwlog_info("vibrator check vib calibrate result\n");
 	return snprintf(buf, PAGE_SIZE, "%d\n", val);
 }
 
@@ -418,7 +418,7 @@ static ssize_t vibrator_set_reg_value_store(struct device *dev,
 {
 	char val = 0;
 	uint64_t value = 0;
-	char write_regval = 0, read_regval = 0;
+	char read_regval = 0;
 	if(buf == NULL){
 		hwlog_err("%s bad parameter error\n", __func__);
 		return count;
@@ -443,12 +443,8 @@ static ssize_t haptic_test_store(struct device *dev, struct device_attribute *at
 {
 	char a[2] = {0};
 	char haptic_value[100] = {0};
-	uint64_t value = 0;
-	char type = 0;
 	int i = 0, j = 0;
 	int  m , n ;
-	int time = 0, table_num = 0;
-	char rtp_value = 0;
 
 	if(count < MIN_HAP_BUF_SIZE || count > MAX_HAP_BUF_SIZE || buf == NULL){
 		hwlog_info("-----> haptic_test bad value\n");
@@ -477,7 +473,7 @@ static ssize_t haptic_test_store(struct device *dev, struct device_attribute *at
 	vibrator_off();
 	memcpy(&data->sequence, &haptic_value,8);
 	data->play_effect_time = 0;
-	haptics_play_effect();
+	haptics_play_effect(NULL);
 	hwlog_info("%s\n", __func__);
 	return count;
 }
@@ -507,7 +503,6 @@ out:
 static ssize_t vibrator_reg_value_show(struct device *dev,
 				   struct device_attribute *attr, char *buf)
 {
-	char reg_val = 0;
 	char write_regval = 0, read_regval = 0;
 	char reg_address = 0;
 
@@ -653,7 +648,7 @@ static void vibrator_set_time(int val){
 		hwlog_err("send tag %d vibrator_set_time fail, %d\n", TAG_VIBRATOR, pkg_mcu.errno);
 	}
 }
-static int vibrator_enable(struct led_classdev *cdev, int value)
+static void vibrator_enable(struct led_classdev *cdev, enum led_brightness value)
 {
 	int val = value;
 
@@ -678,7 +673,6 @@ static int vibrator_enable(struct led_classdev *cdev, int value)
 		vibrator_shake = 0;
 	}
 	schedule_work(&data->work);
-	return 0;
 }
 
 static int haptics_open(struct inode * i_node, struct file * filp)
@@ -696,13 +690,14 @@ static ssize_t haptics_write(struct file* filp, const char* buff, size_t len, lo
 	int i = 0, type_flag = 0, table_num = 0;
 	uint64_t type = 0;
 	char write_buf[MAX_BUF_LEGTH] = {0};
+	struct drv2605_data *data = NULL;
 
 	if(len>MAX_BUF_LEGTH || buff == NULL || filp == NULL || off == NULL){
 		hwlog_err("[haptics_write] bad value\n");
 		return len;
 	}
 
-	struct drv2605_data *data = (struct drv2605_data *)filp->private_data;
+	data = (struct drv2605_data *)filp->private_data;
 
 	mutex_lock(&data->lock);
 
@@ -728,12 +723,12 @@ static ssize_t haptics_write(struct file* filp, const char* buff, size_t len, lo
 		if (type == haptics_table_hub[i].haptics_type) {
 			table_num = i;
 			type_flag = 1;
-			hwlog_info("[haptics write] type:%d,table_num:%d.\n", type,table_num);
+			hwlog_info("[haptics write] type:%llu,table_num:%d.\n", type,table_num);
 			break;
 		}
 	}
 	if (!type_flag) {
-		hwlog_info("[haptics write] undefined type:%d.\n", type);
+		hwlog_info("[haptics write] undefined type:%llu.\n", type);
 		goto out;
 	} else {
 		data->should_stop = YES;

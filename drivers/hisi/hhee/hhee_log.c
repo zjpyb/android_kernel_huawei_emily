@@ -44,11 +44,11 @@ struct circular_buffer *monitor_cb;
  */
 static int circ_buf_init(struct circular_buffer *cir_buf)
 {
-	struct circular_buffer *tmp_cb = (struct circular_buffer *)cir_buf->virt_log_addr;
+	struct circular_buffer *tmp_cb = (struct circular_buffer *)(uintptr_t)cir_buf->virt_log_addr;
 
 	if (0 == cir_buf->inited) {
 		memset(cir_buf, 0, sizeof(struct circular_buffer));/* unsafe_function_ignore: memset */
-		cir_buf->virt_log_addr = (uint64_t)tmp_cb;
+		cir_buf->virt_log_addr = (uint64_t)(uintptr_t)tmp_cb;
 		cir_buf->start = tmp_cb->start;
 		cir_buf->inited = 1;
 	} else {
@@ -60,7 +60,6 @@ static int circ_buf_init(struct circular_buffer *cir_buf)
 	cir_buf->overflow = tmp_cb->overflow;
 	cir_buf->buf = (char *)(tmp_cb);
 
-	pr_info("[HHEE] Logging, start addr is %lx, buf size is %lx, end is %lx\n", cir_buf->start, cir_buf->size, cir_buf->end);
 	return 0;
 }
 
@@ -80,7 +79,6 @@ ssize_t circ_buf_copy(struct circular_buffer *incb, char *text)
 	tmpsize = (unsigned long)(long long)abs((long)(incb->end - incb->start));
 	if (tmpsize > incb->size) {
 		pr_err("%s: cbuf pointers corrupted\n", __func__);
-		pr_err("log end is %lx, start is %lx, size is %lx\n", incb->end, incb->start, incb->size);
 		return -EINVAL;
 	}
 
@@ -158,7 +156,7 @@ int cb_init(uint64_t inlog_addr, uint64_t inlog_size,
 	uint64_t log_addr;
 	struct circular_buffer *tmp_cb;
 
-	log_addr = (uint64_t)ioremap_cache(inlog_addr, inlog_size);
+	log_addr = (uint64_t)(uintptr_t)ioremap_cache(inlog_addr, inlog_size);
 	if (!log_addr) {
 		pr_err("fail to get virtal addr of hhee\n");
 		return -EINVAL;
@@ -167,7 +165,7 @@ int cb_init(uint64_t inlog_addr, uint64_t inlog_size,
 	tmp_cb = (struct circular_buffer *) kzalloc(sizeof(struct circular_buffer),
 						    GFP_KERNEL);
 	if (!tmp_cb) {
-		iounmap((void __iomem *)log_addr);
+		iounmap((void __iomem *)(uintptr_t)log_addr);
 		pr_err("%s: no memory avaiable for circular buffer struct\n",
 			__func__);
 		return -ENOMEM;
@@ -183,7 +181,7 @@ int cb_init(uint64_t inlog_addr, uint64_t inlog_size,
 void cb_deinit(struct circular_buffer *incb)
 {
 	if (incb && incb->virt_log_addr)
-		iounmap((void __iomem *)incb->virt_log_addr);
+		iounmap((void __iomem *)(uintptr_t)incb->virt_log_addr);
 	if (incb)
 		kfree(incb);
 }

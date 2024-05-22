@@ -1,3 +1,4 @@
+
 /*
  * hi_cdc_ctrl.h -- hisilicon codec controller
  *
@@ -30,11 +31,21 @@ enum bustype_select {
 	BUSTYPE_SELECT_SSI = 2,
 };
 
+enum {
+	HI64XX_CODEC_TYPE_6402,
+	HI64XX_CODEC_TYPE_6403,
+#ifdef CONFIG_SND_SOC_HI6405
+	HI64XX_CODEC_TYPE_6405,
+#endif
+	HI64XX_CODEC_TYPE_BUTT,
+};
+
 struct hi_cdc_ctrl {
 	/* device of codec controller */
 	struct device *dev;
 	enum bustype_select bus_sel;
 	bool pm_runtime_support;
+	bool reg_read_twice;
 	uint32_t slimbusclk_cdc_drv;
 	uint32_t slimbusdata_cdc_drv;
 };
@@ -64,5 +75,7 @@ int hi_cdcctrl_enable_clk(struct hi_cdc_ctrl *cdc_ctrl,
 void hi_cdcctrl_pm_get(void);
 
 void hi_cdcctrl_pm_put(void);
+
+unsigned int hi_cdcctrl_get_pmu_mclk_status(void);
 
 #endif

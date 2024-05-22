@@ -103,8 +103,9 @@ int blkcipher_walk_done(struct blkcipher_desc *desc,
 	unsigned int n; /* bytes processed */
 	bool more;
 
-	if (likely(err < 0))
+	if (unlikely(err < 0))
 		goto finish;
+
 	n = walk->nbytes - err;
 	walk->total -= n;
 	more = (walk->total != 0);

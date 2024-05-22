@@ -4,9 +4,13 @@
 #include <huawei_platform/log/hw_log.h>
 
 #ifdef CONFIG_APP_QOE_AI_PREDICT
+#define INT_MAX (2147483647)
 #define NETWORK_STATUS_APP_QOE_NORMAL  (4)
 #define NETWORK_STATUS_APP_QOE_GENERAL_SLOW (5)
 
+int g_slow_proba_threshold_normal_state = 540;
+int g_slow_proba_threshold_slow_state = 500;
+int g_slow_proba_threshold_init_state = 510;
 judge_rlt_info_int_calc_type judge_single_smp_using_clf_info_int_exp(classifier_info_int_exp_type clf_info, AI_INT x_smp[], AI_INT app_qoe_level)
 {
 	/*meaning: FALSE: not psSlow; 1.0: all as psNormal.*/
@@ -30,6 +34,11 @@ judge_rlt_info_int_calc_type judge_single_smp_using_clf_info_int_exp(classifier_
 		AI_INT sel_feat_idx = clf_info.pp_param[i][2];
         AI_INT left_child_is_fake = clf_info.pp_param[i][3];
 		AI_INT cur_judge_value = 1;/*value: 1 or -1.*/
+
+		// prevent overflow
+		if (x_smp[sel_feat_idx] > (INT_MAX / FLOAT_TO_INT_ENLARGE_10E3)) {
+			return rlt_info1;
+		}
 
 		/*compute final_clf_value.*/
 		if (x_smp[sel_feat_idx] * FLOAT_TO_INT_ENLARGE_10E3 <= cur_thres) {/*left/right child class: <= or >=   [0, 65535].*/
@@ -62,15 +71,12 @@ judge_rlt_info_int_calc_type judge_single_smp_using_clf_info_int_exp(classifier_
 	rlt_info1.vote_positvie = vote_positvie;
 	rlt_info1.vote_negative = vote_negative;
 
-	pr_info("judge_single_smp_using_clf_info_int_exp final_clf_value=0x%x,fake_bts_agg_value=0x%x,ps_slow_proba=%d\n",
-		final_clf_value, fake_bts_agg_value, rlt_info1.ps_slow_proba);
-
 	if (app_qoe_level == NETWORK_STATUS_APP_QOE_NORMAL) {
-		slow_proba_threshold = 540;//525;
+		slow_proba_threshold = g_slow_proba_threshold_normal_state;//540;//525;
 	} else if (app_qoe_level == NETWORK_STATUS_APP_QOE_GENERAL_SLOW) {
-		slow_proba_threshold = 500;
+		slow_proba_threshold = g_slow_proba_threshold_slow_state;//500;
 	} else 	{
-		slow_proba_threshold = 510;
+		slow_proba_threshold = g_slow_proba_threshold_init_state;//510;
 	}
 
     if(final_clf_value > 0 && rlt_info1.ps_slow_proba > slow_proba_threshold){
@@ -81,5 +87,17 @@ judge_rlt_info_int_calc_type judge_single_smp_using_clf_info_int_exp(classifier_
 	rlt_info1.is_ps_slow = is_ps_slow;/*get final judge result.*/
 
 	return rlt_info1;
+}
+
+void set_slow_proba_threshold(int threshold_normal, int threshold_slow, int threshold_init) {
+	if (threshold_normal > 0
+		&& threshold_slow > 0
+		&& threshold_init > 0) {
+		pr_info("[AppQoe]set_slow_proba_threshold %d,%d,%d\n",
+			threshold_normal, threshold_slow, threshold_init);
+		g_slow_proba_threshold_normal_state = threshold_normal;
+		g_slow_proba_threshold_slow_state = threshold_slow;
+		g_slow_proba_threshold_init_state = threshold_init;
+	}
 }
 #endif

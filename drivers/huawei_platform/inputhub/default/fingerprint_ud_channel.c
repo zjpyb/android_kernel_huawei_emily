@@ -36,6 +36,7 @@ extern int flag_for_sensor_test;
 
 extern bool really_do_enable_disable(int *ref_cnt, bool enable, int bit);
 extern int send_app_config_cmd_with_resp(int tag, void *app_config, bool use_lock);
+extern void inputhub_route_clean_buffer(unsigned short port);
 
 struct fingerprint_cmd_map
 {
@@ -93,6 +94,8 @@ static int send_fingerprint_cmd_internal(int tag, obj_cmd_t cmd, fingerprint_typ
     {
         if (really_do_enable_disable(&fp_ref_cnt, true, type))
         {
+			inputhub_route_clean_buffer(ROUTE_FHB_UD_PORT);
+
             app_config[0] = SUB_CMD_FINGERPRINT_OPEN_REQ;
             if (use_lock)
             {
@@ -180,7 +183,6 @@ static int fingerprint_recovery_config_para(void* data, int len)
     fingerprint_req_t fp_pkt;
     int ret = 0;
     write_info_t pkg_ap;
-    int i = 0;
 
     memset(&fp_pkt, 0, sizeof(fp_pkt));
     memset(&pkg_ap, 0, sizeof(pkg_ap));
@@ -274,7 +276,7 @@ static ssize_t fhb_ud_write(struct file *file, const char __user *data, size_t l
 
     if (len > sizeof(fp_pkt.buf))
     {
-        hwlog_warn("fingerprint: fhb_ud_write len is out of size, len=%d\n", len);
+        hwlog_warn("fingerprint: fhb_ud_write len is out of size, len=%lu\n", len);
         return -1;
     }
     if (copy_from_user(fp_pkt.buf, data, len))
@@ -293,7 +295,7 @@ static ssize_t fhb_ud_write(struct file *file, const char __user *data, size_t l
     fp_pkt.len = len;
     fp_pkt.sub_cmd = SUB_CMD_FINGERPRINT_CONFIG_SENSOR_DATA_REQ;
 
-    hwlog_info("fingerprint: fhb_ud_write data=%d, len=%d\n", fp_pkt.buf[0], len);
+    hwlog_info("fingerprint: fhb_ud_write data=%d, len=%lu\n", fp_pkt.buf[0], len);
 
     pkg_ap.tag = TAG_FP_UD;
     pkg_ap.cmd = CMD_CMN_CONFIG_REQ;

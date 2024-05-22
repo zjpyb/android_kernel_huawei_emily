@@ -1,6 +1,8 @@
 source "drivers/huawei_platform/power/charger/charger_ap/direct_charger/Kconfig"
 source "drivers/huawei_platform/power/charger/charger_ap/wireless_charger/Kconfig"
 source "drivers/huawei_platform/power/charger/charger_ap/wired_channel_switch/Kconfig"
+source "drivers/huawei_platform/power/charger/charger_ap/vbus_channel/Kconfig"
+
 config HUAWEI_CHARGER_AP
 	bool "huawei charger ap"
 	default n
@@ -19,6 +21,16 @@ config BQ25892_CHARGER
 config RT9466_CHARGER
 	bool "rt9466 charger"
 	default n
+config HL7019_CHARGER
+	bool "hl7019 charger"
+	default n
+	help
+	  Say Y here to enable support for batteries with hl7019 chip.
+config RT9471_CHARGER
+	bool "rt9471 charger"
+	default n
+	help
+	  Say Y here to enable support for batteries with rt9471 chip.
 config DUAL_CHARGER
 	bool "dual charger"
 	default n
@@ -28,6 +40,12 @@ config DIRECT_CHARGER
 config WIRELESS_CHARGER
 	bool "wireless charger"
 	default n
-config WIRED_CHANNEL_SWITCH
-	bool "wired channel switch"
+config BQ25882_CHARGER
+	bool "bq25882 charger"
+	default n
+config SERIES_BATT
+	bool "series batt charger"
+	default n
+config BATTERY_BALANCE
+	bool "battery balance"
 	default n

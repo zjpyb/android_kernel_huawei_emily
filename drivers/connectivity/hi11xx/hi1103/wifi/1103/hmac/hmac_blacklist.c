@@ -50,20 +50,14 @@ OAL_STATIC oal_uint32 hmac_blacklist_mac_is_zero(oal_uint8 *puc_mac_addr)
 }
 
 
-OAL_STATIC oal_uint32 hmac_blacklist_mac_is_bcast(oal_uint8 *puc_mac_addr)
+OAL_STATIC oal_uint32 hmac_blacklist_mac_is_bcast(const oal_uint8 *puc_mac_addr)
 {
-    if (puc_mac_addr[0] == 0xff &&
-            puc_mac_addr[1] == 0xff &&
-            puc_mac_addr[2] == 0xff &&
-            puc_mac_addr[3] == 0xff &&
-            puc_mac_addr[4] == 0xff &&
-            puc_mac_addr[5] == 0xff)
-    {
-        return 1;
-    }
+    return ((*(const oal_uint16 *)(puc_mac_addr + 0) &
+             *(const oal_uint16 *)(puc_mac_addr + 2) &
+             *(const oal_uint16 *)(puc_mac_addr + 4)) == 0xffff);
 
-    return 0;
 }
+
 
 OAL_STATIC oal_void hmac_blacklist_init(mac_vap_stru *pst_mac_vap, cs_blacklist_mode_enum_uint8 en_mode, oal_bool_enum_uint8 en_flush)
 {
@@ -991,7 +985,7 @@ oal_uint32 hmac_blacklist_del_etc(mac_vap_stru *pst_mac_vap, oal_uint8 *puc_mac_
             if(OAL_SUCC != ul_ret)
             {
                 OAM_WARNING_LOG1(pst_mac_vap->uc_vap_id, OAM_SF_ANY, "{hmac_blacklist_del_etc::find_user_by_macaddr failed[%d].}", ul_ret);
-                return OAL_PTR_NULL;
+                return ul_ret;
             }
             pst_hmac_user_tmp = mac_res_get_hmac_user_etc(us_user_idx);
             if (OAL_PTR_NULL == pst_hmac_user_tmp)

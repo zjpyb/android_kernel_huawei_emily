@@ -182,7 +182,10 @@ enum boot_status {
 	BOOT_STATUS_BAD_APP_FIRMWARE = 0xfe,
 	BOOT_STATUS_WARM_BOOT = 0xff,
 };
-
+enum report_status {
+	NOT_NEED_REPORT = 0,
+	NEED_REPORT = 1,
+};
 enum app_status {
 	APP_STATUS_OK = 0x00,
 	APP_STATUS_BOOTING = 0x01,
@@ -544,9 +547,14 @@ struct syna_tcm_hcd {
 	const struct syna_tcm_hw_interface *hw_if;
 	char fw_name[MAX_STR_LEN * 4];
 	unsigned int aft_wxy_enable;
+	unsigned int esd_report_status;
+	unsigned int use_esd_report;
 	unsigned int use_dma_download_firmware;
 	unsigned int downmload_firmware_frequency;
 	unsigned int spi_comnunicate_frequency;
+	unsigned int resume_retry_download_fw_support;
+	unsigned int retry_download_delay_time;
+	unsigned int retry_download_retry_times;
 	int (*reset)(struct syna_tcm_hcd *tcm_hcd, bool hw, bool update_wd);
 	int (*sleep)(struct syna_tcm_hcd *tcm_hcd, bool en);
 	int (*identify)(struct syna_tcm_hcd *tcm_hcd, bool id);
@@ -661,6 +669,21 @@ static inline int secure_memcpy(unsigned char *dest, unsigned int dest_size,
 	memcpy((void *)dest, (const void *)src, count);
 
 	return 0;
+}
+
+static inline char *syna_tcm_strncat(char *dest, char *src, size_t dest_size)
+{
+	size_t dest_len = 0;
+	size_t len = 0;
+
+	dest_len = strnlen(dest, dest_size);
+	if (dest_size > dest_len) {
+		len = dest_size - dest_len - 1;
+	} else {
+		len = 0;
+	}
+
+	return strncat(&dest[dest_len], src, len);
 }
 
 static inline int syna_tcm_realloc_mem(struct syna_tcm_hcd *tcm_hcd,

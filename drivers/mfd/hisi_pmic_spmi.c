@@ -358,7 +358,7 @@ int hisi_pmic_array_read(int addr, char *buff, unsigned int len)
 	return 0;
 }
 
-int hisi_pmic_array_write(int addr, char *buff, unsigned int len)
+int hisi_pmic_array_write(int addr, const char *buff, unsigned int len)
 {
     unsigned int i;
 

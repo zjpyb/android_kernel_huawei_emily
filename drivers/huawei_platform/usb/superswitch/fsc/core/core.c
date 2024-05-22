@@ -81,9 +81,6 @@ void FUSB3601_core_initialize(struct Port *port)
 
 void FUSB3601_core_state_machine(struct Port *port)
 {
-	FSC_U8 data;
-	int ret;
-
 	/* Read Type-C/PD interrupts - AlertL, AlertH */
 	if((port->registers_.AlertMskL.byte || port->registers_.AlertMskH.byte)	&& ((FUSB3601_platform_get_device_irq_state(port->port_id_) || state_machine_need_resched))){
 		state_machine_need_resched = 0;

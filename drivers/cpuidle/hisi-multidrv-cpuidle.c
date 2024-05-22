@@ -20,6 +20,8 @@
 #include <linux/slab.h>
 #include <linux/hisi/hisi_idle_sleep.h>
 #include <linux/io.h>
+#include <linux/version.h>
+#include <linux/string.h>
 
 #include <asm/cpuidle.h>
 #include <asm/suspend.h>
@@ -30,14 +32,6 @@
 #include <linux/coresight.h>
 #endif
 
-enum {
-	LITTLE_CLUSTER_ID = 0,
-#ifdef CONFIG_CPU_IDLE_TRIPPLE_DRIVERS
-	MID_CLUSTER_ID,
-#endif
-	BIG_CLUSTER_ID,
-	MAX_CLUSTER_ID,
-};
 static unsigned long cpu_on_hotplug = 0;
 static struct cpumask idle_cpus_mask;
 static spinlock_t idle_spin_lock;
@@ -58,6 +52,20 @@ bool hisi_cluster_cpu_all_pwrdn(void)
 	return !!all_pwrdn;
 }
 EXPORT_SYMBOL(hisi_cluster_cpu_all_pwrdn);
+
+
+bool hisi_fcm_cluster_pwrdn(void)
+{
+	int fcm_pwrdn = 0;
+
+	spin_lock(&idle_spin_lock);
+	fcm_pwrdn = cpumask_subset(cpu_online_mask, &idle_cpus_mask);
+	spin_unlock(&idle_spin_lock);
+
+	return !!fcm_pwrdn;
+}
+EXPORT_SYMBOL(hisi_fcm_cluster_pwrdn);
+
 
 static struct cpumask pending_idle_cpumask;
 
@@ -87,7 +95,7 @@ u32 hisi_get_idle_cpumask(void)
 			return 0;
 		}
 
-		tmp_flag = readl(idle_flag_addr[i]) & BIT(idle_flag_bit[i]);
+		tmp_flag = (unsigned int)readl(idle_flag_addr[i]) & BIT(idle_flag_bit[i]);
 		if(tmp_flag)
 			core_idle_flag |= BIT(i);
 	}
@@ -256,65 +264,7 @@ static int hisi_enter_coupled_idle_state(struct cpuidle_device *dev,
 }
 
 /*lint -e64 -e785 -e651*/
-static struct cpuidle_driver hisi_little_cluster_idle_driver = {
-	.name = "hisi_little_cluster_idle",
-	.owner = THIS_MODULE,
-	/*
-	 * State at index 0 is standby wfi and considered standard
-	 * on all ARM platforms. If in some platforms simple wfi
-	 * can't be used as "state 0", DT bindings must be implemented
-	 * to work around this issue and allow installing a special
-	 * handler for idle state index 0.
-	 */
-	.states[0] = {
-		.enter                  = hisi_enter_idle_state,
-		.exit_latency           = 1,
-		.target_residency       = 1,
-		.power_usage		= (int)UINT_MAX,
-		.name                   = "WFI",
-		.desc                   = "ARM64 WFI",
-	}
-};
-#ifdef CONFIG_CPU_IDLE_TRIPPLE_DRIVERS
-static struct cpuidle_driver hisi_middle_cluster_idle_driver = {
-	.name = "hisi_middle_cluster_idle",
-	.owner = THIS_MODULE,
-	/*
-	 * State at index 0 is standby wfi and considered standard
-	 * on all ARM platforms. If in some platforms simple wfi
-	 * can't be used as "state 0", DT bindings must be implemented
-	 * to work around this issue and allow installing a special
-	 * handler for idle state index 0.
-	 */
-	.states[0] = {
-		.enter                  = hisi_enter_idle_state,
-		.exit_latency           = 1,
-		.target_residency       = 1,
-		.power_usage		= (int)UINT_MAX,
-		.name                   = "WFI",
-		.desc                   = "ARM64 WFI",
-	}
-};
-#endif
-static struct cpuidle_driver hisi_big_cluster_idle_driver = {
-	.name = "hisi_big_cluster_idle",
-	.owner = THIS_MODULE,
-	/*
-	 * State at index 0 is standby wfi and considered standard
-	 * on all ARM platforms. If in some platforms simple wfi
-	 * can't be used as "state 0", DT bindings must be implemented
-	 * to work around this issue and allow installing a special
-	 * handler for idle state index 0.
-	 */
-	.states[0] = {
-		.enter                  = hisi_enter_idle_state,
-		.exit_latency           = 1,
-		.target_residency       = 1,
-		.power_usage		= (int)UINT_MAX,
-		.name                   = "WFI",
-		.desc                   = "ARM64 WFI",
-	}
-};
+
 
 static const struct of_device_id arm64_idle_state_match[] __initconst = {
 	{ .compatible = "arm,idle-state",
@@ -389,14 +339,10 @@ static int __init hisi_idle_drv_init(struct cpuidle_driver *drv)
 static int __init hisi_multidrv_idle_init(struct cpuidle_driver *drv, int cluster_id)
 {
 	int ret;
-	if (cluster_id >= MAX_CLUSTER_ID) {
-		pr_err("cluster id is out of range.\n");
-		return -ENODEV;
-	}
 
 	ret = hisi_idle_drv_cpumask_init(drv, cluster_id);
 	if (ret) {
-		pr_err("fail to init idle driver!\n");
+		pr_err("fail to init cluster%d idle driver! \n", cluster_id);
 		return ret;
 	}
 
@@ -406,8 +352,6 @@ static int __init hisi_multidrv_idle_init(struct cpuidle_driver *drv, int cluste
 		pr_err("fail to register cluster%d cpuidle drv.\n", cluster_id);
 		return ret;
 	}
-
-
 
 	return 0;
 }
@@ -459,10 +403,11 @@ static int __init get_idle_mask_init(void)
 	return 0;
 }
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
 static int cpuidle_decoup_hotplug_notify(struct notifier_block *nb,
 		unsigned long action, void *hcpu)
 {
-	long cpu = (long)hcpu;
+	long cpu = (long)(uintptr_t)hcpu;
 	if (nb == NULL)
 		return -1;
 	if (action & CPU_TASKS_FROZEN)
@@ -489,6 +434,99 @@ static int cpuidle_decoup_hotplug_notify(struct notifier_block *nb,
 static struct notifier_block cpuidle_decoup_hotplug_notifier = {
 	.notifier_call = cpuidle_decoup_hotplug_notify,
 };
+#else
+static int __ref cpuidle_decoup_hotplug_online(unsigned int cpu)
+{
+	clear_bit((int)cpu, &cpu_on_hotplug);
+	return 0;
+}
+
+static int __ref cpuidle_decoup_hotplug_offline(unsigned int cpu)
+{
+	clear_bit((int)cpu, &cpu_on_hotplug);
+	return 0;
+}
+
+static int __ref cpuidle_decoup_hotplug_down_prepare(unsigned int cpu)
+{
+	clear_bit((int)cpu, &cpu_on_hotplug);
+	return 0;
+}
+
+static int __ref cpuidle_decoup_hotplug_up_prepare(unsigned int cpu)
+{
+	set_bit((int)cpu, &cpu_on_hotplug);
+	kick_all_cpus_sync();
+	return 0;
+}
+#endif
+
+#define HISI_CLUSTER_IDLE_DRV_NAME_LEN  32
+static struct cpuidle_driver hisi_cluster_idle_driver[NR_CPUS];
+
+static void __init hisi_cluster_wfi_state_init(struct cpuidle_state *pstate_wfi)
+{
+	/*
+	 * State at index 0 is standby wfi and considered standard
+	 * on all ARM platforms. If in some platforms simple wfi
+	 * can't be used as "state 0", DT bindings must be implemented
+	 * to work around this issue and allow installing a special
+	 * handler for idle state index 0.
+	 */
+	pstate_wfi->enter            = hisi_enter_idle_state;
+	pstate_wfi->exit_latency     = 1;
+	pstate_wfi->target_residency = 1;
+	pstate_wfi->power_usage      = (int)UINT_MAX;
+	strncpy(pstate_wfi->name, "WFI", CPUIDLE_NAME_LEN);
+	strncpy(pstate_wfi->desc, "ARM64 WFI", CPUIDLE_DESC_LEN);
+}
+
+static int __init hisi_cluster_idle_driver_init(void)
+{
+	int ret;
+	int cpu = 0;
+	int cluster_num = 0;
+	char *drv_name;
+	struct cpumask drv_init_cpumask;
+	struct cpuidle_driver *drv;
+
+	cpumask_clear(&drv_init_cpumask);
+	memset(hisi_cluster_idle_driver, 0, sizeof(hisi_cluster_idle_driver));
+
+	for_each_possible_cpu(cpu) {
+		if(cpumask_test_cpu(cpu, &drv_init_cpumask))
+			continue;
+
+		drv_name = kzalloc(HISI_CLUSTER_IDLE_DRV_NAME_LEN, GFP_KERNEL);
+		if (drv_name){
+			snprintf(drv_name, HISI_CLUSTER_IDLE_DRV_NAME_LEN, "hisi_cluster%d_idle_driver", cluster_num);
+		}
+
+		drv = &hisi_cluster_idle_driver[cluster_num++];
+		drv->owner = THIS_MODULE;
+		drv->name  = drv_name;
+		drv_name   = NULL;
+
+		hisi_cluster_wfi_state_init(&drv->states[0]);
+
+		ret = hisi_multidrv_idle_init(drv, topology_physical_package_id(cpu));
+		if (ret) {
+			pr_err("fail to register cluster cpuidle drv.ret:%d\n", ret);
+			return ret;
+		}
+
+		cpumask_or(&drv_init_cpumask, &drv_init_cpumask, drv->cpumask);
+
+		if(cpumask_weight(&drv_init_cpumask) >= NR_CPUS)
+			break;
+	}
+
+	return 0;
+}
+
+
+
+
 /*lint +e785*/
 /*
  * hisi_idle_init
@@ -509,31 +547,23 @@ static int __init hisi_idle_init(void)
 	cpumask_clear(&idle_cpus_mask);
 	cpumask_clear(&pending_idle_cpumask);
 
-	ret = hisi_multidrv_idle_init(&hisi_little_cluster_idle_driver, LITTLE_CLUSTER_ID);
+	ret = hisi_cluster_idle_driver_init();
 	if (ret) {
-		pr_err("fail to register little cluster cpuidle drv.\n");
 		return ret;
 	}
 
-#ifdef CONFIG_CPU_IDLE_TRIPPLE_DRIVERS
-	ret = hisi_multidrv_idle_init(&hisi_middle_cluster_idle_driver, MID_CLUSTER_ID);
-	if (ret) {
-		pr_err("fail to register middle cluster cpuidle drv.\n");
-		return ret;
-	}
-#endif
-
-	ret = hisi_multidrv_idle_init(&hisi_big_cluster_idle_driver, BIG_CLUSTER_ID);
-	if (ret) {
-		pr_err("fail to register big cluster cpuidle drv.\n");
-		return ret;
-	}
-
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
 	ret = register_cpu_notifier(&cpuidle_decoup_hotplug_notifier);
 	if (ret) {
 		pr_err("fail to register cpuidle_coupled_cpu_notifier.\n");
 		return ret;
 	}
+#else
+	cpuhp_setup_state_nocalls(CPUHP_BP_HISI_MULTIDRV_NOTIFY_PREPARE, "multidrv-cpuidle:notify",
+				  cpuidle_decoup_hotplug_up_prepare, cpuidle_decoup_hotplug_down_prepare);
+	cpuhp_setup_state_nocalls(CPUHP_AP_ONLINE_DYN, "multidrv-cpuidle:online/offline",
+				  cpuidle_decoup_hotplug_online, cpuidle_decoup_hotplug_offline);
+#endif
 
 	return 0;
 }

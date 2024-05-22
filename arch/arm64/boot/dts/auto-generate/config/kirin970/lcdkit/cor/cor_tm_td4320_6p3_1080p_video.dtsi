@@ -278,6 +278,7 @@
 		hw,lcdkit-bl-normal = <0>;
 		hw,lcdkit-delay-af-rst-off = <5>;
 		hw,lcdkit-default-project-id = "corn691100";
+		hw,lcdkit-tp-reset-gpio = <15>;
 		hw,lcdkit-h-back-porch = <36>;
 		hw,lcdkit-h-front-porch = <196>;
 		hw,lcdkit-h-pulse-width = <16>;

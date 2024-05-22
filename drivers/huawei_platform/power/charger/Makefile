@@ -1,5 +1,6 @@
-obj-$(CONFIG_HUAWEI_CHARGER_AP)	+= charger_ap/
-obj-$(CONFIG_HUAWEI_CHARGER_SENSORHUB)	+= charger_sensorhub/
+obj-$(CONFIG_HUAWEI_CHARGER_AP) += charger_ap/
+obj-$(CONFIG_HUAWEI_CHARGER_SENSORHUB) += charger_sensorhub/
+obj-$(CONFIG_CHARGER_PROTOCOL) += charger_protocol/
 
 ifeq ($(wildcard $(srctree)/drivers/huawei_platform/inputhub/$(TARGET_BOARD_PLATFORM)),)
 ccflags-y  += -I$(srctree)/drivers/huawei_platform/inputhub/default/

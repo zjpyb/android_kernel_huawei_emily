@@ -15,6 +15,7 @@
 #include "hisi_dpe_utils.h"
 #include "hisi_overlay_utils.h"
 
+
 DEFINE_SEMAPHORE(hisi_fb_dss_regulator_sem);
 static int dss_regulator_refcount = 0;
 static int dss_regulator_ref_table[HISI_FB_MAX_FBI_LIST] = {0};
@@ -45,17 +46,25 @@ static int dpe_init(struct hisi_fb_data_type *hisifd, bool fastboot_enable)
 		init_ldi(hisifd, fastboot_enable);
 	} else if (hisifd->index == EXTERNAL_PANEL_IDX) {
 		hisifb_activate_vsync(hisifd_list[PRIMARY_PANEL_IDX]);
-		if (hisifd->dss_pxl1_clk)
+		if (hisifd->dss_pxl1_clk) {
 			clk_disable(hisifd->dss_pxl1_clk);
+		}
 
-		set_reg(hisifd->dss_base + DSS_LDI0_OFFSET + LDI_DSI1_CLK_SEL, 0x1, 1, 0);
+		if (!is_dp_panel(hisifd)) {
+			set_reg(hisifd->dss_base + DSS_LDI0_OFFSET + LDI_DSI1_CLK_SEL, 0x1, 1, 0);
+		}
 
-		if (hisifd->dss_pxl1_clk)
+		if (hisifd->dss_pxl1_clk) {
 			clk_enable(hisifd->dss_pxl1_clk);
+		}
 
-		set_reg(hisifd->dss_base + DSS_LDI0_OFFSET + LDI_DSI1_RST_SEL, 0x1, 1, 0);
+		if (!is_dp_panel(hisifd)) {
+			set_reg(hisifd->dss_base + DSS_LDI0_OFFSET + LDI_DSI1_RST_SEL, 0x1, 1, 0);
+		}
 		// dual lcd: dsi_mux_sel=1, dual mipi: dsi_mux_sel=0
-		set_reg(hisifd->dss_base + DSS_MCTRL_SYS_OFFSET + MCTL_DSI_MUX_SEL, 0x1, 1, 0);
+		if (!is_dp_panel(hisifd)) {
+			set_reg(hisifd->dss_base + DSS_MCTRL_SYS_OFFSET + MCTL_DSI_MUX_SEL, 0x1, 1, 0);
+		}
 		hisifb_deactivate_vsync(hisifd_list[PRIMARY_PANEL_IDX]);
 
 		init_dbuf(hisifd);
@@ -68,7 +77,7 @@ static int dpe_init(struct hisi_fb_data_type *hisifd, bool fastboot_enable)
 
 	return 0;
 }
-
+/*lint -e559*/
 static int dpe_deinit(struct hisi_fb_data_type *hisifd)
 {
 	if (NULL == hisifd) {
@@ -91,7 +100,7 @@ static int dpe_deinit(struct hisi_fb_data_type *hisifd)
 
 static void dpe_check_itf_status(struct hisi_fb_data_type *hisifd)
 {
-	int tmp = 0;
+	uint32_t tmp = 0;
 	int delay_count = 0;
 	bool is_timeout = true;
 	int itf_idx = 0;
@@ -140,7 +149,7 @@ static int dpe_irq_enable(struct hisi_fb_data_type *hisifd)
 
 	return 0;
 }
-
+/*lint +e559*/
 static int dpe_irq_disable(struct hisi_fb_data_type *hisifd)
 {
 	if (NULL == hisifd) {
@@ -166,8 +175,9 @@ static int dpe_irq_disable_nosync(struct hisi_fb_data_type *hisifd)
 		return -EINVAL;
 	}
 
-	if (hisifd->dpe_irq)
+	if (hisifd->dpe_irq) {
 		disable_irq_nosync(hisifd->dpe_irq);
+	}
 
 	return 0;
 }
@@ -286,10 +296,13 @@ regulator_sem:
 
 void mdc_regulator_enable(struct hisi_fb_data_type *hisifd)
 {
+	uint32_t mdc_core_clk = 0xffc02180;
+
 	if (NULL == hisifd) {
 		HISI_FB_ERR("NULL ptr.\n");
 		return;
 	}
+
 
 	if (hisifd->index == MEDIACOMMON_PANEL_IDX) {
 		outp32(hisifd->media_crg_base + MEDIA_CLKDIV9, 0x08000800);
@@ -303,7 +316,7 @@ void mdc_regulator_enable(struct hisi_fb_data_type *hisifd)
 
 		outp32(hisifd->media_crg_base + MEDIA_PEREN0, 0x20000000);
 		outp32(hisifd->media_crg_base + MEDIA_PEREN1, 0x01806000);
-		outp32(hisifd->media_crg_base + MEDIA_CLKDIV8, 0xffc02180);
+		outp32(hisifd->media_crg_base + MEDIA_CLKDIV8, mdc_core_clk);
 	}
 }
 
@@ -376,6 +389,7 @@ int dpe_common_clk_enable(struct hisi_fb_data_type *hisifd)
 		return -EINVAL;
 	}
 
+	//mmbuf_clk
 	clk_tmp = hisifd->dss_mmbuf_clk;
 	if (clk_tmp) {
 		ret = clk_prepare(clk_tmp);
@@ -393,6 +407,7 @@ int dpe_common_clk_enable(struct hisi_fb_data_type *hisifd)
 		}
 	}
 
+	//aclk
 	clk_tmp = hisifd->dss_axi_clk;
 	if (clk_tmp) {
 		ret = clk_prepare(clk_tmp);
@@ -410,6 +425,7 @@ int dpe_common_clk_enable(struct hisi_fb_data_type *hisifd)
 		}
 	}
 
+	//pclk
 	clk_tmp = hisifd->dss_pclk_dss_clk;
 	if (clk_tmp) {
 		ret = clk_prepare(clk_tmp);
@@ -484,6 +500,7 @@ int dpe_inner_clk_enable(struct hisi_fb_data_type *hisifd)
 		return -EINVAL;
 	}
 
+	//edc0_clk
 	clk_tmp = hisifd->dss_pri_clk;
 	if (clk_tmp) {
 		ret = clk_prepare(clk_tmp);
@@ -501,6 +518,7 @@ int dpe_inner_clk_enable(struct hisi_fb_data_type *hisifd)
 		}
 	}
 
+	//ldi0_clk(pxl0_clk)    ldi1_clk(pxl1_clk)
 	ret = dpe_pxl_clk_enable(hisifd);
 	if (ret) {
 		HISI_FB_ERR("pxl clk enable failed, error=%d!\n", ret);
@@ -657,6 +675,9 @@ static int dpe_set_fastboot(struct platform_device *pdev)
 
 	ret = panel_next_set_fastboot(pdev);
 
+	//set inital display region
+	panel_next_tcon_mode(pdev, &hisifd->panel_info);
+
 	if (hisifd->panel_info.vsync_ctrl_type == VSYNC_CTRL_NONE) {
 		dpe_interrupt_mask(hisifd);
 		dpe_interrupt_clear(hisifd);
@@ -716,7 +737,7 @@ static int dpe_clk_get(struct platform_device *pdev)
 	}
 
 	if (hisifd->index == PRIMARY_PANEL_IDX) {
-		hisifd->dss_pxl0_clk = devm_clk_get(&pdev->dev, hisifd->dss_pxl0_clk_name);
+		hisifd->dss_pxl0_clk = devm_clk_get(&pdev->dev, hisifd->dss_pxl0_clk_name);  //lint !e527
 		if (IS_ERR(hisifd->dss_pxl0_clk)) {
 			ret = PTR_ERR(hisifd->dss_pxl0_clk);
 			HISI_FB_ERR("dss_pxl0_clk error, ret = %d", ret);
@@ -785,7 +806,7 @@ static int dpe_on(struct platform_device *pdev)
 			return -EINVAL;
 		}
 	} else {
-		ret = dpe_set_clk_rate(pdev);
+		ret = dpe_set_clk_rate(pdev);//edc pxl
 		if (ret) {
 			HISI_FB_ERR("fb%d dpe_set_clk_rate, error=%d!\n",
 				hisifd->index, ret);
@@ -843,6 +864,9 @@ static int dpe_on(struct platform_device *pdev)
 	}
 
 	ret = panel_next_on(pdev);
+
+	//set inital display region
+	panel_next_tcon_mode(pdev, &hisifd->panel_info);
 
 	if (hisifd->panel_info.vsync_ctrl_type == VSYNC_CTRL_NONE) {
 		dpe_interrupt_mask(hisifd);
@@ -1287,12 +1311,12 @@ static int dpe_set_pixclk_rate(struct platform_device *pdev)
 
 		ret = clk_set_rate(hisifd->dss_pxl0_clk, pinfo->pxl_clk_rate);
 		if (ret < 0) {
-			HISI_FB_ERR("fb%d dss_pxl1_clk clk_set_rate(%llu) failed, error=%d!\n",
+			HISI_FB_ERR("fb%d dss_pxl0_clk clk_set_rate(%llu) failed, error=%d!\n",
 				hisifd->index, pinfo->pxl_clk_rate, ret);
 			return -EINVAL;
 		}
 
-		HISI_FB_INFO("dss_pxl1_clk:[%llu]->[%llu].\n",
+		HISI_FB_INFO("dss_pxl0_clk:[%llu]->[%llu].\n",
 			pinfo->pxl_clk_rate, (uint64_t)clk_get_rate(hisifd->dss_pxl0_clk));
 	} else if (hisifd->index == EXTERNAL_PANEL_IDX) {
 		ldi_base = hisifd->dss_base + DSS_LDI1_OFFSET;

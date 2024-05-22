@@ -118,6 +118,7 @@ static inline void mmc_unregister_pm_notifier(struct mmc_host *host) { }
 #endif
 int mmc_sd_init_card(struct mmc_host *host, u32 ocr,
 	struct mmc_card *oldcard);
+extern void sd_sdio_loop_test(struct work_struct *work);
 
 #endif
 

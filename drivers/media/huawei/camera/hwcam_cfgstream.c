@@ -988,59 +988,6 @@ hwcam_cfgstream_vo_notify(
     return 0;
 }
 
-static long
-hwcam_cfgstream_vo_mount_buf(
-        hwcam_cfgstream_t* stm,
-        hwcam_buf_info_t* bi)
-{
-    long rc = -EINVAL;
-    switch (bi->kind)
-    {
-    case HWCAM_BUF_KIND_STREAM_PARAM:
-        break;
-    default:
-        HWCAM_CFG_ERR("invalid buffer kind(%d)! \n", bi->kind);
-        break;
-    }
-    return rc;
-}
-
-static long
-hwcam_cfgstream_vo_unmount_buf(
-        hwcam_cfgstream_t* stm,
-        hwcam_buf_info_t* bi)
-{
-    long rc = -EINVAL;
-    switch (bi->kind)
-    {
-    case HWCAM_BUF_KIND_STREAM_PARAM:
-        break;
-    default:
-        HWCAM_CFG_ERR("invalid buffer kind(%d)! \n", bi->kind);
-        break;
-    }
-    return rc;
-}
-
-static long
-hwcam_cfgstream_vo_get_graphic_buf(
-        hwcam_cfgstream_t* stm,
-        hwcam_graphic_buf_info_t* bi)
-{
-    long rc = -EINVAL;
-    if (stm->cfgreq != NULL
-            && stm->cfgreq->vtbl == &s_vtbl_req_mount_graphic_buf) {
-        hwcam_cfgstream_mount_graphic_buf_req_t* req =
-            container_of(stm->cfgreq, hwcam_cfgstream_mount_graphic_buf_req_t, intf);
-        *bi = *req->buf;
-        rc = 0;
-    }
-    else {
-        HWCAM_CFG_ERR("failed to get graphic buffer info! \n");
-    }
-    return rc;
-}
-
 static int
 hwcam_cfgstream_vo_get_buf(
         hwcam_cfgstream_t* stm,
@@ -1056,13 +1003,7 @@ hwcam_cfgstream_vo_get_buf(
     }
     spin_unlock_irqrestore(&stm->lock_bufq, flags);
     if (ret) {
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0))
-        bufstatus->id = ret->buf.v4l2_buf.index;
-        bufstatus->tv.tv_sec = ret->buf.v4l2_buf.timestamp.tv_sec;
-        bufstatus->tv.tv_usec = ret->buf.v4l2_buf.timestamp.tv_usec;
-#else
         bufstatus->id = ret->buf.index;
-#endif
         return 0;
     }
     else {
@@ -1083,11 +1024,7 @@ hwcam_cfgstream_vo_put_buf(
 
     spin_lock_irqsave(&stm->lock_bufq, flags);
     list_for_each_entry_safe(entry, tmp, &stm->bufq_busy, node) {
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0))
-        if (entry->buf.v4l2_buf.index == bufstatus->id) {
-#else
         if (entry->buf.index == bufstatus->id) {
-#endif
             list_move(&entry->node, &stm->bufq_idle);
             rc = 0;
             break;
@@ -1109,11 +1046,7 @@ hwcam_cfgstream_vo_buf_done(
 
     spin_lock_irqsave(&stm->lock_bufq, flags);
     list_for_each_entry_safe(entry, tmp, &stm->bufq_busy, node) {
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0))
-        if (entry->buf.v4l2_buf.index == bufstatus->id) {
-#else
         if (entry->buf.index == bufstatus->id) {
-#endif
             list_del_init(&entry->node);
             if (bufstatus->buf_status == false) {
                 vb2_buffer_done(&entry->buf, VB2_BUF_STATE_DONE);
@@ -1203,15 +1136,6 @@ hwcam_cfgstream_vo_do_ioctl(
         break;
     case HWCAM_V4L2_IOCTL_NOTIFY:
         rc = hwcam_cfgstream_vo_notify(stm, arg);
-        break;
-    case HWCAM_V4L2_IOCTL_MOUNT_BUF:
-        rc = hwcam_cfgstream_vo_mount_buf(stm, arg);
-        break;
-    case HWCAM_V4L2_IOCTL_UNMOUNT_BUF:
-        rc = hwcam_cfgstream_vo_unmount_buf(stm, arg);
-        break;
-    case HWCAM_V4L2_IOCTL_GET_GRAPHIC_BUF:
-        rc = hwcam_cfgstream_vo_get_graphic_buf(stm, arg);
         break;
     case HWCAM_V4L2_IOCTL_GET_BUF:
         rc = hwcam_cfgstream_vo_get_buf(stm, arg);

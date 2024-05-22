@@ -124,10 +124,11 @@ struct usbaudio_disconnect_rcv_data {
 struct usbaudio_rcv_msg {
 	USBAUDIO_CHN_COMMON
 	union {
-		unsigned int ret_val;
+		unsigned int rate;
 		struct usbaudio_probe_rcv_data probe_rcv_data;
 		struct usbaudio_disconnect_rcv_data disconnect_rcv_data;
 	};
+	unsigned int period;
 };
 
 struct usbaudio_disconnect_msg {

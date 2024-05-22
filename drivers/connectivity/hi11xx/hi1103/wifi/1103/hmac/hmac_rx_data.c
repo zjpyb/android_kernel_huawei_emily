@@ -72,8 +72,17 @@ extern "C" {
 
 #include<hmac_auto_adjust_freq.h>  //为hmac_auto_adjust_freq.c统计收包数准备
 
+#ifdef _PRE_WLAN_PKT_TIME_STAT
+#include  <hwnet/ipv4/wifi_delayst.h>
+#endif
+
+#ifdef _PRE_WLAN_FEATURE_SNIFFER
+#include <hwnet/ipv4/sysctl_sniffer.h>
+#endif
+
 #ifdef CONFIG_HUAWEI_DUBAI
-#include <log/log_usertype/log-usertype.h>
+#include <log/log_usertype.h>
+//#include <log/log_usertype/log-usertype.h>
 #include <huawei_platform/log/hwlog_kernel.h>
 #endif
 
@@ -230,16 +239,25 @@ OAL_STATIC OAL_INLINE oal_void  hmac_rx_frame_80211_to_eth(
 {
     mac_ether_header_stru              *pst_ether_hdr;
     mac_llc_snap_stru                  *pst_snap;
-    oal_uint16                          us_ether_type;
+    oal_uint8                           ul_offset_len;
 
+    /* 注意:默认使用protocol形式的snap头，length形式snap头形式仅前两个字节格式与protocol形式相同 */
     pst_snap = (mac_llc_snap_stru *)oal_netbuf_data(pst_netbuf);
-    us_ether_type = pst_snap->us_ether_type;
 
-    /* 将payload向前扩充6个字节，加上后面8个字节的snap头空间，构成以太网头的14字节空间 */
-    oal_netbuf_push(pst_netbuf, HMAC_RX_DATA_ETHER_OFFSET_LENGTH);
+    if(OAL_LIKELY(mac_snap_is_protocol_type(MAC_GET_SNAP_TYPE(pst_snap))))
+    {
+        ul_offset_len = HMAC_RX_DATA_ETHER_OFFSET_LENGTH;
+    }
+    else
+    {
+        ul_offset_len = MAC_SUBMSDU_HEADER_LEN;
+    }
+
+    /* 将payload向前扩充一定长度来构成以太网头的14字节空间。protocl形式的以太头会覆盖原本的snap头，length形式的会将snap头作为数据部分 */
+    oal_netbuf_push(pst_netbuf, ul_offset_len);
     pst_ether_hdr = (mac_ether_header_stru *)oal_netbuf_data(pst_netbuf);
 
-    pst_ether_hdr->us_ether_type = us_ether_type;
+    pst_ether_hdr->us_ether_type = (HMAC_RX_DATA_ETHER_OFFSET_LENGTH == ul_offset_len) ? pst_snap->us_ether_type : pst_netbuf->len;
     oal_set_mac_addr(pst_ether_hdr->auc_ether_shost, puc_sa);
     oal_set_mac_addr(pst_ether_hdr->auc_ether_dhost, puc_da);
 }
@@ -414,7 +432,6 @@ oal_uint32  hmac_rx_parse_amsdu_etc(
     oal_bool_enum_uint8     b_need_free_netbuf      = OAL_FALSE;
     oal_uint32              ul_need_pull_len;
 
-
     if (OAL_UNLIKELY(OAL_PTR_NULL == pst_netbuf))
     {
         OAM_ERROR_LOG0(0, OAM_SF_RX, "{hmac_rx_parse_amsdu_etc::pst_netbuf null.}");
@@ -495,8 +512,8 @@ oal_uint32  hmac_rx_parse_amsdu_etc(
         OAL_MEM_NETBUF_TRACE(pst_msdu->pst_netbuf, OAL_TRUE);
 
         /* 针对每一个子msdu，修改netbuf的end、data、tail、len指针 */
-        oal_netbuf_put(pst_msdu->pst_netbuf, us_submsdu_len + HMAC_RX_DATA_ETHER_OFFSET_LENGTH);
-        oal_netbuf_pull(pst_msdu->pst_netbuf, HMAC_RX_DATA_ETHER_OFFSET_LENGTH);
+        oal_netbuf_put(pst_msdu->pst_netbuf, us_submsdu_len + MAC_SUBMSDU_HEADER_LEN);
+        oal_netbuf_pull(pst_msdu->pst_netbuf, MAC_SUBMSDU_HEADER_LEN);
         oal_memcopy(pst_msdu->pst_netbuf->data, (puc_submsdu_hdr + MAC_SUBMSDU_HEADER_LEN), us_submsdu_len);
 
         b_need_free_netbuf = OAL_TRUE;
@@ -638,8 +655,11 @@ OAL_STATIC oal_uint32  hmac_rx_prepare_msdu_list_to_wlan(
         /* 将MSDU转化为以太网格式的帧 */
         hmac_rx_frame_80211_to_eth(pst_netbuf, auc_da, auc_sa);
 
+#ifdef _PRE_WLAN_PKT_TIME_STAT
+        OAL_MEMZERO(OAL_NETBUF_CB(pst_netbuf), OAL_NETBUF_CB_ORIGIN);
+#else
         OAL_MEMZERO(OAL_NETBUF_CB(pst_netbuf), OAL_NETBUF_CB_SIZE());
-
+#endif
         /* 将MSDU加入到netbuf链的最后 */
         oal_netbuf_add_to_list_tail(pst_netbuf, pst_netbuf_header);
 
@@ -1356,7 +1376,11 @@ OAL_STATIC oal_void  hmac_rx_transmit_msdu_to_lan(hmac_vap_stru *pst_vap, hmac_u
 #endif
 
     OAL_MEM_NETBUF_TRACE(pst_netbuf, OAL_TRUE);
+#ifdef _PRE_WLAN_PKT_TIME_STAT
+    OAL_MEMZERO(OAL_NETBUF_CB(pst_netbuf), OAL_NETBUF_CB_ORIGIN);
+#else
     OAL_MEMZERO(OAL_NETBUF_CB(pst_netbuf), OAL_NETBUF_CB_SIZE());
+#endif
 
 #if (_PRE_PRODUCT_ID == _PRE_PRODUCT_ID_HI1151)
 #if ((_PRE_TARGET_PRODUCT_TYPE_5610EVB == _PRE_CONFIG_TARGET_PRODUCT) || (_PRE_TARGET_PRODUCT_TYPE_5610DMB == _PRE_CONFIG_TARGET_PRODUCT) || (_PRE_TARGET_PRODUCT_TYPE_5630HERA == _PRE_CONFIG_TARGET_PRODUCT))
@@ -1446,7 +1470,7 @@ OAL_STATIC oal_void  hmac_rx_transmit_msdu_to_lan(hmac_vap_stru *pst_vap, hmac_u
     {
         hmac_rxdata_netbuf_enqueue_etc(pst_netbuf);
 
-        hmac_rxdata_sched_etc();
+        //hmac_rxdata_sched_etc();
     }
     else
     {
@@ -1455,9 +1479,12 @@ OAL_STATIC oal_void  hmac_rx_transmit_msdu_to_lan(hmac_vap_stru *pst_vap, hmac_u
     }
 #endif
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,11,0))
+    /* 4.11以上内核版本net_device结构体中没有last_rx字段 */
+#else
     /* 置位net_dev->jiffies变量 */
     OAL_NETDEVICE_LAST_RX(pst_device) = OAL_TIME_JIFFY;
-
+#endif
 }
 
 
@@ -1542,6 +1569,9 @@ oal_void  hmac_rx_lan_frame_classify_etc(
      }
 #else
      hmac_ba_update_rx_bitmap(pst_hmac_user, pst_frame_hdr);
+#endif
+#ifdef _PRE_WLAN_FEATURE_SNIFFER
+	 proc_sniffer_write_file(NULL, 0, (oal_uint8 *)oal_netbuf_payload(pst_netbuf), pst_rx_ctrl->us_frame_len, 0);
 #endif
 
     /* 情况一:不是AMSDU聚合，则该MPDU对应一个MSDU，同时对应一个NETBUF */
@@ -1823,11 +1853,11 @@ oal_void  hmac_rx_process_data_filter_etc(oal_netbuf_head_stru *pst_netbuf_heade
         /*如果不buff进reorder队列，则重新挂到链表尾，保序*/
         for (uc_netbuf_num = 0; uc_netbuf_num < uc_buf_nums; uc_netbuf_num++)
         {
-            pst_netbuf = oal_netbuf_delist(pst_netbuf_header);
+            pst_netbuf = oal_netbuf_delist_nolock(pst_netbuf_header);
 
             if (OAL_LIKELY(OAL_PTR_NULL != pst_netbuf))
             {
-                oal_netbuf_add_to_list_tail(pst_netbuf, pst_netbuf_header);
+                oal_netbuf_list_tail_nolock(pst_netbuf_header, pst_netbuf);
             }
             else
             {
@@ -1881,11 +1911,11 @@ oal_void hmac_transfer_rx_handle(hmac_device_stru *pst_hmac_device,
     oal_netbuf_stru                    *pst_netbuf;
 
     oal_netbuf_head_init(&st_temp_header);
-    while(!!(pst_netbuf = oal_netbuf_delist(pst_netbuf_header)))
+    while(!!(pst_netbuf = oal_netbuf_delist_nolock(pst_netbuf_header)))
     {
         if(OAL_FALSE == hmac_transfer_rx_tcp_ack_handler(pst_hmac_device,pst_hmac_vap,pst_netbuf))
         {
-            oal_netbuf_list_tail(&st_temp_header,pst_netbuf);
+            oal_netbuf_list_tail_nolock(&st_temp_header,pst_netbuf);
         }
     }
     /*lint -e522*/
@@ -1954,6 +1984,11 @@ oal_uint32  hmac_rx_lan_frame_etc(oal_netbuf_head_stru *pst_netbuf_header)
 #endif
 
         hmac_rx_lan_frame_classify_etc(pst_vap, pst_netbuf, pst_frame_hdr);
+    }
+
+    if (OAL_TRUE == hmac_get_rxthread_enable_etc())
+    {
+        hmac_rxdata_sched_etc();
     }
 
     return OAL_SUCC;
@@ -2179,6 +2214,11 @@ oal_void  hmac_rx_process_data_ap_tcp_ack_opt_etc(hmac_vap_stru *pst_vap,oal_net
         hmac_rx_transmit_to_wlan(&st_event_hdr, &st_w2w_netbuf_hdr);
     }
 
+    if (OAL_TRUE == hmac_get_rxthread_enable_etc())
+    {
+        hmac_rxdata_sched_etc();
+    }
+
     OAM_PROFILING_RX_STATISTIC(OAM_PROFILING_FUNC_RX_HMAC_END);
 
 }
@@ -2285,7 +2325,7 @@ oal_uint32  hmac_rx_process_data_event(frw_event_mem_stru *pst_event_mem)
 #if (_PRE_MULTI_CORE_MODE_OFFLOAD_DMAC == _PRE_MULTI_CORE_MODE)
         hmac_auto_freq_wifi_rx_bytes_stat(OAL_NETBUF_LEN(pst_temp_netbuf));
 #endif
-        oal_netbuf_add_to_list_tail(pst_temp_netbuf, &st_netbuf_header);
+        oal_netbuf_list_tail_nolock(&st_netbuf_header, pst_temp_netbuf);
         us_netbuf_num--;
     }
 

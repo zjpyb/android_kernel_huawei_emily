@@ -29,7 +29,9 @@ extern void create_mapping_late(phys_addr_t phys, unsigned long virt,
 		phys_addr_t size, pgprot_t prot);
 */
 static const char *dynion_name = "DYN_ION";
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
 static struct ion_client *dynion_client = NULL;
+#endif
 static DEFINE_MUTEX(dynamic_mem_lock);
 struct dynamic_mem_list {
 	struct list_head list;
@@ -79,9 +81,9 @@ static int send_loadapp_ion(void)
 {
 	TC_NS_SMC_CMD smc_cmd = {0};
 	int ret;
-	struct mb_cmd_pack *mb_pack;
+	struct mb_cmd_pack *mb_pack = NULL;
 	mb_pack = mailbox_alloc_cmd_pack();
-	if (!mb_pack) {
+	if ( mb_pack == NULL ) {
 		tloge("alloc cmd pack failed\n");
 		return -ENOMEM;
 	}
@@ -102,13 +104,13 @@ static int register_to_tee(struct dynamic_mem_item* mem_item)
 {
 	TC_NS_SMC_CMD smc_cmd = {0};
 	int ret;
-	struct mb_cmd_pack *mb_pack;
-	if ( !mem_item ) {
+	struct mb_cmd_pack *mb_pack = NULL;;
+	if ( mem_item == NULL ) {
 		tloge("mem_item is null\n");
 		return -1;
 	}
 	mb_pack = mailbox_alloc_cmd_pack();
-	if (!mb_pack) {
+	if ( mb_pack == NULL) {
 		tloge("alloc cmd pack failed\n");
 		return -ENOMEM;
 	}
@@ -139,8 +141,8 @@ static int unregister_from_tee(struct dynamic_mem_item* mem_item, uint32_t by_fd
 {
 	TC_NS_SMC_CMD smc_cmd = {0};
 	int ret;
-	struct mb_cmd_pack *mb_pack;
-	if ( !mem_item ) {
+	struct mb_cmd_pack *mb_pack = NULL;
+	if ( mem_item == NULL ) {
 		tloge("mem_item is null\n");
 		return -1;
 	}
@@ -173,7 +175,7 @@ static int unregister_from_tee(struct dynamic_mem_item* mem_item, uint32_t by_fd
 }
 static struct dynamic_mem_item* find_memitem_by_configid_locked(uint32_t configid)
 {
-	struct dynamic_mem_item *item;
+	struct dynamic_mem_item *item = NULL;
 
 	list_for_each_entry(item, &g_dynamic_mem_list.list, head) {
 		if (item->configid == configid) {
@@ -185,7 +187,7 @@ static struct dynamic_mem_item* find_memitem_by_configid_locked(uint32_t configi
 }
 static struct dynamic_mem_item* find_memitem_by_uuid_locked(TEEC_UUID *uuid)
 {
-	struct dynamic_mem_item *item;
+	struct dynamic_mem_item *item = NULL;
 
 	list_for_each_entry(item, &g_dynamic_mem_list.list, head) {
 		if (memcmp(&item->uuid,uuid,sizeof(TEEC_UUID)) == 0) {
@@ -196,9 +198,15 @@ static struct dynamic_mem_item* find_memitem_by_uuid_locked(TEEC_UUID *uuid)
 
 }
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
 static int alloc_from_hisi(struct dynamic_mem_item* mem_item)
 {
-	if (!dynion_client || !mem_item)
+	return 0;
+}
+#else
+static int alloc_from_hisi(struct dynamic_mem_item* mem_item)
+{
+	if ( dynion_client == NULL || mem_item == NULL )
 		return -1;
 	mem_item->memory.ion_handle = ion_alloc(dynion_client, mem_item->size, /*lint !e647 */
 			SZ_2M, ION_HEAP(ION_MISC_HEAP_ID), ION_FLAG_CACHED);
@@ -207,8 +215,8 @@ static int alloc_from_hisi(struct dynamic_mem_item* mem_item)
 		mem_item->memory.ion_phys_addr = 0;
 		return -1;
 	}
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
-	if(ion_secmem_get_phys(dynion_client, mem_item->memory.ion_handle, &(mem_item->memory.ion_phys_addr), &(mem_item->memory.len)) < 0) {
+#if ( LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0) && LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0) )
+	if(ion_secmem_get_phys(dynion_client, mem_item->memory.ion_handle, (phys_addr_t *)(&(mem_item->memory.ion_phys_addr)), &(mem_item->memory.len)) < 0) {
 #else
 	if(ion_phys(dynion_client, mem_item->memory.ion_handle, &(mem_item->memory.ion_phys_addr), &(mem_item->memory.len)) < 0) {
 #endif
@@ -237,9 +245,17 @@ static int alloc_from_hisi(struct dynamic_mem_item* mem_item)
 #endif
 	return 0;
 }
+#endif
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
 static void free_to_hisi(struct dynamic_mem_item* mem_item)
 {
-	if (!dynion_client || !mem_item)
+	return;
+}
+#else
+static void free_to_hisi(struct dynamic_mem_item* mem_item)
+{
+	if ( dynion_client == NULL || mem_item == NULL )
 		return ;
 	if (IS_ERR(mem_item->memory.ion_handle) || NULL == mem_item->memory.ion_handle ||
 		0 == mem_item->memory.ion_phys_addr) {
@@ -261,16 +277,33 @@ static void free_to_hisi(struct dynamic_mem_item* mem_item)
 
 	return;
 }
+#endif
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+int init_dynamic_mem(void)
+{
+	INIT_LIST_HEAD(&(g_dynamic_mem_list.list));
+	return 0;
+}
+#else
 int init_dynamic_mem(void)
 {
 	INIT_LIST_HEAD(&(g_dynamic_mem_list.list));
 	dynion_client = hisi_ion_client_create(dynion_name);
-	if ( !dynion_client) {
+	if ( dynion_client == NULL ) {
 		tloge("create dynion client failed\n");
 		return -1;
 	}
 	return 0;
 }
+#endif
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+void exit_dynamic_mem(void)
+{
+	return;
+}
+#else
 void exit_dynamic_mem(void)
 {
 	if ( dynion_client ) {
@@ -279,6 +312,7 @@ void exit_dynamic_mem(void)
 	}
 
 }
+#endif
 
 static int trans_configid2memid(uint32_t configid, uint32_t cafd,  TEEC_UUID* uuid, uint32_t size)
 {
@@ -403,11 +437,11 @@ void kill_ion_by_uuid(TEEC_UUID* uuid)
 
 void kill_ion_by_cafd(unsigned int cafd)
 {
+	struct dynamic_mem_item *item = NULL;
+	struct dynamic_mem_item *temp = NULL;
+	int32_t i;
 	tlogd("kill_ion_by_cafd:\n");
 	mutex_lock(&dynamic_mem_lock);
-	struct dynamic_mem_item *item;
-	struct dynamic_mem_item *temp;
-	int32_t i;
 
 	list_for_each_entry_safe(item, temp, &g_dynamic_mem_list.list, head) {
 		for (i = 0; i < CAFD_MAX; i++) {
@@ -482,6 +516,7 @@ int is_used_dynamic_mem(TEEC_UUID *uuid)
 		tloge("param is null\n");
 		return 0;
 	}
+
 	for (i=0; i < g_dynion_uuid_num; i++) {
 		if (!memcmp(uuid, &g_dynamic_mem_uuid[i], sizeof(TEEC_UUID))) {
 			return 1;

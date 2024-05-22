@@ -8,6 +8,7 @@
 #define DUBAI_COMMON_H
 
 #include <linux/sched.h>
+#include <linux/uaccess.h>
 
 #define DUBAI_LOG_TAG	"DUBAI"
 
@@ -41,6 +42,7 @@ enum {
 	BUFFERED_LOG_MAGIC_KWORKER,
 	BUFFERED_LOG_MAGIC_UEVENT,
 	BUFFERED_LOG_MAGIC_BINDER_STATS,
+	BUFFERED_LOG_MAGIC_WS_LASTING_NAME,
 };
 
 struct process_name {
@@ -60,17 +62,41 @@ struct buffered_log_entry {
 	unsigned char data[0];
 } __packed;
 
+static inline int get_enable_value(void __user *argp, bool *enable) {
+	uint8_t value;
+
+	if (copy_from_user(&value, argp, sizeof(uint8_t)))
+		return -EFAULT;
+
+	if (value != 1 && value != 0) {
+		DUBAI_LOGE("Invalid enable value: %u", value);
+		return -EFAULT;
+	}
+	*enable = (value == 1);
+
+	return 0;
+}
+
+static inline int get_timestamp_value(void __user *argp, long long *timestamp) {
+	if (copy_from_user(timestamp, argp, sizeof(long long)))
+		return -EFAULT;
+
+	return 0;
+}
+
 void dubai_proc_cputime_init(void);
 void dubai_proc_cputime_exit(void);
-void dubai_proc_cputime_enable(bool enable);
-bool dubai_get_task_cpupower_enable(void);
-int dubai_get_proc_cputime(long long timestamp);
-int dubai_get_proc_name(struct process_name *process);
+int dubai_proc_cputime_enable(void __user *argp);
+int dubai_get_task_cpupower_enable(void __user *argp);
+int dubai_get_proc_cputime(void __user *argp);
+int dubai_get_proc_name(void __user *argp);
+int dubai_get_process_name(struct process_name *process);
+int dubai_set_proc_decompose(void __user *argp);
 
 void dubai_gpu_init(void);
 void dubai_gpu_exit(void);
-void dubai_set_gpu_enable(bool enable);
-int dubai_get_gpu_info(unsigned long arg);
+int dubai_set_gpu_enable(void __user *argp);
+int dubai_get_gpu_info(void __user *argp);
 
 extern int (*send_buffered_log)(const struct buffered_log_entry *entry);
 struct buffered_log_entry *create_buffered_log_entry(long long size, int magic);
@@ -79,16 +105,16 @@ void buffered_log_release(void);
 
 void dubai_stats_init(void);
 void dubai_stats_exit(void);
-void dubai_log_stats_enable(bool enable);
-int dubai_get_kworker_info(long long timestamp);
-int dubai_get_uevent_info(long long timestamp);
-void dubai_set_brightness_enable(bool enable);
-int dubai_get_brightness_info(uint32_t *brightness);
-int dubai_get_binder_stats(long long timestamp);
-void dubai_binder_stats_enable(bool enable);
-void dubai_set_binder_stats_list(char *name);
-void dubai_init_binder_stats_list(void);
-uint64_t dubai_get_aod_duration(void);
-int dubai_get_battery_rm(void);
+int dubai_log_stats_enable(void __user *argp);
+int dubai_get_kworker_info(void __user *argp);
+int dubai_get_uevent_info(void __user *argp);
+int dubai_set_brightness_enable(void __user *argp);
+int dubai_get_brightness_info(void __user *argp);
+int dubai_get_binder_stats(void __user *argp);
+int dubai_set_binder_list(void __user *argp);
+int dubai_binder_stats_enable(void __user *argp);
+int dubai_get_aod_duration(void __user *argp);
+int dubai_get_battery_rm(void __user *argp);
+int dubai_get_ws_lasting_name(void __user *argp);
 
 #endif

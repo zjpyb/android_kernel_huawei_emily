@@ -3,6 +3,7 @@
 #ifndef HISI_AP_DRV_H
 #define HISI_AP_DRV_H
 #include <linux/module.h>
+#include <linux/version.h>
 /*************************************************************************
 *
 *   启动/加载/复位/校验
@@ -596,5 +597,25 @@ int atfd_hisi_service_access_register_smc(unsigned long long main_fun_id,
 void ipf_get_waking_pkt(void* data, unsigned int len);
 
 
+#if (LINUX_VERSION_CODE > KERNEL_VERSION(4, 9, 0))
+/* hifi reset notify modem */
+enum DRV_RESET_CALLCBFUN_MOMENT {
+	DRV_RESET_CALLCBFUN_RESET_BEFORE,
+	DRV_RESET_CALLCBFUN_RESET_AFTER,
+	DRV_RESET_CALLCBFUN_RESETING,
+	DRV_RESET_CALLCBFUN_MOEMENT_INVALID
+};
+
+typedef int (*hifi_reset_cbfunc)(enum DRV_RESET_CALLCBFUN_MOMENT eparam, int userdata);
+
+#ifdef CONFIG_HISI_HIFI_BB
+int hifireset_regcbfunc(const char *pname, hifi_reset_cbfunc pcbfun, int userdata, int priolevel);
+#else
+static inline int hifireset_regcbfunc(const char *pname, hifi_reset_cbfunc pcbfun, int userdata, int priolevel)
+{
+	return 0;
+}
+#endif
+#endif
 #endif /* HISI_AP_DRV_H */
 

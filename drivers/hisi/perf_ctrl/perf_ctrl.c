@@ -188,7 +188,7 @@ static long perf_ctrl_ioctl_get_power(void __user *uarg) {
 		if(thp.thermal_zone_type >= sizeof(thermal_zone_name)/sizeof(thermal_zone_name[0]) || thp.thermal_zone_type < 0) /*lint !e574 */
 			break;
 		result = thermal_zone_cdev_get_power(thermal_zone_name[thp.thermal_zone_type], thermal_cdev_type_name[i], &power); /*lint !e661 !e662*/
-		if (!IS_ERR_VALUE(result))
+		if (!IS_ERR_VALUE((uintptr_t)result))
 			thp.cdev_power[i] = power;
 	}
 
@@ -207,7 +207,7 @@ static long perf_ctrl_ioctl(struct file *file, unsigned int cmd, unsigned long a
 	struct ddr_flux ddr_flux_val = {0};
 	struct sched_stat sched_stat_val;
 	struct ipa_stat ipa_stat_val;
-	void __user *uarg = (void __user *)arg;
+	void __user *uarg = (void __user *)(uintptr_t)arg;
 	struct task_struct *leader, *pos;
 	struct related_tid_info *r_t_info = NULL;
 
@@ -342,7 +342,7 @@ err:
 	case PERF_CTRL_GET_THERMAL_CDEV_POWER:
 		ret = perf_ctrl_ioctl_get_power(uarg);
 
-		if (IS_ERR_VALUE(ret)) {
+		if (IS_ERR_VALUE((uintptr_t)ret)) {
 			pr_err("get_thermal_cdev_power thermal_zone_cdev_get_power failed ret %ld.\n", ret);
 			return ret;
 		}

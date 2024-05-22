@@ -75,6 +75,8 @@ extern "C" {
 #define LLC_UI                  0x3
 #define SNAP_LLC_FRAME_LEN      8
 #define SNAP_LLC_LSAP           0xaa
+#define SNAP_BRIDGE_SPANNING_TREE   0x42
+#define SNAP_IBM_LAN_MANAGEMENT     0xf5
 #define SNAP_RFC1042_ORGCODE_0  0x00
 #define SNAP_RFC1042_ORGCODE_1  0x00
 #define SNAP_RFC1042_ORGCODE_2  0x00

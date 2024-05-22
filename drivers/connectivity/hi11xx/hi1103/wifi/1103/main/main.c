@@ -416,7 +416,9 @@ extern oal_uint32 wlan_pm_close_etc(oal_void);
 extern oal_bool_enum g_wlan_pm_switch_etc;
 extern oal_uint8 g_wlan_device_pm_switch;
 extern oal_uint8 g_wlan_ps_mode;
-extern oal_uint8 g_wlan_fast_check_cnt;
+extern oal_uint8 g_wlan_min_fast_ps_idle;
+extern oal_uint8 g_wlan_max_fast_ps_idle;
+extern oal_uint8 g_wlan_auto_ps_thresh;
 extern oal_uint8 g_wlan_fast_ps_mode_dyn_ctl;
 #ifdef _PRE_WLAN_RF_AUTOCALI
 extern oal_uint8 g_uc_autocali_switch;
@@ -444,7 +446,9 @@ oal_uint32 hwifi_cfg_host_global_init_param(oal_void)
     {
         g_wlan_fast_ps_mode_dyn_ctl = 0;
     }
-    g_wlan_fast_check_cnt   = hwifi_get_init_value_etc(CUS_TAG_INI, WLAN_CFG_INIT_FAST_CHECK_CNT);
+    g_wlan_min_fast_ps_idle   = hwifi_get_init_value_etc(CUS_TAG_INI, WLAN_CFG_INIT_MIN_FAST_PS_IDLE);
+    g_wlan_max_fast_ps_idle   = hwifi_get_init_value_etc(CUS_TAG_INI, WLAN_CFG_INIT_MAX_FAST_PS_IDLE);
+    g_wlan_auto_ps_thresh     = hwifi_get_init_value_etc(CUS_TAG_INI, WLAN_CFG_INIT_AUTO_FAST_PS_THRESH);
 
     g_wlan_pm_switch_etc = (g_wlan_device_pm_switch == 1 || g_wlan_device_pm_switch == 4)  ?  OAL_TRUE : OAL_FALSE;
 
@@ -776,7 +780,7 @@ oal_uint8 device_psm_main_function(oal_void)
 #if defined(_PRE_WLAN_FEATURE_BTCOEX) || defined(_PRE_WLAN_FEATURE_SMARTANT)
     dmac_device_stru        *pst_dmac_device;
     hal_to_dmac_device_stru *pst_hal_device;
-    hal_to_dmac_chip_stru   *pst_hal_chip;
+    hal_to_dmac_chip_stru   *pst_hal_chip    = OAL_PTR_NULL;
 #endif
 
 #ifdef _PRE_WLAN_FEATURE_SMARTANT

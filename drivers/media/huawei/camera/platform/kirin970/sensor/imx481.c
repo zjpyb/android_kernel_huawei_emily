@@ -11,6 +11,7 @@
 #include "hw_csi.h"
 
 #define I2S(i) container_of(i, sensor_t, intf)
+#define Sensor2Pdev(s) container_of((s).dev, struct platform_device, dev)
 #define POWER_DELAY_0        0//delay 0 ms
 #define POWER_DELAY_1        1//delay 1 ms
 
@@ -41,26 +42,10 @@ static hwsensor_vtbl_t s_imx481_vtbl =
     .csi_disable = imx481_csi_disable,
 };
 
-static hwsensor_intf_t *s_intf = NULL;
+static struct platform_device *s_pdev = NULL;
 static sensor_t *s_sensor = NULL;
 
 struct sensor_power_setting hw_imx481_power_up_setting[] = {
-    //disable MCAM1 reset [GPIO136]
-    {
-        .seq_type     = SENSOR_SUSPEND2,
-        .config_val   = SENSOR_GPIO_LOW,
-        .sensor_index = SENSOR_INDEX_INVALID,
-        .delay        = POWER_DELAY_0,
-    },
-
-    //disable MCAM1 PWDN [GPIO227]
-    {
-        .seq_type     = SENSOR_PWDN2,
-        .config_val   = SENSOR_GPIO_LOW,//pull HIGH
-        .sensor_index = SENSOR_INDEX_INVALID,
-        .delay        = POWER_DELAY_0,
-    },
-
     //SCAM IOVDD 1.80V [LDO21]
     {
         .seq_type     = SENSOR_IOVDD,
@@ -77,10 +62,10 @@ struct sensor_power_setting hw_imx481_power_up_setting[] = {
         .delay        = POWER_DELAY_0,
     },
 
-    //SCAM DVDD 1.2V [LDO32]
+    //SCAM DVDD 1.1V [LDO32]
     {
         .seq_type     = SENSOR_DVDD,
-        .config_val   = LDO_VOLTAGE_1P2V,
+        .config_val   = LDO_VOLTAGE_1P1V,
         .sensor_index = SENSOR_INDEX_INVALID,
         .delay        = POWER_DELAY_1,
     },
@@ -170,6 +155,14 @@ int imx481_power_up(hwsensor_intf_t* si)
     }
     cam_info("enter %s. index = %d name = %s", __func__, sensor->board_info->sensor_index, sensor->board_info->name);
 
+    ret = hw_sensor_power_up_config(sensor->dev, sensor->board_info);
+    if (0 == ret){
+        cam_info("%s. power up config success.", __func__);
+    }else{
+        cam_err("%s. power up config fail.", __func__);
+        return ret;
+    }
+
     if (hw_is_fpga_board()) {
         ret = do_sensor_power_on(sensor->board_info->sensor_index, sensor->board_info->name);
     } else {
@@ -215,6 +208,8 @@ int imx481_power_down(hwsensor_intf_t* si)
     {
         cam_err("%s. power down sensor fail.", __func__);
     }
+
+    hw_sensor_power_down_config(sensor->board_info);
 
     return ret;
 }
@@ -389,12 +384,12 @@ int32_t imx481_platform_probe(struct platform_device* pdev)
         cam_err("%s hwsensor_register failed rc %d\n", __func__, rc);
         return -ENODEV;
     }
-    s_intf = intf;
+    s_pdev = pdev;
 
     rc = rpmsg_sensor_register(pdev, (void*)sensor);
     if (rc < 0) {
-        hwsensor_unregister(intf);
-        s_intf = NULL;
+        hwsensor_unregister(s_pdev);
+        s_pdev = NULL;
         cam_err("%s rpmsg_sensor_register failed rc %d\n", __func__, rc);
         return -ENODEV;
     }
@@ -419,9 +414,9 @@ imx481_exit_module(void)
         rpmsg_sensor_unregister((void*)s_sensor);
         s_sensor = NULL;
     }
-    if (NULL != s_intf) {
-        hwsensor_unregister(s_intf);
-        s_intf = NULL;
+    if (NULL != s_pdev) {
+        hwsensor_unregister(s_pdev);
+        s_pdev = NULL;
     }
     platform_driver_unregister(&s_imx481_driver);
 }

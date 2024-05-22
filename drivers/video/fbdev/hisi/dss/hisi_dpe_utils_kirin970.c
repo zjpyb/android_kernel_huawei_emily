@@ -13,7 +13,7 @@
 
 #include "hisi_dpe_utils.h"
 #include "peri_volt_poll.h"
-
+/*lint -e838 -e679 -e712*/
 DEFINE_SEMAPHORE(hisi_fb_dss_inner_clk_sem);
 
 static int dss_inner_clk_refcount = 0;
@@ -417,7 +417,7 @@ int dpe_set_clk_rate(struct platform_device *pdev)
 #define PERI_VOLTAGE_LEVEL0_065V		(0) // 0.65v
 #define PERI_VOLTAGE_LEVEL1_075V		(2) // 0.75v
 #define PERI_VOLTAGE_LEVEL2_080V		(3) // 0.80v
-int dpe_get_voltage_value(struct hisi_fb_data_type *hisifd, dss_vote_cmd_t *vote_cmd)
+int dpe_get_voltage_value(dss_vote_cmd_t *vote_cmd)
 {
 	if (!vote_cmd) {
 		HISI_FB_ERR("vote_cmd is null\n");
@@ -437,7 +437,7 @@ int dpe_get_voltage_value(struct hisi_fb_data_type *hisifd, dss_vote_cmd_t *vote
 	}
 }
 
-int dpe_get_voltage_level(struct hisi_fb_data_type *hisifd, int votage_value)
+int dpe_get_voltage_level(int votage_value)
 {
 	switch (votage_value) {
 		case PERI_VOLTAGE_LEVEL0_065V: // 0.65v
@@ -2224,7 +2224,6 @@ static int CSC10B_RGB2YUV709_WIDE[CSC_ROW][CSC_COL] = {
 	{0x02000, 0x1e2ef, 0x1fd11, 0x000, 0x200},
 };
 
-
 static void init_csc10b(struct hisi_fb_data_type *hisifd, char __iomem * dpp_csc10b_base)
 {
 	int (*csc_coe)[CSC_COL];
@@ -2870,7 +2869,7 @@ void init_igm_gmp_xcc_gm(struct hisi_fb_data_type *hisifd)
 			outp32(xcc_base + XCC_COEF_21, pinfo->xcc_table[9]);
 			outp32(xcc_base + XCC_COEF_22, pinfo->xcc_table[10]);
 			outp32(xcc_base + XCC_COEF_23, pinfo->xcc_table[11]
-				* g_led_rg_csc_value[8] / 32768 * DISCOUNT_COEFFICIENT(g_comform_value)
+				* g_led_rg_csc_value[8] / 32768 * DISCOUNT_COEFFICIENT(g_comform_value) / CHANGE_MAX
 				* color_temp_rectify_B / 32768);
 
 			//enable xcc
@@ -3077,7 +3076,7 @@ int dpe_set_ct_cscValue(struct hisi_fb_data_type *hisifd)
 			outp32(xcc_base + XCC_COEF_21, pinfo->xcc_table[9]);
 			outp32(xcc_base + XCC_COEF_22, pinfo->xcc_table[10]);
 			outp32(xcc_base + XCC_COEF_23, pinfo->xcc_table[11]
-				* g_led_rg_csc_value[8] / 32768 * DISCOUNT_COEFFICIENT(g_comform_value)
+				* g_led_rg_csc_value[8] / 32768 * DISCOUNT_COEFFICIENT(g_comform_value) / CHANGE_MAX
 				* color_temp_rectify_B / 32768);
 			hisifd->color_temperature_flag = 2;
 		}
@@ -3160,7 +3159,7 @@ int dpe_set_comform_ct_cscValue(struct hisi_fb_data_type *hisifd)
 			outp32(xcc_base + XCC_COEF_21, pinfo->xcc_table[9]);
 			outp32(xcc_base + XCC_COEF_22, pinfo->xcc_table[10]);
 			outp32(xcc_base + XCC_COEF_23, pinfo->xcc_table[11]
-				* g_led_rg_csc_value[8] / 32768 * DISCOUNT_COEFFICIENT(g_comform_value)
+				* g_led_rg_csc_value[8] / 32768 * DISCOUNT_COEFFICIENT(g_comform_value) / CHANGE_MAX
 				* color_temp_rectify_B / 32768);
 		}
 	}
@@ -3271,7 +3270,7 @@ int dpe_set_led_rg_ct_cscValue(struct hisi_fb_data_type *hisifd)
 			outp32(xcc_base + XCC_COEF_21, pinfo->xcc_table[9]);
 			outp32(xcc_base + XCC_COEF_22, pinfo->xcc_table[10]);
 			outp32(xcc_base + XCC_COEF_23, pinfo->xcc_table[11]
-				* g_led_rg_csc_value[8] / 32768 * DISCOUNT_COEFFICIENT(g_comform_value)
+				* g_led_rg_csc_value[8] / 32768 * DISCOUNT_COEFFICIENT(g_comform_value) / CHANGE_MAX
 				* color_temp_rectify_B / 32768);
 		}
 	}
@@ -3356,7 +3355,7 @@ ssize_t dpe_show_gmp_state(char *buf)
 
 	return ret;
 }
-//lint -e838
+
 void dpe_sbl_set_al_bl(struct hisi_fb_data_type *hisifd)
 {
 	uint32_t temp;
@@ -3374,4 +3373,4 @@ void dpe_sbl_set_al_bl(struct hisi_fb_data_type *hisifd)
 	set_reg(sbl_base + SBL_REG_AL_BL, temp, 8, 0);
 	return;
 }
-//lint +e838
+/*lint +e838 +e679 +e712*/

@@ -212,7 +212,7 @@ extern "C" {
 #define Type_C_Supports_Vconn_Powered_Accessory NO
 #define Type_C_Is_VCONN_Powered_Accessory NO    /* 'YES' Not Currently Implemented */
 #define Captive_Cable NO
-#define RP_Value 0            //; 1: 1.5A
+#define RP_Value 1 /* 1: 1.5A */
 
 /******************************************************************************/
 

@@ -51,6 +51,8 @@
 #define ADAPT_SENSOR_LIST_NUM           20
 #define MAX_FILE_ID	80
 #define CURRENT_FAC_AKM_INIT  0
+#define WIA_NUM	6
+#define DATA_FLAG_LEN  4
 #define SEMTECH_REGS_NEED_INITIATED_NUM	(12)
 #define SEMTECH_REGS_MAX_INITIATED_NUM	(17)
 
@@ -85,6 +87,7 @@ extern int send_para_flag;
 extern struct charge_device_ops *g_ops;
 extern struct ps_external_ir_param ps_external_ir_param;
 extern struct ps_extend_platform_data ps_extend_platform_data;
+extern int ps_support_mode;
 #ifdef CONFIG_HUAWEI_CHARGER_SENSORHUB
 extern irqreturn_t fsa9685_irq_sh_handler(int irq, void *dev_id);
 #endif
@@ -204,6 +207,7 @@ struct sar_platform_data sar_pdata = {
 	.cfg = DEF_SENSOR_COM_SETTING,
 	.poll_interval = 200,
 	.calibrate_type = 5,
+	.gpio_int = 0,
 };
 
 static struct gps_4774_platform_data gps_4774_data = {
@@ -293,6 +297,11 @@ struct magn_bracket_platform_data magn_bracket_data = {
 };
 /*lint +e785*/
 
+struct motion_platform_data motion_data = {
+	.pickup_data_flag = 0,
+	.angle_gap = 67,
+};
+
 struct sensor_detect_manager s_detect_manager[SENSOR_MAX] = {
     {"acc", 3,ACC,DET_INIT,TAG_ACCEL, &gsensor_data, sizeof(gsensor_data)},
     {"mag",3, MAG,DET_INIT,TAG_MAG, &mag_data, sizeof(mag_data)},
@@ -308,6 +317,7 @@ struct sensor_detect_manager s_detect_manager[SENSOR_MAX] = {
     {"charger", 7,CHARGER, DET_INIT,TAG_CHARGER,&charger_dts_data,sizeof(charger_dts_data)},
     {"switch", 6,SWITCH, DET_INIT,TAG_SWITCH,&switch_fsa9685_data,sizeof(switch_fsa9685_data)},
     {"hw_magn_bracket", 15,MAGN_BRACKET, DET_INIT,TAG_MAGN_BRACKET,&magn_bracket_data,sizeof(magn_bracket_data)},
+	{"motion", 6, MOTION, DET_INIT,TAG_MOTION, &motion_data, sizeof(motion_data)},
 };
 
 SENSOR_DETECT_LIST get_id_by_sensor_tag(int tag)
@@ -410,10 +420,19 @@ int read_cap_prox_calibrate_data_from_nv(void)
 		pkg_ap.wr_buf = (const void *)&sar_calibrate_datas;
 		pkg_ap.wr_len = sizeof(sar_calibrate_datas);
 		hwlog_info("sx9323:offset=%d, diff=%d length:%d %d\n",
-				sar_calibrate_datas.semtech_cali_data.offset,
-				sar_calibrate_datas.semtech_cali_data.diff,
-				sizeof(sar_calibrate_datas), pkg_ap.wr_len);
-	} 	else {
+			sar_calibrate_datas.semtech_cali_data.offset,
+			sar_calibrate_datas.semtech_cali_data.diff,
+			sizeof(sar_calibrate_datas), pkg_ap.wr_len);
+	} else if (!strncmp(sensor_chip_info[CAP_PROX], "huawei,abovb-a96t3x6",
+			strlen("huawei,abovb-a96t3x6"))) {
+		memcpy((void *)&sar_calibrate_datas, user_info.nv_data, sizeof(sar_calibrate_datas));
+		pkg_ap.wr_buf = (const void *)&sar_calibrate_datas;
+		pkg_ap.wr_len = sizeof(sar_calibrate_datas);
+		hwlog_info("a96t3x6:offset=%d, diff=%d length:%d %d\n",
+			sar_calibrate_datas.abovb_cali_data.offset,
+			sar_calibrate_datas.abovb_cali_data.diff,
+			sizeof(sar_calibrate_datas), pkg_ap.wr_len);
+	} else {
 		pkg_ap.wr_buf = (const void *)&sar_calibrate_datas;
 		pkg_ap.wr_len = sizeof(sar_calibrate_datas);
 		memcpy(&sar_calibrate_datas, user_info.nv_data,
@@ -458,7 +477,7 @@ void read_sensorlist_info(struct device_node *dn, int sensor)
 		hwlog_info("sensor SENSOR_DETECT_LIST %d get vendor %s\n", sensor, sensorlist_info[sensor].vendor);
 	}
 	else
-		sensorlist_info[sensor].name[0] = '\0';
+		sensorlist_info[sensor].vendor[0] = '\0';
 
 	if (0 == of_property_read_u32(dn, "version", &temp))
 	{
@@ -587,6 +606,14 @@ static void read_acc_data_from_dts(struct device_node *dn)
 		hwlog_err("%s:read acc negate_z fail\n", __func__);
 	else
 		gsensor_data.negate_z = (uint8_t) temp;
+
+	if (of_property_read_u32(dn, "data_convert", &temp))
+	{
+		gsensor_data.data_convert = 0;
+		hwlog_err("%s:read acc data_convert fail\n", __func__);
+	} else {
+		gsensor_data.data_convert = (uint8_t) temp;
+	}
 
 /* i2c_address should be set when detect success! not here
 	if (of_property_read_u32(dn, "reg", &temp))
@@ -870,11 +897,31 @@ static void read_ps_data_from_dts(struct device_node *dn)
 		ps_external_ir_param.internal_ir_threshold_value = temp;
 	}
 
+	if (of_property_read_u32(dn, "ps_flag_mode", &temp)){
+		ps_data.ps_flag = 0;
+		hwlog_err("%s:read ps_flag_mode fail\n", __func__);
+	}
+	else {
+		ps_data.ps_flag = temp;
+	}
+
+	if (of_property_read_u32(dn, "ps_support_mode", &temp)) {
+		ps_support_mode = 0;
+		hwlog_err("%s:read ps_support_mode fail\n", __func__);
+	} else {
+		ps_support_mode = temp;
+	}
+
 	if (of_property_read_u32(dn, "external_ir", &temp))
 		hwlog_err("%s:read mag min_proximity_value fail\n", __func__);
 	else if(temp == 1) {
 		ps_external_ir_param.external_ir = temp;
 		hwlog_err("%s:external_ir set value\n", __func__);
+
+		if (of_property_read_u32(dn, "external_ir_powermode", &temp))
+			hwlog_err("%s:read powermode fail\n", __func__);
+		else
+			ps_external_ir_param.external_ir_powermode = temp;
 
 		if (of_property_read_u32(dn, "external_ir_min_proximity_value", &temp))
 			hwlog_err("%s:read mag min_proximity_value fail\n", __func__);
@@ -890,6 +937,16 @@ static void read_ps_data_from_dts(struct device_node *dn)
 			hwlog_err("%s:read pwave_value fail\n", __func__);
 		else
 			ps_external_ir_param.external_ir_pwave_value = temp;
+
+		if (of_property_read_u32(dn, "external_ir_pwindows_ratio", &temp))
+			hwlog_err("%s:read pwindows_ratio fail\n", __func__);
+		else
+			ps_external_ir_param.external_ir_pwindows_ratio = temp;
+
+		if (of_property_read_u32(dn, "external_ir_pwave_ratio", &temp))
+			hwlog_err("%s:read pwave_ratio fail\n", __func__);
+		else
+			ps_external_ir_param.external_ir_pwave_ratio = temp;
 
 		if (of_property_read_u32(dn, "external_ir_threshold_value", &temp))
 			hwlog_err("%s:read threshold_value fail\n", __func__);
@@ -1087,6 +1144,47 @@ static void read_handpress_data_from_dts(struct device_node *dn)
 		   sensorlist[0] - 1);
 }
 
+static void read_abovb_sar_data_from_dts(struct device_node *dn)
+{
+	uint16_t abovb_phone_type = 0;
+	uint32_t ph = 0;
+	uint16_t *threshold_to_modem = NULL;
+	uint16_t *calibrate_thred = NULL;
+	int product_type_data = 0;
+
+	read_chip_info(dn, CAP_PROX);
+
+	if (of_property_read_u16(dn, "phone_type", &abovb_phone_type)) {
+		sar_pdata.sar_datas.abovb_data.phone_type = 0;
+		hwlog_err("%s:read phone_type fail.\n", __func__);
+	} else {
+		sar_pdata.sar_datas.abovb_data.phone_type = abovb_phone_type;
+		hwlog_info("%s:read phone_type:0x%x\n", __func__,
+			sar_pdata.sar_datas.abovb_data.phone_type);
+	}
+	if (of_property_read_u32(dn, "product_type", &product_type_data)) {
+		sar_pdata.sar_datas.abovb_data.product_type = 0;
+		hwlog_err("%s:read product_type fail.\n", __func__);
+	} else {
+		sar_pdata.sar_datas.abovb_data.product_type = product_type_data;
+		hwlog_info("%s:read product_type_data:0x%x\n", __func__,
+			sar_pdata.sar_datas.abovb_data.product_type);
+	}
+
+	calibrate_thred = sar_pdata.sar_datas.abovb_data.calibrate_thred;
+	if (of_property_read_u16_array(dn, "calibrate_thred",
+				calibrate_thred, CAP_CALIBRATE_THRESHOLE_LEN)) {
+		*calibrate_thred = 0;
+		*(calibrate_thred + 1) = 0;
+		*(calibrate_thred + 2) = 0;
+		*(calibrate_thred + 3) = 0;
+		hwlog_err("%s:read calibrate_thred fail\n", __func__);
+	}
+	hwlog_info("calibrate_thred:%u %u %u %u\n",
+		*calibrate_thred, *(calibrate_thred + 1),
+		*(calibrate_thred + 2), *(calibrate_thred + 3));
+}
+
 static void read_capprox_data_from_dts(struct device_node *dn)
 {
 	uint16_t threshold_to_ap = 0;
@@ -1103,6 +1201,22 @@ static void read_capprox_data_from_dts(struct device_node *dn)
 			 0x000b9905, 0x000c00e8, 0x000d0200, 0x000e0000,
 			 0x000f000C, 0x007a8000};
 	read_chip_info(dn, CAP_PROX);
+
+	temp = of_get_named_gpio(dn, "gpio_int", 0);
+	if (temp < 0)
+		hwlog_err("%s:read gpio_int1 fail\n", __func__);
+	else
+		sar_pdata.gpio_int = (uint8_t) temp;
+
+	if (of_property_read_u32(dn, "gpio_int_sh", &temp))
+		hwlog_err("%s:read gpio_int_sh fail\n", __func__);
+	else
+		sar_pdata.gpio_int2_sh = (uint8_t) temp;
+
+	if (of_property_read_u32(dn, "reg", &temp))
+		hwlog_err("%s:read cap_prox reg fail\n", __func__);
+	else
+		sar_pdata.cfg.i2c_address = (uint8_t)temp;
 
 	if (of_property_read_u32(dn, "poll_interval", &temp))
 		hwlog_err("%s:read poll_interval fail\n", __func__);
@@ -1220,6 +1334,16 @@ static void read_capprox_data_from_dts(struct device_node *dn)
 			sar_pdata.sar_datas.semteck_data.ph= (uint8_t)ph;
 			hwlog_info("%s:read ph:0x%x\n",__func__,sar_pdata.sar_datas.semteck_data.ph);
 		}
+		if (of_property_read_u32(dn, "offset_check", &temp))
+		{
+			sar_pdata.sar_datas.semteck_data.offset_check= 0;
+			hwlog_err("%s:read offset_check fail\n", __func__);
+		}
+		else
+		{
+			sar_pdata.sar_datas.semteck_data.offset_check= (uint16_t)temp;
+			hwlog_info("%s:read offset_check:0x%x\n",__func__,sar_pdata.sar_datas.semteck_data.offset_check);
+		}
 		calibrate_thred = sar_pdata.sar_datas.semteck_data.calibrate_thred;
 		if (sar_pdata.stage_num == 2){//sar double stage
 		        if (of_property_read_u16_array(dn, "calibrate_thred", calibrate_thred, 4)) {//sar calibrate_thred num
@@ -1239,6 +1363,9 @@ static void read_capprox_data_from_dts(struct device_node *dn)
 		        }
 		        hwlog_info("calibrate_thred:%d %d\n", *calibrate_thred, *(calibrate_thred+1));
 		}
+	} else if (!strncmp(sensor_chip_info[CAP_PROX], "huawei,abovb-a96t3x6",
+			strlen("huawei,abovb-a96t3x6"))) {
+		read_abovb_sar_data_from_dts(dn);
 	}
 	read_sensorlist_info(dn, CAP_PROX);
 }
@@ -1398,7 +1525,58 @@ static void read_magn_bracket_data_from_dts(struct device_node *dn)
 	read_sensorlist_info(dn, MAGN_BRACKET);
 }
 
+static void read_motion_data_from_dts(struct device_node *dn)
+{
+	int temp = 0;
+	u32 wia[WIA_NUM]={ 0, };
+	struct property *prop = NULL;
+	unsigned int len = 0;
 
+	if (NULL == dn) {
+		return;
+	}
+
+	read_chip_info(dn, MOTION);
+
+	prop = of_find_property(dn, "pickup_data_flag", NULL);
+	if (!prop) {
+		hwlog_err("%s! prop is NULL!\n", __func__);
+		return;
+	}
+	if (!prop->value) {
+		hwlog_err("%s! prop->value is NULL!\n", __func__);
+		return;
+	}
+	len = prop->length / DATA_FLAG_LEN;
+	if (of_property_read_u32_array(dn, "pickup_data_flag", wia, len)) {
+		hwlog_err("%s:read pickup_data_flag from dts fail!\n",  __func__);
+		return;
+	}
+
+	motion_data.pickup_data_flag = (uint8_t)wia[0];
+
+	hwlog_info("read_motion_data_from_dts pickup_data_flag %d\n", motion_data.pickup_data_flag);
+
+	prop = of_find_property(dn, "angle_gap", NULL);
+	if (!prop) {
+		hwlog_err("%s! prop is NULL!\n", __func__);
+		return;
+	}
+	if (!prop->value) {
+		hwlog_err("%s! prop->value is NULL!\n", __func__);
+		return;
+	}
+	len = prop->length / 4;
+	if (of_property_read_u32_array(dn, "angle_gap", wia, len)) {
+		hwlog_err("%s:read angle_gap from dts fail!\n",  __func__);
+		return;
+	}
+
+	motion_data.angle_gap = (int)wia[0];
+
+	hwlog_info("read_motion_data_from_dts angle_gap %d\n", motion_data.angle_gap);
+
+}
 static void prase_dts(struct device_node *dn)
 {
     struct device_node *batt_node;
@@ -2292,6 +2470,9 @@ static int device_detect(struct device_node *dn, int index)
 	} else if (MAGN_BRACKET == s_detect_manager[index].sensor_id){
 		hwlog_info("%s: magn_bracket device detect always ok\n",
 			   __func__);
+	} else if(MOTION == s_detect_manager[index].sensor_id){
+		hwlog_info("%s:motion detect always ok\n",
+			__func__);
 	} else {
 		ret = _device_detect(dn, index, &cfg);
 		if (!ret) {
@@ -2362,6 +2543,7 @@ static void __set_hw_dev_flag(SENSOR_DETECT_LIST s_id)
 		case FINGERPRINT:
 		case CHARGER:
 		case SWITCH:
+		case MOTION:
 		case KEY:
 		case MAGN_BRACKET:
 			break;
@@ -2472,8 +2654,12 @@ static void extend_config_after_sensor_detect(struct device_node *dn, int index)
 		case SWITCH:
 			read_switch_data_from_dts(dn);
 			break;
+		case MOTION:
+			read_motion_data_from_dts(dn);
+			break;
 		case MAGN_BRACKET:
 			read_magn_bracket_data_from_dts(dn);
+			break;
 		default:
 			hwlog_err("%s:err id =%d\n",__func__, s_id);
 			break;
@@ -2816,6 +3002,13 @@ int sensor_set_fw_load(void)
 	hwlog_info("write fw dload.\n");
 
 	return 0;
+}
+
+int motion_set_cfg_data(void)
+{
+	uint8_t app_config[16] = {MOTION_TYPE_ROTATION, CMD_MOTION_SET_PARA_REQ, };
+	memcpy(&app_config[2], &motion_data, min(sizeof(motion_data), sizeof(app_config) - 2));
+	write_customize_cmd_noresp(TAG_MOTION, CMD_CMN_CONFIG_REQ, app_config, sizeof(app_config));
 }
 
 static void redetect_sensor_work_handler(void)

@@ -19,9 +19,11 @@
 
 #ifndef _SLIMBUS_UTILS_H_
 #define _SLIMBUS_UTILS_H_
+
+#include "soc_acpu_baseaddr_interface.h"
 #include "slimbus_types.h"
 
-#define IOC_BASE_ADDR		(0xfff11000)
+#define IOC_BASE_ADDR		(SOC_ACPU_AO_IOC_BASE_ADDR)
 #define IOC_REG_SIZE		(0x1000)
 
 #define IOC_SYS_IOMG_011	(0x02c)
@@ -45,8 +47,8 @@ void slimbus_utils_init(void __iomem * addr, int src_freq);
 void slimbus_utils_deinit(void);
 void slimbus_freq_request(void);
 void slimbus_freq_release(void);
-uint32_t slimbus_port_state_get(void __iomem *slimbus_base_addr);
-uint32_t slimbus_asp_state_get(void __iomem *asppower_base_addr, uint32_t offset);
+uint32_t slimbus_port_state_get(const void __iomem *slimbus_base_addr);
+uint32_t slimbus_asp_state_get(const void __iomem *asppower_base_addr, uint32_t offset);
 void slimbus_module_enable(slimbus_device_info_t *dev, bool enable);
 
 #endif

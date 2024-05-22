@@ -27,6 +27,7 @@
 		logo-buffer {
 			reg = <0x0 0xDC00000 0x0 0x3000000>;
 			status = "disabled";
+			visible_to_users;
 		};
 
 		modem-phy-ex {
@@ -61,6 +62,7 @@
 			linux,cma-default;
 			reusable;
 			status = "ok";
+			visible_to_users;
 		};
 
 		ivp {
@@ -125,6 +127,7 @@
 		kerneldump {
 			reg = <0x4 0x5D200000 0x0 0x20000000>;
 			status = "disabled";
+			visible_to_users;
 		};
 
 		modem-s {

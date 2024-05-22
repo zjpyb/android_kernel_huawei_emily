@@ -42,6 +42,7 @@
 #include "DisplayPort/dp.h"
 #include "DisplayPort/interface_dp.h"
 #endif // FSC_HAVE_DP
+#include <huawei_platform/usb/hw_pd_dev.h>
 
 // assuming policy state is made elsewhere
 extern	PolicyState_t	PolicyState;
@@ -106,7 +107,12 @@ FSC_S32 requestDiscoverIdentity(SopType sop) {
 		sendVdmMessageWithTimeout(sop, __arr, __length, __n_pe);
 	} else if (	(sop == SOP_TYPE_SOP1) &&		// allow cable discovery in special earlier states
 				((PolicyState == peSourceStartup) ||
-				 (PolicyState == peSourceSendCaps))) {
+				 (PolicyState == peSourceSendCaps)
+#ifdef FSC_HAVE_CUSTOM_SRC2
+				|| ((PolicyState == peDisabled) &&
+					pd_dpm_get_is_support_smart_holder())
+#endif /* FSC_HAVE_CUSTOM_SRC2 */
+				)) {
 		originalPolicyState = PolicyState;
 		__n_pe = peSrcVdmIdentityRequest;
 		__vdmh.SVDM.SVID		= PD_SID;					// PD SID to be used for Discover Identity command
@@ -227,6 +233,9 @@ FSC_S32 processDiscoverIdentity(SopType sop, FSC_U32* arr_in, FSC_U32 length_in)
     FSC_U32				__arr[7] = {0};
     FSC_U32          __length;
     FSC_BOOL            __result;
+	FSC_U32 vid = 0;
+	FSC_U32 pid = 0;
+	FSC_U32 bcd = 0;
 
 
     __vdmh_in.object = arr_in[0];
@@ -357,9 +366,26 @@ FSC_S32 processDiscoverIdentity(SopType sop, FSC_U32* arr_in, FSC_U32 length_in)
 				__id.cable_vdo = getCableVdo(arr_in[3]);
 			}
 
-			if ((__id.id_header.product_type == AMA)) {
+			if (__id.id_header.product_type == AMA) {
 				__id.has_ama_vdo = TRUE;
 				__id.ama_vdo = getAmaVdo(arr_in[4]); // !!! assuming it is after Product VDO
+			}
+
+			if ((__id.id_header.product_type == PERIPHERAL) ||
+			    (__id.id_header.product_type == PASSIVE_CABLE) ||
+			    (__id.id_header.product_type == ACTIVE_CABLE)) {
+
+		                /*
+				 * payload[0]: reserved
+				 * payload[1]: id header vdo
+				 * payload[2]: reserved
+				 * payload[3]: product vdo
+				 */
+				bcd = arr_in[3] & PD_DPM_HW_PDO_MASK;
+				vid = arr_in[1] & PD_DPM_HW_PDO_MASK;
+				pid = arr_in[3] >> PD_DPM_PDT_VID_OFFSET &
+					PD_DPM_HW_PDO_MASK;
+				pd_set_product_id_info(vid, pid, bcd);
 			}
 		}
 
@@ -367,6 +393,10 @@ FSC_S32 processDiscoverIdentity(SopType sop, FSC_U32* arr_in, FSC_U32 length_in)
 						(PolicyState == peDfpCblVdmIdentityAcked) ||
 						(PolicyState == peSrcVdmIdentityAcked);
 		vdmm.inform_id(__result, sop, __id);
+#ifdef FSC_HAVE_CUSTOM_SRC2
+		if (pd_dpm_get_is_support_smart_holder())
+			vdmm.inform_raw_vdo_data(__result, sop, __id, arr_in);
+#endif /* FSC_HAVE_CUSTOM_SRC2 */
 		ExpectingVdmResponse = FALSE;
 		PolicyState = originalPolicyState;
 		platform_set_timer(&VdmTimer, 0);

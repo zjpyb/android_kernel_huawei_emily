@@ -1017,22 +1017,6 @@ VOS_UINT8 VOS_RegisterSelfTaskPrio( VOS_FID             ulFID ,
     return ubyIndex;
 }
 
-/*****************************************************************************
- Function   : VOS_SuspendFidTask
- Description: Suspend task of FID
- Input      : ulFID       -- Function module Identifiers
-            : void
- Return     : VOS_OK on success or errno on failure
- *****************************************************************************/
-VOS_UINT32 VOS_SuspendFidTask(VOS_FID ulFid)
-{
-    if ((VOS_FID_DOPRAEND > ulFid) || (VOS_FID_BUTT <= ulFid))
-    {
-        return VOS_ERR;
-    }
-
-    return VOS_SuspendTask( vos_FidCtrlBlk[ulFid].Tid );
-}
 
 /*****************************************************************************
  Function   : VOS_ResumeFidTask
@@ -1051,46 +1035,6 @@ VOS_UINT32 VOS_ResumeFidTask(VOS_FID ulFid)
     return VOS_ResumeTask( vos_FidCtrlBlk[ulFid].Tid );
 }
 
-/*****************************************************************************
- Function   : VOS_SuspendFidsTask
- Description: Suspend tasks of all FIDs
- Input      : void
-            : void
- Return     : VOS_OK on success or errno on failure
- *****************************************************************************/
-VOS_UINT32 VOS_SuspendFidsTask(VOS_VOID)
-{
-    VOS_UINT32              i;
-    int                     ubyIndex;
-    VOS_UINT32              ulReturnValue;
-
-    for(i=VOS_FID_DOPRAEND; i<VOS_FID_BUTT; i++)
-    {
-        ulReturnValue = VOS_SuspendTask( vos_FidCtrlBlk[i].Tid );
-        if( ulReturnValue != VOS_OK )
-        {
-            Print1("%s", "# SuspendFidsTask Fail 1 in SuspendFidsTask.\r\n");
-            return( ulReturnValue );
-        }
-
-        for( ubyIndex = 0; ubyIndex < VOS_MAX_SELF_TASK_OF_FID; ubyIndex++ )
-        {
-            if( vos_FidCtrlBlk[i].SelfProcTaskFunc[ubyIndex] != VOS_NULL_PTR )
-            {
-                ulReturnValue
-                    = VOS_SuspendTask( vos_FidCtrlBlk[i].SelfProcTaskTid[ubyIndex]);
-                if( ulReturnValue != VOS_OK )
-                {
-                    Print1("%s", "# SuspendFidsTask Fail 2 in SuspendFidsTask.\r\n");
-
-                    return( ulReturnValue );
-                }
-            }
-        }
-    }
-
-    return( VOS_OK );
-}
 
 /*****************************************************************************
  Function   : VOS_ResumeFidsTask
@@ -1133,32 +1077,6 @@ VOS_UINT32 VOS_ResumeFidsTask(VOS_VOID)
     return( VOS_OK );
 }
 
-
-/*****************************************************************************
- Function   : VOS_SuspendAllTask
- Description: suspend all FID & selftask
- Input      : invaild
- Return     : void
- Other      : only for designer
- *****************************************************************************/
-VOS_VOID VOS_SuspendAllTask( VOS_UINT32 Para0, VOS_UINT32 Para1,
-                             VOS_UINT32 Para2, VOS_UINT32 Para3 )
-{
-    if ( VOS_OK != VOS_SuspendFidsTask() )
-    {
-        Print1("%s", "# SUSPED FID error.\r\n");
-    }
-
-    if ( VOS_OK != VOS_SuspendTask( vos_TimerTaskId ) )
-    {
-        Print1("%s", "# SUSPED VOS timer task error.\r\n");
-    }
-
-    if ( VOS_OK != VOS_SuspendTask( RTC_TimerTaskId ) )
-    {
-        Print1("%s", "# SUSPED RTC timer task error.\r\n");
-    }
-}
 
 /*****************************************************************************
  Function   : VOS_RegisterMsgTaskEntry

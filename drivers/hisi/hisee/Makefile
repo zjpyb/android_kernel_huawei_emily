@@ -24,6 +24,9 @@ obj-$(CONFIG_HISI_HISEE)  += hisi_hisee_power.o
 obj-$(CONFIG_HISI_HISEE)  += hisi_hisee_upgrade.o
 obj-$(CONFIG_HISI_HISEE)  += hisi_hisee_chip_test.o
 obj-$(CONFIG_HISI_HISEE)  += hisi_hisee_fs.o
-obj-$(CONFIG_HISI_HISEE)  += hisi_hisee_autotest.o
 obj-$(CONFIG_HISI_HISEE_SHUTDOWN_SWIPE)  += hisi_hisee_shutdown_swipe.o
 obj-$(CONFIG_HISI_HISEE_SUPPORT_CASDKEY) += hisi_casdcert.o
+
+ifeq ($(CONFIG_HISI_HISEE),y)
+obj-$(CONFIG_HISI_DEBUG_FS)  += hisi_hisee_autotest.o
+endif

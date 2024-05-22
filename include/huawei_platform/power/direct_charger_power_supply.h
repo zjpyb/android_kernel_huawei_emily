@@ -1,6 +1,24 @@
-#ifndef _DIRECT_CHARGER_POWER_SUPPLY_H
-#define _DIRECT_CHARGER_POWER_SUPPLY_H
+/*
+ * direct_charger_power_supply.h
+ *
+ * power supply for direct charger
+ *
+ * Copyright (c) 2012-2018 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ */
+
+#ifndef _DIRECT_CHARGER_POWER_SUPPLY_H_
+#define _DIRECT_CHARGER_POWER_SUPPLY_H_
 
 int direct_charge_set_bst_ctrl(int enable);
-int direct_charge_ps_probe(struct platform_device *pdev);
-#endif
+
+#endif /* _DIRECT_CHARGER_POWER_SUPPLY_H_ */

@@ -54,7 +54,7 @@ MAILBOX_LOCAL int mailbox_init_mem(struct mb_cfg *config);
 
 MAILBOX_EXTERN int mailbox_queue_write(
                 struct mb_queue      *queue,
-                char                 *data,
+                const char           *data,
                 unsigned int         size)
 {
     unsigned int SizeToBottom;
@@ -744,7 +744,7 @@ void *mem_remap_type(unsigned long phys_addr, size_t size, pgprot_t pgprot)
     int npages = PAGE_ALIGN((phys_addr & (PAGE_SIZE - 1)) + size) >> PAGE_SHIFT;
     unsigned long offset = phys_addr & (PAGE_SIZE - 1);
     struct page **pages;
-    pages = vmalloc(sizeof(struct page *) * npages);
+    pages = vmalloc(sizeof(char *) * npages);
     if (!pages)
     {
         printk(KERN_ERR "%s: vmalloc return NULL!\n", __FUNCTION__);
@@ -956,13 +956,13 @@ MAILBOX_EXTERN int mailbox_request_buff(unsigned int mailcode,  void* mb_buf)
 /*把用户数据填入邮箱物理通道buff*/
 MAILBOX_EXTERN int mailbox_write_buff(
                 struct mb_queue      *queue,
-                 char                *data,
+                 const char          *data,
                 unsigned int         size)
 {
 	if ((size  <= mailbox_queue_left(queue->rear, queue->front, queue->length)) &&
 		(size + sizeof(struct mb_mail)	<= mailbox_queue_left(queue->rear, queue->front, queue->length))
 	   ) {
-		return mailbox_queue_write(queue, (char*)data, size);
+		return mailbox_queue_write(queue, data, size);
 	}
 	return 0;
 }

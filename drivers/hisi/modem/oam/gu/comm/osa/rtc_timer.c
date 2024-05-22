@@ -275,7 +275,7 @@ typedef struct RTC_TIMER_PMLOG_STRU
 
 VOS_UINT32 g_ulTimerlpm = VOS_FALSE;
 
-VOS_UINT32 VOS_TimerLpmCb(VOS_INT x)
+VOS_INT VOS_TimerLpmCb(VOS_INT x)
 {
     g_ulTimerlpm = VOS_TRUE;
 

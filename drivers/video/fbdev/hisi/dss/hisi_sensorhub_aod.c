@@ -167,7 +167,10 @@ int hisi_sensorhub_aod_unblank(void)
 		goto hw_unlock;
 	}
 
-	outp32(hisifd->peri_crg_base + PERRSTDIS3, 0x10000000);
+	if (is_dual_mipi_panel(hisifd))
+		outp32(hisifd->peri_crg_base + PERRSTDIS3, 0x30000000);
+	else
+		outp32(hisifd->peri_crg_base + PERRSTDIS3, 0x10000000);
 	ret = mipi_dsi_clk_enable(hisifd);
 	if (ret) {
 		HISI_FB_ERR("fb%d mipi_dsi_clk_enable, error=%d!\n",
@@ -215,7 +218,10 @@ int hisi_sensorhub_aod_blank(void)
 	}
 
 	/* reset DSI */
-	outp32(hisifd->peri_crg_base + PERRSTEN3, 0x10000000);
+	if (is_dual_mipi_panel(hisifd))
+		outp32(hisifd->peri_crg_base + PERRSTEN3, 0x30000000);
+	else
+		outp32(hisifd->peri_crg_base + PERRSTEN3, 0x10000000);
 	mipi_dsi_clk_disable(hisifd);
 
 	dpe_regulator_disable(hisifd);

@@ -104,7 +104,7 @@ err_return:
 	return ret;
 }
 
-int hisi_mdc_power_ctrl(struct fb_info *info, void __user *argp)
+int hisi_mdc_power_ctrl(struct fb_info *info, const void __user *argp)
 {
 	int ret = 0;
 	struct hisi_fb_data_type *hisifd = NULL;
@@ -196,7 +196,7 @@ static void hisi_media_common_clear(struct hisi_fb_data_type *hisifd,
 }
 
 static int hisi_media_common_get_data_from_user(struct hisi_fb_data_type *hisifd,
-	dss_overlay_t *pov_req, void __user *argp)
+	dss_overlay_t *pov_req, const void __user *argp)
 {
 	int ret = 0;
 	dss_overlay_block_t *pov_h_block_infos = NULL;
@@ -263,6 +263,7 @@ static bool hisi_media_common_check_csc_config_needed(dss_overlay_t *pov_req_h_v
 
 	if (pov_req_h_v == NULL) {
 		HISI_FB_ERR("pov_req_h_v is NULL point!\n");
+		return true;
 	}
 
 	pov_h_v_block = (dss_overlay_block_t *)(pov_req_h_v->ov_block_infos_ptr);
@@ -410,6 +411,8 @@ int hisi_ov_media_common_play(struct hisi_fb_data_type *hisifd, void __user *arg
 	bool has_wb_scl = false;
 	uint32_t timeout_interval = 0;
 
+	memset(&tv0, 0, sizeof(struct timeval));
+
 	if (NULL == hisifd) {
 		HISI_FB_ERR("NULL Pointer!\n");
 		return -EINVAL;
@@ -542,7 +545,7 @@ int hisi_ov_media_common_play(struct hisi_fb_data_type *hisifd, void __user *arg
 			for (i = 0; i < pov_h_v_block->layer_nums; i++) {
 				layer = &(pov_h_v_block->layer_infos[i]);
 				memset(&clip_rect, 0, sizeof(dss_rect_ltrb_t));
-				memset(&aligned_rect, 0, sizeof(dss_rect_ltrb_t));
+				memset(&aligned_rect, 0, sizeof(dss_rect_t));
 				rdma_stretch_enable = false;
 
 				ret = hisi_ov_compose_handler(hisifd, pov_req_h_v, pov_h_v_block, layer, &wb_layer4block->dst_rect,
@@ -588,7 +591,7 @@ int hisi_ov_media_common_play(struct hisi_fb_data_type *hisifd, void __user *arg
 	//wmb();
 	hisi_cmdlist_flush_cache(hisifd, cmdlist_idxs);
 
-	hisifb_buf_sync_handle_offline(hisifd, pov_req);
+	hisifb_buf_sync_handle(hisifd, pov_req);
 
 	hisifd->media_common_info->mdc_flag = 1;
 	hisifd->media_common_info->mdc_done = 0;
@@ -651,16 +654,16 @@ err_return_sem0:
 
 	reset = true;
 
-	if (pov_req)
+	if (pov_req) {
 		hisi_media_common_clear(hisifd, pov_req, cmdlist_idxs, reset, debug);
-
+	}
 	up(&(hisifd->media_common_composer_sem));
 
 	hisi_media_common_power_off(hisifd);
 
-	if (g_debug_ovl_mediacommon_composer)
+	if (g_debug_ovl_mediacommon_composer) {
 		HISI_FB_INFO("-.\n");
-
+	}
 	return ret;
 }
 /*lint +e40 +e438 +e529 +e570 +e574 +e578 +e613 +e648 +e665 +e666 +e679 */

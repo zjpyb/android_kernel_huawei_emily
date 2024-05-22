@@ -40,7 +40,9 @@
 #endif /* CONFIG_USB_POWER_DELIVERY */
 
 #define PE_STATE_FULL_NAME	0
+#ifdef CONFIG_CONTEXTHUB_PD
 static TCPC_MUX_CTRL_TYPE g_mux_type = TCPC_DP;
+#endif
 
 extern void pd_dpm_send_event(enum pd_dpm_cable_event_type event);
 
@@ -76,6 +78,7 @@ extern void tcpci_vbus_level_init(
 		struct tcpc_device *tcpc, uint16_t power_status);
 
 extern void rt1711h_set_cc_mode(int mode);
+extern int rt1711h_get_cc_state(void);
 static inline int tcpci_check_vbus_valid(struct tcpc_device *tcpc)
 {
 	return tcpc->vbus_level >= TCPC_VBUS_VALID;
@@ -542,7 +545,10 @@ static inline int tcpci_report_hpd_state(
 		struct tcpc_device *tcpc, uint32_t dp_status)
 {
 	struct tcp_notify tcp_noti;
+#ifdef CONFIG_CONTEXTHUB_PD
 	int ret = 0;
+	struct pd_dpm_combphy_event event;
+#endif
 
 	/* UFP_D to DFP_D only */
 
@@ -559,7 +565,6 @@ static inline int tcpci_report_hpd_state(
 		if (!support_dp) {
 			return 0;
 		}
-		struct pd_dpm_combphy_event event;
 		event.dev_type = TCA_DP_IN;
 		event.irq_type = TCA_IRQ_HPD_IN;
 		event.mode_type = g_mux_type;
@@ -608,7 +613,10 @@ static inline int tcpci_dp_configure(
 	struct tcpc_device *tcpc, uint32_t dp_config)
 {
 	struct tcp_notify tcp_noti;
+#ifdef CONFIG_CONTEXTHUB_PD
 	int ret = 0;
+	struct pd_dpm_combphy_event event;
+#endif
 
 	DP_INFO("LocalCFG: 0x%x\r\n", dp_config);
 
@@ -644,7 +652,6 @@ static inline int tcpci_dp_configure(
 	else if(MODE_DP_PIN_D == tcp_noti.ama_dp_state.pin_assignment || MODE_DP_PIN_F == tcp_noti.ama_dp_state.pin_assignment)
 		g_mux_type = TCPC_USB31_AND_DP_2LINE;
 
-	struct pd_dpm_combphy_event event;
 	event.dev_type = TCA_ID_RISE_EVENT;
 	event.irq_type = TCA_IRQ_HPD_OUT;
 	event.mode_type = TCPC_NC;

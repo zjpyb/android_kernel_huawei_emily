@@ -92,16 +92,16 @@ void bsp_hds_cmd_register(u32 cmdid, bsp_hds_func fn)
 /*lint -restore*/
 
 
-int bsp_hds_msg_proc(diag_frame_head_stru *pData)
+unsigned int bsp_hds_msg_proc(diag_frame_head_stru *pData)
 {
-    s32 ret = 0;
+    u32 ret = 0;
     struct list_head *me;
     bsp_hds_cmd_stru *pstDiag = NULL;
 
     if(DIAG_FRAME_MSG_TYPE_BSP != pData->stID.pri4b)
     {
         printk(KERN_ERR"Rcv Error Msg Id 0x%x\n",pData->u32CmdId);
-        return BSP_ERROR;
+        return HDS_CMD_ERROR;
     }
 
     /*遍历链表，根据注册的cmdid，跳到对应的回调中处理*/

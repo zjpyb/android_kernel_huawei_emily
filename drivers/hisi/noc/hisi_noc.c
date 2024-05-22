@@ -81,7 +81,7 @@ void noc_record_log_pstorememory(void __iomem *base, int ptype)
 	unsigned int *reg;
 	unsigned int size = SZ_128;
 
-	pr_err("[base is 0x%llx]\n ", (u64) base);
+	pr_err("[base is 0x%lx]\n ",(uintptr_t)base);
 
 	if (ptype == NOC_PTYPE_PSTORE) {
 		mntn_print_to_ramconsole("Error logger dump:\n");
@@ -312,7 +312,7 @@ int noc_node_try_to_giveup_idle(struct noc_node *node)
 
 	status = readl_relaxed(pm_idlereq_reg);
 	status &= ~pwrack_bit;
-	status |= (pwrack_bit << 16);
+	status |= (pwrack_bit << HIGH_ENABLE_MASK);
 	writel_relaxed(status, pm_idlereq_reg);
 
 	status = readl_relaxed(pm_idle_reg);
@@ -392,7 +392,7 @@ input: void __iomem *pctrl_base: pctrl virtual base address
 output: none
 return: irq status
 */
-unsigned long long noc_get_irq_status(void __iomem *pctrl_base)
+unsigned long long noc_get_irq_status(const void __iomem *pctrl_base)
 {
 	unsigned long long ret = 0;
 
@@ -408,18 +408,32 @@ static irqreturn_t hisi_noc_timeout_irq_handler(int irq, void *data)
 	void __iomem *pmctrl_base;
 	struct hisi_noc_device *noc_dev = (struct hisi_noc_device *)data;
 	unsigned int pending, scperstatus6;
+	unsigned int pending1 = 0;
 
 	pmctrl_base = noc_dev->pmctrl_base;
 	pending = readl_relaxed(pmctrl_base + noc_dev->preg_list->pmctrl_int0_stat_offset);
-	if (pending)
-		pr_err("NoC timeout IRQ occured, PERI_INT_STAT0 = 0x%x\n", pending);
+
+	if(noc_dev->preg_list->pmctrl_int1_stat_offset)
+	    pending1 = readl_relaxed(pmctrl_base + noc_dev->preg_list->pmctrl_int1_stat_offset);
 	else
-		pr_err("PMCTRL other interrupt source occurs!\n");
+	    pr_err("pmctrl_int1_stat_offset no need set \n");
+
+	if(pending)
+	    pr_err("NoC timeout IRQ occured, PERI_INT_STAT0 = 0x%x\n", pending);
+
+	if(pending1)
+	    pr_err("NoC timeout IRQ occured, PERI_INT_STAT1 = 0x%x\n", pending1);
+	else
+	    pr_err("PMCTRL other interrupt source occurs!\n");
 
 	scperstatus6 = readl_relaxed(noc_dev->sctrl_base + noc_dev->preg_list->sctrl_scperstatus6_offset);
 	pr_err("SCTRL_SCPERSTATUS6 = 0x%x\n", scperstatus6);
 
-	writel_relaxed(pending, pmctrl_base + noc_dev->preg_list->pmctrl_int0_mask_offset);
+	if(pending)
+	   writel_relaxed(pending, pmctrl_base + noc_dev->preg_list->pmctrl_int0_mask_offset);
+
+	if(pending1)
+	   writel_relaxed(pending1, pmctrl_base + noc_dev->preg_list->pmctrl_int1_mask_offset);
 
     if (check_himntn(HIMNTN_NOC_ERROR_REBOOT))
 		/* queue timeout work into noc error work queue. */
@@ -620,7 +634,7 @@ static void get_noc_node_clock(struct device_node *np, struct noc_node *node)
 			continue;
 		} else {
 			if (clk_reg_u32[1] > 32) {	/* 32 bit register */
-				pr_err("[%s]:NOC node[%s] %s  invalid mask_bit=%d\n",
+				 pr_err("[%s]:NOC node[%s] %s  invalid mask_bit=%d\n",
 				     __func__, node->name, clock_name,
 				     node->crg_clk[i].mask_bit);
 				continue;
@@ -628,7 +642,7 @@ static void get_noc_node_clock(struct device_node *np, struct noc_node *node)
 			node->crg_clk[i].offset = clk_reg_u32[0];
 			node->crg_clk[i].mask_bit = clk_reg_u32[1];
 			if (noc_property_dt.noc_debug)
-				pr_info("[%s]:NOC node[%s] %s  offset=0x%x, mask_bit=%d\n",
+				 pr_info("[%s]:NOC node[%s] %s  offset=0x%x, mask_bit=%d\n",
 				     __func__, node->name, clock_name,
 				     node->crg_clk[i].offset,
 				     node->crg_clk[i].mask_bit);
@@ -916,8 +930,8 @@ void noc_get_bus_nod_info(void **node_array_pptr, unsigned int *idx_ptr)
 	*node_array_pptr = &noc_nodes_array;
 	*idx_ptr = nodes_array_idx;
 
-	pr_err("[%s]: nodes_array addr: %llx.\n", __func__,
-		(unsigned long long)&noc_nodes_array);
+	pr_err("[%s]: nodes_array addr: %lx.\n", __func__,
+		(uintptr_t)&noc_nodes_array);
 }
 
 void enable_errprobe(struct device *dev)
@@ -1352,6 +1366,10 @@ static void hisi_noc_get_reg_list_debug(unsigned int flag_debug, unsigned int nu
 				    noc_dev->preg_list->pmctrl_int0_stat_offset);
 			pr_err("pmctrl_int0_mask_offset = 0x%x\n",
 				    noc_dev->preg_list->pmctrl_int0_mask_offset);
+			pr_err("pmctrl_int1_stat_offset = 0x%x\n",
+				    noc_dev->preg_list->pmctrl_int1_stat_offset);
+			pr_err("pmctrl_int1_mask_offset = 0x%x\n",
+				    noc_dev->preg_list->pmctrl_int1_mask_offset);
 			pr_err("pmctrl_power_idlereq_offset = 0x%x\n",
 				    noc_dev->preg_list->pmctrl_power_idlereq_offset);
 			pr_err("pmctrl_power_idleack_offset = 0x%x\n",

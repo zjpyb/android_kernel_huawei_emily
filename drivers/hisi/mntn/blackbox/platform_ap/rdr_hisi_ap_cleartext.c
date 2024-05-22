@@ -42,12 +42,12 @@
  */
 static bool is_addr_len_invalid(u8 *addr, u32 len, u64 log_addr, u32 log_len)
 {
-	if (((u64)addr >= log_addr) && (len <= log_len) && ((u64)addr <= log_addr + log_len - len)) {
+	if (((u64)(uintptr_t)addr >= log_addr) && (len <= log_len) && ((u64)(uintptr_t)addr <= log_addr + log_len - len)) {
 		return false;
 	}
 
 	BB_PRINT_ERR("%s() fail: addr 0x%pK len %u log_addr 0x%pK log_len %u.\n",
-		__func__, addr, len, (u8 *)log_addr, log_len);
+		__func__, addr, len, (u8 *)(uintptr_t)log_addr, log_len);
 	return true;
 }
 
@@ -68,7 +68,7 @@ static inline u8 * get_real_addr(u8 *addr, AP_EH_ROOT *ap_root, u64 log_addr)
 {
 	u32 offset = addr - (u8 *)ap_root->rdr_ap_area_map_addr;
 
-	return ((u8 *)log_addr + offset + PMU_RESET_RECORD_DDR_AREA_SIZE);
+	return ((u8 *)(uintptr_t)log_addr + offset + PMU_RESET_RECORD_DDR_AREA_SIZE);
 }
 
 /*
@@ -190,7 +190,7 @@ static int rdr_hisiap_cleartext_print_hk_cpu_onoff(char *dir_path,
 		return -1;
 	}
 
-	ap_root = (AP_EH_ROOT *)(log_addr + PMU_RESET_RECORD_DDR_AREA_SIZE);
+	ap_root = (AP_EH_ROOT *)(uintptr_t)(log_addr + PMU_RESET_RECORD_DDR_AREA_SIZE);
 
 	if (unlikely(_rdr_hisiap_cleartext_print_hk_cpu_onoff(fp, log_addr, 
 					log_len, ap_root->hook_buffer_addr[HK_CPU_ONOFF], 
@@ -306,7 +306,7 @@ static int rdr_hisiap_cleartext_print_hk_cpuidle(char *dir_path, u64 log_addr, u
 		return -1;
 	}
 
-	ap_root = (AP_EH_ROOT *)(log_addr + PMU_RESET_RECORD_DDR_AREA_SIZE);
+	ap_root = (AP_EH_ROOT *)(uintptr_t)(log_addr + PMU_RESET_RECORD_DDR_AREA_SIZE);
 
 	for (i = 0; i < NR_CPUS; i++) {
 		if (unlikely(rdr_hisiap_cleartext_print_hk_cpuidle_on_cpu(fp, log_addr, 
@@ -423,7 +423,7 @@ static int rdr_hisiap_cleartext_print_hk_irq(char *dir_path, u64 log_addr, u32 l
 		return -1;
 	}
 
-	ap_root = (AP_EH_ROOT *)(log_addr + PMU_RESET_RECORD_DDR_AREA_SIZE);
+	ap_root = (AP_EH_ROOT *)(uintptr_t)(log_addr + PMU_RESET_RECORD_DDR_AREA_SIZE);
 
 	for (i = 0; i < NR_CPUS; i++) {
 		if (unlikely(rdr_hisiap_cleartext_print_hk_irq_on_cpu(fp, log_addr, 
@@ -474,7 +474,7 @@ static int rdr_hisiap_cleartext_print_ap_root(char *dir_path, u64 log_addr, u32 
 		return -1;
 	}
 
-	ap_root = (AP_EH_ROOT *)(log_addr + PMU_RESET_RECORD_DDR_AREA_SIZE);
+	ap_root = (AP_EH_ROOT *)(uintptr_t)(log_addr + PMU_RESET_RECORD_DDR_AREA_SIZE);
 	error = false;
 
 	ap_root->version[PRODUCT_VERSION_LEN - 1] = '\0';
@@ -527,9 +527,9 @@ static int rdr_hisiap_cleartext_print_ap_root(char *dir_path, u64 log_addr, u32 
  */
 int rdr_hisiap_cleartext_print(char *dir_path, u64 log_addr, u32 log_len)
 {
-	if ( unlikely(IS_ERR_OR_NULL(dir_path) || IS_ERR_OR_NULL((void *)log_addr)) ) {
+	if ( unlikely(IS_ERR_OR_NULL(dir_path) || IS_ERR_OR_NULL((void *)(uintptr_t)log_addr)) ) {
 		BB_PRINT_ERR("%s() error:dir_path 0x%pK log_addr 0x%pK.\n", 
-			__func__, dir_path, (void *)log_addr);
+			__func__, dir_path, (void *)(uintptr_t)log_addr);
 		return -1;
 	}
 

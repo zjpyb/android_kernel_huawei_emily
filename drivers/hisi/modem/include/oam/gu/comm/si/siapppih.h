@@ -938,9 +938,7 @@ typedef struct
 
 extern int TC_NS_RegisterServiceCallbackFunc(char *uuid, void *func, void *private_data);
 
-extern VOS_VOID SI_PIH_TEETimeOutCB (
-    TEEC_TIMER_PROPERTY_STRU            *pstTimerData
-);
+extern VOS_VOID SI_PIH_TEETimeOutCB (VOS_VOID *timerDataCb);
 
 #endif/*CONFIG_TZDRIVER*/
 #endif/*(FEATURE_ON == FEATURE_VSIM)*/
@@ -984,6 +982,16 @@ extern VOS_UINT32 SI_PIH_CchoSetReq(
     SI_PIH_CCHO_COMMAND_STRU           *pstCchoCmd);
 
 extern VOS_UINT32 SI_PIH_CchpSetReq(
+    MN_CLIENT_ID_T                      ClientId,
+    MN_OPERATION_ID_T                   OpId,
+    SI_PIH_CCHP_COMMAND_STRU           *pstCchopCmd);
+
+extern VOS_UINT32 SI_PIH_PrivateCchoSetReq(
+    MN_CLIENT_ID_T                      ClientId,
+    MN_OPERATION_ID_T                   OpId,
+    SI_PIH_CCHO_COMMAND_STRU           *pstCchoCmd);
+
+extern VOS_UINT32 SI_PIH_PrivateCchpSetReq(
     MN_CLIENT_ID_T                      ClientId,
     MN_OPERATION_ID_T                   OpId,
     SI_PIH_CCHP_COMMAND_STRU           *pstCchopCmd);

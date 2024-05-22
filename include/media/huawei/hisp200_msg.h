@@ -2,8 +2,9 @@
 
 #ifndef HISP200_MSG_H_INCLUDED
 #define HISP200_MSG_H_INCLUDED
-
+//#include "devices_ctl.h"
 #define MAX_INPUT_STREAM_NUM (2)
+/*be same with hisi/ap/kernel/... */
 #define MAX_STREAM_NUM       (14)
 #define ARSR_REQ_OUT_NUM     (2)
 #define NAME_LEN             (32)
@@ -48,7 +49,7 @@ typedef enum
     PIXEL_FMT_YUV422_YVYU,
     PIXEL_FMT_MONOCHROME,
     PIXEL_FMT_Y8,
-    PIXEL_FMT_YUV420SP_WARP_ARSR, // only warp
+    PIXEL_FMT_YUV420SP_WARP_ARSR,
     PIXEL_FMT_YUV420_PLANAR,//only warp
     PIXEL_FMT_XYMAP_8,//only warp
     PIXEL_FMT_XYMAP,//only warp
@@ -64,7 +65,7 @@ typedef enum
 
 typedef enum
 {
-    STREAM_REP_YUV_IN = 0,
+    STREAM_ISP_TOF_EMBEDED = 0,
     STREAM_REP_RAW_IN = 1,
     STREAM_ISP_YUV_OUT_PREVIEW = 2,
     STREAM_ISP_YUV_OUT_VIDEO = 3,
@@ -75,9 +76,10 @@ typedef enum
     STREAM_ISP_YUV_OUT_DMAP_PRE = 8,
     STREAM_ISP_AFSTAT = 9,
     STREAM_RAW_OUT = 10,
-    STREAM_ISP_PD = 11,
-    STREAM_ISP_YUV_OUT_CB = 12,
+    STREAM_ISP_PD  = 11,
+    STREAM_ISP_YUV_OUT_CB  = 12,
     STREAM_ISP_YUV_MDC = 13,
+
     STREAM_POS_MAX,
 } stream_pos_e;
 
@@ -173,6 +175,8 @@ typedef enum
     COMMAND_RAW2YUV_MAP_BUFFER,
     COMMAND_RAW2YUV_START,
     COMMAND_RAW2YUV_REQUEST,
+    COMMAND_RAW2RGB_REQUEST,
+    COMMAND_RGB2YUV_REQUEST,
     COMMAND_RAW2YUV_STOP,
     COMMAND_RAW2YUV_UNMAP_BUFFER,
     COMMAND_DMAP_OFFLINE_MAP_REQUEST,
@@ -185,6 +189,11 @@ typedef enum
     COMMAND_ACQUIRE_DOT_PROJECTOR,
     COMMAND_RELEASE_DOT_PROJECTOR,
     COMMAND_GET_DOT_OTP,
+    COMMAND_PQ_SETTING_CONFIG,
+    COMMAND_FBDRAW_REQUEST,
+    COMMAND_DEVICE_CTL,
+    COMMAND_RELEASE_I2C,
+    COMMAND_BATCH_REQUEST,
     /* Response items. */
     QUERY_CAPABILITY_RESPONSE = 0x2000,
     ACQUIRE_CAMERA_RESPONSE,
@@ -238,6 +247,8 @@ typedef enum
     RAW2YUV_MAP_BUFFER_RESPONSE,
     RAW2YUV_START_RESPONSE,
     RAW2YUV_REQUEST_RESPONSE,
+    RAW2RGB_REQUEST_RESPONSE,
+    RGB2YUV_REQUEST_RESPONSE,
     RAW2YUV_STOP_RESPONSE,
     RAW2YUV_UNMAP_BUFFER_RESPONSE,
     DMAP_OFFLINE_MAP_RESPONSE,
@@ -250,6 +261,11 @@ typedef enum
     ACQUIRE_DOT_PROJECTOR_RESPONSE,
     RELEASE_DOT_PROJECTOR_RESPONSE,
     GET_DOT_OTP_RESPONSE,
+    PQ_SETTING_CONFIG_RESPONSE,
+    FBDRAW_REQUEST_RESPONSE,
+    DEVICE_CTL_RESPONSE,
+    RELEASE_I2C_RESPONSE,
+    BATCH_REQUEST_RESPONSE,
     /* Event items sent to AP. */
     MSG_EVENT_SENT           = 0x3000,
 } api_id_e;
@@ -275,7 +291,8 @@ typedef enum _ucfg_ext_e
     SENSOR_FULLSIZE_4_3          = 1 << 16,
     SENSOR_FULLSIZE_16_9         = 1 << 17,
     SENSOR_HDR_MODE              = 1 << 18,
-    RESERVED                     = 1 << 19,
+    APERTURE_MODE                = 1 << 19,
+    RESERVED                     = 1 << 20,
 } ucfg_ext_e;
 
 typedef enum _ucfg_scene_e
@@ -421,6 +438,21 @@ typedef struct _msg_ack_query_laser_t
     laser_spad_t   spad;
 } msg_ack_query_laser_t;
 
+//typedef struct _msg_req_acquire_camera_t
+//{
+//    unsigned int cam_id;
+//    unsigned int csi_index;
+//    unsigned int i2c_index;
+//    char         sensor_name[NAME_LEN];
+//    char         product_name[NAME_LEN];
+//    unsigned int input_otp_buffer;
+//    unsigned int input_calib_buffer;
+//    unsigned int buffer_size;
+//    unsigned int info_buffer;
+//    unsigned int info_count;
+//    unsigned int factory_calib_buffer;
+//} msg_req_acquire_camera_t;
+
 typedef enum _hisp_phy_id_e
 {
     HISP_CDPHY_A = 0,
@@ -470,6 +502,7 @@ typedef struct _msg_req_acquire_camera_t
     hisp_phy_info_t   phy_info;
     char         sensor_name[NAME_LEN];
     char         product_name[NAME_LEN];
+    char         extend_name[NAME_LEN];
     unsigned int input_otp_buffer;
     unsigned int input_calib_buffer;
     unsigned int buffer_size;
@@ -581,7 +614,6 @@ typedef struct _msg_req_usecase_config_t
     unsigned int cam_id;
     unsigned int extension;
     unsigned int stream_nr;
-    unsigned int scene;
     stream_config_t stream_cfg[MAX_STREAM_NUM];
     char            time[32];
 } msg_req_usecase_config_t;
@@ -593,6 +625,24 @@ typedef struct _msg_ack_usecase_config_t
     unsigned int sensor_width;
     unsigned int sensor_height;
 } msg_ack_usecase_config_t;
+
+typedef struct _msg_req_pq_setting_config_t
+{
+    unsigned int cam_id;
+    unsigned int mode;
+    char scene[256];
+    unsigned int pq_setting;
+    unsigned int pq_setting_size;
+} msg_req_pq_setting_config_t;
+
+typedef struct _msg_ack_pq_setting_config_t
+{
+    unsigned int cam_id;
+    unsigned int mode;
+    unsigned int pq_setting;
+    unsigned int pq_setting_size;
+    int          status;
+} msg_ack_pq_setting_config_t;
 
 typedef struct _msg_req_stream_on_t
 {
@@ -685,6 +735,28 @@ typedef struct _msg_req_request_offline_t
     unsigned int output_metadata_buffer;
 } msg_req_request_offline_t;
 
+typedef struct _msg_req_request_offline_raw2rgb_t
+{
+    unsigned int cam_id;
+    unsigned int num_targets;
+    unsigned int target_map;
+    unsigned int frame_number;
+    unsigned int buf[MAX_STREAM_NUM];
+    unsigned int input_setting_buffer;
+    unsigned int output_metadata_buffer;
+} msg_req_request_offline_raw2rgb_t;
+
+typedef struct _msg_req_request_offline_rgb2yuv_t
+{
+    unsigned int cam_id;
+    unsigned int num_targets;
+    unsigned int target_map;
+    unsigned int frame_number;
+    unsigned int buf[MAX_STREAM_NUM];
+    unsigned int input_setting_buffer;
+    unsigned int output_metadata_buffer;
+} msg_req_request_offline_rgb2yuv_t;
+
 typedef struct _msg_ack_request_t
 {
     unsigned int cam_id;
@@ -714,6 +786,25 @@ typedef struct _msg_ack_request_offline_t
     unsigned int status;
 } msg_ack_request_offline_t;
 
+typedef struct _msg_batch_req_request_t
+{
+    unsigned int cam_id;
+    unsigned int count;
+    unsigned int requests_buf;
+    unsigned int requests_buf_size;
+} msg_batch_req_request_t;
+
+typedef struct _msg_batch_ack_request_t
+{
+    unsigned int cam_id;
+    unsigned int count;
+    unsigned int acks_buf;
+    unsigned int acks_buf_size;
+    unsigned int timestampL;
+    unsigned int timestampH;
+    unsigned int system_couter_rate;
+} msg_batch_ack_request_t;
+
 typedef struct _msg_req_jpeg_encode_t
 {
     unsigned int width;
@@ -725,6 +816,22 @@ typedef struct _msg_req_jpeg_encode_t
     unsigned int quality;
     unsigned int format;
 } msg_req_jpeg_encode_t;
+
+typedef struct _msg_req_fbdraw_request_t
+{
+    unsigned int  cam_id;
+    unsigned int  frame_number;
+    stream_info_t input_stream_info;
+    stream_info_t output_stream_info;
+} msg_req_fbdraw_request_t;
+
+typedef struct _msg_ack_fbdraw_request_t
+{
+    unsigned int  cam_id;
+    unsigned int  frame_number;
+    unsigned int  status;
+    stream_info_t output_stream_info;
+} msg_ack_fbdraw_request_t;
 
 typedef struct _msg_ack_jpeg_encode_t
 {
@@ -1629,6 +1736,15 @@ typedef struct _pdaf_sensor_coord_t
     unsigned int dig_crop_image_width;
     unsigned int dig_crop_image_height;
 } pdaf_sensor_coord;
+
+typedef enum
+{
+    DEMOSAIC_ONLINE = 0,
+    DEMOSAIC_OFFLINE,
+    REMOSAIC_OFFLINE,
+    REQUEST_RAW2YUV_MAX,
+} raw2yuv_req_mode_e;
+
 typedef struct _msg_req_raw2yuv_start_t
 {
     unsigned int cam_id;
@@ -1637,8 +1753,8 @@ typedef struct _msg_req_raw2yuv_start_t
     char         sensor_name[NAME_LEN];
     char         product_name[NAME_LEN];
     unsigned int input_calib_buffer;
+    raw2yuv_req_mode_e raw2yuv_mode;
 } msg_req_raw2yuv_start_t;
-
 
 typedef struct _msg_ack_raw2yuv_start_t
 {
@@ -1899,13 +2015,13 @@ typedef enum
     SUBCMD_SET_WARP_SELFLEARN = 167,
     SUBCMD_LASER_RAWDATA = 168,
     SUBCMD_SD_RESULTS = 169,
-    SUBCMD_SET_LCD_RATIO = 170,
-    SUBCMD_SET_CAPLCD_ON = 171,
-    SUBCMD_SET_LCD_COMPENSATE_MODE = 172,
-    SUBCMD_SAVE_PREVIEW_AE_AWB = 173,
+    SUBCMD_SET_LCD_RATIO                  = 170,
+    SUBCMD_SET_CAPLCD_ON                  = 171,
+    SUBCMD_SET_LCD_COMPENSATE_MODE        = 172,
+    SUBCMD_SAVE_PREVIEW_AE_AWB            = 173,
     SUBCMD_SET_HUAWEI_CAMERA = 174,
     SUBCMD_SET_RAW_READBACK_ADDR = 175,
-    SUBCMD_SET_SOFTLIGHT_MODE = 176,
+    SUBCMD_SET_SOFTLIGHT_MODE  = 176,
     SUBCMD_LASER_VERSION = 177,
     SUBCMD_SET_PDALGO_ENABLE = 178,
     SUBCMD_SET_PD_INFO = 179,
@@ -1945,6 +2061,19 @@ typedef enum
     SUBCMD_SMART_ZOOM_ENABLE = 211,
     SUBCMD_IR_LIGHT_SWITCH_MODE = 212,
     SUBCMD_SET_UNDER_WATER_MODE = 213,
+    SUBCMD_SET_AF_DEPTH_DATA = 214,
+    SUBCMD_TOF_CONFIG = 215,
+    SUBCMD_TOF_SET_CALIB_DATA = 216,
+    SUBCMD_TOF_GET_CALIB_DATA = 217,
+    SUBCMD_SET_SCD_INFO = 218,
+    SUBCMD_SET_FLK_INFO = 219,
+    SUBCMD_SET_DPCC_MODE = 220,
+    SUBCMD_SET_SENSORHDR_SEAMLESS = 221,
+    SUBCMD_SET_RAW2RGB_OFFLINE_INFO  = 222,
+    SUBCMD_SET_RGB2YUV_OFFLINE_INFO  = 223,
+    SUBCMD_SET_CAP_LSC_PARAM = 224,
+    SUBCMD_SET_DISABLE_TAE = 225,
+    SUBCMD_OIS_CONTROL_SHAKE_INFO = 230,
 
     SUBCMD_MAX,
 } extendset_info_e;
@@ -2201,8 +2330,11 @@ typedef struct _isp_msg_t
         msg_req_raw2yuv_start_t         req_raw2yuv_start;
         msg_req_raw2yuv_stop_t          req_raw2yuv_stop;
         msg_req_request_offline_t       req_raw2yuv_req;
+        msg_req_request_offline_raw2rgb_t       req_raw2rgb_req;
+        msg_req_request_offline_rgb2yuv_t       req_rgb2yuv_req;
         msg_req_map_buffer_offline_t    req_raw2yuv_mapbuffer;
         msg_req_unmap_buffer_offline_t  req_raw2yuv_unmapbuffer;
+        msg_req_fbdraw_request_t        req_fbdraw_request;
 
         msg_req_query_driver_ic_t       req_query_driver_ic;
         msg_req_acquire_driver_ic_t     req_acquire_driver_ic;
@@ -2212,6 +2344,9 @@ typedef struct _isp_msg_t
         msg_req_release_dot_projector_t req_release_dot_projector;
         msg_req_get_dot_otp_t           req_get_dot_otp;
 
+        msg_batch_req_request_t         req_batch_request;
+        msg_req_pq_setting_config_t     req_pq_setting_config;
+        //msg_req_device_ctl_t                req_device_ctl;
 
         /* Response items. */
         msg_ack_query_capability_t      ack_query_capability;
@@ -2269,6 +2404,8 @@ typedef struct _isp_msg_t
         msg_ack_raw2yuv_start_t         ack_raw2yuv_start;
         msg_ack_raw2yuv_stop_t          ack_raw2yuv_stop;
         msg_ack_request_offline_t       ack_raw2yuv_req;
+        msg_ack_request_offline_t       ack_raw2rgb_req;
+        msg_ack_request_offline_t       ack_rgb2yuv_req;
         msg_ack_map_buffer_offline_t    ack_raw2yuv_mapbuffer;
         msg_ack_unmap_buffer_offline_t  ack_raw2yuv_unmapbuffer;
 
@@ -2279,7 +2416,11 @@ typedef struct _isp_msg_t
         msg_ack_acquire_dot_projector_t ack_acquire_dot_projector;
         msg_ack_release_dot_projector_t ack_release_dot_projector;
         msg_ack_get_dot_otp_t           ack_get_dot_otp;
+        msg_ack_pq_setting_config_t     ack_pq_setting_config;
 
+        msg_batch_ack_request_t         ack_batch_request;
+        msg_ack_fbdraw_request_t        ack_fbdraw_request;
+        //msg_ack_device_ctl_t                ack_device_ctl;
         /* Event items sent to AP. */
         msg_event_sent_t                event_sent;
     }u;
@@ -2367,6 +2508,32 @@ typedef struct _tag_af_pdaf_result
         af_ov_pdaf_output_t    ov_pd_lib_output;
     }ap_pdaf_result;
 } af_pdaf_result_t;
+
+// for TOF setting --begin
+#define TOF_CFG_REG_COUNT   (131)
+typedef struct _tof_reg_val_t
+{
+    unsigned short addr;
+    unsigned short val;
+} tof_reg_val_t;
+typedef enum _tof_config_type_e
+{
+    CONFIG_MODE = 0x00,
+    CONFIG_REG  = 0x01,
+    CONFIG_BOTH = 0x02,
+} tof_config_type_e;
+typedef struct _tof_config_info_t
+{
+    tof_config_type_e   cfg_type;
+    unsigned int        set_mode;
+    tof_reg_val_t       configs[TOF_CFG_REG_COUNT];
+} tof_config_info_t;
+typedef struct _tof_calib_info_t
+{
+    unsigned int    calib_buffer;
+    unsigned int    calib_buffer_size;
+} tof_calib_info;
+// for TOF setting --end
 
 void msg_init_req(hisp_msg_t* req, unsigned int api_name, unsigned int msg_id);
 void msg_init_ack(hisp_msg_t* req, hisp_msg_t* ack);

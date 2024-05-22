@@ -35,6 +35,7 @@
 #include "../pmic/hw_pmic.h"
 
 #define I2S(i) container_of(i, sensor_t, intf)
+#define Sensor2Pdev(s) container_of((s).dev, struct platform_device, dev)
 #define CAMERA_LOG_DEBUG
 
 static char const* ov8865_get_name(hwsensor_intf_t* si);
@@ -368,9 +369,6 @@ ov8865_match_id(
 
     if (cdata->data != SENSOR_INDEX_INVALID) /*lint !e650 */
     {
-        /*
-        hwsensor_writefile(sensor->board_info->sensor_index, cdata->cfg.name);
-        */
         cam_info("%s, cdata->cfg.name = %s", __func__,cdata->cfg.name );
     }
     cam_info("%s TODO.  cdata->data=%d", __func__, cdata->data);
@@ -407,10 +405,8 @@ ov8865_config(
         case SEN_CONFIG_READ_REG_SETTINGS:
             break;
         case SEN_CONFIG_ENABLE_CSI:
-            /* ret = si->vtbl->csi_enable(si); */
             break;
         case SEN_CONFIG_DISABLE_CSI:
-            /* ret = si->vtbl->csi_disable(si); */
             break;
         case SEN_CONFIG_MATCH_ID:
             ret = si->vtbl->match_id(si,argp);
@@ -488,7 +484,7 @@ ov8865_platform_remove(
     sensor = I2S(intf);
 
     rpmsg_sensor_unregister((void*)&sensor);
-    hwsensor_unregister(intf);
+    hwsensor_unregister(pdev);
     return 0;
 }
 static int __init
@@ -503,7 +499,7 @@ static void __exit
 ov8865_exit_module(void)
 {
     rpmsg_sensor_unregister((void*)&s_ov8865);
-    hwsensor_unregister(&s_ov8865.intf);
+    hwsensor_unregister(Sensor2Pdev(s_ov8865));
     platform_driver_unregister(&s_ov8865_driver);
 }
 

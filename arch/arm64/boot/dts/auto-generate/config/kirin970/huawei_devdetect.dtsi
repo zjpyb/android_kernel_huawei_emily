@@ -43,7 +43,7 @@
 		typec = <0>;
                 anc_max14744 = <0>;
 		charge_loadswitch = <0>;
-		max77813 = <0>;
+		buck_boost = <0>;
 		coul = <0>;
 		dtv = <0>;
 		ap_color = <0>;

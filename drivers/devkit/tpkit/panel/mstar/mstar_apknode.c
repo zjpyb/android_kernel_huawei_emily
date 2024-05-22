@@ -261,6 +261,7 @@ static ssize_t mstar_jni_msg_tool_read(struct file *pFile, char __user * pBuffer
     u8 nBusType = 0;
     u16 nReadLen = 0;
     u8 szCmdData[20] = { 0 };
+	s32 rc;
 
     // If file position is non-zero, then assume the string has been read and indicate there is no more data to be read.
     if (*pPos != 0) {
@@ -282,7 +283,9 @@ static ssize_t mstar_jni_msg_tool_read(struct file *pFile, char __user * pBuffer
 
     if (nBusType == SLAVE_I2C_ID_DBBUS || nBusType == SLAVE_I2C_ID_DWI2C) {
 		msleep(I2C_WRITE_COMMAND_DELAY_FOR_FIRMWARE);
-        mstar_iic_read_data(nBusType, &szCmdData[0], nReadLen);
+		rc = mstar_iic_read_data(nBusType, &szCmdData[0], nReadLen);
+		if (rc < 0)
+			TS_LOG_ERR("%s: mstar_iic_read_data fail\n", __func__);
     }
 
 	if (copy_to_user(pBuffer, &szCmdData[0], nReadLen)) {
@@ -648,9 +651,7 @@ static ssize_t mstar_apknode_fw_data_write(struct file *pFile, const char __user
 
     TS_LOG_INFO("g_fw_data_cont = %d\n", tskit_mstar_data->fw_update_data.fw_data_cont);
 
-    if (apk_info->debug_buf != NULL) {
-        TS_LOG_INFO("buf[0] = %c\n", apk_info->debug_buf[0]);
-    }
+	TS_LOG_INFO("buf[0] = %c\n", apk_info->debug_buf[0]);
 
     return nCount;
 
@@ -1030,13 +1031,15 @@ static ssize_t mstar_apknode_fw_debug_read(struct file *pFile, char __user * pBu
         return 0;
     }
 
-    mstar_dbbus_enter();
+	if (mstar_dbbus_enter() < 0)
+		TS_LOG_ERR("%s: mstar_dbbus_enter fail\n", __func__);
 
     for (i = 0; i < apk_info->debug_reg_count; i++) {
         szRegData[i] = mstar_get_reg_16bit(apk_info->debug_reg[i]);
     }
 
-    mstar_dbbus_exit();
+	if (mstar_dbbus_exit() < 0)
+		TS_LOG_ERR("%s: mstar_dbbus_exit fail\n", __func__);
 
     for (i = 0; i < apk_info->debug_reg_count; i++) {
         nBank = (apk_info->debug_reg[i] >> 8) & 0xFF;
@@ -1094,33 +1097,31 @@ static ssize_t mstar_apknode_fw_debug_write(struct file *pFile, const char __use
             TS_LOG_INFO("copy_from_user() failed\n");
             return -EFAULT;
         }
-    if (apk_info->debug_buf != NULL) {
-        TS_LOG_INFO("pBuffer[0] = %c\n", apk_info->debug_buf[0]);
-        TS_LOG_INFO("pBuffer[1] = %c\n", apk_info->debug_buf[1]);
-        TS_LOG_INFO("pBuffer[2] = %c\n", apk_info->debug_buf[2]);
-        TS_LOG_INFO("pBuffer[3] = %c\n", apk_info->debug_buf[3]);
-        TS_LOG_INFO("pBuffer[4] = %c\n", apk_info->debug_buf[4]);
-        TS_LOG_INFO("pBuffer[5] = %c\n", apk_info->debug_buf[5]);
+	TS_LOG_INFO("pBuffer[0] = %c\n", apk_info->debug_buf[0]);
+	TS_LOG_INFO("pBuffer[1] = %c\n", apk_info->debug_buf[1]);
+	TS_LOG_INFO("pBuffer[2] = %c\n", apk_info->debug_buf[2]);
+	TS_LOG_INFO("pBuffer[3] = %c\n", apk_info->debug_buf[3]);
+	TS_LOG_INFO("pBuffer[4] = %c\n", apk_info->debug_buf[4]);
+	TS_LOG_INFO("pBuffer[5] = %c\n", apk_info->debug_buf[5]);
 
-        TS_LOG_INFO("nCount = %d\n", (int)nCount);
+	TS_LOG_INFO("nCount = %d\n", (int)nCount);
 
-        apk_info->debug_buf[nCount] = '\0';
-        pStr = apk_info->debug_buf;
+	apk_info->debug_buf[nCount] = '\0';
+	pStr = apk_info->debug_buf;
 
-        i = 0;
+	i = 0;
 
-        while ((pCh = strsep((char **)&pStr, " ,")) && (i < MAX_DEBUG_REGISTER_NUM)) {
-            TS_LOG_INFO("pCh = %s\n", pCh);
+	while ((pCh = strsep((char **)&pStr, " ,")) && (i < MAX_DEBUG_REGISTER_NUM)) {
+		TS_LOG_INFO("pCh = %s\n", pCh);
 
-            apk_info->debug_reg[i] = mstar_convert_char_to_hex_digit(pCh, strlen(pCh));
+		apk_info->debug_reg[i] = mstar_convert_char_to_hex_digit(pCh, strlen(pCh));
 
-            TS_LOG_INFO("apk_info->debug_reg[%d] = 0x%04X\n", i, apk_info->debug_reg[i]);
-            i++;
-        }
-        apk_info->debug_reg_count = i;
+		TS_LOG_INFO("apk_info->debug_reg[%d] = 0x%04X\n", i, apk_info->debug_reg[i]);
+		i++;
+	}
+	apk_info->debug_reg_count = i;
 
-        TS_LOG_INFO("debug_reg_count = %d\n", apk_info->debug_reg_count);
-    }
+	TS_LOG_INFO("debug_reg_count = %d\n", apk_info->debug_reg_count);
 
 out:
     return nCount;
@@ -1140,13 +1141,15 @@ static ssize_t mstar_apknode_fw_set_debug_value_read(struct file *pFile, char __
         return 0;
     }
 
-    mstar_dbbus_enter();
+	if (mstar_dbbus_enter() < 0)
+		TS_LOG_ERR("%s: mstar_dbbus_enter fail\n", __func__);
 
     for (i = 0; i < apk_info->debug_reg_count; i++) {
         szRegData[i] = mstar_get_reg_16bit(apk_info->debug_reg[i]);
     }
 
-    mstar_dbbus_exit();
+	if (mstar_dbbus_exit() < 0)
+		TS_LOG_ERR("%s: mstar_dbbus_exit fail\n", __func__);
 
     for (i = 0; i < apk_info->debug_reg_count; i++) {
         nBank = (apk_info->debug_reg[i] >> 8) & 0xFF;
@@ -1183,6 +1186,7 @@ static ssize_t mstar_apknode_fw_set_debug_value_write(struct file *pFile, const 
     u32 i, j, k;
     char *pCh = NULL;
     char *pStr = NULL;
+	s32 rc = NO_ERR;
       if(nCount > 1024){
         TS_LOG_ERR("%s:The size of count(%d) is larger than its define\n",__func__,nCount);
         goto out;
@@ -1194,47 +1198,50 @@ static ssize_t mstar_apknode_fw_set_debug_value_write(struct file *pFile, const 
         TS_LOG_INFO("copy_from_user() failed\n");
         return -EFAULT;
     }
-    if (apk_info->debug_buf != NULL) {
-        TS_LOG_INFO("pBuffer[0] = %c\n", apk_info->debug_buf[0]);
-        TS_LOG_INFO("pBuffer[1] = %c\n", apk_info->debug_buf[1]);
+	TS_LOG_INFO("pBuffer[0] = %c\n", apk_info->debug_buf[0]);
+	TS_LOG_INFO("pBuffer[1] = %c\n", apk_info->debug_buf[1]);
 
-        TS_LOG_INFO("nCount = %d\n", (int)nCount);
-        apk_info->debug_buf[nCount] = '\0';
-        pStr = apk_info->debug_buf;
+	TS_LOG_INFO("nCount = %d\n", (int)nCount);
+	apk_info->debug_buf[nCount] = '\0';
+	pStr = apk_info->debug_buf;
 
-        i = 0;
-        j = 0;
-        k = 0;
+	i = 0;
+	j = 0;
+	k = 0;
 
-        while ((pCh = strsep((char **)&pStr, " ,")) && (i < 2)) {
-            TS_LOG_INFO("pCh = %s\n", pCh);
+	while ((pCh = strsep((char **)&pStr, " ,")) && (i < 2)) {
+		TS_LOG_INFO("pCh = %s\n", pCh);
 
-            if ((i % 2) == 0) {
-                apk_info->debug_reg[j] = mstar_convert_char_to_hex_digit(pCh, strlen(pCh));
-                TS_LOG_INFO("apk_info->debug_reg[%d] = 0x%04X\n", j, apk_info->debug_reg[j]);
-                j++;
-            } else  // (i%2) == 1
-            {
-                apk_info->debug_reg_value[k] = mstar_convert_char_to_hex_digit(pCh, strlen(pCh));
-                TS_LOG_INFO("g_debug_reg_value[%d] = 0x%04X\n", k, apk_info->debug_reg_value[k]);
-                k++;
-            }
+		if ((i % 2) == 0) {
+			apk_info->debug_reg[j] = mstar_convert_char_to_hex_digit(pCh, strlen(pCh));
+			TS_LOG_INFO("apk_info->debug_reg[%d] = 0x%04X\n", j, apk_info->debug_reg[j]);
+			j++;
+		} else {
+			apk_info->debug_reg_value[k] = mstar_convert_char_to_hex_digit(pCh, strlen(pCh));
+			TS_LOG_INFO("g_debug_reg_value[%d] = 0x%04X\n", k, apk_info->debug_reg_value[k]);
+			k++;
+		}
 
-            i++;
-        }
-        apk_info->debug_reg_count = j;
+		i++;
+	}
+	apk_info->debug_reg_count = j;
 
-        TS_LOG_INFO("debug_reg_count = %d\n", apk_info->debug_reg_count);
+	TS_LOG_INFO("debug_reg_count = %d\n", apk_info->debug_reg_count);
 
-        mstar_dbbus_enter();
+	if (mstar_dbbus_enter() < 0)
+		TS_LOG_ERR("%s: mstar_dbbus_enter fail\n", __func__);
 
-        for (i = 0; i < apk_info->debug_reg_count; i++) {
-            mstar_set_reg_16bit(apk_info->debug_reg[i], apk_info->debug_reg_value[i]);
-            TS_LOG_INFO("apk_info->debug_reg[%d] = 0x%04X, g_debug_reg_value[%d] = 0x%04X\n", i, apk_info->debug_reg[i], i, apk_info->debug_reg_value[i]);  // add for debug
-        }
+	for (i = 0; i < apk_info->debug_reg_count; i++) {
+		rc = mstar_set_reg_16bit(apk_info->debug_reg[i],
+			apk_info->debug_reg_value[i]);
+		if (rc < 0)
+			TS_LOG_ERR("%s: mstar_set_reg_16bit fail\n",
+				__func__);
+		TS_LOG_INFO("apk_info->debug_reg[%d] = 0x%04X, g_debug_reg_value[%d] = 0x%04X\n", i, apk_info->debug_reg[i], i, apk_info->debug_reg_value[i]);  // add for debug
+	}
 
-        mstar_dbbus_exit();
-    }
+	if (mstar_dbbus_exit() < 0)
+		TS_LOG_ERR("%s: mstar_dbbus_exit fail\n", __func__);
 out:
     return nCount;
 }
@@ -1322,6 +1329,7 @@ static ssize_t mstar_apknode_fw_smbus_debug_write(struct file *pFile, const char
     char szCmdType[5] = { 0 };
     char *pCh = NULL;
     char *pStr = NULL;
+	s32 rc = NO_ERR;
 
      if(nCount > 1024){
         TS_LOG_ERR("%s:The size of count(%d) is larger than its define\n",__func__,nCount);
@@ -1338,49 +1346,51 @@ static ssize_t mstar_apknode_fw_smbus_debug_write(struct file *pFile, const char
         TS_LOG_INFO("copy_from_user() failed\n");
         return -EFAULT;
     }
-    if (apk_info->debug_buf != NULL) {
-        TS_LOG_INFO("pBuffer[0] = %c \n", apk_info->debug_buf[0]);
-        TS_LOG_INFO("pBuffer[1] = %c\n", apk_info->debug_buf[1]);
-        TS_LOG_INFO("pBuffer[2] = %c\n", apk_info->debug_buf[2]);
-        TS_LOG_INFO("pBuffer[3] = %c\n", apk_info->debug_buf[3]);
-        TS_LOG_INFO("pBuffer[4] = %c\n", apk_info->debug_buf[4]);
-        TS_LOG_INFO("pBuffer[5] = %c\n", apk_info->debug_buf[5]);
+	TS_LOG_INFO("pBuffer[0] = %c \n", apk_info->debug_buf[0]);
+	TS_LOG_INFO("pBuffer[1] = %c\n", apk_info->debug_buf[1]);
+	TS_LOG_INFO("pBuffer[2] = %c\n", apk_info->debug_buf[2]);
+	TS_LOG_INFO("pBuffer[3] = %c\n", apk_info->debug_buf[3]);
+	TS_LOG_INFO("pBuffer[4] = %c\n", apk_info->debug_buf[4]);
+	TS_LOG_INFO("pBuffer[5] = %c\n", apk_info->debug_buf[5]);
 
-        TS_LOG_INFO("nCount = %d\n", (int)nCount);
+	TS_LOG_INFO("nCount = %d\n", (int)nCount);
 
-        // Reset to 0 before parsing the adb command
-        apk_info->debug_cmd_arg_count = 0;
-        apk_info->debug_read_data_size = 0;
+	// Reset to 0 before parsing the adb command
+	apk_info->debug_cmd_arg_count = 0;
+	apk_info->debug_read_data_size = 0;
 
-        apk_info->debug_buf[nCount] = '\0';
-        pStr = apk_info->debug_buf;
+	apk_info->debug_buf[nCount] = '\0';
+	pStr = apk_info->debug_buf;
 
-        i = 0;
-        j = 0;
+	i = 0;
+	j = 0;
 
-        while ((pCh = strsep((char **)&pStr, " ,")) && (j < MAX_DEBUG_COMMAND_ARGUMENT_NUM)) {
-            TS_LOG_INFO("pCh = %s\n", pCh);
+	while ((pCh = strsep((char **)&pStr, " ,")) && (j < MAX_DEBUG_COMMAND_ARGUMENT_NUM)) {
+		TS_LOG_INFO("pCh = %s\n", pCh);
 
-            if (strcmp(pCh, "w") == 0 || strcmp(pCh, "r") == 0) {
-                memcpy(szCmdType, pCh, strlen(pCh));
-            } else if (strcmp(szCmdType, "w") == 0) {
-                apk_info->debug_cmd_argu[j] = mstar_convert_char_to_hex_digit(pCh, strlen(pCh));
-                TS_LOG_INFO("g_debug_cmd_argu[%d] = 0x%02X\n", j, apk_info->debug_cmd_argu[j]);
+		if (strcmp(pCh, "w") == 0 || strcmp(pCh, "r") == 0) {
+			memcpy(szCmdType, pCh, strlen(pCh));
+		} else if (strcmp(szCmdType, "w") == 0) {
+			apk_info->debug_cmd_argu[j] = mstar_convert_char_to_hex_digit(pCh, strlen(pCh));
+			TS_LOG_INFO("g_debug_cmd_argu[%d] = 0x%02X\n", j, apk_info->debug_cmd_argu[j]);
 
-                j++;
+			j++;
 
-                apk_info->debug_cmd_arg_count = j;
-                TS_LOG_INFO("g_debug_cmd_arg_count = %d\n", apk_info->debug_cmd_arg_count);
-            } else if (strcmp(szCmdType, "r") == 0) {
-                sscanf(pCh, "%d", &apk_info->debug_read_data_size);
-                TS_LOG_INFO("apk_info->debug_read_data_size = %d\n", apk_info->debug_read_data_size);
-            } else {
-                TS_LOG_INFO("Un-supported adb command format!\n");
-            }
+			apk_info->debug_cmd_arg_count = j;
+			TS_LOG_INFO("g_debug_cmd_arg_count = %d\n", apk_info->debug_cmd_arg_count);
+		} else if (strcmp(szCmdType, "r") == 0) {
+			rc = sscanf(pCh, "%d",
+				&apk_info->debug_read_data_size);
+			if (rc <= 0)
+				TS_LOG_ERR("%s: sscanf fail\n",
+						__func__);
+			TS_LOG_INFO("apk_info->debug_read_data_size = %d\n", apk_info->debug_read_data_size);
+		} else {
+			TS_LOG_INFO("Un-supported adb command format!\n");
+		}
 
-            i++;
-        }
-    }
+		i++;
+	}
 out:
     return nCount;
 }
@@ -1454,59 +1464,56 @@ static ssize_t mstar_apknode_fw_set_dq_mem_value_write(struct file *pFile, const
         TS_LOG_INFO("copy_from_user() failed\n");
         return -EFAULT;
     }
-    if (apk_info->debug_buf != NULL) {
-        TS_LOG_INFO("pBuffer[0] = %c\n", apk_info->debug_buf[0]);
-        TS_LOG_INFO("pBuffer[1] = %c\n", apk_info->debug_buf[1]);
+	TS_LOG_INFO("pBuffer[0] = %c\n", apk_info->debug_buf[0]);
+	TS_LOG_INFO("pBuffer[1] = %c\n", apk_info->debug_buf[1]);
 
-        TS_LOG_INFO("nCount = %d\n", (int)nCount);
-        apk_info->debug_buf[nCount] = '\0';
-        pStr = apk_info->debug_buf;
+	TS_LOG_INFO("nCount = %d\n", (int)nCount);
+	apk_info->debug_buf[nCount] = '\0';
+	pStr = apk_info->debug_buf;
 
-        i = 0;
-        j = 0;
-        k = 0;
+	i = 0;
+	j = 0;
+	k = 0;
 
-        while ((pCh = strsep((char **)&pStr, " ,")) && (i < 2)) {
-            TS_LOG_INFO("pCh = %s\n", pCh);
+	while ((pCh = strsep((char **)&pStr, " ,")) && (i < 2)) {
+		TS_LOG_INFO("pCh = %s\n", pCh);
 
-            if ((i % 2) == 0) {
-                apk_info->debug_reg[j] = mstar_convert_char_to_hex_digit(pCh, strlen(pCh));
-                TS_LOG_INFO("apk_info->debug_reg[%d] = 0x%04X\n", j, apk_info->debug_reg[j]);
-                j++;
-            } else  // (i%2) == 1
-            {
-                apk_info->debug_reg_value[k] = mstar_convert_char_to_hex_digit(pCh, strlen(pCh));
-                TS_LOG_INFO("g_debug_reg_value[%d] = 0x%04X\n", k, apk_info->debug_reg_value[k]);
-                k++;
-            }
+		if ((i % 2) == 0) {
+			apk_info->debug_reg[j] = mstar_convert_char_to_hex_digit(pCh, strlen(pCh));
+			TS_LOG_INFO("apk_info->debug_reg[%d] = 0x%04X\n", j, apk_info->debug_reg[j]);
+			j++;
+		} else {
+			apk_info->debug_reg_value[k] = mstar_convert_char_to_hex_digit(pCh, strlen(pCh));
+			TS_LOG_INFO("g_debug_reg_value[%d] = 0x%04X\n", k, apk_info->debug_reg_value[k]);
+			k++;
+		}
 
-            i++;
-        }
-        apk_info->debug_reg_count = j;
+		i++;
+	}
+	apk_info->debug_reg_count = j;
 
-        TS_LOG_INFO("debug_reg_count = %d\n", apk_info->debug_reg_count);
+	TS_LOG_INFO("debug_reg_count = %d\n", apk_info->debug_reg_count);
 
-        if ((apk_info->debug_reg[0] % 4) == 0) {
-            nRealDQMemAddr = apk_info->debug_reg[0];
-            nRealDQMemValue = mstar_read_dq_mem_value(nRealDQMemAddr);
-            apk_info->debug_reg[0] = nRealDQMemAddr;
-            TS_LOG_INFO("nRealDQMemValue Raw = %X\n", nRealDQMemValue);
-            nRealDQMemValue &= 0xFFFF0000;
-            nRealDQMemValue |= apk_info->debug_reg_value[0];
-            TS_LOG_INFO("nRealDQMemValue Modify = %X\n", nRealDQMemValue);
-            mstar_write_dq_mem_value(nRealDQMemAddr, nRealDQMemValue);
-        } else if ((apk_info->debug_reg[0] % 4) == 2) {
-            nRealDQMemAddr = apk_info->debug_reg[0] - 2;
-            nRealDQMemValue = mstar_read_dq_mem_value(nRealDQMemAddr);
-            apk_info->debug_reg[0] = nRealDQMemAddr;
-            TS_LOG_INFO("nRealDQMemValue Raw = %X\n", nRealDQMemValue);
+	if ((apk_info->debug_reg[0] % 4) == 0) {
+		nRealDQMemAddr = apk_info->debug_reg[0];
+		nRealDQMemValue = mstar_read_dq_mem_value(nRealDQMemAddr);
+		apk_info->debug_reg[0] = nRealDQMemAddr;
+		TS_LOG_INFO("nRealDQMemValue Raw = %X\n", nRealDQMemValue);
+		nRealDQMemValue &= 0xFFFF0000;
+		nRealDQMemValue |= apk_info->debug_reg_value[0];
+		TS_LOG_INFO("nRealDQMemValue Modify = %X\n", nRealDQMemValue);
+		mstar_write_dq_mem_value(nRealDQMemAddr, nRealDQMemValue);
+	} else if ((apk_info->debug_reg[0] % 4) == 2) {
+		nRealDQMemAddr = apk_info->debug_reg[0] - 2;
+		nRealDQMemValue = mstar_read_dq_mem_value(nRealDQMemAddr);
+		apk_info->debug_reg[0] = nRealDQMemAddr;
+		TS_LOG_INFO("nRealDQMemValue Raw = %X\n", nRealDQMemValue);
 
-            nRealDQMemValue &= 0x0000FFFF;
-            nRealDQMemValue |= (apk_info->debug_reg_value[0] << 16);
-            TS_LOG_INFO("nRealDQMemValue Modify = %X\n", nRealDQMemValue);
-            mstar_write_dq_mem_value(nRealDQMemAddr, nRealDQMemValue);
-        }
-    }
+		nRealDQMemValue &= 0x0000FFFF;
+		nRealDQMemValue |= (apk_info->debug_reg_value[0] << 16);
+		TS_LOG_INFO("nRealDQMemValue Modify = %X\n", nRealDQMemValue);
+		mstar_write_dq_mem_value(nRealDQMemAddr, nRealDQMemValue);
+	}
 out:
     return nCount;
 }
@@ -1547,6 +1554,7 @@ static ssize_t mstar_apknode_fw_mode_write(struct file *pFile, const char __user
                         loff_t * pPos)
 {
     u32 nMode = 0;
+	int ret = NO_ERR;
 
     if(nCount > 16){
         TS_LOG_ERR("%s:The size of count(%d) is larger than its define\n",__func__,nCount);
@@ -1564,24 +1572,22 @@ static ssize_t mstar_apknode_fw_mode_write(struct file *pFile, const char __user
         return -EFAULT;
     }
 
-    if (apk_info->debug_buf != NULL) {
-        sscanf(apk_info->debug_buf, "%x", &nMode);
-        TS_LOG_INFO("firmware mode = 0x%x\n", nMode);
+	ret = sscanf(apk_info->debug_buf, "%x", &nMode);
+	if (ret <= 0)
+		TS_LOG_ERR("%s: sscanf fail\n", __func__);
+	TS_LOG_INFO("firmware mode = 0x%x\n", nMode);
 
-        apk_info->switch_mode = 0;
+	apk_info->switch_mode = 0;
 
-        if (nMode == MSG28XX_FIRMWARE_MODE_DEMO_MODE)   //demo mode
-        {
-            tskit_mstar_data->fw_mode = mstar_change_fw_mode(MSG28XX_FIRMWARE_MODE_DEMO_MODE);
-        } else if (nMode == MSG28XX_FIRMWARE_MODE_DEBUG_MODE)   //debug mode
-        {
-            tskit_mstar_data->fw_mode = mstar_change_fw_mode(MSG28XX_FIRMWARE_MODE_DEBUG_MODE);
-            apk_info->switch_mode = 1;
-            apk_info->debug_log_time_stamp = 0; // Set g_debug_log_time_stamp for filter duplicate packet on MTPTool APK
-        } else {
-            TS_LOG_INFO("Undefined Firmware Mode\n");
-        }
-    }
+	if (nMode == MSG28XX_FIRMWARE_MODE_DEMO_MODE) {
+		tskit_mstar_data->fw_mode = mstar_change_fw_mode(MSG28XX_FIRMWARE_MODE_DEMO_MODE);
+	} else if (nMode == MSG28XX_FIRMWARE_MODE_DEBUG_MODE) {
+		tskit_mstar_data->fw_mode = mstar_change_fw_mode(MSG28XX_FIRMWARE_MODE_DEBUG_MODE);
+		apk_info->switch_mode = 1;
+		apk_info->debug_log_time_stamp = 0; // Set g_debug_log_time_stamp for filter duplicate packet on MTPTool APK
+	} else {
+		TS_LOG_INFO("Undefined Firmware Mode\n");
+	}
 
     TS_LOG_INFO("tskit_mstar_data->fw_mode = 0x%x\n", tskit_mstar_data->fw_mode);
 out:
@@ -1689,52 +1695,44 @@ static ssize_t _DrvKObjectPacketShow(struct kobject *pKObj, struct kobj_attribut
 
     if (strcmp(pAttr->attr.name, "packet") == 0) {
         if (tskit_mstar_data->fw_mode == MSG28XX_FIRMWARE_MODE_DEMO_MODE) {
-            if (tskit_mstar_data->demo_packet != NULL) {
-                TS_LOG_INFO("tskit_mstar_data->fw_mode=%x, g_demo_packet[0]=%x, g_demo_packet[1]=%x\n", tskit_mstar_data->fw_mode,
-                        tskit_mstar_data->demo_packet[0], tskit_mstar_data->demo_packet[1]);
-                TS_LOG_INFO("g_demo_packet[2]=%x, g_demo_packet[3]=%x\n", tskit_mstar_data->demo_packet[2],
-                        tskit_mstar_data->demo_packet[3]);
-                TS_LOG_INFO("g_demo_packet[4]=%x, g_demo_packet[5]=%x\n", tskit_mstar_data->demo_packet[4],
-                        tskit_mstar_data->demo_packet[5]);
+			TS_LOG_INFO("tskit_mstar_data->fw_mode=%x, g_demo_packet[0]=%x, g_demo_packet[1]=%x\n", tskit_mstar_data->fw_mode,
+				tskit_mstar_data->demo_packet[0], tskit_mstar_data->demo_packet[1]);
+			TS_LOG_INFO("g_demo_packet[2]=%x, g_demo_packet[3]=%x\n", tskit_mstar_data->demo_packet[2],
+				tskit_mstar_data->demo_packet[3]);
+			TS_LOG_INFO("g_demo_packet[4]=%x, g_demo_packet[5]=%x\n", tskit_mstar_data->demo_packet[4],
+				tskit_mstar_data->demo_packet[5]);
 
-                memcpy(pBuf, tskit_mstar_data->demo_packet, MUTUAL_DEMO_MODE_PACKET_LENGTH);
+			memcpy(pBuf, tskit_mstar_data->demo_packet, MUTUAL_DEMO_MODE_PACKET_LENGTH);
 
-                nLength = MUTUAL_DEMO_MODE_PACKET_LENGTH;
-                TS_LOG_INFO("nLength = %d\n", nLength);
-            } else {
-                TS_LOG_INFO("g_demo_packet is NULL\n");
-            }
+			nLength = MUTUAL_DEMO_MODE_PACKET_LENGTH;
+			TS_LOG_INFO("nLength = %d\n", nLength);
         } else
         {
-            if (tskit_mstar_data->log_packet != NULL) {
-                TS_LOG_INFO("tskit_mstar_data->fw_mode=%x, g_log_packet[0]=%x, g_log_packet[1]=%x\n", tskit_mstar_data->fw_mode,
-                        tskit_mstar_data->log_packet[0], tskit_mstar_data->log_packet[1]);
-                TS_LOG_INFO("g_log_packet[2]=%x, g_log_packet[3]=%x\n", tskit_mstar_data->log_packet[2],
-                        tskit_mstar_data->log_packet[3]);
-                TS_LOG_INFO("g_log_packet[4]=%x, g_log_packet[5]=%x\n", tskit_mstar_data->log_packet[4],
-                        tskit_mstar_data->log_packet[5]);
+			TS_LOG_INFO("tskit_mstar_data->fw_mode=%x, g_log_packet[0]=%x, g_log_packet[1]=%x\n", tskit_mstar_data->fw_mode,
+				tskit_mstar_data->log_packet[0], tskit_mstar_data->log_packet[1]);
+			TS_LOG_INFO("g_log_packet[2]=%x, g_log_packet[3]=%x\n", tskit_mstar_data->log_packet[2],
+				tskit_mstar_data->log_packet[3]);
+			TS_LOG_INFO("g_log_packet[4]=%x, g_log_packet[5]=%x\n", tskit_mstar_data->log_packet[4],
+				tskit_mstar_data->log_packet[5]);
 
-                if ((tskit_mstar_data->chip_type == CHIP_TYPE_MSG28XX || tskit_mstar_data->chip_type == CHIP_TYPE_MSG58XXA)
-                    && (tskit_mstar_data->fw_mode == MSG28XX_FIRMWARE_MODE_DEBUG_MODE) && (tskit_mstar_data->log_packet[0] == 0xA7)) {
-                    memcpy(pBuf, tskit_mstar_data->log_packet, tskit_mstar_data->mutual_fw_info.nLogModePacketLength);
+			if ((tskit_mstar_data->chip_type == CHIP_TYPE_MSG28XX || tskit_mstar_data->chip_type == CHIP_TYPE_MSG58XXA)
+				&& (tskit_mstar_data->fw_mode == MSG28XX_FIRMWARE_MODE_DEBUG_MODE) && (tskit_mstar_data->log_packet[0] == 0xA7)) {
+				memcpy(pBuf, tskit_mstar_data->log_packet, tskit_mstar_data->mutual_fw_info.nLogModePacketLength);
 
-                    if (apk_info->debug_log_time_stamp >= 255) {
-                        apk_info->debug_log_time_stamp = 0;
-                    } else {
-                        apk_info->debug_log_time_stamp++;
-                    }
+				if (apk_info->debug_log_time_stamp >= 255) {
+					apk_info->debug_log_time_stamp = 0;
+				} else {
+					apk_info->debug_log_time_stamp++;
+				}
 
-                    pBuf[tskit_mstar_data->mutual_fw_info.nLogModePacketLength] = apk_info->debug_log_time_stamp;
-                    TS_LOG_INFO("g_debug_log_time_stamp=%d\n", pBuf[tskit_mstar_data->mutual_fw_info.nLogModePacketLength]);    // TODO : add for debug
+				pBuf[tskit_mstar_data->mutual_fw_info.nLogModePacketLength] = apk_info->debug_log_time_stamp;
+				TS_LOG_INFO("g_debug_log_time_stamp=%d\n", pBuf[tskit_mstar_data->mutual_fw_info.nLogModePacketLength]);    // TODO : add for debug
 
-                    nLength = tskit_mstar_data->mutual_fw_info.nLogModePacketLength + 1;
-                    TS_LOG_INFO("nLength = %d\n", nLength);
-                } else {
-                    TS_LOG_INFO("CURRENT MODE IS NOT DEBUG MODE/WRONG DEBUG MODE HEADER\n");
-                }
-            } else {
-                TS_LOG_INFO("g_log_packet is NULL\n");
-            }
+				nLength = tskit_mstar_data->mutual_fw_info.nLogModePacketLength + 1;
+				TS_LOG_INFO("nLength = %d\n", nLength);
+			} else {
+				TS_LOG_INFO("CURRENT MODE IS NOT DEBUG MODE/WRONG DEBUG MODE HEADER\n");
+			}
         }
     } else {
         TS_LOG_INFO("pAttr->attr.name = %s \n", pAttr->attr.name);
@@ -1814,45 +1812,44 @@ static ssize_t mstar_apknode_query_feature_support_status_write(struct file *pFi
         TS_LOG_INFO("copy_from_user() failed\n");
         return -EFAULT;
     }
-    if (apk_info->debug_buf != NULL) {
-        sscanf(apk_info->debug_buf, "%x", &nFeature);
-        TS_LOG_INFO("nFeature = 0x%x\n", nFeature);
+	ret = sscanf(apk_info->debug_buf, "%x", &nFeature);
+	if (ret <= 0)
+		TS_LOG_ERR("%s: sscanf fail\n", __func__);
+	TS_LOG_INFO("nFeature = 0x%x\n", nFeature);
 
-        if (nFeature == FEATURE_GESTURE_WAKEUP_MODE) {
-            apk_info->feature_support_status = apk_info->gesture_wakeup_enable;
-        } else if (nFeature == FEATURE_GESTURE_DEBUG_MODE) {
-            apk_info->feature_support_status = apk_info->gesture_debug_mode_enable;
-        } else if (nFeature == FEATURE_GESTURE_INFORMATION_MODE) {
-            apk_info->feature_support_status = apk_info->gesture_information_mode_enable;
-        } else if (nFeature == FEATURE_TOUCH_DRIVER_DEBUG_LOG) {
-            //apk_info->feature_support_status = TOUCH_DRIVER_DEBUG_LOG_LEVEL;
-        } else if (nFeature == FEATURE_FIRMWARE_DATA_LOG) {
-            apk_info->feature_support_status = apk_info->firmware_log_enable;
+	if (nFeature == FEATURE_GESTURE_WAKEUP_MODE) {
+		apk_info->feature_support_status = apk_info->gesture_wakeup_enable;
+	} else if (nFeature == FEATURE_GESTURE_DEBUG_MODE) {
+		apk_info->feature_support_status = apk_info->gesture_debug_mode_enable;
+	} else if (nFeature == FEATURE_GESTURE_INFORMATION_MODE) {
+		apk_info->feature_support_status = apk_info->gesture_information_mode_enable;
+	} else if (nFeature == FEATURE_TOUCH_DRIVER_DEBUG_LOG) {
+		//apk_info->feature_support_status = TOUCH_DRIVER_DEBUG_LOG_LEVEL;
+	} else if (nFeature == FEATURE_FIRMWARE_DATA_LOG) {
+		apk_info->feature_support_status = apk_info->firmware_log_enable;
 
 #ifdef CONFIG_ENABLE_SEGMENT_READ_FINGER_TOUCH_DATA
-            if (tskit_mstar_data->chip_type == CHIP_TYPE_MSG28XX || tskit_mstar_data->chip_type == CHIP_TYPE_MSG58XXA) {
-                if (apk_info->feature_support_status == 1)  // If the debug mode data log function is supported, then get packet address and flag address for segment read finger touch data.
-                {
-                    ret = mstar_get_touch_packet_addr(&tskit_mstar_data->fw_data.packet_data_addr, &tskit_mstar_data->fw_data.packet_flag_addr);
-                    if (ret < 0) {
-                        TS_LOG_ERR("%s get touch packet addr error ret = %d\n", __func__, ret);
-                    }
-                }
-            }
+		if (tskit_mstar_data->chip_type == CHIP_TYPE_MSG28XX || tskit_mstar_data->chip_type == CHIP_TYPE_MSG58XXA) {
+			if (apk_info->feature_support_status == 1) {
+				ret = mstar_get_touch_packet_addr(&tskit_mstar_data->fw_data.packet_data_addr, &tskit_mstar_data->fw_data.packet_flag_addr);
+				if (ret < 0) {
+					TS_LOG_ERR("%s get touch packet addr error ret = %d\n", __func__, ret);
+				}
+			}
+		}
 #endif //CONFIG_ENABLE_SEGMENT_READ_FINGER_TOUCH_DATA
-        } else if (nFeature == FEATURE_FORCE_TO_UPDATE_FIRMWARE) {
-            apk_info->feature_support_status = apk_info->force_update_firmware_enable;
-        } else if (nFeature == FEATURE_DISABLE_ESD_PROTECTION_CHECK) {
-            apk_info->feature_support_status = apk_info->disable_esd_protection_check;
-        } else if (nFeature == FEATURE_APK_PRINT_FIRMWARE_SPECIFIC_LOG) {
-            apk_info->feature_support_status = apk_info->firmware_special_log_enable;
-        } else if (nFeature == FEATURE_SELF_FREQ_SCAN) {
-            TS_LOG_INFO("change to  FEATURE_SELF_FREQ_SCAN\n");
-            apk_info->feature_support_status = apk_info->self_freq_scan_enable;
-        } else {
-            TS_LOG_INFO("Undefined Feature\n");
-        }
-    }
+	} else if (nFeature == FEATURE_FORCE_TO_UPDATE_FIRMWARE) {
+		apk_info->feature_support_status = apk_info->force_update_firmware_enable;
+	} else if (nFeature == FEATURE_DISABLE_ESD_PROTECTION_CHECK) {
+		apk_info->feature_support_status = apk_info->disable_esd_protection_check;
+	} else if (nFeature == FEATURE_APK_PRINT_FIRMWARE_SPECIFIC_LOG) {
+		apk_info->feature_support_status = apk_info->firmware_special_log_enable;
+	} else if (nFeature == FEATURE_SELF_FREQ_SCAN) {
+		TS_LOG_INFO("change to  FEATURE_SELF_FREQ_SCAN\n");
+		apk_info->feature_support_status = apk_info->self_freq_scan_enable;
+	} else {
+		TS_LOG_INFO("Undefined Feature\n");
+	}
 
     TS_LOG_INFO("g_feature_support_status = %d\n", apk_info->feature_support_status);
 out:
@@ -1907,61 +1904,59 @@ static ssize_t mstar_apknode_change_feature_support_status_write(struct file *pF
         TS_LOG_INFO("copy_from_user() failed\n");
         return -EFAULT;
     }
-    if (apk_info->debug_buf != NULL) {
-        TS_LOG_INFO("nCount = %d\n", (int)nCount);
-        apk_info->debug_buf[nCount] = '\0';
-        pStr = apk_info->debug_buf;
+	TS_LOG_INFO("nCount = %d\n", (int)nCount);
+	apk_info->debug_buf[nCount] = '\0';
+	pStr = apk_info->debug_buf;
 
-        i = 0;
+	i = 0;
 
-        while ((pCh = strsep((char **)&pStr, " ,")) && (i < 3)) {
-            TS_LOG_INFO("pCh = %s\n", pCh);
+	while ((pCh = strsep((char **)&pStr, " ,")) && (i < 3)) {
+		TS_LOG_INFO("pCh = %s\n", pCh);
 
-            if (i == 0) {
-                nFeature = mstar_convert_char_to_hex_digit(pCh, strlen(pCh));
-                TS_LOG_INFO("nFeature = 0x%04X\n", nFeature);
-            } else if (i == 1) {
-                nNewValue = mstar_convert_char_to_hex_digit(pCh, strlen(pCh));
-                TS_LOG_INFO("nNewValue = %d\n", nNewValue);
-            } else {
-                TS_LOG_INFO("End of parsing adb command.\n");
-            }
+		if (i == 0) {
+			nFeature = mstar_convert_char_to_hex_digit(pCh, strlen(pCh));
+			TS_LOG_INFO("nFeature = 0x%04X\n", nFeature);
+		} else if (i == 1) {
+			nNewValue = mstar_convert_char_to_hex_digit(pCh, strlen(pCh));
+			TS_LOG_INFO("nNewValue = %d\n", nNewValue);
+		} else {
+			TS_LOG_INFO("End of parsing adb command.\n");
+		}
 
-            i++;
-        }
-        if (nFeature == FEATURE_GESTURE_WAKEUP_MODE) {
-            apk_info->gesture_wakeup_enable = nNewValue;
-            apk_info->feature_support_status = apk_info->gesture_wakeup_enable;
-        } else if (nFeature == FEATURE_GESTURE_DEBUG_MODE) {
-            apk_info->gesture_debug_mode_enable = nNewValue;
-            apk_info->feature_support_status = apk_info->gesture_debug_mode_enable;
-        } else if (nFeature == FEATURE_GESTURE_INFORMATION_MODE) {
-            apk_info->gesture_information_mode_enable = nNewValue;
-            apk_info->feature_support_status = apk_info->gesture_information_mode_enable;
-        } else if (nFeature == FEATURE_TOUCH_DRIVER_DEBUG_LOG) {
-            //TOUCH_DRIVER_DEBUG_LOG_LEVEL = nNewValue;
-            //apk_info->feature_support_status = TOUCH_DRIVER_DEBUG_LOG_LEVEL;
-        } else if (nFeature == FEATURE_FIRMWARE_DATA_LOG) {
-            apk_info->firmware_log_enable = nNewValue;
-            apk_info->feature_support_status = apk_info->firmware_log_enable;
-        } else if (nFeature == FEATURE_FORCE_TO_UPDATE_FIRMWARE) {
-            apk_info->force_update_firmware_enable = nNewValue;
-            apk_info->feature_support_status = apk_info->force_update_firmware_enable;
-        } else if (nFeature == FEATURE_DISABLE_ESD_PROTECTION_CHECK) {
-            apk_info->disable_esd_protection_check = nNewValue;
-            apk_info->feature_support_status = apk_info->disable_esd_protection_check;
-        } else if (nFeature == FEATURE_APK_PRINT_FIRMWARE_SPECIFIC_LOG) {
-            apk_info->firmware_special_log_enable = nNewValue;
-            apk_info->feature_support_status = apk_info->firmware_special_log_enable;
-        } else if (nFeature == FEATURE_SELF_FREQ_SCAN) {
-            apk_info->self_freq_scan_enable = nNewValue;
-            apk_info->feature_support_status = apk_info->self_freq_scan_enable;
-        } else {
-            TS_LOG_INFO("Undefined Feature\n");
-        }
+		i++;
+	}
+	if (nFeature == FEATURE_GESTURE_WAKEUP_MODE) {
+		apk_info->gesture_wakeup_enable = nNewValue;
+		apk_info->feature_support_status = apk_info->gesture_wakeup_enable;
+	} else if (nFeature == FEATURE_GESTURE_DEBUG_MODE) {
+		apk_info->gesture_debug_mode_enable = nNewValue;
+		apk_info->feature_support_status = apk_info->gesture_debug_mode_enable;
+	} else if (nFeature == FEATURE_GESTURE_INFORMATION_MODE) {
+		apk_info->gesture_information_mode_enable = nNewValue;
+		apk_info->feature_support_status = apk_info->gesture_information_mode_enable;
+	} else if (nFeature == FEATURE_TOUCH_DRIVER_DEBUG_LOG) {
+		//TOUCH_DRIVER_DEBUG_LOG_LEVEL = nNewValue;
+		//apk_info->feature_support_status = TOUCH_DRIVER_DEBUG_LOG_LEVEL;
+	} else if (nFeature == FEATURE_FIRMWARE_DATA_LOG) {
+		apk_info->firmware_log_enable = nNewValue;
+		apk_info->feature_support_status = apk_info->firmware_log_enable;
+	} else if (nFeature == FEATURE_FORCE_TO_UPDATE_FIRMWARE) {
+		apk_info->force_update_firmware_enable = nNewValue;
+		apk_info->feature_support_status = apk_info->force_update_firmware_enable;
+	} else if (nFeature == FEATURE_DISABLE_ESD_PROTECTION_CHECK) {
+		apk_info->disable_esd_protection_check = nNewValue;
+		apk_info->feature_support_status = apk_info->disable_esd_protection_check;
+	} else if (nFeature == FEATURE_APK_PRINT_FIRMWARE_SPECIFIC_LOG) {
+		apk_info->firmware_special_log_enable = nNewValue;
+		apk_info->feature_support_status = apk_info->firmware_special_log_enable;
+	} else if (nFeature == FEATURE_SELF_FREQ_SCAN) {
+		apk_info->self_freq_scan_enable = nNewValue;
+		apk_info->feature_support_status = apk_info->self_freq_scan_enable;
+	} else {
+		TS_LOG_INFO("Undefined Feature\n");
+	}
 
-        TS_LOG_INFO("g_feature_support_status = %d\n", apk_info->feature_support_status);
-    }
+	TS_LOG_INFO("g_feature_support_status = %d\n", apk_info->feature_support_status);
    out:
     return nCount;
 }
@@ -2087,6 +2082,7 @@ static ssize_t mstar_apknode_gesture_info_mode_write(struct file *pFile, const c
                               loff_t * pPos)
 {
     u32 nMode = 0;
+	int ret = NO_ERR;
 
     if(nCount > 16){
         TS_LOG_ERR("%s:The size of count(%d) is larger than its define\n",__func__,nCount);
@@ -2103,10 +2099,10 @@ static ssize_t mstar_apknode_gesture_info_mode_write(struct file *pFile, const c
         TS_LOG_INFO("copy_from_user() failed\n");
         return -EFAULT;
     }
-    if (apk_info->debug_buf != NULL) {
-        sscanf(apk_info->debug_buf, "%x", &nMode);
-        apk_info->log_gesture_info_type = nMode;
-    }
+	ret = sscanf(apk_info->debug_buf, "%x", &nMode);
+	if (ret <= 0)
+		TS_LOG_ERR("%s: sscanf fail\n", __func__);
+	apk_info->log_gesture_info_type = nMode;
 
     TS_LOG_INFO("g_log_gesture_infor_type type = 0x%x\n", apk_info->log_gesture_info_type);
 out:
@@ -2170,33 +2166,29 @@ static ssize_t mstar_apknode_glove_mode_write(struct file *pFile, const char __u
     }
 
     pStr = apk_info->debug_buf;
-    if (apk_info->debug_buf != NULL) {
-        i = 0;
-        while ((pCh = strsep((char **)&pStr, ",")) && (i < 1)) {
-            TS_LOG_INFO("pCh = %s\n", pCh);
+	i = 0;
+	while ((pCh = strsep((char **)&pStr, ",")) && (i < 1)) {
+		TS_LOG_INFO("pCh = %s\n", pCh);
 
-            nGloveMode = mstar_convert_char_to_hex_digit(pCh, strlen(pCh));
+		nGloveMode = mstar_convert_char_to_hex_digit(pCh, strlen(pCh));
 
-            i++;
-        }
+		i++;
+	}
 
-        TS_LOG_INFO("Glove Mode = 0x%x\n", nGloveMode);
+	TS_LOG_INFO("Glove Mode = 0x%x\n", nGloveMode);
 
-        mstar_finger_touch_report_disable();
+	mstar_finger_touch_report_disable();
 
-        if (nGloveMode == 0x01) //open glove mode
-        {
+	if (nGloveMode == 0x01) {
             mstar_apknode_open_glove();
-        } else if (nGloveMode == 0x00)  //close glove mode
-        {
-            mstar_apknode_close_glove();
-        } else {
-            TS_LOG_INFO("Undefined Glove Mode\n");
-        }
-        TS_LOG_INFO("apk_info.ans.g_IsEnableGloveMode = 0x%x\n", apk_info->ans.g_IsEnableGloveMode);
+	} else if (nGloveMode == 0x00) {
+		mstar_apknode_close_glove();
+	} else {
+		TS_LOG_INFO("Undefined Glove Mode\n");
+	}
+	TS_LOG_INFO("apk_info.ans.g_IsEnableGloveMode = 0x%x\n", apk_info->ans.g_IsEnableGloveMode);
 
-        mstar_finger_touch_report_enable();
-    }
+	mstar_finger_touch_report_enable();
 out:
     return nCount;
 }
@@ -2367,7 +2359,10 @@ static long mstar_apknode_jni_msgtool_ioctl(struct file *pFile, unsigned int nCm
                 }
                 break;
             case MSGTOOL_DEVICEPOWEROFF:
-                mstar_enter_sleep_mode();
+			if (mstar_enter_sleep_mode() < 0)
+				TS_LOG_ERR(
+					"%s: mstar_enter_sleep_mode fail\n",
+					__func__);
                 break;
             case MSGTOOL_GETSMDBBUS:
                 TS_LOG_INFO("  MSGTOOL_GETSMDBBUS  \n");
@@ -2420,7 +2415,9 @@ static ssize_t mstar_apknode_jni_msgtool_write(struct file *pFile, const char __
             goto out;
         }
         nRet = copy_from_user(szCmdData, &pBuffer[0], nWriteLen);
-        mstar_iic_write_data(nBusType, &szCmdData[0], nWriteLen);
+		nRet = mstar_iic_write_data(nBusType, &szCmdData[0], nWriteLen);
+		if (nRet < 0)
+			TS_LOG_ERR("%s: mstar_iic_write_data fail\n", __func__);
     } else {
         if (nCount > sizeof(buffer)) {
             TS_LOG_ERR("Count(%d) is larger than buffer size (%d)\n", nCount, sizeof(buffer));
@@ -2435,6 +2432,11 @@ static ssize_t mstar_apknode_jni_msgtool_write(struct file *pFile, const char __
             TS_LOG_INFO("start Erase Flash\n");
             mstar_erase_emem(EMEM_MAIN);
             TS_LOG_INFO("end Erase Flash\n");
+        }
+        else if (strcmp(buffer, "reset") == 0) {
+            TS_LOG_INFO("start reset\n");
+            mstar_dev_hw_reset();
+            TS_LOG_INFO("end reset\n");
         }
     }
 out:
@@ -2462,13 +2464,11 @@ static ssize_t mstar_apknode_set_film_mode_write(struct file *pFile, const char 
 
         return -EFAULT;
     }
-    if (apk_info->debug_buf != NULL) {
-        TS_LOG_INFO("nCount = %d\n", (int)nCount);
-        apk_info->debug_buf[nCount] = '\0';
-        nFilmType = mstar_convert_char_to_hex_digit(apk_info->debug_buf, strlen(apk_info->debug_buf));
-        TS_LOG_INFO("nFeature = 0x%02X\n", nFilmType);
-        mstar_set_film_mode(nFilmType);
-    }
+	TS_LOG_INFO("nCount = %d\n", (int)nCount);
+	apk_info->debug_buf[nCount] = '\0';
+	nFilmType = mstar_convert_char_to_hex_digit(apk_info->debug_buf, strlen(apk_info->debug_buf));
+	TS_LOG_INFO("nFeature = 0x%02X\n", nFilmType);
+	mstar_set_film_mode(nFilmType);
 out:
     return nCount;
 }
@@ -2594,9 +2594,11 @@ static ssize_t mstar_proc_debug_message_write(struct file *filp, const char *buf
 	}
 
 	if (strcmp(buffer, "dbg_flag") == 0) {
+		mutex_lock(&apk_info->debug_mutex);
 		apk_info->debug_node_open = !apk_info->debug_node_open;
 		TS_LOG_INFO(" %s debug_flag message(%X).\n", apk_info->debug_node_open ? "Enabled" : "Disabled",
 			 apk_info->debug_node_open);
+		mutex_unlock(&apk_info->debug_mutex);
 	}
 	return size;
 }

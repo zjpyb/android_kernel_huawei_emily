@@ -18,15 +18,16 @@
 
 #define COMFORM_MAX	80
 #define CHANGE_MAX	100
-#define DISCOUNT_COEFFICIENT(value)  (CHANGE_MAX - value) / CHANGE_MAX
+#define DISCOUNT_COEFFICIENT(value)  (CHANGE_MAX - value)
 #define CSC_VALUE_MAX	32768
 #define CSC_VALUE_NUM	9
 
 struct dss_vote_cmd * get_dss_vote_cmd(struct hisi_fb_data_type *hisifd);
 int set_dss_vote_cmd(struct hisi_fb_data_type *hisifd, dss_vote_cmd_t dss_vote_cmd);
+int hisifb_set_dss_external_vote_pre(struct hisi_fb_data_type *hisifd, uint64_t pixel_clock);
 int dpe_set_clk_rate(struct platform_device *pdev);
-int dpe_get_voltage_value(struct hisi_fb_data_type *hisifd, dss_vote_cmd_t *vote_cmd);
-int dpe_get_voltage_level(struct hisi_fb_data_type *hisifd, int votage_value);
+int dpe_get_voltage_value(dss_vote_cmd_t *vote_cmd);
+int dpe_get_voltage_level(int votage_value);
 int hisifb_set_mmbuf_clk_rate(struct hisi_fb_data_type *hisifd);
 
 int dpe_set_pixel_clk_rate_on_pll0(struct hisi_fb_data_type *hisifd);

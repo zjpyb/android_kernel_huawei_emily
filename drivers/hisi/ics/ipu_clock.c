@@ -7,7 +7,7 @@
 /* this func use mutex, for interface only, and SHOULD NOT be called by other ipu_clock functions */
 int ipu_clock_init(struct device *dev, struct ics_clock *clk, bool lpm3_set_vcodecbus)
 {
-	int property_rd;
+	unsigned int property_rd;
 	struct device_node *node;
 
 	mutex_lock(&clk->clk_mutex);
@@ -48,17 +48,17 @@ int ipu_clock_init(struct device *dev, struct ics_clock *clk, bool lpm3_set_vcod
 		return -ENODEV;
 	}
 
-	property_rd  = of_property_read_u32(node, "start-rate",             &clk->default_rate);
-	property_rd |= of_property_read_u32(node, "stop-rate",              &clk->stop_rate);
-	property_rd |= of_property_read_u32(node, "ipu-low",                &clk->ipu_low);
-	property_rd |= of_property_read_u32(node, "ipu-middle",             &clk->ipu_middle);
-	property_rd |= of_property_read_u32(node, "ipu-high",               &clk->ipu_high);
-	property_rd |= of_property_read_u32(node, "ipu-low-temperature",    &clk->ipu_low_temperature);
-	property_rd |= of_property_read_u32(node, "vcodecbus-low",          &clk->vcodecbus_low);
-	property_rd |= of_property_read_u32(node, "vcodecbus-middle",       &clk->vcodecbus_middle);
-	property_rd |= of_property_read_u32(node, "vcodecbus-high",         &clk->vcodecbus_high);
-	property_rd |= of_property_read_u32(node, "vcodecbus-default",      &clk->vcodecbus_default);
-	property_rd |= of_property_read_u32(node, "vcodecbus-high2default", &clk->vcodecbus_high2default);
+	property_rd  = (unsigned int)of_property_read_u32(node, "start-rate",             &clk->default_rate);
+	property_rd |= (unsigned int)of_property_read_u32(node, "stop-rate",              &clk->stop_rate);
+	property_rd |= (unsigned int)of_property_read_u32(node, "ipu-low",                &clk->ipu_low);
+	property_rd |= (unsigned int)of_property_read_u32(node, "ipu-middle",             &clk->ipu_middle);
+	property_rd |= (unsigned int)of_property_read_u32(node, "ipu-high",               &clk->ipu_high);
+	property_rd |= (unsigned int)of_property_read_u32(node, "ipu-low-temperature",    &clk->ipu_low_temperature);
+	property_rd |= (unsigned int)of_property_read_u32(node, "vcodecbus-low",          &clk->vcodecbus_low);
+	property_rd |= (unsigned int)of_property_read_u32(node, "vcodecbus-middle",       &clk->vcodecbus_middle);
+	property_rd |= (unsigned int)of_property_read_u32(node, "vcodecbus-high",         &clk->vcodecbus_high);
+	property_rd |= (unsigned int)of_property_read_u32(node, "vcodecbus-default",      &clk->vcodecbus_default);
+	property_rd |= (unsigned int)of_property_read_u32(node, "vcodecbus-high2default", &clk->vcodecbus_high2default);
 	if (property_rd) {
 		printk(KERN_ERR"[%s]: IPU_ERROR:read property of clock error\n", __func__);
 		mutex_unlock(&clk->clk_mutex);

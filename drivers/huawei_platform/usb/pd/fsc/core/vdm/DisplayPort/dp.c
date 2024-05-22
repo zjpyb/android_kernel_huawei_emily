@@ -250,7 +250,6 @@ void requestDpConfig(void)
     doDataObject_t  __svdmh = {0};
     FSC_U32          __length = 0;
     FSC_U32          __arr[2] = {0};
-    bool fsc_polarity = FALSE;
     //FSC_U32 pin_assignment = 0;
     //int ret = 0;
 

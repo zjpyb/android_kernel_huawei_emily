@@ -174,7 +174,7 @@ void get_vesa_dsc_para(struct hisi_panel_info *pinfo, uint8_t panel_mode)
 		} else if (panel_mode == MODE_10BIT_VIDEO_3X) {
 			init_dsc_para(vesa_dsc, basic_para_10bpc_10bpp, rc_buf_thresh_10bpc_10bpp, rc_minqp_10bpc_10bpp, rc_maxqp_10bpc_10bpp, rc_offset_10bpc_10bpp);
 		}
-	} else if ((pinfo->ifbc_type == IFBC_TYPE_VESA3_75X_DUAL)) {
+	} else if (pinfo->ifbc_type == IFBC_TYPE_VESA3_75X_DUAL) {
 		init_dsc_para(vesa_dsc, basic_para_10bpc_8bpp, rc_buf_thresh_10bpc_8bpp, rc_minqp_10bpc_8bpp, rc_maxqp_10bpc_8bpp, rc_offset_10bpc_8bpp);
 	}
 
@@ -463,7 +463,6 @@ int hostprocessing_get_project_id_for_udp(char *out)
 		return -1;
 	}
 
-
 	if (!is_first_access) {
 		HISI_FB_DEBUG("you have accessed before .\n");
 		return -1;
@@ -474,9 +473,9 @@ int hostprocessing_get_project_id_for_udp(char *out)
 	} else {
 		down(&hisifd->blank_sem);
 		if (hisifd->panel_power_on) {
-		hisifb_activate_vsync(hisifd);
-		get_project_id_on_udp(out);
-		hisifb_deactivate_vsync(hisifd);
+			hisifb_activate_vsync(hisifd);
+			get_project_id_on_udp(out);
+			hisifb_deactivate_vsync(hisifd);
 		} else {
 			HISI_FB_ERR("panel is off .\n");
 		}

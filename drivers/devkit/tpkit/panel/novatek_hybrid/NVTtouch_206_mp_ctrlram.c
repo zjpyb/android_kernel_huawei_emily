@@ -351,12 +351,14 @@ static void str_low(char *str)
 static unsigned long str_to_hex(char *p)
 {
 	unsigned long hex = 0;
-	unsigned long length = strlen(p), shift = 0;
+	unsigned long length = 0;
+	unsigned long shift = 0;
 	unsigned char dig = 0;
 	if(NULL == p) {
 		TS_LOG_ERR("%s: p is Null\n", __func__);
 		return hex;
 	}
+	length = strlen(p);
 	str_low(p);
 
 	if (length == 0)
@@ -374,6 +376,7 @@ static unsigned long str_to_hex(char *p)
 int32_t parse_mp_criteria_item(char **ptr, const char *item_string, int32_t *item_value)
 {
 	char *tmp = NULL;
+	int ret = 0;
 	if(NULL == item_string || NULL == item_value ||NULL == ptr) {
 		TS_LOG_ERR("%s: item_string is Null,or item_value is null,or ptr is null\n", __func__);
 		return -1;
@@ -385,7 +388,10 @@ int32_t parse_mp_criteria_item(char **ptr, const char *item_string, int32_t *ite
 	} else {
 		*ptr = tmp;
 		goto_next_line(ptr);
-		sscanf(*ptr, "%d,", item_value);
+		ret = sscanf(*ptr, "%d,", item_value);
+		if (ret < 0) {
+			TS_LOG_ERR("sscanf failed\n");
+		}
 		return 0;
 	}
 }
@@ -1026,7 +1032,8 @@ int32_t nvt_206_load_mp_criteria(void)
 				}
 			}
 		} else {
-			TS_LOG_ERR( "%s: retval=%d,read_ret=%d, fbufp=%p, stat.size=%lld\n", __func__, retval, read_ret, fbufp, stat.size);
+			TS_LOG_ERR("%s:ret=%d,read=%d, fbufp=%pK, stat.size=%lld\n",
+				__func__, retval, read_ret, fbufp, stat.size);
 			retval = -3;
 			goto exit_free;
 		}
@@ -1148,11 +1155,10 @@ static int32_t nvt_206_load_mp_ctrl_ram(char *file_path, struct nvt_206_test_cmd
 			filp_close(fp, NULL);
 			return retval;
 		}
-		memset((void *)fbufp,0,(unsigned int)stat.size + 2);
+		memset((void *)fbufp,0,(unsigned int)stat.size + 1);
 		read_ret = (int) vfs_read(fp, (char __user *)fbufp, (size_t) stat.size, &pos);
 		if (read_ret > 0) {
 			fbufp[stat.size] = '\0';
-			fbufp[stat.size+1] = '\n';
 			ptr = fbufp;
 
 			while ( ptr && (ptr < (fbufp + stat.size))) {
@@ -1312,17 +1318,18 @@ static int32_t nvt_206_load_mp_ctrl_ram(char *file_path, struct nvt_206_test_cmd
 					break;
 				}
 			}
-
-        } else {
-            TS_LOG_ERR("%s: retval=%d, read_ret=%d, fbufp=%p, stat.size=%lld\n", __func__, retval, read_ret, fbufp, stat.size);
-            retval = -3;
-            goto exit_free;
-        }
-    } else {
-        TS_LOG_ERR("%s: failed to get file stat, retval = %d\n", __func__, retval);
-        retval = -4;  // Read Failed
-        goto exit_free;
-    }
+		} else {
+			TS_LOG_ERR("%s:retv=%d,read=%d,fbufp=%pK,stat.size=%lld\n",
+				__func__, retval, read_ret, fbufp, stat.size);
+			retval = -3;
+			goto exit_free;
+		}
+	} else {
+		TS_LOG_ERR("%s: failed to get file stat, retval = %d\n",
+			__func__, retval);
+		retval = -4;  // Read Failed
+		goto exit_free;
+	}
 
 exit_free:
     set_fs(org_fs);
@@ -1407,6 +1414,7 @@ return:
 *******************************************************/
 static void nvt_206_write_test_cmd(struct nvt_206_test_cmd *cmds, int32_t cmd_num)
 {
+	int32_t ret;
 	int32_t i = 0;
 	int32_t j = 0;
 	uint8_t buf[64]={0};
@@ -1428,9 +1436,10 @@ static void nvt_206_write_test_cmd(struct nvt_206_test_cmd *cmds, int32_t cmd_nu
 			m=1 + j;
 			buf[m] = cmds[i].data[j];
 		}
-		nvt_hybrid_ts_i2c_write(nvt_hybrid_ts->client, NVT_HYBRID_I2C_FW_Address, buf, 1 + cmds[i].len);
-
-
+		ret = nvt_hybrid_ts_i2c_write(nvt_hybrid_ts->client,
+			NVT_HYBRID_I2C_FW_Address, buf, 1 + cmds[i].len);
+		if (ret < 0)
+			TS_LOG_ERR("%s, %d, i2c err\n", __func__, __LINE__);
 	}
 	return;
 }
@@ -1447,6 +1456,7 @@ return:
 static int32_t nvt_206_read_short_rxrx(void)
 {
 	int ret = 0;
+	int i2c_ret;
 	int32_t i = 0;
 	int32_t j = 0;
 	int32_t k = 0;
@@ -1562,7 +1572,12 @@ static int32_t nvt_206_read_short_rxrx(void)
 		nvt_hybrid_ts_i2c_write(nvt_hybrid_ts->client, NVT_HYBRID_I2C_FW_Address, buf, 3);
 		//---read data---
 		buf[0] = 0x00;
-		nvt_hybrid_ts_i2c_read(nvt_hybrid_ts->client, NVT_HYBRID_I2C_FW_Address, buf, NVT_206_IC_RX_CFG_SIZE * 2 + 1);
+		i2c_ret = nvt_hybrid_ts_i2c_read(nvt_hybrid_ts->client,
+			NVT_HYBRID_I2C_FW_Address, buf,
+			NVT_206_IC_RX_CFG_SIZE * 2 + 1);
+		if (i2c_ret)
+			TS_LOG_ERR("%s: i2c read error\n", __func__);
+
 		for (i = 0; i < nvt_hybrid_ts->ain_rx_num; i++) {
 			nvt_206_rawdata_short_rxrx1[i] = (int16_t)(buf[NVT_206_AIN_RX_Order[i] * 2 + 1] + 256 * buf[NVT_206_AIN_RX_Order[i] * 2 + 2]);
 			printk("%5d, ", nvt_206_rawdata_short_rxrx1[i]);
@@ -1970,6 +1985,7 @@ return:
 static int32_t nvt_206_read_open(void)
 {
 	int32_t ret = 0;
+	int32_t i2c_ret;
 	int32_t i = 0;
 	int32_t j = 0;
 	int32_t k = 0;
@@ -2036,7 +2052,11 @@ static int32_t nvt_206_read_open(void)
 			buf[0] = 0xFF;
 			buf[1] = 0x01;
 			buf[2] = 0x00 + (uint8_t)(((i * NVT_206_IC_RX_CFG_SIZE * 2) & 0xFF00) >> 8);
-			nvt_hybrid_ts_i2c_write(nvt_hybrid_ts->client, NVT_HYBRID_I2C_FW_Address, buf, 3);
+			i2c_ret = nvt_hybrid_ts_i2c_write(nvt_hybrid_ts->client,
+				NVT_HYBRID_I2C_FW_Address, buf, 3);
+			if (i2c_ret < 0)
+				TS_LOG_ERR("%s, %d, i2c err\n",
+					__func__, __LINE__);
 			//---read data---
 			buf[0] = (uint8_t)((i * NVT_206_IC_RX_CFG_SIZE * 2) & 0xFF);
 			nvt_hybrid_ts_i2c_read(nvt_hybrid_ts->client, NVT_HYBRID_I2C_FW_Address, buf, NVT_206_IC_RX_CFG_SIZE * 2 + 1);

@@ -56,8 +56,8 @@ static int hisi_hwspinlock_trylock(struct hwspinlock *lock)
 	int num_in_group = lock_temp->id_in_group;
 	unsigned int status;
 
-	writel(LOCK_CMD << (num_in_group * lock_bits_g), lock_addr);
-	status = readl(lock_addr + LOCK_ST_OFFSET) >> (num_in_group * lock_bits_g);
+	writel(LOCK_CMD << (unsigned int)(num_in_group * lock_bits_g), lock_addr);
+	status = (unsigned int)readl(lock_addr + LOCK_ST_OFFSET) >> (unsigned int)(num_in_group * lock_bits_g);
 
 	/* get only fourth (lock_bits_g) bits and compare to masterID.
 	 * if equal, we have the lock, otherwise
@@ -73,7 +73,7 @@ static void hisi_hwspinlock_unlock(struct hwspinlock *lock)
 	int num_in_group = lock_temp->id_in_group;
 
 	/* release the lock by writing LOCK_CMD to it */
-	writel(LOCK_CMD << (num_in_group * lock_bits_g), lock_addr + UNLOCK_OFFSET);
+	writel(LOCK_CMD << (unsigned int)(num_in_group * lock_bits_g), lock_addr + UNLOCK_OFFSET);
 }
 
 /*

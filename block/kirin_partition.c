@@ -57,7 +57,7 @@ void flash_find_hisee_ptn(const char* str, char* pblkname)
 	enum bootdevice_type boot_device_type;
 
 	if ((NULL == pblkname) || (NULL == str)) {
-		printk(KERN_ERR "Input partition name or device path buffer is NULL\n");
+		pr_err("Input partition name or device path buffer is NULL\n");
 		return;
 	}
 
@@ -86,13 +86,13 @@ int flash_find_ptn(const char* str, char* pblkname)
 	int current_ptn_num = 0;
 	struct partition *current_partition_table = NULL;
 	enum bootdevice_type boot_device_type = BOOT_DEVICE_EMMC;
+	char partition_name_tmp[MAX_PARTITION_NAME_LENGTH];
 #ifdef CONFIG_HISI_AB_PARTITION
 	enum AB_PARTITION_TYPE storage_boot_partition_type;
-	char partition_name_tmp[MAX_PARTITION_NAME_LENGTH];
 #endif
 
 	if ((NULL == pblkname) || (NULL == str)) {
-		printk(KERN_ERR "Input partition name or device path buffer is NULL\n");
+		pr_err("Input partition name or device path buffer is NULL\n");
 		return -1;
 	}
 
@@ -107,7 +107,7 @@ int flash_find_ptn(const char* str, char* pblkname)
 	}
 #endif
 	else {
-		printk(KERN_ERR "Invalid boot device type\n");
+		pr_err("Invalid boot device type\n");
 		return -1;
 	}
 
@@ -119,17 +119,18 @@ int flash_find_ptn(const char* str, char* pblkname)
 			return 0;
 		}
 	}
-#ifdef CONFIG_HISI_AB_PARTITION
-	storage_boot_partition_type = get_device_boot_partition_type();
 
 	if(strlen(str) > (sizeof(partition_name_tmp) - 3))
 	{
-		printk(KERN_ERR "Invalid input str\n");
+		pr_err("Invalid input str\n");
 		return -1;
 	}
 
 	memset(partition_name_tmp,0,sizeof(partition_name_tmp));/* unsafe_function_ignore: memset */
 	strncpy(partition_name_tmp, str, sizeof(partition_name_tmp) - 3);/* unsafe_function_ignore: strncpy */
+
+#ifdef CONFIG_HISI_AB_PARTITION
+	storage_boot_partition_type = get_device_boot_partition_type();
 	if (BOOT_XLOADER_A == storage_boot_partition_type) {
 		strncpy(partition_name_tmp + strlen(partition_name_tmp), "_a", (unsigned long)3);/* unsafe_function_ignore: strncpy */
 	} else if (BOOT_XLOADER_B == storage_boot_partition_type) {
@@ -146,8 +147,19 @@ int flash_find_ptn(const char* str, char* pblkname)
 			return 0;
 		}
 	}
+#else
+	strncpy(partition_name_tmp + strlen(partition_name_tmp), "_a", (unsigned long)3);/* unsafe_function_ignore: strncpy */
+	current_ptn_num = get_cunrrent_total_ptn_num();
+
+	for(n = 0; n < current_ptn_num; n++) {
+		if(!strcmp((current_partition_table + n)->name, partition_name_tmp)) {/*[false alarm]:current_partition_table!=NULL*/
+			strncpy(pblkname, device_path, strlen(device_path));/* unsafe_function_ignore: strncpy */
+			strncpy(pblkname + strlen(device_path), str, strlen(str)+1);/* unsafe_function_ignore: strncpy */
+			return 0;
+		}
+	}
 #endif
-	printk(KERN_ERR "partition is not found\n");
+	pr_err("[%s]partition is not found, str = %s, pblkname = %s\n",__func__,str, pblkname);
 	return -1;
 }
 EXPORT_SYMBOL(flash_find_ptn);
@@ -161,12 +173,12 @@ int flash_get_ptn_index(const char* pblkname)
 	int current_ptn_num;
 	struct partition *current_partition_table = NULL;
 	enum bootdevice_type boot_device_type;
+	char partition_name_tmp[MAX_PARTITION_NAME_LENGTH];
 #ifdef CONFIG_HISI_AB_PARTITION
 	enum AB_PARTITION_TYPE storage_boot_partition_type;
-	char partition_name_tmp[MAX_PARTITION_NAME_LENGTH];
 #endif
 	if (NULL == pblkname) {
-		printk(KERN_ERR "Input partition name is NULL\n");
+		pr_err("Input partition name is NULL\n");
 		return -1;
 	}
 
@@ -180,14 +192,14 @@ int flash_get_ptn_index(const char* pblkname)
 	}
 #endif
 	else {
-		printk(KERN_ERR "Invalid boot device type\n");
+		pr_err("Invalid boot device type\n");
 		return -1;
 	}
 
 	current_ptn_num = get_cunrrent_total_ptn_num();
 
 	if(!strcmp(PART_XLOADER, pblkname)) {
-		printk(KERN_ERR "This is boot partition\n");
+		pr_err("[%s]This is boot partition\n",__func__);
 		return -1;
 	}
 
@@ -198,17 +210,18 @@ int flash_get_ptn_index(const char* pblkname)
 		}
 	}
 
-#ifdef CONFIG_HISI_AB_PARTITION
-	storage_boot_partition_type = get_device_boot_partition_type();
-
 	if(strlen(pblkname) > (sizeof(partition_name_tmp) - 3))
 	{
-		printk(KERN_ERR "Invalid input pblkname\n");
+		pr_err("Invalid input pblkname\n");
 		return -1;
 	}
 
 	memset(partition_name_tmp,0,sizeof(partition_name_tmp));/* unsafe_function_ignore: memset */
 	strncpy(partition_name_tmp, pblkname, sizeof(partition_name_tmp) - 3);/* unsafe_function_ignore: strncpy */
+
+#ifdef CONFIG_HISI_AB_PARTITION
+	/*A/B partition*/
+	storage_boot_partition_type = get_device_boot_partition_type();
 	if (BOOT_XLOADER_A == storage_boot_partition_type) {
 		strncpy(partition_name_tmp + strlen(partition_name_tmp), "_a", 3);/* unsafe_function_ignore: strncpy */
 	} else if (BOOT_XLOADER_B == storage_boot_partition_type) {
@@ -216,16 +229,17 @@ int flash_get_ptn_index(const char* pblkname)
 	} else {
 		return -1;
 	}
+#else
+	strncpy(partition_name_tmp + strlen(partition_name_tmp), "_a", 3);/* unsafe_function_ignore: strncpy */
+#endif
 
-	/*A/B partition*/
 	for(n = 0; n < current_ptn_num; n++) {
 		if (!strcmp((current_partition_table + n)->name, partition_name_tmp)) {
 			return n;
 		}
 	}
-#endif
 
-	printk(KERN_ERR "Input partition is not found\n");
+	pr_err("[%s]Input partition(%s) is not found\n",__func__,pblkname);
 	return -1;
 }
 EXPORT_SYMBOL(flash_get_ptn_index);
@@ -252,11 +266,11 @@ enum AB_PARTITION_TYPE get_device_boot_partition_type(void)
 	}
 #endif
 	else {
-		printk(KERN_ERR "invalid boot device type\n");
+		pr_err("invalid boot device type\n");
 		return ERROR_VALUE;
 	}
 #else
-	printk(KERN_INFO "Not support AB partition\n");
+	pr_info("Not support AB partition\n");
 	return NO_SUPPORT_AB;
 #endif
 }
@@ -275,28 +289,95 @@ int set_device_boot_partition_type(char boot_partition_type)
 	if (BOOT_DEVICE_EMMC == boot_device_type) {
 		ret = mmc_set_boot_partition_type(boot_partition_type);
 		if (ret) {
-			printk(KERN_ERR "set boot device type failed\n");
+			pr_err("set boot device type failed\n");
 			return -1;
 		}
 		emmc_boot_partition_type = boot_partition_type;
 	}
 #ifdef CONFIG_HISI_STORAGE_UFS_PARTITION
-	else if (BOOT_DEVICE_UFS  == boot_device_type){
+	else if (BOOT_DEVICE_UFS  == boot_device_type) {
 		ret = ufs_set_boot_partition_type(boot_partition_type);
 		if (ret) {
-			printk(KERN_ERR "set boot device type failed\n");
+			pr_err("set boot device type failed\n");
 			return -1;
 		}
 		ufs_boot_partition_type = boot_partition_type;
 	}
 #endif
 	else {
-		printk(KERN_ERR "invalid boot device type\n");
+		pr_err("invalid boot device type\n");
 		return -1;
 	}
 #else
-	printk(KERN_ERR "Not support AB partition writing\n");
+	pr_err("Not support AB partition writing\n");
 #endif
 
 	return 0;
 }
+
+#ifdef CONFIG_HISI_DEBUG_FS
+int flash_find_ptn_ut_test(void)
+{
+	char ptn_name_noab[] = "isp_firmware";
+	char pblkname[100] = {'\0'};
+	char device_path_noab[] = "/dev/block/by-name/isp_firmware";
+#ifdef CONFIG_HISI_AB_PARTITION
+	char ptn_name_ab[] = "isp_firmware_a";
+	char device_path_ab[] = "/dev/block/by-name/isp_firmware_a";
+#endif
+	int res = 0;
+
+	/*Scene 1:noab*/
+	/*Scene 2:current partition name have _a,the macro is close*/
+	res = flash_find_ptn(ptn_name_noab, pblkname);
+	if (res == 0) {
+		if (strcmp(device_path_noab, pblkname) == 0) {
+			pr_err("[%s]noab,flash_find_ptn test success\n", __func__);
+			return 0;
+		}
+
+		pr_err("[%s]noab,flash_find_ptn test failed, not equal, \
+		Expectation is %s, Actual is %s\n", __func__, device_path_noab, pblkname);
+	} else {
+		pr_err("[%s]noab,flash_find_ptn test failed,not find\n", __func__);
+	}
+
+#ifdef CONFIG_HISI_AB_PARTITION
+	/*Scene 3:ab*/
+	res = flash_find_ptn(ptn_name_ab, pblkname);
+	if (res == 0) {
+		if (strcmp(device_path_ab, pblkname) == 0) {
+			pr_err("[%s]ab,flash_find_ptn test success\n", __func__);
+			return 0;
+		}
+
+		pr_err("[%s]ab,flash_find_ptn test failed, not equal, \
+		Expectation is %s, Actual is %s\n", __func__, device_path_ab, pblkname);
+	} else {
+		pr_err("[%s]ab,flash_find_ptn test failed,not find\n", __func__);
+	}
+#endif
+	return -1;
+
+}
+
+int flash_get_ptn_index_ut_test(void)
+{
+	char ptn_name[] = "isp_firmware";
+	int res = 0;
+
+	/*noab*/
+	/*ab*/
+	/*current partition name have _a,the macro is close*/
+	res = flash_get_ptn_index(ptn_name);
+	if (res >= 0) {
+		pr_err("[%s]flash_get_ptn_index \
+		test success,the index is %d\n", __func__, res);
+		return 0;
+	} else {
+		pr_err("[%s]flash_get_ptn_index test failed,not find\n", __func__);
+	}
+
+	return -1;
+}
+#endif /*#CONFIG_HISI_DEBUG_FS*/

@@ -2161,7 +2161,7 @@ static int ctrl_reg_access(struct stmvl53l1_data *data, void *p)
 
 	total_byte = offsetof(struct stmvl53l1_register, data.bytes[reg.cnt]);/*[false alarm]:Null Dereference*/
 	/* for write get the effective data part of the structure */
-    if (total_byte > sizeof(reg)){
+    if ((total_byte <= 0) ||(total_byte > sizeof(reg))){
         return -EFAULT;
     }
 	if (!reg.is_read) {
@@ -2750,7 +2750,7 @@ static int ctrl_roi(struct stmvl53l1_data *data, void __user *p)
 		roi_cnt = MIN(rois.roi_cfg.NumberOfRoi,
 				data->roi_cfg.NumberOfRoi);
 		cpy_size = offsetof(VL53L1_RoiConfig_t, UserRois[roi_cnt]);/*[false alarm]:Null Dereference*/
-        if(cpy_size > sizeof(rois.roi_cfg)){
+        if((cpy_size == 0) || (cpy_size > sizeof(rois.roi_cfg))){
             rc = -EFAULT;
             goto done;
         }
@@ -2770,7 +2770,7 @@ static int ctrl_roi(struct stmvl53l1_data *data, void __user *p)
 
         cpy_size = offsetof(struct stmvl53l1_roi_full_t, roi_cfg.UserRois[roi_cnt]);
 /*[false alarm]:Null Dereference*/
-        if (cpy_size > sizeof(rois)){
+        if ((cpy_size == 0) || (cpy_size > sizeof(rois))){
             rc = -EFAULT;
             goto done;
         }
@@ -2844,7 +2844,7 @@ static int ctrl_calibration_data(struct stmvl53l1_data *data, void __user *p)
 		rc = -ENODEV;
 		goto done;
 	}
-    if(data_offset > sizeof(calib)){
+    if((data_offset <= 0) || (data_offset > sizeof(calib))){
         rc = -EFAULT;
         goto done;
     }
@@ -2906,7 +2906,7 @@ static int ctrl_zone_calibration_data(struct stmvl53l1_data *data,
 		rc = -ENODEV;
 		goto done;
 	}
-    if (data_offset > sizeof(data->calib)){
+    if ((data_offset <= 0) || (data_offset > sizeof(data->calib))){
         rc = -EFAULT;
         goto done;
     }
@@ -3199,12 +3199,10 @@ static int stmvl53l1_ioctl_handler(
 		break;
 
 	case VL53L1_IOCTL_GETDATAS:
-		/* vl53l1_dbgmsg("VL53L1_IOCTL_GETDATAS\n"); */
 		rc = ctrl_getdata(data, p);
 		break;
 
 	case VL53L1_IOCTL_GETDATAS_BLOCKING:
-		/* vl53l1_dbgmsg("VL53L1_IOCTL_GETDATAS_BLOCKING\n"); */
 		rc = ctrl_getdata_blocking(data, p);
 		break;
 
@@ -3224,11 +3222,9 @@ static int stmvl53l1_ioctl_handler(
 		rc = ctrl_roi(data, p);
 		break;
 	case VL53L1_IOCTL_MZ_DATA:
-		/* vl53l1_dbgmsg("VL53L1_IOCTL_MZ_DATA\n"); */
 		rc = ctrl_mz_data(data, p);
 		break;
 	case VL53L1_IOCTL_MZ_DATA_BLOCKING:
-		/* vl53l1_dbgmsg("VL53L1_IOCTL_MZ_DATA_BLOCKING\n"); */
 		rc = ctrl_mz_data_blocking(data, p);
 		break;
 	case VL53L1_IOCTL_CALIBRATION_DATA:
@@ -3248,12 +3244,9 @@ static int stmvl53l1_ioctl_handler(
 		rc = ctrl_zone_calibration_data(data, p);
 		break;
 	case VL53L1_IOCTL_MZ_DATA_ADDITIONAL:
-		/* vl53l1_dbgmsg("VL53L1_IOCTL_MZ_DATA_ADDITIONAL\n"); */
 		rc = ctrl_mz_data_additional(data, p);
 		break;
 	case VL53L1_IOCTL_MZ_DATA_ADDITIONAL_BLOCKING:
-		/* vl53l1_dbgmsg("VL53L1_IOCTL_MZ_DATA_ADDITIONAL_BLOCKING\n");
-		 */
 		rc = ctrl_mz_data_blocking_additional(data, p);
 		break;
 	default:
@@ -3807,7 +3800,6 @@ int stmvl53l1_setup(struct stmvl53l1_data *data)
 	stmvl53l1_dev_table[data->id] = data;
 
 	/* init mutex */
-	/* mutex_init(&data->update_lock); */
 	mutex_init(&data->work_mutex);
 
 	/* init work handler */
@@ -4311,8 +4303,6 @@ long stmvl53l1_laser_ioctl(void *hw_data, unsigned int cmd, void  *p)
             break;
         case HWLASER_IOCTL_INIT:
             vl53l1_dbgmsg("HWLASER_IOCTL_INIT\n");
-            //rc = stmvl53l0_laser_init(data);
-            // ctrl_start == init
             break;
         case HWLASER_IOCTL_ROI:
             vl53l1_dbgmsg("HWLASER_IOCTL_ROI\n");
@@ -4373,7 +4363,6 @@ static void __exit stmvl53l1_exit(void)
 }
 
 
-/* MODULE_DEVICE_TABLE(i2c, stmvl53l1_id); */
 MODULE_AUTHOR("STMicroelectronics Imaging Division");
 MODULE_DESCRIPTION("ST FlightSense Time-of-Flight sensor driver");
 MODULE_LICENSE("GPL");

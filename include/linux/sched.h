@@ -335,7 +335,28 @@ enum DYNAMIC_VIP_TYPE
 #define VIP_MSG_LEN 64
 #define VIP_DEPTH_MAX 2
 #endif
-
+#ifdef CONFIG_HW_QOS_THREAD
+enum DYNAMIC_QOS_TYPE {
+	DYNAMIC_QOS_BINDER = 0,
+	DYNAMIC_QOS_RWSEM,
+	DYNAMIC_QOS_MUTEX,
+	DYNAMIC_QOS_FUTEX,
+	DYNAMIC_QOS_TYPE_MAX,
+};
+enum DYNAMIC_QOS_VALUE {
+	VALUE_QOS_LOW = 0,
+	VALUE_QOS_NORMAL,
+	VALUE_QOS_HIGH,
+	VALUE_QOS_CRITICAL,
+	VALUE_QOS_MAX,
+};
+enum DYNAMIC_QOS_OPERATION {
+	OPERATION_QOS_SET = 0,
+	OPERATION_QOS_ENQUEUE,
+	OPERATION_QOS_DEQUEUE,
+	OPERATION_QOS_MAX,
+};
+#endif
 enum task_event {
 	PUT_PREV_TASK   = 0,
 	PICK_NEXT_TASK  = 1,
@@ -617,6 +638,10 @@ static inline int get_dumpable(struct mm_struct *mm)
 #define MMF_OOM_SKIP		21	/* mm is of no interest for the OOM killer */
 #define MMF_UNSTABLE		22	/* mm is unstable for copy_from_user */
 #define MMF_HUGE_ZERO_PAGE	23      /* mm has ever used the global huge zero page */
+
+#ifdef CONFIG_HISI_SVM
+#define MMF_SVM		32	/* start from high 32bit */
+#endif
 
 #define MMF_INIT_MASK		(MMF_DUMPABLE_MASK | MMF_DUMP_FILTER_MASK)
 
@@ -1618,7 +1643,7 @@ struct ravg {
 	u32 prev_window_cpu[NR_CPUS];
 	u32 curr_window, prev_window;
 	u16 active_windows;
-#ifdef CONFIG_SCHED_HISI_MIGRATE_BACK_LOWER_LOAD
+#ifdef CONFIG_SCHED_HISI_MIGRATE_SPREAD_LOAD
 	cpumask_t prev_cpus, curr_cpus;
 #endif
 #ifdef CONFIG_SCHED_HISI_TOP_TASK
@@ -1848,13 +1873,20 @@ struct task_struct {
 	unsigned int flags;	/* per process flags, defined below */
 	unsigned int ptrace;
 
-#ifdef CONFIG_HW_VIP_THREAD
+#if ((defined(CONFIG_HW_VIP_THREAD)) || (defined(CONFIG_HW_QOS_THREAD)))
 	int static_vip;
+#endif
+#ifdef CONFIG_HW_VIP_THREAD
 	atomic64_t dynamic_vip;
 	struct list_head vip_entry;
 	int vip_depth;
 	u64 enqueue_time;
 	u64 dynamic_vip_start;
+#endif
+#ifdef CONFIG_HW_QOS_THREAD
+	atomic_t dynamic_qos;
+	atomic_t trans_flags;
+	struct transact_qos trans_qos[DYNAMIC_QOS_TYPE_MAX];
 #endif
 #ifdef CONFIG_SMP
 	struct llist_node wake_entry;
@@ -1941,7 +1973,7 @@ struct task_struct {
 
 	struct mm_struct *mm, *active_mm;
 	/* per-thread vma caching */
-	u32 vmacache_seqnum;
+	u64 vmacache_seqnum;
 	struct vm_area_struct *vmacache[VMACACHE_SIZE];
 #if defined(SPLIT_RSS_COUNTING)
 	struct task_rss_stat	rss_stat;
@@ -2673,6 +2705,7 @@ extern void thread_group_cputime_adjusted(struct task_struct *p, cputime_t *ut, 
 /*
  * Per process flags
  */
+#define PF_WAKE_UP_IDLE 0x00000002	/* try to wake up on an idle CPU */
 #define PF_EXITING	0x00000004	/* getting shut down */
 #define PF_EXITPIDONE	0x00000008	/* pi exit done on shut down */
 #define PF_VCPU		0x00000010	/* I'm a virtual CPU */
@@ -2757,6 +2790,8 @@ static inline void memalloc_noio_restore(unsigned int flags)
 #define PFA_SPREAD_PAGE  1      /* Spread page cache over cpuset */
 #define PFA_SPREAD_SLAB  2      /* Spread some slab caches over cpuset */
 #define PFA_LMK_WAITING  3      /* Lowmemorykiller is waiting */
+#define PFA_SPEC_SSB_DISABLE		4	/* Speculative Store Bypass disabled */
+#define PFA_SPEC_SSB_FORCE_DISABLE	5	/* Speculative Store Bypass force disabled*/
 
 #define PFA_SLEEP_ON_THROTL	25
 #define PFA_FLUSHER		26
@@ -2802,6 +2837,13 @@ TASK_PFA_CLEAR(IN_PAGEFAULT, in_pagefault)
 TASK_PFA_TEST(IN_WB_THRD, in_wb_thrd)
 TASK_PFA_SET(IN_WB_THRD, in_wb_thrd)
 TASK_PFA_CLEAR(IN_WB_THRD, in_wb_thrd)
+
+TASK_PFA_TEST(SPEC_SSB_DISABLE, spec_ssb_disable)
+TASK_PFA_SET(SPEC_SSB_DISABLE, spec_ssb_disable)
+TASK_PFA_CLEAR(SPEC_SSB_DISABLE, spec_ssb_disable)
+
+TASK_PFA_TEST(SPEC_SSB_FORCE_DISABLE, spec_ssb_force_disable)
+TASK_PFA_SET(SPEC_SSB_FORCE_DISABLE, spec_ssb_force_disable)
 
 /*
  * task->jobctl flags
@@ -2886,6 +2928,14 @@ void calc_load_exit_idle(void);
 static inline void calc_load_enter_idle(void) { }
 static inline void calc_load_exit_idle(void) { }
 #endif /* CONFIG_NO_HZ_COMMON */
+
+static inline void set_wake_up_idle(bool enable)
+{
+	if (enable)
+		current->flags |= PF_WAKE_UP_IDLE;
+	else
+		current->flags &= ~PF_WAKE_UP_IDLE;
+}
 
 /*
  * Do not use outside of architecture code which knows its limitations.
@@ -4078,6 +4128,7 @@ void cpufreq_remove_update_util_hook(int cpu);
 
 #ifdef CONFIG_SCHED_HWSTATUS
 extern void sched_hwstatus_iodelay_caller(struct task_struct *tsk, u64 delta);
+extern void sched_account_ui_thread_io_block_counts(int msecs);
 #endif
 
 #endif

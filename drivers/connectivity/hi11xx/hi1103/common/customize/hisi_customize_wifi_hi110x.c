@@ -52,9 +52,10 @@ oal_bool_enum_uint8 g_en_nv_dp_init_is_null = OAL_TRUE;      /* NVRAM中dp init置
 oal_int16 gs_extre_point_vals[WLAN_RF_CHANNEL_NUMS][DY_CALI_NUM_5G_BAND] = {{0}};
 uint8 g_uc_wlan_open_cnt = 0;
 #ifdef _PRE_WLAN_FEATURE_TAS_ANT_SWITCH
-oal_bool_enum_uint8 g_en_tas_switch_en = OAL_FALSE;
+oal_bool_enum_uint8 g_aen_tas_switch_en[WLAN_RF_CHANNEL_NUMS] = {0};
 #endif
 oal_bool_enum_uint8 g_en_fact_cali_completed = OAL_FALSE;
+oal_bool_enum_uint8 g_uc_wlan_cal_intvl_enable = OAL_TRUE; /* 使能开wifi重复校准的间隔 */
 
 /*
  * 定制化结构体
@@ -97,15 +98,20 @@ OAL_STATIC countryinfo_stru g_ast_country_info_table[] =
     /*Note:too few initializers for unsigned char [3]*/
     /*lint -e785*/
     {REGDOMAIN_COMMON, {'0', '0'}}, // WORLD DOMAIN
+    {REGDOMAIN_FCC, {'A', 'A'}}, // Specific country code for pad
     {REGDOMAIN_FCC, {'A', 'D'}}, // ANDORRA
     {REGDOMAIN_ETSI, {'A', 'E'}}, //UAE
+    {REGDOMAIN_ETSI, {'A', 'F'}}, //AFGHANISTAN
+    {REGDOMAIN_ETSI,   {'A', 'G'}}, //ANTIGUA AND BARBUDA
+    {REGDOMAIN_ETSI,   {'A', 'I'}}, //ANGUILLA
     {REGDOMAIN_ETSI, {'A', 'L'}}, //ALBANIA
     {REGDOMAIN_ETSI, {'A', 'M'}}, //ARMENIA
     {REGDOMAIN_ETSI, {'A', 'N'}}, //NETHERLANDS ANTILLES
+    {REGDOMAIN_ETSI, {'A', 'O'}}, //ANGOLA
     {REGDOMAIN_FCC, {'A', 'R'}}, //ARGENTINA
     {REGDOMAIN_FCC, {'A', 'S'}}, //AMERICAN SOMOA
     {REGDOMAIN_ETSI, {'A', 'T'}}, //AUSTRIA
-    {REGDOMAIN_FCC, {'A', 'U'}}, //AUSTRALIA
+    {REGDOMAIN_ETSI, {'A', 'U'}}, //AUSTRALIA
     {REGDOMAIN_ETSI , {'A', 'W'}}, //ARUBA
     {REGDOMAIN_ETSI,  {'A', 'Z'}}, //AZERBAIJAN
     {REGDOMAIN_ETSI, {'B', 'A'}}, //BOSNIA AND HERZEGOVINA
@@ -117,28 +123,30 @@ OAL_STATIC countryinfo_stru g_ast_country_info_table[] =
     {REGDOMAIN_ETSI, {'B', 'L'}}, //
     {REGDOMAIN_FCC, {'B', 'M'}}, //BERMUDA
     {REGDOMAIN_ETSI, {'B', 'N'}}, //BRUNEI DARUSSALAM
-    {REGDOMAIN_ETSI, {'B', 'O'}}, //BOLIVIA
-    {REGDOMAIN_ETSI, {'B', 'R'}}, //BRAZIL
+    {REGDOMAIN_FCC, {'B', 'O'}}, //BOLIVIA
+    {REGDOMAIN_FCC, {'B', 'R'}}, //BRAZIL
     {REGDOMAIN_FCC, {'B', 'S'}}, //BAHAMAS
     {REGDOMAIN_ETSI, {'B', 'Y'}}, //BELARUS
     {REGDOMAIN_ETSI, {'B', 'Z'}}, //BELIZE
     {REGDOMAIN_FCC, {'C', 'A'}}, //CANADA
     {REGDOMAIN_ETSI, {'C', 'H'}}, //SWITZERLAND
-    {REGDOMAIN_ETSI, {'C', 'L'}}, //CHILE
+    {REGDOMAIN_FCC, {'C', 'L'}}, //CHILE
     {REGDOMAIN_COMMON, {'C', 'N'}}, //CHINA
     {REGDOMAIN_FCC, {'C', 'O'}}, //COLOMBIA
-    {REGDOMAIN_ETSI, {'C', 'R'}}, //COSTA RICA
+    {REGDOMAIN_FCC, {'C', 'R'}}, //COSTA RICA
     {REGDOMAIN_ETSI, {'C', 'S'}},
+    {REGDOMAIN_ETSI,   {'C', 'U'}}, //CUBA
     {REGDOMAIN_ETSI, {'C', 'Y'}}, //CYPRUS
     {REGDOMAIN_ETSI, {'C', 'Z'}}, //CZECH REPUBLIC
     {REGDOMAIN_ETSI, {'D', 'E'}}, //GERMANY
     {REGDOMAIN_ETSI, {'D', 'K'}}, //DENMARK
     {REGDOMAIN_FCC, {'D', 'O'}}, //DOMINICAN REPUBLIC
     {REGDOMAIN_ETSI, {'D', 'Z'}}, //ALGERIA
-    {REGDOMAIN_ETSI, {'E', 'C'}}, //ECUADOR
+    {REGDOMAIN_FCC, {'E', 'C'}}, //ECUADOR
     {REGDOMAIN_ETSI, {'E', 'E'}}, //ESTONIA
     {REGDOMAIN_ETSI, {'E', 'G'}}, //EGYPT
     {REGDOMAIN_ETSI, {'E', 'S'}}, //SPAIN
+    {REGDOMAIN_ETSI, {'E', 'T'}}, //ETHIOPIA
     {REGDOMAIN_ETSI, {'F', 'I'}}, //FINLAND
     {REGDOMAIN_ETSI, {'F', 'R'}}, //FRANCE
     {REGDOMAIN_ETSI, {'G', 'B'}}, //UNITED KINGDOM
@@ -150,56 +158,65 @@ OAL_STATIC countryinfo_stru g_ast_country_info_table[] =
     {REGDOMAIN_ETSI, {'G', 'R'}}, //GREECE
     {REGDOMAIN_FCC, {'G', 'T'}},  //GUATEMALA
     {REGDOMAIN_FCC, {'G', 'U'}},  //GUAM
+    {REGDOMAIN_ETSI, {'H', 'K'}}, //HONGKONG
+    {REGDOMAIN_FCC, {'H', 'N'}}, //HONDURAS
     {REGDOMAIN_ETSI, {'H', 'R'}}, //Croatia
     {REGDOMAIN_ETSI, {'H', 'U'}}, //HUNGARY
-    {REGDOMAIN_FCC, {'I', 'D'}},  //INDONESIA
+    {REGDOMAIN_ETSI, {'I', 'D'}},  //INDONESIA
     {REGDOMAIN_ETSI, {'I', 'E'}}, //IRELAND
     {REGDOMAIN_ETSI, {'I', 'L'}}, //ISRAEL
     {REGDOMAIN_ETSI, {'I', 'N'}}, //INDIA
+    {REGDOMAIN_ETSI, {'I', 'Q'}}, //IRAQ
     {REGDOMAIN_ETSI, {'I', 'R'}}, //IRAN, ISLAMIC REPUBLIC OF
     {REGDOMAIN_ETSI, {'I', 'S'}}, //ICELNAD
     {REGDOMAIN_ETSI, {'I', 'T'}}, //ITALY
     {REGDOMAIN_FCC, {'J', 'M'}},  //JAMAICA
-    {REGDOMAIN_JAPAN, {'J', 'P'}}, //JAPAN
+    {REGDOMAIN_ETSI, {'J', 'P'}}, //JAPAN
     {REGDOMAIN_ETSI, {'J', 'O'}}, //JORDAN
     {REGDOMAIN_ETSI, {'K', 'E'}}, //KENYA
     {REGDOMAIN_ETSI, {'K', 'H'}}, //CAMBODIA
     {REGDOMAIN_ETSI, {'K', 'P'}}, //KOREA, DEMOCRATIC PEOPLE's REPUBLIC OF
     {REGDOMAIN_ETSI, {'K', 'R'}}, //KOREA, REPUBLIC OF
     {REGDOMAIN_ETSI, {'K', 'W'}}, //KUWAIT
+    {REGDOMAIN_ETSI,   {'K', 'Y'}}, //Cayman Is
     {REGDOMAIN_ETSI, {'K', 'Z'}}, //KAZAKHSTAN
     {REGDOMAIN_ETSI, {'L', 'B'}}, //LEBANON
     {REGDOMAIN_ETSI, {'L', 'I'}}, //LIECHTENSTEIN
-    {REGDOMAIN_ETSI, {'L', 'K'}}, //SRI-LANKA
+    {REGDOMAIN_ETSI,   {'L', 'K'}}, //SRI-LANKA
+    {REGDOMAIN_ETSI,   {'L', 'S'}}, //KINGDOM OF LESOTH
     {REGDOMAIN_ETSI, {'L', 'T'}}, //LITHUANIA
     {REGDOMAIN_ETSI, {'L', 'U'}}, //LUXEMBOURG
     {REGDOMAIN_ETSI, {'L','V'}},  //LATVIA
     {REGDOMAIN_ETSI, {'M', 'A'}}, //MOROCCO
     {REGDOMAIN_ETSI, {'M', 'C'}}, //MONACO
+    {REGDOMAIN_ETSI,   {'M', 'D'}}, //REPUBLIC OF MOLDOVA
     {REGDOMAIN_ETSI, {'M', 'E'}}, //Montenegro
+    {REGDOMAIN_FCC,    {'M', 'H'}}, //Marshall Is
     {REGDOMAIN_ETSI, {'M', 'K'}}, //MACEDONIA, THE FORMER YUGOSLAV REPUBLIC OF
     {REGDOMAIN_ETSI, {'M', 'M'}}, //MYANMAR
     {REGDOMAIN_FCC, {'M','N'}}, //MONGOLIA
-    {REGDOMAIN_FCC, {'M', 'O'}}, //MACAO
+    {REGDOMAIN_ETSI, {'M', 'O'}}, //MACAO
     {REGDOMAIN_FCC, {'M', 'P'}}, //NORTHERN MARIANA ISLANDS
     {REGDOMAIN_ETSI, {'M', 'Q'}}, //MARTINIQUE
-    {REGDOMAIN_FCC, {'M', 'T'}}, //MALTA
+    {REGDOMAIN_ETSI,   {'M', 'R'}}, //Mauritania
+    {REGDOMAIN_ETSI, {'M', 'T'}}, //MALTA
+    {REGDOMAIN_ETSI,   {'M', 'V'}}, //Maldives
     {REGDOMAIN_ETSI, {'M', 'U'}}, //MAURITIUS
     {REGDOMAIN_ETSI, {'M', 'W'}}, //MALAWI
-    {REGDOMAIN_FCC, {'M', 'X'}}, //MEXICO
+    {REGDOMAIN_ETSI, {'M', 'X'}}, //MEXICO
     {REGDOMAIN_ETSI, {'M', 'Y'}}, //MALAYSIA
     {REGDOMAIN_ETSI, {'N', 'G'}}, //NIGERIA
     {REGDOMAIN_FCC, {'N', 'I'}}, //NICARAGUA
     {REGDOMAIN_ETSI, {'N', 'L'}}, //NETHERLANDS
     {REGDOMAIN_ETSI, {'N', 'O'}}, //NORWAY
     {REGDOMAIN_ETSI, {'N', 'P'}}, //NEPAL
-    {REGDOMAIN_FCC, {'N', 'Z'}}, //NEW-ZEALAND
-    {REGDOMAIN_FCC, {'O', 'M'}}, //OMAN
+    {REGDOMAIN_ETSI, {'N', 'Z'}}, //NEW-ZEALAND
+    {REGDOMAIN_ETSI, {'O', 'M'}}, //OMAN
     {REGDOMAIN_FCC, {'P', 'A'}}, //PANAMA
-    {REGDOMAIN_ETSI, {'P', 'E'}}, //PERU
+    {REGDOMAIN_FCC, {'P', 'E'}}, //PERU
     {REGDOMAIN_ETSI, {'P', 'F'}}, //FRENCH POLYNESIA
     {REGDOMAIN_ETSI, {'P', 'G'}}, //PAPUA NEW GUINEA
-    {REGDOMAIN_FCC, {'P', 'H'}}, //PHILIPPINES
+    {REGDOMAIN_ETSI, {'P', 'H'}}, //PHILIPPINES
     {REGDOMAIN_ETSI, {'P', 'K'}}, //PAKISTAN
     {REGDOMAIN_ETSI, {'P', 'L'}}, //POLAND
     {REGDOMAIN_FCC, {'P', 'R'}}, //PUERTO RICO
@@ -218,6 +235,7 @@ OAL_STATIC countryinfo_stru g_ast_country_info_table[] =
     {REGDOMAIN_ETSI, {'S', 'G'}}, //SINGAPORE
     {REGDOMAIN_ETSI, {'S', 'I'}}, //SLOVENNIA
     {REGDOMAIN_ETSI, {'S', 'K'}}, //SLOVAKIA
+    {REGDOMAIN_ETSI, {'S', 'N'}}, //SENEGAL
     {REGDOMAIN_ETSI, {'S', 'V'}}, //EL SALVADOR
     {REGDOMAIN_ETSI, {'S', 'Y'}}, //SYRIAN ARAB REPUBLIC
     {REGDOMAIN_ETSI, {'T', 'H'}}, //THAILAND
@@ -229,14 +247,15 @@ OAL_STATIC countryinfo_stru g_ast_country_info_table[] =
     {REGDOMAIN_ETSI, {'U', 'A'}}, //UKRAINE
     {REGDOMAIN_ETSI, {'U', 'G'}}, //UGANDA
     {REGDOMAIN_FCC, {'U', 'S'}}, //USA
-    {REGDOMAIN_ETSI, {'U', 'Y'}}, //URUGUAY
-    {REGDOMAIN_FCC, {'U', 'Z'}}, //UZBEKISTAN
-    {REGDOMAIN_ETSI, {'V', 'E'}}, //VENEZUELA
+    {REGDOMAIN_FCC, {'U', 'Y'}}, //URUGUAY
+    {REGDOMAIN_ETSI, {'U', 'Z'}}, //UZBEKISTAN
+    {REGDOMAIN_FCC, {'V', 'E'}}, //VENEZUELA
     {REGDOMAIN_FCC, {'V', 'I'}}, //VIRGIN ISLANDS, US
     {REGDOMAIN_ETSI, {'V', 'N'}}, //VIETNAM
     {REGDOMAIN_ETSI, {'Y', 'E'}}, //YEMEN
     {REGDOMAIN_ETSI, {'Y', 'T'}}, //MAYOTTE
     {REGDOMAIN_ETSI, {'Z', 'A'}}, //SOUTH AFRICA
+    {REGDOMAIN_ETSI,   {'Z', 'M'}}, //Zambia
     {REGDOMAIN_ETSI, {'Z', 'W'}}, //ZIMBABWE
 
     {REGDOMAIN_COUNT,{'9','9'}}
@@ -397,6 +416,7 @@ OAL_STATIC wlan_cfg_cmd g_ast_wifi_config_priv[] =
     {"rssi_ant_switch",             WLAN_CFG_ANT_SWITCH},
 
     {"m2s_function_mask",           WLAN_CFG_PRIV_M2S_FUNCTION_MASK},
+    {"linkloss_threshold_fixed",    WLAN_CFG_PRRIV_LINKLOSS_THRESHOLD_FIXED},
 
 #ifdef _PRE_WLAN_DOWNLOAD_PM
     {"download_rate_limit_pps",     WLAN_CFG_PRIV_DOWNLOAD_RATE_LIMIT_PPS},
@@ -466,6 +486,7 @@ OAL_STATIC wlan_cfg_cmd g_ast_wifi_config_cmds[] =
     {"candidate_good_rssi",             WLAN_CFG_INIT_CANDIDATE_GOOD_RSSI},
     {"candidate_good_num",              WLAN_CFG_INIT_CANDIDATE_GOOD_NUM},
     {"candidate_weak_num",              WLAN_CFG_INIT_CANDIDATE_WEAK_NUM},
+    {"interval_variable",               WLAN_CFG_INIT_INTERVAL_VARIABLE},
 
     /* 性能 */
     {"ampdu_tx_max_num",                WLAN_CFG_INIT_AMPDU_TX_MAX_NUM},
@@ -546,7 +567,9 @@ OAL_STATIC wlan_cfg_cmd g_ast_wifi_config_cmds[] =
     {"powermgmt_switch",                WLAN_CFG_INIT_POWERMGMT_SWITCH},
 
     {"ps_mode",                         WLAN_CFG_INIT_PS_MODE},
-    {"ps_fast_check_cnt",               WLAN_CFG_INIT_FAST_CHECK_CNT},
+    {"min_fast_ps_idle",                WLAN_CFG_INIT_MIN_FAST_PS_IDLE},
+    {"max_fast_ps_idle",                WLAN_CFG_INIT_MAX_FAST_PS_IDLE},
+    {"auto_fast_ps_thresh",             WLAN_CFG_INIT_AUTO_FAST_PS_THRESH},
     /* 可维可测 */
     {"loglevel",                        WLAN_CFG_INIT_LOGLEVEL},
     /* 2G RF前端插损 */
@@ -681,6 +704,7 @@ OAL_STATIC wlan_cfg_cmd g_ast_wifi_config_cmds[] =
     {"delta_cca_ed_high_40th_2g",       WLAN_CFG_INIT_DELTA_CCA_ED_HIGH_40TH_2G},
     {"delta_cca_ed_high_20th_5g",       WLAN_CFG_INIT_DELTA_CCA_ED_HIGH_20TH_5G},
     {"delta_cca_ed_high_40th_5g",       WLAN_CFG_INIT_DELTA_CCA_ED_HIGH_40TH_5G},
+    {"delta_cca_ed_high_80th_5g",       WLAN_CFG_INIT_DELTA_CCA_ED_HIGH_80TH_5G},
     {"voe_switch_mask",                 WLAN_CFG_INIT_VOE_SWITCH},
     {"11ax_switch_mask",                WLAN_CFG_INIT_11AX_SWITCH},
     /* ldac m2s rssi */
@@ -713,9 +737,11 @@ OAL_STATIC wlan_cfg_cmd g_ast_nvram_config_ini[NVRAM_PARAMS_PWR_INDEX_BUTT] =
     {"nvram_params60",                    NVRAM_PARAMS_INDEX_DPD_1},
     {"nvram_params61",                    NVRAM_PARAMS_INDEX_DPD_2},
     /* 11B & OFDM delta power */
-    {"nvram_params62",                    NVRAM_PARAMS_INDEX_62},
+    {"nvram_params62",                    NVRAM_PARAMS_INDEX_11B_OFDM_DELT_POW},
     /* 5G cali upper upc limit */
-    {"nvram_params63",                    NVRAM_PARAMS_INDEX_63},
+    {"nvram_params63",                    NVRAM_PARAMS_INDEX_IQ_MAX_UPC},
+    /* 2G low pow amend */
+    {"nvram_params64",                    NVRAM_PARAMS_INDEX_2G_LOW_POW_AMEND},
     {OAL_PTR_NULL,                        NVRAM_PARAMS_TXPWR_INDEX_BUTT},
     {"nvram_max_txpwr_base_2p4g",         NVRAM_PARAMS_INDEX_19},
     {"nvram_max_txpwr_base_5g",           NVRAM_PARAMS_INDEX_20},
@@ -724,42 +750,99 @@ OAL_STATIC wlan_cfg_cmd g_ast_nvram_config_ini[NVRAM_PARAMS_PWR_INDEX_BUTT] =
     {OAL_PTR_NULL,                        NVRAM_PARAMS_BASE_INDEX_BUTT},
     {OAL_PTR_NULL,  NVRAM_PARAMS_INDEX_23_RSV},
     {OAL_PTR_NULL,  NVRAM_PARAMS_INDEX_24_RSV},
-    /* FCC & SAR */
-    {"side_band_txpwr_limit_5g_20m_0",  NVRAM_PARAMS_INDEX_25},
-    {"side_band_txpwr_limit_5g_20m_1",  NVRAM_PARAMS_INDEX_26},
-    {"side_band_txpwr_limit_5g_40m_0",  NVRAM_PARAMS_INDEX_27},
-    {"side_band_txpwr_limit_5g_40m_1",  NVRAM_PARAMS_INDEX_28},
-    {"side_band_txpwr_limit_5g_80m_0",  NVRAM_PARAMS_INDEX_29},
-    {"side_band_txpwr_limit_5g_80m_1",  NVRAM_PARAMS_INDEX_30},
-    {"side_band_txpwr_limit_5g_160m",   NVRAM_PARAMS_INDEX_31},
-    {"side_band_txpwr_limit_24g_ch1",   NVRAM_PARAMS_INDEX_32},
-    {"side_band_txpwr_limit_24g_ch2",   NVRAM_PARAMS_INDEX_33},
-    {"side_band_txpwr_limit_24g_ch3",   NVRAM_PARAMS_INDEX_34},
-    {"side_band_txpwr_limit_24g_ch4",   NVRAM_PARAMS_INDEX_35},
-    {"side_band_txpwr_limit_24g_ch5",   NVRAM_PARAMS_INDEX_36},
-    {"side_band_txpwr_limit_24g_ch6",   NVRAM_PARAMS_INDEX_37},
-    {"side_band_txpwr_limit_24g_ch7",   NVRAM_PARAMS_INDEX_38},
-    {"side_band_txpwr_limit_24g_ch8",   NVRAM_PARAMS_INDEX_39},
-    {"side_band_txpwr_limit_24g_ch9",   NVRAM_PARAMS_INDEX_40},
-    {"side_band_txpwr_limit_24g_ch10",  NVRAM_PARAMS_INDEX_41},
-    {"side_band_txpwr_limit_24g_ch11",  NVRAM_PARAMS_INDEX_42},
-    {"side_band_txpwr_limit_24g_ch12",  NVRAM_PARAMS_INDEX_43},
-    {"side_band_txpwr_limit_24g_ch13",  NVRAM_PARAMS_INDEX_44},
+    /* FCC */
+    {"fcc_side_band_txpwr_limit_5g_20m_0",  NVRAM_PARAMS_INDEX_25},
+    {"fcc_side_band_txpwr_limit_5g_20m_1",  NVRAM_PARAMS_INDEX_26},
+    {"fcc_side_band_txpwr_limit_5g_40m_0",  NVRAM_PARAMS_INDEX_27},
+    {"fcc_side_band_txpwr_limit_5g_40m_1",  NVRAM_PARAMS_INDEX_28},
+    {"fcc_side_band_txpwr_limit_5g_80m_0",  NVRAM_PARAMS_INDEX_29},
+    {"fcc_side_band_txpwr_limit_5g_80m_1",  NVRAM_PARAMS_INDEX_30},
+    {"fcc_side_band_txpwr_limit_5g_160m",   NVRAM_PARAMS_INDEX_31},
+    {"fcc_side_band_txpwr_limit_24g_ch1",   NVRAM_PARAMS_INDEX_32},
+    {"fcc_side_band_txpwr_limit_24g_ch2",   NVRAM_PARAMS_INDEX_33},
+    {"fcc_side_band_txpwr_limit_24g_ch3",   NVRAM_PARAMS_INDEX_34},
+    {"fcc_side_band_txpwr_limit_24g_ch4",   NVRAM_PARAMS_INDEX_35},
+    {"fcc_side_band_txpwr_limit_24g_ch5",   NVRAM_PARAMS_INDEX_36},
+    {"fcc_side_band_txpwr_limit_24g_ch6",   NVRAM_PARAMS_INDEX_37},
+    {"fcc_side_band_txpwr_limit_24g_ch7",   NVRAM_PARAMS_INDEX_38},
+    {"fcc_side_band_txpwr_limit_24g_ch8",   NVRAM_PARAMS_INDEX_39},
+    {"fcc_side_band_txpwr_limit_24g_ch9",   NVRAM_PARAMS_INDEX_40},
+    {"fcc_side_band_txpwr_limit_24g_ch10",  NVRAM_PARAMS_INDEX_41},
+    {"fcc_side_band_txpwr_limit_24g_ch11",  NVRAM_PARAMS_INDEX_42},
+    {"fcc_side_band_txpwr_limit_24g_ch12",  NVRAM_PARAMS_INDEX_43},
+    {"fcc_side_band_txpwr_limit_24g_ch13",  NVRAM_PARAMS_INDEX_44},
     {OAL_PTR_NULL,                      NVRAM_PARAMS_FCC_END_INDEX_BUTT},
-    {"sar_txpwr_ctrl_5g_band1",   NVRAM_PARAMS_INDEX_45},
-    {"sar_txpwr_ctrl_5g_band2",   NVRAM_PARAMS_INDEX_46},
-    {"sar_txpwr_ctrl_5g_band3",   NVRAM_PARAMS_INDEX_47},
-    {"sar_txpwr_ctrl_5g_band4",   NVRAM_PARAMS_INDEX_48},
-    {"sar_txpwr_ctrl_5g_band5",   NVRAM_PARAMS_INDEX_49},
-    {"sar_txpwr_ctrl_5g_band6",   NVRAM_PARAMS_INDEX_50},
-    {"sar_txpwr_ctrl_5g_band7",   NVRAM_PARAMS_INDEX_51},
-    {"sar_txpwr_ctrl_2g",         NVRAM_PARAMS_INDEX_52},
-    {OAL_PTR_NULL,                NVRAM_PARAMS_SAR_END_INDEX_BUTT},
+    /* CE */
+    {"ce_side_band_txpwr_limit_5g_20m_0",  NVRAM_PARAMS_INDEX_CE_0},
+    {"ce_side_band_txpwr_limit_5g_20m_1",  NVRAM_PARAMS_INDEX_CE_1},
+    {"ce_side_band_txpwr_limit_5g_40m_0",  NVRAM_PARAMS_INDEX_CE_2},
+    {"ce_side_band_txpwr_limit_5g_40m_1",  NVRAM_PARAMS_INDEX_CE_3},
+    {"ce_side_band_txpwr_limit_5g_80m_0",  NVRAM_PARAMS_INDEX_CE_4},
+    {"ce_side_band_txpwr_limit_5g_80m_1",  NVRAM_PARAMS_INDEX_CE_5},
+    {"ce_side_band_txpwr_limit_5g_160m",   NVRAM_PARAMS_INDEX_CE_6},
+    {"ce_side_band_txpwr_limit_24g_ch1",   NVRAM_PARAMS_INDEX_CE_7},
+    {"ce_side_band_txpwr_limit_24g_ch2",   NVRAM_PARAMS_INDEX_CE_8},
+    {"ce_side_band_txpwr_limit_24g_ch3",   NVRAM_PARAMS_INDEX_CE_9},
+    {"ce_side_band_txpwr_limit_24g_ch4",   NVRAM_PARAMS_INDEX_CE_10},
+    {"ce_side_band_txpwr_limit_24g_ch5",   NVRAM_PARAMS_INDEX_CE_11},
+    {"ce_side_band_txpwr_limit_24g_ch6",   NVRAM_PARAMS_INDEX_CE_12},
+    {"ce_side_band_txpwr_limit_24g_ch7",   NVRAM_PARAMS_INDEX_CE_13},
+    {"ce_side_band_txpwr_limit_24g_ch8",   NVRAM_PARAMS_INDEX_CE_14},
+    {"ce_side_band_txpwr_limit_24g_ch9",   NVRAM_PARAMS_INDEX_CE_15},
+    {"ce_side_band_txpwr_limit_24g_ch10",  NVRAM_PARAMS_INDEX_CE_16},
+    {"ce_side_band_txpwr_limit_24g_ch11",  NVRAM_PARAMS_INDEX_CE_17},
+    {"ce_side_band_txpwr_limit_24g_ch12",  NVRAM_PARAMS_INDEX_CE_18},
+    {"ce_side_band_txpwr_limit_24g_ch13",  NVRAM_PARAMS_INDEX_CE_19},
+    {OAL_PTR_NULL,                      NVRAM_PARAMS_CE_END_INDEX_BUTT},
+    /* SAR */
+    {"sar_txpwr_ctrl_5g_band1_0",   NVRAM_PARAMS_INDEX_45},
+    {"sar_txpwr_ctrl_5g_band2_0",   NVRAM_PARAMS_INDEX_46},
+    {"sar_txpwr_ctrl_5g_band3_0",   NVRAM_PARAMS_INDEX_47},
+    {"sar_txpwr_ctrl_5g_band4_0",   NVRAM_PARAMS_INDEX_48},
+    {"sar_txpwr_ctrl_5g_band5_0",   NVRAM_PARAMS_INDEX_49},
+    {"sar_txpwr_ctrl_5g_band6_0",   NVRAM_PARAMS_INDEX_50},
+    {"sar_txpwr_ctrl_5g_band7_0",   NVRAM_PARAMS_INDEX_51},
+    {"sar_txpwr_ctrl_2g_0",         NVRAM_PARAMS_INDEX_52},
+    {"sar_txpwr_ctrl_5g_band1_1",   NVRAM_PARAMS_INDEX_53},
+    {"sar_txpwr_ctrl_5g_band2_1",   NVRAM_PARAMS_INDEX_54},
+    {"sar_txpwr_ctrl_5g_band3_1",   NVRAM_PARAMS_INDEX_55},
+    {"sar_txpwr_ctrl_5g_band4_1",   NVRAM_PARAMS_INDEX_56},
+    {"sar_txpwr_ctrl_5g_band5_1",   NVRAM_PARAMS_INDEX_57},
+    {"sar_txpwr_ctrl_5g_band6_1",   NVRAM_PARAMS_INDEX_58},
+    {"sar_txpwr_ctrl_5g_band7_1",   NVRAM_PARAMS_INDEX_59},
+    {"sar_txpwr_ctrl_2g_1",         NVRAM_PARAMS_INDEX_60},
+    {"sar_txpwr_ctrl_5g_band1_2",   NVRAM_PARAMS_INDEX_61},
+    {"sar_txpwr_ctrl_5g_band2_2",   NVRAM_PARAMS_INDEX_62},
+    {"sar_txpwr_ctrl_5g_band3_2",   NVRAM_PARAMS_INDEX_63},
+    {"sar_txpwr_ctrl_5g_band4_2",   NVRAM_PARAMS_INDEX_64},
+    {"sar_txpwr_ctrl_5g_band5_2",   NVRAM_PARAMS_INDEX_65},
+    {"sar_txpwr_ctrl_5g_band6_2",   NVRAM_PARAMS_INDEX_66},
+    {"sar_txpwr_ctrl_5g_band7_2",   NVRAM_PARAMS_INDEX_67},
+    {"sar_txpwr_ctrl_2g_2",         NVRAM_PARAMS_INDEX_68},
+    {"sar_txpwr_ctrl_5g_band1_3",   NVRAM_PARAMS_INDEX_69},
+    {"sar_txpwr_ctrl_5g_band2_3",   NVRAM_PARAMS_INDEX_70},
+    {"sar_txpwr_ctrl_5g_band3_3",   NVRAM_PARAMS_INDEX_71},
+    {"sar_txpwr_ctrl_5g_band4_3",   NVRAM_PARAMS_INDEX_72},
+    {"sar_txpwr_ctrl_5g_band5_3",   NVRAM_PARAMS_INDEX_73},
+    {"sar_txpwr_ctrl_5g_band6_3",   NVRAM_PARAMS_INDEX_74},
+    {"sar_txpwr_ctrl_5g_band7_3",   NVRAM_PARAMS_INDEX_75},
+    {"sar_txpwr_ctrl_2g_3",         NVRAM_PARAMS_INDEX_76},
+    {"sar_txpwr_ctrl_5g_band1_4",   NVRAM_PARAMS_INDEX_77},
+    {"sar_txpwr_ctrl_5g_band2_4",   NVRAM_PARAMS_INDEX_78},
+    {"sar_txpwr_ctrl_5g_band3_4",   NVRAM_PARAMS_INDEX_79},
+    {"sar_txpwr_ctrl_5g_band4_4",   NVRAM_PARAMS_INDEX_80},
+    {"sar_txpwr_ctrl_5g_band5_4",   NVRAM_PARAMS_INDEX_81},
+    {"sar_txpwr_ctrl_5g_band6_4",   NVRAM_PARAMS_INDEX_82},
+    {"sar_txpwr_ctrl_5g_band7_4",   NVRAM_PARAMS_INDEX_83},
+    {"sar_txpwr_ctrl_2g_4",         NVRAM_PARAMS_INDEX_84},
+    {OAL_PTR_NULL,                  NVRAM_PARAMS_SAR_END_INDEX_BUTT},
+
+
 #ifdef _PRE_WLAN_FEATURE_TAS_ANT_SWITCH
     {"tas_ant_switch_en",         NVRAM_PARAMS_TAS_ANT_SWITCH_EN},
     {"tas_txpwr_ctrl_params",     NVRAM_PARAMS_TAS_PWR_CTRL},
 #endif
-    {"5g_max_pow_high_band_ce",   NVRAM_PARAMS_5G_CE_HIGH_BAND_MAX_PWR},
+    {"5g_max_pow_high_band_fcc_ce",   NVRAM_PARAMS_5G_FCC_CE_HIGH_BAND_MAX_PWR},
 };
 
 OAL_STATIC wlan_cfg_cmd g_ast_nvram_pro_line_config_ini[] =
@@ -829,9 +912,9 @@ OAL_STATIC oal_void original_value_for_nvram_params(oal_void)
     g_al_nvram_init_params[NVRAM_PARAMS_INDEX_DPD_1] = 0xE2E200E2;
     g_al_nvram_init_params[NVRAM_PARAMS_INDEX_DPD_2] = 0x0000C4C4;
     /* 11B和OFDM功率差 */
-    g_al_nvram_init_params[NVRAM_PARAMS_INDEX_62] = 0x00000000;
+    g_al_nvram_init_params[NVRAM_PARAMS_INDEX_11B_OFDM_DELT_POW] = 0xA0A00000;
     /* 5G功率和IQ校准UPC上限值 */
-    g_al_nvram_init_params[NVRAM_PARAMS_INDEX_63] = 0xD8D83030;
+    g_al_nvram_init_params[NVRAM_PARAMS_INDEX_IQ_MAX_UPC] = 0xD8D83030;
     /* FCC功率认证 */
     g_al_nvram_init_params[NVRAM_PARAMS_INDEX_25] = 0xFFFFFFFF;
     g_al_nvram_init_params[NVRAM_PARAMS_INDEX_26] = 0xFFFFFFFF;
@@ -853,6 +936,28 @@ OAL_STATIC oal_void original_value_for_nvram_params(oal_void)
     g_al_nvram_init_params[NVRAM_PARAMS_INDEX_42] = 0xFFFFFFFF;
     g_al_nvram_init_params[NVRAM_PARAMS_INDEX_43] = 0xFFFFFFFF;
     g_al_nvram_init_params[NVRAM_PARAMS_INDEX_44] = 0xFFFFFFFF;
+    /* CE功率认证 */
+    g_al_nvram_init_params[NVRAM_PARAMS_INDEX_CE_0] = 0xFFFFFFFF;
+    g_al_nvram_init_params[NVRAM_PARAMS_INDEX_CE_1] = 0xFFFFFFFF;
+    g_al_nvram_init_params[NVRAM_PARAMS_INDEX_CE_2] = 0xFFFFFFFF;
+    g_al_nvram_init_params[NVRAM_PARAMS_INDEX_CE_3] = 0xFFFFFFFF;
+    g_al_nvram_init_params[NVRAM_PARAMS_INDEX_CE_4] = 0xFFFFFFFF;
+    g_al_nvram_init_params[NVRAM_PARAMS_INDEX_CE_5] = 0xFFFFFFFF;
+    g_al_nvram_init_params[NVRAM_PARAMS_INDEX_CE_6] = 0xFFFFFFFF;
+    g_al_nvram_init_params[NVRAM_PARAMS_INDEX_CE_7] = 0xFFFFFFFF;
+    g_al_nvram_init_params[NVRAM_PARAMS_INDEX_CE_8] = 0xFFFFFFFF;
+    g_al_nvram_init_params[NVRAM_PARAMS_INDEX_CE_9] = 0xFFFFFFFF;
+    g_al_nvram_init_params[NVRAM_PARAMS_INDEX_CE_10] = 0xFFFFFFFF;
+    g_al_nvram_init_params[NVRAM_PARAMS_INDEX_CE_11] = 0xFFFFFFFF;
+    g_al_nvram_init_params[NVRAM_PARAMS_INDEX_CE_12] = 0xFFFFFFFF;
+    g_al_nvram_init_params[NVRAM_PARAMS_INDEX_CE_13] = 0xFFFFFFFF;
+    g_al_nvram_init_params[NVRAM_PARAMS_INDEX_CE_14] = 0xFFFFFFFF;
+    g_al_nvram_init_params[NVRAM_PARAMS_INDEX_CE_15] = 0xFFFFFFFF;
+    g_al_nvram_init_params[NVRAM_PARAMS_INDEX_CE_16] = 0xFFFFFFFF;
+    g_al_nvram_init_params[NVRAM_PARAMS_INDEX_CE_17] = 0xFFFFFFFF;
+    g_al_nvram_init_params[NVRAM_PARAMS_INDEX_CE_18] = 0xFFFFFFFF;
+    g_al_nvram_init_params[NVRAM_PARAMS_INDEX_CE_19] = 0xFFFFFFFF;
+    /* SAR功率控制 */
     g_al_nvram_init_params[NVRAM_PARAMS_INDEX_45] = 0xFFFFFF;
     g_al_nvram_init_params[NVRAM_PARAMS_INDEX_46] = 0xFFFFFF;
     g_al_nvram_init_params[NVRAM_PARAMS_INDEX_47] = 0xFFFFFF;
@@ -865,7 +970,7 @@ OAL_STATIC oal_void original_value_for_nvram_params(oal_void)
     g_al_nvram_init_params[NVRAM_PARAMS_TAS_ANT_SWITCH_EN] = 0x0;
     g_al_nvram_init_params[NVRAM_PARAMS_TAS_PWR_CTRL]      = 0x0;
 #endif
-    g_al_nvram_init_params[NVRAM_PARAMS_5G_CE_HIGH_BAND_MAX_PWR] = 0xFF;
+    g_al_nvram_init_params[NVRAM_PARAMS_5G_FCC_CE_HIGH_BAND_MAX_PWR] = 0x00FA00FA;
 }
 
 
@@ -951,7 +1056,7 @@ OAL_STATIC oal_void host_params_init_first(oal_void)
     g_al_host_init_params_etc[WLAN_CFG_INIT_USED_MEM_FOR_STOP]                 = 25;
     g_al_host_init_params_etc[WLAN_CFG_INIT_RX_ACK_LIMIT]                      = 10;
     g_al_host_init_params_etc[WLAN_CFG_INIT_SDIO_D2H_ASSEMBLE_COUNT]           = HISDIO_DEV2HOST_SCATT_MAX;
-    g_al_host_init_params_etc[WLAN_CFG_INIT_SDIO_H2D_ASSEMBLE_COUNT]           = 8;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_SDIO_H2D_ASSEMBLE_COUNT]           = 16;
     /* LINKLOSS */
     g_al_host_init_params_etc[WLAN_CFG_INIT_LINK_LOSS_THRESHOLD_BT]            = 80;
     g_al_host_init_params_etc[WLAN_CFG_INIT_LINK_LOSS_THRESHOLD_DBAC]          = 80;
@@ -1023,7 +1128,9 @@ OAL_STATIC oal_void host_params_init_first(oal_void)
     /* 低功耗 */
     g_al_host_init_params_etc[WLAN_CFG_INIT_POWERMGMT_SWITCH]                  = OAL_TRUE;
     g_al_host_init_params_etc[WLAN_CFG_INIT_PS_MODE]                           = 1;
-    g_al_host_init_params_etc[WLAN_CFG_INIT_FAST_CHECK_CNT]                    = 1;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_MIN_FAST_PS_IDLE]                    = 1;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_MAX_FAST_PS_IDLE]                    = 10;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_AUTO_FAST_PS_THRESH]                 = 5;
 
     /* 可维可测 */
     /* 日志级别 */
@@ -1192,6 +1299,7 @@ OAL_STATIC oal_void host_params_init_first(oal_void)
     g_al_host_init_params_etc[WLAN_CFG_INIT_DELTA_CCA_ED_HIGH_40TH_2G]         = 0;
     g_al_host_init_params_etc[WLAN_CFG_INIT_DELTA_CCA_ED_HIGH_20TH_5G]         = 0;
     g_al_host_init_params_etc[WLAN_CFG_INIT_DELTA_CCA_ED_HIGH_40TH_5G]         = 0;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_DELTA_CCA_ED_HIGH_80TH_5G]         = 0;
 
     /* ldac m2s rssi */
     g_al_host_init_params_etc[WLAN_CFG_INIT_LDAC_THRESHOLD_M2S]            = -45;  /* 默认最大门限，不支持 */
@@ -1532,15 +1640,17 @@ OAL_STATIC oal_void hwifi_custom_adapt_device_ini_fast_ps_check_cnt(oal_uint8 *p
 
     st_syn_msg.en_syn_id = CUSTOM_CFGID_INI_PS_FAST_CHECK_CNT_ID;
 
-    st_syn_msg.auc_msg_body[0] = g_wlan_fast_check_cnt;
+    st_syn_msg.auc_msg_body[0] = g_wlan_min_fast_ps_idle;
+    st_syn_msg.auc_msg_body[1] = g_wlan_max_fast_ps_idle;
+    st_syn_msg.auc_msg_body[2] = g_wlan_auto_ps_thresh;
     st_syn_msg.ul_len = OAL_SIZEOF(st_syn_msg) - CUSTOM_MSG_DATA_HDR_LEN;
 
     oal_memcopy(puc_data, &st_syn_msg, OAL_SIZEOF(st_syn_msg));
 
     *pul_data_len += OAL_SIZEOF(st_syn_msg);
 
-    OAM_WARNING_LOG2(0, OAM_SF_CFG, "{hwifi_custom_adapt_device_ini_fast_ps_check_cnt::da_len[%d].fast ps check cnt[%d]}",
-                    *pul_data_len, g_wlan_fast_check_cnt);
+    OAM_WARNING_LOG4(0, OAM_SF_CFG, "{hwifi_custom_adapt_device_ini_fast_ps_check_cnt::da_len[%d].fast_ps idle min/max[%d/%d],auto_ps thresh[%d]}",
+                    *pul_data_len, g_wlan_min_fast_ps_idle,g_wlan_max_fast_ps_idle,g_wlan_auto_ps_thresh);
 }
 
 
@@ -1703,7 +1813,7 @@ OAL_STATIC oal_int32 hwifi_custom_adapt_priv_ini_param(wlan_cfg_priv_id_uint8 uc
             }
             else
             {
-                if (uc_priv_cfg_value & CALI_DATA_REFRESH_MASK)
+                if (g_uc_wlan_cal_intvl_enable && (uc_priv_cfg_value & CALI_DATA_REFRESH_MASK))
                 {
                     uc_cali_interval = (uc_priv_cfg_value >> CALI_INTVL_OFFSET) + 1;
                     if (g_uc_wlan_open_cnt % uc_cali_interval)
@@ -1736,7 +1846,11 @@ OAL_STATIC oal_int32 hwifi_custom_adapt_priv_ini_param(wlan_cfg_priv_id_uint8 uc
             break;
         case WLAN_CFG_ANT_SWITCH:
             st_syn_msg.en_syn_id = CUSTOM_CFGID_PRIV_ANT_SWITCH_ID;
-            OAL_IO_PRINT("hwifi_custom_adapt_mac_device_priv_ini_param::temp pro safe th[%d].\r\n", uc_priv_cfg_value);
+            OAL_IO_PRINT("hwifi_custom_adapt_mac_device_priv_ini_param::ant switch[%d].\r\n", uc_priv_cfg_value);
+            break;
+        case WLAN_CFG_PRRIV_LINKLOSS_THRESHOLD_FIXED:
+            st_syn_msg.en_syn_id = CUSTOM_CFGID_PRIV_LINKLOSS_THRESHOLD_FIXED_ID;
+            OAL_IO_PRINT("hwifi_custom_adapt_mac_device_priv_ini_param::linkloss threshold fixed[%d].\r\n", uc_priv_cfg_value);
             break;
 #ifdef _PRE_WLAN_FEATURE_TXOPPS
             case WLAN_CFG_PRIV_TXOPPS_SWITCH:
@@ -2008,6 +2122,7 @@ int32 hwifi_custom_adapt_device_priv_ini_param(oal_uint8 *puc_data)
     hwifi_custom_adapt_priv_ini_param(WLAN_CFG_PRIV_FASTSCAN_SWITCH, puc_data + ul_data_len, &ul_data_len);
     hwifi_custom_adapt_priv_ini_param(WLAN_CFG_ANT_SWITCH, puc_data + ul_data_len, &ul_data_len);
     hwifi_custom_adapt_priv_ini_param(WLAN_CFG_PRIV_M2S_FUNCTION_MASK, puc_data + ul_data_len, &ul_data_len);
+    hwifi_custom_adapt_priv_ini_param(WLAN_CFG_PRRIV_LINKLOSS_THRESHOLD_FIXED, puc_data + ul_data_len, &ul_data_len);
 
 #ifdef _PRE_WLAN_DOWNLOAD_PM
     hwifi_custom_adapt_device_priv_ini_download_pm_param(puc_data + ul_data_len, &ul_data_len);
@@ -2419,29 +2534,71 @@ int32 hwifi_hcc_customize_h2d_data_cfg(void)
     return INI_SUCC;
 }
 
+OAL_STATIC oal_void hwifi_config_fcc_ce_5g_high_band_txpwr_nvram(regdomain_enum  regdomain_type)
+{
+    oal_uint8     uc_5g_max_pwr_for_high_band;
+    oal_int32     l_val = g_al_nvram_init_params[NVRAM_PARAMS_5G_FCC_CE_HIGH_BAND_MAX_PWR];
 
-OAL_STATIC int32 hwifi_config_init_fcc_txpwr_nvram(void)
+    /* FCC/CE 5G 高band的最大发射功率 */
+    if(INI_SUCC != get_cust_conf_int32_etc(INI_MODU_WIFI, g_ast_nvram_config_ini[NVRAM_PARAMS_5G_FCC_CE_HIGH_BAND_MAX_PWR].name, &l_val))
+    {
+        /* 读取失败时,使用初始值 */
+        l_val = g_al_nvram_init_params[NVRAM_PARAMS_5G_FCC_CE_HIGH_BAND_MAX_PWR];
+    }
+
+    uc_5g_max_pwr_for_high_band = (oal_uint8)((REGDOMAIN_ETSI == regdomain_type) ? CUS_GET_LOW_16BIT(l_val) : CUS_GET_HIGH_16BIT(l_val));
+    /* 参数有效性检查 */
+    if (CUS_VAL_INVALID(uc_5g_max_pwr_for_high_band, CUS_MAX_BASE_TXPOWER_VAL, CUS_MIN_BASE_TXPOWER_VAL))
+    {
+        OAM_WARNING_LOG1(0, OAM_SF_CFG, "hwifi_config_init_nvram read 5g_max_pow_high_band[%d] failed!", l_val);
+        uc_5g_max_pwr_for_high_band = CUS_MAX_BASE_TXPOWER_VAL;
+    }
+
+    g_st_cust_nv_params.uc_5g_max_pwr_fcc_ce_for_high_band = uc_5g_max_pwr_for_high_band;
+}
+
+
+OAL_STATIC int32 hwifi_config_init_fcc_ce_txpwr_nvram(void)
 {
     int32     l_ret = INI_FAILED;
     uint8     uc_cfg_id;
     uint8     uc_param_idx = 0;
     int32    *pl_nvram_params = OAL_PTR_NULL;
-    int32    *pl_fcc_txpwr_limit_params = OAL_PTR_NULL;
-    oal_uint8 uc_param_len = (NVRAM_PARAMS_FCC_END_INDEX_BUTT - NVRAM_PARAMS_FCC_START_INDEX_BUTT) * OAL_SIZEOF(int32);
+    int32    *pl_fcc_ce_txpwr_limit_params = OAL_PTR_NULL;
+    regdomain_enum regdomain_type = REGDOMAIN_COMMON;
+    oal_uint8 uc_param_len = 0;
+    oal_uint8 uc_start_idx = 0;
+    oal_uint8 uc_end_idx = 0;
 
-    pl_fcc_txpwr_limit_params = (int32 *)OS_KZALLOC_GFP(uc_param_len);
-    if (OAL_PTR_NULL == pl_fcc_txpwr_limit_params)
+    /* 获取管制域信息 */
+    regdomain_type = hwifi_get_regdomain_from_country_code((oal_uint8 *)g_ac_country_code_etc);
+    /* 根据管制域信息选择下发FCC还是CE参数 */
+    hwifi_config_fcc_ce_5g_high_band_txpwr_nvram(regdomain_type);
+    if (REGDOMAIN_ETSI == regdomain_type)
+    {
+        uc_start_idx = NVRAM_PARAMS_CE_START_INDEX_BUTT;
+        uc_end_idx = NVRAM_PARAMS_CE_END_INDEX_BUTT;
+    }
+    else
+    {
+        uc_start_idx = NVRAM_PARAMS_FCC_START_INDEX_BUTT;
+        uc_end_idx = NVRAM_PARAMS_FCC_END_INDEX_BUTT;
+    }
+
+    uc_param_len = (uc_end_idx - uc_start_idx) * OAL_SIZEOF(int32);
+    pl_fcc_ce_txpwr_limit_params = (int32 *)OS_KZALLOC_GFP(uc_param_len);
+    if (OAL_PTR_NULL == pl_fcc_ce_txpwr_limit_params)
     {
         OAM_ERROR_LOG0(0, OAM_SF_CUSTOM, "hwifi_config_init_fcc_txpwr_nvram::pl_nvram_params mem alloc fail!");
         return INI_FAILED;
     }
-    OAL_MEMZERO(pl_fcc_txpwr_limit_params, uc_param_len);
-    pl_nvram_params = pl_fcc_txpwr_limit_params;
+    OAL_MEMZERO(pl_fcc_ce_txpwr_limit_params, uc_param_len);
+    pl_nvram_params = pl_fcc_ce_txpwr_limit_params;
 
-    for (uc_cfg_id = NVRAM_PARAMS_FCC_START_INDEX_BUTT; uc_cfg_id < NVRAM_PARAMS_FCC_END_INDEX_BUTT; uc_cfg_id++)
+    for (uc_cfg_id = uc_start_idx; uc_cfg_id < uc_end_idx; uc_cfg_id++)
     {
         l_ret = get_cust_conf_int32_etc(INI_MODU_WIFI, g_ast_nvram_config_ini[uc_cfg_id].name, pl_nvram_params+uc_param_idx);
-        OAL_IO_PRINT("{hwifi_config_init_fcc_txpwr_nvram params[%d]=0x%x!}", uc_param_idx, pl_nvram_params[uc_param_idx]);
+        OAL_IO_PRINT("{hwifi_config_init_fcc_txpwr_nvram params[%d]=0x%x!\r\n}", uc_param_idx, pl_nvram_params[uc_param_idx]);
 
         if(INI_SUCC != l_ret)
         {
@@ -2469,48 +2626,53 @@ OAL_STATIC int32 hwifi_config_init_fcc_txpwr_nvram(void)
     for (uc_cfg_id = 0; uc_cfg_id < MAC_2G_CHANNEL_NUM; uc_cfg_id++)
     {
         pl_nvram_params++;
-        oal_memcopy(g_st_cust_nv_params.auc_2g_fcc_txpwr_limit_params[uc_cfg_id], pl_nvram_params, CUS_NUM_FCC_2G_PRO*OAL_SIZEOF(oal_uint8));
+        oal_memcopy(g_st_cust_nv_params.auc_2g_fcc_txpwr_limit_params[uc_cfg_id], pl_nvram_params, CUS_NUM_FCC_CE_2G_PRO*OAL_SIZEOF(oal_uint8));
     }
 
-    OS_MEM_KFREE(pl_fcc_txpwr_limit_params);
+    OS_MEM_KFREE(pl_fcc_ce_txpwr_limit_params);
     return INI_SUCC;
 }
+
 
 
 OAL_STATIC oal_int32 hwifi_config_init_sar_ctrl_nvram(void)
 {
     oal_int32     l_ret = INI_FAILED;
     oal_uint8     uc_cfg_id;
+    oal_uint8     uc_band_id;
+    oal_uint8     uc_cus_id   = NVRAM_PARAMS_SAR_START_INDEX_BUTT;
     oal_uint8     uc_sar_lvl_idx;
-    oal_uint8     uc_sar_params_idx = 0;
-    oal_uint32    ul_nvram_params = 0;
-    oal_uint8     auc_nvram_params[CUS_NUM_OF_SAR_LVL] = {0};
+    oal_uint32    ul_nvram_params   = 0;
+    oal_uint8     auc_nvram_params[CUS_NUM_OF_SAR_ONE_PARAM_NUM];
 
-    for (uc_cfg_id = NVRAM_PARAMS_SAR_START_INDEX_BUTT; uc_cfg_id < NVRAM_PARAMS_SAR_END_INDEX_BUTT; uc_cfg_id++)
+    for (uc_cfg_id = 0; uc_cfg_id < CUS_NUM_OF_SAR_PER_BAND_PAR_NUM; uc_cfg_id++)
     {
-        l_ret = get_cust_conf_int32_etc(INI_MODU_WIFI, g_ast_nvram_config_ini[uc_cfg_id].name, &ul_nvram_params);
-        OAL_IO_PRINT("{hwifi_config_init_sar_ctrl_nvram params[%d]=0x%x!}", uc_cfg_id, ul_nvram_params);
-
-        if(INI_SUCC != l_ret)
+        for (uc_band_id = 0; uc_band_id < CUS_NUM_OF_SAR_PARAMS; uc_band_id++)
         {
-            OAM_WARNING_LOG1(0, OAM_SF_CFG, "hwifi_config_init_sar_ctrl_nvram read id[%d] from ini failed!", uc_cfg_id);
-            /* 读取失败时,使用初始值 */
-            ul_nvram_params = g_al_nvram_init_params[uc_cfg_id];
-        }
+            l_ret = get_cust_conf_int32_etc(INI_MODU_WIFI, g_ast_nvram_config_ini[uc_cus_id].name, &ul_nvram_params);
+            OAL_IO_PRINT("{hwifi_config_init_sar_ctrl_nvram params[%d]=0x%x!\r\n}", uc_cus_id, ul_nvram_params);
 
-        oal_memcopy(auc_nvram_params, &ul_nvram_params, OAL_SIZEOF(auc_nvram_params));
-
-        for (uc_sar_lvl_idx = 0; uc_sar_lvl_idx < CUS_NUM_OF_SAR_LVL; uc_sar_lvl_idx++)
-        {
-            if (auc_nvram_params[uc_sar_lvl_idx] <= CUS_MIN_OF_SAR_VAL)
+            if(INI_SUCC != l_ret)
             {
-                OAM_ERROR_LOG4(0, OAM_SF_CUSTOM, "hwifi_config_init_sar_ctrl_nvram::uc_cfg_id[%d]:0x%x got[%d] out of the normal[%d] check ini file!",
-                               uc_cfg_id, ul_nvram_params, auc_nvram_params[uc_sar_lvl_idx], CUS_MIN_OF_SAR_VAL);
-                auc_nvram_params[uc_sar_lvl_idx] = 0xFF;
+                OAM_WARNING_LOG1(0, OAM_SF_CFG, "hwifi_config_init_sar_ctrl_nvram read id[%d] from ini failed!", uc_cus_id);
+                /* 读取失败时,使用初始值 */
+                ul_nvram_params = 0xFFFFFFFF;
             }
-            g_st_cust_nv_params.auc_sar_ctrl_params[uc_sar_lvl_idx][uc_sar_params_idx] = auc_nvram_params[uc_sar_lvl_idx];
+
+            oal_memcopy(auc_nvram_params, &ul_nvram_params, OAL_SIZEOF(ul_nvram_params));
+            for (uc_sar_lvl_idx = 0; uc_sar_lvl_idx < CUS_NUM_OF_SAR_ONE_PARAM_NUM; uc_sar_lvl_idx++)
+            {
+                /* 定制项检查 */
+                if (auc_nvram_params[uc_sar_lvl_idx] <= CUS_MIN_OF_SAR_VAL)
+                {
+                    OAM_ERROR_LOG4(0, OAM_SF_CUSTOM, "hwifi_config_init_sar_ctrl_nvram::uc_cfg_id[%d]:0x%x got[%d] out of the normal[%d] check ini file!",
+                                   uc_cus_id, ul_nvram_params, auc_nvram_params[uc_sar_lvl_idx], CUS_MIN_OF_SAR_VAL);
+                    auc_nvram_params[uc_sar_lvl_idx] = 0xFF;
+                }
+                g_st_cust_nv_params.auc_sar_ctrl_params[uc_sar_lvl_idx+uc_cfg_id*CUS_NUM_OF_SAR_ONE_PARAM_NUM][uc_band_id] = auc_nvram_params[uc_sar_lvl_idx];
+            }
+            uc_cus_id++;
         }
-        uc_sar_params_idx++;
     }
 
     return INI_SUCC;
@@ -2529,13 +2691,13 @@ OAL_STATIC oal_int32 hwifi_config_init_tas_ctrl_nvram(oal_void)
     l_ret = get_cust_conf_int32_etc(INI_MODU_WIFI, g_ast_nvram_config_ini[NVRAM_PARAMS_TAS_ANT_SWITCH_EN].name, &ul_nvram_params);
     if(INI_SUCC == l_ret)
     {
-        g_en_tas_switch_en = (oal_bool_enum_uint8)ul_nvram_params;
-        OAM_WARNING_LOG1(0, OAM_SF_CUSTOM, "hwifi_config_init_tas_ctrl_nvram g_en_tas_switch_en[%d]!", g_en_tas_switch_en);
+        OAM_WARNING_LOG1(0, OAM_SF_CUSTOM, "hwifi_config_init_tas_ctrl_nvram g_aen_tas_switch_en[%d]!", ul_nvram_params);
+        g_aen_tas_switch_en[WLAN_RF_CHANNEL_ZERO] = (oal_bool_enum_uint8)CUS_GET_LOW_16BIT(ul_nvram_params);
+        g_aen_tas_switch_en[WLAN_RF_CHANNEL_ONE]  = (oal_bool_enum_uint8)CUS_GET_HIGH_16BIT(ul_nvram_params);
     }
 
     l_ret = get_cust_conf_int32_etc(INI_MODU_WIFI, g_ast_nvram_config_ini[NVRAM_PARAMS_TAS_PWR_CTRL].name, &ul_nvram_params);
-    OAL_IO_PRINT("{hwifi_config_init_tas_ctrl_nvram params[%d]=0x%x!}", NVRAM_PARAMS_TAS_PWR_CTRL, ul_nvram_params);
-
+    OAL_IO_PRINT("{hwifi_config_init_tas_ctrl_nvram params[%d]=0x%x!\r\n}", NVRAM_PARAMS_TAS_PWR_CTRL, ul_nvram_params);
     if(INI_SUCC != l_ret)
     {
         OAM_WARNING_LOG1(0, OAM_SF_CUSTOM, "hwifi_config_init_tas_ctrl_nvram read id[%d] from ini failed!", NVRAM_PARAMS_TAS_PWR_CTRL);
@@ -2579,7 +2741,7 @@ OAL_STATIC oal_uint32 hwifi_config_sepa_coefficient_from_param(oal_uint8 *puc_cu
     if (OAL_PTR_NULL == pc_token)
     {
         OAM_ERROR_LOG0(0, OAM_SF_CUSTOM, "hwifi_config_sepa_coefficient_from_param read get null value check!");
-        return OAL_PTR_NULL;
+        return OAL_ERR_CODE_PTR_NULL;
     }
     pc_token = oal_strtok(pc_token, pc_sep, &pc_ctx);
     /* 获取定制化系数 */
@@ -2670,7 +2832,7 @@ OAL_STATIC int32 hwifi_config_init_nvram(void)
     int32     l_ret = INI_FAILED;
     int32     l_cfg_id;
     int32     al_nvram_params[NVRAM_PARAMS_TXPWR_INDEX_BUTT] = {0};
-    int32     l_val = 0xFF;
+    int32     l_val;
 
     OAL_MEMZERO(&g_st_cust_nv_params, OAL_SIZEOF(g_st_cust_nv_params));
 
@@ -2692,8 +2854,30 @@ OAL_STATIC int32 hwifi_config_init_nvram(void)
 
     oal_memcopy(g_st_cust_nv_params.ac_delt_txpwr_params, al_nvram_params, NUM_OF_NV_MAX_TXPOWER);
     oal_memcopy(g_st_cust_nv_params.ac_dpd_delt_txpwr_params, al_nvram_params + NVRAM_PARAMS_INDEX_DPD_0, NUM_OF_NV_DPD_MAX_TXPOWER);
-    oal_memcopy(g_st_cust_nv_params.ac_11b_delt_txpwr_params, al_nvram_params + NVRAM_PARAMS_INDEX_62, NUM_OF_NV_11B_DELTA_TXPOWER);
-    oal_memcopy(g_st_cust_nv_params.auc_5g_upper_upc_params, al_nvram_params + NVRAM_PARAMS_INDEX_63, NUM_OF_NV_5G_UPPER_UPC);
+
+    l_val = CUS_GET_LOW_16BIT(*(al_nvram_params + NVRAM_PARAMS_INDEX_11B_OFDM_DELT_POW));
+    oal_memcopy(g_st_cust_nv_params.ac_11b_delt_txpwr_params, &l_val, NUM_OF_NV_11B_DELTA_TXPOWER);
+    /* FEM OFF IQ CALI POW */
+    l_val = CUS_GET_HIGH_16BIT(*(al_nvram_params + NVRAM_PARAMS_INDEX_11B_OFDM_DELT_POW));
+    oal_memcopy(g_st_cust_nv_params.auc_fem_off_iq_cal_pow_params, &l_val, OAL_SIZEOF(g_st_cust_nv_params.auc_fem_off_iq_cal_pow_params));
+    for (l_cfg_id = 0; l_cfg_id < WLAN_RF_CHANNEL_NUMS; l_cfg_id++)
+    {
+        if (CUS_VAL_INVALID(g_st_cust_nv_params.auc_fem_off_iq_cal_pow_params[l_cfg_id], CUS_AGC_FEM_OFF_IQ_CAL_POWER_MAX, CUS_AGC_FEM_OFF_IQ_CAL_POWER_MIN))
+        {
+            g_st_cust_nv_params.auc_fem_off_iq_cal_pow_params[l_cfg_id] = CUS_AGC_FEM_OFF_IQ_CAL_POWER_MIN;
+        }
+    }
+
+    oal_memcopy(g_st_cust_nv_params.auc_5g_upper_upc_params, al_nvram_params + NVRAM_PARAMS_INDEX_IQ_MAX_UPC, NUM_OF_NV_5G_UPPER_UPC);
+
+    oal_memcopy(g_st_cust_nv_params.ac_2g_low_pow_amend_params, al_nvram_params + NVRAM_PARAMS_INDEX_2G_LOW_POW_AMEND, NUM_OF_NV_2G_LOW_POW_DELTA_VAL);
+    for (l_cfg_id = 0; l_cfg_id < NUM_OF_NV_2G_LOW_POW_DELTA_VAL; l_cfg_id++)
+    {
+        if (CUS_ABS(g_st_cust_nv_params.ac_2g_low_pow_amend_params[l_cfg_id]) > CUS_2G_LOW_POW_AMEND_ABS_VAL_MAX)
+        {
+            g_st_cust_nv_params.ac_2g_low_pow_amend_params[l_cfg_id] = 0;
+        }
+    }
 
     /* 基准功率 */
     hwifi_get_max_txpwr_base(INI_MODU_WIFI, NVRAM_PARAMS_INDEX_19, g_st_cust_nv_params.auc_2g_txpwr_base_params[WLAN_RF_CHANNEL_ZERO], CUS_BASE_PWR_NUM_2G);
@@ -2703,29 +2887,14 @@ OAL_STATIC int32 hwifi_config_init_nvram(void)
     hwifi_get_max_txpwr_base(INI_MODU_WIFI, NVRAM_PARAMS_INDEX_22, g_st_cust_nv_params.auc_5g_txpwr_base_params[WLAN_RF_CHANNEL_ONE], CUS_BASE_PWR_NUM_5G);
 #endif
 
-    /* FCC */
-    hwifi_config_init_fcc_txpwr_nvram();
+    /* FCC/CE */
+    hwifi_config_init_fcc_ce_txpwr_nvram();
     /* SAR */
     hwifi_config_init_sar_ctrl_nvram();
 #ifdef _PRE_WLAN_FEATURE_TAS_ANT_SWITCH
     /* TAS */
     hwifi_config_init_tas_ctrl_nvram();
 #endif
-
-    if(INI_SUCC == get_cust_conf_int32_etc(INI_MODU_WIFI, g_ast_nvram_config_ini[NVRAM_PARAMS_5G_CE_HIGH_BAND_MAX_PWR].name, &l_val))
-    {
-        if ((l_val < CUS_MIN_BASE_TXPOWER_VAL) || l_val > 0xFF)
-        {
-            OAM_ERROR_LOG1(0, OAM_SF_CFG, "hwifi_config_init_nvram read 5G_CE_HIGH_BAND_MAX_PWR[%d] failed!", l_val);
-            l_val = 0xFF;
-        }
-    }
-    else
-    {
-        /* 读取失败时,使用初始值 */
-        l_val = g_al_nvram_init_params[NVRAM_PARAMS_5G_CE_HIGH_BAND_MAX_PWR];
-    }
-    g_st_cust_nv_params.uc_5g_max_pwr_for_ce_high_band = (oal_uint8)l_val;
 
     OAM_INFO_LOG0(0, OAM_SF_CFG, "hwifi_config_init_nvram read from ini success!");
     return INI_SUCC;
@@ -3354,9 +3523,19 @@ int hwifi_get_cfg_params(void)
         OAL_IO_PRINT("%s%d \t [config:%d]\n", "delt_11b_txpwr_params", l_cfg_idx_one, pst_cust_nv_params->ac_11b_delt_txpwr_params[l_cfg_idx_one]);
     }
 
+    for(l_cfg_idx_one = 0; l_cfg_idx_one < WLAN_RF_CHANNEL_NUMS; ++l_cfg_idx_one)
+    {
+        OAL_IO_PRINT("%s%d \t [config:%d]\n", "5g_IQ_cali_pow", l_cfg_idx_one, pst_cust_nv_params->auc_fem_off_iq_cal_pow_params[l_cfg_idx_one]);
+    }
+
     for(l_cfg_idx_one = 0; l_cfg_idx_one < NUM_OF_NV_5G_UPPER_UPC; ++l_cfg_idx_one)
     {
         OAL_IO_PRINT("%s%d \t [config:%d]\n", "5g_upper_upc_params", l_cfg_idx_one, pst_cust_nv_params->auc_5g_upper_upc_params[l_cfg_idx_one]);
+    }
+
+    for(l_cfg_idx_one = 0; l_cfg_idx_one < NUM_OF_NV_2G_LOW_POW_DELTA_VAL; ++l_cfg_idx_one)
+    {
+        OAL_IO_PRINT("%s%d \t [config:%d]\n", "2g_low_pow_amend_val", l_cfg_idx_one, pst_cust_nv_params->ac_2g_low_pow_amend_params[l_cfg_idx_one]);
     }
 
     for (l_cfg_idx_one = 0; l_cfg_idx_one < WLAN_RF_CHANNEL_NUMS; l_cfg_idx_one++)
@@ -3394,7 +3573,7 @@ int hwifi_get_cfg_params(void)
     }
     for (l_cfg_idx_one = 0; l_cfg_idx_one < MAC_2G_CHANNEL_NUM; l_cfg_idx_one++)
     {
-        for (l_cfg_idx_two = 0; l_cfg_idx_two < CUS_NUM_FCC_2G_PRO; l_cfg_idx_two++)
+        for (l_cfg_idx_two = 0; l_cfg_idx_two < CUS_NUM_FCC_CE_2G_PRO; l_cfg_idx_two++)
         {
             OAL_IO_PRINT("%s[%d] [%d] \t [config:%d]\n", "fcc_txpwr_limit_2g: chan",l_cfg_idx_one, l_cfg_idx_two,
                          pst_cust_nv_params->auc_2g_fcc_txpwr_limit_params[l_cfg_idx_one][l_cfg_idx_two]);
@@ -3421,7 +3600,7 @@ int hwifi_get_cfg_params(void)
     }
 #endif
 
-    OAL_IO_PRINT("%s \t [config:%d]\n", g_ast_nvram_config_ini[NVRAM_PARAMS_5G_CE_HIGH_BAND_MAX_PWR].name, pst_cust_nv_params->uc_5g_max_pwr_for_ce_high_band);
+    OAL_IO_PRINT("%s \t [config:%d]\n", g_ast_nvram_config_ini[NVRAM_PARAMS_5G_FCC_CE_HIGH_BAND_MAX_PWR].name, pst_cust_nv_params->uc_5g_max_pwr_fcc_ce_for_high_band);
 
     //CUS_TAG_DTS
     for(l_cfg_idx_one = 0; l_cfg_idx_one < WLAN_CFG_DTS_BUTT; ++l_cfg_idx_one)
@@ -3462,9 +3641,10 @@ EXPORT_SYMBOL_GPL(g_ast_pro_line_params);
 EXPORT_SYMBOL_GPL(gs_extre_point_vals);
 EXPORT_SYMBOL_GPL(g_en_nv_dp_init_is_null);
 #ifdef _PRE_WLAN_FEATURE_TAS_ANT_SWITCH
-EXPORT_SYMBOL_GPL(g_en_tas_switch_en);
+EXPORT_SYMBOL_GPL(g_aen_tas_switch_en);
 #endif
 EXPORT_SYMBOL_GPL(g_en_fact_cali_completed);
+EXPORT_SYMBOL_GPL(g_uc_wlan_cal_intvl_enable);
 EXPORT_SYMBOL_GPL(hwifi_config_init_etc);
 EXPORT_SYMBOL_GPL(hwifi_get_mac_addr_etc);
 EXPORT_SYMBOL_GPL(hwifi_get_init_value_etc);

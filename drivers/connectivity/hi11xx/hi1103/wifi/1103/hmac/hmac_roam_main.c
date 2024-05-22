@@ -275,7 +275,7 @@ oal_uint32 hmac_roam_init_etc(hmac_vap_stru *pst_hmac_vap)
 #endif
     pst_roam_info->en_roam_trigger       = ROAM_TRIGGER_DMAC;
     pst_roam_info->en_main_state         = ROAM_MAIN_STATE_INIT;
-    pst_roam_info->en_current_bss_ignore = OAL_FALSE;
+    pst_roam_info->en_current_bss_ignore = OAL_TRUE;
     pst_roam_info->pst_hmac_vap          = pst_hmac_vap;
     pst_roam_info->pst_hmac_user         = OAL_PTR_NULL;
     pst_roam_info->ul_connected_state    = WPAS_CONNECT_STATE_INIT;
@@ -292,6 +292,7 @@ oal_uint32 hmac_roam_init_etc(hmac_vap_stru *pst_hmac_vap)
     pst_roam_info->st_config.c_candidate_good_rssi  = g_st_wlan_customize_etc.c_candidate_good_rssi;
     pst_roam_info->st_config.uc_candidate_good_num  = g_st_wlan_customize_etc.uc_candidate_good_num;
     pst_roam_info->st_config.uc_candidate_weak_num  = g_st_wlan_customize_etc.uc_candidate_weak_num;
+    pst_roam_info->st_config.us_roam_interval       = g_st_wlan_customize_etc.us_roam_interval;
 #else
     pst_roam_info->st_config.uc_scan_band         = ROAM_BAND_2G_BIT|ROAM_BAND_5G_BIT;
     pst_roam_info->st_config.uc_scan_orthogonal   = ROAM_SCAN_CHANNEL_ORG_BUTT;
@@ -305,6 +306,7 @@ oal_uint32 hmac_roam_init_etc(hmac_vap_stru *pst_hmac_vap)
     pst_roam_info->st_config.c_candidate_good_rssi  = ROAM_ENV_RSSI_NE60_DB;
     pst_roam_info->st_config.uc_candidate_good_num  = ROAM_ENV_CANDIDATE_GOOD_NUM;
     pst_roam_info->st_config.uc_candidate_weak_num  = ROAM_ENV_CANDIDATE_WEAK_NUM;
+    pst_roam_info->st_config.us_roam_interval       = 0x8003; /* 使能动态漫游间隔，默认漫游间隔保护3次 */
 #endif
 
     for(i = 0; i<ROAM_LIST_MAX; i++)
@@ -370,6 +372,7 @@ oal_uint32 hmac_roam_info_init_etc(hmac_vap_stru *pst_hmac_vap)
 
     st_roam_trigger.c_trigger_2G = pst_roam_info->st_config.c_trigger_rssi_2G;
     st_roam_trigger.c_trigger_5G = pst_roam_info->st_config.c_trigger_rssi_5G;
+    st_roam_trigger.us_roam_interval = pst_roam_info->st_config.us_roam_interval;
 
     ul_ret = hmac_config_send_event_etc(&pst_hmac_vap->st_vap_base_info,
                                     WLAN_CFGID_SET_ROAM_TRIGGER,
@@ -606,7 +609,8 @@ oal_uint32 hmac_roam_check_signal_bridge_etc(hmac_vap_stru *pst_hmac_vap)
 
 
 oal_uint32 hmac_roam_start_etc(hmac_vap_stru *pst_hmac_vap, roam_channel_org_enum uc_scan_type,
-                           oal_bool_enum_uint8 en_current_bss_ignore, roam_trigger_enum_uint8 en_roam_trigger)
+                           oal_bool_enum_uint8 en_current_bss_ignore, oal_uint8 *pauc_target_bssid,
+                           roam_trigger_enum_uint8 en_roam_trigger)
 {
     oal_uint32              ul_ret;
     hmac_roam_info_stru    *pst_roam_info;
@@ -617,7 +621,7 @@ oal_uint32 hmac_roam_start_etc(hmac_vap_stru *pst_hmac_vap, roam_channel_org_enu
         return OAL_ERR_CODE_PTR_NULL;
     }
 
-    if(OAL_FALSE == en_current_bss_ignore)
+    if(OAL_TRUE == en_current_bss_ignore)
     {
         ul_ret = hmac_roam_check_signal_bridge_etc(pst_hmac_vap);
         if (OAL_SUCC != ul_ret)
@@ -648,8 +652,12 @@ oal_uint32 hmac_roam_start_etc(hmac_vap_stru *pst_hmac_vap, roam_channel_org_enu
 
     /* 每次漫游前，刷新是否支持漫游到自己的参数 */
     pst_roam_info->st_config.uc_scan_orthogonal = uc_scan_type;
-    pst_roam_info->en_current_bss_ignore = en_current_bss_ignore; /* true表示漫游到自己 */
+    pst_roam_info->en_current_bss_ignore = en_current_bss_ignore; /* false表示漫游到自己 */
     pst_roam_info->en_roam_trigger       = en_roam_trigger;
+    if (pauc_target_bssid)
+    { /* && (ROAM_TRIGGER_BSSID == en_roam_trigger) */
+        oal_set_mac_addr(pst_roam_info->auc_target_bssid, pauc_target_bssid);
+    }
 
     OAM_WARNING_LOG3(pst_hmac_vap->st_vap_base_info.uc_vap_id, OAM_SF_ROAM,
         "{hmac_roam_start_etc::START succ, uc_scan_type=%d, en_current_bss_ignore=%d en_roam_trigger=%d.}",
@@ -716,12 +724,25 @@ oal_uint32 hmac_roam_show_etc(hmac_vap_stru *pst_hmac_vap)
     pst_info   = &(pst_roam_info->st_config);
 
     uc_vap_id = pst_hmac_vap->st_vap_base_info.uc_vap_id;
-    OAM_WARNING_LOG4(uc_vap_id, OAM_SF_ROAM, "{hmac_roam_show_etc::band[%d] uc_scan_orthogonal[%d], c_trigger_rssi_2G=%d c_trigger_rssi_5G=%d}",
-                   pst_info->uc_scan_band, pst_info->uc_scan_orthogonal, pst_info->c_trigger_rssi_2G, pst_info->c_trigger_rssi_5G);
-    OAM_WARNING_LOG4(uc_vap_id, OAM_SF_ROAM, "{hmac_roam_show_etc::trigger_rssi_cnt[%u] trigger_linkloss_cnt[%u], dense env c_trigger_rssi_2G=%d c_trigger_rssi_5G=%d.}",
-                   pst_static->ul_trigger_rssi_cnt, pst_static->ul_trigger_linkloss_cnt, pst_info->c_dense_env_trigger_rssi_2G, pst_info->c_dense_env_trigger_rssi_5G);
-    OAM_WARNING_LOG2(uc_vap_id, OAM_SF_ROAM, "{hmac_roam_show_etc::scan_cnt[%u] scan_result_cnt[%u].}",
-                   pst_static->ul_scan_cnt, pst_static->ul_scan_result_cnt);
+
+    if (ROAM_ENV_SPARSE_AP == pst_roam_info->uc_rssi_type)
+    {
+        OAM_WARNING_LOG4(uc_vap_id, OAM_SF_ROAM, "{hmac_roam_show_etc::default env band[%d] uc_scan_orthogonal[%d], c_trigger_rssi_2G=%d c_trigger_rssi_5G=%d}",
+                       pst_info->uc_scan_band, pst_info->uc_scan_orthogonal, pst_info->c_trigger_rssi_2G, pst_info->c_trigger_rssi_5G);
+    }
+    else if (ROAM_ENV_DENSE_AP == pst_roam_info->uc_rssi_type)
+    {
+        OAM_WARNING_LOG4(uc_vap_id, OAM_SF_ROAM, "{hmac_roam_show_etc::dense env band[%d] uc_scan_orthogonal[%d], c_trigger_rssi_2G=%d c_trigger_rssi_5G=%d.}",
+                        pst_info->uc_scan_band, pst_info->uc_scan_orthogonal, pst_info->c_dense_env_trigger_rssi_2G, pst_info->c_dense_env_trigger_rssi_5G);
+    }
+    else
+    {
+        OAM_WARNING_LOG3(uc_vap_id, OAM_SF_ROAM, "{hmac_roam_show_etc::LinkLoss env band[%d] uc_scan_orthogonal[%d] uc_rssi_type[%d]}",
+                       pst_info->uc_scan_band, pst_info->uc_scan_orthogonal, pst_roam_info->uc_rssi_type);
+    }
+
+    OAM_WARNING_LOG4(uc_vap_id, OAM_SF_ROAM, "{hmac_roam_show_etc::trigger_rssi_cnt[%u] trigger_linkloss_cnt[%u], scan_cnt[%u] scan_result_cnt[%u].}",
+                   pst_static->ul_trigger_rssi_cnt, pst_static->ul_trigger_linkloss_cnt, pst_static->ul_scan_cnt, pst_static->ul_scan_result_cnt);
     OAM_WARNING_LOG3(uc_vap_id, OAM_SF_ROAM, "{hmac_roam_show_etc::total_cnt[%u] roam_success_cnt[%u] roam_fail_cnt[%u].}",
                    pst_static->ul_connect_cnt, pst_static->ul_roam_new_cnt, pst_static->ul_roam_old_cnt);
 #ifdef _PRE_WLAN_FEATURE_11V_ENABLE
@@ -939,15 +960,13 @@ oal_uint32  hmac_roam_check_bkscan_result_etc(hmac_vap_stru *pst_hmac_vap, void 
 
     oal_spin_unlock(&(pst_scan_bss_mgmt->st_lock));
 
-    /* Roaming Scenario Recognition (RISK: strong relationship with SCAN, need exclude partial channel scan)
-     * dense AP standard: RSSI>=-60dB, candidate num>=5;
-     *                    RSSI<-60dB && RSSI >=-75dB, candidate num>=10;
-     */
-    if ((pst_roam_info->st_config.uc_scenario_enable == OAL_TRUE)
-        && (pst_hmac_device->st_scan_mgmt.st_scan_record_mgmt.uc_chan_numbers >= WLAN_FULL_CHANNEL_NUM)) //full channel scan
+    /* 漫游场景识别1:密集AP场景/默认AP场景模式切换(风险:与扫描强相关,仅针对全信道扫描) */
+    if ((pst_roam_info->st_config.uc_scenario_enable == OAL_TRUE) &&
+        (pst_hmac_device->st_scan_mgmt.st_scan_record_mgmt.uc_chan_numbers >= WLAN_FULL_CHANNEL_NUM))
     {
-        if ((pst_roam_info->st_alg.uc_candidate_good_rssi_num >= pst_roam_info->st_config.uc_candidate_good_num)
-            || (pst_roam_info->st_alg.uc_candidate_weak_rssi_num >= pst_roam_info->st_config.uc_candidate_weak_num))
+        /* 密集AP场景要求: RSSI>=-60dB 的AP个数>=5 或 RSSI在[-75dB,-60dB)的AP个数>=10 */
+        if ((pst_roam_info->st_alg.uc_candidate_good_rssi_num >= pst_roam_info->st_config.uc_candidate_good_num) ||
+            (pst_roam_info->st_alg.uc_candidate_weak_rssi_num >= pst_roam_info->st_config.uc_candidate_weak_num))
         {
             pst_roam_info->st_alg.uc_scan_period = 0;
             OAM_WARNING_LOG3(pst_hmac_vap->st_vap_base_info.uc_vap_id, OAM_SF_ROAM,
@@ -957,49 +976,49 @@ oal_uint32  hmac_roam_check_bkscan_result_etc(hmac_vap_stru *pst_hmac_vap, void 
                 pst_roam_info->st_alg.uc_candidate_weak_rssi_num);
             if (ROAM_ENV_DENSE_AP != pst_roam_info->uc_rssi_type)
             {
-                /*OAM_WARNING_LOG3(pst_hmac_vap->st_vap_base_info.uc_vap_id, OAM_SF_ROAM,
-                    "{hmac_roam_check_bkscan_result::roam_to dense AP env: candidate bss total[%d] good[%d] weak[%d]}",
-                    pst_roam_info->st_alg.uc_candidate_bss_num,
-                    pst_roam_info->st_alg.uc_candidate_good_rssi_num,
-                    pst_roam_info->st_alg.uc_candidate_weak_rssi_num);*/
-                hmac_roam_rssi_trigger_type(pst_hmac_vap, ROAM_ENV_DENSE_AP); //dense AP roaming scenario
+                hmac_roam_rssi_trigger_type(pst_hmac_vap, ROAM_ENV_DENSE_AP);
             }
         }
         else
         {
-            /* When switch from dense AP scenario to default AP scenario, for five times continuous none-dense-AP scan; */
+            /* 连续5次扫描都不是密集AP环境，则切换回默认AP环境模式 */
             pst_roam_info->st_alg.uc_scan_period++;
-            if (pst_roam_info->st_alg.uc_another_bss_scaned
-                && (pst_roam_info->st_alg.uc_scan_period == ROAM_ENV_DENSE_TO_SPARSE_PERIOD))
+            if ((pst_roam_info->st_alg.uc_another_bss_scaned) &&
+                (pst_roam_info->st_alg.uc_scan_period == ROAM_ENV_DENSE_TO_SPARSE_PERIOD))
             {
                 OAM_WARNING_LOG3(pst_hmac_vap->st_vap_base_info.uc_vap_id, OAM_SF_ROAM,
                     "{hmac_roam_check_bkscan_result::roam_to sparse AP env: candidate bss total[%d] good[%d] weak[%d]}",
                     pst_roam_info->st_alg.uc_candidate_bss_num,
                     pst_roam_info->st_alg.uc_candidate_good_rssi_num,
                     pst_roam_info->st_alg.uc_candidate_weak_rssi_num);
-                //if (ROAM_ENV_SPARSE_AP != pst_roam_info->uc_rssi_type)
-                {
-                    hmac_roam_rssi_trigger_type(pst_hmac_vap, ROAM_ENV_SPARSE_AP); //default roaming scenario
-                }
+
+                hmac_roam_rssi_trigger_type(pst_hmac_vap, ROAM_ENV_SPARSE_AP);
             }
         }
     }
     else if (pst_roam_info->st_alg.uc_another_bss_scaned)
     {
-        hmac_roam_rssi_trigger_type(pst_hmac_vap, ROAM_ENV_SPARSE_AP); //default roaming scenario
+        hmac_roam_rssi_trigger_type(pst_hmac_vap, ROAM_ENV_SPARSE_AP);
     }
 
+    /* 漫游场景识别2: 非漫游场景恢复，扫描到其他大于-80dB的AP立即恢复 */
+    if ((ROAM_ENV_LINKLOSS == pst_roam_info->uc_rssi_type) &&
+        (pst_roam_info->st_alg.uc_another_bss_scaned) &&
+        (pst_roam_info->st_alg.c_max_rssi >= ROAM_RSSI_NE80_DB))
+    {
+        return hmac_roam_rssi_trigger_type(pst_hmac_vap, ROAM_ENV_SPARSE_AP);
+    }
+
+    /* 漫游场景识别3: 关闭漫游 */
     if (OAL_TRUE == hmac_roam_alg_need_to_stop_roam_trigger_etc(pst_roam_info))
     {
-        return hmac_roam_rssi_trigger_type(pst_hmac_vap, ROAM_ENV_LINKLOSS); //LINKLOSS roaming scenario
+        return hmac_roam_rssi_trigger_type(pst_hmac_vap, ROAM_ENV_LINKLOSS);
     }
 
-    /* Another Roaming Scenario: current AP >= -75dB, max RSSI AP - current AP >= 20dB */
-    /* 5个扫描周期4次扫到更好信号强度的AP即可触发漫游，即扫描到满足要求的BSS和扫描不到的比例是4:1 */
-    if ((pst_roam_info->st_config.uc_scenario_enable == OAL_TRUE)
-        && (pst_roam_info->st_alg.c_max_rssi - pst_roam_info->st_alg.c_current_rssi >= ROAM_ENV_BETTER_RSSI_DISTANSE)
-        //&& (pst_roam_info->st_alg.c_current_rssi >= ROAM_RSSI_NE75_DB) //We'd better keep device to trigger roaming, so need this condition
-        && (pst_roam_info->st_alg.c_current_rssi <= ROAM_ENV_RSSI_NE60_DB))
+    /* 漫游场景识别4: 当前信号弱于-60dB，高概率(5次有4次)扫到比当前高20dB的AP即可触发漫游 */
+    if ((pst_roam_info->st_config.uc_scenario_enable == OAL_TRUE) &&
+        (pst_roam_info->st_alg.c_max_rssi - pst_roam_info->st_alg.c_current_rssi >= ROAM_ENV_BETTER_RSSI_DISTANSE) &&
+        (pst_roam_info->st_alg.c_current_rssi <= ROAM_ENV_RSSI_NE60_DB))
     {
         if (pst_roam_info->st_alg.uc_better_rssi_null_period >= (ROAM_ENV_BETTER_RSSI_NULL_PERIOD + 1))
         {
@@ -1016,7 +1035,8 @@ oal_uint32  hmac_roam_check_bkscan_result_etc(hmac_vap_stru *pst_hmac_vap, void 
         {
             pst_roam_info->st_alg.uc_better_rssi_scan_period = 0;
             pst_roam_info->st_alg.uc_better_rssi_null_period = 0;
-            hmac_roam_start_etc(pst_hmac_vap, ROAM_SCAN_CHANNEL_ORG_0, OAL_FALSE, ROAM_TRIGGER_APP);
+
+            hmac_roam_start_etc(pst_hmac_vap, ROAM_SCAN_CHANNEL_ORG_0, OAL_TRUE, NULL, ROAM_TRIGGER_APP);
         }
     }
     else
@@ -1070,7 +1090,8 @@ OAL_STATIC oal_uint32 hmac_roam_check_11v_scan_result(hmac_roam_info_stru *pst_r
         pst_hmac_vap->st_vap_base_info.bit_roam_scan_valid_rslt = OAL_FALSE;
         if(ROAM_SCAN_CHANNEL_ORG_1 == pst_roam_info->st_config.uc_scan_orthogonal)
         {
-            if(pst_11v_ctrl_info->uc_11v_roam_scan_times <= MAC_11V_ROAM_SCAN_ONE_CHANNEL_LIMIT)
+            if((OAL_FALSE == pst_11v_ctrl_info->en_only_scan_one_time) &&
+                (pst_11v_ctrl_info->uc_11v_roam_scan_times <= MAC_11V_ROAM_SCAN_ONE_CHANNEL_LIMIT))
             {
                 /*还需要再次触发漫游扫描*/
                 pst_scan_mgmt->en_is_scanning = OAL_FALSE;
@@ -1352,12 +1373,6 @@ OAL_STATIC oal_uint32  hmac_roam_resume_pm(hmac_roam_info_stru *pst_roam_info, o
     oal_uint32  ul_ret = OAL_SUCC;
 
 #ifdef _PRE_WLAN_FEATURE_STA_PM
-    /* 开低功耗前关闭低功耗超时定时器 */
-    if (OAL_TRUE == pst_roam_info->pst_hmac_vap->st_ps_sw_timer.en_is_registerd)
-    {
-        FRW_TIMER_IMMEDIATE_DESTROY_TIMER(&pst_roam_info->pst_hmac_vap->st_ps_sw_timer);
-    }
-
     ul_ret = hmac_config_set_pm_by_module_etc(&pst_roam_info->pst_hmac_vap->st_vap_base_info, MAC_STA_PM_CTRL_TYPE_ROAM, MAC_STA_PM_SWITCH_ON);
     if (OAL_SUCC != ul_ret)
     {
@@ -1486,7 +1501,7 @@ OAL_STATIC oal_uint32  hmac_roam_connecting_fail(hmac_roam_info_stru *pst_roam_i
             pst_roam_info->st_alg.c_current_rssi = ROAM_RSSI_LINKLOSS_TYPE;
         }
         /* 漫游失败时，rssi 逐次减1dBm，一直到到ROAM_RSSI_MAX_TYPE。这样可以最多触发5次重漫游 */
-        return hmac_roam_trigger_handle_etc(pst_roam_info->pst_hmac_vap, pst_roam_info->st_alg.c_current_rssi - 1, OAL_FALSE);
+        return hmac_roam_trigger_handle_etc(pst_roam_info->pst_hmac_vap, pst_roam_info->st_alg.c_current_rssi - 1, OAL_TRUE);
     }
 
     /* 管理帧加密是否开启*/
@@ -1541,7 +1556,7 @@ OAL_STATIC oal_uint32  hmac_roam_handle_fail_handshake_phase(hmac_roam_info_stru
             pst_roam_info->st_alg.c_current_rssi = ROAM_RSSI_LINKLOSS_TYPE;
         }
         /* 漫游握手失败时，rssi 逐次减1dBm，一直到到ROAM_RSSI_MAX_TYPE。这样可以最多触发5次重漫游 */
-        return hmac_roam_trigger_handle_etc(pst_roam_info->pst_hmac_vap, pst_roam_info->st_alg.c_current_rssi - 1, OAL_FALSE);
+        return hmac_roam_trigger_handle_etc(pst_roam_info->pst_hmac_vap, pst_roam_info->st_alg.c_current_rssi - 1, OAL_TRUE);
     }
 
     OAM_WARNING_LOG1(0, OAM_SF_ROAM, "{hmac_roam_handle_fail_handshake_phase:: report deauth to wpas! c_current_rssi=%d}", pst_roam_info->st_alg.c_current_rssi);
@@ -1652,6 +1667,7 @@ OAL_STATIC oal_uint32  hmac_roam_connect_to_bss(hmac_roam_info_stru *pst_roam_in
     oal_memcopy(&pst_old_bss->st_channel, &(pst_hmac_vap->st_vap_base_info.st_channel), OAL_SIZEOF(mac_channel_stru));
     oal_memcopy(&pst_old_bss->auc_bssid, &(pst_hmac_vap->st_vap_base_info.auc_bssid), WLAN_MAC_ADDR_LEN);
     pst_old_bss->us_cap_info = pst_hmac_vap->st_vap_base_info.us_assoc_user_cap_info;
+    pst_old_bss->en_ap_type  = pst_hmac_user->en_user_ap_type;
 
     /* 切换状态至connecting */
     hmac_roam_main_change_state(pst_roam_info, ROAM_MAIN_STATE_CONNECTING);
@@ -2054,6 +2070,7 @@ oal_uint32  hmac_roam_rssi_trigger_type(hmac_vap_stru *pst_hmac_vap, roam_scenar
     {
         st_roam_trigger.c_trigger_2G = ROAM_RSSI_LINKLOSS_TYPE;
         st_roam_trigger.c_trigger_5G = ROAM_RSSI_LINKLOSS_TYPE;
+        pst_roam_info->st_alg.uc_invalid_scan_cnt = 0;
     }
     else if (ROAM_ENV_DENSE_AP == en_val)
     {
@@ -2065,6 +2082,8 @@ oal_uint32  hmac_roam_rssi_trigger_type(hmac_vap_stru *pst_hmac_vap, roam_scenar
         st_roam_trigger.c_trigger_2G = pst_roam_info->st_config.c_trigger_rssi_2G;
         st_roam_trigger.c_trigger_5G = pst_roam_info->st_config.c_trigger_rssi_5G;
     }
+    st_roam_trigger.us_roam_interval = pst_roam_info->st_config.us_roam_interval;
+
     ul_ret = hmac_config_send_event_etc(&pst_hmac_vap->st_vap_base_info,
                                     WLAN_CFGID_SET_ROAM_TRIGGER,
                                     OAL_SIZEOF(mac_roam_trigger_stru),

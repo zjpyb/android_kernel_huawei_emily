@@ -223,6 +223,7 @@ WAIT_FOR_MCU_RESP_DATA_AFTER_SEND(send_pkt, trigger, wait_ms, NULL, 0)
 extern char *obj_tag_str[];
 extern struct sensor_status sensor_status;
 
+
 /*called by sensorhub or tp modules.*/
 extern int inputhub_route_open(unsigned short port);
 extern void inputhub_route_close(unsigned short port);

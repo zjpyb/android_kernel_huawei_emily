@@ -36,11 +36,10 @@ static struct proc_dir_entry *focal_proc_entry;
 static ssize_t focal_proc_write(struct file *filp,
 const char __user *buff, size_t count, loff_t *ppos)
 {
-	u8 writebuf[WRITE_BUF_SIZE];
+	u8 writebuf[WRITE_BUF_SIZE] = {0};
 	size_t buflen = count;
 	int writelen = 0;
 	int ret = 0;
-	char upgrade_file_path[128];
 	struct ts_kit_device_data *focal_dev_data = NULL;
 	struct focal_platform_data *focal_pdata = NULL;
 
@@ -179,9 +178,10 @@ focal_proc_read(struct file *filp, char __user *buff, size_t count, loff_t *ppos
 	default:
 		break;
 	}
-	TS_LOG_DEBUG("%s:num_read_chars =%d ,count = %d",  __func__ ,num_read_chars,count);
+	TS_LOG_DEBUG("%s:num_read_chars =%lu,count = %lu",
+		__func__, num_read_chars, count);
 	if (num_read_chars > count){
-		TS_LOG_DEBUG("%s:buff size is too large",  __func__);
+		TS_LOG_DEBUG("%s:buff size is too large", __func__);
 		return -EINVAL ;
 	}
 	if (copy_to_user(buff, buf, num_read_chars)) {

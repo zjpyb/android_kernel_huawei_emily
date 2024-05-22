@@ -229,13 +229,11 @@ int hw_csi_enable(csi_index_t csi_index, int csi_lane, int csi_mipi_clk)
 
 			writel(readl((pctrl_reg + CSI_PERI_CTRL19)) | DPHY_CSI2_2_CSI_S,
 			(pctrl_reg + CSI_PERI_CTRL19));
-			//writel_relaxed(value, (volatile void *)(pctrl_reg + CSI_PERI_CTRL19));
 		} else {
 			/* config csi to sensor */
 			cam_notice("%s Config CSI to Sensor.", __func__);
 			writel((readl(pctrl_reg + CSI_PERI_CTRL24)) & ~DPHY_MUX_SEL,
 				(pctrl_reg + CSI_PERI_CTRL24));
-			//writel_relaxed(readl_relaxed(prti_cfg_reg + REG_PCTRL24) & ~DPHY_MUX_SEL, prti_cfg_reg + REG_PCTRL24);
 		}
 		iounmap((void*)pctrl_reg);
 
@@ -443,11 +441,6 @@ int hw_csi_disable(csi_index_t csi_index)
 		cam_debug("csi is disabled now");
 		return 0;
 	}
-
-	//reg_offset = hw_csi_pad.info.csi_base_offset[csi_index];
-
-	//HW_CSI_SETREG32(reg_offset + CSI_REG_RESETN, 0);
-	//HW_CSI_SETREG32(reg_offset + CSI_REG_PHY_SHUTDOWNZ, 0);
 
 	if (!hw_is_fpga_board()) {
 		clk_disable_unprepare(hw_csi_pad.info.phyclk[csi_index]);

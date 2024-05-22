@@ -13,8 +13,9 @@
 #include <linux/of.h>
 #include <linux/of_address.h>
 
+#include <linux/version.h>
 #ifdef CONFIG_HUAWEI_PRINTK_CTRL
-#include <log/log_usertype/log-usertype.h>
+#include <log/log_usertype.h>
 #include <linux/hisi/hw_cmdline_parse.h> /*for runmode_is_factory*/
 #endif
 
@@ -181,19 +182,30 @@ pure_initcall(uniformity_timer_init);
 #ifdef CONFIG_HISI_AMBA_PL011
 int get_console_index(void)
 {
+#if(LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0))
+	if ((preferred_console != -1) && (preferred_console < MAX_CMDLINECONSOLES))
+		return console_cmdline[preferred_console].index;
+#else
 	if ((selected_console != -1) && (selected_console < MAX_CMDLINECONSOLES))
 		return console_cmdline[selected_console].index;
+#endif
 
 	return -1;
 }
 
 int get_console_name(char *name, int name_buf_len)
 {
-	if ((selected_console != -1) && (selected_console < MAX_CMDLINECONSOLES)) {
-		strncpy(name, console_cmdline[selected_console].name, min(sizeof(console_cmdline[selected_console].name), name_buf_len)); /*lint !e574 !e58*/
+#if(LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0))
+	if ((preferred_console != -1) && (preferred_console < MAX_CMDLINECONSOLES)) {
+		strncpy(name, console_cmdline[preferred_console].name, min((int)(sizeof(console_cmdline[preferred_console].name)), name_buf_len)); /*lint !e574 !e58*/
 		return 0;
 	}
-
+#else
+	if ((selected_console != -1) && (selected_console < MAX_CMDLINECONSOLES)) {
+		strncpy(name, console_cmdline[selected_console].name, min((int)(sizeof(console_cmdline[selected_console].name)), name_buf_len)); /*lint !e574 !e58*/
+		return 0;
+	}
+#endif
 	return -1;
 }
 #endif

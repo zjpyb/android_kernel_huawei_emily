@@ -30,6 +30,7 @@
 #include <linux/export.h>
 #include <linux/in6.h>
 #include <linux/kernel.h>
+#include <linux/random.h>
 
 #include <net/addrconf.h>
 #include <net/flow.h>
@@ -47,43 +48,31 @@
 __u32 mptcp_v6_get_nonce(const __be32 *saddr, const __be32 *daddr,
 			 __be16 sport, __be16 dport)
 {
-	u32 secret[MD5_MESSAGE_BYTES / 4];
-	u32 hash[MD5_DIGEST_WORDS];
-	u32 i;
+	u32 hash;
 
-	memcpy(hash, saddr, 16);
-	for (i = 0; i < 4; i++)
-		secret[i] = mptcp_secret[i] + (__force u32)daddr[i];
-	secret[4] = mptcp_secret[4] +
-		    (((__force u16)sport << 16) + (__force u16)dport);
-	secret[5] = mptcp_seed++;
-	for (i = 6; i < MD5_MESSAGE_BYTES / 4; i++)
-		secret[i] = mptcp_secret[i];
+	(void)saddr;
+	(void)daddr;
+	(void)sport;
+	(void)dport;
 
-	md5_transform(hash, secret);
-
-	return hash[0];
+	get_random_bytes(&hash, sizeof(hash));
+	return hash;
 }
 
 u64 mptcp_v6_get_key(const __be32 *saddr, const __be32 *daddr,
 		     __be16 sport, __be16 dport, u32 seed)
 {
-	u32 secret[MD5_MESSAGE_BYTES / 4];
-	u32 hash[MD5_DIGEST_WORDS];
-	u32 i;
+	u64 hash;
 
-	memcpy(hash, saddr, 16);
-	for (i = 0; i < 4; i++)
-		secret[i] = mptcp_secret[i] + (__force u32)daddr[i];
-	secret[4] = mptcp_secret[4] +
-		    (((__force u16)sport << 16) + (__force u16)dport);
-	secret[5] = seed;
-	for (i = 6; i < MD5_MESSAGE_BYTES / 4; i++)
-		secret[i] = mptcp_secret[i];
+	(void)saddr;
+	(void)daddr;
+	(void)sport;
+	(void)dport;
+	(void)seed;
 
-	md5_transform(hash, secret);
+	get_random_bytes(&hash, sizeof(hash));
 
-	return *((u64 *)hash);
+	return hash;
 }
 
 static void mptcp_v6_reqsk_destructor(struct request_sock *req)
@@ -179,7 +168,6 @@ static int mptcp_v6_join_request(struct sock *meta_sk, struct sk_buff *skb)
 
 int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 {
-	const struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 	const struct tcphdr *th = tcp_hdr(skb);
 	const struct ipv6hdr *ip6h = ipv6_hdr(skb);
 	struct sock *child, *rsk = NULL, *sk;
@@ -208,9 +196,14 @@ int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 	if (sk->sk_state == TCP_NEW_SYN_RECV) {
 		struct request_sock *req = inet_reqsk(sk);
 
+		if (!mptcp_can_new_subflow(meta_sk))
+			goto reset_and_discard;
+
+		local_bh_disable();
 		child = tcp_check_req(meta_sk, skb, req, false);
 		if (!child) {
 			reqsk_put(req);
+			local_bh_enable();
 			goto discard;
 		}
 
@@ -218,15 +211,18 @@ int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 			ret = mptcp_finish_handshake(child, skb);
 			if (ret) {
 				rsk = child;
+				local_bh_enable();
 				goto reset_and_discard;
 			}
 
+			local_bh_enable();
 			return 0;
 		}
 
 		/* tcp_check_req failed */
 		reqsk_put(req);
 
+		local_bh_enable();
 		goto discard;
 	}
 
@@ -236,15 +232,7 @@ int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 	return ret;
 
 new_subflow:
-	/* Has been removed from the tk-table. Thus, no new subflows.
-	 *
-	 * Check for close-state is necessary, because we may have been closed
-	 * without passing by mptcp_close().
-	 *
-	 * When falling back, no new subflows are allowed either.
-	 */
-	if (meta_sk->sk_state == TCP_CLOSE || !tcp_sk(meta_sk)->inside_tk_table ||
-	    mpcb->infinite_mapping_rcv || mpcb->send_infinite_mapping)
+	if (!mptcp_can_new_subflow(meta_sk))
 		goto reset_and_discard;
 
 	child = tcp_v6_cookie_check(meta_sk, skb);
@@ -259,8 +247,11 @@ new_subflow:
 		}
 	}
 
-	if (tcp_hdr(skb)->syn)
+	if (tcp_hdr(skb)->syn) {
+		local_bh_disable();
 		mptcp_v6_join_request(meta_sk, skb);
+		local_bh_enable();
+	}
 
 discard:
 	kfree_skb(skb);

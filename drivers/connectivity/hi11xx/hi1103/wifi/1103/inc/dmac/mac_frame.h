@@ -336,6 +336,8 @@ extern "C" {
 #define MAC_IS_TPINK_941N_AP(puc_bssid)      ((0x50 == puc_bssid[0]) && (0xfa == puc_bssid[1]) && (0x84 == puc_bssid[2]))
 #define MAC_IS_TPINK_5510_AP(puc_bssid)      ((0x80 == puc_bssid[0]) && (0x89 == puc_bssid[1]) && (0x17 == puc_bssid[2]))
 //#define MAC_IS_TPINK_5660_AP(puc_bssid)      ((0x78 == puc_bssid[0]) && (0x44 == puc_bssid[1]) && (0xfd == puc_bssid[2]))
+#define MAC_IS_LINKSYS_EA8500_AP(puc_bssid)      ((0xc0 == puc_bssid[0]) && (0x56 == puc_bssid[1]) && (0x27 == puc_bssid[2]))
+
 
 #define MAC_IS_360_AP0(puc_bssid)           ((0xb0 == puc_bssid[0]) && (0xd5 == puc_bssid[1]) && (0x9d == puc_bssid[2]))
 #define MAC_IS_360_AP1(puc_bssid)           ((0xc8 == puc_bssid[0]) && (0xd5 == puc_bssid[1]) && (0xfe == puc_bssid[2]))
@@ -344,9 +346,12 @@ extern "C" {
 /* TP-LINK 7300识别:AP OUI + 芯片OUI */
 #define MAC_IS_TP_LINK_7300(pst_bss_dscr)   ((0xd0 == pst_bss_dscr->auc_bssid[0]) && (0x76 == pst_bss_dscr->auc_bssid[1]) &&\
                                                 (0xe7 == pst_bss_dscr->auc_bssid[2]) && (WLAN_AP_CHIP_OUI_RALINK == pst_bss_dscr->en_is_tplink_oui))
-
+/* ASUS AX88U识别:AP OUI + 芯片OUI */
+#define MAC_IS_ASUS_AX88U_AP(pst_bss_dscr)   ((0x0c == pst_bss_dscr->auc_bssid[0]) && (0x9d == pst_bss_dscr->auc_bssid[1]) &&\
+                                                (0x92 == pst_bss_dscr->auc_bssid[2]) && (WLAN_AP_CHIP_OUI_BCM == pst_bss_dscr->en_is_tplink_oui))
 
 #define MAC_IS_FEIXUN_K3(puc_bssid)    ((0x2c == puc_bssid[0]) && (0xb2 == puc_bssid[1]) && (0x1a == puc_bssid[2]))
+#define MAC_IS_LINKSYS(puc_bssid)      ((0x60 == puc_bssid[0]) && (0x38 == puc_bssid[1]) && (0xe0 == puc_bssid[2]))
 
 #define MAC_IS_HAIER_AP(puc_bssid)      ((0x08 == puc_bssid[0]) && (0x10 == puc_bssid[1]) && (0x79 == puc_bssid[2]))
 #define MAC_IS_JCG_AP(puc_bssid)        ((0x04 == puc_bssid[0]) && (0x5f == puc_bssid[1]) && (0xa7 == puc_bssid[2]))
@@ -361,6 +366,13 @@ extern "C" {
 #define MAC_WLAN_CHIP_OUI_TYPE_BROADCOM         0x2
 #define MAC_WLAN_CHIP_OUI_SHENZHEN              0x000aeb
 #define MAC_WLAN_CHIP_OUI_TYPE_SHENZHEN         0x1
+#define MAC_WLAN_CHIP_OUI_APPLE1                0x0017f2
+#define MAC_WLAN_CHIP_OUI_TYPE_APPLE_1_1        0x1
+#define MAC_WLAN_CHIP_OUI_TYPE_APPLE_1_2        0x7
+#define MAC_WLAN_CHIP_OUI_APPLE2                0x000393
+#define MAC_WLAN_CHIP_OUI_TYPE_APPLE_2_1        0x1
+#define MAC_WLAN_CHIP_OUI_MARVELL               0x005043
+#define MAC_WLAN_CHIP_OUI_TYPE_MARVELL          0x3
 
 /* p2p相关*/
 /* GO negotiation*/
@@ -379,7 +391,6 @@ extern "C" {
 #define WFA_OUI_BYTE2       0x6F
 #define WFA_OUI_BYTE3       0x9A
 #define WFA_P2P_v1_0        0x09
-#define WFA_OUI_WORD       (WFA_OUI_BYTE1|(WFA_OUI_BYTE2<<8)|(WFA_OUI_BYTE3<<16))
 
 #define MAC_VHT_CHANGE (BIT1)
 #define MAC_HT_CHANGE  (BIT2)
@@ -417,6 +428,9 @@ typedef enum
     MAC_AP_TYPE_TPLINK              = BIT5,
     MAC_AP_TYPE_M2S                 = BIT6,
     MAC_AP_TYPE_ROAM                = BIT7,
+    MAC_AP_TYPE_160M_OP_MODE        = BIT8,
+    MAC_AP_TYPE_AGGR_BLACKLIST      = BIT9,
+    MAC_AP_TYPE_MIMO_BLACKLIST      = BIT10,
     MAC_AP_TYPE_BUTT
 } mac_ap_type_enum;
 typedef oal_uint16 mac_ap_type_enum_uint16;
@@ -575,6 +589,7 @@ typedef oal_uint8 mac_txbf_clb_enum_uint8;
 /* Spectrum Management Category下的Action枚举值 */
 typedef enum
 {
+    MAC_SPEC_TPC_REQUEST        = 2,
     MAC_SPEC_CH_SWITCH_ANNOUNCE = 4   /*  Channel Switch Announcement */
 }mac_specmgmt_action_type_enum;
 typedef oal_uint8 mac_specmgmt_action_type_enum_uint8;

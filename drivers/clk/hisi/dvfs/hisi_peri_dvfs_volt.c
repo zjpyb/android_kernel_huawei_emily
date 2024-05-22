@@ -18,6 +18,9 @@
 #include <linux/of_device.h>
 #include "../hisi-clk-mailbox.h"
 #include "peri_volt_internal.h"
+#ifdef CONFIG_HISI_PERI_VOLT_HW_VOTE
+#include <linux/hisi/hisi_hw_vote.h>
+#endif
 
 enum {
 	HS_PMCTRL,
@@ -56,6 +59,80 @@ static struct perivolt perivolt = {
 };
 static void __iomem *perivolt_get_base(struct device_node *np);
 
+#ifdef CONFIG_HISI_PERI_VOLT_HW_VOTE
+#define PERI_DVFS_HW_VOTE_CH_NAME     "peri-volt"
+#define PERI_DVFS_HW_VOTE_CH_SRC      "vote-src-1"
+#define PERI_DVFS_HW_VOTE_VOTE_FLAG   "peri_dvfs_hw_vote_flag"
+#define PERI_DVFS_HW_VOTE_RATIO       (1000)
+#define PERI_DVFS_DVFS_ID_SHIFT       (8)
+#define PERI_DVFS_AVS_ID_SHIFT        (4)
+#define PERI_DVFS_HW_VOTE_MASK        (0x7FFF)
+static struct hvdev *peri_dvfs_hvdev = NULL;
+static unsigned int get_perivolt_hv_value(unsigned int dvfs_id, unsigned int avs_id, unsigned int volt)
+{
+	unsigned int hv_val = 0;
+
+	/* field_name   bit_range   val_range
+	 *   volt         [ 3:0]       0~15
+	 *   avs_id       [ 7:4]       0~15
+	 *   dvfs_id      [14:8]      0~127
+	 */
+	hv_val = ((dvfs_id << PERI_DVFS_DVFS_ID_SHIFT) | (avs_id << PERI_DVFS_AVS_ID_SHIFT) | volt);
+	/* make sure that hv_value NOT exceed to 0x7FFF */
+	hv_val = (hv_val & PERI_DVFS_HW_VOTE_MASK);
+	/* hisi_hv_set_freq interface requirement: should multiply ratio(=1000) */
+	hv_val = (hv_val * PERI_DVFS_HW_VOTE_RATIO);
+	pr_debug("[%s] dvfs_id: %u, avs_id: %u volt: %u, hv_val: %u\n", __func__,
+			dvfs_id, avs_id, volt, hv_val);
+
+	return hv_val;
+}
+static int peri_dvfs_hw_vote(struct peri_volt_poll *pvp, unsigned int target_volt)
+{
+	int ret = 0;
+	unsigned int last_hv_val = 0;
+	unsigned int hv_val = 0;
+	unsigned int new_hv_val = 0;
+	unsigned int hv_result = 0;
+
+	if (IS_ERR_OR_NULL(peri_dvfs_hvdev)) {
+		pr_err("[%s] peri dvfs hw vote device is nul!\n", __func__);
+		return -EINVAL;
+	}
+
+	/* get old hw vote */
+	ret = hisi_hv_get_freq(peri_dvfs_hvdev, &last_hv_val);
+	if (ret) {
+		pr_err("[%s] get last peri_hw_vote volt fail!\n", __func__);
+	}
+
+	/* peri_volt hw vote */
+	hv_val = get_perivolt_hv_value(pvp->dev_id, pvp->perivolt_avs_ip, target_volt);
+	ret = hisi_hv_set_freq(peri_dvfs_hvdev, hv_val);
+	if (ret) {
+		pr_err("[%s] set peri_hw_vote volt fail!\n", __func__);
+		return ret;
+	}
+
+	/* get hw vote readback */
+	ret = hisi_hv_get_freq(peri_dvfs_hvdev, &new_hv_val);
+	if (ret) {
+		pr_err("[%s] get last peri_hw_vote volt fail!\n", __func__);
+	}
+
+	/* get hw vote finally result */
+	ret = hisi_hv_get_result(peri_dvfs_hvdev, &hv_result);
+	if (ret) {
+		pr_err("[%s] get last peri_hw_vote volt fail!\n", __func__);
+	}
+
+	pr_debug("[%s] pvp_id:%d, last_hv_val: %d, hv_val: %d, hv_val_rb: %d, hv_result: %d\n",
+			__func__, pvp->dev_id, last_hv_val, hv_val, new_hv_val, hv_result);
+
+	return ret;
+}
+#endif
+
 #ifdef CONFIG_HISI_PERI_FAST_AVS
 static int peri_fast_avs(struct peri_volt_poll *pvp, unsigned int target_volt)
 {
@@ -79,13 +156,13 @@ static int peri_fast_avs(struct peri_volt_poll *pvp, unsigned int target_volt)
 #endif
 
 #ifdef CONFIG_HISI_PERI_AVS_IPC_NOTIFY
-static int peri_avs_notify_m3(struct peri_volt_poll *pvp, unsigned int target_volt)
+static int peri_avs_ipc_notify_m3(struct peri_volt_poll *pvp, unsigned int target_volt)
 {
 	int ret = 0;
 	u32 val = 0;
 	u32 avs_ipc_cmd[LPM3_CMD_LEN] = {LPM3_CMD_CLOCK_EN, FAST_AVS_ID};
 	/*send ipc for avs ip do not care scene*/
-	if(pvp->perivolt_avs_ip){
+	if (pvp->perivolt_avs_ip) {
 		ret = hisi_clkmbox_send_msg(avs_ipc_cmd);
 		if (ret < 0) {
 			pr_err("[%s]fail to notify LPM3 for avs ip !\n",
@@ -110,7 +187,38 @@ static int peri_avs_notify_m3(struct peri_volt_poll *pvp, unsigned int target_vo
 	}
 	return ret;
 }
+
+#ifdef CONFIG_HISI_PERI_VOLT_HW_VOTE
+static int peri_avs_hv_notify_m3(struct peri_volt_poll *pvp, unsigned int target_volt)
+{
+	int ret = 0;
+
+	/* DVFS(AVS) hw vote */
+	ret = peri_dvfs_hw_vote(pvp, target_volt);
+	if (ret) {
+		pr_err("[%s] peri dvfs hw volt fail!\n", __func__);
+		return ret;
+	}
+
+	return ret;
+}
+#endif /*CONFIG_HISI_PERI_VOLT_HW_VOTE*/
+
+static int peri_avs_notify_m3(struct peri_volt_poll *pvp, unsigned int target_volt)
+{
+	int ret = 0;
+
+#ifdef CONFIG_HISI_PERI_VOLT_HW_VOTE
+	if (!IS_ERR_OR_NULL(peri_dvfs_hvdev)) {
+		ret = peri_avs_hv_notify_m3(pvp, target_volt);
+		return ret;
+	}
 #endif
+	ret = peri_avs_ipc_notify_m3(pvp, target_volt);
+
+	return ret;
+}
+#endif /*CONFIG_HISI_PERI_AVS_IPC_NOTIFY*/
 
 static int hisi_peri_set_volt(struct peri_volt_poll *pvp, unsigned int volt)
 {
@@ -358,7 +466,7 @@ static void __iomem *perivolt_get_base(struct device_node *np)
 		pr_err("[%s] parent node %s doesn't match!\n", __func__, parent->name);
 		goto out;
 	}
-	switch ((unsigned long)match->data) {
+	switch ((uintptr_t)match->data) {
 	case HS_PMCTRL:
 	if (!perivolt.pmctrl) {
 		ret = of_iomap(parent, 0);
@@ -387,6 +495,18 @@ static int hisi_peri_volt_poll_probe(struct platform_device *pdev)
 	struct device_node *parent = pdev->dev.of_node;
 	const struct of_device_id *matches = NULL;
 	of_perivolt_init_cb_t perivolt_init_cb = NULL;
+
+#ifdef CONFIG_HISI_PERI_VOLT_HW_VOTE
+	if (of_property_read_bool(parent, PERI_DVFS_HW_VOTE_VOTE_FLAG)) {
+		peri_dvfs_hvdev = hisi_hvdev_register(&pdev->dev,
+					PERI_DVFS_HW_VOTE_CH_NAME, PERI_DVFS_HW_VOTE_CH_SRC);
+		if (IS_ERR_OR_NULL(peri_dvfs_hvdev)) {
+			pr_err("[%s] pvp request hw vote device failed!\n", __func__);
+			return -ENODEV;
+		}
+	}
+#endif
+
 	peri_poll_hwlock = hwspin_lock_request_specific(PERIVOLT_POLL_HWLOCK);
 	if (NULL == peri_poll_hwlock) {
 		pr_err("pvp request hwspin lock failed !\n");
@@ -408,6 +528,11 @@ static int hisi_peri_volt_poll_probe(struct platform_device *pdev)
 
 static int hisi_peri_volt_poll_remove(struct platform_device *pdev)
 {
+#ifdef CONFIG_HISI_PERI_VOLT_HW_VOTE
+	if (!IS_ERR_OR_NULL(peri_dvfs_hvdev) && hisi_hvdev_remove(peri_dvfs_hvdev) != 0) {
+		pr_err("[%s] remove hw vote device failed!\n", __func__);
+	}
+#endif
 	return 0;
 }
 

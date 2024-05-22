@@ -27,6 +27,10 @@
 #include <linux/unmovable_isolate.h>
 #endif
 
+#ifdef CONFIG_OF_RESERVED_MEM
+#include <linux/of_reserved_mem.h>
+#endif
+
 void __attribute__((weak)) arch_report_meminfo(struct seq_file *m)
 {
 }
@@ -182,6 +186,10 @@ static int meminfo_proc_show(struct seq_file *m, void *v)
 		    global_page_state(NR_FREE_UNMOVABLE_ISOLATE1_PAGES));
 	show_val_kb(m, "Isolate2Free:   ",
 		    global_page_state(NR_FREE_UNMOVABLE_ISOLATE2_PAGES));
+#endif
+#ifdef CONFIG_OF_RESERVED_MEM
+	show_val_kb(m, "RsvTotalUsed:   ",
+		    dt_memory_reserved_sizeinfo_get() >> PAGE_SHIFT);
 #endif
 
 	hugetlb_report_meminfo(m);

@@ -40,20 +40,13 @@
 #ifdef CONFIG_HISI_IPA_THERMAL
 #include <trace/events/thermal_power_allocator.h>
 #ifdef CONFIG_HISI_THERMAL_SPM
-#ifdef CONFIG_HISI_THERMAL_TRIPPLE_CLUSTERS
-#define NUM_CLUSTERS 3
-#else
-#define NUM_CLUSTERS 2
-#endif
-extern unsigned int get_powerhal_profile(enum ipa_actor actor);
-extern unsigned int get_minfreq_profile(enum ipa_actor actor);
+extern unsigned int get_powerhal_profile(int actor);
+extern unsigned int get_minfreq_profile(int actor);
 extern bool is_spm_mode_enabled(void);
 
-u32 profile_freq[NUM_CLUSTERS];
-int get_profile_power(enum ipa_actor actor, unsigned int *power);
+u32 profile_freq[CAPACITY_OF_ARRAY];
 int hisi_calc_static_power(const struct cpumask *cpumask, int temp,
 				unsigned long u_volt, u32 *static_power);
-int get_soc_target_temp(struct thermal_cooling_device *cdev, int *target_temp);
 #endif
 extern unsigned int g_ipa_freq_limit[];
 extern unsigned int g_ipa_soc_freq_limit[];
@@ -252,7 +245,7 @@ static int cpufreq_thermal_notifier(struct notifier_block *nb,
 	unsigned long clipped_freq;
 	struct cpufreq_cooling_device *cpufreq_dev;
 #ifdef CONFIG_HISI_THERMAL_SPM
-	enum ipa_actor actor;
+	int actor;
 	unsigned int min_freq = 0, freq = 0;
 #endif
 
@@ -281,7 +274,7 @@ static int cpufreq_thermal_notifier(struct notifier_block *nb,
 			cpufreq_verify_within_limits(policy, 0, clipped_freq);
 #else
 		if (is_spm_mode_enabled()) {
-			actor = (enum ipa_actor)topology_physical_package_id(policy->cpu);
+			actor = topology_physical_package_id(policy->cpu);
 			freq = get_powerhal_profile(actor);
 			min_freq = get_minfreq_profile(actor);
 			cpufreq_verify_within_limits(policy, min_freq, freq);
@@ -919,12 +912,12 @@ static unsigned int find_next_max(struct cpufreq_frequency_table *table,
 int cpufreq_update_policies(void)
 {
 	struct cpufreq_cooling_device *cpufreq_dev;
-	unsigned int cpus[NUM_CLUSTERS];
+	unsigned int cpus[g_cluster_num];
 	int i, num = 0;
 
 	mutex_lock(&cooling_cpufreq_lock);
 	list_for_each_entry(cpufreq_dev, &cpufreq_dev_list, node) {
-		if (num >= NUM_CLUSTERS)
+		if (num >= (int)g_cluster_num)
 			break;
 		cpus[num] = cpumask_any(&cpufreq_dev->allowed_cpus);
 		num++;
@@ -938,76 +931,6 @@ int cpufreq_update_policies(void)
 }
 /*lint -e64 -e826 -e771 +esym(64,826,771,*)*/
 EXPORT_SYMBOL(cpufreq_update_policies);
-
-static int cpufreq_freq2volt(struct cpufreq_cooling_device *cpufreq_device, unsigned long freq,
-				unsigned long *voltage)
-{
-	struct dev_pm_opp *opp;
-	unsigned long freq_hz = freq * 1000;
-
-	if (!cpufreq_device->cpu_dev) {
-		*voltage = 0;
-		return -EINVAL;
-	}
-
-	rcu_read_lock();
-
-	opp = dev_pm_opp_find_freq_exact(cpufreq_device->cpu_dev, freq_hz,
-					 (bool)true);
-	*voltage = dev_pm_opp_get_voltage(opp);
-
-	rcu_read_unlock();
-
-	if (*voltage == 0) {
-		/*lint -e64 -e570 -e785 -esym(64,570,785,*)*/
-		dev_warn_ratelimited(cpufreq_device->cpu_dev,
-				     "Failed to get voltage for frequency %lu: %ld\n",
-				     freq_hz, IS_ERR(opp) ? PTR_ERR(opp) : 0);
-		/*lint -e64 -e570 -e785 +esym(64,570,785,*)*/
-		return -EINVAL;
-	}
-
-	return 0;
-}
-
-static int cpufreq_power2freq(struct thermal_cooling_device *cdev, u32 power, u32 *freq)
-{
-	int target_temp = 0;
-	struct cpufreq_cooling_device *cpufreq_device = cdev->devdata;
-	struct power_table *pt = cpufreq_device->dyn_power_table;
-	int i, ret;
-	u32 static_power, num_cpus;
-	unsigned long voltage;
-
-	ret = get_soc_target_temp(cdev, &target_temp);
-	if (ret)
-		return ret;
-
-	num_cpus = cpumask_weight(&cpufreq_device->allowed_cpus);
-
-	for (i = 1; i < cpufreq_device->dyn_power_table_entries; i++) {
-		ret = cpufreq_freq2volt(cpufreq_device, (unsigned long)pt[i].frequency, &voltage);
-		if (ret)
-			return ret;
-		hisi_calc_static_power(&cpufreq_device->allowed_cpus, target_temp, voltage, &static_power);
-		if ((pt[i].power * num_cpus + static_power) > power)
-			break;
-	}
-	*freq = pt[i - 1].frequency;
-
-	return 0;
-}
-
-int get_profile_cpu_freq(enum ipa_actor actor, u32 *freq)
-{
-	if (actor >= IPA_GPU)
-		return -EDOM;
-
-	*freq = profile_freq[actor]; /* [false alarm]:  check done */
-
-	return 0;
-}
-EXPORT_SYMBOL(get_profile_cpu_freq);
 #endif
 
 /**
@@ -1041,11 +964,6 @@ __cpufreq_cooling_register(struct device_node *np,
 	unsigned int freq, i, num_cpus;
 	int ret;
 	struct thermal_cooling_device_ops *cooling_ops;
-#ifdef CONFIG_HISI_THERMAL_SPM
-	int cpu_id;
-	enum ipa_actor actor;
-	u32 power;
-#endif
 
 	cpumask_and(&temp_mask, clip_cpus, cpu_online_mask);
 	policy = cpufreq_cpu_get(cpumask_first(&temp_mask));
@@ -1132,8 +1050,7 @@ __cpufreq_cooling_register(struct device_node *np,
 			pr_debug("%s: freq:%u KHz\n", __func__, freq);
 	}
 
-	snprintf(dev_name, sizeof(dev_name), "thermal-cpufreq-%d",
-		 cpufreq_dev->id);
+	snprintf(dev_name, sizeof(dev_name), "thermal-cpufreq-%d", cpufreq_dev->id);/* unsafe_function_ignore: snprintf */
 
 	cool_dev = thermal_of_cooling_device_register(np, dev_name, cpufreq_dev,
 						      cooling_ops);
@@ -1155,14 +1072,6 @@ __cpufreq_cooling_register(struct device_node *np,
 					  CPUFREQ_POLICY_NOTIFIER);
 	mutex_unlock(&cooling_cpufreq_lock);
 
-#ifdef CONFIG_HISI_THERMAL_SPM
-	cpu_id = (int)cpumask_any(clip_cpus);
-	actor = (enum ipa_actor)topology_physical_package_id(cpu_id);
-
-	get_profile_power(actor, &power);
-	cpufreq_power2freq(cool_dev, power, &profile_freq[actor]);
-	pr_err("IPA: actor: %d, freq: %d\n", actor, profile_freq[actor]);
-#endif
 	goto put_policy;
 
 remove_idr:

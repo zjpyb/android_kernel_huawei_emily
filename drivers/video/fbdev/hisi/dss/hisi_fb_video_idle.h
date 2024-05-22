@@ -15,7 +15,10 @@
 #ifdef CONFIG_HISI_L3CACHE_SHARE
 #include <linux/hisi/hisi_l3share.h>
 #endif
-#include <linux/hisi/ion-iommu.h>
+
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
+#include <linux/ion-iommu.h>
+#endif
 #include "hisi_fb.h"
 
 #define CACHE_WB_SIZE (1080*2244*4)
@@ -67,9 +70,8 @@ struct hisifb_video_idle_ctrl {
 	struct idle_rb_closed_reg rb_closed_reg;
 
 	uint32_t wb_buffer_size;
-	struct ion_handle *wb_handle;
 	char __iomem *wb_buffer_base;
-	ion_phys_addr_t wb_phys_addr;
+	phys_addr_t wb_phys_addr;
 	uint64_t wb_vir_addr;
 
 	bool buffer_alloced;

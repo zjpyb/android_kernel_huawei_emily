@@ -91,15 +91,15 @@ void   PPM_UsbCfgPortClose(void);
 
 void   PPM_UsbCfgStatusCB(ACM_EVT_E enPortState);
 
-void   PPM_UsbCfgWriteDataCB(u8* pucVirData, u8* pucPhyData, s32 lLen);
+void   PPM_UsbCfgWriteDataCB(char* pucVirData, char* pucPhyData, int lLen);
 
-s32  PPM_UsbCfgReadDataCB(void);
+void   PPM_UsbCfgReadDataCB(void);
 
 void   PPM_UsbCfgPortOpen(void);
 
 void   PPM_UsbIndStatusCB(ACM_EVT_E enPortState);
 
-void   PPM_UsbIndWriteDataCB(u8* pucVirData, u8* pucPhyData, s32 lLen);
+void   PPM_UsbIndWriteDataCB(char* pucVirData, char* pucPhyData, int lLen);
 
 void   PPM_UsbIndPortOpen(void);
 

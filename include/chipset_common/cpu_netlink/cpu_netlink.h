@@ -1,5 +1,11 @@
 #include <linux/netlink.h>
 #include <net/sock.h>
+#include <linux/version.h>
+#include <linux/module.h>
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0)
+#include <linux/sched/task.h>
+#endif
 
 enum sock_no {
     CPU_HIGH_LOAD = 1,

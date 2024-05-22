@@ -1626,6 +1626,15 @@ config CRYPTO_LZ4HC
 	help
 	  This is the LZ4 high compression mode algorithm.
 
+config CRYPTO_ZSTD
+	tristate "Zstd compression algorithm"
+	select CRYPTO_ALGAPI
+	select CRYPTO_ACOMP2
+	select ZSTD_COMPRESS
+	select ZSTD_DECOMPRESS
+	help
+	  This is the zstd algorithm.
+
 comment "Random Number Generation"
 
 config CRYPTO_ANSI_CPRNG
@@ -1724,6 +1733,13 @@ config CRYPTO_USER_API_AEAD
 
 config CRYPTO_HASH_INFO
 	bool
+
+config HIDE_SHA_CAP
+	bool "boringssl support"
+	default n
+	help
+	  This feature enables support for boringssl support. If you say Y
+	  here, the kernel will to support sha1 sha2.
 
 source "drivers/crypto/Kconfig"
 source crypto/asymmetric_keys/Kconfig

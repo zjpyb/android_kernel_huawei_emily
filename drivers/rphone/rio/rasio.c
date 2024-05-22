@@ -304,10 +304,17 @@ static struct fault_impl *rasio_check_fault_match(struct bio *bio,
 		return NULL;
 
 	/* match disk_name*/
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)	
+	bio_devname(bio->bi_disk, buf);
+        if ((0 != strcmp(buf, fault->disk))
+            && (0 != strcmp(bio->bi_disk->disk_name, buf)))
+                return NULL;
+#else
 	bdevname(bio->bi_bdev, buf);
-	if ((0 != strcmp(buf, fault->disk))
-	    && (0 != strcmp(bio->bi_bdev->bd_disk->disk_name, buf)))
-		return NULL;
+        if ((0 != strcmp(buf, fault->disk))
+            && (0 != strcmp(bio->bi_bdev->bd_disk->disk_name, buf)))
+                return NULL;
+#endif
 
 	random_val = prandom_u32();
 	if (fault->percent <= random_val % 100)
@@ -412,8 +419,13 @@ blk_qc_t rasio_make_request_fn(struct request_queue *q, struct bio *bio)
 		write_lock(&fault_injected.rwk);
 		for (i = 0; i < ARRAY_SIZE(fault_injected.arr_queue_disk);
 			i++) {
+			#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
+			struct gendisk *bdisk = bio->bi_disk;
+			#else
+			struct gendisk *bdisk = bio->bi_bdev->bd_disk;
+			#endif
 			if (fault_injected.arr_queue_disk[i].gendisk ==
-			    bio->bi_bdev->bd_disk) {
+			    bdisk) {
 				request_fn =
 				    fault_injected.arr_queue_disk[i].
 				    make_request_fn;

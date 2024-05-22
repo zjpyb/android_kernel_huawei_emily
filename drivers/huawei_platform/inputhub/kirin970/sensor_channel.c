@@ -101,6 +101,7 @@ static const struct sensors_cmd_map sensors_cmd_map_tab[] = {
 	{SENSORHUB_TYPE_AGT, TAG_AGT},
 	{SENSORHUB_TYPE_COLOR,TAG_COLOR},
 	{SENSORHUB_TYPE_ACCELEROMETER_UNCALIBRATED, TAG_ACCEL_UNCALIBRATED},
+	{SENSORHUB_TYPE_DROP, TAG_DROP},
 };
 
 static void init_hash_tables(void)

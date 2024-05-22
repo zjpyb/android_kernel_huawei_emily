@@ -293,6 +293,8 @@ static int ilitek_short_test(int *short_data1, int *short_data2) {
 		}
 		total += abs(short_data1[i] - short_data2[i]);
 	}
+	if (ilitek_data->x_ch == 0)
+		goto TEST_ERR;
 	ilitek_data->sensor_test_data_result.short_ave = total / (ilitek_data->x_ch);
 	if (buf_recv) {
 		kfree(buf_recv);
@@ -937,11 +939,6 @@ static int ilitek_set_charger_switch(u8 charger_switch)
 		return -EINVAL;
 	}
 
-	if (charger_switch < 0) {
-		TS_LOG_ERR("%s: roi_switch value %d is invalid\n", __func__, charger_switch);
-		return -EINVAL;
-	}
-
 	if (charger_switch) {
 		error =ilitek_into_charger_mode(true);
 	}
@@ -1096,6 +1093,13 @@ void ilitek_set_sensor_test_result(struct ts_rawdata_info *info) {
 		ilitek_reset(ILITEK_RESET_MODEL_CHECKFW_DELAY);
 		enable_irq(ilitek_data->ilitek_chip_data->ts_platform_data->irq_id);
 		ilitek_data->sensor_testing = false;
+		kfree(short_data1);
+		kfree(short_data2);
+		kfree(open_data);
+		kfree(allnode_data);
+		kfree(allnode_p2p_data);
+		kfree(allnode_Tx_delta_data);
+		kfree(allnode_Rx_delta_data);
 		return NO_ERR;
 	}
 
@@ -1289,11 +1293,6 @@ static int ilitek_set_roi_switch(u8 roi_switch)
 
 	if (ilitek_data->firmware_updating){
 		TS_LOG_ERR("%s: tp fw is updating,return\n", __func__);
-		return -EINVAL;
-	}
-
-	if (roi_switch < 0) {
-		TS_LOG_ERR("%s: roi_switch value %d is invalid\n", __func__, roi_switch);
 		return -EINVAL;
 	}
 

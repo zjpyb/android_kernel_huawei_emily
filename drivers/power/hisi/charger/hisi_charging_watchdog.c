@@ -46,37 +46,37 @@ static struct hisi_chgwdg_device *g_di;
 static unsigned char g_watchdog_enable;
 static unsigned int watchdog_kick_cpu;
 static u64  watchdog_kick_time;
-static inline void __chg_wdt_lock(void __iomem *base, unsigned int lock_key)
+static inline void __chg_wdt_lock(const void __iomem *base, unsigned int lock_key)
 {
 	__raw_writel(lock_key, CHG_WATHDOG_WDLOCK_ADDR((char *)base));
 }
 
-static inline void __chg_wdt_unlock(void __iomem *base, unsigned int value)
+static inline void __chg_wdt_unlock(const void __iomem *base, unsigned int value)
 {
 	__raw_writel(value, CHG_WATHDOG_WDLOCK_ADDR((char *)base));
 }
 
-static inline unsigned int __chg_wdt_unlock_check(void __iomem *base)
+static inline unsigned int __chg_wdt_unlock_check(const void __iomem *base)
 {
 	return __raw_readl(CHG_WATHDOG_WDLOCK_ADDR((char *)base));
 }
 
-static inline void __chg_wdt_load(void __iomem *base, unsigned int timeout)
+static inline void __chg_wdt_load(const void __iomem *base, unsigned int timeout)
 {
 	__raw_writel(WATCHDOG_CLOCK_COUNT*timeout, CHG_WATHDOG_WDLOAD_ADDR((char *)base));
 }
 
-static inline unsigned int __chg_wdt_get_cnt(void __iomem *base)
+static inline unsigned int __chg_wdt_get_cnt(const void __iomem *base)
 {
 	return __raw_readl(CHG_WATHDOG_WDVALUE_ADDR((char *)base));
 }
 
-static inline void __chg_wdt_intclr(void __iomem *base, unsigned int value)
+static inline void __chg_wdt_intclr(const void __iomem *base, unsigned int value)
 {
 	__raw_writel(value, CHG_WATHDOG_WDINTCLR_ADDR((char *)base));
 }
 
-static inline void __chg_wdt_control(void __iomem *base, unsigned int value)
+static inline void __chg_wdt_control(const void __iomem *base, unsigned int value)
 {
 	__raw_writel(value, CHG_WATHDOG_WDCTRL_ADDR((char *)base));
 }
@@ -93,6 +93,7 @@ static int rdr_charge_syswdt_init(void)
 {
 	struct rdr_exception_info_s einfo;
 	unsigned int ret;
+	errno_t ret_s;
 	memset_s(&einfo, sizeof(struct rdr_exception_info_s), 0, sizeof(struct rdr_exception_info_s));
 	einfo.e_modid = MODID_CHARGER_S_WDT;
 	einfo.e_modid_end = MODID_CHARGER_S_WDT;
@@ -110,9 +111,16 @@ static int rdr_charge_syswdt_init(void)
 	/* 异常类型初始化失败 */
 	einfo.e_exce_type = CHARGER_S_WDT;
 	einfo.e_upload_flag = (u32)RDR_UPLOAD_YES;
-	memcpy_s(einfo.e_from_module, sizeof("RDR_CHG_SYSWDT"), "RDR_CHG_SYSWDT", sizeof("RDR_CHG_SYSWDT"));
-	memcpy_s(einfo.e_desc, sizeof("RDR_CHG_SYSWDT"), "RDR_CHG_SYSWDT", sizeof("RDR_CHG_SYSWDT"));
-
+	ret_s = memcpy_s(einfo.e_from_module, sizeof("RDR_CHG_SYSWDT"), "RDR_CHG_SYSWDT", sizeof("RDR_CHG_SYSWDT"));
+	if (ret_s) {
+		chgwdt_err(" memcpy e_from_module failed.\n");
+		return ret_s;
+	}
+	ret_s = memcpy_s(einfo.e_desc, sizeof("RDR_CHG_SYSWDT"), "RDR_CHG_SYSWDT", sizeof("RDR_CHG_SYSWDT"));
+	if (ret_s) {
+		chgwdt_err(" memcpy e_desc failed.\n");
+		return ret_s;
+	}
 	ret = rdr_register_exception(&einfo);
 	if (ret != MODID_CHARGER_S_WDT) {
 		chgwdt_err(" register rdr_charge_syswdt failed.\n");

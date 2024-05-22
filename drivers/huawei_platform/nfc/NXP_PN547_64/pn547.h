@@ -58,6 +58,10 @@
 #define NFC_CLK_SRC_PMU_HI6555V200 255
 #define NFC_CLK_SRC_XTAL        4       // need to match HAL defination
 #define NFC_CLK_SRC_PMU_HI6421V700 5
+#define NFC_CLK_SRC_PMU_HI6421V800 6
+#define NFC_CLK_SRC_PMU_HI6555V300 254
+
+
 
 #define WAKE_LOCK_TIMEOUT_DISABLE		  0
 #define WAKE_LOCK_TIMEOUT_ENALBE		  1
@@ -70,10 +74,19 @@
 #define TEL_HUAWEI_NV_NFCCAL_NAME     "NFCCAL"
 #define TEL_HUAWEI_NV_NFCCAL_LEGTH    104
 
+#define MIN_NCI_CMD_LEN_WITH_BANKCARD_NUM 14
+#define BANKCARD_NUM_LEN                16
+#define BANKCARD_NUM_HEAD_LEN           2
+#define BANKCARD_NUM_VALUE_LEN     (BANKCARD_NUM_LEN - BANKCARD_NUM_HEAD_LEN)
+#define BANKCARD_NUM_OVERRIDE_LEN       8
+#define BANKCARD_NUM_OVERRIDE_OFFSET    4
+#define NCI_CMD_HEAD_OFFSET             0
+
 #define CLR_BIT     0
 #define SET_BIT     1
 
 #define CHAR_0 48
+#define CHAR_9 57
 extern int nfc_record_dmd_info(long dmd_no, const char *dmd_info);
 
 typedef struct pmu_reg_control {
@@ -96,6 +109,8 @@ enum NFC_ON_TYPE {
 	NFC_ON_BY_REGULATOR_BULK,
 	NFC_ON_BY_HI6555V110_PMIC,
 	NFC_ON_BY_HI6421V700_PMIC,
+	NFC_ON_BY_HI6421V800_PMIC,
+       NFC_ON_BY_HI6555V300_PMIC,
 };
 
 enum NFC_SWP_SWITCH_PMU_PLATFROM_TYPE {
@@ -104,6 +119,8 @@ enum NFC_SWP_SWITCH_PMU_PLATFROM_TYPE {
 	NFC_SWP_SW_HI6421V600 = 2,
 	NFC_SWP_SW_HI6555V110 = 3,
 	NFC_SWP_SW_HI6421V700 = 4,
+	NFC_SWP_SW_HI6421V800 = 5,
+       NFC_SWP_SW_HI6555V300 = 6,
 };
 
 

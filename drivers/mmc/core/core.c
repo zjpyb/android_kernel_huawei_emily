@@ -309,16 +309,6 @@ EXPORT_SYMBOL(mmc_request_done);
 
 static void __mmc_start_request(struct mmc_host *host, struct mmc_request *mrq)
 {
-#if 0
-	int err;
-	/* Assumes host controller has been runtime resumed by mmc_claim_host */
-	err = mmc_retune(host);
-	if (err) {
-		mrq->cmd->error = err;
-		mmc_request_done(host, mrq);
-		return;
-	}
-#endif
 	/*
 	 * For sdio rw commands we must wait for card busy otherwise some
 	 * sdio devices won't work properly.
@@ -777,6 +767,11 @@ void mmc_wait_for_req_done(struct mmc_host *host,
 		if (!cmd->error || !cmd->retries ||
 		    mmc_card_removed(host->card))
 			break;
+
+		/* if device is busy, not retry */
+		if (cmd->error == -ENOMSG) {
+			break;
+		}
 
 		mmc_retune_recheck(host);
 
@@ -1548,7 +1543,7 @@ u32 mmc_vddrange_to_ocrmask(int vdd_min, int vdd_max)
 
 	/* Fill the mask, from max bit to min bit. */
 	while (vdd_max >= vdd_min)
-		mask |= 1 << vdd_max--;
+		mask |= 1 << (unsigned int)vdd_max--;
 
 	return mask;
 }
@@ -1677,7 +1672,7 @@ static int mmc_ocrbitnum_to_vdd(int vdd_bit, int *min_uV, int *max_uV)
  */
 int mmc_regulator_get_ocrmask(struct regulator *supply)
 {
-	int			result = 0;
+	unsigned int		result = 0;
 	int			count;
 	int			i;
 	int			vdd_uV;
@@ -1705,7 +1700,7 @@ int mmc_regulator_get_ocrmask(struct regulator *supply)
 		result = mmc_vddrange_to_ocrmask(vdd_mV, vdd_mV);
 	}
 
-	return result;
+	return (int)result;
 }
 EXPORT_SYMBOL_GPL(mmc_regulator_get_ocrmask);
 
@@ -1866,7 +1861,7 @@ EXPORT_SYMBOL_GPL(mmc_regulator_get_supply);
  */
 u32 mmc_select_voltage(struct mmc_host *host, u32 ocr)
 {
-	int bit;
+	unsigned int bit;
 
 	/*
 	 * Sanity check the voltages that the card claims to
@@ -2044,7 +2039,7 @@ int mmc_select_drive_strength(struct mmc_card *card, unsigned int max_dtr,
 			      int card_drv_type, int *drv_type)
 {
 	struct mmc_host *host = card->host;
-	int host_drv_type = SD_DRIVER_TYPE_B;
+	unsigned int host_drv_type = SD_DRIVER_TYPE_B;
 
 	*drv_type = 0;
 
@@ -2068,7 +2063,7 @@ int mmc_select_drive_strength(struct mmc_card *card, unsigned int max_dtr,
 	 * return what is possible given the options
 	 */
 	return host->ops->select_drive_strength(card, max_dtr,
-						host_drv_type,
+						(int)host_drv_type,
 						card_drv_type,
 						drv_type);
 }
@@ -2199,32 +2194,6 @@ void mmc_bus_put(struct mmc_host *host)
 #ifdef CONFIG_MMC_BLOCK_DEFERRED_RESUME
 int mmc_resume_bus(struct mmc_host *host)
 {
-#if 0
-	unsigned long flags;
-
-	if (!mmc_bus_needs_resume(host))
-		return -EINVAL;
-
-	pr_err("%s: Starting deferred resume\n", mmc_hostname(host));
-	spin_lock_irqsave(&host->lock, flags);
-	host->bus_resume_flags &= ~MMC_BUSRESUME_NEEDS_RESUME;
-	host->rescan_disable = 0;
-	spin_unlock_irqrestore(&host->lock, flags);
-
-	mmc_bus_get(host);
-	if (host->bus_ops && !host->bus_dead) {
-		mmc_power_up(host, host->card->ocr);
-		BUG_ON(!host->bus_ops->resume);
-		host->bus_ops->resume(host);
-	}
-
-	if (host->bus_ops && host->bus_ops->detect && !host->bus_dead)
-		host->bus_ops->detect(host);
-
-	mmc_bus_put(host);
-	pr_err("%s: Deferred resume completed\n", mmc_hostname(host));
-	return 0;
-#endif
 	unsigned long flags;
 
 	mmc_claim_host(host);
@@ -2905,7 +2874,13 @@ unsigned int mmc_calc_max_discard(struct mmc_card *card)
 	max_discard = mmc_do_calc_max_discard(card, MMC_ERASE_ARG);
 	if (mmc_can_trim(card)) {
 		max_trim = mmc_do_calc_max_discard(card, MMC_TRIM_ARG);
-		if (max_trim < max_discard)
+		/*
+		 *since Toshiba 128G ERASE_TIMEOUT_MULT(223) is 0x73,
+		 *which is too high, causes max_discard calculation result is 0,
+		 *can't update to max_trim in original if-condition
+		 *'max_trim < max_discard'
+		 */
+		if (max_trim < max_discard || max_discard == 0)
 			max_discard = max_trim;
 		/*Micron TRIM_MULT(232) and ERASE_TIMEOUT_MULT(223) are both 0x22,
 		  the bigger the timeout, the smaller the max_discard,
@@ -3043,6 +3018,8 @@ static int mmc_rescan_detect_sd_or_mmc(struct mmc_host *host, unsigned freq)
 
 	mmc_power_up(host, host->ocr_avail);
 
+	config_sdsim_gpio_mode(SDSIM_MODE_SD_NORMAL);
+
 	/*
 	 * Some eMMCs (with VCCQ always on) may not be reset after power up, so
 	 * do a hardware reset if possible.
@@ -3065,14 +3042,8 @@ int mmc_detect_sd_or_mmc(struct mmc_host *host)
 	int i = 0;
 	int sd_or_mmc_detected = -1;
 
-	mmc_claim_host(host);
-	for (i = 0; i < ARRAY_SIZE(freqs); i++) {/*lint !e574*/
-		if (!mmc_rescan_detect_sd_or_mmc(host, max(freqs[i], host->f_min))){
-			sd_or_mmc_detected = 0;
-			break;
-		}
-	}
-	mmc_release_host(host);
+	if (!mmc_rescan_detect_sd_or_mmc(host, max(freqs[i], host->f_min)))
+		sd_or_mmc_detected = 0;
 
 	return sd_or_mmc_detected;
 }
@@ -3316,10 +3287,6 @@ void mmc_stop_host(struct mmc_host *host)
 	spin_unlock_irqrestore(&host->lock, flags);
 #endif
 	/* HISI do not use slot gpio */
-#if 0
-	if (host->slot.cd_irq >= 0)
-		disable_irq(host->slot.cd_irq);
-#endif
 	host->rescan_disable = 1;
 	if (cancel_delayed_work_sync(&host->detect))
 		wake_unlock(&host->detect_wake_lock);/*lint !e455*/
@@ -3573,7 +3540,7 @@ unregister_host_class:
 	mmc_unregister_host_class();
 unregister_bus:
 	mmc_unregister_bus();
-
+    return ret;
 }/*lint !e533*/
 
 static void __exit mmc_exit(void)

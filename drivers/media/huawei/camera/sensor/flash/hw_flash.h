@@ -32,6 +32,7 @@
 #include "hw_subdev.h"
 #include "cam_log.h"
 #include <dsm/dsm_pub.h>
+#include <securec.h>
 //lint -save -e607
 //lint -esym(607,*)
 #define CAMERA_FLASH_MAX	2

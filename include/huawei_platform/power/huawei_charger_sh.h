@@ -85,7 +85,7 @@ struct charge_device_info_sh {
 	bool otg_flag;
 	bool charge_done_sleep_dts;
 	struct charge_sysfs_data_sh sysfs_data;
-	enum usb_charger_type charger_type;
+	enum huawei_usb_charger_type charger_type;
 	enum typec_input_current typec_current_mode;
 	enum power_supply_type charger_source;
 	enum charge_fault_type charge_fault;

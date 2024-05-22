@@ -1,24 +1,18 @@
-/*-----------------------------------------------------------------------
-// Copyright (c) 2017, Hisilicon Tech. Co., Ltd. All rights reserved.
-//
-// This software and the associated documentation are confidential and
-// proprietary to Synopsys, Inc. Your use or disclosure of this software
-// is subject to the terms and conditions of a written license agreement
-// between you, or your company, and Synopsys, Inc.
-//
-// The entire notice above must be reproduced on all authorized copies.
-//
-//-----------------------------------------------------------------------
-//
-// Project:
-//
-// Host Library.
-//
-// Description:
-//
-// Linux kernel driver interface definitions.
-//
-//-----------------------------------------------------------------------*/
+/*
+ *               (C) COPYRIGHT 2014 - 2016 SYNOPSYS, INC.
+ *                         ALL RIGHTS RESERVED.
+ *
+ * This software and the associated documentation are confidential and
+ * proprietary to Synopsys, Inc. Your use or disclosure of this software
+ * is subject to the terms and conditions of a written license agreement
+ * between you, or your company, and Synopsys, Inc.
+ *
+ * The entire notice above must be reproduced on all authorized copies.
+ */
+
+/*
+ * Copyright (c) 2017 Hisilicon Tech. Co., Ltd. Integrated into the Hisilicon display system.
+ */
 
 #ifndef _HOST_LIB_DRIVER_LINUX_IF_H_
 #define _HOST_LIB_DRIVER_LINUX_IF_H_

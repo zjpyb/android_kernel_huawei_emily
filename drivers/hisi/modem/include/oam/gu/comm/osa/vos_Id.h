@@ -6,7 +6,7 @@
  * apply:
  *
  * * This program is free software; you can redistribute it and/or modify
- * * it under the terms of the GNU General Public License version 2 and 
+ * * it under the terms of the GNU General Public License version 2 and
  * * only version 2 as published by the Free Software Foundation.
  * *
  * * This program is distributed in the hope that it will be useful,
@@ -28,10 +28,10 @@
  * * 2) Redistributions in binary form must reproduce the above copyright
  * *    notice, this list of conditions and the following disclaimer in the
  * *    documentation and/or other materials provided with the distribution.
- * * 3) Neither the name of Huawei nor the names of its contributors may 
- * *    be used to endorse or promote products derived from this software 
+ * * 3) Neither the name of Huawei nor the names of its contributors may
+ * *    be used to endorse or promote products derived from this software
  * *    without specific prior written permission.
- * 
+ *
  * * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
  * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
@@ -140,7 +140,7 @@ typedef struct
     VOS_UINT32          ulMemPeakSize;
 #endif
     MODEM_ID_ENUM_UINT16 usModemId;
-    VOS_UINT16          usReserved; 
+    VOS_UINT16          usReserved;
     VOS_UINT8           aucRsv[4];
 } VOS_PID_RECORD;
 
@@ -284,11 +284,15 @@ VOS_UINT32 VOS_RegisterMsgTaskEntry(VOS_FID ulFID, VOS_VOIDFUNCPTR pfnMsgTask);
 
 VOS_UINT32 VOS_GetQueueIDFromFid(VOS_UINT32 ulFid);
 
+#if (VOS_LINUX != VOS_OS_VER)
 VOS_UINT32 VOS_SuspendFidTask(VOS_FID ulFid);
+#endif
 
 VOS_UINT32 VOS_ResumeFidTask(VOS_FID ulFid);
 
+#if (VOS_LINUX != VOS_OS_VER)
 VOS_UINT32 VOS_SuspendFidsTask(VOS_VOID);
+#endif
 
 VOS_UINT32 VOS_ResumeFidsTask(VOS_VOID);
 

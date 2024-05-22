@@ -28,6 +28,9 @@ static u32 g_subtype;
 #undef __AP_BL31PANIC_SUBTYPE_MAP
 #define __AP_BL31PANIC_SUBTYPE_MAP(x, y, z) {x, #y, #z, z},
 
+#undef __AP_VENDOR_PANIC_SUBTYPE_MAP
+#define __AP_VENDOR_PANIC_SUBTYPE_MAP(x, y, z) {x, #y, #z, z},
+
 #undef __APWDT_HWEXC_SUBTYPE_MAP
 #define __APWDT_HWEXC_SUBTYPE_MAP(x, y, z) {x, #y":hw", #z, z},
 
@@ -36,6 +39,9 @@ static u32 g_subtype;
 
 #undef __LPM3_EXC_SUBTYPE_MAP
 #define __LPM3_EXC_SUBTYPE_MAP(x, y, z) {x, #y, #z, z},
+
+#undef __MEM_REPAIR_EXC_SUBTYPE_MAP
+#define __MEM_REPAIR_EXC_SUBTYPE_MAP(x, y, z) {x, #y, #z, z},
 
 #undef __SCHARGER_EXC_SUBTYPE_MAP
 #define __SCHARGER_EXC_SUBTYPE_MAP(x, y, z) {x, #y, #z, z},
@@ -59,9 +65,11 @@ struct exp_subtype exp_subtype_map[] = {
 #undef __MMC_EXCEPTION_SUBTYPE_MAP
 #undef __AP_PANIC_SUBTYPE_MAP
 #undef __AP_BL31PANIC_SUBTYPE_MAP
+#undef __AP_VENDOR_PANIC_SUBTYPE_MAP
 #undef __APWDT_HWEXC_SUBTYPE_MAP
 #undef __APWDT_EXC_SUBTYPE_MAP
 #undef __LPM3_EXC_SUBTYPE_MAP
+#undef __MEM_REPAIR_EXC_SUBTYPE_MAP
 #undef __SCHARGER_EXC_SUBTYPE_MAP
 #undef __PMU_EXC_SUBTYPE_MAP
 #undef __NPU_EXC_SUBTYPE_MAP
@@ -133,7 +141,7 @@ char *rdr_get_category_name(u32 e_exce_type, u32 subtype)
 void set_subtype_exception(unsigned int subtype, bool save_value)
 {
 	unsigned int value = 0;
-	unsigned long long pmu_reset_reg;
+	uintptr_t pmu_reset_reg;
 
 	if (FPGA == g_bbox_fpga_flag) {
 		pmu_reset_reg = get_pmu_subtype_reg();
@@ -164,7 +172,7 @@ void set_subtype_exception(unsigned int subtype, bool save_value)
 unsigned int get_subtype_exception(void)
 {
 	unsigned int value = 0;
-	unsigned long long pmu_reset_reg;
+	uintptr_t pmu_reset_reg;
 
 	if (FPGA == g_bbox_fpga_flag) {
 		pmu_reset_reg = get_pmu_reset_reg();
@@ -192,7 +200,10 @@ static int __init early_parse_exec_subtype_cmdline(char *exec_subtype_cmdline)
 {
 	int i;
 
-	memset_s(g_subtype_name, RDR_REBOOT_REASON_LEN, 0x0, RDR_REBOOT_REASON_LEN);
+	if (EOK != memset_s(g_subtype_name, RDR_REBOOT_REASON_LEN, 0x0, RDR_REBOOT_REASON_LEN)) {
+		BB_PRINT_ERR("%s():%d:memset_s fail!\n", __func__, __LINE__);
+	}
+
 	if (memcpy_s(g_subtype_name, RDR_REBOOT_REASON_LEN, exec_subtype_cmdline,
                 RDR_REBOOT_REASON_LEN - 1)) {
 		BB_PRINT_ERR("failed to memcpy_s exception subtype.\n");

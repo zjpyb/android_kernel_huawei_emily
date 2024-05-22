@@ -2,6 +2,7 @@
 /*lint -save -e578 -e695 -e571*/
 #include <linux/sched.h>
 #include <linux/list.h>
+#include <linux/rwsem.h>
 #include <chipset_common/hwcfs/hwcfs_common.h>
 
 enum rwsem_waiter_type {

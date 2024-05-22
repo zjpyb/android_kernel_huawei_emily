@@ -95,7 +95,11 @@ int hw_flash_i2c_block_write(struct hw_flash_i2c_client *client,
     }
 
     buf[0] = reg;
-    memcpy_s(&buf[I2C_ADDR_LEN], I2C_DATA_LEN, wr_buf, len);//I2C_MAX_BUF_LEN > I2C_ADDR_LEN
+    rc = memcpy_s(&buf[I2C_ADDR_LEN], I2C_DATA_LEN, wr_buf, len);//I2C_MAX_BUF_LEN > I2C_ADDR_LEN
+    if (rc != 0) {
+        cam_err("%s i2c data memcpy error",__func__);
+        return -EINVAL;
+    }
 
     msg.addr = client->client->addr;
     msg.flags = 0;

@@ -4,6 +4,97 @@
 
 #include<linux/tracepoint.h>
 
+/* Event 914009000
+	the block info */
+/* sd card exist */
+#define V914009000_SD_CARD_EXIST_SMALLINT "SD_CARD_EXIST"
+/* data part free space */
+#define V914009000_DATA_PART_FREE_SPACE_INT "DATA_PART_FREE_SPACE"
+/* total read data in blk */
+#define V914009000_HOST_TOTAL_READ_INT "HOST_TOTAL_READ"
+/* total write data in blk */
+#define V914009000_HOST_TOTAL_WRITE_INT "HOST_TOTAL_WRITE"
+/* 4k read delay in five */
+#define V914009000_READ_DELAY_4K_FIVE_INT "READ_DELAY_4K_FIVE"
+/* 4k write delay in five */
+#define V914009000_WRITE_DELAY_4K_FIVE_INT "WRITE_DELAY_4K_FIVE"
+/* 4k read delay in four */
+#define V914009000_READ_DELAY_4K_FOUR_INT "READ_DELAY_4K_FOUR"
+/* 4k write delay in four */
+#define V914009000_WRITE_DELAY_4K_FOUR_INT "WRITE_DELAY_4K_FOUR"
+/* 4k read delay in three */
+#define V914009000_READ_DELAY_4K_THREE_INT "READ_DELAY_4K_THREE"
+/* 4k write delay in three */
+#define V914009000_WRITE_DELAY_4K_THREE_INT "WRITE_DELAY_4K_THREE"
+/* 4k read delay in two */
+#define V914009000_READ_DELAY_4K_TWO_INT "READ_DELAY_4K_TWO"
+/* 4k write delay in two */
+#define V914009000_WRITE_DELAY_4K_TWO_INT "WRITE_DELAY_4K_TWO"
+/* 4k read delay in one */
+#define V914009000_READ_DELAY_4K_ONE_INT "READ_DELAY_4K_ONE"
+/* 4k write delay in one */
+#define V914009000_WRITE_DELAY_4K_ONE_INT "WRITE_DELAY_4K_ONE"
+/* 4k read delay in five */
+#define V914009000_READ_DELAY_512K_FIVE_INT "READ_DELAY_512K_FIVE"
+/* 512k write delay in five */
+#define V914009000_WRITE_DELAY_512K_FIVE_INT "WRITE_DELAY_512K_FIVE"
+/* 512k read delay in four */
+#define V914009000_READ_DELAY_512K_FOUR_INT "READ_DELAY_512K_FOUR"
+/* 512k write delay in four */
+#define V914009000_WRITE_DELAY_512K_FOUR_INT "WRITE_DELAY_512K_FOUR"
+/* 512k read delay in three */
+#define V914009000_READ_DELAY_512K_THREE_INT "READ_DELAY_512K_THREE"
+/* 512k write delay in three */
+#define V914009000_WRITE_DELAY_512K_THREE_INT "WRITE_DELAY_512K_THREE"
+/* 512k read delay in two */
+#define V914009000_READ_DELAY_512K_TWO_INT "READ_DELAY_512K_TWO"
+/* 512k write delay in two */
+#define V914009000_WRITE_DELAY_512K_TWO_INT "WRITE_DELAY_512K_TWO"
+/* 512k read delay in one */
+#define V914009000_READ_DELAY_512K_ONE_INT "READ_DELAY_512K_ONE"
+/* 512k write delay in one */
+#define V914009000_WRITE_DELAY_512K_ONE_INT "WRITE_DELAY_512K_ONE"
+/* 4k average read delay */
+#define V914009000_READ_DELAY_4K_AVERAGE_INT "READ_DELAY_4K_AVERAGE"
+/* 4k average write delay */
+#define V914009000_WRITE_DELAY_4K_AVERAGE_INT "WRITE_DELAY_4K_AVERAGE"
+/* 512k  average read delay */
+#define V914009000_READ_DELAY_512K_AVERAGE_INT "READ_DELAY_512K_AVERAGE"
+/* 512k average write delay */
+#define V914009000_WRITE_DELAY_512K_AVERAGE_INT "WRITE_DELAY_512K_AVERAGE"
+/* min read delay */
+#define V914009000_READ_DELAY_MIN_INT "READ_DELAY_MIN"
+/* min write delay */
+#define V914009000_WRITE_DELAY_MIN_INT "WRITE_DELAY_MIN"
+/* max read delay */
+#define V914009000_READ_DELAY_MAX_INT "READ_DELAY_MAX"
+/* max read delay */
+#define V914009000_WRITE_DELAY_MAX_INT "WRITE_DELAY_MAX"
+/* running read io number */
+#define V914009000_READ_RUN_IO_NUM_INT "READ_RUN_IO_NUM"
+/* running write io number */
+#define V914009000_WRITE_RUN_IO_NUM_INT "WRITE_RUN_IO_NUM"
+/* running read io sectors */
+#define V914009000_READ_RUN_IO_SECTOR_INT "READ_RUN_IO_SECTOR"
+/* running write io sectors */
+#define V914009000_WRITE_RUN_IO_SECTOR_INT "WRITE_RUN_IO_SECTOR"
+/* running read io ticks */
+#define V914009000_READ_RUN_IO_TICKS_INT "READ_RUN_IO_TICKS"
+/* running write io ticks */
+#define V914009000_WRITE_RUN_IO_TICKS_INT "WRITE_RUN_IO_TICKS"
+/* running read io flight */
+#define V914009000_READ_RUN_IO_FLIGHT_INT "READ_RUN_IO_FLIGHT"
+/* running write io flight */
+#define V914009000_WRITE_RUN_IO_FLIGHT_INT "WRITE_RUN_IO_FLIGHT"
+/* read iops */
+#define V914009000_READ_IOPS_INT "READ_IOPS"
+/* write iops */
+#define V914009000_WRITE_IOPS_INT "WRITE_IOPS"
+/* read bandith */
+#define V914009000_READ_BANDITH_INT "READ_BANDITH"
+/* write bandith */
+#define V914009000_WRITE_BANDITH_INT "WRITE_BANDITH"
+
 DECLARE_TRACE(generic_perform_write_enter,
         TP_PROTO(struct file *file, size_t count, loff_t pos),
         TP_ARGS(file, count, pos));

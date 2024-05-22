@@ -123,7 +123,7 @@
 
 
 /*************************struct define area***************************/
-enum usb_charger_type {
+enum huawei_usb_charger_type {
 	CHARGER_TYPE_USB = 0,	/*SDP*/
 	CHARGER_TYPE_BC_USB,	/*CDP*/
 	CHARGER_TYPE_NON_STANDARD,	/*UNKNOW*/
@@ -290,7 +290,7 @@ struct charge_device_info{
     struct charge_core_data *core_data;
     struct charge_sysfs_data sysfs_data;
 
-    enum usb_charger_type charger_type;
+    enum huawei_usb_charger_type charger_type;
     enum power_supply_type charger_source;
     enum charge_fault_type charge_fault;
     unsigned int charge_enable;

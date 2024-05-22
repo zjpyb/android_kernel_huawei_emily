@@ -121,6 +121,8 @@ oal_void wal_update_bss_etc(oal_wiphy_stru      *pst_wiphy,
     mac_bss_dscr_stru            *pst_bss_dscr;
     oal_uint8                     uc_chan_number;
     enum ieee80211_band           en_band;
+    oal_int32                     l_channel;
+    oal_bool_enum_uint8           en_inform_bss = OAL_FALSE;
 
     if (pst_wiphy == OAL_PTR_NULL || pst_bss_mgmt == OAL_PTR_NULL || puc_bssid == OAL_PTR_NULL)
     {
@@ -167,9 +169,29 @@ oal_void wal_update_bss_etc(oal_wiphy_stru      *pst_wiphy,
 
     if (pst_cfg80211_bss != OAL_PTR_NULL)
     {
-        oal_cfg80211_put_bss_etc(pst_wiphy, pst_cfg80211_bss);
+        l_channel = (oal_int32)oal_ieee80211_frequency_to_channel((oal_int32)(pst_cfg80211_bss->channel->center_freq));
+
+        /* 如果老的ssid的信道不一致，需要unlink之后重新上报新的FRW从内核获取到old信道，造成后续再次关联因为信道错误而无法关联成功 */
+        if(pst_bss_dscr->st_channel.uc_chan_number != (oal_uint8)l_channel)
+        {
+            OAM_WARNING_LOG2(0, OAM_SF_ASSOC, "{wal_update_bss_etc::current kernel bss channel[%d] need to update to channel[%d].",
+                   (oal_uint8)l_channel, pst_bss_dscr->st_channel.uc_chan_number);
+
+            oal_cfg80211_unlink_bss_etc(pst_wiphy, pst_cfg80211_bss);
+            en_inform_bss = OAL_TRUE;
+        }
+        else
+        {
+            oal_cfg80211_put_bss_etc(pst_wiphy, pst_cfg80211_bss);
+        }
     }
     else
+    {
+        en_inform_bss = OAL_TRUE;
+    }
+
+    /* 需要inform bss到内核 */
+    if(en_inform_bss)
     {
         uc_chan_number = pst_bss_dscr->st_channel.uc_chan_number;
         en_band        = (enum ieee80211_band)pst_bss_dscr->st_channel.en_band;
@@ -271,7 +293,7 @@ oal_void  wal_inform_all_bss_etc(oal_wiphy_stru  *pst_wiphy, hmac_bss_mgmt_stru 
 #endif
         {/*voe 11r 认证时不进行时戳过滤*/
             /* 上报WAL_SCAN_REPORT_LIMIT以内的扫描结果 */
-            if (oal_time_after((oal_ulong)OAL_TIME_GET_STAMP_MS(),(oal_ulong)(pst_bss_dscr->ul_timestamp + WAL_SCAN_REPORT_LIMIT)))
+            if (oal_time_after32(OAL_TIME_GET_STAMP_MS(), (pst_bss_dscr->ul_timestamp + WAL_SCAN_REPORT_LIMIT)))
             {
                 continue;
             }
@@ -309,7 +331,7 @@ oal_void  wal_inform_all_bss_etc(oal_wiphy_stru  *pst_wiphy, hmac_bss_mgmt_stru 
     oal_spin_unlock(&(pst_bss_mgmt->st_lock));
 
     OAM_WARNING_LOG3(uc_vap_id, OAM_SF_SCAN,
-                     "{wal_inform_all_bss_etc::there are %d bss not in regdomain, so inform kernal bss num is [%d] in [%d]!}",
+                     "{wal_inform_all_bss_etc::there are %d bss not in regdomain, so inform kernel bss num is [%d] in [%d]!}",
                      ul_bss_num_not_in_regdomain, ul_bss_num, (pst_bss_mgmt->ul_bss_num - ul_bss_num_not_in_regdomain));
 
     return;
@@ -908,7 +930,7 @@ oal_int32 wal_stop_sched_scan_etc(oal_net_device_stru *pst_netdev)
         (OAL_TRUE != pst_scan_mgmt->en_sched_scan_complete))
     {
         /* 如果正常扫描请求未执行，则上报调度扫描结果 */
-        if (OAL_PTR_NULL == pst_scan_mgmt->pst_request)
+        //if (OAL_PTR_NULL == pst_scan_mgmt->pst_request)
         {
             oal_cfg80211_sched_scan_result_etc(pst_hmac_device->pst_device_base_info->pst_wiphy);
         }

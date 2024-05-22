@@ -44,13 +44,13 @@
 #include <linux/uaccess.h>
 #include <linux/fs.h>
 #include <huawei_platform/log/hw_log.h>
+#include <huawei_platform/usb/hw_typec_dev.h>
 #include <huawei_platform/usb/hw_typec_platform.h>
 
 #ifdef CONFIG_HUAWEI_HW_DEV_DCT
 #include <huawei_platform/devdetect/hw_dev_dec.h>
 #endif
 #include "fusb301.h"
-#include <huawei_platform/usb/hw_typec_dev.h>
 #include <linux/reboot.h>
 
 #define HWLOG_TAG fusb301_typec

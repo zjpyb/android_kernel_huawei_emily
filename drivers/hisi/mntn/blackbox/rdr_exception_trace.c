@@ -471,7 +471,9 @@ int exception_trace_buffer_init(u8 *addr, unsigned int size)
  */
 static int rdr_exception_trace_ap_init(u8 *phy_addr, u8 *virt_addr, u32 log_len)
 {
-	memset_s(virt_addr, log_len, 0, log_len);
+	if (EOK != memset_s(virt_addr, log_len, 0, log_len)) {
+		BB_PRINT_ERR("%s():%d:memset_s fail!\n", __func__, __LINE__);
+	}
 	
 	if ( unlikely(exception_trace_buffer_init(virt_addr, log_len)) ) {
 		return -1;
@@ -545,7 +547,7 @@ int rdr_exception_trace_init(void)
 
 		ops_fn = g_exception_init_fn[i];
 		if ( unlikely(ops_fn 
-			&& ops_fn((u8 *)current_info.log_addr + g_exception_core[i].offset,
+			&& ops_fn((u8 *)(uintptr_t)current_info.log_addr + g_exception_core[i].offset,
 				g_exception_trace_addr + g_exception_core[i].offset, size[i])) ) {
 			BB_PRINT_ERR("[%s], exception init fail: core %u size %u ops_fn 0x%pK\n",
 					 __func__, i, size[i], ops_fn);

@@ -22,6 +22,7 @@
 #include <linux/netfilter_ipv4.h>
 #include <linux/netfilter_ipv6.h>
 #include <linux/crc32.h>
+#include <linux/version.h>
 #include <net/sock.h>
 #include <net/inet_sock.h>
 #include <linux/string.h>
@@ -38,7 +39,9 @@
 #define PROC_NET_INFO_NODE "proc_netstat"
 #define STATS "stats"
 #define CTRL "ctrl"
-#define DEFAULT "default"
+#define DEFAULT_SK "default_sk"
+#define DEFAULT_SOCKET "default_socket"
+#define DEFAULT_TIME_WAIT "default_timewait"
 
 /* max store 80 shared uids */
 static int shared_uids[MAX_SHARED_UID_NUM] = {0};
@@ -108,7 +111,9 @@ static struct iface_stat *find_or_create_iface_entry(const char *if_name)
 	hash_init(iface_entry->pid_stat_table);
 	hash_init(iface_entry->proc_stat_table);
 	INIT_LIST_HEAD(&iface_entry->list);
+	write_lock_bh(&stat_splock);
 	list_add(&iface_entry->list, &iface_stat_list);
+	write_unlock_bh(&stat_splock);
 	return iface_entry;
 }
 
@@ -207,13 +212,13 @@ static void update_data_entry(struct data_entry *data_entry, uint hooknum, uint 
 }
 
 /* add to default data entry of this uid */
-static void add_to_default_data_entry(const char *if_name, uint len, uint hooknum, uid_t uid)
+static void add_to_default_data_entry(const char *if_name, uint len, uint hooknum, uid_t uid, const char *proc_name)
 {
 	struct iface_stat *iface_entry;
 	struct proc_stat *proc_entry;
 
-	if (!if_name) {
-		pr_err("%s, null dev_name\n", __func__);
+	if (!if_name || !proc_name) {
+		pr_err("%s, null dev_name or proc_name\n", __func__);
 		return;
 	}
 
@@ -224,7 +229,7 @@ static void add_to_default_data_entry(const char *if_name, uint len, uint hooknu
 	}
 
 	write_lock_bh(&stat_splock);
-	proc_entry = find_or_create_proc_entry(iface_entry, DEFAULT, uid);
+	proc_entry = find_or_create_proc_entry(iface_entry, proc_name, uid);
 	if (!proc_entry) {
 		pr_err("%s, no mem\n", __func__);
 		write_unlock_bh(&stat_splock);
@@ -309,6 +314,7 @@ static unsigned int hook_datastat(void *priv,
 	uint hook;
 	pid_t pid = -1;
 	bool isDefault = false;
+	const char *proc_name = NULL;
 
 	if (0 == shared_uid_num) {
 		return NF_ACCEPT;
@@ -339,7 +345,12 @@ static unsigned int hook_datastat(void *priv,
 	* So we ignore it.
 	* Otherwise if you visit sk->sk_socket->file, it may cause reboot.
 	*/
-	if (NULL == sk || (TCP_TIME_WAIT == sk->sk_state)) {
+
+	if (NULL == sk) {
+		proc_name = DEFAULT_SK;
+		goto account_default_and_exit;
+	} else if (TCP_TIME_WAIT == sk->sk_state) {
+		proc_name = DEFAULT_TIME_WAIT;
 		goto account_default_and_exit;
 	}
 
@@ -358,6 +369,7 @@ static unsigned int hook_datastat(void *priv,
 	read_unlock_bh(&sk->sk_callback_lock);
 
 	if (isDefault) {
+		proc_name = DEFAULT_SOCKET;
 		goto account_default_and_exit;
 	}
 
@@ -371,7 +383,7 @@ account_default_and_exit:
 	if (is_shared_uid(uid) == false) {
 		return NF_ACCEPT;
 	}
-	add_to_default_data_entry(dev->name, skb->len, hook, uid);
+	add_to_default_data_entry(dev->name, skb->len, hook, uid, proc_name);
 exit:
 	/* must return NF_ACCEPT, so skb can be processed by other flow */
 	return NF_ACCEPT;
@@ -500,8 +512,8 @@ static ssize_t ctrl_stat_write(struct file *file, const char __user *buffer, siz
 	int i;
 	bool valid;
 
-	if (count >= MAX_CTRL_CMD_LENGTH) {
-		pr_err("%s, exceed max count %ld\n", __func__, count);
+	if ((count <= 0) || (count >= MAX_CTRL_CMD_LENGTH)) {
+		pr_err("%s, invalid count %ld\n", __func__, count);
 		return -EINVAL;
 	}
 
@@ -649,7 +661,11 @@ static int __init procnetstat_init(void)
 	profile_event_register(PROFILE_TASK_EXIT, &netstat_process_nb);
 
 	/* register data hook function */
-	err = nf_register_hooks(netstat_nf_hooks, ARRAY_SIZE(netstat_nf_hooks));
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
+ 	err = nf_register_hooks(netstat_nf_hooks, ARRAY_SIZE(netstat_nf_hooks));
+#else
+ 	err = nf_register_net_hooks(&init_net, netstat_nf_hooks, ARRAY_SIZE(netstat_nf_hooks));
+#endif
 	if (err < 0) {
 		pr_err("nf_register_hooks_err\n");
 		goto nf_register_hooks_err;

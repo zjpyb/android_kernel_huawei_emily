@@ -246,9 +246,9 @@ OAL_STATIC oal_int32  wal_dfr_destroy_vap(oal_net_device_stru *pst_netdev)
 {
     wal_msg_write_stru           st_write_msg;
     wal_msg_stru                *pst_rsp_msg = OAL_PTR_NULL;
-    oal_uint32                  ul_err_code;
-
+    oal_uint32                   ul_err_code;
     oal_int32                    l_ret;
+
 
     WAL_WRITE_MSG_HDR_INIT(&st_write_msg, WLAN_CFGID_DESTROY_VAP, OAL_SIZEOF(oal_int32));
     l_ret = wal_send_cfg_event_etc(pst_netdev,
@@ -591,7 +591,7 @@ oal_uint32 wal_dfr_excp_rx_etc(oal_uint8 uc_device_id, oal_uint32 ul_exception_t
     }
 
     CHR_EXCEPTION_REPORT(CHR_PLATFORM_EXCEPTION_EVENTID, CHR_SYSTEM_WIFI, CHR_LAYER_DRV, CHR_WIFI_DRV_EVENT_PLAT, CHR_PLAT_DRV_ERROR_WIFI_RECOVERY);
-    
+
     return wal_dfr_excp_process_etc(pst_mac_dev, ul_exception_type);
 #else
     return OAL_SUCC;

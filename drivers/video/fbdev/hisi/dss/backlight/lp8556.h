@@ -60,14 +60,6 @@
 #define TEST_ERROR_LED4_OPEN     BIT(7)
 #define TEST_ERROR_LED5_OPEN     BIT(8)
 #define TEST_ERROR_LED6_OPEN     BIT(9)
-#define TEST_ERROR_LED1_SHORT    BIT(10)
-#define TEST_ERROR_LED2_SHORT    BIT(11)
-#define TEST_ERROR_LED3_SHORT    BIT(12)
-#define TEST_ERROR_LED4_SHORT    BIT(13)
-#define TEST_ERROR_LED5_SHORT    BIT(14)
-#define TEST_ERROR_LED6_SHORT    BIT(15)
-
-#define TEST_ERROR_CHIP_INIT     BIT(16)
 
 #define LP8556_BL_MIN            0
 #define LP8556_BL_MAX            4095

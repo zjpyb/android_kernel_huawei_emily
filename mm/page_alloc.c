@@ -63,6 +63,7 @@
 #include <linux/sched/rt.h>
 #include <linux/page_owner.h>
 #include <linux/kthread.h>
+#include <linux/page-flags.h>
 #include <linux/memcontrol.h>
 #include <linux/hisi/hisi_ion.h>
 #include <linux/hisi/page_tracker.h>
@@ -90,6 +91,7 @@
 
 #ifdef CONFIG_HUAWEI_SLAB_UNRECLAIMABLE_THRESHOLD
 #include "slab.h"
+#include "slab_unreclaimable_test.h"
 #endif
 
 /* prevent >1 _updater_ of zone percpu pageset ->high and ->batch fields */
@@ -3798,7 +3800,6 @@ retry:
 	 * orientated.
 	 */
 	if (!(alloc_flags & ALLOC_CPUSET) || (alloc_flags & ALLOC_NO_WATERMARKS)) {
-		ac->zonelist = node_zonelist(numa_node_id(), gfp_mask);
 		ac->preferred_zoneref = first_zones_zonelist(ac->zonelist,
 					ac->high_zoneidx, ac->nodemask);
 	}
@@ -4069,6 +4070,9 @@ EXPORT_SYMBOL(get_zeroed_page);
 
 void __free_pages(struct page *page, unsigned int order)
 {
+#ifdef CONFIG_HISI_LB
+	BUG_ON(PageLB(page) || PageLB(page + ((1 << order) - 1)));	/*lint !e679*/
+#endif
 	if (put_page_testzero(page)) {
 		page_trace_hook(__GFP_HIGHMEM, (unsigned char)MEM_FREE, _RET_IP_, page, order);/*lint !e571*/
 		if (order == 0)
@@ -4368,9 +4372,9 @@ long si_mem_available(void)
 	available += (long)global_page_state(NR_MALI_PAGES);
 #ifdef CONFIG_TASK_PROTECT_LRU
 	available -= (long)global_page_state(NR_PROTECT_ACTIVE_FILE) +
-		(long)global_page_state(NR_PROTECT_INACTIVE_FILE) +
-		(long)global_page_state(NR_PROTECT_ACTIVE_ANON) +
-		(long)global_page_state(NR_PROTECT_INACTIVE_ANON);
+		     (long)global_page_state(NR_PROTECT_INACTIVE_FILE) +
+		     (long)global_page_state(NR_PROTECT_ACTIVE_ANON) +
+		     (long)global_page_state(NR_PROTECT_INACTIVE_ANON);
 #endif
 
 	if (available < 0)
@@ -4448,7 +4452,6 @@ out:
 #define K(x) ((x) << (PAGE_SHIFT-10))
 
 #ifdef CONFIG_HUAWEI_SLAB_UNRECLAIMABLE_THRESHOLD
-#define SLAB_UNRECLAIMABLE_THRESHOLD 0x40000000
 
 static void show_slabinfo_header(void)
 {
@@ -4539,7 +4542,7 @@ static void show_slabinfo(struct kmem_cache *s)
 	show_extra_slabinfo_stats(s);
 }
 
-static void print_all_slabinfo(void)
+void print_all_slabinfo(void)
 {
 	struct kmem_cache *s = NULL;
 	show_slabinfo_header();
@@ -4547,6 +4550,22 @@ static void print_all_slabinfo(void)
 		if (is_root_cache(s))
 			show_slabinfo(s);
 	}
+}
+
+bool is_exceed_slab_unreclaimable_threshold(unsigned int filter)
+{
+	struct zone *zone;
+
+	pr_info("%s: g_slab_unreclaimable_threshold is %lu bytes.\n",
+			__func__, g_slab_unreclaimable_threshold);
+	for_each_populated_zone(zone) {
+		if (skip_free_areas_node(filter, zone_to_nid(zone)))
+			continue;
+		if ((K(zone_page_state(zone, NR_SLAB_UNRECLAIMABLE)) << 10) >
+			g_slab_unreclaimable_threshold)
+			return true;
+	}
+	return false;
 }
 
 #endif
@@ -4792,14 +4811,6 @@ void show_free_areas(unsigned int filter)
 		for (i = 0; i < MAX_NR_ZONES; i++)
 			printk(KERN_CONT " %ld", zone->lowmem_reserve[i]);
 		printk(KERN_CONT "\n");
-
-#ifdef CONFIG_HUAWEI_SLAB_UNRECLAIMABLE_THRESHOLD
-		if ((K(zone_page_state(zone, NR_SLAB_UNRECLAIMABLE)) << 10) > SLAB_UNRECLAIMABLE_THRESHOLD) {
-			printk("slab_unreclaimable exceeds the threshold, so panic...\n");
-			print_all_slabinfo();
-			BUG_ON(1);
-		}
-#endif
 	}
 
 	for_each_populated_zone(zone) {

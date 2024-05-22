@@ -71,7 +71,7 @@ void mdrv_hds_cnf_register(hds_cnf_func fn)
 
 int mdrv_hds_msg_proc(void *pstReq)
 {
-    return bsp_hds_msg_proc((diag_frame_head_stru *)pstReq);
+    return (int)bsp_hds_msg_proc((diag_frame_head_stru *)pstReq);
 }
 
 

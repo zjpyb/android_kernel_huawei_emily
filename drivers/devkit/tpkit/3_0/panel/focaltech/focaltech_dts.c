@@ -31,12 +31,13 @@ int focal_get_vendor_compatible_name(
 }
 
 int focal_get_vendor_name_from_dts(
-	const char *project_id,
+	char *project_id,
 	char *vendor_name,
 	size_t size)
 {
 	int ret = 0;
 	const char *producer = NULL;
+	const char *new_project_id = NULL;
 	char comp_name[FTS_VENDOR_COMP_NAME_LEN] = {0};
 	u32 value = 0;
 
@@ -65,6 +66,13 @@ int focal_get_vendor_name_from_dts(
 		return ret;
 	}
 
+	ret = of_property_read_string(np, "project_id", &new_project_id);
+	if (!ret) {
+		snprintf(project_id, FTS_PROJECT_ID_LEN - 1,"%s", new_project_id);
+	}
+	TS_LOG_INFO("%s:project_id: %s\n", __func__, project_id);
+
+
 	return 0;
 }
 
@@ -91,12 +99,15 @@ static void focal_of_property_read_u16_default(
 	u16 default_value)
 {
 	int ret = 0;
+	u32 value = 0;
 
-	ret = of_property_read_u16(np, prop_name, out_value);
+	ret = of_property_read_u32(np, prop_name, &value);
 	if (ret) {
 		TS_LOG_INFO("%s:%s not set in dts, use default\n",
 			__func__, prop_name);
 		*out_value = default_value;
+	} else {
+		*out_value = (u16)value;
 	}
 }
 
@@ -107,12 +118,15 @@ static void focal_of_property_read_u8_default(
 	u8 default_value)
 {
 	int ret = 0;
+	u32 value = 0;
 
-	ret = of_property_read_u8(np, prop_name, out_value);
+	ret = of_property_read_u32(np, prop_name, &value);
 	if (ret) {
 		TS_LOG_INFO("%s:%s not set in dts, use default\n",
 			__func__, prop_name);
 		*out_value = default_value;
+	} else {
+		*out_value = (u8)value;
 	}
 }
 
@@ -120,8 +134,7 @@ int focal_prase_ic_config_dts(
 	struct device_node *np,
 	struct ts_kit_device_data *dev_data)
 {
-	focal_of_property_read_u32_default(np, FTS_POWER_SELF_CTRL,
-		&g_focal_pdata->self_ctrl_power, 0);
+	focal_of_property_read_u32_default(np, FTS_POWER_SELF_CTRL, &g_focal_pdata->self_ctrl_power, 0);
 	TS_LOG_INFO("%s: %s= %d\n", __func__, FTS_POWER_SELF_CTRL, g_focal_pdata->self_ctrl_power);
 
 	return NO_ERR;
@@ -258,6 +271,12 @@ int focal_parse_dts(
 	if (ret) {
 		focal_pdata->fw_only_depend_on_lcd = 0;
 		TS_LOG_INFO("%s: get fw_only_depend_on_lcd from dts failed, use default(0)\n", __func__);
+	}
+
+	ret = of_property_read_u32(np, FTS_OPEN_ONCE_THRESHOLD, &focal_pdata->only_open_once_captest_threshold);
+	if (ret) {
+		focal_pdata->only_open_once_captest_threshold = 0;
+		TS_LOG_INFO("%s: get only_open_once_captest_threshold from dts failed, use default(0)\n", __func__);
 	}
 
 	if (focal_pdata->need_distinguish_lcd) {
@@ -406,7 +425,7 @@ static void focal_prase_test_threshold(
 	focal_of_property_read_u32_default(np, DTS_LCD_NOISE_MAX,
 		&threshold->lcd_noise_max, 0);
 
-	TS_LOG_INFO("%s:%s:%s=%d, %s=%d, %s=%d, %s=%d, %s=%d, %s=%d\n",
+	TS_LOG_INFO("%s:%s:%s=%d, %s=%d, %s=%d, %s=%d, %s=%d, %s=%d, %s=%d\n",
 		__func__, "cb test thresholds",
 		"raw_data_min", threshold->raw_data_min,
 		"raw_data_max", threshold->raw_data_max,

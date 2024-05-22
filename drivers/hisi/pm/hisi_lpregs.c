@@ -51,7 +51,7 @@
 #pragma GCC diagnostic pop
 
 
-#include <huawei_platform/log/hwlog_kernel.h>
+#include <chipset_common/dubai/dubai.h>
 
 #define PM_BUFFER_SIZE						(256)
 
@@ -88,8 +88,8 @@
 #define IPC_MBXDATA_MIN			0
 #define IPC_MBXDATA_MAX			8
 #define IPC_MBXDATA_TAG			2
-#define MATCH_TAG_SHAREMEM(m)			(((m) & 0xFF) == 0x8E)
-#define DUBAI_UPDATE_TAG(m, value)		(((m) & 0xFF00) | ((value) & 0xFF))
+#define GET_SHAREMEM_DATA(m)			(((m) & 0xFFFF))
+#define GET_SHAREMEM_SOURCE(m)			(((m) & 0xFF))
 #define IPC_MBX_SOURCE_OFFSET(m)		((m) << 6)
 #define IPC_MBX_DSTATUS_OFFSET(m)		(0x0C + ((m) << 6))
 #define IPC_MBXDATA_OFFSET(m, idex)		(0x20 + 4 * (idex) + ((m) << 6))
@@ -155,6 +155,7 @@ void __iomem **g_mg_reg;
 void __iomem **g_cg_reg;
 int g_mg_sec_reg_num;
 int g_cg_sec_reg_num;
+
 
 char *processor_name[IPC_PROCESSOR_MAX] = {
 	"gic1",
@@ -550,7 +551,7 @@ unsigned int proc_mask_to_id(unsigned int mask)
 	return i;
 }
 
-void ipc_mbx_irq_show(struct seq_file *s, void __iomem *base, unsigned int mbx)
+void ipc_mbx_irq_show(struct seq_file *s, const void __iomem *base, unsigned int mbx)
 {
 	unsigned int ipc_source = 0;
 	unsigned int ipc_dest = 0;
@@ -558,7 +559,8 @@ void ipc_mbx_irq_show(struct seq_file *s, void __iomem *base, unsigned int mbx)
 	unsigned int src_id = 0;
 	unsigned int dest_id = 0;
 	unsigned int i = 0;
-	unsigned int dubai_data = 0;
+	unsigned int source = 0;
+	unsigned int mem = 0;
 
 	ipc_source = readl(base + IPC_MBX_SOURCE_OFFSET(mbx));
 	src_id = proc_mask_to_id(ipc_source);
@@ -586,12 +588,11 @@ void ipc_mbx_irq_show(struct seq_file *s, void __iomem *base, unsigned int mbx)
 		if ((src_id < IPC_PROCESSOR_MAX) &&
 			(strncmp(processor_name[src_id], "iomcu", PROCESSOR_IOMCU_LENGTH) == 0)) {
 			if (i == IPC_MBXDATA_MIN) {
-				dubai_data = ipc_data;
+				mem = GET_SHAREMEM_DATA(ipc_data);
 			}
 			if (i == IPC_MBXDATA_TAG) {
-				dubai_data = MATCH_TAG_SHAREMEM(dubai_data) ?
-					DUBAI_UPDATE_TAG(dubai_data, ipc_data) : dubai_data;
-				HWDUBAI_LOGE("DUBAI_TAG_SENSORHUB_WAKE", "data=%u", dubai_data);
+				source = GET_SHAREMEM_SOURCE(ipc_data);
+				dubai_update_wakeup_info("DUBAI_TAG_SENSORHUB_WAKEUP", "mem=%u source=%u", mem, source);
 			}
 		}
 		LOWPM_MSG(s, "SR:[MBXDATA%u]:0x%x\n", i, ipc_data); //lint !e666
@@ -634,7 +635,7 @@ unsigned int ao_proc_mask_to_id(unsigned int mask)
 	return i;
 }
 
-void ao_ipc_mbx_irq_show(struct seq_file *s, void __iomem *base, unsigned int mbx)
+void ao_ipc_mbx_irq_show(struct seq_file *s, const void __iomem *base, unsigned int mbx)
 {
 	unsigned int ipc_source = 0;
 	unsigned int ipc_dest = 0;
@@ -642,7 +643,8 @@ void ao_ipc_mbx_irq_show(struct seq_file *s, void __iomem *base, unsigned int mb
 	unsigned int src_id = 0;
 	unsigned int dest_id = 0;
 	unsigned int i = 0;
-	unsigned int dubai_data = 0;
+	unsigned int source = 0;
+	unsigned int mem = 0;
 
 	ipc_source = readl(base + IPC_MBX_SOURCE_OFFSET(mbx));
 	src_id = ao_proc_mask_to_id(ipc_source);
@@ -670,12 +672,11 @@ void ao_ipc_mbx_irq_show(struct seq_file *s, void __iomem *base, unsigned int mb
 		if ((src_id < AO_IPC_PROCESSOR_MAX) &&
 			(strncmp(aoipc_processor_name[src_id], "iomcu", PROCESSOR_IOMCU_LENGTH) == 0)) {
 			if (i == IPC_MBXDATA_MIN) {
-				dubai_data = ipc_data;
+				mem = GET_SHAREMEM_DATA(ipc_data);
 			}
 			if (i == IPC_MBXDATA_TAG) {
-				dubai_data = MATCH_TAG_SHAREMEM(dubai_data) ?
-					DUBAI_UPDATE_TAG(dubai_data, ipc_data) : dubai_data;
-				HWDUBAI_LOGE("DUBAI_TAG_SENSORHUB_WAKE", "data=%u", dubai_data);
+				source = GET_SHAREMEM_SOURCE(ipc_data);
+				dubai_update_wakeup_info("DUBAI_TAG_SENSORHUB_WAKEUP", "mem=%u source=%u", mem, source);
 			}
 		}
 		LOWPM_MSG(s, "SR:[MBXDATA%u]:0x%x\n", i, ipc_data); //lint !e666
@@ -732,7 +733,7 @@ void pm_status_show(struct seq_file *s)
 		(wake_status & HISEE_MASK) ? 1 : 0,
 		(wake_status & HOTPLUG_MASK(0)) ? 1 : 0,
 		(wake_status & HOTPLUG_MASK(1)) ? 1 : 0);
-	HWDUBAI_LOGE("DUBAI_TAG_WAKE_STATUS", "ap=%d modem=%d hifi=%d iomcu=%d hisee=%d hotplug0=%d hotplug1=%d",
+	dubai_update_wakeup_info("DUBAI_TAG_WAKE_STATUS", "ap=%d modem=%d hifi=%d iomcu=%d hisee=%d hotplug0=%d hotplug1=%d",
 		(wake_status & AP_MASK) ? 1 : 0,
 		(wake_status & MODEM_MASK) ? 1 : 0,
 		(wake_status & HIFI_MASK) ? 1 : 0,
@@ -816,7 +817,7 @@ void pm_status_show(struct seq_file *s)
 	ap_irq = readl(sysreg_base.reserved_base + AP_WAKE_IRQ_OFFSET);
 	if ((g_lpmcu_irq_num > ap_irq)
 		&& (g_lpmcu_irq_name != NULL)){
-		HWDUBAI_LOGE("DUBAI_TAG_AP_WAKE_IRQ", "name=%s", g_lpmcu_irq_name[ap_irq]);
+		dubai_update_wakeup_info("DUBAI_TAG_AP_WAKE_IRQ", "name=%s", g_lpmcu_irq_name[ap_irq]);
 		LOWPM_MSG(s, "SR:AP WAKE IRQ(LPM3 NVIC): %d (%s)\n",
 				ap_irq, g_lpmcu_irq_name[ap_irq]);
 	} else {
@@ -860,7 +861,7 @@ void show_iomg_reg(unsigned int i, struct iocfg_lp *hisi_iocfg_lookups)
 	if (hisi_iocfg_lookups[i].iomg_offset != -1) {
 	if ((g_mg_sec_reg_num > 0)
 			&&(g_mg_reg != NULL)) {
-		addr = (void __iomem *)(unsigned long)(hisi_iocfg_lookups[i].iomg_base
+		addr = (void __iomem *)(uintptr_t)(hisi_iocfg_lookups[i].iomg_base
 						+ hisi_iocfg_lookups[i].iomg_offset);
 		if(NULL == addr)
 			return;
@@ -914,7 +915,7 @@ void show_iocg_reg(unsigned int i, struct iocfg_lp *hisi_iocfg_lookups)
 		return;
 	if ((g_cg_sec_reg_num > 0)
 			&&(g_cg_reg != NULL)) {
-		addr = (void __iomem *)(unsigned long)(hisi_iocfg_lookups[i].iocg_base
+		addr = (void __iomem *)(uintptr_t)(hisi_iocfg_lookups[i].iocg_base
 						+ hisi_iocfg_lookups[i].iocg_offset);
 		if(NULL == addr)
 			return;
@@ -934,7 +935,7 @@ void show_iocg_reg(unsigned int i, struct iocfg_lp *hisi_iocfg_lookups)
 	value = readl(addr);
 	iounmap(addr);
 
-	printk("[0x%x]iocg = %s", value, pulltype[value&0x3]);
+	printk("[0x%x]iocg = %s", value, pulltype[((unsigned int)value) & 0x3]);
 
 	if ((value != hisi_iocfg_lookups[i].iocg_val) &&
 			(hisi_iocfg_lookups[i].iocg_val != -1)) {
@@ -946,7 +947,7 @@ void show_iocg_reg(unsigned int i, struct iocfg_lp *hisi_iocfg_lookups)
 }
 
 
-void show_gpio_info(unsigned int i, struct iocfg_lp *hisi_iocfg_lookups)
+void show_gpio_info(unsigned int i, struct iocfg_lp *hisi_iocfg_lookups, unsigned int gpio_id)
 {
 	void __iomem *addr = NULL;
 	void __iomem **addr1 = NULL;
@@ -955,6 +956,7 @@ void show_gpio_info(unsigned int i, struct iocfg_lp *hisi_iocfg_lookups)
 
 	if(NULL == hisi_iocfg_lookups)
 		return;
+
 
 	if (hisi_iocfg_lookups[i].iomg_val == FUNC0) {
 		addr = GPIO_DIR(sysreg_base.gpio_base[hisi_iocfg_lookups[i].gpio_group_id]);
@@ -985,7 +987,7 @@ void show_gpio_info(unsigned int i, struct iocfg_lp *hisi_iocfg_lookups)
 void dbg_io_status_show(void)
 {
 	unsigned int i = 0;
-	int gpio_id = 0;
+	unsigned int gpio_id = 0;
 	unsigned int len = 0;
 	struct iocfg_lp *hisi_iocfg_lookups = NULL;
 
@@ -1008,7 +1010,7 @@ void dbg_io_status_show(void)
 		gpio_id = ((hisi_iocfg_lookups[i].gpio_group_id << 3)
 					+ hisi_iocfg_lookups[i].ugpio_bit);
 
-		printk("gpio - %d  gpio_logic - %s\t",
+		printk("gpio - %u  gpio_logic - %s\t",
 				gpio_id, hisi_iocfg_lookups[i].gpio_logic);
 
 	/* show iomg register's value */
@@ -1018,7 +1020,7 @@ void dbg_io_status_show(void)
 	show_iocg_reg(i, hisi_iocfg_lookups);
 
 	/* if this is gpio pin*/
-	show_gpio_info(i, hisi_iocfg_lookups);
+	show_gpio_info(i, hisi_iocfg_lookups, gpio_id);
 	}
 }
 
@@ -1771,7 +1773,7 @@ err:
 	return ret;
 }
 
-static int init_sec_gpio(struct device_node *np)
+static int init_sec_io(struct device_node *np)
 {
 	int ret = 0;
 	int i = 0;
@@ -1822,7 +1824,7 @@ static int init_sec_gpio(struct device_node *np)
 		}
 	}
 
-	pr_info("%s:%d init sec GPIO success!\n", __func__, __LINE__);
+	pr_info("%s:%d init sec ioc success!\n", __func__, __LINE__);
 	return ret;
 
 err_free_iocg:
@@ -1836,6 +1838,8 @@ err:
 	return ret;
 
 }
+
+
 
 static int init_lowpm_data(void)
 {
@@ -1859,12 +1863,13 @@ static int init_lowpm_data(void)
 		goto err_put_node;
 	}
 
-	/*init sec GPIO*/
-	ret = init_sec_gpio(np);
+	/*init sec IO*/
+	ret = init_sec_io(np);
 	if (ret < 0) {
-		pr_err("%s:%d init sec GPIO failed!\n", __func__,__LINE__);
+		pr_err("%s:%d init sec IO failed!\n", __func__,__LINE__);
 		goto err_put_node;
 	}
+
 
 	/* init lpmcu irq table */
 	ret = of_property_count_strings(np, "lpmcu-irq-table");

@@ -32,6 +32,7 @@
 #include <huawei_platform/power/huawei_charger.h>
 #include <huawei_platform/power/usb_short_circuit_protect.h>
 #include <linux/thermal.h>
+#include <huawei_platform/power/huawei_battery_temp.h>
 
 #define HWLOG_TAG usb_short_circuit_protect
 HWLOG_REGIST();
@@ -78,6 +79,57 @@ static int is_scp_charger = 0;
 
 static struct uscp_device_info* g_di = NULL;
 static struct wake_lock uscp_wakelock;
+
+#ifdef CONFIG_HUAWEI_POWER_DEBUG
+static ssize_t uscp_dbg_show(void *dev_data, char *buf, size_t size)
+{
+	struct uscp_device_info *dev_p = (struct uscp_device_info *)dev_data;
+
+	if (!dev_p) {
+		hwlog_err("error: platform_get_drvdata return null!\n");
+		return scnprintf(buf, size, "platform_get_drvdata return null!\n");
+	}
+
+	return scnprintf(buf, size,
+		"uscp_threshold_tusb=%d\n" "open_mosfet_temp=%d\n" "close_mosfet_temp=%d\n" "interval_switch_temp=%d\n",
+		dev_p->uscp_threshold_tusb,
+		dev_p->open_mosfet_temp,
+		dev_p->close_mosfet_temp,
+		dev_p->interval_switch_temp);
+}
+
+static ssize_t uscp_dbg_store(void *dev_data, const char *buf, size_t size)
+{
+	struct uscp_device_info *dev_p = (struct uscp_device_info *)dev_data;
+	unsigned int uscp_tusb = 0;
+	unsigned int open_temp = 0;
+	unsigned int close_temp = 0;
+	unsigned int switch_temp = 0;
+
+	if (!dev_p) {
+		hwlog_err("error: platform_get_drvdata return null!\n");
+		return -EINVAL;
+	}
+
+	if (sscanf(buf, "%d %d %d %d", &uscp_tusb, &open_temp, &close_temp, &switch_temp) != 4) {
+		hwlog_err("error: unable to parse input:%s\n", buf);
+		return -EINVAL;
+	}
+
+	dev_p->uscp_threshold_tusb = uscp_tusb;
+	dev_p->open_mosfet_temp = open_temp;
+	dev_p->close_mosfet_temp = close_temp;
+	dev_p->interval_switch_temp = switch_temp;
+
+	hwlog_info("uscp_threshold_tusb=%d, open_mosfet_temp=%d, close_mosfet_temp=%d, interval_switch_temp=%d\n",
+		dev_p->uscp_threshold_tusb,
+		dev_p->open_mosfet_temp,
+		dev_p->close_mosfet_temp,
+		dev_p->interval_switch_temp);
+
+	return size;
+}
+#endif
 
 static void uscp_wake_lock(void)
 {
@@ -366,7 +418,7 @@ static void check_temperature(struct uscp_device_info* di)
     }
     tusb = get_temperature_value();
     usb_temp = tusb;
-    tbatt = hisi_battery_temperature();
+    huawei_battery_temp(BAT_TEMP_MIXED, &tbatt);
     hwlog_info("tusb = %d, tbatt = %d\n", tusb, tbatt);
     tdiff = tusb - tbatt;
 
@@ -473,15 +525,17 @@ static void check_ntc_error(void)
     hwlog_info("check ntc error, temp = %d\n", temp);
     if (temp > CHECK_NTC_TEMP_MAX || temp < CHECK_NTC_TEMP_MIN)
     {
+        #ifndef CONFIG_HLTHERM_RUNTEST
         if (!dsm_client_ocuppy(power_dsm_get_dclient(POWER_DSM_USCP)))
         {
-            tbatt = hisi_battery_temperature();
+            huawei_battery_temp(BAT_TEMP_MIXED, &tbatt);
             batt_id = hisi_battery_id_voltage();
             hwlog_info("ntc error notify\n");
             dsm_client_record(power_dsm_get_dclient(POWER_DSM_USCP), "ntc error happened,tusb = %d,tbatt = %d,batt_id = %d\n",
                 temp,tbatt,batt_id);
             dsm_client_notify(power_dsm_get_dclient(POWER_DSM_USCP), ERROR_NO_USB_SHORT_PROTECT_NTC);
         }
+        #endif
         protect_enable = 0;
     }
     else
@@ -620,12 +674,20 @@ static int uscp_probe(struct platform_device *pdev)
     {
         hwlog_err("charger_type_notifier_register failed\n");
         ret = -EINVAL;
-        goto free_gpio;
+        goto fail_free_wakelock;
     }
     charge_type_handler(di, type);
+
+#ifdef CONFIG_HUAWEI_POWER_DEBUG
+	power_dbg_ops_register("uscp_para", platform_get_drvdata(pdev),
+		(power_dgb_show)uscp_dbg_show, (power_dgb_store)uscp_dbg_store);
+#endif
+
     hwlog_info("uscp probe ok!\n");
     return 0;
 
+fail_free_wakelock:
+	wake_lock_destroy(&uscp_wakelock);
 free_gpio:
     gpio_free(di->gpio_uscp);
 free_mem:

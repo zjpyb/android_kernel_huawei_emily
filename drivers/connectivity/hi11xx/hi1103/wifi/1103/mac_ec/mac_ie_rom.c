@@ -21,10 +21,10 @@ extern "C" {
 /*****************************************************************************
   2 全局变量定义
 *****************************************************************************/
-mac_ie_cb g_st_mac_ie_rom_cb = {OAL_PTR_NULL,
-                                OAL_PTR_NULL,
-                                OAL_PTR_NULL};
-
+mac_ie_cb g_st_mac_ie_rom_cb = {
+    .opmode_field_cb = OAL_PTR_NULL,
+    .vht_opern_cb    = OAL_PTR_NULL,
+    .ht_opern_cb     = OAL_PTR_NULL};
 
 /*****************************************************************************
   3 函数实现
@@ -738,30 +738,43 @@ oal_uint32 mac_ie_get_rsn_cipher(oal_uint8 *puc_ie, mac_crypto_settings_stru *ps
     /*************************************************************************/
     uc_ie_len  = puc_ie[1];
     puc_src_ie = puc_ie + 2;
+    puc_ie    += 2;
 
-    if (mac_ie_check_rsn_cipher_format(puc_src_ie, uc_ie_len) != OAL_SUCC)
+    /*version字段检查*/
+    pst_crypto->ul_wpa_versions = *(oal_uint16 *)puc_ie;
+    if ((uc_ie_len < MAC_MIN_RSN_LEN) || (pst_crypto->ul_wpa_versions != 1))
     {
-        OAM_WARNING_LOG0(0, OAM_SF_CFG, "{mac_ie_check_rsn_cipher_format, return fail.}");
-        return OAL_ERR_CODE_MSG_LENGTH_ERR;
+        return OAL_FAIL;
     }
+    pst_crypto->ul_wpa_versions = WITP_WPA_VERSION_2;//wpa为1，rsn为2
+    puc_ie += 2;
 
-    puc_ie += 1 + 1 + 2;
-    pst_crypto->ul_wpa_versions = WITP_WPA_VERSION_2;
-
-    /* Group Cipher Suite */
+    /*Group Cipher Suite*/
     pst_crypto->ul_group_suite = *(oal_uint32 *)puc_ie;
     puc_ie += 4;
 
+    /*Pairwise Suite Count*/
     us_suites_count = OAL_MAKE_WORD16(puc_ie[0], puc_ie[1]);
     puc_ie += 2;
+    if((0 == us_suites_count) || (us_suites_count > MAC_RSN_CIPHER_COUNT_LEN))
+    {
+       return OAL_FAIL;
+    }
 
 #ifdef _PRE_WLAN_WEB_CMD_COMM
     pst_crypto->n_pair_suite = us_suites_count;
 #endif
-
+    if(0 == us_suites_count)
+    {
+       return OAL_FAIL;
+    }
     /* Pairwise Cipher Suite 最多存2个 */
     for (us_suite_idx = 0; us_suite_idx < us_suites_count; us_suite_idx++)
     {
+        if(OAL_FALSE == MAC_IE_REAMIN_LEN_IS_ENOUGH(puc_src_ie, puc_ie, uc_ie_len, 4))
+        {
+            return OAL_FAIL;
+        }
         if (us_suite_idx < WLAN_PAIRWISE_CIPHER_SUITES)
         {
             pst_crypto->aul_pair_suite[us_suite_idx] = *(oal_uint32 *)puc_ie;
@@ -769,9 +782,17 @@ oal_uint32 mac_ie_get_rsn_cipher(oal_uint8 *puc_ie, mac_crypto_settings_stru *ps
         puc_ie += 4;
     }
 
+    /*AKM Suite Count*/
+    if(OAL_FALSE == MAC_IE_REAMIN_LEN_IS_ENOUGH(puc_src_ie, puc_ie, uc_ie_len, 2))
+    {
+        return OAL_FAIL;
+    }
     us_suites_count = OAL_MAKE_WORD16(puc_ie[0], puc_ie[1]);
     puc_ie += 2;
-
+    if((0 == us_suites_count) || (us_suites_count > OAL_NL80211_MAX_NR_AKM_SUITES))
+    {
+       return OAL_FAIL;
+    }
 #ifdef _PRE_WLAN_WEB_CMD_COMM
     pst_crypto->n_akm_suites = us_suites_count;
 #endif
@@ -779,6 +800,10 @@ oal_uint32 mac_ie_get_rsn_cipher(oal_uint8 *puc_ie, mac_crypto_settings_stru *ps
     /* AKM Suite 最多存2个 */
     for (us_suite_idx = 0; us_suite_idx < us_suites_count; us_suite_idx++)
     {
+        if(OAL_FALSE == MAC_IE_REAMIN_LEN_IS_ENOUGH(puc_src_ie, puc_ie, uc_ie_len, 4))
+        {
+            return OAL_FAIL;
+        }
         if (us_suite_idx < WLAN_AUTHENTICATION_SUITES)
         {
             pst_crypto->aul_akm_suite[us_suite_idx] = *(oal_uint32 *)puc_ie;
@@ -787,6 +812,14 @@ oal_uint32 mac_ie_get_rsn_cipher(oal_uint8 *puc_ie, mac_crypto_settings_stru *ps
     }
 
     /* 越过RSN Capabilities */
+    if(OAL_FALSE == MAC_IE_REAMIN_LEN_IS_ENOUGH(puc_src_ie, puc_ie, uc_ie_len, 2))
+    {
+        if (OAL_TRUE == MAC_IE_REAMIN_LEN_IS_ENOUGH(puc_src_ie, puc_ie, uc_ie_len, 1))
+        {
+            return OAL_FAIL;
+        }
+        return OAL_SUCC;
+    }
     puc_ie += 2;
 
     /* 目前PMK信息暂不做处理 */
@@ -796,9 +829,14 @@ oal_uint32 mac_ie_get_rsn_cipher(oal_uint8 *puc_ie, mac_crypto_settings_stru *ps
     }
     us_suites_count = OAL_MAKE_WORD16(puc_ie[0], puc_ie[1]);
     puc_ie += 2;
+
     for (us_suite_idx = 0; us_suite_idx < us_suites_count; us_suite_idx++)
     {
-        puc_ie += 4;
+        if(OAL_FALSE == MAC_IE_REAMIN_LEN_IS_ENOUGH(puc_src_ie, puc_ie, uc_ie_len, 16))
+        {
+            return OAL_FAIL;
+        }
+        puc_ie += 16;
     }
 
     /* 获取Group Management Cipher Suite信息 */

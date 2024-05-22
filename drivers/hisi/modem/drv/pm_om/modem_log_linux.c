@@ -53,11 +53,13 @@
 #include <linux/fs.h>
 #include <linux/miscdevice.h>
 #include <linux/suspend.h>
-#include <linux/wakelock.h>
+#include <linux/device.h>
+#include <linux/pm_wakeup.h>
 #include <linux/uaccess.h>
 #include <linux/poll.h>
-
+#include <osl_types.h>
 #include <osl_generic.h>
+#include <osl_thread.h>
 #include <bsp_ipc.h>
 #include <bsp_slice.h>
 #include <bsp_ring_buffer.h>
@@ -88,7 +90,7 @@ struct logger_log {
 
 struct modem_log
 {
-	struct wake_lock  wake_lock;
+	struct wakeup_source wake_lock;
 	struct notifier_block pm_notify;
 	u32 init_flag;
 };
@@ -128,10 +130,21 @@ struct logger_log *get_modem_log_from_minor(int minor)
     return NULL;
 }
 
-unsigned long kernel_user_memcpy(void* dest, u32 destMax, const void* src, u32 count)
-{/*lint --e{715} suppress destMax not referenced*/
-	/* coverity[HW_CBG_C_COPY_TO_USER] */
-	return copy_to_user(dest, src, (unsigned long)count);
+int kernel_user_memcpy(void *dest, u32 destMax, void *src, u32 count)
+{ /*lint --e{715} suppress destMax not referenced*/
+    unsigned long ret;
+    unsigned long src_addr = (uintptr_t)src;
+    src = (void *)(uintptr_t)src_addr;
+    if (dest == NULL) {
+        modem_log_pr_err("dest is NULL ptr\n");
+        return -1;
+    }
+    ret = copy_to_user(dest, src, (unsigned long)count);
+    if (ret != 0) {
+        modem_log_pr_err("copy_to_user err\n");
+        return -1;
+    }
+    return 0;
 }
 
 void modem_log_ring_buffer_get(struct log_usr_info * usr_info, struct ring_buffer *rb)
@@ -244,7 +257,7 @@ skip_read:
 			break;
 		}
 
-		wake_unlock(&g_modem_log.wake_lock); /*lint !e455*/
+		__pm_relax(&g_modem_log.wake_lock); /*lint !e455*/
 		schedule();
 		modem_log_pr_debug("give up cpu in modem_log_read\n");
 	}
@@ -350,7 +363,7 @@ static int modem_log_release(struct inode *inode, struct file *file)
 	}
 	mutex_unlock(&log->mutex);
 
-	wake_unlock(&g_modem_log.wake_lock); /*lint !e455*/
+	__pm_relax(&g_modem_log.wake_lock); /*lint !e455*/
 
 	modem_log_pr_debug("%s entry\n", __func__);
 	return 0;
@@ -374,7 +387,7 @@ void modem_log_wakeup_all(void)
     {
 		if (log->usr_info->mem && log->usr_info->mem->read != log->usr_info->mem->write)
 		{
-			wake_lock_timeout(&g_modem_log.wake_lock,(long)(HZ));
+			__pm_wakeup_event(&g_modem_log.wake_lock, jiffies_to_msecs((long)HZ));
 			if((&log->wq)!=NULL)
 			{
 			wake_up_interruptible(&log->wq);
@@ -382,7 +395,6 @@ void modem_log_wakeup_all(void)
 		}
     }
 }
-
 
 /*
  * modem_log_ipc_handler - wake up waitquque
@@ -397,9 +409,9 @@ void modem_log_ipc_handler(u32 data)
  * modem_log_notify - modem log pm notify
  */
 s32 modem_log_notify(struct notifier_block *notify_block, unsigned long mode, void *unused)
-{/*lint --e{715} suppress notify_block&unused not referenced*/
+{
     struct logger_log *log;
-
+    UNUSED(unused);
 	modem_log_pr_debug("entry\n");
 
 	switch (mode)
@@ -409,7 +421,7 @@ s32 modem_log_notify(struct notifier_block *notify_block, unsigned long mode, vo
 	    {
 			if ((log->usr_info->mem) && (log->usr_info->mem->read != log->usr_info->mem->write) && (log->usr_info->mem->app_is_active))
 			{
-				wake_lock_timeout(&g_modem_log.wake_lock,(long)(HZ));
+				__pm_wakeup_event(&g_modem_log.wake_lock, jiffies_to_msecs((long)HZ));
 				if((&log->wq)!=NULL)
 				{
 				wake_up_interruptible(&log->wq);
@@ -511,7 +523,7 @@ void bsp_modem_log_fwrite_trigger(struct log_usr_info *usr_info)
 	/* if reader is not ready, no need to wakeup waitqueue */
 	if (usr_info->mem && usr_info->mem->app_is_active)  /*lint !e456*/
 	{
-		wake_lock(&g_modem_log.wake_lock); /*lint !e454*/
+		__pm_stay_awake(&g_modem_log.wake_lock); /*lint !e454*/
 		if((&log->wq)!=NULL)
 		{
 		wake_up_interruptible(&log->wq);
@@ -533,7 +545,7 @@ EXPORT_SYMBOL(modem_log_fwrite_trigger_force); /*lint !e19 */
  */
 static int __init modem_log_init(void)
 {
-	wake_lock_init(&g_modem_log.wake_lock, WAKE_LOCK_SUSPEND, "modem_log_wake");
+	wakeup_source_init(&g_modem_log.wake_lock, "modem_log_wake");
 
 	g_modem_log.pm_notify.notifier_call = modem_log_notify;
 	register_pm_notifier(&g_modem_log.pm_notify);

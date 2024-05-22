@@ -25,6 +25,7 @@ struct lcd_kit_ops {
 	int (*get_panel_power_status)(void);
 	int (*power_monitor_on)(void);
 	int (*power_monitor_off)(void);
+	int (*set_vss_by_thermal)(void);
 	int (*write_otp_gamma)(u8 *buf);
 };
 
@@ -51,6 +52,11 @@ enum ts_kit_type {
 
 enum lcd_kit_type {
 	TS_GESTURE_FUNCTION,
+};
+
+enum lcd_kit_panel_state {
+	LCD_POWER_STATE_OFF,
+	LCD_POWER_STATE_ON,
 };
 
 /*lcd kit ops, provide to ts kit module register*/

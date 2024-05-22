@@ -27,6 +27,12 @@
 #define PID_NS(proxy) proxy->pid_ns_for_children
 #endif
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
+#define SET_TASK_STATE(tsk, task_value) smp_store_mb((tsk)->state, (task_value))
+#else
+#define SET_TASK_STATE(tsk, task_value) set_task_state(tsk, task_value)
+#endif
+
 enum FaultType {
 	PROCESS_D_STATE = 1,
 	PROCESS_Z_STATE,
@@ -123,17 +129,17 @@ void fail_thread(struct task_struct *tsk, struct FaultImpl *ft)
 	case PROCESS_D_STATE:
 		if (tsk->exit_state == EXIT_ZOMBIE)
 			tsk->exit_state = 0;
-		set_task_state(tsk, TASK_UNINTERRUPTIBLE);
+		SET_TASK_STATE(tsk, TASK_UNINTERRUPTIBLE);
 		break;
 	case PROCESS_Z_STATE:
-		set_task_state(tsk, TASK_DEAD);
+		SET_TASK_STATE(tsk, TASK_DEAD);
 		tsk->exit_state = EXIT_ZOMBIE;
 		break;
 	case PROCESS_T_STATE:
 	case PROCESS_HANG:
 		if (tsk->exit_state == EXIT_ZOMBIE)
 			tsk->exit_state = 0;
-		set_task_state(tsk, TASK_STOPPED);
+		SET_TASK_STATE(tsk, TASK_STOPPED);
 		break;
 	default:
 		break;
@@ -146,13 +152,13 @@ void resume_thread(struct task_struct *tsk, struct FaultImpl *ft)
 	case PROCESS_D_STATE:
 	case PROCESS_T_STATE:
 	case PROCESS_HANG:
-		set_task_state(tsk, TASK_INTERRUPTIBLE);
+		SET_TASK_STATE(tsk, TASK_INTERRUPTIBLE);
 		wake_up_process(tsk);
 		break;
 	case PROCESS_Z_STATE:
 		if (tsk->exit_state == EXIT_ZOMBIE)
 			tsk->exit_state = 0;
-		set_task_state(tsk, TASK_INTERRUPTIBLE);
+		SET_TASK_STATE(tsk, TASK_INTERRUPTIBLE);
 		wake_up_process(tsk);
 		break;
 	case PROCESS_EXIT:

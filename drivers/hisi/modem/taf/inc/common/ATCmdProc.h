@@ -81,6 +81,11 @@
 
 #include "AtMtaInterface.h"
 #include "TafLogPrivacyMatch.h"
+
+
+#include "adrv.h"
+#include <linux/version.h>
+
 #ifdef __cplusplus
 #if __cplusplus
 extern "C" {
@@ -1115,7 +1120,7 @@ typedef enum
     AT_CMD_CMGC,
     AT_CMD_CMSS,
     AT_CMD_CMST,
-    AT_CMD_CNMA, 
+    AT_CMD_CNMA,
     AT_CMD_CCNMA,
     AT_CMD_CMSTUB,
     AT_CMD_CMMS,
@@ -1353,6 +1358,9 @@ typedef enum
 
     AT_CMD_SILENTPININFO,
 #endif
+
+    AT_CMD_PRIVATECCHO,
+    AT_CMD_PRIVATECCHP,
 
     AT_CMD_PRIVATECGLA,
 
@@ -1765,6 +1773,7 @@ typedef enum
 
     AT_CMD_GAMEMODE,
 
+    AT_CMD_PSEUDBTS,
 
     AT_CMD_COMM_BUTT,
 
@@ -2819,11 +2828,12 @@ typedef enum
     AT_CMD_SAMPLE_SET,
 
     AT_CMD_GPSLOCSET_SET,
-    
+
     AT_CMD_CCLK_QRY,
 
     AT_CMD_GAME_MODE_SET,
-	
+
+    AT_CMD_PSEUDBTS_SET,
     AT_CMD_INVALID,
     /* GU模AT命令和公共命令的当前处理ID，新增命令处理ID时要添加到此ID前 */
     AT_CMD_COMM_CURRENT_OPT
@@ -2984,6 +2994,7 @@ typedef enum
 #if (FEATURE_ON == FEATURE_DSDS)
     AT_STRING_DSDSSTATE,
 #endif
+    AT_STRING_PSEUDBTS,
 
     AT_STRING_BUTT
 }AT_STRING_CONTENT_ENUM;
@@ -4482,6 +4493,8 @@ extern TAF_UINT32   At_SetCnumPara(TAF_UINT8 ucIndex);
 extern TAF_UINT32   At_SetCsimPara(TAF_UINT8 ucIndex);
 extern TAF_UINT32   At_SetCchoPara(TAF_UINT8 ucIndex);
 extern TAF_UINT32   At_SetCchpPara(TAF_UINT8 ucIndex);
+extern TAF_UINT32   At_SetPrivateCchoPara(TAF_UINT8 ucIndex);
+extern TAF_UINT32   At_SetPrivateCchpPara(TAF_UINT8 ucIndex);
 extern TAF_UINT32   At_SetCchcPara(TAF_UINT8 ucIndex);
 extern TAF_UINT32   At_SetCglaPara(TAF_UINT8 ucIndex);
 extern TAF_UINT32   At_SetCrsmPara(TAF_UINT8 ucIndex);
@@ -6154,7 +6167,7 @@ extern  VOS_UINT32 atQryTdsFTXONParaCnfProc(VOS_UINT8 ucClientId, VOS_VOID *pMsg
 extern  VOS_UINT32 atQryTdsFRXONParaCnfProc(VOS_UINT8 ucClientId, VOS_VOID *pMsgBlock);
 
 extern VOS_UINT32 atLcacellCnfProc(VOS_VOID *pMsgBlock);
-extern VOS_VOID atLcacellInd(VOS_VOID *pMsgBlock);
+extern VOS_UINT32 atLcacellInd(VOS_VOID *pMsgBlock);
 
 
 VOS_UINT32 AT_SetNvmEccNumPara(VOS_UINT8 ucIndex);
@@ -6362,10 +6375,19 @@ VOS_INT AT_CCpuResetCallback(
     DRV_RESET_CB_MOMENT_E               eparam,
     VOS_INT                             iUserData
 );
+
+#if (LINUX_VERSION_CODE <= KERNEL_VERSION(4, 9, 0))
 VOS_INT AT_HifiResetCallback(
     DRV_RESET_CB_MOMENT_E               eparam,
     VOS_INT                             iUserData
 );
+
+#else
+VOS_INT AT_HifiResetCallback(
+    enum DRV_RESET_CALLCBFUN_MOMENT     eparam,
+    VOS_INT                             iUserData
+);
+#endif
 
 VOS_UINT32 AT_RcvTempprtStatusInd(VOS_VOID *pMsg);
 

@@ -200,10 +200,10 @@ VOS_UINT32 DIAG_MsgProcReg (DIAG_MESSAGE_TYPE_U32 ulMsgType, DIAG_MESSAGE_FUNC p
     1.c64416         2014-11-18  Draft Enact
 
 *****************************************************************************/
-VOS_UINT32 DIAG_MsgReport (MSP_DIAG_CNF_INFO_STRU *pstDiagInfo, VOS_VOID *pstData, VOS_UINT32 ulLen)
+VOS_UINT32 DIAG_MsgReport (VOS_VOID *pstMessage, VOS_VOID *pstData, VOS_UINT32 ulLen)
 {
     DIAG_MSG_REPORT_HEAD_STRU stDiagHead;
-
+    MSP_DIAG_CNF_INFO_STRU *pstDiagInfo = (MSP_DIAG_CNF_INFO_STRU *)pstMessage;
     /*检查DIAG是否初始化且HSO是否连接上*/
     if(!DIAG_IS_CONN_ON)
     {

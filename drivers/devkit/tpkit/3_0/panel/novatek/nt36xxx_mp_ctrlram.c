@@ -187,38 +187,6 @@ typedef enum rawdata_type {
 	E_RawdataType_Last
 } rawdata_type_e;
 
-static void goto_next_line(char **ptr)
-{
-	do {
-		*ptr = *ptr + 1;
-	} while (**ptr != '\n');
-	*ptr = *ptr + 1;
-}
-
-static void copy_this_line(char *dest, char *src)
-{
-	char *copy_from;
-	char *copy_to;
-
-	copy_from = src;
-	copy_to = dest;
-	do {
-		*copy_to = *copy_from;
-		copy_from++;
-		copy_to++;
-	} while((*copy_from != '\n') && (*copy_from != '\r'));
-	*copy_to = '\0';
-}
-
-static void str_low(char *str)
-{
-	int i;
-
-	for (i = 0; i < strlen(str); i++)
-		if ((str[i] >= 65) && (str[i] <= 90))
-			str[i] += 32;
-}
-
 /*******************************************************
 Description:
 	Novatek touchscreen check ASR error function.
@@ -377,14 +345,12 @@ static int32_t nvt_load_mp_ctrlram_bin(void)
 				CtrlRAM_test_cmd[i].data[1] = *(ptr + (4 * i) + 1);
 				CtrlRAM_test_cmd[i].data[2] = *(ptr + (4 * i) + 2);
 				CtrlRAM_test_cmd[i].data[3] = *(ptr + (4 * i) + 3);
-				//if (i < 10) {
-				//	printk("%02X %02X %02X %02X\n", CtrlRAM_test_cmd[i].data[0], CtrlRAM_test_cmd[i].data[1], CtrlRAM_test_cmd[i].data[2], CtrlRAM_test_cmd[i].data[3]);
-				//}
 				ctrlram_cur_addr = ctrlram_cur_addr + 4;
 			}
 
 		} else {
-			TS_LOG_ERR("%s: retval=%d, read_ret=%d, fbufp=%p, stat.size=%lld\n", __func__, retval, read_ret, fbufp, stat.size);
+			TS_LOG_ERR("%s:ret=%d,read=%d,fbufp=%pK,stat.size=%lld\n",
+				__func__, retval, read_ret, fbufp, stat.size);
 			retval = -3;
 			goto exit_free;
 		}
@@ -396,10 +362,8 @@ static int32_t nvt_load_mp_ctrlram_bin(void)
 
 exit_free:
 	set_fs(org_fs);
-	if (fbufp) {
-		vfree(fbufp);
-		fbufp = NULL;
-	}
+	vfree(fbufp);
+	fbufp = NULL;
 	if (fp) {
 		filp_close(fp, NULL);
 		fp = NULL;
@@ -1603,7 +1567,8 @@ static int nvt_get_threshold_from_csvfile(uint64_t columns, uint64_t rows, char*
 	else{
 	    return FAIL;
 	}
-	TS_LOG_INFO("threshold file name:%s, rows_size=%d, columns_size=%d, target_name = %s\n", file_path, rows, columns, target_name);
+	TS_LOG_INFO("threshold filename:%s, rows_size=%llu, columns_size=%llu,target_name = %s\n",
+		file_path, rows, columns, target_name);
 
 	result =  ts_kit_parse_csvfile(file_path, target_name, data->csv_data, rows, columns);
 	if (PASS == result){
@@ -2232,8 +2197,10 @@ int32_t nvt_kit_selftest(struct ts_rawdata_info *info)
 	char test_2_result[4]={0};
 	char test_3_result[4]={0};
 	char test_4_result[4]={0};
-	int32_t noise_ret = NO_ERR;
-	int32_t open_ret = NO_ERR;
+	uint32_t bytes_of_array=0;
+	uint32_t start_p=0;
+	unsigned long timer_start=0;
+	unsigned long timer_end=0;
 
 	if (NULL == info || NULL == nvt_ts) {
 		TS_LOG_ERR("%s: param error\n", __FUNCTION__);
@@ -2251,7 +2218,6 @@ int32_t nvt_kit_selftest(struct ts_rawdata_info *info)
 		return -ERESTARTSYS;
 	}
 	//---For Debug : Test Time, Mallon 20160907---
-	unsigned long timer_start=0,timer_end=0;
 	timer_start=jiffies;
 	//---print criteria ,mallon 20161012-----
 	if(nvt_ts->print_criteria == true) {
@@ -2408,7 +2374,7 @@ int32_t nvt_kit_selftest(struct ts_rawdata_info *info)
 		nvt_kit_fw_update_boot_spi(nvt_ts->fw_name);
 	}
 
-	uint32_t bytes_of_array;
+
 	//---Copy Data to info->buff---
 	if(nvt_ts->criteria_threshold_flag){
 
@@ -2423,7 +2389,7 @@ int32_t nvt_kit_selftest(struct ts_rawdata_info *info)
 			bytes_of_array = X_Channel*Y_Channel*sizeof(int);
 			memcpy(&info->buff[CHANNEL_NUM], RawData_FWMutual, bytes_of_array);
 
-			uint32_t start_p = X_Channel * Y_Channel + CHANNEL_NUM;
+			start_p = X_Channel * Y_Channel + CHANNEL_NUM;
 			memcpy(&info->buff[start_p], RawData_Diff, bytes_of_array);
 
 			start_p = X_Channel * Y_Channel*2 + CHANNEL_NUM;
@@ -2446,7 +2412,7 @@ int32_t nvt_kit_selftest(struct ts_rawdata_info *info)
 			bytes_of_array = (X_Channel*(uint64_t)Y_Channel*sizeof(int));
 			memcpy(&info->buff[CHANNEL_NUM], RawData_FWMutual, bytes_of_array);
 
-			uint32_t start_p = X_Channel * Y_Channel + CHANNEL_NUM;
+			start_p = X_Channel * Y_Channel + CHANNEL_NUM;
 			memcpy(&info->buff[start_p], RawData_Diff, bytes_of_array);
 
 			start_p = X_Channel * Y_Channel*2 + CHANNEL_NUM;

@@ -20,7 +20,7 @@
 #include <linux/stacktrace.h>
 #include <chipset_common/hwlogger/hw_logger.h>
 #include <chipset_common/hwfdleak/fdleak.h>
-#include <log/log_usertype/log-usertype.h>
+#include <log/log_usertype.h>
 
 //#define FDLEAK_DEBUG
 #define fdleak_err(format, ...)  do {printk(KERN_ERR "[fdleak]%s %d: " format, __func__, __LINE__, ##__VA_ARGS__);} while (0)
@@ -61,7 +61,7 @@ struct stack_frame_user32 {
     unsigned int    lr;
     unsigned int    pc;
 };
-static unsigned long long stack_entries[MAX_STACK_TRACE_DEPTH] = {0};
+static unsigned long long stack_entries[FDLEAK_MAX_STACK_TRACE_DEPTH] = {0};
 static unsigned int usertype = 0;
 static int tgid_hiview = 0;
 
@@ -335,32 +335,7 @@ EXPORT_SYMBOL(fdleak_ioctl);
 /*****the following session are used for save user stack when specific syscall happen*******/
 static void save_stack_trace32(struct task_struct *task, struct stack_trace *trace)
 {
-    const struct pt_regs *regs = task_pt_regs(task);
-    const void __user *fp = NULL;
-    unsigned long addr = 0;
-
-    fp = (const void __user *)regs->regs[11];
-    if (trace->nr_entries < trace->max_entries)
-        trace->entries[trace->nr_entries++] = regs->pc;
-
-    while (trace->nr_entries < trace->max_entries) {
-        struct stack_frame_user32 frame;
-
-        memset(&frame, 0, sizeof(frame));
-        addr = (unsigned long)fp;
-        if (!access_process_vm(task, addr, (void *)&frame, sizeof(frame), 0))
-            break;
-        if ((unsigned long)fp < regs->sp)
-            break;
-        if (frame.lr)
-            trace->entries[trace->nr_entries++] = frame.lr;
-        if ((unsigned long)fp == frame.fp)
-            break;
-        fp = (const void __user *)frame.fp;
-    }
-
-    if (trace->nr_entries < trace->max_entries)
-        trace->entries[trace->nr_entries++] = ULONG_MAX;
+    trace->entries[trace->nr_entries++] = ULONG_MAX;
 }
 
 static void save_stack_trace64(struct task_struct *task, struct stack_trace *trace)
@@ -397,9 +372,9 @@ static bool fdleak_compare_stack(unsigned long long *stack1, unsigned long long 
 {
     int i = 0;
 
-    for (i = 0; (i < MAX_STACK_TRACE_DEPTH) && (stack1[i] == stack2[i]); i++);
+    for (i = 0; (i < FDLEAK_MAX_STACK_TRACE_DEPTH) && (stack1[i] == stack2[i]); i++);
 
-    return (i == MAX_STACK_TRACE_DEPTH) ? true : false;
+    return (i == FDLEAK_MAX_STACK_TRACE_DEPTH) ? true : false;
 }
 
 static int fdleak_insert_stack(fdleak_wp_id wpid, int pid_index, int probe_id, struct stack_trace *stack)
@@ -411,7 +386,7 @@ static int fdleak_insert_stack(fdleak_wp_id wpid, int pid_index, int probe_id, s
         return -1;
     }
     for (i = 0; i < fdleak_table[wpid].list[pid_index][probe_id].diff_cnt; i++) {
-        if (fdleak_compare_stack(fdleak_table[wpid].list[pid_index][probe_id].items[i].stack, stack->entries))
+        if (fdleak_compare_stack(fdleak_table[wpid].list[pid_index][probe_id].items[i].stack, (unsigned long long *)stack->entries))
         {
             fdleak_table[wpid].list[pid_index][probe_id].hit_cnt[i]++;
             break;
@@ -461,7 +436,7 @@ int fdleak_report(fdleak_wp_id wpid, int probe_id)
 
         memset(stack_entries, 0, sizeof(stack_entries));
         trace.nr_entries    = 0;
-        trace.max_entries    = MAX_STACK_TRACE_DEPTH;
+        trace.max_entries    = FDLEAK_MAX_STACK_TRACE_DEPTH;
         trace.entries        = (unsigned long *)stack_entries;
         trace.skip            = 0;
 
@@ -511,7 +486,7 @@ static ssize_t info_show(struct kobject *kobj, struct kobj_attribute *attr, char
                 for (j = 0; j <  fdleak_table[id].list[pid_index][probe_id].diff_cnt; j++) {
                     len += snprintf(buf + len, SIZE_4K - len , "      [stack %2d : %d hits]\n", j, fdleak_table[id].list[pid_index][probe_id].hit_cnt[j]);
                     check_break(len >= SIZE_4K - 1);
-                    for(k = 0; k < MAX_STACK_TRACE_DEPTH && (fdleak_table[id].list[pid_index][probe_id].items[j].stack[k] != ULONG_MAX)
+                    for(k = 0; k < FDLEAK_MAX_STACK_TRACE_DEPTH && (fdleak_table[id].list[pid_index][probe_id].items[j].stack[k] != ULONG_MAX)
                                 && (fdleak_table[id].list[pid_index][probe_id].items[j].stack[k]); k++) {
                         len += snprintf(buf + len, SIZE_4K - len , "        #%2d: %#llX\n", k, fdleak_table[id].list[pid_index][probe_id].items[j].stack[k]);
                         check_break(len >= SIZE_4K - 1);

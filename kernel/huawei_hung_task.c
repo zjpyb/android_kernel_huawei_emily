@@ -17,7 +17,16 @@
 #include <linux/sysctl.h>
 #include <linux/utsname.h>
 #include <trace/events/sched.h>
-
+#include <linux/timer.h>
+#include <linux/timex.h>
+#include <linux/rtc.h>
+#include <linux/slab.h>
+#include <linux/version.h>
+/* no sched/debug.h before kernel4.14 in which sched_show_task is declared */
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
+#else
+#include <linux/sched/debug.h>
+#endif
 #include <huawei_platform/log/log_jank.h>
 #include <linux/ptrace.h>
 #include <linux/module.h>
@@ -33,16 +42,13 @@
 #include <linux/hisi/rdr_hisi_ap_hook.h>
 #endif
 #ifdef CONFIG_TZDRIVER
-#include <linux/hisi/hisi_teeos.h>
+#include <chipset_common/security/itrustee.h>
 #endif
 #ifdef CONFIG_HW_ZEROHUNG
 #include <chipset_common/hwzrhung/zrhung.h>
 #endif
-#include <linux/timer.h>
-#include <linux/timex.h>
-#include <linux/rtc.h>
-#include <linux/slab.h>
 /****************************MICRO DEFINITION*********************************/
+#define RWSEM_READER_OWNED ((struct task_struct *)1UL)
 #define ENABLE_SHOW_LEN         8
 #define WHITELIST_STORE_LEN     200
 #define IGNORELIST_LENGTH       100
@@ -219,7 +225,7 @@ static int whitelist_panic_cnt = DEFAULT_WHITE_PANIC_CNT;
 static int jankproc_pids[JANK_TASK_MAXNUM];
 static int jankproc_pids_size;
 static int topapp_pid;
-static int last_topapp_pid;
+//static int last_topapp_pid;
 static int found_in_topapp = TOPAPP_HUNG_INIT;
 static int topapp_hung_times = 0;
 static int janklist_dump_cnt = DEFAULT_JANK_DUMP_CNT;
@@ -227,7 +233,10 @@ static int jank_report_limit;
 /*used for app D state detect*/
 static int zygote64_pid;
 static int zygote_pid;
+static int maple_zygote64_pid;
+static bool vmboot_flag = false;
 static int systemserver_pid;
+static int last_systemserver_pid;
 static int watchdog_pid;
 static int applist_dump_cnt = DEFAULT_APP_DUMP_CNT;
 static int applist_panic_cnt = DEFAULT_APP_PANIC_CNT;
@@ -243,12 +252,14 @@ static int ignore_state = IGN_STATE_INIT;
 static int ignorelist_state = IGNORELIST_EMPTY;
 /*how many heartbeat happend after power on*/
 static unsigned long cur_heartbeat;
-static int report_zrhung_ID;
 static int hung_task_dump_and_upload = 0;
 static int time_since_upload = 0;
 static int hung_task_must_panic = 0;
+#ifdef CONFIG_HW_ZEROHUNG
+static int report_zrhung_id;
 static int zrhung_WPhungtask_enable;
-static struct task_hung_upload upload_hungtask = {0};
+#endif
+static struct task_hung_upload upload_hungtask;
 static bool in_suspend = false;
 static struct rtc_time jank_last_tm = {0};
 static struct rtc_time jank_tm = {0};
@@ -270,7 +281,9 @@ extern int freezer_info_show_messages(void);
 #else
 int freezer_info_show_messages(void) {return 0;}
 #endif
+#ifdef CONFIG_HW_ZEROHUNG
 extern int hwhungtask_get_backlight(void);
+#endif
 
 static void hungtask_print_all_ignorelist(void)
 {
@@ -409,8 +422,8 @@ static int get_task_type(pid_t pid, pid_t tgid, struct task_struct *parent)
 
 		if (PID_KTHREAD == ppid) {
 			flag |= TASK_TYPE_KERNEL;
-		} else if ((ppid == zygote_pid || ppid == zygote64_pid) &&
-			   tgid != systemserver_pid) {
+		} else if ((ppid == zygote_pid || ppid == zygote64_pid
+					|| ppid == maple_zygote64_pid) && tgid != systemserver_pid) {
 			flag |= TASK_TYPE_APP;
 		} else if (ppid == PID_INIT) {
 			flag |= TASK_TYPE_NATIVE;
@@ -430,6 +443,9 @@ static void refresh_zygote_pids(void)
 	int max_count = sysctl_hung_task_check_count;
 	int batch_count = HUNG_TASK_BATCHING;
 	struct task_struct *g, *t;
+#ifdef CONFIG_HW_DIE_CATCH
+	unsigned short vipthread_flag = 0;
+#endif
 
 	hungtask_watchdog_nosched_vmrebooting = 1;
 	rcu_read_lock();
@@ -441,18 +457,37 @@ static void refresh_zygote_pids(void)
 			if (!rcu_lock_break(g, t))
 				goto unlock_f;
 		}
-		if (!strncmp(t->comm, "main", TASK_COMM_LEN) &&
-			systemserver_pid) {
-			if (zygote64_pid && !zygote_pid && t->tgid != zygote64_pid) {
-				zygote_pid = t->tgid;
-				pr_err("hungtask: zygote pid-%d.\n", zygote_pid);
+#ifdef CONFIG_HW_DIE_CATCH
+		if (t->signal != NULL) {
+			vipthread_flag = t->signal->unexpected_die_catch_flags;
+		} else {
+			vipthread_flag = 0;
+		}
+#endif
+		if (!strncmp(t->comm, "main", TASK_COMM_LEN)) {
+#ifdef CONFIG_HW_DIE_CATCH
+			if (vipthread_flag == 0)
+				continue;
+#endif
+			if (t->tgid < systemserver_pid && vmboot_flag) {
+				if (zygote64_pid == 0) {
+					zygote64_pid = t->tgid;
+					pr_err("hungtask: zygote64 pid-%d.\n", zygote64_pid);
+				} else {
+					zygote_pid = t->tgid;
+					pr_err("hungtask: zygote pid-%d.\n", zygote_pid);
+					vmboot_flag = false;
+				}
 			}
 		} else if (!strncmp(t->comm, "system_server", TASK_COMM_LEN)) {
 			systemserver_pid = t->tgid;
+			if (systemserver_pid != last_systemserver_pid) {
+				vmboot_flag = true;
+				last_systemserver_pid = systemserver_pid;
+			}
 			if (t->pid == t->tgid) {
-				zygote64_pid = t->real_parent->tgid;
-				zygote_pid = 0;
-				pr_err("hungtask: zygote64 pid-%d, system_server pid-%d.\n", zygote64_pid, systemserver_pid);
+				maple_zygote64_pid = t->real_parent->tgid;
+				pr_err("hungtask: maple_zygote64 pid-%d, system_server pid-%d.\n", maple_zygote64_pid, systemserver_pid);
 			}
 		} else if (!strncmp(t->comm, "watchdog", TASK_COMM_LEN)) {
 			if (systemserver_pid && systemserver_pid == t->tgid) {
@@ -543,10 +578,10 @@ static bool insert_task(struct task_item *item, struct rb_root *root)
 	}
 	rb_link_node(&item->node, parent, p);
 	rb_insert_color(&item->node, root);
-	if (item->task_type & (TASK_TYPE_WHITE | TASK_TYPE_JANK)) {
+	/*if (item->task_type & (TASK_TYPE_WHITE | TASK_TYPE_JANK)) {
 		pr_info("hungtask: insert success pid=%d,tgid=%d,name=%s,"
 		"type=%d\n", item->pid, item->tgid, item->name, item->task_type);
-	}
+	}*/
 	return true;
 }
 
@@ -555,6 +590,7 @@ void show_state_filter_ext(unsigned long state_filter)
 	struct task_struct *g, *p;
 	struct task_item *taskitem;
 	int    exist_frozen = 0;
+	unsigned long long last_arrival, last_queued;
 
 #if BITS_PER_LONG == 32
 	printk(KERN_INFO "  task                PC stack   pid father\n");
@@ -571,6 +607,13 @@ void show_state_filter_ext(unsigned long state_filter)
 		touch_nmi_watchdog();
 		if (((p->state == TASK_RUNNING) || (p->state & state_filter))
 		    && (ignorelist_hash_locate(p->pid, HASH_FIND, ignorelist) == HASH_ERROR)) {
+#ifdef CONFIG_SCHED_INFO
+			last_arrival = p->sched_info.last_arrival;
+			last_queued = p->sched_info.last_queued;
+#else
+			last_arrival = 0;
+			last_queued = 0;
+#endif /* CONFIG_SCHED_INFO */
 			taskitem = find_task(p->pid, &list_tasks);
 			if (unlikely(p->flags & PF_FROZEN)) {
 				exist_frozen++;
@@ -580,15 +623,13 @@ void show_state_filter_ext(unsigned long state_filter)
 						p->comm, p->pid, p->tgid, p->group_leader->comm,
 						taskitem->time_in_D_state * HEARTBEAT_TIME,
 						taskitem->task_type, p->thread.cpu_context.sp,
-						p->sched_info.last_arrival,
-						p->sched_info.last_queued);
+						last_arrival, last_queued);
 				} else {
 					pr_err("hungtask:name=%s,PID=%d,tgid=%d,tgname=%s a new FROZEN task"
 						",SP=0x%08lx,la:%llu/lq:%llu.\n",
 						p->comm, p->pid, p->tgid, p->group_leader->comm,
 						p->thread.cpu_context.sp,
-						p->sched_info.last_arrival,
-						p->sched_info.last_queued);
+						last_arrival, last_queued);
 				}
 			} else {
 				if (taskitem) {
@@ -597,12 +638,12 @@ void show_state_filter_ext(unsigned long state_filter)
 						taskitem->pid, p->tgid, p->group_leader->comm, taskitem->task_type,
 						taskitem->time_in_D_state * HEARTBEAT_TIME,
 						p->thread.cpu_context.sp,
-						p->sched_info.last_arrival, p->sched_info.last_queued);
+						last_arrival, last_queued);
 				} else {
 					pr_err("hungtask:name=%s,PID=%d,tgid=%d,tgname=%s,SP=0x%08lx,la:%llu/lq:%llu.\n",
 						p->comm, p->pid, p->tgid,
 						p->group_leader->comm, p->thread.cpu_context.sp,
-						p->sched_info.last_arrival, p->sched_info.last_queued);
+						last_arrival, last_queued);
 				}
 				sched_show_task(p);
 			}
@@ -610,7 +651,6 @@ void show_state_filter_ext(unsigned long state_filter)
 	}
 	touch_all_softlockup_watchdogs();
 #ifdef CONFIG_SCHED_DEBUG
-	sysrq_sched_debug_show();
 #endif
 	rcu_read_unlock();
 	/*
@@ -648,7 +688,9 @@ static void jank_print_task_wchan(struct task_struct *task)
 	snprintf(report_jank_text, sizeof(report_jank_text),
 			"hungtask-janklist Blocked task %s pid:%d tgid:%d tgname:%s wchan %s.\n",
 			task->comm, task->pid, task->tgid, task->group_leader->comm, symname);
+#ifdef CONFIG_HW_ZEROHUNG
 	zrhung_send_event(ZRHUNG_WP_HTSK_WARNING, NULL, report_jank_text);
+#endif
 }
 
 static void do_dump_task(struct task_struct *task)
@@ -694,6 +736,13 @@ static void do_dump(struct task_struct *task, int flag, int time_in_D_state)
 		pr_err("\"echo 0 > /proc/sys/kernel/hung_task_timeout_secs\""
 		       " disables this message.\n");
 		do_dump_task(task);
+#ifdef CONFIG_RWSEM_SPIN_ON_OWNER
+		if (task->mm && task->mm->mmap_sem.owner &&
+		    task->mm->mmap_sem.owner != RWSEM_READER_OWNED) {
+			pr_err("dump the semaphore owner task\n");
+			do_dump_task(task->mm->mmap_sem.owner);
+		}
+#endif
 		touch_nmi_watchdog();
 		if (flag & FLAG_DUMP_WHITE && (!hung_task_dump_and_upload)) {
 			hung_task_dump_and_upload++;
@@ -786,10 +835,10 @@ static void generate_ignorelist(struct task_struct *t)
 }
 static void remove_list_tasks(struct task_item *item)
 {
-	if(item->task_type & (TASK_TYPE_WHITE | TASK_TYPE_JANK)) {
+	/*if(item->task_type & (TASK_TYPE_WHITE | TASK_TYPE_JANK)) {
 		pr_info("hungtask: remove from list_tasks pid=%d,tgid=%d,"
 			"name=%s\n", item->pid, item->tgid, item->name);
-	}
+	}*/
 	rb_erase(&item->node, &list_tasks);
 	kfree(item);
 }
@@ -840,6 +889,7 @@ static void hungtask_report_zrhung(int event)
 	char report_buf_tag_cmd[REPORT_MSGLENGTH + 2] = {0};
 	char report_buf_text[REPORT_MSGLENGTH] = {0};
 	char report_name[TASK_COMM_LEN + 1] = {0};
+	char cmd[MAX_ZRHUNG_CMD_BUF_SIZE] = {0};
 	int report_pid = 0, report_hungtime = 0, report_tasktype = 0;
 
 	if (zrhung_WPhungtask_enable != ZRHUNG_HUNGTASK_ENABLE)
@@ -848,14 +898,14 @@ static void hungtask_report_zrhung(int event)
 		return;
 
 	if (event & HUNGTASK_EVENT_WHITELIST) {
-		snprintf(report_buf_tag, sizeof(report_buf_tag), "hungtask_whitelist_%d", report_zrhung_ID);
+		snprintf(report_buf_tag, sizeof(report_buf_tag), "hungtask_whitelist_%d", report_zrhung_id);
 		strncpy(report_name, upload_hungtask.name, TASK_COMM_LEN);
 		report_pid = upload_hungtask.pid;
 		report_tasktype = TASK_TYPE_WHITE;
 		report_hungtime = whitelist_dump_cnt * HEARTBEAT_TIME;
 		report_load = true;
 	} else if (event & HUNGTASK_EVENT_LAZYWATCHDOG) {
-		snprintf(report_buf_tag, sizeof(report_buf_tag), "hungtask_lazydog_%d", report_zrhung_ID);
+		snprintf(report_buf_tag, sizeof(report_buf_tag), "hungtask_lazydog_%d", report_zrhung_id);
 		snprintf(report_name, TASK_COMM_LEN, "vmwatchdog");
 		report_pid = watchdog_pid;
 		report_tasktype = TASK_TYPE_NOSCHEDULE;
@@ -863,7 +913,7 @@ static void hungtask_report_zrhung(int event)
 		upload_hungtask.flag = FLAG_DUMP_NOSCHEDULE;
 		report_load = true;
 	} else if (event & HUNGTASK_EVENT_TOPAPP) {
-		snprintf(report_buf_tag, sizeof(report_buf_tag), "hungtask_topapp_%d", report_zrhung_ID);
+		snprintf(report_buf_tag, sizeof(report_buf_tag), "hungtask_topapp_%d", report_zrhung_id);
 		strncpy(report_name, upload_hungtask.name, TASK_COMM_LEN);
 		report_pid = upload_hungtask.pid;
 		report_tasktype = TASK_TYPE_APP;
@@ -878,7 +928,6 @@ static void hungtask_report_zrhung(int event)
 		pr_err("hungtask: HUNGTASK_EVENT_WHITELIST happens , report to zrhung!\n");
 	if (event & HUNGTASK_EVENT_LAZYWATCHDOG) {
 		pr_err("hungtask: HUNGTASK_EVENT_LAZYWATCHDOG happens in this cycle!\n");
-		char cmd[MAX_ZRHUNG_CMD_BUF_SIZE] = {0};
 		snprintf(cmd, MAX_ZRHUNG_CMD_BUF_SIZE, "P=%d", systemserver_pid);
 		zrhung_send_event(ZRHUNG_WP_HUNGTASK, cmd, "hungtask: vmreboot watchdog not scheduled for 39s.");
 	}
@@ -899,7 +948,7 @@ static void hungtask_report_zrhung(int event)
 		pr_err("hungtask: %s end.\n", report_buf_tag);
 		snprintf(report_buf_tag_cmd, sizeof(report_buf_tag_cmd), "R=%s", report_buf_tag);
 		zrhung_send_event(ZRHUNG_WP_HUNGTASK, report_buf_tag_cmd, report_buf_text);
-		report_zrhung_ID++;
+		report_zrhung_id++;
 	}
 }
 #endif
@@ -909,15 +958,19 @@ static int hungtask_check_topapp(void)
 		topapp_hung_times = 0;
 	if (topapp_hung_times > topapp_hung_cnt) {
 		topapp_hung_times = 0;
+#ifdef CONFIG_HW_ZEROHUNG
 		if (hwhungtask_get_backlight() > 0)
 			return HUNGTASK_EVENT_TOPAPP;
+#endif
 	}
 	return 0;
 }
 static int watchdog_nosched_check(void)
 {
 	int ret = 0;
-
+#ifdef CONFIG_HW_ZEROHUNG
+	char cmd[MAX_ZRHUNG_CMD_BUF_SIZE] = {0};
+#endif
 	if (!hungtask_watchdog_nosched_enable || !hungtask_watchdog_nosched_firstkick)
 		return ret;
 
@@ -940,7 +993,6 @@ static int watchdog_nosched_check(void)
 			pr_err("hungtask: vmreboot watchdog not scheduled for more"
 				"than %d seconds.\n", noschedule_panic_cnt * HEARTBEAT_TIME);
 #ifdef CONFIG_HW_ZEROHUNG
-			char cmd[MAX_ZRHUNG_CMD_BUF_SIZE] = {0};
 			snprintf(cmd, MAX_ZRHUNG_CMD_BUF_SIZE, "S,P=%d", systemserver_pid);
 			zrhung_send_event(ZRHUNG_WP_HUNGTASK, cmd, "hungtask: vmreboot watchdog not scheduled for 120s.");
 #endif
@@ -963,8 +1015,11 @@ static void post_process(void)
 {
 	struct rb_node *n;
 	int i = 0;
-	int hungevent = 0, err = 0;
+	int hungevent = 0;
+#ifdef CONFIG_HW_ZEROHUNG
+	int err;
 	char config_str[ZRHUNG_CONFIG_LENGTH] = {0};
+#endif
 
 	if (hung_task_dump_and_upload == HUNG_TASK_UPLOAD_ONCE) {
 		hungevent |= HUNGTASK_EVENT_WHITELIST;
@@ -1061,9 +1116,11 @@ static int dump_task_wa(struct task_item *item, int dump_cnt,
 		item->dump_wa = 1;
 		if (!hung_task_dump_and_upload) {
 			if (task->flags & PF_FROZEN) {
+#ifndef CONFIG_FINAL_RELEASE
 				pr_err("hungtask: Task %s:%d tgid:%d type:%d is FROZEN for %ds.\n",
 						item->name, item->pid, item->tgid, item->task_type,
 						item->time_in_D_state * HEARTBEAT_TIME);
+#endif
 			} else {
 				pr_err("hungtask: Ready to dump a task %s.\n", item->name);
 				do_dump(task, flag, item->time_in_D_state);
@@ -1128,8 +1185,10 @@ static void deal_task(struct task_item *item, struct task_struct *task, bool is_
 		}
 	} else if (!(item->task_type & (TASK_TYPE_WHITE | TASK_TYPE_APP))) {
 		if (item->dump_wa > other_log_cnt && item->time_in_D_state < HUNG_ONE_HOUR) {
+#ifndef CONFIG_FINAL_RELEASE
 			pr_err("hungtask: Unconcerned task %s:%d blocked more than %d seconds\n",
 				item->name, item->pid, item->time_in_D_state * HEARTBEAT_TIME);
+#endif
 			item->dump_wa = 1;
 			any_dumped_num++;
 		}
@@ -1461,6 +1520,8 @@ static ssize_t monitorlist_store(struct kobject *kobj,
 			if(strlen(whitetmplist[index].name) > 0)
 				whitelistEmpty = false;
 			index++;
+			if (index >= CONCERNLIST_LENGTH)
+				break;
 		}
 		if (!cur)
 			break;

@@ -3,7 +3,7 @@
  *
  * huawei antenna board match driver
  *
-*/
+ */
 
 #ifndef _ANTENNA_BOARD_ADC_MATCH
 #define _ANTENNA_BOARD_ADC_MATCH
@@ -12,7 +12,7 @@
 #define DEFAULT_ANTENNA_BOARD_ADC_CHANNEL (7)
 
 struct antenna_adc_match_info {
-    struct device *dev;
+	struct device *dev;
 };
 
 #endif

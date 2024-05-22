@@ -1,11 +1,8 @@
 /*
- * hw_rscan_interface.h
- *
- * the hw_rscan_interface.h for TEE root scan using.
- *
- * likun <quentin.lee@huawei.com>
- *
- * Copyright (c) 2001-2021, Huawei Tech. Co., Ltd. All rights reserved.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2016-2018. All rights reserved.
+ * Description: the hw_rscan_interface.h for TEE root scan using
+ * Author: likun <quentin.lee@huawei.com>
+ * Create: 2016-06-18
  */
 
 #ifndef _HW_RSCAN_INTERFACE_H_
@@ -16,7 +13,6 @@
 #endif
 
 #define MAX_RPROC_SIZE 10240 /* 10k */
-
 
 /* check all items */
 #define RSOPID_ALL (0xFFFFFFFF)
@@ -36,18 +32,18 @@ struct rscan_skip_flags {
 };
 
 struct rscan_result_dynamic {
-	uint8_t kcode[HASH_DIGEST_SIZE];	/* kernel code hash */
-	uint8_t syscalls[HASH_DIGEST_SIZE];	/* system call table hash */
-	uint8_t sehooks[HASH_DIGEST_SIZE]; /* struct security_operations hash */
-	int seenforcing;	/* SE-Linux state */
-	char rprocs[MAX_RPROC_SIZE];	/* root processes */
-	int setid;                      /* get setids */
+	uint8_t kcode[HASH_DIGEST_SIZE];        /* kernel code hash */
+	uint8_t syscalls[HASH_DIGEST_SIZE];     /* system call table hash */
+	uint8_t sehooks[HASH_DIGEST_SIZE];      /* struct security_operations hash */
+	int seenforcing;                        /* SE-Linux state */
+	char rprocs[MAX_RPROC_SIZE];            /* root processes */
+	int setid;                              /* get setids */
 };
 
 struct rscan_status {
-	uint32_t cpuload;	/* CPU usage: 0~100 */
-	uint32_t battery;	/* Remaining battery: 0~100 */
-	uint32_t charging;	/* Is it charging? 0~1 */
+	uint32_t cpuload;       /* CPU usage: 0~100 */
+	uint32_t battery;       /* Remaining battery: 0~100 */
+	uint32_t charging;      /* Is it charging? 0~1 */
 
 	/* Current time in UNIX Epoch time. same as the time() systemcall */
 	uint32_t time;
@@ -61,15 +57,15 @@ struct rscan_status {
 };
 
 enum HW_RSCAN_ERR_CODE {
-	RSCAN_SUCC = 0x0,	/* succeed */
-	RSCAN_ERR_SECURE_MODE = 0xFFFF0001, /* env not ready for secure mode */
-	RSCAN_ERR_NULL_POINTER = 0xFFFF0002,	/* null pointer error */
-	RSCAN_ERR_KOBJ_ADD = 0xFFFF0003,	/* creat kobject failed */
-	RSCAN_ERR_KSET_ADD = 0xFFFF0004,	/* creat kset failed */
-	RSCAN_ERR_SCANNER_INIT = 0xFFFF0005,	/* scanner init failed */
-	RSCAN_ERR_KOBJECT_EVENT = 0xFFFF0006,	/* err in kobject_uevent */
+	RSCAN_SUCC = 0x0,                       /* succeed */
+	RSCAN_ERR_SECURE_MODE = 0xFFFF0001,     /* env not ready for secure mode */
+	RSCAN_ERR_NULL_POINTER = 0xFFFF0002,    /* null pointer error */
+	RSCAN_ERR_KOBJ_ADD = 0xFFFF0003,        /* creat kobject failed */
+	RSCAN_ERR_KSET_ADD = 0xFFFF0004,        /* creat kset failed */
+	RSCAN_ERR_SCANNER_INIT = 0xFFFF0005,    /* scanner init failed */
+	RSCAN_ERR_KOBJECT_EVENT = 0xFFFF0006,   /* err in kobject_uevent */
 
-	RSCAN_ERR_GENARIC = 0xFFFFF000,	/* genaric error */
+	RSCAN_ERR_GENARIC = 0xFFFFF000,         /* genaric error */
 };
 
 /*

@@ -4,6 +4,7 @@ EXTRA_CFLAGS += -Idrivers/hisi/hi64xx_dsp/
 EXTRA_CFLAGS += -Idrivers/hisi/soundtrigger/
 EXTRA_CFLAGS += -Isound/soc/codecs/hisi/hi6xxx_fpga_test/
 EXTRA_CFLAGS += -Isound/soc/codecs/hisi/hs_auto_calib/
+EXTRA_CFLAGS += -Idrivers/hisi/mntn/blackbox/platform_hifi/
 
 ifeq ($(CLT_IV), true)
 EXTRA_CFLAGS += -DCLT_AUDIO
@@ -14,13 +15,14 @@ EXTRA_CFLAGS += -DANC_HEADSET
 EXTRA_CFLAGS += -DINVERT_HEADSET
 endif
 
-ifneq ($(TARGET_BUILD_VARIANT),user)
-	EXTRA_CFLAGS += -DCONFIG_HUAWEI_HEADSET_DEBUG
-	EXTRA_CFLAGS += -Idrivers/devkit/audiokit/headset_debug/
+ifeq ($(CONFIG_HISI_AUDIO_DEBUG),y)
+EXTRA_CFLAGS += -DCONFIG_HUAWEI_HEADSET_DEBUG
+EXTRA_CFLAGS += -Idrivers/devkit/audiokit/headset_debug/
 ifeq ($(kcov),true)
 EXTRA_CFLAGS += -DKCOV_AUDIO
 else
 EXTRA_CFLAGS += -DENABLE_HI64XX_CODEC_DEBUG
+obj-y += hi64xx_mad.o
 endif
 #ifeq ($(CONFIG_SND_SOC_CODEC_STUB),y)
 #EXTRA_CFLAGS += -DHI6XXX_FPGA_CODEC_STUB

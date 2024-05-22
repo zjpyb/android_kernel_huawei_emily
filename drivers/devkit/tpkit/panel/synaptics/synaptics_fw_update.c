@@ -1212,10 +1212,13 @@ bool synap_check_fw_version(void)
 	}
 
 	int size = FW_IMAGE_OFFSET + header.firmware_size;
-	
-	if(fwu->image_size < size) {
-			TS_LOG_ERR("config_data = %p , fw_image = %p  , header size  =%d\n",fwu->config_data ,fw_image,header.firmware_size);
-			return false;
+
+	if (fwu->image_size < size) {
+		TS_LOG_ERR("config_data = %pK, fw_image = %pK, header size =%d\n",
+			fwu->config_data,
+			fw_image,
+			header.firmware_size);
+		return false;
 	}
 
 	flash_area = fwu_go_nogo(&header);

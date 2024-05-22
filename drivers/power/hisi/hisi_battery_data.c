@@ -22,7 +22,7 @@
 
 #include <huawei_platform/power/power_dsm.h>
 #ifdef CONFIG_HUAWEI_BATTERY_INFORMATION
-#include <huawei_platform/power/batt_info.h>
+#include <huawei_platform/power/batt_info_pub.h>
 #endif
 
 
@@ -53,7 +53,11 @@ static struct hisi_coul_battery_data **p_data = NULL;
 static unsigned int hisi_bat_data_size = 0;	/* used to store number of bat types defined in DTS */
 /* used to judege whether bat_drv works fine or not, 1 means yes,0 means no */
 static int bat_param_status = 0;
+static int default_batt_id_index = -1;
 static int temp_points[] = { -20, -10, 0, 25, 40, 60 };
+#ifdef CONFIG_HISI_ASW
+struct device_node *g_np;
+#endif /* CONFIG_HISI_ASW */
 
 static int get_battery_data_by_id_volt(unsigned int id_index, unsigned int id_voltage)
 {
@@ -82,7 +86,7 @@ static int get_battery_data_by_id_sn(unsigned int id_index)
 		return -EINVAL;
 
 	ret = get_battery_type(id_sn);
-	if (ret == BATTERY_DRIVER_FAIL) {
+	if (ret) {
 		bat_data_err("get id_sn from ic fail!\n");
 		return -EINVAL;
 	}
@@ -121,10 +125,18 @@ struct hisi_coul_battery_data *get_battery_data(unsigned int id_voltage)
 		}
 	}
 	if (i == hisi_bat_data_size) {
-		i = 0;
-		if (!strstr(saved_command_line, "androidboot.swtype=factory")) {
-			power_dsm_dmd_report_format(POWER_DSM_BATTERY_DETECT, DSM_BATTERY_DETECT_ERROR_NO, \
-				"Battery id is invalid. Use the default battery params!\n");
+		if ((default_batt_id_index >= 0) &&
+			(default_batt_id_index < hisi_bat_data_size)) {
+			i = default_batt_id_index;
+			bat_data_info("use default battery of index %d\n", default_batt_id_index);
+		} else {
+			i = 0;
+			if (!strstr(saved_command_line, "androidboot.swtype=factory")) {
+				power_dsm_dmd_report_format(POWER_DSM_BATTERY_DETECT,
+					DSM_BATTERY_DETECT_ERROR_NO,
+					"Battery id is invalid. Use the default battery params!\n");
+			}
+			p_data[i]->id_status = BAT_ID_INVALID;
 		}
 	}
 	bat_data_info("current battery name is %s\n", p_data[i]->batt_brand);
@@ -408,6 +420,9 @@ static int get_dat(struct device_node *np, struct hisi_coul_battery_data *pdat)
 	hisi_bat_info("default_rbatt_mohm is %d\n", pdat->default_rbatt_mohm);
 	/* vbat_max */
 	ret = of_property_read_u32(np, "vbat_max", (unsigned int *)(&(pdat->vbatt_max)));
+#ifdef CONFIG_HISI_ASW
+	pdat->vbatt_max_backup = pdat->vbatt_max;
+#endif /* CONFIG_HISI_ASW */
 	if (ret) {
 		bat_data_err("get vbat_max failed\n");
 		return -EINVAL;
@@ -741,10 +756,14 @@ static int hisi_battery_data_probe(struct platform_device *pdev)
 
 	bat_param_status = 0;
 	np = pdev->dev.of_node;
+#ifdef CONFIG_HISI_ASW
+	g_np = pdev->dev.of_node;
+#endif /* CONFIG_HISI_ASW */
 	if (NULL == np) {
 		bat_data_err("get device node failed\n");
 		goto fatal_err;
 	}
+
 	/* get numeber of types */
 	for (i = 0;; ++i) {
 		if (!of_parse_phandle(np, "batt_name", i))
@@ -798,6 +817,42 @@ fatal_err:
 	BUG();
 	return -EINVAL;
 }
+
+#ifdef CONFIG_HISI_ASW
+int asw_protect_load_batt_data(void)
+{
+	int i;
+	int retval;
+	struct device_node *bat_node = NULL;
+	struct device_node *np = g_np;
+
+	if (!np) {
+		bat_data_err("get device node failed\n");
+		return -EINVAL;
+	}
+
+	for (i = 0; ; ++i) {
+		bat_node = of_parse_phandle(np, "batt_name", i);
+		if (!bat_node) {
+			bat_data_err("bat_node [%d] failed\n", i);
+			break;
+		}
+
+		retval = get_dat(bat_node, p_data[i]);
+		if (retval) {
+			bat_data_err("get_dat[%d] failed\n", i);
+			return -EINVAL;
+		}
+	}
+
+	if (i == 0) {
+		bat_data_err("hisi_bat_data error!\n");
+		return -EINVAL;
+	}
+
+	return retval;
+}
+#endif /* CONFIG_HISI_ASW */
 
 static int hisi_battery_data_remove(struct platform_device *pdev)
 {

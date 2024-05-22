@@ -15,10 +15,11 @@
 
 //lint -save -e846 -e866 -e826 -e785 -e838 -e715 -e747 -e774 -e778 -e732 -e731 -e569 -e650 -e31
 #define I2S(i) container_of((i), sensor_t, intf)
+#define Sensor2Pdev(s) container_of((s).dev, struct platform_device, dev)
 static hwsensor_vtbl_t s_imx319_vtbl;
 static bool power_on_status = false;//false: power off, true:power on
 int imx319_config(hwsensor_intf_t* si, void  *argp);
-static hwsensor_intf_t *s_intf = NULL;
+static struct platform_device *s_pdev = NULL;
 
 /* imx319 cs udp project */
 static struct sensor_power_setting imx319_power_setting[] = {
@@ -431,9 +432,6 @@ static int imx319_match_id(
 
     if (cdata->data != SENSOR_INDEX_INVALID)
     {
-        /*
-        hwsensor_writefile(sensor->board_info->sensor_index, cdata->cfg.name);
-        */
         cam_info("%s, cdata->cfg.name = %s", __func__,cdata->cfg.name );
     }
     cam_info("%s TODO.  cdata->data=%d", __func__, cdata->data);
@@ -542,11 +540,11 @@ static int32_t imx319_platform_probe(struct platform_device* pdev)
         cam_err("%s hwsensor_register failed rc %d\n", __func__, rc);
         return -ENODEV;
     }
-    s_intf = intf;
+    s_pdev = pdev;
     rc = rpmsg_sensor_register(pdev, (void*)sensor);
     if (rc < 0) {
-        hwsensor_unregister(intf);
-        s_intf = NULL;
+        hwsensor_unregister(s_pdev);
+        s_pdev = NULL;
         cam_err("%s rpmsg_sensor_register failed rc %d\n", __func__, rc);
         return -ENODEV;
     }
@@ -563,9 +561,9 @@ static int __init imx319_init_module(void)
 
 static void __exit imx319_exit_module(void)
 {
-    if (NULL != s_intf) {
-        hwsensor_unregister(s_intf);
-        s_intf = NULL;
+    if (NULL != s_pdev) {
+        hwsensor_unregister(s_pdev);
+        s_pdev = NULL;
     }
 
     platform_driver_unregister(&s_imx319_driver);

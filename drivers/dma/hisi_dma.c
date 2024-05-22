@@ -142,7 +142,7 @@ static void hisi_dma_pause_dma(struct hisi_dma_phy *phy, struct hisi_dma_dev *d,
 		writel(val, phy->base + CX_CONFIG);
 		/* Wait for channel inactive */
 		for (timeout = 2000; timeout > 0; timeout--) {
-			if (!(BIT(phy->idx) & readl(d->base + CH_STAT)))
+			if (!(BIT(phy->idx) & ((u32)readl(d->base + CH_STAT))))
 				break;
 			writel(val, phy->base + CX_CONFIG);
 			udelay(1);
@@ -311,7 +311,7 @@ static int hisi_dma_start_txd(struct hisi_dma_chan *c)
 
 static void hisi_dma_tasklet(unsigned long arg)
 {
-	struct hisi_dma_dev *d = (struct hisi_dma_dev *)arg;
+	struct hisi_dma_dev *d = (struct hisi_dma_dev *)(uintptr_t)arg;
 	struct hisi_dma_phy *p;
 	struct hisi_dma_chan *c, *cn;
 	unsigned pch, pch_alloc = 0;
@@ -521,7 +521,7 @@ static struct dma_async_tx_descriptor *hisi_dma_prep_memcpy(
 		dev_dbg(chan->device->dev, "vchan %pK: kzalloc fail\n", (void*)&c->vc);
 		return NULL;
 	}
-	ds->desc_hw_lli = __virt_to_phys((unsigned long)&ds->desc_hw[0]);/*lint !e648*/
+	ds->desc_hw_lli = __virt_to_phys((uintptr_t)&ds->desc_hw[0]);/*lint !e648*/
 	ds->size = len;
 	ds->desc_num = num;
 	num = 0;
@@ -580,7 +580,7 @@ static struct dma_async_tx_descriptor *hisi_dma_prep_slave_sg(
 		dev_dbg(chan->device->dev, "vchan %pK: kzalloc fail\n", &c->vc);
 		return NULL;
 	}
-	ds->desc_hw_lli = __virt_to_phys((unsigned long)&ds->desc_hw[0]);/*lint !e648*/
+	ds->desc_hw_lli = __virt_to_phys((uintptr_t)&ds->desc_hw[0]);/*lint !e648*/
 	ds->desc_num = num;
 	num = 0;
 
@@ -672,7 +672,7 @@ static int hisi_dma_config(struct dma_chan *chan, struct dma_slave_config *confi
 		c->ccfg |= CCFG_MEM2PER | CCFG_EN;
 
 		/* specific request line */
-		c->ccfg |= c->vc.chan.chan_id << 4;
+		c->ccfg |= ((unsigned int)c->vc.chan.chan_id) << 4;
 		return 0;
 }
 
@@ -1180,7 +1180,7 @@ static int hisi_dma_probe(struct platform_device *op)
 
 	spin_lock_init(&d->lock);
 	INIT_LIST_HEAD(&d->chan_pending);
-	tasklet_init(&d->task, hisi_dma_tasklet, (unsigned long)d);
+	tasklet_init(&d->task, hisi_dma_tasklet, (uintptr_t)d);
 	platform_set_drvdata(op, d);
 	dev_info(&op->dev, "initialized\n");
 

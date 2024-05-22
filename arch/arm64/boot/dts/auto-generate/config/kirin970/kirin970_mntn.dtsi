@@ -11,7 +11,7 @@
   /{
     nve_himntn:himntn {
         compatible = "hisilicon,hisi-himntn";
-        himntn = "011111111111101000101100000000000000001000001";
+        himntn = "01111111111110100010110000000000000000101000";
     };
 
     rdr_ap_adapter {

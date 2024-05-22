@@ -324,7 +324,8 @@ struct mmc_card {
 #define MMC_QUIRK_BROKEN_IRQ_POLLING	(1<<11)	/* Polling SDIO_CCCR_INTx could create a fake interrupt */
 #define MMC_QUIRK_TRIM_BROKEN	(1<<12)		/* Skip trim */
 #define MMC_QUIRK_BROKEN_HPI	(1<<13)		/* Disable broken HPI support */
-
+#define MMC_QUIRK_DISABLE_PON   (1<<23)
+#define MMC_QUIRK_DISABLE_CMD_SEVEN_FIVE_INSUSPEND   (1<<24)	/*Cancel cmd5/cmd7 send for micron32L when sleep/awake*/
 
 	unsigned int		erase_size;	/* erase size in sectors */
  	unsigned int		erase_shift;	/* if erase unit is power 2 */
@@ -502,12 +503,12 @@ struct mmc_fixup {
 
 static inline void __maybe_unused add_quirk(struct mmc_card *card, int data)
 {
-	card->quirks |= data;
+	card->quirks |= (unsigned int)data;
 }
 
 static inline void __maybe_unused remove_quirk(struct mmc_card *card, int data)
 {
-	card->quirks &= ~data;
+	card->quirks &= ~(unsigned int)data;
 }
 
 #define mmc_card_mmc(c)		((c)->type == MMC_TYPE_MMC)
@@ -557,14 +558,14 @@ static inline void __maybe_unused remove_quirk(struct mmc_card *card, int data)
 static inline void __maybe_unused add_quirk_mmc(struct mmc_card *card, int data)
 {
 	if (mmc_card_mmc(card))
-		card->quirks |= data;
+		card->quirks |= (unsigned int)data;
 }
 
 static inline void __maybe_unused remove_quirk_mmc(struct mmc_card *card,
 						   int data)
 {
 	if (mmc_card_mmc(card))
-		card->quirks &= ~data;
+		card->quirks &= ~(unsigned int)data;
 }
 
 /*

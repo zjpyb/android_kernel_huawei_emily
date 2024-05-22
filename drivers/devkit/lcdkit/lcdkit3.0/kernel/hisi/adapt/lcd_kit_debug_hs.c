@@ -18,6 +18,8 @@
 #include "lcd_kit_parse.h"
 #include "lcd_kit_power.h"
 
+static bool dbg_panel_power_on(void);
+
 static int dbg_fps_updt_support(int val)
 {
 	disp_info->fps.support = val;
@@ -213,6 +215,75 @@ static int dbg_prefixsharptwo_d_support(int val)
 	return LCD_KIT_OK;
 }
 
+static void hisifb_frame_refresh(struct hisi_fb_data_type *hisifd)
+{
+	#define ENVP_LEN 2
+	#define BUF_LEN 64
+	char *envp[ENVP_LEN] = {0};
+	char buf[BUF_LEN];
+
+	if (!hisifd) {
+		LCD_KIT_ERR("hisifd is null\n");
+		return;
+	}
+
+	snprintf(buf, sizeof(buf), "Refresh=1");
+	envp[0] = buf;
+	envp[1] = NULL;
+	kobject_uevent_env(&(hisifd->fbi->dev->kobj), KOBJ_CHANGE, envp);
+}
+
+static int dbg_video_idle_mode_support(int val)
+{
+	#define BACKLIGHT_DELAY 100
+	struct hisi_fb_data_type *hisifd = hisifd_list[PRIMARY_PANEL_IDX];
+	struct hisi_panel_info *pinfo = NULL;
+	bool panel_power_on = dbg_panel_power_on();
+	uint32_t bl_level_cur;
+	int ret;
+
+	if (!hisifd) {
+		LCD_KIT_ERR("hisifd is null\n");
+		return LCD_KIT_FAIL;
+	}
+
+	pinfo = &hisifd->panel_info;
+	if (!pinfo) {
+		LCD_KIT_ERR("pinfo is null\n");
+		return LCD_KIT_FAIL;
+	}
+
+	/*lcd panel off*/
+	if (panel_power_on) {
+		bl_level_cur = hisifd->bl_level;
+		hisifb_set_backlight(hisifd, 0, false);
+		ret = hisi_fb_blank_sub(FB_BLANK_POWERDOWN, hisifd->fbi);
+		if (ret != 0) {
+			LCD_KIT_ERR("fb%d, blank_mode(%d) failed!\n",
+				hisifd->index, FB_BLANK_POWERDOWN);
+			return LCD_KIT_FAIL;
+		}
+	}
+
+	pinfo->video_idle_mode = val;
+
+	/*lcd panel on*/
+	if (panel_power_on) {
+		ret = hisi_fb_blank_sub(FB_BLANK_UNBLANK, hisifd->fbi);
+		if (ret != 0) {
+			HISI_FB_ERR("fb%d, blank_mode(%d) failed!\n",
+				hisifd->index, FB_BLANK_UNBLANK);
+			return LCD_KIT_FAIL;
+		}
+		hisifb_frame_refresh(hisifd);
+		msleep(BACKLIGHT_DELAY);
+		hisifb_set_backlight(hisifd,
+			bl_level_cur ? bl_level_cur : hisifd->bl_level, false);
+	}
+	LCD_KIT_INFO("pinfo->video_idle_mode = %d\n", pinfo->video_idle_mode);
+	return LCD_KIT_OK;
+}
+
 static int dbg_cmd_type(int val)
 {
 	struct hisi_fb_data_type* hisifd = NULL;
@@ -249,7 +320,7 @@ static int dbg_pxl_clk(int val)
 		return LCD_KIT_FAIL;
 	}
 	pinfo->pxl_clk_rate = val * 1000000UL;
-	LCD_KIT_INFO("pinfo->pxl_clk_rate = %d\n", pinfo->pxl_clk_rate);
+	LCD_KIT_INFO("pinfo->pxl_clk_rate = %ul\n", pinfo->pxl_clk_rate);
 	return LCD_KIT_OK;
 }
 
@@ -468,7 +539,7 @@ static int dbg_mipi_dsi_bit_clk(int val)
 		LCD_KIT_ERR("pinfo is null\n");
 		return LCD_KIT_FAIL;
 	}
-	pinfo->mipi.dsi_bit_clk = val;
+	pinfo->mipi.dsi_bit_clk_upt = val;
 	LCD_KIT_INFO("pinfo->mipi.dsi_bit_clk = %d\n", pinfo->mipi.dsi_bit_clk);
 	return LCD_KIT_OK;
 }
@@ -855,6 +926,54 @@ static int dbg_set_voltage(void)
 	return ret;
 }
 
+static int dbg_dsi_cmds_rx(uint8_t* out, struct lcd_kit_dsi_panel_cmds* cmds)
+{
+	struct hisi_fb_data_type* hisifd = hisifd_list[PRIMARY_PANEL_IDX];
+
+	if (hisifd == NULL) {
+		LCD_KIT_ERR("hisifd is null\n");
+		return LCD_KIT_FAIL;
+	}
+	return lcd_kit_dsi_cmds_rx(hisifd,out,cmds);
+}
+
+static bool dbg_panel_power_on(void)
+{
+	struct hisi_fb_data_type* hisifd = hisifd_list[PRIMARY_PANEL_IDX];
+	bool panel_power_on = false;
+
+	if (hisifd == NULL) {
+		LCD_KIT_ERR("hisifd is null\n");
+		return false;
+	}
+
+	down(&hisifd->blank_sem);
+	panel_power_on = hisifd->panel_power_on;
+	up(&hisifd->blank_sem);
+	return panel_power_on;
+}
+
+static void dbg_esd_check_func(void)
+{
+	struct hisi_fb_data_type* hisifd = hisifd_list[PRIMARY_PANEL_IDX];
+	struct hisi_panel_info* pinfo = NULL;
+
+	if (hisifd == NULL) {
+		LCD_KIT_ERR("hisifd is null\n");
+		return;
+	}
+	pinfo = &hisifd->panel_info;
+	if (pinfo == NULL) {
+		LCD_KIT_ERR("pinfo is null\n");
+		return;
+	}
+
+	pinfo->esd_enable = 1;
+	if (hisifd->esd_register) {
+		hisifd->esd_register(hisifd->pdev);
+	}
+}
+
 struct lcd_kit_dbg_ops hisi_dbg_ops = {
 	.fps_updt_support = dbg_fps_updt_support,
 	.quickly_sleep_out_support = dbg_quickly_sleep_out_support,
@@ -867,6 +986,7 @@ struct lcd_kit_dbg_ops hisi_dbg_ops = {
 	.xcc_support = dbg_xcc_support,
 	.arsr1psharpness_support = dbg_arsr1psharpness_support,
 	.prefixsharptwo_d_support = dbg_prefixsharptwo_d_support,
+	.video_idle_mode_support = dbg_video_idle_mode_support,
 	.cmd_type = dbg_cmd_type,
 	.pxl_clk = dbg_pxl_clk,
 	.pxl_clk_div = dbg_pxl_clk_div,
@@ -906,6 +1026,9 @@ struct lcd_kit_dbg_ops hisi_dbg_ops = {
 	.barcode_2d_cmd = dbg_barcode_2d_cmd,
 	.brightness_color_cmd = dbg_brightness_color_cmd,
 	.set_voltage = dbg_set_voltage,
+	.dbg_mipi_rx = dbg_dsi_cmds_rx,
+	.panel_power_on = dbg_panel_power_on,
+	.esd_check_func = dbg_esd_check_func,
 };
 int lcd_kit_dbg_init(void)
 {

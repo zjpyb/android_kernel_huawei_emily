@@ -58,7 +58,6 @@
 #include "nv_stru_sys.h"
 #include "acore_nv_stru_msp.h"
 #include "msp_diag_comm.h"
-#include  <linux/wakelock.h>
 #include "msp_diag.h"
 #include "chr_om.h"
 #include "chr_cfg.h"

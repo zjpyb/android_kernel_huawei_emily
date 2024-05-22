@@ -816,7 +816,7 @@ oal_uint32  hmac_proc_roam_trigger_event_etc(frw_event_mem_stru *pst_event_mem)
         return OAL_ERR_CODE_PTR_NULL;
     }
 
-    hmac_roam_trigger_handle_etc(pst_hmac_vap, c_rssi, OAL_FALSE);
+    hmac_roam_trigger_handle_etc(pst_hmac_vap, c_rssi, OAL_TRUE);
 
     return OAL_SUCC;
 }

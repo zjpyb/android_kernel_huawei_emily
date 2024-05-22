@@ -32,6 +32,7 @@
 #include <linux/random.h>
 #include <linux/version.h>//lint !e451
 #include <linux/ratelimit.h>
+#include <linux/hisi/rdr_hisi_platform.h>
 
 #include <mali_kbase_jm.h>
 #include <mali_kbase_hwaccess_jm.h>
@@ -201,7 +202,9 @@ static int kbase_jd_pre_external_resources(struct kbase_jd_atom *katom, const st
 	u32 res_no;
 #ifdef CONFIG_MALI_DMA_FENCE
 	struct kbase_dma_fence_resv_info info = {
+		.resv_objs = NULL,
 		.dma_fence_resv_count = 0,
+		.dma_fence_excl_bitmap = NULL
 	};
 #ifdef CONFIG_SYNC
 	/*
@@ -226,8 +229,7 @@ static int kbase_jd_pre_external_resources(struct kbase_jd_atom *katom, const st
 
 	katom->extres = kmalloc_array(katom->nr_extres, sizeof(*katom->extres), GFP_KERNEL);
 	if (NULL == katom->extres) {
-		err_ret_val = -ENOMEM;
-		goto early_err_out;
+		return -ENOMEM;
 	}
 
 	/* copy user buffer to the end of our real buffer.
@@ -284,7 +286,7 @@ static int kbase_jd_pre_external_resources(struct kbase_jd_atom *katom, const st
 				katom->kctx,
 				res->ext_resource & ~BASE_EXT_RES_ACCESS_EXCLUSIVE);
 		/* did we find a matching region object? */
-		if (NULL == reg || (reg->flags & KBASE_REG_FREE)) {
+		if (kbase_is_region_invalid_or_free(reg)) {
 			/* roll back */
 			goto failed_loop;
 		}
@@ -676,7 +678,7 @@ bool jd_done_nolock(struct kbase_jd_atom *katom,
 
 			if (node->status != KBASE_JD_ATOM_STATE_COMPLETED &&
 					!kbase_ctx_flag(kctx, KCTX_DYING)) {
-				need_to_try_schedule_context |= jd_run_atom(node);
+				need_to_try_schedule_context |= jd_run_atom(node);//lint !e514
 			} else {
 				node->event_code = katom->event_code;
 
@@ -688,15 +690,7 @@ bool jd_done_nolock(struct kbase_jd_atom *katom,
 						continue;
 				} else if (node->core_req &
 							BASE_JD_REQ_SOFT_JOB) {
-					/* If this is a fence wait soft job
-					 * then remove it from the list of sync
-					 * waiters.
-					 */
-					if (BASE_JD_REQ_SOFT_FENCE_WAIT == node->core_req) {
-						dev_err(kbdev->dev, "kctx %pK atom=%pK fence wait removed for dying context\n", (void *)kctx, node);
-						kbasep_remove_waiting_soft_job(node);
-					}
-
+					WARN_ON(!list_empty(&node->queue));
 					kbase_finish_soft_job(node);
 				}
 				node->status = KBASE_JD_ATOM_STATE_COMPLETED;
@@ -798,7 +792,7 @@ bool jd_submit_atom(struct kbase_context *kctx, const struct base_jd_atom_v2 *us
 	int sched_prio;
 	bool ret;
 	bool will_fail = false;
-
+/*lint -e648*/
 	/* Update the TOTAL number of jobs. This includes those not tracked by
 	 * the scheduler: 'not ready to run' and 'dependency-only' jobs. */
 	jctx->job_nr++;
@@ -832,6 +826,7 @@ bool jd_submit_atom(struct kbase_context *kctx, const struct base_jd_atom_v2 *us
 
 	katom->age = kctx->age_count++;
 
+	INIT_LIST_HEAD(&katom->queue);
 	INIT_LIST_HEAD(&katom->jd_item);
 #ifdef CONFIG_MALI_DMA_FENCE
 	kbase_fence_dep_count_set(katom, -1);
@@ -857,9 +852,9 @@ bool jd_submit_atom(struct kbase_context *kctx, const struct base_jd_atom_v2 *us
 				 * dependencies. */
 				KBASE_TLSTREAM_TL_NEW_ATOM(
 						katom,
-						kbase_jd_atom_id(kctx, katom));
+						kbase_jd_atom_id(kctx, katom));//lint !e648
 				KBASE_TLSTREAM_TL_RET_ATOM_CTX(
-						katom, kctx);
+						katom, kctx);//lint !e648
 				KBASE_TLSTREAM_TL_ATTRIB_ATOM_STATE(katom,
 						TL_ATOM_STATE_IDLE);
 
@@ -905,7 +900,7 @@ bool jd_submit_atom(struct kbase_context *kctx, const struct base_jd_atom_v2 *us
 			KBASE_TLSTREAM_TL_NEW_ATOM(
 					katom,
 					kbase_jd_atom_id(kctx, katom));
-			KBASE_TLSTREAM_TL_RET_ATOM_CTX(katom, kctx);
+			KBASE_TLSTREAM_TL_RET_ATOM_CTX(katom, kctx);//lint !e648
 			KBASE_TLSTREAM_TL_ATTRIB_ATOM_STATE(katom,
 					TL_ATOM_STATE_IDLE);
 
@@ -925,7 +920,7 @@ bool jd_submit_atom(struct kbase_context *kctx, const struct base_jd_atom_v2 *us
 			queued = 1;
 		}
 	}
-
+/*lint +e648*/
 	if (will_fail) {
 		if (!queued) {
 			if (katom->core_req & BASE_JD_REQ_SOFT_JOB) {
@@ -967,7 +962,7 @@ bool jd_submit_atom(struct kbase_context *kctx, const struct base_jd_atom_v2 *us
 		 * that depends on a previous atom with the same number behaves
 		 * as expected */
 		katom->event_code = BASE_JD_EVENT_DONE;
-		katom->status = KBASE_JD_ATOM_STATE_QUEUED;
+		katom->status = KBASE_JD_ATOM_STATE_QUEUED;//lint !e648
 	}
 
 	/* For invalid priority, be most lenient and choose the default */
@@ -979,17 +974,17 @@ bool jd_submit_atom(struct kbase_context *kctx, const struct base_jd_atom_v2 *us
 	/* Create a new atom recording all dependencies it was set up with. */
 	KBASE_TLSTREAM_TL_NEW_ATOM(
 			katom,
-			kbase_jd_atom_id(kctx, katom));
+			kbase_jd_atom_id(kctx, katom));//lint !e648
 	KBASE_TLSTREAM_TL_ATTRIB_ATOM_STATE(katom, TL_ATOM_STATE_IDLE);
 	KBASE_TLSTREAM_TL_ATTRIB_ATOM_PRIORITY(katom, katom->sched_priority);
-	KBASE_TLSTREAM_TL_RET_ATOM_CTX(katom, kctx);
+	KBASE_TLSTREAM_TL_RET_ATOM_CTX(katom, kctx);//lint !e648
 	for (i = 0; i < 2; i++)
 		if (BASE_JD_DEP_TYPE_INVALID != kbase_jd_katom_dep_type(
 					&katom->dep[i])) {
 			KBASE_TLSTREAM_TL_DEP_ATOM_ATOM(
 					(void *)kbase_jd_katom_dep_atom(
 						&katom->dep[i]),
-					(void *)katom);
+					(void *)katom);//lint !e648
 		} else if (BASE_JD_DEP_TYPE_INVALID !=
 				user_atom->pre_dep[i].dependency_type) {
 			/* Resolved dependency. */
@@ -1000,7 +995,7 @@ bool jd_submit_atom(struct kbase_context *kctx, const struct base_jd_atom_v2 *us
 
 			KBASE_TLSTREAM_TL_RDEP_ATOM_ATOM(
 					(void *)dep_atom,
-					(void *)katom);
+					(void *)katom);//lint !e648
 		}
 
 	/* Reject atoms with job chain = NULL, as these cause issues with soft-stop */
@@ -1125,7 +1120,7 @@ bool jd_submit_atom(struct kbase_context *kctx, const struct base_jd_atom_v2 *us
  out:
 	return ret;
 }
-
+/*lint -e574*/
 int kbase_jd_submit(struct kbase_context *kctx,
 		void __user *user_addr, u32 nr_atoms, u32 stride,
 		bool uk6_atom)
@@ -1184,10 +1179,10 @@ while (false)
 #endif
 		compiletime_assert((1 << (8*sizeof(user_atom.atom_number))) ==
 					BASE_JD_ATOM_COUNT,
-			"BASE_JD_ATOM_COUNT and base_atom_id type out of sync");
+			"BASE_JD_ATOM_COUNT and base_atom_id type out of sync");//lint !e1564
 		compiletime_assert(sizeof(user_atom.pre_dep[0].atom_id) ==
 					sizeof(user_atom.atom_number),
-			"BASE_JD_ATOM_COUNT and base_atom_id type out of sync");
+			"BASE_JD_ATOM_COUNT and base_atom_id type out of sync");//lint !e1564
 #ifdef compiletime_assert_defined
 #undef compiletime_assert
 #undef compiletime_assert_defined
@@ -1224,7 +1219,7 @@ while (false)
 		}
 
 		need_to_try_schedule_context |=
-				       jd_submit_atom(kctx, &user_atom, katom);
+				       jd_submit_atom(kctx, &user_atom, katom);//lint !e514
 
 		/* Register a completed job as a disjoint event when the GPU is in a disjoint state
 		 * (ie. being reset or replaying jobs).
@@ -1239,7 +1234,7 @@ while (false)
 
 	return err;
 }
-
+/*lint +e574*/
 KBASE_EXPORT_TEST_API(kbase_jd_submit);
 
 void kbase_jd_done_worker(struct work_struct *data)
@@ -1306,20 +1301,22 @@ void kbase_jd_done_worker(struct work_struct *data)
 			"t6xx: GPU fault 0x%02lx from job slot %d\n",
 					(unsigned long)katom->event_code,
 								katom->slot_nr);
-
-		if(kbdev->gpu_job_status != BASE_JD_EVENT_TERMINATED)
-		{
 #ifdef CONFIG_HUAWEI_DSM
-			gpu_dsm_report(kbdev, 922002000, "t6xx: GPU fault 0x%02lx from job slot %d!!!!",(unsigned long)katom->event_code, katom->slot_nr);
-#endif
+		if(kbdev->gpu_job_status != BASE_JD_EVENT_TERMINATED) {
+			/* For normal runmode,report dmd every 20 times. */
+			if(dsm_report_enable(kbdev->error_num.gpu_fault, 20, kbdev->runmode_normal)) {
+				gpu_dsm_report(kbdev, GPU_JOB_FAIL_DSM_NO, "t6xx: GPU fault 0x%02lx from job slot %d!!!!",
+					(unsigned long)katom->event_code, katom->slot_nr);
+			}
 		}
+#endif
 
 		kbdev->error_num.gpu_fault++;
 		kbdev->error_num.ts = hisi_getcurtime();
 #ifdef CONFIG_HISI_ENABLE_HPM_DATA_COLLECT
 		/*benchmark data collect */
 		if (kbase_has_hi_feature(kbdev, KBASE_FEATURE_HI0009)) {
-			BUG_ON(1);  //lint !e730
+			rdr_syserr_process_for_ap((u32)MODID_AP_S_PANIC_GPU, 0ull, 0ull);  //lint !e730
 		}
 #endif
 	}

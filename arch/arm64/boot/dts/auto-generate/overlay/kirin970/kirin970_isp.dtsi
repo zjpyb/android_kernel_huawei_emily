@@ -41,6 +41,8 @@
         ispsmmu-init-byap   = <1>;          /* Switch 10 for Whether Smmu Init by AP or Not */
         isp-mdc-flag        = <0>;          /* Switch 11 for Whether Use MDC or Not */
         isp-efuse-flag      = <0>;          /* Switch 12 for Whether Use efuse_deskew or Not */
+        useloadbin          = <0>;          /* Switch 13 for Whether Use load binary image or Not */
+        use-ion-smmuerr     = <1>;          /* Switch 14 for Whether Use on alloc mem for smmu err */
 
         /* Misc Items */
         isp-names           = "ISPCPU";     /* Name of MPU */
@@ -49,6 +51,7 @@
         mailbox-names       = "isp_mailbox";/* Name of IPC */
         isp-remap-addr      = <0x00000000>; /* Base Address for MPU Remap */
         isp-ipc-addr        = <0xC2020000>; /* Base Address for IPC Buffers(VA) */
+        isp-seckthread-nice = <10>;         /* ISP sec kthread nice value*/
 
         /* Isp Cpu Cfg */
         isp_local_timer     = <19200000>;   /* Isp Cpu Local Timer */
@@ -64,6 +67,7 @@
                               <&clk_gate_ispi2c>;                                               	/* Clock Gate 03 for ispi2c */
         clock-names         = "ispcpu", "ispfunc", "ispi2c";                                       	/* Clock Names */
         clock-value         = <960000000 480000000 107000000>;                                     	/* Clock Values for CLKLVL_TURBO */
+        clkdis-need-div     = <000000000 000000000 000000000>;                                   	/* Clock Values for CLKLVL_DISCLKDN, Control by usepowerdn_clockdn_need_div */
         clkdis-dvfs         = <400000000 267000000 107000000>;                                     	/* Clock Values for CLKLVL_NORMINAL, Control by usedvfs */
         ispa7-default-clk   = <800000000>;                                                          /* Default isp Clock */
 
@@ -92,6 +96,13 @@
         a7-vaddr-heap       = <0xC4000000 0x01800000 0x00000107 0x00000000 0x00000001>;  			/* Trusted ISP Page Table Mapping 12 for OS Heap Memory Space */
         a7-vaddr-a7dyna     = <0xD1000000 0x0F000000 0x00000007 0x00000000 0x00000000>;  			/* Trusted ISP Page Table Mapping 13 for Dynamic Memory Space */
         /*                    <ispva      size       prot       offset     reserve   >*/
+
+        /* QOS Items */
+        qos-num         = <12>;
+        qos-offset      = <0x0008 0x000C 0x0088 0x008C 0x0208 0x020C 0x0288 0x028C 0x0108 0x010C
+                           0x0188 0x018C>;
+        qos-value       = <0x0202 0x0002 0x0202 0x0002 0x0202 0x0002 0x0202 0x0002 0x0303 0x0000
+                           0x0303 0x0000>;
 
         /* Definition for Smmu/Iommu Driver */
         iommu_info {

@@ -51,7 +51,7 @@
 
 #if (_PRE_PRODUCT_ID == _PRE_PRODUCT_ID_HI1103_DEV) || (_PRE_PRODUCT_ID == _PRE_PRODUCT_ID_HI1103_HOST)
 /* wifi校准buf长度 */
-#define RF_CALI_DATA_BUF_LEN              (0x7258)
+#define RF_CALI_DATA_BUF_LEN              (0x4a00)
 #define RF_SINGLE_CHAN_CALI_DATA_BUF_LEN  (RF_CALI_DATA_BUF_LEN>>1)
 /* 校准结构体大小 */
 #define OAL_SINGLE_CALI_DATA_STRU_LEN     (RF_CALI_DATA_BUF_LEN+4)

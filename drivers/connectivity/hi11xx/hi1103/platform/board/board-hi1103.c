@@ -51,7 +51,7 @@ int32 g_device_monitor_enable = 0;
 
 oal_int32 ft_fail_powerdown_bypass = 0;
 #if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
-module_param(ft_fail_powerdown_bypass, int, S_IRUGO | S_IWUSR);
+oal_debug_module_param(ft_fail_powerdown_bypass, int, S_IRUGO | S_IWUSR);
 #endif
 /*
 *
@@ -634,6 +634,8 @@ int32 hi1103_bfgx_dev_power_on(void)
         return BFGX_POWER_FAILED;
     }
 
+    bfgx_gpio_intr_enable(OAL_TRUE);
+
     ret = hi1103_board_power_on(BFGX_POWER);
     if(ret)
     {
@@ -686,6 +688,10 @@ int32 hi1103_bfgx_dev_power_on(void)
     return BFGX_POWER_SUCCESS;
 
 bfgx_power_on_fail:
+#ifdef CONFIG_HUAWEI_DSM
+    hw_1103_dsm_client_notify(DSM_1103_DOWNLOAD_FIRMWARE, "bcpu download firmware failed,wifi %s,ret=%d,process:%s\n",
+                                                            wlan_is_shutdown_etc() ? "off":"on", error, current->comm);
+#endif
     hi1103_board_power_off(BFGX_POWER);
     return error;
 }
@@ -791,6 +797,8 @@ int32 hi1103_bfgx_dev_power_off(void)
        PS_PRINT_ERR("bfgx self close fail\n");
        CHR_EXCEPTION_REPORT(CHR_PLATFORM_EXCEPTION_EVENTID, CHR_SYSTEM_GNSS, CHR_LAYER_DRV, CHR_GNSS_DRV_EVENT_PLAT, CHR_PLAT_DRV_ERROR_CLOSE_BCPU);
     }
+
+    bfgx_gpio_intr_enable(OAL_FALSE);
 
     if (SUCCESS != release_tty_drv_etc(ps_core_d->pm_data))
     {
@@ -917,7 +925,8 @@ wifi_power_fail:
 #ifdef CONFIG_HUAWEI_DSM
     if(WIFI_POWER_ON_FIRMWARE_DOWNLOAD_INTERRUPT != error)
     {
-        hw_1103_dsm_client_notify(DSM_1103_DOWNLOAD_FIRMWARE, "%s: failed to download firmware\n", __FUNCTION__);
+        hw_1103_dsm_client_notify(DSM_1103_DOWNLOAD_FIRMWARE, "%s: failed to download firmware, bfgx %s, error=%d\n",
+                                                            __FUNCTION__, bfgx_is_shutdown_etc() ? "off":"on", error);
     }
 #endif
     return error;
@@ -1946,6 +1955,9 @@ oal_int32 hi1103_pcie_chip_poweroff(oal_void* data)
 
     g_slt_pcie_status = 0;
 
+    /*SLT下电之前打印链路信息*/
+    hcc_bus_chip_info(pst_bus, OAL_FALSE, OAL_TRUE);
+
     hi1103_board_power_off(WLAN_POWER);
 
     hcc_bus_unlock(pst_bus);
@@ -2042,7 +2054,7 @@ oal_int32 hi1103_pcie_slt_test(oal_void)
 }
 #endif
 
-#ifdef CONFIG_PCIE_KIRIN_SLT_HI110X
+#if defined(CONFIG_PCIE_KIRIN_SLT_HI110X) && defined(CONFIG_HISI_DEBUG_FS)
 extern oal_int32 kirin_rc_idx;
 extern int pcie_slt_hook_register(u32 rc_id, u32 device_type, int (*init)(void *), int (*on)(void *), int (*off)(void *), int (*setup)(void *), int (*data_transfer)(void *, u32, u32));
 oal_int32 hi1103_pcie_chip_init(oal_void* data)

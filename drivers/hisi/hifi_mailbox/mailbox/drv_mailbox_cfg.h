@@ -761,7 +761,7 @@ typedef void (*mb_msg_cb)(
 
 unsigned int DRV_MAILBOX_SENDMAIL(
                 unsigned int           MailCode,
-                void                   *pData,
+                const void             *pData,
                 unsigned int           Length);
 
 

@@ -298,6 +298,7 @@ static int smartpakit_parse_reg_ctl(const char *val)
 	char *tokens = NULL;
 	char *pbuf = NULL;
 	int index = 0;
+	int ret;
 
 	if (NULL == val) {
 		hwlog_err("%s: val is NULL!!!\n", __func__);
@@ -317,7 +318,11 @@ static int smartpakit_parse_reg_ctl(const char *val)
 		if (NULL == tokens) {
 			break;
 		}
-		(void)kstrtoint(tokens, 16, &reg_ctl_params.params[index]);
+
+		ret = kstrtoint(tokens, 16, &reg_ctl_params.params[index]);
+		if (ret < 0)
+			continue;
+
 		hwlog_info("%s: tokens[%d] = %s,%d\n", __func__, index, tokens, reg_ctl_params.params[index]);
 
 		index++;

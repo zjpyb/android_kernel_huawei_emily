@@ -13,7 +13,21 @@
 #include <linux/miscdevice.h>
 
 #include <drivers/staging/android/ion/ion.h>
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 12, 0)
 #include <drivers/staging/android/ion/ion_priv.h>
+#endif
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0)
+#define DOWN_WRITE(dev) down_write(&(dev->heap_lock))
+#define UP_WRITE(dev) up_write(&dev->heap_lock)
+#define DOWN_READ(dev) down_read(&dev->heap_lock)
+#define UP_READ(dev) up_read(&dev->heap_lock)
+#else
+#define DOWN_WRITE(dev) down_write(&(dev->lock))
+#define UP_WRITE(dev) up_write(&dev->lock)
+#define DOWN_READ(dev) down_read(&dev->lock)
+#define UP_READ(dev) up_read(&dev->lock)
+#endif
+
 #define MSEC(time) (time*HZ/1000)
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0)
 #include <drivers/staging/android/sync.h>
@@ -240,8 +254,7 @@ void restore_ion_allocate(void)
 	dev = get_iondev();
 	if (!dev)
 		return;
-
-	down_write(&(dev->heap_lock));
+	DOWN_WRITE(dev);
 	write_lock(&ion_heaps.rwk);
 	list_for_each_entry_safe(heap_item, next, &(ion_heaps.stlist), stlist) {
 		heap_item->heap->ops->allocate = heap_item->orig_alloc;
@@ -249,7 +262,7 @@ void restore_ion_allocate(void)
 		kmem_cache_free(ion_heap_cache, heap_item);
 	}
 	write_unlock(&ion_heaps.rwk);
-	up_write(&dev->heap_lock);
+	UP_WRITE(dev);
 }
 
 /*repleace ion heaps func*/
@@ -264,8 +277,7 @@ int replace_ion_func(void)
 	dev = get_iondev();
 	if (!dev)
 		return 0;
-
-	down_read(&dev->heap_lock);
+	DOWN_READ(dev);
 	plist_for_each_entry(heap, &dev->heaps, node) {
 		/*repleace ion heap allocate func*/
 		/*1.if ops is NULL ,or allocate is NULL no replace*/
@@ -286,7 +298,7 @@ int replace_ion_func(void)
 		write_unlock(&ion_heaps.rwk);
 		heap->ops->allocate = ion_heap_allocate;
 	}
-	up_read(&dev->heap_lock);
+	UP_READ(dev);
 	return 1;
 }
 

@@ -29,7 +29,7 @@ void mntn_ipc_msg_nb(unsigned int * msg);
 void bbox_ap_ipc_init(void);
 int bbox_diaginfo_init(void);
 int bbox_lpmcu_diaginfo_init(void);
-int bbox_diaginfo_register(unsigned int err_id,char* pdata,unsigned int data_len, u64 ts);
+int bbox_diaginfo_register(unsigned int err_id,const char* pdata,unsigned int data_len, u64 ts);
 int bbox_diaginfo_record(unsigned int err_id,const char *fmt, ...);
 void cpu_up_diaginfo_record(unsigned int cpu, int status);
 void bbox_diaginfo_dump_lastmsg(void);

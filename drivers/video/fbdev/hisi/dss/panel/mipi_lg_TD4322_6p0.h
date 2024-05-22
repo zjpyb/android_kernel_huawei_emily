@@ -1,5 +1,5 @@
 #include "hisi_fb.h"
-
+/*lint -e569*/
 #ifndef MIPI_LG_NT35695
 #define MIPI_LG_NT35695
 
@@ -1776,3 +1776,4 @@ static int bist_check_cmds_size[] = {
 	ARRAY_SIZE(lg_display_bist_check_cmds8),
 };
 #endif
+/*lint +e569*/

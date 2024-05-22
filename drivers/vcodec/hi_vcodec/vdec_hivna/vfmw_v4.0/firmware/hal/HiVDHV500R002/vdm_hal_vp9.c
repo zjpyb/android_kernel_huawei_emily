@@ -102,7 +102,7 @@ static SINT32 VP9HAL_CfgPicMsg( VDMHAL_HWMEM_S *pHwMem, MEM_BUFFER_S* pVdhMemMap
 	WR_MSGWORD(pSlot + 37, D32);
 
 	//D38
-	//D32 = pVp9DecParam->frame_info[38];
+
 	D32 = pHwMem->RcnTopAddr & 0xFFFFFFF0;
 	WR_MSGWORD(pSlot + 38, D32);
 
@@ -119,7 +119,7 @@ static SINT32 VP9HAL_CfgPicMsg( VDMHAL_HWMEM_S *pHwMem, MEM_BUFFER_S* pVdhMemMap
 	WR_MSGWORD(pSlot + 41, D32);
 
 	//D42
-	//D32 = pVp9DecParam->CurrPmvAddr & 0xFFFFFFF0;
+
 	RD_MSGWORD(pSlot + 42, D32);
 	ret = CheckPmvBufAddr(D32, pVdhMemMap);
 	VDMHAL_ASSERT_RET(ret == VDMHAL_OK, "D42 is failed");
@@ -143,7 +143,7 @@ static SINT32 VP9HAL_CfgReg(OMXVDH_REG_CFG_S *pVdhRegCfg)
 	D32 = 0;
 	((BASIC_CFG0*)(&D32))->mbamt_to_dec      = ((BASIC_CFG0 *)(&pVdhRegCfg->VdhBasicCfg0))->mbamt_to_dec;
 	((BASIC_CFG0*)(&D32))->load_qmatrix_flag = 0;
-	//((BASIC_CFG0*)(&D32))->repair_en       = 0;
+
 
 	WR_VREG(VREG_BASIC_CFG0, D32, 0);
 	dprint(PRN_VDMREG, "VREG_BASIC_CFG0 : 0x%x\n", D32);
@@ -151,13 +151,13 @@ static SINT32 VP9HAL_CfgReg(OMXVDH_REG_CFG_S *pVdhRegCfg)
 	//BASIC_CFG1
 	D32 = 0;
 	((VP9_BASIC_CFG1*)(&D32))->video_standard     = 0x0E;  //VFMW_VP9;
-  //  ((VP9_BASIC_CFG1*)(&D32))->ddr_stride       = pVp9DecParam->ddr_stride >> 6;
+
 	((VP9_BASIC_CFG1*)(&D32))->uv_order_en        = ((VP9_BASIC_CFG1 *)(&pVdhRegCfg->VdhBasicCfg1))->uv_order_en;
 	((VP9_BASIC_CFG1*)(&D32))->fst_slc_grp        = 1;
 	((VP9_BASIC_CFG1*)(&D32))->mv_output_en       = 1;
 	((VP9_BASIC_CFG1*)(&D32))->max_slcgrp_num     = 3;
 	((VP9_BASIC_CFG1*)(&D32))->line_num_output_en = 0;
-	//   ((BASIC_CFG1*)(&D32))->compress_en       = pVp9DecParam->Compress_en;
+
 	((VP9_BASIC_CFG1*)(&D32))->vdh_2d_en          = ((VP9_BASIC_CFG1 *)(&pVdhRegCfg->VdhBasicCfg1))->vdh_2d_en;
 	((VP9_BASIC_CFG1*)(&D32))->frm_cmp_en         = ((VP9_BASIC_CFG1 *)(&pVdhRegCfg->VdhBasicCfg1))->frm_cmp_en; //for tmp linear
 	((VP9_BASIC_CFG1*)(&D32))->ppfd_en            = 0;

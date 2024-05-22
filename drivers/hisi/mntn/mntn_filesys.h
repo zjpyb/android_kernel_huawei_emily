@@ -50,7 +50,7 @@ extern int mntn_filesys_rm_dir(const char *dirname);
 extern int mntn_filesys_dir_list(const char *path, char *pout_namelist, int cnt,
 				 int type);
 extern int mntn_filesys_rm_all_file(const char *path);
-extern int mntn_filesys_write_log(const char *pname, void *pbuf,
+extern int mntn_filesys_write_log(const char *pname, const void *pbuf,
 				  unsigned int ulen, umode_t mode);
 extern int mntn_filesys_rm_file(const char *fullname);
 extern void mntn_rm_old_log(const char *path, unsigned int unumber);

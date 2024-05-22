@@ -110,7 +110,7 @@ int bsp_hds_printlog_disconn(void)
 }
 
 
-int bsp_LogProcEntry(u8* pstReq)
+unsigned int bsp_LogProcEntry(u8* pstReq)
 {
     diag_frame_head_stru    *pData;
     MSP_DIAG_DATA_REQ_STRU  *pReqData;
@@ -135,7 +135,7 @@ int bsp_LogProcEntry(u8* pstReq)
     {
         bsp_hds_cnf_common_fill(&stCommCnf, pData);
         bsp_hds_confirm(&stCommCnf, (void*)&stLogSetCnf, (unsigned int)sizeof(DIAG_BSP_COMM_CNF_STRU));
-        return (int)stLogSetCnf.ulRet;
+        return stLogSetCnf.ulRet;
     }
 }
 

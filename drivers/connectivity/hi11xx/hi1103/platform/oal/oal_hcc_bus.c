@@ -22,6 +22,9 @@ extern "C" {
 #include "oam_ext_if.h"
 #include "plat_pm_wlan.h"
 #include "plat_firmware.h"
+#if defined(CONFIG_LOG_EXCEPTION) && !defined(CONFIG_HI110X_KERNEL_MODULES_BUILD_SUPPORT)
+#include <log/log_usertype.h>
+#endif
 
 #ifndef WIN32
 #include "plat_pm.h"
@@ -53,46 +56,46 @@ static struct notifier_block hcc_bus_pm_notifier = {
   "pcie"               -- only support pcie
   */
 char* hisi_wifi_bus_select = "";
-module_param(hisi_wifi_bus_select, charp, S_IRUGO | S_IWUSR);
+oal_debug_module_param(hisi_wifi_bus_select, charp, S_IRUGO | S_IWUSR);
 
 oal_uint32 hcc_exception_enable = 1;
-module_param(hcc_exception_enable, uint, S_IRUGO|S_IWUSR);
+oal_debug_module_param(hcc_exception_enable, uint, S_IRUGO|S_IWUSR);
 
 oal_uint32 hcc_bus_switch_bypass = 0;
-module_param(hcc_bus_switch_bypass, uint, S_IRUGO|S_IWUSR);
+oal_debug_module_param(hcc_bus_switch_bypass, uint, S_IRUGO|S_IWUSR);
 
 oal_uint32 hcc_bus_switch_test_delay_time = 0;
-module_param(hcc_bus_switch_test_delay_time, uint, S_IRUGO|S_IWUSR);
+oal_debug_module_param(hcc_bus_switch_test_delay_time, uint, S_IRUGO|S_IWUSR);
 
 oal_uint32 hcc_bus_switch_test_break = 0;
-module_param(hcc_bus_switch_test_break, uint, S_IRUGO|S_IWUSR);
+oal_debug_module_param(hcc_bus_switch_test_break, uint, S_IRUGO|S_IWUSR);
 
 oal_uint32 hcc_bus_auto_switch = 0;
-module_param(hcc_bus_auto_switch, uint, S_IRUGO|S_IWUSR);
+oal_debug_module_param(hcc_bus_auto_switch, uint, S_IRUGO|S_IWUSR);
 
 oal_uint32 hcc_bus_auto_bindcpu = 0;
-module_param(hcc_bus_auto_bindcpu, uint, S_IRUGO|S_IWUSR);
+oal_debug_module_param(hcc_bus_auto_bindcpu, uint, S_IRUGO|S_IWUSR);
 
 oal_uint32 hcc_bus_manual_bindcpu = 1;
-module_param(hcc_bus_manual_bindcpu, uint, S_IRUGO|S_IWUSR);
+oal_debug_module_param(hcc_bus_manual_bindcpu, uint, S_IRUGO|S_IWUSR);
 
 /*pps 按照大包计算*/
 oal_uint32 hcc_bus_auto_bindcpu_limit = (200*1024*128)/1500;
-module_param(hcc_bus_auto_bindcpu_limit, uint, S_IRUGO|S_IWUSR);
+oal_debug_module_param(hcc_bus_auto_bindcpu_limit, uint, S_IRUGO|S_IWUSR);
 
 oal_uint32 hcc_bus_current_pps = 0x0;
-module_param(hcc_bus_current_pps, uint, S_IRUGO);
+oal_debug_module_param(hcc_bus_current_pps, uint, S_IRUGO);
 
 oal_uint32 hcc_bus_wakelock_debug = 0x0;
-module_param(hcc_bus_wakelock_debug, uint, S_IRUGO|S_IWUSR);
+oal_debug_module_param(hcc_bus_wakelock_debug, uint, S_IRUGO|S_IWUSR);
 
 oal_uint32 hcc_bus_auto_switch_limit       = (350*1024*128)/1500;
-module_param(hcc_bus_auto_switch_limit, uint, S_IRUGO|S_IWUSR);
+oal_debug_module_param(hcc_bus_auto_switch_limit, uint, S_IRUGO|S_IWUSR);
 
 char str_ini_hcc_bus_switch[100] = {0};
-module_param_string(ini_hcc_bus_switch, str_ini_hcc_bus_switch,
+oal_debug_module_param_string(ini_hcc_bus_switch, str_ini_hcc_bus_switch,
                     sizeof(str_ini_hcc_bus_switch), S_IRUGO|S_IWUSR);
-MODULE_PARM_DESC(ini_hcc_bus_switch, "Ini string for hcc bus switch");
+OAL_DEBUG_MODULE_PARM_DESC(ini_hcc_bus_switch, "Ini string for hcc bus switch");
 
 #else
 oal_dlist_head_stru g_hcc_bus_res_hdr;
@@ -120,7 +123,7 @@ oal_uint32 g_switch_ip_pwrdown_bypass = 1;
 #ifdef WIN32
 oal_uint32 jiffies;
 #else
-module_param(g_switch_ip_pwrdown_bypass, uint, S_IRUGO|S_IWUSR);
+oal_debug_module_param(g_switch_ip_pwrdown_bypass, uint, S_IRUGO|S_IWUSR);
 #endif
 
 oal_int32  g_switch_pwr_ret;/*TBD*/
@@ -175,7 +178,7 @@ OAL_STATIC hcc_bus_dev g_bus_dev_res[10];
 
 oal_uint32       bus_dump_mem_flag = 0;
 #if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
-module_param(bus_dump_mem_flag, uint, S_IRUGO | S_IWUSR);
+oal_debug_module_param(bus_dump_mem_flag, uint, S_IRUGO | S_IWUSR);
 
 oal_atomic g_wakeup_dev_wait_ack_etc;
 oal_atomic g_bus_powerup_dev_wait_ack;/*ip 上电握手标记*/
@@ -290,6 +293,30 @@ oal_void hcc_switch_action_unregister(hcc_switch_action* action)
     oal_dlist_delete_entry(&action->list);
 }
 
+static oal_int32 bus_chan_init_string_cmp(const char *start, int len, const char *pc_para)
+{
+    if ((OAL_STRLEN(pc_para) == len) && (!oal_memcmp(start, pc_para, len))) {
+        return OAL_SUCC;
+    } else {
+        return OAL_FAIL;
+    }
+}
+
+static oal_void hcc_bus_pcie_switch_ini_parse(hcc_bus_dev *pst_bus_dev, const char *start, uint32 len)
+{
+    /* wlan channel support pcie switch to sdio, used to pice hardwhare bugfix */
+    /* current only used for vogue*/
+    if(bus_chan_init_string_cmp(start, len, "pcie_switch_enable") == OAL_SUCC)
+    {
+        if (pst_bus_dev->bus_cap & HCC_BUS_PCIE_CAP)
+        {
+            pst_bus_dev->bus_cap |= HCC_BUS_SDIO_CAP;
+            hcc_set_pcie_switch_flag(1);
+            oal_print_hi11xx_log(HI11XX_LOG_INFO, "hisi wifi bus support pcie switch");
+        }
+    }
+}
+
 oal_void hcc_bus_chan_init_from_string(hcc_bus_dev*  pst_bus_dev, char* bus_select)
 {
     int len;
@@ -340,6 +367,8 @@ oal_void hcc_bus_chan_init_from_string(hcc_bus_dev*  pst_bus_dev, char* bus_sele
                     }
                     oal_print_hi11xx_log(HI11XX_LOG_INFO, "hisi wifi support pcie %s", default_select);
                 }
+
+                hcc_bus_pcie_switch_ini_parse(pst_bus_dev, start, len);
 
                 /*动态切换开关，由驱动来仲裁哪2种接口切换*/
                 if(!oal_memcmp(start, "switchon", OAL_STRLEN("switchon")))
@@ -2222,6 +2251,34 @@ oal_int32 hcc_bus_pm_wakeup_device(hcc_bus *hi_bus)
 EXPORT_SYMBOL_GPL(hcc_bus_pm_wakeup_device);
 
 #if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
+unsigned long long hcc_bus_excetpion_ssi_module_set(oal_void)
+{
+    unsigned long long set = 0x0;
+    oal_print_hi11xx_log(HI11XX_LOG_INFO, "bfgx is %s  %s",
+        (true == bfgx_is_shutdown_etc()) ? "shutdown":"poweron", 
+#if defined(CONFIG_LOG_EXCEPTION) && !defined(CONFIG_HI110X_KERNEL_MODULES_BUILD_SUPPORT)
+    (BETA_USER == get_logusertype_flag())?", is beta user":", not beta user"
+#else
+        ""
+#endif
+        );
+    if((true == bfgx_is_shutdown_etc())
+#if defined(CONFIG_LOG_EXCEPTION) && !defined(CONFIG_HI110X_KERNEL_MODULES_BUILD_SUPPORT)
+       || (BETA_USER == get_logusertype_flag())
+#endif
+      )
+    {
+        set = (SSI_MODULE_MASK_ARM_REG|SSI_MODULE_MASK_AON_CUT);
+    }
+    else
+    {
+        //set = SSI_MODULE_MASK_ARM_REG;
+        set = 0x0;
+    }
+
+    return set;
+}
+
 oal_void hcc_bus_exception_submit(hcc_bus *hi_bus, oal_int32 excep_type)
 {
     oal_ulong flags;
@@ -2264,16 +2321,7 @@ oal_void hcc_bus_exception_submit(hcc_bus *hi_bus, oal_int32 excep_type)
 
         if(HI1XX_ANDROID_BUILD_VARIANT_USER == hi11xx_get_android_build_variant())
         {
-            if(true == bfgx_is_shutdown_etc())
-            {
-                set = (SSI_MODULE_MASK_ARM_REG|SSI_MODULE_MASK_AON_CUT);
-                oal_print_hi11xx_log(HI11XX_LOG_INFO, "bfgx is shutdown");
-            }
-            else
-            {
-                //set = SSI_MODULE_MASK_ARM_REG;
-                set = 0x0;
-            }
+            set = hcc_bus_excetpion_ssi_module_set();
 
             if(!oal_print_rate_limit(24*PRINT_RATE_HOUR))
             {
@@ -3181,6 +3229,32 @@ OAL_STATIC oal_void hcc_dev_pps_count_timeout(oal_uint arg)
     oal_timer_start(&pst_bus_dev->bus_pps_timer, HCC_BUS_PPS_COUNT_TIMEOUT);
 }
 
+oal_int32 hcc_get_pcie_switch_flag(oal_void)
+{
+    hcc_bus_dev *pst_bus_dev;
+
+    pst_bus_dev = hcc_get_bus_dev(HCC_CHIP_110X_DEV);
+    if (pst_bus_dev == NULL) {
+        return 0;
+    }
+
+    return pst_bus_dev->pcie_bugfix_enable;
+}
+
+oal_int32 hcc_set_pcie_switch_flag(oal_int32 flag)
+{
+    hcc_bus_dev *pst_bus_dev;
+
+    pst_bus_dev = hcc_get_bus_dev(HCC_CHIP_110X_DEV);
+    if (pst_bus_dev == NULL) {
+        return -OAL_ENODEV;
+    }
+
+    pst_bus_dev->pcie_bugfix_enable = (flag == 0) ? 0 : 1;
+
+    return 0;
+}
+
 oal_void hcc_dev_exit(oal_void)
 {
     oal_int32 i;
@@ -3254,29 +3328,74 @@ hcc_init_fail:
     return -OAL_EFAIL;
 }
 
-/*枚举接口设备*/
-oal_int32 oal_wifi_platform_load_dev(oal_void)
+oal_int32 oal_load_dev(oal_void)
 {
-    oal_int32 ret = OAL_SUCC;
+    oal_int32 load_sdio;
+    oal_int32 load_pcie;
 
-    ret = oal_wifi_platform_load_sdio();
-    if(OAL_SUCC != ret)
-    {
-        oal_print_hi11xx_log(HI11XX_LOG_ERR, "load sdio failed ret=%d", ret);
-        return ret;
+    load_sdio = oal_wifi_platform_load_sdio();
+    if (load_sdio != OAL_SUCC) {
+        oal_print_hi11xx_log(HI11XX_LOG_ERR, "load sdio failed ret=%d", load_sdio);
+        return load_sdio;
     }
 
-    ret = oal_wifi_platform_load_pcie();
-    if(OAL_SUCC != ret)
-    {
-        oal_print_hi11xx_log(HI11XX_LOG_ERR, "load pcie failed ret=%d", ret);
-        goto failed_load_pcie;
+    load_pcie = oal_wifi_platform_load_pcie();
+    if (load_pcie != OAL_SUCC) {
+        oal_print_hi11xx_log(HI11XX_LOG_ERR, "load pcie failed ret=%d", load_pcie);
+        oal_wifi_platform_unload_sdio();
+        return load_pcie;
     }
 
     return OAL_SUCC;
-failed_load_pcie:
-    oal_wifi_platform_unload_sdio();
-    return ret;
+}
+
+oal_int32 oal_load_dev_retry(oal_void)
+{
+    oal_int32 load_sdio;
+    oal_int32 load_pcie;
+    hcc_bus_dev *pst_bus_dev;
+
+    pst_bus_dev = hcc_get_bus_dev(HCC_CHIP_110X_DEV);
+    if (pst_bus_dev == NULL) {
+        oal_print_hi11xx_log(HI11XX_LOG_ERR, "hcc_get_bus_dev fail!\n");
+        return -OAL_ENODEV;
+    }
+
+    load_pcie = oal_wifi_platform_load_pcie();
+    if (load_pcie == OAL_SUCC) {
+        return OAL_SUCC;
+    }
+
+    /*pcie 枚举失败，尝试使用sdio*/
+    load_sdio = oal_wifi_platform_load_sdio();
+    if (load_sdio == OAL_SUCC) {
+        oal_print_hi11xx_log(HI11XX_LOG_INFO, "hisi wifi bus pcie fail, sdio succ");
+        hcc_set_pcie_switch_flag(0);
+        pst_bus_dev->init_bus_type = HCC_BUS_SDIO;
+#ifdef CONFIG_HUAWEI_DSM
+        hw_1103_dsm_client_notify(DSM_PCIE_SWITCH_SDIO_SUCC, "probe:pcie switch to sdio succ\n");
+#endif
+    } else {
+        oal_print_hi11xx_log(HI11XX_LOG_ERR, "hisi wifi bus pcie and sdio all fail");
+#ifdef CONFIG_HUAWEI_DSM
+        hw_1103_dsm_client_notify(DSM_PCIE_SWITCH_SDIO_FAIL, "probe:pcie switch to sdio fail\n");
+#endif
+    }
+
+    return load_sdio;
+}
+
+
+/*枚举接口设备*/
+oal_int32 oal_wifi_platform_load_dev(oal_void)
+{
+    if (hcc_get_pcie_switch_flag() != 1) {
+        oal_print_hi11xx_log(HI11XX_LOG_INFO, "hisi wifi bus pcie switch disable");
+        return oal_load_dev();
+    } else {
+        oal_print_hi11xx_log(HI11XX_LOG_INFO, "hisi wifi bus pcie switch enable");
+        return oal_load_dev_retry();
+    }
 }
 
 /*卸载接口设备*/
@@ -3286,8 +3405,17 @@ oal_void oal_wifi_platform_unload_dev(oal_void)
     oal_wifi_platform_unload_sdio();
 }
 
-
 #else
+oal_int32 hcc_get_pcie_switch_flag(oal_void)
+{
+    return OAL_SUCC;
+}
+
+oal_int32 hcc_set_pcie_switch_flag(oal_int32 flag)
+{
+    return OAL_SUCC;
+}
+
 oal_void hcc_dev_exit(oal_void)
 {
 }

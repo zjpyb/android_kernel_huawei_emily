@@ -147,7 +147,8 @@ void vbatt_limit_ctrl(int val)
 
 static void hisi_6423_vbatt_check(struct work_struct *work)
 {
-	int vbatt, ret, val;
+	int vbatt, ret;
+	unsigned int val;
 	struct hisi_6423_pmic *subpmic = container_of(work, struct hisi_6423_pmic, check_6423_vbatt_work.work);
 
 	pr_err("Enter in schedule_delayed_work!\n");
@@ -411,7 +412,7 @@ static int hisi_6423_pmic_remove(struct spmi_device *pdev)
 static int hisi_6423_pmic_suspend(struct spmi_device *pdev, pm_message_t state)
 {
 	struct hisi_6423_pmic *subpmic = dev_get_drvdata(&pdev->dev);
-	int val;
+	unsigned int val;
 
 	if (NULL == subpmic) {
 		pr_err("%s:6423_pmic is NULL\n", __func__);

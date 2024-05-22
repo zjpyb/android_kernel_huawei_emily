@@ -54,7 +54,12 @@
 #include <linux/suspend.h>
 #include <linux/string.h>
 #include <linux/platform_device.h>
+#include <linux/version.h>
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+#include <linux/uaccess.h>
+#else
 #include <asm/uaccess.h>
+#endif
 #include <bsp_slice.h>
 #include <bsp_pm.h>
 #include <bsp_dump.h>
@@ -65,7 +70,7 @@
 #include "pm_om_pressure.h"
 #include "product_config.h"
 #include <mdrv_pm_common.h>
-
+#include <osl_types.h>
 struct pm_om_debug g_pmom_debug;
 char *wakelock_name[]={
     "TLPHY" ,
@@ -97,7 +102,9 @@ char *wakelock_name[]={
     "HRPD",
     "MSP",
     "VOWIFI",
-    "DSFLOW1"
+    "DSFLOW1",
+    "LTEV",
+    "TTF"
 };
 /*lint --e{64,528}*//*64:list_for_each_entry, 528 for not referenced referenced*/
 void pm_om_wakeup_log(void)
@@ -213,12 +220,12 @@ s32 pm_wakeup_ccore(enum debug_wake_type type)
 }
 void debug_pm_wake_lock(void)
 {
-    wake_lock(&g_pmom_debug.wakelock_debug);
+    __pm_stay_awake(&g_pmom_debug.wakelock_debug);
 } /*lint !e454*/
 
 void debug_pm_wake_unlock(void)
 {
-    wake_unlock(&g_pmom_debug.wakelock_debug); /*lint !e455*/
+    __pm_relax(&g_pmom_debug.wakelock_debug); /*lint !e455*/
 }
 
 static s32 pm_wakeup_icc_msg(u32 id , u32 len, void* context)
@@ -422,7 +429,7 @@ void pm_wakeup_init(void)
 {
 	char* dump_base = NULL;
 
-	wake_lock_init(&g_pmom_debug.wakelock_debug, WAKE_LOCK_SUSPEND, "cp_pm_wakeup");
+	wakeup_source_init(&g_pmom_debug.wakelock_debug, "cp_pm_wakeup");
 
 	/* 即使注册icc失败(有错误打印),只影响调测,不影响功能 */
 	(void)bsp_icc_event_register(ICC_CHN_IFC << 16 | IFC_RECV_FUNC_WAKEUP, \

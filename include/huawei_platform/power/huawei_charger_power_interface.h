@@ -1,5 +1,23 @@
-#ifndef __POWER_INTERFACE_H_
-#define __POWER_INTERFACE_H_
+ /*
+  * huawei_charger_power_interface.h
+  *
+  * interface for power module
+  *
+  * Copyright (c) 2012-2018 Huawei Technologies Co., Ltd.
+  *
+  * This software is licensed under the terms of the GNU General Public
+  * License version 2, as published by the Free Software Foundation, and
+  * may be copied, distributed, and modified under those terms.
+  *
+  * This program is distributed in the hope that it will be useful,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+  * GNU General Public License for more details.
+  *
+  */
+
+#ifndef _POWER_INTERFACE_H_
+#define _POWER_INTERFACE_H_
 
 #define POWER_IF_RD_BUF_SIZE (64)
 #define POWER_IF_WR_BUF_SIZE (256)
@@ -7,7 +25,9 @@
 enum power_if_sysfs_type {
 	POWER_IF_SYSFS_BEGIN = 0,
 
-	POWER_IF_SYSFS_ENABLE_CHARGER = POWER_IF_SYSFS_BEGIN, /* enable charger */
+	/* enable charger */
+	POWER_IF_SYSFS_ENABLE_CHARGER = POWER_IF_SYSFS_BEGIN,
+	POWER_IF_SYSFS_VBUS_IIN_LIMIT,
 
 	POWER_IF_SYSFS_END,
 
@@ -67,23 +87,26 @@ enum power_if_error_code {
 	POWER_IF_ERRCODE_PASS = 0,
 };
 
-/* power interface oprator */
+/* power interface operator */
 struct power_if_ops {
-	int (*set_enable_charger)(unsigned int value); /* set enable charger interface */
-	int (*get_enable_charger)(unsigned int *value); /* get enable charger interface */
 	const char *type_name;
+	int (*set_enable_charger)(unsigned int value);
+	int (*get_enable_charger)(unsigned int *value);
+	int (*set_iin_limit)(unsigned int value);
+	int (*get_iin_limit)(unsigned int *value);
 };
 
 /* power interface info */
 struct power_if_device_info {
 	struct device *dev;
-
 	unsigned int total_ops;
 	struct power_if_ops *ops[POWER_IF_OP_TYPE_END];
 };
 
 int power_if_ops_register(struct power_if_ops *ops);
-int power_if_kernel_sysfs_get(unsigned int type, unsigned int sysfs_type, unsigned int *value);
-int power_if_kernel_sysfs_set(unsigned int type, unsigned int sysfs_type, unsigned int value);
+int power_if_kernel_sysfs_get(unsigned int type, unsigned int sysfs_type,
+	unsigned int *value);
+int power_if_kernel_sysfs_set(unsigned int type, unsigned int sysfs_type,
+	unsigned int value);
 
-#endif /* end of __POWER_INTERFACE_H_ */
+#endif /* _POWER_INTERFACE_H_ */

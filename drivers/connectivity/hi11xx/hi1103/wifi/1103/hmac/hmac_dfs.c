@@ -376,7 +376,7 @@ oal_uint32  hmac_dfs_cac_timeout_fn_etc(oal_void *p_arg)
         /* 启动 CAC 定时器 */
         FRW_TIMER_CREATE_TIMER(&pst_mac_device->st_dfs.st_dfs_cac_timer,
                                hmac_dfs_cac_timeout_fn_etc,
-                               HMAC_DFS_ONE_MIN_IN_MS,
+                               HMAC_DFS_SIXTY_TWO_SEC_IN_MS,
                                pst_hmac_vap,
                                OAL_FALSE,
                                OAM_MODULE_ID_HMAC,
@@ -508,7 +508,7 @@ OAL_STATIC oal_uint32  hmac_chan_get_cac_time(mac_device_stru *pst_mac_device, m
 OAL_STATIC oal_uint32  hmac_chan_get_off_chan_cac_time(mac_device_stru *pst_mac_device, mac_vap_stru *pst_mac_vap)
 {
     mac_channel_list_stru     st_chan_info;
-    oal_uint8                  uc_idx;
+    oal_uint8                 uc_idx = 0;
 
     mac_get_channel_idx_from_num_etc(pst_mac_vap->st_channel.en_band, pst_mac_device->st_dfs.st_dfs_info.uc_offchan_num, &uc_idx);
 
@@ -603,7 +603,7 @@ oal_void  hmac_dfs_cac_start_etc(mac_device_stru *pst_mac_device, hmac_vap_stru 
     ul_scan_time = hmac_chan_get_cac_time(pst_mac_device, &(pst_hmac_vap->st_vap_base_info));
     OAM_WARNING_LOG2(0, OAM_SF_DFS, "start cac time=%d ms ch=%d\n", ul_scan_time, pst_hmac_vap->st_vap_base_info.st_channel.uc_chan_number);
 
-    if(HMAC_DFS_ONE_MIN_IN_MS > ul_scan_time)
+    if(HMAC_DFS_SIXTY_TWO_SEC_IN_MS > ul_scan_time)
     {
         pst_mac_device->st_dfs.st_dfs_info.uc_timer_cnt     = 0;
         pst_mac_device->st_dfs.st_dfs_info.uc_timer_end_cnt = 1;
@@ -620,12 +620,12 @@ oal_void  hmac_dfs_cac_start_etc(mac_device_stru *pst_mac_device, hmac_vap_stru 
     else
     {
         pst_mac_device->st_dfs.st_dfs_info.uc_timer_cnt     = 0;
-        pst_mac_device->st_dfs.st_dfs_info.uc_timer_end_cnt = (oal_uint8)(ul_scan_time / HMAC_DFS_ONE_MIN_IN_MS);
+        pst_mac_device->st_dfs.st_dfs_info.uc_timer_end_cnt = (oal_uint8)(ul_scan_time / HMAC_DFS_SIXTY_TWO_SEC_IN_MS);
 
         /* 启动 CAC 定时器 */
         FRW_TIMER_CREATE_TIMER(&pst_mac_device->st_dfs.st_dfs_cac_timer,
                                hmac_dfs_cac_timeout_fn_etc,
-                               HMAC_DFS_ONE_MIN_IN_MS,
+                               HMAC_DFS_SIXTY_TWO_SEC_IN_MS,
                                pst_hmac_vap,
                                OAL_FALSE,
                                OAM_MODULE_ID_HMAC,
@@ -1497,7 +1497,7 @@ OAL_STATIC oal_uint32  hmac_dfs_off_chan_cac_timeout_fn(oal_void *p_arg)
         /* 启动OFF CHAN CAC 定时器 */
         FRW_TIMER_CREATE_TIMER(&pst_mac_device->st_dfs.st_dfs_off_chan_cac_timer,
                                hmac_dfs_off_chan_cac_timeout_fn,
-                               HMAC_DFS_ONE_MIN_IN_MS,
+                               HMAC_DFS_SIXTY_TWO_SEC_IN_MS,
                                pst_hmac_vap,
                                OAL_FALSE,
                                OAM_MODULE_ID_HMAC,
@@ -1779,12 +1779,12 @@ oal_void  hmac_dfs_off_chan_cac_start_etc(mac_device_stru *pst_mac_device, hmac_
     ul_scan_time = hmac_chan_get_off_chan_cac_time(pst_mac_device, &pst_hmac_vap->st_vap_base_info);
 
     pst_mac_device->st_dfs.st_dfs_info.uc_timer_cnt     = 0;
-    pst_mac_device->st_dfs.st_dfs_info.uc_timer_end_cnt = (oal_uint8)(ul_scan_time / HMAC_DFS_ONE_MIN_IN_MS);
+    pst_mac_device->st_dfs.st_dfs_info.uc_timer_end_cnt = (oal_uint8)(ul_scan_time / HMAC_DFS_SIXTY_TWO_SEC_IN_MS);
 
     /* 启动 CAC 定时器 */
     FRW_TIMER_CREATE_TIMER(&pst_mac_device->st_dfs.st_dfs_off_chan_cac_timer,
                            hmac_dfs_off_chan_cac_timeout_fn,
-                           HMAC_DFS_ONE_MIN_IN_MS,
+                           HMAC_DFS_SIXTY_TWO_SEC_IN_MS,
                            pst_hmac_vap,
                            OAL_FALSE,
                            OAM_MODULE_ID_HMAC,

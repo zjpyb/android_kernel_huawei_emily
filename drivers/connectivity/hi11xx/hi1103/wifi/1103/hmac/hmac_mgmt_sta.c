@@ -94,6 +94,10 @@ extern "C" {
 #include "hmac_btcoex.h"
 #endif
 
+#ifdef _PRE_WLAN_FEATURE_SNIFFER
+#include <hwnet/ipv4/sysctl_sniffer.h>
+#endif
+
 #if (_PRE_MULTI_CORE_MODE_OFFLOAD_DMAC == _PRE_MULTI_CORE_MODE)&&(_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
 #include "plat_pm_wlan.h"
 #endif
@@ -857,6 +861,10 @@ oal_uint32  hmac_sta_wait_auth_seq2_rx_etc(hmac_vap_stru *pst_sta, oal_void *pst
         return OAL_SUCC;
     }
 
+#ifdef _PRE_WLAN_FEATURE_SNIFFER
+	proc_sniffer_write_file(NULL, 0, puc_mac_hdr, pst_rx_ctrl->us_frame_len, 0);
+#endif
+
     /* AUTH alg CHECK*/
     us_auth_alg = mac_get_auth_alg(puc_mac_hdr);
     if ((mac_mib_get_AuthenticationMode(&pst_sta->st_vap_base_info) != us_auth_alg)
@@ -999,7 +1007,9 @@ oal_uint32  hmac_sta_wait_auth_seq4_rx_etc(hmac_vap_stru *pst_sta, oal_void *p_m
 
     if ((WLAN_FC0_SUBTYPE_AUTH|WLAN_FC0_TYPE_MGT) == mac_get_frame_type_and_subtype(puc_mac_hdr))
     {
-
+#ifdef _PRE_WLAN_FEATURE_SNIFFER
+	    proc_sniffer_write_file(NULL, 0, puc_mac_hdr, pst_rx_ctrl->us_frame_len, 0);
+#endif
         if((WLAN_AUTH_TRASACTION_NUM_FOUR == mac_get_auth_seq_num(puc_mac_hdr)) &&
            (MAC_SUCCESSFUL_STATUSCODE == mac_get_auth_status(puc_mac_hdr)))
         {
@@ -1455,6 +1465,10 @@ oal_uint32 hmac_sta_not_up_rx_mgmt_etc(hmac_vap_stru *pst_hmac_vap_sta, oal_void
         OAM_WARNING_LOG1(pst_hmac_vap_sta->st_vap_base_info.uc_vap_id, OAM_SF_RX, "{wifi_wake_src:hmac_sta_not_up_rx_mgmt_etc::wakeup mgmt type[0x%x]}",uc_mgmt_frm_type);
     }
 #endif
+#endif
+
+#ifdef _PRE_WLAN_FEATURE_SNIFFER
+	proc_sniffer_write_file(NULL, 0, puc_mac_hdr, pst_rx_info->us_frame_len, 0);
 #endif
 
     switch (uc_mgmt_frm_type)
@@ -3136,6 +3150,10 @@ oal_uint32 hmac_sta_wait_asoc_rx_etc(hmac_vap_stru *pst_hmac_sta, oal_void *pst_
         return OAL_FAIL;
     }
 
+#ifdef _PRE_WLAN_FEATURE_SNIFFER
+	proc_sniffer_write_file(NULL, 0, puc_mac_hdr, pst_rx_info->us_frame_len, 0);
+#endif
+
     if (MAC_SUCCESSFUL_STATUSCODE != en_asoc_status)
     {
         OAM_WARNING_LOG1(pst_hmac_sta->st_vap_base_info.uc_vap_id, OAM_SF_ASSOC,
@@ -3455,6 +3473,46 @@ oal_uint32 hmac_sta_get_min_rate(dmac_set_rate_stru *pst_rate_params, hmac_join_
     return OAL_SUCC;
 }
 
+#ifdef _PRE_WLAN_FEATURE_TXBF
+
+oal_void hmac_sta_roam_and_assoc_update_txbf_etc(mac_vap_stru *pst_mac_vap, mac_bss_dscr_stru *pst_mac_bss_dscr)
+{
+    /* linksys 2G 黑名单设备关闭txbf能力 */
+    if(MAC_IS_LINKSYS(pst_mac_vap->auc_bssid) &&
+        OAL_TRUE == pst_mac_bss_dscr->en_txbf_blacklist_chip_oui && WLAN_BAND_2G == pst_mac_vap->st_channel.en_band)
+    {
+        OAM_WARNING_LOG0(pst_mac_vap->uc_vap_id, OAM_SF_ROAM, "hmac_sta_roam_and_assoc_update_txbf_etc: txbf blacklist!");
+        hmac_config_vap_update_txbf_cap_etc(pst_mac_vap, OAL_FALSE);
+    }
+    else
+    {
+        /* 默认重新做一次恢复动作 */
+        hmac_config_vap_update_txbf_cap_etc(pst_mac_vap, OAL_TRUE);
+    }
+}
+#endif
+
+#ifdef _PRE_WLAN_FEATURE_ROAM
+
+oal_void hmac_sta_update_join_req_params_for_roam_etc(mac_vap_stru *pst_mac_vap, mac_ap_type_enum_uint16  *pen_ap_type)
+{
+    if (MAC_VAP_STATE_ROAMING == pst_mac_vap->en_vap_state)
+    {
+        hmac_user_stru         *pst_hmac_user;
+
+        pst_hmac_user = mac_res_get_hmac_user_etc(pst_mac_vap->us_assoc_vap_id);
+        if(pst_hmac_user)
+        {
+            *pen_ap_type = hmac_compability_ap_tpye_identify_etc(pst_mac_vap, pst_mac_vap->auc_bssid);
+
+            OAM_WARNING_LOG1(0, OAM_SF_TX, "{hmac_sta_update_join_req_params_for_roam_etc::ROAM vap en_ap_type[%d].}\r\n",*pen_ap_type);
+
+            pst_hmac_user->en_user_ap_type = *pen_ap_type;  /* AP类型 */
+        }
+    }
+}
+#endif
+
 
 oal_uint32 hmac_sta_update_join_req_params_etc(hmac_vap_stru *pst_hmac_vap, hmac_join_req_stru *pst_join_req)
 {
@@ -3467,6 +3525,7 @@ oal_uint32 hmac_sta_update_join_req_params_etc(hmac_vap_stru *pst_hmac_vap, hmac
     wlan_mib_ieee802dot11_stru     *pst_mib_info;
     mac_cfg_mode_param_stru         st_cfg_mode;
     oal_uint8                      *puc_cur_ssid;
+    mac_ap_type_enum_uint16         en_ap_type = 0;
 
     pst_mac_vap      = &(pst_hmac_vap->st_vap_base_info);
     pst_mib_info     = pst_mac_vap->pst_mib_info;
@@ -3614,6 +3673,10 @@ oal_uint32 hmac_sta_update_join_req_params_etc(hmac_vap_stru *pst_hmac_vap, hmac
         pst_mac_device->en_max_bandwidth = pst_mac_vap->st_channel.en_bandwidth;
     }
 
+#ifdef _PRE_WLAN_FEATURE_ROAM
+    hmac_sta_update_join_req_params_for_roam_etc(pst_mac_vap, &en_ap_type);
+#endif
+
     /* 抛事件到DMAC, 申请事件内存 */
     pst_event_mem = FRW_EVENT_ALLOC(OAL_SIZEOF(dmac_ctx_join_req_set_reg_stru));
     if (OAL_PTR_NULL == pst_event_mem)
@@ -3660,6 +3723,8 @@ oal_uint32 hmac_sta_update_join_req_params_etc(hmac_vap_stru *pst_hmac_vap, hmac
     /* 设置no frame filter打开 */
     pst_reg_params->ul_non_frame_filter = OAL_TRUE;
 
+    pst_reg_params->en_ap_type = en_ap_type;
+
     /* 下发ssid */
     oal_memcopy(pst_reg_params->auc_ssid, pst_join_req->st_bss_dscr.ac_ssid, WLAN_SSID_MAX_LEN);
     pst_reg_params->auc_ssid[WLAN_SSID_MAX_LEN - 1] = '\0';
@@ -3687,6 +3752,10 @@ oal_uint32 hmac_sta_update_join_req_params_etc(hmac_vap_stru *pst_hmac_vap, hmac
 
     /* 同步vap修改信息到device侧 */
     hmac_config_vap_m2s_info_syn(pst_mac_vap);
+#endif
+
+#ifdef _PRE_WLAN_FEATURE_TXBF
+    hmac_sta_roam_and_assoc_update_txbf_etc(pst_mac_vap, &pst_join_req->st_bss_dscr);
 #endif
 
     return OAL_SUCC;
@@ -4284,6 +4353,11 @@ oal_uint32  hmac_sta_up_rx_mgmt_etc(hmac_vap_stru *pst_hmac_vap_sta, oal_void *p
     oal_uint8                  *puc_mac_hdr;
     oal_uint8                   uc_mgmt_frm_type;
     oal_bool_enum_uint8         en_is_protected = OAL_FALSE;
+#if (_PRE_MULTI_CORE_MODE_OFFLOAD_DMAC == _PRE_MULTI_CORE_MODE)
+#ifdef _PRE_WLAN_WAKEUP_SRC_PARSE
+    oal_uint8                  *puc_data;
+#endif
+#endif
 
     if (OAL_PTR_NULL == pst_hmac_vap_sta || OAL_PTR_NULL == p_param)
     {
@@ -4311,7 +4385,16 @@ oal_uint32  hmac_sta_up_rx_mgmt_etc(hmac_vap_stru *pst_hmac_vap_sta, oal_void *p
         if(OAL_TRUE == wlan_pm_wkup_src_debug_get())
         {
             wlan_pm_wkup_src_debug_set(OAL_FALSE);
-            OAM_WARNING_LOG1(pst_hmac_vap_sta->st_vap_base_info.uc_vap_id, OAM_SF_RX, "{wifi_wake_src:hmac_sta_up_rx_mgmt_etc::wakeup mgmt type[0x%x]}",uc_mgmt_frm_type);
+            OAM_WARNING_LOG2(pst_hmac_vap_sta->st_vap_base_info.uc_vap_id, OAM_SF_RX, "{wifi_wake_src:hmac_sta_up_rx_mgmt_etc::wakeup frame type[0x%x] sub type[0x%x]}",
+                        mac_get_frame_type(puc_mac_hdr), uc_mgmt_frm_type);
+            /* action帧唤醒时打印action帧类型 */
+            if ((WLAN_FC0_SUBTYPE_ACTION|WLAN_FC0_TYPE_MGT) == mac_get_frame_type_and_subtype(puc_mac_hdr))
+            {
+                /* 获取帧体指针 */
+                puc_data = (oal_uint8 *)MAC_GET_RX_CB_MAC_HEADER_ADDR(&pst_rx_ctrl->st_rx_info) + pst_rx_ctrl->st_rx_info.uc_mac_header_len;
+                OAM_WARNING_LOG2(pst_hmac_vap_sta->st_vap_base_info.uc_vap_id, OAM_SF_RX, "{wifi_wake_src:hmac_sta_up_rx_mgmt_etc::wakeup action category[0x%x], action details[0x%x]}",
+                                                                                 puc_data[MAC_ACTION_OFFSET_CATEGORY], puc_data[MAC_ACTION_OFFSET_ACTION]);
+            }
         }
 #endif
 #endif
@@ -4322,11 +4405,17 @@ oal_uint32  hmac_sta_up_rx_mgmt_etc(hmac_vap_stru *pst_hmac_vap_sta, oal_void *p
         uc_mgmt_frm_type = mac_get_frame_sub_type(puc_mac_hdr);
         if (WLAN_FC0_SUBTYPE_BAR == uc_mgmt_frm_type)
         {
+#ifdef _PRE_WLAN_FEATURE_SNIFFER
+	        proc_sniffer_write_file(NULL, 0, puc_mac_hdr, pst_rx_info->us_frame_len, 0);
+#endif
             hmac_up_rx_bar_etc(pst_hmac_vap_sta, pst_rx_ctrl, pst_mgmt_rx_event->pst_netbuf);
         }
     }
     else if(WLAN_FC0_TYPE_MGT == mac_get_frame_type(puc_mac_hdr))
     {
+#ifdef _PRE_WLAN_FEATURE_SNIFFER
+	    proc_sniffer_write_file(NULL, 0, puc_mac_hdr, pst_rx_info->us_frame_len, 0);
+#endif
         switch (uc_mgmt_frm_type)
         {
             case WLAN_FC0_SUBTYPE_DEAUTH:

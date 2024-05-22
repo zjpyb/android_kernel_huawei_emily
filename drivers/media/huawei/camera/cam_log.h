@@ -23,7 +23,7 @@
 
 #ifndef LOG_H_INCLUDED
 #define LOG_H_INCLUDED
-
+#include <linux/types.h>
 enum{
 		CAM_DEBUG_EMERG     = 1<<7,
 		CAM_DEBUG_ALERT     = 1<<6,

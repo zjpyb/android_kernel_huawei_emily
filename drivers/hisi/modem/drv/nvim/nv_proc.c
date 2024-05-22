@@ -65,7 +65,7 @@ static ssize_t Modem_NvWrite(struct file *file,const char __user *buf, size_t le
     ret = nv_upgrade_set_flag((bool)true);
     if(ret)
         return -EIO;
-    nv_record("%s %s modify upgrade flag success !\n",__DATE__,__TIME__);
+    nv_record("modify upgrade flag success !\n");
     /*lint -save -e713*/
     return len;
     /*lint -restore*/

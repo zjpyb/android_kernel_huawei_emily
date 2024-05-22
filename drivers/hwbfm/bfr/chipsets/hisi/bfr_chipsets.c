@@ -18,11 +18,14 @@
 
 #include <chipset_common/bfmr/bfr/chipsets/bfr_chipsets.h>
 #include <chipset_common/bfmr/common/bfmr_common.h>
+#include <linux/mm.h>
 
 
 /*----local macroes------------------------------------------------------------------*/
 
 #define BFR_RRECORD_BACKUP_PART_NAME "reserved2"
+#define BFR_KB (1024)
+#define BFR_MIN_MEM_SIZE_FOR_BOPD (3 * BFR_KB * BFR_KB)
 
 
 /*----local prototypes----------------------------------------------------------------*/
@@ -44,9 +47,23 @@
 
 bool bfr_safe_mode_has_been_enabled(void)
 {
-    return true;
+    if (((totalram_pages * PAGE_SIZE) / BFR_KB) < (BFR_MIN_MEM_SIZE_FOR_BOPD))
+    {
+        return true;
+    }
+
+    return false;
 }
 
+bool bfr_bopd_has_been_enabled(void)
+{
+    if (((totalram_pages * PAGE_SIZE) / BFR_KB) >= (BFR_MIN_MEM_SIZE_FOR_BOPD))
+    {
+        return true;
+    }
+
+    return false;
+}
 
 int bfr_get_full_path_of_rrecord_part(char **path_buf)
 {
@@ -59,7 +76,7 @@ int bfr_get_full_path_of_rrecord_part(char **path_buf)
 
     if (unlikely(NULL == path_buf))
     {
-        BFMR_PRINT_INVALID_PARAMS("path_buf: %p\n", path_buf);
+        BFMR_PRINT_INVALID_PARAMS("path_buf.\n");
         return -1;
     }
 

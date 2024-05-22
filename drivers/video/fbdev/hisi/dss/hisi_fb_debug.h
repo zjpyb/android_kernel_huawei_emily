@@ -63,20 +63,27 @@
 #include <linux/file.h>
 #include <linux/dma-buf.h>
 #include <linux/genalloc.h>
-#include <linux/hisi/hisi-iommu.h>
+#include <linux/hisi-iommu.h>
 #if defined (CONFIG_HUAWEI_DSM)
 #include <dsm/dsm_pub.h>
 #endif
 
-
 #if defined (CONFIG_HUAWEI_DSM)
-#define VACTIVE0_TIMEOUT_EXPIRE_COUNT	(6)
-#define UNDERFLOW_EXPIRE_COUNT (6)
+#define VACTIVE0_TIMEOUT_EXPIRE_COUNT   (6)
+#define UNDERFLOW_EXPIRE_COUNT   (6)
 #define UNDERFLOW_INTERVAL (1000)
 #define OFFLINE_COMPOSE_TIMEOUT_EXPECT_COUNT (6)
 #endif
 
-
+/* DSS debug tag func */
+#ifdef CONFIG_HISI_FB_ENG_DBG
+#define DDTF(tag, func)    \
+   do {                    \
+      if (tag) func();     \
+   } while(0)
+#else
+#define DDTF(tag, func)
+#endif
 /******************************************************************************
 ** FUNCTIONS PROTOTYPES
 */
@@ -119,20 +126,20 @@ extern int g_enable_mmbuf_debug;
 extern int g_ldi_data_gate_en;
 extern int g_debug_ovl_credit_step;
 extern int g_debug_layerbuf_sync;
-extern int g_debug_offline_layerbuf_sync;
 extern int g_debug_fence_timeline;
 extern int g_enable_dss_idle;
 extern int g_dss_effect_sharpness1D_en;
 extern int g_dss_effect_sharpness2D_en;
 extern int g_dss_effect_acm_ce_en;
 extern int g_debug_dump_mmbuf;
+extern int g_debug_dump_iova;
 extern uint32_t g_mmbuf_addr_test;
 extern uint32_t g_dump_sensorhub_aod_hwlock;
 #if !defined(CONFIG_HISI_FB_3650) && !defined (CONFIG_HISI_FB_6250)
 extern uint32_t g_dss_min_bandwidth_inbusbusy;
 #endif
 
-extern int g_err_status;
+extern uint32_t g_err_status;
 extern int g_debug_enable_lcd_sleep_in;
 
 

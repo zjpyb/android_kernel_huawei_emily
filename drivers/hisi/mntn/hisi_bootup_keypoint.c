@@ -50,7 +50,7 @@ void set_boot_keypoint(u32 value)
 		if (!g_bootup_keypoint_addr) {
 			return;
 		}
-		writel(value, (void *)g_bootup_keypoint_addr);
+		writel(value, (void *)(uintptr_t)g_bootup_keypoint_addr);
 	} else {
 		hisi_pmic_reg_write(BOOTUP_KEYPOINT_OFFSET, value);/*lint !e747*/
 	}
@@ -71,7 +71,7 @@ u32 get_boot_keypoint(void)
 		if (!g_bootup_keypoint_addr) {
 			return 0;
 		}
-		value = readl((void *)g_bootup_keypoint_addr);
+		value = readl((void *)(uintptr_t)g_bootup_keypoint_addr);
 	} else {
 		value = hisi_pmic_reg_read(BOOTUP_KEYPOINT_OFFSET);/*lint !e747*/
 	}
@@ -165,7 +165,7 @@ static void bootup_keypoint_addr_init(void)
 	}
 	if (fpga_flag == FPGA) {
 		bootup_keypoint_addr = FPGA_BOOTUP_KEYPOINT_ADDR;
-		g_bootup_keypoint_addr = (unsigned long long)
+		g_bootup_keypoint_addr = (uintptr_t)
 			ioremap_wc(bootup_keypoint_addr, sizeof(int));
 		if (!g_bootup_keypoint_addr) {
 			BB_PRINT_ERR(KERN_ERR "get bootup_keypoint_addr error\n");

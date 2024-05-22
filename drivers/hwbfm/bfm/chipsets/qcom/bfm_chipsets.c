@@ -36,7 +36,7 @@
 #define BFM_QCOM_LOG_UPLOADING_PATH BFM_QCOM_LOG_ROOT_PATH "/" BFM_UPLOADING_DIR_NAME
 #define BFM_QCOM_BL1_BOOTFAIL_LOG_NAME "sbl1.log"
 #define BFM_QCOM_BL2_BOOTFAIL_LOG_NAME "lk.log"
-#define BFM_QCOM_KERNEL_BOOTFAIL_LOG_NAME "kmsg.log"
+#define BFM_QCOM_KERNEL_BOOTFAIL_LOG_NAME "last_kmsg"
 #define BFM_QCOM_RAMOOPS_BOOTFAIL_LOG_NAME "pmsg-ramoops-0"
 #define BFM_QCOM_WAIT_FOR_LOG_PART_TIMEOUT (40)
 
@@ -714,6 +714,12 @@ int bfm_platform_process_boot_fail(bfm_process_bootfail_param_t *param)
 }
 
 
+int bfm_update_platform_logs(bfm_bootfail_log_info_t *pbootfail_log_info)
+{
+    return 0;
+}
+
+
 /**
     @function: int bfm_platform_process_boot_success(void)
     @brief: process boot success in chipsets module
@@ -1005,17 +1011,6 @@ void bfmr_update_raw_log_info(bfmr_log_src_t *psrc, bfmr_log_dst_t *pdst, unsign
 void bfmr_copy_data_from_dfx_to_bfmr_tmp_buffer(void)
 {
     return;
-}
-
-
-int bfm_get_kmsg_log_header_size(void)
-{
-    return 0;
-}
-
-bool bfm_is_beta_version(void)
-{
-    return false;
 }
 
 

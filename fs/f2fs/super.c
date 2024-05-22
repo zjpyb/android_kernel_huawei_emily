@@ -67,10 +67,6 @@ struct dsm_client *f2fs_dclient = NULL;
 #define SSR_WD_WATERLINE_128G       60		/* 80% default warm data waterline for 128G devices */
 #endif
 
-static atomic_t restart;
-static struct workqueue_struct *f2fs_wq;
-static struct work_struct f2fs_work;
-
 static struct kmem_cache *f2fs_inode_cachep;
 
 #ifdef CONFIG_F2FS_JOURNAL_APPEND
@@ -277,25 +273,6 @@ static match_table_t f2fs_tokens = {
 	{Opt_nosubdivision, "nosubdivision"},
 	{Opt_err, NULL},
 };
-
-static void f2fs_reboot(struct work_struct *work)
-{
-	if (work)
-		kernel_restart("mount failed!");
-
-	/* should not be here */
-	panic("f2fs reboot error!");
-}
-
-void f2fs_add_restart_wq(void)
-{
-	if(!atomic_xchg(&restart, 1)) {
-		if (system_state > SYSTEM_RUNNING)
-			return;
-		printk(KERN_ERR "f2fs reboot for some IO ERR!\n");
-		queue_work(f2fs_wq, &f2fs_work);
-	}
-}
 
 #ifndef CONFIG_F2FS_CHECK_FS
 void need_fsck_fn(struct work_struct *work)
@@ -944,13 +921,14 @@ static int f2fs_drop_inode(struct inode *inode)
 			sb_start_intwrite(inode->i_sb);
 			f2fs_i_size_write(inode, 0);
 
+			f2fs_submit_merged_write_cond(F2FS_I_SB(inode), inode,
+						      0, ULONG_MAX, DATA);
+			truncate_inode_pages_final(inode->i_mapping);
+
 			if (F2FS_HAS_BLOCKS(inode))
 				f2fs_truncate(inode);
 
 			sb_end_intwrite(inode->i_sb);
-
-			if (!f2fs_inline_encrypted_inode(inode))
-				fscrypt_put_encryption_info(inode, NULL);
 
 			spin_lock(&inode->i_lock);
 			atomic_dec(&inode->i_count);
@@ -1140,6 +1118,14 @@ static void f2fs_put_super(struct super_block *sb)
 		kfree(sbi->write_io[i]);
 	kfree(sbi);
 	f2fs_msg(sb, KERN_ALERT, "f2fs put super sucessfully\n");
+}
+
+int __f2fs_sync_fs(struct super_block *sb, int sync)
+{
+	if (is_gc_test_set(F2FS_SB(sb), GC_TEST_DISABLE_SYNCFS))
+		return 0;
+
+	return f2fs_sync_fs(sb, sync);
 }
 
 int f2fs_sync_fs(struct super_block *sb, int sync)
@@ -1636,6 +1622,7 @@ restore_opts:
 static ssize_t f2fs_quota_read(struct super_block *sb, int type, char *data,
 			       size_t len, loff_t off)
 {
+	struct f2fs_sb_info *sbi = F2FS_SB(sb);
 	struct inode *inode = sb_dqopt(sb)->files[type];
 	struct address_space *mapping = inode->i_mapping;
 	block_t blkidx = F2FS_BYTES_TO_BLK(off);
@@ -1664,6 +1651,7 @@ repeat:
 			f2fs_msg(sb, KERN_ERR,
 				"Failed to read quota file "
 				"(type=%d, err=%ld).", type, PTR_ERR(page));
+			set_sbi_flag(sbi, SBI_QUOTA_NEED_REPAIR);
 			return PTR_ERR(page);
 		}
 
@@ -1678,6 +1666,7 @@ repeat:
 			f2fs_msg(sb, KERN_ERR,
 				"Failed to read quota file "
 				"(type=%d, err=EIO).", type);
+			set_sbi_flag(sbi, SBI_QUOTA_NEED_REPAIR);
 			return -EIO;
 		}
 
@@ -1698,6 +1687,7 @@ repeat:
 static ssize_t f2fs_quota_write(struct super_block *sb, int type,
 				const char *data, size_t len, loff_t off)
 {
+	struct f2fs_sb_info *sbi = F2FS_SB(sb);
 	struct inode *inode = sb_dqopt(sb)->files[type];
 	struct address_space *mapping = inode->i_mapping;
 	const struct address_space_operations *a_ops = mapping->a_ops;
@@ -1722,6 +1712,7 @@ retry:
 			f2fs_msg(sb, KERN_ERR,
 				"Failed to write quota file "
 				"(type=%d, err=%d).", type, err);
+			set_sbi_flag(sbi, SBI_QUOTA_NEED_REPAIR);
 			break;
 		}
 
@@ -1758,6 +1749,12 @@ static qsize_t *f2fs_get_reserved_space(struct inode *inode)
 
 static int f2fs_quota_on_mount(struct f2fs_sb_info *sbi, int type)
 {
+	if (is_set_ckpt_flags(sbi, CP_QUOTA_NEED_FSCK_FLAG)) {
+		f2fs_msg(sbi->sb, KERN_ERR,
+			"quota sysfile may be corrupted, skip loading it");
+		return 0;
+	}
+
 	return dquot_quota_on_mount(sbi->sb, sbi->s_qf_names[type],
 						sbi->s_jquota_fmt, type);
 }
@@ -1830,6 +1827,12 @@ static int f2fs_enable_quotas(struct super_block *sb)
 		test_opt(F2FS_SB(sb), PRJQUOTA),
 	};
 
+	if (is_set_ckpt_flags(F2FS_SB(sb), CP_QUOTA_NEED_FSCK_FLAG)) {
+		f2fs_msg(sb, KERN_ERR,
+			"quota file may be corrupted, skip loading it");
+		return 0;
+	}
+
 	sb_dqopt(sb)->flags |= DQUOT_QUOTA_SYS_FILE;
 	for (type = 0; type < MAXQUOTAS; type++) {
 		qf_inum = f2fs_qf_ino(sb, type);
@@ -1845,6 +1848,7 @@ static int f2fs_enable_quotas(struct super_block *sb)
 				for (type--; type >= 0; type--)
 					dquot_quota_off(sb, type);
 				set_extra_flag(sbi, EXTRA_NEED_FSCK_FLAG);
+				set_sbi_flag(sbi, SBI_QUOTA_NEED_REPAIR);
 				return err;
 			}
 		}
@@ -1853,39 +1857,55 @@ static int f2fs_enable_quotas(struct super_block *sb)
 }
 /*lint -restore*/
 
-static int f2fs_quota_sync(struct super_block *sb, int type)
+int f2fs_quota_sync(struct super_block *sb, int type)
 {
+	struct f2fs_sb_info *sbi = F2FS_SB(sb);
 	struct quota_info *dqopt = sb_dqopt(sb);
 	int cnt;
 	int ret;
 
 	ret = dquot_writeback_dquots(sb, type);
 	if (ret)
-		return ret;
+		goto out;
 
 	/*
 	 * Now when everything is written we can discard the pagecache so
 	 * that userspace sees the changes.
 	 */
 	for (cnt = 0; cnt < MAXQUOTAS; cnt++) {
+		struct address_space *mapping;
+
 		if (type != -1 && cnt != type)
 			continue;
 		if (!sb_has_quota_active(sb, cnt))
 			continue;
 
-		ret = filemap_write_and_wait(dqopt->files[cnt]->i_mapping);
+		mapping = dqopt->files[cnt]->i_mapping;
+
+		ret = filemap_fdatawrite(mapping);
 		if (ret) {
 			f2fs_msg(sb, KERN_ERR,
 				"Failed to sync quota file "
 				"(type=%d, err=%d)", type, ret);
-			return ret;
+			goto out;
 		}
+
+		/* if we are using journalled quota */
+		if (is_journalled_quota(sbi))
+			continue;
+
+		ret = filemap_fdatawait(mapping);
+		if (ret)
+			set_sbi_flag(F2FS_SB(sb), SBI_QUOTA_NEED_REPAIR);
 
 		inode_lock(dqopt->files[cnt]);
 		truncate_inode_pages(&dqopt->files[cnt]->i_data, 0);
 		inode_unlock(dqopt->files[cnt]);
 	}
-	return 0;
+out:
+	if (ret)
+		set_sbi_flag(F2FS_SB(sb), SBI_QUOTA_NEED_REPAIR);
+	return ret;
 }
 
 static int f2fs_quota_on(struct super_block *sb, int type, int format_id,
@@ -1917,20 +1937,14 @@ static int f2fs_quota_on(struct super_block *sb, int type, int format_id,
 static int f2fs_quota_off(struct super_block *sb, int type)
 {
 	struct inode *inode = sb_dqopt(sb)->files[type];
-	struct f2fs_sb_info *sbi = F2FS_SB(sb);
 	int err;
 
 	if (!inode || !igrab(inode))
 		return dquot_quota_off(sb, type);
 
 	err = f2fs_quota_sync(sb, type);
-	if (err) {
-		f2fs_msg(sb, KERN_ERR,
-			"Failed to sync quota file in umount"
-			"(type=%d, err=%d). Please run "
-			"fsck to fix.", type, err);
-		set_sbi_flag(sbi, SBI_NEED_FSCK);
-	}
+	if (err)
+		goto out_put;
 
 	err = dquot_quota_off(sb, type);
 	if (err || f2fs_sb_has_quota_ino(sb))
@@ -1949,9 +1963,86 @@ out_put:
 void f2fs_quota_off_umount(struct super_block *sb)
 {
 	int type;
+	int err;
 
-	for (type = 0; type < MAXQUOTAS; type++)
-		f2fs_quota_off(sb, type);
+	for (type = 0; type < MAXQUOTAS; type++) {
+		err = f2fs_quota_off(sb, type);
+		if (err) {
+			int ret = dquot_quota_off(sb, type);
+			f2fs_msg(sb, KERN_ERR,
+					"Fail to turn off disk quota "
+					"(type: %d, err: %d, ret:%d), Please "
+					"run fsck to fix it.", type, err, ret);
+			set_sbi_flag(F2FS_SB(sb), SBI_QUOTA_NEED_REPAIR);
+		}
+	}
+}
+
+static int f2fs_dquot_commit(struct dquot *dquot)
+{
+	int ret;
+
+	ret = dquot_commit(dquot);
+	if (ret < 0)
+		set_sbi_flag(F2FS_SB(dquot->dq_sb), SBI_QUOTA_NEED_REPAIR);
+	return ret;
+}
+
+static int f2fs_dquot_acquire(struct dquot *dquot)
+{
+	int ret;
+
+	ret = dquot_acquire(dquot);
+	if (ret < 0)
+		set_sbi_flag(F2FS_SB(dquot->dq_sb), SBI_QUOTA_NEED_REPAIR);
+	return ret;
+}
+
+static int f2fs_dquot_release(struct dquot *dquot)
+{
+	int ret;
+
+	ret = dquot_release(dquot);
+	if (ret < 0)
+		set_sbi_flag(F2FS_SB(dquot->dq_sb), SBI_QUOTA_NEED_REPAIR);
+	return ret;
+}
+
+static int f2fs_dquot_mark_dquot_dirty(struct dquot *dquot)
+{
+	struct super_block *sb = dquot->dq_sb;
+	struct f2fs_sb_info *sbi = F2FS_SB(sb);
+	int ret;
+
+	ret = dquot_mark_dquot_dirty(dquot);
+
+	/* if we are using journalled quota */
+	if (is_journalled_quota(sbi))
+		set_sbi_flag(sbi, SBI_QUOTA_NEED_FLUSH);
+
+	return ret;
+}
+
+static int f2fs_dquot_commit_info(struct super_block *sb, int type)
+{
+	int ret;
+
+	ret = dquot_commit_info(sb, type);
+	if (ret < 0)
+		set_sbi_flag(F2FS_SB(sb), SBI_QUOTA_NEED_REPAIR);
+	return ret;
+}
+
+static void f2fs_truncate_quota_inode_pages(struct super_block *sb)
+{
+	struct quota_info *dqopt = sb_dqopt(sb);
+	int type;
+
+	for (type = 0; type < MAXQUOTAS; type++) {
+		if (!dqopt->files[type])
+			continue;
+		f2fs_inode_synced(dqopt->files[type]);
+	}
 }
 
 int f2fs_get_projid(struct inode *inode, kprojid_t *projid)
@@ -1962,11 +2053,11 @@ int f2fs_get_projid(struct inode *inode, kprojid_t *projid)
 
 static const struct dquot_operations f2fs_quota_operations = {
 	.get_reserved_space = f2fs_get_reserved_space,
-	.write_dquot	= dquot_commit,
-	.acquire_dquot	= dquot_acquire,
-	.release_dquot	= dquot_release,
-	.mark_dirty	= dquot_mark_dquot_dirty,
-	.write_info	= dquot_commit_info,
+	.write_dquot	= f2fs_dquot_commit,
+	.acquire_dquot	= f2fs_dquot_acquire,
+	.release_dquot	= f2fs_dquot_release,
+	.mark_dirty	= f2fs_dquot_mark_dquot_dirty,
+	.write_info	= f2fs_dquot_commit_info,
 	.alloc_dquot	= dquot_alloc,
 	.destroy_dquot	= dquot_destroy,
 	.get_projid	= f2fs_get_projid,
@@ -1984,6 +2075,16 @@ static const struct quotactl_ops f2fs_quotactl_ops = {
 	.get_nextdqblk	= dquot_get_next_dqblk,
 };
 #else
+int f2fs_quota_sync(struct super_block *sb, int type)
+{
+	return 0;
+}
+
+int f2fs_quota_flush(struct super_block *sb)
+{
+	return 0;
+}
+
 void f2fs_quota_off_umount(struct super_block *sb)
 {
 }
@@ -2011,7 +2112,7 @@ static const struct super_operations f2fs_sops = {
 #endif
 	.evict_inode	= f2fs_evict_inode,
 	.put_super	= f2fs_put_super,
-	.sync_fs	= f2fs_sync_fs,
+	.sync_fs	= __f2fs_sync_fs,
 	.freeze_fs	= f2fs_freeze,
 	.unfreeze_fs	= f2fs_unfreeze,
 	.statfs		= f2fs_statfs,
@@ -2044,6 +2145,86 @@ static int f2fs_set_context(struct inode *inode, const void *ctx, size_t len,
 				F2FS_XATTR_NAME_ENCRYPTION_CONTEXT,
 				ctx, len, fs_data, XATTR_CREATE);
 }
+
+#ifdef CONFIG_HWAA
+static int f2fs_get_hwaa_attr(struct inode *inode, void *buf, size_t len)
+{
+	return f2fs_getxattr(inode, F2FS_XATTR_INDEX_ENCRYPTION, HWAA_XATTR_NAME,
+		buf, len, NULL, NULL);
+}
+
+static int f2fs_set_hwaa_attr(struct inode *inode, const void *attr, size_t len,
+	void *fs_data)
+{
+	return f2fs_setxattr(inode, F2FS_XATTR_INDEX_ENCRYPTION, HWAA_XATTR_NAME,
+		attr, len, fs_data, XATTR_CREATE);
+}
+
+/* mainly copied from f2fs_get_sdp_encrypt_flags */
+static int f2fs_get_hwaa_flags(struct inode *inode, void *fs_data, u32 *flags)
+{
+	struct f2fs_xattr_header *hdr;
+	struct page *xpage;
+	int err;
+
+	if (!fs_data)
+		down_read(&F2FS_I(inode)->i_sem);
+
+	*flags = 0;
+	hdr = get_xattr_header(inode, (struct page *)fs_data, &xpage);
+	if (IS_ERR_OR_NULL(hdr)) {
+		err = (long)PTR_ERR(hdr);
+		goto out_unlock;
+	}
+
+	*flags = hdr->h_xattr_flags;
+	err = 0;
+	f2fs_put_page(xpage, 1);
+out_unlock:
+	if (!fs_data)
+		up_read(&F2FS_I(inode)->i_sem);
+	return err;
+}
+
+/* mainly copied from f2fs_set_sdp_encrypt_flags */
+static int f2fs_set_hwaa_flags(struct inode *inode, void *fs_data, u32 *flags)
+{
+	struct f2fs_sb_info *sbi = F2FS_I_SB(inode);
+	struct f2fs_xattr_header *hdr;
+	struct page *xpage = NULL;
+	int err = 0;
+
+	if (!fs_data) {
+		f2fs_lock_op(sbi);
+		down_write(&F2FS_I(inode)->i_sem);
+	}
+
+	hdr = get_xattr_header(inode, (struct page *)fs_data, &xpage);
+	if (IS_ERR_OR_NULL(hdr)) {
+		err = (long)PTR_ERR(hdr);
+		goto out_unlock;
+	}
+
+	hdr->h_xattr_flags = *flags;
+	if (fs_data)
+		set_page_dirty(fs_data);
+	else if (xpage)
+		set_page_dirty(xpage);
+
+	f2fs_put_page(xpage, 1);
+
+	f2fs_mark_inode_dirty_sync(inode, true);
+	if (S_ISDIR(inode->i_mode))
+		set_sbi_flag(sbi, SBI_NEED_CP);
+
+out_unlock:
+	if (!fs_data) {
+		up_write(&F2FS_I(inode)->i_sem);
+		f2fs_unlock_op(sbi);
+	}
+	return err;
+}
+#endif
 
 static int f2fs_get_verify_context(struct inode *inode, void *ctx, size_t len)
 {
@@ -2123,6 +2304,13 @@ static const struct fscrypt_operations f2fs_cryptops = {
 #if DEFINE_F2FS_FS_SDP_ENCRYPTION
 	.get_keyinfo          = f2fs_get_crypt_keyinfo,
 	.is_permitted_context = f2fs_is_permitted_context,
+#endif
+#ifdef CONFIG_HWAA
+	.get_keyinfo		= f2fs_get_crypt_keyinfo,
+	.set_hwaa_attr		= f2fs_set_hwaa_attr,
+	.get_hwaa_attr		= f2fs_get_hwaa_attr,
+	.get_hwaa_flags		= f2fs_get_hwaa_flags,
+	.set_hwaa_flags		= f2fs_set_hwaa_flags,
 #endif
 };
 #else
@@ -2979,6 +3167,9 @@ try_onemore:
 #endif
 
 	sbi->sb = sb;
+#ifdef CONFIG_F2FS_CHECK_FS
+	atomic_set(&sbi->in_cp, 0);
+#endif
 
 	/* Load the checksum driver */
 	sbi->s_chksum_driver = crypto_alloc_shash("crc32", 0, 0);
@@ -3145,6 +3336,9 @@ try_onemore:
 		goto free_meta_inode;
 	}
 
+	if (__is_set_ckpt_flags(F2FS_CKPT(sbi), CP_QUOTA_NEED_FSCK_FLAG))
+		set_sbi_flag(sbi, SBI_QUOTA_NEED_REPAIR);
+
 	/* Initialize device list */
 	err = f2fs_scan_devices(sbi);
 	if (err) {
@@ -3249,11 +3443,9 @@ try_onemore:
 	 */
 	if (f2fs_sb_has_quota_ino(sb) && !sb_rdonly(sb)) {
 		err = f2fs_enable_quotas(sb);
-		if (err) {
+		if (err)
 			f2fs_msg(sb, KERN_ERR,
 				"Cannot turn on quotas: error %d", err);
-			goto free_sysfs;
-		}
 	}
 #endif
 	/* all the print info of sbi is created and ready now */
@@ -3353,10 +3545,10 @@ skip_recovery:
 
 free_meta:
 #ifdef CONFIG_QUOTA
+	f2fs_truncate_quota_inode_pages(sb);
 	if (f2fs_sb_has_quota_ino(sb) && !sb_rdonly(sb))
 		f2fs_quota_off_umount(sbi->sb);
 #endif
-	f2fs_sync_inode_meta(sbi);
 	/*
 	 * Some dirty meta pages can be produced by recover_orphan_inodes()
 	 * failed by EIO. Then, iput(node_inode) can trigger balance_fs_bg()
@@ -3364,9 +3556,6 @@ free_meta:
 	 * falls into an infinite loop in sync_meta_pages().
 	 */
 	truncate_inode_pages_final(META_MAPPING(sbi));
-#ifdef CONFIG_QUOTA
-free_sysfs:
-#endif
 	f2fs_unregister_sysfs(sbi);
 free_root_inode:
 	dput(sb->s_root);
@@ -3435,6 +3624,7 @@ static struct dentry *f2fs_mount(struct file_system_type *fs_type, int flags,
 
 static void kill_f2fs_super(struct super_block *sb)
 {
+	struct f2fs_sb_info *sbi = F2FS_SB(sb);
 #ifdef CONFIG_F2FS_CHECK_FS
 	struct access_timestamp *at, *tmp;
 #endif
@@ -3443,6 +3633,9 @@ static void kill_f2fs_super(struct super_block *sb)
 		set_sbi_flag(F2FS_SB(sb), SBI_IS_CLOSE);
 		stop_gc_thread(F2FS_SB(sb));
 		stop_discard_thread(F2FS_SB(sb));
+
+		if (is_sbi_flag_set(sbi, SBI_IS_RECOVERED) && f2fs_readonly(sb))
+			sb->s_flags &= ~MS_RDONLY;
 	}
 	kill_block_super(sb);
 #ifdef CONFIG_F2FS_CHECK_FS
@@ -3492,13 +3685,6 @@ static int __init init_f2fs_fs(void)
 	int err;
 
 	f2fs_build_trace_ios();
-
-	/*wq for reboot in interrupt context*/
-	atomic_set(&restart, 0);
-	f2fs_wq = alloc_workqueue("f2fs", WQ_FREEZABLE, 0);
-	if (!f2fs_wq)
-		return -ENOMEM;
-	INIT_WORK(&f2fs_work, f2fs_reboot);
 
 	err = init_inodecache();
 	if (err)
@@ -3575,7 +3761,6 @@ static void __exit exit_f2fs_fs(void)
 	destroy_node_manager_caches();
 	destroy_inodecache();
 	f2fs_destroy_trace_ios();
-	destroy_workqueue(f2fs_wq);
 }
 
 module_init(init_f2fs_fs)

@@ -46,11 +46,6 @@ struct blk_scsi_device {
 	unsigned long flags;
 };
 
-static long hisi_blk_kern_copy_data(void *to, const void *from, unsigned long n)
-{
-	memcpy(to, from, n);
-	return 0;
-}
 static int hisi_blk_kern_fill_sgv4_hdr_rq(struct request_queue *q,
 					  struct request *rq,
 					  struct sg_io_v4 *hdr)
@@ -61,10 +56,9 @@ static int hisi_blk_kern_fill_sgv4_hdr_rq(struct request_queue *q,
 			return -ENOMEM;
 	}
 
-	if (hisi_blk_kern_copy_data((void *)rq->cmd,
-				    (void *)(unsigned long)hdr->request,
-				    (unsigned long)hdr->request_len))
-		return -EFAULT;
+	memcpy((void *)rq->cmd, /* unsafe_function_ignore: memcpy */
+	       (void *)(unsigned long)hdr->request,
+	       (unsigned long)hdr->request_len);
 
 	/*
 	 * fill in request structure
@@ -207,9 +201,9 @@ static int hisi_blk_kern_complete_hdr_rq(struct request *rq,
 	/*
 	 * fill in all the output members
 	 */
-	hdr->device_status = rq->errors & 0xff;
-	hdr->transport_status = host_byte(rq->errors);
-	hdr->driver_status = driver_byte(rq->errors);
+	hdr->device_status = (unsigned int)(rq->errors) & 0xff;
+	hdr->transport_status = host_byte((unsigned int)(rq->errors));
+	hdr->driver_status = driver_byte((unsigned int)(rq->errors));
 	hdr->info = 0;
 	if (hdr->device_status || hdr->transport_status || hdr->driver_status)
 		hdr->info |= SG_INFO_CHECK;
@@ -219,12 +213,10 @@ static int hisi_blk_kern_complete_hdr_rq(struct request *rq,
 		unsigned int len = min_t(unsigned int, hdr->max_response_len,
 				rq->sense_len);
 
-		ret = hisi_blk_kern_copy_data(
-			(void *)(unsigned long)hdr->response, rq->sense, (unsigned long)len);
-		if (!ret)
-			hdr->response_len = len;
-		else
-			ret = -EFAULT;
+		memcpy((void *)(unsigned long)hdr->response, /* unsafe_function_ignore: memcpy */
+		       rq->sense,
+		       (unsigned long)len);
+		hdr->response_len = len;
 	}
 
 	if (rq->next_rq) {
@@ -267,9 +259,7 @@ long blk_scsi_kern_ioctl(unsigned int fd, unsigned int cmd, unsigned long arg)
 	bd = (struct blk_scsi_device *)pfile->private_data;
 	switch (cmd) {
 	case SG_IO:
-		if (hisi_blk_kern_copy_data(&hdr, uarg, sizeof(hdr)))
-			return -EFAULT;
-
+		memcpy(&hdr, uarg, sizeof(hdr)); /* unsafe_function_ignore: memcpy */
 		rq = hisi_blk_kern_map_hdr(bd, &hdr, sense);
 
 		if (IS_ERR(rq))
@@ -279,8 +269,7 @@ long blk_scsi_kern_ioctl(unsigned int fd, unsigned int cmd, unsigned long arg)
 		blk_execute_rq(bd->queue, NULL, rq, at_head);
 		ret = hisi_blk_kern_complete_hdr_rq(rq, &hdr);
 
-		if (hisi_blk_kern_copy_data(uarg, &hdr, sizeof(hdr)))
-			return -EFAULT;
+		memcpy(uarg, &hdr, sizeof(hdr)); /* unsafe_function_ignore: memcpy */
 
 		break;
 	/*

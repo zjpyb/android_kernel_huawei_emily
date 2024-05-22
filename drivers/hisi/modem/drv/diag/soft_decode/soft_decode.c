@@ -207,7 +207,7 @@ u32 SCM_SoftDecodeCfgHdlcInit(OM_HDLC_STRU *pstHdlc)
 }
 
 
-void SCM_SoftDecodeCfgRcvSelfTask(void)
+int SCM_SoftDecodeCfgRcvSelfTask(void* para)
 {
     s32                           sRet;
     s32                           lLen;
@@ -216,6 +216,8 @@ void SCM_SoftDecodeCfgRcvSelfTask(void)
     u32                          ulPktNum;
     u32                          i;
     unsigned long                           ulLockLevel;
+
+    UNUSED(para);
 
     for (;;)
     {
@@ -285,6 +287,7 @@ void SCM_SoftDecodeCfgRcvSelfTask(void)
     
     /* coverity[loop_bottom] */
     }
+    return 0;//lint !e527
 }
 
 
@@ -311,7 +314,8 @@ int SCM_SoftDecodeCfgRcvTaskInit(void)
     osl_sem_init(0, &(g_stSCMDataRcvTaskCtrlInfo.SmID));
 
     /* 注册OM配置数据接收自处理任务 */
-    ulRslt = (u32)osl_task_init("soft_dec", 76, 8096,(OSL_TASK_FUNC)SCM_SoftDecodeCfgRcvSelfTask, NULL, &task_id);
+    ulRslt = (u32)osl_task_init("soft_dec", 76, 8096,
+    	(OSL_TASK_FUNC)SCM_SoftDecodeCfgRcvSelfTask, NULL, &task_id);
     if (ulRslt )
     {
         soft_decode_printf("SCM_SoftDecodeCfgRcvTaskInit: VOS_RegisterSelfTaskPrio Fail.\n");

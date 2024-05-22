@@ -8,12 +8,7 @@
 #include <huawei_platform/power/wireless_direct_charger.h>
 #include <huawei_platform/power/direct_charger.h>
 #include <huawei_platform/power/wired_channel_switch.h>
-#ifdef CONFIG_BOOST_5V
 #include <huawei_platform/power/boost_5v.h>
-#endif
-#ifdef CONFIG_TCPC_CLASS
-#include <huawei_platform/usb/hw_pd_dev.h>
-#endif
 
 #define HWLOG_TAG wireless_sc
 HWLOG_REGIST();
@@ -37,7 +32,7 @@ static int wireless_sc_set_enable_charger(unsigned int val)
 	}
 
 	di->sysfs_data.enable_charger = val;
-	hwlog_info("wl_sc: set enable_charger = %ld\n", di->sysfs_data.enable_charger);
+	hwlog_info("wl_sc: set enable_charger = %d\n", di->sysfs_data.enable_charger);
 
 	return 0;
 }
@@ -154,9 +149,7 @@ int wireless_sc_charge_check(void)
 		hwlog_debug("%s: batt temp out of range, try next loop!\n", __func__);
 		return -1;
 	}
-#ifdef CONFIG_BOOST_5V
 	boost_5v_enable(BOOST_5V_ENABLE, BOOST_CTRL_WLDC);
-#endif
 	if (!di->wldc_stop_charging_complete_flag) {
 		hwlog_err("%s: in wireless sc, ingnore wireless_sc check", __func__);
 		return -1;
@@ -170,6 +163,7 @@ int wireless_sc_charge_check(void)
 		wldc_stop_charging(di);
 		return -1;
 	}
+	wireless_charge_set_iout_min();
 	ret = wldc_set_rx_init_vout(di);
 	if (ret){
 		di->wldc_stop_flag_error = 1;
@@ -178,7 +172,7 @@ int wireless_sc_charge_check(void)
 		return -1;
 	}
 	wireless_charge_chip_init(WILREESS_SC_CHIP_INIT);
-	ret = wldc_cutt_off_normal_charge_path();
+	ret = wldc_cut_off_normal_charge_path();
 	if (ret) {
 		di->wldc_stop_flag_error = 1;
 		hwlog_err("%s: cutt_off_normal_charge fail, try next loop!\n", __func__);
@@ -187,10 +181,8 @@ int wireless_sc_charge_check(void)
 		wldc_stop_charging(di);
 		return -1;
 	}
-#ifdef CONFIG_TCPC_CLASS
-	pd_dpm_ignore_vbus_only_event(true);
-#endif
-	ret = wired_chsw_set_wired_reverse_channel(WIRED_REVERSE_CHANNEL_RESTORE);
+	wlc_ignore_vbus_only_event(true);
+	ret = wldc_turn_on_direct_charge_channel();
 	if (ret) {
 		di->wldc_stop_flag_error = 1;
 		hwlog_err("%s: open wired_reverse_channel fail, try next loop!\n", __func__);
@@ -342,7 +334,7 @@ static ssize_t wireless_sc_sysfs_store(struct device *dev,
 		if ((strict_strtol(buf, 10, &val) < 0) || (val < 0) || (val > 1))
 			return -EINVAL;
 		di->sysfs_data.enable_charger = val;
-		hwlog_info("[%s] set enable_charger = %ld\n", __func__, di->sysfs_data.enable_charger);
+		hwlog_info("[%s] set enable_charger = %d\n", __func__, di->sysfs_data.enable_charger);
 		break;
 	case WLDC_SYSFS_IIN_THERMAL:
 		if ((strict_strtol(buf, 10, &val) < 0) || (val < 0) || (val > 1500))

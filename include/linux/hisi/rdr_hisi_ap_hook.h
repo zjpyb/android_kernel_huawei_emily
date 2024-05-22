@@ -5,8 +5,12 @@
 #include <linux/thread_info.h>
 #include <linux/hisi/rdr_types.h>
 #include <linux/hisi/rdr_pub.h>
-#include <linux/hisi/hisi_ion.h>
 #include <linux/version.h>
+
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
+#include <linux/hisi/hisi_ion.h>
+#endif
+
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 76))
 #include <linux/sched.h>
 #endif
@@ -176,13 +180,17 @@ void worker_hook(u64 address, u32 dir);
 void page_trace_hook(gfp_t gfp_flag, u8 action, u64 caller, struct page *page, u32 order);
 void kmalloc_trace_hook(u8 action, u64 caller, u64 va_addr, u64 phy_addr, u32 size);
 void vmalloc_trace_hook(u8 action, u64 caller, u64 va_addr, struct page *page, u64 size);
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
 void ion_trace_hook(u8 action, struct ion_client *client, struct ion_handle *handle);
+#endif
 void smmu_trace_hook(u8 action, u64 va_addr, u64 phy_addr, u32 size);
 #else
 static inline void page_trace_hook(gfp_t gfp_flag, u8 action, u64 caller, struct page *page, u32 order){}
 static inline void kmalloc_trace_hook(u8 action, u64 caller, u64 va_addr, u64 phy_addr, u32 size){}
 static inline void vmalloc_trace_hook(u8 action, u64 caller, u64 va_addr, struct page *page, u64 size){}
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
 static inline void ion_trace_hook(u8 action, struct ion_client *client, struct ion_handle *handle){}
+#endif
 static inline void smmu_trace_hook(u8 action, u64 va_addr, u64 phy_addr, u32 size){}
 #endif
 #else
@@ -198,7 +206,9 @@ static inline void worker_hook(u64 address, u32 dir){}
 static inline void page_trace_hook(gfp_t gfp_flag, u8 action, u64 caller, struct page *page, u32 order){}
 static inline void kmalloc_trace_hook(u8 action, u64 caller, u64 va_addr, u64 phy_addr, u32 size){}
 static inline void vmalloc_trace_hook(u8 action, u64 caller, u64 va_addr, struct page *page, u64 size){}
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
 static inline void ion_trace_hook(u8 action, struct ion_client *client, struct ion_handle *handle){}
+#endif
 static inline void smmu_trace_hook(u8 action, u64 va_addr, u64 phy_addr, u32 size){}
 #endif
 

@@ -1412,6 +1412,7 @@ enum TAF_CS_CAUSE_ENUM
     TAF_CS_CAUSE_IMSA_STRM_RTP_BREAK_WIFI_CONGEST                   = (TAF_CS_CAUSE_IMSA_BEGIN + 28),           /* WIFI信号差拥塞引发的RTP break导致VOWIFI电话掉话 */
     TAF_CS_CAUSE_IMSA_IMS_IGNORE_ERROR                              = (TAF_CS_CAUSE_IMSA_BEGIN + 29),           /* 仅用作IMSA上报给TAF的可忽略错误原因值 */
     TAF_CS_CAUSE_IMSA_SERVICE_WIFI_SIGNAL_BAD                        = (TAF_CS_CAUSE_IMSA_BEGIN + 30),           /* LTE信号质量差 */
+    TAF_CS_CAUSE_IMSA_SSAC_BAR                                       = (TAF_CS_CAUSE_IMSA_BEGIN + 32),
     /* XCALL 错误原因值 */
     TAF_CS_CAUSE_XCALL_NO_SERVICE                                   = (TAF_CS_CAUSE_XCALL_BEGIN + 1),           /* No Service\x{ff0c}Call Redial */
     TAF_CS_CAUSE_XCALL_MAX_ACCESS_PROBES,                                                                       /* Max Access Probes, Call Redial */

@@ -1,8 +1,14 @@
-#include "drv_venc_osal.h"
-#include "hi_drv_mem.h"
 #include <asm/uaccess.h>
 #include <linux/version.h>
+#include <linux/dma-mapping.h>
+#include <linux/dma-iommu.h>
+#include <linux/dma-buf.h>
+#include <linux/iommu.h>
+#include <linux/hisi-iommu.h>
+#include <linux/slab.h>
 
+#include "drv_venc_osal.h"
+#include "hi_drv_mem.h"
 
 #define  MAX_BUFFER_SIZE (10*1024)
 
@@ -10,27 +16,25 @@ HI_CHAR *g_sbuf = NULL;
 HI_S32   g_venc_node_num = 0;
 
 struct semaphore    g_VencMemSem;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4,14,0)
 struct ion_client  *g_ion_client = HI_NULL;
+#endif
 venc_mem_buf g_venc_mem_node[MAX_KMALLOC_MEM_NODE];
 venc_mem_buf g_venc_ion_mem_node[MAX_ION_MEM_NODE];
 
 VENC_SMMU_ERR_ADDR g_smmu_err_mem;
-
+extern struct platform_device *gPlatDev;
 HI_S32 DRV_MEM_INIT(HI_VOID)
 {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4,14,0)
 	struct ion_client *ion_client;
+#endif
 	HI_CHAR *sbuf;
 	HI_S32 s32Ret;
 	MEM_BUFFER_S  MEM_SMMU_RD_ADDR;
 	MEM_BUFFER_S  MEM_SMMU_WR_ADDR;
 
 	HiVENC_INIT_MUTEX(&g_VencMemSem);
-
-	ion_client = (struct ion_client *)hisi_ion_client_create("hi_vcodec_ion_venc");
-	if (IS_ERR_OR_NULL(ion_client)) {
-		HI_FATAL_VENC("failed to create hi_vcodec ion client\n");
-		return HI_FAILURE;
-	}
 
 	sbuf = HiMemVAlloc(MAX_BUFFER_SIZE);
 	if (!sbuf) {
@@ -59,10 +63,19 @@ HI_S32 DRV_MEM_INIT(HI_VOID)
 		goto err_rd_smmu_exit;
 	}
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4,14,0)
+	ion_client = (struct ion_client *)hisi_ion_client_create("hi_vcodec_ion_venc");
+	if (IS_ERR_OR_NULL(ion_client)) {
+		HI_FATAL_VENC("failed to create hi_vcodec ion client\n");
+		goto err_rd_smmu_exit;
+	}
+	g_ion_client = ion_client;
+#endif
+
 	g_smmu_err_mem.RdAddr = MEM_SMMU_RD_ADDR.u64StartPhyAddr;//config alloc phyaddr,in order system don't dump
 	g_smmu_err_mem.WrAddr = MEM_SMMU_WR_ADDR.u64StartPhyAddr;
 	g_venc_node_num = 0;
-	g_ion_client = ion_client;
+
 	g_sbuf = sbuf;
 	HiMemSet((HI_VOID *)g_sbuf, 0, MAX_BUFFER_SIZE);
 
@@ -73,7 +86,6 @@ err_rd_smmu_exit:
 err_sbuf_exit:
 	HiMemVFree(sbuf);
 err_client_exit:
-	ion_client_destroy(ion_client);
 	return HI_FAILURE;
 
 }
@@ -95,22 +107,20 @@ HI_S32 DRV_MEM_EXIT(HI_VOID)
 		}
 	}
 
-	if (IS_ERR_OR_NULL(g_ion_client)) {
-		HI_FATAL_VENC("invalid Param, g_ion_client is NULL\n");
-		return HI_FAILURE;
-	}
-
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4,14,0)
 	for (i = 0; i < MAX_ION_MEM_NODE; i++) {
 		if ((g_venc_ion_mem_node[i].phys_addr != 0) && (g_venc_ion_mem_node[i].handle != HI_NULL)) {
 			HI_INFO_VENC("MEM not free, will release resource\n");
 			ion_unmap_kernel(g_ion_client, g_venc_ion_mem_node[i].handle);
 			ion_free(g_ion_client, g_venc_ion_mem_node[i].handle);
+
 			HiMemSet(&g_venc_ion_mem_node[i], 0, sizeof(g_venc_ion_mem_node[i]));
 		}
 	}
 
 	ion_client_destroy(g_ion_client);
 	g_ion_client = HI_NULL;
+#endif
 
 	g_venc_node_num = 0;
 
@@ -214,7 +224,7 @@ err_exit:
         return ret;
 }
 
-
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4,14,0)
 /*----------------------------------------
     func: map ion buffer
  ----------------------------------------*/
@@ -256,11 +266,8 @@ HI_S32 DRV_MEM_MapKernel(HI_S32 share_fd, MEM_BUFFER_S *psMBuf)
 		goto err_exit;
 	}
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0)
 	handle = ion_import_dma_buf_fd(g_ion_client, share_fd);
-#else
-	handle = ion_import_dma_buf(g_ion_client, share_fd);
-#endif
+
 	if (IS_ERR_OR_NULL(handle)) {
 		HI_FATAL_VENC("get ion handle failed\n");
 		goto err_exit;
@@ -340,6 +347,179 @@ err_exit:
 	HiVENC_UP_INTERRUPTIBLE(&g_VencMemSem);
 	return ret;
 }
+#else
+
+/*----------------------------------------
+    func: get map info
+ ----------------------------------------*/
+HI_S32 DRV_MEM_GetMapInfo(HI_S32 share_fd, MEM_BUFFER_S *psMBuf)
+{
+	HI_U64 iova_addr;
+	struct dma_buf *dmabuf;
+	HI_S32 ret = HI_SUCCESS;
+	unsigned long iova_size = 0;
+
+	if (share_fd <= 0) {
+		HI_FATAL_VENC("invalid Param, share_fd is illegal\n");
+		return HI_FAILURE;
+	}
+
+	if (HiVENC_DOWN_INTERRUPTIBLE(&g_VencMemSem)) {
+		HI_FATAL_VENC("Map down interruptible failed\n");
+		return HI_FAILURE;
+	}
+
+	dmabuf = dma_buf_get(share_fd);
+	if (IS_ERR(dmabuf)) {
+		HI_FATAL_VENC("%s, get dma buf failed", __func__);
+		ret = HI_FAILURE;
+		goto exit_1;
+	}
+
+	iova_addr = hisi_iommu_map_dmabuf(&gPlatDev->dev, dmabuf, 0, &iova_size);
+	if (!iova_addr) {
+		HI_FATAL_VENC("%s, iommu map dmabuf failed", __func__);
+		ret = HI_FAILURE;
+		goto exit_2;
+	}
+
+	psMBuf->u32Size         = iova_size;
+	psMBuf->u64StartPhyAddr = iova_addr;
+	psMBuf->u32ShareFd      = share_fd;
+
+exit_2:
+	dma_buf_put(dmabuf);
+exit_1:
+	HiVENC_UP_INTERRUPTIBLE(&g_VencMemSem);
+	return ret;
+}
+
+/*----------------------------------------
+    func: put map info
+ ----------------------------------------*/
+HI_S32 DRV_MEM_PutMapInfo(MEM_BUFFER_S *psMBuf)
+{
+	struct dma_buf *dmabuf;
+	HI_S32 ret = HI_SUCCESS;
+
+	if (!psMBuf) {
+		HI_FATAL_VENC("invalid Param, psMBuf is NULL\n");
+		return HI_FAILURE;
+	}
+
+	if (psMBuf->u32ShareFd <= 0) {
+		HI_FATAL_VENC("share fd is invalid\n");
+		return HI_FAILURE;
+	}
+
+	if (HiVENC_DOWN_INTERRUPTIBLE(&g_VencMemSem)) {
+		HI_FATAL_VENC("Unmap down interruptible failed\n");
+		return HI_FAILURE;
+	}
+
+	dmabuf = dma_buf_get(psMBuf->u32ShareFd);
+	if (IS_ERR(dmabuf)) {
+		HI_FATAL_VENC("%s, get dma buf failed", __func__);
+		HiVENC_UP_INTERRUPTIBLE(&g_VencMemSem);
+		return HI_FAILURE;
+	}
+
+	ret = hisi_iommu_unmap_dmabuf(&gPlatDev->dev, dmabuf, psMBuf->u64StartPhyAddr);
+	if (ret != 0) {
+		HI_FATAL_VENC("%s: hisi_iommu_unmap_dmabuf failed \n", __func__);
+		ret = HI_FAILURE;
+	}
+
+	dma_buf_put(dmabuf);
+	HiVENC_UP_INTERRUPTIBLE(&g_VencMemSem);
+	return ret;
+}
+
+HI_S32 DRV_MEM_IommuMap(VencBufferRecord *node, struct platform_device *pltdev)
+{
+	HI_U64 iova_addr;
+	struct dma_buf *dmabuf;
+
+	HI_S32 ret = HI_SUCCESS;
+	unsigned long iova_size = 0;
+
+	if (!node) {
+		HI_FATAL_VENC("node is invalid \n");
+		return HI_FAILURE;
+	}
+
+	if (node->share_fd <= 0) {
+		HI_FATAL_VENC("share fd is invalid \n");
+		return HI_FAILURE;
+	}
+
+	if (HiVENC_DOWN_INTERRUPTIBLE(&g_VencMemSem)) {
+		HI_FATAL_VENC("Map down interruptible failed\n");
+		return HI_FAILURE;
+	}
+
+	dmabuf = dma_buf_get(node->share_fd);
+	if (IS_ERR(dmabuf)) {
+		HI_FATAL_VENC("%s, get dma buf failed", __func__);
+		ret = HI_FAILURE;
+		goto exit_1;
+	}
+
+	iova_addr = hisi_iommu_map_dmabuf(&pltdev->dev, dmabuf, 0, &iova_size);
+	if (!iova_addr) {
+		HI_FATAL_VENC("%s, iommu map dmabuf failed", __func__);
+		ret = HI_FAILURE;
+		goto exit_2;
+	}
+
+	node->iova = iova_addr;
+
+exit_2:
+	dma_buf_put(dmabuf);
+exit_1:
+	HiVENC_UP_INTERRUPTIBLE(&g_VencMemSem);
+	return ret;
+}
+
+HI_S32 DRV_MEM_IommuUnmap(HI_S32 share_fd, HI_S32 phys_addr, struct platform_device *pltdev)
+{
+	struct dma_buf *dmabuf;
+	HI_S32 ret = HI_SUCCESS;
+
+	if (share_fd <= 0) {
+		HI_FATAL_VENC("share fd is invalid\n");
+		return HI_FAILURE;
+	}
+
+	if (!phys_addr) {
+		HI_FATAL_VENC("phys addr is invalid\n");
+		return HI_FAILURE;
+	}
+
+	if (HiVENC_DOWN_INTERRUPTIBLE(&g_VencMemSem)) {
+		HI_FATAL_VENC("IommuUnMap down interruptible failed\n");
+		return HI_FAILURE;
+	}
+
+	dmabuf = dma_buf_get(share_fd);
+	if (IS_ERR(dmabuf)) {
+		HI_FATAL_VENC("%s, get dma buf failed", __func__);
+		HiVENC_UP_INTERRUPTIBLE(&g_VencMemSem);
+		return HI_FAILURE;
+	}
+
+	ret = hisi_iommu_unmap_dmabuf(&pltdev->dev, dmabuf, phys_addr);
+	if (ret != 0) {
+		HI_FATAL_VENC("%s: hisi_iommu_unmap_dmabuf failed \n", __func__);
+		ret = HI_FAILURE;
+	}
+
+	dma_buf_put(dmabuf);
+
+	HiVENC_UP_INTERRUPTIBLE(&g_VencMemSem);
+	return ret;
+}
+#endif
 
 HI_S32 HI_DRV_UserCopy(struct file *file, HI_U32 cmd, unsigned long arg,
 			long (*func)(struct file *file, HI_U32 cmd, unsigned long uarg))
@@ -395,4 +575,5 @@ HI_S32 HI_DRV_UserCopy(struct file *file, HI_U32 cmd, unsigned long arg,
 out:
 	return err;
 }
+
 

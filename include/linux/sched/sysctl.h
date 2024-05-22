@@ -22,6 +22,10 @@ extern unsigned int sysctl_boost_killing;
 #include <chipset_common/hwcfs/hwcfs_sysctl.h>
 #endif
 
+#ifdef CONFIG_HW_QOS_THREAD
+#include <chipset_common/hwqos/hwqos_sysctl.h>
+#endif
+
 extern unsigned int sysctl_sched_latency;
 extern unsigned int sysctl_sched_min_granularity;
 extern unsigned int sysctl_sched_wakeup_granularity;
@@ -34,6 +38,9 @@ extern unsigned int sysctl_sched_use_walt_cpu_util;
 extern unsigned int sysctl_sched_use_walt_task_util;
 extern unsigned int sysctl_sched_walt_init_task_load_pct;
 extern unsigned int sysctl_sched_walt_cpu_high_irqload;
+#ifdef CONFIG_HISI_EAS_SCHED
+extern unsigned int sysctl_sched_walt_cpu_overload_irqload;
+#endif
 #endif
 #ifdef CONFIG_HISI_RT_CAS
 extern unsigned int sysctl_sched_enable_rt_cas;

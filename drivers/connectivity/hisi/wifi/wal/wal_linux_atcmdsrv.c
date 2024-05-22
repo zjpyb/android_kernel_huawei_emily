@@ -24,6 +24,8 @@ extern "C" {
 #include "mac_vap.h"
 #include "mac_resource.h"
 #include "mac_ie.h"
+#include "hmac_resource.h"
+#include "hmac_scan.h"
 
 #include "hmac_ext_if.h"
 #include "hmac_chan_mgmt.h"
@@ -131,6 +133,8 @@ wal_atcmdsrv_ant_info_stru g_st_atcmdsrv_ant_info;
 #endif
 
 #endif
+extern oal_int32 wal_ioctl_reduce_sar(oal_net_device_stru *pst_net_dev, oal_uint8 uc_tx_power);
+extern oal_uint32  wal_hipriv_sta_pm_on(oal_net_device_stru * pst_cfg_net_dev, oal_int8 * pc_param);
 
 
 /*****************************************************************************
@@ -1238,6 +1242,7 @@ OAL_STATIC oal_int32  wal_atcmsrv_ioctl_set_pm_switch(oal_net_device_stru *pst_n
     wal_msg_write_stru          st_write_msg;
 
     oal_int32                   l_ret;
+    oal_uint8                   sta_pm_on[5] = " 0 ";
 
     OAM_WARNING_LOG1(0, OAM_SF_ANY, "wal_atcmsrv_ioctl_set_pm_switch:l_pm_switch[%d]", l_pm_switch);
 
@@ -1260,6 +1265,16 @@ OAL_STATIC oal_int32  wal_atcmsrv_ioctl_set_pm_switch(oal_net_device_stru *pst_n
         OAM_WARNING_LOG1(0, OAM_SF_ANY, "{wal_atcmsrv_ioctl_set_pm_switch::return err code [%d]!}\r\n", l_ret);
         return l_ret;
     }
+#ifdef _PRE_WLAN_FEATURE_STA_PM
+    l_ret = wal_hipriv_sta_pm_on(pst_net_dev, sta_pm_on);
+
+    if (OAL_UNLIKELY(OAL_SUCC != l_ret))
+    {
+        OAM_WARNING_LOG1(0, OAM_SF_ANY, "{wal_atcmsrv_ioctl_set_pm_switch::CMD_SET_STA_PM_ON return err code [%d]!}\r\n", l_ret);
+        return l_ret;
+    }
+
+#endif
 
     return OAL_SUCC;
 
@@ -1954,6 +1969,105 @@ OAL_STATIC oal_int32 wal_atcmsrv_ioctl_double_ant_switch(oal_net_device_stru *ps
 #endif
 
 
+OAL_STATIC oal_int32  wal_atcmsrv_ioctl_set_bss_expire_age(oal_net_device_stru *pst_net_dev, oal_uint32 ul_expire_age)
+{
+    g_pd_bss_expire_time = (ul_expire_age < WAL_ATCMSRV_MIN_BSS_EXPIRATION_AGE)?WAL_ATCMSRV_MIN_BSS_EXPIRATION_AGE:ul_expire_age;
+    g_pd_bss_expire_time = (g_pd_bss_expire_time > WAL_ATCMSRV_MAX_BSS_EXPIRATION_AGE)?WAL_ATCMSRV_MAX_BSS_EXPIRATION_AGE:g_pd_bss_expire_time;
+
+    OAM_WARNING_LOG2(0, OAM_SF_CFG, "wal_atcmsrv_ioctl_set_bss_expire_age::pd_bss_expire_time %d, input expire time %d",
+                        g_pd_bss_expire_time, ul_expire_age);
+
+    return OAL_SUCC;
+}
+
+
+OAL_STATIC oal_int32  wal_atcmsrv_ioctl_get_wifi_connect_info(oal_net_device_stru *pst_net_dev,struct wal_atcmdsrv_wifi_connect_info *pst_connect_info)
+{
+    mac_vap_stru                *pst_mac_vap;
+    hmac_vap_stru               *pst_hmac_vap;
+    hmac_device_stru            *pst_hmac_device;
+    hmac_bss_mgmt_stru          *pst_bss_mgmt;          /*管理扫描的bss结果的结构体 */
+    hmac_scanned_bss_info       *pst_scanned_bss_info   = OAL_PTR_NULL;
+
+    if (pst_net_dev == OAL_PTR_NULL || pst_connect_info == OAL_PTR_NULL)
+    {
+        OAM_ERROR_LOG2(0, OAM_SF_CFG, "wal_atcmsrv_ioctl_get_wifi_connect_info::null pointer. net_dev %p, connect_info %p",
+                            pst_net_dev, pst_connect_info);
+        return -OAL_EFAIL;
+    }
+
+    OAL_MEMZERO(pst_connect_info, OAL_SIZEOF(*pst_connect_info));
+
+    pst_mac_vap = OAL_NET_DEV_PRIV(pst_net_dev);
+    if (OAL_PTR_NULL == pst_mac_vap)
+    {
+        OAM_ERROR_LOG0(0,OAM_SF_ANY,"{wal_atcmsrv_ioctl_get_wifi_connect_info::vap is null.}");
+        return -OAL_EINVAL;
+    }
+
+    if (pst_mac_vap->en_vap_mode != WLAN_VAP_MODE_BSS_STA)
+    {
+        OAM_ERROR_LOG1(0,OAM_SF_ANY,"{wal_atcmsrv_ioctl_get_wifi_connect_info::invalid vap mode.vap_mode [%d]}", pst_mac_vap->en_vap_mode);
+        return -OAL_EINVAL;
+    }
+
+    if (pst_mac_vap->en_vap_state == MAC_VAP_STATE_UP)
+    {
+
+        pst_hmac_vap = (hmac_vap_stru *)mac_res_get_hmac_vap(pst_mac_vap->uc_vap_id);
+        if (OAL_PTR_NULL == pst_hmac_vap)
+        {
+            OAM_ERROR_LOG1(0,OAM_SF_ANY,"{wal_atcmsrv_ioctl_get_wifi_connect_info::mac_res_get_hmac_vap fail.vap_id[%u]}",pst_mac_vap->uc_vap_id);
+            return -OAL_EINVAL;
+        }
+
+        /* 获取hmac device 结构 */
+        pst_hmac_device = hmac_res_get_mac_dev(pst_mac_vap->uc_device_id);
+        if (OAL_PTR_NULL == pst_hmac_device)
+        {
+            OAM_WARNING_LOG0(0, OAM_SF_SCAN, "{wal_atcmsrv_ioctl_get_wifi_connect_info::hmac_device is null.}");
+            return -OAL_EINVAL;
+        }
+
+        pst_connect_info->en_status = ATCMDSRV_WIFI_CONNECTED;
+        pst_connect_info->c_rssi    = pst_hmac_vap->station_info.signal;
+        oal_memcopy(pst_connect_info->auc_bssid, pst_mac_vap->auc_bssid, WLAN_MAC_ADDR_LEN);
+
+        /* 获取管理扫描的bss结果的结构体 */
+        pst_bss_mgmt = &(pst_hmac_device->st_scan_mgmt.st_scan_record_mgmt.st_bss_mgmt);
+        /* 对链表删操作前加锁*/
+        oal_spin_lock(&(pst_bss_mgmt->st_lock));
+        pst_scanned_bss_info = hmac_scan_find_scanned_bss_by_bssid(pst_bss_mgmt, pst_connect_info->auc_bssid);
+        if (OAL_PTR_NULL == pst_scanned_bss_info)
+        {
+        OAM_WARNING_LOG4(pst_mac_vap->uc_vap_id, OAM_SF_CFG,
+                             "{wal_atcmsrv_ioctl_get_wifi_connect_info::find the bss failed by bssid:%02X:XX:XX:%02X:%02X:%02X}",
+                             pst_connect_info->auc_bssid[0],
+                             pst_connect_info->auc_bssid[3],
+                             pst_connect_info->auc_bssid[4],
+                             pst_connect_info->auc_bssid[5]);
+
+            /* 解锁 */
+        oal_spin_unlock(&(pst_bss_mgmt->st_lock));
+    return -OAL_EINVAL;
+        }
+        /* 解锁*/
+        oal_spin_unlock(&(pst_bss_mgmt->st_lock));
+
+        oal_memcopy(pst_connect_info->auc_ssid, pst_scanned_bss_info->st_bss_dscr_info.ac_ssid, WLAN_SSID_MAX_LEN);
+    }
+    else
+    {
+        pst_connect_info->en_status = ATCMDSRV_WIFI_DISCONNECT;
+    }
+
+        OAM_WARNING_LOG4(0, OAM_SF_CFG, "wal_atcmsrv_ioctl_get_wifi_connect_info::state %d, rssi %d, BSSID[XX:XX:XX:XX:%02X:%02X]",
+                        pst_connect_info->en_status, pst_connect_info->c_rssi,
+                        pst_connect_info->auc_bssid[4], pst_connect_info->auc_bssid[5]);
+
+    return OAL_SUCC;
+}
+
 
 
 oal_int32 wal_atcmdsrv_wifi_priv_cmd(oal_net_device_stru *pst_net_dev, oal_ifreq_stru *pst_ifr, oal_int32 ul_cmd)
@@ -2110,9 +2224,31 @@ oal_int32 wal_atcmdsrv_wifi_priv_cmd(oal_net_device_stru *pst_net_dev, oal_ifreq
             l_ret = wal_atcmsrv_ioctl_get_upccode(pst_net_dev,&st_priv_cmd.pri_data.upc_code);
             oal_copy_to_user(pst_ifr->ifr_data,&st_priv_cmd,sizeof(wal_atcmdsrv_wifi_priv_cmd_stru));
             break;
+        case WAL_ATCMDSRV_IOCTL_CMD_SET_CONN_POWER:
+            l_ret = wal_ioctl_reduce_sar(pst_net_dev, (oal_uint8)st_priv_cmd.pri_data.l_pow);
+            break;
+
+        case WAL_ATCMDSRV_IOCTL_CMD_SET_BSS_EXPIRE_AGE:
+            l_ret = wal_atcmsrv_ioctl_set_bss_expire_age(pst_net_dev, st_priv_cmd.pri_data.ul_bss_expire_age);
+            break;
+
+        case WAL_ATCMDSRV_IOCTL_CMD_GET_CONN_INFO:
+            l_ret = wal_atcmsrv_ioctl_get_wifi_connect_info(pst_net_dev, &st_priv_cmd.pri_data.st_connect_info);
+
+            OAL_IO_PRINT("wal_atcmsrv_ioctl_get_wifi_connect_info::status %d, %.32s,%02x:%02x:%02x:%02x:%02x:%02x,%d",
+                         st_priv_cmd.pri_data.st_connect_info.en_status,
+                         st_priv_cmd.pri_data.st_connect_info.auc_ssid,
+                         st_priv_cmd.pri_data.st_connect_info.auc_bssid[0], st_priv_cmd.pri_data.st_connect_info.auc_bssid[1], st_priv_cmd.pri_data.st_connect_info.auc_bssid[2],
+                         st_priv_cmd.pri_data.st_connect_info.auc_bssid[3], st_priv_cmd.pri_data.st_connect_info.auc_bssid[4], st_priv_cmd.pri_data.st_connect_info.auc_bssid[5],
+                         st_priv_cmd.pri_data.st_connect_info.c_rssi);
+
+            oal_copy_to_user(pst_ifr->ifr_data, &st_priv_cmd, sizeof(wal_atcmdsrv_wifi_priv_cmd_stru));
+            break;
+
         default:
-             break;
+            break;
     }
+
     return l_ret;
 }
 #endif

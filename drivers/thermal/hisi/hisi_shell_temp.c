@@ -241,7 +241,7 @@ static int calc_shell_temp(struct hisi_shell_t *hisi_shell)
 	long sum = 0;
 
 	for (i = 0; i < hisi_shell->sensor_count; i++) {
-		shell_sensor = (struct hisi_shell_sensor_t *)((u64)(hisi_shell->hisi_shell_sensor) + (u64)((long)i) * (sizeof(struct hisi_shell_sensor_t)
+		shell_sensor = (struct hisi_shell_sensor_t *)(uintptr_t)((u64)(uintptr_t)(hisi_shell->hisi_shell_sensor) + (u64)((long)i) * (sizeof(struct hisi_shell_sensor_t)
 						+ sizeof(struct hisi_temp_tracing_t) * (u64)((long)hisi_shell->sample_count)));
 		for (j = 0; j < hisi_shell->sample_count; j++) {
 			k = (hisi_shell->index - j) <  0 ? ((hisi_shell->index - j) + hisi_shell->sample_count) : hisi_shell->index - j;
@@ -305,7 +305,7 @@ static int calc_sensor_temp_avg(struct hisi_shell_t *hisi_shell, int *tsensor_av
 	struct hisi_shell_sensor_t *shell_sensor;
 
 	for (i = 0; i < hisi_shell->sensor_count; i++) {
-		shell_sensor = (struct hisi_shell_sensor_t *)((u64)(hisi_shell->hisi_shell_sensor) + (u64)((long)i) * (sizeof(struct hisi_shell_sensor_t)
+		shell_sensor = (struct hisi_shell_sensor_t *)(uintptr_t)((u64)(uintptr_t)(hisi_shell->hisi_shell_sensor) + (u64)((long)i) * (sizeof(struct hisi_shell_sensor_t)
 						+ sizeof(struct hisi_temp_tracing_t) * (u64)((long)hisi_shell->sample_count)));
 		if (shell_sensor->sensor_type & CHECK_TSENS) {
 			have_tsensor = 1;
@@ -348,7 +348,7 @@ static int handle_invalid_temp(struct hisi_shell_t *hisi_shell)
 		return 1;
 
 	for (i = 0; i < hisi_shell->sensor_count; i++) {
-		shell_sensor = (struct hisi_shell_sensor_t *)((u64)(hisi_shell->hisi_shell_sensor) + (u64)((long)i) * (sizeof(struct hisi_shell_sensor_t)
+		shell_sensor = (struct hisi_shell_sensor_t *)(uintptr_t)((u64)(uintptr_t)(hisi_shell->hisi_shell_sensor) + (u64)((long)i) * (sizeof(struct hisi_shell_sensor_t)
 						+ sizeof(struct hisi_temp_tracing_t) * (u64)((long)hisi_shell->sample_count)));
 		if ((shell_sensor->sensor_type & CHECK_TSENS) && shell_sensor->temp_tracing[hisi_shell->index].temp_invalid_flag) {
 			invalid_temp = shell_sensor->temp_tracing[hisi_shell->index].temp;
@@ -383,7 +383,7 @@ static int calc_shell_temp_first(struct hisi_shell_t *hisi_shell)
 		pr_err("%s, %s, battery temperature [%d] out of range!!!\n", __func__, hisi_shell->tz_dev->type, temp / 1000);
 
 		for (i = 0; i < hisi_shell->sensor_count; i++) {
-			shell_sensor = (struct hisi_shell_sensor_t *)((u64)(hisi_shell->hisi_shell_sensor) + (u64)((long)i) * (sizeof(struct hisi_shell_sensor_t)
+			shell_sensor = (struct hisi_shell_sensor_t *)(uintptr_t)((u64)(uintptr_t)(hisi_shell->hisi_shell_sensor) + (u64)((long)i) * (sizeof(struct hisi_shell_sensor_t)
 							+ sizeof(struct hisi_temp_tracing_t) * (u64)((long)hisi_shell->sample_count)));
 			if (shell_sensor->sensor_type == TYPE_PERIPHERAL) {
 				count_board_sensor++;
@@ -450,7 +450,7 @@ static void hkadc_sample_temp(struct work_struct *work)
 	mod_delayed_work(system_freezable_power_efficient_wq, (struct delayed_work *)work, round_jiffies(msecs_to_jiffies(hisi_shell->interval)));
 
 	for (i = 0; i < hisi_shell->sensor_count ; i++) {
-		shell_sensor = (struct hisi_shell_sensor_t *)((u64)(hisi_shell->hisi_shell_sensor) + (u64)((long)i) * (sizeof(struct hisi_shell_sensor_t)
+		shell_sensor = (struct hisi_shell_sensor_t *)(uintptr_t)((u64)(uintptr_t)(hisi_shell->hisi_shell_sensor) + (u64)((long)i) * (sizeof(struct hisi_shell_sensor_t)
 						+ sizeof(struct hisi_temp_tracing_t) * (u64)((long)hisi_shell->sample_count)));
 		tz = thermal_zone_get_zone_by_name(shell_sensor->sensor_name);
 		ret = thermal_zone_get_temp(tz, &temp);
@@ -486,7 +486,7 @@ static int fill_sensor_coef(struct hisi_shell_t *hisi_shell, struct device_node 
 	struct thermal_zone_device *tz = NULL;
 
 	for_each_child_of_node(np, child) {
-		shell_sensor = (struct hisi_shell_sensor_t *)((u64)hisi_shell + sizeof(struct hisi_shell_t) + (u64)((long)i) * (sizeof(struct hisi_shell_sensor_t)
+		shell_sensor = (struct hisi_shell_sensor_t *)(uintptr_t)((u64)(uintptr_t)hisi_shell + sizeof(struct hisi_shell_t) + (u64)((long)i) * (sizeof(struct hisi_shell_sensor_t)
 						+ sizeof(struct hisi_temp_tracing_t) * (u64)((long)hisi_shell->sample_count)));
 
 		ret = of_property_read_string(child, "type", &ptr_type);

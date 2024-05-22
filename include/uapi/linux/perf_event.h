@@ -32,8 +32,11 @@ enum perf_type_id {
 	PERF_TYPE_HW_CACHE			= 3,
 	PERF_TYPE_RAW				= 4,
 	PERF_TYPE_BREAKPOINT			= 5,
-#ifdef CONFIG_HISI_L3C_DEVFREQ
-	PERF_TYPE_DSU				=6,
+#ifdef CONFIG_ARM_DSU_PMU
+	PERF_TYPE_DSU,
+#endif
+#ifdef CONFIG_HISI_KARMA_PMU
+	PERF_TYPE_KARMA,
 #endif
 
 	PERF_TYPE_MAX,				/* non-ABI */

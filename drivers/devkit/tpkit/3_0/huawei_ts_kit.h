@@ -21,9 +21,7 @@
 #include <huawei_platform/log/hw_log.h>
 #include <linux/wakelock.h>
 #include <linux/semaphore.h>
-#ifndef CONFIG_HUAWEI_DEVKIT_MTK_3_0
 #include <lcd_kit_core.h>
-#endif
 
 #define NO_ERR 0
 #define RESULT_ERR (-1)
@@ -94,6 +92,10 @@ enum ts_scene_code {
 	TS_SWITCH_SCENE_19,
 	TS_SWITCH_SCENE_20
 };
+
+#define TS_SWITCH_FACE_DETECT		22
+#define TS_SWITCH_FACE_DCT_ENABLE	1
+#define TS_SWITCH_FACE_DCT_DISABLE	2
 /* ts switch func end */
 
 #define MAX_STR_LEN 32
@@ -109,7 +111,7 @@ enum ts_scene_code {
 
 #define CHIP_INFO_LENGTH	16
 #define RAWDATA_NUM 16
-#define MAX_POSITON_NUMS 6
+#define MAX_POSITION_NUMS 6
 
 #define TS_BOOT_DETECTION_SUPPORT  1
 
@@ -261,7 +263,9 @@ enum ts_cmd {
 	TS_FREEBUFF,
 	TS_SET_SENSIBILITY,
 	TS_BOOT_DETECTION,
+	TS_PALM_KEY,
 	TS_GAMMA_INFO_SWITCH,
+	TS_REPORT_KEY,
 	TS_INVAILD_CMD = 255,
 };
 
@@ -311,26 +315,32 @@ enum STYLUS_WAKEUP_CTRL {
 	STYLUS_WAKEUP_TESTMODE = 3,
 	MAX_STATUS = 255,
 };
-
+#define KEY_F26 196 /* ESD Key Event */
 #define KEY_F27  197
 #define KEY_F28  198
+#define KEY_FLIP  250
+#define KEY_FACE_CLOSE 227
+#define KEY_FACE_AWAY 228
 enum ts_gesture_num {
-	//      TS_NUM_TOTAL = 12, /* total gesture numbers  */
-	TS_DOUBLE_CLICK = KEY_F1,	/*0.Double tap:KEY_F1 */
-	TS_SLIDE_L2R = KEY_F2,	/*1.Single finger slide from left to right:KEY_F2 */
-	TS_SLIDE_R2L = KEY_F3,	/*2.Single finger slide from right to left:KEY_F3 */
-	TS_SLIDE_T2B = KEY_F4,	/*3.Single finger slide from top to bottom:KEY_F4 */
-	TS_SLIDE_B2T = KEY_F5,	/*4.Single finger slide from bottom to top:KEY_F5 */
-	TS_CIRCLE_SLIDE = KEY_F7,	/*5.Single finger slide circle:KEY_F7 */
-	TS_LETTER_c = KEY_F8,	/*6.Single finger write letter c*:KEY_F8 */
-	TS_LETTER_e = KEY_F9,	/*7.Single finger write letter e:KEY_F9 */
-	TS_LETTER_m = KEY_F10,	/*8.Single finger write letter m:KEY_F10 */
-	TS_LETTER_w = KEY_F11,	/*9.Single finger write letter w:KEY_F11 */
-	TS_PALM_COVERED = KEY_F12,	/*10.Palm off screen:KEY_F12 */
+	TS_DOUBLE_CLICK = KEY_F1,    /*0.Double tap:KEY_F1 */
+	TS_SLIDE_L2R = KEY_F2,    /*1.Single finger slide from left to right:KEY_F2 */
+	TS_SLIDE_R2L = KEY_F3,    /*2.Single finger slide from right to left:KEY_F3 */
+	TS_SLIDE_T2B = KEY_F4,    /*3.Single finger slide from top to bottom:KEY_F4 */
+	TS_SLIDE_B2T = KEY_F5,    /*4.Single finger slide from bottom to top:KEY_F5 */
+	TS_CIRCLE_SLIDE = KEY_F7,    /*5.Single finger slide circle:KEY_F7 */
+	TS_LETTER_c = KEY_F8,    /*6.Single finger write letter c*:KEY_F8 */
+	TS_LETTER_e = KEY_F9,	    /*7.Single finger write letter e:KEY_F9 */
+	TS_LETTER_m = KEY_F10,    /*8.Single finger write letter m:KEY_F10 */
+	TS_LETTER_w = KEY_F11,    /*9.Single finger write letter w:KEY_F11 */
+	TS_PALM_COVERED = KEY_F12,    /*10.Palm off screen:KEY_F12 */
+	TS_KEY_IRON = KEY_F26,    /* ESD_avoiding to report KEY_F26(196) */
 	TS_STYLUS_WAKEUP_TO_MEMO = KEY_F27,
 	TS_STYLUS_WAKEUP_SCREEN_ON = KEY_F28,
+	TS_FACE_STATE_CLOSE = KEY_FACE_CLOSE, /* face close to panel: keycode 227 */
+	TS_FACE_STATE_FAR_AWAY = KEY_FACE_AWAY, /* face away from panel: keycode 228 */
 	TS_GESTURE_INVALID = 0xFF,	/*FF.No gesture */
 };
+
 enum ts_gesture_enable_bit {
 	GESTURE_DOUBLE_CLICK = 0,
 	GESTURE_SLIDE_L2R,
@@ -633,7 +643,7 @@ struct ts_easy_wakeup_info {
 	int palm_cover_flag;
 	int palm_cover_control;
 	unsigned char easy_wakeup_fastrate;
-	unsigned int easywake_position[MAX_POSITON_NUMS];
+	unsigned int easywake_position[MAX_POSITION_NUMS];
 };
 
 struct ts_wakeup_gesture_enable_info {
@@ -697,19 +707,25 @@ struct ts_feature_info {
 	struct ts_pen_info pen_info;
 };
 
+#define TS_KEY_ACTION_PRESS	(1 << 0)
+#define TS_KEY_ACTION_RELEASE	(1 << 1)
+
+struct ts_key_info {
+	unsigned int key_code;
+	unsigned int action; // bit0-press bit1-release
+};
+
 struct ts_cmd_param {
 	union {
 		struct algo_param algo_param;	//algo cal
 		struct ts_fingers report_info;	//report input
 		struct ts_pens report_pen_info;	//report pen
 		struct fw_param firmware_info;	//firmware update
-#ifndef CONFIG_HUAWEI_DEVKIT_MTK_3_0
 		enum lcd_kit_ts_pm_type pm_type;
-#else
-		int pm_type;
-#endif
 		struct ts_kit_device_data *chip_data;
 		int sensibility_cfg;
+		unsigned int ts_key;
+		struct ts_key_info key_info;
 	} pub_params;
 	void *prv_params;
 	void (*ts_cmd_freehook) (void *);
@@ -891,6 +907,7 @@ enum ts_kit_power_type {
 	TS_KIT_POWER_UNUSED = 0,
 	TS_KIT_POWER_LDO = 1,
 	TS_KIT_POWER_GPIO = 2,
+	TS_KIT_POWER_PMIC = 3,
 	TS_KIT_POWER_INVALID_TYPE,
 };
 
@@ -900,11 +917,18 @@ enum ts_kit_power_id {
 	TS_KIT_POWER_ID_MAX,
 };
 
+struct ts_kit_pmic_power_config {
+	unsigned int ldo_num;
+	unsigned int value;
+	unsigned int pmic_num;
+};
+
 struct ts_kit_power_supply {
 	int use_count;
 	int type;
 	int gpio;
 	int ldo_value;
+	struct ts_kit_pmic_power_config pmic_power;
 	struct regulator *regulator;
 };
 
@@ -942,6 +966,7 @@ struct ts_kit_device_data {
 	unsigned int vddio_regulator_type;
 	unsigned int vddio_gpio_ctrl;
 	unsigned int vddio_default_on;
+	unsigned int support_gesture_mode;
 	unsigned int algo_size;
 	unsigned int algo_id;
 	unsigned int slave_addr;
@@ -961,6 +986,9 @@ struct ts_kit_device_data {
 	unsigned short touch_switch_hold_off_reg;
 	unsigned short touch_game_reg;//game mode config reg
 	unsigned short touch_scene_reg;
+	unsigned int face_dct_support;
+	unsigned short face_dct_en_reg;
+	unsigned short face_dct_data_reg;
 	unsigned short aft_data_addr;
 	unsigned int support_aft;
 	unsigned int self_cap_test;
@@ -1014,6 +1042,8 @@ struct ts_kit_device_data {
 	u8 rawdata_newformatflag;	// 0 - old format   1 - new format
 	u8 tui_set_flag;
 	u8 provide_panel_id_support;
+	/* print all tr&rx difference cap data (TX*RX) */
+	u8 print_all_trx_diffdata_for_newformat_flag;
 	unsigned int boot_detection_addr;
 	unsigned int boot_detection_threshold;
 	u8 boot_detection_flag;
@@ -1039,12 +1069,19 @@ struct tp_i2c_hwlock {
 	struct hwspinlock *hwspin_lock;
 };
 
+enum FACE_DCT_EN_STATE {
+	FACE_DCT_DISABLE = 0,
+	FACE_DCT_ENABLE,
+	STATE_INVALID
+};
+
 struct ts_kit_platform_data {
 	char product_name[MAX_STR_LEN];
 	atomic_t state;
 	atomic_t power_state;	//only used in dmd report
 	atomic_t ts_esd_state;
 	atomic_t register_flag;
+	atomic_t face_dct_en;
 	int get_info_flag;
 	int irq_id;
 	int edge_wideth;
@@ -1094,12 +1131,10 @@ struct ts_kit_platform_data {
 #endif
 	struct notifier_block charger_detect_notify;
 	u8 panel_id;
+	u8 gammaflag;
+	u8 gammaerrno;
 };
-#ifndef CONFIG_HUAWEI_DEVKIT_MTK_3_0
-int ts_kit_power_control_notify(int pm_type, int timeout);
-#else
-int ts_kit_power_control_notify(int pm_type, int timeout);
-#endif
+
 int ts_kit_put_one_cmd(struct ts_cmd_node *cmd, int timeout);
 int register_ts_algo_func(struct ts_kit_device_data *chip_data,
 			  struct ts_algo_func *fn);

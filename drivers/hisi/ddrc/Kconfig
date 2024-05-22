@@ -26,6 +26,10 @@ config HISI_DDRC_SEC
 	bool "hisi ddr secprotect"
 	default n
 
+config HISI_MNTN_DMSS_OPTI
+	bool "hisi dmss opti"
+	default n
+
 config HI3660_DDR_AUTO_FSGT
        bool "hi3660 ddr autofs/autogt"
        default n
@@ -37,3 +41,16 @@ config KIRIN970_DDR_AUTO_FSGT
 config DDR_AUTO_FSGT
        bool "ddr autofs/autogt"
        default n
+
+config HISI_DDR_CETUS
+       bool "Hisi ddr cetus platform"
+       default n
+
+config HISI_DDR_PERSEUS
+       bool "Hisi ddr perseus platform"
+       default n
+
+config HISI_DDR_URSA
+       bool "Hisi ddr ursa platform"
+       default n
+

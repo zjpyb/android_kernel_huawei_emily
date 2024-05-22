@@ -1,7 +1,15 @@
-/*
- * Copyright 2013 HUAWEI Tech. Co., Ltd.
+/* Copyright (c) 2012-2015, Hisilicon Tech. Co., Ltd. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
  */
-
 
 #ifndef __TPS65132_H
 #define __TPS65132_H
@@ -91,6 +99,10 @@ struct tps65132_configure_info {
 extern int is_normal_lcd(void);
 extern int get_vsp_voltage(void);
 extern int get_vsn_voltage(void);
+#endif
+
+#ifdef CONFIG_LCD_KIT_DRIVER
+int tps65132_dbg_set_bias_for_hisi(int vpos, int vneg);
 #endif
 
 #endif

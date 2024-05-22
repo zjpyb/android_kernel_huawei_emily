@@ -43,7 +43,7 @@ static char *cfg_initflow_array[] = {
 	"DMA-Controller-wr(noc_dmac_mst_wr)", /*5 */
 	"DPCTRL(noc_dpctrl)",		      /*6 */
 	"noc_fd_mst",			      /*7 */
-	"IOMCU(noc_iomcu_ahb_mst)",	   /*8 */
+	"IOMCU(noc_iomcu_ahb_mst)",	    /*8 */
 	"IOMCU-DMA(noc_iomcu_dma_mst)",       /*9 */
 	"TZP(noc_iomcu_tzp_ahb_mst)",	 /*A */
 	"IPF(noc_ipf)",			      /*B */
@@ -329,7 +329,7 @@ static const ROUTE_ID_ADDR_STRU cfgsys_routeid_addr_tbl[] = {
 	{0x03, 0x06, 0x0, 0xfe200000},/*mmc0bus_service_target*/
 	{0x03, 0x07, 0x0, 0xfe220000},/*modembus_service_target*/
 	{0x03, 0x08, 0x0, 0xfa980000},/*noc_ao_tcp_cfg*/
-	{0x03, 0x09, 0x1, 0xfa880000},/*noc_aon_apb_slv*/
+	{0x03, 0x09, 0x0, 0xfa880000},/*noc_aon_apb_slv*/
 	{0x03, 0x0A, 0x0, 0xfa400000},/*noc_asp_cfg*/
 	{0x03, 0x0B, 0x0, 0xe4000000},/*noc_cfg2ipu*/
 	{0x03, 0x0C, 0x0, 0xfe300000},/*noc_cfg2syscache*/
@@ -506,8 +506,6 @@ static const ROUTE_ID_ADDR_STRU npu_routeid_addr_tbl[] = {
 };
 
 
-
-
 struct noc_mid_info noc_mid_PHOE_es[] = {
 	/*Bus ID,     init_flow       ,mask   ,mid_va,        mid name */
 	{0, 0x02, 0x1C0, 0x0, "AP_CPU0"}, /*noc_cci2sysbus,*/
@@ -608,7 +606,7 @@ struct noc_mid_info noc_mid_PHOE_es[] = {
 	{2, 0xFF, 0x003f, 0x2E, "IPP_SUBSYS_CPE"},/*CPE*/
 	{2, 0xFF, 0x003f, 0x2F, "IPP_SUBSYS_SLAM"},/*SLAM*/
 	{3, 0xFF, 0x003f, 0x30, "ATGM_NPU"},/*NPU*/
-	{3, 0xFF, 0x003f, 0x30, "NPU"},/*NPU*/
+	{3, 0xFF, 0x003f, 0x31, "NPU"},/*NPU*/
 	{2, 0xFF, 0x003f, 0x34, "IVP32_DSP DSP_CORE_DATA"},
 	{1, 0xFF, 0x003f, 0x35, "VENC2_1"},
 	{2, 0xFF, 0x003f, 0x38, "FCM_M0"},
@@ -680,6 +678,7 @@ const struct noc_busid_initflow hisi_filter_initflow_PHOE_es[] = {
 	{0, 24, RDR_CP},	/*socp*/
 	{0, 8, RDR_IOM3},  /* iomcu core */
 	{0, 9, RDR_IOM3},  /* iomcu dma */
+	{0, 1, RDR_HIFI},  /* hifi */
 	{ARRAY_END_FLAG, 0, RDR_AP},	/*end*/
 };
 

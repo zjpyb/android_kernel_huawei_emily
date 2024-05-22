@@ -1441,7 +1441,8 @@ static int goodix_chip_get_info(struct ts_chip_info_param *info)
 	goodix_pinctr_int_ouput_low();//gpio_direction_output(irq_gpio, 0);
 	msleep(ms);
 	goodix_pinctrl_select_normal(goodix_ts);
-	gpio_direction_input(irq_gpio);
+	if (gpio_direction_input(irq_gpio) < 0)
+		TS_LOG_ERR("%s: gpio_direction_input fail\n", __func__);
 }
 int goodix_reset_select_addr(void)
 {
@@ -1455,7 +1456,8 @@ int goodix_reset_select_addr(void)
 	msleep(2);
 	gpio_direction_output(reset_gpio, 1);
 	msleep(6);
-	gpio_direction_input(reset_gpio);
+	if (gpio_direction_input(reset_gpio) < 0)
+		TS_LOG_ERR("%s: gpio_direction_input fail\n", __func__);
 	return 0;
 }
  /**
@@ -1650,7 +1652,10 @@ static int goodix_esdcheck_func(void)
 		}else{
 			if ((esd_buf[0] == GTP_CMD_ESD_CHECK) || (esd_buf[1] != GTP_CMD_ESD_CHECK)){
 				/* ESD check IC works abnormally */
-				goodix_i2c_read(GTP_REG_CMD, chk_buf, 4);
+				ret = goodix_i2c_read(GTP_REG_CMD, chk_buf, 4);
+				if (ret < 0)
+					TS_LOG_ERR("%s: goodix_i2c_read fail!\n",
+						__func__);
 				TS_LOG_ERR("%s,%d:[Check]0x8040 = 0x%02X, 0x8041 = 0x%02X",__func__,__LINE__, chk_buf[0], chk_buf[1]);
 				if ((chk_buf[0] == GTP_CMD_ESD_CHECK) || (chk_buf[1] != GTP_CMD_ESD_CHECK)){
 				    i = CHECK_HW_STATUS_RETRY;

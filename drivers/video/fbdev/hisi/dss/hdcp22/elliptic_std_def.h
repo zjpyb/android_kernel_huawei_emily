@@ -1,24 +1,14 @@
-/*-----------------------------------------------------------------------
-// Copyright (c) 2017, Hisilicon Tech. Co., Ltd. All rights reserved.
-//
-// This software and the associated documentation are confidential and
-// proprietary to Synopsys, Inc. Your use or disclosure of this software
-// is subject to the terms and conditions of a written license agreement
-// between you, or your company, and Synopsys, Inc.
-//
-// The entire notice above must be reproduced on all authorized copies.
-//
-//-----------------------------------------------------------------------
-//
-// Project:
-//
-// CAL.
-//
-// Description:
-//
-//
-//
-//-----------------------------------------------------------------------*/
+/*
+ *               (C) COPYRIGHT 2014 - 2016 SYNOPSYS, INC.
+ *                         ALL RIGHTS RESERVED.
+ *
+ * This software and the associated documentation are confidential and
+ * proprietary to Synopsys, Inc. Your use or disclosure of this software
+ * is subject to the terms and conditions of a written license agreement
+ * between you, or your company, and Synopsys, Inc.
+ *
+ *  The entire notice above must be reproduced on all authorized copies.
+ */
 
 #ifndef _SYNOPSYS_STD_DEF_H_
 #define _SYNOPSYS_STD_DEF_H_

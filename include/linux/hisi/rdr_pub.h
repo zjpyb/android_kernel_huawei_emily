@@ -405,7 +405,7 @@ static inline void clear_dfx_tempbuffer(void){return;};
 static inline void systemerror_save_log2dfx(u32 reboot_type){return;}
 static inline void hisi_bbox_unmap(const void *vaddr){return;}
 static inline u64 rdr_get_logsize(void){return 0;}
-static inline u32 rdr_get_diaginfo_size(void){return 0};
+static inline u32 rdr_get_diaginfo_size(void){return 0;}
 static inline u32 rdr_get_lognum(void){return 0;}
 static inline char *rdr_get_timestamp(void){return NULL;}
 static inline void *bbox_vmap(phys_addr_t paddr, size_t size){return NULL;}

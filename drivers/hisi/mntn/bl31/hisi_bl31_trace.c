@@ -74,7 +74,7 @@ static noinline u64 __kernel_cpuid_notify_bl31(u64 cpu)
 static void kernel_cpuid_notify_bl31(void *info)
 {
 	u64 ret;
-	int cpu = (int)((u64)info);
+	int cpu = (int)((uintptr_t)info);
 
 	if ( unlikely(0 == cpumask_test_cpu(cpu, &kernel_bl31_cpuid_notify_mask)) ) {
 		ret = __kernel_cpuid_notify_bl31((u64)cpu);
@@ -134,7 +134,7 @@ static int kernel_notify_bl31(void *arg)
 	down(&kernel_notify_bl31_sem);
 
 	for_each_possible_cpu(cpu) {
-		ret = smp_call_function_single(cpu, kernel_cpuid_notify_bl31, (void *)((u64)cpu), 0);
+		ret = smp_call_function_single(cpu, kernel_cpuid_notify_bl31, (void *)((uintptr_t)cpu), 0);
 		if (unlikely(ret)) {
 			BB_PRINT_ERR("[%s] fail, cpu %d\n", __func__, cpu);
 		}
@@ -340,7 +340,9 @@ int rdr_exception_trace_bl31_init(u8 *phy_addr, u8 *virt_addr, u32 log_len)
 		return 0;
 	}
 
-	memset_s(virt_addr, log_len, 0, log_len);
+	if (EOK != memset_s(virt_addr, log_len, 0, log_len)) {
+		BB_PRINT_ERR("%s():%d:memset_s fail!\n", __func__, __LINE__);
+	}
 
 	offset = 0;
 	for (i = 0; i < BL31_TRACE_ENUM; i++) {
@@ -361,7 +363,7 @@ int rdr_exception_trace_bl31_init(u8 *phy_addr, u8 *virt_addr, u32 log_len)
 		offset += bl31_trace_size[i];
 	}
 
-	if ( unlikely(bl31_trace_addr_len_set((u64)phy_addr, (u64)log_len)) ) {
+	if ( unlikely(bl31_trace_addr_len_set((uintptr_t)phy_addr, (u64)log_len)) ) {
 		BB_PRINT_ERR("[%s] fail, bl31_trace_addr_len_set faild.\n", __func__);
 		return -1;
 	}
@@ -447,7 +449,7 @@ static int bl31_cleartext_exception_print(char *dir_path, u64 log_addr, u32 log_
 	bool                       error;
 	u32                        start, end, i;
 
-	q = (struct hisiap_ringbuffer_s *)log_addr;
+	q = (struct hisiap_ringbuffer_s *)(uintptr_t)log_addr;
 	memcpy_s(&temp, sizeof(struct hisiap_ringbuffer_s), q, sizeof(struct hisiap_ringbuffer_s));
 	if (unlikely(is_ringbuffer_invalid(sizeof(rdr_exception_trace_t), log_len, &temp))) {
 		BB_PRINT_ERR("%s() fail:check_ringbuffer_invalid.\n", __func__);
@@ -520,9 +522,9 @@ static int bl31_cleartext_irq_smc_print_on_cpu(struct file *fp,
 	bool                       error;
 	u32                        start, end, i;
 
-	if ( unlikely((addr < (u8 *)log_addr) || (addr + len > (u8 *)(log_addr + log_len))) ) {
+	if ( unlikely((addr < (u8 *)(uintptr_t)log_addr) || (addr + len > (u8 *)(uintptr_t)(log_addr + log_len))) ) {
 		BB_PRINT_ERR("%s() fail: addr 0x%pK len %u min_addr 0x%pK max_addr 0x%pK.\n",
-			__func__, addr, len, (u8 *)log_addr, (u8 *)(log_addr + log_len));
+			__func__, addr, len, (u8 *)(uintptr_t)log_addr, (u8 *)(uintptr_t)(log_addr + log_len));
 		return -1;
 	}
 
@@ -602,7 +604,7 @@ static int bl31_cleartext_irq_smc_print(char *dir_path, u64 log_addr, u32 log_le
 		return -1;
 	}
 
-	head = (bl31_trace_irq_smc_head_t *)log_addr;
+	head = (bl31_trace_irq_smc_head_t *)(uintptr_t)log_addr;
 	if ( unlikely(log_len < sizeof(bl31_trace_irq_smc_head_t)) ) {
 		BB_PRINT_ERR("%s() fail:log_len %u < sizeof(bl31_trace_irq_smc_head_t) %u.\n",
 			__func__, log_len, (u32)sizeof(bl31_trace_irq_smc_head_t));
@@ -637,7 +639,7 @@ static int bl31_cleartext_irq_smc_print(char *dir_path, u64 log_addr, u32 log_le
 			goto exit;
 		}
 
-		addr = (u8 *)log_addr + head->offset[i];
+		addr = (u8 *)(uintptr_t)log_addr + head->offset[i];
 		len = next_offset - head->offset[i];
 
 		if (unlikely(bl31_cleartext_irq_smc_print_on_cpu(fp, log_addr + head_len, 
@@ -679,9 +681,9 @@ int rdr_exception_trace_bl31_cleartext_print(char *dir_path, u64 log_addr, u32 l
 	pfn_cleartext_ops ops_fn;
 	u32               i, offset;
 
-	if ( unlikely(IS_ERR_OR_NULL(dir_path) || IS_ERR_OR_NULL((void *)log_addr)) ) {
+	if ( unlikely(IS_ERR_OR_NULL(dir_path) || IS_ERR_OR_NULL((void *)(uintptr_t)log_addr)) ) {
 		BB_PRINT_ERR("%s() error:dir_path 0x%pK log_addr 0x%pK.\n",
-			__func__, dir_path, (void *)log_addr);
+			__func__, dir_path, (void *)(uintptr_t)log_addr);
 		return -1;
 	}
 

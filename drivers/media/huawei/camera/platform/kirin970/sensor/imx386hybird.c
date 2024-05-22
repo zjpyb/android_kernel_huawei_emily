@@ -36,6 +36,7 @@
 #include "../pmic/hw_pmic.h"
 
 #define I2S(i) container_of(i, sensor_t, intf)
+#define Sensor2Pdev(s) container_of((s).dev, struct platform_device, dev)
 #define CTL_RESET_HOLD    (0)
 #define CTL_RESET_RELEASE (1)
 
@@ -756,7 +757,7 @@ imx386hybird_platform_remove(
     sensor = I2S(intf);
 
     rpmsg_sensor_unregister((void*)&sensor);
-    hwsensor_unregister(intf);
+    hwsensor_unregister(pdev);
     return 0;
 }
 static int __init

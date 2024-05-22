@@ -74,7 +74,7 @@ struct MSP_SERVICE_TABLE g_astMspService[MSP_SID_BUTT] = {
 };
 
 
-VOS_UINT32 msp_ServiceProc(SOCP_DECODER_DST_ENUM_U32 enChanID,VOS_UINT8 *pucData, VOS_UINT32 ulSize,VOS_UINT8 *pucRBData, VOS_UINT32 ulRBSize)
+VOS_VOID msp_ServiceProc(SOCP_DECODER_DST_ENUM_U32 enChanID,VOS_UINT8 *pucData, VOS_UINT32 ulSize,VOS_UINT8 *pucRBData, VOS_UINT32 ulRBSize)
 {
     VOS_UINT32 ulRet = ERR_MSP_INVALID_PARAMETER;
     VOS_UINT32 ulTotalLen = 0;
@@ -85,7 +85,7 @@ VOS_UINT32 msp_ServiceProc(SOCP_DECODER_DST_ENUM_U32 enChanID,VOS_UINT8 *pucData
     if(pucData == VOS_NULL)
     {
         mdrv_diag_PTR(EN_DIAG_PTR_MSP_SERVICE_ERR1,  0, 0, 0);
-        return ERR_MSP_INVALID_PARAMETER;
+        return ;
     }
 
     mdrv_diag_PTR(EN_DIAG_PTR_MSP_SERVICE_1, 1, 0, 0);
@@ -95,14 +95,14 @@ VOS_UINT32 msp_ServiceProc(SOCP_DECODER_DST_ENUM_U32 enChanID,VOS_UINT8 *pucData
     if(!ulTotalLen)
     {
         mdrv_diag_PTR(EN_DIAG_PTR_MSP_SERVICE_ERR2, 1, 0, 0);
-        return ERR_MSP_INVALID_PARAMETER;
+        return ;
     }
 
     pData = VOS_MemAlloc(MSP_PID_DIAG_APP_AGENT, DYNAMIC_MEM_PT, ulTotalLen);
     if(pData == VOS_NULL)
     {
         mdrv_diag_PTR(EN_DIAG_PTR_MSP_SERVICE_ERR3, 1, 0, 0);
-        return ERR_MSP_MALLOC_FAILUE;
+        return ;
     }
 
     VOS_MemCpy_s(pData, ulTotalLen, pucData, ulSize);
@@ -137,7 +137,7 @@ VOS_UINT32 msp_ServiceProc(SOCP_DECODER_DST_ENUM_U32 enChanID,VOS_UINT8 *pucData
 
     VOS_MemFree(MSP_PID_DIAG_APP_AGENT,pData);
 
-    return ulRet;
+    return ;
 }
 
 

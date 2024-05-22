@@ -146,6 +146,10 @@ int lcd_kit_parse_dcs_cmds(struct device_node* np, char* cmd_key,
 	}
 	if (adapt_ops->buf_trans) {
 		ret = adapt_ops->buf_trans(data, blen, &buf, &buflen);
+		if (ret) {
+			LCD_KIT_ERR("buf_trans fail\n");
+			return LCD_KIT_FAIL;
+		}
 	}
 	if (ret) {
 		LCD_KIT_ERR("buffer trans fail!\n");
@@ -201,14 +205,14 @@ int lcd_kit_parse_dcs_cmds(struct device_node* np, char* cmd_key,
 		len -= dchdr->dlen;
 	}
 	pcmds->flags = LCD_KIT_CMD_REQ_COMMIT;
-	/*Set default link state to LP Mode*/
-	pcmds->link_state = LCD_KIT_DSI_LP_MODE;
+	/*Set default link state to HS Mode*/
+	pcmds->link_state = LCD_KIT_DSI_HS_MODE;
 	if (link_key) {
 		data = (char*)of_get_property(np, link_key, NULL);
-		if (data && !strcmp(data, "dsi_hs_mode")) {
-			pcmds->link_state = LCD_KIT_DSI_HS_MODE;
-		} else {
+		if (data && !strcmp(data, "dsi_lp_mode")) {
 			pcmds->link_state = LCD_KIT_DSI_LP_MODE;
+		} else {
+			pcmds->link_state = LCD_KIT_DSI_HS_MODE;
 		}
 	}
 	return LCD_KIT_OK;

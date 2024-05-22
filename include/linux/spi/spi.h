@@ -567,8 +567,6 @@ struct spi_master {
 #if defined CONFIG_HISI_SPI
 	struct mutex		msg_mutex;
 #endif
-	int			tx_chan_no;
-	int			rx_chan_no;
 };
 
 static inline void *spi_master_get_devdata(struct spi_master *master)
@@ -1318,9 +1316,10 @@ spi_transfer_is_last(struct spi_master *master, struct spi_transfer *xfer)
 {
 	return list_is_last(&xfer->transfer_list, &master->cur_msg->transfers);
 }
+#if defined CONFIG_HISI_SPI
+void disable_spi(struct spi_master *master);
+int pl022_runtime_suspend(struct device *dev);
+int pl022_runtime_resume(struct device *dev);
+#endif
 
-void show_spi_register(struct spi_master *master);
-void show_dma_register(struct spi_master *master, int channel_id);
-void pl022_resume_all(struct spi_master *master);
-bool spi_use_dma_transmode(struct spi_message *msg);
 #endif /* __LINUX_SPI_H */

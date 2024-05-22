@@ -33,7 +33,7 @@ static const uint8_t edid_v1_header[8] = {0x00, 0xff, 0xff, 0xff,
 		((((uint8_t)hi) << 4) | (uint8_t)lo)
 
 #define GET_ARRAY_LEN(array) \
-			sizeof(array) / sizeof(array[0])
+			(sizeof(array) / sizeof(array[0]))
 
 #define GET_CEA_DATA_BLOCK_TAG(x) \
 			(((uint8_t)0xE0 & x[0]) >> 5)
@@ -122,7 +122,7 @@ static const uint8_t edid_v1_header[8] = {0x00, 0xff, 0xff, 0xff,
 #define INTERLACED          ((FLAGS & 0x80) >> 7)
 #define V_SYNC_POLARITY ((FLAGS & 0x4) >> 2)
 #define H_SYNC_POLARITY ((FLAGS & 0x2) >> 1)
-#define INPUT_TYPE          ((FLAGS & 0x60) >> 4) | ((FLAGS & 0x1))
+#define INPUT_TYPE          (((FLAGS & 0x60) >> 4) | ((FLAGS & 0x1)))
 #define SYNC_SCHEME         ((FLAGS & 0x18) >> 3)
 #define SCHEME_DETAIL       ((FLAGS & 0x6) >> 1)
 
@@ -164,6 +164,34 @@ static const uint8_t edid_v1_header[8] = {0x00, 0xff, 0xff, 0xff,
 #define Present_One		1
 #define Present_Both		2
 
+/* EDID Audio Data Block */
+#define AUDIO_TAG		1
+#define VIDEO_TAG		2
+#define EDID_TAG_MASK		GENMASK(7,5)
+#define EDID_TAG_SHIFT		5
+#define EDID_SIZE_MASK		GENMASK(4,0)
+#define EDID_SIZE_SHIFT		0
+
+/* Established timing blocks */
+#define ET1_800x600_60hz	BIT(0)
+#define ET1_800x600_56hz	BIT(1)
+#define ET1_640x480_75hz	BIT(2)
+#define ET1_640x480_72hz	BIT(3)
+#define ET1_640x480_67hz	BIT(4)
+#define ET1_640x480_60hz	BIT(5)
+#define ET1_720x400_88hz	BIT(6)
+#define ET1_720x400_70hz	BIT(7)
+
+#define ET2_1280x1024_75hz	BIT(0)
+#define ET2_1024x768_75hz	BIT(1)
+#define ET2_1024x768_70hz	BIT(2)
+#define ET2_1024x768_60hz	BIT(3)
+#define ET2_1024x768_87hz	BIT(4)
+#define ET2_832x624_75hz	BIT(5)
+#define ET2_800x600_75hz	BIT(6)
+#define ET2_800x600_72hz	BIT(7)
+
+#define ET3_1152x870_75hz	BIT(7)
 int parse_edid(struct dp_ctrl *dptx, uint16_t len);
 
 int parse_main(struct dp_ctrl *dptx);

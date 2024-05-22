@@ -57,10 +57,11 @@ enum typec_attach_type {
 #ifdef CONFIG_TYPEC_CAP_CUSTOM_SRC
 	TYPEC_ATTACHED_CUSTOM_SRC,		/* Same Rp */
 #endif	/* CONFIG_TYPEC_CAP_CUSTOM_SRC */
-#ifdef CONFIG_TYPEC_CAP_NORP_SRC
-/* CONFIG_TYPEC_CAP_NORP_SRC */
-	TYPEC_ATTACHED_NORP_SRC,	/* No Rp */
-#endif	/* CONFIG_TYPEC_CAP_NORP_SRC */
+	TYPEC_ATTACHED_VBUS_ONLY,
+	TYPEC_UNATTACHED_VBUS_ONLY,
+#ifdef CONFIG_TYPEC_CAP_CUSTOM_SRC2
+	TYPEC_ATTACHED_CUSTOM_SRC2,     /* Same Rp 1.5 or 3A with CableVDO */
+#endif  /* CONFIG_TYPEC_CAP_CUSTOM_SRC2 */
 };
 
 #if 0
@@ -440,12 +441,15 @@ extern int tcpm_typec_set_rp_level(
 extern int tcpm_typec_role_swap(
 	struct tcpc_device *tcpc_dev);
 
-extern int tcpm_typec_notify_direct_charge(
-	struct tcpc_device *tcpc_dev, bool dc);
+extern int tcpm_typec_notify_direct_charge(void *client, bool dc);
 extern int tcpm_typec_change_role(
 	struct tcpc_device *tcpc_dev, uint8_t typec_role);
 
 #ifdef CONFIG_USB_POWER_DELIVERY
+#ifdef CONFIG_TYPEC_CAP_CUSTOM_SRC2
+extern bool tcpm_inquire_cust_src2_cable_vdo(
+	struct tcpc_device *tcpc_dev, uint32_t *data, int size);
+#endif /* CONFIG_TYPEC_CAP_CUSTOM_SRC2 */
 
 extern bool tcpm_inquire_pd_connected(
 	struct tcpc_device *tcpc_dev);

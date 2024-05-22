@@ -321,7 +321,7 @@ static void hwcnt_bitmap_union(u32 dst[4], u32 src[4])
 	dst[SHADER_HWCNT_BM] |= src[SHADER_HWCNT_BM];
 	dst[MMU_L2_HWCNT_BM] |= src[MMU_L2_HWCNT_BM];
 }
-
+/*lint -e647*/
 size_t kbase_vinstr_dump_size(struct kbase_device *kbdev)
 {
 	size_t dump_size;
@@ -333,7 +333,7 @@ size_t kbase_vinstr_dump_size(struct kbase_device *kbdev)
 		nr_cg = kbdev->gpu_props.num_core_groups;
 		dump_size = nr_cg * NR_CNT_BLOCKS_PER_GROUP *
 				NR_CNT_PER_BLOCK *
-				NR_BYTES_PER_CNT;
+				NR_BYTES_PER_CNT;//lint !e647
 	} else
 #endif /* CONFIG_MALI_NO_MALI */
 	{
@@ -346,10 +346,11 @@ size_t kbase_vinstr_dump_size(struct kbase_device *kbdev)
 		/* JM and tiler counter blocks are always present */
 		dump_size = (2 + nr_l2 + nr_blocks) *
 				NR_CNT_PER_BLOCK *
-				NR_BYTES_PER_CNT;
+				NR_BYTES_PER_CNT;//lint !e647
 	}
 	return dump_size;
 }
+/*lint +e647*/
 KBASE_EXPORT_TEST_API(kbase_vinstr_dump_size);
 
 static size_t kbasep_vinstr_dump_size_ctx(
@@ -434,7 +435,7 @@ static int kbasep_vinstr_create_kctx(struct kbase_vinstr_context *vinstr_ctx)
 		KBASE_TLSTREAM_TL_NEW_CTX(
 				vinstr_ctx->kctx,
 				vinstr_ctx->kctx->id,
-				(u32)(vinstr_ctx->kctx->tgid));
+				(u32)(vinstr_ctx->kctx->tgid));//lint !e648
 
 		mutex_unlock(&kbdev->kctx_list_lock);
 	} else {
@@ -465,7 +466,7 @@ static int kbasep_vinstr_create_kctx(struct kbase_vinstr_context *vinstr_ctx)
 		goto failed_kthread;
 	}
 
-	return 0;
+	return 0;//lint !e429
 
 failed_kthread:
 	disable_hwcnt(vinstr_ctx);
@@ -479,7 +480,7 @@ failed_enable:
 		list_del(&element->link);
 		kfree(element);
 		mutex_unlock(&kbdev->kctx_list_lock);
-		KBASE_TLSTREAM_TL_DEL_CTX(vinstr_ctx->kctx);
+		KBASE_TLSTREAM_TL_DEL_CTX(vinstr_ctx->kctx);//lint !e648
 	}
 failed_map:
 	kbase_destroy_context(vinstr_ctx->kctx);
@@ -533,7 +534,7 @@ static void kbasep_vinstr_destroy_kctx(struct kbase_vinstr_context *vinstr_ctx)
 	kbase_destroy_context(vinstr_ctx->kctx);
 
 	/* Inform timeline client about context destruction. */
-	KBASE_TLSTREAM_TL_DEL_CTX(vinstr_ctx->kctx);
+	KBASE_TLSTREAM_TL_DEL_CTX(vinstr_ctx->kctx);//lint !e648
 
 	vinstr_ctx->kctx = NULL;
 }
@@ -816,25 +817,25 @@ static void patch_dump_buffer_hdr_v4(
 	for (i = 0; i < nr_cg; i++) {
 		group = i * group_size;
 		/* copy shader core headers */
-		memcpy(&dst[group + SC0_BASE], &src[group + SC0_BASE],
+		memcpy(&dst[group + SC0_BASE], &src[group + SC0_BASE], /* unsafe_function_ignore: memcpy */
 		       NR_BYTES_PER_HDR);
-		memcpy(&dst[group + SC1_BASE], &src[group + SC1_BASE],
+		memcpy(&dst[group + SC1_BASE], &src[group + SC1_BASE], /* unsafe_function_ignore: memcpy */
 		       NR_BYTES_PER_HDR);
-		memcpy(&dst[group + SC2_BASE], &src[group + SC2_BASE],
+		memcpy(&dst[group + SC2_BASE], &src[group + SC2_BASE], /* unsafe_function_ignore: memcpy */
 		      NR_BYTES_PER_HDR);
-		memcpy(&dst[group + SC3_BASE], &src[group + SC3_BASE],
+		memcpy(&dst[group + SC3_BASE], &src[group + SC3_BASE], /* unsafe_function_ignore: memcpy */
 		      NR_BYTES_PER_HDR);
 
 		/* copy tiler header */
-		memcpy(&dst[group + TILER_BASE], &src[group + TILER_BASE],
+		memcpy(&dst[group + TILER_BASE], &src[group + TILER_BASE], /* unsafe_function_ignore: memcpy */
 		      NR_BYTES_PER_HDR);
 
 		/* copy mmu header */
-		memcpy(&dst[group + MMU_L2_BASE], &src[group + MMU_L2_BASE],
+		memcpy(&dst[group + MMU_L2_BASE], &src[group + MMU_L2_BASE], /* unsafe_function_ignore: memcpy */
 		      NR_BYTES_PER_HDR);
 
 		/* copy job manager header */
-		memcpy(&dst[group + JM_BASE], &src[group + JM_BASE],
+		memcpy(&dst[group + JM_BASE], &src[group + JM_BASE], /* unsafe_function_ignore: memcpy */
 		      NR_BYTES_PER_HDR);
 
 		/* patch the shader core enable mask */
@@ -878,14 +879,14 @@ static void patch_dump_buffer_hdr_v5(
 	size_t block_size = NR_CNT_PER_BLOCK * NR_BYTES_PER_CNT;
 
 	/* copy and patch job manager header */
-	memcpy(dst, src, NR_BYTES_PER_HDR);
+	memcpy(dst, src, NR_BYTES_PER_HDR); /* unsafe_function_ignore: memcpy */
 	mask = (u32 *)&dst[PRFCNT_EN_MASK_OFFSET];
 	*mask &= cli->bitmap[JM_HWCNT_BM];
 	dst += block_size;
 	src += block_size;
 
 	/* copy and patch tiler header */
-	memcpy(dst, src, NR_BYTES_PER_HDR);
+	memcpy(dst, src, NR_BYTES_PER_HDR); /* unsafe_function_ignore: memcpy */
 	mask = (u32 *)&dst[PRFCNT_EN_MASK_OFFSET];
 	*mask &= cli->bitmap[TILER_HWCNT_BM];
 	dst += block_size;
@@ -894,7 +895,7 @@ static void patch_dump_buffer_hdr_v5(
 	/* copy and patch MMU/L2C headers */
 	nr_l2 = kbdev->gpu_props.props.l2_props.num_l2_slices;
 	for (i = 0; i < nr_l2; i++) {
-		memcpy(dst, src, NR_BYTES_PER_HDR);
+		memcpy(dst, src, NR_BYTES_PER_HDR); /* unsafe_function_ignore: memcpy */
 		mask = (u32 *)&dst[PRFCNT_EN_MASK_OFFSET];
 		*mask &= cli->bitmap[MMU_L2_HWCNT_BM];
 		dst += block_size;
@@ -904,7 +905,7 @@ static void patch_dump_buffer_hdr_v5(
 	/* copy and patch shader core headers */
 	core_mask = kbdev->gpu_props.props.coherency_info.group[0].core_mask;
 	while (0ull != core_mask) {
-		memcpy(dst, src, NR_BYTES_PER_HDR);
+		memcpy(dst, src, NR_BYTES_PER_HDR); /* unsafe_function_ignore: memcpy */
 		if (0ull != (core_mask & 1ull)) {
 			/* if block is not reserved update header */
 			mask = (u32 *)&dst[PRFCNT_EN_MASK_OFFSET];
@@ -1104,7 +1105,7 @@ static int kbasep_vinstr_fill_dump_buffer(
 	meta->timestamp  = timestamp;
 	meta->event_id   = event_id;
 	meta->buffer_idx = write_idx;
-	memcpy(buffer, cli->accum_buffer, cli->dump_size);
+	memcpy(buffer, cli->accum_buffer, cli->dump_size); /* unsafe_function_ignore: memcpy */
 	return 0;
 }
 
@@ -1144,7 +1145,7 @@ static int kbasep_vinstr_fill_dump_buffer_legacy(
 static int kbasep_vinstr_fill_dump_buffer_kernel(
 		struct kbase_vinstr_client *cli)
 {
-	memcpy(cli->kernel_buffer, cli->accum_buffer, cli->dump_size);
+	memcpy(cli->kernel_buffer, cli->accum_buffer, cli->dump_size); /* unsafe_function_ignore: memcpy */
 
 	return 0;
 }
@@ -1217,7 +1218,7 @@ static int kbasep_vinstr_update_client(
 		rcode = kbasep_vinstr_fill_dump_buffer_legacy(cli);
 
 	/* Prepare for next request. */
-	memset(cli->accum_buffer, 0, cli->dump_size);
+	memset(cli->accum_buffer, 0, cli->dump_size); /* unsafe_function_ignore: memset */
 
 	spin_lock_irqsave(&cli->vinstr_ctx->state_lock, flags);
 	/* Check if client was put to suspend state while it was being updated */
@@ -1970,6 +1971,8 @@ void kbase_vinstr_term(struct kbase_vinstr_context *vinstr_ctx)
 			vinstr_ctx->nclients--;
 		else
 			vinstr_ctx->nclients_suspended--;
+		if (cli->buffer_count && cli->dump_buffers_meta)
+			kfree(cli->dump_buffers_meta);
 		kfree(cli->accum_buffer);
 		kfree(cli);
 	}
@@ -2126,7 +2129,7 @@ int kbase_vinstr_hwc_clear(struct kbase_vinstr_client *cli)
 {
 	struct kbase_vinstr_context *vinstr_ctx;
 	int                         rcode;
-	u64                         unused;
+	u64                         unused;//lint !e578
 
 	if (!cli)
 		return -EINVAL;
@@ -2142,7 +2145,7 @@ int kbase_vinstr_hwc_clear(struct kbase_vinstr_client *cli)
 	rcode = kbase_instr_hwcnt_clear(vinstr_ctx->kctx);
 	if (rcode)
 		goto exit;
-	memset(cli->accum_buffer, 0, cli->dump_size);
+	memset(cli->accum_buffer, 0, cli->dump_size); /* unsafe_function_ignore: memset */
 
 	kbasep_vinstr_reprogram(vinstr_ctx);
 
@@ -2229,7 +2232,7 @@ static int kbase_vinstr_is_ready(struct kbase_vinstr_context *vinstr_ctx)
 
 	return ret;
 }
-
+/*lint -e666*/
 void kbase_vinstr_suspend(struct kbase_vinstr_context *vinstr_ctx)
 {
 	wait_event(vinstr_ctx->suspend_waitq,
@@ -2241,6 +2244,7 @@ void kbase_vinstr_wait_for_ready(struct kbase_vinstr_context *vinstr_ctx)
 	wait_event(vinstr_ctx->suspend_waitq,
 			(0 == kbase_vinstr_is_ready(vinstr_ctx)));
 }
+/*lint +e666*/
 KBASE_EXPORT_TEST_API(kbase_vinstr_wait_for_ready);
 
 /**

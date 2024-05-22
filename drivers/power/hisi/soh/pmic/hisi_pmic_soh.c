@@ -116,6 +116,46 @@ STATIC void hisi_soh_pmic_pd_leak_enable(int enable)
     HISI_SOH_PMIC_REG_WRITE(PD_OCV_ONOFF_REG, reg_val);
     HISI_SOH_PMIC_REG_WRITE(SOH_WRITE_PRO, SOH_WRITE_LOCK);
 }
+
+#ifndef CONFIG_HISI_COUL_HI6421V700
+STATIC unsigned int hisi_soh_pmic_pd_get_ocv_rtc(unsigned int index)
+{
+    unsigned int ts_sec = 0, ts;      /* timestamp in seconds */
+    int i;
+    u8 reg_val, temp;
+
+    reg_val = HISI_SOH_PMIC_REG_READ(PD_OCV_RTC_OCV_REG);
+    hisi_pmic_soh_debug("[%s] 0x%x, index: %d\n",__func__, reg_val, index);
+
+    for(i = 0; i < index; i++) { //lint !e574
+        temp = (reg_val >> PD_OCV_RTC_SHIFT(i)) & PD_OCV_RTC_OCV_MASK;
+
+        switch(temp) {
+        case RTC_MIN_0:
+            ts = RTC_VAL_MIN_0;
+            break;
+        case RTC_MIN_10:
+            ts = RTC_VAL_MIN_10;
+            break;
+        case RTC_MIN_30:
+            ts = RTC_VAL_MIN_30;
+            break;
+        case RTC_MIN_60:
+            ts = RTC_VAL_MIN_60;
+            break;
+        default :
+            ts = RTC_VAL_MIN_30;
+            hisi_pmic_soh_err("[%s] error! %d \n",__func__, temp);
+            break;
+        }
+        ts_sec += ts; //lint !e644
+    }
+    hisi_pmic_soh_debug("[%s] %d\n",__func__, ts_sec);
+
+    return ts_sec;
+}
+#endif
+
 /*******************************************************
   Function:      hisi_soh_get_pd_leak_info
   Description:   get pd ocv info.
@@ -128,7 +168,7 @@ STATIC void hisi_soh_pmic_pd_leak_get_info(struct pd_leak_chip_info *pd_ocv, uns
 {
     struct pd_leak_chip_info *ocv = pd_ocv;
     u32 reg_val = 0;
-    int reg_offset_val = 0;
+    unsigned int reg_offset_val = 0;
     int reg = 0;
 
     if (!pd_ocv)
@@ -140,7 +180,10 @@ STATIC void hisi_soh_pmic_pd_leak_get_info(struct pd_leak_chip_info *pd_ocv, uns
     hisi_pmic_soh_debug("[%s] index: %u!\n", __func__, index);
 
     HISI_SOH_PMIC_REGS_READ(PD_OCV_V_OCV_BASE + index * PD_OCV_REG_NUM, &reg_val, PD_OCV_REG_NUM);/*lint !e647*/
+
+#ifdef CONFIG_HISI_COUL_HI6421V700
     HISI_SOH_PMIC_REGS_READ(PD_OCV_OFTV_OCV_BASE + index * PD_OCV_REG_NUM, &reg_offset_val, PD_OCV_REG_NUM);/*lint !e647*/
+#endif
 
     reg  = ((int)reg_val << PD_OCV_SHIFT) - (reg_offset_val << PD_OCV_SHIFT);
     if (PD_OCV_DEFAULT == reg_val && PD_OCV_OFFSET_DEFAULT == reg_offset_val)
@@ -154,13 +197,16 @@ STATIC void hisi_soh_pmic_pd_leak_get_info(struct pd_leak_chip_info *pd_ocv, uns
     ocv->ocv_cur_ua = hisi_coul_convert_regval2ua(reg_val);
     hisi_pmic_soh_debug("[%s] current: reg_val:0x%x,  ocv_curr_ua:%d!\n", __func__, reg_val , ocv->ocv_cur_ua);
 
-    HISI_SOH_PMIC_REGS_READ(PD_OCV_T_OCV_BASE + index * PD_OCV_REG_NUM, &reg_val, PD_OCV_REG_NUM);/*lint !e647*/
-    ocv->ocv_chip_temp = hisi_coul_convert_regval2temp(reg_val);
+    HISI_SOH_PMIC_REGS_READ(PD_OCV_T_OCV_BASE + index * PD_OCV_TEMP_REG_NUM, &reg_val, PD_OCV_TEMP_REG_NUM);/*lint !e647*/
+    ocv->ocv_chip_temp = hisi_coul_convert_regval2temp(reg_val << PD_OCV_TEMP_CODE_SHIFT);
     hisi_pmic_soh_debug("[%s] temp: reg_val:0x%x,  ocv_temp:%d!\n", __func__, reg_val , ocv->ocv_chip_temp);
-
+#ifdef CONFIG_HISI_COUL_HI6421V700
     HISI_SOH_PMIC_REGS_READ(PD_OCV_RTC_OCV_BASE + index * PD_OCV_RTC_REG_NUM, &reg_val, PD_OCV_RTC_REG_NUM);/*lint !e647*/
     ocv->ocv_rtc  = reg_val;
-    hisi_pmic_soh_debug("[%s] rtc: reg_val:%d!\n", __func__, reg_val);
+    hisi_pmic_soh_debug("[%s] rtc: reg_val:%d, ocv_rtc: %d!\n", __func__, reg_val, ocv->ocv_rtc);
+#else
+    ocv->ocv_rtc  = hisi_soh_pmic_pd_get_ocv_rtc(index);
+#endif
 
 }
 /*******************************************************
@@ -189,9 +235,19 @@ STATIC void hisi_soh_pmic_acr_enable(int enable)
     if (enable)
         reg_val = ACR_EN;
 
+#ifdef CONFIG_HISI_COUL_HI6421V700
     HISI_SOH_PMIC_REG_WRITE(SOH_WRITE_PRO,SOH_WRITE_UNLOCK);
     HISI_SOH_PMIC_REG_WRITE(ACR_EN_ADDR, reg_val);
     HISI_SOH_PMIC_REG_WRITE(SOH_WRITE_PRO,SOH_WRITE_LOCK);
+
+#else
+    HISI_SOH_PMIC_REG_WRITE(SOH_MODE_ADDR, reg_val);
+     /* more than 100us clear acr flag after acr disalbeled */
+    if(enable == 0)
+        udelay(200);
+#endif
+
+    hisi_pmic_soh_debug("[%s] :%d!\n", __func__, enable);
 }
 /*******************************************************
   Function:      hisi_soh_pmic_acr_get_acr_flag
@@ -367,12 +423,13 @@ STATIC int hisi_soh_pmic_acr_calculate_acr(void)
 ********************************************************/
 STATIC int hisi_soh_pmic_acr_get_chip_temp(void)
 {
+    int t_acr = INVALID_TEMP;
+#ifdef CONFIG_HISI_COUL_HI6421V700
     int retry = ACR_GET_TEMP_RETRY;
-    int reg_value;
+    unsigned int reg_value;
     u16 reg_val_l;
     u16 reg_val_h;
     int v_acr;
-    int t_acr = INVALID_TEMP;
 
     /*start arc temp adc*/
     HISI_SOH_PMIC_REG_WRITE(ACR_CHIP_TEMP_CFG_ADDR, ACR_CHIP_TEMP_CFG);
@@ -403,6 +460,9 @@ reset_temp_adc:
     HISI_SOH_PMIC_REG_WRITE(ACR_CHIP_TEMP_CFG_ADDR, ACR_CHIP_TEMP_CFG_DEFAULT);
     HISI_SOH_PMIC_REG_WRITE(ACR_CHIP_TEMP_EN_ADDR, ACR_CHIP_TEMP_EN_DEFAULT);
 
+#else
+    t_acr = hisi_coul_chip_temperature();;
+#endif
     return t_acr;
 }
 
@@ -416,7 +476,17 @@ reset_temp_adc:
 ********************************************************/
 STATIC u32 hisi_soh_pmic_acr_get_fault_status(void)
 {
+#ifdef CONFIG_HISI_COUL_HI6421V700
     return 0;
+#else
+    u8 fault = 0;
+
+    fault = HISI_SOH_PMIC_REG_READ(SOH_FLAG_INT_ADDR);
+    if(fault)
+        hisi_pmic_soh_err("[%s] 0x%x \n", __func__, fault);
+
+    return (unsigned int)(fault & SOH_FLAG_INT_MASK);
+#endif
 }
 
 /*******************************************************
@@ -429,7 +499,10 @@ STATIC u32 hisi_soh_pmic_acr_get_fault_status(void)
 ********************************************************/
 STATIC void hisi_soh_pmic_acr_clear_fault(void)
 {
-    return;
+#ifdef CONFIG_HISI_COUL_HI6421V700
+#else
+        HISI_SOH_PMIC_REG_WRITE(SOH_FLAG_INT_ADDR, SOH_FLAG_INT_MASK);
+#endif
 }
 
 
@@ -474,16 +547,26 @@ STATIC void __hisi_soh_pmic_ovp_set_dis_current(unsigned int reg_value)
 STATIC void hisi_soh_pmic_dcr_enable(int enable)
 {
     unsigned char reg_val = DCR_DISABLE;
-
     if(enable) {
         reg_val = DCR_ENABLE;
-         /*OVP and DCR multiplexing discharge current configuration */
+        /*OVP and DCR multiplexing discharge current configuration */
         __hisi_soh_pmic_ovp_set_dis_current(OVP_IDIS_200MA);
     }
 
+#ifdef CONFIG_HISI_COUL_HI6421V700
     HISI_SOH_PMIC_REG_WRITE(SOH_WRITE_PRO,SOH_WRITE_UNLOCK);
     HISI_SOH_PMIC_REG_WRITE(DCR_EN_REG, reg_val);
     HISI_SOH_PMIC_REG_WRITE(SOH_WRITE_PRO,SOH_WRITE_LOCK);
+
+#else
+    if (enable) {
+        HISI_SOH_PMIC_REG_WRITE(DCR_CFG_ADDR, DCR_CFG_VAL);
+        HISI_SOH_PMIC_REG_WRITE(DCR_COUNT_ADDR, DCR_COUNT_1);
+    }
+    HISI_SOH_PMIC_REG_WRITE(SOH_MODE_ADDR, reg_val);
+#endif
+    hisi_pmic_soh_inf("[%s] 0x%x \n", __func__, enable);
+
 }
 /*******************************************************
   Function:      hisi_soh_pmic_dcr_get_fifo_depth
@@ -496,6 +579,7 @@ STATIC unsigned int hisi_soh_pmic_dcr_get_fifo_depth(void)
 {
     return DCR_FIFO_LEN;
 }
+
 /*******************************************************
   Function:        hisi_soh_get_dcr_info
   Description:     Get the DCR current(ma) and vol(mv) data
@@ -506,7 +590,7 @@ STATIC unsigned int hisi_soh_pmic_dcr_get_fifo_depth(void)
   Remark:          DCR irq flag only as an indication of data collection, will always be masked
                    Suggest soh core get dcr info every 32 seconds
 *******************************************************/
-STATIC int hisi_soh_pmic_dcr_get_info(int *dcr_current, int *dcr_vol, int num)
+STATIC int hisi_soh_pmic_dcr_get_data2(int *dcr_current, int *dcr_vol, int num)
 {
     unsigned int v_reg = 0;
     unsigned int i_reg = 0;
@@ -524,6 +608,29 @@ STATIC int hisi_soh_pmic_dcr_get_info(int *dcr_current, int *dcr_vol, int num)
     hisi_pmic_soh_debug("[%s] fifo[%d]:vol = %d, current = %d \n", __func__, num, *dcr_vol, *dcr_current);
     return 0;
 }
+
+STATIC int hisi_soh_pmic_dcr_get_data1(int *dcr_current, int *dcr_vol)
+{
+#ifdef CONFIG_HISI_COUL_HI6421V700
+    return -1;
+#else
+    unsigned int v_reg = 0;
+    unsigned int i_reg = 0;
+
+    if (!dcr_current || !dcr_vol) {
+        hisi_pmic_soh_err("[%s] point NULL!\n", __func__);
+        return -1;
+    }
+
+    HISI_SOH_PMIC_REGS_READ(DCR_V1_BASE_REG, &v_reg, DCR_VI_REG_NUM);/*lint !e647*/
+    HISI_SOH_PMIC_REGS_READ(DCR_I1_BASE_REG, &i_reg, DCR_VI_REG_NUM);/*lint !e647*/
+    *dcr_current  = hisi_coul_convert_regval2ua(i_reg)/UAH_PER_MAH;
+    *dcr_vol      = hisi_coul_convert_regval2uv(v_reg)/UAH_PER_MAH;
+
+    hisi_pmic_soh_debug("[%s] :vol = %d, current = %d \n", __func__, *dcr_vol, *dcr_current);
+    return 0;
+#endif
+}
 /*******************************************************
   Function:      hisi_soh_get_dcr_flag
   Description:   get dcr interrup flag.
@@ -537,7 +644,8 @@ STATIC u32 hisi_soh_pmic_dcr_get_dcr_flag(void)
     unsigned int reg_val;
 
     reg_val = HISI_SOH_PMIC_REG_READ(DCR_IRQ_FLAG_INT_REG);
-    reg_val &= DCR_FLAG_MASK;
+    hisi_pmic_soh_debug("[%s] 0x%x !\n", __func__, reg_val);
+    reg_val &= DCR_DONE_FLAG_MASK;
     if (reg_val)
         return 1;
     else
@@ -553,7 +661,7 @@ STATIC u32 hisi_soh_pmic_dcr_get_dcr_flag(void)
 ********************************************************/
 STATIC void hisi_soh_pmic_dcr_clear_dcr_flag(void)
 {
-    HISI_SOH_PMIC_REG_WRITE(DCR_IRQ_FLAG_INT_REG, DCR_IRQ_FLAG_INT_REG);
+    HISI_SOH_PMIC_REG_WRITE(DCR_IRQ_FLAG_INT_REG, DCR_FLAG_MASK);
 }
 
 /*******************************************************
@@ -566,29 +674,41 @@ STATIC void hisi_soh_pmic_dcr_clear_dcr_flag(void)
 ********************************************************/
 STATIC void hisi_soh_pmic_dcr_set_timer(enum dcr_timer_choose  dcr_timer)
 {
-    u32 reg_val;
+    u8 reg_val;
+#ifndef CONFIG_HISI_COUL_HI6421V700
+    u8 timer1_val, timer3_val;
+#endif
 
-	switch (dcr_timer) {
-
-	case DCR_TIMER_32:
-		reg_val = DCR_TIMER_32;
-		break;
-	case DCR_TIMER_64:
-		reg_val = DCR_TIMER_64;
-		break;
- 	case DCR_TIMER_128:
-		reg_val = DCR_TIMER_128;
-		break;
-	case DCR_TIMER_256:
-		reg_val = DCR_TIMER_256;
-		break;
+    switch (dcr_timer) {
+    case DCR_TIMER_32:
+        reg_val = DCR_TIME_1;
+        break;
+    case DCR_TIMER_64:
+        reg_val = DCR_TIME_2;
+        break;
+    case DCR_TIMER_128:
+        reg_val = DCR_TIME_3;
+        break;
+    case DCR_TIMER_256:
+        reg_val = DCR_TIME_4;
+        break;
     default:
-        reg_val = DCR_TIMER_32;
+        reg_val = DCR_TIME_1;
         hisi_pmic_soh_err("[%s] dcr timer is 0x%x,err!\n",__func__,dcr_timer);
         break;
-	}
+    }
+#ifdef CONFIG_HISI_COUL_HI6421V700
     HISI_SOH_PMIC_REG_WRITE(DCR_TIMER_REG, (reg_val & DCR_TIMER_MASK));
     hisi_pmic_soh_inf("[%s]:timer = 0x%x\n",__func__, (reg_val & DCR_TIMER_MASK));
+#else
+    timer1_val = DCR_TIMER_250_MS;
+    timer3_val = DCR_TIMER_8_MS;
+    HISI_SOH_PMIC_REG_WRITE(DCR_TIMER_CFG0_REG, ((timer1_val << DCR_TIMER1_SHIFT) | reg_val));
+    HISI_SOH_PMIC_REG_WRITE(DCR_TIMER_CFG1_REG, timer3_val);
+
+    hisi_pmic_soh_inf("[%s]:timer1 0x%x, timer2 0x%x, timer3 0x%x\n",
+        __func__, timer1_val, reg_val, timer3_val);
+#endif
 }
 
 /*******************************************************
@@ -604,10 +724,9 @@ STATIC unsigned int hisi_soh_pmic_dcr_get_timer(void)
     int reg_val;
     unsigned int timer_s = 32;
 
+#ifdef CONFIG_HISI_COUL_HI6421V700
     reg_val = HISI_SOH_PMIC_REG_READ(DCR_TIMER_REG);
-
 	switch (reg_val) {
-
 	case DCR_TIMER_32:
 		timer_s = 32;
 		break;
@@ -623,7 +742,28 @@ STATIC unsigned int hisi_soh_pmic_dcr_get_timer(void)
     default:
         break;
 	}
+#else
+    reg_val = HISI_SOH_PMIC_REG_READ(DCR_TIMER_CFG0_REG);
+	switch (reg_val & DCR_TIMER2_MASK) {
+	case DCR_TIME_35_SEC:
+		timer_s = 35;
+		break;
+	case DCR_TIME_60_SEC:
+		timer_s = 60;
+		break;
+	case DCR_TIME_120_SEC:
+		timer_s = 120;
+		break;
+	case DCR_TIME_300_SEC:
+		timer_s = 300;
+		break;
+    default:
+        break;
+	}
+#endif
+
     hisi_pmic_soh_inf("[%s]:timer = %u!\n",__func__, timer_s);
+
     return timer_s;
 }
 
@@ -712,7 +852,7 @@ STATIC void parse_pmic_soh_ovp_dts(struct soh_pmic_device *di)
 *************************************************************/
 static void  __hisi_soh_pmic_ovp_set_vol_temp_thd(enum soh_thd_type thd_type, int value, int reg_addr_h, int reg_addr_l)
 {
-    int reg_value;
+    unsigned int reg_value;
 
     switch (thd_type) {
     case VOL_MV:
@@ -751,6 +891,7 @@ static void  __hisi_soh_pmic_ovp_set_vol_temp_thd(enum soh_thd_type thd_type, in
  static void __hisi_soh_pmic_ovp_enable_irq(void)
  {
 	HISI_SOH_PMIC_REG_WRITE(SOH_OVP_IRQ_MASK_REG, ~(SOH_OVH_IRQ_MASK | SOH_OVL_IRQ_MASK));
+
 	hisi_pmic_soh_inf("[%s]:en irq\n", __func__);
  }
 
@@ -763,7 +904,9 @@ static void  __hisi_soh_pmic_ovp_set_vol_temp_thd(enum soh_thd_type thd_type, in
 ********************************************************/
  static void __hisi_soh_pmic_ovp_set_ov_check_time(int time)
  {
+ #ifdef CONFIG_HISI_COUL_HI6421V700
 	HISI_SOH_PMIC_REG_WRITE(SOH_TIME_EN_REG, time);
+ #endif
  }
 
 /*******************************************************
@@ -776,6 +919,8 @@ static void  __hisi_soh_pmic_ovp_set_vol_temp_thd(enum soh_thd_type thd_type, in
 ********************************************************/
 STATIC void __hisi_soh_pmic_ovp_mask_ovh_check(int mask)
 {
+#ifdef CONFIG_HISI_COUL_HI6421V700
+
     unsigned int reg_val = 0;
 
     if (mask)
@@ -783,6 +928,7 @@ STATIC void __hisi_soh_pmic_ovp_mask_ovh_check(int mask)
     else
         reg_val &= ~SOH_OVH_CHECK_MASK;
     HISI_SOH_PMIC_REG_WRITE(SOH_OVH_CHECK_MASK, reg_val);
+#endif
 }
 
 /***************************************************************
@@ -829,13 +975,13 @@ static int  hisi_soh_pmic_ovp_set_ovp_threshold(enum soh_ovp_type type, struct s
             __hisi_soh_pmic_ovp_set_vol_temp_thd(TEMP, p->temp, (int)SOH_OVH_TEMP_H_REG(i), (int)SOH_OVH_TEMP_L_REG(i));/*lint !e647*/
         }
         break;
-
+#ifdef CONFIG_HISI_COUL_HI6421V700
     case SOH_OVL:
         p = ovp;
         __hisi_soh_pmic_ovp_set_vol_temp_thd(VOL_MV, p->bat_vol_mv, SOH_OVL_VOL_H_REG, SOH_OVL_VOL_L_REG);
         __hisi_soh_pmic_ovp_set_vol_temp_thd(TEMP, p->temp, SOH_OVL_TEMP_H_REG, SOH_OVL_TEMP_L_REG);
         break;
-
+#endif
     default:
         hisi_pmic_soh_err("[%s]:default!\n", __func__);
         return -1;
@@ -854,6 +1000,8 @@ static int  hisi_soh_pmic_ovp_set_ovp_threshold(enum soh_ovp_type type, struct s
 ********************************************************/
 STATIC int hisi_soh_pmic_ovp_get_dischg_stop_state(void)
 {
+#ifdef CONFIG_HISI_COUL_HI6421V700
+
     int state;
 
     state = HISI_SOH_PMIC_REG_READ(SOH_DISCHARGE_EN_REG);
@@ -861,6 +1009,7 @@ STATIC int hisi_soh_pmic_ovp_get_dischg_stop_state(void)
     if (SOH_DISCHARGER_DIS == state)
         return 1;
     else
+#endif
         return 0;
  }
 /*******************************************************
@@ -873,14 +1022,16 @@ STATIC int hisi_soh_pmic_ovp_get_dischg_stop_state(void)
 ********************************************************/
 STATIC void hisi_soh_pmic_ovp_enable_ov(int en)
 {
-    unsigned int reg_val = 0;
-
+    u8 reg_val = SOH_OVP_DIS;
     if (en)
-        reg_val |= SOH_OVP_EN;
-    else
-        reg_val &= ~SOH_OVP_EN;
+        reg_val = SOH_OVP_EN;
 
+#ifdef CONFIG_HISI_COUL_HI6421V700
     HISI_SOH_PMIC_REG_WRITE(SOH_OVP_EN_REG, reg_val);
+#else
+    HISI_SOH_PMIC_REG_WRITE(SOH_MODE_ADDR, reg_val);
+#endif
+    hisi_pmic_soh_inf("[%s] 0x%x \n", __func__, reg_val);
 }
 /*******************************************************
   Function:        hisi_soh_enable_discharger
@@ -891,6 +1042,8 @@ STATIC void hisi_soh_pmic_ovp_enable_ov(int en)
 ********************************************************/
 STATIC void hisi_soh_pmic_ovp_enable_discharger(int en)
 {
+#ifdef CONFIG_HISI_COUL_HI6421V700
+
     if (en) {
          /*OVP and DCR multiplexing discharge current configuration */
         __hisi_soh_pmic_ovp_set_dis_current(OVP_IDIS_50MA);
@@ -900,6 +1053,7 @@ STATIC void hisi_soh_pmic_ovp_enable_discharger(int en)
         HISI_SOH_PMIC_REG_WRITE(SOH_DISCHARGE_EN_REG, SOH_DISCHARGER_DIS);
         hisi_soh_pmic_ovp_enable_ov(0);
     }
+#endif
 }
 /*******************************************************
   Function:        hisi_soh_ovp_chip_init
@@ -932,7 +1086,8 @@ static struct soh_dcr_device_ops hisi_pmic_dcr_ops =
     .enable_dcr         = hisi_soh_pmic_dcr_enable,
     .get_dcr_flag       = hisi_soh_pmic_dcr_get_dcr_flag,
     .clear_dcr_flag     = hisi_soh_pmic_dcr_clear_dcr_flag,
-    .get_dcr_info       = hisi_soh_pmic_dcr_get_info,
+    .get_dcr_info       = hisi_soh_pmic_dcr_get_data2,
+    .get_dcr_data1       = hisi_soh_pmic_dcr_get_data1,
     .set_dcr_timer      = hisi_soh_pmic_dcr_set_timer,
     .get_dcr_timer      = hisi_soh_pmic_dcr_get_timer,
     .get_dcr_fifo_depth = hisi_soh_pmic_dcr_get_fifo_depth,
@@ -1060,11 +1215,11 @@ STATIC int hisi_soh_pmic_acr_init(struct soh_pmic_device *di)
     /*acr starts according dts config*/
     if (!di->pmic_acr_support)
         return 0;
-
+#ifdef CONFIG_HISI_COUL_HI6421V700
     /*mask acr flag and acr ocp interrupt*/
     HISI_SOH_PMIC_REG_WRITE(ACR_FLAG_INT_MASK_REG, ACR_FLAG_INT_MASK_BIT);
     HISI_SOH_PMIC_REG_WRITE(ACR_OCP_INT_MASK_REG,  ACR_OCP_INT_MASK_BIT);
-
+#endif
     /*choose acr mul*/
     __hisi_soh_pmic_acr_set_mul(ACR_MUL_70);
     /*register acr ops to soh core*/
@@ -1102,11 +1257,11 @@ static int  hisi_soh_pmic_ovp_init(struct soh_pmic_device *di)
         return 0;
 
     pdev = to_spmi_device(di->dev);
-	if (!pdev) {
-		hisi_pmic_soh_err("%s:pdev get failed!\n", __func__);
-        ret = -1;
-		goto ovp_init_err;
-	}
+    if (!pdev) {
+    	hisi_pmic_soh_err("%s:pdev get failed!\n", __func__);
+    ret = -1;
+    	goto ovp_init_err;
+    }
 
     /*requeset ovh dis interrupt*/
     di->soh_ovh_dis_irq = spmi_get_irq_byname(pdev, NULL, "soh_ovh_dis");
@@ -1153,7 +1308,31 @@ ovp_init_err:
     hisi_pmic_soh_err("[%s]fail!\n", __func__);
     return ret;
 }
+#ifndef CONFIG_HISI_COUL_HI6421V700
+static void hisi_soh_pmic_soh_vbat_uvp_thd(int mv)
+{
+    u16 reg_val;
 
+    reg_val = (hisi_coul_convert_mv2regval(mv) >> SOH_VBAT_UVP_SHIFT);
+    HISI_SOH_PMIC_REGS_WRITE(SOH_VBAT_UVP_BASE, &reg_val, SOH_VBAT_UVP_NUM);
+}
+
+static void hisi_soh_pmic_irq_init(struct soh_pmic_device *di)
+{
+        HISI_SOH_PMIC_REG_WRITE(ACR_SOH_IRQ_REG, ACR_SOH_INT_MASK_BIT);
+        HISI_SOH_PMIC_REG_WRITE(DCR_IRQ_REG, ACR_SOH_INT_MASK_BIT);
+}
+#endif
+
+static void hisi_soh_pmic_soh_init(struct soh_pmic_device *di)
+{
+#ifndef CONFIG_HISI_COUL_HI6421V700
+        /* set soh vbat uvp */
+        hisi_soh_pmic_soh_vbat_uvp_thd(SOH_VBAT_UVP_THD);
+
+        hisi_soh_pmic_irq_init(di);
+#endif
+}
 
 /*******************************************************
   Function:        hisi_soh_pmic_probe
@@ -1175,6 +1354,8 @@ static int  hisi_soh_pmic_probe(struct spmi_device *pdev)
     di->dev =&pdev->dev;
 
     spmi_set_devicedata(pdev, di);
+
+    hisi_soh_pmic_soh_init(di);
 
     ret = hisi_soh_pmic_acr_init(di);
     if (ret)

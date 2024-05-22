@@ -42,10 +42,8 @@ struct mmc_blk_data {
 	int	area_type;
 };
 
-#ifndef mmc_req_rel_wr
-#define mmc_req_rel_wr(req)	(((req->cmd_flags & REQ_FUA) || \
-				  (req->cmd_flags & REQ_META)) && \
-				  (rq_data_dir(req) == WRITE))
-#endif
+#define mmc_req_rel_wr(req)	((req->cmd_flags & REQ_FUA) && \
+				 (rq_data_dir(req) == WRITE))
 
+extern int mmc_blk_reset(struct mmc_blk_data *md, struct mmc_host *host, int type);
 #endif

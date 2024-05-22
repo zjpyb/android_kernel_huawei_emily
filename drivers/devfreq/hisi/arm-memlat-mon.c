@@ -31,6 +31,7 @@
 #include "governor.h"
 #include "governor_memlat.h"
 #include <linux/perf_event.h>
+#include <linux/version.h>
 
 enum ev_index {
 	INST_IDX,
@@ -163,7 +164,11 @@ static void stop_hwmon(struct memlat_hwmon *hw)
 
 	put_online_cpus();
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
 	unregister_cpu_notifier(&cpu_grp->arm_memlat_cpu_notif);
+#else
+	cpuhp_remove_state_nocalls(CPUHP_AP_HISI_ARM_MEMLAT_MON_NOTIFY_PREPARE);
+#endif
 }
 
 static struct perf_event_attr *alloc_attr(void)
@@ -219,6 +224,7 @@ err_out:
 	return err;
 }
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
 static int arm_memlat_cpu_callback(struct notifier_block *nb,
 		unsigned long action, void *hcpu)
 {
@@ -244,13 +250,39 @@ static int arm_memlat_cpu_callback(struct notifier_block *nb,
 
 	return NOTIFY_OK;
 }
+#else
+static int __ref arm_memlat_cpu_online(unsigned int cpu)
+{
+	struct cpu_grp_info *cpu_grp, *tmp;
+
+	mutex_lock(&list_lock);
+	list_for_each_entry_safe(cpu_grp, tmp, &memlat_mon_list, mon_list) {
+		if (!cpumask_test_cpu(cpu, &cpu_grp->cpus) ||
+		    cpumask_test_cpu(cpu, &cpu_grp->inited_cpus))
+			continue;
+		if (set_events(cpu_grp, cpu))
+			pr_warn("Failed to create perf ev for CPU%lu\n", cpu);
+		else
+			cpumask_set_cpu(cpu, &cpu_grp->inited_cpus);
+		if (cpumask_equal(&cpu_grp->cpus, &cpu_grp->inited_cpus))
+			list_del(&cpu_grp->mon_list);
+	}
+	mutex_unlock(&list_lock);
+	return 0;
+}
+#endif
 
 static int start_hwmon(struct memlat_hwmon *hw)
 {
 	int cpu, ret = 0;
 	struct cpu_grp_info *cpu_grp = to_cpu_grp(hw);
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
 	register_cpu_notifier(&cpu_grp->arm_memlat_cpu_notif);
+#else
+	cpuhp_setup_state_nocalls(CPUHP_AP_HISI_ARM_MEMLAT_MON_NOTIFY_PREPARE, "arm-memlat-mon:online",
+				  arm_memlat_cpu_online, NULL);
+#endif
 
 	get_online_cpus();
 	for_each_cpu(cpu, &cpu_grp->cpus) {
@@ -315,7 +347,9 @@ static int arm_memlat_mon_driver_probe(struct platform_device *pdev)
 	cpu_grp = devm_kzalloc(dev, sizeof(*cpu_grp), GFP_KERNEL);
 	if (!cpu_grp)
 		return -ENOMEM;
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
 	cpu_grp->arm_memlat_cpu_notif.notifier_call = arm_memlat_cpu_callback;
+#endif
 	hw = &cpu_grp->hw;
 
 	hw->dev = dev;

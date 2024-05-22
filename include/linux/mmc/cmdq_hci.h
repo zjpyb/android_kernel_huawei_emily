@@ -196,6 +196,7 @@ struct cmdq_host_ops {
 	void (*clean_irqs)(struct mmc_host *mmc, u32 clean);
 	int (*dump_vendor_regs)(struct mmc_host *mmc);
 	int (*card_busy)(struct mmc_host *mmc);
+	void (*sqscmd_idle_tmr)(struct mmc_host *mmc);
 	void (*write_l)(struct cmdq_host *host, u32 val, int reg);
 	u32 (*read_l)(struct cmdq_host *host, int reg);
 	void (*enter)(struct mmc_host *mmc);

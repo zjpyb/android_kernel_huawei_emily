@@ -128,6 +128,8 @@ static void bfm_check_boot_time(struct bfm_boot_timer_info *boot_timer_info)
             bfm_send_signal_to_init();//for dump trace of init Process.
 
             boot_fail_err(KERNEL_BOOT_TIMEOUT, NO_SUGGESTION, NULL);
+        } else {
+            bfmr_set_boot_stage(STAGE_BOOT_SUCCESS);
         }
     }
 
@@ -351,14 +353,14 @@ int bfm_action_timer_start(char *act_name, unsigned int timeout_value)
     pid_t task_pid_tmp;
 
     if (NULL == act_name) {
-        BFMR_PRINT_INVALID_PARAMS("act_name invalid: %p\n", act_name);
+        BFMR_PRINT_INVALID_PARAMS("act_name.\n");
         return ret;
     }
 
     if (timeout_value > BFMR_MAX_TIMEOUT_VALUE_FOR_ACTION_TIMER) {
         timeout_value = BFMR_MAX_TIMEOUT_VALUE_FOR_ACTION_TIMER;
-        BFMR_PRINT_INVALID_PARAMS("!!WARNING!!timeout value too large! act_name: %p, timeout_value:%d\n",
-                                    act_name, timeout_value);
+        BFMR_PRINT_INVALID_PARAMS("!!WARNING!!timeout value too large! timeout_value:%d\n",
+                                    timeout_value);
     }
 
     /*get current task info*/
@@ -426,7 +428,7 @@ int bfm_action_timer_stop(char *act_name)
 
     if (NULL == act_name)
     {
-        BFMR_PRINT_INVALID_PARAMS("act_name: %p\n", act_name);
+        BFMR_PRINT_INVALID_PARAMS("act_name.\n");
         return ret;
     }
 
@@ -475,7 +477,7 @@ int bfm_action_timer_pause(char *act_name)
 
     if (NULL == act_name)
     {
-        BFMR_PRINT_INVALID_PARAMS("act_name: %p\n", act_name);
+        BFMR_PRINT_INVALID_PARAMS("act_name.\n");
         return ret;
     }
 
@@ -524,7 +526,7 @@ int bfm_action_timer_resume(char *act_name)
 
     if (NULL == act_name)
     {
-        BFMR_PRINT_INVALID_PARAMS("act_name: %p\n", act_name);
+        BFMR_PRINT_INVALID_PARAMS("act_name.\n");
         return ret;
     }
 

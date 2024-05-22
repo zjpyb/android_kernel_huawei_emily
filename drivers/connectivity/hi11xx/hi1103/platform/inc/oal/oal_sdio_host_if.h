@@ -215,7 +215,11 @@ OAL_STATIC OAL_INLINE struct oal_sdio* oal_get_sdio_default_handler(oal_void)
 extern struct oal_sdio hi_sdio_ut;
 OAL_STATIC OAL_INLINE struct oal_sdio* oal_get_sdio_default_handler(oal_void)
 {
+#if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
+    return NULL;
+#else
     return &hi_sdio_ut;
+#endif
 }
 
 OAL_STATIC OAL_INLINE oal_uint32 oal_sdio_func_max_req_size_etc(struct oal_sdio *pst_hi_sdio)

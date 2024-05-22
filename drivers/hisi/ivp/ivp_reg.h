@@ -52,6 +52,7 @@
 #define IVP_REG_OFF_DSPCRE_GATE_ST                 (0x0228)
 #define IVP_REG_OFF_MEM_CTRL3                      (0x0290)
 #define IVP_REG_OFF_MEM_CTRL4                      (0x0294)
+#define IVP_REG_OFF_RESEVER_REG                    (0x02B4)
 #define IVP_REG_OFF_INTERCONNECT_PRIORITY_CFG      (0x030c)
 #define IVP_REG_OFF_IVP_SYSTEM_QOS_CFG             (0x0310)
 #define IVP_REG_OFF_MEM_CTRL0                      (0x0320)
@@ -104,6 +105,7 @@
 #define IVP_REG_OFF_SMMU_RST_EN                    (0x0510)
 #define IVP_REG_OFF_SMMU_RST_DIS                   (0x0514)
 #define IVP_REG_OFF_SMMU_RST_ST                    (0x0518)
+#define IVP_REG_OFF_IVP_DEBUG_SIG_PC               (0x060c)
 #define IVP_REG_OFF_SUBSYS_VERSION_NUM             (0x0800)
 
 /******addr defines for block IVP_CFG_SEC_REG******/
@@ -197,6 +199,9 @@
 #define IVP_DIV_AUTO_REDUCE_BYPASS        (0x01 << 0)
 
 #define GATE_CLK_AUTODIV_IVP              (0x01 << 0)
+
+#define IVP_RUNSTALL_RUN          0
+#define IVP_RUNSTALL_STALL        1
 
 //gic reg
 #define GIC_REG_OFF_GICD_ICENABLERn       (0x11A4)

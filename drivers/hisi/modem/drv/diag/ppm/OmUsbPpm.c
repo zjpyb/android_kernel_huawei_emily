@@ -99,7 +99,7 @@ void PPM_UsbCfgStatusCB(ACM_EVT_E enPortState)
 }
 
 
-void PPM_UsbCfgWriteDataCB(u8* pucVirData, u8* pucPhyData, s32 lLen)
+void PPM_UsbCfgWriteDataCB(char* pucVirData, char* pucPhyData, int lLen)
 {
     PPM_PortWriteAsyCB(OM_USB_CFG_PORT_HANDLE, pucVirData, lLen);
 
@@ -107,9 +107,14 @@ void PPM_UsbCfgWriteDataCB(u8* pucVirData, u8* pucPhyData, s32 lLen)
 }
 
 
-s32 PPM_UsbCfgReadDataCB(void)
+void PPM_UsbCfgReadDataCB(void)
 {
-    return PPM_ReadPortData(CPM_CFG_PORT, g_astOMPortUDIHandle[OM_USB_CFG_PORT_HANDLE], OM_USB_CFG_PORT_HANDLE);
+    u32 ret;
+    ret = PPM_ReadPortData(CPM_CFG_PORT, g_astOMPortUDIHandle[OM_USB_CFG_PORT_HANDLE], OM_USB_CFG_PORT_HANDLE);
+    if (ret) {
+        ppm_printf("PPM_ReadPortData ret fail\n");
+    }
+    return;
 }
 
 
@@ -134,7 +139,7 @@ void PPM_UsbIndStatusCB(ACM_EVT_E enPortState)
 }
 
 
-void PPM_UsbIndWriteDataCB(u8* pucVirData, u8* pucPhyData, s32 lLen)
+void PPM_UsbIndWriteDataCB(char* pucVirData, char* pucPhyData, int lLen)
 {
 
     PPM_PortWriteAsyCB(OM_USB_IND_PORT_HANDLE, pucVirData, lLen);
@@ -150,7 +155,7 @@ void PPM_UsbIndPortOpen(void)
                             NULL,
                             PPM_UsbIndWriteDataCB,
                             PPM_UsbIndStatusCB);
-    
+
     ppm_printf("usb ind port open\n");
     return;
 }

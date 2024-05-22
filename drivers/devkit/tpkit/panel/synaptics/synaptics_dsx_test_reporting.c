@@ -3493,7 +3493,8 @@ exit:
 	retval = synaptics_rmi4_irq_enable(IRQ_ON);
 	sysfs_is_busy = true;
 	f54->rmi4_data->reset_device(rmi4_data);
-	strcat(g_mmi_buf_f54test_result, "0F-software_reason");
+	if (g_mmi_buf_f54test_result)
+		strcat(g_mmi_buf_f54test_result, "0F-software_reason");
 	TS_LOG_ERR("%s: Failed to run mmi test\n", __func__);
 	atomic_set(&rmi4_data->synaptics_chip_data->ts_platform_data->state, TS_WORK);
 	return 0;

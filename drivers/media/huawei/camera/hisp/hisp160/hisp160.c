@@ -50,7 +50,7 @@
 #include "platform/sensor_commom.h"
 #include <linux/wakelock.h>
 #include <linux/hisi/hisi_ion.h>
-#include <linux/hisi/hisi-iommu.h>
+#include <linux/hisi-iommu.h>
 #include <linux/platform_data/remoteproc-hisi.h>
 #include <linux/iommu.h>
 #include <linux/mutex.h>
@@ -396,13 +396,8 @@ hisp160_rpmsg_ept_cb(struct rpmsg_channel *rpdev,
 
 	msg = (hisp_msg_t *) (data);
 	/* save the data and wait for hisp160_recv_rpmsg to get the data*/
+	hisp_recvx(data);
 	hisp160_save_rpmsg_data(data, len);
-    hisp_recvx();
-    if(msg->api_name == RELEASE_CAMERA_RESPONSE)
-    {
-        hisp_rpmsgrefs_dump();
-    }
-
 }
 
 char const *hisp160_get_name(hisp_intf_t *i)
@@ -1076,34 +1071,37 @@ static int hisp160_config(hisp_intf_t *i, void *cfg)
         rc = hisp160_free_r8isp_addr(cfg);
         break;
 
-case HISP_CONFIG_ISP_TURBO:
-    cam_info("%s HISP_CONFIG_ISP_TURBO", __func__);
-    rc = hisp_set_clk_rate(VIVOBUS_CLK, 600000000);
-    rc = hisp_set_clk_rate(ISPFUNC_CLK, 554000000);
-    break;
-case HISP_CONFIG_ISP_NORMAL:
-    cam_info("%s HISP_CONFIG_ISP_NORMAL", __func__);
-    rc = hisp_set_clk_rate(VIVOBUS_CLK, 400000000);
-    rc = hisp_set_clk_rate(ISPFUNC_CLK, 480000000);
-    break;
-case HISP_CONFIG_ISP_LOWPOWER:
-    cam_info("%s HISP_CONFIG_ISP_LOWPOWER", __func__);
-    rc = hisp_set_clk_rate(VIVOBUS_CLK, 300000000);
-    rc = hisp_set_clk_rate(ISPFUNC_CLK, 300000000);
-    break;
-case HISP_CONFIG_R8_TURBO:
-    cam_info("%s HISP_CONFIG_R8_TURBO", __func__);
-    rc = hisp_set_clk_rate(ISPCPU_CLK,  900000000);
-    break;
-case HISP_CONFIG_R8_NORMAL:
-    cam_info("%s HISP_CONFIG_R8_NORMAL", __func__);
-    rc = hisp_set_clk_rate(ISPCPU_CLK,  830000000);
-    break;
-case HISP_CONFIG_R8_LOWPOWER:
-    cam_info("%s HISP_CONFIG_R8_TURBO", __func__);
-    rc = hisp_set_clk_rate(ISPCPU_CLK,  600000000);
-    break;
-
+    case HISP_CONFIG_ISP_TURBO:
+        cam_info("%s HISP_CONFIG_ISP_TURBO", __func__);
+        rc = hisp_set_clk_rate(VIVOBUS_CLK, 600000000);
+        rc = hisp_set_clk_rate(ISPFUNC_CLK, 554000000);
+        break;
+    case HISP_CONFIG_ISP_NORMAL:
+        cam_info("%s HISP_CONFIG_ISP_NORMAL", __func__);
+        rc = hisp_set_clk_rate(VIVOBUS_CLK, 400000000);
+        rc = hisp_set_clk_rate(ISPFUNC_CLK, 480000000);
+        break;
+    case HISP_CONFIG_ISP_LOWPOWER:
+        cam_info("%s HISP_CONFIG_ISP_LOWPOWER", __func__);
+        rc = hisp_set_clk_rate(VIVOBUS_CLK, 300000000);
+        rc = hisp_set_clk_rate(ISPFUNC_CLK, 300000000);
+        break;
+    case HISP_CONFIG_R8_TURBO:
+        cam_info("%s HISP_CONFIG_R8_TURBO", __func__);
+        rc = hisp_set_clk_rate(ISPCPU_CLK,  900000000);
+        break;
+    case HISP_CONFIG_R8_NORMAL:
+        cam_info("%s HISP_CONFIG_R8_NORMAL", __func__);
+        rc = hisp_set_clk_rate(ISPCPU_CLK,  830000000);
+        break;
+    case HISP_CONFIG_R8_LOWPOWER:
+        cam_info("%s HISP_CONFIG_R8_TURBO", __func__);
+        rc = hisp_set_clk_rate(ISPCPU_CLK,  600000000);
+        break;
+    case HISP_CONFIG_PROC_TIMEOUT:
+        cam_info("%s message_id.0x%x",__func__, pcfg->cfgdata[0]);
+        hisp_dump_rpmsg_with_id(pcfg->cfgdata[0]);
+        break;
     default:
         break;
 	}
@@ -1350,15 +1348,11 @@ static void hisp160_rpmsg_remove(struct rpmsg_channel *rpdev)
 		return;
 	}
 
-//	mutex_lock(&hisi_rpmsg_service_mutex);
-	/*unblock any pending thread */
-	//complete(hisi_serv->comp);
 	mutex_destroy(&hisi_serv->send_lock);
 	mutex_destroy(&hisi_serv->recv_lock);
 
 	kfree(hisi_serv);
 	rpmsg_local.hisi_isp_serv = NULL;
-//	mutex_unlock(&hisi_rpmsg_service_mutex);
 	cam_notice("rpmsg hisi driver is removed\n");
 }
 
@@ -1422,7 +1416,7 @@ hisp160_send_rpmsg(hisp_intf_t *i, hisp_msg_t *from_user, size_t len)
 			rc = -ENODEV;
 			goto UNLOCK_RET;
 		}
-
+		hisp_sendin(msg);
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
 		rc = rpmsg_send_offchannel(hisi_serv->ept,
 					   hisi_serv->ept->addr,
@@ -1439,10 +1433,9 @@ hisp160_send_rpmsg(hisp_intf_t *i, hisp_msg_t *from_user, size_t len)
 			cam_err("%s() %d failed: first rpmsg_send_offchannel ret is %d!\n", __func__,
 				__LINE__, rc);
 		}
-         hisp_sendin();
 		goto UNLOCK_RET;
 	}
-
+	hisp_sendin(msg);
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
 	rc = rpmsg_send_offchannel(hisi_serv->ept, hisi_serv->ept->addr,
 				   hisi_serv->dst, (void *)msg, len);
@@ -1456,7 +1449,6 @@ hisp160_send_rpmsg(hisp_intf_t *i, hisp_msg_t *from_user, size_t len)
 			__LINE__, rc);
 		goto UNLOCK_RET;
 	}
-    hisp_sendin();
 UNLOCK_RET:
 	mutex_unlock(&hisi_serv->send_lock);
 RET:
@@ -1548,7 +1540,11 @@ hisp160_recv_rpmsg(hisp_intf_t *i, hisp_msg_t *user_addr, size_t len)
 
 	rc = min((unsigned int)len, skb->len);
 	msg = (hisp_msg_t *) (skb->data);
-
+	hisp_recvdone((void *)msg);
+	if(msg->api_name == ISP_CPU_POWER_OFF_RESPONSE)
+	{
+		hisp_rpmsgrefs_dump();
+	}
 	cam_debug("%s: api_name(0x%x)\n", __func__, msg->api_name);
 
 	if (msg->message_id % HISP_MSG_LOG_MOD == 0) {
@@ -1572,9 +1568,6 @@ RET:
 static void hisp160_set_ddrfreq(int ddr_bandwidth)
 {
 	cam_info("%s enter,ddr_bandwidth:%d\n",__func__,ddr_bandwidth);
-	/* qos_request_ddr_down_record.pm_qos_class = 0; */
-	/* pm_qos_add_request(&qos_request_ddr_down_record,PM_QOS_MEMORY_THROUGHPUT , ddr_bandwidth); */
-	/* current_ddr_bandwidth = ddr_bandwidth; */
 }
 
 static void hisp160_release_ddrfreq(void)
@@ -1731,7 +1724,7 @@ hisp160_platform_probe(
 	}
 
 	init_completion(&rpmsg_local.isp_comp);
-	ret = hisp_register(&s_hisp160.intf, &s_hisp160.notify);
+	ret = hisp_register(pdev, &s_hisp160.intf, &s_hisp160.notify);
 	if (0 == ret) {
 		atomic_set(&s_hisp160.opened, 0); /*lint !e1058 */
 	} else {
@@ -1755,7 +1748,7 @@ hisp160_platform_probe(
 	if (ret < 0) {
 		cam_err("%s failed to creat hisp ddr freq ctrl attribute.", __func__);
 		unregister_rpmsg_driver(&rpmsg_hisp160_driver);
-		hisp_unregister(&s_hisp160.intf);
+		hisp_unregister(s_hisp160.pdev);
 		goto error;
 	}
 #endif
@@ -1791,7 +1784,7 @@ static void __exit
 hisp160_exit_module(void)
 {
 	cam_notice("%s enter\n", __func__);
-	hisp_unregister(&s_hisp160.intf);
+	hisp_unregister(s_hisp160.pdev);
 	platform_driver_unregister(&s_hisp160_driver);
 	wake_lock_destroy(&hisp_power_wakelock);
 	mutex_destroy(&hisp_wake_lock_mutex);

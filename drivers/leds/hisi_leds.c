@@ -420,7 +420,6 @@ static int hisi_led_configure(struct platform_device *pdev,
 		led->ldev.max_brightness = LED_FULL;
 		led->ldev.blink_set = hisi_led_set_blink;
 		led->ldev.brightness_set = hisi_led_set_brightness;
-		//led->ldev.flags = LED_CORE_SUSPENDRESUME;
 
 		ret = led_classdev_register(&pdev->dev, &led->ldev);
 		if (ret < 0) {
@@ -497,7 +496,6 @@ static int hisi_led_probe(struct platform_device *pdev)
     if (ret < 0) {
         dev_info(&pdev->dev, "config max_iset failure! use default value\n");
         hisi_leds.max_iset = DR_BRIGHTNESS_FULL;
-        //goto err;
     }
 
 #ifdef CONFIG_HISI_LEDS_BLUE_TP_COLOR_SWITCH
@@ -594,7 +592,6 @@ static int hisi_led_probe(struct platform_device *pdev)
         if (ret < 0) {
             dev_info(&pdev->dev, "config led%d's each_maxdr_iset failure! use default value.\n", index);
             hisi_leds.leds[index].each_maxdr_iset = hisi_leds.max_iset;
-            //goto err;
         }
 
         ret = of_property_read_u32(root, "hisilicon,dr_start_del", &hisi_leds.leds[index].dr_start_del);

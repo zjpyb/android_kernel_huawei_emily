@@ -244,7 +244,7 @@ static ssize_t fhb_write(struct file *file, const char __user *data, size_t len,
 
 	if (len > sizeof(fp_pkt.buf))
 	{
-		hwlog_warn("fingerprint: fhb_write len is out of size, len=%d\n", len);
+		hwlog_warn("fingerprint: fhb_write len is out of size, len=%lu\n", len);
 		return -1;
 	}
 	if (copy_from_user(fp_pkt.buf, data, len))
@@ -255,7 +255,7 @@ static ssize_t fhb_write(struct file *file, const char __user *data, size_t len,
 	fp_pkt.len = len;
 	fp_pkt.sub_cmd = SUB_CMD_FINGERPRINT_CONFIG_SENSOR_DATA_REQ;
 
-	hwlog_info("fingerprint: fhb_write data=%d, len=%d\n", fp_pkt.buf[0], len);
+	hwlog_info("fingerprint: fhb_write data=%d, len=%lu\n", fp_pkt.buf[0], len);
 
 	pkg_ap.tag = TAG_FP;
 	pkg_ap.cmd = CMD_CMN_CONFIG_REQ;

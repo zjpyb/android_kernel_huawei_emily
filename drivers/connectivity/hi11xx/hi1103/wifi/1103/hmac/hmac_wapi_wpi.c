@@ -44,7 +44,7 @@ oal_uint32  hmac_wpi_encrypt_etc(oal_uint8 *puc_iv, oal_uint8 *puc_bufin, oal_ui
     oal_uint32       ul_counter;
     oal_uint32       ul_comp;
     oal_uint32       ul_loop;
-    oal_uint32       aul_pr_keyin[32];
+    oal_uint32       aul_pr_keyin[32] = {0};
 
 
     if (ul_buflen < 1)
@@ -124,7 +124,7 @@ oal_uint32  hmac_wpi_pmac_etc(oal_uint8* puc_iv, oal_uint8* puc_buf, oal_uint32 
     oal_uint32  aul_mic_tmp[4];
     oal_uint32  ul_loop;
     oal_uint32 *pul_in;
-    oal_uint32  aul_pr_macKeyin[32];
+    oal_uint32  aul_pr_macKeyin[32] = {0};
 
     if ((ul_pamclen < 1) || (ul_pamclen > 4096))
     {

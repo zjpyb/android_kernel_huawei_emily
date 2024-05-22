@@ -36,6 +36,14 @@ OAL_STATIC hmac_fsm_func   g_pa_hmac_ap_fsm_func[MAC_VAP_AP_STATE_BUTT][HMAC_FSM
 OAL_STATIC hmac_fsm_func   g_pa_hmac_sta_fsm_func[MAC_VAP_STA_STATE_BUTT][HMAC_FSM_STA_INPUT_TYPE_BUTT];
 
 
+oal_void  hmac_fsm_change_state_check_etc(hmac_vap_stru *pst_hmac_vap,  mac_vap_state_enum_uint8 en_comp_vap_state, mac_vap_state_enum_uint8 en_new_vap_state)
+{
+    if(WLAN_VAP_MODE_BSS_STA == pst_hmac_vap->st_vap_base_info.en_vap_mode && en_comp_vap_state != pst_hmac_vap->st_vap_base_info.en_vap_state)
+    {
+        hmac_fsm_change_state_etc(pst_hmac_vap, en_new_vap_state);
+    }
+}
+
 
 oal_void  hmac_fsm_change_state_etc(hmac_vap_stru *pst_hmac_vap, mac_vap_state_enum_uint8 en_vap_state)
 {

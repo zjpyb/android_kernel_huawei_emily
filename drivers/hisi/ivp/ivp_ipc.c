@@ -17,8 +17,10 @@
 #include <linux/atomic.h>
 #include <linux/ion.h>
 #include <linux/hisi/hisi_ion.h>
-#include <linux/hisi/hisi-iommu.h>
-#include <linux/hisi/ion-iommu.h>
+#include <linux/hisi-iommu.h>
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
+#include <linux/ion-iommu.h>
+#endif
 #include "ivp.h"
 #include "ivp_log.h"
 #include "ivp_core.h"
@@ -75,6 +77,7 @@ extern struct ivp_ipc_device ivp_ipc_dev;
 extern struct ivp_device ivp_dev;
 static struct mutex ivp_ipc_ion_mutex;
 static struct mutex ivp_ipc_read_mutex;
+
 static const struct of_device_id ivp_ipc_of_descriptor[] = {
         {.compatible = "hisilicon,hisi-ivp-ipc",},
         {},
@@ -141,7 +144,7 @@ static struct ivp_ipc_packet *ivp_ipc_get_packet(struct ivp_ipc_queue *queue)
     return packet;
 }
 
-static int ivp_ipc_add_packet(struct ivp_ipc_queue *queue, void *data, size_t len)
+static int ivp_ipc_add_packet(struct ivp_ipc_queue *queue, const void *data, size_t len)
 {
     struct ivp_ipc_packet *new_packet = NULL;
     int ret = 0;
@@ -154,7 +157,13 @@ static int ivp_ipc_add_packet(struct ivp_ipc_queue *queue, void *data, size_t le
         goto ipc_exit;
     }
 
-    memcpy_s(new_packet->buff, DEFAULT_MSG_SIZE, data, len);
+    ret = memcpy_s(new_packet->buff, DEFAULT_MSG_SIZE, data, len);
+    if (ret != EOK) {
+        ivp_err("(%s):memcpy_s fail, ret[%d]",__FUNCTION__,ret);
+        ivp_ipc_free_packet(new_packet);
+        ret =  -EINVAL;
+        goto ipc_exit;
+    }
 
     spin_lock_irq(&queue->rw_lock);
     list_add_tail(&new_packet->list, &queue->head);
@@ -226,92 +235,6 @@ static int ivp_ipc_open(struct inode *inode, struct file *file)
     sema_init(&(ivp_ipc_dev.recv_queue.r_lock), 0);
 
     return ret;
-}
-static int ivp_trans_sharefd_to_phyaddr(unsigned int* buff)
-{
-    int ret;
-    unsigned int i;
-    unsigned int share_fd = 0;
-    unsigned int fd_num = 0;
-    unsigned int sec_fd_num = 0;
-    unsigned int nosec_fd_num = 0;
-    struct ion_client *ivp_ipc_fd_client;
-    struct ion_handle *ivp_ion_fd_handle;
-    ion_phys_addr_t ion_phy_addr = 0x0 ;
-    mutex_lock(&ivp_ipc_ion_mutex);
-    ivp_ipc_fd_client = hisi_ion_client_create("ivp_ipc_fd_client");
-    if (IS_ERR(ivp_ipc_fd_client)) {
-        ivp_err("ivp_ipc_fd_client create failed!\n");
-        goto err_create_client;
-    }
-    //the second field is sharefd number according to the algo arg struct
-    buff++;
-    fd_num = *buff++;
-    sec_fd_num = fd_num&0xFFFF;
-    nosec_fd_num = (fd_num >> 16)&0xFFFF;
-    /*fd_num indicate the followed shared_fd number, it should not exceed the
-    buffer size(32), buff size = one cmd + one fdnum + fdnum*shard_fd + ..*/
-    if (((sec_fd_num+nosec_fd_num) > MAX_FD_NUM)||(0 == sec_fd_num))
-    {
-        ivp_err("ion buff number maybe wrong, num=%d\n", fd_num);
-        goto err_ion_buff_num;
-    }
-    //trans sec buff phyaddr, phyaddr = phyaddr_begin+offset
-    share_fd = *buff++;
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4,9,0))
-    ivp_ion_fd_handle = ion_import_dma_buf(ivp_ipc_fd_client, share_fd);
-#else
-    ivp_ion_fd_handle = ion_import_dma_buf_fd(ivp_ipc_fd_client, share_fd);
-#endif
-    if (IS_ERR(ivp_ion_fd_handle)){
-        ivp_err("%d, ion_import_dma_buf failed!\n", __LINE__);
-        goto err_import_handle;
-    }
-    ret = ivp_ion_phys(ivp_ipc_fd_client, ivp_ion_fd_handle, (dma_addr_t *)&ion_phy_addr);
-    if (ret < 0){
-        ivp_err("%d, ion_phys failed, result=%d\n", __LINE__, ret);
-        goto err_ion_phys;
-    }
-    for (i = 0; i < sec_fd_num; i++)
-    {
-        *buff++ += ion_phy_addr;
-    }
-    ion_free(ivp_ipc_fd_client, ivp_ion_fd_handle);
-
-    //trans nosec buff phyaddr
-    for (i = 0; i < nosec_fd_num; i++)
-    {
-        share_fd = *buff;
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4,9,0))
-        ivp_ion_fd_handle = ion_import_dma_buf(ivp_ipc_fd_client, share_fd);
-#else
-        ivp_ion_fd_handle = ion_import_dma_buf_fd(ivp_ipc_fd_client, share_fd);
-#endif
-        if (IS_ERR(ivp_ion_fd_handle)){
-            ivp_err("%d, ion_import_dma_buf failed!\n", __LINE__);
-            goto err_import_handle;
-        }
-        ret = ivp_ion_phys(ivp_ipc_fd_client, ivp_ion_fd_handle, (dma_addr_t *)&ion_phy_addr);
-        if (ret < 0){
-            ivp_err("%d, ion_phys failed, result=%d\n", __LINE__, ret);
-            goto err_ion_phys;
-        }
-        *buff++ = ion_phy_addr;
-        ion_free(ivp_ipc_fd_client, ivp_ion_fd_handle);
-    }
-    ion_client_destroy(ivp_ipc_fd_client);
-    mutex_unlock(&ivp_ipc_ion_mutex);
-    return ret;
-
-err_ion_phys:
-    ion_free(ivp_ipc_fd_client, ivp_ion_fd_handle);
-err_ion_buff_num:
-err_import_handle:
-    ion_client_destroy(ivp_ipc_fd_client);
-err_create_client:
-    mutex_unlock(&ivp_ipc_ion_mutex);
-
-    return -EFAULT;
 }
 /******************************************************************************************
  *  len:   msg len. data len is (len * sizeof(msg))
@@ -393,6 +316,7 @@ static ssize_t ivp_ipc_read(struct file *file,
         mutex_unlock(&ivp_ipc_read_mutex);
         return -EINVAL;
     }
+    ivp_info("send ipc cmd 0x%x,0x%x,0x%x,0x%x", packet->buff[0], packet->buff[1], packet->buff[2], packet->buff[3]);
 
     *off += size;
     ret = size;
@@ -434,15 +358,10 @@ static ssize_t ivp_ipc_write(struct file *file,
         goto OUT;
     }
     //trans ion fd to phyaddr
-    if (is_ivp_in_secmode()) {
-        //the third char is ipc cmd,the first char is msg index
-        if ((CMD_ALGORUN == (tmp_buff[3] & 0x7F)) && (0 == tmp_buff[0])) {
-            ret = ivp_trans_sharefd_to_phyaddr((unsigned int *)tmp_buff);
-            if (ret < 0) {
-                ivp_err("ivp trans fd fail! ret=%ld\n", ret);
-                goto OUT;
-            }
-        }
+
+    if (0 == tmp_buff[0])
+    {
+        ivp_info("receive ipc cmd 0x%x",(tmp_buff[3] & 0x7F));
     }
     ret = RPROC_ASYNC_SEND(pdev->send_ipc, (rproc_msg_t *) tmp_buff, size/sizeof(rproc_msg_len_t));
     if (ret) {
@@ -518,7 +437,7 @@ static long ivp_ipc_ioctl(struct file *fd, unsigned int cmd, unsigned long args)
 static long ivp_ipc_ioctl32(struct file *fd, unsigned int cmd, unsigned long args)
 {
     void *user_ptr = compat_ptr(args);
-    return ivp_ipc_ioctl(fd, cmd, (unsigned long)user_ptr);
+    return ivp_ipc_ioctl(fd, cmd, (uintptr_t)user_ptr);
 }
 
 static struct file_operations ivp_ipc_fops = {
@@ -601,5 +520,4 @@ static struct platform_driver ivp_ipc_driver = {
 }; //lint -e785
 
 module_platform_driver(ivp_ipc_driver); //lint -e528 -e64
-//MODULE_LICENSE("GPL");
 //lint -restore

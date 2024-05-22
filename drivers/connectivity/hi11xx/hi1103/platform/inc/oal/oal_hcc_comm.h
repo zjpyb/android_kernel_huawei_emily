@@ -87,7 +87,8 @@ typedef enum _hcc_test_subtype_
 #define   HCC_TEST_CMD_STOP_TEST         (3)
 #define   HCC_TEST_CMD_CFG_FIX_FREQ      (4)
 #define   HCC_TEST_CMD_PCIE_MAC_LOOPBACK_TST      (5)
-#define   HCC_TEST_CMD_PCIE_PHY_LOOPBACK_TST      (6)
+#define   HCC_TEST_CMD_PCIE_PHY_LOOPBACK_TST      (6)  /*PHY内部回环*/
+#define   HCC_TEST_CMD_PCIE_REMOTE_PHY_LOOPBACK_TST      (7)  /*PHY外部环回，TX/RX需要短接*/
 
 typedef struct _hcc_test_cmd_stru_
 {
@@ -95,6 +96,19 @@ typedef struct _hcc_test_cmd_stru_
     oal_uint16 cmd_len;
 }hcc_test_cmd_stru;
 #define hcc_get_test_cmd_data(base) (((oal_uint8*)(base)) + OAL_SIZEOF(hcc_test_cmd_stru))
+typedef struct _hcc_pcie_test_request_stru_
+{
+    oal_uint64 request_flag;
+    oal_int32  response_ret;
+    oal_uint32 link_up_cost;
+    oal_uint32 rw_test_cost;
+    oal_uint32 total_test_cost;
+    oal_uint32 linkup_timeout;
+    oal_uint32 rw_test_count;
+    oal_uint32 bias_cldo3;
+    oal_uint32 bias_vptx;
+    oal_uint32 bias_vph;
+}hcc_pcie_test_request_stru;
 
 typedef struct _hsdio_trans_test_info_
 {

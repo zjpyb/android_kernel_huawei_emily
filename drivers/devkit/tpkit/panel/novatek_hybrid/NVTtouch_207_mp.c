@@ -69,8 +69,6 @@ static int32_t NVT_Hybrid_PixelRawCmRatioMax[40 * 40] = {0};
 static int64_t NVT_Hybrid_StatisticsNum[NVT_Hybrid_MaxStatisticsBuf];
 static int64_t NVT_Hybrid_StatisticsSum[NVT_Hybrid_MaxStatisticsBuf];
 
-static struct proc_dir_entry *NVT_HYBRID_proc_selftest_entry = NULL;
-
 extern struct nvt_hybrid_ts_data *nvt_hybrid_ts;
 extern char nvt_hybrid_product_id[];
 extern void nvt_hybrid_hw_reset(void);
@@ -129,6 +127,7 @@ return:
 *******************************************************/
 static int32_t nvt_hybrid_read_short_rxrx(void)
 {
+	int32_t ret;
 	int32_t i = 0;
 	uint8_t buf[128] = {0};
 	int16_t sh = 0;
@@ -171,7 +170,10 @@ static int32_t nvt_hybrid_read_short_rxrx(void)
 	buf[0] = 0xFF;
 	buf[1] = 0x01;
 	buf[2] = 0x00;
-		nvt_hybrid_ts_i2c_write(nvt_hybrid_ts->client, NVT_HYBRID_I2C_FW_Address, buf, 3);
+	ret = nvt_hybrid_ts_i2c_write(nvt_hybrid_ts->client,
+		NVT_HYBRID_I2C_FW_Address, buf, 3);
+	if (ret < 0)
+		TS_LOG_ERR("%s, %d, i2c err\n", __func__, __LINE__);
 	//---read data---
 	buf[0] = 0x00;
 	nvt_hybrid_ts_i2c_read(nvt_hybrid_ts->client, NVT_HYBRID_I2C_FW_Address, buf, NVT_HYBRID_IC_RX_CFG_SIZE * 2 + 1);
@@ -182,9 +184,10 @@ static int32_t nvt_hybrid_read_short_rxrx(void)
 	for (i = 0; i < nvt_hybrid_ts->ain_rx_num; i++) {
 		sh = nvt_hybrid_rawdata_short_rxrx0[i];
 		sh1 = nvt_hybrid_rawdata_short_rxrx1[i];
-		if (ABS(sh) < ABS(sh1))
+		if (ABS(sh) < ABS(sh1)) {
 			sh = sh1;
-			nvt_hybrid_rawdata_short_rxrx[i] = sh;
+		}
+		nvt_hybrid_rawdata_short_rxrx[i] = sh;
 	}
 
 	TS_LOG_INFO("%s:--\n", __func__);
@@ -258,6 +261,7 @@ return:
 *******************************************************/
 static int32_t nvt_hybrid_read_open(void)
 {
+	int32_t ret;
 	int32_t i = 0;
 	int32_t j = 0;
 	int32_t iArrayIndex = 0;
@@ -278,7 +282,10 @@ static int32_t nvt_hybrid_read_open(void)
 		buf[0] = 0xFF;
 		buf[1] = 0x01;
 		buf[2] = 0x00 + (uint8_t)(((i * nvt_hybrid_ts->ain_rx_num * 2) & 0xFF00) >> 8);	// 2 bytes for 1 point raw data, get high byte parts
-		nvt_hybrid_ts_i2c_write(nvt_hybrid_ts->client, NVT_HYBRID_I2C_FW_Address, buf, 3);
+		ret = nvt_hybrid_ts_i2c_write(nvt_hybrid_ts->client,
+			NVT_HYBRID_I2C_FW_Address, buf, 3);
+		if (ret)
+			TS_LOG_ERR("%s: i2c write error\n", __func__);
 		//---read data---
 		buf[0] = (uint8_t)((i * nvt_hybrid_ts->ain_rx_num * 2) & 0xFF);	// 2 bytes for 1 point raw data
 		nvt_hybrid_ts_i2c_read(nvt_hybrid_ts->client, NVT_HYBRID_I2C_FW_Address, buf, nvt_hybrid_ts->ain_rx_num * 2 + 1);	// 2 bytes for 1 point raw data, read all rawdata by i2c
@@ -691,7 +698,6 @@ int32_t nvt_hybrid_read_raw_and_diff(int32_t *xdata, int32_t *xdata1)
 	uint8_t y_num = 0;
 	uint32_t x = 0;
 	uint32_t y = 0;
-	int32_t iArrayIndex = 0;
 
 	TS_LOG_INFO("%s:++\n", __func__);
 
@@ -774,7 +780,6 @@ int32_t nvt_hybrid_read_raw(int32_t *xdata)
 	uint8_t y_num = 0;
 	uint32_t x = 0;
 	uint32_t y = 0;
-	int32_t iArrayIndex = 0;
 
 	TS_LOG_INFO("%s:++\n", __func__);
 
@@ -850,7 +855,7 @@ int32_t nvt_hybrid_read_diff(int32_t *xdata)
 	}
 
 	nvt_hybrid_get_fw_info();
-	
+
 	if (nvt_hybrid_get_fw_pipe() == 0)
 		nvt_hybrid_read_mdata(NVT_HYBRID_DIFF_PIPE0_ADDR, NVT_HYBRID_DIFF_BTN_PIPE0_ADDR);
 	else
@@ -866,27 +871,8 @@ int32_t nvt_hybrid_read_diff(int32_t *xdata)
 
 	TS_LOG_INFO("%s:change mode\n", __func__);
 	nvt_hybrid_change_mode(NVT_HYBRID_NORMAL_MODE);
-	
+
 	TS_LOG_INFO("%s:--\n", __func__);
-
-	return 0;
-}
-
-/*******************************************************
-Description:
-	Novatek touchscreen read noise data function.
-
-return:
-	n.a.
-*******************************************************/
-static int32_t nvt_hybrid_read_noise(void)
-{
-	int32_t x = 0;
-	int32_t y = 0;
-
-	if (nvt_hybrid_read_diff(nvt_hybrid_rawdata_diff)) {
-		return 1; // read data failed
-	}
 
 	return 0;
 }
@@ -1121,20 +1107,21 @@ return:
 static char selftest_failed_reason[NVT_HYBRID_TP_TEST_FAILED_REASON_LEN] = { "-software_reason" };
 int32_t nvt_hybrid_selftest(struct ts_rawdata_info *info)
 {
-	unsigned long timer_start=jiffies, timer_end=0;
+	unsigned long timer_start = jiffies;
+	unsigned long timer_end = 0;
 	uint8_t buf[2] = {0};
-	NVT_Hybrid_TestResult_FWMutual =0;
+	char test_0_result[4] = {0};
+	char test_1_result[4] = {0};
+	char test_2_result[4] = {0};
+	char test_3_result[4] = {0};
+	char test_4_result[4] = {0};
+
+	NVT_Hybrid_TestResult_FWMutual = 0;
 	NVT_Hybrid_TestResult_Short_RXRX = 0;
 	NVT_Hybrid_TestResult_Open = 0;
 	NVT_Hybrid_TestResult_PixelRaw = 0;
 	NVT_Hybrid_TestResult_Noise = 0;
 	NVT_Hybrid_TestResult_FW_Diff = 0;
-	char test_0_result[4]={0};
-	char test_1_result[4]={0};
-	char test_2_result[4]={0};
-	char test_3_result[4]={0};
-	char test_4_result[4]={0};
-
 	nvt_hybrid_ts->sensor_testing = true;
 
 	if (!info) {
@@ -1192,7 +1179,9 @@ int32_t nvt_hybrid_selftest(struct ts_rawdata_info *info)
 													NVT_Hybrid_Lmt_FW_Rawdata_P, NVT_Hybrid_Lmt_FW_Rawdata_N);
 		if (NVT_Hybrid_TestResult_FWMutual == -1){
 			TS_LOG_ERR("%s: FW RAWDATA TEST FAIL! NVT_Hybrid_TestResult_FWMutual=%d\n", __func__, NVT_Hybrid_TestResult_FWMutual);
-			nvt_hybrid_print_raw_data(NVT_Hybrid_RecordResult_FWMutual, nvt_hybrid_ts->ain_rx_num, nvt_hybrid_ts->ain_tx_num);
+			nvt_hybrid_print_raw_data((uint32_t *)NVT_Hybrid_RecordResult_FWMutual,
+				nvt_hybrid_ts->ain_rx_num,
+				nvt_hybrid_ts->ain_tx_num);
 		} else {
 			TS_LOG_INFO("%s: FW RAWDATA TEST PASS! NVT_Hybrid_TestResult_FWMutual=%d\n", __func__, NVT_Hybrid_TestResult_FWMutual);
 		}

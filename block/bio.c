@@ -156,7 +156,7 @@ out:
 
 unsigned int bvec_nr_vecs(unsigned short idx)
 {
-	return bvec_slabs[idx].nr_vecs;/*[false alarm]:fortify*/
+	return bvec_slabs[--idx].nr_vecs;/*[false alarm]:fortify*/
 }
 
 void bvec_free(mempool_t *pool, struct bio_vec *bv, unsigned int idx)
@@ -1467,7 +1467,7 @@ struct bio *bio_map_kern(struct request_queue *q, void *data, unsigned int len,
 			bytes = len;
 
 		if (((unsigned int)bio_add_pc_page(q, bio, virt_to_page(data), bytes,
-				    offset)) < bytes) {
+				    (unsigned int)offset)) < bytes) {
 			/* we don't support partial mappings */
 			bio_put(bio);
 			return ERR_PTR(-EINVAL);
@@ -1834,7 +1834,7 @@ struct bio *bio_split(struct bio *bio, int sectors,
 	if (!split)
 		return NULL;
 
-	split->bi_iter.bi_size = sectors << 9;
+	split->bi_iter.bi_size = (unsigned int)sectors << 9;
 
 #ifdef CONFIG_HISI_BLK
 	hisi_blk_bio_split_pre(bio, split);
@@ -1864,7 +1864,7 @@ void bio_trim(struct bio *bio, int offset, int size)
 	 * the given offset and size.
 	 */
 
-	size <<= 9;
+	size = (unsigned int)size << 9;
 	if (offset == 0 && size == bio->bi_iter.bi_size)
 		return;
 

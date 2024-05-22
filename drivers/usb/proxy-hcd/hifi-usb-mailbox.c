@@ -3,7 +3,7 @@
 #include <linux/hisi/hisi_rproc.h>
 
 #include "hifi-usb.h"
-#include "../dwc3/dwc3-hifi-usb.h"
+#include "../dwc3/hisi/dwc3-hifi-usb.h"
 
 static irq_rt_t usb_notify_recv_isr(void *usr_para, void *mail_handle, unsigned int mail_len)
 {

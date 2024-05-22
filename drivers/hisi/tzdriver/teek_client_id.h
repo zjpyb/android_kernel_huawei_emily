@@ -109,6 +109,15 @@ enum SVC_SECBOOT_IMG_TYPE {
     CAS,
     MODEM_DTB,
     ISP,
+/*
+miami c30上需要支持冷补丁特性，该分支的modem代码与miami_c30 Modem代码共分支；
+增加冷补丁枚举是为了在该分支编译通过miami版本，安全OS中没有增加对应的枚举，该分支上编译的miami版本不支持冷补丁特性；
+分支对应关系链接：http://3ms.huawei.com/hi/group/8729/wiki_5190309.html
+*/
+#ifdef CONFIG_COLD_PATCH
+    MODEM_COLD_PATCH,
+    DSP_COLD_PATCH,
+#endif
     SOC_MAX
 };
 #endif

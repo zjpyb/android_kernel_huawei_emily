@@ -457,6 +457,8 @@ oal_int32 oal_pcie_unmask_device_link_erros(oal_pcie_res* pst_pci_res);
 oal_int32 oal_pcie_check_device_link_errors(oal_pcie_res* pst_pci_res);
 oal_void oal_pcie_print_ringbuf_info(pcie_ringbuf* pst_ringbuf, PCI_LOG_TYPE level);
 oal_void oal_pcie_set_voltage_bias_param(oal_uint32 phy_0v9_bias, oal_uint32 phy_1v8_bias);
+oal_int32 oal_pcie_get_vol_reg_1v8_value(oal_int32 request_vol, oal_uint32* pst_value);
+oal_int32 oal_pcie_get_vol_reg_0v9_value(oal_int32 request_vol, oal_uint32* pst_value);
 oal_int32 oal_pcie_voltage_bias_init(oal_pcie_res* pst_pci_res);
 oal_void oal_pcie_print_transfer_info(oal_pcie_res* pst_pci_res, oal_uint64 print_flag);
 oal_void oal_pcie_reset_transfer_info(oal_pcie_res* pst_pci_res);

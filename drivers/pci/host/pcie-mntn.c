@@ -13,8 +13,9 @@ void dsm_pcie_dump_info(struct kirin_pcie *pcie, enum dsm_err_id id)
 {
 	u32 i = 0;
 
-	if (!pcie || !atomic_read(&(pcie->is_power_on)))
-		return;
+	mutex_lock(&pcie->power_lock);
+	if (!atomic_read(&(pcie->is_power_on)))
+		goto MUTEX_UNLOCK;
 
 	dsm_record_info[i++] = id;
 	dsm_record_info[i++] = gpio_get_value(pcie->gpio_id_reset);
@@ -28,7 +29,8 @@ void dsm_pcie_dump_info(struct kirin_pcie *pcie, enum dsm_err_id id)
 	}
 	info_size = i;
 
-	PCIE_PR_INFO("--");
+MUTEX_UNLOCK:
+	mutex_unlock(&pcie->power_lock);
 }
 
 void dsm_pcie_clear_info(void)
@@ -85,13 +87,11 @@ EXPORT_SYMBOL_GPL(dsm_pcie_dump_reginfo);
 void dump_apb_register(struct kirin_pcie *pcie)
 {
 	u32 j;
-#ifdef CONFIG_KIRIN_PCIE_MAR
-	u32 val1, val2, val3, val4;
-#endif
 
+	mutex_lock(&pcie->power_lock);
 	if (!atomic_read(&pcie->is_power_on)) {
 		PCIE_PR_ERR("PCIe is Poweroff");
-		return;
+		goto MUTEX_UNLOCK;
 	}
 
 	PCIE_PR_INFO("####DUMP APB CORE Register : ");
@@ -130,72 +130,12 @@ void dump_apb_register(struct kirin_pcie *pcie)
 		kirin_apb_phy_readl(pcie, 0x8),
 		kirin_apb_phy_readl(pcie, 0xc),
 		kirin_apb_phy_readl(pcie, 0x400));
-	PCIE_PR_INFO("MPLLA status: 0x%x", kirin_apb_phy_readl(pcie, 0x488));
+	PCIE_PR_INFO("PHY MPLL status: 0x%x", kirin_apb_phy_readl(pcie, 0x488));
 
-#ifdef CONFIG_KIRIN_PCIE_MAR
-	PCIE_PR_INFO("####DUMP SYNP PHY Register : ");
-
-	if ((LTSSM_L1_2 == show_link_state(0)) || (LTSSM_L1_1 == show_link_state(0)))
-		return;
-
-	for (j = 0; j < 0xF0; j += 4) {
-		val1 = kirin_natural_phy_readl(pcie, j + 0x0);
-		val2 = kirin_natural_phy_readl(pcie, j + 0x1);
-		val3 = kirin_natural_phy_readl(pcie, j + 0x2);
-		val4 = kirin_natural_phy_readl(pcie, j + 0x3);
-		printk(KERN_INFO "0x%-8x: %8x %8x %8x %8x \n",
-			j, val1, val2, val3, val4);
-	}
-
-	for (j = 0x1000; j < 0x10A0; j += 4) {
-		val1 = kirin_natural_phy_readl(pcie, j + 0x0);
-		val2 = kirin_natural_phy_readl(pcie, j + 0x1);
-		val3 = kirin_natural_phy_readl(pcie, j + 0x2);
-		val4 = kirin_natural_phy_readl(pcie, j + 0x3);
-		printk(KERN_INFO "0x%-8x: %8x %8x %8x %8x \n",
-			j, val1, val2, val3, val4);
-	}
-
-	for (j = 0; j < 5; j++) {
-		val1 = kirin_natural_phy_readl(pcie, 0x1059);
-		printk(KERN_INFO "times[%d], 0x%-8x: %8x \n",
-			j, 0x1059, val1);
-	}
-
-	for (j = 0; j < 5; j++) {
-		val1 = kirin_natural_phy_readl(pcie, 0x404a);
-		printk(KERN_INFO "times[%d], 0x%-8x: %8x \n",
-			j, 0x404a, val1);
-	}
-
-	for (j = 0x2000; j < 0x2040; j += 4) {
-		val1 = kirin_natural_phy_readl(pcie, j + 0x0);
-		val2 = kirin_natural_phy_readl(pcie, j + 0x1);
-		val3 = kirin_natural_phy_readl(pcie, j + 0x2);
-		val4 = kirin_natural_phy_readl(pcie, j + 0x3);
-		printk(KERN_INFO "0x%-8x: %8x %8x %8x %8x \n",
-			j, val1, val2, val3, val4);
-	}
-	/* Invalid val */
-	for (j = 0x3000; j < 0x30CF; j += 4) {
-		val1 = kirin_natural_phy_readl(pcie, j + 0x0);
-		val2 = kirin_natural_phy_readl(pcie, j + 0x1);
-		val3 = kirin_natural_phy_readl(pcie, j + 0x2);
-		val4 = kirin_natural_phy_readl(pcie, j + 0x3);
-		printk(KERN_INFO "0x%-8x: %8x %8x %8x %8x \n",
-			j, val1, val2, val3, val4);
-	}
-	/* all 0x0 */
-	for (j = 0x4000; j < 0x4050; j += 4) {
-		val1 = kirin_natural_phy_readl(pcie, j + 0x0);
-		val2 = kirin_natural_phy_readl(pcie, j + 0x1);
-		val3 = kirin_natural_phy_readl(pcie, j + 0x2);
-		val4 = kirin_natural_phy_readl(pcie, j + 0x3);
-		printk(KERN_INFO "0x%-8x: %8x %8x %8x %8x \n",
-			j, val1, val2, val3, val4);
-	}
-#endif
 	printk("\n");
+
+MUTEX_UNLOCK:
+	mutex_unlock(&pcie->power_lock);
 }
 
 typedef void (* WIFI_DUMP_FUNC) (void);
@@ -248,12 +188,17 @@ bool get_pcie_dump_flag(void)
 
 void dump_pcie_apb_info(void)
 {
-	struct kirin_pcie *pcie;
+	struct kirin_pcie *pcie = NULL;
 	u32 i;
 
 	for (i = 0; i < g_rc_num; i++)
 		if (g_kirin_pcie[i].dtsinfo.noc_mntn)
 			pcie = &g_kirin_pcie[i];
+
+	if (!pcie) {
+		PCIE_PR_INFO("Not set!");
+		return;
+	}
 
 	if (!atomic_read(&pcie->is_power_on)) {
 		PCIE_PR_ERR("PCIe is Poweroff");

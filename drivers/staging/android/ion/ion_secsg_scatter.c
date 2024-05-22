@@ -38,18 +38,19 @@
 #include <asm/tlbflush.h>
 
 #include "ion.h"
-#include "ion_priv.h"
 #include "hisi/ion_sec_priv.h"
+
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
+#include "ion_priv.h"
+#else
+#include "hisi_ion_priv.h"
+#endif
 
 static int change_scatter_prop(struct ion_secsg_heap *secsg_heap,
 			       struct ion_buffer *buffer,
 			       u32 cmd)
 {
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
-	struct sg_table *table = buffer->priv_virt;
-#else
 	struct sg_table *table = buffer->sg_table;
-#endif
 	struct scatterlist *sg;
 	struct page *page;
 	struct mem_chunk_list mcl;
@@ -114,7 +115,11 @@ static struct page *__secsg_alloc_large(struct ion_secsg_heap *secsg_heap,
 #endif
 
 	count = size / PAGE_SIZE;
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
 	page = cma_alloc(secsg_heap->cma, count, get_order(align));
+#else
+	page = cma_alloc(secsg_heap->cma, count, get_order(align), GFP_KERNEL);
+#endif
 	if (!page) {
 		pr_err("alloc cma fail, count:0x%x\n", count);
 		return NULL;
@@ -151,6 +156,12 @@ int __secsg_alloc_scatter(struct ion_secsg_heap *secsg_heap,
 	if (sg_alloc_table(table, nents, GFP_KERNEL))
 		goto free_table;
 
+	/*
+	 * DRM memory alloc from CMA pool.
+	 * In order to speed up the allocation, we will apply for memory
+	 * in units of 2MB, and the memory portion of less than 2MB will
+	 * be applied for one time.
+	 */
 	sg = table->sgl;
 	while (size_remaining) {
 		if (size_remaining > SZ_2M)
@@ -165,29 +176,33 @@ int __secsg_alloc_scatter(struct ion_secsg_heap *secsg_heap,
 			       __func__);
 			goto free_pages;
 		}
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
-		create_mapping_late(page_to_phys(page),
-				    (unsigned long)page_address(page),
-				    alloc_size, __pgprot(PROT_DEVICE_nGnRE));
-#else
+
+		/*
+		 * Before set memory in secure region, we need change kernel
+		 * pgtable from normal to device to avoid big CPU Speculative
+		 * read.
+		 */
 		change_secpage_range(page_to_phys(page),
 				     (unsigned long)page_address(page),
 				     alloc_size, __pgprot(PROT_DEVICE_nGnRE));
-#endif
 		size_remaining -= alloc_size;
 		sg_set_page(sg, page, alloc_size, 0);
 		sg = sg_next(sg);
 		i++;
 	}
+
+	/*
+	 * After change the pgtable prot, we need flush TLB and cache.
+	 */
 	flush_tlb_all();
 	ion_flush_all_cpus_caches();
 
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
-	buffer->priv_virt = table;
-#else
 	buffer->sg_table = table;
-#endif
 
+	/*
+	 * Send cmd to secos change the memory form normal to protect,
+	 * and record some information of the sg_list for secos va map.
+	 */
 	ret = change_scatter_prop(secsg_heap, buffer, ION_SEC_CMD_ALLOC);
 	if (ret)
 		goto free_pages;
@@ -200,15 +215,9 @@ free_pages:
 	pr_err("free %ld pages in err runtime\n", nents);
 	for_each_sg(table->sgl, sg, nents, i) {
 		page = sg_page(sg);
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
-		create_mapping_late(page_to_phys(page),
-				    (unsigned long)page_address(page),
-				    sg->length, PAGE_KERNEL);
-#else
 		change_secpage_range(page_to_phys(page),
 				     (unsigned long)page_address(page),
 				     sg->length, PAGE_KERNEL);
-#endif
 		flush_tlb_all();
 		cma_release(secsg_heap->cma, page, sg->length / PAGE_SIZE);
 	}
@@ -223,11 +232,7 @@ free_table:
 void __secsg_free_scatter(struct ion_secsg_heap *secsg_heap,
 			  struct ion_buffer *buffer)
 {
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
-	struct sg_table *table = buffer->priv_virt;
-#else
 	struct sg_table *table = buffer->sg_table;
-#endif
 	struct scatterlist *sg;
 	int ret = 0;
 	u32 i;
@@ -239,15 +244,9 @@ void __secsg_free_scatter(struct ion_secsg_heap *secsg_heap,
 	}
 
 	for_each_sg(table->sgl, sg, table->nents, i) {
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
-		create_mapping_late(page_to_phys(sg_page(sg)),
-				    (unsigned long)page_address(sg_page(sg)),
-				    sg->length, PAGE_KERNEL);
-#else
 		change_secpage_range(page_to_phys(sg_page(sg)),
 				     (unsigned long)page_address(sg_page(sg)),
 				     sg->length, PAGE_KERNEL);
-#endif
 		flush_tlb_all();
 		cma_release(secsg_heap->cma, sg_page(sg),
 			    sg->length / PAGE_SIZE);
@@ -257,7 +256,7 @@ void __secsg_free_scatter(struct ion_secsg_heap *secsg_heap,
 	kfree(table);
 	secsg_heap->alloc_size -= buffer->size;
 }
-
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
 int secsg_map_iommu(struct ion_secsg_heap *secsg_heap,
 		    struct ion_buffer *buffer,
 		    struct ion_iommu_map *map_data)
@@ -317,3 +316,4 @@ void secsg_unmap_iommu(struct ion_secsg_heap *secsg_heap,
 	if (ret)
 		pr_err("%s:exec unmap iommu cmd fail\n", __func__);
 }
+#endif

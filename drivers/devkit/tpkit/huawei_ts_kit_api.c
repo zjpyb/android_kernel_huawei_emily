@@ -113,13 +113,11 @@ out:
 			dump_fingers_info_debug(g_ts_kit_platform_data.fingers_send_aft_info.fingers);
 			atomic_set(&g_ts_kit_platform_data.fingers_waitq_flag, AFT_WAITQ_WAKEUP);
 			up(&g_ts_kit_platform_data.fingers_aft_send);
-			//TS_LOG_ERR("[MUTI_AFT] wake_up_interruptible  fingers_waitq!\n");
                         ts_work_after_input();//read roi data for some ic
 			out_cmd->command = TS_INVAILD_CMD;
 		}
 		else if(atomic_read(&g_ts_kit_platform_data.fingers_waitq_flag)  != AFT_WAITQ_IDLE)
 		{
-			//atomic_set(&g_ts_data.fingers_waitq_flag, AFT_WAITQ_IGNORE);
 			up(&g_ts_kit_platform_data.fingers_aft_send);
 			TS_LOG_DEBUG("[MUTI_AFT] ts_algo_calibrate hal aglo process too slow \n");
 		}
@@ -263,18 +261,16 @@ void ts_report_pen(struct ts_cmd_node* in_cmd, struct ts_cmd_node* out_cmd)
 {
 	struct ts_pens* pens = NULL;
 	struct input_dev* input = g_ts_kit_platform_data.pen_dev;
-	struct anti_false_touch_param *local_param = NULL;
-	int finger_num = 0;
 	int id = 0;
 	int key_value = 0;
 
 	if(!in_cmd || !out_cmd || !input){
-		TS_LOG_ERR("parameters is null!\n", __func__);
+		TS_LOG_ERR("%s:parameters is null!\n", __func__);
 		return;
 	}
 	pens = &in_cmd->cmd_param.pub_params.report_pen_info;
 	if(!pens){
-		TS_LOG_ERR("pens is null!\n", __func__);
+		TS_LOG_ERR("%s: pens is null!\n", __func__);
 		return;
 	}
 
@@ -290,7 +286,7 @@ void ts_report_pen(struct ts_cmd_node* in_cmd, struct ts_cmd_node* out_cmd)
 			key_value = 0;
 		}
 
-		if(pens->buttons[id].key != NULL)
+		if (pens->buttons[id].key != 0)
 		{
 			TS_LOG_ERR("id is %d, key is %d, value is %d\n", id, pens->buttons[id].key, key_value);
 			input_report_key(input, pens->buttons[id].key, key_value);
@@ -347,12 +343,6 @@ void ts_report_input(struct ts_cmd_node* in_cmd, struct ts_cmd_node* out_cmd)
     struct anti_false_touch_param *local_param = NULL;
     int finger_num = 0;
     int id = 0;
-
-	if(!input_dev || !in_cmd){
-		TS_LOG_ERR("The command node or input device is not exist!\n");
-		return;
-	}
-	finger = &in_cmd->cmd_param.pub_params.report_info;
 #if ANTI_FALSE_TOUCH_USE_PARAM_MAJOR_MINOR
 	struct aft_abs_param_major aft_abs_major;
 	int major = 0;
@@ -362,6 +352,11 @@ void ts_report_input(struct ts_cmd_node* in_cmd, struct ts_cmd_node* out_cmd)
 	short tmp_distance = 0;
 	char *p = NULL;
 #endif
+	if (!input_dev || !in_cmd) {
+		TS_LOG_ERR("The command node or input device is not exist!\n");
+		return;
+	}
+	finger = &in_cmd->cmd_param.pub_params.report_info;
 
 	if (g_ts_kit_platform_data.chip_data){
 		local_param = &(g_ts_kit_platform_data.chip_data->anti_false_touch_param_data);
@@ -764,7 +759,6 @@ bool ts_cmd_need_process(struct ts_cmd_node* cmd)
                     break;
                 case TS_INT_PROCESS:
                 case TS_INT_ERR_OCCUR:
-				//enable_irq(g_ts_data.irq_id);
 				if (g_ts_kit_platform_data.chip_data->is_parade_solution){
 					if(g_ts_kit_platform_data.chip_data->isbootupdate_finish==false
 						|| g_ts_kit_platform_data.chip_data->sleep_in_mode == 0) //deep sleep mode need process irq when suspend/resume
@@ -838,7 +832,9 @@ int ts_kit_power_notify_callback(struct notifier_block* self, unsigned long noti
     }
 
     timeout = *data_in;
-    TS_LOG_INFO("%s called,pm_type=%d, timeout=%d\n", __func__, notify_pm_type, timeout);
+
+	TS_LOG_INFO("%s called,pm_type=%lu, timeout=%u\n",
+		__func__, notify_pm_type, timeout);
     return ts_kit_power_control_notify(notify_pm_type, timeout);
 }
 
@@ -933,13 +929,13 @@ int ts_read_rawdata_for_newformat(struct ts_cmd_node* in_cmd, struct ts_cmd_node
 	struct ts_rawdata_info_new* info = NULL;
 	struct ts_kit_device_data* dev = g_ts_kit_platform_data.chip_data;
 	int error = NO_ERR;
-	
+
 	TS_LOG_INFO("ts read rawdata for new format called\n");
 	if (!in_cmd || !out_cmd){
 		TS_LOG_ERR("%s : find a null pointer\n", __func__);
 		return -EINVAL;
 	}
-	
+
 	info = (struct ts_rawdata_info_new*)in_cmd->cmd_param.prv_params;
 	if (!info) {
 		TS_LOG_ERR("%s, find a null pointer\n", __func__);
@@ -948,9 +944,11 @@ int ts_read_rawdata_for_newformat(struct ts_cmd_node* in_cmd, struct ts_cmd_node
 	if(!g_ts_kit_platform_data.chip_data->is_parade_solution){
         ts_stop_wd_timer(&g_ts_kit_platform_data);
     }
-    if (dev->ops->chip_get_rawdata){
-		error = dev->ops->chip_get_rawdata(info, out_cmd); 
-	}
+	if (dev->ops->chip_get_rawdata)
+		error = dev->ops->chip_get_rawdata(
+			(struct ts_rawdata_info *)info,
+			out_cmd);
+
     if(!g_ts_kit_platform_data.chip_data->is_parade_solution){
         ts_start_wd_timer(&g_ts_kit_platform_data);
     }
@@ -1366,7 +1364,6 @@ int ts_chip_detect(struct ts_cmd_node* in_cmd, struct ts_cmd_node* out_cmd)
 	}
 	else {
 		g_ts_kit_platform_data.chip_data = NULL;
-        //atomic_set(&g_ts_kit_platform_data.state, TS_UNINIT);
     }
     return error;
 }
@@ -1665,7 +1662,7 @@ void ts_special_hardware_test_switch(struct ts_cmd_node* in_cmd, struct ts_cmd_n
 
 	if (!info) {
 		TS_LOG_ERR("%s, find a null pointer\n", __func__);
-		return -EINVAL;
+		return;
 	}
     TS_LOG_INFO("%s, action :%d, value:%d\n", __func__, info->op_action, info->switch_value);
     if (dev->ops->chip_special_hardware_test_swtich)

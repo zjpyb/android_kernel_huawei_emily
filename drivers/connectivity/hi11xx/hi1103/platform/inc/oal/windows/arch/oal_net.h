@@ -45,6 +45,18 @@ extern "C" {
 #define IPV6_ADDR_MC_SCOPE(a)	\
     ((a)->s6_addr[1] & 0x0f)    /* nonstandard */
 
+/* NAPI */
+#define NAPI_POLL_WEIGHT_MAX              64
+#define NAPI_POLL_WEIGHT_LEV1             1
+#define NAPI_POLL_WEIGHT_LEV2             4
+#define NAPI_POLL_WEIGHT_LEV3             8
+#define NAPI_STAT_PERIOD                  1000
+#define NAPI_WATER_LINE_LEV1              12300
+#define NAPI_WATER_LINE_LEV2              24600
+#define NAPI_WATER_LINE_LEV3              38400
+#define NAPI_NETDEV_PRIV_QUEUE_LEN_MAX    4096
+
+
 /*****************************************************************************
   2.11 VLAN宏定义
 *****************************************************************************/
@@ -991,7 +1003,15 @@ typedef struct survey_info
 
 typedef oal_uint32       oal_work_struct_stru;
 typedef oal_uint32       oal_ieee80211_mgmt_stru;
-typedef oal_uint32       oal_cfg80211_bss_stru;
+
+typedef struct cfg80211_bss {
+    oal_ieee80211_channel *channel;
+    oal_int32 signal;
+    oal_uint16 beacon_interval;
+    oal_uint16 capability;
+    oal_uint8 bssid[6];
+}oal_cfg80211_bss_stru;
+
 /*typedef oal_uint32       oal_station_info_stru;*/
 
 
@@ -1342,7 +1362,7 @@ typedef struct oal_station_info_tag
     oal_int32 generation;
     oal_int32    snr;
     oal_int32    noise;        /* 底噪 */
-    oal_int32    chload;          /* 信道繁忙程度*/ 
+    oal_int32    chload;          /* 信道繁忙程度*/
 }oal_station_info_stru;
 #else
 struct sta_bss_parameters {
@@ -1400,7 +1420,7 @@ typedef struct oal_station_info_tag
 	enum nl80211_mesh_power_mode nonpeer_pm;
 	oal_int32    snr;
 	oal_int32    noise;        /* 底噪 */
-    oal_int32    chload;          /* 信道繁忙程度*/ 
+    oal_int32    chload;          /* 信道繁忙程度*/
 }oal_station_info_stru;
 #endif
 
@@ -1759,6 +1779,25 @@ typedef struct
     oal_uint8  auc_ar_tha[ETHER_ADDR_LEN];           /* target hardware address */
     oal_uint8  auc_ar_tip[ETH_TARGET_IP_ADDR_LEN];   /* target IP address */
 }oal_eth_arphdr_stru;
+
+
+struct napi_struct
+{
+    oal_uint32 ul_reserved;
+};
+
+typedef struct
+{
+    oal_uint8                           uc_napi_enable;       /* NAPI使能 */
+    oal_uint8                           uc_gro_enable;        /* GRO使能 */
+    oal_uint8                           uc_napi_weight;       /* 每次调度NAPI处理数据包个数限制 */
+    oal_uint8                           uc_state;
+    struct napi_struct                  st_napi;
+    oal_netbuf_head_stru                st_rx_netbuf_queue;
+    oal_uint32                          ul_queue_len_max;
+    oal_uint32                          ul_period_pkts;       /* 统计周期pps,以便调整napi参数 */
+    oal_uint32                          ul_period_start;      /* 统计周期起始时间戳 */
+}oal_netdev_priv_stru;
 
 /*****************************************************************************
   8 UNION定义
@@ -2119,17 +2158,21 @@ OAL_INLINE oal_net_device_stru* oal_dev_get_by_name(const oal_int8 *pc_name)
 OAL_INLINE oal_net_device_stru * oal_net_alloc_netdev_mqs(oal_uint32 ul_sizeof_priv, oal_int8 *puc_name,
                                                   oal_void *p_set_up, oal_uint32 ul_txqs, oal_uint32 ul_rxqs)
 {
-    oal_net_device_stru *pst_net_dev;
-    oal_uint32           ul_size;
+    oal_net_device_stru  *pst_net_dev;
+    oal_netdev_priv_stru *pst_netdev_priv;
+    oal_uint32            ul_size;
 
     ul_size = OAL_STRLEN(puc_name) + 1; /* 包括'\0' */
 
     pst_net_dev = (oal_net_device_stru *)oal_memalloc(OAL_SIZEOF(oal_net_device_stru));
+    pst_netdev_priv = (oal_netdev_priv_stru *)oal_memalloc(ul_sizeof_priv);
 
     OAL_MEMZERO(pst_net_dev, OAL_SIZEOF(oal_net_device_stru));
 
     /* 将name保存到netdeivce */
     oal_memcopy(pst_net_dev->name, puc_name, ul_size);
+
+    pst_net_dev->priv = pst_netdev_priv;
 
     return pst_net_dev;
 }
@@ -2884,6 +2927,29 @@ OAL_INLINE oal_uint32  oal_netbuf_decrease_user(oal_netbuf_stru *pst_buf)
 }
 
 
+OAL_STATIC OAL_INLINE oal_uint32  oal_netbuf_read_user(oal_netbuf_stru *pst_buf)
+{
+    if (OAL_UNLIKELY(OAL_PTR_NULL == pst_buf))
+    {
+        return OAL_ERR_CODE_PTR_NULL;
+    }
+
+    return pst_buf->users;
+}
+
+
+
+OAL_STATIC OAL_INLINE oal_void  oal_netbuf_set_user(oal_netbuf_stru *pst_buf, oal_uint32 refcount)
+{
+    if (OAL_UNLIKELY(OAL_PTR_NULL == pst_buf))
+    {
+        return;
+    }
+
+    pst_buf->users = refcount;
+}
+
+
 OAL_STATIC OAL_INLINE oal_uint32  oal_netbuf_increase_user(oal_netbuf_stru *pst_buf)
 {
     if (OAL_UNLIKELY(OAL_PTR_NULL == pst_buf))
@@ -2955,6 +3021,41 @@ OAL_STATIC OAL_INLINE oal_void  oal_local_bh_disable(oal_void)
 }
 
 OAL_STATIC OAL_INLINE oal_void  oal_local_bh_enable(oal_void)
+{
+    return;
+}
+
+OAL_STATIC OAL_INLINE oal_void  oal_napi_schedule(struct napi_struct *napi)
+{
+    return;
+}
+
+OAL_STATIC OAL_INLINE oal_void  oal_napi_gro_receive(struct napi_struct *napi,oal_netbuf_stru *pst_netbuf)
+{
+    return;
+}
+
+OAL_STATIC OAL_INLINE oal_void  oal_netif_receive_skb(oal_netbuf_stru *pst_netbuf)
+{
+    return;
+}
+
+OAL_STATIC OAL_INLINE oal_void  oal_napi_complete(struct napi_struct *napi)
+{
+    return;
+}
+
+OAL_STATIC OAL_INLINE oal_void oal_netif_napi_add(struct net_device *dev , struct napi_struct *napi ,int (*poll)(struct napi_struct *, int) , int weight)
+{
+    return;
+}
+
+OAL_STATIC OAL_INLINE oal_void oal_napi_disable(struct napi_struct *napi)
+{
+    return;
+}
+
+OAL_STATIC OAL_INLINE oal_void oal_napi_enable(struct napi_struct * napi)
 {
     return;
 }

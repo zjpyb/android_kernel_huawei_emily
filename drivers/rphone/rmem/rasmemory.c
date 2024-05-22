@@ -1,10 +1,13 @@
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/kthread.h>
-
 #include <linux/pid_namespace.h>
 #include "../rasbase/rasbase.h"
 #include "../rasbase/rasproc.h"
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
+#include <linux/sched/task.h>
+#include <linux/sched/mm.h>
+#endif
 struct RasMemory {
 	struct RasMemory *next;
 	unsigned long len;

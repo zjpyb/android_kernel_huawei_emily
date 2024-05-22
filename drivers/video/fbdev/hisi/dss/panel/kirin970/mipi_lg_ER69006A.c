@@ -13,7 +13,7 @@
 
 #include "hisi_fb.h"
 #include <huawei_platform/touthscreen/huawei_touchscreen.h>
-
+/*lint -e569 -e574*/
 #define DTS_COMP_LG_ER69006 "hisilicon,mipi_lg_eR69006A"
 
 static struct hisi_fb_panel_data g_panel_data;
@@ -1025,8 +1025,6 @@ err_return:
 	return ret;
 err_probe_defer:
 	return -EPROBE_DEFER;
-
-	return ret;
 }
 
 static const struct of_device_id hisi_panel_match_table[] = {
@@ -1064,3 +1062,4 @@ static int __init mipi_lg_panel_init(void)
 }
 
 module_init(mipi_lg_panel_init);
+/*lint +e569 -e574*/

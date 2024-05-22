@@ -299,7 +299,9 @@ extern "C" {
 extern oal_int32 hi11xx_loglevel;
 #else
 oal_int32 HI11XX_LOG_MODULE_NAME_VAR = HI11XX_LOG_INFO;
+#if defined(PLATFORM_DEBUG_ENABLE) && (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
 module_param(HI11XX_LOG_MODULE_NAME_VAR, int, S_IRUGO | S_IWUSR);
+#endif
 #endif
 
 #ifndef HI11XX_LOG_MODULE_NAME_VAR
@@ -489,10 +491,11 @@ OAL_STATIC OAL_INLINE oal_int  oal_strncasecmp(OAL_CONST oal_int8 *p_buf1, OAL_C
 }
 
 
-OAL_STATIC OAL_INLINE oal_uint8  oal_get_random(oal_void)
+OAL_STATIC OAL_INLINE void oal_get_random_bytes(oal_int8 *pc_random_buf, oal_uint32 ul_random_len)
 {
-    /* TBD */
-    return 1;
+#if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
+    get_random_bytes(pc_random_buf,ul_random_len);
+#endif
 }
 
 

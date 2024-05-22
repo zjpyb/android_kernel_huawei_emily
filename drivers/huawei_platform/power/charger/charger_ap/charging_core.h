@@ -40,7 +40,6 @@
 #define SEGMENT_TYPE_BY_VBAT_ICHG (0)
 #define SEGMENT_TYPE_BY_VBAT (1)
 
-#define YCABLE_CURR_DEFAULT			(1000)
 #define INVALID_CURRENT_SET (0)
 #define DEFAULT_BASP_POLICY_TYPE (0)
 #define SEGMENT_BASP_POLICY_TYPE (1)
@@ -53,6 +52,10 @@
 
 #define BATT_BRAND_STRING_MAX        (32)
 #define BATT_BRAND_NUM_MAX           (5)
+
+#define CCAFC_RUN_DEFAULT	0
+#define CCAFC_RUN_FIRST		1
+#define CCAFC_RUN_ALREADY	2
 
 /*************************struct define area***************************/
 enum vdpm_para_info {

@@ -595,7 +595,7 @@ spidev_compat_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			&& _IOC_DIR(cmd) == _IOC_WRITE)/*lint !e845 */
 		return spidev_compat_ioc_message(filp, cmd, arg);
 
-	return spidev_ioctl(filp, cmd, (unsigned long)compat_ptr(arg));/*lint !e712 !e747 */
+	return spidev_ioctl(filp, cmd, (uintptr_t)compat_ptr(arg));/*lint !e712 !e747 */
 }
 #else
 #define spidev_compat_ioctl NULL

@@ -70,13 +70,13 @@
 **************************************************************************** */
 SCM_CODER_DEST_CFG_STRU     g_astSCMCnfCoderDstCfg=
 {
-    SCM_CHANNEL_UNINIT, 
-    SOCP_CODER_DST_OM_CNF, 
-    SCM_CODER_DST_CNF_SIZE, 
-    SCM_CODER_DST_THRESHOLD, 
+    SCM_CHANNEL_UNINIT,
+    SOCP_CODER_DST_OM_CNF,
+    SCM_CODER_DST_CNF_SIZE,
+    SCM_CODER_DST_THRESHOLD,
     SOCP_TIMEOUT_TRF_SHORT,
-    NULL, 
-    NULL,  
+    NULL,
+    NULL,
     NULL
 };
 
@@ -135,8 +135,8 @@ u32 scm_rls_cnf_dst_buff(u32 ulReadSize)
 {
     u32                          ulDataLen;
     SOCP_BUFFER_RW_STRU                 stBuffer;
-    SOCP_CODER_DST_ENUM_U32             ulChanlID; 
-    
+    SOCP_CODER_DST_ENUM_U32             ulChanlID;
+
     ulChanlID = g_astSCMCnfCoderDstCfg.enChannelID;
 
     if(0 == ulReadSize) /*释放通道所有数据*/
@@ -293,8 +293,17 @@ void scm_send_cnf_data_to_udi(u8 *pucVirData, u8 *pucPHYData, u32 ulDataLen)
     return;
 }
 
+/* ****************************************************************************
+ 函 数 名  : SCM_CoderDestReadCB
+ 功能描述  : 处理编码目的通道的数据
+ 输入参数  : ulDstChID 目的通道ID
+ 输出参数  : 无
+ 返 回 值  : 无
+ 调用函数  :
+ 被调函数  :
 
-void scm_cnf_dst_read_cb(void)
+**************************************************************************** */
+int scm_cnf_dst_read_cb(unsigned int u32ChanID)
 {
     u32                          ulChType;
     SOCP_BUFFER_RW_STRU          stBuffer;
@@ -310,32 +319,32 @@ void scm_cnf_dst_read_cb(void)
     if (SOCP_CODER_DEST_CHAN != ulChType)
     {
         SCM_CODER_DST_ERR("SCM_CoderDestReadCB: Channel Type is Error", ulDstChID, ulChType);/* 记录Log */
-        return;
+        return ERR_MSP_INVALID_PARAMETER;
     }
 
     if (BSP_OK != bsp_socp_get_read_buff(ulDstChID, &stBuffer))
     {
         SCM_CODER_DST_ERR("SCM_CoderDestReadCB: Get Read Buffer is Error", ulDstChID, 0);/* 记录Log */
-        return;
+        return ERR_MSP_INVALID_PARAMETER;
     }
 
      /* 开机log功能，IND通道上报函数为空，使log缓存在本地 */
     if(NULL == g_astSCMCnfCoderDstCfg.pfunc)
     {
         scm_printf("cnf dst channel is null\n");
-        return;
+        return ERR_MSP_SUCCESS;
     }
 
     if((0 == (stBuffer.u32Size + stBuffer.u32RbSize))||(NULL == stBuffer.pBuffer))
     {
         bsp_socp_read_data_done(ulDstChID, stBuffer.u32Size + stBuffer.u32RbSize);  /* 清空数据 */
         SCM_CODER_DST_ERR("SCM_CoderDestReadCB: Get RD error ", ulDstChID,0);/* 记录Log */
-        return;
+        return ERR_MSP_SUCCESS;
     }
 
     if(0 == stBuffer.u32Size)
     {
-        return;
+        return ERR_MSP_SUCCESS;
     }
 
     /* 发送数据 */
@@ -347,7 +356,7 @@ void scm_cnf_dst_read_cb(void)
     {
         bsp_socp_read_data_done(ulDstChID, stBuffer.u32Size + stBuffer.u32RbSize);  /* 清空数据 */
         SCM_CODER_DST_ERR("SCM_CoderDestReadCB:  stBuffer.pBuffer == VOS_NULL", ulDstChID, 0);/* 记录Log */
-        return;
+        return ERR_MSP_MALLOC_FAILUE;
     }
     ulTimerIn = bsp_get_slice_value();
     g_astSCMCnfCoderDstCfg.pfunc((u8*)ulVirtAddr, (u8*)stBuffer.pBuffer,(u32)stBuffer.u32Size);
@@ -355,7 +364,7 @@ void scm_cnf_dst_read_cb(void)
     /* 记录回调函数的执行时间 */
     SCM_CODER_DST_LOG("SCM_CoderDestReadCB: Call channel Func Proc time", ulDstChID, (ulTimerOut - ulTimerIn));
 
-    return;
+    return ERR_MSP_SUCCESS;
 }
 
 

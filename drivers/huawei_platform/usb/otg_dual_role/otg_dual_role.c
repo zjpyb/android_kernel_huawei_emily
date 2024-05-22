@@ -69,7 +69,6 @@ static int otg_dual_role_set_prop(struct dual_role_phy_instance *dual_role,
                         enum dual_role_property prop, const unsigned int *val)
 {
     struct otg_dual_role_data *dual_data = dual_role_get_drvdata(dual_role);
-    int state = 0;
 
     if (!dual_data) {
         return -EINVAL;

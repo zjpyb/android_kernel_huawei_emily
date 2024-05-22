@@ -16,6 +16,7 @@
 #define HISEE_MAX_MISC_IMAGE_NUMBER  (5)
 #define HISEE_MISC_NO_UPGRADE_NUMBER (1)
 #endif
+#define HISEE_SMX_MISC_IMAGE_NUMBER  (10)
 
 #define HISEE_FS_PARTITION_NAME         "/mnt/hisee_fs/"
 #define HISEE_COS_FLASH_IMG_NAME        "cos_flash.img"
@@ -307,14 +308,14 @@ int hisee_parse_img_header(char *buffer);
 int filesys_hisee_read_image(hisee_img_file_type type, char *buffer);
 int hisee_read_file(const char *fullname, char *buffer, size_t offset, size_t size);
 int filesys_read_img_from_file(const char *filename, char *buffer, size_t *file_size, size_t max_read_size);
-int hisee_write_file(const char *fullname, char *buffer, size_t size);
+int hisee_write_file(const char *fullname, const char *buffer, size_t size);
 int hisee_get_partition_path(char full_path[MAX_PATH_NAME_LEN]);
 
 #ifdef CONFIG_HISEE_SUPPORT_MULTI_COS
 extern hisee_encos_header g_hisee_encos_header;
 int hisee_encos_header_init(void);
 int hisee_encos_read(char *data_buf, unsigned int size, unsigned int cos_id);
-int hisee_encos_write(char *data_buf, unsigned int size, unsigned int cos_id);
+int hisee_encos_write(const char *data_buf, unsigned int size, unsigned int cos_id);
 int filesys_rm_cos_flash_file(void);
 int check_cos_flash_file_exist(unsigned int *exist_flg);
 #endif

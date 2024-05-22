@@ -50,7 +50,6 @@ hisifb-objs := \
 	hisi_fb_bl.o \
 	hisi_fb_utils.o \
 	hisi_fb.o \
-	hisifb_ion.o \
 	hisi_fb_debug.o \
 	hisi_mdc_resource.o \
 	hisi_overlay_utils.o \
@@ -61,6 +60,10 @@ hisifb-objs := \
 	hisi_offlinecomposer_panel.o \
 	panel/mipi_lcd_utils.o \
 	hisi_display_effect.o
+
+hisifb-objs += \
+	hisi_dss_ion.o \
+	hisi_dss_iommu.o
 
 ifeq ($(CONFIG_HISI_FB_3650),y)
 hisifb-objs += \
@@ -80,7 +83,6 @@ hisifb-objs += \
 	panel/mipi_lg_ER69006_5p7.o \
 	panel/mipi_boe_ER69006_5p7.o \
 	panel/mipi_jdi_NT35695_cut2_5.o \
-	panel/mipi_jdi_NT35695_cut3_1.o \
 	panel/mipi_jdi_NT36850.o \
 	panel/mipi_sharp_NT35597.o \
 	panel/mipi_lg_R69006_5p2.o \
@@ -94,7 +96,6 @@ hisifb-objs += \
 	panel/mipi_jdi_R63452_5p5.o \
 	panel/mipi_jdi_R63452_5p7.o \
 	panel/mipi_sharp_NT35695_5p7.o\
-	panel/mipi_samsung_D53G6EA8064T.o \
 	panel/mipi_samsung_S6E3HA3X01.o \
 	panel/mipi_samsung_S6E3HA3X02.o \
 	panel/mipi_lcd_external_panel.o \
@@ -103,10 +104,10 @@ hisifb-objs += \
 	panel/mipi_sharp_TD4322_6p0.o \
 	panel/mipi_lg_TD4322_6p0.o \
 	panel/mipi_jdi_R63452_6p0.o \
-	panel/mipi_sharp_NT35523_8p4.o \
 	backlight/lm36274.o \
 	backlight/lm36923.o \
-	backlight/lp8556.o
+	backlight/lp8556.o \
+	backlight/rt8555.o
 
 hisifb-objs += voltage/tps65132.o
 hisifb-objs += voltage/rt4801h.o
@@ -125,6 +126,7 @@ hisifb-objs += \
 	backlight/lm36274.o\
 	backlight/lm36923.o\
 	backlight/lp8556.o\
+	backlight/rt8555.o\
 	panel/mipi_auo_OTM1901A.o
 
 hisifb-objs += voltage/tps65132.o
@@ -141,23 +143,13 @@ hisifb-objs += \
 	hisi_overlay_copybit.o \
 	backlight/lm36274.o \
 	backlight/lp8556.o\
+	backlight/rt8555.o\
 	backlight/lm36923.o\
 	panel/mipi_cmi_NT35521.o\
-	panel/3660/mipi_sharp_NT35597_chicago.o\
-	panel/3660/mipi_jdi_NT35950_chicago.o\
-	panel/3660/mipi_jdi_OTM1902B_chicago.o\
-	panel/3660/mipi_jdi_NT35695_cut3_1_chicago.o\
-	panel/3660/mipi_lg_ER69007_chicago.o\
-	panel/3660/mipi_lcd_external_panel_chicago.o\
-	panel/3660/mipi_lg_ER69006A_chicago.o\
-	panel/3660/mipi_jdi_ER63450_chicago.o\
-	panel/3660/mipi_lg_TD4322_6p0_chicago.o\
-	panel/3660/mipi_jdi_external_NT35695_chicago.o\
 	panel/mipi_sharp_TD4322_6p0.o\
 	panel/mipi_sharp_TD4322_5p5.o\
 	panel/mipi_lg_TD4322_6p0.o\
 	panel/mipi_lgd_NT36772_5p5.o\
-	panel/mipi_jdi_NT35696_5p5.o\
 	panel/mipi_jdi_R63452_6p0.o \
 	panel/mipi_samsung_S6E3HF4_5p5.o \
 	panel/mipi_lg_S6E3HF4_5p5.o \
@@ -188,6 +180,7 @@ hisifb-objs += \
 	backlight/lm36274.o \
 	backlight/lm36923.o \
 	backlight/lp8556.o \
+	backlight/rt8555.o \
 	panel/kirin970/mipi_cmi_NT35521.o\
 	panel/kirin970/mipi_jdi_NT35695_cut3_1.o\
 	panel/kirin970/mipi_lg_TD4322.o \
@@ -244,6 +237,7 @@ hisifb-objs += \
 	panel/kirin970/mipi_lcd_external_panel.o
 
 hisifb-objs += voltage/ina231.o
+hisifb-objs += voltage/tps65132.o
 
 hisifb-objs += \
 	dp/dp_aux.o \
@@ -261,6 +255,8 @@ endif
 
 ifeq ($(CONFIG_HISI_FB_V510),y)
 hisifb-objs += \
+	hisi_dp.o \
+	hisi_dp_hpd.o \
 	hisi_dpe_utils_dssv510.o \
 	hisi_display_effect_dssv501.o \
 	hisi_overlay_utils_dssv510.o \
@@ -270,11 +266,28 @@ hisifb-objs += \
 	hisi_overlay_mediacommon.o \
 	hisi_mediacommon_panel.o \
 	hisi_fb_video_idle.o \
+	backlight/lm36923.o \
 	panel/dssv501/mipi_cmi_NT35521.o \
 	panel/dssv501/mipi_jdi_R63452.o \
 	panel/kirin970/mipi_sharp_NT36870.o \
+	panel/kirin970/mipi_samsung_EA8074.o \
 	panel/kirin970/mipi_lcd_external_panel.o
 
+hisifb-objs += voltage/ina231.o
+hisifb-objs += voltage/tps65132.o
+
+hisifb-objs += \
+	dp/dp_aux.o \
+	dp/avgen.o \
+	dp/core.o \
+	dp/intr.o \
+	dp/edid.o \
+	dp/link.o \
+	dp/drm_dp_helper.o \
+	panel/dp_fake_panel.o
+
+hisifb-objs += hdcp22/host_lib_driver_linux_kernel.o \
+			hdcp22/hdcp13.o
 endif
 
 ifeq ($(CONFIG_HISI_FB_V320),y)
@@ -286,6 +299,7 @@ hisifb-objs += \
 	backlight/lm36274.o \
 	backlight/lm36923.o \
 	backlight/lp8556.o \
+	backlight/rt8555.o \
 	panel/dssv320/mipi_tm_OTM1911A.o \
 	panel/dssv320/mipi_cmi_NT35521.o
 
@@ -306,7 +320,9 @@ hisifb-objs += \
 	backlight/lm36274.o \
 	backlight/lm36923.o \
 	backlight/lp8556.o \
-	panel/dssv330/mipi_lg_TD4322.o
+	backlight/rt8555.o \
+	panel/dssv330/mipi_lg_TD4322.o \
+	panel/dssv330/mipi_boe_TD4320.o
 
 
 
@@ -314,6 +330,7 @@ hisifb-objs += \
 	panel/dp_fake_panel.o
 hisifb-objs += voltage/tps65132.o
 hisifb-objs += voltage/rt4801h.o
+hisifb-objs += voltage/ina231.o
 endif
 hisifb-objs += \
 	panel/lcdc_fake_panel.o \
@@ -341,9 +358,15 @@ EXTRA_CFLAGS += -Idrivers/devkit/lcdkit/lcdkit3.0/kernel/common/include \
                 -Idrivers/devkit/lcdkit/lcdkit3.0/kernel/hisi/include
 
 hisifb-objs += backlight/lp8556.o
+hisifb-objs += backlight/rt8555.o
 hisifb-objs += voltage/tps65132.o
 hisifb-objs += backlight/lm36274.o
 hisifb-objs += voltage/rt4801h.o
+hisifb-objs += backlight/ktz8864.o
+endif
+
+ifeq ($(CONFIG_HUAWEI_DEVKIT_HISI),y)
+EXTRA_CFLAGS += -DLV_GET_LCDBK_ON
 endif
 
 clean:

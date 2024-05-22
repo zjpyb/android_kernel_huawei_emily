@@ -33,7 +33,7 @@ static ssize_t hwconn_read_proc_chiptype(struct file *filp, char __user *buffer,
         return -EINVAL;
     }
 
-    printk(KERN_INFO "[HW_CONN] hwconn_read_proc_chiptype off = %d\n", (unsigned long)*off);
+    printk(KERN_INFO "[HW_CONN] hwconn_read_proc_chiptype off = %ld\n", (unsigned long)*off);
     if ((unsigned long)*off > 0) {
         return 0;
     }
@@ -67,7 +67,7 @@ static ssize_t hwconn_read_proc_nfc_chiptype(struct file *filp, char __user *buf
         return -EINVAL;
     }
 
-    printk(KERN_INFO "[HW_CONN] hwconn_read_proc_nfc_chiptype off = %d\n", (unsigned long)*off);
+    printk(KERN_INFO "[HW_CONN] hwconn_read_proc_nfc_chiptype off = %ld\n", (unsigned long)*off);
     if ((unsigned long)*off > 0)
     {
         return 0;

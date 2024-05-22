@@ -25,6 +25,7 @@
 #include <linux/slab.h>
 #include <linux/thermal.h>
 #include <linux/hisi/hisi_cpufreq_dt.h>
+#include <linux/hisi/hifreq_hotplug.h>
 
 #include "cpufreq-dt.h"
 #ifdef CONFIG_HISI_HW_VOTE_CPU_FREQ
@@ -57,6 +58,11 @@ extern void l2_dynamic_retention_ctrl(struct cpufreq_policy *policy, unsigned in
 static int set_target(struct cpufreq_policy *policy, unsigned int index)
 {
 	struct private_data *priv = policy->driver_data;
+
+#ifdef CONFIG_HISI_BIG_MAXFREQ_HOTPLUG
+	if (hifreq_hotplug_is_enabled())
+		return bL_hifreq_hotplug_set_target(policy, priv->cpu_dev, policy->freq_table[index].frequency);
+#endif
 
 #ifdef CONFIG_HISI_HW_VOTE_CPU_FREQ
 #ifdef CONFIG_HISI_L2_DYNAMIC_RETENTION
@@ -400,11 +406,7 @@ static void cpufreq_ready(struct cpufreq_policy *policy)
 }
 
 static struct cpufreq_driver dt_cpufreq_driver = {
-#ifdef CONFIG_HISI_CPUFREQ_DT
-	.flags = CPUFREQ_STICKY | CPUFREQ_NEED_INITIAL_FREQ_CHECK | CPUFREQ_HAVE_GOVERNOR_PER_POLICY,
-#else
 	.flags = CPUFREQ_STICKY | CPUFREQ_NEED_INITIAL_FREQ_CHECK,
-#endif
 	.verify = cpufreq_generic_frequency_table_verify,
 	.target_index = set_target,
 #ifdef CONFIG_HISI_HW_VOTE_CPU_FREQ
@@ -438,6 +440,18 @@ static int dt_cpufreq_probe(struct platform_device *pdev)
 
 	if (data && data->have_governor_per_policy)
 		dt_cpufreq_driver.flags |= CPUFREQ_HAVE_GOVERNOR_PER_POLICY;
+
+#ifdef CONFIG_HISI_CPUFREQ_DT
+	dt_cpufreq_driver.flags |= CPUFREQ_HAVE_GOVERNOR_PER_POLICY;
+	ret = hisi_cpufreq_init();
+	if (ret)
+		return ret;
+
+#ifdef CONFIG_HISI_BIG_MAXFREQ_HOTPLUG
+	if (hifreq_hotplug_is_enabled())
+		dt_cpufreq_driver.flags |= CPUFREQ_ASYNC_NOTIFICATION;
+#endif
+#endif
 
 	ret = cpufreq_register_driver(&dt_cpufreq_driver);
 	if (ret)

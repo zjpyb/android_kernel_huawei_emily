@@ -124,6 +124,10 @@ static int send_client_msg(void *msg_data, int msg_size)
 	NETLINK_CB(skb_out).dst_group = 0; /* not in mcast group */
 
 	nl_data = nlmsg_data(nlh); /*get data ptr from header*/
+	if (NULL == nl_data) {
+		ipp_err("fail to nlmsg_data\n");
+		return -1;
+	}
 	memcpy_s(nl_data, msg_size, msg_data, msg_size);
 
 	/* FIXME do we real need to lock to send a data other nl_sk ? */

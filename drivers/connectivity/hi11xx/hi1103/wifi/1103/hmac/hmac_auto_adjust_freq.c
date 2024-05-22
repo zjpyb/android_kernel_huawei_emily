@@ -45,7 +45,7 @@ oal_uint32 jiffies;
 #endif
 
 freq_lock_control_stru g_freq_lock_control_etc = {0};
-OAL_STATIC wifi_txrx_pkt_stat g_st_wifi_rxtx_total = {0};
+wifi_txrx_pkt_stat g_st_wifi_rxtx_total = {0};
 /* Wi-Fi驱动收发负载识别数据区 */
 freq_wifi_load_stru g_st_wifi_load = {0};
 
@@ -591,6 +591,7 @@ oal_void hmac_adjust_set_irq(oal_uint8 uc_cpu_id)
         {
             set_cpus_allowed_ptr( g_st_rxdata_thread_etc.pst_rxdata_thread , cpumask_of(1));
         }
+        g_st_rxdata_thread_etc.uc_allowed_cpus = uc_cpu_id;
     }
 #endif
 #endif
@@ -911,6 +912,11 @@ void hmac_adjust_throughput(oal_void)
     else
     {
         g_st_wifi_load.en_wifi_rx_busy = OAL_TRUE;
+    }
+    if(OAL_TRUE == g_st_wifi_rxtx_total.uc_trx_stat_log_en)
+    {
+        OAM_WARNING_LOG4(0,OAM_SF_ANY,"{hmac_tx_tcp_ack_buf_switch: rx_throught= [%d],tx_throughput = [%d],smooth_throughtput = [%d],dur_time = [%d]ms!}",
+                ul_rx_throughput_mbps, ul_tx_throughput_mbps, g_st_tcp_ack_buf_switch.us_tcp_ack_smooth_throughput,ul_dur_time);
     }
 
 #ifdef _PRE_WLAN_FEATURE_MULTI_NETBUF_AMSDU

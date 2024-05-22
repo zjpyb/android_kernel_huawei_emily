@@ -1906,7 +1906,7 @@ VL53L0_Error VL53L0_get_pal_range_status(VL53L0_DEV Dev,
 		uint8_t *pPalRangeStatus)
 {
 	VL53L0_Error Status = VL53L0_ERROR_NONE;
-	uint8_t NoneFlag;
+	uint8_t NoneFlag = 0;
 	uint8_t SigmaLimitflag = 0;
 	uint8_t SignalRefClipflag = 0;
 	uint8_t RangeIgnoreThresholdflag = 0;
@@ -1914,16 +1914,16 @@ VL53L0_Error VL53L0_get_pal_range_status(VL53L0_DEV Dev,
 	uint8_t SignalRateFinalRangeLimitCheckEnable = 0;
 	uint8_t SignalRefClipLimitCheckEnable = 0;
 	uint8_t RangeIgnoreThresholdLimitCheckEnable = 0;
-	FixPoint1616_t SigmaEstimate;
-	FixPoint1616_t SigmaLimitValue;
+	FixPoint1616_t SigmaEstimate = 0;
+	FixPoint1616_t SigmaLimitValue = 0;
 	FixPoint1616_t SignalRefClipValue = 0;
 	FixPoint1616_t RangeIgnoreThresholdValue = 0;
-	FixPoint1616_t SignalRatePerSpad;
+	FixPoint1616_t SignalRatePerSpad = 0;
 	uint8_t DeviceRangeStatusInternal = 0;
 	uint16_t tmpWord = 0;
-	uint8_t Temp8;
+	uint8_t Temp8 = 0;
 	uint32_t Dmax_mm = 0;
-	FixPoint1616_t LastSignalRefMcps;
+	FixPoint1616_t LastSignalRefMcps = 0;
 	bool bFlag = 0;
 
 	LOG_FUNCTION_START("");

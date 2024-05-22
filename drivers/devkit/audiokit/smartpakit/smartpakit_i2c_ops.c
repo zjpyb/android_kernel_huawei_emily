@@ -121,16 +121,16 @@ static void smartpakit_dsm_report_by_i2c_error(const char *model, int id, int fl
 #ifdef CONFIG_HUAWEI_DSM_AUDIO
 	if (0 == flag) { // read i2c error
 		if (info) {
-			hwlog_info("%s: dsm report, %s_%d i2c read errno(%d) %u fail times of %u all times, err_details is %lu.\n", __func__, model, id, errno, info->err_count, info->regs_num, info->err_details);
-			audio_dsm_report_info(AUDIO_SMARTPA, DSM_SMARTPA_I2C_ERR, "%s_%d i2c read errno(%d) %u fail times of %u all times, err_details is %lu.", model, id, errno, info->err_count, info->regs_num, info->err_details);
+			hwlog_info("%s: dsm report, %s_%d i2c read errno(%d) %u fail times of %u all times, err_details is 0x%lx.\n", __func__, model, id, errno, info->err_count, info->regs_num, info->err_details);
+			audio_dsm_report_info(AUDIO_SMARTPA, DSM_SMARTPA_I2C_ERR, "%s_%d i2c read errno(%d) %u fail times of %u all times, err_details is 0x%lx.", model, id, errno, info->err_count, info->regs_num, info->err_details);
 		} else {
 			hwlog_info("%s: dsm report, %s_%d i2c read errno %d.\n", __func__, model, id, errno);
 			audio_dsm_report_info(AUDIO_SMARTPA, DSM_SMARTPA_I2C_ERR, "%s_%d i2c read errno %d.", model, id, errno);
 		}
 	} else { // 1 == flag write i2c error
 		if (info) {
-			hwlog_info("%s: dsm report, %s_%d i2c write errno(%d) %u fail times of %u all times, err_details is %lu.\n", __func__, model, id, errno, info->err_count, info->regs_num, info->err_details);
-			audio_dsm_report_info(AUDIO_SMARTPA, DSM_SMARTPA_I2C_ERR, "%s_%d i2c write errno(%d) %u fail times of %u all times, err_details is %lu.", model, id, info->err_count, info->regs_num, info->err_details);
+			hwlog_info("%s: dsm report, %s_%d i2c write errno(%d) %u fail times of %u all times, err_details is 0x%lx.\n", __func__, model, id, errno, info->err_count, info->regs_num, info->err_details);
+			audio_dsm_report_info(AUDIO_SMARTPA, DSM_SMARTPA_I2C_ERR, "%s_%d i2c write errno(%d) %u fail times of %u all times, err_details is 0x%lx.", model, id, errno, info->err_count, info->regs_num, info->err_details);
 		} else {
 			hwlog_info("%s: dsm report, %s_%d i2c write errno %d.\n", __func__, model, id, errno);
 			audio_dsm_report_info(AUDIO_SMARTPA, DSM_SMARTPA_I2C_ERR, "%s_%d i2c write errno %d.", model, id, errno);
@@ -206,6 +206,7 @@ static int smartpakit_do_reg_ctl(smartpakit_i2c_priv_t *i2c_priv, smartpakit_reg
 	unsigned int ctl_value = 0;
 	unsigned int ctl_type  = 0;
 	unsigned int value     = 0;
+	unsigned int compare_value = 0;
 	int ret = 0;
 	int ret_once = 0;
 	int i = 0;
@@ -234,6 +235,33 @@ static int smartpakit_do_reg_ctl(smartpakit_i2c_priv_t *i2c_priv, smartpakit_reg
 				if (ctl_value > 0) {
 					// delay time units: msecs
 					msleep(ctl_value);
+				}
+			} else if (SMARTPAKIT_REG_CTL_TYPE_R_COMPARE == ctl_type) {
+				ret_once = regmap_read(i2c_priv->regmap_cfg->regmap,
+				                       reg_addr, &value);
+				smartpakit_dsm_report_by_i2c_error(i2c_priv->chip_model,
+				                                   (int)i2c_priv->chip_id, 0,
+				                                   ret_once, NULL);
+				ret += ret_once;
+				// dsm report
+#ifdef CONFIG_HUAWEI_DSM_AUDIO
+				if (report != NULL) {
+					snprintf(report_tmp, (unsigned long)SMARTPAKIT_NAME_MAX,
+					         "reg[0x%x]=0x%x,", reg_addr, value);
+					strncat(report, report_tmp,
+					        SMARTPAKIT_DSM_BUF_SIZE - strlen(report) - 1);
+				}
+#endif
+				if (i2c_priv->irq_handler->compare_value_existed) {
+					compare_value = sequence->compare_value[i];
+					hwlog_info(
+					"%s: pa[%d], r reg[0x%x] = 0x%x, compare_value = 0x%x\n",
+					__func__, i2c_priv->chip_id, reg_addr,
+					value, compare_value);
+					if ((value & ctl_value) != compare_value) {
+						hwlog_info("%s:need reset pa\n", __func__);
+						i2c_priv->irq_handler->irq_need_reset_status = true;
+					}
 				}
 			} else { // SMARTPAKIT_REG_CTL_TYPE_R
 				for (j = 0; j < (int)ctl_value; j++) {
@@ -323,6 +351,19 @@ static int smartpakit_read_regs(void *priv, void __user *arg)
 	}
 
 	return ret;
+}
+
+static bool smartpakit_need_write_regs(smartpakit_priv_t *pakit_priv,
+	int id, unsigned int num, smartpakit_param_node_t *regs)
+{
+	smartpakit_pa_ctl_sequence_t *old = &pakit_priv->poweron_sequence[id];
+	unsigned int regs_size = sizeof(smartpakit_param_node_t) * num;
+
+	if ((old->node != NULL) && (old->param_num == num) &&
+		(memcmp(old->node, regs, regs_size) == 0))
+		return false;
+
+	return true;
 }
 
 static int smartpakit_do_write_regs(smartpakit_i2c_priv_t *i2c_priv, unsigned int num, smartpakit_param_node_t *regs)
@@ -423,9 +464,9 @@ static int smartpakit_do_write_regs(smartpakit_i2c_priv_t *i2c_priv, unsigned in
 			ret = smartpakit_regmap_update_bits(cfg->regmap, regs[i].index, regs[i].mask, regs[i].value);
 		}
 		if (ret) {
-			hwlog_err("%s: regs[%d]:%d, value:%d write error(errno:%d).\n", __func__,i, regs[i].index, regs[i].value, ret);
+			hwlog_err("%s: regs[%d]:0x%x, value:0x%x write error(errno:%d).\n", __func__,i, regs[i].index, regs[i].value, ret);
 			if (i < I2C_STATUS_B64) {
-				info.err_details |= 1 << i;
+				info.err_details |= (unsigned long int)1 << i;
 			}
 			info.err_count++;
 			errno = ret;
@@ -484,6 +525,14 @@ static int smartpakit_do_write_regs_all(smartpakit_priv_t *pakit_priv, smartpaki
 	hwlog_debug("%s: pa_num=%d, reg_num=%d!!!\n", __func__, pa_num_need_ops, reg_num_need_ops);
 	for (i = 0; i < pa_num_need_ops; i++) {
 		index = (int)sequence->pa_ctl_index[i];
+		if (!pakit_priv->force_refresh_chip &&
+			!smartpakit_need_write_regs(pakit_priv,
+			index, (unsigned int)reg_num_need_ops,
+			sequence->node + (i * reg_num_need_ops))) {
+			hwlog_info("%s: pa%d not need re-write the same regs\n",
+				__func__, index);
+			continue;
+		}
 		ret += smartpakit_do_write_regs(pakit_priv->i2c_priv[index], (unsigned int)reg_num_need_ops,
 			sequence->node + (i * reg_num_need_ops)); /*lint !e679*/
 	}
@@ -508,6 +557,13 @@ static int smartpakit_write_regs(void *priv, void __user *arg, int compat_mode)
 	ret = smartpakit_parse_params(&sequence, arg, compat_mode);
 	if (ret < 0) {
 		hwlog_err("%s: parse w_regs failed!!!\n", __func__);
+		goto err_out;
+	}
+
+	if (!smartpakit_need_write_regs(i2c_priv->priv_data,
+		i2c_priv->chip_id, sequence.param_num, sequence.node)) {
+		hwlog_info("%s: pa%d not need re-write the same regs\n",
+			__func__, i2c_priv->chip_id);
 		goto err_out;
 	}
 
@@ -650,6 +706,8 @@ static int smartpakit_resume_regs(void *priv)
 		return -EINVAL;
 	}
 
+	pakit_priv->force_refresh_chip = true;
+
 	// init chip
 	hwlog_info("%s: init chips...\n", __func__);
 	ret = smartpakit_do_write_regs_all(pakit_priv, &pakit_priv->resume_sequence);
@@ -671,6 +729,7 @@ static int smartpakit_resume_regs(void *priv)
 	}
 
 err_out:
+	pakit_priv->force_refresh_chip = false;
 	return ret;
 }
 
@@ -750,8 +809,15 @@ static bool smartpakit_i2c_check_need_reset_existed(smartpakit_priv_t *pakit_pri
 		}
 
 		if (pakit_priv->i2c_priv[i]->irq_handler->need_reset) {
-			check = true;
-			break;
+			if (pakit_priv->i2c_priv[i]->irq_handler->compare_value_existed) {
+				check = pakit_priv->i2c_priv[i]->irq_handler->irq_need_reset_status ?
+				        true : false;
+				pakit_priv->i2c_priv[i]->irq_handler->irq_need_reset_status = false;
+			} else {
+				check = true;
+			}
+			if (check)
+				break;
 		}
 	}
 
@@ -799,6 +865,8 @@ void smartpakit_i2c_handler_irq(struct work_struct *work)
 			}
 
 			hwlog_info("%s: pa[%d], rw_sequence ...\n", __func__, pakit_priv->i2c_priv[i]->chip_id);
+			if (NULL != pakit_priv->i2c_priv[i]->irq_handler)
+				pakit_priv->i2c_priv[i]->irq_handler->irq_need_reset_status = false;
 #ifdef CONFIG_HUAWEI_DSM_AUDIO
 			if (pakit_priv->i2c_priv[i]->chip_id == i2c_priv->chip_id) {
 				// current pa, irq trigger from this pa
@@ -1203,7 +1271,6 @@ static int smartpakit_i2c_parse_dt_reg_ctl(smartpakit_reg_ctl_sequence_t **reg_c
 	int count = 0;
 	int val_num = 0;
 	int ret = 0;
-	int i = 0;
 
 	if ((NULL == node) || (NULL == ctl_str)) {
 		hwlog_err("%s: invalid argument!!!\n", __func__);
@@ -1240,15 +1307,6 @@ static int smartpakit_i2c_parse_dt_reg_ctl(smartpakit_reg_ctl_sequence_t **reg_c
 		goto err_out;
 	}
 
-#ifndef CONFIG_FINAL_RELEASE
-	// dump regs
-	hwlog_info("%s: %s reg_ctl ...\n", __func__, ctl_str);
-	for (i = 0; i < (int)ctl->num; i++) {
-		hwlog_info("%s: reg_ctl[%d]=0x%x, 0x%x, %d!!!\n", __func__, i,
-			ctl->regs[i].addr, ctl->regs[i].value, ctl->regs[i].ctl_type);
-	}
-#endif
-
 	*reg_ctl = ctl;
 	return 0;
 
@@ -1273,6 +1331,7 @@ static int smartpakit_i2c_parse_dt_irq(struct i2c_client *i2c, smartpakit_i2c_pr
 	smartpakit_gpio_irq_t *irq_handler = NULL;
 	struct device_node *node = NULL;
 	int ret = 0;
+	unsigned int count = 0;
 
 	if ((NULL == i2c) || (NULL == i2c_priv)) {
 		hwlog_err("%s: invalid argument!!!\n", __func__);
@@ -1329,6 +1388,40 @@ static int smartpakit_i2c_parse_dt_irq(struct i2c_client *i2c, smartpakit_i2c_pr
 		if (ret < 0) {
 			hwlog_err("%s: parse irq_handler->rw_sequence failed!!!\n", __func__);
 			goto err_out;
+		} else {
+			irq_handler->rw_sequence->compare_value = kzalloc(
+                sizeof(unsigned int)*irq_handler->rw_sequence->num, GFP_KERNEL);
+			if (NULL == irq_handler->rw_sequence->compare_value) {
+				hwlog_err("%s: kzalloc compare_value failed!!!\n", __func__);
+				ret = -EFAULT;
+				goto err_out;
+			}
+			if (of_property_read_bool(node, "rw_sequence_compare")) {
+				count = of_property_count_elems_of_size(node, "rw_sequence_compare",
+				                                        (int)sizeof(u32));
+				if (count != irq_handler->rw_sequence->num) {
+					irq_handler->compare_value_existed = false;
+					hwlog_err(
+					"%s: rw_sequence_compare num and rw_sequence num not equal\n",
+					__func__);
+					goto err_out;
+				} else {
+					ret = of_property_read_u32_array(node, "rw_sequence_compare",
+					        (u32 *)irq_handler->rw_sequence->compare_value,
+					        (size_t)(long)count);
+					if (ret < 0) {
+						irq_handler->compare_value_existed = false;
+						hwlog_err("%s: get compare_value failed!\n", __func__);
+						goto err_out;
+					}
+				}
+				irq_handler->compare_value_existed = true;
+			} else {
+				SMARTPAKIT_KFREE_OPS(irq_handler->rw_sequence->compare_value);
+				irq_handler->compare_value_existed = false;
+				hwlog_info("%s: rw_sequence_compare prop not existed, skip!!!\n",
+				           __func__);
+			}
 		}
 	} else {
 		hwlog_debug("%s: rw_sequence prop not existed, skip!!!\n", __func__);
@@ -1373,6 +1466,7 @@ err_out:
 	if (irq_handler != NULL) {
 		if (irq_handler->rw_sequence != NULL) {
 			SMARTPAKIT_KFREE_OPS(irq_handler->rw_sequence->regs);
+			SMARTPAKIT_KFREE_OPS(irq_handler->rw_sequence->compare_value);
 
 			kfree(irq_handler->rw_sequence);
 			irq_handler->rw_sequence = NULL;
@@ -1792,6 +1886,7 @@ static void smartpakit_i2c_free(smartpakit_i2c_priv_t *i2c_priv)
 	if (i2c_priv->irq_handler != NULL) {
 		if (i2c_priv->irq_handler->rw_sequence != NULL) {
 			SMARTPAKIT_KFREE_OPS(i2c_priv->irq_handler->rw_sequence->regs);
+			SMARTPAKIT_KFREE_OPS(i2c_priv->irq_handler->rw_sequence->compare_value);
 
 			kfree(i2c_priv->irq_handler->rw_sequence);
 			i2c_priv->irq_handler->rw_sequence = NULL;
@@ -1815,7 +1910,9 @@ static void smartpakit_i2c_free(smartpakit_i2c_priv_t *i2c_priv)
 		i2c_priv->dump_regs_sequence = NULL;
 	}
 
-	smartpakit_i2c_regmap_deinit(i2c_priv);
+	if (i2c_priv->regmap_cfg != NULL)
+		smartpakit_i2c_regmap_deinit(i2c_priv);
+
 	kfree(i2c_priv);
 }
 
@@ -1823,10 +1920,6 @@ static int smartpakit_i2c_probe(struct i2c_client *i2c, const struct i2c_device_
 {
 	smartpakit_i2c_priv_t *i2c_priv = NULL;
 	int ret = 0;
-
-#ifndef CONFIG_FINAL_RELEASE
-	hwlog_info("%s: enter ...\n", __func__);
-#endif
 
 	if (0 == smartpakit_init_flag) {
 		hwlog_info("%s: this driver need probe_defer!!!\n", __func__);
@@ -1859,8 +1952,9 @@ static int smartpakit_i2c_probe(struct i2c_client *i2c, const struct i2c_device_
 	}
 
 	if (smartpakit_i2c_probe_skip[i2c_priv->chip_id]) {
-		hwlog_info("%s: chip_id = %d is probe success, skip!\n", __func__, i2c_priv->chip_id);
-		goto err_out;
+		hwlog_info("%s: chip_id = %d has been probed successfully, skip\n",
+				__func__, i2c_priv->chip_id);
+		goto skip_probe;
 	}
 
 	i2c_priv->dev = &i2c->dev;
@@ -1904,10 +1998,11 @@ static int smartpakit_i2c_probe(struct i2c_client *i2c, const struct i2c_device_
 	return 0;
 
 err_out:
+	hwlog_err("%s: end fail\n", __func__);
+skip_probe:
 	if (i2c_priv != NULL) {
 		smartpakit_i2c_free(i2c_priv);
 	}
-	hwlog_err("%s: end fail !!!\n", __func__);
 	return ret;
 }
 

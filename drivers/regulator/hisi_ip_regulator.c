@@ -114,22 +114,21 @@ enum ip_regulator_id {
 };
 #elif defined CONFIG_PHOE_IP_PLATFORM
 enum ip_regulator_id {
-	MEDIA1_SUBSYS_ID = 0,
-	MEDIA2_SUBSYS_ID,
-	VIVOBUS_ID,
+	VIVOBUS_ID = 0,
 	VCODECSUBSYS_ID,
 	DSSSUBSYS_ID,
 	ISPSUBSYS_ID,
 	IVP_ID,
 	VDEC_ID,
 	VENC_ID,
-	ICS_ID,
 	ISP_R8_ID,
-	G3D_ID,
-	ASP_ID,
-	NPU_ID,
 	VENC2_ID,
 	HIFACE_ID,
+	MEDIA1_SUBSYS_ID,
+	MEDIA2_SUBSYS_ID,
+	NPU_ID,
+	G3D_ID,
+	ASP_ID,
 };
 #elif defined CONFIG_IP_PLATFORM_COMMON
 enum ip_regulator_id {
@@ -247,20 +246,9 @@ int hisi_regulator_freq_autodown_clk(int regulator_id, u32 flag)
 		ret = hisi_freq_autodown_clk_set("ics2bus", flag);
 		break;
 #endif
-#if defined(CONFIG_IP_PLATFORM_COMMON)
-	case NPU_ID:
-		ret = hisi_freq_autodown_clk_set("npubus", flag);
-		break;
-#endif
 #if defined(CONFIG_PHOE_IP_PLATFORM)
-	case NPU_ID:
-		ret = hisi_freq_autodown_clk_set("npubus", flag);
-		break;
 	case VENC2_ID:
 		ret = hisi_freq_autodown_clk_set("venc2bus", flag);
-		break;
-	case HIFACE_ID:
-		ret = hisi_freq_autodown_clk_set("hifacebus", flag);
 		break;
 #endif
 	default:
@@ -277,7 +265,7 @@ static int aod_set_and_get_poweron_state(struct hisi_regulator_ip *sreg, u32 con
 {
 	int ret = 0;
 	int bit_mask = 0;
-	int val = 0;
+	unsigned int val = 0;
 	/*sctrl 0x438 : power state vote
 	*bit[0]:AP			media1 vote
 	*bit[1]:Sensorhub	media1 vote
@@ -366,7 +354,7 @@ static int hisi_clock_state_check(struct hisi_regulator_ip *sreg)
 static int get_softreset_state(struct hisi_regulator_ip_core *pmic, struct hisi_regulator_ip *sreg, unsigned int value)
 {
 	int ret = 0;
-	int val = 0;
+	unsigned int val = 0;
 	/*First boot and AOD to camera need check DSS poweron status*/
 	if (sreg->hwlock_seq > 0) {
 		if (NULL == regulator_hwlock_29) {
@@ -792,8 +780,8 @@ static int hisi_ip_regulator_cmd_send(struct regulator_dev *dev, int cmd)
 	err = RPROC_SYNC_SEND(HISI_RPROC_LPM3_MBX14, tx_buffer,
 		AP_TO_LPM_MSG_NUM, ack_buffer, AP_TO_LPM_MSG_NUM);
 	if (err || (ack_buffer[0] != tx_buffer[0]) || ((ack_buffer[1] >> 24) != 0x0)) {
-		pr_err("%s: regulator ID[%d] rproc sync send err!\n",
-						__func__, sreg->regulator_id);
+		pr_err("%s: regulator ID[%d] rproc sync send err, err = %d, ack_buffer[0] = %u, ack_buffer[1] = %u!\n",
+						__func__, sreg->regulator_id, err, ack_buffer[0], ack_buffer[1]);
 		return -EINVAL;
 	}
 

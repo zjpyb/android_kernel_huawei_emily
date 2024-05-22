@@ -37,6 +37,7 @@
 
 //lint -save -e31 -e64 -e650
 #define I2S(i) container_of(i, sensor_t, intf)
+#define Sensor2Pdev(s) container_of((s).dev, struct platform_device, dev)
 
 extern struct hw_csi_pad hw_csi_pad;
 extern int strncpy_s(char *strDest, size_t destMax, const char *strSrc, size_t count);
@@ -478,7 +479,7 @@ imx298_platform_probe(
     rc = rpmsg_sensor_register(pdev, (void *)&s_imx298);
     if (0 != rc){
         cam_err("%s rpmsg_sensor_register fail.\n", __func__);
-        hwsensor_unregister(&s_imx298.intf);
+        hwsensor_unregister(Sensor2Pdev(s_imx298));
         goto imx298_sensor_probe_fail;
     }
 
@@ -498,7 +499,7 @@ static void __exit
 imx298_exit_module(void)
 {
     rpmsg_sensor_unregister((void *)&s_imx298);
-    hwsensor_unregister(&s_imx298.intf);
+    hwsensor_unregister(Sensor2Pdev(s_imx298));
     platform_driver_unregister(&s_imx298_driver);
 }
 

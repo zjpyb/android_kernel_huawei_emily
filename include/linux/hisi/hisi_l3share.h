@@ -26,8 +26,10 @@ struct l3_cache_release_params {
 	module_id id;
 };
 
-#define	L3C_ACP_PENDING	0x1
-#define	L3C_ACP_RELEASE	0x2
+#define	L3SHARE_MON_START			0x1
+#define	L3SHARE_MON_STOP			0x2
+#define	L3SHARE_ACP_ENABLE			0X3
+#define	L3SHARE_ACP_DISABLE		0X4
 
 /*
 L3 Cache request and release.
@@ -47,8 +49,8 @@ Default configuration: 0x1 & 0xe, private 3MB for acp.
 */
 
 #ifdef CONFIG_HISI_L3CACHE_SHARE
-int register_l3c_acp_notifier(struct notifier_block *nb);
-int unregister_l3c_acp_notifier(struct notifier_block *nb);
+int register_l3share_acp_notifier(struct notifier_block *nb);
+int unregister_l3share_acp_notifier(struct notifier_block *nb);
 #endif
 
 #endif

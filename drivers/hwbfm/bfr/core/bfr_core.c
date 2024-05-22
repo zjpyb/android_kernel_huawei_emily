@@ -27,7 +27,7 @@
 
 #define BFR_RECORD_COPIES_MAX_COUNT (2)
 #define BFR_RRECORD_PART_MAX_COUNT (2)
-#define BFR_RECOVERY_RECORD_READ_MAX_COUNT (5)
+#define BFR_RECOVERY_RECORD_READ_MAX_COUNT (10)
 #define BF_0_TIME (0)
 #define BF_1_TIME (1)
 #define BF_2_TIME (2)
@@ -36,6 +36,8 @@
 #define bfr_is_package_install_successfully(running_status_code) (RMRSC_ERECOVERY_INSTALL_PACKAGES_SUCCESS == running_status_code)
 #define bfr_is_factory_reset_done(factory_reset_flag) (BFR_FACTORY_RESET_DONE == factory_reset_flag)
 #define bfr_is_boot_fail_recovery_successfully(result) (BOOT_FAIL_RECOVERY_SUCCESS == result)
+#define bfr_is_download_successfully(recovery_method, running_status_code) (bfr_is_download_recovery_method(recovery_method) \
+    && bfr_is_package_install_successfully(running_status_code))
 
 
 /*----local prototypes----------------------------------------------------------------*/
@@ -56,9 +58,12 @@ typedef struct bfr_recovery_method_select_param
     int recovery_failed_times_total;
     int recovery_failed_times_in_bottom_layer;
     int recovery_failed_times_in_application;
+    int recovery_failed_times_after_download;
     int bootfail_with_safe_mode_failed_times;
     bool need_not_parse_recovery_method_further;
     bool has_fixed_recovery_method;
+    bool is_download_successfully;
+    bool is_hardware_degrade_boot_fail;
     bfr_recovery_method_e fixed_recovery_method;
     bfr_recovery_method_e recovery_method;
     bfr_recovery_record_t latest_recovery_record[BFR_RECOVERY_RECORD_READ_MAX_COUNT];
@@ -76,6 +81,12 @@ typedef struct
     unsigned int bootfail_errno;
     bool has_safemode_recovery_method;
 } bfr_safemode_recovery_param_t;
+
+typedef struct bfr_rrecord_parse_param
+{
+    int start_idx;
+    int count;
+} bfr_rrecord_parse_param_t;
 
 
 /*----local variables-----------------------------------------------------------------*/
@@ -100,20 +111,6 @@ static bfr_enter_erecovery_reason_map_t s_enter_erecovery_reason_map[] =
     {{NATIVE_ERRNO_START, PACKAGE_MANAGER_SETTING_FILE_DAMAGED}, ENTER_ERECOVERY_BECAUSE_APP_BOOT_FAIL},
 };
 
-#if defined(CONFIG_USE_AB_SYSTEM)
-static bfr_recovery_policy_e s_fixed_recovery_policy[] =
-{
-    {
-        SYSTEM_MOUNT_FAIL, 1,
-        {
-            {1, FRM_GOTO_ERECOVERY_DOWNLOAD_RECOVERY},
-            {1, FRM_GOTO_ERECOVERY_DOWNLOAD_RECOVERY},
-            {1, FRM_GOTO_ERECOVERY_DOWNLOAD_RECOVERY},
-            {1, FRM_GOTO_ERECOVERY_DOWNLOAD_RECOVERY}
-        },
-    },
-};
-#else
 static bfr_recovery_policy_e s_fixed_recovery_policy[] =
 {
     {
@@ -207,7 +204,6 @@ static bfr_recovery_policy_e s_fixed_recovery_policy[] =
         },
     }
 };
-#endif
 
 static bfr_recovery_record_param_t s_rrecord_param[BFR_RECORD_COPIES_MAX_COUNT];
 static bfr_recovery_method_desc_t s_recovery_method_desc[] =
@@ -226,6 +222,12 @@ static bfr_recovery_method_desc_t s_recovery_method_desc[] =
     {FRM_GOTO_ERECOVERY_LOWLEVEL_FORMAT_DATA, "recommend user to do low-level formatting data"},
     {FRM_ENTER_SAFE_MODE, "enter android safe mode to uninstall the third party APK"},
     {FRM_FACTORY_RESET_AFTER_DOWNLOAD_RECOVERY, "factory reset after download and recovery"},
+    {FRM_BOPD, "BoPD"},
+    {FRM_STORAGE_RDONLY_BOPD, "storage read only and BoPD"},
+    {FRM_HARDWARE_DEGRADE_BOPD, "hardware degrade BoPD"},
+    {FRM_STORAGE_RDONLY_HARDWARE_DEGRADE_BOPD, "storage read only and hardware degrade BoPD"},
+    {FRM_BOPD_AFTER_DOWNLOAD, "BoPD after download and recovery"},
+    {FRM_HARDWARE_DEGRADE_BOPD_AFTER_DOWNLOAD, "Hardware degrade BoPD after download and recovery"},
 };
 
 static bfr_safemode_recovery_param_t s_safemode_recovery_param[] = {
@@ -246,10 +248,6 @@ static bfr_safemode_recovery_param_t s_safemode_recovery_param[] = {
 
 /*----local function prototypes---------------------------------------------------------*/
 
-#if defined(CONFIG_USE_AB_SYSTEM)
-static int bfr_another_system_is_ok(void);
-static void bfr_goto_another_system(void);
-#endif
 static bool bfr_boot_fail_has_fixed_recovery_method(bfr_recovery_method_select_param_t *pselect_param);
 static bfr_recovery_method_running_status_e bfr_init_recovery_method_running_status(
     bfr_recovery_method_e recovery_method);
@@ -280,24 +278,16 @@ static unsigned int bfr_get_bootfail_uptime(void);
 
 /*----function definitions--------------------------------------------------------------*/
 
-#if defined(CONFIG_USE_AB_SYSTEM)
-static int bfr_another_system_is_ok(void)
-{
-    return 1;
-}
-
-
-static void bfr_goto_another_system(void)
-{
-    return;
-}
-#endif
-
-
 static bool bfr_bootfail_has_safe_mode_recovery_method(unsigned int bootfail_errno)
 {
     unsigned int i = 0;
     unsigned int count = sizeof(s_safemode_recovery_param) / sizeof(s_safemode_recovery_param[0]);
+
+    if (bfr_bopd_has_been_enabled())
+    {
+        BFMR_PRINT_ERR("BoPD has been enabled! safe mode can't be used!\n");
+        return false;
+    }
 
     for (i = 0; i < count; i++)
     {
@@ -311,6 +301,12 @@ static bool bfr_bootfail_has_safe_mode_recovery_method(unsigned int bootfail_err
 }
 
 
+static bool bfr_is_hardware_fault(unsigned int bootfail_no)
+{
+    return (BFM_HARDWARE_FAULT == (bfmr_bootfail_errno_e)bootfail_no);
+}
+
+
 static bool bfr_boot_fail_has_fixed_recovery_method(bfr_recovery_method_select_param_t *pselect_param)
 {
     int count = sizeof(s_fixed_recovery_policy) / sizeof(s_fixed_recovery_policy[0]);
@@ -318,11 +314,11 @@ static bool bfr_boot_fail_has_fixed_recovery_method(bfr_recovery_method_select_p
 
     if (unlikely(NULL == pselect_param))
     {
-        BFMR_PRINT_INVALID_PARAMS("pselect_param: %p\n", pselect_param);
+        BFMR_PRINT_INVALID_PARAMS("pselect_param.\n");
         return false;
     }
 
-    if (BFM_HARDWARE_FAULT == pselect_param->cur_boot_fail_no)
+    if (bfr_is_hardware_fault(pselect_param->cur_boot_fail_no))
     {
         bfmr_get_hw_fault_info_param_t *pfault_info_param = NULL;
 
@@ -514,7 +510,7 @@ static bool bfr_need_factory_reset_after_download_recovery(bfr_recovery_method_s
 {
     if (NULL == pselect_param)
     {
-        BFMR_PRINT_INVALID_PARAMS("pselect_param: %p\n", pselect_param);
+        BFMR_PRINT_INVALID_PARAMS("pselect_param.\n");
         return false;
     }
 
@@ -524,19 +520,21 @@ static bool bfr_need_factory_reset_after_download_recovery(bfr_recovery_method_s
         return false;
     }
 
+    if (bfr_bopd_has_been_enabled())
+    {
+        BFMR_PRINT_ERR("BoPD has been enabled! factory reset can't be used!\n");
+        return false;
+    }
+
     BFMR_PRINT_KEY_INFO("recovery_method: %d, running_status_code: %d, recovery_result: %x, factory_reset_flag:%x\n",
         pselect_param->latest_recovery_record[pselect_param->latest_valid_recovery_record_count - 1].recovery_method,
         pselect_param->latest_recovery_record[pselect_param->latest_valid_recovery_record_count - 1].running_status_code,
         pselect_param->latest_recovery_record[pselect_param->latest_valid_recovery_record_count - 1].recovery_result,
         pselect_param->latest_recovery_record[pselect_param->latest_valid_recovery_record_count - 1].factory_reset_flag);
-    if (bfr_is_download_recovery_method(pselect_param->latest_recovery_record[
-        pselect_param->latest_valid_recovery_record_count - 1].recovery_method)
-        && bfr_is_package_install_successfully(pselect_param->latest_recovery_record[
-        pselect_param->latest_valid_recovery_record_count - 1].running_status_code)
-        && !bfr_is_boot_fail_recovery_successfully(pselect_param->latest_recovery_record[
-        pselect_param->latest_valid_recovery_record_count - 1].recovery_result)
-        && !bfr_is_factory_reset_done(pselect_param->latest_recovery_record[
-        pselect_param->latest_valid_recovery_record_count - 1].factory_reset_flag))
+    if (bfr_is_download_recovery_method(pselect_param->latest_recovery_record[pselect_param->latest_valid_recovery_record_count - 1].recovery_method)
+        && bfr_is_package_install_successfully(pselect_param->latest_recovery_record[pselect_param->latest_valid_recovery_record_count - 1].running_status_code)
+        && !bfr_is_boot_fail_recovery_successfully(pselect_param->latest_recovery_record[pselect_param->latest_valid_recovery_record_count - 1].recovery_result)
+        && !bfr_is_factory_reset_done(pselect_param->latest_recovery_record[pselect_param->latest_valid_recovery_record_count - 1].factory_reset_flag))
     {
         return true;
     }
@@ -551,7 +549,7 @@ static int bfr_parse_boot_fail_info(bfr_recovery_method_select_param_t *pselect_
 
     if (NULL == pselect_param)
     {
-        BFMR_PRINT_INVALID_PARAMS("pselect_param: %p\n", pselect_param);
+        BFMR_PRINT_INVALID_PARAMS("pselect_param.\n");
         return -1;
     }
 
@@ -615,12 +613,191 @@ static int bfr_parse_boot_fail_info(bfr_recovery_method_select_param_t *pselect_
 }
 
 
+static bool bfr_bootfail_need_factory_reset(unsigned int bootfail_no)
+{
+    return ((DATA_MOUNT_FAILED_AND_ERASED == bootfail_no) || (FRK_USER_DATA_DAMAGED == bootfail_no));
+}
+
+
+static bool bfr_bootfail_need_download(unsigned int bootfail_no)
+{
+    return ((SYSTEM_MOUNT_FAIL == bootfail_no) || (VENDOR_MOUNT_FAIL == bootfail_no));
+}
+
+
+static bool bfr_is_bopd_download_successfully(bfr_recovery_record_t *precord, bfr_recovery_method_select_param_t *pselect_param)
+{
+    if (unlikely((NULL == precord)|| (NULL == pselect_param)))
+    {
+        BFMR_PRINT_INVALID_PARAMS("precord or pselect_param.\n");
+        return false;
+    }
+
+    if ((bfr_is_download_successfully(precord->recovery_method, precord->running_status_code)))
+    {
+        pselect_param->is_download_successfully = true;
+        pselect_param->recovery_failed_times_after_download++; /* include the boot fail this time */
+        return pselect_param->is_download_successfully;
+    }
+
+    if (precord->boot_fail_stage < KERNEL_STAGE_START)
+    {
+        pselect_param->recovery_failed_times_in_bottom_layer++;
+    }
+
+    pselect_param->recovery_failed_times_after_download++;
+
+    return pselect_param->is_download_successfully;
+}
+
+
+static int bfr_parse_bootfail_for_bopd(bfr_recovery_method_select_param_t *pselect_param)
+{
+    int i = 0;
+    int j = 0;
+    int record_count_before_boot_success = 0;
+    int count_in_ringbuffer_begin = 0;
+    int count_in_ringbuffer_end = 0;
+    unsigned int header_size = (unsigned int)sizeof(bfr_recovery_record_header_t);
+    unsigned int record_size = (unsigned int)sizeof(bfr_recovery_record_t);
+    bfr_recovery_record_header_t *precord_header = NULL;
+    bfr_recovery_record_t *precord = NULL;
+    bfr_rrecord_parse_param_t parse_param[2];
+
+    if (NULL == pselect_param)
+    {
+        BFMR_PRINT_INVALID_PARAMS("pselect_param.\n");
+        return -1;
+    }
+
+    pselect_param->recovery_failed_times_in_bottom_layer = 0;
+    precord_header = (bfr_recovery_record_header_t *)s_rrecord_param[0].buf;
+    record_count_before_boot_success = BFMR_MIN(precord_header->record_count_before_boot_success, precord_header->record_count);
+    count_in_ringbuffer_begin = (precord_header->next_record_idx >= record_count_before_boot_success)
+        ? (record_count_before_boot_success) : (precord_header->next_record_idx);
+    count_in_ringbuffer_end = (precord_header->next_record_idx >= record_count_before_boot_success)
+        ? (0) : (record_count_before_boot_success - precord_header->next_record_idx);
+    parse_param[0].count = count_in_ringbuffer_begin;
+    parse_param[0].start_idx = precord_header->next_record_idx;
+    parse_param[1].count = count_in_ringbuffer_end;
+    parse_param[1].start_idx = precord_header->record_count;
+    for (i = 0; i < (int)(sizeof(parse_param) / sizeof(parse_param[0])); i++)
+    {
+        bool recovery_successfully = false;
+        bool download_successfully = false;
+
+        for (j = 0; j < parse_param[i].count; j++)
+        {
+            precord = (bfr_recovery_record_t *)(s_rrecord_param[0].buf + header_size + (parse_param[i].start_idx - j - 1) * record_size);
+            if (BOOT_FAIL_RECOVERY_SUCCESS == precord->recovery_result)
+            {
+                recovery_successfully = true;
+                break;
+            }
+            else
+            {
+                if (bfr_is_bopd_download_successfully(precord, pselect_param))
+                {
+                    download_successfully = true;
+                    break;
+                }
+            }
+        }
+
+        if (recovery_successfully || download_successfully)
+        {
+            break;
+        }
+    }
+
+    return 0;
+}
+
+
+static int bfr_select_recovery_method_with_bopd(bfr_recovery_method_select_param_t *pselect_param)
+{
+    if (NULL == pselect_param)
+    {
+        BFMR_PRINT_INVALID_PARAMS("pselect_param.\n");
+        return -1;
+    }
+
+    /* process the special boot fail that need low-level format */
+    if (bfr_bootfail_need_factory_reset(pselect_param->cur_boot_fail_no))
+    {
+        pselect_param->recovery_method = FRM_GOTO_ERECOVERY_LOWLEVEL_FORMAT_DATA;
+        return 0;
+    }
+
+    /* process the special boot fail that need download */
+    if (bfr_bootfail_need_download(pselect_param->cur_boot_fail_no))
+    {
+        pselect_param->recovery_method = FRM_GOTO_ERECOVERY_DOWNLOAD_RECOVERY;
+        return 0;
+    }
+
+    /* 1. parse bootfail for bopd firstly */
+    if (0 != bfr_parse_bootfail_for_bopd(pselect_param))
+    {
+        BFMR_PRINT_ERR("bfr_parse_bootfail_for_bopd failed!\n");
+        return 0;
+    }
+
+    /* 2. use the result processed by bfr_parse_bootfail_for_bopd */
+    if (pselect_param->is_download_successfully)
+    {
+        pselect_param->recovery_method = (BF_1_TIME == pselect_param->recovery_failed_times_after_download)
+            ? (FRM_BOPD_AFTER_DOWNLOAD) : (FRM_HARDWARE_DEGRADE_BOPD_AFTER_DOWNLOAD);
+    }
+    else
+    {
+        /*
+        * If there're interleave fault between bootloader stage and non-bootloader stage, download firstly!
+        */
+        if (0 != pselect_param->recovery_failed_times_in_bottom_layer)
+        {
+            pselect_param->is_hardware_degrade_boot_fail = true;
+            pselect_param->recovery_method = FRM_GOTO_ERECOVERY_DOWNLOAD_RECOVERY;
+            return 0;
+        }
+
+        switch (pselect_param->recovery_failed_times_in_application)
+        {
+        case BF_1_TIME:
+        case BF_2_TIME:
+            {
+                pselect_param->recovery_method = FRM_REBOOT;
+                break;
+            }
+        case BF_3_TIME:
+            {
+                pselect_param->recovery_method = FRM_BOPD;
+                break;
+            }
+        case BF_4_TIME:
+            {
+                pselect_param->recovery_method = FRM_HARDWARE_DEGRADE_BOPD;
+                break;
+            }
+        default:
+            {
+                pselect_param->is_hardware_degrade_boot_fail = true;
+                pselect_param->recovery_method = FRM_GOTO_ERECOVERY_DOWNLOAD_RECOVERY;
+                break;
+            }
+        }
+    }
+
+    return 0;
+}
+
+
 static int bfr_select_recovery_method_with_safe_mode(
     bfr_recovery_method_select_param_t *pselect_param)
 {
     if (NULL == pselect_param)
     {
-        BFMR_PRINT_INVALID_PARAMS("pselect_param: %p\n", pselect_param);
+        BFMR_PRINT_INVALID_PARAMS("pselect_param.\n");
         return -1;
     }
 
@@ -728,7 +905,7 @@ static int bfr_select_recovery_method_without_safe_mode(
 {
     if (NULL == pselect_param)
     {
-        BFMR_PRINT_INVALID_PARAMS("pselect_param: %p\n", pselect_param);
+        BFMR_PRINT_INVALID_PARAMS("pselect_param.\n");
         return -1;
     }
 
@@ -741,6 +918,11 @@ static int bfr_select_recovery_method_without_safe_mode(
     if (pselect_param->need_not_parse_recovery_method_further)
     {
         return 0;
+    }
+
+    if (bfr_bopd_has_been_enabled())
+    {
+        return bfr_select_recovery_method_with_bopd(pselect_param);
     }
 
     switch (pselect_param->recovery_failed_times_in_bottom_layer)
@@ -857,21 +1039,19 @@ static bfr_boot_fail_stage_e bfr_get_main_boot_fail_stage(unsigned int boot_fail
 
 static int bfr_run_recovery_method(bfr_recovery_method_select_param_t *pselect_param)
 {
+    bfmr_rrecord_misc_msg_param_t misc_msg;
+
     if (NULL == pselect_param)
     {
-        BFMR_PRINT_INVALID_PARAMS("pselect_param: %p\n", pselect_param);
+        BFMR_PRINT_INVALID_PARAMS("pselect_param.\n");
         return -1;
     }
 
+    memset((void *)&misc_msg, 0, sizeof(misc_msg));
+    misc_msg.boot_fail_no = (unsigned int)pselect_param->cur_boot_fail_no;
+    memcpy((void *)misc_msg.command, (void *)BFR_ENTER_BOPD_MODE_CMD, strlen(BFR_ENTER_BOPD_MODE_CMD)); /*[false alarm]:strlen*/
     switch (pselect_param->recovery_method)
     {
-#if defined(CONFIG_USE_AB_SYSTEM)
-    case FRM_GOTO_B_SYSTEM:
-        {
-            bfr_goto_another_system();
-            break;
-        }
-#endif
     case FRM_GOTO_ERECOVERY_DEL_FILES_FOR_BF:
     case FRM_GOTO_ERECOVERY_DEL_FILES_FOR_NOSPC:
     case FRM_GOTO_ERECOVERY_FACTORY_RESET:
@@ -882,17 +1062,14 @@ static int bfr_run_recovery_method(bfr_recovery_method_select_param_t *pselect_p
     case FRM_GOTO_ERECOVERY_LOWLEVEL_FORMAT_DATA:
     case FRM_FACTORY_RESET_AFTER_DOWNLOAD_RECOVERY:
         {
-            bfmr_rrecord_misc_msg_param_t reason_param;
-
-            memset((void *)&reason_param, 0, sizeof(reason_param));
-            memcpy((void *)reason_param.command, (void *)BFR_ENTER_ERECOVERY_CMD,
-                strlen(BFR_ENTER_ERECOVERY_CMD)+1);/*[false alarm]:strlen*/
-            reason_param.enter_erecovery_reason = EER_BOOT_FAIL_SOLUTION;
-            reason_param.enter_erecovery_reason_number = bfr_get_enter_erecovery_reason(pselect_param->cur_boot_fail_no);
-            reason_param.boot_fail_stage_for_erecovery = bfr_get_main_boot_fail_stage(pselect_param->cur_boot_fail_stage);
-            reason_param.recovery_method = (unsigned int)pselect_param->recovery_method;
-            reason_param.boot_fail_no = (unsigned int)pselect_param->cur_boot_fail_no;
-            (void)bfmr_write_rrecord_misc_msg(&reason_param);
+            memset(misc_msg.command, 0, sizeof(misc_msg.command));
+            memcpy((void *)misc_msg.command, (void *)BFR_ENTER_ERECOVERY_CMD, strlen(BFR_ENTER_ERECOVERY_CMD) + 1); /*[false alarm]:strlen*/
+            misc_msg.enter_erecovery_reason = EER_BOOT_FAIL_SOLUTION;
+            misc_msg.enter_erecovery_reason_number = (pselect_param->is_hardware_degrade_boot_fail)
+                ? (ENTER_ERECOVERY_BECAUSE_HW_DEGRADE_BOOT_FAIL) : (bfr_get_enter_erecovery_reason(pselect_param->cur_boot_fail_no));
+            misc_msg.boot_fail_stage_for_erecovery = bfr_get_main_boot_fail_stage(pselect_param->cur_boot_fail_stage);
+            misc_msg.recovery_method = (unsigned int)pselect_param->recovery_method;
+            misc_msg.boot_fail_no = (unsigned int)pselect_param->cur_boot_fail_no;
             (void)bfr_set_misc_msg_for_erecovery();
             break;
         }
@@ -902,13 +1079,45 @@ static int bfr_run_recovery_method(bfr_recovery_method_select_param_t *pselect_p
         }
     case FRM_ENTER_SAFE_MODE:
         {
-            bfmr_rrecord_misc_msg_param_t misc_msg;
-
             BFMR_PRINT_KEY_INFO("FRM_ENTER_SAFE_MODE!\n");
-            memset((void *)&misc_msg, 0, sizeof(misc_msg));
-            memcpy((void *)misc_msg.command, (void *)BFR_ENTER_SAFE_MODE_CMD,
-                strlen(BFR_ENTER_SAFE_MODE_CMD)+1);/*[false alarm]:strlen*/
-            (void)bfmr_write_rrecord_misc_msg(&misc_msg);
+            memset(misc_msg.command, 0, sizeof(misc_msg.command));
+            memcpy((void *)misc_msg.command, (void *)BFR_ENTER_SAFE_MODE_CMD, strlen(BFR_ENTER_SAFE_MODE_CMD) + 1);/*[false alarm]:strlen*/
+            break;
+        }
+    case FRM_BOPD:
+        {
+            BFMR_PRINT_KEY_INFO("FRM_BOPD!\n");
+            misc_msg.bopd_mode_value = BOPD_BEFORE_DOWNLOAD;
+            break;
+        }
+    case FRM_STORAGE_RDONLY_BOPD:
+        {
+            BFMR_PRINT_KEY_INFO("FRM_STORAGE_RDONLY_BOPD!\n");
+            misc_msg.bopd_mode_value = BOPD_WITH_STORAGE_RDONLY_BEFORE_DOWNLOAD;
+            break;
+        }
+    case FRM_HARDWARE_DEGRADE_BOPD:
+        {
+            BFMR_PRINT_KEY_INFO("FRM_HARDWARE_DEGRADE_BOPD!\n");
+            misc_msg.bopd_mode_value = BOPD_WITH_HARDWARE_DEGRADE_BEFORE_DOWNLOAD;
+            break;
+        }
+    case FRM_STORAGE_RDONLY_HARDWARE_DEGRADE_BOPD:
+        {
+            BFMR_PRINT_KEY_INFO("FRM_STORAGE_RDONLY_HARDWARE_DEGRADE_BOPD!\n");
+            misc_msg.bopd_mode_value = BOPD_WITH_STORAGE_RDONLY_HARDWARE_DEGRADE_BEFORE_DOWNLOAD;
+            break;
+        }
+    case FRM_BOPD_AFTER_DOWNLOAD:
+        {
+            BFMR_PRINT_KEY_INFO("FRM_BOPD_AFTER_DOWNLOAD!\n");
+            misc_msg.bopd_mode_value = BOPD_AFTER_DOWNLOAD;
+            break;
+        }
+    case FRM_HARDWARE_DEGRADE_BOPD_AFTER_DOWNLOAD:
+        {
+            BFMR_PRINT_KEY_INFO("FRM_HARDWARE_DEGRADE_BOPD_AFTER_DOWNLOAD!\n");
+            misc_msg.bopd_mode_value = BOPD_WITH_HARDWARE_DEGRADE_AFTER_DOWNLOAD;
             break;
         }
     default:
@@ -916,6 +1125,8 @@ static int bfr_run_recovery_method(bfr_recovery_method_select_param_t *pselect_p
             return 0;
         }
     }
+
+    (void)bfmr_write_rrecord_misc_msg(&misc_msg);
 
     return 0;
 }
@@ -1250,8 +1461,7 @@ static int bfr_read_recovery_record(bfr_recovery_record_t *precord,
 
     if (unlikely((NULL == precord) || (NULL == record_count_actually_read)))
     {
-        BFMR_PRINT_INVALID_PARAMS("precord: %p record_count_actually_read: %p\n",
-            precord, record_count_actually_read);
+        BFMR_PRINT_INVALID_PARAMS("precord or record_count_actually_read.\n");
         return -1;
     }
 
@@ -1369,7 +1579,7 @@ int bfr_get_hardware_fault_times(bfmr_get_hw_fault_info_param_t *pfault_info_par
 
     if (unlikely((NULL == pfault_info_param)))
     {
-        BFMR_PRINT_INVALID_PARAMS("pfault_info_param: %p\n", pfault_info_param);
+        BFMR_PRINT_INVALID_PARAMS("pfault_info_param.\n");
         return -1;
     }
 
@@ -1448,7 +1658,7 @@ int bfr_get_real_recovery_info(bfr_real_recovery_info_t *preal_recovery_info)
 
     if (NULL == preal_recovery_info)
     {
-        BFMR_PRINT_INVALID_PARAMS("preal_recovery_info: %p\n", preal_recovery_info);
+        BFMR_PRINT_INVALID_PARAMS("preal_recovery_info.\n");
         return -1;
     }
 
@@ -1508,17 +1718,15 @@ static int bfr_renew_recovery_record(bfr_recovery_record_t *precord)
     int i = 0;
     int ret = -1;
     int count = sizeof(s_rrecord_param) / sizeof(s_rrecord_param[0]);
-    int valid_record_idx = -1;
     bfr_recovery_record_t recovery_record;
     unsigned int header_size = (unsigned int)sizeof(bfr_recovery_record_header_t);
     unsigned int record_size = (unsigned int)sizeof(bfr_recovery_record_t);
-    unsigned int local_crc32 = 0x0;
     bool system_boot_fail_last_time = false;
     char *dev_path = NULL;
 
     if (NULL == precord)
     {
-        BFMR_PRINT_INVALID_PARAMS("precord: %p\n", precord);
+        BFMR_PRINT_INVALID_PARAMS("precord.\n");
         return -1;
     }
 
@@ -1672,7 +1880,17 @@ bfr_recovery_method_e try_to_recovery(
     bfr_recovery_record_t cur_recovery_record;
     bfr_recovery_method_e recovery_method = FRM_DO_NOTHING;
     bfr_recovery_method_select_param_t *pselect_param = NULL;
+	if (!bfr_has_been_enabled()) {
+		BFMR_PRINT_ERR("BFR has been disabled, so do not \
+			entery recovery method\n");
+		return recovery_method;
+	}
 
+	if (!((boot_fail_no >= HARDWARE_ERRNO_START) &&
+			(boot_fail_no <= HARDWARE_ERRNO_END))) {
+		if (suggested_recovery_method == DO_NOTHING)
+			return FRM_DO_NOTHING;
+	}
     BFMR_PRINT_KEY_INFO("boot_fail_stage:%x, boot_fail_no: %x, suggested_recovery_method: %d!\n",
         boot_fail_stage, boot_fail_no, (int)suggested_recovery_method);
 
@@ -1715,7 +1933,7 @@ bfr_recovery_method_e try_to_recovery(
     cur_recovery_record.recovery_method = (DO_NOTHING == suggested_recovery_method) ? FRM_DO_NOTHING : pselect_param->recovery_method;
     cur_recovery_record.running_status_code = bfr_init_recovery_method_running_status(pselect_param->recovery_method);
     cur_recovery_record.method_run_result = bfr_init_recovery_method_run_result(pselect_param->recovery_method);
-    cur_recovery_record.recovery_result = BOOT_FAIL_RECOVERY_FAILURE;
+	cur_recovery_record.recovery_result = BOOT_FAIL_RECOVERY_FAILURE;
     cur_recovery_record.recovery_method_original = pselect_param->recovery_method;
     cur_recovery_record.boot_fail_time = bfr_get_bootfail_uptime();
     if (NULL != args)

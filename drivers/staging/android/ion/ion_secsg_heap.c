@@ -47,9 +47,14 @@
 #include <asm/tlbflush.h>
 
 #include "ion.h"
-#include "ion_priv.h"
 #include "hisi/ion_sec_priv.h"
+#if (KERNEL_VERSION(4, 14, 0) > LINUX_VERSION_CODE)
+#include "ion_priv.h"
+#else
+#include "hisi_ion_priv.h"
+#endif
 
+static struct cma *hisi_cma;
 static struct ion_sec_cma hisi_secsg_cmas[SEC_SG_CMA_NUM];
 static unsigned int secsg_cma_num;
 
@@ -63,7 +68,7 @@ int hisi_sec_cma_set_up(struct reserved_mem *rmem)
 	int err;
 
 	if (secsg_cma_num == 0)
-		memset(hisi_secsg_cmas, 0,
+		memset(hisi_secsg_cmas, 0,/* unsafe_function_ignore: memset */
 		       sizeof(hisi_secsg_cmas));
 
 	if (secsg_cma_num >= SEC_SG_CMA_NUM) {
@@ -89,13 +94,18 @@ int hisi_sec_cma_set_up(struct reserved_mem *rmem)
 		return -EINVAL;
 	}
 
-	if(!memblock_is_memory(rmem->base)){
+	if (!memblock_is_memory(rmem->base)) {
 		memblock_free(rmem->base, rmem->size);
 		pr_err("memory is invalid(0x%llx), size(0x%llx)\n",
 			rmem->base, rmem->size);
 		return -EINVAL;
 	}
+#if (KERNEL_VERSION(4, 14, 0) > LINUX_VERSION_CODE)
 	err = cma_init_reserved_mem(rmem->base, rmem->size, 0, &cma);
+#else
+	err = cma_init_reserved_mem(rmem->base, rmem->size,
+				0, rmem->name, &cma);
+#endif
 	if (err) {
 		pr_err("Reserved memory: unable to setup CMA region\n");
 		return err;
@@ -111,6 +121,7 @@ int hisi_sec_cma_set_up(struct reserved_mem *rmem)
 
 	if (!strcmp(cma_name, "hisi-cma-pool")) {
 		pr_err("%s,cma reg to dma_camera_cma\n", __func__);
+		hisi_cma = cma;
 		ion_register_dma_camera_cma((void *)cma);
 	}
 
@@ -127,6 +138,11 @@ RESERVEDMEM_OF_DECLARE(hisi_algo_static_cma,
 		       "hisi-algo-sta-cma-pool",
 		       hisi_sec_cma_set_up);
 /*lint -e528 +esym(528,RESERVEDMEM_OF_DECLARE)*/
+
+struct cma *get_sec_cma(void)
+{
+	return hisi_cma;
+}
 
 static int __secsg_pgtable_init(struct ion_secsg_heap *secsg_heap)
 {
@@ -156,6 +172,12 @@ static int __secsg_pgtable_init(struct ion_secsg_heap *secsg_heap)
 static int __secsg_heap_input_check(struct ion_secsg_heap *secsg_heap,
 				    unsigned long size, unsigned long flag)
 {
+	if (secsg_heap->alloc_size + size <= secsg_heap->alloc_size) {
+		pr_err("size overflow! alloc_size = 0x%lx, size = 0x%lx,\n",
+			secsg_heap->alloc_size, size);
+		return -EINVAL;
+	}
+
 	if ((secsg_heap->alloc_size + size) > secsg_heap->heap_size) {
 		pr_err("alloc size = 0x%lx, size = 0x%lx, heap size = 0x%lx\n",
 			secsg_heap->alloc_size, size, secsg_heap->heap_size);
@@ -191,8 +213,11 @@ static int __secsg_create_static_cma_region(struct ion_secsg_heap *secsg_heap,
 					    u64 cma_base, u64 cma_size)
 {
 	struct page *page = NULL;
-
+#if (KERNEL_VERSION(4, 14, 0) > LINUX_VERSION_CODE)
 	page = cma_alloc(secsg_heap->cma, cma_size >> PAGE_SHIFT, 0);
+#else
+	page = cma_alloc(secsg_heap->cma, cma_size >> PAGE_SHIFT, 0, GFP_KERNEL);
+#endif
 	if (!page) {
 		pr_err("%s cma_alloc failed!cma_base 0x%llx cma_size 0x%llx\n",
 		       __func__, cma_base, cma_size);
@@ -293,7 +318,7 @@ static int secsg_alloc(struct ion_secsg_heap *secsg_heap,
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
 int ion_secmem_heap_phys(struct ion_heap *heap, struct ion_buffer *buffer,
-			 ion_phys_addr_t *addr, size_t *len)
+			 phys_addr_t *addr, size_t *len)
 {
 	struct sg_table *table = buffer->sg_table;
 	struct page *page = sg_page(table->sgl);
@@ -306,11 +331,11 @@ int ion_secmem_heap_phys(struct ion_heap *heap, struct ion_buffer *buffer,
 
 	secsg_heap = container_of(heap, struct ion_secsg_heap, heap);
 
-	if(secsg_heap->heap_attr == HEAP_PROTECT) {
+	if (secsg_heap->heap_attr == HEAP_PROTECT) {
 		*addr = buffer->id;
 		*len = buffer->size;
 	} else {
-		ion_phys_addr_t paddr = PFN_PHYS(page_to_pfn(page));
+		phys_addr_t paddr = PFN_PHYS(page_to_pfn(page));
 		*addr = paddr;
 		*len = buffer->size;
 	}
@@ -330,10 +355,17 @@ static void secsg_free(struct ion_secsg_heap *secsg_heap,
 	secsg_debug("%s: exit\n", __func__);
 }
 
+#if (KERNEL_VERSION(4, 14, 0) > LINUX_VERSION_CODE)
 static int ion_secsg_heap_allocate(struct ion_heap *heap,
 				   struct ion_buffer *buffer,
 				   unsigned long size, unsigned long align,
 				   unsigned long flags)
+#else
+static int ion_secsg_heap_allocate(struct ion_heap *heap,
+				   struct ion_buffer *buffer,
+				   unsigned long size,
+				   unsigned long flags)
+#endif
 {
 	struct ion_secsg_heap *secsg_heap =
 		container_of(heap, struct ion_secsg_heap, heap);/*lint !e826*/
@@ -343,14 +375,14 @@ static int ion_secsg_heap_allocate(struct ion_heap *heap,
 		    __func__, size, heap->id);
 	mutex_lock(&secsg_heap->mutex);
 
-	if (__secsg_heap_input_check(secsg_heap, size, flags)){
+	if (__secsg_heap_input_check(secsg_heap, size, flags)) {
 		pr_err("input params failed\n");
 		ret = -EINVAL;
 		goto out;
 	}
 
 	/*init the TA conversion here*/
-	if(!secsg_heap->TA_init &&
+	if (!secsg_heap->TA_init &&
 	   (flags & ION_FLAG_SECURE_BUFFER)) {
 		ret = secmem_tee_init(secsg_heap->context, secsg_heap->session);
 		if (ret) {
@@ -369,8 +401,6 @@ static int ion_secsg_heap_allocate(struct ion_heap *heap,
 	}
 
 	if (secsg_alloc(secsg_heap, buffer, size)) {/*lint !e838*/
-		pr_err("[%s] secsg_alloc failed, size = 0x%lx.\n",
-			__func__, secsg_heap->alloc_size);
 		ret = -ENOMEM;
 		goto out;
 	}
@@ -383,8 +413,12 @@ out:
 	pr_err("heap[%d] alloc fail, size 0x%lx, heap all alloc_size 0x%lx\n",
 	       heap->id, size, secsg_heap->alloc_size);
 	mutex_unlock(&secsg_heap->mutex);
+
+	if (ret == -ENOMEM)
+		hisi_ion_memory_info(true);
+
 	return ret;
-}/*lint !e715*/
+}  /*lint !e715*/
 
 static void ion_secsg_heap_free(struct ion_buffer *buffer)
 {
@@ -399,32 +433,9 @@ static void ion_secsg_heap_free(struct ion_buffer *buffer)
 	secsg_debug("out %s:heap remaining allocate %lx\n",
 		    __func__, secsg_heap->alloc_size);
 	mutex_unlock(&secsg_heap->mutex);
-}/*lint !e715*/
+} /*lint !e715*/
 
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
-static int ion_secsg_heap_phys(struct ion_heap *heap,
-				struct ion_buffer *buffer,
-				ion_phys_addr_t *addr, size_t *len)
-{
-	/* keep the input parames for compatible with other heaps*/
-	/* TZ driver can call "ion_phys" with ion_handle input*/
-	struct sg_table *table = buffer->priv_virt;
-	struct page *page = sg_page(table->sgl);
-	struct ion_secsg_heap *secsg_heap =
-		container_of(heap, struct ion_secsg_heap, heap);/*lint !e826*/
 
-	if(secsg_heap->heap_attr == HEAP_PROTECT) {
-		*addr = buffer->id;
-		*len = buffer->size;
-	} else {
-		ion_phys_addr_t paddr = PFN_PHYS(page_to_pfn(page));
-		*addr = paddr;
-		*len = buffer->size;
-	}
-
-	return 0;
-}/*lint !e715*/
-#endif
 
 static int ion_secsg_heap_map_user(struct ion_heap *heap,
 				   struct ion_buffer *buffer,
@@ -466,6 +477,7 @@ static void ion_secsg_heap_unmap_kernel(struct ion_heap *heap,
 	ion_heap_unmap_kernel(heap, buffer);
 }
 
+#if (KERNEL_VERSION(4, 14, 0) > LINUX_VERSION_CODE)
 static int ion_secsg_heap_map_iommu(struct ion_buffer *buffer,
 				    struct ion_iommu_map *map_data)
 {
@@ -474,7 +486,7 @@ static int ion_secsg_heap_map_iommu(struct ion_buffer *buffer,
 		container_of(heap, struct ion_secsg_heap, heap);/*lint !e826*/
 	int ret = 0;
 
-	if(secsg_heap->heap_attr == HEAP_PROTECT) {
+	if (secsg_heap->heap_attr == HEAP_PROTECT) {
 		ret = secsg_map_iommu(secsg_heap, buffer, map_data);
 		if (ret)
 			pr_err("%s:protect map iommu fail\n", __func__);
@@ -494,42 +506,25 @@ static void ion_secsg_heap_unmap_iommu(struct ion_iommu_map *map_data)
 	struct ion_secsg_heap *secsg_heap =
 		container_of(heap, struct ion_secsg_heap, heap);/*lint !e826*/
 
-	if(secsg_heap->heap_attr == HEAP_PROTECT)
+	if (secsg_heap->heap_attr == HEAP_PROTECT)
 		secsg_unmap_iommu(secsg_heap, buffer, map_data);
 	else if (secsg_heap->heap_attr == HEAP_SECURE)
 		pr_err("[%s]secure buffer, do nothing.\n", __func__);
 	else
 		ion_heap_unmap_iommu(map_data);
 }
-
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
-/*lint -save -e715 */
-static struct sg_table *ion_secsg_heap_map_dma(struct ion_heap *heap,
-						struct ion_buffer *buffer)
-{
-	return buffer->priv_virt;
-}
-
-static void ion_secsg_heap_unmap_dma(struct ion_heap *heap,
-				     struct ion_buffer *buffer)
-{
-}
-/*lint -restore*/
 #endif
 
 static struct ion_heap_ops secsg_heap_ops = {
 	.allocate = ion_secsg_heap_allocate,
 	.free = ion_secsg_heap_free,
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
-	.phys = ion_secsg_heap_phys,
-	.map_dma = ion_secsg_heap_map_dma,
-	.unmap_dma = ion_secsg_heap_unmap_dma,
-#endif
 	.map_user = ion_secsg_heap_map_user,
 	.map_kernel = ion_secsg_heap_map_kernel,
 	.unmap_kernel = ion_secsg_heap_unmap_kernel,
+#if (KERNEL_VERSION(4, 14, 0) > LINUX_VERSION_CODE)
 	.map_iommu = ion_secsg_heap_map_iommu,
 	.unmap_iommu = ion_secsg_heap_unmap_iommu,
+#endif
 };/*lint !e785*/
 
 static void __secsg_parse_dt_cma_para(struct device_node *nd,
@@ -574,6 +569,7 @@ static int __secsg_parse_dt(struct device *dev,
 	u64 water_mark = 0;
 	u32 heap_attr = 0;
 	u32 pool_shift = ION_PBL_SHIFT;
+	u32 pre_alloc_attr = 0;
 	int ret = 0;
 
 	nd = of_get_child_by_name(dev->of_node, heap_data->name);
@@ -619,24 +615,35 @@ static int __secsg_parse_dt(struct device *dev,
 	if (ret < 0) {
 		pr_err("can't find prop:water-mark\n");
 		water_mark = 0;
+		ret = 0;
 	}
 	secsg_heap->water_mark = PAGE_ALIGN(water_mark);
 
 	ret = of_property_read_u32(nd, "pool-shift", &pool_shift);
 	if (ret < 0) {
-		pr_err("can not find pool-shift.\n");
+		pr_err("can't find prop:pool-shift.\n");
 		pool_shift = ION_PBL_SHIFT;
+		ret = 0;
 	}
 	secsg_heap->pool_shift = pool_shift;
 
 	ret = of_property_read_u32(nd, "heap-attr", &heap_attr);
 	if (ret < 0) {
-		pr_err("can not find heap-arrt.\n");
+		pr_err("can't find prop:heap-arrt.\n");
 		heap_attr = HEAP_NORMAL;
+		ret = 0;
 	}
 	if (heap_attr >= HEAP_MAX)
 		heap_attr = HEAP_NORMAL;
 	secsg_heap->heap_attr = heap_attr;
+
+	ret = of_property_read_u32(nd, "pre-alloc-attr", &pre_alloc_attr);
+	if (ret < 0) {
+		pr_err("can't find prop:pre-alloc-attr.\n");
+		pre_alloc_attr = 0;
+		ret = 0;
+	}
+	secsg_heap->pre_alloc_attr = pre_alloc_attr;
 
 out:
 	return ret;
@@ -668,12 +675,14 @@ struct ion_heap *ion_secsg_heap_create(struct ion_platform_heap *heap_data)
 		return ERR_PTR(-ENOMEM);/*lint !e747*/
 
 	mutex_init(&secsg_heap->mutex);
+	mutex_init(&secsg_heap->pre_alloc_mutex);
 
 	secsg_heap->pool = NULL;
 	secsg_heap->heap.ops = &secsg_heap_ops;
 	secsg_heap->heap.type = ION_HEAP_TYPE_SECSG;
 	secsg_heap->heap_size = heap_data->size;
 	secsg_heap->alloc_size = 0;
+	secsg_heap->cma_alloc_size = 0;
 	dev = heap_data->priv;
 	INIT_LIST_HEAD(&secsg_heap->allocate_head);
 
@@ -714,23 +723,28 @@ struct ion_heap *ion_secsg_heap_create(struct ion_platform_heap *heap_data)
 	    __secsg_fill_watermark(secsg_heap))
 		pr_err("__secsg_fill_watermark failed!\n");
 
+	if (secsg_heap->pre_alloc_attr)
+		INIT_WORK(&secsg_heap->pre_alloc_work, secsg_pre_alloc_wk_func);
+
 	pr_err("secsg heap info %s:\n"
-		  "\t\t\t\t heap id : %u\n"
-		  "\t\t\t\t heap cmatype : %u\n"
-		  "\t\t\t\t heap cmaname : %s\n"
-		  "\t\t\t\t heap attr : %u\n"
-		  "\t\t\t\t pool shift : %u\n"
-		  "\t\t\t\t heap size : %lu MB\n"
-		  "\t\t\t\t per alloc size :  %llu MB\n"
-		  "\t\t\t\t per bit size : %llu KB\n"
-		  "\t\t\t\t water_mark size : %llu MB\n"
-		  "\t\t\t\t cma base : 0x%llx\n"
-		  "\t\t\t\t cma size : 0x%lx\n",
+		  "\t\t\t\t\t\t\t heap id : %u\n"
+		  "\t\t\t\t\t\t\t heap cmatype : %u\n"
+		  "\t\t\t\t\t\t\t heap cmaname : %s\n"
+		  "\t\t\t\t\t\t\t heap attr : %u\n"
+		  "\t\t\t\t\t\t\t pre alloc attr : %u\n"
+		  "\t\t\t\t\t\t\t pool shift : %u\n"
+		  "\t\t\t\t\t\t\t heap size : %lu MB\n"
+		  "\t\t\t\t\t\t\t per alloc size :  %llu MB\n"
+		  "\t\t\t\t\t\t\t per bit size : %llu KB\n"
+		  "\t\t\t\t\t\t\t water_mark size : %llu MB\n"
+		  "\t\t\t\t\t\t\t cma base : 0x%llx\n"
+		  "\t\t\t\t\t\t\t cma size : 0x%lx\n",
 		  heap_data->name,
 		  heap_data->id,
 		  secsg_heap->cma_type,
 		  secsg_heap->cma_name,
 		  secsg_heap->heap_attr,
+		  secsg_heap->pre_alloc_attr,
 		  secsg_heap->pool_shift,
 		  secsg_heap->heap_size / SZ_1M,
 		  secsg_heap->per_alloc_sz / SZ_1M,
@@ -750,7 +764,7 @@ free_heap:
 	kfree(secsg_heap);
 	return ERR_PTR(-ENOMEM);/*lint !e747*/
 }
-
+#if (KERNEL_VERSION(4, 14, 0) > LINUX_VERSION_CODE)
 void ion_secsg_heap_destroy(struct ion_heap *heap)
 {
 	struct ion_secsg_heap *secsg_heap =
@@ -767,3 +781,4 @@ void ion_secsg_heap_destroy(struct ion_heap *heap)
 		kfree(secsg_heap->session);
 	kfree(secsg_heap);
 }
+#endif

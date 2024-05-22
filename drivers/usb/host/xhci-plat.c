@@ -287,13 +287,14 @@ static int xhci_plat_probe(struct platform_device *pdev)
 	if (device_property_read_bool(&pdev->dev, "usb3-lpm-capable"))
 		xhci->quirks |= XHCI_LPM_SUPPORT;
 
-#ifdef CONFIG_USB_DWC3_NYET_ABNORMAL
 	if (device_property_read_bool(&pdev->dev, "ctrl-nyet-abnormal"))
 		xhci->quirks |= XHCI_CTRL_NYET_ABNORMAL;
-#endif
 
 	if (device_property_read_bool(&pdev->dev, "warm-reset-after-init"))
 		xhci->quirks |= XHCI_WARM_RESET_AFTER_INIT;
+
+	if (device_property_read_bool(&pdev->dev, "xhci-delay-ctrl-data-stage"))
+		xhci->quirks |= XHCI_DELAY_CTRL_DATA_STAGE;
 
 	if (device_property_read_bool(&pdev->dev, "quirk-broken-port-ped"))
 		xhci->quirks |= XHCI_BROKEN_PORT_PED;

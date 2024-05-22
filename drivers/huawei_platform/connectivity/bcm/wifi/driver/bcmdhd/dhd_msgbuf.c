@@ -1639,7 +1639,7 @@ dhd_pktid_map_avail_cnt(dhd_pktid_map_handle_t *handle)
 
 	ASSERT(handle != NULL);
 	if (NULL == handle )
-		return;
+		return 0;
 
 	map = (dhd_pktid_map_t *)handle;
 
@@ -1666,7 +1666,7 @@ __dhd_pktid_map_reserve(dhd_pub_t *dhd, dhd_pktid_map_handle_t *handle, void *pk
 
 	ASSERT(handle != NULL);
 	if (handle == NULL)
-		return;
+		return DHD_PKTID_INVALID;
 
 	map = (dhd_pktid_map_t *)handle;
 
@@ -1822,7 +1822,7 @@ dhd_pktid_map_free(dhd_pub_t *dhd, dhd_pktid_map_handle_t *handle, uint32 nkey,
 
 	ASSERT(handle != NULL);
 	if (NULL == handle)
-		return;
+		return NULL;
 
 	map = (dhd_pktid_map_t *)handle;
 
@@ -2081,6 +2081,7 @@ dhd_pktid_to_native(dhd_pktid_map_handle_t *map, uint32 pktid32,
 
 /* +------------------ End of PCIE DHD PKTID MAPPER  -----------------------+ */
 #ifdef H2DRING_PREALLOC_SIZE
+#undef H2DRING_PREALLOC_SIZE
 #define H2DRING_PREALLOC_SIZE (H2DRING_TXPOST_MAX_ITEM * H2DRING_TXPOST_ITEMSIZE * 40)
 #endif
 
@@ -4598,6 +4599,15 @@ dhd_fillup_ioct_reqst(dhd_pub_t *dhd, uint16 len, uint cmd, void* buf, int ifidx
 	ioct_rqst->input_buf_len = htol16(rqstlen);
 	ioct_rqst->host_input_buf_addr.high = htol32(PHYSADDRHI(prot->ioctbuf.pa));
 	ioct_rqst->host_input_buf_addr.low = htol32(PHYSADDRLO(prot->ioctbuf.pa));
+
+#ifdef CONFIG_HW_WIFI_DMA_ADDR_CTRL
+	if ((ioct_rqst->host_input_buf_addr.low > ATLANTA_CODE_ADDR_BEGIN) && (ioct_rqst->host_input_buf_addr.low < ATLANTA_CODE_ADDR_END)) {
+		DHD_ERROR(("%s: ioct_rqst->host_input_buf_addr, BASE(PA) %x:%x\n", __FUNCTION__,
+		      ioct_rqst->host_input_buf_addr.high,
+		      ioct_rqst->host_input_buf_addr.low));
+	}
+#endif
+
 	/* copy ioct payload */
 	ioct_buf = (void *) prot->ioctbuf.va;
 
@@ -4648,7 +4658,7 @@ dhd_prot_ring_attach(dhd_pub_t *dhd, msgbuf_ring_t *ring, const char *name,
 	ASSERT(name);
 	ASSERT((max_items < 0xFFFF) && (item_len < 0xFFFF) && (ringid < 0xFFFF));
 	if (NULL == ring || NULL == name)
-		return;
+		return BCME_ERROR;
 	/* Init name */
 	strncpy(ring->name, name, RING_NAME_MAX_LENGTH);
 	ring->name[RING_NAME_MAX_LENGTH - 1] = '\0';
@@ -5027,7 +5037,7 @@ dhd_prot_flowrings_pool_fetch(dhd_pub_t *dhd, uint16 flowid)
 	ASSERT(flowid < prot->h2d_rings_total);
 	ASSERT(prot->h2d_flowrings_pool != NULL);
 	if (NULL == prot->h2d_flowrings_pool)
-		return;
+		return NULL;
 	ring = DHD_RING_IN_FLOWRINGS_POOL(prot, flowid);
 
 	/* ASSERT flow_ring->inited == FALSE */

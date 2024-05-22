@@ -62,6 +62,7 @@ struct hifi_om_s g_om_data;
 #define BIGDATA_VOICE_HFEVENTID (916200002)
 #define BIGDATA_VOICE_HESEVENTID (916200003)
 #define BIGDATA_VOICE_BTEVENTID (916200004)
+#define BIGDATA_VOICE_BLOCKMIC  (20)
 
 static struct hifi_dsp_dump_info s_dsp_dump_info[] = {
 	{DSP_NORMAL, DUMP_DSP_LOG, FILE_NAME_DUMP_DSP_LOG, UNCONFIRM_ADDR, (DRV_DSP_UART_TO_MEM_SIZE-DRV_DSP_UART_TO_MEM_RESERVE_SIZE)},
@@ -127,13 +128,21 @@ static  void hifi_om_show_audio_detect_info(struct work_struct *work);
 static  void hifi_om_show_voice_3a_info(struct work_struct *work);
 static  void hifi_om_voice_bigdata_handler(struct work_struct *work);
 static  void voice_bigdata_decode(char arrayblock[2][20], char arraybigdata[4][64], unsigned char *data);
-static  void voice_bigdata_update_imonitor_inc_blkmic(unsigned int eventID, unsigned short paramid, imedia_voice_bigdata_to_imonitor *voice_bigdata_buff, char *blockmic);
+static  void voice_bigdata_update_imonitor_inc_blkmic(unsigned int eventID, unsigned short paramid, imedia_voice_bigdata_to_imonitor *voice_bigdata_buff, const char *blockmic);
 static  void voice_bigdata_update_imonitor(unsigned int eventID, unsigned short paramid, imedia_voice_bigdata_to_imonitor *voice_bigdata_buff);
+static  void hifi_om_work_smartpa_dft_report(struct work_struct *work);
+
 static struct hifi_om_work_info work_info[] = {
-	{HIFI_OM_WORK_VOICE_BSD, "hifi_om_work_voice_bsd", hifi_om_voice_bsd_work_handler, {0}},
-	{HIFI_OM_WORK_AUDIO_OM_DETECTION, "hifi_om_work_audio_om_detect", hifi_om_show_audio_detect_info, {0}},
-	{HIFI_OM_WORK_VOICE_3A, "hifi_om_work_voice_3a", hifi_om_show_voice_3a_info, {0}},
-	{HIFI_OM_WORK_VOICE_BIGDATA, "hifi_om_work_voice_bigdata", hifi_om_voice_bigdata_handler, {0}},
+	{HIFI_OM_WORK_VOICE_BSD, "hifi_om_work_voice_bsd",
+		hifi_om_voice_bsd_work_handler, {0}},
+	{HIFI_OM_WORK_AUDIO_OM_DETECTION, "hifi_om_work_audio_om_detect",
+		hifi_om_show_audio_detect_info, {0}},
+	{HIFI_OM_WORK_VOICE_3A, "hifi_om_work_voice_3a",
+		hifi_om_show_voice_3a_info, {0}},
+	{HIFI_OM_WORK_VOICE_BIGDATA, "hifi_om_work_voice_bigdata",
+		hifi_om_voice_bigdata_handler, {0}},
+	{HIFI_OM_WORK_SMARTPA_DFT, "hifi_om_work_smartpa_dft_report",
+		hifi_om_work_smartpa_dft_report, {0}},
 };
 
 static unsigned int dsm_notify_limit = 0x10;
@@ -143,7 +152,10 @@ static void hifi_get_time_stamp(char *timestamp_buf, unsigned int len)
 	struct timeval tv = {0};
 	struct rtc_time tm = {0};
 
-	BUG_ON(NULL == timestamp_buf);
+	if (NULL == timestamp_buf) {
+		loge("timestamp buf is null\n");
+		return;
+	}
 
 	memset(&tv, 0, sizeof(struct timeval));/* unsafe_function_ignore: memset */
 	memset(&tm, 0, sizeof(struct rtc_time));/* unsafe_function_ignore: memset */
@@ -249,7 +261,7 @@ static int hifi_om_create_log_dir(char *path)
 
 }
 
-int hifi_om_get_voice_bsd_param(void __user * uaddr)
+int hifi_om_get_voice_bsd_param(const void __user * uaddr)
 {
 	int work_id = HIFI_OM_WORK_VOICE_BSD;
 	struct hifi_om_work *om_work = NULL;
@@ -446,6 +458,163 @@ static void hifi_om_show_voice_3a_info(struct work_struct *work)
 	return;
 }
 
+static int smartpa_dft_cal_pow(short x, short y)
+{
+	int i;
+	int result = 1;
+
+	for (i = 0; i < y; i++)
+		result *= x;
+	return result;
+}
+
+static int smartpa_dft_get_round(short x, short accu, short keep_decimals)
+{
+	return (int)abs(x) + smartpa_dft_cal_pow(10, accu - keep_decimals) / 2;
+}
+
+static int smartpa_dft_get_integer(short x, short accu, short keep_decimals)
+{
+	return smartpa_dft_get_round(x, accu, keep_decimals) /
+			smartpa_dft_cal_pow(10, accu);
+}
+
+static int smartpa_dft_get_decimal(short x, short accu, short keep_decimals)
+{
+	return (smartpa_dft_get_round(x, accu, keep_decimals) %
+			smartpa_dft_cal_pow(10, accu)) /
+			smartpa_dft_cal_pow(10, accu - keep_decimals);
+}
+
+static void smartpa_dft_err_value_to_str(short err_value, short accu,
+					short keep_decimals, char *err_str)
+{
+	int integer;
+	int decimal;
+	char neg_flag;
+	char str_format[SOC_SMARTPA_ERR_INFO_MAX_LEN] = { 0 };
+
+	if (err_str == NULL) {
+		loge("err_str NULL\n");
+		return;
+	}
+	if (accu < 0) {
+		snprintf(err_str, SOC_SMARTPA_ERR_INFO_MAX_LEN, "accuErr");/*lint !e747*/ /* unsafe_function_ignore: snprintf */
+		return;
+	}
+	if (keep_decimals < 0) {
+		snprintf(err_str, SOC_SMARTPA_ERR_INFO_MAX_LEN, "keepDecimalsErr");/*lint !e747*/ /* unsafe_function_ignore: snprintf */
+		return;
+	}
+
+	if (keep_decimals > accu)
+		keep_decimals = accu;
+
+	integer = smartpa_dft_get_integer(err_value, accu, keep_decimals);
+	decimal = smartpa_dft_get_decimal(err_value, accu, keep_decimals);
+
+	neg_flag = (err_value < 0) ? '-' : '+';
+	if (keep_decimals == 0 && neg_flag == '-') {
+		snprintf(err_str, SOC_SMARTPA_ERR_INFO_MAX_LEN, "-%d", integer);/* unsafe_function_ignore: snprintf */
+	} else if (keep_decimals == 0 && neg_flag == '+') {
+		snprintf(err_str, SOC_SMARTPA_ERR_INFO_MAX_LEN, "%d", integer);/* unsafe_function_ignore: snprintf */
+	} else if (keep_decimals > 0 && neg_flag == '-') {
+		snprintf(str_format, SOC_SMARTPA_ERR_INFO_MAX_LEN, "-%s%d%s",/* unsafe_function_ignore: snprintf */
+			"%d.%0", keep_decimals, "d");
+		snprintf(err_str, SOC_SMARTPA_ERR_INFO_MAX_LEN, str_format,/* unsafe_function_ignore: snprintf */
+				integer, decimal);
+	} else if (keep_decimals > 0 && neg_flag == '+') {
+		snprintf(str_format, SOC_SMARTPA_ERR_INFO_MAX_LEN, "%s%d%s",/* unsafe_function_ignore: snprintf */
+			"%d.%0", keep_decimals, "d");
+		snprintf(err_str, SOC_SMARTPA_ERR_INFO_MAX_LEN, str_format,/* unsafe_function_ignore: snprintf */
+			integer, decimal);
+	}
+}
+
+static void smartpa_dft_report_process(char *data)
+{
+	int ret;
+	struct pa_status_str status_str = { {0}, {0}, {0}, {0}, {0}, {0} };
+	struct smartpa_msg *msg = (struct smartpa_msg *)data;
+	struct smartpa_info *info = (struct smartpa_info *)(&(msg->msg_body));
+	struct imonitor_eventobj *obj = NULL;
+	struct imedia_dft_report_info *pa_status = NULL;
+
+	pa_status = (struct imedia_dft_report_info *)info->err_info;
+	smartpa_dft_err_value_to_str(pa_status->slsm_re[info->err_chl],
+					IMEDIA_PARAMS_ACCURACY_100,
+					IMEDIA_PARAMS_KEEP_ONE_DECIMAL,
+					status_str.rdc);
+
+	smartpa_dft_err_value_to_str(pa_status->slsm_re_ref[info->err_chl],
+					IMEDIA_PARAMS_ACCURACY_100,
+					IMEDIA_PARAMS_KEEP_ONE_DECIMAL,
+					status_str.re);
+
+	smartpa_dft_err_value_to_str(pa_status->slsm_f0[info->err_chl],
+					IMEDIA_PARAMS_ACCURACY_1,
+					IMEDIA_PARAMS_KEEP_ZERO_DECIMAL,
+					status_str.f0);
+
+	smartpa_dft_err_value_to_str(pa_status->slsm_coiltemp[info->err_chl],
+					IMEDIA_PARAMS_ACCURACY_100,
+					IMEDIA_PARAMS_KEEP_ONE_DECIMAL,
+					status_str.tem);
+
+	smartpa_dft_err_value_to_str(pa_status->spow_target_gain[info->err_chl],
+					IMEDIA_PARAMS_ACCURACY_100,
+					IMEDIA_PARAMS_KEEP_TWO_DECIMAL,
+					status_str.totoal_gain);
+
+	snprintf(status_str.err_module, SOC_SMARTPA_ERR_INFO_MAX_LEN,/* unsafe_function_ignore: snprintf */
+			"SOC_%d%s%d_R_%s_R0_%s_F0_%s_T_%s_TG_%s",
+			pa_status->smode, "SmartPA_CH", info->err_chl + 1,
+			status_str.rdc, status_str.re, status_str.f0,
+			status_str.tem, status_str.totoal_gain);/*lint !e747*/ /* unsafe_function_ignore: snprintf */
+
+	obj = imonitor_create_eventobj(SOC_SMARTPA_ERR_BASE_ID +
+					info->err_class);
+
+	imonitor_set_param_integer_v2(obj, "EventLevel", info->err_level);
+	imonitor_set_param_integer_v2(obj, "ErrCode", info->err_code);
+	imonitor_set_param_string_v2(obj, "EventModule", status_str.err_module);
+
+	ret = imonitor_send_event(obj);
+	logi("send event to imonitor, ret = %d\n", ret);
+
+	imonitor_destroy_eventobj(obj);
+}
+
+static  void hifi_om_work_smartpa_dft_report(struct work_struct *work)
+{
+	struct hifi_om_work *om_work = NULL;
+	unsigned char data[MAIL_LEN_MAX] = {0};
+	unsigned int data_len = 0;
+	static int hifi_to_ap_event_count;
+
+	logi("enter work list process\n");
+	spin_lock_bh(&work_info[HIFI_OM_WORK_SMARTPA_DFT].ctl.lock);
+	if (!list_empty(&work_info[HIFI_OM_WORK_SMARTPA_DFT].ctl.list)) {
+		om_work = list_entry(
+			work_info[HIFI_OM_WORK_SMARTPA_DFT].ctl.list.next,
+			struct hifi_om_work, om_node);/*lint !e826*/
+		data_len = om_work->data_len;
+		memcpy(data, om_work->data, om_work->data_len);/*lint !e747*/ /* unsafe_function_ignore: memcpy */
+		list_del(&om_work->om_node);
+		kzfree(om_work);
+	}
+	spin_unlock_bh(&work_info[HIFI_OM_WORK_SMARTPA_DFT].ctl.lock);
+
+	if ((sizeof(struct smartpa_msg)) != data_len) {
+		logw("unavailable data from hifi, data_len: %u\n", data_len);
+		return;
+	}
+
+	hifi_to_ap_event_count++;
+	if (hifi_to_ap_event_count < HIFI_AP_MESG_CNT)
+		smartpa_dft_report_process(data);
+}
+
 static  void hifi_om_voice_bigdata_handler(struct work_struct *work)
 {
 	int work_id = HIFI_OM_WORK_VOICE_BIGDATA;
@@ -453,7 +622,7 @@ static  void hifi_om_voice_bigdata_handler(struct work_struct *work)
 	unsigned char data[MAIL_LEN_MAX] = {'\0'};
 	unsigned int data_len = 0;
 	static char voice_bigdata[4][64] = {{0},{0},{0},{0}};
-	static char voice_bigdata_miccheck[2][20] = {{0},{0}};
+	static char voice_bigdata_miccheck[2][BIGDATA_VOICE_BLOCKMIC] = {{0},{0}};
 	static struct timespec bigdata_time1 = {0, 0};
 	static struct timespec bigdata_time2 = {0, 0};
 	static int hifi_ap_count = 0;
@@ -509,13 +678,35 @@ static  void hifi_om_voice_bigdata_handler(struct work_struct *work)
 }
 
 /*carry data from kernel to imonitor,for handset mode and handfree mode*/
-static  void voice_bigdata_update_imonitor_inc_blkmic(unsigned int eventID, unsigned short paramid, imedia_voice_bigdata_to_imonitor *voice_bigdata_buff, char *blockmic)
+static  void voice_bigdata_update_imonitor_inc_blkmic(unsigned int eventID, unsigned short paramid,
+					imedia_voice_bigdata_to_imonitor *voice_bigdata_buff, const char *blockmic)
 {
-	int i, j;
-	int blockmic_size = E916200001_BLOCKMICCNT19_TINYINT - E916200001_BLOCKMICCNT0_TINYINT + 1;
+	int i, j, k;
+	int bigdata_voice_charact_param_hs_size;
+	int bigdata_voice_charact_param_size;
 	struct imonitor_eventobj *voice_bigdata_obj;
 
-	if ((NULL == voice_bigdata_buff) || (NULL == blockmic) || ((E916200001_NOISECNT0_TINYINT != paramid) && (E916200002_NOISECNT0_TINYINT != paramid))) {
+	static char *bigdata_voice_param[VOICE_BIGDATA_NOISE_VOICE_SIZE] = {
+		"NoiseCnt0", "NoiseCnt1", "NoiseCnt2", "NoiseCnt3", "NoiseCnt4", "NoiseCnt5", "NoiseCnt6", "NoiseCnt7",
+		"NoiseCnt8", "NoiseCnt9", "NoiseCnt10", "NoiseCnt11", "NoiseCnt12", "NoiseCnt13", "NoiseCnt14", "NoiseCnt15",
+		"VoiceCnt0", "VoiceCnt1", "VoiceCnt2", "VoiceCnt3", "VoiceCnt4", "VoiceCnt5", "VoiceCnt6", "VoiceCnt7",
+		"VoiceCnt8", "VoiceCnt9", "VoiceCnt10", "VoiceCnt11", "VoiceCnt12", "VoiceCnt13", "VoiceCnt14", "VoiceCnt15"
+	};
+	static char *bigdata_voice_charact_param_hs[] = {
+		"WhisperCnt", "AveCnt", "BweCnt", "AutolvmCnt", "WindCnt", "AngleCnt"
+	};
+	static char *bigdata_voice_charact_param[] = {
+		"WhisperCnt", "AveCnt", "BweCnt", "AutolvmCnt", "WindCnt"
+	};
+	static char *bigdata_voice_miccheck_param[BIGDATA_VOICE_BLOCKMIC] = {
+		"BlockmicCnt0", "BlockmicCnt1", "BlockmicCnt2", "BlockmicCnt3", "BlockmicCnt4", "BlockmicCnt5",
+		"BlockmicCnt6","BlockmicCnt7", "BlockmicCnt8", "BlockmicCnt9", "BlockmicCnt10", "BlockmicCnt11",
+		"BlockmicCnt12","BlockmicCnt13", "BlockmicCnt14", "BlockmicCnt15", "BlockmicCnt16",
+		"BlockmicCnt17", "BlockmicCnt18", "BlockmicCnt19"
+	};
+
+	if ((NULL == voice_bigdata_buff) || (NULL == blockmic) || ((E916200001_NOISECNT0_TINYINT != paramid) &&
+					(E916200002_NOISECNT0_TINYINT != paramid))) {
 		logw(" imonitor data from kernel is empty \n");
 		return;
 	}
@@ -524,26 +715,39 @@ static  void voice_bigdata_update_imonitor_inc_blkmic(unsigned int eventID, unsi
 	voice_bigdata_obj = imonitor_create_eventobj(eventID);
 
 	if (NULL == voice_bigdata_obj) {
-		logw(" imonitor obj create fail \n");
+		logw(" imonitor obj create for handset or handfree fail \n");
 		return;
 	}
 
 	/*carry noise and voice data from kerenl to imonitor*/
 	for (i = paramid; i < VOICE_BIGDATA_NOISESIZE; i++) {
-		imonitor_set_param_integer(voice_bigdata_obj, i, voice_bigdata_buff->noise[i]);
-		imonitor_set_param_integer(voice_bigdata_obj, i + VOICE_BIGDATA_NOISESIZE, voice_bigdata_buff->voice[i]);
+		imonitor_set_param_integer_v2(voice_bigdata_obj, bigdata_voice_param[i], voice_bigdata_buff->noise[i]);
+		k = i + VOICE_BIGDATA_NOISESIZE;
+		imonitor_set_param_integer_v2(voice_bigdata_obj, bigdata_voice_param[k], voice_bigdata_buff->voice[i]);
 	}
 
 	/*carry blockmic data from kerenl to imonitor*/
-	for (i = paramid + (VOICE_BIGDATA_NOISESIZE + VOICE_BIGDATA_VOICESIZE); i < (VOICE_BIGDATA_NOISESIZE + VOICE_BIGDATA_VOICESIZE + blockmic_size); i++) {
-		imonitor_set_param_integer(voice_bigdata_obj, i, *blockmic);
+	for (i = paramid; i < BIGDATA_VOICE_BLOCKMIC; i++) {
+		imonitor_set_param_integer_v2(voice_bigdata_obj, bigdata_voice_miccheck_param[i], *blockmic);
 		blockmic++;
 	}
 
 	/*carry charact data from kerenl to imonitor*/
-	for (i = 0; i < VOICE_BIGDATA_CHARACTSIZE; i++) {
-		j = (VOICE_BIGDATA_CHARACTSIZE - 1) - i;
-		imonitor_set_param_integer(voice_bigdata_obj, VOICE_BIGDATA_NOISESIZE + VOICE_BIGDATA_VOICESIZE + blockmic_size + i, voice_bigdata_buff->charact[j]);
+	if (BIGDATA_VOICE_HSEVENTID == eventID) {
+		bigdata_voice_charact_param_hs_size = sizeof(bigdata_voice_charact_param_hs)/sizeof(char*);
+		for (i = 0; i < bigdata_voice_charact_param_hs_size; i++) {
+			j = (VOICE_BIGDATA_CHARACTSIZE - 1) - i;
+			imonitor_set_param_integer_v2(voice_bigdata_obj, bigdata_voice_charact_param_hs[i],
+					voice_bigdata_buff->charact[j]);
+		}
+	}
+	else {
+		bigdata_voice_charact_param_size = sizeof(bigdata_voice_charact_param)/sizeof(char*);
+		for (i = 0; i < bigdata_voice_charact_param_size; i++) {
+			j = (VOICE_BIGDATA_CHARACTSIZE - 1) - i;
+			imonitor_set_param_integer_v2(voice_bigdata_obj, bigdata_voice_charact_param[i],
+						voice_bigdata_buff->charact[j]);
+		}
 	}
 
 	imonitor_send_event(voice_bigdata_obj);
@@ -551,12 +755,25 @@ static  void voice_bigdata_update_imonitor_inc_blkmic(unsigned int eventID, unsi
 }
 
 /*carry data from kernel to imonitor,for headset mode and bluetooth mode*/
-static  void voice_bigdata_update_imonitor(unsigned int eventID, unsigned short paramid, imedia_voice_bigdata_to_imonitor *voice_bigdata_buff)
+static  void voice_bigdata_update_imonitor(unsigned int eventID, unsigned short paramid,
+					imedia_voice_bigdata_to_imonitor *voice_bigdata_buff)
 {
-	int i, j;
+	int i, j, k;
+	int bigdata_voice_charact_param_size;
 	struct imonitor_eventobj *voice_bigdata_obj;
 
-	if ((NULL == voice_bigdata_buff) || ((E916200003_NOISECNT0_TINYINT != paramid) && (E916200004_NOISECNT0_TINYINT != paramid))) {
+	static char *bigdata_voice_param[VOICE_BIGDATA_NOISE_VOICE_SIZE] = {
+		"NoiseCnt0", "NoiseCnt1", "NoiseCnt2", "NoiseCnt3", "NoiseCnt4", "NoiseCnt5", "NoiseCnt6", "NoiseCnt7",
+		"NoiseCnt8", "NoiseCnt9", "NoiseCnt10", "NoiseCnt11", "NoiseCnt12", "NoiseCnt13", "NoiseCnt14", "NoiseCnt15",
+		"VoiceCnt0", "VoiceCnt1", "VoiceCnt2", "VoiceCnt3", "VoiceCnt4", "VoiceCnt5", "VoiceCnt6", "VoiceCnt7",
+		"VoiceCnt8", "VoiceCnt9", "VoiceCnt10", "VoiceCnt11", "VoiceCnt12", "VoiceCnt13", "VoiceCnt14", "VoiceCnt15"
+	};
+	static char *bigdata_voice_charact_param[] = {
+		"WhisperCnt", "AveCnt", "BweCnt", "AutolvmCnt", "WindCnt"
+	};
+
+	if ((NULL == voice_bigdata_buff) || ((E916200003_NOISECNT0_TINYINT != paramid) &&
+				(E916200004_NOISECNT0_TINYINT != paramid))) {
 		logw(" imonitor data from kernel is empty \n");
 		return;
 	}
@@ -565,21 +782,25 @@ static  void voice_bigdata_update_imonitor(unsigned int eventID, unsigned short 
 	voice_bigdata_obj = imonitor_create_eventobj(eventID);
 
 	if (NULL == voice_bigdata_obj) {
-		logw(" imonitor obj create fail \n");
+		logw(" imonitor obj create for headset or Bluetooth fail \n");
 		return;
+	}
+
+	/*carry charact data from kerenl to imonitor*/
+	bigdata_voice_charact_param_size = sizeof(bigdata_voice_charact_param)/sizeof(char*);
+	for (i = 0; i < bigdata_voice_charact_param_size; i++) {
+		j = (VOICE_BIGDATA_CHARACTSIZE - 1) - i;
+		imonitor_set_param_integer_v2(voice_bigdata_obj, bigdata_voice_charact_param[i],
+					voice_bigdata_buff->charact[j]);
 	}
 
 	/*carry noise and voice data from kerenl to imonitor*/
 	for (i = paramid; i < VOICE_BIGDATA_NOISESIZE; i++) {
-		imonitor_set_param_integer(voice_bigdata_obj, i, voice_bigdata_buff->noise[i]);
-		imonitor_set_param_integer(voice_bigdata_obj, i + VOICE_BIGDATA_NOISESIZE, voice_bigdata_buff->voice[i]);
+		imonitor_set_param_integer_v2(voice_bigdata_obj, bigdata_voice_param[i], voice_bigdata_buff->noise[i]);
+		k = i + VOICE_BIGDATA_NOISESIZE;
+		imonitor_set_param_integer_v2(voice_bigdata_obj, bigdata_voice_param[k], voice_bigdata_buff->voice[i]);
 	}
 
-	/*carry charact data from kerenl to imonitor*/
-	for (i = 0; i < VOICE_BIGDATA_CHARACTSIZE; i++) {
-		j = (VOICE_BIGDATA_CHARACTSIZE - 1) - i;
-		imonitor_set_param_integer(voice_bigdata_obj, VOICE_BIGDATA_NOISESIZE + VOICE_BIGDATA_VOICESIZE + i, voice_bigdata_buff->charact[j]);
-	}
 	imonitor_send_event(voice_bigdata_obj);
 	imonitor_destroy_eventobj(voice_bigdata_obj);
 }
@@ -907,7 +1128,7 @@ bool is_hifi_loaded(void)
 	return g_om_data.dsp_loaded;
 }
 
-int hifi_dsp_dump_hifi(void __user *arg)
+int hifi_dsp_dump_hifi(const void __user *arg)
 {
 	unsigned int err_type = 0;
 
@@ -930,10 +1151,10 @@ int hifi_dsp_dump_hifi(void __user *arg)
 void hifi_om_init(struct platform_device *pdev, unsigned char* hifi_priv_base_virt, unsigned char* hifi_priv_base_phy)
 {
 	unsigned int i = 0;
-	BUG_ON(NULL == pdev);
+	WARN_ON(NULL == pdev);
 
-	BUG_ON(NULL == hifi_priv_base_virt);
-	BUG_ON(NULL == hifi_priv_base_phy);
+	WARN_ON(NULL == hifi_priv_base_virt);
+	WARN_ON(NULL == hifi_priv_base_phy);
 
 	memset(&g_om_data, 0, sizeof(struct hifi_om_s));/* unsafe_function_ignore: memset */
 
@@ -1016,7 +1237,7 @@ void hifi_om_deinit(struct platform_device *dev)
 
 	IN_FUNCTION;
 
-	BUG_ON(NULL == dev);
+	WARN_ON(NULL == dev);
 
 	up(&g_om_data.dsp_dump_sema);
 	kthread_stop(g_om_data.kdumpdsp_task);

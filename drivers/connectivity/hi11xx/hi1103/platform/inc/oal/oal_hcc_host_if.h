@@ -20,6 +20,10 @@ extern "C" {
 
 #if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
 #include <linux/kernel.h>
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0))
+#include <linux/sched/debug.h>
+#endif
+#include "board.h"
 #endif
 
 #ifdef _PRE_WLAN_TCP_OPT
@@ -451,11 +455,33 @@ extern oal_int32 hcc_rx_register_etc(struct hcc_handler *hcc, oal_uint8 mtype, h
 extern oal_int32 hcc_rx_unregister_etc(struct hcc_handler *hcc, oal_uint8 mtype);
 extern oal_void hcc_tx_wlan_queue_map_set_etc(struct hcc_handler* hcc,hcc_queue_type hcc_queue_id,wlan_net_queue_type wlan_queue_id);
 
-extern oal_void hi_wlan_power_set_etc(oal_int32 on);
 extern oal_void hcc_rx_submit(struct hcc_handler* hcc, oal_netbuf_stru* pst_netbuf);
 extern oal_void  hcc_restore_assemble_netbuf_list(struct hcc_handler *hcc);
 extern oal_void hcc_restore_tx_netbuf(struct hcc_handler *hcc, oal_netbuf_stru *pst_netbuf);
 extern oal_void hcc_change_state_exception_etc(oal_void);
+
+OAL_STATIC OAL_INLINE oal_void hi_wlan_power_set_etc(oal_int32 on)
+{
+    /*
+     * this should be done in mpw1
+     * it depends on the gpio used to power up and down 1101 chip
+     *
+     * */
+#if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
+    if(on)
+    {
+        oal_print_hi11xx_log(HI11XX_LOG_INFO, "hcc probe:pull up power on gpio");
+        board_host_wakeup_dev_set(0);
+        board_power_on_etc(WLAN_POWER);
+    }
+    else
+    {
+        oal_print_hi11xx_log(HI11XX_LOG_INFO, "hcc probe:pull down power on gpio");
+        board_power_off_etc(WLAN_POWER);
+        board_host_wakeup_dev_set(0);
+    }
+#endif
+}
 
 #ifdef _PRE_CONFIG_CONN_HISI_SYSFS_SUPPORT
 extern oal_int32  hcc_test_init_module_etc(struct hcc_handler* hcc);

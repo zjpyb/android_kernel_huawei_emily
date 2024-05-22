@@ -83,6 +83,7 @@
 #include "nv_cust.h"
 #include "nv_id_gucnas.h"
 #include "acore_nv_id_gucnas.h"
+#include "osl_types.h"
 
 /* 非加密版本需要进行恢复的机要数据NV项 */
 u32 g_ausNvResumeSecureIdList[] =
@@ -720,14 +721,14 @@ u32 nv_write2file_handle(nv_cmd_req *msg)
     return ret;
 }
 
-void bsp_nvm_icc_task(void* parm)
+int bsp_nvm_icc_task(void* parm)
 {
     u32 ret = NV_ERROR;
     nv_cmd_req *msg;
     nv_item_info_t *nv_info;
 
     /* coverity[self_assign] */
-    parm = parm;
+    UNUSED(parm);
 
     /* coverity[no_escape] */
     for(;;)
@@ -790,6 +791,7 @@ void bsp_nvm_icc_task(void* parm)
         g_nv_ctrl.task_proc_count++;
         g_nv_ctrl.opState = NV_IDLE_STATE;
     }
+	return 0; /*lint !e527 */
 }
 
 
@@ -1020,10 +1022,10 @@ s32 bsp_nvm_kernel_init(void)
     osl_sem_init(0,&g_nv_ctrl.suspend_sem);
     osl_sem_init(1,&g_nv_ctrl.rw_sem);
     osl_sem_init(0,&g_nv_ctrl.cc_sem);
-    wake_lock_init(&g_nv_ctrl.wake_lock,WAKE_LOCK_SUSPEND,"nv_wakelock");
+    wakeup_source_init(&g_nv_ctrl.wake_lock, "nv_wakelock");
     g_nv_ctrl.shared_addr = (nv_global_info_s *)NV_GLOBAL_INFO_ADDR;
 
-    nv_record("Balong nv init  start! %s %s\n",__DATE__,__TIME__);
+    nv_record("Balong nv init  start!\n");
 
     (void)nv_debug_init();
 
@@ -1137,7 +1139,7 @@ static void bsp_nvm_exit(void)
     nv_global_info_s* ddr_info = (nv_global_info_s*)NV_GLOBAL_INFO_ADDR;
 
     /* coverity[self_assign] */
-    ddr_info = ddr_info;
+    UNUSED(ddr_info);
 
     /*关机写数据*/
     (void)bsp_nvm_flush();
@@ -1328,10 +1330,6 @@ void  modem_nv_exit(void)
 
 device_initcall(nv_init_dev);
 
-void bsp_nvm_make_pclint_happy(void)
-{
-    (void)__initcall_nv_init_dev6();
-}
 EXPORT_SYMBOL(bsp_nvm_backup);
 EXPORT_SYMBOL(bsp_nvm_dcread);
 EXPORT_SYMBOL(bsp_nvm_kernel_init);

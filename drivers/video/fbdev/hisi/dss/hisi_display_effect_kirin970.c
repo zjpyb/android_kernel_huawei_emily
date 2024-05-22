@@ -65,8 +65,8 @@ static time_interval_t interval_algorithm = {0};
 static delay_record_t delay_wait_hist = {"event hist waiting", 0, 0xFFFFFFFF, 0, 0};
 static delay_record_t delay_algorithm = {"algorithm processing", 0, 0xFFFFFFFF, 0, 0};
 
-int g_enable_effect = ENABLE_EFFECT_HIACE | ENABLE_EFFECT_BL;
-int g_debug_effect = 0;
+uint32_t g_enable_effect = ENABLE_EFFECT_HIACE | ENABLE_EFFECT_BL;
+uint32_t g_debug_effect = 0;
 static bool hiace_enable_status = false;
 
 static inline long get_timestamp_in_us(void)
@@ -667,6 +667,11 @@ int hisifb_ce_service_get_hist(struct fb_info *info, void __user *argp)
 		return -EINVAL;
 	}
 
+	if (hisifd->index != PRIMARY_PANEL_IDX) {
+		HISI_FB_ERR("fb%d is not supported!\n", hisifd->index);
+		return -EINVAL;
+	}
+
 	if (NULL == argp) {
 		HISI_FB_ERR("[effect] argp is NULL\n");
 		return -EINVAL;
@@ -726,7 +731,7 @@ int hisifb_ce_service_get_hist(struct fb_info *info, void __user *argp)
 	return ret;
 }
 
-int hisifb_ce_service_set_lut(struct fb_info *info, void __user *argp)
+int hisifb_ce_service_set_lut(struct fb_info *info, const void __user *argp)
 {
 	struct hisi_fb_data_type *hisifd = NULL;
 	struct hisi_panel_info *pinfo = NULL;
@@ -1027,18 +1032,18 @@ bool hisifb_display_effect_is_need_blc(struct hisi_fb_data_type *hisifd)
 static int deltabl_process(struct hisi_fb_data_type *hisifd, int backlight_in)
 {
 	int ret = 0;
-	int bl_min = (int)hisifd->panel_info.bl_min;
-	int bl_max = (int)hisifd->panel_info.bl_max;
-	bool HBMEnable = hisifd->de_info.amoled_param.HBMEnable ? true:false;
-	bool AmoledDimingEnable = hisifd->de_info.amoled_param.AmoledDimingEnable ? true:false;
-	int HBM_Threshold_BackLight = hisifd->de_info.amoled_param.HBM_Threshold_BackLight;
-	int HBM_Min_BackLight = hisifd->de_info.amoled_param.HBM_Min_BackLight;
-	int HBM_Max_BackLight = hisifd->de_info.amoled_param.HBM_Max_BackLight;
+	int bl_min = 0;
+	int bl_max = 0;
+	bool HBMEnable = false;
+	bool AmoledDimingEnable = false;
+	int HBM_Threshold_BackLight = 0;
+	int HBM_Min_BackLight = 0;
+	int HBM_Max_BackLight = 0;
 	//int HBM_MinLum_Regvalue = hisifd->de_info.amoled_param.HBM_MinLum_Regvalue;
 	//int HBM_MaxLum_Regvalue = hisifd->de_info.amoled_param.HBM_MaxLum_Regvalue;
-	int Hiac_DBVThres = hisifd->de_info.amoled_param.Hiac_DBVThres;
-	int Hiac_DBV_XCCThres = hisifd->de_info.amoled_param.Hiac_DBV_XCCThres;
-	int Hiac_DBV_XCC_MinThres = hisifd->de_info.amoled_param.Hiac_DBV_XCC_MinThres;
+	int Hiac_DBVThres = 0;
+	int Hiac_DBV_XCCThres = 0;
+	int Hiac_DBV_XCC_MinThres = 0;
 	int current_hiac_backlight = 0;
 	int current_hiac_deltaBL = 0;
 	int temp_hiac_backlight = 0;
@@ -1048,6 +1053,17 @@ static int deltabl_process(struct hisi_fb_data_type *hisifd, int backlight_in)
 		HISI_FB_ERR("[effect] hisifd is NULL \n");
 		return -1;
 	}
+
+	bl_min = (int)hisifd->panel_info.bl_min;
+	bl_max = (int)hisifd->panel_info.bl_max;
+	HBMEnable = hisifd->de_info.amoled_param.HBMEnable ? true:false;
+	AmoledDimingEnable = hisifd->de_info.amoled_param.AmoledDimingEnable ? true:false;
+	HBM_Threshold_BackLight = hisifd->de_info.amoled_param.HBM_Threshold_BackLight;
+	HBM_Min_BackLight = hisifd->de_info.amoled_param.HBM_Min_BackLight;
+	HBM_Max_BackLight = hisifd->de_info.amoled_param.HBM_Max_BackLight;
+	Hiac_DBVThres = hisifd->de_info.amoled_param.Hiac_DBVThres;
+	Hiac_DBV_XCCThres = hisifd->de_info.amoled_param.Hiac_DBV_XCCThres;
+	Hiac_DBV_XCC_MinThres = hisifd->de_info.amoled_param.Hiac_DBV_XCC_MinThres;
 
 	origin_hiac_backlight = (backlight_in - bl_min) * (HBM_Max_BackLight - HBM_Min_BackLight) /(bl_max - bl_min) + HBM_Min_BackLight;
 	current_hiac_backlight = origin_hiac_backlight;
@@ -1080,15 +1096,20 @@ static int deltabl_process(struct hisi_fb_data_type *hisifd, int backlight_in)
 
 static void handle_first_deltabl(struct hisi_fb_data_type *hisifd, int backlight_in)
 {
-	bool HBMEnable = hisifd->de_info.amoled_param.HBMEnable ? true:false;
-	bool AmoledDimingEnable = hisifd->de_info.amoled_param.AmoledDimingEnable ? true:false;
-	int bl_min = (int)hisifd->panel_info.bl_min;
-	int bl_max = (int)hisifd->panel_info.bl_max;
+	bool HBMEnable = false;
+	bool AmoledDimingEnable = false;
+	int bl_min = 0;
+	int bl_max = 0;
 
 	if (NULL == hisifd) {
 		HISI_FB_ERR("[effect] hisifd is NULL\n");
 		return;
 	}
+
+	HBMEnable = hisifd->de_info.amoled_param.HBMEnable ? true:false;
+	AmoledDimingEnable = hisifd->de_info.amoled_param.AmoledDimingEnable ? true:false;
+	bl_min = (int)hisifd->panel_info.bl_min;
+	bl_max = (int)hisifd->panel_info.bl_max;
 
 	if (!(HBMEnable || AmoledDimingEnable)) {
 		HISI_FB_DEBUG("[effect] HBM and Amoled disable\n");
@@ -1307,11 +1328,7 @@ void init_hiace(struct hisi_fb_data_type *hisifd)
 	partition_mode = 0;
 	is_left_pipe = 0;
 	set_reg(hiace_base + DPE_DB_PIPE_CFG, (is_left_pipe << 31) | (partition_mode << 30) | pipe_mode, 32, 0);
-	if (partition_mode == 0) {
-		xPartition = 6;
-	} else {
-		xPartition = 4;
-	}
+	xPartition = 6;
 
 	hiace_param->db_pipe_cfg = (is_left_pipe << 31) | (partition_mode << 30) | pipe_mode;
 
@@ -2121,6 +2138,11 @@ void hisifb_update_gm_from_reserved_mem(uint32_t *gm_r, uint32_t *gm_g, uint32_t
 
 static void free_acm_table(struct acm_info *acm)
 {
+	if (acm == NULL) {
+		HISI_FB_ERR("acm is NULL \n");
+		return;
+	}
+
 	hisi_effect_kfree(&acm->hue_table);
 	hisi_effect_kfree(&acm->sata_table);
 	hisi_effect_kfree(&acm->satr0_table);
@@ -2135,6 +2157,11 @@ static void free_acm_table(struct acm_info *acm)
 
 static void free_gamma_table(struct gamma_info *gamma)
 {
+	if (gamma == NULL) {
+		HISI_FB_ERR("gamma is NULL \n");
+		return;
+	}
+
 	hisi_effect_kfree(&gamma->gamma_r_table);
 	hisi_effect_kfree(&gamma->gamma_g_table);
 	hisi_effect_kfree(&gamma->gamma_b_table);
@@ -2161,14 +2188,8 @@ int hisi_effect_arsr2p_info_get(struct hisi_fb_data_type *hisifd, struct arsr2p_
 	memcpy(&arsr2p[1], &(hisifd->dss_module_default.arsr2p[DSS_RCHN_V0].arsr2p_effect_scale_up), sizeof(struct arsr2p_info));
 	memcpy(&arsr2p[2], &(hisifd->dss_module_default.arsr2p[DSS_RCHN_V0].arsr2p_effect_scale_down), sizeof(struct arsr2p_info));
 	arsr2p[0].sharp_enable = hisifd->panel_info.prefix_sharpness2D_support;
-	arsr2p[0].skin_enable  = arsr2p[0].skin_enable;
-	arsr2p[0].shoot_enable = arsr2p[0].shoot_enable;
 	arsr2p[1].sharp_enable = hisifd->panel_info.prefix_sharpness2D_support;
-	arsr2p[1].skin_enable  = arsr2p[1].skin_enable;
-	arsr2p[1].shoot_enable = arsr2p[1].shoot_enable;
 	arsr2p[2].sharp_enable = hisifd->panel_info.prefix_sharpness2D_support;
-	arsr2p[2].skin_enable  = arsr2p[2].skin_enable;
-	arsr2p[2].shoot_enable = arsr2p[2].shoot_enable;
 
 	return 0;
 }
@@ -2786,6 +2807,7 @@ static int set_acm_user_param(struct acm_info *acm_dst, struct acm_info *acm_src
 		HISI_FB_DEBUG("acm_src is NULL!\n");
 		return -1;
 	}
+
 	acm_dst->acm_en = acm_src->acm_en;
 	acm_dst->sata_offset = acm_src->sata_offset;
 	acm_dst->acm_hue_rlh01 = acm_src->acm_hue_rlh01;
@@ -3095,6 +3117,11 @@ err_ret:
 
 static int hisi_efffect_gamma_param_set(struct gamma_info *gammaDst, struct gamma_info *gammaSrc,
                                   struct hisi_panel_info* pInfo) {
+
+	if ((gammaDst == NULL) || (gammaSrc == NULL) || (pInfo == NULL)) {
+		HISI_FB_ERR("gammaDst or gammaSrc or pInfo is NULL \n");
+		return -1;
+	}
 
 	if (gammaSrc->para_mode == 0) {
 		//Normal mode
@@ -3788,6 +3815,26 @@ static int set_arsr1p_param(struct hisi_fb_data_type *hisifd, dss_arsr1p_t *post
 {
 	struct hisi_panel_info *pinfo = NULL;
 
+	if (hisifd == NULL) {
+		HISI_FB_ERR("hisifd, null pointer warning.\n");
+		return -1;
+	}
+
+	if (post_scf == NULL) {
+		HISI_FB_ERR("post_scf, null pointer warning.\n");
+		return -1;
+	}
+
+	if (arsr1p_param == NULL) {
+		HISI_FB_ERR("arsr1p_param, null pointer warning.\n");
+		return -1;
+	}
+
+	if (pov_req == NULL) {
+		HISI_FB_ERR("pov_req, null pointer warning.\n");
+		return -1;
+	}
+
 	pinfo = &(hisifd->panel_info);
 
 	if (!hisifd->effect_ctl.arsr1p_sharp_support)
@@ -3889,6 +3936,26 @@ int hisi_arsr1p_set_rect(struct hisi_fb_data_type *hisifd, dss_overlay_t *pov_re
 	int32_t extraw_right = 0;
 	dss_rect_t src_rect = {0};
 	dss_rect_t dst_rect = {0};
+
+	if(hisifd == NULL){
+		HISI_FB_ERR("hisifd is null pointer \n");
+		return -1;
+	}
+
+	if(pov_req == NULL){
+		HISI_FB_ERR("pov_req is null pointer \n");
+		return -1;
+	}
+
+	if(post_scf == NULL){
+		HISI_FB_ERR("post_scf is null pointer \n");
+		return -1;
+	}
+
+	if(pinfo == NULL){
+		HISI_FB_ERR("pinfo is null pointer \n");
+		return -1;
+	}
 
 	/*if((pov_req->res_updt_rect.w != hisifd->ov_req_prev.res_updt_rect.w)
 	|| (pov_req->res_updt_rect.h != hisifd->ov_req_prev.res_updt_rect.h))
@@ -4132,7 +4199,7 @@ int hisi_effect_arsr2p_config(struct arsr2p_info *arsr2p_effect_dst, int ih_inc,
 
 	return 0;
 }
-int hisifb_ce_service_enable_hiace(struct fb_info *info, void __user *argp)
+int hisifb_ce_service_enable_hiace(struct fb_info *info, const void __user *argp)
 {
 	struct hisi_panel_info *pinfo = NULL;
 	dss_display_effect_ce_t *ce_ctrl = NULL;
@@ -4211,11 +4278,6 @@ int hisifb_get_reg_val(struct fb_info *info, void __user *argp) {
 		return -EINVAL;
 	}
 
-	if (hisifd->panel_power_on == false) {
-		HISI_FB_ERR("[effect] panel power off\n");
-		return -EINVAL;
-	}
-
 	pinfo = &(hisifd->panel_info);
 	if (!pinfo->hiace_support) {
 		EFFECT_DEBUG_LOG(DEBUG_EFFECT_ENTRY, "[effect] Don't support HIACE\n");
@@ -4252,7 +4314,18 @@ int hisifb_get_reg_val(struct fb_info *info, void __user *argp) {
 			return -EINVAL;
 	}
 
+	down(&hisifd->blank_sem);
+	if (hisifd->panel_power_on == false) {
+		HISI_FB_ERR("[effect] panel power off\n");
+		up(&hisifd->blank_sem);
+		return -EINVAL;
+	}
+	hisifb_activate_vsync(hisifd);
+
 	reg.value = (uint32_t)inp32(hisifd->dss_base + addr);
+
+	hisifb_deactivate_vsync(hisifd);
+	up(&hisifd->blank_sem);
 
 	ret = (int)copy_to_user(argp, &reg, sizeof(struct dss_reg));
 	if (ret) {
@@ -4261,7 +4334,7 @@ int hisifb_get_reg_val(struct fb_info *info, void __user *argp) {
 	}
 	return 0;
 }
-int hisifb_ce_service_set_param(struct fb_info *info, void __user *argp) {
+int hisifb_ce_service_set_param(struct fb_info *info, const void __user *argp) {
 	struct hisi_fb_data_type *hisifd = NULL;
 	struct hisi_panel_info *pinfo = NULL;
 	int ret = 0;

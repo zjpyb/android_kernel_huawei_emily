@@ -1800,7 +1800,7 @@ VOS_UINT32  FC_ACORE_RcvIntraMsg( MsgBlock * pMsg )
 
 
 
-VOS_UINT32  FC_ACORE_MsgProc( MsgBlock * pMsg )
+VOS_VOID FC_ACORE_MsgProc(MsgBlock * pMsg)
 {
     switch (pMsg->ulSenderPid)
     {
@@ -1825,7 +1825,6 @@ VOS_UINT32  FC_ACORE_MsgProc( MsgBlock * pMsg )
             break;
     }
 
-    return VOS_OK;
 } /* FC_MsgProc */
 
 

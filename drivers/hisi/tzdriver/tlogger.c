@@ -95,7 +95,7 @@ typedef struct {
 	uint8_t		buffer_start[0];
 }LOG_BUFFER_T;
 
-static LOG_BUFFER_T *m_logbuffer;
+static LOG_BUFFER_T *m_logbuffer = NULL;
 uint32_t g_lastread_offset = 0;
 
 
@@ -107,7 +107,7 @@ uint32_t g_lastread_offset = 0;
 
 #define __TEELOGGERIO	0xBE	/* for ioctl */
 /* get tee verison */
-#define TEELOGGER_GET_VERSION		_IOR(__TEELOGGERIO, 5, char *)
+#define TEELOGGER_GET_VERSION		_IOR(__TEELOGGERIO, 5, char[256])
 
 /* set the log reader pos to current pos */
 #define TEELOGGER_SET_READERPOS_CUR		_IO(__TEELOGGERIO, 6)
@@ -245,14 +245,14 @@ static struct logger_log *g_log;
  * Will set errno to EINVAL if read
  * buffer is insufficient to hold next entry.
  */
-static LOG_ITEM_T*	logitem_getnext(uint8_t	*buffer_start, uint32_t max_len, uint32_t readpos, uint32_t scope_len, uint32_t *pos)
+static LOG_ITEM_T*	logitem_getnext(const uint8_t *buffer_start, uint32_t max_len, uint32_t readpos, uint32_t scope_len, uint32_t *pos)
 {
 	uint32_t i = 0;
 	LOG_ITEM_T	*logitem_next = NULL;
 	uint32_t 	item_max_size = 0;
 	uint16_t	item_crc;
 
-	if (!buffer_start)
+	if (buffer_start == NULL)
 		return NULL;
 
 	if ((readpos + scope_len) > max_len)
@@ -297,7 +297,7 @@ static LOG_ITEM_T*	logitem_getnext(uint8_t	*buffer_start, uint32_t max_len, uint
 }
 
 
-static uint32_t logitem_parse(char __user *buf, size_t count, uint8_t	*buffer_start, uint32_t max_len, uint32_t start_pos, uint32_t end_pos, uint32_t *read_off, uint32_t *userbuffer_left)
+static uint32_t logitem_parse(char __user *buf, size_t count, const uint8_t	*buffer_start, uint32_t max_len, uint32_t start_pos, uint32_t end_pos, uint32_t *read_off, uint32_t *userbuffer_left)
 {
 	LOG_ITEM_T	*logitem_next = NULL;
 	uint32_t 	buf_left, buf_written, item_len;
@@ -348,8 +348,8 @@ static uint32_t logitem_parse(char __user *buf, size_t count, uint8_t	*buffer_st
 }
 static ssize_t tlogger_read(struct file *file, char __user *buf, size_t count, loff_t *pos)
 {
-	struct logger_reader *reader;
-	struct logger_log *log;
+	struct logger_reader *reader = NULL;
+	struct logger_log *log = NULL;
 	LOG_BUFFER_T		*logbuffer = NULL;
 	ssize_t ret = 0;
 	uint32_t 	buf_written, userbuffer_left;
@@ -502,7 +502,7 @@ void tz_log_write(void)
 
 static struct logger_log *get_log_from_minor(int minor)
 {
-	struct logger_log *log;
+	struct logger_log *log = NULL;
 
 	list_for_each_entry(log, &m_log_list, logs) {
 		if (log->misc.minor == minor)
@@ -518,9 +518,9 @@ static struct logger_log *get_log_from_minor(int minor)
  */
 static int tlogger_open(struct inode *inode, struct file *file)
 {
-	struct logger_log *log;
+	struct logger_log *log = NULL;
 	int ret;
-	struct logger_reader *reader;
+	struct logger_reader *reader = NULL;
 
 	tlogd("open logger_open ++\n");
 	/*not support seek */
@@ -529,11 +529,11 @@ static int tlogger_open(struct inode *inode, struct file *file)
 		return ret;
 	tlogd("Before get_log_from_minor\n");
 	log = get_log_from_minor(MINOR(inode->i_rdev));
-	if (!log)
+	if (log == NULL)
 		return -ENODEV;
 
 	reader = kmalloc(sizeof(struct logger_reader), GFP_KERNEL);
-	if (!reader)
+	if (reader == NULL)
 		return -ENOMEM;
 
 	reader->log = log;
@@ -612,13 +612,15 @@ static int tlogger_release(struct inode *ignored, struct file *file)
  */
 static unsigned int tlogger_poll(struct file *file, poll_table *wait)
 {
-	struct logger_reader *reader;
-	struct logger_log *log;
+	struct logger_reader *reader = NULL;
+	struct logger_log *log = NULL;
 	LOG_BUFFER_T		*logbuffer = NULL;
 
 	unsigned int ret = POLLOUT | POLLWRNORM;
 
 	tlogd("logger_poll ++\n");
+	if (file == NULL)
+		return -1;
 
 	reader = (struct logger_reader *)file->private_data;
 	if (NULL == reader) {
@@ -649,9 +651,9 @@ static unsigned int tlogger_poll(struct file *file, poll_table *wait)
 
 static void tlogger_setreaderpos_cur(struct file *file)
 {
-	struct logger_reader *reader;
+	struct logger_reader *reader = NULL;
 
-	struct logger_log *log;
+	struct logger_log *log = NULL;
 	LOG_BUFFER_T		*logbuffer = NULL;
 
 	if (NULL == file)
@@ -681,7 +683,7 @@ static void tlogger_setreaderpos_cur(struct file *file)
 }
 static void tlogger_set_tlogcat_f(struct file *file)
 {
-	struct logger_reader *reader;
+	struct logger_reader *reader = NULL;
 
 	if (NULL == file)
 		return;
@@ -705,7 +707,7 @@ static int tlogger_get_tlogcat_f(void)
 static long tlogger_ioctl(struct file *file, unsigned int cmd,
 			  unsigned long arg)
 {
-	struct logger_log *log;
+	struct logger_log *log = NULL;
 	long ret = -EINVAL;
 
 	if (file == NULL)
@@ -730,7 +732,7 @@ static long tlogger_ioctl(struct file *file, unsigned int cmd,
 
 	case TEELOGGER_GET_VERSION:
 		if (_IOC_DIR(cmd) & _IOC_READ) {
-			ret = !access_ok(VERIFY_WRITE, (void __user *)arg, _IOC_SIZE(cmd));
+			ret = !access_ok(VERIFY_WRITE, (void __user *)arg, sizeof(m_logbuffer->flag.version_info));
 			if (!ret) {
 				ret = copy_to_user((void __user *)arg, (void *)m_logbuffer->flag.version_info, sizeof(m_logbuffer->flag.version_info));
 				if (ret != 0) {
@@ -787,8 +789,8 @@ static const struct file_operations logger_fops = {
 static int __init create_log(char *log_name, size_t addr, int size)
 {
 	int ret = 0;
-	struct logger_log *log;
-	unsigned char *buffer;
+	struct logger_log *log = NULL;
+	unsigned char *buffer = NULL;
 
 	buffer = (unsigned char *)addr; /*lint !e64 */
 
@@ -838,13 +840,13 @@ out_free_buffer:
 	return ret;
 }
 
-static LOG_ITEM_T*	lastmsg_logitem_getnext(uint8_t	*buffer_start, uint32_t readpos, int scope_len, uint32_t max_len)
+static LOG_ITEM_T*	lastmsg_logitem_getnext(const uint8_t *buffer_start, uint32_t readpos, int scope_len, uint32_t max_len)
 {
 	int i = 0;
 	LOG_ITEM_T	*logitem_next = NULL;
 	uint32_t 	item_max_size = 0;
 
-	if (!buffer_start)
+	if (buffer_start == NULL)
 		return NULL;
 
 
@@ -887,7 +889,7 @@ int tlogger_store_lastmsg(void)
 	loff_t pos = 0;
 	int ret = 0;
 	errno_t ret_s;
-	LOG_ITEM_T	*logitem_next;
+	LOG_ITEM_T	*logitem_next = NULL;
 	uint32_t log_buffer_maxlen = m_rdr_mem_len - sizeof(LOG_BUFFER_T);
 
 	uint8_t *buffer = NULL;
@@ -1046,7 +1048,8 @@ static int __init tlogger_init(void)
 
 static void __exit tlogger_exit(void)
 {
-	struct logger_log *current_log, *next_log;
+	struct logger_log *current_log = NULL;
+	struct logger_log *next_log = NULL;
 
 	list_for_each_entry_safe(current_log, next_log, &m_log_list, logs) {
 		/* we have to delete all the entry inside m_log_list */

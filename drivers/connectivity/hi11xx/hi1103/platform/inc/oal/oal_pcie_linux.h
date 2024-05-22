@@ -26,6 +26,7 @@ typedef struct _oal_pcie_linux_res__
     oal_uint32              version;    /*pcie version*/
     oal_uint32              revision;   /*1:4.7a  , 2:5.00a*/
     oal_uint32              irq_stat;    /*0:enabled, 1:disabled*/
+    oal_uint32              l1_err_cnt;
     oal_spin_lock_stru      st_lock;
     oal_pci_dev_stru*       pst_pcie_dev;/*Linux PCIe device hander*/
     hcc_bus*                pst_bus;
@@ -58,7 +59,7 @@ oal_int32 oal_pcie_firmware_write(oal_pcie_linux_res *pst_pcie_lres, oal_uint8* 
 oal_int32 oal_disable_pcie_irq(oal_pcie_linux_res* pst_pci_lres);
 oal_int32 oal_pcie_ip_factory_test(hcc_bus *pst_bus, oal_int32 test_count);
 oal_int32 oal_pcie_ip_voltage_bias_init(hcc_bus *pst_bus);
-oal_void oal_pcie_chip_info(hcc_bus *pst_bus);
+oal_void oal_pcie_chip_info(hcc_bus *pst_bus, oal_uint32 is_need_wakeup, oal_uint32 is_full_log);
 oal_int32 oal_pcie_rc_slt_chip_transfer(hcc_bus *pst_bus, oal_void* ddr_address, 
                                               oal_uint32 data_size, oal_int32 direction);
 oal_int32 oal_pcie_ip_init(hcc_bus *pst_bus);

@@ -23,7 +23,7 @@
 #endif
 #if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
 oal_int32 bfgx_panic_ssi_dump = 0;
-module_param(bfgx_panic_ssi_dump, int, S_IRUGO | S_IWUSR);
+oal_debug_module_param(bfgx_panic_ssi_dump, int, S_IRUGO | S_IWUSR);
 #endif
 
 /* function pointer for rx data */
@@ -966,10 +966,10 @@ int32 ps_store_rx_sepreated_data_etc(struct ps_core_s *ps_core_d, uint8 *buf_ptr
 
     rx_current_pkt_len = ps_core_d->rx_pkt_total_len - sizeof(struct ps_packet_head) - sizeof(struct ps_packet_end);
     pst_sepreted_data->rx_pkt_len = rx_current_pkt_len;
-    pst_sepreted_data->rx_buf_all_len += rx_current_pkt_len;
 
-    if (likely(pst_sepreted_data->rx_buf_all_len <= g_bfgx_rx_max_frame_etc[subsys]))
+    if (likely((uint32)(pst_sepreted_data->rx_buf_all_len + rx_current_pkt_len) <= g_bfgx_rx_max_frame_etc[subsys]))
     {
+        pst_sepreted_data->rx_buf_all_len += rx_current_pkt_len;
         if (likely(NULL != pst_sepreted_data->rx_buf_ptr))
         {
             memcpy(pst_sepreted_data->rx_buf_ptr, buf_ptr, rx_current_pkt_len);
@@ -1340,6 +1340,7 @@ int32 ps_decode_packet_func_etc(struct ps_core_s *ps_core_d, uint8 *buf_ptr)
         uc_wakeup_src_debug = 0;
     }
 
+
     switch (ps_core_d->rx_pkt_type)
     {
     case SYS_MSG:
@@ -1351,6 +1352,7 @@ int32 ps_decode_packet_func_etc(struct ps_core_s *ps_core_d, uint8 *buf_ptr)
     case BT_MSG:
         PS_PRINT_DBG("recv BT data\n");
         ps_core_d->rx_pkt_num[BFGX_BT]++;
+        oal_wake_lock_timeout(&pm_data->bt_wake_lock, DEFAULT_WAKELOCK_TIMEOUT);
         ps_recv_no_sepreated_data_etc(ps_core_d, ptr, BFGX_BT);
         break;
 
@@ -1375,18 +1377,21 @@ int32 ps_decode_packet_func_etc(struct ps_core_s *ps_core_d, uint8 *buf_ptr)
     case GNSS_First_MSG:
         PS_PRINT_DBG("into ->gnss-START\n");
         ps_core_d->rx_pkt_num[BFGX_GNSS]++;
+        oal_wake_lock_timeout(&pm_data->gnss_wake_lock, DEFAULT_WAKELOCK_TIMEOUT);
         ps_recv_sepreated_data_etc(ps_core_d, ptr, BFGX_GNSS, RX_SEQ_START);
         break;
 
     case GNSS_Common_MSG:
         PS_PRINT_DBG("into ->gnss-INT\n");
         ps_core_d->rx_pkt_num[BFGX_GNSS]++;
+        oal_wake_lock_timeout(&pm_data->gnss_wake_lock, DEFAULT_WAKELOCK_TIMEOUT);
         ps_recv_sepreated_data_etc(ps_core_d, ptr, BFGX_GNSS, RX_SEQ_INT);
         break;
 
     case GNSS_Last_MSG:
         PS_PRINT_DBG("recv GNSS data\n");
         ps_core_d->rx_pkt_num[BFGX_GNSS]++;
+        oal_wake_lock_timeout(&pm_data->gnss_wake_lock, DEFAULT_WAKELOCK_TIMEOUT);
         ps_recv_sepreated_data_etc(ps_core_d, ptr, BFGX_GNSS, RX_SEQ_LAST);
         break;
 
@@ -2437,7 +2442,6 @@ int32 ps_tx_irbuf_etc(struct ps_core_s *ps_core_d, const int8 __user *buf, size_
         buf   = buf + tx_ir_len;
         count = count - tx_ir_len;
     }
-
     return 0;
 }
 

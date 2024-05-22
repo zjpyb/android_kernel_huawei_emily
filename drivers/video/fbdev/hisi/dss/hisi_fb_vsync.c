@@ -176,7 +176,11 @@ static int vsync_timestamp_changed(struct hisi_fb_data_type *hisifd,
 		HISI_FB_ERR("hisifd is NULL");
 		return -EINVAL;
 	}
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0)
+	return !(prev_timestamp == hisifd->vsync_ctrl.vsync_timestamp);
+#else
 	return !ktime_equal(prev_timestamp, hisifd->vsync_ctrl.vsync_timestamp);
+#endif
 }
 
 static ssize_t vsync_show_event(struct device *dev,
@@ -743,7 +747,6 @@ int hisifb_vsync_resume(struct hisi_fb_data_type *hisifd)
 	//vsync_ctrl->vsync_infinite = 0;
 
 	atomic_set(&(vsync_ctrl->buffer_updated), 1);
-
 
 	return 0;
 }

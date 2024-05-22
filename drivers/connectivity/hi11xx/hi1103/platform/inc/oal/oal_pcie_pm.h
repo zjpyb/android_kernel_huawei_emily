@@ -22,7 +22,11 @@ typedef enum {
 typedef oal_uint8 oal_pcie_aspm_enum;
 
 #define  PCI_EXT_CAP_ID_L1SS    0x1E	/* PCIE L1SS CAP */
+
+#ifndef PCI_L1SS_CAP                    /* redefine at <uapi/linux/pci_regs.h> , kernel_version>=4.14 */
 #define  PCI_L1SS_CAP		0x4	        /* LSSS CAP Regist */
+#endif
+
 #define  PCI_L1SS_CTRL1		0x8	        /* LSSS CONTROL 1 Regist */
 #define   PCI_L1SS_L12_PCIPM_EN  (1<<0)
 #define   PCI_L1SS_L11_PCIPM_EN  (1<<1)

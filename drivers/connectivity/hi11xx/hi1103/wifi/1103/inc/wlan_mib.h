@@ -920,7 +920,6 @@ typedef enum
     WLAN_CFGID_ADD_USER                     = 178,      /* 添加用户配置命令 */
     WLAN_CFGID_DEL_USER                     = 179,      /* 删除用户配置命令 */
     WLAN_CFGID_DEL_MULTI_USER               = 180,      /* 删除用户配置命令 */
-    WLAN_CFGID_AMPDU_START                  = 181,      /* 开启AMPDU的配置命令 */
     WLAN_CFGID_AMPDU_END                    = 182,      /* 关闭AMPDU的配置命令 */
     WLAN_CFGID_AUTO_BA_SWITCH               = 183,      /* 自动建立BA会话 */
     WLAN_CFGID_PROFILING_SWITCH             = 184,      /* 自动建立BA会话 */
@@ -953,6 +952,7 @@ typedef enum
     WLAN_CFGID_LIST_CHAN                    = 217,      /* 列举支持的管制域信道 */
     WLAN_CFGID_REGDOMAIN_PWR                = 218,      /* 设置管制域功率 */
     WLAN_CFGID_TXBF_SWITCH                  = 219,      /* 开启或关闭TXBF发送/接收功能 */
+    WLAN_CFGID_TXBF_MIB_UPDATE              = 220,      /* 刷新txbf mib能力 */
     WLAN_CFGID_FRAG_THRESHOLD_REG           = 221,      /* 设置分片门限长度 */
     WLAN_CFGID_SET_VOWIFI_KEEP_ALIVE        = 222,      /*vowifi nat keep alive*/
 
@@ -962,7 +962,6 @@ typedef enum
     WLAN_CFGID_SET_STA_PM_ON                = 232,      /* STA低功耗开关接口 */
 #endif
 
-    WLAN_CFGID_PACKET_XMIT                  = 240,      /* 发指定个数的报文 */
     WLAN_CFGID_DUMP_BA_BITMAP               = 241,      /* 发指定个数的报文 */
     WLAN_CFGID_VAP_PKT_STAT                 = 242,      /* vap统计信息 */
     WLAN_CFGID_TIMER_START                  = 244,
@@ -1246,7 +1245,11 @@ typedef enum
 #ifdef _PRE_WLAN_FEATURE_HS20
     WLAN_CFGID_SET_QOS_MAP             = 507,      /* 配置HotSpot 2.0 QoSMap参数*/
 #endif
-    WLAN_CFGID_UAPSD_UPDATE            = 510,
+#ifdef _PRE_WLAN_FEATURE_P2P
+    WLAN_CFGID_SET_P2P_MIRACAST_STATUS  = 508,      /* 配置P2P投屏状态 */
+#endif
+
+    WLAN_CFGID_UAPSD_UPDATE             = 510,
 #ifdef _PRE_WLAN_PROFLING_MIPS
     WLAN_CFGID_SET_MIPS                 = 520,
     WLAN_CFGID_SHOW_MIPS                = 521,
@@ -1349,7 +1352,8 @@ typedef enum
     WLAN_CFGID_SET_RX_AMPDU_AMSDU  = 584,
     WLAN_CFGID_SET_ADDBA_RSP_BUFFER= 585,
     WLAN_CFGID_SET_SK_PACING_SHIFT = 586,
-
+    WLAN_CFGID_SET_TRX_STAT_LOG    = 587,
+    WLAN_CFGID_MIMO_COMPATIBILITY  = 588, /* mimo兼容性AP */
 #ifdef _PRE_PLAT_FEATURE_CUSTOMIZE
     /* HISI-CUSTOMIZE */
     WLAN_CFGID_SET_CUS_DYN_CALI_PARAM  = 605,            /* 动态校准参数定制化 */
@@ -1690,7 +1694,7 @@ typedef enum
     WLAN_CFGID_SET_DFS_MODE             = 781,         /* dfs功能的寄存器调整接口 */
 #endif
 
-
+    WLAN_CFGID_MIMO_BLACKLIST           = 782,
     WLAN_CFGID_SET_ADC_DAC_FREQ         = 790,         /* dfs功能的寄存器调整接口 */
 
 
@@ -1704,6 +1708,9 @@ typedef enum
 
 #ifdef _PRE_WLAN_FEATURE_DBDC
     WLAN_CFGID_GET_DBDC_INFO            = 793,
+#endif
+#ifdef _PRE_WLAN_DELAY_STATISTIC
+    WLAN_CFGID_PKT_TIME_SWITCH          = 794,
 #endif
 
 
@@ -1751,6 +1758,9 @@ typedef enum
     WLAN_CFGID_VAP_CHANNEL_INFO_SYN    = 2020,
     WLAN_CFGID_GET_MNGPKT_SENDSTAT     = 2021,      /* 获取管理帧发送状态 */
 
+#ifdef _PRE_WLAN_DELAY_STATISTIC
+    WLAN_CFGID_NOTIFY_STA_DELAY        = 2022,
+#endif
     WLAN_CFGID_BUTT,
 }wlan_cfgid_enum;
 typedef oal_uint16 wlan_cfgid_enum_uint16;

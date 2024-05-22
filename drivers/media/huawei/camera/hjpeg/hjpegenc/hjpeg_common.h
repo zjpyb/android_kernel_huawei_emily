@@ -48,7 +48,9 @@ if JPGENC_HEAD_OFFSET small than 4, func jpgenc_add_header must be modify */
 
 #define CHECK_ALIGN(value,align) (value%align == 0)
 #pragma GCC visibility push(default)
+#ifndef ALIGN_DOWN
 #define ALIGN_DOWN(value, al) ((unsigned int )(value) & ~((al) - 1))
+#endif
 #pragma GCC visibility pop
 
 #define MASK0(name)  (((unsigned int)1<<(name##_LEN))-1)
@@ -66,7 +68,6 @@ static inline
 void set_reg_val(void __iomem *addr, u32 value)
 {
     iowrite32(value, addr);
-    //cam_debug("jpeg setreg 0x%08x = 0x%08x, 0x%08x", (unsigned int)addr, value, ioread32(addr));
 }
 static inline
 u32 get_reg_val(void __iomem *addr)
@@ -135,6 +136,10 @@ typedef struct _tag_hjpeg_cvdr_prop
     u32           type;
     u32           rd_port;
     u32           wr_port;
+    u32           flag;
+    u32           wr_limiter;
+    u32           rd_limiter;
+    u32           allocated_du;
 }hjpeg_cvdr_prop_t;
 
 

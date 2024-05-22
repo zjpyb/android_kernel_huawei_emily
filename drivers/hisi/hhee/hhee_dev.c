@@ -49,7 +49,9 @@ int hhee_panic_handle(unsigned int len, void *buf)
 {
 	pr_err("hhee panic trigger system_error.\n");
 	(void)len;
-	(void)buf;
+	if (buf != NULL) {
+		pr_err("El2 trigger panic, buf should be null.\n");
+	};
 	rdr_syserr_process_for_ap((u32)MODID_AP_S_HHEE_PANIC, 0ULL, 0ULL);
 	return 0;
 }

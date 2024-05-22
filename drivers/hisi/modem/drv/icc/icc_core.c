@@ -482,7 +482,7 @@ void handle_channel_recv(struct icc_channel *channel)
 	}
 }
 
-s32 icc_task_private_func(void *obj)
+int icc_task_private_func(void *obj)
 {
 	struct icc_channel *channel = obj;
 
@@ -493,10 +493,10 @@ s32 icc_task_private_func(void *obj)
 		handle_channel_recv(channel);
 		osl_sem_down(&channel->private_task_sem);
 	}
+	return 0;//lint !e527
 }
 
-void icc_task_shared_func(void const *obj)
-
+int icc_task_shared_func(void *obj)
 {
 	struct icc_channel *channel = NULL;
 	u32 i = 0;
@@ -521,7 +521,7 @@ void icc_task_shared_func(void const *obj)
 		icc_wake_unlock(&g_icc_ctrl.wake_lock);
 		osl_sem_down(&g_icc_ctrl.shared_task_sem);
 	}
-	return ; /*lint !e527 */
+	return 0; /*lint !e527 */
 }
 
 void icc_notask_sharedipc_func(void)
@@ -637,7 +637,7 @@ struct icc_channel *icc_channel_init(struct icc_init_info *info, s32 *ret)
 
 		/* coverity[overwrite_var] */
 		if(ICC_ERR == osl_task_init((char *)channel->name, ICC_TASK_PRIVATE_PRI, ICC_TASK_STK_SIZE,
-			(void *)icc_task_private_func, (void*)channel, &channel->private_task_id)) /*lint !e611 */
+			(OSL_TASK_FUNC)icc_task_private_func, (void*)channel, &channel->private_task_id)) /*lint !e611 */
 		{
 			*ret = ICC_CREATE_TASK_FAIL; /* [false alarm]:fortify */
 			goto error_task; /*lint !e801 */
@@ -907,7 +907,7 @@ s32 bsp_icc_init(void)
 		goto icc_channels_init_err; /*lint !e801 */
 	}
 
-	icc_wake_lock_init(&g_icc_ctrl.wake_lock, WAKE_LOCK_SUSPEND, "icc_wake");
+	icc_wake_lock_init(&g_icc_ctrl.wake_lock, "icc_wake");
 
 	ret = icc_debug_init(ICC_STATIC_CHN_ID_MAX);
 	if(ICC_OK != ret)

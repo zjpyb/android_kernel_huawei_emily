@@ -862,7 +862,7 @@ oal_uint32  hmac_config_send_meas_req(mac_vap_stru *pst_mac_vap, mac_user_stru *
     if(OAL_PTR_NULL == pst_mgmt_buf)
     {
         OAM_ERROR_LOG0(pst_mac_vap->uc_vap_id, OAM_SF_RRM, "{hmac_config_send_meas_req::pst_mgmt_buf null.}");
-        return OAL_PTR_NULL;
+        return OAL_ERR_CODE_PTR_NULL;
     }
 
     OAL_MEMZERO(oal_netbuf_cb(pst_mgmt_buf), OAL_NETBUF_CB_SIZE());

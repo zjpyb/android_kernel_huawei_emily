@@ -7,6 +7,11 @@
 #include <linux/module.h>
 #include <linux/mutex.h>
 #include <linux/uaccess.h>
+#include <linux/version.h>
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+#include <linux/vmalloc.h>
+#endif
 
 #include "teek_client_constants.h"
 #include "mailbox_mempool.h"
@@ -41,8 +46,8 @@ static struct mutex mb_lock;
 static void mailbox_show_status(void)
 {
 	unsigned int i;
-	struct mb_page_t *pos;
-	struct list_head *head;
+	struct mb_page_t *pos = NULL;
+	struct list_head *head = NULL;
 	unsigned int used = 0;
 
 	pr_info("########################################\n");
@@ -113,7 +118,7 @@ void *mailbox_alloc(size_t size, int flag)
 {
 	unsigned int i;
 	struct mb_page_t *pos = (struct mb_page_t *)NULL;
-	struct list_head *head;
+	struct list_head *head = NULL;
 	unsigned int order = get_order(ALIGN(size, SZ_4K));
 
 	if (0 == size) {
@@ -141,7 +146,7 @@ void *mailbox_alloc(size_t size, int flag)
 
 		/* split and add free list */
 		for (j = order; j < i; j++) {
-			struct mb_page_t *new_page;
+			struct mb_page_t *new_page = NULL;
 
 			new_page = pos + (1<<j); /*lint !e679*/
 			new_page->count = 0;
@@ -163,13 +168,20 @@ void *mailbox_alloc(size_t size, int flag)
 	return NULL;
 }
 
-void mailbox_free(void *ptr)
+void mailbox_free(const void *ptr)
 {
 	unsigned int i;
-	struct page *page = virt_to_page(ptr); /*lint !e648*/
-	struct mb_page_t *self, *buddy;
+	struct page *page = NULL;
+	struct mb_page_t *self = NULL;
+	struct mb_page_t *buddy = NULL;
 	unsigned int self_idx, buddy_idx;
 
+	if (NULL == ptr) {
+		tloge("invalid ptr\n");
+		return;
+	}
+
+	page = virt_to_page(ptr); /*lint !e648*/
 	if (page < m_zone.all_pages || page >= (m_zone.all_pages + MAILBOX_PAGE_MAX)) {
 		tloge("invalid ptr to free in mailbox\n");
 		return;
@@ -221,23 +233,23 @@ struct mb_cmd_pack *mailbox_alloc_cmd_pack(void)
 {
 	void *pack = mailbox_alloc(SZ_4K, MB_FLAG_ZERO);
 
-	if (!pack)
+	if (NULL == pack)
 		tloge("alloc mb cmd pack failed\n");
 
 	return (struct mb_cmd_pack *)pack;
 }
 
-void *mailbox_copy_alloc(void *src, size_t size)
+void *mailbox_copy_alloc(const void *src, size_t size)
 {
-	void *mb_ptr;
+	void *mb_ptr = NULL;
 
-	if (!src || 0 == size) {
+	if ((NULL == src) || (0 == size)) {
 		tloge("invali src to alloc mailbox copy\n");
 		return NULL;
 	}
 
 	mb_ptr = mailbox_alloc(size, 0);
-	if (!mb_ptr) {
+	if (NULL == mb_ptr) {
 		tloge("alloc size(%zu) mailbox failed\n", size);
 		return NULL;
 	}
@@ -261,14 +273,14 @@ static LIST_HEAD(mb_dbg_list);
 static DEFINE_MUTEX(mb_dbg_lock);
 static unsigned int mb_dbg_entry_count = 1;
 static unsigned int mb_dbg_last_res; /* only cache 1 opt result */
-static struct dentry *mb_dbg_dentry;
+static struct dentry *mb_dbg_dentry = NULL;
 
 static unsigned int mb_dbg_add_entry(void *ptr)
 {
-	struct mb_dbg_entry *new_entry;
+	struct mb_dbg_entry *new_entry =  NULL;
 
-	new_entry = kmalloc(sizeof(*new_entry), GFP_KERNEL);
-	if (!new_entry) {
+	new_entry = kmalloc(sizeof(struct mb_dbg_entry),  GFP_KERNEL);
+	if (NULL == new_entry) {
 		tloge("alloc entry failed\n");
 		return 0;
 	}
@@ -288,7 +300,7 @@ static unsigned int mb_dbg_add_entry(void *ptr)
 
 static void mb_dbg_remove_entry(unsigned int idx)
 {
-	struct mb_dbg_entry *pos;
+	struct mb_dbg_entry *pos = NULL;
 
 	mutex_lock(&mb_dbg_lock);
 	list_for_each_entry(pos, &mb_dbg_list, node) {
@@ -307,7 +319,8 @@ static void mb_dbg_remove_entry(unsigned int idx)
 
 static void mb_dbg_reset(void)
 {
-	struct mb_dbg_entry *pos, *tmp;
+	struct mb_dbg_entry *pos = NULL;
+	struct mb_dbg_entry *tmp = NULL;
 
 	mutex_lock(&mb_dbg_lock);
 	list_for_each_entry_safe(pos, tmp, &mb_dbg_list, node) {
@@ -324,12 +337,13 @@ static ssize_t mb_dbg_opt_write(struct file *filp,
 				 loff_t *ppos)
 {
 	char buf[64] = {0};
-	char *cmd, *value;
+	char *cmd = NULL;
+	char *value = NULL;
 
-	if (!ubuf || !filp || !ppos)
+	if ((NULL == ubuf) || (NULL == filp) || (NULL == ppos))
 		return -EINVAL;
 
-	if (cnt >= sizeof(buf))
+	if ((cnt >= sizeof(buf)) || (cnt == 0))
 		return -EINVAL;
 
 	if (copy_from_user(buf, ubuf, cnt))
@@ -345,7 +359,7 @@ static ssize_t mb_dbg_opt_write(struct file *filp,
 	}
 
 	cmd = strsep(&value, ":");
-	if (!cmd || !value) {
+	if ((NULL == cmd) || (NULL == value)) {
 		tloge("no valid cmd or value for mb dbg\n");
 		return -EFAULT;
 	}
@@ -357,7 +371,7 @@ static ssize_t mb_dbg_opt_write(struct file *filp,
 			unsigned int idx;
 			void *ptr = mailbox_alloc(alloc_size, 0);
 
-			if (ptr) {
+			if (NULL != ptr) {
 				if (0 == (idx = mb_dbg_add_entry(ptr)))
 					mailbox_free(ptr);
 
@@ -383,8 +397,10 @@ static ssize_t mb_dbg_opt_write(struct file *filp,
 static ssize_t mb_dbg_opt_read(struct file *filp, char __user *ubuf,
 				size_t cnt, loff_t *ppos)
 {
-	char buf[16];
+	char buf[16] = {0};
 	ssize_t ret;
+
+	(void)(filp);
 
 	ret = snprintf_s(buf, 16, 15, "%u\n", mb_dbg_last_res);
 	if (ret < 0) {
@@ -404,6 +420,9 @@ static const struct file_operations mb_dbg_opt_fops = {
 static ssize_t mb_dbg_state_read(struct file *filp, char __user *ubuf,
 				size_t cnt, loff_t *ppos)
 {
+	(void)(filp);
+	(void)(ubuf);
+	(void)(ppos);
 	mailbox_show_status();
 	mailbox_show_details();
 	return 0;
@@ -414,44 +433,74 @@ static const struct file_operations mb_dbg_state_fops = {
 	.read = mb_dbg_state_read,
 };
 
-static int mailbox_register(void *mb_pool, unsigned int size)
+static int mailbox_register(const void *mb_pool, unsigned int size)
 {
-	TC_NS_SMC_CMD smc_cmd = {0};
-	char uuid[17] = {0};
-	TC_NS_Operation operation = {0};
-	int ret;
+	char *uuid;
+	TC_NS_Operation *operation;
+	TC_NS_SMC_CMD *smc_cmd;
+	int ret = 0;
 
-	operation.paramTypes = TEE_PARAM_TYPE_VALUE_INPUT | (TEE_PARAM_TYPE_VALUE_INPUT << 4);
-	operation.params[0].value.a = virt_to_phys(mb_pool);
-	operation.params[0].value.b = virt_to_phys(mb_pool) >> 32;
-	operation.params[1].value.a = size;
-
-	uuid[0] = 1;
-	smc_cmd.uuid_phys = virt_to_phys(uuid);
-	smc_cmd.uuid_h_phys = virt_to_phys(uuid) >> 32;
-	smc_cmd.cmd_id = GLOBAL_CMD_ID_REGISTER_MAILBOX;
-	smc_cmd.operation_phys = virt_to_phys(&operation);
-	smc_cmd.operation_h_phys = virt_to_phys(&operation) >> 32;
-
-	ret = TC_NS_SMC(&smc_cmd, 0);
-
-	if (TEEC_SUCCESS != ret) {
-		tloge("resigter mailbox failed\n");
+	smc_cmd = kzalloc(sizeof(TC_NS_SMC_CMD), GFP_KERNEL);
+	if (smc_cmd == NULL)
+	{
 		return -EIO;
 	}
 
-	return 0;
+	uuid = kzalloc(sizeof(char)*17, GFP_KERNEL);
+	if (uuid == NULL)
+	{
+		ret = -EIO;
+		goto free_smc_cmd;
+	}
+
+	operation = kzalloc(sizeof(TC_NS_Operation), GFP_KERNEL);
+	if (operation == NULL)
+	{
+		ret = -EIO;
+		goto free_uuid;
+	}
+
+	operation->paramTypes = TEE_PARAM_TYPE_VALUE_INPUT | (TEE_PARAM_TYPE_VALUE_INPUT << 4);
+	operation->params[0].value.a = virt_to_phys(mb_pool);
+	operation->params[0].value.b = virt_to_phys(mb_pool) >> 32;
+	operation->params[1].value.a = size;
+
+	uuid[0] = 1;
+	smc_cmd->uuid_phys = virt_to_phys(uuid);
+	smc_cmd->uuid_h_phys = virt_to_phys(uuid) >> 32;
+	smc_cmd->cmd_id = GLOBAL_CMD_ID_REGISTER_MAILBOX;
+	smc_cmd->operation_phys = virt_to_phys(operation);
+	smc_cmd->operation_h_phys = virt_to_phys(operation) >> 32;
+
+	ret = TC_NS_SMC(smc_cmd, 0);
+	if (TEEC_SUCCESS != ret) {
+		tloge("resigter mailbox failed\n");
+		ret = -EIO;
+		goto free_operation;
+    }
+
+free_operation:
+	kfree(operation);
+	operation = NULL;
+free_uuid:
+	kfree(uuid);
+	uuid = NULL;
+free_smc_cmd:
+	kfree(smc_cmd);
+	smc_cmd = NULL;
+	return ret;
+
 }
 
 int mailbox_mempool_init(void)
 {
-    unsigned int i;
-    struct mb_page_t *mb_page;
-    struct mb_free_area_t *area;
-	struct page *all_pages;
+	unsigned int i;
+	struct mb_page_t *mb_page = NULL;
+	struct mb_free_area_t *area = NULL;
+	struct page *all_pages = NULL;
 
 	all_pages = alloc_pages(GFP_KERNEL, MAILBOX_ORDER_MAX);
-	if (!all_pages) {
+	if (NULL == all_pages) {
 		tloge("fail to alloc mailbox mempool\n");
 		return -ENOMEM;
 	}
@@ -494,4 +543,5 @@ int mailbox_mempool_init(void)
 void mailbox_mempool_destroy(void)
 {
 	free_pages((unsigned long)m_zone.all_pages, MAILBOX_ORDER_MAX);
+	m_zone.all_pages = NULL;
 }

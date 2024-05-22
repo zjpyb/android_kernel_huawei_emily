@@ -2,10 +2,13 @@
 #define _LPMCU_RUNTIME_H_ 
 #include <m3_sram_map.h>
 #ifndef BYTE_REF
-#define BYTE_REF(address) (* ((unsigned char volatile * ) (address)))
-#define HALFWORD_REF(address) (* ((unsigned short volatile * ) (address)))
-#define WORD_REF(address) (* ((unsigned int volatile * ) (address)))
-#define WORD_PTR(address) (* ((unsigned int volatile **) (address)))
+#define BYTE_REF(address) (* ((unsigned char volatile * ) (uintptr_t)(address)))
+#endif
+#ifndef HALFWORD_REF
+#define HALFWORD_REF(address) (* ((unsigned short volatile * ) (uintptr_t)(address)))
+#endif
+#ifndef WORD_REF
+#define WORD_REF(address) (* ((unsigned int volatile * ) (uintptr_t)(address)))
 #endif
 enum {
  WITH_MODEM_OFFSET = 0,
@@ -42,6 +45,7 @@ enum {
  AUTOFSGT_INT_EN_OFFSET = 10,
  DDR_UCE_UART_DIS_OFFSET = 11,
  DDR_TRAIN_TRACK_DIS_OFFSET = 12,
+ DDR_LP_FEATURE_EN_OFFSET = 13,
 };
 #define DDR_OP_EN ((u16)BIT(DDR_OP_OFFSET))
 #define DDR_MNT_EN ((u16)BIT(DDR_MNT_OFFSET))
@@ -56,6 +60,7 @@ enum {
 #define AUTOFSGT_INT_EN ((u16)BIT(AUTOFSGT_INT_EN_OFFSET))
 #define DDR_UCE_UART_DIS ((u16)BIT(DDR_UCE_UART_DIS_OFFSET))
 #define DDR_TRAIN_TRACK_DIS ((u16)BIT(DDR_TRAIN_TRACK_DIS_OFFSET))
+#define DDR_LP_FEATURE_EN ((u16)BIT(DDR_LP_FEATURE_EN_OFFSET))
 enum {
  OP_ENABLE_OFFSET = 0,
  VDM_ENABLE_OFFSET = 1,
@@ -410,14 +415,16 @@ typedef enum MODULE_FUNC
  LP_BCPU_IDLE_DIV = (LP_BIG_CPU << 16) | 0x0004,
  LP_GPU_VDM = (LP_GPU << 16) | 0x0001,
  LP_GPU_AVS = (LP_GPU << 16) | 0x0003,
+ LP_GPU_IDLEDIV = (LP_GPU << 16) | IDLE_DIV_OFFSET,
  LP_DDR_TMP_ENABLE = (LP_DDR << 16) | DDR_TMP_OFFSET,
  LP_DDR_DFS = (LP_DDR << 16) | DDR_DFS_OFFSET,
  LP_DDR_AFS = (LP_DDR << 16) | DDR_AFS_OFFSET,
- LP_DDR_TMP_NREC = (LP_DDR << 16) | DDR_TMP_NREC_OFFSET,
- LP_DDR_TMP_NRST = (LP_DDR << 16) | DDR_TMP_NRST_OFFSET,
- LP_DDR_TMP_SHANRST = (LP_DDR << 16) | DDR_TMP_SHANRST_OFFSET,
+ LP_DDR_TMP_REC_EN = (LP_DDR << 16) | DDR_TMP_NREC_OFFSET,
+ LP_DDR_TMP_RST_EN = (LP_DDR << 16) | DDR_TMP_NRST_OFFSET,
+ LP_DDR_TMP_SHARST_DIS = (LP_DDR << 16) | DDR_TMP_SHANRST_OFFSET,
  LP_DDR_UCE_UART_DIS = (LP_DDR << 16) | DDR_UCE_UART_DIS_OFFSET,
  LP_DDR_TRAIN_TRACK_DIS = (LP_DDR << 16) | DDR_TRAIN_TRACK_DIS_OFFSET,
+ LP_DDR_LP_FEATURE_EN = (LP_DDR << 16) | DDR_LP_FEATURE_EN_OFFSET,
  LP_TMP_TCTRL = (LP_TMP << 16) | TMP_OP_OFFSET,
  LP_TSENSOR_RESET = (LP_TMP << 16) | TMP_TSEN_RST_ENABLE_OFFSET,
  LP_LPM3_SYS_SR = (LP_LPM3 << 16) | 0x0000,
@@ -440,6 +447,9 @@ typedef enum MODULE_FUNC
  LP_LPM3_DDRCRGGT = (LP_LPM3 << 16) | 0x0011,
  LP_LPM3_CPU_DDR_LINK = (LP_LPM3 << 16) | 0x0012,
  LP_LPM3_GPU_DDR_LINK = (LP_LPM3 << 16) | 0x0013,
+ LP_LPM3_LOW_TEMP = (LP_LPM3 << 16) | 0x0014,
+ LP_LPM3_MODEM_LOW_TEMP = (LP_LPM3 << 16) | 0x0015,
+ LP_LPM3_AO_VOLT_LOW_TEMP = (LP_LPM3 << 16) | 0x0016,
 } MODULE_FUNC_T;
 #define LP_FEATURE_MAX 31
 #define FUNCTION_ENABLE 1

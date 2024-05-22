@@ -1352,6 +1352,11 @@ static int mipi_dsi_probe(struct platform_device *pdev)
 		goto err_device_put;
 	}
 
+
+	if (hisifd->panel_info.delayed_cmd_queue_support) {
+		mipi_dsi_init_delayed_cmd_queue();
+	}
+
 	HISI_FB_DEBUG("fb%d, -.\n", hisifd->index);
 
 	return 0;

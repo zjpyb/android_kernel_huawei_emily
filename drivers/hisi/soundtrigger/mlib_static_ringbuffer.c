@@ -39,12 +39,12 @@ int Static_RingBuffer_Get(void *element)
 	return RingBuffer_Get(rb, element);
 }
 
-int Static_RingBuffer_Put(void *element)
+int Static_RingBuffer_Put(const void *element)
 {
 	return RingBuffer_Put(rb, element);
 }
 
-int Static_RingBuffer_Compare(void *element,int compareCount)
+int Static_RingBuffer_Compare(const void *element,int compareCount)
 {
 	return RingBuffer_Compare(rb,element,compareCount);
 }

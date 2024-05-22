@@ -23,4 +23,12 @@ typedef struct {
 	struct device *device;
 } OMXVDEC_ENTRY;
 
+typedef struct
+{
+	HI_S32 share_fd;
+	UADDR  iova;
+	HI_U64 vir_addr;
+	HI_U32 iova_size;
+} VdecBufferRecord;
+
 #endif

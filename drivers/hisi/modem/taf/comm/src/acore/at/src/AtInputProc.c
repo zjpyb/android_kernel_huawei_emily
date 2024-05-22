@@ -1210,13 +1210,13 @@ VOS_UINT32 AT_ModemFreeUlDataBuf(
 
 
 VOS_VOID AT_ModemFreeDlDataBuf(
-    IMM_ZC_STRU                        *pstBuf
+    VOS_CHAR                           *pstBuf
 )
 {
     AT_MODEM_DBG_DL_FREE_BUFF_NUM(1);
 
     /* 释放pstBuf */
-    IMM_ZcFree(pstBuf);
+    IMM_ZcFree((IMM_ZC_STRU*)pstBuf);
     return;
 }
 
@@ -1237,7 +1237,7 @@ VOS_UINT32 AT_ModemWriteData(
 
     if (UDI_INVALID_HANDLE == g_alAtUdiHandle[ucIndex])
     {
-        AT_ModemFreeDlDataBuf(pstBuf);
+        AT_ModemFreeDlDataBuf((VOS_CHAR*)pstBuf);
         return AT_FAILURE;
     }
 
@@ -1248,7 +1248,7 @@ VOS_UINT32 AT_ModemWriteData(
     {
         AT_WARN_LOG("AT_ModemWriteData: Write data failed with code!\r\n");
         AT_MODEM_DBG_DL_WRITE_ASYNC_FAIL_NUM(1);
-        AT_ModemFreeDlDataBuf(pstBuf);
+        AT_ModemFreeDlDataBuf((VOS_CHAR*)pstBuf);
         return AT_FAILURE;
     }
 
@@ -1340,13 +1340,13 @@ VOS_UINT32 AT_SendCsdZcDataToModem(
 }
 
 
-VOS_VOID AT_UsbModemEnableCB(PS_BOOL_ENUM_UINT8 ucEnable)
+VOS_VOID AT_UsbModemEnableCB(VOS_UINT32 ulEnable)
 {
     VOS_UINT8                           ucIndex;
 
     ucIndex = AT_CLIENT_TAB_MODEM_INDEX;
 
-    AT_ModemeEnableCB(ucIndex, ucEnable);
+    AT_ModemeEnableCB(ucIndex, ulEnable);
 
     return;
 }
@@ -2076,11 +2076,18 @@ int  App_VcomRecvCallbackRegister(unsigned char  uPortNo, pComRecv pCallback)
 VOS_INT AT_RcvFromAppCom(
     VOS_UINT8                           ucVcomId,
     VOS_UINT8                          *pData,
-    VOS_UINT16                          uslength
+    VOS_UINT32                          ullength
 )
 {
     VOS_UINT8                           ucIndex;
     VOS_UINT32                          ulRet;
+
+    /* AT命令长度处理函数统一用的VOS_UINT16，超过支持范围的长度打印异常返回 */
+    if (ullength > 0xffff)
+    {
+        AT_WARN_LOG("AT_RcvFromAppCom: ullength is more than 0xffff!");
+        return VOS_ERR;
+    }
 
     if (ucVcomId >= APP_VCOM_DEV_INDEX_BUTT)
     {
@@ -2099,7 +2106,7 @@ VOS_INT AT_RcvFromAppCom(
         return VOS_ERR;
     }
 
-    if (0 == uslength)
+    if (0 == ullength)
     {
         AT_WARN_LOG("AT_RcvFromAppCom: uslength is 0!");
         return VOS_ERR;
@@ -2118,11 +2125,11 @@ VOS_INT AT_RcvFromAppCom(
 
     if (AT_CMD_MODE == gastAtClientTab[ucIndex].Mode)
     {
-        ulRet = At_CmdStreamPreProc(ucIndex, pData, uslength);
+        ulRet = At_CmdStreamPreProc(ucIndex, pData, (VOS_UINT16)ullength);
     }
     else
     {
-        ulRet = At_DataStreamPreProc(ucIndex, gastAtClientTab[ucIndex].DataMode, pData, uslength);
+        ulRet = At_DataStreamPreProc(ucIndex, gastAtClientTab[ucIndex].DataMode, pData, (VOS_UINT16)ullength);
     }
 
     if ( AT_SUCCESS == ulRet )
@@ -3380,6 +3387,7 @@ VOS_INT AT_CCpuResetCallback(
 }
 
 
+#if (LINUX_VERSION_CODE <= KERNEL_VERSION(4, 9, 0))
 VOS_INT AT_HifiResetCallback(
     DRV_RESET_CB_MOMENT_E               enParam,
     VOS_INT                             iUserData
@@ -3467,19 +3475,107 @@ VOS_INT AT_HifiResetCallback(
         return VOS_ERROR;
     }
 }
+#else
+VOS_INT AT_HifiResetCallback(
+    enum DRV_RESET_CALLCBFUN_MOMENT     enParam,
+    VOS_INT                             iUserData
+)
+{
+    AT_MSG_STRU                        *pstMsg = VOS_NULL_PTR;
 
+    /* 参数为0表示复位前调用 */
+    if (DRV_RESET_CALLCBFUN_RESET_BEFORE == enParam)
+    {
+        printk("\n AT_HifiResetCallback before reset enter, %u \n", VOS_GetSlice());
+        /* 构造消息 */
+        /*lint -save -e516 */
+        pstMsg = (AT_MSG_STRU *)PS_ALLOC_MSG_WITH_HEADER_LEN(WUEPS_PID_AT,
+                                                             sizeof(AT_MSG_STRU));
+        /*lint -restore */
+        if (VOS_NULL_PTR == pstMsg)
+        {
+            printk("\n AT_HifiResetCallback before reset alloc msg fail, %u \n", VOS_GetSlice());
+            return VOS_ERROR;
+        }
+
+        /* 初始化消息 */
+        TAF_MEM_SET_S((VOS_CHAR *)pstMsg + VOS_MSG_HEAD_LENGTH,
+                   (VOS_SIZE_T)(sizeof(AT_MSG_STRU) - VOS_MSG_HEAD_LENGTH),
+                   0x00,
+                   (VOS_SIZE_T)(sizeof(AT_MSG_STRU) - VOS_MSG_HEAD_LENGTH));
+
+        /* 填写消息头 */
+        pstMsg->ulReceiverCpuId             = VOS_LOCAL_CPUID;
+        pstMsg->ulReceiverPid               = WUEPS_PID_AT;
+        pstMsg->ucType                      = ID_HIFI_AT_RESET_START_IND;
+
+        pstMsg->enMsgId                     = ID_AT_COMM_HIFI_RESET_START;
+
+        /* 发消息 */
+        if (VOS_OK != PS_SEND_MSG(WUEPS_PID_AT, pstMsg))
+        {
+            printk("\n AT_HifiResetCallback after reset alloc msg fail, %u \n", VOS_GetSlice());
+            return VOS_ERROR;
+        }
+
+        return VOS_OK;
+    }
+    /* 复位后 */
+    else if (DRV_RESET_CALLCBFUN_RESET_AFTER == enParam)
+    {
+        printk("\n AT_HifiResetCallback after reset enter, %u \n", VOS_GetSlice());
+        /* Added by L47619 for HIFI Reset End Report, 2013/07/08, begin */
+        /* 构造消息 */
+        /*lint -save -e516 */
+        pstMsg = (AT_MSG_STRU *)PS_ALLOC_MSG_WITH_HEADER_LEN(WUEPS_PID_AT,
+                                                             sizeof(AT_MSG_STRU));
+        /*lint -restore */
+        if (VOS_NULL_PTR == pstMsg)
+        {
+            printk("\n AT_HifiResetCallback after reset alloc msg fail, %u \n", VOS_GetSlice());
+            return VOS_ERROR;
+        }
+
+        /* 初始化消息 */
+        TAF_MEM_SET_S((VOS_CHAR *)pstMsg + VOS_MSG_HEAD_LENGTH,
+                   (VOS_SIZE_T)(sizeof(AT_MSG_STRU) - VOS_MSG_HEAD_LENGTH),
+                   0x00,
+                   (VOS_SIZE_T)(sizeof(AT_MSG_STRU) - VOS_MSG_HEAD_LENGTH));
+
+        /* 填写消息头 */
+        pstMsg->ulReceiverCpuId             = VOS_LOCAL_CPUID;
+        pstMsg->ulReceiverPid               = WUEPS_PID_AT;
+        pstMsg->ucType                      = ID_HIFI_AT_RESET_END_IND;
+
+        pstMsg->enMsgId                     = ID_AT_COMM_HIFI_RESET_END;
+
+        /* 发消息 */
+        if (VOS_OK != PS_SEND_MSG(WUEPS_PID_AT, pstMsg))
+        {
+            printk("\n AT_HifiResetCallback after reset send msg fail, %u \n", VOS_GetSlice());
+            return VOS_ERROR;
+        }
+        /* Added by L47619 for HIFI Reset End Report, 2013/07/08, end */
+        return VOS_OK;
+    }
+    else
+    {
+        return VOS_ERROR;
+    }
+}
+#endif
 
 
 VOS_VOID AT_ModemeEnableCB(
     VOS_UINT8                           ucIndex,
-    PS_BOOL_ENUM_UINT8                  ucEnable
+    VOS_UINT32                          ulEnable
 )
 {
     /* 设备默认处于生效状态，有数据就通过读回调接收，
     　 设备失效时，根据当前状态，通知PPP，如处于数传态，
        则通知AT去激活PDP.
     */
-    if (PS_FALSE == ucEnable)
+    if (PS_FALSE == ulEnable)
     {
         if (AT_PPP_DATA_MODE == gastAtClientTab[ucIndex].DataMode)
         {

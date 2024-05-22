@@ -59,6 +59,7 @@
 #include "../../adrv/adrv.h"
 #include "nv_partition_upgrade.h"
 #include "nv_cust.h"
+#include "osl_types.h"
 
 static struct nv_emmc_file_header_stru g_nv_file[NV_FILE_BUTT] = {
     {NULL,NV_FILE_DLOAD,          0,0,0,0,NV_DLOAD_PATH,          NV_DLOAD_SEC_NAME, NULL, {}},
@@ -687,7 +688,7 @@ u32 nv_emmc_access(const s8* path,s32 mode)
         return NV_ERROR;
     }
 	/* coverity[self_assign] */
-    mode = mode;
+    UNUSED(mode);
     switch(fd->emmc_type)
     {
         case NV_FILE_DLOAD:

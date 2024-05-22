@@ -33,6 +33,7 @@
 /include/ "hisi_modem_log.dtsi"
 /include/ "hisi_modem_apr.dtsi"
 /include/ "hisi_modem_dlock_balong.dtsi"
+/include/ "hisi_modem_hds.dtsi"
 
 /* data transfer --- bsp4 */
 /include/ "hisi_modem_ipf_balong.dtsi"
@@ -40,3 +41,4 @@
 
 /include/ "hisi_modem_ads.dtsi"
 
+/include/ "hisi_modem_osa.dtsi"

@@ -23,10 +23,12 @@
 #include <linux/module.h>
 #include <linux/kobject.h>
 #include <linux/profile.h>
+#include <linux/pm_wakeup.h>
 
 #include <huawei_platform/log/hwlog_kernel.h>
 #include <chipset_common/dubai/dubai.h>
 #include <chipset_common/dubai/dubai_common.h>
+#include <log/log_usertype.h>
 
 #define KWORKER_HASH_BITS			(10)
 #define MAX_SYMBOL_LEN				(48)
@@ -35,6 +37,10 @@
 #define MAX_BRIGHTNESS				(10000)
 #define BINDER_STATS_HASH_BITS		(10)
 #define DUBAI_AOD_DURATION_ENENT	(6)
+#define MAX_WS_NAME_LEN				(64)
+#define MAX_WS_NAME_COUNT			(128)
+#define WAKEUP_TAG_SIZE				(48)
+#define WAKEUP_MSG_SIZE				(128)
 
 #ifdef SENSORHUB_DUBAI_INTERFACE
 extern uint64_t iomcu_dubai_log_fetch(uint8_t event_type);
@@ -49,90 +55,106 @@ extern int hisi_battery_rm(void);
 		+ (long long)(count) * sizeof(info)
 
 #pragma GCC diagnostic ignored "-Wunused-variable"
-static struct brightness_info {
+struct dubai_brightness_info {
 	atomic_t enable;
 	uint64_t last_time;
 	uint32_t last_brightness;
 	uint64_t sum_time;
 	uint64_t sum_brightness_time;
-} _brightness_info;
+};
 
-static struct kworker_info {
+struct dubai_kworker_info {
 	long long count;
 	long long time;
 	char symbol[MAX_SYMBOL_LEN];
-} __packed _kworker_info;
+} __packed;
 
-static struct kworker_transmit {
+struct dubai_kworker_transmit {
 	long long timestamp;
 	int count;
 	char data[0];
-} __packed _kworker_transmit;
+} __packed;
 
-static struct kworker_entry {
+struct dubai_kworker_entry {
 	unsigned long address;
-	struct kworker_info info;
+	struct dubai_kworker_info info;
 	struct hlist_node hash;
-} _kworker_entry;
+};
 
-static struct uevent_info {
+struct dubai_uevent_info {
 	char devpath[MAX_DEVPATH_LEN];
 	int actions[KOBJ_MAX];
-} __packed _uevent_info;
+} __packed;
 
-static struct uevent_transmit {
+struct dubai_uevent_transmit {
 	long long timestamp;
 	int action_count;
 	int count;
 	char data[0];
-} __packed _uevent_transmit;
+} __packed;
 
-static struct uevent_entry {
+struct dubai_uevent_entry {
 	struct list_head list;
-	struct uevent_info uevent;
-} _uevent_entry;
+	struct dubai_uevent_info uevent;
+};
 
-static struct binder_stats_list_entry {
+struct dubai_binder_list_entry {
 	char name[NAME_LEN];
 	struct list_head node;
-} _binder_stats_list_entry;
+};
 
-static struct binder_proc_info {
+struct dubai_binder_proc {
 	uid_t uid;
 	pid_t pid;
 	char name[NAME_LEN];
-} __packed _binder_proc_info;
+} __packed;
 
-static struct binder_client_entry {
-	struct binder_proc_info proc;
+struct dubai_binder_client_entry {
+	struct dubai_binder_proc proc;
 	int count;
 	struct list_head node;
-} _binder_client_entry;
+};
 
-static struct binder_stats_entry {
-	struct binder_proc_info proc;
+struct dubai_binder_stats_entry {
+	struct dubai_binder_proc proc;
 	int count;
 	struct list_head client;
 	struct list_head died;
 	struct hlist_node hash;
-} _binder_stats_entry;
+};
 
-static struct binder_stats_info {
-	struct binder_proc_info service;
-	struct binder_proc_info client;
+struct dubai_binder_stats_info {
+	struct dubai_binder_proc service;
+	struct dubai_binder_proc client;
 	int count;
-} __packed _binder_stats_info;
+} __packed;
 
-static struct binder_stats_transmit {
+struct dubai_binder_stats_transmit {
 	long long timestamp;
 	int count;
 	char data[0];
-} __packed _binder_stats_transmit;
+} __packed;
+
+struct dubai_ws_lasting_name {
+	char name[MAX_WS_NAME_LEN];
+} __packed;
+
+struct dubai_ws_lasting_transmit {
+	long long timestamp;
+	int count;
+	char data[0];
+} __packed;
+
+struct dubai_wakeup_entry {
+	char tag[WAKEUP_TAG_SIZE];
+	char msg[WAKEUP_MSG_SIZE];
+	struct list_head list;
+};
 
 static atomic_t kworker_count;
 static atomic_t uevent_count;
 static atomic_t log_stats_enable;
-static struct brightness_info dubai_backlight;
+static struct dubai_brightness_info dubai_backlight;
 static atomic_t binder_stats_enable;
 static atomic_t binder_stats_count;
 static atomic_t binder_client_count;
@@ -148,35 +170,43 @@ static LIST_HEAD(binder_stats_died_list);
 static DEFINE_MUTEX(binder_stats_hash_lock);
 static LIST_HEAD(binder_stats_list);
 static DEFINE_MUTEX(binder_stats_list_lock);
+static LIST_HEAD(wakeup_list);
 
-void ipf_get_waking_pkt(void* data, unsigned int len)
-{
-	if (data == NULL) {
-		DUBAI_LOGE(" invalid param");
-		return;
-	}
-	print_hex_dump(KERN_INFO, "", DUMP_PREFIX_ADDRESS, 16, 1, data, PRINT_MAX_LEN, 0);
-	return;
-}
-
-int dubai_get_battery_rm(void) {
+int dubai_get_battery_rm(void __user *argp) {
 #ifdef CONFIG_HISI_COUL
-	return hisi_battery_rm();
+	int rm;
+
+	rm = hisi_battery_rm();
+	if (copy_to_user(argp, &rm, sizeof(int)))
+		return -EFAULT;
+
+	return 0;
 #else
 	return -EINVAL;
 #endif
 }
 
-static struct kworker_entry *dubai_find_kworker_entry(unsigned long address)
+void dubai_log_packet_wakeup_stats(const char *tag, const char *key, int value)
 {
-	struct kworker_entry *entry = NULL;
+	if (tag == NULL || key == NULL) {
+		return;
+	}
+	if (BETA_USER == get_logusertype_flag()) {
+		HWDUBAI_LOGE(tag, "%s=%d", key, value);
+	}
+}
+EXPORT_SYMBOL(dubai_log_packet_wakeup_stats);
+
+static struct dubai_kworker_entry *dubai_find_kworker_entry(unsigned long address)
+{
+	struct dubai_kworker_entry *entry = NULL;
 
 	hash_for_each_possible(kworker_hash_table, entry, hash, address) {
 		if (entry->address == address)
 			return entry;
 	}
 
-	entry = kzalloc(sizeof(struct kworker_entry), GFP_ATOMIC);
+	entry = kzalloc(sizeof(struct dubai_kworker_entry), GFP_ATOMIC);
 	if (entry == NULL) {
 		DUBAI_LOGE("Failed to allocate memory");
 		return NULL;
@@ -191,7 +221,7 @@ static struct kworker_entry *dubai_find_kworker_entry(unsigned long address)
 void dubai_log_kworker(unsigned long address, unsigned long long enter_time)
 {
 	unsigned long long exit_time;
-	struct kworker_entry *entry = NULL;
+	struct dubai_kworker_entry *entry = NULL;
 
 	if (!atomic_read(&log_stats_enable))
 		return;
@@ -213,17 +243,18 @@ void dubai_log_kworker(unsigned long address, unsigned long long enter_time)
 out:
 	mutex_unlock(&kworker_lock);
 }
+EXPORT_SYMBOL(dubai_log_kworker);
 
-int dubai_get_kworker_info(long long timestamp)
+int dubai_get_kworker_info(void __user *argp)
 {
 	int ret = 0, count = 0;
-	long long size = 0;
+	long long timestamp, size = 0;
 	unsigned char *data = NULL;
 	unsigned long bkt;
-	struct kworker_entry *entry;
+	struct dubai_kworker_entry *entry;
 	struct hlist_node *tmp;
 	struct buffered_log_entry *log_entry = NULL;
-	struct kworker_transmit *transmit = NULL;
+	struct dubai_kworker_transmit *transmit = NULL;
 
 	if (!atomic_read(&log_stats_enable))
 		return -EPERM;
@@ -232,13 +263,19 @@ int dubai_get_kworker_info(long long timestamp)
 	if (count < 0)
 		return -EINVAL;
 
-	size = LOG_ENTRY_SIZE(struct kworker_transmit, struct kworker_info, count);
+	ret = get_timestamp_value(argp, &timestamp);
+	if (ret < 0) {
+		DUBAI_LOGE("Failed to get timestamp");
+		return ret;
+	}
+
+	size = LOG_ENTRY_SIZE(struct dubai_kworker_transmit, struct dubai_kworker_info, count);
 	log_entry = create_buffered_log_entry(size, BUFFERED_LOG_MAGIC_KWORKER);
 	if (log_entry == NULL) {
 		DUBAI_LOGE("Failed to create buffered log entry");
 		return -ENOMEM;
 	}
-	transmit = (struct kworker_transmit *)log_entry->data;
+	transmit = (struct dubai_kworker_transmit *)log_entry->data;
 	transmit->timestamp = timestamp;
 	transmit->count = 0;
 	data = transmit->data;
@@ -261,8 +298,8 @@ int dubai_get_kworker_info(long long timestamp)
 		}
 
 		if (transmit->count < count) {
-			memcpy(data, &entry->info, sizeof(struct kworker_info));/* unsafe_function_ignore: memcpy */
-			data += sizeof(struct kworker_info);
+			memcpy(data, &entry->info, sizeof(struct dubai_kworker_info));/* unsafe_function_ignore: memcpy */
+			data += sizeof(struct dubai_kworker_info);
 			transmit->count++;
 		}
 		entry->info.count = 0;
@@ -270,8 +307,8 @@ int dubai_get_kworker_info(long long timestamp)
 	}
 	mutex_unlock(&kworker_lock);
 
-	log_entry->length = LOG_ENTRY_SIZE(struct kworker_transmit,
-							struct kworker_info, transmit->count);
+	log_entry->length = LOG_ENTRY_SIZE(struct dubai_kworker_transmit,
+							struct dubai_kworker_info, transmit->count);
 	ret = send_buffered_log(log_entry);
 	if (ret < 0)
 		DUBAI_LOGE("Failed to send kworker log entry");
@@ -280,16 +317,16 @@ int dubai_get_kworker_info(long long timestamp)
 	return ret;
 }
 
-static struct uevent_entry *dubai_find_uevent_entry(const char *devpath)
+static struct dubai_uevent_entry *dubai_find_uevent_entry(const char *devpath)
 {
-	struct uevent_entry *entry = NULL;
+	struct dubai_uevent_entry *entry = NULL;
 
 	list_for_each_entry(entry, &uevent_list, list) {
 		if (!strncmp(devpath, entry->uevent.devpath, MAX_DEVPATH_LEN - 1))
 			return entry;
 	}
 
-	entry = kzalloc(sizeof(struct uevent_entry), GFP_ATOMIC);
+	entry = kzalloc(sizeof(struct dubai_uevent_entry), GFP_ATOMIC);
 	if (entry == NULL) {
 		DUBAI_LOGE("Failed to allocate memory");
 		return NULL;
@@ -302,7 +339,7 @@ static struct uevent_entry *dubai_find_uevent_entry(const char *devpath)
 }
 
 void dubai_log_uevent(const char *devpath, unsigned int action) {
-	struct uevent_entry *entry = NULL;
+	struct dubai_uevent_entry *entry = NULL;
 
 	if (!atomic_read(&log_stats_enable)
 		|| devpath == NULL
@@ -320,15 +357,16 @@ void dubai_log_uevent(const char *devpath, unsigned int action) {
 out:
 	mutex_unlock(&uevent_lock);
 }
+EXPORT_SYMBOL(dubai_log_uevent);
 
-int dubai_get_uevent_info(long long timestamp)
+int dubai_get_uevent_info(void __user *argp)
 {
 	int ret = 0, count = 0;
-	long long size = 0;
+	long long timestamp, size = 0;
 	unsigned char *data = NULL;
-	struct uevent_entry *entry, *tmp;
+	struct dubai_uevent_entry *entry, *tmp;
 	struct buffered_log_entry *log_entry = NULL;
-	struct uevent_transmit *transmit = NULL;
+	struct dubai_uevent_transmit *transmit = NULL;
 
 	if (!atomic_read(&log_stats_enable))
 		return -EPERM;
@@ -337,13 +375,19 @@ int dubai_get_uevent_info(long long timestamp)
 	if (count < 0)
 		return -EINVAL;
 
-	size = LOG_ENTRY_SIZE(struct uevent_transmit, struct uevent_info, count);
+	ret = get_timestamp_value(argp, &timestamp);
+	if (ret < 0) {
+		DUBAI_LOGE("Failed to get timestamp");
+		return ret;
+	}
+
+	size = LOG_ENTRY_SIZE(struct dubai_uevent_transmit, struct dubai_uevent_info, count);
 	log_entry = create_buffered_log_entry(size, BUFFERED_LOG_MAGIC_UEVENT);
 	if (log_entry == NULL) {
 		DUBAI_LOGE("Failed to create buffered log entry");
 		return -ENOMEM;
 	}
-	transmit = (struct uevent_transmit *)log_entry->data;
+	transmit = (struct dubai_uevent_transmit *)log_entry->data;
 	transmit->timestamp = timestamp;
 	transmit->action_count = KOBJ_MAX;
 	transmit->count = 0;
@@ -364,16 +408,16 @@ int dubai_get_uevent_info(long long timestamp)
 			continue;
 		}
 		if (transmit->count < count) {
-			memcpy(data, &entry->uevent, sizeof(struct uevent_info));/* unsafe_function_ignore: memcpy */
-			data += sizeof(struct uevent_info);
+			memcpy(data, &entry->uevent, sizeof(struct dubai_uevent_info));/* unsafe_function_ignore: memcpy */
+			data += sizeof(struct dubai_uevent_info);
 			transmit->count++;
 		}
 		memset(&(entry->uevent.actions), 0, KOBJ_MAX * sizeof(int));/* unsafe_function_ignore: memset */
 	}
 	mutex_unlock(&uevent_lock);
 
-	log_entry->length = LOG_ENTRY_SIZE(struct uevent_transmit,
-							struct uevent_info, transmit->count);
+	log_entry->length = LOG_ENTRY_SIZE(struct dubai_uevent_transmit,
+							struct dubai_uevent_info, transmit->count);
 	ret = send_buffered_log(log_entry);
 	if (ret < 0)
 		DUBAI_LOGE("Failed to send uevent log entry");
@@ -382,24 +426,60 @@ int dubai_get_uevent_info(long long timestamp)
 	return ret;
 }
 
-void dubai_log_stats_enable(bool enable)
+int dubai_log_stats_enable(void __user *argp)
 {
-	atomic_set(&log_stats_enable, enable ? 1 : 0);
+	int ret;
+	bool enable;
+
+	ret = get_enable_value(argp, &enable);
+	if (ret == 0) {
+		atomic_set(&log_stats_enable, enable ? 1 : 0);
+		DUBAI_LOGI("Dubai log stats enable: %d", enable ? 1 : 0);
+	}
+
+	return ret;
 }
 
-void dubai_update_wakeup_info(const char *name, int gpio)
+/*
+ * Caution: It's dangerous to use HWDUBAI_LOG in this function,
+ * because it's in the SR process, and the HWDUBAI_LOG will wake up the kworker thread that will open irq
+ */
+void dubai_update_wakeup_info(const char *tag, const char *fmt, ...)
 {
-	if (name == NULL) {
+	va_list args;
+	struct dubai_wakeup_entry *entry;
+
+	if (tag == NULL || strlen(tag) >= WAKEUP_TAG_SIZE) {
 		DUBAI_LOGE("Invalid parameter");
 		return;
 	}
 
-	HWDUBAI_LOGE("DUBAI_TAG_KERNEL_WAKEUP", "irq=%s gpio=%d", name, gpio);
-}
+	entry = kzalloc(sizeof(struct dubai_wakeup_entry), GFP_ATOMIC);
+	if (entry == NULL) {
+		DUBAI_LOGE("Failed to allocate memory");
+		return;
+	}
 
-void dubai_set_brightness_enable(bool enable)
+	strncpy(entry->tag, tag, WAKEUP_TAG_SIZE - 1); /* unsafe_function_ignore: strncpy */
+	va_start(args, fmt);
+	vscnprintf(entry->msg, WAKEUP_MSG_SIZE, fmt, args);
+	va_end(args);
+	list_add_tail(&entry->list, &wakeup_list);
+}
+EXPORT_SYMBOL(dubai_update_wakeup_info);
+
+int dubai_set_brightness_enable(void __user *argp)
 {
-	atomic_set(&dubai_backlight.enable, enable ? 1 : 0);
+	int ret;
+	bool enable;
+
+	ret = get_enable_value(argp, &enable);
+	if (ret == 0) {
+		atomic_set(&dubai_backlight.enable, enable ? 1 : 0);
+		DUBAI_LOGI("Dubai brightness enable: %d", enable ? 1 : 0);
+	}
+
+	return ret;
 }
 
 static int dubai_lock_set_brightness(uint32_t brightness)
@@ -411,7 +491,7 @@ static int dubai_lock_set_brightness(uint32_t brightness)
 		return -EINVAL;
 	}
 
-	current_time = ktime_get_ns() / NSEC_PER_MSEC;
+	current_time = div_u64(ktime_get_ns(), NSEC_PER_MSEC);
 
 	if (dubai_backlight.last_brightness > 0) {
 		uint64_t diff_time = current_time - dubai_backlight.last_time;
@@ -435,23 +515,23 @@ void dubai_update_brightness(uint32_t brightness)
 	dubai_lock_set_brightness(brightness);
 	mutex_unlock(&brightness_lock);
 }
+EXPORT_SYMBOL(dubai_update_brightness);
 
-int dubai_get_brightness_info(uint32_t *brightness)
+int dubai_get_brightness_info(void __user *argp)
 {
-	int ret = 0;
-
-	if (brightness == NULL) {
-		DUBAI_LOGE("Invalid param");
-		return -EINVAL;
-	}
+	int ret;
+	uint32_t brightness;
 
 	mutex_lock(&brightness_lock);
 	ret = dubai_lock_set_brightness(dubai_backlight.last_brightness);
+	if (ret == 0) {
+		if (dubai_backlight.sum_time > 0 && dubai_backlight.sum_brightness_time > 0)
+			brightness = (uint32_t)div64_u64(dubai_backlight.sum_brightness_time, dubai_backlight.sum_time);
+		else
+			brightness = 0;
 
-	if (dubai_backlight.sum_time > 0 && dubai_backlight.sum_brightness_time > 0) {
-		*brightness = (uint32_t)(dubai_backlight.sum_brightness_time / dubai_backlight.sum_time);
-	} else {
-		*brightness = 0;
+		if (copy_to_user(argp, &brightness, sizeof(uint32_t)))
+			ret = -EFAULT;
 	}
 
 	dubai_backlight.sum_time = 0;
@@ -461,18 +541,23 @@ int dubai_get_brightness_info(uint32_t *brightness)
 	return ret;
 }
 
-uint64_t dubai_get_aod_duration(void)
+int dubai_get_aod_duration(void __user *argp)
 {
+	uint64_t duration = 0;
+
 #ifdef SENSORHUB_DUBAI_INTERFACE
-	return iomcu_dubai_log_fetch(DUBAI_AOD_DURATION_ENENT);
-#else
-	return 0;
+	duration = iomcu_dubai_log_fetch(DUBAI_AOD_DURATION_ENENT);
 #endif
+
+	if (copy_to_user(argp, &duration, sizeof(uint64_t)))
+		return -EFAULT;
+
+	return 0;
 }
 
 static void dubai_init_binder_client(struct list_head *head)
 {
-	struct binder_client_entry *client, *tmp;
+	struct dubai_binder_client_entry *client, *tmp;
 
 	if (head != NULL) {
 		list_for_each_entry_safe(client, tmp, head, node) {
@@ -486,7 +571,7 @@ static void dubai_init_binder_stats(void)
 {
 	struct hlist_node *tmp;
 	unsigned long bkt;
-	struct binder_stats_entry *stats, *temp;
+	struct dubai_binder_stats_entry *stats, *temp;
 
 	mutex_lock(&binder_stats_hash_lock);
 	hash_for_each_safe(binder_stats_hash_table, bkt, tmp, stats, hash) {
@@ -503,9 +588,9 @@ static void dubai_init_binder_stats(void)
 	atomic_set(&binder_client_count, 0);
 }
 
-void dubai_init_binder_stats_list(void)
+static void dubai_init_binder_stats_list(void)
 {
-	struct binder_stats_list_entry *entry, *tmp;
+	struct dubai_binder_list_entry *entry, *tmp;
 
 	mutex_lock(&binder_stats_list_lock);
 	list_for_each_entry_safe(entry, tmp, &binder_stats_list, node) {
@@ -518,7 +603,7 @@ void dubai_init_binder_stats_list(void)
 
 static bool dubai_check_binder_stats_enable(char *name)
 {
-	struct binder_stats_list_entry *entry = NULL;
+	struct dubai_binder_list_entry *entry = NULL;
 	bool rc = false;
 
 	if (name == NULL) {
@@ -543,10 +628,10 @@ out:
 	return rc;
 }
 
-static struct binder_client_entry *dubai_check_binder_client_entry(
-	struct list_head *head, struct binder_proc_info *proc)
+static struct dubai_binder_client_entry *dubai_check_binder_client_entry(
+	struct list_head *head, struct dubai_binder_proc *proc)
 {
-	struct binder_client_entry *entry = NULL;
+	struct dubai_binder_client_entry *entry = NULL;
 
 	if ((head == NULL) || (proc == NULL)) {
 		DUBAI_LOGE("Invalid param");
@@ -562,10 +647,10 @@ static struct binder_client_entry *dubai_check_binder_client_entry(
 	return NULL;
 }
 
-static struct binder_client_entry *dubai_find_binder_client_entry(
-	struct binder_stats_entry *stats, struct binder_proc_info *proc)
+static struct dubai_binder_client_entry *dubai_find_binder_client_entry(
+	struct dubai_binder_stats_entry *stats, struct dubai_binder_proc *proc)
 {
-	struct binder_client_entry *entry = NULL;
+	struct dubai_binder_client_entry *entry = NULL;
 
 	if ((stats == NULL) || (proc == NULL)) {
 		DUBAI_LOGE("Invalid param");
@@ -574,12 +659,12 @@ static struct binder_client_entry *dubai_find_binder_client_entry(
 
 	entry = dubai_check_binder_client_entry(&stats->client, proc);
 	if (entry == NULL) {
-		entry = kzalloc(sizeof(struct binder_client_entry), GFP_ATOMIC);
+		entry = kzalloc(sizeof(struct dubai_binder_client_entry), GFP_ATOMIC);
 		if (entry == NULL) {
 			DUBAI_LOGE("Failed to allocate binder client entry");
 			return NULL;
 		}
-		memset(&entry->proc, 0, sizeof(struct binder_proc_info));/* unsafe_function_ignore: memset */
+		memset(&entry->proc, 0, sizeof(struct dubai_binder_proc));/* unsafe_function_ignore: memset */
 		entry->count = 0;
 		list_add_tail(&entry->node, &stats->client);
 		stats->count++;
@@ -589,9 +674,9 @@ static struct binder_client_entry *dubai_find_binder_client_entry(
 }
 
 
-static struct binder_stats_entry *dubai_check_binder_stats_entry(struct binder_proc_info *proc)
+static struct dubai_binder_stats_entry *dubai_check_binder_stats_entry(struct dubai_binder_proc *proc)
 {
-	struct binder_stats_entry *entry = NULL;
+	struct dubai_binder_stats_entry *entry = NULL;
 
 	if (proc == NULL) {
 		DUBAI_LOGE("Invalid param");
@@ -611,9 +696,9 @@ static struct binder_stats_entry *dubai_check_binder_stats_entry(struct binder_p
 	return NULL;
 }
 
-static struct binder_stats_entry *dubai_find_binder_stats_entry(struct binder_proc_info *proc)
+static struct dubai_binder_stats_entry *dubai_find_binder_stats_entry(struct dubai_binder_proc *proc)
 {
-	struct binder_stats_entry *entry = NULL;
+	struct dubai_binder_stats_entry *entry = NULL;
 
 	if (proc == NULL) {
 		DUBAI_LOGE("Invalid param");
@@ -622,12 +707,12 @@ static struct binder_stats_entry *dubai_find_binder_stats_entry(struct binder_pr
 
 	entry = dubai_check_binder_stats_entry(proc);
 	if (entry == NULL) {
-		entry = kzalloc(sizeof(struct binder_stats_entry), GFP_ATOMIC);
+		entry = kzalloc(sizeof(struct dubai_binder_stats_entry), GFP_ATOMIC);
 		if (entry == NULL) {
 			DUBAI_LOGE("Failed to allocate binder stats entry");
 			return NULL;
 		}
-		memset(&entry->proc, 0, sizeof(struct binder_proc_info));/* unsafe_function_ignore: memset */
+		memset(&entry->proc, 0, sizeof(struct dubai_binder_proc));/* unsafe_function_ignore: memset */
 		entry->count = 0;
 		INIT_LIST_HEAD(&entry->client);
 		hash_add(binder_stats_hash_table, &entry->hash, proc->pid);//lint !e666
@@ -635,10 +720,10 @@ static struct binder_stats_entry *dubai_find_binder_stats_entry(struct binder_pr
 	return entry;
 }
 
-static int dubai_get_binder_proc_name(struct binder_proc_info *service, struct binder_proc_info *client)
+static int dubai_get_binder_proc_name(struct dubai_binder_proc *service, struct dubai_binder_proc *client)
 {
-	struct binder_stats_entry *stats = NULL;
-	struct binder_client_entry *entry = NULL;
+	struct dubai_binder_stats_entry *stats = NULL;
+	struct dubai_binder_client_entry *entry = NULL;
 	int rc = 0;
 	struct process_name s, c;
 
@@ -658,12 +743,12 @@ static int dubai_get_binder_proc_name(struct binder_proc_info *service, struct b
 		s.pid = service->pid;
 		memset(&c, 0, sizeof(struct process_name));/* unsafe_function_ignore: memset */
 		c.pid = client->pid;
-		rc = dubai_get_proc_name(&s);
+		rc = dubai_get_process_name(&s);
 		if (rc <= 0) {
 			DUBAI_LOGE("Failed to get service name: %d, %d", service->uid, service->pid);
 			return -1;
 		}
-		rc = dubai_get_proc_name(&c);
+		rc = dubai_get_process_name(&c);
 		if (rc <= 0) {
 			DUBAI_LOGE("Failed to get client name: %d, %d", client->uid, client->pid);
 			return -1;
@@ -678,7 +763,7 @@ static int dubai_get_binder_proc_name(struct binder_proc_info *service, struct b
 
 			memset(&c, 0, sizeof(struct process_name));/* unsafe_function_ignore: memset */
 			c.pid = client->pid;
-			rc = dubai_get_proc_name(&c);
+			rc = dubai_get_process_name(&c);
 			if (rc <= 0) {
 				DUBAI_LOGE("Failed to get client name: %d, %d", client->uid, client->pid);
 				return -1;
@@ -692,10 +777,10 @@ static int dubai_get_binder_proc_name(struct binder_proc_info *service, struct b
 	return 0;
 }
 
-static void dubai_add_binder_stats(struct binder_proc_info *service, struct binder_proc_info *client)
+static void dubai_add_binder_stats(struct dubai_binder_proc *service, struct dubai_binder_proc *client)
 {
-	struct binder_stats_entry *stats = NULL;
-	struct binder_client_entry *entry = NULL;
+	struct dubai_binder_stats_entry *stats = NULL;
+	struct dubai_binder_client_entry *entry = NULL;
 
 	if ((service == NULL) || (client == NULL)) {
 		DUBAI_LOGE("Invalid param");
@@ -724,10 +809,10 @@ out:
 }
 
 static void dubai_get_binder_client(
-	struct binder_stats_entry *stats, struct binder_stats_transmit *transmit, int count)
+	struct dubai_binder_stats_entry *stats, struct dubai_binder_stats_transmit *transmit, int count)
 {
-	struct binder_client_entry *client, *temp;
-	struct binder_stats_info info;
+	struct dubai_binder_client_entry *client, *temp;
+	struct dubai_binder_stats_info info;
 	unsigned char *data = NULL;
 
 	if ((stats == NULL) || (transmit == NULL)) {
@@ -735,7 +820,7 @@ static void dubai_get_binder_client(
 		return;
 	}
 
-	data = transmit->data + transmit->count * sizeof(struct binder_stats_info);
+	data = transmit->data + transmit->count * sizeof(struct dubai_binder_stats_info);
 	info.service = stats->proc;
 	list_for_each_entry_safe(client, temp, &stats->client, node) {
 		DUBAI_LOGD("service: %d, %s, %d, %d, client: %d, %s, %d, %d",
@@ -745,8 +830,8 @@ static void dubai_get_binder_client(
 		info.client = client->proc;
 		info.count = client->count;
 		if (transmit->count < count) {
-			memcpy(data, &info, sizeof(struct binder_stats_info));/* unsafe_function_ignore: memcpy */
-			data += sizeof(struct binder_stats_info);
+			memcpy(data, &info, sizeof(struct dubai_binder_stats_info));/* unsafe_function_ignore: memcpy */
+			data += sizeof(struct dubai_binder_stats_info);
 			transmit->count++;
 		}
 
@@ -755,10 +840,10 @@ static void dubai_get_binder_client(
 	}
 }
 
-static void dubai_get_binder_stats_info(struct binder_stats_transmit *transmit, int count)
+static void dubai_get_binder_stats_info(struct dubai_binder_stats_transmit *transmit, int count)
 {
 	unsigned long bkt;
-	struct binder_stats_entry *stats;
+	struct dubai_binder_stats_entry *stats;
 	struct hlist_node *tmp;
 
 	if (transmit == NULL) {
@@ -780,9 +865,9 @@ static void dubai_get_binder_stats_info(struct binder_stats_transmit *transmit, 
 	}
 }
 
-static void dubai_get_binder_stats_died(struct binder_stats_transmit *transmit, int count)
+static void dubai_get_binder_stats_died(struct dubai_binder_stats_transmit *transmit, int count)
 {
-	struct binder_stats_entry *tmp, *stats;
+	struct dubai_binder_stats_entry *tmp, *stats;
 
 	if (transmit == NULL) {
 		DUBAI_LOGE("Invalid param");
@@ -796,25 +881,31 @@ static void dubai_get_binder_stats_died(struct binder_stats_transmit *transmit, 
 	}
 }
 
-int dubai_get_binder_stats(long long timestamp)
+int dubai_get_binder_stats(void __user *argp)
 {
 	int ret = 0, count = 0;
-	long long size = 0;
+	long long timestamp, size = 0;
 	struct buffered_log_entry *log_entry = NULL;
-	struct binder_stats_transmit *transmit = NULL;
+	struct dubai_binder_stats_transmit *transmit = NULL;
 
 	if (!atomic_read(&binder_stats_enable))
 		return -EPERM;
 
+	ret = get_timestamp_value(argp, &timestamp);
+	if (ret < 0) {
+		DUBAI_LOGE("Failed to get timestamp");
+		return ret;
+	}
+
 	count = atomic_read(&binder_client_count);
-	size = LOG_ENTRY_SIZE(struct binder_stats_transmit, struct binder_stats_info, count);
+	size = LOG_ENTRY_SIZE(struct dubai_binder_stats_transmit, struct dubai_binder_stats_info, count);
 	log_entry = create_buffered_log_entry(size, BUFFERED_LOG_MAGIC_BINDER_STATS);
 	if (log_entry == NULL) {
 		dubai_init_binder_stats();
 		DUBAI_LOGE("Failed to create buffered log entry");
 		return -ENOMEM;
 	}
-	transmit = (struct binder_stats_transmit *)log_entry->data;
+	transmit = (struct dubai_binder_stats_transmit *)log_entry->data;
 	transmit->timestamp = timestamp;
 	transmit->count = 0;
 
@@ -825,7 +916,7 @@ int dubai_get_binder_stats(long long timestamp)
 	atomic_set(&binder_client_count, 0);
 
 	if (transmit->count > 0) {
-		log_entry->length = LOG_ENTRY_SIZE(struct binder_stats_transmit, struct binder_stats_info, transmit->count);
+		log_entry->length = LOG_ENTRY_SIZE(struct dubai_binder_stats_transmit, struct dubai_binder_stats_info, transmit->count);
 		ret = send_buffered_log(log_entry);
 		if (ret < 0)
 			DUBAI_LOGE("Failed to send binder stats log entry: %d", ret);
@@ -837,7 +928,7 @@ int dubai_get_binder_stats(long long timestamp)
 
 void dubai_log_binder_stats(int reply, uid_t c_uid, int c_pid, uid_t s_uid, int s_pid)
 {
-	struct binder_proc_info client, service;
+	struct dubai_binder_proc client, service;
 	bool enable = false;
 
 	if (reply || !atomic_read(&binder_stats_enable))
@@ -846,10 +937,10 @@ void dubai_log_binder_stats(int reply, uid_t c_uid, int c_pid, uid_t s_uid, int 
 	if (c_uid > 1000000 || s_uid > 1000000)
 		return;
 
-	memset(&service, 0, sizeof(struct binder_proc_info));/* unsafe_function_ignore: memset */
+	memset(&service, 0, sizeof(struct dubai_binder_proc));/* unsafe_function_ignore: memset */
 	service.uid = s_uid;
 	service.pid = s_pid;
-	memset(&client, 0, sizeof(struct binder_proc_info));/* unsafe_function_ignore: memset */
+	memset(&client, 0, sizeof(struct dubai_binder_proc));/* unsafe_function_ignore: memset */
 	client.uid = c_uid;
 	client.pid = c_pid;
 
@@ -863,11 +954,12 @@ void dubai_log_binder_stats(int reply, uid_t c_uid, int c_pid, uid_t s_uid, int 
 	DUBAI_LOGD("ENABLE: %d, SNAME: %s, SUID: %d, SPID: %d, CNAME: %s, CUID: %d, CPID: %d",
 		enable ? 1 : 0, service.name, s_uid, s_pid, client.name, c_uid, c_pid);
 }
+EXPORT_SYMBOL(dubai_log_binder_stats);
 
 /*lint -esym(429,*)*/
-void dubai_set_binder_stats_list(char *name)
+static void dubai_set_binder_stats_list(char *name)
 {
-	struct binder_stats_list_entry *entry = NULL;
+	struct dubai_binder_list_entry *entry = NULL;
 	int size;
 
 	if (name == NULL) {
@@ -876,7 +968,7 @@ void dubai_set_binder_stats_list(char *name)
 	}
 	DUBAI_LOGI("Set binder stats name: %s", name);
 
-	size = sizeof(struct binder_stats_list_entry);
+	size = sizeof(struct dubai_binder_list_entry);
 	entry = kzalloc(size, GFP_KERNEL);
 	if (entry == NULL) {
 		DUBAI_LOGE("Failed to allocate memory");
@@ -892,21 +984,69 @@ void dubai_set_binder_stats_list(char *name)
 }
 /*lint +esym(429,*)*/
 
-void dubai_binder_stats_enable(bool enable)
+int dubai_set_binder_list(void __user *argp)
 {
-	DUBAI_LOGI("Set binder stats enable: %d", enable ? 1 : 0);
-	atomic_set(&binder_stats_enable, enable ? 1 : 0);
-	if (!enable) {
-		dubai_init_binder_stats_list();
-		dubai_init_binder_stats();
+	int ret = 0, size, i, count, length, remain;
+	struct dev_transmit_t *transmit = NULL;
+	char *p = NULL;
+
+	if (copy_from_user(&length, argp, sizeof(int)))
+		return -EFAULT;
+
+	count = length / NAME_LEN;
+	remain = length % NAME_LEN;
+	if ((count <= 0) || (count > BINDER_STATS_LIST_LEN) || (remain != 0)) {
+		DUBAI_LOGE("Invalid params, length: %d, count: %d, remain: %d", length, count, remain);
+		return -EINVAL;
 	}
+
+	size = length + sizeof(struct dev_transmit_t);
+	transmit = kzalloc(size, GFP_KERNEL);
+	if (transmit == NULL) {
+		DUBAI_LOGE("Failed to allocate memory for binder stats list");
+		return -ENOMEM;
+	}
+	if (copy_from_user(transmit, argp, size)) {
+		ret = -EFAULT;
+		goto exit;
+	}
+
+	dubai_init_binder_stats_list();
+	p = (char *)transmit->data;
+	for (i = 0; i < count; i++) {
+		dubai_set_binder_stats_list(p);
+		p += NAME_LEN;
+	}
+
+exit:
+	kfree(transmit);
+
+	return ret;
+}
+
+int dubai_binder_stats_enable(void __user *argp)
+{
+	int ret;
+	bool enable;
+
+	ret = get_enable_value(argp, &enable);
+	if (ret == 0) {
+		DUBAI_LOGI("Set binder stats enable: %d", enable ? 1 : 0);
+		atomic_set(&binder_stats_enable, enable ? 1 : 0);
+		if (!enable) {
+			dubai_init_binder_stats_list();
+			dubai_init_binder_stats();
+		}
+	}
+
+	return ret;
 }
 
 static void dubai_process_binder_died(pid_t pid)
 {
 	unsigned long bkt;
 	struct hlist_node *tmp;
-	struct binder_stats_entry *stats;
+	struct dubai_binder_stats_entry *stats;
 
 	if (!atomic_read(&binder_stats_enable))
 		return;
@@ -925,6 +1065,54 @@ static void dubai_process_binder_died(pid_t pid)
 	mutex_unlock(&binder_stats_hash_lock);
 }
 
+int dubai_get_ws_lasting_name(void __user * argp)
+{
+	int ret = 0;
+	size_t i;
+	long long timestamp, size = 0;
+	char *data = NULL;
+	struct dubai_ws_lasting_transmit *transmit;
+	struct buffered_log_entry *log_entry = NULL;
+
+	ret = get_timestamp_value(argp, &timestamp);
+	if (ret < 0) {
+		DUBAI_LOGE("Failed to get timestamp");
+		return ret;
+	}
+
+	size = LOG_ENTRY_SIZE(struct dubai_ws_lasting_transmit, struct dubai_ws_lasting_name, MAX_WS_NAME_COUNT);
+	log_entry = create_buffered_log_entry(size, BUFFERED_LOG_MAGIC_WS_LASTING_NAME);
+	if (log_entry == NULL) {
+		DUBAI_LOGE("Failed to create buffered log entry");
+		ret = -ENOMEM;
+		return ret;
+	}
+	transmit = (struct dubai_ws_lasting_transmit *)log_entry->data;
+	transmit->timestamp = timestamp;
+	transmit->count = MAX_WS_NAME_COUNT;
+	data = transmit->data;
+
+	ret = wakeup_source_getlastingname(data, MAX_WS_NAME_LEN, MAX_WS_NAME_COUNT);
+	if ((ret <= 0) || (ret > MAX_WS_NAME_COUNT)) {
+		DUBAI_LOGE("Fail to call wakeup_source_getlastingname.");
+		ret = -ENOMEM;
+		goto exit;
+	}
+
+	transmit->count = ret;
+	log_entry->length = LOG_ENTRY_SIZE(struct dubai_ws_lasting_transmit,
+				struct dubai_ws_lasting_name, transmit->count);
+	ret = send_buffered_log(log_entry);
+	if (ret < 0) {
+		DUBAI_LOGE("Failed to send wakeup source log entry");
+	}
+
+exit:
+	free_buffered_log_entry(log_entry);
+
+	return ret;
+}
+
 static int dubai_stats_process_notifier(struct notifier_block *self, unsigned long cmd, void *v)
 {
 	struct task_struct *task = v;
@@ -939,6 +1127,17 @@ exit:
 	return NOTIFY_OK;
 }
 
+static void dubai_send_wakeup_info(void)
+{
+	struct dubai_wakeup_entry *entry, *tmp;
+
+	list_for_each_entry_safe(entry, tmp, &wakeup_list, list) {
+		HWDUBAI_LOGE(entry->tag, "%s", entry->msg);
+		list_del_init(&entry->list);
+		kfree(entry);
+	}
+}
+
 static int dubai_pm_notify(struct notifier_block *nb,
 			unsigned long mode, void *data)
 {
@@ -947,6 +1146,7 @@ static int dubai_pm_notify(struct notifier_block *nb,
 		HWDUBAI_LOGE("DUBAI_TAG_KERNEL_SUSPEND", "");
 		break;
 	case PM_POST_SUSPEND:
+		dubai_send_wakeup_info();
 		HWDUBAI_LOGE("DUBAI_TAG_KERNEL_RESUME", "");
 		break;
 	default:
@@ -981,13 +1181,15 @@ void dubai_stats_init(void)
 	dubai_backlight.sum_brightness_time = 0;
 	register_pm_notifier(&dubai_pm_nb);
 	profile_event_register(PROFILE_TASK_EXIT, &process_notifier_block);
+	DUBAI_LOGI("DUBAI stats initialize success");
 }
 
 void dubai_stats_exit(void)
 {
-	struct kworker_entry *kworker = NULL;
+	struct dubai_kworker_entry *kworker = NULL;
 	struct hlist_node *tmp;
-	struct uevent_entry *uevent, *temp;
+	struct dubai_uevent_entry *uevent, *temp;
+	struct dubai_wakeup_entry *wakeup, *wakeup_temp;
 	unsigned long bkt;
 
 	profile_event_unregister(PROFILE_TASK_EXIT, &process_notifier_block);
@@ -1009,6 +1211,10 @@ void dubai_stats_exit(void)
 	}
 	atomic_set(&uevent_count, 0);
 	mutex_unlock(&uevent_lock);
+	list_for_each_entry_safe(wakeup, wakeup_temp, &wakeup_list, list) {
+		list_del_init(&wakeup->list);
+		kfree(wakeup);
+	}
 
 	unregister_pm_notifier(&dubai_pm_nb);
 }

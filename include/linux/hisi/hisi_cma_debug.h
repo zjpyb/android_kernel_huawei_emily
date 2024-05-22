@@ -5,7 +5,7 @@ static inline unsigned int cma_bitmap_used(struct cma *cma)
 {
 	unsigned int used;
 
-	used = (unsigned int)bitmap_weight(cma->bitmap, (unsigned int)cma->count);
+	used = (unsigned int)bitmap_weight(cma->bitmap, (unsigned int)cma_bitmap_maxno(cma));
 
 	return used << cma->order_per_bit;
 }
@@ -14,12 +14,13 @@ static inline unsigned long int cma_bitmap_maxchunk(struct cma *cma)
 {
 	unsigned long maxchunk = 0;
 	unsigned long start, end = 0;
+	unsigned long bitmap_maxno = cma_bitmap_maxno(cma);
 
 	for (;;) {
-		start = find_next_zero_bit(cma->bitmap, cma->count, end);
+		start = find_next_zero_bit(cma->bitmap, bitmap_maxno, end);
 		if (start >= cma->count)
 			break;
-		end = find_next_bit(cma->bitmap, cma->count, start);
+		end = find_next_bit(cma->bitmap, bitmap_maxno, start);
 		maxchunk = max(end - start, maxchunk);
 	}
 

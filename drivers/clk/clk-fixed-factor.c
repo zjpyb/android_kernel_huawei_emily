@@ -17,6 +17,10 @@
 #include <linux/clkdev.h>
 #endif
 
+#ifdef CONFIG_HISI_CLK_DEBUG
+#include "hisi-clk-debug.h"
+#endif
+
 #ifdef CONFIG_HISI_CLK
 extern int IS_FPGA(void);
 #endif
@@ -69,11 +73,15 @@ static int clk_factor_set_rate(struct clk_hw *hw, unsigned long rate,
 }
 
 #ifdef CONFIG_HISI_CLK_DEBUG
-static int hi3xxx_dumpfixed_factor(struct clk_hw *hw, char* buf)
+static int hi3xxx_dumpfixed_factor(struct clk_hw *hw, char* buf, struct seq_file *s)
 {
 	struct clk_fixed_factor *fix = to_clk_fixed_factor(hw);
-	if(buf)
+	if(buf && !s) {
 		snprintf(buf, DUMP_CLKBUFF_MAX_SIZE, "[%s] : fixed div value = %d\n", __clk_get_name(hw->clk), fix->div);
+	}
+	if(!buf && s) {
+		seq_printf(s, "    %-15s    %-15s    DIV-%d", "NONE", "fixed-factor", fix->div);
+	}
 	return 0;
 }
 #endif
@@ -212,8 +220,15 @@ static struct clk *_of_fixed_factor_clk_setup(struct device_node *node)
 
 	clk = clk_register_fixed_factor(NULL, clk_name, parent_name, flags,
 					mult, div);
-	if (IS_ERR(clk))
+	if (IS_ERR(clk)) {
+		/*
+		 * If parent clock is not registered, registration would fail.
+		 * Clear OF_POPULATED flag so that clock registration can be
+		 * attempted again from probe function.
+		 */
+		of_node_clear_flag(node, OF_POPULATED);
 		return clk;
+	}
 
 	ret = of_clk_add_provider(node, of_clk_src_simple_get, clk);
 	if (ret) {
@@ -241,6 +256,7 @@ static int of_fixed_factor_clk_remove(struct platform_device *pdev)
 {
 	struct clk *clk = platform_get_drvdata(pdev);
 
+	of_clk_del_provider(pdev->dev.of_node);
 	clk_unregister_fixed_factor(clk);
 
 	return 0;

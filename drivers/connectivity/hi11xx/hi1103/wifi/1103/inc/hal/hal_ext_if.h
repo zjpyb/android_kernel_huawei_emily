@@ -41,8 +41,12 @@ extern oal_int32 g_l_rf_fem_switch;
 extern oal_uint8 g_auc_sar_ctrl_params[HAL_CUS_NUM_OF_SAR_PARAMS];
 #ifdef _PRE_PLAT_FEATURE_CUSTOMIZE
 extern OAL_CONST oal_int16 g_aus_cutom_simple_txpwr_table[];
-extern oal_uint8 g_uc_5g_ce_high_band_max_pwr;
+extern oal_uint8 g_uc_5g_fcc_ce_high_band_max_pwr;
 #endif
+
+extern hal_pwr_efuse_amend_stru g_ast_efuse_G_D[WLAN_RF_CHANNEL_NUMS][WLAN_BAND_BUTT];
+
+extern  frw_timeout_stru  g_st_check_pll_lock_sts_timer;
 
 /*****************************************************************************
   2 宏定义
@@ -71,6 +75,7 @@ extern oal_uint8 g_uc_5g_ce_high_band_max_pwr;
 
 #define HAL_ANT_SWITCH_RSSI_MGMT_STRONG_TH       10  /* 强信号下管理帧ant0与ant1相差10dB时切换到SISO */
 #define HAL_ANT_SWITCH_RSSI_MGMT_WEAK_TH         3   /* 弱信号下管理帧ant0与ant1相差3dB时切换到SISO */
+#define HAL_ANT_SWITCH_RSSI_VALID_MAX_TH         3   /* 管理帧new mgmt chain满足连续max的次数 */
 
 #define HAL_ANT_SWITCH_RSSI_TBTT_CNT_TH          50   /* 50个tbtt中断触发一次探测 */
 #define HAL_ANT_SWITCH_RSSI_MIMO_TBTT_OPEN_TH    50   /* 50个tbtt中断触发一次探测 */
@@ -79,6 +84,8 @@ extern oal_uint8 g_uc_5g_ce_high_band_max_pwr;
 #define HAL_ANT_SWITCH_RSSI_VHT_DIFF_TH          12   /* VHT协议下20M的差值门限，双流MCS4灵敏度-单流MCS9灵敏度 */
 #define HAL_ANT_SWITCH_RSSI_HT_MIN_TH            -86  /* HT协议下的最小值门限，MCS11的灵敏度+3db */
 #define HAL_ANT_SWITCH_RSSI_VHT_MIN_TH           -82  /* VHT协议下的最小值门限，双流MCS4的灵敏度+3db */
+#define HAL_ANT_SWITCH_RSSI_HT_MAX_TH            -68
+#define HAL_ANT_SWITCH_RSSI_VHT_MAX_TH           -66
 
 #define HAL_ANT_SWITCH_RSSI_MGMT_ENABLE             BIT0
 #define HAL_ANT_SWITCH_RSSI_DATA_ENABLE             BIT1
@@ -87,14 +94,15 @@ extern oal_uint8 g_uc_5g_ce_high_band_max_pwr;
 #define HAL_CCA_OPT_ED_HIGH_40TH_DEF       (-59)        /* CCA 40M检测门限寄存器默认值 */
 #define HAL_CCA_OPT_ED_HIGH_80TH_DEF       (-56)        /* CCA 80M检测门限寄存器默认值 */
 
-#define HAL_CCA_OPT_ED_HYST_20TH_DEF       (-62)        /* CCA 20M 空闲概率检测门限 */
-#define HAL_CCA_OPT_ED_HYST_40TH_DEF       (-59)        /* CCA 40M 空闲概率检测门限 */
-
 #define HAL_CCA_OPT_ED_LOW_TH_DSSS_DEF     (-76)        /* DSSS信号的默认协议门限 */
 #define HAL_CCA_OPT_ED_LOW_TH_OFDM_DEF     (-82)        /* OFDM信号的默认协议门限 */
+#define HAL_CCA_OPT_ED_LOW_TH_40M_HIGH_DEF (-72)        /* 辅40M带宽的默认协议门限 */
+#define HAL_CCA_OPT_ED_LOW_TH_80M_HIGH_DEF (-69)        /* 辅80M带宽的默认协议门限 */
+
 #define HAL_CCA_OPT_ED_LOW_TH_DSSS_MIN     (-88)        /* DSSS信号的最小协议门限 */
 #define HAL_CCA_OPT_ED_LOW_TH_OFDM_MIN     (-88)        /* OFDM信号的最小协议门限 */
-
+#define HAL_CCA_OPT_ED_LOW_TH_40M_HIGH_MIN (-85)        /* 辅40M的最小协议门限 */
+#define HAL_CCA_OPT_ED_LOW_TH_80M_HIGH_MIN (-82)        /* 辅80M的最小协议门限 */
 
 #define HAL_CCA_OPT_ED_HYST_STEP_20TH_DEF       (2)        /* CCA 20M 空闲概率检测安全门限 */
 #define HAL_CCA_OPT_ED_HYST_STEP_40TH_DEF       (2)        /* CCA 40M 空闲概率检测安全门限 */
@@ -113,6 +121,8 @@ extern oal_uint8 g_uc_5g_ce_high_band_max_pwr;
     ((WLAN_BAND_2G == (_band)) ? \
      ((_cust)->c_delta_cca_ed_high_40th_2g + HAL_CCA_OPT_ED_HIGH_40TH_DEF) : \
      ((_cust)->c_delta_cca_ed_high_40th_5g + HAL_CCA_OPT_ED_HIGH_40TH_DEF))
+#define HAL_CCA_OPT_GET_DEFAULT_ED_80TH(_default) \
+         (_default + HAL_CCA_OPT_ED_HIGH_80TH_DEF)
 #endif
 
 #ifdef _PRE_WLAN_DFT_STAT
@@ -151,6 +161,7 @@ extern oal_uint8 g_uc_5g_ce_high_band_max_pwr;
 #define GET_HAL_DEVICE_M2S_MSS_ON(_pst_handler)            (GET_HAL_DEVICE_M2S_MGR(_pst_handler)->en_mss_on)
 #define GET_HAL_DEVICE_M2S_RSSI_MGMT_SINGLE_TXCHAIN(_pst_handler)   (GET_HAL_DEVICE_M2S_MGR(_pst_handler)->uc_rssi_mgmt_single_txchain)
 #define GET_HAL_DEVICE_M2S_BLACKLIST_ASSOC_AP_ON(_pst_handler)      (GET_HAL_DEVICE_M2S_MGR(_pst_handler)->en_blacklist_assoc_ap_on)
+#define GET_HAL_DEVICE_M2S_MSS_SCAN_OPT_CHAIN(_pst_handler)   (GET_HAL_DEVICE_M2S_MGR(_pst_handler)->uc_mss_scan_opt_chain)
 
 #define GET_HAL_M2S_CUR_STATE(_pst_handler)         ((_pst_handler)->st_hal_m2s_fsm.st_oal_fsm.uc_cur_state)/* 获取当前状态机的状态 */
 #define GET_HAL_M2S_PREV_STATE(_pst_handler)        ((_pst_handler)->st_hal_m2s_fsm.st_oal_fsm.uc_prev_state)/* 获取当前状态机的上一个状态 */
@@ -217,6 +228,8 @@ extern oal_uint8 g_uc_5g_ce_high_band_max_pwr;
 #define GET_HAL_DEVICE_BTCOEX_M2S_DETECT_CNT_TH(_pst_handler)       (GET_HAL_DEVICE_BTCOEX_MGR(_pst_handler)->uc_detect_cnt_threshold)
 #define GET_HAL_DEVICE_BTCOEX_M2S_RSSI_TH(_pst_handler)             (GET_HAL_DEVICE_BTCOEX_MGR(_pst_handler)->c_m2s_threshold)
 #define GET_HAL_DEVICE_BTCOEX_S2M_RSSI_TH(_pst_handler)             (GET_HAL_DEVICE_BTCOEX_MGR(_pst_handler)->c_s2m_threshold)
+#define GET_HAL_DEVICE_BTCOEX_SCO_FIX_RX_BA_WIN(_pst_handler)       (GET_HAL_DEVICE_BTCOEX_MGR(_pst_handler)->uc_sco_fix_rx_ba_win)
+#define GET_HAL_DEVICE_BTCOEX_BT20DBM_SET_RF_ON(_pst_handler)       (GET_HAL_DEVICE_BTCOEX_MGR(_pst_handler)->en_bt20dbm_set_rf_on)
 
 #define GET_HAL_DEVICE_BTCOEX_SISO_AP_EXCUTE_ON(_pst_handler)       (GET_HAL_DEVICE_BTCOEX_MGR(_pst_handler)->en_siso_ap_excute_on)
 #define GET_HAL_DEVICE_BTCOEX_SISO_AP_TIMER(_pst_handler)           (&(GET_HAL_DEVICE_BTCOEX_MGR(_pst_handler)->bt_coex_s2m_siso_ap_timer))
@@ -378,7 +391,8 @@ typedef enum {
     HAL_M2S_EVENT_COMMAND_MISO_TO_MIMO,       /* miso此时不区分c0或者c1 */
     HAL_M2S_EVENT_COMMAND_SISO_TO_MIMO,       /* siso此时不区分c0或者c1 */
     HAL_M2S_EVENT_COMMAND_SISO_TO_MISO_SCAN_BEGIN,  /* 专门用于并发扫描未开，mss下的特殊扫描,当前是c0 siso mss */
-    HAL_M2S_EVENT_COMMAND_MISO_TO_SISO_SCAN_END,  /* 专门用于并发扫描未开，mss下的特殊扫描,当前是c0 siso mss */
+    HAL_M2S_EVENT_COMMAND_MISO_TO_SISO_C0_SCAN_END,  /* 专门用于并发扫描未开，mss下的特殊扫描,当前是c0 siso mss */
+    HAL_M2S_EVENT_COMMAND_MISO_TO_SISO_C1_SCAN_END,  /* 专门用于并发扫描未开，mss下的特殊扫描,当前是c1 siso mss */
     HAL_M2S_EVENT_COMMAND_SISO_C0_TO_SISO_C1,
     HAL_M2S_EVENT_COMMAND_SISO_C1_TO_SISO_C0,
     HAL_M2S_EVENT_COMMAND_MISO_TO_SISO_C0,
@@ -438,6 +452,18 @@ typedef enum
     HAL_CLK_ADC_DAC_BUTT
 }hal_clk_adc_dac_enum;
 typedef oal_uint8 hal_clk_adc_dac_enum_uint8;
+
+typedef enum
+{
+    HAL_DPD_CFR_SET_11B  = 0,
+    HAL_DPD_CFR_SET_BW   = 1,
+    HAL_DPD_CFR_SET_FREQ = 2,
+    HAL_DPD_CFR_SET_MCS  = 3,
+    HAL_DPD_CFR_SET_TPC  = 4,
+
+    HAL_DPD_CFR_SET_BUTT,
+}hal_dpd_cfr_set_type;
+typedef oal_uint8 hal_dpd_cfr_set_type_uint8;
 
 
 /*****************************************************************************
@@ -856,10 +882,11 @@ OAL_STATIC OAL_INLINE oal_void  hal_dyn_cali_vdet_val_amend(hal_to_dmac_device_s
 #endif
 }
 
-OAL_STATIC OAL_INLINE oal_void  hal_dyn_cali_get_tx_power_dc(hal_to_dmac_device_stru *pst_hal_device, oal_uint8 uc_rf_id, oal_int16 *ps_tx_power_dc)
+OAL_STATIC OAL_INLINE oal_void  hal_dyn_cali_get_tx_power_dc(hal_to_dmac_device_stru *pst_hal_device, wlan_channel_band_enum_uint8 en_freq,
+                                                                        oal_uint8 uc_rf_id, oal_int16 *ps_tx_power_dc, oal_bool_enum_uint8 en_ppa_working)
 {
 #if (_PRE_PRODUCT_ID == _PRE_PRODUCT_ID_HI1103_DEV)
-    HAL_PUBLIC_HOOK_FUNC(_dyn_cali_get_tx_power_dc)(pst_hal_device, uc_rf_id, ps_tx_power_dc);
+    HAL_PUBLIC_HOOK_FUNC(_dyn_cali_get_tx_power_dc)(pst_hal_device, en_freq, uc_rf_id, ps_tx_power_dc, en_ppa_working);
 #endif
 }
 
@@ -933,12 +960,6 @@ OAL_STATIC OAL_INLINE oal_void  hal_update_cbb_cfg(hal_to_dmac_device_stru *pst_
 OAL_STATIC OAL_INLINE oal_void  hal_ce_enable_key(hal_to_dmac_device_stru *pst_hal_device)
 {
     HAL_PUBLIC_HOOK_FUNC(_ce_enable_key)(pst_hal_device);
-}
-
-
-OAL_STATIC OAL_INLINE oal_void hal_set_cus_over_temper_rf(oal_uint8 *puc_param)
-{
-    HAL_PUBLIC_HOOK_FUNC(_set_cus_over_temper_rf)(puc_param);
 }
 
 #endif
@@ -1763,6 +1784,12 @@ OAL_STATIC OAL_INLINE oal_void  hal_reset_reg_dma_restore(hal_to_dmac_device_str
 }
 
 
+OAL_STATIC OAL_INLINE oal_void  hal_reset_rf_reg_restore_rx_n(hal_to_dmac_device_stru *pst_hal_device)
+{
+    HAL_PUBLIC_HOOK_FUNC(_reset_rf_reg_restore_rx_n)(pst_hal_device);
+}
+
+
 OAL_STATIC OAL_INLINE oal_void  hal_disable_machw_ack_trans(hal_to_dmac_device_stru *pst_hal_device)
 {
     HAL_PUBLIC_HOOK_FUNC(_disable_machw_ack_trans)( pst_hal_device);
@@ -1886,9 +1913,9 @@ OAL_STATIC OAL_INLINE oal_void hal_pow_set_band_spec_frame_tx_power(hal_to_dmac_
 OAL_STATIC OAL_INLINE oal_void  hal_pow_cfg_show_log(hal_to_dmac_device_stru           *pst_hal_device,
                                                                 hal_vap_pow_info_stru            *pst_vap_pow_info,
                                                                 wlan_channel_band_enum_uint8      en_freq_band,
-                                                                oal_uint8                         uc_rate_idx)
+                                                                oal_uint8                        *puc_rate_idx)
 {
-    HAL_PUBLIC_HOOK_FUNC(_pow_cfg_show_log)( pst_hal_device, pst_vap_pow_info, en_freq_band, uc_rate_idx);
+    HAL_PUBLIC_HOOK_FUNC(_pow_cfg_show_log)( pst_hal_device, pst_vap_pow_info, en_freq_band, puc_rate_idx);
 }
 OAL_STATIC OAL_INLINE oal_void hal_pow_cfg_no_margin_pow_mode(hal_to_dmac_device_stru * pst_hal_device,
                                                                 oal_uint8 uc_pow_mode)
@@ -1904,9 +1931,10 @@ OAL_STATIC OAL_INLINE oal_void  hal_pow_set_user_resp_frame_tx_power(hal_to_dmac
     HAL_PUBLIC_HOOK_FUNC(_pow_set_user_resp_frame_tx_power)(pst_hal_device, uc_lut_index, uc_rssi_distance);
 }
 
-OAL_STATIC OAL_INLINE oal_void  hal_pow_del_machw_resp_power_lut_entry(hal_to_dmac_device_stru *pst_hal_device, oal_uint8 uc_lut_index)
+OAL_STATIC OAL_INLINE oal_void  hal_pow_oper_machw_resp_power_lut_entry(hal_to_dmac_device_stru *pst_hal_device,
+                                                                       oal_uint8 uc_lut_index, hal_resp_pow_lut_oper_type_enum_uint8 en_rsp_pow_oper)
 {
-    HAL_PUBLIC_HOOK_FUNC(_pow_del_machw_resp_power_lut_entry)(pst_hal_device, uc_lut_index);
+    HAL_PUBLIC_HOOK_FUNC(_pow_oper_machw_resp_power_lut_entry)(pst_hal_device, uc_lut_index, en_rsp_pow_oper);
 }
 #endif
 
@@ -2299,36 +2327,10 @@ OAL_STATIC OAL_INLINE oal_void  hal_dpd_config(hal_to_dmac_device_stru *pst_hal_
     HAL_PUBLIC_HOOK_FUNC(_dpd_config)(pst_hal_device, puc_val);
 }
 
-OAL_STATIC OAL_INLINE oal_void  hal_dpd_cfr_set_tpc(hal_to_dmac_device_stru *pst_hal_device, oal_uint8 uc_val)
+OAL_STATIC OAL_INLINE oal_void  hal_dpd_cfr_set_work_mode(hal_to_dmac_device_stru *pst_hal_device, oal_uint8 uc_set_type, oal_uint8 uc_value)
 {
-
-    HAL_PUBLIC_HOOK_FUNC(_dpd_cfr_set_tpc)(pst_hal_device, uc_val);
+    HAL_PUBLIC_HOOK_FUNC(_dpd_cfr_set_work_mode)(pst_hal_device, uc_set_type, uc_value);
 }
-
-OAL_STATIC OAL_INLINE oal_void  hal_dpd_cfr_set_bw(hal_to_dmac_device_stru *pst_hal_device, wlan_channel_bandwidth_enum_uint8 en_bandwidth)
-{
-
-    HAL_PUBLIC_HOOK_FUNC(_dpd_cfr_set_bw)(pst_hal_device, en_bandwidth);
-}
-OAL_STATIC OAL_INLINE oal_void  hal_dpd_cfr_set_mcs(hal_to_dmac_device_stru *pst_hal_device, oal_uint8 uc_mcs)
-{
-#ifdef _PRE_WLAN_1103_PILOT
-    HAL_PUBLIC_HOOK_FUNC(_dpd_cfr_set_mcs)(pst_hal_device, uc_mcs);
-#endif
-}
-
-OAL_STATIC OAL_INLINE oal_void  hal_dpd_cfr_set_freq(hal_to_dmac_device_stru *pst_hal_device, oal_uint8 uc_val)
-{
-
-    HAL_PUBLIC_HOOK_FUNC(_dpd_cfr_set_freq)(pst_hal_device, uc_val);
-}
-
-OAL_STATIC OAL_INLINE oal_void  hal_dpd_cfr_set_11b(hal_to_dmac_device_stru *pst_hal_device, oal_uint8 en_11b)
-{
-
-    HAL_PUBLIC_HOOK_FUNC(_dpd_cfr_set_11b)(pst_hal_device, en_11b);
-}
-
 
 #endif
 
@@ -3123,18 +3125,24 @@ OAL_STATIC OAL_INLINE oal_bool_enum_uint8 hal_get_dyn_bypass_extlna_pm_flag(hal_
 
 #ifdef _PRE_WLAN_FEATURE_CCA_OPT
 
-OAL_STATIC  OAL_INLINE oal_void hal_set_ed_high_th(hal_to_dmac_device_stru *pst_hal_device, oal_int32 l_ed_high_20_reg_val, oal_int32 l_ed_high_40_reg_val, oal_bool_enum_uint8 en_is_default_th)
+OAL_STATIC  OAL_INLINE oal_void hal_set_ed_high_th(hal_to_dmac_device_stru *pst_hal_device, hal_alg_cca_th_stru *pst_cca_th_opt)
 {
-    HAL_PUBLIC_HOOK_FUNC(_set_ed_high_th)( pst_hal_device, l_ed_high_20_reg_val, l_ed_high_40_reg_val, en_is_default_th);
+    HAL_PUBLIC_HOOK_FUNC(_set_ed_high_th)( pst_hal_device, pst_cca_th_opt);
 }
 
 
 
-OAL_STATIC  OAL_INLINE oal_void hal_set_cca_prot_th(hal_to_dmac_device_stru *pst_hal_device, oal_int8 c_ed_low_th_dsss_reg_val, oal_int8 c_ed_low_th_ofdm_reg_val)
+OAL_STATIC  OAL_INLINE oal_void hal_set_cca_prot_th(hal_to_dmac_device_stru *pst_hal_device, hal_alg_cca_th_stru *pst_cca_th_opt)
 {
 #if (_PRE_PRODUCT_ID ==_PRE_PRODUCT_ID_HI1103_DEV)
-    HAL_PUBLIC_HOOK_FUNC(_set_cca_prot_th)(pst_hal_device, c_ed_low_th_dsss_reg_val, c_ed_low_th_ofdm_reg_val);
+    HAL_PUBLIC_HOOK_FUNC(_set_cca_prot_th)(pst_hal_device, pst_cca_th_opt);
 #endif
+}
+
+
+OAL_STATIC  OAL_INLINE oal_void hal_set_cca_th_default(hal_to_dmac_device_stru *pst_hal_device, wlan_channel_band_enum_uint8 en_band)
+{
+    HAL_PUBLIC_HOOK_FUNC(_set_cca_th_default)(pst_hal_device, en_band);
 }
 
 
@@ -3157,9 +3165,9 @@ OAL_STATIC  OAL_INLINE oal_void hal_set_sync_err_counter_clear(hal_to_dmac_devic
 }
 
 
-OAL_STATIC  OAL_INLINE oal_void hal_get_cca_reg_th(hal_to_dmac_device_stru *pst_hal_device, oal_int8 *ac_reg_val)
+OAL_STATIC  OAL_INLINE oal_void hal_get_cca_reg_th(hal_to_dmac_device_stru *pst_hal_device, wlan_channel_band_enum_uint8 uc_band, oal_int8 *ac_reg_val)
 {
-    HAL_PUBLIC_HOOK_FUNC(_get_cca_reg_th)( pst_hal_device, ac_reg_val);
+    HAL_PUBLIC_HOOK_FUNC(_get_cca_reg_th)( pst_hal_device, uc_band, ac_reg_val);
 }
 
 #endif
@@ -3887,6 +3895,12 @@ OAL_STATIC OAL_INLINE oal_void  hal_vap_set_ext_noa_enable(hal_to_dmac_vap_stru 
 }
 
 
+OAL_STATIC OAL_INLINE oal_bool_enum_uint8  hal_vap_is_ext_noa_enable(hal_to_dmac_vap_stru *pst_hal_vap)
+{
+    return HAL_PUBLIC_HOOK_FUNC(_vap_is_ext_noa_enable)( pst_hal_vap);
+}
+
+
 OAL_STATIC  OAL_INLINE oal_void hal_vap_set_ext_noa_offset(hal_to_dmac_vap_stru *pst_hal_vap, oal_uint16 us_offset)
 {
     HAL_PUBLIC_HOOK_FUNC(_vap_set_ext_noa_offset)( pst_hal_vap, us_offset);
@@ -3977,7 +3991,7 @@ OAL_STATIC OAL_INLINE oal_void hal_tx_complete_update_rate(hal_tx_dscr_ctrl_one_
     {
         pst_tx_dscr_param->ast_per_rate[pst_tx_dscr_param->uc_last_rate_rank].rate_bit_stru.bit_tx_count = uc_retry;
     }
-#if (_PRE_PRODUCT_ID == _PRE_PRODUCT_ID_HI1151)
+
     if (OAL_UNLIKELY((0 != pst_tx_dscr_param->uc_long_retry + pst_tx_dscr_param->uc_short_retry) && (uc_retry == 0)))
     {
         OAM_ERROR_LOG4(0, OAM_SF_TX, "{hal_tx_complete_update_rate::invalid tx count, long=%d short=%d last=%d retry=%d}\r\n",
@@ -3986,7 +4000,7 @@ OAL_STATIC OAL_INLINE oal_void hal_tx_complete_update_rate(hal_tx_dscr_ctrl_one_
                 pst_tx_dscr_param->ast_per_rate[0].rate_bit_stru.bit_tx_count, pst_tx_dscr_param->ast_per_rate[1].rate_bit_stru.bit_tx_count,
                 pst_tx_dscr_param->ast_per_rate[2].rate_bit_stru.bit_tx_count, pst_tx_dscr_param->ast_per_rate[3].rate_bit_stru.bit_tx_count);
     }
-#endif
+
 }
 
 
@@ -4190,14 +4204,23 @@ OAL_STATIC OAL_INLINE oal_void hal_set_btcoex_sw_priority_flag(hal_to_dmac_devic
 {
     HAL_PUBLIC_HOOK_FUNC(_set_btcoex_sw_priority_flag)(pst_hal_device, en_sw_prio_flag);
 }
+OAL_STATIC OAL_INLINE oal_void hal_set_btcoex_soc_gpreg0_replace(hal_to_dmac_device_stru *pst_hal_device, oal_uint8 uc_val, oal_uint16 us_mask, oal_uint8 uc_offset)
+{
+    HAL_PUBLIC_HOOK_FUNC(_set_btcoex_soc_gpreg0_replace)(pst_hal_device, uc_val, us_mask, uc_offset);
+}
 OAL_STATIC OAL_INLINE oal_void hal_set_btcoex_soc_gpreg0(oal_uint8 uc_val, oal_uint16 us_mask, oal_uint8 uc_offset)
 {
-    HAL_PUBLIC_HOOK_FUNC(_set_btcoex_soc_gpreg0)( uc_val, us_mask, uc_offset);
+    HAL_PUBLIC_HOOK_FUNC(_set_btcoex_soc_gpreg0)(uc_val, us_mask, uc_offset);
 }
 OAL_STATIC OAL_INLINE oal_void hal_set_btcoex_soc_gpreg1(oal_uint8 uc_val, oal_uint16 us_mask, oal_uint8 uc_offset)
 {
     HAL_PUBLIC_HOOK_FUNC(_set_btcoex_soc_gpreg1)( uc_val, us_mask, uc_offset);
 }
+OAL_STATIC OAL_INLINE oal_void hal_set_btcoex_soc_gpreg1_replace(hal_to_dmac_device_stru *pst_hal_device, oal_uint8 uc_val, oal_uint16 us_mask, oal_uint8 uc_offset)
+{
+    HAL_PUBLIC_HOOK_FUNC(_set_btcoex_soc_gpreg1_replace)(pst_hal_device, uc_val, us_mask, uc_offset);
+}
+
 OAL_STATIC OAL_INLINE oal_void hal_update_btcoex_btble_status(hal_to_dmac_chip_stru *pst_hal_chip)
 {
     HAL_PUBLIC_HOOK_FUNC(_update_btcoex_btble_status)( pst_hal_chip);
@@ -4630,15 +4653,12 @@ OAL_STATIC OAL_INLINE oal_void hal_config_get_cus_nvram_params(hal_cfg_custom_nv
     HAL_PUBLIC_HOOK_FUNC(_config_get_cus_nvram_params)(ppst_cfg_nvram);
 }
 
-OAL_STATIC OAL_INLINE oal_void hal_config_get_cus_cca_param(hal_cfg_custom_cca_stru **pst_cfg_cca)
-{
-    HAL_PUBLIC_HOOK_FUNC(_config_get_cus_cca_param)(pst_cfg_cca);
-}
-
+#ifndef _PRE_WLAN_1103_PILOT
 OAL_STATIC OAL_INLINE oal_void hal_config_get_far_dist_dsss_scale_promote_switch(oal_uint8 *puc_switch)
 {
     HAL_PUBLIC_HOOK_FUNC(_config_get_far_dist_dsss_scale_promote_switch)(puc_switch);
 }
+#endif
 
 
 OAL_STATIC OAL_INLINE oal_void hal_config_set_cus_nvram_params(hal_to_dmac_device_stru *pst_hal_device, oal_uint8  *puc_param)
@@ -5028,6 +5048,21 @@ OAL_STATIC OAL_INLINE oal_void hal_get_abort_timers_cnt(hal_to_dmac_device_stru 
     HAL_PUBLIC_HOOK_FUNC(_get_abort_timers_cnt)(pst_hal_device, uc_abort_cnt);
 }
 
+OAL_STATIC OAL_INLINE oal_uint16 hal_bt20dbm_enable_status(oal_void)
+{
+#ifdef _PRE_WLAN_FEATURE_BT_20DBM
+    return HAL_PUBLIC_HOOK_FUNC(_bt20dbm_enable_status)();
+#else
+    return 0;
+#endif
+}
+
+#ifdef _PRE_WLAN_FEATURE_P2P_NOA_DSLEEP
+OAL_STATIC OAL_INLINE oal_bool_enum_uint8 hal_check_noa_sleep_time(hal_to_dmac_device_stru *pst_hal_device)
+{
+    return HAL_PUBLIC_HOOK_FUNC(_check_noa_sleep_time)(pst_hal_device);
+}
+#endif
 
 #ifdef _PRE_WLAN_FEATURE_GNSS_SCAN
 typedef mac_scan_state_enum_uint8 (*hi1103_get_wifi_scan_state)(oal_uint32 *pst_end_time);

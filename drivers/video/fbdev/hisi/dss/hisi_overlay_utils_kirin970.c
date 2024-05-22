@@ -12,7 +12,7 @@
 */
 
 #include "hisi_overlay_utils.h"
-
+/*lint -e838 -e679 -e712 -e732 -e730 -e574 -e747 -e778 -e774*/
 uint32_t g_dss_module_base[DSS_CHN_MAX_DEFINE][MODULE_CHN_MAX] = {
 	// D0
 	{
@@ -534,7 +534,7 @@ void hisi_dss_qos_on(struct hisi_fb_data_type *hisifd)
 */
 static int mid_array[DSS_CHN_MAX_DEFINE] = {0xb, 0xa, 0x9, 0x8, 0x7, 0x6, 0x5, 0x4, 0x2, 0x1, 0x3, 0x0};
 
-void hisi_dss_aif_init(char __iomem *aif_ch_base,
+void hisi_dss_aif_init(const char __iomem *aif_ch_base,
 	dss_aif_t *s_aif)
 {
 	if (NULL == aif_ch_base) {
@@ -932,10 +932,7 @@ void hisi_dss_smmu_on(struct hisi_fb_data_type *hisifd)
 	int idx0 = 0;
 	int idx1 = 0;
 	int idx2 = 0;
-	uint32_t phy_pgd_base = 0;
-	struct iommu_domain_data *domain_data = NULL;
 	uint64_t smmu_rwerraddr_phys = 0;
-	uint64_t fama_phy_pgd_base;
 	uint32_t fama_ptw_msb;
 
 	if (NULL == hisifd) {
@@ -987,13 +984,10 @@ void hisi_dss_smmu_on(struct hisi_fb_data_type *hisifd)
 	set_reg(smmu_base + SMMU_SMRx_NS + idx2 * 0x4, 0x1, 32, 0);
 
 	//TTBR0
-	domain_data = (struct iommu_domain_data *)(hisifd->hisi_domain->priv);
-	fama_phy_pgd_base = domain_data->phy_pgd_base;
-	phy_pgd_base = (uint32_t)(domain_data->phy_pgd_base);
-	set_reg(smmu_base + SMMU_CB_TTBR0, phy_pgd_base, 32, 0);
+	set_reg(smmu_base + SMMU_CB_TTBR0, (uint32_t)hisi_dss_domain_get_ttbr(), 32, 0);
 
 	if (g_dss_version_tag == FB_ACCEL_KIRIN970) {
-		fama_ptw_msb = (fama_phy_pgd_base >> 32) & 0x7F;
+		fama_ptw_msb = (hisi_dss_domain_get_ttbr() >> 32) & 0x7F;
 		set_reg(smmu_base + SMMU_FAMA_CTRL0, 0x80, 14, 0);
 		set_reg(smmu_base + SMMU_FAMA_CTRL1, fama_ptw_msb, 7, 0);
 	}
@@ -1006,10 +1000,7 @@ void hisi_mdc_smmu_on(struct hisi_fb_data_type *hisifd)
 	int idx0 = 0;
 	int idx1 = 0;
 	int idx2 = 0;
-	uint32_t phy_pgd_base = 0;
-	struct iommu_domain_data *domain_data = NULL;
 	uint64_t smmu_rwerraddr_phys = 0;
-	uint64_t fama_phy_pgd_base;
 	uint32_t fama_ptw_msb;
 
 	if (hisifd == NULL) {
@@ -1062,13 +1053,10 @@ void hisi_mdc_smmu_on(struct hisi_fb_data_type *hisifd)
 	set_reg(smmu_base + SMMU_SMRx_NS + idx2 * 0x4, 0x1d, 32, 0);
 
 	//TTBR0
-	domain_data = (struct iommu_domain_data *)(hisifd->hisi_domain->priv);
-	fama_phy_pgd_base = domain_data->phy_pgd_base;
-	phy_pgd_base = (uint32_t)(domain_data->phy_pgd_base);
-	set_reg(smmu_base + SMMU_CB_TTBR0, phy_pgd_base, 32, 0);
+	set_reg(smmu_base + SMMU_CB_TTBR0, (uint32_t)hisi_dss_domain_get_ttbr(), 32, 0);
 
 	if (g_dss_version_tag == FB_ACCEL_KIRIN970) {
-		fama_ptw_msb = (fama_phy_pgd_base >> 32) & 0x7F;
+		fama_ptw_msb = (hisi_dss_domain_get_ttbr() >> 32) & 0x7F;
 		set_reg(smmu_base + SMMU_FAMA_CTRL0, 0x80, 14, 0);
 		set_reg(smmu_base + SMMU_FAMA_CTRL1, fama_ptw_msb, 7, 0);
 	}
@@ -1317,7 +1305,7 @@ static int CSC_COE_YUV2RGB2020[CSC_ROW][CSC_COL] = {
 	{0x04A85, 0x08912, 0x00000, 0x00600, 0x00000},
 };
 /*lint -e732*/
-void hisi_dss_csc_init(char __iomem *csc_base, dss_csc_t *s_csc)
+void hisi_dss_csc_init(const char __iomem *csc_base, dss_csc_t *s_csc)
 {
 	if (NULL == csc_base) {
 		HISI_FB_ERR("csc_base is NULL");
@@ -1679,7 +1667,7 @@ int hisi_dss_csc_config(struct hisi_fb_data_type *hisifd,
 }
 /*lint +e701 +e732 */
 /*lint -e679 -e730 -e732*/
-void hisi_dss_ovl_init(char __iomem *ovl_base, dss_ovl_t *s_ovl, int ovl_idx)
+void hisi_dss_ovl_init(const char __iomem *ovl_base, dss_ovl_t *s_ovl, int ovl_idx)
 {
 	int i = 0;
 
@@ -2374,7 +2362,7 @@ void hisi_dss_arsr2p_write_config_coefs(struct hisi_fb_data_type *hisifd, bool e
 }
 
 /*lint -e570 -e732*/
-void hisi_dss_arsr2p_init(char __iomem * arsr2p_base, dss_arsr2p_t *s_arsr2p)
+void hisi_dss_arsr2p_init(const char __iomem * arsr2p_base, dss_arsr2p_t *s_arsr2p)
 {
 	if (NULL == arsr2p_base) {
 		HISI_FB_ERR("arsr2p_base is NULL");
@@ -3275,30 +3263,42 @@ void hisi_dss_post_clip_set_reg(struct hisi_fb_data_type *hisifd,
 /*******************************************************************************
 **
 */
+static bool hisi_check_wblayer_buff_paremeters_validate(struct hisi_fb_data_type *hisifd, dss_wb_layer_t *wb_layer)
+{
+	if (!hisifd || !(hisifd->pdev)) {
+		HISI_FB_ERR("hisifd is NULL!\n");
+		return false;
+	}
+
+	if (NULL == hisifd->buffer_client) {
+		HISI_FB_ERR("fb%u, buffer_client is NULL!\n", hisifd->index);
+		return false;
+	}
+
+	if (NULL == wb_layer) {
+		HISI_FB_ERR("fb%u, wb_layer is NULL!\n", hisifd->index);
+		return false;
+	}
+
+	return true;
+}
+
+/*lint -e613*/
 static int hisi_dss_check_wblayer_buff(struct hisi_fb_data_type *hisifd, dss_wb_layer_t *wb_layer)
 {
+#if CONFIG_ION_ALLOC_BUFFER
 	struct ion_handle *ionhnd = NULL;
 	struct iommu_map_format iommu_format;
 	size_t buf_len = 0;
 	unsigned long buf_addr = 0;
 	bool succ = true;
 
-	if (!hisifd || !(hisifd->pdev)) {
-		HISI_FB_ERR("hisifd is NULL!\n");
-		return -EINVAL;
-	}
-
-	if (NULL == hisifd->ion_client) {
-		HISI_FB_ERR("fb%d, ion_client is NULL!\n", hisifd->index);
+	if (!hisi_check_wblayer_buff_paremeters_validate(hisifd, wb_layer)) {
 		return -EINVAL;
 	}
 
 	if (wb_layer && (wb_layer->dst.shared_fd >= 0)) {
-	#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0)
-		ionhnd = ion_import_dma_buf_fd(hisifd->ion_client, wb_layer->dst.shared_fd);
-	#else
-		ionhnd = ion_import_dma_buf(hisifd->ion_client, wb_layer->dst.shared_fd);
-	#endif
+		ionhnd = ion_import_dma_buf_fd(hisifd->buffer_client, wb_layer->dst.shared_fd);
 		if (IS_ERR(ionhnd)) {
 			ionhnd = NULL;
 			HISI_FB_INFO("fb%d, failed to ion_import_dma_buf, shared_fd=%d!\n",
@@ -3306,7 +3306,7 @@ static int hisi_dss_check_wblayer_buff(struct hisi_fb_data_type *hisifd, dss_wb_
 		} else {
 			if (wb_layer->dst.mmu_enable == 1) {
 				memset(&iommu_format, 0, sizeof(struct iommu_map_format));
-				if (ion_map_iommu(hisifd->ion_client, ionhnd, &iommu_format)) {
+				if (ion_map_iommu(hisifd->buffer_client, ionhnd, &iommu_format)) {
 					HISI_FB_ERR("fb%d, failed to ion_map_iommu, shared_fd=%d!\n",
 						hisifd->index, wb_layer->dst.shared_fd);
 					succ = false;
@@ -3316,10 +3316,10 @@ static int hisi_dss_check_wblayer_buff(struct hisi_fb_data_type *hisifd, dss_wb_
 							hisifd->index, wb_layer->dst.shared_fd);
 						succ = false;
 					}
-					ion_unmap_iommu(hisifd->ion_client, ionhnd);
+					ion_unmap_iommu(hisifd->buffer_client, ionhnd);
 				}
 			} else {
-				if (hisifb_ion_phys(hisifd->ion_client, ionhnd, &(hisifd->pdev->dev), &buf_addr, &buf_len)) {
+				if (hisifb_ion_phys(hisifd->buffer_client, ionhnd, &(hisifd->pdev->dev), &buf_addr, &buf_len)) {
 					HISI_FB_ERR("fb%d, failed to ion_phys, shared_fd=%d!\n",hisifd->index, wb_layer->dst.shared_fd);
 					succ = false;
 				} else {
@@ -3331,15 +3331,19 @@ static int hisi_dss_check_wblayer_buff(struct hisi_fb_data_type *hisifd, dss_wb_
 				}
 			}
 
-			ion_free(hisifd->ion_client, ionhnd);
+			ion_free(hisifd->buffer_client, ionhnd);
 		}
 
 		if (!succ)
 			return -EINVAL;
+	} else {
+		HISI_FB_ERR("fb%u, wb_layer shared_fd=%d is invalid!\n", hisifd->index, wb_layer->dst.shared_fd);
+		return -EINVAL;
 	}
-
+#endif
 	return 0;
 }
+/*lint +e613*/
 
 static int hisi_dss_check_wblayer_rect(struct hisi_fb_data_type *hisifd, dss_wb_layer_t *wb_layer)
 {
@@ -3577,30 +3581,42 @@ int hisi_dss_check_userdata(struct hisi_fb_data_type *hisifd,
 	return 0;
 }
 
+static bool hisi_check_layer_buff_paremeters_validate(struct hisi_fb_data_type *hisifd, dss_layer_t *layer)
+{
+	if (!hisifd || !(hisifd->pdev)) {
+		HISI_FB_ERR("hisifd is NULL!\n");
+		return false;
+	}
+
+	if (NULL == hisifd->buffer_client) {
+		HISI_FB_ERR("fb%d, buffer_client is NULL!\n", hisifd->index);
+		return false;
+	}
+
+	if (NULL == layer) {
+		HISI_FB_ERR("fb%d, layer is NULL!\n", hisifd->index);
+		return false;
+	}
+
+	return true;
+}
+
+/*lint -e613*/
 static int hisi_dss_check_layer_buff(struct hisi_fb_data_type *hisifd, dss_layer_t *layer)
 {
+#if CONFIG_ION_ALLOC_BUFFER
 	struct ion_handle *ionhnd = NULL;
 	struct iommu_map_format iommu_format;
 	size_t buf_len = 0;
 	unsigned long buf_addr = 0;
 	bool succ = true;
 
-	if (!hisifd || !(hisifd->pdev)) {
-		HISI_FB_ERR("hisifd is NULL!\n");
-		return -EINVAL;
-	}
-
-	if (NULL == hisifd->ion_client) {
-		HISI_FB_ERR("fb%d, ion_client is NULL!\n", hisifd->index);
+	if (!hisi_check_layer_buff_paremeters_validate(hisifd, layer)) {
 		return -EINVAL;
 	}
 
 	if (layer && layer->img.shared_fd >= 0) {
-	#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0)
-		ionhnd = ion_import_dma_buf_fd(hisifd->ion_client, layer->img.shared_fd);
-	#else
-		ionhnd = ion_import_dma_buf(hisifd->ion_client, layer->img.shared_fd);
-	#endif
+		ionhnd = ion_import_dma_buf_fd(hisifd->buffer_client, layer->img.shared_fd);
 		if (IS_ERR(ionhnd)) {
 			ionhnd = NULL;
 			HISI_FB_ERR("fb%d, layer_idx%d, failed to ion_import_dma_buf, shared_fd=%d!\n",
@@ -3609,7 +3625,7 @@ static int hisi_dss_check_layer_buff(struct hisi_fb_data_type *hisifd, dss_layer
 		} else {
 			if (layer->img.mmu_enable == 1) {
 				memset(&iommu_format, 0, sizeof(struct iommu_map_format));
-				if (ion_map_iommu(hisifd->ion_client, ionhnd, &iommu_format)) {
+				if (ion_map_iommu(hisifd->buffer_client, ionhnd, &iommu_format)) {
 					HISI_FB_ERR("fb%d, layer_idx%d, failed to ion_map_iommu, shared_fd=%d!\n",
 						hisifd->index, layer->layer_idx, layer->img.shared_fd);
 					succ = false;
@@ -3619,10 +3635,10 @@ static int hisi_dss_check_layer_buff(struct hisi_fb_data_type *hisifd, dss_layer
 							hisifd->index, layer->layer_idx, layer->img.shared_fd);
 						succ = false;
 					}
-					ion_unmap_iommu(hisifd->ion_client, ionhnd);
+					ion_unmap_iommu(hisifd->buffer_client, ionhnd);
 				}
 			} else {
-				if (hisifb_ion_phys(hisifd->ion_client, ionhnd, &(hisifd->pdev->dev), &buf_addr, &buf_len)) {
+				if (hisifb_ion_phys(hisifd->buffer_client, ionhnd, &(hisifd->pdev->dev), &buf_addr, &buf_len)) {
 					HISI_FB_ERR("fb%d, layer_idx%d, failed to ion_phys, shared_fd=%d!\n",hisifd->index, layer->layer_idx, layer->img.shared_fd);
 					succ = false;
 				} else {
@@ -3634,15 +3650,19 @@ static int hisi_dss_check_layer_buff(struct hisi_fb_data_type *hisifd, dss_layer
 				}
 			}
 
-			ion_free(hisifd->ion_client, ionhnd);
+			ion_free(hisifd->buffer_client, ionhnd);
 		}
 
 		if (!succ)
 			return -EINVAL;
+	} else {
+		HISI_FB_ERR("fb%u, layer_idx%d, shared_fd=%d is invalid!\n", hisifd->index, layer->layer_idx, layer->img.shared_fd);
+		//return -EINVAL;
 	}
-
+#endif
 	return 0;
 }
+/*lint +e613*/
 
 static int hisi_dss_check_layer_rect(dss_layer_t *layer)
 {
@@ -3837,7 +3857,7 @@ int hisi_dss_check_layer_par(struct hisi_fb_data_type *hisifd, dss_layer_t *laye
 /*******************************************************************************
 ** DSS disreset
 */
-/*lint -e747 -e778 -e774 -e732 -e838*/
+
 void hisifb_dss_disreset(struct hisi_fb_data_type *hisifd)
 {
 	(void)hisifd;
@@ -4552,7 +4572,7 @@ void hisi_dss_hfbce_set_reg(struct hisi_fb_data_type *hisifd,
 	hisifd->set_reg(hisifd, wdma_base + AFBCE_PAYLOAD_SRTIDE_1, s_wdma->hfbce_payload_stride1, 32, 0);
 }
 
-void hisi_dss_mctl_sys_init(char __iomem *mctl_sys_base, dss_mctl_sys_t *s_mctl_sys)
+void hisi_dss_mctl_sys_init(const char __iomem *mctl_sys_base, dss_mctl_sys_t *s_mctl_sys)
 {
 	int i;
 
@@ -4913,7 +4933,7 @@ void hisi_dss_dpp_acm_gm_set_reg(struct hisi_fb_data_type *hisifd) {
 func_exit:
 	return;//lint !e438
 }//lint !e550
-void hisi_dss_post_scf_init(char __iomem * dss_base, char __iomem *post_scf_base, dss_arsr1p_t *s_post_scf)
+void hisi_dss_post_scf_init(char __iomem * dss_base, const char __iomem *post_scf_base, dss_arsr1p_t *s_post_scf)
 {
 	if (NULL == post_scf_base) {
 		HISI_FB_ERR("post_scf_base is NULL");
@@ -5330,5 +5350,4 @@ int hisi_dss_mdc_module_default(struct hisi_fb_data_type *hisifd)
 
 	return 0;
 }
-
-/*lint +e747 +e778 +e774 +e732 +e838*/
+/*lint +e838 +e679 +e712 +e732 +e730 +e574 +e747 +e778 +e774*/

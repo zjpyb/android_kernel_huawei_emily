@@ -36,6 +36,10 @@ extern "C" {
 #undef  THIS_FILE_ID
 #define THIS_FILE_ID OAM_FILE_ID_HMAC_MGMT_BSS_COMM_C
 
+#ifdef _PRE_WLAN_FEATURE_SNIFFER
+#include <hwnet/ipv4/sysctl_sniffer.h>
+#endif
+
 /*****************************************************************************
   2 全局变量定义
 *****************************************************************************/
@@ -1623,6 +1627,10 @@ oal_uint32 hmac_tx_mgmt_send_event_etc(mac_vap_stru *pst_vap, oal_netbuf_stru *p
     pst_ctx_stru->pst_netbuf    = pst_mgmt_frame;
     pst_ctx_stru->us_frame_len  = us_frame_len;
 
+#ifdef _PRE_WLAN_FEATURE_SNIFFER
+    proc_sniffer_write_file(NULL, 0, (oal_uint8 *)(OAL_NETBUF_HEADER(pst_mgmt_frame)), us_frame_len, 1);
+#endif
+
     ul_return = frw_event_dispatch_event_etc(pst_event_mem);
     if (OAL_SUCC != ul_return)
     {
@@ -2088,7 +2096,7 @@ oal_void  hmac_mgmt_send_deauth_frame_etc(mac_vap_stru *pst_mac_vap, oal_uint8 *
     ul_ret = mac_vap_set_cb_tx_user_idx(pst_mac_vap, pst_tx_ctl, puc_da);
     if (OAL_SUCC != ul_ret)
     {
-        OAM_WARNING_LOG3(pst_mac_vap->uc_vap_id, OAM_SF_AUTH, "(hmac_mgmt_send_deauth_frame_etc::fail to find user by xx:xx:xx:0x:0x:0x.}",
+        OAM_WARNING_LOG3(pst_mac_vap->uc_vap_id, OAM_SF_AUTH, "(hmac_mgmt_send_deauth_frame_etc::fail to find user by xx:xx:xx:%2x:%2x:%2x.}",
         puc_da[3],
         puc_da[4],
         puc_da[5]);
@@ -2521,7 +2529,7 @@ oal_void  hmac_rx_sa_query_req_etc(hmac_vap_stru *pst_hmac_vap, oal_netbuf_stru 
     /*如果该用户的管理帧加密属性不一致，丢弃该报文*/
     if (en_is_protected != pst_hmac_user->st_user_base_info.st_cap_info.bit_pmf_active)
     {
-       OAM_ERROR_LOG0(pst_hmac_vap->st_vap_base_info.uc_vap_id, OAM_SF_RX,
+       OAM_WARNING_LOG0(pst_hmac_vap->st_vap_base_info.uc_vap_id, OAM_SF_RX,
                       "{hmac_rx_sa_query_req_etc::PMF check failed.}");
        return;
     }

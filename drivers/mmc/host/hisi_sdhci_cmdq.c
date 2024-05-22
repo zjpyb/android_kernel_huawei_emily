@@ -292,6 +292,20 @@ static int sdhci_cmdq_dump_vendor_regs(struct mmc_host *mmc)
 	sdhci_dumpregs(host);
 	return 0;
 }
+void sdhci_sqscmd_idle_tmr(struct mmc_host *mmc)
+{
+	struct sdhci_host *host = mmc_priv(mmc);
+	struct cmdq_host *cq_host = mmc_cmdq_private(mmc);
+
+	/*CIT 0x100 means set cmd13 polling time period 256*clk
+	 *CBC 0x1 means that STATUS command is to be sent during
+	 *the last block of the
+	*/
+	if (host->ops->sqscmd_idle_tmr)
+		host->ops->sqscmd_idle_tmr(cq_host);
+	else
+		cmdq_writel(cq_host, 0x10100, CQSSC1);
+}
 
 void sdhci_cmdq_enter(struct mmc_host *mmc)
 {
@@ -372,6 +386,11 @@ static int sdhci_cmdq_dump_vendor_regs(struct mmc_host *mmc)
 	return 0;
 }
 
+void sdhci_sqscmd_idle_tmr(struct mmc_host *mmc)
+{
+
+}
+
 void sdhci_cmdq_enter(struct mmc_host *mmc)
 {
 
@@ -393,6 +412,7 @@ static const struct cmdq_host_ops sdhci_cmdq_ops = {
 	.card_busy = sdhci_card_busy_data0,
 	.discard_task = sdhci_cmdq_discard_task,
 	.tuning_move = sdhci_cmdq_tuning_move,
+	.sqscmd_idle_tmr = sdhci_sqscmd_idle_tmr,
 	.enter = sdhci_cmdq_enter,
 	.exit = sdhci_cmdq_exit,
 };

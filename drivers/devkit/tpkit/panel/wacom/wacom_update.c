@@ -741,7 +741,7 @@ bool find_pid_version_in_bindata(UBL_PROCESS *pUBLProcess)
 				else if (id == FW_VERSION_TWO_BYTE) {
 					offset = DATA_ID_FD_OFFSET_VALUE;// version need 2 bytes to store
 					if((count+offset+FW_VERSION_LSB_OFFSET) >= chk_size ){
-						TS_LOG_ERR("%s, %d current count is %x, %d, can't continue find two byte pid. \n", __func__, __LINE__, count);
+						TS_LOG_ERR("%s, %d current count is %x, can't continue find two byte pid. \n", __func__, __LINE__, count);
 						break;
 					}
 					pUBLProcess->version = (*(data_id - FW_VERSION_MSB_OFFSET - offset)) << 8 + *(data_id - FW_VERSION_LSB_OFFSET - offset);
@@ -1056,7 +1056,7 @@ int check_hex_file_g11(const u8 *strFiledata, unsigned long fwFile_size, UBL_PRO
 	}
 
 	if ( start_address != UBL_MAIN_ADDRESS ) {
-		TS_LOG_ERR("Start address error.  %x \n",  __func__, start_address);
+		TS_LOG_ERR("%s:Start address error.  %x \n",  __func__, start_address);
 		ret = WACOM_ERR_FW_FILE_ADDR;
 		goto release_rom_data;
 	}
@@ -1163,7 +1163,8 @@ int wacom_do_fw_update(const u8 *fw_img, u32 fw_filesize)
 	flash_rom_data = (u8 *)vmalloc(UBL_ROM_SIZE);
 	if (pUBLStatus == NULL || pUBLProcess == NULL || flash_rom_data == NULL) {
 		TS_LOG_ERR("cannot preserve memories \n");
-		return WACOM_ERR_NOMEM;
+		ret = WACOM_ERR_NOMEM;
+		goto dfu_Release_Memory;
 	}
 
 	pUBLProcess->data = flash_rom_data;

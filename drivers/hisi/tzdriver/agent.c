@@ -83,12 +83,18 @@ CA_INFO allowed_ext_agent_ca[] = {
 		1000,
 		TEE_FACE_AGENT2_ID,
 	},
+
+    /*just for test in ENG version*/
 };
 
-int is_allowed_agent_ca(CA_INFO *ca, bool check_agent_id_flag)
+static int is_allowed_agent_ca(const CA_INFO *ca, bool check_agent_id_flag)
 {
 	uint32_t i;
 	CA_INFO *tmp_ca = allowed_ext_agent_ca;
+	if (ca == NULL) {
+		return -1;
+	}
+
 	if (!check_agent_id_flag) {
 		for(i = 0; i < sizeof(allowed_ext_agent_ca)/sizeof(CA_INFO); i++) {
 			if ((0 == memcmp(ca->path, tmp_ca->path, MAX_PATH_SIZE)) && (ca->uid == tmp_ca->uid))
@@ -114,11 +120,11 @@ int is_allowed_agent_ca(CA_INFO *ca, bool check_agent_id_flag)
 
 static int get_ca_path_and_uid(struct task_struct *ca_task, CA_INFO *ca)
 {
-	char *path;
+	char *path = NULL;
 	const struct cred *cred = NULL;
 	int message_size;
 	int ret = 0;
-	char *tpath;
+	char *tpath = NULL;
 
 	if (NULL == ca_task || NULL == ca) {
 		TCERR("task info is NULL\n");
@@ -158,6 +164,8 @@ static int get_ca_path_and_uid(struct task_struct *ca_task, CA_INFO *ca)
 end:
 	kfree(tpath);
 	put_cred(cred);
+	tpath = NULL;
+	cred = NULL;
 	return ret;
 }
 
@@ -165,6 +173,11 @@ int check_ext_agent_access(struct task_struct *ca_task)
 {
 	int ret = 0;
 	CA_INFO agent_ca = {"", 0, 0};
+
+	if (NULL == ca_task) {
+		TCERR("ca_task is NULL\n");
+		return -EPERM;
+	}
 
 	ret = get_ca_path_and_uid(ca_task, &agent_ca);
 	if (ret) {
@@ -180,6 +193,11 @@ int check_ext_agent_access_with_agent_id(struct task_struct *ca_task, uint32_t a
 {
 	int ret = 0;
 	CA_INFO agent_ca = {"", 0, 0};
+
+	if (NULL == ca_task) {
+		TCERR("ca_task is NULL\n");
+		return -EPERM;
+	}
 
 	ret = get_ca_path_and_uid(ca_task, &agent_ca);
 	if (ret) {
@@ -198,7 +216,7 @@ int TC_NS_set_nativeCA_hash(unsigned long arg)
 	uint8_t *inbuf = (uint8_t *)arg;
 	uint32_t buflen = 0;
 	uint8_t *buftotee = NULL;
-	struct mb_cmd_pack *mb_pack;
+	struct mb_cmd_pack *mb_pack = NULL;
 
 	if (NULL == inbuf)
 		return -1;
@@ -249,10 +267,12 @@ int TC_NS_set_nativeCA_hash(unsigned long arg)
 	smc_cmd.operation_phys = virt_to_phys(&mb_pack->operation);
 	smc_cmd.operation_h_phys = virt_to_phys(&mb_pack->operation) >> 32; /*lint !e572*/
 
-	ret = TC_NS_SMC(&smc_cmd, 0);
+	ret = (int)TC_NS_SMC(&smc_cmd, 0);
 
 	mailbox_free(buftotee);
 	mailbox_free(mb_pack);
+	buftotee = NULL;
+	mb_pack = NULL;
 
 	return ret;
 }
@@ -304,6 +324,24 @@ struct __smc_event_data *find_event_control(unsigned int agent_id)
 
 	return tmp_data;
 }
+
+static void release_shared_mem_by_addr(TC_NS_DEV_File *dev_file, void *kernel_addr)
+{
+	TC_NS_Shared_MEM *shared_mem = NULL;
+	TC_NS_Shared_MEM *shared_mem_temp = NULL;
+
+	mutex_lock(&dev_file->shared_mem_lock);
+	list_for_each_entry_safe(shared_mem, shared_mem_temp,
+		&dev_file->shared_mem_list, head) {
+		if (shared_mem != NULL && shared_mem->kernel_addr == kernel_addr) {
+			if (atomic_read(&shared_mem->usage) == 1)
+				list_del(&shared_mem->head);
+			break;
+		}
+	}
+	mutex_unlock(&dev_file->shared_mem_lock);
+}
+
 static void free_event_control(unsigned int agent_id)
 {
 	struct __smc_event_data *event_data = NULL;
@@ -318,17 +356,19 @@ static void free_event_control(unsigned int agent_id)
 		}
 	}
 	spin_unlock_irqrestore(&agent_control.lock, flags);
-	if (event_data) {
+	if (event_data != NULL) {
 		/* Release the share memory obtained in TC_NS_register_agent() */
+		if (event_data->buffer != NULL)
+			release_shared_mem_by_addr(event_data->owner, event_data->buffer->kernel_addr);
 		put_sharemem_struct(event_data->buffer);
 		put_agent_event(event_data);
 	}
 }
 
 
-int agent_process_work(TC_NS_SMC_CMD *smc_cmd, unsigned int agent_id)
+int agent_process_work(const TC_NS_SMC_CMD *smc_cmd, unsigned int agent_id)
 {
-	struct __smc_event_data *event_data;
+	struct __smc_event_data *event_data = NULL;
 	int ret = TEEC_SUCCESS;
 
 	if (NULL == smc_cmd) {
@@ -382,7 +422,7 @@ int agent_process_work(TC_NS_SMC_CMD *smc_cmd, unsigned int agent_id)
  */
 int is_agent_alive(unsigned int agent_id)
 {
-	struct __smc_event_data* event_data;
+	struct __smc_event_data* event_data = NULL;
 	event_data = find_event_control(agent_id);
 	if (event_data) {
 		put_agent_event(event_data);
@@ -395,7 +435,7 @@ int is_agent_alive(unsigned int agent_id)
 int TC_NS_wait_event(unsigned int agent_id)
 {
 	int ret = -EINVAL;
-	struct __smc_event_data *event_data;
+	struct __smc_event_data *event_data = NULL;
 
 	if ((TC_NS_get_uid() != 0) && check_ext_agent_access_with_agent_id(current, agent_id)) {
 		tloge("It is a fake tee agent\n");
@@ -418,14 +458,14 @@ int TC_NS_wait_event(unsigned int agent_id)
 }
 
 
-int TC_NS_sync_sys_time(TC_NS_Time *tc_ns_time)
+int TC_NS_sync_sys_time(const TC_NS_Time *tc_ns_time)
 {
 	TC_NS_SMC_CMD smc_cmd = { 0 };
 	int ret = 0;
 	TC_NS_Time tmp_tc_ns_time = {0};
 	struct mb_cmd_pack *mb_pack = NULL;
 
-	if (!tc_ns_time) {
+	if (tc_ns_time == NULL) {
 		tloge("tc_ns_time is NULL input buffer\n");
 		return -EINVAL;
 	}
@@ -439,7 +479,7 @@ int TC_NS_sync_sys_time(TC_NS_Time *tc_ns_time)
 	}
 
 	mb_pack = mailbox_alloc_cmd_pack();
-	if (!mb_pack) {
+	if (mb_pack == NULL) {
 		tloge("alloc mb pack failed\n");
 		return -ENOMEM;
 	}
@@ -451,11 +491,12 @@ int TC_NS_sync_sys_time(TC_NS_Time *tc_ns_time)
 	smc_cmd.err_origin = (unsigned int)tmp_tc_ns_time.seconds;
 	smc_cmd.ret_val = (unsigned int)tmp_tc_ns_time.millis;
 
-	ret = TC_NS_SMC(&smc_cmd, 0);
+	ret = (int)TC_NS_SMC(&smc_cmd, 0);
 	if (ret)
 		tloge("tee adjust time failed, return error %x\n", ret);
 
 	mailbox_free(mb_pack);
+	mb_pack = NULL;
 
 	return ret;
 }
@@ -532,7 +573,7 @@ int TC_NS_register_agent(TC_NS_DEV_File *dev_file, unsigned int agent_id,
 		goto error;
 	}
 
-	if (!shared_mem) {
+	if (shared_mem == NULL) {
 		tloge("shared mem is not exist\n");
 		ret = TEEC_ERROR_GENERIC;
 		goto error;
@@ -542,7 +583,7 @@ int TC_NS_register_agent(TC_NS_DEV_File *dev_file, unsigned int agent_id,
 	get_sharemem_struct(shared_mem);
 
 	mb_pack = mailbox_alloc_cmd_pack();
-	if (!mb_pack) {
+	if (mb_pack == NULL) {
 		tloge("alloc mailbox failed\n");
 		ret = TEEC_ERROR_GENERIC;
 		put_sharemem_struct(shared_mem);
@@ -562,7 +603,7 @@ int TC_NS_register_agent(TC_NS_DEV_File *dev_file, unsigned int agent_id,
 	smc_cmd.operation_h_phys = virt_to_phys(&mb_pack->operation) >> 32; /*lint !e572*/
 	smc_cmd.agent_id = agent_id;
 
-	ret = TC_NS_SMC(&smc_cmd, 0);
+	ret = (int)TC_NS_SMC(&smc_cmd, 0);
 
 	if (ret == TEEC_SUCCESS) {
 		event_data =
@@ -595,8 +636,10 @@ int TC_NS_register_agent(TC_NS_DEV_File *dev_file, unsigned int agent_id,
 	}
 
 error:
-	if (mb_pack)
+	if (mb_pack) {
 		mailbox_free(mb_pack);
+		mb_pack = NULL;
+	}
 	return ret; /*lint !e429 */
 }
 
@@ -619,12 +662,12 @@ int TC_NS_unregister_agent(unsigned int agent_id)
 		return TEEC_ERROR_GENERIC;
 	}
 	mb_pack = mailbox_alloc_cmd_pack();
-	if (!mb_pack) {
+	if (mb_pack == NULL) {
 		tloge("alloc mailbox failed\n");
 		return TEEC_ERROR_GENERIC;
 	}
 	event_data = find_event_control(agent_id);
-	if (!event_data) {
+	if (event_data == NULL) {
 		mailbox_free(mb_pack);
 		tloge("agent is not found\n");
 		return TEEC_ERROR_GENERIC;
@@ -645,7 +688,7 @@ int TC_NS_unregister_agent(unsigned int agent_id)
 
 	mutex_lock(&event_data->work_lock);
 	tlogd("Unregistering agent %u\n", agent_id);
-	ret = TC_NS_SMC(&smc_cmd, 0);
+	ret = (int)TC_NS_SMC(&smc_cmd, 0);
 	mutex_unlock(&event_data->work_lock);
 	if (ret == TEEC_SUCCESS) {
     		free_event_control(agent_id);
@@ -653,18 +696,18 @@ int TC_NS_unregister_agent(unsigned int agent_id)
 	put_agent_event(event_data);
 
 	mailbox_free(mb_pack);
-
+	mb_pack = NULL;
 	return ret;
 }
 
-bool TC_NS_is_system_agent_client(TC_NS_DEV_File *dev_file)
+bool TC_NS_is_system_agent_client(const TC_NS_DEV_File *dev_file)
 {
 	struct __smc_event_data *event_data = NULL;
 	struct __smc_event_data *tmp = NULL;
 	bool system_agent = false;
 	unsigned long flags;
 
-	if (!dev_file)
+	if (dev_file == NULL)
 		return system_agent;
 
 	spin_lock_irqsave(&agent_control.lock, flags);
@@ -680,7 +723,7 @@ bool TC_NS_is_system_agent_client(TC_NS_DEV_File *dev_file)
 	return system_agent;
 }
 
-int TC_NS_unregister_agent_client(TC_NS_DEV_File *dev_file)
+int TC_NS_unregister_agent_client(const TC_NS_DEV_File *dev_file)
 {
 	struct __smc_event_data *event_data = NULL;
 	struct __smc_event_data	*tmp = NULL;
@@ -791,6 +834,7 @@ out:
 	if (!IS_ERR_OR_NULL(shared_mem)) {
 		tc_mem_free(shared_mem); /*lint !e668 */
 		agent_instance->agent_buffer = NULL;
+		shared_mem = NULL;
 	}
 
 	return ret;

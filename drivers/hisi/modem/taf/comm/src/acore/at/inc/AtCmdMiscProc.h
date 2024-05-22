@@ -439,6 +439,8 @@ extern VOS_VOID AT_PrintCclkTime(
     MODEM_ID_ENUM_UINT16                enModemId
 );
 VOS_UINT32 AT_RcvMtaCclkQryCnf(VOS_VOID *pMsg);
+VOS_UINT32 AT_SetPseudBtsPara(VOS_UINT8 ucIndex);
+VOS_UINT32 AT_RcvMtaPseudBtsIdentInd(VOS_VOID *pMsg);
 
 #if (VOS_OS_VER == VOS_WIN32)
 #pragma pack()

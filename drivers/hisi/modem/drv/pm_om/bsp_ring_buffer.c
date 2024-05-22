@@ -60,7 +60,7 @@ int bsp_ring_buffer_in(struct ring_buffer *rb, void *data, u32 len, MEMCPY_FUNC 
 
 	/* copy data from rb->write to buffer tail */
 	left = min(len, rb->size - rb->write);
-	if (left && memcpy_func && memcpy_func((void *)(rb->buf + rb->write), rb->size, (void *)data, left))
+	if (left && memcpy_func && memcpy_func((rb->buf + rb->write), rb->size, data, left))
 	{
 		return -1;
 	}
@@ -68,7 +68,7 @@ int bsp_ring_buffer_in(struct ring_buffer *rb, void *data, u32 len, MEMCPY_FUNC 
 	/* copy left data(if neccessary) from buffer head */
 	if (len != left)
 	{
-		if (memcpy_func && memcpy_func((void *)rb->buf, rb->size, (void*)((char *)data + left), (len - left)))
+		if (memcpy_func && memcpy_func(rb->buf, rb->size, ((char *)data + left), (len - left)))
 		{
 			return -1;
 		}
@@ -90,14 +90,14 @@ int bsp_ring_buffer_out(struct ring_buffer *rb, void *data, u32 len, MEMCPY_FUNC
 	}
 
 	left = min(len, rb->size - rb->read);
-	if (memcpy_func && memcpy_func(data, rb->size, (void *)(rb->buf + rb->read), left))
+	if (memcpy_func && memcpy_func(data, rb->size, (rb->buf + rb->read), left))
 	{
 		return -1;
 	}
 
 	if (len != left)
 	{
-		if (memcpy_func && memcpy_func((void *)((char *)data + left), rb->size, rb->buf, (len - left)))
+		if (memcpy_func && memcpy_func(((char *)data + left), rb->size, rb->buf, (len - left)))
 		{
 			return -1;
 		}

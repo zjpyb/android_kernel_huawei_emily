@@ -391,7 +391,7 @@ exit:
 }
 
 static void ufsdbg_pr_buf_to_std(struct ufs_hba *hba, int offset, int num_regs,
-			  char *str, void *priv)
+			  const char *str, void *priv)
 {
 	int i;
 	char linebuf[38];

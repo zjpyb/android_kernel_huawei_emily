@@ -56,6 +56,7 @@ struct memlat_node {
 	/*cpufreq notifier*/
 	unsigned int min_core_freq;
 
+	bool governor_started;
 	bool monitor_paused;
 	bool pending_change;
 	unsigned int switch_on_cpufreq;
@@ -168,13 +169,13 @@ err:
 static ssize_t show_target_ratios(struct device *dev, struct device_attribute *attr,
 			char *buf)
 {
-	int i;
+	unsigned int i;
 	ssize_t ret = 0;
 	struct devfreq *df = to_devfreq(dev);
 	struct memlat_node *n = df->data;
 
 	mutex_lock(&n->mon_mutex_lock);
-	for (i = 0; i < n->ntarget_ratios; i++)
+	for (i = 0; i < n->ntarget_ratios; i++) /*lint !e574*/
 		ret += sprintf(buf + ret, "%u%s", n->target_ratios[i],
 			       i & 0x1 ? ":" : " "); /*lint !e421*/
 
@@ -499,7 +500,7 @@ static int cpufreq_notifier_trans(struct notifier_block *nb,
 
 	d = container_of(nb, struct memlat_node, notifier_trans_block);
 	/* device hasn't been initilzed yet */
-	if (!d->monitor_enable || !d->mon_started)
+	if (!d->monitor_enable || !d->governor_started)
 		return NOTIFY_OK;
 
 	/*
@@ -516,7 +517,7 @@ static int cpufreq_notifier_trans(struct notifier_block *nb,
 	new_freq = new_freq / 1000;
 
 	mutex_lock(&d->cpufreq_mutex_lock);
-	if (!d->pending_change) {
+	if (!d->pending_change && d->switch_on_cpufreq != 0) {
 		if (new_freq < d->switch_on_cpufreq && d->monitor_paused) {
 			mutex_unlock(&d->cpufreq_mutex_lock);
 			return 0;
@@ -702,6 +703,7 @@ static int gov_start(struct devfreq *df)
 	if (ret)
 		goto err_sysfs;
 
+	node->governor_started = true;
 	return 0;
 
 err_sysfs:
@@ -719,6 +721,7 @@ static void gov_stop(struct devfreq *df)
 	struct memlat_node *node = df->data;
 	struct memlat_hwmon *hw = node->hw;
 
+	node->governor_started = false;
 	sysfs_remove_group(&df->dev.kobj, node->attr_grp);
 	mutex_lock(&node->mon_mutex_lock);
 	stop_monitor(df);
@@ -871,7 +874,7 @@ static struct devfreq_governor devfreq_gov_memlat = {
 #define NUM_COLS	2
 /*lint -e429*/
 static struct core_dev_map *init_core_dev_map(struct device *dev,
-		char *prop_name)
+		const char *prop_name)
 {
 	int len, nf, i, j;
 	u32 data;
@@ -949,6 +952,7 @@ int register_memlat(struct device *dev, struct memlat_hwmon *hw)
 	node->new_cpufreq = 0;
 	node->monitor_paused = false;
 	node->pending_change = false;
+	node->governor_started = false;
 	node->min_core_freq = INT_MAX;
 	mutex_init(&node->cpufreq_mutex_lock);
 	mutex_init(&node->mon_mutex_lock);

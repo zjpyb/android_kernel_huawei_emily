@@ -26,11 +26,10 @@
 #include "zrhung_transtation.h"
 #include <chipset_common/hwzrhung/zrhung.h>
 #include "zrhung_common.h"
+#include "watchpoint/zrhung_wp_sochalt.h"
 #ifdef CONFIG_ARCH_QCOM
 #define wp_get_sochalt(x)
 #define get_sr_position_from_fastboot(x, y)
-#else
-#include "watchpoint/zrhung_wp_sochalt.h"
 #endif
 
 #ifdef GTEST
@@ -135,8 +134,6 @@ static int htrans_write_from_kernel(uint32_t offset, void* k_data, uint32_t len)
 	if (NULL == k_data
 		|| len > HTRANS_TRANS_EVENT_BUF_SIZE_MAX
 		|| offset >= HTRANS_RING_BUF_SIZE_MAX) {
-
-		HTRANS_ERROR("offset: %d, dst:%p, len:0x%x\n", offset, k_data, len);
 
 		return -1;
 	}
@@ -550,6 +547,8 @@ finish:
 
 	//get LONGPRESS event "AP_S_PRESS6S" from reboot_reason
 	zrhung_get_longpress_event();
+	//report erecovery event "COLDBOOT" maybe through VMWTG to zrhung
+	zrhung_report_endrecovery();
 
 	// return 1 here to notify lastword reading finished
 	return 1;
@@ -629,7 +628,6 @@ static int __init htrans_init(void)
 
 	// trans pos information is in the end of htrans_buf
 	htrans_pos = (zrhung_trans_pos*)(htrans_buf+HTRANS_TOTAL_BUF_SIZE-sizeof(zrhung_trans_pos));
-	HTRANS_INFO("pos: %p\n", htrans_pos);
 
 	init_waitqueue_head(&htrans_wq);
 

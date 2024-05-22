@@ -40,7 +40,7 @@
 #include <linux/iommu.h>
 #include <linux/of_reserved_mem.h>
 #include <linux/delay.h>
-#include "hisifb_ion.h"
+#include "hisi_dss_ion.h"
 #include <asm/fb.h>
 
 #define ALIGN_UP(val, al)    (((val) + ((al)-1)) & ~((al)-1))
@@ -72,12 +72,13 @@
 #define LCD_TYPE_UNKNOWN 0
 #define LCD_TYPE_SAMSUNG_S6E3HF4 1
 
-#define MAX_DISPLAY_SPACE_COUNT 11  //9
-//#define MAX_DISPLAY_SPACE_COUNT 10
-#define MAX_DYNAMIC_ALLOC_FB_COUNT 12
+#define MAX_DISPLAY_SPACE_COUNT 13
+#define MAX_DYNAMIC_ALLOC_FB_COUNT 64
 #define MAX_ADDR_FOR_SENSORHUB     0xFFFFFFFF
 
 #define MAX_BIT_MAP_SIZE 2
+
+#define DIFF_NUMBER 1
 
 enum aod_fb_pixel_format {
 	AOD_FB_PIXEL_FORMAT_RGB_565 = 0,
@@ -205,12 +206,20 @@ typedef struct aod_bitmaps_size_ap {
 } aod_bitmaps_size_ap_t;
 
 typedef struct aod_display_spaces_ap {
-    size_t size;
-	int32_t dual_clocks;
-	int32_t display_type;
-	int32_t display_space_count;
+	size_t size;
+	unsigned char dual_clocks;
+	unsigned char display_space_count;
+	uint16_t pd_logo_final_pos_y;
 	aod_display_space_t display_spaces[MAX_DISPLAY_SPACE_COUNT];
 } aod_display_spaces_ap_t;
+
+typedef struct aod_display_spaces_ap_temp {
+	size_t size;
+	uint32_t dual_clocks;
+	uint32_t display_type;
+	uint32_t display_space_count;
+	aod_display_space_t display_spaces[MAX_DISPLAY_SPACE_COUNT];
+} aod_display_spaces_ap_temp_t;
 
 //add
 typedef struct aod_dss_ctrl_ap_status {
@@ -231,8 +240,11 @@ typedef struct aod_start_config_mcu {
 	int32_t intelli_switching;
 	int32_t aod_type;
 	int32_t fp_mode;
-    uint32_t dynamic_fb_count;
-    uint32_t dynamic_fb_addr[MAX_DYNAMIC_ALLOC_FB_COUNT];
+	uint32_t dynamic_fb_count;
+	uint32_t dynamic_ext_fb_count;
+	uint32_t face_id_fb_count;
+	uint32_t pd_logo_fb_count;
+	uint32_t dynamic_fb_addr[MAX_DYNAMIC_ALLOC_FB_COUNT];
 } aod_start_config_mcu_t;
 
 typedef struct aod_info_mcu {
@@ -248,9 +260,9 @@ typedef struct aod_time_config_mcu {
 } aod_time_config_mcu_t;
 
 typedef struct aod_display_spaces_mcu {
-	int32_t dual_clocks;
-	int32_t display_type;
-	int32_t display_space_count;
+	unsigned char dual_clocks;
+	unsigned char display_space_count;
+	uint16_t pd_logo_final_pos_y;
 	aod_display_space_t display_spaces[MAX_DISPLAY_SPACE_COUNT];
 } aod_display_spaces_mcu_t;
 
@@ -272,7 +284,6 @@ typedef struct {
 	pkt_header_t hd;
 	unsigned int subtype;
 	union {
-		aod_start_config_mcu_t start_param;
         aod_time_config_mcu_t time_param;
 		aod_display_spaces_mcu_t display_param;
 		aod_set_config_mcu_t set_config_param;
@@ -291,7 +302,10 @@ typedef struct aod_ion_buf_fb {
     int32_t  ion_buf_fb;
 } aod_ion_buf_fb_t;
 typedef struct aod_dynamic_fb {
-    uint32_t fb_count; 
+    uint32_t dynamic_fb_count;
+    uint32_t dynamic_ext_fb_count;
+    uint32_t face_id_fb_count;
+    uint32_t pd_logo_fb_count;
     aod_ion_buf_fb_t  str_ion_fb[MAX_DYNAMIC_ALLOC_FB_COUNT] ;
 } aod_dynamic_fb_space_t;
 

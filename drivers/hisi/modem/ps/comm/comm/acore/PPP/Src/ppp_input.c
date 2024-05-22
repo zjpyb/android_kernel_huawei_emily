@@ -55,9 +55,9 @@
 /*****************************************************************************
     协议栈打印打点方式下的.C文件宏定义
 *****************************************************************************/
-/*lint -e767  修改人: z57034; 检视人: g45205 原因简述: 打点日志文件宏ID定义 */
+/*lint -e767  原因简述: 打点日志文件宏ID定义 */
 #define    THIS_FILE_ID        PS_FILE_ID_PPP_INPUT_C
-/*lint +e767  修改人: z57034; 检视人: g45205 */
+/*lint +e767  */
 
 /******************************************************************************
    2 外部函数变量声明
@@ -160,30 +160,30 @@ VOS_VOID    PPP_INPUT_ShowStatInfo(VOS_VOID)
 {
     PS_PRINTF("\n================PPP STAT INFO Begin==========================\n");
 
-    PS_PRINTF("队列中当前结点个数         = %d\n", PPP_ZC_GET_QUEUE_LEN(&g_PppDataQCtrl.stDataQ));
+    PS_PRINTF("node num                 = %d\n", PPP_ZC_GET_QUEUE_LEN(&g_PppDataQCtrl.stDataQ));
 
-    PS_PRINTF("ulNotifyMsg                = %d\n", g_PppDataQCtrl.ulNotifyMsg);
-    PS_PRINTF("DataNotify消息发送次数     = %d\n", g_PppDataQCtrl.stStat.ulSndMsgCnt);
-    PS_PRINTF("DataNotify消息处理次数     = %d\n", g_PppDataQCtrl.stStat.ulProcMsgCnt);
-    PS_PRINTF("队列中出现过的最大节点个数 = %d\n", g_PppDataQCtrl.stStat.ulQMaxCnt);
-    PS_PRINTF("一次最多允许处理的节点个数 = %d\n", PPP_ONCE_DEAL_MAX_CNT);
+    PS_PRINTF("NotifyMsg                = %d\n", g_PppDataQCtrl.ulNotifyMsg);
+    PS_PRINTF("DataNotify SndMsgCnt     = %d\n", g_PppDataQCtrl.stStat.ulSndMsgCnt);
+    PS_PRINTF("DataNotify ProcMsgCnt    = %d\n", g_PppDataQCtrl.stStat.ulProcMsgCnt);
+    PS_PRINTF("QMaxCnt                  = %d\n", g_PppDataQCtrl.stStat.ulQMaxCnt);
+    PS_PRINTF("PPP_ONCE_DEAL_MAX_CNT    = %d\n", PPP_ONCE_DEAL_MAX_CNT);
 
-    PS_PRINTF("上行内存申请成功次数       = %d\n", g_PppDataQCtrl.stStat.ulMemAllocUplinkCnt);
-    PS_PRINTF("上行内存申请失败次数       = %d\n", g_PppDataQCtrl.stStat.ulMemAllocUplinkFailCnt);
+    PS_PRINTF("MemAllocUplinkCnt        = %d\n", g_PppDataQCtrl.stStat.ulMemAllocUplinkCnt);
+    PS_PRINTF("MemAllocUplinkFailCnt    = %d\n", g_PppDataQCtrl.stStat.ulMemAllocUplinkFailCnt);
 
-    PS_PRINTF("下行内存申请成功次数       = %d\n", g_PppDataQCtrl.stStat.ulMemAllocDownlinkCnt);
-    PS_PRINTF("下行内存申请失败次数       = %d\n", g_PppDataQCtrl.stStat.ulMemAllocDownlinkFailCnt);
-    PS_PRINTF("内存释放次数               = %d\n", g_PppDataQCtrl.stStat.ulMemFreeCnt);
+    PS_PRINTF("MemAllocDownlinkCnt      = %d\n", g_PppDataQCtrl.stStat.ulMemAllocDownlinkCnt);
+    PS_PRINTF("MemAllocDownlinkFailCnt  = %d\n", g_PppDataQCtrl.stStat.ulMemAllocDownlinkFailCnt);
+    PS_PRINTF("MemFreeCnt               = %d\n", g_PppDataQCtrl.stStat.ulMemFreeCnt);
 
-    PS_PRINTF("上行数据包总个数           = %d\n", g_PppDataQCtrl.stStat.ulUplinkCnt);
-    PS_PRINTF("上行丢包数                 = %d\n", g_PppDataQCtrl.stStat.ulUplinkDropCnt);
-    PS_PRINTF("上行发包数                 = %d\n", g_PppDataQCtrl.stStat.ulUplinkSndDataCnt);
+    PS_PRINTF("UplinkCnt                = %d\n", g_PppDataQCtrl.stStat.ulUplinkCnt);
+    PS_PRINTF("UplinkDropCnt            = %d\n", g_PppDataQCtrl.stStat.ulUplinkDropCnt);
+    PS_PRINTF("UplinkSndDataCnt         = %d\n", g_PppDataQCtrl.stStat.ulUplinkSndDataCnt);
 
-    PS_PRINTF("下行数据包总个数           = %d\n", g_PppDataQCtrl.stStat.ulDownlinkCnt);
-    PS_PRINTF("下行丢包数                 = %d\n", g_PppDataQCtrl.stStat.ulDownlinkDropCnt);
-    PS_PRINTF("下行发包数                 = %d\n", g_PppDataQCtrl.stStat.ulDownlinkSndDataCnt);
+    PS_PRINTF("DownlinkCnt              = %d\n", g_PppDataQCtrl.stStat.ulDownlinkCnt);
+    PS_PRINTF("DownlinkDropCnt          = %d\n", g_PppDataQCtrl.stStat.ulDownlinkDropCnt);
+    PS_PRINTF("DownlinkSndDataCnt       = %d\n", g_PppDataQCtrl.stStat.ulDownlinkSndDataCnt);
 
-    PS_PRINTF("队列满丢包数               = %d\n", g_PppDataQCtrl.stStat.ulDropCnt);
+    PS_PRINTF("DropCnt                  = %d\n", g_PppDataQCtrl.stStat.ulDropCnt);
 
     PS_PRINTF("================PPP STAT INFO End==========================\n");
 
@@ -318,7 +318,6 @@ VOS_UINT32 PPP_PushPacketEvent(VOS_UINT8 ucRabId, PPP_ZC_STRU *pstImmZc, ADS_PKT
     g_PppDataQCtrl.stStat.ulDownlinkCnt++;
 
     /* 通过RabId，寻找到PPP ID和相应的实体 */
-    /*Add by y45445 for PS FUSION PC ST 20120117 begin*/
     if ( !PPP_RAB_TO_PPPID(&usPppId, ucRabId) )
     {
         g_PppDataQCtrl.stStat.ulDownlinkDropCnt++;
@@ -345,7 +344,6 @@ VOS_UINT32 PPP_PushPacketEvent(VOS_UINT8 ucRabId, PPP_ZC_STRU *pstImmZc, ADS_PKT
         return PS_FAIL;
     }
 
-    /*Add by y45445 for PS FUSION PC ST 20120117 end*/
     /*填充pstData的usApp字段:高8位放usPppId,低8位放PPP报文类型*/
     PPP_ZC_SET_DATA_APP(pstImmZc, (VOS_UINT16)(usPppId << 8) | (VOS_UINT16)PPP_PUSH_PACKET_TYPE);
 

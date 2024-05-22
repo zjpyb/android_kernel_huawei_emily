@@ -107,7 +107,7 @@ History
 Modification : Created function
  *****************************************************************************/
 /*lint -e429*/
-void hisi_save_pstore_log(char *name, void *data, size_t size)
+void hisi_save_pstore_log(const char *name, const void *data, size_t size)
 {
 	struct persist_store_info *info;
 
@@ -127,7 +127,9 @@ void hisi_save_pstore_log(char *name, void *data, size_t size)
 		return;
 	}
 
-	strncpy_s(info->name, PERSIST_STORE_NAMELEN-1, name, PERSIST_STORE_NAMELEN);
+	if (EOK != strncpy_s(info->name, PERSIST_STORE_NAMELEN-1, name, PERSIST_STORE_NAMELEN)) {
+		pr_err("%s(), strncpy_s fail !\n", __func__);
+	}
 	info->name[PERSIST_STORE_NAMELEN-1] = '\0';
 	info->size = size;
 	if (EOK != memcpy_s((void*)info->data, info->size, data, size)) {

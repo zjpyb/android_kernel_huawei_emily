@@ -113,8 +113,7 @@ mapped:
 	f2fs_wait_on_page_writeback(page, DATA, false);
 
 	/* wait for GCed encrypted page writeback */
-	if (f2fs_encrypted_file(inode))
-		f2fs_wait_on_block_writeback(sbi, dn.data_blkaddr);
+	f2fs_wait_on_block_writeback(inode, dn.data_blkaddr);
 
 out_sem:
 	up_read(&F2FS_I(inode)->i_mmap_sem);
@@ -629,7 +628,7 @@ truncate_out:
 	return 0;
 }
 
-int truncate_blocks(struct inode *inode, u64 from, bool lock)
+int truncate_blocks(struct inode *inode, u64 from, bool lock, bool buf_write)
 {
 	struct f2fs_sb_info *sbi = F2FS_I_SB(inode);
 	unsigned int blocksize = inode->i_sb->s_blocksize;
@@ -638,6 +637,8 @@ int truncate_blocks(struct inode *inode, u64 from, bool lock)
 	int count = 0, err = 0;
 	struct page *ipage;
 	bool truncate_page = false;
+	int flag = buf_write ? F2FS_GET_BLOCK_PRE_AIO : F2FS_GET_BLOCK_PRE_DIO;
+	bool lock2 = false;
 
 	trace_f2fs_truncate_blocks_enter(inode, from);
 
@@ -647,7 +648,7 @@ int truncate_blocks(struct inode *inode, u64 from, bool lock)
 		goto free_partial;
 
 	if (lock)
-		f2fs_lock_op(sbi);
+		lock2 = __do_map_lock(sbi, flag, true, false);
 
 	ipage = get_node_page(sbi, inode->i_ino);
 	if (IS_ERR(ipage)) {
@@ -685,7 +686,7 @@ free_next:
 	err = truncate_inode_blocks(inode, free_from);
 out:
 	if (lock)
-		f2fs_unlock_op(sbi);
+		(void)__do_map_lock(sbi, flag, false, lock2);
 free_partial:
 	/* lastly zero out the first data page */
 	if (!err)
@@ -721,7 +722,7 @@ int f2fs_truncate(struct inode *inode)
 			return err;
 	}
 
-	err = truncate_blocks(inode, i_size_read(inode), true);
+	err = truncate_blocks(inode, i_size_read(inode), true, false);
 	if (err)
 		return err;
 
@@ -734,18 +735,6 @@ int f2fs_getattr(struct vfsmount *mnt,
 			struct dentry *dentry, struct kstat *stat)
 {
 	struct inode *inode = d_inode(dentry);
-#if 0
-	struct f2fs_inode_info *fi = F2FS_I(inode);
-	struct f2fs_inode *ri;
-
-	if (f2fs_has_extra_attr(inode) &&
-			f2fs_sb_has_inode_crtime(inode->i_sb) &&
-			F2FS_FITS_IN_INODE(ri, fi->i_extra_isize, i_crtime)) {
-		stat->result_mask |= STATX_BTIME;
-		stat->btime.tv_sec = fi->i_crtime.tv_sec;
-		stat->btime.tv_nsec = fi->i_crtime.tv_nsec;
-	}
-#endif
 
 	generic_fillattr(inode, stat);
 
@@ -810,9 +799,24 @@ int f2fs_setattr(struct dentry *dentry, struct iattr *attr)
 		!uid_eq(attr->ia_uid, inode->i_uid)) ||
 		(attr->ia_valid & ATTR_GID &&
 		!gid_eq(attr->ia_gid, inode->i_gid))) {
+		f2fs_lock_op(F2FS_I_SB(inode));
 		err = f2fs_dquot_transfer(inode, attr);
-		if (err)
+		if (err) {
+			set_sbi_flag(F2FS_I_SB(inode),
+					SBI_QUOTA_NEED_REPAIR);
+			f2fs_unlock_op(F2FS_I_SB(inode));
 			return err;
+		}
+		/*
+		 * update uid/gid under lock_op(), so that dquot and inode can
+		 * be updated atomically.
+		 */
+		if (attr->ia_valid & ATTR_UID)
+			inode->i_uid = attr->ia_uid;
+		if (attr->ia_valid & ATTR_GID)
+			inode->i_gid = attr->ia_gid;
+		f2fs_mark_inode_dirty_sync(inode, true);
+		f2fs_unlock_op(F2FS_I_SB(inode));
 	}
 
 	if (attr->ia_valid & ATTR_SIZE) {
@@ -1259,7 +1263,7 @@ static int f2fs_collapse_range(struct inode *inode, loff_t offset, loff_t len)
 	new_size = i_size_read(inode) - len;
 	truncate_pagecache(inode, new_size);
 
-	ret = truncate_blocks(inode, new_size, true);
+	ret = truncate_blocks(inode, new_size, true, false);
 	if (!ret)
 		f2fs_i_size_write(inode, new_size);
 out_unlock:
@@ -1439,7 +1443,7 @@ static int f2fs_insert_range(struct inode *inode, loff_t offset, loff_t len)
 	f2fs_balance_fs(sbi, true);
 
 	down_write(&F2FS_I(inode)->i_mmap_sem);
-	ret = truncate_blocks(inode, i_size_read(inode), true);
+	ret = truncate_blocks(inode, i_size_read(inode), true, false);
 	if (ret)
 		goto out;
 
@@ -1955,10 +1959,6 @@ static int f2fs_ioc_fitrim(struct file *filp, unsigned long arg)
 	 * disable aligning minlen to discard granularity of device,
 	 * so that smaller discard could be issued from FITRIM interface.
 	 */
-#if 0
-	range.minlen = max((unsigned int)range.minlen,
-				q->limits.discard_granularity);
-#endif
 
 	f2fs_msg(sb, KERN_ALERT,
 		"%s: Recive fstrim command from userspace!\n", __func__);

@@ -37,6 +37,10 @@ extern "C" {
 #include "linux/timex.h"
 #include "linux/rtc.h"
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0))
+#include <uapi/linux/sched/types.h>
+#endif
+
 /*lint +e322*/
 
 /*****************************************************************************
@@ -77,7 +81,11 @@ typedef oal_void                    (*oal_defer_func)(oal_uint);
 /* taskletÉùÃ÷ */
 #define OAL_DECLARE_TASK    DECLARE_TASKLET
 
-typedef wait_queue_t         oal_wait_queue_stru;
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0))
+    typedef wait_queue_entry_t   oal_wait_queue_stru;
+#else
+    typedef wait_queue_t         oal_wait_queue_stru;
+#endif
 typedef wait_queue_head_t    oal_wait_queue_head_stru;
 
 /**
@@ -428,7 +436,7 @@ OAL_STATIC OAL_INLINE oal_int32  oal_atomic_dec_and_test(oal_atomic *p_vector)
 
 OAL_STATIC OAL_INLINE oal_void  oal_time_get_stamp_us(oal_time_us_stru *pst_usec)
 {
-    struct timespec ts;
+    struct timespec ts = {0};
 
     getnstimeofday(&ts);
 
@@ -533,6 +541,13 @@ OAL_STATIC OAL_INLINE oal_uint32 oal_time_is_before(oal_uint ui_time)
 OAL_STATIC OAL_INLINE oal_uint32 oal_time_after(oal_ulong ul_time_a, oal_ulong ul_time_b)
 {
     return (oal_uint32)time_after(ul_time_a, ul_time_b);
+}
+
+
+
+OAL_STATIC OAL_INLINE oal_uint32 oal_time_after32(oal_uint32 ul_time_a, oal_uint32 ul_time_b)
+{
+    return (oal_uint32)((oal_int32)((ul_time_b) - (ul_time_a)) < 0);
 }
 
 OAL_INLINE static char* oal_get_current_task_name(oal_void)

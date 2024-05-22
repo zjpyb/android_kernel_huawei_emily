@@ -69,17 +69,29 @@ static struct report_chr_stru g_chr_report;
 #endif
 
 /*hidata app qoe statistic variable*/
-static struct pkt_stat_swth g_app_qoe_stat = {0};
+static struct pkt_stat_swth g_app_qoe_stat;
 static uid_t g_app_qoe_uid = 0;
 static int g_app_qoe_cycle = 0;/*seconds*/
 static int g_app_qoe_level = NETWORK_STATUS_INVALID;
 static int g_slow_num = 0;
 static int g_no_rx_num = 0;
 static int g_normal_num = 0;
+static int g_alpha_filter_factor = 1;
+static int g_alpha_filter_factor_small = 1;
+static int g_alpha_filter_factor_big = 10;
+static int g_alpha_filter_change_thresh = 0;
+static unsigned int g_no_rx_thresh = 2;
+static unsigned long g_no_rx_time_stamp = 0;
+
+static int g_network_detect_window = 5;/*seconds*/
+static int g_network_status = NETWORK_STATUS_NETWORK_NORMAL;
+static int g_slow_count = 0;
+static int g_no_rx_count = 0;
+static int g_normal_count = 0;
+
 static int g_rsrp = 0;
 static int g_dbm = 0;
 static unsigned int g_app_rtt;
-
 /********************************
 *	Function variables
 *********************************/
@@ -127,7 +139,7 @@ static void update_tcp_app_qoe_hook_out(struct sk_buff *skb, struct tcphdr *tcph
 	if (is_need_update_app_qoe(skb)) {
 		if (skb->sk->sk_state == TCP_ESTABLISHED) {
 			idx_update(&g_app_qoe_stat);
-			stat_pkt_out(skb->sk, tcph, &g_app_qoe_stat, dataLen);
+			stat_pkt_out((struct tcp_sock *)skb->sk, tcph, &g_app_qoe_stat, dataLen);
 		} else if (skb->sk->sk_state == TCP_SYN_SENT) {
 			idx_update(&g_app_qoe_stat);
 			if (tcph->syn == 1) {
@@ -143,7 +155,7 @@ static void update_tcp_app_qoe_hook_in(struct sk_buff *skb, struct tcphdr *tcph,
 		return;
 	if (is_need_update_app_qoe(skb)) {
 		idx_update(&g_app_qoe_stat);
-		stat_pkt_in(skb->sk, tcph, &g_app_qoe_stat, dataLen);
+		stat_pkt_in((struct tcp_sock *)skb->sk, tcph, &g_app_qoe_stat, dataLen);
 	}
 }
 #endif
@@ -234,7 +246,7 @@ static void mean_stat_new(void)
 	}
 }
 
-static int chr_report(unsigned long data)
+static void chr_report(unsigned long data)
 {
 	int rtt = 0;
 
@@ -249,7 +261,7 @@ static int chr_report(unsigned long data)
 	nb_notify_event(NBMSG_KSI_EVT, &g_chr_report,
 		sizeof(g_chr_report));
 	pr_info("KSI chr slow timer report\n");
-	return 0;
+	return;
 }
 
 #endif
@@ -432,7 +444,7 @@ static int ksi_update(struct pkt_stat_swth *stat_ptr)
 	int idx_prv = 0;
 
 	if (NULL == stat_ptr)
-		return;
+		return -1;
 
 	stat_ptr->idx = idx_check(stat_ptr->idx);
 	calc_norm(stat_ptr, stat_ptr->idx);
@@ -501,7 +513,8 @@ static void stat_pkt_in(struct tcp_sock *sk,
 		if (0 == g_app_rtt) {
 			g_app_rtt = rtt_ms;
 		} else {
-			g_app_rtt = g_app_rtt + rtt_ms / FILT_16 - g_app_rtt / FILT_16;
+			g_app_rtt = g_app_rtt + (rtt_ms*g_alpha_filter_factor)/FILT_16 -
+				(g_app_rtt*g_alpha_filter_factor)/FILT_16;
 		}
 		if (stat_ptr->stat[stat_ptr->idx].rtt < g_app_rtt)
 			stat_ptr->stat[stat_ptr->idx].rtt = g_app_rtt;
@@ -530,6 +543,43 @@ static void stat_pkt_out(struct tcp_sock *sk,
 }
 
 #ifdef CONFIG_APP_QOE_AI_PREDICT
+static void update_alpha_filter_factor(void) {
+	int idx_tmp = 0;
+	if (g_alpha_filter_change_thresh <= 0) {
+		g_alpha_filter_factor = 1;
+		return;
+	}
+	idx_tmp = idx_check(g_app_qoe_stat.idx);
+	if (g_app_qoe_stat.stat[idx_tmp].in_pkt >= g_alpha_filter_change_thresh) {
+		g_alpha_filter_factor = g_alpha_filter_factor_small;
+	} else {
+		g_alpha_filter_factor = g_alpha_filter_factor_big;
+	}
+}
+
+static bool is_app_qoe_level_changed(void)
+{
+	unsigned int num_max = 0;
+	bool is_no_rx_timeout = false;
+	num_max = g_app_qoe_cycle < APP_QOE_MIN_STAT_SEC ? APP_QOE_MIN_STAT_SEC : g_app_qoe_cycle;
+	if ((g_no_rx_time_stamp != 0) && ((jiffies - g_no_rx_time_stamp)/HZ >= (long)num_max*2) &&
+		(g_no_rx_num >= num_max)) {
+		is_no_rx_timeout = true;
+	}
+
+	if (NETWORK_STATUS_APP_QOE_GENERAL_SLOW != g_app_qoe_level) {
+		if ((2*num_max <= g_no_rx_num) || is_no_rx_timeout || (num_max <= g_slow_num)) {
+			return true;
+		}
+	}
+	if (NETWORK_STATUS_APP_QOE_NORMAL != g_app_qoe_level) {
+		if (num_max <= g_normal_num) {
+			return true;
+		}
+	}
+	return false;
+}
+
 static void hidata_app_qoe_ai_predict(void)
 {
 	int para[10] = {0};
@@ -537,7 +587,6 @@ static void hidata_app_qoe_ai_predict(void)
 	unsigned int i = 0;
 	unsigned int j = 0;
 	unsigned int loop_max = APP_QOE_MIN_STAT_SEC;
-	unsigned int num_max = 0;
 	unsigned int idx_tmp = 0;
 	unsigned int *ptr = NULL;
 	unsigned int *ptr1 = NULL;
@@ -559,7 +608,7 @@ static void hidata_app_qoe_ai_predict(void)
 
 	sum_num = (int)loop_max;
 	ptr = &(stat.in_pkt);
-	for (i = 1; i <= loop_max; i++) {
+	for (i = 0; i < loop_max; i++) {
 		idx_tmp = idx_check(g_app_qoe_stat.idx - i);
 		ptr1 = &(g_app_qoe_stat.stat[idx_tmp].in_pkt);
 		if ((g_app_qoe_stat.stat[idx_tmp].in_pkt + g_app_qoe_stat.stat[idx_tmp].out_pkt
@@ -572,10 +621,9 @@ static void hidata_app_qoe_ai_predict(void)
 		}
 	}
 	if (sum_num <= 0) {
-		pr_info("hidata_app_qoe_ai_predict,sum_num is 0");
+		pr_info("[AppQoe]hidata_app_qoe_ai_predict,sum_num is 0");
 		g_normal_num = 0;
 		g_slow_num = 0;
-		g_no_rx_num = 0;
 		return;
 	}
 	for (j = 0; j < (sizeof(struct pkt_cnt_swth)/sizeof(unsigned int)); j++) {
@@ -604,29 +652,31 @@ static void hidata_app_qoe_ai_predict(void)
 
 	rlt_info1 = judge_single_smp_using_clf_info_int_exp(clf_info, para, g_app_qoe_level);
 
-	if ((stat.out_pkt + stat.syn) > 0 && stat.in_pkt == 0) {
+	if ((stat.out_pkt + stat.syn) >= g_no_rx_thresh && stat.in_pkt == 0) {
 		pr_info("[AppQoe]ai_predict no rx");
 		g_no_rx_num++;
 		g_slow_num = 0;
 		g_normal_num = 0;
 		rlt_info1.is_ps_slow = TRUE;
+		if (g_no_rx_num == 1) {
+			g_no_rx_time_stamp = jiffies;
+		}
 	} else if (TRUE == rlt_info1.is_ps_slow) {
 		g_slow_num++;
 		g_normal_num = 0;
 		g_no_rx_num = 0;
+		g_no_rx_time_stamp = 0;
 	} else if (FALSE == rlt_info1.is_ps_slow) {
 		g_normal_num++;
 		g_slow_num = 0;
 		g_no_rx_num = 0;
+		g_no_rx_time_stamp = 0;
 	}
 
-	pr_info("[AppQoe]app qoe AI predict result =%d,g_app_qoe_level=%d,g_slow_num=%d,g_normal_num=%d,g_no_rx_num=%d\n",
-		rlt_info1.is_ps_slow, g_app_qoe_level, g_slow_num, g_normal_num, g_no_rx_num);
-	num_max = g_app_qoe_cycle < APP_QOE_MIN_STAT_SEC ? APP_QOE_MIN_STAT_SEC : g_app_qoe_cycle;
+	pr_info("[AppQoe]app qoe AI predict result=%d,ps_slow_proba=%ld,g_app_qoe_level=%d,g_slow_num=%d,g_normal_num=%d,g_no_rx_num=%d\n",
+		rlt_info1.is_ps_slow, rlt_info1.ps_slow_proba, g_app_qoe_level, g_slow_num, g_normal_num, g_no_rx_num);
 
-	if ((2*num_max <= g_no_rx_num && NETWORK_STATUS_APP_QOE_GENERAL_SLOW != g_app_qoe_level)
-		|| (num_max <= g_slow_num && NETWORK_STATUS_APP_QOE_GENERAL_SLOW != g_app_qoe_level)
-		|| (num_max <= g_normal_num && NETWORK_STATUS_APP_QOE_NORMAL != g_app_qoe_level)) {
+	if (is_app_qoe_level_changed()) {
 		g_app_qoe_level = (rlt_info1.is_ps_slow == TRUE ?
 				 NETWORK_STATUS_APP_QOE_GENERAL_SLOW : NETWORK_STATUS_APP_QOE_NORMAL);
 		report_para.slowType = g_app_qoe_level;
@@ -638,10 +688,107 @@ static void hidata_app_qoe_ai_predict(void)
 		g_normal_num = 0;
 		g_slow_num = 0;
 		g_no_rx_num = 0;
+		g_no_rx_time_stamp = 0;
 		pr_info("[AppQoe]hidata_app_qoe_ai_predict,slowType=%d\n", report_para.slowType);
 	}
 }
 #endif
+
+static void predict_network_normal_or_slow(void)
+{
+	int para[10] = {0};
+	int sum_num = 0;
+	unsigned int i = 0;
+	unsigned int j = 0;
+	//unsigned int loop_max = APP_QOE_MIN_STAT_SEC;
+	unsigned int loop_max = 5;
+	unsigned int idx_tmp = 0;
+	unsigned int *ptr = NULL;
+	unsigned int *ptr1 = NULL;
+	struct pkt_cnt_swth stat = {0};
+	struct report_slow_para report_para = {0};
+	/*point to gIntFixParam[SUB_CLFS_NUM_MAX][4], i.e g_int_fix_param: global variable.
+	  array pointer from clf_params.h.*/
+	int (*ppg_int_fix_param)[4] = g_int_fix_param;
+	classifier_info_int_exp_type clf_info = (classifier_info_int_exp_type){ppg_int_fix_param, ADA_SUB_CLFS_NUM};
+	/*meaning: FALSE: not fakeBts; 1.0: all as trueBts.*/
+	judge_rlt_info_int_calc_type rlt_info1 = {FALSE, 0, 0.0, 1.0, 0, ADA_SUB_CLFS_NUM};
+
+	sum_num = (int)loop_max;
+	ptr = &(stat.in_pkt);
+	for (i = 1; i <= loop_max; i++) {
+		idx_tmp = idx_check(g_stat.idx - i);
+		ptr1 = &(g_stat.stat[idx_tmp].in_pkt);
+		if ((g_stat.stat[idx_tmp].in_pkt + g_stat.stat[idx_tmp].out_pkt
+			+ g_stat.stat[idx_tmp].syn) == 0) {
+			sum_num--;
+			continue;
+		}
+		for (j = 0; j < (sizeof(struct pkt_cnt_swth)/sizeof(unsigned int)); j++) {
+			*(ptr + j) += *(ptr1 + j);
+		}
+	}
+	if (sum_num <= 0) {
+		g_normal_count  = 0;
+		g_slow_count  = 0;
+		g_no_rx_count  = 0;
+		return;
+	}
+	for (j = 0; j < (sizeof(struct pkt_cnt_swth)/sizeof(unsigned int)); j++) {
+		unsigned int temp = *(ptr+j);
+		if (temp >= sum_num || 0 == temp) {
+			*(ptr+j) = temp/sum_num;
+		} else {
+			*(ptr+j) = 1;
+		}
+	}
+	/*10 parameters: RTT,in,inpkt,out,outpkt,dack,rts,syn,3Gsignal,4Gsignal
+	*/
+	para[0] = stat.rtt;
+	para[1] = stat.in_len;
+	para[2] = stat.in_pkt;
+	para[3] = stat.out_len;
+	para[4] = stat.out_pkt;
+	para[5] = stat.dupack;
+	para[6] = stat.rts;
+	para[7] = stat.syn;
+	para[8] = g_dbm;//3Gsingnal
+	para[9] = g_rsrp;
+
+	rlt_info1 = judge_single_smp_using_clf_info_int_exp(clf_info, para, g_network_status );
+	pr_info("[AppQoe]predict_network_normal_or_slow params[]=%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,ps_slow_proba=%ld\n",
+		para[0], para[1], para[2], para[3], para[4],
+		para[5], para[6], para[7], para[8], para[9], rlt_info1.ps_slow_proba);
+
+	if ((stat.out_pkt + stat.syn) > 0 && stat.in_pkt == 0) {
+		pr_info("ai_predict no rx");
+		g_no_rx_count++;
+		g_slow_count = 0;
+		g_normal_count = 0;
+		rlt_info1.is_ps_slow = TRUE;
+	} else if (TRUE == rlt_info1.is_ps_slow) {
+		g_slow_count++;
+		g_normal_count = 0;
+		g_no_rx_count = 0;
+	} else if (FALSE == rlt_info1.is_ps_slow) {
+		g_normal_count++;
+		g_slow_count = 0;
+		g_no_rx_count = 0;
+	}
+
+	if ((2*g_network_detect_window <= g_no_rx_count && NETWORK_STATUS_NETWORK_SLOW != g_network_status )
+		|| (g_network_detect_window <= g_slow_count && NETWORK_STATUS_NETWORK_SLOW != g_network_status )
+		|| (g_network_detect_window <= g_normal_count && NETWORK_STATUS_NETWORK_NORMAL != g_network_status )) {
+		g_network_status  = (rlt_info1.is_ps_slow == TRUE ?
+			NETWORK_STATUS_NETWORK_SLOW : NETWORK_STATUS_NETWORK_NORMAL);
+		report_para.slowType = g_network_status ;
+		nb_notify_event(NBMSG_KSI_EVT, &report_para,sizeof(report_para));
+		g_normal_count  = 0;
+		g_slow_count = 0;
+		g_no_rx_count = 0;
+		pr_info("predict_network_normal_or_slow,slowType=%d\n", report_para.slowType);
+	}
+}
 
 /*Update the index for the statistics array*/
 static unsigned int idx_update(struct pkt_stat_swth *stat_ptr)
@@ -677,9 +824,13 @@ static unsigned int idx_update(struct pkt_stat_swth *stat_ptr)
 
 #ifdef CONFIG_APP_QOE_AI_PREDICT
 		if (&g_app_qoe_stat == stat_ptr) {
+			update_alpha_filter_factor();
 			hidata_app_qoe_ai_predict();
 		}
 #endif
+		if (&g_stat == stat_ptr) {
+			predict_network_normal_or_slow();
+		}
 		stat_ptr->idx = index;
 		stat_ptr->time_stamp = time_stamp;
 
@@ -690,8 +841,8 @@ static unsigned int idx_update(struct pkt_stat_swth *stat_ptr)
 }
 
 /*Local out hook function*/
-static unsigned int hook_out(const struct nf_hook_ops *ops,
-		struct sk_buff *skb, const struct nf_hook_state *state)
+static unsigned int hook_out(void *ops, struct sk_buff *skb,
+		const struct nf_hook_state *state)
 {
 	struct iphdr *iph = NULL;
 	struct tcphdr *tcph = NULL;
@@ -742,7 +893,7 @@ static unsigned int hook_out(const struct nf_hook_ops *ops,
 
 		if (skb->sk->sk_state == TCP_ESTABLISHED) {
 			idx_update(&g_stat);
-			stat_pkt_out(skb->sk, tcph, &g_stat, dataLen);
+			stat_pkt_out((struct tcp_sock *)skb->sk, tcph, &g_stat, dataLen);
 		} else if (skb->sk->sk_state == TCP_SYN_SENT) {
 			if (tcph->syn == 1)
 				g_stat.stat[g_stat.idx].syn++;
@@ -756,8 +907,8 @@ static unsigned int hook_out(const struct nf_hook_ops *ops,
 }
 
 /*Local in hook function*/
-static unsigned int hook_in(const struct nf_hook_ops *ops,
-		struct sk_buff *skb, const struct nf_hook_state *state)
+static unsigned int hook_in(void *ops, struct sk_buff *skb,
+		const struct nf_hook_state *state)
 {
 	struct iphdr *iph = NULL;
 	struct tcphdr *tcph = NULL;
@@ -785,13 +936,6 @@ static unsigned int hook_in(const struct nf_hook_ops *ops,
 		if (!virt_addr_valid(pTcpData) && !virt_addr_valid(pTcpData + MAX_PKT_LEN))
 			return NF_ACCEPT;
 
-		totalLen = skb->len - skb->data_len;
-		ipHdrLen = (pTcpData - (char *)iph);
-		dataLen = totalLen - ipHdrLen;
-
-		if (totalLen > MAX_PKT_LEN || ipHdrLen > MAX_PKT_LEN || dataLen > MAX_PKT_LEN)
-			return NF_ACCEPT;
-
 		if (NULL == skb->dev || NULL == skb->dev->name)
 			return NF_ACCEPT;
 
@@ -799,7 +943,17 @@ static unsigned int hook_in(const struct nf_hook_ops *ops,
 			&& 0 != strncmp(skb->dev->name, DS_NET_SLAVE, DS_NET_LEN))
 			return NF_ACCEPT;
 
+		g_no_rx_num = 0;
+		g_no_rx_time_stamp = 0;
+
 		if (skb->sk == NULL)
+			return NF_ACCEPT;
+
+		totalLen = skb->len - skb->data_len;
+		ipHdrLen = (pTcpData - (char *)iph);
+		dataLen = totalLen - ipHdrLen;
+
+		if (totalLen > MAX_PKT_LEN || ipHdrLen > MAX_PKT_LEN || dataLen > MAX_PKT_LEN)
 			return NF_ACCEPT;
 
 		if (skb->sk->sk_state != TCP_ESTABLISHED)
@@ -809,7 +963,7 @@ static unsigned int hook_in(const struct nf_hook_ops *ops,
 			return NF_ACCEPT;
 
 		idx_update(&g_stat);
-		stat_pkt_in(skb->sk, tcph, &g_stat, dataLen);
+		stat_pkt_in((struct tcp_sock *)skb->sk, tcph, &g_stat, dataLen);
 #ifdef CONFIG_APP_QOE_AI_PREDICT
 		update_tcp_app_qoe_hook_in(skb, tcph, dataLen);
 #endif
@@ -849,14 +1003,20 @@ int set_app_qoe_uid(int uid, int period)
 {
 	pr_info("[AppQoe]set_app_qoe_uid uid=%d,period=%d\n", uid, period);
 	spin_lock_bh(&g_smart_switch_lock);
-	g_app_qoe_uid = uid;
-	memset(&g_app_qoe_stat, 0, sizeof(g_app_qoe_stat));
-	g_app_qoe_level = NETWORK_STATUS_INVALID;
-	g_app_rtt = 0;
-	g_slow_num = 0;
-	g_no_rx_num = 0;
-	g_normal_num = 0;
-	g_app_qoe_cycle = period/1000;/*seconds*/
+	if (g_app_qoe_uid != uid) {
+		g_app_qoe_uid = uid;
+		memset(&g_app_qoe_stat, 0, sizeof(g_app_qoe_stat));
+		g_app_qoe_level = NETWORK_STATUS_INVALID;
+		g_app_rtt = 0;
+		g_slow_num = 0;
+		g_no_rx_num = 0;
+		g_normal_num = 0;
+		g_no_rx_time_stamp = 0;
+		g_app_qoe_cycle = 0;
+	}
+	if ((period/1000) > g_app_qoe_cycle) {
+		g_app_qoe_cycle = period/1000; /*seconds*/
+	}
 	spin_unlock_bh(&g_smart_switch_lock);
 	return 0;
 }
@@ -866,6 +1026,21 @@ int set_app_qoe_rsrp(int rsrp, int rsrq)
 	g_rsrp = rsrp;
 	g_dbm = rsrq;
 	return 0;
+}
+
+void set_alpha_filter_alg_params(int filter_factor_small, int filter_factor_big) {
+	if ((filter_factor_small > 0) && (filter_factor_small < FILT_16) &&
+		(filter_factor_big > 0) && (filter_factor_big < FILT_16)) {
+		pr_info("[AppQoe]set_alpha_filter_alg_params %d,%d\n",
+			filter_factor_small, filter_factor_big);
+		g_alpha_filter_factor_small = filter_factor_small;
+		g_alpha_filter_factor_big = filter_factor_big;
+	}
+}
+
+void set_alpha_filter_alg_change_thresh(int threshold) {
+	pr_info("[AppQoe]set_alpha_filter_alg_change_thresh  %d\n", threshold);
+	g_alpha_filter_change_thresh = threshold;
 }
 #endif
 
@@ -886,7 +1061,11 @@ int smart_switch_init(void)
 #endif
 	spin_lock_init(&g_smart_switch_lock);
 	/*Registration hook function*/
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
 	ret = nf_register_hooks(net_hooks, ARRAY_SIZE(net_hooks));
+#else
+	ret = nf_register_net_hooks(&init_net, net_hooks, ARRAY_SIZE(net_hooks));
+#endif
 	if (ret) {
 		pr_err("KSI init fail ret=%d\n", ret);
 		return ret;
@@ -908,7 +1087,11 @@ int smart_switch_init(void)
 /*Exit function*/
 void smart_switch_exit(void)
 {
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
 	nf_unregister_hooks(net_hooks, ARRAY_SIZE(net_hooks));
+#else
+	nf_unregister_net_hooks(&init_net, net_hooks, ARRAY_SIZE(net_hooks));
+#endif
 	pr_err("KSI exit success\n");
 }
 

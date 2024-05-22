@@ -1,45 +1,41 @@
-/************************************************************
-*
-* Copyright (C), 1988-1999, Huawei Tech. Co., Ltd.
-* FileName: switch_chip.h
-* Author: WangJing(00270068)       Version : 0.1      Date:  2015-04-14
-*
-* This software is licensed under the terms of the GNU General Public
-* License version 2, as published by the Free Software Foundation, and
-* may be copied, distributed, and modified under those terms.
-*
-* This program is distributed in the hope that it will be useful,
-* but WITHOUT ANY WARRANTY; without even the implied warranty of
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-* GNU General Public License for more details.
-*
-*  Description:    .h file for TI tusb320 typec chip
-*  Version:
-*  Function List:
-*  History:
-*  <author>  <time>   <version >   <desc>
-***********************************************************/
+/*
+ * tusb320.h
+ *
+ * header file for TI tusb320 typec chip
+ *
+ * Copyright (c) 2012-2018 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ */
 
-#ifndef _TYPEC_TUSB320_H_
-#define _TYPEC_TUSB320_H_
-
-#define TUSB320_REGISTER_NUM    12
+#ifndef _TUSB320_H_
+#define _TUSB320_H_
 
 #ifndef BIT
 #define BIT(x)        (1 << (x))
 #endif
 
-#define DISABLE_SET    0
-#define DISABLE_CLEAR    1
-#define TUSB320_RESET_DURATION_MS              25
-#define TUSB320_UFP_RESET_DURATION_MS          100
+#define TUSB320_REGISTER_NUM                    12
+
+#define DISABLE_SET                             0
+#define DISABLE_CLEAR                           1
+#define TUSB320_RESET_DURATION_MS               25
+#define TUSB320_UFP_RESET_DURATION_MS           100
 
 /* Register address */
-#define TUSB320_REG_DEVICE_ID                  0x00
-#define TUSB320_REG_CURRENT_MODE               0x08
-#define TUSB320_REG_ATTACH_STATUS              0x09
-#define TUSB320_REG_MODE_SET                   0x0a
-#define TUSB320_REG_DISABLE                    0x45
+#define TUSB320_REG_DEVICE_ID                   0x00
+#define TUSB320_REG_CURRENT_MODE                0x08
+#define TUSB320_REG_ATTACH_STATUS               0x09
+#define TUSB320_REG_MODE_SET                    0x0a
+#define TUSB320_REG_DISABLE                     0x45
 
 /* Register REG_CURRENT_MODE 08 */
 #define TUSB320_REG_HOST_CUR_MID                BIT(6)
@@ -67,4 +63,5 @@
 #define TUSB320_REG_SET_SOFT_RESET              BIT(3)
 #define TUSB320_REG_SET_DISABLE_RD_RP           BIT(2)
 #define TUSB320_REG_SET_DISABLE_TERM            BIT(0)
-#endif /*_TYPEC_TUSB320_H_*/
+
+#endif /*_TUSB320_H_*/

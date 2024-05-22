@@ -310,7 +310,7 @@ static int extract_sub_para(const char *buf,
 	return 0;
 }
 
-static inline int check_tokens(int *ntokens_sub)
+static inline int check_tokens(const unsigned int *ntokens_sub)
 {
 	return (!(ntokens_sub[1] & 0x1) || ntokens_sub[1] > SURPORT_NTARGET_LOAD_MAX || ntokens_sub[0] != MAX_PARA);
 }
@@ -322,7 +322,7 @@ static struct scene_aware_policy *get_policy(const char *buf)
 
 	int i;
 	int ntokens = 1;
-	int ntokens_sub[3] = {1, 1, 1};
+	unsigned int ntokens_sub[3] = {1, 1, 1};
 	struct scene_aware_policy *policy;
 	int err = -EINVAL;
 
@@ -352,7 +352,7 @@ static struct scene_aware_policy *get_policy(const char *buf)
 	}
 
 	if (check_tokens(ntokens_sub)) {
-		pr_err("sub ntokens err:%d,%d\n", ntokens_sub[0], ntokens_sub[1]);
+		pr_err("sub ntokens err:%u,%u\n", ntokens_sub[0], ntokens_sub[1]);
 		goto err_parse;
 	}
 

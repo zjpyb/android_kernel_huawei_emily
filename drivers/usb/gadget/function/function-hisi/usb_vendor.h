@@ -81,6 +81,6 @@ static inline void bsp_usb_add_setup_dev(unsigned intf_id)
 }
 void bsp_usb_remove_setup_dev_fdname(void);
 void bsp_usb_set_enum_stat(unsigned intf_id, int enum_stat);
-void bsp_usb_set_last_cdev_name(char *dev_name);
+void bsp_usb_set_last_cdev_name(const char *dev_name);
 
 #endif /* __USB_VENDOR_H__ */

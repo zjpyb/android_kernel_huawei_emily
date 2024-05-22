@@ -34,8 +34,9 @@ enum kbase_hi_feature {
 	KBASE_FEATURE_HI0012, /* for tSIx mem auto shutdown */
 	KBASE_FEATURE_HI0013, /* use always on as power policy in FPGA */
 	KBASE_FEATURE_HI0014, /* norr es gpu deep sleep and auto shutdown */
-	KBASE_FEATURE_HI0015, /* norr cs gpu deep sleep and auto shutdown */
+	KBASE_FEATURE_HI0015, /* norr cs,trym,gondul gpu deep sleep and auto shutdown */
 	KBASE_FEATURE_HI0016, /* open bug on for gpu steadiness */
+	KBASE_FEATURE_HI0017, /* trym es set gpu striping granule to hash function with 256 byte*/
 	KBASE_HI_FEATURE_END
 };
 
@@ -88,16 +89,26 @@ static const enum kbase_hi_feature kbase_hi_feature_tNOx_r0p0[] = {
 #ifdef CONFIG_HISI_ENABLE_HPM_DATA_COLLECT
 	KBASE_FEATURE_HI0009,
 #endif
-#ifdef CONFIG_MALI_TRYM
-	KBASE_FEATURE_HI0013,
-#endif
-#ifdef CONFIG_MALI_NORR
 	KBASE_FEATURE_HI0015,
+	KBASE_FEATURE_HI0016,
+#ifdef CONFIG_MALI_TRYM
+	KBASE_FEATURE_HI0017,
 #endif
+	KBASE_HI_FEATURE_END
+};
+static const enum kbase_hi_feature kbase_hi_feature_tGOx_r1p0[] = {
+	KBASE_FEATURE_HI0007,
+	KBASE_FEATURE_HI0008,
+#ifdef CONFIG_HISI_ENABLE_HPM_DATA_COLLECT
+	KBASE_FEATURE_HI0009,
+#endif
+	KBASE_FEATURE_HI0015,
 	KBASE_FEATURE_HI0016,
 	KBASE_HI_FEATURE_END
 };
 static const enum kbase_hi_feature kbase_hi_feature_tSIx_r1p1[] = {
+	KBASE_FEATURE_HI0002,
+	KBASE_FEATURE_HI0005,
 	KBASE_FEATURE_HI0007,
 	KBASE_FEATURE_HI0008,
 #ifdef CONFIG_HISI_ENABLE_HPM_DATA_COLLECT

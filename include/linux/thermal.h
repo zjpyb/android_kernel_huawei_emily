@@ -606,7 +606,6 @@ static inline int thermal_generate_netlink_event(struct thermal_zone_device *tz,
 #endif
 
 #ifdef CONFIG_HISI_IPA_THERMAL
-#define IPA_SENSOR_NUM	3
 #define IPA_PERIPH_NUM 8
 
 #define SOC_THERMAL_NAME "soc_thermal"
@@ -622,24 +621,25 @@ static inline int thermal_generate_netlink_event(struct thermal_zone_device *tz,
 #define IPA_SENSOR_SHELLID    254
 #endif
 
-enum ipa_actor
-{
-	IPA_CLUSTER0 = 0,
-	IPA_CLUSTER1,
-#ifdef CONFIG_HISI_THERMAL_TRIPPLE_CLUSTERS
-	IPA_CLUSTER2,
-#endif
-	IPA_GPU,
-	IPA_ACTOR_MAX
-};
+extern u32 g_cluster_num;
+extern u32 g_ipa_sensor_num;
+/* the num of ipa cpufreq table equals cluster num , but
+cluster num is a variable. So define a larger arrays in advance.
+*/
+#define CAPACITY_OF_ARRAY  10
+extern unsigned int g_ipa_actor_num;
+extern u32 ipa_cpufreq_table_index[CAPACITY_OF_ARRAY];
+extern const char *ipa_actor_name[CAPACITY_OF_ARRAY];
+extern u32 ipa_actor_index[CAPACITY_OF_ARRAY];
 
-#ifdef CONFIG_HISI_IPA_THERMAL
+s32 thermal_zone_temp_check(s32 temperature);
 int thermal_zone_cdev_get_power(const char *thermal_zone_name, const char *cdev_name, unsigned int *power);
-#endif
-
+int of_parse_ipa_sensor_index_table(void);
+int ipa_weights_cfg_init(void);
+int ipa_get_actor_id(const char *name);
 void ipa_freq_limit_init(void);
 void ipa_freq_limit_reset(struct thermal_zone_device *tz);
-unsigned int ipa_freq_limit(enum ipa_actor actor,unsigned int target_freq);
+unsigned int ipa_freq_limit(int actor, unsigned int target_freq);
 int get_soc_temp(void);
 void dynipa_get_weights_cfg(unsigned int * weight0, unsigned int * weight1);
 #else

@@ -61,6 +61,8 @@
 #define ID_ADDR_LEN 4
 #define FLASH_ADDR_LEN 14
 #define SMWP_EN 1
+#define SMWP_ON 1
+#define SMWP_OFF 0
 #define GLOVE_EN 1
 //use for write/read register
 #define CRC_LEN 							0x0099
@@ -483,14 +485,6 @@ struct himax_ts_data {
 	struct workqueue_struct *flash_wq;
 	struct work_struct flash_work;
 #endif
-//#ifdef HX_RESEND_CMD
-	struct workqueue_struct *himax_resend_cmd_wq;
-	struct delayed_work resend_cmd_work;
-//#endif
-#ifdef HX_TP_SYS_DIAG
-		struct workqueue_struct *himax_diag_wq;
-		struct delayed_work himax_diag_delay_wrok;
-#endif
 
 	char smwp_enable;   //gesture switch
 
@@ -554,6 +548,11 @@ struct himax_touching_data
 #define HX_VER_FW_MIN					0x32
 #define HX_VER_FW_CFG				 	0x39
 #define HX_MAX_PRBUF_SIZE           	PIPE_BUF
+
+
+#define HX_FW_DATA_FW_STOP	0x000000A5
+#define HX_FW_ADDR_CTRL_FW	0x9000005c
+#define HX_FW_WAKING	0x05
 
 enum input_protocol_type {
 	PROTOCOL_TYPE_A	= 0x00,

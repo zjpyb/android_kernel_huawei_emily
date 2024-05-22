@@ -196,7 +196,7 @@ VOS_VOID DMS_Init(VOS_VOID)
     mdrv_usb_reg_enablecb(DMS_UsbEnableCB);
     mdrv_usb_reg_disablecb(DMS_UsbDisableCB);
 
-    wake_lock_init(&g_stDmsMainInfo.stwakelock, WAKE_LOCK_SUSPEND, "dms_wakelock");
+    wakeup_source_init(&g_stDmsMainInfo.stwakelock, "dms_wakelock");
 
     DMS_ReadGetModemLogCfgNV();
 
@@ -594,7 +594,7 @@ VOS_INT DMS_WriteOmData(
     ulMemNum      = (ulLength >= DMS_GET_NLK_THRESH_SIZE())?(ulLength / DMS_GET_NLK_DATA_SIZE()):0;
     ulLastMemSize = (ulLength >= DMS_GET_NLK_THRESH_SIZE())?(ulLength % DMS_GET_NLK_DATA_SIZE()):ulLength;
 
-    wake_lock(&g_stDmsMainInfo.stwakelock);
+    __pm_stay_awake(&g_stDmsMainInfo.stwakelock);
 
     /* 发送固定大小数据块 */
     for (ulCnt = 0; ulCnt < ulMemNum; ulCnt++)
@@ -609,7 +609,7 @@ VOS_INT DMS_WriteOmData(
         DMS_NLK_Send(DMS_GET_NLK_PHY_BEAR(enChan), DMS_GET_NLK_MSG_TYPE(enChan), pucMem, ulLastMemSize, enMode);
     }
 
-    wake_unlock(&g_stDmsMainInfo.stwakelock);
+    __pm_relax(&g_stDmsMainInfo.stwakelock);
 
     return VOS_OK;
 }

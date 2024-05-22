@@ -31,6 +31,15 @@
 #define SCBAKDATA11 (0x438)
 //pt test state
 #define IN_POWER_TEST 2
+#define LCD_POWER_LEN 3
+
+//UD PrintFinger HBM
+#define LCD_KIT_FP_HBM_ENTER 1
+#define LCD_KIT_FP_HBM_EXIT  2
+#define LCD_KIT_DATA_LEN_TWO 2
+#define LCD_KIT_ENABLE_ELVSSDIM  0
+#define LCD_KIT_DISABLE_ELVSSDIM 1
+#define LCD_KIT_ELVSSDIM_NO_WAIT 0
 
 struct lcd_kit_disp_info *lcd_kit_get_disp_info(void);
 #define disp_info	lcd_kit_get_disp_info()
@@ -51,6 +60,7 @@ struct lcd_kit_disp_info {
 	u32 gpio_errflag;
 	/*backlight open short test*/
 	u32 bkl_open_short_support;
+	struct lcd_kit_cascade_ic cascade_ic;
 	/*check sum test*/
 	struct lcd_kit_checksum checksum;
 	/*adc sample vsp voltage*/
@@ -61,6 +71,10 @@ struct lcd_kit_disp_info {
 	struct lcd_kit_lv_detect lv_det;
 	/*ldo check*/
 	struct lcd_kit_ldo_check ldo_check;
+	/*vertical line test*/
+	struct lcd_kit_vertical_line vertical_line;
+	/*pcd errflag*/
+	struct lcd_kit_pcd_errflag pcd_errflag;
 	/********************end****************/
 	/********************effect****************/
 	/*gamma calibration*/

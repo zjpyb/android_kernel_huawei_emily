@@ -77,38 +77,45 @@ oal_uint32 hmac_11v_roam_scan_check(hmac_vap_stru *pst_hmac_vap)
         pst_11v_ctrl_info->uc_11v_roam_scan_times++;
         OAM_WARNING_LOG3(0, OAM_SF_ANY, "{hmac_11v_roam_scan_check::Trigger One channel scan roam, uc_11v_roam_scan_times=[%d],limit_times=[%d].channel=[%d]}",
         pst_11v_ctrl_info->uc_11v_roam_scan_times, MAC_11V_ROAM_SCAN_ONE_CHANNEL_LIMIT, pst_roam_info->st_bsst_rsp_info.uc_chl_num);
-        hmac_roam_start_etc(pst_hmac_vap, ROAM_SCAN_CHANNEL_ORG_1, OAL_FALSE, ROAM_TRIGGER_11V);
+        hmac_roam_start_etc(pst_hmac_vap, ROAM_SCAN_CHANNEL_ORG_1, OAL_TRUE, NULL, ROAM_TRIGGER_11V);
     }
     else if(MAC_11V_ROAM_SCAN_ONE_CHANNEL_LIMIT == pst_11v_ctrl_info->uc_11v_roam_scan_times)
     {/*触发全信道扫描漫游*/
         pst_11v_ctrl_info->uc_11v_roam_scan_times++;
         OAM_WARNING_LOG0(0, OAM_SF_ANY, "{hmac_11v_roam_scan_check::Trigger ALL Channel scan roam.}");
-        hmac_roam_start_etc(pst_hmac_vap, ROAM_SCAN_CHANNEL_ORG_BUTT, OAL_FALSE, ROAM_TRIGGER_11V);
+        hmac_roam_start_etc(pst_hmac_vap, ROAM_SCAN_CHANNEL_ORG_BUTT, OAL_TRUE, NULL, ROAM_TRIGGER_11V);
     }
     return OAL_SUCC;
 }
 
 
-oal_uint32 hmac_rx_bsst_req_candidate_info_check(hmac_vap_stru *pst_hmac_vap, oal_uint8 uc_channel, oal_uint8 *puc_bssid)
+oal_uint32 hmac_rx_bsst_req_candidate_info_check(hmac_vap_stru *pst_hmac_vap, oal_uint8 *puc_channel, oal_uint8 *puc_bssid)
 {
     wlan_channel_band_enum_uint8            en_channel_band;
     oal_uint32                              ul_check;
     mac_bss_dscr_stru                      *pst_bss_dscr;
+    oal_uint8                               uc_candidate_channel;
 
-    en_channel_band = mac_get_band_by_channel_num(uc_channel);
-    ul_check        = mac_is_channel_num_valid_etc(en_channel_band, uc_channel);
-    if (OAL_SUCC != ul_check)
-    {
-        /*对于无效channel如果bssid存在扫描列表中则继续11v漫游流程  */
-        pst_bss_dscr = (mac_bss_dscr_stru *)hmac_scan_get_scanned_bss_by_bssid(&pst_hmac_vap->st_vap_base_info, puc_bssid);
-        if (OAL_PTR_NULL != pst_bss_dscr)
-        {
-            OAM_WARNING_LOG4(0, OAM_SF_CFG,"{hmac_rx_bsst_req_candidate_info_check::uc_channel=[%d] is invalid,but bssid:XX:XX:XX:XX:%02X:%02X in bssinfo channel=[%d]}",
-                             uc_channel, puc_bssid[4], puc_bssid[5], pst_bss_dscr->st_channel.uc_chan_number);
-            return OAL_SUCC;
-        }
+    uc_candidate_channel = *puc_channel;
+    en_channel_band      = mac_get_band_by_channel_num(uc_candidate_channel);
+    ul_check             = mac_is_channel_num_valid_etc(en_channel_band, uc_candidate_channel);
+    pst_bss_dscr         = (mac_bss_dscr_stru *)hmac_scan_get_scanned_bss_by_bssid(&pst_hmac_vap->st_vap_base_info, puc_bssid);
 
+    if (OAL_SUCC != ul_check && OAL_PTR_NULL == pst_bss_dscr)
+    {/*无效信道*/
+        OAM_WARNING_LOG3(0, OAM_SF_CFG,"{hmac_rx_bsst_req_candidate_info_check:jolly:uc_channel=[%d] is invalid,but bssid:XX:XX:XX:XX:%02X:%02X not in scan list}",
+                         uc_candidate_channel, puc_bssid[4], puc_bssid[5]);
         return OAL_FAIL;
+    }
+    else
+    {/*有效*/
+        if (OAL_PTR_NULL != pst_bss_dscr && uc_candidate_channel != pst_bss_dscr->st_channel.uc_chan_number)
+        {/*纠正为实际信道*/
+            *puc_channel = pst_bss_dscr->st_channel.uc_chan_number;
+            OAM_WARNING_LOG4(0, OAM_SF_CFG,"{hmac_rx_bsst_req_candidate_info_check::bssid:XX:XX:XX:XX:%02X:%02X in bssinfo channel=[%d],not [%d]}",
+                             puc_bssid[4], puc_bssid[5],
+                             pst_bss_dscr->st_channel.uc_chan_number,uc_candidate_channel);
+        }
     }
 
     return OAL_SUCC;
@@ -184,6 +191,12 @@ oal_uint32 hmac_rx_bsst_req_action(hmac_vap_stru *pst_hmac_vap, hmac_user_stru *
     st_bsst_req_info.st_request_mode.bit_ess_disassoc_imminent = (puc_data[3]&BIT4)? OAL_TRUE : OAL_FALSE;
 
     st_bsst_req_info.us_disassoc_time = ((oal_uint16)(puc_data[5]) << 8 ) | puc_data[4];
+    if((st_bsst_req_info.us_disassoc_time >=  HMAC_11V_REQUEST_DISASSOC_TIME_SCAN_ONE_CHANNEL_TIME)
+        && st_bsst_req_info.us_disassoc_time < HMAC_11V_REQUEST_DISASSOC_TIME_SCAN_ALL_CHANNEL_TIME)
+    {
+        pst_11v_ctrl_info->en_only_scan_one_time = OAL_TRUE;
+    }
+
     st_bsst_req_info.uc_validity_interval = puc_data[6];
     us_handle_len = 7;              /* 前面7个字节已被处理完 */
     /* 12字节的termination duration 如果有的话 */
@@ -263,7 +276,7 @@ oal_uint32 hmac_rx_bsst_req_action(hmac_vap_stru *pst_hmac_vap, hmac_user_stru *
                              st_bsst_req_info.pst_neighbor_bss_list->auc_mac_addr[5],
                              st_bsst_req_info.pst_neighbor_bss_list->uc_chl_num);
             /*检查channel num 是否有效*/
-            ul_ret = hmac_rx_bsst_req_candidate_info_check(pst_hmac_vap, st_bsst_req_info.pst_neighbor_bss_list->uc_chl_num,
+            ul_ret = hmac_rx_bsst_req_candidate_info_check(pst_hmac_vap, &st_bsst_req_info.pst_neighbor_bss_list->uc_chl_num,
                          st_bsst_req_info.pst_neighbor_bss_list->auc_mac_addr);
             if(OAL_SUCC != ul_ret)
             {
@@ -287,9 +300,10 @@ oal_uint32 hmac_rx_bsst_req_action(hmac_vap_stru *pst_hmac_vap, hmac_user_stru *
             pst_roam_info = (hmac_roam_info_stru *)pst_hmac_vap->pul_roam_info;
             oal_memcopy(&(pst_roam_info->st_bsst_rsp_info), &st_bsst_rsp_info, sizeof(st_bsst_rsp_info));
 
-            /* broadcast address or assocaited AP's address, && disassociation time > 0, BSST reject */
+            /* broadcast address or assocaited AP's address, && disassociation time > 0,disassociation time < 100ms, BSST reject */
             if ((ETHER_IS_BROADCAST(st_bsst_req_info.pst_neighbor_bss_list->auc_mac_addr)
                 || ETHER_IS_ALL_ZERO(st_bsst_req_info.pst_neighbor_bss_list->auc_mac_addr)
+                || (st_bsst_req_info.us_disassoc_time < HMAC_11V_REQUEST_DISASSOC_TIME_SCAN_ONE_CHANNEL_TIME)
                 || !oal_memcmp(pst_mac_user->auc_user_mac_addr, st_bsst_req_info.pst_neighbor_bss_list->auc_mac_addr, WLAN_MAC_ADDR_LEN))
                 && (st_bsst_req_info.us_disassoc_time > 0))
             {
@@ -312,11 +326,11 @@ oal_uint32 hmac_rx_bsst_req_action(hmac_vap_stru *pst_hmac_vap, hmac_user_stru *
             if ((OAL_TRUE == en_need_roam) && (1 == st_bsst_req_info.uc_bss_list_num))
             {
                 pst_11v_ctrl_info->uc_11v_roam_scan_times = 1;
-                hmac_roam_start_etc(pst_hmac_vap, ROAM_SCAN_CHANNEL_ORG_1, OAL_FALSE, ROAM_TRIGGER_11V);
+                hmac_roam_start_etc(pst_hmac_vap, ROAM_SCAN_CHANNEL_ORG_1, OAL_TRUE, NULL, ROAM_TRIGGER_11V);
             }
             else if (OAL_TRUE == en_need_roam)
             {
-                hmac_roam_start_etc(pst_hmac_vap, ROAM_SCAN_CHANNEL_ORG_BUTT, OAL_FALSE, ROAM_TRIGGER_11V);
+                hmac_roam_start_etc(pst_hmac_vap, ROAM_SCAN_CHANNEL_ORG_BUTT, OAL_TRUE, NULL, ROAM_TRIGGER_11V);
             }
 #endif
         }

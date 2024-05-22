@@ -43,6 +43,10 @@
 #include "plat_exception_rst.h"
 #include "plat_pm.h"
 
+#if defined(CONFIG_LOG_EXCEPTION) && !defined(CONFIG_HI110X_KERNEL_MODULES_BUILD_SUPPORT)
+#include <log/log_usertype.h>
+#endif
+
 #ifdef BFGX_UART_DOWNLOAD_SUPPORT
 #include "wireless_patch.h"
 #endif
@@ -58,6 +62,33 @@
 extern int32 bfg_patch_recv(const uint8 *data, int32 count);
 #endif
 extern int32 hw_ir_only_open_other_subsys(void);
+extern int32 get_device_test_mem(bool is_wifi);
+
+int ram_test_ssi_error_dump = 0;
+oal_debug_module_param(ram_test_ssi_error_dump, int, S_IRUGO | S_IWUSR);
+int ram_test_ssi_pass_dump = 0;
+oal_debug_module_param(ram_test_ssi_pass_dump, int, S_IRUGO | S_IWUSR);
+int ram_test_detail_result_dump = 1;
+oal_debug_module_param(ram_test_detail_result_dump, int, S_IRUGO | S_IWUSR);
+int ram_test_detail_tsensor_dump = 1;
+oal_debug_module_param(ram_test_detail_tsensor_dump, int, S_IRUGO | S_IWUSR);
+int ram_test_mem_pass_dump = 0;
+oal_debug_module_param(ram_test_mem_pass_dump, int, S_IRUGO | S_IWUSR);
+
+/*0 表示 用例全部跑完,
+  1表示 case1跑完返回，
+  2表示 case2跑完返回 类推*/
+int ram_test_run_process_sel = 0x0;
+oal_debug_module_param(ram_test_run_process_sel, int, S_IRUGO | S_IWUSR);
+
+int ram_test_run_voltage_bias_sel = RAM_TEST_RUN_VOLTAGE_BIAS_HIGH;
+oal_debug_module_param(ram_test_run_voltage_bias_sel, int, S_IRUGO | S_IWUSR);
+
+int ram_test_wifi_hold_time = 0;/*after done the test, we hold the process to test signal(ms)*/
+oal_debug_module_param(ram_test_wifi_hold_time, int, S_IRUGO | S_IWUSR);
+
+int ram_test_bfgx_hold_time = 0;/*after done the test, we hold the process to test signal(ms)*/
+oal_debug_module_param(ram_test_bfgx_hold_time, int, S_IRUGO | S_IWUSR);
 
 /*****************************************************************************
   2 Global Variable Definition
@@ -531,6 +562,25 @@ void bfg_wake_unlock_etc(void)
     return;
 }
 
+/*return OAL_TRUE means dump ssi*/
+oal_int32 host_wkup_dev_fail_ssi_cond_check(oal_void)
+{
+#if defined(CONFIG_LOG_EXCEPTION) && !defined(CONFIG_HI110X_KERNEL_MODULES_BUILD_SUPPORT)
+    if(BETA_USER == get_logusertype_flag())
+    {
+        PS_PRINT_ERR("host_wkup_dev_fail_ssi_cond_check beta user\n");
+        return OAL_TRUE;
+    }
+#endif
+
+    if(HI1XX_ANDROID_BUILD_VARIANT_USER == hi11xx_get_android_build_variant())
+    {
+        return OAL_FALSE;
+    }
+
+    return OAL_TRUE;
+}
+
 
 void host_wkup_dev_work_etc(struct work_struct *work)
 {
@@ -646,16 +696,17 @@ void host_wkup_dev_work_etc(struct work_struct *work)
                 if(0==bwkup_gpio_val)
                 {
                     DECLARE_DFT_TRACE_KEY_INFO("bfg wakeup fail",OAL_DFT_TRACE_EXCEP);
-                    if(HI1XX_ANDROID_BUILD_VARIANT_USER == hi11xx_get_android_build_variant())
+                    if(OAL_TRUE != host_wkup_dev_fail_ssi_cond_check())
                     {
-                        PS_PRINT_INFO("user mode,ssi dump bypass\n");
+                        PS_PRINT_INFO("user mode or maybe beta user,ssi dump bypass\n");
                     }
                     else
                     {
-
-                        if(false == wlan_is_shutdown_etc())
+                        /*bfg异常打印SSI 有可能导致PCIE异常，
+                          甚至PCIE NOC，所以只在root和beta 版本打印*/
+                        if((false == wlan_is_shutdown_etc())&&(0==g_ssi_dump_en))
                         {
-                            ssi_dump_device_regs(SSI_MODULE_MASK_ARM_REG);
+                            ssi_dump_device_regs(SSI_MODULE_MASK_ARM_REG|SSI_MODULE_MASK_AON|SSI_MODULE_MASK_COEX_CTL|SSI_MODULE_MASK_BCTRL);
                         }
                         else
                         {
@@ -747,7 +798,7 @@ void host_send_disallow_msg_etc(struct work_struct *work)
             if(loop_tty_resume_cnt++ >= MAX_TTYRESUME_LOOPCNT)
             {
                 PS_PRINT_ERR("tty is not ready, state:%d!\n", tty_port_suspended(ps_core_d->tty->port));
-                break;
+                return;
             }
             msleep(10);
         }
@@ -760,7 +811,7 @@ void host_send_disallow_msg_etc(struct work_struct *work)
             if(loop_tty_resume_cnt++ >= MAX_TTYRESUME_LOOPCNT)
             {
                 PS_PRINT_ERR("tty is not ready, flag is 0x%x!\n", (unsigned int)ps_core_d->tty->port->flags);
-                break;
+                return;
             }
             msleep(10);
         }
@@ -780,7 +831,7 @@ void host_send_disallow_msg_etc(struct work_struct *work)
                     if (loop_sensorhub_resume_cnt++ >= MAX_SENSORHUB_LOOPCNT)
                     {
                         PS_PRINT_ERR("sensorhub not wakeup yet, state is %d\n", get_iomcu_power_state());
-                        break;
+                        return;
                     }
                     msleep(10);
                 }
@@ -1227,7 +1278,6 @@ int32 bfgx_dev_power_on_etc(void)
     /*防止Host睡眠*/
     oal_wake_lock(&pm_data->bfg_wake_lock_etc);
 
-    bfgx_gpio_intr_enable(OAL_TRUE);
     INIT_COMPLETION(pm_data->dev_bootok_ack_comp);
     atomic_set(&pm_data->bfg_needwait_devboot_flag, NEED_SET_FLAG);
     error = bd_info->bd_ops.bfgx_dev_power_on_etc();
@@ -1331,8 +1381,6 @@ int32 bfgx_dev_power_off_etc(void)
 
     bfg_wake_unlock_etc();
 
-    bfgx_gpio_intr_enable(OAL_FALSE);
-
     return error;
 }
 
@@ -1375,7 +1423,7 @@ int32 bfgx_dev_power_control_etc(uint8 subsys, uint8 flag)
 }
 
 
-int firmware_download_function_etc(uint32 which_cfg)
+int firmware_download_function_priv(uint32 which_cfg, firmware_downlaod_privfunc priv_func)
 {
     int32 ret = 0;
     unsigned long long total_time = 0;
@@ -1442,6 +1490,19 @@ int firmware_download_function_etc(uint32 which_cfg)
 
     PS_PRINT_INFO("firmware_download_etc begin\n");
 
+    /*do some private command before load cfg*/
+    if(NULL != priv_func)
+    {
+        ret = priv_func();
+        if(ret)
+        {
+            PS_PRINT_ERR("priv_func=%pf failed, ret:%d!\n", (oal_void*)priv_func, ret);
+            hcc_bus_unlock(pm_data->pst_wlan_pm_info->pst_bus);
+            hcc_bus_wake_unlock(pm_data->pst_wlan_pm_info->pst_bus);
+            return ret;
+        }
+    }
+
     ret = firmware_download_etc(which_cfg);
 
     if (ret < 0)
@@ -1504,6 +1565,11 @@ int firmware_download_function_etc(uint32 which_cfg)
     PS_PRINT_WARNING("download firmware, count [%llu], current time [%llu]us, max time [%llu]us\n", count, total_time, max_time);
 
     return SUCCESS;
+}
+
+int firmware_download_function_etc(uint32 which_cfg)
+{
+    return firmware_download_function_priv(which_cfg, NULL);
 }
 
 bool  wlan_is_shutdown_etc(void)
@@ -1819,7 +1885,7 @@ int32 memcheck_is_working(void)
     if (pro_memcheck_en)
     {
         complete(&pro_memcheck_finish);
-        PS_PRINT_ERR("is in product mem check test !\n");
+        PS_PRINT_INFO("is in product mem check test !bfg_wakeup_host=%d\n", oal_gpio_get_value(g_board_info_etc.bfgn_wakeup_host));
         return 0;
     }
     return -1;
@@ -1827,6 +1893,7 @@ int32 memcheck_is_working(void)
 void memcheck_bfgx_init(void)
 {
     bfgx_gpio_intr_enable(OAL_TRUE);
+    PS_PRINT_INFO("memcheck_bfgx_init\n");
     pro_memcheck_en = 1;
     init_completion(&pro_memcheck_finish);
 }
@@ -1837,6 +1904,13 @@ void memcheck_bfgx_exit(void)
 }
 int32 memcheck_bfgx_is_succ(void)
 {
+    int state = 0;
+    unsigned long timeout;
+    unsigned long timeout_hold = jiffies;
+    oal_uint32 hold_time = 100;/*拉高维持100ms*/
+    oal_uint32 gpio_value;
+    declare_time_cost_stru(cost);
+#if 0
     uint64 timeleft;
     PS_PRINT_FUNCTION_NAME;
     timeleft = wait_for_completion_timeout(&pro_memcheck_finish, msecs_to_jiffies(bfgx_mem_check_mdelay));
@@ -1845,11 +1919,113 @@ int32 memcheck_bfgx_is_succ(void)
         PS_PRINT_ERR("wait bfgx memcheck_bfgx_is_succ timeout\n");
         return  -1;
     }
-    return 0;
+#endif
+    /*中断改成电平判断，
+       WLAN POWERON拉高瞬间存在毛刺会误报中断*/
+    timeout = jiffies + msecs_to_jiffies(bfgx_mem_check_mdelay);
+    PS_PRINT_INFO("bfgx memcheck gpio level check start,timeout=%d ms\n", bfgx_mem_check_mdelay);
+    oal_get_time_cost_start(cost);
+    for(;;)
+    {
+        gpio_value = oal_gpio_get_value(g_board_info_etc.bfgn_wakeup_host);
+        if(0 == state)
+        {
+            if(0 == gpio_value)
+            {
+                if(time_after(jiffies, timeout))
+                {
+                    PS_PRINT_ERR("[E]wait wakeup gpio to high timeout [%u] ms[%lu:%lu]\n", bfgx_mem_check_mdelay, jiffies, timeout);
+                    return -1;
+                }
+                else
+                {
+                    oal_msleep(10);
+                    continue;
+                }
+            }
+            else
+            {
+                oal_get_time_cost_end(cost);
+                oal_calc_time_cost_sub(cost);
+                PS_PRINT_INFO("bfgx wake up host gpio to high %llu us", time_cost_var_sub(cost));
+                timeout_hold = jiffies + OAL_MSECS_TO_JIFFIES(hold_time);
+                state = 1;
+                oal_msleep(10);
+                continue;
+            }
+        }
+        else if(1 == state)
+        {
+            if(0 == gpio_value)
+            {
+                oal_print_hi11xx_log(HI11XX_LOG_INFO, "[E]gpio pull down again, retry");
+                oal_msleep(10);
+                state = 0;
+                continue;
+            }
+            else
+            {
+                if(time_after(jiffies, timeout_hold))
+                {
+                    /*gpio high and hold enough time.*/
+                    oal_get_time_cost_end(cost);
+                    oal_calc_time_cost_sub(cost);
+                    PS_PRINT_INFO("bfgx hold high level %u ms,check succ, test cost %llu us", hold_time, time_cost_var_sub(cost));
+                    return 0;
+                }
+                else
+                {
+                    oal_msleep(10);
+                    continue;
+                }
+            }
+        }
+        else
+        {
+            PS_PRINT_ERR("[E]error state=%d\n", state);
+            return -1;
+        }
+    }
+    //return 0;
 }
+
+static int32 device_mem_check_priv_init(void)
+{
+    int32 ret = 0;
+    ret = write_device_reg16(RAM_TEST_RUN_VOLTAGE_REG_ADDR,
+                (RAM_TEST_RUN_VOLTAGE_BIAS_HIGH == ram_test_run_voltage_bias_sel)
+                ? RAM_TEST_RUN_VOLTAGE_BIAS_HIGH : RAM_TEST_RUN_VOLTAGE_BIAS_LOW);
+    if(ret)
+    {
+        PS_PRINT_ERR("write reg=0x%x value=0x%x failed, high bias\n", RAM_TEST_RUN_VOLTAGE_REG_ADDR, ram_test_run_voltage_bias_sel);
+        return ret;
+    }
+
+    PS_PRINT_INFO("ram_test_run_voltage_bias_sel=%d, [%s]\n",
+                      ram_test_run_voltage_bias_sel,
+                      (RAM_TEST_RUN_VOLTAGE_BIAS_HIGH == ram_test_run_voltage_bias_sel)
+                       ? "high voltage bias" : "low voltage bias");
+
+    if(ram_test_run_process_sel)
+    {
+        ret = write_device_reg16(RAM_TEST_RUN_PROCESS_SEL_REG_ADDR,
+                                 ram_test_run_process_sel);
+        if(ret)
+        {
+            PS_PRINT_ERR("write reg=0x%x value=0x%x failed, process sel\n", RAM_TEST_RUN_PROCESS_SEL_REG_ADDR, ram_test_run_process_sel);
+            return ret;/*just test , if failed, we don't return*/
+        }
+        PS_PRINT_INFO("ram_test_run_process_sel=%d\n", ram_test_run_process_sel);
+    }
+    return ret;
+}
+
+
 int32 device_mem_check_etc(unsigned long long *time)
 {
     int32 ret = -FAILURE;
+    uint32 wcost = 0;
+    uint32 bcost = 0;
     unsigned long long total_time = 0;
     ktime_t start_time, end_time, trans_time;
     struct pm_drv_data *pm_data = pm_get_drvdata_etc();
@@ -1888,21 +2064,39 @@ int32 device_mem_check_etc(unsigned long long *time)
     }
 
     PS_PRINT_INFO("===================start wcpu ram reg test!\n");
-    ret = firmware_download_function_etc(RAM_REG_TEST_CFG);
+    ret = firmware_download_function_priv(RAM_REG_TEST_CFG, device_mem_check_priv_init);
     if(SUCCESS == ret)
     {
          /*等待device信息处理*/
          mdelay(wlan_mem_check_mdelay);
          ret = is_device_mem_test_succ();
-         get_device_test_mem();
+         if(ram_test_detail_result_dump)
+         {
+            get_device_ram_test_result(true, &wcost);
+         }
+
+         if(ram_test_wifi_hold_time)
+         {
+            oal_msleep(ram_test_wifi_hold_time);
+         }
+
          if (!ret)
          {
-             PS_PRINT_INFO("==device wcpu ram reg test success!\n");
+            PS_PRINT_INFO("==device wcpu ram reg test success!\n");
+            if(ram_test_ssi_pass_dump)
+                ssi_dump_device_regs(SSI_MODULE_MASK_AON | SSI_MODULE_MASK_ARM_REG | SSI_MODULE_MASK_WCTRL|SSI_MODULE_MASK_BCTRL);
+            if(ram_test_mem_pass_dump)
+                get_device_test_mem(true);
          }
          else
          {
-             PS_PRINT_INFO("==device wcpu ram reg test failed!\n");
-             goto exit_error;
+            PS_PRINT_INFO("==device wcpu ram reg test failed!\n");
+            if(ram_test_ssi_error_dump)
+                ssi_dump_device_regs(SSI_MODULE_MASK_AON | SSI_MODULE_MASK_ARM_REG | SSI_MODULE_MASK_WCTRL|SSI_MODULE_MASK_BCTRL);
+            else
+                ssi_dump_device_regs(SSI_MODULE_MASK_ARM_REG);
+            get_device_test_mem(true);
+            goto exit_error;
          }
     }
     PS_PRINT_INFO("===================start bcpu ram reg test!\n");
@@ -1919,21 +2113,42 @@ int32 device_mem_check_etc(unsigned long long *time)
 
     memcheck_bfgx_init();
 
-    ret = firmware_download_function_etc(RAM_REG_TEST_CFG);
+    ret = firmware_download_function_priv(RAM_REG_TEST_CFG, device_mem_check_priv_init);
 
     g_auc_pilot_cfg_patch_in_vendor[RAM_REG_TEST_CFG]=RAM_CHECK_CFG_HI1103_PILOT_PATH;
     if(SUCCESS == ret)
     {
         /*等待device信息处理*/
         ret = memcheck_bfgx_is_succ();
+        if(ram_test_detail_result_dump)
+        {
+            get_device_ram_test_result(false, &bcost);
+        }
+
+        if(ram_test_bfgx_hold_time)
+        {
+            oal_msleep(ram_test_bfgx_hold_time);
+        }
+
         if (!ret)
         {
             PS_PRINT_INFO("==device bcpu ram reg test success!\n");
+            if(ram_test_ssi_pass_dump)
+                ssi_dump_device_regs(SSI_MODULE_MASK_AON | SSI_MODULE_MASK_ARM_REG | SSI_MODULE_MASK_WCTRL|SSI_MODULE_MASK_BCTRL);
+            if(ram_test_mem_pass_dump)
+                get_device_test_mem(false);
+
+            PS_PRINT_INFO("[memcheck]bfg_wakeup_host=%d\n", oal_gpio_get_value(g_board_info_etc.bfgn_wakeup_host));
         }
         else
         {
             PS_PRINT_INFO("==device bcpu ram reg test failed!\n");
             firmware_get_cfg_etc(g_auc_cfg_path_etc[RAM_REG_TEST_CFG], RAM_REG_TEST_CFG);
+            if(ram_test_ssi_error_dump)
+                ssi_dump_device_regs(SSI_MODULE_MASK_AON | SSI_MODULE_MASK_ARM_REG | SSI_MODULE_MASK_WCTRL|SSI_MODULE_MASK_BCTRL);
+            else
+                ssi_dump_device_regs(SSI_MODULE_MASK_ARM_REG);
+            get_device_test_mem(false);
             goto exit_error;
         }
     }
@@ -1946,7 +2161,10 @@ int32 device_mem_check_etc(unsigned long long *time)
 
     *time = total_time;
 
-    PS_PRINT_SUC("device mem reg test time [%llu]us\n", total_time);
+    if(wcost + bcost)
+        PS_PRINT_SUC("device mem reg test time [%llu]us, actual cost=%u us\n", total_time, wcost + bcost);
+    else
+        PS_PRINT_SUC("device mem reg test time [%llu]us\n", total_time);
 exit_error:
     memcheck_bfgx_exit();
     board_power_off_etc(WLAN_POWER);
@@ -2237,6 +2455,8 @@ STATIC int low_power_remove(void)
 
     wlan_pm_exit_etc();
 
+    free_irq(pm_data->bfg_irq, NULL);
+
     /*delete timer*/
     del_timer_sync(&pm_data->bfg_timer);
     pm_data->bfg_timer_mod_cnt = 0;
@@ -2245,6 +2465,8 @@ STATIC int low_power_remove(void)
     del_timer_sync(&pm_data->dev_ack_timer);
     /*destory wake lock*/
     oal_wake_lock_exit(&pm_data->bfg_wake_lock_etc);
+    oal_wake_lock_exit(&pm_data->bt_wake_lock);
+    oal_wake_lock_exit(&pm_data->gnss_wake_lock);
     /*free platform driver data struct*/
     kfree(pm_data);
 
@@ -2390,6 +2612,9 @@ STATIC int low_power_probe(void)
 
     /*init bfg wake lock */
     oal_wake_lock_init(&pm_data->bfg_wake_lock_etc, BFG_LOCK_NAME);
+    oal_wake_lock_init(&pm_data->bt_wake_lock, BT_LOCK_NAME);
+    oal_wake_lock_init(&pm_data->gnss_wake_lock, GNSS_LOCK_NAME);
+
     /*init mutex*/
     mutex_init(&pm_data->host_mutex);
 
@@ -2440,7 +2665,7 @@ STATIC int low_power_probe(void)
 
 
 CREATE_WORKQ_FAIL:
-
+    free_irq(pm_data->bfg_irq, NULL);
 REQ_IRQ_FAIL:
 
 WLAN_INIT_FAIL:

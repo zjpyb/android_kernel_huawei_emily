@@ -80,11 +80,11 @@ VOS_VOID PPP_HDLC_SOFT_MntnShowStatInfo(VOS_VOID)
 {
     vos_printf("\n================HDLC Software STAT INFO Begin==========================\n");
 
-    vos_printf("处理上行IP类型数据个数    = %d\n", g_PppHdlcSoftStat.ulUplinkIpDataProcCnt);
-    vos_printf("处理上行PPP类型数据个数   = %d\n", g_PppHdlcSoftStat.ulUplinkPppDataProcCnt);
-    vos_printf("处理下行IP类型数据个数    = %d\n", g_PppHdlcSoftStat.ulDownlinkIpDataProcCnt);
-    vos_printf("处理下行PPP类型数据个数   = %d\n", g_PppHdlcSoftStat.ulDownlinkPppDataProcCnt);
-    vos_printf("单次处理数据最大个数   = %d\n", g_PppHdlcSoftStat.ulMaxCntOnce);
+    vos_printf("UplinkIpDataProcCnt       = %d\n", g_PppHdlcSoftStat.ulUplinkIpDataProcCnt);
+    vos_printf("UplinkPppDataProcCnt      = %d\n", g_PppHdlcSoftStat.ulUplinkPppDataProcCnt);
+    vos_printf("DownlinkIpDataProcCnt     = %d\n", g_PppHdlcSoftStat.ulDownlinkIpDataProcCnt);
+    vos_printf("DownlinkPppDataProcCnt    = %d\n", g_PppHdlcSoftStat.ulDownlinkPppDataProcCnt);
+    vos_printf("MaxCntOnce                = %d\n", g_PppHdlcSoftStat.ulMaxCntOnce);
 
     vos_printf("================HDLC Software STAT INFO End==========================\n");
 }

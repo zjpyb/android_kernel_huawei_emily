@@ -13,14 +13,19 @@
  */
 
 #define pr_fmt(fmt) "ufshcd :" fmt
-
 #include <linux/mfd/hisi_pmic.h>
 #include <soc_sctrl_interface.h>
 #include <soc_ufs_sysctrl_interface.h>
+#include <pmic_interface.h>
 #include <linux/hisi/hisi_idle_sleep.h>
 #include "ufshcd.h"
 #include "ufs-kirin.h"
 #include "dsm_ufs.h"
+
+void ufs_kirin_regulator_init(struct ufs_hba *hba)
+{
+	return;
+}
 
 void ufs_clk_init(struct ufs_hba *hba)
 {
@@ -107,30 +112,28 @@ void ufs_soc_init(struct ufs_hba *hba)
 	ufs_sys_ctrl_set_bits(host, BIT_SYSCTRL_REF_CLOCK_EN,
 			      PHY_CLK_CTRL); /* open clock of M-PHY */
 	if (host->caps & USE_HISI_MPHY_TC) {
-		ufs_i2c_writel(hba, (unsigned int) BIT(6),
-			       SC_RSTDIS); /*enable Device Reset*/
-		ufs_i2c_readl(hba, &reg, SC_UFS_REFCLK_RST_PAD);
-		reg = reg & (~(BIT(2) | BIT(10)));
-		/*output enable, For EMMC to high dependence, open
-		 * DA_UFS_OEN_RST
-		 * and DA_UFS_OEN_REFCLK*/
-		ufs_i2c_writel(hba, reg, SC_UFS_REFCLK_RST_PAD);
+		if (IS_V200_MPHY(hba)) {
+			ufs_i2c_writel(hba, 0x20000, SC_RSTEN_V200);
+			mdelay(2); /* wait 2 ms */
+			ufs_i2c_writel(hba, 0x20000, SC_RSTDIS_V200);
+		} else {
+			ufs_i2c_writel(hba, (unsigned int)BIT(6),
+				SC_RSTDIS); /*enable Device Reset*/
+			ufs_i2c_readl(hba, &reg, SC_UFS_REFCLK_RST_PAD);
+			reg = reg & (~(BIT(2) | BIT(10)));
+			/*output enable, For EMMC to high dependence, open
+			 * DA_UFS_OEN_RST
+			 * and DA_UFS_OEN_REFCLK*/
+			ufs_i2c_writel(hba, reg, SC_UFS_REFCLK_RST_PAD);
 
-		mdelay(2);
-		ufs_i2c_writel(hba, (unsigned int)BIT(6),
+			mdelay(2);
+			ufs_i2c_writel(hba, (unsigned int)BIT(6),
 				SC_RSTEN); /*disable Device Reset*/
+		}
 	} else {
 		ufs_sys_ctrl_writel(host, MASK_UFS_DEVICE_RESET | 0,
 				    UFS_DEVICE_RESET_CTRL); /* reset device */
-		/* To improve the ref clock jitter, use PMU's output directly */
-		/* change the PMU's device ref clk to 38.4Mhz, if after onchiprom's
-		* linkstartup's PA_MaxRxHSGear = 0x4 */
-		/* close the device clk */
-		hisi_pmic_reg_write(0x43, 0);
-		/* choose the device clk 19.2Mhz */
-		hisi_pmic_reg_write(0x02E3, 0);
-		/* open the device clk */
-		hisi_pmic_reg_write(0x43, 1);
+		ufshcd_vops_vcc_power_on_off(hba);
 
 		mdelay(1);
 
@@ -153,7 +156,8 @@ void ufs_soc_init(struct ufs_hba *hba)
 		mdelay(1);
 
 	/*set SOC_SCTRL_SCBAKDATA11_ADDR ufs bit to 1 when init*/
-	hisi_idle_sleep_vote(ID_UFS, 1);
+	if (!ufshcd_is_auto_hibern8_allowed(hba))
+		hisi_idle_sleep_vote(ID_UFS, 1);
 
 	dev_info(hba->dev, "%s --\n", __func__);
 	return;
@@ -193,7 +197,8 @@ int ufs_kirin_suspend(struct ufs_hba *hba, enum ufs_pm_op pm_op)
 	struct ufs_kirin_host *host = hba->priv;
 
 	/*set SOC_SCTRL_SCBAKDATA11_ADDR ufs bit to 0 when idle*/
-	hisi_idle_sleep_vote(ID_UFS, 0);
+	if (!ufshcd_is_auto_hibern8_allowed(hba))
+		hisi_idle_sleep_vote(ID_UFS, 0);
 
 	if (ufshcd_is_runtime_pm(pm_op))
 		return 0;
@@ -205,7 +210,7 @@ int ufs_kirin_suspend(struct ufs_hba *hba, enum ufs_pm_op pm_op)
 
 	ufs_sys_ctrl_clr_bits(host, BIT_SYSCTRL_REF_CLOCK_EN, PHY_CLK_CTRL);
 	udelay(10);
-	hisi_pmic_reg_write(0x43, 0);
+	hisi_pmic_reg_write(PMIC_CLK_UFS_EN_ADDR(0), 0);
 
 	host->in_suspend = true;
 
@@ -217,15 +222,12 @@ int ufs_kirin_resume(struct ufs_hba *hba, enum ufs_pm_op pm_op)
 	struct ufs_kirin_host *host = hba->priv;
 
 	/*set SOC_SCTRL_SCBAKDATA11_ADDR ufs bit to 1 when busy*/
-	hisi_idle_sleep_vote(ID_UFS, 1);
+	if (!ufshcd_is_auto_hibern8_allowed(hba))
+		hisi_idle_sleep_vote(ID_UFS, 1);
 
 	if (!host->in_suspend)
 		return 0;
-	if (hba->is_hs_gear4_dev)
-		hisi_pmic_reg_write(0x02E3, 1);
-	else
-		hisi_pmic_reg_write(0x02E3, 0);
-	hisi_pmic_reg_write(0x43, 1);
+	hisi_pmic_reg_write(PMIC_CLK_UFS_EN_ADDR(0), 1);
 	/* 250us to ensure the clk stable */
 	udelay(250);
 	ufs_sys_ctrl_set_bits(host, BIT_SYSCTRL_REF_CLOCK_EN, PHY_CLK_CTRL);
@@ -237,20 +239,30 @@ int ufs_kirin_resume(struct ufs_hba *hba, enum ufs_pm_op pm_op)
 void ufs_kirin_device_hw_reset(struct ufs_hba *hba)
 {
 	struct ufs_kirin_host *host = hba->priv;
-	if (likely(!(host->caps & USE_HISI_MPHY_TC)))
+	if (likely(!(host->caps & USE_HISI_MPHY_TC))) {
 		ufs_sys_ctrl_writel(host, MASK_UFS_DEVICE_RESET | 0,
 							UFS_DEVICE_RESET_CTRL);
-	else
-		ufs_i2c_writel(hba, (unsigned int) BIT(6), SC_RSTDIS);
-	mdelay(1);
+		ufshcd_vops_vcc_power_on_off(hba);
+		mdelay(1);
+	}
+	else if (!IS_V200_MPHY(hba)) {
+		ufs_i2c_writel(hba, (unsigned int)BIT(6), SC_RSTDIS);
+		mdelay(1);
+	} else {
+			ufs_i2c_writel(hba, 0x20000, SC_RSTEN_V200);
+			mdelay(2); /* wait 2 ms */
+		}
 
 	if (likely(!(host->caps & USE_HISI_MPHY_TC)))
-		ufs_sys_ctrl_writel(host, MASK_UFS_DEVICE_RESET | BIT_UFS_DEVICE_RESET,
-			    			UFS_DEVICE_RESET_CTRL);
-	else
+		ufs_sys_ctrl_writel(host,
+			MASK_UFS_DEVICE_RESET | BIT_UFS_DEVICE_RESET,
+			UFS_DEVICE_RESET_CTRL);
+	else if (!IS_V200_MPHY(hba)) {
 		ufs_i2c_writel(hba, (unsigned int)BIT(6), SC_RSTEN);
-	/* some device need at least 40ms */
-	mdelay(40);
+	} else {
+			ufs_i2c_writel(hba, 0x20000, SC_RSTDIS_V200);
+		}
+	mdelay(10); /* wait 10 ms */
 }
 
 /* Workaround: PWM-amplitude reduce & PMC and H8's glitch */
@@ -259,8 +271,23 @@ static void mphy_amplitude_glitch_workaround(struct ufs_hba *hba)
 	uint16_t value3 = 0;
 	uint16_t value4 = 0;
 	uint32_t reg;
-	uint16_t table[11][2] = {
+	struct ufs_kirin_host *host = hba->priv;
+	uint16_t (*table)[2] = NULL;
+	uint16_t table_0DB[11][2] = {
 			/* tx_ana_ctrl_leg_pull_en, tx_ana_ctrl_post */
+			{252, 0},
+			{252, 0},
+			{252, 0},
+			{255, 0},
+			{255, 0},
+			{1020, 0},
+			{1020, 0},
+			{1023, 0},
+			{1023, 0},
+			{4092, 0},
+			{4092, 0}
+	};
+	uint16_t table_35DB[11][2] = {
 			{252, 3},
 			{252, 3},
 			{252, 3},
@@ -273,12 +300,32 @@ static void mphy_amplitude_glitch_workaround(struct ufs_hba *hba)
 			{4092, 6},
 			{4092, 7}
 	};
+	uint16_t table_60DB[11][2] = {
+			{252, 6},
+			{252, 7},
+			{252, 7},
+			{255, 7},
+			{255, 14},
+			{1020, 14},
+			{1020, 14},
+			{1023, 14},
+			{1023, 15},
+			{4092, 15},
+			{4092, 15}
+	};
+
+	table = &table_35DB[0];
+	if (0 == host->tx_equalizer) {
+		table = &table_0DB[0];
+	} else if (60 == host->tx_equalizer) {
+		table = &table_60DB[0];
+	}
 
 	reg = ufs_kirin_mphy_read(hba, 0x200C);
 	reg = reg & 0xF; /* RAWCMN_DIG_TX_CAL_CODE[3:0] */
-	if (reg >= sizeof(table)/sizeof(table[0]))
+	if (reg >= sizeof(table_35DB) / sizeof(table_35DB[0]))
 		reg = 0;
-	value3 = table[reg][0]<<1;
+	value3 = table[reg][0] << 1;
 	value4 = table[reg][1];
 	ufs_kirin_mphy_write(hba, 0x10A3, value3); /* LANEN_DIG_ANA_TX_EQ_OVRD_OUT_0[14:1](tx_ana_ctrl_leg_pull_en) */
 	ufs_kirin_mphy_write(hba, 0x11A3, value3); /* LANEN_DIG_ANA_TX_EQ_OVRD_OUT_0[14:1](tx_ana_ctrl_leg_pull_en) */
@@ -317,26 +364,6 @@ int ufs_kirin_dme_setup_snps_asic_mphy(struct ufs_hba *hba)
 	pr_info("%s ++\n", __func__);
 
 	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL(0xD0C1, 0x0), 0x1); /* Unipro VS_mphy_disable */
-
-	if (host->caps & RX_CANNOT_DISABLE) {
-		ufshcd_dme_get(hba, UIC_ARG_MIB_SEL(0x800a, 0x4), &value1);
-		ufshcd_dme_get(hba, UIC_ARG_MIB_SEL(0x800a, 0x5), &value2);
-		/* bit[5:4] = 2b'00, not do override, let the FSM control the
-		 *            RX status, normally during H8, the RX will be
-		 *            disabled to save power. CS chip will use this
-		 *            configure, which is default also.
-		 * bit[5:4] = 2b'01, do override, not disable RX in any status,
-		 *            include H8, which cause high power consume,
-		 *            ES chip need this bugfix, otherwise the RX
-		 *            will not work again if enabled after disable.
-		 * bit[5:4] = 2b'11, do override, disable RX in any status,
-		 *            link startup will fail if configured this.
-		 */
-		value1 |= BIT_RX_DISABLE_OVR_EN_WR;
-		value2 |= BIT_RX_DISABLE_OVR_EN_WR;
-		ufshcd_dme_set(hba, UIC_ARG_MIB_SEL(0x800a, 0x4), value1);
-		ufshcd_dme_set(hba, UIC_ARG_MIB_SEL(0x800a, 0x5), value2);
-	}
 
 	if (ufs_sctrl_readl(host, SCDEEPSLEEPED_OFFSET) & EFUSE_RHOLD_BIT) {
 		ufshcd_dme_set(hba, UIC_ARG_MIB_SEL(0x8013, 0x4), 0x2); /* MPHY RXRHOLDCTRLOPT */
@@ -401,6 +428,12 @@ int ufs_kirin_dme_setup_snps_asic_mphy(struct ufs_hba *hba)
 	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL(0x008c, 0x5), 0xF); /* Gear1 Synclength */
 	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL(0xD085, 0x0), 0x1); /* Unipro VS_MphyCfgUpdt */
 
+	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL(0x15d4, 0x0), 0x3); /* PA_TxHsAdaptType: no adapt */
+	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL(0x15d5, 0x0), 0x3); /* PA_TxHsAdaptTypeInPa_Init: no adapt */
+	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL(0x0005, 0x0), 0x2); /* only LA */
+	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL(0x0005, 0x1), 0x2); /* only LA */
+	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL(0xD085, 0x0), 0x1); /* Unipro VS_MphyCfgUpdt */
+
 	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL(0x0092, 0x4), 0xA);/* RX_Hibern8Time_Capability*/
 	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL(0x0092, 0x5), 0xA);/* RX_Hibern8Time_Capability*/
 	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL(0x008f, 0x4), 0xA);/* RX_Min_ActivateTime */
@@ -440,7 +473,6 @@ int ufs_kirin_dme_setup_snps_asic_mphy(struct ufs_hba *hba)
 	return err;
 }
 
-
 int ufs_kirin_link_startup_pre_change(struct ufs_hba *hba)
 {
 	int err = 0;
@@ -451,7 +483,12 @@ int ufs_kirin_link_startup_pre_change(struct ufs_hba *hba)
 	pr_info("%s ++\n", __func__);
 
 	/*for hisi MPHY*/
-	hisi_mphy_updata_temp_sqvref(hba, host);
+	if ((host->caps & USE_HISI_MPHY_TC)) {
+		if (IS_V200_MPHY(hba))
+			hisi_mphy_V200_updata(hba, host);
+		else
+			hisi_mphy_updata_temp_sqvref(hba, host);
+	}
 
 	/*FIXME is it good for FPGA condition*/
 	if (!(host->caps & USE_HISI_MPHY_TC)) {
@@ -466,54 +503,37 @@ int ufs_kirin_link_startup_pre_change(struct ufs_hba *hba)
 	ufshcd_writel(hba, reg, REG_CONTROLLER_AHIT);
 
 	/*for hisi MPHY*/
-	hisi_mphy_updata_vswing_fsm_ocs5(hba, host);
+	if ((host->caps & USE_HISI_MPHY_TC)) {
+		if (!IS_V200_MPHY(hba))
+			hisi_mphy_updata_vswing_fsm_ocs5(hba, host);
+		else {
+			hisi_mphy_V200_updata_vswing_fsm(hba, host);
+		}
+	}
 
-	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL(0x155E, 0x0), 0x0); /* Unipro PA_Local_TX_LCC_Enable */
+	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL(0x155E, 0x0),
+		0x0); /* Unipro PA_Local_TX_LCC_Enable */
 
-	/* enlarge the VS_AdjustTrailingClocks and VS_DebugSaveConfigTime */
-	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL((u32)0xd086, 0x0), 0xF0); /* Unipro VS_AdjustTrailingClocks */
-	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL((u32)0xd0a0, 0x0), 0x3); /* Unipro VS_DebugSaveConfigTime */
-	/* Unipro PA_AdaptAfterLRSTInPA_INIT, use PA_PeerRxHsAdaptInitial value */
-	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL((u32)0x15D5, 0x0), 0x1);
+	/* enlarge the VS_AdjustTrailingClocks and
+	* VS_DebugSaveConfigTime */
+	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL((u32)0xd086, 0x0),
+		0xF0); /* Unipro VS_AdjustTrailingClocks */
+	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL((u32)0xd0a0, 0x0),
+		0x3); /* Unipro VS_DebugSaveConfigTime */
+	/* Unipro PA_AdaptAfterLRSTInPA_INIT, use
+	* PA_PeerRxHsAdaptInitial value */
+	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL((u32)0x15D5, 0x0), 0x3);
 
-	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL(0xD0AB, 0x0), 0x0); /* close Unipro VS_Mk2ExtnSupport */
+	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL(0xD0AB, 0x0),
+	0x0); /* close Unipro VS_Mk2ExtnSupport */
 	ufshcd_dme_get(hba, UIC_ARG_MIB_SEL(0xD0AB, 0x0), &value);
 	if (0 != value) {
 		/* Ensure close success */
 		pr_warn("Warring!!! close VS_Mk2ExtnSupport failed\n");
 	}
-	if (!(host->caps & USE_HISI_MPHY_TC)) {
-#if 0
-		/*FPGA with HISI PHY not configure equalizer*/
-		if (35 == host->tx_equalizer) {
-			ufs_kirin_mphy_write(hba, 0x1002, 0xAC78);
-			ufs_kirin_mphy_write(hba, 0x1102, 0xAC78);
-			ufs_kirin_mphy_write(hba, 0x1003, 0x2440);
-			ufs_kirin_mphy_write(hba, 0x1103, 0x2440);
-		} else if (60 == host->tx_equalizer) {
-			ufs_kirin_mphy_write(hba, 0x1002, 0xAA78);
-			ufs_kirin_mphy_write(hba, 0x1102, 0xAA78);
-			ufs_kirin_mphy_write(hba, 0x1003, 0x2640);
-			ufs_kirin_mphy_write(hba, 0x1103, 0x2640);
-		}
-#endif
-		if (35 == host->tx_equalizer) {
-			ufshcd_dme_set(
-				hba, UIC_ARG_MIB_SEL((u32)0x0037, 0x0), 0x1);
-			ufshcd_dme_set(
-				hba, UIC_ARG_MIB_SEL((u32)0x0037, 0x1), 0x1);
-		} else if (60 == host->tx_equalizer) {
-			ufshcd_dme_set(
-				hba, UIC_ARG_MIB_SEL((u32)0x0037, 0x0), 0x2);
-			ufshcd_dme_set(
-				hba, UIC_ARG_MIB_SEL((u32)0x0037, 0x1), 0x2);
-		}
-	}
 	/*for hisi MPHY*/
 	hisi_mphy_busdly_config(hba, host);
-
 	pr_info("%s --\n", __func__);
-
 	return err;
 }
 
@@ -543,28 +563,22 @@ static void hisi_mphy_link_post_config(struct ufs_hba *hba,
 
 void set_device_clk(struct ufs_hba *hba)
 {
-	uint32_t max_rx_hsgear;
-	/* Read PA_MaxRxHSGear(0x1587) to see if it is UFS3.0 device
-	which supports HS gear 4, this checking must be done after linkstartup */
-	ufshcd_dme_get(hba, UIC_ARG_MIB(0x1587), &max_rx_hsgear);
-	if (max_rx_hsgear >= 0x4) {
-		/*The B_REFCLK_FREQ was changed to 38.4MHz in
-		the xloader*/
+	/* 0: 19.2M, 1: 38.4M */
+	int ufs_refclk_val = 0;
 
-		hba->is_hs_gear4_dev = 1;
+	if (hba->ufs_device_spec_version >= 0x0300)
+		ufs_refclk_val = 1;
 
-		/* close the device clk */
-		hisi_pmic_reg_write(0x43, 0);
-		/* choose the device clk 38.4Mhz */
-		hisi_pmic_reg_write(0x02E3, 1);
-		/* open the device clk */
-		hisi_pmic_reg_write(0x43, 1);
+	dev_info(hba->dev, "ref clk %s\n", ufs_refclk_val ? "38.4M" : "19.2M");
 
-		mdelay(2);
-	}
-	else {
-		hba->is_hs_gear4_dev = 0;
-	}
+	/* close the device clk */
+	hisi_pmic_reg_write(PMIC_CLK_UFS_EN_ADDR(0), 0);
+	/* choose the device clk 38.4Mhz when device spec is 3.0*/
+	hisi_pmic_reg_write(PMIC_CLK_UFS_FRE_CTRL1_ADDR(0), ufs_refclk_val);
+	/* open the device clk */
+	hisi_pmic_reg_write(PMIC_CLK_UFS_EN_ADDR(0), 1);
+
+	mdelay(2);
 }
 
 int ufs_kirin_link_startup_post_change(struct ufs_hba *hba)
@@ -573,12 +587,23 @@ int ufs_kirin_link_startup_post_change(struct ufs_hba *hba)
 
 	pr_info("%s ++\n", __func__);
 
-	ufshcd_dme_set(hba, UIC_ARG_MIB(0x2044), 0x0); /* Unipro DL_AFC0CreditThreshold */
-	ufshcd_dme_set(hba, UIC_ARG_MIB(0x2045), 0x0); /* Unipro DL_TC0OutAckThreshold */
-	ufshcd_dme_set(hba, UIC_ARG_MIB(0x2040), 0x9); /* Unipro DL_TC0TXFCThreshold */
+	if (!(host->caps & USE_HISI_MPHY_TC)) {
+		ufshcd_dme_set(hba, UIC_ARG_MIB(0x2044), 0x0); /* Unipro DL_AFC0CreditThreshold */
+		ufshcd_dme_set(hba, UIC_ARG_MIB(0x2045), 0x0); /* Unipro DL_TC0OutAckThreshold */
+		ufshcd_dme_set(hba, UIC_ARG_MIB(0x2040), 0x9); /* Unipro DL_TC0TXFCThreshold */
+	}
+	if ((host->caps & USE_HISI_MPHY_TC)) {
+		/*for hisi MPHY*/
+		if (!IS_V200_MPHY(hba)) {
+			ufshcd_dme_set(hba, UIC_ARG_MIB(0x2044), 0x0); /* Unipro DL_AFC0CreditThreshold */
+			ufshcd_dme_set(hba, UIC_ARG_MIB(0x2045), 0x0); /* Unipro DL_TC0OutAckThreshold */
+			ufshcd_dme_set(hba, UIC_ARG_MIB(0x2040), 0x9); /* Unipro DL_TC0TXFCThreshold */
+			hisi_mphy_link_post_config(hba, host);
+		} else {
+			hisi_mphy_V200_link_post_config(hba, host);
 
-	/*for hisi MPHY*/
-	hisi_mphy_link_post_config(hba, host);
+		}
+	}
 
 	if (host->caps & BROKEN_CLK_GATE_BYPASS) {
 		/* not bypass ufs clk gate */
@@ -593,8 +618,6 @@ int ufs_kirin_link_startup_post_change(struct ufs_hba *hba)
 	ufshcd_dme_set(hba, UIC_ARG_MIB(0xd09a), 0x80000000); /* select received symbol cnt */
 	ufshcd_dme_set(hba, UIC_ARG_MIB(0xd09c), 0x00000005); /* reset counter0 and enable */
 
-	set_device_clk(hba);
-
 	pr_info("%s --\n", __func__);
 	return 0;
 }
@@ -602,9 +625,12 @@ int ufs_kirin_link_startup_post_change(struct ufs_hba *hba)
 void ufs_kirin_pwr_change_pre_change(struct ufs_hba *hba)
 {
 	uint32_t value;
-	pr_info("%s ++\n", __func__);
+	struct ufs_kirin_host *host = hba->priv;
 
+	pr_info("%s ++\n", __func__);
+#ifdef CONFIG_HISI_DEBUG_FS
 	pr_info("device manufacturer_id is 0x%x\n", hba->manufacturer_id);
+#endif
 	/*ARIES platform need to set SaveConfigTime to 0x13, and change sync length to maximum value */
 	ufshcd_dme_set(hba, UIC_ARG_MIB((u32)0xD0A0), 0x13); /* VS_DebugSaveConfigTime */
 	ufshcd_dme_set(hba, UIC_ARG_MIB((u32)0x1552), 0x4f); /* g1 sync length */
@@ -645,8 +671,12 @@ void ufs_kirin_pwr_change_pre_change(struct ufs_hba *hba)
 	/*DME_AFC1ReqTimeOutVal = 32767, default is 0*/
 	ufshcd_dme_set(hba, UIC_ARG_MIB((u32)0xd046), 32767);
 
-
 	pr_info("%s --\n", __func__);
+	if ((host->caps & USE_HISI_MPHY_TC)) {
+		if (IS_V200_MPHY(hba)) {
+			hisi_mphy_V200_pwr_change_pre_config(hba, host);
+		}
+	}
 	return;
 }
 /*lint +e648 +e845*/

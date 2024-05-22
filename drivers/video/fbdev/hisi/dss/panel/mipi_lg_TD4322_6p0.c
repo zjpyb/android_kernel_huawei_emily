@@ -21,7 +21,7 @@
 #include "mipi_lg_TD4322_6p0.h"
 #include <huawei_platform/log/log_jank.h>
 #include <linux/hisi/hw_cmdline_parse.h>
-
+/*lint -e569 -e574 -e679*/
 #define DTS_COMP_LG_TD4322_6P0 "hisilicon,mipi_lg_TD4322_6P0"
 #define LCD_VDDIO_TYPE_NAME	"lcd-vddio-type"
 #define CABC_OFF	(0)
@@ -932,6 +932,8 @@ static int mipi_lg_panel_off(struct platform_device *pdev)
 
 	if (pinfo->lcd_uninit_step == LCD_UNINIT_MIPI_HS_SEND_SEQUENCE) {
 		LOG_JANK_D(JLID_KERNEL_LCD_POWER_OFF, "%s", "JL_KERNEL_LCD_POWER_OFF");
+/*lint -e427*/
+/*lint +e427*/
 		/* backlight off */
 		hisi_lcd_backlight_off(pdev);
 
@@ -1309,6 +1311,7 @@ static ssize_t mipi_lg_panel_lcd_check_reg_show(struct platform_device *pdev, ch
 		ret = snprintf(buf, PAGE_SIZE, "OK\n");
 	} else {
 		ret = snprintf(buf, PAGE_SIZE, "ERROR\n");
+		HISI_FB_ERR("lcd check reg ERROR!\n");
 	}
 	HISI_FB_DEBUG("fb%d, -.\n", hisifd->index);
 
@@ -1411,9 +1414,15 @@ static ssize_t mipi_lg_panel_lcd_gram_check_show(struct platform_device *pdev, c
 		return ret;
 	}
 
-	BUG_ON(pdev == NULL);
+	if (pdev == NULL){
+		HISI_FB_ERR("pdev is null\n");
+		return -1;
+	}
 	hisifd = platform_get_drvdata(pdev);
-	BUG_ON(hisifd == NULL);
+	if (hisifd == NULL){
+		HISI_FB_ERR("hisifd is null\n");
+		return -1;
+	}
 
 	mipi_dsi0_base = hisifd->mipi_dsi0_base;
 
@@ -1456,9 +1465,15 @@ static int bist_read_and_check(struct platform_device *pdev, int step)
 	u32 D8_value = 0xFF, D9_value = 0xFF, BC_value = 0xFF;
 	int ret = LCD_BIST_CHECK_PASS;
 
-	BUG_ON(pdev == NULL);
+	if (pdev == NULL){
+		HISI_FB_ERR("pdev is null\n");
+		return -1;
+	}
 	hisifd = platform_get_drvdata(pdev);
-	BUG_ON(hisifd == NULL);
+	if (hisifd == NULL){
+		HISI_FB_ERR("hisifd is null\n");
+		return -1;
+	}
 	mipi_dsi0_base = hisifd->dss_base + DSS_MIPI_DSI0_OFFSET;
 
 	outp32(mipi_dsi0_base + MIPIDSI_GEN_HDR_OFFSET, 0xD806);
@@ -1508,7 +1523,10 @@ irqreturn_t mipi_lg_panel_lcd_bist_check_isr(int irq, void *ptr)
 	struct hisi_fb_data_type *hisifd = NULL;
 
 	hisifd = (struct hisi_fb_data_type *)ptr;
-	BUG_ON(hisifd == NULL);
+	if (hisifd == NULL) {
+		HISI_FB_ERR("hisifd is NULL");
+		return -EINVAL;
+	}
 
 	sram_test_feedback = 1;
 	HISI_FB_INFO("Get a te interrupt\n");
@@ -1614,7 +1632,7 @@ static ssize_t mipi_lg_panel_lcd_bist_check_show(struct platform_device *pdev,
 		goto err_gpio_request;
 	}
 
-	gpio_direction_input(GPIO_TE0);
+	(void)gpio_direction_input(GPIO_TE0);
 	irq_id = gpio_to_irq(GPIO_TE0);
 	ret = request_irq(irq_id, mipi_lg_panel_lcd_bist_check_isr, IRQF_TRIGGER_RISING | IRQF_NO_SUSPEND, "gpio_te0_irq", (void *)hisifd);
 	if (ret) {
@@ -1865,9 +1883,15 @@ static ssize_t mipi_lg_panel_lcd_reg_read_show(struct platform_device *pdev,
 		{DTYPE_GEN_READ1, 0, 10, WAIT_TYPE_US,
 			sizeof(lcd_reg), lcd_reg},
 	};
-	BUG_ON(pdev == NULL);
+	if (pdev == NULL){
+		HISI_FB_ERR("pdev is null\n");
+		return -1;
+	}
 	hisifd = platform_get_drvdata(pdev);
-	BUG_ON(hisifd == NULL);
+	if (hisifd == NULL){
+		HISI_FB_ERR("hisifd is null\n");
+		return -1;
+	}
 
 	HISI_FB_DEBUG("fb%d, +.\n", hisifd->index);
 
@@ -1956,9 +1980,15 @@ static ssize_t mipi_lg_panel_lcd_reg_read_store(struct platform_device *pdev,
 	char *token;
 	int i = 0;
 	struct hisi_fb_data_type *hisifd = NULL;
-	BUG_ON(pdev == NULL);
+	if (pdev == NULL){
+		HISI_FB_ERR("pdev is null\n");
+		return -1;
+	}
 	hisifd = platform_get_drvdata(pdev);
-	BUG_ON(hisifd == NULL);
+	if (hisifd == NULL){
+		HISI_FB_ERR("hisifd is null\n");
+		return -1;
+	}
 
 	cur = (char*)buf;
 	token = strsep(&cur, ",");
@@ -2106,9 +2136,15 @@ static ssize_t mipi_lg_panel_sharpness2d_table_store(struct platform_device *pde
 	struct hisi_fb_data_type *hisifd = NULL;
 	sharp2d_t* sharp2d;
 	int i = 0;
-	BUG_ON(pdev == NULL);
+	if (pdev == NULL){
+		HISI_FB_ERR("pdev is null\n");
+		return -1;
+	}
 	hisifd = platform_get_drvdata(pdev);
-	BUG_ON(hisifd == NULL);
+	if (hisifd == NULL){
+		HISI_FB_ERR("hisifd is null\n");
+		return -1;
+	}
 
 	HISI_FB_DEBUG("fb%d, +.\n", hisifd->index);
 
@@ -2133,9 +2169,15 @@ static ssize_t mipi_lg_panel_sharpness2d_table_show(struct platform_device *pdev
 	int i = 0;
 	int buf_len = 0;
 
-	BUG_ON(pdev == NULL);
+	if (pdev == NULL){
+		HISI_FB_ERR("pdev is null\n");
+		return -1;
+	}
 	hisifd = platform_get_drvdata(pdev);
-	BUG_ON(hisifd == NULL);
+	if (hisifd == NULL){
+		HISI_FB_ERR("hisifd is null\n");
+		return -1;
+	}
 
 	HISI_FB_DEBUG("fb%d, +.\n", hisifd->index);
 	if (hisifd->panel_info.sharp2d_table && buf) {
@@ -2849,3 +2891,4 @@ static int __init mipi_lg_panel_init(void)
 }
 
 module_init(mipi_lg_panel_init);
+/*lint +e569 +e574 +e679*/

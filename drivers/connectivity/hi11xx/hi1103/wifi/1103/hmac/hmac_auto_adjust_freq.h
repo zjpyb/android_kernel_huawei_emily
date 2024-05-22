@@ -108,15 +108,16 @@ typedef oal_uint8 oal_auto_freq_cmd_enum_uint8;
   7 STRUCT定义
 *****************************************************************************/
 typedef struct {
+    oal_uint8   uc_trx_stat_log_en;
+    oal_uint8   auc_resv[3];
 #ifdef _PRE_WLAN_FEATURE_AUTO_FREQ
     oal_uint32  ul_tx_pkts;  /* WIFI 业务发送帧统计 */
     oal_uint32  ul_rx_pkts;   /* WIFI 业务接收帧统计 */
 #endif
     oal_uint32  ul_tx_bytes;  /* WIFI 业务发送帧统计 */
     oal_uint32  ul_rx_bytes;   /* WIFI 业务接收帧统计 */
-
 }wifi_txrx_pkt_stat;
-
+extern wifi_txrx_pkt_stat g_st_wifi_rxtx_total;
 #ifdef _PRE_WLAN_FEATURE_AUTO_FREQ
 typedef struct {
     oal_uint8  uc_device_type;   /*device主频类型*/

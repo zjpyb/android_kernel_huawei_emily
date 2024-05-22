@@ -16,6 +16,10 @@
 #include <linux/err.h>
 #include <linux/string.h>
 
+#ifdef CONFIG_HISI_CLK_DEBUG
+#include "hisi-clk-debug.h"
+#endif
+
 /**
  * DOC: basic gatable clock which can gate and ungate it's ouput
  *
@@ -110,14 +114,24 @@ static int clk_gate_is_enabled(struct clk_hw *hw)
 	return reg ? 1 : 0;
 }
 #ifdef CONFIG_HISI_CLK_DEBUG
-static int hi3xxx_dumpgt(struct clk_hw *hw, char* buf)
+static int hi3xxx_dumpgt(struct clk_hw *hw, char* buf, struct seq_file *s)
 {
 	u32 reg;
+	long unsigned int clk_base_addr = 0;
+	unsigned int clk_bit = 0;
 	struct clk_gate *gate = to_clk_gate(hw);
 
-	if (gate->reg && buf) {
+	if (gate->reg && buf && !s) {
 		reg = clk_readl(gate->reg);
-		snprintf(buf, DUMP_CLKBUFF_MAX_SIZE, "[%s] : regAddress = 0x%pK, regval = 0x%x\n", __clk_get_name(hw->clk), gate->reg, reg);
+		snprintf(buf, DUMP_CLKBUFF_MAX_SIZE, "[%s] : regAddress = 0x%pK, regval = 0x%x\n",  \
+			__clk_get_name(hw->clk), gate->reg, reg);
+	}
+	if(gate->reg && !buf && s) {
+		clk_base_addr = (uintptr_t)gate->reg & CLK_ADDR_HIGH_MASK;
+		clk_bit = (uintptr_t)gate->reg & CLK_ADDR_LOW_MASK;
+		seq_printf(s, "    %-15s    %-15s    0x%03X    bit-%-u", hs_base_addr_transfer(clk_base_addr), \
+			"himask-gate", clk_bit, gate->bit_idx);
+
 	}
 	return 0;
 }

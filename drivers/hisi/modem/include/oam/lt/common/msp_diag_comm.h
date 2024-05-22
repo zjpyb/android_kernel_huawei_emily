@@ -741,7 +741,7 @@ extern VOS_VOID DIAG_TraceReport(VOS_VOID *pMsg);
 
 
 
-VOS_VOID DIAG_LayerMsgReport(VOS_VOID *pMsg);
+VOS_UINT32 DIAG_LayerMsgReport(VOS_VOID *pMsg);
 
 /*****************************************************************************
  º¯ Êý Ãû  : DIAG_UserPlaneReport

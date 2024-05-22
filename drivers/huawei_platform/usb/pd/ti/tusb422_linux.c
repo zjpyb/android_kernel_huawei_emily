@@ -65,9 +65,6 @@
 extern void hw_pd_wait_dptx_ready(void);
 #endif
 
-#ifdef CONFIG_CC_ANTI_CORROSION
-#include <huawei_platform/usb/hw_cc_anti_corrosion.h>
-#endif
 
 #define TUSB422_I2C_NAME "tusb422"
 
@@ -1167,7 +1164,7 @@ static int is_cable_for_direct_charge(void)
 static struct cc_check_ops cc_check_ops = {
 	.is_cable_for_direct_charge = is_cable_for_direct_charge,
 };
-#ifdef CONFIG_CC_ANTI_CORROSION
+
 void tusb422_set_cc_mode(int mode)
 {
 	int port = 0;
@@ -1190,30 +1187,25 @@ int tusb422_get_cc_mode(void)
 {
        return 0;
 }
-struct cc_corrosion_ops tusb422_corrosion_ops = {
-    .set_cc_mode = tusb422_set_cc_mode,
-    .get_cc_mode = tusb422_get_cc_mode,
-};
-#endif
+
 static int pd_dpm_wake_lock_call(struct notifier_block *tusb_nb, unsigned long event, void *data)
 {
-	switch(event)
-	{
-		case PD_WAKE_LOCK:
-			PRINT("%s - wake lock node called\n", __func__);
+	switch (event) {
+	case PD_WAKE_LOCK:
+		PRINT("%s - wake lock node called\n", __func__);
 #ifdef CONFIG_WAKELOCK
-			tusb422_wake_lock_control(true);
+		tusb422_wake_lock_control(true);
 #endif
-			break;
-		case PD_WAKE_UNLOCK:
-			PRINT("%s - wake unlock node called\n", __func__);
+		break;
+	case PD_WAKE_UNLOCK:
+		PRINT("%s - wake unlock node called\n", __func__);
 #ifdef CONFIG_WAKELOCK
-			tusb422_wake_lock_control(false);
+		tusb422_wake_lock_control(false);
 #endif
-			break;
-		default:
-			PRINT("%s - unknown event: %d\n", __func__, event);
-			break;
+		break;
+	default:
+		PRINT("%s - unknown event: %ld\n", __func__, event);
+		break;
 	}
 	return NOTIFY_OK;
 }
@@ -1223,8 +1215,19 @@ static void tusb_pd_dpm_hard_reset(void* client)
 	PRINT("%s++", __func__);
 	usb_pd_policy_manager_request(0, PD_POLICY_MNGR_REQ_HARD_RESET);
 }
+
+static int tusb_pd_dpm_get_cc_state(void)
+{
+	int val = 0;
+	tusb422_read(TI_CC_STATUS, &val, 1);
+	printk("%s:cc_state_REG0x1D = 0x%x\n",__func__,val);
+	val = val & TI_CC_STATUS_MASK;
+	return val;
+}
+
 static struct pd_dpm_ops tusb_device_pd_dpm_ops = {
 	.pd_dpm_hard_reset = tusb_pd_dpm_hard_reset,
+	.pd_dpm_get_cc_state = tusb_pd_dpm_get_cc_state,
 };
 static int tusb422_probe(struct i2c_client *client, const struct i2c_device_id *id)
 {
@@ -1354,10 +1357,6 @@ static int tusb422_probe(struct i2c_client *client, const struct i2c_device_id *
 		dev_err(dev, "failed to create sysfs: %d\n", ret);
 		goto err_sysfs;
 	}
-#endif
-
-#ifdef CONFIG_CC_ANTI_CORROSION
-	cc_corrosion_register_ops(&tusb422_corrosion_ops);
 #endif
 
 	ret = cc_check_ops_register(&cc_check_ops);

@@ -225,6 +225,12 @@ static struct usb_function_instance *rndis_alloc_inst(void)
 
 	INIT_LIST_HEAD(&opts->rndis_os_desc.ext_prop);
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+	opts->class = rndis_iad_descriptor.bFunctionClass;
+	opts->subclass = rndis_iad_descriptor.bFunctionSubClass;
+	opts->protocol = rndis_iad_descriptor.bFunctionProtocol;
+#endif
+
 	descs[0] = &opts->rndis_os_desc;
 	names[0] = "rndis";
 	config_group_init_type_name(&opts->func_inst.group, "",

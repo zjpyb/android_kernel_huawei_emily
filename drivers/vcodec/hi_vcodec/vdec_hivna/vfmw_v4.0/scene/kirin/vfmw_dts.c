@@ -28,8 +28,9 @@ SINT32 VFMW_SetDtsConfig(VFMW_DTS_CONFIG_S *pDtsConfig)
 	if (pDtsConfig->VdecIrqNumNorm == 0 || pDtsConfig->VdecIrqNumProt == 0 || pDtsConfig->VdecIrqNumSafe == 0   ||
 	    pDtsConfig->VdhRegBaseAddr == 0 || pDtsConfig->VdhRegRange == 0    || pDtsConfig->SmmuPageBaseAddr == 0 ||
 	    pDtsConfig->PERICRG_RegBaseAddr == 0) {
-		dprint(PRN_ERROR, "%s invalid param: IsFPGA : %d, VdecIrqNumNorm : %d, VdecIrqNumProt : %d, VdecIrqNumSafe : %d, VdhRegBaseAddr : %pK, VdhRegSize : %d, SmmuPageBaseAddr : %pK, PERICRG_RegBaseAddr : %pK\n", __func__,
-			pDtsConfig->IsFPGA, pDtsConfig->VdecIrqNumNorm, pDtsConfig->VdecIrqNumProt, pDtsConfig->VdecIrqNumSafe, (void *)(uintptr_t)(pDtsConfig->VdhRegBaseAddr), pDtsConfig->VdhRegRange, (void *)(uintptr_t)(pDtsConfig->SmmuPageBaseAddr), (void *)(uintptr_t)(pDtsConfig->PERICRG_RegBaseAddr));
+		dprint(PRN_ERROR, "%s invalid param: IsFPGA : %d, VdecIrqNumNorm : %d\n", __func__, pDtsConfig->IsFPGA, pDtsConfig->VdecIrqNumNorm);
+             dprint(PRN_ERROR,"VdecIrqNumProt : %d, VdecIrqNumSafe : %d, VdhRegBaseAddr : %pK\n", pDtsConfig->VdecIrqNumProt, pDtsConfig->VdecIrqNumSafe, (void *)(uintptr_t)(pDtsConfig->VdhRegBaseAddr));
+             dprint(PRN_ERROR,"VdhRegSize : %d, SmmuPageBaseAddr : %pK, PERICRG_RegBaseAddr : %pK\n", pDtsConfig->VdhRegRange, (void *)(uintptr_t)(pDtsConfig->SmmuPageBaseAddr), (void *)(uintptr_t)(pDtsConfig->PERICRG_RegBaseAddr));
 		return VDEC_ERR;
 	}
 

@@ -19,6 +19,7 @@ obj-y += laser/
 obj-y += hjpeg/
 obj-y += clt/
 obj-y += fd/
+obj-y += hicam_buf/
 
 obj-$(CONFIG_HISI_CAMERA_FPGA) += fpga/
 obj-$(CONFIG_HISI_CAMERA_DRIVER_IC) += driver_ic/

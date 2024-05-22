@@ -242,7 +242,10 @@ typedef enum BFM_ERRNO_CODE
     NATIVE_BOOT_ERR_DISPLAY,
     NATIVE_BOOT_ERR_MODEM,
     NATIVE_BOOT_ERR_SECURITY,
-
+    MAPLE_ESCAPE_DLOPEN_MRT, /*maple system boot failed cause by dlopen libandroidmpl-rt.so */
+    MAPLE_ESCAPE_CRITICAL_CRASH, /*maple system 'mygote'and 'maple system server' crash 4 times at 4 minutes*/
+    MAPLE_CRITICAL_CRASH_MYGOTE_DATA, /*mygote data caused crash*/
+    MAPLE_CRITICAL_CRASH_SYSTEMSERVER_DATA, /*sysvr data caused crash*/
     /* android frameworkl stage's bootFail errors */
     ANDROID_FRAMEWORK_ERRNO_START = (ANDROID_FRAMEWORK_STAGE <<24)|(COMMON_PLATFORM<<16),
     SYSTEM_SERVICE_LOAD_FAIL,
@@ -267,7 +270,10 @@ typedef enum BFM_ERRNO_CODE
     FRK_BOOT_ERR,
     APP_BOOT_ERR,
 
+	HARDWARE_ERRNO_START = 0x7fff0000,
+    STORAGE_RDONLY=0x7ffffffb,
     BFM_HARDWARE_FAULT = 0x7ffffffc,
+	HARDWARE_ERRNO_END = BFM_HARDWARE_FAULT,
     BOOTUP_SLOWLY = 0x7ffffffd,
     POWEROFF_ABNORMAL = 0x7ffffffe,
     BFM_ERRNO_MAX_COUNT,
@@ -413,6 +419,7 @@ typedef enum BFM_BOOT_STAGE_CODE
 #define bfmr_is_android_framework_stage(x) (((x) & (0xFF <<24)) ==  (((unsigned int)ANDROID_FRAMEWORK_STAGE) <<24))
 
 #define bfmr_get_boot_stage_from_bootfail_errno(x) ((((unsigned int)(x)) >> 24) & (0xFF))
+#define bfmr_get_boot_stage_from_detail_stage(x) ((((unsigned int)(x)) >> 24) & (0xFF))
 
 #define BFMR_MAX(a, b) (((a) > (b)) ? (a) : (b))
 #define BFMR_MIN(a, b) (((a) < (b)) ? (a) : (b))

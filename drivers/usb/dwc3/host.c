@@ -22,7 +22,7 @@
 
 int dwc3_host_init(struct dwc3 *dwc)
 {
-	struct property_entry	props[5];
+	struct property_entry	props[6];
 	struct platform_device	*xhci;
 	int			ret, irq;
 	struct resource		*res;
@@ -95,8 +95,12 @@ int dwc3_host_init(struct dwc3 *dwc)
 
 	if (dwc->ctrl_nyet_abnormal)
 		props[prop_idx++].name = "ctrl-nyet-abnormal";
+
 	if (dwc->warm_reset_after_init)
 		props[prop_idx++].name = "warm-reset-after-init";
+
+	if (dwc->xhci_delay_ctrl_data_stage)
+		props[prop_idx++].name = "xhci-delay-ctrl-data-stage";
 
 	/**
 	 * WORKAROUND: dwc3 revisions <=3.00a have a limitation

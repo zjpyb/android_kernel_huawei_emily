@@ -988,5 +988,11 @@ config HISI_CHARGER_REGULATOR
 	  This driver provides support for the voltage regulators on the
 	  Hisi Charger.
 
+config HISI_REGULATOR_VIVOBUS
+        tristate "HiSilicon  vivobus regulator interface"
+        depends on PHOE_IP_PLATFORM
+        help
+          This driver provides support for vivobus regulator interface
+
 endif
 

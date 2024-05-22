@@ -14,8 +14,9 @@
 #ifndef UFS_KIRIN_H_
 #define UFS_KIRIN_H_
 
+/* #define UFS_TX_EQUALIZER_0DB */
 #define UFS_TX_EQUALIZER_35DB
-/*#define UFS_TX_EQUALIZER_60DB*/
+/* #define UFS_TX_EQUALIZER_60DB */
 
 #define UFS_I2C_SLAVE (0x5A)
 #define UFS_I2C_BUS 3
@@ -78,6 +79,7 @@
 /* LPMCU: 0xB4000000, A53: 0xF4000000, I2C: 0x0 */
 #define BASE_BUS_ADDR         ( 0x0)
 #define REG_SC_APB_IF         ( BASE_BUS_ADDR + 0x00023000)
+#define REG_SC_APB_IF_V200    ( BASE_BUS_ADDR + 0x00046000)
 #define SCNOCSTA              ( REG_SC_APB_IF + 0xa0)
 #define NOCSTA                ( BASE_BUS_ADDR + 0x00026000)
 #define SCPPLLCTRL0           ( REG_SC_APB_IF + 0x8)
@@ -85,7 +87,9 @@
 #define SCPPLLSTAT            ( REG_SC_APB_IF + 0x14)
 #define SC_CLKEN              ( REG_SC_APB_IF + 0x18)
 #define SC_RSTEN              ( REG_SC_APB_IF + 0x30)
+#define SC_RSTEN_V200         ( REG_SC_APB_IF_V200 + 0x78)
 #define SC_RSTDIS             ( REG_SC_APB_IF + 0x34)
+#define SC_RSTDIS_V200        ( REG_SC_APB_IF_V200 + 0x7C)
 #define SC_RSTSTAT            ( REG_SC_APB_IF + 0x38)
 #define SC_CLK_DIV            ( REG_SC_APB_IF + 0x84)
 #define SC_INT_MASK_EN        ( REG_SC_APB_IF + 0x70)
@@ -343,6 +347,8 @@ enum {
 #define RX_CANNOT_DISABLE	UFS_BIT(11)
 #define DISABLE_UFS_PMRUNTIME	UFS_BIT(12)
 #define RX_VCO_VREF	 UFS_BIT(13)
+#define MPHY_BOARDID_V200     ( 0x18903205)
+bool IS_V200_MPHY(struct ufs_hba *hba);
 
 struct ufs_kirin_host {
 	struct ufs_hba *hba;
@@ -436,7 +442,6 @@ void ufs_kirin_advertise_quirks(struct ufs_hba *hba);
 void ufs_kirin_set_pm_lvl(struct ufs_hba *hba);
 void ufs_kirin_populate_dt(struct device *dev,
 				  struct ufs_kirin_host *host);
-int ufs_kirin_get_resource(struct ufs_kirin_host *host);
 void ufs_kirin_regulator_init(struct ufs_hba *hba);
 void ufs_kirin_inline_crypto_attr(struct ufs_hba *hba);
 #ifndef CONFIG_SCSI_UFS_ENHANCED_INLINE_CRYPTO
@@ -451,6 +456,14 @@ void hisi_mphy_updata_temp_sqvref(struct ufs_hba *hba,
 				struct ufs_kirin_host *host);
 void hisi_mphy_updata_vswing_fsm_ocs5(struct ufs_hba *hba,
 				struct ufs_kirin_host *host);
+void hisi_mphy_V200_updata_vswing_fsm(struct ufs_hba *hba,
+				struct ufs_kirin_host *host);
+void hisi_mphy_V200_updata(struct ufs_hba *hba,
+				struct ufs_kirin_host *host);
+void hisi_mphy_V200_link_post_config(struct ufs_hba *hba,
+				struct ufs_kirin_host *host);
+void hisi_mphy_V200_pwr_change_pre_config(struct ufs_hba *hba,
+				struct ufs_kirin_host *host);
 
 int ufs_kirin_check_hibern8(struct ufs_hba *hba);
 void ufs_kirin_mphy_write(struct ufs_hba *hba, uint16_t addr, uint16_t value);
@@ -464,6 +477,7 @@ void hisi_mphy_busdly_config(struct ufs_hba *hba,
 void ufs_clk_init(struct ufs_hba *hba);
 void ufs_soc_init(struct ufs_hba *hba);
 void ufs_kirin_full_reset(struct ufs_hba *hba);
+void set_device_clk(struct ufs_hba *hba);
 void ufs_kirin_device_hw_reset(struct ufs_hba *hba);
 int ufs_kirin_suspend_before_set_link_state(struct ufs_hba *hba, enum ufs_pm_op pm_op);
 int ufs_kirin_resume_after_set_link_state(struct ufs_hba *hba, enum ufs_pm_op pm_op);

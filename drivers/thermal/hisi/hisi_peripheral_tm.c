@@ -814,7 +814,7 @@ int ipa_get_periph_id(const char *name)
 	u32 id;
 	u32 sensor_num = sizeof(hisi_peripheral_chanel)/sizeof(char *);
 
-	pr_info("IPA sensor_num =%d\n", sensor_num);
+	pr_info("IPA periph sensor_num =%d\n", sensor_num);
 
 	for (id = 0; id < sensor_num; id++) {
 		pr_info("IPA: sensor_name=%s, hisi_tsensor_name[%d]=%s\n", name, id, hisi_peripheral_chanel[id]);

@@ -170,7 +170,9 @@ typedef struct wlan_memdump_s{
 *****************************************************************************/
 extern oal_bool_enum g_wlan_pm_switch_etc;
 extern oal_uint8 g_wlan_device_pm_switch;
-extern oal_uint8 g_wlan_fast_check_cnt;
+extern oal_uint8 g_wlan_min_fast_ps_idle;
+extern oal_uint8 g_wlan_max_fast_ps_idle;
+extern oal_uint8 g_wlan_auto_ps_thresh;
 #if (_PRE_MULTI_CORE_MODE_OFFLOAD_DMAC == _PRE_MULTI_CORE_MODE) && (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
 extern oal_uint8 g_uc_custom_cali_done_etc;
 #endif
@@ -191,6 +193,7 @@ extern oal_uint  wlan_pm_exit_etc(oal_void);
 extern oal_uint32 wlan_pm_is_poweron_etc(oal_void);
 extern oal_int32 wlan_pm_open_etc(oal_void);
 extern oal_uint32 wlan_pm_close_etc(oal_void);
+extern oal_uint32 wlan_pm_close_by_shutdown(oal_void);
 extern oal_uint wlan_pm_init_dev_etc(void);
 extern oal_uint wlan_pm_wakeup_dev_etc(oal_void);
 extern oal_uint wlan_pm_wakeup_host_etc(void);
@@ -217,7 +220,7 @@ extern oal_int32           bfgx_mem_check_mdelay;
 extern wlan_memdump_t* get_wlan_memdump_cfg(void);
 
 #if (defined(_PRE_PRODUCT_ID_HI110X_DEV) || defined(_PRE_PRODUCT_ID_HI110X_HOST))
-extern oal_int32 wlan_device_mem_check_etc(void);
+extern oal_int32 wlan_device_mem_check_etc(oal_int32 l_runing_test_mode);
 extern oal_int32 wlan_device_mem_check_result_etc(unsigned long long *time);
 extern oal_void wlan_device_mem_check_work_etc(oal_work_stru *pst_worker);
 #endif
@@ -225,6 +228,11 @@ extern oal_void wlan_device_mem_check_work_etc(oal_work_stru *pst_worker);
 #if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
 oal_int32 wlan_pm_register_notifier(struct notifier_block *nb);
 oal_void wlan_pm_unregister_notifier(struct notifier_block *nb);
+#endif
+
+#ifdef CONFIG_HUAWEI_DSM
+extern void hw_1103_register_wifi_dsm_client(void);
+extern void hw_1103_unregister_wifi_dsm_client(void);
 #endif
 
 #endif

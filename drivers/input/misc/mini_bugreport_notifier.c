@@ -6,7 +6,7 @@
 #include <linux/hisi/hisi_powerkey_event.h>
 #include <linux/input.h>
 #include <linux/notifier.h>
-#include <log/log_usertype/log-usertype.h>
+#include <log/log_usertype.h>
 
 #define POWER_KEY_RELEASE		(0)
 #define POWER_KEY_PRESS			(1)

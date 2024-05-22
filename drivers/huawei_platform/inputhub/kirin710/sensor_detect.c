@@ -29,6 +29,7 @@
 #include <linux/mtd/hisi_nve_interface.h>
 #include <linux/switch.h>
 #include <linux/hisi/hw_cmdline_parse.h>
+#include "huawei_thp_attr.h"
 
 #ifdef CONFIG_HUAWEI_HW_DEV_DCT
 #include <huawei_platform/devdetect/hw_dev_dec.h>
@@ -41,7 +42,7 @@
 #endif
 #define HANDPRESS_DEFAULT_STATE		"huawei,default-state"
 #define ADAPT_SENSOR_LIST_NUM           20
-
+#define TP_REPLACE_PS        1
 static struct sensor_redetect_state s_redetect_state ;
 static struct wake_lock sensor_rd;
 static struct work_struct redetect_work;
@@ -51,6 +52,7 @@ static pkt_sys_dynload_req_t *dyn_req = (pkt_sys_dynload_req_t *) buf;
 struct sleeve_detect_pare sleeve_detect_paremeter[MAX_PHONE_COLOR_NUM] = {{0,0},};
 struct sensorlist_info sensorlist_info[SENSOR_MAX];
 static u32 tof_replace_ps_flag = 0;
+static u32 replace_ps_type = 0;
 uint8_t gyro_cali_way = 0;
 uint8_t acc_cali_way = 0;
 int mag_threshold_for_als_calibrate = 0;
@@ -94,11 +96,12 @@ extern int vishay_vcnl36658_ps_flag;
 extern int ams_tof_flag;
 extern int sharp_tof_flag;
 extern struct CONFIG_ON_DDR* pConfigOnDDr;
+extern t_ap_sensor_ops_record all_ap_sensor_operations[TAG_SENSOR_END];
 extern void select_als_para(struct device_node *dn);
 extern int iom3_need_recovery(int modid, exp_source_t f);
 
 static int _device_detect(struct device_node *dn, int index, struct sensor_combo_cfg *p_succ_ret);
-
+int support_hall_hishow = 0;
 
 #define DEF_SENSOR_COM_SETTING \
 {\
@@ -179,6 +182,8 @@ struct als_platform_data als_data = {
 	.init_time = 150,
 	.als_phone_type = 0,
 	.als_phone_version = 0,
+	.als_gain_dynamic = 0,
+	.is_bllevel_supported = 0,
 };
 
 struct ps_platform_data ps_data = {
@@ -202,7 +207,9 @@ struct ps_platform_data ps_data = {
 	.wtime = 100,//ms
 	.pulse_len = 8 ,//us
 	.pgain = 4,
-	.led_current = 102,//mA
+	.led_current = 0x40,//mA
+	.led_limited_curr = 0xC0,
+	.pd_current = 0x03,
 	.prox_avg = 2, //ps average contrl
 	.offset_max = 200 ,
 	.offset_min = 50,
@@ -244,6 +251,7 @@ struct sar_platform_data sar_pdata = {
 	.cfg = DEF_SENSOR_COM_SETTING,
 	.poll_interval = 200,
 	.calibrate_type = 5,
+	.gpio_int = 0,
 };
 
 struct adux_sar_add_data_t adux_sar_add_data;
@@ -349,6 +357,12 @@ struct sar_sensor_detect cypress_sar_detect = {
 	.detect_flag = 0,
 	.chip_id = 0,
 };
+
+struct sar_sensor_detect g_abov_sar_detect = {
+	.cfg = DEF_SENSOR_COM_SETTING,
+	.detect_flag = 0,
+	.chip_id = 0,
+};
 /*lint +e785*/
 struct sensor_detect_manager sensor_manager[SENSOR_MAX] = {
     {"acc", ACC,DET_INIT,TAG_ACCEL, &gsensor_data, sizeof(gsensor_data)},
@@ -402,7 +416,7 @@ void read_sensorlist_info(struct device_node *dn, int sensor)
 		hwlog_info("sensor SENSOR_DETECT_LIST %d get vendor %s\n", sensor, sensorlist_info[sensor].vendor);
 	}
 	else
-		sensorlist_info[sensor].name[0] = '\0';
+		sensorlist_info[sensor].vendor[0] = '\0';
 
 	if (0 == of_property_read_u32(dn, "version", &temp))
 	{
@@ -817,6 +831,7 @@ void read_als_data_from_dts(struct device_node *dn)
 	int temp = 0;
 	int als_phone_type = 0;
 	int als_phone_version = 0;
+	int als_gain_dynamic = 0;
 	int ret = 0;
 	char *chip_info = NULL;
 	read_chip_info(dn, ALS);
@@ -895,6 +910,15 @@ void read_als_data_from_dts(struct device_node *dn)
 		vishay_vcnl36658_als_flag= 1;
 		//hwlog_info("%s:vishay_vcnl36658 i2c_address suc,%d \n", __func__, temp);
 	}
+	if (!strncmp(chip_info, "huawei,vishay_vcnl36832", sizeof("huawei,vishay_vcnl36832"))) {
+		vishay_vcnl36832_als_flag = 1;
+	}
+	if (!strncmp(chip_info, "huawei,arrow_stk3338", sizeof("huawei,arrow_stk3338"))) {
+		stk3338_als_flag = 1;
+	}
+	if (!strncmp(chip_info, "huawei,liteon_ltr2568", sizeof("huawei,liteon_ltr2568"))) {
+		ltr2568_als_flag = 1;
+	}
 	if (!strncmp(chip_info, "huawei,A", sizeof("huawei,A"))) {
 		tsl2591_flag= 1;
 		//hwlog_info("%s:A i2c_address suc,%d \n", __func__, temp);
@@ -902,6 +926,9 @@ void read_als_data_from_dts(struct device_node *dn)
 	if (!strncmp(chip_info, "huawei,B", sizeof("huawei,B"))) {
 		bh1726_flag= 1;
 		//hwlog_info("%s:B i2c_address suc,%d \n", __func__, temp);
+	}
+	if (!strncmp(chip_info, "huawei,apds9308_als",sizeof("huawei,apds9308_als"))) {
+		g_apds9308Flag = 1;
 	}
 	temp = of_get_named_gpio(dn, "gpio_int1", 0);
 	if (temp < 0)
@@ -944,6 +971,11 @@ void read_als_data_from_dts(struct device_node *dn)
 	else
 		als_data.als_phone_type = (uint8_t) als_phone_type;
 
+	if (of_property_read_u32(dn, "als_gain_dynamic", &als_gain_dynamic));
+		//hwlog_err("%s:read als_gian_dynamic fail\n" __func__);
+	else
+		als_data.als_gain_dynamic = (uint8_t) als_gain_dynamic;
+
 	if (of_property_read_u32(dn, "als_phone_version", &als_phone_version));
 		//hwlog_err("%s:read als_phone_version fail\n", __func__);
 	else
@@ -969,6 +1001,11 @@ void read_als_data_from_dts(struct device_node *dn)
 		//hwlog_err("%s:read als file_id fail\n", __func__);
 	else
 		dyn_req->file_list[dyn_req->file_count] = (uint16_t) temp;
+
+	if (of_property_read_u32(dn, "is_bllevel_supported", &temp))
+		hwlog_err("%s:read als is_cali_supported fail\n", __func__);
+	else
+		als_data.is_bllevel_supported = (int)temp;
 	dyn_req->file_count++;
 	read_sensorlist_info(dn, ALS);
 	ret = of_property_read_u32(dn, "phone_color_num", &temp);
@@ -994,14 +1031,28 @@ void read_als_data_from_dts(struct device_node *dn)
 static void read_ps_data_from_dts(struct device_node *dn)
 {
 	int temp = 0;
+	const char *ps_chip_info = "proximity-tp";
+	const char *ps_vendor = "huawei";
 
 	if (of_property_read_u32(dn, "sensor_list_info_id", &temp));
 		//hwlog_err("%s:read ps sensor_list_info_id fail\n", __func__);
 	else
 		sensorlist[++sensorlist[0]] = (uint16_t) temp;
 
-	if(tof_replace_ps_flag){
-		hwlog_info("tof_replace_ps_flag is true skip read ps dtsconfig %d\n", tof_replace_ps_flag);
+	if (tof_replace_ps_flag != 0) {
+		hwlog_info("tof_replace_ps_flag is true skip read ps dts %u\n",
+			tof_replace_ps_flag);
+		return;
+	}
+	if (replace_ps_type == TP_REPLACE_PS) {
+		strncpy(sensorlist_info[PS].name, ps_chip_info,
+			(MAX_CHIP_INFO_LEN - 1));
+		sensorlist_info[PS].name[MAX_CHIP_INFO_LEN-1] = '\0';
+		strncpy(sensorlist_info[PS].vendor, ps_vendor,
+			(MAX_CHIP_INFO_LEN - 1));
+		sensorlist_info[PS].vendor[MAX_CHIP_INFO_LEN-1] = '\0';
+		hwlog_info("tp replace ps, name is %s vendor is %s\n",
+			sensorlist_info[PS].name, sensorlist_info[PS].vendor);
 		return;
 	}
 
@@ -1138,9 +1189,19 @@ static void read_ps_data_from_dts(struct device_node *dn)
 		ps_data.wtime = (uint8_t) temp;
 
 	if (of_property_read_u32(dn, "led_current", &temp));
-		//hwlog_err("%s:read led_current fail\n", __func__);
+
 	else
 		ps_data.led_current = (uint8_t) temp;
+
+	if (of_property_read_u32(dn, "led_limited_curr", &temp));
+
+	else
+		ps_data.led_limited_curr = (uint8_t) temp;
+
+	if (of_property_read_u32(dn, "pd_current", &temp));
+
+	else
+		ps_data.pd_current = (uint8_t) temp;
 
 	if (of_property_read_u32(dn, "pulse_len", &temp));
 		//hwlog_err("%s:read pulse_len fail\n", __func__);
@@ -1289,6 +1350,35 @@ static void read_handpress_data_from_dts(struct device_node *dn)
 	hwlog_info("get handpress dev from temp=%d; ++sensorlist[0]:%d\n", temp, sensorlist[0] - 1);
 }
 
+static void read_abov_sar_data_from_dts(struct device_node *dn)
+{
+	uint16_t abov_phone_type = 0;
+	uint16_t *calibrate_thred = NULL;
+
+	read_chip_info(dn, CAP_PROX);
+	if (of_property_read_u16(dn, "phone_type", &abov_phone_type)) {
+		sar_pdata.sar_datas.abov_data.phone_type = 0;
+		hwlog_err("%s:read phone_type fail\n", __func__);
+	} else {
+		sar_pdata.sar_datas.abov_data.phone_type = abov_phone_type;
+		hwlog_info("%s:read phone_type:0x%x\n", __func__,
+			sar_pdata.sar_datas.abov_data.phone_type);
+	}
+
+	calibrate_thred = sar_pdata.sar_datas.abov_data.calibrate_thred;
+	if (of_property_read_u16_array(dn, "calibrate_thred", calibrate_thred,
+		CAP_CALIBRATE_THRESHOLE_LEN)) {
+		hwlog_err("%s:read calibrate_thred fail\n", __func__);
+		*calibrate_thred = 0;
+		*(calibrate_thred + 1) = 0;
+		*(calibrate_thred + 2) = 0;
+		*(calibrate_thred + 3) = 0;
+	}
+	hwlog_info("calibrate_thred:%u %u %u %u\n", *calibrate_thred,
+		*(calibrate_thred + 1), *(calibrate_thred + 2),
+		*(calibrate_thred + 3));
+}
+
 static void read_capprox_data_from_dts(struct device_node *dn)
 {
 	uint16_t threshold_to_ap = 0;
@@ -1314,6 +1404,14 @@ static void read_capprox_data_from_dts(struct device_node *dn)
 	else
 		sar_pdata.gpio_int = (GPIO_NUM_TYPE) temp;
 
+	if (of_property_read_u32(dn, "gpio_int_sh", &temp))
+		hwlog_err("%s:read gpio_int_sh fail\n", __func__);
+	else
+		sar_pdata.gpio_int_sh = (GPIO_NUM_TYPE)temp;
+	if (of_property_read_u32(dn, "reg", &temp))
+		hwlog_err("%s:read cap_prox reg fail\n", __func__);
+	else
+		sar_pdata.cfg.i2c_address = (uint8_t)temp;
 	if (of_property_read_u32(dn, "poll_interval", &temp))
 		hwlog_err("%s:read poll_interval fail\n", __func__);
 	else
@@ -1455,6 +1553,9 @@ static void read_capprox_data_from_dts(struct device_node *dn)
 			*(calibrate_thred+3) = 0;
 		}
 		hwlog_info("calibrate_thred:%u %u %u %u\n", *calibrate_thred, *(calibrate_thred+1), *(calibrate_thred+2), *(calibrate_thred+3));
+	} else if (!strncmp(sensor_chip_info[CAP_PROX], "huawei,abov-a96t3x6",
+		strlen("huawei,abov-a96t3x6"))) {
+		read_abov_sar_data_from_dts(dn);
 	}
 	read_sensorlist_info(dn, CAP_PROX);
 }
@@ -1869,6 +1970,14 @@ static int get_adapt_file_id_for_dyn_load(void)
 		if (!strcmp("enabled",step_count_ty)) {
 			pConfigOnDDr->reserved = 1;
 			hwlog_info("%s : docom_step_counter status is %s \n",__func__,step_count_ty);
+		}
+	}
+	if (0 == of_property_read_u32(sensorhub_node, "is_support_hall_hishow", &i))
+	{
+		if(1 == i)
+		{
+			support_hall_hishow = 1;
+			hwlog_info("sensor get support_hall_hishow: %d\n", support_hall_hishow);
 		}
 	}
 	return 0;
@@ -2692,6 +2801,23 @@ static int device_detect(struct device_node *dn, int index)
 			hwlog_info("get replace_by_tof flag %d, skip detect\n", tof_replace_ps_flag);
 			goto out;
 		}
+		ret = of_property_read_u32(dn, "replace_by_who", &replace_ps_type);
+		if (ret) {
+			hwlog_info("get replace_by_who failed, use defalut value\n");
+			replace_ps_type = 0;
+		} else {
+			hwlog_info("get replace_by_who successful, replace_ps_type =%d \n",replace_ps_type);
+		}
+		if( replace_ps_type == TP_REPLACE_PS ){
+			hwlog_info("get replace_by_who flag %d, skip detect\n", replace_ps_type);
+			#ifdef CONFIG_HUAWEI_THP
+			all_ap_sensor_operations[TAG_PS].work_on_ap = true;
+			all_ap_sensor_operations[TAG_PS].ops.enable = thp_set_prox_switch_status;
+			ret = is_tp_detected();
+			goto out;
+			#endif
+		}
+
 	}
 	ret = _device_detect(dn, index, &cfg);
 	if (!ret) {
@@ -2994,6 +3120,15 @@ static void read_cap_prox_info(struct device_node *dn)
 		cypress_sar_detect.chip_id = (uint8_t)register_add;
 		cypress_sar_detect.chip_id_value[0] = (uint8_t)wia[0];
 		cypress_sar_detect.chip_id_value[1] = (uint8_t)wia[1];
+	} else if (!strncmp(chip_info, "huawei,abov-a96t3x6",
+		strlen("huawei,abov-a96t3x6"))) {
+		hwlog_info("sar sensor from dts is abov-a96t3x6\n");
+		g_abov_sar_detect.detect_flag = 1;
+		g_abov_sar_detect.cfg.bus_num = (uint8_t)i2c_bus_num;
+		g_abov_sar_detect.cfg.i2c_address = (uint8_t)i2c_address;
+		g_abov_sar_detect.chip_id = (uint8_t)register_add;
+		g_abov_sar_detect.chip_id_value[0] = (uint8_t)wia[0];
+		g_abov_sar_detect.chip_id_value[1] = (uint8_t)wia[1];
 	}
 }
 
@@ -3230,13 +3365,13 @@ static void register_priv_notifier(SENSOR_DETECT_LIST s_id)
 }
 
 /*******************************************************************************************
-Function:	sensor_set_cfg_data
-Description: 将配置参数发至mcu 侧
-Data Accessed:  无
-Data Updated:   无
-Input:        无
-Output:         无
-Return:         成功或者失败信息: 0->成功, -1->失败
+Function:      sensor_set_cfg_data
+Description:   send config para to mcu
+Data Accessed: No
+Data Updated:  No
+Input:         No
+Output:        No
+Return:        success or fail : 0->success, -1->fail
 *******************************************************************************************/
 int sensor_set_cfg_data(void)
 {
@@ -3276,7 +3411,7 @@ int sensor_set_cfg_data(void)
 
 static bool need_download_fw(uint8_t tag)
 {
-	return ((TAG_KEY == tag) || (TAG_TOF == tag));
+	return ((tag == TAG_KEY) || (tag == TAG_TOF) || (tag == TAG_CAP_PROX));
 }
 
 int sensor_set_fw_load(void)

@@ -35,6 +35,7 @@
 #include "../pmic/hw_pmic.h"
 
 #define I2S(i) container_of(i, sensor_t, intf)
+#define Sensor2Pdev(s) container_of((s).dev, struct platform_device, dev)
 
 static char const* imx179_get_name(hwsensor_intf_t* si);
 static int imx179_config(hwsensor_intf_t* si, void  *argp);
@@ -428,10 +429,8 @@ imx179_config(
         case SEN_CONFIG_READ_REG_SETTINGS:
             break;
         case SEN_CONFIG_ENABLE_CSI:
-            //ret = si->vtbl->csi_enable(si);
             break;
         case SEN_CONFIG_DISABLE_CSI:
-            //ret = si->vtbl->csi_disable(si);
             break;
         case SEN_CONFIG_MATCH_ID:
             ret = si->vtbl->match_id(si,argp);
@@ -504,7 +503,7 @@ static void __exit
 imx179_exit_module(void)
 {
     rpmsg_sensor_unregister((void*)&s_imx179);
-    hwsensor_unregister(&s_imx179.intf);
+    hwsensor_unregister(Sensor2Pdev(s_imx179));
     platform_driver_unregister(&s_imx179_driver);
 }
 

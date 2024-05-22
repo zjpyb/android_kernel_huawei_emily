@@ -461,7 +461,7 @@ static ssize_t rmidev_write(struct file *filp, const char __user *buf,
 		count = REG_ADDR_LIMIT - *f_pos;
 
 	if ((count <= 0) || (count > I2C_WRITE_DATA_LIMIT)){
-		TS_LOG_ERR("count =%d is invalid",count);
+		TS_LOG_ERR("count =%lu is invalid", count);
 		retval =  0;
 		goto clean_up;
 	}

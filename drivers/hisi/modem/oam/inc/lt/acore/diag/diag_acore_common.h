@@ -63,7 +63,8 @@ extern "C" {
 #include "blist.h"
 #include "AppRrcInterface.h"
 #include "msp_diag_comm.h"
-#include  <linux/wakelock.h>
+#include <linux/device.h>
+#include <linux/pm_wakeup.h>
 
 
 /*****************************************************************************
@@ -132,7 +133,7 @@ typedef struct
 /*****************************************************************************
   7 Extern Global Variable
 *****************************************************************************/
-extern struct wake_lock diag_wakelock;
+extern struct wakeup_source diag_wakelock;
 
 /* 自旋锁，用来作编码源buff的临界资源保护 */
 extern VOS_SPINLOCK             g_stScmIndSrcBuffSpinLock;
@@ -168,8 +169,8 @@ extern VOS_VOID OM_AcpuCltInfoCnfMsgProc(MsgBlock* pMsg);
 extern VOS_VOID OM_AcpuCltInfoCnfNotNeedProcessSetFlag(VOS_VOID);
 extern VOS_VOID OM_AcpuRcvCltInfoFinish(VOS_VOID);
 
-extern VOS_VOID PPM_SockOmServerTask(VOS_VOID);
-extern VOS_VOID PPM_SockAtServerTask(VOS_VOID);
+extern int PPM_SockOmServerTask(void* parm);
+extern int PPM_SockAtServerTask(void* parm);
 u32 diag_DisconnectTLPort(void);
 
 /*****************************************************************************

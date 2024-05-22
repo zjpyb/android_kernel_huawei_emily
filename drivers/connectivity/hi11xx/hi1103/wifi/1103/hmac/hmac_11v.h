@@ -42,6 +42,9 @@ extern "C" {
 #define HMAC_11V_SUBELEMENT_ID_RESV         0           /* SUBELEMENT预留 ID*/
 
 
+#define HMAC_11V_REQUEST_DISASSOC_TIME_SCAN_ONE_CHANNEL_TIME 100    /*去关联时间小于100ms直接回Reject */
+#define HMAC_11V_REQUEST_DISASSOC_TIME_SCAN_ALL_CHANNEL_TIME 3000   /*100ms到3s之间，仅扫描一个信道 */
+
 /*****************************************************************************
   3 枚举定义
 *****************************************************************************/

@@ -308,7 +308,7 @@ Retry:
 		if (ret) {
 			goto Retry;
 		}
-		ilitek_update_flash_data(ap_startaddr, ap_endaddr, fw);
+		ret = ilitek_update_flash_data(ap_startaddr, ap_endaddr, fw);
 		if (ret) {
 			goto Retry;
 		}

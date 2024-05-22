@@ -501,20 +501,38 @@ static void cap_prox_enq_notify_work(const int item_id, uint16_t value,uint16_t 
 
 static void cap_prox_do_enq_work(int calibrate_index)
 {
-	if(!strncmp(sensor_chip_info[CAP_PROX], "huawei,semtech-sx9323", strlen("huawei,semtech-sx9323"))){
-		switch(calibrate_index){
-			case 1:
-				cap_prox_enq_notify_work(SAR_SENSOR_DIFF_MSG,sar_calibrate_datas.semtech_cali_data.diff,
-					sar_pdata.sar_datas.semteck_data.calibrate_thred[DIFF_MIN_THREDHOLD],
-					sar_pdata.sar_datas.semteck_data.calibrate_thred[DIFF_MAX_THREDHOLD],CAP_PROX_DIFF);
-				break;
-			case 2:
-				cap_prox_enq_notify_work(SAR_SENSOR_OFFSET_MSG,sar_calibrate_datas.semtech_cali_data.offset,
-					sar_pdata.sar_datas.semteck_data.calibrate_thred[OFFSET_MIN_THREDHOLD],
-					sar_pdata.sar_datas.semteck_data.calibrate_thred[OFFSET_MAX_THREDHOLD],CAP_PROX_OFFSET);
-				break;
-			default:
-				break;
+	uint16_t diff;
+	uint16_t offset;
+	uint16_t *calibrate_thred = NULL;
+
+	if (!strncmp(sensor_chip_info[CAP_PROX], "huawei,semtech-sx9323",
+			strlen("huawei,semtech-sx9323"))) {
+		diff = sar_calibrate_datas.semtech_cali_data.diff;
+		offset = sar_calibrate_datas.semtech_cali_data.offset;
+		calibrate_thred = sar_pdata.sar_datas.semteck_data.calibrate_thred;
+	} else if (!strncmp(sensor_chip_info[CAP_PROX], "huawei,abov-a96t3x6",
+			strlen("huawei,abov-a96t3x6"))) {
+		diff = sar_calibrate_datas.abov_cali_data.diff;
+		offset = sar_calibrate_datas.abov_cali_data.offset;
+		calibrate_thred = sar_pdata.sar_datas.abov_data.calibrate_thred;
+	}
+
+	if (calibrate_thred) {
+		switch (calibrate_index) {
+		case 1: /* near data */
+			cap_prox_enq_notify_work(SAR_SENSOR_DIFF_MSG, diff,
+						calibrate_thred[DIFF_MIN_THREDHOLD],
+						calibrate_thred[DIFF_MAX_THREDHOLD],
+						CAP_PROX_DIFF);
+			break;
+		case 2: /* far data */
+			cap_prox_enq_notify_work(SAR_SENSOR_OFFSET_MSG, offset,
+						calibrate_thred[OFFSET_MIN_THREDHOLD],
+						calibrate_thred[OFFSET_MAX_THREDHOLD],
+						CAP_PROX_OFFSET);
+			break;
+		default:
+			break;
 		}
 	}
 }
@@ -1172,7 +1190,7 @@ static ssize_t attr_ps_calibrate_write(struct device *dev, struct device_attribu
 	memset(&ps_test,0,sizeof(ps_test));
 	#endif
 
-	if((txc_ps_flag != 1) && (ams_tmd2620_ps_flag != 1) &&	(avago_apds9110_ps_flag != 1) && (ams_tmd3725_ps_flag != 1) 
+	if((txc_ps_flag != 1) && (ams_tmd2620_ps_flag != 1) &&	(avago_apds9110_ps_flag != 1) && (ams_tmd3725_ps_flag != 1)
 		&& (liteon_ltr582_ps_flag != 1) && (apds9999_ps_flag != 1) && (ams_tmd3702_ps_flag != 1)
 		&& (ams_tof_flag != 1) && (sharp_tof_flag != 1) && (ltr2568_ps_flag!= 1)) {
 		hwlog_info("ps sensor is not txc_ps_224 or ams_tmd2620 or avago_apds9110 or ams_tmd3725 or liteon_ltr582 or liteon_ltr2568,no need calibrate\n");
@@ -1309,6 +1327,30 @@ int write_als_offset_to_nv(char *temp)
 	return ret;
 }
 
+static void als_dark_noise_offset_enq_notify_work(const int item_id, uint16_t value,uint16_t min_threshold,uint16_t max_threshold)
+{
+	#ifdef SENSOR_DATA_ACQUISITION
+	int ret = -1;
+	struct event als_dark_noise_offset_event;
+	memset(&als_dark_noise_offset_event, 0, sizeof(als_dark_noise_offset_event));
+
+	als_dark_noise_offset_event.item_id = item_id;
+	memcpy(als_dark_noise_offset_event.device_name,ALS_TEST_CAL,sizeof(ALS_TEST_CAL));
+	memcpy(als_dark_noise_offset_event.result,ALS_CAL_RESULT,sizeof(ALS_CAL_RESULT));
+	memcpy(als_dark_noise_offset_event.test_name,ALS_DARK_CALI_NAME,sizeof(ALS_DARK_CALI_NAME));
+	snprintf(als_dark_noise_offset_event.value,MAX_VAL_LEN,"%d",value);
+	snprintf(als_dark_noise_offset_event.min_threshold,MAX_VAL_LEN,"%u",min_threshold);
+	snprintf(als_dark_noise_offset_event.max_threshold,MAX_VAL_LEN,"%u",max_threshold);
+
+	ret = enq_msg_data_in_sensorhub_single(als_dark_noise_offset_event);
+	if(ret > 0){
+		hwlog_info("als_dark_noise_offset_enq_notify_work succ!!item_id=%d\n", als_dark_noise_offset_event.item_id);
+	}else{
+		hwlog_info("als_dark_noise_offset_enq_notify_work failed!!\n");
+	}
+	#endif
+}
+
 static int als_calibrate_save(const void *buf, int length)
 {
 	const uint16_t *poffset_data = (const uint16_t *)buf;
@@ -1337,6 +1379,8 @@ static const char * als_calibrate_param[] = {
 	ALS_CALI_R, ALS_CALI_G, ALS_CALI_B, ALS_CALI_C, ALS_CALI_LUX, ALS_CALI_CCT,
 };
 
+#define ALS_DARK_NOISE_OFFSET_MAX (10)
+#define ALS_DARK_NOISE_OFFSET_MIN (0)
 static ssize_t attr_als_calibrate_write(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
 	unsigned long val = 0;
@@ -1369,7 +1413,7 @@ static ssize_t attr_als_calibrate_write(struct device *dev, struct device_attrib
 	if (strict_strtoul(buf, 10, &val))
 		return -EINVAL;
 
-	if (1 != val)
+	if (1 != val && val != 2)
 		return count;
 
 	if (sensor_status.opened[TAG_ALS] == 0) { /*if ALS is not opened, open first*/
@@ -1403,40 +1447,48 @@ static ssize_t attr_als_calibrate_write(struct device *dev, struct device_attrib
 	if (als_calibration_res == COMMU_FAIL) {
 		return count;
 	} else if (pkg_mcu.errno == 0){
-		als_calibrate_save(pkg_mcu.data, pkg_mcu.data_length);
+	        als_calibrate_save(pkg_mcu.data, pkg_mcu.data_length);
 	}
 
 	get_test_time(date_str, sizeof(date_str));
 	als_cali_data = (const int32_t *)pkg_mcu.data;
 
-	#ifdef SENSOR_DATA_ACQUISITION
-	cali_data_u16 = (const uint16_t *)pkg_mcu.data;
-	int32_t als_cali_data_int32[ALS_CAL_NUM] = {*cali_data_u16,*(cali_data_u16 + 1),*(cali_data_u16 + 2),*(cali_data_u16 + 3),*(cali_data_u16 + 4),*(cali_data_u16 + 5)};
-	hwlog_info("als calibrate data for collect, %d %d %d %d %d %d\n",*cali_data_u16, *(cali_data_u16 + 1), *(cali_data_u16 + 2),
-		*(cali_data_u16 + 3), *(cali_data_u16 + 4), *(cali_data_u16 + 5));
+	if (2 == val){
+#ifdef SENSOR_DATA_ACQUISITION
+		cali_data_u16 = (const uint16_t *)pkg_mcu.data;
+		als_dark_noise_offset_enq_notify_work(ALS_CALI_DARK_OFFSET_MSG, *cali_data_u16,
+				ALS_DARK_NOISE_OFFSET_MIN, ALS_DARK_NOISE_OFFSET_MAX);
+#endif
+	}else{
+#ifdef SENSOR_DATA_ACQUISITION
+		cali_data_u16 = (const uint16_t *)pkg_mcu.data;
+		int32_t als_cali_data_int32[ALS_CAL_NUM] = {*cali_data_u16,*(cali_data_u16 + 1),*(cali_data_u16 + 2),*(cali_data_u16 + 3),*(cali_data_u16 + 4),*(cali_data_u16 + 5)};
+		hwlog_info("als calibrate data for collect, %d %d %d %d %d %d\n",*cali_data_u16, *(cali_data_u16 + 1), *(cali_data_u16 + 2),
+				*(cali_data_u16 + 3), *(cali_data_u16 + 4), *(cali_data_u16 + 5));
 
-	minThreshold = (const int32_t *)minThreshold_als;
-	maxThreshold = (const int32_t *)maxThreshold_als;
-	als_test.cal_value = (const int32_t *)als_cali_data_int32;
-	als_test.first_item = ALS_CALI_R_MSG;
-	als_test.value_num = ALS_CAL_NUM;
-	als_test.threshold_num = ALS_THRESHOLD_NUM;
-	als_test.min_threshold = minThreshold;
-	als_test.max_threshold = maxThreshold;
+		minThreshold = (const int32_t *)minThreshold_als;
+		maxThreshold = (const int32_t *)maxThreshold_als;
+		als_test.cal_value = (const int32_t *)als_cali_data_int32;
+		als_test.first_item = ALS_CALI_R_MSG;
+		als_test.value_num = ALS_CAL_NUM;
+		als_test.threshold_num = ALS_THRESHOLD_NUM;
+		als_test.min_threshold = minThreshold;
+		als_test.max_threshold = maxThreshold;
 
-	memcpy(als_test.name,ALS_TEST_CAL,sizeof(ALS_TEST_CAL));
-	memcpy(als_test.result,ALS_CAL_RESULT,(strlen(ALS_CAL_RESULT)+1));
-	for(pAlsTest=0; pAlsTest<ALS_CAL_NUM; pAlsTest++){
-		als_test.test_name[pAlsTest] = als_test_name[pAlsTest];
-	}
-	enq_notify_work_sensor(als_test);
-	#endif
+		memcpy(als_test.name,ALS_TEST_CAL,sizeof(ALS_TEST_CAL));
+		memcpy(als_test.result,ALS_CAL_RESULT,(strlen(ALS_CAL_RESULT)+1));
+		for(pAlsTest=0; pAlsTest<ALS_CAL_NUM; pAlsTest++){
+			als_test.test_name[pAlsTest] = als_test_name[pAlsTest];
+		}
+		enq_notify_work_sensor(als_test);
+#endif
 
-	for (i=0; i<ARRAY_SIZE(als_calibrate_param); i++) {
-		memset(&content, 0, sizeof(content));
-		snprintf(content, CLI_CONTENT_LEN_MAX, als_calibrate_param[i], *(als_cali_data),
-		 	((als_calibration_res == SUC) ? "pass" : "fail"), get_cali_error_code(als_calibration_res), date_str);
-		save_to_file(DATA_CLLCT, content);
+		for (i=0; i<ARRAY_SIZE(als_calibrate_param); i++) {
+			memset(&content, 0, sizeof(content));
+			snprintf(content, CLI_CONTENT_LEN_MAX, als_calibrate_param[i], *(als_cali_data),
+					((als_calibration_res == SUC) ? "pass" : "fail"), get_cali_error_code(als_calibration_res), date_str);
+			save_to_file(DATA_CLLCT, content);
+		}
 	}
 
 	if(als_close_after_calibrate == true) {
@@ -1507,12 +1559,41 @@ static void cap_prox_calibrate_work_func(struct work_struct *work)
 	}
 	hwlog_info("cap_prox calibrate work enter --\n");
 }
+
+static void attr_abov_calibrate_write(int calibrate_index, uint16_t abov_data)
+{
+	switch (calibrate_index) {
+	case 1: /* 1: near data */
+		sar_calibrate_datas.abov_cali_data.diff = abov_data;
+		break;
+	case 2: /* 2: far data */
+		sar_calibrate_datas.abov_cali_data.offset = abov_data;
+		break;
+	default:
+		hwlog_err(" abov a96t3x6 sar calibrate err\n");
+		break;
+	}
+	hwlog_info("abov a96t3x6 %u\n", abov_data);
+	hwlog_info("abov_data offset:%d diff:%d\n",
+		sar_calibrate_datas.abov_cali_data.offset,
+		sar_calibrate_datas.abov_cali_data.diff);
+	cap_prox_calibrate_len = sizeof(sar_calibrate_datas);
+	if (cap_prox_calibrate_len > sizeof(cap_prox_calibrate_data))
+		cap_prox_calibrate_len = sizeof(cap_prox_calibrate_data);
+
+	memset(cap_prox_calibrate_data, 0, cap_prox_calibrate_len);
+	memcpy(cap_prox_calibrate_data, &sar_calibrate_datas,
+		cap_prox_calibrate_len);
+}
+
 static ssize_t attr_cap_prox_calibrate_write(struct device *dev,
 					     struct device_attribute *attr, const char *buf, size_t count)
 {
 	unsigned long val = 0;
 	int calibrate_index = 0;
 	read_info_t pkg_mcu;
+	uint16_t semtech = 0;
+	uint16_t abov_data = 0;
 
 	hwlog_info("attr_cap_prox_calibrate_write\n");
 	if (strict_strtoul(buf, 10, &val))
@@ -1558,14 +1639,12 @@ static ssize_t attr_cap_prox_calibrate_write(struct device *dev,
 				cap_prox_calibrate_len = sizeof(cap_prox_calibrate_data);
 				memset(cap_prox_calibrate_data, 0, cap_prox_calibrate_len);
 				memcpy(cap_prox_calibrate_data, &sar_calibrate_datas, cap_prox_calibrate_len);
-		    }
-                  else if (!strncmp(sensor_chip_info[CAP_PROX], "huawei,semtech-sx9323", strlen("huawei,semtech-sx9323")))
-                  {
-			uint16_t semtech = 0;
-			memcpy(&semtech, pkg_mcu.data, sizeof(semtech));
-			switch(calibrate_index) {
+			} else if (!strncmp(sensor_chip_info[CAP_PROX], "huawei,semtech-sx9323",
+				strlen("huawei,semtech-sx9323"))) {
+				memcpy(&semtech, pkg_mcu.data, sizeof(semtech));
+				switch (calibrate_index) {
 				case 1: /* near data */
-					sar_calibrate_datas.semtech_cali_data.diff= semtech;
+					sar_calibrate_datas.semtech_cali_data.diff = semtech;
 					break;
 				case 2:/* far data */
 					sar_calibrate_datas.semtech_cali_data.offset = semtech;
@@ -1573,23 +1652,29 @@ static ssize_t attr_cap_prox_calibrate_write(struct device *dev,
 				default:
 					hwlog_err(" semtech sar calibrate err\n");
 					break;
-			}
-			hwlog_info("semtech_data %u\n", semtech);
-			hwlog_info("semtech_data offset:%d,diff:%d\n", sar_calibrate_datas.semtech_cali_data.offset,
+				}
+				hwlog_info("semtech_data %u\n", semtech);
+				hwlog_info("semtech_data offset:%d,diff:%d\n",
+					sar_calibrate_datas.semtech_cali_data.offset,
 					sar_calibrate_datas.semtech_cali_data.diff);
-			cap_prox_calibrate_len = pkg_mcu.data_length;
-			if (cap_prox_calibrate_len > sizeof(cap_prox_calibrate_data)) {
-				cap_prox_calibrate_len = sizeof(cap_prox_calibrate_data);
-			}
-			memset(cap_prox_calibrate_data, 0, cap_prox_calibrate_len);
-			memcpy(cap_prox_calibrate_data, &sar_calibrate_datas, cap_prox_calibrate_len);
-		    } else {
+				cap_prox_calibrate_len = pkg_mcu.data_length;
+				if (cap_prox_calibrate_len > sizeof(cap_prox_calibrate_data))
+					cap_prox_calibrate_len = sizeof(cap_prox_calibrate_data);
+
+				memset(cap_prox_calibrate_data, 0, cap_prox_calibrate_len);
+				memcpy(cap_prox_calibrate_data, &sar_calibrate_datas,
+					cap_prox_calibrate_len);
+			} else if (!strncmp(sensor_chip_info[CAP_PROX], "huawei,abov-a96t3x6",
+				strlen("huawei,abov-a96t3x6"))) {
+				memcpy(&abov_data, pkg_mcu.data, sizeof(abov_data));
+				attr_abov_calibrate_write(calibrate_index, abov_data);
+			} else {
 				cap_prox_calibrate_len = pkg_mcu.data_length;
 				if (cap_prox_calibrate_len > sizeof(cap_prox_calibrate_data)) {
 					cap_prox_calibrate_len = sizeof(cap_prox_calibrate_data);
 				}
 				memcpy(cap_prox_calibrate_data, pkg_mcu.data, sizeof(cap_prox_calibrate_data));
-		    }
+			}
 			INIT_WORK(&cap_prox_calibrate_work, cap_prox_calibrate_work_func);
 			queue_work(system_power_efficient_wq, &cap_prox_calibrate_work);
 			#ifdef SENSOR_DATA_ACQUISITION
@@ -3169,6 +3254,11 @@ static ssize_t show_sar_data(struct device *dev, struct device_attribute *attr, 
 		return snprintf(buf, MAX_STR_SIZE, "offset:%d diff:%d \n",
 			sar_calibrate_datas.semtech_cali_data.offset, sar_calibrate_datas.semtech_cali_data.diff);
 	}
+	if (!strncmp(sensor_chip_info[CAP_PROX], "huawei,abov-a96t3x6",
+		strlen("huawei,abov-a96t3x6")))
+		return snprintf(buf, MAX_STR_SIZE, "offset:%d, diff:%d\n",
+			sar_calibrate_datas.abov_cali_data.offset,
+			sar_calibrate_datas.abov_cali_data.diff);
 
 	return -1;
 }

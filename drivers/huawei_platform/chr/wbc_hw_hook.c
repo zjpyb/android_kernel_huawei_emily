@@ -98,7 +98,6 @@ static unsigned long abnomal_stamp_list_tcp_rtt_large_update(
 static void abnomal_stamp_list_syn_no_ack_print_log(void);
 
 static void save_app_syn_succ(u32 uid, u8 interface_type);
-static void save_app_syn_no_ack(u32 uid, u8 interface_type);
 static void save_app_web_no_ack(u32 uid, u8 interface_type);
 static void save_app_web_delay(u32 uid, int web_delay, u8 interface_type);
 static void save_app_web_fail(u32 uid, u8 interface_type);
@@ -126,12 +125,12 @@ u32 us_cvt_to_ms(u32 seq_rtt_us)
 /*To notify thread to update rtt*/
 void notify_chr_thread_to_update_rtt(u32 seq_rtt_us, struct sock *sk, u8 data_net_flag)
 {
+	u8 interface_type;
+
 	if (seq_rtt_us <= 0)
 		return;
-
 	if (!spin_trylock_bh(&g_web_stat_lock))
 		return;
-	u8 interface_type;
 	if(data_net_flag) {
 		interface_type = RMNET_INTERFACE;
 	}
@@ -169,8 +168,8 @@ void chr_update_buf_time(s64 time, u32 protocal)
 	case SOL_TCP:
 		kt = ktime_get_real();
 		difJif = (long)(jif - g_chr_key_val.tcp_last);
-		curBuf = kt.tv64 - time;
-		if (curBuf < 0)
+		curBuf = ktime_to_ns(kt) - time;
+if (curBuf < 0)
 			curBuf = 0;
 
 		if (difJif > FILTER_TIME_LIMIT) {
@@ -186,7 +185,7 @@ void chr_update_buf_time(s64 time, u32 protocal)
 	case SOL_UDP:
 		kt = ktime_get_real();
 		difJif = (long)(jif - g_chr_key_val.udp_last);
-		curBuf = kt.tv64 - time;
+		curBuf = ktime_to_ns(kt) - time;
 		if (curBuf < 0)
 			curBuf = 0;
 
@@ -219,7 +218,7 @@ static u32 reportBuf(void)
 
 	buf64 = atomic_read(&g_chr_key_val.udp_buf_time);
 	tmpBuf = (u16)(buf64 / NS_CONVERT_TO_MS);
-	if (buf64 > MAX_VALID_U16 * NS_CONVERT_TO_MS)
+	if (buf64 > MAX_VALID_NS)
 		tmpBuf = MAX_VALID_U16;
 
 	difJif = (long)(jif - g_chr_key_val.udp_last);
@@ -230,7 +229,7 @@ static u32 reportBuf(void)
 
 	buf64 = atomic_read(&g_chr_key_val.tcp_buf_time);
 	tmpBuf = (u16)(buf64 / NS_CONVERT_TO_MS);
-	if (buf64 > MAX_VALID_U16 * NS_CONVERT_TO_MS)
+	if (buf64 > MAX_VALID_NS)
 		tmpBuf = MAX_VALID_U16;
 
 	difJif = (long)(jif - g_chr_key_val.tcp_last);
@@ -329,7 +328,7 @@ static void web_stat_timer(unsigned long data)
 		rtn_stat[RMNET_INTERFACE].report_type = WEB_STAT;
 		rtn_stat[WLAN_INTERFACE].report_type = WEB_STAT;
 		spin_unlock_bh(&g_web_stat_lock);
-#ifdef CONFIG_HW_NETBOOSTER_MODULE		
+#ifdef CONFIG_HW_NETBOOSTER_MODULE
 		video_chr_stat_report();
 #endif
 		chr_notify_event(CHR_WEB_STAT_EVENT,
@@ -439,6 +438,27 @@ void wifi_disconnect_report(void)
 	memset(&rtn_stat, 0, sizeof(rtn_stat));
 	web_delay_rtt_flag_reset();
 	spin_unlock_bh(&g_web_stat_lock);
+}
+
+/*report abnormal event for kernel delay statistic*/
+void wifi_kernel_delay_report(DELAY_CHR_REPROT_T *p_delay_chr)
+{
+	struct http_return rtn_stat_wifi[RNT_STAT_SIZE];
+	pr_info("wifi_kernel_delay_report \n");
+	memset(&rtn_stat_wifi, 0, sizeof(rtn_stat_wifi));
+	if (NULL == p_delay_chr) {
+            return;
+	}
+	rtn_stat_wifi[WLAN_INTERFACE].report_type = WEB_STAT;
+	rtn_stat_wifi[WLAN_INTERFACE].exception_cnt = p_delay_chr->exception_cnt;
+	rtn_stat_wifi[WLAN_INTERFACE].data_direct = p_delay_chr->data_direct;
+	rtn_stat_wifi[WLAN_INTERFACE].transport_delay = p_delay_chr->transport_delay;
+	rtn_stat_wifi[WLAN_INTERFACE].ip_delay = p_delay_chr->ip_delay;
+	rtn_stat_wifi[WLAN_INTERFACE].hmac_delay = p_delay_chr->hmac_delay;
+	rtn_stat_wifi[WLAN_INTERFACE].driver_delay = p_delay_chr->driver_delay;
+	rtn_stat_wifi[WLAN_INTERFACE].android_uid = p_delay_chr->android_uid;
+	chr_notify_event(CHR_WEB_STAT_EVENT,
+		g_user_space_pid, 0, rtn_stat_wifi);
 }
 
 /*Local_in packet processing*/
@@ -785,9 +805,8 @@ u32 http_response_code(char *pstr)
 }
 
 /*Local out hook function*/
-static unsigned int hook_local_out(const struct nf_hook_ops *ops,
-					struct sk_buff *skb,
-					const struct nf_hook_state *state)
+static unsigned int hook_local_out(void *ops, struct sk_buff *skb,
+		const struct nf_hook_state *state)
 {
 	struct iphdr *iph = NULL;
 	struct tcphdr *tcph = NULL;
@@ -823,7 +842,7 @@ static unsigned int hook_local_out(const struct nf_hook_ops *ops,
 		if (skb->sk == NULL)
 			return NF_ACCEPT;
 
-		if (strncmp(skb->dev->name, DS_NET, DS_NET_LEN)) {
+		if (strncmp(skb->dev->name, WEB_DS_NET, WEB_DS_NET_LEN)) {
 			http_para_out.interface = WLAN_INTERFACE;
 		}
 		else {
@@ -883,9 +902,8 @@ static unsigned int hook_local_out(const struct nf_hook_ops *ops,
 }
 
 /*Local in hook function*/
-static unsigned int hook_local_in(const struct nf_hook_ops *ops,
-					struct sk_buff *skb,
-					const struct nf_hook_state *state)
+static unsigned int hook_local_in(void *ops, struct sk_buff *skb,
+		const struct nf_hook_state *state)
 {
 	struct iphdr *iph = NULL;
 	struct tcphdr *tcph = NULL;
@@ -914,7 +932,7 @@ static unsigned int hook_local_in(const struct nf_hook_ops *ops,
 		if (NULL == skb->dev || NULL == skb->dev->name)
 			return NF_ACCEPT;
 
-		if (strncmp(skb->dev->name, DS_NET, DS_NET_LEN)) {
+		if (strncmp(skb->dev->name, WEB_DS_NET, WEB_DS_NET_LEN)) {
 			http_para_in.interface = WLAN_INTERFACE;
 		}
 		else {
@@ -1083,7 +1101,11 @@ int web_chr_init(void)
 	sleep_flag = false;
 
        /*Registration hook function*/
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
 	ret = nf_register_hooks(net_hooks, ARRAY_SIZE(net_hooks));
+#else
+	ret = nf_register_net_hooks(&init_net, net_hooks, ARRAY_SIZE(net_hooks));
+#endif
 	if (ret) {
 		pr_info("chr:nf_init_in ret=%d  ", ret);
 		return -1;
@@ -1110,7 +1132,11 @@ error:
 
 void web_chr_exit(void)
 {
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
 	nf_unregister_hooks(net_hooks, ARRAY_SIZE(net_hooks));
+#else
+	nf_unregister_net_hooks(&init_net, net_hooks, ARRAY_SIZE(net_hooks));
+#endif
 	kfree(stream_list);
 	kfree(abn_stamp_list_syn_no_ack);
 	kfree(abn_stamp_list_web_no_ack);
@@ -1155,7 +1181,7 @@ void abnomal_stamp_list_syn_no_ack_print_log(void)
 	int idx;
 
 	for (idx = 0; idx < SYN_NO_ACK_MAX; idx++) {
-		pr_info("chr:abn_stamp_list_syn_no_ack[%d]=%d\n", idx,
+		pr_info("chr:abn_stamp_list_syn_no_ack[%d]=%ld\n", idx,
 			abn_stamp_list_syn_no_ack[idx]);
 	}
 	pr_info("chr:abn_stamp_list_syn_no_ack_idx=%d\n",

@@ -72,11 +72,12 @@ void FUSB3601_ProtocolGetRxPacket(struct Port *port)
 	FSC_U8 i = 0, j = 0;
 	SopType rx_sop;
 
-	port->double_check = 0;
-
 #ifdef FSC_LOGGING
 	sopMainHeader_t temp_header = {0};
 #endif /* FSC_LOGGING */
+
+	port->double_check = 0;
+
 	/* Read the Rx token, two header bytes, and the byte count */
 	FUSB3601_ReadRegisters(port, regRXSTAT, 3);
 

@@ -329,15 +329,6 @@ static SINT32 alloc_smmu_tlb_miss_addr(VOID)
 }
 #endif
 
-VOID SMMU_ConfigSMR(VOID)
-{
-	UINT32 i = 0;
-	for(i = 0; i < SMRx_ID_SIZE; i++)
-	{
-		set_common_reg(SMMU_SMRx_P + i * 0x4, 0x0, 32, 0); //smmu_smrx_p.smr_prtectec_en=1
-	}
-}
-
 /**
  *function: init SMMU global registers.
  */
@@ -359,24 +350,38 @@ VOID SMMU_InitGlobalReg(VOID)
 	}
 
 	//SMRX_S had set default value. Only need to set SMMU_SMRx_NS secure SID  bypass
-	//SMMU_SMRx[0]smr_bypass=0(non-bypass); SMMU_SMRx[2:3]smr_ptw_qos=0x3;
+
 	for (i = 0; i < SMRx_ID_SIZE; i += 2) {
-		set_common_reg(SMMU_SMRx_NS + i * 0x4, 0x1C, 32, 0);//0x00000003 none secure
+		set_common_reg(SMMU_SMRx_NS + i * 0x4, 0x1C, 32, 0);
 	}
 
 	for (i = 1; i < SMRx_ID_SIZE; i += 2) {
-		set_common_reg(SMMU_SMRx_NS + i * 0x4, 0x1D, 32, 0);//0x00000002 secure
+		set_common_reg(SMMU_SMRx_NS + i * 0x4, 0x1D, 32, 0);
 	}
 	set_common_reg(SMMU_CB_TTBR0, gSmmuPageBase, 32, 0);
-	set_common_reg(SMMU_FAMA_CTRL1_NS, (gSmmuPageBase>>32)&0x7F, 32, 0);
+
+#ifdef HISMMUV170
+	set_common_reg(SMMU_CB_TTBR_MSB, (gSmmuPageBase >> 32) & 0xFFFF, 16, 0);
+#else
+	set_common_reg(SMMU_FAMA_CTRL1_NS, (gSmmuPageBase >> 32) & 0x7F, 7, 0);
+#endif
+
 	set_common_reg(SMMU_CB_TTBCR, 0x1, 1, 0);
 
 	if (gAllocMem_RD.PhyAddr != 0 && gAllocMem_WR.PhyAddr != 0) {
-		set_common_reg(SMMU_ERR_RDADDR, (gAllocMem_RD.PhyAddr & 0xFFFFFFFF), 32, 0);
-		set_common_reg(SMMU_ADDR_MSB, (gAllocMem_RD.PhyAddr>>32)&0x7F, 7, 0);
+#ifdef HISMMUV170
+		set_common_reg(SMMU_ERR_RDADDR_NS, (gAllocMem_RD.PhyAddr & 0xFFFFFFFF), 32, 0);
+		set_common_reg(SMMU_ERR_WRADDR_NS, (gAllocMem_WR.PhyAddr & 0xFFFFFFFF), 32, 0);
 
+		set_common_reg(SMMU_ERR_ADDR_MSB_NS, (gAllocMem_RD.PhyAddr >> 32) & 0xFFFF, 16, 0);
+		set_common_reg(SMMU_ERR_ADDR_MSB_NS, (gAllocMem_WR.PhyAddr >> 32) & 0xFFFF, 16, 16);
+#else
+		set_common_reg(SMMU_ERR_RDADDR, (gAllocMem_RD.PhyAddr & 0xFFFFFFFF), 32, 0);
 		set_common_reg(SMMU_ERR_WRADDR, (gAllocMem_WR.PhyAddr & 0xFFFFFFFF), 32, 0);
-		set_common_reg(SMMU_ADDR_MSB, (gAllocMem_WR.PhyAddr>>32)&0x7F, 7, 7);
+
+		set_common_reg(SMMU_ADDR_MSB, (gAllocMem_RD.PhyAddr >> 32) & 0x7F, 7, 0);
+		set_common_reg(SMMU_ADDR_MSB, (gAllocMem_WR.PhyAddr >> 32) & 0x7F, 7, 7);
+#endif
 	}
 	//glb_bypass, 0x0: normal mode, 0x1: bypass mode
 	set_master_reg(SMMU_MSTR_GLB_BYPASS, 0x0, 32, 0);    //master mmu enable

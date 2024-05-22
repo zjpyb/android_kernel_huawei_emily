@@ -83,6 +83,10 @@ struct hcc_test_stru {
 /*
  * 2 Global Variable Definition
  */
+#ifdef _PRE_PLAT_FEATURE_HI110X_PCIE
+oal_completion pcie_test_trans_done;
+hcc_pcie_test_request_stru g_pcie_test_request_ack;
+#endif
 OAL_STATIC oal_int32 g_test_force_stop = 0;
 struct hcc_test_event  *g_hcc_test_event_etc = NULL;
 
@@ -94,7 +98,7 @@ struct hcc_test_stru g_hcc_test_stru_etc[HCC_TEST_CASE_COUNT] = {
 
 #ifdef _PRE_CONFIG_HISI_PANIC_DUMP_SUPPORT
 oal_uint32 wifi_panic_debug_etc = 0;
-module_param(wifi_panic_debug_etc, int, S_IRUGO|S_IWUSR);
+oal_debug_module_param(wifi_panic_debug_etc, int, S_IRUGO|S_IWUSR);
 OAL_STATIC LIST_HEAD(wifi_panic_log_head);
 #endif
 
@@ -105,12 +109,24 @@ oal_int32 ft_pcie_test_retry_cnt    = 3;/*retry 3 times*/
 oal_int32 ft_ip_test_cpu_max_freq    = 1;/*retry 3 times*/
 oal_int32 hcc_test_performance_mode = 0;
 #if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
-module_param(ft_pcie_test_wifi_runtime, int, S_IRUGO | S_IWUSR);
-module_param(ft_sdio_test_wifi_runtime, int, S_IRUGO | S_IWUSR);
-module_param(ft_pcie_test_min_throught, int, S_IRUGO | S_IWUSR);
-module_param(ft_pcie_test_retry_cnt, int, S_IRUGO | S_IWUSR);
-module_param(ft_ip_test_cpu_max_freq, int, S_IRUGO | S_IWUSR);
-module_param(hcc_test_performance_mode, int, S_IRUGO | S_IWUSR);
+oal_debug_module_param(ft_pcie_test_wifi_runtime, int, S_IRUGO | S_IWUSR);
+oal_debug_module_param(ft_sdio_test_wifi_runtime, int, S_IRUGO | S_IWUSR);
+oal_debug_module_param(ft_pcie_test_min_throught, int, S_IRUGO | S_IWUSR);
+oal_debug_module_param(ft_pcie_test_retry_cnt, int, S_IRUGO | S_IWUSR);
+oal_debug_module_param(ft_ip_test_cpu_max_freq, int, S_IRUGO | S_IWUSR);
+oal_debug_module_param(hcc_test_performance_mode, int, S_IRUGO | S_IWUSR);
+#endif
+#ifdef _PRE_PLAT_FEATURE_HI110X_PCIE
+oal_int32 ft_pcie_loopback_rw_test_count = 500;
+oal_int32 ft_pcie_loopback_linkup_timeout = 600000;/*us*/
+oal_int32 ft_pcie_loopback_bias_cldo3=900;/*0.9v*/
+oal_int32 ft_pcie_loopback_bias_vptx=900;/*0.9v*/
+oal_int32 ft_pcie_loopback_bias_vph=1800;/*1.8v*/
+module_param(ft_pcie_loopback_rw_test_count, int, S_IRUGO | S_IWUSR);
+module_param(ft_pcie_loopback_linkup_timeout, int, S_IRUGO | S_IWUSR);
+module_param(ft_pcie_loopback_bias_cldo3, int, S_IRUGO | S_IWUSR);
+module_param(ft_pcie_loopback_bias_vptx, int, S_IRUGO | S_IWUSR);
+module_param(ft_pcie_loopback_bias_vph, int, S_IRUGO | S_IWUSR);
 #endif
 
 oal_int32 conn_test_hcc_chann_switch(char* new_dev);
@@ -994,10 +1010,21 @@ OAL_STATIC oal_int32 hcc_test_rcvd(struct hcc_handler * hcc, oal_uint8 stype, hc
             oal_memcopy(&g_hcc_test_event_etc->test_data.trans_info,
                         hcc_get_test_cmd_data(OAL_NETBUF_DATA(pst_netbuf)),
                         OAL_SIZEOF(hsdio_trans_test_info));
-        }
+
         g_hcc_test_event_etc->last_time= ktime_get();
         OAL_IO_PRINT("hcc_test_rcvd:cmd %d recvd!\n",cmd.cmd_type);
         OAL_COMPLETE(&g_hcc_test_event_etc->test_trans_done);
+        }
+#ifdef _PRE_PLAT_FEATURE_HI110X_PCIE
+        else if((HCC_TEST_CMD_PCIE_MAC_LOOPBACK_TST == cmd.cmd_type)||
+                (HCC_TEST_CMD_PCIE_PHY_LOOPBACK_TST == cmd.cmd_type)
+                || (HCC_TEST_CMD_PCIE_REMOTE_PHY_LOOPBACK_TST == cmd.cmd_type))
+        {
+            oal_memcopy(&g_pcie_test_request_ack, (oal_void*)hcc_get_test_cmd_data(OAL_NETBUF_DATA(pst_netbuf)), OAL_SIZEOF(g_pcie_test_request_ack));
+            OAL_COMPLETE(&pcie_test_trans_done);
+            oal_print_hi11xx_log(HI11XX_LOG_INFO, "pcie test done type=%s", (HCC_TEST_CMD_PCIE_MAC_LOOPBACK_TST == cmd.cmd_type) ? "mac":"phy");
+        }
+#endif
     }
     else
     {
@@ -1148,10 +1175,14 @@ OAL_STATIC oal_int32 hcc_test_rx_start(oal_uint16 start_cmd)
     return ret;
 }
 
+#ifdef _PRE_PLAT_FEATURE_HI110X_PCIE
 oal_int32 hcc_test_pcie_loopback(oal_int32 is_phy_loopback)
 {
+    oal_int32 ret;
+    oal_uint32 vol = 0;
     oal_netbuf_stru*       pst_netbuf;
     hcc_test_cmd_stru  cmd={0};
+    hcc_pcie_test_request_stru pcie_test_rq = {0};
 
     struct hcc_handler* hcc;
 
@@ -1163,18 +1194,58 @@ oal_int32 hcc_test_pcie_loopback(oal_int32 is_phy_loopback)
         return -OAL_EFAIL;
     }
 
-    cmd.cmd_type = is_phy_loopback ? HCC_TEST_CMD_PCIE_PHY_LOOPBACK_TST:HCC_TEST_CMD_PCIE_MAC_LOOPBACK_TST;
+    OAL_INIT_COMPLETION(&pcie_test_trans_done);
+    OAL_MEMZERO(&g_pcie_test_request_ack, OAL_SIZEOF(g_pcie_test_request_ack));
+    g_pcie_test_request_ack.response_ret = -199;
+    if(0 == is_phy_loopback)
+    {
+        cmd.cmd_type = HCC_TEST_CMD_PCIE_MAC_LOOPBACK_TST;
+    }
+    else if(1 == is_phy_loopback)
+    {
+        cmd.cmd_type = HCC_TEST_CMD_PCIE_PHY_LOOPBACK_TST;
+    }
+    else if(2 == is_phy_loopback)
+    {
+        cmd.cmd_type = HCC_TEST_CMD_PCIE_REMOTE_PHY_LOOPBACK_TST;
+    }
     cmd.cmd_len = OAL_SIZEOF(hcc_test_cmd_stru);
 
-    pst_netbuf  = hcc_netbuf_alloc(cmd.cmd_len);
+    pst_netbuf  = hcc_netbuf_alloc(cmd.cmd_len + sizeof(pcie_test_rq));
     if(NULL == pst_netbuf)
     {
         oal_print_hi11xx_log(HI11XX_LOG_ERR, "alloc %u mem failed!", cmd.cmd_len);
         return -OAL_ENOMEM;
     }
 
-    oal_memcopy(oal_netbuf_put(pst_netbuf, cmd.cmd_len), &cmd, cmd.cmd_len);
+    oal_netbuf_put(pst_netbuf, cmd.cmd_len + sizeof(pcie_test_rq));
 
+    oal_memcopy((oal_void*)OAL_NETBUF_DATA(pst_netbuf), (oal_void*)&cmd, cmd.cmd_len);
+    pcie_test_rq.request_flag   = (oal_uint64)(oal_ulong)&pcie_test_rq;
+    pcie_test_rq.linkup_timeout = (oal_uint32)ft_pcie_loopback_linkup_timeout;
+    pcie_test_rq.rw_test_count  = (oal_uint32)ft_pcie_loopback_rw_test_count;
+    ret = oal_pcie_get_vol_reg_1v8_value(ft_pcie_loopback_bias_vph, &vol);
+    if(OAL_SUCC != ret)
+    {
+        oal_netbuf_free(pst_netbuf);
+        return -OAL_EFAUL;
+    }
+    pcie_test_rq.bias_vph       = (oal_uint32)vol;
+    ret = oal_pcie_get_vol_reg_0v9_value(ft_pcie_loopback_bias_cldo3, &vol);
+    if(OAL_SUCC != ret)
+    {
+        oal_netbuf_free(pst_netbuf);
+        return -OAL_EFAUL;
+    }
+    pcie_test_rq.bias_cldo3     = (oal_uint32)vol;
+    ret = oal_pcie_get_vol_reg_0v9_value(ft_pcie_loopback_bias_vptx, &vol);
+    if(OAL_SUCC != ret)
+    {
+        oal_netbuf_free(pst_netbuf);
+        return -OAL_EFAUL;
+    }
+    pcie_test_rq.bias_vptx      = (oal_uint32)vol;
+    oal_memcopy((oal_void*)hcc_get_test_cmd_data(OAL_NETBUF_DATA(pst_netbuf)), (oal_void*)&pcie_test_rq, OAL_SIZEOF(pcie_test_rq));
     hcc_hdr_param_init(&st_hcc_transfer_param,
                     HCC_ACTION_TYPE_TEST,
                     HCC_TEST_SUBTYPE_CMD,
@@ -1182,8 +1253,199 @@ oal_int32 hcc_test_pcie_loopback(oal_int32 is_phy_loopback)
                     HCC_FC_WAIT,
                     DATA_HI_QUEUE);
 
-    return hcc_tx_etc(hcc, pst_netbuf, &st_hcc_transfer_param);
+    ret =  hcc_tx_etc(hcc, pst_netbuf, &st_hcc_transfer_param);
+    if(ret)
+    {
+        oal_print_hi11xx_log(HI11XX_LOG_ERR, "pcie test send failed ret=%d", ret);
+        oal_netbuf_free(pst_netbuf);
+        return ret;
+    }
+    ret = wait_for_completion_interruptible_timeout(&pcie_test_trans_done, OAL_MSECS_TO_JIFFIES(15000));
+    if(ret < 0)
+    {
+        oal_print_hi11xx_log(HI11XX_LOG_INFO, "pcie test Event  terminated ret=%d\n", ret);
+        oal_dft_print_all_key_info_etc();
+        return ret;
+    }
+    else if(ret == 0)
+    {
+        oal_print_hi11xx_log(HI11XX_LOG_ERR, "pcie test timeout");
+        oal_dft_print_all_key_info_etc();
+        return -OAL_ETIMEDOUT;
+    }
+    if(pcie_test_rq.request_flag != g_pcie_test_request_ack.request_flag)
+    {
+        ret = -OAL_EFAIL;
+        oal_print_hi11xx_log(HI11XX_LOG_WARN, "pcie test request mismatch request 0x%llx , return 0x%llx", 
+                                                pcie_test_rq.request_flag, 
+                                                g_pcie_test_request_ack.request_flag);
+    }
+    else
+    {
+        if(OAL_SUCC == g_pcie_test_request_ack.response_ret)
+        {
+            oal_print_hi11xx_log(HI11XX_LOG_INFO, "pcie_test_ok linkup cost %u us , rw_test cost %u us , total %u us",
+                                              g_pcie_test_request_ack.link_up_cost, g_pcie_test_request_ack.rw_test_cost, 
+                                              g_pcie_test_request_ack.total_test_cost);
+        }
+        else
+        {
+            oal_print_hi11xx_log(HI11XX_LOG_ERR, "pcie_test_failed linkup cost %u us , rw_test cost %u us , total %u us, ret=%d",
+                                              g_pcie_test_request_ack.link_up_cost, g_pcie_test_request_ack.rw_test_cost, 
+                                              g_pcie_test_request_ack.total_test_cost, g_pcie_test_request_ack.response_ret);
+        }
+        ret = g_pcie_test_request_ack.response_ret;
+    }
+    oal_print_hi11xx_log(HI11XX_LOG_INFO, "pcie %s test %s", is_phy_loopback ? "phy":"mac", 
+                                        (OAL_SUCC  == ret)?"succ":"failed");
+    return ret;
 }
+OAL_STATIC ssize_t  hcc_test_pcie_loopback_get_para(struct device *dev, struct device_attribute *attr, char*buf)
+{
+    oal_int32 ret;
+    oal_int32 count = 0;
+    oal_uint32 buf_len = PAGE_SIZE - 1;
+    if(NULL == dev)
+    {
+        oal_print_hi11xx_log(HI11XX_LOG_ERR, "dev is null");
+        return 0;
+    }
+    if(NULL == attr)
+    {
+        oal_print_hi11xx_log(HI11XX_LOG_ERR, "attr is null");
+        return 0;
+    }
+    ret = snprintf(buf + count, buf_len - count, "TestResult: %s\n", (OAL_SUCC == g_pcie_test_request_ack.response_ret) ? "PASS":"FAIL");
+    if (0 >= ret)
+        return count;
+    count += ret;
+    if(OAL_SUCC != g_pcie_test_request_ack.response_ret)
+    {
+        ret = snprintf(buf + count, buf_len - count, "ReturnFailValue: %d\n", g_pcie_test_request_ack.response_ret);
+        if (0 >= ret)
+            return count;
+        count += ret;
+    }
+    ret = snprintf(buf + count, buf_len - count, "Bias: CLDO3 %u mv VPTX %u mv VPH %u mv\n",
+                                                ft_pcie_loopback_bias_cldo3, ft_pcie_loopback_bias_vptx, ft_pcie_loopback_bias_vph);
+    if (0 >= ret)
+        return count;
+    count += ret;
+    ret = snprintf(buf + count, buf_len - count, "TimeCost linkup %u us  %u ms\n", g_pcie_test_request_ack.link_up_cost, g_pcie_test_request_ack.link_up_cost/1000);
+    if (0 >= ret)
+        return count;
+    count += ret;
+    ret = snprintf(buf + count, buf_len - count, "TimeCost rw_test_cost %u us  %u ms\n", g_pcie_test_request_ack.rw_test_cost, g_pcie_test_request_ack.rw_test_cost/1000);
+    if (0 >= ret)
+        return count;
+    count += ret;
+    ret = snprintf(buf + count, buf_len - count, "TimeCost total_test_cost %u us  %u ms\n", g_pcie_test_request_ack.total_test_cost, g_pcie_test_request_ack.total_test_cost/1000);
+    if (0 >= ret)
+        return count;
+    count += ret;
+    return count;
+}
+OAL_STATIC ssize_t  hcc_test_pcie_loopback_set_para(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+    oal_int32 ret;
+    oal_int32 test_rw_count = 0;
+    oal_uint32 cldo3  = 0;
+    oal_uint32 vptx = 0;
+    oal_uint32 vph = 0;
+    oal_int32 is_phy_loopback = 0;
+    oal_int32 test_linkup_timeout = 0;
+    char      test_case[128] = {0};
+    if (NULL == buf)
+     {
+        OAL_IO_PRINT("buf is null r failed!%s\n",__FUNCTION__);
+        return 0;
+    }
+     if (NULL == attr)
+     {
+        OAL_IO_PRINT("attr is null r failed!%s\n",__FUNCTION__);
+        return 0;
+    }
+     if (NULL == dev)
+     {
+        OAL_IO_PRINT("dev is null r failed!%s\n",__FUNCTION__);
+        return 0;
+    }
+
+    if((count == 0) || (count >= OAL_SIZEOF(test_case)) || (buf[count] != '\0'))
+    {
+        OAL_IO_PRINT("input illegal!%s\n",__FUNCTION__);
+        return 0;
+    }
+
+    if(!oal_strncmp("setparam", buf , OAL_STRLEN("setparam")))
+    {
+        oal_uint32 vol;
+        buf += OAL_STRLEN("setparam");
+        for(;*buf == ' ';buf++);
+        if ((sscanf(buf, "%u %u %u", &cldo3, &vptx, &vph) != 3))
+        {
+            oal_print_hi11xx_log(HI11XX_LOG_ERR, "error input:%s", buf);
+            return count;
+        }
+        ret = oal_pcie_get_vol_reg_1v8_value(vph, &vol);
+        if(OAL_SUCC != ret)
+        {
+            return count;
+        }
+        ret = oal_pcie_get_vol_reg_0v9_value(cldo3, &vol);
+        if(OAL_SUCC != ret)
+        {
+            return count;
+        }
+        ret = oal_pcie_get_vol_reg_0v9_value(vptx, &vol);
+        if(OAL_SUCC != ret)
+        {
+            return count;
+        }
+        oal_print_hi11xx_log(HI11XX_LOG_INFO, "setbias vph:%umv cldo3:%umv vptx:%umv", vph, cldo3, vptx);
+        ft_pcie_loopback_bias_vph = vph;
+        ft_pcie_loopback_bias_cldo3 = cldo3;
+        ft_pcie_loopback_bias_vptx = vptx;
+    }
+    else if(!oal_strncmp("runloopback", buf , OAL_STRLEN("runloopback")))
+    {
+        buf += OAL_STRLEN("runloopback");
+        for(;*buf == ' ';buf++);
+        if ((sscanf(buf, "%s %d %d", test_case, &test_linkup_timeout, &test_rw_count) != 3))
+        {
+            oal_print_hi11xx_log(HI11XX_LOG_ERR, "error input:%s", buf);
+            return count;
+        }
+        ft_pcie_loopback_rw_test_count = test_rw_count;
+        ft_pcie_loopback_linkup_timeout = test_linkup_timeout;
+        if(!oal_strcmp("mac", test_case))
+        {
+            is_phy_loopback = 0;
+        }
+        else if(!oal_strcmp("internalPhy", test_case))
+        {
+            is_phy_loopback = 1;
+        }
+        else if(!oal_strcmp("remotePhy", test_case))
+        {
+            is_phy_loopback = 2;
+        }
+        else
+        {
+            oal_print_hi11xx_log(HI11XX_LOG_ERR, "error input:%s", buf);
+            return count;
+        }
+        g_pcie_test_request_ack.response_ret = -199;
+        hcc_test_pcie_loopback(is_phy_loopback);
+    }
+    else
+    {
+        oal_print_hi11xx_log(HI11XX_LOG_ERR, "unkown:%s\n", buf);
+    }
+    return count;
+}
+OAL_STATIC DEVICE_ATTR(pcie_loopback, S_IRUGO | S_IWUSR, hcc_test_pcie_loopback_get_para, hcc_test_pcie_loopback_set_para);
+#endif
 
 oal_int32 hcc_test_fix_wcpu_freq(oal_void)
 {
@@ -2093,6 +2355,9 @@ OAL_STATIC struct attribute *hcc_test_sysfs_entries[] = {
         &dev_attr_switch_bus.attr,
         &dev_attr_dev_panic.attr,
         //&dev_attr_Readme.attr,
+#ifdef _PRE_PLAT_FEATURE_HI110X_PCIE
+        &dev_attr_pcie_loopback.attr,
+#endif
         NULL
 };
 
@@ -2410,7 +2675,7 @@ retry:
         }
     }
 
-    hcc_bus_chip_info(hcc_get_current_110x_bus());
+    hcc_bus_chip_info(hcc_get_current_110x_bus(), OAL_TRUE, OAL_TRUE);
 
     ret = wlan_pm_close_etc();
     if(OAL_SUCC != ret)
@@ -2427,9 +2692,10 @@ oal_int32 conn_test_wifi_chan_loop(char *param)
     oal_int32 ret;
     oal_int32 run_flag = 0;
     hcc_bus   *pst_bus, *old_bus;
+#if defined(_PRE_PLAT_FEATURE_HI110X_PCIE) || defined(CONFIG_MMC)
     declare_time_cost_stru(cost);
     oal_int32  pkt_len = 1500;
-
+#endif
     OAL_REFERENCE(param);
 
     if(!wlan_is_shutdown_etc())
@@ -2642,6 +2908,8 @@ oal_void hcc_test_kirin_noc_handler(oal_void)
 {
 #ifdef _PRE_PLAT_FEATURE_HI110X_PCIE
     hcc_bus* pst_bus;
+
+    hi11xx_kernel_crash = 1;
 
     pst_bus = hcc_get_current_110x_bus();
     if(NULL != pst_bus)

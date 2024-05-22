@@ -25,6 +25,7 @@
 #include <idtp9221_fw_sram.h>
 #ifdef WIRELESS_CHARGER_FACTORY_VERSION
 #include <idtp9221_fw_otp.h>
+#include <stwlc33_fw_nvm.h>
 #endif
 
 #define HWLOG_TAG wireless_idtp9221
@@ -32,13 +33,23 @@ HWLOG_REGIST();
 
 static struct idtp9221_device_info *g_idtp9221_di;
 static struct wake_lock g_idtp9221_wakelock;
+static int g_support_idt_wlc;
+static int g_support_st_wlc;
+static int g_i2c_fail_cnt;
 static int stop_charging_flag;
+static u16 stwlc33_iout_adc_val;
+static int stwlc33_rx_ready_check_flag;
 static int irq_abnormal_flag = false;
+static u8 st_nvm_bufs[STWLC33_NVM_SEC_VAL_SIZE];
 static const u8 idtp9221_send_msg_len[IDT9221_RX_TO_TX_DATA_LEN+2] = {0,0x18,0x28,0x38,0x48,0x58};
 static const u8 idtp9221_send_fsk_msg_len[IDT9221_RX_TO_TX_DATA_LEN+2] = {0,0x1f,0x2f,0x3f,0x4f,0x5f};
-static int g_otp_index = -1;  //refer to which otp to be (or has been) programmed
-static int g_otp_status = -1;  //OTP_PROGRAMED;OTP_NON_PROGRAMED;OTP_ERR_PROGRAMED
-static const u8 *g_latest_otp_version = NULL;
+#ifdef WIRELESS_CHARGER_FACTORY_VERSION
+/* refer to which otp to be (or has been) programmed */
+static int g_otp_index = -1;
+/* OTP_PROGRAMED;OTP_NON_PROGRAMED;OTP_ERR_PROGRAMED */
+static int g_otp_status = -1;
+static const u8 *g_latest_otp_version;
+#endif
 
 /**********************************************************
 *  Function:       idtp9221_read_block
@@ -70,17 +81,28 @@ static int idtp9221_read_block(struct idtp9221_device_info *di, u16 reg, u8 *dat
 	msg[1].buf = data;
 	msg[1].len = len;
 
+	if ((di->i2c_trans_fail_limit > 0) &&
+		(g_i2c_fail_cnt >= di->i2c_trans_fail_limit) &&
+		(reg != IDT9221_SYS_MODE_ADDR) &&
+		(reg != IDT9221_RX_INT_STATUS_ADDR) &&
+		(reg != IDT9221_TX_VIN_ADDR)) {
+		hwlog_err("%s: i2c err cnt = %d\n",
+			__func__, g_i2c_fail_cnt);
+		return -1;
+	}
 	for (i = 0; i < I2C_RETRY_CNT; i++) {
 		ret = i2c_transfer(di->client->adapter, msg, 2);
-		if(ret >= 0)
+		if (ret >= 0)
 			break;
-		msleep(I2C_OPS_SLEEP_TIME);
+		++g_i2c_fail_cnt;
+		usleep_range(9500, 10500); /* 10ms */
 	}
 
 	if (ret < 0) {
 		hwlog_err("idt9221 read block fail, start_reg = 0x%x\n", reg);
 		return -1;
 	}
+	g_i2c_fail_cnt = 0;
 
 	return 0;
 }
@@ -107,17 +129,27 @@ static int idtp9221_write_block(struct idtp9221_device_info *di, u16 reg, u8 *bu
 	msg.addr = di->client->addr;
 	msg.flags = 0;
 	msg.len = len + IDT9221_ADDR_LEN;
+
+	if ((di->i2c_trans_fail_limit > 0) &&
+		(g_i2c_fail_cnt >= di->i2c_trans_fail_limit) &&
+		(reg != IDT9221_RX_INT_STATUS_ADDR)) {
+		hwlog_err("%s: i2c err cnt = %d\n",
+			__func__, g_i2c_fail_cnt);
+		return -1;
+	}
 	for (i = 0; i < I2C_RETRY_CNT; i++) {
 		ret = i2c_transfer(di->client->adapter, &msg, 1);
 		if (ret >= 0)
 			break;
-		msleep(I2C_OPS_SLEEP_TIME);
+		++g_i2c_fail_cnt;
+		usleep_range(9500, 10500); /* 10ms */
 	}
 
 	if (1 != ret) {
 		hwlog_err("idt9221 write block fail, start_reg = 0x%x\n", reg);
 		return -1;
 	}
+	g_i2c_fail_cnt = 0;
 
 	return 0;
 }
@@ -221,11 +253,45 @@ static void idtp9221_wake_unlock(void)
 		hwlog_info("idtp9221 wake unlock\n");
 	}
 }
+static void idtp9221_enable_irq(struct idtp9221_device_info *di)
+{
+	mutex_lock(&di->mutex_irq);
+	if (di->irq_active == 0) {
+		enable_irq(di->irq_int);
+		di->irq_active = 1;
+	}
+	mutex_unlock(&di->mutex_irq);
+}
+static void idtp9221_disable_irq_nosync(struct idtp9221_device_info *di)
+{
+	mutex_lock(&di->mutex_irq);
+	if (di->irq_active == 1) {
+		disable_irq_nosync(di->irq_int);
+		di->irq_active = 0;
+	}
+	mutex_unlock(&di->mutex_irq);
+}
+
+static u16 idtp9221_get_chip_id(void)
+{
+	int ret;
+	static u16 chip_id;
+
+	if (chip_id)
+		return chip_id;
+
+	ret = idtp9221_read_word(IDT9221_RX_CHIP_ID_ADDR, &chip_id);
+	if (ret)
+		return ERR_CHIP_ID;
+
+	hwlog_info("[%s] chip id 0x%x\n", __func__, chip_id);
+	return chip_id;
+}
 
 static int idtp9221_clear_interrupt(u16 itr)
 {
 	int ret;
-	u8 itrs[IDT9221_ADDR_LEN + IDT9221_RX_INT_CLEAR_LEN];
+	u8 itrs[IDT9221_ADDR_LEN + IDT9221_RX_INT_CLEAR_LEN] = {0};
 	struct idtp9221_device_info *di = g_idtp9221_di;
 	if (NULL == di) {
 		hwlog_err("%s para is null\n", __func__);
@@ -249,36 +315,7 @@ static int idtp9221_clear_interrupt(u16 itr)
 	return 0;
 
 }
-static int idtp9221_set_interrupt(u16 itr)
-{
-	int ret;
-	u8 itrs[IDT9221_ADDR_LEN + IDT9221_RX_INT_CLEAR_LEN];
-	struct idtp9221_device_info *di = g_idtp9221_di;
-	if (NULL == di) {
-		hwlog_err("%s para is null\n", __func__);
-		return -1;
-	}
 
-	ret = idtp9221_read_block(di, IDT9221_RX_INT_ENABLE_ADDR,
-			itrs+IDT9221_RX_INT_ENABLE_LEN, IDT9221_RX_INT_ENABLE_LEN);
-	if(ret) {
-		hwlog_err("%s:read interrupt enable register failed!\n", __func__);
-		return -1;
-	}
-
-	itrs[IDT9221_ADDR_LEN] = itrs[IDT9221_ADDR_LEN] |(itr & BYTE_MASK);
-	itrs[IDT9221_ADDR_LEN+1] = itrs[IDT9221_ADDR_LEN+1] |(itr >> BITS_PER_BYTE);
-
-
-	ret = idtp9221_write_block(di, IDT9221_RX_INT_ENABLE_ADDR, itrs,
-			IDT9221_RX_INT_ENABLE_LEN);
-	if(ret) {
-		hwlog_err("%s:write interrupt  enable register failed!\n", __func__);
-		return -1;
-	}
-	hwlog_info("%s:set interrupt success!\n", __func__);
-	return 0;
-}
 static int idtp9221_send_msg(u8 cmd, u8 *data, int data_len)
 {
 	int ret;
@@ -422,15 +459,19 @@ static void idtp9221_sleep_enable(int enable)
 		hwlog_info("[%s] gpio value = %d\n", __func__, gpio_get_value(di->gpio_sleep_en));
 	}
 }
+
 static int idtp9221_chip_reset(void)
 {
 	int ret;
-	struct idtp9221_device_info *di = g_idtp9221_di;
-	if (!di) {
-		hwlog_err("%s di null\n", __func__);
-		return -1;
-	}
-	ret = idtp9221_write_byte(IDT9221_M0_ADDR, IDT9221_M0_RESET);
+	u16 chip_id;
+
+	chip_id = idtp9221_get_chip_id();
+	if (chip_id == STWLC33_CHIP_ID)
+		ret = idtp9221_write_byte(STWLC33_CHIP_RST_ADDR,
+			STWLC33_CHIP_RST_VAL);
+	else
+		ret = idtp9221_write_byte(IDT9221_M0_ADDR,
+			IDT9221_M0_RESET);
 	if (ret) {
 		hwlog_err("%s fail\n", __func__);
 		return -1;
@@ -445,6 +486,9 @@ static int idtp9221_send_ept(enum wireless_etp_type ept_type)
 	switch(ept_type) {
 	case WIRELESS_EPT_ERR_VRECT:
 		rx_ept_type = IDT9221_RX_ERR_VRECT;
+		break;
+	case WIRELESS_EPT_ERR_VOUT:
+		rx_ept_type = IDT9221_RX_ERR_VOUT;
 		break;
 	default:
 		hwlog_err("%s: err ept_type(0x%x)", __func__, ept_type);
@@ -653,6 +697,98 @@ static int idtp9221_get_tx_para(u8 cmd, u8 * receive_data, int receive_len)
 	hwlog_info("%s: get tx para, fail!\n", __func__);
 	return -1;
 }
+
+static char *stwlc33_nvm_read(int sec_no)
+{
+	int i;
+	int ret;
+	u16 cmd_status = 0;
+	u8 nvm_sec_val[STWLC33_NVM_REG_SIZE] = { 0 };
+	static char nvm_buf[STWLC33_NVM_VALUE_SIZE];
+	char temp[STWLC33_NVM_SEC_VAL_SIZE] = { 0 };
+	u8 sec_val[STWLC33_SEC_NO_SIZE] = { 0 };
+	struct idtp9221_device_info *di = g_idtp9221_di;
+
+	if (!di) {
+		hwlog_err("%s: di is null\n", __func__);
+		return "error";
+	}
+	if (sec_no < 0 || sec_no > STWLC33_NVM_SEC_NO_MAX) {
+		hwlog_err("%s: nvm sec no is invalid\n", __func__);
+		return "error";
+	}
+	memset(nvm_buf, 0, STWLC33_NVM_VALUE_SIZE);
+	/* Step 1 : check for zero, to confirm pre cmds completed */
+	ret = idtp9221_read_word(STWLC33_CMD_STATUS_ADDR, &cmd_status);
+	if (ret) {
+		hwlog_err("%s: get cmd status failed\n", __func__);
+		return "error";
+	}
+	if (cmd_status) {
+		hwlog_err("%s: pre cmds not completed [0x%x]\n",
+			__func__, cmd_status);
+		return "error";
+	}
+	/* Step 2 : Update I2C sector no */
+	sec_val[0] = sec_no;
+	memcpy(nvm_sec_val + STWLC33_ADDR_LEN, sec_val,
+				STWLC33_SEC_NO_SIZE);
+	ret = idtp9221_write_block(di, STWLC33_OFFSET_REG_ADDR,
+				nvm_sec_val, STWLC33_SEC_NO_SIZE);
+	if (ret) {
+		hwlog_err("%s: write sector no fail\n", __func__);
+		return "error";
+	}
+	/* Step 3 : Update I2C sector value length */
+	ret = idtp9221_write_byte(STWLC33_SRAM_SIZE_ADDR,
+				STWLC33_NVM_SEC_VAL_SIZE - 1);
+	if (ret) {
+		hwlog_err("%s: write sector length fail\n", __func__);
+		return "error";
+	}
+	/* Step 4 : Write I2C nvm read cmd val */
+	ret = idtp9221_write_byte(STWLC33_CMD_STATUS_ADDR, STWLC33_NVM_RD_CMD);
+	if (ret) {
+		hwlog_err("%s: write nvm read cmd fail\n", __func__);
+		return "error";
+	}
+	/* Step 5 : check for zero, to confirm pre cmds completed */
+	ret = idtp9221_read_word(STWLC33_CMD_STATUS_ADDR, &cmd_status);
+	if (ret) {
+		hwlog_err("%s: get cmd status failed\n", __func__);
+		return "error";
+	}
+	if (cmd_status) {
+		hwlog_err("%s: pre cmds not completed [0x%x]\n",
+					__func__, cmd_status);
+		return "error";
+	}
+	/* Step 6 : Read back corresponding NVM sector content */
+	ret = idtp9221_read_block(di, STWLC33_NVM_RD_ADDR,
+			st_nvm_bufs, STWLC33_NVM_SEC_VAL_SIZE);
+	if (ret) {
+		hwlog_err("%s: read NVM data failed\n", __func__);
+		return "error";
+	}
+	for (i = 0; i < STWLC33_NVM_SEC_VAL_SIZE; i++) {
+		snprintf(temp, STWLC33_NVM_SEC_VAL_SIZE, "%x ",
+				st_nvm_bufs[i]);
+		strncat(nvm_buf, temp, strlen(temp));
+	}
+
+	return nvm_buf;
+}
+
+static char *idt_st_read_nvm(int sec_num)
+{
+	u16 chip_id = idtp9221_get_chip_id();
+
+	if (chip_id == STWLC33_CHIP_ID)
+		return stwlc33_nvm_read(sec_num);
+
+	return "not support yet";
+}
+
 #ifdef WIRELESS_CHARGER_FACTORY_VERSION
  /**********************************************************
 *  Function:       idtp9221 program_bootloader
@@ -888,7 +1024,7 @@ static int idtp9221_read_otp(u16 addr ,u8 *data,int size)
 	hwlog_info("read OTP step 2 OK!\n");
 	return 0;
 }
-static u8* idtp9221_get_otp_fw_version(void);
+static u8 *idt_st_get_otp_fw_version(void);
 static int idtp9221_get_otp_index(int otp_total_num)
 {
 	u8 *otp_fw_version;
@@ -898,7 +1034,7 @@ static int idtp9221_get_otp_index(int otp_total_num)
 		hwlog_info("[%s] index is %d (%s)\n", __func__, g_otp_index, otp_info[g_otp_index].otp_name);
 		return g_otp_index;
 	}
-	otp_fw_version = idtp9221_get_otp_fw_version();
+	otp_fw_version = idt_st_get_otp_fw_version();
 	if(strcmp(otp_fw_version, "error") == 0) {
 		hwlog_err("%s: get firmware version fail!\n", __func__);
 		return -1;
@@ -916,6 +1052,45 @@ static int idtp9221_get_otp_index(int otp_total_num)
 	}
 	return -1;
 }
+
+static int stwlc33_check_nvm(void)
+{
+	int i;
+	int j;
+	int ret;
+	int nvm_update_flag;
+	u8 *nvm_fw_data = NULL;
+
+	nvm_update_flag = STWLC33_NVM_PROGRAMED;
+	for (i = 0; i < ARRAY_SIZE(st_fw_nvm_data); i++) {
+		if (st_fw_nvm_data[i].sec_size != STWLC33_NVM_SEC_VAL_SIZE ||
+		    st_fw_nvm_data[i].sec_no < 0 ||
+		    st_fw_nvm_data[i].sec_no > STWLC33_NVM_SEC_NO_MAX) {
+			hwlog_err("%s: nvm sec no is invalid\n", __func__);
+			return -EINVAL;
+		}
+		nvm_fw_data = stwlc33_nvm_read(st_fw_nvm_data[i].sec_no);
+		if (strcmp(nvm_fw_data, "error") == 0) {
+			hwlog_err("%s:read nvm data:%d fail\n",
+					__func__, st_fw_nvm_data[i].sec_no);
+			return STWLC33_NVM_ERR_PROGRAMED;
+		}
+		for (j = 0; j < st_fw_nvm_data[i].sec_size; j++) {
+			if (st_nvm_bufs[j] != st_fw_nvm_data[i].sec_data[j]) {
+				st_fw_nvm_data[i].same_flag = 0;
+				nvm_update_flag = STWLC33_NVM_NON_PROGRAMED;
+				hwlog_info("[%s] sec_no:%d not same\n",
+					__func__, st_fw_nvm_data[i].sec_no);
+				break;
+			}
+		}
+		if (j == st_fw_nvm_data[i].sec_size)
+			st_fw_nvm_data[i].same_flag = 1;
+	}
+
+	return nvm_update_flag;
+}
+
 static int idtp9221_check_is_otp_exist(void)
 {
 	int ret;
@@ -955,6 +1130,20 @@ static int idtp9221_check_is_otp_exist(void)
 	}
 	return IDT9221_OTP_PROGRAMED;
 }
+
+static int idt_st_check_is_otp_exist(void)
+{
+	u16 chip_id;
+
+	/* enable RX for i2c read and write */
+	idtp9221_chip_enable(RX_EN_ENABLE);
+	chip_id = idtp9221_get_chip_id();
+	if (chip_id == STWLC33_CHIP_ID)
+		return stwlc33_check_nvm();
+
+	return idtp9221_check_is_otp_exist();
+}
+
 static int idtp9221_program_otp(void)
 {
 	int ret = 0;
@@ -978,32 +1167,155 @@ static int idtp9221_program_otp(void)
 		return -1;
 	}
 
-	disable_irq_nosync(di->irq_int);
+	idtp9221_disable_irq_nosync(di);
 	ret = idtp9221_program_otp_first_step();
 	mdelay(IDT9221_OTP_SLEEP_TIME);  //delay for bootloader startup
 	if (ret) {
 		hwlog_info("program OTP step 1 FAIL!\n");
-		enable_irq(di->irq_int);
+		idtp9221_enable_irq(di);
 		return -1;
 	}
 	ret = idtp9221_program_otp_second_step
 		(otp_info[g_otp_index].otp_arr, 0, otp_info[g_otp_index].otp_size, 0x00);
 	if (ret) {
 		hwlog_info("program OTP step 2 FAIL!\n");
-		enable_irq(di->irq_int);
+		idtp9221_enable_irq(di);
 		return -1;
 	}
 	ret = idtp9221_program_otp_third_step();
 	if (ret) {
 		hwlog_info("program OTP step 3 FAIL!\n");
-		enable_irq(di->irq_int);
+		idtp9221_enable_irq(di);
 		return -1;
 	}
 
-	enable_irq(di->irq_int);
+	idtp9221_enable_irq(di);
 	hwlog_info("program OTP successfully!\n");
 	return ret;
 }
+
+static int stwlc33_nvm_write(void)
+{
+	int i;
+	int ret;
+	u16 cmd_status = 0;
+	u8 nvm_sec_val[STWLC33_NVM_REG_SIZE] = { 0 };
+	u8 bufs[STWLC33_NVM_SEC_VAL_SIZE + STWLC33_ADDR_LEN] = { 0 };
+	u8 sec_val[STWLC33_SEC_NO_SIZE] = { 0 };
+	struct idtp9221_device_info *di = g_idtp9221_di;
+
+	if (!di) {
+		hwlog_err("%s: di is null\n", __func__);
+		return -EINVAL;
+	}
+	for (i = 0; i < ARRAY_SIZE(st_fw_nvm_data); i++) {
+		if (st_fw_nvm_data[i].same_flag)
+			continue;
+		/* Step 1 : check for zero, to confirm pre cmds completed */
+		ret = idtp9221_read_word(STWLC33_CMD_STATUS_ADDR, &cmd_status);
+		if (ret) {
+			hwlog_err("%s: get cmd status failed\n", __func__);
+			return -EINVAL;
+		}
+		if (cmd_status) {
+			hwlog_err("%s: pre cmds not completed [0x%x]\n",
+				__func__, cmd_status);
+			return -EINVAL;
+		}
+		/* Step 2 : Write new NVM sector content  */
+		memcpy(bufs + STWLC33_ADDR_LEN, st_fw_nvm_data[i].sec_data,
+				st_fw_nvm_data[i].sec_size);
+		ret = idtp9221_write_block(di, STWLC33_NVM_WR_ADDR, bufs,
+					st_fw_nvm_data[i].sec_size);
+		if (ret) {
+			hwlog_err("%s: write nvm failed\n", __func__);
+			return -EINVAL;
+		}
+		/* Step 3 : Update sector number */
+		sec_val[0] = st_fw_nvm_data[i].sec_no;
+		memcpy(nvm_sec_val + STWLC33_ADDR_LEN, sec_val,
+					STWLC33_SEC_NO_SIZE);
+		ret = idtp9221_write_block(di, STWLC33_OFFSET_REG_ADDR,
+					nvm_sec_val, STWLC33_SEC_NO_SIZE);
+		if (ret) {
+			hwlog_err("%s: write sector no fail\n", __func__);
+			return -EINVAL;
+		}
+		/* Step 4 : Update nvm byte length */
+		ret = idtp9221_write_byte(STWLC33_SRAM_SIZE_ADDR,
+					st_fw_nvm_data[i].sec_size - 1);
+		if (ret) {
+			hwlog_err("%s: write sector length fail\n", __func__);
+			return -EINVAL;
+		}
+		/* Step 5 : Write nvm_wr command */
+		ret = idtp9221_write_byte(STWLC33_CMD_STATUS_ADDR,
+				STWLC33_NVM_WR_CMD);
+		if (ret) {
+			hwlog_err("%s: write nvm write cmd fail\n", __func__);
+			return -EINVAL;
+		}
+		msleep(STWLC33_NVM_WR_TIME);
+		/* Step 6 : check for zero, to confirm pre cmds completed */
+		ret = idtp9221_read_word(STWLC33_CMD_STATUS_ADDR, &cmd_status);
+		if (ret) {
+			hwlog_err("%s: get cmd status failed\n", __func__);
+			return -EINVAL;
+		}
+		if (cmd_status) {
+			hwlog_err("%s: pre cmds not completed [0x%x]\n",
+				__func__, cmd_status);
+			return -EINVAL;
+		}
+	}
+	hwlog_info("[%s] success\n", __func__);
+	return 0;
+}
+
+static int stwlc33_program_nvm(void)
+{
+	int ret;
+	struct idtp9221_device_info *di = g_idtp9221_di;
+
+	if (!di) {
+		hwlog_err("%s di null\n", __func__);
+		return -EINVAL;
+	}
+	ret = stwlc33_check_nvm();
+	if (ret < 0) {
+		hwlog_err("%s: read nvm fail\n", __func__);
+		return -EINVAL;
+	}
+	if (ret == STWLC33_NVM_PROGRAMED) {
+		hwlog_info("[%s] NVM is already programed\n", __func__);
+		return 0;
+	}
+
+	idtp9221_disable_irq_nosync(di);
+	ret = stwlc33_nvm_write();
+	if (ret) {
+		hwlog_err("%s: write nvm fail\n", __func__);
+		idtp9221_enable_irq(di);
+		return -EINVAL;
+	}
+	idtp9221_enable_irq(di);
+	hwlog_info("[%s] program NVM succ\n", __func__);
+	return 0;
+}
+
+static int idt_st_program_otp(void)
+{
+	u16 chip_id;
+
+	/* enable RX for i2c read and write */
+	idtp9221_chip_enable(RX_EN_ENABLE);
+	chip_id = idtp9221_get_chip_id();
+	if (chip_id == STWLC33_CHIP_ID)
+		return stwlc33_program_nvm();
+
+	return idtp9221_program_otp();
+}
+
 static int idtp9221_check_otp(void)
 {
 	int ret, i;
@@ -1016,7 +1328,7 @@ static int idtp9221_check_otp(void)
 	u8 data[IDT9221_PAGE_SIZE] = {0};
 
 	idtp9221_chip_enable(RX_EN_ENABLE);// enable RX for i2c read and write
-	otp_fw_version = idtp9221_get_otp_fw_version();
+	otp_fw_version = idt_st_get_otp_fw_version();
 	if(!strstr(otp_fw_version, IDT9221_OTP_FW_HEAD)) {
 		hwlog_err("%s: otp(version: %s) has not been programmed\n", __func__, otp_fw_version);
 		otp_fw_version = g_latest_otp_version;
@@ -1061,6 +1373,20 @@ static int idtp9221_check_otp(void)
 	g_otp_status = IDT9221_OTP_PROGRAMED;
 	return 0;
 }
+
+static int idt_st_check_otp(void)
+{
+	u16 chip_id;
+
+	/* enable RX for i2c read and write */
+	idtp9221_chip_enable(RX_EN_ENABLE);
+	chip_id = idtp9221_get_chip_id();
+	if (chip_id == STWLC33_CHIP_ID)
+		return stwlc33_check_nvm();
+
+	return idtp9221_check_otp();
+}
+
 #endif
 static int idtp9221_get_mode(u8 *mode)
 {
@@ -1102,7 +1428,7 @@ static int idtp9221_send_rx_qval(u8 qval)
 	u8 qval_data[IDT9221_QVAL_LEN] = {0,0};
 	qval_data[IDT9221_QVAL_LEN-1] = qval;
 
-	ret = idtp9221_send_msg_ack(IDT9221_CMD_SEND_QVAL, &qval_data, IDT9221_QVAL_LEN);
+	ret = idtp9221_send_msg_ack(IDT9221_CMD_SEND_QVAL, (u8*)&qval_data, IDT9221_QVAL_LEN);
 	if(ret) {
 		hwlog_err("%s: send qval to TX failed!\n", __func__);
 		return -1;
@@ -1120,7 +1446,7 @@ static int idtp9221_kick_watchdog(void)
 	}
 	return 0;
 }
-static int idtp9221_program_sramupdate(struct fw_update_info *fw_sram_info)
+static int idtp9221_program_sramupdate(const struct fw_update_info *fw_sram_info)
 {
 	u8 mode;
 	u8 bufs[IDT9221_PAGE_SIZE + IDT9221_ADDR_LEN];	//write datas must offset 2 bytes
@@ -1221,6 +1547,310 @@ static int idtp9221_program_sramupdate(struct fw_update_info *fw_sram_info)
 	return 0;
 }
 
+static int stwlc33_write_ram_data(
+			const struct fw_update_info *fw_sram_info)
+{
+	int i;
+	int ret;
+	u16 offset;
+	u16 cmd_status;
+	u8 write_size;
+	/* write datas must offset 2 bytes */
+	u8 bufs[STWLC33_PAGE_SIZE + STWLC33_ADDR_LEN];
+	u8 offset_reg_value[STWLC33_OFFSET_REG_SIZE] = { 0 };
+	u8 st_fw_start_addr[] = { 0x00, 0x00, 0x00, 0x00 };
+	struct idtp9221_device_info *di = g_idtp9221_di;
+
+	if (!di || !fw_sram_info || !fw_sram_info->fw_sram) {
+		hwlog_err("%s: para is null\n", __func__);
+		return -ENODEV;
+	}
+
+	/* write FW into SRAM */
+	i = fw_sram_info->fw_sram_size;
+	offset = 0;
+	while (i > 0) {
+		if (i >= STWLC33_PAGE_SIZE)
+			write_size = STWLC33_PAGE_SIZE;
+		else
+			write_size = i;
+		/* Step 1 : confirm previous commands completed  */
+		ret = idtp9221_read_word(STWLC33_CMD_STATUS_ADDR,
+				&cmd_status);
+		if (ret) {
+			hwlog_err("%s: get cmd status fail\n", __func__);
+			return -EINVAL;
+		}
+		if (cmd_status) {
+			hwlog_err("%s: pre cmd not completed [0x%x]\n",
+					__func__, cmd_status);
+			return -EINVAL;
+		}
+		/* Step 2 : Load data */
+		memcpy(bufs + STWLC33_ADDR_LEN, fw_sram_info->fw_sram + offset,
+		       write_size);
+		ret = idtp9221_write_block(di,
+			fw_sram_info->fw_sram_update_addr, bufs, write_size);
+		if (ret) {
+			hwlog_err("%s: write SRAM fm failed\n", __func__);
+			return -EINVAL;
+		}
+		/* Step 3 : Update I2C reg mem_access_offset */
+		st_fw_start_addr[0] = offset & BYTE_MASK;
+		st_fw_start_addr[1] = offset >> BITS_PER_BYTE;
+		memcpy(offset_reg_value + STWLC33_ADDR_LEN, st_fw_start_addr,
+				STWLC33_OFFSET_VALUE_SIZE);
+		ret = idtp9221_write_block(di, STWLC33_OFFSET_REG_ADDR,
+				offset_reg_value, STWLC33_OFFSET_VALUE_SIZE);
+		/* Step 4 : Update number of bytes */
+		ret |= idtp9221_write_byte(STWLC33_SRAM_SIZE_ADDR,
+					write_size-1);
+		if (ret) {
+			hwlog_err("%s: Update write size failed\n", __func__);
+			return -EINVAL;
+		}
+		/* Step 5 : Issue patch_wr command */
+		ret = idtp9221_write_byte(STWLC33_ACT_CMD_ADDR,
+					STWLC33_WRITE_CMD_VALUE);
+		if (ret) {
+			hwlog_err("%s: Issue patch_wr cmd failed\n", __func__);
+			return -EINVAL;
+		}
+		offset += write_size;
+		i -= write_size;
+	}
+
+	hwlog_info("[%s] write FW into SRAM succ\n", __func__);
+	return 0;
+}
+
+static int stwlc33_check_ram_data(
+			const struct fw_update_info *fw_sram_info)
+{
+	int i;
+	int j;
+	int ret;
+	u16 offset;
+	u8 write_size;
+	u16 cmd_status;
+	/* write datas must offset 2 bytes */
+	u8 bufs[STWLC33_PAGE_SIZE + STWLC33_ADDR_LEN];
+	u8 offset_reg_value[STWLC33_OFFSET_REG_SIZE] = { 0 };
+	u8 st_fw_start_addr[] = { 0x00, 0x00, 0x00, 0x00 };
+	struct idtp9221_device_info *di = g_idtp9221_di;
+
+	if (!di || !fw_sram_info || !fw_sram_info->fw_sram) {
+		hwlog_err("%s: para is null\n", __func__);
+		return -EINVAL;
+	}
+
+	/* read ram patch and check */
+	i = fw_sram_info->fw_sram_size;
+	offset = 0;
+	while (i > 0) {
+		if (i >= STWLC33_PAGE_SIZE)
+			write_size = STWLC33_PAGE_SIZE;
+		else
+			write_size = i;
+		/* Step 1 : confirm previous commands completed */
+		ret = idtp9221_read_word(STWLC33_CMD_STATUS_ADDR, &cmd_status);
+		if (ret) {
+			hwlog_err("%s: get cmd status failed\n", __func__);
+			return -EINVAL;
+		}
+		if (cmd_status) {
+			hwlog_err("%s: pre cmd not completed [0x%x]\n",
+					__func__, cmd_status);
+			return -EINVAL;
+		}
+		/* Step 2 : Update I2C reg mem_access_offset */
+		st_fw_start_addr[0] = offset & BYTE_MASK;
+		st_fw_start_addr[1] = offset >> BITS_PER_BYTE;
+		memcpy(offset_reg_value + STWLC33_ADDR_LEN, st_fw_start_addr,
+				STWLC33_OFFSET_VALUE_SIZE);
+		ret = idtp9221_write_block(di, STWLC33_OFFSET_REG_ADDR,
+				offset_reg_value, STWLC33_OFFSET_VALUE_SIZE);
+		/* Step 3 : Update number of bytes */
+		ret |= idtp9221_write_byte(STWLC33_SRAM_SIZE_ADDR,
+					write_size-1);
+		if (ret) {
+			hwlog_err("%s: Update read size failed\n", __func__);
+			return -EINVAL;
+		}
+		/* Step 4 : Issue patch_rd command */
+		ret = idtp9221_write_byte(STWLC33_ACT_CMD_ADDR,
+					STWLC33_READ_CMD_VALUE);
+		if (ret) {
+			hwlog_err("%s: Issue patch_rd cmd fail\n", __func__);
+			return -EINVAL;
+		}
+		/* Step 5 : confirm previous commands completed */
+		ret = idtp9221_read_word(STWLC33_CMD_STATUS_ADDR, &cmd_status);
+		if (ret) {
+			hwlog_err("%s: get cmds status failed\n", __func__);
+			return -EINVAL;
+		}
+		if (cmd_status) {
+			hwlog_err("%s: pre cmds not completed [0x%x]\n",
+				__func__, cmd_status);
+			return -EINVAL;
+		}
+		/* Step 6 : Read data from buffer and check */
+		ret = idtp9221_read_block(di,
+			fw_sram_info->fw_sram_update_addr, bufs, write_size);
+		if (ret) {
+			hwlog_err("%s: read SRAM failed\n", __func__);
+			return -EINVAL;
+		}
+		for (j = 0; j < write_size; j++) {
+			if (bufs[j] != fw_sram_info->fw_sram[offset + j]) {
+				hwlog_err("%s: read (0x%x) != write (0x%x)\n",
+					  __func__, bufs[j],
+					  fw_sram_info->fw_sram[offset + j]);
+				return -EINVAL;
+			}
+		}
+		i -= write_size;
+		offset += write_size;
+	}
+
+	hwlog_info("[%s] read and check ram patch succ!\n", __func__);
+	return 0;
+}
+
+static int stwlc33_exec_ram_data(void)
+{
+	int ret;
+	u16 cmd_status;
+	u8 offset_reg_val[STWLC33_OFFSET_REG_SIZE] = { 0 };
+	unsigned char magic_number[] = { 0x01, 0x10, 0x00, 0x20 };
+	struct idtp9221_device_info *di = g_idtp9221_di;
+
+	if (!di) {
+		hwlog_err("%s: para is null\n", __func__);
+		return -EINVAL;
+	}
+	/* Step 1 : check for zero, to confirm previous commands completed */
+	ret = idtp9221_read_word(STWLC33_CMD_STATUS_ADDR, &cmd_status);
+	if (ret) {
+		hwlog_err("%s: get cmd status failed\n", __func__);
+		return -EINVAL;
+	}
+	if (cmd_status) {
+		hwlog_err("%s: pre cmds not completed [0x%x]\n",
+			__func__, cmd_status);
+		return -EINVAL;
+	}
+	/* Step 2 : Write 4-byte magic number */
+	memcpy(offset_reg_val + STWLC33_ADDR_LEN, magic_number,
+			STWLC33_OFFSET_VALUE_SIZE);
+	ret = idtp9221_write_block(di, STWLC33_OFFSET_REG_ADDR,
+				offset_reg_val, STWLC33_OFFSET_VALUE_SIZE);
+	if (ret) {
+		hwlog_err("%s: Write magic number failed\n", __func__);
+		return -EINVAL;
+	}
+	/* Step 3 : Issue patch_exec command */
+	ret |= idtp9221_write_byte(STWLC33_ACT_CMD_ADDR,
+				STWLC33_EXEC_CMD_VALUE);
+	if (ret) {
+		hwlog_err("%s: Issue patch_exec cmd failed\n", __func__);
+		return -EINVAL;
+	}
+	/* wait for swtiching to SRAM running */
+	msleep(STWLC33_SRAM_EXEC_TIME);
+	/* Step 4 : check for zero, to confirm patch execution */
+	ret = idtp9221_read_word(STWLC33_CMD_STATUS_ADDR, &cmd_status);
+	if (ret) {
+		hwlog_err("%s: get cmd_status failed\n", __func__);
+		return -EINVAL;
+	}
+	if (cmd_status) {
+		hwlog_err("%s: pre cmds not completed [0x%x]\n",
+			__func__, cmd_status);
+		return -EINVAL;
+	}
+
+	hwlog_info("[%s] exec ram patch succ\n", __func__);
+	return 0;
+}
+
+static int stwlc33_program_sramupdate(
+		const struct fw_update_info *fw_sram_info)
+{
+	int ret;
+	u8 iout_offset;
+	u16 ram_version;
+
+	/* Step -1 write FW patch into SRAM */
+	ret = stwlc33_write_ram_data(fw_sram_info);
+	if (ret) {
+		hwlog_err("%s: write ram data fail\n", __func__);
+		return -EINVAL;
+	}
+	/* Step -2 read ram patch and check */
+	ret = stwlc33_check_ram_data(fw_sram_info);
+	if (ret) {
+		hwlog_err("%s: check ram data fail\n", __func__);
+		return -EINVAL;
+	}
+	/* Step -3 : To execute ram patch */
+	ret = stwlc33_exec_ram_data();
+	if (ret) {
+		hwlog_err("%s: exec ram data fail\n", __func__);
+		return -EINVAL;
+	}
+	if (fw_sram_info->fw_sram_mode == WIRELESS_TX_MODE) {
+		usleep_range(9500, 10500); /* 10ms */
+		idtp9221_write_byte(STWLC33_TX_ENABLE_ADDR,
+				STWLC33_TX_ENABLE_VAL);
+		ret = stwlc33_exec_ram_data();
+		if (ret) {
+			hwlog_err("%s: exec ram data fail\n", __func__);
+			return -EINVAL;
+		}
+	}
+	if (fw_sram_info->fw_sram_mode == WIRELESS_RX_MODE &&
+		stwlc33_iout_adc_val > STWLC33_IOUT_ADC_VAL_LTH &&
+		stwlc33_iout_adc_val < STWLC33_IOUT_ADC_VAL_HTH) {
+		if (stwlc33_iout_adc_val >= STWLC33_IOUT_ADC_CRITICAL_VAL)
+			iout_offset = stwlc33_iout_adc_val -
+				STWLC33_IOUT_ADC_CRITICAL_VAL;
+		else
+			iout_offset = ~(STWLC33_IOUT_ADC_CRITICAL_VAL -
+				stwlc33_iout_adc_val) + 1;
+		hwlog_info("[%s] iout_offset = 0x%x\n", __func__, iout_offset);
+		ret = idtp9221_write_byte(STWLC33_IOUT_CALI_VAL_ADDR,
+			iout_offset);
+
+		/* clear iout calibration register */
+		ret += idtp9221_write_byte(STWLC33_IOUT_CALI_ADDR, 0x00);
+		if (ret)
+			hwlog_err("%s: write reg failed\n", __func__);
+	}
+	ret = idtp9221_read_word(STWLC33_RAM_VER_ADDR, &ram_version);
+	if (ret) {
+		hwlog_err("%s: read ram version fail\n", __func__);
+		return -EINVAL;
+	}
+	hwlog_info("[%s] success ram_version:0x%x\n", __func__, ram_version);
+
+	return 0;
+}
+
+static int idt_st_program_sramupdate(
+		const struct fw_update_info *fw_sram_info)
+{
+	u16 chip_id = idtp9221_get_chip_id();
+
+	if (chip_id == STWLC33_CHIP_ID)
+		return stwlc33_program_sramupdate(fw_sram_info);
+	else if (chip_id == IDTP9221_CHIP_ID)
+		return idtp9221_program_sramupdate(fw_sram_info);
+	else
+		return -EINVAL;
+}
+
 static char* idtp9221_get_rx_fod_coef(void)
 {
 	int ret, i;
@@ -1260,8 +1890,8 @@ static int idtp9221_set_rx_fod_coef(char* fod_coef)
 		return -1;
 	}
 	if (strlen(fod_coef) >= IDT9221_RX_FOD_COEF_STRING_LEN) {
-		hwlog_err("%s length(%d) exceeds max size(%d)\n",
-			__func__, strlen(fod_coef), IDT9221_RX_FOD_COEF_STRING_LEN);
+		hwlog_err("%s: length(%d) exceeds max size(%d)\n",
+			__func__, (int)strlen(fod_coef), IDT9221_RX_FOD_COEF_STRING_LEN);
 		return -1;
 	}
 	cur = fod_coef;
@@ -1309,16 +1939,31 @@ static int idtp9221_unfix_tx_fop(void)
 }
 static int idtp9221_rx_fod_coef_5v(void)
 {
-	int ret, i;
+	int i;
+	int ret;
+	int fod_val;
+	u16 chip_id;
 	struct idtp9221_device_info *di = g_idtp9221_di;
-	if (NULL == di) {
+
+	if (!di) {
 		hwlog_err("%s: para is null\n", __func__);
 		return -1;
 	}
+	chip_id = idtp9221_get_chip_id();
+	if (chip_id == ERR_CHIP_ID) {
+		hwlog_err("%s: get chip id fail\n", __func__);
+		return -EINVAL;
+	}
 	/*set rx 5v fod coef*/
-	for(i = 0; i < IDT9221_RX_FOD_COEF_LEN; i++) {
-		ret = idtp9221_write_word(IDT9221_RX_FOD_COEF_STSRT_ADDR + i*WORD_LEN, di->rx_fod_5v[i]);
-		if(ret) {
+	for (i = 0; i < IDT9221_RX_FOD_COEF_LEN; i++) {
+		if (chip_id == STWLC33_CHIP_ID)
+			fod_val = di->st_rx_fod_5v[i];
+		else
+			fod_val = di->rx_fod_5v[i];
+
+		ret = idtp9221_write_word(IDT9221_RX_FOD_COEF_STSRT_ADDR +
+			i*WORD_LEN, fod_val);
+		if (ret) {
 			hwlog_err("%s: set rx_fod_5v reg[%d] failed!\n", __func__, i);
 			return -1;
 		}
@@ -1328,15 +1973,29 @@ static int idtp9221_rx_fod_coef_5v(void)
 }
 static int idtp9221_rx_fod_coef_9v(void)
 {
-	int ret, i;
+	int i;
+	int ret;
+	int fod_val;
+	u16 chip_id;
 	struct idtp9221_device_info *di = g_idtp9221_di;
-	if (NULL == di) {
+
+	if (!di) {
 		hwlog_err("%s: para is null\n", __func__);
 		return -1;
 	}
+	chip_id = idtp9221_get_chip_id();
+	if (chip_id == ERR_CHIP_ID) {
+		hwlog_err("%s: get chip id fail\n", __func__);
+		return -EINVAL;
+	}
 	/*set rx 9v fod coef*/
-	for(i = 0; i < IDT9221_RX_FOD_COEF_LEN; i++) {
-		ret = idtp9221_write_word(IDT9221_RX_FOD_COEF_STSRT_ADDR + i*WORD_LEN, di->rx_fod_9v[i]);
+	for (i = 0; i < IDT9221_RX_FOD_COEF_LEN; i++) {
+		if (chip_id == STWLC33_CHIP_ID)
+			fod_val = di->st_rx_fod_9v[i];
+		else
+			fod_val = di->rx_fod_9v[i];
+		ret = idtp9221_write_word(IDT9221_RX_FOD_COEF_STSRT_ADDR +
+			i*WORD_LEN, fod_val);
 		if(ret) {
 			hwlog_err("%s: set rx_fod_9v reg[%d] failed!\n", __func__, i);
 			return -1;
@@ -1347,15 +2006,29 @@ static int idtp9221_rx_fod_coef_9v(void)
 }
 static int idtp9221_rx_fod_coef_12v(void)
 {
-	int ret, i;
+	int i;
+	int ret;
+	int fod_val;
+	u16 chip_id;
 	struct idtp9221_device_info *di = g_idtp9221_di;
-	if (NULL == di) {
+
+	if (!di) {
 		hwlog_err("%s: para is null\n", __func__);
 		return -1;
 	}
+	chip_id = idtp9221_get_chip_id();
+	if (chip_id == ERR_CHIP_ID) {
+		hwlog_err("%s: get chip id fail\n", __func__);
+		return -EINVAL;
+	}
 	/*set rx 12v fod coef*/
-	for(i = 0; i < IDT9221_RX_FOD_COEF_LEN; i++) {
-		ret = idtp9221_write_word(IDT9221_RX_FOD_COEF_STSRT_ADDR + i*WORD_LEN, di->rx_fod_12v[i]);
+	for (i = 0; i < IDT9221_RX_FOD_COEF_LEN; i++) {
+		if (chip_id == STWLC33_CHIP_ID)
+			fod_val = di->st_rx_fod_12v[i];
+		else
+			fod_val = di->rx_fod_12v[i];
+		ret = idtp9221_write_word(IDT9221_RX_FOD_COEF_STSRT_ADDR +
+			i*WORD_LEN, fod_val);
 		if(ret) {
 			hwlog_err("%s: set rx_fod_12v reg[%d] failed!\n", __func__, i);
 			return -1;
@@ -1368,6 +2041,12 @@ static int idtp9221_rx_fod_coef_12v(void)
 static int idtp9221_chip_init(int tx_vset)
 {
 	int ret = 0;
+	struct idtp9221_device_info *di = g_idtp9221_di;
+
+	if (!di) {
+		hwlog_err("%s: para is null\n", __func__);
+		return -1;
+	}
 	switch(tx_vset) {
 		case WIRELESS_CHIP_INIT:
 			hwlog_info("[%s] DEFAULT_CHIP_INIT\n", __func__);
@@ -1380,11 +2059,11 @@ static int idtp9221_chip_init(int tx_vset)
 			ret |= idtp9221_write_word(IDT9221_RX_VRMIN_COR_ADDR, 10);
 			/*CAP Enable*/
 			ret |= idtp9221_write_byte(IDT9221_RX_USER_FLAGS_ADDR, IDT9221_RX_USER_FLAGS);
-		case ADAPTER_5V*MVOLT_PER_VOLT:
+		case ADAPTER_5V*WL_MVOLT_PER_VOLT:
 			hwlog_info("[%s] 5V_CHIP_INIT\n", __func__);
 			ret |= idtp9221_rx_fod_coef_5v();
 			break;
-		case ADAPTER_9V*MVOLT_PER_VOLT:
+		case ADAPTER_9V*WL_MVOLT_PER_VOLT:
 			hwlog_info("[%s] 9V_CHIP_INIT\n", __func__);
 			ret |= idtp9221_rx_fod_coef_9v();
 			break;
@@ -1393,13 +2072,14 @@ static int idtp9221_chip_init(int tx_vset)
 			/*set vrect coef*/
 			ret |= idtp9221_write_byte(IDT9221_RX_PWR_KNEE_ADDR, 18);
 			ret |= idtp9221_write_byte(IDT9221_RX_VRCORR_FACTOR_ADDR, 50);
-			ret |= idtp9221_write_word(IDT9221_RX_VRMAX_COR_ADDR, 300);
+			ret |= idtp9221_write_word(IDT9221_RX_VRMAX_COR_ADDR,
+				di->sc_rx_vrmax_gap);
 			ret |= idtp9221_write_word(IDT9221_RX_VRMIN_COR_ADDR, 10);
 			if (!ret) {
 				ret |= idtp9221_rx_fod_coef_9v();
 			}
 			break;
-		case ADAPTER_12V*MVOLT_PER_VOLT:
+		case ADAPTER_12V*WL_MVOLT_PER_VOLT:
 			hwlog_info("[%s] 12V_CHIP_INIT\n", __func__);
 			ret |= idtp9221_rx_fod_coef_12v();
 			break;
@@ -1409,23 +2089,113 @@ static int idtp9221_chip_init(int tx_vset)
 	}
 	return ret;
 }
+
+static int stwlc33_chip_init(int tx_vset)
+{
+	int ret = 0;
+
+	switch (tx_vset) {
+	case WIRELESS_CHIP_INIT:
+		hwlog_info("[%s] DEFAULT_CHIP_INIT\n", __func__);
+		/* ldo drop */
+		ret |= idtp9221_write_byte(STWLC33_LDO_DROP0_ADDR,
+				STWLC33_LDO_DROP0_VAL);
+		ret |= idtp9221_write_byte(STWLC33_LDO_DROP1_ADDR,
+				STWLC33_LDO_DROP1_VAL);
+		ret |= idtp9221_write_byte(STWLC33_LDO_DROP2_ADDR,
+				STWLC33_LDO_DROP2_VAL);
+		ret |= idtp9221_write_byte(STWLC33_LDO_DROP3_ADDR,
+				STWLC33_LDO_DROP3_VAL);
+		/* ldo cur thres */
+		ret |= idtp9221_write_byte(STWLC33_LDO_CUR_TH1_ADDR,
+				STWLC33_LDO_CUR_TH1_VAL);
+		ret |= idtp9221_write_byte(STWLC33_LDO_CUR_TH2_ADDR,
+				STWLC33_LDO_CUR_TH2_VAL);
+		ret |= idtp9221_write_byte(STWLC33_LDO_CUR_TH3_ADDR,
+				STWLC33_LDO_CUR_TH3_VAL);
+		/* full through */
+	case ADAPTER_5V * WL_MVOLT_PER_VOLT:
+		hwlog_info("[%s] 5V_CHIP_INIT\n", __func__);
+		ret |= idtp9221_rx_fod_coef_5v();
+		break;
+	case ADAPTER_9V * WL_MVOLT_PER_VOLT:
+		hwlog_info("[%s] 9V_CHIP_INIT\n", __func__);
+		ret |= idtp9221_rx_fod_coef_9v();
+		break;
+	case WILREESS_SC_CHIP_INIT:
+		hwlog_info("[%s] SC_CHIP_INIT\n", __func__);
+		/* ldo drop */
+		ret |= idtp9221_write_byte(STWLC33_LDO_DROP0_ADDR,
+				STWLC33_LDO_DROP0_SC_VAL);
+		ret |= idtp9221_write_byte(STWLC33_LDO_DROP1_ADDR,
+				STWLC33_LDO_DROP1_SC_VAL);
+		ret |= idtp9221_write_byte(STWLC33_LDO_DROP2_ADDR,
+				STWLC33_LDO_DROP2_SC_VAL);
+		ret |= idtp9221_write_byte(STWLC33_LDO_DROP3_ADDR,
+				STWLC33_LDO_DROP3_SC_VAL);
+		/* ldo cur thres */
+		ret |= idtp9221_write_byte(STWLC33_LDO_CUR_TH1_ADDR,
+				STWLC33_LDO_CUR_TH1_SC_VAL);
+		ret |= idtp9221_write_byte(STWLC33_LDO_CUR_TH2_ADDR,
+				STWLC33_LDO_CUR_TH2_SC_VAL);
+		ret |= idtp9221_write_byte(STWLC33_LDO_CUR_TH3_ADDR,
+				STWLC33_LDO_CUR_TH3_SC_VAL);
+		if (!ret)
+			ret |= idtp9221_rx_fod_coef_9v();
+		break;
+	case ADAPTER_12V * WL_MVOLT_PER_VOLT:
+		hwlog_info("[%s] 12V_CHIP_INIT\n", __func__);
+		ret |= idtp9221_rx_fod_coef_12v();
+		break;
+	default:
+		hwlog_info("%s: input para is invalid!\n", __func__);
+		break;
+	}
+	return ret;
+}
+
+static int idt_st_chip_init(int tx_vset)
+{
+	u16 chip_id;
+
+	chip_id = idtp9221_get_chip_id();
+	if (chip_id == STWLC33_CHIP_ID)
+		return stwlc33_chip_init(tx_vset);
+
+	return idtp9221_chip_init(tx_vset);
+}
+
 static int idtp9221_stop_charging(void)
 {
+	int wired_channel_state;
 	struct idtp9221_device_info *di = g_idtp9221_di;
-	if (NULL == di) {
+
+	if (!di) {
 		hwlog_err("%s: para is null\n", __func__);
 		return -1;
 	}
-	if(irq_abnormal_flag &&
-		WIRED_CHANNEL_ON == wireless_charge_get_wired_channel_state()) {
-		di->irq_cnt = 0;
-		irq_abnormal_flag = false;
-		enable_irq(di->irq_int);
-		hwlog_info("[%s] wired channel on, enable irq_int!\n", __func__);
-	}
+
 	stop_charging_flag = 1;
+
+	if (irq_abnormal_flag) {
+		wired_channel_state =
+			wireless_charge_get_wired_channel_state();
+		if (wired_channel_state != WIRED_CHANNEL_ON) {
+			hwlog_info("[%s] irq_abnormal,\t"
+				"keep wireless switch on\n", __func__);
+			wireless_charge_sw_control(WL_SWITCH_ON);
+		} else {
+			di->irq_cnt = 0;
+			irq_abnormal_flag = false;
+			idtp9221_enable_irq(di);
+			hwlog_info("[%s] wired channel on, enable irq_int\n",
+				__func__);
+		}
+	}
+
 	return 0;
 }
+
 static enum tx_adaptor_type idtp9221_get_tx_type(void)
 {
 	int ret;
@@ -1468,8 +2238,8 @@ static void idtp9221_get_tx_main_capability(struct tx_capability *tx_cap)
 	tx_cap->support_scp      = tx_cap_data[TX_CAP_ATTR] & IDT9221_TX_CAP_SUPPORT_SCP_MASK;
 	tx_cap->support_12v       = tx_cap_data[TX_CAP_ATTR] & IDT9221_TX_CAP_SUPPORT_12V_MASK;
 	tx_cap->support_extra_cap = tx_cap_data[TX_CAP_ATTR] & IDT9221_TX_CAP_SUPPORT_EXTRA_BIT_MASK;
-	if (tx_cap->vout_max >ADAPTER_9V*MVOLT_PER_VOLT && !tx_cap->support_12v) {
-		tx_cap->vout_max = ADAPTER_9V*MVOLT_PER_VOLT;
+	if (tx_cap->vout_max > ADAPTER_9V * WL_MVOLT_PER_VOLT && !tx_cap->support_12v) {
+		tx_cap->vout_max = ADAPTER_9V * WL_MVOLT_PER_VOLT;
 		hwlog_info("[%s] tx not support 12V, tx_cap->vout_max set to %dmV\n",
 			__func__, tx_cap->vout_max);
 	}
@@ -1538,29 +2308,7 @@ static u8* idtp9221_get_tx_fw_version(void)
 	}
 	return tx_fw_version;
 }
-static u8* idtp9221_get_chip_id(void)
-{
-	int ret, i;
-	static u8 chip_id[IDT9221_RX_CHIP_ID_STRING_LEN] = {0};
-	u8 data[IDT9221_RX_CHIP_ID_LEN] = {0};
-	u8 buff[IDT9221_RX_TMP_BUFF_LEN] = {0};
-	struct idtp9221_device_info *di = g_idtp9221_di;
-	if (!di) {
-		hwlog_err("%s di null\n", __func__);
-		return "error";
-	}
-	memset(chip_id, 0, IDT9221_RX_CHIP_ID_STRING_LEN);
-	ret = idtp9221_read_block(di, IDT9221_RX_CHIP_ID_ADDR, data, IDT9221_RX_CHIP_ID_LEN);
-	if (!ret) {
-		for (i = 0; i < IDT9221_RX_CHIP_ID_LEN; i++) {
-			snprintf(buff, IDT9221_RX_TMP_BUFF_LEN, "0x%x ", data[i]);
-			strncat(chip_id, buff, strlen(buff));
-		}
-		return chip_id;
-	} else {
-		return "error";
-	}
-}
+
 static u8* idtp9221_get_otp_fw_version(void)
 {
 	int ret, i;
@@ -1590,6 +2338,74 @@ static u8* idtp9221_get_otp_fw_version(void)
 		return "error";
 	}
 }
+
+static void stwlc33_get_rx_chip_temp(void)
+{
+	int ret;
+	int count = 0;
+	u16 chip_temp = 0;
+	u16 chip_id;
+
+	chip_id = idtp9221_get_chip_id();
+	if (chip_id != STWLC33_CHIP_ID)
+		return;
+	do {
+		ret = idtp9221_read_word(STWLC33_RX_CHIP_TEMP_ADDR,
+				&chip_temp);
+		if (ret) {
+			hwlog_err("%s: read fail\n", __func__);
+			break;
+		}
+		count++;
+		/* (ADC code-1350)*(83/444)-273 */
+		chip_temp = (chip_temp - 1350) * 83 / 444 - 273;
+		hwlog_info("[%s] chip temp:%d", __func__, chip_temp);
+	} while (count < STWLC33_GET_RX_CHIP_TEMP_RETRY_CNT);
+}
+
+static u8 *stwlc33_get_otp_fw_version(void)
+{
+	int i;
+	int ret;
+	static u8 fw_version[IDT9221_RX_OTP_FW_VERSION_STRING_LEN];
+	u8 buff[IDT9221_RX_TMP_BUFF_LEN] = {0};
+	u8 data[STWLC33_RX_OTP_FW_VERSION_LEN] = { 0 };
+	struct idtp9221_device_info *di = g_idtp9221_di;
+
+	if (!di) {
+		hwlog_err("%s di null\n", __func__);
+		return "error";
+	}
+	memset(fw_version, 0, IDT9221_RX_OTP_FW_VERSION_STRING_LEN);
+	ret = idtp9221_read_block(di, STWLC33_RX_OTP_FW_VERSION_ADDR,
+			data, STWLC33_RX_OTP_FW_VERSION_LEN);
+	if (ret) {
+		hwlog_err("%s: read fail\n", __func__);
+		return "error";
+	}
+	strncat(fw_version, IDT9221_OTP_FW_HEAD, strlen(IDT9221_OTP_FW_HEAD));
+	for (i = STWLC33_RX_OTP_FW_VERSION_LEN - 1; i >= 0; i--) {
+		snprintf(buff, IDT9221_RX_TMP_BUFF_LEN, " 0x%02x", data[i]);
+		strncat(fw_version, buff, strlen(buff));
+	}
+
+	hwlog_info("[%s] otp version:%s\n", __func__, fw_version);
+	return fw_version;
+}
+
+static u8 *idt_st_get_otp_fw_version(void)
+{
+	u16 chip_id = idtp9221_get_chip_id();
+
+	g_i2c_fail_cnt = 0;
+	if (chip_id == STWLC33_CHIP_ID)
+		return stwlc33_get_otp_fw_version();
+	else if (chip_id == IDTP9221_CHIP_ID)
+		return idtp9221_get_otp_fw_version();
+	else
+		return "error";
+}
+
 static int idtp9221_check_fwupdate(enum wireless_mode fw_sram_mode)
 {
 	int ret;
@@ -1598,7 +2414,7 @@ static int idtp9221_check_fwupdate(enum wireless_mode fw_sram_mode)
 	unsigned int fw_update_size;
 
 	fw_update_size = ARRAY_SIZE(fw_update);
-	otp_fw_version = idtp9221_get_otp_fw_version();
+	otp_fw_version = idt_st_get_otp_fw_version();
 	if(strcmp(otp_fw_version, "error") == 0) {
 		hwlog_err("%s:get firmware version fail!\n", __func__);
 		return -1;
@@ -1609,12 +2425,12 @@ static int idtp9221_check_fwupdate(enum wireless_mode fw_sram_mode)
 			&& strcmp(otp_fw_version, fw_update[i].name_fw_update_from) >= 0
 			&& strcmp(otp_fw_version, fw_update[i].name_fw_update_to) <= 0) {
 			hwlog_info("[%s] SRAM update start! otp_fw_version = %s!\n", __func__, otp_fw_version);
-			ret = idtp9221_program_sramupdate(&fw_update[i]);
+			ret = idt_st_program_sramupdate(&fw_update[i]);
 			if(ret) {
-				hwlog_err("%s:SRAM update fail!\n", __func__);
+				hwlog_err("%s: SRAM update fail!\n", __func__);
 				return -1;
 			}
-			otp_fw_version = idtp9221_get_otp_fw_version();
+			otp_fw_version = idt_st_get_otp_fw_version();
 			hwlog_info("[%s] SRAM update succ! otp_fw_version = %s\n", __func__, otp_fw_version);
 			return 0;
 		}
@@ -1904,6 +2720,25 @@ static int idtp9221_data_received_handler(struct idtp9221_device_info *di)
 	return 0;
 }
 
+static void stwlc33_iout_calibration(void)
+{
+	int ret;
+	struct idtp9221_device_info *di = g_idtp9221_di;
+
+	if (!di) {
+		hwlog_err("%s di null\n", __func__);
+		return;
+	}
+	wireless_charge_sw_control(WL_SWITCH_OFF);
+	usleep_range(4500, 5000); /* 5ms */
+	gpio_set_value(di->gpio_sleep_en, RX_SLEEP_EN_DISABLE);
+	ret = idtp9221_write_byte(STWLC33_IOUT_CALI_ADDR,
+		STWLC33_IOUT_CALI_VAL);
+	if (ret)
+		hwlog_err("%s: write reg failed\n", __func__);
+
+}
+
 /**********************************************************
 *  Function:       idtp9221_rx_ready_handler
 *  Discription:    handler rx ready
@@ -1912,12 +2747,26 @@ static int idtp9221_data_received_handler(struct idtp9221_device_info *di)
 **********************************************************/
 static void idtp9221_rx_ready_handler(struct idtp9221_device_info *di)
 {
+	int ret;
+	u16 chip_id  = idtp9221_get_chip_id();
+
 	if (WIRED_CHANNEL_ON != wireless_charge_get_wired_channel_state()) {
 		hwlog_info("%s rx ready, goto wireless charging\n", __func__);
 		stop_charging_flag = 0;
 		di->irq_cnt = 0;
 		wired_chsw_set_wired_channel(WIRED_CHANNEL_CUTOFF);
+		if (chip_id == STWLC33_CHIP_ID)
+			stwlc33_iout_calibration();
+
 		msleep(CHANNEL_SW_TIME);
+		if (chip_id == STWLC33_CHIP_ID) {
+			ret = idtp9221_read_word(STWLC33_IOUT_ADC_VAL_ADDR,
+				&stwlc33_iout_adc_val);
+			if (ret) {
+				stwlc33_iout_adc_val = 0;
+				hwlog_err("%s: get cl val failed\n", __func__);
+			}
+		}
 		gpio_set_value(di->gpio_sleep_en, RX_SLEEP_EN_DISABLE);
 		blocking_notifier_call_chain(&rx_event_nh, WIRELESS_CHARGE_RX_READY, NULL);
 	}
@@ -1945,14 +2794,15 @@ static void idtp9221_handle_abnormal_irq(struct idtp9221_device_info *di)
 	if (timespec64_compare(&ts64_now, &ts64_timeout) >= 0) {
 		if (di->irq_cnt >= WIRELESS_INT_CNT_TH) {
 			irq_abnormal_flag = true;
-			disable_irq_nosync(di->irq_int);
+			wireless_charge_sw_control(WL_SWITCH_ON);
+			idtp9221_disable_irq_nosync(di);
 			gpio_set_value(di->gpio_sleep_en, RX_SLEEP_EN_DISABLE);
 			hwlog_err("%s: more than %d interrupts happened in %ds, disable irq\n",
-				__func__, WIRELESS_INT_CNT_TH, WIRELESS_INT_TIMEOUT_TH/MSEC_PER_SEC);
+				__func__, WIRELESS_INT_CNT_TH, WIRELESS_INT_TIMEOUT_TH/WL_MSEC_PER_SEC);
 		} else {
 			di->irq_cnt = 0;
 			hwlog_info("%s: less than %d interrupts happened in %ds, clear irq count!\n",
-				__func__, WIRELESS_INT_CNT_TH, WIRELESS_INT_TIMEOUT_TH/MSEC_PER_SEC);
+				__func__, WIRELESS_INT_CNT_TH, WIRELESS_INT_TIMEOUT_TH/WL_MSEC_PER_SEC);
 		}
 	}
 }
@@ -2012,12 +2862,18 @@ static int idtp9221_get_tx_vrect(u16 *tx_vrect)
 
 static int idtp9221_get_tx_vin(u16 *tx_vin)
 {
-	int ret = 0;
+	int ret;
+	u16 chip_id;
+
 	ret = idtp9221_read_word(IDT9221_TX_VIN_ADDR, tx_vin);
 	if (ret) {
 		hwlog_err("%s: read failed!\n", __func__);
 		return -1;
 	}
+	chip_id = idtp9221_get_chip_id();
+	if ((chip_id == STWLC33_CHIP_ID) && !(*tx_vin))
+		*tx_vin = TX_DEFAULT_VOUT;
+
 	return 0;
 }
 static int idtp9221_get_tx_fop(u16 *fop)
@@ -2163,6 +3019,10 @@ static int idtp9221_tx_chip_init(void)
 		hwlog_err("%s: di is null\n", __func__);
 		return -1;
 	}
+
+	di->irq_cnt = 0;
+	irq_abnormal_flag = false;
+	idtp9221_enable_irq(di);//when idtp9221_handle_abnormal_irq disable irq, tx will irq-mask. so, here enable irq.
 	ret = idtp9221_write_word(IDT9221_TX_OCP_ADDR, IDT9221_TX_OCP_VAL);
 	ret |= idtp9221_write_word(IDT9221_TX_OVP_ADDR, IDT9221_TX_OVP_VAL);
 	ret |= idtp9221_write_word_mask(IDT9221_CMD3_ADDR,
@@ -2194,7 +3054,11 @@ static int idtp9221_send_fsk_msg(u8 cmd, u8 *data, int data_len)
 		return -1;
 	}
 
-	msg_byte_num = idtp9221_send_fsk_msg_len[data_len + 1];
+	if (IDT9221_CMD_ACK == cmd) {
+		msg_byte_num = IDT9221_CMD_ACK_HEAD;
+	} else {
+		msg_byte_num = idtp9221_send_fsk_msg_len[data_len + 1];
+	}
 
 	ret = idtp9221_write_byte(IDT9221_TX_TO_RX_HEADER_ADDR, msg_byte_num);
 	if (ret) {
@@ -2255,6 +3119,15 @@ static int idtp9221_send_fsk_msg_tx_cap(void)
 	}
 	return 0;
 }
+static int idtp9221_send_fsk_ack_msg(void)
+{
+	int ret = idtp9221_send_fsk_msg(IDT9221_CMD_ACK, NULL, 0);
+	if (ret) {
+		hwlog_err("%s: send tx ack to rx failed!\n", __func__);
+		return -1;
+	}
+	return 0;
+}
 static bool idtp9221_check_rx_disconnect(void)
 {
 	struct idtp9221_device_info *di = g_idtp9221_di;
@@ -2279,6 +3152,15 @@ static bool idtp9221_in_tx_mode(void)
 	}
 	return false;
 }
+
+static int idtp9221_set_tx_open_flag(bool enable)
+{
+	if (enable)
+		g_i2c_fail_cnt = 0;
+
+	return 0;
+}
+
 static int idtp9221_get_tx_ept_type(u16 *ept_type)
 {
 	int ret = 0;
@@ -2329,6 +3211,16 @@ static void idtp9221_handle_qi_ask_packet(struct idtp9221_device_info *di)
 		hwlog_info("[%s]signal strength = %d\n", __func__, packet_data[1]);
 	}
 }
+static bool idtp9221_check_ask_header(u8 head)
+{
+	int i;
+	for (i = 1; i < IDT9221_RX_TO_TX_DATA_LEN+2; i++) {
+		if (head == idtp9221_send_msg_len[i]) {
+			return true;
+		}
+	}
+	return false;
+}
 static void idtp9221_handle_ask_packet(struct idtp9221_device_info *di)
 {
 	u16 tx_id = 0;
@@ -2336,6 +3228,10 @@ static void idtp9221_handle_ask_packet(struct idtp9221_device_info *di)
 	u8 packet_data[IDT9221_RX_TO_TX_PACKET_LEN] = {0};
 	//handle ask packet!  byte]0]: header;   byte[1]: cmd;   byte[2 3 4 5]: data
 	idtp9221_get_ask_packet(packet_data, IDT9221_RX_TO_TX_PACKET_LEN);
+	if (!idtp9221_check_ask_header(packet_data[0])) {
+		hwlog_err("%s: head(0x%x) not correct\n", __func__, packet_data[0]);
+		return;
+	}
 	switch (packet_data[1]) {
 		case IDT9221_CMD_GET_TX_ID:
 			tx_id = (packet_data[2] << BITS_PER_BYTE) | packet_data[3];
@@ -2351,6 +3247,7 @@ static void idtp9221_handle_ask_packet(struct idtp9221_device_info *di)
 		case IDT9221_CMD_SEND_CHRG_STATE:
 			chrg_stage = packet_data[2];
 			hwlog_info("[%s] charge state 0x%x\n!", __func__, chrg_stage);
+			idtp9221_send_fsk_ack_msg(); //tx ack to rx
 			if (chrg_stage & WIRELESS_STATE_CHRG_DONE) {
 				hwlog_info("[%s] TX received RX charge-done event!!\n!", __func__);
 				blocking_notifier_call_chain(&tx_event_nh, WL_TX_EVENT_CHARGEDONE, NULL);
@@ -2373,7 +3270,7 @@ static void idtp9221_handle_tx_ept(struct idtp9221_device_info *di)
 		case IDT9221_TX_EPT_CMD:
 			di->ept_type &= ~IDT9221_TX_EPT_CMD;
 			hwlog_info("[%s] ept command\n!", __func__);
-			blocking_notifier_call_chain(&tx_event_nh, WL_TX_EVENT_EPT_CMD, NULL);
+			//blocking_notifier_call_chain(&tx_event_nh, WL_TX_EVENT_EPT_CMD, NULL);
 			break;
 		case IDT9221_TX_EPT_CEP_TIMEOUT:
 			di->ept_type &= ~IDT9221_TX_EPT_CEP_TIMEOUT;
@@ -2403,6 +3300,83 @@ static void idtp9221_handle_tx_ept(struct idtp9221_device_info *di)
 			break;
 	}
 }
+
+static void stwlc33_rx_ready_check_work(struct work_struct *work)
+{
+	int i;
+	int vrect;
+	int sum = 0;
+	int avg_val;
+	int sample_cnt = 0;
+	struct idtp9221_device_info *di = NULL;
+
+	di = g_idtp9221_di;
+	if (!di) {
+		hwlog_err("%s: di null\n", __func__);
+		goto ready_check_end;
+	}
+	for (i = 0; i < STWLC33_RX_VRECT_READ_CNT; i++) {
+		if (stop_charging_flag) {
+			hwlog_err("%s: already stop charging\n", __func__);
+			goto ready_check_end;
+		}
+		msleep(STWLC33_VRECT_SLEEP_TIME);
+		if (i < STWLC33_VRECT_IGNORE_CNT) /* ignore first 1.5s */
+			continue;
+		vrect = idtp9221_get_rx_vrect();
+		if (vrect < 0) {
+			hwlog_err("%s: get rx vrect err\n", __func__);
+			goto ready_check_end;
+		}
+		sum += vrect;
+		sample_cnt++;
+	}
+	if (!sample_cnt)
+		avg_val = STWLC33_VRECT_INVALID_VAL;
+	else
+		avg_val = sum / sample_cnt;
+	hwlog_info("[%s] avg vrect is %dmV\n", __func__, avg_val);
+	if (avg_val >= STWLC33_VRECT_THRES_VAL) {
+		idtp9221_rx_ready_handler(di);
+	} else {
+		idtp9221_disable_irq_nosync(di);
+		hwlog_err("%s: ldo off\n", __func__);
+		blocking_notifier_call_chain(&rx_event_nh,
+			WIRELESS_CHARGE_RX_LDO_OFF, NULL);
+		irq_abnormal_flag = true;
+		wireless_charge_sw_control(WL_SWITCH_ON);
+		gpio_set_value(di->gpio_sleep_en, RX_SLEEP_EN_DISABLE);
+	}
+	stwlc33_rx_ready_check_flag = 0;
+	return;
+
+ready_check_end:
+	blocking_notifier_call_chain(&rx_event_nh,
+		WIRELESS_CHARGE_RX_LDO_OFF, NULL);
+	stwlc33_rx_ready_check_flag = 0;
+}
+
+static int stwlc33_rx_ready_check_handler(struct idtp9221_device_info *di)
+{
+	if (di->irq_val & IDT9221_RX_STATUS_READY ||
+		di->irq_val & IDT9221_RX_STATUS_POWER_ON) {
+		di->irq_val &= ~IDT9221_RX_STATUS_READY;
+		di->irq_val &= ~IDT9221_RX_STATUS_POWER_ON;
+		if (stwlc33_rx_ready_check_flag) {
+			hwlog_err("%s: rx_vrect_work running\n",
+				__func__);
+			return -1;
+		}
+		stwlc33_rx_ready_check_flag = 1;
+		idtp9221_sleep_enable(RX_SLEEP_EN_ENABLE);
+		idtp9221_rx_power_on_handler(di);
+		stop_charging_flag = 0;
+		schedule_work(&di->rx_ready_check_work);
+	}
+
+	return 0;
+}
+
 static int idtp9221_clear_tx_interrupt(u16 itr)
 {
 	int ret;
@@ -2438,6 +3412,8 @@ static void idtp9221_tx_mode_irq_handler(struct idtp9221_device_info *di)
 	if (di->irq_val & IDT9221_TX_STATUS_START_DPING) {
 		hwlog_info("%s: tx PING interrupt\n", __func__);
 		di->irq_val &= ~IDT9221_TX_STATUS_START_DPING;
+		blocking_notifier_call_chain(&tx_event_nh,
+			WL_TX_EVENT_PING_RX, NULL);
 	}
 
 	if (di->irq_val & IDT9221_TX_STATUS_GET_SS) {
@@ -2477,9 +3453,11 @@ FuncEnd:
 	}
 
 }
+
 static void idtp9221_rx_mode_irq_handler(struct idtp9221_device_info *di)
 {
 	int ret;
+	u16 chip_id = 0;
 	u16 irq_value = 0;
 	ret = idtp9221_read_word(IDT9221_RX_INT_STATUS_ADDR, &di->irq_val);
 	if (ret) {
@@ -2491,6 +3469,13 @@ static void idtp9221_rx_mode_irq_handler(struct idtp9221_device_info *di)
 
 	hwlog_info("%s interrupt 0x%04x\n", __func__, di->irq_val);
 	idtp9221_clear_interrupt(di->irq_val);
+
+	chip_id = idtp9221_get_chip_id();
+	if (chip_id == STWLC33_CHIP_ID) {
+		ret = stwlc33_rx_ready_check_handler(di);
+		if (ret)
+			goto FuncEnd;
+	}
 
 	if (di->irq_val & IDT9221_RX_STATUS_READY) {
 		di->irq_val &= ~IDT9221_RX_STATUS_READY;
@@ -2510,6 +3495,7 @@ static void idtp9221_rx_mode_irq_handler(struct idtp9221_device_info *di)
 	}
 	if (di->irq_val & IDT9221_RX_STATUS_OTP) {
 		di->irq_val &= ~IDT9221_RX_STATUS_OTP;
+		stwlc33_get_rx_chip_temp();
 		blocking_notifier_call_chain(&rx_event_nh, WIRELESS_CHARGE_RX_OTP, NULL);
 	}
 	/* receice data from TX, please handler the interrupt! */
@@ -2554,10 +3540,8 @@ static void idtp9221_irq_work(struct work_struct *work)
 		idtp9221_rx_mode_irq_handler(di);
 	}
 
-	if (di->irq_active == 0) {
-		di->irq_active = 1;
-		enable_irq(di->irq_int);
-	}
+	if (!irq_abnormal_flag)
+		idtp9221_enable_irq(di);
 	idtp9221_wake_unlock();
 }
 /**********************************************************
@@ -2578,8 +3562,8 @@ static irqreturn_t idtp9221_interrupt(int irq, void *_di)
 	idtp9221_wake_lock();
 	hwlog_info("%s ++\n", __func__);
 	if (di->irq_active == 1) {
-		di->irq_active = 0;
 		disable_irq_nosync(di->irq_int);
+		di->irq_active = 0;
 		schedule_work(&di->irq_work);
 	} else {
 		hwlog_info("irq is not enable,do nothing!\n");
@@ -2592,9 +3576,11 @@ static irqreturn_t idtp9221_interrupt(int irq, void *_di)
 static void idtp9221_pmic_vbus_handler(bool vbus_state)
 {
 	u16 irq_val = 0;
-	int ret = 0;
+	int ret;
+	int vrect;
 	struct idtp9221_device_info *di = g_idtp9221_di;
-	if (NULL == di) {
+
+	if (!di) {
 		hwlog_err("%s: di is null\n", __func__);
 		return;
 	}
@@ -2606,15 +3592,110 @@ static void idtp9221_pmic_vbus_handler(bool vbus_state)
 			hwlog_err("%s: read interrupt fail, clear interrupt\n", __func__);
 			return;
 		}
-		hwlog_info("[%s] irq_val = 0x%x\n", __func__, irq_val);
-		if (irq_val & IDT9221_RX_STATUS_READY) {
+		vrect = idtp9221_get_rx_vrect();
+		hwlog_info("[%s] irq_val = 0x%x, vrect = %dmV\n",
+			__func__, irq_val, vrect);
+		if (irq_val & IDT9221_RX_STATUS_READY ||
+			vrect > STWLC33_VRECT_THRES_VAL) {
 			idtp9221_clear_interrupt(WORD_MASK);
 			idtp9221_rx_ready_handler(di);
 			di->irq_cnt = 0;
 			irq_abnormal_flag = false;
-			enable_irq(di->irq_int);
+			idtp9221_enable_irq(di);
 		}
 	}
+}
+
+static int idtp9221_parse_fod(struct device_node *np,
+		struct idtp9221_device_info *di)
+{
+	int i;
+	int ret;
+
+	if (!np || !di) {
+		hwlog_err("%s: np or di null\n", __func__);
+		return -EINVAL;
+	}
+	if (!g_support_idt_wlc)
+		return 0;
+	ret = of_property_read_u32_array(np, "rx_fod_5v", di->rx_fod_5v,
+				IDT9221_RX_FOD_COEF_LEN);
+	if (ret) {
+		hwlog_err("%s: get para fail!\n", __func__);
+		return -EINVAL;
+	}
+	for (i = 0; i < IDT9221_RX_FOD_COEF_LEN; i++) {
+		hwlog_info("[%s] rx_fod_5v[%d] = %d\n", __func__, i,
+				di->rx_fod_5v[i]);
+	}
+	ret = of_property_read_u32_array(np, "rx_fod_9v", di->rx_fod_9v,
+				IDT9221_RX_FOD_COEF_LEN);
+	if (ret) {
+		hwlog_err("%s: get para fail!\n", __func__);
+		return -EINVAL;
+	}
+	for (i = 0; i < IDT9221_RX_FOD_COEF_LEN; i++) {
+		hwlog_info("[%s] rx_fod_9v[%d] = %d\n", __func__, i,
+				di->rx_fod_9v[i]);
+	}
+	ret = of_property_read_u32_array(np, "rx_fod_12v", di->rx_fod_12v,
+				IDT9221_RX_FOD_COEF_LEN);
+	if (ret) {
+		hwlog_err("%s: get para fail!\n", __func__);
+		return -EINVAL;
+	}
+	for (i = 0; i < IDT9221_RX_FOD_COEF_LEN; i++) {
+		hwlog_info("[%s] rx_fod_12v[%d] = %d\n", __func__, i,
+				di->rx_fod_12v[i]);
+	}
+
+	return 0;
+}
+
+static int stwlc33_parse_fod(struct device_node *np,
+		struct idtp9221_device_info *di)
+{
+	int i;
+	int ret;
+
+	if (!np || !di) {
+		hwlog_err("%s: np or di null\n", __func__);
+		return -EINVAL;
+	}
+	if (!g_support_st_wlc)
+		return 0;
+	ret = of_property_read_u32_array(np, "st_rx_fod_5v",
+			di->st_rx_fod_5v, STWLC33_RX_FOD_COEF_LEN);
+	if (ret) {
+		hwlog_err("%s:  para null\n", __func__);
+		return -EINVAL;
+	}
+	for (i = 0; i < STWLC33_RX_FOD_COEF_LEN; i++) {
+		hwlog_info("[%s] st_rx_fod_5v[%d] = %d\n", __func__, i,
+				di->st_rx_fod_5v[i]);
+	}
+	ret = of_property_read_u32_array(np, "st_rx_fod_9v",
+				di->st_rx_fod_9v, STWLC33_RX_FOD_COEF_LEN);
+	if (ret) {
+		hwlog_err("%s: get para fail\n", __func__);
+		return -EINVAL;
+	}
+	for (i = 0; i < STWLC33_RX_FOD_COEF_LEN; i++) {
+		hwlog_info("[%s] st_rx_fod_9v[%d] = %d\n", __func__, i,
+				di->st_rx_fod_9v[i]);
+	}
+	ret = of_property_read_u32_array(np, "st_rx_fod_12v",
+			di->st_rx_fod_12v, STWLC33_RX_FOD_COEF_LEN);
+	if (ret) {
+		hwlog_err("%s: get para fail\n", __func__);
+		return -EINVAL;
+	}
+	for (i = 0; i < STWLC33_RX_FOD_COEF_LEN; i++) {
+		hwlog_info("[%s] st_rx_fod_12v[%d] = %d\n",
+			__func__, i, di->st_rx_fod_12v[i]);
+	}
+
+	return 0;
 }
 
 /**********************************************************
@@ -2627,31 +3708,8 @@ static void idtp9221_pmic_vbus_handler(bool vbus_state)
 
 static int idtp9221_parse_dts(struct device_node *np, struct idtp9221_device_info *di)
 {
-	int ret, i;
-	ret = of_property_read_u32_array(np, "rx_fod_5v", di->rx_fod_5v, IDT9221_RX_FOD_COEF_LEN);
-	if (ret) {
-		hwlog_err("%s: get para fail!\n", __func__);
-		return -EINVAL;
-	}
-	for(i = 0; i < IDT9221_RX_FOD_COEF_LEN; i++) {
-		hwlog_info("[%s] rx_fod_5v[%d] = %d\n", __func__, i, di->rx_fod_5v[i]);
-	}
-	ret = of_property_read_u32_array(np, "rx_fod_9v", di->rx_fod_9v, IDT9221_RX_FOD_COEF_LEN);
-	if (ret) {
-		hwlog_err("%s: get para fail!\n", __func__);
-		return -EINVAL;
-	}
-	for(i = 0; i < IDT9221_RX_FOD_COEF_LEN; i++) {
-		hwlog_info("[%s] rx_fod_9v[%d] = %d\n", __func__, i, di->rx_fod_9v[i]);
-	}
-	ret = of_property_read_u32_array(np, "rx_fod_12v", di->rx_fod_12v, IDT9221_RX_FOD_COEF_LEN);
-	if (ret) {
-		hwlog_err("%s: get para fail!\n", __func__);
-		return -EINVAL;
-	}
-	for(i = 0; i < IDT9221_RX_FOD_COEF_LEN; i++) {
-		hwlog_info("[%s] rx_fod_12v[%d] = %d\n", __func__, i, di->rx_fod_12v[i]);
-	}
+	int ret;
+
 	ret = of_property_read_u32(np, "rx_ss_good_lth", &di->rx_ss_good_lth);
 	if (ret) {
 		hwlog_err("%s: get rx_ss_good_lth failed\n", __func__);
@@ -2670,6 +3728,12 @@ static int idtp9221_parse_dts(struct device_node *np, struct idtp9221_device_inf
 		di->tx_fod_th_5v = IDT9221_TX_FOD_THD0_VAL;
 	}
 	hwlog_info("[%s] tx_fod_th_5v = %d\n", __func__, di->tx_fod_th_5v);
+	ret = of_property_read_u32(np, "sc_rx_vrmax_gap",
+			&di->sc_rx_vrmax_gap);
+	if (ret)
+		di->sc_rx_vrmax_gap = 300; /* volt=gap*21/4095=1.53v*/
+	hwlog_info("[%s] sc_rx_vrmax_gap = %d\n",
+		__func__, di->sc_rx_vrmax_gap);
 #ifdef WIRELESS_CHARGER_FACTORY_VERSION
 	ret = of_property_read_string(np, "latest_otp_version", &g_latest_otp_version);
 	if (ret) {
@@ -2678,6 +3742,38 @@ static int idtp9221_parse_dts(struct device_node *np, struct idtp9221_device_inf
 	}
 	hwlog_info("[%s] latest_otp_version is %s\n", __func__, g_latest_otp_version);
 #endif
+	ret = of_property_read_u32(np, "support_idt_wlc",
+				&g_support_idt_wlc);
+	if (ret)
+		g_support_idt_wlc = 1;
+	hwlog_info("[%s] support idtp9221 = %d\n",
+			__func__, g_support_idt_wlc);
+
+	ret = of_property_read_u32(np, "support_st_wlc",
+				&g_support_st_wlc);
+	if (ret)
+		g_support_st_wlc = 0;
+	hwlog_info("[%s] support stwlc33 = %d\n",
+			__func__, g_support_st_wlc);
+	ret = of_property_read_u32(np, "i2c_trans_fail_limit",
+			&di->i2c_trans_fail_limit);
+	if (ret) {
+		hwlog_err("%s: get i2c_trans_fail_limit failed\n", __func__);
+		di->i2c_trans_fail_limit = 0;
+	}
+	hwlog_info("[%s] i2c_trans_fail_limit = %d\n", __func__,
+		di->i2c_trans_fail_limit);
+	ret = idtp9221_parse_fod(np, di);
+	if (ret) {
+		hwlog_err("%s: get idt fod para fail\n", __func__);
+		return -EINVAL;
+	}
+	ret = stwlc33_parse_fod(np, di);
+	if (ret) {
+		hwlog_err("%s: get st fod para fail\n", __func__);
+		return -EINVAL;
+	}
+
 	return 0;
 }
 /**********************************************************
@@ -2777,7 +3873,7 @@ irq_init_fail_0:
 }
 
 static struct wireless_charge_device_ops idtp9221_ops = {
-	.chip_init              = idtp9221_chip_init,
+	.chip_init              = idt_st_chip_init,
 	.chip_reset             = idtp9221_chip_reset,
 	.get_tx_id              = idtp9221_get_tx_id,
 	.get_rx_vrect           = idtp9221_get_rx_vrect,
@@ -2790,7 +3886,7 @@ static struct wireless_charge_device_ops idtp9221_ops = {
 	.get_rx_fop             = idtp9221_get_rx_fop,
 	.get_tx_adaptor_type    = idtp9221_get_tx_type,
 	.get_rx_chip_id         = idtp9221_get_chip_id,
-	.get_rx_fw_version      = idtp9221_get_otp_fw_version,
+	.get_rx_fw_version      = idt_st_get_otp_fw_version,
 	.get_rx_fod_coef        = idtp9221_get_rx_fod_coef,
 	.set_rx_fod_coef        = idtp9221_set_rx_fod_coef,
 	.fix_tx_fop             = idtp9221_fix_tx_fop,
@@ -2815,10 +3911,11 @@ static struct wireless_charge_device_ops idtp9221_ops = {
 	.send_msg_cert_confirm  = idtp9221_send_msg_certification_confirm,
 	.send_msg_rx_boost_succ = idtp9221_send_msg_rx_boost_succ,
 	.pmic_vbus_handler      = idtp9221_pmic_vbus_handler,
+	.read_nvm_info          = idt_st_read_nvm,
 #ifdef WIRELESS_CHARGER_FACTORY_VERSION
-	.rx_program_otp         = idtp9221_program_otp,
-	.rx_check_otp           = idtp9221_check_otp,
-	.check_is_otp_exist     = idtp9221_check_is_otp_exist,
+	.rx_program_otp         = idt_st_program_otp,
+	.rx_check_otp           = idt_st_check_otp,
+	.check_is_otp_exist     = idt_st_check_is_otp_exist,
 #endif
 };
 
@@ -2846,14 +3943,17 @@ static struct wireless_tx_device_ops idtp9221_tx_ops = {
 	.get_tx_ping_interval   = idtp9221_get_tx_ping_interval,
 	.check_rx_disconnect    = idtp9221_check_rx_disconnect,
 	.in_tx_mode             = idtp9221_in_tx_mode,
+	.set_tx_open_flag       = idtp9221_set_tx_open_flag,
 };
+
 static void idtp9221_shutdown(struct i2c_client *client)
 {
 	hwlog_info("%s ++\n", __func__);
-	if (WIRELESS_CHANNEL_ON ==
-		wireless_charge_get_wireless_channel_state()) {
-		idtp9221_set_tx_vout(ADAPTER_5V * MVOLT_PER_VOLT);
-		idtp9221_set_rx_vout(ADAPTER_5V * MVOLT_PER_VOLT);
+	if (wireless_charge_get_wireless_channel_state() ==
+		WIRELESS_CHANNEL_ON) {
+		(void)idtp9221_chip_reset();
+		idtp9221_set_tx_vout(ADAPTER_5V * WL_MVOLT_PER_VOLT);
+		idtp9221_set_rx_vout(ADAPTER_5V * WL_MVOLT_PER_VOLT);
 		msleep(IDT9221_SHUTDOWN_SLEEP_TIME);
 	}
 	hwlog_info("%s --\n", __func__);
@@ -2883,6 +3983,7 @@ static int idtp9221_probe(struct i2c_client *client, const struct i2c_device_id 
 	np = di->dev->of_node;
 	di->client = client;
 	i2c_set_clientdata(client, di);
+	INIT_WORK(&di->rx_ready_check_work, stwlc33_rx_ready_check_work);
 	ret = idtp9221_parse_dts(np, di);
 	if (ret)
 		goto idt9221_fail_0;
@@ -2896,6 +3997,7 @@ static int idtp9221_probe(struct i2c_client *client, const struct i2c_device_id 
 
 	ops = &idtp9221_ops;
 	wake_lock_init(&g_idtp9221_wakelock, WAKE_LOCK_SUSPEND, "idtp9221_wakelock");
+	mutex_init(&di->mutex_irq);
 	ret = wireless_charge_ops_register(ops);
 	if (ret) {
 		hwlog_err("%s: register wireless charge ops failed!\n", __func__);
@@ -2919,6 +4021,7 @@ static int idtp9221_probe(struct i2c_client *client, const struct i2c_device_id 
 	return 0;
 
 idt9221_fail_2:
+	wake_lock_destroy(&g_idtp9221_wakelock);
 	free_irq(di->irq_int, di);
 idt9221_fail_1:
 	gpio_free(di->gpio_en);

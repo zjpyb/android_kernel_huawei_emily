@@ -41,5 +41,26 @@ void kbase_mem_pool_debugfs_init(struct dentry *parent,
 		struct kbase_mem_pool *pool,
 		struct kbase_mem_pool *lp_pool);
 
+
+/**
+ * kbase_lb_mem_pool_debugfs_init - add debugfs knobs for lb_pools
+ * @kbdev:    The kbase_device to operate.
+ * @parent:   Parent debugfs dentry
+ * @lb_pools: The memory pools to init debugfs.
+ *
+ * Adds several debugfs nodes under kctx->kctx_dentry. For each memory
+ * pool, there are four debugfs nodes under policy_id_<nr> directory.
+ * - mem_pool_size: get/set the current size of pool
+ * - mem_pool_max_size: get/set the max size of pool
+ * - lp_mem_pool_size: get/set the current size of lp_pool
+ * - lp_mem_pool_max_size: get/set the max size of lp_pool
+ */
+#ifdef CONFIG_MALI_LAST_BUFFER
+int kbase_lb_mem_pool_debugfs_init(struct kbase_device *kbdev, struct dentry * parent,
+                                   struct kbase_hisi_lb_pools *lb_pools);
+int kbase_lb_ctx_pool_debugfs_init(struct kbase_context *kctx);
+int kbase_lb_dev_pool_debugfs_init(struct kbase_device *kbdev);
+#endif
+
 #endif  /*_KBASE_MEM_POOL_DEBUGFS_H*/
 

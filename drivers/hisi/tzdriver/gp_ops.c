@@ -9,8 +9,14 @@
 #include <linux/vmalloc.h>
 #include <linux/version.h>
 #include <asm/memory.h>
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+#include <linux/dma-buf.h>
+#endif
+
 #include <linux/hisi/hisi_ion.h>
 #include <linux/ion.h>
+
 #include "securec.h"
 
 #include "smc.h"
@@ -25,6 +31,7 @@
 #include "dynamic_mem.h"
 #include "tlogger.h"
 #include "cfc.h"
+
 
 #include "security_auth_enhance.h"
 struct session_secure_info g_cur_session_secure_info;
@@ -45,16 +52,16 @@ static int encrypt_login_info(uint8_t flags, uint32_t cmd_id, int32_t index,
 	(((paramTypes) >> (4*(index))) & 0x0F)
 #define ROUND_UP(N, S) ((((N) + (S) - 1) / (S)) * (S))
 
-static int free_operation(TC_NS_ClientContext *client_context,
+static int free_operation(const TC_NS_ClientContext *client_context,
 		TC_NS_Operation *operation,
 		TC_NS_Temp_Buf local_temp_buffer[4]);
 
 int tc_user_param_valid(TC_NS_ClientContext *client_context, int n)
 {
-	TC_NS_ClientParam *client_param;
+	TC_NS_ClientParam *client_param = NULL;
 	unsigned int param_type;
 
-	if (!client_context) {
+	if (client_context == NULL) {
 		tloge("client_context is null.\n");
 		return -EINVAL;
 	}
@@ -113,13 +120,13 @@ int tc_user_param_valid(TC_NS_ClientContext *client_context, int n)
 
 /* These 2 functions handle copying from client. Because client here can be
  * kernel client or user space client, we must use the proper copy function */
-static inline int copy_from_client(void *dest, void __user *src, size_t size,
+static inline int copy_from_client(void *dest, const void __user *src, size_t size,
 				   uint8_t kernel_api)
 {
 	int ret = 0;
 	int s_ret = 0;
 
-	if ((!dest) || (!src)) {
+	if ((dest == NULL) || (src == NULL)) {
 		tloge("src or dest is NULL input buffer\n");
 		return -EINVAL;
 	}
@@ -143,7 +150,7 @@ static inline int copy_from_client(void *dest, void __user *src, size_t size,
 			}
 		} else {
 			tloge("copy_from_client check kernel addr %llx failed.\n", (uint64_t)src);
-			return -EFAULT;
+			return  -EFAULT;
 		}
 	} else {
 		/* buffer is in user space(CA call TEE API) */
@@ -158,13 +165,13 @@ static inline int copy_from_client(void *dest, void __user *src, size_t size,
 	return ret;
 }
 
-static inline int copy_to_client(void __user *dest, void *src, size_t size,
+static inline int copy_to_client(void __user *dest, const void *src, size_t size,
 				 uint8_t kernel_api)
 {
 	int ret = 0;
 	int s_ret = 0;
 
-	if ((!dest) || (!src)) {
+	if ((dest == NULL) || (src == NULL)) {
 		tloge("src or dest is NULL input buffer\n");
 		return -EINVAL;
 	}
@@ -198,34 +205,42 @@ static int alloc_operation(TC_NS_DEV_File *dev_file,
 					TC_NS_Temp_Buf local_temp_buffer[4],
 					uint8_t flags)
 {
-	TC_NS_ClientParam *client_param;
-	TC_NS_Shared_MEM *shared_mem = NULL;
-	ion_phys_addr_t drm_ion_phys = 0x0;
-	size_t drm_ion_size = 0;
-	int ret = 0;
 	unsigned int param_type;
 	int i;
-	uint32_t buffer_size = 0;
-	void *temp_buf;
 	unsigned int trans_paramtype_to_tee[4];
 	uint8_t kernel_params;
+	TC_NS_ClientParam *client_param = NULL;
+	TC_NS_Shared_MEM *shared_mem = NULL;
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+	phys_addr_t drm_ion_phys = 0x0;
+#else
+	ion_phys_addr_t drm_ion_phys = 0x0;
+#endif
+	size_t drm_ion_size = 0;
 
-	if (!dev_file) {
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+	struct dma_buf *drm_dma_buf = NULL;
+#endif
+	int ret = 0;
+	uint32_t buffer_size = 0;
+	void *temp_buf = NULL;;
+
+	if (dev_file == NULL) {
 		tloge("dev_file is null");
 		return -EINVAL;
 	}
 
-	if (!operation) {
+	if (operation == NULL) {
 		tloge("operation is null\n");
 		return -EINVAL;
 	}
 
-	if (!client_context) {
+	if (client_context == NULL) {
 		tloge("client_context is null");
 		return -EINVAL; /*lint !e747 */
 	}
 
-	if (!local_temp_buffer) {
+	if (local_temp_buffer == NULL) {
 		tloge("local_temp_buffer is null");
 		return -EINVAL;
 	}
@@ -279,7 +294,7 @@ static int alloc_operation(TC_NS_DEV_File *dev_file,
 
 			temp_buf = (void *)mailbox_alloc(buffer_size, MB_FLAG_ZERO); /*lint !e647 */
 			/* If buffer size is zero or malloc failed */
-			if (!temp_buf) {
+			if (temp_buf == NULL) {
 				tloge("temp_buf malloc failed, i = %d.\n", i);
 				ret = -ENOMEM;
 				break;
@@ -435,6 +450,27 @@ static int alloc_operation(TC_NS_DEV_File *dev_file,
 			if ((int)operation->params[i].value.a >= 0) {
 				unsigned int ion_shared_fd =
 					operation->params[i].value.a;
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+				drm_dma_buf = dma_buf_get(ion_shared_fd);
+				if (IS_ERR(drm_dma_buf))
+				{
+					tloge("in %s err:drm_dma_buf is ERR, ret=%d fd=%d\n",
+					      __func__, ret, ion_shared_fd);
+					ret = -EFAULT;
+					break;
+				}
+
+				ret = ion_secmem_get_phys(drm_dma_buf, &drm_ion_phys, &drm_ion_size);
+				if (ret)
+				{
+					tloge("in %s err:ret=%d fd=%d\n",
+					      __func__, ret, ion_shared_fd);
+					ret = -EFAULT;
+					break;
+				}
+#else
+
 				struct ion_handle *drm_ion_handle =
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
 					ion_import_dma_buf_fd(drm_ion_client,
@@ -450,12 +486,12 @@ static int alloc_operation(TC_NS_DEV_File *dev_file,
 					break;
 				}
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
+#if ( LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0) && LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0) )
 				ret = ion_secmem_get_phys(drm_ion_client, drm_ion_handle,
-					       &drm_ion_phys, &drm_ion_size);
+					(phys_addr_t *)(&drm_ion_phys), &drm_ion_size);
 #else
 				ret = ion_phys(drm_ion_client, drm_ion_handle,
-					       &drm_ion_phys, &drm_ion_size);
+					&drm_ion_phys, &drm_ion_size);
 #endif
 
 				if (ret) {
@@ -466,6 +502,8 @@ static int alloc_operation(TC_NS_DEV_File *dev_file,
 					break;
 				}
 
+#endif
+
 				if (drm_ion_size > operation->params[i].value.b)
 					drm_ion_size = operation->params[i].value.b;
 
@@ -474,7 +512,9 @@ static int alloc_operation(TC_NS_DEV_File *dev_file,
 				operation->params[i].memref.size =
 					(unsigned int)drm_ion_size;
 				trans_paramtype_to_tee[i] = param_type;
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
 				ion_free(drm_ion_client, drm_ion_handle);
+#endif
 			} else {
 				tloge("in %s err: drm ion handle invaild!\n", __func__);
 				ret = -EFAULT;
@@ -498,29 +538,29 @@ static int alloc_operation(TC_NS_DEV_File *dev_file,
 	return ret;
 }
 
-static int update_client_operation(TC_NS_DEV_File *dev_file,
+static int update_client_operation(const TC_NS_DEV_File *dev_file,
 				   TC_NS_ClientContext *client_context,
 				   TC_NS_Operation *operation,
 				   TC_NS_Temp_Buf local_temp_buffer[4],
 				   bool incomplete)
 {
-	TC_NS_ClientParam *client_param;
+	TC_NS_ClientParam *client_param = NULL;
 	int ret = 0;
 	unsigned int param_type;
 	int i;
 	uint32_t buffer_size = 0;
 
-	if (!dev_file) {
+	if (dev_file == NULL) {
 		tloge("dev_file is null");
 		return -EINVAL;
 	}
 
-	if (!client_context) {
+	if (client_context == NULL) {
 		tloge("client_context is null");
 		return -EINVAL;
 	}
 
-	if (!local_temp_buffer) {
+	if (local_temp_buffer == NULL) {
 		tloge("local_temp_buffer is null");
 		return -EINVAL;
 	}
@@ -627,22 +667,22 @@ static int update_client_operation(TC_NS_DEV_File *dev_file,
 	return ret;
 }
 
-static int free_operation(TC_NS_ClientContext *client_context,
+static int free_operation(const TC_NS_ClientContext *client_context,
 			  TC_NS_Operation *operation,
 			  TC_NS_Temp_Buf local_temp_buffer[4])
 {
 	int ret = 0;
 	unsigned int param_type;
 	int i;
-	void *temp_buf;
+	void *temp_buf = NULL;
 
-	if (!operation)
+	if (operation == NULL)
 		return -EFAULT;
 
-	if (!client_context)
+	if (client_context == NULL)
 		return -EFAULT;
 
-	if (!local_temp_buffer) {
+	if (local_temp_buffer == NULL) {
 		tloge("local_temp_buffer is null");
 		return -EINVAL;
 	}
@@ -657,8 +697,10 @@ static int free_operation(TC_NS_ClientContext *client_context,
 			temp_buf = local_temp_buffer[i].temp_buffer;
 			tlogd("Free temp buf, i = %d\n", i);
 			if (virt_addr_valid(temp_buf) && /*lint !e648 */
-			    !ZERO_OR_NULL_PTR(temp_buf))
+			    !ZERO_OR_NULL_PTR(temp_buf)){
 				mailbox_free(temp_buf);
+				temp_buf = NULL;
+			}
 		} else if ((TEEC_MEMREF_PARTIAL_INPUT == param_type) ||
 			 (TEEC_MEMREF_PARTIAL_OUTPUT == param_type) ||
 			 (TEEC_MEMREF_PARTIAL_INOUT == param_type)) {
@@ -676,7 +718,7 @@ static int32_t save_token_info(void *dst_teec, uint8_t *src_buf,
 					uint8_t kernel_api) {
 	uint8_t temp_teec_token[TOKEN_SAVE_LEN];
 
-	if ((!dst_teec) || (!src_buf)) {
+	if ((dst_teec == NULL) || (src_buf == NULL)) {
 		tloge("dst data or src data is invalid.\n");
 		return -EINVAL;
 	}
@@ -719,15 +761,15 @@ static int fill_token_info(TC_NS_SMC_CMD *smc_cmd,
 			uint8_t *mb_pack_token, uint32_t mb_pack_token_size) {
 	uint8_t temp_libteec_token[TOKEN_SAVE_LEN] = {0};
 	errno_t ret_s;
-	int paramcheck = (!smc_cmd) || (!client_context)
-		|| (!dev_file) || (!tc_ns_token)
-		|| (!mb_pack_token) || (mb_pack_token_size < TOKEN_BUFFER_LEN);
+	int paramcheck = (smc_cmd == NULL) || (client_context == NULL)
+		|| (dev_file == NULL) || (tc_ns_token == NULL)
+		|| (mb_pack_token == NULL) || (mb_pack_token_size < TOKEN_BUFFER_LEN);
 	if (paramcheck) {
 		tloge("in parameter is ivalid.\n");
 		return -EFAULT;
 	}
 
-	if ((!client_context->teec_token) || (!tc_ns_token->token_buffer)) {
+	if ((client_context->teec_token == NULL) || (tc_ns_token->token_buffer == NULL)) {
 		tloge("teec_token or token_buffer is NULL, error!\n");
 		return -EFAULT;
 	}
@@ -755,11 +797,11 @@ static int fill_token_info(TC_NS_SMC_CMD *smc_cmd,
 					TIMESTAMP_SAVE_INDEX,
 					temp_libteec_token,
 					TIMESTAMP_SAVE_INDEX)) {
-			tloge("copy temp_libteec_token failed!\n");
+			tloge("copy buffer failed!\n");
 			ret_s = memset_s(tc_ns_token->token_buffer, TOKEN_BUFFER_LEN,
 					0, TOKEN_BUFFER_LEN);
 			if (ret_s != EOK) {
-				tloge("fill_token_info memset_s error=%d\n", ret_s);
+				tloge("memset_s buffer error=%d\n", ret_s);
 			}
 			return -EFAULT;
 		}
@@ -772,7 +814,7 @@ static int fill_token_info(TC_NS_SMC_CMD *smc_cmd,
 			ret_s = memset_s(tc_ns_token->token_buffer, TOKEN_BUFFER_LEN,
 					0, TOKEN_BUFFER_LEN);
 			if (ret_s != EOK) {
-				tloge("fill_token_info memset_s error=%d\n", ret_s);
+				tloge("fill buffer memset_s error=%d\n", ret_s);
 			}
 			return -EFAULT;
 		}
@@ -807,7 +849,9 @@ static int load_security_enhance_info(TC_NS_SMC_CMD *smc_cmd,
 	int ret = 0;
 	bool is_open_session_cmd = false;
 
-	if (!smc_cmd || !mb_pack) {
+	int paramcheck = (smc_cmd == NULL) || (client_context == NULL)
+		|| (dev_file == NULL) || (mb_pack == NULL);
+	if (paramcheck) {
 		tloge("in parameter is invalid.\n");
 		return -EFAULT;
 	}
@@ -816,7 +860,7 @@ static int load_security_enhance_info(TC_NS_SMC_CMD *smc_cmd,
 		ret = fill_token_info(smc_cmd, client_context, tc_ns_token,
 			dev_file, global, mb_pack->token, sizeof(mb_pack->token));
 		if (EOK != ret) {
-			tloge("fill_token_info  failed. \
+			tloge("fill info failed. \
 				global=%d, cmd_id=%d, session_id=%d\n",
 				global, smc_cmd->cmd_id, smc_cmd->context_id);
 			return -EFAULT;
@@ -840,19 +884,19 @@ static int load_security_enhance_info(TC_NS_SMC_CMD *smc_cmd,
 	return EOK;
 }
 
-static int append_teec_token(TC_NS_ClientContext *client_context,
+static int append_teec_token(const TC_NS_ClientContext *client_context,
 			TC_NS_Token *tc_ns_token,
-			TC_NS_DEV_File *dev_file,
+			const TC_NS_DEV_File *dev_file,
 			bool global,
 			uint8_t *mb_pack_token, uint32_t mb_pack_token_size) {
 	uint8_t temp_libteec_token[TOKEN_SAVE_LEN] = {0};
 	int sret;
-	if ((!client_context) || (!dev_file) || (!tc_ns_token)) {
+	if ((client_context == NULL) || (dev_file == NULL) || (tc_ns_token == NULL)) {
 		tloge("in parameter is invalid.\n");
 		return -EFAULT;
 	}
 
-	if ((!client_context->teec_token) || (!tc_ns_token->token_buffer)) {
+	if ((client_context->teec_token == NULL) || (tc_ns_token->token_buffer == NULL)) {
 		tloge("teec_token or token_buffer is NULL, error!\n");
 		return -EFAULT;
 	}
@@ -900,8 +944,8 @@ static int post_process_token(TC_NS_SMC_CMD *smc_cmd,
 {
 	int ret = 0;
 
-	if ((!smc_cmd) || (!client_context)
-		|| (!tc_ns_token) || (!mb_pack_token) || !tc_ns_token->token_buffer
+	if ((smc_cmd == NULL) || (client_context == NULL)
+		|| (tc_ns_token == NULL) || (mb_pack_token == NULL) || tc_ns_token->token_buffer == NULL
 		|| (mb_pack_token_size < TOKEN_BUFFER_LEN)) {
 		tloge("in parameter is invalid.\n");
 		return -EINVAL;
@@ -946,10 +990,11 @@ static int post_process_token(TC_NS_SMC_CMD *smc_cmd,
 static DEFINE_MUTEX(tzmp_lock);
 static unsigned int tzmp_uid = INVALID_TZMP_UID;
 
-int TZMP2_uid(TC_NS_ClientContext *client_context, TC_NS_SMC_CMD *smc_cmd, bool global){
+int TZMP2_uid(const TC_NS_ClientContext *client_context, TC_NS_SMC_CMD *smc_cmd, bool global)
+{
 	TEEC_UUID uuid_tzmp = TEE_TZMP;
 
-	if (!client_context || !smc_cmd) {
+	if (client_context == NULL || smc_cmd == NULL) {
 		tloge("client_context or smc_cmd is null! ");
 		return -EINVAL;
 	}
@@ -995,11 +1040,11 @@ int tc_client_call(TC_NS_ClientContext *client_context,
 	struct TC_wait_data *wq = NULL;
 	TC_NS_Temp_Buf local_temp_buffer[4] = {{0, 0}, {0, 0}, {0, 0}, {0, 0} };
 	bool global = flags & TC_CALL_GLOBAL;
-	uint32_t uid;
+	uint32_t uid = 0;
 	int needchecklogin = 0;
 	int needreset = 0;
 	bool is_token_work = false;
-	struct mb_cmd_pack *mb_pack;
+	struct mb_cmd_pack *mb_pack = NULL;
 	bool operation_init = false;
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 13, 0))
@@ -1010,27 +1055,27 @@ int tc_client_call(TC_NS_ClientContext *client_context,
 #else
 	uid = current_uid();
 #endif
-	if (!dev_file) {
+	if (dev_file == NULL) {
 		tloge("dev_file is null");
 		return -EINVAL;
 	}
 
-	if (!client_context) {
+	if (client_context ==NULL) {
 		tloge("client_context is null");
 		return -EINVAL;
 	}
 
-	if (client_context->cmd_id == GLOBAL_CMD_ID_OPEN_SESSION)
+	if (client_context->cmd_id == GLOBAL_CMD_ID_OPEN_SESSION && global == TC_CALL_GLOBAL)
 		CFC_FUNC_ENTRY(tc_client_call);
 
 	smc_cmd = kzalloc(sizeof(TC_NS_SMC_CMD), GFP_KERNEL);
-	if (!smc_cmd) {
+	if (smc_cmd == NULL) {
 		tloge("smc_cmd malloc failed.\n");
 		return -ENOMEM;
 	}
 
 	mb_pack = mailbox_alloc_cmd_pack();
-	if (!mb_pack) {
+	if (mb_pack == NULL) {
 		kfree(smc_cmd);
 		return -ENOMEM;
 	}
@@ -1167,7 +1212,7 @@ int tc_client_call(TC_NS_ClientContext *client_context,
 						tc_ns_token, dev_file, global,
 						mb_pack->token, sizeof(mb_pack->token));
 				if (EOK != ret) {
-					tloge("append_teec_token  failed. \
+					tloge("append teec's member failed. \
 						global=%d, cmd_id=%d, session_id=%d\n",
 						global, smc_cmd->cmd_id, smc_cmd->context_id);
 					goto error;
@@ -1245,7 +1290,7 @@ error:
 	if (operation_init)
 		free_operation(client_context, &mb_pack->operation, local_temp_buffer);
 	mailbox_free(mb_pack);
-
+	mb_pack = NULL;
 	return ret;
 }
 
@@ -1290,12 +1335,29 @@ static int do_encryption(uint8_t *buffer, uint32_t buffer_size,
 	uint8_t *plaintext = buffer;
 	struct encryption_head head;
 
-	if (!buffer) {
+	if (buffer == NULL) {
 		tloge("Do encryption buffer is null!\n");
 		return -EINVAL;
 	}
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+	plaintext = kzalloc(buffer_size, GFP_KERNEL);
+	if (plaintext == NULL) {
+		tloge("malloc plaintext failed\n");
+		return -ENOMEM;
+	}
+
+	if(memcpy_s(plaintext, buffer_size, buffer, buffer_size)) {
+		tloge("memcpy failed\n");
+		kfree(plaintext);
+		return -EINVAL;
+	}
+
+#else
+
+
+#endif
 #endif
 
 	/* Payload + Head + Padding */
@@ -1313,7 +1375,7 @@ static int do_encryption(uint8_t *buffer, uint32_t buffer_size,
 	}
 
 	cryptotext = kzalloc(total_size, GFP_KERNEL);
-	if (!cryptotext) {
+	if (cryptotext == NULL) {
 		tloge("Malloc failed when doing encryption!\n");
 		ret = -ENOMEM;
 		goto end;
@@ -1362,6 +1424,13 @@ static int do_encryption(uint8_t *buffer, uint32_t buffer_size,
 
 end:
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+	kfree(plaintext);
+
+#else
+
+
+#endif
 #endif
 	if (cryptotext)
 		kfree(cryptotext);
@@ -1377,7 +1446,7 @@ static int encrypt_login_info(uint8_t flags, uint32_t cmd_id, int32_t index,
 	uint32_t total_size;
 	bool login_en;
 
-	if (!buffer) {
+	if (buffer == NULL) {
 		tloge("Login information buffer is null!\n");
 		return -EINVAL;
 	}

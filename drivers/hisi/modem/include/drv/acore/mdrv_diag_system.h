@@ -6,7 +6,7 @@
  * apply:
  *
  * * This program is free software; you can redistribute it and/or modify
- * * it under the terms of the GNU General Public License version 2 and 
+ * * it under the terms of the GNU General Public License version 2 and
  * * only version 2 as published by the Free Software Foundation.
  * *
  * * This program is distributed in the hope that it will be useful,
@@ -28,10 +28,10 @@
  * * 2) Redistributions in binary form must reproduce the above copyright
  * *    notice, this list of conditions and the following disclaimer in the
  * *    documentation and/or other materials provided with the distribution.
- * * 3) Neither the name of Huawei nor the names of its contributors may 
- * *    be used to endorse or promote products derived from this software 
+ * * 3) Neither the name of Huawei nor the names of its contributors may
+ * *    be used to endorse or promote products derived from this software
  * *    without specific prior written permission.
- * 
+ *
  * * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
  * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
@@ -177,7 +177,7 @@ typedef enum
     EN_DIAG_DST_LOST_CPMWR,             /* 当前时间段CPM写失败次数 */
 
     EN_DIAG_DST_LOST_CPMCB,             /* 当前时间段CPM写回调失败次数 */
-    
+
     EN_DIAG_DST_LOST_MAX
 }DIAG_LOST_DST_ID_ENUM;
 
@@ -188,8 +188,8 @@ typedef struct
     unsigned int      ulLeftSize;         /*通道剩余buf大小*/
     unsigned int      ulDeltaTime;        /*和上次上报的时间间隔*/
 
-    unsigned int      ulDeltaLostTimes;   /*上报时间段内的丢次数*/        
-    unsigned int      ulDeltaLostLen;     /*上报时间段内丢弃数据长度*/        
+    unsigned int      ulDeltaLostTimes;   /*上报时间段内的丢次数*/
+    unsigned int      ulDeltaLostLen;     /*上报时间段内丢弃数据长度*/
 
     unsigned int      aulCurFailNum[EN_DIAG_DST_LOST_MAX];    /* 当前时间段内丢包的各类次数 */
     unsigned int      aulCurFailLen[EN_DIAG_DST_LOST_MAX];    /* 当前时间段内丢包的总数据长度 */
@@ -217,7 +217,7 @@ typedef struct
     unsigned int      ulDeltaUsbSendTime;         /* 上报时间段内发送给USB占用的时间总和 */
     unsigned int      ulDeltaVcomSendTime;        /* 上报时间段内发送给Vcom占用的时间总和 */
     unsigned int      ulDeltaSockSendTime;        /* 上报时间段内发送给Socket占用的时间总和 */
-    
+
     unsigned int      ulThrputPhy;               /* 物理通道吞吐率 */
     unsigned int      ulThrputCb;                /* 回调吞吐率 */
 
@@ -239,7 +239,6 @@ unsigned int mdrv_CPM_ComSend(CPM_LOGIC_PORT_ENUM_UINT32 enLogicPort, unsigned c
 void mdrv_CPM_LogicRcvReg(CPM_LOGIC_PORT_ENUM_UINT32 enLogicPort, CPM_RCV_FUNC pRcvFunc);
 unsigned int mdrv_PPM_LogPortSwitch(unsigned int  ulPhyPort, unsigned int ulEffect);
 unsigned int mdrv_PPM_QueryLogPort(unsigned int  *pulLogPort);
-void mdrv_scm_ind_dst_read_cb(void);
 unsigned int mdrv_SCM_RegDecoderDestProc(SOCP_DECODER_DST_ENUM_U32 enChanlID, SCM_DECODERDESTFUCN func);
 void mdrv_report_dst_mntn(void);
 void mdrv_diag_get_dst_mntn_info(DIAG_MNTN_DST_INFO_STRU * dst_mntn);

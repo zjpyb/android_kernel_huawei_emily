@@ -147,7 +147,6 @@ show_ddr_chintlv(struct device *dev, struct device_attribute *attr, char *buf)
 
 	/*boston chintlv = (chintlv / 2)  * 128*/
 
-	/*pr_err("%s %d, chintlv %d\n", __func__, __LINE__,chintlv);*/
 
 	mutex_unlock(&devfreq->lock);
 

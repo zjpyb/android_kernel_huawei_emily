@@ -20,17 +20,20 @@
 #include <linux/delay.h>
 #include <linux/hisi/hisi_mailbox.h>
 #include <linux/hisi/hisi_rproc.h>
+#include <linux/semaphore.h>
 #ifdef CONFIG_HUAWEI_DSM
 #include <dsm/dsm_pub.h>
 #endif
 #include "protocol.h"
 #include "contexthub_route.h"
 #include "sensor_config.h"
+#include "sensor_detect.h"
 #include "contexthub_recovery.h"
 #include "contexthub_pm.h"
 #include <huawei_platform/inputhub/motionhub.h>
 #include <huawei_platform/inputhub/sensorhub.h>
 #include <huawei_platform/log/imonitor.h>
+#include "sensor_feima.h"
 
 #ifdef CONFIG_CONTEXTHUB_SHMEM
 #include "shmem.h"
@@ -56,6 +59,9 @@ spinlock_t	fsdata_lock;
 bool fingersense_data_ready;
 bool fingersense_data_intrans;        /* the data is on the way */
 s16 fingersense_data[FINGERSENSE_DATA_NSAMPLES] = { 0 };
+als_run_stop_para_t als_ud_data_upload;
+uint8_t sem_als_ud_rgbl_block_flag = 0;
+int als_ud_rgbl_block = 0;
 
 static struct type_record type_record;
 static struct wake_lock wlock;
@@ -77,7 +83,7 @@ static uint32_t recovery_step_count;
 static uint32_t valid_floor_count = 0;
 static uint32_t recovery_floor_count = 0;
 static struct workqueue_struct *mcu_aod_wq;
-static int adapt_ext_hall_index = 0;
+static unsigned int adapt_ext_hall_index = 0;
 static DEFINE_MUTEX(mutex_update);
 
 extern struct CONFIG_ON_DDR *pConfigOnDDr;
@@ -89,6 +95,7 @@ extern int stop_auto_accel;
 extern int stop_auto_als;
 extern int stop_auto_ps;
 extern rproc_id_t ipc_ap_to_iom_mbx;
+extern int hall_sen_type;
 
 #ifdef CONFIG_HUAWEI_DSM
 extern struct dsm_client *shb_dclient;
@@ -112,6 +119,15 @@ static struct inputhub_route_table package_route_tbl[] = {
 	{ROUTE_CA_PORT, {NULL,0}, {NULL,0}, {NULL,0}, __WAIT_QUEUE_HEAD_INITIALIZER(package_route_tbl[2].read_wait)},
 	{ROUTE_FHB_PORT, {NULL,0}, {NULL,0}, {NULL,0}, __WAIT_QUEUE_HEAD_INITIALIZER(package_route_tbl[3].read_wait)},
 	{ROUTE_FHB_UD_PORT, {NULL,0}, {NULL,0}, {NULL,0}, __WAIT_QUEUE_HEAD_INITIALIZER(package_route_tbl[4].read_wait)},
+	{ROUTE_KB_PORT, {NULL,0}, {NULL,0}, {NULL,0},
+		__WAIT_QUEUE_HEAD_INITIALIZER(package_route_tbl[5].read_wait)},
+};
+
+static struct {
+	int ext_hall_adapt;
+	int ext_hall_value[HALL_ONE_DATA_NUM];
+} ext_hall_table[] = {
+    { 0, {1, 0, 2, -1}},
 };
 
 bool really_do_enable_disable(int *ref_cnt, bool enable, int bit)
@@ -196,6 +212,24 @@ void inputhub_route_close(unsigned short port)
 	route_item->phead.pos = NULL;
 	route_item->pWrite.pos = NULL;
 	route_item->pRead.pos = NULL;
+}
+
+void inputhub_route_clean_buffer(unsigned short port)
+{
+	int ret;
+	struct inputhub_route_table *route_item;
+	unsigned long flags = 0;
+
+	hwlog_info("%s\n", __func__);
+	ret = inputhub_route_item(port, &route_item);
+	if (ret < 0)
+		return;
+
+	spin_lock_irqsave(&route_item->buffer_spin_lock, flags);
+	route_item->pRead.pos = route_item->pWrite.pos;
+	route_item->pWrite.buffer_size = ROUTE_BUFFER_MAX_SIZE;
+	route_item->pRead.buffer_size = 0;
+	spin_unlock_irqrestore(&route_item->buffer_spin_lock, flags);
 }
 
 static inline bool data_ready(struct inputhub_route_table *route_item, struct inputhub_buffer_pos *reader)
@@ -371,7 +405,9 @@ int unregister_ap_sensor_operations(int tag)
 static void sensor_get_data(struct sensor_data *data)
 {
 	struct t_sensor_get_data *get_data = NULL;
-	if (NULL == data ||(!(TAG_SENSOR_BEGIN <= data->type && data->type < TAG_SENSOR_END))) {
+	if (NULL == data || (!((SENSORHUB_TYPE_BEGIN <= data->type) &&
+				(data->type < SENSORHUB_TYPE_END)))) {
+		hwlog_err("%s, para err\n", __func__);
 		return;
 	}
 
@@ -402,8 +438,6 @@ int report_sensor_event(int tag, int value[], int length)
 
 static int adapt_hall_value(int value)
 {
-	int ext_val = 0;
-
 	if(adapt_ext_hall_index >= ARRAY_SIZE(ext_hall_table)){
 		return -EPERM;
 	}
@@ -427,13 +461,24 @@ int ap_hall_report(int value)
 	}
 	//return diff sensor type
 	report_sensor_event(TAG_HALL, double_hall_value, sizeof(double_hall_value));
-	report_sensor_event(TAG_EXT_HALL, ext_hall_value, sizeof(ext_hall_value));
+	if (hall_sen_type == SLIDE_HALL_TYPE)
+		report_sensor_event(TAG_EXT_HALL,
+			ext_hall_value,
+			sizeof(ext_hall_value));
 
 	return 0;
 }
 int ap_color_report(int value[], int length)
 {
 	return report_sensor_event(TAG_COLOR, value, length);
+}
+
+int thp_prox_event_report(int value[], int length)
+{
+	if(value == NULL){
+		return -EINVAL;
+	}
+	return 0;
 }
 
 bool ap_sensor_enable(int tag, bool enable)
@@ -622,13 +667,18 @@ static int inputhub_mcu_send(const char* buf, unsigned int length)
 	return ret;
 }
 
-static const pkt_header_t *pack(const char *buf, unsigned int length)
+static const pkt_header_t *pack(const char *buf, unsigned int length, bool *is_notifier)
 {
 	const pkt_header_t *head = normalpack(buf, length);
 #ifdef CONFIG_CONTEXTHUB_SHMEM
-	if(head && (head->tag == TAG_SHAREMEM) && (head->cmd == CMD_SHMEM_AP_RECV_REQ))
+	if(head && (head->tag == TAG_SHAREMEM))
 	{
-	    head = shmempack(buf, length);
+		if (head->cmd == CMD_SHMEM_AP_RECV_REQ) {
+			head = shmempack(buf, length);
+		} else if (head->cmd == CMD_SHMEM_AP_SEND_RESP) {
+			shmem_send_resp(head);
+			*is_notifier = true;
+		}
 	}
 #endif
 	return head;
@@ -782,6 +832,14 @@ char *obj_tag_str[] = {
 	[TAG_TOF]="TAG_TOF",
 	[TAG_DROP] = "TAG_DROP",
 	[TAG_EXT_HALL] = "TAG_EXT_HALL",
+	[TAG_ACC1] = "TAG_ACCEL1",
+	[TAG_GYRO1] = "TAG_GYRO1",
+	[TAG_ACC2] = "TAG_ACCEL2",
+	[TAG_GYRO2] = "TAG_GYRO2",
+	[TAG_MAG1] = "TAG_MAG1",
+	[TAG_CAP_PROX1] = "TAG_CAP_PROX1",
+	[TAG_POSTURE] = "TAG_POSTURE",
+	[TAG_KB] = "TAG_KB",
 	[TAG_END] = "TAG_END",
 };
 
@@ -982,6 +1040,9 @@ static int inputhub_sensor_enable_internal(int tag, bool enable, bool is_lock)
 			.resp = NO_RESP,
 			.length = 0
 		};
+		if(TAG_MAG == tag || TAG_ORIENTATION == tag){
+			mag_opend++;
+		}
 		hwlog_info("open sensor %s (tag:%d)!\n", obj_tag_str[tag] ? obj_tag_str[tag] : "TAG_UNKNOWN", tag);
 		if (is_lock)
 			return inputhub_mcu_write_cmd_adapter(&pkt, sizeof(pkt), NULL);
@@ -994,6 +1055,11 @@ static int inputhub_sensor_enable_internal(int tag, bool enable, bool is_lock)
 			.resp = NO_RESP,
 			.length = 0
 		};
+		if(TAG_MAG == tag || TAG_ORIENTATION == tag){
+			if(mag_opend > 0){
+				mag_opend--;
+			}//mag_opend is 0 for mag is not opened
+		}
 		hwlog_info("close sensor %s (tag:%d)!\n", obj_tag_str[tag] ? obj_tag_str[tag] : "TAG_UNKNOWN", tag);
 		if (is_lock)
 			return inputhub_mcu_write_cmd_adapter(&pkt, sizeof(pkt), NULL);
@@ -1077,7 +1143,7 @@ int write_customize_cmd(const struct write_info *wr, struct read_info *rd, bool 
 		hwlog_err("tag = %d error in %s\n", wr->tag, __func__);
 		return -EINVAL;
 	}
-	if (wr->wr_len + sizeof(pkt_header_t) > MAX_PKT_LENGTH) {
+	if (wr->wr_len < 0 || wr->wr_len + sizeof(pkt_header_t) > MAX_PKT_LENGTH) {
 		hwlog_err("-----------> wr_len = %d is too large in %s\n", wr->wr_len, __func__);
 		return -EINVAL;
 	}
@@ -1099,6 +1165,11 @@ int write_customize_cmd(const struct write_info *wr, struct read_info *rd, bool 
 		return inputhub_mcu_write_cmd_nolock(buf, sizeof(pkt_header_t) + wr->wr_len);
 }
 
+static bool is_als_ud_data_report(const pkt_header_t* head)
+{
+    return ((head->tag == TAG_ALS) && (CMD_ALS_RUN_STOP_PARA_REQ == head->cmd));
+}
+
 static bool is_fingerprint_data_report(const pkt_header_t* head)
 {
     return ((head->tag == TAG_FP) || (head->tag == TAG_FP_UD)) && (CMD_DATA_REQ == head->cmd);
@@ -1114,6 +1185,17 @@ static bool is_ca_data_report(const pkt_header_t *head)
 {
 	/*all sensors report data with command CMD_PRIVATE*/
 	return (head->tag == TAG_CA) && (CMD_DATA_REQ == head->cmd);
+}
+
+static bool is_kb_data_report(const pkt_header_t *head)
+{
+	/* all sensors report data with command CMD_PRIVATE */
+	if (head != NULL) {
+		return ((head->tag == TAG_KB) && (head->cmd == CMD_DATA_REQ));
+	} else {
+		hwlog_err("head is NULL in %s\n", __func__);
+		return false;
+	}
 }
 
 static bool cmd_match(int req, int resp)
@@ -1544,7 +1626,9 @@ static void update_client_info(uint8_t dmd_case)
 			return;
 	}
 	hwlog_info("update_client_info ic name is %s.\n", dsm_sensorhub.ic_name);
-	dsm_update_client_vendor_info(&dsm_sensorhub);
+	if (dsm_update_client_vendor_info(&dsm_sensorhub)) {
+		hwlog_err("dsm_update_client_vendor_info failed\n");
+	}
 }
 #endif
 static void iom7_dmd_log_handle(struct work_struct *work)
@@ -1639,6 +1723,14 @@ static void process_ps_report(const pkt_header_t* head)
 		hwlog_info("Kernel get near event!!!!pdata=%d\n", sensor_event->xyz[0].y);
 }
 
+static void process_ext_hall_report(const pkt_header_t *head)
+{
+	pkt_batch_data_req_t *sensor_event = NULL;
+	sensor_event = (pkt_batch_data_req_t *)head;
+	if (sensor_event == NULL) return;
+	hwlog_info("get fold_ext_hall event = %d, %d\n",
+		sensor_event->xyz[0].x, sensor_event->xyz[0].y);
+}
 static void process_tof_report(const pkt_header_t* head)
 {
 	pkt_batch_data_req_t* sensor_event = NULL;
@@ -1692,16 +1784,16 @@ static int process_drop_report(const pkt_drop_data_req_t* head)
 		return -1;
 	}
 
-	ret += imonitor_set_param(obj, E936005000_TYPE_TINYINT, (long)(head->data.type));
-	ret += imonitor_set_param(obj, E936005000_INITSPEED_INT, (long)(head->data.initial_speed));
-	ret += imonitor_set_param(obj, E936005000_HEIGHT_INT, (long)(head->data.height));
-	ret += imonitor_set_param(obj, E936005000_PITCH_INT, (long)(head->data.angle_pitch));
-	ret += imonitor_set_param(obj, E936005000_ROLL_INT, (long)(head->data.angle_roll));
-	ret += imonitor_set_param(obj, E936005000_MATERIAL_TINYINT, (long)(head->data.material));
-	ret += imonitor_set_param(obj, E936005000_YAW_INT, (long)(yaw));
-	ret += imonitor_set_param(obj, E936005000_SPEED_INT, (long)(speed));
-	ret += imonitor_set_param(obj, E936005000_SHELL_TINYINT, (long)(shell));
-	ret += imonitor_set_param(obj, E936005000_FILM_TINYINT, (long)(film));
+	ret += imonitor_set_param_integer_v2(obj, "Type", (long)(head->data.type));
+	ret += imonitor_set_param_integer_v2(obj, "InitSpeed", (long)(head->data.initial_speed));
+	ret += imonitor_set_param_integer_v2(obj, "Height", (long)(head->data.height));
+	ret += imonitor_set_param_integer_v2(obj, "Pitch", (long)(head->data.angle_pitch));
+	ret += imonitor_set_param_integer_v2(obj, "Roll", (long)(head->data.angle_roll));
+	ret += imonitor_set_param_integer_v2(obj, "Yaw", (long)(head->data.material));
+	ret += imonitor_set_param_integer_v2(obj, "Material", (long)(yaw));
+	ret += imonitor_set_param_integer_v2(obj, "Speed", (long)(speed));
+	ret += imonitor_set_param_integer_v2(obj, "Shell", (long)(shell));
+	ret += imonitor_set_param_integer_v2(obj, "Film", (long)(film));
 
 	if (ret) {
 		imonitor_destroy_eventobj(obj);
@@ -1734,6 +1826,9 @@ static int process_sensors_report(const pkt_header_t* head)
 				hwlog_info("%s not report ps_data for dt\n", __func__);
 				return -1;
 			}
+			break;
+		case TAG_EXT_HALL:
+			process_ext_hall_report(head);
 			break;
 		case TAG_TOF:
 			process_tof_report(head);
@@ -1979,12 +2074,29 @@ static int inputhub_process_motion_report(const pkt_header_t* head)
 	return inputhub_route_write(ROUTE_MOTION_PORT, motion_data, head->length-(sizeof(pkt_common_data_t) - sizeof(pkt_header_t)));
 }
 
+/*
+ * Handle parameters uploaded by ALS_UD
+ * Caution: ensure that the thread can sleep in the block node
+ */
+static int inputhub_process_als_ud_report(const pkt_header_t* head)
+{
+	memcpy(&als_ud_data_upload, (head + 1), sizeof(als_ud_data_upload));
+	hwlog_info("inputhub_process_als_ud_report para is %llu %u %u\n", \
+		als_ud_data_upload.sample_start_time, als_ud_data_upload.sample_interval, als_ud_data_upload.integ_time);
+	if (sem_als_ud_rgbl_block_flag == 1) {
+		als_ud_rgbl_block = 1;
+		sem_als_ud_rgbl_block_flag = 0;
+		wake_up_als_ud_block();
+	}
+	return 0;
+}
+
 int inputhub_route_recv_mcu_data(const char *buf, unsigned int length)
 {
 	const pkt_header_t* head = (const pkt_header_t*)buf;
 	bool is_notifier = false;
 
-	head = pack(buf, length);
+	head = pack(buf, length, &is_notifier);
 
 	if (NULL == head)
 		{ return 0; }	/*receive next partial package.*/
@@ -2038,6 +2150,7 @@ int inputhub_route_recv_mcu_data(const char *buf, unsigned int length)
 			//hold wakelock 1ms avoid system suspend
 			wake_lock_timeout(&wlock, 1);
 		}
+
 	#ifdef CONFIG_CONTEXTHUB_SHMEM
 		mcu_notifier_queue_work(head, inputhub_process_sensor_report_notifier_handler);
 	#else
@@ -2054,12 +2167,19 @@ int inputhub_route_recv_mcu_data(const char *buf, unsigned int length)
 	} else if (is_ca_data_report(head)) {
 		char* ca_data = (char*)head + sizeof(pkt_common_data_t);
 		return inputhub_route_write(ROUTE_CA_PORT, ca_data, head->length);
+	} else if (is_kb_data_report(head)) {
+		char *kb_data = (char *)head + sizeof(pkt_header_t) + sizeof(uint32_t);
+		return inputhub_route_write(ROUTE_KB_PORT, kb_data, head->length);
 	} else if (head->tag == TAG_KEY) {
 		uint16_t key_datas[12] = { 0 };
 		pkt_batch_data_req_t *key_data = (pkt_batch_data_req_t *)head;
 		memcpy(key_datas, key_data->xyz, sizeof(key_datas));
 		hwlog_info("status:%2x\n", key_datas[0]);
 		touch_key_report_from_sensorhub((int)key_datas[0], 0);
+	} else if (is_als_ud_data_report(head))
+	{
+		hwlog_info("In func is_als_ud_data_report(head).");
+		return inputhub_process_als_ud_report(head);
 	} else {
 		if (!is_notifier) {
 			hwlog_err("--------->tag = %d, cmd = %d is not implement!\n", head->tag, head->cmd);

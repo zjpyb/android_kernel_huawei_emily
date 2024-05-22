@@ -664,6 +664,10 @@ int himax_Raw_Data_test(int step) //for Rawdara
 	TS_LOG_DEBUG("Get Raw Data Start:\n");
 	himax_nc_int_enable(g_himax_nc_ts_data->tskit_himax_data->ts_platform_data->irq_id,IRQ_DISABLE);
 
+	himax_nc_sense_off();
+	mdelay(HX_SLEEP_10MS);
+	himax_nc_sense_on(ON);
+
 	//himax_nc_switch_mode(1);/* 1: sorting mode 0: normal mode*/
 	himax_nc_diag_register_set(0x0A);/*===DC===*/
 	himax_burst_enable(1);

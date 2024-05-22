@@ -78,7 +78,7 @@ int agent_init(void);
 
 int agent_exit(void);
 
-int agent_process_work(TC_NS_SMC_CMD *smc_cmd, unsigned int agent_id);
+int agent_process_work(const TC_NS_SMC_CMD *smc_cmd, unsigned int agent_id);
 
 int is_agent_alive(unsigned int agent_id);
 
@@ -88,7 +88,7 @@ int TC_NS_register_agent(TC_NS_DEV_File *dev_file,
 								 unsigned int agent_id,
 								 TC_NS_Shared_MEM *shared_mem);
 int TC_NS_unregister_agent(unsigned int agent_id);
-int TC_NS_unregister_agent_client(TC_NS_DEV_File *dev_file);
+int TC_NS_unregister_agent_client(const TC_NS_DEV_File *dev_file);
 
 unsigned int TC_NS_incomplete_proceed(TC_NS_SMC_CMD *smc_cmd,
 								unsigned int agent_id,
@@ -99,22 +99,18 @@ int TC_NS_wait_event(unsigned int agent_id);
 int TC_NS_send_event_response(unsigned int agent_id);
 void TC_NS_send_event_response_all(void);
 
-int TC_NS_sync_sys_time(TC_NS_Time *tc_ns_time);
+int TC_NS_sync_sys_time(const TC_NS_Time *tc_ns_time);
 
 int tee_agent_clear_work(TC_NS_ClientContext *context, unsigned int dev_file_id);
 int tee_agent_kernel_register(struct tee_agent_kernel_ops *new_agent);
 
-bool TC_NS_is_system_agent_client(TC_NS_DEV_File *dev_file);
-
-extern int mmc_blk_ioctl_rpmb_cmd(enum func_id id,
-						struct block_device *bdev,
-						struct mmc_blk_ioc_rpmb_data *idata);
+bool TC_NS_is_system_agent_client(const TC_NS_DEV_File *dev_file);
 
 extern struct mmc_card *get_mmc_card(struct block_device *bdev);
 
 extern int check_ext_agent_access(struct task_struct *ca_task);
 char *get_process_path(struct task_struct *task, char *tpath);
-#ifdef CONFIG_HISI_MMC_SECURE_RPMB
+#if defined(CONFIG_HISI_RPMB) || defined(CONFIG_HISI_MMC_SECURE_RPMB)
 extern int rpmb_agent_register(void);
 #endif
 

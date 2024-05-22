@@ -23,10 +23,10 @@ struct mb_cmd_pack {
 };
 
 void *mailbox_alloc(size_t size, int flag);
-void mailbox_free(void *ptr);
+void mailbox_free(const void *ptr);
 int mailbox_mempool_init(void);
 void mailbox_mempool_destroy(void);
 struct mb_cmd_pack *mailbox_alloc_cmd_pack(void);
-void *mailbox_copy_alloc(void *src, size_t size);
+void *mailbox_copy_alloc(const void *src, size_t size);
 
 #endif

@@ -48,6 +48,13 @@
 #define DOWNLOAD_RETRY_COUNT 10
 #define READ_OUT_IDENTIFY_MS 20
 #define ZEROFLASH_DOWNLOAD_DELAYUS 2000
+extern struct ts_kit_platform_data g_ts_kit_platform_data;
+
+enum SPI_COM_MODE {
+	INTERRUPT_MODE = 0,
+	POLLING_MODE,
+	DMA_MODE,
+};
 
 enum f35_error_code {
 	SUCCESS = 0,
@@ -473,7 +480,6 @@ int zeroflash_get_fw_image(char *file_name)
 	int retval = NO_ERR;
 	char fw_name[MAX_STR_LEN * 4] = {0};
 	struct syna_tcm_hcd *tcm_hcd = NULL;
-	int projectid_lenth = 0;
 
 	if (!zeroflash_hcd || !zeroflash_hcd->tcm_hcd)
 		return -EINVAL;
@@ -482,7 +488,7 @@ int zeroflash_get_fw_image(char *file_name)
 		return 0;
 
 	tcm_hcd = zeroflash_hcd->tcm_hcd;
-	
+
 	snprintf(fw_name, (MAX_STR_LEN * 4), "ts/%s%s.img", file_name,
 		tcm_hcd->tcm_mod_info.project_id_string);
 	TS_LOG_INFO("%s file_name name is :%s\n", __func__, fw_name);
@@ -758,8 +764,8 @@ int zeroflash_download_app_firmware(char *file_name)
 		goto exit;
 	}
 
-	TS_LOG_ERR("Microbootloader data = 0x%02x\n",
-				data);
+	TS_LOG_ERR("Microbootloader error code = 0x%02x\n",
+		data.error_code);
 
 	if (data.error_code != REQUESTING_FIRMWARE) {
 		TS_LOG_ERR("Microbootloader error code = 0x%02x\n",
@@ -815,7 +821,7 @@ int check_report_status(void)
 	unsigned char status_report[10] = {0};
 	int retry = 3;
 
-	while(retry) {	
+	while(retry) {
 		retval = syna_tcm_read(zeroflash_hcd->tcm_hcd,
 				status_report,
 				sizeof(status_report));
@@ -874,11 +880,15 @@ static int zeroflash_download_config(void)
 	return retval;
 }
 
-int zeroflash_download(char *file_name)
+int zeroflash_download(char *file_name, struct syna_tcm_hcd *tcm_hcd)
 {
 	int retval = NO_ERR;
 	char retry = 5;
 
+	if(tcm_hcd->use_dma_download_firmware) {
+		g_ts_kit_platform_data.spidev0_chip_info.com_mode = DMA_MODE;
+		tcm_hcd->spi_comnunicate_frequency = tcm_hcd->downmload_firmware_frequency;
+	}
 	retval = zeroflash_download_app_firmware(file_name);
 	if (retval < 0)
 		goto exit;
@@ -908,6 +918,10 @@ int zeroflash_download(char *file_name)
 	udelay(ZEROFLASH_DOWNLOAD_DELAYUS);
 
 exit:
+	if(tcm_hcd->use_dma_download_firmware) {
+		tcm_hcd->spi_comnunicate_frequency = SPI_DEFLAUT_SPEED;
+		g_ts_kit_platform_data.spidev0_chip_info.com_mode = POLLING_MODE;
+	}
 	return retval;
 }
 

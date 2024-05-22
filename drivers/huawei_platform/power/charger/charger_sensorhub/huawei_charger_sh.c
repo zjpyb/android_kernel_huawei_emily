@@ -47,9 +47,9 @@
 #include <huawei_platform/power/charging_core_sh.h>
 #include <linux/workqueue.h>
 #include <inputhub_route.h>
-#include <protocol.h>
 #include <inputhub_bridge.h>
 #include <sensor_info.h>
+#include <huawei_platform/power/power_common_sh.h>
 
 struct charge_sysfs_lock sysfs_lock;
 struct mutex charge_usb_notify_lock;
@@ -77,8 +77,6 @@ static enum charging_stat_t charging_status = CHARGING_CLOSE;
 
 extern struct CONFIG_ON_DDR *pConfigOnDDr;
 extern int g_iom3_state;
-extern atomic_t iom3_rec_state;
-extern sys_status_t iom3_sr_status;
 extern struct charge_core_info_sh *g_core_info_sh;
 extern struct charger_platform_data charger_dts_data;
 extern struct fcp_adapter_device_ops sh_fcp_hi6523_ops;
@@ -527,6 +525,16 @@ static enum fcp_check_stage_type fcp_get_stage(void)
 }
 /*lint -restore*/
 
+
+static enum huawei_usb_charger_type huawei_get_charger_type(void)
+{
+	if (NULL == pConfigOnDDr) {
+		hwlog_err("[%s]pConfigOnDDr is not init!\n", __func__);
+		return CHARGER_REMOVED;
+	}
+	return pConfigOnDDr->g_di.charger_type;
+}
+
 /**********************************************************
 *  Function:       set_charge_state
 *  Description:    set charge stop or enable
@@ -578,7 +586,7 @@ void charge_type_dcp_detected_notify_sh(void)
 **********************************************************/
 static void charge_process_vr_charge_event(struct charge_device_info_sh *di)
 {
-	enum usb_charger_type type_bak;
+	enum huawei_usb_charger_type type_bak;
 	enum power_supply_type supply_bak;
 
 	type_bak = di->charger_type;
@@ -1548,6 +1556,7 @@ static struct charge_extra_ops huawei_charge_extra_ops = {
 	.check_ts = charge_check_ts,
 	.check_otg_state = charge_check_otg_state,
 	.get_stage = fcp_get_stage,
+	.get_charger_type = huawei_get_charger_type,
 	.set_state = set_charge_state,
 	.get_charge_current = huawei_get_charge_current_max,
 };

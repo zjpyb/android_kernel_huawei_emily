@@ -19,6 +19,7 @@
 #include <linux/delay.h>
 #include <linux/slab.h>
 #include <linux/wakelock.h>
+#include "sensor_feima.h"
 #include "contexthub_route.h"
 #include "contexthub_boot.h"
 #include "protocol.h"
@@ -42,12 +43,23 @@
 #define HANDPRESS_DEFAULT_STATE		"huawei,default-state"
 #define ADAPT_SENSOR_LIST_NUM           20
 
+#define CURRENT_FAC_AKM_INIT  0
+#ifndef TRUE
+#define TRUE 1
+#endif
+
+#ifndef FALSE
+#define FALSE 0
+#endif
+
 static struct sensor_redetect_state s_redetect_state ;
 static struct wake_lock sensor_rd;
 static struct work_struct redetect_work;
 static const char *str_soft_para = "softiron_parameter";
 static char buf[MAX_PKT_LENGTH] = { 0 };
+static char aux_buf[MAX_PKT_LENGTH] = { 0 };
 static pkt_sys_dynload_req_t *dyn_req = (pkt_sys_dynload_req_t *) buf;
+static pkt_sys_dynload_req_t *aux_req = (pkt_sys_dynload_req_t *) aux_buf;
 struct sleeve_detect_pare sleeve_detect_paremeter[MAX_PHONE_COLOR_NUM] = {{0,0},};
 struct sensorlist_info sensorlist_info[SENSOR_MAX];
 static u32 tof_replace_ps_flag = 0;
@@ -55,6 +67,8 @@ uint8_t gyro_cali_way = 0;
 uint8_t acc_cali_way = 0;
 int mag_threshold_for_als_calibrate = 0;
 int ps_support_abs_threshold=0;
+uint8_t als_support_under_screen_cali = 0;
+uint8_t ps_support_cali_after_sale = 0;
 uint8_t tof_register_value = 0;
 extern int ltr578_flag;
 extern int apds9922_flag;
@@ -63,6 +77,7 @@ extern int tmd2745_flag;
 extern int rpr531_flag;
 extern int tsl2591_flag;
 extern int bh1726_flag;
+int g_bh1749_flag = 0;
 uint8_t gyro_position;
 extern u8 phone_color;
 extern uint16_t sensorlist[SENSOR_LIST_NUM] ;
@@ -79,6 +94,11 @@ extern int avago_apds9110_ps_flag;
 extern int g_iom3_state;
 extern int iom3_power_state;
 extern char *sar_calibrate_order;
+extern char *acc_sensor_id;
+extern char *gyro_sensor_id;
+extern char *mag_sensor_id;
+extern char *cap_sensor_id;
+extern char *sensor_in_board_status;
 extern int is_cali_supported;
 extern int send_para_flag;
 extern int gyro_range;
@@ -92,17 +112,27 @@ extern int  ams_tmd3702_ps_flag;
 extern int apds9253_rgb_flag;
 extern int vishay_vcnl36658_als_flag;
 extern int vishay_vcnl36658_ps_flag;
+extern int vd6281_als_flag;
 extern int ams_tof_flag;
 extern int sharp_tof_flag;
 extern int apds9253_006_ps_flag;
+extern int ams_tcs3701_rgb_flag;
+extern int ams_tcs3701_ps_flag;
 
 extern struct CONFIG_ON_DDR* pConfigOnDDr;
 extern void select_als_para(struct device_node *dn);
 extern int iom3_need_recovery(int modid, exp_source_t f);
+extern t_ap_sensor_ops_record all_ap_sensor_operations[TAG_SENSOR_END];
 uint8_t is_close = 0;
 static int _device_detect(struct device_node *dn, int index, struct sensor_combo_cfg *p_succ_ret);
+int get_combo_bus_tag(const char *bus, uint8_t *tag);
 int hall_number = 1 ;
 int hall_sen_type = 0;
+int mag_opend = 0;
+int akm_need_charger_current = 0;
+int akm_current_x_fac = 0;
+int akm_current_y_fac = 0;
+int akm_current_z_fac = 0;
 
 #define DEF_SENSOR_COM_SETTING \
 {\
@@ -113,6 +143,12 @@ int hall_sen_type = 0;
 }
 
 /*lint -e785*/
+struct g_sensor_platform_data gsensor1_data;
+struct g_sensor_platform_data gsensor2_data;
+struct gyro_platform_data gyro1_data;
+struct gyro_platform_data gyro2_data;
+struct compass_platform_data mag1_data;
+struct sar_platform_data sar1_pdata;
 struct gyro_platform_data gyro_data = {
 	.cfg = DEF_SENSOR_COM_SETTING,
 	.poll_interval = 10,
@@ -184,6 +220,7 @@ struct als_platform_data als_data = {
 	.als_phone_type = 0,
 	.als_phone_version = 0,
 	.is_close = 0,
+	.tp_info = 0,
 };
 
 struct ps_platform_data ps_data = {
@@ -216,6 +253,11 @@ struct ps_platform_data ps_data = {
 	.max_near_pdata_loop = 4,
 	.oily_count_size = 12,
 	.ps_tp_threshold = 40,
+	.pwindows_screenon_value = 0,
+	.pwave_screenon_value = 0,
+	.threshold_screenon_value = 0,
+	.digital_offset_max = 0,
+	.is_always_on = 0,
 };
 
 struct airpress_platform_data airpress_data = {
@@ -253,6 +295,7 @@ struct sar_platform_data sar_pdata = {
 	.cfg = DEF_SENSOR_COM_SETTING,
 	.poll_interval = 200,
 	.calibrate_type = 5,
+	.gpio_int = 0,
 };
 
 struct adux_sar_add_data_t adux_sar_add_data;
@@ -322,6 +365,7 @@ static struct tp_ud_platform_data tp_ud_data = {
 	.gpio_irq_sh = 1000,
 	.gpio_cs  = 236,
 	.pressure_support = 1,
+	.anti_forgery_support = 0,
 	.spi_max_speed_hz = 10000000,
 	.spi_mode = 0,
 	.ic_type = 0,
@@ -369,7 +413,21 @@ struct rpc_platform_data rpc_data={
 	.default_value = 0,
 	.mask_enable = 0,
 };
+
+struct kb_platform_data g_kb_data = {
+	.uart_num = KB_DEFAULT_UART_NUM,
+	.kb_detect_adc_num = KB_DEFAULT_DETECT_ADC_NUM,
+	.kb_disconnect_adc_min = KB_DEFAULT_DISCONNECT_ADC_VOL,
+	.kb_disable_angle = 0,
+};
+
 struct sar_sensor_detect semtech_sar_detect = {
+	.cfg = DEF_SENSOR_COM_SETTING,
+	.detect_flag = 0,
+	.chip_id = 0,
+};
+
+struct sar_sensor_detect semtech_9335_sar_detect = {
 	.cfg = DEF_SENSOR_COM_SETTING,
 	.detect_flag = 0,
 	.chip_id = 0,
@@ -382,6 +440,12 @@ struct sar_sensor_detect adi_sar_detect = {
 };
 
 struct sar_sensor_detect cypress_sar_detect = {
+	.cfg = DEF_SENSOR_COM_SETTING,
+	.detect_flag = 0,
+	.chip_id = 0,
+};
+
+struct sar_sensor_detect g_abov_sar_detect = {
 	.cfg = DEF_SENSOR_COM_SETTING,
 	.detect_flag = 0,
 	.chip_id = 0,
@@ -406,6 +470,13 @@ struct sensor_detect_manager sensor_manager[SENSOR_MAX] = {
     {"tof", TOF, DET_INIT,TAG_TOF, &tof_data, sizeof(tof_data)},
     {"tp_ud", TP_UD, DET_INIT, TAG_TP, &tp_ud_data, sizeof(tp_ud_data)},
 	{"sh_aod", SH_AOD, DET_INIT, TAG_AOD, &aod_data, sizeof(aod_data)},
+    {"acc1", ACC1,DET_INIT,TAG_ACC1, &gsensor1_data, sizeof(gsensor1_data)},
+    {"gyro1", GYRO1,DET_INIT,TAG_GYRO1, &gyro1_data, sizeof(gyro1_data)},
+    {"acc2", ACC2,DET_INIT,TAG_ACC2, &gsensor2_data, sizeof(gsensor2_data)},
+    {"gyro2", GYRO2,DET_INIT,TAG_GYRO2, &gyro2_data, sizeof(gyro2_data)},
+    {"mag1", MAG1,DET_INIT,TAG_MAG1, &mag1_data, sizeof(mag1_data)},
+    {"cap_prox1", CAP_PROX1,DET_INIT,TAG_CAP_PROX1, &sar1_pdata, sizeof(sar1_pdata)},
+	{ "kb", KB, DET_INIT, TAG_KB, &g_kb_data, sizeof(g_kb_data) },
 };
 
 SENSOR_DETECT_LIST get_id_by_sensor_tag(int tag)
@@ -441,7 +512,7 @@ void read_sensorlist_info(struct device_node *dn, int sensor)
 		hwlog_info("sensor SENSOR_DETECT_LIST %d get vendor %s\n", sensor, sensorlist_info[sensor].vendor);
 	}
 	else
-		sensorlist_info[sensor].name[0] = '\0';
+		sensorlist_info[sensor].vendor[0] = '\0';
 
 	if (0 == of_property_read_u32(dn, "version", &temp))
 	{
@@ -522,93 +593,102 @@ void read_chip_info(struct device_node *dn, SENSOR_DETECT_LIST sname)
 	hwlog_info("get chip info from dts success. sensor name=%s\n", sensor_chip_info[sname]);
 }
 
-static void read_acc_data_from_dts(struct device_node *dn)
+static void read_aux_file_list(uint16_t fileid, uint16_t tag)
 {
-	int temp = 0;
+	aux_req->file_list[aux_req->file_count * 2] = fileid;
+	aux_req->file_list[aux_req->file_count * 2 + 1] = tag;
+	aux_req->file_count++;
+}
 
-	read_chip_info(dn, ACC);
+static void read_acc_data_from_dts(struct device_node *dn, struct sensor_detect_manager *sm)
+{
+	int temp = 0, aux = 0;
+	const char *bus_type;
+	struct g_sensor_platform_data *gsensor_data = (struct g_sensor_platform_data *)sm->spara;
+
+	read_chip_info(dn, sm->sensor_id);
 
 	if(of_property_read_u32(dn, "used_int_pin", &temp))
-		hwlog_err("%s:read used_int_pin fail\n", __func__);
+		hwlog_err("%s:read %s used_int_pin fail\n", __func__, sm->sensor_name_str);
 	else
-		gsensor_data.used_int_pin = (uint8_t) temp;
+		gsensor_data->used_int_pin = (uint8_t) temp;
 
 	temp = of_get_named_gpio(dn, "gpio_int1", 0);
 	if (temp < 0)
-		hwlog_err("%s:read gpio_int1 fail\n", __func__);
+		hwlog_err("%s:read %s gpio_int1 fail\n", __func__, sm->sensor_name_str);
 	else
-		gsensor_data.gpio_int1 = (GPIO_NUM_TYPE) temp;
+		gsensor_data->gpio_int1 = (GPIO_NUM_TYPE) temp;
 
 	temp = of_get_named_gpio(dn, "gpio_int2", 0);
 	if (temp < 0)
-		hwlog_err("%s:read gpio_int2 fail\n", __func__);
+		hwlog_err("%s:read %s gpio_int2 fail\n", __func__, sm->sensor_name_str);
 	else
-		gsensor_data.gpio_int2 = (GPIO_NUM_TYPE) temp;
+		gsensor_data->gpio_int2 = (GPIO_NUM_TYPE) temp;
 
 	if (of_property_read_u32(dn, "gpio_int2_sh", &temp))
-		hwlog_err("%s:read acc gpio_int2_sh fail\n", __func__);
+		hwlog_err("%s:read %s gpio_int2_sh fail\n", __func__, sm->sensor_name_str);
 	else
-		gsensor_data.gpio_int2_sh = (GPIO_NUM_TYPE) temp;
+		gsensor_data->gpio_int2_sh = (GPIO_NUM_TYPE) temp;
 
 	if (of_property_read_u32(dn, "poll_interval", &temp))
-		hwlog_err("%s:read acc poll_interval fail\n", __func__);
+		hwlog_err("%s:read %s poll_interval fail\n", __func__, sm->sensor_name_str);
 	else
-		gsensor_data.poll_interval = (uint16_t) temp;
+		gsensor_data->poll_interval = (uint16_t) temp;
 
 	if (of_property_read_u32(dn, "calibrate_style", &temp))
-		hwlog_err("%s:read acc calibrate_style fail\n", __func__);
+		hwlog_err("%s:read %s calibrate_style fail\n", __func__, sm->sensor_name_str);
 	else
-		gsensor_data.calibrate_style = (uint8_t) temp;
+		gsensor_data->calibrate_style = (uint8_t) temp;
 
 	if (of_property_read_u32(dn, "axis_map_x", &temp))
-		hwlog_err("%s:read acc axis_map_x fail\n", __func__);
+		hwlog_err("%s:read %s axis_map_x fail\n", __func__, sm->sensor_name_str);
 	else
-		gsensor_data.axis_map_x = (uint8_t) temp;
+		gsensor_data->axis_map_x = (uint8_t) temp;
 
 	if (of_property_read_u32(dn, "axis_map_y", &temp))
-		hwlog_err("%s:read acc axis_map_y fail\n", __func__);
+		hwlog_err("%s:read %s axis_map_y fail\n", __func__, sm->sensor_name_str);
 	else
-		gsensor_data.axis_map_y = (uint8_t) temp;
+		gsensor_data->axis_map_y = (uint8_t) temp;
 
 	if (of_property_read_u32(dn, "axis_map_z", &temp))
-		hwlog_err("%s:read acc axis_map_z fail\n", __func__);
+		hwlog_err("%s:read %s axis_map_z fail\n", __func__, sm->sensor_name_str);
 	else
-		gsensor_data.axis_map_z = (uint8_t) temp;
+		gsensor_data->axis_map_z = (uint8_t) temp;
 
 	if (of_property_read_u32(dn, "negate_x", &temp))
-		hwlog_err("%s:read acc negate_x fail\n", __func__);
+		hwlog_err("%s:read %s negate_x fail\n", __func__, sm->sensor_name_str);
 	else
-		gsensor_data.negate_x = (uint8_t) temp;
+		gsensor_data->negate_x = (uint8_t) temp;
 
 	if (of_property_read_u32(dn, "negate_y", &temp))
-		hwlog_err("%s:read acc negate_y fail\n", __func__);
+		hwlog_err("%s:read %s negate_y fail\n", __func__, sm->sensor_name_str);
 	else
-		gsensor_data.negate_y = (uint8_t) temp;
+		gsensor_data->negate_y = (uint8_t) temp;
 
 	if (of_property_read_u32(dn, "negate_z", &temp))
-		hwlog_err("%s:read acc negate_z fail\n", __func__);
+		hwlog_err("%s:read %s negate_z fail\n", __func__, sm->sensor_name_str);
 	else
-		gsensor_data.negate_z = (uint8_t) temp;
+		gsensor_data->negate_z = (uint8_t) temp;
 
         if (of_property_read_u32(dn, "device_type", &temp))
-                hwlog_err("%s:read acc device_type fail\n", __func__);
+                hwlog_err("%s:read %s device_type fail\n", __func__, sm->sensor_name_str);
         else
-                gsensor_data.device_type = (uint8_t) temp;
+                gsensor_data->device_type = (uint8_t) temp;
 
 	if (of_property_read_u32(dn, "x_calibrate_thredhold", &temp))
-		hwlog_err("%s:read acc x_calibrate_thredhold fail\n", __func__);
+		hwlog_err("%s:read %s x_calibrate_thredhold fail\n", __func__, sm->sensor_name_str);
 	else
-		gsensor_data.x_calibrate_thredhold = (uint16_t) temp;
+		gsensor_data->x_calibrate_thredhold = (uint16_t) temp;
 
 	if (of_property_read_u32(dn, "y_calibrate_thredhold", &temp))
-		hwlog_err("%s:read acc y_calibrate_thredhold fail\n", __func__);
+		hwlog_err("%s:read %s y_calibrate_thredhold fail\n", __func__, sm->sensor_name_str);
 	else
-		gsensor_data.y_calibrate_thredhold = (uint16_t) temp;
+		gsensor_data->y_calibrate_thredhold = (uint16_t) temp;
 
 	if (of_property_read_u32(dn, "z_calibrate_thredhold", &temp))
-		hwlog_err("%s:read acc z_calibrate_thredhold fail\n", __func__);
+		hwlog_err("%s:read %s z_calibrate_thredhold fail\n", __func__, sm->sensor_name_str);
 	else
-		gsensor_data.z_calibrate_thredhold = (uint16_t) temp;
+		gsensor_data->z_calibrate_thredhold = (uint16_t) temp;
 
 
 /* i2c_address should be set when detect success! not here
@@ -617,100 +697,138 @@ static void read_acc_data_from_dts(struct device_node *dn)
 	else
 		gsensor_data.cfg.i2c_address = (uint8_t) temp;
 */
-	if (of_property_read_u32(dn, "file_id", &temp))
-		hwlog_err("%s:read acc file_id fail\n", __func__);
+	if (of_property_read_u32(dn, "aux_prop", &aux))
+		hwlog_err("%s:read %s aux_prop fail\n", __func__, sm->sensor_name_str);
 	else
+		hwlog_info("%s:read %s aux_prop %d\n", __func__, sm->sensor_name_str, aux);
+
+	if (of_property_read_u32(dn, "file_id", &temp))
+		hwlog_err("%s:read %s file_id fail\n", __func__, sm->sensor_name_str);
+	else if (aux)
+		read_aux_file_list(temp, sm->tag);
+	else if (!aux) {
 		dyn_req->file_list[dyn_req->file_count] = (uint16_t) temp;
-	dyn_req->file_count++;
+		dyn_req->file_count++;
+	}
 
 	if (of_property_read_u32(dn, "sensor_list_info_id", &temp))
-		hwlog_err("%s:read acc sensor_list_info_id fail\n", __func__);
+		hwlog_err("%s:read %s sensor_list_info_id fail\n", __func__, sm->sensor_name_str);
 	else
 		sensorlist[++sensorlist[0]] = (uint16_t) temp;
 	if (of_property_read_u32(dn, "calibrate_way", &temp))
-		hwlog_err("%s:read acc calibrate_way fail\n", __func__);
+		hwlog_err("%s:read %s calibrate_way fail\n", __func__, sm->sensor_name_str);
 	else {
-		gsensor_data.calibrate_way = (uint8_t) temp;
-		acc_cali_way = (uint8_t) temp;
+		gsensor_data->calibrate_way = (uint8_t) temp;
+		acc_cali_way = ((ACC == sm->sensor_id) ? (uint8_t) temp : acc_cali_way);
 	}
 
 	if (of_property_read_u32(dn, "wakeup_duration", &temp))
-		hwlog_err("%s:read acc wakeup_duration fail\n", __func__);
+		hwlog_err("%s:read %s wakeup_duration fail\n", __func__, sm->sensor_name_str);
 	else {
-		gsensor_data.wakeup_duration = (uint8_t) temp;
+		gsensor_data->wakeup_duration = (uint8_t) temp;
 	}
 
-	read_sensorlist_info(dn, ACC);
+	if (of_property_read_string(dn, "bus_type", &bus_type)) {
+		hwlog_warn("%s:acc %s bus_type not configured\n", __func__, sm->sensor_name_str);
+	} else {
+		if (get_combo_bus_tag(bus_type, (uint8_t *)&temp)) {
+			hwlog_warn("%s:acc %s bus_type invalid\n.", __func__, sm->sensor_name_str);
+		} else {
+			gsensor_data->cfg.bus_type = temp;
+		}
+	}
+
+	if (of_property_read_u32(dn, "bus_number", &temp)) {
+		hwlog_warn("%s:acc %s bus_number not configured\n", __func__, sm->sensor_name_str);
+	} else {
+		gsensor_data->cfg.bus_num = temp;
+	}
+
+	if (gsensor_data->cfg.bus_type == TAG_I2C || gsensor_data->cfg.bus_type == TAG_I3C) {
+		if (of_property_read_u32(dn, "i2c_address", &temp)) {
+			hwlog_warn("%s:acc %s i2c_address not configured\n", __func__, sm->sensor_name_str);
+		} else {
+			gsensor_data->cfg.i2c_address = temp;
+		}
+	}
+
+	if (of_property_read_string(dn, "sensor_in_board_status", (const char**)&sensor_in_board_status)) {
+		hwlog_err("read sensor_in_board_status order err.\n");
+	}
+	hwlog_info("sensor_in_board_status order:%s\n", sensor_in_board_status);
+
+	read_sensorlist_info(dn, sm->sensor_id);
 }
 
-static void read_mag_data_from_dts(struct device_node *dn)
+static void read_mag_data_from_dts(struct device_node *dn, struct sensor_detect_manager *sm)
 {
-	int temp = 0;
+	int temp = 0, aux = 0;
+	struct compass_platform_data *mag_data = (struct compass_platform_data *)sm->spara;
 
-	read_chip_info(dn, MAG);
+	read_chip_info(dn, sm->sensor_id);
 
 	if (of_property_read_u32(dn, "poll_interval", &temp))
-		hwlog_err("%s:read mag poll_interval fail\n", __func__);
+		hwlog_err("%s:read %s mag poll_interval fail\n", __func__, sm->sensor_name_str);
 	else
-		mag_data.poll_interval = (uint16_t) temp;
+		mag_data->poll_interval = (uint16_t) temp;
 
 	if (of_property_read_u32(dn, "axis_map_x", &temp))
-		hwlog_err("%s:read mag axis_map_x fail\n", __func__);
+		hwlog_err("%s:read %s mag axis_map_x fail\n", __func__, sm->sensor_name_str);
 	else
-		mag_data.axis_map_x = (uint8_t) temp;
+		mag_data->axis_map_x = (uint8_t) temp;
 
 	if (of_property_read_u32(dn, "axis_map_y", &temp))
-		hwlog_err("%s:read mag axis_map_y fail\n", __func__);
+		hwlog_err("%s:read %s mag axis_map_y fail\n", __func__, sm->sensor_name_str);
 	else
-		mag_data.axis_map_y = (uint8_t) temp;
+		mag_data->axis_map_y = (uint8_t) temp;
 
 	if (of_property_read_u32(dn, "axis_map_z", &temp))
-		hwlog_err("%s:read mag axis_map_z fail\n", __func__);
+		hwlog_err("%s:read %s mag axis_map_z fail\n", __func__, sm->sensor_name_str);
 	else
-		mag_data.axis_map_z = (uint8_t) temp;
+		mag_data->axis_map_z = (uint8_t) temp;
 
 	if (of_property_read_u32(dn, "negate_x", &temp))
-		hwlog_err("%s:read mag negate_x fail\n", __func__);
+		hwlog_err("%s:read %s mag negate_x fail\n", __func__, sm->sensor_name_str);
 	else
-		mag_data.negate_x = (uint8_t) temp;
+		mag_data->negate_x = (uint8_t) temp;
 
 	if (of_property_read_u32(dn, "negate_y", &temp))
-		hwlog_err("%s:read mag negate_y fail\n", __func__);
+		hwlog_err("%s:read %s mag negate_y fail\n", __func__, sm->sensor_name_str);
 	else
-		mag_data.negate_y = (uint8_t) temp;
+		mag_data->negate_y = (uint8_t) temp;
 
 	if (of_property_read_u32(dn, "negate_z", &temp))
-		hwlog_err("%s:read mag negate_z fail\n", __func__);
+		hwlog_err("%s:read %s mag negate_z fail\n", __func__, sm->sensor_name_str);
 	else
-		mag_data.negate_z = (uint8_t) temp;
+		mag_data->negate_z = (uint8_t) temp;
 
 	if (of_property_read_u32(dn, "outbit", &temp))
-		hwlog_err("%s:read mag outbit fail\n", __func__);
+		hwlog_err("%s:read %s mag outbit fail\n", __func__, sm->sensor_name_str);
 	else
-		mag_data.outbit = (uint8_t) temp;
+		mag_data->outbit = (uint8_t) temp;
 
 	if (of_property_read_u32(dn, "softfilter", &temp))
-		hwlog_err("%s:read mag softfilter fail; use default value:%d\n", __func__, mag_data.soft_filter);
+		hwlog_err("%s:read %s mag softfilter fail; use default value:%d\n", __func__, sm->sensor_name_str, mag_data->soft_filter);
 	else
-		mag_data.soft_filter = (uint8_t) temp;
+		mag_data->soft_filter = (uint8_t) temp;
 
 	if (of_property_read_u32(dn, "calibrate_method", &temp))
-		hwlog_err("%s:read mag calibrate_method fail\n", __func__);
+		hwlog_err("%s:read %s mag calibrate_method fail\n", __func__, sm->sensor_name_str);
 	else
-		mag_data.calibrate_method = (uint8_t) temp;
+		mag_data->calibrate_method = (uint8_t) temp;
 
 	if (of_property_read_u32(dn, "charger_trigger", &temp))
-		hwlog_err("%s:read mag charger_trigger fail; use default value:%d\n", __func__, mag_data.charger_trigger);
+		hwlog_err("%s:read %s mag charger_trigger fail; use default value:%d\n", __func__, sm->sensor_name_str, mag_data->charger_trigger);
 	else
-		mag_data.charger_trigger = (uint8_t)temp;
+		mag_data->charger_trigger = (uint8_t)temp;
 
 	if (of_property_read_u32(dn, "threshold_for_als_calibrate", &temp))
-		hwlog_err("%s:read mag threshold_for_als_calibrate fail\n", __func__);
+		hwlog_err("%s:read %s mag threshold_for_als_calibrate fail\n", __func__, sm->sensor_name_str);
 	else
 		mag_threshold_for_als_calibrate =  temp;
 
 	if (of_property_read_u32(dn, "akm_cal_algo", &temp)) {
-		hwlog_err("%s:read mag akm_cal_algo fail\n", __func__);
+		hwlog_err("%s:read %s mag akm_cal_algo fail\n", __func__, sm->sensor_name_str);
 		akm_cal_algo = 0;
 	} else {
 		if (1 == temp) {
@@ -718,7 +836,7 @@ static void read_mag_data_from_dts(struct device_node *dn)
 		} else {
 			akm_cal_algo = 0;
 		}
-		hwlog_info("%s: mag akm_cal_algo=%d.\n", __func__, akm_cal_algo);
+		hwlog_info("%s: mag %s akm_cal_algo=%d.\n", __func__, sm->sensor_name_str, akm_cal_algo);
 	}
 
 /* i2c_address should be set when detect success! not here
@@ -727,128 +845,207 @@ static void read_mag_data_from_dts(struct device_node *dn)
 	else
 		mag_data.cfg.i2c_address = (uint8_t) temp;
 */
+	if (of_property_read_u32(dn, "aux_prop", &aux))
+		hwlog_err("%s:read %s aux_prop fail\n", __func__, sm->sensor_name_str);
+	else
+		hwlog_info("%s:read %s aux_prop %d\n", __func__, sm->sensor_name_str, aux);
 
 	if (of_property_read_u32(dn, "file_id", &temp))
-		hwlog_err("%s:read mag file_id fail\n", __func__);
-	else
+		hwlog_err("%s:read %s file_id fail\n", __func__, sm->sensor_name_str);
+	else if (aux)
+		read_aux_file_list(temp, sm->tag);
+	else if (!aux) {
 		dyn_req->file_list[dyn_req->file_count] = (uint16_t) temp;
-	dyn_req->file_count++;
+		dyn_req->file_count++;
+	}
 
 	if (of_property_read_u32(dn, "sensor_list_info_id", &temp))
-		hwlog_err("%s:read mag sensor_list_info_id fail\n", __func__);
+		hwlog_err("%s:read %s mag sensor_list_info_id fail\n", __func__, sm->sensor_name_str);
 	else
 		sensorlist[++sensorlist[0]] = (uint16_t) temp;
 
 	temp = of_get_named_gpio(dn, "gpio_reset", 0);
 	if (temp < 0)
-		hwlog_err("%s:read gpio_rst fail\n", __func__);
+		hwlog_err("%s:read %s gpio_rst fail\n", __func__, sm->sensor_name_str);
 	else
-		mag_data.gpio_rst = (GPIO_NUM_TYPE) temp;
+		mag_data->gpio_rst = (GPIO_NUM_TYPE) temp;
+
+	if (of_property_read_u32(dn, "akm_need_charger_current", &temp)) {
+		hwlog_info("%s:read mag akm_need_charger_current fail\n", __func__);
+		akm_need_charger_current = FALSE;
+	} else {
+		if (TRUE== temp) {
+			akm_need_charger_current = TRUE;
+		} else {
+			akm_need_charger_current = FALSE;
+		}
+		hwlog_info("%s: mag akm_need_charger_current=%d.\n", __func__,
+			   akm_need_charger_current);
+	}
+	if (of_property_read_u32(dn, "akm_current_x_fac", &temp)) {
+		hwlog_info("%s:read mag akm_current_x_fac fail\n", __func__);
+		akm_current_x_fac = CURRENT_FAC_AKM_INIT;
+	} else {
+		akm_current_x_fac = temp;
+		hwlog_info("%s: mag akm_current_x_fac=%d.\n", __func__,
+			   akm_current_x_fac);
+	}
+	if (of_property_read_u32(dn, "akm_current_y_fac", &temp)) {
+		hwlog_info("%s:read mag akm_current_y_fac fail\n", __func__);
+		akm_current_y_fac = CURRENT_FAC_AKM_INIT;
+	} else {
+		akm_current_y_fac = temp;
+		hwlog_info("%s: mag akm_current_y_fac=%d.\n", __func__,
+			   akm_current_y_fac);
+	}
+	if (of_property_read_u32(dn, "akm_current_z_fac", &temp)) {
+		hwlog_info("%s:read mag akm_current_z_fac fail\n", __func__);
+		akm_current_z_fac = CURRENT_FAC_AKM_INIT;
+	} else {
+		akm_current_z_fac = temp;
+		hwlog_info("%s: mag akm_current_z_fac=%d.\n", __func__,
+			   akm_current_z_fac);
+	}
 	read_sensorlist_info(dn, MAG);
 }
 
-static void read_gyro_data_from_dts(struct device_node *dn)
+static void read_gyro_data_from_dts(struct device_node *dn, struct sensor_detect_manager *sm)
 {
-	int temp = 0;
+	const char *bus_type;
+	int temp = 0, aux = 0;
+	struct gyro_platform_data *gyro_data = (struct gyro_platform_data *)sm->spara;
 
-	read_chip_info(dn, GYRO);
+	read_chip_info(dn, sm->sensor_id);
 
 	if (of_property_read_u32(dn, "poll_interval", &temp))
-		hwlog_err("%s:read mag poll_interval fail\n", __func__);
+		hwlog_err("%s:read %s mag poll_interval fail\n", __func__, sm->sensor_name_str);
 	else
-		gyro_data.poll_interval = (uint16_t) temp;
+		gyro_data->poll_interval = (uint16_t) temp;
 
 	if (of_property_read_u32(dn, "position", &temp)){
-		gyro_position = gyro_data.position;
-		hwlog_err("%s:read gyro position fail,use default position =%d\n", __func__,gyro_position);
+		gyro_position = gyro_data->position;
+		hwlog_err("%s:read %s gyro position fail,use default position =%d\n", __func__, sm->sensor_name_str,gyro_position);
 	}
 	else{
-		gyro_data.position = (uint8_t) temp;
-		gyro_position = gyro_data.position;
-		hwlog_info("%s:read gyro position suc position=%d\n", __func__,gyro_position);
+		gyro_data->position = (uint8_t) temp;
+		gyro_position = gyro_data->position;
+		hwlog_info("%s:read %s gyro position suc position=%d\n", __func__, sm->sensor_name_str,gyro_position);
 	}
 
 	if (of_property_read_u32(dn, "axis_map_x", &temp))
-		hwlog_err("%s:read gyro axis_map_x fail\n", __func__);
+		hwlog_err("%s:read %s gyro axis_map_x fail\n", __func__, sm->sensor_name_str);
 	else
-		gyro_data.axis_map_x = (uint8_t) temp;
+		gyro_data->axis_map_x = (uint8_t) temp;
 
 	if (of_property_read_u32(dn, "axis_map_y", &temp))
-		hwlog_err("%s:read gyro axis_map_y fail\n", __func__);
+		hwlog_err("%s:read %s gyro axis_map_y fail\n", __func__, sm->sensor_name_str);
 	else
-		gyro_data.axis_map_y = (uint8_t) temp;
+		gyro_data->axis_map_y = (uint8_t) temp;
 
 	if (of_property_read_u32(dn, "axis_map_z", &temp))
-		hwlog_err("%s:read gyro axis_map_z fail\n", __func__);
+		hwlog_err("%s:read %s gyro axis_map_z fail\n", __func__, sm->sensor_name_str);
 	else
-		gyro_data.axis_map_z = (uint8_t) temp;
+		gyro_data->axis_map_z = (uint8_t) temp;
 
 	if (of_property_read_u32(dn, "negate_x", &temp))
-		hwlog_err("%s:read gyro negate_x fail\n", __func__);
+		hwlog_err("%s:read %s gyro negate_x fail\n", __func__, sm->sensor_name_str);
 	else
-		gyro_data.negate_x = (uint8_t) temp;
+		gyro_data->negate_x = (uint8_t) temp;
 
 	if (of_property_read_u32(dn, "negate_y", &temp))
-		hwlog_err("%s:read gyro negate_y fail\n", __func__);
+		hwlog_err("%s:read %s gyro negate_y fail\n", __func__, sm->sensor_name_str);
 	else
-		gyro_data.negate_y = (uint8_t) temp;
+		gyro_data->negate_y = (uint8_t) temp;
 
 	if (of_property_read_u32(dn, "negate_z", &temp))
-		hwlog_err("%s:read gyro negate_z fail\n", __func__);
+		hwlog_err("%s:read %s gyro negate_z fail\n", __func__, sm->sensor_name_str);
 	else
-		gyro_data.negate_z = (uint8_t) temp;
+		gyro_data->negate_z = (uint8_t) temp;
 
 	if (of_property_read_u32(dn, "still_calibrate_threshold", &temp))
-		hwlog_err("%s:read gyro still_calibrate_threshold fail\n", __func__);
+		hwlog_err("%s:read %s gyro still_calibrate_threshold fail\n", __func__, sm->sensor_name_str);
 	else
-		gyro_data.still_calibrate_threshold = (uint8_t) temp;
+		gyro_data->still_calibrate_threshold = (uint8_t) temp;
+
+	if (of_property_read_u32(dn, "aux_prop", &aux))
+		hwlog_err("%s:read %s aux_prop fail\n", __func__, sm->sensor_name_str);
+	else
+		hwlog_info("%s:read %s aux_prop %d\n", __func__, sm->sensor_name_str, aux);
 
 	if (of_property_read_u32(dn, "file_id", &temp))
-		hwlog_err("%s:read gyro file_id fail\n", __func__);
-	else
+		hwlog_err("%s:read %s file_id fail\n", __func__, sm->sensor_name_str);
+	else if (aux)
+		read_aux_file_list(temp, sm->tag);
+	else if (!aux) {
 		dyn_req->file_list[dyn_req->file_count] = (uint16_t) temp;
-	dyn_req->file_count++;
+		dyn_req->file_count++;
+	}
 
 	if (of_property_read_u32(dn, "sensor_list_info_id", &temp))
-		hwlog_err("%s:read gyro sensor_list_info_id fail\n", __func__);
+		hwlog_err("%s:read %s gyro sensor_list_info_id fail\n", __func__, sm->sensor_name_str);
 	else
 		sensorlist[++sensorlist[0]] = (uint16_t) temp;
 
 	temp = of_get_named_gpio(dn, "gpio_int1", 0);
 	if (temp < 0)
-		hwlog_err("%s:read gpio_int1 fail\n", __func__);
+		hwlog_err("%s:read %s gpio_int1 fail\n", __func__, sm->sensor_name_str);
 	else
-		gyro_data.gpio_int1 = (GPIO_NUM_TYPE) temp;
+		gyro_data->gpio_int1 = (GPIO_NUM_TYPE) temp;
 
 	if (of_property_read_u32(dn, "fac_fix_offset_Y", &temp))
-		hwlog_info("%s:read fac_fix_offset_Y fail\n", __func__);
+		hwlog_info("%s:read %s fac_fix_offset_Y fail\n", __func__, sm->sensor_name_str);
 	else{
-		gyro_data.fac_fix_offset_Y = (uint8_t) temp;
-		hwlog_debug("%s:read acc fac_fix_offset_Y %d\n", __func__, temp);
+		gyro_data->fac_fix_offset_Y = (uint8_t) temp;
+		hwlog_debug("%s:read %s acc fac_fix_offset_Y %d\n", __func__, sm->sensor_name_str, temp);
 	}
 	if (of_property_read_u32(dn, "calibrate_way", &temp))
-		hwlog_err("%s:read gyro calibrate_way fail\n", __func__);
+		hwlog_err("%s:read %s gyro calibrate_way fail\n", __func__, sm->sensor_name_str);
 	else {
-		gyro_data.calibrate_way = (uint8_t) temp;
+		gyro_data->calibrate_way = (uint8_t) temp;
 		gyro_cali_way = (uint8_t) temp;
 	}
 
 	if (of_property_read_u32(dn, "calibrate_thredhold", &temp))
-		hwlog_info("%s:read calibrate_thredhold fail\n", __func__);
+		hwlog_info("%s:read %s calibrate_thredhold fail\n", __func__, sm->sensor_name_str);
 	else{
-		gyro_data.calibrate_thredhold = (uint16_t) temp;
-		hwlog_debug("%s:read gyro calibrate_thredhold %d\n", __func__, temp);
+		gyro_data->calibrate_thredhold = (uint16_t) temp;
+		hwlog_debug("%s:read %s gyro calibrate_thredhold %d\n", __func__, sm->sensor_name_str, temp);
 	}
 
 	if (of_property_read_u32(dn, "gyro_range", &temp)){
-		hwlog_debug("%s:read gyro_range fail\n", __func__);
+		hwlog_debug("%s:read %s gyro_range fail\n", __func__, sm->sensor_name_str);
 	}
 	else{
-		gyro_data.gyro_range = (uint16_t) temp;
-		gyro_range = gyro_data.gyro_range;
-		hwlog_info("%s:read gyro gyro_range %d\n", __func__, temp);
+		gyro_data->gyro_range = (uint16_t) temp;
+		gyro_range = gyro_data->gyro_range;
+		hwlog_info("%s:read %s gyro gyro_range %d\n", __func__, sm->sensor_name_str, temp);
 	}
-	read_sensorlist_info(dn, GYRO);
+
+	if (of_property_read_string(dn, "bus_type", &bus_type)) {
+		hwlog_warn("%s:gyro %s bus_type not configured\n", __func__, sm->sensor_name_str);
+	} else {
+		if (get_combo_bus_tag(bus_type, (uint8_t *)&temp)) {
+			hwlog_warn("%s:gyro %s bus_type invalid\n.", __func__, sm->sensor_name_str);
+		} else {
+			gyro_data->cfg.bus_type = temp;
+		}
+	}
+
+	if (of_property_read_u32(dn, "bus_number", &temp)) {
+		hwlog_warn("%s:gyro %s bus_number not configured\n", __func__, sm->sensor_name_str);
+	} else {
+		gyro_data->cfg.bus_num = temp;
+	}
+
+	if (gyro_data->cfg.bus_type == TAG_I2C || gyro_data->cfg.bus_type == TAG_I3C) {
+		if (of_property_read_u32(dn, "i2c_address", &temp)) {
+			hwlog_warn("%s:gyro %s i2c_address not configured\n", __func__, sm->sensor_name_str);
+		} else {
+			gyro_data->cfg.i2c_address = temp;
+		}
+	}
+
+	read_sensorlist_info(dn, sm->sensor_id);
 }
 
 void read_als_data_from_dts(struct device_node *dn)
@@ -870,6 +1067,11 @@ void read_als_data_from_dts(struct device_node *dn)
 		hwlog_err("%s:rohm_bh1745 i2c_address suc,%d \n", __func__, temp);
 	}
 
+	if (!strncmp(chip_info, "huawei,rohm_bh1749", sizeof("huawei,rohm_bh1749"))) {
+		g_bh1749_flag = 1;
+		hwlog_err("%s:rohm_bh1749 i2c_address suc,%d \n", __func__, temp);
+	}
+
 	if (!strncmp(chip_info, "huawei,avago_apds9251", sizeof("huawei,avago_apds9251"))) {
 		avago_rgb_flag = 1;
 		hwlog_err("%s:avago_apds9251 i2c_address suc,%d \n", __func__, temp);
@@ -878,6 +1080,11 @@ void read_als_data_from_dts(struct device_node *dn)
 	if (!strncmp(chip_info, "huawei,ams_tmd3725",sizeof("huawei,ams_tmd3725"))) {
 		ams_tmd3725_rgb_flag = 1;
 		hwlog_err("%s:ams_tmd3725 i2c_address suc,%d \n", __func__,temp);
+	}
+
+	if (!strncmp(chip_info, "huawei,ams_tcs3701",sizeof("huawei,ams_tcs3701"))) {
+		ams_tcs3701_rgb_flag = 1;
+		hwlog_err("%s:ams_tcs3701 i2c_address suc,%d \n", __func__,temp);
 	}
 
 	if (!strncmp(chip_info, "huawei,liteon_ltr582",sizeof("huawei,liteon_ltr582"))) {
@@ -924,6 +1131,19 @@ void read_als_data_from_dts(struct device_node *dn)
 	if (!strncmp(chip_info, "huawei,vishay_vcnl36658", sizeof("huawei,vishay_vcnl36658"))) {
 		vishay_vcnl36658_als_flag= 1;
 		hwlog_info("%s:vishay_vcnl36658 i2c_address suc,%d \n", __func__, temp);
+	}
+	if (!strncmp(chip_info, "huawei,vishay_vcnl36832", sizeof("huawei,vishay_vcnl36832"))) {
+		vishay_vcnl36832_als_flag = 1;
+	}
+	if (!strncmp(chip_info, "huawei,arrow_stk3338", sizeof("huawei,arrow_stk3338"))) {
+		stk3338_als_flag = 1;
+	}
+	if (!strncmp(chip_info, "huawei,liteon_ltr2568", sizeof("huawei,liteon_ltr2568"))) {
+		ltr2568_als_flag = 1;
+	}
+	if (!strncmp(chip_info, "huawei,st_vd6281", sizeof("huawei,st_vd6281"))) {
+		vd6281_als_flag= 1;
+		hwlog_info("%s:st_vd6281 i2c_address suc,%d \n", __func__, temp);
 	}
 	if (!strncmp(chip_info, "huawei,A", sizeof("huawei,A"))) {
 		tsl2591_flag= 1;
@@ -1000,10 +1220,19 @@ void read_als_data_from_dts(struct device_node *dn)
 	else
 		als_data.is_close = (int)temp;
 
+	if (of_property_read_u32(dn, "als_cali_after_sale", &temp))
+		hwlog_err("%s:read als_cali_after_sale fail\n", __func__);
+	else
+		als_support_under_screen_cali = (uint8_t)temp;
+
 	if (of_property_read_u32(dn, "file_id", &temp))
 		hwlog_err("%s:read als file_id fail\n", __func__);
 	else
 		dyn_req->file_list[dyn_req->file_count] = (uint16_t) temp;
+	if (of_property_read_u32(dn, "is_bllevel_supported", &temp))
+		hwlog_err("%s:read als is_bllevel_supported fail\n", __func__);
+	else
+		als_data.is_bllevel_supported = (int)temp;
 	dyn_req->file_count++;
 	read_sensorlist_info(dn, ALS);
 	ret = of_property_read_u32(dn, "phone_color_num", &temp);
@@ -1061,6 +1290,11 @@ static void read_ps_data_from_dts(struct device_node *dn)
 		hwlog_err("%s:ams-tmd3725_ps i2c_address suc,%d \n", __func__, temp);
 	}
 
+	if (!strncmp(sensor_chip_info[PS], "huawei,ams_tcs3701",sizeof("huawei,ams_tcs3701"))) {
+		ams_tcs3701_ps_flag = 1;
+		hwlog_err("%s:ams_tcs3701_ps i2c_address suc,%d \n", __func__, temp);
+	}
+
        if (!strncmp(sensor_chip_info[PS], "huawei,liteon-ltr582",sizeof("huawei,liteon-ltr582"))) {
 		liteon_ltr582_ps_flag = 1;
 		hwlog_err("%s:liteon-ltr582_ps i2c_address suc,%d \n", __func__, temp);
@@ -1081,7 +1315,7 @@ static void read_ps_data_from_dts(struct device_node *dn)
 		hwlog_err("%s:vishay-vcnl36658_ps i2c_address suc,%d \n", __func__, temp);
 	}
 
-	if (!strncmp(sensor_chip_info[PS], "avago_apds9253_006",sizeof("huawei,avago_apds9253_006"))) {
+	if (!strncmp(sensor_chip_info[PS], "huawei,avago_apds9253_006",sizeof("huawei,avago_apds9253_006"))) {
 		apds9253_006_ps_flag = 1;
 		hwlog_info("%s:apds9253_006_ps i2c_address suc,%d \n", __func__, temp);
 	}
@@ -1111,6 +1345,21 @@ static void read_ps_data_from_dts(struct device_node *dn)
 		hwlog_err("%s:read threshold_value fail\n", __func__);
 	else
 		ps_data.threshold_value = temp;
+
+	if (of_property_read_u32(dn, "pwindows_screenon_value", &temp))
+		hwlog_err("%s:read pwindows_screenon_value fail\n", __func__);
+	else
+		ps_data.pwindows_screenon_value = temp;
+
+	if (of_property_read_u32(dn, "pwave_screenon_value", &temp))
+		hwlog_err("%s:read pwave_screenon_value fail\n", __func__);
+	else
+		ps_data.pwave_screenon_value = temp;
+
+	if (of_property_read_u32(dn, "threshold_screenon_value", &temp))
+		hwlog_err("%s:read threshold_screenon_value fail\n", __func__);
+	else
+		ps_data.threshold_screenon_value = temp;
 
 	if (of_property_read_u32(dn, "rdata_under_sun", &temp))
 		hwlog_err("%s:read rdata_under_sun fail\n", __func__);
@@ -1203,10 +1452,20 @@ static void read_ps_data_from_dts(struct device_node *dn)
 	else
 		ps_data.offset_max = (uint8_t) temp;
 
+	if (of_property_read_u32(dn, "digital_offset_max", &temp))
+		hwlog_err("%s:read digital_offset_max fail\n", __func__);
+	else
+		ps_data.digital_offset_max = (uint8_t)temp;
+
 	if (of_property_read_u32(dn, "offset_min", &temp))
 		hwlog_err("%s:read offset_min fail\n", __func__);
 	else
 		ps_data.offset_min = (uint8_t) temp;
+
+	if (of_property_read_u32(dn, "ps_cali_after_sale", &temp))
+		hwlog_err("%s:read ps_cali_after_sale fail\n", __func__);
+	else
+		ps_support_cali_after_sale = (uint8_t)temp;
 
 	if (of_property_read_u32(dn, "oily_max_near_pdata", &temp))
 		hwlog_err("%s:read oily_max_near_pdata fail\n", __func__);
@@ -1246,6 +1505,10 @@ static void read_ps_data_from_dts(struct device_node *dn)
 	else
 	      ps_support_abs_threshold=temp;
 
+	if (of_property_read_u32(dn, "is_always_on", &temp))
+		hwlog_err("%s:read is_always_on fail\n", __func__);
+	else
+		ps_data.is_always_on = (uint8_t) temp;
 	read_sensorlist_info(dn, PS);
 }
 
@@ -1417,12 +1680,59 @@ static void read_handpress_data_from_dts(struct device_node *dn)
 	hwlog_info("get handpress dev from temp=%d; ++sensorlist[0]:%d\n", temp, sensorlist[0] - 1);
 }
 
-static void read_capprox_data_from_dts(struct device_node *dn)
+static void read_abov_sar_data_from_dts(struct device_node *dn)
+{
+	uint16_t abov_phone_type = 0;
+	uint32_t ph = 0;
+	int temp = 0;
+	int i = 0;
+	uint16_t *threshold_to_modem = NULL;
+	uint16_t *calibrate_thred = NULL;
+
+	read_chip_info(dn, CAP_PROX);
+	threshold_to_modem = sar_pdata.sar_datas.abov_data.threshold_to_modem;
+	if (of_property_read_u16_array(dn, "to_modem_threshold", threshold_to_modem, CAP_MODEM_THRESHOLE_LEN)) {
+		*threshold_to_modem = 0xC8; // 0xC8: default modem_threshold
+		*(threshold_to_modem + 1) = 0;
+		hwlog_info("read threshold_to_modem fail\n");
+	}
+	hwlog_info("read threshold_to_modem %u %u %u\n", *threshold_to_modem, *(threshold_to_modem + 1),
+	           *(threshold_to_modem + (CAP_MODEM_THRESHOLE_LEN - 1)));
+
+	if (of_property_read_u16(dn, "phone_type", &abov_phone_type)) {
+		sar_pdata.sar_datas.abov_data.phone_type = 0;
+		hwlog_err("%s:read phone_type fail.\n", __func__);
+	} else {
+		sar_pdata.sar_datas.abov_data.phone_type = abov_phone_type;
+		hwlog_info("%s:read phone_type:0x%x\n", __func__, sar_pdata.sar_datas.abov_data.phone_type);
+	}
+
+	if (of_property_read_u32(dn, "ph", &ph)) {
+		sar_pdata.sar_datas.abov_data.ph = 0x5; // 0x5: enable ph0
+		hwlog_err("%s:read ph fail\n", __func__);
+	} else {
+		sar_pdata.sar_datas.abov_data.ph = (uint8_t)ph;
+		hwlog_info("%s:read ph:0x%x\n", __func__, sar_pdata.sar_datas.abov_data.ph);
+	}
+	calibrate_thred = sar_pdata.sar_datas.abov_data.calibrate_thred;
+	if (of_property_read_u16_array(dn, "calibrate_thred", calibrate_thred, CAP_CALIBRATE_THRESHOLE_LEN)) {
+		hwlog_err("%s:read calibrate_thred fail\n", __func__);
+		*calibrate_thred = 0;
+		*(calibrate_thred + 1) = 0;
+		*(calibrate_thred + 2) = 0;
+		*(calibrate_thred + 3) = 0;
+	}
+	hwlog_info("calibrate_thred:%u %u %u %u\n", *calibrate_thred, *(calibrate_thred + 1), *(calibrate_thred + 2),
+	           *(calibrate_thred + 3));
+}
+
+static void read_capprox_data_from_dts(struct device_node *dn, struct sensor_detect_manager *sm)
 {
 	uint16_t threshold_to_ap = 0;
 	uint16_t semtech_phone_type = 0;
 	uint32_t ph = 0;
-	int temp = 0;
+	int temp = 0, aux = 0;
+	struct sar_platform_data *sar_pdata = (struct sar_platform_data *)sm->spara;
 	int i = 0;
 	uint16_t *threshold_to_modem = NULL;
 	uint16_t *calibrate_thred = NULL;
@@ -1434,53 +1744,71 @@ static void read_capprox_data_from_dts(struct device_node *dn)
 			 0x000a000C, 0x00798000,
 			 0x000b9905, 0x000c00e8, 0x000d0200, 0x000e0000,
 			 0x000f000C, 0x007a8000};
-	read_chip_info(dn, CAP_PROX);
+	read_chip_info(dn, sm->sensor_id);
 
 	temp = of_get_named_gpio(dn, "gpio_int", 0);
 	if (temp < 0)
-		hwlog_err("%s:read gpio_int1 fail\n", __func__);
+		hwlog_err("%s:read %s gpio_int fail\n", __func__, sm->sensor_name_str);
 	else
-		sar_pdata.gpio_int = (GPIO_NUM_TYPE) temp;
+		sar_pdata->gpio_int = (GPIO_NUM_TYPE) temp;
+
+	if (of_property_read_u32(dn, "gpio_int_sh", &temp))
+		hwlog_err("%s:read %s gpio_int_sh fail\n", __func__,
+		sm->sensor_name_str);
+	else
+		sar_pdata->gpio_int_sh = (GPIO_NUM_TYPE)temp;
+	if (of_property_read_u32(dn, "reg", &temp))
+		hwlog_err("%s:read cap_prox reg fail\n", __func__);
+	else
+		sar_pdata->cfg.i2c_address = (uint8_t)temp;
 
 	if (of_property_read_u32(dn, "poll_interval", &temp))
-		hwlog_err("%s:read poll_interval fail\n", __func__);
+		hwlog_err("%s:read %s poll_interval fail\n", __func__, sm->sensor_name_str);
 	else
-		sar_pdata.poll_interval = (uint16_t) temp;
-	hwlog_info("sar.poll_interval: %d\n", sar_pdata.poll_interval);
+		sar_pdata->poll_interval = (uint16_t) temp;
+	hwlog_info("sar.poll_interval: %d\n", sar_pdata->poll_interval);
+
+	if (of_property_read_u32(dn, "aux_prop", &aux))
+		hwlog_err("%s:read %s aux_prop fail\n", __func__, sm->sensor_name_str);
+	else
+		hwlog_info("%s:read %s aux_prop %d\n", __func__, sm->sensor_name_str, aux);
 
 	if (of_property_read_u32(dn, "file_id", &temp))
-		hwlog_err("%s:read sar file_id fail\n", __func__);
-	else
+		hwlog_err("%s:read %s file_id fail\n", __func__, sm->sensor_name_str);
+	else if (aux)
+		read_aux_file_list(temp, sm->tag);
+	else if (!aux) {
 		dyn_req->file_list[dyn_req->file_count] = (uint16_t) temp;
-	dyn_req->file_count++;
+		dyn_req->file_count++;
+	}
 
 	if (of_property_read_u32(dn, "sensor_list_info_id", &temp))
-		hwlog_err("%s:read sar sensor_list_info_id fail\n", __func__);
+		hwlog_err("%s:read %s sar sensor_list_info_id fail\n", __func__, sm->sensor_name_str);
 	else
 		sensorlist[++sensorlist[0]] = (uint16_t) temp;
 	if (of_property_read_u32(dn, "calibrate_type", &temp))
-		hwlog_err("%s:read sar calibrate_type fail\n", __func__);
+		hwlog_err("%s:read %s sar calibrate_type fail\n", __func__, sm->sensor_name_str);
 	else
-		sar_pdata.calibrate_type=temp;
+		sar_pdata->calibrate_type = (uint16_t)temp;
 
 	if (of_property_read_string(dn, "calibrate_order", (const char**)&sar_calibrate_order)) {
 		hwlog_err("read calibrate order err.\n");
 	}
 	hwlog_info("calibrate order:%s\n", sar_calibrate_order);
 
-	if (!strncmp(sensor_chip_info[CAP_PROX], "huawei,cypress_sar_psoc4000", strlen("huawei,cypress_sar_psoc4000"))) {
+	if (!strncmp(sensor_chip_info[sm->sensor_id], "huawei,cypress_sar_psoc4000", strlen("huawei,cypress_sar_psoc4000"))) {
 		if (of_property_read_u16(dn, "to_ap_threshold", &threshold_to_ap))
-			sar_pdata.sar_datas.cypress_data.threshold_to_ap = 0xC8;
+			sar_pdata->sar_datas.cypress_data.threshold_to_ap = 0xC8;
 		else
-			sar_pdata.sar_datas.cypress_data.threshold_to_ap = (uint16_t)threshold_to_ap;
+			sar_pdata->sar_datas.cypress_data.threshold_to_ap = (uint16_t)threshold_to_ap;
 
-		threshold_to_modem = sar_pdata.sar_datas.cypress_data.threshold_to_modem;
+		threshold_to_modem = sar_pdata->sar_datas.cypress_data.threshold_to_modem;
 		if (of_property_read_u16_array(dn, "to_modem_threshold", threshold_to_modem, 8)) {
 			*threshold_to_modem =  0xC8;
 			*(threshold_to_modem+1) = 0;
 		}
 		hwlog_info("ap:%u, modem:%u %u %u\n", threshold_to_ap, *threshold_to_modem, *(threshold_to_modem+1), *(threshold_to_modem+7));
-	} else if (!strncmp(sensor_chip_info[CAP_PROX], "huawei,adi-adux1050", strlen("huawei,adi-adux1050"))) {
+	} else if (!strncmp(sensor_chip_info[sm->sensor_id], "huawei,adi-adux1050", strlen("huawei,adi-adux1050"))) {
 
 		memset(&adux_sar_add_data, 0x00, sizeof(adux_sar_add_data));
 
@@ -1499,13 +1827,13 @@ static void read_capprox_data_from_dts(struct device_node *dn)
 		}
 
 		if (of_property_read_u32(dn, "update_offset", &temp))
-			hwlog_err("%s:read sar updata_offset fail\n", __func__);
+			hwlog_err("%s:read %s sar updata_offset fail\n", __func__, sm->sensor_name_str);
 		else{
 			adux_sar_add_data.updata_offset=temp;
 		}
 
 		if (of_property_read_u32(dn, "cdc_calue_threshold", &temp))
-			hwlog_err("%s:read sar cdc_calue_threshold fail\n", __func__);
+			hwlog_err("%s:read %s sar cdc_calue_threshold fail\n", __func__, sm->sensor_name_str);
 		else{
 			adux_sar_add_data.cdc_calue_threshold=temp;
 		}
@@ -1520,7 +1848,7 @@ static void read_capprox_data_from_dts(struct device_node *dn)
 
 		calibrate_thred = adux_sar_add_data.calibrate_thred;
 		if (of_property_read_u16_array(dn, "calibrate_thred", calibrate_thred, 4)) {
-			hwlog_err("%s:read calibrate_thred fail\n", __func__);
+			hwlog_err("%s:read %s calibrate_thred fail\n", __func__, sm->sensor_name_str);
 			*calibrate_thred = 0;
 			*(calibrate_thred+1) = 0;
 			*(calibrate_thred+2) = 0;
@@ -1528,19 +1856,19 @@ static void read_capprox_data_from_dts(struct device_node *dn)
 		}
 		hwlog_info("calibrate_thred:%u %u %u %u\n", *calibrate_thred, *(calibrate_thred+1), *(calibrate_thred+2), *(calibrate_thred+3));
 
-		init_reg_val = sar_pdata.sar_datas.adux_data.init_reg_val;
+		init_reg_val = sar_pdata->sar_datas.adux_data.init_reg_val;
 		if (of_property_read_u32_array(dn, "init_reg_val", init_reg_val, ADUX_REGS_NEED_INITIATED_NUM)) {
-			hwlog_err("%s:read init_reg_val fail\n", __func__);
+			hwlog_err("%s:read %s init_reg_val fail\n", __func__, sm->sensor_name_str);
 			memcpy(init_reg_val, init_reg_val_default, sizeof(init_reg_val_default));
 		}
 		hwlog_info("init_reg_val[0]:%8x init_reg_val[%d]%8x\n", *init_reg_val, ADUX_REGS_NEED_INITIATED_NUM-1, *(init_reg_val+ADUX_REGS_NEED_INITIATED_NUM-1));
 
-	}else if (!strncmp(sensor_chip_info[CAP_PROX], "huawei,semtech-sx9323", strlen("huawei,semtech-sx9323"))){
+	}else if (!strncmp(sensor_chip_info[sm->sensor_id], "huawei,semtech-sx9323", strlen("huawei,semtech-sx9323"))){
 		if (of_property_read_u16(dn, "to_ap_threshold", &threshold_to_ap))
-			sar_pdata.sar_datas.semteck_data.threshold_to_ap = 0xC8;
+			sar_pdata->sar_datas.semteck_data.threshold_to_ap = 0xC8;
 		else
-			sar_pdata.sar_datas.semteck_data.threshold_to_ap = (uint16_t)threshold_to_ap;
-		threshold_to_modem = sar_pdata.sar_datas.semteck_data.threshold_to_modem;
+			sar_pdata->sar_datas.semteck_data.threshold_to_ap = (uint16_t)threshold_to_ap;
+		threshold_to_modem = sar_pdata->sar_datas.semteck_data.threshold_to_modem;
 		if (of_property_read_u16_array(dn, "to_modem_threshold", threshold_to_modem, 8)) {
 			*threshold_to_modem =  0xC8;
 			*(threshold_to_modem+1) = 0;
@@ -1548,43 +1876,45 @@ static void read_capprox_data_from_dts(struct device_node *dn)
 		}
 		hwlog_info("read threshold_to_modem %u %u %u\n", *threshold_to_modem, *(threshold_to_modem+1), *(threshold_to_modem+7));
 
-		init_reg_val = sar_pdata.sar_datas.semteck_data.init_reg_val;
+		init_reg_val = sar_pdata->sar_datas.semteck_data.init_reg_val;
 		if (of_property_read_u32_array(dn, "init_reg_val", init_reg_val, SEMTECH_REGS_NEED_INITIATED_NUM)) {
-			hwlog_err("%s:read init_reg_val fail\n", __func__);
+			hwlog_err("%s:read %s init_reg_val fail\n", __func__, sm->sensor_name_str);
 			memcpy(init_reg_val, init_reg_val_default, sizeof(init_reg_val_default));
 		}
 		hwlog_info("init_reg_val[0]:%8x init_reg_val[%d]%8x\n", *init_reg_val, SEMTECH_REGS_NEED_INITIATED_NUM-1,*(init_reg_val+SEMTECH_REGS_NEED_INITIATED_NUM-1));
 
 		if (of_property_read_u16(dn, "phone_type", &semtech_phone_type)) {
-			sar_pdata.sar_datas.semteck_data.phone_type = 0;
-			hwlog_err("%s:read phone_type fail.\n", __func__);
+			sar_pdata->sar_datas.semteck_data.phone_type = 0;
+			hwlog_err("%s:read %s phone_type fail.\n", __func__, sm->sensor_name_str);
 		}
 		else {
-			sar_pdata.sar_datas.semteck_data.phone_type = semtech_phone_type;
-			hwlog_info("%s:read phone_type:0x%x\n",__func__,sar_pdata.sar_datas.semteck_data.phone_type);
+			sar_pdata->sar_datas.semteck_data.phone_type = semtech_phone_type;
+			hwlog_info("%s:read %s phone_type:0x%x\n",__func__, sm->sensor_name_str,sar_pdata->sar_datas.semteck_data.phone_type);
 		}
 
 		if (of_property_read_u32(dn, "ph", &ph))
 		{
-			sar_pdata.sar_datas.semteck_data.ph= 0x2f;
-			hwlog_err("%s:read ph fail\n", __func__);
+			sar_pdata->sar_datas.semteck_data.ph= 0x2f;
+			hwlog_err("%s:read %s ph fail\n", __func__, sm->sensor_name_str);
 		}
 		else
 		{
-			sar_pdata.sar_datas.semteck_data.ph= (uint8_t)ph;
-			hwlog_info("%s:read ph:0x%x\n",__func__,sar_pdata.sar_datas.semteck_data.ph);
+			sar_pdata->sar_datas.semteck_data.ph= (uint8_t)ph;
+			hwlog_info("%s:read %s ph:0x%x\n",__func__, sm->sensor_name_str,sar_pdata->sar_datas.semteck_data.ph);
 		}
-		calibrate_thred = sar_pdata.sar_datas.semteck_data.calibrate_thred;
+		calibrate_thred = sar_pdata->sar_datas.semteck_data.calibrate_thred;
 		if (of_property_read_u16_array(dn, "calibrate_thred", calibrate_thred, 4)) {
-			hwlog_err("%s:read calibrate_thred fail\n", __func__);
+			hwlog_err("%s:read %s calibrate_thred fail\n", __func__, sm->sensor_name_str);
 			*calibrate_thred = 0;
 			*(calibrate_thred+1) = 0;
 			*(calibrate_thred+2) = 0;
 			*(calibrate_thred+3) = 0;
 		}
 		hwlog_info("calibrate_thred:%u %u %u %u\n", *calibrate_thred, *(calibrate_thred+1), *(calibrate_thred+2), *(calibrate_thred+3));
+	} else if (!strncmp(sensor_chip_info[CAP_PROX], "huawei,abov-a96t3x6", strlen("huawei,abov-a96t3x6"))) {
+		read_abov_sar_data_from_dts(dn);
 	}
-	read_sensorlist_info(dn, CAP_PROX);
+	read_sensorlist_info(dn, sm->sensor_id);
 }
 
 static void read_connectivity_data_from_dts(struct device_node *dn)
@@ -1856,7 +2186,7 @@ static void read_aod_data_from_dts(struct device_node *dn)
     else
     {
 		aod_data.phone_type = (uint32_t) temp;
-		hwlog_info("[bhm]aod_data.phone_type is %u\n", aod_data.phone_type);
+		hwlog_info("aod_data.phone_type is %u\n", aod_data.phone_type);
 	}
 }
 
@@ -1983,6 +2313,41 @@ static int read_rpc_data_from_dts(struct device_node* dn)
     read_sensorlist_info(dn, RPC);
     return 0;
 }
+
+static void read_kb_data_from_dts(struct device_node *dn)
+{
+	int temp = 0;
+
+	if (dn == NULL)
+		return;
+
+	read_chip_info(dn, KB);
+
+	if (of_property_read_u32(dn, "uart_num", &temp))
+		hwlog_err("%s:read uart_num fail\n", __func__);
+	else
+		g_kb_data.uart_num = (uint16_t) temp;
+
+	if (of_property_read_u32(dn, "kb_detect_adc_num", &temp))
+		hwlog_err("%s:read kb_detect_adc_num fail\n", __func__);
+	else
+		g_kb_data.kb_detect_adc_num = (uint16_t) temp;
+
+	if (of_property_read_u32(dn, "kb_disconnect_adc_min", &temp))
+		hwlog_err("%s:read kb_disconnect_adc_min fail\n", __func__);
+	else
+		g_kb_data.kb_disconnect_adc_min = (uint16_t) temp;
+
+	if (of_property_read_u32(dn, "kb_disable_angle", &temp))
+		hwlog_err("%s:read kb_disable_angle fail\n", __func__);
+	else
+		g_kb_data.kb_disable_angle = (uint16_t) temp;
+
+	hwlog_info("%s: uart_num:%d, adc_num:%d, disconnect_adc_min:%d\n",
+		__func__, g_kb_data.uart_num, g_kb_data.kb_detect_adc_num,
+		g_kb_data.kb_disconnect_adc_min);
+}
+
 static int get_adapt_file_id_for_dyn_load(void)
 {
 	u32 wia[ADAPT_SENSOR_LIST_NUM]={ 0 };
@@ -1991,7 +2356,7 @@ static int get_adapt_file_id_for_dyn_load(void)
 	unsigned int len = 0;
 	struct device_node *sensorhub_node = NULL;
 	const char *name = "adapt_file_id";
-	char *step_count_ty = NULL;
+	char *temp = NULL;
 	sensorhub_node = of_find_compatible_node(NULL, NULL, "huawei,sensorhub");
 	if (!sensorhub_node) {
 		hwlog_err("%s, can't find node sensorhub\n", __func__);
@@ -2038,18 +2403,27 @@ static int get_adapt_file_id_for_dyn_load(void)
 
 	if (0 == of_property_read_u32(sensorhub_node, "hall_sen_type", &i))
 	{
-		if(1 == i)
-		{
-			hall_sen_type = i;
-			hwlog_info("sensor get hall sensor type %d\n" , i);
+		hall_sen_type = i;
+		hwlog_info("sensor get hall sensor type %d\n", i);
+		if (hall_sen_type == HUB_FOLD_HALL_TYPE)
+			all_ap_sensor_operations[TAG_EXT_HALL].work_on_ap = false;
+	} else {
+		hall_sen_type = 0;
+	}
+
+	if (0 == of_property_read_string(sensorhub_node, "docom_step_counter", (const char **)&temp))
+	{
+		if (!strcmp("enabled",temp)) {
+			pConfigOnDDr->reserved |= 1 << 0;
+			hwlog_info("%s : docom_step_counter status is %s \n",__func__,temp);
 		}
 	}
 
-	if (0 == of_property_read_string(sensorhub_node, "docom_step_counter", (const char **)&step_count_ty))
+	if (0 == of_property_read_string(sensorhub_node, "homo_activity", (const char **)&temp))
 	{
-		if (!strcmp("enabled",step_count_ty)) {
-			pConfigOnDDr->reserved = 1;
-			hwlog_info("%s : docom_step_counter status is %s \n",__func__,step_count_ty);
+		if (!strcmp("enabled",temp)) {
+			pConfigOnDDr->reserved |= 1 << 1;
+			hwlog_info("%s : homo_activity status is %s \n",__func__,temp);
 		}
 	}
 
@@ -2127,7 +2501,41 @@ static int get_adapt_sensor_list_id(void)
 	return 0;
 }
 
-int send_fileid_to_mcu(void)
+static int get_sensors_id_from_dts(void)
+{
+	struct device_node *sensorhub_node = NULL;
+
+	sensorhub_node = of_find_compatible_node(NULL, NULL, "huawei,sensorhub");
+	if (!sensorhub_node) {
+		hwlog_err("%s, can't find node sensorhub\n", __func__);
+		return -1;
+	}
+
+	if (of_property_read_string(sensorhub_node, "acc_sensor_id", (const char**)&acc_sensor_id)) {
+		hwlog_err("acc_sensor_id err.\n");
+	}
+	hwlog_info("acc_sensor_id:%s\n",acc_sensor_id);
+
+	if (of_property_read_string(sensorhub_node, "gyro_sensor_id", (const char**)&gyro_sensor_id)) {
+		hwlog_err("gyro_sensor_id err.\n");
+	}
+	hwlog_info("gyro_sensor_id:%s\n",gyro_sensor_id);
+
+	if (of_property_read_string(sensorhub_node, "mag_sensor_id", (const char**)&mag_sensor_id)) {
+		hwlog_err("mag_sensor_id err.\n");
+	}
+	hwlog_info("mag_sensor_id:%s\n",mag_sensor_id);
+
+	if (of_property_read_string(sensorhub_node, "cap_sensor_id", (const char**)&cap_sensor_id)) {
+		hwlog_err("cap_sensor_id err.\n");
+	}
+	hwlog_info("cap_sensor_id:%s\n",cap_sensor_id);
+
+	return 0;
+}
+
+
+static int send_dyn_to_mcu(void *buf, int len)
 {
 	write_info_t pkg_ap;
 	read_info_t pkg_mcu;
@@ -2135,12 +2543,10 @@ int send_fileid_to_mcu(void)
 
 	memset(&pkg_ap, 0, sizeof(pkg_ap));
 	memset(&pkg_mcu, 0, sizeof(pkg_mcu));
-	dyn_req->end = 1;
 	pkg_ap.tag = TAG_SYS;
 	pkg_ap.cmd = CMD_SYS_DYNLOAD_REQ;
-	pkg_ap.wr_buf = &(dyn_req->end);
-	pkg_ap.wr_len = dyn_req->file_count * sizeof(dyn_req->file_list[0])
-	    + sizeof(dyn_req->end) + sizeof(dyn_req->file_count);
+	pkg_ap.wr_buf = buf;
+	pkg_ap.wr_len = len;
 
 	if (g_iom3_state == IOM3_ST_RECOVERY || iom3_power_state == ST_SLEEP) {
 		ret = write_customize_cmd(&pkg_ap, NULL, false);
@@ -2158,6 +2564,44 @@ int send_fileid_to_mcu(void)
 	}
 
 	return 0;
+}
+
+int send_fileid_to_mcu(void)
+{
+	int i = 0;
+	pkt_sys_dynload_req_t dynload_req;
+
+	if (dyn_req->file_count) {
+		hwlog_info("sensorhub after check, get dynload file id number = %d, fild id", dyn_req->file_count);
+		for (i = 0; i < dyn_req->file_count; i++) {
+			hwlog_info("--%d", dyn_req->file_list[i]);
+		}
+		hwlog_info("\n");
+		dyn_req->file_flg = 0;
+		if (send_dyn_to_mcu(&(dyn_req->file_flg),
+			dyn_req->file_count * sizeof(dyn_req->file_list[0]) + sizeof(dyn_req->file_flg) + sizeof(dyn_req->file_count)))
+			hwlog_err("%s send file_id to mcu failed\n", __func__);
+	} else {
+		hwlog_err("%s file_count = 0, not send file_id to mcu\n", __func__);
+		return -EINVAL;
+	}
+
+	if (aux_req->file_count) {
+		hwlog_info("sensorhub after check, get aux file id number = %d, aux file id and tag ", aux_req->file_count);
+		for (i = 0; i < aux_req->file_count; i++) {
+			hwlog_info("--%d, %d", aux_req->file_list[2*i], aux_req->file_list[2*i + 1]);
+		}
+		hwlog_info("\n");
+		aux_req->file_flg = 1;
+		if (send_dyn_to_mcu(&(aux_req->file_flg),
+			aux_req->file_count * sizeof(aux_req->file_list[0]) * 2 + sizeof(aux_req->file_flg) + sizeof(aux_req->file_count)))
+			hwlog_err("%s send aux file_id to mcu failed\n", __func__);
+	} else {
+		hwlog_err("%s aux count = 0, not send file_id to mcu\n", __func__);
+	}
+	memset(&dynload_req, 0, sizeof(pkt_sys_dynload_req_t));
+	dynload_req.file_flg = 2;
+	return send_dyn_to_mcu(&(dynload_req.file_flg), sizeof(pkt_sys_dynload_req_t) - sizeof(pkt_header_t));
 }
 
 static int get_adapt_id_and_send(void)
@@ -2189,18 +2633,7 @@ static int get_adapt_id_and_send(void)
 	dyn_req->file_count = check_file_list(dyn_req->file_count, dyn_req->file_list);
 
 	//transfer_for_akm(dyn_req->file_count, dyn_req->file_list);
-
-	if (dyn_req->file_count) {
-		hwlog_info("sensorhub after check, get dynload file id number = %d, fild id", dyn_req->file_count);
-		for (i = 0; i < dyn_req->file_count; i++) {
-			hwlog_info("--%d", dyn_req->file_list[i]);
-		}
-		hwlog_info("\n");
-		return send_fileid_to_mcu();
-	} else {
-		hwlog_err("%s file_count = 0, not send file_id to mcu\n", __func__);
-		return -EINVAL;
-	}
+	return send_fileid_to_mcu();
 }
 
 static int handpress_sensor_detect(struct device_node *dn, struct handpress_platform_data *handpress_data)
@@ -2515,7 +2948,28 @@ static int fingerprint_ud_sensor_detect(struct device_node *dn, int index, struc
 
 	ret = of_property_read_string(dn, "compatible", (const char **)&sensor_vendor);
 	if (!ret) {
-		if(!strncmp(sensor_vendor, "goodix", 6)) {
+		/* compare the string, and len is 15 */
+		if(!strncmp(sensor_vendor, "goodix,goodixG2", 15)) {
+			gpio_direction_output(gpio_reset, 1);
+			msleep(10);
+			gpio_direction_output(gpio_reset, 0);
+			msleep(10);
+			gpio_direction_output(gpio_reset, 1);
+			msleep(10);
+			ctrl.data = gpio_cs;
+
+			tx[0] = 0xC0; /* cmd */
+			tx_len = 1;
+			ret = mcu_spi_rw(2, ctrl, tx, tx_len, NULL, 0); /*set sensor to idle mode */
+
+			msleep(100);
+			tx[0] = 0xF0; /* addr of the cmd */
+			tx[1] = 0x43;
+			tx[2] = 0x04;
+			tx_len = 3;
+			ret = mcu_spi_rw(2, ctrl, tx, tx_len, NULL, 0); /* write cmd & address,2 is bus num */
+		}
+		else if(!strncmp(sensor_vendor, "goodix", 6)) {
 			gpio_direction_output(gpio_reset, 1);
 			msleep(10);
 			gpio_direction_output(gpio_reset, 0);
@@ -2554,6 +3008,13 @@ static int fingerprint_ud_sensor_detect(struct device_node *dn, int index, struc
 			_device_detect(dn, index, cfg);
 			hwlog_info("%s: fingerprint device %s detect bypass\n", __func__, sensor_vendor);
 			return FINGERPRINT_SENSOR_DETECT_SUCCESS;
+		}else if(!strncmp(sensor_vendor, "silead", 6)) {
+			gpio_direction_output(gpio_reset, 1);
+			msleep(10);
+			gpio_direction_output(gpio_reset, 0);
+			msleep(10);
+			gpio_direction_output(gpio_reset, 1);
+			msleep(5);
 		}
 		hwlog_info("%s: fingerprint device %s\n", __func__, sensor_vendor);
 		ret = 0;
@@ -2576,7 +3037,7 @@ static int fingerprint_ud_sensor_detect(struct device_node *dn, int index, struc
 	return ret;
 }
 
-extern const char* ts_kit_get_vendor_name(void);
+__weak const char* ts_kit_get_vendor_name(void) { return NULL; }
 int get_combo_bus_tag(const char *bus, uint8_t *tag);
 
 static int tp_ud_sensor_detect(struct device_node *dn)
@@ -2744,6 +3205,12 @@ static void read_tp_ud_from_dts(struct device_node *dn)
 		tp_ud_data.pressure_support = (GPIO_NUM_TYPE) temp;
 	}
 
+	if (of_property_read_u32(dn, "anti_forgery_support", &temp)){
+		hwlog_err("%s:read anti_forgery_support fail\n", __func__);
+	} else {
+		tp_ud_data.anti_forgery_support = (GPIO_NUM_TYPE) temp;
+	}
+
 	if (of_property_read_u32(dn, "ic_type", &temp)){
 		hwlog_err("%s:read low_power_addr fail\n", __func__);
 	} else {
@@ -2760,6 +3227,88 @@ static void read_tp_ud_from_dts(struct device_node *dn)
 		hwlog_err("%s:read i2c_max_speed_hz fail\n", __func__);
 	} else {
 		tp_ud_data.i2c_max_speed_hz = (GPIO_NUM_TYPE) temp;
+	}
+	if (of_property_read_u32(dn, "fw_power_config_reg", &temp)){
+		hwlog_err("%s:read fw_power_config_reg not config\n", __func__);
+		tp_ud_data.fw_power_config_reg = 0;
+	} else {
+		tp_ud_data.fw_power_config_reg = (GPIO_NUM_TYPE) temp;
+		hwlog_err("%s:read fw_power_config_reg = %d\n", __func__,tp_ud_data.fw_power_config_reg );
+	}
+
+	if (of_property_read_u32(dn, "fw_touch_data_reg", &temp)){
+		hwlog_err("%s:read fw_touch_data_reg not config\n", __func__);
+		tp_ud_data.fw_touch_data_reg = 0;
+	} else {
+		tp_ud_data.fw_touch_data_reg = (GPIO_NUM_TYPE) temp;
+		hwlog_err("%s:read fw_touch_data_reg = %d\n", __func__,tp_ud_data.fw_touch_data_reg );
+	}
+
+	if (of_property_read_u32(dn, "fw_touch_command_reg", &temp)){
+		hwlog_err("%s:read fw_touch_command_reg not config\n", __func__);
+		tp_ud_data.fw_touch_command_reg = 0;
+	} else {
+		tp_ud_data.fw_touch_command_reg = (GPIO_NUM_TYPE) temp;
+		hwlog_err("%s:read fw_touch_command_reg = %d\n", __func__,tp_ud_data.fw_touch_command_reg );
+	}
+
+	if (of_property_read_u32(dn, "fw_addr_3", &temp)){
+		hwlog_err("%s:read fw_addr_3 not config\n", __func__);
+		tp_ud_data.fw_addr_3 = 0;
+	} else {
+		tp_ud_data.fw_addr_3 = (GPIO_NUM_TYPE) temp;
+		hwlog_err("%s:read fw_addr_3 = %d\n", __func__,tp_ud_data.fw_addr_3 );
+	}
+
+	if (of_property_read_u32(dn, "fw_addr_4", &temp)){
+		hwlog_err("%s:read fw_addr_4 not config\n", __func__);
+		tp_ud_data.fw_addr_4 = 0;
+	} else {
+		tp_ud_data.fw_addr_4 = (GPIO_NUM_TYPE) temp;
+		hwlog_err("%s:read fw_addr_4 = %d\n", __func__,tp_ud_data.fw_addr_4 );
+	}
+
+	if (of_property_read_u32(dn, "fw_addr_5", &temp)){
+		hwlog_err("%s:read fw_addr_5 not config\n", __func__);
+		tp_ud_data.fw_addr_5 = 0;
+	} else {
+		tp_ud_data.fw_addr_5 = (GPIO_NUM_TYPE) temp;
+		hwlog_err("%s:read fw_addr_5 = %d\n", __func__,tp_ud_data.fw_addr_5 );
+	}
+
+	if (of_property_read_u32(dn, "fw_addr_6", &temp)){
+		hwlog_err("%s:read fw_addr_6 not config\n", __func__);
+		tp_ud_data.fw_addr_6 = 0;
+	} else {
+		tp_ud_data.fw_addr_6 = (GPIO_NUM_TYPE) temp;
+		hwlog_err("%s:read fw_addr_6 = %d\n", __func__,tp_ud_data.fw_addr_6 );
+	}
+
+	if (of_property_read_u32(dn, "fw_addr_7", &temp)){
+		hwlog_err("%s:read fw_addr_7 not config\n", __func__);
+		tp_ud_data.fw_addr_7 = 0;
+	} else {
+		tp_ud_data.fw_addr_7 = (GPIO_NUM_TYPE) temp;
+		hwlog_err("%s:read fw_addr_7 = %d\n", __func__,tp_ud_data.fw_addr_7 );
+	}
+	if (of_property_read_u32(dn, "tp_sensorhub_irq_flag", &temp)){
+		hwlog_err("%s:read tp_sensorhub_irq_flag not config\n", __func__);
+		tp_ud_data.tp_sensorhub_irq_flag = 0;
+	} else {
+		tp_ud_data.tp_sensorhub_irq_flag = (GPIO_NUM_TYPE) temp;
+		hwlog_err("%s:read tp_sensorhub_irq_flag = %d\n",
+			__func__,tp_ud_data.tp_sensorhub_irq_flag );
+	}
+	if (of_property_read_u32(dn,
+		"tp_sensor_spi_sync_cs_low_delay_us", &temp)) {
+		hwlog_err("%s:read tp_sensor_spi_sync_cs_low_delay_us not config\n",
+			__func__);
+		tp_ud_data.tp_sensor_spi_sync_cs_low_delay_us = 0;
+	} else {
+		tp_ud_data.tp_sensor_spi_sync_cs_low_delay_us =
+							(GPIO_NUM_TYPE) temp;
+		hwlog_err("%s:read tp_sensor_spi_sync_cs_low_delay_us = %d\n",
+			__func__, tp_ud_data.tp_sensor_spi_sync_cs_low_delay_us);
 	}
 	return;
 }
@@ -2874,8 +3423,14 @@ static int detect_i2c_device(struct device_node *dn, char *device_name)
 	int i = 0, ret = 0, i2c_address = 0, i2c_bus_num = 0;
 	int register_add = 0, len = 0;
 	u32 wia[10] = { 0 };
-	uint8_t detected_device_id;
+	uint8_t detected_device_id[4] ={0};
+	uint8_t tag = TAG_I2C;
+	uint32_t register_add_len = 0;
+	uint32_t rx_len = 0;
+	uint32_t device_id ;
 	struct property *prop = NULL;
+	const char *bus_type;
+
 
 	if (of_property_read_u32(dn, "bus_number", &i2c_bus_num)
 	    || of_property_read_u32(dn, "reg", &i2c_address)
@@ -2897,25 +3452,42 @@ static int detect_i2c_device(struct device_node *dn, char *device_name)
 		return -1;
 	}
 
-	hwlog_info("%s:read i2c bus_number (%d) slave address(0x%x) chip_id_register(0x%x) chipid value 0x%x 0x%x 0x%x 0x%x\n",
-	     device_name, i2c_bus_num, i2c_address, register_add, wia[0], wia[1], wia[2], wia[3]);
+	if (!of_property_read_string(dn, "bus_type", &bus_type)) {
+		get_combo_bus_tag(bus_type, (uint8_t *)&tag);
+	}
 
-	ret = mcu_i2c_rw((uint8_t)i2c_bus_num, (uint8_t)i2c_address, (uint8_t*)&register_add, 1, &detected_device_id, 1);
+	hwlog_info("%s:read i2c bus_type(%d) bus_number (%d) slave address(0x%x) chip_id_register(0x%x) chipid value 0x%x 0x%x 0x%x 0x%x\n",
+		device_name, tag, i2c_bus_num, i2c_address, register_add, wia[0], wia[1], wia[2], wia[3]);
+
+	if (TAG_I3C == tag) {
+		ret = mcu_i3c_rw((uint8_t)i2c_bus_num, (uint8_t)i2c_address, (uint8_t*)&register_add, 1, detected_device_id, 1);
+	} else {
+		if(register_add & 0xFF00){
+			register_add_len = 2 ;
+			rx_len = 4;
+		}else{
+			register_add_len = 1 ;
+			rx_len = 1;
+		}
+		ret = mcu_i2c_rw((uint8_t)i2c_bus_num, (uint8_t)i2c_address, (uint8_t*)&register_add, register_add_len, detected_device_id, rx_len);
+	}
+
 	if (ret) {
 		hwlog_err("%s:detect_i2c_device:send i2c read cmd to mcu fail,ret=%d\n", device_name, ret);
 		return -1;
 	}
+	memcpy(&device_id,detected_device_id,4);
 	if(!strncmp(device_name, "vibrator", strlen("vibrator"))){
-		hwlog_info("virbator temp i2c detect success,chip_value:0x%x,len:%d!\n", detected_device_id, len);
+		hwlog_info("virbator temp i2c detect success,chip_value:0x%x,len:%d!\n", device_id, len);
 		return 0;
 	}
 	for (i = 0; i < len; i++) {
-		if (detected_device_id == (char)wia[i]) {
-			hwlog_info("%s:i2c detect  suc!chip_value:0x%x\n", device_name, detected_device_id);
+		if (device_id == wia[i]) {
+			hwlog_info("%s:i2c detect  suc!chip_value:0x%x\n", device_name, device_id);
 			return 0;
 		}
 	}
-	hwlog_info("%s:i2c detect fail,chip_value:0x%x,len:%d!\n", device_name, detected_device_id, len);
+	hwlog_info("%s:i2c detect fail,chip_value:0x%x,len:%d!\n", device_name, device_id, len);
 	return -1;
 }
 
@@ -3097,12 +3669,17 @@ static void __set_hw_dev_flag(SENSOR_DETECT_LIST s_id)
 	switch(s_id)
 	{
 		case ACC:
+		case ACC1:
+		case ACC2:
 			set_hw_dev_flag(DEV_I2C_G_SENSOR);
 			break;
 		case MAG:
+		case MAG1:
 			set_hw_dev_flag(DEV_I2C_COMPASS);
 			break;
 		case GYRO:
+		case GYRO1:
+		case GYRO2:
 			set_hw_dev_flag(DEV_I2C_GYROSCOPE);
 			break;
 		case ALS:
@@ -3119,6 +3696,7 @@ static void __set_hw_dev_flag(SENSOR_DETECT_LIST s_id)
 			set_hw_dev_flag(DEV_I2C_VIBRATOR_LRA);
 			break;
 		case CAP_PROX:
+		case CAP_PROX1:
 		case FINGERPRINT:
 		case KEY:
 		case MAGN_BRACKET:
@@ -3155,6 +3733,11 @@ static int extend_config_before_sensor_detect(struct device_node *dn, int index)
 		case SH_AOD:
 			sensor_manager[index].detect_result = DET_SUCC;
 			read_aod_data_from_dts(dn);
+			break;
+		case KB:
+			sensor_manager[index].detect_result = DET_SUCC;
+			read_kb_data_from_dts(dn);
+			break;
 		default:
 			ret = -1;
 			break;
@@ -3171,17 +3754,24 @@ static void extend_config_after_sensor_detect(struct device_node *dn, int index)
 	switch(s_id)
 	{
 		case ACC:
-			read_acc_data_from_dts(dn);
+		case ACC1:
+		case ACC2:
+			read_acc_data_from_dts(dn, &sensor_manager[index]);
+			break;
+		case MAG1:
+			read_mag_data_from_dts(dn, &sensor_manager[index]);
 			break;
 		case MAG:
-			read_mag_data_from_dts(dn);
+			read_mag_data_from_dts(dn, &sensor_manager[index]);
 			ret = fill_extend_data_in_dts(dn, str_soft_para,	mag_data.pdc_data, PDC_SIZE, EXTEND_DATA_TYPE_IN_DTS_BYTE);
 			if (ret) {
 				hwlog_err("%s:fill_extend_data_in_dts failed!\n", str_soft_para);
 			}
 			break;
 		case GYRO:
-			read_gyro_data_from_dts(dn);
+		case GYRO1:
+		case GYRO2:
+			read_gyro_data_from_dts(dn, &sensor_manager[index]);
 			break;
 		case ALS:
 			read_als_data_from_dts(dn);
@@ -3196,7 +3786,8 @@ static void extend_config_after_sensor_detect(struct device_node *dn, int index)
 			read_handpress_data_from_dts(dn);
 			break;
 		case CAP_PROX:
-			read_capprox_data_from_dts(dn);
+		case CAP_PROX1:
+			read_capprox_data_from_dts(dn, &sensor_manager[index]);
 			break;
 		case KEY:
 			read_key_i2c_data_from_dts(dn);
@@ -3243,7 +3834,9 @@ static void update_detectic_client_info(void)
 	sensor_name[DSM_MAX_IC_NAME_LEN - 1] = '\0';
 	hwlog_info("update_detectic_client_info %s.\n", sensor_name);
 	dsm_sensorhub.ic_name = sensor_name;
-	dsm_update_client_vendor_info(&dsm_sensorhub);
+	if (dsm_update_client_vendor_info(&dsm_sensorhub)) {
+		hwlog_info("dsm_update_client_vendor_info failed\n");
+	}
 }
 #endif
 static uint8_t check_detect_result(DETECT_MODE mode)
@@ -3313,6 +3906,45 @@ static void show_last_detect_fail_sensor(void)
 	}
 }
 
+static void read_cap_prox1_info(struct device_node *dn)
+{
+	int register_add = 0;
+	int i2c_address = 0;
+	int i2c_bus_num = 0;
+	u32 wia[2] = { 0 };
+	char *chip_info = NULL;
+
+	if (of_property_read_u32(dn, "bus_number", &i2c_bus_num) ||
+		of_property_read_u32(dn, "reg", &i2c_address) ||
+		of_property_read_u32(dn, "chip_id_register", &register_add)) {
+		hwlog_err("sar sensor :read i2c bus_number (%d)or bus\
+		address(%x) orchip_id_register(%8x)\from dts fail\n",
+		i2c_bus_num, i2c_address, register_add);
+	}
+
+	if (of_property_read_u32_array(dn, "chip_id_value", wia, 2))
+		hwlog_err("sar1 sensor:read chip_id_value (id0=0x%8x id1=0x%8x)\
+		from dts fail\n", wia[0], wia[1]);
+
+	hwlog_info("sar sensor:bus_number (%d) slave address(0x%x)\
+		chip_id_register (0x%8x)chipid value0x%8x 0x%8x\n",
+		i2c_bus_num, i2c_address, register_add, wia[0], wia[1]);
+
+	if (of_property_read_string(dn, "compatible", (const char **)&chip_info))
+		hwlog_err("%s:read name_id:CAP_PROX info fail.\n", __func__);
+
+	if (!strncmp(chip_info, "huawei,semtech-sx9335",
+		strlen("huawei,semtech-sx9335"))) {
+		hwlog_info("sar sensor from dts is semtech-sx9335\n");
+		semtech_9335_sar_detect.detect_flag = 1;
+		semtech_9335_sar_detect.cfg.bus_num = (uint8_t)i2c_bus_num;
+		semtech_9335_sar_detect.cfg.i2c_address = (uint8_t)i2c_address;
+		semtech_9335_sar_detect.chip_id = (uint16_t)register_add;
+		semtech_9335_sar_detect.chip_id_value[0] = (uint32_t)wia[0];
+		semtech_9335_sar_detect.chip_id_value[1] = (uint32_t)wia[1];
+	}
+}
+
 static void read_cap_prox_info(struct device_node *dn)
 {
 	int register_add = 0, i2c_address = 0, i2c_bus_num = 0;
@@ -3340,25 +3972,33 @@ static void read_cap_prox_info(struct device_node *dn)
 		semtech_sar_detect.detect_flag= 1;
 		semtech_sar_detect.cfg.bus_num = (uint8_t)i2c_bus_num;
 		semtech_sar_detect.cfg.i2c_address = (uint8_t)i2c_address;
-		semtech_sar_detect.chip_id = (uint8_t)register_add;
-		semtech_sar_detect.chip_id_value[0] = (uint8_t)wia[0];
-		semtech_sar_detect.chip_id_value[1] = (uint8_t)wia[1];
+		semtech_sar_detect.chip_id = (uint16_t)register_add;
+		semtech_sar_detect.chip_id_value[0] = (uint32_t)wia[0];
+		semtech_sar_detect.chip_id_value[1] = (uint32_t)wia[1];
 	} else if (!strncmp(chip_info, "huawei,adi-adux1050", strlen("huawei,adi-adux1050"))) {
 		hwlog_info("sar sensor from dts is adi-adux1050\n");
 		adi_sar_detect.detect_flag= 1;
 		adi_sar_detect.cfg.bus_num = (uint8_t)i2c_bus_num;
 		adi_sar_detect.cfg.i2c_address = (uint8_t)i2c_address;
-		adi_sar_detect.chip_id = (uint8_t)register_add;
-		adi_sar_detect.chip_id_value[0] = (uint8_t)wia[0];
-		adi_sar_detect.chip_id_value[1] = (uint8_t)wia[1];
+		adi_sar_detect.chip_id = (uint16_t)register_add;
+		adi_sar_detect.chip_id_value[0] = (uint32_t)wia[0];
+		adi_sar_detect.chip_id_value[1] = (uint32_t)wia[1];
 	}else if (!strncmp(chip_info, "huawei,cypress_sar_psoc4000", strlen("huawei,cypress_sar_psoc4000"))){
 		hwlog_info("sar sensor from dts is cypress_sar_psoc4000\n");
 		cypress_sar_detect.detect_flag= 1;
 		cypress_sar_detect.cfg.bus_num = (uint8_t)i2c_bus_num;
 		cypress_sar_detect.cfg.i2c_address = (uint8_t)i2c_address;
-		cypress_sar_detect.chip_id = (uint8_t)register_add;
-		cypress_sar_detect.chip_id_value[0] = (uint8_t)wia[0];
-		cypress_sar_detect.chip_id_value[1] = (uint8_t)wia[1];
+		cypress_sar_detect.chip_id = (uint16_t)register_add;
+		cypress_sar_detect.chip_id_value[0] = (uint32_t)wia[0];
+		cypress_sar_detect.chip_id_value[1] = (uint32_t)wia[1];
+	} else if (!strncmp(chip_info, "huawei,abov-a96t3x6", strlen("huawei,abov-a96t3x6"))) {
+		hwlog_info("sar sensor from dts is abov-a96t3x6\n");
+		g_abov_sar_detect.detect_flag = 1;
+		g_abov_sar_detect.cfg.bus_num = (uint8_t)i2c_bus_num;
+		g_abov_sar_detect.cfg.i2c_address = (uint8_t)i2c_address;
+		g_abov_sar_detect.chip_id = (uint16_t)register_add;
+		g_abov_sar_detect.chip_id_value[0] = (uint32_t)wia[0];
+		g_abov_sar_detect.chip_id_value[1] = (uint32_t)wia[1];
 	}
 }
 
@@ -3369,7 +4009,6 @@ static void redetect_failed_sensors(DETECT_MODE mode)
 	char *sensor_st = NULL;
 	struct device_node *dn = NULL;
 	const char *st = "disabled";
-	int i = 0;
 
 	for_each_node_with_property(dn, "sensor_type") {
 		//sensor type
@@ -3449,13 +4088,17 @@ int init_sensors_cfg_data_from_dts(void)
 			hwlog_err("get sensor type fail ret=%d\n", ret);
 			continue;
 		}
+		hwlog_info("%s : get sensor type %s \n",__func__,sensor_ty);
 		index = get_sensor_index(sensor_ty, strlen(sensor_ty));
-		if(index < 0){
+		if (index < 0) {
 			hwlog_err("get sensor index fail ret=%d\n", ret);
 			continue;
 		}
-		if(CAP_PROX == sensor_manager[index].sensor_id)
+		if (sensor_manager[index].sensor_id == CAP_PROX)
 			read_cap_prox_info(dn);//for factory sar
+
+		if (sensor_manager[index].sensor_id == CAP_PROX1)
+			read_cap_prox1_info(dn);//for factory sar
 
 		//sensor status:ok or disabled
 		ret = of_property_read_string(dn, "status", (const char **)&sensor_st);
@@ -3465,8 +4108,9 @@ int init_sensors_cfg_data_from_dts(void)
 		}
 
 		ret = strcmp(st,sensor_st);
-		if( !ret){
-			hwlog_info("%s : sensor %s status is %s \n",__func__,sensor_ty,sensor_st);
+		if (!ret) {
+			hwlog_info("%s : sensor %s status is %s\n", __func__,
+				sensor_ty, sensor_st);
 			continue;
 		}
 		if (!extend_config_before_sensor_detect(dn, index))
@@ -3497,6 +4141,7 @@ int init_sensors_cfg_data_from_dts(void)
 	sensor_detect_result = check_detect_result(BOOT_DETECT);
 	sensor_detect_exception_process(sensor_detect_result);
 
+	get_sensors_id_from_dts();
 	if (get_adapt_id_and_send())
 		return -EINVAL;
 
@@ -3557,6 +4202,18 @@ void resend_als_parameters_to_mcu(void){
 	hwlog_info("%s\n", __func__);
 }
 
+static int mag1_data_from_mcu(const pkt_header_t *head)
+{
+	switch(((pkt_mag_calibrate_data_req_t *)head)->subcmd) {
+	case SUB_CMD_CALIBRATE_DATA_REQ:
+			return write_magsensor_calibrate_data_to_nv(((pkt_mag1_calibrate_data_req_t *)head)->calibrate_data);
+	default:
+		hwlog_err("uncorrect subcmd 0x%x.\n", ((pkt_mag1_calibrate_data_req_t *)head)->subcmd);
+	}
+	return 0;
+}
+
+
 static int mag_data_from_mcu(const pkt_header_t *head)
 {
 	switch(((pkt_mag_calibrate_data_req_t *)head)->subcmd) {
@@ -3567,6 +4224,16 @@ static int mag_data_from_mcu(const pkt_header_t *head)
 			return write_magsensor_calibrate_data_to_nv(((pkt_mag_calibrate_data_req_t *)head)->calibrate_data);
 	default:
 		hwlog_err("uncorrect subcmd 0x%x.\n", ((pkt_mag_calibrate_data_req_t *)head)->subcmd);
+	}
+	return 0;
+}
+static int gyro1_data_from_mcu(const pkt_header_t *head)
+{
+	switch(((pkt_gyro1_calibrate_data_req_t *)head)->subcmd) {
+	case SUB_CMD_SELFCALI_REQ:
+		return write_gyro1_sensor_offset_to_nv(((pkt_gyro1_calibrate_data_req_t *)head)->calibrate_data, head->length-SUBCMD_LEN);
+	default:
+		hwlog_err("uncorrect subcmd 0x%x.\n", ((pkt_gyro1_calibrate_data_req_t *)head)->subcmd);
 	}
 	return 0;
 }
@@ -3594,6 +4261,37 @@ static int tof_data_from_mcu(const pkt_header_t *head)
 	}
 	return 0;
 }
+
+/* recieve ps offset data from mcu and write to nv */
+static int ps_data_from_mcu(const pkt_header_t *head)
+{
+	int ret = -1;
+	switch (((pkt_ps_calibrate_data_req_t *)head)->subcmd) {
+	case SUB_CMD_SET_WRITE_NV_ATTER_SALE:
+		ret = write_ps_offset_to_nv((int *)(((pkt_ps_calibrate_data_req_t *)head)->calibrate_data));
+		break;
+	default:
+		hwlog_err("uncorrect subcmd 0x%x\n", ((pkt_ps_calibrate_data_req_t *)head)->subcmd);
+		break;
+	}
+	return ret;
+}
+
+/* recieve als offset data from mcu and write to nv */
+static int als_data_from_mcu(const pkt_header_t *head)
+{
+	int ret = -1;
+	switch (((pkt_als_calibrate_data_req_t *)head)->subcmd) {
+	case SUB_CMD_SET_WRITE_NV_ATTER_SALE:
+		ret = als_underscreen_calidata_save();
+		break;
+	default:
+		hwlog_err("uncorrect subcmd 0x%x\n", ((pkt_als_calibrate_data_req_t *)head)->subcmd);
+		break;
+	}
+	return ret;
+}
+
 static void register_priv_notifier(SENSOR_DETECT_LIST s_id)
 {
 	switch (s_id){
@@ -3606,6 +4304,19 @@ static void register_priv_notifier(SENSOR_DETECT_LIST s_id)
 		case TOF:
 			register_mcu_event_notifier(TAG_TOF, CMD_CMN_CONFIG_REQ,tof_data_from_mcu);
 			break;
+		case ALS:
+			register_mcu_event_notifier(TAG_ALS, CMD_CMN_CONFIG_REQ, als_data_from_mcu);
+			break;
+		case PS:
+			register_mcu_event_notifier(TAG_PS, CMD_CMN_CONFIG_REQ, ps_data_from_mcu);
+			break;
+		case GYRO1:
+			register_mcu_event_notifier(TAG_GYRO1, CMD_CMN_CONFIG_REQ, gyro1_data_from_mcu);
+			break;
+		case MAG1:
+			register_mcu_event_notifier(TAG_MAG1, CMD_CMN_CONFIG_REQ, mag1_data_from_mcu);
+			break;
+
 		default:
 			break;
 	}
@@ -3659,7 +4370,7 @@ int sensor_set_cfg_data(void)
 
 static bool need_download_fw(uint8_t tag)
 {
-	return ((TAG_KEY == tag) || (TAG_TOF == tag));
+	return ((tag == TAG_KEY) || (tag == TAG_TOF) || (tag == TAG_CAP_PROX));
 }
 
 int sensor_set_fw_load(void)
@@ -3721,6 +4432,17 @@ void sensor_redetect_enter(void)
 void sensor_redetect_init(void)
 {
 	memset(&s_redetect_state,0,sizeof(s_redetect_state));
+	memcpy(&gsensor1_data, &gsensor_data, sizeof(gsensor1_data));
+	memcpy(&gsensor2_data, &gsensor_data, sizeof(gsensor2_data));
+	memcpy(&gyro1_data, &gyro_data, sizeof(gyro1_data));
+	memcpy(&gyro2_data, &gyro_data, sizeof(gyro2_data));
+	memcpy(&mag1_data, &mag_data, sizeof(mag1_data));
+	memcpy(&sar1_pdata, &sar_pdata, sizeof(sar1_pdata));
 	wake_lock_init(&sensor_rd, WAKE_LOCK_SUSPEND, "sensorhub_redetect");
 	INIT_WORK(&redetect_work, redetect_sensor_work_handler);
+}
+
+int sensor_get_als_bh1749_flag(void)
+{
+	return g_bh1749_flag;
 }

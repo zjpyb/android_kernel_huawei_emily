@@ -266,7 +266,7 @@ static const struct attribute_group hall_attr_group = {
 	.attrs = hall_attributes,
 };
 
-static const struct attribute_group hall_attr_groups[] = {
+static const struct attribute_group *hall_attr_groups[] = {
 	&hall_attr_group,
 	NULL,
 };
@@ -312,7 +312,7 @@ static int hall_init(void)
 	if (IS_ERR(hall_class))
 		return PTR_ERR(hall_class);
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 13, 0))
-	hall_class->dev_groups = &hall_attr_groups;
+	hall_class->dev_groups = hall_attr_groups;
 #else
 	hall_class->dev_attrs = hall_class_attrs;
 #endif

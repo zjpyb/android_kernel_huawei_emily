@@ -13,6 +13,7 @@ enum nb_cmd_type
 	NBMSG_NATIVE_UNREG,
 	NBMSG_NATIVE_GET_RTT,
 	NBMSG_APP_QOE_PARAMS_REQ,
+	NBMSG_SETTING_PARAMS_REQ,
 	NBMSG_REQ_BUTT,
 };
 
@@ -30,6 +31,16 @@ enum nb_evt_type
 	NBMSG_KSI_EVT,
 	NBMSG_NATIVE_RTT,
 	NBMSG_EVT_BUTT,
+};
+
+enum setting_params_req_type
+{
+	REQ_TYPE_CLOSE_SOCKET = 1,
+	REQ_TYPE_SET_SLOW_THRESHOLD = 2,
+	REQ_TYPE_DEL_UID_NETID_ENTRY = 3,
+	REQ_TYPE_SET_ALPHA_FILTER_ALG_PARAMS = 4,
+	REQ_TYPE_SET_FILTER_ALG_CHANGE_THRESHOLD = 5,
+	REQ_TYPE_BUTT,
 };
 
 struct vod_event {
@@ -72,6 +83,13 @@ struct app_qoe_request {
 	int rsrq;
 };
 
+struct setting_params_request {
+	int msg_id;
+	int param1;
+	int param2;
+	int param3;
+};
+
 struct vod_request {
 	int8_t nf_hook_enable;
 	int8_t nl_event_enable;
@@ -84,5 +102,11 @@ struct native_requst {
 
 void nb_notify_event(enum nb_evt_type event_type, void *data, int size);
 extern int get_rtt_list(struct native_event *rtt_event, unsigned int list_len);
+#ifdef CONFIG_HW_DPIMARK_MODULE
+extern void mplk_del_nw_bind(uid_t uid);
+extern void mplk_add_nw_bind(uid_t uid, uint32_t netid);
+extern void mplk_close_socket_by_uid(uint32_t strategy, uid_t uid);
+#endif
+extern void set_slow_proba_threshold(int threshold_normal, int threshold_slow, int threshold_init);
 
 #endif /*_NB_NETLINK_H*/

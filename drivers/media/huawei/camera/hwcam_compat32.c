@@ -26,7 +26,6 @@ long compat_get_v4l2_event_data(struct v4l2_event __user *pdata, struct v4l2_eve
 	ret |= get_user(sequence, &pdata32->sequence);
     ret |= put_user(sequence, &pdata->sequence);
 	ret |= compat_get_timespec(&timestamp, &pdata32->timestamp);
-    /* ret |= put_compat_timespec(&timestamp, &pdata->timestamp); */
     ret |= copy_to_user(&pdata->timestamp, &timestamp, sizeof(timestamp));
 	ret |= get_user(id, &pdata32->id);
     ret |= put_user(id, &pdata->id);
@@ -54,7 +53,6 @@ long compat_put_v4l2_event_data(struct v4l2_event __user *pdata, struct v4l2_eve
 	ret |= put_user(pending, &pdata32->pending);
     ret |= get_user(sequence, &pdata->sequence);
 	ret |= put_user(sequence, &pdata32->sequence);
-    /* ret |= get_compat_timespec(&timestamp, &pdata->timestamp); */
     ret |= copy_from_user(&timestamp, &pdata->timestamp, sizeof(timestamp));
 	ret |= compat_put_timespec(&timestamp, &pdata32->timestamp);
     ret |= get_user(id, &pdata->id);
@@ -205,7 +203,6 @@ long compat_get_hwcam_buf_status_data(hwcam_buf_status_t __user *pdata, hwcam_bu
 	ret |= get_user(status, &pdata32->buf_status);
     ret |= put_user(status, &pdata->buf_status);
 	ret |= compat_get_timeval(&tv, &pdata32->tv);
-    /* ret |= put_compat_timeval(&tv, &pdata->tv); */
     ret |= copy_to_user(&pdata->tv, &tv, sizeof(tv));
 	return ret;
 }
@@ -224,7 +221,6 @@ long compat_put_hwcam_buf_status_data(hwcam_buf_status_t __user *pdata, hwcam_bu
 	ret |= put_user(id, &pdata32->id);
     ret |= get_user(status, &pdata->buf_status);
 	ret |= put_user(status, &pdata32->buf_status);
-    /* ret |= get_compat_timeval(&tv, &pdata->tv); */
     ret |= copy_from_user(&tv, &pdata->tv, sizeof(tv));
 	ret |= compat_put_timeval(&tv, &pdata32->tv);
 

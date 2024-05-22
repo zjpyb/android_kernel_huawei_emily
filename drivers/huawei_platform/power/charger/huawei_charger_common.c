@@ -2,10 +2,10 @@
 
 #include <huawei_platform/log/hw_log.h>
 #include <huawei_platform/power/huawei_charger.h>
-#include <protocol.h>
 #ifdef CONFIG_INPUTHUB
 #include <inputhub_bridge.h>
 #endif
+#include <huawei_platform/power/power_common_sh.h>
 
 #define HWLOG_TAG sensorhub
 HWLOG_REGIST();
@@ -13,10 +13,6 @@ HWLOG_REGIST();
 
 static struct charge_extra_ops *g_extra_ops;
 struct charge_device_ops *g_ops;
-#ifdef CONFIG_INPUTHUB
-extern sys_status_t iom3_sr_status;
-extern atomic_t iom3_rec_state;
-#endif
 
 int charge_extra_ops_register(struct charge_extra_ops *ops)
 {
@@ -162,6 +158,21 @@ enum fcp_check_stage_type fcp_get_stage_status(void)
 		return FCP_STAGE_DEFAUTL;
 	}
 	return g_extra_ops->get_stage();
+}
+
+/**********************************************************
+*  Function:       charge_get_charger_type
+*  Description:    get the charger type
+*  Parameters:     NULL
+*  return value:   NULL
+**********************************************************/
+enum huawei_usb_charger_type charge_get_charger_type(void)
+{
+	if (NULL == g_extra_ops || NULL == g_extra_ops->get_charger_type) {
+		hwlog_err("g_extra_ops->get_charger_type is NULL.\n");
+		return CHARGER_REMOVED;
+	}
+	return g_extra_ops->get_charger_type();
 }
 
 /**********************************************************

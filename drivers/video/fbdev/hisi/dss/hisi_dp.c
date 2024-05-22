@@ -26,15 +26,24 @@
 #include "hdcp22/host_lib_driver_linux_if.h"
 #include "hdcp22/hdcp13.h"
 #include <linux/printk.h>
+#include "peri_volt_poll.h"
+#include "hisi_dpe_utils.h"
 
 #define DTS_COMP_SWING_VALUE "hisilicon,hisi_dp_swing"
+#define DTS_DP_AUX_SWITCH "huawei,dp_aux_switch"
+#define PERI_VOLTAGE_LEVEL0_060V		(0) // 0.60v
+#define PERI_VOLTAGE_LEVEL1_065V		(1) // 0.65v
+#define PERI_VOLTAGE_LEVEL2_070V		(2) // 0.70v
+#define PERI_VOLTAGE_LEVEL3_080V		(3) // 0.80v
 
 struct platform_device *g_dp_pdev = NULL;
 static bool bpress_powerkey = false;
 static bool btrigger_timeout = false;
 
+#if CONFIG_DP_ENABLE
 extern int get_current_dp_source_mode(void);
 extern int update_external_display_timming_info(uint32_t width,uint32_t high,uint32_t fps);
+#endif
 extern int get_hdcp_state(uint32_t *state);
 
 /*******************************************************************************
@@ -180,7 +189,8 @@ int dp_pxl_ppll7_init(struct hisi_fb_data_type *hisifd, uint64_t pixel_clock)
 	uint32_t ppll7ctrl1;
 	uint32_t ppll7ctrl0_val;
 	uint32_t ppll7ctrl1_val;
-	int i, ret;
+	uint8_t i, j;
+	int ret;
 	int ceil_temp;
 	int freq_divider_list[22]={1,2,3,4,5,6,7,8,9,10,
 			12,14,15,16,20,21,24,
@@ -194,6 +204,7 @@ int dp_pxl_ppll7_init(struct hisi_fb_data_type *hisifd, uint64_t pixel_clock)
 		3,2,3,4,4,3,4,5,5,6,
 			6,7};
 	ret = 0;
+	j = 1;
 	postdiv1 = 0;
 	postdiv2 = 0;
 	if (pixel_clock == 0)
@@ -205,7 +216,6 @@ int dp_pxl_ppll7_init(struct hisi_fb_data_type *hisifd, uint64_t pixel_clock)
 	}
 
 	pixel_clock_ori = pixel_clock;
-
 	if (pixel_clock_ori <= PERI_VOLTAGE_065V_CLK)
 		pixel_clock_cur = pixel_clock * PPLL7_DIV_VOLTAGE_065V;
 	else if (pixel_clock_ori <= PERI_VOLTAGE_070V_CLK)
@@ -218,6 +228,13 @@ int dp_pxl_ppll7_init(struct hisi_fb_data_type *hisifd, uint64_t pixel_clock)
 	}
 
 	pixel_clock_cur = pixel_clock_cur / 1000;
+
+	if (pixel_clock_cur * freq_divider_list[21] < vco_min_freq_output) //Fractional PLL can not output the so small clock
+	{
+		j = 2;
+		pixel_clock_cur *= j; //multiple frequency
+	}
+
 	ceil_temp = dp_ceil(vco_min_freq_output, pixel_clock_cur);
 
 	if (ceil_temp < 0)
@@ -240,6 +257,8 @@ int dp_pxl_ppll7_init(struct hisi_fb_data_type *hisifd, uint64_t pixel_clock)
 	if (vco_freq_output == 0)
 		return -EINVAL;
 
+	HISI_FB_INFO("[DP] vco_freq_output=0x%llx\n", vco_freq_output);
+
 	ceil_temp = dp_ceil(400000, vco_freq_output);
 
 	if (ceil_temp < 0)
@@ -254,6 +273,7 @@ int dp_pxl_ppll7_init(struct hisi_fb_data_type *hisifd, uint64_t pixel_clock)
 	frac = (uint64_t)(ceil_temp * vco_freq_output - sys_clock_fref /refdiv*fbdiv) * refdiv * frac_range;
 	frac = (uint64_t)frac / sys_clock_fref;
 	HISI_FB_INFO("[DP] frac=0x%llx\n", frac);/*lint !e559 */
+
 
 	ppll7ctrl0 = inp32(hisifd->pmctrl_base + MIDIA_PPLL7_CTRL0);
 	ppll7ctrl0 &= ~MIDIA_PPLL7_FREQ_DEVIDER_MASK;/*lint !e648 */
@@ -276,7 +296,6 @@ int dp_pxl_ppll7_init(struct hisi_fb_data_type *hisifd, uint64_t pixel_clock)
 	outp32(hisifd->pmctrl_base + MIDIA_PPLL7_CTRL1, ppll7ctrl1);
 
 	/*comfirm ldi1 switch ppll7*/
-
 	if (pixel_clock_ori <= PERI_VOLTAGE_065V_CLK)
 		ret = clk_set_rate(hisifd->dss_pxl1_clk, DEFAULT_MIDIA_PPLL7_CLOCK_FREQ/PPLL7_DIV_VOLTAGE_065V);
 	else if (pixel_clock_ori <= PERI_VOLTAGE_070V_CLK)
@@ -453,13 +472,13 @@ static int dp_clock_setup(struct platform_device *pdev)
 	} else {
 		ret = clk_set_rate(hisifd->dss_aclk_dpctrl_clk, default_aclk_dpctrl_rate);
 		if (ret < 0) {
-			HISI_FB_ERR("[DP] fb%d dss_aclk_dpctrl_clk clk_set_rate(%lu) failed, error=%d!\n",/*lint !e559 */
+			HISI_FB_ERR("[DP] fb%d dss_aclk_dpctrl_clk clk_set_rate(%u) failed, error=%d!\n",
 				hisifd->index, default_aclk_dpctrl_rate, ret);/*lint !e559 */
 			return -EINVAL;
 		}
 
-		HISI_FB_INFO("[DP] dss_aclk_dpctrl_clk:[%lu]->[%lu].\n",/*lint !e559 */
-			default_aclk_dpctrl_rate, clk_get_rate(hisifd->dss_aclk_dpctrl_clk));/*lint !e559 */
+		HISI_FB_INFO("[DP] dss_aclk_dpctrl_clk:[%u]->[%lu].\n",
+			default_aclk_dpctrl_rate, clk_get_rate(hisifd->dss_aclk_dpctrl_clk));
 	}
 
 	hisifd->dss_pclk_dpctrl_clk = devm_clk_get(&pdev->dev, hisifd->dss_pclk_dpctrl_name);
@@ -468,6 +487,24 @@ static int dp_clock_setup(struct platform_device *pdev)
 		HISI_FB_ERR("[DP] fb%d dss_pclk_dpctrl_clk get fail ret = %d.\n",
 			hisifd->index, ret);
 		return ret;
+	}
+
+	return 0;
+}
+
+static int dp_dis_reset(struct hisi_fb_data_type *hisifd, bool benable)
+{
+	if (hisifd == NULL) {
+		HISI_FB_ERR("[DP] NULL Pointer\n");
+		return -EINVAL;
+	}
+
+	if (benable) {
+		/* dp dis reset */
+			outp32(hisifd->peri_crg_base + PERRSTDIS0, 0x00000400);
+	} else {
+		/* dp reset */
+			outp32(hisifd->peri_crg_base + PERRSTEN0, 0x00000400);
 	}
 
 	return 0;
@@ -507,8 +544,13 @@ static int dp_on(struct platform_device *pdev)
 		return 0;
 	}
 
-	/* dp dis reset */
-	outp32(hisifd->peri_crg_base + PERRSTDIS0, 0x00000400);
+	ret = dp_dis_reset(hisifd, true);
+	if (ret) {
+		HISI_FB_ERR("[DP] DPTX dis reset failed !!!\n");
+		ret = -ENODEV;
+		goto err_out;
+	}
+
 	ret = dp_clk_enable(pdev);
 	if (ret) {
 		HISI_FB_ERR("[DP] DPTX dp clock enable failed !!!\n");
@@ -522,7 +564,6 @@ static int dp_on(struct platform_device *pdev)
 		ret = -ENODEV;
 		goto err_out;
 	}
-
 	ret = dptx_core_init(dptx);
 	if (ret) {
 		HISI_FB_ERR("[DP] DPTX core init failed!\n");
@@ -540,7 +581,7 @@ static int dp_on(struct platform_device *pdev)
 	if(hisifd->secure_ctrl.hdcp_dpc_sec_en) {
 		esm_driver_enable(1);
 	}
-	HDCP_DP_on(1);
+	HDCP_DP_on(dptx, 1);
 
 	dptx->dptx_enable = true;
 	dptx->detect_times = 0;
@@ -596,13 +637,7 @@ static int dp_off(struct platform_device *pdev)
 	if(hisifd->secure_ctrl.hdcp_dpc_sec_en) {
 		esm_driver_enable(0);
 	}
-	HDCP_DP_on(0);
-
-	/* FIXME: */
-	if (dptx->video_transfer_enable) {
-		handle_hotunplug(hisifd);
-		mdelay(10);
-	}
+	HDCP_DP_on(dptx, 0);
 
 	get_hdcp_state(&hdcp_state);
 	if(hdcp_state == 1) {
@@ -618,6 +653,12 @@ static int dp_off(struct platform_device *pdev)
 	}
 	HISI_FB_INFO("[DP] wait count = %d\n", i);
 
+	/* FIXME: */
+	if (dptx->video_transfer_enable) {
+		handle_hotunplug(hisifd);
+		mdelay(10);
+	}
+
 	/* FIXME: clear intr */
 	dptx_global_intr_dis(dptx);
 	disable_irq_nosync(dptx->irq);
@@ -626,8 +667,11 @@ static int dp_off(struct platform_device *pdev)
 	dptx_aux_disreset(dptx, false);
 	dp_clk_disable(pdev);
 
-	/* dp reset */
-	outp32(hisifd->peri_crg_base + PERRSTEN0, 0x00000400);
+	ret = dp_dis_reset(hisifd, false);
+	if (ret) {
+		HISI_FB_ERR("[DP] DPTX dis reset failed !!!\n");
+		ret = -ENODEV;
+	}
 
 	dptx->detect_times = 0;
 	dptx->dptx_vr = false;
@@ -695,6 +739,7 @@ void dp_send_cable_notification(struct dp_ctrl *dptx, int val)
 		return;
 	}
 
+#if CONFIG_DP_ENABLE
 	state = dptx->sdev.state;
 	switch_set_state(&dptx->sdev, val);
 	if (dptx->edid_info.Audio.basicAudio == 0x1) {
@@ -714,6 +759,7 @@ void dp_send_cable_notification(struct dp_ctrl *dptx, int val)
 
 	HISI_FB_INFO("[DP] cable state %s %d\n",
 		dptx->sdev.state == state ? "is same" : "switched to", dptx->sdev.state);
+#endif
 }
 
 int dp_device_srs(struct hisi_fb_data_type *hisifd, bool ublank)
@@ -747,13 +793,13 @@ int dp_device_srs(struct hisi_fb_data_type *hisifd, bool ublank)
 				if (retval < 0) {
 					dp_imonitor_set_param(DP_PARAM_LINK_RETRAINING_FAILED, &retval);
 				}
-				dptx_enable_default_video_stream(dptx);
+				dptx_enable_default_video_stream(dptx, 0);
 				bpress_powerkey = false;
 				HISI_FB_INFO("[DP] Retraining when blank on. \n");
 			}
 		} else {
 			dptx_write_dpcd(dptx, DP_SET_POWER, DP_SET_POWER_D3);
-			dptx_disable_default_video_stream(dptx);
+			dptx_disable_default_video_stream(dptx, 0);
 			bpress_powerkey = true;
 			HISI_FB_INFO("[DP] Disable stream when blank off. \n");
 		}
@@ -791,6 +837,38 @@ int dp_get_color_bit_mode(struct hisi_fb_data_type *hisifd, void __user *argp)
 	}
 
 	ret = (int)copy_to_user(argp, &(dptx->vparams.bpc), sizeof(dptx->vparams.bpc));
+	if (ret) {
+		HISI_FB_ERR("[DP]  copy_to_user failed! ret=%d.\n", ret);
+		return ret;
+	}
+
+	return ret;
+}
+
+int dp_get_source_mode(struct hisi_fb_data_type *hisifd, void __user *argp)
+{
+	struct dp_ctrl *dptx;
+	int ret;
+
+	if (argp == NULL) {
+		return -EINVAL;
+	}
+
+	if (hisifd == NULL) {
+		HISI_FB_ERR("[DP] NULL Pointer\n");
+		return -EINVAL;
+	}
+
+	dptx = &(hisifd->dp);
+
+	if (dptx == NULL) {
+		HISI_FB_ERR("[DP] dptx is NULL!\n");
+		return -EINVAL;
+	}
+#if CONFIG_DP_ENABLE
+	dptx->same_source = get_current_dp_source_mode();
+#endif
+	ret = (int)copy_to_user(argp, &(dptx->same_source), sizeof(dptx->same_source));
 	if (ret) {
 		HISI_FB_ERR("[DP]  copy_to_user failed! ret=%d.\n", ret);
 		return ret;
@@ -924,6 +1002,7 @@ int hisi_dptx_switch_source(uint32_t user_mode, uint32_t user_format)
 		goto fail;
 	}
 
+#if CONFIG_DP_ENABLE
 	if ((dptx->same_source == get_current_dp_source_mode()) && (!user_mode) && (!user_format)) {
 		HISI_FB_ERR("[DP] dptx don't switch source when the dest mode is same as current!!!\n");
 		ret = -EINVAL;
@@ -933,7 +1012,7 @@ int hisi_dptx_switch_source(uint32_t user_mode, uint32_t user_format)
 	dptx->user_mode = user_mode;
 	dptx->user_mode_format = (enum video_format_type) user_format;
 	dptx->same_source = get_current_dp_source_mode();
-
+#endif
 	HISI_FB_INFO("[DP] dptx user switch: mode (%d); format (%d); same_source (%d).\n",
 		dptx->user_mode, dptx->user_mode_format, dptx->same_source);
 
@@ -993,7 +1072,9 @@ int hisi_dptx_hpd_trigger(TCA_IRQ_TYPE_E irq_type, TCPC_MUX_CTRL_TYPE mode, TYPE
 		goto fail;
 	}
 
+#if CONFIG_DP_ENABLE
 	dptx->same_source = get_current_dp_source_mode();
+#endif
 	dptx->user_mode = 0;
 	dptx->dptx_plug_type = typec_orien;
 	dptx->user_mode_format = VCEA;
@@ -1103,12 +1184,13 @@ int hisi_dptx_notify_switch(void)
 	}
 
 	dptx = &(hisifd->dp);
+
 	HISI_FB_INFO("[DP] fb%d, + [DP] Status: %d.\n", hisifd->index, dptx->dptx_enable);
 	mutex_lock(&dptx->dptx_mutex);
 
 	if (dptx->dptx_enable) {
 		lanes_status_change = true;
-		dptx_disable_default_video_stream(dptx);
+		dptx_disable_default_video_stream(dptx, 0);
 		dptx_typec_reset_ack(dptx);
 		dptx_phy_set_lanes_status(dptx, false);
 	}
@@ -1188,11 +1270,20 @@ static int dp_device_init(struct platform_device *pdev)
 	atomic_set(&(dptx->c_connect), 0);
 
 	if (g_fpga_flag == 1) {
-		dptx->max_rate = DPTX_PHYIF_CTRL_RATE_RBR;
+		dptx->max_rate = DPTX_PHYIF_CTRL_RATE_HBR;
 	} else {
 		dptx->max_rate = DPTX_PHYIF_CTRL_RATE_HBR2;
 	}
-	dptx->max_lanes = 4;
+
+	dptx->cr_fail = false; // harutk ---ntr
+	dptx->mst = false;
+	dptx->ssc_en = true;
+	dptx->streams = 1;
+	dptx->multipixel = DPTX_MP_DUAL_PIXEL;
+	dptx->dummy_dtds_present = false;
+	dptx->selected_est_timing = NONE;
+
+	dptx->max_lanes = DPTX_DEFAULT_LINK_LANES;
 	dptx->dptx_vr = false;
 	dptx->dptx_gate = false;
 	dptx->dptx_enable = false;
@@ -1202,8 +1293,18 @@ static int dp_device_init(struct platform_device *pdev)
 	dptx->detect_times = 0;
 	dptx->dptx_plug_type = DP_PLUG_TYPE_NORMAL;
 	dptx->user_mode_format = VCEA;
+#if CONFIG_DP_ENABLE
 	dptx->same_source = get_current_dp_source_mode();
+#endif
 	dptx->max_edid_timing_hactive = 0;
+
+	dptx->edid_second = kzalloc(DPTX_DEFAULT_EDID_BUFLEN, GFP_KERNEL);
+	if (!dptx->edid_second) {
+		HISI_FB_ERR("[DP] dptx base is NULL!\n");
+		return -ENOMEM;
+	}
+	dptx->bstatus = 0;
+
 	memset(&(dptx->edid_info), 0, sizeof(struct edid_information));
 
 	dptx_video_params_reset(&dptx->vparams);
@@ -1216,6 +1317,7 @@ static int dp_device_init(struct platform_device *pdev)
 	}
 	memset(dptx->edid, 0, DPTX_DEFAULT_EDID_BUFLEN);
 
+#if CONFIG_DP_ENABLE
 	dptx->sdev.name = "hisi-dp";
 	if (switch_dev_register(&dptx->sdev) < 0) {
 		HISI_FB_ERR("[DP] dp switch registration failed!\n");
@@ -1243,6 +1345,24 @@ static int dp_device_init(struct platform_device *pdev)
 			return -ENOMEM;
 		}
 	}
+#endif
+
+	np = of_find_compatible_node(NULL, NULL, DTS_DP_AUX_SWITCH);
+	if (!np) {
+		dptx->edid_try_count = MAX_AUX_RETRY_COUNT;
+		dptx->edid_try_delay = AUX_RETRY_DELAY_TIME;
+	} else {
+		ret = of_property_read_u32(np, "edid_try_count", &dptx->edid_try_count);
+		if (ret < 0) {
+			dptx->edid_try_count = MAX_AUX_RETRY_COUNT;
+		}
+
+		ret = of_property_read_u32(np, "edid_try_delay", &dptx->edid_try_delay);
+		if (ret < 0) {
+			dptx->edid_try_delay = AUX_RETRY_DELAY_TIME;
+		}
+	}
+	HISI_FB_INFO("[DP] edid try count=%d, delay=%d ms.\n", dptx->edid_try_count, dptx->edid_try_delay);
 
 	ret = devm_request_threaded_irq(&(pdev->dev),
 		dptx->irq, dptx_irq, dptx_threaded_irq,
@@ -1253,21 +1373,26 @@ static int dp_device_init(struct platform_device *pdev)
 	} else {
 		disable_irq(dptx->irq);
 	}
-
+#if CONFIG_DP_ENABLE
 	dp_debug_init_combophy_pree_swing(dptx->combophy_pree_swing, DPTX_COMBOPHY_PARAM_NUM);
-
+#endif
 	hisifd->dp_device_srs = dp_device_srs;
 	hisifd->dp_get_color_bit_mode = dp_get_color_bit_mode;
+	hisifd->dp_get_source_mode = dp_get_source_mode;
 	hisifd->dp_pxl_ppll7_init = dp_pxl_ppll7_init;
 	hisifd->dp_wakeup = dp_wakeup;
 	HISI_FB_INFO("[DP] fb%d -.\n", hisifd->index);
 
 	return 0;
 err_sdev_hdmi_register: /*lint !e563 */
+#if CONFIG_DP_ENABLE
 	switch_dev_unregister(&dptx->dp_switch);
+#endif
 
 err_sdev_register: /*lint !e563 */
+#if CONFIG_DP_ENABLE
 	switch_dev_unregister(&dptx->sdev);
+#endif
 
 err_edid_alloc: /*lint !e563 */
 	if (dptx->edid != NULL) {
@@ -1275,6 +1400,10 @@ err_edid_alloc: /*lint !e563 */
 		dptx->edid = NULL;
 	}
 
+	if (dptx->edid_second) {
+		kfree(dptx->edid_second);
+		dptx->edid_second = NULL;
+	}
 	return ret;
 }
 
@@ -1298,11 +1427,18 @@ static int dp_remove(struct platform_device *pdev)
 	HISI_FB_INFO("[DP] fb%d, +.\n", hisifd->index);
 
 	dptx = &(hisifd->dp);
+#if CONFIG_DP_ENABLE
 	switch_dev_unregister(&dptx->sdev);
+#endif
 
 	if (dptx->edid != NULL) {
 		kfree(dptx->edid);
 		dptx->edid = NULL;
+	}
+
+	if (dptx->edid_second) {
+		kfree(dptx->edid_second);
+		dptx->edid_second = NULL;
 	}
 
 	dptx->dptx_vr = false;
@@ -1314,7 +1450,6 @@ static int dp_remove(struct platform_device *pdev)
 	mdelay(15); //lint !e778 !e747 !e774 !e845
 
 	ret = panel_next_remove(pdev);
-
 
 	g_dp_pdev = NULL;
 
@@ -1348,7 +1483,6 @@ static int dp_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "fb%d mipi_dsi_irq_clk_setup failed, error=%d!\n", hisifd->index, ret);
 		return -EINVAL;
 	}
-
 
 	/* alloc device */
 	dpp_dev = platform_device_alloc(DEV_NAME_DSS_DPE, pdev->id);

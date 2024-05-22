@@ -65,11 +65,6 @@ int readB2(u16 address, u8* outBuf, int len) {
 	u8 readEvent[FIFO_EVENT_SIZE] = {0};
 	u8 cmd[4] = { FTS_CMD_REQU_FW_CONF, 0x00, 0x00, (u8)len };
 
-	if(readEvent==NULL){
-		TS_LOG_ERR("%s readB2: ERROR %02X\n", __func__, ERROR_ALLOC);
-		return ERROR_ALLOC;
-	}
-
 	u16ToU8_be(address, &cmd[1]);
 	temp = printHex("Command B2 = ", cmd, 4);
 	if(temp!=NULL)
@@ -120,44 +115,6 @@ int readB2(u16 address, u8* outBuf, int len) {
 	TS_LOG_INFO("%s B2 read %d bytes\n", __func__, len);
 	return OK;
 }
-
-
-int readB2U16( u16 address, u8* outBuf, int byteToRead)
-{
-	int remaining = byteToRead;
-	int toRead = 0;
-	int ret;
-
-	u8* buff = (u8*)kmalloc((B2_CHUNK + 1)*sizeof(u8), GFP_KERNEL);
-	if(buff==NULL){
-		TS_LOG_ERR("%s readB2U16: ERROR %02X\n", __func__, ERROR_ALLOC);
-		return ERROR_ALLOC;
-	}
-
-	while (remaining > 0) {
-		if (remaining >= B2_CHUNK) {
-			toRead = B2_CHUNK;
-			remaining -= B2_CHUNK;
-		} else {
-			toRead = remaining;
-			remaining = 0;
-		}
-
-		ret=readB2(address, buff, toRead);
-		if (ret < 0) {
-			kfree(buff);
-			return ret;
-		}
-		memcpy(outBuf, buff , toRead);
-
-		address += toRead;
-		outBuf += toRead;
-	}
-
-	kfree(buff);
-	return OK;
-}
-
 
 int releaseInformation()
 {
@@ -226,7 +183,7 @@ char* printHex(char* label, u8* buff, int count)
 	char *result=NULL;
 	if(!label || !buff ){
 		TS_LOG_ERR("%s pointer is NULL.\n",__func__);
-		return -EINVAL;
+		return NULL;
 	}
 	offset = strlen(label);
 	if(offset >PRINT_HEX_MAX_LEN ){
@@ -354,22 +311,7 @@ int fts_enableInterrupt() {
 	return OK;
 }
 
-int u8ToU16n(u8* src, int src_length, u16* dst) {
-	int i, j;
 
-	if (src_length % 2 != 0) {
-		return -1;
-	} else {
-		j = 0;
-		dst = (u16*)kmalloc((src_length / 2)*sizeof(u16), GFP_KERNEL);
-		for (i = 0; i < src_length; i += 2) {
-			dst[j]= ((src[i+1] & 0x00FF) << 8) + (src[i] & 0x00FF);
-			j++;
-		}
-	}
-
-	return (src_length / 2);
-}
 
 int u8ToU16(u8* src, u16* dst)
 {
@@ -392,7 +334,6 @@ int u16ToU8n(u16* src, int src_length, u8* dst)
 		dst[j+1] = (u8) (src[i] & 0x00FF);
 		j += 2;
 	}
-
 	return src_length * 2;
 
 }
@@ -705,7 +646,6 @@ int writeNoiseParameters(u8 *noise)
 	ret = fts_disableInterrupt();
 	if (ret < OK) {
 		TS_LOG_ERR("%s: ERROR %08X\n", __func__, ret );
-		ret = (ret | ERROR_NOISE_PARAMETERS);
 		goto ERROR;
 	}
 
@@ -721,7 +661,6 @@ int writeNoiseParameters(u8 *noise)
 	ret = fts_writeCmd(cmd, NOISE_PARAMETERS_SIZE+2);			//not use writeFwCmd because this function should be fast
 	if (ret < OK) {
 		TS_LOG_ERR("%s: impossible write command... ERROR %02X\n", __func__, ret );
-		ret = (ret | ERROR_NOISE_PARAMETERS);
 		goto ERROR;
 	}
 
@@ -729,14 +668,12 @@ int writeNoiseParameters(u8 *noise)
 	ret = pollForEvent(event_to_search, 2, readData, GENERAL_TIMEOUT);
 	if (ret < OK) {
 		TS_LOG_ERR("%s: polling FIFO ERROR %02X\n", __func__, ret );
-		ret = (ret | ERROR_NOISE_PARAMETERS);
 		goto ERROR;
 	}
 
 	if(readData[2]!=0x00){
 		TS_LOG_ERR("%s: Event check FAIL! %02X != 0x00 ERROR %02X\n",
 		 	__func__, readData[2], ERROR_NOISE_PARAMETERS);
-		ret= ERROR_NOISE_PARAMETERS;
 		goto ERROR;
 	}
 
@@ -752,9 +689,10 @@ ERROR:
 
 
 int readNoiseParameters(u8 *noise){
-	int ret,i;
-	u8 cmd[2];
-	u8 readData[FIFO_EVENT_SIZE];
+	int ret = 0;
+	int i = 0;
+	u8 cmd[2] = {0};
+	u8 readData[FIFO_EVENT_SIZE] = {0};
 	int event_to_search[2] = {EVENTID_NOISE_READ, NOISE_PARAMETERS};
 
 	TS_LOG_INFO("%s: Reading noise parameters from the IC ...\n", __func__);
@@ -762,7 +700,6 @@ int readNoiseParameters(u8 *noise){
 	ret = fts_disableInterrupt();
 	if (ret < OK) {
 		TS_LOG_ERR("%s readNoiseParameters: ERROR %02X\n", __func__, ret );
-		ret = (ret | ERROR_NOISE_PARAMETERS);
 		goto ERROR;
 	}
 
@@ -773,7 +710,6 @@ int readNoiseParameters(u8 *noise){
 	ret = fts_writeCmd(cmd, 2);			//not use writeFwCmd should be fast
 	if (ret < OK) {
 		TS_LOG_ERR("%s: impossible write command... ERROR %02X\n", __func__, ret );
-		ret = (ret | ERROR_NOISE_PARAMETERS);
 		goto ERROR;
 	}
 
@@ -781,7 +717,6 @@ int readNoiseParameters(u8 *noise){
 	ret = pollForEvent(event_to_search, 2, readData, GENERAL_TIMEOUT);
 	if (ret < OK) {
 		TS_LOG_ERR("%s: polling FIFO ERROR %02X\n", __func__, ret );
-		ret = (ret | ERROR_NOISE_PARAMETERS);
 		goto ERROR;
 	}
 
@@ -900,7 +835,7 @@ int writeLockDownInfo(u8 *data, int size)
 	u8 cmd[2+LOCKDOWN_CODE_WRITE_CHUNK]={0xCA, 0x00};
 	u8 crc=0,write_count=0;
 	int event_to_search[2] = {EVENTID_STATUS_UPDATE, EVENT_TYPE_LOCKDOWN_WRITE_SPEC};
-	u8 readEvent[FIFO_EVENT_SIZE];
+	u8 readEvent[FIFO_EVENT_SIZE] = {0};
 	char *temp =NULL;
 
 
@@ -1008,12 +943,12 @@ ERROR:
 int readLockDownInfo(u8 data_type, u8 *lockData, int buffer_size,
 	int *real_size)
 {
-	int ret;
+	int ret = 0;
 	int retry = 0;
 	int toRead = 0;
-	int byteToRead;
+	int byteToRead = 0;
 	int event_to_search[3] = {EVENTID_LOCKDOWN_INFO_READ,-1,0x00};
-	u8 readEvent[FIFO_EVENT_SIZE];
+	u8 readEvent[FIFO_EVENT_SIZE] = {0};
 	char *temp =NULL;
 	u8 cmd_lock[]={0xCD,0x02,0x00};/* read command */
 

@@ -15,8 +15,9 @@
 #include <linux/hisi/hi64xx/hi64xx_vad.h>
 #include <linux/hisi/hi64xx/hi64xx_irq.h>
 #include <hi64xx_algo_interface.h>
-#include "soundtrigger_event.h"
 #include <linux/hisi/hi64xx/hi64xx_regs.h>
+#include <linux/hisi/hi64xx/hi64xx_mad.h>
+#include "soundtrigger_event.h"
 
 #define HI6402_DSP_VAD_CMD  (BASE_ADDR_PAGE_CFG + 0x73)
 
@@ -35,8 +36,8 @@ static irqreturn_t hi64xx_sound_trigger_handler(int irq, void *data)
 		(struct hi64xx_vad_platform_data *)data;
 	unsigned int soundtrigger_event = 0;
 
-	BUG_ON(NULL == pdata);
-	BUG_ON(NULL == vad_data);
+	WARN_ON(NULL == pdata);
+	WARN_ON(NULL == vad_data);
 
 	wake_lock_timeout(&pdata->soundtrigger_wake_lock, msecs_to_jiffies(1000));
 

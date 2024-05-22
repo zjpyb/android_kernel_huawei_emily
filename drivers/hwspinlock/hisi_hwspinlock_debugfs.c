@@ -31,14 +31,14 @@
  * - "echo unlock 'ID'", unlock the hwspinlock;
  * - "cat debug", show current the resources of hwspinlock,but now have requested all locks.
  */
-
 struct hwspinlock_hisi {
        int id_in_group;
        void __iomem *address;
 };
-
+#ifdef CONFIG_HISI_DEBUG_FS
 static struct dentry *hwspinlock_debug_dir;
 static struct dentry *hwspinlock_fn;
+#endif
 static struct hwspinlock *hwlock;
 static int locked;
 /*lint -e750 -esym(750,*)*/

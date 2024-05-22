@@ -30,6 +30,7 @@
 #include "oal_hcc_bus.h"
 #include "plat_pm.h"
 #include "oam_ext_if.h"
+#include "oal_util.h"
 
 /*****************************************************************************
   2 Global Variable Definition
@@ -40,20 +41,23 @@ EXPORT_SYMBOL(g_board_info_etc);
 OAL_STATIC int32 board_probe_ret = 0;
 OAL_STATIC  struct completion  board_driver_complete;
 
+int hi11xx_kernel_crash = 0;/*linux kernel crash*/
+EXPORT_SYMBOL_GPL(hi11xx_kernel_crash);
+
 char str_gpio_ssi_dump_path[100] = HISI_TOP_LOG_DIR"/wifi/memdump";
 int  ssi_is_logfile = 0;
 int  ssi_is_pilot = -1;
 int ssi_dfr_bypass = 0;
 #if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
-module_param_string(gpio_ssi_dump_path, str_gpio_ssi_dump_path,
+oal_debug_module_param_string(gpio_ssi_dump_path, str_gpio_ssi_dump_path,
 		sizeof(str_gpio_ssi_dump_path), S_IRUGO|S_IWUSR);
-MODULE_PARM_DESC(gpio_ssi_dump_path, "gpio_ssi dump path");
-module_param(ssi_is_logfile, int, S_IRUGO | S_IWUSR);
-module_param(ssi_is_pilot, int, S_IRUGO | S_IWUSR);
-module_param(ssi_dfr_bypass, int, S_IRUGO | S_IWUSR);
+OAL_DEBUG_MODULE_PARM_DESC(gpio_ssi_dump_path, "gpio_ssi dump path");
+oal_debug_module_param(ssi_is_logfile, int, S_IRUGO | S_IWUSR);
+oal_debug_module_param(ssi_is_pilot, int, S_IRUGO | S_IWUSR);
+oal_debug_module_param(ssi_dfr_bypass, int, S_IRUGO | S_IWUSR);
 
 int hi11xx_android_variant = HI1XX_ANDROID_BUILD_VARIANT_USER; /*default user mode*/
-module_param(hi11xx_android_variant, int, S_IRUGO | S_IWUSR);
+oal_debug_module_param(hi11xx_android_variant, int, S_IRUGO | S_IWUSR);
 #endif
 
 OAL_DEFINE_SPINLOCK(g_ssi_lock);
@@ -108,6 +112,7 @@ ssi_file_st g_aSsiFile[] =
 extern irqreturn_t bfg_wake_host_isr_etc(int irq, void *dev_id);
 int ssi_check_wcpu_is_working(void);
 int ssi_check_bcpu_is_working(void);
+int ssi_read_reg_info_arry(ssi_reg_info** pst_reg_info, oal_uint32 reg_nums, oal_int32 is_logfile);
 inline BOARD_INFO * get_hi110x_board_info_etc(void)
 {
 	return &g_board_info_etc;
@@ -811,7 +816,7 @@ int32 check_device_board_name_etc(void)
     int32 i = 0;
     for (i = 0; i < BOARD_VERSION_BOTT; i++)
     {
-        if (0 == strncmp(device_board_version_list_etc[i].name, g_board_info_etc.chip_type, strlen(device_board_version_list_etc[i].name)))
+        if (0 == strncmp(device_board_version_list_etc[i].name, g_board_info_etc.chip_type, HI11XX_SUBCHIP_NAME_LEN_MAX))
         {
             g_board_info_etc.chip_nr = i;
             return BOARD_SUCC;
@@ -940,7 +945,7 @@ STATIC int32 hi110x_board_probe(struct platform_device *pdev)
     return BOARD_SUCC;
 
 err_get_power_pinctrl:
-    free_irq(g_board_info_etc.bfgx_irq, NULL);
+
 err_gpio_source:
 #ifdef HAVE_HISI_IR
     free_board_ir_gpio();
@@ -965,8 +970,6 @@ STATIC int32 hi110x_board_remove(struct platform_device *pdev)
         devm_pinctrl_put(g_board_info_etc.pctrl);
     }
 #endif
-
-    free_irq(g_board_info_etc.bfgx_irq, NULL);
 
 #ifdef HAVE_HISI_IR
     free_board_ir_gpio();
@@ -997,6 +1000,7 @@ int32 hi110x_board_resume_etc(struct platform_device *pdev)
 #define HI110X_SSI_DATA_GPIO_NAME ("hi110x ssi data")
 #define INTERVAL_TIME             (10)
 #define SSI_DATA_LEN              (16)
+#define SSI_CPU_ARM_REG_DUMP_CNT    (2)
 
 #ifdef BFGX_UART_DOWNLOAD_SUPPORT
 #define SSI_CLK_GPIO  89
@@ -1024,6 +1028,24 @@ char* g_ssi_hi1103_pilot_cpu_st_str[] =
     "SLEEP",/*0x6*/
     "PROTECTING"/*0x7*/
 };
+
+static uint32 g_halt_det_cnt = 0;/*检测soc异常次数*/
+typedef struct _ssi_cpu_info_
+{
+    uint32 cpu_state;
+    uint32 pc[SSI_CPU_ARM_REG_DUMP_CNT];
+    uint32 lr[SSI_CPU_ARM_REG_DUMP_CNT];
+    uint32 sp[SSI_CPU_ARM_REG_DUMP_CNT];
+    uint32 reg_flag[SSI_CPU_ARM_REG_DUMP_CNT];
+}ssi_cpu_info;
+
+typedef struct _ssi_cpu_infos_
+{
+    ssi_cpu_info wcpu_info;
+    ssi_cpu_info bcpu_info;
+}ssi_cpu_infos;
+
+static ssi_cpu_infos g_st_ssi_cpu_infos;
 
 #define SSI_WRITE_DATA 0x5a5a
 ssi_trans_test_st ssi_test_st = {0};
@@ -1635,7 +1657,8 @@ int32 do_ssi_file_test(ssi_file_st *file_st, ssi_trans_test_st* pst_ssi_test)
     while(1)
     {
         data_buf = 0;
-        rdlen = kernel_read(fp, fp->f_pos, (uint8 *)&data_buf, 2);
+        rdlen = oal_file_read_ext(fp, fp->f_pos, (uint8 *)&data_buf, 2);
+
         if (rdlen > 0)
         {
             fp->f_pos += rdlen;
@@ -1983,6 +2006,8 @@ ssi_reg_info hi1103_glb_ctrl_extend3  = {0x50001600, 0x4, SSI_RW_WORD_MOD};
 ssi_reg_info hi1103_pmu_cmu_ctrl_full = {0x50002000, 0xb00, SSI_RW_WORD_MOD};
 ssi_reg_info hi1103_pmu2_cmu_ir_ctrl_full = {0x50003000, 0xa20, SSI_RW_WORD_MOD};
 ssi_reg_info hi1103_pmu2_cmu_ir_ctrl_tail = {0x50003a80, 0xc, SSI_RW_WORD_MOD};
+ssi_reg_info hi1103_coex_ctl_part1        = {0x5000a000, 0x354, SSI_RW_WORD_MOD};/*coex ctl part1*/
+ssi_reg_info hi1103_coex_ctl_part2        = {0x5000a500, 0x8, SSI_RW_WORD_MOD};/*coex ctl part2*/
 ssi_reg_info hi1103_w_ctrl_full =    {0x40000000, 0x408, SSI_RW_WORD_MOD};
 ssi_reg_info hi1103_w_key_mem  =    {0x2001e620, 0x80, SSI_RW_DWORD_MOD};
 ssi_reg_info hi1103_b_ctrl_full =    {0x48000000, 0x40c, SSI_RW_WORD_MOD};
@@ -1993,6 +2018,10 @@ ssi_reg_info hi1103_pcie_pilot_dma_full = {0x40106000, 0x1000, SSI_RW_DWORD_MOD}
 ssi_reg_info hi1103_pcie_dma_ctrl_full = {0x40008000, 0x34, SSI_RW_DWORD_MOD};
 ssi_reg_info hi1103_pcie_sdio_ctrl_full = {0x40101000, 0x180, SSI_RW_DWORD_MOD};
 
+ssi_reg_info hi1103_tcxo_detect_reg1  = {0x50000040, 0x4, SSI_RW_WORD_MOD};
+ssi_reg_info hi1103_tcxo_detect_reg2  = {0x500000c0, 0x14, SSI_RW_WORD_MOD};
+ssi_reg_info hi1103_tcxo_detect_reg3  = {0x50000700, 0xc, SSI_RW_WORD_MOD};
+
 ssi_reg_info *hi1103_aon_reg_full[] = {
     &hi1103_glb_ctrl_full,
     &hi1103_glb_ctrl_extend1,
@@ -2001,6 +2030,17 @@ ssi_reg_info *hi1103_aon_reg_full[] = {
     &hi1103_pmu_cmu_ctrl_full,
     &hi1103_pmu2_cmu_ir_ctrl_full,
     &hi1103_pmu2_cmu_ir_ctrl_tail
+};
+
+ssi_reg_info *hi1103_coex_ctl_full[] = {
+    &hi1103_coex_ctl_part1,
+    &hi1103_coex_ctl_part2,
+};
+
+ssi_reg_info *hi1103_tcxo_detect_regs[] = {
+    &hi1103_tcxo_detect_reg1,
+    &hi1103_tcxo_detect_reg2,
+    &hi1103_tcxo_detect_reg3
 };
 
 //0x5000_0000~0x500000FC
@@ -2172,7 +2212,7 @@ int ssi_read_wpcu_pc_lr_sp(int trace_en)
     uint32 reg_low, reg_high, pc, lr, sp;
 
     /*read pc twice check whether wcpu is runing*/
-    for(i = 0; i < 2; i++)
+    for(i = 0; i < SSI_CPU_ARM_REG_DUMP_CNT; i++)
     {
         ssi_write32_etc(0x50000400, 0x1);
         oal_mdelay(1);
@@ -2212,6 +2252,16 @@ int ssi_read_wpcu_pc_lr_sp(int trace_en)
             }
             //return 0;
         }
+        else
+        {
+            if(0 == g_st_ssi_cpu_infos.wcpu_info.reg_flag[i])
+            {
+                g_st_ssi_cpu_infos.wcpu_info.reg_flag[i] = 1;
+                g_st_ssi_cpu_infos.wcpu_info.pc[i] = pc;
+                g_st_ssi_cpu_infos.wcpu_info.lr[i] = lr;
+                g_st_ssi_cpu_infos.wcpu_info.sp[i] = sp;
+            }
+        }
         oal_mdelay(10);
     }
 
@@ -2224,7 +2274,7 @@ int ssi_read_bpcu_pc_lr_sp(int trace_en)
     uint32 reg_low, reg_high, pc, lr, sp;
 
     /*read pc twice check whether wcpu is runing*/
-    for(i = 0; i < 2; i++)
+    for(i = 0; i < SSI_CPU_ARM_REG_DUMP_CNT; i++)
     {
         ssi_write32_etc(0x50000420, 0x1);
         oal_mdelay(1);
@@ -2264,6 +2314,16 @@ int ssi_read_bpcu_pc_lr_sp(int trace_en)
             }
             //return 0;
         }
+        else
+        {
+            if(0 == g_st_ssi_cpu_infos.bcpu_info.reg_flag[i])
+            {
+                g_st_ssi_cpu_infos.bcpu_info.reg_flag[i] = 1;
+                g_st_ssi_cpu_infos.bcpu_info.pc[i] = pc;
+                g_st_ssi_cpu_infos.bcpu_info.lr[i] = lr;
+                g_st_ssi_cpu_infos.bcpu_info.sp[i] = sp;
+            }
+        }
         oal_mdelay(10);
     }
 
@@ -2287,8 +2347,11 @@ void ssi_check_buck_scp_ocp_status(void)
                     (reg & 0x1) ? "buck_scp_off":"", (reg & 0x2) ? "buck_ocp_off":"");
 #ifdef CONFIG_HUAWEI_DSM
     if(reg & 0x3)
+    {
         hw_1103_dsm_client_notify(DSM_BUCK_PROTECTED, "%s: buck protect status:0x%x %s %s \n", __FUNCTION__, reg,
                     (reg & 0x1) ? "buck_scp_off":"", (reg & 0x2) ? "buck_ocp_off":"");
+        g_halt_det_cnt++;
+    }
 #endif
 }
 
@@ -2305,9 +2368,7 @@ int ssi_check_wcpu_is_working(void)
         reg = (uint32)ssi_read32_etc(0x50002200);
         mask = reg & 0x7;
         PS_PRINT_INFO("cpu state=0x%8x, wcpu is %s\n", reg, g_ssi_hi1103_pilot_cpu_st_str[mask]);
-#ifdef CONFIG_HUAWEI_DSM
-        hw_1103_dsm_client_notify(DSM_1103_HALT, "%s: cpu state=0x%8x, wcpu is %s\n", __FUNCTION__, reg, g_ssi_hi1103_pilot_cpu_st_str[mask]);
-#endif
+        g_st_ssi_cpu_infos.wcpu_info.cpu_state = mask;
         if(0x5 == mask)
         {
             ssi_check_buck_scp_ocp_status();
@@ -2320,6 +2381,7 @@ int ssi_check_wcpu_is_working(void)
         reg = (uint32)ssi_read32_etc(0x50002240);
         mask = reg & 0x3;
         PS_PRINT_INFO("cpu state=0x%8x, wcpu is %s\n", reg, g_ssi_hi1103_mpw2_cpu_st_str[mask]);
+        g_st_ssi_cpu_infos.wcpu_info.cpu_state = mask;
         return (0x3 == mask);
     }
 }
@@ -2337,9 +2399,7 @@ int ssi_check_bcpu_is_working(void)
         reg = (uint32)ssi_read32_etc(0x50002200);
         mask = (reg >> 3) & 0x7;
         PS_PRINT_INFO("cpu state=0x%8x, bcpu is %s\n", reg, g_ssi_hi1103_pilot_cpu_st_str[mask]);
-#ifdef CONFIG_HUAWEI_DSM
-        hw_1103_dsm_client_notify(DSM_1103_HALT, "%s: cpu state=0x%8x, bcpu is %s\n", __FUNCTION__, reg, g_ssi_hi1103_pilot_cpu_st_str[mask]);
-#endif
+        g_st_ssi_cpu_infos.bcpu_info.cpu_state = mask;
         if(0x5 == mask)
         {
             ssi_check_buck_scp_ocp_status();
@@ -2352,8 +2412,194 @@ int ssi_check_bcpu_is_working(void)
         reg = (uint32)ssi_read32_etc(0x50002240);
         mask = (reg >> 2) & 0x3;
         PS_PRINT_INFO("cpu state=0x%8x, bcpu is %s\n", reg, g_ssi_hi1103_mpw2_cpu_st_str[mask]);
+        g_st_ssi_cpu_infos.bcpu_info.cpu_state = mask;
         return (0x3 == mask);
     }
+}
+
+#define TCXO_32K_DET_VALUE  (10)
+/*[+-x%]*/
+#define TCXO_LIMIT_THRESHOLD (5)
+int ssi_detect_tcxo_is_normal(void)
+{
+    /*tcxo detect 依赖tcxo时钟，
+       如果在启动后tcxo 异常那么tcxo_32k_det_result 为旧值
+       如果在启动后32k异常 那么sytem_tick为旧值*/
+    int ret  = 0;
+    char* tcxo_str = "";
+    int tcxo_is_abnormal = 0;
+    uint32 reg;
+    uint32 tcxo_enable;
+    uint32 tcxo_det_value_src, tcxo_det_value_target;
+    oal_uint32 clock_32k = 0;
+    uint32 sys_tick_old, sys_tick_new, pmu2_cmu_abb_sts_3, pmu2_cmu_abb_sts_2;
+    uint32 tcxo_det_res_old, tcxo_det_res_new, cmu_reserve1;
+    oal_uint64 clock_tcxo = 0;
+    oal_uint64 div_clock = 0;
+    oal_uint64 tcxo_limit_low, tcxo_limit_high, tcxo_tmp;
+    oal_uint64 base_tcxo_clock = 76800000;
+
+    declare_time_cost_stru(cost);
+
+    pmu2_cmu_abb_sts_3 = (uint32)ssi_read32_etc(0x5000317c);
+    pmu2_cmu_abb_sts_2 = (uint32)ssi_read32_etc(0x5000315c);
+    cmu_reserve1 = (uint32)ssi_read32_etc(0x50003338);
+    tcxo_det_value_src = (uint32)ssi_read32_etc(0x50000704);
+
+    if(cmu_reserve1 & (1 << 7))
+    {
+        base_tcxo_clock = 76800000;
+    }
+    else
+    {
+        base_tcxo_clock = 38400000;
+    }
+
+    if((!(pmu2_cmu_abb_sts_3 & (1 << 7)))
+            && (pmu2_cmu_abb_sts_2 & ( 1 << 14)))
+    {
+        /*tcxo enable*/
+        tcxo_enable = 1;
+    }
+    else
+    {
+        /*system maybe sleep, tcxo disable*/
+        tcxo_enable = 0;
+        PS_PRINT_ERR("tcxo gating normal\n");
+    }
+
+    tcxo_det_value_target = TCXO_32K_DET_VALUE;
+    if(tcxo_det_value_src == tcxo_det_value_target)
+    {
+        /*刚做过detect,改变det_value，观测值是否改变*/
+        tcxo_det_value_target = TCXO_32K_DET_VALUE + 2;
+    }
+
+    tcxo_tmp = div_u64(base_tcxo_clock, 100);
+    tcxo_limit_low  = (tcxo_tmp*(100-TCXO_LIMIT_THRESHOLD));
+    tcxo_limit_high = (tcxo_tmp*(100+TCXO_LIMIT_THRESHOLD));
+
+    sys_tick_old = (uint32)ssi_read32_etc(0x500000d0);
+    tcxo_det_res_old = (uint32)ssi_read32_etc(0x50000708);
+
+    ssi_write32_etc(0x500000c0, 0x2);/*清零w systick*/
+    oal_get_time_cost_start(cost);
+
+    if(tcxo_enable)
+    {
+        ssi_write32_etc(0x50000704, tcxo_det_value_target);
+        ssi_write32_etc(0x50000700, 0x0);/*tcxo_det_en disable*/
+
+        /*to tcxo*/
+        ssi_write16_etc(0x8007, 0x0);
+
+        oal_udelay(150);
+
+        /*to ssi*/
+        ssi_write16_etc(0x8007, 0x1);
+        ssi_write32_etc(0x50000700, 0x1);/*tcxo_det_en enable*/
+        /*to tcxo*/
+        ssi_write16_etc(0x8007, 0x0);
+        oal_udelay(31*tcxo_det_value_target*2);/*wait detect done*/
+
+        /*to ssi*/
+        ssi_write16_etc(0x8007, 0x1);
+    }
+    else
+    {
+        oal_udelay(300);
+    }
+
+    ret = ssi_read_reg_info_arry(hi1103_tcxo_detect_regs, sizeof(hi1103_tcxo_detect_regs)/sizeof(ssi_reg_info*), ssi_is_logfile);
+    if(ret)
+    {
+        return ret;
+    }
+
+    oal_udelay(1000);/*wait 32k count more*/
+
+    oal_get_time_cost_end(cost);
+    oal_calc_time_cost_sub(cost);
+
+    sys_tick_new = (uint32)ssi_read32_etc(0x500000d0);
+
+    reg = (uint32)ssi_read32_etc(0x50000700);
+    tcxo_det_res_new = (uint32)ssi_read32_etc(0x50000708);
+
+    /*32k detect*/
+    if(sys_tick_new == sys_tick_old)
+    {
+        PS_PRINT_ERR("32k sys_tick don't change after detect, 32k maybe abnormal, sys_tick=0x%x\n", sys_tick_new);
+    }
+    else
+    {
+        oal_uint64  us_to_s;
+        us_to_s = time_cost_var_sub(cost);
+        us_to_s += 1446;/*经验值,误差1446us*/
+        clock_32k = (sys_tick_new*1000)/(oal_uint32)us_to_s;
+        PS_PRINT_ERR("32k runtime:%llu us , sys_tick:%u\n", us_to_s, sys_tick_new);
+        PS_PRINT_ERR("32k realclock real= %u Khz[base=32768]\n", clock_32k);
+    }
+
+
+    /*tcxo enabled*/
+    if(tcxo_enable)
+    {
+        if(tcxo_det_res_new == tcxo_det_res_old)
+        {
+            /*tcxo 软件配置为打开此时应该有时钟*/
+            PS_PRINT_ERR("tcxo don't change after detect, tcxo or 32k maybe abnormal, tcxo=0x%x\n", tcxo_det_res_new);
+            if(0 == tcxo_det_res_new)
+            {
+                tcxo_is_abnormal = 1;
+                tcxo_str = "non-tcxo";
+            }
+            else
+            {
+                /*这里可能是无效的探测，
+                   要结合详细日志分析，此处DSM忽略改分支，不上报*/
+                tcxo_is_abnormal = 0;
+                tcxo_str = "tcxo-detect-invalid";
+            }
+        }
+        else
+        {
+            /*tcxo_det_res_new read from 16bit width register  <= 0xffff*/
+            clock_tcxo = (oal_uint64)((tcxo_det_res_new*32768)/(tcxo_det_value_target));
+            div_clock = clock_tcxo;
+            div_clock = div_u64(div_clock, 1000000);
+            if((clock_tcxo < tcxo_limit_low) || (clock_tcxo > tcxo_limit_high))
+            {
+                /*时钟误差超过阈值*/
+                tcxo_is_abnormal = 2;
+                tcxo_str = "tcxo clock-abnormal";
+            }
+            else
+            {
+                tcxo_is_abnormal = 0;
+                tcxo_str = "tcxo normal";
+            }
+            PS_PRINT_ERR("%s real=%llu hz,%llu Mhz[base=%llu][limit:%llu~%llu]\n", tcxo_str, clock_tcxo, div_clock, base_tcxo_clock, tcxo_limit_low, tcxo_limit_high);
+        }
+
+        /*tcxo detect abnormal, dmd report*/
+        if(0 == hi11xx_kernel_crash)
+        {
+            /*kernel is normal*/
+            if(tcxo_is_abnormal)
+            {
+#ifdef CONFIG_HUAWEI_DSM
+                hw_1103_dsm_client_notify(DSM_1103_TCXO_ERROR, "%s: tcxo=%llu[%llu][limit:%llu~%llu] 32k_clock=%lu,det_tick=0x%x value=0x%x\n",
+                                    tcxo_str, clock_tcxo, base_tcxo_clock, tcxo_limit_low, tcxo_limit_high, clock_32k,
+                                    tcxo_det_value_target, tcxo_det_res_new);
+                g_halt_det_cnt++;
+#endif
+            }
+
+        }
+    }
+
+    return ret;
 }
 
 int ssi_read_device_arm_register(int trace_en)
@@ -2461,7 +2707,7 @@ int ssi_read_reg_info(ssi_reg_info* pst_reg_info,
     int i,j,k,seg_size,seg_nums, left_size;
 
     struct timeval tv;
-    struct rtc_time tm;
+    struct rtc_time tm = {0};
     OS_KERNEL_FILE_STRU *fp = NULL;
     char filename[200] = {0};
 
@@ -2822,6 +3068,87 @@ int ssi_set_gpio_pins(int32 clk, int32 data)
 }
 EXPORT_SYMBOL_GPL(ssi_set_gpio_pins);
 
+#define DSM_CPU_INFO_SIZE   (256)
+void dsm_cpu_info_dump(void)
+{
+    int32 i;
+    int32 ret = 0;
+    int32 count = 0;
+    char buf[DSM_CPU_INFO_SIZE];
+    /*dsm cpu信息上报*/
+    if(g_halt_det_cnt || (hi11xx_kernel_crash))
+    {
+        PS_PRINT_INFO("g_halt_det_cnt=%u hi11xx_kernel_crash=%d dsm_cpu_info_dump return\n", g_halt_det_cnt, hi11xx_kernel_crash);
+        return;
+    }
+
+    /*没有检测到异常，上报记录的CPU信息*/
+    oal_memset((void*)buf, 0, sizeof(buf));
+    ret = snprintf(buf + count, DSM_CPU_INFO_SIZE - count, "wcpu_state=0x%x %s, bcpu_state=0x%x %s ",
+       g_st_ssi_cpu_infos.wcpu_info.cpu_state, ssi_is_pilot ? (g_ssi_hi1103_pilot_cpu_st_str[g_st_ssi_cpu_infos.wcpu_info.cpu_state & 0x7]):(g_ssi_hi1103_mpw2_cpu_st_str[g_st_ssi_cpu_infos.wcpu_info.cpu_state & 0x3]),
+       g_st_ssi_cpu_infos.bcpu_info.cpu_state, ssi_is_pilot ? (g_ssi_hi1103_pilot_cpu_st_str[g_st_ssi_cpu_infos.bcpu_info.cpu_state & 0x7]):(g_ssi_hi1103_mpw2_cpu_st_str[g_st_ssi_cpu_infos.bcpu_info.cpu_state & 0x3]));
+    if(ret <= 0)
+    {
+        goto done;
+    }
+    count += ret;
+
+    for(i = 0; i < SSI_CPU_ARM_REG_DUMP_CNT; i++)
+    {
+        if(0 == g_st_ssi_cpu_infos.wcpu_info.reg_flag[i])
+        {
+            continue;
+        }
+        ret = snprintf(buf + count, DSM_CPU_INFO_SIZE - count, "wcpu[%d] pc:0x%x lr:0x%x sp:0x%x ", i,
+              g_st_ssi_cpu_infos.wcpu_info.pc[i], g_st_ssi_cpu_infos.wcpu_info.lr[i], g_st_ssi_cpu_infos.wcpu_info.sp[i]);
+        if(ret <= 0)
+        {
+            goto done;
+        }
+        count += ret;
+    }
+
+done:
+#ifdef CONFIG_HUAWEI_DSM
+    hw_1103_dsm_client_notify(DSM_1103_HALT, "%s\n", buf);
+#else
+    OAL_IO_PRINT("[non-dsm]%s\n", buf);
+#endif
+}
+
+int ssi_dump_device_aon_regs(unsigned long long module_set)
+{
+    int ret = OAL_SUCC;
+    if(module_set & SSI_MODULE_MASK_AON)
+    {
+        ret = ssi_read_reg_info_arry(hi1103_aon_reg_full, sizeof(hi1103_aon_reg_full)/sizeof(ssi_reg_info*), ssi_is_logfile);
+        if(ret)
+        {
+            return -OAL_EFAIL;
+        }
+    }
+
+    if(module_set & SSI_MODULE_MASK_AON_CUT)
+    {
+        ret = ssi_read_reg_info_arry(hi1103_aon_reg_cut, sizeof(hi1103_aon_reg_cut)/sizeof(ssi_reg_info*), ssi_is_logfile);
+        if(ret)
+        {
+            return -OAL_EFAIL;
+        }
+    }
+
+    if(module_set & SSI_MODULE_MASK_COEX_CTL)
+    {
+        ret = ssi_read_reg_info_arry(hi1103_coex_ctl_full, sizeof(hi1103_coex_ctl_full)/sizeof(ssi_reg_info*), ssi_is_logfile);
+        if(ret)
+        {
+           return -OAL_EFAIL;
+        }
+    }
+
+    return OAL_SUCC;
+}
+
 /*Try to dump all reg,
   ssi used to debug, we should*/
 int ssi_dump_device_regs(unsigned long long module_set)
@@ -2829,7 +3156,8 @@ int ssi_dump_device_regs(unsigned long long module_set)
     int ret;
     struct st_exception_info *pst_exception_data = NULL;
 
-    if(HI1XX_ANDROID_BUILD_VARIANT_USER == hi11xx_get_android_build_variant())
+    /*系统crash后强行dump,系统正常时user版本受控*/
+    if((HI1XX_ANDROID_BUILD_VARIANT_USER == hi11xx_get_android_build_variant()) && (0 == hi11xx_kernel_crash))
     {
         /*user build, limit the ssi dump*/
         if(!oal_print_rate_limit(30*PRINT_RATE_SECOND))
@@ -2873,6 +3201,13 @@ int ssi_dump_device_regs(unsigned long long module_set)
         return -OAL_EBUSY;
     }
 
+    if(0 == gpio_get_value(g_board_info_etc.power_on_enable))
+    {
+        PS_PRINT_INFO("110x power off,ssi return,power_on=%d\n", g_board_info_etc.power_on_enable);
+        ssi_unlock();
+        return -OAL_ENODEV;
+    }
+
     DECLARE_DFT_TRACE_KEY_INFO("ssi_dump_device_regs", OAL_DFT_TRACE_FAIL);
 
     if(module_set & SSI_MODULE_MASK_AON_CUT)
@@ -2892,12 +3227,17 @@ int ssi_dump_device_regs(unsigned long long module_set)
         return ret;
     }
 
+    PS_PRINT_INFO("module_set=0x%llx\n", module_set);
+
+    g_halt_det_cnt = 0;
+    oal_memset(&g_st_ssi_cpu_infos, 0, sizeof(g_st_ssi_cpu_infos));
+
     ssi_read16_etc(0x8009);
     ssi_read16_etc(0x8008);
 
     ssi_write16_etc(0x8007, 0x1);/*switch to ssi clk, wcpu hold*/
 
-    PS_PRINT_INFO("switch ssi clk %s", (ssi_read16_etc(0x8007) == 0x1) ? "ok":"failed");
+    PS_PRINT_INFO("switch ssi clk %s\n", (ssi_read16_etc(0x8007) == 0x1) ? "ok":"failed");
 
     ret = ssi_check_device_isalive();
     if(ret)
@@ -2938,22 +3278,10 @@ int ssi_dump_device_regs(unsigned long long module_set)
         goto ssi_fail;
     }
 
-    if(module_set & SSI_MODULE_MASK_AON)
+    ret = ssi_dump_device_aon_regs(module_set);
+    if(OAL_SUCC != ret)
     {
-        ret = ssi_read_reg_info_arry(hi1103_aon_reg_full, sizeof(hi1103_aon_reg_full)/sizeof(ssi_reg_info*), ssi_is_logfile);
-        if(ret)
-        {
-            goto ssi_fail;
-        }
-    }
-
-    if(module_set & SSI_MODULE_MASK_AON_CUT)
-    {
-        ret = ssi_read_reg_info_arry(hi1103_aon_reg_cut, sizeof(hi1103_aon_reg_cut)/sizeof(ssi_reg_info*), ssi_is_logfile);
-        if(ret)
-        {
-            goto ssi_fail;
-        }
+        goto ssi_fail;
     }
 
     if(module_set & SSI_MODULE_MASK_ARM_REG)
@@ -2962,6 +3290,16 @@ int ssi_dump_device_regs(unsigned long long module_set)
         if(ret)
         {
             goto ssi_fail;
+        }
+    }
+
+    /*detect tcxo clock is normal, trigger*/
+    if(module_set & (SSI_MODULE_MASK_AON|SSI_MODULE_MASK_AON_CUT))
+    {
+        ret = ssi_detect_tcxo_is_normal();
+        if(ret)
+        {
+            PS_PRINT_INFO("tcxo detect failed, continue dump\n");
         }
     }
 
@@ -3083,6 +3421,7 @@ int ssi_dump_device_regs(unsigned long long module_set)
     ssi_write16_etc(0x8007, 0x0);/*switch from ssi clk, wcpu continue*/
 
     ssi_free_gpio_etc();
+    dsm_cpu_info_dump();
     ssi_unlock();
 
     return 0;
@@ -3090,6 +3429,7 @@ ssi_fail:
     ssi_write16_etc(0x8007, 0x0);/*switch from ssi clk, wcpu continue*/
 
     ssi_free_gpio_etc();
+    dsm_cpu_info_dump();
     ssi_unlock();
     return ret;
 }
@@ -3239,6 +3579,7 @@ int32 hi11xx_get_android_build_variant(void)
 {
     return hi11xx_android_variant;
 }
+EXPORT_SYMBOL(hi11xx_get_android_build_variant);
 
 int32 hisi_wifi_platform_register_drv(void)
 {

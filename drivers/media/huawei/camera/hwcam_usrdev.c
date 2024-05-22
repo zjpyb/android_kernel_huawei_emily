@@ -186,11 +186,10 @@ s_vtbl_hwcam_user =
 static int
 hwcam_user_vb2q_queue_setup(
         struct vb2_queue* q,
-        const void* para,
         unsigned int* num_buffers,
         unsigned int* num_planes,
         unsigned int sizes[],
-        void* alloc_ctxs[])
+        struct device* alloc_ctxs[])
 {
     int i = 0;
     hwcam_user_t* user = NULL;
@@ -202,7 +201,7 @@ hwcam_user_vb2q_queue_setup(
     *num_planes = user->format.fmt.pix_mp.num_planes;
     for (; i != user->format.fmt.pix_mp.num_planes; i++) {
         sizes[i] = user->format.fmt.pix_mp.plane_fmt[i].sizeimage;
-        alloc_ctxs[i] = user;
+        alloc_ctxs[i] = (struct device*)user;
     }
 
     return 0;
@@ -313,7 +312,7 @@ s_qops_hwcam_vbuf =
 #pragma GCC visibility pop
 static void*
 hwcam_user_vb2q_get_userptr(
-        void* alloc_ctx,      //  hwcam_user_t*
+        struct device* alloc_ctx,      //  hwcam_user_t*
         unsigned long vaddr,  //  fdIon
         unsigned long size,
         enum dma_data_direction dma_dir)
@@ -848,68 +847,6 @@ hwcam_dev_vo_unsubscribe_event(
 }
 
 static long
-hwcam_dev_vo_mount_buf(
-        hwcam_dev_t* cam,
-        hwcam_user_t* user,
-        void* arg)
-{
-    long rc = -EINVAL;
-    hwcam_buf_info_t* bi = arg;
-    switch (bi->kind)
-    {
-    case HWCAM_BUF_KIND_PIPELINE_CAPABILITY:
-    case HWCAM_BUF_KIND_PIPELINE_PARAM:
-        if (user->f_pipeline_owner) {
-            rc = hwcam_cfgpipeline_intf_mount_buf(
-                    cam->pipeline, &user->intf, bi);
-        }
-        break;
-    case HWCAM_BUF_KIND_STREAM_PARAM:
-    case HWCAM_BUF_KIND_STREAM:
-        if (user->stream) {
-            rc = hwcam_cfgstream_intf_mount_buf(
-                    user->stream, bi);
-        }
-        break;
-    default:
-        HWCAM_CFG_ERR("invalid buffer kind(%d)! \n", bi->kind);
-        break;
-    }
-    return rc;
-}
-
-static long
-hwcam_dev_vo_unmount_buf(
-        hwcam_dev_t* cam,
-        hwcam_user_t* user,
-        void* arg)
-{
-    long rc = -EINVAL;
-    hwcam_buf_info_t* bi = arg;
-    switch (bi->kind)
-    {
-    case HWCAM_BUF_KIND_PIPELINE_CAPABILITY:
-    case HWCAM_BUF_KIND_PIPELINE_PARAM:
-        if (user->f_pipeline_owner) {
-            rc = hwcam_cfgpipeline_intf_unmount_buf(
-                    cam->pipeline, &user->intf, bi);
-        }
-        break;
-    case HWCAM_BUF_KIND_STREAM_PARAM:
-    case HWCAM_BUF_KIND_STREAM:
-        if (user->stream) {
-            rc = hwcam_cfgstream_intf_unmount_buf(
-                    user->stream, bi);
-        }
-        break;
-    default:
-        HWCAM_CFG_ERR("invalid buffer kind(%d)! \n", bi->kind);
-        break;
-    }
-    return rc;
-}
-
-static long
 hwcam_dev_vo_ioctl_default(
         struct file* file,
         void* fh,
@@ -928,24 +865,6 @@ hwcam_dev_vo_ioctl_default(
 
     switch (cmd)
     {
-    case HWCAM_V4L2_IOCTL_MOUNT_BUF:
-        rc = hwcam_dev_vo_mount_buf(cam, user, arg);
-        break;
-    case HWCAM_V4L2_IOCTL_UNMOUNT_BUF:
-        rc = hwcam_dev_vo_unmount_buf(cam, user, arg);
-        break;
-    case HWCAM_V4L2_IOCTL_MOUNT_GRAPHIC_BUF:
-        if (user->stream) {
-            rc = hwcam_cfgstream_intf_mount_graphic_buf(
-                    user->stream, arg);
-        }
-        break;
-    case HWCAM_V4L2_IOCTL_UNMOUNT_GRAPHIC_BUF:
-        if (user->stream) {
-            rc = hwcam_cfgstream_intf_unmount_graphic_buf(
-                    user->stream, *((int*)arg));
-        }
-        break;
     default:
         HWCAM_CFG_ERR("invalid IOCTL CMD(%d)! \n", cmd);
         break;

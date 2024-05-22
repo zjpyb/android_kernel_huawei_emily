@@ -91,7 +91,6 @@ hw_laser_subdev_ioctl(
 
     s = SD2Laser(sd);
     ctrl = (hw_laser_ctrl_t*)s->ctrl;
-    //cam_dbg("hw laser cmd = %x",cmd);
     if(ctrl->func_tbl && ctrl->func_tbl->laser_ioctl && ctrl->data)
     {
         rc = ctrl->func_tbl->laser_ioctl(ctrl->data,cmd, arg);
@@ -130,7 +129,6 @@ static int laser_close(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 
     s = SD2Laser(sd);
     ctrl = (hw_laser_ctrl_t*)s->ctrl;
-    //cam_dbg("hw laser cmd = %x",cmd);
     if(ctrl->func_tbl && ctrl->func_tbl->laser_ioctl && ctrl->data)
     {
         rc = ctrl->func_tbl->laser_ioctl(ctrl->data,HWLASER_IOCTL_STOP, NULL);

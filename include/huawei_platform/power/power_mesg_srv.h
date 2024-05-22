@@ -1,53 +1,45 @@
 #ifndef POWER_MESG_SRV_H
 #define POWER_MESG_SRV_H
 
-#define BATT_SHUTDOWN_MAGIC1                        "fee1dead"
-#define BATT_SHUTDOWN_MAGIC2                        "gotodead"
-#define BLIMSW_NV_NUMBER                            388
-#define BLIMSW_NV_NAME                              "BLIMSW"
-#define BBINFO_NV_NUMBER                            389
-#define BBINFO_NV_NAME                              "BBINFO"
-
-#define FACTORY_VERSION_MODE_FLAG                   0x00
-#define COMMERCIAL_VERSION_MODE_FLAG                0x88
-
 enum {
-    ILLEGAL_BIND_VERSION = 0,
-    RAW_BIND_VERSION,
+    POWER_GENL_UNUSED = 0, /* 0 is invalid attr type for kernel in nla_parse*/
+    POWER_GENL_ATTR0,
+    POWER_GENL_ATTR1,
+    __POWER_GENL_ATTR_NUM,
 };
+#define TOTAL_POWER_GENL_ATTR       (__POWER_GENL_ATTR_NUM - 1)
+#define BATT_INFO_DEVICE_ATTR       POWER_GENL_ATTR0
+#define BATT_INFO_DATA_ATTR         POWER_GENL_ATTR1
+#define POWER_GENL_RAW_DATA_ATTR    POWER_GENL_ATTR1
+#define POWER_GENL_MAX_ATTR_INDEX   (__POWER_GENL_ATTR_NUM - 1)
 
-enum {
-    IC_STATUS_OFFSET = 0,
-    KEY_STATUS_OFFSET,
-    SN_STATUS_OFFSET,
-    CHECK_MODE_OFFSET,
-    MAGIC_NUM_OFFSET,
-};
-#define CHECK_RESULT_LEN                (CHECK_MODE_OFFSET + 1)
-#define BATT_SN_OFFSET                  (MAGIC_NUM_OFFSET + strlen(BATT_SHUTDOWN_MAGIC1))
-#define MAX_SN_LEN                      20
-#define MAX_SN_BUFF_LENGTH              5
+typedef enum {
+    CT_PREPARE = 0,
+    SN_PREPARE,
+    //MAX is 255
+}batt_info_subcmd_t;
 
 typedef struct {
-    unsigned int version;
-    char info[MAX_SN_BUFF_LENGTH][MAX_SN_LEN];
-} binding_info;
+    unsigned char id_in_grp;
+    unsigned char chks_in_grp;
+    unsigned char id_of_grp;
+    unsigned char ic_type;
+    unsigned char subcmd;
+} nl_dev_info;
 
-enum SN_CR{
-    SN_PASS = 0,
-    SN_OBD_REMATCH,     //old board rematch new battery
-    SN_OBT_REMATCH,     //old battery rematch new board
-    SN_NN_REMATCH,      //new board & new battery rematch
-    SN_FAIL_NV_TIMEOUT, //SN get from NV timeout
-    SN_UNREADY,         //SN is under checking
-    SN_FAIL_IC_TIMEOUT, //SN get from IC timeout
-    SN_OO_UNMATCH,      //old board & old battery unmatch
-};
+typedef enum {
+    LOCAL_IC_TYPE = 0,
+    MAXIM_DS28EL15_TYPE = 1,
+    MAXIM_DS28EL16_TYPE = 2,
+    NXP_A1007_TYPE = 3,
+    /* should not larger than 255 */
+} batt_ic_type;
 
-enum CHECK_MODE {
-    FACTORY_CHECK_MODE = 0,
-    COMMERCIAL_CHECK_MODE = 15,
-};
+typedef struct {
+    const unsigned char *data;
+    unsigned int len;
+    int type;
+} resource;
 
 /* cmd: 00-49 is for battery
  *      50-99 is for wireless charging
@@ -55,13 +47,43 @@ enum CHECK_MODE {
  *      max is 255
  */
 typedef enum {
-    BATT_MAXIM_SECRET_MAC = 0,
+    BATT_INFO_CMD = 0,
+	BATT_DMD_CMD = 10,
 //    BATT_MAXIM_EEPROM_MAC,
 //    BATT_MAXIM_STATUS_MAC,
-    BATT_SHUTDOWN_CMD = 40,
+    BOARD_INFO_CMD = 40,
+    BATT_FINAL_RESULT_CMD = 49,
     POWER_CMD_ADAPTOR_ANTIFAKE_HASH = 50,
     POWER_CMD_WC_ANTIFAKE_HASH = 60,
     POWER_CMD_TOTAL_NUM = 256,
 } power_genl_cmd_t;
+
+enum RESULT_STATUS {
+    FINAL_RESULT_PASS = 0,
+    FINAL_RESULT_CRASH,
+    FINAL_RESULT_FAIL,
+    __FINAL_RESULT_MAX,
+};
+
+enum {
+    NEW_BOARD_MESG_INDEX = 0,
+    OLD_BOARD_MESG_INDEX,
+};
+
+#ifdef BATTCT_KERNEL_SRV_SHARE_VAR
+const char* result_status_mesg[] = {
+    [FINAL_RESULT_PASS]  = "AuthenticationPass_",
+    [FINAL_RESULT_CRASH] = "AuthenticationCrash",
+    [FINAL_RESULT_FAIL]  = "AuthenticationFail_",
+    /* all element should be same strlen */
+};
+const char* board_info_mesg = {
+    "BoardInformationMessage",
+};
+const char* board_info_cb_mesg[] = {
+    [NEW_BOARD_MESG_INDEX] = "IFeelYong",
+    [OLD_BOARD_MESG_INDEX] = "IFeelOld_",
+};
+#endif
 
 #endif

@@ -18,6 +18,10 @@ config CONNECTIVITY_HI1103
 	depends on CONNECTIVITY_HI11XX
 	bool "Connectivity Hi1103 support"
 	default n
+config CONNECTIVITY_HI1102A
+	depends on CONNECTIVITY_HI11XX
+	bool "Connectivity Hi1102a support"
+	default n
 config HI110X_DRIVER_PATH
 	string "Hi1102 Kernel Driver Path"
 	default "drivers/connectivity/hisi"
@@ -69,3 +73,6 @@ if CONNECTIVITY_HI1103
 source "drivers/connectivity/hi11xx/Kconfig"
 endif
 
+if CONNECTIVITY_HI1102A
+source "drivers/connectivity/hi11xx/Kconfig"
+endif

@@ -255,6 +255,9 @@ OAL_STATIC oal_uint32  wal_config_set_omit_acs(mac_vap_stru *pst_mac_vap, oal_ui
 #if (defined(_PRE_PRODUCT_ID_HI110X_DEV) || defined(_PRE_PRODUCT_ID_HI110X_HOST))
 OAL_STATIC oal_uint32  wal_config_sdio_flowctrl(mac_vap_stru *pst_mac_vap, oal_uint16 us_len, oal_uint8 *puc_param);
 #endif
+#ifdef _PRE_WLAN_DELAY_STATISTIC
+OAL_STATIC oal_uint32  wal_config_pkt_time_switch(mac_vap_stru *pst_mac_vap, oal_uint16 us_len, oal_uint8 *puc_param);
+#endif
 OAL_STATIC oal_uint32  wal_config_reg_write(mac_vap_stru *pst_mac_vap, oal_uint16 us_len, oal_uint8 *puc_param);
 
 
@@ -321,6 +324,7 @@ OAL_STATIC oal_uint32  wal_config_query_ani(mac_vap_stru *pst_mac_vap, oal_uint1
 OAL_STATIC oal_uint32  wal_config_set_qos_map(mac_vap_stru *pst_mac_vap, oal_uint16 us_len, oal_uint8 *puc_param);
 #endif
 #ifdef _PRE_WLAN_FEATURE_P2P
+OAL_STATIC oal_uint32  wal_config_set_p2p_miracast_status(mac_vap_stru *pst_mac_vap, oal_uint16 us_len, oal_uint8 *puc_param);
 OAL_STATIC oal_uint32  wal_config_set_p2p_ps_ops(mac_vap_stru *pst_mac_vap, oal_uint16 us_len, oal_uint8 *puc_param);
 OAL_STATIC oal_uint32  wal_config_set_p2p_ps_noa(mac_vap_stru *pst_mac_vap, oal_uint16 us_len, oal_uint8 *puc_param);
 #endif
@@ -639,6 +643,9 @@ OAL_STATIC OAL_CONST wal_wid_op_stru g_ast_board_wid_op[] =
 #if (defined(_PRE_PRODUCT_ID_HI110X_DEV) || defined(_PRE_PRODUCT_ID_HI110X_HOST))
     {WLAN_CFGID_SDIO_FLOWCTRL,          OAL_FALSE,  {0},    OAL_PTR_NULL,            wal_config_sdio_flowctrl},
 #endif
+#ifdef _PRE_WLAN_DELAY_STATISTIC
+    {WLAN_CFGID_PKT_TIME_SWITCH,         OAL_FALSE,  {0},    OAL_PTR_NULL,           wal_config_pkt_time_switch},
+#endif
     {WLAN_CFGID_REG_WRITE,               OAL_FALSE,  {0},    OAL_PTR_NULL,           wal_config_reg_write},
 #ifdef _PRE_WLAN_FEATURE_SINGLE_CHIP_DUAL_BAND
     {WLAN_CFGID_SET_RESTRICT_BAND,       OAL_FALSE,  {0},    OAL_PTR_NULL,           wal_config_set_restrict_band},
@@ -773,6 +780,7 @@ OAL_STATIC OAL_CONST wal_wid_op_stru g_ast_board_wid_op[] =
 #endif
 
 #ifdef _PRE_WLAN_FEATURE_P2P
+    {WLAN_CFGID_SET_P2P_MIRACAST_STATUS,     OAL_FALSE,  {0},   OAL_PTR_NULL,   wal_config_set_p2p_miracast_status},
     {WLAN_CFGID_SET_P2P_PS_OPS,     OAL_FALSE,  {0},   OAL_PTR_NULL,            wal_config_set_p2p_ps_ops},
     {WLAN_CFGID_SET_P2P_PS_NOA,     OAL_FALSE,  {0},   OAL_PTR_NULL,            wal_config_set_p2p_ps_noa},
 #endif
@@ -2122,6 +2130,14 @@ OAL_STATIC oal_uint32  wal_config_sdio_flowctrl(mac_vap_stru *pst_mac_vap, oal_u
 }
 #endif
 
+ #ifdef _PRE_WLAN_DELAY_STATISTIC
+ 
+OAL_STATIC oal_uint32  wal_config_pkt_time_switch(mac_vap_stru *pst_mac_vap, oal_uint16 us_len, oal_uint8 *puc_param)
+{
+    return hmac_config_pkt_time_switch(pst_mac_vap, us_len, puc_param);
+}
+#endif
+
 
 OAL_STATIC oal_uint32  wal_config_alg_param(mac_vap_stru *pst_mac_vap, oal_uint16 us_len, oal_uint8 *puc_param)
 {
@@ -3293,9 +3309,9 @@ OAL_STATIC oal_uint32  wal_config_set_sta_pm_mode(mac_vap_stru *pst_mac_vap, oal
 
 #if _PRE_MULTI_CORE_MODE_OFFLOAD_DMAC == _PRE_MULTI_CORE_MODE
 #ifdef _PRE_PLAT_FEATURE_CUSTOMIZE
-    if(MAX_FAST_PS==pst_hmac_vap->uc_ps_mode)
+    if((MAX_FAST_PS==pst_hmac_vap->uc_ps_mode)||(AUTO_FAST_PS==pst_hmac_vap->uc_ps_mode))
     {
-        wlan_pm_set_timeout_etc(g_wlan_fast_check_cnt);
+        wlan_pm_set_timeout_etc((g_wlan_min_fast_ps_idle>1)?(g_wlan_min_fast_ps_idle-1): g_wlan_min_fast_ps_idle);
     }
     else
 #endif
@@ -3408,6 +3424,12 @@ OAL_STATIC oal_uint32  wal_config_set_qos_map(mac_vap_stru *pst_mac_vap, oal_uin
 #endif
 
 #ifdef _PRE_WLAN_FEATURE_P2P
+
+OAL_STATIC oal_uint32  wal_config_set_p2p_miracast_status(mac_vap_stru *pst_mac_vap, oal_uint16 us_len, oal_uint8 *puc_param)
+{
+    return hmac_config_set_p2p_miracast_status(pst_mac_vap, us_len, puc_param);
+}
+
 
 OAL_STATIC oal_uint32  wal_config_set_p2p_ps_ops(mac_vap_stru *pst_mac_vap, oal_uint16 us_len, oal_uint8 *puc_param)
 {

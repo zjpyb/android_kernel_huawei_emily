@@ -34,7 +34,6 @@
 #define LOCKDOWN_CODE_RETRY		2
 
 int readB2(u16 address, u8* outBuf, int len);
-int readB2U16(u16 address, u8* outBuf, int byteToRead);
 int releaseInformation(void);
 int calculateCRC8(u8* u8_srcBuff, int size, u8 *crc);
 int writeLockDownInfo(u8 *data, int size);
@@ -45,7 +44,6 @@ int fts_disableInterrupt(void);
 int fts_enableInterrupt(void);
 int u8ToU16(u8* src, u16* dst);
 int u8ToU16_le(u8* src, u16* dst);
-int u8ToU16n(u8* src, int src_length, u16* dst);
 int u16ToU8(u16 src, u8* dst);
 int u16ToU8_le(u16 src, u8* dst);
 int u16ToU8_be(u16 src, u8* dst);

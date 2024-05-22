@@ -1,5 +1,6 @@
 #ifdef CONFIG_HW_VIP_THREAD
 /*lint -save -e578 -e695 -e571*/
+#include <linux/version.h>
 #include <linux/sched.h>
 #include <linux/list.h>
 #include <linux/mutex.h>
@@ -43,7 +44,11 @@ void mutex_dynamic_vip_enqueue(struct mutex *lock, struct task_struct *task)
 		return;
 	}
 	is_vip = test_set_dynamic_vip(task);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0)
+	owner = __mutex_owner(lock);
+#else
 	owner = lock->owner;
+#endif
 	if (is_vip && !lock->vip_dep_task && owner && !test_task_vip(owner)) {
 		dynamic_vip_enqueue(owner, DYNAMIC_VIP_MUTEX, task->vip_depth);
 		lock->vip_dep_task = owner;

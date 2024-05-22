@@ -820,7 +820,7 @@ static void dwc3_debugfs_create_endpoint_dir(struct dwc3_ep *dep,
 static void dwc3_debugfs_create_endpoint_dirs(struct dwc3 *dwc,
 		struct dentry *parent)
 {
-	int			i;
+	unsigned int i;
 
 	for (i = 0; i < dwc->num_in_eps; i++) {
 		u8		epnum = (i << 1) | 1;

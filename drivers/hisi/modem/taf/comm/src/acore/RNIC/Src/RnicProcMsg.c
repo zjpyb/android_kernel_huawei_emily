@@ -1813,12 +1813,12 @@ VOS_UINT32 RNIC_RcvCdsMsg(MsgBlock *pstMsg)
 }
 
 
-VOS_UINT32 RNIC_ProcMsg (MsgBlock *pstMsg)
+VOS_VOID RNIC_ProcMsg (MsgBlock *pstMsg)
 {
     if (VOS_NULL_PTR == pstMsg)
     {
         RNIC_ERROR_LOG(ACPU_PID_RNIC, "RNIC_ProcMsg: Msg is invalid!");
-        return VOS_ERR;
+        return;
     }
 
     /* 消息的分发处理 */
@@ -1860,7 +1860,7 @@ VOS_UINT32 RNIC_ProcMsg (MsgBlock *pstMsg)
             break;
     }
 
-    return VOS_OK;
+    return;
 }
 
 

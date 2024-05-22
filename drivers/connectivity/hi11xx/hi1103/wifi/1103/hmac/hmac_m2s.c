@@ -36,7 +36,7 @@
   3 函数实现
 *****************************************************************************/
 
-oal_void hmac_m2s_vap_arp_probe_start(oal_void *p_arg)
+oal_void hmac_m2s_vap_arp_probe_process(oal_void *p_arg, oal_bool_enum_uint8 en_arp_detect_on)
 {
     mac_vap_stru                 *pst_mac_vap = (mac_vap_stru *)p_arg;
     hmac_vap_stru                *pst_hmac_vap;
@@ -48,7 +48,9 @@ oal_void hmac_m2s_vap_arp_probe_start(oal_void *p_arg)
         return;
     }
 
-    pst_hmac_vap->st_hmac_vap_m2s.en_arp_probe_on = OAL_TRUE;
+    pst_hmac_vap->st_hmac_vap_m2s.en_arp_probe_on = en_arp_detect_on;
+
+    OAM_WARNING_LOG1(0, OAM_SF_M2S, "{hmac_m2s_vap_arp_probe_process: en_arp_probe_on[%d].}", pst_hmac_vap->st_hmac_vap_m2s.en_arp_probe_on);
 }
 
 
@@ -56,7 +58,9 @@ OAL_STATIC oal_uint32 hmac_m2s_arp_probe_timeout(oal_void *p_arg)
 {
     hmac_vap_m2s_stru            *pst_hmac_vap_m2s;
     hmac_vap_stru                *pst_hmac_vap;
+    hmac_user_stru               *pst_hmac_user;
     oal_uint32                    ui_val;
+    oal_bool_enum_uint8           en_reassoc_codeid;
 
     pst_hmac_vap = (hmac_vap_stru *)p_arg;
     if (OAL_PTR_NULL == pst_hmac_vap)
@@ -76,19 +80,37 @@ OAL_STATIC oal_uint32 hmac_m2s_arp_probe_timeout(oal_void *p_arg)
 
         if(pst_hmac_vap_m2s->uc_rx_no_pkt_count > M2S_ARP_FAIL_REASSOC_NUM)
         {
+            pst_hmac_user = mac_res_get_hmac_user_etc(pst_hmac_vap->st_vap_base_info.us_assoc_vap_id);
+            if (OAL_PTR_NULL == pst_hmac_user)
+            {
+                OAM_ERROR_LOG1(pst_hmac_vap->st_vap_base_info.uc_vap_id, OAM_SF_M2S, "hmac_m2s_arp_probe_timeout: pst_hmac_user is null ptr. user id:%d", pst_hmac_vap->st_vap_base_info.us_assoc_vap_id);
+                return OAL_ERR_CODE_PTR_NULL;
+            }
+
             /* 重关联逻辑暂时关闭，等统计出现哪些场景出现不通，才限制场景放开 */
-            OAM_WARNING_LOG0(pst_hmac_vap->st_vap_base_info.uc_vap_id, OAM_SF_M2S, "{hmac_m2s_arp_probe_timeout::need to reassoc to resume.}");
+            OAM_WARNING_LOG2(pst_hmac_vap->st_vap_base_info.uc_vap_id, OAM_SF_M2S, "{hmac_m2s_arp_probe_timeout::user rssi[%d] threhold[%d] need to reassoc to resume.}",
+                pst_hmac_user->c_rssi, WLAN_FAR_DISTANCE_RSSI);
 
             /* 停止arp探测 */
             pst_hmac_vap_m2s->en_arp_probe_on = OAL_FALSE;
 
             pst_hmac_vap_m2s->uc_rx_no_pkt_count = 0;
 
-            /* 发起reassoc req */
-            hmac_roam_start_etc(pst_hmac_vap, ROAM_SCAN_CHANNEL_ORG_0, OAL_TRUE, ROAM_TRIGGER_M2S);
+            /* 非远场才触发重关联逻辑 */
+            if(pst_hmac_user->c_rssi >= WLAN_FAR_DISTANCE_RSSI)
+            {
+                /* 发起reassoc req */
+                hmac_roam_start_etc(pst_hmac_vap, ROAM_SCAN_CHANNEL_ORG_0, OAL_FALSE, NULL, ROAM_TRIGGER_M2S);
 
+
+                en_reassoc_codeid = OAL_TRUE;
+            }
+            else
+            {
+                en_reassoc_codeid = OAL_FALSE;
+            }
 #ifdef _PRE_WLAN_1103_CHR
-            CHR_EXCEPTION_REPORT(CHR_PLATFORM_EXCEPTION_EVENTID, CHR_SYSTEM_WIFI, CHR_LAYER_DRV, CHR_WIFI_DRV_EVENT_MIMO_TO_SISO_FAIL, 0);
+            CHR_EXCEPTION_REPORT(CHR_PLATFORM_EXCEPTION_EVENTID, CHR_SYSTEM_WIFI, CHR_LAYER_DRV, CHR_WIFI_DRV_EVENT_MIMO_TO_SISO_FAIL, en_reassoc_codeid);
 #endif
         }
     }
@@ -98,6 +120,8 @@ OAL_STATIC oal_uint32 hmac_m2s_arp_probe_timeout(oal_void *p_arg)
         pst_hmac_vap_m2s->en_arp_probe_on = OAL_FALSE;
 
         pst_hmac_vap_m2s->uc_rx_no_pkt_count = 0;
+
+        OAM_WARNING_LOG1(0, OAM_SF_M2S, "{hmac_m2s_arp_probe_timeout: detect succ, en_arp_probe_on[%d].}", pst_hmac_vap_m2s->en_arp_probe_on);
     }
 
     oal_atomic_set(&pst_hmac_vap_m2s->ul_rx_unicast_pkt_to_lan, 0);

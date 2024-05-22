@@ -23,9 +23,13 @@
 #include <linux/rculist.h>
 #include <asm/cacheflush.h>
 #include <asm/page.h>
-
 #include <linux/debugfs.h>
 #include <linux/hisi/hisi_hkip.h>
+
+#include <linux/version.h>
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+#include <linux/set_memory.h>
+#endif
 
 /**
  * pmalloc_data contains the data specific to a pmalloc pool,
@@ -58,9 +62,9 @@ static ssize_t pmalloc_pool_show_protected(struct kobject *dev,
 
 	data = container_of(attr, struct pmalloc_data, attr_protected);
 	if (data->protected)
-		return sprintf(buf, "protected\n");/* unsafe_function_ignore: sprintf *//*lint !e421*/
+		return snprintf(buf, PAGE_SIZE, "ro_protected\n");/* unsafe_function_ignore: snprintf *//*lint !e421*/
 	else
-		return sprintf(buf, "protected\n");/* unsafe_function_ignore: sprintf *//*lint !e421*/
+		return snprintf(buf, PAGE_SIZE, "rw_unprotected\n");/* unsafe_function_ignore: snprintf *//*lint !e421*/
 }
 
 static ssize_t pmalloc_pool_show_avail(struct kobject *dev,
@@ -70,7 +74,7 @@ static ssize_t pmalloc_pool_show_avail(struct kobject *dev,
 	struct pmalloc_data *data;
 
 	data = container_of(attr, struct pmalloc_data, attr_avail);
-	return sprintf(buf, "%lu\n", gen_pool_avail(data->pool));/* unsafe_function_ignore: sprintf *//*lint !e421*/
+	return snprintf(buf, PAGE_SIZE, "%lu\n", gen_pool_avail(data->pool));/* unsafe_function_ignore: snprintf *//*lint !e421*/
 }
 
 static ssize_t pmalloc_pool_show_size(struct kobject *dev,
@@ -80,7 +84,7 @@ static ssize_t pmalloc_pool_show_size(struct kobject *dev,
 	struct pmalloc_data *data;
 
 	data = container_of(attr, struct pmalloc_data, attr_size);
-	return sprintf(buf, "%lu\n", gen_pool_size(data->pool));/* unsafe_function_ignore: sprintf *//*lint !e421*/
+	return snprintf(buf, PAGE_SIZE, "%lu\n", gen_pool_size(data->pool));/* unsafe_function_ignore: snprintf *//*lint !e421*/
 }
 
 static void pool_chunk_number(struct gen_pool *pool,
@@ -100,7 +104,7 @@ static ssize_t pmalloc_pool_show_chunks(struct kobject *dev,
 
 	data = container_of(attr, struct pmalloc_data, attr_chunks);
 	gen_pool_for_each_chunk(data->pool, pool_chunk_number, &chunks_num);
-	return sprintf(buf, "%lu\n", chunks_num);/* unsafe_function_ignore: sprintf *//*lint !e421*/
+	return snprintf(buf, PAGE_SIZE, "%lu\n", chunks_num);/* unsafe_function_ignore: snprintf *//*lint !e421*/
 }
 
 /**
@@ -238,6 +242,27 @@ static inline int check_input_params(struct gen_pool *pool, size_t req_size)
 	}
 	return 0;
 }
+/*lint -e429*/
+
+static inline void tag_chunk(const void *chunk)
+{
+	struct vmap_area *va;
+
+	va = find_vmap_area((unsigned long)(uintptr_t)chunk);
+	if (likely(va)) {
+		va->vm->flags |= VM_PMALLOC;
+	}
+}
+
+static inline void untag_chunk(const void *chunk)
+{
+	struct vmap_area *va;
+
+	va = find_vmap_area((unsigned long)(uintptr_t)chunk);
+	if (likely(va)) {
+		va->vm->flags &= ~(unsigned long)VM_PMALLOC;
+	}
+}
 
 bool pmalloc_prealloc(struct gen_pool *pool, size_t req_size)
 {
@@ -260,15 +285,16 @@ bool pmalloc_prealloc(struct gen_pool *pool, size_t req_size)
 	chunk = vmalloc(chunk_size);
 	if (unlikely(chunk == NULL))
 		return false;
-
+	tag_chunk(chunk);
 	/* Locking is already done inside gen_pool_add */
-	add_error = gen_pool_add(pool, (unsigned long)chunk, chunk_size,
+	add_error = gen_pool_add(pool, (unsigned long)(uintptr_t)chunk, chunk_size,
 				 NUMA_NO_NODE);
 	if (unlikely(add_error != 0))
 		goto abort;
 
 	return true;/*lint !e429*/
 abort:
+	untag_chunk(chunk);
 	vfree(chunk);
 	return false;
 
@@ -311,9 +337,9 @@ retry_alloc_from_pool:
 		else
 			return NULL;
 	}
-
+	tag_chunk(chunk);
 	/* Locking is already done inside gen_pool_add */
-	add_error = gen_pool_add(pool, (unsigned long)chunk, chunk_size,
+	add_error = gen_pool_add(pool, (unsigned long)(uintptr_t)chunk, chunk_size,
 				 NUMA_NO_NODE);
 	if (unlikely(add_error))
 		goto abort;
@@ -321,10 +347,10 @@ retry_alloc_from_pool:
 	retval = gen_pool_alloc(pool, real_size);
 	if (retval) {
 return_allocation:
-		*(size_t *)retval = real_size;
+		*(size_t *)(uintptr_t)retval = real_size;
 		if (gfp & __GFP_ZERO)
-			memset((void *)(retval + overhead), 0, req_size);/* unsafe_function_ignore: memset*/
-		return (void *) (retval + overhead);/*lint !e429*/
+			memset((void *)(uintptr_t)(retval + overhead), 0, req_size);/* unsafe_function_ignore: memset*/
+		return (void *) (uintptr_t)(retval + overhead);/*lint !e429*/
 	}
 	else
 		/* Here there is no test for __GFP_NO_FAIL because, in
@@ -335,13 +361,14 @@ return_allocation:
 		 * As long as vmalloc succeeds, it's ok to retry.*/
 		goto retry_alloc_from_pool;
 abort:
+	untag_chunk(chunk);
 	vfree(chunk);
 	return NULL;
 }
 
 void pfree(struct gen_pool *pool, const void *addr)
 {
-	unsigned long real_addr, overhead;
+	uintptr_t real_addr, overhead;
 	size_t size;
 	unsigned int order;
 
@@ -350,9 +377,9 @@ void pfree(struct gen_pool *pool, const void *addr)
 
 	order = (unsigned int)pool->min_alloc_order;
 	overhead = roundup(sizeof(size_t), (1UL << order));
-	real_addr = ((unsigned long)addr) - overhead;
+	real_addr = ((uintptr_t)addr) - overhead;
 	size = *(size_t *)real_addr;
-	gen_pool_free(pool, real_addr, size);
+	gen_pool_free(pool, (unsigned long)real_addr, size);
 }
 
 static void pmalloc_chunk_set_protection(struct gen_pool *pool,
@@ -367,9 +394,9 @@ static void pmalloc_chunk_set_protection(struct gen_pool *pool,
 
 	if (*flag) {
 		set_memory_ro(chunk->start_addr, pages);
-		hkip_register_ro_mod((void *)chunk->start_addr, chunk_size);
+		hkip_register_ro_mod((void *)(uintptr_t)chunk->start_addr, chunk_size);
 	} else {
-		hkip_unregister_ro_mod((void *)chunk->start_addr, chunk_size);
+		hkip_unregister_ro_mod((void *)(uintptr_t)chunk->start_addr, chunk_size);
 		set_memory_rw(chunk->start_addr, pages);
 	}
 }
@@ -410,8 +437,9 @@ static void pmalloc_chunk_free(struct gen_pool *pool,
 	unsigned int order = (unsigned int)pool->min_alloc_order;
 	size_t size = chunk->end_addr + 1 - chunk->start_addr;
 
+	untag_chunk((void *)(uintptr_t)chunk->start_addr);
 	memset(chunk->bits, 0, DIV_ROUND_UP(size >> order, BITS_PER_BYTE));/* unsafe_function_ignore: memset */
-	vfree((void *)chunk->start_addr);
+	vfree((void *)(uintptr_t)chunk->start_addr);
 }
 
 

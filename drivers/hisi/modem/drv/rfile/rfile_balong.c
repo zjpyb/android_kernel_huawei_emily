@@ -52,6 +52,7 @@
 #include <product_config.h>
 
 #include "mdrv.h"
+#include <osl_thread.h>
 #include "bsp_pm_om.h"
 #include "bsp_slice.h"
 //#include "bsp_nandc.h"
@@ -66,38 +67,6 @@
 
 struct bsp_rfile_main_stru g_stRfileMain = {EN_RFILE_INIT_INVALID, };
 
-
-typedef s32 (*RFILE_REQ_FUN)(void *pstRfileQue, u32 ulId);
-
-
-struct bsp_rfile_table_stru
-{
-    u32                             enRfileType;
-    void                            *pFun;
-};
-
-
-/* 接收C核的请求处理函数表 */
-struct bsp_rfile_table_stru astAcoreRfileReq[] = {
-    {EN_RFILE_OP_OPEN,              rfile_AcoreOpenReq},
-    {EN_RFILE_OP_CLOSE,             rfile_AcoreCloseReq},
-    {EN_RFILE_OP_WRITE,             rfile_AcoreWriteReq},
-    {EN_RFILE_OP_WRITE_SYNC,        rfile_AcoreWriteSyncReq},
-    {EN_RFILE_OP_READ,              rfile_AcoreReadReq},
-    {EN_RFILE_OP_SEEK,              rfile_AcoreSeekReq},
-    {EN_RFILE_OP_TELL,              rfile_AcoreTellReq},
-    {EN_RFILE_OP_REMOVE,            rfile_AcoreRemoveReq},
-    {EN_RFILE_OP_MKDIR,             rfile_AcoreMkdirReq},
-    {EN_RFILE_OP_RMDIR,             rfile_AcoreRmdirReq},
-    {EN_RFILE_OP_OPENDIR,           rfile_AcoreOpendirReq},
-    {EN_RFILE_OP_READDIR,           rfile_AcoreReaddirReq},
-    {EN_RFILE_OP_CLOSEDIR,          rfile_AcoreClosedirReq},
-    {EN_RFILE_OP_STAT,              rfile_AcoreStatReq},
-    {EN_RFILE_OP_ACCESS,            rfile_AcoreAccessReq},
-    {EN_RFILE_OP_MASSRD,            rfile_AcoreMassrdReq},
-    {EN_RFILE_OP_MASSWR,            rfile_AcoreMasswrReq},
-    {EN_RFILE_OP_RENAME,            rfile_AcoreRenameReq},
-};
 
 struct rfile_mntn_stru g_stRfileMntnInfo;
 
@@ -1523,7 +1492,7 @@ s32 bsp_RfileCallback(u32 channel_id, u32 len, void *context)
 
         return BSP_OK;
     }
-    wake_lock(&g_stRfileMain.wake_lock);
+    __pm_stay_awake(&g_stRfileMain.wake_lock);
     osl_sem_up(&g_stRfileMain.semTask);
 
     return BSP_OK;
@@ -1571,6 +1540,80 @@ void rfile_ResetProc(void)
     }
 
 }
+s32 rfile_AcoreReqFunc_part2(u32 enOptype, u32 channel_id)
+{
+    switch (enOptype) {
+        case EN_RFILE_OP_OPENDIR: {
+            return rfile_AcoreOpendirReq((struct bsp_rfile_opendir_req *)g_stRfileMain.data, channel_id);
+        }
+        case EN_RFILE_OP_READDIR: {
+            return rfile_AcoreReaddirReq((struct bsp_rfile_readdir_req *)g_stRfileMain.data, channel_id);
+        }
+        case EN_RFILE_OP_CLOSEDIR: {
+            return rfile_AcoreClosedirReq((struct bsp_rfile_closedir_req *)g_stRfileMain.data, channel_id);
+        }
+        case EN_RFILE_OP_STAT: {
+            return rfile_AcoreStatReq((struct bsp_rfile_stat_req *)g_stRfileMain.data, channel_id);
+        }
+        case EN_RFILE_OP_ACCESS: {
+            return rfile_AcoreAccessReq((struct bsp_rfile_access_req *)g_stRfileMain.data, channel_id);
+        }
+        case EN_RFILE_OP_MASSRD: {
+            return rfile_AcoreMassrdReq((struct bsp_rfile_massread_req *)g_stRfileMain.data, channel_id);
+        }
+        case EN_RFILE_OP_MASSWR: {
+            return rfile_AcoreMasswrReq((struct bsp_rfile_masswrite_req *)g_stRfileMain.data, channel_id);
+        }
+        case EN_RFILE_OP_RENAME: {
+            return rfile_AcoreRenameReq((struct bsp_rfile_rename_req *)g_stRfileMain.data, channel_id);
+        }
+
+        default: {
+            bsp_trace(BSP_LOG_LEVEL_ERROR, BSP_MODU_RFILE,"[rfile]: <%s> enOptype %d  is bigger than EN_RFILE_OP_BUTT.\n", __FUNCTION__, enOptype);
+            return BSP_ERROR;
+        }
+    }
+}
+
+s32 rfile_AcoreReqFunc_part1(u32 enOptype, u32 channel_id)
+{
+    switch (enOptype) {
+        case EN_RFILE_OP_OPEN: {
+            return rfile_AcoreOpenReq((struct bsp_rfile_open_req *)g_stRfileMain.data, channel_id);
+        }
+        case EN_RFILE_OP_CLOSE: {
+            return rfile_AcoreCloseReq((struct bsp_rfile_close_req *)g_stRfileMain.data, channel_id);
+        }
+        case EN_RFILE_OP_WRITE: {
+            return rfile_AcoreWriteReq((struct bsp_rfile_write_req *)g_stRfileMain.data, channel_id);
+        }
+        case EN_RFILE_OP_WRITE_SYNC: {
+            return rfile_AcoreWriteSyncReq((struct bsp_rfile_write_req *)g_stRfileMain.data, channel_id);
+        }
+        case EN_RFILE_OP_READ: {
+            return rfile_AcoreReadReq((struct bsp_rfile_read_req *)g_stRfileMain.data, channel_id);
+        }
+        case EN_RFILE_OP_SEEK: {
+            return rfile_AcoreSeekReq((struct bsp_rfile_seek_req *)g_stRfileMain.data, channel_id);
+        }
+        case EN_RFILE_OP_TELL: {
+            return rfile_AcoreTellReq((struct bsp_rfile_tell_req *)g_stRfileMain.data, channel_id);
+        }
+        case EN_RFILE_OP_REMOVE: {
+            return rfile_AcoreRemoveReq((struct bsp_rfile_remove_req *)g_stRfileMain.data, channel_id);
+        }
+        case EN_RFILE_OP_MKDIR: {
+            return rfile_AcoreMkdirReq((struct bsp_rfile_mkdir_req *)g_stRfileMain.data, channel_id);
+        }
+        case EN_RFILE_OP_RMDIR: {
+            return rfile_AcoreRmdirReq((struct bsp_rfile_rmdir_req *)g_stRfileMain.data, channel_id);
+        }
+        default: {
+            return rfile_AcoreReqFunc_part2(enOptype, channel_id);
+        }
+    }
+}
+
 
 /*lint -save -e716*/
 
@@ -1579,7 +1622,6 @@ s32 rfile_TaskProc(void* obj)
     s32 ret;
     u32 enOptype;
     u32 channel_id;
-    RFILE_REQ_FUN   pReqFun;
 
     bsp_trace(BSP_LOG_LEVEL_DEBUG, BSP_MODU_RFILE, "[rfile]: <%s> entry.\n", __FUNCTION__);
 
@@ -1609,7 +1651,7 @@ s32 rfile_TaskProc(void* obj)
         }
 
         g_stRfileMain.opState = EN_RFILE_DOING;
-        wake_lock(&g_stRfileMain.wake_lock);
+        __pm_stay_awake(&g_stRfileMain.wake_lock);
         if(g_stRfileMain.pmState == EN_RFILE_SLEEP_STATE)
         {
             printk(KERN_ERR"%s cur state in sleeping,wait for resume end!\n",__func__);
@@ -1621,7 +1663,7 @@ s32 rfile_TaskProc(void* obj)
         if(((u32)ret > RFILE_LEN_MAX) || (ret <= 0))
         {
             bsp_trace(BSP_LOG_LEVEL_DEBUG, BSP_MODU_RFILE, "![rfile]: <%s> icc_read %d.\n", __FUNCTION__, ret);
-            wake_unlock(&g_stRfileMain.wake_lock);
+            __pm_relax(&g_stRfileMain.wake_lock);
             g_stRfileMain.opState = EN_RFILE_IDLE;
             continue;   /* A-C通道没读到数据 */
         }
@@ -1636,15 +1678,13 @@ s32 rfile_TaskProc(void* obj)
         }
         else
         {
-            pReqFun = astAcoreRfileReq[enOptype].pFun;
-
-            ret = pReqFun(g_stRfileMain.data, channel_id);
+            ret = rfile_AcoreReqFunc_part1(enOptype, channel_id);
             if(BSP_OK != ret)
             {
                 bsp_trace(BSP_LOG_LEVEL_ERROR, BSP_MODU_RFILE, "![rfile]: <%s> pFun failed %d.\n", __FUNCTION__, enOptype);
             }
         }
-        wake_unlock(&g_stRfileMain.wake_lock);
+        __pm_relax(&g_stRfileMain.wake_lock);
 
         /* 处理结束后避免ICC通道中有缓存，再次启动读取 */
         osl_sem_up(&g_stRfileMain.semTask);
@@ -1689,7 +1729,7 @@ s32 bsp_rfile_init(void)
     osl_sem_init(0, &(g_stRfileMain.semTask));
     osl_sem_init(0, &(g_stRfileMain.semCloseFps));
 
-    wake_lock_init(&g_stRfileMain.wake_lock,WAKE_LOCK_SUSPEND, "rfile_wakelock");
+    wakeup_source_init(&g_stRfileMain.wake_lock, "rfile_wakelock");
 
     g_stRfileMain.taskid = kthread_run(rfile_TaskProc, BSP_NULL, "rfile");
     if (IS_ERR(g_stRfileMain.taskid))

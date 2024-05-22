@@ -31,18 +31,35 @@ extern "C" {
 oal_uint8 g_uc_uapsd_cap_etc = WLAN_FEATURE_UAPSD_IS_OPEN;
 #endif
 
-mac_vap_cb  g_st_mac_vap_rom_cb = {mac_init_mib_rom_cb,
-                                   mac_vap_init_mib_11n_rom_cb,
-                                   mac_vap_init_by_protocol_cb,
-                                   mac_vap_init_11ac_mcs_singlenss_rom_cb,
-                                   mac_vap_init_11ac_mcs_doublenss_rom_cb,
-                                   mac_vap_ch_mib_by_bw_cb, //ch_mib_by_bw_cb
-                                   mac_vap_init_11ac_rates_cb,
-                                   mac_vap_init_11n_rates_cb,
-                                   OAL_PTR_NULL, //init_privacy_cb
-                                   OAL_PTR_NULL, //init_rates_by_prot_cb
-                                   mac_vap_init_11ax_rates,
-                                   mac_vap_init_mib_11ax};
+#if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
+mac_vap_cb  g_st_mac_vap_rom_cb = {
+    .mac_init_mib_cb                    = mac_init_mib_rom_cb,
+    .mac_vap_init_mib_11n_cb            = mac_vap_init_mib_11n_rom_cb,
+    .mac_vap_init_by_protocol_cb        = mac_vap_init_by_protocol_cb,
+    .mac_vap_init_11ac_mcs_singlenss_cb = mac_vap_init_11ac_mcs_singlenss_rom_cb,
+    .mac_vap_init_11ac_mcs_doublenss_cb = mac_vap_init_11ac_mcs_doublenss_rom_cb,
+    .ch_mib_by_bw_cb                    = mac_vap_ch_mib_by_bw_cb, //ch_mib_by_bw_cb
+    .init_11ac_rates_cb                 = mac_vap_init_11ac_rates_cb,
+    .init_11n_rates_cb                  = mac_vap_init_11n_rates_cb,
+    .init_privacy_cb                    = OAL_PTR_NULL, //init_privacy_cb
+    .init_rates_by_prot_cb              = OAL_PTR_NULL, //init_rates_by_prot_cb
+    .init_11ax_rates_cb                 = mac_vap_init_11ax_rates,
+    .init_11ax_mib_cb                   = mac_vap_init_mib_11ax};
+#else
+mac_vap_cb  g_st_mac_vap_rom_cb = {
+    .mac_init_mib_cb                    = OAL_PTR_NULL,
+    .mac_vap_init_mib_11n_cb            = OAL_PTR_NULL,
+    .mac_vap_init_by_protocol_cb        = OAL_PTR_NULL,
+    .mac_vap_init_11ac_mcs_singlenss_cb = OAL_PTR_NULL,
+    .mac_vap_init_11ac_mcs_doublenss_cb = OAL_PTR_NULL,
+    .ch_mib_by_bw_cb                    = OAL_PTR_NULL, //ch_mib_by_bw_cb
+    .init_11ac_rates_cb                 = OAL_PTR_NULL,
+    .init_11n_rates_cb                  = OAL_PTR_NULL,
+    .init_privacy_cb                    = OAL_PTR_NULL, //init_privacy_cb
+    .init_rates_by_prot_cb              = OAL_PTR_NULL, //init_rates_by_prot_cb
+    .init_11ax_rates_cb                 = OAL_PTR_NULL,
+    .init_11ax_mib_cb                   = OAL_PTR_NULL};
+#endif
 
 /* WME初始参数定义，按照OFDM初始化 AP模式 值来自于TGn 9 Appendix D: Default WMM AC Parameters */
 
@@ -3261,7 +3278,7 @@ oal_uint32 mac_vap_add_wep_key(mac_vap_stru *pst_mac_vap, oal_uint8 us_key_idx, 
     pst_wep_key->ul_cipher        = ul_cipher_type;
     pst_wep_key->ul_key_len       = (oal_uint32)uc_key_len;
 
-    oal_memcopy(pst_wep_key->auc_key, puc_key, WLAN_WPA_KEY_LEN);
+    oal_memcopy(pst_wep_key->auc_key, puc_key, WLAN_WEP104_KEY_LEN);
 
     /* TBD 挪出去 初始化组播用户的发送信息 */
     pst_multi_user->st_user_tx_info.st_security.en_cipher_key_type      = us_key_idx + HAL_KEY_TYPE_PTK;

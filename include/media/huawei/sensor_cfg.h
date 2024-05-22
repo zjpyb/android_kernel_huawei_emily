@@ -56,10 +56,10 @@ typedef enum _tag_hwsensor_position_kind
     HWSENSOR_POSITION_SUBFORE                   =    3,//legacy
     HWSENSOR_POSITION_REAR_THIRD                =    4,
     HWSENSOR_POSITION_REAR_SECOND               =    5,
+    HWSENSOR_POSITION_REAR_FORTH                =    6,
     HWSENSOR_POSITION_FORE_SECOND               =    7,
     HWSENSOR_POSITION_FORE_THIRD                =    8,
     HWSENSOR_POSITION_IR4STRUCTURELIGHT = 10,
-    HWSENSOR_POSITION_IRIS                      =    11,
     HWSENSOR_POSITION_GAZE                      =    12,
 } hwsensor_position_kind_t;
 
@@ -75,6 +75,7 @@ typedef struct _tag_hwsensor_info
 
     char                                        name[DEVICE_NAME_SIZE];
     char                                        vcm_name[DEVICE_NAME_SIZE];
+    char                                        extend_name[DEVICE_NAME_SIZE];
     int                                         vcm_enable;
     hwsensor_position_kind_t                    mount_position;
     uint32_t                                    mount_angle;
@@ -104,6 +105,8 @@ enum sensor_config_type
 	SEN_CONFIG_OIS_WPB_CTRL,
 	SEN_CONFIG_RESET_HOLD,
 	SEN_CONFIG_RESET_RELEASE,
+	SEN_CONFIG_MIPI_SWITCH,
+	SEN_CONFIG_FPC_CHECK,
 	SEN_CONFIG_MAX_INDEX
 };
 
@@ -136,6 +139,9 @@ struct sensor_cfg_data {
         struct sensor_i2c_setting setting;
         //struct hisi_sensor_af_otp af_otp;
     } cfg;
+    union {
+         char extend_name[DEVICE_NAME_SIZE];
+    }info;
 };
 
 typedef enum _tag_sensor_otp_cfg_type_t

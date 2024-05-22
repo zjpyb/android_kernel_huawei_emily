@@ -1683,7 +1683,7 @@ VOS_VOID Ndis_AdsMsgProc(const MsgBlock* pMsgBlock )
 }
 
 
-VOS_VOID APP_Ndis_PidMsgProc(const MsgBlock* pMsgBlock )
+VOS_VOID APP_Ndis_PidMsgProc(MsgBlock* pMsgBlock )
 {
     if (VOS_NULL_PTR == pMsgBlock)
     {

@@ -26,7 +26,7 @@
 #define WLDC_DIFF_VOLT_CHECK_CNT          3
 #define WLDC_DIFF_VOLT_CHECK_TH           1200
 
-#define WLDC_IOUT_MAX                     1400
+#define WLDC_IOUT_MAX                     1350
 #define SC_DEFAULT_VOLT_RATIO             2
 
 #define WLDC_DEFAULT_CTRL_INTERVAL        100  //ms
@@ -89,6 +89,7 @@ struct wldc_device_info {
 	int rx_vout_err_th;
 	int rx_iout_err_th;
 	int rx_init_delt_vout;
+	int vrect_vout_diff;
 	int cur_vbat_th;
 	int cur_iout_th_high;
 	int cur_iout_th_low;
@@ -103,15 +104,24 @@ struct wldc_device_info {
 void wldc_set_di(struct wldc_device_info *di);
 int wireless_sc_get_di(struct wldc_device_info **di);
 
+
+#ifdef CONFIG_WIRELESS_CHARGER
 int wldc_rx_ops_register(struct wireless_charge_device_ops *ops);
 int wireless_sc_ops_register(struct loadswitch_ops* ops);
 int wireless_sc_batinfo_ops_register(struct batinfo_ops* ops);
+#else
+static inline int wldc_rx_ops_register(struct wireless_charge_device_ops *ops) {return 0;}
+static inline int wireless_sc_ops_register(struct loadswitch_ops* ops) {return 0;}
+static inline int wireless_sc_batinfo_ops_register(struct batinfo_ops* ops) {return 0;}
+#endif
 
 int can_vbatt_do_wldc_charge(struct wldc_device_info *di);
 int can_tbatt_do_wldc_charge(void);
 
 int wldc_retore_normal_charge_path(void);
-int wldc_cutt_off_normal_charge_path(void);
+int wldc_cut_off_normal_charge_path(void);
+int wldc_turn_on_direct_charge_channel(void);
+int wldc_turn_off_direct_charge_channel(void);
 
 int wireless_direct_charge_check(void);
 int wireless_sc_charge_check(void);

@@ -34,6 +34,8 @@
 #include <teek_client_id.h>
 #include <teek_client_constants.h>
 #endif
+#include <linux/mfd/hisi_pmic.h>
+#include <pmic_interface.h>
 
 #include "ufshcd.h"
 #include "unipro.h"
@@ -67,8 +69,11 @@ static char ufs_product_name[32] = {0};
 static int __init early_parse_ufs_product_name_cmdline(char *arg)
 {
 	if (arg) {
-		strncpy(ufs_product_name, arg, strnlen(arg, sizeof(ufs_product_name)));
+		strncpy(ufs_product_name, arg,
+			strnlen(arg, sizeof(ufs_product_name)));
+#ifdef CONFIG_HISI_DEBUG_FS
 		pr_info("cmdline ufs_product_name=%s\n", ufs_product_name);
+#endif
 	} else {
 		pr_info("no ufs_product_name cmdline\n");
 	}
@@ -158,23 +163,6 @@ no_memory:
 	return ret;
 }
 
-void uie_close_session(void)
-{
-	if (session) {
-		TEEK_CloseSession(session);
-		kfree(session);
-		session = NULL;
-	}
-
-	if (context) {
-		TEEK_FinalizeContext(context);
-		kfree(context);
-		context = NULL;
-	}
-
-	pr_err("%s: end\n", __func__);
-}
-
 static int set_key_in_tee(void)
 {
 	u32 root_id = 2012;
@@ -183,6 +171,11 @@ static int set_key_in_tee(void)
 	TEEC_Result result;
 	u32 origin = 0;
 	int ret = 0;
+
+	if (!session) {
+		pr_err("%s: session is null\n", __func__);
+		return ret;
+	}
 
 	pr_err("%s: start ++\n", __func__);
 
@@ -324,19 +317,24 @@ static inline int ufshcd_polling_dme_set(struct ufs_hba *hba, u32 attr_sel,
 int ufs_kirin_polling_mphy_write(struct ufs_hba *hba, uint16_t addr,
 				  uint16_t value)
 {
-	int err = 0;
+	unsigned int err = 0;
 	/*DME_SET(16'h8117, cr_para_addr.MSB ); */
-	err |= ufshcd_polling_dme_set(hba, UIC_ARG_MIB(0x8117), (addr & 0xFF00) >> 8);
+	err |= (unsigned int)ufshcd_polling_dme_set(
+		hba, UIC_ARG_MIB(0x8117), (addr & 0xFF00) >> 8);
 	/*DME_SET(16'h8116, cr_para_addr.LSB); */
-	err |= ufshcd_polling_dme_set(hba, UIC_ARG_MIB(0x8116), (addr & 0xFF));
+	err |= (unsigned int)ufshcd_polling_dme_set(
+		hba, UIC_ARG_MIB(0x8116), (addr & 0xFF));
 	/*DME_SET(16'h8119, cr_para_wr_data.MSB); */
-	err |= ufshcd_polling_dme_set(hba, UIC_ARG_MIB(0x8119), (value & 0xFF00) >> 8);
+	err |= (unsigned int)ufshcd_polling_dme_set(
+		hba, UIC_ARG_MIB(0x8119), (value & 0xFF00) >> 8);
 	/*DME_SET(16'h8118, cr_para_wr_data.LSB ); */
-	err |= ufshcd_polling_dme_set(hba, UIC_ARG_MIB(0x8118), (value & 0xFF));
-	/*DME_SET(16'h811c, 0x0); *//*trigger write */
-	err |= ufshcd_polling_dme_set(hba, UIC_ARG_MIB(0x811C), 1);
+	err |= (unsigned int)ufshcd_polling_dme_set(
+		hba, UIC_ARG_MIB(0x8118), (value & 0xFF));
+	/*DME_SET(16'h811c, 0x0); */ /*trigger write */
+	err |= (unsigned int)ufshcd_polling_dme_set(
+		hba, UIC_ARG_MIB(0x811C), 1);
 
-	return err;
+	return (int)err;
 }
 
 /*lint -restore*/
@@ -514,7 +512,7 @@ void kirin_ufs_hci_log(struct ufs_hba *hba)
 
 int ufs_kirin_check_hibern8(struct ufs_hba *hba)
 {
-	int err = 0;
+	unsigned int err = 0;
 	u32 tx_fsm_val_0 = 0;
 	u32 tx_fsm_val_1 = 0;
 	unsigned long timeout = jiffies + msecs_to_jiffies(HBRN8_POLL_TOUT_MS);
@@ -522,8 +520,8 @@ int ufs_kirin_check_hibern8(struct ufs_hba *hba)
 	do {
 		err = ufshcd_dme_get(hba, UIC_ARG_MIB_SEL(MPHY_TX_FSM_STATE, 0),
 				     &tx_fsm_val_0);
-		err |= ufshcd_dme_get(hba, UIC_ARG_MIB_SEL(MPHY_TX_FSM_STATE, 1),
-				     &tx_fsm_val_1);
+		err |= (unsigned int)ufshcd_dme_get(hba,
+			UIC_ARG_MIB_SEL(MPHY_TX_FSM_STATE, 1), &tx_fsm_val_1);
 		if (err || (tx_fsm_val_0 == TX_FSM_HIBERN8 && tx_fsm_val_1 == TX_FSM_HIBERN8))
 			break;
 
@@ -538,26 +536,26 @@ int ufs_kirin_check_hibern8(struct ufs_hba *hba)
 	if (time_after(jiffies, timeout)) {
 		err = ufshcd_dme_get(hba, UIC_ARG_MIB_SEL(MPHY_TX_FSM_STATE, 0),
 				     &tx_fsm_val_0);
-		err |= ufshcd_dme_get(hba, UIC_ARG_MIB_SEL(MPHY_TX_FSM_STATE, 1),
-				     &tx_fsm_val_1);
+		err |= (unsigned int)ufshcd_dme_get(hba,
+			UIC_ARG_MIB_SEL(MPHY_TX_FSM_STATE, 1), &tx_fsm_val_1);
 	}
 
 	if (err) {
 		dev_err(hba->dev, "%s: unable to get TX_FSM_STATE, err %d\n",
 			__func__, err);
 	} else if (tx_fsm_val_0 != TX_FSM_HIBERN8 || tx_fsm_val_1 != TX_FSM_HIBERN8) {
-		err = -1;
+		err = (unsigned int)(-1);
 		dev_err(hba->dev, "%s: invalid TX_FSM_STATE, lane0 = %d, lane1 = %d\n",
 			__func__, tx_fsm_val_0, tx_fsm_val_1);
 	}
 
-	return err;
+	return (int)err;
 }
 
 #ifdef CONFIG_SCSI_UFS_INLINE_CRYPTO
 int ufs_kirin_uie_config_init(struct ufs_hba *hba)
 {
-	int reg_value = 0;
+	unsigned int reg_value = 0;
 	int err = 0;
 
 	/* enable UFS cryptographic operations on transactions */
@@ -673,7 +671,7 @@ void ufs_kirin_uie_utrd_prepare(struct ufs_hba *hba,
 #else
 		crypto_cci = lrbp->task_tag;
 		spin_lock_irqsave(hba->host->host_lock, flags);
-		ufs_kirin_uie_key_prepare(hba, crypto_cci, lrbp->cmd->request->ci_key);
+		ufs_kirin_uie_key_prepare(hba, crypto_cci, lrbp->cmd->request->hisi_req.ci_key);
 		spin_unlock_irqrestore(hba->host->host_lock, flags);
 #endif
 	} else {
@@ -707,35 +705,6 @@ void ufs_kirin_uie_utrd_prepare(struct ufs_hba *hba,
 }
 #endif
 
-void ufs_kirin_regulator_init(struct ufs_hba *hba)
-{
-	struct device *dev = hba->dev;
-
-	hba->vreg_info.vcc =
-		devm_kzalloc(dev, sizeof(struct ufs_vreg), GFP_KERNEL);
-	if (!hba->vreg_info.vcc) {
-		dev_err(dev, "vcc alloc error\n");
-		goto error;
-	}
-
-	hba->vreg_info.vcc->reg = devm_regulator_get(dev, "vcc");
-	if (IS_ERR(hba->vreg_info.vcc->reg)) {
-		dev_err(dev, "get regulator vcc failed\n");
-		goto error;
-	}
-
-	if (regulator_set_voltage(hba->vreg_info.vcc->reg, 2950000, 2950000)) {
-		dev_err(dev, "set vcc voltage failed\n");
-		goto error;
-	}
-
-	if (regulator_enable(hba->vreg_info.vcc->reg))
-		dev_err(dev, "regulator vcc enable failed\n");
-
-error:
-	return;
-}
-
 void ufs_kirin_pre_hce_notify(struct ufs_hba *hba)
 {
 	struct ufs_kirin_host *host = (struct ufs_kirin_host *)hba->priv;
@@ -746,7 +715,8 @@ void ufs_kirin_pre_hce_notify(struct ufs_hba *hba)
 	return;
 }
 
-int ufs_kirin_hce_enable_notify(struct ufs_hba *hba, bool status)
+int ufs_kirin_hce_enable_notify(struct ufs_hba *hba,
+				      enum ufs_notify_change_status status)
 {
 	int err = 0;
 
@@ -772,8 +742,8 @@ void hisi_mphy_busdly_config(struct ufs_hba *hba,
 	}
 }
 
-/*lint -save -e483*/
-int ufs_kirin_link_startup_notify(struct ufs_hba *hba, bool status)
+int ufs_kirin_link_startup_notify(struct ufs_hba *hba,
+				      enum ufs_notify_change_status status)
 {
 	int err = 0;
 	switch (status) {
@@ -789,7 +759,6 @@ int ufs_kirin_link_startup_notify(struct ufs_hba *hba, bool status)
 
 	return err;
 }
-/*lint -restore*/
 
 static int ufs_kirin_get_pwr_dev_param(struct ufs_kirin_dev_params *kirin_param,
 				       struct ufs_pa_layer_attr *dev_max,
@@ -903,7 +872,8 @@ void ufs_kirin_cap_fill(struct ufs_kirin_host *host, struct ufs_kirin_dev_params
 	}
 }
 
-int ufs_kirin_pwr_change_notify(struct ufs_hba *hba, bool status,
+int ufs_kirin_pwr_change_notify(struct ufs_hba *hba,
+	enum ufs_notify_change_status status,
 	struct ufs_pa_layer_attr *dev_max_params,
 	struct ufs_pa_layer_attr *dev_req_params)
 {
@@ -968,9 +938,10 @@ int ufs_kirin_pwr_change_notify(struct ufs_hba *hba, bool status,
 		}
 		/*for hisi MPHY*/
 		deemphasis_config(host, hba, dev_req_params);
-
 		if (host->caps & USE_HISI_MPHY_TC) {
-			adapt_pll_to_power_mode(hba);
+			if(!IS_V200_MPHY(hba)) {
+				adapt_pll_to_power_mode(hba);
+			}
 		}
 
 		ufs_kirin_pwr_change_pre_change(hba);
@@ -1254,7 +1225,9 @@ static void ufs_kirin_populate_mgc_dt(struct device_node *parent_np,
 
 		ret = of_property_read_u32(child_np, "manufacturer_id", &man_id);
 		if (ret) {
+#ifdef CONFIG_HISI_DEBUG_FS
 			pr_err("check the manufacturer_id %s\n", child_np->name);
+#endif
 			continue;
 		}
 
@@ -1351,9 +1324,14 @@ void ufs_kirin_populate_dt(struct device *dev,
 	ret = of_property_match_string(np, "ufs-0db-equalizer-product-names",
 				     ufs_product_name);
 	if (ret >= 0) {
+#ifdef CONFIG_HISI_DEBUG_FS
 		dev_info(dev, "find %s in dts\n", ufs_product_name);
+#endif
 		host->tx_equalizer = 0;
 	} else {
+#ifdef UFS_TX_EQUALIZER_0DB
+		host->tx_equalizer = 0;
+#endif
 #ifdef UFS_TX_EQUALIZER_35DB
 		host->tx_equalizer = 35;
 #endif
@@ -1363,12 +1341,16 @@ void ufs_kirin_populate_dt(struct device *dev,
 	}
 
 	/*ufs reset retry num*/
-	if (of_property_read_u32(np, "reset_retry_max",
+	if (of_property_read_s32(np, "reset_retry_max",
 				&(host->hba->reset_retry_max))) {
 		host->hba->reset_retry_max =
 			MAX_HOST_RESET_RETRIES;
 		dev_info(dev, "can not find retry max, use default val\n");
 	}
+
+	host->hba->ufs_reset_retries = host->hba->reset_retry_max;
+	host->hba->ufs_init_retries = MAX_HOST_INIT_RETRIES;
+	host->hba->manufacturer_id = 0;
 
 	if (of_find_property(np, "broken-hce", NULL))
 		host->hba->quirks |= UFSHCD_QUIRK_BROKEN_HCE;
@@ -1445,14 +1427,6 @@ int ufs_kirin_init(struct ufs_hba *hba)
 	}
 #endif
 
-#ifdef CONFIG_SCSI_UFS_ENHANCED_INLINE_CRYPTO_V2
-	err = uie_open_session();
-	if (err) {
-		dev_err(dev, "uie_open_session error\n");
-		goto host_free;
-	}
-#endif
-
 	goto out;
 
 host_free:
@@ -1497,6 +1471,54 @@ int ufs_kirin_get_pwr_by_sysctrl(struct ufs_hba *hba)
 #endif
 /*lint -restore*/
 
+bool IS_V200_MPHY(struct ufs_hba *hba)
+{
+	u32 reg;
+	/* V200 memorymap is not equal to V120 */
+	ufs_i2c_readl(hba, &reg, REG_SC_APB_IF_V200);
+	dev_err(hba->dev, "UFS MPHY  %s\n",
+		(MPHY_BOARDID_V200 == reg) ? "V200" : "V120");
+	if (MPHY_BOARDID_V200 == reg) {
+		return true;
+	} else {
+		return false;
+	}
+}
+
+/*lint -e648 -e845*/
+/*
+ * some ufs devices need to be powered off then on when they are reset or
+ * initialized.
+ */
+void ufs_kirin_vcc_power_on_off(struct ufs_hba *hba)
+{
+	unsigned int value;
+	int reg_offset;
+
+	if ((hba->manufacturer_id != UFS_VENDOR_HI1861) &&
+		(hba->manufacturer_id != 0))
+		return;
+
+#ifdef CONFIG_SCSI_UFS_LIBRA
+	reg_offset = PMIC_LDO15_ONOFF_ADDR(0);
+#else
+	reg_offset = PMIC_LDO15_ONOFF_ECO_ADDR(0);
+#endif
+
+	if ((hba->ufs_init_retries < MAX_HOST_INIT_RETRIES) ||
+		(hba->ufs_reset_retries < hba->reset_retry_max) ||
+		(hba->curr_dev_pwr_mode == UFS_POWERDOWN_PWR_MODE)) {
+		udelay(10);
+		value = hisi_pmic_reg_read(reg_offset);
+		hisi_pmic_reg_write(value & ~BIT(0), reg_offset);
+		mdelay(16);
+		hisi_pmic_reg_write(value | BIT(0), reg_offset);
+		udelay(200);
+		dev_err(hba->dev, "ufs vcc power off then on.\n");
+	}
+}
+/*lint -restore*/
+
 /**
  * struct ufs_hba_kirin_vops - UFS KIRIN specific variant operations
  *
@@ -1513,6 +1535,7 @@ const struct ufs_hba_variant_ops ufs_hba_kirin_vops = {
 	.pwr_change_notify = ufs_kirin_pwr_change_notify,
 	.full_reset = ufs_kirin_full_reset,
 	.device_reset = ufs_kirin_device_hw_reset,
+	.set_ref_clk = set_device_clk,
 	.suspend_before_set_link_state = ufs_kirin_suspend_before_set_link_state,
 	.suspend = ufs_kirin_suspend,
 	.resume = ufs_kirin_resume,
@@ -1529,6 +1552,25 @@ const struct ufs_hba_variant_ops ufs_hba_kirin_vops = {
 #ifdef CONFIG_SCSI_UFS_HS_ERROR_RECOVER
 	.get_pwr_by_debug_register = ufs_kirin_get_pwr_by_sysctrl,
 #endif
+	.vcc_power_on_off = ufs_kirin_vcc_power_on_off,
 };
 /*lint -restore*/
+
+
+static int __init uie_open_session_late(void)
+{
+	int err = 0;
+
+#ifdef CONFIG_SCSI_UFS_ENHANCED_INLINE_CRYPTO_V2
+	err = uie_open_session();
+	if (err) {
+		BUG_ON(1);
+	}
+#endif
+
+	return err;
+}
+
+late_initcall(uie_open_session_late);
+
 EXPORT_SYMBOL(ufs_hba_kirin_vops);

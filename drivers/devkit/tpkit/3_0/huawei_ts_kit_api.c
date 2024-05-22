@@ -36,11 +36,10 @@
 #include <dsm/dsm_pub.h>
 extern struct dsm_client *ts_dclient;
 #endif
-extern unsigned int  is_all_finger_up;
 
 extern struct ts_kit_platform_data g_ts_kit_platform_data;
 atomic_t g_ts_kit_data_report_over = ATOMIC_INIT(1);
-/*lint -save -e* */
+
 void ts_proc_bottom_half(struct ts_cmd_node *in_cmd,
 			 struct ts_cmd_node *out_cmd)
 {
@@ -88,14 +87,12 @@ static void ts_finger_events_reformat(struct ts_fingers *fingers)
 {
 	int index;
 	dump_fingers_info_debug((struct ts_finger *)fingers);
-	is_all_finger_up = true;
 	for (index = 0; index < TS_MAX_FINGER; index++) {
 		if (fingers->cur_finger_number == 0 ||
 		    fingers->fingers[index].status == TP_NONE_FINGER) {
 			fingers->fingers[index].status |= TS_FINGER_RELEASE;
 		} else {
 			fingers->fingers[index].status |= TS_FINGER_PRESS;
-			is_all_finger_up = false;
 		}
 	}
 }
@@ -277,20 +274,18 @@ void ts_report_pen(struct ts_cmd_node *in_cmd, struct ts_cmd_node *out_cmd)
 {
 	struct ts_pens *pens = NULL;
 	struct input_dev *input = g_ts_kit_platform_data.pen_dev;
-	struct anti_false_touch_param *local_param = NULL;
-	int finger_num = 0;
 	int id = 0;
 	int key_value = 0;
 	int ret = 0;
 
 	if (!in_cmd || !out_cmd) {
-		TS_LOG_ERR("parameters is null!\n", __func__);
+		TS_LOG_ERR("%s parameters is null!\n", __func__);
 		return;
 	}
 	trace_touch(TOUCH_TRACE_PEN_REPORT, TOUCH_TRACE_FUNC_IN, "report pen");
 	pens = &in_cmd->cmd_param.pub_params.report_pen_info;
 	if (!pens) {
-		TS_LOG_ERR("pens is null!\n", __func__);
+		TS_LOG_ERR("%s pens is null!\n", __func__);
 		return;
 	}
 	//report pen basic single button
@@ -365,6 +360,49 @@ int ts_count_fingers(struct ts_fingers *fingers)
 	}
 
 	return count;
+}
+void ts_palm_report(struct ts_cmd_node* in_cmd, struct ts_cmd_node* out_cmd){
+	unsigned int key = 0;
+	struct input_dev *input_dev = g_ts_kit_platform_data.input_dev;
+
+	if(!input_dev || !in_cmd){
+		TS_LOG_ERR("The command node or input device is not exist!\n");
+		return;
+	}
+	key = in_cmd->cmd_param.pub_params.ts_key;
+	TS_LOG_INFO("%s is called, palm_button_key is %d\n", __func__, key);
+	input_report_key(input_dev, key, 1); /* 1 report key_event DOWN  */
+	input_sync(input_dev);
+	input_report_key(input_dev, key, 0); /* 0 report key_event UP */
+	input_sync (input_dev);
+	atomic_set(&g_ts_kit_data_report_over, 1);
+}
+
+void ts_report_key_event(struct ts_cmd_node *in_cmd, struct ts_cmd_node *out_cmd)
+{
+	struct ts_key_info *key_info = NULL;
+	struct input_dev *input_dev = g_ts_kit_platform_data.input_dev;
+
+	if (!input_dev || !in_cmd) {
+		TS_LOG_ERR("The command node or input device is not exist!\n");
+		return;
+	}
+	key_info = &in_cmd->cmd_param.pub_params.key_info;
+
+	TS_LOG_INFO("ts report key %d, action: %x\n",
+		key_info->key_code, key_info->action);
+
+	if (key_info->action & TS_KEY_ACTION_PRESS) {
+		input_report_key(input_dev, key_info->key_code, 1);
+		input_sync(input_dev);
+	}
+
+	if (key_info->action & (TS_KEY_ACTION_RELEASE)) {
+		input_report_key(input_dev, key_info->key_code, 0);
+		input_sync(input_dev);
+	}
+
+	atomic_set(&g_ts_kit_data_report_over, 1);
 }
 
 void ts_report_input(struct ts_cmd_node *in_cmd, struct ts_cmd_node *out_cmd)
@@ -447,27 +485,13 @@ static void send_up_msg_in_resume(void)
 	TS_LOG_DEBUG("send_up_msg_in_resume\n");
 	return;
 }
-#ifdef CONFIG_HUAWEI_DEVKIT_MTK_3_0
- enum kit_ts_pm_type
- {
- 	TS_BEFORE_SUSPEND = 0,
- 	TS_SUSPEND_DEVICE,
- 	TS_RESUME_DEVICE,
- 	TS_AFTER_RESUME,
- 	TS_EARLY_SUSPEND,
- 	TS_IC_SHUT_DOWN,
- };
-#endif
 
 int ts_power_off_control_mode(int irq_id,
 		     struct ts_cmd_node *in_cmd, struct ts_cmd_node *out_cmd)
 {
 	int error = NO_ERR;
-#ifndef CONFIG_HUAWEI_DEVKIT_MTK_3_0
 	enum lcd_kit_ts_pm_type pm_type = in_cmd->cmd_param.pub_params.pm_type;
-#else
-	int pm_type = in_cmd->cmd_param.pub_params.pm_type;
-#endif
+
 	struct ts_kit_device_data *dev = g_ts_kit_platform_data.chip_data;
 
 	switch (pm_type) {
@@ -573,11 +597,8 @@ int ts_power_off_no_config(int irq_id,
 		     struct ts_cmd_node *in_cmd, struct ts_cmd_node *out_cmd)
 {
 	int error = NO_ERR;
-#ifndef CONFIG_HUAWEI_DEVKIT_MTK_3_0
 	enum lcd_kit_ts_pm_type pm_type = in_cmd->cmd_param.pub_params.pm_type;
-#else
-	int pm_type = in_cmd->cmd_param.pub_params.pm_type;
-#endif
+
 	struct ts_kit_device_data *dev = g_ts_kit_platform_data.chip_data;
 
 	switch (pm_type) {
@@ -617,11 +638,7 @@ int ts_power_off_easy_wakeup_mode(int irq_id,
 		     struct ts_cmd_node *in_cmd, struct ts_cmd_node *out_cmd)
 {
 	int error = NO_ERR;
-#ifndef CONFIG_HUAWEI_DEVKIT_MTK_3_0
 	enum lcd_kit_ts_pm_type pm_type = in_cmd->cmd_param.pub_params.pm_type;
-#else
-	int pm_type = in_cmd->cmd_param.pub_params.pm_type;
-#endif
 	struct ts_kit_device_data *dev = g_ts_kit_platform_data.chip_data;
 
 	switch (pm_type) {
@@ -690,19 +707,26 @@ int ts_power_control(int irq_id,
 {
 	int error = NO_ERR;
 
-	if (g_ts_kit_platform_data.chip_data->easy_wakeup_info.sleep_mode ==
-	    TS_POWER_OFF_MODE) {
-		if(!(g_ts_kit_platform_data.udfp_enable_flag&&g_ts_kit_platform_data.chip_data->suspend_no_config)){
-			error = ts_power_off_control_mode(irq_id, in_cmd, out_cmd);
+	if (g_ts_kit_platform_data.chip_data->easy_wakeup_info.sleep_mode == TS_POWER_OFF_MODE) {
+		if (!(g_ts_kit_platform_data.udfp_enable_flag &&
+			g_ts_kit_platform_data.chip_data->suspend_no_config)) {
+			if (g_ts_kit_platform_data.chip_data->face_dct_support &&
+				(atomic_read(&g_ts_kit_platform_data.face_dct_en) == FACE_DCT_ENABLE)) {
+				enable_irq(g_ts_kit_platform_data.irq_id);
+				error = ts_power_off_no_config(irq_id, in_cmd, out_cmd);
+			} else {
+				error = ts_power_off_control_mode(irq_id, in_cmd, out_cmd);
+			}
 		}else{
 			error = ts_power_off_no_config(irq_id, in_cmd, out_cmd);
 		}
 	} else if (g_ts_kit_platform_data.chip_data->easy_wakeup_info.sleep_mode == TS_GESTURE_MODE) {
-			error = ts_power_off_easy_wakeup_mode(irq_id, in_cmd, out_cmd);
+		error = ts_power_off_easy_wakeup_mode(irq_id, in_cmd, out_cmd);
 	} else {
 		TS_LOG_ERR("no such mode!\n");
 		error = -EINVAL;
 	}
+
 	return error;
 }
 
@@ -837,11 +861,8 @@ bool ts_cmd_need_process(struct ts_cmd_node * cmd)
 {
 	bool is_need_process = true;
 	struct ts_cmd_sync *sync = cmd->sync;
-#ifndef CONFIG_HUAWEI_DEVKIT_MTK_3_0
 	enum lcd_kit_ts_pm_type pm_type = cmd->cmd_param.pub_params.pm_type;
-#else
-	int pm_type = cmd->cmd_param.pub_params.pm_type;
-#endif
+
 	if (unlikely((atomic_read(&g_ts_kit_platform_data.state) == TS_SLEEP)
 		     || (atomic_read(&g_ts_kit_platform_data.state) ==
 			 TS_WORK_IN_SLEEP))) {
@@ -858,13 +879,14 @@ bool ts_cmd_need_process(struct ts_cmd_node * cmd)
 				break;
 			case TS_INT_PROCESS:
 			case TS_INT_ERR_OCCUR:
-				//enable_irq(g_ts_data.irq_id);
 				if (g_ts_kit_platform_data.
 				    chip_data->is_parade_solution) {
-					if (g_ts_kit_platform_data.chip_data->isbootupdate_finish == false || g_ts_kit_platform_data.chip_data->sleep_in_mode == 0)	//deep sleep mode need process irq when suspend/resume
+					if (g_ts_kit_platform_data.chip_data->isbootupdate_finish == false ||
+						g_ts_kit_platform_data.chip_data->sleep_in_mode == 0) { // deep sleep mode need process irq when suspend/resume
 						is_need_process = true;
-					else
+					} else {
 						is_need_process = false;
+					}
 				} else {
 					is_need_process = false;
 				}
@@ -929,15 +951,12 @@ int ts_kit_power_notify_callback(struct notifier_block *self,
 	}
 
 	timeout = *data_in;
-	TS_LOG_INFO("%s called,pm_type=%d, timeout=%d\n", __func__,
+	TS_LOG_INFO("%s called,pm_type=%lu, timeout=%d\n", __func__,
 		    notify_pm_type, timeout);
 	return ts_kit_power_control_notify(notify_pm_type, timeout);
 }
-#ifndef CONFIG_HUAWEI_DEVKIT_MTK_3_0
-int ts_kit_power_control_notify(int pm_type, int timeout)
-#else
-int ts_kit_power_control_notify(int pm_type, int timeout)
-#endif
+
+int ts_kit_power_control_notify(enum lcd_kit_ts_pm_type pm_type, int timeout)
 {
 	int error = 0;
 	struct ts_cmd_node cmd;
@@ -949,29 +968,29 @@ int ts_kit_power_control_notify(int pm_type, int timeout)
 	}
 
 #if defined (CONFIG_TEE_TUI)
-	if (g_ts_kit_platform_data.chip_data->report_tui_enable
-	    && (TS_BEFORE_SUSPEND == pm_type)) {
+	if (g_ts_kit_platform_data.chip_data->report_tui_enable &&
+		(pm_type == TS_BEFORE_SUSPEND)) {
 		g_ts_kit_platform_data.chip_data->tui_set_flag |= 0x1;
 		TS_LOG_INFO("TUI is working, later do before suspend\n");
 		return NO_ERR;
 	}
 
-	if (g_ts_kit_platform_data.chip_data->report_tui_enable
-	    && (TS_SUSPEND_DEVICE == pm_type)) {
+	if (g_ts_kit_platform_data.chip_data->report_tui_enable &&
+		(pm_type == TS_SUSPEND_DEVICE)) {
 		g_ts_kit_platform_data.chip_data->tui_set_flag |= 0x2;
 		TS_LOG_INFO("TUI is working, later do suspend\n");
 		return NO_ERR;
 	}
 #endif
 
-    if ((g_ts_kit_platform_data.chip_data->easy_wakeup_info.sleep_mode == TS_POWER_OFF_MODE)
-		&& (TS_BEFORE_SUSPEND == pm_type)) {
-                if(!(g_ts_kit_platform_data.chip_data->is_parade_solution == 1
-			&& g_ts_kit_platform_data.chip_data->sleep_in_mode == 0)) {
-				disable_irq(g_ts_kit_platform_data.irq_id);
-				TS_LOG_INFO("%s :device will go to sleep ,disable irq first !\n", __func__);
-                }
-    }
+	if ((g_ts_kit_platform_data.chip_data->easy_wakeup_info.sleep_mode == TS_POWER_OFF_MODE) &&
+		(pm_type == TS_BEFORE_SUSPEND)) {
+		if (!(g_ts_kit_platform_data.chip_data->is_parade_solution == 1 &&
+			g_ts_kit_platform_data.chip_data->sleep_in_mode == 0)) {
+			disable_irq(g_ts_kit_platform_data.irq_id);
+			TS_LOG_INFO("%s :device will go to sleep ,disable irq first !\n", __func__);
+		}
+	}
 	cmd.command = TS_POWER_CONTROL;
 	cmd.cmd_param.pub_params.pm_type = pm_type;
 	error = ts_kit_put_one_cmd(&cmd, timeout);
@@ -980,12 +999,14 @@ int ts_kit_power_control_notify(int pm_type, int timeout)
 		error = -EBUSY;
 	}
 	if (TS_AFTER_RESUME == pm_type) {
-		if(g_ts_kit_platform_data.chip_data->ts_platform_data->feature_info.pen_info.supported_pen_alg) {
+		if (g_ts_kit_platform_data.chip_data->ts_platform_data->feature_info.pen_info.supported_pen_alg)
 			ts_pen_open_confirm_init();
-		}
+
 		TS_LOG_INFO("ts_resume_send_roi_cmd\n");
-		if ((g_ts_kit_platform_data.chip_data->is_direct_proc_cmd == 0)&&(g_ts_kit_platform_data.chip_data->suspend_no_config == 0))
-			ts_send_roi_cmd(TS_ACTION_WRITE, NO_SYNC_TIMEOUT);	/*force to write the roi function */
+		if ((g_ts_kit_platform_data.chip_data->is_direct_proc_cmd == 0) &&
+			(g_ts_kit_platform_data.chip_data->suspend_no_config == 0)) {
+			ts_send_roi_cmd(TS_ACTION_WRITE, NO_SYNC_TIMEOUT);	/* force to write the roi function */
+		}
 		if (error) {
 			TS_LOG_ERR("ts_resume_send_roi_cmd failed\n");
 		}
@@ -1526,13 +1547,12 @@ int ts_chip_detect(struct ts_cmd_node *in_cmd, struct ts_cmd_node *out_cmd)
 		atomic_set(&g_ts_kit_platform_data.register_flag, TS_REGISTER_DONE);
 		atomic_set(&g_ts_kit_platform_data.state, TS_WORK);
 		wake_up_process(g_ts_kit_platform_data.ts_init_task);
-#ifdef CONFIG_HUAWEI_HW_DEV_DCT
+#if defined(CONFIG_HUAWEI_DEV_SELFCHECK) || defined(CONFIG_HUAWEI_HW_DEV_DCT)
 		/* detect current device successful, set the flag as present */
 		set_tp_dev_flag();
 #endif
 	} else {
 		g_ts_kit_platform_data.chip_data = NULL;
-		//atomic_set(&g_ts_kit_platform_data.state, TS_UNINIT);
 	}
 	return error;
 }

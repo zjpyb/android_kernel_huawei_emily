@@ -3,13 +3,8 @@
 #include <huawei_platform/power/wireless_direct_charger.h>
 #include <linux/power/hisi/coul/hisi_coul_drv.h>
 #include <huawei_platform/power/wired_channel_switch.h>
-#ifdef CONFIG_BOOST_5V
 #include <huawei_platform/power/boost_5v.h>
-#endif
 #include <huawei_platform/power/wireless_charger.h>
-#ifdef CONFIG_TCPC_CLASS
-#include <huawei_platform/usb/hw_pd_dev.h>
-#endif
 
 #define HWLOG_TAG wireless_dc
 HWLOG_REGIST();
@@ -19,6 +14,7 @@ static char g_wldc_stage_char[WLDC_STAGE_TOTAL][WIRELESS_STAGE_STR_LEN] = {
 	{"STAGE_DEFAULT"}, {"STAGE_CHECK"}, {"STAGE_SUCCESS"},
 	{"STAGE_CHARGING"}, {"STAGE_CHARGE_DONE"},{"STAGE_STOP_CHARGING"}
 };
+static int g_wldc_need_wired_sw_on = 1;
 
 void wldc_set_di(struct wldc_device_info *di)
 {
@@ -191,9 +187,23 @@ int wldc_retore_normal_charge_path(void)
 {
 	return charge_set_hiz_enable(HIZ_MODE_DISABLE);
 }
-int wldc_cutt_off_normal_charge_path(void)
+int wldc_cut_off_normal_charge_path(void)
 {
 	return charge_set_hiz_enable(HIZ_MODE_ENABLE);
+}
+int wldc_turn_on_direct_charge_channel(void)
+{
+	if (g_wldc_need_wired_sw_on)
+		return wired_chsw_set_wired_reverse_channel(WIRED_REVERSE_CHANNEL_RESTORE);
+	else
+		return 0;
+}
+int wldc_turn_off_direct_charge_channel(void)
+{
+	if (g_wldc_need_wired_sw_on)
+		return wired_chsw_set_wired_reverse_channel(WIRED_REVERSE_CHANNEL_CUTOFF);
+	else
+		return 0;
 }
 int wldc_check_ops_valid(struct wldc_device_info *di)
 {
@@ -334,15 +344,15 @@ FuncEnd:
 	strncat(di->wldc_err_dsm_buff, tmp_buf, strlen(tmp_buf));
 	if (soc >= BATTERY_CAPACITY_HIGH_TH) {
 		di->dc_open_retry_cnt ++;
-		hwlog_info("[%s] fail, may because of high battery capacity(d%%%)\n", __func__, soc);
+		hwlog_info("[%s] fail, may because of high battery capacity(%d%%)\n", __func__, soc);
 	}
 	return -1;
 }
 static int wldc_leak_current_check(struct wldc_device_info *di)
 {
 	int i, iout;
-	char tmp_buf[ERR_NO_STRING_SIZE] = { 0 };
-	char dsm_buf[CHARGE_DMDLOG_SIZE] = { 0 };
+	char tmp_buf[POWER_DSM_BUF_SIZE_0128] = { 0 };
+	char dsm_buf[POWER_DSM_BUF_SIZE_1024] = { 0 };
 
 	for (i = 0; i < WLDC_LEAK_CURRENT_CHECK_CNT; i++) {
 		iout = wireless_charge_get_rx_iout();
@@ -365,16 +375,16 @@ static int wldc_vrect_vout_diff_value_check(struct wldc_device_info *di)
 {
 	int i, vrect, vout;
 	char tmp_buf[ERR_NO_STRING_SIZE] = { 0 };
-	char dsm_buf[CHARGE_DMDLOG_SIZE] = { 0 };
+	char dsm_buf[POWER_DSM_BUF_SIZE_0256 * WLDC_DIFF_VOLT_CHECK_CNT] = { 0 };
 
 	for (i = 0; i < WLDC_DIFF_VOLT_CHECK_CNT; i++) {
 		vrect = wireless_charge_get_rx_vrect();
 		vout = wireless_charge_get_rx_vout();
 		hwlog_info("%s: vrect = %dmV, vout = %dmV, delta_th = %dmV\n",
-			__func__, vrect, vout, WLDC_DIFF_VOLT_CHECK_TH);
+			__func__, vrect, vout, di->vrect_vout_diff);
 		snprintf(tmp_buf, sizeof(tmp_buf), "check vdiff, vrect = %dmV, vout = %dmV\n", vrect, vout);
 		strncat(dsm_buf, tmp_buf, strlen(tmp_buf));
-		if (vrect - vout > WLDC_DIFF_VOLT_CHECK_TH) {
+		if (vrect - vout > di->vrect_vout_diff) {
 			return 0;
 		}
 		if (di->wldc_stage == WLDC_STAGE_STOP_CHARGING) {
@@ -392,7 +402,7 @@ static int wldc_vout_accuracy_check(struct wldc_device_info *di)
 	int i;
 	int rx_vout, rx_iout;
 	char tmp_buf[ERR_NO_STRING_SIZE] = { 0 };
-	char dsm_buf[CHARGE_DMDLOG_SIZE] = { 0 };
+	char dsm_buf[POWER_DSM_BUF_SIZE_1024] = { 0 };
 
 	ret = wldc_msleep(300); //only used here, delay for stable vout
 	if (ret) {
@@ -601,7 +611,7 @@ void wldc_stop_charging(struct wldc_device_info *di)
 	if (ret) {
 		hwlog_err("%s: retore_normal_charge fail!\n", __func__);
 	}
-	ret = wired_chsw_set_wired_reverse_channel(WIRED_REVERSE_CHANNEL_CUTOFF);
+	ret = wldc_turn_off_direct_charge_channel();
 	if (ret) {
 		hwlog_err("%s: close wired_reverse_channel fail!\n", __func__);
 	}
@@ -624,17 +634,14 @@ void wldc_stop_charging(struct wldc_device_info *di)
 	if (ret) {
 		hwlog_err("[%s]: bi exit fail!\n", __func__);
 	}
-#ifdef CONFIG_TCPC_CLASS
-	pd_dpm_ignore_vbus_only_event(false);
-#endif
-#ifdef CONFIG_BOOST_5V
 	boost_5v_enable(BOOST_5V_DISABLE, BOOST_CTRL_WLDC);
-#endif
+	wlc_ignore_vbus_only_event(false);
 	di->wldc_stop_flag_error = 0;
 	di->wldc_stop_flag_warning = 0;
 	di->wldc_stop_flag_info = 0;
 	di->cur_stage = 0;
 	di->wldc_stop_charging_complete_flag = true;
+	memset(di->wldc_err_dsm_buff, 0, sizeof(di->wldc_err_dsm_buff));
 	hwlog_info("%s: --\n", __func__);
 }
 void wldc_update_basp_para(struct wldc_device_info *di)
@@ -802,6 +809,12 @@ static int wldc_parse_volt_para(struct device_node* np, struct wldc_device_info*
 int wldc_parse_dts(struct device_node *np, struct wldc_device_info *di)
 {
 	int ret;
+	ret = of_property_read_u32(np, "need_wired_sw_on", &g_wldc_need_wired_sw_on);
+	if (ret) {
+		hwlog_err("%s: get need_wired_sw_on failed, use default config!!\n", __func__);
+		g_wldc_need_wired_sw_on = 1;
+	}
+	hwlog_info("%s: g_wldc_need_wired_sw_on = %d\n", __func__, g_wldc_need_wired_sw_on);
 	ret = of_property_read_u32(np, "vbatt_max", &di->vbatt_max);
 	if (ret) {
 		hwlog_err("%s: get vbatt_max failed, use default config!!\n", __func__);
@@ -817,7 +830,7 @@ int wldc_parse_dts(struct device_node *np, struct wldc_device_info *di)
 	ret = of_property_read_u32(np, "rx_init_vout", &di->rx_init_vout);
 	if (ret) {
 		hwlog_err("%s: get rx_init_vout failed, use default config!!\n", __func__);
-		di->rx_init_vout = ADAPTER_9V*MVOLT_PER_VOLT;
+		di->rx_init_vout = ADAPTER_9V*WL_MVOLT_PER_VOLT;
 	}
 	hwlog_info("%s: rx_init_vout  = %dmV\n", __func__, di->rx_init_vout);
 	ret = of_property_read_u32(np, "rx_vout_err_th", &di->rx_vout_err_th);
@@ -838,6 +851,12 @@ int wldc_parse_dts(struct device_node *np, struct wldc_device_info *di)
 		di->rx_init_delt_vout = WLDC_INIT_DELT_VOUT;
 	}
 	hwlog_info("%s: rx_init_delt_vout  = %dmV\n", __func__, di->rx_init_delt_vout);
+	ret = of_property_read_u32(np, "vrect_vout_diff",
+			&di->vrect_vout_diff);
+	if (ret)
+		di->vrect_vout_diff = WLDC_DIFF_VOLT_CHECK_TH;
+	hwlog_info("%s: vrect_vout_diff  = %dmV\n",
+		__func__, di->vrect_vout_diff);
 	ret = of_property_read_u32(np, "volt_ratio", &di->volt_ratio);
 	if (ret) {
 		hwlog_err("%s: get sc_volt_ratio failed, use default config!!\n", __func__);

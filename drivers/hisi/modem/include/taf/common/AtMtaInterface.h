@@ -344,6 +344,7 @@ enum AT_MTA_MSG_TYPE_ENUM
 
 
     ID_AT_MTA_GAME_MODE_SET_REQ         = 0x008A,           /* _H2ASN_MsgChoice AT_MTA_COMM_GAME_MODE_SET_STRU */
+    ID_AT_MTA_PSEUDBTS_SET_REQ          = 0x008B,
 
     /* MTA发给AT的消息 */
     ID_MTA_AT_CPOS_SET_CNF              = 0x1000,           /* _H2ASN_MsgChoice MTA_AT_CPOS_CNF_STRU        */
@@ -571,6 +572,8 @@ enum AT_MTA_MSG_TYPE_ENUM
 
     ID_AT_MTA_GAME_MODE_SET_CNF         = 0x10AB,           /* _H2ASN_MsgChoice MTA_AT_GAME_MODE_SET_CFN_STRU */
 
+    ID_MTA_AT_PSEUDBTS_SET_CNF          = 0x10AC,
+    ID_MTA_AT_PSEUD_BTS_IDENT_IND       = 0x1102,
     /* 最后一条消息 */
     ID_AT_MTA_MSG_TYPE_BUTT
 
@@ -585,7 +588,7 @@ enum MTA_AT_RESULT_ENUM
     MTA_AT_RESULT_ERROR,                                                        /* 消息处理出错 */
     MTA_AT_RESULT_INCORRECT_PARAMETERS,
     MTA_AT_RESULT_OPTION_TIMEOUT,
-
+    MTA_AT_RESULT_FUNC_DISABLE,                                                 /* 消息处理功能关闭 */
     /* 预留对应AT标准命令错误码 */
 
     /* 装备命令特有错误码 */
@@ -1676,6 +1679,29 @@ typedef struct
     MTA_AT_RESULT_ENUM_UINT32           enResult;
 }MTA_AT_SET_SAMPLE_CNF_STRU;
 
+
+
+typedef struct
+{
+    VOS_UINT8                           ucPseudRat;                            /* 伪基站制式 1.GSM  2.WCDMA  3.LTE */
+    VOS_UINT8                           ucPseudBtsQryType;                     /* 查询参数 1.查询伪基站是否支持  2.查询伪基站拦截次数 */
+    VOS_UINT8                           aucRsv[2];
+
+}AT_MTA_SET_PSEUDBTS_REQ_STRU;
+
+
+typedef struct
+{
+    MTA_AT_RESULT_ENUM_UINT32               enResult;                               /* NO_ERROR:成功，其他:失败 */
+    VOS_UINT8                               ucPseudBtsIdentType;                    /* 查询参数 1.查询伪基站是否支持  2.查询伪基站拦截次数 */
+    VOS_UINT8                               aucRsv[3];
+
+    union
+    {
+        VOS_UINT32                          ulPseudBtsIdentTimes;                   /* 识别次数 */
+        VOS_UINT8                           ucPseudBtsIdentCap;                     /* 是否支持 */
+    }u;
+}MTA_AT_PSEUD_BTS_SET_CNF_STRU;
 
 
 
@@ -3289,6 +3315,11 @@ typedef struct
 }MTA_AT_CCLK_QRY_CNF_STRU;
 
 
+
+typedef struct
+{
+    VOS_UINT32           ulPseudBtsType;
+}MTA_AT_PSEUD_BTS_IDENT_IND_STRU;
 /*****************************************************************************
   10 函数声明
 *****************************************************************************/

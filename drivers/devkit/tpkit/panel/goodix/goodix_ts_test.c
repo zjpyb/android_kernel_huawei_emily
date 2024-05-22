@@ -981,28 +981,26 @@ begin_test:
 	if (test_cnt > 4)
 		goto end_test;
 
-	for (i = 0; i < 4; i++) {
-		GTP_INFO("RawCap Test:%d:%d", test_cnt, i);
-		ret = goodix_cache_rawdata(ts_test);
-		if (ret < 0) {
-			/* test NG, re-test once */
-			test_cnt++;
-			test_result0 = -1;
-			test_result1 = -1;
-			goto begin_test;
-		}
+	GTP_INFO("RawCap Test:%d", test_cnt);
+	ret = goodix_cache_rawdata(ts_test);
+	if (ret < 0) {
+		/* test NG, re-test once */
+		test_cnt++;
+		test_result0 = -1;
+		test_result1 = -1;
+		goto begin_test;
+	}
 
-		test_result0 = goodix_rawcapacitance_test(&ts_test->rawdata,
-						&ts_test->test_params);
-		test_result1 = goodix_deltacapacitance_test(&ts_test->rawdata,
-						&ts_test->test_params);
-		if (test_result0 < 0 || test_result1 < 0) {
-			/* test NG, re-test once */
-			test_cnt++;
-			goto begin_test;
-		} else {
-			goto end_test;
-		}
+	test_result0 = goodix_rawcapacitance_test(&ts_test->rawdata,
+		&ts_test->test_params);
+	test_result1 = goodix_deltacapacitance_test(&ts_test->rawdata,
+		&ts_test->test_params);
+	if (test_result0 < 0 || test_result1 < 0) {
+		/* test NG, re-test once */
+		test_cnt++;
+		goto begin_test;
+	} else {
+		goto end_test;
 	}
 
 end_test:

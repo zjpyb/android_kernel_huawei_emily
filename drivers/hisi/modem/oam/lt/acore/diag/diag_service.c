@@ -55,7 +55,8 @@
 #include "soc_socp_adapter.h"
 #include "diag_acore_common.h"
 #include "msp_diag_comm.h"
-#include  <linux/wakelock.h>
+#include <linux/device.h>
+#include <linux/pm_wakeup.h>
 
 
 #define    THIS_FILE_ID        MSP_FILE_ID_DIAG_SERVICE_C
@@ -407,7 +408,7 @@ VOS_UINT32 diag_ServiceProc(MSP_SERVICE_HEAD_STRU *pData, VOS_UINT32 ulDatalen)
         mdrv_diag_PTR(EN_DIAG_PTR_SERVICE_1, 1, pHeader->ulCmdId, 0 );
 
         /* 开始处理，不允许睡眠 */
-        wake_lock(&diag_wakelock);
+        __pm_stay_awake(&diag_wakelock);
         if(pHeader->stService.ff1b)
         {
             /* 每次有分包时检测是否有超时的节点 */
@@ -418,7 +419,7 @@ VOS_UINT32 diag_ServiceProc(MSP_SERVICE_HEAD_STRU *pData, VOS_UINT32 ulDatalen)
             {
                 diag_SrvcCreatePkt(pHeader);
                 (VOS_VOID)diag_SrvcSavePkt(pHeader, ulDatalen);
-                wake_unlock(&diag_wakelock);
+                __pm_relax(&diag_wakelock);
                 return VOS_OK;
             }
             else if(pHeader->stService.eof1b)
@@ -426,7 +427,7 @@ VOS_UINT32 diag_ServiceProc(MSP_SERVICE_HEAD_STRU *pData, VOS_UINT32 ulDatalen)
                 pProcHead = diag_SrvcSavePkt(pHeader, ulDatalen);
                 if(pProcHead == NULL)
                 {
-                    wake_unlock(&diag_wakelock);
+                    __pm_relax(&diag_wakelock);
                     return ((VOS_UINT32)VOS_NULL_PARA);
                 }
                 /* 5G中分包的节点一定是走的5G格式,4G下分包一定是走的4G的格式 */
@@ -435,7 +436,7 @@ VOS_UINT32 diag_ServiceProc(MSP_SERVICE_HEAD_STRU *pData, VOS_UINT32 ulDatalen)
             else
             {
                 (VOS_VOID)diag_SrvcSavePkt(pHeader, ulDatalen);
-                wake_unlock(&diag_wakelock);
+                __pm_relax(&diag_wakelock);
                 return VOS_OK;
             }
         }
@@ -443,7 +444,7 @@ VOS_UINT32 diag_ServiceProc(MSP_SERVICE_HEAD_STRU *pData, VOS_UINT32 ulDatalen)
         {
             /*if(ulDatalen < pHeader->ulMsgLen + sizeof(DIAG_FRAME_INFO_STRU))
             {
-                wake_unlock(&diag_wakelock);
+                __pm_relax(&diag_wakelock);
                 diag_error("rev tools data len error, rev:0x%x except:0x%x\n", \
                     ulDatalen, pHeader->ulMsgLen + (VOS_UINT32)sizeof(DIAG_FRAME_INFO_STRU));
                 return ERR_MSP_INVALID_PARAMETER;
@@ -473,7 +474,7 @@ VOS_UINT32 diag_ServiceProc(MSP_SERVICE_HEAD_STRU *pData, VOS_UINT32 ulDatalen)
         }
 
         /* 处理结束，允许睡眠 */
-        wake_unlock(&diag_wakelock);
+        __pm_relax(&diag_wakelock);
     }
     else
     {

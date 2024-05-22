@@ -17,8 +17,10 @@
 #include <linux/module.h>
 #include <linux/interrupt.h>
 #include <linux/pci.h>
+#include "hisi_dss_ion.h"
+#if CONFIG_DP_ENABLE
 #include <linux/switch.h>
-
+#endif
 #include "dp/drm_dp_helper.h"
 #include "dp/drm_dp_helper_additions.h"
 #include "dp/reg.h"
@@ -26,6 +28,12 @@
 #include <huawei_platform/dp_source/dp_dsm.h>
 #include <huawei_platform/dp_source/dp_factory.h>
 #include <huawei_platform/dp_source/dp_debug.h>
+#include <drm/drm_fixed.h>
+#include <drm/drm_dp_mst_helper.h>
+
+
+#define PARSE_EST_TIMINGS_FROM_BYTE3
+
 
 #define CONFIG_DP_HDCP_ENABLE
 //#define CONFIG_DP_GENERATOR_REF
@@ -44,7 +52,7 @@
 #define DPTX_DEFAULT_EDID_BUFLEN	(128UL)
 
 /* The max rate and lanes supported by the core */
-#define DPTX_MAX_LINK_RATE	DPTX_PHYIF_CTRL_RATE_HBR2
+#define DPTX_MAX_LINK_RATE		DPTX_PHYIF_CTRL_RATE_HBR2
 #define DPTX_MAX_LINK_LANES	(4)
 
 /* The default rate and lanes to use for link training */
@@ -63,6 +71,26 @@
 
 #define DEFAULT_AUXCLK_DPCTRL_RATE	16000000UL
 #define DEFAULT_ACLK_DPCTRL_RATE_ES	288000000UL
+
+#ifdef CONFIG_HISI_FB_V510
+#define DEFAULT_ACLK_DPCTRL_RATE 207500000UL
+#define DEFAULT_MIDIA_PPLL7_CLOCK_FREQ 1290000000UL
+#define KIRIN_VCO_MIN_FREQ_OUPUT         800000 /*dssv501: 800 * 1000*/
+#define KIRIN_SYS_FREQ   38400 /*dssv501: 38.4 * 1000 */
+#define MIDIA_PPLL7_CTRL0	0x530
+#define MIDIA_PPLL7_CTRL1	0x534
+#define MIDIA_PERI_CTRL4	0x350
+#define TX_VBOOST_ADDR		0x21
+#define PERI_VOLTAGE_060V_CLK 213000000UL
+#define PERI_VOLTAGE_065V_CLK 332000000UL
+#define PERI_VOLTAGE_070V_CLK 415000000UL
+#define PERI_VOLTAGE_080V_CLK 600000000UL
+#define PPLL7_DIV_VOLTAGE_060V 7
+#define PPLL7_DIV_VOLTAGE_065V 4
+#define PPLL7_DIV_VOLTAGE_070V 4
+#define PPLL7_DIV_VOLTAGE_080V 3
+#endif
+
 #ifdef CONFIG_HISI_FB_V501
 #define DEFAULT_ACLK_DPCTRL_RATE 207500000UL
 #define DEFAULT_MIDIA_PPLL7_CLOCK_FREQ 1290000000UL
@@ -78,7 +106,9 @@
 #define PPLL7_DIV_VOLTAGE_065V 5
 #define PPLL7_DIV_VOLTAGE_070V 4
 #define PPLL7_DIV_VOLTAGE_080V 3
-#else
+#endif
+
+#ifdef CONFIG_HISI_FB_970
 #define DEFAULT_ACLK_DPCTRL_RATE	208000000UL
 #define DEFAULT_MIDIA_PPLL7_CLOCK_FREQ	1782000000UL
 #define KIRIN_VCO_MIN_FREQ_OUPUT         1000000 /*Boston: 1000 * 1000*/
@@ -161,6 +191,13 @@ enum video_format_type {
 	VCEA = 0,
 	CVT = 1,
 	DMT = 2
+};
+
+enum established_timings {
+	DMT_640x480_60hz,
+	DMT_800x600_60hz,
+	DMT_1024x768_60hz,
+	NONE
 };
 
 enum iec_samp_freq_value {
@@ -246,6 +283,7 @@ struct hdcp_params {
 	uint32_t crc32;
 	uint32_t auth_fail_count;
 	uint32_t hdcp13_is_en;
+	uint32_t hdcp22_is_en;
 };
 
 typedef struct hdcp13_int_params {
@@ -264,6 +302,23 @@ enum _master_hdcp_op_type_ {
 	DSS_HDCP_DPC_SEC_EN,
 	DSS_HDCP_ENC_MODE_EN,
 	HDCP_OP_SECURITY_MAX,
+};
+
+enum audio_sample_freq {
+	SAMPLE_FREQ_32 = 0,
+	SAMPLE_FREQ_44_1 = 1,
+	SAMPLE_FREQ_48 = 2,
+	SAMPLE_FREQ_88_2 = 3,
+	SAMPLE_FREQ_96 = 4,
+	SAMPLE_FREQ_176_4 = 5,
+	SAMPLE_FREQ_192 = 6
+};
+
+struct audio_short_desc
+{
+	u8 max_num_of_channels;
+	enum audio_sample_freq max_sampling_freq;
+	u8 max_bit_per_sample;
 };
 
 struct audio_params {
@@ -413,9 +468,17 @@ struct edid_information
  * @edid: The sink's EDID.
  * @aux: AUX channel state for performing an AUX transfer.
  * @link: The current link state.
+  * @multipixel: Controls multipixel configuration. 0-Single, 1-Dual, 2-Quad.
  */
 struct dp_ctrl {
 	struct mutex dptx_mutex; /* generic mutex for dptx */
+
+	struct {
+		u8 multipixel;
+		u8 streams;
+		bool gen2phy;
+		bool dsc;
+	} hwparams;
 
 	void __iomem *base;
 	uint32_t irq;
@@ -424,14 +487,31 @@ struct dp_ctrl {
 	uint8_t max_rate;
 	uint8_t max_lanes;
 
+	bool ycbcr420;
+	u8 streams;
+	bool mst;
+
+	bool cr_fail;// harutk need to remove
+
+	u8 multipixel;
+	u8 bstatus;
+
+	bool ssc_en;
+
+	bool dummy_dtds_present;
+	enum established_timings selected_est_timing;
+
 	struct device *dev;
+#if CONFIG_DP_ENABLE
 	struct switch_dev sdev;
 	struct switch_dev dp_switch;
+#endif
 	struct hisi_fb_data_type *hisifd;
 
 	struct video_params vparams;
 	struct audio_params aparams;
 	struct hdcp_params hparams;
+	struct audio_short_desc audio_desc;
 
 	struct edid_information edid_info;
 
@@ -445,6 +525,9 @@ struct dp_ctrl {
 	uint8_t rx_caps[DPTX_RECEIVER_CAP_SIZE];
 
 	uint8_t *edid;
+	uint8_t *edid_second;
+	uint32_t edid_try_count;
+	uint32_t edid_try_delay; // unit: ms
 
 	struct sdp_full_data sdp_list[DPTX_SDP_NUM];
 	struct dptx_aux aux;

@@ -205,6 +205,7 @@ config SND_SOC_ALL_CODECS
 	select SND_SOC_WM9713 if SND_SOC_AC97_BUS
 	select SND_SOC_HI6402
 	select SND_SOC_HI6403
+	select SND_SOC_HI6405
         help
           Normally ASoC codec drivers are only built if a machine driver which
           uses them is also built since they are only usable with a machine
@@ -1099,6 +1100,9 @@ config SND_SOC_HI6403
 	tristate "Support Sound SoC Hi6403 Codec"
 	depends on HI6403_CODEC
 
+config SND_SOC_HI6405
+	tristate "Support Sound SoC Hi6405 Codec"
+
 config SND_SOC_CODEC_HISSC
 	tristate "HI Soc Smartstar Codec support"
 
@@ -1112,7 +1116,13 @@ config SND_SOC_DP_AUDIO
 config SND_SOC_CODEC_HI6555V2
 	tristate "HI Soc Smartstar Codec 6555v2 support"
 
+config SND_SOC_CODEC_HI6555V3
+	tristate "HI Soc Smartstar Codec 6555v3 support"
+
 config SND_SOC_HICODEC_DEBUG
 	bool "Hisi Codec debug support"
+
+config SND_SOC_CODEC_HICODECLESS
+	tristate "HI Soc Smartstar Codec hicodecless support"
 
 endmenu

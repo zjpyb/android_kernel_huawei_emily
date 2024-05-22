@@ -12,6 +12,8 @@
 #include <media/huawei/hisp200_cfg.h>
 #elif defined( HISP250_CAMERA  )
 #include <media/huawei/hisp250_cfg.h>
+#elif defined( HISP210_CAMERA  )
+#include <media/huawei/hisp210_cfg.h>
 #else
 #include <media/huawei/hisp_cfg.h>
 #endif
@@ -39,7 +41,6 @@
 #include <dsm/dsm_pub.h>
 
 #define  DSM_DEV_BUFF_SIZE 1024
-#define  HwtoHisp(isp_intf) container_of(isp_intf, hisp_t, hw)
 #define CREATE_TRACE_POINTS
 #include "trace_hisp.h"
 
@@ -155,6 +156,7 @@ hisp_vo_subdev_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
 	size_t len = sizeof(hisp_msg_t);
 	hisp_t *isp = NULL;
 	memset(&isp_msg, 0, sizeof(hisp_msg_t));
+
 	hisp_assert(NULL != sd);
 	if (NULL == arg || NULL == sd){
 		cam_err("func %s: arg or sd is NULL",__func__);
@@ -181,16 +183,12 @@ hisp_vo_subdev_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
 		}
 		break;
 	case HISP_IOCTL_POWER_ON:
-		/* cam_info("Enter HISP_IOCTL_POWER_ON!\n"); */
-		/* rc = isp->hw->vtbl->power_on(isp->hw); */
 		break;
     case HISP_IOCTL_GET_SYSTEM_TIME:
         cam_debug("Enter HISP_IOCTL_GET_SYSTEM_TIME!\n");
         hisp_subdev_get_system_timestamp((hisp_system_time_t*) arg);
         break;
 	case HISP_IOCTL_POWER_OFF:
-		/* cam_info("Enter HISP_IOCTL_POWER_OFF!\n"); */
-		/* rc = isp->hw->vtbl->power_off(isp->hw); */
 		break;
 	case HISP_IOCTL_SEND_RPMSG:
 		cam_debug("Enter HISP_IOCTL_SEND_RPMSG!\n");
@@ -425,7 +423,7 @@ err_aclk:
  *notify: get notified when Histar ISP driver needs
  *********************************************/
 int32_t
-hisp_register(
+hisp_register(struct platform_device *pdev,
 	      hisp_intf_t *hw, hisp_notify_intf_t **notify)
 {
 	int rc = 0;
@@ -446,7 +444,6 @@ hisp_register(
 		goto alloc_fail;
 	}
 
-	//hisp_assert(NULL != pdev);
 	hisp_assert(NULL != hw);
 
 	subdev = &isp->subdev;
@@ -457,12 +454,12 @@ hisp_register(
 	snprintf(subdev->name, sizeof(subdev->name), "hwcam-cfg-hisp");
 	subdev->flags |= V4L2_SUBDEV_FL_HAS_DEVNODE;
 	subdev->flags |= V4L2_SUBDEV_FL_HAS_EVENTS;
-	//v4l2_set_subdevdata(subdev, pdev);
 
 	init_subdev_media_entity(subdev,HWCAM_SUBDEV_HISP);
 	hwcam_cfgdev_register_subdev(subdev,HWCAM_SUBDEV_HISP);
 	subdev->devnode->lock = &isp->lock;
 
+	platform_set_drvdata(pdev, subdev);
 	isp->hw = hw;
 	isp->notify.vtbl = &s_notify_hisp;
 	*notify = &(isp->notify);
@@ -477,15 +474,15 @@ alloc_fail:
 
 
 void
-hisp_unregister(hisp_intf_t* isp_intf)
+hisp_unregister(struct platform_device* pdev)
 {
-    hisp_t* isp = NULL;
-    struct v4l2_subdev* subdev = NULL;
-    isp = HwtoHisp(isp_intf);
-    subdev  = &isp->subdev;
+    struct v4l2_subdev *subdev = platform_get_drvdata(pdev);
+    hisp_t* isp = SD2HISP(subdev);
+
     media_entity_cleanup(&subdev->entity);
     hwcam_cfgdev_unregister_subdev(subdev);
     mutex_destroy(&isp->lock);
+
     kzfree(isp);
 }
 

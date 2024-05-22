@@ -128,7 +128,7 @@ void process_native_requst(struct native_requst *requst)
 {
 	struct native_event native_info;
 
-	hwlog_info("%s:request addr=%x\n", __func__,requst);
+	hwlog_info("%s:request\n", __func__);
 	if (requst->len > MAX_RTT_LIST_LEN || requst->len < 0)
 		return;
 
@@ -149,6 +149,36 @@ void process_app_qoe_params_request(struct app_qoe_request *request)
 	}
 }
 #endif
+
+static void process_settings_params_request(struct setting_params_request *request)
+{
+	int strategy = 0;
+	int uid = 0;
+	if (!request)
+		return;
+	if (request->msg_id == REQ_TYPE_CLOSE_SOCKET) {
+		pr_info("process_settings_params_request REQ_TYPE_CLOSE_SOCKET,%d,%d\n", request->param1, request->param2);
+#ifdef CONFIG_HW_DPIMARK_MODULE
+		strategy = request->param1;
+		uid = request->param2;
+		mplk_add_nw_bind((uid_t)uid, 0);
+		mplk_close_socket_by_uid((uint32_t)strategy, (uid_t)uid);
+#endif
+	} else if (request->msg_id == REQ_TYPE_DEL_UID_NETID_ENTRY) {
+#ifdef CONFIG_HW_DPIMARK_MODULE
+		uid = request->param1;
+		mplk_del_nw_bind((uid_t)uid);
+#endif
+	} else if (request->msg_id == REQ_TYPE_SET_SLOW_THRESHOLD) {
+		pr_info("process_settings_params_request REQ_TYPE_SET_SLOW_THRESHOLD,%d,%d,%d\n",
+			request->param1, request->param2, request->param3);
+		set_slow_proba_threshold(request->param1, request->param2, request->param3);
+	} else if (request->msg_id == REQ_TYPE_SET_ALPHA_FILTER_ALG_PARAMS) {
+		set_alpha_filter_alg_params(request->param1, request->param2);
+	} else if (request->msg_id == REQ_TYPE_SET_FILTER_ALG_CHANGE_THRESHOLD) {
+		set_alpha_filter_alg_change_thresh(request->param1);
+	}
+}
 
 static void nb_netlink_rcv(struct sk_buff *__skb)
 {
@@ -231,6 +261,15 @@ static void nb_netlink_rcv(struct sk_buff *__skb)
 				break;
 			}
 #endif
+			case NBMSG_SETTING_PARAMS_REQ: {
+				if (nlh->nlmsg_len < NLMSG_LENGTH(sizeof(struct setting_params_request))) {
+					hwlog_err("nb_netlink_rcv:invalid nlmsg_len %d of nlmsg_type %d\n",
+								nlh->nlmsg_len, nlh->nlmsg_type);
+					break;
+				}
+				process_settings_params_request((struct setting_params_request *)NLMSG_DATA(nlh));
+				break;
+			}
 			default:
 				hwlog_err("nb_netlink_rcv:invalid nlmsg_type %d\n", nlh->nlmsg_type);
 				break;

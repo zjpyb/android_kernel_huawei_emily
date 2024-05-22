@@ -1498,6 +1498,7 @@ STATIC ssize_t show_dev_test(struct device *dev, struct kobj_attribute *attr, in
                                    "  16 wlan_pm_open_etc\n  17 wlan_pm_close_etc\n  18 wlan gpio power on\n  19 bfg gpio power on\n  20 gnss monitor enable\n"
                                    "  21 rdr test\n  22 bfgx power on\n");
 }
+
 oal_uint  wlan_pm_open_bcpu_etc(oal_void);
 extern int32 uart_loop_test_etc(void);
 extern int firmware_download_function_etc(uint32 which_cfg);
@@ -1652,6 +1653,69 @@ STATIC ssize_t store_dev_test(struct device *dev, struct kobj_attribute *attr, c
         default:
             PS_PRINT_ERR("unknown cmd %d\n", cmd);
             break;
+    }
+
+    return count;
+}
+
+STATIC ssize_t show_octty_test(struct device *dev, struct kobj_attribute *attr, int8 *buf)
+{
+    PS_PRINT_INFO("%s\n", __func__);
+
+    if (NULL == buf)
+    {
+        PS_PRINT_ERR("buf is NULL\n");
+        return -FAILURE;
+    }
+
+    return snprintf(buf, PAGE_SIZE, "cmd  func\n 1 close octty\n 2 open octty\n"
+                                    " 3 change uart buard rate to wake_dev_buad_rate with flow control disable\n"
+                                    " 4 change uart buad rate to normal_buad_rate with flow control enable\n");
+
+}
+
+STATIC ssize_t store_octty_test(struct device *dev, struct kobj_attribute *attr, const char *buf, size_t count)
+{
+    int32 cmd;
+    struct ps_core_s *ps_core_d = NULL;
+    int32 result = -EINVAL;
+
+    PS_PRINT_INFO("%s\n", __func__);
+    ps_get_core_reference_etc(&ps_core_d);
+    if (unlikely(NULL == ps_core_d))
+    {
+        PS_PRINT_ERR("ps_core_d is NULL\n");
+        return -FAILURE;
+    }
+
+    if (NULL == buf)
+    {
+        PS_PRINT_ERR("buf is NULL\n");
+        return -FAILURE;
+    }
+
+    cmd = simple_strtol(buf, NULL, 10);
+    switch (cmd)
+    {
+        case 1:
+            result = release_tty_drv_etc(ps_core_d->pm_data);// close tty
+            break;
+        case 2:
+            result = open_tty_drv_etc(ps_core_d->pm_data); // open tty
+            break;
+        case 3:
+            result = ps_change_uart_baud_rate_etc(WKUP_DEV_BAUD_RATE, FLOW_CTRL_DISABLE);// BUAD RATE:115200, flow control: disable
+            break;
+        case 4:
+            result = ps_change_uart_baud_rate_etc(LOW_FREQ_BAUD_RATE, FLOW_CTRL_ENABLE);// BUAD_RATE:4000000, flow control:enable
+        default:
+            PS_PRINT_ERR("unknown cmd %d\n", cmd);
+            break;
+    }
+
+    if(result != 0)
+    {
+        PS_PRINT_ERR("cmd[%d] test error\n", cmd);
     }
 
     return count;
@@ -2239,6 +2303,10 @@ __ATTR(uart_rx_dump, 0664, (void *)show_uart_rx_dump, (void *)store_uart_rx_dump
 STATIC struct kobj_attribute bfgx_dev_test =
 __ATTR(bfgx_test, 0664, (void *)show_dev_test, (void *)store_dev_test);
 
+STATIC struct kobj_attribute octty_pre_test =
+__ATTR(octty_test, 0664, (void *)show_octty_test, (void *)store_octty_test);
+
+
 STATIC struct kobj_attribute wifi_mem_dump =
 __ATTR(wifi_mem, 0664, (void *)show_wifi_mem_dump, (void *)store_wifi_mem_dump);
 
@@ -2263,6 +2331,7 @@ STATIC struct attribute *hi110x_debug_attrs[] = {
         &plat_exception_dbg.attr,
         &uart_dumpctrl.attr,
         &bfgx_dev_test.attr,
+        &octty_pre_test.attr,
         &wifi_mem_dump.attr,
         &bfgx_mem_and_reg_dump.attr,
         &wifi_boot_test.attr,

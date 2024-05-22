@@ -57,7 +57,6 @@ typedef enum _tag_hwcam_device_id_constants
 typedef enum _tag_hwcam_buf_kind
 {
     HWCAM_BUF_KIND_PIPELINE_CAPABILITY,
-    HWCAM_BUF_KIND_PIPELINE_PARAM,
     HWCAM_BUF_KIND_STREAM_PARAM,
     HWCAM_BUF_KIND_STREAM,
 } hwcam_buf_kind_t;
@@ -467,21 +466,6 @@ hwcam_data_table_set_as_used(hwcam_data_table_t* tbl,
     hwcam_data_entry_t* tgt = hwcam_data_table_find_entry_by_id(tbl, id);
     return hwcam_data_table_set_entry_as_used(tbl, tgt, used);
 }
-
-#define HWCAM_V4L2_IOCTL_MOUNT_BUF \
-    _IOW('A', BASE_VIDIOC_PRIVATE + 0x01, hwcam_buf_info_t)
-
-#define HWCAM_V4L2_IOCTL_UNMOUNT_BUF \
-    _IOW('A', BASE_VIDIOC_PRIVATE + 0x02, hwcam_buf_info_t)
-
-#define HWCAM_V4L2_IOCTL_MOUNT_GRAPHIC_BUF \
-    _IOW('A', BASE_VIDIOC_PRIVATE + 0x03, hwcam_graphic_buf_info_t)
-
-#define HWCAM_V4L2_IOCTL_UNMOUNT_GRAPHIC_BUF \
-    _IOW('A', BASE_VIDIOC_PRIVATE + 0x04, int)
-
-#define HWCAM_V4L2_IOCTL_GET_GRAPHIC_BUF \
-    _IOR('A', BASE_VIDIOC_PRIVATE + 0x05, hwcam_graphic_buf_info_t)
 
 #define HWCAM_V4L2_IOCTL_GET_BUF \
     _IOR('A', BASE_VIDIOC_PRIVATE + 0x06, hwcam_buf_status_t)

@@ -35,6 +35,7 @@
 #include "hw_csi.h"
 
 #define I2S(i) container_of(i, sensor_t, intf)
+#define Sensor2Pdev(s) container_of((s).dev, struct platform_device, dev)
 
 char const* imx230_get_name(hwsensor_intf_t* si);
 int imx230_config(hwsensor_intf_t* si, void  *argp);
@@ -236,56 +237,9 @@ imx230_match_id(
         hwsensor_intf_t* si, void * data)
 {
     sensor_t* sensor = I2S(si);
-//  hwsensor_board_info_t *board_info = sensor->board_info;
     struct sensor_cfg_data *cdata = (struct sensor_cfg_data *)data;
-//    int sensor_index = CAMERA_SENSOR_INVALID;
-//    int ret = 0;
-//    int camif_id = -1;
 
     cam_info("%s TODO.", __func__);
-#if	0
-    if(0 == board_info->gpios[FSIN].gpio) {
-		cam_err("%s gpio type[FSIN] is not actived.", __func__);
-		ret = -1;
-		goto out;
-    }
-
-    ret = gpio_request(board_info->gpios[FSIN].gpio, "camif_id");
-    if(ret < 0) {
-		cam_err("failed to request gpio[%d]", board_info->gpios[FSIN].gpio);
-		goto out;
-	}
-    ret = gpio_direction_input(board_info->gpios[FSIN].gpio);
-    if(ret < 0) {
-		cam_err("failed to control gpio[%d]", board_info->gpios[FSIN].gpio);
-		goto out_gpio;
-	}
-
-    ret = gpio_get_value(board_info->gpios[FSIN].gpio);
-    if(ret < 0) {
-		cam_err("failed to get gpio[%d]", board_info->gpios[FSIN].gpio);
-		goto out_gpio;
-	} else {
-		camif_id = ret;
-		cam_notice("%s camif id = %d.", __func__, camif_id);
-	}
-
-	if (camif_id != board_info->camif_id) {
-		cam_notice("%s camera[%s] module is not match.", __func__, board_info->name);
-		board_info->sensor_index = CAMERA_SENSOR_INVALID;
-		ret = -1;
-	} else {
-		cam_notice("%s camera[%s] match successfully.", __func__, board_info->name);
-		sensor_index = board_info->sensor_index;
-		ret = 0;
-	}
-
-out_gpio:
-	gpio_free(board_info->gpios[FSIN].gpio);
-out:
-    cdata->data = sensor_index;
-    return ret;
-#endif
     strncpy(cdata->cfg.name, sensor->board_info->name, DEVICE_NAME_SIZE);
     cdata->data = sensor->board_info->sensor_index;
 
@@ -377,7 +331,7 @@ imx230_init_module(void)
 static void __exit
 imx230_exit_module(void)
 {
-    hwsensor_unregister(&s_imx230.intf);
+    hwsensor_unregister(Sensor2Pdev(s_imx230));
     platform_driver_unregister(&s_imx230_driver);
 }
 

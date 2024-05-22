@@ -24,12 +24,18 @@
 #include <linux/semaphore.h>
 #include <linux/sched/rt.h>
 #include <linux/ion.h>
+#include <linux/version.h>
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
 #include <linux/hisi/hisi_ion.h>
+#endif
 #include <sound/core.h>
 #include <sound/pcm.h>
 #include <sound/pcm_params.h>
 #include <sound/soc.h>
 #include <sound/hwdep.h>
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+#include <uapi/linux/sched/types.h>
+#endif
 #include "drv_mailbox_cfg.h"
 
 #ifdef CONFIG_HUAWEI_DSM
@@ -439,7 +445,7 @@ struct hisi_pcm_data {
 
 extern int mailbox_get_timestamp(void);
 static int hisi_pcm_notify_set_buf(struct snd_pcm_substream *substream);
-static irq_rt_t hisi_pcm_notify_recv_isr(void *usr_para, void *mail_handle, unsigned int mail_len);
+static irq_rt_t hisi_pcm_notify_recv_isr(const void *usr_para, void *mail_handle, unsigned int mail_len);
 static irq_rt_t hisi_pcm_isr_handle(struct snd_pcm_substream *substream);
 
 static bool _is_valid_pcm_device(int pcm_device)
@@ -709,6 +715,7 @@ static int hisi_pcm_alloc_mmap_share_buf(struct snd_pcm_substream *substream,
 	uint32_t buf_size)
 {
 	int ret = -EINVAL;
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
 	struct hisi_pcm_runtime_data *prtd = substream->runtime->private_data;
 	struct snd_soc_pcm_runtime *soc_prtd = substream->private_data;
 	struct device *dev = soc_prtd->platform->dev;
@@ -776,11 +783,13 @@ err_ion_client:
 	kfree(ion_buf);
 	ion_buf = NULL;
 err_ret:
+#endif
 	return ret;
 }
 
 static void hisi_pcm_free_mmap_share_buf(struct snd_pcm_substream *substream)
 {
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
 	struct hisi_pcm_runtime_data *prtd = substream->runtime->private_data;
 	struct hisi_pcm_ion_buf *ion_buf = prtd->ion_buf;
 
@@ -800,12 +809,14 @@ static void hisi_pcm_free_mmap_share_buf(struct snd_pcm_substream *substream)
 		kfree(prtd->ion_buf);
 		prtd->ion_buf = NULL;
 	}
+#endif
 }
 
 /* get shared fd info for mmap device's ion share buffer */
 static int hisi_pcm_mmap_shared_fd(struct snd_pcm_substream *substream,
 			   struct hisi_pcm_mmap_fd *mmap_fd)
 {
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
 	struct hisi_pcm_runtime_data *prtd = NULL;
 	struct hisi_pcm_ion_buf *ion_buf = NULL;
 
@@ -839,7 +850,7 @@ static int hisi_pcm_mmap_shared_fd(struct snd_pcm_substream *substream,
 		loge("get shared fd %d error\n", mmap_fd->shared_fd);
 		return -EFAULT;
 	}
-
+#endif
 	return 0;
 }
 
@@ -1052,7 +1063,7 @@ static irq_rt_t hisi_pcm_isr_handle(struct snd_pcm_substream *substream)
 	return IRQ_HDD;
 }
 
-static int hisi_pcm_mailbox_send_data(void *pmsg_body, unsigned int msg_len,
+static int hisi_pcm_mailbox_send_data(const void *pmsg_body, unsigned int msg_len,
 		unsigned int msg_priority)
 {
 	unsigned int ret = 0;
@@ -1220,7 +1231,7 @@ void snd_pcm_reset_pre_time(struct snd_pcm_substream *substream)
 }
 EXPORT_SYMBOL(snd_pcm_reset_pre_time);
 
-static irq_rt_t hisi_pcm_notify_recv_isr(void *usr_para, void *mail_handle, unsigned int mail_len)
+static irq_rt_t hisi_pcm_notify_recv_isr(const void *usr_para, void *mail_handle, unsigned int mail_len)
 {
 	struct snd_pcm_substream * substream    = NULL;
 	struct hisi_pcm_runtime_data *prtd        = NULL;

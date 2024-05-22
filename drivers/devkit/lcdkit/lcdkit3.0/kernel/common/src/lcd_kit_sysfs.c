@@ -857,6 +857,22 @@ static ssize_t lcd_kit_effect_bl_store(struct device* dev, struct device_attribu
 	return ret;
 }
 
+static ssize_t lcd_kit_general_test_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	ssize_t ret = LCD_KIT_OK;
+	struct lcd_kit_sysfs_ops *sysfs_ops = NULL;
+
+	sysfs_ops = lcd_kit_get_sysfs_ops();
+	if (sysfs_ops == NULL) {
+		LCD_KIT_ERR("sysfs_ops is NULL!\n");
+		return LCD_KIT_FAIL;
+	}
+	if (sysfs_ops->general_test_show)
+		ret = sysfs_ops->general_test_show(dev, attr, buf);
+
+	return ret;
+}
+
 static DEVICE_ATTR(lcd_model, 0644, lcd_kit_model_show, NULL);
 static DEVICE_ATTR(lcd_display_type, 0644, lcd_kit_type_show, NULL);
 static DEVICE_ATTR(panel_info, 0644, lcd_kit_panel_info_show, NULL);
@@ -889,6 +905,7 @@ static DEVICE_ATTR(lcd_bl_support_mode, S_IRUGO | S_IWUSR, lcd_kit_support_bl_mo
 static DEVICE_ATTR(lcd_ldo_check, S_IRUGO, lcd_kit_ldo_check_show, NULL);
 static DEVICE_ATTR(bl_self_test, S_IRUGO|S_IWUSR, lcd_kit_bl_self_test_show, NULL);
 static DEVICE_ATTR(effect_bl, S_IRUGO | S_IWUSR, lcd_kit_effect_bl_show, lcd_kit_effect_bl_store);
+static DEVICE_ATTR(lcd_general_test, S_IRUGO, lcd_kit_general_test_show, NULL);
 
 static struct attribute* lcd_kit_sysfs_attrs[LCD_KIT_SYSFS_MAX] = {NULL};
 struct attribute *lcd_kit_conf[] = {
@@ -924,6 +941,7 @@ struct attribute *lcd_kit_conf[] = {
 	&dev_attr_lcd_ldo_check.attr,
 	&dev_attr_bl_self_test.attr,
 	&dev_attr_effect_bl.attr,
+	&dev_attr_lcd_general_test.attr,
 };
 
 struct attribute_group lcd_kit_sysfs_attr_group = {

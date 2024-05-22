@@ -19,9 +19,6 @@
 #include "hisi-clk-debug.h"
 #endif
 
-#ifdef CONFIG_HISI_CLK_DEBUG
-#include "hisi-clk-debug.h"
-#endif
 /*
  * DOC: basic adjustable multiplexer clock that cannot gate
  *
@@ -131,14 +128,23 @@ static int hisi_selreg_check(struct clk_hw *hw)
 		return 0;
 }
 
-static int hi3xxx_dumpmux(struct clk_hw *hw, char* buf)
+static int hi3xxx_dumpmux(struct clk_hw *hw, char* buf, struct seq_file *s)
 {
 	struct clk_mux *mux = to_clk_mux(hw);
+	long unsigned int clk_base_addr = 0;
+	unsigned int clk_bit = 0;
 	u32 val = 0;
 
-	if (mux->reg && buf) {
+	if (mux->reg && buf && !s) {
 		val = readl(mux->reg) ;
-		snprintf(buf, DUMP_CLKBUFF_MAX_SIZE, "[%s] : regAddress = 0x%pK, regval = 0x%x\n", __clk_get_name(hw->clk), mux->reg, val);
+		snprintf(buf, DUMP_CLKBUFF_MAX_SIZE, "[%s] : regAddress = 0x%pK, regval = 0x%x\n",  \
+			__clk_get_name(hw->clk), mux->reg, val);
+	}
+	if(mux->reg && !buf && s) {
+		clk_base_addr = (uintptr_t)mux->reg & CLK_ADDR_HIGH_MASK;
+		clk_bit = (uintptr_t)mux->reg & CLK_ADDR_LOW_MASK;
+		seq_printf(s, "    %-15s    %-15s    0x%03X    bit-%u:%u", hs_base_addr_transfer(clk_base_addr),  \
+			"mux", clk_bit, mux->shift, (mux->shift + fls((mux->mask + 1)) - 2));
 	}
 	return 0;
 

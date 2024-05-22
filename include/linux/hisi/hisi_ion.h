@@ -16,8 +16,29 @@
 #ifndef _LINUX_HISI_ION_H
 #define _LINUX_HISI_ION_H
 
+#include <linux/dma-buf.h>
 #include <linux/ion.h>
 #include <linux/sizes.h>
+#include <linux/version.h>
+
+#ifdef CONFIG_HISI_LB
+#include <linux/hisi/hisi_lb.h>
+enum ion_lb_pid_ids {
+	INVALID_PID = -1,
+	ION_LB_BYPASS = PID_BY_PASS,
+	ION_LB_OPENCL = PID_OPENCL,
+	ION_LB_GPUFBO = PID_GPUFBO,
+	ION_LB_GPUTXT = PID_GPUTXT,
+	ION_LB_IDISPLAY = PID_IDISPLAY,
+	ION_LB_JPEG = PID_JPEG,
+	ION_LB_VIDEO = PID_VIDEO,
+	ION_LB_DMAP = PID_DMAP,
+	ION_LB_TINY = PID_TINY,
+	ION_LB_AUDIO = PID_AUDIO,
+	ION_LB_MAX = 10,
+
+};
+#endif
 
 /**
  * These are the only ids that should be used for Ion heap ids.
@@ -57,7 +78,6 @@ enum ion_heap_ids {
 #endif
 	ION_HEAP_ID_RESERVED = 31, /* Bit reserved */
 };
-
 
 /**
  * Macro should be used with ion_heap_ids defined above.
@@ -168,6 +188,11 @@ enum ion_ta_tag{
 
 #define TINY_SYSTEM   0x0        /* tiny version system for chip test*/
 #define FULL_SYSTEM   0x1        /* full version system */
+
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
+int ion_handle_get_flags(struct ion_client *client, struct ion_handle *handle,
+			 unsigned long *flags);
+
 /**
  * hisi_ion_client_create() - create iommu mapping for the given handle
  * @heap_mask:	ion heap type mask
@@ -178,10 +203,10 @@ enum ion_ta_tag{
  * can access a buffer, they should get a client via calling this function.
  */
 struct ion_client *hisi_ion_client_create(const char *name);
-int hisi_ion_get_heap_info(unsigned int id,struct ion_heap_info_data* data);
-int hisi_ion_get_media_mode(void);
-unsigned long long get_system_type(void);
+
 struct ion_device * get_ion_device(void);
+#endif
+
 struct platform_device *get_hisi_ion_platform_device(void);
 
 #define ION_IOC_HISI_MAGIC 'H'
@@ -202,9 +227,15 @@ static inline unsigned long hisi_ion_total(void)
 }
 #endif
 
-/* add to calc free memory */
-void hisi_ionsysinfo(struct sysinfo *si);
-int ion_handle_get_flags(struct ion_client *client, struct ion_handle *handle,
-			 unsigned long *flags);
 int hisi_ion_memory_info(bool verbose);
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+int ion_secmem_get_phys(struct dma_buf *dmabuf, phys_addr_t *addr, size_t *len);
+int hisi_ion_cache_operate(int fd, unsigned long uaddr,
+	unsigned long offset, unsigned long length,
+	unsigned int cmd);
+#endif
+
+struct cma *get_sec_cma(void);
+
 #endif

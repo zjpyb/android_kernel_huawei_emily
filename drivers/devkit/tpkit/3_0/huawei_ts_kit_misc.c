@@ -11,14 +11,11 @@
 extern struct ts_kit_platform_data g_ts_kit_platform_data;
 extern atomic_t g_ts_kit_data_report_over;
 
-unsigned int  is_all_finger_up = 0;
 
 static long ts_ioctl_get_fingers_info(unsigned long arg)
 {
 	int ret = 0;
 	void __user *argp = (void __user *)arg;
-	struct ts_fingers data;
-	u32 frame_size;
 	if (arg == 0) {
 		TS_LOG_ERR("arg == 0.\n");
 		return -EINVAL;
@@ -26,7 +23,9 @@ static long ts_ioctl_get_fingers_info(unsigned long arg)
 	trace_touch(TOUCH_TRACE_ALGO_GET_DATA, TOUCH_TRACE_FUNC_IN, "with aft");
 	/* wait event */
 	atomic_set(&g_ts_kit_platform_data.fingers_waitq_flag, AFT_WAITQ_WAIT);
-	down_interruptible(&g_ts_kit_platform_data.fingers_aft_send);
+	if (down_interruptible(&g_ts_kit_platform_data.fingers_aft_send))
+		TS_LOG_ERR(" Failed to down_interruptible()\n");
+
 	if (atomic_read(&g_ts_kit_platform_data.fingers_waitq_flag) == AFT_WAITQ_WAIT) {
 		atomic_set(&g_ts_kit_platform_data.fingers_waitq_flag,AFT_WAITQ_IGNORE);
 		return -EINVAL;
@@ -107,10 +106,11 @@ static long ts_ioctl_set_coordinates(unsigned long arg)
 			}
 			input_report_abs(input_dev, ABS_MT_TRACKING_ID, id);
 			input_mt_sync(input_dev);
-		} else if (finger->fingers[id].status & TS_FINGER_RELEASE) {
-			input_mt_sync(input_dev);
 		}
 	}
+	// all fingers up, report the last empty finger
+	if (finger_num == 0)
+		input_mt_sync(input_dev);
 
 	input_report_key(input_dev, BTN_TOUCH, finger_num);
 	input_sync(input_dev);
@@ -214,11 +214,6 @@ static int aft_get_info_misc_open(struct inode *inode, struct file *filp)
 
 static int aft_get_info_misc_release(struct inode *inode, struct file *filp)
 {
-	/*if(g_ts_kit_platform_data.aft_param.aft_enable_flag)
-	   {
-	   g_ts_kit_platform_data.fingers_waitq_flag = AFT_WAITQ_WAKEUP;
-	   wake_up_interruptible(&(g_ts_kit_platform_data.fingers_waitq));
-	   } */
 	return 0;
 }
 
@@ -247,9 +242,6 @@ static int ts_ioctl_get_diff_data_info(unsigned long arg)
 			TS_LOG_ERR("%s down_interruptible fail",__func__);
 
 		if(atomic_read(& (g_ts_kit_platform_data.diff_data_status)) == DIFF_DATA_WAKEUP){
-			if(is_all_finger_up){
-				return 0;
-			}
 			if (copy_to_user(argp, g_ts_kit_platform_data.chip_data->diff_data,
 				g_ts_kit_platform_data.chip_data->diff_data_len)){
 				TS_LOG_ERR("%s:[DIFF_DATA]Failed to copy_to_user().\n",__func__);
@@ -308,11 +300,6 @@ static int aft_set_info_misc_open(struct inode *inode, struct file *filp)
 
 static int aft_set_info_misc_release(struct inode *inode, struct file *filp)
 {
-	/*if(g_ts_kit_platform_data.aft_param.aft_enable_flag)
-	   {
-	   g_ts_kit_platform_data.fingers_waitq_flag = AFT_WAITQ_WAKEUP;
-	   wake_up_interruptible(&(g_ts_kit_platform_data.fingers_waitq));
-	   } */
 	return 0;
 }
 
@@ -359,17 +346,87 @@ static int ts_ioctl_set_sensibility_cfg(unsigned long arg)
 	return 0;
 }
 
+static void ts_report_keyevent(unsigned int  key_value)
+{
+	struct input_dev *input_dev = g_ts_kit_platform_data.input_dev;
+	int valid_flag = 0;
+
+	switch (key_value) {
+	case KEY_FLIP:
+	case TS_DOUBLE_CLICK:
+		valid_flag = 1; // just valid case need to be report
+		break;
+	default:
+		TS_LOG_ERR("key_value is invalid.%x\n", key_value);
+	}
+	if (valid_flag) {
+		input_report_key(input_dev, key_value, 1); /* 1 report key_event DOWN */
+		input_sync(input_dev);
+		input_report_key(input_dev, key_value, 0); /* 0 report key_event UP */
+		input_sync(input_dev);
+	}
+}
+static int ts_ioctl_set_key_value(unsigned long arg)
+{
+	void __user *argp = (void __user *)arg;
+	unsigned int key_value;
+
+	if (arg == 0) {
+		TS_LOG_ERR("arg == 0\n");
+		return -EINVAL;
+	}
+
+	if (copy_from_user(&key_value, argp, sizeof(unsigned int))) {
+		TS_LOG_ERR("%s Failed to copy_from_user\n", __func__);
+		return -EFAULT;
+	}
+	TS_LOG_INFO("%s:key_value = %d\n", __func__, key_value);
+	ts_report_keyevent(key_value);
+	return 0;
+}
+
+static int ts_ioctl_set_double_click(unsigned long arg)
+{
+	void __user *argp = (void __user *)arg;
+	struct double_click_data data;
+
+	if (arg == 0) {
+		TS_LOG_ERR("arg == 0\n");
+		return -EINVAL;
+	}
+	if (!g_ts_kit_platform_data.chip_data->support_gesture_mode) {
+		TS_LOG_ERR("%s: not surport gesture mode\n", __func__);
+		return -EINVAL;
+	}
+	if (copy_from_user(&data, argp, sizeof(data))) {
+		TS_LOG_ERR("%s:Failed to copy_from_user()\n", __func__);
+		return -EFAULT;
+	}
+	TS_LOG_INFO("%s:key_code = %d\n", __func__, data.key_code);
+	g_ts_kit_platform_data.chip_data->easy_wakeup_info.
+		easywake_position[0] = (data.x_position << 16) |
+		data.y_position;
+	ts_report_keyevent(data.key_code);
+	return 0;
+}
+
 static long aft_set_info_misc_ioctl(struct file *filp,
 				    unsigned int cmd, unsigned long arg)
 {
 	long ret;
-	//TS_LOG_ERR("[MUTI_AFT] aft_Set_info_misc_ioctl enter cmd:%d\n",cmd);
+
 	switch (cmd) {
 	case INPUT_AFT_IOCTL_CMD_SET_COORDINATES:
 		ret = ts_ioctl_set_coordinates(arg);
 		break;
 	case INPUT_AFT_IOCTL_CMD_SET_SENSIBILITY_CFG:
 		ret = ts_ioctl_set_sensibility_cfg(arg);
+		break;
+	case INPUT_IOCTL_CMD_SET_FLIP_KEY:
+		ret = ts_ioctl_set_key_value(arg);
+		break;
+	case INPUT_IOCTL_CMD_SET_DOUBLE_CLICK:
+		ret = ts_ioctl_set_double_click(arg);
 		break;
 	default:
 		TS_LOG_ERR("cmd unkown.%x\n",cmd);
@@ -396,7 +453,7 @@ int ts_kit_misc_init(struct ts_kit_platform_data *pdata)
 	int error = 0;
 
 	if (!pdata->aft_param.aft_enable_flag) {
-		TS_LOG_INFO("%s: aft not enable\n");
+		TS_LOG_INFO("%s: aft not enable\n", __func__);
 		return 0;
 	}
 

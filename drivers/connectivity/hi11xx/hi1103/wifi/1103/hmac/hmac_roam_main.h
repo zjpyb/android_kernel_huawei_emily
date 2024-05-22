@@ -50,6 +50,7 @@ typedef enum
     ROAM_TRIGGER_COEX                 = 2,
     ROAM_TRIGGER_11V                  = 3,
     ROAM_TRIGGER_M2S                  = 4,
+    ROAM_TRIGGER_BSSID                = 5, /* 指定BSSID漫游 */
 
     ROAM_TRIGGER_BUTT
 }roam_trigger_condition_enum;
@@ -138,6 +139,8 @@ typedef struct
     oal_int8                        c_candidate_good_rssi;       /* 密集AP场景识别，强信号强度AP的门限 */
     oal_uint8                       uc_candidate_good_num;       /* 密集AP场景识别，强信号强度AP的数目 */
     oal_uint8                       uc_candidate_weak_num;       /* 密集AP场景识别，弱信号强度AP的数目 */
+    oal_uint16                      us_roam_interval;            /* 动态调整漫游触发间隔 */
+    oal_uint8                       uc_resv[2];
     oal_uint32                      ul_blacklist_expire_sec;     /* not used for now */
     oal_uint32                      ul_buffer_max;               /* not used for now */
 }hmac_roam_config_stru;
@@ -177,7 +180,8 @@ oal_uint32 hmac_roam_band_etc(hmac_vap_stru *pst_hmac_vap, oal_uint8 uc_scan_ban
 oal_uint32 hmac_roam_org_etc(hmac_vap_stru *pst_hmac_vap, oal_uint8 uc_scan_orthogonal);
 oal_uint32 hmac_roam_check_signal_bridge_etc(hmac_vap_stru *pst_hmac_vap);
 oal_uint32 hmac_roam_start_etc(hmac_vap_stru *pst_hmac_vap, roam_channel_org_enum uc_scan_type,
-                           oal_bool_enum_uint8 en_current_bss_ignore, roam_trigger_enum_uint8 en_roam_trigger);
+                           oal_bool_enum_uint8 en_current_bss_ignore, oal_uint8 *pauc_target_bssid,
+                           roam_trigger_enum_uint8 en_roam_trigger);
 oal_uint32 hmac_roam_show_etc(hmac_vap_stru *pst_hmac_vap);
 oal_uint32 hmac_roam_init_etc(hmac_vap_stru *pst_hmac_vap);
 oal_uint32 hmac_roam_info_init_etc(hmac_vap_stru *pst_hmac_vap);

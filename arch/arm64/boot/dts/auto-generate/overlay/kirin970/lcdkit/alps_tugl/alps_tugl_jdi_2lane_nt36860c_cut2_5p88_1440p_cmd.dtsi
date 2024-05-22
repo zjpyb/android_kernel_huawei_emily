@@ -485,6 +485,7 @@
 		hw,lcdkit-hisi-esd-reg-command = <0x14 0x01 0x00 0x00 0x0a 0x00 0x02 0xab 0x00>;
 		hw,lcdkit-hisi-esd-value = <0x3e 0xf3>;
 		hw,lcdkit-delay-af-rst-off = <5>;
+		hw,lcdkit-tp-reset-gpio = <15>;
 		hw,lcdkit-h-back-porch = <10>;
 		hw,lcdkit-h-front-porch = <32>;
 		hw,lcdkit-h-pulse-width = <10>;

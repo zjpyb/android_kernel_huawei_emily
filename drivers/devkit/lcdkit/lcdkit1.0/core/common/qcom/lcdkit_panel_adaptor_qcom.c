@@ -327,24 +327,24 @@ void lcdkit_update_lcd_brightness_info(void)
 {
 	int read_count = 0;
 	void *ctrl_pdata = lcdkit_get_dsi_ctrl_pdata();
-	struct msm_fb_data_type *mdp = NULL;
+	struct mdss_dsi_ctrl_pdata *pdata = ctrl_pdata;
 
 	if (lcd_dev == NULL) {
 		LCDKIT_INFO("lcd_dev is NULL\n");
 		return;
 	}
 
-	mdp = get_mfd(lcd_dev);
-	while ((lcdkit_info.panel_infos.get_blmaxnit_type == GET_BLMAXNIT_FROM_DDIC) && mdss_fb_is_power_on(mdp) && (lcdkit_brightness_ddic_info == 0) && (read_count < 3)) {
+	while ((lcdkit_info.panel_infos.get_blmaxnit_type == GET_BLMAXNIT_FROM_DDIC)
+		&& (pdata->panel_data.panel_info.esd_rdy)
+		&& (lcdkit_brightness_ddic_info == 0)
+		&& (read_count < 3)) {
 		lcdkit_dsi_tx(ctrl_pdata, &lcdkit_info.panel_infos.bl_befreadconfig_cmds);
 		lcdkit_dsi_rx(ctrl_pdata, &lcdkit_brightness_ddic_info, 1, &lcdkit_info.panel_infos.bl_maxnit_cmds);
 		lcdkit_dsi_tx(ctrl_pdata, &lcdkit_info.panel_infos.bl_aftreadconfig_cmds);
 		read_count++;
 	}
 
-	if (read_count >= 3) {
-		LCDKIT_INFO("lcdkit_brightness_ddic_info = %d, read_count = %d\n", lcdkit_brightness_ddic_info, read_count);
-	}
+	LCDKIT_INFO("lcdkit_brightness_ddic_info = %d, read_count = %d\n", lcdkit_brightness_ddic_info, read_count);
 
 	return;
 }

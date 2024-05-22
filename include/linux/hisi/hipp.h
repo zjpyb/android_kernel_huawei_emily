@@ -29,12 +29,14 @@ enum hipp_clocklevel_type_e {
 };
 
 enum hipp_com_type_e {
-    HISI_CPE_UNIT   = 0,
-    HISI_ORB_UNIT   = 1,
-    HISI_JPEGE_UNIT = 2,
-    HISI_JPEGD_UNIT = 3,
-    HISI_FD_UNIT    = 4,
-    HISI_HIFD_UNIT  = 5,
+    HISI_CPE_UNIT       = 0,
+    HISI_ORB_UNIT       = 1,
+    HISI_JPEGE_UNIT     = 2,
+    HISI_JPEGD_UNIT     = 3,
+    HISI_FD_UNIT        = 4,
+    HISI_HIFD_UNIT      = 5,
+    HISI_REORDER_UNIT   = 6,
+    HISI_COMPARE_UNIT   = 7,
     MAX_IPP_COM
 };
 

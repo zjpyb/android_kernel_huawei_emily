@@ -1,30 +1,23 @@
-/*-----------------------------------------------------------------------
-// Copyright (c) 2017, Hisilicon Tech. Co., Ltd. All rights reserved.
-//
-// This program is free software; you can redistribute it and/or modify
-// it under the terms of the GNU General Public License version 2
-// as published by the Free Software Foundation.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-// GNU General Public License for more details.
-//
-// You should have received a copy of the GNU General Public License
-// along with this program; if not, write to the Free Software
-// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
-//
-//-----------------------------------------------------------------------
-//
-// Project:
-//
-// Host Library.
-//
-// Description:
-//
-// Sample Linux kernel driver.
-//
-//-----------------------------------------------------------------------*/
+/*
+ *               (C) COPYRIGHT 2014 - 2016 SYNOPSYS, INC.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2
+ * as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
+ */
+
+/*
+ * Copyright (c) 2017 Hisilicon Tech. Co., Ltd. Integrated into the Hisilicon display system.
+ */
 
 #include <linux/module.h>
 #include <linux/version.h>
@@ -88,7 +81,7 @@
 #define ESM_DEVICE_MAJOR   58
 #define MAX_ESM_DEVICES    1//16
 #define HPI_REG_SIZE    0x100
-#define HPI_ADDRESS_ESM0    0xff350000
+#define HPI_ADDRESS_ESM0     0xff350000
 #define HDCP_FW_ADDRESS     HISI_RESERVED_DP_HDCP2_PHYMEM_BASE
 #define HDCP_FW_SIZE            0x40000
 #define HDCP_DATA_ADDRESS  (HISI_RESERVED_DP_HDCP2_PHYMEM_BASE + HDCP_FW_SIZE)
@@ -151,6 +144,11 @@ static esm_device esm_devices[MAX_ESM_DEVICES];
 //
 static void release_resources(esm_device *esm)
 {
+	if(esm == NULL)
+	{
+		return;
+	}
+
 	if (esm->code)
 	{
 		iounmap(esm->code);
@@ -188,6 +186,11 @@ static long cmd_load_code(esm_device *esm, esm_hld_ioctl_load_code *request)
 {
 	long ret = HL_DRIVER_FAILED;
 	esm_hld_ioctl_load_code krequest;
+
+	if((esm == NULL) || (request == NULL)){
+		HISI_FB_ERR("esm or request is null pointer\n");
+		return -1;
+	}
 
 	memset(&krequest, 0, sizeof(esm_hld_ioctl_load_code));
 	ret = copy_from_user(&krequest, request, sizeof(esm_hld_ioctl_load_code));
@@ -266,6 +269,11 @@ static long cmd_get_code_phys_addr(esm_device *esm, esm_hld_ioctl_get_code_phys_
 	long ret = 0;
 	esm_hld_ioctl_get_code_phys_addr krequest;
 
+	if(request == NULL){
+		HISI_FB_ERR("request is null pointer\n");
+		return -1;
+	}
+
 	memset(&krequest, 0, sizeof(esm_hld_ioctl_get_code_phys_addr));
 	krequest.returned_status = HL_DRIVER_FAILED;
 	/*krequest.returned_phys_addr = esm->code_base;
@@ -288,6 +296,11 @@ static long cmd_get_data_phys_addr(esm_device *esm, esm_hld_ioctl_get_data_phys_
 {
 	long ret = 0;
 	esm_hld_ioctl_get_data_phys_addr krequest;
+
+	if(request == NULL){
+		HISI_FB_ERR("request is null pointer\n");
+		return -1;
+	}
 
 	memset(&krequest, 0, sizeof(esm_hld_ioctl_get_data_phys_addr));
 	krequest.returned_status = HL_DRIVER_FAILED;
@@ -314,6 +327,11 @@ static long cmd_get_data_size(esm_device *esm, esm_hld_ioctl_get_data_size *requ
 	long ret = 0;
 	esm_hld_ioctl_get_data_size krequest;
 
+	if(request == NULL){
+		HISI_FB_ERR("request is null pointer\n");
+		return -1;
+	}
+
 	memset(&krequest, 0, sizeof(esm_hld_ioctl_get_data_size));
 	krequest.returned_status = HL_DRIVER_FAILED;
 	/*krequest.returned_data_size = esm->data_size;
@@ -338,6 +356,11 @@ static long cmd_hpi_read(esm_device *esm, esm_hld_ioctl_hpi_read *request)
 {
 	long ret = 0;
 	esm_hld_ioctl_hpi_read krequest;
+
+	if((esm == NULL) || (request == NULL)){
+		HISI_FB_ERR("esm or request is null pointer\n");
+		return -1;
+	}
 
 	memset(&krequest, 0, sizeof(esm_hld_ioctl_hpi_read));
 	ret = copy_from_user(&krequest, request, sizeof(esm_hld_ioctl_hpi_read));
@@ -390,6 +413,11 @@ static long cmd_hpi_write(esm_device *esm, esm_hld_ioctl_hpi_write *request)
 {
 	long ret = 0;
 	esm_hld_ioctl_hpi_write krequest;
+
+	if((esm == NULL) || (request == NULL)){
+		HISI_FB_ERR("esm or request is null pointer\n");
+		return -1;
+	}
 
 	memset(&krequest, 0, sizeof(esm_hld_ioctl_hpi_write));
 	ret = copy_from_user(&krequest, request, sizeof(esm_hld_ioctl_hpi_write));
@@ -455,6 +483,11 @@ static long cmd_data_read(esm_device *esm, esm_hld_ioctl_data_read *request)
 	long ret = 0;
 	esm_hld_ioctl_data_read krequest;
 
+	if((esm == NULL) || (request == NULL)){
+		HISI_FB_ERR("esm or request is null pointer\n");
+		return -1;
+	}
+
 	memset(&krequest, 0, sizeof(esm_hld_ioctl_data_read));
 	ret = copy_from_user(&krequest, request, sizeof(esm_hld_ioctl_data_read));
 	if (ret) {
@@ -519,6 +552,11 @@ static long cmd_data_write(esm_device *esm, esm_hld_ioctl_data_write *request)
 	long ret = 0;
 	esm_hld_ioctl_data_write krequest;
 
+	if((esm == NULL) || (request == NULL)){
+		HISI_FB_ERR("esm or request is null pointer\n");
+		return -1;
+	}
+
 	memset(&krequest, 0, sizeof(esm_hld_ioctl_data_write));
 	ret = copy_from_user(&krequest, request, sizeof(esm_hld_ioctl_data_write));
 	if (ret) {
@@ -582,6 +620,11 @@ static long cmd_data_set(esm_device *esm, esm_hld_ioctl_data_set *request)
 	long ret = 0;
 	esm_hld_ioctl_data_set krequest;
 
+	if((esm == NULL) || (request == NULL)){
+		HISI_FB_ERR("esm or request is null pointer\n");
+		return -1;
+	}
+
 	memset(&krequest, 0, sizeof(esm_hld_ioctl_data_set));
 	ret = copy_from_user(&krequest, request, sizeof(esm_hld_ioctl_data_set));
 	if (ret) {
@@ -642,6 +685,11 @@ static long cmd_esm_open(struct file *f, esm_hld_ioctl_esm_open *request)
 	int ret_val = HL_DRIVER_SUCCESS;
 	esm_hld_ioctl_esm_open krequest;
 	long ret = 0;
+
+	if((f == NULL) || (request == NULL)){
+		HISI_FB_ERR("f or request is null pointer\n");
+		return -1;
+	}
 
 	memset(&krequest, 0, sizeof(esm_hld_ioctl_esm_open));
 	ret = copy_from_user(&krequest, request, sizeof(esm_hld_ioctl_esm_open));
@@ -815,6 +863,11 @@ static long cmd_esm_start(esm_device *esm, esm_hld_ioctl_esm_start *request)
 	long ret = 0;
 	esm_hld_ioctl_esm_start krequest;
 
+	if(request == NULL){
+		HISI_FB_ERR("request is null pointer\n");
+		return -1;
+	}
+
 	memset(&krequest, 0, sizeof(esm_hld_ioctl_esm_start));
 	ret = copy_from_user(&krequest, request, sizeof(esm_hld_ioctl_esm_start));
 	if (ret) {
@@ -835,31 +888,30 @@ static long cmd_esm_start(esm_device *esm, esm_hld_ioctl_esm_start *request)
 		case 0:
 			//set I_px_gpio_in[0] when boot up esm
 			HISI_FB_INFO("%s start esm!\n", MY_TAG);
-			g_hdcp_mode = 2;
 			krequest.returned_status = atfd_hisi_service_access_register_smc(ACCESS_REGISTER_FN_MAIN_ID_HDCP,
 										DSS_HDCP22_ENABLE, 1, (u64)ACCESS_REGISTER_FN_SUB_ID_HDCP_CTRL);
 			break;
 		case 1:
 			HISI_FB_INFO("%s set HDCP1.3 (%d)\n", MY_TAG, krequest.value);
-			if(krequest.value == 2)
-			{
-			    link_error_count=0;
-			    HDCP_Stop_Polling_task(0);
-			    g_hdcp_mode = 0;
-			}
-			else
-			{
-			    g_hdcp_mode = 3;
-			}
 			krequest.returned_status = atfd_hisi_service_access_register_smc(ACCESS_REGISTER_FN_MAIN_ID_HDCP,
 										DSS_HDCP13_ENABLE, krequest.value, (u64)ACCESS_REGISTER_FN_SUB_ID_HDCP_CTRL);
 			break;
 		case 2:
 			HISI_FB_INFO("%s Polling HDCP1.3 state...\n", MY_TAG);
 			krequest.returned_status = HL_DRIVER_SUCCESS;
-		      if(g_hdcp_mode == 3)
-		      {
-			    krequest.returned_status = HDCP13_WaitAuthenticationStop();
+			break;
+		case 3:	//start hdcp polling thread to check hdcp enable or not
+			krequest.returned_status = HL_DRIVER_SUCCESS;
+			if(krequest.value == HDCP_CHECK_STOP) {
+				HISI_FB_INFO("stop hdcp polling\n");
+				HDCP_Stop_Polling_task(0);
+			} else {
+				if(krequest.value == HDCP_CHECK_DISABLE) {
+					HISI_FB_INFO("%s start polling to check hdcp disable...\n", MY_TAG);
+				} else {
+					HISI_FB_INFO("%s start polling to check hdcp enable...\n", MY_TAG);
+				}
+				krequest.returned_status = HDCP_CheckEnable(krequest.value);
 			}
 			break;
 		default:
@@ -881,6 +933,11 @@ static long cmd_get_te_info(esm_device *esm, esm_hld_ioctl_get_te_info*request)
 	long ret = 0;
 	esm_hld_ioctl_get_te_info krequest;
 	uint64_t temp;
+
+	if(request == NULL){
+		HISI_FB_ERR("request is null pointer\n");
+		return -1;
+	}
 
 	memset(&krequest, 0, sizeof(esm_hld_ioctl_get_te_info));
 	ret = copy_from_user(&krequest, request, sizeof(esm_hld_ioctl_get_te_info));
@@ -943,6 +1000,11 @@ static long cmd_set_hdcp_state(esm_device *esm, esm_hld_ioctl_state_set *request
 	long ret = 0;
 	esm_hld_ioctl_state_set krequest;
 
+	if(request == NULL){
+		HISI_FB_ERR("request is null pointer\n");
+		return -1;
+	}
+
 	memset(&krequest, 0, sizeof(esm_hld_ioctl_state_set));
 	ret = copy_from_user(&krequest, request, sizeof(esm_hld_ioctl_state_set));
 	if (ret) {
@@ -984,6 +1046,11 @@ int get_hdcp_state(uint32_t *state)
 static int device_open(struct inode *inode, struct file *filp)
 {
 	HISI_FB_INFO( "%sDevice opened.\n", MY_TAG);
+
+	if(filp == NULL){
+		HISI_FB_ERR("filp is null pointer\n");
+		return -1;
+	}
 
 	//
 	// No associated ESM device yet.

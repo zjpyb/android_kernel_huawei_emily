@@ -217,7 +217,7 @@ extern "C" {
 #define WLAN_CL_KEEPALIVE_TIME                  (20*1000) /* P2P CL发送keepalive null帧间隔,避免CL被GO pvb唤醒,P2P cl 20s */
 
 /* STA TBTT中断不产生时，驱动linkloss保护机制,单位ms */
-#define WLAN_STA_TBTT_PROTECT_TIME             (60 * 1000)
+#define WLAN_STA_TBTT_PROTECT_TIME             (30 * 1000)
 
 /*****************************************************************************
   2.1.3 STA断网功能
@@ -383,6 +383,8 @@ extern "C" {
 #define WLAN_TX_PROT_TIMEOUT                    6000
 #endif
 
+#define WLAN_BAR_SEND_TIMEOUT                   500
+
 /* 支持的建立rx ba 的最大个数 */
 #define WLAN_MAX_RX_BA                      32
 
@@ -455,6 +457,8 @@ extern "C" {
         Notes: 辅路只支持2.4G规格可以减小
 *****************************************************************************/
 
+/* 描述符队列初始化参数 考虑到并发扫描等场景不期望第一拍挂太多资源 */
+#define HAL_INIT_RX_BUFFS                  32
 /* 接收描述符个数的宏定义 主路 hal device */
 /* 小包数据接收描述符队列中描述符最大个数 */
 #define HAL_SMALL_RX_MAX_BUFFS             52
@@ -483,6 +487,11 @@ extern "C" {
 
 
 #define HAL_NORMAL_RX_MIN_BUFFS            24
+
+#define HAL_ADD_DSCR_FREE_CNT_THRES        16
+#define HAL_ADD_DSCR_DVALUE_TO_THRES_MIN   8
+#define HAL_ADD_DSCR_DVALUE_TO_THRES_MAX   24
+#define HAL_ADD_RX_DSCR_THRES              32
 
 /*****************************************************************************
   2.5.8 自动调频
@@ -611,7 +620,7 @@ extern "C" {
 #define WLAN_2G_DYN_POW_UPPER_RANGE    10
 #endif
 #define WLAN_2G_DYN_POW_LOWER_RANGE    100
-#define WLAN_2G_DYN_POW_RANGE_MIN      100
+#define WLAN_2G_DYN_POW_RANGE_MIN      50
 
 /* 5G 芯片动态功率动态调整范围 */
 #define WLAN_5G_DYN_POW_RANGE_MIN      50
@@ -765,9 +774,6 @@ extern "C" {
 
 /* 是否支持11n txbf */
 #define WLAN_HAL1_11N_TXBF_IS_EN    OAL_FALSE
-/* 是否支持控制帧双通道发送 */
-#define WLAN_HAL1_CONTROL_FRM_TX_DOUBLE_CHAIN_FLAG    OAL_FALSE
-
 
 /* HAL DEV1是否support tx stbc */
 #define WLAN_HAL1_TX_STBC_IS_EN     OAL_FALSE
@@ -976,7 +982,7 @@ extern "C" {
 #define BT_POSTPREEMPT_TIMEOUT_US           (150)
 #define BT_ABORT_RETRY_TIMES_MAX            (10)
 #define BT_ABORT_RETRY_TIMES_MIN            (1)
-#define BT_ABORT_RETRY_TIMES_DETECT_INVALID (3)  /* abort timers连续MIN异常判定门限 */
+#define BT_ABORT_RETRY_TIMES_DETECT_INVALID (3)
 
 #define BT_PREEMPT_TIMEOUT_US               (50)
 #define BLE_PREEMPT_TIMEOUT_US              (10)

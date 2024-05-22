@@ -1059,21 +1059,14 @@ VOS_UINT32 AT_RcvImsaImsRegDomainQryCnf(VOS_VOID *pMsg)
     /* 复位状态 */
     AT_STOP_TIMER_CMD_READY(ucIndex);
 
-    /* 判断返回值是否合法 */
-    if (IMSA_AT_IMS_REG_DOMAIN_TYPE_BUTT <= (pstImsRegDomainCnf->enImsRegDomain))
-    {
-        ulResult = AT_ERROR;
-    }
-    else
-    {
-       gstAtSendData.usBufLen += (VOS_UINT16)At_sprintf(AT_CMD_MAX_LEN,
-                                                       (VOS_CHAR *)pgucAtSndCodeAddr,
-                                                       (VOS_CHAR *)pgucAtSndCodeAddr,
-                                                       "%s: %d",
-                                                       g_stParseContext[ucIndex].pstCmdElement->pszCmdName,
-                                                       pstImsRegDomainCnf->enImsRegDomain);
-        ulResult= AT_OK;
-    }
+    /* 无效值修改为255后，删除返回值是否合法判断 */
+    gstAtSendData.usBufLen += (VOS_UINT16)At_sprintf(AT_CMD_MAX_LEN,
+        (VOS_CHAR *)pgucAtSndCodeAddr,
+        (VOS_CHAR *)pgucAtSndCodeAddr,
+        "%s: %d",
+        g_stParseContext[ucIndex].pstCmdElement->pszCmdName,
+        pstImsRegDomainCnf->enImsRegDomain);
+    ulResult = AT_OK;
 
     At_FormatResultData(ucIndex, ulResult);
 

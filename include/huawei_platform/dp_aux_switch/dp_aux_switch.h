@@ -26,7 +26,7 @@ enum aux_switch_channel_type get_aux_switch_channel(void);
 static inline void dp_aux_switch_op(uint32_t value) {}
 static inline void dp_aux_uart_switch_enable(void) {}
 static inline void dp_aux_uart_switch_disable(void) {}
-static enum aux_switch_channel_type get_aux_switch_channel(void) {return channel_superswitch;}
+static inline enum aux_switch_channel_type get_aux_switch_channel(void) {return channel_superswitch;}
 #endif
 
 #endif // __DP_AUX_SWITCH_H__

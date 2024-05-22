@@ -1128,7 +1128,7 @@ unsigned int hisi_noc_clock_enable_hi6250(struct hisi_noc_device *noc_dev,
 			continue;
 
 		clock_reg =
-		    (void __iomem *)((unsigned long)noc_dev->pcrgctrl_base +
+		    (void __iomem *)(uintptr_t)((uintptr_t)noc_dev->pcrgctrl_base +
 					node->crg_clk[i].offset);
 		reg_value = readl_relaxed(clock_reg);
 

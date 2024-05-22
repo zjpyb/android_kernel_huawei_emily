@@ -15,6 +15,7 @@
 
 static FSC_BOOL g_vbus = 0;
 static FSC_BOOL g_pd_notified = FALSE;
+static FSC_BOOL g_vbus_only_reported = FALSE;
 
 //open vbus and switch to host
 extern FSC_BOOL			PolicyHasContract;
@@ -24,6 +25,7 @@ extern USBTypeCPort            PortType;
 struct pd_dpm_vbus_state g_vbus_state;
 extern USBTypeCCurrent         SinkCurrent;
 extern DeviceReg_t             Registers;
+extern TIMER                 VbusOnlyTimer;
 
 int notify_thread_source_vbus(void* vbus_state)
 {
@@ -401,7 +403,8 @@ void platform_notify_debug_accessory_snk(CC_ORIENTATION orientation)
     }
 
     pd_dpm_handle_pe_event(PD_DPM_PE_EVT_TYPEC_STATE, (void*)&tc_state);
-    FSC_PRINT("FUSB %s - \n", __func__);
+    FSC_PRINT("FUSB %s, sourceOrSink = %s\n", __func__,
+        (sourceOrSink == SOURCE) ? "SOURCE" : "SINK");
 }
 
 void platform_notify_audio_accessory(CC_ORIENTATION orientation)
@@ -463,24 +466,29 @@ int notify_thread_sink_vbus(void* vbus_state)
 void platform_notify_pd_contract(FSC_BOOL contract, FSC_U32 PDvoltage, FSC_U32 PDcurrent, FSC_U8 externally_powered_bit)
 {
     // Optional: Notify platform of PD contract
-    FSC_PRINT("FUSB  %s, contract=%d - PD Contract: %dmV/%dmA; g_vbus=%d,sourceOrSink: %s, Externally Powered: %d\n", __func__, contract, PDvoltage * 50, PDcurrent *10, g_vbus, (sourceOrSink == SOURCE) ? "SOURCE" : "SINK", externally_powered_bit);
+    FSC_PRINT("FUSB  %s, contract=%d - PD Contract: %dmV/%dmA; g_vbus=%d,sourceOrSink: %s, Externally Powered: %d\n", __func__,  \
+        contract, PDvoltage * 50, PDcurrent *10, g_vbus, (sourceOrSink == SOURCE) ? "SOURCE" : "SINK", externally_powered_bit);
+
     if (contract)
     {
         g_vbus_state.vbus_type = TCP_VBUS_CTRL_PD_DETECT;
         g_vbus_state.mv = PDvoltage * 50;
         g_vbus_state.ma = PDcurrent * 10;
-	g_vbus_state.ext_power = externally_powered_bit;
+        g_vbus_state.ext_power = externally_powered_bit;
+
         if (sourceOrSink == SINK)
         {
             kthread_run(notify_thread_sink_vbus, (void*)&g_vbus_state, "notitfy_vbus");
         }
     }
-    else {
+    else
+    {
         if (sourceOrSink == SINK)
         {
             pd_dpm_handle_pe_event(PD_DPM_PE_EVT_DIS_VBUS_CTRL, NULL);
         }
     }
+
     FSC_PRINT("FUSB  %s - PD Contract: %dmV/%dmA; g_vbus=%d,sourceOrSink: %s\n", __func__, PDvoltage * 50, PDcurrent *10, g_vbus, (sourceOrSink == SOURCE) ? "SOURCE" : "SINK");
 }
 
@@ -490,8 +498,11 @@ void platform_notify_attached_vbus_only(void)
 	memset(&tc_state, 0, sizeof(tc_state));
 	tc_state.new_state = PD_DPM_TYPEC_ATTACHED_VBUS_ONLY;
 
-	pd_dpm_handle_pe_event(PD_DPM_PE_EVT_TYPEC_STATE, (void*)&tc_state);
-	FSC_PRINT("FUSB %s - platform_notify_attached_vbus_only\n", __func__);
+	if (!g_vbus_only_reported && Registers.Status.VBUSOK) {
+		g_vbus_only_reported = TRUE;
+		pd_dpm_handle_pe_event(PD_DPM_PE_EVT_TYPEC_STATE, (void*)&tc_state);
+		FSC_PRINT("FUSB %s - platform_notify_attached_vbus_only\n", __func__);
+	}
 }
 
 void platform_notify_unattached_vbus_only(void)
@@ -500,8 +511,12 @@ void platform_notify_unattached_vbus_only(void)
 	memset(&tc_state, 0, sizeof(tc_state));
 	tc_state.new_state = PD_DPM_TYPEC_UNATTACHED_VBUS_ONLY;
 
-	pd_dpm_handle_pe_event(PD_DPM_PE_EVT_TYPEC_STATE, (void*)&tc_state);
-	FSC_PRINT("FUSB %s - platform_notify_unattached_vbus_only\n", __func__);
+	if (g_vbus_only_reported)
+	{
+		g_vbus_only_reported = FALSE;
+		pd_dpm_handle_pe_event(PD_DPM_PE_EVT_TYPEC_STATE, (void*)&tc_state);
+		FSC_PRINT("FUSB %s - platform_notify_unattached_vbus_only\n", __func__);
+	}
 }
 /*******************************************************************************
 * Function:        platform_notify_pd_state
@@ -543,7 +558,8 @@ void platform_notify_data_role(FSC_BOOL PolicyIsDFP)
 {
 	// Optional: Notify platform of data role change
     struct pd_dpm_swap_state swap_state;
-	swap_state.new_role = (sourceOrSink == SOURCE) ? PD_ROLE_DFP : PD_ROLE_UFP;
+    swap_state.new_role = (PolicyIsDFP == (FSC_BOOL)SOURCE) ?
+        PD_ROLE_DFP : PD_ROLE_UFP;
     pd_dpm_handle_pe_event(PD_DPM_PE_EVT_DR_SWAP, (void *)&swap_state);
 }
 
@@ -639,7 +655,7 @@ void platform_start_timer(TIMER *timer, FSC_U32 timeout)
         pr_err("FUSB %s - Error: Chip structure is NULL!\n", __func__);
         return;
     }
-    FSC_PRINT("FUSB %s - Starting timer\n", __func__);
+    FSC_PRINT("FUSB %s - Starting timer timer->id = %d\n", __func__, timer->id);
     timer->expired = FALSE;
     switch(timer->id)
     {
@@ -660,6 +676,9 @@ void platform_start_timer(TIMER *timer, FSC_U32 timeout)
             break;
         case LOOP_RESET_TIMER:
             fusb_StartTimers(&chip->timer_loopresettimer, timeout);
+            break;
+        case VBUS_ONLY_TIMER:
+            fusb_StartTimers(&chip->timer_vbusonlytimer, timeout);
             break;
         default:
             break;
@@ -696,6 +715,9 @@ void platform_stop_timer(TIMER *timer)
             break;
         case LOOP_RESET_TIMER:
             fusb_StopTimers(&chip->timer_loopresettimer);
+            break;
+        case VBUS_ONLY_TIMER:
+            fusb_StopTimers(&chip->timer_vbusonlytimer);
             break;
         default:
             break;
@@ -812,6 +834,20 @@ FSC_BOOL platform_discover_svid_supported(void)
 
     return chip->discover_svid_supported;
 }
+FSC_U32 platform_sink_pdo_number(void)
+{
+    struct fusb30x_chip* chip = NULL;
+
+    chip = fusb30x_GetChip();
+    if(!chip)
+    {
+        pr_err("FUSB %s - Error: Chip structure is NULL!\n", __func__);
+        return 0;
+    }
+
+    return chip->sink_pdo_number;
+}
+
 void platform_double_56k_cable(void)
 {
     struct pd_dpm_typec_state typec_state;
@@ -820,3 +856,15 @@ void platform_double_56k_cable(void)
     FSC_PRINT("FUSB %s Enter\n", __func__);
     pd_dpm_handle_pe_event(PD_DPM_PE_EVT_TYPEC_STATE, &typec_state);
 }
+
+#ifdef FSC_HAVE_CUSTOM_SRC2
+void platform_double_22k_cable(void)
+{
+	struct pd_dpm_typec_state typec_state = {
+		.new_state = PD_DPM_TYPEC_ATTACHED_CUSTOM_SRC2,
+	};
+
+	FSC_PRINT("FUSB %s Enter\n", __func__);
+	pd_dpm_handle_pe_event(PD_DPM_PE_EVT_TYPEC_STATE, &typec_state);
+}
+#endif /* FSC_HAVE_CUSTOM_SRC2 */

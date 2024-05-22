@@ -238,6 +238,10 @@ int atmel_get_rawdata_test(struct mxt_data *data)
 	}
 
 	Data_count = data->T37_buf_size / sizeof(int);
+	if(Data_count == 0) {
+		TS_LOG_ERR("%s :Data_count result error\n", __func__);
+		return 0;
+	}
 	Data_ave = DataSum / Data_count;
 	data->refs_delta_data.MaxNum = Data_Max;
 	data->refs_delta_data.MinNum = Data_Min;
@@ -306,6 +310,10 @@ int atmel_get_refs_or_deltas_data_test(struct mxt_data *data)
 	}
 
 	Data_count = data->T37_buf_size / sizeof(int);
+	if(Data_count == 0) {
+		TS_LOG_ERR("%s, Data_count data invalid\n", __func__);
+		return 0;
+	}
 	Data_ave = DataSum / Data_count;
 	data->refs_delta_data.MaxNum = Data_Max;
 	data->refs_delta_data.MinNum = Data_Min;
@@ -470,7 +478,6 @@ int atmel_T37_fetch(struct mxt_data *data, u8 mode)
 						break;
 					case 2://page 2
 						chunk_len = (size_t)(data->info->matrix_ysize) * 2;
-						break;
 					default:
 						break;
 				}

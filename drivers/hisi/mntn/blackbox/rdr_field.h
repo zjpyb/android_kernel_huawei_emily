@@ -25,8 +25,8 @@
 #endif
 
 #define RDR_PRODUCT "PRODUCT_NAME"	/* "hi3630_udp" */
-#define RDR_VERSION             ((RDR_SMP_FLAG << 16) | (0x203 << 0))
-						    /* v2.02 2018.4.11 */
+#define RDR_VERSION             ((RDR_SMP_FLAG << 16) | (0x204 << 0))
+						    /* v2.04 2018.12.05 */
 #define RDR_BASEINFO_SIZE  0x200
 
 enum RDR_AREA_LIST {
@@ -145,7 +145,7 @@ int rdr_field_init(void);
 void rdr_set_area_info(int index, u32 size);
 void rdr_save_args(u32 modid, u32 arg1, u32 arg2);
 void rdr_show_base_info(int flag);
-void rdr_fill_edata(struct rdr_exception_info_s *e, char *date);
+void rdr_fill_edata(struct rdr_exception_info_s *e,const char *date);
 int rdr_get_areainfo(enum RDR_AREA_LIST area,
 		     struct rdr_register_module_result *retinfo);
 #endif /* End #define __BB_FIELD_H__ */

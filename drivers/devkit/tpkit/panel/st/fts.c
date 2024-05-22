@@ -132,6 +132,9 @@ static int fts_command(struct fts_ts_info *info, unsigned char cmd)
 	regAdd = cmd;
 
 	ret = fts_writeCmd(&regAdd, sizeof (regAdd)); // 0 = ok
+	if (ret < 0)
+		TS_LOG_ERR("%s Cannot send system resest command %08X\n",
+			__func__, ret);
 
 	TS_LOG_INFO( "%s Issued command 0x%02x, return value %08X\n", __func__, cmd, ret);
 
@@ -348,11 +351,10 @@ static int fts_mode_handler(struct fts_ts_info *info,int force)
 			ret=enterGestureMode(isSystemResettedDown());
 			if (ret >= OK) {
 				info->mode |= FEAT_GESTURE;
+			} else {
+				TS_LOG_ERR("%s: enterGestureMode failed! %08X recovery in senseOff...\n", __func__, ret);
+				res = ret;
 			}
-			else {
-				TS_LOG_ERR("%s: enterGestureMode failed! %08X recovery in senseOff...\n", __func__,ret);
-			}
-			res|=ret;
 		}
 #endif
 		if(info->mode != (FEAT_GESTURE|MODE_NOTHING) || info->gesture_enabled==0){
@@ -370,10 +372,10 @@ static int fts_mode_handler(struct fts_ts_info *info,int force)
 		if((info->glove_enabled == FEAT_ENABLE && isSystemResettedUp()) || force==1){
 			TS_LOG_INFO( "%s: Glove Mode setting...\n", __func__);
 			ret=featureEnableDisable(info->glove_enabled,FEAT_GLOVE);
-			if(ret<OK){
-				TS_LOG_ERR("%s: error during setting GLOVE_MODE! %08X\n", __func__,ret);
+			if (ret < OK) {
+				TS_LOG_ERR("%s: error during setting GLOVE_MODE! %08X\n", __func__, ret);
+				res = ret;
 			}
-			res |=ret;
 
 			if(ret>=OK && info->glove_enabled == FEAT_ENABLE){
 				info->mode |= FEAT_GLOVE;
@@ -389,10 +391,10 @@ static int fts_mode_handler(struct fts_ts_info *info,int force)
 		if((info->cover_enabled == FEAT_ENABLE && isSystemResettedUp()) || force==1){
 				TS_LOG_INFO( "%s: Cover Mode setting...\n", __func__);
 				ret=featureEnableDisable(info->cover_enabled,FEAT_COVER);
-				if(ret<OK){
-					TS_LOG_ERR("%s: error during setting COVER_MODE! %08X\n", __func__,ret);
+				if (ret < OK) {
+					TS_LOG_ERR("%s: error during setting COVER_MODE! %08X\n", __func__, ret);
+					res = ret;
 				}
-				res |=ret;
 
 			if(ret>=OK && info->cover_enabled == FEAT_ENABLE){
 					info->mode |= FEAT_COVER;
@@ -407,10 +409,10 @@ static int fts_mode_handler(struct fts_ts_info *info,int force)
 		if((info->charger_enabled == FEAT_ENABLE && isSystemResettedUp()) || force==1){
 			TS_LOG_INFO( "%s: Charger Mode setting...\n", __func__);
 			ret=featureEnableDisable(info->charger_enabled,FEAT_CHARGER);
-			if(ret<OK){
-				TS_LOG_ERR("%s: error during setting CHARGER_MODE! %08X\n", __func__,ret);
+			if (ret < OK) {
+				TS_LOG_ERR("%s: error during setting CHARGER_MODE! %08X\n", __func__, ret);
+				res = ret;
 			}
-			res |=ret;
 
 			if(ret>=OK && info->charger_enabled == FEAT_ENABLE){
 				info->mode |= FEAT_CHARGER;
@@ -425,10 +427,10 @@ static int fts_mode_handler(struct fts_ts_info *info,int force)
 		if((info->edge_rej_enabled == FEAT_ENABLE && isSystemResettedUp()) || force==1){
 			TS_LOG_INFO( "%s: Edge Rejection Mode setting...\n", __func__);
 			ret=featureEnableDisable(info->edge_rej_enabled,FEAT_EDGE_REJECTION);
-			if(ret<OK){
-				TS_LOG_ERR("%s: error during setting EDGE_REJECTION_MODE! %08X\n", __func__,ret);
+			if (ret < OK) {
+				TS_LOG_ERR("%s: error during setting EDGE_REJECTION_MODE! %08X\n", __func__, ret);
+				res = ret;
 			}
-			res |=ret;
 
 			if(ret>=OK && info->edge_rej_enabled == FEAT_ENABLE){
 				info->mode |= FEAT_EDGE_REJECTION;
@@ -442,10 +444,10 @@ static int fts_mode_handler(struct fts_ts_info *info,int force)
 		if((info->corner_rej_enabled == FEAT_ENABLE && isSystemResettedUp()) || force==1){
 			TS_LOG_INFO( "%s: Corner rejection Mode setting...\n", __func__);
 			ret=featureEnableDisable(info->corner_rej_enabled,FEAT_CORNER_REJECTION);
-			if(ret<OK){
-				TS_LOG_ERR("%s: error during setting CORNER_REJECTION_MODE! %08X\n", __func__,ret);
+			if (ret < OK) {
+				TS_LOG_ERR("%s: error during setting CORNER_REJECTION_MODE! %08X\n", __func__, ret);
+				res = ret;
 			}
-				res |=ret;
 
 			if(ret>=OK && info->corner_rej_enabled == FEAT_ENABLE){
 				info->mode |= FEAT_CORNER_REJECTION;
@@ -460,10 +462,10 @@ static int fts_mode_handler(struct fts_ts_info *info,int force)
 		if((info->edge_palm_rej_enabled == FEAT_ENABLE && isSystemResettedUp()) || force==1){
 			TS_LOG_INFO( "%s: Edge Palm rejection Mode setting...\n", __func__);
 			ret=featureEnableDisable(info->edge_palm_rej_enabled,FEAT_EDGE_PALM_REJECTION);
-			if(ret<OK){
-				TS_LOG_ERR("%s: error during setting EDGE_PALM_REJECTION_MODE! %08X\n", __func__,ret);
+			if (ret < OK) {
+				TS_LOG_ERR("%s: error during setting EDGE_PALM_REJECTION_MODE! %08X\n", __func__, ret);
+				res = ret;
 			}
-				res |=ret;
 
 			if(ret>=OK && info->edge_palm_rej_enabled == FEAT_ENABLE){
 				info->mode |= FEAT_EDGE_PALM_REJECTION;
@@ -475,7 +477,11 @@ static int fts_mode_handler(struct fts_ts_info *info,int force)
 		}
 #endif
 		TS_LOG_INFO("%s: Sense ON\n", __func__);
-		res |=fts_command(info, FTS_CMD_MS_MT_SENSE_ON);
+		ret = fts_command(info, FTS_CMD_MS_MT_SENSE_ON);
+		if (ret < OK) {
+			TS_LOG_ERR("%s: errorfts_command! %08X\n", __func__, ret);
+			res = ret;
+		}
 		info->mode |= MODE_SENSEON;
 
 		setSystemResettedUp(0);
@@ -784,13 +790,13 @@ static void fts_event_handler(struct fts_ts_info *info,
 static int cx_crc_check(void)
 {
 	unsigned char regAdd1[3] = {FTS_CMD_HW_REG_R, ADDR_CRC_BYTE0, ADDR_CRC_BYTE1};
-	unsigned char val[2];
+	unsigned char val[2] = {0};
 	unsigned char crc_status;
 	int res;
 #ifndef FTM3_CHIP
 	u8 cmd[4] = { FTS_CMD_HW_REG_W, 0x00, 0x00, SYSTEM_RESET_VALUE };
 	int event_to_search[2] = {(int)EVENTID_ERROR_EVENT, (int)EVENT_TYPE_CHECKSUM_ERROR} ;
-	u8 readData[FIFO_EVENT_SIZE];
+	u8 readData[FIFO_EVENT_SIZE] = {0};
 #endif
 
 	res = fts_readCmd(regAdd1, sizeof (regAdd1), val, 2);		//read 2 bytes because the first one is a dummy byte!
@@ -862,9 +868,12 @@ static int generate_fw_name(int force, char *fw_name)
 static int fts_enable_force_key(void)
 {
 	char cmd = 0x9B; /* force ker enable cmd */
-
+	int ret = 0;
 	TS_LOG_INFO("%s: force key enable\n", __func__);
-	fts_writeCmd(&cmd, 1);
+	ret = fts_writeCmd(&cmd, 1);
+	if (ret < 0)
+		TS_LOG_ERR("%s Cannot send system resest command %08X\n",
+			__func__, ret);
 	return 0;
 }
 
@@ -875,7 +884,7 @@ static int fts_fw_update_auto(struct fts_ts_info *info, int force)
 #ifndef FTM3_CHIP
 	u8 cmd[4] = { FTS_CMD_HW_REG_W, 0x00, 0x00, SYSTEM_RESET_VALUE };
 	int event_to_search[2] = {(int)EVENTID_ERROR_EVENT, (int)EVENT_TYPE_CHECKSUM_ERROR} ;
-	u8 readData[FIFO_EVENT_SIZE];
+	u8 readData[FIFO_EVENT_SIZE] = {0};
 	int flag_init = 0;
 #endif
 	int retval = 0;
@@ -987,483 +996,7 @@ static int fts_interrupt_install(struct fts_ts_info *info)
 	return error;
 }
 
-static ssize_t fts_strength_frame_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
-{
-	char *p = (char *)buf;
 
-	sscanf(p, "%d ", &typeOfComand[0]);
-
-	TS_LOG_INFO("%s: Type of Strength Frame selected: %d\n", __func__, typeOfComand[0]);
-	return count;
-}
-
-static ssize_t fts_strength_frame_show(struct device *dev, struct device_attribute *attr, char *buf)
-{
-	MutualSenseFrame frame;
-	int res= ERROR_OP_NOT_ALLOW, count, j, size =6*2;
-	u16 type = 0;
-	char *all_strbuff = NULL;
-	char buff[CMD_STR_LEN] = {0};
-	struct fts_ts_info *info = fts_get_info();
-
-	frame.node_data =NULL;
-
-	res=fts_disableInterrupt();
-		if(res<OK)
-		goto END;
-
-	res = senseOn();
-	if(res<OK){
-		TS_LOG_ERR("%s: could not start scanning! %08X\n", __func__, res);
-		goto END;
-	}
-	mdelay(WAIT_FOR_FRESH_FRAMES);
-
-	res = senseOff();
-	if(res<OK){
-		TS_LOG_ERR("%s: could not finish scanning! %08X\n", __func__, res);
-		goto END;
-	}
-
-	mdelay(WAIT_AFTER_SENSEOFF);
-	flushFIFO();
-
-	switch(typeOfComand[0]){
-	case 1:
-		type = ADDR_NORM_TOUCH;
-		break;
-	default:
-		TS_LOG_ERR("%s: Strength type %d not valid! %08X\n", __func__, typeOfComand[0], ERROR_OP_NOT_ALLOW);
-		res = ERROR_OP_NOT_ALLOW;
-		goto END;
-	}
-
-	res = getMSFrame(type, &frame, 0);
-	if(res<OK){
-		TS_LOG_ERR("%s: could not get the frame! %08X\n",__func__, res);
-		goto END;
-	}else{
-		size += (res * 6);
-		TS_LOG_INFO("%s The frame size is %d words\n", __func__, res);
-		res = OK;
-		print_frame_short("MS Strength frame =", array1dTo2d_short(frame.node_data, frame.node_data_size,
-				frame.header.sense_node), frame.header.force_node, frame.header.sense_node);
-	}
-
-END:
-	flushFIFO();
-	fts_mode_handler(info,1);
-
-	all_strbuff = (char *)kmalloc(size*sizeof(char),GFP_KERNEL);
-
-	if(all_strbuff!=NULL) {
-		memset(all_strbuff, 0, size);
-		snprintf(buff, sizeof(buff), "%02X", 0xAA);
-		strncat(all_strbuff, buff, size);
-
-		snprintf(buff, sizeof (buff), "%08X", res);
-		strncat(all_strbuff, buff, size);
-
-		if (res >= OK) {
-			snprintf(buff, sizeof (buff), "%02X", (u8) frame.header.force_node);
-			strncat(all_strbuff, buff, size);
-
-			snprintf(buff, sizeof (buff), "%02X", (u8) frame.header.sense_node);
-			strncat(all_strbuff, buff, size);
-
-			for (j = 0; j < frame.node_data_size; j++) {
-				snprintf(buff, sizeof(buff), "%d,", frame.node_data[j]);
-				strncat(all_strbuff, buff, size);
-			}
-
-			kfree(frame.node_data);
-		}
-
-		snprintf(buff, sizeof (buff), "%02X", 0xBB);
-		strncat(all_strbuff, buff, size);
-
-		count = snprintf(buf, TSP_BUF_SIZE, "%s\n", all_strbuff);
-		kfree(all_strbuff);
-	} else {
-		TS_LOG_ERR("%s: Unable to allocate all_strbuff! %08X\n",
-				__func__,ERROR_ALLOC);
-	}
-
-	fts_enableInterrupt();
-	return count;
-
-}
-static ssize_t stm_fts_cmd_store(struct device *dev, struct device_attribute *attr,
-					const char *buf, size_t count)
-{
-	int n;
-	char *p = (char *) buf;
-
-	memset(typeOfComand, 0, CMD_STR_LEN * sizeof (u32));
-
-	TS_LOG_ERR("%s\n", __func__);
-	for (n = 0; n < (count + 1) / 3 && n < CMD_STR_LEN; n++) {
-		sscanf(p, "%02X ", &typeOfComand[n]);
-		p += 3;
-		TS_LOG_ERR("%s typeOfComand[%d] = %02X\n", __func__, n, typeOfComand[n]);
-
-	}
-
-	numberParameters = n;
-	TS_LOG_ERR("%s Number of Parameters = %d\n", __func__, numberParameters);
-	return count;
-}
-
-static ssize_t stm_fts_cmd_show(struct device *dev,
-	struct device_attribute *attr, char *buf)
-{
-	char buff[CMD_STR_LEN] = {0};
-	int res, j, doClean = 0, count;
-
-	int size = 20; /*default info len*/
-	u8 *all_strbuff = NULL;
-
-	MutualSenseData compData;
-	SelfSenseData comData;
-	MutualSenseFrame frameMS;
-	SelfSenseFrame frameSS;
-	u32 signature = 0;
-	/*
-	 * struct used for defining which test
-	 * perform during the production test
-	 */
-	TestToDo todoDefault;
-
-	todoDefault.MutualRaw = 1;
-	todoDefault.MutualRawGap = 0;
-	todoDefault.MutualCx1 = 0;
-	todoDefault.MutualCx2 = 0;
-	todoDefault.MutualCx2Adj = 0;
-	todoDefault.MutualCxTotal = 0;
-	todoDefault.MutualCxTotalAdj = 0;
-
-	todoDefault.MutualKeyRaw = 0;
-	todoDefault.MutualKeyCx1 = 0;
-	todoDefault.MutualKeyCx2 = 0;
-	todoDefault.MutualKeyCxTotal = 0;
-
-	todoDefault.SelfForceRaw = 1;
-	todoDefault.SelfForceRawGap = 0;
-	todoDefault.SelfForceIx1 = 0;
-	todoDefault.SelfForceIx2 = 0;
-	todoDefault.SelfForceIx2Adj = 0;
-	todoDefault.SelfForceIxTotal = 0;
-	todoDefault.SelfForceIxTotalAdj = 0;
-	todoDefault.SelfForceCx1 = 0;
-	todoDefault.SelfForceCx2 = 0;
-	todoDefault.SelfForceCx2Adj = 0;
-	todoDefault.SelfForceCxTotal = 0;
-	todoDefault.SelfForceCxTotalAdj = 0;
-
-	todoDefault.SelfSenseRaw = 1;
-	todoDefault.SelfSenseRawGap = 0;
-	todoDefault.SelfSenseIx1 = 0;
-	todoDefault.SelfSenseIx2 = 0;
-	todoDefault.SelfSenseIx2Adj = 0;
-	todoDefault.SelfSenseIxTotal = 0;
-	todoDefault.SelfSenseIxTotalAdj = 0;
-	todoDefault.SelfSenseCx1 = 0;
-	todoDefault.SelfSenseCx2 = 0;
-	todoDefault.SelfSenseCx2Adj = 0;
-	todoDefault.SelfSenseCxTotal = 0;
-	todoDefault.SelfSenseCxTotalAdj = 0;
-
-	if (numberParameters <= 0) {
-		TS_LOG_ERR("%s NO COMMAND SPECIFIED!!! do: 'echo [cmd_code] [args] > stm_fts_cmd' before looking for result!\n",
-				 __func__);
-		res = ERROR_OP_NOT_ALLOW;
-		goto END;
-
-	}
-
-	res = fts_disableInterrupt();
-	if (res < 0) {
-		TS_LOG_INFO("%s fts_disableInterrupt: %08X\n", __func__, res);
-		res = (res | ERROR_DISABLE_INTER);
-		goto END;
-	}
-	switch (typeOfComand[0]) {
-	/*ITO TEST*/
-	case 0x01:
-		res = production_test_ito(NULL);
-		break;
-	/*PRODUCTION TEST*/
-	case 0x00:
-		res = production_test_main(LIMITS_FILE, 1, 0, &todoDefault, INIT_MP,NULL,NULL);
-		break;
-
-	case 0x02:
-		if(numberParameters>=5){
-			signature = ((u8)typeOfComand[1])<<24 | ((u8)typeOfComand[2])<<16 |
-					((u8)typeOfComand[3])<<8 | ((u8)typeOfComand[4]) ;
-			TS_LOG_INFO("%s Signature to write = %08X\n", __func__, signature);
-			res = production_test_initialization(signature,NULL);
-			fts_system_reset();
-		}else{
-			TS_LOG_ERR("%s Wrong number of parameters... Missing Signature!\n", __func__);
-			res = ERROR_OP_NOT_ALLOW;
-		}
-		break;
-
-	case 0x20:
-		TS_LOG_INFO("%s Value of signature = %08X\n", __func__, ftsInfo.u32_mpPassFlag);
-		res = ftsInfo.u32_mpPassFlag;
-		break;
-	/*read mutual raw*/
-	case 0x13:
-		TS_LOG_INFO("%s Get 1 MS Frame\n", __func__);
-		res = getMSFrame2(MS_TOUCH_ACTIVE, &frameMS);
-		if (res < 0) {
-			TS_LOG_INFO("%s Error while taking the MS frame... %02X\n", __func__, res);
-
-		} else {
-			TS_LOG_INFO("%s The frame size is %d words\n", __func__, res);
-			size = (res * sizeof (short) + 8)*2;
-			/* set res to OK because if getMSFrame is
-			   successful res = number of words read
-			 */
-			res = OK;
-			print_frame_short("MS frame =", array1dTo2d_short(frameMS.node_data, frameMS.node_data_size, frameMS.header.sense_node), frameMS.header.force_node, frameMS.header.sense_node);
-		}
-		break;
-	/*read self raw*/
-	case 0x15:
-		TS_LOG_INFO("%s Get 1 SS Frame\n", __func__);
-		res = getSSFrame2(SS_TOUCH, &frameSS);
-
-		if (res < OK) {
-			TS_LOG_INFO("%s Error while taking the SS frame... %02X\n", __func__, res);
-
-		} else {
-			TS_LOG_INFO("%s The frame size is %d words\n", __func__, res);
-			size = (res * sizeof (short) + 8)*2+1;
-			/*
-			 * set res to OK because if getMSFrame is
-			 *  successful res = number of words read
-			 */
-			res = OK;
-			print_frame_short("SS force frame =", array1dTo2d_short(frameSS.force_data, frameSS.header.force_node, 1), frameSS.header.force_node, 1);
-			print_frame_short("SS sense frame =", array1dTo2d_short(frameSS.sense_data, frameSS.header.sense_node, frameSS.header.sense_node), 1, frameSS.header.sense_node);
-		}
-
-				break;
-
-	case 0x14: //read mutual comp data
-		TS_LOG_INFO("%s Get MS Compensation Data\n", __func__);
-		res = readMutualSenseCompensationData(MS_TOUCH_ACTIVE, &compData);
-
-		if (res < 0) {
-			TS_LOG_INFO("%s Error reading MS compensation data %02X\n", __func__, res);
-		} else {
-			TS_LOG_INFO("%s MS Compensation Data Reading Finished!\n", __func__);
-			size = ((compData.node_data_size + 9) * sizeof (u8))*2;
-			print_frame_u8("MS Data (Cx2) =", array1dTo2d_u8(compData.node_data, compData.node_data_size, compData.header.sense_node), compData.header.force_node, compData.header.sense_node);
-		}
-		break;
-
-	case 0x16: //read self comp data
-		TS_LOG_INFO("%s Get SS Compensation Data...\n", __func__);
-		res = readSelfSenseCompensationData(SS_TOUCH, &comData);
-		if (res < 0) {
-			TS_LOG_INFO("%s Error reading SS compensation data %02X\n", __func__, res);
-		} else {
-			TS_LOG_INFO("%s SS Compensation Data Reading Finished!\n", __func__);
-			size = ((comData.header.force_node + comData.header.sense_node)*2 + 12) * sizeof (u8)*2;
-			print_frame_u8("SS Data Ix2_fm = ", array1dTo2d_u8(comData.ix2_fm, comData.header.force_node, 1), comData.header.force_node, 1);
-			print_frame_u8("SS Data Cx2_fm = ", array1dTo2d_u8(comData.cx2_fm, comData.header.force_node, 1), comData.header.force_node, 1);
-			print_frame_u8("SS Data Ix2_sn = ", array1dTo2d_u8(comData.ix2_sn, comData.header.sense_node, comData.header.sense_node), 1, comData.header.sense_node);
-			print_frame_u8("SS Data Cx2_sn = ", array1dTo2d_u8(comData.cx2_sn, comData.header.sense_node, comData.header.sense_node), 1, comData.header.sense_node);
-		}
-		break;
-
-	case 0x03: // MS Raw DATA TEST
-		res = fts_system_reset();
-		if (res >= OK)
-			res = production_test_ms_raw(LIMITS_FILE, 1, &todoDefault,0,0);
-		break;
-
-	case 0x04: // MS CX DATA TEST
-		res = fts_system_reset();
-		if (res >= OK)
-			res = production_test_ms_cx(LIMITS_FILE, 1, &todoDefault,NULL,NULL);
-		break;
-
-	case 0x05: // SS RAW DATA TEST
-		res = fts_system_reset();
-		if (res >= OK)
-			res = production_test_ss_raw(LIMITS_FILE, 1, &todoDefault,NULL,NULL);
-		break;
-
-	case 0xF0:
-	case 0xF1: // TOUCH ENABLE/DISABLE
-		doClean = (int) (typeOfComand[0]&0x01);
-		res = cleanUp(doClean);
-		break;
-
-	default:
-		TS_LOG_ERR("%s COMMAND NOT VALID!! Insert a proper value ...\n", __func__);
-		res = ERROR_OP_NOT_ALLOW;
-		break;
-	}
-
-	doClean = fts_enableInterrupt();
-	if (doClean < 0)
-		TS_LOG_INFO("%s fts_enableInterrupt: %08X\n", __func__,
-				(doClean|ERROR_ENABLE_INTER));
-
-END: //here start the reporting phase, assembling the data to send in the file node
-	all_strbuff = (u8 *) kmalloc(size, GFP_KERNEL);
-	memset(all_strbuff, 0, size);
-
-	snprintf(buff, sizeof (buff), "%02X", 0xAA);
-	strncat(all_strbuff, buff, 2);
-
-	snprintf(buff, sizeof (buff), "%08X", res);
-	strncat(all_strbuff, buff, 8);
-
-	if (res >= OK) {
-		/*all the other cases are already fine printing only the res.*/
-		switch (typeOfComand[0]) {
-		case 0x13:
-			snprintf(buff, sizeof (buff), "%02X", (u8) frameMS.header.force_node);
-			strncat(all_strbuff, buff, 2);
-
-			snprintf(buff, sizeof (buff), "%02X", (u8) frameMS.header.sense_node);
-			strncat(all_strbuff, buff, 2);
-
-			for (j = 0; j < frameMS.node_data_size; j++) {
-				snprintf(buff, sizeof (buff), "%04X", frameMS.node_data[j]);
-				strncat(all_strbuff, buff, 4);
-			}
-
-			kfree(frameMS.node_data);
-			break;
-
-		case 0x15:
-			snprintf(buff, sizeof (buff), "%02X", (u8) frameSS.header.force_node);
-			strncat(all_strbuff, buff, 2);
-
-			snprintf(buff, sizeof (buff), "%02X", (u8) frameSS.header.sense_node);
-			strncat(all_strbuff, buff, 2);
-
-			// Copying self raw data Force
-			for (j = 0; j < frameSS.header.force_node; j++) {
-				snprintf(buff, sizeof (buff), "%04X", frameSS.force_data[j]);
-				strncat(all_strbuff, buff, 4);
-			}
-
-
-			// Copying self raw data Sense
-			for (j = 0; j < frameSS.header.sense_node; j++) {
-				snprintf(buff, sizeof (buff), "%04X", frameSS.sense_data[j]);
-				strncat(all_strbuff, buff, 4);
-			}
-
-			kfree(frameSS.force_data);
-			kfree(frameSS.sense_data);
-			break;
-
-		case 0x14:
-			snprintf(buff, sizeof (buff), "%02X", (u8) compData.header.force_node);
-			strncat(all_strbuff, buff, 2);
-
-			snprintf(buff, sizeof (buff), "%02X", (u8) compData.header.sense_node);
-			strncat(all_strbuff, buff, 2);
-
-			//Cpying CX1 value
-			snprintf(buff, sizeof (buff), "%02X", compData.cx1);
-			strncat(all_strbuff, buff, 2);
-
-			//Copying CX2 values
-			for (j = 0; j < compData.node_data_size; j++) {
-				snprintf(buff, sizeof (buff), "%02X", *(compData.node_data + j));
-				strncat(all_strbuff, buff, 2);
-			}
-
-			kfree(compData.node_data);
-			break;
-
-		case 0x16:
-			snprintf(buff, sizeof (buff), "%02X", comData.header.force_node);
-			strncat(all_strbuff, buff, 2);
-
-			snprintf(buff, sizeof (buff), "%02X", comData.header.sense_node);
-			strncat(all_strbuff, buff, 2);
-
-			snprintf(buff, sizeof (buff), "%02X", comData.f_ix1);
-			strncat(all_strbuff, buff, 2);
-
-			snprintf(buff, sizeof (buff), "%02X", comData.s_ix1);
-			strncat(all_strbuff, buff, 2);
-
-			snprintf(buff, sizeof (buff), "%02X", comData.f_cx1);
-			strncat(all_strbuff, buff, 2);
-
-			snprintf(buff, sizeof (buff), "%02X", comData.s_cx1);
-			strncat(all_strbuff, buff, 2);
-
-			//Copying IX2 Force
-			for (j = 0; j < comData.header.force_node; j++) {
-				snprintf(buff, sizeof (buff), "%02X", comData.ix2_fm[j]);
-				strncat(all_strbuff, buff, size);
-			}
-
-			//Copying IX2 Sense
-			for (j = 0; j < comData.header.sense_node; j++) {
-				snprintf(buff, sizeof (buff), "%02X", comData.ix2_sn[j]);
-				strncat(all_strbuff, buff, 2);
-			}
-
-			//Copying CX2 Force
-			for (j = 0; j < comData.header.force_node; j++) {
-				snprintf(buff, sizeof (buff), "%02X", comData.cx2_fm[j]);
-				strncat(all_strbuff, buff, 2);
-			}
-
-			//Copying CX2 Sense
-			for (j = 0; j < comData.header.sense_node; j++) {
-				snprintf(buff, sizeof (buff), "%02X", comData.cx2_sn[j]);
-				strncat(all_strbuff, buff, 2);
-			}
-
-			kfree(comData.ix2_fm);
-			kfree(comData.ix2_sn);
-			kfree(comData.cx2_fm);
-			kfree(comData.cx2_sn);
-			break;
-
-		default:
-			break;
-
-		}
-	}
-
-	snprintf(buff, sizeof (buff), "%02X", 0xBB);
-	strncat(all_strbuff, buff, 2);
-
-	count = snprintf(buf, TSP_BUF_SIZE, "%s\n", all_strbuff);
-	numberParameters = 0; //need to reset the number of parameters in order to wait the next comand, comment if you want to repeat the last comand sent just doing a cat
-	kfree(all_strbuff);
-
-	return count;
-}
-
-static DEVICE_ATTR(strength_frame, (S_IRUGO | S_IWUSR | S_IWGRP), fts_strength_frame_show, fts_strength_frame_store);
-static DEVICE_ATTR(stm_fts_cmd, (S_IRUGO | S_IWUSR | S_IWGRP), stm_fts_cmd_show, stm_fts_cmd_store);
-
-static struct attribute *fts_attr_attributes[] = {
-	&dev_attr_strength_frame.attr,
-	&dev_attr_stm_fts_cmd.attr,
-	NULL,
-};
-struct attribute_group fts_attr_group = {
-	.attrs = fts_attr_attributes,
-};
 static int fts_init(struct fts_ts_info *info)
 {
 	int error = fts_system_reset();
@@ -1492,7 +1025,7 @@ static int fts_init(struct fts_ts_info *info)
 
 int fts_chip_powercycle(struct fts_ts_info *info)
 {
-	int error;
+	int error = 0;
 
 	TS_LOG_ERR("%s: Power Cycle Starting...\n", __func__);
 	TS_LOG_ERR("%s: Disabling IRQ...\n", __func__);	//if IRQ pin is short with DVDD a call to the ISR will triggered when the regulator is turned off
@@ -1513,14 +1046,14 @@ int fts_chip_powercycle(struct fts_ts_info *info)
 
 	gpio_set_value(info->chip_data->ts_platform_data->reset_gpio, 0);
 
-	if (info->pwr_reg) {
+	if (info->bus_reg) {
 		error = regulator_enable(info->bus_reg);
 		if (error < 0) {
 			TS_LOG_ERR("%s: Failed to enable AVDD regulator\n", __func__);
 		}
 	}
 
-	if (info->bus_reg) {
+	if (info->pwr_reg) {
 		error = regulator_enable(info->pwr_reg);
 		if (error < 0) {
 			TS_LOG_ERR("%s: Failed to enable DVDD regulator\n", __func__);
@@ -1540,6 +1073,7 @@ int fts_chip_powercycle(struct fts_ts_info *info)
 
 static int st_resume(void)
 {
+	int res = 0;
 	struct fts_ts_info *info = fts_get_info();
 
 	info->resume_bit = 1;
@@ -1547,7 +1081,9 @@ static int st_resume(void)
 #ifdef USE_NOISE_PARAM
 	readNoiseParameters(noise_params);
 #endif
-	fts_system_reset();
+	res = fts_system_reset();
+	if (res < OK)
+		TS_LOG_ERR("%s fts_system_reset fail!\n", __func__);
 
 #ifdef USE_NOISE_PARAM
 	writeNoiseParameters(noise_params);
@@ -1562,7 +1098,9 @@ static int st_resume(void)
 		TS_LOG_INFO("%s: pt flag   key serse on \n", __func__);
 		keyOn();
 		suspensionOn();
-		senseOn();
+		res = senseOn();
+		if (res < OK)
+			TS_LOG_ERR("%s:senseOn fail \n", __func__);
 	}
 	return 0;
 }
@@ -1639,7 +1177,8 @@ regulator_put:
 #define ST_POWER_ON_DELAY_MS 20
 static int fts_enable_reg(struct fts_ts_info *info,
 		bool enable) {
-	int retval;
+	int retval = 0;
+	int ret = 0;
 
 	if (!enable) {
 		retval = 0;
@@ -1670,12 +1209,17 @@ static int fts_enable_reg(struct fts_ts_info *info,
 
 power_off:
 	if (info->bus_reg) {
-		regulator_disable(info->bus_reg);
+		ret = regulator_disable(info->bus_reg);
+		if (ret < 0)
+			TS_LOG_INFO("%s: failed to disable regulator.\n", __func__);
 		mdelay(5); /* in IC SPEC, need dealy 5ms after 1.8v power off */
 	}
 disable_bus_reg:
-	if (info->pwr_reg)
-		regulator_disable(info->pwr_reg);
+	if (info->pwr_reg){
+		ret = regulator_disable(info->pwr_reg);
+		if (ret < 0)
+			TS_LOG_INFO("%s: failed to disable regulator.\n", __func__);
+	}
 
 exit:
 	return retval;
@@ -1781,109 +1325,7 @@ static int st_oem_info_switch(struct ts_oem_info_param *info)
 	return 0;
 }
 
-int st_get_debug_data(struct ts_diff_data_info* info, struct ts_cmd_node* out_cmd)
-{
-	int ret = 0;
-	int size = 0;
-	int count = 0;
-	SelfSenseData ssCompData;
-	short *ss_sense_frame=NULL;
-	short *ss_force_frame=NULL;
-	SelfSenseFrame SS_Frame;
-	SelfSenseData comData;
 
-	if(NULL == info || NULL == out_cmd)
-	{
-		TS_LOG_ERR("the pointer error: NULL\n");
-		return -EINVAL;
-	}
-	memset(info->buff , 0 , sizeof(info->buff));
-	memset(&ssCompData , 0 ,sizeof(ssCompData));
-	memset(&SS_Frame , 0 ,sizeof(SS_Frame));
-	memset(&comData , 0 ,sizeof(comData));
-
-	switch (info->debug_type) {
-	case READ_FORCE_DATA:
-		fts_disableInterrupt();
-		//diff
-		size = getSSFrame(ADDR_NORM_HOVER_FORCE, &ss_force_frame);//strength force data
-		TS_LOG_INFO("********Hover_Tx_diff********\n");
-		short_to_infobuf(info->buff, ss_force_frame,size , BUFF_SEEK_BIT);
-		count = count + size + BUFF_SEEK_BIT;
-
-		size = getSSFrame(ADDR_NORM_HOVER_SENSE, &ss_sense_frame);//strength sense data
-		TS_LOG_INFO("********Hover_Rx_diff********\n");
-		short_to_infobuf(info->buff, ss_sense_frame,size , count);
-		count = count + size;
-		//raw
-		size = getSSFrame2(SS_HOVER, &SS_Frame);// include raw force and sense data
-		TS_LOG_INFO("********Hover_Rawdata********\n");
-		short_to_infobuf(info->buff, SS_Frame.force_data,SS_Frame.header.force_node , count);
-		count = count + SS_Frame.header.force_node ;
-		short_to_infobuf(info->buff, SS_Frame.sense_data,SS_Frame.header.sense_node , count);
-		count = count + SS_Frame.header.sense_node ;
-
-		ret = readSelfSenseCompensationData(SS_HOVER, &ssCompData);// include a f_ix1(global force) and s_ix1(global sense) and ix2_fm(every force channel) and  ix2_sn (every sense channel)data
-		if(ret < 0 )
-		{
-			TS_LOG_ERR("read self sense com data SS_HOVER error\n");
-			ret = -EINVAL;
-			break;
-		}
-		TS_LOG_INFO("********Hover_compensation********\n");
-
-		uchar_to_infobuf(info->buff, ssCompData.ix2_fm,ssCompData.header.force_node  , count);
-		count = count + ssCompData.header.force_node ;
-
-		uchar_to_infobuf(info->buff, ssCompData.ix2_sn,ssCompData.header.sense_node  , count);
-		count = count + ssCompData.header.sense_node ;
-
-		uchar_to_infobuf(info->buff, ssCompData.cx2_fm, ssCompData.header.force_node , count);
-		count = count + ssCompData.header.force_node ;
-
-		uchar_to_infobuf(info->buff,ssCompData.cx2_sn, ssCompData.header.sense_node , count);
-		count = count + ssCompData.header.sense_node ;
-
-		ret = readSelfSenseCompensationData(SS_KEY, &comData);
-		if(ret < 0 )
-		{
-			TS_LOG_ERR("read self sense com data SS_KEY error\n");
-			ret = -EINVAL;
-			break;
-		}
-		TS_LOG_INFO("********ForceKey_Compensation********\n");
-
-		uchar_to_infobuf(info->buff,comData.ix2_fm, comData.header.force_node , count);
-		count = count + comData.header.force_node ;
-
-		uchar_to_infobuf(info->buff,comData.ix2_sn,comData.header.sense_node, count);
-		count = count + comData.header.sense_node ;
-
-		uchar_to_infobuf(info->buff,comData.cx2_fm,comData.header.force_node, count);
-		count = count + comData.header.force_node ;
-
-		uchar_to_infobuf(info->buff,comData.cx2_sn,comData.header.sense_node, count);
-		count = count + comData.header.sense_node ;
-
-		TS_LOG_INFO("********ForceKey_Compensation_Value********\n");
-
-		info->buff[count] = forcekeyvalue(comData.f_ix1 ,comData.ix2_fm[0] );
-		count = count +1;
-
-		info->buff[count] = forcekeyvalue(comData.f_ix1 ,comData.ix2_fm[1] );
-		count = count +1;
-
-		fts_enableInterrupt();
-		info->buff[0] = count;
-		break;
-	default:
-		ret = -EINVAL;
-		TS_LOG_ERR("%s:debug_type mis match\n", __func__);
-		break;
-	}
-
-	return ret;
-}
 
 static int st_get_capacitance_test_type(struct ts_test_type_info *info)
 {
@@ -2410,8 +1852,7 @@ int st_get_project_id(struct fts_ts_info *fts_info)
 			ST_PROJECT_ID_LEN, &read_len);
 	if (ret < OK) {
 		TS_LOG_ERR("%s: project_id read failed, use fake id\n", __func__);
-		strncpy(fts_info->project_id, fts_info->fake_project_id,
-				strlen(fts_info->fake_project_id));
+		strncpy(fts_info->project_id, fts_info->fake_project_id, ST_PROJECT_ID_LEN);
 		return -EIO;
 	}
 
@@ -2478,12 +1919,6 @@ static int st_init_chip(void)
 	}
 
 #endif
-
-	/* sysfs stuff */
-	retval = sysfs_create_group(&info->i2c_cmd_dev->kobj, &fts_attr_group);
-	if (retval) {
-	TS_LOG_ERR("%s: Cannot create sysfs structure!\n", __func__);
-	}
 
 #ifdef DRIVER_TEST
 	if (fts_cmd_class == NULL)
@@ -2599,7 +2034,7 @@ static int st_chip_detect(struct ts_kit_platform_data *data)
 	struct fts_ts_info *ts = fts_get_info();
 	TS_LOG_INFO("st chip detect called\n");
 
-	if (!data) {
+	if (!data || !ts->chip_data) {
 		TS_LOG_ERR("%s: ts_kit_platform_data is NULL\n", __func__);
 		return -ENOMEM;
 	}
@@ -2717,7 +2152,7 @@ struct ts_device_ops ts_kit_st_ops = {
 	.chip_calibrate = st_calibrate,
 	.chip_work_after_input = st_ts_work_after_input_kit,
 	.oem_info_switch = st_oem_info_switch,
-	.chip_get_debug_data = st_get_debug_data,
+	.chip_get_debug_data = NULL,
 	.chip_reset = NULL,
 };
 

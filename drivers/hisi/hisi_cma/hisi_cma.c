@@ -141,8 +141,8 @@ static int __init hisi_cma_reserve_mem_fdt_scan(unsigned long node,
 	 */
 	limit = DMA_BIT_MASK(48); /*lint !e838*/
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 18, 0)
-	ret = dma_contiguous_reserve_area(size, base, limit, cma_area, 1);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
+	ret = cma_declare_contiguous(base, size, limit,  0, 0, fixed, cma_name, cma_area);
 #else
 	ret = cma_declare_contiguous(base, size, limit,  0, 0, fixed, cma_area);
 #endif

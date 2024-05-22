@@ -122,6 +122,7 @@ static ssize_t chr_misc_read(struct file *fp, int8 __user *buff, size_t count, l
         CHR_ERR("chr %s read fail, user buff is NULL", chr_misc_dev.name);
         return -EAGAIN;
     }
+
     skb = skb_dequeue(&g_chr_event.errno_queue);
     if (NULL == skb)
     {
@@ -133,8 +134,7 @@ static ssize_t chr_misc_read(struct file *fp, int8 __user *buff, size_t count, l
         }
         else
         {
-            if (wait_event_interruptible(g_chr_event.errno_wait,
-                        NULL != (skb = skb_dequeue(&g_chr_event.errno_queue))))
+            if (wait_event_interruptible(g_chr_event.errno_wait, NULL != (skb = skb_dequeue(&g_chr_event.errno_queue))))
             {
                 if(NULL != skb)
                 {
@@ -148,7 +148,6 @@ static ssize_t chr_misc_read(struct file *fp, int8 __user *buff, size_t count, l
 
     data_len = min_t(size_t, skb->len, count);
     ret = copy_to_user(puser, skb->data, data_len);
-
     if (ret)
     {
         CHR_WARNING("copy_to_user err!restore it, len=%d\n", data_len);
@@ -178,7 +177,8 @@ uint32 g_ul_unlimit_errno[] =
     CHR_WIFI_DISCONNECT_QUERY_EVENTID,
     CHR_WIFI_CONNECT_FAIL_QUERY_EVENTID,
     CHR_WIFI_WEB_FAIL_QUERY_EVENTID,
-    CHR_WIFI_WEB_SLOW_QUERY_EVENTID
+    CHR_WIFI_WEB_SLOW_QUERY_EVENTID,
+    CHR_BT_CHIP_SOFT_ERROR_EVENTID
 };
 
 
@@ -221,7 +221,7 @@ static int32 chr_report_frequency_limit(uint32 ul_errno)
 
 static int32 chr_write_errno_to_queue(uint32 ul_errno,uint8 uc_flag,uint8 *ptr_data,uint16 ul_len)
 {
-    struct sk_buff  *skb   =NULL;
+    struct sk_buff  *skb = NULL;
     uint16 sk_len;
 
     if (chr_report_frequency_limit(ul_errno))
@@ -252,13 +252,15 @@ static int32 chr_write_errno_to_queue(uint32 ul_errno,uint8 uc_flag,uint8 *ptr_d
 
     if ((ul_len > 0) && (NULL != ptr_data))
     {
-        oal_memcopy(((uint8*)skb->data + OAL_SIZEOF(CHR_DEV_EXCEPTION_STRU_PARA)),ptr_data,ul_len);
+        oal_memcopy(((uint8*)skb->data+OAL_SIZEOF(CHR_DEV_EXCEPTION_STRU_PARA)), ptr_data, ul_len);
     }
 
     skb_queue_tail(&g_chr_event.errno_queue, skb);
     wake_up_interruptible(&g_chr_event.errno_wait);
+
     return CHR_SUCC;
 }
+
 
 static int64 chr_misc_ioctl(struct file* fp, uint32 cmd, uint64 arg)
 {
@@ -275,15 +277,13 @@ static int64 chr_misc_ioctl(struct file* fp, uint32 cmd, uint64 arg)
 
     if (CHR_MAGIC != _IOC_TYPE(cmd))
     {
-        CHR_ERR("chr %s ioctl fail, the type of cmd is error type is %d\n",
-                                            chr_misc_dev.name, _IOC_TYPE(cmd));
+        CHR_ERR("chr %s ioctl fail, the type of cmd is error type is %d\n", chr_misc_dev.name, _IOC_TYPE(cmd));
         return -EINVAL;
     }
 
     if (CHR_MAX_NR < _IOC_NR(cmd))
     {
-        CHR_ERR("chr %s ioctl fail, the nr of cmd is error, nr is %d\n",
-                                            chr_misc_dev.name, _IOC_NR(cmd));
+        CHR_ERR("chr %s ioctl fail, the nr of cmd is error, nr is %d\n", chr_misc_dev.name, _IOC_NR(cmd));
         return -EINVAL;
     }
 
@@ -299,7 +299,7 @@ static int64 chr_misc_ioctl(struct file* fp, uint32 cmd, uint64 arg)
 
         if (0 == chr_rx_data.chr_len)
         {
-            chr_write_errno_to_queue(chr_rx_data.chr_errno,CHR_HOST,NULL,0);
+            chr_write_errno_to_queue(chr_rx_data.chr_errno, CHR_HOST, NULL, 0);
         }
         else
         {
@@ -317,7 +317,7 @@ static int64 chr_misc_ioctl(struct file* fp, uint32 cmd, uint64 arg)
                 return -EINVAL;
             }
 
-            chr_write_errno_to_queue(chr_rx_data.chr_errno,CHR_HOST,(uint8 *)pst_mem,chr_rx_data.chr_len);
+            chr_write_errno_to_queue(chr_rx_data.chr_errno, CHR_HOST, (uint8 *)pst_mem, chr_rx_data.chr_len);
             oal_free(pst_mem);
         }
         break ;
@@ -335,8 +335,10 @@ static int64 chr_misc_ioctl(struct file* fp, uint32 cmd, uint64 arg)
         CHR_WARNING("chr ioctl not support cmd=0x%x\n", cmd);
         return -EINVAL;
     }
+
     return CHR_SUCC;
 }
+
 
 static int32 chr_misc_release(struct inode *fd, struct file* fp)
 {
@@ -348,6 +350,7 @@ static int32 chr_misc_release(struct inode *fd, struct file* fp)
     CHR_DBG("chr %s release success\n", chr_misc_dev.name);
     return CHR_SUCC;
 }
+
 
 int32 __chr_printLog_etc(CHR_LOGPRIORITY prio, CHR_DEV_INDEX dev_index, const int8 *fmt,...)
 {
@@ -386,7 +389,6 @@ typedef struct
     char macHardErrCode;
 } dhcpFailChipInfo_STRU;
 
-
 void chr_test(void)
 {
     dhcpFailChipInfo_STRU aa={0};
@@ -400,17 +402,14 @@ void chr_test(void)
     chr_rx_errno_to_dispatch(909050004);
 
     OAL_IO_PRINT("{chr_test:: end !}\r\n");
-
 }
 
 uint32 chr_rx_proc_test(uint32 errno)
 {
-
     OAL_IO_PRINT("{chr_rx_proc_test:: errno = %u !}",errno);
     CHR_EXCEPTION_P(errno,NULL,0);
     return CHR_SUCC;
 }
-
 
 EXPORT_SYMBOL(__chr_exception_etc);
 EXPORT_SYMBOL(__chr_exception_para);
@@ -421,7 +420,6 @@ void chr_dev_exception_callback_etc(void *buff, uint16 len)
     CHR_DEV_EXCEPTION_STRU* chr_dev_exception = NULL;
     oal_uint32 chr_len = 0;
     oal_uint8  *chr_data = NULL;
-
 
     if (CHR_LOG_ENABLE != g_log_enable)
     {
@@ -438,18 +436,18 @@ void chr_dev_exception_callback_etc(void *buff, uint16 len)
     chr_dev_exception = (CHR_DEV_EXCEPTION_STRU*)buff;
 
     /*mode select*/
-    if (chr_dev_exception->framehead == 0x7e && chr_dev_exception->frametail == 0x7e)
+    if ((chr_dev_exception->framehead == CHR_DEV_FRAME_START) && (chr_dev_exception->frametail == CHR_DEV_FRAME_END))
     {
         /*old interface: chr upload has only errno*/
         chr_len = sizeof(CHR_DEV_EXCEPTION_STRU);
 
         if (len != chr_len)
         {
-            CHR_WARNING("chr recv device errno fail, len %d is unavailable,chr_len %d\n", (int32)len,chr_len);
+            CHR_WARNING("chr recv device errno fail, len %d is unavailable,chr_len %d\n", (int32)len, chr_len);
             return;
         }
 
-        chr_write_errno_to_queue(chr_dev_exception->error,CHR_DEVICE,NULL,0);
+        chr_write_errno_to_queue(chr_dev_exception->error, CHR_DEVICE, NULL, 0);
     }
     else
     {
@@ -459,21 +457,19 @@ void chr_dev_exception_callback_etc(void *buff, uint16 len)
 
         if (len != chr_len)
         {
-            CHR_WARNING("chr recv device errno fail, len %d is unavailable,chr_len %d\n", (int32)len,chr_len);
+            CHR_WARNING("chr recv device errno fail, len %d is unavailable,chr_len %d\n", (int32)len, chr_len);
             return;
         }
 
         if (0 == chr_dev_exception_p->errlen)
         {
-            chr_write_errno_to_queue(chr_dev_exception_p->errno,chr_dev_exception_p->flag,NULL,0);
-
+            chr_write_errno_to_queue(chr_dev_exception_p->errno, chr_dev_exception_p->flag, NULL, 0);
         }
         else
         {
             chr_data = (oal_uint8 *)buff + OAL_SIZEOF(CHR_DEV_EXCEPTION_STRU_PARA);
-            chr_write_errno_to_queue(chr_dev_exception_p->errno,chr_dev_exception_p->flag,chr_data,chr_dev_exception_p->errlen);
+            chr_write_errno_to_queue(chr_dev_exception_p->errno, chr_dev_exception_p->flag, chr_data, chr_dev_exception_p->errlen);
         }
-
     }
 }
 EXPORT_SYMBOL(chr_dev_exception_callback_etc);
@@ -488,6 +484,7 @@ void chr_host_callback_register(chr_get_wifi_info pfunc)
         CHR_ERR("chr_host_callback_register::pfunc is null !");
         return ;
     }
+
     gst_chr_get_wifi_info_callback.chr_get_wifi_info = pfunc;
 
     return;
@@ -514,7 +511,7 @@ void chr_rx_errno_to_dispatch(uint32 errno)
 
             if (CHR_SUCC != chr_wifi_tx_handler(errno))
             {
-                CHR_ERR("chr_rx_errno_to_dispatch::wifi tx failed,0x%x",errno);
+                CHR_ERR("wifi tx failed,0x%x",errno);
             }
             break;
 
@@ -523,12 +520,12 @@ void chr_rx_errno_to_dispatch(uint32 errno)
 
             if (CHR_SUCC != chr_bfg_dev_tx_handler(errno))
             {
-                CHR_ERR("chr_rx_errno_to_dispatch::bt/gnss tx failed,0x%x",errno);
+                CHR_ERR("bt/gnss tx failed,0x%x",errno);
             }
             break;
 
         default :
-            CHR_ERR("chr_rx_errno_to_dispatch::rcv error num 0x%x",errno);
+            CHR_ERR("rcv error num 0x%x",errno);
     }
 }
 
@@ -570,8 +567,8 @@ int32 chr_wifi_dev_tx_handler(uint32 errno)
     }
 
     return CHR_SUCC;
-
 }
+
 
 int32 chr_host_tx_handler(uint32 errno)
 {
@@ -590,6 +587,7 @@ int32 chr_host_tx_handler(uint32 errno)
     return CHR_SUCC;
 }
 
+
 int32 chr_wifi_tx_handler(uint32 errno)
 {
     int32  ret1;
@@ -601,11 +599,11 @@ int32 chr_wifi_tx_handler(uint32 errno)
 
     if (CHR_SUCC != ret1 || CHR_SUCC != ret2)
     {
-        CHR_ERR("chr_wifi_tx_handler::wifi tx failed,errno[0x%x],host tx ret1[%u],device tx ret2[%u]",errno,ret1,ret2);
+        CHR_ERR("wifi tx failed,errno[0x%x],host tx ret1[%u],device tx ret2[%u]",errno,ret1,ret2);
         return -CHR_EFAIL;
     }
 
-    CHR_INFO("chr_wifi_tx_handler::tx is succ,errno %u\n",errno);
+    CHR_INFO("tx is succ,errno %u\n",errno);
 
     return CHR_SUCC;
 
@@ -622,7 +620,7 @@ int32 chr_bfg_dev_tx_handler(uint32 ul_errno)
     ps_get_core_reference_etc(&ps_core_d);
     if (unlikely((NULL == ps_core_d)||(NULL == ps_core_d->ps_pm)))
     {
-        CHR_ERR("chr_bfg_dev_tx_handler::ps_core_d is NULL\n");
+        CHR_ERR("ps_core_d is NULL\n");
         return CHR_EFAIL;
     }
 
@@ -636,7 +634,7 @@ int32 chr_bfg_dev_tx_handler(uint32 ul_errno)
     ret = prepare_to_visit_node_etc(ps_core_d);
     if (CHR_SUCC != ret)
     {
-        CHR_ERR("chr_bfg_dev_tx_handler::prepare work fail, bring to reset work\n");
+        CHR_ERR("prepare work fail, bring to reset work\n");
         plat_exception_handler_etc(SUBSYS_BFGX, THREAD_BT, BFGX_WAKEUP_FAIL);
         return ret;
     }
@@ -650,7 +648,7 @@ int32 chr_bfg_dev_tx_handler(uint32 ul_errno)
     skb = alloc_skb(sk_len, oal_in_interrupt() ? GFP_ATOMIC : GFP_KERNEL);
     if( NULL == skb)
     {
-        CHR_ERR("chr_bfg_dev_tx_handler::alloc skbuff failed! len=%d, errno=0x%x\n", sk_len, ul_errno);
+        CHR_ERR("alloc skbuff failed! len=%d, errno=0x%x\n", sk_len, ul_errno);
         post_to_visit_node_etc(ps_core_d);
         return -CHR_EFAIL;
     }
@@ -668,25 +666,16 @@ int32 chr_bfg_dev_tx_handler(uint32 ul_errno)
 
     post_to_visit_node_etc(ps_core_d);
 
-    CHR_WARNING("chr_bfg_dev_tx_handler::tx is succ,errno %u\n",ul_errno);
+    CHR_INFO("tx is succ,errno %u\n",ul_errno);
 
     return CHR_SUCC;
 }
 
 
-
 int32 chr_miscdevs_init_etc(void)
 {
     int32 ret = 0;
-#if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
-    if (!is_my_chip_etc()) {
-        CHR_INFO("cfg chr log chip type is not match, skip driver init");
-        g_log_enable = CHR_LOG_DISABLE;
-        return -EINVAL;
-    } else {
-        CHR_INFO("cfg chr log is matched with hi110x, continue");
-    }
-#endif
+
     init_waitqueue_head(&g_chr_event.errno_wait);
     skb_queue_head_init(&g_chr_event.errno_queue);
 
@@ -702,16 +691,9 @@ int32 chr_miscdevs_init_etc(void)
     return CHR_SUCC;
 }
 
+
 void chr_miscdevs_exit_etc(void)
 {
-#if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
-    if (!is_my_chip_etc()) {
-        CHR_INFO("cfg chr log chip type is not match, skip driver init");
-        return;
-    } else {
-        CHR_INFO("cfg chr log is matched with hi110x, continue");
-    }
-#endif
     if (CHR_LOG_ENABLE != g_log_enable)
     {
         CHR_INFO("chr module is diabled\n");

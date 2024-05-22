@@ -22,6 +22,40 @@
 #include "ufs-kirin.h"
 #include "dsm_ufs.h"
 
+void set_device_clk(struct ufs_hba *hba)
+{
+	return;
+}
+
+void ufs_kirin_regulator_init(struct ufs_hba *hba)
+{
+	struct device *dev = hba->dev;
+
+	hba->vreg_info.vcc =
+		devm_kzalloc(dev, sizeof(struct ufs_vreg), GFP_KERNEL);
+	if (!hba->vreg_info.vcc) {
+		dev_err(dev, "vcc alloc error\n");
+		goto error;
+	}
+
+	hba->vreg_info.vcc->reg = devm_regulator_get(dev, "vcc");
+	if (IS_ERR(hba->vreg_info.vcc->reg)) {
+		dev_err(dev, "get regulator vcc failed\n");
+		goto error;
+	}
+
+	if (regulator_set_voltage(hba->vreg_info.vcc->reg, 2950000, 2950000)) {
+		dev_err(dev, "set vcc voltage failed\n");
+		goto error;
+	}
+
+	if (regulator_enable(hba->vreg_info.vcc->reg))
+		dev_err(dev, "regulator vcc enable failed\n");
+
+error:
+	return;
+}
+
 static void set_rhold(struct ufs_kirin_host *host)
 {
 	if (ufs_sctrl_readl(host, SCDEEPSLEEPED_OFFSET) & EFUSE_RHOLD_BIT)
@@ -122,6 +156,7 @@ void ufs_soc_init(struct ufs_hba *hba)
 	} else {
 		ufs_sys_ctrl_writel(host, MASK_UFS_DEVICE_RESET | 0,
 				    UFS_DEVICE_RESET_CTRL); /* reset device */
+		ufshcd_vops_vcc_power_on_off(hba);
 		ret = clk_prepare_enable(host->clk_ufsio_ref);
 		if (ret) {
 			pr_err("%s ,clk_prepare_enable failed\n", __func__);
@@ -281,9 +316,11 @@ int ufs_kirin_resume(struct ufs_hba *hba, enum ufs_pm_op pm_op)
 void ufs_kirin_device_hw_reset(struct ufs_hba *hba)
 {
 	struct ufs_kirin_host *host = hba->priv;
-	if (likely(!(host->caps & USE_HISI_MPHY_TC)))
+	if (likely(!(host->caps & USE_HISI_MPHY_TC))) {
 		ufs_sys_ctrl_writel(host, MASK_UFS_DEVICE_RESET | 0,
 							UFS_DEVICE_RESET_CTRL);
+		ufshcd_vops_vcc_power_on_off(hba);
+	}
 	else
 		ufs_i2c_writel(hba, (unsigned int) BIT(6), SC_RSTDIS);
 	mdelay(1);
@@ -484,8 +521,9 @@ void ufs_kirin_pwr_change_pre_change(struct ufs_hba *hba)
 {
 	uint32_t value;
 	pr_info("%s ++\n", __func__);
-
+#ifdef CONFIG_HISI_DEBUG_FS
 	pr_info("device manufacturer_id is 0x%x\n", hba->manufacturer_id);
+#endif
 	/*Boston platform need to set SaveConfigTime to 0x13, and change sync length to maximum value */
 	ufshcd_dme_set(hba, UIC_ARG_MIB((u32)0xD0A0), 0x13); /* VS_DebugSaveConfigTime */
 	ufshcd_dme_set(hba, UIC_ARG_MIB((u32)0x1552), 0x4f); /* g1 sync length */

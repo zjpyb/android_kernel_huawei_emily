@@ -537,9 +537,6 @@ int stmvl53l1_probe(struct i2c_client *client,
 	if (rc)
 		goto done_freemem;
 
-	/* setup device name */
-	/* vl53l1_data->dev_name = dev_name(&client->dev); */
-
 	/* setup client data */
 	i2c_set_clientdata(client, vl53l1_data);
 

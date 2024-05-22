@@ -174,12 +174,11 @@ static inline bool dp_dfp_u_configuration(pd_port_t *pd_port)
 int dp_dfp_u_notify_pe_ready(
 	pd_port_t *pd_port, svdm_svid_data_t *svid_data, pd_event_t *pd_event)
 {
-	char buf[1024] = { 0 };
-
 	DPM_DBG("dp_dfp_u_notify_pe_ready\r\n");
-	if(pd_port->data_role != PD_ROLE_DFP) {
-		snprintf(buf, sizeof(buf), "the data_role %d is not %d\n", pd_port->data_role, PD_ROLE_DFP);
-	}
+	if (pd_port->data_role != PD_ROLE_DFP)
+		PD_ERR("the data_role %d is not %d\n",
+			pd_port->data_role, PD_ROLE_DFP);
+
 	if (pd_port->dp_dfp_u_state != DP_DFP_U_DISCOVER_MODES)
 		return 0;
 
@@ -801,13 +800,12 @@ int dp_ufp_u_request_dp_status(pd_port_t *pd_port, pd_event_t *pd_event)
 {
 	bool ack = true;
 	uint32_t dp_status;
-	char buf[1024] = { 0 };
 
-	if(pd_event->pd_msg == NULL) {
-		snprintf(buf, sizeof(buf), "the pd_msg is NULL\n");
-
+	if (pd_event->pd_msg == NULL) {
+		PD_ERR("the pd_msg is NULL\n");
 		return 0;
 	}
+
 	dp_status = pd_event->pd_msg->payload[1];
 
 	switch (pd_port->dp_ufp_u_state) {
@@ -877,20 +875,18 @@ int dp_ufp_u_request_dp_config(pd_port_t *pd_port, pd_event_t *pd_event)
 {
 	bool ack = false;
 	uint32_t dp_config;
-	char buf[1024] = { 0 };
 
 	if (!pd_port || !pd_event) {
 		DP_INFO("Invalid pd_port or pd_event\r\n");
 		return 0;
 	}
 
-	if(pd_event->pd_msg == NULL) {
-		snprintf(buf, sizeof(buf), "the pd_msg is NULL\n");
-
+	if (pd_event->pd_msg == NULL) {
+		PD_ERR("the pd_msg is NULL\n");
 		return 0;
 	}
-	dp_config = pd_event->pd_msg->payload[1];
 
+	dp_config = pd_event->pd_msg->payload[1];
 	DPM_DBG("dp_config: 0x%x\r\n", dp_config);
 
 	switch (pd_port->dp_ufp_u_state) {
@@ -914,18 +910,17 @@ int dp_ufp_u_request_dp_config(pd_port_t *pd_port, pd_event_t *pd_event)
 void dp_ufp_u_send_dp_attention(pd_port_t *pd_port, pd_event_t *pd_event)
 {
 	svdm_svid_data_t *svid_data;
-	char buf[1024] = { 0 };
 
 	switch (pd_port->dp_ufp_u_state) {
 	case DP_UFP_U_STARTUP:
 	case DP_UFP_U_OPERATION:
 		svid_data = dpm_get_svdm_svid_data(
 				pd_port, USB_SID_DISPLAYPORT);
-		if(svid_data == NULL) {
-			snprintf(buf, sizeof(buf), "the svid_data is NULL\n");
-
+		if (svid_data == NULL) {
+			PD_ERR("the svid_data is NULL\n");
 			return;
 		}
+
 		pd_send_vdm_dp_attention(pd_port, TCPC_TX_SOP,
 			svid_data->active_mode, pd_port->dp_status);
 		break;

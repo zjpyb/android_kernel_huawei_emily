@@ -96,7 +96,7 @@ static int kbase_device_as_init(struct kbase_device *kbdev, int i)
 		struct hrtimer *poke_timer = &kbdev->as[i].poke_timer;
 		struct work_struct *poke_work = &kbdev->as[i].poke_work;
 
-		kbdev->as[i].poke_wq = alloc_workqueue(poke_name, 0, 1);
+		kbdev->as[i].poke_wq = alloc_workqueue(poke_name, 0, 1);//lint !e645
 		if (!kbdev->as[i].poke_wq) {
 			destroy_workqueue(kbdev->as[i].pf_wq);
 			return -EINVAL;
@@ -505,7 +505,7 @@ static int kbasep_trace_debugfs_open(struct inode *inode, struct file *file)
 	spin_lock_irqsave(&kbdev->trace_lock, flags);
 	state->start = kbdev->trace_first_out;
 	state->end = kbdev->trace_next_in;
-	memcpy(state->trace_buf, kbdev->trace_rbuf, sizeof(state->trace_buf));
+	memcpy(state->trace_buf, kbdev->trace_rbuf, sizeof(state->trace_buf)); /* unsafe_function_ignore: memcpy */
 	spin_unlock_irqrestore(&kbdev->trace_lock, flags);
 
 	return 0;

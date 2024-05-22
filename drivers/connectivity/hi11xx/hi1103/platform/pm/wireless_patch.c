@@ -93,7 +93,7 @@ unsigned short CRC_table[256] =
 };
 
 uint8 powerpin_state;
-module_param(g_debuglevel_patch, int, 0);
+oal_debug_module_param(g_debuglevel_patch, int, 0);
 
 /*
  * 3 Function Definition

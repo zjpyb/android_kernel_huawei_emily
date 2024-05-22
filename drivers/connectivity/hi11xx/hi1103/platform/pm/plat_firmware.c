@@ -20,6 +20,8 @@
 #include "plat_efuse.h"
 #include "bfgx_exception_rst.h"
 
+#include "oal_util.h"
+
 /*****************************************************************************
   3 全局变量定义
 *****************************************************************************/
@@ -1202,7 +1204,7 @@ int32 wifi_device_mem_dump(struct st_wifi_dump_mem_info *pst_mem_dump_info, uint
 }
 
 #endif
-int32 sdio_read_mem_etc(uint8 *Key, uint8 *Value)
+int32 sdio_read_mem_etc(uint8 *Key, uint8 *Value, bool is_wifi)
 {
     int32 l_ret = -EFAIL;
     uint32 size,readlen;
@@ -1247,7 +1249,7 @@ int32 sdio_read_mem_etc(uint8 *Key, uint8 *Value)
         return -EFAIL;
     }
 
-    fp = open_file_to_readm_etc(NULL);
+    fp = open_file_to_readm_etc(is_wifi == true ? WIFI_DUMP_PATH"/readm_wifi":WIFI_DUMP_PATH"/readm_bfgx");
     if (IS_ERR(fp))
     {
         PS_PRINT_ERR("create file error,fp = 0x%p\n", fp);
@@ -1437,7 +1439,7 @@ int32 exec_number_type_cmd_etc(uint8 *Key, uint8 *Value)
     }
     else if (!OS_STR_CMP((int8 *)Key, RMEM_CMD_KEYWORD))
     {
-        l_ret = sdio_read_mem_etc(Key, Value);
+        l_ret = sdio_read_mem_etc(Key, Value, true);
     }
 
     return l_ret;
@@ -1539,7 +1541,8 @@ int32 exec_file_type_cmd_etc(uint8 *Key, uint8 *Value)
 
     for (i = 0; i < send_count; i++)
     {
-        rdlen = kernel_read(fp, fp->f_pos, g_pucDataBuf_etc, per_send_len);
+        rdlen = oal_file_read_ext(fp, fp->f_pos, g_pucDataBuf_etc, per_send_len);
+
         if (rdlen > 0)
         {
             PS_PRINT_DBG("len of kernel_read is [%d], i=%d\n", rdlen, i);
@@ -1719,7 +1722,9 @@ int32 firmware_read_cfg_etc(uint8 *puc_CfgPatch, uint8 *puc_read_buffer)
     }
 
     OS_MEM_SET(puc_read_buffer, 0, READ_CFG_BUF_LEN);
-    l_ret = kernel_read(fp, fp->f_pos, puc_read_buffer, READ_CFG_BUF_LEN);
+
+    l_ret = oal_file_read_ext(fp, fp->f_pos, puc_read_buffer, READ_CFG_BUF_LEN);
+
 
     filp_close(fp, NULL);
     fp = NULL;
@@ -2359,11 +2364,122 @@ void save_nfc_lowpower_log_2_sdt_etc(void)
 }
 
 #define     DEVICE_MEM_CHECK_SUCC                                     (0x000f)
+#define     RESULT_DETAIL_REG                                       "0x5000001c,4"
+#define     RESULT_TIME_LOW_REG                                     "0x50000010,4"
+#define     RESULT_TIME_HIGH_REG                                    "0x50000014,4"
+#define     RESULT_TSENSOR_C0_REG                                    "0x5000348c,4"
+#define     RESULT_TSENSOR_C1_REG                                    "0x500034cc,4"
 #define     GET_MEM_CHECK_FLAG                                         "0x50000018,4"
+
+#define     PRO_RAM_TEST_CASE_NONE             (0x0)
+#define     PRO_RAM_TEST_CASE_TCM_SCAN         (0x1)
+#define     PRO_RAM_TEST_CASE_RAM_ALL_SCAN     (0x2)
+#define     PRO_RAM_TEST_CASE_REG_SCAN         (0x3)
+#define     PRO_RAM_TEST_CASE_BT_EM_SCAN       (0x4)
+#define     PRO_RAM_TEST_CASE_MBIST            (0x5)
+#define     PRO_RAM_TEST_CASE_MBIST_CLDO1_WL0_MAJORITY_FULL_TEST_NEW  (0x6)
+#define     PRO_RAM_TEST_CASE_MBIST_CLDO2_FULL_TEST_NEW				  (0x7)
+#define     PRO_RAM_TEST_CASE_MBIST_CLDO1_OTHER_FULL_TEST_NEW         (0x8)
+#define     PRO_RAM_TEST_CASE_MBIST_CLDO1_WL0_320_FULL_TEST_NEW       (0x9)
+#define     PRO_RAM_TEST_CASE_MBIST_CLDO1_WL0_MAJORITY_TEST_NEW       (0xa)
+
+#define     PRO_DETAIL_RESULT_NOT_START                                  (0x0000)
+#define     PRO_DETAIL_RESULT_SUCC                                       (0xf000)
+#define     PRO_DETAIL_RESULT_RUNING                                     (0xffff)
+#define     PRO_DETAIL_RESULT_CASE_0                                     (0x1)
+#define     PRO_DETAIL_RESULT_CASE_1                                     (0x2)
+#define     PRO_DETAIL_RESULT_CASE_2_1                                   (0x3)
+#define     PRO_DETAIL_RESULT_CASE_2_2                                   (0x4)
+#define     PRO_DETAIL_RESULT_CASE_3                                     (0x5)
+#define     PRO_DETAIL_ERROR_RESULT(main_case, test_case)       (0xf000 | (main_case << 8) | (test_case & 0xff))
+#define     PRO_GET_DETAIL_ERROR_RESULT_MAIN(error)     ((error >> 8) & 0xf)
+#define     PRO_GET_DETAIL_ERROR_RESULT_SUB(error)     ((error >> 0) & 0xff)
+
+typedef union
+{
+    /* Define the struct bits */
+    struct
+    {
+        unsigned int    tsensor_c0_auto_clr         : 1  ;  /* [0]  */
+        unsigned int    tsensor_c0_rdy_auto         : 1  ;  /* [1]  */
+        unsigned int    tsensor_c0_data_auto        : 10 ;  /* [11..2]  */
+        unsigned int    reserved                    : 4  ;  /* [15..12]  */
+    } bits;
+
+    /* Define an unsigned member */
+    unsigned int    u32;
+
+}TSENSOR_AUTO_STS;
+
+typedef struct _mem_test_type_str_
+{
+    uint32 id;
+    char*  name;
+}mem_test_type_str;
+
+mem_test_type_str mem_test_main_type[] =
+{
+    {PRO_DETAIL_RESULT_CASE_0, "SYSTEM_INIT"},
+    {PRO_DETAIL_RESULT_CASE_1, "CASE_1"},
+    {PRO_DETAIL_RESULT_CASE_2_1, "CASE_2_1"},
+    {PRO_DETAIL_RESULT_CASE_2_2, "CASE_2_2"},
+    {PRO_DETAIL_RESULT_CASE_3, "CASE_3"},
+};
+
+mem_test_type_str mem_test_sub_type[] =
+{
+    {PRO_RAM_TEST_CASE_NONE, "NOT_OVER"},
+    {PRO_RAM_TEST_CASE_TCM_SCAN, "TCM_SCAN"},
+    {PRO_RAM_TEST_CASE_RAM_ALL_SCAN, "RAM_ALL_SCAN"},
+    {PRO_RAM_TEST_CASE_REG_SCAN, "REG_SCAN"},
+    {PRO_RAM_TEST_CASE_BT_EM_SCAN, "BT_EM_SCAN"},
+    {PRO_RAM_TEST_CASE_MBIST, "MBIST_INIT"},
+    {PRO_RAM_TEST_CASE_MBIST_CLDO1_WL0_MAJORITY_FULL_TEST_NEW, "CLDO1_WL0_MAJORITY_FULL_TEST_NEW"},
+    {PRO_RAM_TEST_CASE_MBIST_CLDO2_FULL_TEST_NEW, "CLDO2_FULL_TEST_NEW"},
+    {PRO_RAM_TEST_CASE_MBIST_CLDO1_OTHER_FULL_TEST_NEW, "CLDO1_OTHER_FULL_TEST_NEW"},
+    {PRO_RAM_TEST_CASE_MBIST_CLDO1_WL0_320_FULL_TEST_NEW, "CLDO1_WL0_320_FULL_TEST_NEW"},
+    {PRO_RAM_TEST_CASE_MBIST_CLDO1_WL0_MAJORITY_TEST_NEW, "CLDO1_WL0_MAJORITY_TEST_NEW"},
+};
+
+static char* get_memcheck_error_main_string(uint32 result)
+{
+    uint16 main_type;
+    uint32 i;
+    uint32 num = sizeof(mem_test_main_type)/sizeof(mem_test_type_str);
+    main_type = PRO_GET_DETAIL_ERROR_RESULT_MAIN(result);
+    //test_case = PRO_GET_DETAIL_ERROR_RESULT_SUB(result);
+    for(i = 0; i < num; i++)
+    {
+        if(main_type == mem_test_main_type[i].id)
+        {
+            return mem_test_main_type[i].name;
+        }
+    }
+
+    return NULL;
+}
+
+static char* get_memcheck_error_sub_string(uint32 result)
+{
+    uint16 sub_type;
+    uint32 i;
+    uint32 num = sizeof(mem_test_sub_type)/sizeof(mem_test_type_str);
+    sub_type = PRO_GET_DETAIL_ERROR_RESULT_SUB(result);
+    for(i = 0; i < num; i++)
+    {
+        if(sub_type == mem_test_sub_type[i].id)
+        {
+            return mem_test_sub_type[i].name;
+        }
+    }
+
+    return NULL;
+}
+
 int32 is_device_mem_test_succ(void)
 {
     int32 ret = 0;
-    int32 test_flag;
+    int32 test_flag = 0;
 
     ret = number_type_cmd_send_etc(RMEM_CMD_KEYWORD, GET_MEM_CHECK_FLAG);
     if (0 > ret)
@@ -2385,7 +2501,189 @@ int32 is_device_mem_test_succ(void)
     }
     return -1;
 }
-int32 get_device_test_mem(void)
+
+void print_device_ram_test_detail_result(int32 is_wcpu, uint32 result)
+{
+    char* case_name = NULL;
+    char* main_str = NULL;
+    char* sub_str = NULL;
+    if(true == is_wcpu)
+    {
+        case_name = "[wcpu_memcheck]";
+    }
+    else
+    {
+        case_name = "[bcpu_memcheck]";
+    }
+    PS_PRINT_WARNING("%s detail result=0x%x\n", case_name, result);
+    if(PRO_DETAIL_RESULT_NOT_START == result)
+    {
+        PS_PRINT_WARNING("%s didn't start run\n", case_name);
+        return;
+    }
+    else if(PRO_DETAIL_RESULT_SUCC == result)
+    {
+        PS_PRINT_WARNING("%s run succ\n", case_name);
+        return;
+    }
+    else if(PRO_DETAIL_RESULT_RUNING == result)
+    {
+        PS_PRINT_WARNING("%s still running\n", case_name);
+        return;
+    }
+
+    main_str = get_memcheck_error_main_string(result);
+    sub_str  = get_memcheck_error_sub_string(result);
+
+    PS_PRINT_ERR("%s error found [%s:%s]\n",
+                  case_name, 
+                  (NULL == main_str) ? "unkown":main_str,
+                  (NULL == sub_str) ? "unkown":sub_str);
+
+}
+
+extern int ram_test_detail_tsensor_dump;
+int32 get_device_ram_test_result(int32 is_wcpu, uint32* cost)
+{
+    int32 ret = 0;
+    uint32 result = 0;
+    hcc_bus* pst_bus;
+    uint32 time_cost;
+
+    *cost = 0;
+
+    pst_bus = hcc_get_current_110x_bus();
+    if (NULL == pst_bus)
+    {
+        oal_print_hi11xx_log(HI11XX_LOG_ERR, "pst_bus is null");
+        return -OAL_EFAIL;
+    }
+
+    if(HCC_BUS_PCIE != pst_bus->bus_type)
+    {
+        if(is_wcpu != true)
+        {
+            /*bcpu 运行wmbist 会导致sdio接口无法回读，
+            这种场景不回读*/
+            oal_print_hi11xx_log(HI11XX_LOG_INFO, "bcpu ram test can't read detail result");
+            return -OAL_ENODEV;
+        }
+    }
+
+    /*失败后读取详细的结果*/
+    ret = number_type_cmd_send_etc(RMEM_CMD_KEYWORD, RESULT_DETAIL_REG);
+    if (0 > ret)
+    {
+        PS_PRINT_WARNING("send cmd %s:%s fail,ret = %d\n", RMEM_CMD_KEYWORD, RESULT_DETAIL_REG, ret);
+        return -1;
+    }
+
+    ret = read_msg_etc((uint8*)&result, sizeof(result));
+    if (0 > ret)
+    {
+        PS_PRINT_WARNING("send cmd %s:%s read result failed,ret = %d\n", RMEM_CMD_KEYWORD, RESULT_DETAIL_REG, ret);
+        return -1;
+    }
+
+    print_device_ram_test_detail_result(is_wcpu, result);
+
+    ret = number_type_cmd_send_etc(RMEM_CMD_KEYWORD, RESULT_TIME_LOW_REG);
+    if (0 > ret)
+    {
+        PS_PRINT_WARNING("send cmd %s:%s fail,ret = %d\n", RMEM_CMD_KEYWORD, RESULT_TIME_LOW_REG, ret);
+        return -1;
+    }
+
+    ret = read_msg_etc((uint8*)&result, sizeof(result));
+    if (0 > ret)
+    {
+        PS_PRINT_WARNING("send cmd %s:%s read result failed,ret = %d\n", RMEM_CMD_KEYWORD, RESULT_TIME_LOW_REG, ret);
+        return -1;
+    }
+
+    time_cost = (result & 0xffff);
+
+    ret = number_type_cmd_send_etc(RMEM_CMD_KEYWORD, RESULT_TIME_HIGH_REG);
+    if (0 > ret)
+    {
+        PS_PRINT_WARNING("send cmd %s:%s fail,ret = %d\n", RMEM_CMD_KEYWORD, RESULT_TIME_HIGH_REG, ret);
+        return -1;
+    }
+
+    ret = read_msg_etc((uint8*)&result, sizeof(result));
+    if (0 > ret)
+    {
+        PS_PRINT_WARNING("send cmd %s:%s read result failed,ret = %d\n", RMEM_CMD_KEYWORD, RESULT_TIME_HIGH_REG, ret);
+        return -1;
+    }
+
+    time_cost |= ((result & 0xffff) << 16);
+    PS_PRINT_WARNING("%s_ram_test_time_cost tick:%u  %u us\n", (true == is_wcpu) ? "wcpu":"bcpu" ,time_cost, time_cost*31);/*time from 32k*/
+    *cost = time_cost*31;
+
+    /*tsensor read*/
+    if(ram_test_detail_tsensor_dump)
+    {
+        uint32 tsensor_c0 = 0;
+        uint32 tsensor_c1 = 0;
+        oal_uint16  us_reg_val;
+        oal_uint16  us_temp_data;
+        oal_int32   l_temp_val;
+        TSENSOR_AUTO_STS *pun_tsensor_auto_sts;
+
+        ret = number_type_cmd_send_etc(RMEM_CMD_KEYWORD, RESULT_TSENSOR_C0_REG);
+        if (0 > ret)
+        {
+            PS_PRINT_WARNING("send cmd %s:%s fail,ret = %d\n", RMEM_CMD_KEYWORD, RESULT_TSENSOR_C0_REG, ret);
+            return -1;
+        }
+
+        ret = read_msg_etc((uint8*)&tsensor_c0, sizeof(tsensor_c0));
+        if (0 > ret)
+        {
+            PS_PRINT_WARNING("send cmd %s:%s read result failed,ret = %d\n", RMEM_CMD_KEYWORD, RESULT_TSENSOR_C0_REG, ret);
+            return -1;
+        }
+
+        ret = number_type_cmd_send_etc(RMEM_CMD_KEYWORD, RESULT_TSENSOR_C1_REG);
+        if (0 > ret)
+        {
+            PS_PRINT_WARNING("send cmd %s:%s fail,ret = %d\n", RMEM_CMD_KEYWORD, RESULT_TSENSOR_C1_REG, ret);
+            return -1;
+        }
+
+        ret = read_msg_etc((uint8*)&tsensor_c1, sizeof(tsensor_c1));
+        if (0 > ret)
+        {
+            PS_PRINT_WARNING("send cmd %s:%s read result failed,ret = %d\n", RMEM_CMD_KEYWORD, RESULT_TSENSOR_C1_REG, ret);
+            return -1;
+        }
+
+        us_reg_val = tsensor_c0;
+        pun_tsensor_auto_sts = (TSENSOR_AUTO_STS *)&us_reg_val;
+        us_temp_data    = pun_tsensor_auto_sts->bits.tsensor_c0_data_auto;
+        l_temp_val     = ((((oal_int32)us_temp_data - 118) * 165) / 815) - 40;
+        PS_PRINT_INFO("[memcheck]TsensorC0, val 0x%x data,%u rdy,%u temp %d\n", us_reg_val, pun_tsensor_auto_sts->bits.tsensor_c0_data_auto, pun_tsensor_auto_sts->bits.tsensor_c0_rdy_auto, l_temp_val);
+        if ((pun_tsensor_auto_sts->bits.tsensor_c0_rdy_auto)&&((l_temp_val < -40) || (l_temp_val > 125)))
+        {
+            PS_PRINT_INFO("[memcheck]TsensorC0, invalid");
+        }
+
+        us_reg_val = tsensor_c1;
+        pun_tsensor_auto_sts = (TSENSOR_AUTO_STS *)&us_reg_val;
+        us_temp_data    = pun_tsensor_auto_sts->bits.tsensor_c0_data_auto;
+        l_temp_val     = ((((oal_int32)us_temp_data - 118) * 165) / 815) - 40;
+        PS_PRINT_INFO("[memcheck]TsensorC1, val 0x%x data,%u rdy,%u temp %d\n", us_reg_val, pun_tsensor_auto_sts->bits.tsensor_c0_data_auto, pun_tsensor_auto_sts->bits.tsensor_c0_rdy_auto, l_temp_val);
+        if ((pun_tsensor_auto_sts->bits.tsensor_c0_rdy_auto)&&((l_temp_val < -40) || (l_temp_val > 125)))
+        {
+            PS_PRINT_INFO("[memcheck]TsensorC1, invalid");
+        }
+    }
+
+    return 0;
+}
+
+int32 get_device_test_mem( bool is_wifi)
 {
     wlan_memdump_t* wlan_memdump_s =NULL;
     uint8 buff[100];
@@ -2396,7 +2694,7 @@ int32 get_device_test_mem(void)
         return -FAILURE;
     }
     snprintf(buff,sizeof(buff),"0x%x,%d",wlan_memdump_s->addr,wlan_memdump_s->len);
-    if(sdio_read_mem_etc(RMEM_CMD_KEYWORD, buff) >= 0)
+    if(sdio_read_mem_etc(RMEM_CMD_KEYWORD, buff, is_wifi) >= 0)
     {
         PS_PRINT_WARNING("read device mem succ\n");
     }

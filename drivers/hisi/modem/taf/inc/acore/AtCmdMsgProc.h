@@ -126,6 +126,8 @@ extern "C" {
 #define         AT_CMD_CESQ_RSRP_LOWER_BOUNDARY_VALUE     (-140)
 #define         AT_CMD_CESQ_RSRP_UPPER_BOUNDARY_VALUE     (-44)
 
+#define AT_PSEUD_BTS_PARAM_ENABLE          (1)                 /* 查询伪基站是否支持 */
+#define AT_PSEUD_BTS_PARAM_TIMES           (2)                 /* 查询伪基站拦截次数 */
 /*****************************************************************************
   3 枚举定义
 *****************************************************************************/
@@ -1272,6 +1274,7 @@ VOS_UINT32 AT_RcvMmaCindSetCnf(
 TAF_UINT32 At_CallMsgProc(
     MSG_HEADER_STRU                     *pstMsg
 );
+VOS_UINT32 AT_RcvMtaPseudBtsSetCnf (VOS_VOID *pMsg);
 #if (VOS_OS_VER == VOS_WIN32)
 #pragma pack()
 #else

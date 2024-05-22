@@ -3,12 +3,15 @@
 #include <linux/init.h>
 #include <asm/siginfo.h>
 #include <linux/rcupdate.h>
-#include <linux/sched.h>
 #include <linux/debugfs.h>
 #include <linux/uaccess.h>
 #include <linux/notifier.h>
 #include <linux/proc_fs.h>
 #include <linux/reboot.h>
+#include <linux/version.h>
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+#include <linux/sched/signal.h>
+#endif
 
 #include <huawei_platform/log/hw_log.h>
 #undef HWLOG_TAG

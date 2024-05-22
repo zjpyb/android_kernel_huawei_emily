@@ -128,3 +128,10 @@ config DEFAULT_MPTCP_SCHED
 	default "redundant" if DEFAULT_REDUNDANT
 	default "default"
 
+config MPTCP_HEARTBEAT
+	bool "MPTCP heartbeat"
+	default n
+	depends on (MPTCP=y)
+	---help---
+	  This is the heartbeat for mptcp over all available subflows
+	  for instance, LTE and WiFi.

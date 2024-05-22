@@ -67,6 +67,10 @@ extern "C" {
 #include "plat_pm_wlan.h"
 #endif
 
+#ifdef _PRE_WLAN_FEATURE_SNIFFER
+#include <hwnet/ipv4/sysctl_sniffer.h>
+#endif
+
 #undef  THIS_FILE_ID
 #define THIS_FILE_ID OAM_FILE_ID_HMAC_MGMT_AP_C
 
@@ -254,7 +258,6 @@ OAL_STATIC oal_void  hmac_ap_rx_auth_req(hmac_vap_stru *pst_hmac_vap, oal_netbuf
     oal_netbuf_stru  *pst_auth_rsp      = OAL_PTR_NULL;
     hmac_user_stru   *pst_hmac_user     = OAL_PTR_NULL;
     oal_uint8         auc_chtxt[WLAN_CHTXT_SIZE]={0};
-    oal_uint8         uc_chtxt_index;
     oal_uint16        us_auth_rsp_len   = 0;
     mac_tx_ctl_stru  *pst_tx_ctl;
     oal_uint32        ul_ret;
@@ -281,11 +284,8 @@ OAL_STATIC oal_void  hmac_ap_rx_auth_req(hmac_vap_stru *pst_hmac_vap, oal_netbuf
     if (WLAN_WITP_AUTH_SHARED_KEY == mac_get_auth_algo_num(pst_auth_req))
     {
         /* 获取challenge text */
-        for (uc_chtxt_index = 0; uc_chtxt_index < WLAN_CHTXT_SIZE; uc_chtxt_index++)
-        {
-             /* 硬件寄存器获取随即byte,用于WEP SHARED加密 */
-             auc_chtxt[uc_chtxt_index] = oal_get_random();
-        }
+        /* 硬件寄存器获取随即byte,用于WEP SHARED加密 */
+        oal_get_random_bytes((oal_int8 *)&auc_chtxt, WLAN_CHTXT_SIZE);
     }
 
 #ifdef _PRE_WLAN_FEATURE_HILINK_DBT
@@ -587,7 +587,7 @@ OAL_STATIC oal_uint16 hmac_check_rsn_cipher_ap(mac_vap_stru *pst_mac_vap, mac_us
     us_rsn_cap = mac_get_rsn_capability_etc(puc_ie);
 
     /* 预认证能力检查 */
-    if (mac_mib_get_pre_auth_actived(pst_mac_vap) != (us_rsn_cap & BIT0))
+    if (0 != (us_rsn_cap & BIT0))
     {
         return MAC_INVALID_RSN_INFO_CAP;
     }
@@ -1276,6 +1276,16 @@ OAL_STATIC oal_uint32  hmac_ap_up_rx_asoc_req(
     oal_uint8                      *puc_payload_tmp;
     oal_int32                       l_payload_len_tmp;
 #endif
+    oal_uint8                       uc_frm_least_len;
+
+    uc_frm_least_len = MAC_CAP_INFO_LEN + MAC_LIS_INTERVAL_IE_LEN;
+    uc_frm_least_len += (WLAN_FC0_SUBTYPE_REASSOC_REQ == uc_mgmt_frm_type) ? WLAN_MAC_ADDR_LEN : 0;
+
+    if(ul_payload_len <= uc_frm_least_len)
+    {
+        OAM_WARNING_LOG1(pst_hmac_vap->st_vap_base_info.uc_vap_id, OAM_SF_ASSOC, "hmac_ap_up_rx_asoc_req:assoc req len[%d] too short!", ul_payload_len);
+        return OAL_FAIL;
+    }
 
     mac_get_address2(puc_mac_hdr, auc_sta_addr);
 
@@ -2276,6 +2286,10 @@ oal_uint32  hmac_ap_up_rx_mgmt_etc(hmac_vap_stru *pst_hmac_vap, oal_void *p_para
         {
             return OAL_SUCC;
         }
+#endif
+
+#ifdef _PRE_WLAN_FEATURE_SNIFFER
+		proc_sniffer_write_file(NULL, 0, puc_mac_hdr, pst_rx_info->us_frame_len, 0);
 #endif
 
         switch (uc_mgmt_frm_type)

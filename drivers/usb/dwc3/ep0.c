@@ -29,11 +29,13 @@
 #include <linux/usb/ch9.h>
 #include <linux/usb/gadget.h>
 #include <linux/usb/composite.h>
+#include <linux/hisi/hitest_slt.h>
 
 #include "core.h"
 #include "debug.h"
 #include "gadget.h"
 #include "io.h"
+#include <linux/hisi/usb/dwc3_usb_interface.h>
 
 static void __dwc3_ep0_do_control_status(struct dwc3 *dwc, struct dwc3_ep *dep);
 static void __dwc3_ep0_do_control_data(struct dwc3 *dwc,
@@ -138,7 +140,7 @@ static int __dwc3_gadget_ep0_queue(struct dwc3_ep *dep,
 	if (dep->flags & DWC3_EP_PENDING_REQUEST) {
 		unsigned	direction;
 
-		direction = !!(dep->flags & DWC3_EP0_DIR_IN);
+		direction = !!(dep->flags & DWC3_EP0_DIR_IN);//lint !e648
 
 		if (dwc->ep0state != EP0_DATA_PHASE) {
 			dev_WARN(dwc->dev, "Unexpected pending request\n");
@@ -148,7 +150,7 @@ static int __dwc3_gadget_ep0_queue(struct dwc3_ep *dep,
 		__dwc3_ep0_do_control_data(dwc, dwc->eps[direction], req);
 
 		dep->flags &= ~(DWC3_EP_PENDING_REQUEST |
-				DWC3_EP0_DIR_IN);
+				DWC3_EP0_DIR_IN);//lint !e648
 
 		return 0;
 	}
@@ -213,7 +215,7 @@ static int __dwc3_gadget_ep0_queue(struct dwc3_ep *dep,
 
 		__dwc3_ep0_do_control_data(dwc, dwc->eps[direction], req);
 
-		dep->flags &= ~DWC3_EP0_DIR_IN;
+		dep->flags &= ~DWC3_EP0_DIR_IN;//lint !e648
 
 		return 0;
 	}
@@ -422,6 +424,17 @@ static int dwc3_ep0_handle_status(struct dwc3 *dwc,
 	return __dwc3_gadget_ep0_queue(dep, &dwc->ep0_usb_req);
 }
 
+static int dwc3_ep0_is_dis_u1u2(void)
+{
+	int ret = 0;
+
+#ifdef CONFIG_USB_DWC3_APR
+	ret = !!is_running_kernel_slt();
+#endif
+
+	return ret;
+}
+
 static int dwc3_ep0_handle_feature(struct dwc3 *dwc,
 		struct usb_ctrlrequest *ctrl, int set)
 {
@@ -456,7 +469,7 @@ static int dwc3_ep0_handle_feature(struct dwc3 *dwc,
 				return -EINVAL;
 
 			reg = dwc3_readl(dwc->regs, DWC3_DCTL);
-			if (set)
+			if (set && !(dwc3_ep0_is_dis_u1u2()))
 				reg |= DWC3_DCTL_INITU1ENA;
 			else
 				reg &= ~DWC3_DCTL_INITU1ENA;
@@ -471,7 +484,7 @@ static int dwc3_ep0_handle_feature(struct dwc3 *dwc,
 				return -EINVAL;
 
 			reg = dwc3_readl(dwc->regs, DWC3_DCTL);
-			if (set)
+			if (set && !(dwc3_ep0_is_dis_u1u2()))
 				reg |= DWC3_DCTL_INITU2ENA;
 			else
 				reg &= ~DWC3_DCTL_INITU2ENA;
@@ -511,10 +524,10 @@ static int dwc3_ep0_handle_feature(struct dwc3 *dwc,
 			if (wIndex & USB_INTRF_FUNC_SUSPEND_LP)
 				/* XXX enable Low power suspend */
 				;
-			if (wIndex & USB_INTRF_FUNC_SUSPEND_RW)
+			if (wIndex & USB_INTRF_FUNC_SUSPEND_RW)//lint !e548
 				/* XXX enable remote wakeup */
 				;
-			break;
+			break;//lint !e548
 		default:
 			return -EINVAL;
 		}
@@ -579,27 +592,18 @@ static int dwc3_ep0_delegate_req(struct dwc3 *dwc, struct usb_ctrlrequest *ctrl)
 {
 	int ret;
 
-	spin_unlock(&dwc->lock);
+	spin_unlock(&dwc->lock);//lint !e455
 	ret = dwc->gadget_driver->setup(&dwc->gadget, ctrl);
 	spin_lock(&dwc->lock);
-	return ret;
+	return ret;//lint !e454
 }
 
-ATOMIC_NOTIFIER_HEAD(setconfig_nh);
 
-int dwc3_setconfig_notifier_register(struct notifier_block *nb)
-{
-	return atomic_notifier_chain_register(&setconfig_nh, nb);
-}
-
-int dwc3_setconfig_notifier_unregister(struct notifier_block *nb)
-{
-	return atomic_notifier_chain_unregister(&setconfig_nh, nb);
-}
 
 static void dwc3_setconfig_notify(enum usb_device_speed speed)
 {
-	atomic_notifier_call_chain(&setconfig_nh, (unsigned long)speed, NULL);
+	atomic_notifier_call_chain(&device_event_nh, DEVICE_EVENT_SETCONFIG,
+		(void *)&speed);
 }
 
 static int dwc3_ep0_set_config(struct dwc3 *dwc, struct usb_ctrlrequest *ctrl)
@@ -634,9 +638,11 @@ static int dwc3_ep0_set_config(struct dwc3 *dwc, struct usb_ctrlrequest *ctrl)
 			 * Enable transition to U1/U2 state when
 			 * nothing is pending from application.
 			 */
-			reg = dwc3_readl(dwc->regs, DWC3_DCTL);
-			reg |= (DWC3_DCTL_ACCEPTU1ENA | DWC3_DCTL_ACCEPTU2ENA);
-			dwc3_writel(dwc->regs, DWC3_DCTL, reg);
+			if (!(dwc3_ep0_is_dis_u1u2())) {
+				reg = dwc3_readl(dwc->regs, DWC3_DCTL);
+				reg |= (DWC3_DCTL_ACCEPTU1ENA | DWC3_DCTL_ACCEPTU2ENA);
+				dwc3_writel(dwc->regs, DWC3_DCTL, reg);
+			}
 
 			if ((dwc->revision > DWC3_REVISION_194A) &&
 			    (dwc->speed != DWC3_DCFG_SUPERSPEED) &&
@@ -895,7 +901,7 @@ static void dwc3_ep0_complete_data(struct dwc3 *dwc,
 		return;
 	}
 
-	status = DWC3_TRB_SIZE_TRBSTS(trb->size);
+	status = DWC3_TRB_SIZE_TRBSTS(trb->size);//lint !e648
 	if (status == DWC3_TRBSTS_SETUP_PENDING) {
 		dwc->setup_packet_pending = true;
 
@@ -997,7 +1003,7 @@ static void dwc3_ep0_complete_status(struct dwc3 *dwc,
 		}
 	}
 
-	status = DWC3_TRB_SIZE_TRBSTS(trb->size);
+	status = DWC3_TRB_SIZE_TRBSTS(trb->size);//lint !e648
 	if (status == DWC3_TRBSTS_SETUP_PENDING) {
 		dwc->setup_packet_pending = true;
 		dwc3_trace(trace_dwc3_ep0, "Setup Pending received");

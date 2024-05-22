@@ -205,8 +205,6 @@ DEFINE_HISI_FLASH_MUTEX(lm3646_mix_ir);
 /* Function define */
 static int hw_lm3646_mix_ir_param_check(char *buf, unsigned long *param,
                                         int num_of_par);
-//static int hw_lm3646_mix_ir_action_ic_flash_mode_inf(unsigned long arg);
-
 static int hw_lm3646_mix_ir_set_pin(struct hw_flash_ctrl_t   *flash_ctrl,
                                     lm3646_mix_ir_pin_type_t  pin_type,
                                     int state)
@@ -309,7 +307,6 @@ static int hw_lm3646_mix_ir_init(struct hw_flash_ctrl_t *flash_ctrl)
         goto gpio_fail_handler;
     }
 
-    //msleep(lm3646_RESET_HOLD_TIME);
     if(WAKE_LOCK_ENABLE == pdata->need_wakelock) {
         wake_lock_init(&pdata->lm3646_mix_ir_wakelock,WAKE_LOCK_SUSPEND,"lm3646_mix_ir");
     }
@@ -750,13 +747,7 @@ static int hw_lm3646_mix_ir_action_ic_flash_mode(struct hw_flash_ctrl_t *flash_c
 
     return rc;
 }
-/*
-static int hw_lm3646_mix_ir_action_ic_flash_mode_inf(unsigned long arg)
-{
-    cam_info("%s fenghshuai timer call", __func__);
-    return hw_lm3646_mix_ir_action_ic_flash_mode(&hw_lm3646_mix_ir_ctrl);
-}
-*/
+
 static int hw_lm3646_mix_ir_action_ic_torch_mode(struct hw_flash_ctrl_t *flash_ctrl)
 {
 
@@ -807,7 +798,6 @@ static int hw_lm3646_mix_ir_update_inner_status(struct hw_flash_ctrl_t   *flash_
     pdata = (struct hw_lm3646_mix_ir_private_data_t *)flash_ctrl->pdata;
     cur   = (unsigned int)(cdata->data);
     //limit the max value when we calculate levels in the corresponding mode  
-    //LIMITE_VAL_CELLING(cur, lm3646_FLASH_MAX_CUR);
 
     switch(cdata->mode) {
         case STANDBY_MODE:
@@ -1162,7 +1152,6 @@ static int hw_lm3646_mix_ir_param_check(char *buf, unsigned long *param, int num
             }
             token = strsep(&buf, " ");
         } else{
-            //return -EINVAL;
             cam_info("%s the %d param is null\n", __func__, num_of_par);
         }
     }

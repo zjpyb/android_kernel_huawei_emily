@@ -11,8 +11,10 @@
 
 static inline uint32_t crc32c_nve(uint32_t crc, const uint8_t *p, unsigned long long len)
 {
-	for(; (uintptr_t)p & (sizeof(uint64_t) - 1); --len)
+	for(; (uintptr_t)p & (sizeof(uint64_t) - 1);) {
+		--len;
 		CRC32CB(crc, *p++);
+	}
 	for(; len >= sizeof(uint64_t); len -= sizeof(uint64_t)) {
 		CRC32CX(crc, *(uint64_t *)p);
 		p += sizeof(uint64_t);

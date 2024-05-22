@@ -6,7 +6,7 @@
 * apply:
 *
 * * This program is free software; you can redistribute it and/or modify
-* * it under the terms of the GNU General Public License version 2 and 
+* * it under the terms of the GNU General Public License version 2 and
 * * only version 2 as published by the Free Software Foundation.
 * *
 * * This program is distributed in the hope that it will be useful,
@@ -28,10 +28,10 @@
 * * 2) Redistributions in binary form must reproduce the above copyright
 * *    notice, this list of conditions and the following disclaimer in the
 * *    documentation and/or other materials provided with the distribution.
-* * 3) Neither the name of Huawei nor the names of its contributors may 
-* *    be used to endorse or promote products derived from this software 
+* * 3) Neither the name of Huawei nor the names of its contributors may
+* *    be used to endorse or promote products derived from this software
 * *    without specific prior written permission.
-* 
+*
 * * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
@@ -124,10 +124,12 @@ VOS_INT RNIC_SetMacAddress(
     struct net_device                  *pstNetDev,
     void                               *pMacAddr
 );
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0))
 VOS_INT RNIC_ChangeMtu(
     struct net_device                  *pstNetDev,
     VOS_INT                             lNewMtu
 );
+#endif
 VOS_VOID RNIC_ProcTxTimeout(
     struct net_device                  *pstNetDev
 );

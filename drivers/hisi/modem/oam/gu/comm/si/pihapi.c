@@ -457,6 +457,122 @@ VOS_UINT32 SI_PIH_CchpSetReq(
 }
 
 
+VOS_UINT32 SI_PIH_PrivateCchoSetReq(
+    MN_CLIENT_ID_T                      ClientId,
+    MN_OPERATION_ID_T                   OpId,
+    SI_PIH_CCHO_COMMAND_STRU           *pstCchoCmd)
+{
+    SI_PIH_CCHO_SET_REQ_STRU           *pstMsg;
+    VOS_UINT32                          ulReceiverPid;
+
+    /* 参数检测 */
+    if (USIMM_AID_LEN_MAX < pstCchoCmd->ulAIDLen)
+    {
+        PIH_ERROR_LOG("SI_PIH_PrivateCchoSetReq: AID length is incorrect.");
+
+        return TAF_FAILURE;
+    }
+
+    if (VOS_OK != SI_PIH_GetReceiverPid(ClientId, &ulReceiverPid))
+    {
+        PIH_ERROR_LOG("SI_PIH_PrivateCchoSetReq:Get ulReceiverPid Error.");
+
+        return TAF_FAILURE;
+    }
+
+    /* 分配消息内存 */
+    pstMsg  = (SI_PIH_CCHO_SET_REQ_STRU*)VOS_AllocMsg(WUEPS_PID_AT,
+                            (VOS_UINT32)(sizeof(SI_PIH_CCHO_SET_REQ_STRU) - VOS_MSG_HEAD_LENGTH));
+
+    if (VOS_NULL_PTR == pstMsg)
+    {
+        PIH_WARNING_LOG("SI_PIH_PrivateCchoSetReq: AllocMsg FAILED");
+
+        return TAF_FAILURE;
+    }
+
+    pstMsg->stMsgHeader.ulReceiverPid   =   ulReceiverPid;
+    pstMsg->stMsgHeader.ulMsgName       =   SI_PIH_CCHO_SET_REQ;
+    pstMsg->stMsgHeader.usClient        =   ClientId;
+    pstMsg->stMsgHeader.ucOpID          =   OpId;
+    pstMsg->stMsgHeader.ulEventType     =   SI_PIH_EVENT_CCHO_SET_CNF;
+    pstMsg->ulAIDLen                    =   pstCchoCmd->ulAIDLen;
+
+    if (pstCchoCmd->ulAIDLen != 0)
+    {
+        PAM_MEM_CPY_S(pstMsg->aucADFName, sizeof(pstMsg->aucADFName), pstCchoCmd->pucADFName, pstCchoCmd->ulAIDLen);
+    }
+
+    if (VOS_OK !=  VOS_SendMsg(WUEPS_PID_AT, pstMsg))
+    {
+        PIH_WARNING_LOG("SI_PIH_PrivateCchoSetReq:WARNING SendMsg FAILED");
+
+        return TAF_FAILURE;
+    }
+
+    return TAF_SUCCESS;
+
+}
+
+
+VOS_UINT32 SI_PIH_PrivateCchpSetReq(
+    MN_CLIENT_ID_T                      ClientId,
+    MN_OPERATION_ID_T                   OpId,
+    SI_PIH_CCHP_COMMAND_STRU           *pstCchpCmd)
+{
+    SI_PIH_CCHP_SET_REQ_STRU           *pstMsg;
+    VOS_UINT32                          ulReceiverPid;
+
+    /* 参数检测 */
+    if (USIMM_AID_LEN_MAX < pstCchpCmd->ulAIDLen)
+    {
+        PIH_ERROR_LOG("SI_PIH_PrivateCchpSetReq: AID length is incorrect.");
+
+        return TAF_FAILURE;
+    }
+
+    if (VOS_OK != SI_PIH_GetReceiverPid(ClientId, &ulReceiverPid))
+    {
+        PIH_ERROR_LOG("SI_PIH_PrivateCchpSetReq:Get ulReceiverPid Error.");
+
+        return TAF_FAILURE;
+    }
+
+    /* 分配消息内存 */
+    pstMsg  = (SI_PIH_CCHP_SET_REQ_STRU*)VOS_AllocMsg(WUEPS_PID_AT,
+                            (VOS_UINT32)(sizeof(SI_PIH_CCHP_SET_REQ_STRU) - VOS_MSG_HEAD_LENGTH));
+
+    if (VOS_NULL_PTR == pstMsg)
+    {
+        PIH_WARNING_LOG("SI_PIH_PrivateCchpSetReq: AllocMsg FAILED");
+
+        return TAF_FAILURE;
+    }
+
+    pstMsg->stMsgHeader.ulReceiverPid   =   ulReceiverPid;
+    pstMsg->stMsgHeader.ulMsgName       =   SI_PIH_CCHP_SET_REQ;
+    pstMsg->stMsgHeader.usClient        =   ClientId;
+    pstMsg->stMsgHeader.ucOpID          =   OpId;
+    pstMsg->stMsgHeader.ulEventType     =   SI_PIH_EVENT_CCHP_SET_CNF;
+    pstMsg->ucAPDUP2                    =   pstCchpCmd->ucAPDUP2;
+    pstMsg->ulAIDLen                    =   pstCchpCmd->ulAIDLen;
+
+    if (pstCchpCmd->ulAIDLen != 0)
+    {
+        PAM_MEM_CPY_S(pstMsg->aucADFName, sizeof(pstMsg->aucADFName), pstCchpCmd->pucADFName, pstCchpCmd->ulAIDLen);
+    }
+    if (VOS_OK !=  VOS_SendMsg(WUEPS_PID_AT, pstMsg))
+    {
+        PIH_WARNING_LOG("SI_PIH_PrivateCchpSetReq:WARNING SendMsg FAILED");
+
+        return TAF_FAILURE;
+    }
+
+    return TAF_SUCCESS;
+
+}
+
+
 
 VOS_UINT32 SI_PIH_CchcSetReq(
     MN_CLIENT_ID_T                      ClientId,
@@ -802,12 +918,18 @@ VOS_UINT32 SI_PIH_GetSecIccVsimVer(VOS_VOID)
 }
 
 
-
-VOS_VOID SI_PIH_TEETimeOutCB (
-    TEEC_TIMER_PROPERTY_STRU            *pstTimerData
-)
+VOS_VOID SI_PIH_TEETimeOutCB (VOS_VOID *timerDataCb)
 {
-    MN_APP_PIH_AT_CNF_STRU *pstMsg;
+
+    TEEC_TIMER_PROPERTY_STRU *timerData = VOS_NULL_PTR;
+    MN_APP_PIH_AT_CNF_STRU   *pstMsg    = VOS_NULL_PTR;
+
+    if (timerDataCb == VOS_NULL_PTR)
+    {
+        PIH_ERROR_LOG("SI_PIH_TEETimeOutCB: para error!");
+
+        return ;
+    }
 
     pstMsg = (MN_APP_PIH_AT_CNF_STRU*)VOS_AllocMsg(MAPS_PIH_PID,
                                                 sizeof(MN_APP_PIH_AT_CNF_STRU)-VOS_MSG_HEAD_LENGTH);
@@ -819,11 +941,13 @@ VOS_VOID SI_PIH_TEETimeOutCB (
         return ;
     }
 
+    timerData = (TEEC_TIMER_PROPERTY_STRU *)timerDataCb;
+
     pstMsg->stPIHAtEvent.EventType                  = SI_PIH_EVENT_TEETIMEOUT_IND;
 
     pstMsg->stPIHAtEvent.PIHError                   = TAF_ERR_NO_ERROR;
 
-    pstMsg->stPIHAtEvent.PIHEvent.TEETimeOut.ulData = pstTimerData->time_type;
+    pstMsg->stPIHAtEvent.PIHEvent.TEETimeOut.ulData = timerData->time_type;
 
     pstMsg->ulReceiverPid                           = WUEPS_PID_AT;
 

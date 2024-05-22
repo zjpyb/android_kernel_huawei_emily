@@ -40,8 +40,8 @@ static struct base_jd_udata kbase_event_process(struct kbase_context *kctx, stru
 
 	KBASE_TIMELINE_ATOMS_IN_FLIGHT(kctx, atomic_sub_return(1, &kctx->timeline.jd_atoms_in_flight));
 
-	KBASE_TLSTREAM_TL_NRET_ATOM_CTX(katom, kctx);
-	KBASE_TLSTREAM_TL_DEL_ATOM(katom);
+	KBASE_TLSTREAM_TL_NRET_ATOM_CTX(katom, kctx);//lint !e648
+	KBASE_TLSTREAM_TL_DEL_ATOM(katom);//lint !e648
 
 	katom->status = KBASE_JD_ATOM_STATE_UNUSED;
 
@@ -77,7 +77,7 @@ int kbase_event_dequeue(struct kbase_context *ctx, struct base_jd_event_v2 *ueve
 		/* generate the BASE_JD_EVENT_DRV_TERMINATED message on the fly */
 		mutex_unlock(&ctx->event_mutex);
 		uevent->event_code = BASE_JD_EVENT_DRV_TERMINATED;
-		memset(&uevent->udata, 0, sizeof(uevent->udata));
+		memset(&uevent->udata, 0, sizeof(uevent->udata)); /* unsafe_function_ignore: memset */
 		dev_dbg(ctx->kbdev->dev,
 				"event system closed, returning BASE_JD_EVENT_DRV_TERMINATED(0x%X)\n",
 				BASE_JD_EVENT_DRV_TERMINATED);

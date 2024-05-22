@@ -1759,7 +1759,7 @@ static ssize_t ts_tui_report_store(struct device *dev,
 	int ret = 0;
 	unsigned long value = 0;
 
-	ret = sscanf(buf, "%d", &value);
+	ret = sscanf(buf, "%lu", &value);
 
 	g_ts_kit_platform_data.chip_data->report_tui_enable = (unsigned int)value;
 
@@ -1952,8 +1952,8 @@ static ssize_t ts_oem_info_store(struct device *dev,
 
 	if (strlen(buf) > TS_GAMMA_DATA_MAX_SIZE - 1) {
 		TS_LOG_ERR
-		    ("%s: Store TPIC type data size= %d larger than MAX input size=%d \n",
-		     __func__, strlen(buf), TS_CHIP_TYPE_MAX_SIZE);
+		    ("%s: Store TPIC type size= %lu > MAX input size=%d\n",
+				__func__, strlen(buf), TS_CHIP_TYPE_MAX_SIZE);
 		error = -EINVAL;
 		goto out;
 	}
@@ -2221,7 +2221,7 @@ static ssize_t stylus_wakeup_ctrl_store(struct device *dev,
 	}
 	if ((TS_SLEEP == atomic_read(&g_ts_kit_platform_data.state)) || (TS_WORK_IN_SLEEP == atomic_read(&g_ts_kit_platform_data.state))){
 		if((parameter >= 0) && (parameter < MAX_STATUS)){
-			//save switch status when tp in sleep,and wil²Ål send to ic when tp resume
+			//save switch status when tp in sleep,and send to ic when tp resume
 			gesture_enabel_info->switch_value = parameter;
 		}
 		TS_LOG_ERR("do not echo this node when tp work in sleep or tp is sleep\n");
@@ -2252,9 +2252,9 @@ out:
 
 
 /*lint -restore*/
-static DEVICE_ATTR(touch_chip_info, (S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH),
+static DEVICE_ATTR(touch_chip_info, (S_IRUSR | S_IWUSR | S_IRGRP),
 		   ts_chip_info_show, ts_chip_info_store);
-static DEVICE_ATTR(calibrate, S_IRUSR, ts_calibrate_show, NULL);
+static DEVICE_ATTR(calibrate, (S_IRUSR|S_IRGRP), ts_calibrate_show, NULL);
 static DEVICE_ATTR(calibrate_wakeup_gesture, S_IRUSR,
 		   ts_calibrate_wakeup_gesture_show, NULL);
 static DEVICE_ATTR(touch_glove, (S_IRUSR | S_IWUSR), ts_glove_mode_show,
@@ -2264,7 +2264,7 @@ static DEVICE_ATTR(touch_sensitivity, (S_IRUSR | S_IWUSR), ts_sensitivity_show,
 static DEVICE_ATTR(hand_detect, S_IRUSR, ts_hand_detect_show, NULL);
 static DEVICE_ATTR(loglevel, (S_IRUSR | S_IWUSR), ts_loglevel_show,
 		   ts_loglevel_store);
-static DEVICE_ATTR(supported_func_indicater, (S_IRUSR),
+static DEVICE_ATTR(supported_func_indicater, (S_IRUSR|S_IRGRP),
 		   ts_supported_func_indicater_show, NULL);
 static DEVICE_ATTR(touch_window, (S_IRUSR | S_IWUSR), ts_touch_window_show,
 		   ts_touch_window_store);

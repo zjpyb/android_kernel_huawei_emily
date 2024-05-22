@@ -92,8 +92,6 @@ struct ghost_finger_touch pre_finger_touch;
 
 static int ghost_num_record_per_second[TS_MAX_FINGER] = {0};
 static unsigned long ghost_time_record[TS_MAX_FINGER] = {0};
-//static int g_one_operate_ghost_record = 0;
-//static int g_ghost_detect_support = 0;
 
 void ts_algo_det_ght_init(void){
 	TS_LOG_INFO("%s:%s init ghost resource\n",
@@ -124,9 +122,6 @@ void ts_algo_det_ght_finger_release(void){
 **/
 void ts_algo_det_ght_finger_press(int index, int x, int y){
 	struct timeval tv;
-#if 0
-	int delta_x = 0, delta_y = 0;
-#endif
 
 	TS_LOG_DEBUG("%s:%s finger press, index:%d\n", __func__, GHOST_LOG_TAG, index);
 	do_gettimeofday(&tv);
@@ -140,23 +135,7 @@ void ts_algo_det_ght_finger_press(int index, int x, int y){
 		finger_touch.finger_num_flag |= 1 << index;
 		memcpy(&(finger_touch.finger_press_tv[index]), &tv, sizeof(struct timeval));
 	}
-#if 0
-	if (finger_touch.finger_num_flag & (1 << 0) && 0 != index
-		&& (finger_touch.pre_x[index] || finger_touch.pre_y[index])){
-		delta_x = finger_touch.x[0] - finger_touch.x[index];
-		delta_y = finger_touch.y[0] - finger_touch.y[index];
-		if (delta_x > 500 || delta_x < -500 || delta_y > 500 || delta_y < -500){
-			delta_x = finger_touch.pre_x[index] - finger_touch.x[index];
-			delta_y = finger_touch.pre_y[index] - finger_touch.y[index];
-			if (delta_x > 200 || delta_x < -200 || delta_y > 200 || delta_y < -200){
-				g_one_operate_ghost_record++;//add time condition
-			}
-		}
-	}
 
-	finger_touch.pre_x[index] = x;
-	finger_touch.pre_y[index] = y;
-#endif
 	return ;
 }
 
@@ -728,7 +707,6 @@ int ts_algo_t3(struct ts_device_data *dev_data, struct ts_fingers *in_info, stru
 			{
 				for (index = 0; index < TS_MAX_FINGER; index++)
 				{
-					//if ((temp_report_flag & (1 << index)) && (!(must_report_flag & (1 << index))))
 					if (temp_report_flag & (1 << index))
 					{
 						if (!(stop_report_flag & (1 << index)))
@@ -752,7 +730,6 @@ int ts_algo_t3(struct ts_device_data *dev_data, struct ts_fingers *in_info, stru
 			{
 				for (index = 0; index < TS_MAX_FINGER; index++)
 				{
-					//if ((temp_report_flag & (1 << index)) && (!(stop_report_flag & (1 << index))))
 					if (temp_report_flag & (1 << index))										//temp_report_flag bit won't the same with stop_report_flag bit
 					{
 						out_info->fingers[index].x = in_info->fingers[index].x;

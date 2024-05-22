@@ -279,6 +279,7 @@ static int sec_ts_i2c_write_burst(struct sec_ts_data *ts, u8 *data, int len)
 		if (!ts->chip_data->ts_platform_data->bops->bus_write) {
 			TS_LOG_ERR("bus_write not exits\n");
 			ret = -EIO;
+			mutex_unlock(&ts->i2c_mutex);
 			goto err;
 		}
 		ret = ts->chip_data->ts_platform_data->bops->bus_write(data, len);
@@ -1130,7 +1131,6 @@ static void sec_ts_parse_default_projectid(struct device_node *device,
 					struct ts_kit_device_data *chip_data)
 {
 	int ret = NO_ERR;
-	int read_val = 0;
 	if(!device || !chip_data) {
 		TS_LOG_ERR("%s, param invalid\n", __func__);
 		return;
@@ -1142,7 +1142,7 @@ static void sec_ts_parse_default_projectid(struct device_node *device,
 		tsp_info->default_projectid = SEC_TS_HW_PROJECTID;
 	}
 
-	strncpy(tsp_info->project_id, tsp_info->default_projectid, strlen(tsp_info->default_projectid));
+	strncpy(tsp_info->project_id, tsp_info->default_projectid, SEC_TS_PROJECTID_MAX - 1);
 	TS_LOG_INFO("%s,default_projectid:%s\n", __func__, tsp_info->default_projectid);
 }
 
@@ -1172,10 +1172,7 @@ static int sec_ts_parse_dt(struct device_node *device,
 	int ret = 0;
 	int index = 0;
 	int array_len = 0;
-	int read_val = 0;
 	const char *raw_data_dts = NULL;
-	const char *producer = NULL;
-	char id_buf[SEC_TS_MAX_FW_PATH] = {0};
 	int value = 0;
 
 	TS_LOG_INFO("%s:%s=%d, %s=%d, %s=%d, %s=%d, %s=%d\n", __func__,
@@ -1272,7 +1269,6 @@ static int sec_ts_parse_dt(struct device_node *device,
 
 	return ret;
 }
-
 
 static int sec_ts_gpio_request(struct sec_ts_data *ts)
 {
@@ -1481,11 +1477,9 @@ static int i2c_communicate_check(void)
 
 	ret = sec_ts_i2c_read(ts, SEC_TS_READ_DEVICE_ID, deviceID, 5);
 	if (ret < 0)
-		TS_LOG_ERR("%s: failed to read device ID(%d)\n", __func__, ret);
+		TS_LOG_ERR("%s: failed to read info(%d)\n", __func__, ret);
 	else
-		TS_LOG_INFO("%s: TOUCH DEVICE ID : %02X, %02X, %02X, %02X, %02X\n",
-					__func__, deviceID[0], deviceID[1],
-					deviceID[2], deviceID[3], deviceID[4]);
+		TS_LOG_INFO("%s: read info success\n", __func__);
 
 	ret = sec_ts_i2c_read(ts, SEC_TS_READ_FIRMWARE_INTEGRITY, &result, 1);
 	if (ret < 0) {
@@ -1743,6 +1737,16 @@ static int sec_ts_init_chip(void)
 	ts->sum_z_value = 0;
 	ts->flip_enable = false;
 	ts->lowpower_mode = false;
+
+	TS_LOG_INFO("%s:%s=%d, %s=%d, %s=%d, %s=%d, %s=%d\n", __func__,
+		"algo_id",ts->chip_data->algo_id,
+		"x_max", ts->chip_data->x_max,
+		"y_max", ts->chip_data->y_max,
+		"x_mt", ts->chip_data->x_max_mt,
+		"y_mt", ts->chip_data->y_max_mt);
+
+	pdata->max_x = ts->chip_data->x_max - 1;
+	pdata->max_y = ts->chip_data->y_max - 1;
 
 	wake_lock_init(&ts->wakelock, WAKE_LOCK_SUSPEND, "tsp_wakelock");
 	init_completion(&ts->resume_done);
@@ -2742,7 +2746,6 @@ static int sec_ts_suspend(void)
 {
 	struct sec_ts_data *ts = tsp_info;
 	int tskit_pt_station_flag = 0;
-	int ret = NO_ERR;
 
 	ts->input_closed = true;
 	ts_kit_get_pt_station_status(&tskit_pt_station_flag);
@@ -2801,7 +2804,6 @@ out:
 
 int sec_ts_start_device(struct sec_ts_data *ts)
 {
-	int ret = NO_ERR;
 
 	TS_LOG_ERR("%s\n", __func__);
 
@@ -2837,7 +2839,6 @@ static int sec_ts_irq_bottom_half(struct ts_cmd_node *in_cmd,
 {
 	struct ts_fingers *info =
 		&out_cmd->cmd_param.pub_params.algo_param.info;
-	int ret = NO_ERR;
 
 	out_cmd->command = TS_INPUT_ALGO;
 	out_cmd->cmd_param.pub_params.algo_param.algo_order =

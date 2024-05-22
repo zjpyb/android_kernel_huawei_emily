@@ -18,6 +18,10 @@ extern "C" {
 #include "oal_profiling.h"
 #include "oam_ext_if.h"
 
+#ifdef _PRE_WLAN_PKT_TIME_STAT
+#include <hwnet/ipv4/wifi_delayst.h>
+#endif
+
 #ifdef CONFIG_MMC
 #include "plat_pm_wlan.h"
 #endif
@@ -29,6 +33,9 @@ extern "C" {
 #include <linux/wait.h>
 #include <linux/workqueue.h>
 #include <linux/kthread.h>
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0))
+#include <linux/signal.h>
+#endif
 #endif
 
 #undef  THIS_FILE_ID
@@ -60,7 +67,7 @@ oal_module_symbol(g_pm_wifi_rxtx_count);
 /*lint +e19 */
 
 //oal_uint32 hcc_assemble_count_etc = HISDIO_HOST2DEV_SCATT_MAX;
-oal_uint32 hcc_assemble_count_etc = 8;
+oal_uint32 hcc_assemble_count_etc = 16;
 /*lint -e19 */
 oal_module_symbol(hcc_assemble_count_etc);
 /*lint +e19 */
@@ -70,11 +77,11 @@ oal_uint32 hcc_rx_thread_enable_etc = 1;
 oal_uint32 hcc_credit_bottom_value_etc=2;
 oal_uint32 hcc_flowctrl_detect_panic_etc=0;
 #if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
-module_param(g_hcc_tx_max_buf_len, uint, S_IRUGO|S_IWUSR);
-module_param(hcc_assemble_count_etc, uint, S_IRUGO|S_IWUSR);
-module_param(hcc_rx_thread_enable_etc, uint, S_IRUGO|S_IWUSR);
-module_param(hcc_credit_bottom_value_etc, uint, S_IRUGO|S_IWUSR);
-module_param(hcc_flowctrl_detect_panic_etc, uint, S_IRUGO|S_IWUSR);
+oal_debug_module_param(g_hcc_tx_max_buf_len, uint, S_IRUGO|S_IWUSR);
+oal_debug_module_param(hcc_assemble_count_etc, uint, S_IRUGO|S_IWUSR);
+oal_debug_module_param(hcc_rx_thread_enable_etc, uint, S_IRUGO|S_IWUSR);
+oal_debug_module_param(hcc_credit_bottom_value_etc, uint, S_IRUGO|S_IWUSR);
+oal_debug_module_param(hcc_flowctrl_detect_panic_etc, uint, S_IRUGO|S_IWUSR);
 #endif
 oal_int32 hcc_send_rx_queue_etc(struct hcc_handler *hcc, hcc_queue_type type);
 oal_uint32 hcc_queues_flow_ctrl_len_etc(struct hcc_handler* hcc, hcc_chan_type dir);
@@ -1837,25 +1844,38 @@ OAL_STATIC  oal_int32 hcc_rx(struct hcc_handler *hcc, oal_netbuf_stru* netbuf)
 
 oal_int32 hcc_send_rx_queue_etc(struct hcc_handler *hcc, hcc_queue_type type)
 {
-    oal_int32 count = 0;
-    oal_int32 pre_ret = OAL_SUCC;
-    oal_uint8* pst_pre_context = NULL;
-    oal_netbuf_head_stru* netbuf_hdr;
-    hcc_rx_action    *rx_action;
-    oal_netbuf_stru *pst_netbuf;
-    hcc_netbuf_stru  st_hcc_netbuf;
-    struct hcc_header * pst_hcc_head;
+    oal_int32                count = 0;
+    oal_int32                pre_ret = OAL_SUCC;
+#ifndef WIN32
+    oal_uint                 ul_irq_flag;
+#endif
+    oal_uint8               *pst_pre_context = NULL;
+    oal_netbuf_head_stru    *netbuf_hdr;
+    hcc_rx_action           *rx_action;
+    oal_netbuf_stru         *pst_netbuf;
+    hcc_netbuf_stru          st_hcc_netbuf;
+    struct hcc_header       *pst_hcc_head;
+    oal_netbuf_head_stru     st_netbuf_header;
 
     if(OAL_WARN_ON(type >= HCC_QUEUE_COUNT))
         return -OAL_EINVAL ;
 
     netbuf_hdr = &hcc->hcc_transer_info.hcc_queues[HCC_RX].queues[type].data_queue;
 
+    oal_netbuf_list_head_init(&st_netbuf_header);
+
+#ifndef WIN32
+    spin_lock_irqsave(&netbuf_hdr->lock, ul_irq_flag);
+    oal_netbuf_splice_init(netbuf_hdr, &st_netbuf_header);
+    spin_unlock_irqrestore(&netbuf_hdr->lock, ul_irq_flag);
+#else
+    oal_netbuf_splice_sync(&st_netbuf_header, netbuf_hdr);
+#endif
+
     /* 依次处理队列中每个netbuf */
     for(;;)
     {
-
-        pst_netbuf = oal_netbuf_delist(netbuf_hdr);
+        pst_netbuf = oal_netbuf_delist_nolock(&st_netbuf_header);
         if(NULL == pst_netbuf)
         {
             break;
@@ -1895,6 +1915,13 @@ oal_int32 hcc_send_rx_queue_etc(struct hcc_handler *hcc, hcc_queue_type type)
                     st_hcc_netbuf.len = (oal_int32)OAL_NETBUF_LEN(pst_netbuf);
                     //hcc_netbuf_stru.len = (oal_int32)pst_hcc_head->pay_len;
                     rx_action->post_do(hcc, pst_hcc_head->sub_type,&st_hcc_netbuf, pst_pre_context);
+#ifdef _PRE_WLAN_PKT_TIME_STAT
+                    if(DELAY_STATISTIC_SWITCH_ON)
+                    {
+                        skbprobe_record_first(pst_netbuf, TP_SKB_DMAC);
+                        skbprobe_record_time(pst_netbuf, TP_SKB_HMAC_RX);
+                    }
+#endif
                 }
                 else
                 {
@@ -1916,10 +1943,18 @@ oal_int32 hcc_send_rx_queue_etc(struct hcc_handler *hcc, hcc_queue_type type)
         }
         else
         {
+#ifdef _PRE_WLAN_PKT_TIME_STAT
+        if(DELAY_STATISTIC_SWITCH_ON)
+        {
+            skbprobe_record_first(pst_netbuf, TP_SKB_DMAC);
+            skbprobe_record_time(pst_netbuf, TP_SKB_HMAC_RX);
+        }
+#endif
             /*simple process, when pre do failed,
             keep the netbuf in list,
             and skip the loop*/
-            oal_netbuf_addlist(netbuf_hdr,pst_netbuf);
+            oal_netbuf_list_tail_nolock(&st_netbuf_header, pst_netbuf);
+            oal_netbuf_splice_sync(netbuf_hdr, &st_netbuf_header);
             break;
         }
     }

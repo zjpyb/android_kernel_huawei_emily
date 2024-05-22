@@ -45,6 +45,9 @@ typedef enum{
 	TOF_CLOSE = 10,
 	TOF_OPEN = 11,
 	TOF_CALI_FOR_FIX = 12,
+	PS_SCREEN_ON_XTALK_CALIBRATE = 13,
+	PS_SCREEN_ON_5CM_CALIBRATE,// 14
+	PS_SCREEN_ON_3CM_CALIBRATE,// 15
 }PS_TOF_CALIBRATE_ORDER;
 
 
@@ -64,6 +67,9 @@ typedef enum{
 #define PS_TEST_CAL                 "PS"
 #define CAP_PROX_TEST_CAL           "SAR"
 
+#define PS_GET_DIGITAL_OFFSET(x)       (((x) >> 8) & 0x000000FF)
+#define PS_GET_ANALOGOU_OFFSET(x)      ((x) & 0x000000FF)
+
 #define ACC_CAL_RESULT              ((return_calibration == SUC) ? "pass" : "fail")
 #define GYRO_CAL_RESULT             ((gyro_calibration_res == SUC) ? "pass" : "fail")
 #define ALS_CAL_RESULT              ((als_calibration_res == SUC) ? "pass" : "fail")
@@ -77,8 +83,10 @@ typedef enum{
 #define GYRO_THRESHOLD_NUM           3
 #define ALS_CAL_NUM                  6
 #define ALS_THRESHOLD_NUM            6
-#define PS_CAL_NUM                  4
-#define PS_THRESHOLD_NUM            4
+#define PS_CAL_NUM                  8
+#define PS_THRESHOLD_NUM            8
+#define PS_ADD_CAL_NUM              1
+#define PS_ADD_THRESHOLD_NUM        1
 #define AIRPRESS_CAL_NUM             17
 #define CAP_PROX_CAL_NUM            2
 #define CAP_PROX_THRESHOLD_NUM      1
@@ -134,9 +142,14 @@ typedef enum{
 #define SAR_SENSOR_DIFF2_MSG         703016004
 
 #define PS_CALI_XTALK                703018001
-#define PS_FAR_PDATA                703018002
+#define PS_FAR_PDATA                 703018002
 #define PS_NEAR_PDATA                703018003
-#define PS_OFFSET_PDATA               703018004
+#define PS_OFFSET_PDATA              703018004
+#define PS_SCREEN_ON_CALI_XTALK      703018005
+#define PS_SCREEN_ON_FAR_PDATA       703018006
+#define PS_SCREEN_ON_NEAR_PDATA      703018007
+#define PS_SCREEN_ON_OFFSET_PDATA    703018008
+#define PS_DIGITAL_OFFSET_PDATA      703018015
 
 #define  AIRPRESS_CALI_OFFSET_MSG         703017001
 #define  AIRPRESS_TOUCH_CALI_SLOPE_MSG    703017002
@@ -157,36 +170,8 @@ typedef enum{
 #define  AIRPRESS_TOUCH_TEST_RFLAG_MSG    703017017
 
 #define PS_CALI_NAME                 "PS_CALI_XTALK"
+#define PS_DIGITAL_CALI_NAME         "PS_CALI_DIGITAL_OFFSET"
 #define ALS_DARK_CALI_NAME           "ALS_DARK_CALI_OFFSET"
-
-static char *acc_test_name[ACC_CAL_NUM] =
-	{"ACC_CALI_X_OFFSET_MSG", "ACC_CALI_Y_OFFSET_MSG", "ACC_CALI_Z_OFFSET_MSG",
-	"ACC_CALI_X_SEN_MSG", "ACC_CALI_Y_SEN_MSG", "ACC_CALI_Z_SEN_MSG",
-	"ACC_CALI_XIS_00_MSG", "ACC_CALI_XIS_01_MSG", "ACC_CALI_XIS_02_MSG",
-	"ACC_CALI_XIS_10_MSG", "ACC_CALI_XIS_11_MSG", "ACC_CALI_XIS_12_MSG",
-	"ACC_CALI_XIS_20_MSG", "ACC_CALI_XIS_21_MSG", "ACC_CALI_XIS_22_MSG"};
-static char *gyro_test_name[GYRO_CAL_NUM] =
-	{"GYRO_CALI_X_OFFSET_MSG", "GYRO_CALI_Y_OFFSET_MSG", "GYRO_CALI_Z_OFFSET_MSG",
-	"GYRO_CALI_X_SEN_MSG", "GYRO_CALI_Y_SEN_MSG", "GYRO_CALI_Z_SEN_MSG",
-	"GYRO_CALI_XIS_00_MSG", "GYRO_CALI_XIS_01_MSG", "GYRO_CALI_XIS_02_MSG",
-	"GYRO_CALI_XIS_10_MSG", "GYRO_CALI_XIS_11_MSG", "GYRO_CALI_XIS_12_MSG",
-	"GYRO_CALI_XIS_20_MSG", "GYRO_CALI_XIS_21_MSG", "GYRO_CALI_XIS_22_MSG"};
-static char *als_test_name[ALS_CAL_NUM] =
-	{"ALS_CALI_R_MSG", "ALS_CALI_G_MSG", "ALS_CALI_B_MSG",
-	"ALS_CALI_C_MSG", "ALS_CALI_LUX_MSG", "ALS_CALI_CCT_MSG"};
-static char *ps_test_name[PS_CAL_NUM] =
-	{"PS_CALI_XTALK_MSG", "PS_FAR_PDATA_MSG", "PS_NEAR_PDATA_MSG","PS_OFFSET_PDATA_MSG"};
-static char *cap_prox_offset_test_name[CAP_PROX_CAL_NUM] =
-	{"SAR_SENSOR_PH1_OFFSET_MSG", "SAR_SENSOR_PH2_OFFSET_MSG"};
-static char *cap_prox_diff_test_name[CAP_PROX_CAL_NUM ] =
-	{"SAR_SENSOR_DIFF1_MSG", "SAR_SENSOR_DIFF2_MSG"};
-static char *airpress_test_name[AIRPRESS_CAL_NUM] =
-	{"AIRPRESS_CALI_OFFSET_MSG", "AIRPRESS_TOUCH_CALI_SLOPE_MSG", "AIRPRESS_TOUCH_CALI_BASEP_MSG",
-	"AIRPRESS_TOUCH_CALI_MAXP_MSG", "AIRPRESS_TOUCH_CALI_RAISEP_MSG", "AIRPRESS_TOUCH_CALI_MINP_MSG",
-	"AIRPRESS_TOUCH_CALI_TEMP_MSG", "AIRPRESS_TOUCH_CALI_SPEED_MSG", "AIRPRESS_TOUCH_CALI_RFLAG_MSG",
-	"AIRPRESS_TOUCH_TEST_SLOPE_MSG", "AIRPRESS_TOUCH_TEST_BASEP_MSG", "AIRPRESS_TOUCH_TEST_MAXP_MSG",
-	"AIRPRESS_TOUCH_TEST_RAISEP_MSG", "AIRPRESS_TOUCH_TEST_MINP_MSG", "AIRPRESS_TOUCH_TEST_TEMP_MSG",
-	"AIRPRESS_TOUCH_TEST_SPEED_MSG", "AIRPRESS_TOUCH_TEST_RFLAG_MSG"};
 
 struct sensor_eng_cal_test{
 	int first_item;
@@ -256,12 +241,14 @@ extern int read_calibrate_data_from_nv(int nv_number, int nv_size, char *nv_name
 extern int fingersense_commu(unsigned int cmd, unsigned int pare, unsigned int responsed, bool is_subcmd);
 extern int fingersense_enable(unsigned int enable);
 extern ssize_t sensors_calibrate_show(int tag, struct device *dev, struct device_attribute *attr, char *buf);
+extern ssize_t show_get_sensors_id(int tag, struct device *dev, struct device_attribute *attr, char *buf);
 extern ssize_t sensors_calibrate_store(int tag, struct device *dev, struct device_attribute *attr, const char *buf, size_t count);
 extern ssize_t show_sensor_read_airpress_common(struct device *dev, struct device_attribute *attr, char *buf);
 extern int ois_commu(int tag, unsigned int cmd, unsigned int pare, unsigned int responsed, bool is_subcmd);
 extern ssize_t show_cap_prox_calibrate_method(struct device *dev, struct device_attribute *attr, char *buf);
-extern ssize_t show_cap_prox_calibrate_orders(struct device *dev, struct device_attribute *attr, char *buf);
-
+extern ssize_t show_cap_prox_calibrate_orders(int tag, struct device *dev,
+	struct device_attribute *attr, char *buf);
+extern ssize_t show_sensor_in_board_status_sysfs(struct device *dev, struct device_attribute *attr, char *buf);
 read_info_t send_airpress_calibrate_cmd(uint8_t tag, unsigned long val, RET_TYPE *rtype);
 extern int write_tof_offset_to_nv(uint8_t *temp);
 void airpress_touch_data_acquisition(int* air_touch_data, int len);

@@ -66,6 +66,10 @@
 #include <scsi/scsi_ioctl.h>
 #include <scsi/scsicam.h>
 
+#ifdef CONFIG_HUAWEI_STORAGE_ROFA
+#include <chipset_common/storage_rofa/storage_rofa.h>
+#endif
+
 #include "sd.h"
 #include "scsi_priv.h"
 #include "scsi_logging.h"
@@ -1187,7 +1191,8 @@ static int sd_init_command(struct scsi_cmnd *cmd)
 	case REQ_OP_WRITE:
 		return sd_setup_read_write_cmnd(cmd);
 	default:
-		BUG();
+		WARN_ON_ONCE(1);
+		return BLKPREP_KILL;
 	}
 }/*lint !e533*/
 
@@ -1834,11 +1839,29 @@ static int sd_done(struct scsi_cmnd *SCpnt)
 	}
 	sdkp->medium_access_timed_out = 0;
 
+#ifdef CONFIG_HUAWEI_STORAGE_ROFA_FAULT_INJECT
+	if (storage_rochk_filter_sd(sdkp->device)) {
+		if (storage_rofi_should_inject_check_condition_sense()) {
+			storage_rofi_inject_fault_check_condition_sense(
+				&SCpnt->result, &sense_valid, &sense_deferred,
+				&good_bytes, req, sdkp->device, &sshdr);
+			result = SCpnt->result;
+		}
+	}
+#endif
+
 	if (driver_byte(result) != DRIVER_SENSE &&
 	    (!sense_valid || sense_deferred))
 		goto out;
 
-	switch (sshdr.sense_key) {/*lint !e644*/
+#ifdef CONFIG_HUAWEI_STORAGE_ROFA
+	if (storage_rochk_is_monitor_enabled() &&
+	    storage_rochk_filter_sd(sdkp->device))
+		storage_rochk_monitor_sd_readonly(sdkp->device, req, result,
+			sshdr.sense_key, sshdr.asc, sshdr.ascq);
+#endif
+
+	switch (sshdr.sense_key) {/* lint !e644*/
 	case HARDWARE_ERROR:
 	case MEDIUM_ERROR:
 		good_bytes = sd_completed_bytes(SCpnt);
@@ -2433,6 +2456,7 @@ sd_read_write_protect_flag(struct scsi_disk *sdkp, unsigned char *buffer)
 	int res;
 	struct scsi_device *sdp = sdkp->device;
 	struct scsi_mode_data data;
+	int disk_ro = get_disk_ro(sdkp->disk);
 	int old_wp = sdkp->write_prot;
 
 	set_disk_ro(sdkp->disk, 0);
@@ -2473,7 +2497,32 @@ sd_read_write_protect_flag(struct scsi_disk *sdkp, unsigned char *buffer)
 			  "Test WP failed, assume Write Enabled\n");
 	} else {
 		sdkp->write_prot = ((data.device_specific & 0x80) != 0);
-		set_disk_ro(sdkp->disk, sdkp->write_prot);
+
+#ifdef CONFIG_HUAWEI_STORAGE_ROFA_FAULT_INJECT
+		if (storage_rochk_filter_sd(sdp)) {
+			if (storage_rofi_should_inject_write_prot_status())
+				sdkp->write_prot = 1; /* set wp as true */
+		}
+#endif
+#ifdef CONFIG_HUAWEI_STORAGE_ROFA
+		if (storage_rochk_filter_sd(sdp)) {
+			unsigned int bootopt;
+
+			storage_rochk_record_disk_wp_status(sdp,
+				sdkp->disk->disk_name, sdkp->write_prot);
+
+			bootopt = get_storage_rofa_bootopt();
+			if (sdkp->write_prot &&
+			    bootopt == STORAGE_ROFA_BOOTOPT_BYPASS) {
+				sd_printk(KERN_NOTICE, sdkp,
+					"Reset Write Protect\n");
+				sdkp->write_prot = 0;
+			}
+		}
+#endif
+
+		set_disk_ro(sdkp->disk, sdkp->write_prot || disk_ro);
+
 		if (sdkp->first_scan || old_wp != sdkp->write_prot) {
 			sd_printk(KERN_NOTICE, sdkp, "Write Protect is %s\n",
 				  sdkp->write_prot ? "on" : "off");
@@ -2837,8 +2886,6 @@ static void sd_read_block_provisioning(struct scsi_disk *sdkp)
  */
 static void sd_set_block_flag_novpd(struct scsi_disk *sdkp)
 {
-	struct scsi_device *sdp = sdkp->device;
-
 	/* for Non-rotating medium such as solid state disk(ufs/nvme/U disk) */
 	queue_flag_set_unlocked(QUEUE_FLAG_NONROT, sdkp->disk->queue);
 	queue_flag_clear_unlocked(QUEUE_FLAG_ADD_RANDOM, sdkp->disk->queue);
@@ -3083,6 +3130,14 @@ static void sd_probe_async(void *data, async_cookie_t cookie)
 	sdkp->first_scan = 1;
 	sdkp->max_medium_access_timeouts = SD_MAX_MEDIUM_TIMEOUTS;
 
+#ifdef CONFIG_HUAWEI_STORAGE_ROFA
+	if (storage_rochk_filter_sd(sdp)) {
+		storage_rochk_record_sd(sdp,
+			gd->disk_name, gd->major, gd->first_minor);
+		storage_rochk_record_sd_rev_once(sdp);
+	}
+#endif
+
 	sd_revalidate_disk(gd);
 
 	gd->flags = GENHD_FL_EXT_DEVT;
@@ -3099,6 +3154,12 @@ static void sd_probe_async(void *data, async_cookie_t cookie)
 		sd_dif_config_host(sdkp);
 
 	sd_revalidate_disk(gd);
+
+#ifdef CONFIG_HUAWEI_STORAGE_ROFA
+	if (storage_rochk_filter_sd(sdp))
+		storage_rochk_record_disk_capacity(sdp, sdkp->disk->disk_name,
+			sdkp->capacity * sdp->sector_size);
+#endif
 
 	sd_printk(KERN_NOTICE, sdkp, "Attached SCSI %sdisk\n",
 		  sdp->removable ? "removable " : "");
@@ -3265,13 +3326,14 @@ static void scsi_disk_release(struct device *dev)
 	struct scsi_disk *sdkp = to_scsi_disk(dev);
 	struct gendisk *disk = sdkp->disk;
 
-	spin_lock(&sd_index_lock);
-	ida_remove(&sd_index_ida, sdkp->index);
-	spin_unlock(&sd_index_lock);
-
+	dev_info(dev, "%s ++\n", __func__);
 	disk->private_data = NULL;
 	put_disk(disk);
 	put_device(&sdkp->device->sdev_gendev);
+
+	spin_lock(&sd_index_lock);
+	ida_remove(&sd_index_ida, sdkp->index);
+	spin_unlock(&sd_index_lock);
 
 	kfree(sdkp);
 }

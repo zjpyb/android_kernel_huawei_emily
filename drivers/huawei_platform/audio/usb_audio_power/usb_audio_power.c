@@ -52,6 +52,11 @@ enum usb_audio_power_gpio_type {
 	USB_AUDIO_POWER_GPIO_CODEC         = 1,
 };
 
+enum usb_audio_power_gpio_one_ctrl {
+	USB_AUDIO_POWER_GPIO_ONE         = 1,
+	USB_AUDIO_POWER_GPIO_DEFAUIT     = 0,
+};
+
 #ifdef CONFIG_SUPERSWITCH_FSC
 enum {
 	NOT_USING_SUPWRSWITCH              = 0,
@@ -91,6 +96,8 @@ struct usb_audio_power_data {
 	int gpio_chg_vbst_ctrl;
 	int gpio_ear_power_en;
 	int gpio_type;
+	int gpio_low_power_ctrl;
+	int gpio_one_ctrl;
 	bool pm_ref; /*used to static PM vboost ctrl*/
 	bool audio_ref; /*used to static audio vboost ctrl*/
 	bool audio_buckboost_enable;
@@ -177,9 +184,12 @@ static int buckboost_voltage_control(void)
 		boost_5v_enable(true, BOOST_CTRL_AUDIO);
 	}
 #endif
-	bst_ctrl_enable(true, VBOOST_CONTROL_AUDIO);
-	usb_audio_power_gpio_set_value(pdata->gpio_ear_power_en, AUDIO_POWER_GPIO_SET);
-
+	if (pdata->gpio_one_ctrl > 0) {
+		usb_audio_power_gpio_set_value(pdata->gpio_low_power_ctrl, AUDIO_POWER_GPIO_SET);
+	} else {
+		bst_ctrl_enable(true, VBOOST_CONTROL_AUDIO);
+		usb_audio_power_gpio_set_value(pdata->gpio_ear_power_en, AUDIO_POWER_GPIO_SET);
+	}
 	pd_dpm_vbus_ctrl(CHARGER_TYPE_NONE);
 	pdata->audio_buckboost_enable = true;
 	hwlog_info("%s", __func__);
@@ -224,8 +234,12 @@ int usb_audio_power_scharger()
 
 	//pd_dpm_vbus_ctrl(PLEASE_PROVIDE_POWER);
 	if (pdata->audio_buckboost_enable == true) {
-		bst_ctrl_enable(false, VBOOST_CONTROL_AUDIO);
-		usb_audio_power_gpio_set_value(pdata->gpio_ear_power_en, AUDIO_POWER_GPIO_RESET);
+		if (pdata->gpio_one_ctrl > 0) {
+			usb_audio_power_gpio_set_value(pdata->gpio_low_power_ctrl, AUDIO_POWER_GPIO_RESET);
+		} else {
+			bst_ctrl_enable(false, VBOOST_CONTROL_AUDIO);
+			usb_audio_power_gpio_set_value(pdata->gpio_ear_power_en, AUDIO_POWER_GPIO_RESET);
+		}
 #ifdef	CONFIG_BOOST_5V
 		if (USING_BOOST_5V == pdata->using_boost_5v) {
 			boost_5v_enable(false, BOOST_CTRL_AUDIO);
@@ -348,6 +362,18 @@ static void load_usb_audio_power_config(struct device_node *node)
 	}
 #endif
 }
+static void load_usb_audio_power_config_one_gpio(struct device_node *node)
+{
+	int temp = 0;
+
+	/*lint -save -e* */
+	if (!of_property_read_u32(node, "gpio_one_ctrl", &temp)) {
+	/*lint -restore*/
+		pdata->gpio_one_ctrl = temp;
+	} else {
+		pdata->gpio_one_ctrl = USB_AUDIO_POWER_GPIO_DEFAUIT;
+	}
+}
 static const struct file_operations usb_audio_power_fops = {
 	.owner            = THIS_MODULE,
 	.open            = simple_open,
@@ -380,57 +406,86 @@ static int usb_audio_power_probe(struct platform_device *pdev)
 	pdata->audio_buckboost_enable = false;
 	mutex_init(&pdata->vboost_ctrl_lock);
 
-	/* get gpio_chg_vbst_ctrl gpio */
-	pdata->gpio_chg_vbst_ctrl =  of_get_named_gpio(node, "gpio_chg_vbst_ctrl", 0);
-	if (pdata->gpio_chg_vbst_ctrl < 0) {
-		hwlog_err("gpio_chg_vbst_ctrl is unvalid!\n");
-		/*lint -save -e* */
-		ret = -ENOENT;
-		/*lint -restore*/
-		goto err_out;
-	}
+	load_usb_audio_power_config_one_gpio(node);
+	if (pdata->gpio_one_ctrl > 0) {
+		/* get gpio_low_power_ctrl gpio */
+		pdata->gpio_low_power_ctrl =  of_get_named_gpio(node, "gpio_low_power_ctrl", 0);
+		if (pdata->gpio_low_power_ctrl < 0) {
+			hwlog_err("gpio_low_power_ctrl is unvalid!\n");
+			/*lint -save -e* */
+			ret = -ENOENT;
+			/*lint -restore*/
+			goto err_out;
+		}
 
-	if (!gpio_is_valid(pdata->gpio_chg_vbst_ctrl)) {
-		hwlog_err("gpio is unvalid!\n");
-		/*lint -save -e* */
-		ret = -ENOENT;
-		/*lint -restore*/
-		goto gpio_chg_vbst_ctrl_err;
-	}
+		if (!gpio_is_valid(pdata->gpio_low_power_ctrl)) {
+			hwlog_err("gpio is unvalid!\n");
+			/*lint -save -e* */
+			ret = -ENOENT;
+			/*lint -restore*/
+			goto err_out;
+		}
 
-	/* applay for mic->gnd gpio */
-	ret = gpio_request(pdata->gpio_chg_vbst_ctrl, "gpio_chg_vbst_ctrl");
-	if (ret) {
-		hwlog_err("error request GPIO for vbst ctrl fail %d\n", ret);
-		goto gpio_chg_vbst_ctrl_err;
-	}
-	gpio_direction_output(pdata->gpio_chg_vbst_ctrl, 0);
+		/* applay for mic->gnd gpio */
+		ret = gpio_request(pdata->gpio_low_power_ctrl, "gpio_low_power_ctrl");
+		if (ret) {
+			hwlog_err("error request GPIO for low power ctrl fail %d\n", ret);
+			goto err_out;
+		}
+		gpio_direction_output(pdata->gpio_low_power_ctrl, 0);
+	} else {
+		/* get gpio_chg_vbst_ctrl gpio */
+		pdata->gpio_chg_vbst_ctrl =  of_get_named_gpio(node, "gpio_chg_vbst_ctrl", 0);
+		if (pdata->gpio_chg_vbst_ctrl < 0) {
+			hwlog_err("gpio_chg_vbst_ctrl is unvalid!\n");
+			/*lint -save -e* */
+			ret = -ENOENT;
+			/*lint -restore*/
+			goto err_out;
+		}
 
-	/* get gpio_ear_power_en gpio */
-	pdata->gpio_ear_power_en =  of_get_named_gpio(node, "gpio_ear_power_en", 0);
-	if (pdata->gpio_ear_power_en < 0) {
-		hwlog_err("gpio_ear_power_en is unvalid!\n");
-		/*lint -save -e* */
-		ret = -ENOENT;
-		/*lint -restore*/
-		goto gpio_chg_vbst_ctrl_err;
-	}
+		if (!gpio_is_valid(pdata->gpio_chg_vbst_ctrl)) {
+			hwlog_err("gpio is unvalid!\n");
+			/*lint -save -e* */
+			ret = -ENOENT;
+			/*lint -restore*/
+			goto gpio_chg_vbst_ctrl_err;
+		}
 
-	if (!gpio_is_valid(pdata->gpio_ear_power_en)) {
-		hwlog_err("gpio is unvalid!\n");
-		/*lint -save -e* */
-		ret = -ENOENT;
-		/*lint -restore*/
-		goto gpio_ear_power_en_err;
-	}
+		/* applay for mic->gnd gpio */
+		ret = gpio_request(pdata->gpio_chg_vbst_ctrl, "gpio_chg_vbst_ctrl");
+		if (ret) {
+			hwlog_err("error request GPIO for vbst ctrl fail %d\n", ret);
+			goto gpio_chg_vbst_ctrl_err;
+		}
+		gpio_direction_output(pdata->gpio_chg_vbst_ctrl, 0);
 
-	/* applay for mic->gnd gpio */
-	ret = gpio_request(pdata->gpio_ear_power_en, "gpio_ear_power_en");
-	if (ret) {
-		hwlog_err("error request GPIO for mic_gnd fail %d\n", ret);
-		goto gpio_ear_power_en_err;
+		/* get gpio_ear_power_en gpio */
+		pdata->gpio_ear_power_en =  of_get_named_gpio(node, "gpio_ear_power_en", 0);
+		if (pdata->gpio_ear_power_en < 0) {
+			hwlog_err("gpio_ear_power_en is unvalid!\n");
+			/*lint -save -e* */
+			ret = -ENOENT;
+			/*lint -restore*/
+			goto gpio_chg_vbst_ctrl_err;
+		}
+
+		if (!gpio_is_valid(pdata->gpio_ear_power_en)) {
+			hwlog_err("gpio is unvalid!\n");
+			/*lint -save -e* */
+			ret = -ENOENT;
+			/*lint -restore*/
+			goto gpio_ear_power_en_err;
+		}
+
+		/* applay for mic->gnd gpio */
+		ret = gpio_request(pdata->gpio_ear_power_en, "gpio_ear_power_en");
+		if (ret) {
+			hwlog_err("error request GPIO for mic_gnd fail %d\n", ret);
+			goto gpio_ear_power_en_err;
+		}
+		gpio_direction_output(pdata->gpio_ear_power_en, 0);
 	}
-	gpio_direction_output(pdata->gpio_ear_power_en, 0);
 #ifdef CONFIG_SUPERSWITCH_FSC
 	pdata->superswitch_vout_switch_delay_wq = create_singlethread_workqueue("superswitch_vout_switch_delay_wq");
 	if (!(pdata->superswitch_vout_switch_delay_wq)) {
@@ -470,6 +525,9 @@ gpio_ear_power_en_err:
 gpio_chg_vbst_ctrl_err:
 	gpio_free(pdata->gpio_chg_vbst_ctrl);
 err_out:
+	if (pdata->gpio_one_ctrl > 0) {
+		gpio_free(pdata->gpio_low_power_ctrl);
+	}
 	devm_kfree(dev, pdata);
 	pdata = NULL;
 
@@ -485,6 +543,9 @@ static int usb_audio_power_remove(struct platform_device *pdev)
 		}
 		if(pdata->gpio_ear_power_en > 0) {
 			gpio_free(pdata->gpio_ear_power_en);
+		}
+		if(pdata->gpio_low_power_ctrl > 0) {
+			gpio_free(pdata->gpio_low_power_ctrl);
 		}
 #ifdef CONFIG_SUPERSWITCH_FSC
 		if (pdata->superswitch_vout_switch_delay_wq) {

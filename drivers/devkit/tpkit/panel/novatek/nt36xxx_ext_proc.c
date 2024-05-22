@@ -198,7 +198,7 @@ static ssize_t nvt_flash_spi_read(struct file *file, char __user *buff, size_t c
 		goto out;
 	}
 
-#if NVT_QEEXO_EARSENSE
+#if defined(NVT_QEEXO_EARSENSE)
 	cancel_delayed_work_sync(&nvt_proximity_work);
 #endif
 
@@ -357,6 +357,7 @@ return:
 void nvt_kit_change_mode(uint8_t mode)
 {
 	uint8_t buf[8] = {0};
+	int32_t retval = 0;
 
 	//---set xdata index to EVENT BUF ADDR---
 	nvt_set_page(nvt_ts->mmap->EVENT_BUF_ADDR | EVENT_MAP_HOST_CMD);
@@ -364,12 +365,17 @@ void nvt_kit_change_mode(uint8_t mode)
 	//---set mode---
 	buf[0] = EVENT_MAP_HOST_CMD;
 	buf[1] = mode;
-	novatek_ts_kit_write(I2C_FW_Address, buf, 2);
+	retval = novatek_ts_kit_write(I2C_FW_Address, buf, 2);
+	if (retval < 0)
+		TS_LOG_ERR("%s: novatek_ts_kit_write, failed\n", __func__);
 
 	if (mode == NORMAL_MODE) {
 		buf[0] = EVENT_MAP_HANDSHAKING_or_SUB_CMD_BYTE;
 		buf[1] = HANDSHAKING_HOST_READY;
-		novatek_ts_kit_write(I2C_FW_Address, buf, 2);
+		retval = novatek_ts_kit_write(I2C_FW_Address, buf, 2);
+		if (retval < 0)
+			TS_LOG_ERR("%s: novatek_ts_kit_write, failed\n",
+				__func__);
 		msleep(20);
 	}
 }
@@ -789,6 +795,8 @@ return:
 *******************************************************/
 static int32_t nvt_diff_open(struct inode *inode, struct file *file)
 {
+	int ret = 0;
+
 	if (mutex_lock_interruptible(&nvt_ts->lock)) {
 		return -ERESTARTSYS;
 	}
@@ -805,7 +813,10 @@ static int32_t nvt_diff_open(struct inode *inode, struct file *file)
 		return -EAGAIN;
 	}
 
-	nvt_kit_get_fw_info();
+	ret = nvt_kit_get_fw_info();
+	if (ret) {
+		TS_LOG_ERR("nvt_kit_get_fw_info failed. (%d)\n", ret);
+	}
 
 	if (nvt_kit_get_fw_pipe() == 0)
 		nvt_kit_read_mdata(nvt_ts->mmap->DIFF_PIPE0_ADDR);

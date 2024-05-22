@@ -20,7 +20,6 @@
 #define pr_fmt(fmt) "logger: " fmt
 
 #include <linux/version.h>
-#include <linux/sched.h>
 #include <linux/module.h>
 #include <linux/fs.h>
 #include <linux/miscdevice.h>
@@ -31,6 +30,9 @@
 #include <linux/vmalloc.h>
 #include <linux/aio.h>
 #include <linux/ratelimit.h>
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+#include <linux/sched/signal.h>
+#endif
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,1,0))
 #include <linux/uio.h>
 #endif
@@ -42,6 +44,9 @@
 #endif
 #ifdef CONFIG_HW_FDLEAK
 #include <chipset_common/hwfdleak/fdleak.h>
+#endif
+#ifdef CONFIG_HW_ERECOVERY
+#include <chipset_common/hwerecovery/erecovery.h>
 #endif
 #include <asm/ioctls.h>
 #include <huawei_platform/log/log_switch.h>
@@ -833,6 +838,12 @@ static long logger_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		return ret;
 	}
 #endif
+#ifdef CONFIG_HW_ERECOVERY
+        ret = erecovery_ioctl(file, cmd, arg);
+        if(ret != ERECOVERY_CMD_INVALID) {
+                return ret;
+        }
+#endif
 	mutex_lock(&log->mutex);
 
 	switch (cmd) {
@@ -920,7 +931,9 @@ static const struct file_operations logger_fops = {
 #endif
 	.poll = logger_poll,
 	.unlocked_ioctl = logger_ioctl,
+#ifdef CONFIG_COMPAT
 	.compat_ioctl = logger_ioctl,
+#endif
 	.open = logger_open,
 	.release = logger_release,
 };

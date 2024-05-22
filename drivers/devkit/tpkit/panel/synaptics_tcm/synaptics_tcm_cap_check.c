@@ -188,8 +188,18 @@ static void syna_tcm_get_frame_size_words(unsigned int *size, bool image_only)
 
 static void syna_tcm_put_device_info(struct ts_rawdata_info_new *info)
 {
-	/* put ic data */
-	strncpy(info->deviceinfo, "-syna_tcm;", sizeof(info->deviceinfo));
+	char buf_fw_ver[CHIP_INFO_LENGTH] = {0};
+	struct syna_tcm_hcd *tcm_hcd = testing_hcd->tcm_hcd;
+
+	strncpy(info->deviceinfo, "-syna_tcm-", sizeof(info->deviceinfo));
+	syna_tcm_strncat(info->deviceinfo, tcm_hcd->tcm_mod_info.project_id_string,
+		sizeof(info->deviceinfo));
+
+	syna_tcm_strncat(info->deviceinfo, "-", sizeof(info->deviceinfo));
+	snprintf(buf_fw_ver, CHIP_INFO_LENGTH, "%d", tcm_hcd->packrat_number);
+	TS_LOG_INFO("buf_fw_ver = %s", buf_fw_ver);
+	syna_tcm_strncat(info->deviceinfo, buf_fw_ver, sizeof(info->deviceinfo));
+	syna_tcm_strncat(info->deviceinfo, ";", sizeof(info->deviceinfo));
 }
 
 static int syna_tcm_open_short_test(struct ts_rawdata_info_new *info)
@@ -203,11 +213,8 @@ static int syna_tcm_open_short_test(struct ts_rawdata_info_new *info)
 	unsigned int col = 0;
 	unsigned int rows = 0;
 	unsigned int cols = 0;
-	unsigned int limits_rows = 0;
-	unsigned int limits_cols = 0;
 	unsigned int frame_size_words = 0;
 	unsigned char *temp_buf = NULL;
-	unsigned char res_buf[4] = {0};
 	int open_short_data_max = 0;
 	int open_short_data_min = 0;
 	int open_short_data_avg = 0;
@@ -386,11 +393,8 @@ static int syna_tcm_noise_test(struct ts_rawdata_info_new *info)
 	unsigned int col = 0;
 	unsigned int rows = 0;
 	unsigned int cols = 0;
-	unsigned int limits_rows = 0;
-	unsigned int limits_cols = 0;
 	unsigned int frame_size_words = 0;
 	unsigned char *temp_buf = NULL;
-	unsigned char res_buf[4] = {0};
 	char testresult = CAP_TEST_PASS_CHAR;
 	char failedreason[TS_RAWDATA_FAILED_REASON_LEN] = {0};
 	int noise_data_max = 0;
@@ -569,11 +573,8 @@ static int syna_tcm_dynamic_range_test(struct ts_rawdata_info_new *info)
 	unsigned int col = 0;
 	unsigned int rows = 0;
 	unsigned int cols = 0;
-	unsigned int limits_rows = 0;
-	unsigned int limits_cols = 0;
 	unsigned int frame_size_words = 0;
 	unsigned char *temp_buf = NULL;
-	unsigned char res_buf[4] = {0};
 	char testresult = CAP_TEST_PASS_CHAR;
 	char failedreason[TS_RAWDATA_FAILED_REASON_LEN] = {0};
 	int raw_data_size= 0;
@@ -732,227 +733,12 @@ exit:
 	list_add_tail(&pts_node->node, &info->rawdata_head);
 
 	testing_hcd->report_type = 0;
+	kfree(temp_buf);
+	temp_buf = NULL;
 
 	return retval;
 }
 
-static int syna_tcm_raw_data_test(struct ts_rawdata_info_new* info)
-{
-	int retval = 0;
-	unsigned int idx = 0;
-	unsigned int data_length = 0;
-	short data = 0;
-	unsigned int timeout = 0;
-	unsigned int row = 0;
-	unsigned int col = 0;
-	unsigned int rows = 0;
-	unsigned int cols = 0;
-	unsigned char status_code = 0;
-	unsigned int retry = READ_REPORT_RETRY_TIMES;
-	unsigned char res_buf[4] = {0};
-	unsigned char temp_buf[2000] = {0};
-	char testresult = CAP_TEST_PASS_CHAR;
-	char failedreason[TS_RAWDATA_FAILED_REASON_LEN] = {0};
-	int raw_data_size= 0;
-	int raw_data_max = 0;
-	int raw_data_min = 0;
-	int raw_data_avg = 0;
-
-	struct syna_tcm_app_info *app_info = NULL;
-	struct syna_tcm_hcd *tcm_hcd = testing_hcd->tcm_hcd;
-	struct ts_rawdata_newnodeinfo* pts_node = NULL;
-	struct syna_tcm_test_threshold *threshold = &test_params->threshold;
-
-	TS_LOG_INFO("%s start\n", __func__);
-
-	testing_hcd->report_index = 0;
-	testing_hcd->report_type = REPORT_RAW;
-	testing_hcd->num_of_reports = 1;
-
-	app_info = &tcm_hcd->app_info;
-	rows = le2_to_uint(app_info->num_of_image_rows);
-	cols = le2_to_uint(app_info->num_of_image_cols);
-	raw_data_size = rows * cols;
-
-	pts_node = (struct ts_rawdata_newnodeinfo *)kzalloc(sizeof(struct ts_rawdata_newnodeinfo), GFP_KERNEL);
-	if (!pts_node) {
-		TS_LOG_ERR("malloc pts_node failed\n");
-		return -ENOMEM;
-	}
-
-	pts_node->values = kzalloc(raw_data_size*sizeof(int), GFP_KERNEL);
-	if (!pts_node->values) {
-		TS_LOG_ERR("%s malloc value failed  for values\n", __func__);
-		testresult = CAP_TEST_FAIL_CHAR;
-		strncpy(failedreason, "-software_reason", TS_RAWDATA_FAILED_REASON_LEN-1);
-		goto exit;
-	}
-
-	retval = syna_tcm_alloc_mem(tcm_hcd,
-			&testing_hcd->out,
-			1);
-	if (retval < 0) {
-		TS_LOG_ERR(
-				"Failed to allocate memory for testing_hcd->out.buf\n");
-		goto exit;
-	}
-
-	while(retry) {
-		testing_hcd->out.buf[0] = testing_hcd->report_type;
-		retval = syna_tcm_write_hdl_message(tcm_hcd,
-				CMD_ENABLE_REPORT,
-				testing_hcd->out.buf,
-				1,
-				&testing_hcd->resp.buf,
-				&testing_hcd->resp.buf_size,
-				&testing_hcd->resp.data_length,
-				NULL,
-				0);
-		if (retval < 0) {
-			TS_LOG_ERR("Failed to write command %s\n",STR(CMD_ENABLE_REPORT));
-			goto exit;
-		}
-
-
-		timeout = RES_TIMEOUT_MS;
-		msleep(timeout);
-
-		/* read out the response*/
-		retval = syna_tcm_read(tcm_hcd,
-				res_buf,
-				sizeof(res_buf));
-		if (retval < 0 ||res_buf[0] != MESSAGE_MARKER) {
-			TS_LOG_ERR("Failed to res_buf data\n");
-			return retval;
-		}
-
-		if (res_buf[1] != STATUS_OK) {
-			TS_LOG_INFO("cmd_enable_report_resp_buf: 0x%02x 0x%02x 0x%02x 0x%02x ", res_buf[0],res_buf[1],res_buf[2],res_buf[3]);
-		}else{
-			break;
-		}
-		retry --;
-	}
-
-	retry = READ_REPORT_RETRY_TIMES;
-	while (retry) {
-		timeout = REPORT_TIMEOUT_MS * testing_hcd->num_of_reports;
-		msleep(timeout);
-		retval = syna_tcm_read(tcm_hcd,
-				temp_buf,
-				sizeof(temp_buf));
-		if (retval < 0) {
-			TS_LOG_ERR("Failed to read raw data\n");
-			return retval;
-		}
-
-		if (temp_buf[0] != MESSAGE_MARKER) {
-			TS_LOG_ERR("incorrect Header Marker!");
-			return -EINVAL;
-		}
-		status_code = temp_buf[1];
-		if (status_code == REPORT_RAW) {
-			break;
-		} else {
-			TS_LOG_ERR("status_code = 0x%x, retry = %d\n", status_code, retry);
-			retry --;
-		}
-	}
-
-	data_length = temp_buf[2] | temp_buf[3] << 8;
-	TS_LOG_INFO("data_length = %d\n", data_length);
-
-	retry = READ_REPORT_RETRY_TIMES;
-	while(retry) {
-		testing_hcd->out.buf[0] = testing_hcd->report_type;
-		retval = syna_tcm_write_hdl_message(tcm_hcd,
-				CMD_DISABLE_REPORT,
-				testing_hcd->out.buf,
-				1,
-				&testing_hcd->resp.buf,
-				&testing_hcd->resp.buf_size,
-				&testing_hcd->resp.data_length,
-				NULL,
-				0);
-		if (retval < 0) {
-			TS_LOG_ERR(
-					"Failed to write command %s\n",
-					STR(CMD_ENABLE_REPORT));
-			goto exit;
-		}
-
-		timeout = RES_TIMEOUT_MS;
-		msleep(timeout);
-
-		/* read out the response*/
-		retval = syna_tcm_read(tcm_hcd,
-				res_buf,
-				sizeof(res_buf));
-
-		if (retval < 0 ||res_buf[0] != MESSAGE_MARKER) {
-				TS_LOG_ERR("Failed to res_buf data\n");
-				return retval;
-		}
-
-		if (res_buf[1] != STATUS_OK) {
-			TS_LOG_INFO("cmd_disable_report_resp_buf: 0x%02x 0x%02x 0x%02x 0x%02x ", res_buf[0],res_buf[1],res_buf[2],res_buf[3]);
-		}else{
-			break;
-		}
-		retry --;
-	}
-
-	idx = 0;
-	raw_data_max = raw_data_min = (int)le2_to_uint(&temp_buf[MESSAGE_HEADER_SIZE]);
-	for (row = 0; row < rows; row++) {
-		for (col = 0; col < cols; col++) {
-			data = (short)le2_to_uint(&temp_buf[idx * 2 + MESSAGE_HEADER_SIZE]);
-			pts_node->values[idx] = (int)data;
-			raw_data_max = data > raw_data_max ? data : raw_data_max;
-			raw_data_min = data < raw_data_min ? data : raw_data_min;
-			raw_data_avg += data;
-			idx++;
-		}
-	}
-	if (raw_data_size)
-		raw_data_avg /= raw_data_size;
-
-	idx = 0;
-	testing_hcd->result = true;
-
-	for (row = 0; row < rows; row++) {
-		for (col = 0; col < cols; col++) {
-			data = (short)le2_to_uint(&temp_buf[idx * 2 + MESSAGE_HEADER_SIZE]);
-			if (data > threshold->raw_data_max_limits[idx] ||
-				data < threshold->raw_data_min_limits[idx]) {
-				TS_LOG_ERR("%s overlow_data = %d, row = %d, col = %d, limits [%d,%d]\n", __func__, data, row, col, threshold->raw_data_max_limits[idx], threshold->raw_data_min_limits[idx]);
-				testing_hcd->result = false;
-				testresult = CAP_TEST_FAIL_CHAR;
-				strncpy(failedreason, "-panel_reason", TS_RAWDATA_FAILED_REASON_LEN-1);
-				goto exit;
-			}
-			idx++;
-		}
-	}
-
-exit:
-	TS_LOG_INFO("%s end retval = %d\n", __func__, retval);
-	pts_node->size = raw_data_size;
-	pts_node->testresult = testresult;
-	pts_node->typeindex = RAW_DATA_TYPE_CAPRAWDATA;		
-	strncpy(pts_node->test_name, "Cap_Rawdata", TS_RAWDATA_TEST_NAME_LEN-1);
-	snprintf(pts_node->statistics_data, TS_RAWDATA_STATISTICS_DATA_LEN,
-			"[%d,%d,%d]",
-			raw_data_min, raw_data_max, raw_data_avg);	
-	if (CAP_TEST_FAIL_CHAR == testresult) {
-		strncpy(pts_node->tptestfailedreason, failedreason, TS_RAWDATA_FAILED_REASON_LEN-1);
-	}
-	list_add_tail(&pts_node->node, &info->rawdata_head);
-
-	testing_hcd->report_type = 0;
-
-	return retval;
-}
 
 int syna_tcm_cap_test(struct ts_rawdata_info_new *info,
 			struct ts_cmd_node *out_cmd)

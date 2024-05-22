@@ -67,7 +67,7 @@
 #include <m3_modem.h>
 #include <hwspinlock.h>
 #ifndef UNUSED
-#define UNUSED(a) (a=a)
+#define UNUSED(a) (void)(a)
 #endif
 
 typedef enum {

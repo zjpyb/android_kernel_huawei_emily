@@ -88,6 +88,9 @@
 /* Auto Hibern8 Timer, RPMB: 5s */
 #define UFS_AHIT_AUTOH8_RPMB_TIMER (0x11F4)
 
+/* maximum number of init retries before giving up */
+#define MAX_HOST_INIT_RETRIES 7
+
 struct ufs_hba;
 #ifdef CONFIG_HISI_UFS_MANUAL_BKOPS
 struct ufs_dev_bkops_ops;
@@ -424,8 +427,10 @@ struct ufs_clk_info {
 	bool enabled;
 };
 
-#define PRE_CHANGE      0
-#define POST_CHANGE     1
+enum ufs_notify_change_status {
+	PRE_CHANGE,
+	POST_CHANGE,
+};
 
 struct ufs_pa_layer_attr {
 	u32 gear_rx;
@@ -472,43 +477,47 @@ struct ufs_pwr_mode_info {
  */
 struct ufs_hba_variant_ops {
 	const char *name;
-	int	(*init)(struct ufs_hba *);
-	void    (*exit)(struct ufs_hba *);
-	u32	(*get_ufs_hci_version)(struct ufs_hba *);
-	void    (*clk_scale_notify)(struct ufs_hba *);
-	int     (*setup_clocks)(struct ufs_hba *, bool);
-	int     (*setup_regulators)(struct ufs_hba *, bool);
-	int     (*hce_enable_notify)(struct ufs_hba *, bool);
-	int     (*link_startup_notify)(struct ufs_hba *, bool);
-	int	(*pwr_change_notify)(struct ufs_hba *,
-					bool, struct ufs_pa_layer_attr *,
-					struct ufs_pa_layer_attr *);
-	int	(*apply_dev_quirks)(struct ufs_hba *);
-	int     (*suspend_before_set_link_state)(struct ufs_hba *, enum ufs_pm_op);
-	int     (*suspend)(struct ufs_hba *, enum ufs_pm_op);
-	int     (*resume)(struct ufs_hba *, enum ufs_pm_op);
-	int     (*resume_after_set_link_state)(struct ufs_hba *, enum ufs_pm_op);
-	void    (*full_reset)(struct ufs_hba *);
+	int (*init)(struct ufs_hba *);
+	void (*exit)(struct ufs_hba *);
+	u32 (*get_ufs_hci_version)(struct ufs_hba *);
+	void (*clk_scale_notify)(struct ufs_hba *);
+	int (*setup_clocks)(struct ufs_hba *, bool);
+	int (*setup_regulators)(struct ufs_hba *, bool);
+	int (*hce_enable_notify)(
+		struct ufs_hba *, enum ufs_notify_change_status);
+	int (*link_startup_notify)(
+		struct ufs_hba *, enum ufs_notify_change_status);
+	int (*pwr_change_notify)(struct ufs_hba *,
+		enum ufs_notify_change_status status,
+		struct ufs_pa_layer_attr *, struct ufs_pa_layer_attr *);
+	int (*apply_dev_quirks)(struct ufs_hba *);
+	int (*suspend_before_set_link_state)(struct ufs_hba *, enum ufs_pm_op);
+	int (*suspend)(struct ufs_hba *, enum ufs_pm_op);
+	int (*resume)(struct ufs_hba *, enum ufs_pm_op);
+	int (*resume_after_set_link_state)(struct ufs_hba *, enum ufs_pm_op);
+	void (*full_reset)(struct ufs_hba *);
 #ifdef CONFIG_SCSI_UFS_INLINE_CRYPTO
-	int     (*uie_config_init)(struct ufs_hba *);
-	void    (*uie_utrd_pre)(struct ufs_hba *, struct ufshcd_lrb *);
+	int (*uie_config_init)(struct ufs_hba *);
+	void (*uie_utrd_pre)(struct ufs_hba *, struct ufshcd_lrb *);
 #endif
-	void    (*device_reset)(struct ufs_hba *);
+	void (*device_reset)(struct ufs_hba *);
+	void (*set_ref_clk)(struct ufs_hba *);
 	/* kirin specific ops */
-	void    (*dbg_hci_dump)(struct ufs_hba *);
-	void    (*dbg_uic_dump)(struct ufs_hba *);
+	void (*dbg_hci_dump)(struct ufs_hba *);
+	void (*dbg_uic_dump)(struct ufs_hba *);
 #ifdef CONFIG_DEBUG_FS
-	void	(*add_debugfs)(struct ufs_hba *hba, struct dentry *root);
-	void	(*remove_debugfs)(struct ufs_hba *hba);
+	void (*add_debugfs)(struct ufs_hba *hba, struct dentry *root);
+	void (*remove_debugfs)(struct ufs_hba *hba);
 #endif
 #ifdef CONFIG_SCSI_UFS_KIRIN_LINERESET_CHECK
-	int	(*background_thread)(void *d);
+	int (*background_thread)(void *d);
 #endif
-	void	(*dbg_register_dump)(struct ufs_hba *hba);
-	int	(*phy_initialization)(struct ufs_hba *);
+	void (*dbg_register_dump)(struct ufs_hba *hba);
+	int (*phy_initialization)(struct ufs_hba *);
 #ifdef CONFIG_SCSI_UFS_HS_ERROR_RECOVER
-	int	(*get_pwr_by_debug_register)(struct ufs_hba *hba);
+	int (*get_pwr_by_debug_register)(struct ufs_hba *hba);
 #endif
+	void (*vcc_power_on_off)(struct ufs_hba *hba);
 };
 
 /* UFS Host Controller debug print bitmask */
@@ -919,7 +928,7 @@ struct ufs_hba {
 	struct list_head bkops_whitelist;
 	struct list_head bkops_blacklist;
 #endif
-	u32 reset_retry_max;
+	int reset_retry_max;
 
 	uint32_t last_intr;
 	uint64_t last_intr_time_stamp;
@@ -937,6 +946,8 @@ struct ufs_hba {
 	bool ufs_idle_intr_verify;
 #endif
 	struct mutex eh_mutex;
+	int ufs_init_retries;
+	int ufs_reset_retries;
 };
 #ifdef FEATURE_UFS_AUTO_BKOPS
 static inline bool ufshcd_can_autobkops_during_suspend(struct ufs_hba *hba)
@@ -1260,6 +1271,13 @@ static inline int ufshcd_vops_resume(struct ufs_hba *hba, enum ufs_pm_op op)
 
 	return 0;
 }
+
+static inline void ufshcd_vops_set_device_refclk(struct ufs_hba *hba)
+{
+	if (hba->vops && hba->vops->set_ref_clk)
+		hba->vops->set_ref_clk(hba);
+}
+
 static inline int ufshcd_vops_suspend_before_set_link_state(struct ufs_hba *hba, enum ufs_pm_op op)
 {
 	if (hba->vops && hba->vops->suspend_before_set_link_state)
@@ -1284,7 +1302,11 @@ int ufshcd_read_unit_desc_param(struct ufs_hba *hba,
 int ufshcd_send_vendor_scsi_cmd(struct ufs_hba *hba,
 		struct scsi_device *sdp, unsigned char* cdb, void* buf);
 void ufshcd_set_auto_hibern8_delay(struct ufs_hba *hba, unsigned int value);
-#ifdef CONFIG_SCSI_UFS_ENHANCED_INLINE_CRYPTO_V2
-void uie_close_session(void);
-#endif
+
+static inline void ufshcd_vops_vcc_power_on_off(struct ufs_hba *hba)
+{
+	if (hba && hba->vops && hba->vops->vcc_power_on_off)
+		hba->vops->vcc_power_on_off(hba);
+}
+
 #endif /* End of Header */

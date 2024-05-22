@@ -404,6 +404,7 @@ IOMAP_FIN:
 }
 
 /*lint -e715*/
+#ifdef CONFIG_HISI_DEBUG_FS
 static void hisi_softtimer_timeout(unsigned long data)
 {
     printk(KERN_INFO "hisi_softtimer_timeout\n");
@@ -411,7 +412,6 @@ static void hisi_softtimer_timeout(unsigned long data)
 }
 /*lint +e715*/
 /*lint -e727*/
-#ifdef CONFIG_HISI_DEBUG_FS
 struct softtimer_list timer = {0};
 void hisi_softtimer_test(int timeout)
 {

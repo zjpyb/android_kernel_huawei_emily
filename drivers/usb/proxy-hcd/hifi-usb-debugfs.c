@@ -555,7 +555,7 @@ static int hifi_test_open(struct inode *inode, struct file *file)
 	return single_open(file, hifi_test_show, inode->i_private);
 }
 
-static int get_inject_point_data(char *cmd, size_t len,
+static int get_inject_point_data(const char *cmd, size_t len,
 		enum inject_point *point, u32 *data)
 {
 	char *fun_name;
@@ -588,7 +588,7 @@ static int get_inject_point_data(char *cmd, size_t len,
 	return -EOPNOTSUPP;
 }
 
-static int send_faultinject_msg(enum fault_type fault, char *cmd, size_t len)
+static int send_faultinject_msg(enum fault_type fault, const char *cmd, size_t len)
 {
 	struct hifi_usb_test_msg mesg;
 	enum inject_point point;

@@ -585,7 +585,7 @@ int rdr_common_early_init(void)
 	len = strlen(prdr_dumpctrl);
 	for (i = --len; i >= 0; i--) {
 		if (prdr_dumpctrl[i] == '1')
-			g_nve |= (u64)1 << (len - i);
+			g_nve |= (u64)1 <<(unsigned int)(len - i);
 	}
 	BB_PRINT_DBG("[%s], get nve [0x%llx] in dts!\n", __func__, g_nve);
 	ret = of_property_read_u32(np, "rdr-log-max-size", &value);

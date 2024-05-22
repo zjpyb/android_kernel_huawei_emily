@@ -34,8 +34,10 @@ struct ion_buffer;
  * be converted to phys_addr_t.  For the time being many kernel interfaces
  * do not accept phys_addr_t's that would have to
  */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeclaration-after-statement"
 #define ion_phys_addr_t unsigned long
-
+#pragma GCC diagnostic pop
 /**
  * struct ion_platform_heap - defines a heap in the given platform
  * @type:	type of the heap from ion_heap_type enum
@@ -218,5 +220,5 @@ size_t ion_get_used_memory(struct ion_heap *heap);
 * @len:»       a pointer to put the length in
 */
 int ion_secmem_get_phys(struct ion_client *client, struct ion_handle *handle,
-			ion_phys_addr_t *addr, size_t *len);
+			phys_addr_t *addr, size_t *len);
 #endif /* _LINUX_ION_H */

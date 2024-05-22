@@ -25,6 +25,7 @@
 #include <hisi_partition.h>
 #include "rdr_print.h"
 #include "rdr_inner.h"
+#include <libhwsecurec/securec.h>
 
 int dfx_open(void)
 {
@@ -46,8 +47,14 @@ int dfx_open(void)
 		return ret;
 	}
 
-	memset(p_name, 0, sizeof(p_name));
-	strncpy(p_name, buf, sizeof(p_name));
+	if (EOK != memset_s(p_name, sizeof(p_name), 0, sizeof(p_name))) {
+		BB_PRINT_ERR("%s():%d:memset_s fail!\n", __func__, __LINE__);
+	}
+
+	if (EOK != strncpy_s(p_name, sizeof(p_name), buf, sizeof(p_name))) {
+		BB_PRINT_ERR("%s():%d:strncpy_s fail!\n", __func__, __LINE__);
+	}
+
 	p_name[BDEVNAME_SIZE + 11] = '\0';
 	kfree(buf);
 
@@ -86,7 +93,7 @@ close:
 	return cnt;
 }
 
-int dfx_write(u32 module,void *buffer, u32 size)
+int dfx_write(u32 module,const void *buffer, u32 size)
 {
 	int ret, fd_dfx, cnt=0;
 	mm_segment_t old_fs = get_fs();

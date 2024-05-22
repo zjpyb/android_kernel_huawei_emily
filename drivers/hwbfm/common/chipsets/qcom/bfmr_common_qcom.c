@@ -18,6 +18,7 @@
 
 #include <linux/kernel.h>
 #include <chipset_common/bfmr/common/bfmr_common.h>
+#include <linux/rtc.h>
 
 
 /*----local macroes------------------------------------------------------------------*/
@@ -78,7 +79,11 @@ int bfmr_get_device_full_path(char *dev_name, char *path_buf, unsigned int path_
 */
 unsigned int bfmr_get_bootup_time(void)
 {
-    //TODO: need add qcom function to get bootup time
-    return 0;
+	u64 ts = 0;
+
+	ts = sched_clock();
+
+	/* nanoseconds covert to seconds */
+	return (unsigned int)(ts / 1000 / 1000 / 1000);
 }
 

@@ -41,17 +41,22 @@
 #include <linux/iommu.h>
 #include <linux/proc_fs.h>
 #include <linux/hisi/hisi_ion.h>
-#include <linux/hisi/ion-iommu.h>
+#include <linux/ion-iommu.h>
 #include <linux/atomic.h>
 #include <linux/platform_device.h>
-
+#ifdef CONFIG_HISI_LB
+#include <linux/hisi/hisi_lb.h>
+#endif
 #include <linux/hisi/rdr_hisi_ap_hook.h>
 #include "ion.h"
 #include "ion_priv.h"
 #include "compat_ion.h"
+#include <linux/fdtable.h>
+#include <linux/sched.h>
 
 #define HISI_ION_FLUSH_ALL_CPUS_CACHES	(0x800000) /*8MB*/
 
+static atomic_long_t ion_magic;
 static atomic_long_t ion_total_size;
 
 bool ion_buffer_fault_user_mappings(struct ion_buffer *buffer)
@@ -112,6 +117,7 @@ static void ion_buffer_add(struct ion_device *dev,
 }
 
 /* this function should only be called while dev->heap_lock is held */
+/*lint -e578 -e574*/
 static struct ion_buffer *ion_buffer_create(struct ion_heap *heap,
 					    struct ion_device *dev,
 					    unsigned long len,
@@ -128,6 +134,7 @@ static struct ion_buffer *ion_buffer_create(struct ion_heap *heap,
 	if (!buffer)
 		return ERR_PTR(-ENOMEM);
 
+	buffer->magic = atomic64_inc_return(&ion_magic);
 	buffer->heap = heap;
 	buffer->flags = flags;
 	kref_init(&buffer->ref);
@@ -253,11 +260,30 @@ static struct ion_buffer *ion_buffer_create(struct ion_heap *heap,
 		}
 	}
 
+#ifdef CONFIG_HISI_LB
+	if (flags & ION_FLAG_HISI_LB_MASK) {
+		buffer->plc_id = ION_FLAG_2_PLC_ID(flags);
+		pr_err("HISI ION LB %lx\n", flags);
+		/*
+		 * will inv cache with normal va,
+		 * and need before zero
+		 */
+		if (lb_sg_attach(buffer->plc_id, buffer->sg_table->sgl,
+				 buffer->sg_table->nents))
+			goto err0;
+	}
+#endif
+
 	mutex_lock(&dev->buffer_lock);
 	ion_buffer_add(dev, buffer);
 	mutex_unlock(&dev->buffer_lock);
 	return buffer;
 
+#ifdef CONFIG_HISI_LB
+err0:
+	if (ion_buffer_fault_user_mappings(buffer))
+		vfree(buffer->pages);
+#endif
 err1:
 	heap->ops->free(buffer);
 err2:
@@ -266,6 +292,7 @@ err2:
 		pr_err("%s: failed!\n", __func__);
 	return ERR_PTR(ret);
 }
+/*lint +e578 +e574*/
 
 void ion_buffer_destroy(struct ion_buffer *buffer)
 {
@@ -282,6 +309,16 @@ void ion_buffer_destroy(struct ion_buffer *buffer)
 
 	if (WARN_ON(buffer->kmap_cnt > 0))
 		buffer->heap->ops->unmap_kernel(buffer->heap, buffer);
+
+#ifdef CONFIG_HISI_LB
+	/*
+	 * will inv cache with gid va,
+	 * and need before free
+	 */
+	if (buffer->plc_id)
+		(void)lb_sg_detach(buffer->plc_id, buffer->sg_table->sgl,
+				 buffer->sg_table->nents);
+#endif
 	buffer->heap->ops->free(buffer);
 	vfree(buffer->pages);
 	kfree(buffer);
@@ -844,6 +881,7 @@ static void do_iommu_unmap(struct kref *kref)
 	kfree(map);
 }
 
+/*lint -e578*/
 void ion_unmap_iommu(struct ion_client *client, struct ion_handle *handle)
 {
 	struct ion_iommu_map *iommu_map;
@@ -874,8 +912,10 @@ out:
 	mutex_unlock(&buffer->lock);
 	mutex_unlock(&client->lock);
 }
+/*lint +e578*/
 EXPORT_SYMBOL(ion_unmap_iommu);
 
+/*lint -e574*/
 static int ion_debug_client_show(struct seq_file *s, void *unused)
 {
 	struct ion_client *client = s->private;
@@ -904,6 +944,7 @@ static int ion_debug_client_show(struct seq_file *s, void *unused)
 	}
 	return 0;
 }
+/*lint +e574*/
 
 static int ion_debug_client_open(struct inode *inode, struct file *file)
 {
@@ -1171,7 +1212,7 @@ static int ion_vm_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 
 	return VM_FAULT_NOPAGE;
 }
-
+/*lint -e429*/
 static void ion_vm_open(struct vm_area_struct *vma)
 {
 	struct ion_buffer *buffer = vma->vm_private_data;
@@ -1187,6 +1228,7 @@ static void ion_vm_open(struct vm_area_struct *vma)
 	mutex_unlock(&buffer->lock);
 	pr_debug("%s: adding %pK\n", __func__, vma);
 }
+/*lint +e429*/
 
 static void ion_vm_close(struct vm_area_struct *vma)
 {
@@ -1603,6 +1645,95 @@ static size_t ion_debug_heap_total(struct ion_client *client,
 	return size;
 }
 
+static  int ion_debug_process_heap_show(struct seq_file *s, void *unused)
+{
+	int fd;
+	struct task_struct *tsk;
+	struct files_struct *files;
+	size_t task_total_ion_size = 0;
+
+	seq_puts(s, "Process ION heap info:\n");
+	seq_puts(s, "----------------------------------------------------\n");
+	seq_printf(s, "%16s %16s %16s %16s %16s %16s %16s\n",
+			"Process name", "Process ID",
+			"fd", "size",
+			"magic", "buf->pid",
+			"buf->task_comm");
+
+	rcu_read_lock();
+	for_each_process(tsk) {
+		if (tsk->flags & PF_KTHREAD)
+			continue;
+		get_task_struct(tsk);
+		files = get_files_struct(tsk);
+		if (!files) {
+			put_task_struct(tsk);
+			continue;
+		}
+
+		task_total_ion_size = 0;
+		for (fd = 0; fd < files_fdtable(files)->max_fds; fd++) {/*lint !e1058*/
+			struct dma_buf *dbuf;
+			struct ion_buffer *ibuf;
+			struct file *f = fcheck_files(files, fd);
+			if (!f)
+				continue;
+			if (!get_file_rcu(f))
+				continue;
+			if (!is_dma_buf_file(f)) {
+				fput(f);
+				continue;
+			}
+			dbuf = file_to_dma_buf(f);
+			if (!dbuf) {
+				fput(f);
+				continue;
+			}
+			if (dbuf->owner != THIS_MODULE) {
+				fput(f);
+				continue;
+			}
+			ibuf = dbuf->priv;
+			if (!ibuf) {
+				fput(f);
+				continue;
+			}
+			task_total_ion_size += dbuf->size;
+			seq_printf(s, "%16s %16u %16u %16zu %16llu %16u %16s\n",
+				tsk->comm, tsk->pid,
+				fd, dbuf->size, ibuf->magic,
+				ibuf->pid, ibuf->task_comm);
+			fput(f);
+		}
+
+		if (task_total_ion_size > 0) {
+			seq_printf(s, "%16s %-16s %16zu\n",
+				"Total Ion size of ",
+				tsk->comm, task_total_ion_size);
+		}
+		task_total_ion_size = 0;
+		put_files_struct(files);
+		put_task_struct(tsk);
+	}
+	rcu_read_unlock();
+
+	seq_puts(s, "----------------------------------------------------\n");
+	return 0;
+}
+
+static int ion_debug_process_heap_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, ion_debug_process_heap_show, inode->i_private);
+}
+
+static const struct file_operations debug_process_heap_fops = {
+	.open = ion_debug_process_heap_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
+
+/*lint -e578*/
 static int ion_debug_heap_show(struct seq_file *s, void *unused)
 {
 	struct ion_heap *heap = s->private;
@@ -1665,6 +1796,7 @@ static int ion_debug_heap_show(struct seq_file *s, void *unused)
 
 	return 0;
 }
+/*lint +e578*/
 
 static int ion_debug_heap_open(struct inode *inode, struct file *file)
 {
@@ -1713,6 +1845,7 @@ static int debug_shrink_get(void *data, u64 *val)
 DEFINE_SIMPLE_ATTRIBUTE(debug_shrink_fops, debug_shrink_get,
 			debug_shrink_set, "%llu\n");
 
+/*lint -e501 */
 void ion_device_add_heap(struct ion_device *dev, struct ion_heap *heap)
 {
 	struct dentry *debug_file;
@@ -1767,6 +1900,7 @@ void ion_device_add_heap(struct ion_device *dev, struct ion_heap *heap)
 	dev->heap_cnt++;
 	up_write(&dev->heap_lock);
 }
+/*lint +e501 */
 EXPORT_SYMBOL(ion_device_add_heap);
 
 static size_t ion_debug_memtrack_total(struct ion_client *client)
@@ -1848,6 +1982,7 @@ struct ion_device *ion_device_create(long (*custom_ioctl)
 	struct ion_device *idev;
 	struct proc_dir_entry *entry;
 	int ret;
+	struct dentry *debug_file;
 
 	idev = kzalloc(sizeof(*idev), GFP_KERNEL);
 	if (!idev)
@@ -1874,6 +2009,18 @@ struct ion_device *ion_device_create(long (*custom_ioctl)
 		pr_err("ion: failed to create debugfs heaps directory.\n");
 		goto debugfs_done;
 	}
+
+	debug_file = debugfs_create_file(
+		"process_hep_info", 0660, idev->heaps_debug_root, NULL,
+		&debug_process_heap_fops);
+	if (!debug_file) {
+		char buf[256], *path;
+
+		path = dentry_path(idev->heaps_debug_root, buf, 256);
+		pr_err("Failed to create process heap debugfs at %s/%s\n",
+			path, "process_hep_info");
+	}
+
 	idev->clients_debug_root = debugfs_create_dir("clients",
 						idev->debug_root);
 	if (!idev->clients_debug_root)
@@ -1907,7 +2054,7 @@ void ion_device_destroy(struct ion_device *dev)
 EXPORT_SYMBOL(ion_device_destroy);
 
 int ion_secmem_get_phys(struct ion_client *client, struct ion_handle *handle,
-	     ion_phys_addr_t *addr, size_t *len)
+	     phys_addr_t *addr, size_t *len)
 {
 	struct ion_buffer *buffer;
 	int ret;

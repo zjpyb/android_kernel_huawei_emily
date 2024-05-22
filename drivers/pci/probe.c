@@ -1240,12 +1240,12 @@ int pci_setup_device(struct pci_dev *dev)
 	dev->revision = class & 0xff;
 	dev->class = class >> 8;		    /* upper 3 bytes */
 
-#ifdef CONFIG_PCIE_KIRIN
-	dev_printk(KERN_DEBUG, &dev->dev, "type %02x class %#08x\n",
-		   dev->hdr_type, dev->class);
-#else
+#if !defined(CONFIG_PCIE_KIRIN) || defined(CONFIG_KIRIN_PCIE_TEST)
 	dev_printk(KERN_DEBUG, &dev->dev, "[%04x:%04x] type %02x class %#08x\n",
 		   dev->vendor, dev->device, dev->hdr_type, dev->class);
+#else
+	dev_printk(KERN_DEBUG, &dev->dev, "type %02x class %#08x\n",
+		   dev->hdr_type, dev->class);
 #endif
 
 	/* need to have dev->class ready */
@@ -1369,6 +1369,10 @@ static void pci_configure_mps(struct pci_dev *dev)
 	int mps, p_mps, rc;
 
 	if (!pci_is_pcie(dev) || !bridge || !pci_is_pcie(bridge))
+		return;
+
+	/* MPS and MRRS fields are of type 'RsvdP' for VFs, short-circuit out */
+	if (dev->is_virtfn)
 		return;
 
 	mps = pcie_get_mps(dev);

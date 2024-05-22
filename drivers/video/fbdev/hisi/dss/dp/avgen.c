@@ -1,15 +1,36 @@
-/* Copyright (c) 2013-2014, Hisilicon Tech. Co., Ltd. All rights reserved.
-*
-* This program is free software; you can redistribute it and/or modify
-* it under the terms of the GNU General Public License version 2 and
-* only version 2 as published by the Free Software Foundation.
-*
-* This program is distributed in the hope that it will be useful,
-* but WITHOUT ANY WARRANTY; without even the implied warranty of
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	See the
-* GNU General Public License for more details.
-*
-*/
+/*
+ * Copyright (c) 2016 Synopsys, Inc.
+ *
+ * Synopsys DP TX Linux Software Driver and documentation (hereinafter,
+ * "Software") is an Unsupported proprietary work of Synopsys, Inc. unless
+ * otherwise expressly agreed to in writing between Synopsys and you.
+ *
+ * The Software IS NOT an item of Licensed Software or Licensed Product under
+ * any End User Software License Agreement or Agreement for Licensed Product
+ * with Synopsys or any supplement thereto. You are permitted to use and
+ * redistribute this Software in source and binary forms, with or without
+ * modification, provided that redistributions of source code must retain this
+ * notice. You may not view, use, disclose, copy or distribute this file or
+ * any information contained herein except pursuant to this license grant from
+ * Synopsys. If you do not agree with this notice, including the disclaimer
+ * below, then you are not authorized to use the Software.
+ *
+ * THIS SOFTWARE IS BEING DISTRIBUTED BY SYNOPSYS SOLELY ON AN "AS IS" BASIS
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE HEREBY DISCLAIMED. IN NO EVENT SHALL SYNOPSYS BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+ * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
+ * DAMAGE.
+ */
+
+/*
+ * Copyright (c) 2017 Hisilicon Tech. Co., Ltd. Integrated into the Hisilicon display system.
+ */
 #include "avgen.h"
 #include "../hisi_fb.h"
 #include "../hisi_fb_def.h"
@@ -328,6 +349,7 @@ void dptx_fill_sdp(struct dp_ctrl *dptx, struct sdp_full_data *data)
 	else
 		dptx_disable_sdp(dptx, data->payload);
 }
+
 void dptx_en_audio_channel(struct dp_ctrl *dptx, int ch_num, int enable)
 {
 	uint32_t reg;
@@ -343,69 +365,69 @@ void dptx_en_audio_channel(struct dp_ctrl *dptx, int ch_num, int enable)
 
 	if (enable) {
 		switch (ch_num) {
-		case 1:
-			data_en = DPTX_EN_AUDIO_CH_1;
-			break;
-		case 2:
-			data_en = DPTX_EN_AUDIO_CH_2;
-			break;
-		case 3:
-			data_en = DPTX_EN_AUDIO_CH_3;
-			break;
-		case 4:
-			data_en = DPTX_EN_AUDIO_CH_4;
-			break;
-		case 5:
-			data_en = DPTX_EN_AUDIO_CH_5;
-			break;
-		case 6:
-			data_en = DPTX_EN_AUDIO_CH_6;
-			break;
-		case 7:
-			data_en = DPTX_EN_AUDIO_CH_7;
-			break;
-		case 8:
-			data_en = DPTX_EN_AUDIO_CH_8;
-			break;
-		default:
-			break;
+			case 1:
+				data_en = DPTX_EN_AUDIO_CH_1;
+				break;
+			case 2:
+				data_en = DPTX_EN_AUDIO_CH_2;
+				break;
+			case 3:
+				data_en = DPTX_EN_AUDIO_CH_3;
+				break;
+			case 4:
+				data_en = DPTX_EN_AUDIO_CH_4;
+				break;
+			case 5:
+				data_en = DPTX_EN_AUDIO_CH_5;
+				break;
+			case 6:
+				data_en = DPTX_EN_AUDIO_CH_6;
+				break;
+			case 7:
+				data_en = DPTX_EN_AUDIO_CH_7;
+				break;
+			case 8:
+				data_en = DPTX_EN_AUDIO_CH_8;
+				break;
+			default:
+				break;
 		}
 		reg |= data_en << DPTX_AUD_CONFIG1_DATA_EN_IN_SHIFT;
 	} else {
 		switch (ch_num) {
-		case 1:
-			data_en = DPTX_EN_AUDIO_CH_1;
-			break;
-		case 2:
-			data_en = DPTX_EN_AUDIO_CH_2;
-			break;
-		case 3:
-			data_en = DPTX_EN_AUDIO_CH_3;
-			break;
-		case 4:
-			data_en = DPTX_EN_AUDIO_CH_4;
-			break;
-		case 5:
-			data_en = DPTX_EN_AUDIO_CH_5;
-			break;
-		case 6:
-			data_en = DPTX_EN_AUDIO_CH_6;
-			break;
-		case 7:
-			data_en = DPTX_EN_AUDIO_CH_7;
-			break;
-		case 8:
-			data_en = DPTX_EN_AUDIO_CH_8;
-			break;
-		default:
-			break;
+			case 1:
+				data_en = DPTX_EN_AUDIO_CH_1;
+				break;
+			case 2:
+				data_en = DPTX_EN_AUDIO_CH_2;
+				break;
+			case 3:
+				data_en = DPTX_EN_AUDIO_CH_3;
+				break;
+			case 4:
+				data_en = DPTX_EN_AUDIO_CH_4;
+				break;
+			case 5:
+				data_en = DPTX_EN_AUDIO_CH_5;
+				break;
+			case 6:
+				data_en = DPTX_EN_AUDIO_CH_6;
+				break;
+			case 7:
+				data_en = DPTX_EN_AUDIO_CH_7;
+				break;
+			case 8:
+				data_en = DPTX_EN_AUDIO_CH_8;
+				break;
+			default:
+				break;
 		}
 		reg &= ~(data_en << DPTX_AUD_CONFIG1_DATA_EN_IN_SHIFT);
 	}
 	dptx_writel(dptx, DPTX_AUD_CONFIG1, reg);
 }
 
-void dptx_video_reset(struct dp_ctrl *dptx, int enable)
+void dptx_video_reset(struct dp_ctrl *dptx, int enable, int stream)
 {
 	uint32_t reg;
 
@@ -416,9 +438,9 @@ void dptx_video_reset(struct dp_ctrl *dptx, int enable)
 
 	reg = (uint32_t)dptx_readl(dptx, DPTX_SRST_CTRL);
 	if (enable)
-		reg |= DPTX_SRST_VIDEO_RESET;
+		reg |= DPTX_SRST_VIDEO_RESET_N(stream);
 	else
-		reg &= ~DPTX_SRST_VIDEO_RESET;
+		reg &= ~DPTX_SRST_VIDEO_RESET_N(stream);
 	dptx_writel(dptx, DPTX_SRST_CTRL, reg);
 }
 
@@ -573,17 +595,17 @@ bool dptx_check_low_temperature(struct dp_ctrl *dptx)
 /*
  * Video Generation
  */
-void dptx_video_timing_change(struct dp_ctrl *dptx)
+void dptx_video_timing_change(struct dp_ctrl *dptx, int stream)
 {
 	if (dptx == NULL) {
 		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return;
 	}
 
-	dptx_disable_default_video_stream(dptx);
-	dptx_video_core_config(dptx);
-	dptx_video_ts_change(dptx);
-	dptx_enable_default_video_stream(dptx);
+	dptx_disable_default_video_stream(dptx, stream);
+	dptx_video_core_config(dptx, stream);
+	dptx_video_ts_change(dptx, stream);
+	dptx_enable_default_video_stream(dptx, stream);
 }
 
 int dptx_change_video_mode_tu_fail(struct dp_ctrl *dptx)
@@ -635,7 +657,7 @@ int dptx_change_video_mode_user(struct dp_ctrl *dptx)
 	}
 
 	if (needchanged) {
-		retval = dptx_video_mode_change(dptx, vparams->mode);
+		retval = dptx_video_mode_change(dptx, vparams->mode, 0);
 		if (retval) {
 			HISI_FB_ERR("[DP] Change mode error!\n");
 			return retval;
@@ -648,7 +670,7 @@ int dptx_change_video_mode_user(struct dp_ctrl *dptx)
 			vparams->mode = 16; /*Siwtch to 1080p on PC mode*/
 			HISI_FB_INFO("[DP] Video mode is changed by low temperature!\n");
 
-			retval = dptx_video_mode_change(dptx, vparams->mode);
+			retval = dptx_video_mode_change(dptx, vparams->mode, 0);
 			if (retval) {
 				HISI_FB_ERR("[DP] Change mode error!\n");
 				return retval;
@@ -662,7 +684,7 @@ int dptx_change_video_mode_user(struct dp_ctrl *dptx)
 	return 0;
 }
 
-int dptx_video_mode_change(struct dp_ctrl *dptx, uint8_t vmode)
+int dptx_video_mode_change(struct dp_ctrl *dptx, uint8_t vmode, int stream)
 {
 	int retval;
 	struct video_params *vparams;
@@ -691,7 +713,7 @@ int dptx_video_mode_change(struct dp_ctrl *dptx, uint8_t vmode)
 	return retval;
 }
 
-int dptx_video_config(struct dp_ctrl *dptx)
+int dptx_video_config(struct dp_ctrl *dptx, int stream)
 {
 	struct video_params *vparams;
 	struct dtd *mdtd;
@@ -707,10 +729,10 @@ int dptx_video_config(struct dp_ctrl *dptx)
 	if (!dptx_dtd_fill(mdtd, vparams->mode,
 			   vparams->refresh_rate, vparams->video_format))
 		return -EINVAL;
-	dptx_video_core_config(dptx);
+	dptx_video_core_config(dptx, stream);
 	return 0;
 }
-void dptx_video_core_config(struct dp_ctrl *dptx)
+void dptx_video_core_config(struct dp_ctrl *dptx, int stream)
 {
 	struct video_params *vparams;
 	struct dtd *mdtd;
@@ -727,8 +749,7 @@ void dptx_video_core_config(struct dp_ctrl *dptx)
 
 	vmode = vparams->mode;
 
-	dptx_video_set_core_bpc(dptx);
-
+	dptx_video_set_core_bpc(dptx, stream);
 	/* Configure DPTX_VSAMPLE_POLARITY_CTRL register */
 	reg = 0;
 
@@ -737,7 +758,7 @@ void dptx_video_core_config(struct dp_ctrl *dptx)
 	if (mdtd->v_sync_polarity == 1)
 		reg |= DPTX_POL_CTRL_V_SYNC_POL_EN;
 
-	dptx_writel(dptx, DPTX_VSAMPLE_POLARITY_CTRL, reg);
+	dptx_writel(dptx, DPTX_VSAMPLE_POLARITY_CTRL_N(stream), reg);
 
 	reg = 0;
 
@@ -758,28 +779,28 @@ void dptx_video_core_config(struct dp_ctrl *dptx)
 
 	reg |= mdtd->h_active << DPTX_VIDEO_H_ACTIVE_SHIFT;
 	reg |= mdtd->h_blanking << DPTX_VIDEO_H_BLANK_SHIFT;
-	dptx_writel(dptx, DPTX_VIDEO_CONFIG1, reg);
+	dptx_writel(dptx, DPTX_VIDEO_CONFIG1_N(stream), reg);
 
 	/* Configure video_config2 register */
 	reg = 0;
 	reg |= mdtd->v_active << DPTX_VIDEO_V_ACTIVE_SHIFT;
 	reg |= mdtd->v_blanking << DPTX_VIDEO_V_BLANK_SHIFT;
-	dptx_writel(dptx, DPTX_VIDEO_CONFIG2, reg);
+	dptx_writel(dptx, DPTX_VIDEO_CONFIG2_N(stream), reg);
 
 	/* Configure video_config3 register */
 	reg = 0;
 	reg |= mdtd->h_sync_offset << DPTX_VIDEO_H_FRONT_PORCH;
 	reg |= mdtd->h_sync_pulse_width << DPTX_VIDEO_H_SYNC_WIDTH;
-	dptx_writel(dptx, DPTX_VIDEO_CONFIG3, reg);
+	dptx_writel(dptx, DPTX_VIDEO_CONFIG3_N(stream), reg);
 
 	/* Configure video_config4 register */
 	reg = 0;
 	reg |= mdtd->v_sync_offset << DPTX_VIDEO_V_FRONT_PORCH;
 	reg |= mdtd->v_sync_pulse_width << DPTX_VIDEO_V_SYNC_WIDTH;
-	dptx_writel(dptx, DPTX_VIDEO_CONFIG4, reg);
+	dptx_writel(dptx, DPTX_VIDEO_CONFIG4_N(stream), reg);
 
 	/* Configure video_config5 register */
-	dptx_video_ts_change(dptx);
+	dptx_video_ts_change(dptx, stream);
 
 	/* Configure video_msa1 register */
 	reg = 0;
@@ -787,10 +808,11 @@ void dptx_video_core_config(struct dp_ctrl *dptx)
 		<< DPTX_VIDEO_MSA1_H_START_SHIFT;
 	reg |= (mdtd->v_blanking - mdtd->v_sync_offset)
 		<< DPTX_VIDEO_MSA1_V_START_SHIFT;
-	dptx_writel(dptx, DPTX_VIDEO_MSA1, reg);
+	dptx_writel(dptx, DPTX_VIDEO_MSA1_N(stream), reg);
 
-	dptx_video_set_sink_bpc(dptx);
+	dptx_video_set_sink_bpc(dptx, stream);
 }
+
 
 int dptx_video_ts_calculate(struct dp_ctrl *dptx, int lane_num, int rate,
 			    int bpc, int encoding, int pixel_clock)
@@ -914,7 +936,7 @@ int dptx_video_ts_calculate(struct dp_ctrl *dptx, int lane_num, int rate,
 	return retval;
 }
 
-void dptx_video_ts_change(struct dp_ctrl *dptx)
+void dptx_video_ts_change(struct dp_ctrl *dptx, int stream)
 {
 	uint32_t reg;
 	struct video_params *vparams;
@@ -926,33 +948,36 @@ void dptx_video_ts_change(struct dp_ctrl *dptx)
 
 	vparams = &dptx->vparams;
 
-	reg = (uint32_t)dptx_readl(dptx, DPTX_VIDEO_CONFIG5);
+	reg = (uint32_t)dptx_readl(dptx, DPTX_VIDEO_CONFIG5_N(stream));
 	reg = reg & (~DPTX_VIDEO_CONFIG5_TU_MASK);
 	reg = reg | (vparams->aver_bytes_per_tu <<
 			DPTX_VIDEO_CONFIG5_TU_SHIFT);
-	reg = reg & (~DPTX_VIDEO_CONFIG5_TU_FRAC_MASK);
+	reg = reg & (~DPTX_VIDEO_CONFIG5_TU_FRAC_MASK_SST);
 	reg = reg | (vparams->aver_bytes_per_tu_frac <<
-		       DPTX_VIDEO_CONFIG5_TU_FRAC_SHIFT);
+		       DPTX_VIDEO_CONFIG5_TU_FRAC_SHIFT_SST);
 
 	reg = reg & (~DPTX_VIDEO_CONFIG5_INIT_THRESHOLD_MASK);
 	reg = reg | (vparams->init_threshold <<
 			DPTX_VIDEO_CONFIG5_INIT_THRESHOLD_SHIFT);
 
-	dptx_writel(dptx, DPTX_VIDEO_CONFIG5, reg);
+	dptx_writel(dptx, DPTX_VIDEO_CONFIG5_N(stream), reg);
+
+	return;
 }
 
-void dptx_video_bpc_change(struct dp_ctrl *dptx)
+
+void dptx_video_bpc_change(struct dp_ctrl *dptx, int stream)
 {
 	if (dptx == NULL) {
 		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return;
 	}
 
-	dptx_video_set_core_bpc(dptx);
-	dptx_video_set_sink_bpc(dptx);
+	dptx_video_set_core_bpc(dptx, stream);
+	dptx_video_set_sink_bpc(dptx, stream);
 }
 
-void dptx_video_set_core_bpc(struct dp_ctrl *dptx)
+void dptx_video_set_core_bpc(struct dp_ctrl *dptx, int stream)
 {
 	uint32_t reg;
 	uint8_t bpc_mapping = 0, bpc = 0;
@@ -968,7 +993,7 @@ void dptx_video_set_core_bpc(struct dp_ctrl *dptx)
 	bpc = vparams->bpc;
 	pix_enc = vparams->pix_enc;
 
-	reg = dptx_readl(dptx, DPTX_VSAMPLE_CTRL);
+	reg = dptx_readl(dptx, DPTX_VSAMPLE_CTRL_N(stream));
 	reg &= ~DPTX_VSAMPLE_CTRL_VMAP_BPC_MASK;
 
 	switch (pix_enc) {
@@ -1037,9 +1062,9 @@ void dptx_video_set_core_bpc(struct dp_ctrl *dptx)
 	}
 
 	reg |= (bpc_mapping << DPTX_VSAMPLE_CTRL_VMAP_BPC_SHIFT);
-	dptx_writel(dptx, DPTX_VSAMPLE_CTRL, reg);
+	dptx_writel(dptx, DPTX_VSAMPLE_CTRL_N(stream), reg);
 }
-void dptx_video_set_sink_col(struct dp_ctrl *dptx)
+void dptx_video_set_sink_col(struct dp_ctrl *dptx, int stream)
 {
 	uint32_t reg_msa2;
 	uint8_t col_mapping;
@@ -1058,7 +1083,7 @@ void dptx_video_set_sink_col(struct dp_ctrl *dptx)
 	colorimetry = vparams->colorimetry;
 	dynamic_range = vparams->dynamic_range;
 
-	reg_msa2 = dptx_readl(dptx, DPTX_VIDEO_MSA2);
+	reg_msa2 = dptx_readl(dptx, DPTX_VIDEO_MSA2_N(stream));
 	reg_msa2 &= ~DPTX_VIDEO_VMSA2_COL_MASK;
 
 	col_mapping = 0;
@@ -1092,10 +1117,10 @@ void dptx_video_set_sink_col(struct dp_ctrl *dptx)
 	}
 
 	reg_msa2 |= (col_mapping << DPTX_VIDEO_VMSA2_COL_SHIFT);
-	dptx_writel(dptx, DPTX_VIDEO_MSA2, reg_msa2);
+	dptx_writel(dptx, DPTX_VIDEO_MSA2_N(stream), reg_msa2);
 }
 
-void dptx_video_set_sink_bpc(struct dp_ctrl *dptx)
+void dptx_video_set_sink_bpc(struct dp_ctrl *dptx, int stream)
 {
 	uint32_t reg_msa2, reg_msa3;
 	uint8_t bpc_mapping = 0, bpc = 0;
@@ -1111,8 +1136,8 @@ void dptx_video_set_sink_bpc(struct dp_ctrl *dptx)
 	pix_enc = vparams->pix_enc;
 	bpc = vparams->bpc;
 
-	reg_msa2 = dptx_readl(dptx, DPTX_VIDEO_MSA2);
-	reg_msa3 = dptx_readl(dptx, DPTX_VIDEO_MSA3);
+	reg_msa2 = dptx_readl(dptx, DPTX_VIDEO_MSA2_N(stream));
+	reg_msa3 = dptx_readl(dptx, DPTX_VIDEO_MSA3_N(stream));
 
 	reg_msa2 &= ~DPTX_VIDEO_VMSA2_BPC_MASK;
 	reg_msa3 &= ~DPTX_VIDEO_VMSA3_PIX_ENC_MASK;
@@ -1151,6 +1176,7 @@ void dptx_video_set_sink_bpc(struct dp_ctrl *dptx)
 			bpc_mapping = 4;
 		break;
 	case YCBCR420:
+		reg_msa3 |= 1 << DPTX_VIDEO_VMSA3_PIX_ENC_YCBCR420_SHIFT;
 		break;
 	case YONLY:
 		/* According to Table 2-94 of DisplayPort spec 1.3 */
@@ -1185,13 +1211,13 @@ void dptx_video_set_sink_bpc(struct dp_ctrl *dptx)
 	}
 	reg_msa2 |= (bpc_mapping << DPTX_VIDEO_VMSA2_BPC_SHIFT);
 
-	dptx_writel(dptx, DPTX_VIDEO_MSA2, reg_msa2);
-	dptx_writel(dptx, DPTX_VIDEO_MSA3, reg_msa3);
-	dptx_video_set_sink_col(dptx);
+	dptx_writel(dptx, DPTX_VIDEO_MSA2_N(stream), reg_msa2);
+	dptx_writel(dptx, DPTX_VIDEO_MSA3_N(stream), reg_msa3);
+	dptx_video_set_sink_col(dptx, stream);
 }
 
 
-void dptx_disable_default_video_stream(struct dp_ctrl *dptx)
+void dptx_disable_default_video_stream(struct dp_ctrl *dptx, int stream)
 {
 	uint32_t vsamplectrl;
 
@@ -1200,9 +1226,9 @@ void dptx_disable_default_video_stream(struct dp_ctrl *dptx)
 		return;
 	}
 
-	vsamplectrl = dptx_readl(dptx, DPTX_VSAMPLE_CTRL);
+	vsamplectrl = dptx_readl(dptx, DPTX_VSAMPLE_CTRL_N(stream));
 	vsamplectrl &= ~DPTX_VSAMPLE_CTRL_STREAM_EN;
-	dptx_writel(dptx, DPTX_VSAMPLE_CTRL, vsamplectrl);
+	dptx_writel(dptx, DPTX_VSAMPLE_CTRL_N(stream), vsamplectrl);
 
 	if ((dptx->dptx_vr) && (dptx->dptx_detect_inited)) {
 		HISI_FB_INFO("[DP] Cancel dptx detect err count when disable video stream.\n");
@@ -1210,7 +1236,7 @@ void dptx_disable_default_video_stream(struct dp_ctrl *dptx)
 	}
 }
 
-void dptx_enable_default_video_stream(struct dp_ctrl *dptx)
+void dptx_enable_default_video_stream(struct dp_ctrl *dptx, int stream)
 {
 	uint32_t vsamplectrl;
 
@@ -1219,9 +1245,9 @@ void dptx_enable_default_video_stream(struct dp_ctrl *dptx)
 		return;
 	}
 
-	vsamplectrl = dptx_readl(dptx, DPTX_VSAMPLE_CTRL);
+	vsamplectrl = dptx_readl(dptx, DPTX_VSAMPLE_CTRL_N(stream));
 	vsamplectrl |= DPTX_VSAMPLE_CTRL_STREAM_EN;
-	dptx_writel(dptx, DPTX_VSAMPLE_CTRL, vsamplectrl);
+	dptx_writel(dptx, DPTX_VSAMPLE_CTRL_N(stream), vsamplectrl);
 
 	if ((dptx->dptx_vr) && (dptx->dptx_detect_inited)) {
 		HISI_FB_INFO("[DP] restart dptx detect err count when enable video stream.\n");
@@ -1262,9 +1288,10 @@ void dptx_video_params_reset(struct video_params *params)
 	}
 
 	memset(params, 0x0, sizeof(struct video_params));
+	/* TODO 6 bpc should be default - use 8 bpc for MST calculation */
+	params->bpc = COLOR_DEPTH_8;
 	params->pix_enc = RGB;
 	params->mode = 1;
-	params->bpc = COLOR_DEPTH_8;
 	params->colorimetry = ITU601;
 	params->dynamic_range = CEA;
 	params->aver_bytes_per_tu = 30;
@@ -2202,6 +2229,7 @@ bool dptx_dtd_fill(struct dtd *mdtd, uint8_t code, uint32_t refresh_rate,
 			mdtd->v_sync_polarity = 1;
 			mdtd->interlaced = 0;
 			mdtd->pixel_clock = 371250;
+			break;
 		case 92:
 			mdtd->h_active = 2560;
 			mdtd->v_active = 1080;
@@ -2215,6 +2243,7 @@ bool dptx_dtd_fill(struct dtd *mdtd, uint8_t code, uint32_t refresh_rate,
 			mdtd->v_sync_polarity = 1;
 			mdtd->interlaced = 0;
 			mdtd->pixel_clock = 495000;
+			break;
 		case 99:
 			mdtd->h_active = 4096;
 			mdtd->v_active = 2160;
@@ -2652,6 +2681,38 @@ bool dptx_dtd_fill(struct dtd *mdtd, uint8_t code, uint32_t refresh_rate,
 		}
 	} else if (video_format == DMT) {
 		switch (code) {
+		case 1: // HISilicon timing
+			mdtd->h_image_size = 4;
+			mdtd->v_image_size = 3;
+			mdtd->h_active = 3600;
+			mdtd->v_active = 1800;
+			mdtd->h_blanking = 120;
+			mdtd->v_blanking = 128;
+			mdtd->h_sync_offset = 20;
+			mdtd->v_sync_offset = 2;
+			mdtd->h_sync_pulse_width = 20;
+			mdtd->v_sync_pulse_width = 2;
+			mdtd->h_sync_polarity = 0;
+			mdtd->v_sync_polarity = 0;
+			mdtd->interlaced = 0; /* (progressive_nI) */
+			mdtd->pixel_clock = 645500;
+			break;
+		case 2:
+			mdtd->h_image_size = 4;
+			mdtd->v_image_size = 3;
+			mdtd->h_active = 3840;
+			mdtd->v_active = 2160;
+			mdtd->h_blanking = 160;
+			mdtd->v_blanking = 62;
+			mdtd->h_sync_offset = 48;
+			mdtd->v_sync_offset = 3;
+			mdtd->h_sync_pulse_width = 32;
+			mdtd->v_sync_pulse_width = 5;
+			mdtd->h_sync_polarity = 0;
+			mdtd->v_sync_polarity = 0;
+			mdtd->interlaced = 0; /* (progressive_nI) */
+			mdtd->pixel_clock = 533000;
+			break;
 		case 4:
 			mdtd->h_image_size = 4;
 			mdtd->v_image_size = 3;
@@ -2811,6 +2872,38 @@ bool dptx_dtd_fill(struct dtd *mdtd, uint8_t code, uint32_t refresh_rate,
 			mdtd->v_sync_polarity = 1;
 			mdtd->interlaced = 0; /* (progressive_nI) */
 			mdtd->pixel_clock = 72000;
+			break;
+		case 87:
+			mdtd->h_image_size = 4;
+			mdtd->v_image_size = 3;
+			mdtd->h_active = 4096;
+			mdtd->v_active = 2160;
+			mdtd->h_blanking = 80;
+			mdtd->v_blanking = 62;
+			mdtd->h_sync_offset = 8;
+			mdtd->v_sync_offset = 48;
+			mdtd->h_sync_pulse_width = 32;
+			mdtd->v_sync_pulse_width = 8;
+			mdtd->h_sync_polarity = 1;
+			mdtd->v_sync_polarity = 0;
+			mdtd->interlaced = 0; /* (progressive_nI) */
+			mdtd->pixel_clock = 556744;
+			break;
+		case 88:
+			mdtd->h_image_size = 4;
+			mdtd->v_image_size = 3;
+			mdtd->h_active = 4096;
+			mdtd->v_active = 2160;
+			mdtd->h_blanking = 80;
+			mdtd->v_blanking = 62;
+			mdtd->h_sync_offset = 8;
+			mdtd->v_sync_offset = 48;
+			mdtd->h_sync_pulse_width = 32;
+			mdtd->v_sync_pulse_width = 8;
+			mdtd->h_sync_polarity = 1;
+			mdtd->v_sync_polarity = 0;
+			mdtd->interlaced = 0; /* (progressive_nI) */
+			mdtd->pixel_clock = 556188;
 			break;
 		case 41:
 			mdtd->h_image_size = 4;

@@ -65,7 +65,7 @@ extern "C"
 
 #define UDI_GET_MAIN_DEV_ID(id)	(((id) & 0xff00) >> 8 )
 #define UDI_GET_DEV_TYPE(id)		(((id) & 0x00ff))
-#define UDI_UNUSED_PARAM(param) (param=param)
+#define UDI_UNUSED_PARAM(param) (void)(param)
 
 UDI_HANDLE BSP_UDI_NCM_DataChnToHandle(unsigned int u32Chn);
 

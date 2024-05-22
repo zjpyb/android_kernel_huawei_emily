@@ -104,6 +104,18 @@ static void update_general_status(struct f2fs_sb_info *sbi)
 	si->avail_nids = NM_I(sbi)->available_nids;
 	si->alloc_nids = NM_I(sbi)->nid_cnt[PREALLOC_NID];
 	si->bg_gc = sbi->bg_gc;
+	if (is_gc_test_set(sbi, GC_TEST_ENABLE_GC_STAT)) {
+		si->dirty_data_count = dirty_data_segments(sbi);
+		si->dirty_node_count = si->dirty_count - si->dirty_data_count;
+		si->io_skip_bggc = sbi->io_skip_bggc;
+		si->other_skip_bggc = sbi->other_skip_bggc;
+		si->assr_lfs_segs = sbi->assr_lfs_segs;
+		si->assr_ssr_segs = sbi->assr_ssr_segs;
+		si->assr_lfs_blks = sbi->assr_lfs_blks;
+		si->assr_ssr_blks = sbi->assr_ssr_blks;
+		si->bggc_node_lfs_blks = sbi->bggc_node_lfs_blks;
+		si->bggc_node_ssr_blks = sbi->bggc_node_ssr_blks;
+	}
 	si->util_free = (int)(free_user_blocks(sbi) >> sbi->log_blocks_per_seg)
 		* 100 / (int)(sbi->user_block_count >> sbi->log_blocks_per_seg)
 		/ 2;
@@ -245,10 +257,6 @@ static void update_mem_info(struct f2fs_sb_info *sbi)
 get_cache:
 	si->cache_mem = 0;
 
-	/* build gc */
-	/*if (sbi->gc_thread)
-		si->cache_mem += sizeof(struct f2fs_gc_kthread);*/
-
 	/* build merge flush thread */
 	if (SM_I(sbi)->fcc_info)
 		si->cache_mem += sizeof(struct flush_cmd_control);
@@ -372,10 +380,16 @@ static int stat_show(struct seq_file *s, void *v)
 			   si->dirty_seg[CURSEG_FRAGMENT_DATA],
 			   si->full_seg[CURSEG_FRAGMENT_DATA],
 			   si->valid_blks[CURSEG_FRAGMENT_DATA]);
-		seq_printf(s, "\n  - Valid: %d\n  - Dirty: %d\n",
-			   si->main_area_segs - si->dirty_count -
-			   si->prefree_count - si->free_segs,
-			   si->dirty_count);
+		if (is_gc_test_set(si->sbi, GC_TEST_ENABLE_GC_STAT))
+			seq_printf(s, "\n  - Valid: %d\n  - Dirty: %d (Node: %d, Data: %d)\n",
+				   si->main_area_segs - si->dirty_count -
+				   si->prefree_count - si->free_segs,
+				   si->dirty_count, si->dirty_node_count, si->dirty_data_count);
+		else
+			seq_printf(s, "\n  - Valid: %d\n  - Dirty: %d\n",
+				   si->main_area_segs - si->dirty_count -
+				   si->prefree_count - si->free_segs,
+				   si->dirty_count);
 		seq_printf(s, "  - Prefree: %d\n  - Free: %d (%d)\n\n",
 			   si->prefree_count, si->free_segs, si->free_secs);
 		seq_printf(s, "CP calls: %d (BG: %d)\n",
@@ -392,6 +406,16 @@ static int stat_show(struct seq_file *s, void *v)
 				si->bg_data_blks);
 		seq_printf(s, "  - node blocks : %d (%d)\n", si->node_blks,
 				si->bg_node_blks);
+		if (is_gc_test_set(si->sbi, GC_TEST_ENABLE_GC_STAT)) {
+			seq_printf(s, "Moved %d data blocks (LFS: %d, SSR: %d)\n", si->assr_lfs_blks +
+					si->assr_ssr_blks, si->assr_lfs_blks, si->assr_ssr_blks);
+			seq_printf(s, "Moved %d node blocks (LFS: %d, SSR: %d)\n", si->bggc_node_lfs_blks +
+					si->bggc_node_ssr_blks, si->bggc_node_lfs_blks, si->bggc_node_ssr_blks);
+			seq_printf(s, "ASSR used %d segments (LFS: %d, SSR: %d)\n", si->assr_lfs_segs +
+					si->assr_ssr_segs, si->assr_lfs_segs, si->assr_ssr_segs);
+			seq_printf(s, "BG GC skip : IO: %u, Other: %u\n",
+					si->io_skip_bggc, si->other_skip_bggc);
+		}
 		seq_puts(s, "\nExtent Cache:\n");
 		seq_printf(s, "  - Hit Count: L1-1:%llu L1-2:%llu L2:%llu\n",
 				si->hit_largest, si->hit_cached,

@@ -15,7 +15,7 @@
 #include "hisi_fb_panel.h"
 #include "panel/mipi_lcd_utils.h"
 
-
+/*lint -e574 -e647 -e568 -e685 -e578*/
 DEFINE_SEMAPHORE(hisi_fb_dts_resource_sem);
 
 
@@ -2508,10 +2508,9 @@ struct platform_device *hisi_fb_device_alloc(struct hisi_fb_panel_data *pdata,
 		return NULL;
 	}
 
-	if (pdata != NULL)
+	if (pdata != NULL) {
 		pdata->next = NULL;
-	else
-		return NULL;
+	}
 
 	this_dev = platform_device_alloc(dev_name, (((uint32_t)type << 16) | (uint32_t)id));
 	if (this_dev) {
@@ -2719,5 +2718,152 @@ void panel_status_report_by_dsm(struct lcd_reg_read_t *lcd_status_reg, int cnt, 
 	} else {
 		HISI_FB_INFO("dsm lcd_dclient ocuppy failed!\n");
 	}
+}
+/*lint +e574 +e647 +e568 +e685 +e578*/
+
+int panel_next_tcon_mode(struct platform_device *pdev, struct hisi_panel_info *pinfo)
+{
+	int ret = 0;
+	struct hisi_fb_panel_data *pdata = NULL;
+	struct hisi_fb_panel_data *next_pdata = NULL;
+	struct platform_device *next_pdev = NULL;
+
+	if (NULL == pdev) {
+		HISI_FB_ERR("platform_device is NULL");
+		return -EINVAL;
+	}
+
+	pdata = dev_get_platdata(&pdev->dev);
+	if (NULL == pdata) {
+		HISI_FB_ERR("hisi_fb_panel_data is NULL");
+		return -EINVAL;
+	}
+
+	if (NULL == pinfo) {
+		HISI_FB_ERR("panel_info is NULL");
+		return -EINVAL;
+	}
+
+	if (!pinfo->cascadeic_support) {
+		HISI_FB_DEBUG("Nomal IC, do nothing.");
+		return 0;
+	}
+
+	if (pinfo->current_display_region == EN_DISPLAY_REGION_NONE) {
+		pinfo->current_display_region = EN_DISPLAY_REGION_AB;
+		HISI_FB_INFO("first power on, set default region.");
+		return 0;
+	} else if ((pinfo->current_display_region == EN_DISPLAY_REGION_A) ||
+			 (pinfo->current_display_region == EN_DISPLAY_REGION_B) ||
+			 (pinfo->current_display_region == EN_DISPLAY_REGION_AB) ||
+			 (pinfo->current_display_region == EN_DISPLAY_REGION_AB_FOLDED)) {
+		HISI_FB_INFO("change DDIC display region to (%d).", pinfo->current_display_region);
+	} else {
+		pinfo->current_display_region = EN_DISPLAY_REGION_AB;
+		HISI_FB_ERR("wrong display region, should not occur (%d).", pinfo->current_display_region);
+	}
+
+	next_pdev = pdata->next;
+	if (next_pdev) {
+		next_pdata = dev_get_platdata(&next_pdev->dev);
+		if ((next_pdata) && (next_pdata->set_tcon_mode)) {
+			HISI_FB_INFO("send DCS cmd to DDIC.");
+			ret = next_pdata->set_tcon_mode(next_pdev, pinfo->current_display_region);
+		}
+	}
+
+	return ret;
+}
+
+
+//just for Cyclomatic Complexity, no need to check input param
+static inline int _set_display_region(struct hisi_fb_data_type *hisifd, struct hisi_panel_info *pinfo, struct _panel_region_notify* region_notify)
+{
+	int ret = 0;
+
+	down(&hisifd->blank_sem);
+	if (!hisifd->panel_power_on ) {
+	    pinfo->current_display_region = region_notify->panel_display_region;
+	    if (region_notify->notify_mode == EN_MODE_POWER_OFF_SWITCH_NOTIFY) {
+	        HISI_FB_INFO("receive display region change (%d) when powe off, set when next power on.", pinfo->current_display_region);
+	    } else {
+	        HISI_FB_WARNING("receive display region change (%d) when powe off by %d notify_mode.", pinfo->current_display_region, region_notify->notify_mode);
+	    }
+	    up(&hisifd->blank_sem);
+	    return ret;
+	}
+
+	hisifb_activate_vsync(hisifd);
+
+	if (region_notify->notify_mode == EN_MODE_POWER_OFF_SWITCH_NOTIFY) {
+		HISI_FB_WARNING("panel already power on, set DDIC display region(%d) right now, check the timing sequene.\n", pinfo->current_display_region);
+		ret = panel_next_tcon_mode(hisifd->pdev, pinfo);
+	} else if (region_notify->notify_mode == EN_MODE_PRE_NOTIFY) {
+		//set DDIC right now
+		if ( (region_notify->panel_display_region == EN_DISPLAY_REGION_AB) ||
+		   (region_notify->panel_display_region == EN_DISPLAY_REGION_AB_FOLDED) ) {
+			if (pinfo->current_display_region != region_notify->panel_display_region) {
+				pinfo->current_display_region = region_notify->panel_display_region;
+				HISI_FB_INFO("notify_mode:%d, change CurrentDisplayRegion to %d.", region_notify->notify_mode, pinfo->current_display_region);
+				ret = panel_next_tcon_mode(hisifd->pdev, pinfo);
+			} else {
+				HISI_FB_INFO("same DDIC display region (%d), no need pre change.", pinfo->current_display_region);
+			}
+		} else {
+			HISI_FB_ERR("wrong pre notify which region is %d.\n", region_notify->panel_display_region);
+			ret = -EFAULT;
+		}
+	} else if (region_notify->notify_mode == EN_MODE_REAL_SWITCH_NOTIFY) {
+		//need check with TUI & AOD, select the biggest one
+		//TBD...
+		if (pinfo->current_display_region != region_notify->panel_display_region) {
+			pinfo->current_display_region = region_notify->panel_display_region;
+			HISI_FB_INFO("notify_mode:%d, change CurrentDisplayRegion to %d.", region_notify->notify_mode, pinfo->current_display_region);
+			ret = panel_next_tcon_mode(hisifd->pdev, pinfo);
+		} else {
+			HISI_FB_INFO("same DDIC display region (%d), no need real change.", pinfo->current_display_region);
+		}
+	}
+
+	hisifb_deactivate_vsync(hisifd);
+	up(&hisifd->blank_sem);
+
+	return ret;
+}
+
+int panel_set_display_region(struct hisi_fb_data_type *hisifd, void __user *argp)
+{
+	int ret = 0;
+	struct _panel_region_notify region_notify;
+	struct hisi_panel_info *pinfo = NULL;
+
+	if (NULL == hisifd) {
+		HISI_FB_ERR("hisifd is NULL\n");
+		return -EINVAL;
+	}
+
+	if (NULL == argp) {
+		HISI_FB_ERR("argp is NULL\n");
+		return -EINVAL;
+	}
+
+	pinfo = &(hisifd->panel_info);
+	if (NULL == pinfo) {
+		HISI_FB_ERR("panel_info is NULL");
+		return -EINVAL;
+	}
+
+	ret = (int)copy_from_user(&region_notify, argp, sizeof(struct _panel_region_notify));
+	if (ret) {
+		HISI_FB_ERR("copy_from_user(param) failed! ret=%d.\n", ret);
+		return -EFAULT;
+	}
+
+	ret = _set_display_region(hisifd, pinfo, &region_notify);
+
+	//set partial update max area
+	//TODO...
+
+	return ret;
 }
 

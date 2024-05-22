@@ -81,7 +81,13 @@
 #include "v_private.h"
 #include "mdrv.h"
 
+#include <linux/version.h>
 #include <linux/kthread.h>
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+#include <linux/sched/types.h>
+#include <linux/sched/debug.h>
+#include <linux/sched/signal.h>
+#endif
 
 
 
@@ -124,7 +130,7 @@ typedef VOS_INT (*LINUX_START_ROUTINE)( VOS_VOID * );
 /* 自旋锁，用来作task的临界资源保护 */
 VOS_SPINLOCK             g_stVosTaskSpinLock;
 
-VOS_VOID VOS_LinuxTaskEntry( VOS_VOID * pulArg );
+VOS_INT VOS_LinuxTaskEntry( VOS_VOID * pulArg );
 
 /*****************************************************************************
  Function   : VOS_TaskPrintCtrlBlkInfo
@@ -272,8 +278,7 @@ VOS_UINT32 VOS_TaskCtrlBlkFree(VOS_UINT32 Tid)
  Return     : none
  Other      : none
  *****************************************************************************/
-
-VOS_VOID VOS_LinuxTaskEntry( VOS_VOID * pulArg )
+VOS_INT VOS_LinuxTaskEntry( VOS_VOID * pulArg )
 {
     VOS_TASK_CONTROL_BLOCK      *pstTemp;
     VOS_UINT32                  ulPara1;
@@ -289,6 +294,8 @@ VOS_VOID VOS_LinuxTaskEntry( VOS_VOID * pulArg )
     ulPara4 = pstTemp->Args[3];
 
     pstTemp->Function( ulPara1, ulPara2, ulPara3, ulPara4 );
+
+    return 0;
 }
 
 /*****************************************************************************
@@ -457,52 +464,6 @@ VOS_UINT32 VOS_CreateTask( VOS_CHAR * puchName,
     }
 
     (VOS_VOID)wake_up_process(tsk);
-
-    return VOS_OK;
-}
-
-/*****************************************************************************
- Function   : VOS_SuspendTask
- Description: Suspend a task
- Calls      : OSAL_SuspendTask
- Called By  :
- Input      : ulTaskID  --  id of a task
- Output     : none
- Return     : return VOS_OK if success
- Other      : none
- *****************************************************************************/
-VOS_UINT32 VOS_SuspendTask( VOS_UINT32 ulTaskID )
-{
-    struct task_struct    *tsk;
-    pid_t                 ulTemp;
-
-    if( ulTaskID >= vos_TaskCtrlBlkNumber )
-    {
-        return(VOS_ERR);
-    }
-
-    ulTemp = vos_TaskCtrlBlk[ulTaskID].ulLinuxThreadId;
-
-    tsk = pid_task(find_vpid(ulTemp), PIDTYPE_PID);
-
-    if ( VOS_NULL_PTR == tsk)
-    {
-        return(VOS_ERR);
-    }
-
-    if ( tsk->pid != ulTemp )
-    {
-        printk("susupend find task to set pri fail.\r\n");
-        return VOS_ERR;
-    }
-
-    /*lint -e446*/
-    set_task_state(tsk, TASK_UNINTERRUPTIBLE);
-    /*lint +e446*/
-    if (tsk == current)
-    {
-        schedule();
-    }
 
     return VOS_OK;
 }
@@ -835,16 +796,12 @@ VOS_UINT32 VOS_EventRead( VOS_UINT32 ulEvents,
     {
         LogPrint("# OSA don't support VOS_EVENT_NOWAIT.\r\n");
 
-        VOS_SuspendTask(ulTaskSelf);
-
         return VOS_ERR;
     }
 
     if( !(VOS_EVENT_ANY & ulFlags) )
     {
         LogPrint("# OSA don't support VOS_EVENT_ALL.\r\n");
-
-        VOS_SuspendTask(ulTaskSelf);
 
         return VOS_ERR;
     }
@@ -853,16 +810,12 @@ VOS_UINT32 VOS_EventRead( VOS_UINT32 ulEvents,
     {
         LogPrint("# OSA don't support event = 0.\r\n");
 
-        VOS_SuspendTask(ulTaskSelf);
-
         return VOS_ERR;
     }
 
     if ( VOS_OK != VOS_CheckEvent(ulTaskSelf) )
     {
         LogPrint("# VOS_EventRead EVENT not exist.\r\n");
-
-        VOS_SuspendTask(ulTaskSelf);
 
         return VOS_ERR;
     }

@@ -47328,6 +47328,74 @@ extern "C" {
 	/* seconds of Temp > 45 && volt > 4.4v */
 	#define E930001002_TOA_36_INT 38
 
+	/* Event 930001003
+		Statistics of CCA battery protection program */
+	/* charger type 0: USB 1: BC_USB 2: NON STANDARD 3: STANDARD
+		4: FCP 5: REMOVED 6: OTG_ID 7: DIRECT */
+	#define E930001003_CHGTYPE_TINYINT 0
+	/* battery manufactor id */
+	#define E930001003_BATMAN_TINYINT 1
+	/* battery model manufactor id */
+	#define E930001003_BATMOD_TINYINT 2
+	/* battery capacity, in mAh */
+	#define E930001003_BATCAP_SMALLINT 3
+	/* battery capacity caculated by FG, in mAh */
+	#define E930001003_CAPFCC_SMALLINT 4
+	/* charging cycles */
+	#define E930001003_CHGCYC_SMALLINT 5
+	/* charging stop times */
+	#define E930001003_CHGSTOPTS_SMALLINT 6
+	/* start UI soc, in % */
+	#define E930001003_SUISOC_TINYINT 7
+	/* end UI soc, in % */
+	#define E930001003_EUISOC_TINYINT 8
+	/* charger plugin time */
+	#define E930001003_CHGINT_DATETIME 9
+	/* charger plugout time */
+	#define E930001003_CHGOUTT_DATETIME 10
+	/* start charging time */
+	#define E930001003_CHGSTARTT_DATETIME 11
+	/* charging terminate time */
+	#define E930001003_CHGTERT_DATETIME 12
+	/* the time FG report 100% */
+	#define E930001003_CHGENDT_DATETIME 13
+	/* calibration finish cycle */
+	#define E930001003_CALDONECYC_SMALLINT 14
+	/* sample charger remove quit times */
+	#define E930001003_CHGRMTS_SMALLINT 15
+	/* sample low current quit times */
+	#define E930001003_LOWCURTS_SMALLINT 16
+	/* material of positive pole */
+	#define E930001003_POSMASS_SMALLINT 17
+	/* material of negative pole */
+	#define E930001003_NEGMASS_SMALLINT 18
+	/* shift of SOC */
+	#define E930001003_SOCSHIFT_SMALLINT 19
+	/* charge pattern0's current */
+	#define E930001003_PCUR_0_SMALLINT 20
+	/* charge pattern1's current */
+	#define E930001003_PCUR_1_SMALLINT 21
+	/* charge pattern2's current */
+	#define E930001003_PCUR_2_SMALLINT 22
+	/* charge pattern3's current */
+	#define E930001003_PCUR_3_SMALLINT 23
+	/* charge pattern4's current */
+	#define E930001003_PCUR_4_SMALLINT 24
+	/* charge pattern5's current */
+	#define E930001003_PCUR_5_SMALLINT 25
+	/* charge pattern0's voltage */
+	#define E930001003_PVOL_0_SMALLINT 26
+	/* charge pattern1's voltage */
+	#define E930001003_PVOL_1_SMALLINT 27
+	/* charge pattern2's voltage */
+	#define E930001003_PVOL_2_SMALLINT 28
+	/* charge pattern3's voltage */
+	#define E930001003_PVOL_3_SMALLINT 29
+	/* charge pattern4's voltage */
+	#define E930001003_PVOL_4_SMALLINT 30
+	/* charge pattern5's voltage */
+	#define E930001003_PVOL_5_SMALLINT 31
+
 	/* Event 931001000
 		Statistics of Type-C headset related information */
 	/* USB ID */

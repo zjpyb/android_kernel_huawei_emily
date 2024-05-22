@@ -3,6 +3,7 @@ ccflags-y += -Idrivers/media/huawei/camera
 ccflags-y += -Idrivers/media/huawei/camera/csi
 ccflags-y += -Idrivers/media/huawei/camera/platform
 ccflags-y += -Idrivers/hisi/tzdriver/libhwsecurec
+ccflags-y += -Idrivers/media/huawei/camera/sensor/flash
 
 obj-$(CONFIG_HUAWEI_CAMERA_USE_IMX214) += imx214.o
 obj-$(CONFIG_HUAWEI_CAMERA_USE_IMX219) += imx219.o

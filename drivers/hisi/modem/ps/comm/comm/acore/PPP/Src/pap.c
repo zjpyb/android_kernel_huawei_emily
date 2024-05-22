@@ -47,10 +47,7 @@
 #include "PPP/Inc/pap.h"
 
 
-static const VOS_CHAR * const papcodes[] = {
-  "\?\?\?", "REQUEST", "SUCCESS", "FAILURE"
-};
-#define MAXPAPCODE (sizeof papcodes / sizeof papcodes[0] - 1)
+#define MAXPAPCODE 3 /* "\?\?\?", "REQUEST", "SUCCESS", "FAILURE" */
 
 /*****************************************************************************
     协议栈打印打点方式下的.C文件宏定义

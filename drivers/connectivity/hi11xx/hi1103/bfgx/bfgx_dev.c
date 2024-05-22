@@ -92,7 +92,7 @@ struct bt_data_combination g_st_bt_data_combination_etc = {0};
 
 oal_int32 bfgx_open_ssi_dump = 0;
 #if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
-module_param(bfgx_open_ssi_dump, int, S_IRUGO | S_IWUSR);
+oal_debug_module_param(bfgx_open_ssi_dump, int, S_IRUGO | S_IWUSR);
 #endif
 
 uint32 g_ul_gnss_me_thread_status   = DEV_THREAD_EXIT;
@@ -1265,6 +1265,8 @@ STATIC ssize_t hw_bt_write(struct file *filp, const int8 __user *buf, size_t cou
         return ret;
     }
 
+    oal_wake_lock_timeout(&ps_core_d->ps_pm->pm_priv_data->bt_wake_lock, DEFAULT_WAKELOCK_TIMEOUT);
+
     /* modify expire time of uart idle timer */
     mod_timer(&ps_core_d->ps_pm->pm_priv_data->bfg_timer, jiffies + (BT_SLEEP_TIME * HZ/1000));
     ps_core_d->ps_pm->pm_priv_data->bfg_timer_mod_cnt++;
@@ -1405,6 +1407,8 @@ STATIC int32 hw_bt_release(struct inode *inode, struct file *filp)
     mutex_lock(&pm_data->host_mutex);
 
     ret = hw_bfgx_close(BFGX_BT);
+
+    oal_wake_unlock_force(&pm_data->bt_wake_lock);
 
     mutex_unlock(&pm_data->host_mutex);
 
@@ -2383,6 +2387,8 @@ STATIC ssize_t hw_gnss_write(struct file *filp, const int8 __user *buf,
         return ret;
     }
 
+    oal_wake_lock_timeout(&ps_core_d->ps_pm->pm_priv_data->gnss_wake_lock, DEFAULT_WAKELOCK_TIMEOUT);
+
     /* to divide up packet function and tx to tty work */
     if (ps_tx_gnssbuf_etc(ps_core_d, buf, count) < 0)
     {
@@ -2477,6 +2483,8 @@ STATIC int32 hw_gnss_release(struct inode *inode, struct file *filp)
     mutex_lock(&pm_data->host_mutex);
 
     ret = hw_bfgx_close(BFGX_GNSS);
+
+    oal_wake_unlock_force(&pm_data->gnss_wake_lock);
 
     atomic_set(&pm_data->gnss_sleep_flag, GNSS_AGREE_SLEEP);
 
@@ -3636,6 +3644,7 @@ int32 uart_loop_test_send_data_etc(struct ps_core_s *ps_core_d, uint8 *buf, size
 
         buf   = buf + tx_gnss_len;
         count = count - tx_gnss_len;
+
     }
 
     return 0;
@@ -3721,7 +3730,7 @@ int32 uart_loop_test_recv_pkt_etc(struct ps_core_s *ps_core_d, const uint8 *buf_
     rx_buf         = g_pst_uart_loop_test_info_etc->rx_buf;
     recvd_len      = g_pst_uart_loop_test_info_etc->rx_pkt_len;
 
-    if (recvd_len + pkt_len <= expect_pkt_len)
+    if ((uint32)recvd_len + (uint32)pkt_len <= expect_pkt_len)
     {
         memcpy(&rx_buf[recvd_len], buf_ptr, pkt_len);
         g_pst_uart_loop_test_info_etc->rx_pkt_len += pkt_len;
@@ -3795,6 +3804,11 @@ int32 uart_loop_test_etc(void)
     uart_loop_test_close_etc();
 
     throughout = tx_total_len*1000000*10*2;
+    if(0 == total_time)
+    {
+        PS_PRINT_ERR("divisor can not be zero!\n");
+        return -FAILURE;
+    }
     do_div(throughout, total_time);
     effect = throughout;
     do_div(throughout, 8192);

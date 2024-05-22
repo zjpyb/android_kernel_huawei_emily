@@ -26,7 +26,9 @@
 #include <linux/scatterlist.h>
 #include <linux/platform_device.h>
 #include <linux/delay.h>
+#include <linux/hisi-iommu.h>
 #include "ivp_smmu.h"
+#include <linux/hisi/rdr_hisi_platform.h>
 //lint -save -e750 -e753 -e750 -e528 -e144 -e82 -e64 -e785 -e715 -e712 -e40
 //lint -save -e63 -e732 -e42 -e550 -e438 -e834 -e648 -e747 -e778 -e50 -e838
 //lint -save -e571
@@ -182,7 +184,7 @@ void ivp_smmu_flush_pgtable(struct ivp_smmu_dev *smmu_dev, void *addr, size_t si
          * recursion here as the SMMU table walker will not be wired
          * through another SMMU.
          */
-        dma_map_page(smmu_dev->dev, virt_to_page(addr), offset, size, DMA_TO_DEVICE); //lint -e834 -e648
+        dma_map_page(smmu_dev->dev, virt_to_page((uintptr_t)addr), offset, size, DMA_TO_DEVICE); //lint -e834 -e648
     }
 }
 
@@ -305,6 +307,7 @@ int ivp_smmu_trans_disable(struct ivp_smmu_dev *smmu_dev)
     spin_unlock_irqrestore(&smmu_dev->spinlock, flags);
 
     /* free the irq */
+    disable_irq(smmu_dev->irq);
     free_irq(smmu_dev->irq, (void *)smmu_dev);
 
     return 0;
@@ -459,6 +462,7 @@ static int ivp_smmu_probe(struct platform_device *pdev)
     smmu_dev->irq = (unsigned int)res->start;
     smmu_dev->isr = ivp_smmu_isr;
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
     /**
      * get domain and physical pgd base address
      */
@@ -471,6 +475,13 @@ static int ivp_smmu_probe(struct platform_device *pdev)
     iommu_set_fault_handler(smmu_dev->domain, ivp_iommu_fault_handler_t, NULL);
     domain_info = (struct iommu_domain_data *)smmu_dev->domain->priv;
     smmu_dev->pgd_base = (unsigned long)domain_info->phy_pgd_base;
+#else
+    /**
+     * get physical pgd base address
+     */
+    dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(64));
+    smmu_dev->pgd_base = (unsigned long)hisi_domain_get_ttbr(smmu_dev->dev);
+#endif
     /**
      * for the ivp subsys, only support:
      * Context Bank:0; Virtual Machine ID:0; CB attribute:S1_TRANS_S2_BYPASS
@@ -536,7 +547,6 @@ static void __exit ivp_smmu_exit(void)
     return platform_driver_unregister(&ivp_smmu_driver);
 }
 
-/* subsys_initcall(ivp_smmu_init); */
 module_init(ivp_smmu_init);
 module_exit(ivp_smmu_exit);
 MODULE_LICENSE("GPL v2");

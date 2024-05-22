@@ -977,7 +977,7 @@ OAL_STATIC oal_void host_params_init_first(oal_void)
     g_al_host_init_params_etc[WLAN_CFG_INIT_USED_MEM_FOR_STOP]                 = 25;
     g_al_host_init_params_etc[WLAN_CFG_INIT_RX_ACK_LIMIT]                      = 10;
     g_al_host_init_params_etc[WLAN_CFG_INIT_SDIO_D2H_ASSEMBLE_COUNT]           = HISDIO_DEV2HOST_SCATT_MAX;
-    g_al_host_init_params_etc[WLAN_CFG_INIT_SDIO_H2D_ASSEMBLE_COUNT]           = 8;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_SDIO_H2D_ASSEMBLE_COUNT]           = 16;
 
     /* ×Ô¶¯µ÷Æµ */
 #ifdef _PRE_WLAN_FEATURE_AUTO_FREQ

@@ -77,6 +77,10 @@
 #include "socp_ind_delay.h"
 /* log2.0 2014-03-19 End*/
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+#include <linux/sched/types.h>
+#endif
+
 #include <securec.h>
 
 
@@ -94,7 +98,7 @@ EXPORT_SYMBOL(g_stSocpDebugInfo);
 /* SOCP基地址 */
 u32 g_SocpRegBaseAddr = 0;
 /* 中断处理函数 */
-u32 socp_app_int_handler(void);
+irqreturn_t socp_app_int_handler(int irq, void *dev_info);
 
 spinlock_t lock;
 
@@ -1800,7 +1804,7 @@ void socp_handler_decdst(void)
 *
 * 返 回 值   : 无
 *****************************************************************************/
-u32 socp_app_int_handler(void)
+irqreturn_t socp_app_int_handler(int irq, void *dev_info)
 {
     g_stSocpDebugInfo.sSocpDebugGBl.u32SocpAppEtrIntCnt++;
 
@@ -1814,6 +1818,33 @@ u32 socp_app_int_handler(void)
 
     return 1;
 }
+struct platform_device *modem_socp_pdev;
+
+static int socp_driver_probe(struct platform_device *pdev)
+{
+    dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(64));//lint !e598 !e648
+    modem_socp_pdev = pdev;
+
+    return BSP_OK;
+}
+
+static const struct of_device_id socp_dev_of_match[] = {
+       {
+	   	.compatible = "hisilicon,socp_balong_app",
+		.data = NULL,
+	 },
+       {},
+};
+
+static struct platform_driver socp_driver = {
+        .driver = {
+                   .name = "modem_socp",
+
+                   .owner = THIS_MODULE,
+                   .of_match_table = socp_dev_of_match,
+        },
+        .probe = socp_driver_probe,
+};
 
 /*****************************************************************************
 * 函 数 名  : socp_init
@@ -1839,6 +1870,13 @@ s32 socp_init(void)
     }
 
     spin_lock_init(&lock);
+
+    ret = platform_driver_register(&socp_driver);
+    if(ret)
+    {
+        socp_printf("driver_register fail,ret=0x%x\n", ret);
+        return ret;
+    }
 
     /*Add dts begin*/
     dev = of_find_compatible_node(NULL,NULL,"hisilicon,socp_balong_app");

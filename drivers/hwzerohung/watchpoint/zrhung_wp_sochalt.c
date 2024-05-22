@@ -11,13 +11,18 @@
 #include <linux/syscalls.h>
 #include <chipset_common/hwzrhung/zrhung.h>
 #include "../zrhung_common.h"
+#include <chipset_common/hwerecovery/erecovery.h>
 #include "zrhung_wp_sochalt.h"
 
 static int is_soc_halt;
 static int is_longpress;
+static int is_coldboot;
 
 #define SOCHALT_INFO         "BR_PRESS_10S"
 #define ZRHUNG_POWERKEY_LONGPRESS_EVENT "AP_S_PRESS6S"
+#define ZRHUNG_RECOVERY_COLDBOOT "COLDBOOT"
+#define ZRHUNG_VMWTG_ERECOVERYID 401006000
+#define ZRHUNG_VMWTG_FAULTID 901004000
 #define SR_POSITION_KEYWORD  "sr position:"
 #define FASTBOOT_LOG_PATH    "/proc/balong/log/fastboot_log"
 #define BUFFER_SIZE_FASTBOOT (4 * 1024) //4KB buffer for reading fastboot log
@@ -26,17 +31,41 @@ static int __init wp_reboot_reason_cmdline(char *reboot_reason_cmdline)
 {
 	if (!strcmp(reboot_reason_cmdline, SOCHALT_INFO)) {  /*lint !e421*/
 		printk(KERN_ERR "%s %d: LONGPRESS10S_EVENT happen! should report zerohung. \n", __FUNCTION__, __LINE__);
+		#ifndef CONFIG_MTK_PLATFORM
+		printk(KERN_ERR "%s %d: LONGPRESS10S_EVENT happen! should report zerohung. not mtk platform \n", __FUNCTION__, __LINE__);
 		is_soc_halt = 1;
+		#endif
+		return 0;
 	}
 	if (!strcmp(reboot_reason_cmdline, ZRHUNG_POWERKEY_LONGPRESS_EVENT)) { /*lint !e421*/
 		printk(KERN_ERR "%s %d: LONGPRESS6S_EVENT happen! should report zerohung. \n", __FUNCTION__, __LINE__);
 		is_longpress = 1;
+	} else if (!strcmp(reboot_reason_cmdline, ZRHUNG_RECOVERY_COLDBOOT)) {/* lint !e421*/
+		printk(KERN_ERR "%s %d: COLDBOOT, maybe VMWTG-surfaceflinger recovery. \n", __FUNCTION__, __LINE__);
+		is_coldboot = 1;
 	}
 
 	return 0;
 }
 
 early_param("reboot_reason", wp_reboot_reason_cmdline);
+
+void zrhung_report_endrecovery(void)
+{
+#ifdef CONFIG_HW_ERECOVERY
+	if (is_coldboot) {
+		erecovery_eventobj rp;
+		long ret = 0;
+		memset(&rp, 0, sizeof(erecovery_eventobj));
+		rp.erecovery_id = ZRHUNG_VMWTG_ERECOVERYID;
+		rp.fault_id = ZRHUNG_VMWTG_FAULTID;
+		rp.state = EVENT_END;
+		ret = erecovery_report(&rp);
+		if (!ret)
+			printk(KERN_ERR "%s %d: VMWTG-surfaceflinger recovery end report failed. \n", __FUNCTION__, __LINE__);
+	}
+#endif
+}
 
 void zrhung_get_longpress_event(void)
 {
@@ -71,11 +100,13 @@ void get_sr_position_from_fastboot(char *dst, unsigned int max_dst_size)
 	mm_segment_t old_fs;
 	char * reading_buf = NULL;
 	char *plog = NULL;
+        int fd;
+        unsigned int i;
 
 	old_fs = get_fs();
 	set_fs(KERNEL_DS);
 
-	int fd = sys_open(FASTBOOT_LOG_PATH, O_RDONLY, 0);
+	fd = sys_open(FASTBOOT_LOG_PATH, O_RDONLY, 0);
 	if ( fd < 0 ){
 		printk(KERN_ERR "%s %d: fail to open fastbootlog\n", __FUNCTION__, __LINE__);
 		goto __out ;
@@ -93,7 +124,7 @@ void get_sr_position_from_fastboot(char *dst, unsigned int max_dst_size)
 				break;
 			}
 
-			unsigned int i = 0;
+			i = 0;
 			while ( plog[i] != '\r' && plog[i] != '\n' && i < max_dst_size ){
 				dst[i] = plog[i];
 				i ++;

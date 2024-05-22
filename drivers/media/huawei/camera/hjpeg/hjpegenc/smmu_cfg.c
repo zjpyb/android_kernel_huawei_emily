@@ -42,10 +42,6 @@ static int do_cfg_isp_smmu(hjpeg_hw_ctl_t *hw_ctl)
 
     bypass = (hw_ctl->smmu_bypass == BYPASS_YES);
     if(bypass){
-
-        /* disable SMMU for global */
-        //set_reg_val(smmu_base_addr + SMMU_GLOBAL_BYPASS, get_reg_val(smmu_base_addr + SMMU_GLOBAL_BYPASS)|0x1) ;
-
         /* disable SMMU only for JPGENC stream id */
         SMMU_SMRX_NS_offset = SMMU_SMRX_NS(hw_ctl->stream_id[0]);
         set_reg_val((void __iomem*)((char*)smmu_base_addr + SMMU_SMRX_NS_offset),
@@ -152,25 +148,6 @@ static int do_cfg_smmu(hjpeg_hw_ctl_t *hw_ctl, void* pgd)
         cam_warn("%s: jpg_smmu_rwerraddr_virt is NULL!", __func__);
     }
 
-/*
-    tmpVal = get_reg_val((void __iomem*)((char*)smmu_base_addr+SMMU_RLD_EN0_NS));
-    cam_notice("%s: get reg 0x%x = 0x%x", __func__, SMMU_RLD_EN0_NS, tmpVal);
-    tmpVal |= 0x31;
-    set_reg_val((void __iomem*)((char*)smmu_base_addr+SMMU_RLD_EN0_NS), tmpVal);
-    cam_notice("%s: set reg 0x%x = 0x%x", __func__, SMMU_RLD_EN0_NS, tmpVal);
-
-    tmpVal = get_reg_val((void __iomem*)((char*)smmu_base_addr+SMMU_RLD_EN1_NS));
-    cam_notice("%s: get reg 0x%x = 0x%x", __func__, SMMU_RLD_EN1_NS, tmpVal);
-    tmpVal |= 0x31;
-    set_reg_val((void __iomem*)((char*)smmu_base_addr+SMMU_RLD_EN1_NS), tmpVal);
-    cam_notice("%s: set reg 0x%x = 0x%x", __func__, SMMU_RLD_EN1_NS, tmpVal);
-
-    tmpVal = get_reg_val((void __iomem*)((char*)smmu_base_addr+SMMU_RLD_EN2_NS));
-    cam_notice("%s: get reg 0x%x = 0x%x", __func__, SMMU_RLD_EN2_NS, tmpVal);
-    tmpVal |= 0x31;
-    set_reg_val((void __iomem*)((char*)smmu_base_addr+SMMU_RLD_EN2_NS), tmpVal);
-    cam_notice("%s: set reg 0x%x = 0x%x", __func__, SMMU_RLD_EN2_NS, tmpVal);
-*/
     //SMMU Context Config
     tmpVal = get_reg_val((void __iomem*)((char*)smmu_base_addr+SMMU_CB_TTBR0));
     cam_notice("%s: get reg 0x%x = 0x%x", __func__, SMMU_CB_TTBR0, tmpVal);

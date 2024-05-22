@@ -872,7 +872,10 @@ oal_uint32  oal_cfg80211_notify_cac_event(
 
 oal_void  oal_cfg80211_sched_scan_result_etc(oal_wiphy_stru *pst_wiphy)
 {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,10,44))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,12,0))
+    cfg80211_sched_scan_results(pst_wiphy, 0);
+    return;
+#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(3,10,44))
     cfg80211_sched_scan_results(pst_wiphy);
     return;
 #else
@@ -933,6 +936,12 @@ oal_cfg80211_bss_stru *oal_cfg80211_get_bss_etc(oal_wiphy_stru *pst_wiphy,
     return cfg80211_get_bss(pst_wiphy, pst_channel, puc_bssid, puc_ssid, ul_ssid_len,
                             WLAN_CAPABILITY_ESS, WLAN_CAPABILITY_ESS);
 #endif
+}
+
+
+oal_void  oal_cfg80211_unlink_bss_etc(oal_wiphy_stru *pst_wiphy, oal_cfg80211_bss_stru *pst_cfg80211_bss)
+{
+    cfg80211_unlink_bss(pst_wiphy, pst_cfg80211_bss);
 }
 
 
@@ -1061,7 +1070,17 @@ oal_uint32  oal_cfg80211_roamed_etc(
                               oal_uint32             ul_resp_ie_len,
                         oal_gfp_enum_uint8           en_gfp)
 {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,34))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,12,0))
+    struct cfg80211_roam_info info = {0};
+    info.channel     = pst_channel;
+    info.bssid       = puc_bssid;
+    info.req_ie      = puc_req_ie;
+    info.req_ie_len  = ul_req_ie_len;
+    info.resp_ie     = puc_resp_ie;
+    info.resp_ie_len = ul_resp_ie_len;
+    cfg80211_roamed(pst_net_device, &info, en_gfp);
+    return OAL_SUCC;
+#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,34))
     cfg80211_roamed(pst_net_device, pst_channel, puc_bssid,
                     puc_req_ie, ul_req_ie_len,
                     puc_resp_ie, ul_resp_ie_len, en_gfp);
@@ -1378,6 +1397,12 @@ oal_void  oal_cfg80211_put_bss_etc(oal_wiphy_stru *pst_wiphy, oal_cfg80211_bss_s
 }
 
 
+oal_void  oal_cfg80211_unlink_bss_etc(oal_wiphy_stru *pst_wiphy, oal_cfg80211_bss_stru *pst_cfg80211_bss)
+{
+
+}
+
+
 oal_cfg80211_bss_stru *oal_cfg80211_get_bss_etc(oal_wiphy_stru *pst_wiphy,
                       oal_ieee80211_channel_stru *pst_channel,
                       oal_uint8 *puc_bssid,
@@ -1556,6 +1581,7 @@ oal_void  oal_cfg80211_send_rx_auth(oal_net_device_stru *pst_dev,
 /*lint -e578*//*lint -e19*/
 oal_module_symbol(oal_cfg80211_put_bss_etc);
 oal_module_symbol(oal_cfg80211_get_bss_etc);
+oal_module_symbol(oal_cfg80211_unlink_bss_etc);
 oal_module_symbol(oal_cfg80211_inform_bss_frame_etc);
 oal_module_symbol(oal_cfg80211_scan_done_etc);
 oal_module_symbol(oal_cfg80211_sched_scan_result_etc);

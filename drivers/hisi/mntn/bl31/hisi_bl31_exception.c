@@ -155,7 +155,7 @@ static int __init hisi_bl31_panic_init(void)
 		goto err1;
 	}
 
-	bl31_ctrl_addr_phys = (void *)(bl31_smem_base + data[0]);
+	bl31_ctrl_addr_phys = (void *)(uintptr_t)(bl31_smem_base + data[0]);
 	bl31_ctrl_addr = (void *)ioremap(bl31_smem_base + data[0], (u64)data[1]);
 	if (NULL == bl31_ctrl_addr) {
 		BB_PRINT_ERR

@@ -94,6 +94,7 @@ typedef struct
     oal_netbuf_head_stru        st_rxdata_netbuf_head;
     oal_uint32                  ul_pkt_loss_cnt;
     oal_bool_enum_uint8         en_rxthread_enable;
+    oal_uint8                   uc_allowed_cpus;
 }hmac_rxdata_thread_stru;
 #endif
 
@@ -143,6 +144,7 @@ extern oal_bool_enum_uint8 hmac_get_rxthread_enable_etc(oal_void);
 #endif
 
 extern oal_uint32  hmac_proc_query_response_event_etc(mac_vap_stru *pst_mac_vap, oal_uint8 uc_len, oal_uint8 *puc_param);
+extern oal_int32 hmac_rxdata_polling(struct napi_struct *pst_napi, oal_int32 l_data);
 
 extern oal_wakelock_stru   g_st_hmac_wakelock_etc;
 #define hmac_wake_lock()  oal_wake_lock(&g_st_hmac_wakelock_etc)

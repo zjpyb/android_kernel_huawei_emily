@@ -209,7 +209,7 @@ static irqreturn_t hisi_powerkey_handler(int irq, void *data)
 
 static int hisi_powerkey_probe(struct spmi_device *pdev)
 {
-	struct hisi_powerkey_info *info = NULL;
+	struct hisi_powerkey_info *info = NULL; //lint !e429
 	struct device *dev = &pdev->dev;
 	int ret = 0;
 
@@ -244,7 +244,7 @@ static int hisi_powerkey_probe(struct spmi_device *pdev)
 	powerkey_press_count = 0;
 	powerkey_last_press_time = 0;
 	setup_timer(&dsm_powerkey_timer, powerkey_timer_func,
-			(unsigned long)info);
+			(uintptr_t)info);
 #endif
 
 #ifdef CONFIG_HISI_POWERKEY_DEBUG
@@ -352,14 +352,14 @@ static int hisi_powerkey_probe(struct spmi_device *pdev)
 	mod_timer(&dsm_powerkey_timer, jiffies + STATISTIC_INTERVAL * HZ);
 #endif
 
-	return ret;
+	return ret; //lint !e429
 
 input_err:
 unregister_err:
 	wake_lock_destroy(&info->pwr_wake_lock);
 	input_free_device(info->idev);
 
-	return ret;
+	return ret; //lint !e429
 }
 
 static int hisi_powerkey_remove(struct spmi_device *pdev)

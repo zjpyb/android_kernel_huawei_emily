@@ -765,6 +765,11 @@ static void udp_reply(int pid,int seq,void *payload,int size)
 	}
 	TS_LOG_INFO("ilitek udp_reply\n");
 	nlh= nlmsg_put(skb, pid, seq, 0, size, 0);
+	if (!nlh) {
+		kfree_skb(skb);
+		TS_LOG_ERR("ilitek nlmsg_put failed\n");
+		return;
+	}
 	nlh->nlmsg_flags = 0;
 	data=NLMSG_DATA(nlh);
 	memcpy(data, payload, size);
@@ -908,7 +913,8 @@ char *ilitek_strncat(unsigned char *dest, char *src, size_t dest_size)
 	char *start_index = NULL;
 	dest_len = strnlen(dest, dest_size);
 	start_index = dest + dest_len;
-	return strncat(&dest[dest_len], src, dest_size - dest_len - 1);
+	return strncat(&dest[dest_len], src,
+		(dest_size > dest_len ? (dest_size - dest_len - 1) : 0));
 }
 
 char *ilitek_strncatint(unsigned char *dest, int src, char *format, size_t dest_size)
@@ -1657,11 +1663,9 @@ static int __init ilitek_module_init(void)
 	return 0;
 
 error_exit:
-	if (ilitek_data->ilitek_chip_data) {
+	if (ilitek_data) {
 		kfree(ilitek_data->ilitek_chip_data);
 		ilitek_data->ilitek_chip_data = NULL;
-	}
-	if (ilitek_data) {
 		kfree(ilitek_data);
 		ilitek_data = NULL;
 	}

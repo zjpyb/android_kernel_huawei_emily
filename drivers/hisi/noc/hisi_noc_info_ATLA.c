@@ -491,6 +491,7 @@ const struct noc_busid_initflow hisi_filter_initflow_ATLA[] = {
 	{0, 17, RDR_CP},	/*socp*/
 	{0, 5, RDR_IOM3},  /* iomcu core */
 	{0, 6, RDR_IOM3},  /* iomcu dma */
+	{0, 0, RDR_HIFI},  /* hifi */
 	{ARRAY_END_FLAG, 0, RDR_AP},	/*end*/
 };
 

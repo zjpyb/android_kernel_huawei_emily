@@ -1,5 +1,5 @@
 #include <linux/errno.h>
-#include <linux/hisi/hisi-iommu.h> //for struct iommu_domain_data
+#include <linux/hisi-iommu.h> //for struct iommu_domain_data
 #include <linux/iommu.h> //for struct iommu_domain
 #include <linux/mutex.h>
 #include <linux/list.h>
@@ -142,7 +142,7 @@ void ipu_mem_mngr_deinit(unsigned long *reset_va) {
 	list_for_each_safe(pos, n, &memory_manager.head) {
 		memory_node = (struct memory_manage_node *)pos;
 		printk(KERN_ERR"[%s]: IPU_ERROR:Memory Leak: share_fd=%d,ipu_va=0x%pK,size=0x%lx\n",
-			__func__, memory_node->map.share_fd, (void *)memory_node->map.format.iova_start, memory_node->map.format.iova_size);
+			__func__, memory_node->map.share_fd, (void *)(uintptr_t)memory_node->map.format.iova_start, memory_node->map.format.iova_size);
 		if (ipu_smmu_unmap(&memory_node->map)) {
 			printk(KERN_ERR"[%s]: IPU_ERROR:unmap failed\n", __func__);
 		}
@@ -168,7 +168,7 @@ void ipu_mem_mngr_dump(void) {
 	list_for_each(pos, &memory_manager.head) {
 		memory_node = (struct memory_manage_node *)pos;
 		printk(KERN_DEBUG"[%s] share_fd=%d, VA_base=0x%pK, VA_length=0x%lx\n", __func__,
-			memory_node->map.share_fd, (void *)memory_node->map.format.iova_start, memory_node->map.format.iova_size);
+			memory_node->map.share_fd, (void *)(uintptr_t)memory_node->map.format.iova_start, memory_node->map.format.iova_size);
 	}
 }
 
@@ -212,7 +212,7 @@ void * ipu_mem_mngr_add(struct map_data *map) {
 		mutex_unlock(&ipu_mem_mngr_mutex);
 		return 0;
 	}
-
+	memset(node, 0, sizeof(struct memory_manage_node));
 	memcpy(&node->map, map, sizeof(*map));
 	list_add(&node->head, &memory_manager.head);
 
@@ -234,7 +234,7 @@ int ipu_mem_mngr_del(struct map_data *map) {
 		return 0;
 	} else {
 		printk(KERN_ERR"[%s] IPU_ERROR:FATAL: Unknow memory,fd=%d,iova_start=0x%pK,iova_size=0x%lx,prot=0x%x,ignore\n",
-			__func__, map->share_fd, (void *)map->format.iova_start, map->format.iova_size, map->format.prot);
+			__func__, map->share_fd, (void *)(uintptr_t)map->format.iova_start, map->format.iova_size, map->format.prot);
 		mutex_unlock(&ipu_mem_mngr_mutex);
 		return -EINVAL;
 	}
@@ -282,7 +282,7 @@ static void ipu_reg_bit_write_dword(
 		|| (start_bit > 31)
 		|| (end_bit > 31)) {
 		printk(KERN_ERR"[%s]: IPU_ERROR:error input: reg_addr=%pK,start_bit=0x%x,end_bit=0x%x,content=0x%x\n",
-			__func__, (void *)reg_addr, start_bit, end_bit, content);
+			__func__, (void *)(uintptr_t)reg_addr, start_bit, end_bit, content);
 		return;
 	}
 	set_value	   = content;
@@ -293,10 +293,10 @@ static void ipu_reg_bit_write_dword(
 	tmp_mask	   = tmp_mask >> ( start_bit + tmp_bit);
 	tmp_mask	   = tmp_mask << start_bit;
 
-	reg_content    = (unsigned int) ioread32((void *)reg_addr);
+	reg_content    = (unsigned int) ioread32((void *)(uintptr_t)reg_addr);
 	reg_content   &= (~tmp_mask);
 	set_value	  &= tmp_mask;
-	iowrite32((reg_content | set_value), (void *)reg_addr);
+	iowrite32((reg_content | set_value), (void *)(uintptr_t)reg_addr);
 	return;
 }
 
@@ -413,19 +413,19 @@ unsigned long ipu_get_smmu_base_phy(struct device *dev)
 
 static void ipu_smmu_mstr_init(bool port_sel, bool hardware_start)
 {
-	unsigned long io_mstr_base = (unsigned long)smmu_manager.master_io_addr;
+	uintptr_t io_mstr_base = (uintptr_t)smmu_manager.master_io_addr;
 	unsigned int stream_status;
 	int cnt = 0;
 
 	/* set input signal as "register" by config SMMU_MSTR_INPT_SEL */
 	if (port_sel) {
-		iowrite32(SMMU_MSTR_INPUT_SEL_REGISTER, (void *)(io_mstr_base + smmu_master_reg_offset.smmu_mstr_inpt_sel));
+		iowrite32(SMMU_MSTR_INPUT_SEL_REGISTER, (void *)(uintptr_t)(io_mstr_base + smmu_master_reg_offset.smmu_mstr_inpt_sel));
 	}
 
 	/* polling by loop read SMMU_MSTR_END_ACK */
 	do {
 		cnt++;
-		stream_status = ioread32((void *)(io_mstr_base + smmu_master_reg_offset.smmu_mstr_end_ack));
+		stream_status = ioread32((void *)(uintptr_t)(io_mstr_base + smmu_master_reg_offset.smmu_mstr_end_ack));
 
 		if (cnt > SMMU_MSTR_END_ACK_THRESHOLD) {
 			printk(KERN_DEBUG"[%s] check SMMU MSTR END ACK loop overflow\n", __func__);
@@ -434,7 +434,7 @@ static void ipu_smmu_mstr_init(bool port_sel, bool hardware_start)
 	} while((stream_status & 0xf) != SMMU_MSTR_ALL_STREAM_IS_END_ACK);
 
 	/* set SMMU-normal mode */
-	iowrite32(SMMU_MSTR_GLB_BYPASS_NORMAL_MODE, (void *)(io_mstr_base + smmu_master_reg_offset.smmu_mstr_glb_bypass));
+	iowrite32(SMMU_MSTR_GLB_BYPASS_NORMAL_MODE, (void *)(uintptr_t)(io_mstr_base + smmu_master_reg_offset.smmu_mstr_glb_bypass));
 
 	/* here can config clk:
 	   for core_clk_en, hardware open, for low-power ctrl
@@ -442,8 +442,8 @@ static void ipu_smmu_mstr_init(bool port_sel, bool hardware_start)
 	   default value is OK, so NO need to config again */
 
 	/* clean interrupt, and NOT mask all interrupts by config SMMU_MSTR_INTCLR and SMMU_MSTR_INTMASK */
-	iowrite32(SMMU_MSTR_INTCLR_ALL, (void *)(io_mstr_base + smmu_master_reg_offset.smmu_mstr_intclr));
-	iowrite32(SMMU_MSTR_INTCLR_ALL_UNMASK, (void *)(io_mstr_base + smmu_master_reg_offset.smmu_mstr_intmask));
+	iowrite32(SMMU_MSTR_INTCLR_ALL, (void *)(uintptr_t)(io_mstr_base + smmu_master_reg_offset.smmu_mstr_intclr));
+	iowrite32(SMMU_MSTR_INTCLR_ALL_UNMASK, (void *)(uintptr_t)(io_mstr_base + smmu_master_reg_offset.smmu_mstr_intmask));
 
 	if (!hardware_start) {
 		/********************************************************
@@ -464,13 +464,13 @@ static void ipu_smmu_mstr_init(bool port_sel, bool hardware_start)
 
 		for malloc and free, VA is not in a designated area, so can not set VA max and VA min
 		*********************************************************/
-		iowrite32(SMMU_MSTR_SMRX_0_LEN, (void *)(io_mstr_base + smmu_master_reg_offset.smmu_mstr_smrx_0[0]));
-		iowrite32(SMMU_MSTR_SMRX_0_LEN, (void *)(io_mstr_base + smmu_master_reg_offset.smmu_mstr_smrx_0[1]));
-		iowrite32(SMMU_MSTR_SMRX_0_LEN, (void *)(io_mstr_base + smmu_master_reg_offset.smmu_mstr_smrx_0[2]));
-		iowrite32(SMMU_MSTR_SMRX_0_LEN, (void *)(io_mstr_base + smmu_master_reg_offset.smmu_mstr_smrx_0[3]));
+		iowrite32(SMMU_MSTR_SMRX_0_LEN, (void *)(uintptr_t)(io_mstr_base + smmu_master_reg_offset.smmu_mstr_smrx_0[0]));
+		iowrite32(SMMU_MSTR_SMRX_0_LEN, (void *)(uintptr_t)(io_mstr_base + smmu_master_reg_offset.smmu_mstr_smrx_0[1]));
+		iowrite32(SMMU_MSTR_SMRX_0_LEN, (void *)(uintptr_t)(io_mstr_base + smmu_master_reg_offset.smmu_mstr_smrx_0[2]));
+		iowrite32(SMMU_MSTR_SMRX_0_LEN, (void *)(uintptr_t)(io_mstr_base + smmu_master_reg_offset.smmu_mstr_smrx_0[3]));
 
 		/* stream startup by config SMMU_MSTR_SMRX_START */
-		iowrite32(SMMU_MSTR_SMRX_START_ALL_STREAM, (void *)(io_mstr_base + smmu_master_reg_offset.smmu_mstr_smrx_start));
+		iowrite32(SMMU_MSTR_SMRX_START_ALL_STREAM, (void *)(uintptr_t)(io_mstr_base + smmu_master_reg_offset.smmu_mstr_smrx_start));
 	}
 
 	return;
@@ -480,14 +480,14 @@ static void ipu_smmu_comm_init(unsigned long ttbr0, unsigned long smmu_rw_err_vi
 {
 	unsigned int low;
 	unsigned int high;
-	unsigned long io_comm_base = (unsigned long)smmu_manager.common_io_addr;
+	uintptr_t io_comm_base = (uintptr_t)smmu_manager.common_io_addr;
 	unsigned long smmu_rw_err_phy_addr;
 
 	/* set SMMU mode as normal */
 	ipu_reg_bit_write_dword(io_comm_base + smmu_common_reg_offset.smmu_scr, 0, 0, 0);
 
 	/* clear SMMU interrupt(SMMU_INTCLR_NS) */
-	iowrite32(SMMU_COMMON_INTCLR_NS_ALL, (void *)(io_comm_base + smmu_common_reg_offset.smmu_intclr_ns));
+	iowrite32(SMMU_COMMON_INTCLR_NS_ALL, (void *)(uintptr_t)(io_comm_base + smmu_common_reg_offset.smmu_intclr_ns));
 
 	/* clear MASK of interrupt(SMMU_INTMASK_NS) */
 	ipu_reg_bit_write_dword(io_comm_base + smmu_common_reg_offset.smmu_intmask_ns, 0, 5, 0);
@@ -498,21 +498,21 @@ static void ipu_smmu_comm_init(unsigned long ttbr0, unsigned long smmu_rw_err_vi
 	/* set SMMU Translation Table Base Register for Non-Secure Context Bank0(SMMU_CB_TTBR0) */
 	low = (unsigned int)(ttbr0 & 0xffffffff);
 	high = (unsigned int)((ttbr0 >> 32) & 0x7f);
-	iowrite32(low, (void *)(io_comm_base + smmu_common_reg_offset.smmu_cb_ttbr0));
-	iowrite32(high, (void *)(io_comm_base + smmu_common_reg_offset.smmu_fama_ctrl1_ns));
+	iowrite32(low, (void *)(uintptr_t)(io_comm_base + smmu_common_reg_offset.smmu_cb_ttbr0));
+	iowrite32(high, (void *)(uintptr_t)(io_comm_base + smmu_common_reg_offset.smmu_fama_ctrl1_ns));
 
 	/* set Descriptor select of the SMMU_CB_TTBR0 addressed region of Non-Secure Context Bank
 	for 64bit system, select Long Descriptor -> 1(SMMU_CB_TTBCR.cb_ttbcr_des) */
 	ipu_reg_bit_write_dword(io_comm_base + smmu_common_reg_offset.smmu_cb_ttbcr, 0, 0, 0x1);
 	/* set SMMU read/write phy addr in TLB miss case */
-	smmu_rw_err_phy_addr = virt_to_phys((void *)smmu_rw_err_virtual_addr);
+	smmu_rw_err_phy_addr = virt_to_phys((void *)(uintptr_t)smmu_rw_err_virtual_addr);
 	low = (unsigned int)((smmu_rw_err_phy_addr + 0x80) & 0xffffffffffffff80);
 	high = (unsigned int)((smmu_rw_err_phy_addr >> 32) & 0x7f);
 
-	iowrite32(low, (void *)(io_comm_base + smmu_common_reg_offset.smmu_err_rdaddr));
+	iowrite32(low, (void *)(uintptr_t)(io_comm_base + smmu_common_reg_offset.smmu_err_rdaddr));
 	ipu_reg_bit_write_dword(io_comm_base + smmu_common_reg_offset.smmu_addr_msb, 0, 6, high);
 
-	iowrite32(low, (void *)(io_comm_base + smmu_common_reg_offset.smmu_err_wraddr));
+	iowrite32(low, (void *)(uintptr_t)(io_comm_base + smmu_common_reg_offset.smmu_err_wraddr));
 	ipu_reg_bit_write_dword(io_comm_base + smmu_common_reg_offset.smmu_addr_msb, 7, 13, high);
 	return;
 }
@@ -526,9 +526,9 @@ void ipu_smmu_init(unsigned long ttbr0, unsigned long smmu_rw_err_phy_addr, bool
 void ipu_smmu_deinit(void)
 {
 	iowrite32(SMMU_MSTR_INTCLR_ALL_MASK,
-		(void *)((unsigned long)smmu_manager.master_io_addr + smmu_master_reg_offset.smmu_mstr_intmask));
+		(void *)(uintptr_t)((uintptr_t)smmu_manager.master_io_addr + smmu_master_reg_offset.smmu_mstr_intmask));
 	iowrite32(SMMU_COMMON_INTCLR_NS_ALL_MASK,
-		(void *)((unsigned long)smmu_manager.common_io_addr + smmu_common_reg_offset.smmu_intmask_ns));
+		(void *)(uintptr_t)((uintptr_t)smmu_manager.common_io_addr + smmu_common_reg_offset.smmu_intmask_ns));
 }
 
 static unsigned long ipu_alloc_iova(struct gen_pool *pool,
@@ -573,7 +573,7 @@ long ipu_smmu_map(struct map_data *map)
 	struct dma_buf_attachment *attach;
 	struct dma_buf *dma_buf;
 #else
-	struct ion_handle *hdl;
+        struct ion_handle *hdl;
 #endif
 
 	if (0 == ipu_smmu_domain || 0 == ipu_iova_pool) {
@@ -641,7 +641,7 @@ long ipu_smmu_map(struct map_data *map)
 
 	if (sg_size != iova_size) {
 		printk(KERN_ERR"[%s]: IPU_ERROR:map failed!iova_start = 0x%pK, iova_size = 0x%lx\n",
-				__func__, (void *)iova_start, iova_size);
+				__func__, (void *)(uintptr_t)iova_start, iova_size);
 
 		if (ipu_iova_pool) {
 			ipu_free_iova(ipu_iova_pool, iova_start, iova_size);
@@ -682,7 +682,7 @@ long ipu_smmu_unmap(struct map_data *map)
 			format->iova_size);
 	if(!ret) {
 		printk(KERN_ERR"[%s]IPU_ERROR:illegal para!!iova=0x%pK, size=%ld\n",
-				__func__, (void *)format->iova_start, format->iova_size);
+				__func__, (void *)(uintptr_t)format->iova_start, format->iova_size);
 		return -EINVAL;
 	}
 
@@ -732,9 +732,9 @@ void ipu_smmu_mngr_deinit(void)
 
 void ipu_smmu_override_prefetch_addr(unsigned long reset_va)
 {
-	iowrite32(reset_va, (void *)((unsigned long)smmu_manager.common_io_addr
+	iowrite32(reset_va, (void *)(uintptr_t)((uintptr_t)smmu_manager.common_io_addr
 		+ (unsigned long)smmu_common_reg_offset.override_pref_addr));
-	iowrite32(SMMU_OPREF_CTRL_CONFIG_DUMMY, (void *)((unsigned long)smmu_manager.common_io_addr
+	iowrite32(SMMU_OPREF_CTRL_CONFIG_DUMMY, (void *)(uintptr_t)((uintptr_t)smmu_manager.common_io_addr
 		+ (unsigned long)smmu_common_reg_offset.cfg_override_original_pref_addr));
 
 	printk(KERN_DEBUG"[%s] done\n", __func__);
@@ -745,12 +745,12 @@ bool ipu_smmu_interrupt_handler(struct smmu_irq_count *irq_count)
 	unsigned int reg_smmu_mstr_status;
 	unsigned int reg_smmu_comm_status;
 	bool ret = false;
-	unsigned long mstr_io_addr = (unsigned long)smmu_manager.master_io_addr;
-	unsigned long comm_io_addr = (unsigned long)smmu_manager.common_io_addr;
+	uintptr_t mstr_io_addr = (uintptr_t)smmu_manager.master_io_addr;
+	uintptr_t comm_io_addr = (uintptr_t)smmu_manager.common_io_addr;
 
 	//fixme: if security/protect mode is needed, add code here
-	reg_smmu_comm_status = ioread32((void *)(comm_io_addr + smmu_common_reg_offset.smmu_intstat_ns));
-	reg_smmu_mstr_status = ioread32((void *)(mstr_io_addr + smmu_master_reg_offset.smmu_mstr_intstat));
+	reg_smmu_comm_status = ioread32((void *)(uintptr_t)(comm_io_addr + smmu_common_reg_offset.smmu_intstat_ns));
+	reg_smmu_mstr_status = ioread32((void *)(uintptr_t)(mstr_io_addr + smmu_master_reg_offset.smmu_mstr_intstat));
 
 	if (0 != reg_smmu_mstr_status) {
 		ret = true;
@@ -772,14 +772,14 @@ bool ipu_smmu_interrupt_handler(struct smmu_irq_count *irq_count)
 		}
 
 		printk(KERN_ERR"[%s]: IPU_ERROR:error, Rd_Inst_SID=0x%pK, RdAddr=0x%pK, Wr_Inst_SID=0x%pK, WrAddr=0x%pK\n", __func__,
-			(void *)(unsigned long)ioread32((void *)(mstr_io_addr + 0x50)), (void *)(unsigned long)ioread32((void *)(mstr_io_addr + 0x54)),
-			(void *)(unsigned long)ioread32((void *)(mstr_io_addr + 0x58)), (void *)(unsigned long)ioread32((void *)(mstr_io_addr + 0x5c)));
+			(void *)(uintptr_t)ioread32((void *)(mstr_io_addr + 0x50)), (void *)(uintptr_t)ioread32((void *)(mstr_io_addr + 0x54)),
+			(void *)(uintptr_t)ioread32((void *)(mstr_io_addr + 0x58)), (void *)(uintptr_t)ioread32((void *)(mstr_io_addr + 0x5c)));
 
 		printk(KERN_ERR"[%s]: IPU_ERROR:error, RW_Burst_len=0x%pK, Awaddr=0x%pK\n", __func__,
-			(void *)(unsigned long)ioread32((void *)(mstr_io_addr + 0x60)), (void *)(unsigned long)ioread32((void *)(mstr_io_addr + 0x64)));
+			(void *)(uintptr_t)ioread32((void *)(mstr_io_addr + 0x60)), (void *)(uintptr_t)ioread32((void *)(mstr_io_addr + 0x64)));
 
 		/* clear smmu mstr interrupt */
-		iowrite32(SMMU_MSTR_INTCLR_ALL, (void *)(mstr_io_addr + (unsigned long)smmu_master_reg_offset.smmu_mstr_intclr));
+		iowrite32(SMMU_MSTR_INTCLR_ALL, (void *)(uintptr_t)(mstr_io_addr + (unsigned long)smmu_master_reg_offset.smmu_mstr_intclr));
 	}
 
 	if (0 != reg_smmu_comm_status) {
@@ -816,7 +816,7 @@ bool ipu_smmu_interrupt_handler(struct smmu_irq_count *irq_count)
 
 		/* clear smmu interrupt */
 		//fixme: if security/protect mode is needed, add code here
-		iowrite32(SMMU_COMMON_INTCLR_NS_ALL, (void *)(comm_io_addr + (unsigned long)smmu_common_reg_offset.smmu_intclr_ns));
+		iowrite32(SMMU_COMMON_INTCLR_NS_ALL, (void *)(uintptr_t)(comm_io_addr + (unsigned long)smmu_common_reg_offset.smmu_intclr_ns));
 	}
 
 	return ret;
@@ -826,7 +826,7 @@ void ipu_smmu_reset_statistic(void)
 {
 	int i;
 	struct smmu_master_reg_offset *offset = &smmu_master_reg_offset;
-	void *dbg_port_in = (void *)((unsigned long)smmu_manager.master_io_addr
+	void *dbg_port_in = (void *)(uintptr_t)((uintptr_t)smmu_manager.master_io_addr
 		+ (unsigned long)offset->smmu_mstr_dbg_port_in_0);
 
 	/* clean read channel cmd-total-count (by config SMMU_MSTR_DBG_PORT_IN_0) */
@@ -874,64 +874,64 @@ void ipu_smmu_reset_statistic(void)
 void ipu_smmu_record_statistic(struct smmu_statistic *statistic)
 {
 	struct smmu_master_reg_offset *offset = &smmu_master_reg_offset;
-	unsigned long mstr_io_addr = (unsigned long)smmu_manager.master_io_addr;
+	uintptr_t mstr_io_addr = (uintptr_t)smmu_manager.master_io_addr;
 
 	/* read channel cmd total count */
-	statistic->read_stream_cmd_total[0] += ioread32((void *)(mstr_io_addr + (unsigned long)offset->read_cmd_total_cnt[0]));
-	statistic->read_stream_cmd_total[1] += ioread32((void *)(mstr_io_addr + (unsigned long)offset->read_cmd_total_cnt[1]));
-	statistic->read_stream_cmd_total[2] += ioread32((void *)(mstr_io_addr + (unsigned long)offset->read_cmd_total_cnt[2]));
+	statistic->read_stream_cmd_total[0] += ioread32((void *)(uintptr_t)(mstr_io_addr + (unsigned long)offset->read_cmd_total_cnt[0]));
+	statistic->read_stream_cmd_total[1] += ioread32((void *)(uintptr_t)(mstr_io_addr + (unsigned long)offset->read_cmd_total_cnt[1]));
+	statistic->read_stream_cmd_total[2] += ioread32((void *)(uintptr_t)(mstr_io_addr + (unsigned long)offset->read_cmd_total_cnt[2]));
 
 	/* read channel cmd miss count */
-	statistic->read_stream_cmd_miss[0] += ioread32((void *)(mstr_io_addr + (unsigned long)offset->read_cmd_miss_cnt[0]));
-	statistic->read_stream_cmd_miss[1] += ioread32((void *)(mstr_io_addr + (unsigned long)offset->read_cmd_miss_cnt[1]));
-	statistic->read_stream_cmd_miss[2] += ioread32((void *)(mstr_io_addr + (unsigned long)offset->read_cmd_miss_cnt[2]));
+	statistic->read_stream_cmd_miss[0] += ioread32((void *)(uintptr_t)(mstr_io_addr + (unsigned long)offset->read_cmd_miss_cnt[0]));
+	statistic->read_stream_cmd_miss[1] += ioread32((void *)(uintptr_t)(mstr_io_addr + (unsigned long)offset->read_cmd_miss_cnt[1]));
+	statistic->read_stream_cmd_miss[2] += ioread32((void *)(uintptr_t)(mstr_io_addr + (unsigned long)offset->read_cmd_miss_cnt[2]));
 
 	/* read channel data total count */
-	statistic->read_stream_data_total[0] += ioread32((void *)(mstr_io_addr + (unsigned long)offset->read_data_total_cnt[0]));
-	statistic->read_stream_data_total[1] += ioread32((void *)(mstr_io_addr + (unsigned long)offset->read_data_total_cnt[1]));
-	statistic->read_stream_data_total[2] += ioread32((void *)(mstr_io_addr + (unsigned long)offset->read_data_total_cnt[2]));
+	statistic->read_stream_data_total[0] += ioread32((void *)(uintptr_t)(mstr_io_addr + (unsigned long)offset->read_data_total_cnt[0]));
+	statistic->read_stream_data_total[1] += ioread32((void *)(uintptr_t)(mstr_io_addr + (unsigned long)offset->read_data_total_cnt[1]));
+	statistic->read_stream_data_total[2] += ioread32((void *)(uintptr_t)(mstr_io_addr + (unsigned long)offset->read_data_total_cnt[2]));
 
 	/* read cmd miss/hit and latency */
-	statistic->read_stream_cmd_miss_valid += ioread32((void *)(mstr_io_addr + (unsigned long)offset->read_cmd_case_cnt[0]));
-	statistic->read_stream_cmd_miss_pending += ioread32((void *)(mstr_io_addr + (unsigned long)offset->read_cmd_case_cnt[1]));
-	statistic->read_stream_cmd_hit_valid_not_slide_window += ioread32((void *)(mstr_io_addr + (unsigned long)offset->read_cmd_case_cnt[2]));
-	statistic->read_stream_cmd_hit_valid_slide_window += ioread32((void *)(mstr_io_addr + (unsigned long)offset->read_cmd_case_cnt[3]));
-	statistic->read_stream_cmd_hit_pending_not_slide_window += ioread32((void *)(mstr_io_addr + (unsigned long)offset->read_cmd_case_cnt[4]));
-	statistic->read_stream_cmd_hit_pending_slide_window += ioread32((void *)(mstr_io_addr + (unsigned long)offset->read_cmd_case_cnt[5]));
-	statistic->read_stream_cmd_latency += ioread32((void *)(mstr_io_addr + (unsigned long)offset->read_cmd_trans_latency));
+	statistic->read_stream_cmd_miss_valid += ioread32((void *)(uintptr_t)(mstr_io_addr + (unsigned long)offset->read_cmd_case_cnt[0]));
+	statistic->read_stream_cmd_miss_pending += ioread32((void *)(uintptr_t)(mstr_io_addr + (unsigned long)offset->read_cmd_case_cnt[1]));
+	statistic->read_stream_cmd_hit_valid_not_slide_window += ioread32((void *)(uintptr_t)(mstr_io_addr + (unsigned long)offset->read_cmd_case_cnt[2]));
+	statistic->read_stream_cmd_hit_valid_slide_window += ioread32((void *)(uintptr_t)(mstr_io_addr + (unsigned long)offset->read_cmd_case_cnt[3]));
+	statistic->read_stream_cmd_hit_pending_not_slide_window += ioread32((void *)(uintptr_t)(mstr_io_addr + (unsigned long)offset->read_cmd_case_cnt[4]));
+	statistic->read_stream_cmd_hit_pending_slide_window += ioread32((void *)(uintptr_t)(mstr_io_addr + (unsigned long)offset->read_cmd_case_cnt[5]));
+	statistic->read_stream_cmd_latency += ioread32((void *)(uintptr_t)(mstr_io_addr + (unsigned long)offset->read_cmd_trans_latency));
 
 	/* write channel cmd total count */
-	statistic->write_stream_cmd_total += ioread32((void *)(mstr_io_addr + (unsigned long)offset->write_cmd_total_cnt));
-	statistic->write_stream_cmd_miss += ioread32((void *)(mstr_io_addr + (unsigned long)offset->write_cmd_miss_cnt));
-	statistic->write_stream_data_total += ioread32((void *)(mstr_io_addr + (unsigned long)offset->write_data_total_cnt));
+	statistic->write_stream_cmd_total += ioread32((void *)(uintptr_t)(mstr_io_addr + (unsigned long)offset->write_cmd_total_cnt));
+	statistic->write_stream_cmd_miss += ioread32((void *)(uintptr_t)(mstr_io_addr + (unsigned long)offset->write_cmd_miss_cnt));
+	statistic->write_stream_data_total += ioread32((void *)(uintptr_t)(mstr_io_addr + (unsigned long)offset->write_data_total_cnt));
 
 	/* write cmd miss/hit and latency */
-	statistic->write_stream_cmd_miss_valid += ioread32((void *)(mstr_io_addr + (unsigned long)offset->write_cmd_case_cnt[0]));
-	statistic->write_stream_cmd_miss_pending += ioread32((void *)(mstr_io_addr + (unsigned long)offset->write_cmd_case_cnt[1]));
-	statistic->write_stream_cmd_hit_valid_not_slide_window += ioread32((void *)(mstr_io_addr + (unsigned long)offset->write_cmd_case_cnt[2]));
-	statistic->write_stream_cmd_hit_valid_slide_window += ioread32((void *)(mstr_io_addr + (unsigned long)offset->write_cmd_case_cnt[3]));
-	statistic->write_stream_cmd_hit_pending_not_slide_window += ioread32((void *)(mstr_io_addr + (unsigned long)offset->write_cmd_case_cnt[4]));
-	statistic->write_stream_cmd_hit_pending_slide_window += ioread32((void *)(mstr_io_addr + (unsigned long)offset->write_cmd_case_cnt[5]));
-	statistic->write_stream_cmd_latency += ioread32((void *)(mstr_io_addr + (unsigned long)offset->write_cmd_trans_latency));
+	statistic->write_stream_cmd_miss_valid += ioread32((void *)(uintptr_t)(mstr_io_addr + (unsigned long)offset->write_cmd_case_cnt[0]));
+	statistic->write_stream_cmd_miss_pending += ioread32((void *)(uintptr_t)(mstr_io_addr + (unsigned long)offset->write_cmd_case_cnt[1]));
+	statistic->write_stream_cmd_hit_valid_not_slide_window += ioread32((void *)(uintptr_t)(mstr_io_addr + (unsigned long)offset->write_cmd_case_cnt[2]));
+	statistic->write_stream_cmd_hit_valid_slide_window += ioread32((void *)(uintptr_t)(mstr_io_addr + (unsigned long)offset->write_cmd_case_cnt[3]));
+	statistic->write_stream_cmd_hit_pending_not_slide_window += ioread32((void *)(uintptr_t)(mstr_io_addr + (unsigned long)offset->write_cmd_case_cnt[4]));
+	statistic->write_stream_cmd_hit_pending_slide_window += ioread32((void *)(uintptr_t)(mstr_io_addr + (unsigned long)offset->write_cmd_case_cnt[5]));
+	statistic->write_stream_cmd_latency += ioread32((void *)(uintptr_t)(mstr_io_addr + (unsigned long)offset->write_cmd_trans_latency));
 }
 
 /* for online layer-by-layer mode, run once each op(i.e. conv, pooling, ReLU...), while online merge and offline mode
 this func will only call once before run */
 void ipu_smmu_pte_update(void)
 {
-	unsigned long mstr_io_addr = (unsigned long)smmu_manager.master_io_addr;
-	unsigned long comm_io_addr = (unsigned long)smmu_manager.common_io_addr;
+	uintptr_t mstr_io_addr = (uintptr_t)smmu_manager.master_io_addr;
+	uintptr_t comm_io_addr = (uintptr_t)smmu_manager.common_io_addr;
 
-	iowrite32(SMMU_MSTR_SMRX_START_ALL_STREAM, (void *)(mstr_io_addr + smmu_master_reg_offset.smmu_mstr_smrx_start));
+	iowrite32(SMMU_MSTR_SMRX_START_ALL_STREAM, (void *)(uintptr_t)(mstr_io_addr + smmu_master_reg_offset.smmu_mstr_smrx_start));
 
 	/* update cache data to avoid this case: phy address across 8GB address-space */
-	iowrite32(SMMU_CACHE_ALL_LEVEL_INVALID_LEVEL1, (void *)(comm_io_addr + smmu_common_reg_offset.smmu_scachei_all));
-	iowrite32(SMMU_CACHE_ALL_LEVEL_VALID_LEVEL1, (void *)(comm_io_addr + smmu_common_reg_offset.smmu_scachei_all));
+	iowrite32(SMMU_CACHE_ALL_LEVEL_INVALID_LEVEL1, (void *)(uintptr_t)(comm_io_addr + smmu_common_reg_offset.smmu_scachei_all));
+	iowrite32(SMMU_CACHE_ALL_LEVEL_VALID_LEVEL1, (void *)(uintptr_t)(comm_io_addr + smmu_common_reg_offset.smmu_scachei_all));
 }
 
 bool ipu_smmu_master_get_offset(struct device *dev)
 {
-	int property_rd;
+	unsigned int property_rd;
 	struct smmu_master_reg_offset *offset = &smmu_master_reg_offset;
 	struct device_node *node = of_find_node_by_name(dev->of_node, "smmu_master");
 	if(!node) {
@@ -940,46 +940,46 @@ bool ipu_smmu_master_get_offset(struct device *dev)
 	}
 
 	memset(offset, 0, sizeof(*offset));// coverity[secure_coding]
-	property_rd = of_property_read_u32(node, "smmu-mstr-base-addr", &offset->smmu_mstr_base_addr);
-	property_rd |= of_property_read_u32(node, "smmu-mstr-glb-bypass", &offset->smmu_mstr_glb_bypass);
-	property_rd |= of_property_read_u32(node, "smmu-mstr-end-ack", &offset->smmu_mstr_end_ack);
-	property_rd |= of_property_read_u32(node, "smmu-mstr-smrx-start", &offset->smmu_mstr_smrx_start);
-	property_rd |= of_property_read_u32(node, "smmu-mstr-inpt-sel", &offset->smmu_mstr_inpt_sel);
-	property_rd |= of_property_read_u32(node, "smmu-mstr-intmask", &offset->smmu_mstr_intmask);
-	property_rd |= of_property_read_u32(node, "smmu-mstr-intstat", &offset->smmu_mstr_intstat);
-	property_rd |= of_property_read_u32(node, "smmu-mstr-intclr", &offset->smmu_mstr_intclr);
-	property_rd |= of_property_read_u32(node, "smmu-mstr-dbg-port-in-0", &offset->smmu_mstr_dbg_port_in_0);
-	property_rd |= of_property_read_u32(node, "smmu-mstr-dbg-port-out", &offset->smmu_mstr_dbg_port_out);
-	property_rd |= of_property_read_u32(node, "smmu-mstr-smrx-0-stream-0", &offset->smmu_mstr_smrx_0[0]);
-	property_rd |= of_property_read_u32(node, "smmu-mstr-smrx-0-stream-1", &offset->smmu_mstr_smrx_0[1]);
-	property_rd |= of_property_read_u32(node, "smmu-mstr-smrx-0-stream-2", &offset->smmu_mstr_smrx_0[2]);
-	property_rd |= of_property_read_u32(node, "smmu-mstr-smrx-0-stream-3", &offset->smmu_mstr_smrx_0[3]);
-	property_rd |= of_property_read_u32(node, "read-cmd-total-cnt-stream-0", &offset->read_cmd_total_cnt[0]);
-	property_rd |= of_property_read_u32(node, "read-cmd-total-cnt-stream-1", &offset->read_cmd_total_cnt[1]);
-	property_rd |= of_property_read_u32(node, "read-cmd-total-cnt-stream-2", &offset->read_cmd_total_cnt[2]);
-	property_rd |= of_property_read_u32(node, "read-cmd-miss-cnt-stream-0", &offset->read_cmd_miss_cnt[0]);
-	property_rd |= of_property_read_u32(node, "read-cmd-miss-cnt-stream-1", &offset->read_cmd_miss_cnt[1]);
-	property_rd |= of_property_read_u32(node, "read-cmd-miss-cnt-stream-2", &offset->read_cmd_miss_cnt[2]);
-	property_rd |= of_property_read_u32(node, "read-data-total-cnt-stream-0", &offset->read_data_total_cnt[0]);
-	property_rd |= of_property_read_u32(node, "read-data-total-cnt-stream-1", &offset->read_data_total_cnt[1]);
-	property_rd |= of_property_read_u32(node, "read-data-total-cnt-stream-2", &offset->read_data_total_cnt[2]);
-	property_rd |= of_property_read_u32(node, "read-cmd-case-cnt-stream-0", &offset->read_cmd_case_cnt[0]);
-	property_rd |= of_property_read_u32(node, "read-cmd-case-cnt-stream-1", &offset->read_cmd_case_cnt[1]);
-	property_rd |= of_property_read_u32(node, "read-cmd-case-cnt-stream-2", &offset->read_cmd_case_cnt[2]);
-	property_rd |= of_property_read_u32(node, "read-cmd-case-cnt-stream-3", &offset->read_cmd_case_cnt[3]);
-	property_rd |= of_property_read_u32(node, "read-cmd-case-cnt-stream-4", &offset->read_cmd_case_cnt[4]);
-	property_rd |= of_property_read_u32(node, "read-cmd-case-cnt-stream-5", &offset->read_cmd_case_cnt[5]);
-	property_rd |= of_property_read_u32(node, "read-cmd-trans-latency", &offset->read_cmd_trans_latency);
-	property_rd |= of_property_read_u32(node, "write-cmd-total-cnt", &offset->write_cmd_total_cnt);
-	property_rd |= of_property_read_u32(node, "write-cmd-miss-cnt", &offset->write_cmd_miss_cnt);
-	property_rd |= of_property_read_u32(node, "write-data-total-cnt", &offset->write_data_total_cnt);
-	property_rd |= of_property_read_u32(node, "write-cmd-case-cnt-stream-0", &offset->write_cmd_case_cnt[0]);
-	property_rd |= of_property_read_u32(node, "write-cmd-case-cnt-stream-1", &offset->write_cmd_case_cnt[1]);
-	property_rd |= of_property_read_u32(node, "write-cmd-case-cnt-stream-2", &offset->write_cmd_case_cnt[2]);
-	property_rd |= of_property_read_u32(node, "write-cmd-case-cnt-stream-3", &offset->write_cmd_case_cnt[3]);
-	property_rd |= of_property_read_u32(node, "write-cmd-case-cnt-stream-4", &offset->write_cmd_case_cnt[4]);
-	property_rd |= of_property_read_u32(node, "write-cmd-case-cnt-stream-5", &offset->write_cmd_case_cnt[5]);
-	property_rd |= of_property_read_u32(node, "write-cmd-trans-latency", &offset->write_cmd_trans_latency);
+	property_rd = (unsigned int)of_property_read_u32(node, "smmu-mstr-base-addr", &offset->smmu_mstr_base_addr);
+	property_rd |= (unsigned int)of_property_read_u32(node, "smmu-mstr-glb-bypass", &offset->smmu_mstr_glb_bypass);
+	property_rd |= (unsigned int)of_property_read_u32(node, "smmu-mstr-end-ack", &offset->smmu_mstr_end_ack);
+	property_rd |= (unsigned int)of_property_read_u32(node, "smmu-mstr-smrx-start", &offset->smmu_mstr_smrx_start);
+	property_rd |= (unsigned int)of_property_read_u32(node, "smmu-mstr-inpt-sel", &offset->smmu_mstr_inpt_sel);
+	property_rd |= (unsigned int)of_property_read_u32(node, "smmu-mstr-intmask", &offset->smmu_mstr_intmask);
+	property_rd |= (unsigned int)of_property_read_u32(node, "smmu-mstr-intstat", &offset->smmu_mstr_intstat);
+	property_rd |= (unsigned int)of_property_read_u32(node, "smmu-mstr-intclr", &offset->smmu_mstr_intclr);
+	property_rd |= (unsigned int)of_property_read_u32(node, "smmu-mstr-dbg-port-in-0", &offset->smmu_mstr_dbg_port_in_0);
+	property_rd |= (unsigned int)of_property_read_u32(node, "smmu-mstr-dbg-port-out", &offset->smmu_mstr_dbg_port_out);
+	property_rd |= (unsigned int)of_property_read_u32(node, "smmu-mstr-smrx-0-stream-0", &offset->smmu_mstr_smrx_0[0]);
+	property_rd |= (unsigned int)of_property_read_u32(node, "smmu-mstr-smrx-0-stream-1", &offset->smmu_mstr_smrx_0[1]);
+	property_rd |= (unsigned int)of_property_read_u32(node, "smmu-mstr-smrx-0-stream-2", &offset->smmu_mstr_smrx_0[2]);
+	property_rd |= (unsigned int)of_property_read_u32(node, "smmu-mstr-smrx-0-stream-3", &offset->smmu_mstr_smrx_0[3]);
+	property_rd |= (unsigned int)of_property_read_u32(node, "read-cmd-total-cnt-stream-0", &offset->read_cmd_total_cnt[0]);
+	property_rd |= (unsigned int)of_property_read_u32(node, "read-cmd-total-cnt-stream-1", &offset->read_cmd_total_cnt[1]);
+	property_rd |= (unsigned int)of_property_read_u32(node, "read-cmd-total-cnt-stream-2", &offset->read_cmd_total_cnt[2]);
+	property_rd |= (unsigned int)of_property_read_u32(node, "read-cmd-miss-cnt-stream-0", &offset->read_cmd_miss_cnt[0]);
+	property_rd |= (unsigned int)of_property_read_u32(node, "read-cmd-miss-cnt-stream-1", &offset->read_cmd_miss_cnt[1]);
+	property_rd |= (unsigned int)of_property_read_u32(node, "read-cmd-miss-cnt-stream-2", &offset->read_cmd_miss_cnt[2]);
+	property_rd |= (unsigned int)of_property_read_u32(node, "read-data-total-cnt-stream-0", &offset->read_data_total_cnt[0]);
+	property_rd |= (unsigned int)of_property_read_u32(node, "read-data-total-cnt-stream-1", &offset->read_data_total_cnt[1]);
+	property_rd |= (unsigned int)of_property_read_u32(node, "read-data-total-cnt-stream-2", &offset->read_data_total_cnt[2]);
+	property_rd |= (unsigned int)of_property_read_u32(node, "read-cmd-case-cnt-stream-0", &offset->read_cmd_case_cnt[0]);
+	property_rd |= (unsigned int)of_property_read_u32(node, "read-cmd-case-cnt-stream-1", &offset->read_cmd_case_cnt[1]);
+	property_rd |= (unsigned int)of_property_read_u32(node, "read-cmd-case-cnt-stream-2", &offset->read_cmd_case_cnt[2]);
+	property_rd |= (unsigned int)of_property_read_u32(node, "read-cmd-case-cnt-stream-3", &offset->read_cmd_case_cnt[3]);
+	property_rd |= (unsigned int)of_property_read_u32(node, "read-cmd-case-cnt-stream-4", &offset->read_cmd_case_cnt[4]);
+	property_rd |= (unsigned int)of_property_read_u32(node, "read-cmd-case-cnt-stream-5", &offset->read_cmd_case_cnt[5]);
+	property_rd |= (unsigned int)of_property_read_u32(node, "read-cmd-trans-latency", &offset->read_cmd_trans_latency);
+	property_rd |= (unsigned int)of_property_read_u32(node, "write-cmd-total-cnt", &offset->write_cmd_total_cnt);
+	property_rd |= (unsigned int)of_property_read_u32(node, "write-cmd-miss-cnt", &offset->write_cmd_miss_cnt);
+	property_rd |= (unsigned int)of_property_read_u32(node, "write-data-total-cnt", &offset->write_data_total_cnt);
+	property_rd |= (unsigned int)of_property_read_u32(node, "write-cmd-case-cnt-stream-0", &offset->write_cmd_case_cnt[0]);
+	property_rd |= (unsigned int)of_property_read_u32(node, "write-cmd-case-cnt-stream-1", &offset->write_cmd_case_cnt[1]);
+	property_rd |= (unsigned int)of_property_read_u32(node, "write-cmd-case-cnt-stream-2", &offset->write_cmd_case_cnt[2]);
+	property_rd |= (unsigned int)of_property_read_u32(node, "write-cmd-case-cnt-stream-3", &offset->write_cmd_case_cnt[3]);
+	property_rd |= (unsigned int)of_property_read_u32(node, "write-cmd-case-cnt-stream-4", &offset->write_cmd_case_cnt[4]);
+	property_rd |= (unsigned int)of_property_read_u32(node, "write-cmd-case-cnt-stream-5", &offset->write_cmd_case_cnt[5]);
+	property_rd |= (unsigned int)of_property_read_u32(node, "write-cmd-trans-latency", &offset->write_cmd_trans_latency);
 
 	if (property_rd) {
 		printk(KERN_ERR"[%s]: IPU_ERROR:read property of smmu_master offset error\n", __func__);
@@ -990,7 +990,7 @@ bool ipu_smmu_master_get_offset(struct device *dev)
 
 bool ipu_smmu_common_get_offset (struct device *dev)
 {
-	int property_rd;
+	unsigned int property_rd;
 	struct smmu_common_reg_offset *offset = &smmu_common_reg_offset;
 	struct device_node *node = of_find_node_by_name(dev->of_node, "smmu_common");
 	if(!node) {
@@ -999,20 +999,20 @@ bool ipu_smmu_common_get_offset (struct device *dev)
 	}
 
 	memset(offset, 0, sizeof(smmu_common_reg_offset));// coverity[secure_coding]
-	property_rd = of_property_read_u32(node, "smmu-common-base-addr", &offset->smmu_common_base_addr);
-	property_rd |= of_property_read_u32(node, "smmu-scr", &offset->smmu_scr);
-	property_rd |= of_property_read_u32(node, "smmu-intmask-ns", &offset->smmu_intmask_ns);
-	property_rd |= of_property_read_u32(node, "smmu-intstat-ns", &offset->smmu_intstat_ns);
-	property_rd |= of_property_read_u32(node, "smmu-intclr-ns", &offset->smmu_intclr_ns);
-	property_rd |= of_property_read_u32(node, "smmu-cb-ttbr0", &offset->smmu_cb_ttbr0);
-	property_rd |= of_property_read_u32(node, "smmu-cb-ttbcr", &offset->smmu_cb_ttbcr);
-	property_rd |= of_property_read_u32(node, "smmu-scachei-all", &offset->smmu_scachei_all);
-	property_rd |= of_property_read_u32(node, "smmu-fama-ctrl1-ns", &offset->smmu_fama_ctrl1_ns);
-	property_rd |= of_property_read_u32(node, "smmu-opref-addr", &offset->override_pref_addr);
-	property_rd |= of_property_read_u32(node, "smmu-opref-ctrl", &offset->cfg_override_original_pref_addr);
-	property_rd |= of_property_read_u32(node, "smmu-addr-msb", &offset->smmu_addr_msb);
-	property_rd |= of_property_read_u32(node, "smmu-err-rdaddr", &offset->smmu_err_rdaddr);
-	property_rd |= of_property_read_u32(node, "smmu-err-wraddr", &offset->smmu_err_wraddr);
+	property_rd = (unsigned int)of_property_read_u32(node, "smmu-common-base-addr", &offset->smmu_common_base_addr);
+	property_rd |= (unsigned int)of_property_read_u32(node, "smmu-scr", &offset->smmu_scr);
+	property_rd |= (unsigned int)of_property_read_u32(node, "smmu-intmask-ns", &offset->smmu_intmask_ns);
+	property_rd |= (unsigned int)of_property_read_u32(node, "smmu-intstat-ns", &offset->smmu_intstat_ns);
+	property_rd |= (unsigned int)of_property_read_u32(node, "smmu-intclr-ns", &offset->smmu_intclr_ns);
+	property_rd |= (unsigned int)of_property_read_u32(node, "smmu-cb-ttbr0", &offset->smmu_cb_ttbr0);
+	property_rd |= (unsigned int)of_property_read_u32(node, "smmu-cb-ttbcr", &offset->smmu_cb_ttbcr);
+	property_rd |= (unsigned int)of_property_read_u32(node, "smmu-scachei-all", &offset->smmu_scachei_all);
+	property_rd |= (unsigned int)of_property_read_u32(node, "smmu-fama-ctrl1-ns", &offset->smmu_fama_ctrl1_ns);
+	property_rd |= (unsigned int)of_property_read_u32(node, "smmu-opref-addr", &offset->override_pref_addr);
+	property_rd |= (unsigned int)of_property_read_u32(node, "smmu-opref-ctrl", &offset->cfg_override_original_pref_addr);
+	property_rd |= (unsigned int)of_property_read_u32(node, "smmu-addr-msb", &offset->smmu_addr_msb);
+	property_rd |= (unsigned int)of_property_read_u32(node, "smmu-err-rdaddr", &offset->smmu_err_rdaddr);
+	property_rd |= (unsigned int)of_property_read_u32(node, "smmu-err-wraddr", &offset->smmu_err_wraddr);
 	if (property_rd) {
 		printk(KERN_ERR"[%s]: IPU_ERROR:read property of smmu_common offset error\n", __func__);
 		return false;
@@ -1043,15 +1043,15 @@ void ipu_smmu_dump_strm(void)
 	int dsm_offset = 0;
 
 	struct smmu_master_reg_offset *offset = &smmu_master_reg_offset;
-	unsigned long mstr_io_addr = (unsigned long)smmu_manager.master_io_addr;
+	uintptr_t mstr_io_addr = (uintptr_t)smmu_manager.master_io_addr;
 
 	for (i = 0; i < IPU_SMMU_MSTR_DEBUG_BASE_NUM; i++) {
 
 		base = port_in[i];
 
 		for (j = 0; j < IPU_SMMU_MSTR_DEBUG_PORT_NUM; j ++) {
-			iowrite32(base + j * sizeof(unsigned int), (void *)(mstr_io_addr + (unsigned long)offset->smmu_mstr_dbg_port_in_0));
-			port_out[j] = ioread32((void *)(mstr_io_addr + (unsigned long)offset->smmu_mstr_dbg_port_out));
+			iowrite32(base + j * sizeof(unsigned int), (void *)(uintptr_t)(mstr_io_addr + (unsigned long)offset->smmu_mstr_dbg_port_in_0));
+			port_out[j] = ioread32((void *)(uintptr_t)(mstr_io_addr + (unsigned long)offset->smmu_mstr_dbg_port_out));
 		}
 
 		/* dump strm status for analysis */
@@ -1076,14 +1076,14 @@ void ipu_smmu_dump_strm(void)
 
 	}
 
-	iowrite32(IPU_SMMU_RD_CMD_BUF_BITMAP, (void *)(mstr_io_addr + (unsigned long)offset->smmu_mstr_dbg_port_in_0));
-	iowrite32(IPU_SMMU_WR_CMD_BUF_BITMAP, (void *)(mstr_io_addr + (unsigned long)offset->smmu_mstr_dbg_port_in_0));
-	ipu_reg_info.mstr_reg.rd_bitmap = ioread32((void *)(mstr_io_addr + (unsigned long)offset->smmu_mstr_dbg_port_out));
-	ipu_reg_info.mstr_reg.wr_bitmap = ioread32((void *)(mstr_io_addr + (unsigned long)offset->smmu_mstr_dbg_port_out));
-	ipu_reg_info.mstr_reg.rd_cmd_total_cnt0 = ioread32((void *)(mstr_io_addr + (unsigned long)offset->read_cmd_total_cnt[0]));
-	ipu_reg_info.mstr_reg.rd_cmd_total_cnt1 = ioread32((void *)(mstr_io_addr + (unsigned long)offset->read_cmd_total_cnt[1]));
-	ipu_reg_info.mstr_reg.rd_cmd_total_cnt2 = ioread32((void *)(mstr_io_addr + (unsigned long)offset->read_cmd_total_cnt[2]));
-	ipu_reg_info.mstr_reg.wr_cmd_total_cnt	= ioread32((void *)(mstr_io_addr + (unsigned long)offset->write_cmd_total_cnt));
+	iowrite32(IPU_SMMU_RD_CMD_BUF_BITMAP, (void *)(uintptr_t)(mstr_io_addr + (unsigned long)offset->smmu_mstr_dbg_port_in_0));
+	iowrite32(IPU_SMMU_WR_CMD_BUF_BITMAP, (void *)(uintptr_t)(mstr_io_addr + (unsigned long)offset->smmu_mstr_dbg_port_in_0));
+	ipu_reg_info.mstr_reg.rd_bitmap = ioread32((void *)(uintptr_t)(mstr_io_addr + (unsigned long)offset->smmu_mstr_dbg_port_out));
+	ipu_reg_info.mstr_reg.wr_bitmap = ioread32((void *)(uintptr_t)(mstr_io_addr + (unsigned long)offset->smmu_mstr_dbg_port_out));
+	ipu_reg_info.mstr_reg.rd_cmd_total_cnt0 = ioread32((void *)(uintptr_t)(mstr_io_addr + (unsigned long)offset->read_cmd_total_cnt[0]));
+	ipu_reg_info.mstr_reg.rd_cmd_total_cnt1 = ioread32((void *)(uintptr_t)(mstr_io_addr + (unsigned long)offset->read_cmd_total_cnt[1]));
+	ipu_reg_info.mstr_reg.rd_cmd_total_cnt2 = ioread32((void *)(uintptr_t)(mstr_io_addr + (unsigned long)offset->read_cmd_total_cnt[2]));
+	ipu_reg_info.mstr_reg.wr_cmd_total_cnt	= ioread32((void *)(uintptr_t)(mstr_io_addr + (unsigned long)offset->write_cmd_total_cnt));
 	printk(KERN_ERR"RD_BITMAP=%x, WR_BITMAP=%x, rd_cmd_total_cnt[0-3]={%x, %x, %x}, wr_cmd_total_cnt=%x\n",
 		ipu_reg_info.mstr_reg.rd_bitmap,
 		ipu_reg_info.mstr_reg.wr_bitmap,

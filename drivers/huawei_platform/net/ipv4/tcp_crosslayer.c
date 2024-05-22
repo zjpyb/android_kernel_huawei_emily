@@ -23,6 +23,12 @@
 /* 2^31 + 2^29 - 2^25 + 2^22 - 2^19 - 2^16 + 1 */
 #define GOLDEN_RATIO_PRIME_32 0x9e370001UL
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
+#ifndef tcp_jiffies32
+#define tcp_jiffies32 tcp_time_stamp
+#endif
+#endif
+
 /****************************/
 /*** Variables definition ***/
 /****************************/
@@ -711,7 +717,7 @@ bool aspen_tcp_try_undo_modem_drop(struct sock *sk,
 		else if (state == FROM_LOSS)
 			tp->snd_cwnd = tp->snd_cwnd > TCP_INIT_CWND ? tp->snd_cwnd : TCP_INIT_CWND;
 
-		tp->snd_cwnd_stamp = tcp_time_stamp;
+		tp->snd_cwnd_stamp = tcp_jiffies32;
 		sk->undo_modem_drop_marker = 0;
 #ifdef CONFIG_HW_CROSSLAYER_OPT_DBG_MODULE
 		sk->undo_modem_drop_cnts++;

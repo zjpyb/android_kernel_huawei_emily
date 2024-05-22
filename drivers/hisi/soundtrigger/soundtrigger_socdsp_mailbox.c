@@ -43,7 +43,7 @@ static void soundtrigger_hotword_detected_work(struct work_struct *wk)
 }
 static DECLARE_WORK(hotword_detected_queue, soundtrigger_hotword_detected_work);
 
-int soundtrigger_mailbox_send_data(void *pmsg_body, unsigned int msg_len, unsigned int msg_priority)
+int soundtrigger_mailbox_send_data(const void *pmsg_body, unsigned int msg_len, unsigned int msg_priority)
 {
 	unsigned int ret = 0;
 

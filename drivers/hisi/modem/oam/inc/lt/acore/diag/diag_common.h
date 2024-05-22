@@ -496,7 +496,7 @@ extern VOS_UINT32 diag_SendMsg(VOS_UINT32 ulSenderId, VOS_UINT32 ulRecverId, VOS
 /* 诊断数据服务层打包接口 */
 extern VOS_UINT32 diag_ServicePackData(DIAG_MSG_REPORT_HEAD_STRU *pData);
 
-extern VOS_UINT32 DIAG_MsgReport (MSP_DIAG_CNF_INFO_STRU *pstDiagInfo, VOS_VOID *pstData, VOS_UINT32 ulLen);
+extern VOS_UINT32 DIAG_MsgReport (VOS_VOID *pstMessage, VOS_VOID *pstData, VOS_UINT32 ulLen);
 
 extern VOS_UINT32 diag_SrvcPackFirst(DIAG_MSG_REPORT_HEAD_STRU *pData, VOS_UINT8 *puctime);
 

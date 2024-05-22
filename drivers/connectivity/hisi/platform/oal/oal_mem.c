@@ -82,7 +82,14 @@ oal_uint32 gul_dscr_fstphy_addr = 0;
     内存池统计信息全局变量，维测使用
 *******************************************************************************/
 OAL_STATIC oal_mem_stat g_st_mem_stat;
-oal_mempool_info_to_sdt_stru    g_st_mempool_info = {0};
+#if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
+oal_mempool_info_to_sdt_stru    g_st_mempool_info = {
+    .p_mempool_info_func  = NULL,
+    .p_memblock_info_func = NULL
+};
+#else
+oal_mempool_info_to_sdt_stru    g_st_mempool_info = {NULL, NULL};
+#endif
 #ifdef _PRE_DEBUG_MODE
 OAL_STATIC oal_mempool_tx_dscr_addr    g_st_tx_dscr_addr;
 #endif

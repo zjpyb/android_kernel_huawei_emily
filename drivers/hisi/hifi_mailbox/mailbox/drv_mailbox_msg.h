@@ -84,7 +84,7 @@ unsigned long mailbox_init(void);
 
 unsigned long mailbox_send_msg(
 	unsigned long			 mailcode,
-	void					*data,
+	const void				*data,
 	unsigned long			 length);
 
 

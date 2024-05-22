@@ -26,6 +26,19 @@ extern "C" {
  */
 /* 根据WIFI-2.4G-5G-国家码信道对应表更新管制域信息*/
 #ifdef _PRE_WLAN_FEATURE_11D
+/* 某些产品上层无法获取国家码，下发的特定国家码 */
+static const struct ieee80211_regdomain regdom_AA = {
+    .alpha2 = "AA",
+    .reg_rules = {
+        REG_RULE(2402, 2472, 40, 0, 20, 0),
+        REG_RULE(5170, 5250, 80, 0, 17, 0),
+        REG_RULE(5250, 5330, 80, 0, 20,
+            NL80211_RRF_DFS | 0),
+        REG_RULE(5490, 5710, 160, 0, 23,
+            NL80211_RRF_DFS | 0),
+    },
+    .n_reg_rules = 4
+};
 
 static const struct ieee80211_regdomain regdom_AE = {
     .alpha2 = "AE",
@@ -196,11 +209,13 @@ static const struct ieee80211_regdomain regdom_AU = {
         REG_RULE(5170, 5250, 80, 3, 17, 0),
         REG_RULE(5250, 5330, 80, 3, 24,
             NL80211_RRF_DFS | 0),
-        REG_RULE(5490, 5730, 80, 3, 24,
+        REG_RULE(5490, 5590, 80, 3, 24,
+            NL80211_RRF_DFS | 0),
+        REG_RULE(5650, 5730, 80, 3, 24,
             NL80211_RRF_DFS | 0),
         REG_RULE(5735, 5835, 80, 3, 30, 0),
     },
-    .n_reg_rules = 5
+    .n_reg_rules = 6
 };
 
 static const struct ieee80211_regdomain regdom_AW = {
@@ -829,9 +844,14 @@ static const struct ieee80211_regdomain regdom_HN = {
     .alpha2 = "HN",
     .reg_rules = {
         REG_RULE(2402, 2482, 40, 0, 20, 0),
-        REG_RULE(5735, 5835, 80, 3, 30, 0),
+        REG_RULE(5170, 5250, 80, 0, 23, 0),
+        REG_RULE(5250, 5330, 80, 0, 23,
+            NL80211_RRF_DFS | 0),
+        REG_RULE(5490, 5710, 80, 0, 23,
+            NL80211_RRF_DFS | 0),
+        REG_RULE(5735, 5835, 80, 0, 30, 0),
     },
-    .n_reg_rules = 2
+    .n_reg_rules = 5
 };
 
 static const struct ieee80211_regdomain regdom_HR = {
@@ -919,8 +939,9 @@ static const struct ieee80211_regdomain regdom_IQ = {
             NL80211_RRF_DFS | 0),
         REG_RULE(5490, 5710, 80, 0, 30,
             NL80211_RRF_DFS | 0),
+        REG_RULE(5735, 5835, 80, 0, 30, 0),
     },
-    .n_reg_rules = 4
+    .n_reg_rules = 5
 };
 
 static const struct ieee80211_regdomain regdom_IR = {
@@ -1645,11 +1666,14 @@ static const struct ieee80211_regdomain regdom_QA = {
     .alpha2 = "QA",
     .reg_rules = {
         REG_RULE(2402, 2482, 40, 0, 20, 0),
+        REG_RULE(5170, 5250, 80, 0, 20, 0),
+        REG_RULE(5250, 5330, 80, 0, 20,
+            NL80211_RRF_DFS | 0),
         REG_RULE(5490, 5730, 80, 0, 20,
             NL80211_RRF_DFS | 0),
         REG_RULE(5735, 5835, 80, 0, 20, 0),
     },
-    .n_reg_rules = 3
+    .n_reg_rules = 5
 };
 
 static const struct ieee80211_regdomain regdom_RO = {
@@ -2140,6 +2164,7 @@ static const struct ieee80211_regdomain regdom_MM = {
 
 /* country alpha2 code can search from http://en.wikipedia.org/wiki/ISO_3166-1_alpha-2 */
 const struct ieee80211_regdomain *reg_regdb_etc[] = {
+    &regdom_AA,
     &regdom_AE,
     &regdom_AF,
     &regdom_AG,

@@ -11,6 +11,7 @@
 #include "hw_csi.h"
 
 #define I2S(i) container_of(i, sensor_t, intf)
+#define Sensor2Pdev(s) container_of((s).dev, struct platform_device, dev)
 #define POWER_DELAY_0        0//delay 0 ms
 #define POWER_DELAY_1        1//delay 1 ms
 #define POWER_DELAY_2        2//delay 2 ms
@@ -43,7 +44,7 @@ static hwsensor_vtbl_t s_hi259_vtbl =
     .csi_disable = hi259_csi_disable,
 };
 
-static hwsensor_intf_t *s_intf = NULL;
+static struct platform_device *s_pdev = NULL;
 static sensor_t *s_sensor = NULL;
 
 struct sensor_power_setting hw_hi259_power_up_setting[] = {
@@ -463,12 +464,12 @@ int32_t hi259_platform_probe(struct platform_device* pdev)
         cam_err("%s hwsensor_register failed rc %d\n", __func__, rc);
         return -ENODEV;
     }
-    s_intf = intf;
+    s_pdev = pdev;
 
     rc = rpmsg_sensor_register(pdev, (void*)sensor);
     if (rc < 0) {
-        hwsensor_unregister(intf);
-        s_intf = NULL;
+        hwsensor_unregister(s_pdev);
+        s_pdev = NULL;
         cam_err("%s rpmsg_sensor_register failed rc %d\n", __func__, rc);
         return -ENODEV;
     }
@@ -493,9 +494,9 @@ hi259_exit_module(void)
         rpmsg_sensor_unregister((void*)s_sensor);
         s_sensor = NULL;
     }
-    if (NULL != s_intf) {
-        hwsensor_unregister(s_intf);
-        s_intf = NULL;
+    if (NULL != s_pdev) {
+        hwsensor_unregister(s_pdev);
+        s_pdev = NULL;
     }
     platform_driver_unregister(&s_hi259_driver);
 }

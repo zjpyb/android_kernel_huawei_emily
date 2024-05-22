@@ -2721,6 +2721,9 @@ typedef struct
     oal_uint8                   uc_dbb_scale_11a_ht20_vht20;    /* 20MHz dbb scale */
     oal_uint8                   uc_dbb_scale_ht40_vht40;        /* 40MHz dbb scale */
     oal_uint8                   uc_dbb_scale_vht80;             /* 80MHz dbb scale */
+    oal_uint8                   uc_dbb_scale_ht40_vht40_mcs8_9_comp;   /* 40MHz MCS8_9 dbb scale 补偿值 */
+    oal_uint8                   uc_dbb_scale_vht80_mcs8_9_comp;        /* 80MHz MCS8_9 dbb scale 补偿值 */
+    oal_uint8                   auc_resv[2];
 }mac_cfg_ce_5g_hi_band_params;
 
 typedef struct
@@ -2801,7 +2804,7 @@ typedef struct
     oal_int8                   uc_band_5g_enable;
     oal_uint8                  uc_tone_amp_grade;
     oal_uint8                  uc_enable_band_edge_txpwr_fix;              /* 是否使用FCC 边带发射最大功率值.0:不使用， 1:使用 */
-    oal_uint8                  uc_resv_wifi_cali;
+    oal_uint8                  uc_5g_iq_cali_agc_control;  /* 5g iq cali agc调整配置:全0默认,全f自适应调整;其他,固定增益调整,LNA高3bit,VGA低5bit */
     /* bt tmp */
     oal_uint16                  us_cali_bt_txpwr_pa_ref_band1;
     oal_uint16                  us_cali_bt_txpwr_pa_ref_band2;

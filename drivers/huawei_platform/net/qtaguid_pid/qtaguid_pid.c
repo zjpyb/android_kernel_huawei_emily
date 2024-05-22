@@ -28,7 +28,7 @@
 #include "qtaguid_pid.h"
 
 #ifdef CONFIG_HUAWEI_DUBAI
-#include <log/log_usertype/log-usertype.h>
+#include <log/log_usertype.h>
 #include <huawei_platform/log/hwlog_kernel.h>
 extern unsigned long get_wakeuptime(void);
 extern const char *get_sourcename(void);

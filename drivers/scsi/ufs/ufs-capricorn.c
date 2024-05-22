@@ -17,10 +17,16 @@
 #include <linux/mfd/hisi_pmic.h>
 #include <soc_sctrl_interface.h>
 #include <soc_ufs_sysctrl_interface.h>
+#include <pmic_interface.h>
 #include <linux/hisi/hisi_idle_sleep.h>
 #include "ufshcd.h"
 #include "ufs-kirin.h"
 #include "dsm_ufs.h"
+
+void ufs_kirin_regulator_init(struct ufs_hba *hba)
+{
+	return;
+}
 
 void ufs_clk_init(struct ufs_hba *hba)
 {
@@ -31,11 +37,12 @@ void ufs_soc_init(struct ufs_hba *hba)
 {
 	struct ufs_kirin_host *host = (struct ufs_kirin_host *)hba->priv;
 	u32 reg;
-	int i;
+	/* wait ufs psw memory repair timeout */
+	int retry = 400;
 
 	dev_info(hba->dev, "%s ++\n", __func__);
 
-	/* eS LOW TEMP 207M */
+	/* CS LOW TEMP 232M */
 	writel(BIT(SOC_SCTRL_SCPERDIS4_gt_clk_ufs_subsys_START),
 		SOC_SCTRL_SCPERDIS4_ADDR(host->sysctrl));
 	writel(0x003F0006, SOC_SCTRL_SCCLKDIV9_ADDR(host->sysctrl));
@@ -87,12 +94,13 @@ void ufs_soc_init(struct ufs_hba *hba)
 	ufs_sys_ctrl_clr_bits(host, BIT_UFS_PHY_ISO_CTRL, PHY_ISO_EN); /* disable phy iso */
 	ufs_sys_ctrl_clr_bits(host, BIT_SYSCTRL_LP_ISOL_EN, HC_LP_CTRL); /* notice iso disable */
 
-	for (i = 400; i > 0; i--) {
-		if(BIT_UFS_PSW_MEM_REPAIR_ACK_MASK & ufs_pctrl_readl(host, PCTRL_PERI_STAT64_OFFSET))
+	while (retry--) {
+		if (BIT_UFS_PSW_MEM_REPAIR_ACK_MASK
+			& ufs_pctrl_readl(host, PCTRL_PERI_STAT64_OFFSET))
 			break;
 		udelay(1);
 	}
-	if (i <= 0)
+	if (retry < 0)
 		pr_err("ufs memory repair fail\n");
 
 	writel(1<<(SOC_UFS_Sysctrl_CRG_UFS_CFG_ip_arst_ufs_START+16) |\
@@ -120,15 +128,8 @@ void ufs_soc_init(struct ufs_hba *hba)
 	} else {
 		ufs_sys_ctrl_writel(host, MASK_UFS_DEVICE_RESET | 0,
 				    UFS_DEVICE_RESET_CTRL); /* reset device */
-		/* To improve the ref clock jitter, use PMU's output directly */
-		/* change the PMU's device ref clk to 38.4Mhz, if after onchiprom's
-		* linkstartup's PA_MaxRxHSGear = 0x4 */
-		/* close the device clk */
-		hisi_pmic_reg_write(0x43, 0);
-		/* choose the device clk 19.2Mhz */
-		hisi_pmic_reg_write(0x02E3, 0);
-		/* open the device clk */
-		hisi_pmic_reg_write(0x43, 1);
+
+		ufshcd_vops_vcc_power_on_off(hba);
 
 		mdelay(1);
 
@@ -147,7 +148,8 @@ void ufs_soc_init(struct ufs_hba *hba)
 		mdelay(1);
 
 	/*set SOC_SCTRL_SCBAKDATA11_ADDR ufs bit to 1 when init*/
-	hisi_idle_sleep_vote(ID_UFS, 1);
+	if (!ufshcd_is_auto_hibern8_allowed(hba))
+		hisi_idle_sleep_vote(ID_UFS, 1);
 
 	dev_info(hba->dev, "%s --\n", __func__);
 	return;
@@ -187,7 +189,8 @@ int ufs_kirin_suspend(struct ufs_hba *hba, enum ufs_pm_op pm_op)
 	struct ufs_kirin_host *host = hba->priv;
 
 	/*set SOC_SCTRL_SCBAKDATA11_ADDR ufs bit to 0 when idle*/
-	hisi_idle_sleep_vote(ID_UFS, 0);
+	if (!ufshcd_is_auto_hibern8_allowed(hba))
+		hisi_idle_sleep_vote(ID_UFS, 0);
 
 	if (ufshcd_is_runtime_pm(pm_op))
 		return 0;
@@ -199,7 +202,7 @@ int ufs_kirin_suspend(struct ufs_hba *hba, enum ufs_pm_op pm_op)
 
 	ufs_sys_ctrl_clr_bits(host, BIT_SYSCTRL_REF_CLOCK_EN, PHY_CLK_CTRL);
 	udelay(10);
-	hisi_pmic_reg_write(0x43, 0);
+	hisi_pmic_reg_write(PMIC_CLK_UFS_EN_ADDR(0), 0);
 
 	host->in_suspend = true;
 
@@ -211,15 +214,12 @@ int ufs_kirin_resume(struct ufs_hba *hba, enum ufs_pm_op pm_op)
 	struct ufs_kirin_host *host = hba->priv;
 
 	/*set SOC_SCTRL_SCBAKDATA11_ADDR ufs bit to 1 when busy*/
-	hisi_idle_sleep_vote(ID_UFS, 1);
+	if (!ufshcd_is_auto_hibern8_allowed(hba))
+		hisi_idle_sleep_vote(ID_UFS, 1);
 
 	if (!host->in_suspend)
 		return 0;
-	if (hba->is_hs_gear4_dev)
-		hisi_pmic_reg_write(0x02E3, 1);
-	else
-		hisi_pmic_reg_write(0x02E3, 0);
-	hisi_pmic_reg_write(0x43, 1);
+	hisi_pmic_reg_write(PMIC_CLK_UFS_EN_ADDR(0), 1);
 	/* 250us to ensure the clk stable */
 	udelay(250);
 	ufs_sys_ctrl_set_bits(host, BIT_SYSCTRL_REF_CLOCK_EN, PHY_CLK_CTRL);
@@ -231,9 +231,11 @@ int ufs_kirin_resume(struct ufs_hba *hba, enum ufs_pm_op pm_op)
 void ufs_kirin_device_hw_reset(struct ufs_hba *hba)
 {
 	struct ufs_kirin_host *host = hba->priv;
-	if (likely(!(host->caps & USE_HISI_MPHY_TC)))
+	if (likely(!(host->caps & USE_HISI_MPHY_TC))) {
 		ufs_sys_ctrl_writel(host, MASK_UFS_DEVICE_RESET | 0,
 							UFS_DEVICE_RESET_CTRL);
+		ufshcd_vops_vcc_power_on_off(hba);
+	}
 	else
 		ufs_i2c_writel(hba, (unsigned int) BIT(6), SC_RSTDIS);
 	mdelay(1);
@@ -243,8 +245,8 @@ void ufs_kirin_device_hw_reset(struct ufs_hba *hba)
 			    			UFS_DEVICE_RESET_CTRL);
 	else
 		ufs_i2c_writel(hba, (unsigned int)BIT(6), SC_RSTEN);
-	/* some device need at least 40ms */
-	mdelay(40);
+
+	mdelay(10);
 }
 
 /* Workaround: PWM-amplitude reduce & PMC and H8's glitch */
@@ -312,26 +314,6 @@ int ufs_kirin_dme_setup_snps_asic_mphy(struct ufs_hba *hba)
 
 	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL(0xD0C1, 0x0), 0x1); /* Unipro VS_mphy_disable */
 
-	if (host->caps & RX_CANNOT_DISABLE) {
-		ufshcd_dme_get(hba, UIC_ARG_MIB_SEL(0x800a, 0x4), &value1);
-		ufshcd_dme_get(hba, UIC_ARG_MIB_SEL(0x800a, 0x5), &value2);
-		/* bit[5:4] = 2b'00, not do override, let the FSM control the
-		 *            RX status, normally during H8, the RX will be
-		 *            disabled to save power. CS chip will use this
-		 *            configure, which is default also.
-		 * bit[5:4] = 2b'01, do override, not disable RX in any status,
-		 *            include H8, which cause high power consume,
-		 *            ES chip need this bugfix, otherwise the RX
-		 *            will not work again if enabled after disable.
-		 * bit[5:4] = 2b'11, do override, disable RX in any status,
-		 *            link startup will fail if configured this.
-		 */
-		value1 |= BIT_RX_DISABLE_OVR_EN_WR;
-		value2 |= BIT_RX_DISABLE_OVR_EN_WR;
-		ufshcd_dme_set(hba, UIC_ARG_MIB_SEL(0x800a, 0x4), value1);
-		ufshcd_dme_set(hba, UIC_ARG_MIB_SEL(0x800a, 0x5), value2);
-	}
-
 	if (ufs_sctrl_readl(host, SCDEEPSLEEPED_OFFSET) & EFUSE_RHOLD_BIT) {
 		ufshcd_dme_set(hba, UIC_ARG_MIB_SEL(0x8013, 0x4), 0x2); /* MPHY RXRHOLDCTRLOPT */
 		ufshcd_dme_set(hba, UIC_ARG_MIB_SEL(0x8013, 0x5), 0x2); /* MPHY RXRHOLDCTRLOPT */
@@ -395,6 +377,9 @@ int ufs_kirin_dme_setup_snps_asic_mphy(struct ufs_hba *hba)
 	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL(0x008c, 0x5), 0xF); /* Gear1 Synclength */
 	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL(0xD085, 0x0), 0x1); /* Unipro VS_MphyCfgUpdt */
 
+	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL(0x15d4, 0x0), 0x3); /* PA_TxHsAdaptType: no adapt */
+	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL(0x15d5, 0x0), 0x3); /* PA_TxHsAdaptTypeInPa_Init: no adapt */
+
 	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL(0x0092, 0x4), 0xA);/* RX_Hibern8Time_Capability*/
 	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL(0x0092, 0x5), 0xA);/* RX_Hibern8Time_Capability*/
 	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL(0x008f, 0x4), 0xA);/* RX_Min_ActivateTime */
@@ -434,7 +419,6 @@ int ufs_kirin_dme_setup_snps_asic_mphy(struct ufs_hba *hba)
 	return err;
 }
 
-
 int ufs_kirin_link_startup_pre_change(struct ufs_hba *hba)
 {
 	int err = 0;
@@ -468,26 +452,13 @@ int ufs_kirin_link_startup_pre_change(struct ufs_hba *hba)
 	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL((u32)0xd086, 0x0), 0xF0); /* Unipro VS_AdjustTrailingClocks */
 	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL((u32)0xd0a0, 0x0), 0x3); /* Unipro VS_DebugSaveConfigTime */
 	/* Unipro PA_AdaptAfterLRSTInPA_INIT, use PA_PeerRxHsAdaptInitial value */
-	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL((u32)0x15D5, 0x0), 0x1);
+	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL((u32)0x15D5, 0x0), 0x3);
 
 	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL(0xD0AB, 0x0), 0x0); /* close Unipro VS_Mk2ExtnSupport */
 	ufshcd_dme_get(hba, UIC_ARG_MIB_SEL(0xD0AB, 0x0), &value);
 	if (0 != value) {
 		/* Ensure close success */
 		pr_warn("Warring!!! close VS_Mk2ExtnSupport failed\n");
-	}
-	if (!(host->caps & USE_HISI_MPHY_TC)) {
-		if (35 == host->tx_equalizer) {
-			ufshcd_dme_set(
-				hba, UIC_ARG_MIB_SEL((u32)0x0037, 0x0), 0x1);
-			ufshcd_dme_set(
-				hba, UIC_ARG_MIB_SEL((u32)0x0037, 0x1), 0x1);
-		} else if (60 == host->tx_equalizer) {
-			ufshcd_dme_set(
-				hba, UIC_ARG_MIB_SEL((u32)0x0037, 0x0), 0x2);
-			ufshcd_dme_set(
-				hba, UIC_ARG_MIB_SEL((u32)0x0037, 0x1), 0x2);
-		}
 	}
 	/*for hisi MPHY*/
 	hisi_mphy_busdly_config(hba, host);
@@ -523,28 +494,22 @@ static void hisi_mphy_link_post_config(struct ufs_hba *hba,
 
 void set_device_clk(struct ufs_hba *hba)
 {
-	uint32_t max_rx_hsgear;
-	/* Read PA_MaxRxHSGear(0x1587) to see if it is UFS3.0 device
-	which supports HS gear 4, this checking must be done after linkstartup */
-	ufshcd_dme_get(hba, UIC_ARG_MIB(0x1587), &max_rx_hsgear);
-	if (max_rx_hsgear >= 0x4) {
-		/*The B_REFCLK_FREQ was changed to 38.4MHz in
-		the xloader*/
+	/* 0: 19.2M, 1: 38.4M */
+	int ufs_refclk_val = 0;
 
-		hba->is_hs_gear4_dev = 1;
+	if (hba->ufs_device_spec_version >= 0x0300)
+		ufs_refclk_val = 1;
 
-		/* close the device clk */
-		hisi_pmic_reg_write(0x43, 0);
-		/* choose the device clk 38.4Mhz */
-		hisi_pmic_reg_write(0x02E3, 1);
-		/* open the device clk */
-		hisi_pmic_reg_write(0x43, 1);
+	dev_info(hba->dev, "ref clk %s\n", ufs_refclk_val ? "38.4M" : "19.2M");
 
-		mdelay(2);
-	}
-	else {
-		hba->is_hs_gear4_dev = 0;
-	}
+	/* close the device clk */
+	hisi_pmic_reg_write(PMIC_CLK_UFS_EN_ADDR(0), 0);
+	/* choose the device clk 38.4Mhz when device spec is 3.0*/
+	hisi_pmic_reg_write(PMIC_CLK_UFS_FRE_CTRL1_ADDR(0), ufs_refclk_val);
+	/* open the device clk */
+	hisi_pmic_reg_write(PMIC_CLK_UFS_EN_ADDR(0), 1);
+
+	mdelay(2);
 }
 
 int ufs_kirin_link_startup_post_change(struct ufs_hba *hba)
@@ -573,8 +538,6 @@ int ufs_kirin_link_startup_post_change(struct ufs_hba *hba)
 	ufshcd_dme_set(hba, UIC_ARG_MIB(0xd09a), 0x80000000); /* select received symbol cnt */
 	ufshcd_dme_set(hba, UIC_ARG_MIB(0xd09c), 0x00000005); /* reset counter0 and enable */
 
-	set_device_clk(hba);
-
 	pr_info("%s --\n", __func__);
 	return 0;
 }
@@ -583,8 +546,9 @@ void ufs_kirin_pwr_change_pre_change(struct ufs_hba *hba)
 {
 	uint32_t value;
 	pr_info("%s ++\n", __func__);
-
+#ifdef CONFIG_HISI_DEBUG_FS
 	pr_info("device manufacturer_id is 0x%x\n", hba->manufacturer_id);
+#endif
 	/*ARIES platform need to set SaveConfigTime to 0x13, and change sync length to maximum value */
 	ufshcd_dme_set(hba, UIC_ARG_MIB((u32)0xD0A0), 0x13); /* VS_DebugSaveConfigTime */
 	ufshcd_dme_set(hba, UIC_ARG_MIB((u32)0x1552), 0x4f); /* g1 sync length */

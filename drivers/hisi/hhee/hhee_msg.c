@@ -48,7 +48,7 @@ static void hhee_msg_handle(unsigned int start, unsigned int end)
 	struct hhee_msg *msg = NULL;
 
 	while (start != end) {
-		msg = (struct hhee_msg *)((uintptr_t)msg_state +
+		msg = (struct hhee_msg *)(uintptr_t)((uintptr_t)msg_state +
 			HHEE_MSG_SIZE * ((uintptr_t)start + 1));
 		handle_message(msg);
 		start++;

@@ -204,7 +204,7 @@ static void sdhci_of_arasan_hardware_reset(struct sdhci_host *host, unsigned cha
 		writel(emmc0_rst, pericrg_base + PERI_CRG_RSTDIS4);
 		loop_count = 0xF;
 		do {
-			if (!(emmc0_rst & readl(pericrg_base + PERI_CRG_RSTSTAT4))) {
+			if (!(emmc0_rst & (unsigned)readl(pericrg_base + PERI_CRG_RSTSTAT4))) {
 				break;
 			}
 			loop_count--;
@@ -577,7 +577,7 @@ static void sdhci_tuning_clear_flags(struct sdhci_host *host)
 	sdhci_arasan->tuning_sample_flag = (unsigned long)0;
 }
 
-static void sdhci_tuning_set_flags(struct sdhci_host *host, int sample, int ok)
+static void sdhci_tuning_set_flags(struct sdhci_host *host, unsigned int sample, int ok)
 {
 	struct sdhci_pltfm_host *pltfm_host = sdhci_priv(host);
 	struct sdhci_arasan_data *sdhci_arasan = pltfm_host->priv;
@@ -881,7 +881,7 @@ static void sdhci_arasan_hw_reset(struct sdhci_host *host)
 	sdhci_of_arasan_PHY_init(host);
 }
 
-void sdhci_of_arasan_chk_busy_before_send_cmd(struct sdhci_host *host,
+int sdhci_of_arasan_chk_busy_before_send_cmd(struct sdhci_host *host,
 	struct mmc_command* cmd)
 {
 	unsigned long timeout;
@@ -894,15 +894,15 @@ void sdhci_of_arasan_chk_busy_before_send_cmd(struct sdhci_host *host,
 			if (timeout == 0) {
 				pr_err("%s: wait busy 10s time out.\n", mmc_hostname(host->mmc));
 				sdhci_dumpregs(host);
-				cmd->error = -EIO;
+				cmd->error = -ENOMSG;
 				tasklet_schedule(&host->finish_tasklet);
-				return;
+				return -ENOMSG;
 			}
 			timeout--;
 			mdelay(1);
 		}
 	}
-	return;
+	return 0;
 }
 
 int sdhci_arasan_enable_dma(struct sdhci_host *host)
@@ -964,7 +964,7 @@ static int sdhci_arasan_select_drive_strength(struct sdhci_host *host,
 	struct sdhci_pltfm_host *pltfm_host = sdhci_priv(host);
 	struct sdhci_arasan_data *sdhci_arasan = pltfm_host->priv;
 
-	int drive_strength = sdhci_arasan->dev_drv_strength;
+	unsigned int drive_strength = sdhci_arasan->dev_drv_strength;
 
 	if ((mmc_driver_type_mask(drive_strength) & card_drv) == 0)
 		drive_strength = EXT_CSD_DRVIER_STRENGTH_50; /* drivers use Default 50-ohm */
@@ -994,7 +994,7 @@ static struct sdhci_ops sdhci_arasan_ops = {
 	.restore_transfer_para = sdhci_of_arasan_restore_transfer_para,
 	.hw_reset = sdhci_arasan_hw_reset,
 	.dumpregs = sdhci_arasan_dumpregs,
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,4,0))
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
 	.select_drive_strength = sdhci_arasan_select_drive_strength,
 #endif
 };
@@ -1310,6 +1310,13 @@ void sdhci_dsm_handle(struct sdhci_host *host, struct mmc_request *mrq)
 		}
 	}
 }
+
+void sdhci_dsm_report(struct mmc_host *host, struct mmc_request *mrq)
+{
+	struct sdhci_host *sdhci_host = mmc_priv(host);
+	sdhci_dsm_set_host_status(sdhci_host, SDHCI_INT_TIMEOUT);
+	sdhci_dsm_handle(sdhci_host, mrq);
+}
 #endif
 
 #ifdef CONFIG_HISI_MMC
@@ -1327,6 +1334,14 @@ void sdhci_hisi_dump_clk_reg(void)
 }
 
 #endif
+
+void sdhci_arasan_mmc_host_ops_init(struct sdhci_host *host)
+{
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+	host->mmc_host_ops.select_drive_strength =
+		sdhci_arasan_select_drive_strength;
+#endif
+}
 
 static int sdhci_arasan_probe(struct platform_device *pdev)
 {
@@ -1448,12 +1463,14 @@ static int sdhci_arasan_probe(struct platform_device *pdev)
 		goto clk_disable_all;
 	}
 
+	sdhci_of_arasan_platform_init(host);
 	g_sdhci_for_mmctrace = host;
 
 	sdhci_get_of_property(pdev);
 	pltfm_host = sdhci_priv(host);
 	pltfm_host->priv = sdhci_arasan;
 	pltfm_host->clk = sdhci_arasan->clk;
+	sdhci_arasan_mmc_host_ops_init(host);
 
 #ifdef CONFIG_MMC_CQ_HCI
 #define HW_CMDQ_REG_OFF                0x200

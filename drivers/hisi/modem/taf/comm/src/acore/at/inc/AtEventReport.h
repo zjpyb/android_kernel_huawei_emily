@@ -240,6 +240,14 @@ typedef struct
     AT_PIH_RSP_PROC_FUNC                pAtPihRspProcFunc; //lint !e958
 }AT_PIH_RSP_PROC_FUNC_STRU;
 
+
+typedef struct
+{
+    MTA_AT_RESULT_ENUM_UINT32                              enMtaErrCode;
+    AT_RRETURN_CODE_ENUM_UINT32                            enAtReturnCode;
+
+} AT_CHG_MTA_ERR_CODE_TBL_STRU;
+
 /*****************************************************************************
   8 UNION∂®“Â
 *****************************************************************************/

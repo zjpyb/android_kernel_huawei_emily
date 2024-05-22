@@ -22,6 +22,10 @@
 *****************************************************************************/
 /*#define ENABLE_BFG_LOWPOWER_FEATURE*/
 #define BFG_LOCK_NAME                   "bfg_wake_lock_etc"
+#define BT_LOCK_NAME                    "bt_wake_lock"
+#define GNSS_LOCK_NAME                  "gnss_wake_lock"
+
+#define DEFAULT_WAKELOCK_TIMEOUT        (2000)   /*msec*/
 
 #define FIRMWARE_CFG_INIT_OK            0x01
 
@@ -47,6 +51,13 @@
 
 /*超时时间要大于wkup dev work中的最长执行时间，否则超时以后进入DFR和work中会同时操作tty，导致冲突*/
 #define WAIT_WKUPDEV_MSEC              (10000)
+
+
+#define RAM_TEST_RUN_VOLTAGE_BIAS_HIGH  (0x0)/*拉偏高压*/
+#define RAM_TEST_RUN_VOLTAGE_BIAS_LOW   (0x1)/*拉偏低压*/
+
+#define RAM_TEST_RUN_VOLTAGE_REG_ADDR       (0x50002010)
+#define RAM_TEST_RUN_PROCESS_SEL_REG_ADDR   (0x50002014)
 
 enum UART_STATE_ENUM
 {
@@ -143,6 +154,8 @@ struct pm_drv_data
     BOARD_INFO                      *board;
     /*wake lock for bfg,be used to prevent host form suspend*/
     oal_wakelock_stru                bfg_wake_lock_etc;
+    oal_wakelock_stru                bt_wake_lock;
+    oal_wakelock_stru                gnss_wake_lock;
 
     /*mutex for sync*/
     struct mutex                    host_mutex;
@@ -231,6 +244,7 @@ struct gnss_sync_data
 /*****************************************************************************
   5 EXTERN FUNCTION
 *****************************************************************************/
+extern void bfgx_gpio_intr_enable(uint32  ul_en);
 extern struct pm_drv_data * pm_get_drvdata_etc(void);
 extern int32 host_wkup_dev_etc(void);
 extern struct pm_drv_data * pm_get_drvdata_etc(void);
@@ -244,6 +258,8 @@ extern int32 bfgx_power_on_etc(uint8 subsys);
 extern int32 bfgx_power_off_etc(uint8 subsys);
 extern int32 bfgx_pm_feature_set_etc(void);
 extern int firmware_download_function_etc(uint32 which_cfg);
+typedef int32 (*firmware_downlaod_privfunc)(void);
+extern int firmware_download_function_priv(uint32 which_cfg, firmware_downlaod_privfunc);
 extern oal_int32 hi110x_get_wifi_power_stat_etc(oal_void);
 extern int32 device_mem_check_etc(unsigned long long *time);
 extern int32 bfgx_uart_rcv_baud_change_req(uint8 uc_msg_type);

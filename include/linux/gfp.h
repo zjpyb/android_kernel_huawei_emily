@@ -447,7 +447,7 @@ __alloc_pages_node(int nid, gfp_t gfp_mask, unsigned int order)
 	VM_BUG_ON(nid < 0 || nid >= MAX_NUMNODES);
 	VM_WARN_ON(!node_online(nid));
 
-#ifndef CONFIG_ION_HISI_SUPPORT_4GPLUS
+#ifndef CONFIG_ALLOC_MEM_SUPPORT_4GPLUS
 	if (!(gfp_mask & __GFP_HIGHMEM))
 		gfp_mask |= __GFP_DMA;
 #endif

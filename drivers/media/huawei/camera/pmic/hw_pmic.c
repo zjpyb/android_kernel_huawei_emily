@@ -36,8 +36,9 @@ struct dsm_dev dsm_cam_pmic = {
 int pmic_ctl_otg_onoff(bool on_off)
 {
     int pmic_ctl_gpio_otg_switch = 0;
-    pmic_ctl_gpio_otg_switch = of_get_named_gpio(of_find_compatible_node(NULL, NULL, "huawei,wireless_otg"),
-    "gpio_otg_switch", 0);
+	pmic_ctl_gpio_otg_switch = of_get_named_gpio(of_find_compatible_node(
+		NULL, NULL, "huawei,vbus_channel_boost_gpio"),
+		"gpio_otg_switch", 0);
     cam_info("pmic_ctl_otg_onoff,ret = %d\n",pmic_ctl_gpio_otg_switch);
     if (pmic_ctl_gpio_otg_switch > 0)
     {
@@ -224,7 +225,6 @@ int hisi_pmic_get_dt_data(struct hisi_pmic_ctrl_t *pmic_ctrl)
 		goto fail;
 	}
 
-
 fail:
 	return rc;
 }
@@ -237,52 +237,7 @@ static struct hisi_pmic_ctrl_t *get_sctrl(struct v4l2_subdev *sd)
 
 int hisi_pmic_config(struct hisi_pmic_ctrl_t *pmic_ctrl, void *argp)
 {
-	/*
-	struct pmic_cfg_data *cdata = (struct pmic_cfg_data *)argp;
-	*/
-	int rc = 0;
-	//unsigned int state;
-	/*
-	cam_info("%s enter cfgtype=%d.\n", __func__, cdata->cfgtype);
-	*/
-	//mutex_lock(flash_ctrl->hisi_flash_mutex);
-
-	/*
-	switch (cdata->cfgtype) {
-	case CFG_FLASH_TURN_ON:
-		state = hisi_flash_get_state();
-		if (0 == state) {
-			rc = flash_ctrl->func_tbl->flash_on(flash_ctrl, arg);
-		} else {
-			cam_notice("%s flashe led is disable(0x%x).", __func__, state);
-			rc = -1;
-		}
-		break;
-	case CFG_FLASH_TURN_OFF:
-		rc = flash_ctrl->func_tbl->flash_off(flash_ctrl);
-		break;
-	case CFG_FLASH_GET_FLASH_NAME:
-		mutex_lock(flash_ctrl->hisi_flash_mutex);
-		strncpy(cdata->cfg.name, flash_ctrl->flash_info.name,
-			sizeof(cdata->cfg.name) - 1);
-		mutex_unlock(flash_ctrl->hisi_flash_mutex);
-		break;
-	case CFG_FLASH_GET_FLASH_STATE:
-		mutex_lock(flash_ctrl->hisi_flash_mutex);
-		cdata->mode = flash_ctrl->state.mode;
-		cdata->data = flash_ctrl->state.data;
-		mutex_unlock(flash_ctrl->hisi_flash_mutex);
-		break;
-	default:
-		cam_err("%s cfgtype error.\n", __func__);
-		rc = -EFAULT;
-		break;
-	}
-	*/
-
-	//mutex_unlock(flash_ctrl->hisi_flash_mutex);
-
-	return rc;
+	return 0;
 }
 
 EXPORT_SYMBOL(hisi_pmic_config);
@@ -291,7 +246,6 @@ static long hisi_pmic_subdev_ioctl(struct v4l2_subdev *sd,
 			unsigned int cmd, void *arg)
 {
 	struct hisi_pmic_ctrl_t *pmic_ctrl = get_sctrl(sd);
-	//long rc = 0;
 
 	if (!pmic_ctrl) {
 		cam_err("%s pmic_ctrl is NULL\n", __func__);
@@ -386,7 +340,6 @@ int32_t hisi_pmic_i2c_probe(struct i2c_client *client,
 
 #ifdef CONFIG_HUAWEI_HW_DEV_DCT
 	/* detect current device successful, set the flag as present */
-	//set_hw_dev_flag(DEV_I2C_CAMERA_PMU);
 #endif
 	hisi_set_pmic_ctrl(pmic_ctrl);
 

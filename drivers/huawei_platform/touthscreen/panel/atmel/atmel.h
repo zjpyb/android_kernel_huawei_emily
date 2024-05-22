@@ -347,7 +347,7 @@ extern int gMxtT6Cmd58Flag;
 
 #define VERSION_NAME_LEN 8
 #define MAX_MODULE_NAME_LEN 32
-#define MAX_DESCRIPTION_LEN 32
+#define ATMEL_MAX_DESCRIPTION_LEN 32
 #define MAX_HARDWARE_TEST_RESULT_LEN 200
 
 #define MAX_REG_DATA_LEN 16
@@ -710,7 +710,7 @@ struct mxt_data {
 	u8 ver_bytes[VERSION_NAME_LEN];
 	u8 module_id[MISC_PDS_DATA_LEN];
 	u8 module_name[MAX_MODULE_NAME_LEN];
-	u8 description[MAX_DESCRIPTION_LEN];
+	u8 description[ATMEL_MAX_DESCRIPTION_LEN];
 
 	u8 noise_state;
 	int mxt_cur_finger_number;

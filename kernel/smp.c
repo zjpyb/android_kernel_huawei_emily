@@ -567,6 +567,8 @@ void __init smp_init(void)
 			cpu_up(cpu);
 	}
 
+	/* Final decision about SMT support */
+	cpu_smt_check_topology();
 	/* Any cleanup work */
 	smp_announce();
 	smp_cpus_done(setup_max_cpus);
@@ -725,8 +727,10 @@ void wake_up_all_idle_cpus(void)
 
 #ifdef CONFIG_HISI_CPU_ISOLATION
 		if (suspend_freeze_state != FREEZE_STATE_ENTER &&
-		    cpu_isolated(cpu))
-			continue;
+		    cpu_isolated(cpu)) {
+			pr_err("wake_up_all_idle_cpus:%d isolated continue test\n", cpu);
+			//continue;
+		}
 #endif
 
 		wake_up_if_idle(cpu);

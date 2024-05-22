@@ -22,150 +22,6 @@
 #include <asm/cpu.h>
 #include <asm/cputype.h>
 #include <asm/cpufeature.h>
-#include <linux/module.h>
-#include <linux/init.h>
-#include <linux/slab.h>
-#include <linux/perf_event.h>
-#include <linux/perf/arm_pmu.h>
-
-#ifdef CONFIG_HISI_HARDEN_BRANCH_PREDICTOR
-struct wa2_pmu_monitor {
-	struct perf_event *pevent;
-	bool monitor_started;
-};
-
-DEFINE_PER_CPU(struct wa2_pmu_monitor, wa2_monitor);
-DEFINE_PER_CPU_READ_MOSTLY(u64, pmu_counter);
-DEFINE_PER_CPU_READ_MOSTLY(u64, v2_apply);
-
-bool need_to_apply(int cpu)
-{
-	struct wa2_pmu_monitor* monitor = &per_cpu(wa2_monitor, cpu);
-	u64 need_apply = 0;
-
-	if (!monitor->monitor_started || monitor->pevent == NULL)
-		return true;
-
-	need_apply = per_cpu(v2_apply, cpu);
-	if (need_apply) {
-		per_cpu(v2_apply, cpu) = 0;
-		return true;
-	} else {
-		return false;
-	}
-}
-
-static struct perf_event_attr *alloc_attr(void)
-{
-	struct perf_event_attr *attr;
-
-	attr = kzalloc(sizeof(struct perf_event_attr), GFP_KERNEL);
-	if (!attr)
-		return attr;
-
-	attr->type = PERF_TYPE_RAW;
-	attr->size = sizeof(struct perf_event_attr);
-	attr->pinned = 1;
-	attr->exclude_idle = 1;
-
-	return attr;
-}
-
-/* ignore debug code */
-int get_wa2_monitor_status(void)
-{
-	struct wa2_pmu_monitor *monitor;
-	unsigned long stat = 0;
-	int cpu;
-	u64 counter, need_apply;
-
-	for_each_possible_cpu(cpu) {
-		need_apply = per_cpu(v2_apply, cpu);
-		monitor = &per_cpu(wa2_monitor, cpu);
-		if (monitor->monitor_started) {
-			stat |= BIT(cpu);
-			counter = per_cpu(pmu_counter, cpu);
-			pr_err("cpu=%d wa2_monitor_enable, counter=%llu, need-apply=%llu\n", cpu, counter, need_apply);
-		} else {
-			pr_err("cpu=%d,wa2_monitor_disable, need_apply=%llu\n", cpu, need_apply);
-		}
-		per_cpu(v2_apply, cpu) = 0;
-	}
-
-	return stat;
-}
-
-extern void hisi_get_slow_cpus(struct cpumask * cpumask);
-extern u32 armv8pmu_get_counter(struct perf_event *event);
-static int __init wa2_monitor_init(void)
-{
-	int cpu;
-	struct wa2_pmu_monitor *monitor;
-	struct perf_event *pevent;
-	struct perf_event_attr *attr;
-	struct cpumask slow_cpus;
-
-	attr = alloc_attr();
-	if (!attr)
-		return -ENOMEM;
-
-	attr->config = 0x11c;
-
-	hisi_get_slow_cpus(&slow_cpus);
-
-	for_each_possible_cpu(cpu) {
-		monitor = &per_cpu(wa2_monitor, cpu);
-
-		/* littlecores doesn't need to enable this PMU event */
-		if (cpumask_test_cpu(cpu, &slow_cpus)) {
-			monitor->monitor_started = false;
-			monitor->pevent = NULL;
-
-			per_cpu(pmu_counter, cpu) = 0;
-			continue;
-		}
-
-		pevent = perf_event_create_kernel_counter(attr, cpu, NULL,
-							  NULL, NULL);
-		if (IS_ERR(pevent)) {
-			monitor->monitor_started = false;
-			monitor->pevent = NULL;
-			per_cpu(pmu_counter, cpu) = 0;
-			pr_err("fail to create wa2 pmu counter for cpu%d\n", cpu);
-		} else {
-			perf_event_enable(pevent);
-			per_cpu(pmu_counter, cpu) = armv8pmu_get_counter(pevent);
-
-			monitor->pevent = pevent;
-			monitor->monitor_started = true;
-			pr_info("success to create wa2 pmu counter for cpu%d\n", cpu);
-		}
-	}
-
-	kfree(attr);
-
-	return 0;
-}
-
-static void __exit wa2_monitor_exit(void)
-{
-	int cpu;
-	struct wa2_pmu_monitor *monitor;
-
-	for_each_possible_cpu(cpu) {
-		monitor = &per_cpu(wa2_monitor, cpu);
-		if (!monitor->monitor_started)
-			continue;
-
-		monitor->monitor_started = false;
-		perf_event_release_kernel(monitor->pevent);
-		monitor->pevent = NULL;
-	}
-}
-
-late_initcall(wa2_monitor_init);
-module_exit(wa2_monitor_exit);
-#endif
 
 static bool __maybe_unused
 is_affected_midr_range(const struct arm64_cpu_capabilities *entry, int scope)
@@ -187,8 +43,7 @@ has_mismatched_cache_line_size(const struct arm64_cpu_capabilities *entry,
 
 static int cpu_enable_trap_ctr_access(void *__unused)
 {
-	/* Clear SCTLR_EL1.UCT */
-	config_sctlr_el1(SCTLR_EL1_UCT, 0);
+	sysreg_clear_set(sctlr_el1, SCTLR_EL1_UCT, 0);
 	return 0;
 }
 
@@ -284,41 +139,29 @@ static void call_smc_arch_workaround_1(void)
 	arm_smccc_1_1_smc(ARM_SMCCC_ARCH_WORKAROUND_1, NULL);
 }
 
-#if 0
 static void call_hvc_arch_workaround_1(void)
 {
 	arm_smccc_1_1_hvc(ARM_SMCCC_ARCH_WORKAROUND_1, NULL);
 }
-#endif
 
 static int enable_smccc_arch_workaround_1(void *data)
 {
 	const struct arm64_cpu_capabilities *entry = data;
 	bp_hardening_cb_t cb;
 	void *smccc_start, *smccc_end;
-#if 0
 	struct arm_smccc_res res;
-#endif
-
-	unsigned long part_num = read_cpuid_part_number();
-
-	if ((part_num != ARM_CPU_PART_CORTEX_A72)
-			&& (part_num != ARM_CPU_PART_CORTEX_A73)
-			&& (part_num != ARM_CPU_PART_ENYO))
-		return 0;
 
 	if (!entry->matches(entry, SCOPE_LOCAL_CPU))
 		return 0;
 
-	cb = call_smc_arch_workaround_1;
-	smccc_start = __smccc_workaround_1_smc_start;
-	smccc_end = __smccc_workaround_1_smc_end;
-
-#if 0
+#ifndef CONFIG_ARCH_HISI
 	if (psci_ops.smccc_version == SMCCC_VERSION_1_0)
 		return 0;
 
 	switch (psci_ops.conduit) {
+#else
+	switch (PSCI_CONDUIT_SMC) {
+#endif
 	case PSCI_CONDUIT_HVC:
 		arm_smccc_1_1_hvc(ARM_SMCCC_ARCH_FEATURES_FUNC_ID,
 				  ARM_SMCCC_ARCH_WORKAROUND_1, &res);
@@ -342,7 +185,6 @@ static int enable_smccc_arch_workaround_1(void *data)
 	default:
 		return 0;
 	}
-#endif
 
 	install_bp_hardening_cb(entry, cb, smccc_start, smccc_end);
 
@@ -393,8 +235,11 @@ void __init arm64_update_smccc_conduit(struct alt_instr *alt,
 
 	BUG_ON(nr_inst != 1);
 
-#if 0
+#ifdef CONFIG_ARCH_HISI
+	switch (PSCI_CONDUIT_SMC) {
+#else
 	switch (psci_ops.conduit) {
+#endif
 	case PSCI_CONDUIT_HVC:
 		insn = aarch64_insn_get_hvc_value();
 		break;
@@ -404,9 +249,6 @@ void __init arm64_update_smccc_conduit(struct alt_instr *alt,
 	default:
 		return;
 	}
-#endif
-	insn = aarch64_insn_get_smc_value();
-
 	*updptr = cpu_to_le32(insn);
 }
 
@@ -426,8 +268,21 @@ void __init arm64_enable_wa2_handling(struct alt_instr *alt,
 
 void arm64_set_ssbd_mitigation(bool state)
 {
-#if 0
+#ifndef CONFIG_HISI_BYPASS_SSBS
+	if (this_cpu_has_cap(ARM64_SSBS)) {
+		if (state)
+			asm volatile(SET_PSTATE_SSBS(0));
+		else
+			asm volatile(SET_PSTATE_SSBS(1));
+		return;
+	}
+#endif
+
+#ifdef CONFIG_ARCH_HISI
+	switch (PSCI_CONDUIT_SMC) {
+#else
 	switch (psci_ops.conduit) {
+#endif
 	case PSCI_CONDUIT_HVC:
 		arm_smccc_1_1_hvc(ARM_SMCCC_ARCH_WORKAROUND_2, state, NULL);
 		break;
@@ -440,8 +295,6 @@ void arm64_set_ssbd_mitigation(bool state)
 		WARN_ON_ONCE(1);
 		break;
 	}
-#endif
-	arm_smccc_1_1_smc(ARM_SMCCC_ARCH_WORKAROUND_2, state, NULL);
 }
 
 static bool has_ssbd_mitigation(const struct arm64_cpu_capabilities *entry,
@@ -453,7 +306,14 @@ static bool has_ssbd_mitigation(const struct arm64_cpu_capabilities *entry,
 
 	WARN_ON(scope != SCOPE_LOCAL_CPU || preemptible());
 
-#if 0
+#ifndef CONFIG_HISI_BYPASS_SSBS
+	if (this_cpu_has_cap(ARM64_SSBS)) {
+		required = false;
+		goto out_printmsg;
+	}
+#endif
+
+#ifndef CONFIG_ARCH_HISI
 	if (psci_ops.smccc_version == SMCCC_VERSION_1_0)
 		ssbd_state = ARM64_SSBD_UNKNOWN;
 		return false;
@@ -465,6 +325,9 @@ static bool has_ssbd_mitigation(const struct arm64_cpu_capabilities *entry,
 	 */
 
 	switch (psci_ops.conduit) {
+#else
+	switch (PSCI_CONDUIT_SMC) {
+#endif
 	case PSCI_CONDUIT_HVC:
 		arm_smccc_1_1_hvc(ARM_SMCCC_ARCH_FEATURES_FUNC_ID,
 				  ARM_SMCCC_ARCH_WORKAROUND_2, &res);
@@ -479,9 +342,6 @@ static bool has_ssbd_mitigation(const struct arm64_cpu_capabilities *entry,
 		ssbd_state = ARM64_SSBD_UNKNOWN;
 		return false;
 	}
-#endif
-	arm_smccc_1_1_smc(ARM_SMCCC_ARCH_FEATURES_FUNC_ID,
-			  ARM_SMCCC_ARCH_WORKAROUND_2, &res);
 
 	val = (s32)res.a0;
 
@@ -513,7 +373,6 @@ static bool has_ssbd_mitigation(const struct arm64_cpu_capabilities *entry,
 
 	switch (ssbd_state) {
 	case ARM64_SSBD_FORCE_DISABLE:
-		pr_info("%s disabled from command-line\n", entry->desc);
 		arm64_set_ssbd_mitigation(false);
 		required = false;
 		break;
@@ -527,13 +386,25 @@ static bool has_ssbd_mitigation(const struct arm64_cpu_capabilities *entry,
 		break;
 
 	case ARM64_SSBD_FORCE_ENABLE:
-		pr_info("%s forced from command-line\n", entry->desc);
 		arm64_set_ssbd_mitigation(true);
 		required = true;
 		break;
 
 	default:
 		WARN_ON(1);
+		break;
+	}
+
+#ifndef CONFIG_HISI_BYPASS_SSBS
+out_printmsg:
+#endif
+	switch (ssbd_state) {
+	case ARM64_SSBD_FORCE_DISABLE:
+		pr_info_once("%s disabled from command-line\n", entry->desc);
+		break;
+
+	case ARM64_SSBD_FORCE_ENABLE:
+		pr_info_once("%s forced from command-line\n", entry->desc);
 		break;
 	}
 
@@ -663,11 +534,13 @@ const struct arm64_cpu_capabilities arm64_errata[] = {
 		MIDR_ALL_VERSIONS(MIDR_CAVIUM_THUNDERX2),
 		.enable = enable_smccc_arch_workaround_1,
 	},
+#ifdef CONFIG_ARCH_HISI
 	{
 		.capability = ARM64_HARDEN_BRANCH_PREDICTOR,
 		MIDR_ALL_VERSIONS(MIDR_CORTEX_ENYO),
 		.enable = enable_smccc_arch_workaround_1,
 	},
+#endif
 #endif
 #ifdef CONFIG_ARM64_SSBD
 	{

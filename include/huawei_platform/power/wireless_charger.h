@@ -2,7 +2,6 @@
 #define _WIRELESS_CHARGER
 
 #define I2C_RETRY_CNT               3
-#define I2C_OPS_SLEEP_TIME          5
 #define BYTE_MASK                   0xff
 #define WORD_MASK                   0xffff
 #define BYTE_LEN                    1
@@ -17,6 +16,10 @@
 #define RX_EN_DISABLE               0
 #define RX_SLEEP_EN_ENABLE          1
 #define RX_SLEEP_EN_DISABLE         0
+#define WL_SWITCH_ON                1
+#define WL_SWITCH_OFF               0
+
+
 
 #define CERTI_SUCC                  0
 #define CERTI_FAIL                  1
@@ -24,12 +27,12 @@
 #define WIRELESS_CHRG_SUCC          0
 #define WIRELESS_CHRG_FAIL          1
 
-#define MSEC_PER_SEC                1000
-#define MVOLT_PER_VOLT              1000
+#define WL_MSEC_PER_SEC             1000
+#define WL_MVOLT_PER_VOLT           1000
 #define PERCENT                     100
 #define RX_IOUT_MIN                 150
 #define RX_IOUT_MID                 500
-#define RX_VRECT_MIN                4500
+#define RX_VOUT_ERR_RATIO           81
 #define TX_BOOST_VOUT               12000
 #define TX_DEFAULT_VOUT             5000
 #define RX_DEFAULT_VOUT             5500
@@ -41,11 +44,12 @@
 
 #define RX_HIGH_IOUT                850
 #define RX_LOW_IOUT                 300
-#define RX_AVG_IOUT_TIME            30*1000
+#define RX_AVG_IOUT_TIME            10*1000
 #define RX_IOUT_REG_STEP            100
 #define RX_VRECT_LOW_RESTORE_TIME   10000
 #define RX_VRECT_LOW_IOUT_MIN       300
-#define RX_VRECT_ERR_CHECK_TIME     1000
+#define RX_VRECT_LOW_CNT            3
+#define RX_VOUT_ERR_CHECK_TIME      1000
 
 #define TX_ID_HW                    0x8866
 
@@ -53,7 +57,9 @@
 #define CONTROL_INTERVAL_FAST       100
 #define MONITOR_INTERVAL            100
 #define MONITOR_LOG_INTERVAL        5000
-#define DISCONN_WORK_DELAY_MS       1300
+#define WL_DELAY_1300_MS            1300
+#define WL_DELAY_1500_MS            1500
+#define WL_DELAY_1600_MS            1600
 
 #define RX_IOUT_SAMPLE_LEN          10
 #define WIRELESS_STAGE_STR_LEN      32
@@ -83,6 +89,7 @@
 #define WIRELESS_STATE_CHRG_DONE            BIT(1)
 
 #define WIRELESS_INTERFER_PARA_LEVEL        8
+#define WIRELESS_INTERFER_TIMEOUT           3000 /* ms */
 #define WIRELESS_SEGMENT_PARA_LEVEL         5
 #define WIRELESS_IOUT_CTRL_PARA_LEVEL       15
 #define WIRELESS_CHIP_INIT                  0
@@ -108,9 +115,9 @@
 #define WIRELESS_CHECK_SUCC                 1
 
 #define WAIT_AF_SRV_RTY_CNT                 3
-#define WC_AF_INFO_NL_OPS_NUM		    1
-#define WC_AF_WAIT_CT_TIMEOUT		    1000
-#define WC_AF_TOTAL_KEY_NUM		    11
+#define WC_AF_INFO_NL_OPS_NUM               1
+#define WC_AF_WAIT_CT_TIMEOUT               1000
+#define WC_AF_TOTAL_KEY_NUM                 11
 
 enum tx_power_state {
 	TX_POWER_GOOD_UNKNOWN = 0,
@@ -146,6 +153,7 @@ enum wireless_etp_type {
 	WIRELESS_EPT_RESERVED       = 0x07,
 	WIRELESS_EPT_NO_RESPONSE    = 0x08,
 	WIRELESS_EPT_ERR_VRECT      = 0xA0,
+	WIRELESS_EPT_ERR_VOUT       = 0xA1,
 };
 enum wireless_charge_stage {
 	WIRELESS_STAGE_DEFAULT = 0,
@@ -274,7 +282,7 @@ enum wireless_mode_para_info {
 	WIRELESS_MODE_INFO_TOTAL,
 };
 struct wireless_mode_para {
-	char *mode_name;
+	const char *mode_name;
 	int tx_vout_min;
 	int tx_iout_min;
 	struct wireless_ctrl_para ctrl_para;
@@ -301,7 +309,7 @@ enum wireless_tx_prop_info {
 };
 struct wireless_tx_prop_para {
 	u8 tx_type;
-	char *type_name;
+	const char *type_name;
 	u8 need_cable_detect;
 	u8 need_cert;
 	int tx_default_vout;
@@ -350,7 +358,7 @@ struct wireless_charge_device_ops {
 	int (*fix_tx_fop)(int);
 	int (*unfix_tx_fop)(void);
 	int (*get_tx_id)(void);
-	u8* (*get_rx_chip_id)(void);
+	u16 (*get_rx_chip_id)(void);
 	u8* (*get_rx_fw_version)(void);
 	char* (*get_rx_fod_coef)(void);
 	enum tx_adaptor_type (*get_tx_adaptor_type)(void);
@@ -369,6 +377,7 @@ struct wireless_charge_device_ops {
 	int (*send_msg_cert_confirm)(bool);
 	int (*send_msg_rx_boost_succ)(void);
 	void (*pmic_vbus_handler)(bool);
+	char* (*read_nvm_info)(int);
 #ifdef WIRELESS_CHARGER_FACTORY_VERSION
 	int (*check_is_otp_exist)(void);
 	int (*rx_program_otp)(void);
@@ -379,6 +388,7 @@ struct wireless_charge_device_ops {
 struct wireless_charge_sysfs_data {
 	int en_enable;
 	int permit_wldc;
+	int nvm_sec_no;
 	int tx_fixed_fop;
 	int tx_vout_max;
 	int rx_vout_max;
@@ -394,10 +404,12 @@ struct wireless_charge_device_info {
 	struct work_struct wired_vbus_disconnect_work;
 	struct work_struct rx_program_otp_work;
 	struct work_struct wireless_rx_event_work;
+	struct work_struct wireless_pwroff_reset_work;
 	struct delayed_work wireless_vbus_disconnect_work;
 	struct delayed_work wireless_ctrl_work;
 	struct delayed_work wireless_monitor_work;
 	struct delayed_work rx_sample_work;
+	struct delayed_work interfer_work;
 	struct tx_capability *tx_cap;
 	struct wireless_charge_device_ops *ops;
 	struct wireless_mode_data mode_data;
@@ -409,16 +421,19 @@ struct wireless_charge_device_info {
 	struct wireless_segment_data segment_data;
 	struct wireless_iout_ctrl_data iout_ctrl_data;
 	enum tx_adaptor_type standard_tx_adaptor;
+	int gpio_sw;
+	int gpio_sw_valid_val;
 	u8 cur_charge_state;
 	u8 last_charge_state;
-	u8 rx_qval;
+	int rx_qval;
 	int standard_tx;
 	int tx_vout_max;
 	int rx_iout_min;
 	int rx_iout_max;
 	int rx_vout_max;
+	int supported_rx_vout;
 	int rx_iout_step;
-	int rx_vrect_min;
+	int rx_vout_err_ratio;
 	enum wireless_charge_stage stage;
 	int ctrl_interval;
 	int monitor_interval;
@@ -441,7 +456,11 @@ struct wireless_charge_device_info {
 	unsigned long curr_power_time_out;
 	enum tx_power_state tx_pg_state;
 	struct completion wc_af_completion;
-	u8 antifake_key_index;
+	int antifake_key_index;
+	int pwroff_reset_flag;
+	int hvc_need_5vbst;
+	int bst5v_ignore_vbus_only;
+	int extra_pwr_good_flag;
 };
 enum wireless_charge_sysfs_type {
 	WIRELESS_CHARGE_SYSFS_CHIP_ID = 0,
@@ -461,6 +480,7 @@ enum wireless_charge_sysfs_type {
 	WIRELESS_CHARGE_SYSFS_FOD_COEF,
 	WIRELESS_CHARGE_SYSFS_INTERFERENCE_SETTING,
 	WIRELESS_CHARGE_SYSFS_PERMIT_WLDC,
+	WIRELESS_CHARGE_SYSFS_NVM_DATA,
 };
 enum rx_event_type{
 	WIRELESS_CHARGE_RX_POWER_ON = 0,
@@ -474,6 +494,7 @@ enum rx_event_type{
 	WIRELESS_CHARGE_RX_OCP,
 	WIRELESS_CHARGE_RX_OVP,
 	WIRELESS_CHARGE_RX_OTP,
+	WIRELESS_CHARGE_RX_LDO_OFF,
 };
 
 extern struct blocking_notifier_head rx_event_nh;
@@ -503,6 +524,10 @@ extern void wireless_charge_restart_charging(enum wireless_charge_stage);
 extern bool wireless_charge_mode_judge_criterion(int pmode_index, int crit_type);
 extern int wireless_charge_get_power_mode(void);
 extern void wireless_charge_update_max_vout_and_iout(bool ignore_cnt_flag);
+extern void wireless_charge_set_iout_min(void);
 
+
+extern int wireless_charge_sw_control(int sw_ctrl_flag);
+extern void wlc_ignore_vbus_only_event(bool ignore_flag);
 
 #endif

@@ -71,78 +71,59 @@ int lcdkit_parse_int_array_data(struct device_node* np,
 static int lcdkit_parse_arrays_data(struct device_node* np,
                                     char* name, struct lcdkit_arrays_data* out)
 {
-    int i, cnt, ret = 0;
-    char* buf, *bp;
-    const char* data;
-    int len, blen, length;
+	int i, cnt;
+	int ret = 0;
+	char* buf, *bp;
+	const char* data;
+	int len, blen, length;
 
-    data = of_get_property(np, name, &blen);
-
-    if (!data)
-    {
-        LCDKIT_ERR("%s: parse property %s error\n", __func__, name);
-        return -ENOMEM;
-    }
-
-    ret = buf_trans(data, blen, &buf, &len);
-    if (ret)
-    {
-        LCDKIT_ERR("buffer trans fail!\n");
-        return -ENOMEM;
-    }
-
-    cnt = 0;
-    bp = buf;
-    length = len;
-
-    while (length > 1)
-    {
-        len = *bp;
-        bp++;
-        length--;
-
-        if (len > length)
-        {
-            LCDKIT_ERR("data length = %x error\n", len);
-            goto exit_free;
-        }
-
-        bp += len;
-        length -= len;
-        cnt++;
-    }
-
-    if (length != 0)
-    {
-        LCDKIT_ERR("dts data parse error! data len = %d\n", len);
-        goto exit_free;
-    }
-
-    out->cnt = cnt;
-    out->arry_data = kzalloc(sizeof(struct lcdkit_array_data) * cnt, GFP_KERNEL);
-
-    if (!out->arry_data)
-    {
-        goto exit_free;
-    }
-
-    bp = buf;
-
-    for (i = 0; i < cnt; i++)
-    {
-        len = *bp;
-        out->arry_data[i].cnt = len;
-        bp++;
-
-        out->arry_data[i].buf = bp;
-        bp += len;
-    }
-
-    return 0;
-
+	data = of_get_property(np, name, &blen);
+	if (!data) {
+		LCDKIT_ERR("%s: parse property %s error\n", __func__, name);
+		return -ENOMEM;
+	}
+	ret = buf_trans(data, blen, &buf, &len);
+	if (ret) {
+		LCDKIT_ERR("buffer trans fail!\n");
+		return -ENOMEM;
+	}
+	cnt = 0;
+	bp = buf;
+	length = len;
+	while (length > 1) {
+		len = *bp;
+		bp++;
+		length--;
+		if (len > length) {
+			LCDKIT_ERR("data length = %x error\n", len);
+			goto exit_free;
+		}
+		bp += len;
+		length -= len;
+		cnt++;
+	}
+	if (length != 0) {
+		LCDKIT_ERR("dts data parse error! data len = %d\n", len);
+		goto exit_free;
+	}
+	out->cnt = cnt;
+	out->arry_data = kzalloc(sizeof(struct lcdkit_array_data) * cnt, GFP_KERNEL);
+	if (!out->arry_data)
+		goto exit_free;
+	bp = buf;
+	for (i = 0; i < cnt; i++) {
+		len = *bp;
+		out->arry_data[i].cnt = len;
+		bp++;
+		out->arry_data[i].buf = bp;
+		bp += len;
+	}
+	buf = NULL;
+	return 0;
 exit_free:
-    kfree(buf);
-    return -ENOMEM;
+	kfree(buf);
+	buf = NULL;
+	return -ENOMEM;
 }
 
 int lcdkit_parse_dcs_cmds(struct device_node* np, char* cmd_key,
@@ -289,8 +270,11 @@ void lcdkit_parse_panel_dts(struct device_node* np)
     OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-panel-hbm-support", &lcdkit_info.panel_infos.hbm_support, 0);
     OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-panel-inversion-support", &lcdkit_info.panel_infos.inversion_support, 0);
     OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-panel-scan-support", &lcdkit_info.panel_infos.scan_support, 0);
+    OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-panel-thp-proximity-support",
+		&lcdkit_info.panel_infos.thp_proximity_support, 0);
     OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-panel-tp-lcd-reset-sync-support", &lcdkit_info.panel_infos.tp_lcd_reset_sync,0);
     OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-panel-esd-support", &lcdkit_info.panel_infos.esd_support, 0);
+    OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-panel-fac-esd-support", &lcdkit_info.panel_infos.fac_esd_support, 0);
     OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-panel-check-reg-support", &lcdkit_info.panel_infos.check_reg_support, 0);
     OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-panel-mipi-check-support", &lcdkit_info.panel_infos.mipi_check_support, 0);
     OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-panel-display-region-support", &lcdkit_info.panel_infos.display_region_support, 0);
@@ -352,6 +336,9 @@ void lcdkit_parse_panel_dts(struct device_node* np)
     ret = lcdkit_parse_dcs_cmds(np, "hw,lcdkit-panel-off-second-command", "hw,lcdkit-panel-off-command-state",
                                 &lcdkit_info.panel_infos.display_off_second_cmds);
 
+    /*Parse pt panel off cmds*/
+    ret = lcdkit_parse_dcs_cmds(np, "hw,lcdkit-pt-panel-off-command", "hw,lcdkit-pt-panel-off-command-state",
+                                &lcdkit_info.panel_infos.pt_display_off_cmds);
     /*Parse backlight cmds*/
     ret = lcdkit_parse_dcs_cmds(np, "hw,lcdkit-panel-backlight-command", "hw,lcdkit-panel-backlight-command-state",
                                 &lcdkit_info.panel_infos.backlight_cmds);
@@ -739,6 +726,9 @@ void lcdkit_parse_panel_dts(struct device_node* np)
     }
     /*for TP power ctrl*/
     OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-lcd-type", &g_tskit_ic_type, 1);
+    /* for TP gesture special sequence */
+    OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-tddi-tp-gesture-sequence-flag", \
+	    &lcdkit_info.panel_infos.tddi_tp_gesture_sequence_flag, 0);
     /*for power mode ctrl*/
     OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-bias-power-ctrl-mode", &lcdkit_info.panel_infos.bias_power_ctrl_mode, 0);
     OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-iovcc-power-ctrl-mode", &lcdkit_info.panel_infos.iovcc_power_ctrl_mode, 0);
@@ -795,8 +785,14 @@ void lcdkit_parse_panel_dts(struct device_node* np)
     OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-iovcc-on-is-need-reset", &lcdkit_info.panel_infos.first_reset, 0);
     OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-vsn-on-is-need-reset", &lcdkit_info.panel_infos.second_reset, 0);
     OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-reset-pull-high-flag", &lcdkit_info.panel_infos.reset_pull_high_flag, 0);
+    /*for tp_reset after lcd reset low*/
+    OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-tp-after-lcd-reset", &lcdkit_info.panel_infos.tp_after_lcd_reset, 0);
+    OF_PROPERTY_READ_U8_DEFAULT(np, "hw,tp-befor-vsn-low-delay", &lcdkit_info.panel_infos.tp_befor_vsn_low_delay, 0);
     OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-tp-reset-before-lcd-reset", &lcdkit_info.panel_infos.tprst_before_lcdrst, 0);
     OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-tp-fw-early-lcd-init", &lcdkit_info.panel_infos.tpfw_early_lcdinit, 0);
+    /*for nova lcdkit off sequence*/
+    OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-tp-before-lcd-sleep", &lcdkit_info.panel_infos.tp_before_lcdsleep, 0);
+    OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-delay-af-tp-before-suspend", &lcdkit_info.panel_infos.delay_af_tp_before_suspend, 0);
     /*for delay of power sequence*/
     OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-delay-af-vci-on", &lcdkit_info.panel_infos.delay_af_vci_on, 0);
     OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-delay-af-iovcc-on", &lcdkit_info.panel_infos.delay_af_iovcc_on, 0);
@@ -849,12 +845,14 @@ void lcdkit_parse_panel_dts(struct device_node* np)
     OF_PROPERTY_READ_U32_DEFAULT(np, "hw,lcdkit-bl-enhance", &lcdkit_info.panel_infos.bl_enhance, 0);
     OF_PROPERTY_READ_U32_DEFAULT(np, "hw,lcdkit-bl-normal", &lcdkit_info.panel_infos.bl_normal, 0);
     OF_PROPERTY_READ_U32_DEFAULT(np, "hw,lcdkit-bl-dbc-set-boost-ctrl-support", &lcdkit_info.panel_infos.bl_dbc_set_boost_ctrl_flag, 0);
+    OF_PROPERTY_READ_U32_DEFAULT(np, "hw,lcdkit-pan-dis-dimming-bf-sleep-in", &lcdkit_info.panel_infos.dis_pandimming_bf_sleepin_flag, 0);
 
     if (lcdkit_info.panel_infos.host_info_all_in_ddic) {
         ret = lcdkit_parse_dcs_cmds(np, "hw,lcdkit-host-2d-barcode-enter-command", "hw,lcdkit-host-2d-barcode-enter-command-state",  &lcdkit_info.panel_infos.host_2d_barcode_enter_cmds);
         ret = lcdkit_parse_dcs_cmds(np, "hw,lcdkit-host-2d-barcode-command", "hw,lcdkit-host-2d-barcode-command-state",  &lcdkit_info.panel_infos.host_2d_barcode_cmds);
         ret = lcdkit_parse_dcs_cmds(np, "hw,lcdkit-host-2d-barcode-exit-command", "hw,lcdkit-host-2d-barcode-exit-command-state",  &lcdkit_info.panel_infos.host_2d_barcode_exit_cmds);
         OF_PROPERTY_READ_U32_DEFAULT(np, "hw,lcdkit-host-eml-read-reg-flag", &lcdkit_info.panel_infos.eml_read_reg_flag, 0);
+        OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-host-2d-block-num-offset", &lcdkit_info.panel_infos.block_num_offset, 0);
         ret = lcdkit_parse_dcs_cmds(np, "hw,lcdkit-host-project-id-enter-command", "hw,lcdkit-host-project-id-enter-command-state",  &lcdkit_info.panel_infos.host_project_id_enter_cmds);
         ret = lcdkit_parse_dcs_cmds(np, "hw,lcdkit-host-project-id-command", "hw,lcdkit-host-project-id-command-state",  &lcdkit_info.panel_infos.host_project_id_cmds);
         ret = lcdkit_parse_dcs_cmds(np, "hw,lcdkit-host-project-id-exit-command", "hw,lcdkit-host-project-id-exit-command-state",  &lcdkit_info.panel_infos.host_project_id_exit_cmds);
@@ -889,5 +887,9 @@ void lcdkit_parse_panel_dts(struct device_node* np)
         lcdkit_info.panel_infos.bl_work_mode = LCDKIT_BL_NORMAL_MODE;
     }
 
+    if (lcdkit_info.panel_infos.dis_pandimming_bf_sleepin_flag) {
+        ret = lcdkit_parse_dcs_cmds(np, "hw,lcdkit-panel-disable-dimming-command", "hw,lcdkit-panel-disable-dimming-command-state",  &lcdkit_info.panel_infos.disable_pan_dimming_cmds);
+        ret = lcdkit_parse_dcs_cmds(np, "hw,lcdkit-panel-enable-dimming-command", "hw,lcdkit-panel-enable-dimming-command-state",  &lcdkit_info.panel_infos.enable_pan_dimming_cmds);
+    }
     return;
 }

@@ -59,6 +59,11 @@ struct i2c_err_info {
 	unsigned long int err_details;
 };
 
+struct smartpa_vendor_info {
+	unsigned int vendor;
+	const char *chip_model;
+};
+
 typedef struct smartpakit_gpio_state {
 	unsigned int state;
 	unsigned int delay;
@@ -79,10 +84,12 @@ typedef struct smartpakit_gpio_reset {
 // 0 read reg node:   read  addr  | count | 0
 // 1 write reg node:  write addr  | value | 1
 // 2 time delay node: 0(not used) | value | 2
+// 3 compare reg node:   read  addr  | mask | 3
 typedef enum smartpakit_reg_ctl_type {
 	SMARTPAKIT_REG_CTL_TYPE_R = 0,  // read reg
 	SMARTPAKIT_REG_CTL_TYPE_W,      // write reg
 	SMARTPAKIT_REG_CTL_TYPE_DELAY,  // only time delay
+	SMARTPAKIT_REG_CTL_TYPE_R_COMPARE,     // read reg and compare
 
 	SMARTPAKIT_REG_CTL_TYPE_MAX,
 } smartpakit_reg_ctl_type_t;
@@ -104,6 +111,7 @@ typedef struct smartpakit_reg_ctl {
 typedef struct smartpakit_reg_ctl_sequence {
 	unsigned int num;
 	smartpakit_reg_ctl_t *regs;
+	unsigned int *compare_value;
 } smartpakit_reg_ctl_sequence_t;
 
 typedef struct smartpakit_gpio_irq {
@@ -113,6 +121,8 @@ typedef struct smartpakit_gpio_irq {
 	bool need_reset;
 	char gpio_name[SMARTPAKIT_NAME_MAX];
 	char irq_name[SMARTPAKIT_NAME_MAX];
+	bool irq_need_reset_status;
+	bool compare_value_existed;
 
 	smartpakit_reg_ctl_sequence_t *rw_sequence; // read or write reg sequence
 } smartpakit_gpio_irq_t;
@@ -256,6 +266,7 @@ typedef struct smartpakit_priv {
 	// support pa number(now, max == SMARTPAKIT_PA_ID_MAX)
 	unsigned int pa_num;
 	unsigned int i2c_num; // load successful i2c module
+	const char *special_name_config;
 
 	int gpio_of_hw_reset[SMARTPAKIT_PA_ID_MAX];
 	int gpio_of_irq[SMARTPAKIT_PA_ID_MAX];
@@ -270,6 +281,7 @@ typedef struct smartpakit_priv {
 	bool resume_sequence_permission_enable;
 	smartpakit_pa_ctl_sequence_t resume_sequence;
 	smartpakit_pa_ctl_sequence_t poweron_sequence[SMARTPAKIT_PA_ID_MAX];
+	bool force_refresh_chip;
 
 	// misc device r/w settings
 	bool misc_rw_permission_enable;
@@ -295,6 +307,7 @@ void smartpakit_register_ioctl_ops(smartpakit_i2c_ioctl_ops_t *ops);
 int  smartpakit_parse_params(smartpakit_pa_ctl_sequence_t *sequence, void __user *arg, int compat_mode);
 int  smartpakit_set_poweron_regs(smartpakit_priv_t *pakit_priv, smartpakit_pa_ctl_sequence_t *sequence);
 bool smartpakit_is_gpio_request(int gpio, bool is_irq);
+int smartpakit_set_info(struct smartpa_vendor_info *vendor_info);
 
 #endif // __SMARTPAKIT_H__
 

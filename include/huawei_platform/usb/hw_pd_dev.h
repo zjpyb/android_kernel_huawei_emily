@@ -25,9 +25,32 @@
 #define PD_DPM_CC_CHANGE_MSEC                  (1000)
 #define PD_DPM_CC_CHANGE_BUF_SIZE              (10)
 
-#define PD_DPM_CC_DMD_COUNTER_THRESHOLD        (50)
+#define PD_DPM_CC_DMD_COUNTER_THRESHOLD        1
 #define PD_DPM_CC_DMD_INTERVAL                 (24*60*60) /*s*/
 #define PD_DPM_CC_DMD_BUF_SIZE                 (1024)
+
+#define PD_DPM_INVALID_VAL                     (-1)
+
+/* discover id ack:product vdo type offset */
+#define PD_DPM_PDT_OFFSET                      (12)
+#define PD_DPM_PDT_MASK                        (0x7)
+#define PD_DPM_PDT_VID_OFFSET                  (16)
+
+/* huawei vid */
+#define PD_DPM_HW_VID                          (0x12d1)
+
+/* huawei charger device pid */
+#define PD_DPM_HW_CHARGER_PID                  (0x3b30)
+#define PD_DPM_HW_PDO_MASK                     (0xffff)
+
+/* cc status for data collect */
+#define PD_DPM_CC_OPEN                         (0x00)
+#define PD_DPM_CC_DFT                          (0x01)
+#define PD_DPM_CC_1_5                          (0x02)
+#define PD_DPM_CC_3_0                          (0x03)
+#define PD_DPM_CC2_STATUS_OFFSET               (0x02)
+#define PD_DPM_CC_STATUS_MASK                  (0x03)
+#define PD_DPM_BOTH_CC_STATUS_MASK             (0x0F)
 
 /* type-c inserted plug orientation */
 enum pd_cc_orient{
@@ -92,6 +115,7 @@ enum {
     PD_DPM_PE_EVT_PD_STATE,
     PD_DPM_PE_EVT_BC12,
     PD_DPM_PE_ABNORMAL_CC_CHANGE_HANDLER,
+	PD_DPM_PE_CABLE_VDO,
 };
 
 enum pd_typec_attach_type {
@@ -110,6 +134,10 @@ enum pd_typec_attach_type {
 #endif	/* CONFIG_TYPEC_CAP_CUSTOM_SRC */
     PD_DPM_TYPEC_ATTACHED_VBUS_ONLY,
     PD_DPM_TYPEC_UNATTACHED_VBUS_ONLY,
+
+#ifdef CONFIG_TYPEC_CAP_CUSTOM_SRC2
+	PD_DPM_TYPEC_ATTACHED_CUSTOM_SRC2,
+#endif
 };
 
 enum pd_dpm_cable_event_type {
@@ -158,10 +186,13 @@ struct pd_dpm_typec_state {
 
 struct pd_dpm_ops {
 	void (*pd_dpm_hard_reset)(void*);
+	void (*pd_dpm_detect_emark_cable)(void *client);
 	bool (*pd_dpm_get_hw_dock_svid_exist)(void*);
 	int (*pd_dpm_notify_direct_charge_status)(void*, bool mode);
 	void (*pd_dpm_set_cc_mode)(int mode);
 	void (*pd_dpm_set_voltage)(void*, int vol);
+	int (*pd_dpm_get_cc_state)(void);
+	int (*pd_dpm_disable_pd)(void *client, bool disable);
 };
 struct pd_dpm_pd_state {
 	uint8_t connected;
@@ -212,6 +243,23 @@ struct abnomal_change_info {
 	int dmd_data[PD_DPM_CC_CHANGE_BUF_SIZE];
 };
 
+enum cur_cap {
+	PD_DPM_CURR_1P5A = 0x00,
+	PD_DPM_CURR_3A = 0x01,
+	PD_DPM_CURR_5A = 0x02,
+};
+
+#define CABLE_CUR_CAP_SHIFT  5
+#define CABLE_CUR_CAP_MASK   (BIT(5) | BIT(6))
+
+enum pd_product_type {
+	PD_PDT_PD_ADAPTOR = 0,
+	PD_PDT_PD_POWER_BANK,
+	PD_PDT_WIRELESS_CHARGER,
+	PD_PDT_WIRELESS_COVER,
+	PD_PDT_TOTAL,
+};
+
 #ifdef CONFIG_CONTEXTHUB_PD
 struct pd_dpm_combphy_event {
 	TCA_IRQ_TYPE_E irq_type;
@@ -250,6 +298,7 @@ struct pd_dpm_info{
     int last_usb_event;
     struct workqueue_struct *usb_wq;
     struct delayed_work usb_state_update_work;
+    struct delayed_work cc_moisture_flag_restore_work;
 
 #ifdef CONFIG_CONTEXTHUB_PD
     struct pd_dpm_combphy_event last_combphy_notify_event;
@@ -265,12 +314,23 @@ struct pd_dpm_info{
     unsigned long bc12_event;
     struct pd_dpm_vbus_state bc12_sink_vbus_state;
     int cur_usb_event;
+	unsigned int cable_vdo;
+	bool ctc_cable_flag;
 };
 
 struct cc_check_ops {
 	int (*is_cable_for_direct_charge)(void);
 };
 int cc_check_ops_register(struct cc_check_ops*);
+
+#ifdef CONFIG_TYPEC_CAP_CUSTOM_SRC2
+struct cable_vdo_ops {
+	int (*is_cust_src2_cable)(void);
+};
+int pd_dpm_cable_vdo_ops_register(struct cable_vdo_ops *);
+extern int pd_dpm_get_is_support_smart_holder(void);
+extern int pd_dpm_smart_holder_without_emark(void);
+#endif
 
 /* for chip layer to get class created by core layer */
 struct class *hw_pd_get_class(void);
@@ -292,7 +352,11 @@ extern void pd_dpm_get_charge_event(unsigned long *event, struct pd_dpm_vbus_sta
 extern bool pd_dpm_get_high_power_charging_status(void);
 extern bool pd_dpm_get_high_voltage_charging_status(void);
 extern bool pd_dpm_get_optional_max_power_status(void);
+extern void pd_dpm_set_optional_max_power_status(bool status);
+extern bool pd_dpm_get_wireless_cover_power_status(void);
+extern void pd_dpm_set_wireless_cover_power_status(bool status);
 extern bool pd_dpm_get_cc_orientation(void);
+extern int pd_dpm_get_cc_state_type(unsigned int *cc1, unsigned int *cc2);
 #ifdef CONFIG_CONTEXTHUB_PD
 extern int pd_dpm_handle_combphy_event(struct pd_dpm_combphy_event event);
 #endif
@@ -300,6 +364,8 @@ void pd_dpm_set_cc_voltage(int type);
 enum pd_dpm_cc_voltage_type pd_dpm_get_cc_voltage(void);
 int pd_dpm_ops_register(struct pd_dpm_ops *ops, void*client);
 void pd_dpm_hard_reset(void);
+int pd_dpm_disable_pd(bool disable);
+void pd_dpm_set_pd_finish_flag(bool flag);
 bool pd_dpm_get_hw_dock_svid_exist(void);
 int pd_dpm_get_pd_reset_adapter(void);
 void pd_dpm_set_pd_reset_adapter(int ra);
@@ -332,6 +398,28 @@ extern void pd_dpm_set_combphy_status(TCPC_MUX_CTRL_TYPE mode);
 extern TCPC_MUX_CTRL_TYPE pd_dpm_get_combphy_status(void);
 #endif
 
+extern void pd_dpm_send_event(enum pd_dpm_cable_event_type event);
 extern int pd_dpm_get_cur_usb_event(void);
 extern void pd_dpm_audioacc_sink_vbus(unsigned long event, void *data);
+
+extern int pmic_vbus_irq_is_enabled(void);
+extern enum charger_event_type pd_dpm_get_source_sink_state(void);
+extern bool pd_dpm_set_voltage(int vol);
+extern int pd_dpm_notify_direct_charge_status(bool dc);
+extern void dp_dfp_u_notify_dp_configuration_done(TCPC_MUX_CTRL_TYPE mode_type, int ack);
+
+extern void pd_set_product_type(int type);
+extern int pd_get_product_type(void);
+extern void pd_set_product_id_info(unsigned int vid,
+				   unsigned int pid,
+				   unsigned int type);
+extern bool pd_dpm_check_cc_vbus_short(void);
+extern bool pd_dpm_get_cc_moisture_status(void);
+extern enum cur_cap pd_dpm_get_cvdo_cur_cap(void);
+extern int pd_dpm_get_emark_detect_enable(void);
+extern void pd_dpm_detect_emark_cable(void);
+bool pd_dpm_get_ctc_cable_flag(void);
+void pd_dpm_set_source_sink_state(enum charger_event_type type);
+bool pmic_vbus_is_connected(void);
+void pmic_vbus_disconnect_process(void);
 #endif

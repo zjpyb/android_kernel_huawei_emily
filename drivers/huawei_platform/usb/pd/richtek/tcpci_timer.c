@@ -26,10 +26,17 @@
 #include <linux/sched/rt.h>
 #endif /* #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 9, 0)) */
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+#include <linux/sched/types.h>
+#endif
+
 #include <huawei_platform/usb/pd/richtek/tcpci.h>
 #include <huawei_platform/usb/pd/richtek/tcpci_timer.h>
 #include <huawei_platform/usb/pd/richtek/tcpci_typec.h>
 #include <huawei_platform/usb/pd/richtek/rt1711h.h>
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+#include <uapi/linux/sched/types.h>
+#endif
 
 #define RT_MASK64(i)	(((uint64_t)1) << i)
 
@@ -1034,13 +1041,11 @@ void tcpc_restart_timer(struct tcpc_device *tcpc, uint32_t timer_id)
 
 void tcpc_enable_timer(struct tcpc_device *tcpc, uint32_t timer_id)
 {
-
 	uint32_t r, mod, tout;
-	char buf[1024] = { 0 };
 
 	TCPC_TIMER_EN_DBG(tcpc, timer_id);
-	if(timer_id >= PD_TIMER_NR) {
-		snprintf(buf, sizeof(buf), "the timer_id %d is over PD_TIMER_NR\n", timer_id);
+	if (timer_id >= PD_TIMER_NR) {
+		PD_ERR("the timer_id %d is over PD_TIMER_NR\n", timer_id);
 		return;
 	}
 	mutex_lock(&tcpc->timer_lock);
@@ -1068,12 +1073,11 @@ void tcpc_enable_timer(struct tcpc_device *tcpc, uint32_t timer_id)
 void tcpc_disable_timer(struct tcpc_device *tcpc_dev, uint32_t timer_id)
 {
 	uint64_t mask;
-	char buf[1024] = { 0 };
 
 	mask = tcpc_get_timer_enable_mask(tcpc_dev);
 
-	if(timer_id >= PD_TIMER_NR) {
-		snprintf(buf, sizeof(buf), "the timer_id %d is over PD_TIMER_NR\n", timer_id);
+	if (timer_id >= PD_TIMER_NR) {
+		PD_ERR("the timer_id %d is over PD_TIMER_NR\n", timer_id);
 		return;
 	}
 	if (mask & RT_MASK64(timer_id)) {

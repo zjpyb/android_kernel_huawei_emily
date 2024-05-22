@@ -32,7 +32,7 @@ static void cpufreq_gov_performance_limits(struct cpufreq_policy *policy)
 	if ((get_lowbatteryflag() == 1) && hisi_test_fast_cpu(policy->cpu))
 		utarget = policy->min;
 
-	pr_info("%s utarget=%d\n", __func__, utarget);
+	pr_debug("%s utarget=%d\n", __func__, utarget);
 
 	__cpufreq_driver_target(policy, utarget, CPUFREQ_RELATION_H);
 #else

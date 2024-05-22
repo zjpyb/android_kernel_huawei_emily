@@ -35,9 +35,8 @@ struct hisifb_writeback {
 	uint32_t wdfc_pad_num;
 
 	uint32_t wb_buffer_size;
-	struct ion_handle *wb_handle;
 	char __iomem *wb_buffer_base;
-	ion_phys_addr_t wb_phys_addr;
+	phys_addr_t wb_phys_addr;
 
 	bool buffer_alloced;
 

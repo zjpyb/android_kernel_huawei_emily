@@ -171,7 +171,7 @@ static int f2fs_derive_get_keyindex(u8 *descriptor, u8 keyring_type)
 			goto out;
 		}
 
-		res = (int) (*(master_key->raw + 63) & 0xff);
+		res = (int) (*(master_key->raw + FS_KEY_INDEX_OFFSET) & 0xff);
 	} else {
 		if (ukp->datalen != sizeof(struct fscrypt_sdp_key)) {
 			up_read(&keyring_key->sem);
@@ -194,7 +194,7 @@ static int f2fs_derive_get_keyindex(u8 *descriptor, u8 keyring_type)
 				goto out;
 			}
 
-			res = (int) (*(master_sdp_key->raw + 63) & 0xff);
+			res = (int) (*(master_sdp_key->raw + FS_KEY_INDEX_OFFSET) & 0xff);
 		}
 	}
 
@@ -475,7 +475,7 @@ static int f2fs_get_sdp_ece_crypt_info(struct inode *inode, void *fs_data)
 	}
 	pr_sdp_info("f2fs_sdp %s: get sdp cyptinfo %p key %p len %u\n",
 	__func__, crypt_info, crypt_info->ci_key, crypt_info->ci_key_len);
-	crypt_info->ci_sdp_flag = F2FS_XATTR_SDP_ECE_ENABLE_FLAG;
+	crypt_info->ci_hw_enc_flag = F2FS_XATTR_SDP_ECE_ENABLE_FLAG;
 	if (cmpxchg(&inode->i_crypt_info, NULL, crypt_info) == NULL)
 		crypt_info = NULL;
 
@@ -745,7 +745,7 @@ static int f2fs_get_sdp_sece_crypt_info(struct inode *inode, void *fs_data)
 	}
 	pr_sdp_info("f2fs_sdp %s:get sdp cyptinfo %p key %p len %u\n",
 	__func__, crypt_info, crypt_info->ci_key, crypt_info->ci_key_len);
-	crypt_info->ci_sdp_flag = F2FS_XATTR_SDP_SECE_ENABLE_FLAG;
+	crypt_info->ci_hw_enc_flag = F2FS_XATTR_SDP_SECE_ENABLE_FLAG;
 	if (cmpxchg(&inode->i_crypt_info, NULL, crypt_info) == NULL)
 		crypt_info = NULL;
 
@@ -851,11 +851,11 @@ int f2fs_change_to_sdp_crypto(struct inode *inode, void *fs_data)
 	if (F2FS_INODE_IS_CONFIG_SDP_ECE_ENCRYPTION(flag)) {
 		res = f2fs_inode_set_enabled_sdp_ece_encryption_flags(inode,
 			fs_data);
-		ci_info->ci_sdp_flag = F2FS_XATTR_SDP_ECE_ENABLE_FLAG;
+		ci_info->ci_hw_enc_flag = F2FS_XATTR_SDP_ECE_ENABLE_FLAG;
 	} else {
 		res = f2fs_inode_set_enabled_sdp_sece_encryption_flags(inode,
 			fs_data);
-		ci_info->ci_sdp_flag = F2FS_XATTR_SDP_SECE_ENABLE_FLAG;
+		ci_info->ci_hw_enc_flag = F2FS_XATTR_SDP_SECE_ENABLE_FLAG;
 	}
 	if (res) {
 		pr_err("f2fs_sdp %s: set cypt flags failed!need to check!\n",
@@ -939,16 +939,37 @@ static int f2fs_get_sdp_crypt_info(struct inode *inode, void *fs_data)
 
 	return f2fs_get_sdp_sece_crypt_info(inode, fs_data);
 }
+#endif
 
+#if (defined(DEFINE_F2FS_FS_SDP_ENCRYPTION) || defined(CONFIG_HWAA))
 int f2fs_get_crypt_keyinfo(struct inode *inode, void *fs_data, int *flag)
 {
 	struct f2fs_sb_info *sbi = F2FS_I_SB(inode);
 	int res = 0;
 	u32 sdpflag;
 	/* used to check need to get ce encrypt info,
-	 * if 0 need get ce crypt info
+	 * if 0 need get ce crypt info, else get hwaa or
+	 * or sdp crypt info.
 	 */
 	*flag = 0;
+
+#ifdef CONFIG_HWAA
+	if (!inode->i_crypt_info || (inode->i_crypt_info &&
+		(inode->i_crypt_info->ci_hw_enc_flag &
+		HWAA_XATTR_ENABLE_FLAG))) {
+		res = hwaa_get_context(inode);
+		if (res == -EOPNOTSUPP)
+			goto get_sdp_encryption_info;
+		else if (res) {
+			*flag = 1;
+			return -EACCES;
+		} else {
+			*flag = 1;
+			return 0;
+		}
+	}
+get_sdp_encryption_info:
+#endif
 
 	/* means only file use the sdp key, symlink dir use the origin key */
 	if (S_ISREG(inode->i_mode)) {

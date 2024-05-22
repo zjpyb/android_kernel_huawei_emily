@@ -7,7 +7,7 @@
 *	Macro definition
 ***********************************/
 /*Statistics duration second*/
-#define MAX_STAT_SEC (32)
+#define VIDEO_MAX_STAT_SEC (32)
 /* Maximum search http string length, can cause single packet*/
 /* processing Siyanyo 3us, maximum bandwidth about 4Gbps */
 #define MAX_DATA_LEN (600)
@@ -18,7 +18,7 @@
 /*The starting point of the return code for http*/
 /*HTTP\1.0 200OK **** */
 /*         ^          */
-#define HTTP_ACK_FROM_START	(9)
+#define VIDEO_HTTP_ACK_FROM_START	(9)
 
 /*HTTP response associated with video character string*/
 #define CONTENT_TYPE1 ("Content-Type: video")
@@ -27,14 +27,14 @@
 #define MIN_HTTP_LEN (30)
 #define MAX_HTTP_LEN (1500)
 /*Segment information reporting period*/
-#define REPORT_TIME (15*HZ)
+#define VIDEO_REPORT_TIME		(15*HZ)
 
 /*TCP port for HTTP*/
-#define HTTP_PORT (80)
+#define VIDEO_HTTP_PORT			(80)
 
 /*Data service string and length*/
-#define DS_NET					("rmnet0")
-#define DS_NET_LEN				(6)
+#define VIDEO_DS_NET			("rmnet0")
+#define VIDEO_DS_NET_LEN		(6)
 
 /*Filter multiplier*/
 #define MULTIPLIER_X5           (5)
@@ -146,7 +146,7 @@ struct pkt_cnt {
 };
 
 struct pkt_stat {
-	struct pkt_cnt stat[MAX_STAT_SEC];
+	struct pkt_cnt stat[VIDEO_MAX_STAT_SEC];
 	unsigned long time_stamp;
 	unsigned int idx;
 };

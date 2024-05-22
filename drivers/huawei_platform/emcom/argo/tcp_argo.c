@@ -54,7 +54,7 @@ static inline bool argo_time_to_init(struct tcp_sock *tp, struct sk_buff *skb)
 
 	ARGO_LOGD("Argo time to init dest addr: %x, dest port: %u, "
 		  "sysctl_tcp_argo: %u, dev name: %s,"
-		  "argo: %p, tstamp: %x, "
+		  "argo: %pK, tstamp: %x, "
 		  "sack: %x, syn: %x.",
 		  ((struct sock *)tp)->sk_daddr, ((struct sock *)tp)->sk_dport,
 		  sysctl_tcp_argo, skb->dev->name,
@@ -273,7 +273,7 @@ int argo_delay_acks_in_fastpath(struct sock *sk, struct tcp_sock *tp)
 	if (tp->argo && sysctl_tcp_argo && !tp->rx_opt.num_sacks &&
 	    tp->argo->delay_ack_nums == ARGO_DELACK_THRESH) {
 		ARGO_LOGD("Argo fast path delay ack. "
-			  "dest addr: %x, dest port: %u, tp argo: %p, "
+			  "dest addr: %x, dest port: %u, tp argo: %pK, "
 			  "sysctl_tcp_argo: %u, num_sacks: %u, "
 			  "delay ack nums: %u, snd_nxt: %u, "
 			  "argo high_snd_nxt: %u.",
@@ -302,14 +302,14 @@ int argo_delay_acks_in_fastpath(struct sock *sk, struct tcp_sock *tp)
 	} else if (tp->argo && sysctl_tcp_argo && tp->argo->delay_ack_nums &&
 		   tp->argo->delay_ack_nums < ARGO_DELACK_THRESH) {
 			ARGO_LOGD("Argo fast path delay ack. "
-				  "dest addr: %x, dest port: %u, tp argo: %p, "
+				  "dest addr: %x, dest port: %u, tp argo: %pK, "
 				  "sysctl_tcp_argo: %u, delay ack nums: %u.",
 				  sk->sk_daddr, sk->sk_dport, tp->argo,
 				  sysctl_tcp_argo, tp->argo->delay_ack_nums);
 		tp->argo->delay_ack_nums++;
 	} else if (tp->argo && !sysctl_tcp_argo) {
 		ARGO_LOGD("Argo fast path delay ack. "
-			  "dest addr: %x, dest port: %u, tp argo: %p, "
+			  "dest addr: %x, dest port: %u, tp argo: %pK, "
 			  "sysctl_tcp_argo: %u.",
 			  sk->sk_daddr, sk->sk_dport, tp->argo,
 			  sysctl_tcp_argo);

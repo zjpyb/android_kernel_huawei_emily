@@ -186,7 +186,7 @@ OAL_STATIC oal_uint32  hmac_ba_send_frames_with_gap(hmac_ba_rx_stru *pst_ba_rx_h
                 OAL_MEM_NETBUF_TRACE(pst_netbuf, OAL_FALSE);
                 if (OAL_PTR_NULL != pst_netbuf)
                 {
-                    oal_netbuf_add_to_list_tail(pst_netbuf, pst_netbuf_header);
+                    oal_netbuf_list_tail_nolock(pst_netbuf_header, pst_netbuf);
                 }
             }
             pst_rx_buf->uc_num_buf = 0;
@@ -231,7 +231,7 @@ OAL_STATIC oal_uint16  hmac_ba_send_frames_in_order(hmac_ba_rx_stru *pst_ba_rx_h
             OAL_MEM_NETBUF_TRACE(pst_netbuf, OAL_FALSE);
             if (OAL_PTR_NULL != pst_netbuf)
             {
-                oal_netbuf_add_to_list_tail(pst_netbuf, pst_netbuf_header);
+                oal_netbuf_list_tail_nolock(pst_netbuf_header, pst_netbuf);
             }
         }
 
@@ -278,7 +278,7 @@ OAL_STATIC OAL_INLINE oal_void  hmac_ba_buffer_rx_frame(hmac_ba_rx_stru *pst_ba_
     /* all buffers of this frame must be deleted from the buf list */
     for (uc_netbuf_index = pst_cb_ctrl->bit_buff_nums; uc_netbuf_index > 0; uc_netbuf_index--)
     {
-        pst_netbuf = oal_netbuf_delist(pst_netbuf_header);
+        pst_netbuf = oal_netbuf_delist_nolock(pst_netbuf_header);
 
         OAL_MEM_NETBUF_TRACE(pst_netbuf, OAL_TRUE);
         if (OAL_UNLIKELY(OAL_PTR_NULL != pst_netbuf))

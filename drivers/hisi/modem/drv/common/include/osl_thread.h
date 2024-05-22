@@ -61,8 +61,14 @@
 
 
 #ifdef __KERNEL__
+#include <linux/version.h>
 #include <linux/kthread.h>
 #include <linux/sched.h>
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+#include <linux/sched/types.h>
+#include <linux/sched/debug.h>
+#include <linux/sched/signal.h>
+#endif
 #include <linux/delay.h>
 
 /*此处用于存放任务优先级 ---begin*/
@@ -72,7 +78,7 @@
 /*此处用于存放任务优先级 ---end*/
 
 typedef struct task_struct* OSL_TASK_ID;
-typedef void (*OSL_TASK_FUNC)(void* para);
+typedef int (*OSL_TASK_FUNC)(void* para);
 static inline s32  osl_task_init(
 			char* name,
 			u32 priority,
@@ -87,7 +93,7 @@ static inline s32  osl_task_init(
 
 	sch_para.sched_priority = (int)priority;
 
-	tsk =  kthread_run((void*)entry, para, name);
+	tsk =  kthread_run(entry, para, name);
 	if (IS_ERR(tsk))
 	{
 		printk("create kthread %s failed!\n", name);

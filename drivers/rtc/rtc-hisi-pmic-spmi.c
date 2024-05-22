@@ -218,7 +218,7 @@ static inline struct hisi_rtc_dev *hisi_rtc_ldata_get(void)
 }
 
 #ifdef CONFIG_HISI_RTC_SECURE_FEATURE
-static int hisi_rtc_nve_write(unsigned int index, int *data,
+static int hisi_rtc_nve_write(unsigned int index, const int *data,
 			      unsigned int len)
 {
 	int ret;

@@ -1062,7 +1062,6 @@ int reflash_do_reflash(char *fw_name)
 {
 	int retval;
 	enum update_area update_area;
-	struct syna_tcm_hcd *tcm_hcd = reflash_hcd->tcm_hcd;
 
 	retval = reflash_get_fw_image(fw_name);
 	if (retval < 0) {

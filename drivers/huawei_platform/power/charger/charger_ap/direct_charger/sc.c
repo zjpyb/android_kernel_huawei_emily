@@ -69,7 +69,6 @@ void direct_charge_sc_get_fault_notifier(struct atomic_notifier_head **notifier)
 void direct_charge_sc_check(void)
 {
 	int local_mode = 0;
-	enum charge_done_type charge_done_status = get_charge_done_type();
 	struct direct_charge_device *di = NULL;
 	if (NULL == g_di)
 	{
@@ -107,7 +106,7 @@ void direct_charge_sc_check(void)
 		}
 		return;
 	}
-	if (0 == di->sysfs_enable_charger ||0 == di->vbat_ovp_enable_charger)
+	if (0 == di->sysfs_enable_charger)
 	{
 		hwlog_info("%s direct_charge is disabled\n",__func__);
 		di->direct_charge_succ_flag = DIRECT_CHARGE_ERROR_CHARGE_DISABLED;
@@ -218,7 +217,6 @@ static void direct_charge_fault_work(struct work_struct *work)
 {
 	char buf[512] = { 0 };
 	char reg_info[512] = { 0 };
-	int bat_capacity = 0;
 	struct direct_charge_device *di = container_of(work, struct direct_charge_device, fault_work);
 	struct nty_data* data = di->fault_data;
 
@@ -288,6 +286,12 @@ static void direct_charge_fault_work(struct work_struct *work)
 		power_dsm_dmd_report(POWER_DSM_DIRECT_CHARGE_SC, DSM_DIRECT_CHARGE_SC_FAULT_CONV_OCP, buf);
 		chg_set_adaptor_test_result(TYPE_SC, 3);
 		di->sc_conv_ocp_count++;
+		break;
+	case DIRECT_CHARGE_FAULT_LTC7820:
+		hwlog_err("ltc7820 chip error happened!\n");
+		snprintf(buf, sizeof(buf), "ltc7820 chip error happened\n");
+		strncat(buf, reg_info, strlen(reg_info));
+		//power_dsm_dmd_report(POWER_DSM_DIRECT_CHARGE_SC, DSM_DIRECT_CHARGE_SC_FAULT_IBUS_OCP, buf);
 		break;
 	default:
 		hwlog_err("unknow fault: %d happened!\n", di->charge_fault);
@@ -376,7 +380,7 @@ static ssize_t direct_charge_sysfs_show(struct device *dev,
 {
 	struct direct_charge_sysfs_field_info *info = NULL;
 	struct direct_charge_device *di = dev_get_drvdata(dev);
-	enum usb_charger_type type = charge_get_charger_type();
+	enum huawei_usb_charger_type type = charge_get_charger_type();
 	int ret;
 
 	info = direct_charge_sysfs_field_lookup(attr->attr.name);
@@ -395,7 +399,7 @@ static ssize_t direct_charge_sysfs_show(struct device *dev,
 			hwlog_err("(%s)invalid ops\n", __func__);
 			return snprintf(buf, PAGE_SIZE, "%d\n", ret);
 		}
-		if(di->scp_ops->is_support_scp())
+		if(adapter_get_protocol_register_state())
 		{
 			hwlog_err("(%s)not support scp\n", __func__);
 			return snprintf(buf, PAGE_SIZE, "%d\n", ret);
@@ -457,6 +461,7 @@ static ssize_t direct_charge_sysfs_store(struct device *dev,
 	struct direct_charge_device *di = dev_get_drvdata(dev);
 	long val = 0;
 	int ret;
+	int cur_low;
 
 	if (NULL == di)
 		return -EINVAL;
@@ -464,6 +469,9 @@ static ssize_t direct_charge_sysfs_store(struct device *dev,
 	info = direct_charge_sysfs_field_lookup(attr->attr.name);
 	if (!info)
 		return -EINVAL;
+
+	cur_low =
+	    di->orig_volt_para_p[0].volt_info[di->stage_size - 1].cur_th_low;
 
 	switch (info->name) {
 	case DIRECT_CHARGE_SYSFS_ENABLE_CHARGER:
@@ -481,19 +489,17 @@ static ssize_t direct_charge_sysfs_store(struct device *dev,
 		if ((strict_strtol(buf, 10, &val) < 0) || (val < 0) || (val > 8000))
 			return -EINVAL;
 		hwlog_info("set iin_thermal = %ld\n", val);
-		if (0 == val)
-		{
+
+		if (val == 0) {
 			di->sysfs_iin_thermal = di->iin_thermal_default;
-		}
-		else if (val < di->orig_volt_para_p[0].volt_info[di->stage_size - 1].cur_th_low)
-		{
-			hwlog_info("iin_thermal = %ld < %d, ignored\n", val, di->orig_volt_para_p[0].volt_info[di->stage_size - 1].cur_th_low);
-			return -EINVAL;
-		}
-		else
-		{
+		} else if (val < cur_low) {
+			hwlog_info("iin_thermal %ld < cur_th_low %d\n",
+				val, cur_low);
+			di->sysfs_iin_thermal = cur_low;
+		} else {
 			di->sysfs_iin_thermal = val;
 		}
+
 		break;
 	case DIRECT_CHARGE_SYSFS_SET_RESISTANCE_THRESHOLD:
 		if ((strict_strtol(buf, 10, &val) < 0) || (val < 0) || (val > MAX_RESISTANCE))
@@ -501,6 +507,7 @@ static ssize_t direct_charge_sysfs_store(struct device *dev,
 		hwlog_info("set resistance threshold = %ld\n", val);
 		di->standard_cable_full_path_res_max = val;
 		di->full_path_res_max = val;
+		di->ctc_cable_full_path_res_max = val;
 		break;
 	case DIRECT_CHARGE_SYSFS_SET_CHARGETYPE_PRIORITY:
 		if ((strict_strtol(buf, 10, &val) < 0) || (val < 0) || (val > MAX_RESISTANCE))
@@ -631,7 +638,6 @@ static int direct_charge_sc_probe(struct platform_device	*pdev)
 	direct_charge_get_g_cable_detect_ops(&g_cable_detect_ops);
 	di->scp_ops = g_scp_ops;
 	di->scp_ps_ops = g_scp_ps_ops;
-	di->vbat_ovp_enable_charger = 1;
 	di->ls_ops = g_sc_ops;
 	di->bi_ops = g_bi_sc_ops;
 	di->direct_charge_cable_detect = g_cable_detect_ops;
@@ -642,6 +648,7 @@ static int direct_charge_sc_probe(struct platform_device	*pdev)
 	di->direct_charge_succ_flag = DIRECT_CHARGE_ERROR_ADAPTOR_DETECT;
 	di->scp_stop_charging_complete_flag = 1;
 	di->dc_err_report_flag = FALSE;
+	di->last_basp_level = BASP_PARA_LEVEL;
 
 	if (INVALID == is_direct_charge_ops_valid(di))
 	{
@@ -686,7 +693,7 @@ static int direct_charge_sc_probe(struct platform_device	*pdev)
 		if (ret)
 		{
 			hwlog_err("create link to direct_charger_sc fail.\n");
-			goto fail_0;
+			goto free_sysfs_group;
 		}
 	}
 	g_di = di;
@@ -731,6 +738,7 @@ static int direct_charge_sc_probe(struct platform_device	*pdev)
 
 free_sysfs_group:
 	direct_charge_sysfs_remove_group(di);
+	wake_lock_destroy(&di->direct_charge_lock);
 fail_0:
 	devm_kfree(&pdev->dev, di);
 	di = NULL;
@@ -752,6 +760,7 @@ static int direct_charge_sc_remove(struct platform_device *pdev)
 		hwlog_err("[%s]di is NULL!\n", __func__);
 		return -ENODEV;
 	}
+	wake_lock_destroy(&di->direct_charge_lock);
 
 	return 0;
 }

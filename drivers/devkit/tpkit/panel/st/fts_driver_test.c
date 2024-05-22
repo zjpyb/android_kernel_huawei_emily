@@ -90,7 +90,7 @@ u32 functionToTest[MAX_PARAMS];
 int numberParam = 0;
 
 static ssize_t stm_driver_test_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count) {
-	int n;
+	int n = 0;
 	char *p = (char *) buf;
 
 	memset(functionToTest, 0, MAX_PARAMS * sizeof (u32));
@@ -110,24 +110,28 @@ static ssize_t stm_driver_test_store(struct device *dev, struct device_attribute
 
 static ssize_t stm_driver_test_show(struct device *dev, struct device_attribute *attr, char *buf) {
 	char buff[CMD_STR_LEN] = {0};
-	int res = -1, j, count;
-	int size = 6 * 2;
-	int temp, i, byteToRead;
+	int res = -1;
+	int j = 0;
+	int count = 0;
+	int size = BUFFSIZE_INIT;
+	int temp = 0;
+	int i = 0;
+	int byteToRead = 0;
 	u8* readData = NULL;
 	u8 *all_strbuff = NULL;
 	u8 *cmd = NULL;
 
-	MutualSenseFrame frameMS;
-	SelfSenseFrame frameSS;
+	MutualSenseFrame frameMS = {0};
+	SelfSenseFrame frameSS = {0};
 
-	DataHeader dataHead;
-	MutualSenseData compData;
-	SelfSenseData comData;
-	GeneralData gnData;
+	DataHeader dataHead = {0};
+	MutualSenseData compData = {0};
+	SelfSenseData comData = {0};
+	GeneralData gnData = {0};
 
-	u16 address;
-	u16 fw_version;
-	u16 config_id;
+	u16 address = 0;
+	u16 fw_version = 0;
+	u16 config_id = 0;
 
 	Firmware fw;
 

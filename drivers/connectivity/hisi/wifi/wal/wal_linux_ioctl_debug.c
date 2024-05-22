@@ -8058,7 +8058,7 @@ OAL_STATIC oal_uint32  wal_hipriv_sta_psm_param(oal_net_device_stru *pst_cfg_net
 
 
 
-OAL_STATIC oal_uint32  wal_hipriv_sta_pm_on(oal_net_device_stru *pst_cfg_net_dev, oal_int8 *pc_param)
+oal_uint32  wal_hipriv_sta_pm_on(oal_net_device_stru *pst_cfg_net_dev, oal_int8 *pc_param)
 {
     wal_msg_write_stru                  st_write_msg;
     oal_uint32                          ul_off_set;
@@ -8087,7 +8087,7 @@ OAL_STATIC oal_uint32  wal_hipriv_sta_pm_on(oal_net_device_stru *pst_cfg_net_dev
     pst_sta_pm_open = (mac_cfg_ps_open_stru *)(st_write_msg.auc_value);
     /* MAC_STA_PM_SWITCH_ON / MAC_STA_PM_SWITCH_OFF */
     pst_sta_pm_open->uc_pm_enable      = uc_sta_pm_open;
-    pst_sta_pm_open->uc_pm_ctrl_type   = MAC_STA_PM_CTRL_TYPE_HOST;
+    pst_sta_pm_open->uc_pm_ctrl_type   = MAC_STA_PM_CTRL_TYPE_CMD;
 
     l_ret = wal_send_cfg_event(pst_cfg_net_dev,
                                WAL_MSG_TYPE_WRITE,

@@ -17,6 +17,10 @@
 #include "xattr.h"
 #include <trace/events/f2fs.h>
 
+#ifdef CONFIG_HWAA
+#include <huawei_platform/hwaa/hwaa_fs_hooks.h>
+#endif
+
 static unsigned long dir_blocks(struct inode *inode)
 {
 	return ((unsigned long long) (i_size_read(inode) + PAGE_SIZE - 1))
@@ -359,7 +363,8 @@ static int make_empty_dir(struct inode *inode,
 	return 0;
 }
 
-struct page *init_inode_metadata(struct inode *inode, struct inode *dir,
+struct page *init_inode_metadata(struct inode *inode, struct dentry *dentry,
+			struct inode *dir,
 			const struct qstr *new_name, const struct qstr *orig_name,
 			struct page *dpage)
 {
@@ -394,6 +399,13 @@ struct page *init_inode_metadata(struct inode *inode, struct inode *dir,
 			err = fscrypt_inherit_context(dir, inode, page, false);
 			if (err)
 				goto put_error;
+#ifdef CONFIG_HWAA
+			err = hwaa_inherit_context(dir, inode, dentry, page, false);
+			if (err) {
+				err = -EINVAL;
+				goto put_error;
+			}
+#endif
 
 #if DEFINE_F2FS_FS_SDP_ENCRYPTION
 			err = f2fs_sdp_crypt_inherit(dir, inode, dpage, page);
@@ -504,7 +516,7 @@ void f2fs_update_dentry(nid_t ino, umode_t mode, struct f2fs_dentry_ptr *d,
 }
 
 int f2fs_add_regular_entry(struct inode *dir, const struct qstr *new_name,
-				const struct qstr *orig_name,
+				const struct qstr *orig_name, struct dentry *dentry,
 				struct inode *inode, nid_t ino, umode_t mode)
 {
 	unsigned int bit_pos;
@@ -572,7 +584,7 @@ add_dentry:
 
 	if (inode) {
 		down_write(&F2FS_I(inode)->i_sem);
-		page = init_inode_metadata(inode, dir, new_name,
+		page = init_inode_metadata(inode, dentry, dir, new_name,
 						orig_name, NULL);
 		if (IS_ERR(page)) {
 			err = PTR_ERR(page);
@@ -602,6 +614,7 @@ fail:
 }
 
 int __f2fs_do_add_link(struct inode *dir, struct fscrypt_name *fname,
+				struct dentry *dentry,
 				struct inode *inode, nid_t ino, umode_t mode)
 {
 	struct qstr new_name;
@@ -612,10 +625,10 @@ int __f2fs_do_add_link(struct inode *dir, struct fscrypt_name *fname,
 
 	if (f2fs_has_inline_dentry(dir))
 		err = f2fs_add_inline_entry(dir, &new_name, fname->usr_fname,
-							inode, ino, mode);
+						dentry, inode, ino, mode);
 	if (err == -EAGAIN)
 		err = f2fs_add_regular_entry(dir, &new_name, fname->usr_fname,
-							inode, ino, mode);
+						dentry, inode, ino, mode);
 
 	f2fs_update_time(F2FS_I_SB(dir), REQ_TIME);
 	return err;
@@ -625,7 +638,8 @@ int __f2fs_do_add_link(struct inode *dir, struct fscrypt_name *fname,
  * Caller should grab and release a rwsem by calling f2fs_lock_op() and
  * f2fs_unlock_op().
  */
-int __f2fs_add_link(struct inode *dir, const struct qstr *name,
+int __f2fs_add_link(struct inode *dir, struct dentry *dentry,
+				const struct qstr *name,
 				struct inode *inode, nid_t ino, umode_t mode)
 {
 	struct fscrypt_name fname;
@@ -635,19 +649,19 @@ int __f2fs_add_link(struct inode *dir, const struct qstr *name,
 	if (err)
 		return err;
 
-	err = __f2fs_do_add_link(dir, &fname, inode, ino, mode);
+	err = __f2fs_do_add_link(dir, &fname, dentry, inode, ino, mode);
 
 	fscrypt_free_filename(&fname);
 	return err;
 }
 
-int f2fs_do_tmpfile(struct inode *inode, struct inode *dir)
+int f2fs_do_tmpfile(struct inode *inode, struct dentry *dentry, struct inode *dir)
 {
 	struct page *page;
 	int err = 0;
 
 	down_write(&F2FS_I(inode)->i_sem);
-	page = init_inode_metadata(inode, dir, NULL, NULL, NULL);
+	page = init_inode_metadata(inode, dentry, dir, NULL, NULL, NULL);
 	if (IS_ERR(page)) {
 		err = PTR_ERR(page);
 		goto fail;
@@ -786,6 +800,7 @@ int f2fs_fill_dentries(struct dir_context *ctx, struct f2fs_dentry_ptr *d,
 	unsigned int bit_pos;
 	struct f2fs_dir_entry *de = NULL;
 	struct fscrypt_str de_name = FSTR_INIT(NULL, 0);
+	struct f2fs_sb_info *sbi = F2FS_I_SB(d->inode);
 
 	bit_pos = ((unsigned long)ctx->pos % d->max);
 
@@ -805,6 +820,17 @@ int f2fs_fill_dentries(struct dir_context *ctx, struct f2fs_dentry_ptr *d,
 
 		de_name.name = d->filename[bit_pos];
 		de_name.len = le16_to_cpu(de->name_len);
+
+		/* check memory boundary before moving forward */
+		bit_pos += GET_DENTRY_SLOTS(le16_to_cpu(de->name_len));
+		if (unlikely(bit_pos > d->max ||
+				le16_to_cpu(de->name_len) > F2FS_NAME_LEN)) {
+			f2fs_msg(sbi->sb, KERN_WARNING,
+				"%s: corrupted namelen=%d, run fsck to fix.",
+				__func__, le16_to_cpu(de->name_len));
+			set_sbi_flag(sbi, SBI_NEED_FSCK);
+			return -EINVAL;
+		}
 
 		if (f2fs_encrypted_inode(d->inode)) {
 			int save_len = fstr->len;
@@ -827,7 +853,6 @@ int f2fs_fill_dentries(struct dir_context *ctx, struct f2fs_dentry_ptr *d,
 		if (F2FS_I_SB(d->inode)->readdir_ra == 1)
 			ra_node_page(F2FS_I_SB(d->inode), le32_to_cpu(de->ino));
 
-		bit_pos += GET_DENTRY_SLOTS(le16_to_cpu(de->name_len));
 		ctx->pos = start_pos + bit_pos;
 	}
 	return 0;

@@ -97,6 +97,9 @@ enum FW_uptate_state
 #define PAGES_TO_SERVICE (10)
 #define PAGE_SELECT_LEN (2)
 
+#define REG_REPORT_FACE_DCT_ONLY 0x001A
+#define BIT_REPORT_FACE_DCT_ONLY (1 << 1)
+
 #define SYNAPTICS_RMI4_F01 (0x01)
 #define SYNAPTICS_RMI4_F11 (0x11)
 #define SYNAPTICS_RMI4_F12 (0x12)

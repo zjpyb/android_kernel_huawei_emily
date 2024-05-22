@@ -12,7 +12,7 @@
 #define HIFI_USB_SHARE_BUFFER_ADDR HIFI_USB_DRIVER_SHARE_MEM_ADDR
 #define HIFI_USB_SHARE_BUFFER_LEN HIFI_USB_DRIVER_SHARE_MEM_SIZE
 
-void free_urb_buf(struct urb_buffers *urb_bufs, void *addr)
+void free_urb_buf(struct urb_buffers *urb_bufs, const void *addr)
 { /*lint !e49 !e601 */
 	unsigned int index;
 

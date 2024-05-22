@@ -20,4 +20,9 @@ config USB_ANALOG_HS_FSA4476
 	default n
 	---help---
 	 Say Y here if you want to support USB ANALOG headset with FSA4476 switch
+config USB_ANALOG_HS_MOS_SWITCH
+	tristate "Support for USB ANALOG headset with MOS switch"
+	default n
+	---help---
+	 Say Y here if you want to support USB ANALOG headset with MOS switch
 endif #USB_ANALOG_HS_MODULE

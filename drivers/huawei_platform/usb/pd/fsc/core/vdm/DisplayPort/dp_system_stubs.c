@@ -7,10 +7,9 @@
 #include "../../core.h"
 #include <huawei_platform/usb/hw_pd_dev.h>
 
-
+#ifdef CONFIG_CONTEXTHUB_PD
 static TCPC_MUX_CTRL_TYPE g_mux_type = TCPC_DP;
 
-#ifdef CONFIG_CONTEXTHUB_PD
 extern int support_dp;
 extern void dp_aux_switch_op(uint32_t value);
 extern void dp_aux_uart_switch_enable(void);
@@ -30,11 +29,13 @@ void informStatus(DisplayPortStatus_t stat) //response  for DP status update req
 {
 	/* TODO: 'system' should implement this */
 	/* this function is called to inform the 'system' of the DP status of the port partner */
-    DpPpStatus.word = stat.word;
+#ifdef CONFIG_CONTEXTHUB_PD
     int ret = 0;
+    struct pd_dpm_combphy_event event = {0};
+#endif
+    DpPpStatus.word = stat.word;
 
 #ifdef CONFIG_CONTEXTHUB_PD
-    struct pd_dpm_combphy_event event = {0};
     if (!support_dp) {
         return;
     }
@@ -76,8 +77,15 @@ void informStatus(DisplayPortStatus_t stat) //response  for DP status update req
 
 void informConfigResult (FSC_BOOL success)
 {
-	/* TODO: 'system' should implement this */
-	/* this function is called when a config message is either ACKd or NAKd by the other side */
+    /* TODO: 'system' should implement this */
+    /* this function is called when a config message is either ACKd or NAKd by the other side */
+#ifdef CONFIG_CONTEXTHUB_PD
+    FSC_U8 fsc_polarity = 0;
+    FSC_U32 pin_assignment = 0;
+    int ret  = 0;
+    struct pd_dpm_combphy_event event;
+#endif
+
     if (success == FALSE){
         pr_info("\n %s,%d\n",__func__, __LINE__);
         return;
@@ -91,10 +99,6 @@ void informConfigResult (FSC_BOOL success)
         if (!support_dp) {
             return;
         }
-        FSC_U8 fsc_polarity = 0;
-        FSC_U32 pin_assignment = 0;
-        int ret  = 0;
-
         fsc_polarity = core_get_cc_orientation();
         dp_aux_switch_op(fsc_polarity);
         /* add aux uart switch*/
@@ -116,7 +120,6 @@ void informConfigResult (FSC_BOOL success)
             g_mux_type = TCPC_USB31_AND_DP_2LINE;
         }
 
-        struct pd_dpm_combphy_event event;
         event.dev_type = TCA_ID_RISE_EVENT;
         event.irq_type = TCA_IRQ_HPD_OUT;
         event.mode_type = TCPC_NC;

@@ -48,7 +48,10 @@ void tee_fn_dump(u32 modid,
 
 int tee_rdr_register_core(void)
 {
-	struct rdr_module_ops_pub s_module_ops = {0};
+	struct rdr_module_ops_pub s_module_ops = {
+		.ops_dump = NULL,
+		.ops_reset = NULL
+	};
 	int ret = -1;
 
 	s_module_ops.ops_dump = tee_fn_dump;
@@ -119,7 +122,7 @@ int TC_NS_register_rdr_mem(void)
 	int ret = 0;
 	u64 rdr_mem_addr;
 	unsigned int rdr_mem_len;
-	struct mb_cmd_pack *mb_pack;
+	struct mb_cmd_pack *mb_pack = NULL;
 
 	ret = tee_rdr_register_core();
 	if (ret) {
@@ -132,7 +135,7 @@ int TC_NS_register_rdr_mem(void)
 	rdr_mem_len = current_rdr_info.log_len;
 
 	mb_pack = mailbox_alloc_cmd_pack();
-	if (!mb_pack) {
+	if (NULL == mb_pack) {
 		current_rdr_info.log_addr = 0x0;
 		current_rdr_info.log_len = 0;
 		return -ENOMEM;
@@ -151,7 +154,7 @@ int TC_NS_register_rdr_mem(void)
 	smc_cmd.operation_phys = virt_to_phys(&mb_pack->operation);
 	smc_cmd.operation_h_phys = virt_to_phys(&mb_pack->operation) >> 32; /*lint !e572*/
 
-	ret = TC_NS_SMC(&smc_cmd, 0);
+	ret = (int)TC_NS_SMC(&smc_cmd, 0);
 	mailbox_free(mb_pack);
 	if (ret) {
 	    tloge("Send rdr mem info failed.\n");

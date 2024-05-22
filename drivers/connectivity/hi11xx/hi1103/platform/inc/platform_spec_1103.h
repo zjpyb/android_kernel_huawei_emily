@@ -186,17 +186,29 @@ extern "C" {
 #define WLAN_MEM_SHARED_TX_DSCR_CNT2        0
 #endif
 
+#define TOTAL_WLAN_MEM_SHARED_DSCR_SIZE     ((WLAN_MEM_SHARED_RX_DSCR_SIZE + OAL_MEM_INFO_SIZE + OAL_DOG_TAG_SIZE)*WLAN_MEM_SHARED_RX_DSCR_CNT \
+                                            + (WLAN_MEM_SHARED_TX_DSCR_SIZE1 + OAL_MEM_INFO_SIZE + OAL_DOG_TAG_SIZE)*WLAN_MEM_SHARED_TX_DSCR_CNT1 \
+                                            + (WLAN_MEM_SHARED_TX_DSCR_SIZE2 + OAL_MEM_INFO_SIZE + OAL_DOG_TAG_SIZE)*WLAN_MEM_SHARED_TX_DSCR_CNT2)
+
 /*****************************************************************************
   2.4.3 共享管理帧内存池配置信息
 *****************************************************************************/
 #define WLAN_MEM_SHARED_MGMT_PKT_SIZE1      800
-#define WLAN_MEM_SHARED_MGMT_PKT_CNT1       0
+#if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
+#define WLAN_MEM_SHARED_MGMT_PKT_CNT1       0  /* 此池子在host使用不到 */
+#else
+#define WLAN_MEM_SHARED_MGMT_PKT_CNT1       1  /* 此池子在 UT 中使用 */
+#endif
+
+#define TOTAL_WLAN_MEM_SHARED_MGMT_PKT_SIZE ((WLAN_MEM_SHARED_MGMT_PKT_SIZE1 + OAL_MEM_INFO_SIZE + OAL_DOG_TAG_SIZE)*WLAN_MEM_SHARED_MGMT_PKT_CNT1)
 
 /*****************************************************************************
   2.4.4 共享数据帧内存池配置信息
 *****************************************************************************/
 #define WLAN_MEM_SHARED_DATA_PKT_SIZE       44              /* 80211mac帧头大小 */
 #define WLAN_MEM_SHARED_DATA_PKT_CNT        200             /* skb(接收的帧头个数) + 发送描述符个数(发送的帧头个数) 768 */
+
+#define TOTAL_WLAN_MEM_SHARED_DATA_PKT_SIZE ((WLAN_MEM_SHARED_DATA_PKT_SIZE + OAL_MEM_INFO_SIZE + OAL_DOG_TAG_SIZE)*WLAN_MEM_SHARED_DATA_PKT_CNT)
 
 /*****************************************************************************
   2.4.5 本地内存池配置信息

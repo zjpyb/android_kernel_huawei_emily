@@ -91,6 +91,11 @@ extern "C" {
 #include "hisi_customize_wifi.h"
 #endif /* #ifdef _PRE_PLAT_FEATURE_CUSTOMIZE */
 
+#ifdef _PRE_WLAN_PKT_TIME_STAT
+#include  <hwnet/ipv4/wifi_delayst.h>
+#include "mac_vap.h"
+#endif
+
 #undef  THIS_FILE_ID
 #define THIS_FILE_ID OAM_FILE_ID_HMAC_MAIN_C
 
@@ -1055,24 +1060,90 @@ oal_void hmac_rxdata_sched_etc(oal_void)
 #endif
     return;
 }
+
+oal_void hmac_rxdata_update_napi_weight_etc(oal_netdev_priv_stru  * pst_netdev_priv)
+{
+#if defined(CONFIG_ARCH_HISI)
+
+    oal_uint32            ul_now;
+    oal_uint8             uc_new_napi_weight; 
+
+    /* 根据pps水线调整napi weight,调整周期1s */
+    ul_now = (oal_uint32)OAL_TIME_GET_STAMP_MS();
+    if (OAL_TIME_GET_RUNTIME(pst_netdev_priv->ul_period_start, ul_now) > NAPI_STAT_PERIOD)
+    {
+        pst_netdev_priv->ul_period_start = ul_now;
+        if (pst_netdev_priv->ul_period_pkts < NAPI_WATER_LINE_LEV1)
+        {
+            uc_new_napi_weight = NAPI_POLL_WEIGHT_LEV1;
+        }
+        else if (pst_netdev_priv->ul_period_pkts < NAPI_WATER_LINE_LEV2)
+        {
+            uc_new_napi_weight = NAPI_POLL_WEIGHT_LEV2;
+        }
+        else if (pst_netdev_priv->ul_period_pkts < NAPI_WATER_LINE_LEV3)
+        {
+            uc_new_napi_weight = NAPI_POLL_WEIGHT_LEV3;
+        }
+        else
+        {
+            uc_new_napi_weight = NAPI_POLL_WEIGHT_MAX;
+        }
+        pst_netdev_priv->ul_period_pkts  = 0;
+        if (uc_new_napi_weight != pst_netdev_priv->uc_napi_weight)
+        {
+            pst_netdev_priv->uc_napi_weight = uc_new_napi_weight;
+            pst_netdev_priv->st_napi.weight = uc_new_napi_weight;
+            OAM_WARNING_LOG1(0, OAM_SF_CFG, "{hmac_rxdata_update_napi_weight_etc::new_napi_weight [%d]", uc_new_napi_weight);
+        }
+    }
+
+#endif
+}
+
 oal_void hmac_rxdata_netbuf_enqueue_etc(oal_netbuf_stru  *pst_netbuf)
 {
-    if(1000 < oal_netbuf_list_len(&g_st_rxdata_thread_etc.st_rxdata_netbuf_head))
+    oal_netdev_priv_stru *pst_netdev_priv;
+
+    pst_netdev_priv = (oal_netdev_priv_stru *)OAL_NET_DEV_WIRELESS_PRIV(pst_netbuf->dev);
+    if (pst_netdev_priv->ul_queue_len_max < oal_netbuf_list_len(&pst_netdev_priv->st_rx_netbuf_queue))
     {
         oal_netbuf_free(pst_netbuf);
-        g_st_rxdata_thread_etc.ul_pkt_loss_cnt++;
+        //TBD stats for netdev
         return;
     }
 
-    oal_spin_lock(&g_st_rxdata_thread_etc.st_lock);
-    oal_netbuf_list_tail_nolock(&g_st_rxdata_thread_etc.st_rxdata_netbuf_head, pst_netbuf);
-    oal_spin_unlock(&g_st_rxdata_thread_etc.st_lock);
+    oal_netbuf_list_tail(&pst_netdev_priv->st_rx_netbuf_queue, pst_netbuf);
+
+    pst_netdev_priv->ul_period_pkts++;
+
+#if defined(CONFIG_ARCH_HISI)
+#ifdef CONFIG_NR_CPUS
+#if CONFIG_NR_CPUS > OAL_BUS_HPCPU_NUM
+    if (NAPI_POLL_WEIGHT_MAX == (oal_netbuf_list_len(&pst_netdev_priv->st_rx_netbuf_queue)) &&
+        (OAL_TRUE == g_st_rxdata_thread_etc.en_rxthread_enable) &&
+        (WLAN_IRQ_AFFINITY_IDLE_CPU == g_st_rxdata_thread_etc.uc_allowed_cpus))
+    {
+        struct cpumask        st_cpus;
+        /* 使用napi接口后,如果队列中缓存的报文太多，造成cpu1达到100%,需要尽快切到大核 */
+        hisi_get_fast_cpus(&st_cpus);
+        cpumask_clear_cpu(OAL_BUS_HPCPU_NUM, &st_cpus);
+        set_cpus_allowed_ptr( g_st_rxdata_thread_etc.pst_rxdata_thread , &st_cpus);
+        g_st_rxdata_thread_etc.uc_allowed_cpus = WLAN_IRQ_AFFINITY_BUSY_CPU;
+    }
+#endif
+#endif
+#endif
 }
 
 OAL_STATIC oal_int32 hmac_rxdata_thread(oal_void* p_data)
 {
     //oal_int32           l_ret = 20000;
-    oal_netbuf_stru    *pst_netbuf = OAL_PTR_NULL;
+    oal_netbuf_stru      *pst_netbuf = OAL_PTR_NULL;
+    mac_device_stru      *pst_mac_device;
+    oal_uint8             uc_vap_idx;
+    hmac_vap_stru        *pst_hmac_vap;
+    oal_netdev_priv_stru *pst_netdev_priv;
 #if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
     struct sched_param       param;
 
@@ -1093,18 +1164,100 @@ OAL_STATIC oal_int32 hmac_rxdata_thread(oal_void* p_data)
             break;
         }
 
-        //OAL_IO_PRINT("[rxd]timestamp:%llu , netbuf_num:%d.", oal_cpu_clock(), oal_netbuf_list_len(&g_st_rxdata_netbuf_head));
-        oal_spin_lock(&g_st_rxdata_thread_etc.st_lock);
-        pst_netbuf = oal_netbuf_delist_nolock(&g_st_rxdata_thread_etc.st_rxdata_netbuf_head);
-        oal_spin_unlock(&g_st_rxdata_thread_etc.st_lock);
-        if(pst_netbuf)
+        pst_mac_device = mac_res_get_dev_etc(0);
+        for (uc_vap_idx = 0; uc_vap_idx < pst_mac_device->uc_vap_num; uc_vap_idx++)
         {
-            oal_notice_netif_rx(pst_netbuf);
-            oal_netif_rx_ni(pst_netbuf);
+            pst_hmac_vap = mac_res_get_hmac_vap(pst_mac_device->auc_vap_id[uc_vap_idx]);
+            if (OAL_UNLIKELY(OAL_PTR_NULL == pst_hmac_vap))
+            {
+                continue;
+            }
+
+            if (OAL_PTR_NULL == pst_hmac_vap->pst_net_device)
+            {
+                continue;
+            }
+
+            pst_netdev_priv = (oal_netdev_priv_stru *)OAL_NET_DEV_WIRELESS_PRIV(pst_hmac_vap->pst_net_device);
+
+            if (0 == oal_netbuf_list_len(&pst_netdev_priv->st_rx_netbuf_queue))
+            {
+                continue;
+            }
+
+            if (OAL_TRUE == pst_netdev_priv->uc_napi_enable)
+            {
+                hmac_rxdata_update_napi_weight_etc(pst_netdev_priv);
+                oal_napi_schedule(&pst_netdev_priv->st_napi);
+            }
+            else
+            {
+                pst_netbuf = oal_netbuf_delist(&pst_netdev_priv->st_rx_netbuf_queue);
+                if(pst_netbuf)
+                {
+                #ifdef _PRE_WLAN_PKT_TIME_STAT
+                    if (DELAY_STATISTIC_SWITCH_ON && IS_NEED_RECORD_DELAY(pst_netbuf,TP_SKB_HMAC_RX))
+                    {
+                        skbprobe_record_time(pst_netbuf, TP_SKB_HMAC_UPLOAD);
+                    }
+                #endif
+
+                    oal_notice_netif_rx(pst_netbuf);
+                    oal_netif_rx_ni(pst_netbuf);
+                }
+            }
         }
     }
     return OAL_SUCC;
 }
+
+
+oal_int32 hmac_rxdata_polling(struct napi_struct *pst_napi, oal_int32 l_weight)
+{
+    oal_netbuf_stru         *pst_netbuf = OAL_PTR_NULL;
+    oal_netdev_priv_stru    *pst_netdev_priv;
+    oal_int32                l_rx_num = 0;
+    oal_netbuf_head_stru    *netbuf_hdr;
+
+    pst_netdev_priv = OAL_CONTAINER_OF(pst_napi, oal_netdev_priv_stru, st_napi);
+    netbuf_hdr = &pst_netdev_priv->st_rx_netbuf_queue;
+
+    while (l_rx_num < l_weight)
+    {
+        pst_netbuf = oal_netbuf_delist(&pst_netdev_priv->st_rx_netbuf_queue);
+
+        if (OAL_PTR_NULL == pst_netbuf)
+        {
+            break;
+        }
+
+#ifdef _PRE_WLAN_PKT_TIME_STAT
+        if (DELAY_STATISTIC_SWITCH_ON && IS_NEED_RECORD_DELAY(pst_netbuf,TP_SKB_HMAC_RX))
+        {
+            skbprobe_record_time(pst_netbuf, TP_SKB_HMAC_UPLOAD);
+        }
+#endif
+
+        if (OAL_TRUE == pst_netdev_priv->uc_gro_enable)
+        {
+            oal_napi_gro_receive(pst_napi, pst_netbuf);
+        }
+        else
+        {
+            oal_netif_receive_skb(pst_netbuf);
+        }
+
+        l_rx_num++;
+    }
+
+    if (l_rx_num < l_weight)
+    {
+        oal_napi_complete(pst_napi);
+    }
+
+    return l_rx_num;
+}
+
 
 OAL_STATIC oal_uint32 hmac_hisi_thread_init(oal_void)
 {
@@ -1135,6 +1288,7 @@ OAL_STATIC oal_uint32 hmac_hisi_thread_init(oal_void)
     oal_spin_lock_init(&g_st_rxdata_thread_etc.st_lock);
     g_st_rxdata_thread_etc.en_rxthread_enable = OAL_TRUE;
     g_st_rxdata_thread_etc.ul_pkt_loss_cnt    = 0;
+    g_st_rxdata_thread_etc.uc_allowed_cpus    = 0;
 
     g_st_rxdata_thread_etc.pst_rxdata_thread = oal_thread_create_etc(hmac_rxdata_thread,
                                             NULL,
@@ -1142,7 +1296,8 @@ OAL_STATIC oal_uint32 hmac_hisi_thread_init(oal_void)
                                             "hisi_rxdata",
                                             SCHED_FIFO,
                                             98,
-                                            1);
+                                            -1);
+
 #ifndef WIN32
     if (OAL_PTR_NULL == g_st_rxdata_thread_etc.pst_rxdata_thread)
     {

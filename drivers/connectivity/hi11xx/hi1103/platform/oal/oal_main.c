@@ -384,7 +384,7 @@ oal_uint8 oal_board_get_service_vap_start_id(oal_void)
     return (oal_uint8)(WLAN_CHIP_MAX_NUM_PER_BOARD * uc_device_num_per_chip);
 }
 
-#if defined(_PRE_PRODUCT_ID_HI110X_HOST)
+#if defined(_PRE_PRODUCT_ID_HI110X_HOST) && defined(HAVE_HISI_NFC)
 #ifndef WIN32
 oal_void hi_wlan_power_off_etc(void)
 {

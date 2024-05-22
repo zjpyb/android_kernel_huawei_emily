@@ -9,16 +9,23 @@
 
 #define BLK_PAYLOAD_NUM_OFFSET	6
 #define BLK_PAYLOAD_NUM		0x03
+#define DIMMING_ENABLE		1
+#define DIMMING_DISABLE		0
 
+#define BACKLIGHT_PRINT_TIMES   10
+static int g_backlight_count = BACKLIGHT_PRINT_TIMES;
+
+extern bool enable_PT_test;
 extern int is_device_reboot;
 const char *default_panel_name;
 volatile int lcdkit_brightness_ddic_info = 0;
+static int lcdkit_pan_dimming_state = DIMMING_ENABLE;
 extern void lp8556_reset(void);
 extern ssize_t lm36923_set_backlight_reg(uint32_t bl_level);
 extern ssize_t lm36923_chip_initial(void);
 extern ssize_t Is_lm36923_used(void);
 extern ssize_t lp8556_set_backlight_reg(uint32_t bl_level);
-
+extern bool runmode_is_factory(void);
 void level_to_reg_51_mode0(struct lcdkit_dsi_panel_cmds *bl_cmds, int i, int bl_level)
 {
 	if (lcdkit_info.panel_infos.bl_level_max < BL_LEVEL_MAX_10_BIT){
@@ -31,13 +38,16 @@ void level_to_reg_51_mode0(struct lcdkit_dsi_panel_cmds *bl_cmds, int i, int bl_
 		bl_cmds->cmds[i].payload[1] = (bl_level&0xf00)>>8;
 		bl_cmds->cmds[i].payload[2] = bl_level&0xff;
 	}
-	
 }
 
 void level_to_reg_51_mode1(struct lcdkit_dsi_panel_cmds *bl_cmds, int i, int bl_level)
 {
-	bl_cmds->cmds[i].payload[1] = (bl_level & 0xff00)>>8;
-	bl_cmds->cmds[i].payload[2] = bl_level & 0x00ff;
+	if (lcdkit_info.panel_infos.bl_level_max < BL_LEVEL_MAX_8_BIT){
+                bl_cmds->cmds[i].payload[1] = bl_level;
+        } else {
+		bl_cmds->cmds[i].payload[1] = (bl_level & 0xff00)>>8;
+		bl_cmds->cmds[i].payload[2] = bl_level & 0x00ff;
+	}
 }
 
 void level_to_reg_90_mode0(struct lcdkit_dsi_panel_cmds *bl_cmds, int i, int bl_level)
@@ -79,8 +89,15 @@ void mdss_dsi_panel_bklt_dcs(void *pdata, int bl_level)
 	struct mdss_dsi_ctrl_pdata *ctrl_pdata = pdata;
 	static dcs_level_trans_func_t dcs_bklt_level_to_regvallue_func;
 
-	LCDKIT_INFO("mdss_dsi_panel_bklt_dcs: bl_level=%d,cmd_cnt=%d\n",bl_level,bl_cmds->cmd_cnt);
-
+	if((0 == bl_level)
+		&& (NULL !=lcdkit_info.panel_infos.dis_pandimming_bf_sleepin_flag)
+		&& (DIMMING_DISABLE != lcdkit_pan_dimming_state))
+	{
+		lcdkit_dsi_tx(pdata, &lcdkit_info.panel_infos.disable_pan_dimming_cmds);
+		lcdkit_pan_dimming_state = DIMMING_DISABLE;
+		LCDKIT_INFO("[backlight off]close dimming and cabc pwm func, bl_level=%d\n",bl_level);
+		return;
+	}
 
 	if (unlikely(dcs_bklt_level_to_regvallue_func == NULL)) {
 		if (lcdkit_info.panel_infos.lcd_bklt_dcs_reg == SET_CABC_PWM_CMD_51) {
@@ -90,7 +107,7 @@ void mdss_dsi_panel_bklt_dcs(void *pdata, int bl_level)
 			lcdkit_info.panel_infos.lcd_bklt_level_to_regvalue_mode = lcdkit_info.panel_infos.lcd_bklt_level_to_regvalue_mode >= REG90_MODE_NUM ? 0:lcdkit_info.panel_infos.lcd_bklt_level_to_regvalue_mode;
 			dcs_bklt_level_to_regvallue_func = level_to_90regvalue_func_arry[lcdkit_info.panel_infos.lcd_bklt_level_to_regvalue_mode];
 		} else {
-			dcs_bklt_level_to_regvallue_func = level_to_regvalue_default;	
+			dcs_bklt_level_to_regvallue_func = level_to_regvalue_default;
 		}
 	}
 	for (i = 0; i < bl_cmds->cmd_cnt; i++)
@@ -106,6 +123,24 @@ void mdss_dsi_panel_bklt_dcs(void *pdata, int bl_level)
 	}
 
 	lcdkit_dsi_tx(pdata, &lcdkit_info.panel_infos.backlight_cmds);
+
+	if (g_backlight_count)
+	{
+		LCDKIT_INFO("[backlight] Set backlight to %d. [backlight print sequence number: %d] \n",bl_level,BACKLIGHT_PRINT_TIMES-g_backlight_count+1);
+		g_backlight_count = (g_backlight_count > 0) ? (g_backlight_count - 1) : 0;
+	}
+
+	//LCDKIT_INFO("bl_level=%d,cmd_cnt=%d\n",bl_level,bl_cmds->cmd_cnt);
+
+	if ((0 != bl_level)
+		&& (DIMMING_DISABLE == lcdkit_pan_dimming_state)
+		&& (NULL !=lcdkit_info.panel_infos.dis_pandimming_bf_sleepin_flag))
+	{
+		lcdkit_dsi_tx(pdata, &lcdkit_info.panel_infos.enable_pan_dimming_cmds);
+		lcdkit_pan_dimming_state = DIMMING_ENABLE;
+		LCDKIT_INFO("[backlight on]open dimming and cabc pwm func\n");
+	}
+
 	return;
 }
 
@@ -399,6 +434,7 @@ int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
    	struct dsi_panel_cmds *post_on_cmds;
     struct lcdkit_dsi_panel_cmds *on_cmds;
 	struct mdss_dsi_ctrl_pdata *ctrl = NULL;
+	char* panel_name = NULL;
 
 	unsigned long timeout = jiffies;
 
@@ -407,6 +443,7 @@ int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
 		return -EINVAL;
 	}
 
+	g_backlight_count = BACKLIGHT_PRINT_TIMES;
 	pinfo = &pdata->panel_info;
 	ctrl = container_of(pdata, struct mdss_dsi_ctrl_pdata, panel_data);
 
@@ -418,6 +455,12 @@ int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
 	}
 
     LCDKIT_INFO("enter!");
+	panel_name = lcdkit_info.panel_infos.panel_name;
+	if(NULL != panel_name) {
+		LCDKIT_INFO("lcd name = %s.\n", panel_name);
+	} else {
+		LCDKIT_INFO("parse panel_name from dts failed\n");
+	}
 
 #ifdef CONFIG_HUAWEI_TS_KIT
     if (g_tskit_ic_type)
@@ -560,11 +603,14 @@ int mdss_dsi_panel_off(struct mdss_panel_data *pdata)
 
     }
 #endif
-
-	if (lcdkit_info.panel_infos.display_off_cmds.cmd_cnt)
+	if (lcdkit_info.panel_infos.pt_display_off_cmds.cmd_cnt && (enable_PT_test || g_tskit_pt_station_flag)) {
+		LCDKIT_INFO("PT display off cmds\n");
+		lcdkit_off_cmd(ctrl, &lcdkit_info.panel_infos.pt_display_off_cmds);
+	} else if (lcdkit_info.panel_infos.display_off_cmds.cmd_cnt)
 		lcdkit_off_cmd(ctrl, &lcdkit_info.panel_infos.display_off_cmds);
 
-	if (lcdkit_info.panel_infos.shutdown_sleep_support && is_device_reboot)
+	if (lcdkit_info.panel_infos.shutdown_sleep_support && is_device_reboot
+		&& lcdkit_info.panel_infos.shutdown_sleep_cmds.cmd_cnt)
 		lcdkit_off_cmd(ctrl, &lcdkit_info.panel_infos.shutdown_sleep_cmds);
 
 	if (ctrl->ds_registered && pinfo->is_pluggable) {
@@ -1021,6 +1067,9 @@ static int mdss_panel_parse_dt(struct device_node *np,
 
 	lcdkit_info.panel_infos.panel_down_reset
                 = of_property_read_bool(np, "hw,lcdkit-down-reset-enable");
+
+	lcdkit_info.panel_infos.rst_set_low_before_resume
+		= of_property_read_bool(np, "hw,lcdkit-lcd-reset-low-before-resume");
     #if 0
 	global_tp_pre_lcd_flag
                 = of_property_read_bool(np, "hw,lcdkit-tp-pre-lcd-enable");
@@ -1212,19 +1261,26 @@ int mdss_dsi_panel_init(struct device_node *node,
 	struct mdss_panel_info *pinfo;
 
 	if (!node || !ctrl_pdata) {
-		pr_err("%s: Invalid arguments\n", __func__);
+		LCDKIT_ERR("%s: Invalid arguments\n", __func__);
 		return -ENODEV;
 	}
 
 	pinfo = &ctrl_pdata->panel_data.panel_info;
 
-	pr_debug("%s:%d\n", __func__, __LINE__);
+	LCDKIT_DEBUG("%s:%d\n", __func__, __LINE__);
 
     lcdkit_init(node, ctrl_pdata);
 
+	if (runmode_is_factory())
+	{
+		pinfo->esd_check_enabled = false;
+		pinfo->dynamic_fps = false;
+		LCDKIT_INFO("%s:%d factory version closed ESD&FPS function\n", __func__, __LINE__);
+	}
+
     rc = lcdkit_app_info_set(pinfo);
 	if (rc) {
-		pr_err("%s:%d set panel app_info failed\n", __func__, __LINE__);
+		LCDKIT_ERR("%s:%d set panel app_info failed\n", __func__, __LINE__);
 		return rc;
 	}
 

@@ -148,6 +148,7 @@ struct hi6403_board_cfg {
 #ifdef CONFIG_RCV_TDD_SUPPORT
 	int rcv_tdd_gpio;
 #endif
+	bool wakeup_hisi_algo_support;
 };
 
 /* codec private data */
@@ -186,6 +187,8 @@ struct hi6403_platform_data {
 	int mainmicbias_val;
 #endif
 };
+
+static struct hi64xx_hs_cfg hi6403_hs_cfg = {0};
 
 struct snd_soc_codec *g_hi6403_codec = NULL;
 #define HI6403_IRQ_NUM (48)
@@ -577,7 +580,7 @@ int hi6403_s2_rx_power_event(struct snd_soc_dapm_widget *w,
 		struct snd_kcontrol *kcontrol, int event)
 {
 	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
-	BUG_ON(NULL == codec);
+	WARN_ON(NULL == codec);
 
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
@@ -600,7 +603,7 @@ int hi6403_s4_rx_power_event(struct snd_soc_dapm_widget *w,
 		struct snd_kcontrol *kcontrol, int event)
 {
 	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
-	BUG_ON(NULL == codec);
+	WARN_ON(NULL == codec);
 
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
@@ -628,10 +631,10 @@ int hi6403_mad_pll_power_event(struct snd_soc_dapm_widget *w,
 {
 	struct hi6403_platform_data *data = NULL;
 	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
-	BUG_ON(NULL == codec);
+	WARN_ON(NULL == codec);
 
 	data = snd_soc_codec_get_drvdata(codec);
-	BUG_ON(NULL == data);
+	WARN_ON(NULL == data);
 
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
@@ -648,12 +651,40 @@ int hi6403_mad_pll_power_event(struct snd_soc_dapm_widget *w,
 	return 0;
 }
 
+static void hi6403_u12_select_dspif(struct snd_soc_codec *codec)
+{
+	hi64xx_update_bits(codec, HI6403_SLIM_UP_EN2,
+		0x1 << HI6403_SLIMBUS_UP12_DATA_SEL,
+		0x1 << HI6403_SLIMBUS_UP12_DATA_SEL);
+}
+
+static void hi6403_u12_select_pga(struct snd_soc_codec *codec)
+{
+	hi64xx_update_bits(codec, HI6403_SLIM_UP_EN2,
+		0x1 << HI6403_SLIMBUS_UP12_DATA_SEL,
+		0x0);
+}
+
+static void hi6403_u56_select_dspif(struct snd_soc_codec *codec)
+{
+	hi64xx_update_bits(codec, HI6403_SLIM_UP_EN2,
+		0x1 << HI6403_SLIMBUS_UP56_DATA_SEL,
+		0x1 << HI6403_SLIMBUS_UP56_DATA_SEL);
+}
+
+static void hi6403_u56_select_pga(struct snd_soc_codec *codec)
+{
+	hi64xx_update_bits(codec, HI6403_SLIM_UP_EN2,
+		0x1 << HI6403_SLIMBUS_UP56_DATA_SEL,
+		0x0);
+}
+
 static void hi6403_request_dp_clk(struct snd_soc_codec *codec, bool enable)
 {
 	struct hi6403_platform_data *data = NULL;
-	BUG_ON(NULL == codec);
+	WARN_ON(NULL == codec);
 	data = snd_soc_codec_get_drvdata(codec);
-	BUG_ON(NULL == data);
+	WARN_ON(NULL == data);
 
 	mutex_lock(&data->impdet_dapm_mutex);
 	if (enable) {
@@ -682,9 +713,9 @@ static void hi6403_request_dp_clk(struct snd_soc_codec *codec, bool enable)
 static void hi6403_request_cp1(struct snd_soc_codec *codec, bool enable)
 {
 	struct hi6403_platform_data *data = NULL;
-	BUG_ON(NULL == codec);
+	WARN_ON(NULL == codec);
 	data = snd_soc_codec_get_drvdata(codec);
-	BUG_ON(NULL == data);
+	WARN_ON(NULL == data);
 
 	mutex_lock(&data->impdet_dapm_mutex);
 	if (enable) {
@@ -721,9 +752,9 @@ static void hi6403_request_cp1(struct snd_soc_codec *codec, bool enable)
 static void hi6403_request_cp2(struct snd_soc_codec *codec, bool enable)
 {
 	struct hi6403_platform_data *data = NULL;
-	BUG_ON(NULL == codec);
+	WARN_ON(NULL == codec);
 	data = snd_soc_codec_get_drvdata(codec);
-	BUG_ON(NULL == data);
+	WARN_ON(NULL == data);
 
 	mutex_lock(&data->impdet_dapm_mutex);
 	if (enable) {
@@ -757,7 +788,7 @@ int hi6403_dp_clk_power_event(struct snd_soc_dapm_widget *w,
 	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
 	pr_info("%s : power mode event: 0x%x\n", __FUNCTION__, event);
 
-	BUG_ON(NULL == codec);
+	WARN_ON(NULL == codec);
 
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
@@ -779,10 +810,10 @@ int hi6403_pll_power_event(struct snd_soc_dapm_widget *w,
 {
 	struct hi6403_platform_data *priv = NULL;
 	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
-	BUG_ON(NULL == codec);
+	WARN_ON(NULL == codec);
 
 	priv = snd_soc_codec_get_drvdata(codec);
-	BUG_ON(NULL == priv);
+	WARN_ON(NULL == priv);
 
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
@@ -837,10 +868,10 @@ int hi6403_ir_tx_power_event(struct snd_soc_dapm_widget *w,
 	struct hi6403_platform_data *priv = NULL;
 	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
 
-	BUG_ON(NULL == codec);
+	WARN_ON(NULL == codec);
 
 	priv = snd_soc_codec_get_drvdata(codec);
-	BUG_ON(NULL == priv);
+	WARN_ON(NULL == priv);
 
 	if (0 == priv->board_config.ir_gpio_id) {
 		dev_warn(codec->dev, "%s : can't get ir switch gpio, maybe not support audio ir transmit\n", __FUNCTION__);
@@ -883,7 +914,7 @@ int hi6403_adc1r_power_event(struct snd_soc_dapm_widget *w,
 {
 	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
 
-	BUG_ON(NULL == codec);
+	WARN_ON(NULL == codec);
 
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
@@ -911,7 +942,7 @@ int hi6403_adc1l_power_event(struct snd_soc_dapm_widget *w,
 {
 	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
 
-	BUG_ON(NULL == codec);
+	WARN_ON(NULL == codec);
 
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
@@ -939,7 +970,7 @@ int hi6403_adc0r_power_event(struct snd_soc_dapm_widget *w,
 {
 	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
 
-	BUG_ON(NULL == codec);
+	WARN_ON(NULL == codec);
 
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
@@ -967,7 +998,7 @@ int hi6403_adc0l_power_event(struct snd_soc_dapm_widget *w,
 {
 	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
 
-	BUG_ON(NULL == codec);
+	WARN_ON(NULL == codec);
 
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
@@ -1015,7 +1046,7 @@ int hi6403_cp1_power_event(struct snd_soc_dapm_widget *w,
 {
 	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
 
-	BUG_ON(NULL == codec);
+	WARN_ON(NULL == codec);
 
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
@@ -1037,7 +1068,7 @@ int hi6403_cp2_power_event(struct snd_soc_dapm_widget *w,
 {
 	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
 
-	BUG_ON(NULL == codec);
+	WARN_ON(NULL == codec);
 
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
@@ -1187,7 +1218,7 @@ static void hi6403_headphone_pop_on(struct snd_soc_codec *codec)
 {
 	struct hi6403_platform_data *priv = snd_soc_codec_get_drvdata(codec);
 
-	BUG_ON(NULL == priv);
+	WARN_ON(NULL == priv);
 	/* headphone dac vbias power on */
 	hi64xx_update_bits(codec, HI6403_ANALOG_REG2,
 			1<<HI6403_DAC_HP_VB_PB_BIT, 0);
@@ -1259,7 +1290,7 @@ static void hi6403_headphone_on(struct snd_soc_codec *codec)
 {
 	struct hi6403_platform_data *priv = snd_soc_codec_get_drvdata(codec);
 
-	BUG_ON(NULL == priv);
+	WARN_ON(NULL == priv);
 
 	priv->rcv_hp_classh_state |= hp_power_state;
 	set_classh_config(codec, priv->rcv_hp_classh_state);
@@ -1271,7 +1302,7 @@ static void hi6403_headphone_off(struct snd_soc_codec *codec)
 {
 	struct hi6403_platform_data *priv = snd_soc_codec_get_drvdata(codec);
 
-	BUG_ON(NULL == priv);
+	WARN_ON(NULL == priv);
 
 	hi6403_headphone_pop_off(codec);
 
@@ -1306,9 +1337,9 @@ int hi6403_headphonel_power_event(struct snd_soc_dapm_widget *w,
 {
 	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
 	struct hi6403_platform_data *data = NULL;
-	BUG_ON(NULL == codec);
+	WARN_ON(NULL == codec);
 	data = snd_soc_codec_get_drvdata(codec);
-	BUG_ON(NULL == data);
+	WARN_ON(NULL == data);
 
 	hi6403_headphone_power_param_pass(data, codec, &data->hsl_power_on, event);
 
@@ -1320,9 +1351,9 @@ int hi6403_headphoner_power_event(struct snd_soc_dapm_widget *w,
 {
 	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
 	struct hi6403_platform_data *data = NULL;
-	BUG_ON(NULL == codec);
+	WARN_ON(NULL == codec);
 	data = snd_soc_codec_get_drvdata(codec);
-	BUG_ON(NULL == data);
+	WARN_ON(NULL == data);
 
 	hi6403_headphone_power_param_pass(data, codec, &data->hsr_power_on, event);
 
@@ -1336,11 +1367,11 @@ int hi6403_earphone_power_event(struct snd_soc_dapm_widget *w,
 
 	struct hi6403_platform_data *priv = NULL;
 
-	BUG_ON(NULL == codec);
+	WARN_ON(NULL == codec);
 
 	priv = snd_soc_codec_get_drvdata(codec);
 
-	BUG_ON(NULL == priv);
+	WARN_ON(NULL == priv);
 
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
@@ -1378,7 +1409,7 @@ int hi6403_lineoutl_power_event(struct snd_soc_dapm_widget *w,
 {
 	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
 
-	BUG_ON(NULL == codec);
+	WARN_ON(NULL == codec);
 
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
@@ -1410,7 +1441,7 @@ int hi6403_lineoutr_power_event(struct snd_soc_dapm_widget *w,
 {
 	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
 
-	BUG_ON(NULL == codec);
+	WARN_ON(NULL == codec);
 
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
@@ -1495,7 +1526,7 @@ int hi6403_mad_power_event(struct snd_soc_dapm_widget *w,
 {
 	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
 
-	BUG_ON(NULL == codec);
+	WARN_ON(NULL == codec);
 
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
@@ -1531,7 +1562,7 @@ int hi6403_main_power_event(struct snd_soc_dapm_widget *w,
 {
 	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
 
-	BUG_ON(NULL == codec);
+	WARN_ON(NULL == codec);
 
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
@@ -1567,7 +1598,7 @@ int hi6403_aux_power_event(struct snd_soc_dapm_widget *w,
 {
 	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
 
-	BUG_ON(NULL == codec);
+	WARN_ON(NULL == codec);
 
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
@@ -1603,7 +1634,7 @@ int hi6403_lineinl_power_event(struct snd_soc_dapm_widget *w,
 {
 	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
 
-	BUG_ON(NULL == codec);
+	WARN_ON(NULL == codec);
 
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
@@ -1639,7 +1670,7 @@ int hi6403_lineinr_power_event(struct snd_soc_dapm_widget *w,
 {
 	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
 
-	BUG_ON(NULL == codec);
+	WARN_ON(NULL == codec);
 
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
@@ -1675,7 +1706,7 @@ int hi6403_dacl_flt_power_event(struct snd_soc_dapm_widget *w,
 {
 	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
 
-	BUG_ON(NULL == codec);
+	WARN_ON(NULL == codec);
 
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
@@ -1703,7 +1734,7 @@ int hi6403_dacr_flt_power_event(struct snd_soc_dapm_widget *w,
 {
 	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
 
-	BUG_ON(NULL == codec);
+	WARN_ON(NULL == codec);
 
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
@@ -1728,7 +1759,7 @@ int hi6403_dacl_power_event(struct snd_soc_dapm_widget *w,
 {
 	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
 
-	BUG_ON(NULL == codec);
+	WARN_ON(NULL == codec);
 
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
@@ -1764,7 +1795,7 @@ int hi6403_dacr_power_event(struct snd_soc_dapm_widget *w,
 {
 	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
 
-	BUG_ON(NULL == codec);
+	WARN_ON(NULL == codec);
 
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
@@ -1801,7 +1832,7 @@ int hi6403_dacls_power_event(struct snd_soc_dapm_widget *w,
 {
 	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
 
-	BUG_ON(NULL == codec);
+	WARN_ON(NULL == codec);
 
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
@@ -1837,7 +1868,7 @@ int hi6403_dacrs_power_event(struct snd_soc_dapm_widget *w,
 {
 	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
 
-	BUG_ON(NULL == codec);
+	WARN_ON(NULL == codec);
 
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
@@ -1869,7 +1900,7 @@ int hi6403_sidetone_power_event(struct snd_soc_dapm_widget *w,
 {
 	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
 
-	BUG_ON(NULL == codec);
+	WARN_ON(NULL == codec);
 
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
@@ -1894,10 +1925,12 @@ int hi6403_madswitch_power_event(struct snd_soc_dapm_widget *w,
 			struct snd_kcontrol *kcontrol, int event)
 {
 	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
-	BUG_ON(NULL == codec);
+	WARN_ON(NULL == codec);
 
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
+		hi6403_u12_select_dspif(codec);
+		hi6403_u56_select_dspif(codec);
 		/* mad src enable */
 		hi64xx_update_bits(codec, HI6403_S4_PORT_CLKEN_REG, 1<<HI6403_S1_MAD_SRC_CLKEN_BIT, 1<<HI6403_S1_MAD_SRC_CLKEN_BIT);
 		/* s1_o_dsp_if_din_sel->mad_buffer out */
@@ -1908,6 +1941,8 @@ int hi6403_madswitch_power_event(struct snd_soc_dapm_widget *w,
 		/* end for mad test */
 		break;
 	case SND_SOC_DAPM_POST_PMD:
+		hi6403_u12_select_pga(codec);
+		hi6403_u56_select_pga(codec);
 		/* s1_o_dsp_if_din_sel->mad_buffer out */
 		hi64xx_update_bits(codec, HI6403_SC_CODEC_MUX_SEL1_3, 0x3, 0x0);
 		/* mad src disable */
@@ -1926,23 +1961,19 @@ int hi6403_s2up_power_event(struct snd_soc_dapm_widget *w,
 {
 	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
 	struct hi6403_platform_data *priv = NULL;
-	BUG_ON(NULL == codec);
+	WARN_ON(NULL == codec);
 
 	priv = snd_soc_codec_get_drvdata(codec);
-	BUG_ON(NULL == priv);
+	WARN_ON(NULL == priv);
 
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
 		hi64xx_update_bits(codec, HI6403_S2_PORT_CLKEN_REG, 1<<HI6403_S2_OR_SRC_CLKEN_BIT, 1<<HI6403_S2_OR_SRC_CLKEN_BIT);
 		hi64xx_update_bits(codec, HI6403_S2_PORT_CLKEN_REG, 1<<HI6403_S2_OL_SRC_CLKEN_BIT, 1<<HI6403_S2_OL_SRC_CLKEN_BIT);
-		hi64xx_update_bits(codec, HI6403_S2_PORT_CLKEN_REG, 1<<HI6403_S2_IR_SRC_CLKEN_BIT, 1<<HI6403_S2_IR_SRC_CLKEN_BIT);
-		hi64xx_update_bits(codec, HI6403_S2_PORT_CLKEN_REG, 1<<HI6403_S2_IL_SRC_CLKEN_BIT, 1<<HI6403_S2_IL_SRC_CLKEN_BIT);
 		break;
 	case SND_SOC_DAPM_POST_PMD:
 		hi64xx_update_bits(codec, HI6403_S2_PORT_CLKEN_REG, 1<<HI6403_S2_OR_SRC_CLKEN_BIT, 0);
 		hi64xx_update_bits(codec, HI6403_S2_PORT_CLKEN_REG, 1<<HI6403_S2_OL_SRC_CLKEN_BIT, 0);
-		hi64xx_update_bits(codec, HI6403_S2_PORT_CLKEN_REG, 1<<HI6403_S2_IR_SRC_CLKEN_BIT, 0);
-		hi64xx_update_bits(codec, HI6403_S2_PORT_CLKEN_REG, 1<<HI6403_S2_IL_SRC_CLKEN_BIT, 0);
 		break;
 	default :
 		pr_warn("%s : event err : %d\n", __FUNCTION__, event);
@@ -1959,19 +1990,22 @@ int hi6403_audioup_power_event(struct snd_soc_dapm_widget *w,
 	struct hi6403_platform_data *priv = NULL;
 	int ret = 0;
 
-	BUG_ON(NULL == codec);
+	WARN_ON(NULL == codec);
 
 	priv = snd_soc_codec_get_drvdata(codec);
-	BUG_ON(NULL == priv);
+	WARN_ON(NULL == priv);
 
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
+		hi6403_u12_select_pga(codec);
 		priv->capture_params.channels = 2;
 		ret = slimbus_track_activate(SLIMBUS_DEVICE_HI6403, SLIMBUS_TRACK_AUDIO_CAPTURE, &priv->capture_params);
 		break;
 	case SND_SOC_DAPM_POST_PMD:
-		if (priv->audioup_4mic_state == TRACK_FREE)
+		if (priv->audioup_4mic_state == TRACK_FREE) {
+			hi6403_u12_select_dspif(codec);
 			ret = slimbus_track_deactivate(SLIMBUS_DEVICE_HI6403, SLIMBUS_TRACK_AUDIO_CAPTURE, NULL);
+		}
 		break;
 	default :
 		pr_warn("%s : event err : %d\n", __FUNCTION__, event);
@@ -1988,10 +2022,10 @@ int hi6403_audioup_4mic_power_event(struct snd_soc_dapm_widget *w,
 	struct hi6403_platform_data *priv = NULL;
 	int ret = 0;
 
-	BUG_ON(NULL == codec);
+	WARN_ON(NULL == codec);
 
 	priv = snd_soc_codec_get_drvdata(codec);
-	BUG_ON(NULL == priv);
+	WARN_ON(NULL == priv);
 
 	if (priv->voiceup_state && (priv->voice_params.channels == 4)) {
 		priv->capture_params.channels = 2;
@@ -2009,6 +2043,7 @@ int hi6403_audioup_4mic_power_event(struct snd_soc_dapm_widget *w,
 		if (priv->capture_params.channels == 4)
 			snd_soc_write(codec, HI6403_SLIM4_CLK_CFG_REG, 0x44);
 
+		hi6403_u12_select_pga(codec);
 		ret = slimbus_track_activate(SLIMBUS_DEVICE_HI6403, SLIMBUS_TRACK_AUDIO_CAPTURE, &priv->capture_params);
 
 		priv->audioup_4mic_state = TRACK_STARTUP;
@@ -2018,6 +2053,7 @@ int hi6403_audioup_4mic_power_event(struct snd_soc_dapm_widget *w,
 						0x1<<HI6403_AUDIO_UP_RST_BIT, 0);
 		break;
 	case SND_SOC_DAPM_POST_PMD:
+		hi6403_u12_select_dspif(codec);
 		ret = slimbus_track_deactivate(SLIMBUS_DEVICE_HI6403, SLIMBUS_TRACK_AUDIO_CAPTURE, &priv->capture_params);
 		priv->audioup_4mic_state = TRACK_FREE;
 		break;
@@ -2029,6 +2065,26 @@ int hi6403_audioup_4mic_power_event(struct snd_soc_dapm_widget *w,
 	return ret;
 }
 
+static int hi6403_voice_deactive(struct snd_soc_codec *codec,
+		struct hi6403_platform_data *platform_data)
+{
+	int voice_up_ret;
+	int voice_down_ret;
+
+	voice_up_ret = slimbus_track_deactivate(SLIMBUS_DEVICE_HI6403, SLIMBUS_TRACK_VOICE_UP, NULL);
+	if (voice_up_ret)
+		pr_warn("%s : deactive voice up error : %d\n", __func__, voice_up_ret);
+
+	voice_down_ret = slimbus_track_deactivate(SLIMBUS_DEVICE_HI6403, SLIMBUS_TRACK_VOICE_DOWN, NULL);
+	if (voice_down_ret)
+		pr_warn("%s : deactive voice down error : %d\n", __func__, voice_down_ret);
+
+	platform_data->voiceup_state = TRACK_FREE;
+	hi6403_u56_select_dspif(codec);
+
+	return (voice_up_ret + voice_down_ret);
+}
+
 int hi6403_voice8k_power_event(struct snd_soc_dapm_widget *w,
 			struct snd_kcontrol *kcontrol, int event)
 {
@@ -2037,10 +2093,10 @@ int hi6403_voice8k_power_event(struct snd_soc_dapm_widget *w,
 	int ret = 0;
 	slimbus_track_param_t voice_down_param;
 
-	BUG_ON(NULL == codec);
+	WARN_ON(NULL == codec);
 
 	priv = snd_soc_codec_get_drvdata(codec);
-	BUG_ON(NULL == priv);
+	WARN_ON(NULL == priv);
 
 	memset(&voice_down_param, 0, sizeof(voice_down_param));/* unsafe_function_ignore: memset */
 
@@ -2067,6 +2123,8 @@ int hi6403_voice8k_power_event(struct snd_soc_dapm_widget *w,
 			hi64xx_update_bits(codec, HI6403_DIG_CLK_CFG_REG06,
 						0x1<<HI6403_VOICE_UP_RST_BIT, 0x1<<HI6403_VOICE_UP_RST_BIT);
 		}
+
+		hi6403_u56_select_pga(codec);
 		/* slimbus voice active */
 		ret = slimbus_track_activate(SLIMBUS_DEVICE_HI6403, SLIMBUS_TRACK_VOICE_UP, &priv->voice_params);
 
@@ -2079,11 +2137,7 @@ int hi6403_voice8k_power_event(struct snd_soc_dapm_widget *w,
 						0x1<<HI6403_VOICE_UP_RST_BIT, 0);
 		break;
 	case SND_SOC_DAPM_POST_PMD:
-		/* slimbus voice deactive */
-		ret = slimbus_track_deactivate(SLIMBUS_DEVICE_HI6403, SLIMBUS_TRACK_VOICE_UP, NULL);
-		ret += slimbus_track_deactivate(SLIMBUS_DEVICE_HI6403, SLIMBUS_TRACK_VOICE_DOWN, NULL);
-
-		priv->voiceup_state = TRACK_FREE;
+		ret = hi6403_voice_deactive(codec, priv);
 
 		/* src power off */
 		hi64xx_update_bits(codec, HI6403_S3_PORT_CLKEN_REG, 0xC4, 0x0);
@@ -2107,10 +2161,10 @@ int hi6403_voice16k_power_event(struct snd_soc_dapm_widget *w,
 	int ret = 0;
 	slimbus_track_param_t voice_down_param;
 
-	BUG_ON(NULL == codec);
+	WARN_ON(NULL == codec);
 
 	priv = snd_soc_codec_get_drvdata(codec);
-	BUG_ON(NULL == priv);
+	WARN_ON(NULL == priv);
 
 	memset(&voice_down_param, 0, sizeof(voice_down_param));/* unsafe_function_ignore: memset */
 
@@ -2138,6 +2192,7 @@ int hi6403_voice16k_power_event(struct snd_soc_dapm_widget *w,
 						0x1<<HI6403_VOICE_UP_RST_BIT, 0x1<<HI6403_VOICE_UP_RST_BIT);
 		}
 
+		hi6403_u56_select_pga(codec);
 		/* slimbus voice active */
 		ret = slimbus_track_activate(SLIMBUS_DEVICE_HI6403, SLIMBUS_TRACK_VOICE_UP, &priv->voice_params);
 
@@ -2151,11 +2206,7 @@ int hi6403_voice16k_power_event(struct snd_soc_dapm_widget *w,
 		}
 		break;
 	case SND_SOC_DAPM_POST_PMD:
-		/* slimbus voice deactive */
-		ret = slimbus_track_deactivate(SLIMBUS_DEVICE_HI6403, SLIMBUS_TRACK_VOICE_UP, NULL);
-		ret += slimbus_track_deactivate(SLIMBUS_DEVICE_HI6403, SLIMBUS_TRACK_VOICE_DOWN, NULL);
-
-		priv->voiceup_state = TRACK_FREE;
+		ret = hi6403_voice_deactive(codec, priv);
 
 		/* src power off */
 		hi64xx_update_bits(codec, HI6403_S3_PORT_CLKEN_REG, 0xC4, 0x0);
@@ -2179,10 +2230,10 @@ int hi6403_voice32k_power_event(struct snd_soc_dapm_widget *w,
 	slimbus_track_param_t voice_down_param;
 	int ret = 0;
 
-	BUG_ON(NULL == codec);
+	WARN_ON(NULL == codec);
 
 	priv = snd_soc_codec_get_drvdata(codec);
-	BUG_ON(NULL == priv);
+	WARN_ON(NULL == priv);
 
 	memset(&voice_down_param, 0, sizeof(voice_down_param));/* unsafe_function_ignore: memset */
 
@@ -2211,6 +2262,7 @@ int hi6403_voice32k_power_event(struct snd_soc_dapm_widget *w,
 						0x1<<HI6403_VOICE_UP_RST_BIT, 0x1<<HI6403_VOICE_UP_RST_BIT);
 		}
 
+		hi6403_u56_select_pga(codec);
 		/* slimbus voice active */
 		ret = slimbus_track_activate(SLIMBUS_DEVICE_HI6403, SLIMBUS_TRACK_VOICE_UP, &priv->voice_params);
 		ret += slimbus_track_activate(SLIMBUS_DEVICE_HI6403, SLIMBUS_TRACK_VOICE_DOWN, &voice_down_param);
@@ -2224,11 +2276,7 @@ int hi6403_voice32k_power_event(struct snd_soc_dapm_widget *w,
 
 		break;
 	case SND_SOC_DAPM_POST_PMD:
-		/* slimbus voice deactive */
-		ret = slimbus_track_deactivate(SLIMBUS_DEVICE_HI6403, SLIMBUS_TRACK_VOICE_UP, NULL);
-		ret += slimbus_track_deactivate(SLIMBUS_DEVICE_HI6403, SLIMBUS_TRACK_VOICE_DOWN, NULL);
-
-		priv->voiceup_state = TRACK_FREE;
+		ret = hi6403_voice_deactive(codec, priv);
 
 		/* src power off */
 		hi64xx_update_bits(codec, HI6403_S3_PORT_CLKEN_REG, 0xC4, 0x0);
@@ -2297,7 +2345,7 @@ int hi6403_play48k_power_event(struct snd_soc_dapm_widget *w,
 	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
 	int ret = 0;
 
-	BUG_ON(NULL == codec);
+	WARN_ON(NULL == codec);
 
 	ret = hi6403_slimbus_param_pass(codec, SLIMBUS_TRACK_AUDIO_PLAY, NULL, event);
 
@@ -2311,10 +2359,10 @@ int hi6403_play96k_power_event(struct snd_soc_dapm_widget *w,
 	struct hi6403_platform_data *priv = NULL;
 	int ret = 0;
 
-	BUG_ON(NULL == codec);
+	WARN_ON(NULL == codec);
 
 	priv = snd_soc_codec_get_drvdata(codec);
-	BUG_ON(NULL == priv);
+	WARN_ON(NULL == priv);
 
 	priv->play_params.rate = SLIMBUS_SAMPLE_RATE_96K ;
 
@@ -2330,10 +2378,10 @@ int hi6403_play192k_power_event(struct snd_soc_dapm_widget *w,
 	struct hi6403_platform_data *priv = NULL;
 	int ret = 0;
 
-	BUG_ON(NULL == codec);
+	WARN_ON(NULL == codec);
 
 	priv = snd_soc_codec_get_drvdata(codec);
-	BUG_ON(NULL == priv);
+	WARN_ON(NULL == priv);
 
 	priv->play_params.rate = SLIMBUS_SAMPLE_RATE_192K ;
 
@@ -2348,7 +2396,7 @@ int hi6403_lowlatency_play_power_event(struct snd_soc_dapm_widget *w,
 	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
 	int ret = 0;
 
-	BUG_ON(NULL == codec);
+	WARN_ON(NULL == codec);
 
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
@@ -2414,7 +2462,7 @@ void hi6403_headphone_high_mode_shadow_config(struct snd_soc_codec *codec)
 {
 	struct hi6403_platform_data *priv = snd_soc_codec_get_drvdata(codec);
 
-	BUG_ON(NULL == priv);
+	WARN_ON(NULL == priv);
 
 	/* reg pga gain */
 	snd_soc_write(codec, HI6403_CLASSH_CTRL4, 0x0);
@@ -2452,7 +2500,7 @@ void hi6403_headphone_low_mode_shadow_config(struct snd_soc_codec *codec)
 {
 	struct hi6403_platform_data *priv = snd_soc_codec_get_drvdata(codec);
 
-	BUG_ON(NULL == priv);
+	WARN_ON(NULL == priv);
 
 	/* reg pga gain */
 	snd_soc_write(codec, HI6403_CLASSH_CTRL4, 0x19);
@@ -2493,11 +2541,11 @@ int hi6403_hp_high_level_power_event(struct snd_soc_dapm_widget *w,
 
 	struct hi6403_platform_data *priv = NULL;
 
-	BUG_ON(NULL == codec);
+	WARN_ON(NULL == codec);
 
 	priv = snd_soc_codec_get_drvdata(codec);
 
-	BUG_ON(NULL == priv);
+	WARN_ON(NULL == priv);
 
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
@@ -2577,10 +2625,10 @@ void hi6403_pll_param_pass(struct snd_soc_dapm_widget *w,
 {
 	struct hi6403_platform_data *priv = NULL;
 	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
-	BUG_ON(NULL == codec);
+	WARN_ON(NULL == codec);
 
 	priv = snd_soc_codec_get_drvdata(codec);
-	BUG_ON(NULL == priv);
+	WARN_ON(NULL == priv);
 
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
@@ -2636,10 +2684,12 @@ int hi6403_soundtrigger_u5u6_power_event(struct snd_soc_codec *codec, slimbus_tr
 		//snd_soc_write(codec, HI6403_SLIM2_CLK_CFG_REG, 0x11);//d5/d6
 		snd_soc_write(codec, HI6403_SLIM5_CLK_CFG_REG, 0x11);
 
+		hi6403_u56_select_pga(codec);
 		/* slimbus soundtrigger active */
 		ret = slimbus_track_activate(SLIMBUS_DEVICE_HI6403, SLIMBUS_TRACK_SOUND_TRIGGER, params);
 		break;
 	case SND_SOC_DAPM_POST_PMD:
+		hi6403_u56_select_dspif(codec);
 		/* slimbus soundtrigger deactive */
 		ret = slimbus_track_deactivate(SLIMBUS_DEVICE_HI6403, SLIMBUS_TRACK_SOUND_TRIGGER, NULL);
 
@@ -2661,10 +2711,10 @@ int hi6403_soundtrigger_onemic_power_event(struct snd_soc_dapm_widget *w,
 	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
 	struct hi6403_platform_data *priv = NULL;
 
-	BUG_ON(NULL == codec);
+	WARN_ON(NULL == codec);
 
 	priv = snd_soc_codec_get_drvdata(codec);
-	BUG_ON(NULL == priv);
+	WARN_ON(NULL == priv);
 
 	priv->soundtrigger_params.channels = 1;
 
@@ -2677,10 +2727,10 @@ int hi6403_soundtrigger_dualmic_power_event(struct snd_soc_dapm_widget *w,
 	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
 	struct hi6403_platform_data *priv = NULL;
 
-	BUG_ON(NULL == codec);
+	WARN_ON(NULL == codec);
 
 	priv = snd_soc_codec_get_drvdata(codec);
-	BUG_ON(NULL == priv);
+	WARN_ON(NULL == priv);
 
 	priv->soundtrigger_params.channels = 2;
 
@@ -2694,10 +2744,10 @@ int hi6403_soundtrigger_multimic_power_event(struct snd_soc_dapm_widget *w,
 	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
 	struct hi6403_platform_data *priv = NULL;
 
-	BUG_ON(NULL == codec);
+	WARN_ON(NULL == codec);
 
 	priv = snd_soc_codec_get_drvdata(codec);
-	BUG_ON(NULL == priv);
+	WARN_ON(NULL == priv);
 
 	priv->soundtrigger_params.channels = 4;
 
@@ -2716,6 +2766,7 @@ int hi6403_soundtrigger_multimic_power_event(struct snd_soc_dapm_widget *w,
 		hi64xx_update_bits(codec, HI6403_DIG_CLK_CFG_REG06,
 						0x1<<HI6403_VOICE_UP_RST_BIT, 0x1<<HI6403_VOICE_UP_RST_BIT);
 
+		hi6403_u56_select_pga(codec);
 		/* slimbus soundtrigger active */
 		ret = slimbus_track_activate(SLIMBUS_DEVICE_HI6403, SLIMBUS_TRACK_SOUND_TRIGGER, &priv->soundtrigger_params);
 
@@ -2724,6 +2775,7 @@ int hi6403_soundtrigger_multimic_power_event(struct snd_soc_dapm_widget *w,
 
 		break;
 	case SND_SOC_DAPM_POST_PMD:
+		hi6403_u56_select_dspif(codec);
 		/* slimbus soundtrigger deactive */
 		ret = slimbus_track_deactivate(SLIMBUS_DEVICE_HI6403, SLIMBUS_TRACK_SOUND_TRIGGER, NULL);
 
@@ -2742,7 +2794,7 @@ int hi6403_soundtrigger_multimic_power_event(struct snd_soc_dapm_widget *w,
 static void anc_hs_control_charge(struct snd_soc_codec *codec, bool enable)
 {
 	struct hi6403_platform_data *priv = snd_soc_codec_get_drvdata(codec);
-	BUG_ON(NULL == priv);
+	WARN_ON(NULL == priv);
 
 	dev_info(codec->dev, "%s + \n",__FUNCTION__);
 
@@ -2860,10 +2912,10 @@ int hi6403_hsmic_power_event(struct snd_soc_dapm_widget *w,
 {
 	struct hi6403_platform_data *data = NULL;
 	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
-	BUG_ON(NULL == codec);
+	WARN_ON(NULL == codec);
 
 	data = snd_soc_codec_get_drvdata(codec);
-	BUG_ON(NULL == data);
+	WARN_ON(NULL == data);
 
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
@@ -2894,10 +2946,10 @@ int hi6403_mainmic_power_event(struct snd_soc_dapm_widget *w,
 {
 	struct hi6403_platform_data *data;
 	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
-	BUG_ON(NULL == codec);
+	WARN_ON(NULL == codec);
 
 	data = snd_soc_codec_get_drvdata(codec);
-	BUG_ON(NULL == data);
+	WARN_ON(NULL == data);
 
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
@@ -2944,10 +2996,10 @@ int hi6403_auxmic_power_event(struct snd_soc_dapm_widget *w,
 {
 	struct hi6403_platform_data *data;
 	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
-	BUG_ON(NULL == codec);
+	WARN_ON(NULL == codec);
 
 	data = snd_soc_codec_get_drvdata(codec);
-	BUG_ON(NULL == data);
+	WARN_ON(NULL == data);
 
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
@@ -2984,10 +3036,10 @@ int hi6403_mic3_power_event(struct snd_soc_dapm_widget *w,
 {
 	struct hi6403_platform_data *data;
 	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
-	BUG_ON(NULL == codec);
+	WARN_ON(NULL == codec);
 
 	data = snd_soc_codec_get_drvdata(codec);
-	BUG_ON(NULL == data);
+	WARN_ON(NULL == data);
 
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
@@ -3024,10 +3076,10 @@ int hi6403_mic4_power_event(struct snd_soc_dapm_widget *w,
 {
 	struct hi6403_platform_data *data;
 	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
-	BUG_ON(NULL == codec);
+	WARN_ON(NULL == codec);
 
 	data = snd_soc_codec_get_drvdata(codec);
-	BUG_ON(NULL == data);
+	WARN_ON(NULL == data);
 
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
@@ -3064,7 +3116,7 @@ int hi6403_mad_src_power_event(struct snd_soc_dapm_widget *w,
 {
 	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
 
-	BUG_ON(NULL == codec);
+	WARN_ON(NULL == codec);
 
 	return 0;
 }
@@ -3074,7 +3126,7 @@ int hi6403_s1_ol_switch_power_event(struct snd_soc_dapm_widget *w,
 {
 	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
 
-	BUG_ON(NULL == codec);
+	WARN_ON(NULL == codec);
 
 	return 0;
 }
@@ -3084,7 +3136,7 @@ int hi6403_s1_or_switch_power_event(struct snd_soc_dapm_widget *w,
 {
 	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
 
-	BUG_ON(NULL == codec);
+	WARN_ON(NULL == codec);
 
 	return 0;
 }
@@ -3094,7 +3146,7 @@ int hi6403_s3_ol_switch_power_event(struct snd_soc_dapm_widget *w,
 {
 	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
 
-	BUG_ON(NULL == codec);
+	WARN_ON(NULL == codec);
 
 	return 0;
 }
@@ -3104,7 +3156,59 @@ int hi6403_s3_or_switch_power_event(struct snd_soc_dapm_widget *w,
 {
 	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
 
-	BUG_ON(NULL == codec);
+	WARN_ON(NULL == codec);
+
+	return 0;
+}
+
+static int hi6403_s2_il_pga_power_event(struct snd_soc_dapm_widget *w,
+			struct snd_kcontrol *kcontrol, int event)
+{
+	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+
+	switch (event) {
+	case SND_SOC_DAPM_PRE_PMU:
+		hi64xx_update_bits(codec, HI6403_S2_PORT_CLKEN_REG,
+			BIT(HI6403_S2_IL_PGA_CLKEN_BIT), BIT(HI6403_S2_IL_PGA_CLKEN_BIT));
+		hi64xx_update_bits(codec, HI6403_S2_PORT_CLKEN_REG,
+			BIT(HI6403_S2_IL_SRC_CLKEN_BIT), BIT(HI6403_S2_IL_SRC_CLKEN_BIT));
+		break;
+	case SND_SOC_DAPM_POST_PMD:
+		hi64xx_update_bits(codec, HI6403_S2_PORT_CLKEN_REG,
+			BIT(HI6403_S2_IL_SRC_CLKEN_BIT), 0);
+		hi64xx_update_bits(codec, HI6403_S2_PORT_CLKEN_REG,
+			BIT(HI6403_S2_IL_PGA_CLKEN_BIT), 0);
+		break;
+	default :
+		pr_warn("%s : event err : %d\n", __FUNCTION__, event);
+		break;
+	}
+
+	return 0;
+}
+
+static int hi6403_s2_ir_pga_power_event(struct snd_soc_dapm_widget *w,
+			struct snd_kcontrol *kcontrol, int event)
+{
+	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+
+	switch (event) {
+	case SND_SOC_DAPM_PRE_PMU:
+		hi64xx_update_bits(codec, HI6403_S2_PORT_CLKEN_REG,
+			BIT(HI6403_S2_IR_PGA_CLKEN_BIT), BIT(HI6403_S2_IR_PGA_CLKEN_BIT));
+		hi64xx_update_bits(codec, HI6403_S2_PORT_CLKEN_REG,
+			BIT(HI6403_S2_IR_SRC_CLKEN_BIT), BIT(HI6403_S2_IR_SRC_CLKEN_BIT));
+		break;
+	case SND_SOC_DAPM_POST_PMD:
+		hi64xx_update_bits(codec, HI6403_S2_PORT_CLKEN_REG,
+			BIT(HI6403_S2_IR_SRC_CLKEN_BIT), 0);
+		hi64xx_update_bits(codec, HI6403_S2_PORT_CLKEN_REG,
+			BIT(HI6403_S2_IR_PGA_CLKEN_BIT), 0);
+		break;
+	default :
+		pr_warn("%s : event err : %d\n", __FUNCTION__, event);
+		break;
+	}
 
 	return 0;
 }
@@ -4147,11 +4251,11 @@ static const struct snd_soc_dapm_widget hi6403_dapm_widgets[] = {
 		0, HI6403_S1_PORT_CLKEN_REG, HI6403_S1_IR_PGA_CLKEN_BIT, 0,
 		NULL, 0),
 	SND_SOC_DAPM_PGA_S("S2 IL PGA",
-		0, HI6403_S2_PORT_CLKEN_REG, HI6403_S2_IL_PGA_CLKEN_BIT, 0,
-		NULL, 0),
+		0, SND_SOC_NOPM, 0, 0, hi6403_s2_il_pga_power_event,
+		(SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMD)),
 	SND_SOC_DAPM_PGA_S("S2 IR PGA",
-		0, HI6403_S2_PORT_CLKEN_REG, HI6403_S2_IR_PGA_CLKEN_BIT, 0,
-		NULL, 0),
+		0, SND_SOC_NOPM, 0, 0, hi6403_s2_ir_pga_power_event,
+		(SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMD)),
 	SND_SOC_DAPM_PGA_S("S3 IL PGA",
 		0, HI6403_S3_PORT_CLKEN_REG, HI6403_S3_IL_PGA_CLKEN_BIT, 0,
 		NULL, 0),
@@ -5000,10 +5104,10 @@ static int hi6403_audio_hw_params(struct snd_pcm_substream *substream,
 	int rate = 0;
 	int ret = 0;
 
-	BUG_ON(NULL == codec);
+	WARN_ON(NULL == codec);
 
 	priv = snd_soc_codec_get_drvdata(codec);
-	BUG_ON(NULL == priv);
+	WARN_ON(NULL == priv);
 
 	rate = params_rate(params);
 
@@ -5040,7 +5144,7 @@ static int hi6403_audio_hw_free(struct snd_pcm_substream *substream,
 	struct hi6403_platform_data *priv = snd_soc_codec_get_drvdata(codec);
 	int ret = 0;
 
-	BUG_ON(NULL == priv);
+	WARN_ON(NULL == priv);
 
 	return ret;
 }
@@ -5059,10 +5163,10 @@ static int hi6403_voice_hw_params(struct snd_pcm_substream *substream,
 	int ret = 0;
 	int rate = 0;
 
-	BUG_ON(NULL == codec);
+	WARN_ON(NULL == codec);
 
 	priv = snd_soc_codec_get_drvdata(codec);
-	BUG_ON(NULL == priv);
+	WARN_ON(NULL == priv);
 
 	rate = params_rate(params);
 
@@ -5089,7 +5193,7 @@ static int hi6403_voice_hw_free(struct snd_pcm_substream *substream,
 	struct hi6403_platform_data *priv = snd_soc_codec_get_drvdata(codec);
 	int ret = 0;
 
-	BUG_ON(NULL == priv);
+	WARN_ON(NULL == priv);
 
 	hi64xx_update_bits(codec, HI6403_S3_CLK_CFG_REG1, 0xC4, 0);
 
@@ -5187,7 +5291,7 @@ bool hi6403_pll48k_check(struct snd_soc_codec *codec)
 	unsigned int regval[6];
 	unsigned int mclk_value[5];
 
-	BUG_ON(NULL == priv);
+	WARN_ON(NULL == priv);
 
 	udelay(200);
 
@@ -5245,7 +5349,7 @@ int hi6403_pll48k_turn_off(struct snd_soc_codec *codec)
 {
 	unsigned int regval[5];
 	struct hi6403_platform_data *priv = snd_soc_codec_get_drvdata(codec);
-	BUG_ON(NULL == priv);
+	WARN_ON(NULL == priv);
 
 	hi64xx_irq_disable_irq(priv->irqmgr, IRQ_PLL_UNLOCK);
 
@@ -5301,7 +5405,7 @@ bool hi6403_pll44k1_check(struct snd_soc_codec *codec)
 	struct hi6403_platform_data *priv = snd_soc_codec_get_drvdata(codec);
 	int i = 0;
 
-	BUG_ON(NULL == priv);
+	WARN_ON(NULL == priv);
 
 	udelay(200);
 	/* check pll44k1 lock state */
@@ -5340,7 +5444,7 @@ int hi6403_pll44k1_turn_on(struct snd_soc_codec *codec)
 int hi6403_pll44k1_turn_off(struct snd_soc_codec *codec)
 {
 	struct hi6403_platform_data *priv = snd_soc_codec_get_drvdata(codec);
-	BUG_ON(NULL == priv);
+	WARN_ON(NULL == priv);
 
 	hi64xx_irq_disable_irq(priv->irqmgr, IRQ_PLL44K1_UNLOCK);
 
@@ -5380,7 +5484,7 @@ bool hi6403_pllmad_check(struct snd_soc_codec *codec)
 	struct hi6403_platform_data *priv = snd_soc_codec_get_drvdata(codec);
 	int i = 0;
 
-	BUG_ON(NULL == priv);
+	WARN_ON(NULL == priv);
 
 	msleep(5);
 	/* check pllmad lock state */
@@ -5419,7 +5523,7 @@ int hi6403_pllmad_turn_on(struct snd_soc_codec *codec)
 int hi6403_pllmad_turn_off(struct snd_soc_codec *codec)
 {
 	struct hi6403_platform_data *priv = snd_soc_codec_get_drvdata(codec);
-	BUG_ON(NULL == priv);
+	WARN_ON(NULL == priv);
 
 	hi64xx_irq_disable_irq(priv->irqmgr, IRQ_PLLMAD_UNLOCK);
 
@@ -5445,7 +5549,7 @@ int hi6403_pllmad_turn_off(struct snd_soc_codec *codec)
 int hi6403_enable_micbias(struct snd_soc_codec *codec)
 {
 	struct hi6403_platform_data *priv = snd_soc_codec_get_drvdata(codec);
-	BUG_ON(NULL == priv);
+	WARN_ON(NULL == priv);
 
 	/* mask btn irqs */
 	hi64xx_irq_mask_btn_irqs(priv->mbhc);
@@ -5469,7 +5573,7 @@ int hi6403_enable_micbias(struct snd_soc_codec *codec)
 int hi6403_disable_micbias(struct snd_soc_codec *codec)
 {
 	struct hi6403_platform_data *priv = snd_soc_codec_get_drvdata(codec);
-	BUG_ON(NULL == priv);
+	WARN_ON(NULL == priv);
 
 	/* mask btn irqs */
 	hi64xx_irq_mask_btn_irqs(priv->mbhc);
@@ -5581,6 +5685,40 @@ int hi6403_disable_ibias_bandgap(struct snd_soc_codec *codec)
 	return 0;
 }
 
+void hi6403_hs_mbhc_on (struct snd_soc_codec *codec)
+{
+	struct hi6403_platform_data *priv = snd_soc_codec_get_drvdata(codec);
+
+	WARN_ON(NULL == priv);
+
+	/* mask btn irqs */
+	hi64xx_irq_mask_btn_irqs(priv->mbhc);
+
+	/* saradc cfg */
+	snd_soc_write(codec,  HI6403_SAR_CONFIG_REG, 0x7C);
+	/* mbhc on */
+	hi64xx_update_bits(codec, HI6403_ANALOG_REG089, 1 << HI64xx_MBHC_ON_BIT, 0);
+
+	msleep(30);
+	/* unmask btn irqs */
+	hi64xx_irq_unmask_btn_irqs(priv->mbhc);
+
+	msleep(120);
+	return;
+}
+
+void hi6403_hs_mbhc_off (struct snd_soc_codec *codec)
+{
+	/* eco off */
+	hi64xx_update_bits(codec, HI6403_ANALOG_REG093,  1 << HI64xx_MICBIAS_ECO_ON_BIT, 0);
+	pr_info("%s : eco disable \n", __FUNCTION__);
+
+	/* mbhc cmp off */
+	hi64xx_update_bits(codec, HI6403_ANALOG_REG089, 1 << HI64xx_MBHC_ON_BIT, 1 << HI64xx_MBHC_ON_BIT);
+
+	return;
+}
+
 void hi6403_headphone_resdet_config(struct snd_soc_codec *codec)
 {
 	/* ib05_hp 5uA */
@@ -5690,7 +5828,7 @@ void hi6403_headphone_path_enable(struct snd_soc_codec *codec)
 {
 	struct hi6403_platform_data *priv = snd_soc_codec_get_drvdata(codec);
 
-	BUG_ON(NULL == priv);
+	WARN_ON(NULL == priv);
 
 	/* disable the trigger for shadow gain */
 	hi64xx_update_bits(codec, HI6403_HP_SW_CTRL10_REG,
@@ -5725,7 +5863,7 @@ void hi6403_headphone_path_disable(struct snd_soc_codec *codec)
 {
 	struct hi6403_platform_data *priv = snd_soc_codec_get_drvdata(codec);
 
-	BUG_ON(NULL == priv);
+	WARN_ON(NULL == priv);
 
 	/* path enable */
 	hi6403_imp_path_enable(codec, false);
@@ -5844,32 +5982,26 @@ void hi6403_headphone_resdet_enable(struct snd_soc_codec *codec, bool enable)
 	}
 }
 
-bool hi6403_check_sarready(struct snd_soc_codec *codec)
+void hi6403_hs_enable_hsdet(struct snd_soc_codec *codec, struct hi64xx_mbhc_config mbhc_config)
 {
-	/* read codec status */
-	unsigned int value = snd_soc_read(codec, HI64xx_REG_IRQ_2) & (0x1<<HI64xx_SARADC_RD_BIT);
-
-	/*clr irq*/
-	snd_soc_write(codec, HI64xx_REG_IRQ_2, 0x1<<HI64xx_SARADC_RD_BIT);
-
-	if (0 == value)
-		return false;
-	return true;
+	snd_soc_write(codec, HI6403_HP_DET_CFG_REG, mbhc_config.hs_ctrl);
 }
 
-unsigned int hi6403_get_voltagevlaue(struct snd_soc_codec *codec)
+unsigned int hi6403_get_voltage_value(struct snd_soc_codec *codec, unsigned int voltage_coefficient)
 {
 	int retry = 3;
 	unsigned int sar_value = 0;
 	unsigned int voltage_value = 0;
 
+	/* saradc on */
+	hi64xx_update_bits(codec, HI6403_ANALOG_REG089, 0x1 << HI6403_MBHD_SAR_PD_BIT, 0);
 	/* start saradc */
 	hi64xx_update_bits(codec, HI6403_ANALOG_REG089,
 			0x1<<HI6403_SARADC_START_BIT, 0x1<<HI6403_SARADC_START_BIT);
 
 	while(retry--) {
 		usleep_range(1000, 1100);
-		if (hi6403_check_sarready(codec)) {
+		if (hi64xx_check_saradc_ready_detect(codec)) {
 			sar_value = snd_soc_read(codec, HI6403_SAR_VALUE_REG);
 			pr_info("%s : saradc value for imp is %#x\n", __FUNCTION__, sar_value);
 
@@ -5882,14 +6014,27 @@ unsigned int hi6403_get_voltagevlaue(struct snd_soc_codec *codec)
 	/* end saradc */
 	hi64xx_update_bits(codec, HI6403_ANALOG_REG089,
 			0x1<<HI6403_SARADC_START_BIT, 0x0<<HI6403_SARADC_START_BIT);
+	/* saradc pd */
+	hi64xx_update_bits(codec, HI6403_ANALOG_REG089,
+			0x1 << HI6403_MBHD_SAR_PD_BIT, 0x1 << HI6403_MBHD_SAR_PD_BIT);
 
-	voltage_value = sar_value * (1800 / 0xFF);
-	if (voltage_value < 100 || voltage_value > 300) {
-		pr_info("%s : voltage value is %d, invalid value, res selected is %#x\n", __FUNCTION__, voltage_value, snd_soc_read(codec, HI6403_ANALOG_REG50));
-		voltage_value = 0;
-	}
+	voltage_value = sar_value * voltage_coefficient / 0xFF;
 
 	return voltage_value;
+}
+
+unsigned int hi6403_get_volume_vlaue(struct snd_soc_codec *codec)
+{
+	unsigned int volume_value = 0;
+
+	volume_value = hi6403_get_voltage_value(codec, 1800);
+	if (volume_value < 100 || volume_value > 300) {
+		pr_info("%s : voltage value is %d, invalid value, res selected is %#x\n", __FUNCTION__,
+				volume_value, snd_soc_read(codec, HI6403_ANALOG_REG50));
+		volume_value = 0;
+	}
+
+	return volume_value;
 }
 
 unsigned int hi6403_calc_res(struct snd_soc_codec *codec, unsigned int voltage_value, int num)
@@ -5898,7 +6043,7 @@ unsigned int hi6403_calc_res(struct snd_soc_codec *codec, unsigned int voltage_v
 	unsigned int res_value = 0;
 	unsigned int eq_res_value = 0;
 
-	BUG_ON(NULL == priv);
+	WARN_ON(NULL == priv);
 
 	eq_res_value = (1<<num) * priv->res_value * HI6403_IMP_RANGE_VALUE / voltage_value / HI6403_CURRENT_RATIO_VALUE;
 
@@ -5936,7 +6081,7 @@ unsigned int hi6403_get_resvalue(struct snd_soc_codec *codec)
 				0x1<<HI6403_DETRES_RST_BIT, 0x0<<HI6403_DETRES_RST_BIT);
 		usleep_range(100,120);
 
-		volume_value[i] = hi6403_get_voltagevlaue(codec);
+		volume_value[i] = hi6403_get_volume_vlaue(codec);
 
 		/* get sum of valid res value */
 		if (0 != volume_value[i]) {
@@ -5967,7 +6112,7 @@ void hi6403_hs_res_detect(struct snd_soc_codec *codec)
 	struct hi6403_platform_data *priv = snd_soc_codec_get_drvdata(codec);
 	unsigned int res_value = 0;
 
-	BUG_ON(NULL == priv);
+	WARN_ON(NULL == priv);
 
 	res_value = hi6403_get_resvalue(codec);
 
@@ -5980,7 +6125,7 @@ void hi6403_hs_res_detect(struct snd_soc_codec *codec)
 	}
 }
 
-static void hi6403_mad_set_param(struct snd_soc_codec *codec)
+static void hi6403_mad_set_param(struct snd_soc_codec *codec, struct hi6403_board_cfg *board_cfg)
 {
 	/* auto active time */
 	snd_soc_write(codec, HI6403_MAD_AUTO_ACT_TIME_L, 0x0);
@@ -6007,7 +6152,11 @@ static void hi6403_mad_set_param(struct snd_soc_codec *codec)
 	snd_soc_write(codec, HI6403_MAD_SLEEP_TIME_L, 0x0);
 
 	/* mad_buffer_fifo_thre */
-	snd_soc_write(codec, HI6403_MAD_BUFFER_CTRL0, 0x7f);
+	if (board_cfg->wakeup_hisi_algo_support) {
+		snd_soc_write(codec, HI6403_MAD_BUFFER_CTRL0, 0x3f);
+	} else {
+		snd_soc_write(codec, HI6403_MAD_BUFFER_CTRL0, 0x7f);
+	}
 	hi64xx_update_bits(codec, HI6403_MAD_BUFFER_CTRL1, 0x1f, 0x1f);
 
 	/* mad_cnt_thre,vad delay cnt */
@@ -6058,7 +6207,7 @@ enum hi64xx_pll_type hi6403_pll_for_reg_access(struct snd_soc_codec *codec, unsi
 static int hi6403_resmgr_init(struct hi6403_platform_data *pd)
 {
 	int ret = 0;
-	struct resmgr_config cfg;
+	struct resmgr_config cfg = {0};
 
 	cfg.pll_num = 3;
 	cfg.pll_sw_mode = MODE_MULTIPLE;
@@ -6092,7 +6241,7 @@ static void hi6403_init_chip(struct snd_soc_codec *codec)
 {
 	struct hi6403_platform_data *priv = snd_soc_codec_get_drvdata(codec);
 
-	BUG_ON(NULL == priv);
+	WARN_ON(NULL == priv);
 
 	if (priv->cdc_ctrl->bus_sel == BUSTYPE_SELECT_SLIMBUS) {
 
@@ -6614,20 +6763,21 @@ static int hi6403_utils_init(struct hi6403_platform_data *pd)
 	struct utils_config cfg;
 
 	cfg.hi64xx_dump_reg = NULL;
-	ret = hi64xx_utils_init(pd->codec, pd->cdc_ctrl, &cfg, pd->resmgr);
+	ret = hi64xx_utils_init(pd->codec, pd->cdc_ctrl, &cfg, pd->resmgr, HI64XX_CODEC_TYPE_6403);
 
 	return ret;
 }
 
-static struct mbhc_reg hi6403_mbhc_reg = {
+static struct hs_mbhc_reg hi6403_hs_mbhc_reg = {
 	.irq_source_reg = 0x2000701c,
 	.irq_mbhc_2_reg = 0x20007016,
-	.ana_60_reg = 0x20007159,
-	.saradc_value_reg = 0x200071cd,
-	.mbhc_vref_reg = 0,
-	.sar_cfg_reg = 0x2000715b,
-	.micbias_eco_reg = 0x2000715d,
-	.hsdet_ctrl_reg = 0x2000715a,
+};
+
+static struct hs_mbhc_func hi6403_hs_mbhc_func = {
+	.hs_mbhc_on = hi6403_hs_mbhc_on,
+	.hs_get_voltage = hi6403_get_voltage_value,
+	.hs_enable_hsdet = hi6403_hs_enable_hsdet,
+	.hs_mbhc_off = hi6403_hs_mbhc_off,
 };
 
 static struct hs_res_detect_func hi6403_hs_res_detect_func = {
@@ -6764,21 +6914,23 @@ static int hi6403_codec_probe(struct snd_soc_codec *codec)
 	pr_err("version register is %x\n", snd_soc_read(codec, HI64xx_VERSION));
 
 	hi6403_init_chip(codec);
+	hi6403_hs_cfg.mbhc_reg = &hi6403_hs_mbhc_reg;
+	hi6403_hs_cfg.mbhc_func = &hi6403_hs_mbhc_func;
 
 	if (priv->board_config.hp_res_detect_enable) {
-		ret = hi64xx_mbhc_init(codec, priv->node, &hi6403_mbhc_reg, &hi6403_hs_res_detect_func,
-			priv->resmgr, priv->irqmgr, &priv->mbhc);
+		hi6403_hs_cfg.res_detect_func = &hi6403_hs_res_detect_func;
 	} else {
-		ret = hi64xx_mbhc_init(codec, priv->node, &hi6403_mbhc_reg, &hi6403_hs_res_detect_func_null,
-			priv->resmgr, priv->irqmgr, &priv->mbhc);
+		hi6403_hs_cfg.res_detect_func = &hi6403_hs_res_detect_func_null;
 	}
+
+	ret = hi64xx_mbhc_init(codec, priv->node, &hi6403_hs_cfg, priv->resmgr, priv->irqmgr, &priv->mbhc);
 
 	if (0 != ret) {
 		dev_err(codec->dev, "%s: hi6403_mbhc_init fail. err code is %x .\n", __FUNCTION__, ret);
 		goto mbhc_init_err_exit;
 	}
 
-	hi6403_mad_set_param(codec);
+	hi6403_mad_set_param(codec, &priv->board_config);
 	ret = hi6403_hifi_config_init(codec, priv->resmgr, priv->irqmgr, priv->cdc_ctrl->bus_sel);
 	if (0 != ret) {
 		dev_err(codec->dev, "%s: hi6403_hifi_config_init fail. err code is %x .\n", __FUNCTION__, ret);
@@ -6915,7 +7067,7 @@ static unsigned int hi6403_reg_read(struct snd_soc_codec *codec,
 	unsigned int ret=0;
 	unsigned int reg_mask;
 	struct hi6403_platform_data *priv = snd_soc_codec_get_drvdata(codec);
-	BUG_ON(NULL == priv);
+	WARN_ON(NULL == priv);
 
 	reg_mask = reg & 0xFFFFF000;
 	if (0x7000 == reg_mask || 0x1000 == reg_mask) {
@@ -6997,7 +7149,7 @@ static int hi6403_reg_write(struct snd_soc_codec *codec,
 	int ret = 0;
 	unsigned int reg_mask;
 	struct hi6403_platform_data *priv = snd_soc_codec_get_drvdata(codec);
-	BUG_ON(NULL == priv);
+	WARN_ON(NULL == priv);
 
 	reg_mask = reg & 0xFFFFF000;
 	if (0x7000 == reg_mask || 0x1000 == reg_mask) {
@@ -7134,6 +7286,23 @@ static void hi6403_get_board_hp_res_detect(struct device_node *node, struct hi64
 		}
 	} else {
 		board_cfg->hp_res_detect_enable = false;
+	}
+}
+
+static void hi6403_get_board_wakeup_hisi_algo_support(struct device_node *node, struct hi6403_board_cfg *board_cfg)
+{
+	unsigned int val = 0;
+
+	if (NULL == node || NULL == board_cfg) {
+		pr_err("%s: input null pointer! \n", __FUNCTION__);
+		return;
+	}
+
+	board_cfg->wakeup_hisi_algo_support = false;
+	if (!of_property_read_u32(node, "hisilicon,wakeup_hisi_algo_support", &val)) {
+		if (val) {
+			board_cfg->wakeup_hisi_algo_support = true;
+		}
 	}
 }
 
@@ -7341,6 +7510,7 @@ static void hi6403_get_board_cfg(struct device_node *node, struct hi6403_board_c
 #ifdef CONFIG_RCV_TDD_SUPPORT
 	hi6403_get_board_rcv_tdd(node, board_cfg);
 #endif
+	hi6403_get_board_wakeup_hisi_algo_support(node, board_cfg);
 }
 
 static int hi6403_irq_init(struct hi64xx_irq *irq_data)
@@ -7417,7 +7587,11 @@ static int hi6403_platform_probe(struct platform_device *pdev)
 	} else {
 		hi6403_get_board_cfg(priv->node, &priv->board_config);
 
-		dev_info(dev, "%s : mic_num %d , use_stereo_smartpa %d, classh_rcv_hp_switch %d, hp_high_low_change_enable %d, hp_res_detect_enable %d, extern_hs_hifi_ak4376_I2S3 %d, gpio_pd_enable %d, ir_gpio_id %u ear_ir_gpio_id %u hsd_cfg_enable %d bt_tri_gpio %d fm_enable %d, micbias_modify %d\n",
+		dev_info(dev, "%s : mic_num %d , use_stereo_smartpa %d, classh_rcv_hp_switch %d,"
+			" hp_high_low_change_enable %d, hp_res_detect_enable %d,"
+			" extern_hs_hifi_ak4376_I2S3 %d, gpio_pd_enable %d, ir_gpio_id %u,"
+			" ear_ir_gpio_id %u, hsd_cfg_enable %d, bt_tri_gpio %d, fm_enable %d,"
+			" micbias_modify %d, wakeup_hisi_algo_support %d\n",
 			__FUNCTION__, priv->board_config.mic_num,
 			priv->board_config.use_stereo_smartpa,
 			priv->board_config.classh_rcv_hp_switch,
@@ -7430,7 +7604,8 @@ static int hi6403_platform_probe(struct platform_device *pdev)
 			priv->board_config.hsd_cfg_enable,
 			priv->board_config.bt_tri_gpio,
 			priv->board_config.fm_enable,
-			priv->board_config.micbias_modify);
+			priv->board_config.micbias_modify,
+			priv->board_config.wakeup_hisi_algo_support);
 #ifdef CONFIG_HAC_SUPPORT
 		dev_info(dev, "%s : hac_gpio %d\n", __FUNCTION__, priv->board_config.hac_gpio);
 #endif
@@ -7593,7 +7768,7 @@ static int hi6403_platform_remove(struct platform_device *pdev)
 
 	pr_info("%s\n",__FUNCTION__);
 
-	BUG_ON(NULL == priv);
+	WARN_ON(NULL == priv);
 
 	if (gpio_is_valid(priv->board_config.bt_tri_gpio)) {
 		gpio_free(priv->board_config.bt_tri_gpio);
@@ -7624,7 +7799,8 @@ static void hi6403_platform_shutdown(struct platform_device *pdev)
 	struct hi6403_platform_data *priv = platform_get_drvdata(pdev);
 	struct snd_soc_codec *codec = NULL;
 
-	BUG_ON(NULL == priv);
+	WARN_ON(NULL == priv);
+
 	codec = priv->codec;
 
 	if (NULL != codec)

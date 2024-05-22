@@ -292,7 +292,7 @@ static int aod_test(int tag, int argv[], int argc)
 	aod_req_t cpkt;
 	pkt_header_t *hd = (pkt_header_t *)&cpkt;
 	uint8_t *framebuffer;
-	u64 phy_framebuffer;
+	u64 phy_framebuffer = 0;
 	aod_display_pos_t *aod_pos;
 	struct timespec now;
 
@@ -1520,7 +1520,7 @@ static ssize_t store_rpc_sar_service_req(struct device *dev, struct device_attri
 	{
 	    hwlog_err("rpc_sar_service_req strout error.\n");
 	}
-        if (sar_service < 0 || sar_service > 65535) {
+        if (sar_service > 65535) {
                 hwlog_err("%s: set enable fail, invalid val\n", __FUNCTION__);
                 return size;
         }

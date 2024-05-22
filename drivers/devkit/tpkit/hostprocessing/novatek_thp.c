@@ -36,6 +36,7 @@ struct nvt_ts_trim_id_table_entry {
 static const struct nvt_ts_trim_id_table_entry trim_id_table[] = {
 	{.id = {0x0A, 0xFF, 0xFF, 0x72, 0x67, 0x03}, .mask = {1, 0, 0, 1, 1, 1} },
 	{.id = {0x0A, 0xFF, 0xFF, 0x82, 0x66, 0x03}, .mask = {1, 0, 0, 1, 1, 1} },
+	{.id = {0x0B, 0xFF, 0xFF, 0x82, 0x66, 0x03}, .mask = {1, 0, 0, 1, 1, 1} },
 	{.id = {0x0A, 0xFF, 0xFF, 0x72, 0x66, 0x03}, .mask = {1, 0, 0, 1, 1, 1} },
 	{.id = {0x55, 0x00, 0xFF, 0x00, 0x00, 0x00}, .mask = {1, 1, 0, 1, 1, 1} },
 	{.id = {0x55, 0x72, 0xFF, 0x00, 0x00, 0x00}, .mask = {1, 1, 0, 1, 1, 1} },
@@ -58,14 +59,16 @@ static inline int thp_nvt_spi_read_write(struct spi_device *client,
 		.len    = len,
 	};
 	struct spi_message m;
-	struct thp_core_data *cd = spi_get_drvdata(client);
-	struct thp_device *tdev = cd->thp_dev;
 	int rc;
 
 	spi_message_init(&m);
 	spi_message_add_tail(&t, &m);
 
-	thp_bus_lock();
+	rc = thp_bus_lock();
+	if (rc < 0) {
+		THP_LOG_ERR("%s:get lock failed\n", __func__);
+		return -EINVAL;
+	}
 	thp_spi_cs_set(GPIO_HIGH);
 	rc = thp_spi_sync(client, &m);
 	thp_bus_unlock();
@@ -287,11 +290,11 @@ static int thp_novatech_resume(struct thp_device *tdev)
 
 static int thp_novatech_suspend(struct thp_device *tdev)
 {
-	THP_LOG_INFO("%s: called\n", __func__);
 	int pt_test_mode = 0;
 
-	pt_test_mode = is_pt_test_mode(tdev);
+	THP_LOG_INFO("%s: called\n", __func__);
 
+	pt_test_mode = is_pt_test_mode(tdev);
 	if (pt_test_mode) {
 		THP_LOG_INFO("%s: sleep mode\n", __func__);
 		gpio_set_value(tdev->gpios->cs_gpio, 0);

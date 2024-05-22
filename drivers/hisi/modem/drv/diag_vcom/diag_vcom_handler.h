@@ -55,7 +55,8 @@
 
 #include <linux/skbuff.h>
 #include <linux/netlink.h>
-#include <linux/wakelock.h>
+#include <linux/device.h>
+#include <linux/pm_wakeup.h>
 #include "diag_vcom.h"
 #include "diag_vcom_data.h"
 
@@ -112,7 +113,7 @@ struct diag_vcom_stats_s {
 
 struct diag_vcom_entity_s {
 	struct sock *sk;
-	struct wake_lock lock;
+	struct wakeup_source lock;
 	struct diag_vcom_cb_ops_s cb_ops;
 	struct diag_vcom_stats_s stats;
 	uint32_t channel;

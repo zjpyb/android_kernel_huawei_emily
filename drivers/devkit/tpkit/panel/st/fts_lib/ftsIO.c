@@ -56,6 +56,7 @@ static u16 I2CSAD;
 #include "ftsIO.h"
 #include "ftsTool.h"
 
+#define CMD_LEN 3
 
 int openChannel(struct i2c_client *clt)
 {
@@ -130,7 +131,7 @@ int readCmdU16(u8 cmd, u16 address, u8* outBuf, int byteToRead, int hasDummyByte
 
 	int remaining = byteToRead;
 	int toRead = 0;
-	u8 rCmd[3] = { cmd, 0x00, 0x00 };
+	u8 rCmd[CMD_LEN] = { cmd, 0x00, 0x00 };
 
 	u8* buff = (u8*)kmalloc((READ_CHUNK + 1)*sizeof(u8), GFP_KERNEL);
 	if(buff==NULL){
@@ -151,14 +152,17 @@ int readCmdU16(u8 cmd, u16 address, u8* outBuf, int byteToRead, int hasDummyByte
 		rCmd[2] = (u8)(address & 0xFF);
 
 		if (hasDummyByte) {
-			if (fts_readCmd(rCmd, 3, buff, toRead + 1) < 0) {
+			if (fts_readCmd(rCmd, CMD_LEN, buff, toRead + 1) < 0) {
 				TS_LOG_ERR("%s readCmdU16: ERROR %02X\n", __func__, ERROR_I2C_R);
 				kfree(buff);
 				return ERROR_I2C_R;
 			}
 			memcpy(outBuf, buff + 1, toRead);
 		} else {
-			if(fts_readCmd(rCmd, 3, buff, toRead)<0) return ERROR_I2C_R;
+			if (fts_readCmd(rCmd, CMD_LEN, buff, toRead) < 0) {
+				kfree(buff);
+				return ERROR_I2C_R;
+			}
 			memcpy(outBuf, buff, toRead);
 		}
 
@@ -265,8 +269,8 @@ int writeReadCmdU32(u8 wCmd, u8 rCmd, u32 address, u8* outBuf, int byteToRead, i
 
 	int remaining = byteToRead;
 	int toRead = 0;
-	u8 reaCmd[3];
-	u8 wriCmd[3];
+	u8 reaCmd[CMD_LEN];
+	u8 wriCmd[CMD_LEN];
 
 	u8* buff = (u8*)kmalloc((READ_CHUNK + 1)*sizeof(u8), GFP_KERNEL);
 	if(buff==NULL){
@@ -293,14 +297,18 @@ int writeReadCmdU32(u8 wCmd, u8 rCmd, u32 address, u8* outBuf, int byteToRead, i
 		reaCmd[2] = (u8)(address & 0x000000FF);
 
 		if (hasDummyByte) {
-			if(writeReadCmd(wriCmd, 3, reaCmd, 3, buff, toRead + 1)<0) {
-				TS_LOG_ERR("%s writeCmdU32: ERROR %02X\n", __func__, ERROR_I2C_WR);
+			if (writeReadCmd(wriCmd, CMD_LEN, reaCmd, CMD_LEN, buff, toRead + 1) < 0) {
+				TS_LOG_ERR("%s writeCmdU32: ERROR %02X\n",
+					__func__, ERROR_I2C_WR);
 				kfree(buff);
 				return ERROR_I2C_WR;
 			}
 			memcpy(outBuf, buff + 1, toRead);
 		} else {
-			if(writeReadCmd(wriCmd, 3, reaCmd, 3, buff, toRead)<0) return ERROR_I2C_WR;
+			if (writeReadCmd(wriCmd, CMD_LEN, reaCmd, CMD_LEN, buff, toRead) < 0) {
+				kfree(buff);
+				return ERROR_I2C_WR;
+			}
 			memcpy(outBuf, buff, toRead);
 		}
 

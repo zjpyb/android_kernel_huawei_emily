@@ -25,6 +25,10 @@ enum {
 #ifdef CONFIG_HISI_CPUDDR_FREQ_LINK
 	PM_QOS_ACPUDDR_LINK_GOVERNOR_LEVEL,
 #endif
+
+#ifdef CONFIG_HISI_NPUFREQ_PM_QOS
+	PM_QOS_HISI_NPU_FREQ_DNLIMIT,
+#endif
 	/* insert new class ID */
 	PM_QOS_NUM_CLASSES,
 };
@@ -50,6 +54,9 @@ enum pm_qos_flags_status {
 #endif
 #ifdef CONFIG_HISI_CPUDDR_FREQ_LINK
 #define PM_QOS_ACPUDDR_LINK_GOVERNOR_LEVEL_DEFAULT_VALUE 2
+#endif
+#ifdef CONFIG_HISI_NPUFREQ_PM_QOS
+#define PM_QOS_HISI_NPU_FREQ_DNLIMIT_DEFAULT_VALUE	0
 #endif
 #define PM_QOS_RESUME_LATENCY_DEFAULT_VALUE	0
 #define PM_QOS_LATENCY_TOLERANCE_DEFAULT_VALUE	0
@@ -199,6 +206,11 @@ static inline s32 dev_pm_qos_requested_flags(struct device *dev)
 {
 	return dev->power.qos->flags_req->data.flr.flags;
 }
+static inline s32 dev_pm_qos_raw_read_value(struct device *dev)
+{
+	return IS_ERR_OR_NULL(dev->power.qos) ?
+		0 : pm_qos_read_value(&dev->power.qos->resume_latency);
+}
 #else
 static inline enum pm_qos_flags_status __dev_pm_qos_flags(struct device *dev,
 							  s32 mask)
@@ -263,6 +275,7 @@ static inline void dev_pm_qos_hide_latency_tolerance(struct device *dev) {}
 
 static inline s32 dev_pm_qos_requested_resume_latency(struct device *dev) { return 0; }
 static inline s32 dev_pm_qos_requested_flags(struct device *dev) { return 0; }
+static inline s32 dev_pm_qos_raw_read_value(struct device *dev) { return 0; }
 #endif
 
 #endif

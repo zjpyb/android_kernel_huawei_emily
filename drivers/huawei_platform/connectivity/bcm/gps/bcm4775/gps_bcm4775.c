@@ -63,6 +63,8 @@ extern int get_gps_ic_type(void);
 #define GPSDBG(fmt, args...)    pr_debug("[DRV_GPS, D %s:%d]" fmt "\n",  __func__,  __LINE__, ## args)
 #define GPSERR(fmt, args...)    pr_err("[DRV_GPS, E %s:%d]" fmt "\n",  __func__, __LINE__, ## args)
 
+#define GEOFENCE
+
 typedef struct gps_bcm_info {
     struct gpio gpioid_en;
     struct clk *clk;
@@ -221,7 +223,7 @@ static ssize_t gps_write_proc_nstandby(struct file *filp,
 {
     char gps_nstandby = '0';
     GPSINFO("gps_write_proc_nstandby.");
-    
+
     if(buffer == NULL || off == NULL )
     {
         pr_err("[GPS]NULL Pointer to platform device\n");
@@ -374,7 +376,7 @@ static ssize_t gps_read_proc_mcureq(struct file *filp,
     }
     GPSINFO(" gps mcu_req status[%s]", tmp);
 
-    if (copy_to_user((void __user *)buffer, (void*)tmp, len)) 
+    if (copy_to_user((void __user *)buffer, (void*)tmp, len))
     {
         GPSERR(" mcu_req copy_to_user failed!");
         return -EFAULT;
@@ -393,13 +395,14 @@ int gps_bcm4775_node_init(struct device_node *np, struct gpio *Pgpio, int node,
               struct file_operations *gps_proc_fops)
 {
     int ret = 0;
-    
+    struct proc_dir_entry* file;
+
     if(np == NULL  || Pgpio == NULL  || gps_proc_fops == NULL )
     {
         pr_err("[GPS]NULL Pointer to platform device\n");
         return -EINVAL;
     }
-    
+
     Pgpio->gpio = of_get_named_gpio(np, Gps_DtsNodeName[node], 0);
     if (!gpio_is_valid(Pgpio->gpio)) {
         GPSERR(" of_get_named_gpio  %s failed.",
@@ -431,11 +434,11 @@ int gps_bcm4775_node_init(struct device_node *np, struct gpio *Pgpio, int node,
         return ret;
     }
 
-    ret =
-            (int)proc_create(Gps_DeviceNodeName[node],
+    file =
+            proc_create(Gps_DeviceNodeName[node],
             S_IRUGO | S_IWUSR | S_IWGRP | S_IFREG, gps_dir,
             gps_proc_fops);
-    if (!ret) {
+    if (!file) {
         GPSERR(" gps create proc file [%s] failed. ret = %d",
                Gps_DeviceNodeName[node], ret);
         ret = -ENOMEM;
@@ -450,7 +453,6 @@ static int k3_gps_bcm_probe(struct platform_device *pdev)
     GPS_BCM_INFO *gps_bcm = NULL;
     struct device *gps_power_dev = NULL;
     struct device_node *np = NULL;
-    enum of_gpio_flags gpio_flags;
     int ret = 0;
 #ifdef GEOFENCE
     int irq = 0;

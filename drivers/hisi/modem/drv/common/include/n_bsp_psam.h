@@ -124,8 +124,8 @@ typedef struct tagpsam_ipf_reg
 }ipf_reg_s;
 
 #ifdef __KERNEL__
-
-typedef int (*adq_emtpy_cb_t)(unsigned int);
+#include "mdrv_ipf_comm.h"
+typedef int (*adq_emtpy_cb_t)(IPF_ADQ_EMPTY_E);
 
 #ifdef CONFIG_PSAM_SUPPORT
 struct psam_pm_cb* bsp_psam_set_ipf_para(struct tagpsam_ipf_reg *para);

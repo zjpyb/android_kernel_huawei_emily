@@ -4,9 +4,9 @@ obj-$(CONFIG_HISI_CMDLINE_PARSE)	+= cmdline/
 obj-$(CONFIG_HISI_IRQ_AFFINITY)	+= irq_affinity/
 obj-$(CONFIG_HISILICON_PLATFORM_MAILBOX)	+= mailbox/
 ifeq ($(CLT_IV), true)
-obj-$(CONFIG_SND_SOC_CODEC_HI6555V2)            += fake_hi6xxx_test/
+obj-$(CONFIG_SND_SOC_HI6XXX_MBHC)            += fake_hi6xxx_test/
 endif
-obj-$(CONFIG_SND_SOC_CODEC_HI6555V2)		+= hi6xxx/
+obj-$(CONFIG_SND_SOC_HI6XXX_MBHC)		+= hi6xxx/
 obj-$(CONFIG_HI6402_CODEC)			+= hi64xx/
 obj-$(CONFIG_HI6403_CODEC)			+= hi64xx/
 obj-$(CONFIG_HIFI_DSP_ONE_TRACK)		+= hifi_dsp/
@@ -33,6 +33,7 @@ obj-$(CONFIG_HI3XXX_EFUSE)                      += efuse/
 obj-$(CONFIG_HISI_CMA)                          += hisi_cma/
 obj-y                                           += tzdriver/
 obj-y                                           += hitest/
+obj-$(CONFIG_HISI_LB)                           += hisi_lb/
 obj-$(CONFIG_LOAD_IMAGE) += load_image/
 obj-$(CONFIG_HISI_SECS_CTRL) += secs_power_ctrl/
 obj-$(CONFIG_HISI_SR)                      += pm/

@@ -19,9 +19,11 @@
 #include "contexthub_pm.h"
 #include "contexthub_debug.h"
 #include "sensor_detect.h"
+#include "sensor_feima.h"
 
 uint32_t need_reset_io_power = 0;
 uint32_t need_set_3v_io_power = 0;
+uint32_t need_set_3_2v_io_power = 0;
 uint32_t vdd_set_io_power = 0;
 uint32_t use_ldo12_flag = 0;
 int g_sensorhub_wdt_irq = -1;
@@ -259,6 +261,11 @@ static int sensorhub_io_driver_probe(struct platform_device *pdev)
 		hwlog_err("[%s,%d]: sensorhub_io_driver_probe match fail !\n", __FUNCTION__, __LINE__);
 		return -ENODEV;
 	}
+	g_sensorhub_wdt_irq = platform_get_irq(pdev, 0);
+	if (g_sensorhub_wdt_irq < 0) {
+		pr_err("[%s] platform_get_irq err\n", __func__);
+		return -ENXIO;
+	}
 	power_node = of_find_node_by_name(NULL, "sensorhub_io_power");
 	if(!power_node) {
 		hwlog_err("%s failed to find dts node sensorhub_io_power\n", __func__);
@@ -275,6 +282,12 @@ static int sensorhub_io_driver_probe(struct platform_device *pdev)
 		} else {
 			need_set_3v_io_power = val;
 			hwlog_info("%s property set-3v is %d.\n", __func__, val);
+		}
+		if(of_property_read_u32(power_node, "set-3_2v", &val)) {
+			hwlog_err("%s failed to find property set-3_2v.\n", __func__);
+		} else {
+			need_set_3_2v_io_power = val;
+			hwlog_info("%s property set-3_2v is %d.\n", __func__, val);
 		}
 		if(of_property_read_u32(power_node, "vdd-set", &val)){
 			hwlog_info("%s failed to find property vdd-set.\n", __func__);
@@ -301,7 +314,11 @@ static int sensorhub_io_driver_probe(struct platform_device *pdev)
 		ret = regulator_set_voltage(sensorhub_vddio, SENSOR_VOLTAGE_3V, SENSOR_VOLTAGE_3V);
 		if (ret < 0)
 			hwlog_err("failed to set sensorhub_vddio voltage to 3V\n");
-	}else {
+	} else if (need_set_3_2v_io_power) {
+		ret = regulator_set_voltage(sensorhub_vddio, SENSOR_VOLTAGE_3_2V, SENSOR_VOLTAGE_3_2V);
+		if (ret < 0)
+			hwlog_err("failed to set sensorhub_vddio voltage to 3_2V\n");
+	} else {
 		if(vdd_set_io_power){
 			ret = regulator_set_voltage(sensorhub_vddio,vdd_set_io_power, vdd_set_io_power);
 			if(ret < 0)
@@ -337,11 +354,7 @@ static int sensorhub_io_driver_probe(struct platform_device *pdev)
 
 		sensor_jiffies = jiffies;
 	}
-	g_sensorhub_wdt_irq = platform_get_irq(pdev, 0);
-	if (g_sensorhub_wdt_irq < 0) {
-		pr_err("[%s] platform_get_irq err\n", __func__);
-		return -ENXIO;
-	}
+
 	hwlog_info("%s: sensorhub_io_driver_probe success!\n", __func__);
 	return 0;
 }

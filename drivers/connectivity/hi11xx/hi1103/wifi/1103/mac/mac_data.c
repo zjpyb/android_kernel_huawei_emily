@@ -282,7 +282,7 @@ oal_uint8 mac_get_dhcp_frame_type_etc(oal_ip_header_stru   *pst_rx_ip_hdr)
 
     return mac_get_dhcp_type_etc(puc_pos, puc_packet_end);
 }
-
+#endif
 
 
 mac_eapol_type_enum_uint8 mac_get_eapol_key_type_etc(oal_uint8 *pst_payload)
@@ -349,14 +349,32 @@ mac_eapol_type_enum_uint8 mac_get_eapol_key_type_etc(oal_uint8 *pst_payload)
     return en_eapol_type;
 }
 
-#endif
+
+oal_bool_enum mac_snap_is_protocol_type(oal_uint8 uc_snap_type)
+{
+    if(OAL_LIKELY(SNAP_LLC_LSAP == uc_snap_type))
+    {
+        return OAL_TRUE;
+    }
+    else
+    {
+        OAM_WARNING_LOG1(0, OAM_SF_RX, "mac_frame_is_8023_type:: rx a frame not 0xaa snap type[%x]", uc_snap_type);
+
+        if(SNAP_BRIDGE_SPANNING_TREE == uc_snap_type || SNAP_IBM_LAN_MANAGEMENT == uc_snap_type)
+        {
+            return OAL_FALSE;
+        }
+    }
+
+    /* 无法识别的类型默认protocl type形式，与原逻辑保持一致 */
+    return OAL_TRUE;
+}
+
 /*lint -e19*/
 oal_module_symbol(mac_get_data_type_from_80211_etc);
 oal_module_symbol(mac_is_eapol_key_ptk_etc);
 
 /*lint +e19*/
-
-
 
 
 #ifdef __cplusplus

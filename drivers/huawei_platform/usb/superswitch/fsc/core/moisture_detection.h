@@ -1,6 +1,6 @@
 #ifndef __HW_MOISTRUE_H__
 #define __HW_MOISTRUE_H__
-#define BIT(n) (0x01 << n)
+
 #define BITS_PER_BYTE 8
 #define TEN 10
 #define FUSB3601_VBUS_VOLTAGE_LSB_IN_ONE_TENTH_MV 125

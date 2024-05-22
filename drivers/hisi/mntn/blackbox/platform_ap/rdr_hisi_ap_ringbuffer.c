@@ -100,8 +100,10 @@ int hisiap_ringbuffer_read(struct hisiap_ringbuffer_s *q, u8 *element, u32 len)
 
 	ridx = q->r_idx++;
 
-	memcpy_s((void *)element, len, (void *)&q->data[(long)ridx * q->field_count],
-		q->field_count * sizeof(u8));
+	if(EOK !=memcpy_s((void *)element, len, (void *)&q->data[(long)ridx * q->field_count],
+		q->field_count * sizeof(u8))){
+		 BB_PRINT_ERR("[%s], memcpy_s fail!\n", __func__);
+	}
 
 	return 0;
 }

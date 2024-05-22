@@ -61,7 +61,6 @@ static int upload_events_kill_atkprocess(struct hkip_atkinfo *atkinfo)
 	struct hhee_event_header *hdr = atkinfo->header;
 	struct hhee_event_footer *ftr = atkinfo->footer;
 	struct hhee_event *ets = hdr->events;
-	struct imonitor_eventobj *obj_id;
 	uint64_t start = ftr->read_offset;
 	uint64_t end = hdr->write_offset;
 	uint64_t i;

@@ -22,6 +22,7 @@ int set_mse(u32 rc_id, int flag);
 int kirin_pcie_noc_power(struct kirin_pcie *pcie, int enable);
 int kirin_pcie_phy_init(struct kirin_pcie *pcie);
 void kirin_pcie_natural_cfg(struct kirin_pcie *pcie);
+int pcie_phy_fw_update(struct kirin_pcie *pcie, u16 *fw_data, u32 fw_size);
 void kirin_pcie_reset_phy(struct kirin_pcie *pcie);
 void kirin_pcie_config_l0sl1(u32 rc_id, enum link_aspm_state aspm_state);
 void kirin_pcie_config_l1ss(u32 rc_id, enum l1ss_ctrl_state enable);
@@ -34,12 +35,12 @@ int kirin_pcie_cfg_eco(struct kirin_pcie *pcie);
 int wlan_on(u32 rc_id, int on);
 void pcie_io_adjust(struct kirin_pcie *pcie);
 void kirin_pcie_generate_msg(u32 rc_id, int index, u32 iatu_offset, int msg_type, u32 msg_code);
-
-int pcie_memcpy(ulong dts, ulong src, uint32_t size);
-
+void pcie_memcpy(ulong dst, ulong src, uint32_t size);
+int kirin_pcie_ep_mac_init(u32 rc_id);
+void enable_req_clk(struct kirin_pcie *pcie, u32 enable_flag);
 
 u32 show_link_state(u32 rc_id);
-
+extern int memcpy_s(void *dest, size_t destMax, const void *src, size_t count);
 
 static inline void pcie_wr_8(uint8_t val, char *addr)
 {
@@ -76,6 +77,22 @@ int retrain_link(u32 rc_id);
 int set_link_speed(u32 rc_id, enum link_speed gen);
 int show_link_speed(u32 rc_id);
 u32 kirin_pcie_find_capability(struct pcie_port *pp, int cap);
+int limit_link_speed(struct kirin_pcie *pcie);
+#else
+static inline int retrain_link(u32 rc_id)
+{
+	return OK;
+}
+
+static inline int set_link_speed(u32 rc_id, enum link_speed gen)
+{
+	return OK;
+}
+
+static inline int limit_link_speed(struct kirin_pcie *pcie)
+{
+	return OK;
+}
 #endif
 
 #endif

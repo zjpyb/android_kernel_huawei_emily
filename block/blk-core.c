@@ -46,6 +46,10 @@
 #include "hisi_freq_ctl.h"
 #endif
 
+#ifdef CONFIG_ROW_VIP_QUEUE
+extern int get_task_qos(struct task_struct *task);
+#endif
+
 EXPORT_TRACEPOINT_SYMBOL_GPL(block_bio_remap);
 EXPORT_TRACEPOINT_SYMBOL_GPL(block_rq_remap);
 EXPORT_TRACEPOINT_SYMBOL_GPL(block_bio_complete);
@@ -653,7 +657,6 @@ EXPORT_SYMBOL(blk_alloc_queue);
 int blk_queue_enter(struct request_queue *q, bool nowait)
 {
 	while (true) {
-		int ret;
 
 		if (likely(percpu_ref_tryget_live(&q->q_usage_counter)))
 			return 0;
@@ -661,13 +664,11 @@ int blk_queue_enter(struct request_queue *q, bool nowait)
 		if (nowait)
 			return -EBUSY;
 
-		ret = wait_event_interruptible(q->mq_freeze_wq,
-				!atomic_read(&q->mq_freeze_depth) ||
-				blk_queue_dying(q));/*lint !e666*/
+		wait_event(q->mq_freeze_wq,
+			   !atomic_read(&q->mq_freeze_depth) ||
+			   blk_queue_dying(q));/*lint !e666*/
 		if (blk_queue_dying(q))
 			return -ENODEV;
-		if (ret)
-			return ret;
 	}
 }
 
@@ -1760,12 +1761,21 @@ get_rq:
 	 * rq allocator and io schedulers.
 	 */
 	if (sync)
-		rw_flags |= REQ_SYNC;
+		rw_flags = (unsigned int)rw_flags | REQ_SYNC;
 
+#ifdef CONFIG_ROW_VIP_QUEUE
+	if (blk_queue_qos_on(bdev_get_queue(bio->bi_bdev))) {
+		int qos = get_task_qos(current);
+
+		if ((qos >= BLKIO_QOS_HIGH) ||
+			(bio->bi_opf & (REQ_META | REQ_PRIO)))
+			rw_flags |= (REQ_FG | REQ_VIP);
+	}
+#endif
 	/*
 	 * Add in META/PRIO flags, if set, before we get to the IO scheduler
 	 */
-	rw_flags |= (bio->bi_opf & (REQ_META | REQ_PRIO));
+	rw_flags = (unsigned int)rw_flags | (bio->bi_opf & (REQ_META | REQ_PRIO));
 
 	/*
 	 * Grab a free request. This is might sleep but can not fail.
@@ -2390,7 +2400,7 @@ void blk_account_io_completion(struct request *req, unsigned int bytes)
 {
 #ifdef CONFIG_HISI_BLK
         hisi_blk_account_io_completion(req, bytes);
-#endif /* CONFIG_HISI_BLK_CORE */
+#endif /* CONFIG_HISI_BLK */
 
 	if (likely(blk_do_io_stat(req))) {
 		const int rw = rq_data_dir(req);
@@ -2802,7 +2812,7 @@ bool blk_update_request(struct request *req, int error, unsigned int nr_bytes)
 
 	/* update sector only for requests with clear definition of sector */
 	if (req->cmd_type == REQ_TYPE_FS)
-		req->__sector += total_bytes >> 9;
+		req->__sector += (unsigned int)total_bytes >> 9;
 
 	/* mixed attributes always follow the first bio */
 	if (req->cmd_flags & REQ_MIXED_MERGE) {
@@ -3765,7 +3775,7 @@ int __init blk_dev_init(void)
  * them when printing them out.
  */
 ssize_t
-blk_latency_hist_show(char* name, struct io_latency_state *s, char *buf,
+blk_latency_hist_show(const char* name, struct io_latency_state *s, char *buf,
 		int buf_size)
 {
 	int i;

@@ -235,19 +235,21 @@ static int FUSB3601_dual_role_prop_is_writeable(
        struct dual_role_phy_instance *dual_role, enum dual_role_property prop)
 {
 	hwlog_info("%s +\n",__func__);
-	switch(prop)
-	{
+
+	switch (prop) {
+	/* pr and dr return 0 */
 	case DUAL_ROLE_PROP_PR:
 	case DUAL_ROLE_PROP_DR:
 		return 0;
+
+	default:
+		return 1;
 	}
-	return 1;
 }
 
 static int FUSB3601_dual_role_set_prop(struct dual_role_phy_instance *dual_role,
        enum dual_role_property prop, const unsigned int *val)
 {
-	struct fusb3601_chip* chip = fusb3601_GetChip();
 	int mode = DUAL_ROLE_PROP_MODE_NONE;
 	mode = FUSB3601_get_dual_role_mode();
 
@@ -278,12 +280,13 @@ static int FUSB3601_dual_role_set_prop(struct dual_role_phy_instance *dual_role,
 
 FSC_S32 FUSB3601_dual_role_phy_init(void)
 {
-	hwlog_info("%s +\n",__func__);
 	struct dual_role_phy_desc *dual_desc;
 	struct dual_role_phy_instance *dual_role;
 	struct fusb3601_chip* chip = fusb3601_GetChip();
-	dual_desc = devm_kzalloc(&chip->client->dev,sizeof(struct dual_role_phy_desc),GFP_KERNEL);
 
+	hwlog_info("%s +\n",__func__);
+
+	dual_desc = devm_kzalloc(&chip->client->dev,sizeof(struct dual_role_phy_desc),GFP_KERNEL);
 	if (!dual_desc) {
 		hwlog_err("unable to allocate dual role descriptor\n");
 		return -ENOMEM;

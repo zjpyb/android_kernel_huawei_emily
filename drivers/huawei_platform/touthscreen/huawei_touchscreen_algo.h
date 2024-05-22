@@ -20,7 +20,6 @@ enum TP_state_machine {
 #define AFT_EDGE 1
 #define NOT_AFT_EDGE 0
 
-//static char first_touch_tag = 0;
 #define FINGER_PRESS_TIME_MIN	20 * 1000 /* mil second */
 #define FINGER_PRESS_TIMES_IN_MIN_TIME	5
 #define GHOST_MIL_SECOND_TIME 1000000

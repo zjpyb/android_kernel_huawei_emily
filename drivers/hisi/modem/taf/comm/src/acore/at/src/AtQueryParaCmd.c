@@ -273,7 +273,8 @@ VOS_VOID AT_ConvertImsiDigit2String(
 
     TAF_MEM_SET_S(aucImsiNum, sizeof(aucImsiNum), 0x00, NAS_IMSI_STR_LEN);
     ulTempNum       = 0;
-    ucImsiLen       = pucImsi[0];
+
+    ucImsiLen       = TAF_MIN(pucImsi[0], NAS_MAX_IMSI_LENGTH - 1);
 
     aucImsiNum[ulTempNum++] = (pucImsi[1] & 0xf0) >> 4;
 
@@ -285,6 +286,8 @@ VOS_VOID AT_ConvertImsiDigit2String(
 
     /* 非'f'的IMSI号转换为字符 */
     i = 0;
+
+    AT_LOG1("AT_ConvertImsiDigit2String: ulTempNum", ulTempNum);
 
     while (i < ulTempNum)
     {
@@ -299,9 +302,11 @@ VOS_VOID AT_ConvertImsiDigit2String(
         }
     }
 
+    AT_LOG1("AT_ConvertImsiDigit2String: i", i);
+
     pucImsiString[i] = '\0';
 
-    AT_INFO_LOG(pucImsiString);
+    /* GDPR排查不能打印IMSI */
 
     return;
 }

@@ -190,7 +190,7 @@ VOS_VOID AT_ClacCmdProc(VOS_VOID)
                                               "%s%c%c", pstCmdElement[i].pszCmdName, ucAtS3, ucAtS4);
         }
     }
-    
+
     return ;
 }
 
@@ -1583,6 +1583,12 @@ VOS_VOID At_ReadyClientCmdProc(VOS_UINT8 ucIndex, VOS_UINT8 *pData, VOS_UINT16 u
     {
         At_FormatResultData(ucIndex, ulRet);
 
+        return;
+    }
+
+    /* 最短为"AT"两个字符 */
+    if (usLen < 2)
+    {
         return;
     }
 

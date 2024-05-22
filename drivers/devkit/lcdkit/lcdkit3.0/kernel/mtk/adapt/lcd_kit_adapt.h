@@ -18,4 +18,7 @@
 int lcd_kit_dsi_cmds_tx(void* hld, struct lcd_kit_dsi_panel_cmds* cmds);
 int lcd_kit_dsi_cmds_rx(void* hld, uint8_t* out, struct lcd_kit_dsi_panel_cmds* cmds);
 int lcd_kit_adapt_init(void);
+int lcd_kit_dsi_cmds_extern_rx(uint8_t *out,
+				struct lcd_kit_dsi_panel_cmds *cmds,
+				unsigned int len);
 #endif

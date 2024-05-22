@@ -120,7 +120,7 @@ static ssize_t store_keybacklight_attr(struct device *dev,
 		param.test_mode = 1;
 		ret = set_brightness(&param);
 		if (ret < 0) {
-			hwlog_info("set backlight failed\n", brightness);
+			hwlog_info("set backlight failed\n");
 		}
 	}
 	return size;

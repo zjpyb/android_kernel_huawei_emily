@@ -81,7 +81,7 @@ int zrhung_is_id_valid(short wp_id)
     if (wp_id <= ZRHUNG_WP_NONE ||
         (wp_id >= ZRHUNG_WP_MAX && wp_id <= APPEYE_NONE) ||
         (wp_id >= APPEYE_MAX && wp_id <= ZRHUNG_EVENT_NONE) ||
-        (wp_id >= ZRHUNG_EVENT_MAX && wp_id <= ZRHUNG_XCOLLIE_NONE) ||
+        wp_id == XCOLLIE_FWK_SERVICE ||
         wp_id >= ZRHUNG_XCOLLIE_MAX) {
         return -EINVAL;
     }

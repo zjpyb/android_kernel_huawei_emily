@@ -120,7 +120,7 @@ s32 reset_prepare(enum MODEM_ACTION action)
 
 	g_reset_debug.main_stage = 0;
 
-	wake_lock(&(g_modem_reset_ctrl.wake_lock));
+	__pm_stay_awake(&(g_modem_reset_ctrl.wake_lock));
 	cp_reset_timestamp_dump(RESET_DUMP_PREPARE);
 	reset_print_debug("(%d) wake_lock\n", ++g_reset_debug.main_stage);
 
@@ -661,7 +661,7 @@ int modem_reset_task(void *arg)
 		}
 
 		osl_sem_up(&(g_modem_reset_ctrl.action_sem));
-		wake_unlock(&(g_modem_reset_ctrl.wake_lock));/*lint !e455 */
+		__pm_relax(&(g_modem_reset_ctrl.wake_lock));/*lint !e455 */
 
 		cp_reset_timestamp_dump(RESET_DUMP_END);
 		g_modem_reset_ctrl.exec_time = get_timer_slice_delta(g_modem_reset_ctrl.exec_time, bsp_get_slice_value());
@@ -730,6 +730,11 @@ struct reset_cb_list *do_cb_func_register(struct reset_cb_list * list_head, cons
 		cb_func_node->cb_info.userdata = user_data;
 		cb_func_node->cb_info.cbfun = func;
     }
+	else
+	{
+		reset_print_err("malloc fail\n");
+		return list_head;
+	}
 
 	if (!list_head)
     {
@@ -1014,7 +1019,7 @@ int __init bsp_reset_init(void)
 	osl_sem_init(0, &g_modem_reset_ctrl.wait_ccore_reset_ok_sem);
 	osl_sem_init(0, &g_modem_reset_ctrl.wait_modem_master_in_idle_sem);
 
-	wake_lock_init(&g_modem_reset_ctrl.wake_lock, WAKE_LOCK_SUSPEND, "modem_reset wake");
+	wakeup_source_init(&g_modem_reset_ctrl.wake_lock, "modem_reset wake");
 	spin_lock_init(&g_modem_reset_ctrl.action_lock);
 
     g_modem_reset_ctrl.task = kthread_run(modem_reset_task,  NULL, "modem_reset");

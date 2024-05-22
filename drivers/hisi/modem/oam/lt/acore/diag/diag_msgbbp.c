@@ -64,6 +64,7 @@
 #include "adrv.h"
 
 #include <linux/device.h>
+#include <linux/of.h>
 #include <linux/platform_device.h>
 #include <linux/of_reserved_mem.h>
 #include <linux/of_fdt.h>

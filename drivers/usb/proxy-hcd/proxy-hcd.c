@@ -114,7 +114,7 @@ static int phcd_get_ep_index_from_desc(struct usb_endpoint_descriptor *desc)
 	return index;
 }
 
-static struct proxy_hcd_urb* find_urb_by_buf(struct list_head *head, void *buf)
+static struct proxy_hcd_urb* find_urb_by_buf(struct list_head *head, const void *buf)
 {
 	struct proxy_hcd_urb *pos;
 
@@ -281,7 +281,7 @@ error:
  */
 static void fill_phcd_urb_comm(struct urb_msg *urb_msg, struct urb *urb)
 {
-	urb_msg->urb_magic 			= __cpu_to_le64((__u64)urb);
+	urb_msg->urb_magic 			= __cpu_to_le64((__u64)(uintptr_t)urb);
 	urb_msg->slot_id 			= __cpu_to_le32(urb->dev->slot_id);
 	urb_msg->pipe 				= __cpu_to_le32(urb->pipe);
 

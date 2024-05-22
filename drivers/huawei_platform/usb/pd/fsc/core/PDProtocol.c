@@ -38,6 +38,7 @@
 #include "vdm/vdm_types.h"
 #include "vdm/bitfield_translators.h"
 #endif // FSC_HAVE_VDM
+#include <huawei_platform/usb/hw_pd_dev.h>
 
 /////////////////////////////////////////////////////////////////////////////
 //      Variables for use with the USB PD state machine
@@ -81,6 +82,7 @@ static FSC_U8                   ProtocolCRC[4];
 	   FSC_BOOL					g_crcsent_lock;
         TIMER          ProtocolTimer;                               // Multi-function timer for the different policy states
 
+extern VdmDiscoveryState_t             AutoVdmState;
 /////////////////////////////////////////////////////////////////////////////
 //                  Timer Interrupt service routine
 /////////////////////////////////////////////////////////////////////////////
@@ -95,12 +97,12 @@ void InitializePDProtocolVariables(void)
 }
 
 // ##################### USB PD Protocol Layer Routines ##################### //
-
 void USBPDProtocol(void)
 {
     if (Registers.Status.I_HARDRST || Registers.Status.I_HARDSENT)
     {
         FSC_PRINT("FUSB %s Hard Reset Detected\n", __func__);
+        AutoVdmState = AUTO_VDM_INIT;
         ResetProtocolLayer(TRUE);                                               // Reset the protocol layer
         if (PolicyIsSource)                                                     // If we are the source...
         {
@@ -179,10 +181,9 @@ void ProtocolResetWait(void)
 void ProtocolGetRxPacket(void)
 {
     FSC_U32 i, j;
-    FSC_U8 data[3];
+    FSC_U8 data[3] = {0};
     SopType rx_sop;
     //B.Yang debug 0718
-    FSC_U8 reg41h = 0;
 	FSC_U8 doublecheck = 0;
     //End
 #ifdef FSC_DEBUG
@@ -232,7 +233,18 @@ void ProtocolGetRxPacket(void)
         return;
     }
 	if (rx_sop == SOP_TYPE_SOP1)
-        goto blah;
+#ifdef FSC_HAVE_CUSTOM_SRC2
+	{
+		if (pd_dpm_get_is_support_smart_holder()) {
+			// Set the flag to pass the message to the policy engine
+			ProtocolMsgRx = TRUE;
+			ProtocolMsgRxSop = rx_sop;
+		}
+#endif /* FSC_HAVE_CUSTOM_SRC2 */
+		goto blah;
+#ifdef FSC_HAVE_CUSTOM_SRC2
+	}
+#endif /* FSC_HAVE_CUSTOM_SRC2 */
 
     if ((PolicyRxHeader.NumDataObjects == 0) && (PolicyRxHeader.MessageType == CMTSoftReset))
     {
@@ -453,7 +465,7 @@ void ProtocolSendingMessage(void)
 void ProtocolVerifyGoodCRC(void)
 {
     FSC_U32 i, j;
-    FSC_U8 data[7];
+    FSC_U8 data[7] = {0};
     SopType s;
 
     DeviceRead(regFIFO, 7, &data[0]);                                          // Read the Rx token and two header bytes
@@ -605,6 +617,32 @@ void ProtocolSendHardReset(void)
     StoreUSBPDToken(TRUE, pdtHardReset);                                        // Store the hard reset
 #endif // FSC_DEBUG
 }
+
+#ifdef FSC_HAVE_CUSTOM_SRC2
+#define  Control3 3
+void ProtocolSendCableReset(void)
+{
+	Registers.Control.N_RETRIES = 0;
+	DeviceWrite(regControl3, 1, &Registers.Control.byte[Control3]);
+	ProtocolTxBytes = 0;
+	/* to reg FIFOs, End with TXOFF*/
+	ProtocolTxBuffer[ProtocolTxBytes++] = RESET1;
+	ProtocolTxBuffer[ProtocolTxBytes++] = SYNC1_TOKEN;
+	ProtocolTxBuffer[ProtocolTxBytes++] = RESET1;
+	ProtocolTxBuffer[ProtocolTxBytes++] = SYNC3_TOKEN;
+	ProtocolTxBuffer[ProtocolTxBytes++] = TXOFF;
+	if (ProtocolTxBytes <= FSC_PROTOCOL_BUFFER_SIZE) {
+		DeviceWrite(regFIFO, ProtocolTxBytes, &ProtocolTxBuffer[0]);
+	} else {
+		FSC_PRINT("FUSB %s ERROR: TxBuffer is full\n", __func__);
+		return;
+	}
+	/* Start the transmission */
+	Registers.Control.TX_START = 1;
+	DeviceWrite(regControl0, 1, &Registers.Control.byte[0]);
+	Registers.Control.TX_START = 0;
+}
+#endif /* FSC_HAVE_CUSTOM_SRC2 */
 
 void ProtocolFlushRxFIFO(void)
 {

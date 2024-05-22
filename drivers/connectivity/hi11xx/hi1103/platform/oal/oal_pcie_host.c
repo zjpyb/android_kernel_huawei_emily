@@ -40,6 +40,11 @@ extern "C" {
 #include "plat_pm_wlan.h"
 #include "board.h"
 
+#include "oal_util.h"
+
+#ifdef _PRE_WLAN_PKT_TIME_STAT
+#include <hwnet/ipv4/wifi_delayst.h>
+#endif
 #undef  THIS_FILE_ID
 #define THIS_FILE_ID OAM_FILE_ID_OAL_PCIE_HOST_C
 
@@ -76,53 +81,53 @@ OAL_STATIC oal_pcie_bar_info g_en_bar_table[] =
 };
 
 oal_int32 hipcie_loglevel = PCI_LOG_INFO;  /**/
-module_param(hipcie_loglevel, int, S_IRUGO | S_IWUSR);
+oal_debug_module_param(hipcie_loglevel, int, S_IRUGO | S_IWUSR);
 
 oal_int32 pcie_soft_fifo_enable = 0;
-module_param(pcie_soft_fifo_enable, int, S_IRUGO | S_IWUSR);
+oal_debug_module_param(pcie_soft_fifo_enable, int, S_IRUGO | S_IWUSR);
 
 oal_int32 pcie_ringbuf_bugfix_enable = 1;
-module_param(pcie_ringbuf_bugfix_enable, int, S_IRUGO | S_IWUSR);
+oal_debug_module_param(pcie_ringbuf_bugfix_enable, int, S_IRUGO | S_IWUSR);
 
 oal_int32 pcie_dma_data_check_enable = 0;/*Wi-Fi关闭时可以修改此标记*/
-module_param(pcie_dma_data_check_enable, int, S_IRUGO | S_IWUSR);
+oal_debug_module_param(pcie_dma_data_check_enable, int, S_IRUGO | S_IWUSR);
 
 oal_int32 ft_pcie_wcpu_max_freq_bypass = 0;
-module_param(ft_pcie_wcpu_max_freq_bypass, int, S_IRUGO | S_IWUSR);
+oal_debug_module_param(ft_pcie_wcpu_max_freq_bypass, int, S_IRUGO | S_IWUSR);
 
 oal_int32 ft_pcie_link_err_bypass = 0;
-module_param(ft_pcie_link_err_bypass, int, S_IRUGO | S_IWUSR);
+oal_debug_module_param(ft_pcie_link_err_bypass, int, S_IRUGO | S_IWUSR);
 
 oal_int32 ft_pcie_wcpu_mem_check_times = 1;
-module_param(ft_pcie_wcpu_mem_check_times, int, S_IRUGO | S_IWUSR);
+oal_debug_module_param(ft_pcie_wcpu_mem_check_times, int, S_IRUGO | S_IWUSR);
 
 oal_int32 ft_pcie_perf_runtime = 200;
-module_param(ft_pcie_perf_runtime, int, S_IRUGO | S_IWUSR);
+oal_debug_module_param(ft_pcie_perf_runtime, int, S_IRUGO | S_IWUSR);
 
 oal_int32 ft_pcie_perf_wr_bypass = 0;
-module_param(ft_pcie_perf_wr_bypass, int, S_IRUGO | S_IWUSR);
+oal_debug_module_param(ft_pcie_perf_wr_bypass, int, S_IRUGO | S_IWUSR);
 
 oal_int32 ft_pcie_perf_rd_bypass = 1;
-module_param(ft_pcie_perf_rd_bypass, int, S_IRUGO | S_IWUSR);
+oal_debug_module_param(ft_pcie_perf_rd_bypass, int, S_IRUGO | S_IWUSR);
 
 oal_int32 ft_pcie_wcpu_mem_check_burst_check = 0;
-module_param(ft_pcie_wcpu_mem_check_burst_check, int, S_IRUGO | S_IWUSR);
+oal_debug_module_param(ft_pcie_wcpu_mem_check_burst_check, int, S_IRUGO | S_IWUSR);
 
 oal_int32 ft_pcie_wcpu_mem_check_byword_bypass = 1;
-module_param(ft_pcie_wcpu_mem_check_byword_bypass, int, S_IRUGO | S_IWUSR);
+oal_debug_module_param(ft_pcie_wcpu_mem_check_byword_bypass, int, S_IRUGO | S_IWUSR);
 
 oal_int32 ft_pcie_write_address_bypass = 0;
-module_param(ft_pcie_write_address_bypass, int, S_IRUGO | S_IWUSR);
+oal_debug_module_param(ft_pcie_write_address_bypass, int, S_IRUGO | S_IWUSR);
 
 oal_int32 pcie_ldo_phy_0v9_param = 0;
-module_param(pcie_ldo_phy_0v9_param, int, S_IRUGO | S_IWUSR);
+oal_debug_module_param(pcie_ldo_phy_0v9_param, int, S_IRUGO | S_IWUSR);
 
 oal_int32 pcie_ldo_phy_1v8_param = 0;
-module_param(pcie_ldo_phy_1v8_param, int, S_IRUGO | S_IWUSR);
+oal_debug_module_param(pcie_ldo_phy_1v8_param, int, S_IRUGO | S_IWUSR);
 
 /*0 memcopy from kernel ,1 memcopy from self*/
 oal_int32 pcie_memcopy_type = 0;
-module_param(pcie_memcopy_type, int, S_IRUGO | S_IWUSR);
+oal_debug_module_param(pcie_memcopy_type, int, S_IRUGO | S_IWUSR);
 EXPORT_SYMBOL_GPL(pcie_memcopy_type);
 
 char* g_pci_loglevel_format[] = {
@@ -2574,7 +2579,12 @@ oal_void oal_pcie_h2d_transfer_done(oal_pcie_res* pst_pci_res)
                     flag = 0;
                     goto done;
                 }
-
+#ifdef _PRE_WLAN_PKT_TIME_STAT
+                if(DELAY_STATISTIC_SWITCH_ON)
+		{
+                    delay_record_snd_combine(pst_netbuf);
+		}
+#endif
                 /*unmap dma addr & free netbuf*/
                 pst_pci_res->st_tx_res[i].stat.tx_done_count++;
                 PCI_PRINT_LOG(PCI_LOG_DBG, "[q:%d]tx chan:%d, send netbuf ok, va:0x%p, cnt:%u",
@@ -3841,6 +3851,30 @@ oal_int32 oal_pcie_get_vol_reg_bits_value(oal_uint32 target_value, oal_reg_bits_
     return -OAL_ENODEV;
 }
 
+oal_int32 oal_pcie_get_vol_reg_1v8_value(oal_int32 request_vol, oal_uint32* pst_value)
+{
+    oal_int32 ret;
+    ret = oal_pcie_get_vol_reg_bits_value(request_vol, g_pcie_phy_1v8_bits,
+                                          OAL_ARRAY_SIZE(g_pcie_phy_1v8_bits), pst_value);
+    if(OAL_SUCC != ret)
+    {
+        oal_print_hi11xx_log(HI11XX_LOG_ERR, "invalid pcie ldo bias phy 1v8 param =%d mV", request_vol);
+        return -OAL_EINVAL;
+    }
+    return OAL_SUCC;
+}
+oal_int32 oal_pcie_get_vol_reg_0v9_value(oal_int32 request_vol, oal_uint32* pst_value)
+{
+    oal_int32 ret;
+    ret = oal_pcie_get_vol_reg_bits_value(request_vol, g_pcie_phy_0v9_bits,
+                                          OAL_ARRAY_SIZE(g_pcie_phy_0v9_bits), pst_value);
+    if(OAL_SUCC != ret)
+    {
+        oal_print_hi11xx_log(HI11XX_LOG_ERR, "invalid pcie ldo bias phy 0v9 param =%d mV", request_vol);
+        return -OAL_EINVAL;
+    }
+    return OAL_SUCC;
+}
 oal_void oal_pcie_set_voltage_bias_param(oal_uint32 phy_0v9_bias, oal_uint32 phy_1v8_bias)
 {
     pcie_ldo_phy_0v9_param = phy_0v9_bias;
@@ -4050,14 +4084,17 @@ oal_int32 oal_pcie_device_changeto_high_cpufreq(oal_pcie_res* pst_pci_res)
 
         /*pmu_cmu_ctl_pmu1_man_frc_w_0_set(PMU_CMU_CTL_SYSLDO_ECO_REF_SEL_MAN_W_FRC*/
         oal_setl_bit(pst_pmu_cmu_ctrl + 0x88 , 12);
+        oal_readl(pst_pmu_cmu_ctrl + 0x88);
         oal_udelay(30);
 
         /*pmu_cmu_ctl_pmu1_man_frc_w_0_set(PMU_CMU_CTL_SYSLDO_ECO_EN_MAN_W_FRC*/
         oal_setl_bit(pst_pmu_cmu_ctrl + 0x88 , 2);
+        oal_readl(pst_pmu_cmu_ctrl + 0x88);
         oal_udelay(60);
 
         /*pmu_cmu_ctl_pmu1_man_frc_w_0_set(PMU_CMU_CTL_SYSLDO_EN_MAN_W_FRC_OFF*/
         oal_setl_bit(pst_pmu_cmu_ctrl + 0x88 , 1);
+        oal_readl(pst_pmu_cmu_ctrl + 0x88);
         oal_udelay(30);
 
         /*pmu_cmu_ctl_pmu1_man_frc_w_0_clear(PMU_CMU_CTL_SYSLDO_ECO_REF_SEL_MAN_W_FRC)*/
@@ -4108,6 +4145,7 @@ oal_int32 oal_pcie_device_changeto_high_cpufreq(oal_pcie_res* pst_pci_res)
         /*pmu2_cmu_ir_ts_ef_cmu_pd_w_clear(PMU2_CMU_IR_TS_EF_FOUTVCOPD_W | PMU2_CMU_IR_TS_EF_FOUTPOSTDIVPD_W|PMU2_CMU_IR_TS_EF_DSMPD_W)*/
         oal_clearl_mask(HI1103_PMU2_CMU_IR_CMU_PD_REG, (BIT4 | BIT3 | BIT1));
         /*PMU2_CMU_IR_TS_EF_RB_CMU_PD_CMU_PD_W_ADDR value&0x1a != 0x0*/
+        oal_readl(HI1103_PMU2_CMU_IR_CMU_PD_REG);
         oal_msleep(1);
 
         /*pll_on_reset(PMU2_CMU_IR_TS_EF_RB_CMU_STATUS_RAW_ADDR, 0)*/
@@ -9888,7 +9926,8 @@ oal_int32 oal_pcie_loadfile(oal_pcie_res* pst_pcie_res, char* file_name, oal_uin
 
     for(;;)
     {
-        rlen = kernel_read(fp, fp->f_pos, (void*)pst_buf, PAGE_SIZE);
+        rlen = oal_file_read_ext(fp, fp->f_pos, (void*)pst_buf, PAGE_SIZE);
+
         if(rlen <= 0)
         {
             break;

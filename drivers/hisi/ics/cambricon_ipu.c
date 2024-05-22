@@ -347,12 +347,12 @@ int set_offchip_inst_addr(unsigned long addr) {
 	/* write offchip inst addr to instram */
 	uint32_t inst_addr = (uint32_t) (addr + 384);
 	inst_addr = (inst_addr | 0x80000000) >> 1;
-	ipu_base_reg = ioread32((void *)((unsigned long)adapter->config_reg_virt_addr + IPU_BASE_ADDR_REG));
+	ipu_base_reg = ioread32((void *)((uintptr_t)adapter->config_reg_virt_addr + IPU_BASE_ADDR_REG));
 	adjusted_addr = ((ipu_base_reg & 0xfff) << 20) + addr;
 
 	if (ipu_mem_mngr_check_valid((unsigned int)adjusted_addr)) {
 		printk(KERN_ERR"[%s]: IPU_ERROR:fail to seek in malloc memory, input addr=0x%pK ipu_base_reg=%u, adjusted_addr=0x%pK \n",
-			__func__, (void *)(unsigned long)addr, ipu_base_reg, (void *)adjusted_addr);
+			__func__, (void *)(uintptr_t)addr, ipu_base_reg, (void *)(uintptr_t)adjusted_addr);
 		ipu_mem_mngr_dump();
 		return -EINVAL;
 	}
@@ -365,13 +365,13 @@ int set_offchip_inst_addr(unsigned long addr) {
 	/* write boot inst to instram */
 	for (i = 0; i < adapter->boot_inst_set.boot_inst_size; i += 4) {
 		tmp = *(unsigned int *)&adapter->boot_inst_set.boot_inst[i];
-		iowrite32(tmp, (void *)((unsigned long)adapter->inst_ram_virt_addr + i));
+		iowrite32(tmp, (void *)((uintptr_t)adapter->inst_ram_virt_addr + i));
 	}
 
-	iowrite8((inst_addr&0x000000ff)    , (void *)((unsigned long)adapter->inst_ram_virt_addr + 53));
-	iowrite8((inst_addr&0x0000ff00)>>8 , (void *)((unsigned long)adapter->inst_ram_virt_addr + 54));
-	iowrite8((inst_addr&0x00ff0000)>>16, (void *)((unsigned long)adapter->inst_ram_virt_addr + 55));
-	iowrite8((inst_addr&0xff000000)>>24, (void *)((unsigned long)adapter->inst_ram_virt_addr + 56));
+	iowrite8((inst_addr&0x000000ff)    , (void *)((uintptr_t)adapter->inst_ram_virt_addr + 53));
+	iowrite8((inst_addr&0x0000ff00)>>8 , (void *)((uintptr_t)adapter->inst_ram_virt_addr + 54));
+	iowrite8((inst_addr&0x00ff0000)>>16, (void *)((uintptr_t)adapter->inst_ram_virt_addr + 55));
+	iowrite8((inst_addr&0xff000000)>>24, (void *)((uintptr_t)adapter->inst_ram_virt_addr + 56));
 
 	up(&adapter->inst_ram_sem);
 
@@ -414,11 +414,11 @@ static int start_ipu(void)
 		}
 
 		/* set base address */
-		iowrite32(adapter->boot_inst_set.ipu_access_ddr_addr, (void *)((unsigned long)adapter->config_reg_virt_addr + IPU_BASE_ADDR_REG));
+		iowrite32(adapter->boot_inst_set.ipu_access_ddr_addr, (void *)((uintptr_t)adapter->config_reg_virt_addr + IPU_BASE_ADDR_REG));
 	}
 
 	/* prepare data for ipu */
-	if(IPU_TO_START!= ioread32((void *)((unsigned long)adapter->config_reg_virt_addr + IPU_START_REG))) {
+	if(IPU_TO_START!= ioread32((void *)((uintptr_t)adapter->config_reg_virt_addr + IPU_START_REG))) {
 		taskElement head;
 		if (kfifo_peek(&FIFO_TaskElements, &head)) {
 			ret = set_offchip_inst_addr(head.offchipInstAddr);
@@ -426,16 +426,16 @@ static int start_ipu(void)
 				/* update pte */
 				ipu_smmu_pte_update();
 				/* start ipu */
-				iowrite32(IPU_TO_STOP, (void *)((unsigned long)adapter->config_reg_virt_addr + IPU_START_REG));
-				iowrite32(IPU_STATUS_UNFINISH, (void *)((unsigned long)adapter->config_reg_virt_addr + IPU_STATUS_REG));
+				iowrite32(IPU_TO_STOP, (void *)((uintptr_t)adapter->config_reg_virt_addr + IPU_START_REG));
+				iowrite32(IPU_STATUS_UNFINISH, (void *)((uintptr_t)adapter->config_reg_virt_addr + IPU_STATUS_REG));
 
 				if (adapter->feature_tree.performance_monitor) {
 					performance_monitor_open();
 				}
 
-				iowrite32(IPU_TO_START, (void *)((unsigned long)adapter->config_reg_virt_addr + IPU_START_REG));
+				iowrite32(IPU_TO_START, (void *)((uintptr_t)adapter->config_reg_virt_addr + IPU_START_REG));
 
-				printk(KERN_DEBUG"[%s]: START COMPUTE, offchipInstAddr=0x%pK\n", __func__, (void *)head.offchipInstAddr);
+				printk(KERN_DEBUG"[%s]: START COMPUTE, offchipInstAddr=0x%pK\n", __func__, (void *)(uintptr_t)head.offchipInstAddr);
 
 				ipu_watchdog_start(&adapter->reset_wtd, WATCHDOG_TIMEOUT_THD_MS);
 			} else {
@@ -496,7 +496,7 @@ static struct platform_device cambricon_ipu_device = {
 
 bool ipu_get_irq_offset (struct device *dev)
 {
-	int property_rd;
+	unsigned int property_rd;
 	struct irq_reg_offset *offset = &adapter->irq_reg_offset;
 	struct device_node *node = of_find_node_by_name(dev->of_node, "ics_irq");
 	if(!node) {
@@ -504,9 +504,9 @@ bool ipu_get_irq_offset (struct device *dev)
 		return false;
 	}
 	memset(offset, 0, sizeof(*offset));// coverity[secure_coding]
-	property_rd = of_property_read_u32(node, "ics-irq-base-addr", &offset->ics_irq_base_addr);
-	property_rd |= of_property_read_u32(node, "ics-irq-mask-ns", &offset->ics_irq_mask_ns);
-	property_rd |= of_property_read_u32(node, "ics-irq-clr-ns", &offset->ics_irq_clr_ns);
+	property_rd = (unsigned int)of_property_read_u32(node, "ics-irq-base-addr", &offset->ics_irq_base_addr);
+	property_rd |= (unsigned int)of_property_read_u32(node, "ics-irq-mask-ns", &offset->ics_irq_mask_ns);
+	property_rd |= (unsigned int)of_property_read_u32(node, "ics-irq-clr-ns", &offset->ics_irq_clr_ns);
 	if (property_rd) {
 		printk(KERN_ERR"[%s]: IPU_ERROR:read property of irq offset error\n", __func__);
 		return false;
@@ -517,7 +517,7 @@ bool ipu_get_irq_offset (struct device *dev)
 
 bool ipu_get_bandwidth_lmt_offset (struct device *dev)
 {
-	int property_rd;
+	unsigned int property_rd;
 	struct ics_noc_bus_reg_offset *ics_noc_bus = &adapter->ics_noc_bus_reg_offset;
 	struct device_node *node = of_find_node_by_name(dev->of_node, "ics_noc_bus");
 
@@ -526,11 +526,11 @@ bool ipu_get_bandwidth_lmt_offset (struct device *dev)
 		return false;
 	}
 
-	property_rd = of_property_read_u32(node, "base-addr", &ics_noc_bus->base_addr);
-	property_rd |= of_property_read_u32(node, "qos-type", &ics_noc_bus->qos_type);
-	property_rd |= of_property_read_u32(node, "factor", &ics_noc_bus->factor);
-	property_rd |= of_property_read_u32(node, "saturation", &ics_noc_bus->saturation);
-	property_rd |= of_property_read_u32(node, "qos_extcontrol", &ics_noc_bus->qos_extcontrol);
+	property_rd = (unsigned int)of_property_read_u32(node, "base-addr", &ics_noc_bus->base_addr);
+	property_rd |= (unsigned int)of_property_read_u32(node, "qos-type", &ics_noc_bus->qos_type);
+	property_rd |= (unsigned int)of_property_read_u32(node, "factor", &ics_noc_bus->factor);
+	property_rd |= (unsigned int)of_property_read_u32(node, "saturation", &ics_noc_bus->saturation);
+	property_rd |= (unsigned int)of_property_read_u32(node, "qos_extcontrol", &ics_noc_bus->qos_extcontrol);
 	if (property_rd) {
 		printk(KERN_ERR"[%s]: IPU_ERROR:read property of ics_noc_bus offset error\n", __func__);
 		return false;
@@ -541,7 +541,7 @@ bool ipu_get_bandwidth_lmt_offset (struct device *dev)
 
 bool ipu_get_reset_offset (struct device *dev)
 {
-	int property_rd;
+	unsigned int property_rd;
 	struct pmctrl_reg_offset *pmctrl = &adapter->pmctrl_reg_offset;
 	struct pctrl_reg_offset *pctrl = &adapter->pctrl_reg_offset;
 	struct media2_reg_offset *media2 = &adapter->media2_reg_offset;
@@ -552,10 +552,10 @@ bool ipu_get_reset_offset (struct device *dev)
 		return false;
 	}
 	memset(pmctrl, 0, sizeof(*pmctrl));
-	property_rd = of_property_read_u32(node, "base-addr", &pmctrl->base_addr);
-	property_rd |= of_property_read_u32(node, "noc-power-idle-req", &pmctrl->noc_power_idle_req);
-	property_rd |= of_property_read_u32(node, "noc-power-idle-ack", &pmctrl->noc_power_idle_ack);
-	property_rd |= of_property_read_u32(node, "noc-power-idle-stat", &pmctrl->noc_power_idle_stat);
+	property_rd = (unsigned int)of_property_read_u32(node, "base-addr", &pmctrl->base_addr);
+	property_rd |= (unsigned int)of_property_read_u32(node, "noc-power-idle-req", &pmctrl->noc_power_idle_req);
+	property_rd |= (unsigned int)of_property_read_u32(node, "noc-power-idle-ack", &pmctrl->noc_power_idle_ack);
+	property_rd |= (unsigned int)of_property_read_u32(node, "noc-power-idle-stat", &pmctrl->noc_power_idle_stat);
 	if (property_rd) {
 		printk(KERN_ERR"[%s]: IPU_ERROR:read property of pmctrl offset error\n", __func__);
 		return false;
@@ -567,8 +567,8 @@ bool ipu_get_reset_offset (struct device *dev)
 		return false;
 	}
 	memset(pctrl, 0, sizeof(*pctrl));
-	property_rd = of_property_read_u32(node, "base-addr", &pctrl->base_addr);
-	property_rd |= of_property_read_u32(node, "peri-stat3", &pctrl->peri_stat3);
+	property_rd = (unsigned int)of_property_read_u32(node, "base-addr", &pctrl->base_addr);
+	property_rd |= (unsigned int)of_property_read_u32(node, "peri-stat3", &pctrl->peri_stat3);
 	if (property_rd) {
 		printk(KERN_ERR"[%s]: IPU_ERROR:read property of pctrl offset error\n", __func__);
 		return false;
@@ -580,14 +580,14 @@ bool ipu_get_reset_offset (struct device *dev)
 		return false;
 	}
 	memset(media2, 0, sizeof(*media2));
-	property_rd = of_property_read_u32(node, "base-addr", &media2->base_addr);
-	property_rd |= of_property_read_u32(node, "peren0", &media2->peren0);
-	property_rd |= of_property_read_u32(node, "perdis0", &media2->perdis0);
-	property_rd |= of_property_read_u32(node, "perclken0", &media2->perclken0);;
-	property_rd |= of_property_read_u32(node, "perstat0", &media2->perstat0);
-	property_rd |= of_property_read_u32(node, "perrsten0", &media2->perrsten0);
-	property_rd |= of_property_read_u32(node, "perrstdis0", &media2->perrstdis0);
-	property_rd |= of_property_read_u32(node, "perrststat0", &media2->perrststat0);
+	property_rd = (unsigned int)of_property_read_u32(node, "base-addr", &media2->base_addr);
+	property_rd |= (unsigned int)of_property_read_u32(node, "peren0", &media2->peren0);
+	property_rd |= (unsigned int)of_property_read_u32(node, "perdis0", &media2->perdis0);
+	property_rd |= (unsigned int)of_property_read_u32(node, "perclken0", &media2->perclken0);;
+	property_rd |= (unsigned int)of_property_read_u32(node, "perstat0", &media2->perstat0);
+	property_rd |= (unsigned int)of_property_read_u32(node, "perrsten0", &media2->perrsten0);
+	property_rd |= (unsigned int)of_property_read_u32(node, "perrstdis0", &media2->perrstdis0);
+	property_rd |= (unsigned int)of_property_read_u32(node, "perrststat0", &media2->perrststat0);
 	if (property_rd) {
 		printk(KERN_ERR"[%s]: IPU_ERROR:read property of media2 offset error\n", __func__);
 		return false;
@@ -599,12 +599,12 @@ bool ipu_get_reset_offset (struct device *dev)
 		return false;
 	}
 	memset(peri, 0, sizeof(*peri));// coverity[secure_coding]
-	property_rd = of_property_read_u32(node, "base-addr", &peri->base_addr);
-	property_rd |= of_property_read_u32(node, "clkdiv18", &peri->clkdiv18);
-	property_rd |= of_property_read_u32(node, "clkdiv8", &peri->clkdiv8);
-	property_rd |= of_property_read_u32(node, "perpwrstat", &peri->perpwrstat);
-	property_rd |= of_property_read_u32(node, "perpwrack", &peri->perpwrack);
-	property_rd |= of_property_read_u32(node, "peristat7", &peri->peristat7);
+	property_rd = (unsigned int)of_property_read_u32(node, "base-addr", &peri->base_addr);
+	property_rd |= (unsigned int)of_property_read_u32(node, "clkdiv18", &peri->clkdiv18);
+	property_rd |= (unsigned int)of_property_read_u32(node, "clkdiv8", &peri->clkdiv8);
+	property_rd |= (unsigned int)of_property_read_u32(node, "perpwrstat", &peri->perpwrstat);
+	property_rd |= (unsigned int)of_property_read_u32(node, "perpwrack", &peri->perpwrack);
+	property_rd |= (unsigned int)of_property_read_u32(node, "peristat7", &peri->peristat7);
 	if (property_rd) {
 		printk(KERN_ERR"[%s]: IPU_ERROR:read property of crg_periph offset error\n", __func__);
 		return false;
@@ -762,17 +762,17 @@ static void ipu_bandwidth_set_lmt(unsigned int reg_bandwidth, unsigned int satur
 			return;
 		}
 
-		iowrite32(reg_bandwidth, (void *)((unsigned long)adapter->ics_irq_io_addr + ICS_MAX_OSD_REG));
+		iowrite32(reg_bandwidth, (void *)((uintptr_t)adapter->ics_irq_io_addr + ICS_MAX_OSD_REG));
 	} else {
 		if (0 == adapter->noc_bus_io_addr) {
 			printk(KERN_ERR"[%s]:IPU_ERROR:adapter->noc_bus_io_addr is NULL\n", __func__);
 			return;
 		}
 
-		iowrite32(ICS_NOC_BUS_CONFIG_QOS_TYPE, (void *)((unsigned long)adapter->noc_bus_io_addr + adapter->ics_noc_bus_reg_offset.qos_type));
-		iowrite32(reg_bandwidth, (void *)((unsigned long)adapter->noc_bus_io_addr + adapter->ics_noc_bus_reg_offset.factor));
-		iowrite32(saturation, (void *)((unsigned long)adapter->noc_bus_io_addr + adapter->ics_noc_bus_reg_offset.saturation));
-		iowrite32(ICS_NOC_BUS_QOS_EXTCONTROL_ENABLE, (void *)((unsigned long)adapter->noc_bus_io_addr + adapter->ics_noc_bus_reg_offset.qos_extcontrol));
+		iowrite32(ICS_NOC_BUS_CONFIG_QOS_TYPE, (void *)(uintptr_t)((uintptr_t)adapter->noc_bus_io_addr + adapter->ics_noc_bus_reg_offset.qos_type));
+		iowrite32(reg_bandwidth, (void *)(uintptr_t)((uintptr_t)adapter->noc_bus_io_addr + adapter->ics_noc_bus_reg_offset.factor));
+		iowrite32(saturation, (void *)(uintptr_t)((uintptr_t)adapter->noc_bus_io_addr + adapter->ics_noc_bus_reg_offset.saturation));
+		iowrite32(ICS_NOC_BUS_QOS_EXTCONTROL_ENABLE, (void *)(uintptr_t)((uintptr_t)adapter->noc_bus_io_addr + adapter->ics_noc_bus_reg_offset.qos_extcontrol));
 	}
 }
 
@@ -857,11 +857,11 @@ static void performance_monitor_open(void)
 	}
 
 	/* PERF_CNT_CLK_GT.perf_cnt_clk_gt = 0x1, to OPEN performance monitor */
-	iowrite32(PERF_CNT_CLK_GT_ENABLE, (void *)((unsigned long)adapter->ics_irq_io_addr + PERF_CNT_CLK_GT_REG));
+	iowrite32(PERF_CNT_CLK_GT_ENABLE, (void *)((uintptr_t)adapter->ics_irq_io_addr + PERF_CNT_CLK_GT_REG));
 
 	/* PERF_CNT_CLEAR.perf_cnt_clear = 0x1, FRAME_CNT_CLEAR = 0x11, CLEAR old values */
-	iowrite32(PERF_CNT_CLEAR, (void *)((unsigned long)adapter->ics_irq_io_addr + PERF_CNT_CLEAR_REG));
-	iowrite32(FRAME_START_CNT_CLEAR | FRAME_FINISH_CNT_CLEAR, (void *)((unsigned long)adapter->ics_irq_io_addr + FRAME_CNT_CLEAR_REG));
+	iowrite32(PERF_CNT_CLEAR, (void *)((uintptr_t)adapter->ics_irq_io_addr + PERF_CNT_CLEAR_REG));
+	iowrite32(FRAME_START_CNT_CLEAR | FRAME_FINISH_CNT_CLEAR, (void *)((uintptr_t)adapter->ics_irq_io_addr + FRAME_CNT_CLEAR_REG));
 }
 
 static void performance_monitor_get_stat(void)
@@ -880,12 +880,12 @@ static void performance_monitor_get_stat(void)
 	}
 
 	/* after ICS finish, record value of FRAME_CYC_CNT, FU_IDLE_CNT, IO_IDLE_CNT, ALL_IDLE_CNT, ALL_BUSY_CNT, ICS_FRAME_CNT  */
-	frame_cycle_cnt = ioread32((void *)((unsigned long)adapter->ics_irq_io_addr + FRAME_CYC_CNT_REG));
-	fu_idle_cnt = ioread32((void *)((unsigned long)adapter->ics_irq_io_addr + FU_IDLE_CNT_REG));
-	io_idle_cnt = ioread32((void *)((unsigned long)adapter->ics_irq_io_addr + IO_IDLE_CNT_REG));
-	all_idle_cnt = ioread32((void *)((unsigned long)adapter->ics_irq_io_addr + ALL_IDLE_CNT_REG));
-	all_busy_cnt = ioread32((void *)((unsigned long)adapter->ics_irq_io_addr + ALL_BUSY_CNT_REG));
-	ics_frame_cnt = ioread32((void *)((unsigned long)adapter->ics_irq_io_addr + ICS_FRAME_CNT_REG));
+	frame_cycle_cnt = ioread32((void *)((uintptr_t)adapter->ics_irq_io_addr + FRAME_CYC_CNT_REG));
+	fu_idle_cnt = ioread32((void *)((uintptr_t)adapter->ics_irq_io_addr + FU_IDLE_CNT_REG));
+	io_idle_cnt = ioread32((void *)((uintptr_t)adapter->ics_irq_io_addr + IO_IDLE_CNT_REG));
+	all_idle_cnt = ioread32((void *)((uintptr_t)adapter->ics_irq_io_addr + ALL_IDLE_CNT_REG));
+	all_busy_cnt = ioread32((void *)((uintptr_t)adapter->ics_irq_io_addr + ALL_BUSY_CNT_REG));
+	ics_frame_cnt = ioread32((void *)((uintptr_t)adapter->ics_irq_io_addr + ICS_FRAME_CNT_REG));
 
 	// todo: here you can config PERF_CNT_CLEAR.perf_cnt_clear = 0x1 if want to clear current value
 
@@ -911,11 +911,11 @@ static void performance_monitor_close(void)
 	}
 
 	/* PERF_CNT_CLK_GT.perf_cnt_clk_gt = 0x0, to CLOSE performance monitor */
-	iowrite32(PERF_CNT_CLK_GT_CLOSE, (void *)((unsigned long)adapter->ics_irq_io_addr + PERF_CNT_CLK_GT_REG));
+	iowrite32(PERF_CNT_CLK_GT_CLOSE, (void *)((uintptr_t)adapter->ics_irq_io_addr + PERF_CNT_CLK_GT_REG));
 
 	/* PERF_CNT_CLEAR.perf_cnt_clear = 0x1, FRAME_CNT_CLEAR = 0x11, to clear current value */
-	iowrite32(PERF_CNT_CLEAR, (void *)((unsigned long)adapter->ics_irq_io_addr + PERF_CNT_CLEAR_REG));
-	iowrite32(FRAME_START_CNT_CLEAR | FRAME_FINISH_CNT_CLEAR, (void *)((unsigned long)adapter->ics_irq_io_addr + FRAME_CNT_CLEAR_REG));
+	iowrite32(PERF_CNT_CLEAR, (void *)((uintptr_t)adapter->ics_irq_io_addr + PERF_CNT_CLEAR_REG));
+	iowrite32(FRAME_START_CNT_CLEAR | FRAME_FINISH_CNT_CLEAR, (void *)((uintptr_t)adapter->ics_irq_io_addr + FRAME_CNT_CLEAR_REG));
 
 	// todo: here you can calc by this data, e.g. you can calc the accurate time clapse by (FRAME_CYC_CNT * BUS clock)
 }
@@ -923,25 +923,25 @@ static void performance_monitor_close(void)
 /* ipu interrupt init, including update ipu status, clear interrupt, and unmask interrupt */
 void ipu_interrupt_init(void)
 {
-	unsigned long irq_io_addr = (unsigned long)adapter->ics_irq_io_addr;
+	uintptr_t irq_io_addr = (uintptr_t)adapter->ics_irq_io_addr;
 
 	/* clear ipu status to unfinished */
-	iowrite32(IPU_STATUS_UNFINISH, (void *)((unsigned long)adapter->config_reg_virt_addr + IPU_STATUS_REG));
+	iowrite32(IPU_STATUS_UNFINISH, (void *)((uintptr_t)adapter->config_reg_virt_addr + IPU_STATUS_REG));
 
 	/* clear ns interrupt */
 	if (adapter->feature_tree.finish_irq_expand_ns) {
-		iowrite32(ICS_IRQ_CLEAR_IRQ_NS, (void *)(irq_io_addr + adapter->irq_reg_offset.ics_irq_clr_ns));
+		iowrite32(ICS_IRQ_CLEAR_IRQ_NS, (void *)(uintptr_t)(irq_io_addr + adapter->irq_reg_offset.ics_irq_clr_ns));
 	}
 
 	/* unmask interrupt */
-	iowrite32(ICS_IRQ_UNMASK_NO_SECURITY, (void *)(irq_io_addr + adapter->irq_reg_offset.ics_irq_mask_ns));
+	iowrite32(ICS_IRQ_UNMASK_NO_SECURITY, (void *)(uintptr_t)(irq_io_addr + adapter->irq_reg_offset.ics_irq_mask_ns));
 }
 
 /* to mask ipu interrupt and will not receive it */
 void ipu_interrupt_deinit(void)
 {
 	iowrite32(ICS_IRQ_MASK_NO_SECURITY,
-		(void *)((unsigned long)adapter->ics_irq_io_addr + adapter->irq_reg_offset.ics_irq_mask_ns));
+		(void *)(uintptr_t)((uintptr_t)adapter->ics_irq_io_addr + adapter->irq_reg_offset.ics_irq_mask_ns));
 }
 
 void ipu_reset_proc(unsigned int addr)
@@ -972,11 +972,11 @@ void ipu_reset_proc(unsigned int addr)
 
 	if (IPU_SOFT_RESET == adapter->feature_tree.ipu_reset_when_in_error) {
 		/* set ICS_SOFT_RST_REQ */
-		iowrite32(1, (void *)((unsigned long)adapter->ics_irq_io_addr + ICS_SOFT_RST_REQ_REG));
+		iowrite32(1, (void *)((uintptr_t)adapter->ics_irq_io_addr + ICS_SOFT_RST_REQ_REG));
 
 		/* loop wait ICS_SOFT_RST_ACK (0xFF4A2078) == 0x1 */
 		for (loop_cnt = 0; loop_cnt < 100; loop_cnt++) {
-			if (ICS_SOFT_RST_ACK == ioread32((void *)((unsigned long)adapter->ics_irq_io_addr + ICS_SOFT_RST_ACK_REG))) {
+			if (ICS_SOFT_RST_ACK == ioread32((void *)((uintptr_t)adapter->ics_irq_io_addr + ICS_SOFT_RST_ACK_REG))) {
 				break;
 			}
 			udelay(1);
@@ -997,7 +997,7 @@ void ipu_reset_proc(unsigned int addr)
 		udelay(10);
 	}
 
-	iowrite32(CONFIG_NOC_POWER_IDLEREQ_0, (void *)((unsigned long)adapter->pmctrl_io_addr + adapter->pmctrl_reg_offset.noc_power_idle_req));
+	iowrite32(CONFIG_NOC_POWER_IDLEREQ_0, (void *)((uintptr_t)adapter->pmctrl_io_addr + adapter->pmctrl_reg_offset.noc_power_idle_req));
 
 	loop_cnt = 0;
 	while(!noc_idle) {
@@ -1005,9 +1005,9 @@ void ipu_reset_proc(unsigned int addr)
 			printk(KERN_ERR"[%s]: IPU_ERROR:loop timeout", __func__);
 			break;
 		}
-		noc_power_idle_ack = ioread32((void *)((unsigned long)adapter->pmctrl_io_addr + adapter->pmctrl_reg_offset.noc_power_idle_ack)) & CONFIG_NOC_POWER_IDLEACK_0_BIT9;
-		noc_power_idle_stat = ioread32((void *)((unsigned long)adapter->pmctrl_io_addr + adapter->pmctrl_reg_offset.noc_power_idle_stat)) & CONFIG_NOC_POWER_IDLE_0_BIT9;
-		noc_peri_status = ioread32((void *)((unsigned long)adapter->pctrl_io_addr + adapter->pctrl_reg_offset.peri_stat3)) & CONFIG_PCTRL_PERI_STAT3_BIT22;
+		noc_power_idle_ack = ioread32((void *)((uintptr_t)adapter->pmctrl_io_addr + adapter->pmctrl_reg_offset.noc_power_idle_ack)) & CONFIG_NOC_POWER_IDLEACK_0_BIT9;
+		noc_power_idle_stat = ioread32((void *)((uintptr_t)adapter->pmctrl_io_addr + adapter->pmctrl_reg_offset.noc_power_idle_stat)) & CONFIG_NOC_POWER_IDLE_0_BIT9;
+		noc_peri_status = ioread32((void *)((uintptr_t)adapter->pctrl_io_addr + adapter->pctrl_reg_offset.peri_stat3)) & CONFIG_PCTRL_PERI_STAT3_BIT22;
 		noc_idle = noc_power_idle_ack && noc_power_idle_stat && noc_peri_status;
 		printk(KERN_DEBUG"[%s]: noc_power_idle_ack:%d, noc_power_idle_stat:%d, noc_peri_status:%d\n",
 			__func__, noc_power_idle_ack, noc_power_idle_stat, noc_peri_status);
@@ -1016,27 +1016,27 @@ void ipu_reset_proc(unsigned int addr)
 		loop_cnt++;
 	}
 
-	iowrite32(CONFIG_MEDIA2_REG_PERDIS0_ICS, (void *)((unsigned long)adapter->media2_io_addr + adapter->media2_reg_offset.perdis0));
-	iowrite32(CONFIG_MEDIA2_REG_PERRSTEN0_ICS, (void *)((unsigned long)adapter->media2_io_addr + adapter->media2_reg_offset.perrsten0));
-	iowrite32(CONFIG_MEDIA2_REG_PEREN0_ICS, (void *)((unsigned long)adapter->media2_io_addr + adapter->media2_reg_offset.peren0));
-	iowrite32(CONFIG_MEDIA2_REG_PERDIS0_ICS, (void *)((unsigned long)adapter->media2_io_addr + adapter->media2_reg_offset.perdis0));
-	iowrite32(CONFIG_SC_GT_CLK_ICS_DIS, (void *)((unsigned long)adapter->peri_io_addr + adapter->peri_reg_offset.clkdiv18));
+	iowrite32(CONFIG_MEDIA2_REG_PERDIS0_ICS, (void *)((uintptr_t)adapter->media2_io_addr + adapter->media2_reg_offset.perdis0));
+	iowrite32(CONFIG_MEDIA2_REG_PERRSTEN0_ICS, (void *)((uintptr_t)adapter->media2_io_addr + adapter->media2_reg_offset.perrsten0));
+	iowrite32(CONFIG_MEDIA2_REG_PEREN0_ICS, (void *)((uintptr_t)adapter->media2_io_addr + adapter->media2_reg_offset.peren0));
+	iowrite32(CONFIG_MEDIA2_REG_PERDIS0_ICS, (void *)((uintptr_t)adapter->media2_io_addr + adapter->media2_reg_offset.perdis0));
+	iowrite32(CONFIG_SC_GT_CLK_ICS_DIS, (void *)((uintptr_t)adapter->peri_io_addr + adapter->peri_reg_offset.clkdiv18));
 
 	/* restart ipu */
-	iowrite32(CONFIG_SC_GT_CLK_ICS_EN, (void *)((unsigned long)adapter->peri_io_addr + adapter->peri_reg_offset.clkdiv18));
-	iowrite32(CONFIG_MEDIA2_REG_PEREN0_ICS, (void *)((unsigned long)adapter->media2_io_addr + adapter->media2_reg_offset.peren0));
-	iowrite32(CONFIG_MEDIA2_REG_PERDIS0_ICS, (void *)((unsigned long)adapter->media2_io_addr + adapter->media2_reg_offset.perdis0));
-	iowrite32(CONFIG_MEDIA2_REG_PERRSTEN0_ICS, (void *)((unsigned long)adapter->media2_io_addr + adapter->media2_reg_offset.perrstdis0));
-	iowrite32(CONFIG_MEDIA2_REG_PEREN0_ICS, (void *)((unsigned long)adapter->media2_io_addr + adapter->media2_reg_offset.peren0));
-	iowrite32(CONFIG_NOC_ICS_POWER_IDLEREQ_DIS, (void *)((unsigned long)adapter->pmctrl_io_addr + adapter->pmctrl_reg_offset.noc_power_idle_req));
+	iowrite32(CONFIG_SC_GT_CLK_ICS_EN, (void *)((uintptr_t)adapter->peri_io_addr + adapter->peri_reg_offset.clkdiv18));
+	iowrite32(CONFIG_MEDIA2_REG_PEREN0_ICS, (void *)((uintptr_t)adapter->media2_io_addr + adapter->media2_reg_offset.peren0));
+	iowrite32(CONFIG_MEDIA2_REG_PERDIS0_ICS, (void *)((uintptr_t)adapter->media2_io_addr + adapter->media2_reg_offset.perdis0));
+	iowrite32(CONFIG_MEDIA2_REG_PERRSTEN0_ICS, (void *)((uintptr_t)adapter->media2_io_addr + adapter->media2_reg_offset.perrstdis0));
+	iowrite32(CONFIG_MEDIA2_REG_PEREN0_ICS, (void *)((uintptr_t)adapter->media2_io_addr + adapter->media2_reg_offset.peren0));
+	iowrite32(CONFIG_NOC_ICS_POWER_IDLEREQ_DIS, (void *)((uintptr_t)adapter->pmctrl_io_addr + adapter->pmctrl_reg_offset.noc_power_idle_req));
 
-	noc_power_idle_ack = ioread32((void *)((unsigned long)adapter->pmctrl_io_addr + adapter->pmctrl_reg_offset.noc_power_idle_ack)) & CONFIG_NOC_POWER_IDLEACK_0_BIT9;
-	noc_power_idle_stat = ioread32((void *)((unsigned long)adapter->pmctrl_io_addr + adapter->pmctrl_reg_offset.noc_power_idle_stat)) & CONFIG_NOC_POWER_IDLE_0_BIT9;
+	noc_power_idle_ack = ioread32((void *)((uintptr_t)adapter->pmctrl_io_addr + adapter->pmctrl_reg_offset.noc_power_idle_ack)) & CONFIG_NOC_POWER_IDLEACK_0_BIT9;
+	noc_power_idle_stat = ioread32((void *)((uintptr_t)adapter->pmctrl_io_addr + adapter->pmctrl_reg_offset.noc_power_idle_stat)) & CONFIG_NOC_POWER_IDLE_0_BIT9;
 
 	printk(KERN_DEBUG"[%s]: noc_power_idle_ack:%d, noc_power_idle_stat:%d\n", __func__, noc_power_idle_ack, noc_power_idle_stat);
 
 	/* unmask irq*/
-	iowrite32(ICS_IRQ_UNMASK_NO_SECURITY, (void *)((unsigned long)(adapter->ics_irq_io_addr) + adapter->irq_reg_offset.ics_irq_mask_ns));
+	iowrite32(ICS_IRQ_UNMASK_NO_SECURITY, (void *)((uintptr_t)(adapter->ics_irq_io_addr) + adapter->irq_reg_offset.ics_irq_mask_ns));
 
 	if (ipu_clock_set_rate(&adapter->clk, adapter->clk.start_rate)) {
 		/* not return even set rate error, because reset process should finish */
@@ -1051,7 +1051,7 @@ void ipu_reset_proc(unsigned int addr)
 	mutex_unlock(&adapter->bandwidth_lmt_mutex);
 
 	ipu_smmu_init(adapter->smmu_ttbr0,
-		(unsigned long)adapter->smmu_rw_err_virtual_addr, adapter->feature_tree.smmu_port_select, adapter->feature_tree.smmu_mstr_hardware_start);
+		(uintptr_t)adapter->smmu_rw_err_virtual_addr, adapter->feature_tree.smmu_port_select, adapter->feature_tree.smmu_mstr_hardware_start);
 
 	ipu_interrupt_init();
 
@@ -1135,7 +1135,7 @@ static void ipu_level1_irq_handler(void)
 		return;
 	}
 
-	lv1_int_status = ioread32((void *)((unsigned long)adapter->config_reg_virt_addr + IPU_STATUS_REG_FINISH));
+	lv1_int_status = ioread32((void *)((uintptr_t)adapter->config_reg_virt_addr + IPU_STATUS_REG_FINISH));
 
 	while(lv1_int_status){
 		if (loop_cnt > 3) {
@@ -1146,38 +1146,38 @@ static void ipu_level1_irq_handler(void)
 
 		if (lv1_int_status & INTERRUPTINST_INTERRUPT_MASK) {
 			detect_fault = detect_fault | INTERRUPTINST_INTERRUPT_MASK;
-			fault_status = ioread32((void *)((unsigned long)adapter->config_reg_virt_addr + IPU_INTERRUPT_INST_REG));
-			iowrite32(0, (void *)((unsigned long)(adapter->config_reg_virt_addr) + IPU_INTERRUPT_INST_REG));
+			fault_status = ioread32((void *)((uintptr_t)adapter->config_reg_virt_addr + IPU_INTERRUPT_INST_REG));
+			iowrite32(0, (void *)((uintptr_t)(adapter->config_reg_virt_addr) + IPU_INTERRUPT_INST_REG));
 			printk(KERN_ERR"[%s]: IPU_ERROR:INTERRUPTINST_INTERRUPT error, fault_status=0x%x\n", __func__, fault_status);
 		}
 		if (lv1_int_status & CT_INTERRUPT_MASK) {
 			/* do_interruptinst_interrupt_service(); */
 			detect_fault = detect_fault | CT_INTERRUPT_MASK;
-			fault_status = ioread32((void *)((unsigned long)adapter->config_reg_virt_addr + IPU_ID_REG));
-			iowrite32(0, (void *)((unsigned long)(adapter->config_reg_virt_addr) + IPU_ID_REG));
+			fault_status = ioread32((void *)((uintptr_t)adapter->config_reg_virt_addr + IPU_ID_REG));
+			iowrite32(0, (void *)((uintptr_t)(adapter->config_reg_virt_addr) + IPU_ID_REG));
 			printk(KERN_ERR"[%s]: IPU_ERROR:CT_INTERRUPT error, fault_status=0x%x\n", __func__, fault_status);
 		}
 		if (lv1_int_status & IPU_CONTROL_INTERRUPT_MASK) {
 			/* do_ipu_control_interrupt_service(); */
 			detect_fault = detect_fault | IPU_CONTROL_INTERRUPT_MASK;
-			fault_status = ioread32((void *)((unsigned long)adapter->config_reg_virt_addr + IPU_CONTROL_ID_REG));
-			iowrite32(0, (void *)((unsigned long)(adapter->config_reg_virt_addr) + IPU_CONTROL_ID_REG));
+			fault_status = ioread32((void *)((uintptr_t)adapter->config_reg_virt_addr + IPU_CONTROL_ID_REG));
+			iowrite32(0, (void *)((uintptr_t)(adapter->config_reg_virt_addr) + IPU_CONTROL_ID_REG));
 			printk(KERN_ERR"[%s]: IPU_ERROR:IPU_CONTROL_INTERRUPT error, fault_status=0x%x\n", __func__, fault_status);
 		}
 		/* WATCH_DOG */
 		if (lv1_int_status & WATCH_DOG_MASK) {
 			/* do_watch_dog_interrupt_service();*/
 			detect_fault = detect_fault | WATCH_DOG_MASK;
-			fault_status = ioread32((void *)((unsigned long)adapter->config_reg_virt_addr + IPU_WATCH_DOG_REG));
-			iowrite32(0, (void *)((unsigned long)(adapter->config_reg_virt_addr) + IPU_WATCH_DOG_REG));
+			fault_status = ioread32((void *)((uintptr_t)adapter->config_reg_virt_addr + IPU_WATCH_DOG_REG));
+			iowrite32(0, (void *)((uintptr_t)(adapter->config_reg_virt_addr) + IPU_WATCH_DOG_REG));
 			printk(KERN_ERR"[%s]: IPU_ERROR:WATCH_DOG error, fault_status=0x%x\n", __func__, fault_status);
 		}
 		if (lv1_int_status & IS_NORMAL_FINISH_MASK) {
-			iowrite32(IPU_STATUS_UNFINISH, (void *)((unsigned long)adapter->config_reg_virt_addr + IPU_STATUS_REG));
+			iowrite32(IPU_STATUS_UNFINISH, (void *)((uintptr_t)adapter->config_reg_virt_addr + IPU_STATUS_REG));
 		}
-		iowrite32(lv1_int_status, (void *)((unsigned long)adapter->config_reg_virt_addr + IPU_STATUS_REG_FINISH));
-		iowrite32(0, (void *)((unsigned long)adapter->config_reg_virt_addr + (IPU_STATUS_REG_FINISH + 0x4))); /* to clear finish reg high 32bit */
-		lv1_int_status = ioread32((void *)((unsigned long)adapter->config_reg_virt_addr + IPU_STATUS_REG_FINISH));
+		iowrite32(lv1_int_status, (void *)((uintptr_t)adapter->config_reg_virt_addr + IPU_STATUS_REG_FINISH));
+		iowrite32(0, (void *)((uintptr_t)adapter->config_reg_virt_addr + (IPU_STATUS_REG_FINISH + 0x4))); /* to clear finish reg high 32bit */
+		lv1_int_status = ioread32((void *)((uintptr_t)adapter->config_reg_virt_addr + IPU_STATUS_REG_FINISH));
 
 		loop_cnt++;
 	}
@@ -1191,7 +1191,7 @@ static void ipu_level1_irq_handler(void)
 
 static void ipu_finish_irq_handler(void)
 {
-	unsigned long reg_virt_addr = (unsigned long)adapter->config_reg_virt_addr;
+	uintptr_t reg_virt_addr = (uintptr_t)adapter->config_reg_virt_addr;
 
 	/* clear ipu finished status */
 	iowrite32(0, (void *)(reg_virt_addr + IPU_STATUS_REG));
@@ -1200,9 +1200,9 @@ static void ipu_finish_irq_handler(void)
 		// fixme: add security and protected mode here in furture
 		if (adapter->feature_tree.level1_irq) {
 			iowrite32(ICS_IRQ_CLEAR_IRQ_LEVEL1_NS | ICS_IRQ_CLEAR_IRQ_NS,
-				(void *)((unsigned long)adapter->ics_irq_io_addr + adapter->irq_reg_offset.ics_irq_clr_ns));
+				(void *)(uintptr_t)((uintptr_t)adapter->ics_irq_io_addr + adapter->irq_reg_offset.ics_irq_clr_ns));
 		} else {
-			iowrite32(ICS_IRQ_CLEAR_IRQ_NS, (void *)((unsigned long)adapter->ics_irq_io_addr + adapter->irq_reg_offset.ics_irq_clr_ns));
+			iowrite32(ICS_IRQ_CLEAR_IRQ_NS, (void *)(uintptr_t)((uintptr_t)adapter->ics_irq_io_addr + adapter->irq_reg_offset.ics_irq_clr_ns));
 		}
 	}
 }
@@ -1215,7 +1215,7 @@ static void ipu_core_irq_handler(void)
 		ipu_level1_irq_handler();
 	} else {
 		/* clear ipu finished status */
-		iowrite32(IPU_STATUS_UNFINISH, (void *)((unsigned long)adapter->config_reg_virt_addr + IPU_STATUS_REG));
+		iowrite32(IPU_STATUS_UNFINISH, (void *)((uintptr_t)adapter->config_reg_virt_addr + IPU_STATUS_REG));
 	}
 }
 
@@ -1442,7 +1442,7 @@ int ipu_power_up(void)
 	do_gettimeofday(&tv3);
 
 	ipu_smmu_init(adapter->smmu_ttbr0,
-		(unsigned long)adapter->smmu_rw_err_virtual_addr, adapter->feature_tree.smmu_port_select, adapter->feature_tree.smmu_mstr_hardware_start);
+		(uintptr_t)adapter->smmu_rw_err_virtual_addr, adapter->feature_tree.smmu_port_select, adapter->feature_tree.smmu_mstr_hardware_start);
 
 	mutex_lock(&adapter->stat_mutex);
 	if (adapter->smmu_stat_en) {
@@ -1651,7 +1651,7 @@ static long ipu_read_dword(struct cambricon_ipu_private *dev, unsigned long arg,
 	UNUSED_PARAMETER(out_params);
 
 	if (arg != IPU_VERSION_REG) {
-		printk(KERN_ERR"[%s]: IPU_ERROR:Error can not read offset=0x%pK, it is an invalid offset to read\n", __func__, (void *)arg);
+		printk(KERN_ERR"[%s]: IPU_ERROR:Error can not read offset=0x%pK, it is an invalid offset to read\n", __func__, (void *)(uintptr_t)arg);
 		return -EINVAL;
 	}
 
@@ -1663,10 +1663,10 @@ static long ipu_read_dword(struct cambricon_ipu_private *dev, unsigned long arg,
 		return -EBUSY;
 	}
 
-	read_value = ioread32((void *)((unsigned long)dev->config_reg_virt_addr + arg));
+	read_value = ioread32((void *)((uintptr_t)((uintptr_t)dev->config_reg_virt_addr + arg)));
 
 	printk(KERN_ERR"[%s]: Read CONFIG REG dword offset 0x%pK, value is 0x%x\n",
-		__func__, (void *)arg, (unsigned int)read_value);
+		__func__, (void *)(uintptr_t)arg, (unsigned int)read_value);
 
 	mutex_unlock(&adapter->power_mutex);
 	return read_value;
@@ -1687,12 +1687,12 @@ static long ipu_write_dword(struct cambricon_ipu_private *dev, unsigned long arg
 
 	memset(in, 0, sizeof(in));  /* [false alarm]:memset an array */
 
-	if (copy_from_user(in, (void __user *)arg, sizeof(in))) {
+	if (copy_from_user(in, (void __user *)(uintptr_t)arg, sizeof(in))) {
 		printk(KERN_ERR"[%s]: IPU_ERROR:copy arg failed!\n", __func__);
 		return -EFAULT;
 	}
 
-	printk(KERN_DEBUG"[%s]: Write CONFIG REG dword offset 0x%pK, value is 0x%lx\n", __func__, (void *)in[offset], in[data]);
+	printk(KERN_DEBUG"[%s]: Write CONFIG REG dword offset 0x%pK, value is 0x%lx\n", __func__, (void *)(uintptr_t)in[offset], in[data]);
 
 	mutex_lock(&adapter->power_mutex);
 	if (adapter->ipu_power_up) {
@@ -1703,9 +1703,9 @@ static long ipu_write_dword(struct cambricon_ipu_private *dev, unsigned long arg
 				}
 				ipu_watchdog_start(&adapter->reset_wtd, WATCHDOG_TIMEOUT_THD_MS);
 			}
-			iowrite32(in[data], (void *)((unsigned long)dev->config_reg_virt_addr + in[offset]));
+			iowrite32(in[data], (void *)(uintptr_t)((uintptr_t)dev->config_reg_virt_addr + in[offset]));
 		} else {
-			printk(KERN_ERR"[%s]: IPU_ERROR:error offset when ipu on, offset=0x%pK, data=0x%lx\n", __func__, (void *)in[offset], in[data]);
+			printk(KERN_ERR"[%s]: IPU_ERROR:error offset when ipu on, offset=0x%pK, data=0x%lx\n", __func__, (void *)(uintptr_t)in[offset], in[data]);
 			mutex_unlock(&adapter->power_mutex);
 			return -EFAULT;
 		}
@@ -1716,7 +1716,7 @@ static long ipu_write_dword(struct cambricon_ipu_private *dev, unsigned long arg
 			adapter->boot_inst_set.access_ddr_addr_is_config = true;
 			mutex_unlock(&adapter->boot_inst_set.boot_mutex);
 		} else {
-			printk(KERN_ERR"[%s]: IPU_ERROR:error offset when ipu off, offset=0x%pK, data=0x%lx\n", __func__, (void *)in[offset], in[data]);
+			printk(KERN_ERR"[%s]: IPU_ERROR:error offset when ipu off, offset=0x%pK, data=0x%lx\n", __func__, (void *)(uintptr_t)in[offset], in[data]);
 			mutex_unlock(&adapter->power_mutex);
 			return -EFAULT;
 		}
@@ -1738,7 +1738,7 @@ static long ipu_set_map(struct cambricon_ipu_private *dev, unsigned long arg, st
 		return -EINVAL;
 	}
 
-	if (copy_from_user(&map_data, (void __user *)arg, sizeof(map_data))) {
+	if (copy_from_user(&map_data, (void __user *)(uintptr_t)arg, sizeof(map_data))) {
 		printk(KERN_ERR"[%s]: IPU_ERROR:copy arg failed!\n", __func__);
 		return -EFAULT;
 	}
@@ -1749,7 +1749,7 @@ static long ipu_set_map(struct cambricon_ipu_private *dev, unsigned long arg, st
 		return -EFAULT;
 	}
 
-	if (copy_to_user((void __user *)arg, &map_data, sizeof(map_data))) {
+	if (copy_to_user((void __user *)(uintptr_t)arg, &map_data, sizeof(map_data))) {
 		printk(KERN_ERR"[%s]: IPU_ERROR:copy_to_user failed!\n", __func__);
 		return -EFAULT;
 	}
@@ -1798,7 +1798,7 @@ static long ipu_set_unmap(struct cambricon_ipu_private *dev, unsigned long arg, 
 		return -EINVAL;
 	}
 
-	if (copy_from_user(&map_data, (void __user *)arg, sizeof(map_data))) {
+	if (copy_from_user(&map_data, (void __user *)(uintptr_t)arg, sizeof(map_data))) {
 		printk(KERN_ERR"[%s]: IPU_ERROR:copy_from_user failed!\n", __func__);
 		return -EFAULT;
 	}
@@ -1850,7 +1850,7 @@ static long ipu_set_report_statistic(struct cambricon_ipu_private *dev, unsigned
 		return -ENOMEM;
 	}
 
-	if (copy_to_user((void __user *)arg, &adapter->stat, sizeof(adapter->stat))) {
+	if (copy_to_user((void __user *)(uintptr_t)arg, &adapter->stat, sizeof(adapter->stat))) {
 		printk(KERN_ERR"[%s]: IPU_ERROR:copy_to_user failed!\n", __func__);
 		mutex_unlock(&adapter->stat_mutex);
 		return -EFAULT;
@@ -1975,7 +1975,7 @@ static long ipu_process_workqueue(struct cambricon_ipu_private *dev, unsigned lo
 	/*Caution : Already obtain task_fifo_sem !!*/
 	disable_irq(adapter->irq);
 
-	if (!copy_from_user(&element, (void __user *)arg, sizeof(element))) {
+	if (!copy_from_user(&element, (void __user *)(uintptr_t)arg, sizeof(element))) {
 		// todo: add more input-check at here!!
 
 		element.ptaskFlag = NULL;/*Ensure point correct*/
@@ -2077,7 +2077,7 @@ static long ipu_ioctl32(struct file *fd, unsigned int cmd, unsigned long arg)
 {
 	void *ptr_user = compat_ptr(arg);
 
-	return ipu_ioctl(fd, cmd, (unsigned long)ptr_user);
+	return ipu_ioctl(fd, cmd, (uintptr_t)ptr_user);
 }
 
 static ssize_t ipu_write_when_ipu_down(struct cambricon_ipu_private *dev, const char __user *buf, size_t count, loff_t *f_pos)
@@ -2094,7 +2094,12 @@ static ssize_t ipu_write_when_ipu_down(struct cambricon_ipu_private *dev, const 
 	/* NOTE: here max_buff_size is a 32bit length data, and above judge can guarantee (*f_pos + count) < 2*max_buff_size
 		so OVERFLOW in "unsigned long" is impossible here */
 	if((unsigned long)*f_pos + (unsigned long)count > (unsigned long)max_buff_size) {
-		printk(KERN_ERR"[%s]: IPU_ERROR:FATAL, count OVERFLOW, *f_pos=0x%pK, count=0x%x\n", __func__, (void *)*f_pos, (unsigned int)count);
+		printk(KERN_ERR"[%s]: IPU_ERROR:FATAL, count OVERFLOW, *f_pos=0x%pK, count=0x%x\n", __func__, (void *)(uintptr_t)(*f_pos), (unsigned int)count);
+		return -EINVAL;
+	}
+
+	if (buf == NULL || count == 0) {
+		printk(KERN_ERR"[%s]: IPU_ERROR:buf is null or count is zero\n", __func__);
 		return -EINVAL;
 	}
 
@@ -2105,7 +2110,7 @@ static ssize_t ipu_write_when_ipu_down(struct cambricon_ipu_private *dev, const 
 
 	/* clean-up buffer and recv new data */
 	memset(&adapter->boot_inst_set.boot_inst[0], 0, sizeof(adapter->boot_inst_set.boot_inst));
-	bytes_not_copied = copy_from_user((void *)((unsigned long)&adapter->boot_inst_set.boot_inst[0] + (unsigned long)(*f_pos)), buf, count);
+	bytes_not_copied = copy_from_user((void *)(uintptr_t)((uintptr_t)&adapter->boot_inst_set.boot_inst[0] + (unsigned long)(*f_pos)), buf, count);
 
 	if (bytes_not_copied) {
 		printk(KERN_ERR"[%s]: IPU_ERROR:Copy data from user failed, bytes_not_copied=0x%lx\n", __func__, bytes_not_copied);
@@ -2171,10 +2176,10 @@ static ssize_t ipu_write(struct file *filp, const char __user *buf, size_t count
 	}
 
 	if (ret_value < 0) {
-		printk(KERN_DEBUG"[%s]: write 0x%lx bytes, offset=0x%pK error, return is %ld\n", __func__, count, (void *)(*f_pos), ret_value);
+		printk(KERN_DEBUG"[%s]: write 0x%lx bytes, offset=0x%pK error, return is %ld\n", __func__, count, (void *)(uintptr_t)(*f_pos), ret_value);
 	} else {
 		printk(KERN_DEBUG"[%s]: write 0x%lx bytes, offset=0x%pK when ipu_power_up flag is %d\n",
-			__func__, ret_value, (void *)(*f_pos), ipu_power_up_flag);
+			__func__, ret_value, (void *)(uintptr_t)(*f_pos), ipu_power_up_flag);
 	}
 
 	return ret_value;
@@ -2205,7 +2210,7 @@ static loff_t ipu_llseek(struct file *filp, loff_t off, int whence)
 	/* covert unsigned int(32bit) to long(64bit), with no risk */
 	if ((off > (signed long)dev->inst_ram_size) || (off < (-1 * (signed long)dev->inst_ram_size))) {
 		printk(KERN_ERR"[%s]: IPU_ERROR:invalid offset=0x%pK while inst_ram_size=0x%x\n",
-			__func__, (void *)off, dev->inst_ram_size);
+			__func__, (void *)(uintptr_t)off, dev->inst_ram_size);
 		return -EINVAL;
 	}
 

@@ -400,16 +400,11 @@ static int stmvl53l0_laser_init(struct stmvl53l0_data *data);
 
 static int stmvl53l0_laser_parameter(struct stmvl53l0_data *data, hwlaser_parameter_t* param);
 
-/*static int stmvl53l0_flush(struct file *file, fl_owner_t id);*/
-
 static int stmvl53l0_init_client(struct stmvl53l0_data *data);
-
 
 static int stmvl53l0_config_use_case(struct stmvl53l0_data *data);
 
-
 static int stmvl53l0_laser_get_data(struct stmvl53l0_data *data, void* p);
-
 
 static int stmvl53l0_stop(struct stmvl53l0_data *data);
 
@@ -987,7 +982,6 @@ long stmvl53l0_laser_ioctl(void *hw_data, unsigned int cmd, void  *p)
 
     if (!data)
         return -EINVAL;
-    //vl53l0_dbgmsg("ioctl E");
 
     switch (cmd) {
         case HWLASER_IOCTL_GET_INFO:
@@ -998,10 +992,8 @@ long stmvl53l0_laser_ioctl(void *hw_data, unsigned int cmd, void  *p)
             pinfo->ap_pos = HWLASER_POS_AP;
             break;
         case HWLASER_IOCTL_CONFIG:
-            //vl53l0_dbgmsg("HWLASER_IOCTL_CONFIG");
             break;
         case HWLASER_IOCTL_CALIBRATION_DATA:
-            //vl53l0_dbgmsg("HWLASER_IOCTL_CALIBRATION_DATA\n");
             cal_data = (hwlaser_calibration_data_t *)p;
             rc = stmvl53l0_laser_get_set_cal_data(data,cal_data);
             break;
@@ -1422,7 +1414,6 @@ static int stmvl53l0_laser_init(struct stmvl53l0_data *data)
     Status = stmvl53l0_init_client(data);
     if (Status) {
         vl53l0_errmsg("%d, error rc %d\n", __LINE__, Status);
-        //pmodule_func_tbl->power_down(data->client_object);
         return -EINVAL;
     }
     /* set up device parameters */
@@ -1604,7 +1595,6 @@ exit_free_irq:
 #ifdef USE_INT
     free_irq(irq, data);
 #endif
-    //kfree(data);
     return rc;
 }
 

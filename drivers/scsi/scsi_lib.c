@@ -2034,12 +2034,13 @@ static u64 scsi_calculate_bounce_limit(struct Scsi_Host *shost)
 	return bounce_limit;
 }
 
-static void scsi_dump_status(struct request_queue *q, int dump_scene)
+static void scsi_dump_status(
+	struct request_queue *q, enum blk_dump_scenario dump_type)
 {
 	struct scsi_device *sdev = q->queuedata;
 	struct Scsi_Host *shost = sdev->host;
 	if (sdev->host->hostt->dump_status)
-		sdev->host->hostt->dump_status(shost,dump_scene);
+		sdev->host->hostt->dump_status(shost, dump_type);
 }
 
 static int scsi_direct_flush(struct request_queue *q)
@@ -2161,12 +2162,12 @@ int scsi_mq_setup_tags(struct Scsi_Host *shost)
 	memset(&shost->tag_set, 0, sizeof(shost->tag_set));
 	shost->tag_set.ops = &scsi_mq_ops;
 #ifdef CONFIG_HISI_BLK
-	blk_mq_tagset_dump_register(&shost->tag_set, shost->hostt->dump_status ? scsi_dump_status : NULL);
+	blk_mq_tagset_dump_register(&shost->tag_set, shost->hostt->dump_status ? scsi_dump_status:(lld_dump_status_fn)NULL);
 	if (shost->queue_quirk_flag & SHOST_QUIRK(SHOST_QUIRK_IO_LATENCY_WARNING))
 		blk_mq_tagset_latency_warning_set(&shost->tag_set, 2000);
 	blk_mq_tagset_busy_idle_enable(&shost->tag_set, (shost->queue_quirk_flag & SHOST_QUIRK(SHOST_QUIRK_BUSY_IDLE_ENABLE)));
 	blk_mq_tagset_hw_idle_notify_enable(&shost->tag_set, (shost->queue_quirk_flag & SHOST_QUIRK(SHOST_QUIRK_BUSY_IDLE_INTR_ENABLE)));
-	blk_mq_tagset_direct_flush_register(&shost->tag_set, shost->hostt->direct_flush ? scsi_direct_flush : NULL);
+	blk_mq_tagset_direct_flush_register(&shost->tag_set, shost->hostt->direct_flush ? scsi_direct_flush : (blk_direct_flush_fn)NULL);
 	blk_mq_tagset_flush_reduce_config(&shost->tag_set, !!(shost->queue_quirk_flag & SHOST_QUIRK(SHOST_QUIRK_FLUSH_REDUCING)));
 
 	shost->tag_set.nr_hw_queues = shost->nr_hw_queues ? : 1;

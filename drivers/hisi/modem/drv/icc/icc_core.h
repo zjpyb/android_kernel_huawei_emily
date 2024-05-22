@@ -326,7 +326,7 @@ s32 icc_channel_has_data(void);
 void icc_shared_sem_init(void);
 void icc_private_sem_init(osl_sem_id *private_sem);
 int icc_shared_task_init(void);
-void icc_task_shared_func(void const *obj);
+int icc_task_shared_func(void *obj);
 void icc_ipc_isr(u32 data);
 s32 icc_dynamic_data_receive(void);
 s32  icc_channel_empty(u32 channel_id);

@@ -35,7 +35,6 @@ struct i2c_data {
     struct pinctrl	*pinctrl;
     struct pinctrl_state	*pins_default;
     struct pinctrl_state	*pins_idle;
-    //char chip_name[CHIP_NAME_LEN];
     uint8_t power_up;
     int irq;
     unsigned int xsdn_gpio;

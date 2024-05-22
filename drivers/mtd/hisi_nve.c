@@ -33,7 +33,6 @@
 #if CONFIG_HISI_NVE_WHITELIST
 #include "hisi_nve_whitelist.h"
 #endif
-#include "hisi_nve_log_blacklist.h"
 
 static struct semaphore nv_sem;
 static struct class *nve_class;
@@ -1019,25 +1018,19 @@ static void nve_out_log(struct hisi_nve_info_user *user_info, int isRead)
 {
 	int index;
 	if (NULL == user_info) {
-		pr_devel("[NVE][%s]:user_info is null! \n",
+		pr_err("[NVE][%s]:user_info is null! \n",
 		       __func__);
 		return;
 	}
+#ifndef CONFIG_HISI_FACTORY_VERSION
 	if (isRead) {
-		pr_devel("[NVE][%s]:read nv:ID= %d \n", __func__,
-		       user_info->nv_number);
+		pr_err("[NVE][%s]:read data; not factory version,Forbid print nve info!\n", __func__);
 	} else {
-		pr_devel("[NVE][%s]:write nv:ID= %d \n", __func__,
-		       user_info->nv_number);
+		pr_err("[NVE][%s]:write data; not factory version,Forbid print nve info!\n", __func__);
 	}
-	for (index = 0; index < (int)ARRAY_SIZE(nv_num_blacklist); index++) {
-		if (user_info->nv_number == nv_num_blacklist[index]) {
-			pr_devel("[NVE][%s]:nv:ID= %d is in blacklist. Forbid print nve info!\n", __func__,
-		       user_info->nv_number);
-			return;
-		}
-	}
-	memset(log_nv_info, 0, sizeof(log_nv_info));
+	return;
+#endif
+	memset(log_nv_info, 0, sizeof(log_nv_info));/*lint !e527*/
 	memset(temp_nv_info, 0, sizeof(temp_nv_info));
 	for (index = 0; index < (int)user_info->valid_size; index++) {
 		snprintf(temp_nv_info, (size_t)(NV_INFO_LEN - 1), "%s,0x%x", log_nv_info,
@@ -1051,21 +1044,13 @@ static void nve_out_log(struct hisi_nve_info_user *user_info, int isRead)
 		memset(temp_nv_info, 0, sizeof(temp_nv_info));
 	}
 	pr_devel("%s\n", log_nv_info);
-#ifdef CONFIG_HISI_FACTORY_VERSION
 	if (isRead) {
-		pr_err("[NVE][%s]:read data = %s\n", __func__,
-		       user_info->nv_data);
+		pr_err("[NVE][%s]:read data = %s; read nv:ID= %d\n", __func__,
+		       user_info->nv_data,user_info->nv_number);
 	} else {
-		pr_err("[NVE][%s]:write data = %s\n", __func__,
-		       user_info->nv_data);
+		pr_err("[NVE][%s]:write data = %s; read nv:ID= %d\n", __func__,
+		       user_info->nv_data,user_info->nv_number);
 	}
-#else
-	if (isRead) {
-		pr_err("[NVE][%s]:read data \n", __func__);
-	} else {
-		pr_err("[NVE][%s]:write data \n", __func__);
-	}
-#endif
 	return;
 }
 #ifdef CONFIG_CRC_SUPPORT
@@ -1166,7 +1151,7 @@ int hisi_nve_direct_access_for_ramdisk(struct hisi_nve_info_user *user_info){
 	/*get nve partition header to check nv number*/
 	nve_partition_header = &g_nve_struct->nve_current_ramdisk->header;
 	if (user_info->nv_number >= nve_partition_header->valid_items) {
-		pr_err("[NVE][%s] NV items[%d] is not defined.\n", __func__, user_info->nv_number);
+		pr_err("[NVE][%s] The input NV items[%d] is out of range,not exist.\n", __func__, user_info->nv_number);
 		ret = -EINVAL;
 		goto out;
 	}
@@ -1244,8 +1229,15 @@ int hisi_nve_direct_access_for_ramdisk(struct hisi_nve_info_user *user_info){
  * Parameters:
  *          @ user_info:struct hisi_nve_info_user pointer.
  * return value:
- *          @ 0 - success.
- *          @ -1- failure.
+ *          @      0 - success.
+ *          @ -error - failure.
+ * errors:
+ *          @  ENOMEM - Out of memory
+ *          @  ENODEV - No NVE device
+ *          @  EBUSY  - Device or resource busy
+ *          @  EFAULT - Bad address
+ *          @  EINVAL - Invalid argument
+ *          @  ENOTTY - Unknow command
  */
 int hisi_nve_direct_access(struct hisi_nve_info_user *user_info)
 {
@@ -1281,8 +1273,11 @@ out:
  * Function name:nve_open.
  * Discription:open NV device in terms of calling nve_open_ex().
  * return value:
- *          @ 0 - success.
- *          @ -1- failure.
+ *          @      0 - success.
+ *          @ -error - failure.
+ * errors:
+ *          @  ENOMEM - Out of memory
+ *          @  ENODEV - No NVE device
  */
 static int nve_open(struct inode *inode, struct file *file)
 {
@@ -1305,8 +1300,15 @@ static int nve_close(struct inode *inode, struct file *file)
  * Function name:nve_ioctl.
  * Discription:complement read or write NV by terms of sending command-words.
  * return value:
- *          @ 0 - success.
- *          @ -1- failure.
+ *          @      0 - on success.
+ *          @ -error - on error.
+ * errors:
+ *          @  ENOMEM - Out of memory
+ *          @  ENODEV - No NVE device
+ *          @  EBUSY  - Device or resource busy
+ *          @  EFAULT - Bad address
+ *          @  EINVAL - Invalid argument
+ *          @  ENOTTY - Unknow command
  */
 static long nve_ioctl(struct file *file, u_int cmd, u_long arg)
 {
@@ -1333,7 +1335,7 @@ static long nve_ioctl(struct file *file, u_int cmd, u_long arg)
 	size = ((cmd & IOCSIZE_MASK) >> IOCSIZE_SHIFT);
 
 	if (cmd & IOC_IN) {
-		if (!access_ok(VERIFY_READ, argp, size)) {
+		if (!access_ok(VERIFY_READ, arg, size)) {
 			pr_err("[NVE][%s]access_in error!\n",
 			       __func__);
 			up(&nv_sem);
@@ -1342,7 +1344,7 @@ static long nve_ioctl(struct file *file, u_int cmd, u_long arg)
 	}
 
 	if (cmd & IOC_OUT) {
-		if (!access_ok(VERIFY_WRITE, argp, size)) {
+		if (!access_ok(VERIFY_WRITE, arg, size)) {
 			pr_err("[NVE][%s]access_out error!\n",
 			       __func__);
 			up(&nv_sem);
@@ -1495,7 +1497,7 @@ static void __exit cleanup_nve(void)
 	return;
 }
 
-static int nve_setup(const char *val, struct kernel_param *kp)
+static int nve_setup(const char *val, const struct kernel_param *kp)
 {
 	int ret;
 	struct device *nve_dev = NULL;

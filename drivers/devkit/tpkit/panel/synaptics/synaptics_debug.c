@@ -1737,7 +1737,7 @@ static int f54_rawimage_report(void)
 			(int32_t*)kzalloc((rows_size+1)*(columns_size+1)*sizeof(int32_t), GFP_KERNEL);
 		rawdata_from_chip = (int*)kzalloc((rows_size * columns_size)*sizeof(int), GFP_KERNEL);
 		if (!limit_tab.MutualRawMax || !limit_tab.MutualRawMin || !rawdata_from_chip){
-			TS_LOG_ERR("kzalloc error: MutualRawMax:%p, MutualRawMin:%p, rawdata_from_chip:%p\n",
+			TS_LOG_ERR("kzalloc error: MutualRawMax:%pK, MutualRawMin:%pK, rawdata_from_chip:%pK\n",
 				limit_tab.MutualRawMax, limit_tab.MutualRawMin, rawdata_from_chip);
 			goto error_release_mem;
 		}
@@ -4192,10 +4192,7 @@ int synap_get_cap_data(struct ts_rawdata_info *info)
 		} else if (f54->rmi4_data->synaptics_chip_data->test_capacitance_via_csvfile) {
 			mmi_csvfile_rawdata_test();
 		} else {
-			TS_LOG_ERR("[%s] devkit  not support dts raw threshold \n",__func__);
-			rc = -EINVAL;
-			goto exit;
-			//mmi_rawcapacitance_test();	/*1-2p/f*/
+			mmi_rawcapacitance_test();	/*1-2p/f*/
 		}
 
 		TS_LOG_INFO ("Mutul rawdata test!!!\n");
@@ -4690,7 +4687,8 @@ static int synaptics_read_f34(void)
 	mmi_buf_size =
 	    (f54->rmi4_data->num_of_tx) * (f54->rmi4_data->num_of_rx) * 2;
 	if(rawdata_size <= 0 || mmi_buf_size <= 0) {
-		TS_LOG_INFO("%s error rawdata_size = %d, mmi_buf_size = %d\n" ,rawdata_size, mmi_buf_size);
+		TS_LOG_INFO("%s error rawdata_size = %d, mmi_buf_size = %d\n",
+			__func__, rawdata_size, mmi_buf_size);
 		return -EINVAL;
 	}
 

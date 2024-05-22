@@ -130,7 +130,7 @@ typedef struct jpu_data {
 	uint32_t stride_y; /* stride for planar Y or RGBoutput buffer */
 	uint32_t stride_c; /* stride for planar c or RGBoutput buffer */
 	uint32_t restart_interval;
-	uint32_t addr_offset; /* start of scan data offset based start_addr*/
+	uint32_t addr_offset; /* start of scan data offset based start_addr */
 
 	bool arith_code; /* TRUE=arithmetic coding, FALSE=Huffman */
 	bool progressive_mode;

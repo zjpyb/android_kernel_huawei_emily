@@ -55,12 +55,12 @@ chipInfo	ftsInfo;
 int requestCompensationData(u16 type)
 {
 	int retry = 0;
-	int ret;
+	int ret = 0;
 	char *temp = NULL;
-	u16 answer;
+	u16 answer = 0;
 
-	int event_to_search[3];
-	u8 readEvent[FIFO_EVENT_SIZE];
+	int event_to_search[3] = {0};
+	u8 readEvent[FIFO_EVENT_SIZE] = {0};
 
 	u8 cmd[3] = { FTS_CMD_REQU_COMP_DATA, 0x00, 0x00 }; // B8 is the command for asking compensation data
 	u16ToU8(type, &cmd[1]);
@@ -183,7 +183,7 @@ int readMutualSenseNodeData(u16 address, MutualSenseData *node)
 		TS_LOG_ERR("%s readMutualSenseNodeData: ERROR %02X", __func__, ERROR_ALLOC);
 		return ERROR_ALLOC;
 	}
-
+	memset(node->node_data, 0, size*(sizeof(u8)));
 	TS_LOG_INFO("%s Node Data to read %d bytes\n", __func__, size);
 
 	if (readCmdU16(FTS_CMD_FRAMEBUFFER_R, address, node->node_data, size, DUMMY_FRAMEBUFFER) < 0) {
@@ -301,7 +301,7 @@ int readSelfSenseNodeData(u16 address, SelfSenseData *node)
 		return ERROR_ALLOC;
 	}
 
-
+	memset(node->cx2_sn, 0, node->header.sense_node*(sizeof(u8)));
 	TS_LOG_INFO("%s Address for Node data = %02X\n", __func__, address);
 
 	TS_LOG_INFO("%s Node Data to read %d bytes\n", __func__, size);

@@ -9560,6 +9560,99 @@ TAF_UINT32 At_SetCchpPara(TAF_UINT8 ucIndex)
 }
 
 
+TAF_UINT32 At_SetPrivateCchoPara(TAF_UINT8 ucIndex)
+{
+    SI_PIH_CCHO_COMMAND_STRU    stCchoCmd = {0};
+
+    /* 参数检查 */
+    if(g_stATParseCmd.ucCmdOptType != AT_CMD_OPT_SET_PARA_CMD)
+    {
+        return AT_CME_INCORRECT_PARAMETERS;
+    }
+
+    /* 参数过多 */
+    if(gucAtParaIndex != 1)
+    {
+        return AT_CME_INCORRECT_PARAMETERS;
+    }
+
+    /* 字符串长度不为2的整数倍 */
+    if((gastAtParaList[0].usParaLen % 2) != 0)
+    {
+        return AT_CME_INCORRECT_PARAMETERS;
+    }
+
+    /* 将字符串转换为16进制数组 */
+    if(At_AsciiNum2HexString(gastAtParaList[0].aucPara, &gastAtParaList[0].usParaLen) == AT_FAILURE)
+    {
+        AT_ERR_LOG("At_SetPrivateCchoPara: At_AsciiNum2HexString fail.");
+
+        return AT_CME_INCORRECT_PARAMETERS;
+    }
+
+    stCchoCmd.ulAIDLen   = gastAtParaList[0].usParaLen;
+    stCchoCmd.pucADFName = gastAtParaList[0].aucPara;
+
+    /* 执行命令操作 */
+    if(SI_PIH_PrivateCchoSetReq(gastAtClientTab[ucIndex].usClientId, 0, &stCchoCmd) == AT_SUCCESS)
+    {
+        /* 设置当前操作类型 */
+        gastAtClientTab[ucIndex].CmdCurrentOpt = AT_CMD_CCHO_SET;
+
+        return AT_WAIT_ASYNC_RETURN;    /* 返回命令处理挂起状态 */
+    }
+
+    return AT_ERROR;
+}
+
+
+TAF_UINT32 At_SetPrivateCchpPara(TAF_UINT8 ucIndex)
+{
+    SI_PIH_CCHP_COMMAND_STRU    stCchpCmd = {0};
+
+    /* 参数检查 */
+    if (g_stATParseCmd.ucCmdOptType != AT_CMD_OPT_SET_PARA_CMD)
+    {
+        return AT_CME_INCORRECT_PARAMETERS;
+    }
+
+    /* 参数过多 */
+    if (gucAtParaIndex > 2)
+    {
+        return AT_CME_INCORRECT_PARAMETERS;
+    }
+
+    /* 字符串长度不为2的整数倍 */
+    if ((gastAtParaList[0].usParaLen % 2) != 0)
+    {
+        return AT_CME_INCORRECT_PARAMETERS;
+    }
+
+    /* 将字符串转换为16进制数组 */
+    if (At_AsciiNum2HexString(gastAtParaList[0].aucPara, &gastAtParaList[0].usParaLen) == AT_FAILURE)
+    {
+        AT_ERR_LOG("At_SetPrivateCchpPara: At_AsciiNum2HexString fail.");
+
+        return AT_CME_INCORRECT_PARAMETERS;
+    }
+
+    stCchpCmd.ulAIDLen   = gastAtParaList[0].usParaLen;
+    stCchpCmd.pucADFName = gastAtParaList[0].aucPara;
+    stCchpCmd.ucAPDUP2   = (VOS_UINT8)gastAtParaList[1].ulParaValue;
+
+    /* 执行命令操作 */
+    if(SI_PIH_PrivateCchpSetReq(gastAtClientTab[ucIndex].usClientId, 0, &stCchpCmd) == AT_SUCCESS)
+    {
+        /* 设置当前操作类型 */
+        gastAtClientTab[ucIndex].CmdCurrentOpt = AT_CMD_CCHP_SET;
+
+        return AT_WAIT_ASYNC_RETURN;    /* 返回命令处理挂起状态 */
+    }
+
+    return AT_ERROR;
+}
+
+
 TAF_UINT32 At_SetCchcPara(TAF_UINT8 ucIndex)
 {
     /* 参数检查 */

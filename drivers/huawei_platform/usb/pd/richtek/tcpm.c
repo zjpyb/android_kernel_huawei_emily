@@ -30,7 +30,7 @@ int tcpm_shutdown(struct tcpc_device *tcpc_dev)
 		tcpci_disable_vbus_control(tcpc_dev);
 #endif	/* CONFIG_TCPC_SHUTDOWN_VBUS_DISABLE */
 
-	if (tcpc_dev->ops->deinit && tcpc_dev->pd_port.pd_connected)
+	if (tcpc_dev->ops->deinit)
 		tcpc_dev->ops->deinit(tcpc_dev);
 
 	return 0;
@@ -201,10 +201,12 @@ int tcpm_typec_role_swap(struct tcpc_device *tcpc_dev)
 	return TCPM_ERROR_UNSUPPORT;
 }
 
-int tcpm_typec_notify_direct_charge(struct tcpc_device *tcpc_dev, bool dc)
+int tcpm_typec_notify_direct_charge(void *client, bool dc)
 {
+	struct tcpc_device *tcpc_dev = (struct tcpc_device *)client;
+
 	TCPC_INFO("%s,%d", __func__, __LINE__);
-	if (tcpc_dev->typec_attach_old == TYPEC_UNATTACHED)
+	if (tcpc_dev->typec_attach_old == TYPEC_UNATTACHED && tcpc_dev->no_rpsrc_state == 0)
 		return TCPM_ERROR_UNATTACHED;
 
 	TCPC_INFO("%s,%d", __func__, __LINE__);
@@ -217,6 +219,25 @@ int tcpm_typec_change_role(
 }
 
 #ifdef CONFIG_USB_POWER_DELIVERY
+#ifdef CONFIG_TYPEC_CAP_CUSTOM_SRC2
+bool tcpm_inquire_cust_src2_cable_vdo(
+        struct tcpc_device *tcpc_dev, uint32_t *vdos, int size)
+{
+	pd_port_t *pd_port;
+	if(!tcpc_dev){
+		return false;
+	}
+	pd_port = &tcpc_dev->pd_port;
+	if (size < VDO_MAX_SIZE){
+		return false;
+	}
+	mutex_lock(&pd_port->pd_lock);
+	memcpy(vdos, pd_port->cable_vdos,
+		sizeof(uint32_t) * VDO_MAX_SIZE);
+	mutex_unlock(&pd_port->pd_lock);
+	return true;
+}
+#endif /* CONFIG_TYPEC_CAP_CUSTOM_SRC2 */
 
 bool tcpm_inquire_pd_connected(
 	struct tcpc_device *tcpc_dev)

@@ -390,6 +390,7 @@
 		hw,lcdkit-bl-enhance = <0>;
 		hw,lcdkit-bl-normal = <0>;
 		hw,lcdkit-delay-af-rst-off = <5>;
+		hw,lcdkit-tp-reset-gpio = <15>;
 		hw,lcdkit-h-back-porch = <16>;
 		hw,lcdkit-h-front-porch = <170>;
 		hw,lcdkit-h-pulse-width = <6>;

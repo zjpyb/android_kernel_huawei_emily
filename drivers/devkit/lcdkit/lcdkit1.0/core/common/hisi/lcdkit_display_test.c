@@ -69,9 +69,11 @@ ssize_t lcdkit_jdi_nt35696_5p5_gram_check_show(void* pdata, char* buf)
     for (i = 0; i < LCDKIT_CHECKSUM_SIZE; i++) {
         char *data = lcd_check_reg[0].payload;
         *data = 0x73 + i;
-        mipi_dsi_cmds_rx((rd1 + i), lcd_check_reg, \
+        ret = mipi_dsi_cmds_rx((rd1 + i), lcd_check_reg, \
             ARRAY_SIZE(lcd_check_reg), mipi_dsi0_base);
-
+        if(ret){
+            LCDKIT_ERR("Read lcd_check_reg fail\n");
+        }
         if (rd1[i] != expected_checksum1[lcdkit_info.panel_infos.checksum_pic_num][i]) {
             checksum_result++;
         }
@@ -84,9 +86,11 @@ ssize_t lcdkit_jdi_nt35696_5p5_gram_check_show(void* pdata, char* buf)
     for (i = 0; i < LCDKIT_CHECKSUM_SIZE; i++) {
         char *data = lcd_check_reg[0].payload;
         *data = 0x73 + i;
-        mipi_dsi_cmds_rx((rd2 + i), lcd_check_reg, \
+        ret = mipi_dsi_cmds_rx((rd2 + i), lcd_check_reg, \
             ARRAY_SIZE(lcd_check_reg), mipi_dsi0_base);
-
+        if(ret){
+            LCDKIT_ERR("Read lcd_check_reg fail\n");
+        }
         if (rd2[i] != expected_checksum2[lcdkit_info.panel_infos.checksum_pic_num][i]) {
             checksum_result++;
         }
@@ -181,8 +185,6 @@ ssize_t lcdkit_jdi_nt35696_5p5_reg_read_show(void* pdata, char* buf)
                 snprintf(str_tmp, sizeof(str_tmp), "%d,", (read_value[i / 4] >> 24) & 0xFF);
             }
             break;
-        default:
-            break;
         }
         strncat(lcd_reg_buf, str_tmp, strlen(str_tmp));
     }
@@ -254,8 +256,6 @@ ssize_t lcdkit_jdi_nt36860_5p88_reg_read_show(void* pdata, char* buf)
             } else {
                 snprintf(str_tmp, sizeof(str_tmp), "%d,", (read_value[i / 4] >> 24) & 0xFF);
             }
-            break;
-        default:
             break;
         }
         strncat(lcd_reg_buf, str_tmp, strlen(str_tmp));

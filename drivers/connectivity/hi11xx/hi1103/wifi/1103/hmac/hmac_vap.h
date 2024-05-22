@@ -398,7 +398,7 @@ typedef struct hmac_vap_tag
     oal_work_stru                   st_del_virtual_inf_worker;                  /* 删除net_device 工作队列 */
     oal_bool_enum_uint8             en_wait_roc_end;
     oal_uint8                       auc_resv6[3];
-    oal_completion                  st_roc_end_ready;                           /*roc end completion */
+    oal_completion                  st_roc_end_ready;                           /* roc end completion */
 
 #endif
 
@@ -478,7 +478,7 @@ typedef struct hmac_vap_tag
     oal_uint8                       bit_protocol_fall       :   1;              /* 降协议标志位 */
     oal_uint8                       bit_reassoc_flag        :   1;             /* 关联过程中判断是否为重关联动作 */
     oal_uint8                       bit_rx_ampduplusamsdu_active:1;
-#if defined(_PRE_WLAN_FEATURE_11K) || defined(_PRE_WLAN_FEATURE_11R) || defined(_PRE_WLAN_FEATURE_11K_EXTERN)
+#if defined(_PRE_WLAN_FEATURE_11K) || defined(_PRE_WLAN_FEATURE_11R) || defined(_PRE_WLAN_FEATURE_11K_EXTERN) || defined(_PRE_WLAN_FEATURE_11V_ENABLE)
     oal_uint8                       bit_11k_auth_flag       :   1;             /* 11k 认证标志位*/
     oal_uint8                       bit_voe_11r_auth        :   1;
     oal_uint8                       bit_11k_auth_oper_class :   2;

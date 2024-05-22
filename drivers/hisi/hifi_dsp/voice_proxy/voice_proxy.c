@@ -267,7 +267,7 @@ int32_t voice_proxy_create_data_node(struct voice_proxy_data_node **node, int8_t
 	return 0;
 }
 
-int32_t voice_proxy_mailbox_send_msg_cb(uint32_t mailcode, uint16_t msg_id, void *buf, uint32_t size)
+int32_t voice_proxy_mailbox_send_msg_cb(uint32_t mailcode, uint16_t msg_id, const void *buf, uint32_t size)
 {
 	int32_t ret;
 
@@ -563,7 +563,7 @@ static int voice_proxy_write_thread(void *arg)
 /*
  * the interrupt handle function for receiving mailbox data
  */
-static void handle_mail(void *usr_para, void *mail_handle, uint32_t mail_len)
+static void handle_mail(const void *usr_para, void *mail_handle, uint32_t mail_len)
 {
 	int32_t i = 0;
 	int32_t ret_mail = 0;

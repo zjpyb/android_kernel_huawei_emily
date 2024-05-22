@@ -4,8 +4,6 @@
 #include <linux/delay.h>
 #include <linux/slab.h>
 #include <asm/uaccess.h>
-
-//#include "huawei_touchscreen_chips.h"
 #include <huawei_ts_kit.h>
 
 #define SUPPORT_UNIQUE_TEST 1
@@ -176,7 +174,8 @@ int ts_kit_parse_csvfile(char *file_path, char *target_name, int32_t  *data, int
 		}
 	}
 	else {
-		TS_LOG_ERR("%s: ret=%d,read_ret=%d, buf=%p, stat.size=%lld\n", __func__, ret, read_ret, buf, stat.size);
+		TS_LOG_ERR("%s: ret=%d,read_ret=%d, buf=%pK, stat.size=%lld\n",
+			__func__, ret, read_ret, buf, stat.size);
 		ret = -ENXIO;
 		goto exit_free;
 	}

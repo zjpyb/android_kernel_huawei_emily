@@ -109,6 +109,57 @@ STATIC VOS_INT  NFExt_ReRegHooks(VOS_UINT32 ulMask);
 /******************************************************************************
    5 函数实现
 ******************************************************************************/
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+STATIC VOS_INT  nf_register_hook(struct nf_hook_ops *reg)
+{
+    VOS_INT                             iRet = 0;
+    VOS_UINT32                          ulRollBackFlag = VOS_NO;
+    struct net                         *net;
+    struct net                         *last;
+
+
+    rtnl_lock();
+    for_each_net(net)
+    {
+        iRet = nf_register_net_hook(net, reg);
+        if ((iRet != 0)&& (iRet != -ENOENT))
+        {
+            ulRollBackFlag = VOS_YES;
+            break;
+        }
+    }
+
+    if (VOS_YES == ulRollBackFlag)
+    {
+        last = net;
+        for_each_net(net)
+        {
+            if (net == last)
+            {
+                break;
+            }
+            nf_unregister_net_hook(net, reg);
+        }
+    }
+    rtnl_unlock();
+
+    return iRet;
+}
+
+STATIC VOS_VOID  nf_unregister_hook(struct nf_hook_ops *reg)
+{
+    struct net                         *net;
+
+    rtnl_lock();
+    for_each_net(net)
+    {
+        nf_unregister_net_hook(net, reg);
+    }
+    rtnl_unlock();
+
+    return;
+}
+#endif      /* #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)) */
 
 VOS_VOID  NFExt_UnregHooks(VOS_UINT32 ulMask)
 {
@@ -534,7 +585,7 @@ STATIC VOS_VOID NFExt_FlowCtrlInit(VOS_VOID)
 
 
 /*lint -e{550,438} */
-VOS_VOID  NFExt_BrSetFlowCtrl(VOS_VOID)
+VOS_UINT32 NFExt_BrSetFlowCtrl(VOS_UINT32 ulParam1, VOS_UINT32 ulParam2)
 {
     VOS_ULONG       ulFlags = 0UL;
 
@@ -543,11 +594,13 @@ VOS_VOID  NFExt_BrSetFlowCtrl(VOS_VOID)
     VOS_SpinUnlockIntUnlock(&g_stExEntity.stLockTxTask, ulFlags);
 
     IPS_MNTN_FlowCtrl(NF_EXT_BR_FORWARD_FLOW_CTRL_MASK, ID_IPS_TRACE_BR_FORWARD_FLOW_CTRL_START);
+
+    return VOS_OK;
 }
 
 
 /*lint -e{550,438} */
-VOS_VOID  NFExt_BrStopFlowCtrl(VOS_VOID)
+VOS_UINT32 NFExt_BrStopFlowCtrl(VOS_UINT32 ulParam1, VOS_UINT32 ulParam2)
 {
     VOS_ULONG       ulFlags = 0UL;
 
@@ -556,6 +609,8 @@ VOS_VOID  NFExt_BrStopFlowCtrl(VOS_VOID)
     VOS_SpinUnlockIntUnlock(&g_stExEntity.stLockTxTask, ulFlags);
 
     IPS_MNTN_FlowCtrl(NF_EXT_BR_FORWARD_FLOW_CTRL_MASK, ID_IPS_TRACE_BR_FORWARD_FLOW_CTRL_STOP);
+
+    return VOS_OK;
 }
 
 
@@ -568,18 +623,18 @@ VOS_UINT32 NFExt_GetBrBytesCnt(VOS_VOID)
 
 VOS_VOID NFExt_StatsShow(VOS_VOID)
 {
-    vos_printf("网桥forward流控丢掉的数据量 %u \n", g_stNfExtStats.aulStats[NF_EXT_STATS_BR_FC_DROP]);
-    vos_printf("进入网桥forward hook的数据量 %u \n", g_stNfExtStats.aulStats[NF_EXT_STATS_BR_FC_ENTER]);
-    vos_printf("环形buf满之后导致丢包数量 %u \n", g_stNfExtStats.aulStats[NF_EXT_STATS_BUF_FULL_DROP]);
-    vos_printf("入环形buf失败次数 %u \n", g_stNfExtStats.aulStats[NF_EXT_STATS_PUT_BUF_FAIL]);
-    vos_printf("出环形buf失败次数 %u \n", g_stNfExtStats.aulStats[NF_EXT_STATS_GET_BUF_FAIL]);
-    vos_printf("申请内存失败次数 %u \n", g_stNfExtStats.aulStats[NF_EXT_STATS_ALLOC_MEM_FAIL]);
+    vos_printf("NF_EXT_STATS_BR_FC_DROP     %u \n", g_stNfExtStats.aulStats[NF_EXT_STATS_BR_FC_DROP]);
+    vos_printf("NF_EXT_STATS_BR_FC_ENTER    %u \n", g_stNfExtStats.aulStats[NF_EXT_STATS_BR_FC_ENTER]);
+    vos_printf("NF_EXT_STATS_BUF_FULL_DROP  %u \n", g_stNfExtStats.aulStats[NF_EXT_STATS_BUF_FULL_DROP]);
+    vos_printf("NF_EXT_STATS_PUT_BUF_FAIL   %u \n", g_stNfExtStats.aulStats[NF_EXT_STATS_PUT_BUF_FAIL]);
+    vos_printf("NF_EXT_STATS_GET_BUF_FAIL   %u \n", g_stNfExtStats.aulStats[NF_EXT_STATS_GET_BUF_FAIL]);
+    vos_printf("NF_EXT_STATS_ALLOC_MEM_FAIL %u \n", g_stNfExtStats.aulStats[NF_EXT_STATS_ALLOC_MEM_FAIL]);
 
-    vos_printf("当前环形缓存中未处理的数据量 %ld \n", ((VOS_UINT32)OM_RingBufferNBytes(g_stExEntity.pRingBufferId) / sizeof(NF_EXT_DATA_RING_BUF_STRU)));
-    vos_printf("当前的Hook Mask %u \n", g_stExEntity.ulCurHookOnMask);
-    vos_printf("当前的流控状态Mask %u \n", g_stExFlowCtrlEntity.ulFlowCtrlMsk);
-    vos_printf("当前OM WIFI所使用的IP地址 %x \n", g_stExEntity.ulOmIp);
-    vos_printf("当前网桥转发字节数 %x \n", g_stExFlowCtrlEntity.aulTxBytesCnt[NF_EXT_TX_BYTES_CNT_BR]);
+    vos_printf("Unhandle data stats in Ringbuf %ld \n", ((VOS_UINT32)OM_RingBufferNBytes(g_stExEntity.pRingBufferId) / sizeof(NF_EXT_DATA_RING_BUF_STRU)));
+    vos_printf("CurHookOnMask %u \n", g_stExEntity.ulCurHookOnMask);
+    vos_printf("FlowCtrlMsk   %u \n", g_stExFlowCtrlEntity.ulFlowCtrlMsk);
+    vos_printf("OmIp          %x \n", g_stExEntity.ulOmIp);
+    vos_printf("NF_EXT_TX_BYTES_CNT_BR %x \n", g_stExFlowCtrlEntity.aulTxBytesCnt[NF_EXT_TX_BYTES_CNT_BR]);
 }
 
 
@@ -957,7 +1012,7 @@ VOS_VOID NFExt_MsgProc( struct MsgCB * pMsg )
 }
 
 
-VOS_VOID NFExt_FidTask(VOS_VOID)
+VOS_VOID NFExt_FidTask(VOS_UINT32 ulPara0, VOS_UINT32 ulPara1, VOS_UINT32 ulPara2, VOS_UINT32 ulPara3)
 {
     MsgBlock                           *pMsg          = VOS_NULL_PTR;
     VOS_UINT32                          ulEvent       = 0;

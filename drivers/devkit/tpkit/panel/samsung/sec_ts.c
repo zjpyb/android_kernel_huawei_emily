@@ -15,6 +15,7 @@ struct sec_ts_data *tsp_info;
 #if defined (CONFIG_TEE_TUI)
 #include "tui.h"
 #endif
+#include "../../tpkit_platform_adapter.h"
 
 static struct mutex wrong_touch_lock;
 static struct completion roi_data_done;
@@ -279,6 +280,7 @@ static int sec_ts_i2c_write_burst(struct sec_ts_data *ts, u8 *data, int len)
 		if (!ts->chip_data->ts_platform_data->bops->bus_write) {
 			TS_LOG_ERR("bus_write not exits\n");
 			ret = -EIO;
+			mutex_unlock(&ts->i2c_mutex);
 			goto err;
 		}
 		ret = ts->chip_data->ts_platform_data->bops->bus_write(data, len);
@@ -303,10 +305,10 @@ err:
 
 static int sec_ts_i2c_read_bulk(struct sec_ts_data *ts, u8 *data, int len)
 {
-	int ret;
-	unsigned char retry;
+	int ret = 0;
+	unsigned char retry = 0;
 	int remain = len;
-	struct i2c_msg msg;
+	struct i2c_msg msg = {0};
 	u8 reg = 0;
 
 	mutex_lock(&ts->i2c_mutex);
@@ -701,10 +703,10 @@ reinit_err:
 static int sec_ts_process_status(struct sec_ts_data *ts,
 					struct ts_fingers *info, u8 *event_buff)
 {
-	int ret;
-	struct sec_ts_event_status *p_event_status;
-	struct sec_ts_selfcheck *p_selfcheck;
-	u8 rBuff[SEC_TS_SELFCHECK_BUFF_SIZE];
+	int ret = 0;
+	struct sec_ts_event_status *p_event_status = NULL;
+	struct sec_ts_selfcheck *p_selfcheck = NULL;
+	u8 rBuff[SEC_TS_SELFCHECK_BUFF_SIZE] = {0};
 
 	p_event_status = (struct sec_ts_event_status *)event_buff;
 
@@ -822,20 +824,26 @@ static void sec_ts_process_coord(struct sec_ts_data *ts,
 		ts->coord[t_id].ewy = p_event_coord->ewy;
 		ts->coord[t_id].xer = p_event_coord->sgx;
 		ts->coord[t_id].yer = p_event_coord->sgy;
-
-		info->fingers[t_id].status = TP_FINGER;
-		info->fingers[t_id].x = ts->coord[t_id].x;
-		info->fingers[t_id].y = ts->coord[t_id].y;
-		info->fingers[t_id].major = ts->coord[t_id].major;
-		info->fingers[t_id].minor = ts->coord[t_id].minor;
-		info->fingers[t_id].pressure = ts->coord[t_id].z;
-		info->fingers[t_id].orientation = p_event_coord->orient;
-		info->fingers[t_id].wx = ts->coord[t_id].wx;
-		info->fingers[t_id].wy = ts->coord[t_id].wy;
-		info->fingers[t_id].ewx = ts->coord[t_id].ewx;
-		info->fingers[t_id].ewy = ts->coord[t_id].ewy;
-		info->fingers[t_id].xer = ts->coord[t_id].xer;
-		info->fingers[t_id].yer = ts->coord[t_id].yer;
+		if(t_id < MAX_SUPPORT_TOUCH_COUNT) {
+			info->fingers[t_id].status = TP_FINGER;
+			if (ts->plat_data->in_recovery_mode == USE_IN_RECOVERY_MODE && ts->plat_data->use_ic_res == USE_IC_RESOLUTION && ts->plat_data->max_x != 0 && ts->plat_data->max_y != 0) {
+				info->fingers[t_id].x = ts->coord[t_id].x * ts->plat_data->x_max_rc / ts->plat_data->max_x;
+				info->fingers[t_id].y = ts->coord[t_id].y * ts->plat_data->y_max_rc / ts->plat_data->max_y;
+			} else {
+				info->fingers[t_id].x = ts->coord[t_id].x;
+				info->fingers[t_id].y = ts->coord[t_id].y;
+			}
+			info->fingers[t_id].major = ts->coord[t_id].major;
+			info->fingers[t_id].minor = ts->coord[t_id].minor;
+			info->fingers[t_id].pressure = ts->coord[t_id].z;
+			info->fingers[t_id].orientation = p_event_coord->orient;
+			info->fingers[t_id].wx = ts->coord[t_id].wx;
+			info->fingers[t_id].wy = ts->coord[t_id].wy;
+			info->fingers[t_id].ewx = ts->coord[t_id].ewx;
+			info->fingers[t_id].ewy = ts->coord[t_id].ewy;
+			info->fingers[t_id].xer = ts->coord[t_id].xer;
+			info->fingers[t_id].yer = ts->coord[t_id].yer;
+		}
 
 		if (!ts->coord[t_id].palm && (ts->coord[t_id].ttype == SEC_TS_TOUCHTYPE_PALM))
 			ts->coord[t_id].palm_count++;
@@ -853,7 +861,9 @@ static void sec_ts_process_coord(struct sec_ts_data *ts,
 
 			if (ts->coord[t_id].action == SEC_TS_COORDINATE_ACTION_RELEASE) {
 				do_gettimeofday(&ts->time_released[t_id]);
-				memset(&info->fingers[t_id], 0, sizeof(struct ts_finger));
+				if(t_id < MAX_SUPPORT_TOUCH_COUNT) {
+					memset(&info->fingers[t_id], 0, sizeof(struct ts_finger));
+				}
 				if (ts->time_longest < (ts->time_released[t_id].tv_sec - ts->time_pressed[t_id].tv_sec))
 					ts->time_longest = (ts->time_released[t_id].tv_sec - ts->time_pressed[t_id].tv_sec);
 
@@ -1375,6 +1385,57 @@ static void sec_ts_parse_is_need_set_reseved_bit(struct device_node *device,
 	TS_LOG_INFO("tsp_info->is_need_set_reseved_bit = %d\n", tsp_info->is_need_set_reseved_bit);
 }
 
+static void sec_ts_parse_recovery_res(struct device_node *device,
+					struct ts_kit_device_data *chip_data)
+{
+	struct sec_ts_plat_data *pdata = tsp_info->plat_data;
+	int ret = 0;
+	struct device_node *np = device;
+
+	if(!device || !chip_data) {
+		TS_LOG_ERR("%s, param invalid\n", __func__);
+		return;
+	}
+
+	/* convert ic resolution x[0,4095] y[0,4095] to real resolution, fix inaccurate touch in recovery mode,
+	 * there is no coordinate conversion in recovery mode.
+	 */
+	if (get_into_recovery_flag_adapter()) {
+		pdata->in_recovery_mode = USE_IN_RECOVERY_MODE;
+		TS_LOG_INFO("Now driver in recovery mode\n");
+	} else {
+		pdata->in_recovery_mode = USE_NOT_IN_RECOVERY_MODE;
+	}
+
+	ret = of_property_read_u32(np, "use_ic_res", &pdata->use_ic_res);
+	if (ret) {
+		TS_LOG_INFO("%s:get device use_ic_res fail, use default, ret=%d\n",
+			__func__, ret);
+		pdata->use_ic_res = USE_LCD_RESOLUTION;
+	}
+
+	ret = of_property_read_u32(np, "x_max_rc", &pdata->x_max_rc);
+	if (ret) {
+		TS_LOG_INFO("%s:get device x_max_rc fail,use default, ret=%d\n",
+			__func__, ret);
+		pdata->x_max_rc = 0;
+	}
+
+	ret = of_property_read_u32(np, "y_max_rc", &pdata->y_max_rc);
+	if (ret) {
+		TS_LOG_INFO("%s:get device y_max_rc fail,use default, ret=%d\n",
+			__func__, ret);
+		pdata->y_max_rc = 0;
+	}
+
+	TS_LOG_INFO("%s:%s=%d, %s=%d, %s=%d, %s=%d\n", __func__,
+		"use_ic_res", pdata->use_ic_res,
+		"x_max_rc", pdata->x_max_rc,
+		"y_max_rc", pdata->y_max_rc,
+		"in_recovery_mode", pdata->in_recovery_mode);
+}
+
+
 
 static int sec_ts_parse_dt(struct device_node *device,
 					struct ts_kit_device_data *chip_data)
@@ -1448,7 +1509,6 @@ static int sec_ts_parse_dt(struct device_node *device,
 		"y_max", chip_data->y_max,
 		"x_mt", chip_data->x_max_mt,
 		"y_mt", chip_data->y_max_mt);
-
 
 	array_len = of_property_count_strings(np, "raw_data_limit");
 	if (array_len <= 0 || array_len > RAWDATA_NUM) {
@@ -1640,6 +1700,7 @@ static int sec_ts_parse_dt(struct device_node *device,
 	sec_ts_parse_is_need_set_reseved_bit(device, chip_data);
 	sec_ts_default_trx_num(device, chip_data);
 	sec_ts_is_need_calibrate_after_update(device, chip_data);
+	sec_ts_parse_recovery_res(device, chip_data);
 
 	tsp_info->module_name = NULL;
 
@@ -1987,11 +2048,9 @@ static int i2c_communicate_check(void)
 
 	ret = sec_ts_i2c_read(ts, SEC_TS_READ_DEVICE_ID, deviceID, 5);
 	if (ret < 0)
-		TS_LOG_ERR("%s: failed to read device ID(%d)\n", __func__, ret);
+		TS_LOG_ERR("%s: failed to read device, ret = %d  \n", __func__, ret);
 	else
-		TS_LOG_INFO("%s: TOUCH DEVICE ID : %02X, %02X, %02X, %02X, %02X\n",
-					__func__, deviceID[0], deviceID[1],
-					deviceID[2], deviceID[3], deviceID[4]);
+		TS_LOG_INFO("%s: read device_id SUCC \n", __func__);
 
 	ret = sec_ts_i2c_read(ts, SEC_TS_READ_FIRMWARE_INTEGRITY, &result, 1);
 	if (ret < 0) {
@@ -2055,8 +2114,12 @@ static int sec_ts_chip_detect(struct ts_kit_platform_data *data)
 	int retval = NO_ERR;
 
 	TS_LOG_INFO("sec_ts chip detect called\n");
-	if ((!data) && (!data->ts_dev)) {
-		TS_LOG_ERR("device, ts_kit_platform_data *data or data->ts_dev is NULL \n");
+	if (!data) {
+		TS_LOG_ERR("%s: *data or data->ts_dev is NULL \n", __func__);
+		retval =  -EINVAL;
+		goto out;
+	} else if (data->ts_dev == NULL) {
+		TS_LOG_ERR("%s: *data or data->ts_dev is NULL \n", __func__);
 		retval =  -EINVAL;
 		goto out;
 	}
@@ -2121,8 +2184,8 @@ static int sec_ts_chip_detect(struct ts_kit_platform_data *data)
 	} else {
 		TS_LOG_INFO("find sec_ts device\n");
 		strncpy(ts->chip_data->chip_name, SEC_TS_I2C_NAME,
-			(MAX_STR_LEN > strlen(SEC_TS_I2C_NAME)) ?
-				strlen(SEC_TS_I2C_NAME):(MAX_STR_LEN - 1));
+			((MAX_STR_LEN - 1) > (strlen(SEC_TS_I2C_NAME) + 1)) ?
+			(strlen(SEC_TS_I2C_NAME) + 1) : (MAX_STR_LEN - 1));
 	}
 
 	if(S6SY761X == tsp_info->ic_name) {
@@ -2225,17 +2288,31 @@ static int sec_ts_input_config(struct input_dev *input_dev)
 	set_bit(INPUT_PROP_DIRECT, input_dev->propbit);
 #endif
 
-	input_set_abs_params(input_dev, ABS_X,
+	if (tsp_info->plat_data->in_recovery_mode == USE_IN_RECOVERY_MODE && tsp_info->plat_data->use_ic_res == USE_IC_RESOLUTION) {
+		input_set_abs_params(input_dev, ABS_X,
+				0, tsp_info->plat_data->x_max_rc, 0, 0);
+		input_set_abs_params(input_dev, ABS_Y,
+				0, tsp_info->plat_data->y_max_rc, 0, 0);
+	} else {
+		input_set_abs_params(input_dev, ABS_X,
 				0, tsp_info->plat_data->max_x, 0, 0);
-	input_set_abs_params(input_dev, ABS_Y,
+		input_set_abs_params(input_dev, ABS_Y,
 				0, tsp_info->plat_data->max_y, 0, 0);
+	}
 	input_set_abs_params(input_dev, ABS_PRESSURE, 0, 255, 0, 0);
 	input_set_abs_params(input_dev, ABS_MT_TRACKING_ID, 0, 15, 0, 0);
 
-	input_set_abs_params(input_dev, ABS_MT_POSITION_X, 0,
+	if (tsp_info->plat_data->in_recovery_mode == USE_IN_RECOVERY_MODE && tsp_info->plat_data->use_ic_res == USE_IC_RESOLUTION) {
+		input_set_abs_params(input_dev, ABS_MT_POSITION_X, 0,
+				tsp_info->plat_data->x_max_rc, 0, 0);
+		input_set_abs_params(input_dev, ABS_MT_POSITION_Y, 0,
+				tsp_info->plat_data->y_max_rc, 0, 0);
+	} else {
+		input_set_abs_params(input_dev, ABS_MT_POSITION_X, 0,
 				tsp_info->plat_data->max_x, 0, 0);
-	input_set_abs_params(input_dev, ABS_MT_POSITION_Y, 0,
+		input_set_abs_params(input_dev, ABS_MT_POSITION_Y, 0,
 				tsp_info->plat_data->max_y, 0, 0);
+	}
 	input_set_abs_params(input_dev, ABS_MT_PRESSURE, 0, 255, 0, 0);
 #if ANTI_FALSE_TOUCH_USE_PARAM_MAJOR_MINOR
 	input_set_abs_params(input_dev, ABS_MT_WIDTH_MAJOR, 0, 100, 0, 0);
@@ -2657,7 +2734,8 @@ static int sec_ts_set_roi_switch(u8 roi_switch)
 	int retval = NO_ERR;
 	int i;
 	unsigned short roi_ctrl_addr = 0;
-	u8 roi_control_bit, temp_roi_switch;
+	u8 roi_control_bit = 0;
+	u8 temp_roi_switch = 0;
 
 #ifdef ROI
 	roi_ctrl_addr = tsp_info->chip_data->ts_platform_data->feature_info.roi_info.roi_control_addr;

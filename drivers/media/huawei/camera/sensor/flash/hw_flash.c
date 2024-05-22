@@ -334,8 +334,6 @@ int hw_flash_config(struct hw_flash_ctrl_t *flash_ctrl, void *arg)
 
     cam_debug("%s enter cfgtype=%d.\n", __func__, cdata->cfgtype);
 
-    //mutex_lock(flash_ctrl->hisi_flash_mutex);
-
     switch (cdata->cfgtype) {
     case CFG_FLASH_TURN_ON:
         state = hw_flash_get_state();
@@ -352,8 +350,12 @@ int hw_flash_config(struct hw_flash_ctrl_t *flash_ctrl, void *arg)
     case CFG_FLASH_GET_FLASH_NAME:
         mutex_lock(flash_ctrl->hw_flash_mutex);
         memset_s(cdata->cfg.name, sizeof(cdata->cfg.name), 0, sizeof(cdata->cfg.name));
-        strncpy_s(cdata->cfg.name, sizeof(cdata->cfg.name) - 1, flash_ctrl->flash_info.name,
+        rc = strncpy_s(cdata->cfg.name, sizeof(cdata->cfg.name) - 1, flash_ctrl->flash_info.name,
             sizeof(cdata->cfg.name) - 1);
+        if (rc != 0) {
+            cam_err("%s flash name copy error.\n", __func__);
+            rc = -EFAULT;
+        }
         mutex_unlock(flash_ctrl->hw_flash_mutex);
         break;
     case CFG_FLASH_GET_FLASH_STATE:
@@ -373,8 +375,6 @@ int hw_flash_config(struct hw_flash_ctrl_t *flash_ctrl, void *arg)
         rc = -EFAULT;
         break;
     }
-
-    //mutex_unlock(flash_ctrl->hisi_flash_mutex);
 
     return rc;
 }
@@ -532,9 +532,13 @@ int32_t hw_flash_platform_probe(struct platform_device *pdev,
     v4l2_subdev_init(&flash_ctrl->hw_sd.sd,
             flash_ctrl->flash_v4l2_subdev_ops);
 
-    snprintf_s(flash_ctrl->hw_sd.sd.name,
+    rc = snprintf_s(flash_ctrl->hw_sd.sd.name,
         sizeof(flash_ctrl->hw_sd.sd.name),sizeof(flash_ctrl->hw_sd.sd.name) - 1 ,"%s",
         flash_ctrl->flash_info.name);
+    if (rc < 0) {
+        cam_err("%s  flash name in overflow.\n", __func__);
+        return -EFAULT;
+    }
 
     v4l2_set_subdevdata(&flash_ctrl->hw_sd.sd, pdev);
 
@@ -631,9 +635,13 @@ int32_t hw_flash_i2c_probe(struct i2c_client *client,
     v4l2_subdev_init(&flash_ctrl->hw_sd.sd,
             flash_ctrl->flash_v4l2_subdev_ops);
 
-    snprintf_s(flash_ctrl->hw_sd.sd.name,
+    rc = snprintf_s(flash_ctrl->hw_sd.sd.name,
         sizeof(flash_ctrl->hw_sd.sd.name),sizeof(flash_ctrl->hw_sd.sd.name)-1, "%s",
         flash_ctrl->flash_info.name);
+    if (rc < 0) {
+        cam_err("%s  flash name in overflow.\n", __func__);
+        return -EFAULT;
+    }
 
     v4l2_set_subdevdata(&flash_ctrl->hw_sd.sd, client);
 

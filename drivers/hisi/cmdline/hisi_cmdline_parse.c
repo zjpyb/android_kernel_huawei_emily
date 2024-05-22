@@ -6,12 +6,17 @@
 #include "securec.h"
 
 /* Format of hex string: 0x12345678 */
-#define RUNMODE_FLAG_NORMAL  0
-#define RUNMODE_FLAG_FACTORY 1
-#define HEX_STRING_MAX  (10)
-#define TRANSFER_BASE    (16)
+#define RUNMODE_FLAG_NORMAL         0
+#define RUNMODE_FLAG_FACTORY        1
+#define HEX_STRING_MAX              10
+#define TRANSFER_BASE               16
+#define ASW_PROTECT_FLAG_INVALID    (-1)
+#define ASW_PROTECT_VOLT_INVALID    (-1)
+#define ASW_PROTECT_BACKUP_INVALID  (-1)
 
+static unsigned int hisi_platform_product_id = 0xFFFFFFFF;
 static unsigned int runmode_factory = RUNMODE_FLAG_NORMAL;
+
 
 static int __init early_parse_runmode_cmdline(char *p)
 {
@@ -228,6 +233,7 @@ static int __init early_parse_pdcharge_cmdline(char *p)
 
 early_param("androidboot.mode", early_parse_pdcharge_cmdline);
 
+
 unsigned int get_pd_charge_flag(void)
 {
 	return pd_charge_flag;
@@ -276,3 +282,54 @@ unsigned int is_load_modem(void)
 	return !rs;
 }
 EXPORT_SYMBOL(is_load_modem);
+
+
+/******************************************************************************
+* Function: static int __init early_parse_product_id(char *p)
+* Description: Save hisilicon platform product id to kernel.
+*              The product id passed by cmd line from bootloader.
+* Input:
+*        char *p -- cmd line node
+* Return:
+*        always 0
+******************************************************************************/
+static int __init early_parse_product_id(char *p)
+{
+    int ret = 0;
+    char input_id[HEX_STRING_MAX + 1] = {0};
+
+    if (p) {
+        if (EOK != memcpy_s(input_id, HEX_STRING_MAX, p, HEX_STRING_MAX)) {
+            pr_err("%s():%d:memcpy_s fail!\n", __func__, __LINE__);
+        }
+
+        ret = kstrtouint(input_id, TRANSFER_BASE, &hisi_platform_product_id);
+        if (ret){
+            hisi_platform_product_id = 0xFFFFFFFF;
+        }
+
+        pr_info("input product id:%s, parsed product id:0X%X\n", p, hisi_platform_product_id);
+    }
+
+    return 0;
+}
+
+early_param("productid", early_parse_product_id);
+
+/******************************************************************************
+* Function: unsigned int get_product_id(void)
+* Description: Get hisilicon platform product id.
+*              The product id passed by cmd line from bootloader.
+* Input:
+*        void
+* Return:
+*        unsigned in product id
+*        error   -- return 0xFFFFFFFF
+*        success -- return not 0xFFFFFFFF
+******************************************************************************/
+unsigned int get_cmd_product_id(void)
+{
+    return hisi_platform_product_id;
+}
+
+EXPORT_SYMBOL(get_cmd_product_id);

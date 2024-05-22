@@ -31,10 +31,10 @@
 
 /* align */
 #ifndef ALIGN_DOWN
-#define ALIGN_DOWN(val, al)  ((val) & ~((al)-1))
+#define ALIGN_DOWN(val, al)  ((val) & ~((typeof(val))(al)-1))
 #endif
 #ifndef ALIGN_UP
-#define ALIGN_UP(val, al)    (((val) + ((al)-1)) & ~((al)-1))
+#define ALIGN_UP(val, al)    (((val) + ((al)-1)) & ~((typeof(val))(al)-1))
 #endif
 
 #ifndef BIT

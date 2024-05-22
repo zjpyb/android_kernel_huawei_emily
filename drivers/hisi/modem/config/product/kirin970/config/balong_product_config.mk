@@ -21,3 +21,30 @@ ifneq ($(choose_variant_modem),user)
  include $(current_dir)/balong_product_config_version_eng.mk
 endif
 #endif
+
+ifeq ($(choose_variant_modem),user)
+
+ifeq ($(strip $(MODEM_FULL_DUMP)),true)
+ include $(current_dir)/balong_product_config_modem_full_dump.mk
+$(info cust MODEM_FULL_DUMP is true)
+endif
+
+ifeq ($(strip $(MODEM_DDR_MINI_DUMP)),true)
+ include $(current_dir)/balong_product_config_modem_ddr_mini_dump.mk
+$(info cust MODEM_DDR_MINI_DUMP is true)
+endif
+
+ifeq ($(strip $(modem_log_filter_nv_control)),true)
+ include $(current_dir)/balong_product_config_modem_log_filter.mk
+$(info cust modem_log_filter_nv_control is true)
+endif
+
+
+ifeq ($(strip $(MODEM_CHR_INUSER)),true)
+ include $(current_dir)/balong_product_config_modem_chr_ptm.mk
+$(info cust MODEM_CHR_INUSER is true)
+else
+ include $(current_dir)/balong_product_config_modem_chr_ptm_off.mk
+endif
+
+endif

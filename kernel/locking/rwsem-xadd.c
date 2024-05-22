@@ -259,7 +259,9 @@ struct rw_semaphore __sched *rwsem_down_read_failed(struct rw_semaphore *sem)
 #ifdef CONFIG_HW_VIP_THREAD
 	rwsem_dynamic_vip_enqueue(tsk, waiter.task, READ_ONCE(sem->owner), sem);
 #endif
-
+#ifdef CONFIG_HW_QOS_THREAD
+	rwsem_dynamic_qos_enqueue(READ_ONCE(sem->owner), waiter.task);
+#endif
 	raw_spin_unlock_irq(&sem->wait_lock);
 	wake_up_q(&wake_q);
 
@@ -529,6 +531,9 @@ __rwsem_down_write_failed_common(struct rw_semaphore *sem, int state)
 #ifdef CONFIG_HW_VIP_THREAD
 	rwsem_dynamic_vip_enqueue(waiter.task, current, READ_ONCE(sem->owner), sem);
 #endif
+#ifdef CONFIG_HW_QOS_THREAD
+	rwsem_dynamic_qos_enqueue(READ_ONCE(sem->owner), waiter.task);
+#endif
 
 	/* wait until we successfully acquire the lock */
 	set_current_state(state);
@@ -593,6 +598,33 @@ struct rw_semaphore *rwsem_wake(struct rw_semaphore *sem)
 	WAKE_Q(wake_q);
 
 	/*
+	* __rwsem_down_write_failed_common(sem)
+	*   rwsem_optimistic_spin(sem)
+	*     osq_unlock(sem->osq)
+	*   ...
+	*   atomic_long_add_return(&sem->count)
+	*
+	*      - VS -
+	*
+	*              __up_write()
+	*                if (atomic_long_sub_return_release(&sem->count) < 0)
+	*                  rwsem_wake(sem)
+	*                    osq_is_locked(&sem->osq)
+	*
+	* And __up_write() must observe !osq_is_locked() when it observes the
+	* atomic_long_add_return() in order to not miss a wakeup.
+	*
+	* This boils down to:
+	*
+	* [S.rel] X = 1                [RmW] r0 = (Y += 0)
+	*         MB                         RMB
+	* [RmW]   Y += 1               [L]   r1 = X
+	*
+	* exists (r0=1 /\ r1=0)
+	*/
+	smp_rmb();
+
+	/*
 	 * If a spinner is present, it is not necessary to do the wakeup.
 	 * Try to do wakeup only if the trylock succeeds to minimize
 	 * spinlock contention which may introduce too much delay in the
@@ -630,6 +662,9 @@ locked:
 
 #ifdef CONFIG_HW_VIP_THREAD
 	rwsem_dynamic_vip_dequeue(sem, current);
+#endif
+#ifdef CONFIG_HW_QOS_THREAD
+	rwsem_dynamic_qos_dequeue(current);
 #endif
 
 	raw_spin_unlock_irqrestore(&sem->wait_lock, flags);

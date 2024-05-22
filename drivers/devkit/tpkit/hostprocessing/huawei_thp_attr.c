@@ -16,7 +16,6 @@
 #include <linux/spi/spi.h>
 #include <linux/ctype.h>
 #include "huawei_thp.h"
-#include "huawei_thp_attr.h"
 
 #define SYSFS_PROPERTY_PATH	  "afe_properties"
 #define SYSFS_TOUCH_PATH   "touchscreen"
@@ -32,7 +31,7 @@ static ssize_t thp_tui_wake_up_enable_store(struct device *dev,
 	struct thp_core_data *cd = thp_get_core_data();
 
 	ret = strncmp(buf, "open", sizeof("open"));
-	if(ret == 0){
+	if (ret == 0) {
 		cd->thp_ta_waitq_flag = WAITQ_WAKEUP;
 		wake_up_interruptible(&(cd->thp_ta_waitq));
 		THP_LOG_ERR("%s wake up thp_ta_flag\n", __func__);
@@ -66,8 +65,13 @@ static ssize_t thp_chip_info_show(struct device *dev,
 {
 	struct thp_core_data *cd = thp_get_core_data();
 
-	return snprintf(buf, PAGE_SIZE, "%s-%s-%s\n", cd->thp_dev->ic_name,
-					cd->project_id, cd->vendor_name ? cd->vendor_name : "unknown");
+	if (cd->hide_product_info_en)
+		return snprintf(buf, PAGE_SIZE, "%s\n", cd->project_id);
+	else
+		return snprintf(buf, PAGE_SIZE, "%s-%s-%s\n",
+				cd->thp_dev->ic_name,
+				cd->project_id,
+				cd->vendor_name ? cd->vendor_name : "unknown");
 }
 
 static ssize_t thp_loglevel_show(struct device *dev,
@@ -191,7 +195,7 @@ static ssize_t thp_roi_enable_show(struct device *dev,
 					struct device_attribute *attr, char* buf)
 {
 	return snprintf(buf, PAGE_SIZE - 1, "%d\n",
-			thp_get_status(THP_STATUS_ROI));
+		thp_get_status(THP_STATUS_ROI));
 }
 
 static ssize_t thp_holster_enable_store(struct device *dev,
@@ -216,7 +220,7 @@ static ssize_t thp_holster_enable_show(struct device *dev,
 					struct device_attribute *attr, char* buf)
 {
 	return snprintf(buf, PAGE_SIZE - 1, "%d\n",
-			thp_get_status(THP_STATUS_HOLSTER));
+				thp_get_status(THP_STATUS_HOLSTER));
 }
 
 static ssize_t thp_glove_enable_store(struct device *dev,
@@ -261,7 +265,7 @@ static ssize_t thp_holster_window_store(struct device *dev,
 	ret = sscanf(buf,"%4d %4d %4d %4d %4d", &window_enable, &x0,&y0,&x1, &y1);
 	if (ret <= 0) {
 		THP_LOG_ERR("%s: illegal input\n", __func__);
-		return ret;
+		return -EBUSY;
 	}
 	cd->window.x0 = x0;
 	cd->window.y0 = y0;
@@ -270,8 +274,7 @@ static ssize_t thp_holster_window_store(struct device *dev,
 
 	thp_set_status(THP_STATUS_HOLSTER, !!window_enable);
 	thp_set_status(THP_STAUTS_WINDOW_UPDATE, !thp_get_status(THP_STAUTS_WINDOW_UPDATE));
-	THP_LOG_INFO("%s: update window %d %d %d %d %d\n",
-			__func__, window_enable, x0, y0, x1, y1);
+	THP_LOG_INFO("%s: update window %d %d %d %d %d\n", __func__, window_enable, x0, y0, x1, y1);
 
 	return count;
 }
@@ -300,15 +303,13 @@ static ssize_t thp_touch_switch_store(struct device *dev,
 	ret = sscanf(buf,"%4d,%4d,%4d", &type, &status,&parameter);
 	if (ret <= 0) {
 		THP_LOG_ERR("%s: illegal input\n", __func__);
-		return ret;
+		return -EBUSY;
 	}
-
 	cd->scene_info.type = type;
 	cd->scene_info.status = status;
 	cd->scene_info.parameter = parameter;
 	thp_set_status(THP_STAUTS_TOUCH_SCENE, !thp_get_status(THP_STAUTS_TOUCH_SCENE));
-	THP_LOG_INFO("%s:touch scene update %d %d %d\n",
-			__func__, type, status, parameter);
+	THP_LOG_INFO("%s:touch scene update %d %d %d\n", __func__, type, status, parameter);
 
 	return count;
 }
@@ -329,8 +330,7 @@ static ssize_t thp_touch_switch_show(struct device *dev,
 static ssize_t thp_udfp_enable_show(struct device *dev,
 				struct device_attribute *attr, char *buf)
 {
-	return snprintf(buf, PAGE_SIZE - 1, "udfp status : %d\n",
-		     thp_get_status(THP_STAUTS_UDFP));
+	return snprintf(buf, PAGE_SIZE - 1, "udfp status : %d\n", thp_get_status(THP_STAUTS_UDFP));
 }
 
 static ssize_t thp_udfp_enable_store(struct device *dev,
@@ -358,8 +358,188 @@ static ssize_t thp_supported_func_indicater_show(struct device *dev,
 	return snprintf(buf, PAGE_SIZE - 1, "%d\n", cd->supported_func_indicater);
 }
 
+static ssize_t thp_easy_wakeup_gesture_show(struct device *dev,
+					struct device_attribute *attr,
+					char *buf)
+{
+	struct thp_core_data *cd = thp_get_core_data();
+	struct thp_easy_wakeup_info *info = &cd->easy_wakeup_info;
+	ssize_t ret;
+
+	if (!cd->support_gesture_mode) {
+		THP_LOG_ERR("[%s]not support\n", __func__);
+		return -EINVAL;
+	}
+	THP_LOG_INFO("%s\n", __func__);
+
+	if (!dev) {
+		THP_LOG_ERR("dev is null\n");
+		return -EINVAL;
+	}
+
+	ret = snprintf(buf, MAX_STR_LEN, "0x%04X\n",
+		info->easy_wakeup_gesture);
+
+	return ret;
+}
+
+static ssize_t thp_easy_wakeup_gesture_store(struct device *dev,
+				struct device_attribute *attr,
+				const char *buf, size_t size)
+{
+	struct thp_core_data *cd = thp_get_core_data();
+	struct thp_easy_wakeup_info *info;
+	unsigned long value = 0;
+	int ret;
+
+	if (!cd->support_gesture_mode) {
+		THP_LOG_ERR("[%s]not support\n",  __func__);
+		return -EINVAL;
+	}
+	THP_LOG_INFO("thp_easy_wakeup_gesture_store called\n");
+
+	if (!dev) {
+		THP_LOG_ERR("dev is null\n");
+		return -EINVAL;
+	}
+	ret = sscanf(buf, "%4lu", &value);
+	if (ret <= 0 || value > TS_GESTURE_INVALID_COMMAND) {
+		THP_LOG_ERR("invalid parm\n");
+		return -EBUSY;
+	}
+	info = &cd->easy_wakeup_info;
+	info->easy_wakeup_gesture = (u16) value & TS_GESTURE_COMMAND;
+	THP_LOG_INFO("easy_wakeup_gesture=0x%x\n", info->easy_wakeup_gesture);
+	if (info->easy_wakeup_gesture == false) {
+		cd->sleep_mode = TS_POWER_OFF_MODE;
+		THP_LOG_INFO("poweroff mode\n");
+	} else {
+		cd->sleep_mode = TS_GESTURE_MODE;
+		THP_LOG_INFO("gesture mode\n");
+	}
+	ret = size;
+
+	THP_LOG_INFO("ts gesture wakeup done\n");
+	return ret;
+}
+static ssize_t thp_wakeup_gesture_enable_store(struct device *dev,
+				struct device_attribute *attr,
+				const char *buf, size_t count)
+{
+	unsigned long tmp = 0;
+	struct thp_core_data *cd = thp_get_core_data();
+	int error;
+
+	if (!cd->support_gesture_mode) {
+		THP_LOG_ERR("[%s]not support\n",  __func__);
+		return -EINVAL;
+	}
+	THP_LOG_INFO("%s called\n", __func__);
+
+	error = sscanf(buf, "%4lu", &tmp);
+	if (error <= 0) {
+		THP_LOG_ERR("sscanf return invaild :%d\n", error);
+		error = -EINVAL;
+		goto out;
+	}
+	THP_LOG_INFO("%s:%lu\n", __func__, tmp);
+	error = count;
+out:
+	return error;
+}
+
+static ssize_t thp_wakeup_gesture_enable_show(struct device *dev,
+				struct device_attribute *attr, char *buf)
+{
+	struct thp_core_data *cd = thp_get_core_data();
+	if (!cd->support_gesture_mode) {
+		THP_LOG_ERR("[%s]not support\n", __func__);
+		return -EINVAL;
+	}
+	THP_LOG_INFO("%s called\n", __func__);
+	return 0;
+}
+
+static ssize_t thp_easy_wakeup_control_store(struct device *dev,
+				struct device_attribute *attr,
+				const char *buf, size_t size)
+{
+	struct thp_core_data *cd = thp_get_core_data();
+
+	unsigned long value = 0;
+	int ret;
+	int error = NO_ERR;
+
+	if (!cd->support_gesture_mode) {
+		THP_LOG_ERR("[%s]not support\n", __func__);
+		return -EINVAL;
+	}
+	THP_LOG_INFO("%s called\n", __func__);
+
+	ret = sscanf(buf, "%4lu", &value);
+	if (ret <= 0 || value > TS_GESTURE_INVALID_CONTROL_NO) {
+		THP_LOG_INFO("[%s] -> invalid parm\n", __func__);
+		return -EINVAL;
+	}
+
+	value = (u8) value & TS_GESTURE_COMMAND;
+	if (value == 1) {
+		if (cd->thp_dev->ops->chip_wrong_touch) {
+			error = cd->thp_dev->ops->chip_wrong_touch(cd->thp_dev);
+			if (error < 0) {
+				THP_LOG_INFO("chip_wrong_touch error\n");
+			}
+		} else {
+			THP_LOG_INFO("chip_wrong_touch not init\n");
+		}
+	}
+	THP_LOG_INFO("%s done\n", __func__);
+	return size;
+}
+
+static ssize_t thp_easy_wakeup_position_show(struct device *dev,
+				struct device_attribute *attr, char *buf)
+{
+	struct thp_core_data *cd = thp_get_core_data();
+	if (!cd->support_gesture_mode) {
+		THP_LOG_ERR("[%s]not support\n", __func__);
+		return -EINVAL;
+	}
+	return 0;
+}
+
+static ssize_t thp_oem_info_show(struct device *dev,
+				struct device_attribute *attr, char *buf)
+{
+	int error = NO_ERR;
+	struct thp_core_data *cd = thp_get_core_data();
+
+	THP_LOG_INFO("%s: called\n", __func__);
+
+	if ((dev == NULL) || (cd == NULL)) {
+		THP_LOG_ERR("%s: dev is null\n", __func__);
+		return -EINVAL;
+	}
+	if (cd->support_oem_info == THP_OEM_INFO_LCD_EFFECT_TYPE) {
+		error = snprintf(buf, OEM_INFO_DATA_LENGTH, "%s",
+			cd->oem_info_data);
+		if (error < 0) {
+			THP_LOG_INFO("%s:oem info data:%s\n",
+				__func__, cd->oem_info_data);
+			return error;
+		}
+		THP_LOG_INFO("%s: oem info :%s\n", __func__, buf);
+	}
+
+	THP_LOG_DEBUG("%s done\n", __func__);
+	return error;
+}
+
+
+
 static DEVICE_ATTR(thp_status, S_IRUGO, thp_status_show, NULL);
-static DEVICE_ATTR(touch_chip_info, S_IRUGO, thp_chip_info_show, NULL);
+static DEVICE_ATTR(touch_chip_info, (S_IRUSR | S_IWUSR | S_IRGRP),
+			thp_chip_info_show, NULL);
 static DEVICE_ATTR(hostprocessing, S_IRUGO, thp_hostprocessing_show, NULL);
 static DEVICE_ATTR(loglevel, S_IRUGO, thp_loglevel_show, NULL);
 static DEVICE_ATTR(charger_state, (S_IRUSR | S_IRGRP | S_IWUSR | S_IWGRP),
@@ -383,6 +563,17 @@ static DEVICE_ATTR(supported_func_indicater, (S_IRUSR),
 			thp_supported_func_indicater_show, NULL);
 static DEVICE_ATTR(tui_wake_up_enable, (S_IRUSR | S_IRGRP | S_IWUSR | S_IWGRP),
 			thp_tui_wake_up_enable_show, thp_tui_wake_up_enable_store);
+static DEVICE_ATTR(easy_wakeup_gesture, (S_IRUSR | S_IWUSR),
+			thp_easy_wakeup_gesture_show, thp_easy_wakeup_gesture_store);
+static DEVICE_ATTR(wakeup_gesture_enable, (S_IRUSR | S_IWUSR),
+			thp_wakeup_gesture_enable_show,
+			thp_wakeup_gesture_enable_store);
+static DEVICE_ATTR(easy_wakeup_control, S_IWUSR, NULL,
+			thp_easy_wakeup_control_store);
+static DEVICE_ATTR(easy_wakeup_position, S_IRUSR, thp_easy_wakeup_position_show,
+			NULL);
+static DEVICE_ATTR(touch_oem_info, (S_IRUSR | S_IWUSR | S_IRGRP),
+			thp_oem_info_show, NULL);
 
 static struct attribute *thp_ts_attributes[] = {
 	&dev_attr_thp_status.attr,
@@ -402,6 +593,11 @@ static struct attribute *thp_ts_attributes[] = {
 	&dev_attr_udfp_enable.attr,
 	&dev_attr_supported_func_indicater.attr,
 	&dev_attr_tui_wake_up_enable.attr,
+	&dev_attr_easy_wakeup_gesture.attr,
+	&dev_attr_wakeup_gesture_enable.attr,
+	&dev_attr_easy_wakeup_control.attr,
+	&dev_attr_easy_wakeup_position.attr,
+	&dev_attr_touch_oem_info.attr,
 	NULL,
 };
 

@@ -55,8 +55,15 @@ typedef enum BASP_LEVEL_TAG {
     BASP_LEVEL_1,
     BASP_LEVEL_2,
     BASP_LEVEL_3,
+	BASP_LEVEL_4,
     BASP_LEVEL_CNT
 }BASP_LEVEL_TYPE;
+
+enum basp_level_logic {
+	BASP_AND,
+	BASP_OR,
+	BASP_LOGIC_CNT
+};
 
 struct battery_aging_safe_policy {
     BASP_LEVEL_TYPE level;   /*basp policy level */
@@ -68,6 +75,7 @@ struct battery_aging_safe_policy {
     u32 cur_ratio_policy;            /*0: current discount all segment*/
                                                       /*1: current discount for the maximum*/
     u32 err_no;                             /*dmd error number*/
+	enum basp_level_logic logic; /* logic between fcc and cycls */
 };
 
 /* ntc_temp_compensation_para*/
@@ -132,6 +140,7 @@ struct hisi_coul_ops {
     int (*battery_unfiltered_capacity)(void);
     int (*battery_capacity)(void);
     int (*battery_temperature)(void);
+    int (*chip_temperature)(void);
 	int (*battery_temperature_for_charger)(void);
     int (*battery_rm)(void);
     int (*battery_fcc)(void);
@@ -167,6 +176,9 @@ struct hisi_coul_ops {
     int (*get_coul_calibration_status)(void);
     int (*battery_removed_before_boot)(void);
     int (*get_qmax)(void);
+#ifdef CONFIG_HISI_ASW
+	int (*asw_refresh_fcc)(void);
+#endif /* CONFIG_HISI_ASW */
 };
 
 
@@ -220,8 +232,17 @@ extern int hisi_coul_convert_regval2temp(unsigned int reg_val);
 extern int hisi_coul_convert_mv2regval(int vol_mv);
 extern int hisi_coul_cal_uah_by_ocv(int ocv_uv, int *ocv_soc_uAh);
 extern int hisi_coul_convert_temp_to_adc(int temp);
+extern int hisi_coul_chip_temperature(void);
 extern int hisi_battery_cc_uah(void);
 extern int hisi_battery_removed_before_boot(void);
 extern int hisi_battery_get_qmax(void);
+#ifdef CONFIG_HISI_ASW
+extern int hisi_asw_refresh_fcc(void);
+#else
+static inline int hisi_asw_refresh_fcc(void)
+{
+	return 0;
+}
+#endif /* CONFIG_HISI_ASW */
 
 #endif

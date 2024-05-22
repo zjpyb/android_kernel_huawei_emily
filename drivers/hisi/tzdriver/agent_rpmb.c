@@ -4,7 +4,7 @@
 #include <linux/list.h>
 #include <linux/mutex.h>
 #include <linux/slab.h>
-#include <linux/mmc/rpmb.h>
+#include <linux/hisi/rpmb.h>
 
 #include "teek_client_constants.h"
 /*#define TC_DEBUG*/
@@ -87,7 +87,7 @@ struct rpmb_ctrl_t {
 
 /*lint -e754 +esym(754,*)*/
 
-static struct rpmb_ctrl_t *m_rpmb_ctrl;
+static struct rpmb_ctrl_t *m_rpmb_ctrl = NULL;
 /*
  * the data_ptr from SecureOS is physical address,
  * so, we MUST update to the virtual address,
@@ -96,7 +96,7 @@ static struct rpmb_ctrl_t *m_rpmb_ctrl;
 static void update_dataptr(struct rpmb_ctrl_t *trans_ctrl)
 {
 	uint32_t i, offset = 0;
-	uint8_t *dst;
+	uint8_t *dst = NULL;
 
 	if (NULL == trans_ctrl)
 		return;
@@ -177,7 +177,7 @@ static void send_ioccmd(struct tee_agent_kernel_ops *agent_instance)
 	ret = hisi_rpmb_ioctl_cmd(RPMB_FUNC_ID_SECURE_OS, m_rpmb_ctrl->op_type,
 				  &m_rpmb_ctrl->args.send_ioccmd.ioc_rpmb);
 	if (ret)
-		tloge("mmc_blk_ioctl_rpmb_cmd failed: %d\n", ret);
+		tloge("hisi_rpmb_ioctl_cmd failed: %d\n", ret);
 
 	/*TODO: if globalTask or TA in TrustedCore is crash in middle,
 	 * will never free this lock*/
@@ -192,7 +192,7 @@ static uint16_t tee_calc_crc16(uint8_t *pChar, int32_t lCount)
 {
 	uint16_t usCrc;
 	uint16_t usTmp ;
-	uint8_t *pTmp ;
+	uint8_t *pTmp = NULL;
 
 	if (NULL == pChar)
 		return 0;
@@ -219,7 +219,7 @@ static void dump_memory(uint8_t *data, uint32_t count)
 {
 	uint32_t i;
 	int j;
-	uint32_t *p;
+	uint32_t *p = NULL;
 	uint8_t  buffer[256];
 
 	if (NULL == data)
@@ -313,7 +313,7 @@ struct timeval tv;
 
 static int rpmb_agent_work(struct tee_agent_kernel_ops *agent_instance)
 {
-	struct rpmb_ctrl_t *trans_ctrl;
+	struct rpmb_ctrl_t *trans_ctrl = NULL;
 	errno_t rc = EOK;
 	uint32_t copy_len;
 

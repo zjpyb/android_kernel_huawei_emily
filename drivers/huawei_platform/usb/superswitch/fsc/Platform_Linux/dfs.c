@@ -257,9 +257,9 @@ FSC_S32 fusb_InitializeDFS(void)
 
     /* Direct accessors */
     debugfs_create_bool("tcenabled", 0666, chip->debugfs_parent,
-                        &(chip->port.tc_enabled_));
+                      (bool *)&(chip->port.tc_enabled_));
     debugfs_create_bool("pdenabled", 0666, chip->debugfs_parent,
-                        &(chip->port.pd_enabled_));
+                      (bool *)&(chip->port.pd_enabled_));
 
     debugfs_create_u8("porttype", 0666, chip->debugfs_parent,
                       (u8 *)&(chip->port.port_type_));

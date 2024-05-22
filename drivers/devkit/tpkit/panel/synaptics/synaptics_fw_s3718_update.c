@@ -1347,6 +1347,7 @@ static int fwu_read_flash_status(void)
 
 static int fwu_wait_for_idle(int timeout_ms, bool poll)
 {
+	int retval = 0;
 	int count = 0;
 	int timeout_count = ((timeout_ms * 1000) / MAX_SLEEP_TIME_US) + 1;
 
@@ -1354,8 +1355,11 @@ static int fwu_wait_for_idle(int timeout_ms, bool poll)
 		usleep_range(MIN_SLEEP_TIME_US, MAX_SLEEP_TIME_US);
 
 		count++;
-		if (poll || (count == timeout_count))
-			fwu_read_flash_status();
+		if (poll || (count == timeout_count)) {
+			retval = fwu_read_flash_status();
+			if (retval < 0)
+				return retval;
+		}
 
 		if ((fwu->command == CMD_IDLE) && (fwu->flash_status == FLASH_STATUS_00))
 			return 0;
@@ -2727,10 +2731,6 @@ static int fwu_enter_flash_prog(void)
 	if (fwu->in_bl_mode)
 		return 0;
 
-	/*retval = rmi4_data->irq_enable(rmi4_data, false, true);*/
-	if (retval < 0)
-		return retval;
-
 	msleep(INT_DISABLE_WAIT_MS);
 
 	retval = fwu_write_f34_command(CMD_ENABLE_FLASH_PROG);
@@ -3567,7 +3567,7 @@ if (fwu->bl_version == BL_V5 || fwu->bl_version == BL_V6) {
 
 static int fwu_do_read_config_workaround(void)
 {
-	int retval;
+	int retval = 0;
 	int retry = 0;
 	int retry_total = 5;
 
@@ -3589,18 +3589,22 @@ static int fwu_do_read_config_workaround(void)
 	}
 
 	fwu->config_area = UI_CONFIG_AREA;
-	fwu_erase_configuration();
+	retval = fwu_erase_configuration();
+	if(retval < 0) {
+		goto exit;
+	}
 
 	if (fwu->has_guest_code) {
 		fwu_erase_guest_code();
 	}
 
-	fwu_read_f34_queries();
+	retval = fwu_read_f34_queries();
+	if (retval < 0)
+		TS_LOG_ERR("%s: fail to read queries.\n", __func__);
 
 	retval = fwu_do_read_config();
-	if (retval < 0) {
+	if (retval < 0)
 		TS_LOG_ERR("%s: fail to read config again\n", __func__);
-	}
 
 
 exit:
@@ -4357,7 +4361,9 @@ static int synaptics_read_project_id(void)
 			retval = 0;
 			goto out;
 		} else {
-			fwu_read_f34_queries();
+			retval = fwu_read_f34_queries();
+			if (retval < 0)
+				TS_LOG_INFO("%s: read queries failed.\n", __func__);
 			retval = get_lockdown_data(project_id, SYNAPTICS_RMI4_PROJECT_ID_SIZE);
 			if (retval < 0) {
 				TS_LOG_INFO("get_lockdown_data failed \n");
@@ -4384,8 +4390,9 @@ static int synaptics_read_project_id(void)
 				fwu->write_project_id = true;
 				goto out;
 			} else {
-			TS_LOG_ERR("get_lockdown_data successfully\n", __func__);
-			goto out;
+				TS_LOG_ERR("%s: get_lockdown_data successfully\n",
+					__func__);
+				goto out;
 			}
 		}
 	}

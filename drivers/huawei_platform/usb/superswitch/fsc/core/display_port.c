@@ -57,11 +57,11 @@ void pd_dpm_send_event(enum pd_dpm_cable_event_type event);
 //TODO: Update DP to use data objects, not U32
 void FUSB3601_requestDpStatus(struct Port *port)
 {
-  IN_FUNCTION
   doDataObject_t svdmh = {0};
   FSC_U32 length = 0;
   FSC_U32 arr[2] = {0};
   doDataObject_t temp[2] = {{0}};
+  IN_FUNCTION
   svdmh.SVDM.SVID = DP_SID;
   svdmh.SVDM.VDMType = STRUCTURED_VDM;
   svdmh.SVDM.Version = STRUCTURED_VDM_VERSION;
@@ -84,11 +84,11 @@ void FUSB3601_requestDpStatus(struct Port *port)
 
 void FUSB3601_requestDpConfig(struct Port *port)
 {
-  IN_FUNCTION
   doDataObject_t svdmh = {0};
   FSC_U32 length = 0;
   FSC_U32 arr[2] = {0};
   doDataObject_t temp[2] = {{0}};
+  IN_FUNCTION
   FUSB3601_platform_log(port->port_id_, "FUSB Request DP Config, DPCaps: ", port->display_port_data_.DpCaps.word);
   FUSB3601_platform_log(port->port_id_, "FUSB Request DP Config, DpPpStatus", port->display_port_data_.DpPpStatus.word);
 
@@ -193,12 +193,14 @@ void FUSB3601_requestDpConfig(struct Port *port)
 
 void FUSB3601_WriteDpControls(struct Port *port, FSC_U8* data)
 {
-  IN_FUNCTION
   FSC_BOOL en = FALSE;
   FSC_BOOL ame_en = FALSE;
   FSC_U32 m = 0;
   FSC_U32 v = 0;
   FSC_U32 stat = 0;
+
+  IN_FUNCTION
+
   en = *data++ ? TRUE : FALSE;
   stat = (FSC_U32)(*data++ );
   stat |= ((FSC_U32)(*data++ ) << 8);
@@ -268,10 +270,10 @@ void FUSB3601_resetDp(struct Port *port)
 
 FSC_BOOL FUSB3601_processDpCommand(struct Port *port, FSC_U32* arr_in)
 {
-  IN_FUNCTION
-	doDataObject_t svdmh_in = {0};
+  	doDataObject_t svdmh_in = {0};
 	DisplayPortStatus_t stat;
 	DisplayPortConfig_t config;
+	IN_FUNCTION
 
 	if (port->display_port_data_.DpEnabled == FALSE) return TRUE;
 
@@ -330,9 +332,9 @@ FSC_BOOL FUSB3601_processDpCommand(struct Port *port, FSC_U32* arr_in)
 
 FSC_BOOL FUSB3601_dpEvaluateModeEntry(struct Port *port, FSC_U32 mode_in)
 {
-  IN_FUNCTION
   DisplayPortCaps_t field_mask = {0};
   DisplayPortCaps_t temp = {0};
+  IN_FUNCTION
   if (port->display_port_data_.DpEnabled == FALSE) return FALSE;
   if (port->display_port_data_.DpAutoModeEntryEnabled == FALSE) return FALSE;
 
@@ -387,11 +389,11 @@ void FUSB3601_configAutoDpModeEntry(struct Port *port, FSC_BOOL enabled,
 
 void FUSB3601_sendStatusData(struct Port *port, doDataObject_t svdmh_in)
 {
-  IN_FUNCTION
   doDataObject_t svdmh_out = {0};
   FSC_U32 length_out = 0;
   FSC_U32 arr_out[2] = {0};
   doDataObject_t temp[2] = {{0}};
+  IN_FUNCTION
 
   port->display_port_data_.DpStatus.Enabled = 1;
 
@@ -415,11 +417,11 @@ void FUSB3601_sendStatusData(struct Port *port, doDataObject_t svdmh_in)
 void FUSB3601_replyToConfig(struct Port *port, doDataObject_t svdmh_in,
                                 FSC_BOOL success)
 {
-  IN_FUNCTION
   doDataObject_t svdmh_out = {0};
   FSC_U32 length_out = 0;
   FSC_U32 arr_out[2] = {0};
   doDataObject_t temp[2] = {{0}};
+  IN_FUNCTION
 
   /*  Reflect most fields */
   svdmh_out.object = svdmh_in.object;
@@ -441,13 +443,16 @@ void FUSB3601_informStatus(struct Port *port, DisplayPortStatus_t stat)
    * This function should be called to inform the 'system' of the DP status of
    * the port partner.
    */
+#ifdef CONFIG_CONTEXTHUB_PD
+	struct pd_dpm_combphy_event event;
+#endif
 
-  IN_FUNCTION
 	int ret =0;
 	port->display_port_data_.DpPpStatus.word = stat.word;
 
+	IN_FUNCTION
+
 	#ifdef CONFIG_CONTEXTHUB_PD
-    struct pd_dpm_combphy_event event;
 	if(port->display_port_data_.DpPpConfig.word != 0) {
 		event.dev_type = TCA_DP_IN;
 		event.irq_type = TCA_IRQ_HPD_IN;
@@ -490,8 +495,15 @@ void FUSB3601_informConfigResult(struct Port *port, FSC_BOOL success)
    * TODO: 'system' should implement this
    * Called when a config message is either ACKd or NAKd by the other side
    */
+#ifdef CONFIG_CONTEXTHUB_PD
+	FSC_U8 fsc_polarity = 0;
+	FSC_U32 pin_assignment = 0;
+	enum aux_switch_channel_type channel_type= get_aux_switch_channel();
+	int ret = 0;
+	struct pd_dpm_combphy_event event;
+#endif
 
-  IN_FUNCTION
+	IN_FUNCTION
 	if (success == TRUE) {
 		port->display_port_data_.DpPpConfig.word =
 			port->display_port_data_.DpPpRequestedConfig.word;
@@ -499,11 +511,6 @@ void FUSB3601_informConfigResult(struct Port *port, FSC_BOOL success)
 		pr_info("\n %s,%d\n",__func__,__LINE__);
 
 		#ifdef CONFIG_CONTEXTHUB_PD
-		FSC_U8 fsc_polarity = 0;
-		FSC_U32 pin_assignment = 0;
-		enum aux_switch_channel_type channel_type= get_aux_switch_channel(); 
-		int ret = 0;
-
 		fsc_polarity = port->registers_.TcpcCtrl.ORIENT;
 		dp_aux_switch_op(fsc_polarity);
 		dp_aux_uart_switch_enable();
@@ -536,7 +543,6 @@ void FUSB3601_informConfigResult(struct Port *port, FSC_BOOL success)
 		    g_mux_type = TCPC_USB31_AND_DP_2LINE;
 		}
 
-		struct pd_dpm_combphy_event event;
 			event.dev_type = TCA_ID_RISE_EVENT;
 			event.irq_type = TCA_IRQ_HPD_OUT;
 			event.mode_type = TCPC_NC;

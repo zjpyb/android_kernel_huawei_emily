@@ -112,16 +112,23 @@ oal_int32  oal_print_all_wakelock_buff(char* buf, oal_int32 buf_len)
 #if ((LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 37)) && (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION) )
     oal_dlist_head_stru      *pst_entry;
     oal_dlist_head_stru      *pst_entry_temp;
-    ret +=  snprintf(buf + ret , buf_len - ret,"lockname     lockcnt  debug  lockuser \n");
+    if(buf_len<1)
+    {
+        return 0;
+    }
+    ret +=  snprintf(buf , buf_len, "lockname     lockcnt  active  debug  lockuser \n");
     OAL_DLIST_SEARCH_FOR_EACH_SAFE(pst_entry, pst_entry_temp, &g_wakelock_head)
     {
         oal_wakelock_stru* pst_wakelock = (oal_wakelock_stru*)OAL_DLIST_GET_ENTRY(pst_entry, oal_wakelock_stru, list);
-
-        ret +=  snprintf(buf + ret , buf_len - ret,"%s     %lu   %s %pf\n",
-                            pst_wakelock->st_wakelock.name,
-                            pst_wakelock->lock_count,
-                            pst_wakelock->debug ? "on ":"off",
-                            (oal_void*)pst_wakelock->locked_addr);
+        if(buf_len > ret)
+        {
+            ret +=  snprintf(buf + ret , buf_len - ret ,"%s     %lu  %d  %s %pf\n",
+                                pst_wakelock->st_wakelock.name,
+                                pst_wakelock->lock_count,
+                                oal_wakelock_active(pst_wakelock),
+                                pst_wakelock->debug ? "on ":"off",
+                                (oal_void*)pst_wakelock->locked_addr);
+        }
     }
 #else
     OAL_REFERENCE(ret);

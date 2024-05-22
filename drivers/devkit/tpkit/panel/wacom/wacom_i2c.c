@@ -785,7 +785,8 @@ static int wacom_power_on_gpio_set(void)
 	ts_pdata = wac_data->wacom_chip_data->ts_platform_data;
 
 	wacom_pinctrl_select_normal();
-	gpio_direction_input(ts_pdata->irq_gpio);
+	if (gpio_direction_input(ts_pdata->irq_gpio))
+		TS_LOG_ERR("%s :gpio_direction_input fail\n", __func__);
 	gpio_direction_output(ts_pdata->reset_gpio, GPIO_OUTPUT_HIGH);
 	return NO_ERR;
 }
@@ -1827,7 +1828,6 @@ void wacom_report_pen_data(struct wacom_i2c *wac_i2c,u8 *data, struct ts_cmd_nod
 	info->tool.tilt_x = (signed char)data[PEN_TILT_X_BYTE_OFFSET];/*the MSB BIT 1 --0x80 means minus, so trans to signed.*/
 	info->tool.tilt_y = (signed char)data[PEN_TILT_Y_BYTE_OFFSET];
 
-	TS_LOG_DEBUG("report pen coord: x= %d, y= %d, pressure=%d, tilt_x=%d, tilt_y=%d\n", x, y, pressure, info->tool.tilt_x, info->tool.tilt_y);
 	TS_LOG_DEBUG("pen tool: down_button_status=%d, up_button_status=%d, pen_inrange_status=%d, tip_status=%d\n", down_button_status, up_button_status, pen_inrange_status, tip_status);
 
 	if(down_button_status){
@@ -2052,8 +2052,6 @@ static void  wacom_report_tp_data(struct wacom_i2c *wac_i2c, u8 *data, struct ts
 			info->fingers[id].pressure = 0;//wacom don't report pressure
 		}
 
-		TS_LOG_DEBUG(" %s, finger ID: %d, status: %d; x:%d; y:%d; pressure: %d\n",__func__, id,
-		info->fingers[id].status, info->fingers[id].x, info->fingers[id].y, info->fingers[id].pressure);
 
 		finger_num--;
 		if (finger_num == 0) {

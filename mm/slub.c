@@ -43,6 +43,16 @@
 #include "internal.h"
 
 #include <linux/jiffies.h>
+
+#if defined(CONFIG_HW_SLUB_DF) || defined(CONFIG_HW_SLUB_SANITIZE)
+#include <chipset_common/security/upload_double_free.h>
+#endif
+#include <chipset_common/security/check_root.h>
+
+#ifdef CONFIG_HW_SLUB_DF
+static void set_harden_double_free_check_flags(bool status);
+static bool fill_random_malloc = false;
+#endif
 /*
  * Lock order:
  *   1. slab_mutex (Global Mutex)
@@ -131,7 +141,11 @@ static inline int kmem_cache_debug(struct kmem_cache *s)
 #ifdef CONFIG_HW_SLUB_SANITIZE
 static inline bool has_sanitize(struct kmem_cache *s)
 {
-	 return (s->flags & SLAB_CLEAR) && !(s->flags & SLAB_POISON);
+#ifdef CONFIG_HW_SLUB_DF
+	return false;
+#else
+	return (s->flags & SLAB_CLEAR) && !(s->flags & SLAB_POISON);
+#endif
 }
 #endif
 
@@ -271,9 +285,15 @@ static inline void *get_freepointer_safe(struct kmem_cache *s, void *object)
 static inline void set_freepointer(struct kmem_cache *s, void *object, void *fp)
 {
 #ifdef CONFIG_HW_SLUB_SANITIZE
-	if (object == fp)
+	if (unlikely(object == fp))
 	{
+#ifdef CONFIG_HW_SLUB_DF
+		set_harden_double_free_check_flags(true);
+#else
 		s->flags |= SLAB_CLEAR;
+#endif
+		WARN_ON(1);
+		upload_double_free_log(s,"light double free checked");
 		return;
 	}
 #endif
@@ -326,6 +346,7 @@ static inline bool hw_check_canary(struct kmem_cache *s, void *object, unsigned 
 
 	if (*canary == hw_get_canary_value(canary, value))
 	{
+		upload_double_free_log(s, "harden double free checked");
 #ifdef CONFIG_HW_SLUB_DF_BUGON
 		BUG_ON(1);
 #endif
@@ -345,6 +366,7 @@ static inline bool hw_check_and_set_canary(struct kmem_cache *s, void *object, u
 
 	if (*canary == hw_get_canary_value(canary, value))
 	{
+		upload_double_free_log(s, "harden double free checked");
 #ifdef CONFIG_HW_SLUB_DF_BUGON
 		BUG_ON(1);
 #endif
@@ -767,7 +789,7 @@ void object_err(struct kmem_cache *s, struct page *page,
 	print_trailer(s, page, object);
 }
 
-static void slab_err(struct kmem_cache *s, struct page *page,
+static __printf(3, 4) void slab_err(struct kmem_cache *s, struct page *page,
 			const char *fmt, ...)
 {
 	va_list args;
@@ -1478,7 +1500,9 @@ static void setup_object(struct kmem_cache *s, struct page *page,
 {
 	setup_object_debug(s, page, object);
 #ifdef CONFIG_HW_SLUB_DF
-	hw_set_canary(s, object, s->hw_random_free);
+	if (unlikely(s->flags & SLAB_DOUBLEFREE_CHECK)) {
+		hw_set_canary(s, object, s->hw_random_free);
+	}
 #endif
 	kasan_init_slab_obj(s, object);
 	if (unlikely(s->ctor)) {
@@ -1891,7 +1915,7 @@ static void *get_partial_node(struct kmem_cache *s, struct kmem_cache_node *n,
 {
 	struct page *page, *page2;
 	void *object = NULL;
-	int available = 0;
+	unsigned int available = 0;
 	int objects;
 
 	/*
@@ -2833,7 +2857,7 @@ redo:
 		stat(s, ALLOC_FASTPATH);
 	}
 #ifdef CONFIG_HW_SLUB_DF
-	if (object) {
+	if (unlikely(fill_random_malloc) && object) {
 		hw_set_canary(s, object, s->hw_random_malloc);
 	}
 #endif
@@ -2938,6 +2962,10 @@ static void __slab_free(struct kmem_cache *s, struct page *page,
 		prior = page->freelist;
 		counters = page->counters;
 		set_freepointer(s, tail, prior);
+#ifdef CONFIG_HW_SLUB_SANITIZE
+		if (unlikely(*(void **)(tail + s->offset) != prior))
+			return;
+#endif
 		new.counters = counters;
 		was_frozen = new.frozen;
 		new.inuse -= cnt;
@@ -3050,7 +3078,7 @@ static __always_inline void do_slab_free(struct kmem_cache *s,
 	unsigned long tid;
 
 #ifdef CONFIG_HW_SLUB_SANITIZE
-	if (has_sanitize(s)) {
+	if (unlikely(has_sanitize(s))) {
 		int offset = s->offset ? 0 : sizeof(void *);
 		void *x = head;
 
@@ -3066,7 +3094,7 @@ static __always_inline void do_slab_free(struct kmem_cache *s,
 #endif
 
 #ifdef CONFIG_HW_SLUB_DF
-	if(hw_check_and_set_canary(s, head, s->hw_random_free) == false)
+	if (unlikely(s->flags & SLAB_DOUBLEFREE_CHECK) && hw_check_and_set_canary(s, head, s->hw_random_free) == false)
 			return;
 #endif
 redo:
@@ -3087,7 +3115,10 @@ redo:
 
 	if (likely(page == c->page)) {
 		set_freepointer(s, tail_obj, c->freelist);
-
+#ifdef CONFIG_HW_SLUB_SANITIZE
+	if (unlikely(*(void **)(tail_obj + s->offset) != c->freelist))
+		return;
+#endif
 		if (unlikely(!this_cpu_cmpxchg_double(
 				s->cpu_slab->freelist, s->cpu_slab->tid,
 				c->freelist, tid,
@@ -3283,8 +3314,10 @@ int kmem_cache_alloc_bulk(struct kmem_cache *s, gfp_t flags, size_t size,
 	c->tid = next_tid(c->tid);
 	local_irq_enable();
 #ifdef CONFIG_HW_SLUB_DF
-	for (k = 0; k < i; k++) {
-		hw_set_canary(s, p[k], s->hw_random_malloc);
+	if (unlikely(fill_random_malloc)) {
+		for (k = 0; k < i; k++) {
+			hw_set_canary(s, p[k], s->hw_random_malloc);
+		}
 	}
 #endif
 	/* Clear memory outside IRQ disabled fastpath loop */
@@ -3499,7 +3532,9 @@ static void early_kmem_cache_node_alloc(int node)
 	init_tracking(kmem_cache_node, n);
 #endif
 #ifdef CONFIG_HW_SLUB_DF
-	hw_set_canary(kmem_cache_node, n, kmem_cache_node->hw_random_malloc);
+	if (unlikely(fill_random_malloc)) {
+		hw_set_canary(kmem_cache_node, n, kmem_cache_node->hw_random_malloc);
+	}
 #endif
 	kasan_kmalloc(kmem_cache_node, n, sizeof(struct kmem_cache_node),
 		      GFP_KERNEL);
@@ -4000,10 +4035,7 @@ const char *__check_heap_object(const void *ptr, unsigned long n,
 		}
 		offset -= s->red_left_pad;
 	}
-#ifdef CONFIG_HW_SLUB_DF
-	if(hw_check_canary(s, (void *)ptr - offset, s->hw_random_free)== false)
-		return s->name;
-#endif
+
 	/* Allow address range falling entirely within object size. */
 	if (offset <= object_size && n <= object_size - offset)
 		return NULL;
@@ -4015,6 +4047,10 @@ err:
 	pr_err("ptr = %pK, page = %pK, n = %lu\n", ptr, page, n);
 	pr_err("page_addr = %pK, kmem_cache = %pK, size = %d, object= %lu, red_left_pad = %d",
 			page_address(page), s, s->size, object_size, s->red_left_pad);
+
+	/* record trace log for stp */
+	stp_save_trace_log(STP_NAME_USERCOPY);
+
 	BUG();
 }
 #endif /* CONFIG_HARDENED_USERCOPY */
@@ -4866,6 +4902,22 @@ enum slab_stat_type {
 #define SO_OBJECTS	(1 << SL_OBJECTS)
 #define SO_TOTAL	(1 << SL_TOTAL)
 
+#ifdef CONFIG_MEMCG
+static bool memcg_sysfs_enabled = IS_ENABLED(CONFIG_SLUB_MEMCG_SYSFS_ON);
+
+static int __init setup_slub_memcg_sysfs(char *str)
+{
+	int v;
+
+	if (get_option(&str, &v) > 0)
+		memcg_sysfs_enabled = v;
+
+	return 1;
+}
+
+__setup("slub_memcg_sysfs=", setup_slub_memcg_sysfs);
+#endif
+
 static ssize_t show_slab_objects(struct kmem_cache *s,
 			    char *buf, unsigned long flags)
 {
@@ -5069,10 +5121,10 @@ static ssize_t cpu_partial_show(struct kmem_cache *s, char *buf)
 static ssize_t cpu_partial_store(struct kmem_cache *s, const char *buf,
 				 size_t length)
 {
-	unsigned long objects;
+	unsigned int objects;
 	int err;
 
-	err = kstrtoul(buf, 10, &objects);
+	err = kstrtouint(buf, 10, &objects);
 	if (err)
 		return err;
 	if (objects && !kmem_cache_has_cpu_partial(s))
@@ -5771,7 +5823,13 @@ static int sysfs_slab_add(struct kmem_cache *s)
 {
 	int err;
 	const char *name;
+	struct kset *kset = cache_kset(s);
 	int unmergeable = slab_unmergeable(s);
+
+	if (!kset) {
+		kobject_init(&s->kobj, &slab_ktype);
+		return 0;
+	}
 
 	if (unmergeable) {
 		/*
@@ -5789,7 +5847,7 @@ static int sysfs_slab_add(struct kmem_cache *s)
 		name = create_unique_id(s);
 	}
 
-	s->kobj.kset = cache_kset(s);
+	s->kobj.kset = kset;
 	err = kobject_init_and_add(&s->kobj, &slab_ktype, NULL, "%s", name);
 	if (err)
 		goto out;
@@ -5799,7 +5857,7 @@ static int sysfs_slab_add(struct kmem_cache *s)
 		goto out_del_kobj;
 
 #ifdef CONFIG_MEMCG
-	if (is_root_cache(s)) {
+	if (is_root_cache(s) && memcg_sysfs_enabled) {
 		s->memcg_kset = kset_create_and_add("cgroup", NULL, &s->kobj);
 		if (!s->memcg_kset) {
 			err = -ENOMEM;
@@ -6012,3 +6070,46 @@ void show_slab(bool verbose)
 	}
 }
 #endif /* CONFIG_SLABINFO */
+
+#ifdef CONFIG_HW_SLUB_DF
+static void set_harden_double_free_check_flags(bool status)
+{
+	struct kmem_cache *s;
+	if (status)
+	{
+		fill_random_malloc = true;
+		list_for_each_entry(s, &slab_caches, list)
+			s->flags = s->flags | SLAB_DOUBLEFREE_CHECK;
+#ifdef CONFIG_SLUB_DEBUG
+		slub_debug = slub_debug | SLAB_DOUBLEFREE_CHECK;
+#endif
+	}
+	else
+	{
+		list_for_each_entry(s, &slab_caches, list)
+			s->flags = s->flags & ~SLAB_DOUBLEFREE_CHECK;
+#ifdef CONFIG_SLUB_DEBUG
+		slub_debug = slub_debug & ~SLAB_DOUBLEFREE_CHECK;
+#endif
+	}
+}
+
+int set_harden_double_free_status(bool status)
+{
+#ifdef CONFIG_SLUB_DEBUG
+	if (!status && !(slub_debug & SLAB_DOUBLEFREE_CHECK))
+	{
+		pr_err("the harden double free feature status is already disabled\n");
+		return 0;
+	}
+
+	if (status && (slub_debug & SLAB_DOUBLEFREE_CHECK))
+	{
+		pr_err("the harden double free feature status is already enabled\n");
+		return 0;
+	}
+#endif
+	set_harden_double_free_check_flags(status);
+	return 0;
+}
+#endif

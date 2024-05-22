@@ -22,7 +22,13 @@
 #include <linux/sched.h>
 #include <linux/scatterlist.h>
 #include <linux/vmalloc.h>
-#include <linux/hisi/ion-iommu.h>
+#include <linux/ion-iommu.h>
+#ifdef CONFIG_HISI_LB
+#include <linux/hisi/hisi_lb.h>
+#endif
+#ifdef CONFIG_HISI_SVM
+#include <linux/hisi/hisi_svm.h>
+#endif
 
 #include "ion.h"
 #include "ion_priv.h"
@@ -40,20 +46,25 @@ void *ion_heap_map_kernel(struct ion_heap *heap,
 	struct page **tmp = pages;
 
 	if (!pages)
-		return NULL;
+		return ERR_PTR(-ENOMEM);
 
 	if (buffer->flags & ION_FLAG_CACHED)
 		pgprot = PAGE_KERNEL;
 	else
 		pgprot = pgprot_writecombine(PAGE_KERNEL);
 
-	for_each_sg(table->sgl, sg, table->nents, i) {
+#ifdef CONFIG_HISI_LB
+	if (buffer->plc_id)
+		lb_pid_prot_build(buffer->plc_id, &pgprot);
+#endif
+
+	for_each_sg(table->sgl, sg, table->nents, i) {/*lint !e574*/
 		int npages_this_entry = PAGE_ALIGN(sg->length) / PAGE_SIZE;
 		struct page *page = sg_page(sg);
 
 		BUG_ON(i >= npages);
 		for (j = 0; j < npages_this_entry; j++)
-			*(tmp++) = page++;
+			*(tmp++) = page++;/*lint !e613*/
 	}
 	vaddr = vmap(pages, npages, VM_MAP, pgprot);
 	vfree(pages);
@@ -80,7 +91,12 @@ int ion_heap_map_user(struct ion_heap *heap, struct ion_buffer *buffer,
 	int i;
 	int ret;
 
-	for_each_sg(table->sgl, sg, table->nents, i) {
+#ifdef CONFIG_HISI_LB
+	if (buffer->plc_id)
+		lb_pid_prot_build(buffer->plc_id, &vma->vm_page_prot);
+#endif
+
+	for_each_sg(table->sgl, sg, table->nents, i) {/*lint !e574*/
 		struct page *page = sg_page(sg);
 		unsigned long remainder = vma->vm_end - addr;
 		unsigned long len = sg->length;
@@ -100,8 +116,19 @@ int ion_heap_map_user(struct ion_heap *heap, struct ion_buffer *buffer,
 			return ret;
 		addr += len;
 		if (addr >= vma->vm_end)
-			return 0;
+			goto done;
+
 	}
+
+done:
+#ifdef CONFIG_HISI_SVM
+		if (test_bit(MMF_SVM, &vma->vm_mm->flags)) {
+			hisi_svm_flush_cache(vma->vm_mm,
+					vma->vm_start,
+					vma->vm_end - vma->vm_start);
+		}
+#endif
+
 	return 0;
 }
 
@@ -111,6 +138,9 @@ int ion_heap_map_iommu(struct ion_buffer *buffer,
 	struct sg_table *table = buffer->sg_table;
 	int ret;
 
+#ifdef CONFIG_HISI_LB
+	map_data->format.prot |= (unsigned long)buffer->plc_id << IOMMU_PORT_SHIFT;
+#endif
 	ret = hisi_iommu_map_domain(table->sgl, &map_data->format);
 	if (ret) {
 		pr_err("%s: iommu map failed, heap: %s\n", __func__,
@@ -257,7 +287,7 @@ static int ion_heap_deferred_free(void *data)
 		struct ion_buffer *buffer;
 
 		wait_event_freezable(heap->waitqueue,
-				     ion_heap_freelist_size(heap) > 0);
+				     ion_heap_freelist_size(heap) > 0); /*lint !e666*/
 
 		spin_lock(&heap->free_lock);
 		if (list_empty(&heap->free_list)) {
@@ -272,7 +302,7 @@ static int ion_heap_deferred_free(void *data)
 		ion_buffer_destroy(buffer);
 	}
 
-	return 0;
+	return 0;/*lint !e527*/
 }
 
 int ion_heap_init_deferred_free(struct ion_heap *heap)
@@ -302,7 +332,7 @@ static unsigned long ion_heap_shrink_count(struct shrinker *shrinker,
 	total = ion_heap_freelist_size(heap) / PAGE_SIZE;
 	if (heap->ops->shrink)
 		total += heap->ops->shrink(heap, sc->gfp_mask, 0);
-	return total;
+	return total;/* [false alarm]:fortify */
 }
 
 static unsigned long ion_heap_shrink_scan(struct shrinker *shrinker,
@@ -326,11 +356,11 @@ static unsigned long ion_heap_shrink_scan(struct shrinker *shrinker,
 
 	to_scan -= freed;
 	if (to_scan <= 0)
-		return freed;
+		return freed;/* [false alarm]:fortify */
 
 	if (heap->ops->shrink)
 		freed += heap->ops->shrink(heap, sc->gfp_mask, to_scan);
-	return freed;
+	return freed;/* [false alarm]:fortify */
 }
 
 void ion_heap_init_shrinker(struct ion_heap *heap)

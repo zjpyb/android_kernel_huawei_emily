@@ -264,8 +264,19 @@ static int __die(const char *str, int err, struct pt_regs *regs)
 		 end_of_stack(tsk));
 
 	if (!user_mode(regs)) {
+#ifdef CONFIG_HISI_BB
+		#define HISI_SP_DUMP_MAX_LEN 1024
+		unsigned long top;
+		top = THREAD_SIZE + (unsigned long)task_stack_page(tsk);
+		if ((regs->sp + HISI_SP_DUMP_MAX_LEN) < top)
+			top = regs->sp + HISI_SP_DUMP_MAX_LEN;
+		if (regs->sp < (unsigned long)task_stack_page(tsk))
+			top = 0;
+		dump_mem(KERN_EMERG, "Stack: ", regs->sp, top);
+#else
 		dump_mem(KERN_EMERG, "Stack: ", regs->sp,
 			 THREAD_SIZE + (unsigned long)task_stack_page(tsk));
+#endif
 		dump_backtrace(regs, tsk);
 		dump_instr(KERN_EMERG, regs);
 	}
@@ -350,10 +361,12 @@ static int call_undef_hook(struct pt_regs *regs)
 	int (*fn)(struct pt_regs *regs, u32 instr) = NULL;
 	void __user *pc = (void __user *)instruction_pointer(regs);
 
-	if (!user_mode(regs))
-		return 1;
-
-	if (compat_thumb_mode(regs)) {
+	if (!user_mode(regs)) {
+		__le32 instr_le;
+		if (probe_kernel_address((__force __le32 *)pc, instr_le))
+			goto exit;
+		instr = le32_to_cpu(instr_le);
+	} else if (compat_thumb_mode(regs)) {
 		/* 16-bit Thumb instruction */
 		if (get_user(instr, (u16 __user *)pc))
 			goto exit;
@@ -445,11 +458,12 @@ asmlinkage void __exception do_undefinstr(struct pt_regs *regs)
 		return;
 
 	force_signal_inject(SIGILL, ILL_ILLOPC, regs, 0);
+	BUG_ON(!user_mode(regs));
 }
 
 int cpu_enable_cache_maint_trap(void *__unused)
 {
-	config_sctlr_el1(SCTLR_EL1_UCI, 0);
+	sysreg_clear_set(sctlr_el1, SCTLR_EL1_UCI, 0);
 	return 0;
 }
 

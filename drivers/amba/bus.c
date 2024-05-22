@@ -241,6 +241,9 @@ static void amba_put_disable_pclk(struct amba_device *pcdev)
 	clk_put(pcdev->pclk);
 }
 
+#if defined CONFIG_HISI_SPI
+#define SPI_NAME_LEN 9
+#endif
 /*
  * These are the device model conversion veneers; they convert the
  * device model structures to our more specific structures.
@@ -272,15 +275,27 @@ static int amba_probe(struct device *dev)
 		pm_runtime_enable(dev);
 
 		ret = pcdrv->probe(pcdev, id);
+#if defined CONFIG_HISI_SPI
+		if (strncmp(pcdrv->drv.name, "ssp-pl022", SPI_NAME_LEN)) {
+			if (ret == 0)
+				break;
+		}
+#else
 		if (ret == 0)
 			break;
-
+#endif
 		pm_runtime_disable(dev);
 		pm_runtime_set_suspended(dev);
 		pm_runtime_put_noidle(dev);
 
 		amba_put_disable_pclk(pcdev);
+
+#if defined CONFIG_HISI_SPI
+		if (ret)
 		dev_pm_domain_detach(dev, true);
+#else
+		dev_pm_domain_detach(dev, true);
+#endif
 	} while (0);
 
 	return ret;

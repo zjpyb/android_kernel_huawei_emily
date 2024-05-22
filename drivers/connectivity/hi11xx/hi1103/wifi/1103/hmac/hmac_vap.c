@@ -425,7 +425,7 @@ oal_uint32  hmac_vap_get_updata_rd_by_ie_switch_etc(oal_uint8 uc_vap_id,oal_bool
     if (OAL_PTR_NULL == pst_hmac_vap)
     {
         OAM_ERROR_LOG0(0, OAM_SF_ANY, "{hmac_vap_get_updata_rd_by_ie_switch_etc::pst_hmac_vap null.}");
-        return OAL_PTR_NULL;
+        return OAL_ERR_CODE_PTR_NULL;
     }
 
     *us_updata_rd_by_ie_switch = pst_hmac_vap->en_updata_rd_by_ie_switch;

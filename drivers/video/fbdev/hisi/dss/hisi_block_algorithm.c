@@ -51,7 +51,7 @@ int rect_across_rect(dss_rect_t rect1, dss_rect_t rect2, dss_rect_t *cross_rect)
 
 	center_x = abs(rect2.x + rect2.w - 1 + rect2.x - (rect1.x + rect1.w - 1 + rect1.x));
 	center_y = abs(rect2.y + rect2.h - 1 + rect2.y - (rect1.y + rect1.h - 1 + rect1.y));
-
+	/*lint --e(574) */
 	if ((center_x < rect2.w + rect1.w) && (center_y < rect2.h + rect1.h)) {
 		// rect cross case
 		cross_rect->x = MAX(rect1.x, rect2.x);
@@ -115,7 +115,7 @@ uint32_t calc_dest_block_size(dss_overlay_t *pov_req, dss_overlay_block_t *pov_h
 		if (layer->src_rect.h != layer->dst_rect.h) {
 			if (((layer->src_rect.w >= layer->dst_rect.w) && (layer->dst_rect.w > scf_line_buffer)) ||
 				((layer->src_rect.w < layer->dst_rect.w) && (layer->src_rect.w > scf_line_buffer))) {
-				block_width = MIN(block_width, scf_line_buffer);
+				block_width = MIN(block_width, scf_line_buffer); //lint !e574
 			}
 		}
 	}
@@ -163,7 +163,7 @@ int scf_output_suitable(uint32_t x_start, uint32_t x_end, uint32_t pos)
 
 	return 0;
 }
-
+/*lint -e574 -e573 -e578*/
 int block_fix_scf_constraint(dss_overlay_t *pov_req, dss_overlay_block_t *pov_h_block,
 	uint32_t block_size, uint32_t end_pos, uint32_t *fix_size)
 {
@@ -172,6 +172,11 @@ int block_fix_scf_constraint(dss_overlay_t *pov_req, dss_overlay_block_t *pov_h_
 	uint32_t scf_layer_num = 0;
 	dss_rect_t scf_dst_rect[MAX_OFFLINE_LAYER_NUMBER];
 	dss_layer_t *layer = NULL;
+
+	if (pov_req == NULL) {
+		HISI_FB_ERR("pov_req is NULL point.\n");
+		return -1;
+	}
 
 	if (pov_h_block == NULL) {
 		HISI_FB_ERR("pov_h_block is NULL point.\n");
@@ -249,10 +254,16 @@ int adjust_layers_cap(dss_overlay_t *pov_req, dss_overlay_block_t *pov_h_block, 
 	uint32_t stretch_line_num = 0;
 	dss_rect_t temp_rect;
 
+	if (NULL == pov_req) {
+		HISI_FB_ERR("pov_req is NULL");
+		return -EINVAL;
+	}
+
 	if (NULL == pov_h_block) {
 		HISI_FB_ERR("pov_h_block is NULL");
 		return -EINVAL;
 	}
+
 	if (NULL == wb_layer) {
 		HISI_FB_ERR("wb_layer is NULL");
 		return -EINVAL;
@@ -317,12 +328,12 @@ int adjust_layers_cap(dss_overlay_t *pov_req, dss_overlay_block_t *pov_h_block, 
 
 	return 0;
 }
-
+/*lint +e574 +e573 +e578*/
 int get_ov_block_rect(dss_overlay_t *pov_req, dss_overlay_block_t *pov_h_block, dss_wb_layer_t *wb_layer,
 	int *block_num, dss_rect_t *ov_block_rects[], bool has_wb_scl)
 {
 	int ret = 0;
-	uint32_t block_size = 0xFFFF;
+	uint32_t block_size = 0xFFFF; //lint !e578
 	uint32_t current_offset = 0;
 	uint32_t last_offset = 0;
 	uint32_t fix_scf_span = 0;
@@ -379,6 +390,7 @@ int get_ov_block_rect(dss_overlay_t *pov_req, dss_overlay_block_t *pov_h_block, 
 
 	/* if block size is invalid or larger than write back width, block is not needed.
 	Then block num is set to 1, and block rect is set to write back layer rect */
+	/*lint -e574*/
 	if ((block_size == BLOCK_SIZE_INVALID) || (block_size >= w)) {
 		ov_block_rects[*block_num]->x = wb_block_rect.x;
 		ov_block_rects[*block_num]->y = wb_block_rect.y;
@@ -445,7 +457,7 @@ int get_ov_block_rect(dss_overlay_t *pov_req, dss_overlay_block_t *pov_h_block, 
 				wb_block_rect.w, wb_block_rect.h, current_offset, fix_scf_span, last_offset, w);
 		}
 	}
-
+	/*lint +e574*/
 	hisifb_adjust_block_rect(*block_num, ov_block_rects, wb_layer);
 
 	return ret;
@@ -788,10 +800,11 @@ static int wb_create_h_v_block_layer(dss_overlay_t *pov_req_h_v, dss_layer_t *h_
 	return 0;
 }
 /*lint +e713 +e732 +e737 +e834 +e838 +e845*/
+/*lint -e838*/
 int get_block_layers(dss_overlay_t *pov_req, dss_overlay_block_t *pov_h_block,
 	dss_rect_t ov_block_rect, dss_overlay_t *pov_req_h_v)
 {
-	uint32_t i = 0;
+	uint32_t i = 0; //lint !e838
 	int ret = 0;
 	dss_rect_t dst_cross_rect;
 	dss_rect_t wb_ov_rect;
@@ -878,16 +891,21 @@ int get_block_layers(dss_overlay_t *pov_req, dss_overlay_block_t *pov_h_block,
 		}
 
 		h_v_layer_idx++;
-		pov_h_v_block->layer_nums = h_v_layer_idx;
+		pov_h_v_block->layer_nums = h_v_layer_idx; //lint !e732
 	}
 
 	return ret;
 }
-
+/*lint +e838*/
 int get_wb_layer_block_rect(dss_wb_layer_t *wb_layer, bool has_wb_scl, dss_rect_t *wb_layer_block_rect)
 {
 	if (wb_layer == NULL) {
 		HISI_FB_ERR("wb_layer is NULL point!\n");
+		return -1;
+	}
+
+	if (wb_layer_block_rect == NULL) {
+		HISI_FB_ERR("wb_layer_block_rect is NULL point!\n");
 		return -1;
 	}
 

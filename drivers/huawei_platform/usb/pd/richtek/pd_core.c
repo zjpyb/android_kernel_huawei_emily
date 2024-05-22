@@ -39,7 +39,7 @@ static int pd_parse_pdata(pd_port_t *pd_port)
 	int ret = 0, i;
 
 	pr_info("%s\n", __func__);
-	np = of_find_node_by_name(pd_port->tcpc_dev->dev.of_node, "pd-data");
+	np = of_find_node_by_name(pd_port->tcpc_dev->dev.parent->of_node, "pd-data");
 
 	if (np) {
 		ret = of_property_read_u32(np, "pd,source-pdo-size",
@@ -131,7 +131,6 @@ static int dpm_alt_mode_parse_svid_data(
 	uint32_t receptacle = 1;
 	uint32_t usb2 = 0;
 	int i = 0;
-	char buf[1024] = { 0 };
 
 	np = of_find_node_by_name(
 		pd_port->tcpc_dev->dev.of_node, "displayport");
@@ -207,25 +206,24 @@ static int dpm_alt_mode_parse_svid_data(
 			}
 		}
 	}
+
 	/* 2nd connection must not be BOTH */
-	if(pd_port->dp_second_connected == DPSTS_BOTH_CONNECTED) {
-		snprintf(buf, sizeof(buf), "the connect mode is %s.\n", pd_port->dp_second_connected);
-	}
+	if (pd_port->dp_second_connected == DPSTS_BOTH_CONNECTED)
+		PD_ERR("the connect mode is %d.\n", pd_port->dp_second_connected);
+
 	/* UFP or DFP can't both be invalid */
-	if(ufp_d_pin_cap == 0) {
-		snprintf(buf, sizeof(buf), "the ufp is inbalid.\n");
-	}
-	if(dfp_d_pin_cap == 0 ){
-		snprintf(buf, sizeof(buf), "the dfp is inbalid.\n");
-	}
+	if (ufp_d_pin_cap == 0)
+		PD_ERR("the ufp is invalid.\n");
+
+	if (dfp_d_pin_cap == 0)
+		PD_ERR("the dfp is invalid.\n");
 
 	if (pd_port->dp_first_connected == DPSTS_BOTH_CONNECTED) {
-		if(ufp_d_pin_cap == 0) {
-			snprintf(buf, sizeof(buf), "the ufp is inbalid.\n");
-		}
-		if(dfp_d_pin_cap == 0) {
-			snprintf(buf, sizeof(buf), "the dfp is inbalid.\n");
-		}
+		if (ufp_d_pin_cap == 0)
+			PD_ERR("the ufp is invalid.\n");
+
+		if (dfp_d_pin_cap == 0)
+			PD_ERR("the dfp is invalid.\n");
 	}
 
 	return 0;
@@ -339,6 +337,8 @@ static void pd_core_power_flags_init(pd_port_t *pd_port)
 			pr_info("dpm_caps: %s\n",
 				supported_dpm_caps[i].prop_name);
 	}
+
+	pd_port->dpm_caps |= DPM_CAP_ATTEMP_DISCOVER_CABLE_DFP;
 
 	if (of_property_read_u32(np, "pr_check", &val) == 0)
 		pd_port->dpm_caps |= DPM_CAP_PR_CHECK_PROP(val);
@@ -677,6 +677,12 @@ int pd_reset_local_hw(pd_port_t *pd_port)
 	pd_port->pe_ready = false;
 	pd_port->dpm_ack_immediately = false;
 
+#ifdef CONFIG_USB_PD_RESET_CABLE
+	pd_port->reset_cable = false;
+	pd_port->detect_emark = false;
+	pd_port->vswap_ret = 0;
+#endif /* CONFIG_USB_PD_RESET_CABLE */
+
 #ifdef CONFIG_USB_PD_HANDLE_PRDR_SWAP
 	pd_port->postpone_pr_swap = false;
 	pd_port->postpone_dr_swap = false;
@@ -770,6 +776,21 @@ int pd_send_data_msg(pd_port_t *pd_port,
 	return pd_send_message(pd_port, sop_type, msg, cnt, payload);
 }
 
+#ifdef CONFIG_USB_PD_RESET_CABLE
+int pd_send_cable_soft_reset(pd_port_t *pd_port)
+{
+	if (!pd_port)
+		return 0;
+
+	/* reset_protocol_layer */
+	pd_port->msg_id_tx[TCPC_TX_SOP_PRIME] = 0;
+	pd_port->msg_id_rx[TCPC_TX_SOP_PRIME] = 0;
+	pd_port->msg_id_rx_init[TCPC_TX_SOP_PRIME] = false;
+
+	return pd_send_ctrl_msg(pd_port, TCPC_TX_SOP_PRIME, PD_CTRL_SOFT_RESET);
+}
+#endif /* CONFIG_USB_PD_RESET_CABLE */
+
 int pd_send_soft_reset(pd_port_t *pd_port, uint8_t state_machine)
 {
 	pd_port->state_machine = state_machine;
@@ -781,7 +802,6 @@ int pd_send_soft_reset(pd_port_t *pd_port, uint8_t state_machine)
 
 int pd_send_hard_reset(pd_port_t *pd_port)
 {
-	int ret;
 	struct tcpc_device *tcpc_dev = pd_port->tcpc_dev;
 
 	PE_DBG("Send HARD Reset\r\n");
@@ -835,11 +855,9 @@ int pd_send_svdm_request(pd_port_t *pd_port,
 
 	int ret;
 	uint32_t payload[VDO_MAX_SIZE];
-	char buf[1024] = { 0 };
 
-	if(cnt >= (VDO_MAX_SIZE-1)) {
-		snprintf(buf, sizeof(buf), "%d over the vdo max size\n", cnt);
-	}
+	if (cnt >= (VDO_MAX_SIZE - 1))
+		PD_ERR("%d over the vdo max size\n", cnt);
 
 	payload[0] = VDO_S(svid, CMDT_INIT, vdm_cmd, obj_pos);
 	memcpy(&payload[1], data_obj, sizeof(uint32_t) * cnt);
@@ -874,20 +892,19 @@ int pd_reply_svdm_request(pd_port_t *pd_port, pd_event_t *pd_event,
 
 	uint32_t vdo;
 	uint32_t payload[VDO_MAX_SIZE];
-	char buf[1024] = { 0 };
 
 	if (!pd_port || !pd_event) {
 		PE_INFO("invalid pd_port or pd_event\r\n");
 		return 0;
 	}
 
-	if(cnt >= (VDO_MAX_SIZE-1)) {
-		snprintf(buf, sizeof(buf), "%d over the vdo max size\n", cnt);
+	if (cnt >= (VDO_MAX_SIZE - 1)) {
+		PD_ERR("%d over the vdo max size\n", cnt);
 		return 0;
 	}
 
-	if(pd_event->pd_msg == NULL) {
-		snprintf(buf, sizeof(buf), "the pd_msg is NULL\n");
+	if (pd_event->pd_msg == NULL) {
+		PD_ERR("the pd_msg is NULL\n");
 		return 0;
 	}
 
@@ -896,8 +913,8 @@ int pd_reply_svdm_request(pd_port_t *pd_port, pd_event_t *pd_event,
 		PD_VDO_VID(vdo), reply, PD_VDO_CMD(vdo), PD_VDO_OPOS(vdo));
 
 	if (cnt > 0) {
-		if(data_obj == NULL) {
-			snprintf(buf, sizeof(buf), "the data_obj is NULL\n");
+		if (data_obj == NULL) {
+			PD_ERR("the data_obj is NULL\n");
 			return 0;
 		}
 

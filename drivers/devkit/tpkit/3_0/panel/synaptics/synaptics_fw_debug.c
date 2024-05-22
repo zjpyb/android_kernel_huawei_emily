@@ -433,7 +433,6 @@ clean_up:
 	}
 unlock:
 	mutex_unlock(&(dev_data->file_mutex));
-
 	return retval;
 }
 
@@ -469,7 +468,7 @@ static ssize_t rmidev_write(struct file *filp, const char __user *buf,
 		count = REG_ADDR_LIMIT - *f_pos;
 
 	if ((count <= 0) || (count > I2C_WRITE_DATA_LIMIT)){
-		TS_LOG_ERR("count =%d is invalid",count);
+		TS_LOG_ERR("count =%lu is invalid", count);
 		retval =  0;
 		goto clean_up;
 	}
@@ -556,7 +555,6 @@ static int rmidev_release(struct inode *inp, struct file *filp)
 
 	if (!dev_data)
 		return -EACCES;
-
 	mutex_lock(&(dev_data->file_mutex));
 	rmi4_data->reset_device(rmi4_data);
 

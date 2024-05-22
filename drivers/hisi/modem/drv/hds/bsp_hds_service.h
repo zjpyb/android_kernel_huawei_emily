@@ -94,7 +94,7 @@ typedef struct
 extern void bsp_hds_log_init(void);
 void bsp_hds_cmd_register(u32 cmdid, bsp_hds_func fn);
 void bsp_hds_get_cmdlist(u32 *cmdlist, u32 *num);
-int  bsp_hds_msg_proc(diag_frame_head_stru *pData);
+unsigned int  bsp_hds_msg_proc(diag_frame_head_stru *pData);
 void bsp_hds_cnf_register(hds_cnf_func fn);
 void bsp_hds_confirm(hds_cnf_stru *cnf, void *data, u32 len);
 void bsp_hds_cnf_common_fill(hds_cnf_stru *cnf, diag_frame_head_stru *req);

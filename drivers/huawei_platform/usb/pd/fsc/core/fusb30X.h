@@ -79,6 +79,9 @@ FSC_BOOL DeviceRead(FSC_U8 regAddr, FSC_U8 length, FSC_U8* data);
     #define MDAC_2P646          0x3E
 
     #define VBUS_MDAC_0P84V     0x01
+    #define VBUS_MDAC_1P26V     0x02
+    #define VBUS_MDAC_1P68V     0x03
+    #define VBUS_MDAC_2P94      0x06
     #define VBUS_MDAC_3P36      0x07
     #define VBUS_MDAC_3P78      0x08
     #define VBUS_MDAC_4P20      0x09
@@ -91,6 +94,8 @@ FSC_BOOL DeviceRead(FSC_U8 regAddr, FSC_U8 length, FSC_U8* data);
     #define VBUS_MDAC_12P18     0x1C    // (15V detach)
     #define VBUS_MDAC_15P96     0x25    // (20V detach)
 #endif
+
+#define DETACH_THRESHOLD_5V VBUS_MDAC_2P94
 
 typedef union {
     FSC_U8 byte;

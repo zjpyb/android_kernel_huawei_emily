@@ -13,6 +13,10 @@
 #include "public.h"
 #include "linux_kernel_osal.h"
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0)
+#include <linux/sched/clock.h>
+#endif
+
 #ifdef ENV_ARMLINUX_KERNEL
 
 /* SpinLock */

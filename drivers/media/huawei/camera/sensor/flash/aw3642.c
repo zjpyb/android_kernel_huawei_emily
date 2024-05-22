@@ -380,7 +380,7 @@ static int hw_aw3642_on(struct hw_flash_ctrl_t *flash_ctrl, void *data)
 
     cam_info("%s mode=%d, level=%d.\n", __func__, cdata->mode, cdata->data);
     mutex_lock(flash_ctrl->hw_flash_mutex);
-    if (FLASH_MODE == cdata->mode) {
+    if ((FLASH_MODE == cdata->mode) || (FLASH_STROBE_MODE == cdata->mode)) {
         rc = hw_aw3642_flash_mode(flash_ctrl, cdata->data);
     } else {
         rc = hw_aw3642_torch_mode(flash_ctrl, cdata->data);

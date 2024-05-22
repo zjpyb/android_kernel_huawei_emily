@@ -9,6 +9,9 @@
 #include <linux/hardirq.h>
 
 #include <asm/cacheflush.h>
+#ifdef CONFIG_HISI_LB
+extern void *lb_page_to_virt(struct page *page);
+#endif
 
 #ifndef ARCH_HAS_FLUSH_ANON_PAGE
 static inline void flush_anon_page(struct vm_area_struct *vma, struct page *page, unsigned long vmaddr)
@@ -56,6 +59,10 @@ static inline struct page *kmap_to_page(void *addr)
 static inline void *kmap(struct page *page)
 {
 	might_sleep();
+#ifdef CONFIG_HISI_LB
+	if (PageLB(page))
+		return lb_page_to_virt(page);
+#endif
 	return page_address(page);
 }
 
@@ -67,6 +74,12 @@ static inline void *kmap_atomic(struct page *page)
 {
 	preempt_disable();
 	pagefault_disable();
+
+#ifdef CONFIG_HISI_LB
+        if (PageLB(page))
+                return lb_page_to_virt(page);
+#endif
+
 	return page_address(page);
 }
 #define kmap_atomic_prot(page, prot)	kmap_atomic(page)

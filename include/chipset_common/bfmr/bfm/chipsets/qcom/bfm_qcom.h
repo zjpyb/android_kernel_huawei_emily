@@ -4,7 +4,11 @@
 
 struct boot_log_struct {
   u32 boot_magic;        /* must be initialized in slb1 */
-
+	u32 kernel_addr;       /* must be initialized in linux kernel */
+	u32 kernel_log_buf_size;
+	u32 klog_first_idx_addr;
+	u32 klog_first_seq_addr;
+	u32 klog_next_seq_addr;
   u32 boot_stage;        /* must be initialized in every stage,and set it's val via  set_boot_stage */
   u32 last_boot_stage;
 

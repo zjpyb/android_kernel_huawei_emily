@@ -139,7 +139,7 @@ static unsigned int freez(unsigned int idx)
 	/*From the video stream feature detection added after the video
 	*frame freezing video scheduling
 	*/
-	idx = idx % MAX_STAT_SEC;
+	idx = idx % VIDEO_MAX_STAT_SEC;
 	speed_x128 = (g_stat.stat[idx].tin_len * MULTIPLIER_X128);
 
 	speed_norm0 = g_filter.talp;
@@ -189,8 +189,8 @@ static unsigned int bit_rate(unsigned int idx)
 	is_freez = 0;
 
 	if (idx == 0)
-		idx = MAX_STAT_SEC-1;
-	else if (idx >= MAX_STAT_SEC)
+		idx = VIDEO_MAX_STAT_SEC-1;
+	else if (idx >= VIDEO_MAX_STAT_SEC)
 		idx = 0;
 	else
 		idx = idx-1;
@@ -232,7 +232,7 @@ static unsigned int idx_update(void)
 	g_timer_flag = TIMER_CNT;
 
 	time_stamp = jiffies / HZ;
-	index = time_stamp % MAX_STAT_SEC;
+	index = time_stamp % VIDEO_MAX_STAT_SEC;
 	index_tmp = 0;
 	time_stamp_tmp = 0;
 	cnt = 0;
@@ -240,7 +240,7 @@ static unsigned int idx_update(void)
 
 		for (cnt = 1; cnt <= time_stamp - g_stat.time_stamp; cnt++) {
 
-			index_tmp = (g_stat.idx+cnt) % MAX_STAT_SEC;
+			index_tmp = (g_stat.idx+cnt) % VIDEO_MAX_STAT_SEC;
 			time_stamp_tmp = g_stat.time_stamp+cnt;
 
 			memset(&(g_stat.stat[index_tmp]), 0,
@@ -250,7 +250,7 @@ static unsigned int idx_update(void)
 			*	time to the current second or all zero.
 			*/
 			if (time_stamp_tmp == time_stamp ||
-				cnt >= MAX_STAT_SEC) {
+				cnt >= VIDEO_MAX_STAT_SEC) {
 
 			/*Current packet is a integer
 			* second. speed to be counted
@@ -274,7 +274,7 @@ static unsigned int idx_update(void)
 static int tcp_in_cnt(struct tcp_sock *sk,
 	unsigned int len, unsigned int req)
 {
-	if (g_stat.idx >= MAX_STAT_SEC)
+	if (g_stat.idx >= VIDEO_MAX_STAT_SEC)
 		g_stat.idx = 0;
 
 	g_stat.stat[g_stat.idx].in_pkt++;
@@ -414,7 +414,7 @@ static void u_video_state(void)
 	cnt = 0;
 	video_flag = VIDEO_STATUS_END;
 
-	for (cnt = 0; cnt < MAX_STAT_SEC; cnt++) {
+	for (cnt = 0; cnt < VIDEO_MAX_STAT_SEC; cnt++) {
 
 		if (g_stat.stat[cnt].uin_len > UDP_PKT_MAX_THRESHOLD) {
 			video_flag = VIDEO_STATUS_START;
@@ -430,7 +430,7 @@ static void u_video_state(void)
 			if (g_video_stat.t_u_flag == STREAM_UDP) {
 
 				mod_timer(&g_seg_rpt_timer,
-					jiffies + REPORT_TIME);
+					jiffies + VIDEO_REPORT_TIME);
 				pr_info("VOD media modify timer0\n");
 			}
 		}
@@ -455,7 +455,7 @@ static void modify_status(void)
 		report_stat();
 
 		mod_timer(&g_seg_rpt_timer,
-			jiffies + REPORT_TIME);
+			jiffies + VIDEO_REPORT_TIME);
 		pr_info("VOD media modify timer1\n");
 	} else if (g_video_stat.t_stat == VIDEO_STATUS_PREPARED) {
 
@@ -492,7 +492,7 @@ static int t_video_state(unsigned char *pstr,
 	if (strncmp(pstr, STR_HTTP, STR_HTTP_LEN) != 0)
 		return -1;
 
-	if (pstr[HTTP_ACK_FROM_START] != '2')
+	if (pstr[VIDEO_HTTP_ACK_FROM_START] != '2')
 		return -1;
 
 	for (cnt = 0; cnt < len - CONTENT_TYPE_LEN; cnt++) {
@@ -524,13 +524,13 @@ static int t_video_state(unsigned char *pstr,
 }
 
 /*Video segment information changes are reported*/
-static int report_seg(unsigned long data)
+static void report_seg(unsigned long data)
 {
 	spin_lock_bh(&g_video_lock);
 
 	if (!g_report_flag || !g_timer_flag) {
 		spin_unlock_bh(&g_video_lock);
-		return -1;
+		return;
 	}
 
 	if (g_video_stat.t_stat != VIDEO_STATUS_END &&
@@ -570,20 +570,19 @@ static int report_seg(unsigned long data)
 		(g_video_stat.u_stat != VIDEO_STATUS_END
 		&& g_video_stat.t_u_flag == STREAM_UDP)) {
 
-		mod_timer(&g_seg_rpt_timer, jiffies + REPORT_TIME);
+		mod_timer(&g_seg_rpt_timer, jiffies + VIDEO_REPORT_TIME);
 		if (g_timer_flag > 0)
 			g_timer_flag--;
 		pr_info("VOD media modify timer2\n");
 	}
 
 	spin_unlock_bh(&g_video_lock);
-	return 0;
+	return;
 }
 
 /*Local out hook function*/
-static unsigned int hook_out(const struct nf_hook_ops *ops,
-					struct sk_buff *skb,
-					const struct nf_hook_state *state)
+static unsigned int hook_out(void *ops, struct sk_buff *skb,
+		const struct nf_hook_state *state)
 {
 	struct iphdr *iph = NULL;
 	struct tcphdr *tcph = NULL;
@@ -604,7 +603,7 @@ static unsigned int hook_out(const struct nf_hook_ops *ops,
 	if (NULL == skb->dev || NULL == skb->dev->name)
 		return NF_ACCEPT;
 
-	if (strncmp(skb->dev->name, DS_NET, DS_NET_LEN))
+	if (strncmp(skb->dev->name, VIDEO_DS_NET, VIDEO_DS_NET_LEN))
 		return NF_ACCEPT;
 
 	if (iph->protocol == IPPROTO_TCP) {
@@ -625,7 +624,7 @@ static unsigned int hook_out(const struct nf_hook_ops *ops,
 		if (totalLen > MAX_HTTP_LEN || ipHdrLen > MAX_HTTP_LEN || dataLen > MAX_HTTP_LEN)
 			return NF_ACCEPT;
 
-		if (htons(tcph->dest) != HTTP_PORT)
+		if (htons(tcph->dest) != VIDEO_HTTP_PORT)
 			return NF_ACCEPT;
 
 		if (skb->sk == NULL)
@@ -662,9 +661,8 @@ static unsigned int hook_out(const struct nf_hook_ops *ops,
 }
 
 /*Local in hook function*/
-static unsigned int hook_in(const struct nf_hook_ops *ops,
-			struct sk_buff *skb,
-			const struct nf_hook_state *state)
+static unsigned int hook_in(void *ops, struct sk_buff *skb,
+		const struct nf_hook_state *state)
 {
 	struct iphdr *iph = NULL;
 	struct tcphdr *tcph = NULL;
@@ -685,7 +683,7 @@ static unsigned int hook_in(const struct nf_hook_ops *ops,
 	if (NULL == skb->dev || NULL == skb->dev->name)
 		return NF_ACCEPT;
 
-	if (strncmp(skb->dev->name, DS_NET, DS_NET_LEN))
+	if (strncmp(skb->dev->name, VIDEO_DS_NET, VIDEO_DS_NET_LEN))
 		return NF_ACCEPT;
 
 	if (iph->protocol == IPPROTO_TCP) {
@@ -706,7 +704,7 @@ static unsigned int hook_in(const struct nf_hook_ops *ops,
 		if (totalLen > MAX_HTTP_LEN || ipHdrLen > MAX_HTTP_LEN || dataLen > MAX_HTTP_LEN)
 			return NF_ACCEPT;
 
-		if (htons(tcph->source) != HTTP_PORT)
+		if (htons(tcph->source) != VIDEO_HTTP_PORT)
 			return NF_ACCEPT;
 
 		if (skb->sk == NULL)
@@ -719,7 +717,7 @@ static unsigned int hook_in(const struct nf_hook_ops *ops,
 			return NF_ACCEPT;
 
 		idx_update();
-		tcp_in_cnt(skb->sk, dataLen, ntohl(tcph->seq));
+		tcp_in_cnt((struct tcp_sock *)skb->sk, dataLen, ntohl(tcph->seq));
 		t_video_state(pTcpData, dataLen, tcph->dest, iph->saddr);
 
 		spin_unlock_bh(&g_video_lock);
@@ -796,12 +794,16 @@ int video_acceleration_init(void)
 	init_timer(&g_seg_rpt_timer);
 	g_seg_rpt_timer.data = 0;
 	g_seg_rpt_timer.function = report_seg;
-	g_seg_rpt_timer.expires = jiffies + REPORT_TIME;
+	g_seg_rpt_timer.expires = jiffies + VIDEO_REPORT_TIME;
 	g_timer_flag = 0;
 
 	spin_lock_init(&g_video_lock);
 	/*Registration hook function*/
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
 	ret = nf_register_hooks(net_hooks, ARRAY_SIZE(net_hooks));
+#else
+	ret = nf_register_net_hooks(&init_net, net_hooks, ARRAY_SIZE(net_hooks));
+#endif
 	if (ret) {
 		pr_err("VOD hook register fail:%d\n", ret);
 		return ret;
@@ -813,7 +815,11 @@ int video_acceleration_init(void)
 void video_acceleration_exit(void)
 {
 	del_timer(&g_seg_rpt_timer);
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
 	nf_unregister_hooks(net_hooks, ARRAY_SIZE(net_hooks));
+#else
+	nf_unregister_net_hooks(&init_net, net_hooks, ARRAY_SIZE(net_hooks));
+#endif
 	g_hook_flag = HOOK_DISABLE;
 	pr_info("media acceleration exit success\n");
 }

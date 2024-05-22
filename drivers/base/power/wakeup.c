@@ -200,7 +200,6 @@ void wakeup_source_add(struct wakeup_source *ws)
 }
 EXPORT_SYMBOL_GPL(wakeup_source_add);
 
-
 int wakeup_source_set(char *name, u8 lock_timeout)
 {
 	struct wakeup_source *ws = NULL;
@@ -274,7 +273,7 @@ int wake_unlockAll(unsigned int msec)
 
             active_time = ktime_sub(now, ws->last_time);
 
-            pr_info("[wake_unlockAll]wakeup source: %s %d msec.\n", ws->name, ktime_to_ms(active_time));
+            pr_info("[wake_unlockAll]wakeup source: %s %lld msec.\n", ws->name, ktime_to_ms(active_time));
             if (ktime_to_ms(active_time) <= msec) continue;
 
         }
@@ -286,6 +285,34 @@ int wake_unlockAll(unsigned int msec)
     return 0;
 }
 EXPORT_SYMBOL_GPL(wake_unlockAll);
+
+#ifdef CONFIG_HUAWEI_DUBAI
+int wakeup_source_getlastingname(char *ws_namelist, int size, int count)
+{
+	struct wakeup_source *ws = NULL;
+	int tmp = 0;
+	int srcuidx;
+
+	if ((!ws_namelist) || (size <= 0)) {
+		return -EINVAL;
+	}
+
+	srcuidx = srcu_read_lock(&wakeup_srcu);
+	list_for_each_entry_rcu(ws, &wakeup_sources, entry) {
+		if (ws->lasting == 1) {
+			if (tmp >= count) {
+				break;
+			}
+			strncpy(ws_namelist + size * tmp, ws->name, size - 1);
+			tmp++;
+		}
+	}
+	srcu_read_unlock(&wakeup_srcu, srcuidx);
+
+	return tmp;
+}
+EXPORT_SYMBOL_GPL(wakeup_source_getlastingname);
+#endif
 
 /**
  * wakeup_source_remove - Remove given object from the wakeup sources list.
@@ -694,7 +721,9 @@ void __pm_stay_awake(struct wakeup_source *ws)
 	wakeup_source_report_event(ws);
 	del_timer(&ws->timer);
 	ws->timer_expires = 0;
-
+#ifdef CONFIG_HUAWEI_DUBAI
+	ws->lasting = 1;
+#endif
 	spin_unlock_irqrestore(&ws->lock, flags);
 }
 EXPORT_SYMBOL_GPL(__pm_stay_awake);

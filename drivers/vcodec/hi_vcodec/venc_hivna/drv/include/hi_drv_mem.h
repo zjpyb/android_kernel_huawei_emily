@@ -21,11 +21,14 @@
 */
 #ifndef __HI_DRV_MEM_H__
 #define __HI_DRV_MEM_H__
-#include "hi_type.h"
+
 #include <linux/seq_file.h>
 #include <linux/vmalloc.h>
 #include <linux/hisi/hisi_ion.h>
+#include <linux/dma-buf.h>
 
+#include "hi_type.h"
+#include "drv_venc_ioctl.h"
 
 #define MAX_MEM_NAME_LEN       (15)
 #define MAX_KMALLOC_MEM_NODE   (16)    /*1 channel need 2 node ,there is have max 8 channels*/
@@ -51,7 +54,9 @@ typedef struct  {
 	HI_VOID*           virt_addr;
 	HI_U64             phys_addr;
 	HI_U32             size;
+	HI_S32             share_fd;
 	struct ion_handle *handle;
+	struct dma_buf    *dmabuf;
 } venc_mem_buf;
 
 /***********************************************************************************
@@ -66,6 +71,12 @@ HI_S32 DRV_MEM_KAlloc(const HI_CHAR* bufName, const HI_CHAR *zone_name, MEM_BUFF
 HI_S32 DRV_MEM_KFree(const MEM_BUFFER_S *psMBuf);
 HI_S32 DRV_MEM_MapKernel(HI_S32 share_fd, MEM_BUFFER_S *psMBuf);
 HI_S32 DRV_MEM_UnmapKernel(MEM_BUFFER_S *psMBuf);
+
+
+HI_S32 DRV_MEM_GetMapInfo(HI_S32 share_fd, MEM_BUFFER_S *psMBuf);
+HI_S32 DRV_MEM_PutMapInfo(MEM_BUFFER_S *psMBuf);
+HI_S32 DRV_MEM_IommuMap(VencBufferRecord *node, struct platform_device *pltdev);
+HI_S32 DRV_MEM_IommuUnmap(HI_S32 share_fd, HI_S32 phys_addr, struct platform_device *pltdev);
 
 /**************************************************************************************/
 

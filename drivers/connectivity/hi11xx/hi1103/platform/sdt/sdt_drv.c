@@ -461,8 +461,7 @@ oal_void  sdt_drv_netlink_recv_etc(oal_netbuf_stru  *pst_netbuf)
         }
         else
         {
-#if 1
-//#if defined(PLATFORM_DEBUG_ENABLE) || (_PRE_PRODUCT_ID == _PRE_PRODUCT_ID_HI1151)
+#if defined(PLATFORM_DEBUG_ENABLE) || (_PRE_PRODUCT_ID == _PRE_PRODUCT_ID_HI1151)
             sdt_drv_send_data_to_wifi_etc(&g_st_sdt_drv_mng_entry_etc.puc_data[OAL_SIZEOF(st_msg_hdr)],
                                                         ul_len - (oal_int32)OAL_SIZEOF(st_msg_hdr));
 #else

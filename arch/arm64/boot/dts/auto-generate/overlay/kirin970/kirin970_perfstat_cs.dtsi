@@ -23,6 +23,6 @@
             hisilicon,qos_support = <1>;
             hisilicon,rs_enable_support = <2>;/* support RS2 config */
             hisilicon,rs_support_port = <0x7C 0x00840980 0x80 0x5e03e600>;
-            status = "disabled";
+	    status = "disabled";
         };
   };

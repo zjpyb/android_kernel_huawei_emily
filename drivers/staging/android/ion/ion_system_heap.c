@@ -24,7 +24,7 @@
 #include <linux/slab.h>
 #include <linux/vmalloc.h>
 #include <linux/sizes.h>
-#include <linux/hisi/ion-iommu.h>
+#include <linux/ion-iommu.h>
 #include <linux/hisi/page_tracker.h>
 
 #include "ion.h"
@@ -53,7 +53,7 @@ static int order_to_index(unsigned int order)
 {
 	int i;
 
-	for (i = 0; i < NUM_ORDERS; i++)
+	for (i = 0; i < NUM_ORDERS; i++)/*lint !e574*/
 		if (order == orders[i])
 			return i;
 	BUG();
@@ -172,7 +172,7 @@ static struct page *alloc_largest_available(struct ion_system_heap *heap,
 	struct page *page;
 	int i;
 
-	for (i = 0; i < NUM_ORDERS; i++) {
+	for (i = 0; i < NUM_ORDERS; i++) {  /*lint !e574*/
 		if (size < order_to_size(orders[i]))
 			continue;
 		if (max_order < orders[i])
@@ -324,7 +324,7 @@ static void ion_system_heap_free(struct ion_buffer *buffer)
 	LIST_HEAD(pages);
 	int i;
 
-	for_each_sg(table->sgl, sg, table->nents, i)
+	for_each_sg(table->sgl, sg, table->nents, i)/*lint !e574*/
 		free_buffer_page(sys_heap, buffer, sg_page(sg));
 	sg_free_table(table);
 	kfree(table);
@@ -345,7 +345,7 @@ static int ion_system_heap_shrink(struct ion_heap *heap, gfp_t gfp_mask,
 	if (!nr_to_scan)
 		only_scan = 1;
 
-	for (i = 0; i < NUM_ORDERS; i++) {
+	for (i = 0; i < NUM_ORDERS; i++) {/*lint !e574*/
 		uncached_pool = sys_heap->uncached_pools[i];
 		cached_pool = sys_heap->cached_pools[i];
 
@@ -436,8 +436,9 @@ static struct ion_heap_ops system_heap_ops = {
 	.shrink = ion_system_heap_shrink,
 };
 
+/*lint -e578*/
 static int ion_system_heap_debug_show(struct ion_heap *heap, struct seq_file *s,
-				      void *unused)
+				      void *unused)/*lint !e578*/
 {
 
 	struct ion_system_heap *sys_heap = container_of(heap,
@@ -446,7 +447,7 @@ static int ion_system_heap_debug_show(struct ion_heap *heap, struct seq_file *s,
 	int i;
 	struct ion_page_pool *pool;
 
-	for (i = 0; i < NUM_ORDERS; i++) {
+	for (i = 0; i < NUM_ORDERS; i++) {/*lint !e574*/
 		pool = sys_heap->uncached_pools[i];
 
 		seq_printf(s, "%d order %u highmem pages uncached %lu total\n",
@@ -457,7 +458,7 @@ static int ion_system_heap_debug_show(struct ion_heap *heap, struct seq_file *s,
 			   (PAGE_SIZE << pool->order) * pool->low_count);
 	}
 
-	for (i = 0; i < NUM_ORDERS; i++) {
+	for (i = 0; i < NUM_ORDERS; i++) {/*lint !e574*/
 		pool = sys_heap->cached_pools[i];
 
 		seq_printf(s, "%d order %u highmem pages cached %lu total\n",
@@ -472,9 +473,9 @@ static int ion_system_heap_debug_show(struct ion_heap *heap, struct seq_file *s,
 	if (sys_heap->smart_pool) {
 		ion_smart_pool_debug_show_total(s, sys_heap->smart_pool);
 
-		for (i = 0; i < NUM_ORDERS; i++) {
+		for (i = 0; i < NUM_ORDERS; i++) {/*lint !e574*/
 			struct ion_page_pool *pool =
-				sys_heap->smart_pool->pools[i];
+				sys_heap->smart_pool->pools[i]; /*lint !e578*/
 
 			seq_printf(s, "%d order %u highmem pages in smart pool = %lu total\n",
 				pool->high_count, pool->order,
@@ -491,7 +492,7 @@ static int ion_system_heap_debug_show(struct ion_heap *heap, struct seq_file *s,
 
 		for (i = 0; i < NUM_ORDERS; i++) {/*lint !e574*/
 			struct ion_page_pool *pool =
-				sys_heap->scene_pool->pools[i];
+				sys_heap->scene_pool->pools[i];/*lint !e578*/
 
 			seq_printf(s, "%d order %u highmem pages",
 				   pool->high_count, pool->order);
@@ -508,12 +509,13 @@ static int ion_system_heap_debug_show(struct ion_heap *heap, struct seq_file *s,
 #endif
 	return 0;
 }
+/*lint +e578*/
 
 void ion_system_heap_destroy_pools(struct ion_page_pool **pools)
 {
 	int i;
 
-	for (i = 0; i < NUM_ORDERS; i++)
+	for (i = 0; i < NUM_ORDERS; i++)/*lint !e574*/
 		if (pools[i])
 			ion_page_pool_destroy(pools[i]);
 }
@@ -523,7 +525,7 @@ int ion_system_heap_create_pools(struct ion_page_pool **pools,
 {
 	int i;
 
-	for (i = 0; i < NUM_ORDERS; i++) {
+	for (i = 0; i < NUM_ORDERS; i++) {/*lint !e574*/
 		struct ion_page_pool *pool;
 		gfp_t gfp_flags = low_order_gfp_flags;
 
@@ -588,7 +590,7 @@ struct ion_heap *ion_system_heap_create(struct ion_platform_heap *unused)
 
 	heap->heap.debug_show = ion_system_heap_debug_show;
 
-	return &heap->heap;
+	return &heap->heap;/*lint !e429*/
 
 #ifdef CONFIG_HISI_SPECIAL_SCENE_POOL
 #ifdef CONFIG_HISI_SMARTPOOL_OPT
@@ -621,7 +623,7 @@ void ion_system_heap_destroy(struct ion_heap *heap)
 							heap);
 	int i;
 
-	for (i = 0; i < NUM_ORDERS; i++) {
+	for (i = 0; i < NUM_ORDERS; i++) {/*lint !e574*/
 		ion_page_pool_destroy(sys_heap->uncached_pools[i]);
 		ion_page_pool_destroy(sys_heap->cached_pools[i]);
 #ifdef CONFIG_HISI_SMARTPOOL_OPT
@@ -663,7 +665,7 @@ static int ion_system_contig_heap_allocate(struct ion_heap *heap,
 	split_page(page, order);
 
 	len = PAGE_ALIGN(len);
-	for (i = len >> PAGE_SHIFT; i < (1 << order); i++)
+	for (i = len >> PAGE_SHIFT; i < (1 << order); i++)/*lint !e574 !e647*/
 		__free_page(page + i);
 
 	table = kmalloc(sizeof(struct sg_table), GFP_KERNEL);

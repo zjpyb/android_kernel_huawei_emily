@@ -10,7 +10,7 @@
 * GNU General Public License for more details.
 *
 */
-/*lint -e778 -e732 -e845 -e774 -e838 -e438*/
+/*lint -e778 -e732 -e845 -e774 -e438 -e613 -e502 -e647 -e573 -e679 -e574 -e578 -e568 -e685 -e737*/
 
 #include "hisi_overlay_utils.h"
 #include "hisi_display_effect.h"
@@ -313,10 +313,10 @@ void dumpDssOverlay(struct hisi_fb_data_type *hisifd, dss_overlay_t *pov_req)
 	}
 
 alloc_dss_buf_err:
-	if (dumpDss->scene_buf) {
-		kfree(dumpDss->scene_buf);
-		dumpDss->scene_buf = NULL;
-		dumpDss->scene_buf_len = 0;
+	if (dumpDss->dss_buf) {
+		kfree(dumpDss->dss_buf);
+		dumpDss->dss_buf = NULL;
+		dumpDss->dss_buf_len = 0;
 	}
 
        if (dumpDss) {
@@ -1624,7 +1624,7 @@ int hisi_dss_mif_config(struct hisi_fb_data_type *hisifd,
 /*******************************************************************************
 ** DSS RDMA
 */
-void hisi_dss_rdma_init(char __iomem *dma_base, dss_rdma_t *s_dma)
+void hisi_dss_rdma_init(const char __iomem *dma_base, dss_rdma_t *s_dma)
 {
 	if (NULL == dma_base) {
 		HISI_FB_ERR("dma_base is NULL");
@@ -1676,7 +1676,7 @@ void hisi_dss_rdma_init(char __iomem *dma_base, dss_rdma_t *s_dma)
 	s_dma->afbcd_mem_ctrl = inp32(dma_base + AFBCD_MEM_CTRL);
 }
 
-void hisi_dss_rdma_u_init(char __iomem *dma_base, dss_rdma_t *s_dma)
+void hisi_dss_rdma_u_init(const char __iomem *dma_base, dss_rdma_t *s_dma)
 {
 	if (NULL == dma_base) {
 		HISI_FB_ERR("dma_base is NULL");
@@ -1693,7 +1693,7 @@ void hisi_dss_rdma_u_init(char __iomem *dma_base, dss_rdma_t *s_dma)
 	s_dma->data_num1 = inp32(dma_base + DMA_DATA_NUM1);
 }
 
-void hisi_dss_rdma_v_init(char __iomem *dma_base, dss_rdma_t *s_dma)
+void hisi_dss_rdma_v_init(const char __iomem *dma_base, dss_rdma_t *s_dma)
 {
 	if (NULL == dma_base) {
 		HISI_FB_ERR("dma_base is NULL");
@@ -2601,7 +2601,7 @@ int hisi_dss_rdma_config(struct hisi_fb_data_type *hisifd, int ovl_idx,
 		return 0;
 	}
 
-	ret = hisi_dss_rdma_addr_aligned(layer,&l2t_interleave_n,&rdma_addr,mmu_enable);
+	ret = hisi_dss_rdma_addr_aligned(layer,&l2t_interleave_n, &rdma_addr, mmu_enable);
 	if(ret != 0){
 		HISI_FB_ERR("rdma_addr is not aligned");
 		return -EINVAL;
@@ -2740,7 +2740,7 @@ int hisi_dss_rdma_config(struct hisi_fb_data_type *hisifd, int ovl_idx,
 /*******************************************************************************
 ** DSS DFC
 */
-void hisi_dss_dfc_init(char __iomem *dfc_base, dss_dfc_t *s_dfc)
+void hisi_dss_dfc_init(const char __iomem *dfc_base, dss_dfc_t *s_dfc)
 {
 	if (NULL == dfc_base) {
 		HISI_FB_ERR("dfc_base is NULL");
@@ -2806,8 +2806,8 @@ int hisi_dss_rdfc_config(struct hisi_fb_data_type *hisifd, dss_layer_t *layer,
 	int dfc_bpp = 0;
 	int dfc_pix_in_num = 0;
 	int dfc_aligned = 0;
-	int size_hrz = 0;
-	int size_vrt = 0;
+	uint32_t size_hrz = 0;
+	uint32_t size_vrt = 0;
 	int dfc_hrz_clip = 0;
 	bool need_clip = false;
 	bool is_pixel_10bit = false;
@@ -2906,8 +2906,8 @@ int hisi_dss_rdfc_config(struct hisi_fb_data_type *hisifd, dss_layer_t *layer,
 ** DSS SCF
 */
 const int COEF_LUT_TAP4[SCL_COEF_IDX_MAX][PHASE_NUM][TAP4] = {
- 	// YUV_COEF_IDX
-	{
+	// YUV_COEF_IDX
+ 	{
 		{214, 599, 214, -3},
 		{207, 597, 223, -3},
 		{200, 596, 231, -3},
@@ -2974,7 +2974,7 @@ const int COEF_LUT_TAP4[SCL_COEF_IDX_MAX][PHASE_NUM][TAP4] = {
 		{ 47, 486, 457, 34},
 		{ 43, 479, 465, 37},
 		{ 40, 472, 472, 40}
- 	},
+	},
 
 	// RGB_COEF_IDX
 	{
@@ -3331,7 +3331,7 @@ const int COEF_LUT_TAP6[SCL_COEF_IDX_MAX][PHASE_NUM][TAP6] = {
 	}
 };
 
-void hisi_dss_scl_init(char __iomem *scl_base, dss_scl_t *s_scl)
+void hisi_dss_scl_init(const char __iomem *scl_base, dss_scl_t *s_scl)
 {
 	if (NULL == scl_base) {
 		HISI_FB_ERR("scl_base is NULL");
@@ -3817,7 +3817,7 @@ int hisi_dss_post_clip_config(struct hisi_fb_data_type *hisifd, dss_layer_t *lay
 /*******************************************************************************
 ** DSS MCTL
 */
-void hisi_dss_mctl_init(char __iomem *mctl_base, dss_mctl_t *s_mctl)
+void hisi_dss_mctl_init(const char __iomem *mctl_base, dss_mctl_t *s_mctl)
 {
 	if (NULL == mctl_base) {
 		HISI_FB_ERR("mctl_base is NULL");
@@ -3833,7 +3833,7 @@ void hisi_dss_mctl_init(char __iomem *mctl_base, dss_mctl_t *s_mctl)
 	//FIXME:
 }
 
-static void hisi_dss_mctl_ch_starty_init(char __iomem *mctl_ch_starty_base, dss_mctl_ch_t *s_mctl_ch)
+static void hisi_dss_mctl_ch_starty_init(const char __iomem *mctl_ch_starty_base, dss_mctl_ch_t *s_mctl_ch)
 {
 	if (NULL == mctl_ch_starty_base) {
 		HISI_FB_ERR("mctl_ch_starty_base is NULL");
@@ -4279,7 +4279,7 @@ int hisi_dss_mctl_ch_config(struct hisi_fb_data_type *hisifd, dss_overlay_t *pov
 
 	return 0;
 }
-
+/*lint -e715*/
 int hisi_dss_mctl_ov_config(struct hisi_fb_data_type *hisifd, dss_overlay_t *pov_req,
 	int ovl_idx, bool has_base, bool is_first_ov_block)
 {
@@ -4337,7 +4337,7 @@ int hisi_dss_mctl_ov_config(struct hisi_fb_data_type *hisifd, dss_overlay_t *pov
 
 	return 0;
 }
-
+/*lint +e715*/
 
 /*******************************************************************************
 ** DSS OVL
@@ -4378,7 +4378,7 @@ static dss_ovl_alpha_t g_ovl_alpha[DSS_BLEND_MAX] = {
 	{0,0,0,0,0,  1,  1,0,0,0,  0},	//DSS_BLEND_FIX_PER17 DSS_BLEND_SRC
 };
 
-static uint32_t get_ovl_blending_mode(dss_overlay_t *pov_req, dss_layer_t *layer)
+static uint32_t get_ovl_blending_mode(dss_layer_t *layer)
 {
 	uint32_t blend_mode = 0;
 	bool has_per_pixel_alpha = false;
@@ -4519,12 +4519,12 @@ int hisi_dss_ovl_base_config(struct hisi_fb_data_type *hisifd, dss_overlay_t *po
 							ovl->ovl_layer[layer_idx].layer_cfg =
 								set_bits32(ovl->ovl_layer[layer_idx].layer_cfg, 1, 1, 8);
 						} else {
-								ovl->ovl_layer[layer_idx].layer_pattern =
-							set_bits32(ovl->ovl_layer[layer_idx].layer_pattern, 0, 32, 0);
-								ovl->ovl_layer[layer_idx].layer_cfg =
-							set_bits32(ovl->ovl_layer[layer_idx].layer_cfg, 1, 1, 0);
-								ovl->ovl_layer[layer_idx].layer_cfg =
-							set_bits32(ovl->ovl_layer[layer_idx].layer_cfg, 0, 1, 8);
+							ovl->ovl_layer[layer_idx].layer_pattern =
+								set_bits32(ovl->ovl_layer[layer_idx].layer_pattern, 0, 32, 0);
+							ovl->ovl_layer[layer_idx].layer_cfg =
+								set_bits32(ovl->ovl_layer[layer_idx].layer_cfg, 1, 1, 0);
+							ovl->ovl_layer[layer_idx].layer_cfg =
+								set_bits32(ovl->ovl_layer[layer_idx].layer_cfg, 0, 1, 8);
 						}
 
 						ovl->ovl_layer_used[layer_idx] = 1;
@@ -4555,10 +4555,9 @@ int hisi_dss_ovl_base_config(struct hisi_fb_data_type *hisifd, dss_overlay_t *po
 	ovl->ovl_size = set_bits32(ovl->ovl_size, DSS_HEIGHT(img_height), 15, 16);
 
 		ovl_bg_color = 0x00000000;
-
 	ovl->ovl_bg_color= set_bits32(ovl->ovl_bg_color, ovl_bg_color, 32, 0);
 
-	ovl->ovl_bg_color_alpha= set_bits32(ovl->ovl_bg_color_alpha, 0x3FF, 32, 0);
+	ovl->ovl_bg_color_alpha = set_bits32(ovl->ovl_bg_color_alpha, 0x3FF, 32, 0);
 
 	ovl->ovl_dst_startpos = set_bits32(ovl->ovl_dst_startpos, 0x0, 32, 0);
 	ovl->ovl_dst_endpos = set_bits32(ovl->ovl_dst_endpos, DSS_WIDTH(img_width), 15, 0);
@@ -4616,7 +4615,11 @@ int hisi_dss_ovl_layer_config(struct hisi_fb_data_type *hisifd, dss_overlay_t *p
 	hisifd->dss_module.ov_used[ovl_idx] = 1;
 
 	if (layer->need_cap & CAP_BASE) {
-		ovl->ovl_bg_color = set_bits32(ovl->ovl_bg_color, layer->color, 32, 0);
+		color_rgb = layer->color;
+		color_alpha = (layer->color >> 24) * OVL_PATTERN_RATIO;
+		color_rgb = (((layer->color >> 16) & 0xff) << 20) | (((layer->color >> 8) & 0xff) << 10) | (layer->color & 0xff);
+		ovl->ovl_bg_color = set_bits32(ovl->ovl_bg_color, color_rgb, 32, 0);
+		ovl->ovl_bg_color_alpha = set_bits32(ovl->ovl_bg_color_alpha, color_alpha, 32, 0);
 		ovl->ovl_gcfg = set_bits32(ovl->ovl_gcfg, 0x1, 1, 16);
 		return 0;
 	}
@@ -4632,9 +4635,9 @@ int hisi_dss_ovl_layer_config(struct hisi_fb_data_type *hisifd, dss_overlay_t *p
 	color_rgb = layer->color;
 	glb_alpha = layer->glb_alpha * OVL_PATTERN_RATIO;
 	color_alpha = (layer->color >> 24) * OVL_PATTERN_RATIO;
-	color_rgb = (layer->color & 0x01ffffff) * OVL_PATTERN_RATIO;
+	color_rgb = (((layer->color >> 16) & 0xff) << 20) | (((layer->color >> 8) & 0xff) << 10) | (layer->color & 0xff);
 
-	blend_mode = get_ovl_blending_mode(pov_req, layer);
+	blend_mode = get_ovl_blending_mode(layer);
 	if ((blend_mode < 0) || (blend_mode >= DSS_BLEND_MAX)) {
 		HISI_FB_ERR("blend_mode = %d is out of range!\n", blend_mode);
 		return -EINVAL;
@@ -4878,6 +4881,7 @@ void hisi_dss_dirty_region_updt_config(struct hisi_fb_data_type *hisifd,
 	struct hisi_panel_info *pinfo = NULL;
 	dirty_region_updt_t *dirty_region_updt = NULL;
 	struct dss_rect dirty = {0};
+	struct dss_rect dirty_updt = {0};
 	uint32_t h_porch_pading = 0;
 	uint32_t v_porch_pading = 0;
 	dss_rect_t rect = {0};
@@ -4911,6 +4915,7 @@ void hisi_dss_dirty_region_updt_config(struct hisi_fb_data_type *hisifd,
 		dirty = pov_req->dirty_rect;
 	}
 
+	dirty_updt = dirty;
 	if ((hisifd->panel_info.xres) >= dirty.w) {
 		h_porch_pading = hisifd->panel_info.xres - dirty.w;
 	}
@@ -5008,8 +5013,13 @@ void hisi_dss_dirty_region_updt_config(struct hisi_fb_data_type *hisifd,
 		DSS_HEIGHT(rect.h), 13, 0);
 
 	// set dsi size
-	dirty_region_updt->edpi_cmd_size = set_bits32(dirty_region_updt->edpi_cmd_size,
-		rect.w, 16, 0);
+	if (is_dual_mipi_panel(hisifd)) {
+		dirty_region_updt->edpi_cmd_size = set_bits32(dirty_region_updt->edpi_cmd_size,
+			rect.w + pinfo->ldi.dpi0_overlap_size, 16, 0);
+	} else {
+		dirty_region_updt->edpi_cmd_size = set_bits32(dirty_region_updt->edpi_cmd_size,
+			rect.w, 16, 0);
+	}
 
 	// set ifbc size
 	if (pinfo->ifbc_type != IFBC_TYPE_NONE) {
@@ -5026,14 +5036,23 @@ void hisi_dss_dirty_region_updt_config(struct hisi_fb_data_type *hisifd,
 	dirty_region_updt->hiace_img_size = (dirty.h) << 16 | dirty.w;
 
 	if (pdata && pdata->set_display_region) {
-		pdata->set_display_region(hisifd->pdev, &dirty);
+		if (is_dual_mipi_panel(hisifd)) {
+			dirty_updt.x /= 2;
+			dirty_updt.w = rect.w + pinfo->ldi.dpi0_overlap_size;
+			pdata->set_display_region(hisifd->pdev, &dirty_updt);
+
+			HISI_FB_DEBUG("dirty_updt(%d,%d, %d,%d), h_porch_pading=%d, v_porch_pading=%d.\n",
+				dirty_updt.x, dirty_updt.y, dirty_updt.w, dirty_updt.h, h_porch_pading, v_porch_pading);
+		} else {
+			pdata->set_display_region(hisifd->pdev, &dirty);
+		}
 	}
 
 	hisifd->dirty_region_updt = dirty;
 
 	hisi_dss_dirty_region_updt_set_reg(hisifd, hisifd->dss_base, &(hisifd->dss_module.dirty_region_updt));
 
-	HISI_FB_DEBUG("dirty_region(%d,%d, %d,%d), h_porch_pading=%d, v_porch_pading=%d.\n",
+	HISI_FB_DEBUG("dirty(%d,%d, %d,%d), h_porch_pading=%d, v_porch_pading=%d.\n",
 		dirty.x, dirty.y, dirty.w, dirty.h, h_porch_pading, v_porch_pading);
 
 }
@@ -5090,8 +5109,8 @@ int hisi_dss_wdfc_config(struct hisi_fb_data_type *hisifd, dss_wb_layer_t *layer
 	dss_rect_t in_rect;
 	bool need_dither = false;
 
-	int size_hrz = 0;
-	int size_vrt = 0;
+	uint32_t size_hrz = 0;
+	uint32_t size_vrt = 0;
 	int dfc_fmt = 0;
 	int dfc_pix_in_num = 0;
 	int aligned_line = 0;
@@ -5243,7 +5262,7 @@ int hisi_dss_wdfc_config(struct hisi_fb_data_type *hisifd, dss_wb_layer_t *layer
 
 	if (left_pad || right_pad || top_pad || bottom_pad) {
 		dfc->padding_ctl = set_bits32(dfc->padding_ctl, (left_pad |
-			(right_pad << 8) | (top_pad << 16) | (bottom_pad << 24) | (0x1 << 31)), 32, 0);
+			(right_pad << 8) | (top_pad << 16) | (bottom_pad << 24) | (0x1 << 31)), 32, 0); //lint !e648
 	} else {
 		dfc->padding_ctl = set_bits32(dfc->padding_ctl, 0x0, 32, 0);
 	}
@@ -5257,7 +5276,7 @@ int hisi_dss_wdfc_config(struct hisi_fb_data_type *hisifd, dss_wb_layer_t *layer
 	return 0;
 }
 
-void hisi_dss_wdma_init(char __iomem *wdma_base, dss_wdma_t *s_wdma)
+void hisi_dss_wdma_init(const char __iomem *wdma_base, dss_wdma_t *s_wdma)
 {
 	if (NULL == wdma_base) {
 		HISI_FB_ERR("wdma_base is NULL");
@@ -5380,6 +5399,7 @@ static int hisi_dss_wdma_afbc_check_header (dss_wb_layer_t *layer,dss_rect_t in_
 		HISI_FB_ERR("layer is NULL");
 		return -EINVAL;
 	}
+
 	if ((layer->dst.width & (AFBC_HEADER_ADDR_ALIGN - 1)) ||
 		(layer->dst.height & (AFBC_BLOCK_ALIGN - 1))) {
 		HISI_FB_ERR("wb_layer img width(%d) is not %d bytes aligned, or "
@@ -5399,8 +5419,8 @@ static int hisi_dss_wdma_afbc_check_header (dss_wb_layer_t *layer,dss_rect_t in_
 	return  0;
 }
 
-static int hisi_dss_wdma_afbc_check_payload(dss_wb_layer_t *layer,dss_rect_ltrb_t afbc_payload_rect,
-	dss_rect_t in_rect,uint32_t *afbc_payload_addr,uint32_t *afbc_payload_stride)
+static int hisi_dss_wdma_afbc_check_payload(dss_wb_layer_t *layer, dss_rect_ltrb_t afbc_payload_rect,
+	dss_rect_t in_rect, uint32_t *afbc_payload_addr, uint32_t *afbc_payload_stride)
 {
 	uint32_t stride_align = 0;
 	uint32_t addr_align = 0;
@@ -5431,7 +5451,7 @@ static int hisi_dss_wdma_afbc_check_payload(dss_wb_layer_t *layer,dss_rect_ltrb_
 	}
 	*afbc_payload_addr = layer->dst.afbc_payload_addr +
 		(afbc_payload_rect.top / AFBC_BLOCK_ALIGN) * (*afbc_payload_stride) +
-		(afbc_payload_rect.left / AFBC_BLOCK_ALIGN) * stride_align;
+		(afbc_payload_rect.left / AFBC_BLOCK_ALIGN) * stride_align; //lint !e737
 
 	if ((*afbc_payload_addr & (addr_align - 1)) ||
 		(*afbc_payload_stride & (stride_align - 1))) {
@@ -5443,11 +5463,11 @@ static int hisi_dss_wdma_afbc_check_payload(dss_wb_layer_t *layer,dss_rect_ltrb_
 	}
 
 	if (g_debug_ovl_online_composer || g_debug_ovl_offline_composer) {
-	HISI_FB_INFO("aligned_rect(%d,%d,%d,%d), afbc_rect(%d,%d,%d,%d)!\n",
-		in_rect.x, in_rect.y,
-		DSS_WIDTH(in_rect.x + in_rect.w), DSS_WIDTH(in_rect.y + in_rect.h),
-		afbc_payload_rect.left, afbc_payload_rect.top, afbc_payload_rect.right, afbc_payload_rect.bottom);
-		}
+		HISI_FB_INFO("aligned_rect(%d,%d,%d,%d), afbc_rect(%d,%d,%d,%d)!\n",
+			in_rect.x, in_rect.y,
+			DSS_WIDTH(in_rect.x + in_rect.w), DSS_WIDTH(in_rect.y + in_rect.h),
+			afbc_payload_rect.left, afbc_payload_rect.top, afbc_payload_rect.right, afbc_payload_rect.bottom);
+	}
 
 	return 0 ;
 }
@@ -5473,7 +5493,7 @@ int hisi_dss_wdma_config(struct hisi_fb_data_type *hisifd, dss_overlay_t *pov_re
 	dss_rect_t in_rect;
 	int temp = 0;
 	int aligned_pixel = 0;
-	int l2t_interleave_n = 0;
+	uint32_t l2t_interleave_n = 0;
 	bool mmu_enable = false;
 
 	dss_rect_ltrb_t afbc_header_rect = {0};
@@ -5573,7 +5593,7 @@ int hisi_dss_wdma_config(struct hisi_fb_data_type *hisifd, dss_overlay_t *pov_re
 		// afbc header
 		afbc_header_stride = (layer->dst.width / AFBC_BLOCK_ALIGN) * AFBC_HEADER_STRIDE_BLOCK;
 		afbc_header_pointer_offset = (afbc_header_rect.top / AFBC_BLOCK_ALIGN) * afbc_header_stride +
-			(afbc_header_rect.left / AFBC_BLOCK_ALIGN) * AFBC_HEADER_STRIDE_BLOCK;
+			(afbc_header_rect.left / AFBC_BLOCK_ALIGN) * AFBC_HEADER_STRIDE_BLOCK; //lint !e737
 		afbc_header_addr = layer->dst.afbc_header_addr + afbc_header_pointer_offset;
 
 		if ((afbc_header_addr & (AFBC_HEADER_ADDR_ALIGN - 1)) ||
@@ -5586,7 +5606,8 @@ int hisi_dss_wdma_config(struct hisi_fb_data_type *hisifd, dss_overlay_t *pov_re
 		}
 
 		//afbc payload
-		ret = hisi_dss_wdma_afbc_check_payload(layer,afbc_payload_rect,in_rect,&afbc_payload_addr,&afbc_payload_stride);
+		ret = hisi_dss_wdma_afbc_check_payload(layer, afbc_payload_rect, in_rect,
+			&afbc_payload_addr, &afbc_payload_stride);
 		if(ret != 0) {
 			HISI_FB_ERR("hisi_dss_afbc payload error! ret = %d\n", ret);
 			return -EINVAL;
@@ -5628,7 +5649,7 @@ int hisi_dss_wdma_config(struct hisi_fb_data_type *hisifd, dss_overlay_t *pov_re
 	}
 
 	if (layer->need_cap & CAP_TILE) {
-		l2t_interleave_n = hisi_get_rdma_tile_interleave(layer->dst.stride);
+		l2t_interleave_n = (uint32_t)hisi_get_rdma_tile_interleave(layer->dst.stride);
 		if (l2t_interleave_n < MIN_INTERLEAVE) {
 			HISI_FB_ERR("tile stride should be 256*2^n, error stride:%d!\n", layer->dst.stride);
 			return -EINVAL;
@@ -5660,7 +5681,7 @@ int hisi_dss_wdma_config(struct hisi_fb_data_type *hisifd, dss_overlay_t *pov_re
 	wdma_addr = hisi_calculate_display_addr_wb(mmu_enable, layer, in_rect, ov_block_rect, DSS_ADDR_PLANE0);
 	wdma_stride = layer->dst.stride / DMA_ALIGN_BYTES;
 
-	data_num = (oft_x1 - oft_x0 + 1) * (oft_y1- oft_y0 + 1);
+	data_num = (oft_x1 - oft_x0 + 1) * (oft_y1- oft_y0 + 1); //lint !e834
 
 	if (layer->transform & HISI_FB_TRANSFORM_ROT_90) {
 		wdma->rot_size = set_bits32(wdma->rot_size,
@@ -6097,6 +6118,13 @@ static void get_use_comm_mmbuf(int *use_comm_mmbuf,
 	int i = 0;
 	int j = 0;
 
+	if (g_debug_dump_mmbuf) {
+		for (i = 0; i < DSS_CHN_MAX_DEFINE; i++) {
+			HISI_FB_INFO("g_online_mmbuf[%d].addr=0x%x, size=0x%x!\n",
+				i, online_mmbuf[i].mmbuf.addr, online_mmbuf[i].mmbuf.size);
+		}
+	}
+
 	for (i = 0; i < DSS_CHN_MAX_DEFINE; i++) {
 		for (j = 0; j < DSS_CHN_MAX_DEFINE; j++) {
 			if ((((offline_mmbuf[i].addr < online_mmbuf[j].mmbuf.addr + online_mmbuf[j].mmbuf.size) &&
@@ -6111,13 +6139,6 @@ static void get_use_comm_mmbuf(int *use_comm_mmbuf,
 					break;
 				}
 			}
-		}
-	}
-
-	if (g_debug_dump_mmbuf) {
-		for (i = 0; i < DSS_CHN_MAX_DEFINE; i++) {
-			HISI_FB_INFO("g_online_mmbuf[%d].addr=0x%x, size=%d!\n",
-			i, online_mmbuf[i].mmbuf.addr, online_mmbuf[i].mmbuf.size);
 		}
 	}
 }
@@ -6148,8 +6169,8 @@ static void hisi_dss_check_use_comm_mmbuf(uint32_t display_id,
 
 	if (g_debug_dump_mmbuf) {
 		for (i = 0; i < DSS_CHN_MAX_DEFINE; i++) {
-			HISI_FB_INFO("offline_mmbuf[%d].addr=0x%x, size=%d, *use_comm_mmbuf=%d!\n",
-			i, offline_mmbuf[i].addr, offline_mmbuf[i].size, *use_comm_mmbuf);
+			HISI_FB_INFO("offline_mmbuf[%d].addr=0x%x, size=0x%x, *use_comm_mmbuf=%d!\n",
+				i, offline_mmbuf[i].addr, offline_mmbuf[i].size, *use_comm_mmbuf);
 		}
 	}
 }
@@ -6229,8 +6250,9 @@ int hisi_dss_prev_module_set_regs(struct hisi_fb_data_type *hisifd,
 			}
 
 			if (layer->need_cap & (CAP_BASE | CAP_DIM | CAP_PURE_COLOR)) {
-				if (layer->need_cap & CAP_BASE )
+				if (layer->need_cap & CAP_BASE ) {
 					has_base = true;
+				}
 
 				continue;
 			}
@@ -7028,8 +7050,8 @@ uint32_t hisi_dss_mmbuf_alloc(void *handle, uint32_t size)
 	if (g_enable_mmbuf_debug) {
 		HISI_FB_DEBUG("addr=0x%x, size=%d.\n", addr, size);
 	}
-	return addr;
-}
+	return addr; //lint !e429
+}//lint !e429
 
 void hisi_dss_mmbuf_free(void *handle, uint32_t addr, uint32_t size)
 {
@@ -7166,7 +7188,6 @@ void hisi_dss_mmbuf_on(struct hisi_fb_data_type *hisifd)
 		outp32(hisifd->sctrl_base + 0x170, 0x03c00000);
   	       //step 8: bus idle clear
 	}
-
 }
 
 static int hisi_overlay_fastboot(struct hisi_fb_data_type *hisifd)
@@ -7714,7 +7735,7 @@ int hisi_overlay_ioctl_handler(struct hisi_fb_data_type *hisifd,
 			if (g_debug_ovl_online_composer_timediff & 0x1) {
 				hisifb_get_timestamp(&tv1);
 				timediff = hisifb_timestamp_diff(&tv0, &tv1);
-				if (timediff >= g_debug_ovl_online_composer_time_threshold)
+				if (timediff >= g_debug_ovl_online_composer_time_threshold) //lint !e737 !e574
 					HISI_FB_ERR("ONLING_IOCTL_TIMEDIFF is %u us!\n", timediff);
 			}
 
@@ -7818,6 +7839,8 @@ int hisi_overlay_init(struct hisi_fb_data_type *hisifd)
 	hisifd->dpp_ce_end_wq = NULL;
 	hisifd->masklayer_backlight_notify_wq = NULL;
 	hisifd->hiace_end_wq = NULL;
+	hisifd->delayed_cmd_queue_wq = NULL;
+
 	if ((hisifd->index == PRIMARY_PANEL_IDX) ||
 		(hisifd->index == EXTERNAL_PANEL_IDX && !hisifd->panel_info.fake_external) ){
 		snprintf(wq_name, 128, "fb%d_dss_debug", hisifd->index);
@@ -7855,6 +7878,16 @@ int hisi_overlay_init(struct hisi_fb_data_type *hisifd)
 				return -EINVAL;
 			}
 			INIT_WORK(&hisifd->hiace_end_work, hisi_dpp_hiace_end_handle_func);
+		}
+		if (hisifd->panel_info.delayed_cmd_queue_support) {
+			snprintf(wq_name, 128, "fb%d_delayed_cmd_queue", hisifd->index);
+			hisifd->delayed_cmd_queue_wq = create_singlethread_workqueue(wq_name);
+			if (!hisifd->delayed_cmd_queue_wq) {
+				HISI_FB_ERR("fb%d, create delayed cmd queue workqueue failed!\n", hisifd->index);
+				return -EINVAL;
+			}
+			INIT_WORK(&hisifd->delayed_cmd_queue_work, mipi_dsi_delayed_cmd_queue_handle_func);
+			HISI_FB_INFO("Init delayed_cmd_queue_wq!\n");
 		}
 	}
 
@@ -7967,6 +8000,11 @@ int hisi_overlay_deinit(struct hisi_fb_data_type *hisifd)
 		hisifd->ldi_underflow_wq = NULL;
 	}
 
+	if (hisifd->delayed_cmd_queue_wq) {
+		destroy_workqueue(hisifd->delayed_cmd_queue_wq);
+		hisifd->delayed_cmd_queue_wq = NULL;
+	}
+
 	//FIXME:
 	if (!(hisifd->index == EXTERNAL_PANEL_IDX && !hisifd->panel_info.fake_external)) {
 		hisi_cmdlist_deinit(hisifd);
@@ -8014,7 +8052,7 @@ void hisi_vactive0_start_isr_handler(struct hisi_fb_data_type *hisifd)
 			(ktime_to_ns(vsync_ctrl->vactive_timestamp) - ktime_to_ns(pre_vactive_timestamp)));
 	}
 }
-/*lint -e436 -e438 -e527*/
+/*lint -e436 -e438 -e527 -e666 -e648 -e737 -e570*/
 
 int hisi_vactive0_start_config(struct hisi_fb_data_type *hisifd, dss_overlay_t *pov_req)
 {
@@ -8116,7 +8154,11 @@ int hisi_vactive0_start_config(struct hisi_fb_data_type *hisifd, dss_overlay_t *
 					cmdlist_idxs_prev, cmdlist_idxs_prev_prev, cmdlist_idxs,
   					inp32(hisifd->dss_base + DSS_LDI0_OFFSET + LDI_CPU_ITF_INTS)
 				);
-				HISI_FB_ERR("LDI0_VSTATE = 0x%x.\n", inp32(hisifd->dss_base + DSS_LDI0_OFFSET + LDI_VSTATE));
+				panel_check = mipi_panel_check_reg(hisifd, read_value);
+				phy_status = inp32(hisifd->mipi_dsi0_base + MIPIDSI_PHY_STATUS_OFFSET);
+				ldi_vstate = inp32(hisifd->dss_base + DSS_LDI0_OFFSET + LDI_VSTATE);
+				HISI_FB_ERR("panel_check = %d, phy_status = 0x%x, LDI0_VSTATE = 0x%x.\n",
+					panel_check, phy_status, ldi_vstate);
 
 				s_vactive0_timeout_count++;
 				dmd_index = hisifd->index;
@@ -8142,9 +8184,6 @@ int hisi_vactive0_start_config(struct hisi_fb_data_type *hisifd, dss_overlay_t *
 					ldi_data_gate(hisifd, false);
 					mdelay(10);
 
-					panel_check = mipi_panel_check_reg(hisifd, read_value);
-					phy_status = inp32(hisifd->mipi_dsi0_base + MIPIDSI_PHY_STATUS_OFFSET);
-					ldi_vstate = inp32(hisifd->dss_base + DSS_LDI0_OFFSET + LDI_VSTATE);
 					HISI_FB_ERR("fb%d, "
 						"Number of the Errors on DSI : 0x05 = 0x%x\n"
 						"Display Power Mode : 0x0A = 0x%x\n"
@@ -8163,7 +8202,7 @@ int hisi_vactive0_start_config(struct hisi_fb_data_type *hisifd, dss_overlay_t *
 					//waitting te0
 					if ((LDI_VSTATE_V_WAIT_TE0 == ldi_vstate) || (!panel_check && (phy_status & BIT(1)))) {
 						vactive_timeout_count++;
-						if ((vactive_timeout_count >= 3) && hisifd->panel_info.esd_enable) {
+						if ((vactive_timeout_count >= 1) && hisifd->panel_info.esd_enable) {
 							hisifd->esd_recover_state = ESD_RECOVER_STATE_START;
 							if (hisifd->esd_ctrl.esd_check_wq) {
 								queue_work(hisifd->esd_ctrl.esd_check_wq, &(hisifd->esd_ctrl.esd_check_work));
@@ -8359,48 +8398,6 @@ int hisi_vactive0_start_config(struct hisi_fb_data_type *hisifd, dss_overlay_t *
 	return ret;
 }
 
-static int hisi_crc_get_result(struct hisi_fb_data_type *hisifd,
-	dss_overlay_t *pov_req)
-{
-	if (NULL == hisifd) {
-		HISI_FB_ERR("hisifd is NULL");
-		return -EINVAL;
-	}
-	if (NULL == pov_req) {
-		HISI_FB_ERR("pov_req is NULL");
-		return -EINVAL;
-	}
-
-	if (hisifd->index == PRIMARY_PANEL_IDX) {
-		if (pov_req->crc_enable_status == DSS_CRC_OV_EN) {
-			pov_req->crc_info.crc_ov_result = inp32(hisifd->dss_base + DSS_DBG_OFFSET + DBG_CRC_DBG_OV0);
-			pov_req->crc_info.crc_ov_frm = inp32(hisifd->dss_base + DSS_DBG_OFFSET + DBG_CRC_OV0_FRM);
-		} else if (pov_req->crc_enable_status == DSS_CRC_LDI_EN) {
-			pov_req->crc_info.crc_ldi_result = inp32(hisifd->dss_base + GLB_CRC_DBG_LDI0);
-			pov_req->crc_info.crc_ldi_frm = inp32(hisifd->dss_base + GLB_CRC_LDI0_FRM);
-		} else if (pov_req->crc_enable_status == DSS_CRC_SUM_EN) {
-			pov_req->crc_info.crc_ldi_result = inp32(hisifd->dss_base + DSS_DBG_OFFSET + DBG_CRC_DBG_SUM);
-			pov_req->crc_info.crc_ldi_frm = inp32(hisifd->dss_base + DSS_DBG_OFFSET + DBG_CRC_SUM_FRM);
-		}
-	} else if (hisifd->index == EXTERNAL_PANEL_IDX) {
-		if (pov_req->crc_enable_status == DSS_CRC_OV_EN) {
-			pov_req->crc_info.crc_ov_result = inp32(hisifd->dss_base + DSS_DBG_OFFSET + DBG_CRC_DBG_OV1);
-			pov_req->crc_info.crc_ov_frm = inp32(hisifd->dss_base + DSS_DBG_OFFSET + DBG_CRC_OV1_FRM);
-		} else if (pov_req->crc_enable_status == DSS_CRC_LDI_EN) {
-			pov_req->crc_info.crc_ldi_result = inp32(hisifd->dss_base + GLB_CRC_DBG_LDI1);
-			pov_req->crc_info.crc_ldi_frm = inp32(hisifd->dss_base + GLB_CRC_LDI1_FRM);
-		} else if (pov_req->crc_enable_status == DSS_CRC_SUM_EN) {
-			pov_req->crc_info.crc_ldi_result = inp32(hisifd->dss_base + DSS_DBG_OFFSET + DBG_CRC_DBG_SUM);
-			pov_req->crc_info.crc_ldi_frm = inp32(hisifd->dss_base + DSS_DBG_OFFSET + DBG_CRC_SUM_FRM);
-		}
-	} else {
-		HISI_FB_ERR("fb%d, not support!", hisifd->index);
-		return -EINVAL;
-	}
-
-	return 0;
-}
-
 void hisi_dss_debug_func(struct work_struct *work)
 {
 	struct hisi_fb_data_type *hisifd = NULL;
@@ -8413,7 +8410,7 @@ void hisi_dss_debug_func(struct work_struct *work)
 
 	dumpDssOverlay(hisifd, &hisifd->ov_req);
 }
-
+/*lint +e436 +e438 +e527 +e666 +e648 +e737 +e570*/
 void hisi_ldi_underflow_handle_func(struct work_struct *work)
 {
 	struct hisi_fb_data_type *hisifd = NULL;
@@ -8459,6 +8456,7 @@ void hisi_ldi_underflow_handle_func(struct work_struct *work)
 	hisifb_deactivate_vsync(hisifd);
 	hisifb_pipe_clk_set_underflow_flag(hisifd, false);
 	up(&hisifd->blank_sem0);
+	HISI_FB_INFO("fb%d, -.\n", hisifd->index);
 	return;
 
 	hisifb_activate_vsync(hisifd);
@@ -8488,7 +8486,5 @@ void hisi_ldi_underflow_handle_func(struct work_struct *work)
 
 	HISI_FB_INFO("fb%d, -. cmdlist_idxs_prev = 0x%x, cmdlist_idxs_prev_prev = 0x%x\n", hisifd->index, cmdlist_idxs_prev, cmdlist_idxs_prev_prev);
 }
-
-/*lint +e436 +e438 +e527*/
-/*lint +e778 +e732 +845 +774 +e438*/
+/*lint +e778 +e732 +e845 +e774 +e438 +e613 +e502 +e647 +e573 +e679 +e574 +e578 +e568 +e685 +e737*/
 

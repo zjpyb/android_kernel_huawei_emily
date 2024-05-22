@@ -21,7 +21,6 @@
 #include <linux/miscdevice.h>
 #include <linux/module.h>
 #include <linux/slab.h>
-#include <linux/uaccess.h>
 
 #include <chipset_common/dubai/dubai_common.h>
 
@@ -42,6 +41,8 @@
 #define IOCTL_TASK_CPUPOWER_ENABLE _IOR(DUBAI_MAGIC, 14, bool)
 #define IOCTL_AOD_GET_DURATION _IOR(DUBAI_MAGIC, 15, uint64_t)
 #define IOCTL_BATTERY_RM_GET _IOR(DUBAI_MAGIC, 16, int32_t)
+#define IOCTL_WAKEUP_SOURCE_NAME_REQUEST _IOW(DUBAI_MAGIC, 17, long long)
+#define IOCTL_PROC_DECOMPOSE_SET _IOW(DUBAI_MAGIC, 18, struct dev_transmit_t)
 
 static long dubai_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
@@ -49,211 +50,60 @@ static long dubai_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	void __user *argp = (void __user *)arg;
 
 	switch (cmd) {
-	case IOCTL_GPU_ENABLE: {
-		bool enable;
-
-		if (copy_from_user(&enable, argp, sizeof(bool))) {
-			DUBAI_LOGE("Failed to set gpu statistics enable");
-			rc = -EFAULT;
-			break;
-		}
-		dubai_set_gpu_enable(enable);
+	case IOCTL_GPU_ENABLE:
+		rc = dubai_set_gpu_enable(argp);
 		break;
-	}
-	case IOCTL_GPU_INFO_GET: {
-		rc = dubai_get_gpu_info(arg);
+	case IOCTL_GPU_INFO_GET:
+		rc = dubai_get_gpu_info(argp);
 		break;
-	}
-	case IOCTL_PROC_CPUTIME_ENABLE: {
-		bool enable;
-
-		if (copy_from_user(&enable, argp, sizeof(bool))) {
-			DUBAI_LOGE("Failed to set process cputime statistics enable");
-			rc = -EFAULT;
-			break;
-		}
-		dubai_proc_cputime_enable(enable);
+	case IOCTL_PROC_CPUTIME_ENABLE:
+		rc = dubai_proc_cputime_enable(argp);
 		break;
-	}
-	case IOCTL_PROC_CPUTIME_REQUEST: {
-		long long timestamp;
-
-		if (copy_from_user(&timestamp, argp, sizeof(long long))) {
-			DUBAI_LOGE("Failed to get process cputime request timestamp");
-			rc = -EFAULT;
-			break;
-		}
-
-		rc = dubai_get_proc_cputime(timestamp);
+	case IOCTL_PROC_CPUTIME_REQUEST:
+		rc = dubai_get_proc_cputime(argp);
 		break;
-	}
-	case IOCTL_PROC_NAME_GET: {
-		int size;
-		struct process_name *process = NULL;
-		struct dev_transmit_t *transmit = NULL;
-
-		size = sizeof(struct dev_transmit_t)
-			+ sizeof(struct process_name);
-		transmit = kzalloc(size, GFP_KERNEL);
-		if (transmit == NULL) {
-			DUBAI_LOGE("Failed to allocate memory for process name");
-			rc = -ENOMEM;
-			break;
-		}
-		if (copy_from_user(transmit, argp, size)) {
-			rc = -EFAULT;
-			kfree(transmit);
-			break;
-		}
-
-		process = (struct process_name *)transmit->data;
-		dubai_get_proc_name(process);
-		if (copy_to_user(argp, transmit, size))
-			rc = -EFAULT;
-		kfree(transmit);
+	case IOCTL_PROC_NAME_GET:
+		rc = dubai_get_proc_name(argp);
 		break;
-	}
-	case IOCTL_LOG_STATS_ENABLE: {
-		bool enable;
-
-		if (copy_from_user(&enable, argp, sizeof(bool))) {
-			DUBAI_LOGE("Failed to get kworker enable value");
-			rc = -EFAULT;
-			break;
-		}
-		dubai_log_stats_enable(enable);
+	case IOCTL_LOG_STATS_ENABLE:
+		rc = dubai_log_stats_enable(argp);
 		break;
-	}
-	case IOCTL_KWORKER_INFO_REQUEST: {
-		long long timestamp;
-
-		if (copy_from_user(&timestamp, argp, sizeof(long long))) {
-			DUBAI_LOGE("Failed to get kworker info request timestamp");
-			rc = -EFAULT;
-			break;
-		}
-		rc = dubai_get_kworker_info(timestamp);
+	case IOCTL_KWORKER_INFO_REQUEST:
+		rc = dubai_get_kworker_info(argp);
 		break;
-	}
-	case IOCTL_UEVENT_INFO_REQUEST: {
-		long long timestamp;
-
-		if (copy_from_user(&timestamp, argp, sizeof(long long))) {
-			DUBAI_LOGE("Failed to get uevent info request timestamp");
-			rc = -EFAULT;
-			break;
-		}
-		rc = dubai_get_uevent_info(timestamp);
+	case IOCTL_UEVENT_INFO_REQUEST:
+		rc = dubai_get_uevent_info(argp);
 		break;
-	}
-	case IOCTL_BRIGHTNESS_ENABLE: {
-		bool enable;
-
-		if (copy_from_user(&enable, argp, sizeof(bool))) {
-			DUBAI_LOGE("Failed to get brightness enable value");
-			rc = -EFAULT;
-			break;
-		}
-		dubai_set_brightness_enable(enable);
+	case IOCTL_BRIGHTNESS_ENABLE:
+		rc = dubai_set_brightness_enable(argp);
 		break;
-	}
-	case IOCTL_BRIGHTNESS_GET: {
-		uint32_t brightness = 0;
-
-		rc = dubai_get_brightness_info(&brightness);
-		if (rc < 0)
-			break;
-
-		if (copy_to_user(argp, &brightness, sizeof(uint32_t)))
-			rc = -EFAULT;
+	case IOCTL_BRIGHTNESS_GET:
+		rc = dubai_get_brightness_info(argp);
 		break;
-	}
-	case IOCTL_BINDER_STATS_ENABLE: {
-		bool enable;
-
-		if (copy_from_user(&enable, argp, sizeof(bool))) {
-			DUBAI_LOGE("Failed to get kworker enable value");
-			rc = -EFAULT;
-			break;
-		}
-		dubai_binder_stats_enable(enable);
+	case IOCTL_BINDER_STATS_ENABLE:
+		rc = dubai_binder_stats_enable(argp);
 		break;
-	}
-	case IOCTL_BINDER_STATS_LIST_SET: {
-		int size, i, count, length, remain;
-		struct dev_transmit_t *transmit = NULL;
-		char *p = NULL;
-
-		if (copy_from_user(&length, argp, sizeof(int))) {
-			DUBAI_LOGE("Failed to get binder stats length value");
-			break;
-		}
-
-		count = length / NAME_LEN;
-		remain = length % NAME_LEN;
-		if ((count <= 0) || (count > BINDER_STATS_LIST_LEN) || (remain != 0)) {
-			DUBAI_LOGE("Invalid params, length: %d, count: %d, remain: %d", length, count, remain);
-			break;
-		}
-
-		size = sizeof(struct dev_transmit_t) + length;
-		transmit = kzalloc(size, GFP_KERNEL);
-		if (transmit == NULL) {
-			DUBAI_LOGE("Failed to allocate memory for binder stats list");
-			rc = -ENOMEM;
-			break;
-		}
-		if (copy_from_user(transmit, argp, size)) {
-			rc = -EFAULT;
-			kfree(transmit);
-			break;
-		}
-
-		dubai_init_binder_stats_list();
-		p = (char *)transmit->data;
-		for (i = 0; i < count; i++) {
-			dubai_set_binder_stats_list(p);
-			p += NAME_LEN;
-		}
-		kfree(transmit);
+	case IOCTL_BINDER_STATS_LIST_SET:
+		rc = dubai_set_binder_list(argp);
 		break;
-	}
-	case IOCTL_BINDER_STATS_REQUEST: {
-		long long timestamp;
-
-		if (copy_from_user(&timestamp, argp, sizeof(long long))) {
-			DUBAI_LOGE("Failed to get binder stats request timestamp");
-			rc = -EFAULT;
-			break;
-		}
-
-		rc = dubai_get_binder_stats(timestamp);
+	case IOCTL_BINDER_STATS_REQUEST:
+		rc = dubai_get_binder_stats(argp);
 		break;
-	}
-	case IOCTL_TASK_CPUPOWER_ENABLE: {
-		bool enable;
-
-		enable = dubai_get_task_cpupower_enable();
-		if (copy_to_user(argp, &enable, sizeof(bool)))
-			rc = -EFAULT;
+	case IOCTL_TASK_CPUPOWER_ENABLE:
+		rc = dubai_get_task_cpupower_enable(argp);
 		break;
-	}
-	case IOCTL_AOD_GET_DURATION: {
-		uint64_t duration;
-
-		duration = dubai_get_aod_duration();
-		if (copy_to_user(argp, &duration, sizeof(uint64_t)))
-			rc = -EFAULT;
+	case IOCTL_AOD_GET_DURATION:
+		rc = dubai_get_aod_duration(argp);
 		break;
-	}
-	case IOCTL_BATTERY_RM_GET: {
-		int rm;
-
-		rm = dubai_get_battery_rm();
-		if (copy_to_user(argp, &rm, sizeof(int)))
-			rc = -EFAULT;
+	case IOCTL_BATTERY_RM_GET:
+		rc = dubai_get_battery_rm(argp);
 		break;
-	}
+	case IOCTL_WAKEUP_SOURCE_NAME_REQUEST:
+		rc = dubai_get_ws_lasting_name(argp);
+		break;
+	case IOCTL_PROC_DECOMPOSE_SET:
+		rc = dubai_set_proc_decompose(argp);
+		break;
 	default:
 		rc = -EINVAL;
 		break;

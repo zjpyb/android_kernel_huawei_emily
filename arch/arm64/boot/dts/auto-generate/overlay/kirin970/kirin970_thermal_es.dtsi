@@ -12,6 +12,9 @@
 		tsens: tsens@0{
 			compatible = "hisi,tsens";
 			hisi,sensors = <5>;
+			hisi,tsensor_name = "cluster0","cluster1","gpu","modem","ddr";
+			/*tsensor mode: disable->0, enable->1;*/
+			hisi,tsensor_mode = <1 1 1 1 1>;
 			hisi,detect_cluster0_regno = <0>;
 			hisi,detect_cluster1_regno = <1>;
 			hisi,detect_gpu_regno = <2>;
@@ -150,6 +153,14 @@
 		cpu_temp_threshold {
 			hisilicon,down_threshold =  <95000>;
 			hisilicon,up_threshold = <85000>;
+		};
+
+		ipa_sensors_info {
+			hisilicon,cluster_num = <2>;
+			hisilicon,ipa_cpufreq_table_index = <0 4>;/*little big*/
+			hisilicon,ipa_sensor_num = <3>;
+			hisilicon,ipa_actor_name = "cluster0","cluster1","gpu";
+			hisilicon,ipa_actor_index = <0 1 2>;
 		};
 
 		capacitances {

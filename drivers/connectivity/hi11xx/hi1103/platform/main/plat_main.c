@@ -55,12 +55,15 @@ oal_int32  plat_init_etc(oal_void)
 #if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
 #ifdef HI110X_DRV_VERSION
     OAL_IO_PRINT("HI110X_DRV_VERSION: %s\r\n", HI110X_DRV_VERSION);
-    OAL_IO_PRINT("HI110X_DRV compileTime: %s, %s\r\n", __DATE__,__TIME__);
 #endif
     if(false == is_my_chip_etc())
     {
         return OAL_SUCC;
     }
+#endif
+
+#ifdef CONFIG_HUAWEI_DSM
+    hw_1103_register_wifi_dsm_client();
 #endif
 
 #if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
@@ -223,9 +226,12 @@ chr_miscdevs_init_fail:
      hi110x_board_exit_etc();
 #endif
 board_init_fail:
-
-          CHR_EXCEPTION_REPORT(CHR_PLATFORM_EXCEPTION_EVENTID, CHR_SYSTEM_WIFI, CHR_LAYER_DRV, CHR_WIFI_DRV_EVENT_PLAT, CHR_PLAT_DRV_ERROR_SDIO_INIT);
-    
+#ifdef CONFIG_HUAWEI_DSM
+    /*dmd驱动问题，此处释放会概率性触发dmd驱动死机，
+      dmd流程注销和poll存在冲突*/
+    //hw_1103_unregister_wifi_dsm_client();
+#endif
+    CHR_EXCEPTION_REPORT(CHR_PLATFORM_EXCEPTION_EVENTID, CHR_SYSTEM_WIFI, CHR_LAYER_DRV, CHR_WIFI_DRV_EVENT_PLAT, CHR_PLAT_DRV_ERROR_SDIO_INIT);
     return l_return;
 }
 
@@ -270,6 +276,10 @@ oal_void plat_exit_etc(oal_void)
     plat_exception_reset_exit_etc();
 #if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
     ini_cfg_exit_etc();
+#endif
+
+#ifdef CONFIG_HUAWEI_DSM
+    hw_1103_unregister_wifi_dsm_client();
 #endif
     return;
 }

@@ -159,7 +159,7 @@ static int synaptics_rmi4_status_resume(struct synaptics_rmi4_data *rmi4_data);
 static int synaptics_rmi4_status_save(struct synaptics_rmi4_data *rmi4_data);
 static void synaptics_rmi4_empty_fn_list(struct synaptics_rmi4_data *rmi4_data);
 static void synaptics_rmi4_f1a_kfree(struct synaptics_rmi4_fn *fhandler);
-static int synaptics_get_debug_data(struct ts_rawdata_info *info,
+static int synaptics_get_debug_data(struct ts_diff_data_info *info,
 				    struct ts_cmd_node *out_cmd);
 static int synaptics_get_rawdata(struct ts_rawdata_info *info,
 				 struct ts_cmd_node *out_cmd);
@@ -489,10 +489,10 @@ static int synaptics_interrupt_num;
 
 static void synaptics_gpio_reset(void);
 static void synaptics_power_on(void);
-static void synatpics_regulator_enable(void);
+//static void synatpics_regulator_enable(void);
 static void synaptics_power_on_gpio_set(void);
 static void synaptics_power_off(void);
-static void synatpics_regulator_disable(void);
+//static void synatpics_regulator_disable(void);
 static void synaptics_power_off_gpio_set(void);
 static bool synaptics_rmi4_crc_in_progress(struct synaptics_rmi4_data
 					   *rmi4_data,
@@ -1089,7 +1089,7 @@ static int synaptics_get_calibration_info(struct ts_calibration_info_param *info
 	return NO_ERR;
 }
 
-static int synaptics_get_debug_data(struct ts_rawdata_info *info,
+static int synaptics_get_debug_data(struct ts_diff_data_info *info,
 				    struct ts_cmd_node *out_cmd)
 {
 	int retval = 0;
@@ -1136,7 +1136,7 @@ static int synaptics_reconstruct_barcode(struct ts_oem_info_param *info)
 	len = info->buff[offset1*16 + 1];
 	if ((type == 0x00 && len == 0x00) ||(type == 0xFF && len == 0xFF)) {
 		 memcpy(&(info->buff[offset1*16]), tp_type_cmd, tp_type_cmd[1]*16);
-		 TS_LOG_INFO("Will write the data to info_buff, offset is %s", offset1);
+		 TS_LOG_INFO("Will write the data to info_buff, offset is %d", offset1);
 		 return retval;
 	 }
 
@@ -1144,7 +1144,7 @@ static int synaptics_reconstruct_barcode(struct ts_oem_info_param *info)
 	len = info->buff[offset2*16 + 1];
 	if ((type == 0x00 && len == 0x00) ||(type == 0xFF && len == 0xFF)) {
 		 memcpy(&(info->buff[offset2*16]), tp_type_cmd, tp_type_cmd[1]*16);
-		 TS_LOG_INFO("Will write the data to info_buff, offset is %s", offset2);
+		 TS_LOG_INFO("Will write the data to info_buff, offset is %d", offset2);
 		 return retval;
 	 }
 
@@ -1168,7 +1168,7 @@ static int synaptics_reconstruct_brightness(struct ts_oem_info_param *info)
 	len = info->buff[offset1*16 + 1];
 	if ((type == 0x00 && len == 0x00) ||(type == 0xFF && len == 0xFF)) {
 		 memcpy(&(info->buff[offset1*16]), tp_type_cmd, tp_type_cmd[1]*16);
-		 TS_LOG_INFO("Will write the data to info_buff, offset is %s", offset1);
+		 TS_LOG_INFO("Will write the data to info_buff, offset is %d", offset1);
 		 return retval;
 	}
 
@@ -1176,7 +1176,7 @@ static int synaptics_reconstruct_brightness(struct ts_oem_info_param *info)
 	len = info->buff[offset2*16 + 1];
 	if ((type == 0x00 && len == 0x00) ||(type == 0xFF && len == 0xFF)) {
 		 memcpy(&(info->buff[offset2*16]), tp_type_cmd, tp_type_cmd[1]*16);
-		 TS_LOG_INFO("Will write the data to info_buff, offset is %s", offset2);
+		 TS_LOG_INFO("Will write the data to info_buff, offset is %d", offset2);
 		 return retval;
 	 }
 
@@ -1200,7 +1200,7 @@ static int synaptics_reconstruct_whitepoint(struct ts_oem_info_param *info)
 	len = info->buff[offset1*16 + 1];
 	if ((type == 0x00 && len == 0x00) ||(type == 0xFF && len == 0xFF)) {
 		memcpy(&(info->buff[offset1*16]), tp_type_cmd, tp_type_cmd[1]*16);
-		TS_LOG_INFO("Will write the data to info_buff, offset is %s", offset1);
+		TS_LOG_INFO("Will write the data to info_buff, offset is %d", offset1);
 		return retval;
 	}
 
@@ -1208,7 +1208,7 @@ static int synaptics_reconstruct_whitepoint(struct ts_oem_info_param *info)
 	len = info->buff[offset2*16 + 1];
 	if ((type == 0x00 && len == 0x00) ||(type == 0xFF && len == 0xFF)) {
 		memcpy(&(info->buff[offset2*16]), tp_type_cmd, tp_type_cmd[1]*16);
-		TS_LOG_INFO("Will write the data to info_buff, offset is %s", offset2);
+		TS_LOG_INFO("Will write the data to info_buff, offset is %d", offset2);
 		return retval;
 	}
 
@@ -1241,7 +1241,7 @@ static int synaptics_reconstruct_repair_recode(struct ts_oem_info_param *info)
 
 		if ((type == 0x00 && len == 0x00) ||(type == 0xFF && len == 0xFF)) {
 			memcpy(&(info->buff[offset*16]), tp_type_cmd, tp_type_cmd[1]*16);
-			TS_LOG_INFO("Will write the data to info_buff, offset is %s", offset);
+			TS_LOG_INFO("Will write the data to info_buff, offset is %d", offset);
 			break;
 		} else if( offset == TS_NV_STRUCTURE_REPAIR_OFFSET5 ) {
 			TS_LOG_INFO("%s repaire recode is full, could not write into the data\n", __func__);
@@ -1416,7 +1416,7 @@ static int synaptics_set_oem_info(struct ts_oem_info_param *info)
 	} else {
 		error = EINVAL;
 		tp_result_info[0] = TS_CHIP_WRITE_ERROR;
-		TS_LOG_INFO("%s: invalid test cmd:%s\n", __func__);
+		TS_LOG_INFO("%s: invalid test cmd\n", __func__);
 		return error;
 	}
 
@@ -1559,7 +1559,6 @@ static int synaptics_get_oem_info(struct ts_oem_info_param *info)
 	int index =0;
 	int latest_index = 0;
 	int i;
-	int count = 0;
 	int infolength = 0;
 	TS_LOG_INFO("%s called\n", __func__);
 
@@ -2142,7 +2141,7 @@ void synaptics_parse_chip_specific_dts(struct ts_device_data *chip_data)
 		g_ts_data.feature_info.roi_info.roi_data_addr = (u16) read_val;
 	}
 
-	retval = of_property_read_string(device, "producer", &producer);
+	retval = of_property_read_string(device, "producer", (const char **)&producer);
 	if (NULL != producer) {
 		TS_LOG_INFO("producer = %s\n", producer);
 		rmi4_data->module_name = producer;
@@ -2250,7 +2249,7 @@ void synaptics_parse_chip_specific_dts(struct ts_device_data *chip_data)
 	/* syna_wx_wy */
 	retval =
 	    of_property_read_string(device, "adv_width",
-				&adv_width);
+				(const char **)&adv_width);
 	if (retval || !adv_width) {
 		TS_LOG_INFO
 		    ("get device adv_width not exit,use default value\n");
@@ -2341,7 +2340,7 @@ static int synaptics_parse_dts(struct device_node *device,
 
 	retval =
 	    of_property_read_u32(device, SYNAPTICS_WD_CHECK,
-				 &chip_data->need_wd_check_status);
+				 (u32 *)&chip_data->need_wd_check_status);
 	if (retval) {
 		TS_LOG_ERR("get device ic_type failed\n");
 	}
@@ -2382,7 +2381,7 @@ static int synaptics_parse_dts(struct device_node *device,
 
 	retval =
 	    of_property_read_u32(device, "flip_x",
-				 &chip_data->flip_x);
+				 (u32 *)&chip_data->flip_x);
 	if (retval) {
 		TS_LOG_INFO("device flip_x use default\n");
 		chip_data->flip_x = true;
@@ -2390,7 +2389,7 @@ static int synaptics_parse_dts(struct device_node *device,
 
 	retval =
 	    of_property_read_u32(device, "flip_y",
-				 &chip_data->flip_y);
+				 (u32 *)&chip_data->flip_y);
 	if (retval) {
 		TS_LOG_INFO("device flip_y use default\n");
 		chip_data->flip_y = true;
@@ -2430,7 +2429,7 @@ static int synaptics_parse_dts(struct device_node *device,
 	}
 	retval =
 	    of_property_read_string(device, SYNAPTICS_TEST_TYPE,
-				 &chip_data->tp_test_type);
+				 (const char **)&chip_data->tp_test_type);
 	if (retval) {
 		TS_LOG_INFO
 		    ("get device SYNAPTICS_TEST_TYPE not exit,use default value\n");
@@ -2513,7 +2512,7 @@ static int synaptics_parse_dts(struct device_node *device,
 
 	retval =
 	    of_property_read_u32(device, "disable_reset_bit",
-				 &chip_data->disable_reset);
+				 (u32 *)&chip_data->disable_reset);
 	if (!retval) {
 		TS_LOG_INFO("find disable_reset_bit, diasble_reset = %d\n",
 			    chip_data->disable_reset);
@@ -5009,7 +5008,6 @@ static int synaptics_rmi4_set_page_f35(struct synaptics_rmi4_data *rmi4_data,uns
 	int retval = 0;
 	unsigned char buf[PAGE_SELECT_LEN];
 	unsigned char page;
-	struct i2c_client *i2c = to_i2c_client(rmi4_data->synaptics_dev->dev.parent);
 	struct i2c_msg msg[1];
 
 	msg[0].addr = FORCE_TOUCH_I2C;
@@ -5030,13 +5028,10 @@ static int synaptics_rmi4_i2c_read_f35(struct synaptics_rmi4_data *rmi4_data,uns
 	unsigned char retry = 0;
 	unsigned char buf;
 	unsigned char rd_msgs = 1;
-	unsigned char index = 0;
 	unsigned char xfer_msgs;
 	unsigned char remaining_msgs;
 	unsigned short data_offset = 0;
 	unsigned short remaining_length = length;
-	struct i2c_client *i2c = to_i2c_client(rmi4_data->synaptics_dev->dev.parent);
-	struct i2c_adapter *adap = g_ts_data.client->adapter;
 	struct i2c_msg msg[rd_msgs + 1];
 
 	retval = synaptics_rmi4_set_page_f35(rmi4_data, addr);
@@ -5082,8 +5077,6 @@ static int synaptics_rmi4_i2c_write_f35(struct synaptics_rmi4_data *rmi4_data,un
 	int retval;
 	unsigned char retry = 0;
 	unsigned char *buf;
-	unsigned char page;
-	struct i2c_client *i2c = to_i2c_client(rmi4_data->synaptics_dev->dev.parent);
 	struct i2c_msg msg[1];
 
 	if (length >= F35_WRITE_LENGTH_MAX) {

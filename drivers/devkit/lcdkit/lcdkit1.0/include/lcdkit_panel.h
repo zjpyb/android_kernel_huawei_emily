@@ -117,7 +117,7 @@
 #define LCDKIT_TS_RESUME_AFTER_DIS_ON   BIT(0)
 #define LCDKIT_TS_RESUME_BEFORE_LCD_RST  BIT(1)
 
-
+#define LCDKIT_MAX_PANEL_NAME_LEN (128)
 #define MAX_BUF 60
 #define LCD_REG_LENGTH_MAX 200
 #define LCD_REG_NUM 50
@@ -157,7 +157,6 @@ enum
     GET_BLMAXNIT_FROM_DDIC = 1,
 };
 
-typedef void (* dcs_level_trans_func_t)(struct lcdkit_dsi_panel_cmds *, int, int);
 #define REG51_MODE_NUM 2
 #define REG90_MODE_NUM 1
 #define SET_CABC_PWM_CMD_51 0x51
@@ -240,80 +239,6 @@ typedef void (* dcs_level_trans_func_t)(struct lcdkit_dsi_panel_cmds *, int, int
         } \
         *ptr_out_value = (char)temp; \
     } while (0)
-
-static char* sence_array[SENCE_ARRAY_SIZE] = {
-    "LCD_INCOME0",   "MMI0",   "RUNNINGTEST0", "PROJECT_MENU0",
-    "LCD_INCOME1",   "MMI1",   "RUNNINGTEST1",  "PROJECT_MENU1",
-    "LCD_INCOME2",   "MMI2",   "RUNNINGTEST2",  "PROJECT_MENU2",
-    "LCD_INCOME3",   "MMI3",   "RUNNINGTEST3",  "PROJECT_MENU3",
-    "LCD_INCOME4",   "MMI4",   "RUNNINGTEST4",  "PROJECT_MENU4",
-    "LCD_INCOME5",   "MMI5",   "RUNNINGTEST5",  "PROJECT_MENU5",
-    "LCD_INCOME6",   "MMI6",   "RUNNINGTEST6",  "PROJECT_MENU6",
-    "LCD_INCOME7",   "MMI7",   "RUNNINGTEST7",  "PROJECT_MENU7",
-    "LCD_INCOME8",   "MMI8",   "RUNNINGTEST8",  "PROJECT_MENU8",
-    "LCD_INCOME9",   "MMI9",   "RUNNINGTEST9",  "PROJECT_MENU9",
-    "LCD_INCOME10",  "MMI10",  "RUNNINGTEST10",  "PROJECT_MENU10",
-    "LCD_INCOME11",  "MMI11",  "RUNNINGTEST11",  "PROJECT_MENU11",
-    "LCD_INCOME12",  "MMI12",  "RUNNINGTEST12",  "PROJECT_MENU12",
-    "LCD_INCOME13",  "MMI13",  "RUNNINGTEST13",  "PROJECT_MENU13",
-    "LCD_INCOME14",  "MMI14",  "RUNNINGTEST14",  "PROJECT_MENU14",
-    "LCD_INCOME15",  "MMI15",  "RUNNINGTEST15",  "PROJECT_MENU15",
-    "LCD_INCOME16",  "MMI16",  "RUNNINGTEST16",  "PROJECT_MENU16",
-    "LCD_INCOME17",  "MMI17",  "RUNNINGTEST17",  "PROJECT_MENU17",
-    "CURRENT1_0",    "CURRENT1_1", "CURRENT1_2",  "CURRENT1_3",
-    "CURRENT1_4",    "CURRENT1_5", "CHECKSUM1",  "CHECKSUM2",
-    "CHECKSUM3",     "CHECKSUM4", "BL_OPEN_SHORT",  "PCD_ERRORFLAG",
-    "DOTINVERSION",  "CHECKREG", "COLUMNINVERSION",   "POWERONOFF",
-    "BLSWITCH",};
-
-static char* cmd_array[SENCE_ARRAY_SIZE] = {
-    "CURRENT1_0",   "CURRENT1_0",  "CURRENT1_0",  "CURRENT1_0",//current test0
-    "CURRENT1_1",   "CURRENT1_1",  "CURRENT1_1",  "CURRENT1_1",//current test1
-    "CURRENT1_2",   "CURRENT1_2",  "CURRENT1_2",  "CURRENT1_2",//current test2
-    "CURRENT1_3",   "CURRENT1_3",  "CURRENT1_3",  "CURRENT1_3",//current test3
-    "CURRENT1_4",   "CURRENT1_4",  "CURRENT1_4",  "CURRENT1_4",//current test4
-    "CURRENT1_5",   "CURRENT1_5",  "CURRENT1_5",  "CURRENT1_5",//current test5
-    "CHECKSUM1",   "CHECKSUM1",   "CHECKSUM1", "CHECKSUM1",//checksum1
-    "CHECKSUM2",   "CHECKSUM2",   "CHECKSUM2", "CHECKSUM2",//checksum2
-    "CHECKSUM3",    "CHECKSUM3",   "CHECKSUM3", "CHECKSUM3",//checksum3
-    "CHECKSUM4",   "CHECKSUM4",   "CHECKSUM4", "CHECKSUM4",//checksum4
-    "BL_OPEN_SHORT",   "BL_OPEN_SHORT",   "BL_OPEN_SHORT", "BL_OPEN_SHORT",//backlight open short test
-    "PCD_ERRORFLAG",   "PCD_ERRORFLAG",  "PCD_ERRORFLAG", "PCD_ERRORFLAG", // PCD and errorflag test
-    "DOTINVERSION",    "DOTINVERSION",  "DOTINVERSION", "DOTINVERSION",// dot inversion test
-    "CHECKREG",    "CHECKREG",  "CHECKREG", "CHECKREG",// check ic status reg
-    "COLUMNINVERSION", "COLUMNINVERSION", "COLUMNINVERSION", "COLUMNINVERSION", //column inversion test
-    "POWERONOFF",   "POWERONOFF",  "POWERONOFF",  "POWERONOFF",// power on/off test
-    "BLSWITCH",    "BLSWITCH",  "BLSWITCH", "BLSWITCH",// backlight switch test
-    "GPU_TEST",   "GPU_TEST",  "GPU_TEST", "GPU_TEST", //GPU SLT test
-    "/sys/class/ina231/ina231_0/ina231_set," \
-    "/sys/class/ina231/ina231_0/ina231_value," \
-    "1,9999999,1,9999999,1,99999",
-    "/sys/class/ina231/ina231_0/ina231_set," \
-    "/sys/class/ina231/ina231_0/ina231_value," \
-    "1,9999999,1,9999999,1,99999",
-    "/sys/class/ina231/ina231_0/ina231_set," \
-    "/sys/class/ina231/ina231_0/ina231_value," \
-    "1,9999999,1,9999999,1,99999",
-    "/sys/class/ina231/ina231_0/ina231_set," \
-    "/sys/class/ina231/ina231_0/ina231_value," \
-    "1,9999999,1,9999999,1,99999",
-    "/sys/class/ina231/ina231_0/ina231_set," \
-    "/sys/class/ina231/ina231_0/ina231_value," \
-    "1,9999999,1,9999999,1,99999",
-    "/sys/class/ina231/ina231_0/ina231_set," \
-    "/sys/class/ina231/ina231_0/ina231_value," \
-    "1,9999999,1,9999999,1,99999",
-    "/sys/class/graphics/fb0/lcd_checksum",
-    "/sys/class/graphics/fb0/lcd_checksum",
-    "/sys/class/graphics/fb0/lcd_checksum",
-    "/sys/class/graphics/fb0/lcd_checksum",
-    "/sys/class/lm36923/lm36923/self_test",
-    "/sys/class/graphics/fb0/amoled_pcd_errflag_check",
-    "/sys/class/graphics/fb0/lcd_inversion_mode",
-    "/sys/class/graphics/fb0/lcd_check_reg",
-    "/sys/class/graphics/fb0/lcd_inversion_mode",
-    "/sys/class/graphics/fb0/lcd_check_reg",
-    "/sys/class/graphics/fb0/lcd_check_reg",};
 
 /* gpio desc */
 struct lcdkit_gpio_desc
@@ -507,6 +432,9 @@ enum
 	SHARP_TD4336_HMA_PANEL_ID = 11,
 	LG_NT36772A_HMA_PANEL_ID = 12,
 	BOE_HX83112E_HMA_PANEL_ID = 13,
+	JDI_TD4336_RT8555_HMA_PANEL_ID = 14,
+	SHARP_TD4336_RT8555_HMA_PANEL_ID = 15,
+	LG_NT36772A_RT8555_HMA_PANEL_ID = 16,
 	RGBW_PANEL_ID_MAX,
 };
 
@@ -575,6 +503,12 @@ enum esd_judge_type {
     ESD_BIT_VALID,
 };
 
+enum {
+    POWER_ON = 0,
+    POWER_TS_SUSPEND = 1,
+    POWER_OFF = 2,
+};
+
 struct lcdkit_panel_infos
 {
     /*panel information*/
@@ -622,6 +556,8 @@ struct lcdkit_panel_infos
     /*backlight sem*/
     struct semaphore bl_sem;
     struct semaphore lcdkit_cmd_sem;
+    struct semaphore thp_second_poweroff_sem;
+    int panel_power_state;
 
     int idle2_lcd_reset_low;
     int idle2_lcd_on_reset_low_to_high;
@@ -655,6 +591,7 @@ struct lcdkit_panel_infos
     /*lcd off command*/
     struct lcdkit_dsi_panel_cmds display_off_cmds;
     struct lcdkit_dsi_panel_cmds display_off_second_cmds;
+    struct lcdkit_dsi_panel_cmds pt_display_off_cmds;
     /*backlight command*/
     struct lcdkit_dsi_panel_cmds backlight_cmds;
 
@@ -732,8 +669,10 @@ struct lcdkit_panel_infos
     struct lcdkit_dsi_panel_cmds revert_scan_cmds;
     u8 scan_support;
     u8 tp_lcd_reset_sync;
+    u8 rst_set_low_before_resume;
     /*scan mode*/
     int scan_mode;
+    u8 thp_proximity_support;
 
     /*esd check commond*/
     struct lcdkit_dsi_panel_cmds esd_cmds;
@@ -743,6 +682,7 @@ struct lcdkit_panel_infos
     struct lcdkit_dsi_panel_cmds esd_curic_cmds;
     struct lcdkit_dsi_panel_cmds esd_oriic_cmds;
     u8 esd_support;
+    u8 fac_esd_support;
     u8 esd_check_num;
     u8 esd_expect_value_type;
     u8 use_second_ic;
@@ -921,6 +861,10 @@ struct lcdkit_panel_infos
     struct lcdkit_dsi_panel_cmds bl_befreadconfig_cmds;
     struct lcdkit_dsi_panel_cmds bl_aftreadconfig_cmds;
 
+    /*for panel dimming*/
+    u32 dis_pandimming_bf_sleepin_flag;
+    struct lcdkit_dsi_panel_cmds disable_pan_dimming_cmds;
+    struct lcdkit_dsi_panel_cmds enable_pan_dimming_cmds;
     /*tp resume ctrl*/
     u8 tp_resume_no_sync;
 
@@ -982,6 +926,11 @@ struct lcdkit_panel_infos
     u8 reset_pull_high_flag;
     u8 tprst_before_lcdrst;
     u8 tpfw_early_lcdinit;
+    u8 tp_before_lcdsleep;
+
+    /*for tp_reset after lcd reset low*/
+    u8 tp_after_lcd_reset;
+    u8 tp_befor_vsn_low_delay;
 
     /*control reset shutdown timing*/
     u8 reset_shutdown_later;
@@ -1040,6 +989,7 @@ struct lcdkit_panel_infos
     struct lcdkit_dsi_panel_cmds host_2d_barcode_enter_cmds;
     struct lcdkit_dsi_panel_cmds host_2d_barcode_cmds;
     struct lcdkit_dsi_panel_cmds host_2d_barcode_exit_cmds;
+    u8 block_num_offset;
     /*Host project ID support*/
     u32 eml_read_reg_flag;
     struct lcdkit_dsi_panel_cmds host_project_id_enter_cmds;
@@ -1075,8 +1025,10 @@ struct lcdkit_panel_infos
     uint32_t delay_af_LP11;
     uint32_t delay_af_tp_reset;
     uint32_t delay_af_tp_after_resume;
+    uint32_t delay_af_tp_before_suspend;
     u8 rst_after_vbat_flag;
     u8 lcdph_delay_set_flag;
+    u8 tddi_tp_gesture_sequence_flag;
 
     uint32_t delay_af_vsn_off;
     uint32_t delay_af_vsp_off;
@@ -1226,6 +1178,9 @@ struct ddic_oem_cmd{
 	void (*func)(char *oem_data, struct hisi_fb_data_type *hisifd);
 	#endif
 };
+
+typedef void (*dcs_level_trans_func_t)(struct lcdkit_dsi_panel_cmds *,
+	int, int);
 
 struct lcdkit_panel_data* lcdkit_get_panel_info(void);
 void lcdkit_init(struct device_node* np, void* pdata);

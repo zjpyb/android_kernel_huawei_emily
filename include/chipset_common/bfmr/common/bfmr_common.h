@@ -88,6 +88,7 @@ typedef struct
     char *src_log_file_path;
     void *log_save_context;
     void *log_save_additional_context;
+    bool save_log_after_reboot;
 } bfmr_log_src_t;
 
 #if BITS_PER_LONG == 32
@@ -152,9 +153,12 @@ typedef struct bfmr_rrecord_misc_msg_param
     /* original recovery method */
     unsigned int original_recovery_method;
 
+    /* bopd mode value*/
+    unsigned long long bopd_mode_value;
+
     /* reserved for future usage */
-    char reserved[956];
-} bfmr_rrecord_misc_msg_param_t;
+    char reserved[948];
+} __attribute__((packed)) bfmr_rrecord_misc_msg_param_t;
 
 typedef struct
 {
@@ -177,6 +181,12 @@ typedef struct
         ocp_excp_info_t ocp_excp_info;
     } hw_excp_info;
 } bfmr_get_hw_fault_info_param_t;
+
+typedef struct bfmr_partition_mount_result_info
+{
+    char mount_point[32];
+    bool mount_result;
+} bfmr_partition_mount_result_info_t;
 
 
 /*----export macroes-----------------------------------------------------------------*/
@@ -230,6 +240,7 @@ typedef struct
 #define ENTER_ERECOVERY_BECAUSE_CUST_MOUNT_FAILED (2020)
 #define ENTER_ERECOVERY_BECAUSE_PRODUCT_MOUNT_FAILED (2021)
 #define ENTER_ERECOVERY_BECAUSE_VERSION_MOUNT_FAILED (2022)
+#define ENTER_ERECOVERY_BECAUSE_HW_DEGRADE_BOOT_FAIL (2040)
 #define ENTER_ERECOVERY_UNKNOWN (2099)
 
 #define BFMR_PRINT_INVALID_PARAMS(format, ...) do {printk(KERN_ERR "func: %s line: %d invalid parameters: " format, __func__, __LINE__, ##__VA_ARGS__);} while (0)
@@ -260,7 +271,8 @@ do\
 #define BFM_LOG_MAX_COUNT (10)
 #define BFM_LOG_MAX_COUNT_PER_DIR (10)
 #define BFM_MAX_INT_NUMBER_LEN (21)
-
+#define BFMR_BOPD_MODE_FIELD_NAME "bopd.mode"
+#define BFMR_MOUNT_NAME_SIZE (32)
 
 /*----global variables----------------------------------------------------------------*/
 
@@ -325,7 +337,11 @@ unsigned int bfmr_get_bootup_time(void);
 char* bfm_get_boot_stage_name(unsigned int boot_stage);
 bool bfm_is_beta_version(void);
 bool bfmr_is_oversea_commercail_version(void);
+int bfm_write_sub_bootfail_magic_num(unsigned int magic_num, void *phys_addr);
+int bfm_write_sub_bootfail_num(unsigned int bootfail_errno, void *phys_addr);
+int bfm_write_sub_bootfail_count(unsigned int bootfail_count, void *phys_addr);
 int bfmr_common_init(void);
+void bfmr_set_mount_state(char * bfmr_mount_point, bool mount_result);
 
 #ifdef __cplusplus
 }

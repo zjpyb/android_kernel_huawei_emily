@@ -21,6 +21,7 @@
 #include <linux/of_address.h>
 #include <linux/io.h>
 #include <linux/slab.h>
+#include <linux/hisi/hisi_cpufreq_req.h>
 #include <linux/hisi/hifreq_hotplug.h>
 #include <linux/version.h>
 
@@ -28,9 +29,63 @@
 #include <linux/hisi/hisi_hw_vote.h>
 #endif
 
+#define CREATE_TRACE_POINTS
+#include <trace/events/hisi_cpufreq_req.h>
+
 #define VERSION_ELEMENTS	1
 static unsigned int cpufreq_dt_version = 0;
 
+static int cpufreq_freq_req_policy_notifier(struct notifier_block *nb,
+					    unsigned long event, void *data)
+{
+	struct cpufreq_req *req = container_of(nb, struct cpufreq_req, nb);
+	struct cpufreq_policy *policy = (struct cpufreq_policy *) data;
+
+	if (event != CPUFREQ_ADJUST ||
+	    !cpumask_test_cpu(req->cpu, policy->cpus))
+		return NOTIFY_DONE;
+
+	trace_cpufreq_req_notify(req->cpu, (void *)req, req->freq,
+				 policy->min, policy->max);
+
+	cpufreq_verify_within_limits(policy, req->freq,
+				     policy->cpuinfo.max_freq);
+
+	return NOTIFY_OK;
+}
+
+int hisi_cpufreq_init_req(struct cpufreq_req *req, int cpu)
+{
+	if (unlikely(IS_ERR_OR_NULL(req)))
+		return -1;
+
+	req->cpu = cpu;
+	req->freq = 0;
+	req->nb.priority = 100;
+	req->nb.notifier_call = cpufreq_freq_req_policy_notifier;
+	return cpufreq_register_notifier(&req->nb, CPUFREQ_POLICY_NOTIFIER);
+}
+EXPORT_SYMBOL(hisi_cpufreq_init_req);
+
+void hisi_cpufreq_update_req(struct cpufreq_req *req, unsigned int freq)
+{
+	if (unlikely(IS_ERR_OR_NULL(req)))
+		return;
+
+	req->freq = freq;
+	trace_cpufreq_req_update(req->cpu, (void *)req, freq);
+	cpufreq_update_policy(req->cpu);
+}
+EXPORT_SYMBOL(hisi_cpufreq_update_req);
+
+void hisi_cpufreq_exit_req(struct cpufreq_req *req)
+{
+	if (unlikely(IS_ERR_OR_NULL(req)))
+		return;
+
+	cpufreq_unregister_notifier(&req->nb, CPUFREQ_POLICY_NOTIFIER);
+}
+EXPORT_SYMBOL(hisi_cpufreq_exit_req);
 
 #ifdef CONFIG_HISI_L2_DYNAMIC_RETENTION
 struct l2_retention_ctrl {
@@ -141,6 +196,7 @@ err_out:
 }
 #endif
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
 int hisi_cpufreq_set_supported_hw(struct cpufreq_policy *policy)
 {
 	int ret, cpu;
@@ -163,7 +219,7 @@ int hisi_cpufreq_set_supported_hw(struct cpufreq_policy *policy)
 
 void hisi_cpufreq_put_supported_hw(struct cpufreq_policy *policy)
 {
-	int cpu, j;
+	int cpu = 0, j;
 	struct device *cpu_dev;
 
 	/* find last cpu of policy->related_cpus */
@@ -178,6 +234,17 @@ void hisi_cpufreq_put_supported_hw(struct cpufreq_policy *policy)
 
 	dev_pm_opp_put_supported_hw(cpu_dev);
 }
+#else
+struct opp_table *hisi_cpufreq_set_supported_hw(struct device *cpu_dev)
+{
+	return dev_pm_opp_set_supported_hw(cpu_dev, &cpufreq_dt_version, VERSION_ELEMENTS);
+}
+
+void hisi_cpufreq_put_supported_hw(struct opp_table *opp_table)
+{
+	dev_pm_opp_put_supported_hw(opp_table);
+}
+#endif
 
 static int hisi_cpufreq_get_dt_version(void)
 {
@@ -316,7 +383,7 @@ void hisi_cpufreq_policy_cur_init(struct hvdev *cpu_hvdev, struct cpufreq_policy
 		goto exception;
 	}
 
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0)
 	ret = cpufreq_frequency_table_target(policy, policy->freq_table, freq_khz, CPUFREQ_RELATION_C, &index);
 	if (ret) {
 		goto exception;
@@ -336,10 +403,9 @@ exception:
 }
 #endif
 
-static int hisi_cpufreq_init(void)
+int hisi_cpufreq_init(void)
 {
 	int ret = 0;
-	struct platform_device *pdev;
 
 	if (!of_find_compatible_node(NULL, NULL, "arm,generic-bL-cpufreq"))
 		return -ENODEV;
@@ -356,10 +422,5 @@ static int hisi_cpufreq_init(void)
 	bL_hifreq_hotplug_init();
 #endif
 
-	pdev = platform_device_register_simple("cpufreq-dt", -1, NULL, 0);
-	if (IS_ERR(pdev))
-		return PTR_ERR(pdev);
-
 	return ret;
 }
-module_init(hisi_cpufreq_init);

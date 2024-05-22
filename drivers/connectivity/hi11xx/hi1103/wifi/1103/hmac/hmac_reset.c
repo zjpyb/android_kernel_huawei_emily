@@ -101,7 +101,7 @@ oal_uint32  hmac_proc_query_response_event_etc(mac_vap_stru *pst_mac_vap, oal_ui
         pst_hmac_vap->station_info.rx_bytes   =  pst_query_station_reponse_event->ul_rx_bytes;
         pst_hmac_vap->station_info.tx_bytes   =  pst_query_station_reponse_event->ul_tx_bytes;
         
-#if ((LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0)) && defined(_PRE_PRODUCT_ID_HI110X_HOST))
+#ifdef CONFIG_HW_GET_EXT_SIG
         pst_hmac_vap->station_info.noise   =  pst_query_station_reponse_event->s_free_power;
         pst_hmac_vap->station_info.chload      =  pst_query_station_reponse_event->s_chload;
 #endif

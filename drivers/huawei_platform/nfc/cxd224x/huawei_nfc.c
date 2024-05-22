@@ -53,6 +53,15 @@ static struct dsm_client *nfc_dclient;
 #endif
 
 static struct huawei_nfc_data *s_p_nfc_data;
+static int g_nfc_addr_on_hisiXX[NFCC_ON_BY_MAX]=
+{
+    0,     /*NFCC_ON_BY_GPIO*/
+    0x0C3, /*NFCC_ON_BY_HISI_PMIC*/
+    0x240, /*NFCC_ON_BY_HI6421V600_PMIC */
+    0,     /*NFCC_ON_BY_REGULATOR_BULK*/
+    0x158, /*NFCC_ON_BY_HI6555V110_PMIC*/
+    0x2E6, /*NFCC_ON_BY_HI6421V700_PMIC*/
+};
 
 /*lint -e516 -e515 -e717 -e960 -e712 -e747*/
 static int nfc_record_dmd_info(unsigned int dmd_no, const char *dmd_info)
@@ -188,8 +197,16 @@ static void get_nfcc_on_gpio_type(struct device_node *np,
 	} else {
 		if (!strncasecmp(nfc_on_str, "gpio", strlen("gpio"))) {
 			p_nfc_data->ven_on_gpio_type = NFCC_ON_BY_GPIO;
-		} else if (!strncasecmp(nfc_on_str, "pmu_hi6421v600", strlen("pmu_hi6421v600"))) {
+		} else if (!strncasecmp(nfc_on_str, "hisi_pmic", strlen("hisi_pmic"))) {
+			p_nfc_data->ven_on_gpio_type = NFCC_ON_BY_HISI_PMIC;
+		} else if (!strncasecmp(nfc_on_str, "hi6421v600_pmic", strlen("hi6421v600_pmic"))) {
 			p_nfc_data->ven_on_gpio_type = NFCC_ON_BY_HI6421V600_PMIC;
+		} else if (!strncasecmp(nfc_on_str, "hi6421v700_pmic", strlen("hi6421v700_pmic"))) {
+			p_nfc_data->ven_on_gpio_type = NFCC_ON_BY_HI6421V700_PMIC;
+		} else if (!strncasecmp(nfc_on_str, "hi6555v110_pmic", strlen("hi6555v110_pmic"))) {
+			p_nfc_data->ven_on_gpio_type = NFCC_ON_BY_HI6555V110_PMIC;
+		} else if (!strncasecmp(nfc_on_str, "regulator_bulk", strlen("regulator_bulk"))) {
+			p_nfc_data->ven_on_gpio_type = NFCC_ON_BY_REGULATOR_BULK;
 		} else {
 			p_nfc_data->ven_on_gpio_type = NFCC_ON_BY_GPIO;
 		}
@@ -415,7 +432,7 @@ static ssize_t nfc_fwupdate_store(struct device *dev, struct device_attribute *a
 		hwlog_err("%s: para s_p_nfc_data is NULL\n", __func__);
 		return -EINVAL;
 	}
-	if ('1' == buf[0]) {
+	if ((buf !=NULL) && ('1' == buf[0])) {
 		s_p_nfc_data->fw_update = 1;
 		hwlog_info("%s:firmware update success\n", __func__);
 	}
@@ -632,7 +649,7 @@ static ssize_t nfc_switch_state_show(struct device *dev, struct device_attribute
 static ssize_t nfc_hal_dmd_info_store(struct device *dev, struct device_attribute *attr,
 			 const char *buf, size_t count)
 {
-	unsigned int val = 0, cnt_hal_dmd = 0;
+	unsigned int val = 0;
 	char dmd_info_from_hal[64] = {'\0'};
 
 	if (s_p_nfc_data == NULL) {
@@ -675,7 +692,17 @@ static ssize_t nfcc_svdd_sw_store(struct device *dev, struct device_attribute *a
 
        if (sscanf(buf, "%1d", &val) == 1) {
                if (val == CLR_BIT || val == SET_BIT) {
-                       hisi_pmic_reg_write(0x240, val);
+                       if (s_p_nfc_data == NULL)
+                       {
+                           hwlog_err("%s: s_p_nfc_data is null !\n", __func__);
+                           return -1;
+                       }
+                       if (s_p_nfc_data->ven_on_gpio_type >= NFCC_ON_BY_MAX)
+                       {
+                           hwlog_err("%s: nfc_on_type = %d is not exist !\n", __func__, s_p_nfc_data->ven_on_gpio_type);
+                           return -1;
+                       }
+                       hisi_pmic_reg_write(g_nfc_addr_on_hisiXX[s_p_nfc_data->ven_on_gpio_type], val);
                } else {
             hwlog_err("%s: val [%d] error\n", __func__, val);
             return (ssize_t)count;
@@ -691,8 +718,19 @@ static ssize_t nfcc_svdd_sw_store(struct device *dev, struct device_attribute *a
 static ssize_t nfcc_svdd_sw_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
        int sw_status = 0;
-
-       sw_status = hisi_pmic_reg_read(0x240);
+       int nfc_on_type = 0;
+       if (s_p_nfc_data == NULL)
+       {
+           hwlog_err("%s: s_p_nfc_data is null !\n", __func__);
+           return -1;
+       }
+       nfc_on_type = s_p_nfc_data->ven_on_gpio_type;
+       if (nfc_on_type >= NFCC_ON_BY_MAX)
+       {
+           hwlog_err("%s: nfc_on_type = %d is not exist !\n", __func__, nfc_on_type);
+           return -1;
+       }
+       sw_status = hisi_pmic_reg_read(g_nfc_addr_on_hisiXX[nfc_on_type]);
        return (ssize_t)(snprintf(buf, MAX_ATTRIBUTE_BUFFER_SIZE-1, "%d", sw_status));
 }
 

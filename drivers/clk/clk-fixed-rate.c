@@ -43,10 +43,15 @@ static unsigned long clk_fixed_rate_recalc_accuracy(struct clk_hw *hw,
 }
 
 #ifdef CONFIG_HISI_CLK_DEBUG
-static int hi3xxx_dumpfixed_rate(struct clk_hw *hw, char* buf)
+static int hi3xxx_dumpfixed_rate(struct clk_hw *hw, char* buf, struct seq_file *s)
 {
-	if(buf)
-		snprintf(buf, DUMP_CLKBUFF_MAX_SIZE, "[%s] : fixed rate = %lu\n", __clk_get_name(hw->clk), to_clk_fixed_rate(hw)->fixed_rate);
+	if(buf && !s) {
+		snprintf(buf, DUMP_CLKBUFF_MAX_SIZE, "[%s] : fixed rate = %lu\n", \
+			__clk_get_name(hw->clk), to_clk_fixed_rate(hw)->fixed_rate);
+	}
+	if(!buf && s) {
+		seq_printf(s, "    %-15s    %-15s", "NONE", "fixed-rate");
+	}
 	return 0;
 }
 #endif
@@ -218,6 +223,7 @@ static int of_fixed_clk_remove(struct platform_device *pdev)
 {
 	struct clk *clk = platform_get_drvdata(pdev);
 
+	of_clk_del_provider(pdev->dev.of_node);
 	clk_unregister_fixed_rate(clk);
 
 	return 0;

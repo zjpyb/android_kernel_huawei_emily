@@ -27,6 +27,10 @@
 #include <linux/moduleparam.h>
 #include <linux/seq_file.h>
 #include <slowpath_count.h>
+#include <linux/version.h>
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0))
+#include <linux/sched/signal.h>
+#endif
 
 #define FIRST_APP_UID KUIDT_INIT(10000)
 #define LAST_APP_UID  KUIDT_INIT(19999)

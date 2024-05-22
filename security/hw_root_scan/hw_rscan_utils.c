@@ -1,12 +1,9 @@
 /*
- * hw_rscan_utils.c
- *
- * the hw_rscan_utils.c - get current run mode, eng or user
- *
- * likun <quentin.lee@huawei.com>
- * likan <likan82@huawei.com>
- *
- * Copyright (c) 2001-2021, Huawei Tech. Co., Ltd. All rights reserved.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2016-2018. All rights reserved.
+ * Description: the hw_rscan_utils.c - get current run mode, eng or user
+ * Author: likun <quentin.lee@huawei.com>
+ *         likan <likan82@huawei.com>
+ * Create: 2016-06-18
  */
 
 #include "./include/hw_rscan_utils.h"

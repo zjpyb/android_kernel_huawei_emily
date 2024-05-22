@@ -107,7 +107,7 @@ oal_uint32  mac_board_init_etc(void)
     {
         OAL_IO_PRINT("[file = %s, line = %d], mac_board_init_etc, memory allocation g_pst_blacklist %u bytes fail!\n",
                         __FILE__, __LINE__, (oal_uint32)(WLAN_SERVICE_DEVICE_SUPPORT_MAX_NUM_SPEC * WLAN_SERVICE_AP_MAX_NUM_PER_DEVICE * sizeof(mac_blacklist_info_stru)));
-        return OAL_PTR_NULL;
+        return OAL_ERR_CODE_PTR_NULL;
     }
     oal_memset(g_pst_blacklist, 0, WLAN_SERVICE_DEVICE_SUPPORT_MAX_NUM_SPEC * WLAN_SERVICE_AP_MAX_NUM_PER_DEVICE * OAL_SIZEOF(mac_blacklist_info_stru));
 #endif
@@ -138,6 +138,7 @@ oal_uint32  mac_device_init_etc(mac_device_stru *pst_mac_device, oal_uint32 ul_c
     pst_mac_device->uc_max_channel   = 0;
     pst_mac_device->ul_beacon_interval = WLAN_BEACON_INTVAL_DEFAULT;
     pst_mac_device->en_delayed_shift = OAL_FALSE;
+    pst_mac_device->en_delayed_shift_down_prot = OAL_FALSE;
 
 #ifdef _PRE_WLAN_FEATURE_20_40_80_COEXIST
     pst_mac_device->st_bss_id_list.us_num_networks = 0;

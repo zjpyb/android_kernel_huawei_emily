@@ -52,7 +52,9 @@
 #include <hw_wifi.h>
 
 #include <wl_dbg.h>
+#undef WL_ERROR
 #define WL_ERROR(x) printk x
+#undef WL_TRACE
 #define WL_TRACE(x)
 
 /*
@@ -1430,7 +1432,7 @@ wl_android_set_vowifi(struct net_device *dev, char *buf, int total_len,
 char *command, int value)
 {
 	int error = 0;
-	int bytes_written;
+	int bytes_written = 0;
 
 	WL_ERR(("%s:vowifi command = %s value = %d\n", __FUNCTION__,command,value));
 	error = wldev_iovar_setint(dev, command, value);
@@ -1463,7 +1465,8 @@ char *command, int value)
 static int
 wl_android_get_vowifi(struct net_device *dev,char *buf, int total_len, char *command)
 {
-	int error,bytes_written,val;
+	int error,val;
+	int bytes_written = 0;
 
 	error = wldev_iovar_getint(dev, command, &val);
 	WL_ERR(("%s:vowifi get val = %d\n", __FUNCTION__, val));
@@ -1605,7 +1608,7 @@ dev_wlc_intvar_set(
 
 	return (dev_wlc_ioctl(dev, WLC_SET_VAR, buf, len));
 }
-
+#ifndef HW_SOFTAP_ENABLE_BW_80
 static int
 dev_iw_iovar_setbuf(
 	struct net_device *dev,
@@ -1641,7 +1644,7 @@ dev_iw_write_cfg0_bss_var(struct net_device *dev, int val)
 	WL_TRACE(("%s: bss_set_result:%d set with %d\n", __FUNCTION__, bss_set_res, val));
 	return bss_set_res;
 }
-
+#endif
 #ifdef HW_SOFTAP_REASON_CODE
 /* 802.11-2012 Table 8-36--Reason codes */
 /* Previous authentication no longer valid */
@@ -1791,7 +1794,7 @@ init_ap_profile_from_string(char *param_str, struct ap_profile *ap_cfg)
 		PTYPE_STRING,  &ap_cfg->country_code, 3);
 	return ret;
 }
-
+#ifndef HW_SOFTAP_ENABLE_BW_80
 #ifndef AP_ONLY
 static int last_auto_channel = 6;
 #endif
@@ -1844,7 +1847,7 @@ fail :
 	}
 	return res;
 }
-
+#endif
 static int
 set_ap_cfg_hw(struct net_device *dev, struct ap_profile *ap)
 {
@@ -2260,8 +2263,8 @@ wl_android_set_disassoc_roaming_bssid(struct net_device *dev, char *command, int
 {
 	int error;
 	int mode = AUTO_RECOVERY_BY_MANUAL;
-    WL_TRACE(("%s: wl_android_set_disassoc_roaming_bssid\n", dev->name));
 	scb_val_t scbval;
+	WL_TRACE(("%s: wl_android_set_disassoc_roaming_bssid\n", dev->name));
 	memset(&scbval, 0, sizeof(scb_val_t));
 	if(!command)
 	{

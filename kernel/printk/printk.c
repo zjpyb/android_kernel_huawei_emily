@@ -110,7 +110,7 @@ enum devkmsg_log_masks {
 
 static unsigned int __read_mostly devkmsg_log = DEVKMSG_LOG_MASK_DEFAULT;
 
-static int __control_devkmsg(char *str)
+static int __control_devkmsg(const char *str)
 {
 	if (!str)
 		return -EINVAL;
@@ -670,7 +670,7 @@ ok:
 	return security_syslog(type);
 }
 
-static void append_char(char **pp, char *e, char c)
+static void append_char(char **pp, const char *e, char c)
 {
 	if (*pp < e)
 		*(*pp)++ = c;
@@ -702,7 +702,7 @@ static ssize_t msg_print_ext_header(char *buf, size_t size,
 
 static ssize_t msg_print_ext_body(char *buf, size_t size,
 				  char *dict, size_t dict_len,
-				  char *text, size_t text_len)
+				  const char *text, size_t text_len)
 {
 	char *p = buf, *e = buf + size;
 	size_t i;
@@ -1055,7 +1055,12 @@ static void __init log_buf_len_update(unsigned size)
 /* save requested log_buf_len since it's too early to process it */
 static int __init log_buf_len_setup(char *str)
 {
-	unsigned size = memparse(str, &str);
+	unsigned int size;
+
+	if (!str)
+		return -EINVAL;
+
+	size = memparse(str, &str);
 
 	log_buf_len_update(size);
 
@@ -1786,7 +1791,7 @@ static size_t cont_print_text(char *text, size_t size)
 	return textlen;
 }
 
-static size_t log_output(int facility, int level, enum log_flags lflags, const char *dict, size_t dictlen, char *text, size_t text_len)
+static size_t log_output(int facility, int level, enum log_flags lflags, const char *dict, size_t dictlen, const char *text, size_t text_len)
 {
 	/*
 	 * If an earlier line was buffered, and we're a continuation
@@ -2098,7 +2103,7 @@ asmlinkage __visible void early_printk(const char *fmt, ...)
 }
 #endif
 
-static int __add_preferred_console(char *name, int idx, char *options,
+static int __add_preferred_console(const char *name, const int idx, char *options,
 				   char *brl_options)
 {
 	struct console_cmdline *c;
@@ -2185,7 +2190,7 @@ __setup("console=", console_setup);
  * commonly to provide a default console (ie from PROM variables) when
  * the user has not supplied one.
  */
-int add_preferred_console(char *name, int idx, char *options)
+int add_preferred_console(const char *name, int idx, char *options)
 {
 	return __add_preferred_console(name, idx, options, NULL);
 }

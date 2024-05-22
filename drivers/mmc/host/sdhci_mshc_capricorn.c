@@ -226,7 +226,7 @@ void sdhci_mshc_dumpregs(struct sdhci_host *host)
 			sdhci_phy_readl(host, COMBO_PHY_IMPCTRL),
 			sdhci_phy_readl(host, COMBO_PHY_IMPSTATUS));
 		pr_info(DRIVER_NAME ": PHY dly ctrl: 0x%08x\n",
-			sdhci_phy_readl(host, COMBO_PHY_DLY_CTL1));
+			sdhci_phy_readl(host, COMBO_PHY_DLY_CTL));
 		pr_info(DRIVER_NAME ": PHY dly ctrl1: 0x%08x | dly ctrl2: 0x%08x\n",
 			sdhci_phy_readl(host, COMBO_PHY_DLY_CTL1),
 			sdhci_phy_readl(host,  COMBO_PHY_DLY_CTL2));
@@ -468,6 +468,7 @@ static void sdhci_combo_phy_zq_cal(struct sdhci_host *host)
 static void sdhci_combo_phy_init(struct sdhci_host *host)
 {
 	u32 reg_val;
+	int retry = WAIT_STATUS_MAX_RETRY;
 
 	reg_val = sdhci_phy_readl(host, COMBO_PHY_PHYINITCTRL);
 	reg_val |= BIST_CLK;
@@ -481,7 +482,7 @@ static void sdhci_combo_phy_init(struct sdhci_host *host)
 	sdhci_phy_writel(host, reg_val, COMBO_PHY_IOCTL_PUPD);
 
 	/*set drv 40o*/
-	reg_val = EMMC_RONSEL_0;
+	reg_val = EMMC_RONSEL_OR;
 	sdhci_phy_writel(host, reg_val, COMBO_PHY_IOCTL_RONSEL_1);
 	reg_val = sdhci_phy_readl(host, COMBO_PHY_IOCTL_RONSEL_2);
 	reg_val |= EMMC_RONSEL_2;
@@ -491,9 +492,19 @@ static void sdhci_combo_phy_init(struct sdhci_host *host)
 	reg_val = DA_EMMC_E | DA_EMMC_IE;
 	sdhci_phy_writel(host, reg_val, COMBO_PHY_IOCTL_IOE);
 
+	sdhci_sctrl_writel(host, GT_CLK_EMMC_SCTRL, SCTRL_SCPERDIS2);
+	udelay(100);
 	reg_val = sdhci_phy_readl(host, COMBO_PHY_DLY_CTL1);
 	reg_val |= INV_TX_CLK;
 	sdhci_phy_writel(host, reg_val, COMBO_PHY_DLY_CTL1);
+	sdhci_sctrl_writel(host, GT_CLK_EMMC_SCTRL, SCTRL_SCPEREN2);
+	while (retry--) {
+		if (GT_CLK_EMMC_SCTRL & sdhci_sctrl_readl(host, SCTRL_SCPERSTAT2))
+			break;
+		udelay(100);
+	}
+	if (retry < 0)
+		pr_err("%s open emmc clk gate timeout \n", __func__);
 
 	/*do ZQ Calibration and so on, to be finish*/
 	sdhci_combo_phy_zq_cal(host);
@@ -502,14 +513,37 @@ static void sdhci_combo_phy_init(struct sdhci_host *host)
 void sdhci_mshc_config_strobe_clk(struct sdhci_host *host, unsigned timing)
 {
 	u16 reg_u16;
+	u32 reg_u32;
+	u32 delaymeas_code;
+
+	reg_u16 = sdhci_readw(host, SDHCI_CLOCK_CONTROL);
+	reg_u16 &= ~SDHCI_CLOCK_CARD_EN;
+	sdhci_writew(host, reg_u16, SDHCI_CLOCK_CONTROL);
 
 	if (timing == MMC_TIMING_MMC_DDR52
 		|| timing == MMC_TIMING_MMC_HS400) {
-		reg_u16 = sdhci_readw(host, SDHCI_HOST_CONTROL2);
-		reg_u16 |= SDHCI_CTRL_INV_DATA;
-		sdhci_writew(host, reg_u16, SDHCI_HOST_CONTROL2);
-	}
+		reg_u32 = sdhci_mmc_sys_readl(host, MMC1_SYSCTRL_CTRL0);
+		reg_u32 |= CMD_DLY_EN;
+		sdhci_mmc_sys_writel(host, reg_u32, MMC1_SYSCTRL_CTRL0);
 
+		reg_u32 = sdhci_phy_readl(host, COMBO_PHY_DLY_CTL);
+		delaymeas_code = reg_u32 & DLY_CODE_1T_MASK;
+
+		/* set tx_clk_as_1/4T, cancel tx inv*/
+		reg_u32 = sdhci_phy_readl(host, COMBO_PHY_DLY_CTL1);
+		reg_u32 &= ~(DLY_1_CODE_MASK << DLY_1_CODE_SHIFT);
+		delaymeas_code = delaymeas_code/4;
+		reg_u32 |= ((DLY_1_CODE_MASK & (delaymeas_code)) << DLY_1_CODE_SHIFT);
+		reg_u32 &= ~INV_TX_CLK;
+		sdhci_phy_writel(host, reg_u32, COMBO_PHY_DLY_CTL1);
+	} else {
+		reg_u32 = sdhci_mmc_sys_readl(host, MMC1_SYSCTRL_CTRL0);
+		reg_u32 &= ~CMD_DLY_EN;
+		sdhci_mmc_sys_writel(host, reg_u32, MMC1_SYSCTRL_CTRL0);
+	}
+	reg_u16 = sdhci_readw(host, SDHCI_CLOCK_CONTROL);
+	reg_u16 |= SDHCI_CLOCK_CARD_EN;
+	sdhci_writew(host, reg_u16, SDHCI_CLOCK_CONTROL);
 }
 
 void sdhci_mshc_OD_enable(struct sdhci_host *host)
@@ -554,28 +588,29 @@ static void sdhci_mshc_hw_reset(struct sdhci_host *host)
 	sdhci_mshc->need_delay_measure = true;
 }
 
-void sdhci_chk_busy_before_send_cmd(struct sdhci_host *host,
+int sdhci_chk_busy_before_send_cmd(struct sdhci_host *host,
 	struct mmc_command* cmd)
 {
 	unsigned long timeout;
 
 	/* We shouldn't wait for busy for stop commands */
-	if ((cmd->opcode != MMC_STOP_TRANSMISSION) && (cmd->opcode != MMC_SEND_STATUS)) {
+	if ((cmd->opcode != MMC_STOP_TRANSMISSION) && (cmd->opcode != MMC_SEND_STATUS) &&
+	(cmd->opcode != MMC_GO_IDLE_STATE)) {
 		/* Wait busy max 10 s */
 		timeout = 10000;
 		while (!(sdhci_readl(host, SDHCI_PRESENT_STATE) & SDHCI_DATA_0_LVL_MASK)) {
 			if (timeout == 0) {
 				pr_err("%s: wait busy 10s time out.\n", mmc_hostname(host->mmc));
 				sdhci_dumpregs(host);
-				cmd->error = -EIO;
+				cmd->error = -ENOMSG;
 				tasklet_schedule(&host->finish_tasklet);
-				return;
+				return -ENOMSG;
 			}
 			timeout--;
 			mdelay(1);
 		}
 	}
-	return;
+	return 0;
 }
 
 void sdhci_mshc_set_version(struct sdhci_host *host)
@@ -641,7 +676,6 @@ void sdhci_mshc_select_card_type(struct sdhci_host *host)
 	sdhci_writew(host, reg_u16, SDHCI_EMMC_CTRL_R);
 
 	reg_u8 = sdhci_readb(host, SDHCI_MSHC_CTRL_R);
-	reg_u8 &= ~CMD_CONFLICT_CHECK;
 	reg_u8 |=  SW_CG_DIS;
 	reg_u8 |= ACCESS_ALL_REGION;
 	sdhci_writeb(host, reg_u8, SDHCI_MSHC_CTRL_R);
@@ -1052,13 +1086,6 @@ int sdhci_mshc_soft_tuning(struct sdhci_host *host, u32 opcode, bool set)
 		sdhci_mshc_set_tuning_phase(host, hw_tuning_phase);
 		sdhci_mshc->tuning_phase_best = hw_tuning_phase;
 	}
-	/* FPGA set 63 as default tuning phase */
-	if (host->quirks2 & SDHCI_QUIRK2_HISI_COMBO_PHY_TC) {
-		sdhci_mshc->tuning_phase_best = 63;
-		sdhci_mshc_set_tuning_phase(host, 63);
-		pr_err("set tuning phase 63\n");
-	}
-
 
 err:
 	reg_val = sdhci_readw(host, SDHCI_AT_CTRL_R);
@@ -1090,6 +1117,36 @@ u32 sdhci_mshc_get_max_timeout_count(struct sdhci_host *host)
 	return 1 << 29;
 }
 
+void sdhci_mshc_set_clk_gt(struct sdhci_host *host, bool enable)
+{
+
+	if (enable) {
+		int retry = WAIT_STATUS_MAX_RETRY;
+		/* enable emmc gate*/
+		sdhci_sctrl_writel(host, GT_CLK_EMMC_SCTRL, SCTRL_SCPEREN2);
+		while (retry--) {
+			if (GT_CLK_EMMC_SCTRL & sdhci_sctrl_readl(host, SCTRL_SCPERSTAT2))
+				break;
+			udelay(100);
+		}
+		if (retry < 0)
+			pr_err("%s open emmc clk gate timeout \n", __func__);
+	} else {
+		/* disable emmc clk in emmc_sys_ctrl */
+		sdhci_sctrl_writel(host, GT_CLK_EMMC_SCTRL, SCTRL_SCPERDIS2);
+		udelay(100);
+	}
+}
+
+void sdhci_capri_sqscmd_idle_tmr(struct cmdq_host *cq_host)
+{
+	/*CIT 0x100 means set cmd13 polling time period 256*clk
+	 ** capricorn timer is 960k, cmd13 polling time period 10*clk
+	 **CBC 0x1 means that STATUS command is to be sent during
+	 **the last block of the
+	 **/
+	cmdq_writel(cq_host, 0x1000a, CQSSC1);
+}
 
 static struct sdhci_ops sdhci_mshc_ops = {
 	.get_min_clock = sdhci_mshc_get_min_clock,
@@ -1110,6 +1167,8 @@ static struct sdhci_ops sdhci_mshc_ops = {
 	.dumpregs = sdhci_mshc_dumpregs,
 	.delay_measurement = sdhci_combo_phy_delay_measurement,
 	.get_max_timeout_count = sdhci_mshc_get_max_timeout_count,
+	.set_clk_emmc_gt = sdhci_mshc_set_clk_gt,
+	.sqscmd_idle_tmr = sdhci_capri_sqscmd_idle_tmr,
 };
 
 static struct sdhci_pltfm_data sdhci_mshc_pdata = {
@@ -1133,7 +1192,6 @@ static int sdhci_mshc_suspend(struct device *dev)
 	struct sdhci_host *host = dev_get_drvdata(dev);
 	struct sdhci_pltfm_host *pltfm_host = sdhci_priv(host);
 	struct sdhci_mshc_data *sdhci_mshc = pltfm_host->priv;
-	u32 count;
 
 	dev_info(dev, "%s: suspend +\n", __func__);
 
@@ -1141,21 +1199,10 @@ static int sdhci_mshc_suspend(struct device *dev)
 	if (ret)
 		return ret;
 
-	/* enable phy io retention */
-	sdhci_sctrl_writel(host, RG_EMMC_LHEN_IN_RET, SCTRL_SCPERCTRL7);
-
 	clk_disable_unprepare(sdhci_mshc->clk);
 
-	/* close phy, cq ,hclk clock */
-	count = 0;
-	sdhci_mmc_sys_writel(host, GT_CLK_EMMC_OR, MMC1_SYSCTRL_PERDIS0);
-	while ((GT_CLK_EMMC_OR & sdhci_mmc_sys_readl(host, MMC1_SYSCTRL_PERCLKEN0))) {
-		if (count > 0xFFF) {
-			dev_err(dev, "emmc clk disable timeout \n");
-			break;
-		}
-		count++;
-	}
+	/* enable phy io retention */
+	sdhci_sctrl_writel(host, RG_EMMC_LHEN_IN_RET | RG_EMMC_LHEN_MASK, SCTRL_SCPERCTRL7);
 
 	sdhci_mshc_hardware_reset(host);
 
@@ -1174,28 +1221,31 @@ static int sdhci_mshc_suspend(struct device *dev)
 static int sdhci_mshc_resume(struct device *dev)
 {
 	int ret;
+	int retry = WAIT_STATUS_MAX_RETRY;
 	struct sdhci_host *host = dev_get_drvdata(dev);
 	struct sdhci_pltfm_host *pltfm_host = sdhci_priv(host);
 	struct sdhci_mshc_data *sdhci_mshc = pltfm_host->priv;
-	u32 count = 0;
 
 	dev_info(dev, "%s: resume +\n", __func__);
 
 	sdhci_mshc_hardware_disreset(host);
 
-	/* disrest phy, cq ,hclk clock */
-	count = 0;
-	sdhci_mmc_sys_writel(host, GT_CLK_EMMC_OR, MMC1_SYSCTRL_PEREN0);
-	while (GT_CLK_EMMC_OR & sdhci_mmc_sys_readl(host, MMC1_SYSCTRL_PERCLKEN0)) {
-		if (count > 0xFFF) {
-			dev_err(dev, "emmc1 disreset timeout \n");
-			break;
-		}
-		count++;
-	}
+	/* enable phy io normal */
+	sdhci_sctrl_writel(host, RG_EMMC_LHEN_MASK, SCTRL_SCPERCTRL7);
 
-	/* enable phy io retention */
-	sdhci_sctrl_writel(host, RG_EMMC_LHEN_IN_NOR, SCTRL_SCPERCTRL7);
+	sdhci_sctrl_writel(host, GT_CLK_EMMC_BUS, SCTRL_SCPEREN2);
+	while (retry--) {
+		if(GT_CLK_EMMC_BUS & sdhci_sctrl_readl(host, SCTRL_SCPERSTAT2))
+			break;
+		udelay(100);
+	}
+	if (retry < 0)
+		pr_err("%s open  emmc clk bus timeout \n", __func__);
+
+	sdhci_sctrl_writel(host, SEL_CLK_EMMC_PPLL23 | SEL_CLK_PPLL23_MASK, SCTRL_SCCLKDIV10);
+
+	/* disrest phy, cq ,hclk clock */
+	sdhci_mmc_sys_writel(host, GT_CLK_EMMC_OR, MMC1_SYSCTRL_PEREN0);
 
 	ret = clk_set_rate(sdhci_mshc->clk, xin_clk);
 	if (ret)
@@ -1236,7 +1286,6 @@ static int sdhci_mshc_resume(struct device *dev)
 		sdhci_mshc_set_tuning_strobe_phase(host,sdhci_mshc->tuning_strobe_move_phase);
 
 		pr_err("resume,host_clock = %d, mmc_clock = %d\n", host->clock, host->mmc->ios.clock);
-		//sdhci_set_clock(host, host->mmc->ios.clock);
 	}
 
 	dev_info(dev, "%s: resume -\n", __func__);
@@ -1274,25 +1323,15 @@ static int sdhci_mshc_runtime_suspend(struct device *dev)
 	struct sdhci_pltfm_host *pltfm_host = sdhci_priv(host);
 	struct sdhci_mshc_data *sdhci_mshc = pltfm_host->priv;
 	int ret = 0;
-	u32 reg_val;
-	u16 reg_u16;
 
 	ret = sdhci_mshc_runtime_suspend_host(host);
 
-	reg_u16 = sdhci_readw(host, SDHCI_CLOCK_CONTROL);
-	reg_u16 &= ~SDHCI_CLOCK_CARD_EN;
-	sdhci_writew(host, reg_u16, SDHCI_CLOCK_CONTROL);
-	udelay(5);
-
-	reg_val = sdhci_phy_readl(host, COMBO_PHY_DLY_CTL1);
-	reg_val &= ~INV_TX_CLK;
-	sdhci_phy_writel(host, reg_val, COMBO_PHY_DLY_CTL1);
-
 	if (!IS_ERR(sdhci_mshc->clk))
 		clk_disable_unprepare(sdhci_mshc->clk);
+	udelay(100);
 
 	/* close phy, cq ,hclk clock */
-	sdhci_mmc_sys_writel(host, EMMC_SYS_GT_CLK_MASK, EMMC_SYS_CRG_CFG1);
+	sdhci_mmc_sys_writel(host, GT_CLK_EMMC_OR, MMC1_SYSCTRL_PERDIS0);
 
 	return ret;
 }
@@ -1326,19 +1365,14 @@ static int sdhci_mshc_runtime_resume(struct device *dev)
 	struct sdhci_host *host = dev_get_drvdata(dev);
 	struct sdhci_pltfm_host *pltfm_host = sdhci_priv(host);
 	struct sdhci_mshc_data *sdhci_mshc = pltfm_host->priv;
-	u32 reg_val;
 
 	/* enable phy, cq ,hclk clock */
-	sdhci_mmc_sys_writel(host, EMMC_SYS_GT_CLK_MASK | EMMC_SYS_GT_CLK, EMMC_SYS_CRG_CFG1);
+	sdhci_mmc_sys_writel(host, GT_CLK_EMMC_OR, MMC1_SYSCTRL_PEREN0);
 
 	if (!IS_ERR(sdhci_mshc->clk)) {
 		if (clk_prepare_enable(sdhci_mshc->clk))
 			pr_warn("%s: clk_prepare_enable sdhci_arasan->clk failed.\n", __func__);
 	}
-
-	reg_val = sdhci_phy_readl(host, COMBO_PHY_DLY_CTL1);
-	reg_val |= INV_TX_CLK;
-	sdhci_phy_writel(host, reg_val, COMBO_PHY_DLY_CTL1);
 
 	return sdhci_mshc_runtime_resume_host(host);
 }

@@ -81,6 +81,12 @@ static char *iomcu_app_id_str[] = {
 	[TAG_ACCEL_UNCALIBRATED] = "TAG_ACCEL_UNCALIBRATED",
 	[TAG_DROP] = "TAG_DROP",
 	[TAG_BIG_DATA] = "TAG_BIG_DATA",
+	[TAG_ACC1] = "TAG_ACCEL1",
+	[TAG_GYRO1] = "TAG_GYRO1",
+	[TAG_ACC2] = "TAG_ACCEL2",
+	[TAG_GYRO2] = "TAG_GYRO2",
+	[TAG_MAG1] = "TAG_MAG1",
+	[TAG_CAP_PROX1]="TAG_CAP_PROX1",
 	[TAG_HW_PRIVATE_APP_END] = "TAG_HW_PRIVATE_APP_END",
 };
 
@@ -120,6 +126,12 @@ static const struct sensor_debug_tag_map tag_map_tab[] = {
 	{"tof", TAG_TOF},
 	{"drop", TAG_DROP},
 	{"ext_hall", TAG_EXT_HALL},
+	{"accel1", TAG_ACC1},
+	{"gyro1", TAG_GYRO1},
+	{"accel2", TAG_ACC2},
+	{"gyro2", TAG_GYRO2},
+	{"magnitic1", TAG_MAG1},
+	{"cap_prox1", TAG_CAP_PROX1},
 };
 
 static const char *fault_type_table[] = {
@@ -295,10 +307,8 @@ static void iomcu_big_data_flush(uint32_t event_id)
 
 static int big_data_test(int tag, int argv[], int argc)
 {
-	write_info_t pkg_ap;
 	uint32_t def, sel;
 	uint64_t fetch_data;
-	int ret = -1;
 
 	if (argc != 2)
 		return -1;
@@ -791,7 +801,6 @@ static int ps_param_write(int tag, int argv[], int argc)
 	pkt_parameter_req_t spkt;
 	pkt_header_t *shd = (pkt_header_t *)&spkt;
 	int ret = 0;
-	int i = 0;
 	int pwindows_value = argv[0];
 	int pwave_value = argv[1];
 	int threshold_value = argv[2];
@@ -988,6 +997,11 @@ static int change_sar_mode(int tag, int argv[], int argc)
 
 	if (!strncmp(sensor_chip_info[CAP_PROX], "huawei,semtech-sx9323", strlen("huawei,semtech-sx9323"))) {
 		if (1 != argc || (SAR_DEBUG_MODE != argv[0] && SAR_NORMAL_MODE != argv[0])) {
+			hwlog_err("%s: Input incorrect mode.\n", __FUNCTION__);
+			return -1;
+		}
+	} else if (!strncmp(sensor_chip_info[CAP_PROX], "huawei,abov-a96t3x6", strlen("huawei,abov-a96t3x6"))) {
+		if ((argc != 1) || ((argv[0] != SAR_DEBUG_MODE) && (argv[0] != SAR_NORMAL_MODE))) {
 			hwlog_err("%s: Input incorrect mode.\n", __FUNCTION__);
 			return -1;
 		}
@@ -1226,7 +1240,7 @@ const char *get_str_end(const char *cmd_buf)
 }
 
 /*fuzzy matching*/
-static bool str_fuzzy_match(const char *cmd_buf, const char *target)
+bool str_fuzzy_match(const char *cmd_buf, const char *target)
 {
 	if (NULL == cmd_buf || NULL == target)
 		return false;
@@ -1367,7 +1381,7 @@ static ssize_t cls_attr_debug_store_func(struct class *cls, struct class_attribu
 	return size;
 }
 
-static CLASS_ATTR(sensorhub_dbg, 0660, cls_attr_debug_show_func, cls_attr_debug_store_func);
+static struct class_attribute class_attr_sensorhub_dbg = __ATTR(sensorhub_dbg, 0660, cls_attr_debug_show_func, cls_attr_debug_store_func);
 
 static ssize_t cls_attr_dump_show_func(struct class *cls, struct class_attribute *attr, char *buf)
 {
@@ -1376,7 +1390,7 @@ static ssize_t cls_attr_dump_show_func(struct class *cls, struct class_attribute
 	return snprintf(buf, MAX_STR_SIZE,	"read sensorhub_dump node, IOM7 will restart\n");
 }
 
-static CLASS_ATTR(sensorhub_dump, 0660, cls_attr_dump_show_func, NULL);
+static struct class_attribute class_attr_sensorhub_dump = __ATTR(sensorhub_dump, 0660, cls_attr_dump_show_func, NULL);
 
 static ssize_t cls_attr_kernel_support_lib_ver_show_func(struct class *cls, struct class_attribute *attr, char *buf)
 {
@@ -1386,7 +1400,7 @@ static ssize_t cls_attr_kernel_support_lib_ver_show_func(struct class *cls, stru
 	return sizeof(ver);
 }
 
-static CLASS_ATTR(libsensor_ver, 0660, cls_attr_kernel_support_lib_ver_show_func, NULL);
+static struct class_attribute class_attr_libsensor_ver = __ATTR(libsensor_ver, 0660, cls_attr_kernel_support_lib_ver_show_func, NULL);
 
 void create_debug_files(void)
 {

@@ -1118,7 +1118,7 @@ static int lcdkit_is_mipi_input_legal(int op_type,int ic_reg,
    }
 
    /* ic_reg must in [0x00, 0xff] */
-   if (!((unsigned int)ic_reg >= 0 && (unsigned int)ic_reg <= 0xff))
+   if ((unsigned int)ic_reg > 0xff)
    {
       ret = -1;
    }
@@ -1178,8 +1178,6 @@ void lcdkit_dump_reg_buf(const u32* buf, int cnt)
             } else {
                 LCDKIT_DEBUG( "0x%02x,", (buf[i / INT_COUNT] >> (3 * REG_BIT_COUNT)) & 0xFF);
             }
-            break;
-        default:
             break;
         }
     }
@@ -1465,8 +1463,6 @@ static ssize_t lcdkit_mipi_reg_read(struct file *file,
                         snprintf( tmp, sizeof(tmp), "0x%02x,", (lcdkit_dbg.lcdkit_ic_mipi_value[i / INT_COUNT] >> (3 * REG_BIT_COUNT)) & 0xFF);
                     }
                     break;
-                default:
-                    break;
                 }
                 strncat(lcd_debug_buf, tmp, strlen(tmp));
             }
@@ -1642,14 +1638,6 @@ static ssize_t lcdkit_mipi_reg_write(struct file *file,
          }
          break;
       }
-
-      /* error */
-      default:
-      {
-         LCDKIT_ERR("op type not support! op = %d\n", op_type);
-         ret = -1;
-         break;
-      }
    }
 
    /* finish */
@@ -1696,6 +1684,11 @@ int lcdkit_debugfs_init(void)
     static char already_init = 0;  // internal flag
     struct dentry* dent = NULL;
     struct dentry* file = NULL;
+
+#ifndef LCDKIT_DEBUG_ENABLE
+	LCDKIT_ERR("TARGET_BUILD_VARIANT is user,lcd-dbg is not create\n");
+	return 0;
+#endif
 
     /* judge if already init */
     if (already_init)

@@ -9,6 +9,10 @@
 #include <linux/kernel.h>
 #include <linux/hisi/usb/hisi_usb.h>
 #include <linux/wakelock.h>
+#include <linux/version.h>
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+#include <uapi/linux/sched/types.h>
+#endif
 #include "../hifi/usbaudio_setinterface.h"
 #include "../hifi/usbaudio_ioctl.h"
 #ifdef CONFIG_HIFI_MAILBOX
@@ -31,6 +35,7 @@ struct interface_set_mesg
 	unsigned int dir;
 	unsigned int running;
 	unsigned int rate;
+	unsigned int period;
 	struct list_head node;
 };
 
@@ -64,7 +69,7 @@ int usbaudio_mailbox_send_data(void *pmsg_body, unsigned int msg_len, unsigned i
 }
 
 static void usbaudio_mailbox_msg_add(unsigned int dir,
-				unsigned int running, unsigned int rate)
+				unsigned int running, unsigned int rate, unsigned int period)
 {
 	struct interface_set_mesg *interface_msg;/*lint -e429 */
 	interface_msg = kzalloc(sizeof(*interface_msg), GFP_ATOMIC);
@@ -72,6 +77,7 @@ static void usbaudio_mailbox_msg_add(unsigned int dir,
 		interface_msg->running = running;
 		interface_msg->dir = dir;
 		interface_msg->rate = rate;
+		interface_msg->period = period;
 		list_add_tail(&interface_msg->node, &msg_proc.interface_msg_list.node);
 		up(&msg_proc.proc_sema);
 	} else {
@@ -113,19 +119,19 @@ static irq_rt_t usbaudio_mailbox_recv_isr(void *usr_para, void *mail_handle, uns
 			break;
 		case USBAUDIO_CHN_MSG_PIPEOUTINTERFACE_ON_RCV:
 			pr_info("receive message: pipout on \n");
-			usbaudio_mailbox_msg_add(DOWNLINK_STREAM, START_STREAM, rcv_msg.ret_val);
+			usbaudio_mailbox_msg_add(DOWNLINK_STREAM, START_STREAM, rcv_msg.rate, rcv_msg.period);
 			break;
 		case USBAUDIO_CHN_MSG_PIPEOUTINTERFACE_OFF_RCV:
 			pr_info("receive message: pipout off \n");
-			usbaudio_mailbox_msg_add(DOWNLINK_STREAM, STOP_STREAM, rcv_msg.ret_val);
+			usbaudio_mailbox_msg_add(DOWNLINK_STREAM, STOP_STREAM, rcv_msg.rate, rcv_msg.period);
 			break;
 		case USBAUDIO_CHN_MSG_PIPEININTERFACE_ON_RCV:
 			pr_info("receive message: pipein on.\n");
-			usbaudio_mailbox_msg_add(UPLINK_STREAM, START_STREAM, rcv_msg.ret_val);
+			usbaudio_mailbox_msg_add(UPLINK_STREAM, START_STREAM, rcv_msg.rate, rcv_msg.period);
 			break;
 		case USBAUDIO_CHN_MSG_PIPEININTERFACE_OFF_RCV:
 			pr_info("receive message: pipein off.\n");
-			usbaudio_mailbox_msg_add(UPLINK_STREAM, STOP_STREAM, rcv_msg.ret_val);
+			usbaudio_mailbox_msg_add(UPLINK_STREAM, STOP_STREAM, rcv_msg.rate, rcv_msg.period);
 			break;
 		default:
 			pr_err("msg_type 0x%x.\n", rcv_msg.msg_type);
@@ -308,11 +314,12 @@ static int interface_msg_proc_thread(void *p)
 		} else {
 			set_mesg = list_entry(msg_proc.interface_msg_list.node.next, struct interface_set_mesg, node);
 			if (set_mesg) {
-				pr_err("[0:out 1:in]%d [0:start 1:stop]%d \n", set_mesg->dir, set_mesg->running);
+				pr_info("[0:out 1:in]%d [0:start 1:stop]%d rate: %d period: %d\n",
+					set_mesg->dir, set_mesg->running, set_mesg->rate, set_mesg->period);
 				if (set_mesg->dir == 0)
 					usbaudio_ctrl_set_pipeout_interface(set_mesg->running, set_mesg->rate);
 				else
-					usbaudio_ctrl_set_pipein_interface(set_mesg->running, set_mesg->rate);
+					usbaudio_ctrl_set_pipein_interface(set_mesg->running, set_mesg->rate, set_mesg->period);
 				list_del(&set_mesg->node);
 				kfree(set_mesg);
 			} else {

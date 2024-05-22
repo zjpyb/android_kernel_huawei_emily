@@ -92,9 +92,6 @@ static int syna_tcm_spi_read(struct spi_device *client, unsigned char *data,
 {
 	int retval;
 	struct spi_message msg;
-	struct thp_core_data *cd = spi_get_drvdata(client);
-	struct thp_device *tdev = cd->thp_dev;
-
 
 	spi_message_init(&msg);
 
@@ -129,8 +126,6 @@ static int syna_tcm_spi_write(struct spi_device *client, unsigned char *data,
 {
 	int retval;
 	struct spi_message msg;
-	struct thp_core_data *cd = spi_get_drvdata(client);
-	struct thp_device *tdev = cd->thp_dev;
 
 	spi_message_init(&msg);
 
@@ -191,9 +186,13 @@ static int thp_synaptics_chip_detect(struct thp_device *tdev)
 {
 	unsigned char rmiaddr[2] = {0x80, 0xEE};
 	unsigned char fnnum = 0;
-
+	int rc;
 	THP_LOG_INFO("%s: called\n", __func__);
-	thp_bus_lock();
+	rc = thp_bus_lock();
+	if (rc < 0) {
+		THP_LOG_ERR("%s:get lock failed.\n", __func__);
+		return -EINVAL;
+	}
 	syna_tcm_spi_write(tdev->thp_core->sdev, rmiaddr, sizeof(rmiaddr));
 	syna_tcm_spi_read(tdev->thp_core->sdev, &fnnum, sizeof(fnnum));
 	thp_bus_unlock();
@@ -212,7 +211,11 @@ static int thp_synaptics_get_frame(struct thp_device *tdev,
 	unsigned int length = 0;
 	int retval;
 
-	thp_bus_lock();
+	retval = thp_bus_lock();
+	if (retval < 0) {
+		THP_LOG_ERR("%s:get lock failed.\n", __func__);
+		return -EINVAL;
+	}
 	retval = syna_tcm_spi_read(tdev->thp_core->sdev, data, sizeof(data));  // read length
 	if (retval < 0) {
 		THP_LOG_ERR("%s: Failed to read length\n", __func__);

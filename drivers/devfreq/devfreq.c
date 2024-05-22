@@ -300,6 +300,74 @@ int update_devfreq(struct devfreq *devfreq)
 }
 EXPORT_SYMBOL(update_devfreq);
 
+#ifdef CONFIG_ARCH_HISI
+void devfreq_apply_limits(struct devfreq *devfreq)
+{
+	struct devfreq_freqs freqs;
+	unsigned long freq, cur_freq;
+	int err;
+	u32 flags = 0;
+
+	if (!devfreq)
+		return;
+
+	mutex_lock(&devfreq->lock);
+	if (!devfreq->governor || !devfreq->profile)
+		goto out;
+
+	if (devfreq->profile->get_cur_freq)
+		devfreq->profile->get_cur_freq(devfreq->dev.parent, &cur_freq);
+	else
+		cur_freq = devfreq->previous_freq;
+
+	freq = cur_freq;
+	devfreq->governor->event_handler(devfreq, DEVFREQ_GOV_LIMITS, &freq);
+
+	/*
+	 * Adjust the frequency with user freq and QoS.
+	 *
+	 * List from the highest priority
+	 * max_freq
+	 * min_freq
+	 */
+	if (devfreq->min_freq && freq < devfreq->min_freq) {
+		freq = devfreq->min_freq;
+		flags &= ~DEVFREQ_FLAG_LEAST_UPPER_BOUND; /* Use GLB */
+	}
+	if (devfreq->max_freq && freq > devfreq->max_freq) {
+		freq = devfreq->max_freq;
+		flags |= DEVFREQ_FLAG_LEAST_UPPER_BOUND; /* Use LUB */
+	}
+
+#ifdef CONFIG_HISI_DRG
+	freq = drg_devfreq_check_limit(devfreq, freq);
+#endif
+
+	freqs.old = cur_freq;
+	freqs.new = freq;
+	devfreq_notify_transition(devfreq, &freqs, DEVFREQ_PRECHANGE);
+
+	err = devfreq->profile->target(devfreq->dev.parent, &freq, flags);
+	if (err) {
+		freqs.new = cur_freq;
+		devfreq_notify_transition(devfreq, &freqs, DEVFREQ_POSTCHANGE);
+		goto out;
+	}
+
+	freqs.new = freq;
+	devfreq_notify_transition(devfreq, &freqs, DEVFREQ_POSTCHANGE);
+
+	if (devfreq->profile->freq_table)
+		if (devfreq_update_status(devfreq, freq))
+			dev_err(&devfreq->dev,
+				"Couldn't update frequency transition information.\n");
+
+	devfreq->previous_freq = freq;
+out:
+	mutex_unlock(&devfreq->lock);
+}
+#endif
+
 /**
  * devfreq_monitor() - Periodically poll devfreq objects.
  * @work:	the work struct used to run devfreq_monitor periodically.

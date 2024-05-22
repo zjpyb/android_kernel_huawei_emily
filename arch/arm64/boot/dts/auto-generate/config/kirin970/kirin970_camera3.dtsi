@@ -30,6 +30,12 @@
 			status = "ok";
 		};
 
+	huawei,hicam_buf {
+		compatible = "huawei,hicam_buf";
+		status = "ok";
+		/* when upgrading to linux-4.14, add iommus here. */
+	};
+
 	huawei,imx179 {
 		compatible = "huawei,imx179";
 		huawei,sensor_name = "IMX179_VENDOR";

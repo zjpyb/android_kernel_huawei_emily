@@ -19,8 +19,8 @@ extern int Static_RingBuffer_IsFull(void);
 
 extern int Static_RingBuffer_Get(void *element);
 
-extern int Static_RingBuffer_Put(void *element);
-extern int Static_RingBuffer_Compare(void *element,int compareCount);
+extern int Static_RingBuffer_Put(const void *element);
+extern int Static_RingBuffer_Compare(const void *element,int compareCount);
 
 extern int Static_RingBuffer_Start_FastTrans(int skip_cnt,int pre_cnt);
 
@@ -31,8 +31,6 @@ extern void Static_RingBuffer_DeInit(void);
 extern int Static_RingBuffer_SetTransFlag(int transFlag);
 
 extern int Static_RingBuffer_GetTransFlag(void);
-
-extern int Static_RingBuffer_Compare(void *element,int compareCount);
 
 #ifdef __cplusplus
 	#if __cplusplus

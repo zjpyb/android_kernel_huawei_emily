@@ -58,6 +58,7 @@ enum {
 	POWER_SUPPLY_HEALTH_COLD,
 	POWER_SUPPLY_HEALTH_WATCHDOG_TIMER_EXPIRE,
 	POWER_SUPPLY_HEALTH_SAFETY_TIMER_EXPIRE,
+	POWER_SUPPLY_HEALTH_UNDERVOLTAGE,
 };
 
 enum {
@@ -183,6 +184,7 @@ enum power_supply_type {
 	POWER_SUPPLY_TYPE_USB_TYPE_C,	/* Type C Port */
 	POWER_SUPPLY_TYPE_USB_PD,	/* Power Delivery Port */
 	POWER_SUPPLY_TYPE_USB_PD_DRP,	/* PD Dual Role Port */
+	POWER_SUPPLY_TYPE_WIRELESS,
 };
 
 enum power_supply_notifier_events {

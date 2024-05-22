@@ -101,6 +101,13 @@ typedef enum bfr_recovery_method
 
     FRM_FACTORY_RESET_AFTER_DOWNLOAD_RECOVERY,
 
+    FRM_BOPD,
+    FRM_STORAGE_RDONLY_BOPD,
+    FRM_HARDWARE_DEGRADE_BOPD,
+    FRM_STORAGE_RDONLY_HARDWARE_DEGRADE_BOPD,
+    FRM_BOPD_AFTER_DOWNLOAD,
+    FRM_HARDWARE_DEGRADE_BOPD_AFTER_DOWNLOAD,
+
     FRM_RECOVERY_METHOD_MAX_COUNT
 } bfr_recovery_method_e;
 
@@ -220,7 +227,7 @@ typedef struct bfr_recovery_record_header
     int record_count_before_boot_success; /* this field shouid be set as 0 when boot success */
     unsigned int safe_mode_enable_flag; /* if this fiels is 0x656e736d means safe mode has been enabled */
     char reserved[96];
-} bfr_recovery_record_header_t;
+} __attribute__((packed)) bfr_recovery_record_header_t;
 
 typedef struct bfr_recovery_record
 {
@@ -236,7 +243,7 @@ typedef struct bfr_recovery_record
     unsigned int boot_fail_time; /* boot time when bootfail happened */
     char bootfail_detail[16];
     char reserved[68];
-} bfr_recovery_record_t;
+} __attribute__((packed)) bfr_recovery_record_t;
 
 typedef struct bfr_recovery_record_param
 {
@@ -265,13 +272,59 @@ typedef enum bfr_misc_cmd
     BFR_MISC_CMD_MAX_COUNT,
 } bfr_misc_cmd_e;
 
+typedef enum
+{
+    SH_BL1_REBOOT = 400000000,
+    SH_BL1_FACTORY_RESET = 400000002,
+    SH_BL1_SAFE_MODE = 400000003,
+    SH_BL1_DOWNLOAD_VERSION = 400000004,
+    SH_BL1_SELFHEAL = 400000019,
+    SH_BL2_REBOOT = 400001000,
+    SH_BL2_FACTORY_RESET = 400001002,
+    SH_BL2_SAFE_MODE = 400001003,
+    SH_BL2_DOWNLOAD_VERSION = 400001004,
+    SH_BL2_SELFHEAL = 400001019,
+    SH_KERNEL_REBOOT = 400002000,
+    SH_KERNEL_FACTORY_RESET = 400002002,
+    SH_KERNEL_SAFE_MODE = 400002002,
+    SH_KERNEL_DOWNLOAD_VERSION = 400002004,
+    SH_KERNEL_BOPD = 400002014,
+    SH_KERNEL_STORAGE_RDONLY_BOPD = 400002015,
+    SH_KERNEL_HARDWARE_DEGRADE_BOPD = 400002016,
+    SH_KERNEL_BOPD_AFTER_DOWNLOAD = 400002017,
+    SH_KERNEL_HARDWARE_DEGRADE_BOPD_AFTER_DOWNLOAD = 400002018,
+    SH_KERNEL_SELFHEAL = 400002019,
+    SH_NATIVE_REBOOT = 400003000,
+    SH_NATIVE_FACTORY_RESET = 400003002,
+    SH_NATIVE_SAFE_MODE = 400003003,
+    SH_NATIVE_DOWNLOAD_VERSION = 400003004,
+    SH_NATIVE_BOPD = 400003014,
+    SH_NATIVE_STORAGE_RDONLY_BOPD = 400003015,
+    SH_NATIVE_HARDWARE_DEGRADE_BOPD = 400003016,
+    SH_NATIVE_BOPD_AFTER_DOWNLOAD = 400003017,
+    SH_NATIVE_HARDWARE_DEGRADE_BOPD_AFTER_DOWNLOAD = 400003018,
+    SH_NATIVE_SELFHEAL = 400003019,
+    SH_FRAMEWORK_REBOOT= 400004000,
+    SH_FRAMEWORK_FACTORY_RESET = 400004002,
+    SH_FRAMEWORK_SAFE_MODE = 400004003,
+    SH_FRAMEWORK_DOWNLOAD_VERSION = 400004004,
+    SH_FRAMEWORK_BOPD = 400004014,
+    SH_FRAMEWORK_STORAGE_RDONLY_BOPD = 400004015,
+    SH_FRAMEWORK_HARDWARE_DEGRADE_BOPD = 400004016,
+    SH_FRAMEWORK_BOPD_AFTER_DOWNLOAD = 400004017,
+    SH_FRAMEWORK_HARDWARE_DEGRADE_BOPD_AFTER_DOWNLOAD = 400004018,
+    SH_FRAMEWORK_SELFHEAL = 400004019,
+    SH_UNKNOW = 400004999,
+} bfmr_selfheal_code_e;
 
 /*----export macroes-----------------------------------------------------------------*/
 
 #define BFR_ENTER_ERECOVERY_CMD  "boot-erecovery"
 #define BFR_ENTER_RECOVERY_CMD  "boot-recovery"
 #define BFR_ENTER_SAFE_MODE_CMD "boot-safemode"
+#define BFR_ENTER_BOPD_MODE_CMD "boot-bopd"
 #define BFR_MISC_PART_NAME "misc"
+#define BFR_VALID_LONG_PRESS_LOG "valid_long_press"
 
 /* 0x72656364-'r' 'e' 'c' 'd' */
 #define BFR_RRECORD_MAGIC_NUMBER ((unsigned int)0x72656364)
@@ -290,6 +343,20 @@ typedef enum bfr_misc_cmd
     (((unsigned int)FRM_GOTO_ERECOVERY_DOWNLOAD_RECOVERY == recovery_method) \
     || ((unsigned int)FRM_GOTO_ERECOVERY_DOWNLOAD_RECOVERY_AND_DEL_FILES == recovery_method) \
     || ((unsigned int)FRM_GOTO_ERECOVERY_DOWNLOAD_RECOVERY_AND_FACTORY_RESET == recovery_method))
+
+#define BOPD_BEFORE_DOWNLOAD ((unsigned long long)0x2)
+#define BOPD_WITH_STORAGE_RDONLY_BEFORE_DOWNLOAD ((unsigned long long)0x3)
+#define BOPD_WITH_HARDWARE_DEGRADE_BEFORE_DOWNLOAD ((unsigned long long)0x6)
+#define BOPD_WITH_STORAGE_RDONLY_HARDWARE_DEGRADE_BEFORE_DOWNLOAD ((unsigned long long)0x7)
+#define BOPD_AFTER_DOWNLOAD ((unsigned long long)0xa)
+#define BOPD_WITH_HARDWARE_DEGRADE_AFTER_DOWNLOAD ((unsigned long long)0xe)
+#define bfr_is_bopd_mode(bopd_mode_value) \
+    ((BOPD_BEFORE_DOWNLOAD == bopd_mode_value) \
+    || (BOPD_WITH_STORAGE_RDONLY_BEFORE_DOWNLOAD == bopd_mode_value) \
+    || (BOPD_WITH_HARDWARE_DEGRADE_BEFORE_DOWNLOAD == bopd_mode_value) \
+    || (BOPD_WITH_STORAGE_RDONLY_HARDWARE_DEGRADE_BEFORE_DOWNLOAD == bopd_mode_value) \
+    || (BOPD_AFTER_DOWNLOAD == bopd_mode_value) \
+    || (BOPD_WITH_HARDWARE_DEGRADE_AFTER_DOWNLOAD == bopd_mode_value))
 
 
 /*----global variables-----------------------------------------------------------------*/

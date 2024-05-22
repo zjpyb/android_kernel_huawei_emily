@@ -317,7 +317,6 @@ static int hw_mp3336_init(struct hw_flash_ctrl_t *flash_ctrl)
     }
 
     hw_mp3336_set_pin_reset(flash_ctrl,LOW);
-    //msleep(MP3336_RESET_HOLD_TIME);
     if(pdata->need_wakelock == WAKE_LOCK_ENABLE) {
         wake_lock_init(&pdata->mp3336_wakelock,WAKE_LOCK_SUSPEND,"mp3336");
     }

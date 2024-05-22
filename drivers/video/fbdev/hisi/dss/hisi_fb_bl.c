@@ -13,6 +13,7 @@
 
 #include "hisi_fb.h"
 #include <linux/leds.h>
+#include "lcdkit_backlight_ic_common.h"
 
 #include <chipset_common/hwzrhung/hung_wp_screen.h>
 
@@ -21,11 +22,16 @@
 static int lcd_backlight_registered;
 static unsigned int is_recovery_mode;
 static int is_no_fastboot_bl_enable;
+static bool bl_slope_status;
 
 unsigned long backlight_duration = (3 * HZ / 60);
 
 extern unsigned int get_boot_into_recovery_flag(void);
 
+bool hisi_get_bl_slope_status(void)
+{
+	return bl_slope_status;
+}
 void hisifb_set_backlight(struct hisi_fb_data_type *hisifd, uint32_t bkl_lvl, bool enforce)
 {
 	struct hisi_fb_panel_data *pdata = NULL;
@@ -35,6 +41,12 @@ void hisifb_set_backlight(struct hisi_fb_data_type *hisifd, uint32_t bkl_lvl, bo
 		HISI_FB_ERR("hisifd is NULL");
 		return;
 	}
+
+	if (NULL == hisifd->pdev) {
+		HISI_FB_ERR("hisifd->pdev is NULL");
+		return;
+	}
+
 	pdata = dev_get_platdata(&hisifd->pdev->dev);
 	if (NULL == pdata) {
 		HISI_FB_ERR("pdata is NULL");
@@ -55,7 +67,9 @@ void hisifb_set_backlight(struct hisi_fb_data_type *hisifd, uint32_t bkl_lvl, bo
 		}
 
 		hung_wp_screen_setbl(temp);
+		bl_slope_status = true;
 		if (hisifd->backlight.bl_level_old == 0) {
+			bl_slope_status = false;
 			HISI_FB_INFO("backlight level = %d \n", bkl_lvl);
 		}
 		hisifd->bl_level = bkl_lvl;
@@ -157,6 +171,11 @@ void hisifb_backlight_update(struct hisi_fb_data_type *hisifd)
 		HISI_FB_ERR("hisifd is NULL");
 		return;
 	}
+	if (NULL == hisifd->pdev) {
+		HISI_FB_ERR("hisifd->pdev is NULL");
+		return;
+	}
+
 	pdata = dev_get_platdata(&hisifd->pdev->dev);
 	if (NULL == pdata) {
 		HISI_FB_ERR("pdata is NULL");
@@ -180,6 +199,11 @@ void hisifb_backlight_cancel(struct hisi_fb_data_type *hisifd)
 		HISI_FB_ERR("hisifd is NULL");
 		return;
 	}
+	if (NULL == hisifd->pdev) {
+		HISI_FB_ERR("hisifd->pdev is NULL");
+		return;
+	}
+
 	pdata = dev_get_platdata(&hisifd->pdev->dev);
 	if (NULL == pdata) {
 		HISI_FB_ERR("pdata is NULL");
@@ -222,7 +246,7 @@ static void hisi_fb_set_bl_brightness(struct led_classdev *led_cdev,
 		return;
 	}
 
-	if (value < 0)
+	if (value < 0) //lint !e568
 		value = 0;
 
 	if (value > hisifd->panel_info.bl_max)
@@ -624,6 +648,13 @@ void bl_flicker_detector_collect_device_bl(int level)
 			g_flicker_detector.upper_bl_value_last, upper_bl_value_cur,
 			g_flicker_detector.device_bl_value_last, device_bl_value_cur,
 			device_bl_weber, weber_threshold_min, weber_threshold_max);
+		if (!dsm_client_ocuppy(lcd_dclient)) {
+			dsm_client_record(lcd_dclient,"flicker warning: upper %d->%d, device %d->%d, %d out of [%d, %d]\n",
+			g_flicker_detector.upper_bl_value_last, upper_bl_value_cur,
+			g_flicker_detector.device_bl_value_last, device_bl_value_cur,
+			device_bl_weber, weber_threshold_min, weber_threshold_max);
+		}
+		dsm_client_notify(lcd_dclient, DSM_LCD_BACKLIGHT_FLICKER_ERROR_NO);
 		if (g_flicker_detector.config.dump_enable)
 		{
 			bl_flicker_detector_ring_buffer_dump(jiffies_cur);

@@ -237,7 +237,7 @@ extern void save_nfc_lowpower_log_2_sdt_etc(void);
 extern int32 read_device_reg16(uint32 address, int16* value);
 extern int32 write_device_reg16(uint32 address, int16 value);
 extern int32 is_device_mem_test_succ(void);
-extern int32 get_device_test_mem(void);
+extern int32 get_device_ram_test_result(int32 is_wcpu, uint32* cost);
 extern uint8 **g_auc_cfg_path_etc;
 extern uint8 *g_auc_pilot_cfg_patch_in_vendor[CFG_FILE_TOTAL];
 #ifdef __cplusplus

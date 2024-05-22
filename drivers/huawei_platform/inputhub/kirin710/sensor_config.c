@@ -47,6 +47,7 @@ extern int tmd2745_flag;
 extern int rohm_rpr531_flag;
 extern int tsl2591_flag;
 extern int bh1726_flag;
+int g_apds9308Flag = 0;
 s16 minThreshold_als_para;
 s16 maxThreshold_als_para;
 
@@ -56,6 +57,7 @@ static char gyro_temperature_offset[GYRO_TEMP_CALI_NV_SIZE];
 int ps_sensor_offset[PS_CALIBRATE_DATA_LENGTH];
 static uint8_t tof_sensor_offset[TOF_CALIDATA_NV_SIZE];
 uint16_t als_offset[ALS_CALIBRATE_DATA_LENGTH];
+uint16_t als_dark_noise_offset = 0;
 static char str_charger[] = "charger_plug_in_out";
 static uint8_t gsensor_calibrate_data[MAX_SENSOR_CALIBRATE_DATA_LENGTH];
 static uint8_t msensor_calibrate_data[MAX_MAG_CALIBRATE_DATA_LENGTH];
@@ -518,6 +520,13 @@ int send_cap_prox_calibrate_data_to_mcu(void)
 	} else if(!strncmp(sensor_chip_info[CAP_PROX], "huawei,semtech-sx9323", strlen("huawei,semtech-sx9323"))){
 		hwlog_info("sx9323:offset=%d, diff=%d length:%ld %ld\n", sar_calibrate_datas.semtech_cali_data.offset,
 				sar_calibrate_datas.semtech_cali_data.diff, sizeof(sar_calibrate_datas), sizeof(sar_calibrate_datas));
+	} else if (!strncmp(sensor_chip_info[CAP_PROX], "huawei,abov-a96t3x6",
+		strlen("huawei,abov-a96t3x6"))) {
+		hwlog_info("a96t3x6:offset=%d, diff=%d length:%ld %ld diff2=%d len:%ld\n",
+			sar_calibrate_datas.abov_cali_data.offset,
+			sar_calibrate_datas.abov_cali_data.diff,
+			sizeof(sar_calibrate_datas),
+			sizeof(sar_calibrate_datas));
 	} else {
 		hwlog_info("CAP_PROX cal_offset[0],digi_offset[0]:%x,%x\n",
 			sar_calibrate_datas.cap_cali_data.cal_offset[0],sar_calibrate_datas.cap_cali_data.digi_offset[0]);
@@ -601,7 +610,7 @@ void reset_calibrate_data(void)
 	} else {
 		send_calibrate_data_to_mcu(TAG_MAG, SUB_CMD_SET_OFFSET_REQ, msensor_calibrate_data, MAG_CALIBRATE_DATA_NV_SIZE, true);
 	}
-	if (txc_ps_flag == 1 || ams_tmd2620_ps_flag == 1 || avago_apds9110_ps_flag == 1 || ams_tmd3725_ps_flag == 1 
+	if (txc_ps_flag == 1 || ams_tmd2620_ps_flag == 1 || avago_apds9110_ps_flag == 1 || ams_tmd3725_ps_flag == 1
 		|| liteon_ltr582_ps_flag == 1 || apds9999_ps_flag == 1 || ams_tmd3702_ps_flag == 1 || vishay_vcnl36658_ps_flag == 1 || ltr2568_ps_flag == 1) {
 		send_calibrate_data_to_mcu(TAG_PS, SUB_CMD_SET_OFFSET_REQ, ps_sensor_calibrate_data, PS_CALIDATA_NV_SIZE, true);
 	}
@@ -609,7 +618,8 @@ void reset_calibrate_data(void)
 		send_calibrate_data_to_mcu(TAG_TOF, SUB_CMD_SET_OFFSET_REQ, tof_sensor_calibrate_data, TOF_CALIDATA_NV_SIZE, true);
 	}
 	if (rohm_rgb_flag == 1 || avago_rgb_flag == 1 || ams_tmd3725_rgb_flag == 1 || liteon_ltr582_rgb_flag == 1 || is_cali_supported == 1
-		|| apds9999_rgb_flag == 1 || ams_tmd3702_rgb_flag == 1 || apds9253_rgb_flag == 1|| vishay_vcnl36658_als_flag ==1) {
+		|| apds9999_rgb_flag == 1 || ams_tmd3702_rgb_flag == 1 || apds9253_rgb_flag == 1|| vishay_vcnl36658_als_flag ==1
+		|| tsl2591_flag == 1) {
 		send_calibrate_data_to_mcu(TAG_ALS, SUB_CMD_SET_OFFSET_REQ, als_sensor_calibrate_data, ALS_CALIDATA_NV_SIZE, true);
 	}
 	if (strlen(sensor_chip_info[GYRO])) {
@@ -799,17 +809,43 @@ int tpmodule_notifier_call_chain(unsigned long val, void *v)
 }
 EXPORT_SYMBOL(tpmodule_notifier_call_chain);
 
+void set_als_extend_prameters(als_para_normal_table *als_para_diff_tp_color_table, int arraysize)
+{
+	unsigned int i = 0;
+	int min_threshold_num = 0;
+	int max_threshold_num = 0;
+
+	for (i = 0; i < arraysize; i++) {
+		if (((als_para_diff_tp_color_table + i)->phone_type == als_data.als_phone_type) &&
+				((als_para_diff_tp_color_table + i)->phone_version == als_data.als_phone_version) &&
+				(((als_para_diff_tp_color_table + i)->tp_manufacture == tplcd_manufacture) ||
+				 ((als_para_diff_tp_color_table + i)->tp_manufacture == TS_PANEL_UNKNOWN))) {
+			break;
+		}
+	}
+
+	memcpy(als_data.als_extend_data,
+			(als_para_diff_tp_color_table + i)->als_para,
+			sizeof(s16) * (als_para_diff_tp_color_table + i)->len >
+			SENSOR_PLATFORM_EXTEND_ALS_DATA_SIZE
+			? SENSOR_PLATFORM_EXTEND_ALS_DATA_SIZE
+			: sizeof(s16) * (als_para_diff_tp_color_table + i)->len);
+	min_threshold_num = (als_para_diff_tp_color_table + i)->len - 1;
+	max_threshold_num = (als_para_diff_tp_color_table + i)->len - 2;
+	minThreshold_als_para = (als_para_diff_tp_color_table + i)->als_para[min_threshold_num];
+	maxThreshold_als_para = (als_para_diff_tp_color_table + i)->als_para[max_threshold_num];
+}
+
 void set_tsl2591_als_extend_prameters(void)
 {
 	int tsl2591_als_para_table = 0;
 	unsigned int i = 0;
 	for(i=0; i<ARRAY_SIZE(tsl2591_als_para_diff_tp_color_table);i++)
 	{
-		if((tsl2591_als_para_diff_tp_color_table[i].phone_type == als_data.als_phone_type)
-			&& (tsl2591_als_para_diff_tp_color_table[i].phone_version == als_data.als_phone_version)
-			&&(( tsl2591_als_para_diff_tp_color_table[i].tp_manufacture == tp_manufacture)
-				||(tsl2591_als_para_diff_tp_color_table[i].tp_manufacture == TS_PANEL_UNKNOWN)))
-		{
+		if((tsl2591_als_para_diff_tp_color_table[i].phone_type == als_data.als_phone_type) &&
+			(tsl2591_als_para_diff_tp_color_table[i].phone_version == als_data.als_phone_version) &&
+			((tsl2591_als_para_diff_tp_color_table[i].tp_manufacture == tplcd_manufacture) ||
+				(tsl2591_als_para_diff_tp_color_table[i].tp_manufacture == TS_PANEL_UNKNOWN))) {
 			tsl2591_als_para_table = i;
 			break;
 		}
@@ -832,21 +868,52 @@ void set_bh1726_als_extend_prameters(void)
 	{
 		if((bh1726_als_para_diff_tp_color_table[i].phone_type == als_data.als_phone_type)
 			&& (bh1726_als_para_diff_tp_color_table[i].phone_version == als_data.als_phone_version)
-			&&(( bh1726_als_para_diff_tp_color_table[i].tp_manufacture == tp_manufacture)
+			&&(( bh1726_als_para_diff_tp_color_table[i].tp_manufacture == tplcd_manufacture)
 				||(bh1726_als_para_diff_tp_color_table[i].tp_manufacture == TS_PANEL_UNKNOWN)))
 		{
 			bh1726_als_para_table = i;
 			break;
 		}
 	}
+
 	memcpy(als_data.als_extend_data,bh1726_als_para_diff_tp_color_table[bh1726_als_para_table].bh1726_para,
 		sizeof(bh1726_als_para_diff_tp_color_table[bh1726_als_para_table].bh1726_para) >
 		SENSOR_PLATFORM_EXTEND_ALS_DATA_SIZE?
 		SENSOR_PLATFORM_EXTEND_ALS_DATA_SIZE:
 		sizeof(bh1726_als_para_diff_tp_color_table[bh1726_als_para_table].bh1726_para));
 
-	minThreshold_als_para = bh1726_als_para_diff_tp_color_table[bh1726_als_para_table].bh1726_para[BH1726_MAX_ThRESHOLD_NUM];
-	maxThreshold_als_para = bh1726_als_para_diff_tp_color_table[bh1726_als_para_table].bh1726_para[BH1726_MIN_ThRESHOLD_NUM];
+	minThreshold_als_para = bh1726_als_para_diff_tp_color_table[bh1726_als_para_table].bh1726_para[BH1726_MIN_ThRESHOLD_NUM];
+	maxThreshold_als_para = bh1726_als_para_diff_tp_color_table[bh1726_als_para_table].bh1726_para[BH1726_MAX_ThRESHOLD_NUM];
+}
+
+/* set als parameters */
+void SetApds9308AlsExtendPrameters(void)
+{
+	int paraTable = 0;
+	unsigned int i = 0;
+	unsigned int len = 0;
+
+	for (i = 0; i < ARRAY_SIZE(g_apds9308Para); i++) {
+		if ((g_apds9308Para[i].phone_type
+				== als_data.als_phone_type)
+			&& (g_apds9308Para[i].phone_version
+				== als_data.als_phone_version)
+			&& ((g_apds9308Para[i].tp_manufacture
+				== tplcd_manufacture)
+			 || (g_apds9308Para[i].tp_manufacture
+				== TS_PANEL_UNKNOWN))) {
+			paraTable = i;
+			break;
+		}
+	}
+	if ((g_apds9308Para[paraTable].apds9308_para) > SENSOR_PLATFORM_EXTEND_ALS_DATA_SIZE) {
+		len = SENSOR_PLATFORM_EXTEND_ALS_DATA_SIZE;
+	} else {
+		len = g_apds9308Para[paraTable].apds9308_para;
+	}
+	memcpy(als_data.als_extend_data, g_apds9308Para[paraTable].apds9308_para, len);
+	minThreshold_als_para = g_apds9308Para[paraTable].apds9308_para[APDS9308_MIN_THD_NUM];
+	maxThreshold_als_para = g_apds9308Para[paraTable].apds9308_para[APDS9308_MAX_THD_NUM];
 }
 
 void set_rpr531_als_extend_prameters(void)
@@ -1174,6 +1241,17 @@ void select_als_para(struct device_node *dn)
 		set_tsl2591_als_extend_prameters();
 	} else if (bh1726_flag == 1) {
 		set_bh1726_als_extend_prameters();
+	} else if (g_apds9308Flag == 1) {
+		SetApds9308AlsExtendPrameters();
+	} else if (vishay_vcnl36832_als_flag == 1) {
+		set_als_extend_prameters(&vcnl36832_als_para_diff_tp_color_table[0],
+				ARRAY_SIZE(vcnl36832_als_para_diff_tp_color_table));
+	} else if (stk3338_als_flag == 1) {
+		set_als_extend_prameters(&stk3338_als_para_diff_tp_color_table[0],
+				ARRAY_SIZE(stk3338_als_para_diff_tp_color_table));
+	} else if (ltr2568_als_flag == 1) {
+		set_als_extend_prameters(&ltr2568_als_para_diff_tp_color_table[0],
+				ARRAY_SIZE(ltr2568_als_para_diff_tp_color_table));
 	}
 	else {
 		ret = fill_extend_data_in_dts(dn, "als_extend_data", als_data.als_extend_data, 12, EXTEND_DATA_TYPE_IN_DTS_HALF_WORD);

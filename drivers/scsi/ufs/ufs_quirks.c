@@ -21,6 +21,9 @@
 #endif
 #include <linux/of.h>
 #include <linux/string.h>
+#ifdef CONFIG_HUAWEI_STORAGE_ROFA
+#include <chipset_common/storage_rofa/storage_rofa.h>
+#endif
 
 #define SERIAL_NUM_SIZE 12
 #define BOARDID_SIZE 4
@@ -50,7 +53,7 @@ static char old_product_name[MAX_OLD_PRDCT_NAME_NR][MAX_MODEL_LEN] = {
  * for a new product, samsung has 24 byte long of serial number in unicode,
  * which should be transfered to 12 byte long in ascii.
  */
-static int is_old_product_name(char *product_name, unsigned int *boardid)
+static int is_old_product_name(const char *product_name, unsigned int *boardid)
 {
 	int i = 0;
 
@@ -103,9 +106,7 @@ err_get_bid:
 }
 
 static void ufs_set_sec_unique_number(struct ufs_hba *hba,
-				      uint8_t *str_desc_buf,
-				      uint8_t *desc_buf,
-					  char *product_name)
+	uint8_t *str_desc_buf, uint8_t *desc_buf, const char *product_name)
 {
 	int i, idx;
 	unsigned int boardid[BOARDID_SIZE] = {0};
@@ -260,6 +261,14 @@ static int ufs_get_device_info(struct ufs_hba *hba,
 	}
 #endif
 
+#if defined(CONFIG_HISI_BOOTDEVICE) && defined(CONFIG_HUAWEI_STORAGE_ROFA)
+	if (get_bootdevice_type() == BOOT_DEVICE_UFS) {
+		storage_rochk_record_bootdevice_type(1); /* set ufs type */
+		storage_rochk_record_bootdevice_manfid(hba->manufacturer_id);
+		storage_rochk_record_bootdevice_model(card_data->model);
+	}
+#endif
+
 out:
 	return err;
 }
@@ -291,7 +300,7 @@ void ufs_advertise_fixup_device(struct ufs_hba *hba)
 	}
 out:
 
-	printk(KERN_ALERT "GK in func=%s:%d,Failed getting device info\n",__func__,__LINE__);
+	dev_info(hba->dev, "Successful getting device info\n");
 }
 
 void ufs_get_geometry_info(struct ufs_hba *hba)
@@ -372,6 +381,11 @@ void ufs_get_device_health_info(struct ufs_hba *hba)
 	set_bootdevice_pre_eol_info(pre_eol_info);
 	set_bootdevice_life_time_est_typ_a(life_time_est_typ_a);
 	set_bootdevice_life_time_est_typ_b(life_time_est_typ_b);
+#endif
+
+#if defined(CONFIG_HISI_BOOTDEVICE) && defined(CONFIG_HUAWEI_STORAGE_ROFA)
+	if (get_bootdevice_type() == BOOT_DEVICE_UFS)
+		storage_rochk_record_bootdevice_pre_eol_info(pre_eol_info);
 #endif
 
 out:

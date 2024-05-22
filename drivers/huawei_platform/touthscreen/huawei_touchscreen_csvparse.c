@@ -7,7 +7,7 @@
 
 #include "huawei_touchscreen_chips.h"
 
-static enum data_type {
+ enum data_type {
 	MUTUAL_RAW_MAX = 1,
 	MUTUAL_RAW_MIN,
 };
@@ -31,7 +31,7 @@ static void goto_next_line(char **ptr)
 {
 	do {
 		*ptr = *ptr + 1;
-	} while (**ptr != '\n');
+	} while ((**ptr != '\n')&&(**ptr != '\0'));
 	*ptr = *ptr + 1;
 }
 
@@ -45,7 +45,7 @@ static void parse_valid_data(char *buf_start, loff_t buf_size,
 	char row_data[512] = {0};
 
 	if(!ptr) {
-		TS_LOG_ERR("%s, ptr is NULL\n", __func__, ptr);
+		TS_LOG_ERR("%s, ptr is NULL\n", __func__);
 		return;
 	}
 	for (i = 0; i < rows; i++) {
@@ -171,7 +171,7 @@ int ts_parse_csvfile(int columns, int rows, struct ts_rawdata_limit_tab* limit_t
 		parse_valid_data(buf, stat.size, ptr, MUTUAL_RAW_MIN, limit_tab->MutualRawMin, rows);
 		print_data(MUTUAL_RAW_MIN, limit_tab->MutualRawMin, rows, columns);
 	} else {
-		TS_LOG_ERR("%s: ret=%d,read_ret=%d, buf=%p, stat.size=%lld\n", __func__, ret, read_ret, buf, stat.size);
+		TS_LOG_ERR("%s: ret=%d,read_ret=%d, buf=%pK, stat.size=%lld\n", __func__, ret, read_ret, buf, stat.size);
 		ret = -6;
 		goto exit_free;
 	}

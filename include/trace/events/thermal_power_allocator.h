@@ -29,11 +29,9 @@ TRACE_EVENT(thermal_power_allocator,/* [false alarm]:原生宏定义 */
 	),
 	TP_fast_assign(
 		__entry->tz_id = tz->id;
-		memcpy(__get_dynamic_array(req_power), req_power,
-			num_actors * sizeof(*req_power));
+		memcpy(__get_dynamic_array(req_power), req_power, num_actors * sizeof(*req_power)); /* unsafe_function_ignore: memcpy */
 		__entry->total_req_power = total_req_power;
-		memcpy(__get_dynamic_array(granted_power), granted_power,
-			num_actors * sizeof(*granted_power));
+		memcpy(__get_dynamic_array(granted_power), granted_power, num_actors * sizeof(*granted_power)); /* unsafe_function_ignore: memcpy */
 		__entry->total_granted_power = total_granted_power;
 		__entry->num_actors = num_actors;
 		__entry->power_range = power_range;
@@ -45,10 +43,10 @@ TRACE_EVENT(thermal_power_allocator,/* [false alarm]:原生宏定义 */
 	TP_printk("thermal_zone_id=%d req_power={%s} total_req_power=%u granted_power={%s} total_granted_power=%u power_range=%u max_allocatable_power=%u current_temperature=%d delta_temperature=%d",
 		__entry->tz_id,
 		__print_array(__get_dynamic_array(req_power),
-                              __entry->num_actors, 4),
+                              __entry->num_actors, sizeof(u32)),
 		__entry->total_req_power,
 		__print_array(__get_dynamic_array(granted_power),
-                              __entry->num_actors, 4),
+                              __entry->num_actors, sizeof(u32)),
 		__entry->total_granted_power, __entry->power_range,
 		__entry->max_allocatable_power, __entry->current_temp,
 		__entry->delta_temp)
@@ -171,14 +169,11 @@ TRACE_EVENT(IPA_allocator,
 		__entry->delta_temp = delta_temp;
 		__entry->num_actors = num_actors;
 		__entry->power_range = power_range;
-		memcpy(__get_dynamic_array(req_power), req_power,
-			num_actors * sizeof(*req_power));
+		memcpy(__get_dynamic_array(req_power), req_power, num_actors * sizeof(*req_power)); /* unsafe_function_ignore: memcpy */
 		__entry->total_req_power = total_req_power;
-		memcpy(__get_dynamic_array(granted_power), granted_power,
-			num_actors * sizeof(*granted_power));
+		memcpy(__get_dynamic_array(granted_power), granted_power, num_actors * sizeof(*granted_power)); /* unsafe_function_ignore: memcpy */
 		__entry->total_granted_power = total_granted_power;
-		memcpy(__get_dynamic_array(max_power), max_power,
-			num_actors * sizeof(*max_power));
+		memcpy(__get_dynamic_array(max_power), max_power, num_actors * sizeof(*max_power)); /* unsafe_function_ignore: memcpy */
 		__entry->max_allocatable_power = max_allocatable_power;
 	),
 
@@ -186,11 +181,11 @@ TRACE_EVENT(IPA_allocator,
 			__entry->current_temp,__entry->control_temp,__entry->switch_temp,
 			__entry->delta_temp,
 			__entry->power_range,
-		__print_array(__get_dynamic_array(req_power), __entry->num_actors, 4),
+		__print_array(__get_dynamic_array(req_power), __entry->num_actors, sizeof(u32)),
 		__entry->total_req_power,
-		__print_array(__get_dynamic_array(max_power), __entry->num_actors, 4),
+		__print_array(__get_dynamic_array(max_power), __entry->num_actors, sizeof(u32)),
 		__entry->max_allocatable_power,
-		__print_array(__get_dynamic_array(granted_power), __entry->num_actors, 4),
+		__print_array(__get_dynamic_array(granted_power), __entry->num_actors, sizeof(u32)),
 		__entry->total_granted_power
 		)
 
@@ -241,8 +236,7 @@ TRACE_EVENT(IPA_actor_cpu_get_power,
 		__assign_bitmask(cpumask, cpumask_bits(cpus),
 				num_possible_cpus());
 		__entry->freq = freq;
-		memcpy(__get_dynamic_array(load), load,
-			load_len * sizeof(*load));
+		memcpy(__get_dynamic_array(load), load, load_len * sizeof(*load)); /* unsafe_function_ignore: memcpy */
 		__entry->load_len = load_len;
 		__entry->dynamic_power = dynamic_power;
 		__entry->static_power = static_power;
@@ -252,7 +246,7 @@ TRACE_EVENT(IPA_actor_cpu_get_power,
 	TP_printk("%s,%lu,%s,%u,%u,%u",
 		__get_bitmask(cpumask),
 		__entry->freq,
-		__print_array(__get_dynamic_array(load), __entry->load_len, 4),
+		__print_array(__get_dynamic_array(load), __entry->load_len, sizeof(u32)),
 		__entry->dynamic_power,
 		__entry->static_power,
 		__entry->req_power)
@@ -377,28 +371,25 @@ TRACE_EVENT(IPA_actor_gpu_get_power,
 
 
 TRACE_EVENT(IPA_get_tsens_value,/* [false alarm]:原生宏定义 */
-	TP_PROTO(long tsens_value0, long tsens_value1, long tsens_value2,
-	         long tsens_value_max),
+	TP_PROTO(u32 tsens_num, int *tsens_value, int tsens_value_max),
 
-	TP_ARGS(tsens_value0, tsens_value1, tsens_value2, tsens_value_max),
+	TP_ARGS(tsens_num, tsens_value, tsens_value_max),
 
 	TP_STRUCT__entry(
-		__field(long, tsens_value0   )
-		__field(long, tsens_value1   )
-		__field(long, tsens_value2   )
-		__field(long, tsens_value_max)
+		__field(u32, tsens_num)
+		__dynamic_array(int, tsens_value, tsens_num)
+		__field(int, tsens_value_max)
 	),
 
 	TP_fast_assign(
-		__entry->tsens_value0 = tsens_value0;
-		__entry->tsens_value1 = tsens_value1;
-		__entry->tsens_value2 = tsens_value2;
+		__entry->tsens_num = tsens_num;
+		memcpy(__get_dynamic_array(tsens_value), tsens_value, tsens_num * sizeof(*tsens_value)); /* unsafe_function_ignore: memcpy */
 		__entry->tsens_value_max = tsens_value_max;
 	),
 
-	TP_printk("%ld,%ld,%ld,%ld",
-		 __entry->tsens_value0, __entry->tsens_value1, __entry->tsens_value2,
-		 __entry->tsens_value_max)
+	TP_printk("%s,%d",
+		 __print_array(__get_dynamic_array(tsens_value), __entry->tsens_num,
+		 sizeof(int)), __entry->tsens_value_max)
 ); /* [false alarm]:fortify */
 
 TRACE_EVENT(IPA_hot_plug,

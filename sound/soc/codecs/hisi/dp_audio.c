@@ -88,8 +88,6 @@ static int dp_audio_probe(struct platform_device *pdev)
 	int ret = 0;
 	struct device *dev = &pdev->dev;
 
-	BUG_ON(NULL == dev);
-
 	pr_info("[%s:%d], dp_audio_probe \n", __FUNCTION__, __LINE__);
 
 	dev_set_name(dev, "dp-audio");

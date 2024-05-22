@@ -1,6 +1,5 @@
 config HISI_HHEE
 	bool "HISI HHEE support"
-	select DEBUG_RODATA
 	default n
 	help
 	  Say yes here to support the HISI HHEE

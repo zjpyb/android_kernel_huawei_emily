@@ -346,7 +346,8 @@ void FUSB3601_StateMachineAttachedSink(struct Port *port)
 	}
 
 	/* A VBus disconnect should generate an interrupt to wake us up */
-	if ((vbus_sink_disch_low || port->registers_.AlertMskL.M_PORT_PWR && !port->registers_.PwrStat.VBUS_VAL)){
+	if ((vbus_sink_disch_low || port->registers_.AlertMskL.M_PORT_PWR) &&
+		!port->registers_.PwrStat.VBUS_VAL) {
 		port->registers_.AlertMskH.M_VBUS_SNK_DISC = 0;
 		FUSB3601_WriteRegisters(port, regALERTMSKH, 1);
 		FUSB3601_ClearInterrupt(port, regALERTL, MSK_I_PORT_PWR);
@@ -369,7 +370,7 @@ void FUSB3601_StateMachineAttachedSink(struct Port *port)
 				FUSB3601_platform_delay(10 * 1000);
 				FUSB3601_DetectCCPin(port);
 				if (port->cc_term_ == SNK_OPEN && port->vconn_term_ == SNK_OPEN) {
-					hwlog_info("%s:unattach while hardreset is true%d\n", __func__);
+					hwlog_info("%s:unattach while hardreset is true\n", __func__);
 					FUSB3601_platform_delay(5 * 1000);
 					FUSB3601_SetStateUnattached(port);
 				}
@@ -533,8 +534,8 @@ void FUSB3601_StateMachineDebugAccessorySink(struct Port *port)
 		FUSB3601_ReadRegister(port, regPWRSTAT);
 	}
 
-	if (port->registers_.AlertMskL.M_PORT_PWR && 
-		!port->registers_.PwrStat.VBUS_VAL ||
+	if ((port->registers_.AlertMskL.M_PORT_PWR &&
+		!port->registers_.PwrStat.VBUS_VAL) ||
 		port->registers_.AlertH.I_VBUS_SNK_DISC) {
 		FUSB3601_ClearInterrupt(port, regALERTL, MSK_I_PORT_PWR);
 		FUSB3601_ClearInterrupt(port, regALERTH, MSK_I_VBUS_SNK_DISC);
@@ -984,7 +985,6 @@ void FUSB3601_RoleSwapToAttachedSink(struct Port *port)
 		port->registers_.RoleCtrl.CC2_TERM = CCRoleOpen;
 	}
 
-	FUSB3601_platform_notify_dual_role_instance_changed();
 	FUSB3601_WriteRegister(port, regROLECTRL);
 
 	/* Manually disable VBus */

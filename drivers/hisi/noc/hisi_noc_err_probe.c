@@ -24,6 +24,7 @@
 #include "hisi_noc_info.h"
 #include <linux/hisi/util.h>
 #include <linux/hisi/reset.h>
+#include "securec.h"
 #include <linux/hisi/rdr_hisi_platform.h>
 #include <linux/hisi/rdr_pub.h>
 
@@ -38,6 +39,7 @@ static struct err_probe_msg g_err_msg;
 
 extern int sensorhub_noc_notify(int value);
 
+
 bool is_pcie_target(int target_id);
 extern void dump_pcie_apb_info(void);
 extern void set_pcie_dump_flag(int target_id);
@@ -50,8 +52,7 @@ int __weak sensorhub_noc_notify(int value)
 
 static void hisi_noc_err_handle_work_func(struct work_struct *work)
 {
-    if (work != NULL)
-		pr_info("hisi_noc_err_handle_work_func 0x%lx\n", (unsigned long)work);
+		pr_info("hisi_noc_err_handle_work_func 0x%lx\n", (uintptr_t)work);
 
 	switch(g_noc_err_coreid) {
 	case RDR_CP:
@@ -72,11 +73,13 @@ static void hisi_noc_err_handle_work_func(struct work_struct *work)
 	}
 }
 
+
 static void hisi_noc_timeout_handle_work_func(struct work_struct *work)
 {
-    pr_err("hisi_noc_timeout_handle_work_func 0x%lx\n", (unsigned long)work);
+    pr_err("hisi_noc_timeout_handle_work_func 0x%lx\n", (uintptr_t)work);
     rdr_syserr_process_for_ap((u32)MODID_AP_S_NOC, (u64)0, (u64)1);
 }
+
 
 /*输出base+0x14的值的含义*/
 static void print_errlog0(unsigned int idx, unsigned int val)
@@ -101,6 +104,7 @@ static void print_errlog0(unsigned int idx, unsigned int val)
 	else
 		pr_err("\t[err_code=%d] out of range!\n", value);
 
+
 	shift = ffs((int)noc_bus->opc_mask) - 1;
 	value = (val & (noc_bus->opc_mask)) >> shift;
 
@@ -113,6 +117,7 @@ static void print_errlog0(unsigned int idx, unsigned int val)
 
 /*输出输出base+0x18的值的含义*/
 u64 print_errlog1(unsigned int val, unsigned int idx, int *pinitflow)
+
 {
 	const struct noc_bus_info *noc_bus;
 	unsigned int shift;
@@ -143,6 +148,7 @@ u64 print_errlog1(unsigned int val, unsigned int idx, int *pinitflow)
 
 	shift = ffs((int)noc_bus->targetflow_mask) - 1;
 	targetflow = (int)((val & (noc_bus->targetflow_mask)) >> shift);
+
 	if ((unsigned int)targetflow < noc_bus->targetflow_array_size) {
 		pr_err("\t[target_flow=%d]: %s\n", targetflow,
 		       noc_bus->targetflow_array[targetflow]);
@@ -218,7 +224,7 @@ void print_errlog7(unsigned int val, unsigned int idx)
 
 }
 /*Output Error log buffer, one-track code for both Hi6xxx and Hi3xxx */
-static void print_errlog(void __iomem *base, unsigned int idx)
+static void print_errlog(const void __iomem *base, unsigned int idx)
 {
 	unsigned int val, val_errlog3, val_errlog5;
 	u64 base_addr, adjust_addr;
@@ -417,7 +423,7 @@ void noc_err_prt_msg(struct err_probe_msg *pt_err_msg)
 	pr_err("SECURITY = %d\n", pt_err_msg->SECURITY);
 }
 
-void noc_err_probe_prt(void __iomem *base, uint idx)
+void noc_err_probe_prt(const void __iomem *base, uint idx)
 {
 	uint reg_val[10];
 	uint i;
@@ -481,7 +487,6 @@ void noc_err_probe_hanlder(void __iomem *base, struct noc_node *node)
 {
 	noc_info_backup.bus_id = node->bus_id;
 	noc_info_backup.nodename = node->name;
-
 	/* output error log buffer */
 	print_errlog(base, node->bus_id);
 
@@ -506,8 +511,9 @@ void noc_err_probe_hanlder(void __iomem *base, struct noc_node *node)
 			noc_info_backup.init_flow);
 		g_noc_err_coreid = get_noc_err_coreid();
 		pr_err("g_noc_err_coreid is %d\n", g_noc_err_coreid);
-		if (RDR_AP == g_noc_err_coreid)
-			rdr_syserr_process_for_ap(MODID_AP_S_NOC, 0, 0);
+		if (RDR_AP == g_noc_err_coreid){
+	rdr_syserr_process_for_ap(MODID_AP_S_NOC, 0, 0);
+			}
 		else
 			queue_work(noc_err_handle_wq, &noc_err_handle_w);
 	}
@@ -653,7 +659,7 @@ EXPORT_SYMBOL(enable_err_probe_by_name);
 
 /* Need check if noc init is finished,
 	as this interface would be called by other module */
-void disable_err_probe_by_name(char *name)
+void disable_err_probe_by_name(const char *name)
 {
 	void __iomem *base;
 	if (!name) {

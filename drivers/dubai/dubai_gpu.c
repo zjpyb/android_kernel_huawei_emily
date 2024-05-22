@@ -94,16 +94,24 @@ int dubai_update_gpu_info(unsigned long freq, unsigned long busy_time,
 
 	return 0;
 }
+EXPORT_SYMBOL(dubai_update_gpu_info);
 
-void dubai_set_gpu_enable(bool enable)
+int dubai_set_gpu_enable(void __user *argp)
 {
-	atomic_set(&enable_update_gpu_info, enable ? 1 : 0);
-	DUBAI_LOGI("gpu enable: %d", enable);
+	int ret;
+	bool enable;
+
+	ret = get_enable_value(argp, &enable);
+	if (ret == 0) {
+		atomic_set(&enable_update_gpu_info, enable ? 1 : 0);
+		DUBAI_LOGI("Dubai gpu stats enable: %d", enable);
+	}
+
+	return ret;
 }
 
-int dubai_get_gpu_info(unsigned long arg)
+int dubai_get_gpu_info(void __user *argp)
 {
-	void __user *argp = (void __user *)arg;
 	struct dev_transmit_t *stat = NULL;
 	int rc = 0, i = 0;
 	uint8_t *pdata;

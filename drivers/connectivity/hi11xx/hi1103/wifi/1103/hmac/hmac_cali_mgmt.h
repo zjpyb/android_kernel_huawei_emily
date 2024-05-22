@@ -62,7 +62,11 @@ extern "C" {
 #define HI1103_CALI_TXIQ_LS_FILTER_FEQ_NUM_320M    128
 #define HI1103_CALI_TXIQ_LS_FILTER_FEQ_NUM_160M    64
 
-#define HI1103_CALI_MATRIX_DATA_NUMS       (9)
+#define NUM_160M_SNGL_TONE_1_4_CIRCLE    16                          /* DAC 80M时1/4周期2.5M单音点采样点个数 */
+#define NUM_320M_SNGL_TONE_1_4_CIRCLE    32                          /* DAC 160M时1/4周期2.5M单音点采样点个数 */
+#define NUM_640M_SNGL_TONE_1_4_CIRCLE    64                          /* DAC 320M时1/4周期2.5M单音点采样点个数 */
+
+#define HI1103_CALI_MATRIX_DATA_NUMS     (15)
 
 /*****************************************************************************
   3 枚举定义
@@ -98,6 +102,15 @@ typedef struct
     oal_uint8   uc_dpd_mimo_cmp;
 }hi1103_lodiv_comp_val_stru;
 #endif
+
+typedef enum
+{
+    HI1103_CALI_SISO,
+    HI1103_CALI_MIMO,
+
+    HI1103_CALI_CHAIN_NUM_BUTT,
+}hi1103_rf_cali_chain_num_enum;
+
 typedef struct
 {
     oal_uint8   uc_rx_gain_cmp_code;     /* 仅pilot RF使用，C校准补偿值 */
@@ -125,7 +138,7 @@ typedef struct
     oal_uint8   uc_atx_pwr_cmp;
     oal_uint8   uc_dtx_pwr_cmp;
     oal_int8    c_dp_init;
-    oal_uint8   auc_reserve[2];
+    oal_int16   s_2g_tx_ppa_dc;
     oal_int16   s_2g_tx_power_dc;
 }hi1103_2G_tx_power_comp_val_stru;
 
@@ -190,8 +203,10 @@ typedef struct
 
 typedef struct
 {
+#ifndef _PRE_WLAN_1103_PILOT
     oal_int32  l_rxiq_cmp_u1;
     oal_int32  l_rxiq_cmp_u2;
+#endif
     oal_int32  l_rxiq_cmp_alpha;
     oal_int32  l_rxiq_cmp_beta;
     oal_int16  as_rxiq_comp_ls_filt[HI1103_CALI_RXIQ_LS_FILTER_TAP_NUM_160M];
@@ -207,9 +222,11 @@ typedef struct
     hi1103_2G_tx_power_comp_val_stru   st_cali_tx_power_cmp_2G[HI1103_2G_CHANNEL_NUM];
     hi1103_txdc_comp_val_stru          ast_txdc_cmp_val[HI1103_2G_CHANNEL_NUM][HI1103_CALI_TXDC_GAIN_LVL_NUM];
 #ifdef _PRE_WLAN_NEW_IQ
+#ifndef _PRE_WLAN_1103_PILOT
     hi1103_new_txiq_comp_val_stru      ast_new_txiq_cmp_val[HI1103_2G_CHANNEL_NUM][HI1103_CALI_IQ_TONE_NUM];
-    hi1103_new_txiq_time_comp_val_stru st_new_txiq_time_cmp_val[HI1103_2G_CHANNEL_NUM];
-    hi1103_new_rxiq_comp_val_stru      st_new_rxiq_cmp_val[HI1103_2G_CHANNEL_NUM];
+#endif
+    hi1103_new_txiq_time_comp_val_stru ast_new_txiq_time_cmp_val[HI1103_2G_CHANNEL_NUM];
+    hi1103_new_rxiq_comp_val_stru      ast_new_rxiq_cmp_val[HI1103_2G_CHANNEL_NUM];
 #endif
 }hi1103_2Gcali_param_stru;
 
@@ -219,9 +236,11 @@ typedef struct
     //hi1103_logen_comp_val_stru         st_cali_logen_cmp;
     hi1103_txdc_comp_val_stru          ast_txdc_cmp_val[HI1103_2G_CHANNEL_NUM][HI1103_CALI_TXDC_GAIN_LVL_NUM];
 #ifdef _PRE_WLAN_NEW_IQ
+#ifndef _PRE_WLAN_1103_PILOT
     hi1103_new_txiq_comp_val_stru      ast_new_txiq_cmp_val[HI1103_2G_CHANNEL_NUM][HI1103_CALI_IQ_TONE_NUM];
-    hi1103_new_txiq_time_comp_val_stru st_new_txiq_time_cmp_val[HI1103_2G_CHANNEL_NUM];
-    hi1103_new_rxiq_comp_val_stru      st_new_rxiq_cmp_val[HI1103_2G_CHANNEL_NUM];
+#endif
+    hi1103_new_txiq_time_comp_val_stru ast_new_txiq_time_cmp_val[HI1103_2G_CHANNEL_NUM];
+    hi1103_new_rxiq_comp_val_stru      ast_new_rxiq_cmp_val[HI1103_2G_CHANNEL_NUM];
 #endif
 }hi1103_2G_dbdc_cali_param_stru;
 
@@ -234,8 +253,10 @@ typedef struct
     hi1103_ppf_comp_val_stru           st_ppf_cmp_val;
     hi1103_txdc_comp_val_stru          ast_txdc_cmp_val[HI1103_CALI_TXDC_GAIN_LVL_NUM];
 #ifdef _PRE_WLAN_NEW_IQ
+#ifndef _PRE_WLAN_1103_PILOT
     hi1103_new_txiq_comp_val_stru      ast_new_txiq_cmp_val[HI1103_CALI_IQ_TONE_NUM];
-    hi1103_new_txiq_time_comp_val_stru st_new_txiq_time_cmp_val;
+#endif
+    hi1103_new_txiq_time_comp_val_stru ast_new_txiq_time_cmp_val[HI1103_CALI_CHAIN_NUM_BUTT];
     hi1103_new_rxiq_comp_val_stru      st_new_rxiq_cmp_val;
 #endif
 }hi1103_5Gcali_param_stru;
@@ -287,8 +308,10 @@ typedef struct
     hi1103_rc_r_c_cali_param_stru   st_rc_r_c_cali_data;
     hi1103_2G_dbdc_cali_param_stru  ast_2g_dbdc_cali_param;
     oal_int16                       s_2g_idet_gm;
+    oal_bool_enum_uint8             en_use_lpf_10M_for_2grx_20m;
     oal_bool_enum_uint8             en_save_all;
     oal_uint8                       uc_last_cali_fail_status;
+    oal_uint8                       auc_resv[3];
 }hi1103_cali_param_stru;
 
 //added for bt 20dbm cali

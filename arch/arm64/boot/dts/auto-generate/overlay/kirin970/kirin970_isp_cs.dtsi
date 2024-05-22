@@ -41,6 +41,8 @@
         ispsmmu-init-byap   = <0>;          /* Switch 10 for Whether Smmu Init by AP or Not */
         isp-mdc-flag        = <1>;          /* Switch 11 for Whether Use MDC or Not */
         isp-efuse-flag      = <1>;          /* Switch 12 for Whether Use efuse_deskew or Not */
+        useloadbin          = <0>;          /* Switch 13 for Whether Use load binary image or Not */
+        use-ion-smmuerr     = <1>;          /* Switch 14 for Whether Use on alloc mem for smmu err */
 
         /* Misc Items */
         isp-names           = "ISPCPU";     /* Name of MPU */
@@ -49,6 +51,7 @@
         mailbox-names       = "isp_mailbox";/* Name of IPC */
         isp-remap-addr      = <0x00000000>; /* Base Address for MPU Remap */
         isp-ipc-addr        = <0xC2020000>; /* Base Address for IPC Buffers(VA) */
+        isp-seckthread-nice = <10>;         /* ISP sec kthread nice value*/
 
         /* Isp Cpu Cfg */
         isp_local_timer     = <19200000>;   /* Isp Cpu Local Timer */
@@ -68,6 +71,7 @@
         clock-value         = <900000000 554000000 110670000 600000000 0>;                           	/* Clock Values for CLKLVL_TURBO */
         clkdn-normal        = <830000000 480000000 110670000 415000000 0>;                           	/* Clock Values for CLKLVL_NORMINAL, Control by usedvfs */
         clkdn-svs           = <600000000 300000000 110670000 300000000 0>;                           	/* Clock Values for CLKLVL_SVS, Control by usedvfs */
+        clkdis-need-div     = <000000000 000000000 000000000 000000000 0>;                           	/* Clock Values for CLKLVL_DISCLKDN, Control by usepowerdn_clockdn_need_div */
         clkdis-dvfs         = <415000000 238000000 19200000  300000000 0>;                           	/* Clock Values for CLKLVL_DISCLKDN, Control by usepowerdn_clockdn_pll0 */
         ispa7-default-clk   = <800000000>;                                                          /* Default isp Clock */
 
@@ -83,8 +87,8 @@
         mapping-num         = <14>;                                                      			/* Trusted ISP Number of mapping */
         mapping-items       = <5>;                                                       			/* Trusted ISP Max Items of mapping */
         a7-vaddr-boot       = <0xFFFF0000 0x00010000 0x00000305 0x00010000 0x00000000>;  			/* Trusted ISP Page Table Mapping 01 for Boot Space */
-        a7-vaddr-text       = <0xC0300000 0x00500000 0x00000305 0x00010000 0x00000001>;  			/* Trusted ISP Page Table Mapping 02 for Text Segment */
-        a7-vaddr-data       = <0xC0800000 0x00800000 0x00000107 0x00510000 0x00000001>;  			/* Trusted ISP Page Table Mapping 03 for Data Segment */
+        a7-vaddr-text       = <0xC0100000 0x00500000 0x00000305 0x00010000 0x00000001>;  			/* Trusted ISP Page Table Mapping 02 for Text Segment */
+        a7-vaddr-data       = <0xC0600000 0x00A00000 0x00000107 0x00510000 0x00000001>;  			/* Trusted ISP Page Table Mapping 03 for Data Segment */
         a7-vaddr-pgd        = <0xC1000000 0x00002000 0x00000101 0x00000000 0x00000001>;  			/* Trusted ISP Page Table Mapping 04 for PGD Space */
         a7-vaddr-pmd        = <0xC1002000 0x00002000 0x00000101 0x00002000 0x00000001>;  			/* Trusted ISP Page Table Mapping 05 for PMD Space */
         a7-vaddr-pte        = <0xC1100000 0x00200000 0x00000101 0x00D10000 0x00000001>;  			/* Trusted ISP Page Table Mapping 06 for PTE Space */
@@ -97,6 +101,11 @@
         a7-vaddr-a7dyna     = <0xD1000000 0x0F000000 0x00000007 0x00000000 0x00000000>;  			/* Trusted ISP Page Table Mapping 13 for Dynamic Memory Space */
         a7-vaddr-mdc        = <0xC1400000 0x00100000 0x00000007 0x00000000 0x00000000>;  			/* Trusted ISP Page Table Mapping 14 for MDC Memory Space */
         /*                    <ispva      size       prot       offset     reserve   >*/
+
+        /* QOS Items */
+        qos-num         = <8>;
+        qos-offset      = <0x000C 0x008C 0x020C 0x028C 0x0108 0x010C 0x0188 0x018C>;
+        qos-value       = <0x0002 0x0002 0x0002 0x0002 0x0303 0x0000 0x0303 0x0000>;
 
         /* Definition for Smmu/Iommu Driver */
         iommu_info {

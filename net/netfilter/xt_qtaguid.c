@@ -29,7 +29,7 @@
 #include <net/tcp.h>
 #include <net/udp.h>
 #ifdef CONFIG_HUAWEI_BASTET
-#include <huawei_platform/power/bastet/bastet.h>
+#include <huawei_platform/net/bastet/bastet.h>
 #endif
 #if defined(CONFIG_IP6_NF_IPTABLES) || defined(CONFIG_IP6_NF_IPTABLES_MODULE)
 #include <linux/netfilter_ipv6/ip6_tables.h>
@@ -47,10 +47,6 @@ extern void wifipro_update_tcp_statistics(int mib_type, const struct sk_buff *sk
 
 #ifdef CONFIG_HW_QTAGUID_PID
 #include <huawei_platform/net/qtaguid_pid/qtaguid_pid.h>
-#endif
-
-#ifdef CONFIG_SMART_MP
-#include <huawei_platform/emcom/emcom_xengine.h>
 #endif
 
 /*
@@ -1213,11 +1209,6 @@ static void get_dev_and_dir(const struct sk_buff *skb,
 		       par->hooknum, __func__);
 		BUG();
 	}
-	if (unlikely(!(*el_dev)->name)) {
-		pr_err("qtaguid[%d]: %s(): no dev->name?!!\n",
-		       par->hooknum, __func__);
-		BUG();
-	}
 	if (skb->dev && *el_dev != skb->dev) {
 		MT_DEBUG("qtaguid[%d]: skb->dev=%p %s vs par->%s=%p %s\n",
 			 par->hooknum, skb->dev, skb->dev->name,
@@ -1712,12 +1703,6 @@ static void account_for_uid(const struct sk_buff *skb,
 	get_dev_and_dir(skb, par, &direction, &el_dev);
 	proto = ipx_proto(skb, par);
 
-#ifdef CONFIG_SMART_MP
-	if (Emcom_Xengine_SmartMpEnable() &&
-	    Emcom_Xengine_CheckUidAccount(skb, &uid, alternate_sk, proto) == false)
-		return;
-#endif
-
 	MT_DEBUG("qtaguid[%d]: dev name=%s type=%d fam=%d proto=%d dir=%d\n",
 		 par->hooknum, el_dev->name, el_dev->type,
 		 par->family, proto, direction);
@@ -1769,27 +1754,7 @@ static bool qtaguid_mt(const struct sk_buff *skb, struct xt_action_param *par)
 	case NF_INET_PRE_ROUTING:
 	case NF_INET_POST_ROUTING:
 		atomic64_inc(&qtu_events.match_calls_prepost);
-#ifdef CONFIG_SMART_MP
-		if (Emcom_Xengine_SmartMpEnable()) {
-			int proto = ipx_proto(skb, par);
-			sk = skb_to_full_sk(skb);
-			if (sk == NULL) {
-				sk = qtaguid_find_sk(skb, par);
-				if (sk) {
-					if (Emcom_Xengine_CheckIfaceAccount(sk, proto))
-						iface_stat_update_from_skb(skb, par);
-					sock_gen_put(sk);
-				}
-			} else {
-				if (Emcom_Xengine_CheckIfaceAccount(sk, proto))
-					iface_stat_update_from_skb(skb, par);
-			}
-		} else {
-			iface_stat_update_from_skb(skb, par);
-		}
-#else
 		iface_stat_update_from_skb(skb, par);
-#endif
 		/*
 		 * We are done in pre/post. The skb will get processed
 		 * further alter.

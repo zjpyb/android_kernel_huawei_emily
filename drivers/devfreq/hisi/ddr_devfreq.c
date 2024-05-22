@@ -70,14 +70,12 @@ static int saved_jiffies = 0;
 
 static void ddrfreq_begin_work(struct work_struct *work)
 {
-    //printk(KERN_ERR"in %s, %d, %d, %d, %d, %d\n", __func__, in_irq(), in_interrupt(), in_atomic(), jiffies, saved_jiffies);
     pm_qos_add_request(&ddrfreq_min_req, DFS_QOS_ID_DDR_MINFREQ, boost_ddr_dfs_band);
     schedule_delayed_work(&ddrfreq_end, boost_ddr_dfs_last);
 }
 
 static void ddrfreq_end_work(struct work_struct *work)
 {
-    //printk(KERN_ERR"in %s, %d, %d, %d, %d\n", __func__, in_irq(), in_interrupt(), in_atomic(), jiffies);
     pm_qos_remove_request(&ddrfreq_min_req);
     atomic_dec(&flag);
 }
@@ -220,16 +218,22 @@ static struct devfreq_pm_qos_data ddr_devfreq_up_th_pm_qos_data = {
 	.freq = 0,
 };
 
-
+#ifdef CONFIG_DDR_HW_VOTE_15BITS
+#define VOTE_MAX_VALUE	(0x7FFF)
+#define VOTE_QUOTIENT(vote)	(vote)
+#else
 #define VOTE_MAX_VALUE	(0xFF)
 #define VOTE_QUOTIENT(vote)	((vote) >> 4)
 #define VOTE_REMAINDER(vote)	((vote) & 0xF)
+#endif
 #define FREQ_HZ	(1000000)
 
 static unsigned long calc_vote_value_hw(struct devfreq *devfreq, unsigned long freq)
 {
 	unsigned long freq_hz = freq / FREQ_HZ;
 	unsigned long quotient = VOTE_QUOTIENT(freq_hz);
+
+#ifndef CONFIG_DDR_HW_VOTE_15BITS
 	unsigned long remainder = VOTE_REMAINDER(freq_hz);
 	unsigned long x_quotient, x_remainder;
 	unsigned int lev;
@@ -248,7 +252,7 @@ static unsigned long calc_vote_value_hw(struct devfreq *devfreq, unsigned long f
 		}else if (quotient < x_quotient)
 			break;
 	}
-
+#endif
 	if (quotient > VOTE_MAX_VALUE) {
 		quotient = VOTE_MAX_VALUE;
 	}
@@ -261,7 +265,6 @@ static unsigned long calc_vote_value_ipc(struct devfreq *devfreq, unsigned long 
 	return freq;
 }
 
-/*static unsigned long min_freq_table[2];*/
 static int ddr_devfreq_target(struct device *dev, unsigned long *freq, u32 flags)
 {
 	struct platform_device *pdev = container_of(dev,

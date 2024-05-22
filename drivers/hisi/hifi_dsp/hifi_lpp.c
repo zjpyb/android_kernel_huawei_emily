@@ -51,6 +51,7 @@
 #include <dsm/dsm_pub.h>
 #include "usbaudio_ioctl.h"
 #include "soundtrigger_socdsp_mailbox.h"
+#include "hisi_lb.h"
 
 /*lint -e1058*/
 #define DTS_COMP_HIFIDSP_NAME "hisilicon,k3hifidsp"
@@ -114,7 +115,6 @@ static struct notifier_block s_hifi_reboot_nb;
 static atomic_t volatile s_hifi_in_suspend = ATOMIC_INIT(0);
 static atomic_t volatile s_hifi_in_saving = ATOMIC_INIT(0);
 
-
 static struct misc_msg_info msg_info[] = {
 {ID_AP_AUDIO_SET_DTS_ENABLE_CMD, "ID_AP_AUDIO_SET_DTS_ENABLE_CMD"},
 {ID_AP_AUDIO_SET_DTS_DEV_CMD, "ID_AP_AUDIO_SET_DTS_DEV_CMD"},
@@ -168,6 +168,36 @@ static struct misc_msg_info msg_info[] = {
 extern int hisi_dptx_set_aparam(unsigned int channel_num, unsigned int data_width, unsigned int sample_rate);
 extern int hisi_dptx_get_spec(void *data, unsigned int size, unsigned int *ext_acount);
 
+
+static void hifi_misc_set_audio_syscache_quota(int8_t *data, unsigned int size)
+{
+	int ret = 0;
+	struct syscache_quota_msg *msg = NULL;
+
+	if (!data || size != sizeof(*msg)) {
+		loge("data is null or size is invaled, size: %u", size);
+		return;
+	}
+
+	msg = (struct syscache_quota_msg *)data;
+
+	logi("syscache quota msg info type %d\n", msg->msg_type);
+
+	if (msg->msg_type == SYSCACHE_QUOTA_REQUEST) {
+		ret = lb_request_quota(PID_AUDIO);
+		if (ret) {
+			loge("request syscache fail. ret %d\n", ret);
+		}
+	} else if (msg->msg_type == SYSCACHE_QUOTA_RELEASE) {
+		ret = lb_release_quota(PID_AUDIO);
+		if (ret) {
+			loge("release syscache fail. ret %d\n", ret);
+		}
+	} else {
+		loge("msg type error. %u\n", msg->msg_type);
+	}
+}
+
 unsigned long try_copy_to_user(void __user *to, const void *from, unsigned long n)
 {
 	int try_times = 0;
@@ -218,7 +248,7 @@ void sochifi_watchdog_send_event(void)
 	return;
 }
 
-static void hifi_misc_msg_info(unsigned short msg_id)
+static void hifi_misc_msg_info(const unsigned short msg_id)
 {
 	int i;
 	int size;
@@ -272,7 +302,7 @@ static int hifi_misc_sync_write(unsigned char  *buff, unsigned int len)
 {
 	int ret = OK;
 	unsigned long wait_reult = 0;
-	static unsigned int wait_count = 0;
+	static bool is_write_success = false;
 
 	IN_FUNCTION;
 
@@ -307,16 +337,14 @@ static int hifi_misc_sync_write(unsigned char  *buff, unsigned int len)
 	}
 
 	if (!wait_reult) {
-		++wait_count;
-
-		if (wait_count > 1) {
+		if (is_write_success) {
 			loge("wait completion timeout\n");
 			audio_dsm_report_info(AUDIO_CODEC, DSM_SOC_HIFI_SYNC_TIMEOUT, "soc hifi sync message timeout");
 			hifi_dump_panic_log();
 		}
-
 		ret = ERROR;
 	} else {
+		is_write_success = true;
 		ret = OK;
 	}
 
@@ -331,17 +359,19 @@ static bool hifi_misc_local_process(unsigned short _msg_id)
 	HIFI_MSG_ID msg_id =  (HIFI_MSG_ID)_msg_id;
 
 	switch(msg_id) {
-	case ID_AUDIO_AP_OM_DUMP_CMD:
-	case ID_AUDIO_AP_FADE_OUT_REQ:
-	case ID_AUDIO_AP_DP_CLK_EN_IND:
-	case ID_AUDIO_AP_VOICE_BSD_PARAM_CMD:
-	case ID_AUDIO_AP_OM_CMD:
-	case ID_AUDIO_AP_3A_CMD:
-	case ID_HIFI_AP_BIGDATA_CMD:
-		ret = true;
-		break;
-	default:
-		break;
+		case ID_AUDIO_AP_OM_DUMP_CMD:
+		case ID_AUDIO_AP_FADE_OUT_REQ:
+		case ID_AUDIO_AP_DP_CLK_EN_IND:
+		case ID_AUDIO_AP_VOICE_BSD_PARAM_CMD:
+		case ID_AUDIO_AP_OM_CMD:
+		case ID_AUDIO_AP_3A_CMD:
+		case ID_HIFI_AP_BIGDATA_CMD:
+		case ID_HIFI_AP_SMARTPA_DFT_REPORT_CMD:
+		case ID_HIFI_AP_SYSCACHE_QUOTA_CMD:
+			ret = true;
+			break;
+		default:
+			break;
 	}
 
 	return ret;
@@ -352,8 +382,6 @@ static void hifi_misc_mesg_process(void *cmd)
 	unsigned int cmd_id = 0;
 	struct common_hifi_cmd * common_cmd = NULL;
 	struct hifi_om_ap_data *hifi_om_rev_data = NULL;
-
-	BUG_ON(NULL == cmd);
 
 	hifi_om_rev_data = (struct hifi_om_ap_data *)cmd;
 	common_cmd =(struct common_hifi_cmd *)cmd;
@@ -376,8 +404,15 @@ static void hifi_misc_mesg_process(void *cmd)
 		logi("hifi notify to dump hifi log, hifi errtype: %d.\n", common_cmd->value);
 		break;
 	case ID_HIFI_AP_BIGDATA_CMD:
-		hifi_om_rev_data_handle(HIFI_OM_WORK_VOICE_BIGDATA, hifi_om_rev_data->data,
-			hifi_om_rev_data->data_len);
+		hifi_om_rev_data_handle(HIFI_OM_WORK_VOICE_BIGDATA,
+			hifi_om_rev_data->data, hifi_om_rev_data->data_len);
+		break;
+	case ID_HIFI_AP_SMARTPA_DFT_REPORT_CMD:
+		hifi_om_rev_data_handle(HIFI_OM_WORK_SMARTPA_DFT,
+			hifi_om_rev_data->data, hifi_om_rev_data->data_len);
+		break;
+	case ID_HIFI_AP_SYSCACHE_QUOTA_CMD:
+		hifi_misc_set_audio_syscache_quota(hifi_om_rev_data->data, hifi_om_rev_data->data_len);
 		break;
 	default:
 		break;
@@ -385,6 +420,7 @@ static void hifi_misc_mesg_process(void *cmd)
 
 	return;
 }
+
 /*lint +e429*/
 
 static void hifi_misc_handle_mail(void *usr_para, void *mail_handle, unsigned int mail_len)
@@ -494,7 +530,7 @@ END:
 }
 
 
-static int hifi_dsp_get_input_param(unsigned int usr_para_size, void *usr_para_addr,
+static int hifi_dsp_get_input_param(unsigned int usr_para_size, const void *usr_para_addr,
 									unsigned int *krn_para_size, void **krn_para_addr)
 {
 	void *para_in = NULL;
@@ -530,7 +566,7 @@ static int hifi_dsp_get_input_param(unsigned int usr_para_size, void *usr_para_a
 	*krn_para_size = para_size_in;
 	*krn_para_addr = para_in;
 
-	hifi_misc_msg_info(*(unsigned short*)para_in);
+	hifi_misc_msg_info(*(const unsigned short*)para_in);
 
 	OUT_FUNCTION;
 	return OK;
@@ -562,7 +598,7 @@ static void hifi_dsp_get_input_param_free(void **krn_para_addr)
 }
 
 
-static int hifi_dsp_get_output_param(unsigned int krn_para_size, void *krn_para_addr,
+static int hifi_dsp_get_output_param(unsigned int krn_para_size, const void *krn_para_addr,
 									 unsigned int *usr_para_size, void __user *usr_para_addr)
 {
 	int ret			= OK;
@@ -608,7 +644,7 @@ static int hifi_dsp_get_output_param(unsigned int krn_para_size, void *krn_para_
 	}
 
 	*usr_para_size = para_n;
-	hifi_misc_msg_info(*(unsigned short*)krn_para_addr);
+	hifi_misc_msg_info(*(const unsigned short*)krn_para_addr);
 
 END:
 	OUT_FUNCTION;
@@ -1747,7 +1783,7 @@ void hifi_release_log_signal(void)
 	atomic_set(&s_hifi_in_saving, 0);/*lint !e446*/
 }
 
-int hifi_send_msg(unsigned int mailcode, void *data, unsigned int length)
+int hifi_send_msg(unsigned int mailcode, const void *data, unsigned int length)
 {
 	if (is_hifi_loaded()) {
 		return (unsigned int)mailbox_send_msg(mailcode, data, length);

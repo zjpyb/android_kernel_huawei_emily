@@ -24,13 +24,16 @@
 
 
 #define WRITE_STORE_CMD_MIN_LENGTH 3
+#define FTS_PADRESS_LEN 9
 
 #ifdef SCRIPTLESS
+#define WRTE_SIZE	2
 
 
 unsigned int st_data[CMD_RESULT_STR_LEN] = {0};
 unsigned char pAddress_i2c[CMD_RESULT_STR_LEN] = {0};
 int byte_count_read = 0 ;
+int byte_count_strncat = 0 ;
 char Out_buff[TSP_BUF_SIZE];
 
 
@@ -59,10 +62,10 @@ ssize_t fts_i2c_wr_show(struct device *dev, struct device_attribute *attr,
 	printk("}\n");
 #endif
 	snprintf(buff, sizeof(buff), "{");
-	strncat(Out_buff, buff,  ARRAY_SIZE(Out_buff));
+	strncat(Out_buff, buff, (ARRAY_SIZE(Out_buff) - strlen(Out_buff) - 1));
 	for (i = 0; i < (byte_count_read+2); i++) {
 		if((i == 0)) {
-			char temp_byte_count_read = (byte_count_read >> 8) & 0xFF;
+			char temp_byte_count_read = (byte_count_read >> (FTS_PADRESS_LEN - 1)) & 0xFF;
 			snprintf(buff, sizeof(buff), "%02X",temp_byte_count_read);
 		} else if(i == 1) {
 			char temp_byte_count_read = (byte_count_read) & 0xFF;
@@ -72,18 +75,17 @@ ssize_t fts_i2c_wr_show(struct device *dev, struct device_attribute *attr,
 			snprintf(buff, sizeof(buff), "%02X", info->cmd_wr_result[i-2]);
 		}
 		//snprintf(buff, sizeof(buff), "%02X", info->cmd_wr_result[i]);
-		strncat(Out_buff, buff,  ARRAY_SIZE(Out_buff));
+		strncat(Out_buff, buff,  (ARRAY_SIZE(Out_buff) - strlen(Out_buff) - 1));
 		if(i < (byte_count_read+1)) {
 			snprintf(buff, sizeof(buff), " ");
-			strncat(Out_buff, buff,  ARRAY_SIZE(Out_buff));
+			strncat(Out_buff, buff,  (ARRAY_SIZE(Out_buff) - strlen(Out_buff) - 1));
 		}
 	}
 	snprintf(buff, sizeof(buff), "}");
-	strncat(Out_buff, buff,  ARRAY_SIZE(Out_buff));
+	strncat(Out_buff, buff, (ARRAY_SIZE(Out_buff) - 1 - strlen(Out_buff)));
 	return snprintf(buf, TSP_BUF_SIZE, "%s\n", Out_buff);
 }
 
-#define FTS_PADRESS_LEN 9
 
 ssize_t fts_i2c_wr_store(struct device *dev, struct device_attribute *attr,
 				const char *buf, size_t count)
@@ -97,8 +99,11 @@ ssize_t fts_i2c_wr_store(struct device *dev, struct device_attribute *attr,
 	unsigned int data[FTS_PADRESS_LEN] = {0};
 	memset(data, 0x00, ARRAY_SIZE(data));
 	memset(info->cmd_wr_result, 0x00, ARRAY_SIZE(info->cmd_wr_result));
-	sscanf(buf, "%x %x %x %x %x %x %x %x %x ", (data+8), (data),(data+1),(data+2),(data+3),(data+4),(data+5),(data+6),(data+7));
-
+	ret = sscanf(buf, "%x %x %x %x %x %x %x %x %x ",
+		(data+8), (data), (data+1), (data+2), (data+3),
+		(data+4), (data+5), (data+6), (data+7));
+	if (ret != FTS_PADRESS_LEN)
+		TS_LOG_ERR("%s: sscanf ERROR\n", __func__);
 	byte_count = data[FTS_PADRESS_LEN - 1];
 	if (byte_count < 5 || byte_count >= FTS_PADRESS_LEN) {
 		TS_LOG_ERR("%s: byte count less than 5, ERROR\n", __func__);
@@ -121,7 +126,8 @@ ssize_t fts_i2c_wr_store(struct device *dev, struct device_attribute *attr,
 		pAddress[i] = (unsigned char)data[i];
 	}
 #endif
-	byte_count_read = (((unsigned int) data[byte_count-2])<<8)|data[byte_count-1];
+	byte_count_read = (((unsigned int)data[byte_count - 2]) << (FTS_PADRESS_LEN - 1)) |
+		data[byte_count - 1];
 	ret = fts_writeCmd(pAddress,3);
 	msleep(20);
 	ret = fts_readCmd(&pAddress[3], (byte_count - 5), info->cmd_wr_result, byte_count_read);
@@ -129,7 +135,7 @@ ssize_t fts_i2c_wr_store(struct device *dev, struct device_attribute *attr,
 	 printk("%s:DATA READ\n{", __func__);
 	for(i=0;i<(2+byte_count_read);i++) {
 		if((i == 0)) {
-			char temp_byte_count_read = (byte_count_read >> 8) & 0xFF;
+			char temp_byte_count_read = (byte_count_read >> (FTS_PADRESS_LEN - 1)) & 0xFF;
 			printk("%02X",(unsigned int )temp_byte_count_read);
 		} else if(i == 1) {
 			char temp_byte_count_read = (byte_count_read) & 0xFF;
@@ -175,7 +181,7 @@ ssize_t fts_i2c_read_show(struct device *dev, struct device_attribute *attr,
 	strncat(Out_buff, buff,  ARRAY_SIZE(Out_buff));
 	for (i = 0; i < (byte_count_read+2); i++) {
 		if(i == 0) {
-			char temp_byte_count_read = (byte_count_read >> 8) & 0xFF;
+			char temp_byte_count_read = (byte_count_read >> (FTS_PADRESS_LEN - 1)) & 0xFF;
 			snprintf(buff, sizeof(buff), "%02X",temp_byte_count_read);
 		} else if(i == 1) {
 			char temp_byte_count_read = (byte_count_read) & 0xFF;
@@ -183,14 +189,14 @@ ssize_t fts_i2c_read_show(struct device *dev, struct device_attribute *attr,
 		} else {
 			snprintf(buff, sizeof(buff), "%02X", info->cmd_read_result[i-2]);
 		}
-		strncat(Out_buff, buff,  ARRAY_SIZE(Out_buff));
+		strncat(Out_buff, buff,  ARRAY_SIZE(Out_buff) - strlen(Out_buff) - 1);
 		if(i < (byte_count_read+1)) {
 			snprintf(buff, sizeof(buff), " ");
-			strncat(Out_buff, buff,  ARRAY_SIZE(Out_buff));
+			strncat(Out_buff, buff,  ARRAY_SIZE(Out_buff) - strlen(Out_buff) - 1);
 		}
 	}
 	snprintf(buff, sizeof(buff), "}");
-	strncat(Out_buff, buff,  ARRAY_SIZE(Out_buff));
+	strncat(Out_buff, buff,  ARRAY_SIZE(Out_buff) - strlen(Out_buff) - 1);
 
 	return snprintf(buf, TSP_BUF_SIZE, "%s\n", Out_buff);
 }
@@ -198,21 +204,27 @@ ssize_t fts_i2c_read_show(struct device *dev, struct device_attribute *attr,
 ssize_t fts_i2c_read_store(struct device *dev, struct device_attribute *attr,
 				const char *buf, size_t count)
 {
-	int ret;
+	int ret = 0;
 	struct fts_ts_info *info = fts_get_info();
-	unsigned char pAddress[9] = {0};
+	unsigned char pAddress[FTS_PADRESS_LEN] = {0};
 	unsigned int byte_count =0 ;
-	int i ;
-	unsigned int data[9] = {0};
+	int i = 0 ;
+	unsigned int data[FTS_PADRESS_LEN] = {0};
 
 	byte_count_read = 0;
+	byte_count_strncat = 0 ;
+
 	memset(data, 0x00, ARRAY_SIZE(data));
 	memset(info->cmd_read_result, 0x00, ARRAY_SIZE(info->cmd_read_result));
-	sscanf(buf, "%x %x %x %x %x %x %x %x %x ", (data+8), (data),(data+1),(data+2),(data+3),(data+4),(data+5),(data+6),(data+7));
-	byte_count = data[8];
+	ret = sscanf(buf, "%x %x %x %x %x %x %x %x %x ",
+		(data + 8), (data), (data + 1), (data + 2), (data + 3),
+		(data + 4), (data + 5), (data + 6), (data + 7));
+	if (ret != ST_DATALEN)
+		TS_LOG_ERR("%s: sscanf is failed\n", __func__);
+	byte_count = data[FTS_PADRESS_LEN - 1];
 
 
-	if(byte_count >8 || byte_count < 2) {
+	if ((byte_count > (FTS_PADRESS_LEN - 1)) || (byte_count < 2)) {
 #ifdef SCRIPTLESS_DEBUG
 		TS_LOG_ERR("%s : Byte count abnormal\n",__func__);
 #endif
@@ -230,13 +242,14 @@ ssize_t fts_i2c_read_store(struct device *dev, struct device_attribute *attr,
 		pAddress[i] = (unsigned char)data[i];
 	}
 #endif
-	byte_count_read = (((unsigned int) data[byte_count-2])<<8)|data[byte_count-1];
+	byte_count_read = (((unsigned int)data[byte_count - 2]) << (FTS_PADRESS_LEN - 1)) |
+		data[byte_count - 1];
 	ret = fts_readCmd(pAddress, (byte_count-2), info->cmd_read_result, byte_count_read);
 #ifdef SCRIPTLESS_DEBUG
 	printk("%s:DATA READ\n{", __func__);
 	for(i=0;i<(byte_count_read+2);i++) {
 		if((i == 0)) {
-			char temp_byte_count_read = (byte_count_read >> 8) & 0xFF;
+			char temp_byte_count_read = (byte_count_read >> (FTS_PADRESS_LEN - 1)) & 0xFF;
 			printk("%02X",(unsigned int )temp_byte_count_read);
 		} else if(i == 1) {
 			char temp_byte_count_read = (byte_count_read) & 0xFF;
@@ -276,13 +289,16 @@ ssize_t fts_i2c_write_store(struct device *dev, struct device_attribute *attr,
 	memset(pAddress_i2c, 0x00, ARRAY_SIZE(pAddress_i2c));
 	memset(info->cmd_write_result, 0x00, ARRAY_SIZE(info->cmd_write_result));
 	/*skip the bracket between cmds*/
-	sscanf(buf, "%x %x", st_data ,(st_data + 1));
-	byte_count = st_data[0] << 8 | st_data[1];
+	ret = sscanf(buf, "%x %x", st_data ,(st_data + 1));
+	if (ret != WRTE_SIZE)
+		TS_LOG_ERR("%s: sscanf ERROR\n", __func__);
+	byte_count = st_data[0] << (FTS_PADRESS_LEN - 1) | st_data[1];
 
 	if (byte_count <= ARRAY_SIZE(pAddress_i2c)) {
 		for(i=0; i < (byte_count) ;i++) {
 			/*skip spaces the between cmds*/
-			sscanf(&buf[3*(i+2)] , "%x ", (st_data+i));
+			if (sscanf(&buf[3 * (i + 2)], "%x ", (st_data + i)) != 1)
+				TS_LOG_ERR("%s : sscanf fail \n",__func__);
 		}
 	} else {
 #ifdef SCRIPTLESS_DEBUG

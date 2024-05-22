@@ -201,8 +201,10 @@ VOS_UINT32 VOS_GetCurrentTaskID( VOS_VOID );
 
 VOS_UINT32 VOS_SuspendFidsTask(VOS_VOID);
 
+#if (VOS_LINUX != VOS_OS_VER)
 VOS_VOID VOS_SuspendAllTask( VOS_UINT32 Para0, VOS_UINT32 Para1,
                              VOS_UINT32 Para2, VOS_UINT32 Para3 );
+#endif
 
 VOS_VOID VOS_ShowFidsQueueInfo(VOS_UINT32 Para0, VOS_UINT32 Para1,
                                VOS_UINT32 Para2, VOS_UINT32 Para3 );

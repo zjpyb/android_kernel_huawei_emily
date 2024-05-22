@@ -96,4 +96,42 @@ extern void notify_sim_while_sd_success(struct mmc_host *mmc);
 
 extern void notify_sim_while_sd_fail(struct mmc_host *mmc);
 
+
+
+/*980 config here*/
+#define GPIO_160 160
+#define GPIO_161 161
+#define GPIO_162 162
+#define GPIO_163 163
+#define GPIO_164 164
+#define GPIO_165 165
+
+/*990 config here*/
+#define GPIO_104 104
+#define GPIO_105 105
+#define GPIO_106 106
+#define GPIO_107 107
+#define GPIO_108 108
+#define GPIO_109 109
+
+
+#define GPIO_DEFAULT_NUMBER_FOR_SD_CLK      GPIO_160
+#define GPIO_DEFAULT_NUMBER_FOR_SD_CMD      GPIO_161
+#define GPIO_DEFAULT_NUMBER_FOR_SD_DATA0    GPIO_162
+#define GPIO_DEFAULT_NUMBER_FOR_SD_DATA1    GPIO_163
+#define GPIO_DEFAULT_NUMBER_FOR_SD_DATA2    GPIO_164
+#define GPIO_DEFAULT_NUMBER_FOR_SD_DATA3    GPIO_165
+
+
+
+extern void register_gpio_number_group(int start_gpio_number_for_SD_CLK);
+
+
+#define SWITCH_GPIO_DEFAULT_NUMBER  0xFFFF
+extern int switch_gpio_number_0;
+extern int switch_gpio_number_1;
+extern int switch_gpio_number_2;
+extern int switch_gpio_number_3;
+
+
 #endif

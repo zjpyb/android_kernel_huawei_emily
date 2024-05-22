@@ -21,6 +21,10 @@
 #include <linux/jiffies.h>
 #include <linux/version.h>
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+#include <linux/sched/types.h>
+#endif
+
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 9, 0))
 #include <linux/sched/rt.h>
 #endif /* #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 9, 0)) */
@@ -30,6 +34,9 @@
 #include <huawei_platform/usb/pd/richtek/tcpci.h>
 #include <huawei_platform/usb/pd/richtek/pd_policy_engine.h>
 #include <huawei_platform/usb/pd/richtek/rt1711h.h>
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+#include <uapi/linux/sched/types.h>
+#endif
 
 #ifdef CONFIG_USB_PD_POSTPONE_VDM
 static void postpone_vdm_event(struct tcpc_device *tcpc_dev)
@@ -52,7 +59,6 @@ pd_msg_t *__pd_alloc_msg(struct tcpc_device *tcpc_dev)
 {
 	int i;
 	uint8_t mask;
-	char buf[1024] = { 0 };
 
 	for (i = 0, mask = 1; i < PD_MSG_BUF_SIZE; i++, mask <<= 1) {
 		if ((mask & tcpc_dev->pd_msg_buffer_allocated) == 0) {
@@ -62,9 +68,6 @@ pd_msg_t *__pd_alloc_msg(struct tcpc_device *tcpc_dev)
 	}
 
 	PD_ERR("pd_alloc_msg failed\r\n");
-	if (true) {
-		snprintf(buf, sizeof(buf), "pd alloc msg failed\n");
-	}
 	return (pd_msg_t *)NULL;
 }
 
@@ -83,11 +86,10 @@ static void __pd_free_msg(struct tcpc_device *tcpc_dev, pd_msg_t *pd_msg)
 {
 	int index = pd_msg - tcpc_dev->pd_msg_buffer;
 	uint8_t mask = 1 << index;
-	char buf[1024] = { 0 };
 
-	if ((mask & tcpc_dev->pd_msg_buffer_allocated) == 0) {
-		snprintf(buf, sizeof(buf), "pd free msg failed\n");
-	}
+	if ((mask & tcpc_dev->pd_msg_buffer_allocated) == 0)
+		PD_ERR("pd free msg failed\n");
+
 	tcpc_dev->pd_msg_buffer_allocated &= (~mask);
 }
 
@@ -301,13 +303,11 @@ bool pd_put_vdm_event(struct tcpc_device *tcpc_dev,
 		pd_event_t *pd_event, bool from_port_partner)
 {
 	bool ignore_evt = false;
-	char buf[1024] = { 0 };
 	pd_msg_t *pd_msg = pd_event->pd_msg;
-	pd_msg_t *pd_msg_prev = tcpc_dev->pd_vdm_event.pd_msg;
 
 	mutex_lock(&tcpc_dev->access_lock);
 
-	if (from_port_partner && 
+	if (from_port_partner &&
 		pd_is_init_attention_event(tcpc_dev, pd_event)) {
 		TCPC_DBG("AttentionEVT\r\n");
 		ignore_evt = true;
@@ -342,8 +342,9 @@ bool pd_put_vdm_event(struct tcpc_device *tcpc_dev,
 
 	if (from_port_partner) {
 
-		if(pd_msg == NULL) {
-			snprintf(buf, sizeof(buf), "the pd_msg is NULL\n");
+		if (pd_msg == NULL) {
+			PD_ERR("the pd_msg is NULL\n");
+			mutex_unlock(&tcpc_dev->access_lock);
 			return false;
 		}
 		/* pd_msg->time_stamp = 0; */

@@ -88,8 +88,8 @@
 		hw,lcdkit-panel-bpp = <0>;
 		hw,lcdkit-panel-bgrfmt = <0>;
 		hw,lcdkit-panel-bl-type = <4>;
-		hw,lcdkit-panel-blmin = <100>;
-		hw,lcdkit-panel-blmax = <9260>;
+		hw,lcdkit-panel-blmin = <25>;
+		hw,lcdkit-panel-blmax = <7350>;
 		hw,lcdkit-mask-delay-time-before-fp = <16666>;
 		hw,lcdkit-mask-delay-time-after-fp = <16666>;
 		hw,lcdkit-panel-bl-def = <4000>;
@@ -246,6 +246,7 @@
 		hw,lcdkit-bl-enhance = <0>;
 		hw,lcdkit-bl-normal = <0>;
 		hw,lcdkit-delay-af-rst-off = <5>;
+		hw,lcdkit-tp-reset-gpio = <15>;
 		hw,lcdkit-h-back-porch = <10>;
 		hw,lcdkit-h-front-porch = <120>;
 		hw,lcdkit-h-pulse-width = <8>;
@@ -294,6 +295,7 @@
 		hw,lcdkit-delay-af-vbat-off = <0>;
 		hw,lcdkit-delay-af-iovcc-off = <10>;
 		hw,lcdkit-delay-af-vci-off = <10>;
+		hw_lm36274,lcdkit-bl-ic-numb = <4>;
 		hw_lm36274,lcdkit-bl-ic-level = <2047>;
 		hw_lm36274,lcdkit-bl-ic-ctrl-mode = <0>;
 		hw_lm36274,lcdkit-bl-ic-type = <1>;
@@ -322,11 +324,17 @@
 		hw_lm36274,lcdkit-bl-ic-disable-device-cmd = <0x01 0x08 0x80 0xff>;
 		hw_lm36274,lcdkit-bl-ic-fault-flag-cmd = <0x00 0x0f 0x00 0xff>;
 		hw_lm36274,lcdkit-bl-ic-bias-disable-cmd = <0x02 0x09 0x00 0xff>;
+		hw_lm36274,lcdkit-bl-ic-pull-down-vsp-cmd = <0x00 0x00 0x00 0x00>;
+		hw_lm36274,lcdkit-bl-ic-pull-down-vsn-cmd = <0x00 0x00 0x00 0x00>;
+		hw_lm36274,lcdkit-bl-ic-sec-enable-cmd = <0x00 0x00 0x00 0x00>;
+		hw_lm36274,lcdkit-bl-ic-pull-down-boost-cmd = <0x00 0x00 0x00 0x00>;
 		hw_lm36274,lcdkit-bl-ic-bias-enable-cmd = <0x02 0x09 0x00 0xe0>;
 		hw_lm36274,lcdkit-bl-ic-led-open-short-test = <0>;
 		hw_lm36274,lcdkit-bl-ic-num-of-led = <0>;
 		hw_lm36274,lcdkit-bl-ic-brt-ctrl-cmd = <0x00 0x00 0x00 0x00>;
 		hw_lm36274,lcdkit-bl-ic-fault-ctrl-cmd = <0x00 0x00 0x00 0x00>;
+		hw_lm36274,lcdkit-bl-ic-en-gpio-disable = <0>;
+		hw_lm36274,lcdkit-bl-ic-slope-command = <0x00 0x00 0x00 0x00>;
 		hw_lm36274,lcdkit-bl-ic-hidden-reg-surpport = <0>;
 		hw_lm36274,lcdkit-bl-ic-sec-reg-enable-cmd = <0x01 0x50 0x08 0xff>;
 		hw_lm36274,lcdkit-bl-ic-sec-reg-disable-cmd = <0x01 0x50 0x00 0xff>;
@@ -335,6 +343,8 @@
 		hw_lm36274,lcdkit-bl-ic-suspend-disbright-support = <1>;
 		hw_lm36274,lcdkit-bl-ic-bl-wq-support = <0>;
 		hw_lm36274,lcdkit-bl-ic-bl-enahnce-support = <0>;
+		hw_lm36274,lcdkit-bl-ic-pull-down-boost-support = <0>;
+		hw_lm36274,lcdkit-bl-ic-pull-down-boost-delay = <0>;
 		hw_lm36274,lcdkit-bl-ic-bl-lowpower-delay = <6>;
 		hw_lm36274,lcdkit-bl-ic-bl-normal-level = <1709>;
 		hw_lm36274,lcdkit-bl-ic-bl-enhance-level = <1869>;
@@ -347,5 +357,73 @@
 		hw_lm36274,lcdkit-bl-ic-bl-enhance-cur-ramp-cmd = <0x01 0x03 0xad 0xff>;
 		hw_lm36274,lcdkit-bl-ic-bl-enhance-boost-cur-cmd = <0x01 0x11 0x36 0xff>;
 		hw_lm36274,lcdkit-bl-ic-bl-enhance-sink-cmd = <0x01 0x08 0x17 0xff>;
+		hw_lm36274,lcdkit-bl-ovp-bit = <0>;
+		hw_lm36274,lcdkit-bl-ocp-bit = <0>;
+		hw_lm36274,lcdkit-bl-tsd-bit = <0>;
+		hw_ktz8864,lcdkit-bl-ic-numb = <4>;
+		hw_ktz8864,lcdkit-bl-ic-level = <2047>;
+		hw_ktz8864,lcdkit-bl-ic-ctrl-mode = <0>;
+		hw_ktz8864,lcdkit-bl-ic-type = <1>;
+		hw_ktz8864,lcdkit-bl-ic-before-init-delay = <0>;
+		hw_ktz8864,lcdkit-bl-ic-init-delay = <0>;
+		hw_ktz8864,lcdkit-bl-ic-ovp-check = <1>;
+		hw_ktz8864,lcdkit-bl-ic-fake-lcd-ovp-check = <1>;
+		hw_ktz8864,lcdkit-bl-ic-init-cmd = <0x01 0x02 0x40 0xff
+                                     0x01 0x03 0x82 0xff
+                                     0x01 0x06 0x00 0xff
+                                     0x01 0x07 0x00 0xff
+                                     0x01 0x0a 0x11 0xff
+                                     0x01 0x0b 0x00 0xff
+                                     0x01 0x0c 0x24 0xff
+                                     0x01 0x0d 0x1E 0xff
+                                     0x01 0x0e 0x1E 0xff
+                                     0x01 0x10 0xC6 0xff
+                                     0x01 0x11 0x34 0xff
+                                     0x01 0x09 0x99 0xff
+                                     0x01 0x08 0x17 0xff>;
+		hw_ktz8864,lcdkit-bl-ic-num-of-init-cmd = <0x0D>;
+		hw_ktz8864,lcdkit-bl-ic-bl-lsb-reg-cmd = <0x03 0x04 0x00 0x07>;
+		hw_ktz8864,lcdkit-bl-ic-bl-msb-reg-cmd = <0x08 0x05 0x00 0xff>;
+		hw_ktz8864,lcdkit-bl-ic-bl-enable-cmd = <0x01 0x08 0x17 0xff>;
+		hw_ktz8864,lcdkit-bl-ic-bl-disable-cmd = <0x01 0x08 0x00 0xff>;
+		hw_ktz8864,lcdkit-bl-ic-disable-device-cmd = <0x01 0x08 0x80 0xff>;
+		hw_ktz8864,lcdkit-bl-ic-fault-flag-cmd = <0x00 0x0f 0x00 0xff>;
+		hw_ktz8864,lcdkit-bl-ic-bias-disable-cmd = <0x02 0x09 0x00 0xff>;
+		hw_ktz8864,lcdkit-bl-ic-pull-down-vsp-cmd = <0x01 0x0d 0x0E 0xff>;
+		hw_ktz8864,lcdkit-bl-ic-pull-down-vsn-cmd = <0x01 0x0e 0x0E 0xff>;
+		hw_ktz8864,lcdkit-bl-ic-sec-enable-cmd = <0x01 0x09 0x99 0xff>;
+		hw_ktz8864,lcdkit-bl-ic-pull-down-boost-cmd = <0x01 0x0c 0x14 0xff>;
+		hw_ktz8864,lcdkit-bl-ic-bias-enable-cmd = <0x02 0x09 0x00 0xe0>;
+		hw_ktz8864,lcdkit-bl-ic-led-open-short-test = <0>;
+		hw_ktz8864,lcdkit-bl-ic-num-of-led = <0>;
+		hw_ktz8864,lcdkit-bl-ic-brt-ctrl-cmd = <0x00 0x00 0x00 0x00>;
+		hw_ktz8864,lcdkit-bl-ic-fault-ctrl-cmd = <0x00 0x00 0x00 0x00>;
+		hw_ktz8864,lcdkit-bl-ic-en-gpio-disable = <0>;
+		hw_ktz8864,lcdkit-bl-ic-slope-command = <0x00 0x00 0x00 0x00>;
+		hw_ktz8864,lcdkit-bl-ic-hidden-reg-surpport = <0>;
+		hw_ktz8864,lcdkit-bl-ic-sec-reg-enable-cmd = <0x01 0x50 0x08 0xff>;
+		hw_ktz8864,lcdkit-bl-ic-sec-reg-disable-cmd = <0x01 0x50 0x00 0xff>;
+		hw_ktz8864,lcdkit-bl-ic-hidden-reg-cmd = <0x00 0x6a 0x00 0xff>;
+		hw_ktz8864,lcdkit-bl-ic-hidden-reg-val-mask = <0x30>;
+		hw_ktz8864,lcdkit-bl-ic-suspend-disbright-support = <1>;
+		hw_ktz8864,lcdkit-bl-ic-bl-wq-support = <0>;
+		hw_ktz8864,lcdkit-bl-ic-bl-enahnce-support = <0>;
+		hw_ktz8864,lcdkit-bl-ic-pull-down-boost-support = <1>;
+		hw_ktz8864,lcdkit-bl-ic-pull-down-boost-delay = <0>;
+		hw_ktz8864,lcdkit-bl-ic-bl-lowpower-delay = <6>;
+		hw_ktz8864,lcdkit-bl-ic-bl-normal-level = <1709>;
+		hw_ktz8864,lcdkit-bl-ic-bl-enhance-level = <1869>;
+		hw_ktz8864,lcdkit-bl-ic-bl-enhance-hrdtimer-time = <60>;
+		hw_ktz8864,lcdkit-bl-ic-bl-normal-ovp-cmd = <0x01 0x02 0x40 0xff>;
+		hw_ktz8864,lcdkit-bl-ic-bl-normal-cur-ramp-cmd = <0x01 0x03 0x82 0xff>;
+		hw_ktz8864,lcdkit-bl-ic-bl-normal-boost-cur-cmd = <0x01 0x11 0x35 0xff>;
+		hw_ktz8864,lcdkit-bl-ic-bl-normal-sink-cmd = <0x01 0x08 0x17 0xff>;
+		hw_ktz8864,lcdkit-bl-ic-bl-enhance-ovp-cmd = <0x01 0x02 0x60 0xff>;
+		hw_ktz8864,lcdkit-bl-ic-bl-enhance-cur-ramp-cmd = <0x01 0x03 0xad 0xff>;
+		hw_ktz8864,lcdkit-bl-ic-bl-enhance-boost-cur-cmd = <0x01 0x11 0x36 0xff>;
+		hw_ktz8864,lcdkit-bl-ic-bl-enhance-sink-cmd = <0x01 0x08 0x17 0xff>;
+		hw_ktz8864,lcdkit-bl-ovp-bit = <0>;
+		hw_ktz8864,lcdkit-bl-ocp-bit = <0>;
+		hw_ktz8864,lcdkit-bl-tsd-bit = <0>;
     };
 };

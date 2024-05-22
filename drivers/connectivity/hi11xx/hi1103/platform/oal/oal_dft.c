@@ -23,7 +23,7 @@ char* g_hi11xx_loglevel_format[] = {
 };
 
 oal_int32 hi11xx_loglevel = HI11XX_LOG_INFO;  /**/
-module_param(hi11xx_loglevel, int, S_IRUGO | S_IWUSR);
+oal_debug_module_param(hi11xx_loglevel, int, S_IRUGO | S_IWUSR);
 
 #ifdef _PRE_OAL_FEATURE_KEY_PROCESS_TRACE
 OAL_DEFINE_SPINLOCK(g_dft_head_lock_etc);
@@ -36,7 +36,7 @@ oal_module_symbol(g_dft_head_etc);
 #define BUFF_PRINT  (BIT1)
 
 OAL_STATIC oal_uint32 dft_print_mask = (KERN_PRINT | BUFF_PRINT);
-module_param(dft_print_mask, uint, S_IRUGO | S_IWUSR);
+oal_debug_module_param(dft_print_mask, uint, S_IRUGO | S_IWUSR);
 OAL_STATIC oal_int32 oal_dft_dump_key_info(char* buf,oal_int32 key_type, oal_uint32 print_tag)
 {
     oal_int32 ret;

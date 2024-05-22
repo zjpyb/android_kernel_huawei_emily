@@ -133,24 +133,6 @@ static void lmkwp_event_ctor(lmkwp_event_t *this,
 	this->free = free;
 }
 
-static void lmkwp_event_show(lmkwp_event_t *this, bool is_free)
-{
-	char prefix[3] = {0};
-
-	if (is_free)
-		strcpy(prefix, ">>");
-
-	if (this->stamp == 0)
-		LMKWP_INFO("%slmkwp_event: stamp:0\n", prefix);
-	else
-		LMKWP_INFO("%slmkwp_event: stamp:%llu sc->gfp_mask:%u selected pid:%d, tgid:%d comm:%s\n" \
-				"    current  pid:%d, tgid:%d comm:%s cache size:%ld, limit:%ld, free:%ld, adj:%d\n",
-				prefix, this->stamp, this->sc.gfp_mask,
-				this->selected_pid, this->selected_tgid, this->selected_comm,
-				this->cur_pid, this->cur_tgid, this->cur_comm,
-				this->cache_size, this->cache_limit, this->free, this->adj);
-}
-
 static int lmkwp_event_format(lmkwp_event_t *this, char *buf, size_t len)
 {
 	return scnprintf(buf, len,
@@ -207,15 +189,6 @@ static bool lmkwp_check_threshold(unsigned int *pos)
 		*pos = distance;
 
 	return need_report;
-}
-
-static void lmkwp_show_events(void)
-{
-	int i;
-
-	for (i = 0; i < MAX_EVENTS; i++) {
-		lmkwp_event_show(lmk_wp.events+i, i==lmk_wp.free);
-	}
 }
 
 static lmkwp_event_t *lmkwp_get_slot(void)
@@ -283,60 +256,3 @@ void lmkwp_report(struct task_struct *selected, struct shrink_control *sc, long 
 #endif
 	}
 }
-
-/* debug interface for every command */
-/*#define LMKWP_LOAD_CONFIG_CMD "load_config"
-#define LMKWP_SET_CONFIG_CMD  "set_config"
-#define LMKWP_REPORT_EVENT_CMD  "report_event"
-#define LMKWP_SHOW_EVENTS_CMD "show_events"
-char debug_str[64] = {0};
-static int lmkwp_debug_index;
-
-int lmkwp_debug_set(const char *buffer, const struct kernel_param *kp)
-{
-	int ret = 0;
-
-	if (!lmkwp_config_is_debuggable())
-		return ret;
-
-	ret = param_set_copystring(buffer, kp);
-
-	LMKWP_INFO("debug string buffer(%s) = debug_str(%s)\n", buffer, debug_str);
-	if (!strncmp(debug_str, LMKWP_LOAD_CONFIG_CMD, strlen(LMKWP_LOAD_CONFIG_CMD))) {
-		lmkwp_config_load();
-
-	} else if (!strncmp(debug_str, LMKWP_SET_CONFIG_CMD, strlen(LMKWP_SET_CONFIG_CMD))) {
-		uint32_t len = strlen(debug_str + strlen(LMKWP_SET_CONFIG_CMD));
-
-		lmkwp_parse_config(debug_str + strlen(LMKWP_SET_CONFIG_CMD), len, &lmk_wp.config) ;
-
-	} else if (!strncmp(debug_str, LMKWP_REPORT_EVENT_CMD, strlen(LMKWP_REPORT_EVENT_CMD))) {
-		struct shrink_control sc = {
-			.gfp_mask = 0xff,
-			.nr_to_scan = 10,
-		};
-
-		lmkwp_report(current, &sc, lmkwp_debug_index,
-				lmkwp_debug_index, lmkwp_debug_index, lmkwp_debug_index);
-		lmkwp_debug_index++;
-
-	} else if (!strncmp(debug_str, LMKWP_SHOW_EVENTS_CMD, strlen(LMKWP_SHOW_EVENTS_CMD))) {
-		lmkwp_show_events();
-
-	}
-
-	return ret;
-}
-
-static struct kernel_param_ops lmkwp_debug_ops = {
-	.set = lmkwp_debug_set,
-	.get = param_get_string,
-};
-
-static struct kparam_string lmk_param_string = {
-	.maxlen = sizeof(debug_str),
-	.string = debug_str,
-};
-
-module_param_cb(lmkwp_debug, &lmkwp_debug_ops, &lmk_param_string, S_IRUGO | S_IWUSR);
-__MODULE_PARM_TYPE(lmkwp_debug, "lmkwp debug node");*/

@@ -386,7 +386,6 @@ static int __init fingerprinthub_ud_init(void)
         return ret;
     }
     register_iom3_recovery_notifier(&fingerprint_recovery_notify);
-    //hwlog_info( "%s  ok \n", __func__);
 
     return ret;
 }

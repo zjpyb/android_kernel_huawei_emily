@@ -105,8 +105,11 @@ int hw_ois_config(hw_ois_t *hw_ois, void *arg)
 		rc = hw_ois->intf->vtbl->ois_i2c_write(hw_ois->intf, arg);
 		break;
 	case CFG_OIS_GET_OIS_NAME:
-		strncpy_s(cdata->cfg.name, sizeof(cdata->cfg.name) - 1, hw_ois->ois_info->ois_name,
+		rc = strncpy_s(cdata->cfg.name, sizeof(cdata->cfg.name) - 1, hw_ois->ois_info->ois_name,
 			sizeof(cdata->cfg.name) - 1);
+		if (rc != 0) {
+			cam_err("%s copy name fail %d\n", __func__, __LINE__);
+		}
 		break;
 	case CFG_OIS_GET_SUPPORT_FLAG:
 		cdata->cfg.ois_sup = hw_ois->ois_info->ois_support;
@@ -217,6 +220,7 @@ int hw_ois_register(struct platform_device *pdev,
 
 	init_subdev_media_entity(subdev,HWCAM_SUBDEV_OIS);
 	hwcam_cfgdev_register_subdev(subdev,HWCAM_SUBDEV_OIS);
+    intf->subdev = subdev;
 	hw_ois->intf = intf;
 	hw_ois->ois_info = hw_ois_info;
 	hw_ois->pdev = pdev;
@@ -225,18 +229,15 @@ register_fail:
 	return rc;
 }
 
-#define Intf2Hwois(si) container_of(si, hw_ois_t, intf)
-void hw_ois_unregister(hw_ois_intf_t *intf)
+void hw_ois_unregister(struct v4l2_subdev* subdev)
 {
-	struct v4l2_subdev* subdev = NULL;
-	hw_ois_t* hw_ois = Intf2Hwois(intf);
+    hw_ois_t* hw_ois = SD2Ois(subdev);
 
-	subdev = &hw_ois->subdev;
-	media_entity_cleanup(&subdev->entity);
-	hwcam_cfgdev_unregister_subdev(subdev);
+    media_entity_cleanup(&subdev->entity);
+    hwcam_cfgdev_unregister_subdev(subdev);
 
-	kzfree(hw_ois->ois_info);
-	kzfree(hw_ois);
+    kzfree(hw_ois->ois_info);
+    kzfree(hw_ois);
 }
 
 //lint -restore

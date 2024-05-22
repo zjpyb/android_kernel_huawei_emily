@@ -70,7 +70,8 @@ struct kmem_cache {
 	int size;		/* The size of an object including meta data */
 	int object_size;	/* The size of an object without meta data */
 	int offset;		/* Free pointer offset. */
-	int cpu_partial;	/* Number of per cpu partial objects to keep around */
+	/* Number of per cpu partial objects to keep around */
+	unsigned int cpu_partial;
 	struct kmem_cache_order_objects oo;
 
 	/* Allocation and freeing of slabs */
@@ -131,6 +132,10 @@ void object_err(struct kmem_cache *s, struct page *page,
 		u8 *object, char *reason);
 
 void *fixup_red_left(struct kmem_cache *s, void *p);
+
+#ifdef CONFIG_HW_SLUB_DF
+int set_harden_double_free_status(bool status);
+#endif
 
 static inline void *nearest_obj(struct kmem_cache *cache, struct page *page,
 				void *x) {

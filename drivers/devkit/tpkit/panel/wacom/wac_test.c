@@ -418,6 +418,7 @@ void do_init_wacom_hid(void)
 	struct wacom_i2c *data = wac_data;
 	if(!data) {
 		TS_LOG_ERR("%s, data is empty\n", __func__);
+		return ;
 	}
 
 	// Clear the error array
@@ -435,6 +436,7 @@ void do_init_wacom_hid(void)
 	//  Set the Panel X, Y, this is initial value, as real RX_COUNT, TX_COUNT
 	m_panelInfo.x = data->m_ini.rx_num;//MAX_RX;
 	m_panelInfo.y = data->m_ini.tx_num;
+	return ;
 }
 
 //
@@ -1398,14 +1400,16 @@ static int wacom_get_one_value(const char *buf, uint32_t *offset)
 	int value = WACOM_INVALID_VALUE;
 	char tmp_buffer[10] = {0};
 	uint32_t count = 0;
-	uint32_t tmp_offset = *offset;
-	int m=0,n=0;
+	int m;
+	int n;
 	int signed_flag = 0;
+	uint32_t tmp_offset = 0;
 
 	if(!buf || !offset) {
 		TS_LOG_ERR("%s,param invalid\n", __func__);
 		return -EINVAL;
 	}
+	tmp_offset = *offset;
 	/* Bypass extra commas */
 	m=tmp_offset + 1;
 	while (buf[tmp_offset] == ASCII_COMMA

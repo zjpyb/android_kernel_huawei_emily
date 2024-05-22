@@ -3145,7 +3145,7 @@ done:
 #ifdef BCM_PCIE_UPDATE
 #define PCIE_GEN2(sih) ((BUSTYPE((sih)->bustype) == PCI_BUS) &&	\
 	((sih)->buscoretype == PCIE2_CORE_ID))
-
+#ifndef BCM_PATCH_SECURITY_2017_02
 static bool
 pcie2_mdiosetblock(dhd_bus_t *bus, uint blk)
 {
@@ -3177,6 +3177,7 @@ pcie2_mdiosetblock(dhd_bus_t *bus, uint blk)
 
 	return TRUE;
 }
+#endif
 #endif
 extern void dhd_dpc_tasklet_kill(dhd_pub_t *dhdp);
 enum {
@@ -3399,7 +3400,7 @@ done:
 
 	return bcmerror;
 }
-
+#ifndef BCM_PATCH_SECURITY_2017_02
 static int
 pcie2_mdioop(dhd_bus_t *bus, uint physmedia, uint regaddr, bool write, uint *val,
 	bool slave_bypass)
@@ -3444,7 +3445,7 @@ pcie2_mdioop(dhd_bus_t *bus, uint physmedia, uint regaddr, bool write, uint *val
 	}
 	return -1;
 }
-
+#endif
 static int
 dhdpcie_bus_doiovar(dhd_bus_t *bus, const bcm_iovar_t *vi, uint32 actionid, const char *name,
                 void *params, int plen, void *arg, int len, int val_size)
@@ -4418,7 +4419,8 @@ dhdpcie_bus_write_vars(dhd_bus_t *bus)
 		DHD_INFO(("Compare NVRAM dl & ul; varsize=%d\n", varsize));
 		nvram_ularray = (uint8*)MALLOC(bus->dhd->osh, varsize);
 		if (!nvram_ularray)
-			return BCME_NOMEM;
+			goto skip_debug;
+
 
 		/* Upload image to verify downloaded contents. */
 		memset(nvram_ularray, 0xaa, varsize);
@@ -4438,6 +4440,8 @@ dhdpcie_bus_write_vars(dhd_bus_t *bus)
 			__FUNCTION__));
 
 		MFREE(bus->dhd->osh, nvram_ularray, varsize);
+skip_debug:
+		DHD_ERROR(("%s: debug end\n", __FUNCTION__));
 #endif /* DHD_DEBUG */
 
 		MFREE(bus->dhd->osh, vbuffer, varsize);
@@ -4540,6 +4544,9 @@ dhdpcie_downloadvars(dhd_bus_t *bus, void *arg, int len)
 #ifdef BRCM_RSDB
 {
     char *rsdb_mode = NULL;
+#ifdef HW_CE_5G_HIGH_BAND
+	char *ce_5g_high_band = NULL;
+#endif
 #ifdef DHD_DEVWAKE_EARLY
     char *device_wake_opt = NULL;
     int softap_mode;
@@ -4580,7 +4587,6 @@ dhdpcie_downloadvars(dhd_bus_t *bus, void *arg, int len)
 	}
 #endif
 #ifdef HW_CE_5G_HIGH_BAND
-	char *ce_5g_high_band = NULL;
 	/* Don't enable this for old products even though upgrade to android P */
 	ce_5g_high_band = getvar(bus->vars, "ce_5g_high_band");
 	if (ce_5g_high_band) {
@@ -5683,7 +5689,7 @@ dhdpcie_cc_nvmshadow(dhd_bus_t *bus, struct bcmstrbuf *b)
 	chipcregs = (chipcregs_t *)si_setcore(bus->sih, CC_CORE_ID, 0);
 	ASSERT(chipcregs != NULL);
 	if (NULL == chipcregs)
-		return;
+		return BCME_NOTFOUND;
 
 	chipc_corerev = si_corerev(bus->sih);
 
@@ -6287,6 +6293,7 @@ static uint hw_get_var_name_length(char *bufp, uint len)
 static uint hw_check_var(char *varbufp)
 {
 	int varlen, varnamelen;
+	uint i=0;
 	if (varbufp == NULL) {
 		return 0;
 	}
@@ -6295,7 +6302,7 @@ static uint hw_check_var(char *varbufp)
 	if ((varnamelen <= 0) || (varnamelen>=varlen))
 		return 0;
 
-	uint i=0;
+
 	for(i=varnamelen+1; i<varlen; i++)
 	{
 		if((varbufp[i] == '=')

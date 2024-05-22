@@ -17,10 +17,16 @@
 #include <linux/mfd/hisi_pmic.h>
 #include <soc_sctrl_interface.h>
 #include <soc_ufs_sysctrl_interface.h>
+#include <pmic_interface.h>
 #include <linux/hisi/hisi_idle_sleep.h>
 #include "ufshcd.h"
 #include "ufs-kirin.h"
 #include "dsm_ufs.h"
+
+void ufs_kirin_regulator_init(struct ufs_hba *hba)
+{
+	return;
+}
 
 void ufs_clk_init(struct ufs_hba *hba)
 {
@@ -111,15 +117,16 @@ void ufs_soc_init(struct ufs_hba *hba)
 	} else {
 		ufs_sys_ctrl_writel(host, MASK_UFS_DEVICE_RESET | 0,
 				    UFS_DEVICE_RESET_CTRL); /* reset device */
+		ufshcd_vops_vcc_power_on_off(hba);
 		/* To improve the ref clock jitter, use PMU's output directly */
 		/* change the PMU's device ref clk to 38.4Mhz, if after onchiprom's
 		* linkstartup's PA_MaxRxHSGear = 0x4 */
 		/* close the device clk */
-		hisi_pmic_reg_write(0x43, 0);
+		hisi_pmic_reg_write(PMIC_CLK_UFS_EN_ADDR(0), 0);
 		/* choose the device clk 19.2Mhz */
-		hisi_pmic_reg_write(0x02E3, 0);
+		hisi_pmic_reg_write(PMIC_CLK_UFS_FRE_CTRL1_ADDR(0), 0);
 		/* open the device clk */
-		hisi_pmic_reg_write(0x43, 1);
+		hisi_pmic_reg_write(PMIC_CLK_UFS_EN_ADDR(0), 1);
 
 		mdelay(1);
 
@@ -196,7 +203,7 @@ int ufs_kirin_suspend(struct ufs_hba *hba, enum ufs_pm_op pm_op)
 
 	ufs_sys_ctrl_clr_bits(host, BIT_SYSCTRL_REF_CLOCK_EN, PHY_CLK_CTRL);
 	udelay(10);
-	hisi_pmic_reg_write(0x43, 0);
+	hisi_pmic_reg_write(PMIC_CLK_UFS_EN_ADDR(0), 0);
 
 	host->in_suspend = true;
 
@@ -214,10 +221,10 @@ int ufs_kirin_resume(struct ufs_hba *hba, enum ufs_pm_op pm_op)
 	if (!host->in_suspend)
 		return 0;
 	if (hba->is_hs_gear4_dev)
-		hisi_pmic_reg_write(0x02E3, 1);
+		hisi_pmic_reg_write(PMIC_CLK_UFS_FRE_CTRL1_ADDR(0), 1);
 	else
-		hisi_pmic_reg_write(0x02E3, 0);
-	hisi_pmic_reg_write(0x43, 1);
+		hisi_pmic_reg_write(PMIC_CLK_UFS_FRE_CTRL1_ADDR(0), 0);
+	hisi_pmic_reg_write(PMIC_CLK_UFS_EN_ADDR(0), 1);
 	/* 250us to ensure the clk stable */
 	udelay(250);
 	ufs_sys_ctrl_set_bits(host, BIT_SYSCTRL_REF_CLOCK_EN, PHY_CLK_CTRL);
@@ -234,8 +241,8 @@ void ufs_kirin_device_hw_reset(struct ufs_hba *hba)
 							UFS_DEVICE_RESET_CTRL);
 	else
 		ufs_i2c_writel(hba, (unsigned int) BIT(6), SC_RSTDIS);
+	ufshcd_vops_vcc_power_on_off(hba);
 	mdelay(1);
-
 	if (likely(!(host->caps & USE_HISI_MPHY_TC)))
 		ufs_sys_ctrl_writel(host, MASK_UFS_DEVICE_RESET | BIT_UFS_DEVICE_RESET,
 			    			UFS_DEVICE_RESET_CTRL);
@@ -532,11 +539,11 @@ void set_device_clk(struct ufs_hba *hba)
 		hba->is_hs_gear4_dev = 1;
 
 		/* close the device clk */
-		hisi_pmic_reg_write(0x43, 0);
+		hisi_pmic_reg_write(PMIC_CLK_UFS_EN_ADDR(0), 0);
 		/* choose the device clk 38.4Mhz */
-		hisi_pmic_reg_write(0x02E3, 1);
+		hisi_pmic_reg_write(PMIC_CLK_UFS_FRE_CTRL1_ADDR(0), 1);
 		/* open the device clk */
-		hisi_pmic_reg_write(0x43, 1);
+		hisi_pmic_reg_write(PMIC_CLK_UFS_EN_ADDR(0), 1);
 
 		mdelay(2);
 	}
@@ -571,8 +578,6 @@ int ufs_kirin_link_startup_post_change(struct ufs_hba *hba)
 	ufshcd_dme_set(hba, UIC_ARG_MIB(0xd09a), 0x80000000); /* select received symbol cnt */
 	ufshcd_dme_set(hba, UIC_ARG_MIB(0xd09c), 0x00000005); /* reset counter0 and enable */
 
-	set_device_clk(hba);
-
 	pr_info("%s --\n", __func__);
 	return 0;
 }
@@ -581,8 +586,9 @@ void ufs_kirin_pwr_change_pre_change(struct ufs_hba *hba)
 {
 	uint32_t value;
 	pr_info("%s ++\n", __func__);
-
+#ifdef CONFIG_HISI_DEBUG_FS
 	pr_info("device manufacturer_id is 0x%x\n", hba->manufacturer_id);
+#endif
 	/*ARIES platform need to set SaveConfigTime to 0x13, and change sync length to maximum value */
 	ufshcd_dme_set(hba, UIC_ARG_MIB((u32)0xD0A0), 0x13); /* VS_DebugSaveConfigTime */
 	ufshcd_dme_set(hba, UIC_ARG_MIB((u32)0x1552), 0x4f); /* g1 sync length */

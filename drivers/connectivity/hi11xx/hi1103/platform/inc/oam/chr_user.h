@@ -69,6 +69,8 @@
 /*wifi上网慢*/
 #define CHR_WIFI_WEB_SLOW_QUERY_EVENTID 909002025
 
+/*BT软件异常上报*/
+#define CHR_BT_CHIP_SOFT_ERROR_EVENTID   (913900003)
 
 /*****************************************************************************
   3 枚举定义

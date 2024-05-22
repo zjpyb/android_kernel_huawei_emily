@@ -300,9 +300,9 @@ static int hisi_pmic_vibrator_power_on_off(int pmic_vibrator_power_onoff)
 
 static void hisi_pmic_vibrator_get_freq (void)
 {
-	int lra_nml_time_l = 0;
-	int lra_nml_time_m = 0;
-	int lra_nml_time_h = 0;
+	unsigned int lra_nml_time_l = 0;
+	unsigned int lra_nml_time_m = 0;
+	unsigned int lra_nml_time_h = 0;
 	lra_nml_time_l = hisi_pmic_vibrator_read_u8(HISI_PMIC_VIBRATOR_LRA_NML_TIME_L);
 	lra_nml_time_m = hisi_pmic_vibrator_read_u8(HISI_PMIC_VIBRATOR_LRA_NML_TIME_M);
 	lra_nml_time_h = hisi_pmic_vibrator_read_u8(HISI_PMIC_VIBRATOR_LRA_NML_TIME_H);
@@ -335,30 +335,6 @@ static void hisi_pmic_vibrator_off(struct hisi_pmic_vibrator_dev *vdev)
 	hisi_pmic_vibrator_write_u8(HISI_PMIC_VIBRATOR_BRK_EN, vdev->vibrator_reg_off);
 	vdev->pmic_vibrator_strength = vdev->pmic_vibrator_vol;
 	hisi_pmic_vibrator_power_on_off(PMIC_VIBRATOR_POWER_OFF);
-}
-
-/* calc value of voltage */
-static s32 hisi_pmic_vibrator_set_rtp_val(struct hisi_pmic_vibrator_dev *vdev, u32 voltage_level)
- {
-	if (!vdev)
-		return -EINVAL;
-
-	if (voltage_level < PMIC_VIBRATOR_VOL_LEVEL_1
-		|| voltage_level > PMIC_VIBRATOR_VOL_LEVEL_16) {
-		dev_err(vdev->dev,
-			 "vibrator voltage level is invalid!\n");
-		return -EINVAL;
-	} else {
-		if (voltage_level <= PMIC_VIBRATOR_VOL_LEVEL_10 ) {
-			vdev->pmic_vibrator_strength = voltage_level * PMIC_VIBRATOR_STRENGTH_STEP1;
-		} else {
-			vdev->pmic_vibrator_strength =
-				(voltage_level - PMIC_VIBRATOR_VOL_LEVEL_10 ) * PMIC_VIBRATOR_STRENGTH_STEP2
-				+ PMIC_VIBRATOR_VOL_LEVEL_10 * PMIC_VIBRATOR_STRENGTH_STEP1;
-		}
-	}
-
-	return 0;
 }
 
 static s32 hisi_pmic_vibrator_set_strength(void)
@@ -579,7 +555,53 @@ out:
 	return len;
 }
 
+void hisi_pmic_vibrator_haptics_set_type(int type)
+{
+	s32 ret = 0;
+
+	mutex_lock(&g_vdev->lock);
+
+	ret = hisi_pmic_vibrator_haptic_cfg(g_vdev,(u32)type);
+	if (ret) {
+		dev_err(g_vdev->dev,"hisi_haptic_test error\n");
+		mutex_unlock(&g_vdev->lock);
+		return;
+	}
+
+	hisi_pmic_vibrator_power_on_off(PMIC_VIBRATOR_POWER_ON);
+	hisi_pmic_vibrator_set_mode(HISI_PMIC_VIBRATOR_MODE_HAPTICS);
+	dev_info(g_vdev->dev, "hisi_pmic_vibrator_haptics_set_type is running\n");
+	hisi_pmic_vibrator_power_on_off(PMIC_VIBRATOR_POWER_OFF);
+
+	mutex_unlock(&g_vdev->lock);
+}
+EXPORT_SYMBOL(hisi_pmic_vibrator_haptics_set_type);
+
 #ifdef CONFIG_HISI_PMIC_VIBRATOR_DEBUG
+
+/* calc value of voltage */
+static s32 hisi_pmic_vibrator_set_rtp_val(struct hisi_pmic_vibrator_dev *vdev, u32 voltage_level)
+ {
+	if (!vdev)
+		return -EINVAL;
+
+	if (voltage_level < PMIC_VIBRATOR_VOL_LEVEL_1
+		|| voltage_level > PMIC_VIBRATOR_VOL_LEVEL_16) {
+		dev_err(vdev->dev,
+			 "vibrator voltage level is invalid!\n");
+		return -EINVAL;
+	} else {
+		if (voltage_level <= PMIC_VIBRATOR_VOL_LEVEL_10 ) {
+			vdev->pmic_vibrator_strength = voltage_level * PMIC_VIBRATOR_STRENGTH_STEP1;
+		} else {
+			vdev->pmic_vibrator_strength =
+				(voltage_level - PMIC_VIBRATOR_VOL_LEVEL_10 ) * PMIC_VIBRATOR_STRENGTH_STEP2
+				+ PMIC_VIBRATOR_VOL_LEVEL_10 * PMIC_VIBRATOR_STRENGTH_STEP1;
+		}
+	}
+
+	return 0;
+}
 
 static ssize_t hisi_pmic_vibrator_get_reg_value_show(struct device *dev,
 				     struct device_attribute *attr, char *buf)
@@ -827,10 +849,12 @@ static irqreturn_t hisi_pmic_vibrator_handler(int irq, void *data)
 			dev_err(g_vdev->dev,
 				"pmic vibrator interrupt happend[%s]\n",
 				vdev->lra_irq[i].irq_name);
+#ifdef CONFIG_HUAWEI_DSM
 			strncpy_s(pmic_vibrator_happend_irq_name,
 				sizeof(pmic_vibrator_happend_irq_name),
 				vdev->lra_irq[i].irq_name,
 				strlen(vdev->lra_irq[i].irq_name));
+#endif
 			schedule_work(&vdev->hisi_pmic_vibrator_irq_work);
 
 			goto irq_pending;

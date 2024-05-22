@@ -25,14 +25,20 @@
 #include <linux/of.h>
 #include <linux/regulator/consumer.h>
 #include <linux/hwspinlock.h>
+#include <linux/version.h>
 #include "hwspinlock_internal.h"
 #include "../../lcdkit/lcdkit1.0/include/lcdkit_ext.h"
 #include "huawei_thp.h"
 #include "huawei_thp_mt_wrapper.h"
-#include "huawei_thp_attr.h"
 #if defined (CONFIG_LCD_KIT_DRIVER)
 #include <lcd_kit_core.h>
 #endif
+
+#ifdef CONFIG_INPUTHUB_20
+#include "contexthub_recovery.h"
+#endif
+
+#include <huawei_platform/sensor/hw_comm_pmic.h>
 
 #if CONFIG_HISI_BCI_BATTERY
 #include <linux/power/hisi/hisi_bci_battery.h>
@@ -59,6 +65,10 @@
 struct thp_core_data *g_thp_core;
 static u8 *spi_sync_tx_buf = NULL;
 static u8 *spi_sync_rx_buf = NULL;
+static u8 is_fw_update;
+static bool g_thp_prox_enable;
+static bool onetime_poweroff_done;
+static struct hw_comm_pmic_cfg_t tp_pmic_ldo_set;
 
 #if defined (CONFIG_TEE_TUI)
 struct thp_tui_data thp_tui_info;
@@ -88,6 +98,11 @@ struct ts_kit_ops thp_ops = {
 	.ts_power_notify = thp_power_control_notify,
 };
 #endif
+
+static int thp_spi_transfer_one_byte_bootloader(struct thp_core_data *const cd,
+										   const char *const tx_buf,
+										   char *const rx_buf,
+										   const unsigned int len);
 
 int thp_spi_sync(struct spi_device *spi, struct spi_message *message)
 {
@@ -176,6 +191,14 @@ int thp_power_supply_get(enum thp_power_id power_id)
 			return ret;
 		}
 		break;
+	case THP_POWER_PMIC:
+		THP_LOG_INFO("%s call %d,%d,%d\n", __func__,
+			power->pmic_power.pmic_num, power->pmic_power.ldo_num,
+			power->pmic_power.value);
+		tp_pmic_ldo_set.pmic_num = power->pmic_power.pmic_num;
+		tp_pmic_ldo_set.pmic_power_type = power->pmic_power.ldo_num;
+		tp_pmic_ldo_set.pmic_power_voltage = power->pmic_power.value;
+		break;
 	default:
 		THP_LOG_ERR("%s: invalid power type %d\n", __func__, power->type);
 		break;
@@ -210,6 +233,10 @@ int thp_power_supply_put(enum thp_power_id power_id)
 		gpio_direction_output(power->gpio, 0);
 		gpio_free(power->gpio);
 		break;
+	case THP_POWER_PMIC:
+		THP_LOG_ERR("%s: power supply %d\n", __func__, power->type);
+		break;
+
 	default:
 		THP_LOG_ERR("%s: invalid power type %d\n", __func__, power->type);
 		break;
@@ -247,6 +274,14 @@ int thp_power_supply_ctrl(enum thp_power_id power_id, int status, unsigned int d
 	case THP_POWER_GPIO:
 		gpio_direction_output(power->gpio, status ? 1 : 0);
 		break;
+	case THP_POWER_PMIC:
+		tp_pmic_ldo_set.pmic_power_state = (status ? 1 : 0);
+		rc = hw_pmic_power_cfg(TP_PMIC_REQ, &tp_pmic_ldo_set);
+		if (rc)
+			THP_LOG_ERR("%s:pmic %s failed, %d\n", __func__,
+				thp_power_id2name(power_id), rc);
+		break;
+
 	default:
 		THP_LOG_ERR("%s: invalid power type %d\n", __func__, power->type);
 		break;
@@ -256,6 +291,44 @@ int thp_power_supply_ctrl(enum thp_power_id power_id, int status, unsigned int d
 	return rc;
 }
 #define POWER_CONFIG_NAME_MAX 20
+static void thp_paser_pmic_power(struct device_node *thp_node,
+			struct thp_core_data *cd,
+			int power_id)
+{
+	const char *power_name = NULL;
+	char config_name[POWER_CONFIG_NAME_MAX] = {0};
+	struct thp_power_supply *power = NULL;
+	int rc;
+
+	power_name = thp_power_id2name(power_id);
+	power = &cd->thp_powers[power_id];
+	snprintf(config_name, (POWER_CONFIG_NAME_MAX - 1),
+		"%s-value", power_name);
+	rc = of_property_read_u32(thp_node, config_name,
+		&power->pmic_power.value);
+	if (rc)
+		THP_LOG_ERR("%s:failed to get %s\n",
+			__func__, config_name);
+	snprintf(config_name, (POWER_CONFIG_NAME_MAX - 1),
+		"%s-ldo-num", power_name);
+	rc = of_property_read_u32(thp_node, config_name,
+		&power->pmic_power.ldo_num);
+	if (rc)
+		THP_LOG_ERR("%s:failed to get %s\n",
+			__func__, config_name);
+	snprintf(config_name, (POWER_CONFIG_NAME_MAX - 1),
+		"%s-pmic-num", power_name);
+	rc = of_property_read_u32(thp_node, config_name,
+		&power->pmic_power.pmic_num);
+	if (rc)
+		THP_LOG_ERR("%s:failed to get %s\n",
+			__func__, config_name);
+	THP_LOG_INFO("%s: to get %d, %d,%d\n", __func__,
+		power->pmic_power.ldo_num,
+		power->pmic_power.pmic_num,
+		power->pmic_power.value);
+}
+
 static int thp_parse_one_power(struct device_node *thp_node,
 			struct thp_core_data *cd,
 			int power_id)
@@ -295,6 +368,9 @@ static int thp_parse_one_power(struct device_node *thp_node,
 			return rc;
 		}
 		break;
+	case THP_POWER_PMIC:
+		thp_paser_pmic_power(thp_node, cd, power_id);
+		break;
 	default:
 		THP_LOG_ERR("%s: invaild power type %d", __func__, power->type);
 		break;
@@ -327,6 +403,68 @@ int is_valid_project_id(char *id)
 	}
 
 	return true;
+}
+
+
+#define GET_HWLOCK_FAIL   0
+int thp_bus_lock() {
+	int ret = 0;
+	unsigned long time = 0;
+	unsigned long timeout = 0;
+	struct thp_core_data *cd = thp_get_core_data();
+	struct hwspinlock *hwlock = cd->hwspin_lock;
+
+	mutex_lock(&cd->spi_mutex);
+	if(!cd->use_hwlock) {
+		return 0;
+	}
+
+	timeout = jiffies + msecs_to_jiffies(THP_GET_HARDWARE_TIMEOUT);
+
+	do {
+		ret = hwlock->bank->ops->trylock(hwlock);
+		if (GET_HWLOCK_FAIL == ret) {
+			time = jiffies;
+			if (time_after(time, timeout)) {
+				THP_LOG_ERR("%s:get hardware_mutex for completion timeout\n", __func__);
+				return -ETIME;
+			}
+		}
+	} while (GET_HWLOCK_FAIL == ret);
+
+	return 0;
+}
+
+void thp_bus_unlock() {
+	struct thp_core_data *cd = thp_get_core_data();
+	struct hwspinlock *hwlock = cd->hwspin_lock;
+
+	mutex_unlock(&cd->spi_mutex);
+	if(cd->use_hwlock) {
+		hwlock->bank->ops->unlock(hwlock);
+	}
+
+}
+
+static int thp_setup_spi(struct thp_core_data *cd);
+int thp_set_spi_max_speed(unsigned int speed)
+{
+	struct thp_core_data *cd = thp_get_core_data();
+	int rc = 0;
+
+	cd->sdev->max_speed_hz = speed;
+	THP_LOG_INFO("%s:set max_speed_hz %d\n", __func__, speed);
+	rc = thp_bus_lock();
+	if (rc) {
+		THP_LOG_ERR("%s: get lock failed\n", __func__);
+		return rc;
+	}
+	if (thp_setup_spi(cd)) {
+		THP_LOG_ERR("%s: set spi speed fail\n", __func__);
+		rc = -EIO;
+	}
+	thp_bus_unlock();
+	return rc;
 }
 
 static int thp_wait_frame_waitq(struct thp_core_data *cd)
@@ -378,8 +516,8 @@ int thp_set_status(int type, int status)
 	struct thp_core_data *cd = thp_get_core_data();
 
 	mutex_lock(&cd->status_mutex);
-	status ? __set_bit(type, &cd->status) :
-		__clear_bit(type, &cd->status);
+	status ? __set_bit(type, (volatile unsigned long *)&cd->status) :
+		__clear_bit(type, (volatile unsigned long *)&cd->status);
 	mutex_unlock(&cd->status_mutex);
 
 	thp_mt_wrapper_wakeup_poll();
@@ -431,15 +569,21 @@ static int thp_spi_transfer(struct thp_core_data *cd,
 		.rx_buf = rx_buf,
 		.len    = len,
 	};
-	int rc;
+	int rc = 0;
 
-	if (cd->suspended)
+	if (cd->suspended && (!cd->need_work_in_suspend)) {
+		THP_LOG_ERR("%s - suspended\n", __func__);
 		return 0;
+	}
 
 	spi_message_init(&msg);
 	spi_message_add_tail(&xfer, &msg);
 
-	thp_bus_lock();
+	rc = thp_bus_lock();
+	if (rc < 0) {
+		THP_LOG_ERR("%s:get lock failed:%d\n", __func__, rc);
+		return rc;
+	}
 	thp_spi_cs_set(GPIO_HIGH);
 	rc = thp_spi_sync(sdev, &msg);
 	thp_bus_unlock();
@@ -463,6 +607,18 @@ static void thp_set_irq_status(struct thp_core_data *cd, int status)
 	mutex_unlock(&cd->irq_mutex);
 };
 
+/*
+ * This function is called for recording the system time when tp
+ * receive the suspend cmd from lcd driver for proximity feature.
+ */
+static void thp_prox_suspend_record_time(struct thp_core_data *cd)
+{
+	do_gettimeofday(&cd->tp_suspend_record_tv);
+	THP_LOG_INFO("[Proximity_feature] TP early suspend at %ld secs %ld microseconds\n",
+		cd->tp_suspend_record_tv.tv_sec,
+		cd->tp_suspend_record_tv.tv_usec);
+}
+
 static int thp_suspend(struct thp_core_data *cd)
 {
 	if (cd->suspended) {
@@ -471,13 +627,30 @@ static int thp_suspend(struct thp_core_data *cd)
 	}
 
 	cd->suspended = true;
-	if(1 == cd->support_pinctrl)
-		thp_pinctrl_select_lowpower(cd->thp_dev);
-	if (cd->open_count)
-		thp_set_irq_status(cd, THP_IRQ_DISABLE);
-
-	cd->thp_dev->ops->suspend(cd->thp_dev);
-
+	/*
+	 * to avoid easy_wakeup_info.sleep_mode being changed during suspend,
+	 * assign cd->sleep_mode to easy_wakeup_info.sleep_mode once
+	 */
+	cd->easy_wakeup_info.sleep_mode = cd->sleep_mode;
+	if (cd->proximity_support == PROX_SUPPORT) {
+		if (cd->need_work_in_suspend) {
+			THP_LOG_INFO("[Proximity_feature] %s: Enter prximity mode, no need suspend!\n",
+				__func__);
+			return 0;
+		}
+	}
+	if (cd->easy_wakeup_info.sleep_mode == TS_GESTURE_MODE &&
+		cd->support_gesture_mode) {
+		cd->thp_dev->ops->suspend(cd->thp_dev);
+		thp_set_irq_status(cd, THP_IRQ_ENABLE);
+	} else {
+		if (1 == cd->support_pinctrl)
+			thp_pinctrl_select_lowpower(cd->thp_dev);
+		if (cd->open_count)
+			thp_set_irq_status(cd, THP_IRQ_DISABLE);
+		cd->thp_dev->ops->suspend(cd->thp_dev);
+	}
+	cd->work_status = SUSPEND_DONE;
 	return 0;
 }
 
@@ -496,64 +669,131 @@ static int thp_resume(struct thp_core_data *cd)
 	mutex_lock(&cd->mutex_frame);
 	thp_clear_frame_buffer(cd);
 	mutex_unlock(&cd->mutex_frame);
-	if(1 == cd->support_pinctrl)
+	if (cd->support_pinctrl == 1)
 		thp_pinctrl_select_normal(cd->thp_dev);
-	cd->suspended = false;
 
+	if (cd->proximity_support == PROX_SUPPORT) {
+		g_thp_prox_enable = cd->prox_cache_enable;
+		onetime_poweroff_done = false;
+		cd->early_suspended = false;
+		THP_LOG_INFO("[Proximity_feature] %s: update g_thp_prox_enable to %d!\n",
+			__func__, g_thp_prox_enable);
+	}
+	cd->suspended = false;
+	cd->work_status = RESUME_DONE;
 	return 0;
 }
 
+
+static void thp_after_resume_work_fn(struct work_struct *work)
+{
+	struct thp_core_data *cd = thp_get_core_data();
+
+	if (cd->delay_work_for_pm) {
+		if (cd->thp_dev->ops->after_resume)
+			cd->thp_dev->ops->after_resume(cd->thp_dev);
+		thp_set_status(THP_STATUS_POWER, THP_RESUME);
+	}
+	cd->suspend_resume_waitq_flag = WAITQ_WAKEUP;
+	wake_up_interruptible(&(cd->suspend_resume_waitq));
+	THP_LOG_INFO("%s: after resume end.\n", __func__);
+	return;
+}
+
+DECLARE_WORK(thp_after_resume_work, thp_after_resume_work_fn);
+
+#ifndef CONFIG_LCD_KIT_DRIVER
 static int thp_lcdkit_notifier_callback(struct notifier_block* self,
 			unsigned long event, void* data)
 {
 	struct thp_core_data *cd = thp_get_core_data();
 	unsigned long pm_type = event;
 
-	THP_LOG_DEBUG("%s: called by lcdkit, pm_type=%d\n", __func__, pm_type);
+	THP_LOG_DEBUG("%s: called by lcdkit, pm_type=%lu\n", __func__, pm_type);
 
 	switch (pm_type) {
 	case LCDKIT_TS_EARLY_SUSPEND:
-		THP_LOG_INFO("%s: early suspend\n", __func__);
-		thp_set_status(THP_STATUS_POWER, THP_SUSPEND);
+		if (cd->proximity_support != PROX_SUPPORT) {
+			THP_LOG_INFO("%s: early suspend\n", __func__);
+			thp_set_status(THP_STATUS_POWER, THP_SUSPEND);
+		} else {
+			thp_prox_suspend_record_time(cd);
+			THP_LOG_INFO("%s:early suspend!g_thp_prox_enable=%d\n",
+				__func__, g_thp_prox_enable);
+			cd->need_work_in_suspend = g_thp_prox_enable;
+			cd->prox_cache_enable = g_thp_prox_enable;
+			cd->early_suspended = true;
+			if (cd->need_work_in_suspend)
+				thp_set_status(THP_STATUS_AFE_PROXIMITY,
+					THP_PROX_ENTER);
+			else
+				thp_set_status(THP_STATUS_POWER, THP_SUSPEND);
+		}
 		break;
 
-	case LCDKIT_TS_SUSPEND_DEVICE :
-		THP_LOG_DEBUG("%s: suspend\n", __func__);
+	case LCDKIT_TS_SUSPEND_DEVICE:
+		THP_LOG_INFO("%s: suspend\n", __func__);
 		thp_clean_fingers();
 		break;
 
-	case LCDKIT_TS_BEFORE_SUSPEND :
+	case LCDKIT_TS_BEFORE_SUSPEND:
 		THP_LOG_INFO("%s: before suspend\n", __func__);
 		thp_suspend(cd);
 		break;
 
-	case LCDKIT_TS_RESUME_DEVICE :
+	case LCDKIT_TS_RESUME_DEVICE:
 		THP_LOG_INFO("%s: resume\n", __func__);
 		thp_resume(cd);
 		break;
 
 	case LCDKIT_TS_AFTER_RESUME:
-		THP_LOG_INFO("%s: after resume\n", __func__);
-		thp_set_status(THP_STATUS_POWER, THP_RESUME);
+		if (cd->proximity_support != PROX_SUPPORT) {
+			THP_LOG_INFO("%s: after resume\n", __func__);
+			thp_set_status(THP_STATUS_POWER, THP_RESUME);
+		} else {
+			THP_LOG_INFO("%s: after resume! need_work_in_suspend = %d\n",
+				__func__, cd->need_work_in_suspend);
+			if (cd->need_work_in_suspend)
+				thp_set_status(THP_STATUS_AFE_PROXIMITY,
+					THP_PROX_EXIT);
+			else
+				thp_set_status(THP_STATUS_POWER, THP_RESUME);
+		}
 		break;
 
-	default :
+	default:
 		break;
 	}
 
 	return 0;
 }
+#endif
 
+#define SUSPEND_WAIT_TIMEOUT  2000
 #if defined (CONFIG_LCD_KIT_DRIVER)
 int thp_power_control_notify(enum lcd_kit_ts_pm_type pm_type, int timeout)
 {
 	struct thp_core_data *cd = thp_get_core_data();
-	THP_LOG_DEBUG("%s: called by lcdkit, pm_type=%d\n", __func__, pm_type);
+	int rc;
 
+	THP_LOG_DEBUG("%s: called by lcdkit, pm_type=%d\n", __func__, pm_type);
 	switch (pm_type) {
 	case TS_EARLY_SUSPEND:
-		THP_LOG_INFO("%s: early suspend\n", __func__);
-		thp_set_status(THP_STATUS_POWER, THP_SUSPEND);
+		THP_LOG_INFO("%s: early suspend,%d\n", __func__, cd->suspend_resume_waitq_flag);
+		if (cd->delay_work_for_pm) {
+			if(cd->suspend_resume_waitq_flag != WAITQ_WAKEUP) {
+				THP_LOG_INFO("%s:wait resume complete.\n", __func__);
+				rc =  wait_event_interruptible_timeout(cd->suspend_resume_waitq,
+						(cd->suspend_resume_waitq_flag == WAITQ_WAKEUP), SUSPEND_WAIT_TIMEOUT);
+				if (!rc)
+					THP_LOG_ERR("%s:wait resume complete timeout.\n", __func__);
+			}
+			thp_set_status(THP_STATUS_POWER, THP_SUSPEND);
+			cd->suspend_resume_waitq_flag = WAITQ_WAIT;
+		} else {
+			thp_set_status(THP_STATUS_POWER, THP_SUSPEND);
+		}
+
 		break;
 
 	case TS_SUSPEND_DEVICE :
@@ -572,8 +812,13 @@ int thp_power_control_notify(enum lcd_kit_ts_pm_type pm_type, int timeout)
 		break;
 
 	case TS_AFTER_RESUME:
-		THP_LOG_INFO("%s: after resume\n", __func__);
-		thp_set_status(THP_STATUS_POWER, THP_RESUME);
+		if(cd->delay_work_for_pm){
+			THP_LOG_INFO("%s: after resume called\n", __func__);
+			schedule_work(&thp_after_resume_work);
+		} else {
+			THP_LOG_INFO("%s: after resume\n", __func__);
+			thp_set_status(THP_STATUS_POWER, THP_RESUME);
+		}
 		break;
 
 	default :
@@ -587,8 +832,6 @@ int thp_power_control_notify(enum lcd_kit_ts_pm_type pm_type, int timeout)
 static int thp_open(struct inode *inode, struct file *filp)
 {
 	struct thp_core_data *cd = thp_get_core_data();
-	struct thp_frame *temp;
-	struct list_head *pos, *n;
 
 	THP_LOG_INFO("%s: called\n", __func__);
 
@@ -611,12 +854,15 @@ static int thp_open(struct inode *inode, struct file *filp)
 	cd->timeout = THP_DEFATULT_TIMEOUT_MS;
 
 	/*Daemon default is  0, setting  to 1 will trigger daemon to init or restore the status.*/
-	__set_bit(THP_STAUTS_WINDOW_UPDATE, &cd->status);
-	__set_bit(THP_STAUTS_TOUCH_SCENE, &cd->status);
+	__set_bit(THP_STAUTS_WINDOW_UPDATE, (volatile unsigned long *)&cd->status);
+	__set_bit(THP_STAUTS_TOUCH_SCENE, (volatile unsigned long *)&cd->status);
 
 	THP_LOG_INFO("%s: cd->status = 0x%x\n", __func__,cd->status);
 
 	thp_clear_frame_buffer(cd);
+
+	/* restore spi config */
+	thp_set_spi_max_speed(cd->spi_config.max_speed_hz);
 
 	return 0;
 }
@@ -646,12 +892,12 @@ static int  thp_spi_sync_alloc_mem(void)
 	if(!spi_sync_rx_buf && !spi_sync_tx_buf ){
 		spi_sync_rx_buf = kzalloc(THP_SYNC_DATA_MAX, GFP_KERNEL);
 		if(!spi_sync_rx_buf){
-			THP_LOG_ERR("%s:spi_sync_rx_buf request memory fail,sync_data.size = %d\n", __func__);
+			THP_LOG_ERR("%s:spi_sync_rx_buf request memory fail\n", __func__);
 			goto exit;
 		}
 		spi_sync_tx_buf = kzalloc(THP_SYNC_DATA_MAX, GFP_KERNEL);
 		if(!spi_sync_tx_buf){
-			THP_LOG_ERR("%s:spi_sync_tx_buf request memory fail,sync_data.size = %d\n", __func__);
+			THP_LOG_ERR("%s:spi_sync_tx_buf request memory fail\n", __func__);
 			kfree(spi_sync_rx_buf);
 			spi_sync_rx_buf = NULL;
 			goto exit;
@@ -663,18 +909,199 @@ exit :
 	return  -ENOMEM;
 }
 
+
+static unsigned int  thp_get_spi_msg_lens(
+		struct thp_ioctl_spi_xfer_data *spi_data,
+		unsigned int xfer_num)
+{
+	int length = 0;
+	int i;
+
+	if (!spi_data || !xfer_num ||
+		(xfer_num > MAX_SPI_XFER_DATA_NUM)) {
+		THP_LOG_ERR("%s:invalid input\n", __func__);
+		return 0;
+	}
+	for (i = 0; i < xfer_num ; i++) {
+		if (!spi_data[i].len) {
+			THP_LOG_ERR("%s:spi_data[i].len = 0\n", __func__);
+			return 0;
+		}
+		length += spi_data[i].len;
+		THP_LOG_DEBUG("%s: spi_data[i].len = %d\n",
+			__func__, spi_data[i].len);
+	}
+	return length;
+}
+
+static long thp_ioctl_multiple_spi_xfer_sync(void __user *data)
+{
+	struct thp_ioctl_spi_msg_package ioctl_spi_msg;
+	struct thp_core_data *cd = thp_get_core_data();
+	struct thp_ioctl_spi_xfer_data *ioctl_spi_xfer = NULL;
+	struct spi_message msg;
+	struct spi_transfer *xfer = NULL;
+	int rc;
+	int i;
+	unsigned int current_speed = 0;
+	u8 *tx_buf = NULL;
+	u8 *rx_buf = NULL;
+	unsigned int msg_len;
+
+	memset(&ioctl_spi_msg, 0, sizeof(ioctl_spi_msg));
+	if (cd->suspended || !data) {
+		THP_LOG_INFO("%s:suspended or invalid data,return\n", __func__);
+		return -EIO;
+	}
+#if defined(CONFIG_TEE_TUI)
+	if (thp_tui_info.enable) {
+		THP_LOG_INFO("%s:TUI status,return!\n", __func__);
+		return -EIO;
+	}
+#endif
+
+	if (copy_from_user(&ioctl_spi_msg, data, sizeof(ioctl_spi_msg))) {
+		THP_LOG_ERR("%s:Failed to copy spi  data\n", __func__);
+		return -EFAULT;
+	}
+	if ((ioctl_spi_msg.xfer_num > MAX_SPI_XFER_DATA_NUM) ||
+		!ioctl_spi_msg.xfer_num) {
+		THP_LOG_ERR("xfer_num:%d.\n", ioctl_spi_msg.xfer_num);
+		return -EINVAL;
+	}
+
+	ioctl_spi_xfer = kcalloc(ioctl_spi_msg.xfer_num,
+			sizeof(*ioctl_spi_xfer), GFP_KERNEL);
+	if (!ioctl_spi_xfer) {
+		THP_LOG_ERR("%s:failed alloc memory for spi_xfer_data\n",
+			__func__);
+		return -EFAULT;
+	}
+	if (copy_from_user(ioctl_spi_xfer, ioctl_spi_msg.xfer_data,
+			sizeof(*ioctl_spi_xfer) * ioctl_spi_msg.xfer_num)) {
+		THP_LOG_ERR("%s:failed copy xfer_data\n", __func__);
+		rc = -EINVAL;
+		goto exit;
+	}
+
+	msg_len = thp_get_spi_msg_lens(ioctl_spi_xfer, ioctl_spi_msg.xfer_num);
+	if (msg_len > THP_MAX_FRAME_SIZE || !msg_len) {
+		THP_LOG_ERR("%s:invalid msg len :%d\n", __func__, msg_len);
+		rc = -EINVAL;
+		goto exit;
+	}
+
+	xfer = kcalloc(ioctl_spi_msg.xfer_num, sizeof(*xfer), GFP_KERNEL);
+	rx_buf = kzalloc(msg_len, GFP_KERNEL);
+	tx_buf = kzalloc(msg_len, GFP_KERNEL);
+	if (!rx_buf || !tx_buf || !xfer) {
+		THP_LOG_ERR("%s:failed alloc buffer\n", __func__);
+		rc = -EINVAL;
+		goto exit;
+	}
+
+	spi_message_init(&msg);
+	for (i = 0, msg_len = 0; i < ioctl_spi_msg.xfer_num; i++) {
+		if (ioctl_spi_xfer[i].tx) {
+			rc = copy_from_user(tx_buf + msg_len,
+					ioctl_spi_xfer[i].tx,
+					ioctl_spi_xfer[i].len);
+			if (rc) {
+				THP_LOG_ERR("%s:failed copy tx_buf:%d\n",
+					__func__, rc);
+				goto exit;
+			}
+		}
+		xfer[i].tx_buf = tx_buf + msg_len;
+		xfer[i].rx_buf = rx_buf + msg_len;
+		xfer[i].len = ioctl_spi_xfer[i].len;
+		xfer[i].cs_change = !!ioctl_spi_xfer[i].cs_change;
+		xfer[i].delay_usecs = ioctl_spi_xfer[i].delay_usecs;
+
+		THP_LOG_DEBUG(
+			"%s:[%d], cs_change=%d,len =%d,delay_usecs=%d\n",
+			__func__, i, ioctl_spi_xfer[i].cs_change,
+			ioctl_spi_xfer[i].len, ioctl_spi_xfer[i].delay_usecs);
+		spi_message_add_tail(&xfer[i], &msg);
+		msg_len += ioctl_spi_xfer[i].len;
+	}
+
+	rc = thp_bus_lock();
+	if (rc) {
+		THP_LOG_INFO("%s:failed get lock:%d", __func__, rc);
+		goto exit;
+	}
+
+	if (ioctl_spi_msg.speed_hz != 0) {
+		THP_LOG_DEBUG("[%s] change to 3.5k-> speed =%d\n",
+			__func__, ioctl_spi_msg.speed_hz);
+		current_speed = cd->sdev->max_speed_hz;
+		cd->sdev->max_speed_hz = ioctl_spi_msg.speed_hz;
+		rc = thp_setup_spi(cd);
+		if (rc) {
+			THP_LOG_ERR("%s:set max speed failed rc:%d",
+				__func__, rc);
+			thp_bus_unlock();
+			goto exit;
+		}
+	}
+
+	rc = thp_spi_sync(cd->sdev, &msg);
+	if (rc) {
+		THP_LOG_ERR("%s:failed sync msg:%d", __func__, rc);
+		thp_bus_unlock();
+		goto exit;
+	}
+	if (ioctl_spi_msg.speed_hz != 0) {
+		THP_LOG_DEBUG("[%s]  current_speed-> %d\n",
+			__func__, current_speed);
+		cd->sdev->max_speed_hz = current_speed;
+		rc = thp_setup_spi(cd);
+		if (rc) {
+			THP_LOG_ERR("%s:set max speed failed rc:%d",
+				__func__, rc);
+			thp_bus_unlock();
+			goto exit;
+		}
+	}
+	thp_bus_unlock();
+
+	for (i = 0, msg_len = 0; i < ioctl_spi_msg.xfer_num; i++) {
+		if (ioctl_spi_xfer[i].rx) {
+			rc = copy_to_user(ioctl_spi_xfer[i].rx,
+					rx_buf + msg_len,
+					ioctl_spi_xfer[i].len);
+			if (rc) {
+				THP_LOG_ERR("%s:copy to rx buff fail:%d",
+					__func__, rc);
+				goto exit;
+			}
+		}
+		msg_len += ioctl_spi_xfer[i].len;
+	}
+exit:
+	kfree(ioctl_spi_xfer);
+	kfree(xfer);
+	kfree(rx_buf);
+	kfree(tx_buf);
+	return rc;
+}
+
 static long thp_ioctl_spi_sync(void __user *data)
 {
 	struct thp_core_data *cd = thp_get_core_data();
+	struct thp_ioctl_spi_sync_data sync_data;
 	int rc = 0;
 	u8 *tx_buf = NULL;
 	u8 *rx_buf = NULL;
-	struct thp_ioctl_spi_sync_data sync_data;
-
 	THP_LOG_DEBUG("%s: called\n", __func__);
 
-	if (cd->suspended)
+	memset(&sync_data, 0, sizeof(sync_data));
+
+	if (cd->suspended && (!cd->need_work_in_suspend)) {
+		THP_LOG_INFO("[%s] suspended return!\n", __func__);
 		return 0;
+	}
 
 #if defined (CONFIG_TEE_TUI)
 	if(thp_tui_info.enable)
@@ -717,7 +1144,11 @@ static long thp_ioctl_spi_sync(void __user *data)
 		goto exit;
 	}
 
-	rc =  thp_spi_transfer(cd, tx_buf, rx_buf, sync_data.size);
+	if (cd->thp_dev->ops->spi_transfer)
+		rc = cd->thp_dev->ops->spi_transfer(tx_buf,
+						rx_buf, sync_data.size);
+	else
+		rc = thp_spi_transfer(cd, tx_buf, rx_buf, sync_data.size);
 	if (rc) {
 		THP_LOG_ERR("%s: transfer error, ret = %d\n", __func__, rc);
 		goto exit;
@@ -747,8 +1178,21 @@ exit:
 
 static long thp_ioctl_finish_notify(unsigned long arg)
 {
+	struct thp_core_data *cd = thp_get_core_data();
+	unsigned long event_type = arg;
+	int rc = 0;
+
 	THP_LOG_INFO("%s: called\n", __func__);
-	return 0;
+	switch(event_type) {
+		case THP_AFE_NOTIFY_FW_UPDATE :
+			rc = cd->thp_dev->ops->afe_notify ?
+				cd->thp_dev->ops->afe_notify(cd->thp_dev, event_type) : 0;
+			break;
+		default :
+			THP_LOG_ERR("%s: illegal event type\n", __func__);
+			rc = -EINVAL;
+	}
+	return rc;
 }
 
 static long thp_ioctl_get_frame_count(unsigned long arg)
@@ -790,11 +1234,12 @@ static long thp_ioctl_clear_frame_buffer(void)
 
 static long thp_ioctl_get_frame(unsigned long arg, unsigned int f_flag)
 {
-	long rc = 0;
+	struct thp_ioctl_get_frame_data data;
 	struct thp_core_data *cd = thp_get_core_data();
 	void __user *argp = (void __user *)arg;
-	struct thp_ioctl_get_frame_data data;
+	long rc = 0;
 
+	memset(&data, 0, sizeof(data));
 	trace_touch(TOUCH_TRACE_GET_FRAME, TOUCH_TRACE_FUNC_IN, "thp");
 
 	if (!arg) {
@@ -802,7 +1247,7 @@ static long thp_ioctl_get_frame(unsigned long arg, unsigned int f_flag)
 		return -EINVAL;
 	}
 
-	if (cd->suspended) {
+	if (cd->suspended && (!cd->need_work_in_suspend)) {
 		THP_LOG_INFO("%s: drv suspended\n", __func__);
 		return -ETIMEDOUT;
 	}
@@ -869,7 +1314,7 @@ static long thp_ioctl_reset(unsigned long reset)
 {
 	struct thp_core_data *cd = thp_get_core_data();
 
-	THP_LOG_INFO("%s:set reset status %d\n", __func__, reset);
+	THP_LOG_INFO("%s:set reset status %lu\n", __func__, reset);
 
 	gpio_set_value(cd->gpios.rst_gpio, !!reset);
 
@@ -882,7 +1327,7 @@ static long thp_ioctl_reset(unsigned long reset)
 static long thp_ioctl_set_timeout(unsigned long arg)
 {
 	struct thp_core_data *ts = thp_get_core_data();
-	unsigned int timeout_ms = min(arg, THP_WAIT_MAX_TIME);
+	unsigned int timeout_ms = min((unsigned int)arg, THP_WAIT_MAX_TIME);
 
 	THP_LOG_INFO("set wait time %d ms.(current %dms)\n", timeout_ms, ts->timeout);
 
@@ -919,7 +1364,207 @@ static long thp_ioctl_set_irq(unsigned long arg)
 	return 0;
 }
 
+static long thp_ioctl_get_irq_gpio_value(unsigned long arg)
+{
+	struct thp_core_data *cd = thp_get_core_data();
+	u32 __user *out_value = (u32 *)arg;
+	u32 value = 0;
 
+	value = gpio_get_value(cd->gpios.irq_gpio);
+	if (copy_to_user(out_value, &value, sizeof(u32))) {
+		THP_LOG_ERR("%s:copy value fail\n", __func__);
+		return -EFAULT;
+	}
+	return 0;
+}
+
+static long thp_ioctl_set_spi_speed(unsigned long arg)
+{
+	struct thp_core_data *cd = thp_get_core_data();
+	unsigned long max_speed_hz = arg;
+
+	if (max_speed_hz == cd->sdev->max_speed_hz)
+		return 0;
+
+	return thp_set_spi_max_speed(max_speed_hz);
+}
+
+static long thp_ioctl_spi_sync_ssl_bl(void __user *data)
+{
+	struct thp_ioctl_spi_sync_data sync_data;
+	struct thp_core_data *cd = NULL;
+	int rc = 0;
+	u8 *tx_buf = NULL;
+	u8 *rx_buf = NULL;
+	memset(&sync_data, 0, sizeof(sync_data));
+	THP_LOG_DEBUG("%s: called\n", __func__);
+
+	if (!data) {
+		THP_LOG_ERR("%s: data null\n", __func__);
+		return -EINVAL;
+	}
+	cd = thp_get_core_data();
+	if (cd == NULL) {
+		THP_LOG_ERR("%s: thp get core data err\n", __func__);
+		return -EINVAL;
+	}
+	if (cd->suspended)
+		return 0;
+
+#if defined (CONFIG_TEE_TUI)
+	if(thp_tui_info.enable)
+		return 0;
+#endif
+
+	if (copy_from_user(&sync_data, data,
+				sizeof(struct thp_ioctl_spi_sync_data))) {
+		THP_LOG_ERR("Failed to copy_from_user().\n");
+		return -EFAULT;
+	}
+
+	if (sync_data.size > THP_SYNC_DATA_MAX || 0 == sync_data.size) {
+		THP_LOG_ERR("sync_data.size out of range.\n");
+		return -EINVAL;
+	}
+
+	rx_buf = kzalloc(sync_data.size, GFP_KERNEL);
+	tx_buf = kzalloc(sync_data.size, GFP_KERNEL);
+	if (!rx_buf || !tx_buf) {
+		THP_LOG_ERR("%s:buf request memory fail,sync_data.size = %d\n", __func__,sync_data.size);
+		goto exit;
+	}
+
+	rc = copy_from_user(tx_buf, sync_data.tx, sync_data.size);
+	if (rc) {
+		THP_LOG_ERR("%s:copy in buff fail\n", __func__);
+		goto exit;
+	}
+
+	rc =  thp_spi_transfer_one_byte_bootloader(cd,
+		tx_buf, rx_buf, sync_data.size);
+	if (rc) {
+		THP_LOG_ERR("%s: transfer error, ret = %d\n",
+			__func__, rc);
+		goto exit;
+	}
+
+	if (sync_data.rx) {
+		rc = copy_to_user(sync_data.rx, rx_buf, sync_data.size);
+		if (rc) {
+			THP_LOG_ERR("%s:copy out buff fail\n", __func__);
+			goto exit;
+		}
+	}
+
+exit:
+	if(rx_buf){
+		kfree(rx_buf);
+		rx_buf = NULL;
+	}
+	if(tx_buf){
+		kfree(tx_buf);
+		tx_buf = NULL;
+	}
+	return rc;
+}
+
+static int thp_spi_transfer_one_byte_bootloader(struct thp_core_data *const cd,
+						const char *const tx_buf,
+						char *const rx_buf,
+						const unsigned int buf_len)
+{
+	struct spi_message msg;
+	struct spi_device *const sdev = cd->sdev;
+	struct spi_transfer *xfer = NULL;
+	int rc = -EINVAL;
+	int i = 0;
+
+	if (!tx_buf || !rx_buf || !buf_len) {
+		THP_LOG_ERR("%s: point null\n", __func__);
+		return -EINVAL;
+	}
+
+	if (cd->suspended){
+		THP_LOG_ERR("%s - suspended\n", __func__);
+		return 0;
+	}
+
+	xfer = kzalloc(buf_len * sizeof(struct spi_transfer), GFP_KERNEL);
+	if(xfer == NULL){
+		THP_LOG_INFO("[%s] -> zalloc failed\n",__func__);
+		return -EIO;
+	}
+	spi_message_init(&msg);
+
+	for(i = 0 ; i < buf_len ; i++){
+		xfer[i].tx_buf = &tx_buf[i];
+		xfer[i].rx_buf = &rx_buf[i];
+		xfer[i].len = 1;
+		xfer[i].delay_usecs = 9;
+		spi_message_add_tail(&xfer[i], &msg);
+	}
+
+	rc = thp_bus_lock();
+	if (rc  < 0) {
+		THP_LOG_ERR("%s:get lock failed:%d\n", __func__, rc);
+		return rc;
+	}
+	rc = thp_spi_sync(sdev, &msg);
+	thp_bus_unlock();
+
+	if(xfer != NULL){
+		kfree(xfer);
+		xfer = NULL;
+	}
+
+	return rc;
+}
+
+static long thp_ioctl_set_afe_status(void __user *data)
+{
+	int rc = -EINVAL;
+	struct thp_ioctl_set_afe_status set_afe_status;
+	struct thp_core_data *cd = NULL;
+	THP_LOG_INFO("%s: called\n", __func__);
+
+	if (!data) {
+		THP_LOG_ERR("%s: data null\n", __func__);
+		return -EINVAL;
+	}
+	cd = thp_get_core_data();
+	if (copy_from_user(&set_afe_status, data,
+				sizeof(struct thp_ioctl_set_afe_status))) {
+		THP_LOG_ERR("Failed to copy_from_user().\n");
+		return -EFAULT;
+	}
+	THP_LOG_INFO("[%s] -> %d,%d,%d\n",__func__,set_afe_status.type, set_afe_status.status, set_afe_status.parameter);
+
+	switch(set_afe_status.type) {
+		case THP_AFE_STATUS_FW_UPDATE :
+			rc = cd->thp_dev->ops->set_fw_update_mode ?
+				cd->thp_dev->ops->set_fw_update_mode(cd->thp_dev, set_afe_status) : -EINVAL;
+			if (!rc) {
+				if (set_afe_status.parameter == NORMAL_WORK_MODE) {
+					is_fw_update = 0;
+				} else if (set_afe_status.parameter ==
+							FW_UPDATE_MODE) {
+					is_fw_update = 1;
+				} else {
+					THP_LOG_ERR("%s->error mode\n",
+						__func__);
+					rc = -EINVAL;
+				}
+				THP_LOG_INFO("%s call is_fw_updating=%d\n",
+					__func__, is_fw_update);
+			}
+			break;
+		default :
+			THP_LOG_ERR("%s: illegal type\n", __func__);
+			rc = -EINVAL;
+			break;
+	}
+	return rc;
+}
 static long thp_ioctl(struct file *filp, unsigned int cmd,
 				unsigned long arg)
 {
@@ -958,6 +1603,23 @@ static long thp_ioctl(struct file *filp, unsigned int cmd,
 		break;
 	case THP_IOCTL_CMD_CLEAR_FRAME_BUFFER:
 		ret = thp_ioctl_clear_frame_buffer();
+		break;
+
+	case THP_IOCTL_CMD_GET_IRQ_GPIO_VALUE:
+		ret = thp_ioctl_get_irq_gpio_value(arg);
+		break;
+
+	case THP_IOCTL_CMD_SET_SPI_SPEED:
+		ret = thp_ioctl_set_spi_speed(arg);
+		break;
+	case THP_IOCTL_CMD_SPI_SYNC_SSL_BL:
+		ret = thp_ioctl_spi_sync_ssl_bl((void __user *) arg);
+		break;
+	case THP_IOCTL_CMD_SET_AFE_STATUS:
+		ret = thp_ioctl_set_afe_status((void __user *)arg);
+		break;
+	case THP_IOCTL_CMD_MUILTIPLE_SPI_XFRE_SYNC:
+		ret = thp_ioctl_multiple_spi_xfer_sync((void __user *)arg);
 		break;
 	default:
 		THP_LOG_ERR("cmd unknown.\n");
@@ -1021,13 +1683,38 @@ static irqreturn_t thp_irq_thread(int irq, void *dev_id)
 {
 	struct thp_core_data *cd = dev_id;
 	u8 *read_buf = (u8 *)cd->frame_read_buf;
-	int rc;
+	int rc = 0;
+	unsigned int gesture_wakeup_value = 0;
+
 	trace_touch(TOUCH_TRACE_IRQ_BOTTOM, TOUCH_TRACE_FUNC_IN, "thp");
-	if (cd->reset_flag || cd->suspended){
+	if (cd->reset_flag) {
 		THP_LOG_ERR("%s: ignore this irq.\n", __func__);
 		return IRQ_HANDLED;
 	}
+
+	if (cd->suspended && (!cd->need_work_in_suspend)) {
+		if ((cd->easy_wakeup_info.sleep_mode == TS_GESTURE_MODE) &&
+			cd->support_gesture_mode  &&
+			(cd->work_status == SUSPEND_DONE)) {
+			wake_lock_timeout(&cd->thp_wake_lock, HZ);
+			disable_irq_nosync(cd->irq);
+			THP_LOG_INFO("[%s] TS_GESTURE_MODE ->comming \n",__func__);
+			rc = cd->thp_dev->ops->chip_gesture_report(cd->thp_dev, &gesture_wakeup_value);
+			if (rc) {
+				THP_LOG_ERR("%s:gesture report failed this irq. rc = %d\n",
+				__func__, rc);
+				goto exit;
+			}
+			thp_inputkey_report(gesture_wakeup_value);
+			goto exit;
+		} else {
+			THP_LOG_ERR("%s: ignore this irq.\n", __func__);
+			return IRQ_HANDLED;
+		}
+	}
+
 	disable_irq_nosync(cd->irq);
+
 	/* get frame */
 	rc = cd->thp_dev->ops->get_frame(cd->thp_dev, read_buf, cd->frame_size);
 	if (rc) {
@@ -1059,6 +1746,9 @@ void thp_spi_cs_set(u32 control)
 	if (control == SSP_CHIP_SELECT) {
 		rc = gpio_direction_output(cd->gpios.cs_gpio, control);
 		ndelay(cd->thp_dev->timing_config.spi_sync_cs_low_delay_ns);
+		if (cd->thp_dev->timing_config.spi_sync_cs_low_delay_us &&
+			(!is_fw_update))
+			udelay(cd->thp_dev->timing_config.spi_sync_cs_low_delay_us);
 	} else {
 		rc = gpio_direction_output(cd->gpios.cs_gpio, control);
 		ndelay(cd->thp_dev->timing_config.spi_sync_cs_hi_delay_ns);
@@ -1075,7 +1765,7 @@ static int thp_charger_detect_notifier_callback(struct notifier_block *self,
 {
 	int charger_stat_before = thp_get_status(THP_STATUS_CHARGER);
 	int charger_state_new = charger_stat_before;
-	THP_LOG_DEBUG("%s called, charger type: %d\n", __func__, event);
+	THP_LOG_DEBUG("%s called, charger type: %lu\n", __func__, event);
 
 	switch (event) {
 	case VCHRG_START_USB_CHARGING_EVENT :
@@ -1119,11 +1809,15 @@ static struct thp_vendor thp_vendor_table[] = {
 	{"030", "mutto"},
 	{"080", "jdi"},
 	{"100", "lg"},
+	{"101", "lg"},
 	{"110", "tianma"},
+	{"111", "tianma"},
+	{"120", "cmi"},
 	{"130", "boe"},
 	{"140", "ctc"},
 	{"160", "sharp"},
 	{"170", "auo"},
+	{"270", "tcl"},
 };
 
 static struct thp_ic_name thp_ic_table[] = {
@@ -1136,9 +1830,13 @@ static struct thp_ic_name thp_ic_table[] = {
 	{"62", "synaptics"},
 	{"65", "novatech"},
 	{"66", "himax"},
+	{"68", "focaltech"},
 	{"69", "synaptics"},
 	{"71", "novatech"},
 	{"77", "novatech"},
+	{"86", "synaptics"},
+	{"88", "novatech"},
+	{ "91", "synaptics" },
 };
 
 static int thp_projectid_to_vender_name(char *project_id,
@@ -1209,11 +1907,11 @@ static int thp_init_chip_info(struct thp_core_data *cd)
 
 	cd->project_id[THP_PROJECT_ID_LEN] = '\0';
 
-	rc = thp_projectid_to_vender_name(cd->project_id, &cd->vendor_name);
+	rc = thp_projectid_to_vender_name(cd->project_id, (char **)&cd->vendor_name);
 	if (rc)
 		THP_LOG_INFO("%s:vendor name parse fail\n", __func__);
 
-	rc = thp_projectid_to_ic_name(cd->project_id, &cd->ic_name);
+	rc = thp_projectid_to_ic_name(cd->project_id, (char **)&cd->ic_name);
 	if (rc)
 		THP_LOG_INFO("%s:ic name parse fail\n", __func__);
 	return rc;
@@ -1221,14 +1919,35 @@ static int thp_init_chip_info(struct thp_core_data *cd)
 
 static int thp_setup_irq(struct thp_core_data *cd)
 {
-	int rc;
-	int irq = gpio_to_irq(cd->gpios.irq_gpio);
+	int rc = 0;
+	int irq = 0;
+	unsigned long irq_flag_type = 0;
+	u32 current_trigger_mode = 0;
+	if(!cd ){
+		THP_LOG_ERR("%s: thp_core_data is  null\n", __func__);
+		return -EINVAL;
+	}
 
+	irq = gpio_to_irq(cd->gpios.irq_gpio);
+
+	/*
+	 * IRQF_TRIGGER_RISING  0x00000001
+	 * IRQF_TRIGGER_FALLING 0x00000002
+	 * IRQF_TRIGGER_HIGH    0x00000004
+	 * IRQF_TRIGGER_LOW 0x00000008
+	 * IRQF_NO_SUSPEND  0x00004000
+	 */
+	current_trigger_mode =  cd->irq_flag;
+	THP_LOG_INFO("[%s] current_trigger_mode -> 0x%x\n", __func__, current_trigger_mode);
+
+	if (cd->support_gesture_mode) {
+		irq_flag_type = IRQF_ONESHOT | IRQF_NO_SUSPEND | current_trigger_mode;
+	} else {
+		irq_flag_type = IRQF_ONESHOT | current_trigger_mode;
+	}
 	rc = request_threaded_irq(irq, NULL,
-			thp_irq_thread,
-			IRQF_TRIGGER_FALLING | IRQF_ONESHOT | cd->irq_flag,
-			"thp", cd);
-
+				thp_irq_thread,irq_flag_type,
+				"thp", cd);
 	if (rc) {
 		THP_LOG_ERR("%s: request irq fail\n", __func__);
 		return rc;
@@ -1292,22 +2011,6 @@ static int thp_setup_spi(struct thp_core_data *cd)
 {
 	int rc;
 
-	cd->spi_config.pl022_spi_config.cs_control = thp_spi_cs_set;
-	cd->spi_config.pl022_spi_config.hierarchy = SSP_MASTER;
-
-	if (!cd->spi_config.max_speed_hz)
-		cd->spi_config.max_speed_hz = THP_SPI_SPEED_DEFAULT;
-	if (!cd->spi_config.mode)
-		cd->spi_config.mode = SPI_MODE_0;
-	if (!cd->spi_config.bits_per_word)
-		/*spi_config.bits_per_word default value*/
-		cd->spi_config.bits_per_word = 8;
-
-	cd->sdev->mode = cd->spi_config.mode;
-	cd->sdev->max_speed_hz = cd->spi_config.max_speed_hz;
-	cd->sdev->bits_per_word = cd->spi_config.bits_per_word;
-	cd->sdev->controller_data = &cd->spi_config.pl022_spi_config;
-
 	rc = spi_setup(cd->sdev);
 	if (rc) {
 		THP_LOG_ERR("%s: spi setup fail\n", __func__);
@@ -1316,56 +2019,26 @@ static int thp_setup_spi(struct thp_core_data *cd)
 
 	return 0;
 }
-
-int thp_set_spi_max_speed(unsigned int speed)
+int thp_set_spi_com_mode(struct thp_core_data *cd,u8 spi_com_mode)
 {
-	struct thp_core_data *cd = thp_get_core_data();
-	cd->spi_config.max_speed_hz = speed;
-	THP_LOG_INFO("%s:set max_speed_hz %d\n", __func__, cd->spi_config.max_speed_hz);
-	thp_setup_spi(cd);
-	return 0;
-}
+	int rc = -EINVAL;
 
-#define GET_HWLOCK_FAIL   0
-int thp_bus_lock() {
-	int ret = 0;
-	unsigned long time = 0;
-	unsigned long timeout = 0;
-	struct thp_core_data *cd = thp_get_core_data();
-	struct hwspinlock *hwlock = cd->hwspin_lock;
-
-	mutex_lock(&cd->spi_mutex);
-	if(!cd->use_hwlock) {
-		return 0;
+	if (!cd) {
+		THP_LOG_ERR("%s: tdev null\n", __func__);
+		return -EINVAL;
 	}
 
-	timeout = jiffies + msecs_to_jiffies(THP_GET_HARDWARE_TIMEOUT);
-
-	do {
-		ret = hwlock->bank->ops->trylock(hwlock);
-		if (GET_HWLOCK_FAIL == ret) {
-			time = jiffies;
-			if (time_after(time, timeout)) {
-				THP_LOG_ERR("%s:get hardware_mutex for completion timeout\n", __func__);
-				return -ETIME;
-			}
-		}
-	} while (GET_HWLOCK_FAIL == ret);
-
-	return 0;
-}
-
-void thp_bus_unlock() {
-	struct thp_core_data *cd = thp_get_core_data();
-	struct hwspinlock *hwlock = cd->hwspin_lock;
-
-	mutex_unlock(&cd->spi_mutex);
-	if(cd->use_hwlock) {
-		hwlock->bank->ops->unlock(hwlock);
+	if(spi_com_mode != SPI_DMA_MODE && spi_com_mode != SPI_POLLING_MODE){
+		THP_LOG_ERR("[%s] ->error mode\n",__func__);
+		return -EINVAL;
 	}
+	cd->spi_config.pl022_spi_config.com_mode = spi_com_mode;
+	cd->sdev->controller_data = &cd->spi_config.pl022_spi_config;
+	rc = thp_setup_spi(cd);
+	THP_LOG_INFO("[%s] rc -> %d\n",__func__,rc);
+	return rc;
 
 }
-
 #if defined (CONFIG_TEE_TUI)
 extern int spi_exit_secos(unsigned int spi_bus_id);
 extern int spi_init_secos(unsigned int spi_bus_id);
@@ -1428,6 +2101,8 @@ static void thp_tui_init(struct thp_core_data *cd)
 	thp_tui_info.enable = 0;
 	strncpy(thp_tui_info.project_id, cd->project_id, THP_PROJECT_ID_LEN);
 	thp_tui_info.project_id[THP_PROJECT_ID_LEN] = '\0';
+	thp_tui_info.frame_data_addr = cd->frame_data_addr;
+	THP_LOG_INFO("%s thp_tui_info.get_frame_addr %d\n", __func__, thp_tui_info.frame_data_addr);
 	rc = register_tui_driver(thp_tui_switch, "tp", &thp_tui_info);
 	if(rc != 0)
 	{
@@ -1435,7 +2110,8 @@ static void thp_tui_init(struct thp_core_data *cd)
 		return;
 	}
 
-	THP_LOG_INFO("%s reg thp_tui_switch success addr %d\n", __func__, &thp_tui_info);
+	THP_LOG_INFO("%s reg thp_tui_switch success addr %pK\n",
+		__func__, &thp_tui_info);
 	return;
 }
 #endif
@@ -1527,9 +2203,16 @@ static int thp_core_init(struct thp_core_data *cd)
 	mutex_init(&cd->irq_mutex);
 	mutex_init(&cd->thp_mutex);
 	mutex_init(&cd->status_mutex);
+	wake_lock_init(&cd->thp_wake_lock, WAKE_LOCK_SUSPEND, "thp_wake_lock");
+	if (cd->support_gesture_mode)
+		mutex_init(&cd->thp_wrong_touch_lock);
 
 	dev_set_drvdata(&cd->sdev->dev, cd);
 	cd->ic_name = cd->thp_dev->ic_name;
+	cd->prox_cache_enable = false;
+	cd->need_work_in_suspend = false;
+	g_thp_prox_enable = false;
+	onetime_poweroff_done = false;
 
 #if defined(CONFIG_HUAWEI_DSM)
 	if (cd->ic_name)
@@ -1538,7 +2221,6 @@ static int thp_core_init(struct thp_core_data *cd)
 		dsm_thp.module_name = cd->project_id;
 	dsm_thp_dclient = dsm_register_client(&dsm_thp);
 #endif
-
 	rc = thp_project_init(cd);
 	if (rc) {
 		THP_LOG_ERR("%s: failed to get project id form tp ic\n", __func__);
@@ -1570,13 +2252,14 @@ static int thp_core_init(struct thp_core_data *cd)
 #ifndef CONFIG_LCD_KIT_DRIVER
 	cd->lcd_notify.notifier_call = thp_lcdkit_notifier_callback;
 	rc = lcdkit_register_notifier(&cd->lcd_notify);
-	if (rc)	{
+	if (rc) {
 		THP_LOG_ERR("%s: failed to register fb_notifier: %d\n",__func__,rc);
 		goto err_register_fb_notify;
 	}
 #endif
 
 #if defined (CONFIG_LCD_KIT_DRIVER)
+
 	rc = ts_kit_ops_register(&thp_ops);
 	if (rc)
 		THP_LOG_INFO("%s:ts_kit_ops_register fail\n", __func__);
@@ -1605,9 +2288,11 @@ static int thp_core_init(struct thp_core_data *cd)
 	atomic_set(&cd->register_flag, 1);
 	thp_set_status(THP_STATUS_POWER, 1);
 	return 0;
-
+#if 0
 err_setip_irq:
 	thp_sysfs_release(cd);
+#endif
+
 err_init_sysfs:
 	thp_mt_wrapper_exit();
 err_init_wrapper:
@@ -1623,10 +2308,12 @@ err_register_fb_notify:
 	if (rc)
 		THP_LOG_INFO("%s:ts_kit_ops_register fail\n", __func__);
 #endif
-
 	mutex_destroy(&cd->mutex_frame);
 	mutex_destroy(&cd->irq_mutex);
 	mutex_destroy(&cd->thp_mutex);
+	wake_lock_destroy(&cd->thp_wake_lock);
+	if (cd->support_gesture_mode)
+		mutex_destroy(&cd->thp_wrong_touch_lock);
 	return rc;
 }
 
@@ -1697,6 +2384,7 @@ int thp_register_dev(struct thp_device *dev)
 	dev->gpios = &cd->gpios;
 	dev->sdev = cd->sdev;
 	cd->thp_dev = dev;
+	is_fw_update = 0;
 
 	rc = thp_parse_timing_config(cd->thp_node, &dev->timing_config);
 	if (rc) {
@@ -1826,14 +2514,17 @@ int thp_parse_spi_config(struct device_node *spi_cfg_node,
 		pl022_spi_config->iface = value;
 		THP_LOG_INFO("%s: pl022,interface parsed\n", __func__);
 	}
-
+#if(LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0))
+       pl022_spi_config->com_mode = 1;
+       THP_LOG_ERR("%s:update 414 temp modify\n", __func__);
+#else
 	value = 0;
 	rc = of_property_read_u32(spi_cfg_node, "pl022,com-mode", &value);
 	if (!rc) {
 		pl022_spi_config->com_mode = value;
 		THP_LOG_INFO("%s:com_mode parsed\n", __func__);
 	}
-
+#endif
 	value = 0;
 	rc = of_property_read_u32(spi_cfg_node, "pl022,rx-level-trig", &value);
 	if (!rc) {
@@ -1868,6 +2559,23 @@ int thp_parse_spi_config(struct device_node *spi_cfg_node,
 		pl022_spi_config->duplex = value;
 		THP_LOG_INFO("%s:duplex parsed\n", __func__);
 	}
+
+	cd->spi_config.pl022_spi_config.cs_control = thp_spi_cs_set;
+	cd->spi_config.pl022_spi_config.hierarchy = SSP_MASTER;
+
+	if (!cd->spi_config.max_speed_hz)
+		cd->spi_config.max_speed_hz = THP_SPI_SPEED_DEFAULT;
+	if (!cd->spi_config.mode)
+		cd->spi_config.mode = SPI_MODE_0;
+	if (!cd->spi_config.bits_per_word)
+		/*spi_config.bits_per_word default value*/
+		cd->spi_config.bits_per_word = 8;
+
+	cd->sdev->mode = spi_config->mode;
+	cd->sdev->max_speed_hz = spi_config->max_speed_hz;
+	cd->sdev->bits_per_word = spi_config->bits_per_word;
+	cd->sdev->controller_data = &spi_config->pl022_spi_config;
+
 	return 0;
 }
 EXPORT_SYMBOL(thp_parse_spi_config);
@@ -1938,10 +2646,37 @@ int thp_parse_timing_config(struct device_node *timing_cfg_node,
 		THP_LOG_INFO("%s:spi_sync_cs_low_delay_ns configed_ms %d\n",
 				__func__, value);
 	}
+	rc = of_property_read_u32(timing_cfg_node,
+					"spi_sync_cs_low_delay_us", &value);
+	if (!rc) {
+		timing->spi_sync_cs_low_delay_us = value;
+		THP_LOG_INFO("%s:spi_sync_cs_low_delay_us = %d\n",
+				__func__, value);
+	} else {
+		timing->spi_sync_cs_low_delay_us = 0;
+	}
 
 	return 0;
 }
 EXPORT_SYMBOL(thp_parse_timing_config);
+int thp_parse_trigger_config(struct device_node *thp_node,
+			struct thp_core_data *cd)
+{
+	int rc = 0;
+	unsigned int value = 0;
+	THP_LOG_DEBUG("%s:Enter!\n",__func__);
+
+	rc = of_property_read_u32(thp_node,"irq_flag", &value);
+	if (!rc) {
+		cd->irq_flag = value;
+		THP_LOG_INFO("%s:cd->irq_flag %d\n",__func__, value);
+	}else{
+		cd->irq_flag = IRQF_TRIGGER_FALLING;
+		THP_LOG_INFO("%s:cd->irq_flag defaule =>  %d\n",__func__, cd->irq_flag);
+	}
+	return	0;
+}
+EXPORT_SYMBOL(thp_parse_trigger_config);
 
 
  int thp_parse_feature_config(struct device_node *thp_node,
@@ -1964,7 +2699,7 @@ EXPORT_SYMBOL(thp_parse_timing_config);
 	}
 
 	cd->project_id_dummy = "dummy";
-	rc = of_property_read_string(thp_node,"project_id_dummy", &cd->project_id_dummy);
+	rc = of_property_read_string(thp_node,"project_id_dummy", (const char **)&cd->project_id_dummy);
 	if (!rc) {
 		THP_LOG_INFO("%s:project_id_dummy configed %s\n",__func__, cd->project_id_dummy);
 	}
@@ -1981,16 +2716,39 @@ EXPORT_SYMBOL(thp_parse_timing_config);
 		THP_LOG_INFO("%s:use_hwlock configed %d\n",__func__, value);
 	}
 
+	rc = of_property_read_u32(thp_node,"delay_work_for_pm", &value);
+	if (!rc) {
+		cd->delay_work_for_pm = value;
+		THP_LOG_INFO("%s:delay_work_for_pm configed %d\n",__func__, value);
+	}
+
+	rc = of_property_read_u32(thp_node,"support_gesture_mode", &value);
+	if (!rc) {
+		cd->support_gesture_mode = value;
+		THP_LOG_INFO("%s:support_gesture_mode configed %d\n",__func__, value);
+	}
+
+	rc = of_property_read_u32(thp_node, "hide_product_info_en", &value);
+	if (!rc) {
+		cd->hide_product_info_en = value;
+		THP_LOG_INFO("%s:hide_product_info_en %d\n", __func__, value);
+	}
+	rc = of_property_read_u32(thp_node, "support_oem_info", &value);
+	if (!rc) {
+		cd->support_oem_info = value;
+		THP_LOG_INFO("%s:support_oem_info %d\n", __func__, value);
+	}
+
 	return  0;
 }
 EXPORT_SYMBOL(thp_parse_feature_config);
 
 int is_pt_test_mode(struct thp_device *tdev)
 {
-	int ret = 0;
 	int thp_pt_station_flag = 0;
 
 #if defined (CONFIG_LCD_KIT_DRIVER)
+	int ret;
 	struct lcd_kit_ops *lcd_ops = lcd_kit_get_ops();
 	if((lcd_ops)&&(lcd_ops->get_status_by_type)) {
 		ret = lcd_ops->get_status_by_type(PT_STATION_TYPE, &thp_pt_station_flag);
@@ -2009,12 +2767,170 @@ int is_pt_test_mode(struct thp_device *tdev)
 }
 EXPORT_SYMBOL(is_pt_test_mode);
 
+int is_tp_detected(void)
+{
+	int ret = TP_DETECT_SUCC;
+	struct thp_core_data *cd = thp_get_core_data();
+
+	if (!cd) {
+		THP_LOG_ERR("%s: thp_core_data is not inited\n", __func__);
+		return TP_DETECT_FAIL;
+	}
+	if (!atomic_read(&cd->register_flag))
+		ret = TP_DETECT_FAIL;
+
+	THP_LOG_INFO("[Proximity_feature] %s : Check if tp is in place, ret = %d\n",
+		__func__, ret);
+	return ret;
+}
+
+/*
+ * Here to count the period of time which is from suspend to a new
+ * disable status, if the period is less than 1000ms then call lcdkit
+ * power off, otherwise bypass the additional power off.
+ */
+static bool thp_prox_timeout_check(struct thp_core_data *cd)
+{
+	long delta_time;
+	struct timeval tv;
+
+	memset(&tv, 0, sizeof(tv));
+	do_gettimeofday(&tv);
+	THP_LOG_INFO("[Proximity_feature] check time at %ld seconds %ld microseconds\n",
+		tv.tv_sec, tv.tv_usec);
+	/* multiply 1000000 to transfor second to us */
+	delta_time = (tv.tv_sec - cd->tp_suspend_record_tv.tv_sec) * 1000000 +
+		tv.tv_usec - cd->tp_suspend_record_tv.tv_usec;
+	/* divide 1000 to transfor sec to us to ms */
+	delta_time /= 1000;
+	THP_LOG_INFO("[Proximity_feature] delta_time = %ld ms\n", delta_time);
+	if (delta_time >= AFTER_SUSPEND_TIME)
+		return true;
+	else
+		return false;
+}
+
+/*
+ * After lcd driver complete the additional power down,calling this function
+ * do something for matching current power status. Such as updating the
+ * proximity switch status, sending the screen_off cmd to tp daemon, pulling
+ * down the gpios and so on.
+ */
+static void thp_prox_add_suspend(struct thp_core_data *cd, bool enable)
+{
+	THP_LOG_INFO("[Proximity_feature] %s call enter\n", __func__);
+	/* update the control status based on proximity switch */
+	cd->need_work_in_suspend = enable;
+	/* notify daemon to do screen off cmd */
+	thp_set_status(THP_STATUS_POWER, THP_SUSPEND);
+	/* notify daemon to do proximity off cmd */
+	thp_set_status(THP_STATUS_AFE_PROXIMITY, THP_PROX_EXIT);
+	/* pull down the gpio pin */
+	gpio_set_value(cd->thp_dev->gpios->rst_gpio, 0);
+	gpio_set_value(cd->thp_dev->gpios->cs_gpio, 0);
+	/* disable the irq */
+	if (cd->open_count)
+		thp_set_irq_status(cd, THP_IRQ_DISABLE);
+	cd->work_status = SUSPEND_DONE;
+	/* clean the fingers */
+	thp_clean_fingers();
+	THP_LOG_INFO("[Proximity_feature] %s call exit\n", __func__);
+}
+
+/*
+ * In this function, increasing some judgements, only meet these
+ * conditions then the additional power off will be called.
+ */
+static void thp_prox_add_poweroff(struct thp_core_data *cd, bool enable)
+{
+	if ((enable == false) && (onetime_poweroff_done == false)) {
+		onetime_poweroff_done = true;
+		if (thp_prox_timeout_check(cd)) {
+			THP_LOG_INFO("[Proximity_feature] timeout, bypass poweroff\n");
+			return;
+		}
+#ifdef CONFIG_LCDKIT_DRIVER
+		if (!lcdkit_proximity_poweroff())
+			thp_prox_add_suspend(cd, enable);
+#endif
+	}
+}
+
+/*
+ * This function receive the proximity switch status and save it for
+ *  controlling power operation or cmds transferring to daemon
+ * (proximity_on or scrren_off).
+ */
+int thp_set_prox_switch_status(bool enable)
+{
+#ifdef CONFIG_INPUTHUB_20
+	int ret;
+	int report_value[PROX_VALUE_LEN] = {0};
+#endif
+	struct thp_core_data *cd = thp_get_core_data();
+
+	if (!cd) {
+		THP_LOG_ERR("%s: thp_core_data is not inited\n", __func__);
+		return 0;
+	}
+	if (!atomic_read(&cd->register_flag))
+		return 0;
+
+	if (cd->proximity_support == PROX_SUPPORT) {
+#ifdef CONFIG_INPUTHUB_20
+		report_value[0] = AWAY_EVENT_VALUE;
+		ret = thp_prox_event_report(report_value, PROX_EVENT_LEN);
+		if (ret < 0)
+			THP_LOG_INFO("%s: report event fail\n", __func__);
+		THP_LOG_INFO("[Proximity_feature] %s: default report [far] event!\n",
+			__func__);
+#endif
+		thp_set_status(THP_STATUS_TOUCH_APPROACH, enable);
+		if (cd->early_suspended == false) {
+			g_thp_prox_enable = enable;
+			THP_LOG_INFO("[Proximity_feature] %s: 1.Update g_thp_prox_enable to %d in screen on!\n",
+				__func__, g_thp_prox_enable);
+		} else {
+			cd->prox_cache_enable = enable;
+			THP_LOG_INFO("[Proximity_feature] %s: 2.Update prox_cache_enable to %d in screen off!\n",
+				__func__, cd->prox_cache_enable);
+			/* When disable proximity after suspend, call power off once */
+			thp_prox_add_poweroff(cd, enable);
+		}
+		return 0;
+	}
+	THP_LOG_INFO("[Proximity_feature] %s : Not support proximity feature!\n",
+		__func__);
+	return 0;
+}
+
+/*
+ * This function is supplied for lcd driver to get the current proximity status
+ * when lcdkit go to power off, and use this status to contorl power.
+ */
+bool thp_get_prox_switch_status(void)
+{
+	struct thp_core_data *cd = thp_get_core_data();
+
+	if (!cd) {
+		THP_LOG_ERR("%s: thp_core_data is not inited\n", __func__);
+		return 0;
+	}
+	if (cd->proximity_support == PROX_SUPPORT) {
+		THP_LOG_INFO("[Proximity_feature] %s: need_work_in_suspend = %d!\n",
+			__func__, cd->need_work_in_suspend);
+		return cd->need_work_in_suspend;
+	}
+	THP_LOG_INFO("[Proximity_feature] %s :Not support proximity feature!\n",
+		__func__);
+	return 0;
+}
+
 static int thp_parse_config(struct thp_core_data *cd,
 					struct device_node *thp_node)
 {
 	int rc;
 	unsigned int value;
-	struct device_node *spi_cfg_node;
 
 	if (!thp_node) {
 		THP_LOG_ERR("%s:thp not config in dts, exit\n", __func__);
@@ -2044,6 +2960,15 @@ static int thp_parse_config(struct thp_core_data *cd,
 	if (!rc) {
 		cd->irq_flag = value;
 		THP_LOG_INFO("%s:irq_flag parsed\n", __func__);
+	}
+
+	cd->proximity_support = PROX_NOT_SUPPORT;
+	rc = of_property_read_u32(thp_node, "proximity_support", &value);
+	if (!rc) {
+		cd->proximity_support = value;
+		THP_LOG_INFO("%s:parsed success, proximity_support = %u\n", __func__, cd->proximity_support);
+	} else {
+		THP_LOG_INFO("%s:parsed failed, proximity_support = %u\n", __func__, cd->proximity_support);
 	}
 
 	value = of_get_named_gpio(thp_node, "irq_gpio", 0);
@@ -2081,7 +3006,6 @@ static int thp_parse_config(struct thp_core_data *cd,
 
 	return 0;
 }
-
 static int thp_probe(struct spi_device *sdev)
 {
 	struct thp_core_data *thp_core;
@@ -2095,6 +3019,7 @@ static int thp_probe(struct spi_device *sdev)
 		return -ENOMEM;
 	}
 
+	thp_core->sdev = sdev;
 	rc = thp_parse_config(thp_core, sdev->dev.of_node);
 	if (rc) {
 		THP_LOG_ERR("%s: parse dts fail\n", __func__);
@@ -2119,11 +3044,12 @@ static int thp_probe(struct spi_device *sdev)
 	init_waitqueue_head(&(thp_core->frame_waitq));
 	init_waitqueue_head(&(thp_core->thp_ta_waitq));
 	init_waitqueue_head(&(thp_core->thp_event_waitq));
+	init_waitqueue_head(&(thp_core->suspend_resume_waitq));
 	thp_core->event_flag = false;
+	thp_core->suspend_resume_waitq_flag = WAITQ_WAKEUP;
 	spi_set_drvdata(sdev, thp_core);
 
 	g_thp_core = thp_core;
-	g_thp_core->sdev = sdev;
 
 	return 0;
 }
@@ -2131,8 +3057,9 @@ static int thp_probe(struct spi_device *sdev)
 static int thp_remove(struct spi_device *sdev)
 {
 	struct thp_core_data *cd = spi_get_drvdata(sdev);
+#if defined(CONFIG_LCD_KIT_DRIVER)
 	int rc;
-
+#endif
 	THP_LOG_INFO("%s: in\n", __func__);
 
 	if (atomic_read(&cd->register_flag)) {

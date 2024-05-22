@@ -26,6 +26,8 @@ enum MLIB_VOICE_PARA_ENUM {
 int bst_ctrl_enable(bool enable, enum VBOOST_CONTROL_SOURCE_TYPE type);
 int usb_audio_power_buckboost(void);
 int usb_audio_power_scharger(void);
+int usb_headset_plug_in(void);
+int usb_headset_plug_out(void);
 #else
 static inline int bst_ctrl_enable(bool enable, enum VBOOST_CONTROL_SOURCE_TYPE type)
 {
@@ -40,6 +42,16 @@ static inline int usb_audio_power_buckboost(void)
 static inline int usb_audio_power_scharger(void)
 {
     return 0;
+}
+
+static inline int usb_headset_plug_in(void)
+{
+	return 0;
+}
+
+static inline int usb_headset_plug_out(void)
+{
+	return 0;
 }
 #endif
 

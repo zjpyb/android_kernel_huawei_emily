@@ -4,7 +4,7 @@
 #ifdef CONFIG_INPUTHUB_20
 /*lint -e655*/
 int send_cmd_format(unsigned char cmd_tag, unsigned char cmd_type,
-    unsigned int subtype, char  *buf, size_t count, bool is_lock, struct read_info *rd)
+    unsigned int subtype, const char  *buf, size_t count, bool is_lock, struct read_info *rd)
 {
 	char auto_buffer[MAX_PKT_LENGTH] = {0};
 	char *buffer;

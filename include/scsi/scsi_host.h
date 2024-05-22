@@ -340,7 +340,7 @@ struct scsi_host_template {
 #define SCSI_FIRMWARE_RESET	2
 
 	int (*direct_flush)(struct scsi_device *);
-	void (*dump_status)(struct Scsi_Host *shost, int dump_scene);
+	void (*dump_status)(struct Scsi_Host *shost, enum blk_dump_scenario dump_type);
 	/*
 	 * Name of proc directory
 	 */

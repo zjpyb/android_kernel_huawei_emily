@@ -13,13 +13,11 @@
 #define STAT_SUCCESS            1
 #define STAT_ERROR              2
 
-#define PD_ADAPTER_5V                    5000
-#define PD_ADAPTER_20V                  20000
-
 /* PD Voltage values in 50mV resolution */
 #define PD_09_V                 180
 
 #define PD_18_W    36000
+#define PD_9_W     18000
 
 // Device FIFO Token Definitions
 #define TXON                    0xA1
@@ -103,7 +101,9 @@
 #define tFPF2498Transition      20      * TICK_SCALE_TO_MS
 #define tSourceRiseTimeout      350     * TICK_SCALE_TO_MS
 #define tHardResetOverhead      2       * TICK_SCALE_TO_MS
-
+#ifdef FSC_HAVE_CUSTOM_SRC2
+#define tCableResetPoll         (10      * TICK_SCALE_TO_MS)
+#endif /* FSC_HAVE_CUSTOM_SRC2 */
 
 #define nHardResetCount         2
 #define nRetryCount             3

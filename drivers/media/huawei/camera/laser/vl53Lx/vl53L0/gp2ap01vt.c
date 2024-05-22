@@ -207,7 +207,6 @@ static void DataInit(struct gp2ap01vt00f_data *data)
     } else if (data->get_mode == INTERRUPT_MODE) {
         wdata = 0x12;
         gp2ap01vt00f_i2c_write(0x02, &wdata, data->client);	/* pulse interrupt mode */
-        // wdata = 0x10;    seq_i2c_write(slave_addr, 0x02, &wdata, 1); /* level interrupt mode */
     }
 
     wdata = 0x00;
@@ -286,7 +285,6 @@ static int sensor_onoff(u8 onoff, struct gp2ap01vt00f_data *data)
         if (data->enabled != 0) {
             mutex_lock(&data->work_mutex);
             StopMeasurement(data);
-            //disable_irq_wake(data->gp2ap01vt00f_irq);
             /* cancel work handler */
             gp2ap01vt00f_cancel_handler(data);
             mutex_unlock(&data->work_mutex);
@@ -366,7 +364,6 @@ static void GetRangingMeasurementDataAve_xtalk_test(struct gp2ap01vt00f_data *da
         data->range_result_ave += data->range_result;
         data->ret_sig_ave += data->ret_sig;
         data->ret_amb_ave += data->ret_amb;
-        //laser_info("laser :%d,%d,%d",data->range_result_ave, data->ret_sig_ave, data->ret_amb_ave);
     }
     data->range_result_ave  = data->range_result_ave  / data->num_measure;
     data->ret_sig_ave   = data->ret_sig_ave  / data->num_measure;
@@ -636,8 +633,6 @@ static void GP2AP01VT_CalculateDistance(struct gp2ap01vt00f_data *data)
     /* Signal check */
     signal0_amb1 = 349 + (2 * data->ret_amb / 10) + data->xtalk_calib_data;
     signal0_amb2 = (2 * data->ret_amb /10 ) + 27 * data->xtalk_calib_data / 10;
-    //laser_info("range1_cal = %d, range2_cal = %d", range_mm_cal, range2_mm_cal);
-    //laser_info("signal0_amb1 = %d, signal0_amb2 = %d", signal0_amb1, signal0_amb2);
     soft_waf1 = GP2AP01VT_approximate_exp(range2_mm_cal) + data->xtalk_calib_data * 713 / 1000;
 
     if (data->ret_amb > 10800) {    /* Too much ambient */
@@ -667,7 +662,6 @@ static void GP2AP01VT_CalculateDistance(struct gp2ap01vt00f_data *data)
     } else if (data->error_status == VALID_DATA) {
         data->range_mm = data->range_raw;
     }
-    //laser_info("laser :error_status = %d, range_mm = %d\n", data->error_status, data->range_mm);
 
     /* more than MAX */
     if ( (data->range_mm > 2250) && (data->range_mm != 8888) ) {
@@ -686,7 +680,6 @@ static uint8_t get_signal_judge_coefficientM(struct gp2ap01vt00f_data *data,
     uint8_t Status = 0;
     const uint32_t vcsel_pulse = 6410;
     const uint32_t spad_pulse = 3700;
-    // const float meas_pulse = 15.0;
     int32_t diffRangePs = 0;
     int32_t paramSoverM[2] = {0,0};
     int32_t bound[2] = {
@@ -704,8 +697,6 @@ static uint8_t get_signal_judge_coefficientM(struct gp2ap01vt00f_data *data,
     paramSoverM[0] = 2 * diffRangePs;
     paramSoverM[1] = vcsel_pulse - tmpint32 / spad_pulse ;
 
-    //laser_dbg("diffRange=%d,tempint32=%d\n", diffRangePs, tmpint32);
-    //laser_dbg("SoverM0=%d,SoverM1=%d\n", paramSoverM[0], paramSoverM[1]);
     if (0 < paramSoverM[0] && paramSoverM[0] < bound[0] ) {
         *SignalCoefficientM = SignalCoefficientS / paramSoverM[0];
     } else if (bound[0] <= paramSoverM[1] && paramSoverM[1] < bound[1] ) {
@@ -768,7 +759,6 @@ void GP2AP01VT_PerformXTalkCalibration(struct gp2ap01vt00f_data *data, int32_t t
     } else {
         GP2AP01VT_calc_xtalk_signal(data, targetDistance);
     }
-    //GP2AP01VT_calc_xtalk_signal(data, targetDistance);
 }
 
 /* White card 88%, distance:100mm, dark condition at factory

@@ -12,8 +12,6 @@
 #include <media/v4l2-subdev.h>
 #include <media/videobuf2-core.h>
 
-struct ion_handle; 
-
 #define HWCAM_CFG_ERR(fmt, arg...) \
     printk(KERN_ERR "%s(%d, %d): " fmt "\n", \
            __func__, __LINE__, current->pid, ## arg)
@@ -280,13 +278,6 @@ hwcam_dev_intf_notify(hwcam_dev_intf_t* intf,
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-typedef struct _tag_hwcam_cfgdev_graphic_buffer
-{
-    struct list_head                            node; 
-    hwcam_buf_info_t                            info; 
-    struct ion_handle*                          handle; 
-} hwcam_cfgdev_graphic_buffer_t;
-
 extern void 
 hwcam_cfgdev_lock(void); 
 
@@ -313,23 +304,6 @@ hwcam_cfgdev_register_subdev(struct v4l2_subdev* subdev,hwcam_device_id_constant
 
 extern int 
 hwcam_cfgdev_unregister_subdev(struct v4l2_subdev* subdev); 
-
-extern hwcam_data_table_t*  
-hwcam_cfgdev_import_data_table(char const* name, 
-                               hwcam_buf_info_t const* bi, 
-                               struct ion_handle** handle); 
-
-extern void
-hwcam_cfgdev_release_data_table(struct ion_handle* handle); 
-
-extern struct ion_handle* 
-hwcam_cfgdev_import_graphic_buffer(int fd); 
-
-extern int
-hwcam_cfgdev_share_graphic_buffer(struct ion_handle* hdl); 
-
-extern void
-hwcam_cfgdev_release_graphic_buffer(struct ion_handle* hdl); 
 
 //  hwcam_cfgdev interface definition end
 

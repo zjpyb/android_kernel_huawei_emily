@@ -72,7 +72,10 @@ extern volatile bool g_wifi_firstwake;
 #define DHO_MESSAGETYPE     53
 #define DHO_SERVERID        54
 #define DHO_END             255
-
+#ifdef CONFIG_HW_WIFI_DMA_ADDR_CTRL
+#define ATLANTA_CODE_ADDR_BEGIN	  0x80000
+#define ATLANTA_CODE_ADDR_END	  0x1100000
+#endif
 
 struct dhcp_message {
     uint8_t op;             /* message type */
@@ -571,5 +574,9 @@ extern void hw_check_chip_otp(dhd_pub_t *dhd);
 #endif
 #ifdef HW_SOFTAP_BUGFIX
 extern void hw_reset_beacon_interval(struct net_device *ndev);
+#endif
+#ifdef HW_PATCH_FOR_HANG
+extern int hw_need_hang_with_assoc_status(int status);
+extern int hw_need_hang_with_scanbusy(int error);
 #endif
 #endif /* end of __HW_WIFI_H__ */

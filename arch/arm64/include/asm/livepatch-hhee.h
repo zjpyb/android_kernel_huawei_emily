@@ -27,7 +27,11 @@
 #include <linux/hisi/hisi_hhee.h>
 #endif
 
+#ifdef CONFIG_LIVEPATCH
 extern unsigned long hkip_token;
+#else
+static unsigned long hkip_token;
+#endif
 
 enum aarch64_reloc_stage {
 	RELOC_MODULE_LOADING,

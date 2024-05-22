@@ -195,8 +195,8 @@ static int noc_dump(void *dump_addr, unsigned int size)
                 return 0;
 	}
 
-	pr_info("noc_dump:addr=0x%llx,size=[0x%x/0x%x]",
-		(unsigned long long)dump_addr, (unsigned int)sizeof(*pt_dump),
+	pr_info("noc_dump:addr=0x%lx,size=[0x%x/0x%x]",
+		(uintptr_t)dump_addr, (unsigned int)sizeof(*pt_dump),
 		size);
 
 	for (i = 0; i < (NOC_DUMP_SYNC_LEN - 2); i++) {
@@ -362,9 +362,9 @@ int noc_dump_init(void)
 	if (g_noc_dump_info.noc_device_ptr->noc_property->noc_debug) {
 		pr_err("[%s] NoC Bus Dump Info:\n", __func__);
 		pr_err("noc_device_ptr=%lx\n",
-				(unsigned long)g_noc_dump_info.noc_device_ptr);
+				(uintptr_t)g_noc_dump_info.noc_device_ptr);
 		pr_err("noc_node_ptr=%lx\n",
-				(unsigned long)g_noc_dump_info.noc_bus_node_info.noc_node_pptr);
+				(uintptr_t)g_noc_dump_info.noc_bus_node_info.noc_node_pptr);
 		pr_err("noc_node_idx=%d\n",
 				g_noc_dump_info.noc_bus_node_info.noc_node_idx);
 	}

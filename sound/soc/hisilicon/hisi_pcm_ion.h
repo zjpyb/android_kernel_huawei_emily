@@ -14,9 +14,11 @@
 #define HISI_PCM_ION_H
 
 #include <linux/ion.h>
-
+#include <linux/version.h>
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
 int hisi_pcm_ion_phys(struct ion_client *client, struct ion_handle *handle,
 	struct device *dev, ion_phys_addr_t *addr);
 struct sg_table *hisi_pcm_ion_sg_table(struct ion_client *client, struct ion_handle *handle,
         struct device *dev);
+#endif
 #endif

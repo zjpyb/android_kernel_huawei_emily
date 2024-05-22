@@ -526,10 +526,10 @@ err_exit:
  */
 int sec_ts_get_rawcap_debug(struct sec_ts_data *ts, struct ts_diff_data_info *info)
 {
-	int i;
+	int i = 0;
 	int ret = NO_ERR;
 	struct sec_ts_test_mode mode;
-	u8 *rBuff;
+	u8 *rBuff = NULL;
 	int result_size = SEC_TS_SELFTEST_REPORT_SIZE + ts->tx_count * ts->rx_count * 2;
 	int raw_count = ts->tx_count * ts->rx_count;
 

@@ -38,10 +38,11 @@
 #include "governor_memlat.h"
 
 struct vote_reg {
-        void __iomem    *reg;           /* dev frequency vote register */
-        u8              shift;
-        u8              width;
-        u32             mbits;          /* mask bits */
+	void __iomem    *reg;           /* dev frequency vote register */
+	u8              shift;
+	u8              width;
+	u32             mbits;          /* mask bits */
+	u32             rsb;
 };
 
 struct dev_data {
@@ -62,7 +63,7 @@ void set_hw_vote_reg(struct vote_reg *hw_vote, unsigned long value)
 {
 	u32 data = 0;
 
-	value >>= 4;
+	value >>= hw_vote->rsb;
 	if (value > WIDTH_TO_MASK(hw_vote->width))
 		value = WIDTH_TO_MASK(hw_vote->width);
 
@@ -194,7 +195,7 @@ int devfreq_add_devbw(struct platform_device *pdev)
 	u32 *data;
 	const char *gov_name;
 	int ret, len, i;
-	u32 temp[2] = {0};
+	u32 temp[2] = {0}, reg_mask = 0, rsb = 0;
 	void __iomem *reg_base;
 	struct vote_reg *hw_vote;
 	const char *name_str = NULL;
@@ -241,7 +242,30 @@ int devfreq_add_devbw(struct platform_device *pdev)
 	hw_vote->reg = reg_base + temp[0];
 	hw_vote->shift = ffs(temp[1]) - 1;
 	hw_vote->width = fls(temp[1]) - ffs(temp[1]) + 1;
-	hw_vote->mbits = temp[1] << 16;
+
+	if (of_property_read_u32(dev->of_node, "hisi,vote-reg-mask", &reg_mask)) {
+		/*
+		 * backwards compatible with older paltform,
+		 * such as, Atlanta and Miami.
+		 */
+		hw_vote->mbits = temp[1] << 16;
+		dev_info(dev, "[%s] node %s doesn't have hisi,vote-reg mask property!\n",
+				   __func__, dev->of_node->name);
+	} else {
+		hw_vote->mbits = reg_mask;
+	}
+
+	if (of_property_read_u32(dev->of_node, "hisi,vote-value-rsb", &rsb)) {
+		/*
+		 * backwards compatible with older paltform,
+		 * such as, Atlanta and Miami.
+		 */
+		hw_vote->rsb = 4;
+		dev_info(dev, "[%s] node %s doesn't have hisi,vote-value-rsb property!\n",
+				   __func__, dev->of_node->name);
+	} else {
+		hw_vote->rsb = rsb;
+	}
 
 	p = &d->dp;
 	p->polling_ms = 50;

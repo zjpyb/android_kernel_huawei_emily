@@ -80,7 +80,7 @@ static int acr_fmd_report(struct acr_device_info *di, int acr_rt)
 
 static void acr_dmd_report(int acr_rt)
 {
-	char buf[CHARGE_DMDLOG_SIZE] = {0};
+	char buf[POWER_DSM_BUF_SIZE_0256] = {0};
 
 	char* batt_brand = hisi_battery_brand();
 	int batt_volt = hisi_battery_voltage();
@@ -175,7 +175,6 @@ static ssize_t acr_sysfs_store(struct device *dev, struct device_attribute *attr
 	struct acr_sysfs_field_info *info = NULL;
 	struct acr_device_info *di = dev_get_drvdata(dev);
 	long val = 0;
-	int ret;
 
 	info = acr_sysfs_field_lookup(attr->attr.name);
 	if (!info)
@@ -238,6 +237,7 @@ static void batt_acr_detect_parse_dts(struct device_node *np, struct acr_device_
 		hwlog_err("get acr_rt_threshold fail, use default value\n");
 		di->acr_rt_threshold = ACR_RT_THRESHOLD_DEFAULT;
 	}
+	di->acr_rt_threshold *= 1000;//mA->uA
 	hwlog_info("acr_rt_threshold = %d\n", di->acr_rt_threshold);
 
 	ret = of_property_read_u32(np, "acr_rt_fmd_min", &(di->acr_rt_fmd_min));
@@ -258,8 +258,12 @@ static void batt_acr_detect_parse_dts(struct device_node *np, struct acr_device_
 
 static void acr_runningtest_work(struct work_struct *work)
 {
-	struct acr_device_info *di = container_of(work, struct acr_device_info, acr_rt_work);
+	struct delayed_work *d_work;
+	struct acr_device_info *di;
 	int i = 0, ichg_coul = 0, acr_rt = 0;
+
+	d_work = to_delayed_work(work);
+	di = container_of(d_work, struct acr_device_info, acr_rt_work);
 
 	acr_rt_detect_run = ACR_TRUE;
 	if (0 == charge_set_input_current_max()) {

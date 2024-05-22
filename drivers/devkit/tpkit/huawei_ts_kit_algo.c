@@ -59,27 +59,7 @@ static int finger_stop_y[TS_MAX_FINGER] = {0};
 
 static int left_res_point[4] = {0};		//0 point addr /1 error times /2 error flag /3 correct flag
 static int right_res_point[4] = {0};
-/*static int ts_algo_filter_anti_false_touch_edge(int x,int finger_id,  struct anti_false_touch_param *param){
-	int drv_limit_x_left = 0, drv_limit_x_right = 0;
-	if (!param || !param->feature_all){
-		return NOT_AFT_EDGE;
-	}
 
-		drv_limit_x_left = param->drv_stop_width;
-		drv_limit_x_right = param->lcd_width - drv_limit_x_left;
-		
-	       if (0 == (param->edge_status & (1<<finger_id))) {
-			if (x < drv_limit_x_left ||x > drv_limit_x_right) {
-				TS_LOG_DEBUG("%s edge, x:%d\n", __func__, x);
-				return AFT_EDGE;
-	       }
-		else {
-			param->edge_status |= (1<<finger_id);
-		}
-       }
-	return NOT_AFT_EDGE;
-}
-*/
 struct ghost_finger_touch{
 	struct timeval finger_press_tv[TS_MAX_FINGER];
 	struct timeval finger_release_tv;
@@ -227,7 +207,8 @@ static int ts_detect_ghost_algo2(int index) {
 
 	if((ghost_num_record_x[index] > FINGER_PRESS_TIMES_IN_MIN_TIME_ALGO2)
 		||(ghost_num_record_y[index] >  FINGER_PRESS_TIMES_IN_MIN_TIME_ALGO2)){
-		TS_LOG_INFO("%s:%s DETECT:%s\n",__func__, GHOST_LOG_TAG, GHOST_OPERATE_IN_XY_AXIS);
+		TS_LOG_INFO("%s:%s DETECT:%d\n",
+			__func__, GHOST_LOG_TAG, GHOST_OPERATE_IN_XY_AXIS);
 		ghost_num_record_x[index] = 0;
 		ghost_num_record_y[index] = 0;
 		return GHOST_OPERATE_IN_XY_AXIS;
@@ -288,7 +269,7 @@ static int ts_detect_ghost_algo3(int finger_num) {
 
 				TS_LOG_DEBUG("%s:%s ghost_algo3_num:%d\n",__func__, GHOST_LOG_TAG,ghost_algo3_num);
 				if(FINGER_PRESS_TIMES_IN_MIN_TIME_ALGO3 == ghost_algo3_num) {
-					TS_LOG_INFO("%s:%s DETECT:%s\n",
+					TS_LOG_INFO("%s:%s DETECT:%d\n",
 						__func__, GHOST_LOG_TAG, GHOST_OPERATE_IN_SAME_POSITION);
 					target_x = 0;
 					target_y = 0;
@@ -842,7 +823,6 @@ int ts_kit_algo_t3(struct ts_kit_device_data *dev_data, struct ts_fingers *in_in
 			{
 				for (index = 0; index < TS_MAX_FINGER; index++)
 				{
-					//if ((temp_report_flag & (1 << index)) && (!(must_report_flag & (1 << index))))
 					if (temp_report_flag & (1 << index))
 					{
 						if (!(stop_report_flag & (1 << index)))
@@ -866,7 +846,6 @@ int ts_kit_algo_t3(struct ts_kit_device_data *dev_data, struct ts_fingers *in_in
 			{
 				for (index = 0; index < TS_MAX_FINGER; index++)
 				{
-					//if ((temp_report_flag & (1 << index)) && (!(stop_report_flag & (1 << index))))
 					if (temp_report_flag & (1 << index))										//temp_report_flag bit won't the same with stop_report_flag bit
 					{
 						out_info->fingers[index].x = in_info->fingers[index].x;

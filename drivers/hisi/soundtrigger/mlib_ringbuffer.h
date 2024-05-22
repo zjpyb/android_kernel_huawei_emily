@@ -78,7 +78,7 @@ extern int RingBuffer_Get(RingBuffer *rb, void *element);
  输入参数  : element: 要写入的元素的指针
  返 回 值  : 无
 *****************************************************************************/
-extern int RingBuffer_Put(RingBuffer *rb, void *element);
+extern int RingBuffer_Put(RingBuffer *rb, const void *element);
 
 /*****************************************************************************
  函 数 名  : RingBuffer_Get_FastData
@@ -89,7 +89,7 @@ extern int RingBuffer_Put(RingBuffer *rb, void *element);
  输入参数  :
  返 回 值  : 无
 *****************************************************************************/
-extern int RingBuffer_Compare(RingBuffer *rb,void *element,int compareCount);
+extern int RingBuffer_Compare(RingBuffer *rb, const void *element,int compareCount);
 extern int RingBuffer_Backspace(RingBuffer *rb, unsigned int skip_cnt);
 
 

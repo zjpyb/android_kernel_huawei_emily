@@ -114,7 +114,6 @@ int get_kernel_build_time(char* blddt, int dtlen, char* bldtm, int tmlen)
 		{
 			char *tmpdt = NULL;
 			char *delm = " ";
-			char *saveptr = NULL;
 			int subindex = 0;
 			int getinval = 0;
 

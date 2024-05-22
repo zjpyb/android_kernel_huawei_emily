@@ -5,7 +5,7 @@
 			boot_devices ="ff3c0000.ufs";
 			vbmeta_huawei {
 				compatible = "android,vbmeta";
-				parts = "vbmeta,kernel,vendor,odm,cust,version,product,system,eng_system,eng_vendor,preload";
+				parts = "vbmeta,kernel,vendor,odm,cust,version,product,system,eng_system,eng_vendor,preload,patch,preas,preavs";
 			};
 			vbmeta_hisi {
 				compatible = "android,vbmeta";
@@ -16,17 +16,17 @@
 				vendor {
 					compatible = "android,vendor";
 					dev = "/dev/block/by-name/vendor";
-					type = "ext4";
-					mnt_flags = "ro,barrier=1";
-					fsmgr_flags = "wait,slotselect,avb";
+					type = "erofs";
+					mnt_flags = "ro";
+					fsmgr_flags = "wait,avb";
 					status = "ok";
 				};
 				odm {
 					compatible = "android,odm";
 					dev = "/dev/block/by-name/odm";
-					type = "ext4";
-					mnt_flags = "ro,barrier=1";
-					fsmgr_flags = "wait,slotselect,avb";
+					type = "erofs";
+					mnt_flags = "ro";
+					fsmgr_flags = "wait,avb";
 					status = "ok";
 				};
 			};

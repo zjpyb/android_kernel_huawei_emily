@@ -35,15 +35,15 @@
 #include <media/huawei/hjpeg_cfg.h>
 #include <media/camera/jpeg/jpeg_base.h>
 #include <asm/io.h>
-#include <linux/hisi/hisi_ion.h>
 #include <asm/uaccess.h>
 #include <linux/rpmsg.h>
 #include <linux/ioport.h>
-#include <linux/hisi/hisi-iommu.h>
+#include <linux/hisi-iommu.h>
 #include <linux/platform_data/remoteproc-hisi.h>
 #include <linux/wakelock.h>
 #include <linux/version.h>
 
+#include "hicam_buf.h"
 #include "smmu_cfg.h"
 #include "cvdr_cfg.h"
 #include "jpegenc_cfg.h"
@@ -53,16 +53,19 @@
 #include "hjpeg_common.h"
 #include "hjpeg_intf.h"
 #include "cam_log.h"
-
 #include "hjpeg_debug.h"
 /*lint -save -e715 -e747 -e529 -e438 -e845 -e846 -e514 -e866 -e30 -e84*/
 /*TODO:use kernel dump mem space do JPEG IP system verify*/
 
 //#define MST_DEBUG 1
+//#include "hjpeg250/hjpg_softreset_test.h"
+//#define SOFT_RESET 1 
+//#define IRQ_TEST 0
 
 #define I2hjpegenc(i) container_of(i, hjpeg_base_t, intf)
 
 #define ENCODE_FINISH (1<<4)
+#define IRQ_MERGE_ENCODE_FINISH (1<<1)
 
 typedef struct _tag_hjpeg_base
 {
@@ -71,7 +74,6 @@ typedef struct _tag_hjpeg_base
     char const*                                 name;
     u32                                         irq_no;
     struct semaphore                            buff_done;
-    struct ion_client*                          ion_client;           // for shared ion buffer
     hjpeg_hw_ctl_t                              hw_ctl;               // for all phyaddr and viraddr
     struct regulator *                          jpeg_supply;
     struct regulator *                          media_supply;
@@ -87,8 +89,10 @@ typedef struct _tag_hjpeg_base
 } hjpeg_base_t;
 
 int is_hjpeg_qos_update(void);
-int is_hjpeg_iova_update(void);
-int is_hjpeg_wr_port_addr_update(void);
+int get_hjpeg_iova_update(void);
+int get_hjpeg_wr_port_addr_update(void);
+int is_pixel_fmt_update(void);
+int is_cvdr_cfg_update(void);
 
 static void hjpeg_isr_do_tasklet(unsigned long data);
 DECLARE_TASKLET(hjpeg_isr_tasklet, hjpeg_isr_do_tasklet, (unsigned long)0);
@@ -97,7 +101,7 @@ static void hjpeg_unmap_baseaddr(void);
 static int hjpeg_map_baseaddr(void);
 
 static int hjpeg_get_dts(struct platform_device* pDev);
-static int get_phy_pgd_base(struct device* pdev);
+static int get_phy_pgd_base(void);
 
 static int hjpeg_poweron(hjpeg_base_t* pJpegDev);
 static int hjpeg_poweroff(hjpeg_base_t* pJpegDev);
@@ -110,6 +114,10 @@ static int hjpeg_power_on(hjpeg_intf_t *i);
 static int hjpeg_power_off(hjpeg_intf_t *i);
 static int hjpeg_get_reg(hjpeg_intf_t *i, void* cfg);
 static int hjpeg_set_reg(hjpeg_intf_t *i, void* cfg);
+
+static void hjpeg_irq_clr(void __iomem* subctrl1);
+static void hjpeg_irq_mask(void __iomem* subctrl1, bool enable);
+static void hjpeg_encode_finish(void __iomem* jpegenc, void __iomem* subctl);
 
 static hjpeg_vtbl_t
 s_vtbl_hjpeg =
@@ -144,8 +152,12 @@ MODULE_DEVICE_TABLE(of, s_hjpeg_dt_match);
 static struct timeval s_timeval_start;
 static struct timeval s_timeval_end;
 static int is_qos_update = 0;
-static int is_iova_update = 0;
-static int is_wr_port_addr_update = 0;
+static int iova_update_version = 0;
+static int wr_port_addr_update_version = 0;
+static int pixel_format_update = 0;
+static int cvdr_cfg_update = 0;
+static int is_irq_merge = 0;
+static int clk_ctl_offset = 0;
 
 extern int memset_s(void *dest, size_t destMax, int c, size_t count);
 
@@ -156,24 +168,9 @@ static void hjpeg_isr_do_tasklet(unsigned long data)
 
 static irqreturn_t hjpeg_irq_handler(int irq, void *dev_id)
 {
-    void __iomem *base = s_hjpeg.hw_ctl.jpegenc_viraddr;
-    u32 value;
+    hjpeg_encode_finish(s_hjpeg.hw_ctl.jpegenc_viraddr
+            , s_hjpeg.hw_ctl.subctrl_viraddr);
 
-    do_gettimeofday(&s_timeval_end);
-    value = get_reg_val((void __iomem*)((char*)base + JPGENC_JPE_STATUS_RIS_REG));
-    cam_debug("RIS status:%x", value);
-    if (value & ENCODE_FINISH) {
-        tasklet_schedule(&hjpeg_isr_tasklet);
-    } else {
-        cam_err("err irq status 0x%x ", value);
-
-        #if defined( HISP120_CAMERA )
-            hjpeg_120_dump_reg();
-        #endif
-    }
-
-    /*clr jpeg irq*/
-    set_reg_val((void __iomem*)((char*)base + JPGENC_JPE_STATUS_ICR_REG), 0x30);
     return IRQ_HANDLED;
 }
 
@@ -181,8 +178,8 @@ static void calculate_encoding_time(void)
 {
     u64 tm_used;
 
-    tm_used = (u64)(s_timeval_end.tv_sec - s_timeval_start.tv_sec) * MICROSECOND_PER_SECOND
-        + (u64)(s_timeval_end.tv_usec - s_timeval_start.tv_usec);
+    tm_used = (s_timeval_end.tv_sec - s_timeval_start.tv_sec) * MICROSECOND_PER_SECOND
+        + s_timeval_end.tv_usec - s_timeval_start.tv_usec;
 
     cam_debug("%s JPGENC encoding elapse %llu us",__func__, tm_used);
 }
@@ -197,45 +194,28 @@ static void set_rstmarker(void __iomem*  base_addr, unsigned int rst)
     set_reg_val((void __iomem*)((char*)base_addr + JPGENC_JPE_RESTART_INTERVAL_REG), rst);
 }
 
-static int __check_buffer_vaild(int share_fd, unsigned int vaild_addr, unsigned int vaild_size)
+static int __check_buffer_vaild(int share_fd, unsigned int req_addr, unsigned int req_size)
 {
-    struct ion_handle *ionhnd;
-    struct iommu_map_format iommu_format;
     int ret = 0;
+    struct iommu_format fmt = { 0 };
 
     if (share_fd < 0) {
-        cam_err("invalid ion: fd=%d", share_fd);
+        cam_err("invalid ion buffer: fd=%d", share_fd);
         return -1;
     }
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
-    ionhnd = ion_import_dma_buf_fd(s_hjpeg.ion_client, share_fd);/*lint !e838*/
-#else
-    ionhnd = ion_import_dma_buf(s_hjpeg.ion_client, share_fd);/*lint !e838*/
-#endif
-    if (IS_ERR(ionhnd)) {
-        cam_err("%s:invalid ion handle", __func__);
-        return -1;//lint !e438
-    } else {
-        memset_s(&iommu_format, sizeof(struct iommu_map_format), 0, sizeof(struct iommu_map_format)); /*lint !e838 */
-        if (ion_map_iommu(s_hjpeg.ion_client, ionhnd, &iommu_format)) {
-            cam_err("invalid ion: fd=%d", share_fd);
-            ret = -1;
-            goto ion_free;
-        }
-        if (vaild_addr != iommu_format.iova_start) {
-            cam_err("%s:invalid iova addr", __func__);
-            ret = -1;
-        }
-        if (vaild_size > iommu_format.iova_size){
-            cam_err("%s:invalid size: 0x%x", __func__, vaild_size);
-            ret = -1;
-        }
+    ret = hicam_buf_map_iommu(share_fd, &fmt);
+    if (ret < 0) {
+        cam_err("%s: fail to map iommu.", __func__);
+        return ret;
     }
 
-    ion_unmap_iommu(s_hjpeg.ion_client, ionhnd);
-ion_free:
-    ion_free(s_hjpeg.ion_client, ionhnd);
+    // FIXME: change test to req_addr < fmt.iova || req_addr + req_size > fmt.iova + fmt.size ?
+    if (req_addr != fmt.iova || req_size > fmt.size) {
+        ret = -ERANGE;
+    }
+    hicam_buf_unmap_iommu(share_fd, &fmt);
+    cam_debug("%s: fd:%d, iova:%#llx, size:%#llx", __func__, share_fd, fmt.iova, fmt.size);
     return ret;
 }
 
@@ -243,17 +223,12 @@ static int check_buffer_vaild(jpgenc_config_t* config)
 {
     unsigned int vaild_input_size;
 
-    if (IS_ERR_OR_NULL(s_hjpeg.ion_client)) {
-        cam_err("invalid ion_client: s_hjpeg.ion_client is error");
-        return -1;
-    }
-
     if (__check_buffer_vaild(config->buffer.ion_fd, config->buffer.output_buffer, config->buffer.output_size)) {
         cam_err("%s:check output buffer fail", __func__);
         return -1;
     }
 
-    if(JPGENC_FORMAT_YUV422 == (config->buffer.format & JPGENC_FORMAT_BIT)) {
+    if (JPGENC_FORMAT_YUV422 == ((unsigned int)(config->buffer.format) & JPGENC_FORMAT_BIT)) {
         vaild_input_size = config->buffer.width * config->buffer.height * 2;
     }
     else {
@@ -293,7 +268,8 @@ static int check_config(jpgenc_config_t* config)
 
     if ((0 == config->buffer.stride)
             || !CHECK_ALIGN(config->buffer.stride,16)
-            || (config->buffer.stride/16 > ((JPGENC_FORMAT_YUV422 == (config->buffer.format & JPGENC_FORMAT_BIT)) ? 1024 : 512)))
+            || (config->buffer.stride / 16 > ((JPGENC_FORMAT_YUV422 == ((unsigned int)(config->buffer.format) &
+            JPGENC_FORMAT_BIT)) ? 1024 : 512)))
     {
         cam_err(" stride[%d] is invalid! ",config->buffer.stride);
         return -1;
@@ -303,14 +279,14 @@ static int check_config(jpgenc_config_t* config)
         cam_err(" input buffer y[0x%x] is invalid! ",config->buffer.input_buffer_y);
         return -1;
     }
-    if ((JPGENC_FORMAT_YUV420 == (config->buffer.format & JPGENC_FORMAT_BIT))
-            && ((0== config->buffer.input_buffer_uv )|| !CHECK_ALIGN(config->buffer.input_buffer_uv, 16))){
+    if ((JPGENC_FORMAT_YUV420 == ((unsigned int)(config->buffer.format) & JPGENC_FORMAT_BIT))
+            && ((0== config->buffer.input_buffer_uv ) || !CHECK_ALIGN(config->buffer.input_buffer_uv, 16))) {
         cam_err(" input buffer uv[0x%x] is invalid! ",config->buffer.input_buffer_uv);
         return -1;
     }
 
-    if ((JPGENC_FORMAT_YUV420 == (config->buffer.format & JPGENC_FORMAT_BIT))
-            && (config->buffer.input_buffer_uv - config->buffer.input_buffer_y < config->buffer.stride*8*16)){
+    if ((JPGENC_FORMAT_YUV420 == ((unsigned int)(config->buffer.format) & JPGENC_FORMAT_BIT)) &&
+        (config->buffer.input_buffer_uv - config->buffer.input_buffer_y < config->buffer.stride * 8 * 16)) {
         cam_err(" buffer format is invalid! ");
         return -1;
     }
@@ -327,7 +303,6 @@ static int check_config(jpgenc_config_t* config)
     }
     return check_buffer_vaild(config);
 }
-
 /* set picture format
   called by config_jpeg
 */
@@ -429,7 +404,7 @@ static void set_picture_size(void __iomem*  base_addr, jpgenc_config_t* config)
     uint32_t width_right = 0;
 
     width_left = config->buffer.width;
-    if (s_hjpeg.hw_ctl.chip_type == CT_ES)
+    if (s_hjpeg.hw_ctl.power_controller == PC_HISP)
     {
         if(width_left >= 64)
         {
@@ -552,20 +527,26 @@ static void hjpeg_config_jpeg(jpgenc_config_t* config)
     set_picture_quality(base_addr, config->buffer.quality);
 
     //set input buffer address
-    if (is_hjpeg_iova_update()) {
-        SET_FIELD_TO_REG((void __iomem*)((char*)base_addr + JPGENC_ADDRESS_Y_REG),JPGENC_ADDRESS_Y,config->buffer.input_buffer_y >> 6);
-        if (JPGENC_FORMAT_YUV420 == (config->buffer.format & JPGENC_FORMAT_BIT)) {
-            SET_FIELD_TO_REG((void __iomem*)((char*)base_addr + JPGENC_ADDRESS_UV_REG),JPGENC_ADDRESS_UV,config->buffer.input_buffer_uv >> 6);
+    if (CVDR_IOVA_ADDR_34BITS == get_hjpeg_iova_update()) {
+        U_JPEGENC_ADDRESS addr_y;
+        addr_y.bits.address = config->buffer.input_buffer_y >> 4;
+        addr_y.bits.reserved = 0;
+        set_reg_val((void __iomem*)((char*)base_addr + JPGENC_ADDRESS_Y_REG), addr_y.reg32);
+        if (JPGENC_FORMAT_YUV420 == ((unsigned int)(config->buffer.format) & JPGENC_FORMAT_BIT)) {
+            U_JPEGENC_ADDRESS addr_uv;
+            addr_uv.bits.address = config->buffer.input_buffer_uv >> 4;
+            addr_uv.bits.reserved = 0;
+            set_reg_val((void __iomem*)((char*)base_addr + JPGENC_ADDRESS_UV_REG),addr_uv.reg32 );
         }
     } else {
         SET_FIELD_TO_REG((void __iomem*)((char*)base_addr + JPGENC_ADDRESS_Y_REG),JPGENC_ADDRESS_Y,config->buffer.input_buffer_y >> 4);
-        if (JPGENC_FORMAT_YUV420 == (config->buffer.format & JPGENC_FORMAT_BIT)) {
+        if (JPGENC_FORMAT_YUV420 == ((unsigned int)(config->buffer.format) & JPGENC_FORMAT_BIT)) {
             SET_FIELD_TO_REG((void __iomem*)((char*)base_addr + JPGENC_ADDRESS_UV_REG),JPGENC_ADDRESS_UV,config->buffer.input_buffer_uv >> 4);
         }
     }
 
     //set preread
-    if (JPGENC_FORMAT_YUV420 == (config->buffer.format & JPGENC_FORMAT_BIT)) {
+    if (JPGENC_FORMAT_YUV420 == ((unsigned int)(config->buffer.format) & JPGENC_FORMAT_BIT)) {
         SET_FIELD_TO_REG((void __iomem*)((char*)base_addr + JPGENC_PREREAD_REG),JPGENC_PREREAD,4);
     }
     else {
@@ -595,14 +576,22 @@ static void hjpeg_disable_autogating(void)
 
 static void hjpeg_disabe_irq(void)
 {
-    void __iomem *base_addr = s_hjpeg.hw_ctl.jpegenc_viraddr;
-    set_reg_val((void __iomem*)((char*)base_addr + JPGENC_JPE_STATUS_IMR_REG), 0x00);
+    if (is_irq_merge) {
+        hjpeg_irq_mask(s_hjpeg.hw_ctl.subctrl_viraddr, false);
+    } else {
+        void __iomem *base_addr = s_hjpeg.hw_ctl.jpegenc_viraddr;
+        set_reg_val((void __iomem*)((char*)base_addr + JPGENC_JPE_STATUS_IMR_REG), 0x00);
+    }
 }
 
 static void hjpeg_enable_irq(void)
 {
-    void __iomem *base_addr = s_hjpeg.hw_ctl.jpegenc_viraddr;
-    set_reg_val((void __iomem*)((char*)base_addr + JPGENC_JPE_STATUS_IMR_REG), 0x30);
+    if (is_irq_merge) {
+        hjpeg_irq_mask(s_hjpeg.hw_ctl.subctrl_viraddr, true);
+    } else {
+        void __iomem *base_addr = s_hjpeg.hw_ctl.jpegenc_viraddr;
+        set_reg_val((void __iomem*)((char*)base_addr + JPGENC_JPE_STATUS_IMR_REG), 0x30);
+    }
 }
 
 // IOCTL HJPEG_ENCODE_PROCESS
@@ -614,7 +603,6 @@ static int hjpeg_encode_process(hjpeg_intf_t *i, void *cfg)
     long   jiff;
     int    ret;
     u32 byte_cnt;
-    u32 chip_type         = s_hjpeg.hw_ctl.chip_type;
     jpgenc_config_t* pcfg = (jpgenc_config_t *)cfg;
 
     if (NULL == pcfg) {
@@ -637,7 +625,7 @@ static int hjpeg_encode_process(hjpeg_intf_t *i, void *cfg)
             pcfg->buffer.output_size);
 
     if (bypass_smmu()) {
-        if ((0 == s_hjpeg.phy_pgd.phy_pgd_base) && (chip_type==CT_CS)) {
+        if ((0 == s_hjpeg.phy_pgd.phy_pgd_base) && (PC_DRV == s_hjpeg.hw_ctl.power_controller)) {
             cam_err("%s(%d)phy_pgd_base is invalid, encode processing terminated.",__func__, __LINE__);
             return -EINVAL;
         }
@@ -660,7 +648,6 @@ static int hjpeg_encode_process(hjpeg_intf_t *i, void *cfg)
     hjpeg_config_cvdr(&s_hjpeg.hw_ctl, pcfg);
 
     hjpeg_enable_irq();
-
     hjpeg_config_jpeg(pcfg);
 #ifdef SOFT_RESET
     if (nOp == 0) {
@@ -671,6 +658,10 @@ static int hjpeg_encode_process(hjpeg_intf_t *i, void *cfg)
         nOp = 1;
         hjpeg_disabe_irq();
         hjpeg_enable_autogating();
+
+        jiff = (long)msecs_to_jiffies(10);
+        down_timeout(&s_hjpeg.buff_done, jiff);
+
         return -1;
     }
 #endif
@@ -679,12 +670,14 @@ static int hjpeg_encode_process(hjpeg_intf_t *i, void *cfg)
     if (down_timeout(&s_hjpeg.buff_done, jiff)) {
         cam_err("time out wait for jpeg encode");
         ret = -1;
-
+        hjpeg_irq_clr(s_hjpeg.hw_ctl.subctrl_viraddr);
         #if defined( HISP120_CAMERA )
             hjpeg_120_dump_reg();
         #endif
 
     }
+
+    do_gettimeofday(&s_timeval_end);
 
     calculate_encoding_time();
     // for debug
@@ -721,7 +714,6 @@ static int hjpeg_encode_process(hjpeg_intf_t *i, void *cfg)
 
     pcfg->jpegSize = byte_cnt;
     cam_info("%s jpeg encode process success.size=%u", __func__, pcfg->jpegSize);
-
     return ret;
 }
 
@@ -782,16 +774,11 @@ static int hjpeg_power_on(hjpeg_intf_t *i)
         cam_err("%s(%d) failed to enable jpeg clock , prepare to power down!",__func__, __LINE__);
         goto POWERUP_ERROR;
     }
+
     // init qtable\hufftable etc.
     hjpeg_init_hw_param(phjpeg->hw_ctl.jpegenc_viraddr, phjpeg->hw_ctl.power_controller, bypass_smmu());
 
     sema_init(&(phjpeg->buff_done), 0);
-
-    phjpeg->ion_client = hisi_ion_client_create("hwcam-hjpeg");
-    if (IS_ERR_OR_NULL(phjpeg->ion_client )) {
-        cam_err("failed to create ion client! \n");
-        goto POWERUP_ERROR;
-    }
 
     if (phjpeg->irq_no)
     {
@@ -808,11 +795,6 @@ static int hjpeg_power_on(hjpeg_intf_t *i)
 
 POWERUP_ERROR:
 
-    if (phjpeg->ion_client) {
-        ion_client_destroy(phjpeg->ion_client);
-        phjpeg->ion_client = NULL;
-    }
-
     if ( 0 != power_control(phjpeg, false) )
         cam_err("%s(%d) jpeg power down fail",__func__, __LINE__);
 
@@ -824,7 +806,6 @@ static int hjpeg_power_off(hjpeg_intf_t *i)
 {
     int ret;
     hjpeg_base_t* phjpeg;
-    struct ion_client*  ion = NULL;
 
     phjpeg = I2hjpegenc(i);/*lint !e826*/
 
@@ -834,10 +815,6 @@ static int hjpeg_power_off(hjpeg_intf_t *i)
         free_irq(phjpeg->irq_no, 0);
     }
 
-    swap(phjpeg->ion_client, ion);
-    if (ion) {
-        ion_client_destroy(ion);
-    }
     ret = power_control(phjpeg, false);
 
     if (ret != 0){
@@ -1190,7 +1167,7 @@ static int hjpeg_map_baseaddr(void)
         cam_err("%s failed get irq num (%d)\n", __func__, __LINE__);
         goto fail;
     }
-    cam_debug("%s irq [%d].", __func__, phjpeg->irq_no);
+    cam_info("%s irq [%d].", __func__, phjpeg->irq_no);
 
     // debug
 #if (POWER_CTRL_INTERFACE==POWER_CTRL_CFG_REGS)
@@ -1245,26 +1222,22 @@ static int get_dts_power_prop(struct device *pdev)
             goto error;
         }
 
-        if ( s_hjpeg.hw_ctl.chip_type == CT_CS) {
-            //get supply for media
-            s_hjpeg.media_supply = devm_regulator_get(pdev, "hjpeg-media");
-            if (IS_ERR(s_hjpeg.media_supply)) {
-                cam_err("[%s] Failed : media devm_regulator_get.\n", __func__);
-                goto error;
-            }
-
-            if ((ret = of_property_read_u32(np, "clock-low-frequency", &(s_hjpeg.jpegclk_low_frequency))) < 0) {
-                cam_err("[%s] Failed: of_property_read_u32.%d\n", __func__, ret);
-                goto error;
-            }
-
-            if ((ret = of_property_read_u32(np, "power-off-frequency", &(s_hjpeg.power_off_frequency))) < 0) {
-                cam_err("[%s] Failed: of_property_read_u32.%d\n", __func__, ret);
-                goto error;
-            }
-
+        //get supply for media
+        s_hjpeg.media_supply = devm_regulator_get(pdev, "hjpeg-media");
+        if (IS_ERR(s_hjpeg.media_supply)) {
+            cam_err("[%s] Failed : media devm_regulator_get.\n", __func__);
+            goto error;
         }
 
+        if ((ret = of_property_read_u32(np, "clock-low-frequency", &(s_hjpeg.jpegclk_low_frequency))) < 0) {
+            cam_err("[%s] Failed: of_property_read_u32.%d\n", __func__, ret);
+            goto error;
+        }
+
+        if ((ret = of_property_read_u32(np, "power-off-frequency", &(s_hjpeg.power_off_frequency))) < 0) {
+            cam_err("[%s] Failed: of_property_read_u32.%d\n", __func__, ret);
+            goto error;
+        }
 
         //get clk parameters
         if ((ret = of_property_read_string_array(np, "clock-names", clk_name, JPEG_CLK_MAX)) < 0) {
@@ -1379,6 +1352,48 @@ static int get_dts_cvdr_prop(struct device *pdev)
     s_hjpeg.hw_ctl.stream_id[2]    = base_array[2];
     cam_info("%s: stream id=<%d,%d,%d>", __func__, base_array[0], base_array[1], base_array[2]);
 
+    //is_qos_update
+    ret = of_property_read_u32(np, "huawei,qos_update", &is_qos_update);
+    if (ret < 0) {
+        cam_info("%s: get qos_update flag failed.", __func__);
+    }
+
+    //iova_update_version
+    ret = of_property_read_u32(np, "huawei,iova_update", &iova_update_version);
+    if (ret < 0) {
+        cam_info("%s: get iova_update flag failed.", __func__);
+    }
+    cam_info("%s: iova_addr_update=<%d>", __func__, iova_update_version);
+
+    //is_wr_port_addr_update
+    ret = of_property_read_u32(np, "huawei,wr_port_addr_update", &wr_port_addr_update_version);
+    if (ret < 0) {
+        cam_info("%s: get wr_port_addr_update flag failed.", __func__);
+    }
+    cam_info("%s: wr_port_addr_update=<%d>", __func__, wr_port_addr_update_version);
+    //is_pixel_fmt_update
+    ret = of_property_read_u32(np, "huawei,pix_format_update", &pixel_format_update);
+    if (ret < 0) {
+        cam_info("%s: get pixel_format_update flag failed.", __func__);
+    }
+    cam_info("%s: pixel_format_update=<%d>", __func__, pixel_format_update);
+    //is_cvdr_cfg_update
+    ret = of_property_read_u32(np, "huawei,cvdr_cfg_update", &cvdr_cfg_update);
+    if (ret < 0) {
+        cam_info("%s: get cvdr_cfg_update flag failed.", __func__);
+    }
+    cam_info("%s: cvdr_cfg_update=<%d>", __func__, cvdr_cfg_update);
+
+    s_hjpeg.hw_ctl.cvdr_prop.flag    = 0;
+    ret = of_property_read_u32_array(np, "huawei,cvdr_limiter_du", base_array, count);
+    if (ret >= 0) {
+        s_hjpeg.hw_ctl.cvdr_prop.flag    = 1;
+        s_hjpeg.hw_ctl.cvdr_prop.rd_limiter    = base_array[0];
+        s_hjpeg.hw_ctl.cvdr_prop.wr_limiter    = base_array[1];
+        s_hjpeg.hw_ctl.cvdr_prop.allocated_du  = base_array[2];
+        cam_info("%s: limiter_du=<%d,%d,%d>", __func__, base_array[0], base_array[1], base_array[2]);
+    }
+
     return 0;
 }
 
@@ -1403,35 +1418,25 @@ static int hjpeg_get_dts(struct platform_device* pDev)
         return -1;
     }
 
-    chip_type = CT_ES;
+    chip_type = CT_CS;
     // get chip type
     ret = of_property_read_u32(np, "huawei,chip_type", &chip_type);
     if (ret < 0) {
         cam_err("%s: get chip_type flag failed.", __func__);
-        return -1;
     }
     s_hjpeg.hw_ctl.chip_type = chip_type;
     cam_info("%s: chip_type=%d", __func__, chip_type);
 
-    //is_qos_update
-    ret = of_property_read_u32(np, "huawei,qos_update", &is_qos_update);
-    if (ret < 0) {
-        cam_err("%s: get qos_update flag failed.", __func__);
-        return -1;
+    // clk_ctl_offset
+    ret = of_property_read_u32(np, "huawei,clk_ctl_offset", &clk_ctl_offset);
+    if (ret == 0) {
+        cam_info("%s: update clk_ctl_offset=0x%x.", __func__, clk_ctl_offset);
     }
 
-    //is_iova_update
-    ret = of_property_read_u32(np, "huawei,iova_update", &is_iova_update);
-    if (ret < 0) {
-        cam_err("%s: get iova_update flag failed.", __func__);
-        return -1;
-    }
-
-    //is_wr_port_addr_update
-    ret = of_property_read_u32(np, "huawei,wr_port_addr_update", &is_wr_port_addr_update);
-    if (ret < 0) {
-        cam_err("%s: get wr_port_addr_update flag failed.", __func__);
-        return -1;
+    //hjpeg_irq_merge
+    ret = of_property_read_u32(np, "huawei,irq-merge", &is_irq_merge);
+    if (ret == 0) {
+        cam_info("%s: update irq_merge=%u.", __func__, is_irq_merge);
     }
 
     ret = get_dts_cvdr_prop(pdev);
@@ -1451,7 +1456,7 @@ static int hjpeg_get_dts(struct platform_device* pDev)
         return -1;
     }
 
-    ret = get_phy_pgd_base(pdev);
+    ret = get_phy_pgd_base();
     if (ret < 0) {
         cam_err("%s: get phy pgd base failed.", __func__);
         return -1;
@@ -1460,26 +1465,19 @@ static int hjpeg_get_dts(struct platform_device* pDev)
     return 0;
 }
 
-static int get_phy_pgd_base(struct device* pdev)
+static int get_phy_pgd_base(void)
 {
-    struct iommu_domain_data *info;
-
-    s_hjpeg.phy_pgd.phy_pgd_base = 0;
-    //get iommu page
-    if ((s_hjpeg.domain = hisi_ion_enable_iommu(NULL)) == NULL) {
-        pr_err("[%s] Failed : iommu_domain_alloc.\n", __func__);
-        return -1;
-    }
-    if ((info = (struct iommu_domain_data *)s_hjpeg.domain->priv) == NULL) {
-        pr_err("[%s] Failed : info.\n",__func__);
+    phys_addr_t pgd_base = hicam_buf_get_pgd_base();
+    if (!pgd_base) {
         return -1;
     }
 
-    s_hjpeg.phy_pgd.phy_pgd_base = (unsigned int)info->phy_pgd_base;
+    // TODO: need promote \<phy_pgd_base\> to 64 bit?
+    s_hjpeg.phy_pgd.phy_pgd_base = (uint32_t)pgd_base;
     // ptw_msb = phy_pgd_base[38:32]
-    s_hjpeg.phy_pgd.phy_pgd_fama_ptw_msb = ((unsigned int)(info->phy_pgd_base >> 32)) & 0x0000007F;
+    s_hjpeg.phy_pgd.phy_pgd_fama_ptw_msb = ((uint32_t)(pgd_base >> 32)) & 0x0000007F;
     // bps_msb_ns = phy_pgd_base[38:33]
-    s_hjpeg.phy_pgd.phy_pgd_fama_bps_msb_ns = ((unsigned int)(info->phy_pgd_base >> 32)) & 0x0000007E;
+    s_hjpeg.phy_pgd.phy_pgd_fama_bps_msb_ns = ((uint32_t)(pgd_base >> 32)) & 0x0000007E;
     return 0;
 }
 
@@ -1534,33 +1532,39 @@ static void hjpeg_setclk_disable(hjpeg_base_t* pJpegDev, int idx)
 
     cam_debug("%s enter (idx=%d) \n",__func__, idx);
 
-    jpeg_enc_clk_disable_unprepare(pJpegDev->jpegclk[idx]);
-
     // === this is new constraint for cs begin===
-    if (pJpegDev->hw_ctl.chip_type == CT_CS) {
+    if (PC_DRV == pJpegDev->hw_ctl.power_controller) {
         if ((ret = jpeg_enc_set_rate(pJpegDev->jpegclk[idx], pJpegDev->power_off_frequency)) != 0) {
             cam_err("[%s] Failed: jpeg_enc_set_rate.%d\n", __func__, ret);
         }
     }
     // === this is new constraint for cs end ===
 
+    jpeg_enc_clk_disable_unprepare(pJpegDev->jpegclk[idx]);
 }
 
 static int hjpeg_clk_ctrl(void __iomem* subctrl1, bool enable)
 {
-    uint32_t set_clk;
-    uint32_t cur_clk;
+    u32 set_clk;
+    u32 cur_clk;
     int ret = 0;
+    u32 offset;
+
+    if (clk_ctl_offset) {
+        offset = JPGENC_CRG_CFG0;
+    } else {
+        offset = 0;
+    }
 
     cam_info("%s enter\n",__func__);
 
     if (enable) {
-        set_reg_val(subctrl1, get_reg_val(subctrl1)|0x1);
+        set_reg_val(subctrl1 + offset, get_reg_val(subctrl1)|0x1);
     } else {
-        set_reg_val(subctrl1, get_reg_val(subctrl1)&0xFFFFFFFE);   /* [false alarm]:it is a dead code */
+        set_reg_val(subctrl1 + offset, get_reg_val(subctrl1)&0xFFFFFFFE);   /* [false alarm]:it is a dead code */
     }
     set_clk = enable ? 0x1 : 0x0;
-    cur_clk = get_reg_val(subctrl1);
+    cur_clk = get_reg_val(subctrl1 + offset);
     if (set_clk != cur_clk) {
         cam_err("%s(%d) isp jpeg clk status %d, clk write failed",__func__, __LINE__, cur_clk);
         ret = -EIO;
@@ -1568,6 +1572,76 @@ static int hjpeg_clk_ctrl(void __iomem* subctrl1, bool enable)
 
     cam_info("%s isp jpeg clk status %d",__func__, cur_clk);
     return ret;
+}
+
+static void hjpeg_irq_clr(void __iomem* subctrl1)
+{
+    u32 set_val;
+    void __iomem* subctrl1_irq_clr = subctrl1 + JPGENC_IRQ_REG0;
+
+    cam_info("%s enter\n", __func__);
+
+    set_val = 0x00000002;
+
+/* #ifdef IRQ_TEST */
+/*     set_val = 0x6; */
+/* #endif */
+
+    set_reg_val(subctrl1_irq_clr, set_val);   /* [false alarm]:it is a dead code */
+}
+
+static void hjpeg_irq_mask(void __iomem* subctrl1, bool enable)
+{
+    u32 set_val;
+    u32 cur_val;
+    void __iomem* subctrl1_irq_mask = subctrl1 + JPGENC_IRQ_REG1;
+
+    cam_info("%s enter\n", __func__);
+
+    set_val = enable ? 0x0000001D : 0x0000001F;
+
+/* #ifdef IRQ_TEST */
+/*      if (enable) { */
+/*          set_val = 0x19; */
+/*      } */
+/* #endif */
+    set_reg_val(subctrl1_irq_mask,  set_val);
+    cur_val = get_reg_val(subctrl1_irq_mask);
+    if (set_val != cur_val) {
+        cam_err("%s(%d) isp jpeg irq mask status %u, mask write failed set_val=%u", __func__, __LINE__, cur_val, set_val);
+    }
+
+    cam_info("%s isp jpeg irq mask status %u", __func__, cur_val);
+}
+
+static void hjpeg_encode_finish(void __iomem* jpegenc, void __iomem* subctl)
+{
+    u32 value;
+    u32 result;
+    if (is_irq_merge) {
+        value = get_reg_val((void __iomem*)((char*)subctl + JPGENC_IRQ_REG2));
+        result = value & IRQ_MERGE_ENCODE_FINISH;
+    } else {
+        value = get_reg_val((void __iomem*)((char*)jpegenc + JPGENC_JPE_STATUS_RIS_REG));
+        result = value & ENCODE_FINISH;
+    }
+
+    if (result) {
+        tasklet_schedule(&hjpeg_isr_tasklet);
+    } else {
+        cam_err("err irq JPGENC_IRQ_REG2 status 0x%x", value);
+
+        #if defined( HISP120_CAMERA )
+            hjpeg_120_dump_reg();
+        #endif
+    }
+
+    /*clr jpeg irq*/
+    if (is_irq_merge) {
+        hjpeg_irq_clr(subctl);
+    } else {
+        set_reg_val((void __iomem*)((char*)jpegenc + JPGENC_JPE_STATUS_ICR_REG), 0x30);
+    }
 }
 
 static struct platform_driver
@@ -1629,18 +1703,26 @@ int is_hjpeg_qos_update(void)
     return is_qos_update;
 }
 
-int is_hjpeg_iova_update(void)
+int get_hjpeg_iova_update(void)
 {
-    cam_debug("%s is_iova_update=%d.", __func__, is_iova_update);
-    return is_iova_update;
+    cam_debug("%s iova_update_version=%d.", __func__, iova_update_version);
+    return iova_update_version;
 }
 
-int is_hjpeg_wr_port_addr_update(void)
+int get_hjpeg_wr_port_addr_update(void)
 {
-    cam_debug("%s is_wr_port_addr_update=%d.", __func__, is_wr_port_addr_update);
-    return is_wr_port_addr_update;
+    cam_debug("%s wr_port_addr_update_version=%d.", __func__, wr_port_addr_update_version);
+    return wr_port_addr_update_version;
 }
 
+int is_cvdr_cfg_update(void)
+{
+    return cvdr_cfg_update;
+}
+int is_pixel_fmt_update(void)
+{
+    return pixel_format_update;
+}
 static int __init
 hjpeg_init_module(void)
 {
@@ -1667,7 +1749,7 @@ hjpeg_exit_module(void)
 #endif
 
     hjpeg_unmap_baseaddr();
-    hjpeg_unregister(&(s_hjpeg.intf));
+    hjpeg_unregister(s_hjpeg.pdev);
     platform_driver_unregister(&s_hjpeg_driver);
 
     wake_lock_destroy(&s_hjpeg.power_wakelock);

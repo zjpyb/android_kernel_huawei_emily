@@ -14,7 +14,7 @@
 #include "hisi_overlay_utils.h"
 #include "hisi_block_algorithm.h"
 #include "hisi_overlay_cmdlist_utils.h"
-
+/*lint -e570 -e648 -e666 -e838 -e574*/
 static void hisi_dss_copybit_composer_on(struct hisi_fb_data_type *hisifd)
 {
 	struct fb_info *fbi = NULL;
@@ -164,7 +164,7 @@ static void hisi_copybit_clear(struct hisi_fb_data_type *hisifd,
 }
 
 static int hisi_get_ov_data_from_user(struct hisi_fb_data_type *hisifd,
-	dss_overlay_t *pov_req, void __user *argp)
+	dss_overlay_t *pov_req, const void __user *argp)
 {
 	int ret = 0;
 	dss_overlay_block_t *pov_h_block_infos = NULL;
@@ -412,7 +412,7 @@ int hisi_ov_copybit_play(struct hisi_fb_data_type *hisifd, void __user *argp)
 			for (i = 0; i < pov_h_v_block->layer_nums; i++) {
 				layer = &(pov_h_v_block->layer_infos[i]);
 				memset(&clip_rect, 0, sizeof(dss_rect_ltrb_t));
-				memset(&aligned_rect, 0, sizeof(dss_rect_ltrb_t));
+				memset(&aligned_rect, 0, sizeof(dss_rect_t));
 				rdma_stretch_enable = false;
 
 				ret = hisi_ov_compose_handler(hisifd, pov_req_h_v, pov_h_v_block, layer, &wb_layer4block->dst_rect,
@@ -463,7 +463,7 @@ int hisi_ov_copybit_play(struct hisi_fb_data_type *hisifd, void __user *argp)
 	//wmb();
 	hisi_cmdlist_flush_cache(hisifd, cmdlist_idxs);
 
-	hisifb_buf_sync_handle_offline(hisifd, pov_req);
+	hisifb_buf_sync_handle(hisifd, pov_req);
 
 	up(&(hisifd->cmdlist_info->cmdlist_wb_common_sem));
 	down(&(hisifd->copybit_info->copybit_sem));
@@ -540,3 +540,4 @@ err_return_sem0:
 
 	return ret;
 }
+/*lint +e570 +e648 +e666 +e838 +e574*/

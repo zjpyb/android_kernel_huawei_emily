@@ -483,7 +483,7 @@ static ssize_t hicodec_debug_rr_read(struct file *file, char __user *user_buf,
 
 	return byte_read;
 }
-
+#ifdef CONFIG_HISI_DEBUG_FS
 /*
  * Write or read a single register.
  *
@@ -561,7 +561,7 @@ static ssize_t hicodec_debug_rr_write(struct file *file, const char __user *user
 	kfree(kn_buf);
 	return byte_writen;
 }
-
+#endif
 static const struct file_operations hicodec_debug_rr_fops = {
 	.read  = hicodec_debug_rr_read,
 #ifdef CONFIG_HISI_DEBUG_FS

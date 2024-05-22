@@ -1,15 +1,20 @@
 /*
- * drivers/power/bq25892_charger_main.c
+ * bq25892_charger_main.c
  *
- * bq25892_main/1/2/3/4 charging driver
+ * bq25892 driver
  *
- * Copyright (C) 2012-2015 HUAWEI, Inc.
- * Author: HUAWEI, Inc.
+ * Copyright (c) 2012-2018 Huawei Technologies Co., Ltd.
  *
- * This package is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
-*/
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ */
 
 #include <linux/init.h>
 #include <linux/module.h>
@@ -46,31 +51,38 @@
 #include <../dual_charger.h>
 #include <linux/hisi/hisi_adc.h>
 
-#define HWLOG_TAG bq25892_charger_main
+#ifdef HWLOG_TAG
+#undef HWLOG_TAG
+#endif
 
+#define HWLOG_TAG bq25892_charger_main
 HWLOG_REGIST();
 
 static struct bq25892_main_device_info *g_bq25892_main_dev;
-static unsigned int rilim = 124;	/*this should be configured in dts file based on the real value of the Iin limit resistance*/
-static unsigned int adc_channel_iin = 10;	/*this should be configured in dts file based on the real adc channel number*/
+
+/* configured in dts based on the real value of the iin limit resistance */
+static unsigned int rilim = 124;
+/* this should be configured in dts file based on the real adc channel number */
+static unsigned int adc_channel_iin = 10;
 static unsigned int adc_channel_vbat_sys = 14;
-static u32 is_board_type;	/*0:sft 1:udp 2:asic */
-static bool first_charging_done = FALSE;	/* has ever reach charge done state after connect charger. */
+static u32 is_board_type; /*0:sft 1:udp 2:asic */
+/* has ever reach charge done state after connect charger */
+static bool first_charging_done = FALSE;
 static bool charging_again_after_charging_done = FALSE;
-/**********************************************************
-*  Function:       bq25892_main_write_block
-*  Discription:    register write block interface
-*  Parameters:   di:bq25892_main_device_info
-*                      value:register value
-*                      reg:register name
-*                      num_bytes:bytes number
-*  return value:  0-sucess or others-fail
-**********************************************************/
+
+#define MSG_LEN                      (2)
+#define BUF_LEN                      (26)
+
 static int bq25892_main_write_block(struct bq25892_main_device_info *di,
-				    u8 *value, u8 reg, unsigned num_bytes)
+	u8 *value, u8 reg, unsigned int num_bytes)
 {
 	struct i2c_msg msg[1];
 	int ret = 0;
+
+	if (di == NULL || value == NULL) {
+		hwlog_err("di or value is null\n");
+		return -EIO;
+	}
 
 	*value = reg;
 
@@ -83,7 +95,7 @@ static int bq25892_main_write_block(struct bq25892_main_device_info *di,
 
 	/* i2c_transfer returns number of messages transferred */
 	if (ret != 1) {
-		hwlog_err("i2c_write failed to transfer all messages\n");
+		hwlog_err("write_block failed[%x]\n", reg);
 		if (ret < 0)
 			return ret;
 		else
@@ -93,21 +105,17 @@ static int bq25892_main_write_block(struct bq25892_main_device_info *di,
 	}
 }
 
-/**********************************************************
-*  Function:       bq25892_main_read_block
-*  Discription:    register read block interface
-*  Parameters:   di:bq25892_main_device_info
-*                      value:register value
-*                      reg:register name
-*                      num_bytes:bytes number
-*  return value:  0-sucess or others-fail
-**********************************************************/
 static int bq25892_main_read_block(struct bq25892_main_device_info *di,
-				   u8 *value, u8 reg, unsigned num_bytes)
+	u8 *value, u8 reg, unsigned int num_bytes)
 {
-	struct i2c_msg msg[2];
+	struct i2c_msg msg[MSG_LEN];
 	u8 buf = 0;
 	int ret = 0;
+
+	if (di == NULL || value == NULL) {
+		hwlog_err("di or value is null\n");
+		return -EIO;
+	}
 
 	buf = reg;
 
@@ -121,11 +129,11 @@ static int bq25892_main_read_block(struct bq25892_main_device_info *di,
 	msg[1].buf = value;
 	msg[1].len = num_bytes;
 
-	ret = i2c_transfer(di->client->adapter, msg, 2);
+	ret = i2c_transfer(di->client->adapter, msg, MSG_LEN);
 
 	/* i2c_transfer returns number of messages transferred */
-	if (ret != 2) {
-		hwlog_err("i2c_write failed to transfer all messages\n");
+	if (ret != MSG_LEN) {
+		hwlog_err("read_block failed[%x]\n", reg);
 		if (ret < 0)
 			return ret;
 		else
@@ -135,31 +143,17 @@ static int bq25892_main_read_block(struct bq25892_main_device_info *di,
 	}
 }
 
-/**********************************************************
-*  Function:       bq25892_main_write_byte
-*  Discription:    register write byte interface
-*  Parameters:   reg:register name
-*                      value:register value
-*  return value:  0-sucess or others-fail
-**********************************************************/
 static int bq25892_main_write_byte(u8 reg, u8 value)
 {
 	struct bq25892_main_device_info *di = g_bq25892_main_dev;
 	/* 2 bytes offset 1 contains the data offset 0 is used by i2c_write */
-	u8 temp_buffer[2] = { 0 };
+	u8 temp_buffer[MSG_LEN] = {0};
 
 	/* offset 1 contains the data */
 	temp_buffer[1] = value;
 	return bq25892_main_write_block(di, temp_buffer, reg, 1);
 }
 
-/**********************************************************
-*  Function:       bq25892_main_read_byte
-*  Discription:    register read byte interface
-*  Parameters:   reg:register name
-*                      value:register value
-*  return value:  0-sucess or others-fail
-**********************************************************/
 static int bq25892_main_read_byte(u8 reg, u8 *value)
 {
 	struct bq25892_main_device_info *di = g_bq25892_main_dev;
@@ -167,16 +161,7 @@ static int bq25892_main_read_byte(u8 reg, u8 *value)
 	return bq25892_main_read_block(di, value, reg, 1);
 }
 
-/**********************************************************
-*  Function:       bq25892_main_write_mask
-*  Discription:    register write mask interface
-*  Parameters:   reg:register name
-*                      MASK:mask value of the function
-*                      SHIFT:shift number of the function
-*                      value:register value
-*  return value:  0-sucess or others-fail
-**********************************************************/
-static int bq25892_main_write_mask(u8 reg, u8 MASK, u8 SHIFT, u8 value)
+static int bq25892_main_write_mask(u8 reg, u8 mask, u8 shift, u8 value)
 {
 	int ret = 0;
 	u8 val = 0;
@@ -185,24 +170,15 @@ static int bq25892_main_write_mask(u8 reg, u8 MASK, u8 SHIFT, u8 value)
 	if (ret < 0)
 		return ret;
 
-	val &= ~MASK;
-	val |= ((value << SHIFT) & MASK);
+	val &= ~mask;
+	val |= ((value << shift) & mask);
 
 	ret = bq25892_main_write_byte(reg, val);
 
 	return ret;
 }
 
-/**********************************************************
-*  Function:       bq25892_main_read_mask
-*  Discription:    register read mask interface
-*  Parameters:   reg:register name
-*                      MASK:mask value of the function
-*                      SHIFT:shift number of the function
-*                      value:register value
-*  return value:  0-sucess or others-fail
-**********************************************************/
-static int bq25892_main_read_mask(u8 reg, u8 MASK, u8 SHIFT, u8 *value)
+static int bq25892_main_read_mask(u8 reg, u8 mask, u8 shift, u8 *value)
 {
 	int ret = 0;
 	u8 val = 0;
@@ -210,8 +186,9 @@ static int bq25892_main_read_mask(u8 reg, u8 MASK, u8 SHIFT, u8 *value)
 	ret = bq25892_main_read_byte(reg, &val);
 	if (ret < 0)
 		return ret;
-	val &= MASK;
-	val >>= SHIFT;
+
+	val &= mask;
+	val >>= shift;
 	*value = val;
 
 	return 0;
@@ -222,15 +199,16 @@ int bq25892_main_get_ichg_reg(void)
 	int ret = 0;
 	u8 ichg_reg = 0;
 	int ichg = 0;
-	ret =
-	    bq25892_main_read_mask(BQ25892_MAIN_REG_04,
-				   BQ25892_MAIN_REG_04_ICHG_MASK,
-				   BQ25892_MAIN_REG_04_ICHG_SHIFT, &ichg_reg);
-	if (ret) {
-		hwlog_err(" bq25892_main read ichg fail.\n");
+
+	ret = bq25892_main_read_mask(BQ25892_MAIN_REG_04,
+			BQ25892_MAIN_REG_04_ICHG_MASK,
+			BQ25892_MAIN_REG_04_ICHG_SHIFT,
+			&ichg_reg);
+	if (ret)
 		return -1;
-	}
-	ichg = ichg_reg * 64;
+
+	ichg = ichg_reg * 64; /* ichg_step is 64 */
+
 	hwlog_info("bq25892 main get ichg reg = %d\n", ichg);
 	return ichg;
 }
@@ -240,46 +218,42 @@ int bq25892_main_get_ichg_adc(void)
 	int ret = 0;
 	u8 ichg_adc_reg = 0;
 	int ichg_adc = 0;
+
 	ret = bq25892_main_read_byte(BQ25892_MAIN_REG_12, &ichg_adc_reg);
-	if (ret) {
-		hwlog_err(" bq25892_main read ichg_adc fail.\n");
+	if (ret)
 		return -1;
-	}
-	ichg_adc = ichg_adc_reg * 50;
+
+	ichg_adc = ichg_adc_reg * 50; /* ichg_adc_step is 50 */
+
 	hwlog_info("bq25892 main get ichg adc = %d\n", ichg_adc);
 	return ichg_adc;
 }
 
-#define CONFIG_SYSFS_BQ
-#ifdef CONFIG_SYSFS_BQ
+#ifdef CONFIG_SYSFS
 /*
  * There are a numerous options that are configurable on the bq25892_main
  * that go well beyond what the power_supply properties provide access to.
  * Provide sysfs access to them so they can be examined and possibly modified
  * on the fly.
  */
-
-#define BQ25892_MAIN_SYSFS_FIELD(_name, r, f, m, store)                  \
-{                                                   \
-    .attr = __ATTR(_name, m, bq25892_main_sysfs_show, store),    \
-    .reg = BQ25892_MAIN_REG_##r,                      \
-    .mask = BQ25892_MAIN_REG_##r##_##f##_MASK,                       \
-    .shift = BQ25892_MAIN_REG_##r##_##f##_SHIFT,                     \
+#define BQ25892_MAIN_SYSFS_FIELD(_name, r, f, m, store) \
+{ \
+	.attr = __ATTR(_name, m, bq25892_main_sysfs_show, store), \
+	.reg = BQ25892_MAIN_REG_##r, \
+	.mask = BQ25892_MAIN_REG_##r##_##f##_MASK, \
+	.shift = BQ25892_MAIN_REG_##r##_##f##_SHIFT, \
 }
 
-#define BQ25892_MAIN_SYSFS_FIELD_RW(_name, r, f)                     \
-	BQ25892_MAIN_SYSFS_FIELD(_name, r, f, S_IWUSR | S_IRUGO, \
-		bq25892_main_sysfs_store)
+#define BQ25892_MAIN_SYSFS_FIELD_RW(_name, r, f) \
+	BQ25892_MAIN_SYSFS_FIELD(_name, r, f, 0644, bq25892_main_sysfs_store)
 
-#define BQ25892_MAIN_SYSFS_FIELD_RO(_name, r, f)                         \
-	BQ25892_MAIN_SYSFS_FIELD(_name, r, f, S_IRUGO, NULL)
+#define BQ25892_MAIN_SYSFS_FIELD_RO(_name, r, f) \
+	BQ25892_MAIN_SYSFS_FIELD(_name, r, f, 0444, NULL)
 
 static ssize_t bq25892_main_sysfs_show(struct device *dev,
-				       struct device_attribute *attr,
-				       char *buf);
+	struct device_attribute *attr, char *buf);
 static ssize_t bq25892_main_sysfs_store(struct device *dev,
-					struct device_attribute *attr,
-					const char *buf, size_t count);
+	struct device_attribute *attr, const char *buf, size_t count);
 
 struct bq25892_main_sysfs_field_info {
 	struct device_attribute attr;
@@ -288,7 +262,6 @@ struct bq25892_main_sysfs_field_info {
 	u8 shift;
 };
 
-/*lint -save -e* */
 static struct bq25892_main_sysfs_field_info bq25892_main_sysfs_field_tbl[] = {
 	/* sysfs name reg field in reg */
 	BQ25892_MAIN_SYSFS_FIELD_RW(en_hiz, 00, EN_HIZ),
@@ -347,64 +320,44 @@ static struct bq25892_main_sysfs_field_info bq25892_main_sysfs_field_tbl[] = {
 	BQ25892_MAIN_SYSFS_FIELD_RW(reg_value, NONE, NONE),
 };
 
-static struct attribute *bq25892_main_sysfs_attrs[ARRAY_SIZE(bq25892_main_sysfs_field_tbl) + 1];
+static struct attribute *bq25892_main_sysfs_attrs[
+	ARRAY_SIZE(bq25892_main_sysfs_field_tbl) + 1];
 
 static const struct attribute_group bq25892_main_sysfs_attr_group = {
 	.attrs = bq25892_main_sysfs_attrs,
 };
-/*lint -restore*/
 
-/**********************************************************
-*  Function:       bq25892_main_sysfs_init_attrs
-*  Discription:    initialize bq25892_main_sysfs_attrs[] for bq25892_main attribute
-*  Parameters:   NULL
-*  return value:  NULL
-**********************************************************/
-/*lint -save -e* */
 static void bq25892_main_sysfs_init_attrs(void)
 {
 	int i, limit = ARRAY_SIZE(bq25892_main_sysfs_field_tbl);
 
-	for (i = 0; i < limit; i++)
+	for (i = 0; i < limit; i++) {
 		bq25892_main_sysfs_attrs[i] =
-		    &bq25892_main_sysfs_field_tbl[i].attr.attr;
+			&bq25892_main_sysfs_field_tbl[i].attr.attr;
+	}
 
-	bq25892_main_sysfs_attrs[limit] = NULL;	/* Has additional entry for this */
+	bq25892_main_sysfs_attrs[limit] = NULL;
 }
 
-/**********************************************************
-*  Function:       bq25892_main_sysfs_field_lookup
-*  Discription:    get the current device_attribute from bq25892_main_sysfs_field_tbl by attr's name
-*  Parameters:   name:evice attribute name
-*  return value:  bq25892_main_sysfs_field_tbl[]
-**********************************************************/
-static struct bq25892_main_sysfs_field_info
-*bq25892_main_sysfs_field_lookup(const char *name)
+static struct bq25892_main_sysfs_field_info *bq25892_main_sysfs_field_lookup(
+	const char *name)
 {
 	int i, limit = ARRAY_SIZE(bq25892_main_sysfs_field_tbl);
 
-	for (i = 0; i < limit; i++)
-		if (!strcmp
-		    (name, bq25892_main_sysfs_field_tbl[i].attr.attr.name))
+	for (i = 0; i < limit; i++) {
+		if (!strcmp(name,
+			bq25892_main_sysfs_field_tbl[i].attr.attr.name))
 			break;
+	}
 
 	if (i >= limit)
 		return NULL;
 
 	return &bq25892_main_sysfs_field_tbl[i];
 }
-/*lint -restore*/
 
-/**********************************************************
-*  Function:       bq25892_main_sysfs_show
-*  Discription:    show the value for all bq25892_main device's node
-*  Parameters:   dev:device
-*                      attr:device_attribute
-*                      buf:string of node value
-*  return value:  0-sucess or others-fail
-**********************************************************/
 static ssize_t bq25892_main_sysfs_show(struct device *dev,
-				       struct device_attribute *attr, char *buf)
+	struct device_attribute *attr, char *buf)
 {
 	struct bq25892_main_sysfs_field_info *info;
 	struct bq25892_main_sysfs_field_info *info2;
@@ -412,17 +365,21 @@ static ssize_t bq25892_main_sysfs_show(struct device *dev,
 	u8 v;
 
 	info = bq25892_main_sysfs_field_lookup(attr->attr.name);
-	if (!info)
+	if (info == NULL) {
+		hwlog_err("get sysfs entries failed\n");
 		return -EINVAL;
-
-	if (!strncmp("reg_addr", attr->attr.name, strlen("reg_addr"))) {
-		return scnprintf(buf, PAGE_SIZE, "0x%hhx\n", info->reg);
 	}
+
+	if (!strncmp("reg_addr", attr->attr.name, strlen("reg_addr")))
+		return scnprintf(buf, PAGE_SIZE, "0x%hhx\n", info->reg);
 
 	if (!strncmp(("reg_value"), attr->attr.name, strlen("reg_value"))) {
 		info2 = bq25892_main_sysfs_field_lookup("reg_addr");
-		if (!info2)
+		if (info2 == NULL) {
+			hwlog_err("get sysfs entries failed\n");
 			return -EINVAL;
+		}
+
 		info->reg = info2->reg;
 	}
 
@@ -433,20 +390,8 @@ static ssize_t bq25892_main_sysfs_show(struct device *dev,
 	return scnprintf(buf, PAGE_SIZE, "%hhx\n", v);
 }
 
-/**********************************************************
-*  Function:       bq25892_main_sysfs_store
-*  Discription:    set the value for all bq25892_main device's node
-*  Parameters:   dev:device
-*                      attr:device_attribute
-*                      buf:string of node value
-*                      count:unused
-*  return value:  0-sucess or others-fail
-**********************************************************/
-
-/*lint -save -e* */
 static ssize_t bq25892_main_sysfs_store(struct device *dev,
-					struct device_attribute *attr,
-					const char *buf, size_t count)
+	struct device_attribute *attr, const char *buf, size_t count)
 {
 	struct bq25892_main_sysfs_field_info *info;
 	struct bq25892_main_sysfs_field_info *info2;
@@ -454,16 +399,24 @@ static ssize_t bq25892_main_sysfs_store(struct device *dev,
 	u8 v;
 
 	info = bq25892_main_sysfs_field_lookup(attr->attr.name);
-	if (!info)
+	if (info == NULL) {
+		hwlog_err("get sysfs entries failed\n");
 		return -EINVAL;
+	}
 
 	ret = kstrtou8(buf, 0, &v);
-	if (ret < 0)
+	if (ret < 0) {
+		hwlog_err("get kstrtou8 failed\n");
 		return ret;
+	}
+
 	if (!strncmp(("reg_value"), attr->attr.name, strlen("reg_value"))) {
 		info2 = bq25892_main_sysfs_field_lookup("reg_addr");
-		if (!info2)
+		if (info2 == NULL) {
+			hwlog_err("get sysfs entries failed\n");
 			return -EINVAL;
+		}
+
 		info->reg = info2->reg;
 	}
 	if (!strncmp(("reg_addr"), attr->attr.name, strlen("reg_addr"))) {
@@ -481,175 +434,154 @@ static ssize_t bq25892_main_sysfs_store(struct device *dev,
 
 	return count;
 }
-/*lint -restore*/
 
-/**********************************************************
-*  Function:       bq25892_main_sysfs_create_group
-*  Discription:    create the bq25892_main device sysfs group
-*  Parameters:   di:bq25892_main_device_info
-*  return value:  0-sucess or others-fail
-**********************************************************/
 static int bq25892_main_sysfs_create_group(struct bq25892_main_device_info *di)
 {
 	bq25892_main_sysfs_init_attrs();
 
 	return sysfs_create_group(&di->dev->kobj,
-				  &bq25892_main_sysfs_attr_group);
+		&bq25892_main_sysfs_attr_group);
 }
 
-/**********************************************************
-*  Function:       charge_sysfs_remove_group
-*  Discription:    remove the bq25892_main device sysfs group
-*  Parameters:   di:bq25892_main_device_info
-*  return value:  NULL
-**********************************************************/
 static void bq25892_main_sysfs_remove_group(struct bq25892_main_device_info *di)
 {
 	sysfs_remove_group(&di->dev->kobj, &bq25892_main_sysfs_attr_group);
 }
+
 #else
+
 static int bq25892_main_sysfs_create_group(struct bq25892_main_device_info *di)
 {
 	return 0;
 }
 
-static inline void bq25892_main_sysfs_remove_group(struct bq25892_main_device_info *di)
+static inline void bq25892_main_sysfs_remove_group(
+	struct bq25892_main_device_info *di)
 {
 }
-#endif
+
+#endif /* CONFIG_SYSFS */
 
 static int bq25892_main_device_check(void)
 {
 	int ret = 0;
 	u8 reg = 0xff;
+
 	ret |= bq25892_main_read_byte(BQ25892_MAIN_REG_14, &reg);
-	if (ret) {
-		hwlog_err("read bq25892 main version error.\n");
+	if (ret)
 		return CHARGE_IC_BAD;
+
+	hwlog_info("device_check [%x]=0x%x\n", BQ25892_MAIN_REG_14, reg);
+
+	if ((BQ25892 == (reg & CHIP_VERSION_MASK)) &&
+		(CHIP_REVISION == (reg & CHIP_REVISION_MASK))) {
+		hwlog_info("bq25892 main is good\n");
+		return CHARGE_IC_GOOD;
 	}
 
-	if ((BQ25892 == (reg & CHIP_VERSION_MASK))
-	    && (CHIP_REVISION == (reg & CHIP_REVISION_MASK))) {
-		hwlog_info("bq25892 main is good.\n");
-		return CHARGE_IC_GOOD;
-	} else {
-		hwlog_err("bq25892 main is bad.\n");
-		return CHARGE_IC_BAD;
-	}
+	hwlog_err("bq25892 main is bad\n");
+	return CHARGE_IC_BAD;
 }
 
-/**********************************************************
-*  Function:       bq25892_main_set_bat_comp
-*  Discription:    set the bat comp
-*  Parameters:   value:bat_comp m|?
-*  return value:  0-sucess or others-fail
-**********************************************************/
 static int bq25892_main_set_bat_comp(int value)
 {
 	int bat_comp = 0;
 	u8 bat_comp_reg = 0;
+
 	bat_comp = value;
 
 	if (bat_comp < BAT_COMP_MIN_0) {
-		hwlog_info("set term current %dmA is out of range:%dmA!!",
-			   value, BAT_COMP_MIN_0);
+		hwlog_err("set bat_comp %d, out of range:%d",
+			value, BAT_COMP_MIN_0);
 		bat_comp = BAT_COMP_MIN_0;
 	} else if (bat_comp > BAT_COMP_MAX_140) {
-		hwlog_info("set term current %dmA is out of range:%dmA!!",
-			   value, BAT_COMP_MAX_140);
+		hwlog_err("set bat_comp %d, out of range:%d",
+			value, BAT_COMP_MAX_140);
 		bat_comp = BAT_COMP_MAX_140;
 	} else {
-		/*do nothing*/
+		/* do nothing */
 	}
-	hwlog_debug(" bat_comp  is set %d\n", bat_comp);
+
 	bat_comp_reg = (bat_comp - BAT_COMP_MIN_0) / BAT_COMP_STEP_20;
+
+	hwlog_info("set_bat_comp [%x]=0x%x\n",
+		BQ25892_MAIN_REG_08, bat_comp_reg);
+
 	return bq25892_main_write_mask(BQ25892_MAIN_REG_08,
-				       BQ25892_MAIN_REG_08_BAT_COMP_MASK,
-				       BQ25892_MAIN_REG_08_BAT_COMP_SHIFT,
-				       bat_comp_reg);
+			BQ25892_MAIN_REG_08_BAT_COMP_MASK,
+			BQ25892_MAIN_REG_08_BAT_COMP_SHIFT,
+			bat_comp_reg);
 }
 
-/**********************************************************
-*  Function:       bq25892_main_set_vclamp
-*  Discription:    set the vclamp
-*  Parameters:   value:vclamp mv
-*  return value:  0-sucess or others-fail
-**********************************************************/
 static int bq25892_main_set_vclamp(int value)
 {
 	int vclamp = 0;
 	u8 vclamp_reg = 0;
+
 	vclamp = value;
+
 	if (vclamp < VCLAMP_MIN_0) {
-		hwlog_info("set term current %dmA is out of range:%dmA!!",
-			   value, VCLAMP_MIN_0);
+		hwlog_err("set vclamp %d, out of range:%d",
+			value, VCLAMP_MIN_0);
 		vclamp = VCLAMP_MIN_0;
 	} else if (vclamp > VCLAMP_MAX_224) {
-		hwlog_info("set term current %dmA is out of range:%dmA!!",
-			   value, VCLAMP_MAX_224);
+		hwlog_err("set vclamp %d, out of range:%d",
+			value, VCLAMP_MAX_224);
 		vclamp = VCLAMP_MAX_224;
 	} else {
-		/*do nothing*/
+		/* do nothing */
 	}
-	hwlog_debug(" vclamp  is set %d\n", vclamp);
+
 	vclamp_reg = (vclamp - VCLAMP_MIN_0) / VCLAMP_STEP_32;
+
+	hwlog_info("set_vclamp [%x]=0x%x\n", BQ25892_MAIN_REG_08, vclamp_reg);
+
 	return bq25892_main_write_mask(BQ25892_MAIN_REG_08,
-				       BQ25892_MAIN_REG_08_VCLAMP_MASK,
-				       BQ25892_MAIN_REG_08_VCLAMP_SHIFT,
-				       vclamp_reg);
+			BQ25892_MAIN_REG_08_VCLAMP_MASK,
+			BQ25892_MAIN_REG_08_VCLAMP_SHIFT,
+			vclamp_reg);
 }
 
-/**********************************************************
-*  Function:       bq25892_main_set_covn_start
-*  Discription:    set covn start
-*  Parameters:   value: 1(enable) or 0(disable)
-*  return value:  0-sucess or others-fail
-**********************************************************/
 static int bq25892_main_set_covn_start(int enable)
 {
 	int ret = 0;
 	u8 reg = 0;
 	int i = 0;
-	ret = bq25892_main_read_byte(BQ25892_MAIN_REG_0B, &reg);
 
-	if (ret) {
-		hwlog_err(" bq25892_main read PG STAT fail!.\n");
+	ret = bq25892_main_read_byte(BQ25892_MAIN_REG_0B, &reg);
+	if (ret)
 		return -1;
-	}
 
 	if (!(reg & BQ25892_MAIN_NOT_PG_STAT)) {
-		hwlog_err
-		    (" bq25892_main PG NOT GOOD ,can not set covn,reg:%x \n",
-		     reg);
+		hwlog_err("bq25892_main PG NOT GOOD, can not set covn,reg:%x\n",
+			reg);
 		return -1;
 	}
-	ret =
-	    bq25892_main_write_mask(BQ25892_MAIN_REG_02,
-				    BQ25892_MAIN_REG_02_CONV_START_MASK,
-				    BQ25892_MAIN_REG_02_CONV_START_SHIFT,
-				    enable);
-	if (ret) {
-		hwlog_err("set covn fail! ret =%d \n", ret);
+
+	ret = bq25892_main_write_mask(BQ25892_MAIN_REG_02,
+			BQ25892_MAIN_REG_02_CONV_START_MASK,
+			BQ25892_MAIN_REG_02_CONV_START_SHIFT,
+			enable);
+	if (ret)
 		return -1;
-	}
-	/*The conversion result is ready after tCONV, max (10*100)ms */
+
+	/* The conversion result is ready after tCONV, max (10*100)ms */
 	for (i = 0; i < 10; i++) {
-		ret =
-		    bq25892_main_read_mask(BQ25892_MAIN_REG_02,
-					   BQ25892_MAIN_REG_02_CONV_START_MASK,
-					   BQ25892_MAIN_REG_02_CONV_START_SHIFT,
-					   &reg);
-		if (ret) {
-			hwlog_err(" bq25892_main read ADC CONV STAT fail!.\n");
+		ret = bq25892_main_read_mask(BQ25892_MAIN_REG_02,
+				BQ25892_MAIN_REG_02_CONV_START_MASK,
+				BQ25892_MAIN_REG_02_CONV_START_SHIFT,
+				&reg);
+		if (ret)
 			return -1;
-		}
+
 		/* if ADC Conversion finished, CONV_RATE bit will be 0 */
-		if (reg == 0) {
+		if (reg == 0)
 			break;
-		}
-		msleep(100);
+
+		msleep(100); /* sleep 100ms */
 	}
-	hwlog_debug(" one-shot covn start is set %d\n", enable);
+
+	hwlog_info("one-shot covn start is set %d\n", enable);
 	return 0;
 }
 
@@ -657,279 +589,285 @@ static int bq25892_main_5v_chip_init(struct bq25892_main_device_info *di)
 {
 	int ret = 0;
 
-	/*reg init */
-	/*bq25892_main_write_mask(REG0x14,BQ25892_MAIN_REG_RST_MASK,BQ25892_MAIN_REG_RST_SHIFT,0x01);*/
-	/* do not init input current 500 ma(REG00) to support lpt without battery  */
-	/*02 enable Start 1s Continuous Conversion ,others as default */
-	ret |= bq25892_main_write_byte(BQ25892_MAIN_REG_02, 0x1D);	/*adc off*/
-	/*03 WD_RST 1,CHG_CONFIG 1,SYS_MIN 3.5 */
-	ret |= bq25892_main_write_byte(BQ25892_MAIN_REG_03, 0x5A);
-	/*04 Fast Charge Current Limit 1024mA */
-	ret |= bq25892_main_write_byte(BQ25892_MAIN_REG_04, 0x10);
-	/*05 Precharge Current Limit 256mA,Termination Current Limit 256mA */
-	ret |= bq25892_main_write_byte(BQ25892_MAIN_REG_05, 0x33);
-	/*06 Charge Voltage Limit 4.4,Battery Precharge to Fast Charge Threshold 3,Battery Recharge 100mV */
-	ret |= bq25892_main_write_byte(BQ25892_MAIN_REG_06, 0x8e);
-	/*07 EN_TERM 0,Watchdog Timer 80s,EN_TIMER 1,Charge Timer 20h,JEITA Low Temperature Current Setting 1 */
-	ret |= bq25892_main_write_byte(BQ25892_MAIN_REG_07, 0x2f);
-	/*08 IR compensation voatge clamp = 224mV ,IR compensation resistor setting = 80mohm */
-	ret |=
-	    bq25892_main_set_bat_comp(g_bq25892_main_dev->param_dts.bat_comp);
-	ret |= bq25892_main_set_vclamp(g_bq25892_main_dev->param_dts.vclamp);
-	/*boost mode current limit = 500mA,boostv 4.998v */
-	ret |= bq25892_main_write_byte(BQ25892_MAIN_REG_0A, 0x70);
-	/*VINDPM Threshold Setting Method 1,Absolute VINDPM Threshold 4.4v */
-	/*ret = bq25892_main_write_byte(BQ25892_MAIN_REG_0D,0x92);*/
+	/* reg init */
+	/*
+	 * bq25892_main_write_mask(REG0x14,
+	 * BQ25892_MAIN_REG_RST_MASK, BQ25892_MAIN_REG_RST_SHIFT,
+	 * 0x01);
+	 */
+	/*
+	 * do not init input current 500 ma(REG00)
+	 * to support lpt without battery
+	 */
 
-	gpio_set_value(di->gpio_cd, 0);	/*enable charging*/
+	/* 02 enable Start 1s Continuous Conversion, others as default */
+	ret |= bq25892_main_write_byte(BQ25892_MAIN_REG_02, 0x1D); /*adc off*/
+
+	/* 03 WD_RST 1,CHG_CONFIG 1,SYS_MIN 3.5 */
+	ret |= bq25892_main_write_byte(BQ25892_MAIN_REG_03, 0x5A);
+
+	/* 04 Fast Charge Current Limit 1024mA */
+	ret |= bq25892_main_write_byte(BQ25892_MAIN_REG_04, 0x10);
+
+	/* 05 Precharge Current Limit 256mA,Termination Current Limit 256mA */
+	ret |= bq25892_main_write_byte(BQ25892_MAIN_REG_05, 0x33);
+
+	/*
+	 * 06 Charge Voltage Limit 4.4,
+	 * Battery Precharge to Fast Charge Threshold 3, Battery Recharge 100mV
+	 */
+	ret |= bq25892_main_write_byte(BQ25892_MAIN_REG_06, 0x8e);
+
+	/*
+	 * 07 EN_TERM 0, Watchdog Timer 80s, EN_TIMER 1, Charge Timer 20h,
+	 * JEITA Low Temperature Current Setting 1
+	 */
+	ret |= bq25892_main_write_byte(BQ25892_MAIN_REG_07, 0x2f);
+
+	/*
+	 * 08 IR compensation voatge clamp = 224mV,
+	 * IR compensation resistor setting = 80mohm
+	 */
+	ret |= bq25892_main_set_bat_comp(di->param_dts.bat_comp);
+	ret |= bq25892_main_set_vclamp(di->param_dts.vclamp);
+
+	/* boost mode current limit = 500mA,boostv 4.998v */
+	ret |= bq25892_main_write_byte(BQ25892_MAIN_REG_0A, 0x70);
+
+	/* VINDPM Threshold Setting Method 1, Absolute VINDPM Threshold 4.4v */
+	/* ret = bq25892_main_write_byte(BQ25892_MAIN_REG_0D,0x92); */
+
+	/* enable charging */
+	gpio_set_value(di->gpio_cd, 0);
 
 	return ret;
 }
 
-/**********************************************************
-*  Function:       bq25892_main_set_adc_conv_rate
-*  Discription:    set adc conversion rate
-*  Parameters:   mode:0-One shot ADC conversion
-*                              1-Start 1s Continuous Conversion
-*  return value:  0-sucess or others-fail
-**********************************************************/
-
 static int bq25892_main_set_adc_conv_rate(int mode)
 {
-	if (mode) {
+	if (mode)
 		mode = 1;
-	}
 
-	hwlog_debug("adc conversion rate mode is set to %d\n", mode);
+	hwlog_info("adc conversion rate mode is set to %d\n", mode);
 
 	return bq25892_main_write_mask(BQ25892_MAIN_REG_02,
-				       BQ25892_MAIN_REG_02_CONV_RATE_MASK,
-				       BQ25892_MAIN_REG_02_CONV_RATE_SHIFT,
-				       mode);
+			BQ25892_MAIN_REG_02_CONV_RATE_MASK,
+			BQ25892_MAIN_REG_02_CONV_RATE_SHIFT,
+			mode);
 }
 
-/**********************************************************
-*  Function:       bq25892_check_input_current_exit_PFM_when_CD
-*  Discription:    ONLY TI bq25892 charge chip has a bug.
-*                       When charger is in charging done state and under PFM mode,
-*                       there is risk to slowly drive Q4 to open when unplug charger.
-*                      The result is VSYS drops to 2.0V and reach milliseconds interval.
-*                       The VSYS drop can be captured by hi6421 that result in SMPL.
-*                       The solution that TI suggest: when charger chip is bq25892, and under charging done state,
-*                       set IINLIM(reg00 bit0-bit5) to 400mA or below to force chargeIC to exit PFM
-*  Parameters:   value:input current value that upper layer suggests
-*  return:          current that upper layer suggests  or  current that force bq25892 to exit PFM
-**********************************************************/
-static int bq25892_check_input_current_exit_PFM_when_CD(unsigned int limit_default)
+/*
+ * ONLY TI bq25892 charge chip has a bug.
+ * When charger is in charging done state and under PFM mode,
+ * there is risk to slowly drive Q4 to open when unplug charger.
+ * The result is VSYS drops to 2.0V and reach milliseconds interval.
+ * The VSYS drop can be captured by hi6421 that result in SMPL.
+ * The solution that TI suggest: when charger chip is bq25892,
+ * and under charging done state, set IINLIM(reg00 bit0-bit5) to 400mA or
+ * below to force chargeIC to exit PFM
+ */
+static int bq25892_main_exit_pfm_when_cd(unsigned int limit_default)
 {
-	u8 reg0B = 0;
+	u8 reg0b = 0;
 	u8 reg14 = 0;
 	int ret = 0;
 
-	ret |= bq25892_main_read_byte(BQ25892_MAIN_REG_0B, &reg0B);
+	ret |= bq25892_main_read_byte(BQ25892_MAIN_REG_0B, &reg0b);
 	ret |= bq25892_main_read_byte(BQ25892_MAIN_REG_14, &reg14);
-	if (ret != 0) {
-		hwlog_err
-		    ("read main bq25892 reg OB or 14 fail ret:%d, then return default current:%d\n",
-		     ret, limit_default);
+	if (ret)
 		return limit_default;
-	}
 
-	if (((reg14 & BQ25892_MAIN_REG_14_REG_PN_MASK) == BQ25892_MAIN_REG_14_REG_PN_IS_25892) &&	/* bq25892 */
-	    (limit_default > IINLIM_FOR_BQ25892_EXIT_PFM)) {
-		if ((reg0B & BQ25892_MAIN_REG_0B_CHRG_STAT_MASK) == BQ25892_MAIN_CHGR_STAT_CHARGE_DONE) {	/* charging done */
-			if (FALSE == first_charging_done) {	/* first time charging done */
+	if (((reg14 & BQ25892_MAIN_REG_14_REG_PN_MASK) ==
+		BQ25892_MAIN_REG_14_REG_PN_IS_25892) && /* bq25892 */
+		(limit_default > IINLIM_FOR_BQ25892_EXIT_PFM)) {
+		/* charging done */
+		if ((reg0b & BQ25892_MAIN_REG_0B_CHRG_STAT_MASK) ==
+			BQ25892_MAIN_CHGR_STAT_CHARGE_DONE) {
+			/* first time charging done */
+			if (first_charging_done == FALSE) {
 				first_charging_done = TRUE;
 				limit_default = IINLIM_FOR_BQ25892_EXIT_PFM;
-			} else if (FALSE == charging_again_after_charging_done) {	/* charging done and there is NOT second charging */
+			 /* charging done and there is NOT second charging */
+			} else if (charging_again_after_charging_done ==
+				FALSE) {
 				limit_default = IINLIM_FOR_BQ25892_EXIT_PFM;
 			} else {
-				/* charging done but thers is second charging, keep iinlim as upper layer suggests */
+				/*
+				 * charging done but thers is second charging,
+				 * keep iinlim as upper layer suggests
+				 */
 			}
 
-			if (IINLIM_FOR_BQ25892_EXIT_PFM == limit_default) {
-				hwlog_err
-				    ("this is bq25892 and CD, 1stCD(%d), 2nd FC(%d), limit input current to %d to force exit PFM\n",
-				     first_charging_done,
-				     charging_again_after_charging_done,
-				     limit_default);
+			if (limit_default == IINLIM_FOR_BQ25892_EXIT_PFM) {
+				hwlog_err("1stCD(%d), 2nd FC(%d), limit input current to %d to force exit PFM\n",
+					first_charging_done,
+					charging_again_after_charging_done,
+					limit_default);
 			}
-		} else if (TRUE == first_charging_done) {	/* fast charging,  is it ever charging done? */
-			charging_again_after_charging_done = TRUE;	/* keep iinlim as upper layer suggests */
+		/* fast charging,  is it ever charging done? */
+		} else if (first_charging_done == TRUE) {
+			/* keep iinlim as upper layer suggests */
+			charging_again_after_charging_done = TRUE;
 		} else {
-			/* keep iinlim as upper layer suggests, as normal charging before first charging done */
+			/*
+			 * keep iinlim as upper layer suggests,
+			 * as normal charging before first charging done
+			 */
 		}
 	}
 
 	return limit_default;
 }
 
-/**********************************************************
-*  Function:       bq25892_main_set_input_current
-*  Discription:    set the input current in charging process
-*  Parameters:   value:input current value
-*  return value:  0-sucess or others-fail
-**********************************************************/
-
 static int bq25892_main_set_input_current(int value)
 {
 	unsigned int limit_current = 0;
-	u8 Iin_limit = 0;
+	u8 iin_limit = 0;
 
 	limit_current = value;
+
 	if (limit_current <= IINLIM_MIN_100) {
-		hwlog_info("input current %dmA is out of range:%dmA!!", value,
-			   IINLIM_MIN_100);
+		hwlog_err("set input_current %d, out of range:%d",
+			value, IINLIM_MIN_100);
 		limit_current = IINLIM_MIN_100;
 	} else if (limit_current > IINLIM_MAX_3250) {
-		hwlog_info("input current %dmA is out of range:%dmA!!", value,
-			   IINLIM_MAX_3250);
+		hwlog_err("set input_current %d, out of range:%d",
+			value, IINLIM_MAX_3250);
 		limit_current = IINLIM_MAX_3250;
 	} else {
-		/*do nothing*/
+		/* do nothing */
 	}
 
+	hwlog_info("input current is set %dmA\n", limit_current);
+
+	/*
+	 * in order to avoid smpl because bq25892 bug,
+	 * set iinlim to 400mA if under charging done and chip ic is bq25892,
+	 * otherwise keep it change
+	 */
+	limit_current = bq25892_main_exit_pfm_when_cd(limit_current);
 	hwlog_debug("bq25892 main input current is set %dmA\n", limit_current);
 
-	/* in order to avoid smpl because bq25892 bug,
-	   set iinlim to 400mA if under charging done and chip ic is bq25892, OTHERWISE keep it change */
-	limit_current =
-	    bq25892_check_input_current_exit_PFM_when_CD(limit_current);
-
-	hwlog_debug("bq25892 main input current is set %dmA\n", limit_current);
-	Iin_limit = (limit_current - IINLIM_MIN_100) / IINLIM_STEP_50;
+	iin_limit = (limit_current - IINLIM_MIN_100) / IINLIM_STEP_50;
 	return bq25892_main_write_mask(BQ25892_MAIN_REG_00,
-				       BQ25892_MAIN_REG_00_IINLIM_MASK,
-				       BQ25892_MAIN_REG_00_IINLIM_SHIFT,
-				       Iin_limit);
+			BQ25892_MAIN_REG_00_IINLIM_MASK,
+			BQ25892_MAIN_REG_00_IINLIM_SHIFT,
+			iin_limit);
 }
 
-/**********************************************************
-*  Function:       bq25892_main_set_charge_current
-*  Discription:    set the charge current in charging process
-*  Parameters:   value:charge current value
-*  return value:  0-sucess or others-fail
-**********************************************************/
 static int bq25892_main_set_charge_current(int value)
 {
-	int currentmA = 0;
+	int currentma = 0;
 	u8 ichg = 0;
 
-	currentmA = value;
-	if (currentmA < 0) {
-		currentmA = 0;
-	} else if (currentmA > ICHG_MAX_5056) {
-		hwlog_info("set charge current %dmA is out of range:%dmA!!",
-			   value, ICHG_MAX_5056);
-		currentmA = ICHG_MAX_5056;
+	currentma = value;
+
+	if (currentma < 0) {
+		currentma = 0;
+	} else if (currentma > ICHG_MAX_5056) {
+		hwlog_err("set charge_current %d, out of range:%d!",
+			value, ICHG_MAX_5056);
+		currentma = ICHG_MAX_5056;
 	} else {
-		/*do nothing*/
+		/* do nothing */
 	}
-	hwlog_debug("bq25892 main charge current is set %dmA\n", currentmA);
-	ichg = currentmA / ICHG_STEP_64;
+
+	hwlog_info("charge current is set %dmA\n", currentma);
+
+	ichg = currentma / ICHG_STEP_64;
+
 	return bq25892_main_write_mask(BQ25892_MAIN_REG_04,
-				       BQ25892_MAIN_REG_04_ICHG_MASK,
-				       BQ25892_MAIN_REG_04_ICHG_SHIFT, ichg);
+			BQ25892_MAIN_REG_04_ICHG_MASK,
+			BQ25892_MAIN_REG_04_ICHG_SHIFT,
+			ichg);
 }
 
-/**********************************************************
-*  Function:       bq25892_main_set_terminal_voltage
-*  Discription:    set the terminal voltage in charging process
-*  Parameters:   value:terminal voltage value
-*  return value:  0-sucess or others-fail
-**********************************************************/
 static int bq25892_main_set_terminal_voltage(int value)
 {
-	unsigned int voltagemV = 0;
-	u8 Voreg = 0;
-	voltagemV = value;
+	unsigned int voltagemv = 0;
+	u8 voreg = 0;
 
-	if (voltagemV < VCHARGE_MIN_3840) {
-		hwlog_info("set terminal voltage %dmV is out of range:%dmV!!",
-			   value, VCHARGE_MIN_3840);
-		voltagemV = VCHARGE_MIN_3840;
-	} else if (voltagemV > VCHARGE_MAX_4496) {
-		hwlog_info("set terminal voltage %dmV is out of range:%dmV!!",
-			   value, VCHARGE_MAX_4496);
-		voltagemV = VCHARGE_MAX_4496;
+	voltagemv = value;
+
+	if (voltagemv < VCHARGE_MIN_3840) {
+		hwlog_err("set terminal_voltage %d, out of range:%d",
+			value, VCHARGE_MIN_3840);
+		voltagemv = VCHARGE_MIN_3840;
+	} else if (voltagemv > VCHARGE_MAX_4496) {
+		hwlog_err("set terminal_voltage %d, out of range:%d",
+			value, VCHARGE_MAX_4496);
+		voltagemv = VCHARGE_MAX_4496;
 	}
-	hwlog_debug("terminal voltage is set %dmV\n", voltagemV);
-	Voreg = (voltagemV - VCHARGE_MIN_3840) / VCHARGE_STEP_16;
+
+	hwlog_info("terminal voltage is set %dmV\n", voltagemv);
+
+	voreg = (voltagemv - VCHARGE_MIN_3840) / VCHARGE_STEP_16;
+
 	return bq25892_main_write_mask(BQ25892_MAIN_REG_06,
-				       BQ25892_MAIN_REG_06_VREG_MASK,
-				       BQ25892_MAIN_REG_06_VREG_SHIFT, Voreg);
+			BQ25892_MAIN_REG_06_VREG_MASK,
+			BQ25892_MAIN_REG_06_VREG_SHIFT,
+			voreg);
 }
 
-/**********************************************************
-*  Function:       bq25892_main_set_dpm_voltage
-*  Discription:    set the dpm voltage in charging process
-*  Parameters:   value:dpm voltage value
-*  return value:  0-sucess or others-fail
-**********************************************************/
 static int bq25892_main_set_dpm_voltage(int value)
 {
 	int vindpm_voltage;
 	u8 vindpm;
 	u8 reg0d;
+
 	vindpm_voltage = value;
+
 	if (vindpm_voltage > VINDPM_MAX_15300) {
-		hwlog_info("set dpm voltage %d mv is out of range:%dmA!!",
-			   value, VINDPM_MAX_15300);
+		hwlog_err("set dpm_voltage %d, out of range:%d",
+			value, VINDPM_MAX_15300);
 		vindpm_voltage = VINDPM_MAX_15300;
 	} else if (vindpm_voltage < VINDPM_MIN_3900) {
-		hwlog_info("set dpm voltage %d mv is out of range:%dmA!!",
-			   value, VINDPM_MIN_3900);
+		hwlog_err("set dpm_voltage %d, out of range:%d",
+			value, VINDPM_MIN_3900);
 		vindpm_voltage = VINDPM_MIN_3900;
 	} else {
-		/*do nothing*/
+		/* do nothing */
 	}
 
-	hwlog_debug("vindpm absolute voltage is set %dmV\n", vindpm_voltage);
+	hwlog_info("vindpm absolute voltage is set %dmV\n", vindpm_voltage);
+
 	vindpm = (vindpm_voltage - VINDPM_OFFSET_2600) / VINDPM_STEP_100;
 
-	reg0d = (1 << BQ25892_MAIN_REG_0D_FORCE_VINDPM_SHIFT) | vindpm;	/* 1 absolute dpm */
+	/* 1 absolute dpm */
+	reg0d = (1 << BQ25892_MAIN_REG_0D_FORCE_VINDPM_SHIFT) | vindpm;
 
 	return bq25892_main_write_byte(BQ25892_MAIN_REG_0D, reg0d);
 }
 
-/**********************************************************
-*  Function:       bq25892_main_set_terminal_current
-*  Discription:    set the terminal current in charging process
-*  Parameters:   value:terminal current value
-*  return value:  0-sucess or others-fail
-**********************************************************/
 static int bq25892_main_set_terminal_current(int value)
 {
-	unsigned int term_currentmA = 0;
+	unsigned int term_currentma = 0;
 	u8 iterm_reg = 0;
-	term_currentmA = value;
 
-	if (term_currentmA < ITERM_MIN_64) {
-		hwlog_info("set term current %dmA is out of range:%dmA!!",
-			   value, ITERM_MIN_64);
-		term_currentmA = ITERM_MIN_64;
-	} else if (term_currentmA > ITERM_MAX_1024) {
-		hwlog_info("set term current %dmA is out of range:%dmA!!",
-			   value, ITERM_MAX_1024);
-		term_currentmA = ITERM_MAX_1024;
+	term_currentma = value;
+
+	if (term_currentma < ITERM_MIN_64) {
+		hwlog_err("set terminal_current %d, out of range:%d",
+			value, ITERM_MIN_64);
+		term_currentma = ITERM_MIN_64;
+	} else if (term_currentma > ITERM_MAX_1024) {
+		hwlog_err("set terminal_current %d, out of range:%d",
+			value, ITERM_MAX_1024);
+		term_currentma = ITERM_MAX_1024;
 	} else {
-		/*do nothing*/
+		/* do nothing */
 	}
 
-	hwlog_debug("main term current  is set %dmA\n", term_currentmA);
-	iterm_reg = term_currentmA / ITERM_STEP_64;
+	hwlog_info("term current is set %dmA\n", term_currentma);
+
+	iterm_reg = term_currentma / ITERM_STEP_64;
+
 	return bq25892_main_write_mask(BQ25892_MAIN_REG_05,
-				       BQ25892_MAIN_REG_05_ITERM_MASK,
-				       BQ25892_MAIN_REG_05_ITERM_SHIFT,
-				       iterm_reg);
+			BQ25892_MAIN_REG_05_ITERM_MASK,
+			BQ25892_MAIN_REG_05_ITERM_SHIFT,
+			iterm_reg);
 }
 
-/**********************************************************
-*  Function:       bq25892_main_set_charge_enable
-*  Discription:    set the charge enable in charging process
-*  Parameters:   enable:charge enable or not
-*  return value:  0-sucess or others-fail
-**********************************************************/
 static int bq25892_main_set_charge_enable(int enable)
 {
 	struct bq25892_main_device_info *di = g_bq25892_main_dev;
@@ -937,485 +875,441 @@ static int bq25892_main_set_charge_enable(int enable)
 	gpio_set_value(di->gpio_cd, !enable);
 
 	return bq25892_main_write_mask(BQ25892_MAIN_REG_03,
-				       BQ25892_MAIN_REG_03_CHG_CONFIG_MASK,
-				       BQ25892_MAIN_REG_03_CHG_CONFIG_SHIFT,
-				       enable);
+			BQ25892_MAIN_REG_03_CHG_CONFIG_MASK,
+			BQ25892_MAIN_REG_03_CHG_CONFIG_SHIFT,
+			enable);
 }
 
-/**********************************************************
-*  Function:       bq25892_main_set_otg_enable
-*  Discription:    set the otg mode enable in charging process
-*  Parameters:   enable:otg mode  enable or not
-*  return value:  0-sucess or others-fail
-**********************************************************/
 static int bq25892_main_set_otg_enable(int enable)
 {
 	int val = 0;
 	struct bq25892_main_device_info *di = g_bq25892_main_dev;
+
 	gpio_set_value(di->gpio_cd, !enable);
+
 	val = enable << 1;
 	return bq25892_main_write_mask(BQ25892_MAIN_REG_03,
-				       BQ25892_MAIN_REG_03_CHG_CONFIG_MASK,
-				       BQ25892_MAIN_REG_03_CHG_CONFIG_SHIFT,
-				       val);
+			BQ25892_MAIN_REG_03_CHG_CONFIG_MASK,
+			BQ25892_MAIN_REG_03_CHG_CONFIG_SHIFT,
+			val);
 }
 
-/**********************************************************
-*  Function:       bq25892_main_set_otg_current
-*  Discription:    set the otg mdoe current
-*  Parameters:     value :current value
-*  return value:  0-sucess or others-fail
-**********************************************************/
 static int bq25892_main_set_otg_current(int value)
 {
-	unsigned int temp_currentmA = 0;
+	unsigned int temp_currentma = 0;
 	u8 reg = 0;
-	temp_currentmA = value;
 
-	if (temp_currentmA < BOOST_LIM_MIN_500
-	    || temp_currentmA > BOOST_LIM_MAX_2450)
+	temp_currentma = value;
+
+	if (temp_currentma < BOOST_LIM_MIN_500 ||
+		temp_currentma > BOOST_LIM_MAX_2450)
 		hwlog_info("set otg current %dmA is out of range!", value);
-	if (temp_currentmA < BOOST_LIM_750) {
-		reg = 0;
-	} else if (temp_currentmA >= BOOST_LIM_750
-		   && temp_currentmA < BOOST_LIM_1200) {
-		reg = 1;
-	} else if (temp_currentmA >= BOOST_LIM_1200
-		   && temp_currentmA < BOOST_LIM_1400) {
-		reg = 2;
-	} else if (temp_currentmA >= BOOST_LIM_1400
-		   && temp_currentmA < BOOST_LIM_1650) {
-		reg = 3;
-	} else if (temp_currentmA >= BOOST_LIM_1650
-		   && temp_currentmA < BOOST_LIM_1875) {
-		reg = 4;
-	} else if (temp_currentmA >= BOOST_LIM_1875
-		   && temp_currentmA < BOOST_LIM_2150) {
-		reg = 5;
-	} else if (temp_currentmA >= BOOST_LIM_2150
-		   && temp_currentmA < BOOST_LIM_MAX_2450) {
-		reg = 6;
-	} else {
-		reg = 7;
-	}
 
-	hwlog_debug(" otg current is set %dmA\n", temp_currentmA);
+	if (temp_currentma < BOOST_LIM_750)
+		reg = 0;
+	else if (temp_currentma >= BOOST_LIM_750 &&
+		temp_currentma < BOOST_LIM_1200)
+		reg = 1;
+	else if (temp_currentma >= BOOST_LIM_1200 &&
+		temp_currentma < BOOST_LIM_1400)
+		reg = 2;
+	else if (temp_currentma >= BOOST_LIM_1400 &&
+		temp_currentma < BOOST_LIM_1650)
+		reg = 3;
+	else if (temp_currentma >= BOOST_LIM_1650 &&
+		temp_currentma < BOOST_LIM_1875)
+		reg = 4;
+	else if (temp_currentma >= BOOST_LIM_1875 &&
+		temp_currentma < BOOST_LIM_2150)
+		reg = 5;
+	else if (temp_currentma >= BOOST_LIM_2150 &&
+		temp_currentma < BOOST_LIM_MAX_2450)
+		reg = 6;
+	else
+		reg = 7;
+
+	hwlog_debug(" otg current is set %dmA\n", temp_currentma);
 	return bq25892_main_write_mask(BQ25892_MAIN_REG_0A,
-				       BQ25892_MAIN_REG_0A_BOOST_LIM_MASK,
-				       BQ25892_MAIN_REG_0A_BOOST_LIM_SHIFT,
-				       reg);
+			BQ25892_MAIN_REG_0A_BOOST_LIM_MASK,
+			BQ25892_MAIN_REG_0A_BOOST_LIM_SHIFT,
+			reg);
 }
 
-/**********************************************************
-*  Function:       bq25892_main_set_term_enable
-*  Discription:    set the terminal enable in charging process
-*  Parameters:   enable:terminal enable or not
-*  return value:  0-sucess or others-fail
-**********************************************************/
 static int bq25892_main_set_term_enable(int enable)
 {
 	return bq25892_main_write_mask(BQ25892_MAIN_REG_07,
-				       BQ25892_MAIN_REG_07_EN_TERM_MASK,
-				       BQ25892_MAIN_REG_07_EN_TERM_SHIFT,
-				       enable);
+			BQ25892_MAIN_REG_07_EN_TERM_MASK,
+			BQ25892_MAIN_REG_07_EN_TERM_SHIFT,
+			enable);
 }
 
-/**********************************************************
-*  Function:       bq25892_main_get_charge_state
-*  Discription:    get the charge states in charging process
-*  Parameters:   state:charge states
-*  return value:  0-sucess or others-fail
-**********************************************************/
 static int bq25892_main_get_charge_state(unsigned int *state)
 {
-
 	u8 reg = 0;
 	int ret = 0;
+
 	ret = bq25892_main_read_byte(BQ25892_MAIN_REG_0B, &reg);
-	if (!(reg & BQ25892_MAIN_NOT_PG_STAT)) {
+
+	hwlog_info("get_charge_state [%x]=0x%x\n", BQ25892_MAIN_REG_0B, reg);
+
+	if (!(reg & BQ25892_MAIN_NOT_PG_STAT))
 		*state |= CHAGRE_STATE_NOT_PG;
-	}
+
 	if ((reg & BQ25892_MAIN_CHGR_STAT_CHARGE_DONE) ==
-		    BQ25892_MAIN_CHGR_STAT_CHARGE_DONE) {
+		BQ25892_MAIN_CHGR_STAT_CHARGE_DONE)
 		*state |= CHAGRE_STATE_CHRG_DONE;
-	}
 
 	ret |= bq25892_main_read_byte(BQ25892_MAIN_REG_0C, &reg);
 	ret |= bq25892_main_read_byte(BQ25892_MAIN_REG_0C, &reg);
-	if ((reg & BQ25892_MAIN_WATCHDOG_FAULT) == BQ25892_MAIN_WATCHDOG_FAULT) {
+
+	hwlog_info("get_charge_state [%x]=0x%x\n", BQ25892_MAIN_REG_0C, reg);
+
+	if ((reg & BQ25892_MAIN_WATCHDOG_FAULT) == BQ25892_MAIN_WATCHDOG_FAULT)
 		*state |= CHAGRE_STATE_WDT_FAULT;
-	}
-	if ((reg & BQ25892_MAIN_POWER_SUPPLY_OVP) ==
-	    BQ25892_MAIN_POWER_SUPPLY_OVP) {
-		*state |= CHAGRE_STATE_VBUS_OVP;
-	}
-	if ((reg & BQ25892_MAIN_BAT_FAULT_OVP) == BQ25892_MAIN_BAT_FAULT_OVP) {
-		*state |= CHAGRE_STATE_BATT_OVP;
-	}
-	if((reg & BQ25892_MAIN_NTC_FAULT) > BQ25892_MAIN_NTC_NORMAL)
-	{
-		*state |= CHAGRE_STATE_NTC_FAULT;
-	}
 
-	if (reg != 0) {
-		hwlog_err
-		    ("state is not normal : bq25892_main REG[0x0C] is %x\n",
-		     reg);
-	}
+	if ((reg & BQ25892_MAIN_POWER_SUPPLY_OVP) ==
+		BQ25892_MAIN_POWER_SUPPLY_OVP)
+		*state |= CHAGRE_STATE_VBUS_OVP;
+
+	if ((reg & BQ25892_MAIN_BAT_FAULT_OVP) == BQ25892_MAIN_BAT_FAULT_OVP)
+		*state |= CHAGRE_STATE_BATT_OVP;
+
+	if ((reg & BQ25892_MAIN_NTC_FAULT) > BQ25892_MAIN_NTC_NORMAL)
+		*state |= CHAGRE_STATE_NTC_FAULT;
+
+	if (reg != 0)
+		hwlog_err("state is not normal, BQ25892_main REG[0x0C] is %x\n",
+			reg);
 
 	return ret;
 }
 
-/**********************************************************
-*  Function:       bq25892_main_get_vbus_mv
-*  Discription:    get voltage of vbus
-*  Parameters:   vbus_mv:voltage of vbus
-*  return value:  0-sucess or others-fail
-**********************************************************/
 static int bq25892_main_get_vbus_mv(unsigned int *vbus_mv)
 {
 	u8 reg = 0;
 	int ret = 0;
+
 	ret = bq25892_main_read_byte(BQ25892_MAIN_REG_11, &reg);
 	reg = reg & BQ25892_MAIN_REG_11_VBUSV_MASK;
-	*vbus_mv =
-	    (unsigned int)reg * BQ25892_MAIN_REG_11_VBUSV_STEP_MV +
-	    BQ25892_MAIN_REG_11_VBUSV_OFFSET_MV;
-	hwlog_debug(" vbus mv  is  %dmV\n", *vbus_mv);
+
+	*vbus_mv = (unsigned int)reg * BQ25892_MAIN_REG_11_VBUSV_STEP_MV +
+				BQ25892_MAIN_REG_11_VBUSV_OFFSET_MV;
+
+	hwlog_debug("vbus mv is %dmV\n", *vbus_mv);
 	return ret;
 }
 
-/**********************************************************
-*  Function:       bq25892_main_reset_watchdog_timer
-*  Discription:    reset watchdog timer in charging process
-*  Parameters:   NULL
-*  return value:  0-sucess or others-fail
-**********************************************************/
 static int bq25892_main_reset_watchdog_timer(void)
 {
 	return bq25892_main_write_mask(BQ25892_MAIN_REG_03,
-				       BQ25892_MAIN_REG_03_WDT_RESET_MASK,
-				       BQ25892_MAIN_REG_03_WDT_RESET_SHIFT,
-				       0x01);
+			BQ25892_MAIN_REG_03_WDT_RESET_MASK,
+			BQ25892_MAIN_REG_03_WDT_RESET_SHIFT,
+			0x01);
 }
 
-/**********************************************************
-*  Function:       bq25892_main_get_Vilim_sample
-*  Discription:    get one sample Vilim from adc
-*  Parameters:     NULL
-*  return value:   adc sample value
-**********************************************************/
-static int bq25892_main_get_Vilim_sample(void)
+static int bq25892_main_get_vilim_sample(void)
 {
 	int i = 0;
 	int retry_times = 3;
-	int V_sample = -1;
+	int v_sample = -1;
 
 	for (i = 0; i < retry_times; ++i) {
-		V_sample = hisi_adc_get_value(adc_channel_iin);
-		if (V_sample < 0) {
-			hwlog_err("adc read channel 10 fail!\n");
-		} else {
+		v_sample = hisi_adc_get_value(adc_channel_iin);
+		if (v_sample < 0)
+			hwlog_err("adc read channel 10 fail\n");
+		else
 			break;
-		}
 	}
-	return V_sample;
+
+	return v_sample;
 }
 
-/**********************************************************
-*  Function:       bq25892_main_get_ilim
-*  Discription:    get average value for ilim
-*  Parameters:     NULL
-*  return value:   average value for ilim
-**********************************************************/
 static int bq25892_main_get_ilim(void)
 {
 	int i;
 	int cnt = 0;
-	int V_temp;
+	int v_temp;
 	int delay_times = 100;
-	int sample_num = 5;	/* use 5 samples to get an average value*/
+	int sample_num = 5; /* use 5 samples to get an average value */
 	int sum = 0;
-	int Kilim = 355;	/*based bq25892 spec*/
+	int kilim = 355; /* based bq25892 spec */
 
 	for (i = 0; i < sample_num; ++i) {
-		V_temp = bq25892_main_get_Vilim_sample();
-		if (V_temp >= 0) {
-			sum += V_temp;
+		v_temp = bq25892_main_get_vilim_sample();
+		if (v_temp >= 0) {
+			sum += v_temp;
 			++cnt;
 		} else {
-			hwlog_err("bq25892_main get V_temp fail!\n");
+			hwlog_err("get v_temp fail\n");
 		}
 		msleep(delay_times);
 	}
+
 	if (cnt > 0) {
-		return ((10 * sum * Kilim) / (8 * (int)(rilim) * cnt));	/*I =(K* Vlim)/(rilim*0.8) new spec from TI */
-	} else {
-		hwlog_err("use 0 as default Vilim!\n");
-		return 0;
+		/* I =(K* Vlim)/(rilim*0.8) new spec from TI */
+		return ((10 * sum * kilim) / (8 * (int)(rilim) * cnt));
 	}
+
+	hwlog_err("use 0 as default vilim\n");
+	return 0;
 }
 
 static int bq25892_main_vbat_sys(void)
 {
 	int i = 0;
 	int retry_times = 3;
-	int V_sample = -1;
+	int v_sample = -1;
 
 	for (i = 0; i < retry_times; ++i) {
-		V_sample = hisi_adc_get_value(adc_channel_vbat_sys);
-		if (V_sample < 0) {
-			hwlog_err("adc read channel 15 fail!\n");
-		} else {
+		v_sample = hisi_adc_get_value(adc_channel_vbat_sys);
+		if (v_sample < 0)
+			hwlog_err("adc read channel 15 fail\n");
+		else
 			break;
-		}
 	}
-	return V_sample;
+
+	return v_sample;
 }
 
 static int bq25892_main_get_vbat_sys(void)
 {
 	int i;
 	int cnt = 0;
-	int V_temp;
+	int v_temp;
 	int delay_times = 100;
-	int sample_num = 5;	/* use 5 samples to get an average value*/
+	int sample_num = 5; /* use 5 samples to get an average value */
 	int sum = 0;
 
 	for (i = 0; i < sample_num; ++i) {
-		V_temp = bq25892_main_vbat_sys();
-		if (V_temp >= 0) {
-			sum += V_temp;
+		v_temp = bq25892_main_vbat_sys();
+		if (v_temp >= 0) {
+			sum += v_temp;
 			++cnt;
 		} else {
-			hwlog_err("bq25892_main get V_temp fail!\n");
+			hwlog_err("get v_temp fail\n");
 		}
 		msleep(delay_times);
 	}
-	if (cnt > 0) {
-		return (3 * 1000 * sum / cnt);
-	} else {
-		hwlog_err("use 0 as default Vvlim!\n");
-		return 0;
-	}
+
+	if (cnt > 0)
+		return (3 * 1000 * sum / cnt); /* vbat_sys_step is 3*1000 */
+
+	hwlog_err("use 0 as default vvlim\n");
+	return 0;
 }
 
-/**********************************************************
-*  Function:       bq25892_main_dump_register
-*  Discription:    print the register value in charging process
-*  Parameters:   reg_value:string for save register value
-*  return value:  0-sucess or others-fail
-**********************************************************/
 static int bq25892_main_dump_register(char *reg_value)
 {
-	u8 reg[BQ25892_MAIN_REG_TOTAL_NUM] = { 0 };
-	char buff[26] = { 0 };
+	u8 reg[BQ25892_MAIN_REG_TOTAL_NUM] = {0};
+	char buff[BUF_LEN] = {0};
 	int i = 0;
 
-	memset(reg_value, 0, CHARGELOG_SIZE);
 	snprintf(buff, 26, "%-11d", bq25892_main_get_ilim());
 	strncat(reg_value, buff, strlen(buff));
+
 	for (i = 0; i < BQ25892_MAIN_REG_TOTAL_NUM; i++) {
 		bq25892_main_read_byte(i, &reg[i]);
 		bq25892_main_read_byte(i, &reg[i]);
-		snprintf(buff, 26, "0x%-11.2x", reg[i]);
+		snprintf(buff, BUF_LEN, "0x%-11.2x", reg[i]);
 		strncat(reg_value, buff, strlen(buff));
 	}
+
 	return 0;
 }
 
-/**********************************************************
-*  Function:       bq25892_main_get_register_head
-*  Discription:    print the register head in charging process
-*  Parameters:   reg_head:string for save register head
-*  return value:  0-sucess or others-fail
-**********************************************************/
 static int bq25892_main_get_register_head(char *reg_head)
 {
-	char buff[26] = { 0 };
+	char buff[BUF_LEN] = {0};
 	int i = 0;
 
-	memset(reg_head, 0, CHARGELOG_SIZE);
-	snprintf(buff, 26, "Ibus_main  ");
+	snprintf(buff, BUF_LEN, "Ibus_main  ");
 	strncat(reg_head, buff, strlen(buff));
+
 	for (i = 0; i < BQ25892_MAIN_REG_TOTAL_NUM; i++) {
-		snprintf(buff, 26, "Reg_main[%02x] ", i);
+		snprintf(buff, BUF_LEN, "Reg_main[%02x] ", i);
 		strncat(reg_head, buff, strlen(buff));
 	}
+
 	return 0;
 }
 
-/**********************************************************
-*  Function:       bq25892_main_set_batfet_disable
-*  Discription:    set the batfet disable in charging process
-*  Parameters:   disable:batfet disable or not
-*  return value:  0-sucess or others-fail
-**********************************************************/
 static int bq25892_main_set_batfet_disable(int disable)
 {
 	return bq25892_main_write_mask(BQ25892_MAIN_REG_09,
-				       BQ25892_MAIN_REG_09_BATFET_DISABLE_MASK,
-				       BQ25892_MAIN_REG_09_BATFET_DISABLE_SHIFT,
-				       disable);
+			BQ25892_MAIN_REG_09_BATFET_DISABLE_MASK,
+			BQ25892_MAIN_REG_09_BATFET_DISABLE_SHIFT,
+			disable);
 }
 
-/**********************************************************
-*  Function:       bq25892_main_set_watchdog_timer
-*  Discription:    set the watchdog timer in charging process
-*  Parameters:   value:watchdog timer value
-*  return value:  0-sucess or others-fail
-**********************************************************/
 static int bq25892_main_set_watchdog_timer(int value)
 {
 	u8 val = 0;
 	u8 dog_time = value;
-	if (dog_time >= WATCHDOG_TIMER_160_S) {
+
+	if (dog_time >= WATCHDOG_TIMER_160_S)
 		val = BQ25892_MAIN_REG_07_WATCHDOG_160;
-	} else if (dog_time >= WATCHDOG_TIMER_80_S) {
+	else if (dog_time >= WATCHDOG_TIMER_80_S)
 		val = BQ25892_MAIN_REG_07_WATCHDOG_80;
-	} else if (dog_time >= WATCHDOG_TIMER_40_S) {
+	else if (dog_time >= WATCHDOG_TIMER_40_S)
 		val = BQ25892_MAIN_REG_07_WATCHDOG_40;
-	} else {
+	else
 		val = BQ25892_MAIN_REG_07_WATCHDOG_DIS;
-	}
-	hwlog_debug(" watch dog timer is %d ,the register value is set %d \n",
-		    dog_time, val);
+
+	hwlog_info("watch dog timer is %d ,the register value is set %d\n",
+		dog_time, val);
+
 	return bq25892_main_write_mask(BQ25892_MAIN_REG_07,
-				       BQ25892_MAIN_REG_07_WATCHDOG_MASK,
-				       BQ25892_MAIN_REG_07_WATCHDOG_SHIFT, val);
+			BQ25892_MAIN_REG_07_WATCHDOG_MASK,
+			BQ25892_MAIN_REG_07_WATCHDOG_SHIFT,
+			val);
 }
 
-/**********************************************************
-*  Function:       bq25892_main_set_charger_hiz
-*  Discription:    set the charger hiz close watchdog
-*  Parameters:   enable:charger in hiz or not
-*  return value:  0-sucess or others-fail
-**********************************************************/
 static int bq25892_main_set_charger_hiz(int enable)
 {
 	int ret = 0;
 
 	if (enable > 0) {
-		ret |=
-		    bq25892_main_write_mask(BQ25892_MAIN_REG_00,
-					    BQ25892_MAIN_REG_00_EN_HIZ_MASK,
-					    BQ25892_MAIN_REG_00_EN_HIZ_SHIFT,
-					    TRUE);
+		ret |= bq25892_main_write_mask(BQ25892_MAIN_REG_00,
+				BQ25892_MAIN_REG_00_EN_HIZ_MASK,
+				BQ25892_MAIN_REG_00_EN_HIZ_SHIFT,
+				TRUE);
 	} else {
-		ret |=
-		    bq25892_main_write_mask(BQ25892_MAIN_REG_00,
-					    BQ25892_MAIN_REG_00_EN_HIZ_MASK,
-					    BQ25892_MAIN_REG_00_EN_HIZ_SHIFT,
-					    FALSE);
+		ret |= bq25892_main_write_mask(BQ25892_MAIN_REG_00,
+				BQ25892_MAIN_REG_00_EN_HIZ_MASK,
+				BQ25892_MAIN_REG_00_EN_HIZ_SHIFT,
+				FALSE);
 	}
+
 	return ret;
 }
 
-/**********************************************************
-*  Function:       bq25892_main_9v_chip_init
-*  Discription:    bq25892_main chipIC initialization for high voltage adapter
-*  Parameters:   struct bq25892_main_device_info *di
-*  return value:  0-sucess or others-fail
-**********************************************************/
 static int bq25892_main_9v_chip_init(struct bq25892_main_device_info *di)
 {
 	int ret = 0;
 
-	/*reg init */
-	/*bq25892_main_write_mask(REG0x14,BQ25892_MAIN_REG_RST_MASK,BQ25892_MAIN_REG_RST_SHIFT,0x01);*/
-	/* do not init input current 500 ma(REG00) to support lpt without battery  */
-	/*02 enable Start 1s Continuous Conversion ,others as default */
-	ret |= bq25892_main_write_byte(BQ25892_MAIN_REG_02, 0x1D);	/*adc off*/
-	/*03 WD_RST 1,CHG_CONFIG 1,SYS_MIN 3.5 */
+	/* reg init */
+	/*
+	 * bq25892_main_write_mask(REG0x14,
+	 * BQ25892_MAIN_REG_RST_MASK, BQ25892_MAIN_REG_RST_SHIFT,
+	 * 0x01);
+	 */
+	/*
+	 * do not init input current 500 ma(REG00)
+	 * to support lpt without battery
+	 */
+
+	/* 02 enable Start 1s Continuous Conversion ,others as default */
+	ret |= bq25892_main_write_byte(BQ25892_MAIN_REG_02, 0x1D); /*adc off*/
+
+	/* 03 WD_RST 1,CHG_CONFIG 1,SYS_MIN 3.5 */
 	ret |= bq25892_main_write_byte(BQ25892_MAIN_REG_03, 0x5A);
-	/*04 Fast Charge Current Limit 1024mA */
+
+	/* 04 Fast Charge Current Limit 1024mA */
 	ret |= bq25892_main_write_byte(BQ25892_MAIN_REG_04, 0x10);
-	/*05 Precharge Current Limit 256mA,Termination Current Limit 256mA */
+
+	/* 05 Precharge Current Limit 256mA,Termination Current Limit 256mA */
 	ret |= bq25892_main_write_byte(BQ25892_MAIN_REG_05, 0x33);
-	/*06 Charge Voltage Limit 4.4,Battery Precharge to Fast Charge Threshold 3,Battery Recharge 100mV */
+
+	/*
+	 * 06 Charge Voltage Limit 4.4,
+	 * Battery Precharge to Fast Charge Threshold 3,Battery Recharge 100mV
+	 */
 	ret |= bq25892_main_write_byte(BQ25892_MAIN_REG_06, 0x8e);
-	/*07 EN_TERM 1,Watchdog Timer 80s,EN_TIMER 1,Charge Timer 20h,JEITA Low Temperature Current Setting 1 */
+
+	/*
+	 * 07 EN_TERM 1, Watchdog Timer 80s, EN_TIMER 1,
+	 * Charge Timer 20h,JEITA Low Temperature Current Setting 1
+	 */
 	ret |= bq25892_main_write_byte(BQ25892_MAIN_REG_07, 0x2f);
-	/*08 IR compensation voatge clamp = 224mV ,IR compensation resistor setting = 80mohm */
-	ret |=
-	    bq25892_main_set_bat_comp(g_bq25892_main_dev->param_dts.bat_comp);
-	ret |= bq25892_main_set_vclamp(g_bq25892_main_dev->param_dts.vclamp);
-	/*09 FORCE_ICO 0,TMR2X_EN 1,BATFET_DIS 0,JEITA_VSET 0,BATFET_RST_EN 1 */
+
+	/*
+	 * 08 IR compensation voatge clamp = 224mV,
+	 * IR compensation resistor setting = 80mohm
+	 */
+	ret |= bq25892_main_set_bat_comp(di->param_dts.bat_comp);
+	ret |= bq25892_main_set_vclamp(di->param_dts.vclamp);
+
+	/*
+	 * 09 FORCE_ICO 0, TMR2X_EN 1, BATFET_DIS 0,
+	 * JEITA_VSET 0, BATFET_RST_EN 1
+	 */
 	ret |= bq25892_main_write_byte(BQ25892_MAIN_REG_09, 0x44);
-	/*boost mode current limit = 500mA,boostv 4.998v */
+
+	/* boost mode current limit = 500mA,boostv 4.998v */
 	ret |= bq25892_main_write_byte(BQ25892_MAIN_REG_0A, 0x70);
-	/*VINDPM Threshold Setting Method 1,Absolute VINDPM Threshold 4.4v */
-	/*ret = bq25892_main_write_byte(BQ25892_MAIN_REG_0D,0x92);*/
-	/* set dpm voltage as 4700mv instead of 7600mv because chargerIC cannot reset dpm after watchdog time out */
+
+	/* VINDPM Threshold Setting Method 1,Absolute VINDPM Threshold 4.4v */
+	/* ret = bq25892_main_write_byte(BQ25892_MAIN_REG_0D,0x92); */
+
+	/*
+	 * set dpm voltage as 4700mv instead of 7600mv
+	 * because chargerIC cannot reset dpm after watchdog time out
+	 */
 	ret = bq25892_main_set_dpm_voltage(4700);
 
-	gpio_set_value(di->gpio_cd, 0);	/*enable charging*/
+	/*enable charging*/
+	gpio_set_value(di->gpio_cd, 0);
+
 	return ret;
 }
-static int bq25892_main_chip_init(struct chip_init_crit* init_crit)
+
+static int bq25892_main_chip_init(struct chip_init_crit *init_crit)
 {
 	int ret = -1;
 	struct bq25892_main_device_info *di = g_bq25892_main_dev;
-	if (!di || !init_crit) {
-		hwlog_err("%s: di or init_crit is null\n", __func__);
+
+	if (di == NULL || init_crit == NULL) {
+		hwlog_err("di or init_crit is null\n");
 		return -ENOMEM;
 	}
-	switch(init_crit->vbus) {
-		case ADAPTER_5V:
-			ret = bq25892_main_5v_chip_init(di);
-			break;
-		case ADAPTER_9V:
-			ret = bq25892_main_9v_chip_init(di);
-			break;
-		default:
-			hwlog_err("%s: init mode err\n", __func__);
-			break;
+
+	switch (init_crit->vbus) {
+	case ADAPTER_5V:
+		ret = bq25892_main_5v_chip_init(di);
+		break;
+
+	case ADAPTER_9V:
+		ret = bq25892_main_9v_chip_init(di);
+		break;
+
+	default:
+		hwlog_err("invaid init_crit vbus mode\n");
+		break;
 	}
+
 	return ret;
 }
-/**********************************************************
-*  Function:       bq25892_main_check_input_dpm_state
-*  Discription:    check whether VINDPM or IINDPM
-*  Parameters:     NULL
-*  return value:   TRUE means VINDPM or IINDPM
-*                  FALSE means NoT DPM
-**********************************************************/
+
 static int bq25892_main_check_input_dpm_state(void)
 {
 	u8 reg = 0;
 	int ret = -1;
 
 	ret = bq25892_main_read_byte(BQ25892_MAIN_REG_13, &reg);
-	if (ret < 0) {
-		hwlog_err("bq25892_main_check_input_dpm_state err\n");
+	if (ret < 0)
 		return ret;
-	}
 
-	if ((reg & BQ25892_MAIN_REG_13_VDPM_STAT_MASK)
-	    || (reg & BQ25892_MAIN_REG_13_IDPM_STAT_MASK)) {
+	hwlog_info("check_input_dpm_state [%x]=0x%x\n",
+		BQ25892_MAIN_REG_13, reg);
+
+	if ((reg & BQ25892_MAIN_REG_13_VDPM_STAT_MASK) ||
+		(reg & BQ25892_MAIN_REG_13_IDPM_STAT_MASK))
 		return TRUE;
-	} else {
+	else
 		return FALSE;
-	}
 }
 
-/**********************************************************
-*  Function:       bq25892_main_stop_charge_config
-*  Discription:    config chip after stop charging
-*  Parameters:     NULL
-*  return value:  0-sucess or others-fail
-**********************************************************/
 static int bq25892_main_stop_charge_config(void)
 {
-	int ret = 0;
-
 	/* reset to prepare for next charger plug */
 	first_charging_done = FALSE;
 	charging_again_after_charging_done = FALSE;
 
-	/* as vindpm of bq25892_main won't be reset after watchdog timer out,if vindpm is higher than 5v ,IC will not supply power with USB/AC  */
-	ret = bq25892_main_set_dpm_voltage(CHARGE_VOLTAGE_4520_MV);
-	return ret;
+	/*
+	 * as vindpm of bq25892_aux won't be reset after watchdog timer out,
+	 * if vindpm is higher than 5v ,IC will not supply power with USB/AC
+	 */
+	return bq25892_main_set_dpm_voltage(CHARGE_VOLTAGE_4520_MV);
 }
 
 struct charge_device_ops bq25892_main_ops = {
@@ -1446,207 +1340,234 @@ struct charge_device_ops bq25892_main_ops = {
 	.stop_charge_config = bq25892_main_stop_charge_config,
 };
 
-/**********************************************************
-*  Function:       bq25892_main_irq_work
-*  Discription:    handler for chargerIC fault irq in charging process
-*  Parameters:   work:chargerIC fault interrupt workqueue
-*  return value:  NULL
-**********************************************************/
-
-/*lint -save -e* */
 static void bq25892_main_irq_work(struct work_struct *work)
 {
-	struct bq25892_main_device_info *di =
-	    container_of(work, struct bq25892_main_device_info, irq_work);
+	struct bq25892_main_device_info *di;
 	u8 reg = 0, reg1 = 0;
 
-	msleep(100);
+	di = container_of(work, struct bq25892_main_device_info, irq_work);
+
+	msleep(100); /* sleep 100ms */
+
 	bq25892_main_read_byte(BQ25892_MAIN_REG_0B, &reg1);
 	bq25892_main_read_byte(BQ25892_MAIN_REG_0C, &reg);
-	hwlog_info("1st  reg[0xB]:0x%x ,reg[0xC]:0x%0x \n", reg1, reg);
+	hwlog_info("1st reg[0xB]:0x%x,reg[0xC]:0x%0x\n", reg1, reg);
+
 	bq25892_main_read_byte(BQ25892_MAIN_REG_0C, &reg);
-	hwlog_info("2nd  reg[0xB]:0x%x ,reg[0xC]:0x%0x \n", reg1, reg);
+	hwlog_info("2nd reg[0xB]:0x%x,reg[0xC]:0x%0x\n", reg1, reg);
 
 	if (reg & BQ25892_MAIN_REG_0C_BOOST) {
-		hwlog_info("CHARGE_FAULT_BOOST_OCP\n");
+		hwlog_info("CHARGE_FAULT_BOOST_OCP happened\n");
+
 		atomic_notifier_call_chain(&fault_notifier_list,
-					   CHARGE_FAULT_BOOST_OCP, NULL);
+			CHARGE_FAULT_BOOST_OCP, NULL);
 	}
 
 	if (di->irq_active == 0) {
 		di->irq_active = 1;
 		enable_irq(di->irq_int);
 	}
-
 }
 
-/**********************************************************
-*  Function:       bq25892_main_interrupt
-*  Discription:    callback function for chargerIC fault irq in charging process
-*  Parameters:   irq:chargerIC fault interrupt
-*                      _di:bq25892_main_device_info
-*  return value:  IRQ_HANDLED-sucess or others
-**********************************************************/
 static irqreturn_t bq25892_main_interrupt(int irq, void *_di)
 {
 	struct bq25892_main_device_info *di = _di;
 
-	hwlog_info("bq25892_main interrupt\n");
+	if (di == NULL) {
+		hwlog_err("di is null\n");
+		return -1;
+	}
+
+	hwlog_info("bq25892_main int happened (%d)\n", di->irq_active);
+
 	if (di->irq_active == 1) {
 		di->irq_active = 0;
 		disable_irq_nosync(di->irq_int);
 		schedule_work(&di->irq_work);
 	} else {
-		hwlog_info("The irq is not enable,do nothing!\n");
+		hwlog_info("the irq is not enable,do nothing\n");
 	}
+
 	return IRQ_HANDLED;
 }
 
-static void parse_dts(struct device_node *np,
-		      struct bq25892_main_device_info *di)
+static void bq25892_main_parse_dts(struct device_node *np,
+	struct bq25892_main_device_info *di)
 {
 	struct device_node *batt_node;
 	int ret = 0;
+
 	di->param_dts.bat_comp = 80;
 	di->param_dts.vclamp = 224;
+
 	ret = of_property_read_u32(np, "bat_comp", &(di->param_dts.bat_comp));
 	if (ret) {
-		hwlog_err("get bat_comp failed\n");
+		hwlog_err("bat_comp dts read failed\n");
 		return;
 	}
-	hwlog_info("parse_dts bat_comp = %d\n", di->param_dts.bat_comp);
+	hwlog_info("bat_comp=%d\n", di->param_dts.bat_comp);
 
 	ret = of_property_read_u32(np, "vclamp", &(di->param_dts.vclamp));
 	if (ret) {
-		hwlog_err("get vclamp failed\n");
+		hwlog_err("vclamp dts read failed\n");
 		return;
 	}
-	hwlog_info("parse_dts vclamp = %d\n", di->param_dts.vclamp);
+	hwlog_info("vclamp=%d\n", di->param_dts.vclamp);
 
-	if (of_property_read_u32(np, "rilim", &rilim)) {
-		hwlog_err("get rilim error,use default one!\n");
-	}
-	if (of_property_read_u32(np, "adc_channel_iin", &adc_channel_iin)) {
-		hwlog_err("get adc_channel_iin error,use default one!\n");
-	}
-	if (of_property_read_u32
-	    (np, "adc_channel_vbat_sys", &adc_channel_vbat_sys)) {
-		hwlog_err("get adc_channel_vbat_sys error,use default one!\n");
-	}
+	ret = of_property_read_u32(np, "rilim", &rilim);
+	if (ret)
+		hwlog_err("rilim dts read failed\n");
 
-	batt_node =
-	    of_find_compatible_node(NULL, NULL, "huawei,hisi_bci_battery");
-	if (batt_node) {
-		if (of_property_read_u32
-		    (batt_node, "battery_board_type", &is_board_type)) {
-			hwlog_err("get battery_board_type fail!\n");
+	hwlog_info("rilim=%d\n", rilim);
+
+	ret = of_property_read_u32(np, "adc_channel_iin",
+		&adc_channel_iin);
+	if (ret)
+		hwlog_err("adc_channel_iin dts read failed\n");
+
+	hwlog_info("adc_channel_iin=%d\n", adc_channel_iin);
+
+	ret = of_property_read_u32(np, "adc_channel_vbat_sys",
+		&adc_channel_vbat_sys);
+	if (ret)
+		hwlog_err("adc_channel_vbat_sys dts read failed\n");
+
+	hwlog_info("adc_channel_vbat_sys=%d\n", adc_channel_vbat_sys);
+
+	batt_node = of_find_compatible_node(NULL, NULL,
+		"huawei,hisi_bci_battery");
+	if (batt_node != NULL) {
+		ret = of_property_read_u32(batt_node, "battery_board_type",
+			&is_board_type);
+		if (ret) {
+			hwlog_err("battery_board_type dts read failed\n");
 			is_board_type = BAT_BOARD_ASIC;
 		}
 	} else {
-
-		hwlog_err("get hisi_bci_battery fail!\n");
+		hwlog_err("hisi_bci_battery dts read failed\n");
 		is_board_type = BAT_BOARD_ASIC;
 	}
-	return;
 }
 
-/**********************************************************
-*  Function:       bq25892_main_probe
-*  Discription:    bq25892_main module probe
-*  Parameters:   client:i2c_client
-*                      id:i2c_device_id
-*  return value:  0-sucess or others-fail
-**********************************************************/
 static int bq25892_main_probe(struct i2c_client *client,
-			      const struct i2c_device_id *id)
+	const struct i2c_device_id *id)
 {
 	int ret = 0;
 	struct bq25892_main_device_info *di = NULL;
-	struct charge_device_ops *ops = NULL;
 	struct device_node *np = NULL;
 	struct class *power_class = NULL;
 
-	di = devm_kzalloc(&client->dev, sizeof(*di), GFP_KERNEL);
-	if (!di) {
-		hwlog_err("bq25892_main_device_info is NULL!\n");
+	hwlog_info("probe begin\n");
+
+	if (client == NULL || id == NULL) {
+		hwlog_err("client or id is null\n");
 		return -ENOMEM;
 	}
+
+	di = devm_kzalloc(&client->dev, sizeof(*di), GFP_KERNEL);
+	if (di == NULL)
+		return -ENOMEM;
+
 	g_bq25892_main_dev = di;
+
 	di->dev = &client->dev;
 	np = di->dev->of_node;
 	di->client = client;
 	i2c_set_clientdata(client, di);
-	parse_dts(np, di);
+
 	INIT_WORK(&di->irq_work, bq25892_main_irq_work);
+
+	bq25892_main_parse_dts(np, di);
+
 	di->gpio_cd = of_get_named_gpio(np, "gpio_cd", 0);
+	hwlog_info("gpio_cd=%d\n", di->gpio_cd);
+
 	if (!gpio_is_valid(di->gpio_cd)) {
-		hwlog_err("gpio_cd is not valid\n");
+		hwlog_err("gpio(gpio_cd) is not valid\n");
 		ret = -EINVAL;
 		goto bq25892_main_fail_0;
 	}
+
 	di->gpio_int = of_get_named_gpio(np, "gpio_int", 0);
+	hwlog_info("gpio_int=%d\n", di->gpio_int);
+
 	if (!gpio_is_valid(di->gpio_int)) {
-		hwlog_err("gpio_int is not valid\n");
+		hwlog_err("gpio(gpio_int) is not valid\n");
 		ret = -EINVAL;
 		goto bq25892_main_fail_0;
 	}
-	/*set gpio to control CD pin to disable/enable bq25892_main IC */
+
 	ret = gpio_request(di->gpio_cd, "charger_cd");
 	if (ret) {
-		hwlog_err("could not request gpio_cd\n");
-		ret = -ENOMEM;
+		hwlog_err("gpio(gpio_cd) request fail\n");
 		goto bq25892_main_fail_0;
 	}
+
+	/* set gpio to control CD pin to disable/enable bq25892_aux IC */
 	gpio_direction_output(di->gpio_cd, 0);
-	ret = gpio_request(di->gpio_int, "charger_int");
 	if (ret) {
-		hwlog_err("could not request gpio_int\n");
+		hwlog_err("gpio(gpio_cd) set output fail\n");
 		goto bq25892_main_fail_1;
 	}
+
+	ret = gpio_request(di->gpio_int, "charger_int");
+	if (ret) {
+		hwlog_err("gpio(gpio_int) request fail\n");
+		goto bq25892_main_fail_1;
+	}
+
 	gpio_direction_input(di->gpio_int);
-	di->irq_int = gpio_to_irq(di->gpio_int);
-	if (di->irq_int < 0) {
-		hwlog_err("could not map gpio_int to irq\n");
+	if (ret) {
+		hwlog_err("gpio(gpio_int) set input fail\n");
 		goto bq25892_main_fail_2;
 	}
-	if (BAT_BOARD_UDP != is_board_type) {
 
-		ret =
-		    request_irq(di->irq_int, bq25892_main_interrupt,
-				IRQF_TRIGGER_FALLING, "charger_int_irq", di);
+	di->irq_int = gpio_to_irq(di->gpio_int);
+	if (di->irq_int < 0) {
+		hwlog_err("gpio(gpio_int) map to irq fail\n");
+		ret = -EINVAL;
+		goto bq25892_main_fail_2;
+	}
+
+	if (is_board_type != BAT_BOARD_UDP) {
+		ret = request_irq(di->irq_int, bq25892_main_interrupt,
+			IRQF_TRIGGER_FALLING, "charger_int_irq", di);
 		if (ret) {
-			hwlog_err("could not request irq_int\n");
+			hwlog_err("gpio(gpio_int) irq request fail\n");
 			di->irq_int = -1;
 			goto bq25892_main_fail_3;
 		}
+
 		di->irq_active = 1;
 	}
 
-	ops = &bq25892_main_ops;
-	ret = charge_main_ops_register(ops);
+	ret = charge_main_ops_register(&bq25892_main_ops);
 	if (ret) {
-		hwlog_err("register charge ops failed!\n");
+		hwlog_err("bq25892_main charge ops register fail\n");
 		goto bq25892_main_fail_3;
 	}
+
 	ret = bq25892_main_sysfs_create_group(di);
 	if (ret) {
-		hwlog_err("create sysfs entries failed!\n");
-		goto bq25892_main_fail_4;
-	}
-	power_class = hw_power_get_class();
-	if (power_class) {
-		if (charge_dev == NULL)
-			charge_dev =
-			    device_create(power_class, NULL, 0, NULL,
-					  "charger");
-		ret =
-		    sysfs_create_link(&charge_dev->kobj, &di->dev->kobj,
-				      "bq25892_main");
-		if (ret)
-			hwlog_err("create link to bq25892_main fail.\n");
+		hwlog_err("sysfs group create failed\n");
+		goto bq25892_main_fail_3;
 	}
 
-	hwlog_info("bq25892_main probe ok!\n");
+	power_class = hw_power_get_class();
+	if (power_class != NULL) {
+		if (charge_dev == NULL)
+			charge_dev = device_create(power_class, NULL, 0, NULL,
+				"charger");
+
+		ret = sysfs_create_link(&charge_dev->kobj, &di->dev->kobj,
+			"bq25892_main");
+		if (ret) {
+			hwlog_err("sysfs link create failed\n");
+			goto bq25892_main_fail_4;
+		}
+	}
+
+	hwlog_info("probe end\n");
 	return 0;
 
 bq25892_main_fail_4:
@@ -1664,39 +1585,36 @@ bq25892_main_fail_0:
 	return ret;
 }
 
-/**********************************************************
-*  Function:       bq25892_main_remove
-*  Discription:    bq25892_main module remove
-*  Parameters:   client:i2c_client
-*  return value:  0-sucess or others-fail
-**********************************************************/
 static int bq25892_main_remove(struct i2c_client *client)
 {
 	struct bq25892_main_device_info *di = i2c_get_clientdata(client);
 
+	hwlog_info("remove begin\n");
+
 	bq25892_main_sysfs_remove_group(di);
 
 	gpio_set_value(di->gpio_cd, 1);
-	if (di->gpio_cd) {
+
+	if (di->gpio_cd)
 		gpio_free(di->gpio_cd);
-	}
-	if (di->irq_int) {
+
+	if (di->irq_int)
 		free_irq(di->irq_int, di);
-	}
-	if (di->gpio_int) {
+
+	if (di->gpio_int)
 		gpio_free(di->gpio_int);
-	}
+
+	hwlog_info("remove end\n");
 	return 0;
 }
 
 MODULE_DEVICE_TABLE(i2c, bq25892_main);
-static struct of_device_id bq25892_main_of_match[] = {
+static const struct of_device_id bq25892_main_of_match[] = {
 	{
-	 .compatible = "huawei,bq25892_charger_main",
-	 .data = NULL,
-	 },
-	{
-	 },
+		.compatible = "huawei,bq25892_charger_main",
+		.data = NULL,
+	},
+	{},
 };
 
 static const struct i2c_device_id bq25892_main_i2c_id[] = {
@@ -1708,38 +1626,23 @@ static struct i2c_driver bq25892_main_driver = {
 	.remove = bq25892_main_remove,
 	.id_table = bq25892_main_i2c_id,
 	.driver = {
-		   .owner = THIS_MODULE,
-		   .name = "bq25892_charger_main",
-		   .of_match_table = of_match_ptr(bq25892_main_of_match),
-		   },
+		.owner = THIS_MODULE,
+		.name = "bq25892_charger_main",
+		.of_match_table = of_match_ptr(bq25892_main_of_match),
+	},
 };
-/*lint -restore*/
 
-/**********************************************************
-*  Function:       bq25892_main_init
-*  Discription:    bq25892_main module initialization
-*  Parameters:   NULL
-*  return value:  0-sucess or others-fail
-**********************************************************/
-
-/*lint -save -e* */
 static int __init bq25892_main_init(void)
 {
 	int ret = 0;
 
 	ret = i2c_add_driver(&bq25892_main_driver);
 	if (ret)
-		hwlog_err("%s: i2c_add_driver error!!!\n", __func__);
+		hwlog_err("i2c_add_driver error\n");
 
 	return ret;
 }
 
-/**********************************************************
-*  Function:       bq25892_main_exit
-*  Discription:    bq25892_main module exit
-*  Parameters:   NULL
-*  return value:  NULL
-**********************************************************/
 static void __exit bq25892_main_exit(void)
 {
 	i2c_del_driver(&bq25892_main_driver);
@@ -1747,7 +1650,6 @@ static void __exit bq25892_main_exit(void)
 
 rootfs_initcall(bq25892_main_init);
 module_exit(bq25892_main_exit);
-/*lint -restore*/
 
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("bq25892_main charger module driver");

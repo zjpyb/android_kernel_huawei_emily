@@ -22,6 +22,10 @@
 #include <linux/usb.h>
 #include <linux/hidraw.h>
 #include "hid-ids.h"
+#include <linux/version.h>
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+#include <linux/sched/signal.h>
+#endif
 
 #ifdef HID_VR_DEBUG
 #define D(format, arg...) pr_info("[%s]"format, __func__, ##arg)
@@ -38,7 +42,7 @@
 
 static struct class *ovr_class;
 
-static struct hidraw *ovr_hidraw_table[OVR_HIDRAW_MAX_DEVICES];
+static struct hidraw *ovr_hidraw_table[OVR_HIDRAW_MAX_DEVICES + 1];
 static DEFINE_MUTEX(minors_lock);
 
 static int ovr_major;

@@ -165,6 +165,7 @@ typedef struct
     wlan_nss_enum_uint8             en_cur_num_spatial_stream;
     wlan_nss_enum_uint8             en_avail_bf_num_spatial_stream;
     oal_uint16                      us_cap_info;        /* 旧的bss的能力位信息 */
+    mac_ap_type_enum_uint16         en_ap_type;
 }hmac_roam_old_bss_stru;
 
 #if 0
@@ -186,6 +187,7 @@ typedef struct
     roam_scenario_enum_uint8        uc_rssi_type;       /* 何种rssi类型触发漫游 */
     oal_uint8                       uc_invalid_scan_cnt;    /* 无效扫描统计 */
     oal_bool_enum_uint8             en_current_bss_ignore;  /* 是否支持漫游回自己(支持驱动发起重关联) */
+    oal_uint8                       auc_target_bssid[WLAN_MAC_ADDR_LEN];
 #ifdef _PRE_WLAN_FEATURE_11V_ENABLE
     hmac_bsst_rsp_info_stru         st_bsst_rsp_info;
 #endif

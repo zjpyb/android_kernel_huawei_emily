@@ -298,12 +298,13 @@ static int io_count_thread_fn(void *data);
 #define KB              (1024)
 static struct ufs_hba *fsr_hba = NULL;
 #define UFS_VENDOR_HI1861 0x8B6
+static unsigned int ufs_manufacture = 0;
+static unsigned int dm_ufs_manfid = 0;
 
 #ifdef CONFIG_SCSI_UFS_HI1861_VCMD
 static int iotrace_ufs_fsr_get(void);
 static int io_fsr_log_get(struct file *filp);
 
-static unsigned int ufs_manufacture = 0;
 static struct task_struct *apr_work_thread = NULL;
 static int apr_work_thread_fn(void *data);
 
@@ -473,6 +474,8 @@ static unsigned int read_512k_max = 0, read_512k_min = 0, read_512k_avg = 0;
 static unsigned int read_4k_max = 0, read_4k_min = 0, read_4k_avg = 0;
 static unsigned int read_4k_cnt = 0, write_4k_cnt = 0, read_512k_cnt = 0, write_512k_cnt = 0;
 static unsigned int all_read_cnt = 0, all_write_cnt = 0;
+static unsigned int ufs_tag_cnt_one = 0, ufs_tag_cnt_two = 0, ufs_tag_cnt_three = 0, ufs_tag_cnt_four = 0;
+
 
 static struct file *open_log_file(char *name)
 {
@@ -570,24 +573,29 @@ static int io_trace_count_upload(void)
     }
 
     //DMD upload io delay
-    ret = ret | imonitor_set_param(obj, E914009000_READ_DELAY_4K_FIVE_INT, read_4k_cnt);
-    ret = ret | imonitor_set_param(obj, E914009000_WRITE_DELAY_4K_FIVE_INT, write_4k_cnt);
-    ret = ret | imonitor_set_param(obj, E914009000_READ_DELAY_4K_TWO_INT, read_4k_max);
-    ret = ret | imonitor_set_param(obj, E914009000_WRITE_DELAY_4K_TWO_INT, write_4k_max);
-    ret = ret | imonitor_set_param(obj, E914009000_READ_DELAY_4K_ONE_INT, read_4k_min);
-    ret = ret | imonitor_set_param(obj, E914009000_WRITE_DELAY_4K_ONE_INT, write_4k_min);
-    ret = ret | imonitor_set_param(obj, E914009000_READ_DELAY_512K_FIVE_INT, read_512k_cnt);
-    ret = ret | imonitor_set_param(obj, E914009000_WRITE_DELAY_512K_FIVE_INT, write_512k_cnt);
-    ret = ret | imonitor_set_param(obj, E914009000_READ_DELAY_512K_TWO_INT, read_512k_max);
-    ret = ret | imonitor_set_param(obj, E914009000_WRITE_DELAY_512K_TWO_INT, write_512k_max);
-    ret = ret | imonitor_set_param(obj, E914009000_READ_DELAY_512K_ONE_INT , read_512k_min);
-    ret = ret | imonitor_set_param(obj, E914009000_WRITE_DELAY_512K_ONE_INT , write_512k_min);
-    ret = ret | imonitor_set_param(obj, E914009000_READ_DELAY_4K_AVERAGE_INT , read_4k_avg);
-    ret = ret | imonitor_set_param(obj, E914009000_WRITE_DELAY_4K_AVERAGE_INT, write_4k_avg);
-    ret = ret | imonitor_set_param(obj, E914009000_READ_DELAY_512K_AVERAGE_INT , read_512k_avg);
-    ret = ret | imonitor_set_param(obj, E914009000_WRITE_DELAY_512K_AVERAGE_INT , write_512k_avg);
-    ret = ret | imonitor_set_param(obj, E914009000_READ_RUN_IO_NUM_INT, all_read_cnt);
-    ret = ret | imonitor_set_param(obj, E914009000_WRITE_RUN_IO_NUM_INT, all_write_cnt);
+    ret = ret | imonitor_set_param_integer_v2(obj, V914009000_READ_DELAY_4K_FIVE_INT, read_4k_cnt);
+    ret = ret | imonitor_set_param_integer_v2(obj, V914009000_WRITE_DELAY_4K_FIVE_INT, write_4k_cnt);
+    ret = ret | imonitor_set_param_integer_v2(obj, V914009000_READ_DELAY_4K_TWO_INT, read_4k_max);
+    ret = ret | imonitor_set_param_integer_v2(obj, V914009000_WRITE_DELAY_4K_TWO_INT, write_4k_max);
+    ret = ret | imonitor_set_param_integer_v2(obj, V914009000_READ_DELAY_4K_ONE_INT, read_4k_min);
+    ret = ret | imonitor_set_param_integer_v2(obj, V914009000_WRITE_DELAY_4K_ONE_INT, write_4k_min);
+    ret = ret | imonitor_set_param_integer_v2(obj, V914009000_READ_DELAY_512K_FIVE_INT, read_512k_cnt);
+    ret = ret | imonitor_set_param_integer_v2(obj, V914009000_WRITE_DELAY_512K_FIVE_INT, write_512k_cnt);
+    ret = ret | imonitor_set_param_integer_v2(obj, V914009000_READ_DELAY_512K_TWO_INT, read_512k_max);
+    ret = ret | imonitor_set_param_integer_v2(obj, V914009000_WRITE_DELAY_512K_TWO_INT, write_512k_max);
+    ret = ret | imonitor_set_param_integer_v2(obj, V914009000_READ_DELAY_512K_ONE_INT , read_512k_min);
+    ret = ret | imonitor_set_param_integer_v2(obj, V914009000_WRITE_DELAY_512K_ONE_INT , write_512k_min);
+    ret = ret | imonitor_set_param_integer_v2(obj, V914009000_READ_DELAY_4K_AVERAGE_INT , read_4k_avg);
+    ret = ret | imonitor_set_param_integer_v2(obj, V914009000_WRITE_DELAY_4K_AVERAGE_INT, write_4k_avg);
+    ret = ret | imonitor_set_param_integer_v2(obj, V914009000_READ_DELAY_512K_AVERAGE_INT , read_512k_avg);
+    ret = ret | imonitor_set_param_integer_v2(obj, V914009000_WRITE_DELAY_512K_AVERAGE_INT , write_512k_avg);
+    ret = ret | imonitor_set_param_integer_v2(obj, V914009000_READ_RUN_IO_NUM_INT, all_read_cnt);
+    ret = ret | imonitor_set_param_integer_v2(obj, V914009000_WRITE_RUN_IO_NUM_INT, all_write_cnt);
+    ret = ret | imonitor_set_param_integer_v2(obj, V914009000_DATA_PART_FREE_SPACE_INT, dm_ufs_manfid);
+    ret = ret | imonitor_set_param_integer_v2(obj, V914009000_READ_DELAY_MIN_INT, ufs_tag_cnt_one);
+    ret = ret | imonitor_set_param_integer_v2(obj, V914009000_WRITE_DELAY_MIN_INT, ufs_tag_cnt_two);
+    ret = ret | imonitor_set_param_integer_v2(obj, V914009000_READ_DELAY_MAX_INT, ufs_tag_cnt_three);
+    ret = ret | imonitor_set_param_integer_v2(obj, V914009000_WRITE_DELAY_MAX_INT, ufs_tag_cnt_four);
 
 #if 0
 	io_trace_print("io_delay: r_4_max: %d,r_4_min: %d,r_4_avg: %d,w_4_max: %d,w_4_min: %d,w_4_avg: %d\n",
@@ -596,11 +604,14 @@ static int io_trace_count_upload(void)
 		read_512k_max, read_512k_min, read_512k_avg, write_512k_max, write_512k_min, write_512k_avg);
     io_trace_print("io_cnt: r_4_cnt: %d, r_512_cnt: %d, w_4_cnt: %d, w_512_cnt: %d\n",
             read_4k_cnt, read_512k_cnt, write_4k_cnt, write_512k_cnt);
+	io_trace_print("ufs_tags :(0~7): %d, (8~15): %d, (16~23): %d, (24~31): %d\n",
+            ufs_tag_cnt_one, ufs_tag_cnt_two, ufs_tag_cnt_three, ufs_tag_cnt_four);
 #endif
     read_4k_max = read_4k_min = read_4k_avg = write_4k_max = write_4k_min = write_4k_avg = 0;
     read_512k_max = read_512k_min = read_512k_avg = write_512k_max = write_512k_min = write_512k_avg = 0;
     read_4k_cnt = read_512k_cnt = write_4k_cnt = write_512k_cnt = 0;
     all_read_cnt = all_write_cnt = 0;
+    ufs_tag_cnt_one = ufs_tag_cnt_two = ufs_tag_cnt_three = ufs_tag_cnt_four = 0;
 
 	if (ret){
 		return -1;
@@ -1532,6 +1543,34 @@ static unsigned long io_trace_direct_delay(struct io_trace_pid *trace_pid,
     return ret_delay;
 }
 
+static int io_trace_calu_ufs_tag_set_cnt(unsigned long lrb_tag)
+{
+    unsigned int tag_cnt = 0;
+
+    do {
+        if ((lrb_tag % 2) == 1) {
+            tag_cnt ++;
+        }
+        lrb_tag = lrb_tag / 2;
+    } while (lrb_tag != 0);
+    return tag_cnt;
+}
+
+static void io_trace_ufs_tag_cnt(unsigned long delay)
+{
+	unsigned int tag_cnt = 0;
+	tag_cnt =  io_trace_calu_ufs_tag_set_cnt(delay);
+	if ((tag_cnt >= 0) && (tag_cnt < 7)) {
+		ufs_tag_cnt_one ++;
+	} else if ((tag_cnt >= 8) && (tag_cnt < 15)) {
+		ufs_tag_cnt_two ++;
+	} else if ((tag_cnt >= 16) && (tag_cnt < 23)) {
+		ufs_tag_cnt_three ++;
+	} else {
+		ufs_tag_cnt_four ++;
+	}
+}
+
 static void io_trace_global_log(unsigned int action, unsigned long sector,
         unsigned int nr_bytes, unsigned int parent, unsigned long own_time,
         unsigned long delay, unsigned int rw_flags, char *f_name, unsigned long ftrace_time )
@@ -1579,6 +1618,10 @@ static void io_trace_global_log(unsigned int action, unsigned long sector,
             all_write_cnt ++;
     }
 
+    if (action == SCSI_BLK_CMD_RW_END_TAG) {
+		io_trace_ufs_tag_cnt(delay);
+    }
+
     if(parent && (sector != 0) && (action == BLOCK_RQ_COMPLETE_TAG) &&
             ((nr_bytes == (4 * KB)) || (nr_bytes == (512 * KB))) && (io_trace_this->all_log_count >= IO_MAX_LOG_PER_GLOBAL)){
         //char rw_type[32];
@@ -1587,7 +1630,7 @@ static void io_trace_global_log(unsigned int action, unsigned long sector,
         unsigned int count = io_trace_this->all_log_count;
         struct io_trace_log_entry *index_entry;
         unsigned int index;
-        unsigned int cnt_flag = 1;
+        //unsigned int cnt_flag = 1;
         //unsigned int time_flag = 1, delay_type = 0;
 
         index = io_trace_find_index(begin, count, trace_ctrl->all_log_index, 32, action, parent,
@@ -2255,6 +2298,20 @@ static void blk_add_trace_rq_issue(void *ignore, struct request_queue *q, struct
     return;
 }
 
+#if LINUX_VERSION_CODE>= KERNEL_VERSION(4,14,0)
+static void blk_add_trace_rq_complete(void *ignore, struct request *rq,
+        int error, unsigned int nr_bytes)
+{
+    if(io_trace_this->enable)
+    {
+        unsigned int rw_type = iotrace_io_type_parse(req_op(rq), rq->cmd_flags);
+        io_trace_global_log(BLOCK_RQ_COMPLETE_TAG, blk_rq_pos(rq), blk_rq_bytes(rq),
+                BLOCK_RQ_ISSUE_TAG, 0, 0, rw_type, NULL, 0);
+    }
+    return;
+}
+
+#else
 static void blk_add_trace_rq_complete(void *ignore, struct request_queue *q,
         struct request *rq, unsigned int nr_bytes)
 {
@@ -2271,6 +2328,7 @@ static void blk_add_trace_rq_complete(void *ignore, struct request_queue *q,
     }
     return;
 }
+#endif
 
 static void blk_add_trace_rq_abort(void *ignore, struct request_queue *q,
         struct request *rq)
@@ -2707,8 +2765,10 @@ static void iotrace_register_tracepoints(void)
     ret = register_trace_block_bio_wbt_done(blk_add_trace_bio_wbt_done, NULL);
 	WARN_ON(ret);
 #endif
+#if LINUX_VERSION_CODE<KERNEL_VERSION(4,14,0)
     ret = register_trace_block_rq_abort(blk_add_trace_rq_abort, NULL);
 	WARN_ON(ret);
+#endif
     //ret = register_trace_block_rq_requeue(blk_add_trace_rq_requeue, NULL);
 	//WARN_ON(ret);
     ret = register_trace_block_sleeprq(blk_add_trace_sleeprq, NULL);
@@ -2722,10 +2782,12 @@ static void iotrace_register_tracepoints(void)
     ret = register_trace_block_getrq(blk_add_trace_getrq, NULL);
 	WARN_ON(ret);
     */
+#if LINUX_VERSION_CODE<KERNEL_VERSION(4,14,0)
     ret = register_trace_mmc_blk_rw_start(mmc_blk_rw_start, NULL);
     WARN_ON(ret);
     ret = register_trace_mmc_blk_rw_end(mmc_blk_rw_end, NULL);
     WARN_ON(ret);
+#endif
 #if 0
     ret = register_trace_mmc_blk_cmdq_rw_start(mmc_blk_cmdq_rw_start, NULL);
     WARN_ON(ret);
@@ -2737,6 +2799,7 @@ static void iotrace_register_tracepoints(void)
     ret = register_trace_scsi_dispatch_cmd_done(scsi_dispatch_cmd_done, NULL);
     WARN_ON(ret);
 
+#if LINUX_VERSION_CODE<KERNEL_VERSION(4,14,0)
 #ifdef CONFIG_BLK_DEV_THROTTLING
     /*block throttle*/
     ret = register_trace_block_throttle_weight(blk_throttle_weight, NULL);
@@ -2754,6 +2817,7 @@ static void iotrace_register_tracepoints(void)
     ret = register_trace_block_throttle_bio_out(blk_throttle_bio_out, NULL);
 	WARN_ON(ret);
 
+#endif
 #endif
     return;
 }
@@ -3021,7 +3085,7 @@ static int io_count_thread_fn(void *data)
 #ifdef CONFIG_SCSI_UFS_HI1861_VCMD
 static int apr_work_thread_fn(void *data)
 {
-    unsigned int ret;
+    int ret;
     //struct timespec curr_time;
     char file_name[128];
     static struct file *fsr_filp = NULL;
@@ -3085,6 +3149,42 @@ static int apr_work_thread_fn(void *data)
 }
 #endif
 
+static void ufs_manfid( unsigned int ufs_manufid) {
+	switch (ufs_manufid) {
+		case 0x0003:
+		case 0x0045:
+		case 0x0002:
+			dm_ufs_manfid = 3; //Sandisk
+			break;
+		case 0x0011:
+		case 0x0098:
+		case 0x0198:
+			dm_ufs_manfid = 2; //Toshiba
+			break;
+		case 0x0090:
+		case 0x00AD:
+		case 0x01AD:
+			dm_ufs_manfid = 4; //Hynix
+			break;
+		case 0x00FE:
+		case 0x002C:
+		case 0x0013:
+			dm_ufs_manfid = 5; //Micron
+			break;
+		case 0x0015:
+		case 0x00CE:
+		case 0x01CE:
+			dm_ufs_manfid = 1; //Samsung
+			break;
+		case 0x08b6:
+			dm_ufs_manfid = 6; //Hisi
+			break;
+		default:
+			dm_ufs_manfid = 0;
+			break;
+	}
+}
+
 static int __init io_trace_init(void)
 {
     int ret = -1, err = 0;
@@ -3127,15 +3227,17 @@ static int __init io_trace_init(void)
 
         if (!err)
         {
-            io_trace_print("io count upload thread start succeed, %d\n", io_count_thread);
+            io_trace_print("io count upload thread start succeed\n");
             wake_up_process(io_count_thread);
         }
     }
-#ifdef CONFIG_SCSI_UFS_HI1861_VCMD
+
     ufs_manufacture = get_bootdevice_manfid();
+	//dm ufs manfid
+	ufs_manfid(ufs_manufacture);
+	io_trace_print("manfid : 0x%x\n", dm_ufs_manfid);
 
-    io_trace_print("manfid : 0x%x\n", ufs_manufacture);
-
+#ifdef CONFIG_SCSI_UFS_HI1861_VCMD
     //start fsr get thead
     if((ufs_manufacture == UFS_VENDOR_HI1861) && (apr_work_thread == NULL)){
         apr_work_thread = kthread_create(apr_work_thread_fn, NULL, "hi1861-fsr");
@@ -3149,7 +3251,7 @@ static int __init io_trace_init(void)
 
         if(!err)
         {
-            io_trace_print("Hi1861 FSR get start succeed, %d\n", apr_work_thread);
+            io_trace_print("Hi1861 FSR get start succeed\n");
             wake_up_process(apr_work_thread);
         }
     }

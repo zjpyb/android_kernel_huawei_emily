@@ -1,13 +1,20 @@
 
 
+#include <huawei_platform/power/battery_type_identify.h>
 #include "hisi_coul_core.h"
+#ifdef CONFIG_HISI_SOH
 #include <linux/power/hisi/soh/hisi_soh_interface.h>
+#else
+#define ACR_CHECK_CYCLE_S           (20*60)
+#define ACR_MAX_BATTERY_CURRENT_MA   (100)
+#define DCR_CHECK_CYCLE_S           (20*60)
+#define DCR_MAX_BATTERY_CURRENT_MA   (100)
+#endif
 #include <linux/power/hisi/coul/hisi_coul_event.h>
 #ifdef CONFIG_HUAWEI_CHARGER_SENSORHUB
 #include "inputhub_bridge.h"
 #endif
 
-#include <huawei_platform/power/battery_temp_fitting.h>
 #define COUL_CORE_INFO
 #ifndef COUL_CORE_INFO
 #define coul_core_debug(fmt, args...)do {} while (0)
@@ -27,9 +34,17 @@
 #include <huawei_platform/log/hwlog_kernel.h>
 #endif
 #include "securec.h"
+#include "hisi_coul_imonitor.h"
+#ifdef CONFIG_HISI_ASW
+#include "../asw/asw_protect.h"
+#endif /* CONFIG_HISI_ASW */
+
 #define LOW_INT_VOL_COUNT 3
 #define LOW_INT_VOL_SLEEP_TIME 1000
 
+#define CHARGE_CYCLE_INDEX 100
+
+static int check_ocv_data_enable = 0;
 static int last_charge_cycles = 0;
 char* p_charger = NULL;/*0x34A10000~0x34A11000 is reserved for pmu coulomb, we use these to transfer coul information from fastboot to kernel,we add charger info*/
 extern struct blocking_notifier_head notifier_list;
@@ -45,6 +60,7 @@ static int g_eco_leak_uah = 0;
 static int batt_backup_nv_flag = 0;
 static int batt_backup_nv_read = 0;
 static int need_restore_cycle_flag = 0;
+static int basp_mask_delay = 0;
 
 static u32 is_board_type = 0;
 static u32 battery_is_removable = 0;
@@ -114,6 +130,7 @@ static u8 delta_soc_renew_ocv = 0;
 static u8 g_test_delta_soc_renew_ocv = 0;
 static u32 multi_ocv_open_flag = 0;
 static u32 fcc_update_limit_flag = 0;
+static u32 batt_under_voltage_flag;
 ATOMIC_NOTIFIER_HEAD(coul_fault_notifier_list);
 static int basp_learned_fcc = 0;
 static struct battery_aging_safe_policy basp_policy[BASP_PARA_LEVEL];
@@ -125,11 +142,12 @@ static enum BASP_FCC_LEARN_STATE {
 } basp_fcc_ls = LS_UNKNOWN;
 static void coul_get_rm(struct smartstar_coul_device *di, int *rm);
 static int hisi_coul_pm_notify(struct notifier_block * nb, unsigned long mode, void * unused);
-BASP_LEVEL_TYPE get_basp_level(struct smartstar_coul_device *di);
+static BASP_LEVEL_TYPE get_basp_level(struct smartstar_coul_device *di);
 struct coul_core_info_sh *g_di_coul_info_sh = NULL;
 static struct wake_lock coul_lock;
 static void iscd_clear_sampled_info(struct smartstar_coul_device *di);
 static void check_batt_critical_electric_leakage(struct smartstar_coul_device *di);
+static void isc_config_splash2_file_sync(struct iscd_info *iscd);
 static char dsm_buff[ISCD_DSM_LOG_SIZE_MAX] = { 0 };
 #ifdef CONFIG_HISI_DEBUG_FS
 int print_multi_ocv_threshold(void);
@@ -335,7 +353,7 @@ static int basp_nv_set(const char *buffer, const struct kernel_param *kp)
 {
 #define MAX_TMP_BUF_LEN (10)
     const char *begin = NULL, *end = NULL, *c = NULL;
-    BASP_LEVEL_TYPE indx = BASP_LEVEL_0;
+	int indx = 0;
     char num[MAX_TMP_BUF_LEN] = {0};
     long val = 0;
     int need_save = 0;
@@ -356,7 +374,7 @@ static int basp_nv_set(const char *buffer, const struct kernel_param *kp)
         if (!((('0' <= *c) && (*c <= '9')) || *c == ' '))
         {
             coul_core_err(BASP_TAG"[%s], input invalid!\n", __func__);
-            goto FUNC_END;
+			goto func_end;
         }
         c++;
     }
@@ -377,7 +395,7 @@ static int basp_nv_set(const char *buffer, const struct kernel_param *kp)
         if (end - begin >= MAX_TMP_BUF_LEN)
         {
             coul_core_err(BASP_TAG"[%s], input too big!\n", __func__);
-           goto  FUNC_END;
+			goto func_end;
         }
         memcpy(num, begin, (end-begin));
         if (strict_strtol(num, 10, &val) < 0)
@@ -386,39 +404,69 @@ static int basp_nv_set(const char *buffer, const struct kernel_param *kp)
                 break;
         }
 
-        need_save = 1;
-        pinfo->real_fcc_record[indx++] = val;
-        if (indx == MAX_RECORDS_CNT)
-            indx = 0;/*lint !e64*/
-        memset(num, 0, sizeof(num));
-        begin = end;
-    }
+		need_save = 1;
 
-    if (need_save)
-        save_nv_info(di);
+		/*
+		 * 0 ~ MAX_RECORDS_CNT-1 are fcc value
+		 * MAX_RECORDS_CNT is chargecycles
+		 */
+		switch (indx) {
+		case MAX_RECORDS_CNT:
+			di->batt_chargecycles = val;
+			break;
+		case MAX_RECORDS_CNT + 1:
+			indx = 0; /* lint !e64 */
+			break;
+		default:
+			pinfo->real_fcc_record[indx++] = val;
+			break;
+		}
 
-FUNC_END:
-    return strlen(buffer);
+		memset_s(num, sizeof(num), 0, sizeof(num));
+		begin = end;
+	}
+
+	if (need_save)
+		save_nv_info(di);
+
+	di->basp_level = get_basp_level(di);
+
+func_end:
+	return strlen(buffer);
 
 #undef MAX_TMP_BUF_LEN
 }
 
-static int basp_nv_get(char *buffer, const struct kernel_param *kp) {
-    unsigned int len = strlen(buffer);
-    int i = 0;
+static int basp_nv_get(char *buffer, const struct kernel_param *kp)
+{
+	unsigned int len = strlen(buffer);
+	int i = 0;
+	struct smartstar_coul_device *di = g_smartstar_coul_dev;
 
-    struct smartstar_coul_device *di = (struct smartstar_coul_device *)g_smartstar_coul_dev;
-    if (NULL == di) {
-        coul_core_err(BASP_TAG"[%s], input param NULL!\n", __func__);
-        return -EINVAL;
-    }
+	if (!di) {
+		coul_core_err(BASP_TAG"[%s], input param NULL!\n", __func__);
+		return -EINVAL;
+	}
 
-    for (i = 0; i < MAX_RECORDS_CNT; i++) {
-        snprintf(buffer + len, PAGE_SIZE - len, "learned_fcc[%d]:%d\n", i, di->nv_info.real_fcc_record[i]);
-        len = strlen(buffer);
-    }
-    snprintf(buffer + len, PAGE_SIZE - len, "latest_record_index:%d\n", di->nv_info.latest_record_index);
-    return strlen(buffer);
+	for (i = 0; i < MAX_RECORDS_CNT; i++) {
+		snprintf_s(buffer + len, PAGE_SIZE - len, PAGE_SIZE - len -1,
+			"learned_fcc[%d]:%d\n",
+			i, di->nv_info.real_fcc_record[i]);
+		len = strlen(buffer);
+	}
+
+	snprintf_s(buffer + len, PAGE_SIZE - len,
+		PAGE_SIZE - len -1,
+		"chargecycles:%d\n",
+		di->batt_chargecycles);
+
+	len = strlen(buffer);
+	snprintf_s(buffer + len, PAGE_SIZE - len,
+		PAGE_SIZE - len -1,
+		"latest_record_index:%d\n",
+		di->nv_info.latest_record_index);
+
+	return strlen(buffer);
 }
 
 static struct kernel_param_ops basp_nv_ops = {
@@ -453,7 +501,7 @@ int coul_core_ops_register(struct coul_device_ops *ops)
     return ret;
 }
 
-static int get_coul_chip_temp(void)
+static int coul_get_chip_temp(void)
 {
     int chip_temp = 0;
     if(g_coul_core_ops && g_coul_core_ops->get_chip_temp) {
@@ -461,7 +509,7 @@ static int get_coul_chip_temp(void)
         coul_core_info("%s:chip_temp=%d\n",__func__,chip_temp);
         return chip_temp;
     } else {
-        coul_core_err("%s:get_coul_chip_temp failed.",__func__);
+        coul_core_err("%s:coul_get_chip_temp failed.",__func__);
         return -1;
     }
 }
@@ -1533,14 +1581,6 @@ static int __init move_pmu_nv_info(void)
 	}
     memcpy(&my_nv_info, pmu_nv_addr, sizeof(my_nv_info));
 
-    //here transfer the old short value to new int value to avoid check_sum will overflow
-    if(my_nv_info.fcc_check_sum!=0){
-	coul_core_info("cp fcc_check_sum %d to fcc_check_sum_ext, and clear it\n",my_nv_info.fcc_check_sum);
-	my_nv_info.fcc_check_sum_ext =my_nv_info.fcc_check_sum;
-	my_nv_info.fcc_check_sum =0;
-    }else{
-	coul_core_info("fcc_check_sum =0,do nothing\n");
-    }
     p_charger = (void*)pmu_nv_addr;
     return 0;
 }
@@ -1685,10 +1725,11 @@ static int get_initial_params(struct smartstar_coul_device *di)
     }
     memcpy(&di->nv_info, &my_nv_info, sizeof(my_nv_info));
 
-    set_charge_cycles(di, pinfo->charge_cycles);
+    di->batt_chargecycles = pinfo->charge_cycles;
     di->high_pre_qmax     = pinfo->qmax;
     di->batt_limit_fcc    = pinfo->limit_fcc;
     di->batt_report_full_fcc_real = pinfo->report_full_fcc_real;
+	di->basp_delay_config = pinfo->basp_delay_config;
     v_offset_a = pinfo->v_offset_a==0?DEFAULT_V_OFF_A:pinfo->v_offset_a;
     v_offset_b = pinfo->v_offset_b==0?DEFAULT_V_OFF_B:pinfo->v_offset_b;
     if (c_offset_a) {
@@ -1706,6 +1747,10 @@ static int get_initial_params(struct smartstar_coul_device *di)
         pinfo->hkadc_batt_id_voltage);
 
     coul_core_info("real use a/b value, v_offset_a=%d,v_offset_b=%d,c_offset_a=%d,c_offset_b=%d\n",v_offset_a,v_offset_b,c_offset_a,c_offset_b);
+
+	coul_core_info(BASP_TAG"basp_delay_config from nv: %4x\n",
+		di->basp_delay_config);
+
     for (i=0; i<MAX_TEMPS; i++)
     {
         if (pinfo->real_fcc[i] == 0){
@@ -1781,6 +1826,8 @@ static int save_nv_info(struct smartstar_coul_device *di)
     pinfo->limit_fcc = di->batt_limit_fcc;
 
     pinfo->report_full_fcc_real = di->batt_report_full_fcc_real;
+
+	pinfo->basp_delay_config = di->basp_delay_config;
 
     if (di->adjusted_fcc_temp_lut){
         for(i=0; i<di->adjusted_fcc_temp_lut->cols; i++)
@@ -1885,6 +1932,9 @@ static int battery_para_changed(struct smartstar_coul_device *di, int flag)
 ********************************************************/
 static void update_chargecycles(struct smartstar_coul_device *di)
 {
+	struct bit_delay_config *cfg = NULL;
+	unsigned char temp_cycle;
+
     if( 0 == di )
     {
         coul_core_info("NULL point in [%s]\n", __func__);
@@ -1894,6 +1944,17 @@ static void update_chargecycles(struct smartstar_coul_device *di)
         set_charge_cycles(di, di->batt_chargecycles + di->batt_soc_real/10 - di->charging_begin_soc/10);
         coul_core_info("new chargecycle=%d, added=%d\n", di->batt_chargecycles, di->batt_soc_real/10 - di->charging_begin_soc/10);
         hw_coul_update_chargecycles(di);/*update battery backup nv chargecycles*/
+	if (basp_mask_delay) {
+		temp_cycle =
+			(unsigned char)((di->batt_chargecycles / CHARGE_CYCLE_INDEX) & 0xff);
+		cfg = (struct bit_delay_config *)&(di->basp_delay_config);
+		if (di->basp_need_delay && (temp_cycle ==
+			(unsigned char)cfg->delay_cylces)) {
+			coul_core_info(BASP_TAG"basp delayed ok\n");
+			di->basp_need_delay = 0;
+			cfg->delayed = 1;
+		}
+	}
         di->basp_level = get_basp_level(di);
     }
     else{
@@ -2018,11 +2079,29 @@ int coul_battery_temperature_tenth_degree(BATTERY_TEMP_USER_TYPE user)
     int cnt = 0;
     int T_adc;
     int temperature;
+    struct smartstar_coul_device *di = g_smartstar_coul_dev;
 
     /*default is no battery in sft and udp, so here temp is fixed 25c to prevent low power reset*/
     if ( BAT_BOARD_ASIC != is_board_type) {
         return DEFAULT_TEMP*10;
     }
+
+    if (di && di->coul_dev_ops && di->coul_dev_ops->get_bat_temp){
+        while(cnt++ < retry_times) {
+            T_adc = di->coul_dev_ops->get_bat_temp();
+            if(T_adc < 0)
+            {
+                coul_core_err("Bat temp read fail!,retry_cnt = %d\n",cnt);
+            }
+            else
+            {
+                temperature = adc_to_temp(T_adc);
+                return 10*temperature;
+            }
+        }
+        goto error;
+    }
+
     while(cnt++ < retry_times)
     {
         T_adc = hisi_adc_get_adc(adc_batt_temp);
@@ -2038,6 +2117,7 @@ int coul_battery_temperature_tenth_degree(BATTERY_TEMP_USER_TYPE user)
         }
     }
 
+error:
     coul_core_err("Bat temp read retry 3 times,error!\n");
 	if (USER_CHARGER == user)
 		return TEMP_IPC_GET_ABNORMAL*10;
@@ -2059,8 +2139,6 @@ int coul_ntc_temperature_compensation(struct smartstar_coul_device *di, BATTERY_
     int ichg = 0;
     int i = 0;
 
-    int new_temp = 0;
-
     /*modify the temperature obtained by sampling, according to the temperature compensation value
       corresponding to the different current */
     temp_without_compensation = coul_battery_temperature_tenth_degree(user);
@@ -2076,10 +2154,6 @@ int coul_ntc_temperature_compensation(struct smartstar_coul_device *di, BATTERY_
                 break;
             }
         }
-    }
-
-    if (btf_get_battery_temp_with_current(ichg, &new_temp) == 0) {
-        temp_with_compensation = new_temp * 10;
     }
 
     coul_core_info("coul_ntc_temperature_compensation: current = %d, temp_without_compensation = %d, temp_with_compensation = %d\n", ichg, temp_without_compensation, temp_with_compensation );
@@ -2332,7 +2406,11 @@ int coul_get_battery_current_ma(void)
 char* coul_get_battery_brand(void)
 {
     struct smartstar_coul_device *di = g_smartstar_coul_dev;
-    return di->batt_data->batt_brand;
+
+    if (di->batt_data->id_status == BAT_ID_VALID)
+        return di->batt_data->batt_brand;
+
+    return "default";
 }
 
 /*******************************************************
@@ -2669,6 +2747,8 @@ int coul_get_battery_health (void)
         status = POWER_SUPPLY_HEALTH_COLD;
     else if (temp > batt_temp_too_hot)
         status = POWER_SUPPLY_HEALTH_OVERHEAT;
+    else if (batt_under_voltage_flag)
+        status = POWER_SUPPLY_HEALTH_UNDERVOLTAGE;
 
     return status;
 }
@@ -3069,17 +3149,78 @@ bool could_cc_update_ocv(void)
 static bool is_in_capacity_dense_area(int ocv_uv)
 {
 	if( ocv_uv < CAPACITY_DENSE_AREA_3200
-		|| (ocv_uv > CAPACITY_DENSE_AREA_3670 && ocv_uv < CAPACITY_DENSE_AREA_3690)
-		|| (ocv_uv > CAPACITY_DENSE_AREA_3730 && ocv_uv < CAPACITY_DENSE_AREA_3800))
+		|| (ocv_uv > CAPACITY_DENSE_AREA_3670 && ocv_uv < CAPACITY_DENSE_AREA_3700)
+		|| (ocv_uv > CAPACITY_DENSE_AREA_3720 && ocv_uv < CAPACITY_DENSE_AREA_3810))
 		return TRUE;
 /*restrict [3800mv,3830mv]&&(3200mv,3730mv)ocv update with cc dischage 5% fcc */
-    if ((ocv_uv > CAPACITY_DENSE_AREA_3200 && ocv_uv < CAPACITY_DENSE_AREA_3730)
-        ||(ocv_uv >= CAPACITY_DENSE_AREA_3800
-            && ocv_uv <= CAPACITY_DENSE_AREA_3830)) {
+    if ((ocv_uv > CAPACITY_DENSE_AREA_3200 && ocv_uv < CAPACITY_DENSE_AREA_3720)
+        ||(ocv_uv >= CAPACITY_DENSE_AREA_3810
+            && ocv_uv <= CAPACITY_DENSE_AREA_3900)) {
         if (FALSE == could_cc_update_ocv())
             return TRUE;
     }
 	return FALSE;
+}
+
+/*get array max value and min value.*/
+static void max_min_value(const int array[],u32 size, int *min, int *max)
+{
+    u32 i;
+    int max_value, min_value;
+
+    if (!size || !max || !min)
+        return;
+    max_value = min_value = array[0];
+
+    for (i = 1; i < size; i++) {
+        if (array[i] > max_value)
+            max_value = array[i];
+
+        if(array[i] < min_value)
+            min_value = array[i];
+    }
+
+    *max = max_value;
+    *min = min_value;
+}
+
+/*******************************************************
+  Function:        ocv_vol_data_is_valid
+  Description:     check vol data from fifo valid.
+  Input:           vol_data[]:vol data array from fifo
+                   data_cnt: vol data count
+  Output:          NULL
+  Return:          -1:data invalid
+                    0:data valid.
+  Remark:          1 all data is same ,invalid.
+                   2 error exceeding 5mv, invalid.
+********************************************************/
+static int check_ocv_vol_data_valid(const int vol_data[], u32 data_cnt)
+{
+    int max = 0;
+    int min = 0;
+
+    if (data_cnt > VOL_FIFO_MAX)
+        data_cnt = VOL_FIFO_MAX;
+
+    if (!check_ocv_data_enable) {
+        coul_core_err("[%s] not check!\n", __func__);
+        return 0;
+    }
+    max_min_value(vol_data, data_cnt, &min, &max);
+
+    /*all data is  same ,invalid*/
+    if (max == min) {
+        coul_core_err("[%s] all vol data is same ,invalid!\n", __func__);
+        return -1;
+    }
+    /*Error exceeding 5mv, invalid*/
+    if (abs(max - min) > VOL_MAX_DIFF_UV) {
+        coul_core_err("[%s] fifo vol difference is more than 5 millivolts, invalid!\n", __func__);
+        return -1;
+    }
+    coul_core_err("[%s] ocv data valid!\n", __func__);
+    return 0;
 }
 
 static int get_ocv_vol_from_fifo(struct smartstar_coul_device *di)
@@ -3090,6 +3231,7 @@ static int get_ocv_vol_from_fifo(struct smartstar_coul_device *di)
     int voltage_uv = 0;
     int totalvol, totalcur;
     int fifo_depth = 0;
+    int vol_fifo[VOL_FIFO_MAX] = {0};
 
 	if(NULL == di || NULL == di->coul_dev_ops)
 	{
@@ -3119,15 +3261,19 @@ static int get_ocv_vol_from_fifo(struct smartstar_coul_device *di)
 			continue;
 		}
 		DBG_CNT_INC(dbg_valid_vol);
-		coul_core_info("valid current = %d ua\n", current_ua);
-        totalvol += di->coul_dev_ops->get_battery_vol_uv_from_fifo(i);
+		coul_core_info("valid current = %d ua, vol = %d uv!\n", current_ua, voltage_uv);
+        totalvol += voltage_uv;
         totalcur += current_ua;
+        vol_fifo[used%VOL_FIFO_MAX] = voltage_uv;
 		used++;
 	}
 
 	coul_core_info("used = %d\n", used);
-	if (used > 0)
+	if (used > 3)
 	{
+	    /*check vol inalid*/
+	    if (check_ocv_vol_data_valid(vol_fifo, used))
+            return 0;
 		voltage_uv = totalvol / used;
 		current_ua = totalcur / used;
 		voltage_uv += current_ua/1000*(di->r_pcb/1000 + DEFAULT_BATTERY_OHMIC_RESISTANCE);
@@ -3248,8 +3394,10 @@ static int get_high_pre_qmax(struct smartstar_coul_device *di)
         design_fcc_mah = interpolate_fcc(di, di->batt_ocv_temp);
         /*get the percent of power after the CV is lowered */
         delta_cv_pc = basp_full_pc_by_voltage(di)/TENTH;
+        if (!delta_cv_pc)
+            delta_cv_pc = PERCENT;
         /*calculate qmax*/
-        if ((0 != di->qmax_end_pc - di->qmax_start_pc) && delta_cv_pc)
+        if (0 != di->qmax_end_pc - di->qmax_start_pc)
             tmp_qmax =  (- di->qmax_cc)*PERCENT*di->qmax_end_pc/(di->qmax_end_pc - di->qmax_start_pc)/delta_cv_pc;
         else {
             coul_core_err("[%s] qmax_end_pc = %d ,start_pc =%d, delta_cv_pc=%d! \n", __func__, di->qmax_end_pc, di->qmax_start_pc, delta_cv_pc);
@@ -3273,7 +3421,6 @@ static int get_high_pre_qmax(struct smartstar_coul_device *di)
     coul_core_info("[%s] not update!\n", __func__);
     return -1;
 }
-
 /*******************************************************
   Function:        get_ocv_by_vol
   Description:     calculate ocv by 10 history data when AP exist from deep sleep
@@ -3304,6 +3451,9 @@ static void get_ocv_by_vol(struct smartstar_coul_device *di)
 	record_ocv_cali_info(di);
 	coul_clear_cc_register();
 	coul_clear_coul_time();
+#ifdef CONFIG_HISI_COUL_POLAR
+        clear_polar_err_b();
+#endif
 	di->coul_dev_ops->save_ocv(voltage_uv, IS_UPDATE_FCC);
 	coul_core_info("awake from deep sleep, new OCV = %d,fcc_flag=%d \n", di->batt_ocv, di->batt_ocv_valid_to_refresh_fcc);
 	DBG_CNT_INC(dbg_ocv_cng_0);
@@ -3482,7 +3632,9 @@ static void get_battery_id_voltage_real(struct smartstar_coul_device *di)
 {
     int volt;
 
+    apply_batt_type_mode(BAT_ID_VOLTAGE);
     volt = hisi_adc_get_adc(adc_batt_id);
+    release_batt_type_mode();
     if(volt < 0){ //negative means get adc fail
         coul_core_err("HKADC get battery id fail\n");
         volt = 0;
@@ -4344,6 +4496,8 @@ void basp_record_fcc(struct smartstar_coul_device *di)
     int i = 0;
     struct ss_coul_nv_info *pinfo = NULL;
     char buff[DSM_BUFF_SIZE_MAX] = {0};
+	char timestamp[TIMESTAMP_STR_SIZE] = {0};
+	errno_t e_ret = EOK;
 
     if (NULL == di)
     {
@@ -4354,6 +4508,14 @@ void basp_record_fcc(struct smartstar_coul_device *di)
 
     index = pinfo->latest_record_index % MAX_RECORDS_CNT;
     pinfo->real_fcc_record[index] = di->fcc_real_mah;
+	get_timestamp(timestamp, TIMESTAMP_STR_SIZE);
+	e_ret = memcpy_s(di->real_fcc_record_time[index],
+			TIMESTAMP_STR_SIZE,
+			timestamp,
+			TIMESTAMP_STR_SIZE);
+	if (e_ret != EOK)
+		coul_core_err(BASP_TAG"memcpy fail\n");
+
     pinfo->latest_record_index = index + 1;
     coul_core_info(BASP_TAG"[%s], learn times =%d,index=%d!\n", __func__,pinfo->latest_record_index,index);
     for(i = 0;i < MAX_RECORDS_CNT;i++)
@@ -4438,63 +4600,103 @@ bool basp_check_sum(void)
     }
         return TRUE;
 }
-BASP_LEVEL_TYPE get_basp_level(struct smartstar_coul_device *di)
+
+static BASP_LEVEL_TYPE find_basp_level(void)
 {
-    unsigned int i = 0;
-    unsigned int records_cnt = 0, records_sum = 0;
-    unsigned int  records_avg = BASP_DEFAULT_RECORD_FCC_AVG;
-    BASP_LEVEL_TYPE basp_level_ret = BASP_LEVEL_0;
-    if(!basp_check_sum()) { /*learn fcc is invaild,clear NV*/
-        clear_record_fcc(di);
-    }
-    for (i = 0; i < MAX_RECORDS_CNT; i++) {
-        if (0 == my_nv_info.real_fcc_record[i]) {
-            continue;
-        }
-        records_sum += my_nv_info.real_fcc_record[i];
-        records_cnt++;
-        coul_core_info(BASP_TAG"valid fcc records, [%d]:%dmAh\n", i, my_nv_info.real_fcc_record[i]);
-    }
+	unsigned int idx;
+	unsigned int fcc_thres = 0;
+	bool is_cycle_exceed = false;
+	struct smartstar_coul_device *di = NULL;
 
-    if (!records_cnt) {
-        basp_learned_fcc = di->batt_data->fcc;
-    } else {
-        records_avg = records_sum/records_cnt;
-        if( records_avg < di->batt_data->fcc*basp_policy[0].fcc_ratio/BASP_PARA_SCALE) {
-            basp_learned_fcc = di->batt_data->fcc*basp_policy[0].fcc_ratio/BASP_PARA_SCALE;
-        } else {
-            basp_learned_fcc = records_avg;
-        }
-    }
+	if (!g_smartstar_coul_dev) {
+		coul_core_err(BASP_TAG"[%s], input param NULL\n", __func__);
+		return BASP_LEVEL_0;
+	}
 
-    if (records_cnt >= MAX_RECORDS_CNT) {
-        for (i = 0; i < di->basp_total_level; i++) {
-            if (records_avg <  di->batt_data->fcc*basp_policy[i].fcc_ratio/BASP_PARA_SCALE) {
-                basp_level_ret = basp_policy[i].level;
-                goto FuncEnd;
-            }
-        }
-    } else {
-        for (i = 0; i < di->basp_total_level; i++) {
-            if ((di->batt_chargecycles > basp_policy[i].chrg_cycles) &&
-                 (records_avg <  di->batt_data->fcc*basp_policy[i].fcc_ratio/BASP_PARA_SCALE)) {
-                basp_level_ret = basp_policy[i].level;
-                goto FuncEnd;
-            }
-        }
-    }
-    for (i = di->basp_total_level; i != 0; i--) {
-        if ((di->batt_chargecycles < basp_policy[i-1].chrg_cycles) ||
-             (BASP_LEVEL_0 == basp_policy[i-1].level)) {
-             basp_level_ret = basp_policy[i-1].level;
-             goto FuncEnd;
-        }
-    }
+	di = g_smartstar_coul_dev;
+	for (idx = 0; idx < di->basp_total_level; idx++) {
+		fcc_thres = di->batt_data->fcc *
+			basp_policy[idx].fcc_ratio / BASP_PARA_SCALE;
+		is_cycle_exceed = di->batt_chargecycles >
+			basp_policy[idx].chrg_cycles;
 
-FuncEnd:
-    coul_core_info(BASP_TAG"level:%d, charge_cycles:%d, bat_fcc:%dmAh, records_cnt:%d, records_avg:%dmAh\n", \
-        basp_level_ret, di->batt_chargecycles, di->batt_data->fcc, records_cnt, records_avg);
-    return basp_level_ret;
+		if (basp_policy[idx].logic == BASP_AND) {
+			if ((di->basp_records_avg < fcc_thres) &&
+				is_cycle_exceed)
+				return basp_policy[idx].level;
+		} else if (basp_policy[idx].logic == BASP_OR) {
+			if ((di->basp_records_avg < fcc_thres) ||
+				is_cycle_exceed)
+				return basp_policy[idx].level;
+		} else {
+			return BASP_LEVEL_0;
+		}
+	}
+
+	return BASP_LEVEL_0;
+}
+
+static BASP_LEVEL_TYPE get_basp_level(struct smartstar_coul_device *di)
+{
+	unsigned int i = 0;
+	unsigned int fcc_thres = 0;
+	unsigned int records_cnt = 0, records_sum = 0;
+	unsigned int  records_avg = BASP_DEFAULT_RECORD_FCC_AVG;
+	BASP_LEVEL_TYPE basp_level_ret = BASP_LEVEL_0;
+
+	if (!di)
+		return basp_level_ret;
+
+	if (basp_mask_delay && (!di->basp_batt_matched ||
+		di->basp_need_delay)) {
+		coul_core_info(BASP_TAG"skip basp, batt_matched %d, need_delay %d",
+			di->basp_batt_matched, di->basp_need_delay);
+		return basp_level_ret;
+	}
+
+	/* learn fcc is invaild,clear NV */
+	if (!basp_check_sum())
+		clear_record_fcc(di);
+
+	for (i = 0; i < MAX_RECORDS_CNT; i++) {
+		if (di->nv_info.real_fcc_record[i] == 0)
+			continue;
+
+		records_sum += di->nv_info.real_fcc_record[i];
+		records_cnt++;
+		coul_core_info(BASP_TAG"valid fcc records, [%d]:%dmAh\n",
+			i, di->nv_info.real_fcc_record[i]);
+	}
+
+	fcc_thres = di->batt_data->fcc *
+		    basp_policy[0].fcc_ratio / BASP_PARA_SCALE;
+
+	if (records_cnt < MAX_BASP_RECORDS_CNT) {
+		basp_learned_fcc = di->batt_data->fcc;
+		di->basp_records_avg = di->batt_data->fcc;
+	} else {
+		records_avg = records_sum / records_cnt;
+		di->basp_records_avg = records_avg;
+
+		if (records_avg < fcc_thres)
+			basp_learned_fcc = fcc_thres;
+		else
+			basp_learned_fcc = records_avg;
+	}
+	basp_level_ret = find_basp_level();
+
+	coul_core_info(BASP_TAG"level:%d,\t"
+		"charge_cycles:%d,\t"
+		"bat_fcc:%dmAh,\t"
+		"records_cnt:%d,\t"
+		"records_avg:%dmAh\n",
+		basp_level_ret,
+		di->batt_chargecycles,
+		di->batt_data->fcc,
+		records_cnt,
+		records_avg);
+
+	return basp_level_ret;
 }
 
 static int get_batt_charge_info(struct smartstar_coul_device *di, char *buff, int size)
@@ -4575,6 +4777,7 @@ void coul_start_soh_check(void)
     }else
         charged_cnt = 0;
 }
+
 static void coul_set_work_interval(struct smartstar_coul_device *di)
 {
     if (NULL == di)
@@ -4587,12 +4790,70 @@ static void coul_set_work_interval(struct smartstar_coul_device *di)
         else
             di->soc_work_interval = CALCULATE_SOC_MS/2;
     }
-    /*work fast when we use super charge*/
 #ifdef CONFIG_DIRECT_CHARGER
     if (get_super_charge_flag() && (CHARGING_STATE_CHARGE_START == di->charging_state)
         && (di->soc_work_interval > (CALCULATE_SOC_MS/4)))
         di->soc_work_interval = CALCULATE_SOC_MS/4;
 #endif
+}
+
+static void coul_imonitor_prepare_basp_basic_info(
+	struct smartstar_coul_device *di,
+	struct coul_imonitor_basp_basic_info *info)
+{
+	char *bat_brand = NULL;
+	errno_t ret = EOK;
+
+	if (!di || !info) {
+		coul_core_err("NULL point in [%s]\n", __func__);
+		return;
+	}
+
+	info->act_days = 0;
+	info->bat_cap = di->batt_soc_real;
+	info->bat_tv_set = 0;
+	info->bat_cyc = di->batt_chargecycles;
+	info->basp_lv = di->basp_level;
+	info->basp_1_days = 0;
+	info->basp_2_days = 0;
+	info->basp_3_days = 0;
+	info->basp_4_days = 0;
+	info->q_max = di->qmax;
+	info->fg_fcc1 = di->nv_info.real_fcc_record[0];
+	info->fg_fcc2 = di->nv_info.real_fcc_record[1];
+	info->fg_fcc3 = di->nv_info.real_fcc_record[2];
+	info->cha_ic_tp = 0;
+
+	bat_brand = hisi_battery_brand();
+
+	if (bat_brand) {
+		ret = memcpy_s(info->bat_man, BASP_BASIC_INFO_MAX_LEN,
+			bat_brand,
+			strnlen(bat_brand, BASP_BASIC_INFO_MAX_LEN - 1) + 1);
+		if (ret != EOK)
+			coul_core_err("bat_man memcpy failed\n");
+	}
+
+	ret = memcpy_s(info->bat_par_f, BASP_BASIC_INFO_MAX_LEN,
+		"reserve",
+		strnlen("reserve", BASP_BASIC_INFO_MAX_LEN - 1) + 1);
+	if (ret != EOK)
+		coul_core_err("bat_par_f memcpy failed\n");
+
+	ret = memcpy_s(info->fcc_time1, BASP_BASIC_INFO_MAX_LEN,
+		di->real_fcc_record_time[0], BASP_BASIC_INFO_MAX_LEN);
+	if (ret != EOK)
+		coul_core_err("fcc_time1 memcpy failed\n");
+
+	ret = memcpy_s(info->fcc_time2, BASP_BASIC_INFO_MAX_LEN,
+		di->real_fcc_record_time[1], BASP_BASIC_INFO_MAX_LEN);
+	if (ret != EOK)
+		coul_core_err("fcc_time2 memcpy failed\n");
+
+	ret = memcpy_s(info->fcc_time3, BASP_BASIC_INFO_MAX_LEN,
+		di->real_fcc_record_time[2], BASP_BASIC_INFO_MAX_LEN);
+	if (ret != EOK)
+		coul_core_err("fcc_time3 memcpy failed\n");
 }
 
  /*******************************************************
@@ -4623,11 +4884,12 @@ static void coul_set_work_interval(struct smartstar_coul_device *di)
     static int charging_done_ocv_enter_time;
     int charging_done_now_time;
     int ocv_time_inc;
+	struct coul_imonitor_basp_basic_info basp_basic_info;
 
     if( NULL == di || NULL== work)
     {
         coul_core_err("NULL point in [%s]\n", __func__);
-   	 	return;
+                return;
     }
     hw_coul_get_nv(di);/*get battery backup nv info*/
     if(di->is_nv_need_save){
@@ -4638,7 +4900,7 @@ static void coul_set_work_interval(struct smartstar_coul_device *di)
         }
     }
     if (!di->batt_exist){
-    	coul_core_info("battery not exist, do not calc soc any more\n");
+        coul_core_info("battery not exist, do not calc soc any more\n");
         return;
     }
     if(basp_dsm_flag)
@@ -4653,7 +4915,11 @@ static void coul_set_work_interval(struct smartstar_coul_device *di)
             }
         }
     }
+
     basp_fcc_learn_evt_handler(di, EVT_PER_CHECK);
+	coul_imonitor_prepare_basp_basic_info(di, &basp_basic_info);
+	coul_imonitor_periodic_report(COUL_IMONITOR_BASP_BASIC_INFO,
+		&basp_basic_info);
 
     offset_cur_modify_val = di->coul_dev_ops->get_offset_current_mod();
     coul_core_info("offset_cur_modify_val:0x%x\n", offset_cur_modify_val);
@@ -4875,6 +5141,7 @@ static void make_cc_no_overload(struct smartstar_coul_device *di)
 			}
 			delta_soc = di->batt_soc - 2;
             di->batt_soc = 1;
+            batt_under_voltage_flag = 1; /* under voltage flag */
 		}
     }
     else if (di->v_low_int_value == LOW_INT_STATE_RUNNING){
@@ -4898,6 +5165,7 @@ static void make_cc_no_overload(struct smartstar_coul_device *di)
 			}
             delta_soc = di->batt_soc;
             di->batt_soc = 0;
+            batt_under_voltage_flag = 1; /* under voltage flag */
 		}
     }
 
@@ -5516,6 +5784,9 @@ static void charger_event_process(struct smartstar_coul_device *di,unsigned int 
             coul_core_info("receive charge done event = 0x%x\n",(int)event);
             DI_LOCK();
     	    coul_charging_done(di);
+#ifdef CONFIG_HISI_ASW
+	asw_protect_charge_done(di, &batt_backup_nv_info);
+#endif /* CONFIG_HISI_ASW */
     	    DI_UNLOCK();
     		break;
 
@@ -5599,7 +5870,7 @@ static void coul_smooth_startup_soc(struct smartstar_coul_device *di)
 }
 
 #ifdef CONFIG_HUAWEI_CHARGER
-static void __fatal_isc_chg_prot(struct iscd_info *iscd, int * capacity)
+static void __fatal_isc_chg_prot(struct iscd_info *iscd, const int * capacity)
 {
     int ret;
 
@@ -5642,7 +5913,7 @@ static int fatal_isc_chg_limit_soc(struct notifier_block *self,
 #endif
 
 #ifdef CONFIG_DIRECT_CHARGER
-static void __fatal_isc_direct_chg_prot(struct iscd_info *iscd, int * capacity)
+static void __fatal_isc_direct_chg_prot(struct iscd_info *iscd, const int * capacity)
 {
     int ret;
 
@@ -5705,6 +5976,11 @@ static int fatal_isc_uevent_notify(struct notifier_block *self,
 {
     struct iscd_info *iscd = container_of(self, struct iscd_info, fatal_isc_uevent_notify_nb);
 
+    if (iscd->fatal_isc_config.has_reported != TRUE) {
+        iscd->has_reported = TRUE;
+        isc_config_splash2_file_sync(iscd);
+    }
+
     if(event != ISC_LIMIT_START_CHARGING_STAGE && event != ISC_LIMIT_BOOT_STAGE) {
         return NOTIFY_DONE;
     } else if(iscd->isc_status){
@@ -5733,7 +6009,7 @@ static void isc_splash2_file_sync(struct iscd_info *iscd)
             coul_core_err("splash2 file system not ready for isc data record\n.");
             return;
         }
-        iscd->fatal_isc_hist.magic_num = FATAL_ISC_MAGIC_NUM;
+        iscd->fatal_isc_hist.magic_num = iscd->iscd_file_magic_num;
         write_size = kernel_write(fd, (const void *)&iscd->fatal_isc_hist, sizeof(isc_history), 0);
         if(write_size != sizeof(iscd->fatal_isc_hist)) {
             coul_core_err("Write %s failed(wtire:%zd expect:%zu) in %s\n.",
@@ -5746,9 +6022,36 @@ static void isc_splash2_file_sync(struct iscd_info *iscd)
     }
 }
 
+static void isc_config_splash2_file_sync(struct iscd_info *iscd)
+{
+    struct file * fd;
+    ssize_t write_size;
+
+    if (!iscd) {
+        coul_core_err("Null input pointer iscd found in %s\n", __func__);
+        return;
+    }
+    fd = filp_open(ISC_CONFIG_DATA_FILE, O_WRONLY|O_TRUNC, 0);
+    if (IS_ERR(fd)) {
+        coul_core_err("splash2 file isc_config.data not ready for isc config data record\n.");
+        return;
+    }
+    iscd->fatal_isc_config.write_flag = iscd->write_flag;
+    iscd->fatal_isc_config.delay_cycles = iscd->isc_valid_delay_cycles;
+    iscd->fatal_isc_config.has_reported = iscd->has_reported;
+    iscd->fatal_isc_config.magic_num = iscd->iscd_file_magic_num;
+    write_size = kernel_write(fd, (const void *)&iscd->fatal_isc_config, sizeof(isc_config), 0);
+    if (write_size != sizeof(iscd->fatal_isc_config))
+        coul_core_err("Write %s failed(wtire:%zd expect:%zu) in %s\n.",
+                  ISC_CONFIG_DATA_FILE, write_size, sizeof(iscd->fatal_isc_config), __func__);
+
+    filp_close(fd, NULL);
+    coul_core_info("sync fatal isc config to splash2 success.\n");
+}
+
 static void fatal_isc_dmd_wkfunc(struct work_struct *work)
 {
-    fatal_isc_dmd *reporter = container_of(work, fatal_isc_dmd, work);
+    fatal_isc_dmd *reporter = container_of(work, fatal_isc_dmd, work.work);
     struct iscd_info *iscd = container_of(reporter, struct iscd_info, dmd_reporter);
 
     if (!dsm_client_ocuppy(power_dsm_get_dclient(POWER_DSM_BATTERY))) {
@@ -5865,7 +6168,7 @@ static void fatal_isc_protection(struct iscd_info *iscd, unsigned long event)
 
 static void isc_limit_monitor_work(struct work_struct *work)
 {
-    struct iscd_info *iscd = container_of(work, struct iscd_info, isc_limit_work);
+    struct iscd_info *iscd = container_of(work, struct iscd_info, isc_limit_work.work);
 
     fatal_isc_protection(iscd, ISC_LIMIT_UNDER_MONITOR_STAGE);
 
@@ -5965,7 +6268,7 @@ static int iscd_sample_ocv_soc_uAh(struct smartstar_coul_device *di, int ocv_uv,
 
     return (*ocv_soc_uAh > 0 ? SUCCESS : ERROR);
 }
-static int iscd_check_ocv_variance(int *ocv, int avg_ocv, int n)
+static int iscd_check_ocv_variance(const int *ocv, int avg_ocv, int n)
 {
     s64 var = 0;
     int detal_ocv;
@@ -6442,12 +6745,15 @@ static int iscd_is_short_current_valid(struct smartstar_coul_device *di)
     }
 
     chrg_cycle = coul_battery_cycle_count();
-    if (chrg_cycle < di->iscd->isc_valid_cycles ) {
-        coul_core_err("ISCD %s charge_cycle(%d) is less than %d, try to next loop.\n",
-                  __func__, chrg_cycle, di->iscd->isc_valid_cycles);
+    if (chrg_cycle < di->iscd->isc_valid_cycles || (di->iscd->isc_delay_cycles_enable == TRUE &&
+        chrg_cycle <= di->iscd->isc_valid_delay_cycles)) {
+        coul_core_err("ISCD %s charge_cycle(%d) is less than %d or is less than %d, try to next loop.\n",
+                  __func__, chrg_cycle, di->iscd->isc_valid_cycles,di->iscd->isc_valid_delay_cycles);
        return ISCD_INVALID;
     }
 
+    coul_core_info("ISCD %s chrg_cycle: %d, isc_delay_cycles: %d\n", __func__, chrg_cycle,
+        di->iscd->isc_valid_delay_cycles);
     sample_size = di->iscd->size;
     sample_time = di->iscd->sample_info[sample_size-1].sample_time.tv_sec - di->iscd->sample_info[0].sample_time.tv_sec;
 
@@ -6772,12 +7078,12 @@ static void iscd_process_short_current(struct smartstar_coul_device *di)
             di->iscd->isc < di->iscd->level_config[i].isc_max) {
             coul_core_info("ISCD isc: %duA,  level: %d, threhold: [%d, %d)uA\n", di->iscd->isc, i,
                      di->iscd->level_config[i].isc_min, di->iscd->level_config[i].isc_max);
-            ret |= iscd_dsm_report(di, i);
+            ret = iscd_dsm_report(di, i);
+            if(ret) {
+                coul_core_err("Reporting ISC level %d DMD failed in %s\n", i, __func__);
+            }
             break;
         }
-    }
-    if(ret) {
-        coul_core_err("Reporting ISC level %d DMD failed in %s\n", i, __func__);
     }
 
     /* update the isc history information */
@@ -7052,43 +7358,54 @@ static bool could_update_polar_ocv(struct smartstar_coul_device *di,
     return TRUE;
 }
 
-static void update_polar_ocv(struct smartstar_coul_device *di,int time_now,
-                                    int temp, int soc)
+static void update_polar_ocv(struct smartstar_coul_device *di,
+                                    int temp, int soc, int sr_sleep_time, int sleep_cc)
 {
     int eco_cc = 0;
     int eco_vbat = 0;
     int eco_ibat = 0;
     int cc_now = 0;
-    int sleep_cc = 0;
+    int eco_sleep_cc = 0;
     int sample_time = 0;
     int curr_ma = 0;
     int duration = 0;
+    int current_sec = 0;
     u8 eco_sample_flag = 0;
     unsigned long sample_time_rtc = 0;
     if (NULL == di)
         return;
     /*判断eco数据是否被清空*/
     di->coul_dev_ops->get_eco_sample_flag(&eco_sample_flag);
+    current_sec = di->coul_dev_ops->get_coul_time();
     coul_core_debug("[%s]vbat:0x%x, ibat:0x%x\n",
         __FUNCTION__,  di->eco_info.eco_vbat_reg,  di->eco_info.eco_ibat_reg);
-    if (0 == di->eco_info.eco_vbat_reg || 0 == eco_sample_flag) {
+    if (0 == di->eco_info.eco_vbat_reg || 0 == eco_sample_flag || 0 == current_sec) {
+        sample_time_rtc = hisi_getcurtime();
+        sample_time = (int)(sample_time_rtc / NSEC_PER_MSEC);
+        if (sr_sleep_time) {
+            curr_ma = -CC_UAS2MA(sleep_cc, sr_sleep_time);
+            get_resume_polar_info(eco_ibat, curr_ma,
+                (sr_sleep_time * MSEC_PER_SEC), sample_time, temp, soc);
+        }
         return;
     }
-
     eco_vbat = coul_convert_regval2uv(di->eco_info.eco_vbat_reg);
     eco_ibat = -coul_convert_regval2ua(di->eco_info.eco_ibat_reg);
     eco_cc = coul_convert_regval2uah(di->eco_info.eco_cc_reg);
     coul_core_debug("[%s]vbat:%d, ibat:%d\n",__FUNCTION__,  eco_vbat,  eco_ibat);
-    sleep_cc = eco_cc - di->suspend_cc;
+    eco_sleep_cc = eco_cc - di->suspend_cc;
     sample_time_rtc = hisi_getcurtime();
     sample_time = (int)(sample_time_rtc / NSEC_PER_MSEC);
-    sample_time -= ((time_now - di->eco_info.now_sample_time) * MSEC_PER_SEC);
+    sample_time -= ((current_sec - di->eco_info.now_sample_time) * MSEC_PER_SEC);
     duration = di->eco_info.now_sample_time - di->suspend_time;
-    curr_ma = -CC_UAS2MA(sleep_cc, duration);
-    get_resume_polar_info(eco_ibat, curr_ma, duration, sample_time, temp, soc);
+    if (duration) {
+        curr_ma = -CC_UAS2MA(eco_sleep_cc, duration);
+        get_resume_polar_info(eco_ibat, curr_ma,
+            (duration * MSEC_PER_SEC), sample_time, temp, soc);
+    }
     if (-1 == polar_ocv_params_calc(&di->polar, soc, temp, eco_ibat / UA_PER_MA))
         return;
-    if (0 == enable_ocv_calc && FALSE == could_update_polar_ocv(di, time_now, eco_ibat / UA_PER_MA))
+    if (0 == enable_ocv_calc && FALSE == could_update_polar_ocv(di, current_sec, eco_ibat / UA_PER_MA))
         return;
     if (di->polar.sr_polar_err_a > 0)
         di->polar.polar_ocv = eco_vbat - (eco_ibat / UA_PER_MA) * (di->r_pcb / UOHM_PER_MOHM)
@@ -7096,13 +7413,31 @@ static void update_polar_ocv(struct smartstar_coul_device *di,int time_now,
     else
         di->polar.polar_ocv = eco_vbat - (eco_ibat / UA_PER_MA) * (di->r_pcb / UOHM_PER_MOHM)
                           - di->polar.sr_polar_vol0;
-    di->polar.polar_ocv_time = time_now;
+    di->polar.polar_ocv_time = current_sec;
 
     cc_now = di->coul_dev_ops->calculate_cc_uah();
-    cc_now = (eco_cc - cc_now);
+    cc_now = (cc_now - eco_cc);
+    duration = (int)(sample_time_rtc / NSEC_PER_MSEC) - sample_time;
+    sample_time = (int)(sample_time_rtc / NSEC_PER_MSEC);
+    if (duration) {
+        curr_ma = -CC_UAS2MA(cc_now, (duration / MSEC_PER_SEC)); //lint !e647
+        get_resume_polar_info(0, curr_ma, duration, sample_time, temp, soc);
+    }
     coul_core_info("[%s]polar_ocv:%d, polar_ocv_time:%d,cc_comp:%d\n",
         __FUNCTION__,  di->polar.polar_ocv,  di->polar.polar_ocv_time, cc_now);
-
+    #ifdef CONFIG_HISI_DEBUG_FS
+    if (!is_in_capacity_dense_area(di->polar.polar_ocv)) {
+        di->batt_ocv_valid_to_refresh_fcc = 1;
+        di->batt_ocv = di->polar.polar_ocv;
+        di->batt_ocv_temp = temp;
+        di->coul_dev_ops->save_ocv_temp((short)temp);
+        di->coul_dev_ops->save_ocv(di->polar.polar_ocv, IS_UPDATE_FCC);
+    	coul_clear_cc_register();
+        coul_clear_coul_time();
+        clear_polar_err_b();
+        di->coul_dev_ops->save_cc_uah(cc_now);
+    }
+    #endif
     return;
 }
 static void polar_ipc_init(struct smartstar_coul_device *di)
@@ -7145,6 +7480,9 @@ enum coul_sysfs_type{
     COUL_SYSFS_REAL_SOC,
     COUL_SYSFS_CALI_ADC,
     COUL_SYSFS_CURR_CAL_TEMP,
+#ifdef CONFIG_HISI_ASW
+	COUL_SYSFS_ASW_PROTECT_VOLTAGE,
+#endif /* CONFIG_HISI_ASW */
 #ifdef CONFIG_HISI_COUL_POLAR
     COUL_SYSFS_FUTURE_AVG_CURR,
 #endif
@@ -7193,6 +7531,9 @@ static struct coul_sysfs_field_info coul_sysfs_field_tbl[] = {
     COUL_SYSFS_FIELD_RO(real_soc, REAL_SOC),
     COUL_SYSFS_FIELD_RW(cali_adc,         CALI_ADC),
     COUL_SYSFS_FIELD_RO(curr_cal_temp,              CURR_CAL_TEMP),
+#ifdef CONFIG_HISI_ASW
+	COUL_SYSFS_FIELD_RW(asw_protect_voltage, ASW_PROTECT_VOLTAGE),
+#endif /* CONFIG_HISI_ASW */
 #ifdef CONFIG_HISI_COUL_POLAR
     COUL_SYSFS_FIELD_RO(future_avg_curr,         FUTURE_AVG_CURR),
 #endif
@@ -7285,8 +7626,9 @@ static ssize_t coul_sysfs_show(struct device *dev,
     struct smartstar_coul_device *di = dev_get_drvdata(dev);
     int val = 0;
     int temp = 0, voltage = 0, ufcapacity = 0, capacity = 100, afcapacity = 0, rm = 0, fcc = 0, delta_rc = 0;
-    int cur = 0,uuc = 0,cc = 0, ocv=0, rbatt;
+    int cur = 0,uuc = 0,cc = 0, ocv=0, rbatt, high_pre_qmax;
     unsigned int pd_charge = 0;
+    int ret = 0;
 
     info = coul_sysfs_field_lookup(attr->attr.name);
     if (!info)
@@ -7295,7 +7637,8 @@ static ssize_t coul_sysfs_show(struct device *dev,
         return coul_sysfs_show_offset(di, info->name, buf);
     switch(info->name){
     case COUL_SYSFS_GAUGELOG_HEAD:
-        return snprintf(buf, PAGE_SIZE, "ss_VOL  ss_CUR  ss_ufSOC  ss_SOC  SOC  ss_RM  ss_FCC  Qmax     ss_UUC  ss_CC  ss_dRC  pdFlag Temp  ss_OCV   rbatt  fcc    ocv_level  fcc_flag   ocv_old    p_vol   p_cur    err_a    polar_vol   avg_cur    polar_ocv    ");
+		return snprintf_s(buf, PAGE_SIZE, PAGE_SIZE - 1,
+			"ss_VOL  ss_CUR  ss_ufSOC  ss_SOC  SOC  ss_RM  ss_FCC  Qmax     ss_UUC  ss_CC  ss_dRC  pdFlag Temp  ss_OCV   rbatt  fcc    ocv_level  fcc_flag   ocv_old    p_vol   p_cur    err_a    polar_vol   avg_cur    polar_ocv    asw_stat  asw_vol  ");
     case COUL_SYSFS_GAUGELOG:
         temp       = coul_get_battery_temperature();
         voltage    = coul_get_battery_voltage_mv();
@@ -7311,11 +7654,21 @@ static ssize_t coul_sysfs_show(struct device *dev,
         ocv        = coul_get_battery_ocv();
         rbatt      = coul_get_battery_resistance();
         pd_charge  = get_pd_charge_flag();
-
-        snprintf(buf, PAGE_SIZE, "%-6d  %-6d  %-8d  %-6d  %-3d  %-5d  %-6d  %-6d  %-7d  %-5d  %-6d  %-5d  %-4d  %-7d  %-5d  %-5d  %-9d   %-8d   %-7d    %-5d    %-5d    %-5d    %-9ld    %-7d    %-9d    ",
-                    voltage,  (signed short)cur, ufcapacity, capacity, afcapacity, rm, fcc,di->high_pre_qmax, uuc, cc, delta_rc, pd_charge, temp, ocv, rbatt, di->batt_limit_fcc/1000, di->last_ocv_level, di->batt_ocv_valid_to_refresh_fcc,
-                    di->polar.ocv_old, di->polar.ori_vol, di->polar.ori_cur, di->polar.err_a, di->polar.vol, di->polar.curr_5s, di->polar.polar_ocv);
-
+        high_pre_qmax = coul_get_battery_qmax();;
+		ret = snprintf_s(buf, PAGE_SIZE, PAGE_SIZE - 1,
+			"%-6d  %-6d  %-8d  %-6d  %-3d  %-5d  %-6d  %-6d  %-7d  %-5d  %-6d  %-5d  %-4d  %-7d  %-5d  %-5d  %-9d   %-8d   %-7d    %-5d    %-5d    %-5d    %-9ld    %-7d    %-9d    %-8d %-8d    ",
+			voltage, (signed short)cur, ufcapacity, capacity,
+			afcapacity, rm, fcc, high_pre_qmax, uuc, cc,
+			delta_rc, pd_charge, temp, ocv, rbatt,
+			di->batt_limit_fcc/1000, di->last_ocv_level,
+			di->batt_ocv_valid_to_refresh_fcc, di->polar.ocv_old,
+			di->polar.ori_vol, di->polar.ori_cur, di->polar.err_a,
+			di->polar.vol, di->polar.curr_5s, di->polar.polar_ocv,
+			di->hw_nv_info.asw_protect_status,
+			di->hw_nv_info.asw_protect_voltage);
+		if (ret < 0) {
+			coul_core_err("(%s)snprintf_s fail ret = %d\n",__func__, ret);
+		}
         return strlen(buf);
     case COUL_SYSFS_HAND_CHG_CAPACITY_FLAG:
         return snprintf(buf, PAGE_SIZE, "%d\n", hand_chg_capacity_flag);
@@ -7344,6 +7697,12 @@ static ssize_t coul_sysfs_show(struct device *dev,
         return snprintf(buf, PAGE_SIZE, "peak:%d avg:%d\n", di->polar.curr_peak,
                         di->polar.curr_5s);
 #endif
+#ifdef CONFIG_HISI_ASW
+	/* fall through: if define return asw protect voltage */
+	case COUL_SYSFS_ASW_PROTECT_VOLTAGE:
+		return snprintf_s(buf, PAGE_SIZE, PAGE_SIZE - 1, "%d\n",
+			di->hw_nv_info.asw_protect_voltage);
+#endif  /* CONFIG_HISI_ASW */
     default:
         coul_core_err("(%s)NODE ERR!!HAVE NO THIS NODE:(%d)\n",__func__,info->name);
         break;
@@ -7428,7 +7787,7 @@ static ssize_t coul_sysfs_store(struct device *dev,
         if(strict_strtol(buf, 10, &val) < 0)
             return -EINVAL;
         c_offset_a = val;
-        curr_cal_temp = get_coul_chip_temp();
+        curr_cal_temp = coul_get_chip_temp();
         break;
     case COUL_SYSFS_PL_C_OFFSET_B:
         if(strict_strtol(buf, 10, &val) < 0)
@@ -7458,6 +7817,13 @@ static ssize_t coul_sysfs_store(struct device *dev,
 			coul_cali_adc(di);
         }
         break;
+#ifdef CONFIG_HISI_ASW
+	case COUL_SYSFS_ASW_PROTECT_VOLTAGE:
+		if (kstrtol(buf, 10, &val) < 0)
+			return -EINVAL;
+		asw_protect_do(di, val);
+		break;
+#endif /* CONFIG_HISI_ASW */
     default:
         coul_core_err("(%s)NODE ERR!!HAVE NO THIS NODE:(%d)\n",__func__,info->name);
         break;
@@ -7746,7 +8112,7 @@ static void coul_sensorhub_init(struct platform_device *pdev, struct smartstar_c
 	memcpy((void*)g_di_coul_info_sh->ntc_temp_compensation_para, (void*)di->ntc_temp_compensation_para,
 		sizeof(struct ntc_temp_compensation_para_data)*COMPENSATION_PARA_LEVEL);
 	coul_core_info("coul_sensorhub:get ntc_compensation_is=%d,basp_learned_fcc=%d,basp_level=%d\n",
-        				g_di_coul_info_sh->ntc_compensation_is, g_di_coul_info_sh->basp_learned_fcc, g_di_coul_info_sh->basp_level);
+			g_di_coul_info_sh->ntc_compensation_is, g_di_coul_info_sh->basp_learned_fcc, g_di_coul_info_sh->basp_level);
 }
 
 extern struct CONFIG_ON_DDR* pConfigOnDDr;
@@ -7757,50 +8123,241 @@ int update_coul_sensorhub_info(void)
 	return 0;
 }
 #endif
-static void coul_core_get_basp_policy(struct device_node* np, struct smartstar_coul_device* di)
+
+static void basp_match_battery(struct smartstar_coul_device *di)
+{
+	int ret;
+	int i;
+	int array_len;
+	int brand_len;
+	int status;
+	struct device_node *np = NULL;
+	const char *basp_batt_brand_string = NULL;
+
+	if (!di || !di->dev) {
+		coul_core_err(BASP_TAG"di is null\n");
+		return;
+	}
+
+	/* default config for all batteries */
+	di->basp_batt_matched = 1;
+
+	np = di->dev->of_node;
+	if (!np) {
+		coul_core_err(BASP_TAG"np is null\n");
+		return;
+	}
+
+	array_len = of_property_count_strings(np, "basp_mask_batts");
+	if (array_len <= 0) {
+		coul_core_err(BASP_TAG"read config batts failed\n");
+		return;
+	}
+
+	for (i = 0; i < array_len; i++) {
+		ret = of_property_read_string_index(np, "basp_mask_batts",
+			i, &basp_batt_brand_string);
+		if (ret != 0) {
+			coul_core_err(BASP_TAG"mask_batts dts read failed\n");
+		} else {
+			if (!di->batt_data->batt_brand || !basp_batt_brand_string)
+				return;
+			brand_len = strlen(basp_batt_brand_string);
+			status =
+				strncmp(di->batt_data->batt_brand, basp_batt_brand_string, brand_len);
+			if ((brand_len > 0) && (status == 0)) {
+				coul_core_info(BASP_TAG"mask batt: %s, real batt: %s\n",
+					basp_batt_brand_string, di->batt_data->batt_brand);
+				di->basp_batt_matched = 0;
+				break;
+			}
+		}
+	}
+}
+
+static void basp_config_delay(struct smartstar_coul_device *di)
+{
+	int ret;
+	struct device_node *np = NULL;
+	unsigned int basp_config_tag = 0;
+	unsigned int basp_delay_cylces = 0;
+	struct bit_delay_config *cfg = NULL;
+
+	if (!di || !di->dev ) {
+		coul_core_err(BASP_TAG"di is null\n");
+		return;
+	}
+
+	/* default config no delay */
+	di->basp_need_delay = 0;
+
+	np = di->dev->of_node;
+	if (!np) {
+		coul_core_err(BASP_TAG"np is null\n");
+		return;
+	}
+	ret = of_property_read_u32(np, "basp_config_tag", &basp_config_tag);
+	ret += of_property_read_u32(np, "basp_delay_cycles",
+		&basp_delay_cylces);
+	if (ret) {
+		coul_core_err(BASP_TAG"get delay config failed, set no delay\n");
+		return;
+	}
+
+	/* just use 8-bits, basp_delay_cylces > 255 will overflow */
+	if (!basp_delay_cylces || basp_delay_cylces > 255) {
+		coul_core_err(BASP_TAG"basp_delay_cylces %d ivalid\n",
+			basp_delay_cylces);
+		return;
+	}
+	coul_core_info(BASP_TAG"config_tag %d, delay_cycles %d",
+		basp_config_tag, basp_delay_cylces);
+	di->basp_need_delay = 1;
+	cfg = (struct bit_delay_config *)&di->basp_delay_config;
+	if (cfg->config_tag != basp_config_tag) {
+		di->basp_delay_config = 0;
+		cfg->config_tag = basp_config_tag;
+		cfg->delay_cylces =
+			(unsigned char)((di->batt_chargecycles / CHARGE_CYCLE_INDEX + basp_delay_cylces) & 0xFF);
+		di->is_nv_need_save = 1;
+		di->coul_dev_ops->set_nv_save_flag(NV_SAVE_FAIL);
+		coul_core_info(BASP_TAG"config_tag %4x, delay_cylces %d, delay_config %4x\n",
+			cfg->config_tag, cfg->delay_cylces, di->basp_delay_config);
+	} else {
+		if (cfg->delayed)
+			di->basp_need_delay = 0;
+	}
+	coul_core_info(BASP_TAG"delay_config %4x configed\n", di->basp_delay_config);
+}
+
+static void coul_core_get_basp_policy(
+	struct device_node *np,
+	struct smartstar_coul_device *di)
 {
 	int ret = 0;
 	unsigned int i = 0;
 	int array_len = 0;
-	u32 basp_tmp[BASP_MEM_CNT*BASP_PARA_LEVEL];
+	int basp_v1_mem_count = BASP_MEM_CNT - 1;
+	int basp_v2_mem_count = BASP_MEM_CNT;
+	int basp_mem_count = 0;
+	unsigned int *basp_tmp = NULL;
 
 	/* basp_policy para */
-	array_len = of_property_count_u32_elems(np, "basp_policy");
-	if(strstr(saved_command_line, "batt_decress_flag=true"))
-		array_len = of_property_count_u32_elems(np, "basp_policy_bypass");
+	/* basp_policy version   1:1.0  2:2.0 */
+	ret = of_property_read_s32(np, "basp_ver", &di->basp_ver);
+	if (ret) {
+		coul_core_err(BASP_TAG"get basp_ver fail, use default 1\n");
+		di->basp_ver = BASP_VERSION_1;
+	}
+	coul_core_info(BASP_TAG"basp_ver = %d\n", di->basp_ver);
 
-	if ((array_len <= 0) ||(array_len % BASP_MEM_CNT != 0)) {
+	if (di->basp_ver == BASP_VERSION_1)
+		basp_mem_count = basp_v1_mem_count;
+	else
+		basp_mem_count = basp_v2_mem_count;
+
+	basp_tmp = kmalloc(sizeof(unsigned int) *
+			   basp_mem_count * BASP_PARA_LEVEL, GFP_KERNEL);
+	if (!basp_tmp) {
+		coul_core_err("failed to malloc memory\n");
+		return;
+	}
+
+	array_len = of_property_count_u32_elems(np, "basp_policy");
+	if (strstr(saved_command_line, "batt_decress_flag=true"))
+		array_len = of_property_count_u32_elems(np,
+				"basp_policy_bypass");
+
+	if ((array_len <= 0) ||(array_len % basp_mem_count != 0)) {
 		di->basp_total_level = 0;
-		coul_core_err(BASP_TAG"basp_policy is invaild, please check basp_policy number!!\n");
-	} else if (array_len > BASP_PARA_LEVEL * BASP_MEM_CNT) {
+		coul_core_err(BASP_TAG"basp_policy is invaild\t"
+			", please check basp_policy number\n");
+	} else if (array_len > BASP_PARA_LEVEL * basp_mem_count) {
 		di->basp_total_level = 0;
-		coul_core_err(BASP_TAG"basp_policy is too long, use only front %d paras!!\n" , array_len);
+		coul_core_err(BASP_TAG"basp_policy is too long\t"
+			", use only front %d paras\n", array_len);
 	} else {
-		ret = of_property_read_u32_array(np, "basp_policy", basp_tmp, array_len);
-		if(strstr(saved_command_line, "batt_decress_flag=true"))
-			ret = of_property_read_u32_array(np, "basp_policy_bypass", basp_tmp, array_len);
+		ret = of_property_read_u32_array(np, "basp_policy",
+			basp_tmp, array_len);
+		if (strstr(saved_command_line, "batt_decress_flag=true"))
+			ret = of_property_read_u32_array(np,
+				"basp_policy_bypass", basp_tmp, array_len);
 		if (ret) {
-		di->basp_total_level = 0;
-		coul_core_err(BASP_TAG"dts:get basp_policy fail!\n");
+			di->basp_total_level = 0;
+			coul_core_err(BASP_TAG"dts:get basp_policy fail\n");
 		} else {
-			di->basp_total_level = array_len / BASP_MEM_CNT;
+			di->basp_total_level = array_len / basp_mem_count;
 			for (i = 0; i < di->basp_total_level; i++) {
-				basp_policy[i].level = basp_tmp[(int)(BASP_MEM_LEVEL+BASP_MEM_CNT*i)]; /*lint !e64*//*(int) for pclint and can never be out of bounds*/
-				basp_policy[i].chrg_cycles = basp_tmp[(int)(BASP_MEM_CHRG_CYCLES+BASP_MEM_CNT*i)];
-				basp_policy[i].fcc_ratio = basp_tmp[(int)(BASP_MEM_FCC_RATIO+BASP_MEM_CNT*i)];
-				basp_policy[i].dc_volt_dec = basp_tmp[(int)(BASP_MEM_DC_VOLT_DEC+BASP_MEM_CNT*i)];
-				basp_policy[i].nondc_volt_dec = basp_tmp[(int)(BASP_MEM_NONDC_VOLT_DEC+BASP_MEM_CNT*i)];
-				basp_policy[i].cur_ratio = basp_tmp[(int)(BASP_MEM_CUR_RATIO+BASP_MEM_CNT*i)];
-				basp_policy[i].cur_ratio_policy = basp_tmp[(int)(BASP_MEM_CUR_RATIO_POLICY+BASP_MEM_CNT*i)];
-				basp_policy[i].err_no = basp_tmp[(int)(BASP_MEM_ERR_NO+BASP_MEM_CNT*i)];
-				coul_core_info(BASP_TAG"[%d], level: %d chrg_cycles: %-5d "
-							"fcc_ratio: %-3d dc_volt_dec: %-3d nondc_volt_dec: %-3d cur_ratio: %-3d cur_ratio_policy: %d err_no: %d\n",
-							i, basp_policy[i].level, basp_policy[i].chrg_cycles, basp_policy[i].fcc_ratio,
-							basp_policy[i].dc_volt_dec, basp_policy[i].nondc_volt_dec,
-							basp_policy[i].cur_ratio, basp_policy[i].cur_ratio_policy, basp_policy[i].err_no);
+				/* lint !e64 */
+				/*
+				 * (int) for pclint
+				 * can never be out of bounds
+				 */
+				basp_policy[i].level =
+				    basp_tmp[(int)(BASP_MEM_LEVEL +
+					basp_mem_count * i)];
+				basp_policy[i].chrg_cycles =
+				    basp_tmp[(int)(BASP_MEM_CHRG_CYCLES +
+					basp_mem_count * i)];
+				basp_policy[i].fcc_ratio =
+				    basp_tmp[(int)(BASP_MEM_FCC_RATIO +
+					basp_mem_count * i)];
+				basp_policy[i].dc_volt_dec =
+				    basp_tmp[(int)(BASP_MEM_DC_VOLT_DEC +
+					basp_mem_count * i)];
+				basp_policy[i].nondc_volt_dec =
+				    basp_tmp[(int)(BASP_MEM_NONDC_VOLT_DEC +
+					basp_mem_count * i)];
+				basp_policy[i].cur_ratio =
+				    basp_tmp[(int)(BASP_MEM_CUR_RATIO +
+					basp_mem_count * i)];
+				basp_policy[i].cur_ratio_policy =
+				    basp_tmp[(int)(BASP_MEM_CUR_RATIO_POLICY +
+					basp_mem_count * i)];
+				basp_policy[i].err_no =
+				    basp_tmp[(int)(BASP_MEM_ERR_NO +
+					basp_mem_count * i)];
+
+				/*
+				 * BASP_VERSION_1 use fcc and cls to
+				 * evaluate action(vbat threshold,
+				 * ibat threshold)
+				 * BASP_VERSION_2 usb fcc and(or)
+				 * cls to to evaluate
+				 * action(vbat threshold, ibat threshold)
+				 */
+				if (di->basp_ver == BASP_VERSION_1)
+					basp_policy[i].logic = BASP_AND;
+				else
+					basp_policy[i].logic =
+					   basp_tmp[(int)(BASP_MEM_ERR_LOGIC +
+						basp_mem_count * i)];
+
+				coul_core_info(BASP_TAG"[%d]\t"
+					", level: %d\t"
+					", chrg_cycles: %-5d\t"
+					", fcc_ratio: %-3d\t"
+					", dc_volt_dec: %-3d\t"
+					", nondc_volt_dec: %-3d\t"
+					", cur_ratio: %-3d\t"
+					", cur_ratio_policy: %d\t"
+					", err_no: %d\t"
+					", logic: %d\n",
+					i,
+					basp_policy[i].level,
+					basp_policy[i].chrg_cycles,
+					basp_policy[i].fcc_ratio,
+					basp_policy[i].dc_volt_dec,
+					basp_policy[i].nondc_volt_dec,
+					basp_policy[i].cur_ratio,
+					basp_policy[i].cur_ratio_policy,
+					basp_policy[i].err_no,
+					basp_policy[i].logic);
 			}
 		}
 	}
+
+	kfree(basp_tmp);
 }
 static void coul_core_get_iscd_dsm_config(struct device_node* np, struct iscd_info *iscd)
 {
@@ -7919,6 +8476,24 @@ static void coul_core_get_iscd_info(struct device_node* np, struct iscd_info *is
         iscd->isc_critical_threhold = ISCD_CRITICAL_LEVEL_THREHOLD;
     }
     coul_core_info("ISCD isc_critical_threhold = %d\n", iscd->isc_critical_threhold);
+    ret = of_property_read_s32(np, "iscd_chrg_delay_cycles", &iscd->isc_chrg_delay_cycles);
+    if (ret) {
+        coul_core_err("get iscd_chrg_delay_cycles fail, use default one !!\n");
+        iscd->isc_chrg_delay_cycles = ISCD_CHRG_DELAY_CYCLES;
+    }
+    coul_core_info("ISCD isc_chrg_delay_cycles = %d\n", iscd->isc_chrg_delay_cycles);
+    ret = of_property_read_s32(np, "iscd_delay_cycles_enable", &iscd->isc_delay_cycles_enable);
+    if (ret) {
+        coul_core_err("get iscd_delay_cycles_enable fail, use default one !!\n");
+        iscd->isc_delay_cycles_enable = ISCD_DELAY_CYCLES_ENABLE;
+    }
+    coul_core_info("ISCD iscd_delay_cycles_enable = %d\n", iscd->isc_delay_cycles_enable);
+    ret = of_property_read_s32(np, "iscd_file_magic_num", &iscd->iscd_file_magic_num);
+    if (ret) {
+        coul_core_err("get iscd_file_magic_num fail, use default one !!\n");
+        iscd->iscd_file_magic_num = FATAL_ISC_MAGIC_NUM;
+    }
+    coul_core_info("ISCD iscd_file_magic_num = %d\n", iscd->iscd_file_magic_num);
     coul_core_get_iscd_dsm_config(np, iscd);
 
     iscd->isc_valid_cycles = ISCD_CHARGE_CYCLE_MIN;
@@ -8032,6 +8607,20 @@ static void get_bci_dts_info(struct smartstar_coul_device* di,struct device_node
     }
 }
 
+
+static void get_ocv_data_check_flag(struct device_node* np)
+{
+    int ret = 0;
+	if (!np)
+		return;
+    ret = of_property_read_u32(np, "check_ocv_data_enable", &check_ocv_data_enable);
+    if (ret) {
+        check_ocv_data_enable = 0;
+        coul_core_err("dts:get ocv data check flag fail\n");
+    }
+    coul_core_info("ocv_data_check_flag is %d\n", check_ocv_data_enable);
+}
+
 static void coul_core_get_dts(struct smartstar_coul_device *di)
 {
 	struct device_node *batt_node;
@@ -8060,9 +8649,10 @@ static void coul_core_get_dts(struct smartstar_coul_device *di)
 	get_multi_ocv_open_flag(np);
 	get_fcc_update_limit_flag(np);
     get_cutoff_vol_mv(di,np);
+    get_current_full_enable(di,np);
     get_dischg_ocv_enable_flag(di,np);
     get_dischg_ocv_soc(di,np);
-    get_current_full_enable(di,np);
+    get_ocv_data_check_flag(np);
     if (of_property_read_u32(np, "current_offset_a",(u32 *)&c_offset_a)){
 	    c_offset_a = DEFAULT_C_OFF_A;
 		coul_core_err("error:get current_offset_a value failed!\n");
@@ -8186,6 +8776,12 @@ static void coul_core_get_dts(struct smartstar_coul_device *di)
     }
     coul_core_info("need_restore_cycle_flag = %d\n", need_restore_cycle_flag);
 
+	if(of_property_read_u32(np, "basp_mask_delay", &basp_mask_delay)) {
+		coul_core_err("dts:get basp_mask_delay fail, use default value!\n");
+	} else {
+		coul_core_info("basp_mask_delay = %d\n", basp_mask_delay);
+	}
+
     if (of_property_read_string(np, "batt_temp_too_hot", &batt_temp_too_hot_string))
 	    coul_core_err("error:get batt_temp_too_hot value failed!\n");
     else
@@ -8258,7 +8854,8 @@ static void isc_hist_info_init(struct work_struct *work)
     char *buff;
     char *find_str;
     mm_segment_t old_fs;
-    struct iscd_info *iscd = container_of(work, struct iscd_info, isc_splash2_work);
+    int ret_s = -1;
+    struct iscd_info *iscd = container_of(work, struct iscd_info, isc_splash2_work.work);
 
     if(iscd->isc_splash2_ready) {
         coul_core_info("ISC splash2 has been initialized, so does not need to be reinitialized.\n");
@@ -8287,7 +8884,7 @@ static void isc_hist_info_init(struct work_struct *work)
         whence += read_size;
         if(whence > (int) strlen(SPLASH2_MOUNT_INFO)) {
             (void) memmove_s(buff, MOUNTS_INFO_FILE_MAX_SIZE, buff + whence - strlen(SPLASH2_MOUNT_INFO), strlen(SPLASH2_MOUNT_INFO));
-            memset_s(buff + strlen(SPLASH2_MOUNT_INFO), whence - strlen(SPLASH2_MOUNT_INFO), 0, whence - strlen(SPLASH2_MOUNT_INFO));
+            (void)memset_s(buff + strlen(SPLASH2_MOUNT_INFO), whence - strlen(SPLASH2_MOUNT_INFO), 0, whence - strlen(SPLASH2_MOUNT_INFO));
             whence = strlen(SPLASH2_MOUNT_INFO);
         }
     }
@@ -8303,22 +8900,26 @@ static void isc_hist_info_init(struct work_struct *work)
     old_fs = get_fs();/*lint !e501 */
     set_fs(KERNEL_DS);/*lint !e501 */
     file_des = sys_access(ISC_DATA_DIRECTORY, 0);
+    set_fs(old_fs);
     /* case for different errors need differenr process here */
     if (file_des < 0) {
         coul_core_info("Access directory %s failed(%d) in %s.\n",
                    ISC_DATA_DIRECTORY, file_des, __func__);
+        set_fs(KERNEL_DS);/*lint !e501*/
         file_des = sys_mkdir(ISC_DATA_DIRECTORY, 0770);
+        set_fs(old_fs);
         if (file_des < 0) {
             coul_core_err("Create directory %s for recording fatal isc failed(%d) in %s\n",
                       ISC_DATA_DIRECTORY, file_des, __func__);
-            set_fs(old_fs);
             goto isc_init_buff_free;
         }
     }
 
     /* init isc history information from /splash2/isc/isc.data */
     flags = O_RDWR | O_CREAT | (get_batt_reset_flag() ? O_TRUNC : 0);
+    set_fs(KERNEL_DS);/*lint !e501*/
     fd = filp_open(ISC_DATA_FILE, flags, 0660);
+    set_fs(old_fs);
     if (IS_ERR(fd)) {
         coul_core_err("Open and create %s failed in %s.\n", ISC_DATA_FILE, __func__);
         goto isc_init_buff_free;
@@ -8328,7 +8929,7 @@ static void isc_hist_info_init(struct work_struct *work)
     if(read_size == sizeof(isc_history)) {
         coul_core_info("fatal isc datum file size was correct.\n");
         memcpy(&iscd->fatal_isc_hist, buff, read_size);
-        if(iscd->fatal_isc_hist.magic_num == FATAL_ISC_MAGIC_NUM) {
+        if(iscd->fatal_isc_hist.magic_num == iscd->iscd_file_magic_num) {
             if(iscd->fatal_isc_trigger_type == iscd->fatal_isc_hist.trigger_type) {
                 iscd->isc_status = iscd->fatal_isc_hist.isc_status;
             }else{
@@ -8352,7 +8953,7 @@ static void isc_hist_info_init(struct work_struct *work)
             coul_core_info("fatal isc datum file was damaged.\n");
             iscd->fatal_isc_hist.isc_status = 0;
             iscd->fatal_isc_hist.valid_num = 0;
-            iscd->fatal_isc_hist.magic_num = FATAL_ISC_MAGIC_NUM;
+            iscd->fatal_isc_hist.magic_num = iscd->iscd_file_magic_num;
         }
     } else {
         coul_core_info("fatal isc datum file size was uncorrect.\n");
@@ -8361,6 +8962,38 @@ static void isc_hist_info_init(struct work_struct *work)
     iscd->isc_splash2_ready = 1;
     spin_unlock(&iscd->boot_complete);
     coul_core_info("%s was fined by %s.\n", ISC_DATA_FILE, __func__);
+
+
+    /* init isc history information from /splash2/isc/isc_config.data */
+    flags = O_RDWR | O_CREAT | (get_batt_reset_flag() ? O_TRUNC : 0);
+    fd = filp_open(ISC_CONFIG_DATA_FILE, flags, 0660);
+    if (IS_ERR(fd)) {
+        coul_core_err("Open and create %s failed in %s.\n", ISC_CONFIG_DATA_FILE, __func__);
+        goto isc_init_buff_free;
+    }
+    read_size = kernel_read(fd, 0, buff, sizeof(isc_config)+1);
+    filp_close(fd, NULL);
+    if (read_size == (int)sizeof(isc_config)) {
+        coul_core_info("fatal isc config datum file size was correct.\n");
+        ret_s = memcpy_s(&iscd->fatal_isc_config, sizeof(isc_config), buff, sizeof(isc_config));
+        if (ret_s)
+            coul_core_err("fatal isc config datum memcpy failed\n");
+
+        if (iscd->fatal_isc_config.magic_num == iscd->iscd_file_magic_num) {
+            iscd->has_reported = iscd->fatal_isc_config.has_reported;
+            if (iscd->fatal_isc_config.write_flag == TRUE) {
+                iscd->isc_valid_delay_cycles = iscd->fatal_isc_config.delay_cycles;
+                iscd->write_flag = iscd->fatal_isc_config.write_flag;
+            }
+        }
+    } else
+        coul_core_info("fatal isc config datum file size was uncorrect.\n");
+
+    if (iscd->isc_delay_cycles_enable == TRUE && iscd->write_flag != TRUE) {
+        iscd->isc_valid_delay_cycles = coul_battery_cycle_count() + iscd->isc_chrg_delay_cycles;
+        iscd->write_flag = TRUE;
+        isc_config_splash2_file_sync(iscd);
+    }
 
 isc_init_buff_free:
     kfree(buff);
@@ -8389,8 +9022,11 @@ static ssize_t isc_show(struct device *dev, struct device_attribute *attr, char 
     }
     iscd = g_smartstar_coul_dev->iscd;
 
+    iscd->fatal_isc_action = iscd->fatal_isc_action_dts;
+    set_fatal_isc_action(iscd);
     spin_lock(&iscd->boot_complete);
     iscd->app_ready = 1;
+
     if(!iscd->isc_splash2_ready) {
         spin_unlock(&iscd->boot_complete);
         schedule_delayed_work(&iscd->isc_splash2_work, 0);
@@ -8402,7 +9038,42 @@ static ssize_t isc_show(struct device *dev, struct device_attribute *attr, char 
         spin_unlock(&iscd->boot_complete);
     }
 
-    return snprintf(buf, sizeof(iscd->isc_status), "%d", iscd->isc_status);
+    if (iscd->fatal_isc_action == FATAL_ISC_ACTION_DMD_ONLY)
+        return snprintf(buf, sizeof(iscd->isc_status), "%d", 0);
+    else
+        return snprintf(buf, sizeof(iscd->isc_status), "%d", iscd->isc_status);
+}
+
+static ssize_t isc_shutdown_status_show(struct device *dev, struct device_attribute *attr, char *buf
+)
+{
+    struct iscd_info *iscd;
+
+    if(!g_smartstar_coul_dev || !g_smartstar_coul_dev->iscd) {
+        coul_core_err("g_smartstar_coul_dev is Null found in %s.\n", __func__);
+        return snprintf_s(buf, sizeof("Error"),sizeof("Error")-1, "%s", "Error");
+
+    }
+    iscd = g_smartstar_coul_dev->iscd;
+
+    spin_lock(&iscd->boot_complete);
+    if(!iscd->isc_splash2_ready) {
+        spin_unlock(&iscd->boot_complete);
+        schedule_delayed_work(&iscd->isc_splash2_work, 0);
+    } else if(iscd->uevent_wait_for_send && iscd->has_reported) {
+        iscd->uevent_wait_for_send = 0;
+        spin_unlock(&iscd->boot_complete);
+        iscd->fatal_isc_action = iscd->fatal_isc_action_dts;
+        set_fatal_isc_action(iscd);
+        fatal_isc_protection(iscd, ISC_LIMIT_BOOT_STAGE);
+    } else {
+        spin_unlock(&iscd->boot_complete);
+    }
+
+    if (iscd->has_reported && (iscd->fatal_isc_action != FATAL_ISC_ACTION_DMD_ONLY))
+        return snprintf_s(buf, sizeof(iscd->isc_status), sizeof(iscd->isc_status)-1, "%d", iscd->isc_status);
+    else
+        return snprintf_s(buf, sizeof(iscd->isc_status), sizeof(iscd->isc_status)-1, "%d", 0);
 }
 static ssize_t isc_limit_support_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
@@ -8417,11 +9088,26 @@ static ssize_t isc_limit_support_show(struct device *dev, struct device_attribut
     return snprintf(buf, sizeof(iscd->fatal_isc_trigger_type), "%d", iscd->fatal_isc_trigger_type);
 }
 
+#ifdef CONFIG_HISI_ASW
+int coul_asw_refresh_fcc(void)
+{
+	struct smartstar_coul_device *di = g_smartstar_coul_dev;
+
+	if (!di)
+		return -1;
+	di->fcc_real_mah = interpolate_fcc(di, di->batt_temp);
+	readjust_fcc_table(di);
+	return 0;
+}
+#endif /* CONFIG_HISI_ASW */
+
 static DEVICE_ATTR_RO(isc);
+static DEVICE_ATTR_RO(isc_shutdown_status);
 static DEVICE_ATTR_RO(isc_limit_support);
 
 static struct attribute *isc_func_attrs[] = {
     &dev_attr_isc.attr,
+    &dev_attr_isc_shutdown_status.attr,
     &dev_attr_isc_limit_support.attr,
     NULL,
 };
@@ -8469,10 +9155,10 @@ static ssize_t fatal_isc_show(struct device *dev, struct device_attribute *attr,
     }
     iscd = g_smartstar_coul_dev->iscd;
 
-    val = snprintf(buf, PAGE_SIZE, "status:%02x trigger:%02x valid num:%02x dmd:%02x version:%08x\n",
+    val = snprintf(buf, PAGE_SIZE, "status:%02x trigger:%02x valid num:%02x dmd:%02x reported:%02x version:%08x\n",
                    iscd->fatal_isc_hist.isc_status, iscd->fatal_isc_hist.trigger_type,
                    iscd->fatal_isc_hist.valid_num, iscd->fatal_isc_hist.dmd_report,
-                   iscd->fatal_isc_hist.magic_num);
+                   iscd->fatal_isc_config.has_reported, iscd->fatal_isc_hist.magic_num);
     val += snprintf(buf + val, PAGE_SIZE, "%11s%11s%11s%11s%11s%6s%6s\n",
                    "ISC(uA)", "FCC", "RM", "QMAX", "CYCLES", "YEAR", "YDAY");
     for( i = 0; i < MAX_FATAL_ISC_NUM; i++) {
@@ -8691,6 +9377,36 @@ static ssize_t isc_monitor_show(struct device *dev, struct device_attribute *att
 
     return snprintf(buf, PAGE_SIZE, "%d\n", iscd->need_monitor);
 }
+static ssize_t isc_valid_delay_cycles_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    struct iscd_info *iscd;
+
+    if (!g_smartstar_coul_dev || !g_smartstar_coul_dev->iscd) {
+        coul_core_err("g_smartstar_coul_dev is Null found in %s.\n", __func__);
+        return snprintf_s(buf, sizeof("Error"), sizeof("Error")-1, "%s", "Error");
+    }
+    iscd = g_smartstar_coul_dev->iscd;
+
+    return snprintf_s(buf, PAGE_SIZE, PAGE_SIZE-1, "%d\n", iscd->isc_valid_delay_cycles);
+}
+static ssize_t isc_valid_delay_cycles_store(struct device *dev, struct device_attribute *attr,
+                                                const char *buf, size_t count)
+{
+    struct iscd_info *iscd;
+    long val;
+
+    if (!g_smartstar_coul_dev || !g_smartstar_coul_dev->iscd) {
+        coul_core_err("g_smartstar_coul_dev is Null found in %s.\n", __func__);
+        return -EINVAL;
+    }
+    iscd = g_smartstar_coul_dev->iscd;
+
+    if (kstrtol(buf, 10, &val) < 0)
+        return -EINVAL;
+
+    iscd->isc_valid_delay_cycles = val;
+    return count;
+}
 
 static DEVICE_ATTR_RW(isc_status);
 static DEVICE_ATTR_RW(fatal_isc);
@@ -8701,6 +9417,7 @@ static DEVICE_ATTR_RW(isc_charge_limit_soc);
 static DEVICE_ATTR_RW(isc_recharge_soc);
 static DEVICE_ATTR_RW(isc_valid_cycles);
 static DEVICE_ATTR_RO(isc_monitor);
+static DEVICE_ATTR_RW(isc_valid_delay_cycles);
 
 static struct attribute *isc_test_attrs[] = {
     &dev_attr_isc_status.attr,
@@ -8712,6 +9429,7 @@ static struct attribute *isc_test_attrs[] = {
     &dev_attr_isc_recharge_soc.attr,
     &dev_attr_isc_valid_cycles.attr,
     &dev_attr_isc_monitor.attr,
+    &dev_attr_isc_valid_delay_cycles.attr,
     NULL,
 };
 
@@ -8734,7 +9452,7 @@ static const struct attribute_group * isc_groups[] = {
 
 static void fatal_isc_init(struct device_node* np, struct iscd_info *iscd)
 {
-    int ret;
+    int ret, ret0, ret1, ret2;
     int i;
     int j;
     struct class *hw_power;
@@ -8799,15 +9517,17 @@ static void fatal_isc_init(struct device_node* np, struct iscd_info *iscd)
             iscd->fatal_isc_trigger.valid_num = ret/ELEMS_PER_CONDITION;
             ret = 0;
             for( i = 0, j = 0; i < iscd->fatal_isc_trigger.valid_num; i++, j += 3) {/*lint !e574*/
-                ret |= of_property_read_u32_index(np, "fatal_isc_trigger_condition",
+                ret0 = of_property_read_u32_index(np, "fatal_isc_trigger_condition",
                                                   j + FATAL_ISC_TRIGGER_NUM_OFFSET,
                                                   &iscd->fatal_isc_trigger.trigger_num[i]);
-                ret |= of_property_read_u32_index(np, "fatal_isc_trigger_condition",
+                ret1 = of_property_read_u32_index(np, "fatal_isc_trigger_condition",
                                         j + FATAL_ISC_TRIGGER_ISC_OFFSET,
                                         (unsigned int *) (&iscd->fatal_isc_trigger.trigger_isc[i]));
-                ret |= of_property_read_u32_index(np, "fatal_isc_trigger_condition",
+                ret2 = of_property_read_u32_index(np, "fatal_isc_trigger_condition",
                                         j + FATAL_ISC_TRIGGER_DMD_OFFSET,
                                         (unsigned int *) (&iscd->fatal_isc_trigger.dmd_no[i]));
+
+                ret = (ret || ret0 || ret1 || ret2);
             }
             if(ret) {
                 coul_core_err("Read fatal_isc_trigger_condition failed.\n");
@@ -8833,6 +9553,7 @@ static void fatal_isc_init(struct device_node* np, struct iscd_info *iscd)
 
     /* isc limitations setting up */
     iscd->fatal_isc_action = 0;
+    iscd->fatal_isc_action_dts = 0;
     ret = of_property_read_u32_array(np, "fatal_isc_actions", temp, __MAX_FATAL_ISC_ACTION_TYPE);
     if(ret) {
         coul_core_info("fatal_isc_actions not defined or right size in device tree.\n");
@@ -8851,11 +9572,12 @@ static void fatal_isc_init(struct device_node* np, struct iscd_info *iscd)
         }
         for (i = 0; i < __MAX_FATAL_ISC_ACTION_TYPE; i++){
             if(temp[i]) {
-                iscd->fatal_isc_action |= BIT(i);
+                iscd->fatal_isc_action_dts |= BIT(i);
             }
         }
     }
 
+    iscd->fatal_isc_action = FATAL_ISC_ACTION_DMD_ONLY;
     BLOCKING_INIT_NOTIFIER_HEAD(&iscd->isc_limit_func_head);
     iscd->fatal_isc_direct_chg_limit_soc_nb.notifier_call = fatal_isc_direct_chg_limit_soc;
     iscd->fatal_isc_chg_limit_soc_nb.notifier_call = fatal_isc_chg_limit_soc;
@@ -8868,7 +9590,7 @@ static void fatal_isc_init(struct device_node* np, struct iscd_info *iscd)
     /* isc history datum initalization */
     if(iscd->fatal_isc_trigger_type != INVALID_ISC_JUDGEMENT) {
         /* set fatal_isc_hist.magic_num which is version of isc history datum */
-        iscd->fatal_isc_hist.magic_num = FATAL_ISC_MAGIC_NUM;
+        iscd->fatal_isc_hist.magic_num = iscd->iscd_file_magic_num;
         /* init fatal_isc_hist by splash2 file, here wair for splash2 mounted */
         schedule_delayed_work(&iscd->isc_splash2_work, msecs_to_jiffies(WAIT_FOR_SPLASH2_START));
     }
@@ -8909,11 +9631,12 @@ static void iscd_remove(struct smartstar_coul_device *di)
 static void clear_moved_battery_data(struct smartstar_coul_device *di)
 {
     if(di->coul_dev_ops->is_battery_moved()){
-        set_charge_cycles(di, 0);
+        di->batt_chargecycles = 0;
         di->batt_changed_flag = 1;
         di->batt_reset_flag = 1;
         di->batt_limit_fcc = 0;
         di->batt_report_full_fcc_real = 0;
+	di->basp_delay_config = 0;
         di->adjusted_fcc_temp_lut = NULL; /* enable it when test ok */
         di->is_nv_need_save = 1;
         di->coul_dev_ops->set_nv_save_flag(NV_SAVE_FAIL);
@@ -8924,6 +9647,9 @@ static void clear_moved_battery_data(struct smartstar_coul_device *di)
         my_nv_info.latest_record_index = 0;
         memset(di->nv_info.real_fcc_record, 0, sizeof(di->nv_info.real_fcc_record));
         memset(my_nv_info.real_fcc_record, 0, sizeof(my_nv_info.real_fcc_record));
+#ifdef CONFIG_HISI_COUL_POLAR
+        polar_clear_flash_data();
+#endif
         coul_core_info("battery changed, reset chargecycles!\n");
     } else {
         coul_core_info("battery not changed, chargecycles = %d%%\n", di->batt_chargecycles);
@@ -8966,8 +9692,8 @@ static void coul_check_drained_battery_flag(struct smartstar_coul_device *di)
     if(strstr(saved_command_line, "androidboot.mode=normal") && strstr(saved_command_line, "androidboot.swtype=normal")){
    /*if the register of battery drained equals true when battery changed detected,report batter
 y drained event*/
-        snprintf_s(buff,sizeof(buff),sizeof(buff)-1,"last_charge_cycles:%d,charge_cylces:%d!\n",
-               last_charge_cycles,di->batt_chargecycles);
+        (void)snprintf_s(buff,sizeof(buff),sizeof(buff)-1,"last_charge_cycles:%d,charge_cylces:%d!\n",
+            last_charge_cycles,di->batt_chargecycles);
         if(di->batt_changed_flag && !drained_battery_flag){
             coul_dsm_report_ocv_cali_info(di, DSM_BATTERY_CHANGED_NO , buff);
         }else if(drained_battery_flag){
@@ -9067,12 +9793,21 @@ static int  hisi_coul_probe(struct platform_device *pdev)
 
     /*set battery data*/
     di->batt_data = get_battery_data(di->batt_id_vol);
+#ifdef CONFIG_HISI_ASW
+	asw_protect_check(di);
+#endif /* CONFIG_HISI_ASW */
     if (NULL == di->batt_data) {
         coul_core_err("%s: batt ID(0x%x) is invalid\n",__FUNCTION__,di->batt_id_vol);
         retval = -1;
         goto coul_failed_1;
     }
     coul_core_info("%s: batt ID is %d, batt_brand is %s\n",__FUNCTION__,di->batt_id_vol, di->batt_data->batt_brand);
+
+	/* basp match battery and config delay */
+	if (basp_mask_delay) {
+		basp_match_battery(di);
+		basp_config_delay(di);
+	}
 
     /*init battery remove check work*/
 	if (battery_is_removable) {
@@ -9147,6 +9882,7 @@ coul_no_battery:
     coul_ops->battery_unfiltered_capacity = coul_battery_unfiltered_capacity;
     coul_ops->battery_capacity            = coul_get_battery_capacity;
     coul_ops->battery_temperature         = coul_get_battery_temperature;
+    coul_ops->chip_temperature            = coul_get_chip_temp;
     coul_ops->battery_rm                  = coul_get_battery_rm;
     coul_ops->battery_fcc                 = coul_get_battery_fcc;
     coul_ops->battery_tte                 = coul_get_battery_tte;
@@ -9180,6 +9916,9 @@ coul_no_battery:
     coul_ops->get_coul_calibration_status  = coul_get_calibration_status;
     coul_ops->battery_removed_before_boot = get_batt_reset_flag;
     coul_ops->get_qmax                    = coul_get_battery_qmax;
+#ifdef CONFIG_HISI_ASW
+	coul_ops->asw_refresh_fcc = coul_asw_refresh_fcc;
+#endif /* CONFIG_HISI_ASW */
     di->ops = coul_ops;
     retval = hisi_coul_ops_register(coul_ops,COUL_HISI);
     if (retval) {
@@ -9205,6 +9944,8 @@ coul_no_battery:
     di->coul_dev_ops->set_eco_sample_flag(0);
     di->coul_dev_ops->clr_eco_data(0);
 #endif
+    /* on boot multi steps will update charge cycles, so notify at end of function */
+    hisi_call_coul_blocking_notifiers(HISI_EEPROM_CYC, &di->batt_chargecycles);
     coul_core_info("coul core probe ok!\n");
     return 0;
 
@@ -9238,6 +9979,7 @@ int bat_lpm3_ocv_msg_handler(struct notifier_block *nb, unsigned long action,voi
 {
 	struct ipc_msg *p_ipcmsg;
     int mins;
+	errno_t ret_s;
     struct smartstar_coul_device *di = container_of(nb,
                                 struct smartstar_coul_device, bat_lpm3_ipc_block);
 	if (!msg || NULL == di) {
@@ -9247,8 +9989,10 @@ int bat_lpm3_ocv_msg_handler(struct notifier_block *nb, unsigned long action,voi
 	p_ipcmsg = (struct ipc_msg *)msg;
 	if (IPC_BAT_OCVINFO == p_ipcmsg->data[0]) {
         mins = min(sizeof(struct bat_ocv_info),(MAX_MAIL_SIZE - 1)*sizeof(int));
-        memcpy_s((void *)&di->eco_info, sizeof(struct bat_ocv_info), (void *)&p_ipcmsg->data[1], mins);
-        coul_core_debug("%s:vbat:0x%x,ibat:0x%x!\n", __func__, di->eco_info.eco_vbat_reg, di->eco_info.eco_ibat_reg);
+        ret_s = memcpy_s((void *)&di->eco_info, sizeof(struct bat_ocv_info), (void *)&p_ipcmsg->data[1], mins);
+		if (ret_s)
+			coul_core_err("%s:memcpy fail!\n", __func__);
+		coul_core_debug("%s:vbat:0x%x,ibat:0x%x!\n", __func__, di->eco_info.eco_vbat_reg, di->eco_info.eco_ibat_reg);
     }
     return 0;
 }
@@ -9277,7 +10021,7 @@ static int  hisi_coul_remove(struct platform_device *pdev)
 
 #ifdef CONFIG_PM
 
-static int hisi_coul_pm_notify(struct notifier_block * nb, unsigned long mode, void * unused)/*lint !e578*/
+static int hisi_coul_pm_notify(struct notifier_block * nb, unsigned long mode, void * priv_unused)/*lint !e578*/
 {
     struct smartstar_coul_device *di = container_of(nb, struct smartstar_coul_device, pm_notify);
 
@@ -9821,10 +10565,6 @@ static int hisi_coul_resume(struct platform_device *pdev)
     sr_sleep_time = current_sec - di->sr_suspend_time;
     sleep_cc = di->coul_dev_ops->calculate_cc_uah();
     sleep_cc = sleep_cc - di->suspend_cc;  /* sleep uah */
-#ifdef CONFIG_HISI_COUL_POLAR
-    update_polar_ocv(di, current_sec, di->batt_temp, di->batt_soc_real);
-    start_polar_sample();
-#endif
     disable_temperature_debounce = 0;
     coul_set_low_vol_int(di, LOW_INT_STATE_RUNNING);
     DI_LOCK();
@@ -9839,10 +10579,14 @@ static int hisi_coul_resume(struct platform_device *pdev)
     else {
         coul_core_err("[SR]%s(%d): sr_sleep_time = %d\n", __func__, __LINE__, sr_sleep_time);
     }
+
     if ((current_sec - di->charging_stop_time > 30*60)
 		&& multi_ocv_open_flag && multi_ocv_could_update(di)){
 		record_ocv_cali_info(di);
         save_multi_ocv_and_level(di);
+#ifdef CONFIG_HISI_COUL_POLAR
+        clear_polar_err_b();
+#endif
     } else if((current_sec - di->charging_stop_time > 30*60)
     	&& !multi_ocv_open_flag && ocv_could_update(di)) {
 		get_ocv_resume(di);
@@ -9865,6 +10609,10 @@ static int hisi_coul_resume(struct platform_device *pdev)
             di->batt_ocv_valid_to_refresh_fcc = 0;
         }
     }
+#ifdef CONFIG_HISI_COUL_POLAR
+    update_polar_ocv(di, di->batt_temp, di->batt_soc_real, sr_sleep_time, sleep_cc);
+    start_polar_sample();
+#endif
 	di->coul_dev_ops->exit_eco();
     di->soc_limit_flag = 2;
     di->soc_monitor_flag = 2;
@@ -9943,6 +10691,9 @@ static void hisi_coul_shutdown(struct platform_device *pdev)
     cancel_delayed_work(&di->read_temperature_delayed_work);
     if (battery_is_removable)
         cancel_delayed_work(&di->battery_check_delayed_work);
+#ifdef CONFIG_HISI_ASW
+	asw_protect_exit(di);
+#endif /* CONFIG_HISI_ASW */
     coul_core_err("hisi_coul_shutdown end!\n");
 }
 

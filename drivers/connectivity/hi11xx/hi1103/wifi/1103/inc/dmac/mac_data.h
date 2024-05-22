@@ -40,6 +40,8 @@ extern "C" {
 #define OAL_EAPOL_TYPE_POS      9
 #define OAL_EAPOL_TYPE_KEY      3
 
+#define MAC_GET_SNAP_TYPE(_pst_snap) (*(oal_uint8 *)_pst_snap)
+
 /*****************************************************************************
   3 Ã¶¾Ù¶¨Òå
 *****************************************************************************/
@@ -151,6 +153,8 @@ extern oal_bool_enum_uint8 mac_dhcp_frame_should_drop(oal_uint8 *puc_frame_hdr, 
 #endif
 extern pkt_trace_type_enum_uint8 mac_pkt_should_trace(oal_uint8 *puc_frame_hdr, mac_netbuff_payload_type uc_hdr_type);
 extern pkt_trace_type_enum_uint8 wifi_pkt_should_trace(oal_netbuf_stru *pst_netbuff, oal_uint16 us_mac_hdr_len);
+extern oal_bool_enum mac_snap_is_protocol_type(oal_uint8 ul_snap_type);
+
 #ifdef __cplusplus
     #if __cplusplus
         }

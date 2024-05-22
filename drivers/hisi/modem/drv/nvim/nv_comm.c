@@ -147,17 +147,17 @@ bool nv_flag_file_isExist(const s8* path)
 void nv_file_flag_check(void)
 {
     if( !mdrv_file_access((char*)NV_BACK_FLAG_PATH,0)){
-        nv_record("%s %s :last time [back file] write abnomal,rewrite !\n",__DATE__,__TIME__);
+        nv_record("[back file] write abnomal,rewrite !\n");
         (void)bsp_nvm_backup(NV_FLAG_NEED_CRC);
     }
 
     if( !mdrv_file_access((char*)NV_SYS_FLAG_PATH,0)){
-        nv_record("%s %s :last time [sys file] write abnomal,rewrite !\n",__DATE__,__TIME__);
+        nv_record("[sys file] write abnomal,rewrite !\n");
         (void)bsp_nvm_flushSys();
     }
 
     if( !mdrv_file_access((char*)NV_IMG_FLAG_PATH,0)){
-        nv_record("%s %s :last time [img file] write abnomal,rewrite !\n",__DATE__,__TIME__);
+        nv_record("[img file] write abnomal,rewrite !\n");
         (void)nv_img_flush_all();
     }
 }
@@ -291,7 +291,7 @@ u32 nv_load_err_proc(void)
 
     unsigned long nvflag = 0;
 
-    nv_record("load error proc ...%s %s \n",__DATE__,__TIME__);
+    nv_record("load error proc ...\n");
     /*lint -save -e550*//* Warning 550: (Warning -- Symbol '__dummy' (line 267) not accessed)*/
     nv_spin_lock(nvflag, IPC_SEM_NV);
     /*lint -restore*/
@@ -309,7 +309,7 @@ u32 nv_load_err_proc(void)
         return BSP_ERR_NV_NO_FILE;
     }
 
-    nv_record("%s %s load from %s ...\n",__DATE__,__TIME__,NV_DLOAD_PATH);
+    nv_record("load from %s ...\n",NV_DLOAD_PATH);
 
     ret = nv_read_ctrl_from_upfile();
     if(ret)
@@ -357,7 +357,7 @@ u32 nv_load_err_proc(void)
     nv_spin_unlock(nvflag, IPC_SEM_NV);
     nv_flush_cache((u8*)NV_GLOBAL_START_ADDR, SHM_MEM_NV_SIZE);
 
-    nv_record("load error proc OK ...%s %s \n",__DATE__,__TIME__);
+    nv_record("load error proc OK ...\n");
     return NV_OK;
 }
 
@@ -772,6 +772,23 @@ out:
     return NV_ERROR;
 }
 
+u32 nv_check_data(u32 item_size, u32 buff_size, u8* item_base)
+{
+    if(item_size > buff_size)
+    {
+        g_nv_ctrl.revert_len_err++;
+        nv_printf("nv length is too large, skip it!nvsize:0x%x, buffsize:0x%x\n",
+                    item_size, buff_size);
+        return BSP_ERR_NV_OVER_MEM_ERR;
+    }
+    if(NULL == item_base)
+    {
+        nv_printf("can't get nv base\n");
+        return BSP_ERR_NV_NO_THIS_ID;
+    }
+
+    return NV_OK;
+}
 u32 nv_revert_item(nv_revert_file_s * file, u32 itemid, u32 mkcrc, u8* temp_buff, u32 buff_size)
 {
     u32 ret;
@@ -830,13 +847,12 @@ u32 nv_revert_item(nv_revert_file_s * file, u32 itemid, u32 mkcrc, u8* temp_buff
     item_size   = nv_get_item_len(&mem_item, NULL);
     mdm_size    = nv_get_item_mdmlen(&mem_item, NULL);
     mdm_num     = file_item.modem_num < mem_item.modem_num?file_item.modem_num:mem_item.modem_num;
-    if(item_size > buff_size)
+
+    ret = nv_check_data(item_size, buff_size, item_base);
+    if(NV_OK != ret)
     {
-        g_nv_ctrl.revert_len_err++;
-        nv_debug(NV_FUN_REVERT_DATA,13,itemid,item_size,buff_size);
-        nv_printf("nv length is too large, skip it! nvid:0x%x nvsize:0x%x, buffsize:0x%x\n",
-                    itemid, item_size, buff_size);
-        return BSP_ERR_NV_OVER_MEM_ERR;
+        nv_printf("invalid nvid:0x%x data:%d\n", itemid, ret);
+        return ret;
     }
 
     for(i=1; i<=mdm_num; i++)
@@ -1510,12 +1526,12 @@ u32 nv_resume_ddr_from_img(void)
     nv_debug(NV_CRC32_DDR_RESUME_IMG,0,0,0,0);
     if(!nv_debug_is_resume_img())
     {
-        nv_record("nv resume cfg not %s ...%s %s \n",g_nv_path.file_path[NV_IMG],__DATE__,__TIME__);
+        nv_record("nv resume cfg not %s ...\n",g_nv_path.file_path[NV_IMG]);
         return NV_OK;
     }
     else
     {
-        nv_record("nv resume %s ...%s %s \n",g_nv_path.file_path[NV_IMG],__DATE__,__TIME__);
+        nv_record("nv resume %s ...\n",g_nv_path.file_path[NV_IMG]);
     }
 
     /*lock write right*/
@@ -1532,7 +1548,7 @@ u32 nv_resume_ddr_from_img(void)
     ret = bsp_nvm_reload();
     if(ret)
     {
-        nv_record("NV resume fail ...%s %s \n",__DATE__,__TIME__);
+        nv_record("NV resume fail ...\n");
     }
     else
     {
@@ -1543,7 +1559,7 @@ u32 nv_resume_ddr_from_img(void)
         ddr_info->acore_init_state = NV_INIT_OK;
         nv_spin_unlock(nvflag, IPC_SEM_NV);
         nv_flush_cache((u8*)NV_GLOBAL_START_ADDR, SHM_MEM_NV_SIZE);
-        nv_record("NV resume OK ...%s %s \n",__DATE__,__TIME__);
+        nv_record("NV resume OK ...\n");
     }
 
     return ret;
@@ -1612,7 +1628,11 @@ u32 nv_flushItem(nv_flush_item_s *flush_item)
         file_offset = (u32)nv_get_item_filemdmoffset(&item_info, flush_item->modemid, NULL, NULL);
         need_crc = false;
     }
-
+    if(NULL == data)
+    {
+        nv_printf("can't get item base\n");
+        return BSP_ERR_NV_NO_THIS_ID;
+    }
     if(need_crc)
     {
         u8* buff;

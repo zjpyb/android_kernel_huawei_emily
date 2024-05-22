@@ -1,13 +1,10 @@
 /*
- * rproc.c
- *
- * the rproc.c for root processes list checking
- *
- * Yongzheng Wu <Wu.Yongzheng@huawei.com>
- * likun <quentin.lee@huawei.com>
- * likan <likan82@huawei.com>
- *
- * Copyright (c) 2001-2021, Huawei Tech. Co., Ltd. All rights reserved.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2016-2018. All rights reserved.
+ * Description: the rproc.c for root processes list checking
+ * Author: Yongzheng Wu <Wu.Yongzheng@huawei.com>
+ *         likun <quentin.lee@huawei.com>
+ *         likan <likan82@huawei.com>
+ * Create: 2016-06-18
  */
 
 #include <linux/dcache.h>
@@ -20,8 +17,8 @@
 #include <linux/slab.h>
 #include <linux/sort.h>
 #include <linux/string.h>
-#include "./include/hw_rscan_utils.h"
 #include <linux/version.h>
+#include "./include/hw_rscan_utils.h"
 
 #define MAX_PROC_NUM 128 /* 128 root processes should be enough for anybody */
 
@@ -31,7 +28,7 @@ static const char *TAG = "rproc";
  * return number of tokens
  * Note, paths will be modified, just like strtok
  */
-static int paths_explode(char **const tokens, char *paths)
+static int paths_explode(char *paths, char **const tokens)
 {
 	int ntoken = 0;
 	int i = 0;
@@ -67,14 +64,15 @@ static void paths_implode(char *paths,  char **const tokens, int ntoken)
 		return;
 	}
 
-	for (ti = 0; ti < ntoken; ti++)
+	for (ti = 0; ti < ntoken; ti++) {
 		paths += sprintf(paths, ti == 0 ? "%s" : ":%s", tokens[ti]);
+	}
 }
 
 static int tokens_cmp(const void *p1, const void *p2)
 {
-	char *const *i1 = p1;
-	char *const *i2 = p2;
+	char * const *i1 = p1;
+	char * const *i2 = p2;
 
 	return strcmp(*i1, *i2);
 }
@@ -86,12 +84,14 @@ static char *g_whitelist_proc_buf;
 bool is_dup_token(char **const tokens, int index)
 {
 	/* we should delete empty token */
-	if (tokens[index][0]  == '\0')
+	if (tokens[index][0]  == '\0') {
 		return true;
+	}
 
 	/* the current token is same with the last, so it's dup token */
-	if ((index > 0) && (strcmp(tokens[index - 1], tokens[index]) == 0))
+	if ((index > 0) && (strcmp(tokens[index - 1], tokens[index]) == 0)) {
 		return true;
+	}
 
 	return false;
 }
@@ -101,13 +101,14 @@ bool is_dup_token(char **const tokens, int index)
  */
 static bool format_rprocs(char **const tokens, int *ntoken, char *whitelist)
 {
-	int cur = 0;
-	int token_count = 0;
+	int cur;
+	int token_count;
 
-	if (NULL == tokens || NULL == whitelist || NULL == ntoken)
+	if ((tokens == NULL) || (whitelist == NULL) || (ntoken == NULL)) {
 		return false;
+	}
 
-	token_count = paths_explode(tokens, whitelist);
+	token_count = paths_explode(whitelist, tokens);
 
 	sort(tokens, (ulong)token_count, sizeof(char *), tokens_cmp, NULL);
 
@@ -131,18 +132,19 @@ static bool format_rprocs(char **const tokens, int *ntoken, char *whitelist)
 
 bool init_rprocs_whitelist(const char *whitelist)
 {
-	if (NULL == g_whitelist_proc_buf) {
+	if (g_whitelist_proc_buf == NULL) {
 
 		/* never freed */
 		g_whitelist_proc_buf = (char *)__get_free_page(GFP_KERNEL);
 
-		if (NULL != g_whitelist_proc_buf)
+		if (g_whitelist_proc_buf != NULL) {
 			strncpy(g_whitelist_proc_buf, whitelist, PAGE_SIZE);
-		else
+		} else {
 			return false;
+		}
 	}
 	return format_rprocs(g_whitelist_proc, &g_whitelist_count,
-							g_whitelist_proc_buf);
+			g_whitelist_proc_buf);
 }
 
 bool find_proc_in_init_list(const char *proc_name)
@@ -151,8 +153,9 @@ bool find_proc_in_init_list(const char *proc_name)
 	int begin = 0;
 	int end = g_whitelist_count - 1;
 
-	if (proc_name == NULL)
+	if (proc_name == NULL) {
 		return false;
+	}
 
 	while (begin <= end) {
 		int pos = (begin + end) / 2;
@@ -179,17 +182,17 @@ void _rprocs_strip_whitelist(char **const tokens, char **final_tokens,
 {
 	int ntoken = 0;
 	int final_ntoken = 0;
-	int i = 0;
-	char *tmp = NULL;
+	int i;
+	char *tmp;
 
-	if (NULL == tokens || NULL == final_tokens
-			|| NULL == rprocs || rprocs_len > MAX_RPROC_SIZE) {
+	if ((tokens == NULL) || (final_tokens == NULL) ||
+		(rprocs == NULL) || (rprocs_len > MAX_RPROC_SIZE)) {
 		RSLogError(TAG, "strip white list failed, input value invalid");
 		return;
 	}
 
 	tmp = vmalloc((ulong)rprocs_len);
-	if (NULL == tmp) {
+	if (tmp == NULL) {
 		RSLogError(TAG, "rprocs_strip_whitelist failed, out of memory");
 		return;
 	}
@@ -200,14 +203,14 @@ void _rprocs_strip_whitelist(char **const tokens, char **final_tokens,
 
 	/* strip whitelist */
 	for (i = 0; i < ntoken; i++) {
-		if (!find_proc_in_init_list(tokens[i]))
+		if (!find_proc_in_init_list(tokens[i])) {
 			final_tokens[final_ntoken++] = tokens[i];
+		}
 	}
 
 	/* reconstruct */
 	paths_implode(rprocs, final_tokens, final_ntoken);
 	vfree(tmp);
-	tmp = NULL;
 }
 
 /*
@@ -219,39 +222,36 @@ void _rprocs_strip_whitelist(char **const tokens, char **final_tokens,
  */
 void rprocs_strip_whitelist(char *rprocs, ssize_t rprocs_len)
 {
-	char **tokens = NULL;
-	char **final_tokens = NULL;
+	char **tokens;
+	char **final_tokens;
 
-	tokens = vmalloc((ulong)MAX_PROC_NUM * sizeof(char *));
-	if (NULL == tokens) {
-		RSLogError(TAG, "no enough memory for tokens");
+	tokens = kmalloc((ulong)MAX_PROC_NUM * sizeof(char *), GFP_KERNEL);
+	if (tokens == NULL) {
+		RSLogError(TAG, "no enough memory for allocation");
 		return;
 	}
 
-	final_tokens = vmalloc((ulong)MAX_PROC_NUM * sizeof(char *));
-	if (NULL == final_tokens) {
-		RSLogError(TAG, "no enough memory for final_tokens");
-		vfree(tokens);
-		tokens = NULL;
+	final_tokens = kmalloc((ulong)MAX_PROC_NUM * sizeof(char *),
+			GFP_KERNEL);
+	if (final_tokens == NULL) {
+		RSLogError(TAG, "no enough memory for allocation");
+		kfree(tokens);
 		return;
 	}
 
 	_rprocs_strip_whitelist(tokens, final_tokens, rprocs, rprocs_len);
 
-	vfree(tokens);
-	tokens = NULL;
-
-	vfree(final_tokens);
-	final_tokens = NULL;
+	kfree(tokens);
+	kfree(final_tokens);
 }
 
 /* For pre-4.1 kernel, calling get_mm_exe_file causes kernel crash, because
-   we are holding task_lock and get_mm_exe_file calls down_read() which calls
-   might_sleep(). We reimplement get_mm_exe_file and use down_read_trylock()
-   instead of down_read().
-   Since kernel 4.1, get_mm_exe_file() start to use RCU instead of semaphore.
-   We are safe to call it.
-   The exact commit is 90f31d0ea88880f780574f3d0bb1a227c4c66ca3.
+ * we are holding task_lock and get_mm_exe_file calls down_read() which calls
+ * might_sleep(). We reimplement get_mm_exe_file and use down_read_trylock()
+ * instead of down_read().
+ * Since kernel 4.1, get_mm_exe_file() start to use RCU instead of semaphore.
+ *  We are safe to call it.
+ * The exact commit is 90f31d0ea88880f780574f3d0bb1a227c4c66ca3.
 */
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 0)
 #define my_get_mm_exe_file(mm) get_mm_exe_file(mm)
@@ -260,11 +260,13 @@ static struct file *my_get_mm_exe_file(struct mm_struct *mm)
 {
 	struct file *exe_file;
 
-	if (!down_read_trylock(&mm->mmap_sem))
+	if (!down_read_trylock(&mm->mmap_sem)) {
 		return NULL;
+	}
 	exe_file = mm->exe_file;
-	if (exe_file)
+	if (exe_file != NULL) {
 		get_file(exe_file);
+	}
 	up_read(&mm->mmap_sem);
 	return exe_file;
 }
@@ -281,19 +283,20 @@ static int get_task_exe(struct mm_struct *mm, pid_t pid, char *out,
 					int outlen, char *dbuf, int dbuflen)
 {
 	struct file *exe_file;
-	char *pathname = NULL;
-	char *blank_spaces = NULL;
-	size_t len = 0;
+	char *pathname;
+	char *blank_spaces;
+	size_t len;
 
-	if (NULL == mm || NULL == out || NULL == dbuf) {
+	if ((mm == NULL) || (out == NULL) || (dbuf == NULL)) {
 		RSLogError(TAG, "input parameter invalid");
 		return -EINVAL;
 	}
-	if (NULL == &mm->mmap_sem)
+	if (&mm->mmap_sem == NULL) {
 		return -EINVAL;
+	}
 	exe_file = my_get_mm_exe_file(mm);
 
-	if (!exe_file) {
+	if (exe_file == NULL) {
 		RSLogError(TAG, "get mm exe file %d failed", pid);
 		return 0;
 	}
@@ -317,7 +320,7 @@ static int get_task_exe(struct mm_struct *mm, pid_t pid, char *out,
 
 	if (outlen < len) {
 		RSLogWarning(TAG, "get task exe path too long \"%s\" > %d",
-							pathname, outlen);
+			pathname, outlen);
 		return -1;
 	}
 
@@ -328,23 +331,23 @@ static int get_task_exe(struct mm_struct *mm, pid_t pid, char *out,
 
 int get_root_procs(char *out, size_t outlen)
 {
-	char *tmp = NULL;
-	struct task_struct *task;
+	char *tmp;
+	struct task_struct *task = NULL;
 	int pos = 0;
 
-	if (NULL == out || outlen <= 0) {
+	if (out == NULL || outlen <= 0) {
 		RSLogError(TAG, "input parameter invalid");
 		return -EINVAL;
 	}
 
-	tmp = (char *)__get_free_page(GFP_TEMPORARY);
+	tmp = (char *)__get_free_page(GFP_KERNEL);
 	if (tmp == NULL) {
 		RSLogError(TAG, "get free page failed");
 		return -EINVAL;
 	}
 
 	read_lock(&tasklist_lock);
-	for_each_process(task) { /*lint -save -e550 */
+	for_each_process(task) { /* lint -save -e550 */
 		int len;
 		struct task_struct *t;
 
@@ -352,29 +355,33 @@ int get_root_procs(char *out, size_t outlen)
 		 * last char must be '\0',
 		 * so the invalid space for the process name must -1
 		 */
-		if (pos >= outlen - 1)
+		if (pos >= outlen - 1) {
 			break;
+		}
 
-		if ((task->flags & PF_KTHREAD)
-				|| task->mm == NULL
-				|| from_kuid_munged(&init_user_ns,
-							task->cred->euid) != 0)
+		if ((task->flags & PF_KTHREAD) || (task->mm == NULL) ||
+				(from_kuid_munged(&init_user_ns,
+				task->cred->euid) != 0)) {
 			continue;
+		}
 
 		/* follow mm/oom_kill.c:dump_tasks */
 		t = find_lock_task_mm(task);
-		if (!t || !t->mm)
+		if ((t == NULL) || (t->mm == NULL)) {
 			continue;
+		}
 
-		len = get_task_exe(t->mm, t->pid, out + pos,
-					outlen - pos - 1, tmp, PAGE_SIZE);
+		len = get_task_exe(t->mm, t->pid, out + pos, outlen - pos - 1,
+				tmp, PAGE_SIZE);
 		task_unlock(t);
 
-		if (len < 0)
+		if (len < 0) {
 			break;
+		}
 
-		if (len == 0)
+		if (len == 0) {
 			continue;
+		}
 
 		pos += len;
 

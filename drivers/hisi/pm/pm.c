@@ -30,6 +30,7 @@
 #include <chipset_common/dubai/dubai.h>
 
 
+
 #include <soc_gpio_interface.h>
 
 #define POWER_STATE_TYPE_SYS_SUSPEND	3
@@ -66,8 +67,12 @@ static const char *g_plat_name;
 unsigned int g_ap_irq_num;
 const char **g_ap_irq_name;
 unsigned int g_pm_fpga_flag;
+static unsigned int g_ap_suspend_flag;
+static unsigned int tickmark_s = 0;
+static unsigned int tickmark_r = 0;
+static unsigned int resume_time_ms = 0;
 
-#include <log/log_usertype/log-usertype.h>
+#include <log/log_usertype.h>
 unsigned long g_latt_wakeuptime = 0;
 const char *g_latt_sourcename = NULL;
 int  g_latt_gpio = 0;
@@ -100,7 +105,7 @@ static int pm_ao_gpio_irq_dump(unsigned int irq_num)
 {
 	int i = 0;
 	int index = 0;
-	int data = 0;
+	unsigned int data = 0;
 
 	if(g_ao_gpio_grp_num == 0 || (ao_gpio_info_p == NULL)){
 		pr_err("%s: grp num is %d or NULL pointer.\n",__func__,g_ao_gpio_grp_num);
@@ -163,7 +168,7 @@ void pm_gic_pending_dump(void)
 					printk("(gpio-%d)", gpio);
                 }
 				/* notify dubai module to update wakeup information */
-				dubai_update_wakeup_info(g_ap_irq_name[irq], gpio);
+				dubai_update_wakeup_info("DUBAI_TAG_KERNEL_WAKEUP", "irq=%s gpio=%d", g_ap_irq_name[irq], gpio);
                                 if (BETA_USER == get_logusertype_flag()) {
                                           g_latt_wakeuptime = hisi_getcurtime() / 1000000;
                                           g_latt_sourcename = g_ap_irq_name[irq];
@@ -250,7 +255,6 @@ static int hisi_pm_enter(suspend_state_t state)
 	unsigned int cluster = 0;
 	unsigned int core = 0;
 	unsigned long mpidr = read_cpuid_mpidr();
-	unsigned int tickmark = 0;
 
 	PMU_WRITE_SR_TICK(PMUOFFSET_SR_TICK, KERNEL_SUSPEND_IN);
 	pr_err("%s ++\n", __func__);
@@ -258,7 +262,7 @@ static int hisi_pm_enter(suspend_state_t state)
 	cluster = (mpidr >> 8) & 0xff;
 	core = mpidr & 0xff;
 
-	pr_err("%s: mpidr is 0x%lx, cluster = %d, core = %d.\n", __func__, mpidr, cluster, core);
+	pr_debug("%s: mpidr is 0x%lx, cluster = %d, core = %d.\n", __func__, mpidr, cluster, core);
 
 	pm_gic_dump();
 	get_ip_regulator_state();
@@ -269,6 +273,7 @@ static int hisi_pm_enter(suspend_state_t state)
 	while (hisi_test_pwrdn_othercores(cluster, core))
 		;
 	PMU_WRITE_SR_TICK(PMUOFFSET_SR_TICK, KERNEL_SUSPEND_SETFLAG);
+	g_ap_suspend_flag = 1;
 	hisi_set_ap_suspend_flag(cluster);
 	cpu_cluster_pm_enter();
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,1,15)
@@ -276,13 +281,13 @@ static int hisi_pm_enter(suspend_state_t state)
 #else
 	cpu_suspend(POWER_STATE_TYPE_SYS_SUSPEND);
 #endif
-	tickmark = readl(g_bbpdrx1_base);
+	tickmark_s = readl(g_bbpdrx1_base);
 	debuguart_reinit();
 	cpu_cluster_pm_exit();
 	hisi_clear_ap_suspend_flag(cluster);
 	pr_info("%s tick: 0x%x, 0x%x, 0x%x\n",
-			__func__, tickmark, readl(g_bbpdrx1_base),
-			readl(g_bbpdrx1_base) - tickmark);
+			__func__, tickmark_s, readl(g_bbpdrx1_base),
+			readl(g_bbpdrx1_base) - tickmark_s);
 	pm_gic_pending_dump();
 	pm_status_show(NO_SEQFILE);
 	pr_err("%s --\n", __func__);
@@ -474,6 +479,13 @@ static int sr_tick_pm_notify(struct notifier_block *nb,
 			break;
 		case PM_POST_SUSPEND:
 			PMU_WRITE_SR_TICK(PMUOFFSET_SR_TICK, KERNEL_RESUME_OUT);
+			if (1 == g_ap_suspend_flag){
+				tickmark_r = readl(g_bbpdrx1_base);
+				resume_time_ms = (tickmark_r - tickmark_s) * 1000 / 32768;
+			} else {
+				resume_time_ms = 0;
+			}
+			g_ap_suspend_flag = 0;
 			break;
 		default:
 			break;

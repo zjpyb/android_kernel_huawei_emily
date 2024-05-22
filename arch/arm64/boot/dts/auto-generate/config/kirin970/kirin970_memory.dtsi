@@ -23,6 +23,7 @@
 		logo-buffer {
 			reg = <0x0 0x10600000 0x0 0x3000000>;
 			status = "disabled";
+			visible_to_users;
 		};
 
 		/* for supersonic */
@@ -60,6 +61,7 @@
 			linux,cma-default;
 			reusable;
 			status = "ok";
+			visible_to_users;
 		};
 
 		ivp {
@@ -126,6 +128,12 @@
 			no-map;
 		};
 
+		voiceid: voiceid {
+			reg = <0x0 0x8C500000 0x0 0x500000>;
+			compatible = "hisi-voiceid";
+			no-map;
+		};
+
 		sec_camera {
 			reg = <0x0 0x8CA00000 0x0 0xB00000>;
 			no-map;
@@ -176,6 +184,7 @@
 		kerneldump {
 			reg = <0x0 0x8FD00000 0x0 0x20000000>;
 			status = "disabled";
+			visible_to_users;
 		};
 
 		app_no_allocate{

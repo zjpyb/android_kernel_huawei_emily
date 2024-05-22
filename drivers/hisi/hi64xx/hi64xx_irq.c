@@ -84,6 +84,7 @@ static irqreturn_t hi64xx_irq_handler(int irq, void *data)
 
 	wake_lock(&hi64xx_irq->wake_lock);
 	disable_irq_nosync(irq);
+
 	return IRQ_WAKE_THREAD;/*lint !e454*/
 }
 
@@ -376,7 +377,7 @@ int hi64xx_irq_disable_irq(struct hi64xx_irq *irq_data, int phy_irq)
 }
 EXPORT_SYMBOL(hi64xx_irq_disable_irq);
 
-int hi64xx_irq_enable_irqs(struct hi64xx_irq *irq_data, int irq_num, int* phy_irqs)
+int hi64xx_irq_enable_irqs(struct hi64xx_irq *irq_data, int irq_num, const int* phy_irqs)
 {
 	struct hi64xx_irq_platform_data *data =
 		(struct hi64xx_irq_platform_data *)irq_data;
@@ -394,7 +395,7 @@ int hi64xx_irq_enable_irqs(struct hi64xx_irq *irq_data, int irq_num, int* phy_ir
 }
 EXPORT_SYMBOL(hi64xx_irq_enable_irqs);
 
-int hi64xx_irq_disable_irqs(struct hi64xx_irq *irq_data, int irq_num, int* phy_irqs)
+int hi64xx_irq_disable_irqs(struct hi64xx_irq *irq_data, int irq_num, const int* phy_irqs)
 {
 	struct hi64xx_irq_platform_data *data =
 		(struct hi64xx_irq_platform_data *)irq_data;

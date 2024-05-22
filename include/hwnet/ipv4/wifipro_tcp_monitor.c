@@ -17,6 +17,13 @@
 #include <linux/kthread.h>
 #include <linux/string.h>
 #include <net/tcp.h>
+#include <linux/version.h>
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+#include <linux/sched.h>
+#include <linux/sched/mm.h>
+#endif
+
 #include "wifipro_tcp_monitor.h"
 
 #ifndef CONFIG_HW_WIFIPRO
@@ -42,7 +49,19 @@ DEFINE_MUTEX(wifipro_congestion_sem);
 #define LINK_MAYBE_POOR				2
 #define LINK_MAYBE_GOOD				3
 #define LINK_GOOD					4
-
+static char *s_arrTitle[MAX_ARR_TITLE_COUNT] = {
+	"WEBSENDSEGS",
+	"WEBRESENDSEGS",
+	"WEBRECVSEGS",
+	"WEBRTTDURATION",
+	"WEBRTTSEGS"
+};
+static int s_wlanTcpStat_index;
+static int s_rmnetTcpStat_index;
+static int s_hidataTcpStat_index;
+static UIDTCPStat s_uidWlanTcpStat[MAX_UID_CNT];   /* for wlan TCP uid Stat */
+static UIDTCPStat s_uidRmnetTcpStat[MAX_UID_CNT];  /* for rmnet TCP uid Stat */
+static HIDATAUIDTCPStat s_uidHidataTcpStat[MAX_UID_CNT];   /* for wlan TCP uid Stat */
 enum wifipro_KnlMsgType {
 	NETLINK_WIFIPRO_START_MONITOR = 0,
 	NETLINK_WIFIPRO_GET_MSG,
@@ -453,7 +472,6 @@ static void wifipro_set_cong_stat(unsigned int dest_addr, unsigned int dest_port
 int wifipro_handle_retrans(struct sock *sk, struct inet_connection_sock *icsk)
 {
 	struct inet_sock *inet = inet_sk(sk);
-	struct net *temp_net = NULL;
 	unsigned int dest_addr = 0;
 	unsigned int dest_port = 0;
 	unsigned int src_addr = 0;
@@ -561,17 +579,6 @@ static int wifipro_tcp_monitor_send_msg(int pid, unsigned int msg_from, unsigned
 
 end:
 	mutex_unlock(&wifipro_nl_send_sem);
-	/*if (wifipro_log_level >= WIFIPRO_DEBUG && ret != -1) {
-		char printk_buf[WIFIPRO_PRINT_BUF_SIZE];
-		int buf_len = 0;
-
-		buf_len += snprintf(printk_buf + buf_len,  sizeof(printk_buf), "\n\n@@@@@@@@@@@@@@@@@@@@@@@@@ Netlink struct @@@@@@@@@@@@@@@@@@@@@@@@@\n");
-		buf_len += snprintf(printk_buf + buf_len,  sizeof(printk_buf) - buf_len,  "%s:send a msg to wifipro pid=%d:\n", __func__, pid);
-		buf_len += snprintf(printk_buf + buf_len,  sizeof(printk_buf) - buf_len,  "rtt=%d  packet=%d  when=%ds  ", packet->rtt, packet->rtt_pkts, packet->rtt_when);
-		buf_len += snprintf(printk_buf + buf_len,  sizeof(printk_buf) - buf_len,  "congestion=0x%x  quality=%d", packet->congestion, packet->tcp_quality);
-		buf_len += snprintf(printk_buf + buf_len,  sizeof(printk_buf) - buf_len,  "\n@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n\n");
-		pr_err("%s", printk_buf);
-	}*/
 	return ret;
 }
 
@@ -646,16 +653,6 @@ static int wifipro_notify_rtt_msg(int pid, unsigned int msg_from)
 
 end:
 	mutex_unlock(&wifipro_nl_send_sem);
-	/*if (wifipro_log_level >= WIFIPRO_DEBUG && ret != -1) {
-		char printk_buf[WIFIPRO_PRINT_BUF_SIZE];
-		int buf_len = 0;
-
-		buf_len += snprintf(printk_buf + buf_len,  sizeof(printk_buf), "\n\n@@@@@@@@@@@@@@@@@@@@@@@@@ Netlink struct @@@@@@@@@@@@@@@@@@@@@@@@@\n");
-		buf_len += snprintf(printk_buf + buf_len,  sizeof(printk_buf) - buf_len,  "%s:send a msg to wifipro pid=%d:\n", __func__, pid);
-		buf_len += snprintf(printk_buf + buf_len,  sizeof(printk_buf) - buf_len,  "rtt=%d  packet=%d  when=%ds  ", packet->rtt, packet->rtt_pkts, packet->rtt_when);
-		buf_len += snprintf(printk_buf + buf_len,  sizeof(printk_buf) - buf_len,  "\n@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n\n");
-		pr_err("%s", printk_buf);
-	}*/
 	return ret;
 }
 
@@ -784,46 +781,16 @@ void wifipro_handle_congestion(struct sock *sk, u8 ca_state)
 
 	case TCP_CA_Disorder:
 		dst = wifipro_congestion_stat + TCP_CA_Disorder;
-		/*if (wifipro_log_level >= WIFIPRO_DEBUG) {
-			char printk_buf[WIFIPRO_PRINT_BUF_SIZE];
-			int buf_len = 0;
-
-			buf_len += snprintf(printk_buf + buf_len,  sizeof(printk_buf), "\n************************** TCP_CA_Disorder **************************\n");
-			buf_len += snprintf(printk_buf + buf_len,  sizeof(printk_buf) - buf_len,  "%s: %d  sk_state=%d  amount=%d, %lums ago",
-				__func__, dest_port, sk->sk_state, dst->amount+1, (jiffies - dst->when)*WIFIPRO_TICK_TO_MS);
-			buf_len += snprintf(printk_buf + buf_len,  sizeof(printk_buf) - buf_len,  "\n*********************************************************************\n");
-			pr_err("%s", printk_buf);
-		}*/
 		wifipro_set_cong_stat(dest_addr, dest_port, wifipro_congestion_stat, TCP_CA_Disorder);
 		break;
 
 	case TCP_CA_CWR:
 		dst = wifipro_congestion_stat + TCP_CA_CWR;
-		/*if (wifipro_log_level >= WIFIPRO_DEBUG) {
-			char printk_buf[WIFIPRO_PRINT_BUF_SIZE];
-			int buf_len = 0;
-
-			buf_len += snprintf(printk_buf + buf_len,  sizeof(printk_buf), "\n************************** TCP_CA_CWR **************************\n");
-			buf_len += snprintf(printk_buf + buf_len,  sizeof(printk_buf) - buf_len,  "%s: %d  sk_state=%d  amount=%d, %lums ago",
-				__func__, dest_port, sk->sk_state, dst->amount+1, (jiffies - dst->when)*WIFIPRO_TICK_TO_MS);
-			buf_len += snprintf(printk_buf + buf_len,  sizeof(printk_buf) - buf_len,  "\n*********************************************************************\n");
-			pr_err("%s", printk_buf);
-		}*/
 		wifipro_set_cong_stat(dest_addr, dest_port, wifipro_congestion_stat, TCP_CA_CWR);
 		break;
 
 	case TCP_CA_Recovery:
 		dst = wifipro_congestion_stat + TCP_CA_Recovery;
-		/*if (wifipro_log_level >= WIFIPRO_DEBUG) {
-			char printk_buf[WIFIPRO_PRINT_BUF_SIZE];
-			int buf_len = 0;
-
-			buf_len += snprintf(printk_buf + buf_len,  sizeof(printk_buf), "\n************************** TCP_CA_Recovery **************************\n");
-			buf_len += snprintf(printk_buf + buf_len,  sizeof(printk_buf) - buf_len,  "%s: %d  sk_state=%d  amount=%d, %lums ago",
-				__func__, dest_port, sk->sk_state, dst->amount+1, (jiffies - dst->when)*WIFIPRO_TICK_TO_MS);
-			buf_len += snprintf(printk_buf + buf_len,  sizeof(printk_buf) - buf_len,  "\n*********************************************************************\n");
-			pr_err("%s", printk_buf);
-		}*/
 		wifipro_set_cong_stat(dest_addr, dest_port, wifipro_congestion_stat, TCP_CA_Recovery);
 		break;
 
@@ -1184,7 +1151,7 @@ static ssize_t wifipro_log_level_write(struct file *file, const char __user *buf
 {
 
 	unsigned char log_level = 0;
-	WIFIPRO_ERROR("wifipro_log_level_write count = %d",count);
+	WIFIPRO_ERROR("wifipro_log_level_write count = %zu",count);
 	if (count != 2){
 
 		WIFIPRO_ERROR("unvalid count");

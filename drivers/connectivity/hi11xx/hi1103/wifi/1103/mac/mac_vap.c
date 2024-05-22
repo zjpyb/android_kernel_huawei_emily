@@ -42,6 +42,9 @@ mac_tcp_ack_buf_switch_stru g_st_tcp_ack_buf_switch = {0};
 mac_vap_rom_stru g_mac_vap_rom[WLAN_VAP_SUPPORT_MAX_NUM_LIMIT];
 
 mac_rx_dyn_bypass_extlna_stru g_st_rx_dyn_bypass_extlna_switch = {0};
+#ifdef _PRE_WLAN_FEATURE_M2S
+oal_bool_enum_uint8 g_en_mimo_blacklist_etc = OAL_TRUE;
+#endif
 
 #ifdef _PRE_WLAN_FEATURE_11AX
 

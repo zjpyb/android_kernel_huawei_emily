@@ -814,12 +814,19 @@ receive_next:
 	return NULL;
 }
 
-const pkt_header_t *pack(const char *buf, unsigned int length)
+const pkt_header_t *pack(const char *buf, unsigned int length, bool *is_notifier)
 {
 	const pkt_header_t *head = normalpack(buf, length);
 #ifdef CONFIG_CONTEXTHUB_SHMEM
-	if(head && (head->tag == TAG_SHAREMEM) && (head->cmd == CMD_SHMEM_AP_RECV_REQ))
-		head = shmempack(buf, length);
+	if(head && (head->tag == TAG_SHAREMEM))
+	{
+		if (head->cmd == CMD_SHMEM_AP_RECV_REQ) {
+			head = shmempack(buf, length);
+		} else if (head->cmd == CMD_SHMEM_AP_SEND_RESP) {
+			shmem_send_resp(head);
+			*is_notifier = true;
+		}
+	}
 #endif
 	return head;
 }
@@ -1867,12 +1874,12 @@ int send_motion_cmd(unsigned int cmd, unsigned long arg)
 
 int send_apr_log(void)
 {
-	char cmd[256];
+	char cmd[300];
 	char time_buf[16];
 	int ret = 0;
 
 	get_time_stamp(time_buf, 16);
-	snprintf(cmd, 256, "%s%s%s",
+	snprintf(cmd, 300, "%s%s%s",
 		 "archive -i /data/android_logs/kmsgcat-log -i /data/android_logs/kmsgcat-log.1 -i /data/android_logs/applogcat-log "
 		 "-i /data/android_logs/applogcat-log.1 -i /data/rdr/dump_00.bin -i /data/rdr/dump_01.bin -i /data/rdr/dump_02.bin -o ",
 		 time_buf, "_sensorhubErr -z zip");
@@ -2466,7 +2473,7 @@ static void step_counter_data_process(pkt_step_counter_data_req_t *head)
 	}
 
 	hwlog_info
-	    ("convert to standard step counter data to sensor event buffer, step_count = %d!\n");
+	    ("convert to standard step counter data to sensor event buffer\n");
 	head->hd.length = standard_data_len;	/*avoid report extend data to sensor HAL, convert to standard step counter data, just report member step_count to sensor HAL*/
 }
 
@@ -2828,7 +2835,7 @@ int inputhub_route_recv_mcu_data(const char *buf, unsigned int length)
     pkt_additional_info_req_t* addi_info = NULL;
 
 	const fingerprint_upload_pkt_t* fingerprint_data_upload = (const fingerprint_upload_pkt_t*)buf;
-    head = pack(buf, length);
+    head = pack(buf, length, &is_notifier);
 
     if (NULL == head)
     { return 0; }	/*receive next partial package.*/

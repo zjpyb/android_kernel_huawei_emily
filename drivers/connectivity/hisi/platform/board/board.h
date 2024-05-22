@@ -29,6 +29,8 @@
 #define PINMUX_SET_INIT                      (0)
 #define PINMUX_SET_SUCC                      (1)
 
+#define HI11XX_SUBCHIP_NAME_LEN_MAX          (128)
+
 #define DTS_NODE_HI110X                     "hisilicon,hi1102"
 #define DTS_NODE_HI110X_BFGX                "hisilicon,hisi_bfgx"
 #define DTS_NODE_HI110X_WIFI                "hisilicon,hisi_wifi"

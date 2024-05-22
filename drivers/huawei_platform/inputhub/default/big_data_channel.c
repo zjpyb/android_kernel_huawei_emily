@@ -19,31 +19,36 @@
 #include <huawei_platform/log/imonitor.h>
 #include "big_data_channel.h"
 
+#define NO_TAG (-1)
+
 
 /*********** 1.event parameter setting***********/
 static big_data_param_detail_t event_motion_type_param[] = {
-	{"Pickup", INT_PARAM},
-	{"Flip", INT_PARAM},
-	{"Proximity", INT_PARAM},
-	{"Shake", INT_PARAM},
-	{"TiltLr", INT_PARAM},
-	{"Pocket", INT_PARAM},
-	{"Rotation", INT_PARAM},
-	{"Activity", INT_PARAM},
-	{"TakeOff", INT_PARAM},
-	{"HeadDown", INT_PARAM},
-	{"PutDown", INT_PARAM},
-	{"Sidegrip", INT_PARAM}
+	{"Pickup", INT_PARAM, MOTION_TYPE_PICKUP},
+	{"Flip", INT_PARAM, MOTION_TYPE_FLIP},
+	{"Proximity", INT_PARAM, MOTION_TYPE_PROXIMITY},
+	{"Shake", INT_PARAM, MOTION_TYPE_SHAKE},
+	{"TiltLr", INT_PARAM, MOTION_TYPE_TILT_LR},
+	{"Pocket", INT_PARAM, MOTION_TYPE_POCKET},
+	{"Rotation", INT_PARAM, MOTION_TYPE_ROTATION},
+	{"Activity", INT_PARAM, MOTION_TYPE_ACTIVITY},
+	{"TakeOff", INT_PARAM, MOTION_TYPE_TAKE_OFF},
+	{"HeadDown", INT_PARAM, MOTION_TYPE_HEAD_DOWN},
+	{"PutDown", INT_PARAM, MOTION_TYPE_PUT_DOWN},
+	{"Sidegrip", INT_PARAM, MOTION_TYPE_SIDEGRIP}
 };
 
 static big_data_param_detail_t event_ddr_info_param[] = {
-	{"Times", INT_PARAM},
-	{"Duration", INT_PARAM}
+	{"Times", INT_PARAM, NO_TAG},
+	{"Duration", INT_PARAM, NO_TAG}
 };
 
 static big_data_param_detail_t event_tof_phonecall_param[] = {
-	{"Closest", INT_PARAM},
-	{"Farthest", INT_PARAM}
+	{"Closest", INT_PARAM, NO_TAG},
+	{"Farthest", INT_PARAM, NO_TAG}
+};
+static big_data_param_detail_t event_phonecall_screen_param[] = {
+	{"times", INT_PARAM, NO_TAG}
 };
 
 /*********** 2.register event param here {EVENT_ID, param_num, param_detail_struct}*****************/
@@ -51,6 +56,8 @@ static big_data_event_detail_t big_data_event[] = {
 	{BIG_DATA_EVENT_MOTION_TYPE, 12, event_motion_type_param},
 	{BIG_DATA_EVENT_DDR_INFO, 2, event_ddr_info_param},
 	{BIG_DATA_EVENT_TOF_PHONECALL, 2, event_tof_phonecall_param},
+	{BIG_DATA_EVENT_PHONECALL_SCREEN_STATUS, 1, event_phonecall_screen_param},
+
 };
 
 /********** 3. (optional)map tag to str**************/
@@ -107,9 +114,13 @@ static int process_big_data(uint32_t event_id, void* data)
 	struct imonitor_eventobj* obj = NULL;
 	int i = 0;
 	int ret = 0;
+	int tag = 0;
 	uint32_t *raw_data = (uint32_t *)data;
 	big_data_event_detail_t event_detail;
 	big_data_param_detail_t param_detail;
+
+	memset(&event_detail, 0, sizeof(event_detail));
+	memset(&param_detail, 0, sizeof(param_detail));
 
 	if (!data) {
 		hwlog_err("%s para error\n", __func__);
@@ -131,11 +142,13 @@ static int process_big_data(uint32_t event_id, void* data)
 
 	for (i = 0; i < event_detail.param_num; ++i) {
 		memcpy(&param_detail, &event_detail.param_data[i], sizeof(param_detail));
+		tag = (param_detail.tag == NO_TAG) ? i : param_detail.tag;
+
 		if (INT_PARAM == param_detail.param_type) {
-			ret += imonitor_set_param_integer_v2(obj, param_detail.param_name, raw_data[i]);
+			ret += imonitor_set_param_integer_v2(obj, param_detail.param_name, raw_data[tag]);
 		}else if (STR_PARAM == param_detail.param_type) {
-			if (big_data_str_map[raw_data[i]] != NULL) {
-				ret += imonitor_set_param_string_v2(obj, param_detail.param_name, big_data_str_map[raw_data[i]]);
+			if (big_data_str_map[raw_data[tag]] != NULL) {
+				ret += imonitor_set_param_string_v2(obj, param_detail.param_name, big_data_str_map[raw_data[tag]]);
 			}
 		}
 	}
@@ -177,6 +190,8 @@ static int iomcu_big_data_process(const pkt_header_t *head)
 		case BIG_DATA_EVENT_MOTION_TYPE:
 		case BIG_DATA_EVENT_DDR_INFO:
 		case BIG_DATA_EVENT_TOF_PHONECALL:
+		case BIG_DATA_EVENT_PHONECALL_SCREEN_STATUS:
+
 			process_big_data(report_t->event_id, data);
 			break;
 

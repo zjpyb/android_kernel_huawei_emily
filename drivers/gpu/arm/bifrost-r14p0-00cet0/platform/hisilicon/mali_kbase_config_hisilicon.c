@@ -50,6 +50,8 @@
 #endif
 #include <linux/delay.h>
 #include <linux/of_address.h>
+#include <linux/of.h>
+#include <linux/of_platform.h>
 #include <backend/gpu/mali_kbase_pm_internal.h>
 #include <backend/gpu/mali_kbase_device_internal.h>
 #include "mali_kbase_config_platform.h"
@@ -127,6 +129,9 @@ static int kbase_set_hi_features_mask(struct kbase_device *kbdev)
 			break;
 		case GPU_ID2_MAKE(7, 2, 1, 1, 0, 0, 0):
 			hi_features = kbase_hi_feature_tNOx_r0p0;
+			break;
+		case GPU_ID2_MAKE(7, 4, 0, 2, 1, 0, 0):
+			hi_features = kbase_hi_feature_tGOx_r1p0;
 			break;
 		case GPU_ID2_MAKE(7, 0, 9, 0, 1, 1, 0):
 			hi_features = kbase_hi_feature_tSIx_r1p1;
@@ -222,34 +227,56 @@ static struct hisi_devfreq_data hisi_devfreq_priv_data = {
 	.cl_boost = 0,
 };
 
+static inline void gpu_devfreq_rcu_read_lock(void)
+{
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
+	rcu_read_lock();
+#endif
+}
+
+static inline void gpu_devfreq_rcu_read_unlock(void)
+{
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
+	rcu_read_unlock();
+#endif
+}
+
+static inline void gpu_devfreq_opp_put(struct dev_pm_opp *opp)
+{
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+	dev_pm_opp_put(opp);
+#endif
+}
+
 static int mali_kbase_devfreq_target(struct device *dev, unsigned long *_freq,
 			      u32 flags)
 {
 	struct kbase_device *kbdev = (struct kbase_device *)dev->platform_data;
 	unsigned long old_freq = kbdev->devfreq->previous_freq;
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 13, 0))
 	struct dev_pm_opp *opp = NULL;
-#else
-	struct opp *opp = NULL;
-#endif
 	unsigned long freq;
+#ifdef CONFIG_HISI_IPA_THERMAL
+	int gpu_id = -1;
+#endif
 
-	rcu_read_lock();
+	gpu_devfreq_rcu_read_lock();
 	opp = devfreq_recommended_opp(dev, _freq, flags);
 	if (IS_ERR(opp)) {
 		pr_err("[mali]  Failed to get Operating Performance Point\n");
-		rcu_read_unlock();
+		gpu_devfreq_rcu_read_unlock();
 		return PTR_ERR(opp);
 	}
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 13, 0))
 	freq = dev_pm_opp_get_freq(opp);
-#else
-	freq = opp_get_freq(opp);
-#endif
-	rcu_read_unlock();
+	gpu_devfreq_opp_put(opp);
+	gpu_devfreq_rcu_read_unlock();
 
 #ifdef CONFIG_HISI_IPA_THERMAL
-	freq = ipa_freq_limit(IPA_GPU,freq);
+	gpu_id = ipa_get_actor_id("gpu");
+	if (gpu_id < 0) {
+		pr_err("[mali]  Failed to get ipa actor id for gpu.\n");
+		return -ENODEV;
+	}
+	freq = ipa_freq_limit(gpu_id, freq);
 #endif
 
 	if (old_freq == freq)
@@ -370,9 +397,9 @@ static int mali_kbase_get_dev_status(struct device *dev,
 		(void)mali_kbase_devfreq_detect_bound(kbdev, stat->current_frequency, stat->busy_time);
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,1,15)
-	memcpy(&kbdev->devfreq->last_status, stat, sizeof(*stat));
+	memcpy(&kbdev->devfreq->last_status, stat, sizeof(*stat)); /* unsafe_function_ignore: memcpy */
 #else
-	memcpy(&kbdev->devfreq_cooling->last_status, stat, sizeof(*stat));
+	memcpy(&kbdev->devfreq_cooling->last_status, stat, sizeof(*stat)); /* unsafe_function_ignore: memcpy */
 #endif
 #endif
 
@@ -434,7 +461,12 @@ int kbase_platform_dvfs_enable(struct kbase_device *kbdev, bool enable, int freq
 #endif
 
 #ifdef CONFIG_DEVFREQ_THERMAL
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+static unsigned long hisi_model_static_power(struct devfreq *df,
+						unsigned long voltage)
+#else
 static unsigned long hisi_model_static_power(unsigned long voltage)
+#endif
 {
 	int temperature;
 	const unsigned long voltage_cubed = (voltage * voltage * voltage) >> 10;
@@ -473,48 +505,14 @@ static unsigned long hisi_model_static_power(unsigned long voltage)
 	return (((capacitance[4] * voltage_cubed) >> 20) * temp_scaling_factor) / 1000000;/* [false alarm]: no problem - fortify check */
 }
 
-#ifdef CONFIG_HISI_THERMAL_SPM
-unsigned long hisi_calc_gpu_static_power(unsigned long voltage, int temperature)
-{
-	const long voltage_cubed = (voltage * voltage * voltage) >> 10;
-	long temp, temp_squared, temp_cubed;
-	long temp_scaling_factor;
-
-	struct device_node *dev_node = NULL;
-	int ret = -EINVAL, i;
-	const char *temperature_scale_capacitance[5];
-	int capacitance[5] = {0};
-
-	dev_node = of_find_node_by_name(NULL, "capacitances");
-	if (dev_node) {
-		for (i = 0; i < 5; i++) {
-			ret = of_property_read_string_index(dev_node, "hisilicon,gpu_temp_scale_capacitance", i, &temperature_scale_capacitance[i]);
-			if (ret) {
-				pr_err("%s temperature_scale_capacitance [%d] read err\n",__func__,i);
-				continue;
-			}
-
-			ret = kstrtoint(temperature_scale_capacitance[i], 10, &capacitance[i]);
-			if (ret)
-				continue;
-		}
-	}
-
-	temp = (long)temperature / 1000;
-	temp_squared = temp * temp;
-	temp_cubed = temp_squared * temp;
-	temp_scaling_factor = capacitance[3] * temp_cubed +
-				capacitance[2] * temp_squared +
-				capacitance[1] * temp +
-				capacitance[0];
-
-	return (unsigned long)(((((long)capacitance[4] * voltage_cubed) / (1024 * 1024)) * temp_scaling_factor) / 1000000);/* [false alarm]: no problem - fortify check */
-}
-EXPORT_SYMBOL(hisi_calc_gpu_static_power);
-#endif
-
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+static unsigned long hisi_model_dynamic_power(struct devfreq *df,
+						unsigned long freq,
+						unsigned long voltage)
+#else
 static unsigned long hisi_model_dynamic_power(unsigned long freq,
 		unsigned long voltage)
+#endif
 {
 	/* The inputs: freq (f) is in Hz, and voltage (v) in mV.
 	 * The coefficient (c) is in mW/(MHz mV mV).
@@ -547,20 +545,241 @@ static struct devfreq_cooling_ops hisi_model_ops = {
 #endif
 	.get_static_power = hisi_model_static_power,
 	.get_dynamic_power = hisi_model_dynamic_power,
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+	.get_real_power = NULL,
+#endif
 };
 #endif
 
-
-static int kbase_platform_init(struct kbase_device *kbdev)
+/* This function is used when memory_group_manager is not supported. */
+static struct page *native_alloc_pages(struct memory_group_manager_device *mgm_dev __maybe_unused,
+                                       u8 __maybe_unused id, gfp_t gfp_mask, unsigned int order)
 {
-#ifdef CONFIG_DEVFREQ_THERMAL
-	int err;
+	KBASE_DEBUG_ASSERT(mgm_dev != NULL);
+	/* we ignore mgm_dev and policy id. */
+	return alloc_pages(gfp_mask, order);
+}
+
+/* This function is used when memory_group_manager is not supported. */
+static void native_free_pages(struct memory_group_manager_device *mgm_dev __maybe_unused,
+                              u8 id __maybe_unused, struct page *page, unsigned int order)
+{
+	KBASE_DEBUG_ASSERT(page != NULL);
+	__free_pages(page, order);
+}
+
+struct memory_group_manager_ops kbase_native_mgm_ops = {
+	.mgm_alloc_pages = &native_alloc_pages,
+	.mgm_free_pages = &native_free_pages,
+};
+
+static int kbasep_hisi_mgm_init(struct kbase_device *kbdev)
+{
+#ifdef CONFIG_OF
+	struct device_node *mgm_node;
+	struct platform_device *pdev;
+	struct memory_group_manager_device *mgm_dev;
+
+	mgm_node = of_parse_phandle(kbdev->dev->of_node,
+                                "physical_memory_group_manager", 0);
+
+	if (!mgm_node) {
+		/* If memory_group_manager cannot be looked up then we assume
+		 * memory_group_manager is not supported on this platform. */
+		kbdev->hisi_dev_data.mgm_dev = kzalloc(sizeof(*kbdev->hisi_dev_data.mgm_dev),
+                                               GFP_KERNEL);
+		if (!kbdev->hisi_dev_data.mgm_dev)
+			return -ENOMEM;
+
+		kbdev->hisi_dev_data.mgm_ops = &kbase_native_mgm_ops;
+
+		dev_info(kbdev->dev, "physical memory group manager is not available, use native instead.\n");
+		return 0;
+	}
+
+	pdev = of_find_device_by_node(mgm_node);
+	if (!pdev)
+		return -EINVAL;
+
+	mgm_dev = platform_get_drvdata(pdev);
+	if (!mgm_dev)
+		return -EPROBE_DEFER;
+
+	kbdev->hisi_dev_data.mgm_dev = mgm_dev;
+	kbdev->hisi_dev_data.mgm_ops = &mgm_dev->ops;
+
+	dev_info(kbdev->dev, "physical memory group manager init succ.\n");
 #endif
+	return 0;
+}
+
+static void kbasep_hisi_mgm_term(struct kbase_device *kbdev)
+{
+	if (kbdev->hisi_dev_data.mgm_dev)
+		kfree(kbdev->hisi_dev_data.mgm_dev);
+}
+
+static int kbase_platform_backend_init(struct kbase_device *kbdev)
+{
+	int err = 0;
+	kbdev->hisi_dev_data.callbacks = (struct kbase_hisi_callbacks *)gpu_get_callbacks();
+
+	/* Init the hisilicon memory group manager. */
+	err = kbasep_hisi_mgm_init(kbdev);
+	if (err) {
+		dev_err(kbdev->dev, "[mali] Init memory group manager failed.\n");
+		return err;
+	}
+
+#ifdef CONFIG_MALI_LAST_BUFFER
+	cache_policy_callbacks *lb_cache_cbs = kbase_hisi_get_lb_cache_cbs(kbdev);
+	KBASE_DEBUG_ASSERT(lb_cache_cbs != NULL);
+	/* This operation will parse the device tree and create policy info. */
+	err = lb_cache_cbs->lb_create_policy_info(kbdev);
+	if (err) {
+		dev_err(kbdev->dev,"[mali] Create last buffer policy info failed.\n");
+		return err;
+	}
+
+	lb_quota_manager *lb_quota_cbs = kbase_hisi_get_lb_quota_cbs(kbdev);
+	KBASE_DEBUG_ASSERT(lb_quota_cbs != NULL);
+	lb_quota_cbs->quota_timer_init(kbdev, &lb_quota_cbs->quota_timer);
+#endif
+
+	return 0;
+}
+
+static void kbase_platform_backend_term(struct kbase_device *kbdev)
+{
+	/* term the hisilicon memory group manager. */
+	kbasep_hisi_mgm_term(kbdev);
+
+#ifdef CONFIG_MALI_LAST_BUFFER
+	cache_policy_callbacks *lb_cache_cbs = kbase_hisi_get_lb_cache_cbs(kbdev);
+	KBASE_DEBUG_ASSERT(lb_cache_cbs != NULL);
+	lb_cache_cbs->lb_destroy_policy_info(kbdev);
+
+	lb_quota_manager *lb_quota_cbs = kbase_hisi_get_lb_quota_cbs(kbdev);
+	KBASE_DEBUG_ASSERT(lb_quota_cbs != NULL);
+	lb_quota_cbs->quota_timer_cancel(kbdev, &lb_quota_cbs->quota_timer);
+#endif
+
+	kbdev->hisi_dev_data.callbacks = NULL;
+}
+
+#ifdef CONFIG_MALI_LAST_BUFFER
+static void kbase_platform_request_quota(struct kbase_device *kbdev)
+{
+	lb_quota_manager *lb_quota_cbs = kbase_hisi_get_lb_quota_cbs(kbdev);
+	KBASE_DEBUG_ASSERT(lb_quota_cbs);
+
+	lb_quota_cbs->quota_timer_cancel(kbdev, &lb_quota_cbs->quota_timer);
+
+	/* Request last buffer quota again if quota released. */
+	if (lb_quota_cbs->quota_released) {
+		lb_quota_cbs->requestQuota(kbdev);
+		lb_quota_cbs->quota_released = false;
+	}
+}
+
+static void kbase_platform_release_quota(struct kbase_device *kbdev)
+{
+	lb_quota_manager *lb_quota_cbs = kbase_hisi_get_lb_quota_cbs(kbdev);
+	KBASE_DEBUG_ASSERT(NULL != lb_quota_cbs);
+
+	lb_quota_cbs->quota_timer_start(kbdev, &lb_quota_cbs->quota_timer);
+}
+#endif
+
+#ifdef CONFIG_DEVFREQ_THERMAL
+void hisi_gpu_devfreq_cooling_init(struct kbase_device *kbdev)
+{
+	int err;
+	struct devfreq_cooling_power *callbacks;
+
+	callbacks = (struct devfreq_cooling_power *)POWER_MODEL_CALLBACKS;
+
+	kbdev->devfreq_cooling = of_devfreq_cooling_register_power(
+			kbdev->dev->of_node,
+			kbdev->devfreq,
+			callbacks);
+	if (IS_ERR_OR_NULL(kbdev->devfreq_cooling)) {
+		err = PTR_ERR(kbdev->devfreq_cooling);
+		dev_err(kbdev->dev,
+			"Failed to register cooling device (%d)\n",
+			err);
+	}
+}
+#else
+static inline void hisi_gpu_devfreq_cooling_init(struct kbase_device *kbdev){(void)kbdev;}
+#endif
+
+#ifdef CONFIG_PM_DEVFREQ
+void hisi_gpu_devfreq_initial_freq(struct kbase_device *kbdev)
+{
 #ifdef CONFIG_HISI_HW_VOTE_GPU_FREQ
 	u32 freq = 0;
 	unsigned long freq_hz;
 	struct dev_pm_opp *opp;
+	struct device *dev = kbdev->dev;
+
+	gpu_hvdev = hisi_hvdev_register(dev, "gpu-freq", "vote-src-1");
+	if (!gpu_hvdev) {
+		pr_err("[%s] register hvdev fail!\n", __func__);
+	}
+
+	hisi_hv_get_last(gpu_hvdev, &freq);
+	freq_hz = (unsigned long)freq * KHz;
+
+	gpu_devfreq_rcu_read_lock();
+	opp = dev_pm_opp_find_freq_ceil(dev, &freq_hz);
+	if (IS_ERR(opp)) {
+		freq_hz = mali_kbase_devfreq_profile.freq_table[0];
+	}
+	gpu_devfreq_opp_put(opp);
+	gpu_devfreq_rcu_read_unlock();
+
+	/*update last freq in hv driver*/
+	hisi_hv_set_freq(gpu_hvdev, freq_hz/KHz);
+	mali_kbase_devfreq_profile.initial_freq = freq_hz;
+#else
+	mali_kbase_devfreq_profile.initial_freq = clk_get_rate(kbdev->clk);
 #endif
+}
+
+void hisi_gpu_devfreq_init(struct kbase_device *kbdev)
+{
+	struct device *dev = kbdev->dev;
+	int opp_count;
+
+
+	opp_count = dev_pm_opp_get_opp_count(dev);
+	if (opp_count <= 0)
+		return;
+
+	if (fhss_init(dev))
+		dev_err(dev, "[gpufreq] Failed to init fhss\n");
+
+	/* dev_pm_opp_of_add_table(dev) has been called by ddk */
+
+	hisi_gpu_devfreq_initial_freq(kbdev);
+
+	dev_set_name(dev, "gpufreq");
+	kbdev->devfreq = devfreq_add_device(dev,
+					&mali_kbase_devfreq_profile,
+					GPU_DEFAULT_GOVERNOR,
+					NULL);
+
+	if (!IS_ERR_OR_NULL(kbdev->devfreq)) {
+		hisi_gpu_devfreq_cooling_init(kbdev);
+	}
+}
+#else
+static inline void hisi_gpu_devfreq_init(struct kbase_device *kbdev) {(void)kbdev;}
+#endif/*CONFIG_PM_DEVFREQ*/
+
+static int kbase_platform_init(struct kbase_device *kbdev)
+{
 	struct device *dev = kbdev->dev;
 	dev->platform_data = kbdev;
 
@@ -568,6 +787,11 @@ static int kbase_platform_init(struct kbase_device *kbdev)
 	kbase_dev = kbdev;
 #endif
 
+	/* Init the hisilicon platform related data first. */
+	if (kbase_platform_backend_init(kbdev)) {
+		pr_err("[mali] platform backend init failed.\n");
+		return 0;
+	}
 
 	kbdev->clk = devm_clk_get(dev, NULL);
 	if (IS_ERR(kbdev->clk)) {
@@ -584,87 +808,10 @@ static int kbase_platform_init(struct kbase_device *kbdev)
 
 	kbdev->regulator_refcount = 0;
 
-	if (fhss_init(dev))
-		pr_err("[mali] Failed to init fhss\n");
+	hisi_gpu_devfreq_init(kbdev);
 
-	kbdev->hisi_callbacks = (struct kbase_hisi_callbacks *)gpu_get_callbacks();
-
-#ifdef CONFIG_PM_DEVFREQ
-#ifdef CONFIG_HISI_HW_VOTE_GPU_FREQ
-	gpu_hvdev = hisi_hvdev_register(dev, "gpu-freq", "vote-src-1");
-	if (!gpu_hvdev) {
-		pr_err("[%s] register hvdev fail!\n", __func__);
-	}
-#endif
-
-	if (/*dev_pm_opp_of_add_table(dev) ||*/
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 13, 0))
-		hisi_devfreq_init_freq_table(dev,
-			&mali_kbase_devfreq_profile.freq_table)){
-#else
-		opp_init_devfreq_table(dev,
-			&mali_kbase_devfreq_profile.freq_table)) {
-#endif
-		pr_err("[mali]  Failed to init devfreq_table\n");
-		kbdev->devfreq = NULL;
-	} else {
-#ifdef CONFIG_HISI_HW_VOTE_GPU_FREQ
-		hisi_hv_get_last(gpu_hvdev, &freq);
-		freq_hz = (unsigned long)freq * KHz;
-		rcu_read_lock();
-		opp = dev_pm_opp_find_freq_ceil(dev, &freq_hz);
-		if (IS_ERR(opp)) {
-			freq_hz = mali_kbase_devfreq_profile.freq_table[0];
-		}
-		rcu_read_unlock();
-		hisi_hv_set_freq(gpu_hvdev, freq_hz/KHz);/*update last freq in hv driver*/
-		mali_kbase_devfreq_profile.initial_freq = freq_hz;
-#else
-		mali_kbase_devfreq_profile.initial_freq = clk_get_rate(kbdev->clk);
-#endif
-		rcu_read_lock();
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 13, 0))
-		mali_kbase_devfreq_profile.max_state = dev_pm_opp_get_opp_count(dev);
-#else
-		mali_kbase_devfreq_profile.max_state = opp_get_opp_count(dev);
-#endif
-		rcu_read_unlock();
-		dev_set_name(dev, "gpufreq");
-		kbdev->devfreq = devfreq_add_device(dev,
-						&mali_kbase_devfreq_profile,
-						GPU_DEFAULT_GOVERNOR,
-						NULL);
-	}
-
-	if (NULL == kbdev->devfreq) {
-		pr_err("[mali]  NULL pointer [kbdev->devFreq]\n");
-		goto JUMP_DEVFREQ_THERMAL;
-	}
-
-#ifdef CONFIG_DEVFREQ_THERMAL
-	{
-		struct devfreq_cooling_ops *callbacks;
-
-		callbacks = (struct devfreq_cooling_ops *)POWER_MODEL_CALLBACKS;
-
-		kbdev->devfreq_cooling = of_devfreq_cooling_register_power(
-				kbdev->dev->of_node,
-				kbdev->devfreq,
-				callbacks);
-		if (IS_ERR_OR_NULL(kbdev->devfreq_cooling)) {
-			err = PTR_ERR(kbdev->devfreq_cooling);
-			dev_err(kbdev->dev,
-				"Failed to register cooling device (%d)\n",
-				err);
-			goto JUMP_DEVFREQ_THERMAL;
-		}
-	}
-#endif
-
-	/* make devfreq function */
-	//mali_kbase_devfreq_profile.polling_ms = DEFAULT_POLLING_MS;
-#endif/*CONFIG_PM_DEVFREQ*/
-JUMP_DEVFREQ_THERMAL:
+	/* dev name maybe modified by hisi_gpu_devfreq_init */
+	dev_set_name(dev, "gpu");
 	return 1;
 }
 
@@ -673,6 +820,9 @@ static void kbase_platform_term(struct kbase_device *kbdev)
 #ifdef CONFIG_PM_DEVFREQ
 	devfreq_remove_device(kbdev->devfreq);
 #endif
+
+	/* term the hisilicon platform related data at last. */
+	kbase_platform_backend_term(kbdev);
 }
 
 kbase_platform_funcs_conf platform_funcs = {
@@ -682,6 +832,10 @@ kbase_platform_funcs_conf platform_funcs = {
 
 static int pm_callback_power_on(struct kbase_device *kbdev)
 {
+//#ifdef CONFIG_MALI_LAST_BUFFER
+//	kbase_platform_request_quota(kbdev);
+//#endif
+
 #ifdef CONFIG_MALI_MIDGARD_RT_PM
 	int result;
 	int ret_val;
@@ -697,12 +851,15 @@ static int pm_callback_power_on(struct kbase_device *kbdev)
 		value = readl(kbdev->pctrlreg + PERI_CTRL93) & MASK_DISABLEDSBYSF;
 		writel(value, kbdev->pctrlreg + PERI_CTRL93);
 	}
-	/* norr cs */
+	/* norr cs, trym es, gondul */
 	if (kbase_has_hi_feature(kbdev, KBASE_FEATURE_HI0015)) {
 		unsigned int value = 0;
-		/* read PERI_CTRL93 and set it's [1~17]bit to 0, disable deep sleep by software */
-		value = readl(kbdev->pctrlreg + PERI_CTRL93) & MASK_DISABLEDSBYSF;
-		writel(value, kbdev->pctrlreg + PERI_CTRL93);
+		/**
+		 * disable deep sleep by software
+		 * norr cs read PERI_CTRL93 set [1~17]bit to 0, trym read PERI_CTRL92 set [0~16]bit to 0 and gondul read PERI_CTRL92 set [0~6]bit to 0
+		 */
+		value = readl(kbdev->pctrlreg + DEEP_SLEEP_BYSW) & MASK_DISABLEDSBYSF;
+		writel(value, kbdev->pctrlreg + DEEP_SLEEP_BYSW);
 	}
 
 #if (HARD_RESET_AT_POWER_OFF != 1)
@@ -732,6 +889,10 @@ static int pm_callback_power_on(struct kbase_device *kbdev)
 
 static void pm_callback_power_off(struct kbase_device *kbdev)
 {
+//#ifdef CONFIG_MALI_LAST_BUFFER
+//	kbase_platform_release_quota(kbdev);
+//#endif
+
 #ifdef CONFIG_MALI_MIDGARD_RT_PM
 	struct device *dev = kbdev->dev;
 	int ret = 0, retry = 0;
@@ -746,13 +907,17 @@ static void pm_callback_power_off(struct kbase_device *kbdev)
 		value = readl(kbdev->pctrlreg + PERI_CTRL93) | MASK_ENABLEDSBYSF;
 		writel(value, kbdev->pctrlreg + PERI_CTRL93);
 	}
-	/* norr cs */
+	/* norr cs, trym es, gondul */
 	if (kbase_has_hi_feature(kbdev, KBASE_FEATURE_HI0015)) {
 		unsigned int value = 0;
-		/* read PERI_CTRL93 and set it's [1~17]bit to 1, enable deep sleep by software */
-		value = readl(kbdev->pctrlreg + PERI_CTRL93) | MASK_ENABLEDSBYSF;
-		writel(value, kbdev->pctrlreg + PERI_CTRL93);
+		/**
+		 * enable deep sleep by software
+		 * norr cs read PERI_CTRL93 set [1~17]bit to 1, trym read PERI_CTRL92 set [0~16]bit to 1, gondul read PERI_CTRL92 set [0~6]bit to 1
+		 */
+		value = readl(kbdev->pctrlreg + DEEP_SLEEP_BYSW) | MASK_ENABLEDSBYSF;
+		writel(value, kbdev->pctrlreg + DEEP_SLEEP_BYSW);
 	}
+
 	if (kbase_has_hi_feature(kbdev, KBASE_FEATURE_HI0008)) {
 		/* when GPU in idle state, auto decrease the clock rate.
 		 */
@@ -806,18 +971,28 @@ static void pm_callback_power_off(struct kbase_device *kbdev)
 #endif
 }
 
+#pragma GCC diagnostic push
+
+#pragma GCC diagnostic ignored "-Wunused-function"
 static int pm_callback_runtime_init(struct kbase_device *kbdev)
 {
 	pm_suspend_ignore_children(kbdev->dev, true);
 	pm_runtime_enable(kbdev->dev);
 	return 0;
 }
+#pragma GCC diagnostic pop
 
+#pragma GCC diagnostic push
+
+#pragma GCC diagnostic ignored "-Wunused-function"
 static void pm_callback_runtime_term(struct kbase_device *kbdev)
 {
 	pm_runtime_disable(kbdev->dev);
 }
+#pragma GCC diagnostic pop
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-function"
 static void pm_callback_runtime_off(struct kbase_device *kbdev)
 {
 #ifdef CONFIG_PM_DEVFREQ
@@ -828,7 +1003,10 @@ static void pm_callback_runtime_off(struct kbase_device *kbdev)
 
 	kbase_platform_off(kbdev);
 }
+#pragma GCC diagnostic pop
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-function"
 static int pm_callback_runtime_on(struct kbase_device *kbdev)
 {
 	/* norr es */
@@ -841,12 +1019,15 @@ static int pm_callback_runtime_on(struct kbase_device *kbdev)
 		value = readl(kbdev->pctrlreg + PERI_CTRL93) & MASK_DISABLEDSBYSF;
 		writel(value, kbdev->pctrlreg + PERI_CTRL93);
 	}
-	/* norr cs */
+	/* norr cs, trym es, gondul */
 	if (kbase_has_hi_feature(kbdev, KBASE_FEATURE_HI0015)) {
 		unsigned int value = 0;
-		/* read PERI_CTRL93 and set it's [1~17]bit to 0, disable deep sleep by software */
-		value = readl(kbdev->pctrlreg + PERI_CTRL93) & MASK_DISABLEDSBYSF;
-		writel(value, kbdev->pctrlreg + PERI_CTRL93);
+		/**
+		 * disable deep sleep by software
+		 * norr cs read PERI_CTRL93 set [1~17]bit to 0, trym read PERI_CTRL92 set [0~16]bit to 0, gondul read PERI_CTRL92 set [0~6]bit to 0
+		 */
+		value = readl(kbdev->pctrlreg + DEEP_SLEEP_BYSW) & MASK_DISABLEDSBYSF;
+		writel(value, kbdev->pctrlreg + DEEP_SLEEP_BYSW);
 	}
 	kbase_platform_on(kbdev);
 
@@ -859,6 +1040,7 @@ static int pm_callback_runtime_on(struct kbase_device *kbdev)
 
 	return 0;
 }
+#pragma GCC diagnostic pop
 
 static inline void pm_callback_suspend(struct kbase_device *kbdev)
 {

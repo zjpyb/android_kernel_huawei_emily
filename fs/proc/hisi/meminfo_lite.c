@@ -1,7 +1,7 @@
 /*
  * A fast way to read system free and aviliable meminfo
  *
- * Copyright (c) 2016 Hisilicon.
+ * Copyright (c) 2001-2021, Huawei Tech. Co., Ltd. All rights reserved.
  *
  * Authors:
  * liang hui <lianghuiliang.lianghui@huawei.com>
@@ -123,4 +123,5 @@ static int __init proc_meminfo_lite_init(void)
 	proc_create("meminfo_lite", 0, NULL, &meminfo_lite_proc_fops);
 	return 0;
 }
+
 module_init(proc_meminfo_lite_init);

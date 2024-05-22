@@ -525,9 +525,16 @@ static int hi3xxx_intr_dmac_handle(unsigned short int_type, unsigned long para, 
 	}
 
 	runtime = substream->runtime;
-	BUG_ON(NULL == runtime);
+	if (!runtime) {
+		pr_err("[%s:%d] runtime is NULL\n", __FUNCTION__, __LINE__);
+		return -EINVAL;
+	}
+
 	prtd = runtime->private_data;
-	BUG_ON(NULL == prtd);
+	if (!prtd) {
+		pr_err("[%s:%d] prtd is NULL\n", __FUNCTION__, __LINE__);
+		return -EINVAL;
+	}
 
 	if (SNDRV_PCM_STREAM_PLAYBACK == substream->stream) {
 		log_tag = (unsigned char *)"StreamPlayback";
@@ -847,12 +854,10 @@ static int hi3xxx_asp_dmac_close(struct snd_pcm_substream *substream)
 {
 	struct hi3xxx_asp_dmac_runtime_data *prtd = substream->runtime->private_data;
 
-	if (NULL == prtd) {
+	if (NULL == prtd || prtd->pdata == NULL) {
 		pr_err("[%s:%d] prtd is NULL\n", __FUNCTION__, __LINE__);
 		return -ENOMEM;
 	}
-
-	BUG_ON(NULL == prtd->pdata);
 
 	hi3xxx_asp_dmac_regulator_disable(prtd->pdata);
 
@@ -926,8 +931,10 @@ static int hi3xxx_asp_dmac_new(struct snd_soc_pcm_runtime *rtd)
 	struct snd_pcm  *pcm  = rtd->pcm;
 	int ret = 0;
 
-	BUG_ON(NULL == card);
-	BUG_ON(NULL == pcm);
+	if (!card || !pcm) {
+		pr_err("[%s:%d] card or pcm is NULL\n", __FUNCTION__, __LINE__);
+		return -EINVAL;
+	}
 
 	if (!card->dev->dma_mask)
 		card->dev->dma_mask = &hi3xxx_pcm_dmamask;
@@ -955,7 +962,8 @@ static int hi3xxx_asp_dmac_new(struct snd_soc_pcm_runtime *rtd)
 
 static void hi3xxx_asp_dmac_free(struct snd_pcm *pcm)
 {
-	BUG_ON(NULL == pcm);
+	WARN_ON(NULL == pcm);
+
 	if (pcm->streams[SNDRV_PCM_STREAM_PLAYBACK].substream) {
 		dma_free_buffer(pcm, SNDRV_PCM_STREAM_PLAYBACK);
 	}
@@ -1132,7 +1140,7 @@ int hi3xxx_asp_dmac_runtime_suspend(struct device *dev)
 {
 	struct hi3xxx_asp_dmac_data *pdata = dev_get_drvdata(dev);
 
-	BUG_ON(NULL == pdata);
+	WARN_ON(NULL == pdata);
 
 	pr_info("[%s:%d] +\n", __FUNCTION__, __LINE__);
 
@@ -1148,7 +1156,7 @@ int hi3xxx_asp_dmac_runtime_resume(struct device *dev)
 	struct hi3xxx_asp_dmac_data *pdata = dev_get_drvdata(dev);
 	int ret;
 
-	BUG_ON(NULL == pdata);
+	WARN_ON(NULL == pdata);
 
 	pr_info("[%s:%d] +\n", __FUNCTION__, __LINE__);
 

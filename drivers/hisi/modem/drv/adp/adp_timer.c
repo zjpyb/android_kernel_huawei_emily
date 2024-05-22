@@ -145,7 +145,7 @@ OSL_IRQ_FUNC(static irqreturn_t,adp_timer_handler,irq,para)
 {
 	u32 ret_value = 0;
 	u32 timer_id;
-	timer_id = (u32)(unsigned long)para;
+	timer_id = (u32)(uintptr_t)para;
 	timer_callback_stamp_dbg(timer_id);
 	ret_value = bsp_hardtimer_int_status(timer_id);
 	if(0x0 !=ret_value)

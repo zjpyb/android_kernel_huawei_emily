@@ -66,7 +66,6 @@ extern "C" {
 #endif
 
 #include <linux/kernel_stat.h>
-#include <asm/cputime.h>
 
 /* E5 spe module relation */
 #if (defined(CONFIG_BALONG_SPE) && defined(_PRE_WLAN_SPE_SUPPORT))
@@ -113,8 +112,16 @@ extern "C" {
 #define IPV6_ADDR_MC_SCOPE(a)	\
     ((a)->s6_addr[1] & 0x0f)    /* nonstandard */
 
-
-
+/* NAPI */
+#define NAPI_POLL_WEIGHT_MAX              64
+#define NAPI_POLL_WEIGHT_LEV1             1
+#define NAPI_POLL_WEIGHT_LEV2             4
+#define NAPI_POLL_WEIGHT_LEV3             8
+#define NAPI_STAT_PERIOD                  1000
+#define NAPI_WATER_LINE_LEV1              12300
+#define NAPI_WATER_LINE_LEV2              24600
+#define NAPI_WATER_LINE_LEV3              38400
+#define NAPI_NETDEV_PRIV_QUEUE_LEN_MAX    4096
 
 /*****************************************************************************
   2.11 VLAN宏定义
@@ -176,6 +183,9 @@ typedef iw_handler                                  oal_iw_handler;
 //#define OAL_NETBUF_QUEUE_HEAD_INIT                   skb_queue_head_init
 //#define OAL_NETBUF_DEQUEUE                           skb_dequeue
 
+#ifdef _PRE_WLAN_PKT_TIME_STAT
+#define OAL_NETBUF_CB_ORIGIN                           48
+#endif
 #define OAL_NETDEVICE_OPS(_pst_dev)                         ((_pst_dev)->netdev_ops)
 #define OAL_NETDEVICE_OPS_OPEN(_pst_netdev_ops)             ((_pst_netdev_ops)->ndo_open)
 #define OAL_NETDEVICE_OPS_STOP(_pst_netdev_ops)             ((_pst_netdev_ops)->ndo_stop)
@@ -187,15 +197,23 @@ typedef iw_handler                                  oal_iw_handler;
 #define OAL_NETDEVICE_OPS_DO_IOCTL(_pst_netdev_ops)         ((_pst_netdev_ops)->ndo_do_ioctl)
 #define OAL_NETDEVICE_OPS_CHANGE_MTU(_pst_netdev_ops)       ((_pst_netdev_ops)->ndo_change_mtu)
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4,11,0))
 #define OAL_NETDEVICE_LAST_RX(_pst_dev)                     ((_pst_dev)->last_rx)
+#endif
+#ifdef CONFIG_WIRELESS_EXT
 #define OAL_NETDEVICE_WIRELESS_HANDLERS(_pst_dev)           ((_pst_dev)->wireless_handlers)
+#endif
 #define OAL_NETDEVICE_RTNL_LINK_OPS(_pst_dev)               ((_pst_dev)->rtnl_link_ops)
 #define OAL_NETDEVICE_RTNL_LINK_STATE(_pst_dev)             ((_pst_dev)->rtnl_link_state)
 #define OAL_NETDEVICE_MAC_ADDR(_pst_dev)                    ((_pst_dev)->dev_addr)
 #define OAL_NETDEVICE_TX_QUEUE_LEN(_pst_dev)                ((_pst_dev)->tx_queue_len)
 #define OAL_NETDEVICE_TX_QUEUE_NUM(_pst_dev)                ((_pst_dev)->num_tx_queues)
 #define OAL_NETDEVICE_TX_QUEUE(_pst_dev, _index)            ((_pst_dev)->_tx[_index])
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,12,0)
+#define OAL_NETDEVICE_DESTRUCTOR(_pst_dev)                  ((_pst_dev)->priv_destructor)
+#else
 #define OAL_NETDEVICE_DESTRUCTOR(_pst_dev)                  ((_pst_dev)->destructor)
+#endif
 #define OAL_NETDEVICE_TYPE(_pst_dev)                        ((_pst_dev)->type)
 #define OAL_NETDEVICE_NAME(_pst_dev)                        ((_pst_dev)->name)
 #define OAL_NETDEVICE_MASTER(_pst_dev)                      ((_pst_dev)->master)
@@ -646,6 +664,20 @@ extern oal_uint32 (*g_wifi_80211_mirror_pkt)(hw_ker_wifi_sniffer_packet_s *pst_p
 #endif
 
 #endif
+
+typedef struct
+{
+    oal_uint8                           uc_napi_enable;       /* NAPI使能 */
+    oal_uint8                           uc_gro_enable;        /* GRO使能 */
+    oal_uint8                           uc_napi_weight;       /* 每次调度NAPI处理数据包个数限制 */
+    oal_uint8                           uc_state;
+    struct napi_struct                  st_napi;
+    oal_netbuf_head_stru                st_rx_netbuf_queue;
+    oal_uint32                          ul_queue_len_max;
+    oal_uint32                          ul_period_pkts;       /* 统计周期pps,以便调整napi参数 */
+    oal_uint32                          ul_period_start;      /* 统计周期起始时间戳 */
+}oal_netdev_priv_stru;
+
 
 /*****************************************************************************
   8 UNION定义
@@ -1797,7 +1829,11 @@ OAL_STATIC OAL_INLINE oal_uint32  oal_netbuf_decrease_user(oal_netbuf_stru *pst_
         return OAL_ERR_CODE_PTR_NULL;
     }
 
-    oal_atomic_dec(&(pst_buf->users));
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0))
+    refcount_dec(&(pst_buf->users));
+#else
+    atomic_dec(&(pst_buf->users));
+#endif
 
     return OAL_SUCC;
 }
@@ -1810,10 +1846,46 @@ OAL_STATIC OAL_INLINE oal_uint32  oal_netbuf_increase_user(oal_netbuf_stru *pst_
         return OAL_ERR_CODE_PTR_NULL;
     }
 
-    oal_atomic_inc(&(pst_buf->users));
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0))
+    refcount_inc(&(pst_buf->users));
+#else
+    atomic_inc(&(pst_buf->users));
+#endif
 
     return OAL_SUCC;
 }
+
+
+OAL_STATIC OAL_INLINE oal_uint32  oal_netbuf_read_user(oal_netbuf_stru *pst_buf)
+{
+    if (OAL_UNLIKELY(OAL_PTR_NULL == pst_buf))
+    {
+        return OAL_ERR_CODE_PTR_NULL;
+    }
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0))
+    return refcount_read(&(pst_buf->users));
+#else
+    return (oal_uint32)atomic_read(&(pst_buf->users));
+#endif
+}
+
+
+
+OAL_STATIC OAL_INLINE oal_void  oal_netbuf_set_user(oal_netbuf_stru *pst_buf, oal_uint32 refcount)
+{
+    if (OAL_UNLIKELY(OAL_PTR_NULL == pst_buf))
+    {
+        return;
+    }
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0))
+    refcount_set(&(pst_buf->users), refcount);
+#else
+    atomic_set(&(pst_buf->users), (oal_int32)refcount);
+#endif
+}
+
 
 
 OAL_STATIC OAL_INLINE oal_uint32  oal_netbuf_get_buf_num(oal_netbuf_head_stru *pst_netbuf_head)
@@ -1902,6 +1974,41 @@ OAL_STATIC OAL_INLINE oal_void  oal_local_bh_disable(oal_void)
 OAL_STATIC OAL_INLINE oal_void  oal_local_bh_enable(oal_void)
 {
     local_bh_enable();
+}
+
+OAL_STATIC OAL_INLINE oal_void  oal_napi_schedule(struct napi_struct *napi)
+{
+    napi_schedule(napi);
+}
+
+OAL_STATIC OAL_INLINE oal_void  oal_napi_gro_receive(struct napi_struct *napi,oal_netbuf_stru *pst_netbuf)
+{
+    napi_gro_receive(napi, pst_netbuf);
+}
+
+OAL_STATIC OAL_INLINE oal_void  oal_netif_receive_skb(oal_netbuf_stru *pst_netbuf)
+{
+    netif_receive_skb(pst_netbuf);
+}
+
+OAL_STATIC OAL_INLINE oal_void  oal_napi_complete(struct napi_struct *napi)
+{
+    napi_complete(napi);
+}
+
+OAL_STATIC OAL_INLINE oal_void oal_netif_napi_add(struct net_device *dev , struct napi_struct *napi ,int (*poll)(struct napi_struct *, int) , int weight)
+{
+    netif_napi_add(dev, napi, poll, weight);
+}
+
+OAL_STATIC OAL_INLINE oal_void oal_napi_disable(struct napi_struct *napi)
+{
+    napi_disable(napi);
+}
+
+OAL_STATIC OAL_INLINE oal_void oal_napi_enable(struct napi_struct * napi)
+{
+    napi_enable(napi);
 }
 
 
@@ -2186,10 +2293,12 @@ OAL_STATIC OAL_INLINE oal_void  oal_netbuf_concat(oal_netbuf_stru *pst_netbuf_he
     {
         OAL_IO_PRINT("not enough space for concat");
     }
+    else
+    {
+        memcpy(skb_tail_pointer(pst_netbuf_head), pst_netbuf->data, pst_netbuf->len);
 
-    memcpy(skb_tail_pointer(pst_netbuf_head), pst_netbuf->data, pst_netbuf->len);
-
-    skb_put(pst_netbuf_head, pst_netbuf->len);
+        skb_put(pst_netbuf_head, pst_netbuf->len);
+    }
 
     dev_kfree_skb(pst_netbuf);
 }
@@ -2345,7 +2454,7 @@ OAL_STATIC OAL_INLINE oal_uint32 oal_wifi_mirror_pkt(hw_ker_wifi_sniffer_packet_
 #if (_PRE_TARGET_PRODUCT_TYPE_ONT == _PRE_CONFIG_TARGET_PRODUCT)
     if (OAL_PTR_NULL == g_wifi_80211_mirror_pkt)
     {
-        return OAL_PTR_NULL;
+        return OAL_ERR_CODE_PTR_NULL;
     }
     g_wifi_80211_mirror_pkt(pst_packet);
 #endif

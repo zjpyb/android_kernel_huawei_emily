@@ -8,6 +8,7 @@ obj-$(CONFIG_HISI_RECOVERY_BIGCORE_PANIC) += mntn_bc_panic.o
 obj-$(CONFIG_HISI_BB) += blackbox/
 ifeq ($(TARGET_VERSION_MODE),factory)
 obj-$(CONFIG_HISI_VIRT_TO_PHYS) += virt_to_phys.o
+obj-$(CONFIG_HISI_MNTN_FACTORY) += mntn_factory.o
 endif
 obj-$(CONFIG_HISI_POWER_OFF)	+= hisi_poweroff.o
 obj-$(CONFIG_HISI_FIQ)	+= hisi_fiq.o
@@ -16,6 +17,7 @@ subdir-ccflags-$(CONFIG_HISI_BB)               += -Idrivers/hisi/mntn/blackbox/
 obj-$(CONFIG_HISI_BB_DEBUG) += hisi_mntn_test.o
 obj-$(CONFIG_HISI_MNTNDUMP)       += mntn_dump.o
 obj-$(CONFIG_HISI_RECORD_SP)       += mntn_record_sp.o
+obj-$(CONFIG_HISI_HW_SP)           += mntn_hw_sp.o
 obj-$(CONFIG_HISI_L3CACHE_ECC)       += mntn_l3cache_ecc.o
 obj-$(CONFIG_HISI_HISEE_MNTN) += hisee/
 obj-$(CONFIG_HISI_BL31_MNTN) += bl31/

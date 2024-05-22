@@ -31,8 +31,7 @@
 #include <linux/kthread.h>
 #include <linux/interrupt.h>
 #include <linux/of_gpio.h>
-
-
+#include <huawei_platform/sensor/hw_comm_pmic.h>
 
 #define DEFINE_HISI_PMIC_MUTEX(name) \
 	static struct mutex pmic_mut_##name = __MUTEX_INITIALIZER(pmic_mut_##name)
@@ -57,21 +56,6 @@ struct pmic_cfg_data;
 #define BUCK_REG_MAX			90
 #define LDO_REG_MAX			66
 
-/********************** pmic base data struct define **********************/
-
-typedef enum 
-{	VOUT_LDO_1 = 0,	
-	VOUT_LDO_2,
-	VOUT_LDO_3,
-	VOUT_LDO_4,
-	VOUT_LDO_5,
-	VOUT_BUCK_1,
-	VOUT_BUCK_2,
-	VOUT_MAX,
-
-	VOUT_BOOST,
-} pmic_seq_index_t;
-
 /********************** pmic controler struct define **********************/
 struct hisi_pmic_info {
 	const char *name;
@@ -80,6 +64,7 @@ struct hisi_pmic_info {
 	unsigned int intr;
 	unsigned int irq;
 	unsigned int flag;
+	int mutex_flag;
 };
 
 struct hisi_pmic_ctrl_t;

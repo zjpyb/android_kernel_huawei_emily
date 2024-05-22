@@ -1521,8 +1521,8 @@ static void throtl_add_bio_weight(struct bio *bio, struct throtl_grp *tg)
         struct throtl_data *td = tg->td;
 
 	throtl_add_bio_weight_trace(bio);
-#ifdef CONFIG_HISI_BLK_CORE
-        bio->io_in_count |= HISI_IO_IN_COUNT_WILL_BE_SEND_AGAIN;
+#ifdef CONFIG_HISI_BLK
+        bio->hisi_bio.io_in_count |= HISI_IO_IN_COUNT_WILL_BE_SEND_AGAIN;
 #endif
         bio_list_add(&tg->bios, bio);
         tg->service_queue.nr_queued[0]++;
@@ -3132,16 +3132,9 @@ bool blk_throtl_bio(struct request_queue *q, struct blkcg_gq *blkg,
 	WARN_ON_ONCE(!rcu_read_lock_held());
 
 	/* see throtl_charge_bio() */
-	if ((bio->bi_opf & (REQ_THROTTLED |REQ_META | REQ_PREFLUSH |
-		REQ_FUA | REQ_OP_DISCARD | REQ_CHAINED)))
+	if (bio->bi_opf & (REQ_THROTTLED | REQ_OP_DISCARD | REQ_CHAINED))
 		goto out;
 
-	/* If we are on the way of memory reclaim, skip throttle */
-	if (current->flags & (PF_MEMALLOC | PF_SWAPWRITE | PF_KSWAPD))
-		goto out;
-
-	if (task_in_pagefault(current))
-		goto out;
 again:
 	if (!blkg)
 		goto out;
@@ -3157,8 +3150,26 @@ again:
 		goto out;
 	/*lint -restore*/
 
+#ifdef CONFIG_ROW_VIP_QUEUE
+	if (!blk_queue_qos_on(bdev_get_queue(bio->bi_bdev))) {
+		if (blkcg->type <= BLK_THROTL_FG)
+			bio->bi_opf |= REQ_FG;
+	}
+#else
 	if (blkcg->type <= BLK_THROTL_FG)
 		bio->bi_opf |= REQ_FG;
+
+#endif
+
+	if (bio->bi_opf & (REQ_META | REQ_PREFLUSH | REQ_FUA))
+		goto out;
+
+	/* If we are on the way of memory reclaim, skip throttle */
+	if (current->flags & (PF_MEMALLOC | PF_SWAPWRITE | PF_KSWAPD))
+		goto out;
+
+	if (task_in_pagefault(current))
+		goto out;
 
 	if (td_weight_based(td) &&
 		(blk_throtl_weight_offon == BLK_THROTL_WEIGHT_ON_FS))
@@ -3336,7 +3347,7 @@ bool blk_throtl_get_quota(struct block_device *bdev, unsigned int size,
 {
 	struct request_queue *q;
 	struct throtl_data *td;
-	struct throtl_grp *tg;
+	struct throtl_grp *tg = NULL;
 	struct blkcg *blkcg = NULL;
 	struct blkcg *new_blkcg;
 	unsigned long start_jiffies;
@@ -3394,6 +3405,9 @@ get_new_group:
 
 		tg = blkg_to_tg(blkg);
 	}
+
+	if(unlikely(!tg))
+		goto out_unlock_rcu;
 
 	spin_lock_irq(q->queue_lock);
 

@@ -6,6 +6,11 @@
  *
  */
 
-int thp_init_sysfs(struct thp_core_data *cd);
-void thp_sysfs_release(struct thp_core_data *cd);
+#ifndef __HUAWEI_THP_ATTR_H_
+#define __HUAWEI_THP_ATTR_H_
 
+int is_tp_detected(void);
+int thp_set_prox_switch_status(bool enable);
+bool thp_get_prox_switch_status(void);
+
+#endif

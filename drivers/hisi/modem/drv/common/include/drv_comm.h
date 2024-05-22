@@ -71,7 +71,10 @@ typedef unsigned long long  BSP_U64;
 #else
 typedef double              BSP_U64;
 #endif
+#ifndef __u32_defined
+#define __u32_defined
 typedef unsigned int        BSP_U32;
+#endif
 typedef unsigned short      BSP_U16;
 typedef unsigned char       BSP_U8;
 
@@ -110,7 +113,6 @@ typedef int*                BSP_PBOOL;
 typedef void*               BSP_PVOID;
 typedef int*                BSP_PSTATUS;
 typedef BSP_S32             STATUS;
-typedef BSP_S32             UDI_HANDLE;
 
 #ifndef BSP_CONST
 #define BSP_CONST           const
@@ -174,7 +176,10 @@ typedef unsigned int (*PWRCTRLFUNCPTR)(unsigned int arg);     /* ptr to function
 #if defined(BSP_CORE_MODEM) || defined(PRODUCT_CFG_CORE_TYPE_MODEM)
 #else
 
-typedef BSP_VOID (*VOIDFUNCPTR)(BSP_U32);
+#ifndef __VOIDFUNCPTR
+#define __VOIDFUNCPTR
+typedef BSP_VOID (*VOIDFUNCPTR)(BSP_U32);/*lint !e761*/
+#endif
 #ifndef SEM_FULL
 #define SEM_FULL            (1)
 #endif

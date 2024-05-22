@@ -27,7 +27,7 @@
 	spmi: spmi@FFF24000 {
 		pmic: pmic@0 {
 			hi6421v600_coul_spmi: hi6421v600_coul_spmi@1 {
-				compatible = "hisilicon_hi6421v600_coul";
+				compatible = "hisilicon_hi6xxx_coul";
 				interrupt-parent = <&pmic>;
 				interrupts = <9 0>;
 				interrupt-names = "coulirq";

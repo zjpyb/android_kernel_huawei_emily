@@ -62,8 +62,13 @@ struct fscrypt_info {
 	void *ci_key;
 	int ci_key_len;
 	int ci_key_index;
-	u8  ci_sdp_flag;
+	u8  ci_hw_enc_flag;
 };
+
+#ifdef CONFIG_HWAA
+#define HWAA_XATTR_NAME "hwaa"
+#define HWAA_XATTR_ENABLE_FLAG 0x0010
+#endif
 
 static inline void *fscrypt_ci_key(struct inode *inode)
 {
@@ -159,6 +164,13 @@ struct fscrypt_operations {
 	unsigned (*max_namelen)(struct inode *);
 	int (*get_keyinfo)(struct inode *, void *, int *);
 	int (*is_permitted_context)(struct inode *, struct inode *);
+#ifdef CONFIG_HWAA
+	int (*set_hwaa_attr)(struct inode *, const void *, size_t, void *);
+	int (*update_hwaa_attr)(struct inode *, const void *, size_t, void *);
+	int (*get_hwaa_attr)(struct inode *, void *, size_t);
+	int (*get_hwaa_flags)(struct inode *, void *, u32 *);
+	int (*set_hwaa_flags)(struct inode *, void *, u32 *);
+#endif
 };
 
 static inline bool fscrypt_dummy_context_enabled(struct inode *inode)

@@ -208,7 +208,9 @@ static ssize_t sec_ts_enter_recovery_store(struct device *dev, struct device_att
 		enable_irq(ts->client->irq);
 	}
 
-	sec_ts_read_information(ts);
+	ret = sec_ts_read_information(ts);
+	if (ret < 0)
+		TS_LOG_ERR("%s: fail to read information %d\n", __func__, ret);
 
 	return size;
 }

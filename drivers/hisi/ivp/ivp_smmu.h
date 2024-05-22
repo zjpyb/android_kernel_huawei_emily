@@ -2,13 +2,14 @@
 #define _IVP_SMMU_H_
 
 #include <linux/kernel.h>
+#include <linux/version.h>
 #include <linux/device.h>
 #include <linux/spinlock.h>
 #include <linux/interrupt.h>
 #include <linux/clk.h>
 #include <linux/mm.h>
 #include <linux/iommu.h>
-#include <linux/hisi/hisi-iommu.h>
+#include <linux/hisi-iommu.h>
 #include <dsm/dsm_pub.h>
 
 
@@ -21,7 +22,7 @@ enum smmu_state {
     SMMU_STATE_DISABLE,     //SMMU disable
     SMMU_STATE_ENABLE,      //SMMU enable
 };
-      
+
 struct ivp_smmu_dev{
     struct iommu_domain *domain;
     struct device  *dev;

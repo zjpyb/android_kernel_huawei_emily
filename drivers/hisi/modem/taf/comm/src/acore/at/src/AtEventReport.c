@@ -784,6 +784,12 @@ AT_CHG_TAF_ERR_CODE_TBL_STRU                g_astAtChgTafErrCodeTbl[] = {
 };
 
 
+AT_CHG_MTA_ERR_CODE_TBL_STRU                g_astAtChgMtaErrCodeTbl[] =
+{
+    {MTA_AT_RESULT_INCORRECT_PARAMETERS,            AT_CME_INCORRECT_PARAMETERS},
+    {MTA_AT_RESULT_FUNC_DISABLE,                    AT_CME_FUNC_DISABLE},
+};
+
 AT_PIH_RSP_PROC_FUNC_STRU     g_aAtPihRspProcFuncTbl[] =
 {
     {SI_PIH_EVENT_FDN_CNF,                  At_ProcPihFndBndCnf},

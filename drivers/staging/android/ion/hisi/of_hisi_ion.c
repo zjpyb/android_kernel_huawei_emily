@@ -16,7 +16,7 @@
 #include <linux/err.h>
 #include <linux/hisi/hisi_ion.h>
 #include <linux/platform_device.h>
-#include <linux/hisi/hisi-iommu.h>
+#include <linux/hisi-iommu.h>
 #include <linux/slab.h>
 #include <linux/of.h>
 #include <linux/mm.h>
@@ -369,8 +369,12 @@ static long hisi_ion_custom_ioctl(struct ion_client *client,
 				sizeof(smart_pool_info))) {
 			return -EFAULT;
 		}
-		if (smart_pool_info.water_mark < MAX_POOL_SIZE)
+
+		if ((smart_pool_info.water_mark > 0)
+				&& (smart_pool_info.water_mark < MAX_POOL_SIZE)) {
 			ion_smart_set_water_mark(smart_pool_info.water_mark);
+		}
+
 		return ret;
 	}
 #endif

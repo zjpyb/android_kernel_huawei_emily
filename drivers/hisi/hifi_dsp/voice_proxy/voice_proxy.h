@@ -101,7 +101,7 @@ struct voice_proxy_data_node {
 
 typedef void (*register_mailbox_cb)(mb_msg_cb mail_cb);
 typedef int32_t (*read_mailbox_msg_cb)(void *mail_handle, int8_t *buf, int32_t *size);
-typedef int32_t (*mailbox_send_msg_cb)(uint32_t mailcode, uint16_t msg_id, void *buf, uint32_t size);
+typedef int32_t (*mailbox_send_msg_cb)(uint32_t mailcode, uint16_t msg_id, const void *buf, uint32_t size);
 
 typedef void (*voice_proxy_sign_init_cb)(void);
 typedef void (*voice_proxy_msg_cb)(int8_t *rev_buf, uint32_t buf_size);

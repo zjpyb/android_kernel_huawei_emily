@@ -39,7 +39,6 @@ HWLOG_REGIST();
 /****************************************************************************
  *                     OSAL Device Com Interface
  ****************************************************************************/
-static struct class *color_class;
 static bool rohm_bh1749_getDeviceInfo(rohm_bh1749_deviceInfo_t * info);
 static void rohm_bh1749_deviceInit(rohm_bh1749_deviceCtx_t * ctx, ROHM_PORT_portHndl * portHndl);
 static bool rohm_bh1749_deviceEventHandler(rohm_bh1749_deviceCtx_t * ctx, bool inCalMode);
@@ -176,30 +175,14 @@ static int rohm_bh1749_getBuf(ROHM_PORT_portHndl * portHndl, uint8_t reg, UINT8 
 	return read_count;
 }
 
+static int rohm_bh1749_rgb_report_type(void){
+    return AWB_SENSOR_RAW_SEQ_TYPE_R_G_B_IR;
+}
+
 static int rohm_bh1749_report_data(int value[])
 {
 	hwlog_debug("rohm_bh1749_report_data\n");
 	return ap_color_report(value, ROHM_REPORT_DATA_LEN*sizeof(int));
-}
-static int rohm_bh1749_setWord(ROHM_PORT_portHndl * portHndl, uint8_t reg, UINT16 data)
-{
-	int write_count = 0;
-	UINT8 length = sizeof(UINT16);
-	UINT8 buffer[sizeof(UINT16)] = {0};
-
-	if (portHndl == NULL){
-		hwlog_err("ROHM_Driver: %s: Pointer is NULL\n", __func__);
-		return write_count;
-	}
-
-	buffer[0] = ((data >> ROHM_ENDIAN_1) & AND_FF);//0xff for ROHM_ENDIAN_1 need part
-	buffer[1] = ((data >> ROHM_ENDIAN_2) & AND_FF);//0xff for ROHM_ENDIAN_2 need part
-
-	write_count = ROHM_PORT_BH1749_setByte(portHndl,
-				reg,
-				&buffer[0],
-				length);
-	return write_count;
 }
 
 #if 0
@@ -252,32 +235,26 @@ static UINT8 rohm_bh1749_setField(ROHM_PORT_portHndl * portHndl, uint8_t reg, UI
 }
 #endif
 
-static INT32 rohm_bh1749_setGain(rohm_bh1749_deviceCtx_t * ctx, uint32_t gain){
+static INT32 rohm_bh1749_setGain(void *ctx, int gain) {
 	UINT8 cfg1_reg_data = 0;
 	INT32 ret = 0;
 
-	if (ctx == NULL){
+	if (ctx == NULL) {
 		hwlog_err("ROHM_Driver: %s: Pointer is NULL\n", __func__);
 		return -1;
 	}
-
 	hwlog_info("rohm_bh1749_setGain: %d\n", gain);
-
-	rohm_bh1749_getByte(ctx->portHndl, ROHM_BH1749_MODECONTROL1, &cfg1_reg_data);
-	if(GAIN_X1 == gain)
-	{
+	rohm_bh1749_getByte(((rohm_bh1749_deviceCtx_t *)ctx)->portHndl, ROHM_BH1749_MODECONTROL1, &cfg1_reg_data);
+	if ((uint32_t)gain == GAIN_X1) {
 		cfg1_reg_data = (cfg1_reg_data & RGB_GAIN_MASK) | RGB_GAIN_X1;
-		ctx->algCtx.als_data.gain =  GAIN_X1 *  ROHM_BH1749_GAIN_SCALE;
-	}else if(GAIN_X32 == gain)
-	{
+		((rohm_bh1749_deviceCtx_t *)ctx)->algCtx.als_data.gain =  GAIN_X1 * ROHM_BH1749_GAIN_SCALE;
+	} else if ((uint32_t)gain == GAIN_X32) {
 		cfg1_reg_data = (cfg1_reg_data & RGB_GAIN_MASK) | RGB_GAIN_X32;
-		ctx->algCtx.als_data.gain =  GAIN_X32 * ROHM_BH1749_GAIN_SCALE ;
-	}
-	else
-	{
+		((rohm_bh1749_deviceCtx_t *)ctx)->algCtx.als_data.gain =  GAIN_X32 * ROHM_BH1749_GAIN_SCALE ;
+	} else {
 		hwlog_err("Invalid gain\n");
 	}
-	rohm_bh1749_setByte(ctx->portHndl, ROHM_BH1749_MODECONTROL1, cfg1_reg_data);
+	rohm_bh1749_setByte(((rohm_bh1749_deviceCtx_t *)ctx)->portHndl, ROHM_BH1749_MODECONTROL1, cfg1_reg_data);
 
 	return (ret);
 }
@@ -294,79 +271,52 @@ static UINT8 rohm_bh1749_testForDevice(ROHM_PORT_portHndl * portHndl){
 	return chipId;
 }
 #define ROHM_GAIN_SIZE 4
-static INT32 rohm_bh1749_getGain(rohm_bh1749_deviceCtx_t * ctx){
+static INT32 rohm_bh1749_getGain(void *ctx) {
 
 	UINT8 cfg1_reg_data = 0;
 	INT32 gain = 0;
         unsigned char again[ROHM_GAIN_SIZE] = {0, 1, 0, 32};//intalize gain original val
 
-	if (ctx == NULL){
+	if (ctx == NULL) {
 		hwlog_err("ROHM_Driver: %s: Pointer is NULL\n", __func__);
 		return -1;
 	}
-
-	rohm_bh1749_getByte(ctx->portHndl, ROHM_BH1749_MODECONTROL1, &cfg1_reg_data);
+	rohm_bh1749_getByte(((rohm_bh1749_deviceCtx_t *)ctx)->portHndl, ROHM_BH1749_MODECONTROL1, &cfg1_reg_data);
 	gain = again[RGB_GAIN_VALUE(cfg1_reg_data)];
-
 	return gain;
 }
 
-
-
-static INT32 rohm_bh1749_getIrGain(rohm_bh1749_deviceCtx_t * ctx){
-	UINT8 cfg1_reg_data = 0;
-	INT32 ir_gain = 0;
-        unsigned char again[ROHM_GAIN_SIZE] = {0, 1, 0, 32};//intalize ir gain original val
-
-	if (ctx == NULL){
-		hwlog_err("ROHM_Driver: %s: Pointer is NULL\n", __func__);
-		return -1;
-	}
-
-	rohm_bh1749_getByte(ctx->portHndl, ROHM_BH1749_MODECONTROL1, &cfg1_reg_data);
-	ir_gain = again[IR_GAIN_VALUE(cfg1_reg_data)];
-
-	return ir_gain;
-}
-
-static UINT8 rohm_bh1749_gainToReg(UINT32 x){
+static UINT8 rohm_bh1749_gainToReg(UINT32 x) {
 	UINT8 i =0;
 
-	for (i = sizeof(rohm_bh1749_alsGain_conversion)/sizeof(UINT32)-1; i != 0; i--) {
-	    	if (x >= rohm_bh1749_alsGain_conversion[i]) break;
+	for (i = sizeof(rohm_bh1749_alsGain_conversion) / sizeof(UINT32) - 1; i != 0; i--) {
+		if (x >= rohm_bh1749_alsGain_conversion[i])
+			break;
 	}
 	hwlog_info("rohm_bh1749_gainToReg: %d %d\n", x, i);
 	return (i);
 }
 
-static INT32 rohm_bh1749_setIrGain(rohm_bh1749_deviceCtx_t * ctx, uint32_t gain){
+static INT32 rohm_bh1749_setIrGain(void *ctx, uint32_t gain) {
 	UINT8 cfg1_reg_data = 0;
 	INT32 ret = 0;
 
-	if (ctx == NULL){
+	if (ctx == NULL) {
 		hwlog_err("ROHM_Driver: %s: Pointer is NULL\n", __func__);
 		return -1;
 	}
 
 	hwlog_info("rohm_bh1749_setIrGain: %d\n", gain);
-	rohm_bh1749_getByte(ctx->portHndl, ROHM_BH1749_MODECONTROL1, &cfg1_reg_data);
-
-	if(GAIN_X1 == gain)
-	{
+	rohm_bh1749_getByte(((rohm_bh1749_deviceCtx_t *)ctx)->portHndl, ROHM_BH1749_MODECONTROL1, &cfg1_reg_data);
+	if (gain == GAIN_X1) {
 		cfg1_reg_data = (cfg1_reg_data & IR_GAIN_MASK) | IR_GAIN_X1;
-		ctx->algCtx.als_data.gain_ir =  GAIN_X1 * ROHM_BH1749_GAIN_SCALE;
-	}else if(GAIN_X32 == gain)
-	{
+		((rohm_bh1749_deviceCtx_t *)ctx)->algCtx.als_data.gain_ir =  GAIN_X1 * ROHM_BH1749_GAIN_SCALE;
+	} else if (gain == GAIN_X32) {
 		cfg1_reg_data = (cfg1_reg_data & IR_GAIN_MASK) | IR_GAIN_X32;
-		ctx->algCtx.als_data.gain_ir =  GAIN_X32 * ROHM_BH1749_GAIN_SCALE;
-	}
-	else
-	{
+		((rohm_bh1749_deviceCtx_t *)ctx)->algCtx.als_data.gain_ir =  GAIN_X32 * ROHM_BH1749_GAIN_SCALE;
+	} else
 		hwlog_err("Invalid ir_gain\n");
-	}
-
-	rohm_bh1749_setByte(ctx->portHndl, ROHM_BH1749_MODECONTROL1, cfg1_reg_data);
-
+	rohm_bh1749_setByte(((rohm_bh1749_deviceCtx_t *)ctx)->portHndl, ROHM_BH1749_MODECONTROL1, cfg1_reg_data);
 	return (ret);
 }
 
@@ -685,7 +635,6 @@ static void osal_als_timerHndl(unsigned long data)
 
 static ssize_t osal_als_enable_set(struct colorDriver_chip *chip, uint8_t valueToSet)
 {
-	ssize_t rc = 0;
 	rohm_bh1749_rohm_mode_t mode = 0;
 
 	if (chip == NULL){
@@ -713,7 +662,7 @@ static int get_cal_para_from_nv(void)
 {
 	int i = 0, ret = 0;
 
-	ret = read_color_calibrate_data_from_nv(RGBAP_CALI_DATA_NV_NUM, RGBAP_CALI_DATA_SIZE, "RGBAP", &color_nv_para);
+	ret = read_color_calibrate_data_from_nv(RGBAP_CALI_DATA_NV_NUM, RGBAP_CALI_DATA_SIZE, "RGBAP", (char *)&color_nv_para);
 	if(ret < 0){
 		hwlog_err("ROHM_Driver: %s: fail,use default para!!\n", __func__);
 		for (i = 0; i < CAL_STATE_GAIN_LAST; i++){
@@ -781,7 +730,7 @@ static int save_cal_para_to_nv(struct colorDriver_chip *chip)
 
 	}
 
-	ret = write_color_calibrate_data_to_nv(RGBAP_CALI_DATA_NV_NUM, RGBAP_CALI_DATA_SIZE, "RGBAP", &color_nv_para);
+	ret = write_color_calibrate_data_to_nv(RGBAP_CALI_DATA_NV_NUM, RGBAP_CALI_DATA_SIZE, "RGBAP", (char *)&color_nv_para);
 	if(ret < 0){
 		hwlog_err("ROHM_Driver: %s: fail\n", __func__);
 	}
@@ -1043,72 +992,6 @@ static void  osal_report_als(struct colorDriver_chip *chip)
 #endif
 }
 
-#if defined(CONFIG_ROHM_OPTICAL_SENSOR_ALS_XYZ)
-static ssize_t osal_als_x_show(struct device *dev,
-	struct device_attribute *attr, char *buf)
-{
-	export_alsData_t outData;
-	if(NULL == dev || NULL == attr || NULL == buf){
-		hwlog_err("ROHM_Driver: %s: Pointer is NULL\n", __func__);
-		return 0;
-	}
-	struct colorDriver_chip *chip = dev_get_drvdata(dev);
-	rohm_bh1749_deviceGetAls(chip->deviceCtx, &outData);
-	return snprintf(buf, PAGE_SIZE, "%d\n", outData.rawX);
-}
-
-static ssize_t osal_als_y_show(struct device *dev,
-	struct device_attribute *attr, char *buf)
-{
-	export_alsData_t outData;
-	if(NULL == dev || NULL == attr || NULL == buf){
-		hwlog_err("ROHM_Driver: %s: Pointer is NULL\n", __func__);
-		return 0;
-	}
-	struct colorDriver_chip *chip = dev_get_drvdata(dev);
-	rohm_bh1749_deviceGetAls(chip->deviceCtx, &outData);
-	return snprintf(buf, PAGE_SIZE, "%d\n", outData.rawY);
-}
-static ssize_t osal_als_z_show(struct device *dev,
-	struct device_attribute *attr, char *buf)
-{
-	export_alsData_t outData;
-	if(NULL == dev || NULL == attr || NULL == buf){
-		hwlog_err("ROHM_Driver: %s: Pointer is NULL\n", __func__);
-		return 0;
-	}
-	struct colorDriver_chip *chip = dev_get_drvdata(dev);
-	rohm_bh1749_deviceGetAls(chip->deviceCtx, &outData);
-	return snprintf(buf, PAGE_SIZE, "%d\n", outData.rawZ);
-}
-
-static ssize_t osal_als_ir1_show(struct device *dev,
-	struct device_attribute *attr, char *buf)
-{
-	export_alsData_t outData;
-	if(NULL == dev || NULL == attr || NULL == buf){
-		hwlog_err("ROHM_Driver: %s: Pointer is NULL\n", __func__);
-		return 0;
-	}
-	struct colorDriver_chip *chip = dev_get_drvdata(dev);
-	rohm_bh1749_deviceGetAls(chip->deviceCtx, &outData);
-	return snprintf(buf, PAGE_SIZE, "%d\n", outData.rawIR);
-}
-
-static ssize_t osal_als_ir2_show(struct device *dev,
-	struct device_attribute *attr, char *buf)
-{
-	export_alsData_t outData;
-	if(NULL == dev || NULL == attr || NULL == buf){
-		hwlog_err("ROHM_Driver: %s: Pointer is NULL\n", __func__);
-		return 0;
-	}
-	struct colorDriver_chip *chip = dev_get_drvdata(dev);
-	rohm_bh1749_deviceGetAls(chip->deviceCtx, &outData);
-	return snprintf(buf, PAGE_SIZE, "%d\n", outData.rawIR2);
-}
- #endif /* End of  XYZ */
-
 int rohm_bh1749_setenable(bool enable)
 {
 	struct colorDriver_chip *chip = p_chip;
@@ -1125,47 +1008,6 @@ int rohm_bh1749_setenable(bool enable)
 	return 1;
 }
 EXPORT_SYMBOL_GPL(rohm_bh1749_setenable);
-
-static ssize_t osal_als_enable_show(struct device *dev,
-	struct device_attribute *attr, char *buf)
-{
-	if(NULL == dev || NULL == attr || NULL == buf){
-		hwlog_err("ROHM_Driver: %s: Pointer is NULL\n", __func__);
-		return 0;
-	}
-	struct colorDriver_chip *chip = dev_get_drvdata(dev);
-	rohm_bh1749_rohm_mode_t mode = ROHM_BH1749_MODE_OFF;
-
-	rohm_bh1749_deviceGetMode(chip->deviceCtx, &mode);
-	if (mode & ROHM_BH1749_MODE_ALS){
-		return snprintf(buf, PAGE_SIZE, "%d\n", 1);
-	} else {
-		return snprintf(buf, PAGE_SIZE, "%d\n", 0);
-	}
-}
-
-static ssize_t osal_als_enable_store(struct device *dev,
-				struct device_attribute *attr,
-				const char *buf, size_t size)
-{
-	if(NULL == dev ||NULL==attr || NULL==buf)
-	{
-		hwlog_err("ROHM_Driver: %s: Pointer is NULL\n", __func__);
-		return 0;
-	}
-	struct colorDriver_chip *chip = dev_get_drvdata(dev);
-	bool value;
-	if (strtobool(buf, &value))
-		return -EINVAL;
-
-	if (value)
-		osal_als_enable_set(chip, ROHMDRIVER_ALS_ENABLE);
-	else
-		osal_als_enable_set(chip, ROHMDRIVER_ALS_DISABLE);
-
-	return size;
-}
-
 
 void rohm_show_calibrate(struct colorDriver_chip *chip, color_sensor_output_para * out_para)
 {
@@ -1271,8 +1113,6 @@ void rohm_show_enable(struct colorDriver_chip *chip, int *state)
 
 void rohm_store_enable(struct colorDriver_chip *chip, int state)
 {
-	rohm_bh1749_rohm_mode_t mode = 0;
-
 	if(NULL == chip){
 		hwlog_err("ROHM_Driver: %s: Pointer is NULL\n", __func__);
 		return;
@@ -1288,116 +1128,27 @@ void rohm_store_enable(struct colorDriver_chip *chip, int state)
 /****************************************************************************
  *                     OSAL Linux Input Driver
  ****************************************************************************/
-static int rohmdriver_pltf_power_on(struct colorDriver_chip *chip)
-{
-	int rc = 0;
-	if(NULL == chip){
-		hwlog_err("ROHM_Driver: %s: Pointer is NULL\n", __func__);
-		return rc;
-	}
-	return rc;
-}
-
-static int rohmdriver_pltf_power_off(struct colorDriver_chip *chip)
-{
-	int rc = 0;
-	if(NULL == chip){
-		hwlog_err("ROHM_Driver: %s: Pointer is NULL\n", __func__);
-		return rc;
-	}
-	return rc;
-}
-
-static int rohmdriver_power_on(struct colorDriver_chip *chip)
-{
-	int rc = 0;
-	if(NULL == chip){
-		hwlog_err("ROHM_Driver: %s: Pointer is NULL\n", __func__);
-		return rc;
-	}
-	rc = rohmdriver_pltf_power_on(chip);
-	if (rc){
-		return rc;
-	}
-	hwlog_err("%s: chip was off, restoring regs\n",__func__);
-	rohm_bh1749_deviceInit(chip->deviceCtx, chip->client);
-	return 0;
-}
-
-#ifdef CONFIG_ROHM_OPTICAL_SENSOR_ALS
-static int osal_als_idev_open(struct input_dev *idev)
-{
-	if(NULL == idev){
-		hwlog_err("\nROHM_Driver: %s: Pointer is NULL\n", __func__);
-		return 0;
-	}
-	struct colorDriver_chip *chip = dev_get_drvdata(&idev->dev);
-	if(NULL == chip){
-		hwlog_err("\nROHM_Driver: %s: Pointer is NULL\n", __func__);
-		return 0;
-	}
-
-	int rc = 0;
-
-	dev_info(&idev->dev, "%s\n", __func__);
-	ROHM_MUTEX_LOCK(&chip->lock);
-	if (chip->unpowered) {
-		rc = rohmdriver_power_on(chip);
-		if (rc)
-			goto chip_on_err;
-	}
-
-	rc = osal_als_enable_set(chip, ROHMDRIVER_ALS_ENABLE);
-	if (rc)
-		rohmdriver_pltf_power_off(chip);
-chip_on_err:
-	ROHM_MUTEX_UNLOCK(&chip->lock);
-	return 0;
-}
-
-static void osal_als_idev_close(struct input_dev *idev)
-{
-	if(NULL == idev){
-		hwlog_err("ROHM_Driver: %s: Pointer is NULL\n", __func__);
-		return;
-	}
-	int rc = 0;
-	struct colorDriver_chip *chip = dev_get_drvdata(&idev->dev);
-	if(NULL == chip){
-		hwlog_err("\nROHM_Driver: %s: Pointer is NULL\n", __func__);
-		return 0;
-	}
-
-	hwlog_info("%s\n", __func__);
-
-	ROHM_MUTEX_LOCK(&chip->lock);
-	rc = osal_als_enable_set(chip, ROHMDRIVER_ALS_DISABLE);
-	if (rc){
-		rohmdriver_pltf_power_off(chip);
-	}
-	ROHM_MUTEX_UNLOCK(&chip->lock);
-}
-#endif
 
 static void rohmdriver_work(struct work_struct *work)
 {
 	int ret = 0;
 	bool re_enable = false;
 	rohm_bh1749_rohm_mode_t mode = 0;
+	struct colorDriver_chip *chip = NULL;
 
-	if(NULL == work){
+	if (work == NULL) {
 		hwlog_err("ROHM_Driver: %s: Pointer is NULL\n", __func__);
 		return;
 	}
-    	struct colorDriver_chip *chip = container_of(work, struct colorDriver_chip, als_work);
-	if(NULL == chip){
+	chip = container_of(work, struct colorDriver_chip, als_work);
+	if (chip == NULL) {
 		hwlog_err("ROHM_Driver: %s: Pointer chip is NULL\n", __func__);
 		return;
 	}
 
 	ROHM_MUTEX_LOCK(&chip->lock);
 
-	if(0 == read_nv_first_in){
+	if (read_nv_first_in == 0) {
 		ret = get_cal_para_from_nv();
 		if(!ret){
 			hwlog_err("\rohm_bh1749: get_cal_para_from_nv fail \n");
@@ -1427,13 +1178,11 @@ static void rohmdriver_work(struct work_struct *work)
 	if(mode){
 		mod_timer(&chip->work_timer, jiffies + msecs_to_jiffies(ROHM_POLL_TIME));// timer set as 150ms
 	}
-
-bypass:
 	ROHM_MUTEX_UNLOCK(&chip->lock);
 }
 
 #ifdef CONFIG_HUAWEI_DSM
-static void rohmdriver_dmd_work(void)
+static void rohmdriver_dmd_work(struct work_struct *work)
 {
 	if (!dsm_client_ocuppy(shb_dclient)) {
 		if (color_devcheck_dmd_result == false){
@@ -1452,20 +1201,20 @@ int rohmdriver_probe(struct i2c_client *client,
 	int i = 0;
 	UINT8 deviceId = 0;
 	rohm_bh1749_deviceInfo_t rohmDeviceInfo;
+	struct device *dev = NULL;
+	static struct colorDriver_chip *chip = NULL;
+	struct driver_i2c_platform_data *pdata = NULL;
 
-	if(NULL == client){
+	if (client == NULL) {
 		hwlog_err("ROHM_Driver: %s: Pointer is NULL\n", __func__);
 		return -1;
 	}
-	struct device *dev = &client->dev;
-	if(NULL == dev){
+	dev = &client->dev;
+	if (dev == NULL) {
 		hwlog_err("ROHM_Driver: %s: dev Pointer is NULL\n", __func__);
 		return -1;
 	}
-
-	static struct colorDriver_chip *chip;
-	struct driver_i2c_platform_data *pdata = dev->platform_data;
-
+	pdata = dev->platform_data;
 	/****************************************/
 	/* Validate bus and device registration */
 	/****************************************/
@@ -1558,6 +1307,7 @@ int rohmdriver_probe(struct i2c_client *client,
 	chip->color_enable_store_state = rohm_store_enable;
 	chip->color_sensor_getGain = rohm_bh1749_getGain;
 	chip->color_sensor_setGain = rohm_bh1749_setGain;
+    chip->color_report_type = rohm_bh1749_rgb_report_type;
 
 	p_chip = chip;
 	ret = color_register(chip);
@@ -1568,9 +1318,6 @@ int rohmdriver_probe(struct i2c_client *client,
 	hwlog_info("rohm Probe ok.\n");
 	return 0;
 
-id_failed:
-	if (chip->deviceCtx) kfree(chip->deviceCtx);
-	i2c_set_clientdata(client, NULL);
 malloc_failed:
 	kfree(chip);
 init_failed:
@@ -1580,64 +1327,56 @@ init_failed:
 
 int rohmdriver_suspend(struct device *dev)
 {
-	if(NULL == dev){
+	struct colorDriver_chip  *chip = NULL;
+
+	if (dev == NULL) {
 		hwlog_err("ROHM_Driver: %s: Pointer is NULL\n", __func__);
 		return -1;
 	}
-	struct colorDriver_chip  *chip = dev_get_drvdata(dev);
-	if(chip == NULL){
+	chip = dev_get_drvdata(dev);
+	if (chip == NULL) {
 		hwlog_err("ROHM_Driver: %s: chip Pointer is NULL\n", __func__);
 		return -1;
 	}
 	hwlog_info("%s\n", __func__);
 	ROHM_MUTEX_LOCK(&chip->lock);
 	chip->in_suspend = 1;
-
-	if (chip->wake_irq) {
+	if (chip->wake_irq)
 		irq_set_irq_wake(chip->client->irq, 1);
-	} else if (!chip->unpowered) {
+	else if (!chip->unpowered)
 		hwlog_info("powering off\n");
-		/* TODO
-		   platform power off */
-	}
 	ROHM_MUTEX_UNLOCK(&chip->lock);
 	return 0;
 }
 
 int rohmdriver_resume(struct device *dev)
 {
-	if(NULL == dev){
+	if (dev == NULL) {
 		hwlog_err("ROHM_Driver: %s: Pointer is NULL\n", __func__);
 		return -1;
 	}
-	struct colorDriver_chip *chip = dev_get_drvdata(dev);
-
+	dev_get_drvdata(dev);
 	return 0;
 }
 
 int rohmdriver_remove(struct i2c_client *client)
 {
-	if(NULL == client){
+	struct colorDriver_chip *chip = NULL;
+
+	if (client == NULL) {
 		hwlog_err("ROHM_Driver: %s: Pointer is NULL\n", __func__);
 		return -1;
 	}
-	struct colorDriver_chip *chip = i2c_get_clientdata(client);
-	if(NULL == chip){
-		hwlog_err("\ROHM_Driver: %s: Pointer is NULL\n", __func__);
+	chip = i2c_get_clientdata(client);
+	if (chip == NULL) {
+		hwlog_err("ROHM_Driver: %s: Pointer is NULL\n", __func__);
 		return -1;
 	}
-
-	/* TODO
-	   platform teardown */
 	i2c_set_clientdata(client, NULL);
-	if(chip->deviceCtx){
+	if (chip->deviceCtx)
 		kfree(chip->deviceCtx);
-	}
-
-	if(chip){
+	if (chip)
 		kfree(chip);
-	}
-
 	return 0;
 }
 

@@ -237,7 +237,7 @@ void bbox_cleartext_end_filep(struct file *fp, char *dir_path, char *file_name)
  */
 static int bbox_head_cleartext_print(char *dir_path, u64 log_addr, u32 log_len)
 {
-	struct rdr_struct_s *p = (struct rdr_struct_s *)log_addr;
+	struct rdr_struct_s *p = (struct rdr_struct_s *)(uintptr_t)log_addr;
 	struct file         *fp;
 	bool                error;
 
@@ -414,7 +414,7 @@ static int rdr_exception_trace_ap_cleartext_print(char *dir_path, u64 log_addr, 
 	bool                       error;
 	u32                        start, end, i;
 
-	q = (struct hisiap_ringbuffer_s *)log_addr;
+	q = (struct hisiap_ringbuffer_s *)(uintptr_t)log_addr;
 	if (unlikely(is_ringbuffer_invalid(sizeof(rdr_exception_trace_t), log_len, q))) {
 		BB_PRINT_ERR("%s() fail:check_ringbuffer_invalid.\n", __func__);
 		return -1;
@@ -478,9 +478,9 @@ int rdr_exception_trace_cleartext_print(char *dir_path, u64 log_addr, u32 log_le
 	pfn_cleartext_ops ops_fn;
 	u32               i, num, size[EXCEPTION_TRACE_ENUM], offset;
 
-	if ( unlikely(IS_ERR_OR_NULL(dir_path) || IS_ERR_OR_NULL((void *)log_addr)) ) {
+	if ( unlikely(IS_ERR_OR_NULL(dir_path) || IS_ERR_OR_NULL((void *)(uintptr_t)log_addr)) ) {
 		BB_PRINT_ERR("%s() error:dir_path 0x%pK log_addr 0x%pK.\n",
-			__func__, dir_path, (void *)log_addr);
+			__func__, dir_path, (void *)(uintptr_t)log_addr);
 		return -1;
 	}
 
@@ -719,16 +719,16 @@ void bbox_cleartext_proc(const char *path, const char *base_addr)
 		size += data[i];
 
 		if (data[i] > 0) {
-			bbox_save_cleartext(dir_path, (u64)addr, data[i], i, false);
+			bbox_save_cleartext(dir_path, (uintptr_t)addr, data[i], i, false);
 		}
 	}
 
-	bbox_save_cleartext(dir_path, (u64)base_addr, RDR_BASEINFO_SIZE, 0, true);
+	bbox_save_cleartext(dir_path, (uintptr_t)base_addr, RDR_BASEINFO_SIZE, 0, true);
 
 	/* save AP data info */
 	addr = (char *)base_addr + RDR_BASEINFO_SIZE;
 	size = (u32)rdr_get_pbb_size() - (size + RDR_BASEINFO_SIZE);
-	bbox_save_cleartext(dir_path, (u64)addr, size, 0, false);
+	bbox_save_cleartext(dir_path, (uintptr_t)addr, size, 0, false);
 
 	if (!in_atomic() && !irqs_disabled()
 		&& !in_irq()) {
@@ -770,7 +770,10 @@ int rdr_cleartext_body(void *arg)
 
 
 		date = rdr_field_get_datetime();
-		memset_s(path, PATH_MAXLEN, 0, PATH_MAXLEN);
+		if (EOK != memset_s(path, PATH_MAXLEN, 0, PATH_MAXLEN)) {
+			BB_PRINT_ERR("%s():%d:memset_s fail!\n", __func__, __LINE__);
+		}
+
 		ret = snprintf_s(path, PATH_MAXLEN, PATH_MAXLEN - 1, "%s%s/", PATH_ROOT, date);
 		if(unlikely(ret < 0)){
 			BB_PRINT_ERR("[%s], snprintf_s ret %d!\n", __func__, ret);
@@ -795,7 +798,7 @@ int rdr_cleartext_body(void *arg)
  * return 0 for successful checking, otherwise failed.
  *
  */
-static int rdr_check_date(char *date, u32 len)
+static int rdr_check_date(const char *date, u32 len)
 {
 	u32 i;
 
@@ -838,7 +841,10 @@ void rdr_exceptionboot_save_cleartext(void)
 		return;
 	}
 
-	memset_s(path, PATH_MAXLEN, 0, PATH_MAXLEN);
+	if (EOK != memset_s(path, PATH_MAXLEN, 0, PATH_MAXLEN)) {
+		BB_PRINT_ERR("%s():%d:memset_s fail!\n", __func__, __LINE__);
+	}
+
 	ret = snprintf_s(path, PATH_MAXLEN, PATH_MAXLEN - 1,
 		"%s%s/", PATH_ROOT, date);
 	if(unlikely(ret < 0)){

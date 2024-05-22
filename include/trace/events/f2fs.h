@@ -141,6 +141,9 @@ TRACE_DEFINE_ENUM(CP_TRIMMED);
 		{ CP_FASTBOOT_MODE,	"fastboot mode" },		\
 		{ CP_SPEC_LOG_NUM,	"log type is 2" })
 
+struct f2fs_io_info;
+struct extent_info;
+struct f2fs_sb_info;
 struct victim_sel_policy;
 struct f2fs_map_blocks;
 

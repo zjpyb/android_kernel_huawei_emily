@@ -71,7 +71,7 @@ typedef struct
 /*****************************************************************************
   10 º¯ÊýÉùÃ÷
 *****************************************************************************/
-extern oal_void hmac_m2s_vap_arp_probe_start(oal_void *p_arg);
+extern oal_void hmac_m2s_vap_arp_probe_process(oal_void *p_arg, oal_bool_enum_uint8 en_arp_detect_on);
 extern oal_void hmac_m2s_arp_fail_process(oal_netbuf_stru *pst_netbuf, oal_void *p_arg);
 
 #endif

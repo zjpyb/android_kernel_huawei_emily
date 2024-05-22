@@ -18,7 +18,7 @@
 #endif
 
 //lint -save -e31
-//lint -save -e568
+//lint -save -e568 -e456 -e454
 //lint -esym(568,*)
 
 /* NCP6925 Registers define */
@@ -72,9 +72,6 @@
 #define PMIC_LDO2_INDEX     1
 #define PMIC_LDO3_INDEX     2
 
-#define PMIC_POWER_ON  1
-#define PMIC_POWER_OFF 0
-
 /* Internal data struct define */
 typedef enum {
     PMIC_POWER_CTRL = 0,
@@ -105,6 +102,7 @@ static int ncp6925_poweron = 0;
 static int pmic_enable_sensor_1v8_flag = 0;
 static int pmic_enable_sensor_3v3_flag = 0;
 static int pmic_extern_config_flag = 0;
+static int pmic_lon_flag = 0;
 extern struct dsm_client *client_pmic;
 static voltage_map_t voltage_map[VOUT_MAX] =
 {
@@ -131,7 +129,7 @@ static int ncp6925_on(struct hisi_pmic_ctrl_t *pmic_ctrl, void *data);
 int hw_extern_pmic_config(int index, int voltage, int enable)
 {
     struct hisi_pmic_ctrl_t *pmic_ctrl = NULL;
-    if (pmic_extern_config_flag == 0 && ncp6925_poweron == PMIC_POWER_ON) {
+    if ((pmic_extern_config_flag == 0 && ncp6925_poweron == PMIC_POWER_ON) || (1 == pmic_lon_flag)){
         cam_debug("using pmic extern config");
         pmic_ctrl = hisi_get_pmic_ctrl();
         if(pmic_ctrl != NULL) {
@@ -518,6 +516,7 @@ static int ncp6925_get_dt_data(struct hisi_pmic_ctrl_t *pmic_ctrl)
     int rc = -1;
     int pmic_sensor_1v8 = 0;
     int pmic_sensor_3v3 = 0;
+    struct hisi_pmic_info *pmic_info;
 
     cam_info("%s enter.\n", __func__);
 
@@ -526,6 +525,7 @@ static int ncp6925_get_dt_data(struct hisi_pmic_ctrl_t *pmic_ctrl)
         return rc;
     }
 
+    pmic_info = &pmic_ctrl->pmic_info;
     pdata = (struct ncp6925_private_data_t *)pmic_ctrl->pdata;
     dev_node = pmic_ctrl->dev->of_node;
 
@@ -572,6 +572,14 @@ static int ncp6925_get_dt_data(struct hisi_pmic_ctrl_t *pmic_ctrl)
         pmic_enable_sensor_1v8_flag = 1;
     if (pmic_sensor_3v3)
         pmic_enable_sensor_3v3_flag = 1;
+
+    if(of_property_read_u32(dev_node, "hisi,pmic_mutex_flag",(u32 *)&pmic_info->mutex_flag)){
+        cam_err("%s read pmic_mutex_flag failed %d\n", __func__, __LINE__);
+    }else{
+        pmic_lon_flag = 1;
+        cam_info("%s hisi,pmic_mutex_flag %d\n", __func__,
+        pmic_info->mutex_flag);
+    }
 
     return 0;
 }
@@ -663,6 +671,9 @@ static int ncp6925_seq_config(struct hisi_pmic_ctrl_t *pmic_ctrl, pmic_seq_index
 
     i2c_client = pmic_ctrl->pmic_i2c_client;
     i2c_func = pmic_ctrl->pmic_i2c_client->i2c_func_tbl;
+    if(pmic_ctrl->pmic_info.mutex_flag == 1){
+        mutex_lock(pmic_ctrl->hisi_pmic_mutex);
+    }
 
     chx_enable = voltage_map[seq_index].chx_enable;
     voltage_reg = voltage_map[seq_index].vout_reg;
@@ -697,7 +708,6 @@ static int ncp6925_seq_config(struct hisi_pmic_ctrl_t *pmic_ctrl, pmic_seq_index
         cam_debug("%s chx_enable 0x%x, voltage_reg 0x%x, voltage_val 0x%x", __func__, chx_enable, voltage_reg, voltage_val);
     } else {
         i2c_func->i2c_write(i2c_client, CHX_EN, chx_enable_tmp & (~chx_enable));
-        //i2c_func->i2c_write(i2c_client, voltage_reg, state);
         if (seq_index >= VOUT_BUCK_1) {
             i2c_func->i2c_read(i2c_client, BUCK_VSEL, &buck12_prog_old);
             buck12_prog = buck12_prog_old & (~(seq_index == VOUT_BUCK_1 ? 0x1 : 0x2));
@@ -708,6 +718,9 @@ static int ncp6925_seq_config(struct hisi_pmic_ctrl_t *pmic_ctrl, pmic_seq_index
     i2c_func->i2c_read(i2c_client, CHX_ERR, &chx_enable_tmp);
     if (chx_enable_tmp != 0) {
         cam_err("%s PMIC CHX_ERR code 0x%x", __func__, chx_enable_tmp);
+    }
+    if(pmic_ctrl->pmic_info.mutex_flag == 1){
+        mutex_unlock(pmic_ctrl->hisi_pmic_mutex);
     }
 
     return ret;

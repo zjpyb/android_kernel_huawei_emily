@@ -251,7 +251,7 @@ static int device_ioctl(struct inode *inp, struct file *filp, unsigned int cmd,
 		break;
 	case DEVICE_IOC_IRQ:
 		/* leon remove it */
-		TS_LOG_INFO("Try to enable irq %d\n", arg);
+		TS_LOG_INFO("Try to enable irq %lu\n", arg);
 		if (arg == 0) {
 			if (TS_BUS_SPI == tcm_hcd->syna_tcm_chip_data->ts_platform_data->bops->btype) {
 				disable_irq(g_ts_kit_platform_data.irq_id);
@@ -277,7 +277,7 @@ static int device_ioctl(struct inode *inp, struct file *filp, unsigned int cmd,
 			//retval = tcm_hcd->enable_irq(tcm_hcd, true, NULL);
 		break;
 	case DEVICE_IOC_RAW:
-		TS_LOG_INFO("Try to set raw mode %d\n", arg);
+		TS_LOG_INFO("Try to set raw mode %lu\n", arg);
 		if (arg == 0)
 			device_hcd->raw_mode = false;
 		else if (arg == 1)

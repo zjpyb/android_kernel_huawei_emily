@@ -40,14 +40,16 @@
 #define FRAG_JOB_DESC_MIN_TILE_COORD_WORD 8
 /* Word 9: Maximum Tile Coordinates */
 #define FRAG_JOB_DESC_MAX_TILE_COORD_WORD 9
-
+/*lint -e578*/
+/*lint -e668*/
 int kbasep_10969_workaround_clamp_coordinates(struct kbase_jd_atom *katom)
 {
 	struct device *dev = katom->kctx->kbdev->dev;
 	u32   clamped = 0;
 	struct kbase_va_region *region;
 	struct tagged_addr *page_array;
-	u64 page_index;
+	u64 page_index;//lint !e578
+
 	u32 offset = katom->jc & (~PAGE_MASK);
 	u32 *page_1 = NULL;
 	u32 *page_2 = NULL;
@@ -65,7 +67,7 @@ int kbasep_10969_workaround_clamp_coordinates(struct kbase_jd_atom *katom)
 	kbase_gpu_vm_lock(katom->kctx);
 	region = kbase_region_tracker_find_region_enclosing_address(katom->kctx,
 			katom->jc);
-	if (!region || (region->flags & KBASE_REG_FREE))
+	if (kbase_is_region_invalid_or_free(region))
 		goto out_unlock;
 
 	page_array = kbase_get_cpu_phy_pages(region);
@@ -94,7 +96,7 @@ int kbasep_10969_workaround_clamp_coordinates(struct kbase_jd_atom *katom)
 			kbase_dma_addr(p) + offset,
 			copy_size, DMA_BIDIRECTIONAL);
 
-	memcpy(dst, page_1, copy_size);
+	memcpy(dst, page_1, copy_size); /* unsafe_function_ignore: memcpy */
 
 	/* The data needed overflows page the dimension,
 	 * need to map the subsequent page */
@@ -182,7 +184,7 @@ int kbasep_10969_workaround_clamp_coordinates(struct kbase_jd_atom *katom)
 				maxX, maxY);
 
 		/* Flush CPU cache to update memory for future GPU reads*/
-		memcpy(page_1, dst, copy_size);
+		memcpy(page_1, dst, copy_size); /* unsafe_function_ignore: memcpy */
 		kbase_get_compressed_region(region, region->start_pfn + page_index, 1);
 		p = as_page(page_array[page_index]);
 
@@ -191,7 +193,7 @@ int kbasep_10969_workaround_clamp_coordinates(struct kbase_jd_atom *katom)
 				copy_size, DMA_TO_DEVICE);
 
 		if (copy_size < JOB_HEADER_SIZE) {
-			memcpy(page_2, dst + copy_size,
+			memcpy(page_2, dst + copy_size, /* unsafe_function_ignore: memcpy */
 					JOB_HEADER_SIZE - copy_size);
 			kbase_get_compressed_region(region, region->start_pfn + page_index + 1, 1);
 			p = as_page(page_array[page_index + 1]);
@@ -201,6 +203,7 @@ int kbasep_10969_workaround_clamp_coordinates(struct kbase_jd_atom *katom)
 					JOB_HEADER_SIZE - copy_size,
 					DMA_TO_DEVICE);
 		}
+
 	}
 	if (copy_size < JOB_HEADER_SIZE)
 		kunmap_atomic(page_2);
@@ -211,3 +214,5 @@ out_unlock:
 	kbase_gpu_vm_unlock(katom->kctx);
 	return clamped;
 }
+/*lint +e668*/
+/*lint +e578*/

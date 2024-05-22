@@ -28,6 +28,8 @@
 #include <linux/swap.h>
 #include <linux/mmc/ffu.h>
 
+#include "mmc_hisi_card.h"
+
 /**
  * struct mmc_ffu_pages - pages allocated by 'alloc_pages()'.
  *  <at> page: first page in the allocation
@@ -194,7 +196,7 @@ static int mmc_ffu_map_sg(struct mmc_ffu_mem *mem, unsigned long size,
 	unsigned long sz = size;
 
 	sg_init_table(sglist, max_segs);
-	if (min_sg_len > max_segs) {
+	if (min_sg_len > max_segs) {/*lint !e574 */
 		min_sg_len = max_segs;
     }
 
@@ -203,7 +205,7 @@ static int mmc_ffu_map_sg(struct mmc_ffu_mem *mem, unsigned long size,
 		for (i = 0; i < mem->cnt; i++) {
 			unsigned long len = PAGE_SIZE << mem->arr[i].order;
 
-			if (min_sg_len && (size / min_sg_len < len)) {
+			if (min_sg_len && (size / min_sg_len < len)) {/*lint !e573 */
 				len = ALIGN(size / min_sg_len, CARD_BLOCK_SIZE);
             }
 
@@ -399,7 +401,7 @@ static int mmc_ffu_area_init(struct mmc_ffu_area *area, struct mmc_card *card,
 
 	/* copy data to page */
 	length = 0;
-	for (i = 0; i < area->mem->cnt; i++) {
+	for (i = 0; i < area->mem->cnt; i++) {/*lint !e574 */
 		copy_length = min(size - length, (unsigned int)(PAGE_SIZE << area->mem->arr[i].order));
 		memcpy(page_address(area->mem->arr[i].page), data + length, copy_length);
 		length += copy_length;
@@ -459,6 +461,8 @@ exit:
 static int mmc_ffu_restart(struct mmc_card *card)
 {
 	struct mmc_host *host = card->host;
+	struct mmc_blk_data *main_md = NULL;
+	u8 part_config;
 	int err = 0;
 #ifdef CONFIG_HISI_MMC
 	(void)mmc_cache_ctrl(host,0);
@@ -473,7 +477,12 @@ static int mmc_ffu_restart(struct mmc_card *card)
 	}
 
 	err = mmc_power_restore_host(host);
-
+	main_md = dev_get_drvdata(&card->dev);
+	part_config = card->ext_csd.part_config;
+	part_config &= EXT_CSD_PART_CONFIG_ACC_MASK;
+	pr_info("ffu restart part_config = %d, part_curr = %d, part_type = %d\n",
+		part_config, main_md->part_curr, main_md->part_type);
+	main_md->part_curr = part_config;
 exit:
 
 	return err;
@@ -658,7 +667,7 @@ int mmc_ffu_install(struct mmc_card *card)
 
 			if (!ffu_data_len) {
 				err = -EPERM;
-				goto free_ext_csd;;
+				goto free_ext_csd;
 			}
 
 			/* set device to FFU mode */

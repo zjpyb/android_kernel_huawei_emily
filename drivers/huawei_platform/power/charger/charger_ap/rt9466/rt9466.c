@@ -46,10 +46,23 @@
 #define VBUS_POST_THRESHOLD     1000
 #define RT9466_BOOST_VOTGBST    5000
 #define AICR_LOWER_BOUND        150
+#define VBUS_FAKE_5V            5000
+
+#define GPIO_LOW                0
+#define GPIO_HIGH               1
+#define VOLTAGE9V               9
+#define DELAY_10MS              10
+#define DELAY_50MS              50
+#define DELAY_100MS             100
+#define DELAY_1500MS            1500
+#define VOLT_THRES_7P5          7500 /* mv, 9V detect threshold */
+#define RETRY_MAX3              3
+#define MIN_CV                  4350
 
 static int huawei_force_hz = 0; /* for huawei force enable hz */
 static struct i2c_client *g_rt9466_i2c;
 static int hiz_iin_limit_flag = HIZ_IIN_FLAG_FALSE;
+static int g_rt9466_cv;
 /* ======================= */
 /* RT9466 Parameter        */
 /* ======================= */
@@ -69,7 +82,7 @@ static const u32 rt9466_wdt[] = {
 /* Register 0x01 ~ 0x10 */
 static u8 reset_reg_data[] = {
 		0x10, 0x03, 0x23, 0x3C, 0x67, 0x0B, 0x4C, 0xA1,
-		0x3C, 0x58, 0x2C, 0x02, 0x52, 0x05, 0x00, 0x10
+		0x3C, 0x58, 0x2C, 0x82, 0x52, 0x05, 0x00, 0x10
 };
 
 enum rt9466_irq_idx {
@@ -234,6 +247,8 @@ struct rt9466_info {
 #endif /* CONFIG_RT_REGMAP */
 	struct charge_core_data *core_data;
 	bool irq_active;
+	int fcp_support;
+	int gpio_fcp;
 };
 
 /* ======================= */
@@ -383,6 +398,7 @@ static const rt_register_map_t rt9466_regmap_map[] = {
 
 /*function declare here*/
 static int rt9466_set_aicr(int aicr);
+static int rt9466_is_support_fcp(void);
 
 /* ========================= */
 /* I2C operations            */
@@ -1447,18 +1463,27 @@ static inline int rt9466_irq_init(struct rt9466_info *info)
 
 static bool rt9466_is_hw_exist(struct rt9466_info *info)
 {
-	int ret = 0;
-	u8 vendor_id = 0, chip_rev = 0;
+	int vendor_id;
+	u8 chip_rev;
+	int vendor_id_ex;
 
-	ret = i2c_smbus_read_byte_data(info->client, RT9466_REG_DEVICE_ID);
-	if (ret < 0)
+	vendor_id = i2c_smbus_read_byte_data(info->client,
+		RT9466_REG_DEVICE_ID);
+	if (vendor_id < 0)
 		return false;
 
-	vendor_id = ret & 0xF0;
-	chip_rev = ret & 0x0F;
-	if (vendor_id != RT9466_VENDOR_ID) {
-		dev_err(info->dev, "%s: vendor id is incorrect (0x%02X)\n",
-			__func__, vendor_id);
+	vendor_id_ex = i2c_smbus_read_byte_data(info->client,
+		RT9466_REG_DEVICE_ID_EX);
+	if (vendor_id_ex < 0)
+		return false;
+
+	vendor_id &= 0xFF;
+	chip_rev = vendor_id & 0x0F;
+	vendor_id_ex &= 0xFF;
+
+	if (vendor_id_ex != RT9466_VENDOR_ID_EX) {
+		dev_err(info->dev, "%s: vendor id is incorrect vid: 0x%02x\n",
+			__func__, vendor_id_ex);
 		return false;
 	}
 
@@ -1627,7 +1652,7 @@ static inline int rt9466_enable_safety_timer(struct rt9466_info *info, bool en)
 
 static int __rt9466_set_ieoc(struct rt9466_info *info, u32 ieoc)
 {
-	int ret = 0;
+	int ret;
 	u8 reg_ieoc = 0;
 
 	/* IEOC workaround */
@@ -1642,6 +1667,8 @@ static int __rt9466_set_ieoc(struct rt9466_info *info, u32 ieoc)
 
 	ret = rt9466_i2c_update_bits(info, RT9466_REG_CHG_CTRL9,
 		reg_ieoc << RT9466_SHIFT_IEOC, RT9466_MASK_IEOC);
+	if (ret)
+		dev_info(info->dev, "update bits fail\n");
 
 	/* Store IEOC */
 	return rt9466_get_ieoc(info, &info->ieoc);
@@ -1866,6 +1893,12 @@ static int rt9466_parse_dt(struct rt9466_info *info, struct device *dev)
 		dev_err(info->dev, "%s: no hiz_iin_limit\n", __func__);
 	}
 	dev_info(info->dev, "%s: hiz_iin_limit = %d\n", __func__,desc->hiz_iin_limit);
+
+	if (of_property_read_u32(np, "custom_cv", &g_rt9466_cv) < 0) {
+		g_rt9466_cv = 0;
+		dev_err(info->dev, "%s: no custom_cv\n", __func__);
+	}
+	dev_info(info->dev, "custom_cv=%d\n", g_rt9466_cv);
 	desc->en_te = of_property_read_bool(np, "en_te");
 	desc->en_wdt = of_property_read_bool(np, "en_wdt");
 	desc->en_irq_pulse = of_property_read_bool(np, "en_irq_pulse");
@@ -2042,8 +2075,18 @@ static int rt9466_set_ichg(int ichg)
 
 static int rt9466_set_cv(int cv)
 {
-	u8 reg_cv = 0;
+	u8 reg_cv;
 	struct rt9466_info *info = i2c_get_clientdata(g_rt9466_i2c);
+
+	if (!info) {
+		dev_err(info->dev, "info is NULL\n");
+		return -1;
+	}
+
+	if ((g_rt9466_cv > MIN_CV) && (cv > g_rt9466_cv)) {
+		dev_info(info->dev, "set cv to custom_cv=%d\n", g_rt9466_cv);
+		cv = g_rt9466_cv;
+	}
 
 	reg_cv = rt9466_closest_reg(RT9466_CV_MIN, RT9466_CV_MAX,
 		RT9466_CV_STEP, cv);
@@ -2083,7 +2126,7 @@ static int rt9466_set_ieoc(int ieoc)
 	return (ret < 0 ? ret : 0);
 }
 
-static int rt9466_set_boost_voltage(unsigned int voltage)
+static int rt9466_set_boost_voltage(int voltage)
 {
 	u8 reg_voltage = 0;
 	struct rt9466_info *info = i2c_get_clientdata(g_rt9466_i2c);
@@ -2091,7 +2134,7 @@ static int rt9466_set_boost_voltage(unsigned int voltage)
 	if (voltage < RT9466_BOOST_VOREG_MIN)
 		return -1;
 	reg_voltage = (voltage - RT9466_BOOST_VOREG_MIN) / RT9466_BOOST_VOREG_STEP;
-	dev_info(info->dev, "%s: boost voltage = %d(0x%02X)\n", __func__, reg_voltage);
+	dev_info(info->dev, "%s: boost voltage = %d\n", __func__, reg_voltage);
 
 	return rt9466_i2c_update_bits(info, RT9466_REG_CHG_CTRL5,
 		reg_voltage << RT9466_SHIFT_BOOST_VOREG, RT9466_MASK_BOOST_VOREG);
@@ -2370,15 +2413,30 @@ static int rt9466_get_charge_state(unsigned int *state)
 
 static int rt9466_get_vbus(unsigned int *vbus)
 {
-	int ret = 0, adc_vbus = 0;
+	int ret;
+	int adc_vbus = 0;
 	struct rt9466_info *info = i2c_get_clientdata(g_rt9466_i2c);
+
+	if (!info) {
+		pr_err("rt9466 get vbus para err\n");
+		return -1;
+	}
 
 	ret = rt9466_get_adc(info, RT9466_ADC_VBUS_DIV5, &adc_vbus);
 	if (ret < 0) {
 		*vbus = 0;
 		return -1;
 	}
-	*vbus = adc_vbus;
+
+	pr_info("rt9466 get vbus %d\n", adc_vbus);
+	if (adc_vbus >= VBUS_FAKE_5V) {
+		*vbus = VBUS_FAKE_5V; /* compatible with 9V adapter */
+		if (!rt9466_is_support_fcp())
+			*vbus = adc_vbus;
+	} else {
+		*vbus = adc_vbus;
+	}
+
 	return 0;
 }
 
@@ -2450,7 +2508,7 @@ static int rt9466_get_register_head(char *reg_head)
 
 	memset(reg_head, 0, CHARGELOG_SIZE);
 	for (i = 0; i < ARRAY_SIZE(rt9466_reg_addr); i++) {
-		snprintf(buff, 26, "Reg[0x%2x] ", i);
+		snprintf(buff, 26, "Reg[0x%2x] ", rt9466_reg_addr[i]);
 		strncat(reg_head, buff, strlen(buff));
 	}
 	return 0;
@@ -2565,16 +2623,16 @@ static int rt9466_5v_chip_init(void)
 static int rt9466_chip_init(struct chip_init_crit* init_crit)
 {
 	int ret = -1;
-	if (!init_crit) {
-		dev_err("%s: init_crit is null\n", __func__);
+	struct rt9466_info *info = i2c_get_clientdata(g_rt9466_i2c);
+
+	if (!info || !init_crit)
 		return -ENOMEM;
-	}
+
 	switch(init_crit->vbus) {
 		case ADAPTER_5V:
 			ret = rt9466_5v_chip_init();
 			break;
 		default:
-			dev_err("%s: init mode err\n", __func__);
 			break;
 	}
 	return ret;
@@ -2626,6 +2684,179 @@ static struct charge_device_ops rt9466_ops = {
 	.set_boost_voltage = rt9466_set_boost_voltage,
 };
 
+static int rt9466_fcp_init(struct rt9466_info *info)
+{
+	int ret;
+	struct device_node *np = NULL;
+
+	if (!info || !info->dev || !info->dev->of_node) {
+		pr_err("info is null\n");
+		goto fail_init_fcp;
+	}
+
+	np = info->dev->of_node;
+	ret = of_property_read_u32(np, "fcp_support", &(info->fcp_support));
+	if (ret) {
+		pr_err("fcp_support dts read failed\n");
+		goto fail_init_fcp;
+	}
+	pr_info("fcp_support=%d\n", info->fcp_support);
+
+	if (!info->fcp_support)
+		goto fail_init_fcp;
+
+	info->gpio_fcp = of_get_named_gpio(np, "gpio_fcp", 0);
+	pr_info("gpio_fcp=%d\n", info->gpio_fcp);
+
+	if (!gpio_is_valid(info->gpio_fcp)) {
+		pr_err("gpio is not valid\n");
+		goto fail_init_fcp;
+	}
+
+	ret = gpio_request(info->gpio_fcp, "gpio_fcp");
+	if (ret) {
+		pr_err("gpio request fail\n");
+		goto fail_init_fcp;
+	}
+
+	/* gpio_fcp init to input mode */
+	ret = gpio_direction_input(info->gpio_fcp);
+	if (ret < 0) {
+		gpio_free(info->gpio_fcp);
+		pr_err("gpio set input fail\n");
+		goto fail_init_fcp;
+	}
+
+	return 0;
+
+fail_init_fcp:
+	info->fcp_support = 0;
+	return -1;
+}
+
+static bool rt9466_isvbus9v(void)
+{
+	int ret;
+	int vbus = 0;
+	int try_cnt = 0;
+
+	while (try_cnt < RETRY_MAX3) {
+		try_cnt++;
+		ret = rt9466_get_vbus(&vbus);
+		if (!ret)
+			break;
+
+		msleep(DELAY_10MS);
+	}
+
+	if (vbus > VOLT_THRES_7P5)
+		return true;
+
+	return false;
+}
+
+static int rt9466_fcp_get_adapter_output_current(void)
+{
+	return 0;
+}
+
+static int rt9466_fcp_set_adapter_output_vol(int output_vol)
+{
+	return 0;
+}
+
+static int rt9466_fcp_reset(void)
+{
+	struct rt9466_info *di = i2c_get_clientdata(g_rt9466_i2c);
+
+	if (!di) {
+		pr_err("di is null\n");
+		return -EINVAL;
+	}
+
+	/* reset gpio to input status */
+	gpio_set_value(di->gpio_fcp, GPIO_LOW);
+	gpio_direction_input(di->gpio_fcp);
+
+	pr_info("fcp reset gpio_fcp\n");
+	return 0;
+}
+
+static int rt9466_fcp_adapter_detect(void)
+{
+	int try_cnt = 0;
+	struct rt9466_info *di = i2c_get_clientdata(g_rt9466_i2c);
+
+	pr_info("fcp detect enter\n");
+	if (!di) {
+		pr_err("di is null\n");
+		return -1;
+	}
+
+	/*
+	 * first:
+	 * 1. wait 1.5s after DCP detect
+	 * 2. set gpio_fcp to output high
+	 * 3. wait 100ms up to 9v
+	 */
+	msleep(DELAY_1500MS);
+	gpio_direction_output(di->gpio_fcp, GPIO_LOW);
+	gpio_set_value(di->gpio_fcp, GPIO_HIGH);
+	msleep(DELAY_100MS);
+	pr_info("fcp detect set gpio_fcp = %d\n",
+		gpio_get_value(di->gpio_fcp));
+
+	/* second: detect ovp to judge 9v */
+	while (try_cnt < RETRY_MAX3) {
+		try_cnt++;
+		if (rt9466_isvbus9v()) {
+			pr_info("fcp detect upto9v succ\n");
+			return 0;
+		}
+		msleep(DELAY_50MS);
+	}
+
+	/* third: reset when detect 9v failed */
+	(void)rt9466_fcp_reset();
+
+	pr_err("fcp detect upto9v fail\n");
+	return -1;
+}
+
+static int rt9466_is_support_fcp(void)
+{
+	struct rt9466_info *di = i2c_get_clientdata(g_rt9466_i2c);
+
+	if (!di) {
+		pr_err("di is null\n");
+		return -EINVAL;
+	}
+
+	if (di->fcp_support) {
+		pr_info("support fcp\n");
+		return 0;
+	}
+
+	pr_err("not support fcp %d\n", di->fcp_support);
+	return 1; /* not support */
+}
+
+static int rt9466_fcp_read_switch_status(void)
+{
+	return 0;
+}
+
+struct fcp_adapter_device_ops fcp_rt9466_ops = {
+	.get_adapter_output_current = rt9466_fcp_get_adapter_output_current,
+	.set_adapter_output_vol = rt9466_fcp_set_adapter_output_vol,
+	.detect_adapter = rt9466_fcp_adapter_detect,
+	.is_support_fcp = rt9466_is_support_fcp,
+	.switch_chip_reset = rt9466_fcp_reset,
+	.fcp_adapter_reset = rt9466_fcp_reset,
+	.stop_charge_config = rt9466_fcp_reset,
+	.fcp_read_switch_status = rt9466_fcp_read_switch_status,
+};
+
 static int __rt9466_enable_auto_sensing(struct rt9466_info *info, bool en)
 {
 	int ret = 0;
@@ -2671,20 +2902,6 @@ static int rt9466_sw_reset(struct rt9466_info *info)
 
 	dev_info(info->dev, "%s\n", __func__);
 
-	/* Check pwr_rdy and opa_mode */
-	ret = rt9466_get_adc(info, RT9466_ADC_VBUS_DIV5, &adc_vbus);
-	if (ret < 0)
-		dev_err(info->dev, "%s, rt9466 get vbus fail\n", __func__);
-	ret = rt9466_i2c_test_bit(info, RT9466_REG_CHG_CTRL1,
-				RT9466_SHIFT_OPA_MODE, &opa_mode);
-	if (ret < 0)
-		dev_err(info->dev, "%s, rt9466 i2c test bit fail\n", __func__);
-	if ((adc_vbus < VBUS_THRESHOLD) && !opa_mode)
-		ret = rt9466_enable_hz(true);
-	else
-		ret = rt9466_enable_hz(false);
-	if (ret < 0)
-		dev_err(info->dev, "%s, operate hiz fail\n", __func__);
 	/* Disable auto sensing/Enable HZ,ship mode of secondary charger */
 	if (strcmp(info->desc->chg_name, "secondary_chg") == 0) {
 		mutex_lock(&info->hidden_mode_lock);
@@ -2715,6 +2932,21 @@ static int rt9466_sw_reset(struct rt9466_info *info)
 	if (ret < 0)
 		dev_err(info->dev, "%s: reset registers fail\n", __func__);
 	mutex_unlock(&info->io_lock);
+
+	/* Check pwr_rdy and opa_mode */
+	ret = rt9466_get_adc(info, RT9466_ADC_VBUS_DIV5, &adc_vbus);
+	if (ret < 0)
+		dev_err(info->dev, "%s, rt9466 get vbus fail\n", __func__);
+	ret = rt9466_i2c_test_bit(info, RT9466_REG_CHG_CTRL1,
+				RT9466_SHIFT_OPA_MODE, &opa_mode);
+	if (ret < 0)
+		dev_err(info->dev, "%s, rt9466 i2c test bit fail\n", __func__);
+	if ((adc_vbus < VBUS_THRESHOLD) && !opa_mode)
+		ret = rt9466_enable_hz(true);
+	else
+		ret = rt9466_enable_hz(false);
+	if (ret < 0)
+		dev_err(info->dev, "%s, operate hiz fail\n", __func__);
 
 	return ret;
 }
@@ -2776,6 +3008,10 @@ static int rt9466_init_setting(struct rt9466_info *info)
 	ret = rt9466_enable_te(desc->en_te);
 	if (ret < 0)
 		dev_err(info->dev, "%s: set te fail\n", __func__);
+
+	ret = rt9466_enable_safety_timer(info, false);
+	if (ret < 0)
+		dev_err(info->dev, "%s: disable chg timer fail\n", __func__);
 
 	ret = rt9466_set_safety_timer(info, desc->safety_timer);
 	if (ret < 0)
@@ -3029,6 +3265,12 @@ static int rt9466_probe(struct i2c_client *client,
 		goto rt_9466_err_irq_init;
 	}
 
+	if (!rt9466_fcp_init(info)) {
+		if (!fcp_adapter_ops_register(&fcp_rt9466_ops))
+			dev_info(info->dev,
+				"fcp adapter ops register success\n");
+	}
+
 	schedule_work(&info->init_work);
 	dev_err(info->dev, "%s: successfully\n", __func__);
 	return ret;
@@ -3075,6 +3317,9 @@ static int rt9466_remove(struct i2c_client *client)
 		mutex_destroy(&info->ichg_lock);
 		mutex_destroy(&info->hidden_mode_lock);
 		mutex_destroy(&info->ieoc_lock);
+
+		if (info->gpio_fcp)
+			gpio_free(info->gpio_fcp);
 	}
 
 	return ret;

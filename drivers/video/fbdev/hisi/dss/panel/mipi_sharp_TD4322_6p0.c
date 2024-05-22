@@ -10,7 +10,7 @@
 * GNU General Public License for more details.
 *
 */
-
+/*lint -e569 -e679 -e574*/
 #include "hisi_fb.h"
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,1,0)
 #include <linux/hisi/hisi_adc.h>
@@ -1678,7 +1678,7 @@ static ssize_t mipi_sharp_panel_lcd_bist_check_show(struct platform_device *pdev
 		goto err_gpio_request;
 	}
 
-	gpio_direction_input(GPIO_TE0);
+	(void)gpio_direction_input(GPIO_TE0);
 	irq_id = gpio_to_irq(GPIO_TE0);
 	ret = request_irq(irq_id, mipi_sharp_panel_lcd_bist_check_isr, IRQF_TRIGGER_RISING | IRQF_NO_SUSPEND, "gpio_te0_irq", (void *)hisifd);
 	if (ret) {

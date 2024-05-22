@@ -369,7 +369,7 @@ void ovl_copyattr(struct inode *from, struct inode *to)
 {
 #ifdef CONFIG_SECURITY
 	void   *secctx;
-	size_t  ctxlen;
+	u32  ctxlen;
 	int     err = -1;
 
 	err = security_inode_getsecctx(from, &secctx, &ctxlen);

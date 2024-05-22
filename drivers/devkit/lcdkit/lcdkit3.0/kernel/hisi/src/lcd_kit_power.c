@@ -204,7 +204,7 @@ void lcd_kit_gpio_tx(uint32_t type, uint32_t op)
 	int i = 0;
 	struct gpio_power_arra* gpio_cm = NULL;
 
-	if(lcd_kit_get_power_status()) {
+	if (lcd_kit_get_power_status()) {
 		LCD_KIT_INFO("panel is power on, not need operate gpio, type = %d, op = %d\n", type, op);
 		return;
 	}
@@ -227,6 +227,9 @@ void lcd_kit_gpio_tx(uint32_t type, uint32_t op)
 			break;
 		case LCD_KIT_BL:
 			g_lcd_kit_gpio = power_hdl->lcd_backlight.buf[1];
+			break;
+		case LCD_KIT_AOD:
+			g_lcd_kit_gpio = power_hdl->lcd_aod.buf[1];
 			break;
 		default:
 			LCD_KIT_ERR("not support type:%d\n", type);

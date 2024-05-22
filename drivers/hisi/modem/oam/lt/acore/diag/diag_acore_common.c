@@ -95,7 +95,7 @@ DIAG_DUMP_INFO_STRU g_stDumpInfo = {0};
 extern DIAG_TRANS_HEADER_STRU g_stBbpTransHead;
 extern DIAG_TRANS_HEADER_STRU g_stPSTransHead;
 
-struct wake_lock diag_wakelock;
+struct wakeup_source diag_wakelock;
 
 /* 自旋锁，用来作编码源buff的临界资源保护 */
 VOS_SPINLOCK             g_stScmIndSrcBuffSpinLock;
@@ -183,7 +183,7 @@ VOS_UINT32 diag_AppAgentMsgProcInit(enum VOS_INIT_PHASE_DEFINE ip)
 
     if(ip == VOS_IP_LOAD_CONFIG)
     {
-    	 wake_lock_init(&diag_wakelock,WAKE_LOCK_SUSPEND,"diag_wakelock");
+    	wakeup_source_init(&diag_wakelock,"diag_wakelock");
         ret = (VOS_UINT32)mdrv_sysboot_register_reset_notify(resetName, (pdrv_reset_cbfun)diag_ResetCcoreCB, 0, resetLevel);
         if(ret)
         {
@@ -326,7 +326,7 @@ VOS_VOID diag_AppAgentMsgProc(MsgBlock* pMsgBlock)
     }
 
     /*任务开始处理，不允许睡眠*/
-    wake_lock(&diag_wakelock);
+    __pm_stay_awake(&diag_wakelock);
 
     diag_DumpMsgInfo(pMsgBlock->ulSenderPid, (*(VOS_UINT32*)pMsgBlock->aucValue), pMsgBlock->ulLength);
 
@@ -427,7 +427,7 @@ VOS_VOID diag_AppAgentMsgProc(MsgBlock* pMsgBlock)
     }
 
    /*任务开始结束，允许睡眠*/
-  wake_unlock(&diag_wakelock);
+  __pm_relax(&diag_wakelock);
 
    return ;
 }
@@ -861,7 +861,6 @@ static const struct file_operations diag_debug_fops = {
 VOS_UINT32 MSP_AppDiagFidInit(enum VOS_INIT_PHASE_DEFINE ip)
 {
     VOS_UINT32 ulRelVal = 0;
-    struct dentry * d_file;
 
     switch (ip)
     {
@@ -879,20 +878,6 @@ VOS_UINT32 MSP_AppDiagFidInit(enum VOS_INIT_PHASE_DEFINE ip)
             ulRelVal = VOS_RegisterMsgTaskPrio(MSP_FID_DIAG_ACPU, VOS_PRIORITY_M2);
             if (ulRelVal != VOS_OK)
             {
-                return VOS_ERR;
-            }
-
-            /* coverity[var_deref_model] */
-            d_file = debugfs_create_dir("modem_diag", NULL);
-            if(!d_file)
-            {
-                diag_printf("create debugfs dir modem_diag fail\n");
-                return VOS_ERR;
-            }
-
-            if(!debugfs_create_file("diag", 0640, d_file, NULL, &diag_debug_fops))
-            {
-                diag_printf("create debugfs file modem_diag/diag file\n");
                 return VOS_ERR;
             }
 

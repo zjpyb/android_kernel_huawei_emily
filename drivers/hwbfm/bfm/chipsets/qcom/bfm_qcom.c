@@ -38,7 +38,7 @@ struct boot_log_struct *boot_log = NULL;
 #define OFFSET_TAG "PAD0"
 
 extern void msm_trigger_wdog_bark(void);
-
+extern void hwboot_get_printk_buf_info(u64 **fseq, u32 **fidx, u64 **nseq);
 static u32 hwboot_calculate_checksum(unsigned char *addr, u32 len)
 {
     int i;
@@ -114,6 +114,13 @@ void  hwboot_fail_init_struct(void)
     bootlog_inject = (struct bootlog_inject_struct *)(boot_log_virt + sizeof(struct boot_log_struct));
     if(NULL != boot_log){
         boot_log->boot_stage = KERNEL_STAGE_START;
+		boot_log->kernel_addr = virt_to_phys((void *)log_buf_addr_get());
+		boot_log->kernel_log_buf_size = log_buf_len_get();
+		hwboot_get_printk_buf_info(&fseq, &fidx, &nseq);
+		boot_log->klog_first_seq_addr = virt_to_phys((void *)fseq);
+		boot_log->klog_first_idx_addr = virt_to_phys((void *)fidx);
+		boot_log->klog_next_seq_addr =	virt_to_phys((void *)nseq);
+		pr_notice("hwboot:boot_log->kernel_addr=%x\n", boot_log->kernel_addr);
         pr_notice("hwboot:boot_log=%p\n", boot_log);
         pr_notice("hwboot:boot_log->boot_magic=%x\n", boot_log->boot_magic);
         pr_notice("hwboot:boot_log->boot_stage=%x\n", boot_log->boot_stage);

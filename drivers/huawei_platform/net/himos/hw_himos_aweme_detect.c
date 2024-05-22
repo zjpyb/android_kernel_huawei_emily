@@ -104,7 +104,7 @@ int himos_start_aweme_detect(struct genl_info *info)
 
 	na = info->attrs[HIMOS_STATS_ATTR_TYPE];
 	type = nla_get_s32(na);
-	if (type != HIMOS_STATS_TYPE_AWEME)
+	if (type != HIMOS_STATS_TYPE_AWEME && type != HIMOS_STATS_TYPE_KWAI)
 		return -EINVAL;
 
 	na = info->attrs[HIMOS_STATS_ATTR_UID];
@@ -125,7 +125,7 @@ int himos_start_aweme_detect(struct genl_info *info)
 		list_add(&stats_info->comm.node, &stats_info_head);
 		stats_info->comm.uid = uid;
 		write_pnet(&stats_info->comm.net, genl_info_net(info));
-		stats_info->comm.type = HIMOS_STATS_TYPE_AWEME;
+		stats_info->comm.type = type;
 
 		del_timer_sync(&timer_report);
 		timer_report.data = uid;
@@ -154,7 +154,7 @@ int himos_stop_aweme_detect(struct genl_info *info)
 
 	na = info->attrs[HIMOS_STATS_ATTR_TYPE];
 	type = nla_get_s32(na);
-	if (type != HIMOS_STATS_TYPE_AWEME)
+	if (type != HIMOS_STATS_TYPE_AWEME && type != HIMOS_STATS_TYPE_KWAI)
 		return -EINVAL;
 
 	na = info->attrs[HIMOS_STATS_ATTR_UID];
@@ -190,7 +190,7 @@ int himos_keepalive_aweme_detect(struct genl_info *info)
 	//get the type
 	na = info->attrs[HIMOS_STATS_ATTR_TYPE];
 	type = nla_get_s32(na);
-	if (type != HIMOS_STATS_TYPE_AWEME)
+	if (type != HIMOS_STATS_TYPE_AWEME && type != HIMOS_STATS_TYPE_KWAI)
 	   return -EINVAL;
 
 	//get the uid
@@ -229,7 +229,7 @@ int himos_update_aweme_stall_info(struct sk_buff *skb, struct genl_info *info)
 
 	na = info->attrs[HIMOS_STATS_ATTR_TYPE];
 	type = nla_get_s32(na);
-	if (type != HIMOS_STATS_TYPE_AWEME)
+	if (type != HIMOS_STATS_TYPE_AWEME && type != HIMOS_STATS_TYPE_KWAI)
 		return -EINVAL;
 
 	na = info->attrs[HIMOS_STATS_ATTR_UID];
@@ -346,7 +346,7 @@ static int himos_get_total_from_range(struct himos_aweme_detect_info *info,
 	int ret = -1;
 	char number[10];
 	int i = 0;
-	unsigned long total;
+	unsigned long total = 0;
 
 	loc1 = strnstr(msg, info->keys.dl_key1, len);
 	if (!loc1)
@@ -388,7 +388,7 @@ static int himos_get_total_from_length(struct himos_aweme_detect_info *info,
 	int ret = -1;
 	char number[10];
 	int i = 0;
-	unsigned long length;
+	unsigned long length = 0;
 
 	loc = strnstr(msg, info->keys.dl_key2, len);
 	if (!loc)
@@ -436,7 +436,7 @@ static int himos_paser_proxy_header(struct himos_aweme_detect_info *info,
 	int ret = -1;
 	char number[16];
 	int i = 0, temp;
-	unsigned long preload;
+	unsigned long preload = 0;
 
 	temp = len;
 	if ((loc = strnstr(msg, info->keys.ul_key5, temp))) {
@@ -465,6 +465,37 @@ static int himos_paser_proxy_header(struct himos_aweme_detect_info *info,
 			goto out;
 		for (i = 0; (i < STALL_KEY_MAX-1) && (i < temp); ++i) {
 			if (loc[i] == info->keys.ul_key11) {
+				stall->key[i] = '\0';
+				break;
+			}
+			stall->key[i] = loc[i];
+		}
+		if (likely(i > 0)) {
+			stall->key[i] = '\0';
+			ret = 0;
+			WIFIPRO_DEBUG("detect the key: %s", stall->key);
+		}
+	}
+
+out:
+	return ret;
+}
+
+static int himos_paser_kwai_proxy_header(struct himos_aweme_detect_info *info,
+	struct stall_info *stall, const char *msg, int len)
+{
+	const char *loc;
+	int ret = -1;
+	int i = 0, temp;
+
+	temp = len;
+	if ((loc = strnstr(msg, info->keys.ul_key8, temp))) {
+		loc += strlen(info->keys.ul_key8);
+		temp -= (loc - msg);
+		if (temp <= 0)
+			goto out;
+		for (i = 0; (i < STALL_KEY_MAX-1) && (i < temp); ++i) {
+			if (loc[i] == info->keys.ul_key9) {
 				stall->key[i] = '\0';
 				break;
 			}
@@ -520,8 +551,20 @@ static void himos_process_proxy_request(struct himos_aweme_detect_info *info,
 	himos_reset_stall_info(&stall);
 	stall.sport = htons(sk->sk_num);
 
-	if (himos_paser_proxy_header(info, &stall, msg, len) < 0) {
-		WIFIPRO_DEBUG("paser the proxy header failed, ignore this request");
+	switch(info->comm.type) {
+	case HIMOS_STATS_TYPE_AWEME:
+		if (himos_paser_proxy_header(info, &stall, msg, len) < 0) {
+			WIFIPRO_DEBUG("paser the aweme proxy header failed, ignore this request");
+			return;
+		}
+		break;
+	case HIMOS_STATS_TYPE_KWAI:
+		if (himos_paser_kwai_proxy_header(info, &stall, msg, len) < 0) {
+			WIFIPRO_DEBUG("paser the proxy kwai header failed, ignore this request");
+			return;
+		}
+		break;
+	default:
 		return;
 	}
 
@@ -540,7 +583,7 @@ static void himos_process_proxy_request(struct himos_aweme_detect_info *info,
 	himos_log_detect_result(info);
 }
 
-void himos_process_preload_request(struct himos_aweme_detect_info *info,
+static void himos_process_preload_request(struct himos_aweme_detect_info *info,
 	struct sock *sk, const char *msg, int len)
 {
 	struct stall_info stall;
@@ -573,7 +616,7 @@ void himos_process_preload_request(struct himos_aweme_detect_info *info,
 	himos_log_detect_result(info);
 }
 
-void himos_process_local_request(struct himos_aweme_detect_info *info,
+static void himos_process_local_request(struct himos_aweme_detect_info *info,
 	struct sock *sk, const char *msg, int len)
 {
 	const char *loc;
@@ -664,7 +707,7 @@ static void himos_process_response(struct himos_aweme_detect_info *info,
  */
 static int himos_copy_from_msg(char *buf, struct msghdr *msg)
 {
-	struct iovec *iov = NULL;
+	const struct iovec *iov = NULL;
 	int len = -1, ret;
 
 	iov = msg->msg_iter.iov;
@@ -677,15 +720,12 @@ static int himos_copy_from_msg(char *buf, struct msghdr *msg)
 	return len;
 }
 
-/*
- * The caller must hold the lock
- */
 void himos_aweme_tcp_stats(struct sock *sk, struct msghdr *old, struct msghdr *new, int inbytes, int outbytes)
 {
 	struct himos_aweme_detect_info *info;
 	struct stall_info *stall = NULL;
 	int i, j;
-	char buffer[BUF_LEN];
+	char *buffer = NULL;
 	int len = -1;
 	__s32 uid;
 
@@ -697,6 +737,12 @@ void himos_aweme_tcp_stats(struct sock *sk, struct msghdr *old, struct msghdr *n
 		return;
 
 	//copy the data
+	buffer = kmalloc(BUF_LEN, GFP_KERNEL);
+	if(NULL == buffer){
+		WIFIPRO_DEBUG("failed to allocate buffer\n");
+		return;
+	}
+	memset(buffer, 0, BUF_LEN);
 	if (outbytes > 0) {
 		if ((new->msg_iter.type == WRITE) && (new->msg_iter.nr_segs > 0)) {
 			len = himos_copy_from_msg(buffer, new);
@@ -707,8 +753,13 @@ void himos_aweme_tcp_stats(struct sock *sk, struct msghdr *old, struct msghdr *n
 			len = himos_copy_from_msg(buffer, old);
 		}
 	}
-	if (len <= 0)
+	if (len <= 0){
+		if(buffer){
+			kfree(buffer);
+			buffer = NULL;
+		}
 		return;
+	}
 
 	//hold the info lock
 	spin_lock_bh(&stats_info_lock);
@@ -719,16 +770,26 @@ void himos_aweme_tcp_stats(struct sock *sk, struct msghdr *old, struct msghdr *n
 
 	if (outbytes > 0) {
 		if (strnstr(buffer, info->keys.ul_key1, MIN(10, len))) {
-			if (strnstr(buffer, info->keys.ul_key2, len)) {
-				if (strnstr(buffer, info->keys.ul_key3, len)) {
-					himos_process_proxy_request(info, sk, buffer, len);
+			if (HIMOS_STATS_TYPE_AWEME == info->comm.type) {
+				if (strnstr(buffer, info->keys.ul_key2, len)) {
+					if (strnstr(buffer, info->keys.ul_key3, len)) {
+						himos_process_proxy_request(info, sk, buffer, len);
+					}
+					else if (strnstr(buffer, info->keys.ul_key4, len)) {
+						himos_process_preload_request(info, sk, buffer, len);
+					}
 				}
-				else if (strnstr(buffer, info->keys.ul_key4, len)) {
-					himos_process_preload_request(info, sk, buffer, len);
+				else if (strnstr(buffer, info->keys.ul_key7, len)) {
+					himos_process_local_request(info, sk, buffer, len);
 				}
 			}
-			else if (strnstr(buffer, info->keys.ul_key7, len)) {
-				himos_process_local_request(info, sk, buffer, len);
+			else if (HIMOS_STATS_TYPE_KWAI == info->comm.type) {
+				if (strnstr(buffer, info->keys.ul_key12, len)) {
+					if (strnstr(buffer, info->keys.ul_key13, len)) {
+						himos_process_local_request(info, sk, buffer, len);
+					}
+					himos_process_proxy_request(info, sk, buffer, len);
+				}
 			}
 		}
 	}
@@ -743,21 +804,20 @@ void himos_aweme_tcp_stats(struct sock *sk, struct msghdr *old, struct msghdr *n
 			if (--j < 0)
 				j = AWEME_STALL_WINDOW - 1;
 			if (info->stalls[j].sport == htons(sk->sk_num)) {
-				stall = &info->stalls[j];
-				i = j;
-				break;
+				if (!stall)
+					stall = &info->stalls[j];
+				if (info->cur_detect_index == j){
+					info->stalls[j].inbytes += inbytes;
+					WIFIPRO_DEBUG("add inbytes=%u for proxy(sport=%d)", inbytes, stall->sport);
+				}
+				else {
+					info->stalls[j].preload += inbytes;
+					WIFIPRO_DEBUG("add inbytes=%u for preload(sport=%d)", inbytes, stall->sport);
+				}
 			}
 		}
 		if (!stall)
 			goto out;
-		if (info->cur_detect_index == i){
-			stall->inbytes += inbytes;
-			WIFIPRO_DEBUG("add inbytes=%u for proxy(sport=%d)", inbytes, stall->sport);
-		}
-		else {
-			stall->preload += inbytes;
-			WIFIPRO_DEBUG("add inbytes=%u for preload(sport=%d)", inbytes, stall->sport);
-		}
 
 		if (!stall->duration || !stall->total || !stall->timescale) {
 			himos_process_response(info, stall, buffer, len);
@@ -765,6 +825,10 @@ void himos_aweme_tcp_stats(struct sock *sk, struct msghdr *old, struct msghdr *n
 	}
 out:
 	spin_unlock_bh(&stats_info_lock);
+	if(buffer){
+		kfree(buffer);
+		buffer = NULL;
+	}
 }
 
 int __init himos_aweme_init(void)

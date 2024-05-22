@@ -19,13 +19,11 @@ unsigned char *hw_isp_base;
 
 unsigned int HW_CSI_GETREG32(unsigned int reg)
 {
-	//cam_info("%s enter reg=0x%x.\n", __func__, reg);
 	return ioread32((unsigned int*)(hw_isp_base + reg));
 }
 
 void HW_CSI_SETREG32(unsigned int reg, unsigned int val)
 {
-	//cam_info("%s enter reg=0x%x,val=0x%x.\n", __func__, reg, val);
 	iowrite32(val, (void*)(hw_isp_base + reg));
 }
 

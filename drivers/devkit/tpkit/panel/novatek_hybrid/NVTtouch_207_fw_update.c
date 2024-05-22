@@ -78,7 +78,7 @@ int32_t nvt_hybrid_update_firmware_request(char *filename)
 	}
 	fw_entry->size = nvt_hybrid_fw_entry_boot->size;
 	fw_entry->data = (u8 *)nvt_hybrid_fw_entry_boot->data;
-	TS_LOG_INFO("%s: fw_entry->size=%d\n", __func__, fw_entry->size);
+	TS_LOG_INFO("%s: fw_entry->size=%lu\n", __func__, fw_entry->size);
 
 	// check bin file size (124kb)
 	if (fw_entry->size > NVT_HYBRID_FW_BIN_SIZE) {
@@ -782,9 +782,9 @@ err_nvt_hybrid_update_firmware_request:
 
 int32_t nvt_hybrid_fw_update_sd(void)
 {
-	TS_LOG_INFO("%s enter\n", __func__);
 	int32_t ret = 0;
 
+	TS_LOG_INFO("%s enter\n", __func__);
 	g_nvt_hybrid_sd_force_update = 1;
 
 	nvt_bybrid_fw_update_boot("touch_screen_firmware.img");

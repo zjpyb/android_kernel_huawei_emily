@@ -22,6 +22,7 @@ extern TIMER PDDebounceTimer;
 extern TIMER StateTimer;
 extern TIMER PolicyStateTimer;
 extern TIMER NoResponseTimer;
+extern TIMER VbusOnlyTimer;
 
 FSC_U8 last_orientation = 0;
 
@@ -309,6 +310,8 @@ void core_set_expire(TIMER2 timer)
 		case NO_RESPONSE_TIMER:
 			NoResponseTimer.expired = TRUE;
 			break;
+		case VBUS_ONLY_TIMER:
+			VbusOnlyTimer.expired = TRUE;
 		default:
 			break;
 	}

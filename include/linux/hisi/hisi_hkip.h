@@ -47,7 +47,7 @@ static inline void hkip_set_bit(u8 *bits, size_t pos, size_t max, bool value)
 	if (hkip_get_bit(bits, pos, max) == value)
 		return;
 
-	if (unlikely(hkip_hvc4(HKIP_HVC_ROWM_SET_BIT, (unsigned long)bits,
+	if (unlikely(hkip_hvc4(HKIP_HVC_ROWM_SET_BIT, (uintptr_t)bits,
 				pos, value)))
 		BUG();
 }

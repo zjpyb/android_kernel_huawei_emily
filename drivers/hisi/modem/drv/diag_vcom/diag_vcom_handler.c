@@ -54,7 +54,8 @@
 #include <linux/errno.h>
 #include <linux/skbuff.h>
 #include <linux/netlink.h>
-#include <linux/wakelock.h>
+#include <linux/device.h>
+#include <linux/pm_wakeup.h>
 #include <securec.h>
 #include "product_config.h"
 #include <linux/mtd/hisi_nve_interface.h>
@@ -132,11 +133,11 @@ int diag_vcom_channel_init(void)
 
 	entity = DIAG_VCOM_GET_ENTTIY(DIAG_VCOM_CHAN_CTRL);
 	entity->sk = sk1;
-	wake_lock_init(&entity->lock, WAKE_LOCK_SUSPEND, "diag_ctrl_wakelock");
+	wakeup_source_init(&entity->lock, "diag_ctrl_wakelock");
 
 	entity = DIAG_VCOM_GET_ENTTIY(DIAG_VCOM_CHAN_DATA);
 	entity->sk = sk2;
-	wake_lock_init(&entity->lock, WAKE_LOCK_SUSPEND, "diag_data_wakelock");
+	wakeup_source_init(&entity->lock, "diag_data_wakelock");
 
 	return 0;
 }
@@ -153,11 +154,11 @@ void diag_vcom_channel_exit(void)
 	struct diag_vcom_entity_s *entity;
 
 	entity = DIAG_VCOM_GET_ENTTIY(DIAG_VCOM_CHAN_CTRL);
-	wake_lock_destroy(&entity->lock);
+	wakeup_source_trash(&entity->lock);
 	netlink_kernel_release(entity->sk);
 
 	entity = DIAG_VCOM_GET_ENTTIY(DIAG_VCOM_CHAN_DATA);
-	wake_lock_destroy(&entity->lock);
+	wakeup_source_trash(&entity->lock);
 	netlink_kernel_release(entity->sk);
 }
 
@@ -389,7 +390,7 @@ static int diag_vcom_fragment_om_data(struct diag_vcom_entity_s *entity,
 	om_data_desc.data = data;
 	om_data_desc.len = DIAG_VCOM_DATA_SIZE;
 
-	wake_lock(&entity->lock);
+	__pm_stay_awake(&entity->lock);
 
 	for (i = 0; i < blk_num; i++) {
 		diag_vcom_send_om_data_msg(entity, &om_data_desc);
@@ -402,7 +403,7 @@ static int diag_vcom_fragment_om_data(struct diag_vcom_entity_s *entity,
 		diag_vcom_send_om_data_msg(entity, &om_data_desc);
 	}
 
-	wake_unlock(&entity->lock);
+	__pm_relax(&entity->lock);
 	return DIAG_VCOM_OK;
 }
 

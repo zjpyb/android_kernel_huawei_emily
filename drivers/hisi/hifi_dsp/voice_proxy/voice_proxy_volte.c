@@ -101,7 +101,7 @@ static struct volte_priv priv;
 static const short amrnb_frame_length[] =
 {12, 13, 15, 17, 19, 20, 26, 31, 5, 0, 0, 0, 0, 0, 0, 0};
 
-extern int32_t voice_proxy_mailbox_send_msg_cb(uint32_t mailcode, uint16_t msg_id, void *buf, uint32_t size);
+extern int32_t voice_proxy_mailbox_send_msg_cb(uint32_t mailcode, uint16_t msg_id, const void *buf, uint32_t size);
 
 static void volte_sign_init(void)
 {

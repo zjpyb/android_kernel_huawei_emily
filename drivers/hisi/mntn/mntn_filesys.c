@@ -167,7 +167,7 @@ int mntn_filesys_rm_dir(const char *dirname)
 }
 
 
-static int __mntn_filesys_create_dir(char *path, umode_t umode)
+static int __mntn_filesys_create_dir(const char *path, umode_t umode)
 {
 	int iret = 0;
 
@@ -303,7 +303,7 @@ oper_over2:
 }
 
 
-int mntn_filesys_write_log(const char *pname, void *pbuf_vir, unsigned int ulen,
+int mntn_filesys_write_log(const char *pname, const void *pbuf_vir, unsigned int ulen,
 			   umode_t mode)
 {
 	int bytes = 0;

@@ -409,6 +409,8 @@ const AT_PROC_MSG_FROM_MTA_STRU g_astAtProcMsgFromMtaTab[]=
     
     {ID_AT_MTA_GAME_MODE_SET_CNF,           AT_RcvGameModeSetCnf},
 
+    {ID_MTA_AT_PSEUDBTS_SET_CNF,            AT_RcvMtaPseudBtsSetCnf},
+    {ID_MTA_AT_PSEUD_BTS_IDENT_IND,         AT_RcvMtaPseudBtsIdentInd},
 };
 
 const AT_PROC_MSG_FROM_XPDS_STRU g_astAtProcMsgFromXpdsTab[]=
@@ -21693,4 +21695,86 @@ VOS_UINT32 AT_RcvMmaMtReattachInd(
     return VOS_OK;
 }
 
+
+VOS_UINT32  AT_RcvMtaPseudBtsSetCnf (VOS_VOID *pMsg)
+{
+    AT_MTA_MSG_STRU                    *pRcvMsg;
+    MTA_AT_PSEUD_BTS_SET_CNF_STRU      *pstSetPseudBtsCnf;
+    VOS_UINT32                          ulResult;
+    VOS_UINT16                          usLength;
+    VOS_UINT8                           ucIndex;
+
+    usLength            = 0;
+    pRcvMsg             = (AT_MTA_MSG_STRU *)pMsg;
+    pstSetPseudBtsCnf   = (MTA_AT_PSEUD_BTS_SET_CNF_STRU *)(pRcvMsg->aucContent);
+
+    /* 通过clientid获取index */
+    if (AT_FAILURE == At_ClientIdToUserId(pRcvMsg->stAppCtrl.usClientId, &ucIndex))
+    {
+        AT_WARN_LOG("AT_RcvMtaPseudBtsSetCnf:WARNING:AT INDEX NOT FOUND!");
+        return VOS_ERR;
+    }
+
+    /* 判断是否为广播 */
+    if (AT_IS_BROADCAST_CLIENT_INDEX(ucIndex))
+    {
+        AT_WARN_LOG("AT_RcvMtaPseudBtsSetCnf : AT_BROADCAST_INDEX.");
+        return VOS_ERR;
+    }
+
+    /* 当前AT是否在等待该命令返回 */
+    if (AT_CMD_PSEUDBTS_SET != gastAtClientTab[ucIndex].CmdCurrentOpt)
+    {
+        return VOS_ERR;
+    }
+
+    /* 复位AT状态 */
+    AT_STOP_TIMER_CMD_READY(ucIndex);
+
+    if (MTA_AT_RESULT_NO_ERROR == pstSetPseudBtsCnf->enResult)
+    {
+        if (AT_PSEUD_BTS_PARAM_TIMES == pstSetPseudBtsCnf->ucPseudBtsIdentType)
+        {
+            usLength += (VOS_UINT16)At_sprintf(AT_CMD_MAX_LEN,
+                                               (VOS_CHAR *)pgucAtSndCodeAddr,
+                                               (VOS_CHAR *)pgucAtSndCodeAddr,
+                                               "%s: %d",
+                                               g_stParseContext[ucIndex].pstCmdElement->pszCmdName,
+                                               pstSetPseudBtsCnf->u.ulPseudBtsIdentTimes);
+        }
+        else
+        {
+            usLength += (VOS_UINT16)At_sprintf(AT_CMD_MAX_LEN,
+                                               (VOS_CHAR *)pgucAtSndCodeAddr,
+                                               (VOS_CHAR *)pgucAtSndCodeAddr,
+                                               "%s: %d",
+                                               g_stParseContext[ucIndex].pstCmdElement->pszCmdName,
+                                               pstSetPseudBtsCnf->u.ucPseudBtsIdentCap);
+        }
+
+        gstAtSendData.usBufLen  = usLength;
+        ulResult                = AT_OK;
+    }
+    else if (MTA_AT_RESULT_INCORRECT_PARAMETERS == pstSetPseudBtsCnf->enResult)
+    {
+        gstAtSendData.usBufLen  = 0;
+        ulResult                = AT_CME_INCORRECT_PARAMETERS;
+    }
+
+    else if (MTA_AT_RESULT_FUNC_DISABLE == pstSetPseudBtsCnf->enResult)
+    {
+        gstAtSendData.usBufLen  = 0;
+        ulResult                = AT_CME_FUNC_DISABLE;
+    }
+    else
+    {
+        gstAtSendData.usBufLen  = 0;
+        ulResult                = AT_ERROR;
+    }
+
+    /* 发送命令结果 */
+    At_FormatResultData(ucIndex, ulResult);
+
+    return VOS_OK;
+}
 

@@ -77,7 +77,6 @@ void FUSB3601_handle_attached_sink_event(void)
 void FUSB3601_platform_notify_cc_orientation(CCOrientation orientation)
 {
 	static int first_in = 1;
-	FSC_U8 cc1State = 0, cc2State = 0;
 	struct pd_dpm_typec_state tc_state;
 	struct fusb3601_chip* chip = fusb3601_GetChip();
 	struct Port* port;

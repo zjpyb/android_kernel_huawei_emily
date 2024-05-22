@@ -32,13 +32,13 @@ HWLOG_REGIST();
 
 int operate_node(const char *path,char* data,unsigned int len,unsigned int write_read)
 {
+    struct file *fp = NULL;
+    unsigned long old_fs;
     if(NULL == path || NULL == data )
     {
         MISC_LOG_ERR("NULL input\n");
         return -1;
     }
-    struct file *fp;
-    unsigned long old_fs;
     fp = filp_open(path, O_RDWR,0644);
     if (IS_ERR(fp))
     {
@@ -89,16 +89,6 @@ static int reboot_recovery_misc_write(void)
     }
 }
 
-static int reboot_recovery_misc_write_check(void)
-{
-    misc_message_type misc_message;
-    memset(&misc_message, 0, sizeof(misc_message_type));
-    if (0 == operate_node(MISC_NODE_PATH,(char *)&misc_message,sizeof(misc_message_type),RE))
-    {
-        MISC_LOG_INFO("misc command info:%s \n",misc_message.command);
-    }
-    return 0;
-}
 static int recovery_notify(struct notifier_block *this, unsigned long code,
         void *buf)
 {

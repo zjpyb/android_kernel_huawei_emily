@@ -1,3 +1,1 @@
-#fusb301 Type C Connector Driver
-
-obj-y	+= fusb301.o
+obj-$(CONFIG_HUAWEI_TYPEC_FUSB301) += fusb301.o

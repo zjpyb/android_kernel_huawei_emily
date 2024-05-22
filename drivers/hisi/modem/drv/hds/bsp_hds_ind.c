@@ -78,7 +78,6 @@ u32 g_printlog_transId = 0;
 u32 g_translog_transId = 0;
 print_report_hook g_bsp_print_hook = NULL;
 hds_lock_ctrl_info g_hds_lock_ctrl;
-u64 g_dma_hds_mask = (u64)(-1);
 
 static inline void * bsp_MemPhyToVirt(u8 *pucCurPhyAddr, u8 *pucPhyStart, u8 *pucVirtStart, u32 ulBufLen)
 {
@@ -353,18 +352,65 @@ int bsp_trace_to_hids(u32 module_id, u32 level, char* print_buff)
 /*lint -restore +e550 */
 
 /*lint -save -e429 */
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+struct platform_device *g_modem_hds_pdev=NULL;
+
+static int hds_driver_probe(struct platform_device *pdev)
+{
+/*lint -save -e598 -e648 */
+    dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(64));
+
+    g_modem_hds_pdev = pdev;
+
+    return HDS_OK;
+/*lint -restore */
+}
+
+static const struct of_device_id hds_dev_of_match[] = {
+    {
+        .compatible = "hisilicon,hds_balong",
+        .data = NULL,
+    },
+    {},
+};
+
+static struct platform_driver hds_driver = {
+    .probe  = hds_driver_probe,
+    .driver = {
+        .name = "hds_balong",
+        .of_match_table = hds_dev_of_match,
+    },
+};
+#else
+u64 g_dma_hds_mask = (u64)(-1);
+#endif
 s32 bsp_socp_log_chan_cfg(void)
 {
     SOCP_CODER_SRC_CHAN_S EncSrcAttr;
     dma_addr_t  ulAddress = 0;
     u8 *p;
-    struct device dev;
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+    int ret = platform_driver_register(&hds_driver);
+    if(ret != 0)
+    {
+        printk("init failed\n");
+        return HDS_ERR;
+    }
+    if(NULL == g_modem_hds_pdev)
+    {
+        printk("null pdev");
+        return HDS_ERR;
+    }
+    p =(u8 *) dma_alloc_coherent(&g_modem_hds_pdev->dev, (unsigned long)LOG_SRC_BUF_LEN, &ulAddress, GFP_KERNEL);
+#else
+    struct device dev;
     /* coverity[secure_coding] */
     memset_s(&dev, sizeof(dev), 0, sizeof(dev));
     dma_set_mask_and_coherent(&dev, g_dma_hds_mask);
     of_dma_configure(&dev, NULL);
     p =(u8 *) dma_alloc_coherent(&dev, (unsigned long)LOG_SRC_BUF_LEN, &ulAddress, GFP_KERNEL);
+#endif
 
     if(HDS_NULL == p)
     {

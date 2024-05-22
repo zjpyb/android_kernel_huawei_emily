@@ -11,7 +11,7 @@
 #ifdef CONFIG_HW_ZEROHUNG
 #include "chipset_common/hwzrhung/zrhung.h"
 #include "chipset_common/hwzrhung/hung_wp_screen.h"
-#include <log/log_usertype/log-usertype.h>
+#include <log/log_usertype.h>
 #endif
 
 #ifdef CONFIG_HISI_BB
@@ -39,8 +39,8 @@
 #define COMAND_LEN_MAX  256
 #define CMD_BUF_FMT_BETA "T=WindowManager,T=PowerManagerService,n=system_server,"\
     "n=surfaceflinger,n=android.hardware.graphics.composer@2.1-service,"\
-    "n=android.hardware.graphics.composer@2.2-service,d=%d,e=%lu"
-#define CMD_BUF_FMT "T=WindowManager,T=PowerManagerService,n=system_server,d=%d,e=%lu"
+    "n=android.hardware.graphics.composer@2.2-service,d=%d,e=%llu"
+#define CMD_BUF_FMT "T=WindowManager,T=PowerManagerService,n=system_server,d=%d,e=%llu"
 #define BUFFER_TIME_END (1)
 #define BUFFER_TIME_START (BUFFER_TIME_END+10)
 #define NANOS_PER_MILLISECOND (1000000)
@@ -90,7 +90,6 @@ static hung_wp_screen_config off_config;
 static hung_wp_screen_data data;
 static unsigned int vkeys_pressed = 0;
 
-static bool prkyevt_init_done = false;
 static bool prkyevt_config_done = false;
 static zrhung_powerkeyevent_config event_config = {0};
 static unsigned int lastreport_time = 0;
@@ -98,7 +97,6 @@ static unsigned int lastprkyevt_time = 0;
 static unsigned int powerkeyevent_time[POWERKEYEVENT_TIME_LEN] = {0};
 static unsigned int newevt = 0;
 static unsigned int headevt = 0;
-static unsigned int reservedevt = 0;
 struct work_struct powerkeyevent_config;
 struct work_struct powerkeyevent_sendwork;
 
@@ -425,7 +423,7 @@ void hung_wp_screen_send_work(struct work_struct *work)
 #else
     cur_stamp = local_clock() / NANOS_PER_SECOND;
 #endif
-    printk(KERN_ERR "%s: cur_stamp=%d\n", __func__, cur_stamp);
+    printk(KERN_ERR "%s: cur_stamp=%llu\n", __func__, cur_stamp);
     if (get_logusertype_flag() == BETA_USER)
     {
         snprintf(cmd_buf, COMAND_LEN_MAX, CMD_BUF_FMT_BETA,
@@ -596,7 +594,7 @@ void hung_wp_screen_powerkey_ncb(unsigned long event)
 #ifndef HUNG_WP_FACTORY_MODE
     static int check_off = 0;
     int volkeys = 0;
-	unsigned int vkeys_pressed = 0;
+    unsigned int vkeys_pressed_tmp = 0;
     unsigned long flags;
 
     if (!init_done) {
@@ -613,9 +611,12 @@ void hung_wp_screen_powerkey_ncb(unsigned long event)
 
 #ifdef CONFIG_KEYBOARD_HISI_GPIO_KEY
     volkeys = gpio_key_vol_updown_press_get();
+#elif CONFIG_MTK_ZRHUNG_FEATURE
+    volkeys = vkeys_pressed > 0 ?true:false;
 #else
     volkeys = hung_wp_screen_qcom_vkey_get();
 #endif
+
     spin_lock_irqsave(&(data.lock), flags);
     if (WP_SCREEN_PWK_PRESS == event) {
         printk(KERN_ERR "%s: hung_wp_screen_%d start ! "
@@ -643,9 +644,9 @@ void hung_wp_screen_powerkey_ncb(unsigned long event)
         del_timer(&data.long_press_timer);
 #endif
         if (WP_SCREEN_PWK_RELEASE == event && 0 == volkeys) {
-			vkeys_pressed = hung_wp_screen_has_vkeys_pressed();
-			if (vkeys_pressed)
-				printk(KERN_ERR "%s: vkeys_pressed:0x%x\n",__func__,vkeys_pressed);
+			vkeys_pressed_tmp = hung_wp_screen_has_vkeys_pressed();
+			if (vkeys_pressed_tmp)
+				printk(KERN_ERR "%s: vkeys_pressed_tmp:0x%x\n",__func__,vkeys_pressed_tmp);
 			else
 				hung_wp_screen_start(ZRHUNG_WP_SCREENOFF);
         }

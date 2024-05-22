@@ -106,9 +106,9 @@ enum MAILBOX_DELAY_SCENE_E
 /*邮箱内部文件之间调用的接口*/
 extern MAILBOX_EXTERN void  mailbox_assert(unsigned int ErroNo);
 
-extern MAILBOX_EXTERN int mailbox_mutex_lock(void **mutexId);
+extern MAILBOX_EXTERN int mailbox_mutex_lock(void * const *mutexId);
 
-extern MAILBOX_EXTERN void mailbox_mutex_unlock(void **mutexId);
+extern MAILBOX_EXTERN void mailbox_mutex_unlock(void * const *mutexId);
 
 extern MAILBOX_EXTERN int mailbox_int_context(void);
 
@@ -144,7 +144,7 @@ extern MAILBOX_EXTERN int mailbox_wait_completion(void **mutexId, unsigned int t
 
 extern MAILBOX_EXTERN void mailbox_complete(void **wait_id);
 
-extern MAILBOX_EXTERN void mailbox_del_completion(void **wait);
+extern MAILBOX_EXTERN void mailbox_del_completion(void * const *wait);
 extern void mailbox_ifc_test_init(void);
 
 #if defined (BSP_CORE_CM3)

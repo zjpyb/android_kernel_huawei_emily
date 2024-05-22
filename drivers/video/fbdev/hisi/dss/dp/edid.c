@@ -625,6 +625,10 @@ int parse_extension_video_tag(struct edid_video *vid_info, uint8_t* cDblock, uin
 	}
 
 	vid_info->extTiming = kzalloc(length * sizeof(struct ext_timing), GFP_KERNEL);
+	if (vid_info->extTiming == NULL) {
+		HISI_FB_ERR("[DP] extTiming memory alloc fail\n");
+		return -EINVAL;
+	}
 	memset(vid_info->extTiming, 0x0, length * sizeof(struct ext_timing));
 	vid_info->extVCount = 0;
 
@@ -783,7 +787,7 @@ int parse_cea_data_block(struct dp_ctrl *dptx, uint8_t* ceaData, uint8_t dtdStar
 	vid_info = &(dptx->edid_info.Video);
 	aud_info = &(dptx->edid_info.Audio);
 	/*Parse CEA Data Block Collection*/
-	do
+	while(totalLength < dtdStart)
 	{
 		/*Get length(total number of following uint8_ts of a certain tag)*/
 		blockLength = GET_CEA_DATA_BLOCK_LEN(cDblock);
@@ -833,7 +837,7 @@ int parse_cea_data_block(struct dp_ctrl *dptx, uint8_t* ceaData, uint8_t dtdStar
 				break;
 		}
 		totalLength = totalLength + blockLength + 1;
-	}while(totalLength < dtdStart);
+	}
 
 	return 0;
 }

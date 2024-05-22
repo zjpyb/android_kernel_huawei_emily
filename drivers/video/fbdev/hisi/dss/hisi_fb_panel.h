@@ -104,6 +104,7 @@
 #define LCD_BL_IC_NAME_MAX	(50)
 
 #define DEV_DSS_VOLTAGE_ID (20)
+#define DEV_LDI1_VOLTAGE_ID (23)
 
 enum MIPI_LP11_MODE {
 	MIPI_NORMAL_LP11 = 0,
@@ -471,6 +472,9 @@ struct mipi_dsi_phy_ctrl {
 	uint32_t rg_0p8v;
 	uint32_t rg_lpf_r;
 	uint32_t rg_cp;
+	uint32_t rg_pll_fbkdiv;
+	uint32_t rg_pll_prediv;
+	uint32_t rg_pll_posdiv;
 	uint32_t t_prepare;
 	uint32_t t_lpx;
 	uint32_t t_prebegin;
@@ -487,6 +491,7 @@ struct mipi_panel_info {
 	uint32_t burst_mode;
 	uint32_t max_tx_esc_clk;
 	uint8_t non_continue_en;
+	uint8_t txoff_rxulps_en;
 
 	uint32_t dsi_bit_clk_val1;
 	uint32_t dsi_bit_clk_val2;
@@ -766,6 +771,7 @@ struct hisi_panel_info {
 	uint8_t esd_skip_mipi_check;
 	uint8_t esd_recover_step;
 	uint8_t esd_expect_value_type;
+	uint32_t esd_recovery_max_count;
 	uint8_t dirty_region_updt_support;
 	uint8_t snd_cmd_before_frame_support;
 	uint8_t dsi_bit_clk_upt_support;
@@ -1067,8 +1073,16 @@ struct hisi_panel_info {
 
 	uint32_t mask_delay_time_before_fp;
 	uint32_t mask_delay_time_after_fp;
+	uint32_t vsync_delay_th;
+	uint32_t vsync_delay_time_fp;
 	uint32_t bl_delay_frame;
 	int need_skip_delta;
+	// elle need delay 3frames between bl and hbm code
+	uint32_t hbm_entry_delay;
+	// elle the time stamp for bl Code
+	ktime_t hbm_blcode_ts;
+
+	uint32_t elvss_dim_val;
 
 	struct spi_device *spi_dev;
 	struct ldi_panel_info ldi;
@@ -1084,6 +1098,13 @@ struct hisi_panel_info {
 	/* Contrast Alogrithm */
 	struct hiace_alg_parameter hiace_param;
 	struct ce_algorithm_parameter ce_alg_param;
+
+	//for cascade ic, set the correct display area for saving power
+	uint8_t cascadeic_support;
+	uint8_t current_display_region;
+
+	//for mipi dsi tx interface, support delayed cmd queue which will send after next frame start(vsync)
+	uint8_t delayed_cmd_queue_support;
 };
 
 struct hisi_fb_data_type;
@@ -1099,6 +1120,7 @@ struct hisi_fb_panel_data {
 	int (*remove) (struct platform_device *pdev);
 	int (*set_backlight) (struct platform_device *pdev, uint32_t bl_level);
 	int (*lcd_set_backlight_by_type_func) (struct platform_device *pdev, int backlight_type);
+	int (*lcd_set_hbm_for_mmi_func) (struct platform_device* pdev, int level);
 	int (*set_blc_brightness) (struct platform_device *pdev, uint32_t bl_level);
 	int (*sbl_ctrl) (struct platform_device *pdev, int enable);
 	int (*vsync_ctrl) (struct platform_device *pdev, int enable);
@@ -1111,6 +1133,7 @@ struct hisi_fb_panel_data {
 	int (*set_display_resolution) (struct platform_device *pdev);
 	int (*get_lcd_id) (struct platform_device *pdev);
 	int (*panel_bypass_powerdown_ulps_support) (struct platform_device *pdev);
+	int (*set_tcon_mode) (struct platform_device *pdev, uint8_t mode);
 
 	ssize_t (*snd_mipi_clk_cmd_store) (struct platform_device *pdev, uint32_t clk_val);
 	ssize_t (*lcd_model_show) (struct platform_device *pdev, char *buf);
@@ -1304,6 +1327,7 @@ void hisi_fb_device_set_status0(uint32_t status);
 int hisi_fb_device_set_status1(struct hisi_fb_data_type *hisifd);
 bool hisi_fb_device_probe_defer(uint32_t panel_type, uint32_t bl_type);
 
+int32_t bl_config_max_value(void);
 #if defined (CONFIG_HUAWEI_DSM)
 void panel_check_status_and_report_by_dsm(struct lcd_reg_read_t *lcd_status_reg, int cnt, char __iomem *mipi_dsi0_base);
 void panel_status_report_by_dsm(struct lcd_reg_read_t *lcd_status_reg, int cnt, char __iomem *mipi_dsi0_base, int report_cnt);
@@ -1311,4 +1335,7 @@ void panel_status_report_by_dsm(struct lcd_reg_read_t *lcd_status_reg, int cnt, 
 #ifdef CONFIG_LCD_KIT_DRIVER
 int hisi_blpwm_set_bl(struct hisi_fb_data_type *hisifd, uint32_t bl_level);
 #endif
+
+int panel_next_tcon_mode(struct platform_device *pdev, struct hisi_panel_info *pinfo);
+int panel_set_display_region(struct hisi_fb_data_type *hisifd, void __user *argp);
 #endif /* HISI_FB_PANEL_H */

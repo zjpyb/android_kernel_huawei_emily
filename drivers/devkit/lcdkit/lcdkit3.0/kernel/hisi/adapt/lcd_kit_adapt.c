@@ -35,6 +35,29 @@ static void lcd_kit_dump_cmd(struct dsi_cmd_desc* cmd)
 	}
 }
 
+static int lcd_cmds_to_dsi_cmds_ex(struct lcd_kit_dsi_cmd_desc *lcd_kit_cmds,
+				struct dsi_cmd_desc *cmd, int link_state)
+{
+	if (lcd_kit_cmds == NULL) {
+		LCD_KIT_ERR("lcd_kit_cmds is null point!\n");
+		return LCD_KIT_FAIL;
+	}
+	if (cmd == NULL) {
+		LCD_KIT_ERR("cmd is null point!\n");
+		return LCD_KIT_FAIL;
+	}
+	cmd->dtype = lcd_kit_cmds->dtype;
+	if (link_state == LCD_KIT_DSI_LP_MODE)
+		cmd->dtype  |= GEN_VID_LP_CMD;
+	cmd->vc =  lcd_kit_cmds->vc;
+	cmd->wait =  lcd_kit_cmds->wait;
+	cmd->waittype =  lcd_kit_cmds->waittype;
+	cmd->dlen =  lcd_kit_cmds->dlen;
+	cmd->payload = lcd_kit_cmds->payload;
+	lcd_kit_dump_cmd(cmd);
+	return LCD_KIT_OK;
+}
+
 static int lcd_kit_cmds_to_dsi_cmds(struct lcd_kit_dsi_cmd_desc* lcd_kit_cmds, struct dsi_cmd_desc* cmd, int link_state)
 {
 	if (lcd_kit_cmds == NULL) {
@@ -50,7 +73,6 @@ static int lcd_kit_cmds_to_dsi_cmds(struct lcd_kit_dsi_cmd_desc* lcd_kit_cmds, s
 		cmd->dtype  |= GEN_VID_LP_CMD;
 	}
 	cmd->vc =  lcd_kit_cmds->vc;
-	cmd->wait =  lcd_kit_cmds->wait;
 	cmd->waittype =  lcd_kit_cmds->waittype;
 	cmd->dlen =  lcd_kit_cmds->dlen;
 	cmd->payload = lcd_kit_cmds->payload;
@@ -85,6 +107,60 @@ static int lcd_kit_cmd_is_write(struct dsi_cmd_desc* cmd)
 	}
 	return ret;
 }
+
+int lcd_kit_dsi_diff_cmds_tx(void* hld, struct lcd_kit_dsi_panel_cmds* dsi0_cmds,
+			struct lcd_kit_dsi_panel_cmds *dsi1_cmds)
+{
+	int ret = LCD_KIT_OK;
+	int i = 0;
+	struct hisi_fb_data_type* hisifd = NULL;
+	struct dsi_cmd_desc *dsi0_cmd = NULL;
+	struct dsi_cmd_desc *dsi1_cmd = NULL;
+
+	if ((dsi0_cmds == NULL)||(dsi1_cmds == NULL)) {
+		LCD_KIT_ERR("cmd cnt is 0!\n");
+		return LCD_KIT_FAIL;
+	}
+	if ((dsi0_cmds->cmds == NULL || dsi0_cmds->cmd_cnt <= 0)
+		|| (dsi1_cmds->cmds == NULL || dsi1_cmds->cmd_cnt <= 0)) {
+		LCD_KIT_ERR("cmds is null, or cmds->cmd_cnt <= 0!\n");
+		return LCD_KIT_FAIL;
+	}
+	hisifd = (struct hisi_fb_data_type*) hld;
+	if (hisifd == NULL) {
+		LCD_KIT_ERR("hisifd is null!\n");
+		return LCD_KIT_FAIL;
+	}
+	dsi0_cmd = kzalloc(sizeof(struct dsi_cmd_desc) * dsi0_cmds->cmd_cnt, GFP_KERNEL);
+	if(!dsi0_cmd)
+	{
+		LCD_KIT_ERR("dsi0_cmd is null!\n");
+		return LCD_KIT_FAIL;
+	}
+	for (i = 0; i < dsi0_cmds->cmd_cnt; i++) {
+		lcd_cmds_to_dsi_cmds_ex(&dsi0_cmds->cmds[i],
+				(dsi0_cmd + i), dsi0_cmds->link_state);
+	}
+	dsi1_cmd = kzalloc(sizeof(struct dsi_cmd_desc) * dsi1_cmds->cmd_cnt, GFP_KERNEL);
+	if(!dsi1_cmd)
+	{
+		kfree(dsi0_cmd);
+		LCD_KIT_ERR("dsi1_cmd is null!\n");
+		return LCD_KIT_FAIL;
+	}
+	for (i = 0; i < dsi1_cmds->cmd_cnt; i++) {
+		lcd_cmds_to_dsi_cmds_ex(&dsi1_cmds->cmds[i],
+				(dsi1_cmd + i), dsi1_cmds->link_state);
+	}
+	down(&disp_info->lcd_kit_sem);
+	(void)mipi_dual_dsi_cmds_tx(dsi0_cmd, dsi0_cmds->cmd_cnt,
+			hisifd->mipi_dsi0_base, dsi1_cmd, dsi1_cmds->cmd_cnt,
+			hisifd->mipi_dsi1_base, EN_DSI_TX_NORMAL_MODE);
+	up(&disp_info->lcd_kit_sem);
+	kfree(dsi0_cmd);
+	kfree(dsi1_cmd);
+	return ret;
+}
 /*
  *  dsi send cmds
 */
@@ -100,6 +176,9 @@ int lcd_kit_dsi_cmds_tx(void* hld, struct lcd_kit_dsi_panel_cmds* cmds)
 		LCD_KIT_ERR("cmd cnt is 0!\n");
 		return LCD_KIT_FAIL;
 	}
+
+	memset(&dsi_cmd, 0, sizeof(struct dsi_cmd_desc) );
+
 	if (cmds->cmds == NULL || cmds->cmd_cnt <= 0) {
 		LCD_KIT_ERR("cmds is null, or cmds->cmd_cnt <= 0!\n");
 		return LCD_KIT_FAIL;
@@ -111,6 +190,10 @@ int lcd_kit_dsi_cmds_tx(void* hld, struct lcd_kit_dsi_panel_cmds* cmds)
 	}
 	link_state = cmds->link_state;
 	down(&disp_info->lcd_kit_sem);
+	/*switch to LP mode*/
+	if (cmds->link_state == LCD_KIT_DSI_LP_MODE) {
+		lcd_kit_set_mipi_tx_link(hisifd, LCD_KIT_DSI_LP_MODE);
+	}
 	for (i = 0; i < cmds->cmd_cnt; i++) {
 		lcd_kit_cmds_to_dsi_cmds(&cmds->cmds[i], &dsi_cmd, link_state);
 		if (!lcd_kit_dsi_fifo_is_full(hisifd->mipi_dsi0_base)) {
@@ -121,6 +204,11 @@ int lcd_kit_dsi_cmds_tx(void* hld, struct lcd_kit_dsi_panel_cmds* cmds)
 				mipi_dsi_cmds_tx(&dsi_cmd, 1, hisifd->mipi_dsi1_base);
 			}
 		}
+		lcd_kit_delay(cmds->cmds[i].wait, cmds->cmds[i].waittype, true);
+	}
+	/*switch to HS mode*/
+	if (cmds->link_state == LCD_KIT_DSI_LP_MODE) {
+		lcd_kit_set_mipi_tx_link(hisifd, LCD_KIT_DSI_HS_MODE);
 	}
 	up(&disp_info->lcd_kit_sem);
 	return ret;
@@ -153,13 +241,19 @@ int lcd_kit_dsi_cmds_rx(void* hld, uint8_t* out, struct lcd_kit_dsi_panel_cmds* 
 		LCD_KIT_ERR("cmds is null, or cmds->cmd_cnt <= 0!\n");
 		return LCD_KIT_FAIL;
 	}
+	memset(&dsi_cmd, 0, sizeof(struct dsi_cmd_desc) );
 	link_state = cmds->link_state;
 	down(&disp_info->lcd_kit_sem);
+	/*switch to LP mode*/
+	if (cmds->link_state == LCD_KIT_DSI_LP_MODE) {
+		lcd_kit_set_mipi_rx_link(hisifd, LCD_KIT_DSI_LP_MODE);
+	}
 	for (i = 0; i < cmds->cmd_cnt; i++) {
 		lcd_kit_cmds_to_dsi_cmds(&cmds->cmds[i], &dsi_cmd, link_state);
 		if (lcd_kit_cmd_is_write(&dsi_cmd)) {
 			if (!lcd_kit_dsi_fifo_is_full(hisifd->mipi_dsi0_base)) {
 				mipi_dsi_cmds_tx(&dsi_cmd, 1, hisifd->mipi_dsi0_base);
+				lcd_kit_delay(cmds->cmds[i].wait, cmds->cmds[i].waittype, true);
 			} else {
 				LCD_KIT_ERR("mipi write error\n");
 				ret = LCD_KIT_FAIL;
@@ -196,12 +290,17 @@ int lcd_kit_dsi_cmds_rx(void* hld, uint8_t* out, struct lcd_kit_dsi_panel_cmds* 
 					}
 					cnt++;
 				}
+				lcd_kit_delay(cmds->cmds[i].wait, cmds->cmds[i].waittype, true);
 			} else {
 				LCD_KIT_ERR("mipi write error\n");
 				ret = LCD_KIT_FAIL;
 				break;
 			}
 		}
+	}
+	/*switch to HS mode*/
+	if (cmds->link_state == LCD_KIT_DSI_LP_MODE) {
+		lcd_kit_set_mipi_rx_link(hisifd, LCD_KIT_DSI_HS_MODE);
 	}
 	up(&disp_info->lcd_kit_sem);
 	return ret;
@@ -229,7 +328,12 @@ int lcd_kit_dsi_cmds_tx_no_lock(void* hld, struct lcd_kit_dsi_panel_cmds* cmds)
 		LCD_KIT_ERR("hisifd is null!\n");
 		return LCD_KIT_FAIL;
 	}
+	memset(&dsi_cmd, 0, sizeof(struct dsi_cmd_desc) );
 	link_state = cmds->link_state;
+	/*switch to LP mode*/
+	if (cmds->link_state == LCD_KIT_DSI_LP_MODE) {
+		lcd_kit_set_mipi_tx_link(hisifd, LCD_KIT_DSI_LP_MODE);
+	}
 	for (i = 0; i < cmds->cmd_cnt; i++) {
 		lcd_kit_cmds_to_dsi_cmds(&cmds->cmds[i], &dsi_cmd, link_state);
 		if (!lcd_kit_dsi_fifo_is_empty(hisifd->mipi_dsi0_base)) {
@@ -240,6 +344,11 @@ int lcd_kit_dsi_cmds_tx_no_lock(void* hld, struct lcd_kit_dsi_panel_cmds* cmds)
 				mipi_dsi_cmds_tx(&dsi_cmd, 1, hisifd->mipi_dsi1_base);
 			}
 		}
+		lcd_kit_delay(cmds->cmds[i].wait, cmds->cmds[i].waittype, false);
+	}
+	/*switch to HS mode*/
+	if (cmds->link_state == LCD_KIT_DSI_LP_MODE) {
+		lcd_kit_set_mipi_tx_link(hisifd, LCD_KIT_DSI_HS_MODE);
 	}
 	return ret;
 
@@ -271,12 +380,18 @@ int lcd_kit_dsi_cmds_rx_no_lock(void* hld, uint8_t* out, struct lcd_kit_dsi_pane
 		LCD_KIT_ERR("cmds is null, or cmds->cmd_cnt <= 0!\n");
 		return LCD_KIT_FAIL;
 	}
+	memset(&dsi_cmd, 0, sizeof(struct dsi_cmd_desc) );
 	link_state = cmds->link_state;
+	/*switch to LP mode*/
+	if (cmds->link_state == LCD_KIT_DSI_LP_MODE) {
+		lcd_kit_set_mipi_rx_link(hisifd, LCD_KIT_DSI_LP_MODE);
+	}
 	for (i = 0; i < cmds->cmd_cnt; i++) {
 		lcd_kit_cmds_to_dsi_cmds(&cmds->cmds[i], &dsi_cmd, link_state);
 		if (lcd_kit_cmd_is_write(&dsi_cmd)) {
 			if (!lcd_kit_dsi_fifo_is_empty(hisifd->mipi_dsi0_base)) {
 				mipi_dsi_cmds_tx(&dsi_cmd, 1, hisifd->mipi_dsi0_base);
+				lcd_kit_delay(cmds->cmds[i].wait, cmds->cmds[i].waittype, false);
 			} else {
 				LCD_KIT_ERR("mipi write error\n");
 				ret = LCD_KIT_FAIL;
@@ -313,6 +428,7 @@ int lcd_kit_dsi_cmds_rx_no_lock(void* hld, uint8_t* out, struct lcd_kit_dsi_pane
 					}
 					cnt++;
 				}
+				lcd_kit_delay(cmds->cmds[i].wait, cmds->cmds[i].waittype, false);
 			} else {
 				LCD_KIT_ERR("mipi write error\n");
 				ret = LCD_KIT_FAIL;
@@ -320,8 +436,11 @@ int lcd_kit_dsi_cmds_rx_no_lock(void* hld, uint8_t* out, struct lcd_kit_dsi_pane
 			}
 		}
 	}
+	/*switch to HS mode*/
+	if (cmds->link_state == LCD_KIT_DSI_LP_MODE) {
+		lcd_kit_set_mipi_rx_link(hisifd, LCD_KIT_DSI_HS_MODE);
+	}
 	return ret;
-
 }
 
 static int lcd_kit_buf_trans(const char* inbuf, int inlen, char** outbuf, int* outlen)
@@ -336,6 +455,10 @@ static int lcd_kit_buf_trans(const char* inbuf, int inlen, char** outbuf, int* o
 	}
 	/*The property is 4bytes long per element in cells: <>*/
 	bufsize = bufsize / 4;
+	if (bufsize <= 0) {
+		LCD_KIT_ERR("bufsize is less 0!\n");
+		return LCD_KIT_FAIL;
+	}
 	/*If use bype property: [], this division should be removed*/
 	buf = kzalloc(sizeof(char) * bufsize, GFP_KERNEL);
 	if (!buf) {
@@ -441,6 +564,7 @@ void *lcd_kit_get_pdata_hld(void)
 
 struct lcd_kit_adapt_ops adapt_ops = {
 	.mipi_tx = lcd_kit_dsi_cmds_tx,
+	.daul_mipi_diff_cmd_tx = lcd_kit_dsi_diff_cmds_tx,
 	.mipi_rx = lcd_kit_dsi_cmds_rx,
 	.gpio_enable = lcd_kit_gpio_enable,
 	.gpio_disable = lcd_kit_gpio_disable,

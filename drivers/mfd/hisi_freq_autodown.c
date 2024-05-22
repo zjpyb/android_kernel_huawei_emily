@@ -66,7 +66,7 @@ static void hisi_media2crg_regu_write(unsigned int val, unsigned int reg)
 	writel(val, g_freq_autodown->media2_crg_base_addr + reg);
     return ;
 }/*lint !e715*/
-int hisi_freq_autodown_clk_set(char *freq_name, u32 control_flag)
+int hisi_freq_autodown_clk_set(const char *freq_name, u32 control_flag)
 {
 	u32 bypass_reg_value = 0;
 	unsigned int index = 0;

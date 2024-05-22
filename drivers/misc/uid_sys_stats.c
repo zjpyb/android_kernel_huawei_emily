@@ -32,7 +32,7 @@
 #include <linux/blk-cgroup.h>
 #include <linux/workqueue.h>
 #include <linux/delay.h>
-#include <log/log_usertype/log-usertype.h>
+#include <log/log_usertype.h>
 
 #define UID_HASH_BITS	10
 DECLARE_HASHTABLE(hash_table, UID_HASH_BITS);
@@ -141,7 +141,7 @@ static void get_full_task_comm(struct task_entry *task_entry,
 	struct mm_struct *mm = task->mm;
 
 	/* fill the first TASK_COMM_LEN bytes with thread name */
-	get_task_comm(task_entry->comm, task);
+	__get_task_comm(task_entry->comm, TASK_COMM_LEN, task);
 	i = strlen(task_entry->comm);
 	while (i < TASK_COMM_LEN)
 		task_entry->comm[i++] = ' ';
@@ -891,11 +891,11 @@ static void pid_merge_same_name_entry(void)
 {
 	int bkt = 0;
 	struct hlist_head tmp_head;
-	struct pid_entry	*pos1, *tmp1;
-	struct pid_entry	*pos2, *tmp2;
+	struct hlist_node *tmp1, *tmp2;
+	struct pid_entry *pos1, *pos2;
 	for (bkt = 0, pos1 = NULL; pos1 == NULL && bkt < HASH_SIZE(pid_hash_table); bkt++) {
-		INIT_HLIST_HEAD(&tmp_head) ;
-		hlist_for_each_entry_safe(pos1, tmp1, &pid_hash_table[bkt], hash){
+		INIT_HLIST_HEAD(&tmp_head);
+		hlist_for_each_entry_safe(pos1, tmp1, &pid_hash_table[bkt], hash) {
 			hlist_del_init(&pos1->hash);
 			hlist_for_each_entry_safe(pos2, tmp2, &tmp_head, hash) {
 				if (!strncmp(pos1->task_name, pos2->task_name, MAX_PROCTITLE_LEN -1)) {
@@ -1113,7 +1113,7 @@ static void pid_add_switch_event(struct task_struct *notify_task, unsigned int s
 	struct pid_switch_event *new_event;
 	new_event = kzalloc(sizeof(struct pid_switch_event), GFP_ATOMIC);
 	if (unlikely (new_event == NULL)) {
-		pr_err("%s: alloc mem failed for  %d, %p\n", __func__, state, notify_task);
+		pr_err("%s: alloc mem failed for  %d, %pK\n", __func__, state, notify_task);
 		return;
 	}
 	new_event->state = state;
@@ -1136,14 +1136,13 @@ static int blkcg_attach_tgid_notifier(struct notifier_block *self,
 	if (pid_iostats_enabled == 0 && logusertype == 0) {
 		int logusertype = get_logusertype_flag();
 		if (logusertype == BETA_USER || logusertype == OVERSEA_USER) {
-			pid_iostats_enabled = PID_DEFAULT_ENABLE_FLAG;
-			pr_warn("%s: get_logusertype_flag: %d, pid_iostats_enabled=%d\n", __func__, logusertype, pid_iostats_enabled);
+			pr_warn("%s: get_logusertype_flag: %d, pid_iostats_enabled not need enabled\n", __func__, logusertype);
 		}
 	}
 	if (pid_iostats_enabled == 0)
 		return NOTIFY_OK;
 	if (unlikely(type >= BLK_THROTL_TYPE_NR || notify_task ==NULL)) {
-		pr_err("%s: received wrong type %d, %p\n", __func__, type, notify_task);
+		pr_err("%s: received wrong type %d, %pK\n", __func__, type, notify_task);
 		return -EINVAL;
 	}
 	switch (type) {

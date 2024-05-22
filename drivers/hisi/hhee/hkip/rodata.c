@@ -33,7 +33,7 @@ u32 hkip_hvc_dispatch(u32 fid, unsigned long x1, unsigned long x2,
 
 	switch (fid) {
 		case HKIP_HVC_ROWM_SET_BIT: {
-			u8 *bits = (u8 *)x1;
+			u8 *bits = (u8 *)(uintptr_t)x1;
 
 			bits += (x2 / 8);
 			x2 %= 8;
@@ -52,7 +52,7 @@ u32 hkip_hvc_dispatch(u32 fid, unsigned long x1, unsigned long x2,
 
 int hkip_register_ro(const void *base, size_t size)
 {
-	unsigned long addr = (unsigned long)base;
+	uintptr_t addr = (uintptr_t)base;
 
 	BUG_ON((addr | size) & ~PAGE_MASK);
 
@@ -63,7 +63,7 @@ int hkip_register_ro(const void *base, size_t size)
 
 int hkip_register_ro_mod(const void *base, size_t size)
 {
-	unsigned long addr = (unsigned long)base;
+	uintptr_t addr = (uintptr_t)base;
 
 	BUG_ON((addr | size) & ~PAGE_MASK);
 
@@ -75,7 +75,7 @@ EXPORT_SYMBOL(hkip_register_ro_mod);
 
 int hkip_unregister_ro_mod(const void *base, size_t size)
 {
-	unsigned long addr = (unsigned long)base;
+	uintptr_t addr = (uintptr_t)base;
 
 	BUG_ON((addr | size) & ~PAGE_MASK);
 

@@ -63,6 +63,17 @@ config SND_HI3660_HI6403
 	help
 	  Say y to enable sound support for Hi3660-Hi6403
 
+config SND_HI3XXX_HI6405
+	tristate "Hi3XXX-Hi6405 sound support"
+	select SND_SOC_HI6405
+	help
+	  Say y to enable sound support for Hi3XXX-Hi6405
+
+config SND_HI3xxx_HICODECLESS
+	tristate "hi3xxx-hicodecless sound support"
+	help
+	  Say y to enable sound support for hi3xxx-hicodecless
+
 config SND_SOC_PCM_HI6210
 	tristate "SoC Audio support for HI6210"
 	help
@@ -82,5 +93,6 @@ config SND_AUTO_TEST
 	tristate "Auto test sound support"
 	help
 		This option enables sound auto tesrt.
+
 endmenu
 

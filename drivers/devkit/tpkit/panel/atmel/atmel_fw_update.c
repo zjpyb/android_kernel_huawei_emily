@@ -44,7 +44,7 @@ static int  atmel_get_lcd_module_name(void)
 {
 	char temp[LCD_PANEL_INFO_MAX_LEN] = {0};
 	int i = 0;
-	if(!mxt_core_data || !mxt_core_data->lcd_panel_info) {
+	if (mxt_core_data == NULL) {
 		TS_LOG_ERR("%s, data is NULL\n", __func__);
 		return -EINVAL;
 	}
@@ -393,10 +393,6 @@ static int mxt_check_reg_init(struct mxt_data *data)
 		TS_LOG_ERR("%s, param invalid\n", __func__);
 		return -EINVAL;
 	}
-	if (!data->cfg_name) {
-		TS_LOG_INFO("Skipping cfg download\n");
-		return 0;
-	}
 
 	ret = request_firmware(&cfg, data->cfg_name, &data->atmel_dev->dev);
 	if (ret < 0) {
@@ -579,7 +575,7 @@ static int mxt_check_reg_init(struct mxt_data *data)
 			byte_offset = reg + i - cfg_start_ofs;
 
 			if ((byte_offset >= 0)
-			    && (byte_offset <= config_mem_size)) {
+			    && (byte_offset < config_mem_size)) {
 				*(config_mem + byte_offset) = val;
 #if defined(CONFIG_MXT_UPDATE_BY_OBJECT)
 				*(object_offset++) = val;
@@ -1072,10 +1068,6 @@ int atmel_load_fw(struct mxt_data *data)
 	if(!data) {
 		TS_LOG_ERR("%s ,param invalid\n", __func__);
 		return -EINVAL;
-	}
-	if (!data->fw_name) {
-		TS_LOG_ERR("%s:data->fw_name is null\n", __func__);
-		return -EEXIST;
 	}
 	TS_LOG_INFO("atmel_load_fw %s\n", data->fw_name);
 

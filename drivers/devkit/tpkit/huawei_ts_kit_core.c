@@ -34,16 +34,12 @@
 #endif
 #include <huawei_ts_kit.h>
 #include <huawei_ts_kit_misc_dev.h>
-//#ifdef CONFIG_HUAWEI_HW_DEV_DCT
-//#include <huawei_platform/devdetect/hw_dev_dec.h>
-//#endif
-//#include <linux/mfd/hisi_hi6xxx_pmic.h>
-//#include <linux/hisi/hi6xxx-lcd_type.h>
 #include <tpkit_platform_adapter.h>
 #include <huawei_ts_kit_api.h>
 #include <huawei_ts_kit_algo.h>
 #include <linux/hwspinlock.h>
 #include "hwspinlock_internal.h"
+#include "hostprocessing/huawei_thp_attr.h"
 
 #if defined (CONFIG_TEE_TUI)
 #include "tui.h"
@@ -89,12 +85,25 @@ struct mutex  ts_kit_easy_wake_guesure_lock;
 /*external variable declare*/
 extern const struct attribute_group ts_attr_group;
 extern atomic_t g_ts_kit_data_report_over;
-//extern int (*get_tp_gpio_num)(void);
 /*global variable declare*/
 volatile int  not_get_special_tp_node  =0;
 #ifdef CONFIG_HUAWEI_THP
 extern int thp_project_id_provider(char* project_id);
 #endif
+
+bool tp_get_prox_status(void)
+{
+	if (!g_ts_kit_platform_data.node) {
+#ifdef CONFIG_HUAWEI_THP
+		return thp_get_prox_switch_status();
+#else
+		return 0;
+#endif
+	} else {
+		TS_LOG_INFO("[Proximity_feature] %s: It's tskit1.0 driver, not support proximity feature!\n", __func__);
+		return 0;
+	}
+}
 
 static int tskit_get_project_id(char* project_id)
 {
@@ -496,12 +505,12 @@ static void rawdata_proc_printf(struct seq_file *m, struct ts_rawdata_info *info
 		seq_printf(m, "selfcap singleenddelta end\n");
 	}
 	if (g_ts_kit_platform_data.chip_data->trx_delta_test_support) {
-			seq_printf(m, "%s\n", info->tx_delta_buf);
-			seq_printf(m, "%s\n", info->rx_delta_buf);
+		seq_printf(m, "%s\n", (char *)info->tx_delta_buf);
+		seq_printf(m, "%s\n", (char *)info->rx_delta_buf);
 	}
 	if (g_ts_kit_platform_data.chip_data->td43xx_ee_short_test_support) {
-			seq_printf(m, "%s\n", info->td43xx_rt95_part_one);
-			seq_printf(m, "%s\n", info->td43xx_rt95_part_two);
+		seq_printf(m, "%s\n", (char *)info->td43xx_rt95_part_one);
+		seq_printf(m, "%s\n", (char *)info->td43xx_rt95_part_two);
 	}
 	return;
 }
@@ -659,7 +668,6 @@ static void rawdata_proc_3d_func_printf(struct seq_file *m, struct ts_rawdata_in
 		for (index1=0; index1 < row_size; index1++) {
 			seq_printf(m, "%d,", info->buff_3d[2+row_size*index+index1]);		/*print oneline*/
 		}
-		//index1 = 0;
 		seq_printf(m, "\n ");
 
 		if ((range_size -1) == index) {
@@ -682,7 +690,7 @@ static void rawdata_proc_newformat_printf(struct seq_file *m, struct ts_rawdata_
 	char pfstatus[RAW_DATA_END]={0};//0-NA,'P' pass,'F' false
 	char resulttemp[TS_RAWDATA_RESULT_CODE_LEN]={0};
 
-	TS_LOG_INFO("%s : devinfo:%s,nodenum:%d,alllength:%d\n",__func__,info->deviceinfo,info->listnodenum);
+	TS_LOG_INFO("%s : devinfo:%s,nodenum:%d\n", __func__, info->deviceinfo, info->listnodenum);
 
 	/* i2c info */
 	seq_printf(m, "%s",info->i2cinfo);
@@ -718,8 +726,7 @@ static void rawdata_proc_newformat_printf(struct seq_file *m, struct ts_rawdata_
 	/* result info */
 	if (strlen(info->i2cerrinfo)>0){
 		resulttemp[0] = RAW_DATA_TYPE_IC + '0';
-		resulttemp[1] = ':';
-		resulttemp[2] = '\0';
+		resulttemp[1] = '\0';
 		seq_printf(m, "%s",resulttemp);
 		seq_printf(m, "%s",info->i2cerrinfo);
 		seq_printf(m, "%s","-");
@@ -727,8 +734,7 @@ static void rawdata_proc_newformat_printf(struct seq_file *m, struct ts_rawdata_
 	list_for_each_entry(rawdatanode, &info->rawdata_head, node){
 		if (strlen(rawdatanode->tptestfailedreason)>0){
 			resulttemp[0] = rawdatanode->typeindex + '0';
-			resulttemp[1] = ':';
-			resulttemp[2] = '\0';
+			resulttemp[1] = '\0';
 			seq_printf(m, "%s",resulttemp);
 			seq_printf(m, "%s",rawdatanode->tptestfailedreason);
 			seq_printf(m, "%s","-");
@@ -912,13 +918,19 @@ static int rawdata_proc_show(struct seq_file *m, void *v)
 	struct ts_cmd_node *cmd = NULL;
 	struct ts_rawdata_info *info = NULL;
 
+	if ((m == NULL) || (v == NULL)) {
+		TS_LOG_ERR("rawdata_proc_show, input null ptr\n");
+		return -EINVAL;
+	}
+
 	/**********************************************/
 	/* Rawdata rectification, if dts configured   */
 	/* with a new mark, take a new process        */
 	/**********************************************/
-    if (g_ts_kit_platform_data.chip_data->rawdata_newformatflag == TS_RAWDATA_NEWFORMAT){
-		return rawdata_proc_for_newformat(m,v);		
-	}
+	if (g_ts_kit_platform_data.chip_data->rawdata_newformatflag ==
+		TS_RAWDATA_NEWFORMAT)
+		return rawdata_proc_for_newformat(m, v);
+
 	TS_LOG_INFO("rawdata_proc_show, buffer size = %ld\n", m->size);
 	if(m->size <= RAW_DATA_SIZE) {
 		m->count = m->size;
@@ -1270,7 +1282,7 @@ int ts_change_spi_mode(struct spi_device *spi, u16 mode)
 		spi->mode = mode;
 		ret = spi_setup(spi);
 		if (ret){
-			TS_LOG_ERR("%s setup spi failed.\n");
+			TS_LOG_ERR("%s setup spi failed.\n", __func__);
 			return ret;
 		}
 	}
@@ -1419,6 +1431,7 @@ void ts_kit_tui_secos_init(void)
 	}
 
 	if (!g_ts_kit_platform_data.chip_data->report_tui_enable) {
+		ts_stop_wd_timer(&g_ts_kit_platform_data);
 		disable_irq(g_ts_kit_platform_data.irq_id);
 		times = 0;
 		while (times < TS_FB_LOOP_COUNTS) {
@@ -1450,6 +1463,7 @@ void ts_kit_tui_secos_exit(void)
 	int ret = 0;
 
 	if (g_ts_kit_platform_data.chip_data->report_tui_enable) {
+		ts_start_wd_timer(&g_ts_kit_platform_data);
 		if (TS_BUS_I2C == g_ts_kit_platform_data.bops->btype) {
 			i2c_exit_secos(g_ts_kit_platform_data.client->adapter);
 		} else {
@@ -1468,20 +1482,27 @@ void ts_kit_tui_secos_exit(void)
 
 		if (g_ts_kit_platform_data.chip_data->tui_set_flag & 0x1) {
 			TS_LOG_INFO("TUI exit, do before suspend\n");
-			ts_kit_power_control_notify(TS_BEFORE_SUSPEND,
+			ret = ts_kit_power_control_notify(TS_BEFORE_SUSPEND,
 						SHORT_SYNC_TIMEOUT);
+			if (ret) {
+				TS_LOG_ERR("ts beforce suspend device err\n");
+			}
 		}
 
 		if (g_ts_kit_platform_data.chip_data->tui_set_flag & 0x2) {
 			TS_LOG_INFO("TUI exit, do suspend\n");
-			ts_kit_power_control_notify(TS_SUSPEND_DEVICE,
+			ret = ts_kit_power_control_notify(TS_SUSPEND_DEVICE,
 						NO_SYNC_TIMEOUT);
+			if (ret) {
+				TS_LOG_ERR("ts suspend device err\n");
+			}
 		}
 
 		g_ts_kit_platform_data.chip_data->tui_set_flag = 0;
 		TS_LOG_INFO("ts_kit_tui_secos_exit: report_tui_enable is %d\n",
 			    g_ts_kit_platform_data.chip_data->report_tui_enable);
 	}
+	return ;
 }
 
 static int tui_tp_init(void *data, int secure)
@@ -1539,7 +1560,7 @@ int ts_kit_tui_report_input(void *finger_data)
 	return error;
 }
 #endif
-//struct anti_false_touch_param *g_anti_false_touch_param = NULL;
+
 void ts_kit_anti_false_touch_param_achieve(struct ts_kit_device_data *chip_data){
 	int retval  = NO_ERR;
 	unsigned int value = 0;
@@ -1554,7 +1575,6 @@ void ts_kit_anti_false_touch_param_achieve(struct ts_kit_device_data *chip_data)
 		return ;
 	}
 	local_param = &(chip_data->anti_false_touch_param_data);
-	//g_anti_false_touch_param = local_param;
 	memset(local_param, 0, sizeof(struct anti_false_touch_param));
 
 	TS_LOG_INFO("%s chip_name:%s\n", __func__, chip_data->chip_name);
@@ -2119,32 +2139,32 @@ static void ts_kit_charger_notifier_register(void)
 #if defined(CONFIG_FB)
 static int fb_notifier_callback(struct notifier_block* self, unsigned long event, void* data)
 {
-    int error = NO_ERR;
-    int i;
-    struct fb_event* fb_event = data;
-    int* blank;
-    unsigned char ts_state = 0;
-    int times = 0;
+	int error = NO_ERR;
+	int i;
+	struct fb_event *fb_event = data;
+	int *blank = NULL;
+	unsigned char ts_state = 0;
+	int times = 0;
 
-    TS_LOG_INFO("tpkit fb_callback called,ic_type is %d,pt_flag is %ld,event is %d\n",g_tskit_ic_type,g_tskit_pt_station_flag,event);
-    /* only ONCELL and AMOLED ic need use fb_notifier_callbac */
-    if (!(g_tskit_ic_type == ONCELL || g_tskit_ic_type == AMOLED))
-    { 
-    	 TS_LOG_INFO("fb_notifier_callback do not need to do, return\n");
-        return NO_ERR; 
-    }
+	TS_LOG_INFO("tpkit fb_callback called, ic_type is %d, t_flag is %d, event is %lu\n",
+		g_tskit_ic_type, g_tskit_pt_station_flag, event);
+	/* only ONCELL and AMOLED ic need use fb_notifier_callbac */
+	if (!(g_tskit_ic_type == ONCELL || g_tskit_ic_type == AMOLED)) {
+		TS_LOG_INFO("fb_notifier_callback do not need to do, return\n");
+		return NO_ERR;
+	}
 
-    /* only need process event  FB_EARLY_EVENT_BLANK\FB_EVENT_BLANK  */
-    if (!(event == FB_EARLY_EVENT_BLANK || event == FB_EVENT_BLANK)) {
-        TS_LOG_DEBUG("event(%d) do not need process\n", event);
-        return NO_ERR;
-    }
+	/* only need process event  FB_EARLY_EVENT_BLANK\FB_EVENT_BLANK  */
+	if (!(event == FB_EARLY_EVENT_BLANK || event == FB_EVENT_BLANK)) {
+		TS_LOG_DEBUG("event(%lu) do not need process\n", event);
+		return NO_ERR;
+	}
 
-    if (fb_event->data == NULL)
-    {
-        TS_LOG_DEBUG("event = %d, blank is NULL, not do fb_notifier_callback\n", event);
-        return NO_ERR;
-    }
+	if (fb_event->data == NULL) {
+		TS_LOG_DEBUG("event = %lu, blank is NULL, not do fb_notifier_callback\n",
+			event);
+		return NO_ERR;
+	}
     blank = fb_event->data;
 
     for (i = 0 ; i < FB_MAX; i++)
@@ -2415,6 +2435,7 @@ static int get_ts_board_info(void)
     u32 hide_plain_id = 0;
     u32 touch_switch_need_process = 0;
     u32 fp_tp_enable = 0;
+	u32 glove_mode_rw_disable = 0;
     u32 register_charger_notifier = 0;
     g_ts_kit_platform_data.node = NULL;
 
@@ -2479,7 +2500,9 @@ static int get_ts_board_info(void)
 		TS_LOG_INFO("get i2c hwlock success.\n");
     }
 
-    rc = of_property_read_u32(g_ts_kit_platform_data.node, "aft_enable", &g_ts_kit_platform_data.aft_param.aft_enable_flag);
+	rc = of_property_read_u32(g_ts_kit_platform_data.node,
+		"aft_enable",
+		&g_ts_kit_platform_data.aft_param.aft_enable_flag);
     if (g_ts_kit_platform_data.aft_param.aft_enable_flag)
     {
 	  of_property_read_u32(g_ts_kit_platform_data.node, "drv_stop_width", &g_ts_kit_platform_data.aft_param.drv_stop_width);
@@ -2529,6 +2552,20 @@ static int get_ts_board_info(void)
 	    TS_LOG_INFO("hide_plain_id not exsit\n");
     }
     g_ts_kit_platform_data.hide_plain_id = hide_plain_id;
+
+	rc = of_property_read_u32(g_ts_kit_platform_data.node,
+		"glove_mode_rw_disable",
+		&glove_mode_rw_disable);
+	if (rc) {
+		g_ts_kit_platform_data.glove_mode_rw_disable = 0;
+		TS_LOG_INFO("glove_mode_rw_disable read return %d\n", rc);
+	} else {
+		g_ts_kit_platform_data.glove_mode_rw_disable =
+			glove_mode_rw_disable;
+	}
+	TS_LOG_INFO("glove_mode_rw_disable :%d\n",
+		g_ts_kit_platform_data.glove_mode_rw_disable);
+
 	rc = of_property_read_u32(g_ts_kit_platform_data.node, "touch_switch_need_process", &touch_switch_need_process);
     if (rc) {
 	    g_ts_kit_platform_data.touch_switch_need_process = 0;
@@ -2852,10 +2889,7 @@ static long ts_ioctl_get_fingers_info(unsigned long arg)
 {
     int ret = 0;
     void __user* argp = (void __user*)arg;
-    struct ts_fingers data;
-    u32 frame_size;
 
-    //TS_LOG_ERR("[MUTI_AFT] ts_ioctl_get_fingers_info enter \n");
     if (arg == 0)
     {
         TS_LOG_ERR("arg == 0.\n");
@@ -2863,15 +2897,15 @@ static long ts_ioctl_get_fingers_info(unsigned long arg)
     }
     /* wait event */
     atomic_set(&g_ts_kit_platform_data.fingers_waitq_flag, AFT_WAITQ_WAIT);
-	down_interruptible(&g_ts_kit_platform_data.fingers_aft_send);
+	if (down_interruptible(&g_ts_kit_platform_data.fingers_aft_send))
+		TS_LOG_ERR(" Failed to down_interruptible()\n");
+
 	if(atomic_read(&g_ts_kit_platform_data.fingers_waitq_flag) == AFT_WAITQ_WAIT)
 	{
                 atomic_set(&g_ts_kit_platform_data.fingers_waitq_flag, AFT_WAITQ_IGNORE);
                 return -EINVAL;
 	}
-	//TS_LOG_ERR("[MUTI_AFT] get_fingers_info status:%d, x:%d, y:%d,major:%d, minor:%d\n",g_ts_kit_platform_data.fingers_send_aft_info.fingers[0].status,
-		//g_ts_kit_platform_data.fingers_send_aft_info.fingers[0].x,g_ts_kit_platform_data.fingers_send_aft_info.fingers[0].y,
-		//g_ts_kit_platform_data.fingers_send_aft_info.fingers[0].major,g_ts_kit_platform_data.fingers_send_aft_info.fingers[0].minor);
+
 	if(atomic_read(&g_ts_kit_platform_data.fingers_waitq_flag) == AFT_WAITQ_WAKEUP)
 	{
 		if (copy_to_user(argp, &g_ts_kit_platform_data.fingers_send_aft_info,
@@ -2891,7 +2925,8 @@ static long ts_ioctl_get_aft_param_info(unsigned long arg)
         TS_LOG_ERR("arg == 0.\n");
         return -EINVAL;
     }
-    if (copy_to_user(arg, &g_ts_kit_platform_data.aft_param,
+
+	if (copy_to_user((void __user *)arg, &g_ts_kit_platform_data.aft_param,
                      sizeof(struct ts_aft_algo_param)))
     {
 
@@ -2909,14 +2944,20 @@ static long ts_ioctl_set_coordinates(unsigned long arg)
     struct anti_false_touch_param *local_param = NULL;
     int finger_num = 0;
     int id = 0;
-    unsigned long flags;
-	
+#if ANTI_FALSE_TOUCH_USE_PARAM_MAJOR_MINOR
+	struct aft_abs_param_major aft_abs_major;
+	int major = 0;
+	int minor = 0;
+#else
+	int x_y_distance = 0;
+	short tmp_distance = 0;
+	char *p = NULL;
+#endif
 	if(!input_dev){
 		TS_LOG_ERR("The command node or input device is not exist!\n");
 		return -EINVAL;
 	}
 
-//TS_LOG_ERR("[MUTI_AFT] ts_ioctl_set_coordinates enter\n");
     if (arg == 0)
     {
         TS_LOG_ERR("arg == 0.\n");
@@ -2928,40 +2969,26 @@ static long ts_ioctl_set_coordinates(unsigned long arg)
         TS_LOG_ERR("ts_ioctl_set_coordinates Failed to copy_from_user().\n");
         return -EFAULT;
     }
-    //memcpy(&g_ts_kit_platform_data.fingers_recv_aft_info,&data,sizeof(struct ts_fingers));
 	finger = &data;
-
-#if ANTI_FALSE_TOUCH_USE_PARAM_MAJOR_MINOR
-	struct aft_abs_param_major aft_abs_major;
-	int major = 0;
-	int minor = 0;
-#else
-	int x_y_distance = 0;
-	short tmp_distance = 0;
-	char *p = NULL;
-#endif
 
 	if (g_ts_kit_platform_data.chip_data){
 		local_param = &(g_ts_kit_platform_data.chip_data->anti_false_touch_param_data);
 	}else{
 		local_param = NULL;
 	}
-    //TS_LOG_ERR("[MUTI_AFT] ts_report_input\n");
     ts_check_touch_window(finger);
 
     for (id = 0; id < TS_MAX_FINGER; id++)
     {
         if (finger->fingers[id].status == 0)
         {
-            //TS_LOG_ERR("[MUTI_AFT] never touch before: id is %d\n", id);
             continue;
         }
         if (finger->fingers[id].status == TS_FINGER_PRESS)
         {
             if (lcdkit_fps_support_query() && lcdkit_fps_tscall_support_query())
                 lcdkit_fps_ts_callback();
-            //TS_LOG_ERR("[MUTI_AFT] down: id is %d, finger->fingers[id].pressure = %d, finger->fingers[id].x = %d, finger->fingers[id].y = %d\n",
-                        // id, finger->fingers[id].pressure, finger->fingers[id].x, finger->fingers[id].y);
+
             finger_num++;
             input_report_abs(input_dev, ABS_MT_PRESSURE, finger->fingers[id].pressure);
             input_report_abs(input_dev, ABS_MT_POSITION_X, finger->fingers[id].x);
@@ -3016,7 +3043,6 @@ static long ts_ioctl_set_coordinates(unsigned long arg)
         }
         else if (finger->fingers[id].status == TS_FINGER_RELEASE)
         {
-            //TS_LOG_ERR("[MUTI_AFT] up: id is %d, status = %d\n", id, finger->fingers[id].status);
             input_mt_sync(input_dev);	//modfiy by mengkun
         }
     }
@@ -3040,16 +3066,10 @@ static long ts_ioctl_set_coordinates(unsigned long arg)
 		input_report_key(input_dev, BTN_TOUCH, 0);
 		input_mt_sync(input_dev);
 		input_sync(input_dev);
-		//TS_LOG_ERR("[MUTI_AFT] report the added release event\n");
 	}
-    //TS_LOG_ERR("[MUTI_AFT] ts_report_input done, finger_num = %d\n", finger_num);
 
 
     atomic_set(&g_ts_kit_data_report_over, 1);
-    /*TS_LOG_ERR("[MUTI_AFT] set_coordinates status:%d, x:%d, y:%d,major:%d, minor:%d \n",g_ts_kit_platform_data.fingers_recv_aft_info.fingers[0].status,
-		g_ts_kit_platform_data.fingers_recv_aft_info.fingers[0].x,g_ts_kit_platform_data.fingers_recv_aft_info.fingers[0].y,
-		g_ts_kit_platform_data.fingers_recv_aft_info.fingers[0].major,g_ts_kit_platform_data.fingers_recv_aft_info.fingers[0].minor);
-    up(&g_ts_kit_platform_data.fingers_aft_done); */
     return 0;
 }
 static int aft_get_info_misc_open(struct inode* inode, struct file* filp)
@@ -3059,11 +3079,6 @@ static int aft_get_info_misc_open(struct inode* inode, struct file* filp)
 
 static int aft_get_info_misc_release(struct inode* inode, struct file* filp)
 {
-    /*if(g_ts_kit_platform_data.aft_param.aft_enable_flag)
-    { 
-		g_ts_kit_platform_data.fingers_waitq_flag = AFT_WAITQ_WAKEUP;
-		wake_up_interruptible(&(g_ts_kit_platform_data.fingers_waitq));
-    }*/
     return 0;
 }
 
@@ -3071,7 +3086,7 @@ static long aft_get_info_misc_ioctl(struct file* filp, unsigned int cmd,
                                    unsigned long arg)
 {
     long ret;
-//TS_LOG_ERR("[MUTI_AFT] aft_get_info_misc_ioctl enter cmd:%d\n",cmd);
+
     switch (cmd)
     {
         case INPUT_AFT_IOCTL_CMD_GET_TS_FINGERS_INFO:
@@ -3108,11 +3123,6 @@ static int aft_set_info_misc_open(struct inode* inode, struct file* filp)
 
 static int aft_set_info_misc_release(struct inode* inode, struct file* filp)
 {
-    /*if(g_ts_kit_platform_data.aft_param.aft_enable_flag)
-    { 
-		g_ts_kit_platform_data.fingers_waitq_flag = AFT_WAITQ_WAKEUP;
-		wake_up_interruptible(&(g_ts_kit_platform_data.fingers_waitq));
-    }*/
     return 0;
 }
 
@@ -3120,7 +3130,7 @@ static long aft_set_info_misc_ioctl(struct file* filp, unsigned int cmd,
                                    unsigned long arg)
 {
     long ret;
-//TS_LOG_ERR("[MUTI_AFT] aft_Set_info_misc_ioctl enter cmd:%d\n",cmd);
+
     switch (cmd)
     {
         case INPUT_AFT_IOCTL_CMD_SET_COORDINATES:
@@ -3399,27 +3409,33 @@ static int ts_get_brightness_info_cmd(void)
 }
 static int ts_kit_update_firmware(void)
 {
-    int error = NO_ERR;
-    unsigned int touch_recovery_mode = 0;
-    unsigned int charge_flag = 0;
-	
-/*get_boot_into_recovery_flag need to be added later*/
-    touch_recovery_mode = get_into_recovery_flag_adapter();
-    charge_flag = get_pd_charge_flag_adapter();
+	int error = NO_ERR;
+	unsigned int touch_recovery_mode;
+	unsigned int charge_flag;
 
-    /*do not do boot fw update on recovery mode*/
-    TS_LOG_INFO("touch_recovery_mode is %d, charge_flag:%u\n", touch_recovery_mode, charge_flag);
-    if (!touch_recovery_mode && !charge_flag)
-    {
-        error = try_update_firmware();
-        if (error)
-        {
-            TS_LOG_ERR("return fail : %d\n", error);
-            goto err_out;
-        }
-    }
+	/*get_boot_into_recovery_flag need to be added later*/
+	touch_recovery_mode = get_into_recovery_flag_adapter();
+	charge_flag = get_pd_charge_flag_adapter();
+
+	/*do not do boot fw update on recovery mode*/
+	TS_LOG_INFO("touch_recovery_mode is %d, charge_flag:%u\n",
+		touch_recovery_mode, charge_flag);
+	if ((!touch_recovery_mode) && (!charge_flag)) {
+		error = try_update_firmware();
+		if (error) {
+			TS_LOG_ERR("return fail : %d\n", error);
+			goto err_out;
+		}
+	} else if (charge_flag &&
+		g_ts_kit_platform_data.chip_data->download_fw_incharger) {
+		error = try_update_firmware();
+		if (error) {
+			TS_LOG_ERR("return fail : %d\n", error);
+			goto err_out;
+		}
+	}
 err_out:
-    return error;
+	return error;
 
 }
 
@@ -3442,11 +3458,11 @@ static void ts_kit_status_check_start(void)
 
 static int ts_send_init_cmd(void)
 {
+	struct ts_cmd_node cmd;
 	int error = NO_ERR;
 	TS_LOG_INFO("%s Enter\n", __func__);
 	if(g_ts_kit_platform_data.chip_data->is_direct_proc_cmd){
 		g_ts_kit_platform_data.chip_data->is_can_device_use_int = true;
-		struct ts_cmd_node cmd;
 		cmd.command = TS_TP_INIT;
 		error = ts_kit_put_one_cmd(&cmd, NO_SYNC_TIMEOUT);
 		if (error) {
@@ -3465,14 +3481,15 @@ static void proc_init_cmd(void){
 }
 
 static void tp_init_work_fn(struct work_struct *work){
-	struct ts_cmd_node use_cmd;
+	int error = NO_ERR;
 	int i = TS_CMD_QUEUE_SIZE;
 	struct ts_cmd_queue *q;
 	unsigned long flags;
+	struct ts_cmd_node use_cmd;
 	struct ts_cmd_node *cmd = &use_cmd;
 	struct ts_kit_device_data *dev = g_ts_kit_platform_data.chip_data;
 	q = &g_ts_kit_platform_data.no_int_queue;
-	int error = NO_ERR;
+
 	//Call chip init
 	g_ts_kit_platform_data.chip_data->isbootupdate_finish = false;
 	mutex_lock(&g_ts_kit_platform_data.chip_data->device_call_lock);
@@ -3876,6 +3893,7 @@ out:
 
 int ts_kit_proc_command_directly(struct ts_cmd_node *cmd)
 {
+	struct ts_cmd_node outcmd;
 	int error = NO_ERR;
 	TS_LOG_DEBUG("%s Enter\n",__func__);
 	/*Do not use cmd->sync in this func, setting it as null*/
@@ -3885,7 +3903,6 @@ int ts_kit_proc_command_directly(struct ts_cmd_node *cmd)
 		error = -EIO;
 		goto out;
 	}
-	struct ts_cmd_node outcmd;
 	mutex_lock(&g_ts_kit_platform_data.chip_data->device_call_lock);
 
 	switch (cmd->command) {
@@ -4006,30 +4023,39 @@ out:
 
 #if defined (CONFIG_HUAWEI_DSM)
 void ts_dmd_report(int dmd_num, const char* pszFormat, ...) {
-    va_list args;
-    va_start(args, pszFormat);
+	va_list args;
+	char *input_buf = kzalloc(TS_CHIP_DMD_REPORT_SIZE, GFP_KERNEL);
+	char *report_buf = kzalloc(TS_CHIP_DMD_REPORT_SIZE, GFP_KERNEL);
 
-    char input_buf[TS_CHIP_DMD_REPORT_SIZE] = {0};
-    char report_buf[TS_CHIP_DMD_REPORT_SIZE] = {0};
+	if ((input_buf == NULL) || (report_buf == NULL)) {
+		TS_LOG_ERR("%s: memeory is not enough!!\n", __func__);
+		goto exit;
+	}
+	va_start(args, pszFormat);
+	vsnprintf(input_buf, TS_CHIP_DMD_REPORT_SIZE - 1, pszFormat, args);
+	va_end(args);
+	snprintf(report_buf, TS_CHIP_DMD_REPORT_SIZE - 1, "%stp state:%d",
+		input_buf, atomic_read(&g_ts_kit_platform_data.power_state));
 
-    vsnprintf(input_buf, sizeof(input_buf) - 1, pszFormat, args);
-    va_end(args);
-    snprintf(report_buf, sizeof(report_buf), "%stp state:%d", input_buf, atomic_read(&g_ts_kit_platform_data.power_state));
+	if (!dsm_client_ocuppy(ts_dclient)) {
+		dsm_client_record(ts_dclient, report_buf);
+		dsm_client_notify(ts_dclient, dmd_num);
+		TS_LOG_INFO("ts_dmd_report %s\n", report_buf);
+	}
 
-    if (!dsm_client_ocuppy(ts_dclient)) {
-        dsm_client_record(ts_dclient, report_buf);
-        dsm_client_notify(ts_dclient, dmd_num);
-        TS_LOG_INFO("ts_dmd_report %s\n", report_buf);
-    }
-    return;
+exit:
+	kfree(input_buf);
+	kfree(report_buf);
 }
 EXPORT_SYMBOL(ts_dmd_report);
 #endif
 
-static int ts_kit_init(void)
+static int ts_kit_init(void *data)
 {
     int error = NO_ERR;
     struct input_dev* input_dev = NULL;
+
+	(void)data;
     atomic_set(&g_ts_kit_platform_data.state, TS_UNINIT);
     atomic_set(&g_ts_kit_platform_data.ts_esd_state, TS_NO_ESD);
     TS_LOG_INFO("ts_kit_init\n");
@@ -4073,13 +4099,6 @@ static int ts_kit_init(void)
 		&& g_ts_kit_platform_data.chip_data->provide_panel_id_support > 0 ){
 		schedule_work(&ts_panel_id_work);
 	}
-
-/*     if (not_get_special_tp_node )
-    {
-        TS_LOG_ERR("get special  TP node failed not_get_special_tp_node = %d \n",not_get_special_tp_node);
-	 error =not_get_special_tp_node;
-        goto err_out;
-    } */
 
     error = ts_register_algo();
     if (error) 
@@ -4159,13 +4178,8 @@ err_unregister_suspend:
     unregister_early_suspend(&g_ts_kit_platform_data.early_suspend);
 #endif
 err_free_input_dev:
-    if(NULL != input_dev)
-    {
-        input_unregister_device(input_dev);
-        input_free_device(input_dev);
-    }
-    misc_deregister(&g_aft_get_info_misc_device);
-    misc_deregister(&g_aft_set_info_misc_device);
+	misc_deregister(&g_aft_get_info_misc_device);
+	misc_deregister(&g_aft_set_info_misc_device);
 err_remove_sysfs:
     sysfs_remove_link(NULL, "touchscreen");
     sysfs_remove_group(&g_ts_kit_platform_data.ts_dev->dev.kobj, &ts_attr_group);
@@ -4199,7 +4213,6 @@ static void ts_kit_exit(void)
     disable_irq(g_ts_kit_platform_data.irq_id);
     ts_ic_shutdown();
     free_irq(g_ts_kit_platform_data.irq_id, &g_ts_kit_platform_data);
-    //sysfs_remove_group(&g_ts_kit_platform_data.ts_dev->dev.kobj, &ts_attr_group);
 #if defined(CONFIG_FB)
     if (fb_unregister_client(&g_ts_kit_platform_data.fb_notify)){ 
     	    TS_LOG_ERR("error occurred while unregistering fb_notifier.\n"); 
@@ -4264,7 +4277,6 @@ static int ts_thread(void* p)
 {
     static const struct sched_param param =
     {
-        //.sched_priority = MAX_USER_RT_PRIO / 2,
         .sched_priority = 99,
     };
     smp_wmb();
@@ -4288,7 +4300,6 @@ static int ts_thread(void* p)
     TS_LOG_ERR("ts thread stop\n");
     ts_kit_exit();
 
-err_out:
      platform_device_unregister(g_ts_kit_platform_data.ts_dev);
      ts_destory_client();
      if (g_ts_kit_platform_data.reset_gpio) {
@@ -4307,7 +4318,6 @@ void ts_kit_chip_detect(struct ts_kit_device_data* chipdata,int timeout)
     TS_LOG_INFO("ts_kit_chip_detect called\n");
 
     memset(&cmd, 0,sizeof(struct ts_cmd_node) );
-    //atomic_set(&g_ts_kit_platform_data.state, TS_WORK);
     cmd.command = TS_CHIP_DETECT;
     cmd.cmd_param.pub_params.chip_data = chipdata;
 
@@ -4344,7 +4354,6 @@ int huawei_ts_chip_register(struct ts_kit_device_data* chipdata)
         error = -EPERM;
     }
 
-out:
     return error;
 }
 
@@ -4479,12 +4488,9 @@ static void __exit huawei_ts_module_exit(void)
 #if defined (CONFIG_TEE_TUI)
     unregister_tui_driver("tp");
 #endif
- //gpio free;
- //destory i2c client
     return;
 }
 
-//module_init(huawei_ts_module_init);
 module_init(huawei_ts_module_init);
 module_exit(huawei_ts_module_exit);
 EXPORT_SYMBOL(g_ts_kit_log_cfg);

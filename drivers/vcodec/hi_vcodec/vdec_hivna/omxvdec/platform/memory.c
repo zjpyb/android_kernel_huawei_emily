@@ -5,6 +5,11 @@
 #include <linux/file.h>
 #include <linux/major.h>
 #include <linux/syscalls.h>
+#include <linux/dma-mapping.h>
+#include <linux/dma-iommu.h>
+#include <linux/dma-buf.h>
+#include <linux/iommu.h>
+#include <linux/hisi-iommu.h>
 
 #include "omxvdec.h"
 #include "platform.h"
@@ -15,6 +20,7 @@
 /********************************** MACRO *************************************/
 #define MAX_ION_MEM_NODE  (100)
 #define CLIENT_BUF_NAME   "CLIENT"
+extern OMXVDEC_ENTRY g_OmxVdecEntry;
 
 /********************************* STRUCT *************************************/
 typedef struct {
@@ -26,7 +32,9 @@ typedef struct {
 
 /*********************************** VARS *************************************/
 struct  mutex gMemMutex;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4,14,0)
 struct ion_client *gIONClient = HI_NULL;
+#endif
 ION_MEM_DESC_S gIONMemNode[MAX_ION_MEM_NODE];
 
 /******************************** LOCAL FUNC **********************************/
@@ -35,6 +43,7 @@ ION_MEM_DESC_S gIONMemNode[MAX_ION_MEM_NODE];
  ----------------------------------------*/
 static HI_VOID VDEC_MEM_FreeNormal_MMU(ION_MEM_DESC_S * pMemNode)
 {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4,14,0)
 #ifdef HIVDEC_SMMU_SUPPORT
 	/* ion_unmap iommu */
 	ion_unmap_iommu(gIONClient, pMemNode->handle);
@@ -43,7 +52,7 @@ static HI_VOID VDEC_MEM_FreeNormal_MMU(ION_MEM_DESC_S * pMemNode)
 		ion_unmap_kernel(gIONClient, pMemNode->handle);
 	}
 	ion_free(gIONClient, pMemNode->handle);
-
+#endif
 	return;
 }
 
@@ -52,7 +61,9 @@ static HI_VOID VDEC_MEM_FreeNormal_MMU(ION_MEM_DESC_S * pMemNode)
  ----------------------------------------*/
 HI_S32 VDEC_MEM_Probe(HI_VOID)
 {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4,14,0)
 	gIONClient = HI_NULL;
+#endif
 	memset(gIONMemNode, 0, sizeof(gIONMemNode)); /* unsafe_function_ignore: memset */
 
 	VDEC_INIT_MUTEX(&gMemMutex);
@@ -66,7 +77,7 @@ HI_S32 VDEC_MEM_Probe(HI_VOID)
 HI_S32 VDEC_MEM_Init(HI_VOID)
 {
 	HI_S32 ret = HI_SUCCESS;
-
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4,14,0)
 	VDEC_MUTEX_LOCK(&gMemMutex);
 
 	gIONClient = (struct ion_client *)hisi_ion_client_create("hi_vcodec_ion");
@@ -77,6 +88,7 @@ HI_S32 VDEC_MEM_Init(HI_VOID)
 	}
 
 	VDEC_MUTEX_UNLOCK(&gMemMutex);
+#endif
 
 	return ret;
 }
@@ -89,7 +101,7 @@ HI_S32 VDEC_MEM_Exit(HI_VOID)
 	HI_S32 i;
 
 	VDEC_MUTEX_LOCK(&gMemMutex);
-
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4,14,0)
 	if (gIONClient == HI_NULL) {
 		dprint(PRN_ERROR, "%s : gIONClient is NULL\n", __func__);
 		VDEC_MUTEX_UNLOCK(&gMemMutex);
@@ -106,11 +118,13 @@ HI_S32 VDEC_MEM_Exit(HI_VOID)
 
 	ion_client_destroy(gIONClient);
 	gIONClient = HI_NULL;
+#endif
 
 	VDEC_MUTEX_UNLOCK(&gMemMutex);
 	return HI_SUCCESS;
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4,14,0)
 /*----------------------------------------
     func: map ion buffer
  ----------------------------------------*/
@@ -150,11 +164,8 @@ HI_S32 VDEC_MEM_MapKernel(HI_S32 share_fd, MEM_BUFFER_S * psMBuf)
 		goto err_exit;
 	}
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0)
 	handle = ion_import_dma_buf_fd(gIONClient, share_fd);
-#else
-	handle = ion_import_dma_buf(gIONClient, share_fd);
-#endif
+
 	if (IS_ERR_OR_NULL(handle)) {
 		dprint(PRN_ERROR, "%s: handle is error\n", __func__);
 		goto err_exit;
@@ -182,9 +193,9 @@ HI_S32 VDEC_MEM_MapKernel(HI_S32 share_fd, MEM_BUFFER_S * psMBuf)
 #endif
 
 	psMBuf->pStartVirAddr = virt_addr;
-	psMBuf->u32StartPhyAddr = (HI_U32) phy_addr;
+	psMBuf->startPhyAddr = (UADDR) phy_addr;
 	psMBuf->u32Size = phy_size;
-	gIONMemNode[i].phys_addr = (HI_U32) phy_addr;
+	gIONMemNode[i].phys_addr = (UADDR) phy_addr;
 	gIONMemNode[i].virt_addr = psMBuf->pStartVirAddr;
 	gIONMemNode[i].handle = handle;
 	gIONMemNode[i].size = psMBuf->u32Size;
@@ -223,8 +234,8 @@ HI_S32 VDEC_MEM_UnmapKernel(MEM_BUFFER_S * psMBuf)
 	}
 
 	for (i = 0; i < MAX_ION_MEM_NODE; i++) {
-		if ((psMBuf->u32StartPhyAddr != 0)
-			&& (psMBuf->u32StartPhyAddr == gIONMemNode[i].phys_addr)
+		if ((psMBuf->startPhyAddr != 0)
+			&& (psMBuf->startPhyAddr == gIONMemNode[i].phys_addr)
 			&& (psMBuf->pStartVirAddr == gIONMemNode[i].virt_addr)
 			&& (gIONMemNode[i].handle != HI_NULL)) {
 			break;
@@ -255,4 +266,202 @@ err_exit:
 	VDEC_MUTEX_UNLOCK(&gMemMutex);
 	return HI_FAILURE;
 }
+#else
+
+/*----------------------------------------
+    func: map dma buffer
+ ----------------------------------------*/
+HI_S32 VDEC_MEM_GetMapInfo(HI_S32 share_fd, MEM_BUFFER_S * psMBuf)
+{
+	HI_S32 rc;
+	HI_U64 iova_addr;
+	unsigned long phy_size;
+	struct dma_buf *dmabuf;
+	HI_S32 ret         = HI_SUCCESS;
+	HI_VOID *virt_addr = HI_NULL;
+
+	if ((psMBuf == HI_NULL) || (share_fd < 0)) {
+		dprint(PRN_ERROR, "%s: invalid Param(share_fd:%d)\n", __func__, share_fd);
+		return HI_FAILURE;
+	}
+
+	VDEC_MUTEX_LOCK(&gMemMutex);
+
+	dmabuf = dma_buf_get(share_fd);
+	if (IS_ERR(dmabuf)) {
+		dprint(PRN_FATAL, "%s, dma_buf_get failed", __func__);
+		VDEC_MUTEX_UNLOCK(&gMemMutex);
+		return HI_FAILURE;
+
+	}
+
+	iova_addr = hisi_iommu_map_dmabuf(g_OmxVdecEntry.device, dmabuf, 0, &phy_size);
+	if (!iova_addr) {
+		dprint(PRN_FATAL, "%s, hisi_iommu_map_dmabuf failed", __func__);
+		goto exit;
+	}
+
+	if (1 == psMBuf->u8IsMapVirtual) {
+		rc = dma_buf_begin_cpu_access(dmabuf, DMA_FROM_DEVICE);
+		if (rc < 0) {
+			dprint(PRN_ERROR, "%s: dma_buf_begin_cpu_access failed \n", __func__);
+			goto error_1;
+		}
+
+		virt_addr = dma_buf_kmap(dmabuf, 0);
+		if (!virt_addr) {
+			dprint(PRN_FATAL, "%s, kmap failed \n", __func__);
+			goto error_2;
+		}
+
+		psMBuf->pStartVirAddr   = virt_addr;
+	}
+
+	psMBuf->startPhyAddr        = iova_addr;
+	psMBuf->u32Size             = phy_size;
+	psMBuf->u32ShareFd          = share_fd;
+
+	dma_buf_put(dmabuf);
+
+	VDEC_MUTEX_UNLOCK(&gMemMutex);
+	return ret;
+
+error_2:
+	rc = dma_buf_end_cpu_access(dmabuf, DMA_TO_DEVICE);
+	if (rc < 0) {
+		dprint(PRN_ERROR, "%s: dma buf end cpu access failed \n", __func__);
+	}
+error_1:
+	ret = hisi_iommu_unmap_dmabuf(g_OmxVdecEntry.device, dmabuf,  phy_size);
+	if (ret != 0) {
+		dprint(PRN_ERROR, "%s: hisi iommu unmap dmabuf failed \n", __func__);
+	}
+exit:
+	dma_buf_put(dmabuf);
+	VDEC_MUTEX_UNLOCK(&gMemMutex);
+	return HI_FAILURE;
+}
+
+/*----------------------------------------
+    func: unmap dma buffer
+ ----------------------------------------*/
+HI_S32 VDEC_MEM_PutMapInfo(MEM_BUFFER_S * psMBuf)
+{
+	HI_S32 rc;
+	struct dma_buf *dmabuf;
+	HI_S32 ret = HI_SUCCESS;
+
+	if (psMBuf == HI_NULL) {
+		dprint(PRN_ERROR, "%s: psMBuf is NULL\n", __func__);
+		return HI_FAILURE;
+	}
+
+	VDEC_MUTEX_LOCK(&gMemMutex);
+
+	dmabuf = dma_buf_get(psMBuf->u32ShareFd);
+	if (IS_ERR(dmabuf)) {
+		dprint(PRN_FATAL, "%s, dma_buf_get failed share fd %d\n", __func__, psMBuf->u32ShareFd);
+		VDEC_MUTEX_UNLOCK(&gMemMutex);
+		return HI_FAILURE;
+	}
+
+	ret = hisi_iommu_unmap_dmabuf(g_OmxVdecEntry.device, dmabuf,  psMBuf->startPhyAddr);
+	if (ret != 0) {
+		dprint(PRN_ERROR, "%s: hisi iommu unmap dmabuf failed \n", __func__);
+		ret = HI_FAILURE;
+		goto exit;
+	}
+
+	if (1 == psMBuf->u8IsMapVirtual) {
+		dma_buf_kunmap(dmabuf, 0, NULL);
+
+		rc = dma_buf_end_cpu_access(dmabuf, DMA_TO_DEVICE);
+		if (rc != 0) {
+			dprint(PRN_ERROR, "%s: end cpu access failed \n", __func__);
+			ret = HI_FAILURE;
+		}
+	}
+
+exit:
+	dma_buf_put(dmabuf);
+	VDEC_MUTEX_UNLOCK(&gMemMutex);
+	return ret;
+}
+
+HI_S32 VDEC_MEM_IommuMap(HI_S32 share_fd, HI_U32 size, UADDR *iova)
+{
+
+	HI_U64 iova_addr;
+	unsigned long phy_size;
+	struct dma_buf *dmabuf;
+
+
+	if (share_fd <= 0) {
+		dprint(PRN_ERROR, "%s, share fd is invalid \n", __func__);
+		return HI_FAILURE;
+	}
+
+	VDEC_MUTEX_LOCK(&gMemMutex);
+
+	dmabuf = dma_buf_get(share_fd);
+	if (IS_ERR(dmabuf)) {
+		dprint(PRN_FATAL, "%s, dma_buf_get failed", __func__);
+		VDEC_MUTEX_UNLOCK(&gMemMutex);
+		return HI_FAILURE;
+	}
+
+	iova_addr = hisi_iommu_map_dmabuf(g_OmxVdecEntry.device, dmabuf, 0, &phy_size);
+	if (!iova_addr) {
+		dprint(PRN_FATAL, "%s, hisi_iommu_map_dmabuf failed", __func__);
+		dma_buf_put(dmabuf);
+		*iova = 0;
+		VDEC_MUTEX_UNLOCK(&gMemMutex);
+		return HI_FAILURE;
+	}
+
+	*iova = iova_addr;
+
+	dma_buf_put(dmabuf);
+	VDEC_MUTEX_UNLOCK(&gMemMutex);
+	return HI_SUCCESS;
+
+}
+
+HI_S32 VDEC_MEM_IommuUnmap(HI_S32 share_fd, UADDR iova)
+{
+	struct dma_buf *dmabuf;
+	HI_S32 ret = HI_SUCCESS;
+
+	if (share_fd < 0) {
+		dprint(PRN_ERROR, "%s, share fd is invalid \n", __func__);
+		return HI_FAILURE;
+	}
+
+	if (!iova) {
+		dprint(PRN_ERROR, "%s, iova is invalid \n", __func__);
+		return HI_FAILURE;
+	}
+
+	VDEC_MUTEX_LOCK(&gMemMutex);
+
+	dmabuf = dma_buf_get(share_fd);
+	if (IS_ERR(dmabuf)) {
+		dprint(PRN_FATAL, "%s, dma buf get failed \n", __func__);
+		VDEC_MUTEX_UNLOCK(&gMemMutex);
+		return HI_FAILURE;
+
+	}
+
+	ret = hisi_iommu_unmap_dmabuf(g_OmxVdecEntry.device, dmabuf,  iova);
+	if (ret != 0) {
+		dprint(PRN_ERROR, "%s: hisi iommu unmap dmabuf failed \n", __func__);
+		ret = HI_FAILURE;
+	}
+
+	dma_buf_put(dmabuf);
+
+	VDEC_MUTEX_UNLOCK(&gMemMutex);
+	return ret;
+}
+#endif
 

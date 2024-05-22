@@ -22,7 +22,7 @@
 #define hisi_soh_err(fmt,args...) do { printk(KERN_ERR    "[hisi_soh_core]" fmt, ## args); } while (0)
 #define hisi_soh_warn(fmt,args...) do { printk(KERN_WARNING"[hisi_soh_core]" fmt, ## args); } while (0)
 #define hisi_soh_info(fmt,args...) do { printk(KERN_INFO   "[hisi_soh_core]" fmt, ## args); } while (0)
-#define hisi_soh_debug(fmt, args...)    /*do { printk(KERN_ERR     "[hisi_soh_core:debug]" fmt, ## args); } while (0)*/
+#define hisi_soh_debug(fmt, args...)    /*do { printk(KERN_ERR     "[hisi_soh_core:debug]" fmt, ## args); } while (0) */
 #endif
 
 #define SOH_EN    1
@@ -67,6 +67,13 @@
 #define DCR_CAL_BAT_TEMP_DIFF       5   /*max temp Difference*/
 
 #define DCR_FIFO_MAX                10
+#define DCR_VOL_MAX                 4500 /*mv*/
+#define DCR_VOL_MIN                 2500
+enum dcr_data_type {
+    DCR_DATA1 = 0,
+    DCR_DATA2 = 1
+};
+
 #define SOH_DCR_NV_DATA_NUM         3
 
 #define DCR_CURRENT_EXCD_MAX_CYCLE  3
@@ -75,9 +82,7 @@
 
 #define UAH_PER_MAH                 1000
 #define MOHM_PER_OHM                1000
-
 /*dcr macro end*/
-
 
 /*pd macro start*/
 #define PD_FIFO_MAX                16
@@ -171,6 +176,7 @@ struct soh_dcr_device_ops {
     void         (*enable_dcr)(int en);
     void         (*clear_dcr_flag)(void);
     int          (*get_dcr_info)(int *dcr_current, int *dcr_vol, int num);
+    int          (*get_dcr_data1)(int *dcr_current, int *dcr_vol);
     void         (*set_dcr_timer)(enum dcr_timer_choose  dcr_timer);
     unsigned int (*get_dcr_flag)(void);
     unsigned int (*get_dcr_fifo_depth)(void);
@@ -310,7 +316,7 @@ enum soh_type {
 	SOH_DCR      = 1,
 	SOH_PD_LEAK  = 2,
 	SOH_OVP      = 3,
-	SOH_OVP_DIS  = 4
+	SOH_MAX      = 4
 };
 
 enum nv_rw_type {

@@ -33,6 +33,7 @@ extern "C" {
 #define MAC_NET_DEVICE_NAME_LENGTH          16
 #define MAC_BAND_CAP_NAME_LENGTH            16
 
+#define MAC_DATARATES_80211B_NUM            4
 #define MAC_DATARATES_PHY_80211G_NUM        12
 
 #define MAC_RX_BA_LUT_BMAP_LEN             ((HAL_MAX_RX_BA_LUT_SIZE + 7) >> 3)
@@ -614,6 +615,17 @@ typedef enum
     LOCATION_TYPE_BUTT
 }oal_location_type_enum;
 typedef oal_uint8 oal_location_type_enum_uint8;
+#endif
+
+#ifdef _PRE_WLAN_FEATURE_BTCOEX
+/* btcoex黑名单类型 */
+typedef enum
+{
+    MAC_BTCOEX_BLACKLIST_LEV0 = BIT0,       /* 0级条件，还需要其他判断，比如看mac地址 */
+    MAC_BTCOEX_BLACKLIST_LEV1 = BIT1,       /* 一级条件，不看mac地址 */
+    MAC_BTCOEX_BLACKLIST_BUTT,
+}mac_btcoex_blacklist_enum;
+typedef oal_uint8  mac_btcoex_blacklist_enum_uint8;
 #endif
 
 /*****************************************************************************
@@ -1242,12 +1254,10 @@ typedef struct
     oal_bool_enum_uint8                 en_ht_stbc;                         /* 是否支持stbc */
     oal_uint8                           uc_wapi;
     oal_uint8                           en_vendor_novht_capable;            /* 私有vendor中不需再携带 */
-#ifdef _PRE_WLAN_1103_DDC_BUGFIX
-    oal_bool_enum_uint8                 en_ddc_whitelist_chip_oui;
-#else
-    oal_uint8                           uc_resv0;
+    oal_bool_enum_uint8                 en_atheros_chip_oui;
+#ifdef _PRE_WLAN_FEATURE_BTCOEX
+    mac_btcoex_blacklist_enum_uint8     en_btcoex_blacklist_chip_oui;       /* ps机制one pkt帧类型需要修订为self-cts等 */
 #endif
-    oal_bool_enum_uint8                 en_btcoex_blacklist_chip_oui;       /* ps机制one pkt帧类型需要修订为self-cts等 */
     oal_uint32                          ul_timestamp;                       /* 更新此bss的时间戳 */
 #ifdef _PRE_WLAN_FEATURE_11K_EXTERN
     oal_uint8                           uc_phy_type;
@@ -1285,6 +1295,7 @@ typedef struct
 #ifdef _PRE_WLAN_FEATURE_ROAM
     oal_bool_enum_uint8                 en_roam_blacklist_chip_oui;         /* 不支持roam */
 #endif
+    oal_bool_enum_uint8                 en_txbf_blacklist_chip_oui;         /* 不支持txbf */
 
     oal_int8                            c_ant0_rssi;                        /* 天线0的rssi */
     oal_int8                            c_ant1_rssi;                        /* 天线1的rssi */
@@ -1553,7 +1564,7 @@ typedef struct
     oal_bool_enum_uint8                 en_delayed_shift;                       /* 退出dbdc时候延迟迁移 */
     oal_uint8                           uc_auth_req_sendst;
     oal_uint8                           uc_asoc_req_sendst;
-    oal_uint8                           auc_resv0[1];
+    oal_bool_enum_uint8                 en_delayed_shift_down_prot;             /* 退出dbdc时候延迟迁移, 首先去关联不进入delay处理接口 */
 
     oal_uint32                          ul_resv1;
     oal_uint32                          ul_resv2;

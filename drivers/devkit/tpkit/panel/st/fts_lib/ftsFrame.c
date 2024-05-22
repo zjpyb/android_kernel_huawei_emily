@@ -234,8 +234,8 @@ int getForceLen()
 
 int requestFrame(u16 type) {
 	int retry = 0;
-	int ret;
-	u16 answer;
+	int ret = 0;
+	u16 answer = 0;
 	char *temp = NULL;
 
 	int event_to_search[1];
@@ -450,7 +450,7 @@ int getSSFrame2(u16 type, SelfSenseFrame *frame)
 		kfree(frame->force_data);
 		return ERROR_ALLOC;
 	}
-
+	memset(frame->sense_data, 0, frame->header.sense_node*sizeof(short));
 	memcpy(frame->sense_data, &temp[frame->header.force_node], frame->header.sense_node*sizeof(short));
 
 	TS_LOG_INFO( "%s Frame acquired!\n", __func__);

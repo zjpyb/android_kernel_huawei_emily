@@ -18,10 +18,13 @@
 #ifdef CONFIG_HUAWEI_DSM
 #include <dsm/dsm_pub.h>
 
+#define DSM_1103_TCXO_ERROR                 (909030001)
 #define DSM_1103_DOWNLOAD_FIRMWARE          (909030033)
 #define DSM_BUCK_PROTECTED                  (909030034)
 #define DSM_1103_HALT                       (909030035)
 #define DSM_WIFI_FEMERROR                   (909030036)
+#define DSM_PCIE_SWITCH_SDIO_FAIL           (909030043)
+#define DSM_PCIE_SWITCH_SDIO_SUCC           (909030044)
 extern void hw_1103_dsm_client_notify(int dsm_id, const char *fmt, ...);
 #endif
 
@@ -49,6 +52,8 @@ extern void hw_1103_dsm_client_notify(int dsm_id, const char *fmt, ...);
 
 #define PINMUX_SET_INIT                      (0)
 #define PINMUX_SET_SUCC                      (1)
+
+#define HI11XX_SUBCHIP_NAME_LEN_MAX          (128)
 
 /*hi110x*/
 #define DTS_NODE_HISI_HI110X                      "hisilicon,hi110x"
@@ -98,6 +103,9 @@ extern void hw_1103_dsm_client_notify(int dsm_id, const char *fmt, ...);
 #define DTS_NODE_HI110X_WIFI                      "hisilicon,hisi_wifi"
 #define PROC_NAME_GPIO_WLAN_WAKEUP_HOST           "wlan_wake_host"
 #define DTS_PROP_HI110X_GPIO_WLAN_WAKEUP_HOST     "hi110x,gpio_wlan_wakeup_host"
+
+#define DTS_PROP_HI110X_PCIE_RC_IDX               "hi110x,pcie_rc_idx"
+#define DTS_PROP_HI110X_HOST_GPIO_SAMPLE          "hi110x,gpio_sample_low"
 
 #define PROC_NAME_GPIO_HOST_WAKEUP_WLAN           "host_wakeup_wlan"
 #define DTS_PROP_GPIO_HOST_WAKEUP_WLAN            "hi110x,gpio_host_wakeup_wlan"
@@ -265,6 +273,7 @@ typedef struct _download_mode
 #define SSI_MODULE_MASK_WCPU_KEY_DTCM (1 << 10)
 #define SSI_MODULE_MASK_AON_CUT      (1 << 11)
 #define SSI_MODULE_MASK_PCIE_CUT     (1 << 12)
+#define SSI_MODULE_MASK_COEX_CTL     (1 << 13)
 
 
 #define SSI_MODULE_MASK_COMM  (SSI_MODULE_MASK_AON | SSI_MODULE_MASK_ARM_REG | SSI_MODULE_MASK_WCTRL|SSI_MODULE_MASK_BCTRL | SSI_MODULE_MASK_WCPU_KEY_DTCM) /*0xf*/
@@ -388,5 +397,6 @@ extern int32 wait_for_ssi_idle_timeout(int32 mstimeout);
 #endif
 extern  int32 get_ssi_dump_cfg(void);
 extern uint32 g_ssi_dump_en;
+extern int hi11xx_kernel_crash;
 #endif
 

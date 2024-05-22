@@ -50,6 +50,16 @@ extern "C" {
 #define VOICE_BIGDATA_NOISESIZE     16
 #define VOICE_BIGDATA_VOICESIZE     16
 #define VOICE_BIGDATA_CHARACTSIZE   32
+#define VOICE_BIGDATA_NOISE_VOICE_SIZE  (VOICE_BIGDATA_NOISESIZE+VOICE_BIGDATA_VOICESIZE)
+#define SOC_SMARTPA_ERR_BASE_ID          916000100
+#define SOC_SMARTPA_ERR_INFO_MAX_LEN     64
+#define MLIB_SMARTPA_DFT_ERRINFO_MAX_LEN 96
+#define IMEDIA_SMARTPA_MAX_CHANNEL       4
+#define IMEDIA_PARAMS_ACCURACY_100       2
+#define IMEDIA_PARAMS_ACCURACY_1         0
+#define IMEDIA_PARAMS_KEEP_TWO_DECIMAL   2
+#define IMEDIA_PARAMS_KEEP_ONE_DECIMAL   1
+#define IMEDIA_PARAMS_KEEP_ZERO_DECIMAL  0
 
 typedef enum {
 	DUMP_DSP_LOG,
@@ -314,6 +324,50 @@ typedef struct {
 	char	charact[VOICE_BIGDATA_CHARACTSIZE];         /*32 voice charact, such as whisper, ave and so on*/
 } imedia_voice_bigdata_to_imonitor;
 
+enum {
+	IMEDIA_OM_ERR_TYPE_PROC = 1, /* imonitor required this start from 1 */
+	IMEDIA_OM_ERR_TYPE_PARA_SET,
+	IMEDIA_OM_ERR_TYPE_MALLOC,
+	IMEDIA_OM_ERR_TYPE_STATUS
+};
+
+struct pa_status_str {
+	char err_module[SOC_SMARTPA_ERR_INFO_MAX_LEN];
+	char rdc[SOC_SMARTPA_ERR_INFO_MAX_LEN];
+	char f0[SOC_SMARTPA_ERR_INFO_MAX_LEN];
+	char tem[SOC_SMARTPA_ERR_INFO_MAX_LEN];
+	char re[SOC_SMARTPA_ERR_INFO_MAX_LEN];
+	char totoal_gain[SOC_SMARTPA_ERR_INFO_MAX_LEN];
+};
+
+struct imedia_dft_report_info {
+	short smtt_algversion;
+	short smtt_paraversion_year;
+	short smtt_paraversion_date;
+	short smode;
+	short slsm_f0[IMEDIA_SMARTPA_MAX_CHANNEL];
+	short slsm_re[IMEDIA_SMARTPA_MAX_CHANNEL];
+	short slsm_coiltemp[IMEDIA_SMARTPA_MAX_CHANNEL];
+	short slsm_re_ref[IMEDIA_SMARTPA_MAX_CHANNEL];
+	short spow_target_gain[IMEDIA_SMARTPA_MAX_CHANNEL];
+};
+
+struct smartpa_info {
+	unsigned int msg_size;
+	unsigned int err_module;
+	unsigned int err_class;
+	unsigned int err_level;
+	int err_code;
+	unsigned int err_line_num;
+	unsigned int err_chl;
+	unsigned char err_info[MLIB_SMARTPA_DFT_ERRINFO_MAX_LEN];
+};
+
+struct smartpa_msg {
+	unsigned int msg_id;
+	struct smartpa_info msg_body;
+};
+
 extern struct hifi_om_s g_om_data;
 
 typedef struct {
@@ -337,6 +391,7 @@ enum hifi_om_work_id {
 	HIFI_OM_WORK_AUDIO_OM_DETECTION,
 	HIFI_OM_WORK_VOICE_3A,
 	HIFI_OM_WORK_VOICE_BIGDATA,
+	HIFI_OM_WORK_SMARTPA_DFT,
 	HIFI_OM_WORK_MAX,
 };
 
@@ -369,6 +424,7 @@ struct hifi_om_work {
 
 #define HIFI_STAMP (unsigned int)readl(g_om_data.dsp_time_stamp)
 
+#ifdef ENABLE_HIFI_DEBUG
 #define can_reset_system() \
 do {\
 	if (g_om_data.reset_system) {\
@@ -376,6 +432,10 @@ do {\
 		BUG_ON(true);\
 	}\
 } while(0);
+
+#else
+#define can_reset_system()
+#endif
 
 
 #define logd(fmt, ...) \
@@ -411,7 +471,7 @@ do {\
 void hifi_om_init(struct platform_device *dev, unsigned char* hifi_priv_base_virt, unsigned char* hifi_priv_base_phy);
 void hifi_om_deinit(struct platform_device *dev);
 
-int hifi_dsp_dump_hifi(void __user *arg);
+int hifi_dsp_dump_hifi(const void __user *arg);
 void hifi_dump_panic_log(void);
 
 bool is_hifi_loaded(void);
@@ -420,8 +480,8 @@ void hifi_om_effect_mcps_info_show(struct hifi_om_effect_mcps_stru *hifi_mcps_in
 void hifi_om_cpu_load_info_show(struct hifi_om_load_info_stru *hifi_om_info);
 void hifi_om_update_buff_delay_info_show(struct hifi_om_update_buff_delay_info *info);
 
-int hifi_get_dmesg(void __user *arg);
-int hifi_om_get_voice_bsd_param(void __user * uaddr);
+int hifi_get_dmesg(const void __user *arg);
+int hifi_om_get_voice_bsd_param(const void __user * uaddr);
 void hifi_om_rev_data_handle(int type, const unsigned char *addr, unsigned int len);
 
 #ifdef __cplusplus

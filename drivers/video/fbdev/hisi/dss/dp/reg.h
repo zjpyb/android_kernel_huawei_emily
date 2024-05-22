@@ -1,18 +1,48 @@
-/* Copyright (c) 2013-2014, Hisilicon Tech. Co., Ltd. All rights reserved.
-*
-* This program is free software; you can redistribute it and/or modify
-* it under the terms of the GNU General Public License version 2 and
-* only version 2 as published by the Free Software Foundation.
-*
-* This program is distributed in the hope that it will be useful,
-* but WITHOUT ANY WARRANTY; without even the implied warranty of
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	See the
-* GNU General Public License for more details.
-*
-*/
+/*
+ * Copyright (c) 2016 Synopsys, Inc.
+ *
+ * Synopsys DP TX Linux Software Driver and documentation (hereinafter,
+ * "Software") is an Unsupported proprietary work of Synopsys, Inc. unless
+ * otherwise expressly agreed to in writing between Synopsys and you.
+ *
+ * The Software IS NOT an item of Licensed Software or Licensed Product under
+ * any End User Software License Agreement or Agreement for Licensed Product
+ * with Synopsys or any supplement thereto. You are permitted to use and
+ * redistribute this Software in source and binary forms, with or without
+ * modification, provided that redistributions of source code must retain this
+ * notice. You may not view, use, disclose, copy or distribute this file or
+ * any information contained herein except pursuant to this license grant from
+ * Synopsys. If you do not agree with this notice, including the disclaimer
+ * below, then you are not authorized to use the Software.
+ *
+ * THIS SOFTWARE IS BEING DISTRIBUTED BY SYNOPSYS SOLELY ON AN "AS IS" BASIS
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE HEREBY DISCLAIMED. IN NO EVENT SHALL SYNOPSYS BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+ * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
+ * DAMAGE.
+ */
 
+/*
+ * Copyright (c) 2017 Hisilicon Tech. Co., Ltd. Integrated into the Hisilicon display system.
+ */
 #ifndef __DPTX_REG_H__
 #define __DPTX_REG_H__
+
+#ifdef CONFIG_HISI_FB_V510
+/*DP & USB control REG*/
+#define DPTX_DP_AUX_CTRL 0x05C
+#endif
+
+/* Constants */
+#define DPTX_MP_SINGLE_PIXEL		0
+#define DPTX_MP_DUAL_PIXEL		1
+#define DPTX_MP_QUAD_PIXEL		2
 
 /* Controller Version Registers */
 #define DPTX_VER_NUMBER			0x00
@@ -24,32 +54,59 @@
 #define DPTX_ID_DEVICE_ID               0x9001
 #define DPTX_ID_VENDOR_ID		0x16c3
 
-/* DPTXConfigurationParameter Register */
-#define DPTX_CONFIG_REG1		0x100
+/* DPTX Configuration Register */
+#define DPTX_CONFIG1			0x100
 
 /* CoreControl Register */
 #define DPTX_CCTL			0x200
 #define DPTX_SRST_CTRL			0x204
 
-/* Video Registers */
-#define DPTX_VSAMPLE_CTRL		0x300
-#define DPTX_VSAMPLE_STUFF_CTRL1	0x304
-#define DPTX_VSAMPLE_STUFF_CTRL2	0x308
-#define DPTX_VSAMPLE_POLARITY_CTRL	0x30C
-#define DPTX_VIDEO_CONFIG1		0x310
-#define DPTX_VIDEO_CONFIG2		0x314
-#define DPTX_VIDEO_CONFIG3		0x318
-#define DPTX_VIDEO_CONFIG4		0x31c
-#define DPTX_VIDEO_CONFIG5		0x320
-#define DPTX_VIDEO_MSA1			0x324
-#define DPTX_VIDEO_MSA2			0x328
-#define DPTX_VIDEO_MSA3			0x32C
-#define DPTX_VG_CONFIG1			0x3804
-#define DPTX_VG_CONFIG2			0x3808
-#define DPTX_VG_CONFIG3			0x380C
-#define DPTX_VG_CONFIG4			0x3810
-#define DPTX_VG_CONFIG5			0x3814
-#define DPTX_VG_SWRST			0x3800
+/* MST */
+#define DPTX_MST_VCP_TABLE_REG_N(n)	(0x210 + (n) * 4)
+
+/* Video Registers. N=0-3 */
+#ifdef CONFIG_HISI_FB_V510
+#define DPTX_VSAMPLE_CTRL_N(n)		(0x300  + 0x10000 * (n))
+#define DPTX_VSAMPLE_RESERVED1_N(n)	(0x304  + 0x10000 * (n))
+#define DPTX_VSAMPLE_RESERVED2_N(n)	(0x308  + 0x10000 * (n))
+#define DPTX_VSAMPLE_POLARITY_CTRL_N(n)	(0x30C  + 0x10000 * (n))
+#define DPTX_VIDEO_CONFIG1_N(n)		(0x310  + 0x10000 * (n))
+#define DPTX_VIDEO_CONFIG2_N(n)		(0x314  + 0x10000 * (n))
+#define DPTX_VIDEO_CONFIG3_N(n)		(0x318  + 0x10000 * (n))
+#define DPTX_VIDEO_CONFIG4_N(n)		(0x31c  + 0x10000 * (n))
+#define DPTX_VIDEO_CONFIG5_N(n)		(0x320  + 0x10000 * (n))
+#define DPTX_VIDEO_MSA1_N(n)		(0x324  + 0x10000 * (n))
+#define DPTX_VIDEO_MSA2_N(n)		(0x328  + 0x10000 * (n))
+#define DPTX_VIDEO_MSA3_N(n)		(0x32C  + 0x10000 * (n))
+#define DPTX_VG_CONFIG1_N(n)		(0x3804 + 0x10000 * (n))
+#define DPTX_VG_CONFIG2_N(n)		(0x3808 + 0x10000 * (n))
+#define DPTX_VG_CONFIG3_N(n)		(0x380C + 0x10000 * (n))
+#define DPTX_VG_CONFIG4_N(n)		(0x3810 + 0x10000 * (n))
+#define DPTX_VG_CONFIG5_N(n)		(0x3814 + 0x10000 * (n))
+#define DPTX_VG_SWRST_N(n)		(0x3800 + 0x10000 * (n))
+#else
+#define DPTX_VSAMPLE_CTRL_N(n)		(0x300)
+#define DPTX_VSAMPLE_RESERVED1_N(n)	(0x304)
+#define DPTX_VSAMPLE_RESERVED2_N(n)	(0x308)
+#define DPTX_VSAMPLE_POLARITY_CTRL_N(n)	(0x30C)
+#define DPTX_VIDEO_CONFIG1_N(n)		(0x310)
+#define DPTX_VIDEO_CONFIG2_N(n)		(0x314)
+#define DPTX_VIDEO_CONFIG3_N(n)		(0x318)
+#define DPTX_VIDEO_CONFIG4_N(n)		(0x31c)
+#define DPTX_VIDEO_CONFIG5_N(n)		(0x320)
+#define DPTX_VIDEO_MSA1_N(n)		(0x324)
+#define DPTX_VIDEO_MSA2_N(n)		(0x328)
+#define DPTX_VIDEO_MSA3_N(n)		(0x32C)
+#define DPTX_VG_CONFIG1_N(n)		(0x3804)
+#define DPTX_VG_CONFIG2_N(n)		(0x3808)
+#define DPTX_VG_CONFIG3_N(n)		(0x380C)
+#define DPTX_VG_CONFIG4_N(n)		(0x3810)
+#define DPTX_VG_CONFIG5_N(n)		(0x3814)
+#define DPTX_VG_SWRST_N(n)		(0x3800)
+#endif
+#define DPTX_VIDEO_HBLANK_INTERVAL	0x330
+#define DPTX_VIDEO_HBLANK_INTERVAL_SHIFT 16
+#define DPTX_VIDEO_HBLANK_INTERVAL_ENABLE 1
 /* Audio Registers */
 #define DPTX_AUD_CONFIG1		0x400
 #define DPTX_AG_CONFIG1			0x3904
@@ -93,14 +150,38 @@
 #define DPTX_HDCP_CONFIG		0xE00
 #define DPTX_HDCP_API_INT_MSK		0xE10
 
-/* RAM Registers */
+/* I2C APB Registers */
+#define DPTX_I2C_ENABLE			0xc006c
+#define DPTX_I2C_CTRL			0xc0000
+#define DPTX_I2C_TARGET			0xc0004
+#define DPTX_I2C_DATA_CMD		0xc0010
+#define DPTX_PLUG_ORIENTATION_MASK	BIT(4)
 
-#define DPTX_VG_RAM_ADDR		0x381C
-#define DPTX_VG_WRT_RAM_CTR		0x3820
-#define DPTX_VG_WRT_RAM_DATA		0x3824
+/* RAM Registers */
+#ifdef CONFIG_HISI_FB_V510
+#define DPTX_VG_RAM_ADDR_N(n)		(0x381C + 0x10000 * (n))
+#define DPTX_VG_WRT_RAM_CTR_N(n)	(0x3820 + 0x10000 * (n))
+#define DPTX_VG_WRT_RAM_DATA_N(n)	(0x3824 + 0x10000 * (n))
+#else
+#define DPTX_VG_RAM_ADDR_N(n)		(0x381C)
+#define DPTX_VG_WRT_RAM_CTR_N(n)	(0x3820)
+#define DPTX_VG_WRT_RAM_DATA_N(n)	(0x3824)
+#endif
 
 /* WRAP Registers */
+#ifdef CONFIG_HISI_FB_V510
+#define DPTX_WRAP_REG_OFFSET		0x42000
+#define DPTX_WRAP_REG_DPC_INTS	0x4210c
+#define DPTX_WRAP_REG_DPC_INT_MASK	0x42110
+
+#define DPTX_DPC_AUX_CTRL_BLOCK		BIT(10)
+#define DPTX_TYPEC_AUX_VOD_TUNE_SHIFT	4
+#define DPTX_TYPEC_AUX_VOD_TUNE_MASK	GENMASK(5, 4)
+#else
 #define DPTX_WRAP_REG_OFFSET		0x12000
+
+#define DPTX_WRAP_REG_DPC_INTS	0x1210c
+#define DPTX_WRAP_REG_DPC_INT_MASK	0x12110
 
 #ifdef CONFIG_HISI_FB_V501
 #define DPTX_WRAP_REG_DPC_AUX_CTRL  0x122B8
@@ -108,12 +189,10 @@
 #define DPTX_WRAP_REG_DPC_AUX_CTRL  0x12298
 #endif
 
-#define DPTX_WRAP_REG_DPC_INTS	0x1210c
-#define DPTX_WRAP_REG_DPC_INT_MASK	0x12110
-
 #define DPTX_DPC_AUX_CTRL_BLOCK		BIT(0)
 #define DPTX_TYPEC_AUX_VOD_TUNE_SHIFT	12
 #define DPTX_TYPEC_AUX_VOD_TUNE_MASK	GENMASK(13, 12)
+#endif
 
 #define DPTX_TYPEC_INTERRUPT_STATUS		BIT(2)
 #define DPTX_TYPEC_DISABLE_STATUS		BIT(1)
@@ -132,7 +211,22 @@
 #define DPTX_ID_VENDOR_ID_SHIFT		0
 #define DPTX_ID_VENDOR_ID_MASK		GENMASK(15, 0)
 
+#define DPTX_CONFIG1_NUM_STREAMS_SHIFT	16
+#define DPTX_CONFIG1_NUM_STREAMS_MASK	GENMASK(18, 16)
+#define DPTX_CONFIG1_MP_MODE_SHIFT	19
+#define DPTX_CONFIG1_MP_MODE_MASK	GENMASK(21, 19)
+#define DPTX_CONFIG1_MP_MODE_SINGLE	1
+#define DPTX_CONFIG1_MP_MODE_DUAL	2
+#define DPTX_CONFIG1_MP_MODE_QUAD	4
+#define DPTX_CONFIG1_DSC_EN		BIT(22)
+#define DPTX_CONFIG1_NUM_DSC_ENC_SHIFT	25
+#define DPTX_CONFIG1_NUM_DSC_ENC_MASK	GENMASK(28, 25)
+#define DPTX_CONFIG1_GEN2_PHY		BIT(29)
+
 #define DPTX_CCTL_ENH_FRAME_EN		BIT(1)
+#define DPTX_CCTL_ENABLE_MST_MODE	BIT(25)
+#define DPTX_CCTL_INITIATE_MST_ACT	BIT(28)
+
 #define DPTX_CCTL_FORCE_HPD			BIT(4)
 
 #define DPTX_SRST_CTRL_CONTROLLER	BIT(0)
@@ -140,12 +234,20 @@
 #define DPTX_SRST_CTRL_HDCP		BIT(2)
 #define DPTX_SRST_CTRL_AUDIO_SAMPLER	BIT(3)
 #define DPTX_SRST_CTRL_AUX		BIT(4)
-#define DPTX_SRST_VIDEO_RESET		BIT(5)
+#ifdef CONFIG_HISI_FB_V510
+#define DPTX_SRST_VIDEO_RESET_N(n)	BIT(5 + n)
 #define DPTX_SRST_CTRL_ALL (DPTX_SRST_CTRL_CONTROLLER |		\
-			    DPTX_SRST_CTRL_PHY |		\
-			    DPTX_SRST_CTRL_HDCP |		\
-			    DPTX_SRST_CTRL_AUDIO_SAMPLER |	\
-			    DPTX_SRST_CTRL_AUX)
+				DPTX_SRST_CTRL_PHY |		\
+				DPTX_SRST_CTRL_HDCP |		\
+				DPTX_SRST_CTRL_AUDIO_SAMPLER |	\
+				DPTX_SRST_CTRL_AUX)
+#else
+#define DPTX_SRST_VIDEO_RESET_N(n)	BIT(5)
+#define DPTX_SRST_CTRL_ALL (DPTX_SRST_CTRL_CONTROLLER |		\
+				DPTX_SRST_CTRL_HDCP |		\
+				DPTX_SRST_CTRL_AUDIO_SAMPLER |	\
+				DPTX_SRST_CTRL_AUX)
+#endif
 
 #define DPTX_PHYIF_CTRL_TPS_SEL_SHIFT	0
 #define DPTX_PHYIF_CTRL_TPS_SEL_MASK	GENMASK(3, 0)
@@ -172,10 +274,10 @@
 #define DPTX_PHYIF_CTRL_XMIT_EN(lane)	BIT(8 + lane)
 #define DPTX_PHYIF_CTRL_BUSY(lane)	BIT(12 + lane)
 #define DPTX_PHYIF_CTRL_SSC_DIS		BIT(16)
-
+#define DPTX_PHYIF_CTRL_LANE_PWRDOWN_SHIFT 17
 #define DPTX_PHYIF_CTRL_PWRDOWN_MASK GENMASK(20, 17)              /*GA*/
 
-#define DPTX_PHYIF_CTRL_LANE_PWRDOWN_SHIFT(lane) (17 + lane * 2)                         /*EA03*/
+//#define DPTX_PHYIF_CTRL_LANE_PWRDOWN_SHIFT(lane) (17 + lane * 2)                         /*EA03*/
 #define DPTX_PHYIF_CTRL_LANE_PWRDOWN_MASK(lane) GENMASK(17 + lane * 2 + 1, \
 							17 + lane * 2)
 
@@ -247,10 +349,6 @@
 				 DPTX_IEN_AUX_CMD_INVALID |	\
 				 DPTX_IEN_SDP |			\
 				 DPTX_IEN_TYPE_C)
-				 /*
-				 DPTX_IEN_AUDIO_FIFO_OVERFLOW |\
-				 DPTX_IEN_VIDEO_FIFO_OVERFLOW | \
-				 */
 
 #define DPTX_HPDSTS_IRQ			BIT(0)
 #define DPTX_HPDSTS_HOT_PLUG		BIT(1)
@@ -298,11 +396,17 @@
 
 #define DPTX_VSAMPLE_CTRL_VMAP_BPC_SHIFT                16
 #define DPTX_VSAMPLE_CTRL_VMAP_BPC_MASK                 GENMASK(20, 16)
+#define DPTX_VSAMPLE_CTRL_MULTI_PIXEL_SHIFT		21
+#define DPTX_VSAMPLE_CTRL_MULTI_PIXEL_MASK		GENMASK(22, 21)
+#define DPTX_VSAMPLE_CTRL_QUAD_PIXEL			DPTX_MP_QUAD_PIXEL
+#define DPTX_VSAMPLE_CTRL_DUAL_PIXEL			DPTX_MP_DUAL_PIXEL
+#define DPTX_VSAMPLE_CTRL_SINGLE_PIXEL			DPTX_MP_SINGLE_PIXEL
 #define DPTX_VIDEO_VMSA2_BPC_SHIFT                      29
 #define DPTX_VIDEO_VMSA2_BPC_MASK                       GENMASK(31, 29)
 #define DPTX_VIDEO_VMSA2_COL_SHIFT                      25
 #define DPTX_VIDEO_VMSA2_COL_MASK                       GENMASK(28, 25)
 #define DPTX_VIDEO_VMSA3_PIX_ENC_SHIFT                  31
+#define DPTX_VIDEO_VMSA3_PIX_ENC_YCBCR420_SHIFT           30 // ignore MSA
 #define DPTX_VIDEO_VMSA3_PIX_ENC_MASK                   GENMASK(31, 30)
 #define DPTX_POL_CTRL_V_SYNC_POL_EN			BIT(0)
 #define DPTX_POL_CTRL_H_SYNC_POL_EN			BIT(1)
@@ -320,16 +424,23 @@
 #define DPTX_VIDEO_MSA1_H_START_SHIFT			0
 #define DPTX_VIDEO_MSA1_V_START_SHIFT			16
 #define DPTX_VIDEO_CONFIG5_TU_SHIFT			0
-#define DPTX_VIDEO_CONFIG5_TU_MASK			GENMASK(5, 0)
-#define DPTX_VIDEO_CONFIG5_TU_FRAC_SHIFT                16
-#define DPTX_VIDEO_CONFIG5_TU_FRAC_MASK                 GENMASK(19, 16)
+#define DPTX_VIDEO_CONFIG5_TU_MASK			GENMASK(6, 0)
+#define DPTX_VIDEO_CONFIG5_TU_FRAC_SHIFT_MST            14
+#define DPTX_VIDEO_CONFIG5_TU_FRAC_MASK_MST             GENMASK(19, 14)
+#define DPTX_VIDEO_CONFIG5_TU_FRAC_SHIFT_SST            16
+#define DPTX_VIDEO_CONFIG5_TU_FRAC_MASK_SST             GENMASK(19, 16)
 #define DPTX_VIDEO_CONFIG5_INIT_THRESHOLD_SHIFT		7
-#define DPTX_VIDEO_CONFIG5_INIT_THRESHOLD_MASK		GENMASK(12, 7)
+#define DPTX_VIDEO_CONFIG5_INIT_THRESHOLD_MASK		GENMASK(13, 7)
 
 #define DPTX_VG_CONFIG1_BPC_SHIFT			12
 #define DPTX_VG_CONFIG1_BPC_MASK			GENMASK(14, 12)
 #define DPTX_VG_CONFIG1_PATTERN_SHIFT			17
 #define DPTX_VG_CONFIG1_PATTERN_MASK			GENMASK(18, 17)
+#define DPTX_VG_CONFIG1_MULTI_PIXEL_SHIFT		19
+#define DPTX_VG_CONFIG1_MULTI_PIXEL_MASK		GENMASK(20, 19)
+#define DPTX_VG_CONFIG1_QUAD_PIXEL			DPTX_MP_QUAD_PIXEL
+#define DPTX_VG_CONFIG1_DUAL_PIXEL			DPTX_MP_DUAL_PIXEL
+#define DPTX_VG_CONFIG1_SINGLE_PIXEL			DPTX_MP_SINGLE_PIXEL
 #define DPTX_VG_CONFIG1_ODE_POL_EN			BIT(0)
 #define DPTX_VG_CONFIG1_OH_SYNC_POL_EN			BIT(1)
 #define DPTX_VG_CONFIG1_OV_SYNC_POL_EN			BIT(2)

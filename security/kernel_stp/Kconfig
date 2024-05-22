@@ -1,9 +1,9 @@
 #
-# Huawei kernel stp configuration
-#
-# sunhongqing <sunhongqing@huawei.com>
-#
-# Copyright (c) 2001-2021, Huawei Tech. Co., Ltd. All rights reserved.
+# Copyright (c) Huawei Technologies Co., Ltd. 2018-2018. All rights reserved.
+# Description: Huawei kernel mdpp selftest configuration
+# Author: sunhongqing <sunhongqing@huawei.com>
+# Cryptographic API Configuration
+# Create: 2018-03-31
 #
 
 menu "Huawei KERNEL STP"
@@ -13,8 +13,8 @@ config HW_KERNEL_STP
 	default n
 	help
 	  This option enables support for Huawei kernel stp in kernel space.
-	  Huawei kernel stp is a security threat perception module at kernel. 
-	  each source of threat can report the risk info to native throught the kernel stp   
+	  Huawei kernel stp is a security threat perception module at kernel.
+	  each source of threat can report the risk info to native throught the kernel stp
 
 config HW_KERNEL_STP_ENG_DEBUG
 	bool "Huawei KERNEL STP for engineering mode debug"

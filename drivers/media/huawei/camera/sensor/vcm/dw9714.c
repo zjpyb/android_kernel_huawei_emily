@@ -157,7 +157,7 @@ static int __init hw_dw9714_module_init(void)
 
 static void __exit hw_dw9714_module_exit(void)
 {
-	hw_vcm_unregister(&s_dw9714.intf);
+	hw_vcm_unregister(s_dw9714.intf.subdev);
 	platform_driver_unregister(&hw_dw9714_platform_driver);
 }
 

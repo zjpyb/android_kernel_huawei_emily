@@ -32,9 +32,9 @@
 
 
 static void __iomem *powerhold_gpio_base;
-static int g_powerhold_gpio_offset = 0;
+static unsigned int g_powerhold_gpio_offset = 0;
 static int g_powerhold_protect_offset = 0xFFFF;
-static int g_powerhold_protect_bit = 0xFF;
+static unsigned int g_powerhold_protect_bit = 0xFF;
 
 #include <linux/hisi/rdr_hisi_platform.h>
 #include <rdr_inner.h>
@@ -47,7 +47,8 @@ extern struct cmdword reboot_reason_map[];
 
 void hisi_pm_system_off(void)
 {
-	int out_dir, protect_val;
+	unsigned int out_dir;
+	uintptr_t protect_val;
 
 	set_reboot_reason(AP_S_COLDBOOT);
 

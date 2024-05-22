@@ -626,6 +626,7 @@ const AT_STRING_TYPE_STRU gastAtStringTab[]=
     {AT_STRING_IMPU,          (VOS_UINT8 *)"^IMPU: "},
 
     {AT_STRING_DSDSSTATE,     (VOS_UINT8 *)"^DSDSSTATE: "},
+    {AT_STRING_PSEUDBTS,      (VOS_UINT8 *)"^PSEUDBTS"},
 
     {AT_STRING_BUTT,(TAF_UINT8*)"\"\""},
 };

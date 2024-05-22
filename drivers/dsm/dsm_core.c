@@ -328,7 +328,7 @@ int dsm_client_copy_ext(struct dsm_client *client, void *src, int sz)
 	}
 
 	if ((dsm_kfifo_get_data_len() + sz) > MSGQ_SIZE) {
-		DSM_LOG_ERR("%s no enough space in msgQ, [used_size] - %lu bytes\n",
+		DSM_LOG_ERR("%s no enough space in msgQ, [used_size] - %u bytes\n",
 			__func__, dsm_kfifo_get_data_len());
 		goto out;
 	}
@@ -562,7 +562,7 @@ static ssize_t dsm_read(struct file *file, char __user *buf, size_t count, loff_
 	#ifdef CONFIG_HUAWEI_DATA_ACQUISITION
 		if (dsm_is_errno_in_da_range(client->error_no)) {
 			len = dsm_kfifo_get_data_len();
-			DSM_LOG_DEBUG("[msgQ_len] - %lu bytes, [count] - %lu bytes\n",
+			DSM_LOG_DEBUG("[msgQ_len] - %zu bytes, [count] - %zu bytes\n",
 				len, count);
 			if (len > 0) {
 				if (mutex_lock_interruptible(&g_dsm_msgq.read_lock)) {
@@ -583,7 +583,7 @@ static ssize_t dsm_read(struct file *file, char __user *buf, size_t count, loff_
 				DSM_LOG_ERR("ignore coping to user as msgQ is empty\n");
 			}
 			dsm_client_set_idle(client);
-			DSM_LOG_INFO("total %lu bytes read from msgQ to user\n", copy_size);
+			DSM_LOG_INFO("total %zu bytes read from msgQ to user\n", copy_size);
 		} else {
 	#endif
 		copy_size = min(count, (client->used_size - client->read_size));
@@ -592,7 +592,7 @@ static ssize_t dsm_read(struct file *file, char __user *buf, size_t count, loff_
 		client->read_size += copy_size;
 		if (client->read_size >= client->used_size)
 			dsm_client_set_idle(client);
-		DSM_LOG_DEBUG("%lu bytes read to user\n", copy_size);
+		DSM_LOG_DEBUG("%zu bytes read to user\n", copy_size);
 	#ifdef CONFIG_HUAWEI_DATA_ACQUISITION
 		}
 	#endif
@@ -613,7 +613,7 @@ static ssize_t dsm_write(struct file *file, const char __user *buf, size_t count
 		goto out;
 	}
 	if ((count > DSM_MAX_LOG_SIZE) || (count < DSM_MIN_LOG_SIZE)) {
-		DSM_LOG_ERR("count is %lu,out of range\n",count);
+		DSM_LOG_ERR("count is %zu,out of range\n", count);
 		goto out;
 	}
 	buff = (char *)kzalloc(count, GFP_KERNEL);
@@ -813,7 +813,7 @@ static ssize_t dsm_cnotify_store(struct device *dev,
 		goto out;
 	}
 	if ((count > DSM_MAX_LOG_SIZE) || (count < DSM_MIN_LOG_SIZE)) {
-		DSM_LOG_ERR("count is %lu,out of range\n",count);
+		DSM_LOG_ERR("count is %zu,out of range\n", count);
 		goto out;
 	}
 

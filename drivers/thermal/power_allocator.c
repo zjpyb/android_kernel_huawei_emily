@@ -35,6 +35,7 @@
 #define BOARDIPA_PID_RESET_TEMP 2000
 extern unsigned int g_ipa_board_state[];
 extern unsigned int g_ipa_soc_state[];
+#define MAX_S48  0x7FFFFFFFFFFF
 #endif
 
 /**
@@ -104,13 +105,20 @@ static u32 estimate_sustainable_power(struct thermal_zone_device *tz)
 	struct power_allocator_params *params = tz->governor_data;
 
 	list_for_each_entry(instance, &tz->thermal_instances, tz_node) {
-		struct thermal_cooling_device *cdev = instance->cdev;
 		u32 min_power;
+
+		if (!params || !params->trip_max_desired_temperature) {
+			return sustainable_power;
+		}
+
+		if (!instance || !instance->trip || !instance->cdev) {
+			continue;
+		}
 
 		if (instance->trip != params->trip_max_desired_temperature)
 			continue;
 
-		if (power_actor_get_min_power(cdev, tz, &min_power))
+		if (power_actor_get_min_power(instance->cdev, tz, &min_power))
 			continue;
 
 		sustainable_power += min_power;
@@ -236,6 +244,12 @@ static u32 pid_controller(struct thermal_zone_device *tz,
 		if (abs(i_next) < max_power_frac) {
 			i = i_next;
 			params->err_integral += err;
+#ifdef CONFIG_HISI_IPA_THERMAL
+			if (params->err_integral > MAX_S48)
+				params->err_integral = MAX_S48;
+			else if (params->err_integral < -MAX_S48)
+				params->err_integral = -MAX_S48;
+#endif
 		}
 	}
 
@@ -412,15 +426,13 @@ static inline int power_actor_set_powers(struct thermal_zone_device *tz,
 		return ret;
 
 	if(!strncmp(instance->cdev->type, "thermal-devfreq-0", 17)){
-		actor_id = IPA_GPU;
+		actor_id = ipa_get_actor_id("gpu");
 	} else if (!strncmp(instance->cdev->type, "thermal-cpufreq-0", 17)) {
-		actor_id = IPA_CLUSTER0;
+		actor_id = ipa_get_actor_id("cluster0");
 	} else if (!strncmp(instance->cdev->type, "thermal-cpufreq-1", 17)) {
-		actor_id = IPA_CLUSTER1;
-#ifdef CONFIG_HISI_THERMAL_TRIPPLE_CLUSTERS
+		actor_id = ipa_get_actor_id("cluster1");
 	} else if (!strncmp(instance->cdev->type, "thermal-cpufreq-2", 17)) {
-		actor_id = IPA_CLUSTER2;
-#endif
+		actor_id = ipa_get_actor_id("cluster2");
 	} else
 		actor_id = -1;
 

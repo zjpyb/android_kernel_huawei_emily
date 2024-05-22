@@ -47,6 +47,8 @@
 				snps,dis_u3_susphy_quirk;
 				snps,tx_de_emphasis_quirk;
 				snps,tx_de_emphasis = <1>;
+				snps,dis-split-quirk;
+				snps,gctl-reset-quirk;
 			};
 		};
 

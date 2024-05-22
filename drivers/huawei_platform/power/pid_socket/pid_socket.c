@@ -14,7 +14,12 @@
 
 #include "pid_socket.h"
 #include <linux/version.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14,0 )
+#include <linux/sched/task.h>
+#endif
 #include <net/sock.h>
+
+#include <log/log_usertype.h>
 
 void print_process_pid_name(struct inet_sock *inet)
 {
@@ -22,6 +27,12 @@ void print_process_pid_name(struct inet_sock *inet)
         int uid = 0;
 	unsigned short source_port = 0;
 	struct task_struct * task = NULL;
+#ifdef CONFIG_LOG_EXCEPTION
+	unsigned int user_type = get_logusertype_flag();
+
+	if (user_type != BETA_USER && user_type != OVERSEA_USER)
+		return;
+#endif
 
 #if defined(CONFIG_HUAWEI_KSTATE) || defined(CONFIG_MPTCP)
 	if (NULL == inet || NULL == inet->sk.sk_socket) {

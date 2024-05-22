@@ -101,7 +101,7 @@ static int usb_audio_common_notifier_call(struct notifier_block *typec_nb, unsig
 	char envp_ext0[ENVP_LENTH];
 	char *envp_ext[2] = { envp_ext0, NULL };
 
-	hwlog_info("usb_audio_common_notifier_call %d\n", event);
+	hwlog_info("usb_audio_common_notifier_call %lu\n", event);
 	mutex_lock(&pdata->notifier_lock);
 	if (true == pdata->usb_typec_plugin && (PD_DPM_USB_TYPEC_DETACHED == event || PD_DPM_USB_TYPEC_NONE == event)) {
 		pdata->usb_typec_plugin = false;

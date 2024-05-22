@@ -38,8 +38,12 @@
 #include <asm/tlbflush.h>
 
 #include "ion.h"
-#include "ion_priv.h"
 #include "hisi/ion_sec_priv.h"
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
+#include "ion_priv.h"
+#else
+#include "hisi_ion_priv.h"
+#endif
 
 static inline void free_alloc_list(struct list_head *head)
 {
@@ -74,7 +78,11 @@ static struct page *__secsg_cma_alloc(struct ion_secsg_heap *secsg_heap,
 	unsigned long offset = 0;
 
 	if (!secsg_heap->static_cma_region)
+#if (KERNEL_VERSION(4, 14, 0) > LINUX_VERSION_CODE)
 		return cma_alloc(secsg_heap->cma, count, align);
+#else
+		return cma_alloc(secsg_heap->cma, count, align, GFP_KERNEL);
+#endif
 
 	offset = gen_pool_alloc(secsg_heap->static_cma_region,
 				size);
@@ -152,7 +160,7 @@ out:
 	return ret;
 }
 
-static int secsg_cma_alloc(struct ion_secsg_heap *secsg_heap,
+static int __add_cma_to_pool(struct ion_secsg_heap *secsg_heap,
 			   unsigned long user_alloc_size)
 {
 	int ret = 0;
@@ -182,16 +190,13 @@ static int secsg_cma_alloc(struct ion_secsg_heap *secsg_heap,
 	cma_size = cma_get_size(secsg_heap->cma);
 	cma_remain = cma_size - (allocated_size + size_remain);
 	if (secsg_heap->heap_size <= (allocated_size + size_remain)) {
-		pr_err("heap full! allocated(0x%lx), heap_size(0x%lx))\n",
-		       allocated_size, secsg_heap->heap_size);
+		pr_err("heap full! allocated_size(0x%lx), remain_size(0x%lx),"
+		       " heap_size(0x%lx), cma_remain(0x%lx)\n", allocated_size,
+		       size_remain, secsg_heap->heap_size, cma_remain);
 		return -ENOMEM;
 	}
 
-	/* we allocated more than 1M for SMMU page table before.
-	 * then, for the last cma alloc , there is no 64M in
-	 * cma pool. So, we allocate as much contiguous memory
-	 * as we can.
-	 */
+	/* we allocate as much contiguous memory as we can. */
 	count = size >> PAGE_SHIFT;
 
 	pg = __secsg_cma_alloc(secsg_heap, (size_t)count, size,
@@ -229,13 +234,8 @@ static int secsg_cma_alloc(struct ion_secsg_heap *secsg_heap,
 	if (secsg_heap->flag & ION_FLAG_SECURE_BUFFER) {
 		ion_flush_all_cpus_caches();
 		virt = (unsigned long)__va(alloc->addr);/*lint !e648*/
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
-		create_mapping_late(alloc->addr, virt, size,
-				    __pgprot(PROT_DEVICE_nGnRE));
-#else
 		change_secpage_range(alloc->addr, virt, size,
 				     __pgprot(PROT_DEVICE_nGnRE));
-#endif
 		flush_tlb_all();
 		if (cons_phys_struct(secsg_heap, 1,
 				     &secsg_heap->allocate_head,
@@ -248,23 +248,58 @@ static int secsg_cma_alloc(struct ion_secsg_heap *secsg_heap,
 		memset(page_address(pg), 0x0, size);/* unsafe_function_ignore: memset */
 		ion_flush_all_cpus_caches();
 	}
+
+	secsg_heap->cma_alloc_size +=  size;
 	gen_pool_free(secsg_heap->pool, page_to_phys(pg), size);
 	secsg_debug("out %s %llu MB memory(ret = %d).\n",
 		    __func__, size / SZ_1M, ret);
 	return 0;/*lint !e429*/
 err_out2:
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
-	create_mapping_late(alloc->addr, virt, size,
-			    PAGE_KERNEL);
-#else
 	change_secpage_range(alloc->addr, virt, size,
 			     PAGE_KERNEL);
-#endif
 	flush_tlb_all();
 	list_del(&alloc->list);
 	kfree(alloc);
 err_out1:
 	__secsg_cma_release(secsg_heap, pg, count, size);
+	return ret;
+}
+
+void secsg_pre_alloc_wk_func(struct work_struct *work)
+{
+	struct ion_secsg_heap *secsg_heap;
+	int ret = 0;
+
+	secsg_heap = container_of(work, struct ion_secsg_heap, pre_alloc_work);
+	mutex_lock(&secsg_heap->pre_alloc_mutex);
+	/*
+	 * For HEAP_SECURE attr, we want to pre-allocate every time.
+	 */
+	if (secsg_heap->cma_alloc_size < secsg_heap->heap_size) {
+		ret = __add_cma_to_pool(secsg_heap, secsg_heap->per_alloc_sz);
+		if (ret)
+			pr_err("pre alloc cma to fill heap pool failed!"
+			"cma allocated sz(0x%lx), per alloc sz(0x%llx)\n",
+			secsg_heap->cma_alloc_size, secsg_heap->per_alloc_sz);
+	}
+	mutex_unlock(&secsg_heap->pre_alloc_mutex);
+}
+
+static int add_cma_to_pool(struct ion_secsg_heap *secsg_heap,
+			   unsigned long size)
+{
+	int ret = 0;
+
+	if (secsg_heap->pre_alloc_attr) {
+		mutex_lock(&secsg_heap->pre_alloc_mutex);
+		if (gen_pool_avail(secsg_heap->pool) < size &&
+			secsg_heap->cma_alloc_size < secsg_heap->heap_size)
+			ret = __add_cma_to_pool(secsg_heap, size);
+		mutex_unlock(&secsg_heap->pre_alloc_mutex);
+	} else {
+		ret = __add_cma_to_pool(secsg_heap, size);
+	}
+
 	return ret;
 }
 
@@ -318,14 +353,9 @@ static void __secsg_pool_release(struct ion_secsg_heap *secsg_heap)
 			}
 			virt = (unsigned long)__va(addr);/*lint !e648*/
 			if (secsg_heap->flag & ION_FLAG_SECURE_BUFFER) {
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
-				create_mapping_late(addr, virt, size,
-						    PAGE_KERNEL);
-#else
 				change_secpage_range(addr, virt, size,
 						     PAGE_KERNEL);
 				flush_tlb_all();
-#endif
 			}
 
 			__secsg_cma_release(secsg_heap, phys_to_page(addr),
@@ -351,14 +381,10 @@ static void __secsg_pool_release(struct ion_secsg_heap *secsg_heap)
 
 			virt = (unsigned long)__va(addr);/*lint !e648*/
 			if (secsg_heap->flag & ION_FLAG_SECURE_BUFFER) {
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
-				create_mapping_late(addr, virt, size,
-						    PAGE_KERNEL);
-#else
+
 				change_secpage_range(addr, virt, size,
 						     PAGE_KERNEL);
 				flush_tlb_all();
-#endif
 			}
 			__secsg_cma_release(secsg_heap, phys_to_page(addr),
 					    size >> PAGE_SHIFT, size);
@@ -381,6 +407,7 @@ int __secsg_alloc_contig(struct ion_secsg_heap *secsg_heap,
 	int ret = 0;
 	unsigned long offset = 0;
 	struct sg_table *table;
+	struct page *page;
 
 	table = kzalloc(sizeof(*table), GFP_KERNEL);
 	if (!table)
@@ -394,7 +421,7 @@ int __secsg_alloc_contig(struct ion_secsg_heap *secsg_heap,
 	/*align size*/
 	offset = gen_pool_alloc(secsg_heap->pool, size);
 	if (!offset) {
-		ret = secsg_cma_alloc(secsg_heap, size);
+		ret = add_cma_to_pool(secsg_heap, size);
 		if (ret)
 			goto err_out2;
 		offset = gen_pool_alloc(secsg_heap->pool, size);
@@ -404,12 +431,17 @@ int __secsg_alloc_contig(struct ion_secsg_heap *secsg_heap,
 			goto err_out2;
 		}
 	}
-	sg_set_page(table->sgl, pfn_to_page(PFN_DOWN(offset)), size, 0);
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
-	buffer->priv_virt = table;
-#else
+
+	if (secsg_heap->pre_alloc_attr &&
+		    secsg_heap->cma_alloc_size < secsg_heap->heap_size)
+		schedule_work(&secsg_heap->pre_alloc_work);
+
+	page = pfn_to_page(PFN_DOWN(offset));
+	if (secsg_heap->heap_attr == HEAP_NORMAL)
+		(void)ion_heap_pages_zero(page, size,
+					  pgprot_writecombine(PAGE_KERNEL));
+	sg_set_page(table->sgl, page, size, 0);
 	buffer->sg_table = table;
-#endif
 	if (secsg_heap->heap_attr == HEAP_SECURE)
 		pr_info("__secsg_alloc sec buffer phys %lx, size %lx\n",
 			offset, size);
@@ -428,7 +460,7 @@ static void __secsg_free_pool(struct ion_secsg_heap *secsg_heap,
 			      struct ion_buffer *buffer)
 {
 	struct page *page = sg_page(table->sgl);
-	ion_phys_addr_t paddr = PFN_PHYS(page_to_pfn(page));
+	phys_addr_t paddr = PFN_PHYS(page_to_pfn(page));
 	struct platform_device *hisi_ion_dev = get_hisi_ion_platform_device();
 
 	if (!(buffer->flags & ION_FLAG_SECURE_BUFFER)) {
@@ -440,7 +472,7 @@ static void __secsg_free_pool(struct ion_secsg_heap *secsg_heap,
 	gen_pool_free(secsg_heap->pool, paddr, buffer->size);
 	if (secsg_heap->heap_attr == HEAP_SECURE)
 		pr_info("__secsg_free sec buffer phys %lx, size %zx\n",
-			paddr, buffer->size);
+			(unsigned long)paddr, buffer->size);
 
 	sg_free_table(table);
 	kfree(table);
@@ -499,17 +531,16 @@ err:
 void __secsg_free_contig(struct ion_secsg_heap *secsg_heap,
 			 struct ion_buffer *buffer)
 {
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
-	struct sg_table *table = buffer->priv_virt;
-#else
 	struct sg_table *table = buffer->sg_table;
-#endif
 
 	__secsg_free_pool(secsg_heap, table, buffer);
 	WARN_ON(secsg_heap->alloc_size < buffer->size);
 	secsg_heap->alloc_size -= buffer->size;
 	if (!secsg_heap->alloc_size) {
+		if (secsg_heap->pre_alloc_attr)
+			cancel_work_sync(&secsg_heap->pre_alloc_work);
 		__secsg_pool_release(secsg_heap);
+		secsg_heap->cma_alloc_size = 0;
 		if (secsg_heap->water_mark &&
 		    __secsg_fill_watermark(secsg_heap))
 			pr_err("__secsg_fill_watermark failed!\n");

@@ -186,6 +186,62 @@ oal_int16 g_as_txiq_h_comp_640M[HI1103_CALI_TXIQ_LS_FILTER_TAP_NUM][HI1103_CALI_
     -55,-44,-26,-1,26,56,83,106,122,128,124,108,82,49,10,-30,-68,-99,-121,-131,-129,-113,-85,-49,-8,34,73,105,125,133,127,108,77,38,-5,-48,-85,-114,-130,-133,-122,-98,-63,-22,},
 };
 
+oal_int16 gas_625k_160M_tone_lut[NUM_160M_SNGL_TONE_1_4_CIRCLE * 4 + 1] = {
+                                                                            1159, 1158, 1157, 1155, 1153, 1150, 1146, 1141,
+                                                                            1136, 1130, 1124, 1117, 1109, 1100, 1091, 1081,
+                                                                            1070, 1059, 1047, 1035, 1022, 1008, 994 , 979 ,
+                                                                            963 , 947 , 931 , 913 , 896 , 877 , 858 , 839 ,
+                                                                            819 , 799 , 778 , 757 , 735 , 713 , 690 , 667 ,
+                                                                            644 , 620 , 596 , 571 , 546 , 521 , 495 , 469 ,
+                                                                            443 , 417 , 390 , 363 , 336 , 309 , 281 , 254 ,
+                                                                            226 , 198 , 170 , 142 , 114 , 85  , 57  , 28  , 0
+                                                                        };
+
+oal_int16 gas_625k_320M_tone_lut[NUM_320M_SNGL_TONE_1_4_CIRCLE * 4 + 1] = {
+                                                                            1159, 1158, 1158, 1158, 1157, 1156, 1155, 1154, 1153, 1151, 1150, 1148, 1146, 1144, 1141, 1139,
+                                                                            1136, 1133, 1130, 1127, 1124, 1120, 1117, 1113, 1109, 1104, 1100, 1096, 1091, 1086, 1081, 1076,
+                                                                            1070, 1065, 1059, 1053, 1047, 1041, 1035, 1028, 1022, 1015, 1008, 1001, 994 , 986 , 979 , 971 ,
+                                                                            963 , 955 , 947 , 939 , 931 , 922 , 913 , 905 , 896 , 886 , 877 , 868 , 858 , 849 , 839 , 829 ,
+                                                                            819 , 809 , 799 , 788 , 778 , 767 , 757 , 746 , 735 , 724 , 713 , 701 , 690 , 679 , 667 , 655 ,
+                                                                            644 , 632 , 620 , 608 , 596 , 583 , 571 , 559 , 546 , 534 , 521 , 508 , 495 , 482 , 469 , 456 ,
+                                                                            443 , 430 , 417 , 404 , 390 , 377 , 363 , 350 , 336 , 323 , 309 , 295 , 281 , 268 , 254 , 240 ,
+                                                                            226 , 212 , 198 , 184 , 170 , 156 , 142 , 128 , 114 , 99  , 85  , 71  , 57  , 43  , 28  , 14  , 0
+                                                                       };
+
+oal_int16 gas_625k_640M_tone_lut[NUM_640M_SNGL_TONE_1_4_CIRCLE * 4 + 1] = {
+                                                                            1159, 1159, 1158, 1158, 1158, 1158, 1158, 1157, 1157, 1157, 1156, 1156, 1155, 1155, 1154, 1154,
+                                                                            1153, 1152, 1151, 1151, 1150, 1149, 1148, 1147, 1146, 1145, 1144, 1143, 1141, 1140, 1139, 1138,
+                                                                            1136, 1135, 1133, 1132, 1130, 1129, 1127, 1126, 1124, 1122, 1120, 1118, 1117, 1115, 1113, 1111,
+                                                                            1109, 1107, 1104, 1102, 1100, 1098, 1096, 1093, 1091, 1088, 1086, 1083, 1081, 1078, 1076, 1073,
+                                                                            1070, 1068, 1065, 1062, 1059, 1056, 1053, 1050, 1047, 1044, 1041, 1038, 1035, 1032, 1028, 1025,
+                                                                            1022, 1018, 1015, 1012, 1008, 1004, 1001, 997 , 994 , 990 , 986 , 983 , 979 , 975 , 971 , 967 ,
+                                                                            963 , 959 , 955 , 951 , 947 , 943 , 939 , 935 , 931 , 926 , 922 , 918 , 913 , 909 , 905 , 900 ,
+                                                                            896 , 891 , 886 , 882 , 877 , 873 , 868 , 863 , 858 , 854 , 849 , 844 , 839 , 834 , 829 , 824 ,
+                                                                            819 , 814 , 809 , 804 , 799 , 794 , 788 , 783 , 778 , 773 , 767 , 762 , 757 , 751 , 746 , 740 ,
+                                                                            735 , 729 , 724 , 718 , 713 , 707 , 701 , 696 , 690 , 684 , 679 , 673 , 667 , 661 , 655 , 650 ,
+                                                                            644 , 638 , 632 , 626 , 620 , 614 , 608 , 602 , 596 , 589 , 583 , 577 , 571 , 565 , 559 , 552 ,
+                                                                            546 , 540 , 534 , 527 , 521 , 515 , 508 , 502 , 495 , 489 , 482 , 476 , 469 , 463 , 456 , 450 ,
+                                                                            443 , 437 , 430 , 424 , 417 , 410 , 404 , 397 , 390 , 384 , 377 , 370 , 363 , 357 , 350 , 343 ,
+                                                                            336 , 329 , 323 , 316 , 309 , 302 , 295 , 288 , 281 , 275 , 268 , 261 , 254 , 247 , 240 , 233 ,
+                                                                            226 , 219 , 212 , 205 , 198 , 191 , 184 , 177 , 170 , 163 , 156 , 149 , 142 , 135 , 128 , 121 ,
+                                                                            114 , 106 , 99  , 92  , 85  , 78  , 71  , 64  , 57  , 50  , 43  , 36  , 28  , 21  , 14  , 7   , 0
+                                                                       };
+
+oal_int16 gas_160M_tone_lut[NUM_160M_SNGL_TONE_1_4_CIRCLE + 1] = {1159, 1153, 1136, 1109, 1070, 1022, 963 , 896 , 819 , 735 , 644 , 546 , 443 , 336 , 226 , 114 , 0};
+
+oal_int16 gas_320M_tone_lut[NUM_320M_SNGL_TONE_1_4_CIRCLE + 1] = {
+                                                                    1159, 1157, 1153, 1146, 1136, 1124, 1109, 1091,
+                                                                    1070, 1047, 1022, 994 , 963 , 931 , 896 , 858 ,
+                                                                    819 , 778 , 735 , 690 , 644 , 596 , 546 , 495 ,
+                                                                    443 , 390 , 336 , 281 , 226 , 170 , 114 , 57  , 0
+                                                                };
+
+oal_int16 gas_640M_tone_lut[NUM_640M_SNGL_TONE_1_4_CIRCLE + 1] = {
+                                                                    1159, 1158, 1157, 1155, 1153, 1150, 1146, 1141, 1136, 1130, 1124, 1117, 1109, 1100, 1091, 1081,
+                                                                    1070, 1059, 1047, 1035, 1022, 1008, 994 , 979 , 963 , 947 , 931 , 913 , 896 , 877 , 858 , 839 ,
+                                                                    819 , 799 , 778 , 757 , 735 , 713 , 690 , 667 , 644 , 620 , 596 , 571 , 546 , 521 , 495 , 469 ,
+                                                                    443 , 417 , 390 , 363 , 336 , 309 , 281 , 254 , 226 , 198 , 170 , 142 , 114 , 85  , 57  , 28  , 0
+                                                               };
 #ifdef _PRE_WLAN_ONLINE_DPD
 /*  大小:32bit * 512 = 2048 Byte */
 oal_uint32 gul_corram_data_20M[DPD_CORRAM_DATA_NUM] =
@@ -3117,7 +3173,15 @@ oal_uint32 hmac_send_cali_matrix_data(mac_vap_stru *pst_mac_vap)
                                                  g_as_txiq_h_comp_640M[0],
                                                  (oal_uint16 *)gul_corram_data_20M,
                                                  (oal_uint16 *)gul_corram_data_40M,
-                                                 (oal_uint16 *)gul_corram_data_80M};
+                                                 (oal_uint16 *)gul_corram_data_80M,
+                                                 gas_625k_160M_tone_lut,
+                                                 gas_625k_320M_tone_lut,
+                                                 gas_625k_640M_tone_lut,
+                                                 gas_160M_tone_lut,
+                                                 gas_320M_tone_lut,
+                                                 gas_640M_tone_lut
+                                                 };
+
     oal_uint32                aul_matrix_data_size[HI1103_CALI_MATRIX_DATA_NUMS]
                                               = {
                                                  960,   /*  大小:16bit * 15 * 32 = 960 Byte */
@@ -3129,6 +3193,12 @@ oal_uint32 hmac_send_cali_matrix_data(mac_vap_stru *pst_mac_vap)
                                                  2048,  /*  大小:32bit * 512 = 2048 Byte */
                                                  2048,  /*  大小:32bit * 512 = 2048 Byte */
                                                  2048,  /*  大小:32bit * 512 = 2048 Byte */
+                                                 130,   /*  大小:16bit *65 = 130 Byte */
+                                                 258,   /*  大小:16bit *129 = 258 Byte */
+                                                 514,   /*  大小:16bit *257 = 514 Byte */
+                                                 34,   /*  大小:16bit *17 = 34 Byte */
+                                                 66,   /*  大小:16bit *33 = 66 Byte */
+                                                 130,   /*  大小:16bit *65 = 130 Byte */
                                                  };
 
     pst_netbuf_matrix_data = OAL_MEM_NETBUF_ALLOC(OAL_NORMAL_NETBUF, WLAN_LARGE_NETBUF_SIZE, OAL_NETBUF_PRIORITY_MID);
@@ -3471,8 +3541,8 @@ void hmac_get_cali_data_for_bt20dbm(void)
     for (uc_chan_idx = 0; uc_chan_idx < HI1103_2G_CHANNEL_NUM; uc_chan_idx++)
     {
         OAM_INFO_LOG1(0, OAM_SF_ANY, "[20dbm]:start get the uc_chan_idx:=0x%x cali data", uc_chan_idx);
-        (*puc_bt20dbm_cali_data).st_bt20dbm_txcali_param[uc_chan_idx].l_txiq_cmp_alpha = pst_cali_data->ast_2Gcali_param.st_new_txiq_time_cmp_val[uc_chan_idx].l_txiq_cmp_alpha;
-        (*puc_bt20dbm_cali_data).st_bt20dbm_txcali_param[uc_chan_idx].l_txiq_cmp_beta  = pst_cali_data->ast_2Gcali_param.st_new_txiq_time_cmp_val[uc_chan_idx].l_txiq_cmp_beta;
+        (*puc_bt20dbm_cali_data).st_bt20dbm_txcali_param[uc_chan_idx].l_txiq_cmp_alpha = pst_cali_data->ast_2Gcali_param.ast_new_txiq_time_cmp_val[uc_chan_idx].l_txiq_cmp_alpha;
+        (*puc_bt20dbm_cali_data).st_bt20dbm_txcali_param[uc_chan_idx].l_txiq_cmp_beta  = pst_cali_data->ast_2Gcali_param.ast_new_txiq_time_cmp_val[uc_chan_idx].l_txiq_cmp_beta;
         (*puc_bt20dbm_cali_data).st_bt20dbm_txcali_param[uc_chan_idx].st_20dbmtxpwr.uc_atx_pwr_cmp = pst_cali_data->ast_2Gcali_param.st_cali_tx_power_cmp_2G[uc_chan_idx].uc_atx_pwr_cmp;
         (*puc_bt20dbm_cali_data).st_bt20dbm_txcali_param[uc_chan_idx].st_20dbmtxpwr.s_2g_tx_power_dc = pst_cali_data->ast_2Gcali_param.st_cali_tx_power_cmp_2G[uc_chan_idx].s_2g_tx_power_dc;
         (*puc_bt20dbm_cali_data).st_bt20dbm_txcali_param[uc_chan_idx].st_20dbmtxpwr.uc_dtx_pwr_cmp = pst_cali_data->ast_2Gcali_param.st_cali_tx_power_cmp_2G[uc_chan_idx].uc_dtx_pwr_cmp;

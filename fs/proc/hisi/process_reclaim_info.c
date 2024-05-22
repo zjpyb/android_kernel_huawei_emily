@@ -22,6 +22,11 @@
 #include <linux/sched.h>
 #include "internal.h"
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0))
+#include <linux/sched/task.h>
+#include <linux/signal.h>
+#endif
+
 static struct kmem_cache *process_reclaim_result_cache;
 
 static int __init process_reclaim_result_cache_create(void)

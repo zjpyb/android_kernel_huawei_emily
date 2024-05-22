@@ -307,6 +307,30 @@ static ssize_t queue_nomerges_store(struct request_queue *q, const char *page,
 
 	return ret;
 }
+#ifdef CONFIG_ROW_VIP_QUEUE
+static ssize_t queue_qos_show(struct request_queue *q, char *page)
+{
+	return queue_var_show(blk_queue_qos_on(q), page);
+}
+
+static ssize_t queue_qos_store(struct request_queue *q, const char *page,
+				    size_t count)
+{
+	unsigned long qos;
+	ssize_t ret = queue_var_store(&qos, page, count);
+
+	if (ret < 0)
+		return ret;
+	spin_lock_irq(q->queue_lock);
+	if (qos == 0)
+		queue_flag_clear(QUEUE_FLAG_QOS, q);
+	else
+		queue_flag_set(QUEUE_FLAG_QOS, q);
+	spin_unlock_irq(q->queue_lock);
+
+	return ret;
+}
+#endif
 
 static ssize_t queue_rq_affinity_show(struct request_queue *q, char *page)
 {
@@ -719,6 +743,14 @@ static struct queue_sysfs_entry queue_nomerges_entry = {
 	.store = queue_nomerges_store,
 };
 
+#ifdef CONFIG_ROW_VIP_QUEUE
+static struct queue_sysfs_entry queue_qos_entry = {
+	.attr = {.name = "qos_on", .mode = S_IRUGO | S_IWUSR },
+	.show = queue_qos_show,
+	.store = queue_qos_store,
+};
+#endif
+
 static struct queue_sysfs_entry queue_rq_affinity_entry = {
 	.attr = {.name = "rq_affinity", .mode = S_IRUGO | S_IWUSR },
 	.show = queue_rq_affinity_show,
@@ -851,6 +883,24 @@ static struct queue_sysfs_entry queue_hisi_apd_tst_entry = {
 	.show = NULL,
 	.store = hisi_queue_apd_tst_enable_store,
 };
+
+static struct queue_sysfs_entry queue_hisi_sr_tst_entry = {
+	.attr = {.name = "hisi_queue_sr_tst", .mode = S_IWUSR },
+	.show = NULL,
+	.store = hisi_queue_suspend_tst_store,
+};
+
+extern ssize_t hisi_queue_idle_state_show(struct request_queue *q, char *page);
+extern ssize_t hisi_queue_hw_idle_enable_show(struct request_queue *q, char *page);
+static struct queue_sysfs_entry queue_hw_idle_enable_entry = {
+	.attr = {.name = "hw_idle_enable", .mode = S_IRUGO },
+	.show = hisi_queue_hw_idle_enable_show,
+};
+
+static struct queue_sysfs_entry queue_idle_state_entry = {
+	.attr = {.name = "idle_state", .mode = S_IRUGO },
+	.show = hisi_queue_idle_state_show,
+};
 #endif /* CONFIG_HISI_DEBUG_FS */
 
 static ssize_t queue_usr_ctrl_store(struct request_queue *q, const char *page, size_t count)
@@ -923,20 +973,6 @@ static struct queue_sysfs_entry queue_max_bg_depth_entry = {
 	.store = queue_max_bg_depth_store,
 };
 
-extern ssize_t hisi_queue_hw_idle_enable_show(struct request_queue *q, char *page);
-extern ssize_t hisi_queue_hw_idle_enable_store(struct request_queue *q, const char *page, size_t count);
-extern ssize_t hisi_queue_idle_state_show(struct request_queue *q, char *page);
-static struct queue_sysfs_entry queue_hw_idle_enable_entry = {
-	.attr = {.name = "hw_idle_enable", .mode = S_IRUGO },
-	.show = hisi_queue_hw_idle_enable_show,
-};
-
-static struct queue_sysfs_entry queue_idle_state_entry = {
-	.attr = {.name = "idle_state", .mode = S_IRUGO },
-	.show = hisi_queue_idle_state_show,
-};
-
-
 static struct attribute *default_attrs[] = {
 	&queue_requests_entry.attr,
 	&queue_ra_entry.attr,
@@ -962,6 +998,9 @@ static struct attribute *default_attrs[] = {
 	&queue_iostats_entry.attr,
 	&queue_random_entry.attr,
 	&queue_poll_entry.attr,
+#ifdef CONFIG_ROW_VIP_QUEUE
+	&queue_qos_entry.attr,
+#endif
 #ifdef CONFIG_HISI_BLK
 #if defined(CONFIG_HISI_DEBUG_FS) || defined(CONFIG_HISI_BLK_DEBUG)
 	&queue_hisi_feature_status_entry.attr,
@@ -982,6 +1021,7 @@ static struct attribute *default_attrs[] = {
 	&queue_hisi_busy_idle_tst_proc_result_simulate_entry.attr,
 	&queue_hisi_busy_idle_tst_proc_latency_simulate_entry.attr,
 	&queue_hisi_apd_tst_entry.attr,
+	&queue_hisi_sr_tst_entry.attr,
 #endif /* CONFIG_HISI_DEBUG_FS */
 	&queue_usr_ctrl_entry.attr,
 #endif /* CONFIG_HISI_BLK */
@@ -1131,7 +1171,7 @@ static void blk_wb_init(struct request_queue *q)
 {
 	struct rq_wb *rwb;
 
-	rwb = wbt_init(&q->backing_dev_info, &wb_stat_ops, q);
+	rwb = wbt_init(q->backing_dev_info, &wb_stat_ops, q);
 
 	/*
 	 * If this fails, we don't get throttling

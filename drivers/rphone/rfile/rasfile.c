@@ -957,6 +957,10 @@ static inline int chfile_check(void)
 	size_t count = 0;*/
 	struct path *pth = 0;
 	struct vfsmount *mnt = 0;
+#if LINUX_VERSION_CODE > KERNEL_VERSION(4, 10, 0)
+	u32 rquestmask = 0;
+	unsigned int queryflags = 0;
+#endif
 
 	security_inode_mkdir(dir, den, mode);
 	security_inode_create(dir, den, mode);
@@ -969,11 +973,14 @@ static inline int chfile_check(void)
 		vfs_statfs(pth, kfs);
 	}
 #endif
-#if LINUX_VERSION_CODE > KERNEL_VERSION(3, 8, 0)
+#if LINUX_VERSION_CODE > KERNEL_VERSION(4, 10, 0)
+	vfs_getattr(pth, ks, rquestmask, queryflags);
+	mnt = 0;
+#elif LINUX_VERSION_CODE <= KERNEL_VERSION(3, 8, 0)
+	vfs_getattr(mnt, den, ks);
+#else
 	vfs_getattr(pth, ks);
 	mnt = 0;
-#else
-	vfs_getattr(mnt, den, ks);
 #endif
 	/*rw_verify_area(mode, f, ppos, count);*/
 

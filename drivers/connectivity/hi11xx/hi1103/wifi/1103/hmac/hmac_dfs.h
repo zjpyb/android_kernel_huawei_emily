@@ -28,9 +28,10 @@ extern "C" {
 *****************************************************************************/
 #define HMAC_DFS_ONE_SEC_IN_MS    1000
 #define HMAC_DFS_ONE_MIN_IN_MS    (60 * HMAC_DFS_ONE_SEC_IN_MS)
+#define HMAC_DFS_SIXTY_TWO_SEC_IN_MS (62 * HMAC_DFS_ONE_SEC_IN_MS)  
 
 /* CAC检测时长，5600MHz ~ 5650MHz频段外，默认60秒 */
-#define HMAC_DFS_CAC_OUTOF_5600_TO_5650_MHZ_TIME_MS           HMAC_DFS_ONE_MIN_IN_MS
+#define HMAC_DFS_CAC_OUTOF_5600_TO_5650_MHZ_TIME_MS           HMAC_DFS_SIXTY_TWO_SEC_IN_MS
 
 /* CAC检测时长，5600MHz ~ 5650MHz频段内，默认10分钟 */
 #define HMAC_DFS_CAC_IN_5600_TO_5650_MHZ_TIME_MS              (10 * HMAC_DFS_ONE_MIN_IN_MS)

@@ -293,7 +293,7 @@ const struct RDR_LOG_TM_RANGE tbl_rdr_logdir_tm_rg[] = {
 	{"second", {12, 2}, {0, 59} },
 };
 
-int rdr_is_logdir_nm_tm(char *buf, int len)
+int rdr_is_logdir_nm_tm(const char *buf, int len)
 {
 	int i;
 	char tempstr[10];
@@ -326,7 +326,7 @@ int rdr_is_logdir_nm_tm(char *buf, int len)
 	return 1;
 }
 
-u64 rdr_cal_tm_from_logdir_name(char *path)
+u64 rdr_cal_tm_from_logdir_name(const char *path)
 {
 	char sec[15];
 	static u64 date_sec; /* default value is 0 */
@@ -446,7 +446,7 @@ out:
 	return 0;
 }
 
-void rdr_add_logpath_list(char *path, struct timespec *time)
+void rdr_add_logpath_list(const char *path, struct timespec *time)
 {
 	struct logpath_info_s *lp_info = NULL;
 	/*BB_PRINT_START();*/
@@ -782,7 +782,10 @@ static bool rdr_check_log_mark(u32 rdr_max_size, u32 rdr_max_logs)
 			continue;
 		}
 
-		memset_s(fullname, PATH_MAXLEN, 0, PATH_MAXLEN);
+		if (EOK != memset_s(fullname, PATH_MAXLEN, 0, PATH_MAXLEN)) {
+			BB_PRINT_ERR("%s():%d:memset_s fail!\n", __func__, __LINE__);
+		}
+
 		ret_s = snprintf_s(fullname, PATH_MAXLEN, PATH_MAXLEN-1, "%s%s", PATH_ROOT,
 			 p_info->path);
 		if (unlikely(ret_s < 0)) {
@@ -906,7 +909,7 @@ void rdr_count_size(void)
 	return;
 }
 
-static int rdr_rm_file(char *fullname)
+static int rdr_rm_file(const char *fullname)
 {
 	BB_PRINT_DBG("rdr:%s():delete file [%s]\n", __func__, fullname);
 	return sys_unlink(fullname);

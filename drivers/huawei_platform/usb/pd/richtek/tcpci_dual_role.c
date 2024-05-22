@@ -186,7 +186,6 @@ int tcpc_dual_role_phy_init(
 			struct tcpc_device *tcpc)
 {
 	struct dual_role_phy_desc *dual_desc;
-	int len;
 
 	tcpc->dr_usb = devm_kzalloc(&tcpc->dev,
 				sizeof(tcpc->dr_usb), GFP_KERNEL);

@@ -373,6 +373,13 @@ void cal_statistics(const int32_t* array, const int8_t length, int32_t* avg, int
 		}
 		sum += array[index];
 	}
+	if (0 == actual_length)
+	{
+		/* this means all RTTs are abnormal, most likely too high */
+		*avg = RTT_ABNORMAL_THRESHOLD;              // return a high average value to ensure BAD is the evaluation result
+		*sqrdev = 0;                                // and sqrdev is irrelavent
+		return;
+	}
 	if (SS_COUNT == actual_length)                 // for efficiency
 	{
 		average = sum >> SS_SHIFT_BITS;

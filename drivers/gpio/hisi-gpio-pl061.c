@@ -27,7 +27,11 @@ int pl061_parse_gpio_base(struct device *dev)
 	return -EINVAL;
 }
 
+#if(LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0))
+int pl061_check_security_status(struct pl061 *chip)
+#else
 int pl061_check_security_status(struct pl061_gpio *chip)
+#endif
 {
 #if(LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
 	WARN(chip->sec_status, "%s controller is busy", dev_name(chip->gc.parent));
@@ -41,7 +45,11 @@ int pl061_check_security_status(struct pl061_gpio *chip)
 #include "../hisi/tzdriver/tui.h"
 int pl061_tui_request(struct device *dev)
 {
+#if(LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0))
+	struct pl061 *chip = dev_get_drvdata(dev);
+#else
 	struct pl061_gpio *chip = dev_get_drvdata(dev);
+#endif
 	unsigned long flags;
 
 	pr_debug("%s: is switching sec status\n", dev_name(dev));
@@ -64,7 +72,11 @@ int pl061_tui_request(struct device *dev)
 
 int pl061_tui_release(struct device *dev)
 {
+#if(LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0))
+	struct pl061 *chip = dev_get_drvdata(dev);
+#else
 	struct pl061_gpio *chip = dev_get_drvdata(dev);
+#endif
 	unsigned long flags;
 
 	pr_debug("%s: is switching non-sec status\n", dev_name(dev));

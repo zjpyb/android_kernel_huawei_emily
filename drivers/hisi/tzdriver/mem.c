@@ -45,7 +45,9 @@ void tc_mem_free(TC_NS_Shared_MEM *shared_mem)
 		}
 	}
 
+	shared_mem->kernel_addr = NULL;
 	kfree(shared_mem);
+	shared_mem = NULL;
 }
 
 TC_NS_Shared_MEM *tc_mem_allocate(size_t len, bool from_mailbox)
@@ -55,7 +57,7 @@ TC_NS_Shared_MEM *tc_mem_allocate(size_t len, bool from_mailbox)
 
 
 	shared_mem = kmalloc(sizeof(TC_NS_Shared_MEM), GFP_KERNEL|__GFP_ZERO);
-	if (!shared_mem) {
+	if (NULL == shared_mem) {
 		tloge("shared_mem kmalloc failed\n");
 		return ERR_PTR(-ENOMEM);
 	}
@@ -72,7 +74,7 @@ TC_NS_Shared_MEM *tc_mem_allocate(size_t len, bool from_mailbox)
 		addr = vmalloc_user(len);
 	}
 
-	if (!addr) {
+	if (NULL == addr) {
 		tloge("alloc maibox failed\n");
 		kfree(shared_mem);
 		return ERR_PTR(-ENOMEM);
@@ -81,7 +83,9 @@ TC_NS_Shared_MEM *tc_mem_allocate(size_t len, bool from_mailbox)
 	shared_mem->from_mailbox = from_mailbox;
 	shared_mem->kernel_addr = addr;
 	shared_mem->len = len;
-
+	shared_mem->user_addr = NULL;
+	shared_mem->user_addr_ca = NULL;
+	atomic_set(&shared_mem->usage, 0);
 	return shared_mem;
 }
 
@@ -141,14 +145,14 @@ int TC_NS_register_ion_mem(void)
 {
 	TC_NS_SMC_CMD smc_cmd = {0};
 	int ret = 0;
-	struct mb_cmd_pack *mb_pack;
-	struct register_ion_mem_tag *memtag;
+	struct mb_cmd_pack *mb_pack = NULL;
+	struct register_ion_mem_tag *memtag = NULL;
 	uint32_t pos = 0;
 	tloge("ion mem static reserved for tee face=%d,finger=%d,voiceid=%d\n",(uint32_t)g_secfacedetect_mem_size,(uint32_t)g_ion_mem_size,(uint32_t)g_voiceid_size);
 
 
 	mb_pack = mailbox_alloc_cmd_pack();
-	if (!mb_pack) {
+	if (NULL == mb_pack) {
 		tloge("mailbox alloc failed\n");
 		return -ENOMEM;
 	}
@@ -189,7 +193,7 @@ int TC_NS_register_ion_mem(void)
 	smc_cmd.operation_phys = virt_to_phys(&mb_pack->operation);
 	smc_cmd.operation_h_phys = virt_to_phys(&mb_pack->operation) >> 32; /*lint !e572*/
 
-	ret = TC_NS_SMC(&smc_cmd, 0);
+	ret = (int)TC_NS_SMC(&smc_cmd, 0);
 	mailbox_free(mb_pack);
 	mailbox_free(memtag);
 	if (ret) {

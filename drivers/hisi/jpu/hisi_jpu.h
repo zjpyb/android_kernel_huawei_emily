@@ -39,13 +39,14 @@
 
 #include <linux/ion.h>
 #include <linux/hisi/hisi_ion.h>
-#include <linux/hisi/hisi-iommu.h>
+#include <linux/hisi-iommu.h>
 
 #include "hisi_jpu_def.h"
 #include "hisi_jpu_common.h"
 #include "hisi_jpu_regs.h"
 #include "hisi_jpu_regs.h"
 #include "soc_jpu_interface.h"
+#include "hisi_jpu_iommu.h"
 
 #define DEV_NAME_JPU	"hisi_jpu"
 #define DTS_COMP_JPU_NAME	"hisilicon,hisijpu"
@@ -69,10 +70,7 @@
 	#define JPG_FUNC_CLK_DEFAULT_RATE_V501	(415 * 1000000L)
 #endif
 
-#define HISI_JPU_ION_CLIENT_NAME	"hisi_jpu_ion"
-
 //#define CONFIG_NO_USE_INTERFACE
-#define CONFIG_JPU_SMMU_ENABLE
 #define CONFIG_FB_DEBUG_USED
 
 struct hisi_jpu_data_type {
@@ -110,10 +108,14 @@ struct hisi_jpu_data_type {
 	const char *jpg_platform_name;
 	jpeg_dec_platform jpu_support_platform;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0)
+	struct sg_table *lb_sg_table;
+#else
 	struct ion_client *ion_client;
 	struct ion_handle *lb_ion_handle;
 	struct iommu_map_format iommu_format;
 	struct iommu_domain *jpu_domain;
+#endif
 
 	uint32_t lb_addr; /* line buffer addr*/
 	bool power_on;
@@ -166,7 +168,15 @@ void hisi_jpu_dec_interrupt_unmask(struct hisi_jpu_data_type *hisijd);
 void hisi_jpu_dec_interrupt_mask(struct hisi_jpu_data_type *hisijd);
 void hisi_jpu_dec_interrupt_clear(struct hisi_jpu_data_type *hisijd);
 
-int hisijpu_job_exec(struct hisi_jpu_data_type *hisijd, void __user *argp);
+int hisijpu_job_exec(struct hisi_jpu_data_type *hisijd, const void __user *argp);
 
+int hisijpu_create_buffer_client(struct hisi_jpu_data_type *hisijd);
+void hisijpu_destroy_buffer_client(struct hisi_jpu_data_type *hisijd);
+int hisijpu_enable_iommu(struct hisi_jpu_data_type *hisijd);
+phys_addr_t hisi_jpu_domain_get_ttbr(struct hisi_jpu_data_type *hisijd);
+int hisi_jpu_lb_alloc(struct hisi_jpu_data_type *hisijd);
+void hisi_jpu_lb_free(struct hisi_jpu_data_type *hisijd);
+int hisi_jpu_check_inbuff_addr(struct hisi_jpu_data_type *hisijd, jpu_data_t *jpu_req);
+int hisi_jpu_check_outbuff_addr(struct hisi_jpu_data_type *hisijd, jpu_data_t *jpu_req);
 
 #endif /* __HISI_JPU_H__ */

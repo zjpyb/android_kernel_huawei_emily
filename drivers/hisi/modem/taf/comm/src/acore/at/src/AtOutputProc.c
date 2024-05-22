@@ -224,6 +224,7 @@ const AT_RETURN_TAB_TYPE_STRU gastAtReturnCodeTab[]=
     {AT_CME_MODEM_ID_ERROR,                                {  (TAF_UINT8*)"756", (TAF_UINT8*)"Modem Id Error" } },
     {AT_CME_WRITE_NV_TimeOut,                              {  (TAF_UINT8*)"757", (TAF_UINT8*)"Write NV TimeOut" } },
     {AT_CME_NV_NOT_SUPPORT_ERR,                            {  (TAF_UINT8*)"758", (TAF_UINT8*)"NV Not Support" } },
+    {AT_CME_FUNC_DISABLE,                                  {  (TAF_UINT8*)"759", (TAF_UINT8*)"Function Disable" } },
     {AT_CME_ERROR_ENUM_END,                                {TAF_NULL_PTR,       TAF_NULL_PTR                 }  },
 
     /*装备AT命令错误码提示*/

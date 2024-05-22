@@ -281,6 +281,13 @@ static struct scsi_device *scsi_alloc_sdev(struct scsi_target *starget,
 		blk_queue_init_tags(sdev->request_queue,
 				    sdev->host->cmd_per_lun, shost->bqt,
 				    shost->hostt->tag_alloc_policy);
+#ifdef CONFIG_HISI_BLK
+		/* for USB stick */
+		if (shost->queue_quirk_flag & SHOST_QUIRK(SHOST_QUIRK_IO_LATENCY_WARNING)) {
+			blk_queue_latency_warning_set(sdev->request_queue, 5000);
+			blk_queue_dump_register(sdev->request_queue, NULL);
+		}
+#endif
 	}
 	scsi_change_queue_depth(sdev, sdev->host->cmd_per_lun ?
 					sdev->host->cmd_per_lun : 1);
@@ -1036,9 +1043,6 @@ static unsigned char *scsi_inq_str(unsigned char *buf, unsigned char *inq,
 }
 #endif
 
-#ifdef CONFIG_HISI_UFS_MANUAL_BKOPS
-extern int hisi_ufs_manual_bkops_config(struct request_queue *q, struct Scsi_Host *shost);
-#endif
 /**
  * scsi_probe_and_add_lun - probe a LUN, if a LUN is found add it
  * @starget:	pointer to target device structure
@@ -1178,9 +1182,6 @@ static int scsi_probe_and_add_lun(struct scsi_target *starget,
 			scsi_unlock_floptical(sdev, result);
 		}
 	}
-#ifdef CONFIG_HISI_UFS_MANUAL_BKOPS
-	hisi_ufs_manual_bkops_config(sdev->request_queue, shost);
-#endif /* CONFIG_HISI_UFS_MANUAL_BKOPS */
 
  out_free_result:
 	kfree(result);

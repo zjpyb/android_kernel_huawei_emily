@@ -18,6 +18,7 @@
 #include <linux/ioprio.h>
 #include <linux/blkdev.h>
 #include <linux/delay.h>
+#include <linux/hisi/rdr_hisi_platform.h>
 #include <trace/events/mmc.h>
 
 /*move from core.c*/
@@ -84,17 +85,19 @@ int mmc_start_cmdq_request(struct mmc_host *host,
 	mrq->cmd->retries = CMDQ_RETRY;
 	mrq->cmd->mrq = mrq;
 	if (mrq->data) {
-		BUG_ON(mrq->data->blksz > host->max_blk_size);
-		BUG_ON(mrq->data->blocks > host->max_blk_count);
-		BUG_ON(mrq->data->blocks * mrq->data->blksz >
-			host->max_req_size);
+		if (mrq->data->blksz > host->max_blk_size)
+			rdr_syserr_process_for_ap((u32)MODID_AP_S_PANIC_Storage, 0ull, 0ull);
+		if (mrq->data->blocks > host->max_blk_count)
+			rdr_syserr_process_for_ap((u32)MODID_AP_S_PANIC_Storage, 0ull, 0ull);
+		if (mrq->data->blocks * mrq->data->blksz >
+			host->max_req_size)
+			rdr_syserr_process_for_ap((u32)MODID_AP_S_PANIC_Storage, 0ull, 0ull);
 
 		mrq->cmd->data = mrq->data;
 		mrq->data->error = 0;
 		mrq->data->mrq = mrq;
 	}
 
-	led_trigger_event(host->led, LED_FULL);
 
 #ifdef CONFIG_HW_MMC_MAINTENANCE_CMD
 	record_mmc_cmdq_cmd(mrq);

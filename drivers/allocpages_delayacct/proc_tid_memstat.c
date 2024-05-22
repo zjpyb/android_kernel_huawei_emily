@@ -1,5 +1,6 @@
 #include <linux/seq_file.h>
 #include <linux/sched.h>
+#include <linux/delayacct.h>
 #include <linux/pid_namespace.h>
 #include <linux/pid.h>
 #include <linux/spinlock.h>

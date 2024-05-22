@@ -1,7 +1,7 @@
 #ifndef _HUAWEI_DEV_DETECT_H_
 #define _HUAWEI_DEV_DETECT_H_
 
-/**
+/*
  * Note: The enums in these two files are same.
  * ${ANDROID_ROOT}/vendor/huawei/extra/kernel/include/dev_detect/
  * hw_dev_detect.h
@@ -114,7 +114,7 @@ static const struct detect_device hw_detect_device_array[] = {
 	{ DEV_DETECT_PMIC, "pmic" },          /* id : 43 order number 44 */
 };
 
-/**
+/*
  * It is used in the device's probe function, if device's probe is completed,
  * set true flag corresponding to dev_id.
  */

@@ -47,7 +47,10 @@
 #define LSW50_PHYS_ADDR	(0xAC)
 #endif
 
-/*#define DATA_SIZE     (4)*/
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+#include <uapi/linux/sched/types.h>
+#endif
+
 #define MAX_LOTUS_NUM  6
 static struct mutex easy_wake_guesure_lock;
 
@@ -140,16 +143,6 @@ static struct ts_device_data g_ts_device_map[] = {
 	       .ops = &ts_atmel_ops,
 	       },
 #endif
-#ifdef CONFIG_CYPRESS_TS
-/*	[2] = {
-*	       .chip_name = "cypress",
-*	       .irq_gpio = TS_IO_UNDEFINE,
-*	       .irq_config = TS_IRQ_CFG_UNDEFINE,
-*	       .reset_gpio = TS_IO_UNDEFINE,
-*	       .ops = &ts_cypress_ops,
-*	       },
-*/
-#endif
 #ifdef CONFIG_HIDEEP_TS
 	[3] = {
 	       .chip_name = "hideep",
@@ -225,6 +218,7 @@ static void ts_tui_secos_init(void)
 static void ts_tui_secos_exit(void)
 {
 	struct ts_device_data *dev = g_ts_data.chip_data;
+	int error = NO_ERR;
 
 	if (g_ts_data.chip_data->report_tui_enable) {
 		i2c_exit_secos(g_ts_data.client->adapter);
@@ -238,14 +232,20 @@ static void ts_tui_secos_exit(void)
 
 		if (g_ts_data.chip_data->tui_set_flag & 0x1) {
 			TS_LOG_INFO("TUI exit, do before suspend\n");
-			ts_power_control_notify(TS_BEFORE_SUSPEND,
+			error = ts_power_control_notify(TS_BEFORE_SUSPEND,
 						SHORT_SYNC_TIMEOUT);
+			if (error)
+				TS_LOG_ERR("%s: ts suspend device err\n",
+					__func__);
 		}
 
 		if (g_ts_data.chip_data->tui_set_flag & 0x2) {
 			TS_LOG_INFO("TUI exit, do suspend\n");
-			ts_power_control_notify(TS_SUSPEND_DEVICE,
+			error = ts_power_control_notify(TS_SUSPEND_DEVICE,
 						NO_SYNC_TIMEOUT);
+			if (error) {
+				TS_LOG_ERR("ts suspend device err\n");
+			}
 		}
 
 		g_ts_data.chip_data->tui_set_flag = 0;
@@ -479,7 +479,6 @@ int put_one_cmd_direct_sync(struct ts_cmd_node *cmd, int timeout)
 		 error = -EIO;
 	     return error;
 	}
-out:
 	return error;
 }
 
@@ -684,8 +683,6 @@ static ssize_t ts_oem_info_show(struct device *dev, struct device_attribute *att
 		unsigned char str_oem[TS_CHIP_TYPE_MAX_SIZE];
 		unsigned char str_tmp[TS_CHIP_TYPE_MAX_SIZE];
 		int i;
-		int parade_flag = 0;
-		int count = 30;
 		TS_LOG_INFO("%s: called\n", __func__);
 
 		if (dev == NULL) {
@@ -788,7 +785,6 @@ static ssize_t ts_oem_info_show(struct device *dev, struct device_attribute *att
 ssize_t ts_ome_info_store(struct device *dev, struct device_attribute *attr,
 			   const char *buf, size_t count)
 {
-	unsigned int value;
 	int error= NO_ERR;
 	struct ts_cmd_node *cmd = NULL;
 	struct ts_oem_info_param *info = NULL;
@@ -822,7 +818,7 @@ ssize_t ts_ome_info_store(struct device *dev, struct device_attribute *attr,
 	}
 
 	if (strlen(buf) > TS_CHIP_TYPE_MAX_SIZE+1) {
-		TS_LOG_ERR("%s: Store TPIC type data size= %d larger than MAX input size=%d \n",
+		TS_LOG_ERR("%s: Store TPIC type data size= %lu larger than MAX input size=%d\n",
 			__func__, strlen(buf), TS_CHIP_TYPE_MAX_SIZE);
 		error = -EINVAL;
 		goto out;
@@ -864,6 +860,30 @@ out:
 	return error;
 }
 
+#ifdef CONFIG_HUAWEI_DSM
+static void ts_get_projectid_for_dsm(struct ts_chip_info_param *info)
+{
+	char *tmp = NULL;
+	if(NULL != info->ic_vendor)
+	{
+		tmp =  info->ic_vendor;
+		while(strchr(tmp,'-') != NULL)
+		{
+			tmp = strrchr(tmp,'-')+1;
+		}
+
+		if (tmp && DSM_MAX_MODULE_NAME_LEN > strlen(tmp)) {
+			dsm_tp.module_name = tmp;
+			if (dsm_update_client_vendor_info(&dsm_tp)) {
+				TS_LOG_ERR("dsm update client_vendor_info is failed\n");
+			}
+		}else {
+			TS_LOG_ERR("project id is invalid\n");
+		}
+	}
+}
+#endif
+
 ssize_t ts_chip_info_show(struct device *dev, struct device_attribute *attr,
 			  char *buf)
 {
@@ -902,6 +922,7 @@ ssize_t ts_chip_info_show(struct device *dev, struct device_attribute *attr,
 		goto out;
 	}
 
+
 	if (info->status != TS_ACTION_SUCCESS) {
 		TS_LOG_ERR("read action failed\n");
 		error = -EIO;
@@ -917,6 +938,10 @@ ssize_t ts_chip_info_show(struct device *dev, struct device_attribute *attr,
 			     "%s-%s-%s\n", info->ic_vendor, info->mod_vendor,
 			     info->fw_vendor);
 	}
+
+#ifdef CONFIG_HUAWEI_DSM
+        ts_get_projectid_for_dsm(info);
+#endif
 out:
 	if (cmd){
 		kfree(cmd);
@@ -1352,11 +1377,13 @@ out:
 static int ts_send_init_cmd(void)
 {
 	int error = NO_ERR;
+	struct ts_cmd_node cmd;
+
 	TS_LOG_INFO("%s Enter\n", __func__);
+
+	cmd.command = TS_TP_INIT;
 	if(g_ts_data.chip_data->is_direct_proc_cmd){
 		g_ts_data.chip_data->is_can_device_use_int = true;
-		struct ts_cmd_node cmd;
-		cmd.command = TS_TP_INIT;
 		error = put_one_cmd(&cmd, NO_SYNC_TIMEOUT);
 		if (error) {
 			TS_LOG_ERR("put cmd error :%d\n", error);
@@ -1375,13 +1402,15 @@ static void proc_init_cmd(void){
 
 static void tp_init_work_fn(struct work_struct *work){
 	struct ts_cmd_node use_cmd;
-	int i = TS_CMD_QUEUE_SIZE;
 	struct ts_cmd_queue *q;
-	unsigned long flags;
 	struct ts_cmd_node *cmd = &use_cmd;
 	struct ts_device_data *dev = g_ts_data.chip_data;
-	q = &g_ts_data.no_int_queue;
+
+	int i = TS_CMD_QUEUE_SIZE;
 	int error = NO_ERR;
+	unsigned long flags;
+
+	q = &g_ts_data.no_int_queue;
 	//Call chip init
 	mutex_lock(&g_ts_data.chip_data->device_call_lock);
 	if (dev->ops->chip_init) {
@@ -1828,9 +1857,8 @@ static int ts_strsep_and_parse_int_value(char **stringp, const char *delim, cons
 
 static int ts_register_store_parse_param(char *buf, int *flag, unsigned int *addr, char *value, int *num, int *bit)
 {
-	char *cur;
+	char *cur = buf;
 	char *token;
-	cur = buf;
 	int error = NO_ERR;
 
 	if (ts_strsep_and_parse_int_value(&cur, " ", "%d", flag) != NO_ERR) {
@@ -2771,7 +2799,6 @@ out:
 	return error;
 }
 
-//struct anti_false_touch_param *g_anti_false_touch_param = NULL;
 void ts_anti_false_touch_param_achieve(struct ts_device_data *chip_data){
 	int retval  = NO_ERR;
 	unsigned int value = 0;
@@ -2786,7 +2813,6 @@ void ts_anti_false_touch_param_achieve(struct ts_device_data *chip_data){
 		return ;
 	}
 	local_param = &(chip_data->anti_false_touch_param_data);
-	//g_anti_false_touch_param = local_param;
 	memset(local_param, 0, sizeof(struct anti_false_touch_param));
 
 	TS_LOG_INFO("%s chip_name:%s\n", __func__, chip_data->chip_name);
@@ -3445,7 +3471,7 @@ static DEVICE_ATTR(touch_chip_info, (S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH),
 		   ts_chip_info_show, ts_chip_info_store);
 static DEVICE_ATTR(calibration_info, (S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH),
 		ts_calibration_info_show, NULL);
-static DEVICE_ATTR(calibrate, S_IRUSR, ts_calibrate_show, NULL);
+static DEVICE_ATTR(calibrate, (S_IRUSR|S_IRGRP), ts_calibrate_show, NULL);
 static DEVICE_ATTR(calibrate_wakeup_gesture, S_IRUSR,
 		   ts_calibrate_wakeup_gesture_show, NULL);
 static DEVICE_ATTR(touch_glove, (S_IRUSR | S_IWUSR), ts_glove_mode_show,
@@ -3455,7 +3481,7 @@ static DEVICE_ATTR(touch_sensitivity, (S_IRUSR | S_IWUSR), ts_sensitivity_show,
 static DEVICE_ATTR(hand_detect, S_IRUSR, ts_hand_detect_show, NULL);
 static DEVICE_ATTR(loglevel, (S_IRUSR | S_IWUSR), ts_loglevel_show,
 		   ts_loglevel_store);
-static DEVICE_ATTR(supported_func_indicater, (S_IRUSR),
+static DEVICE_ATTR(supported_func_indicater, (S_IRUSR|S_IRGRP),
 		   ts_supported_func_indicater_show, NULL);
 static DEVICE_ATTR(touch_window, (S_IRUSR | S_IWUSR), ts_touch_window_show,
 		   ts_touch_window_store);
@@ -3618,6 +3644,11 @@ static int rawdata_proc_show(struct seq_file *m, void *v)
 	struct ts_cmd_node *cmd = NULL;
 	struct ts_rawdata_info *info = NULL;
 
+	if ((m == NULL) || (v == NULL)) {
+		TS_LOG_ERR("rawdata_proc_show, input null ptr\n");
+		return -EINVAL;
+	}
+
 	TS_LOG_INFO("rawdata_proc_show, buffer size = %ld\n", m->size);
 	if (m->size <= RAW_DATA_SIZE) {
 		m->count = m->size;
@@ -3714,7 +3745,6 @@ static int rawdata_proc_show(struct seq_file *m, void *v)
 			for (index1 = 0; index1 < row_size; index1++) {
 				seq_printf(m, "%d,", info->buff[2 + row_size * index + index1]);	/*print oneline */
 			}
-			/*index1 = 0;*/
 			seq_printf(m, "\n ");
 
 			if ((range_size - 1) == index) {
@@ -3913,8 +3943,6 @@ static int rawdata_proc_show(struct seq_file *m, void *v)
 		}
 		seq_printf(m, "\n ");
 		seq_printf(m, "cp detlat end\n");	/*print the title */
-OUT:
-		seq_printf(m, "*************end data*************\n");
 	}
 
 	if (g_ts_data.chip_data->support_3d_func) {
@@ -4348,7 +4376,7 @@ static int fb_notifier_callback(struct notifier_block *self,
 
 	/* only need process event  FB_EARLY_EVENT_BLANK\FB_EVENT_BLANK  */
 	if (!(event == FB_EARLY_EVENT_BLANK || event == FB_EVENT_BLANK)) {
-		TS_LOG_DEBUG("event(%d) do not need process\n", event);
+		TS_LOG_DEBUG("event(%lu) do not need process\n", event);
 		return NO_ERR;
 	}
 
@@ -4666,13 +4694,11 @@ out:
 			memcpy(&g_ts_data.fingers_send_aft_info, &out_cmd->cmd_param.pub_params.report_info, sizeof(struct ts_fingers));
 			atomic_set(&g_ts_data.fingers_waitq_flag, AFT_WAITQ_WAKEUP);
 			up(&g_ts_data.fingers_aft_send);
-			//TS_LOG_ERR("[MUTI_AFT] wake_up_interruptible  fingers_waitq!\n");
 			ts_work_after_input();  /* do some delayed works */
 			out_cmd->command = TS_INVAILD_CMD;
 		}
 		else if(atomic_read(&g_ts_data.fingers_waitq_flag)  != AFT_WAITQ_IDLE)
 		{
-			//atomic_set(&g_ts_data.fingers_waitq_flag, AFT_WAITQ_IGNORE);
 			up(&g_ts_data.fingers_aft_send);
 			TS_LOG_ERR("[MUTI_AFT] ts_algo_calibrate hal aglo process too slow \n");
 		}
@@ -5548,7 +5574,6 @@ static inline bool ts_cmd_need_process(struct ts_cmd_node *cmd)
 				break;
 			case TS_INT_PROCESS:
 			case TS_INT_ERR_OCCUR:
-				//enable_irq(g_ts_data.irq_id);
 				if (g_ts_data.chip_data->is_parade_solution){
 					if(g_ts_data.chip_data->isbootupdate_finish==false)
 						is_need_process = true;
@@ -5778,6 +5803,8 @@ out:
 static int ts_proc_command_directly(struct ts_cmd_node *cmd)
 {
 	int error = NO_ERR;
+	struct ts_cmd_node outcmd;
+
 	TS_LOG_INFO("%s Enter\n",__func__);
 	/*Do not use cmd->sync in this func, setting it as null*/
 	cmd->sync = NULL;
@@ -5786,7 +5813,6 @@ static int ts_proc_command_directly(struct ts_cmd_node *cmd)
 		error = -EIO;
 		goto out;
 	}
-	struct ts_cmd_node outcmd;
 	mutex_lock(&g_ts_data.chip_data->device_call_lock);
 	switch (cmd->command) {
 		case TS_INT_PROCESS:
@@ -5936,10 +5962,7 @@ static long ts_ioctl_get_fingers_info(unsigned long arg)
 {
 	int ret = 0;
 	void __user* argp = (void __user*)arg;
-	struct ts_fingers data;
-	u32 frame_size;
 
-	//TS_LOG_ERR("[MUTI_AFT] ts_ioctl_get_fingers_info enter \n");
 	if (arg == 0)
 	{
 		TS_LOG_ERR("arg == 0.\n");
@@ -5957,9 +5980,7 @@ static long ts_ioctl_get_fingers_info(unsigned long arg)
 	      atomic_set(&g_ts_data.fingers_waitq_flag, AFT_WAITQ_IGNORE);
 		return -EINVAL;
 	}
-	//TS_LOG_ERR("[MUTI_AFT] get_fingers_info status:%d, x:%d, y:%d,major:%d, minor:%d\n",g_ts_kit_platform_data.fingers_send_aft_info.fingers[0].status,
-		//g_ts_kit_platform_data.fingers_send_aft_info.fingers[0].x,g_ts_kit_platform_data.fingers_send_aft_info.fingers[0].y,
-		//g_ts_kit_platform_data.fingers_send_aft_info.fingers[0].major,g_ts_kit_platform_data.fingers_send_aft_info.fingers[0].minor);
+
 	if(atomic_read(&g_ts_data.fingers_waitq_flag) == AFT_WAITQ_WAKEUP)
 	{
 		if (copy_to_user(argp, &g_ts_data.fingers_send_aft_info,
@@ -5969,31 +5990,19 @@ static long ts_ioctl_get_fingers_info(unsigned long arg)
 			return -EFAULT;
 		}
 	}
-	/*if (wait_event_interruptible(g_ts_kit_platform_data.fingers_waitq, (g_ts_kit_platform_data.fingers_waitq_flag == AFT_WAITQ_WAKEUP)))
-	{
-		TS_LOG_ERR("ts_ioctl_get_fingers_info -ERESTARTSYS\n");
-		return -ERESTARTSYS;
-	}
-	g_ts_kit_platform_data.fingers_waitq_flag = AFT_WAITQ_WAIT;
-	TS_LOG_ERR("get_fingers_info status:%d, x:%d, y:%d,major:%d, minor:%d \n",g_ts_kit_platform_data.fingers_send_aft_info.fingers[0].status,
-	g_ts_kit_platform_data.fingers_send_aft_info.fingers[0].x,g_ts_kit_platform_data.fingers_send_aft_info.fingers[0].y,
-	g_ts_kit_platform_data.fingers_send_aft_info.fingers[0].major,g_ts_kit_platform_data.fingers_send_aft_info.fingers[0].minor);
-	if (copy_to_user(argp, &g_ts_kit_platform_data.fingers_send_aft_info,
-			sizeof(struct ts_fingers)))
-	{
-		TS_LOG_ERR("ts_ioctl_get_fingers_info Failed to copy_from_user().\n");
-		return -EFAULT;
-	}*/
+
 	return ret;
 }
 static long ts_ioctl_get_aft_param_info(unsigned long arg)
 {
+	void __user *argp = (void __user *)arg;
+
 	if (arg == 0)
 	{
 		TS_LOG_ERR("arg == 0.\n");
 		return -EINVAL;
 	}
-	if (copy_to_user(arg, &g_ts_data.aft_param,
+	if (copy_to_user(argp, &g_ts_data.aft_param,
 			sizeof(struct ts_aft_algo_param)))
 	{
 		TS_LOG_ERR("ts_ioctl_get_aft_param_info Failed to copy_to_user().\n");
@@ -6010,7 +6019,6 @@ static long ts_ioctl_set_coordinates(unsigned long arg)
 	struct anti_false_touch_param *local_param = NULL;
 	int finger_num = 0;
 	int id = 0;
-	unsigned long flags;
 #if ANTI_FALSE_TOUCH_USE_PARAM_MAJOR_MINOR
 	struct aft_abs_param_major aft_abs_major;
 	int major = 0;
@@ -6026,7 +6034,6 @@ static long ts_ioctl_set_coordinates(unsigned long arg)
 		return -EINVAL;
 	}
 
-	//TS_LOG_ERR("[MUTI_AFT] ts_ioctl_set_coordinates enter\n");
 	if (arg == 0)
 	{
 		TS_LOG_ERR("arg == 0.\n");
@@ -6038,7 +6045,7 @@ static long ts_ioctl_set_coordinates(unsigned long arg)
 		TS_LOG_ERR("ts_ioctl_set_coordinates Failed to copy_from_user().\n");
 		return -EFAULT;
 	}
-	//memcpy(&g_ts_kit_platform_data.fingers_recv_aft_info,&data,sizeof(struct ts_fingers));
+
 	finger = &data;
 	if (g_ts_data.chip_data){
 		local_param = &(g_ts_data.chip_data->anti_false_touch_param_data);
@@ -6132,16 +6139,9 @@ static long ts_ioctl_set_coordinates(unsigned long arg)
 		input_report_key(input_dev, BTN_TOUCH, 0);
 		input_mt_sync(input_dev);
 		input_sync(input_dev);
-		//TS_LOG_ERR("[MUTI_AFT] report the added release event\n");
 	}
-	//TS_LOG_ERR("[MUTI_AFT] ts_report_input done, finger_num = %d\n", finger_num);
-
 
 	atomic_set(&g_data_report_over, 1);
-	/*TS_LOG_ERR("[MUTI_AFT] set_coordinates status:%d, x:%d, y:%d,major:%d, minor:%d \n",g_ts_kit_platform_data.fingers_recv_aft_info.fingers[0].status,
-		g_ts_kit_platform_data.fingers_recv_aft_info.fingers[0].x,g_ts_kit_platform_data.fingers_recv_aft_info.fingers[0].y,
-		g_ts_kit_platform_data.fingers_recv_aft_info.fingers[0].major,g_ts_kit_platform_data.fingers_recv_aft_info.fingers[0].minor);
-	up(&g_ts_kit_platform_data.fingers_aft_done); */
 	return 0;
 }
 static int aft_get_info_misc_open(struct inode* inode, struct file* filp)
@@ -6151,11 +6151,6 @@ static int aft_get_info_misc_open(struct inode* inode, struct file* filp)
 
 static int aft_get_info_misc_release(struct inode* inode, struct file* filp)
 {
-	/*if(g_ts_kit_platform_data.aft_param.aft_enable_flag)
-	{
-		g_ts_kit_platform_data.fingers_waitq_flag = AFT_WAITQ_WAKEUP;
-		wake_up_interruptible(&(g_ts_kit_platform_data.fingers_waitq));
-	}*/
 	return 0;
 }
 
@@ -6163,7 +6158,7 @@ static long aft_get_info_misc_ioctl(struct file* filp, unsigned int cmd,
                                    unsigned long arg)
 {
 	long ret;
-	//TS_LOG_ERR("[MUTI_AFT] aft_get_info_misc_ioctl enter cmd:%d\n",cmd);
+
 	switch (cmd)
 	{
 	case INPUT_AFT_IOCTL_CMD_GET_TS_FINGERS_INFO:
@@ -6200,11 +6195,6 @@ static int aft_set_info_misc_open(struct inode* inode, struct file* filp)
 
 static int aft_set_info_misc_release(struct inode* inode, struct file* filp)
 {
-	/*if(g_ts_kit_platform_data.aft_param.aft_enable_flag)
-	{
-		g_ts_kit_platform_data.fingers_waitq_flag = AFT_WAITQ_WAKEUP;
-		wake_up_interruptible(&(g_ts_kit_platform_data.fingers_waitq));
-	}*/
 	return 0;
 }
 
@@ -6212,7 +6202,7 @@ static long aft_set_info_misc_ioctl(struct file* filp, unsigned int cmd,
                                    unsigned long arg)
 {
 	long ret;
-	//TS_LOG_ERR("[MUTI_AFT] aft_Set_info_misc_ioctl enter cmd:%d\n",cmd);
+
 	switch (cmd)
 	{
 	case INPUT_AFT_IOCTL_CMD_SET_COORDINATES:
@@ -6503,6 +6493,7 @@ static int get_ts_bus_info(void)
 	int rc;
 	int error = NO_ERR;
 	u32 bus_id = 0;
+	u32 value;
 
 	g_ts_data.node = NULL;
 
@@ -6534,21 +6525,30 @@ static int get_ts_bus_info(void)
 		error = -EINVAL;
 		goto out;
 	}
+
 	g_ts_data.bops->bus_id = bus_id;
 	TS_LOG_DEBUG("bus id :%d\n", bus_id);
-    rc = of_property_read_u32(g_ts_data.node, "aft_enable", &g_ts_data.aft_param.aft_enable_flag);
-    if (g_ts_data.aft_param.aft_enable_flag)
-    {
-	  of_property_read_u32(g_ts_data.node, "drv_stop_width", &g_ts_data.aft_param.drv_stop_width);
-	  of_property_read_u32(g_ts_data.node, "lcd_width", &g_ts_data.aft_param.lcd_width);
-	  of_property_read_u32(g_ts_data.node, "lcd_height", &g_ts_data.aft_param.lcd_height);
-        TS_LOG_INFO("aft enable,drv_stop_width is %d,lcd_width is %d, lcd_height is %d\n",
-			g_ts_data.aft_param.drv_stop_width,g_ts_data.aft_param.lcd_width,g_ts_data.aft_param.lcd_height);
-    }
-    else
-    {
-        TS_LOG_INFO("aft disable\n");
-    }
+	rc = of_property_read_u32(g_ts_data.node, "aft_enable", &value);
+	if (rc) {
+		TS_LOG_INFO("Cant get aft_enable from dts\n");
+		g_ts_data.aft_param.aft_enable_flag = 0;
+	} else {
+		g_ts_data.aft_param.aft_enable_flag = (char)value;
+	}
+	if (g_ts_data.aft_param.aft_enable_flag) {
+		of_property_read_u32(g_ts_data.node, "drv_stop_width",
+			&g_ts_data.aft_param.drv_stop_width);
+		of_property_read_u32(g_ts_data.node, "lcd_width",
+			&g_ts_data.aft_param.lcd_width);
+		of_property_read_u32(g_ts_data.node, "lcd_height",
+			&g_ts_data.aft_param.lcd_height);
+		TS_LOG_INFO("aft enable,drv_stop_width is %d, lcd_width is %d, lcd_height is %d\n",
+			g_ts_data.aft_param.drv_stop_width,
+			g_ts_data.aft_param.lcd_width,
+			g_ts_data.aft_param.lcd_height);
+	} else {
+		TS_LOG_INFO("aft disable\n");
+	}
 out:
 	return error;
 }
@@ -6568,6 +6568,18 @@ static int ts_chip_init(void)
 	if (error) {
 		TS_LOG_ERR("chip init failed\n");
 	}
+#ifdef CONFIG_HUAWEI_DSM
+	else {
+		if (DSM_MAX_IC_NAME_LEN > strlen(dev->chip_name)) {
+			dsm_tp.ic_name = dev->chip_name;
+			if (dsm_update_client_vendor_info(&dsm_tp)) {
+				TS_LOG_ERR("dsm update client_vendor_info is failed\n");
+			}
+		} else {
+			TS_LOG_ERR("ic_name, module_name is invalid\n");
+		}
+}
+#endif
 
 	return error;
 }
@@ -6722,7 +6734,7 @@ static int try_update_firmware(void)
 	return error;
 }
 
-void check_tp_calibration_info(void)
+void check_tp_calibration_info(struct work_struct *work)
 {
 	int error = NO_ERR;
 	struct ts_cmd_node *cmd = NULL;
@@ -6769,8 +6781,6 @@ out:
 		info =NULL;
 	}
 	TS_LOG_INFO("%s done\n", __FUNCTION__);
-
-	return error;
 }
 
 static int ts_init(void)
@@ -7188,7 +7198,6 @@ void ts_thread_bindtocpu(void)
 static int ts_thread(void *p)
 {
 	static const struct sched_param param = {
-		//.sched_priority = MAX_USER_RT_PRIO / 2,
 		.sched_priority = 99,
 	};
 	smp_wmb();

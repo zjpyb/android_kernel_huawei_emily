@@ -105,9 +105,17 @@ struct rdr_exception_info_s einfo[] = {
 	 RDR_REBOOT_NOW, RDR_AP, RDR_AP, RDR_AP,
 	 (u32)RDR_REENTRANT_DISALLOW, (u32)AP_S_PANIC, HI_APPANIC_RESERVED, (u32)RDR_UPLOAD_YES, "ap", "ap",
 	 0, 0, 0},
-	{{0, 0}, MODID_AP_S_L3CACHE_ECC, MODID_AP_S_L3CACHE_ECC, RDR_ERR,
+	{{0, 0}, MODID_AP_S_PANIC_GPU, MODID_AP_S_PANIC_GPU, RDR_ERR,
 	 RDR_REBOOT_NOW, RDR_AP, RDR_AP, RDR_AP,
-	 (u32)RDR_REENTRANT_DISALLOW, (u32)AP_S_PANIC, HI_APPANIC_L3CACHE_ECC, (u32)RDR_UPLOAD_YES, "ap", "ap",
+	 (u32)RDR_REENTRANT_DISALLOW, (u32)AP_S_PANIC, HI_APPANIC_GPU, (u32)RDR_UPLOAD_YES, "ap", "ap",
+	 0, 0, 0},
+	{{0, 0}, MODID_AP_S_L3CACHE_ECC1, MODID_AP_S_L3CACHE_ECC1, RDR_ERR,
+	 RDR_REBOOT_NOW, RDR_AP, RDR_AP, RDR_AP,
+	 (u32)RDR_REENTRANT_DISALLOW, (u32)AP_S_PANIC, HI_APPANIC_L3CACHE_ECC1, (u32)RDR_UPLOAD_YES, "ap", "ap",
+	 0, 0, 0},
+	{{0, 0}, MODID_AP_S_L3CACHE_ECC2, MODID_AP_S_L3CACHE_ECC2, RDR_ERR,
+	 RDR_REBOOT_NOW, RDR_AP, RDR_AP, RDR_AP,
+	 (u32)RDR_REENTRANT_DISALLOW, (u32)AP_S_PANIC, HI_APPANIC_L3CACHE_ECC2, (u32)RDR_UPLOAD_YES, "ap", "ap",
 	 0, 0, 0},
 	{{0, 0}, MODID_AP_S_PANIC_SOFTLOCKUP, MODID_AP_S_PANIC_SOFTLOCKUP, RDR_ERR,
 	 RDR_REBOOT_NOW, RDR_AP, RDR_AP, RDR_AP,
@@ -120,6 +128,10 @@ struct rdr_exception_info_s einfo[] = {
 	{{0, 0}, MODID_AP_S_PANIC_SP805_HARDLOCKUP, MODID_AP_S_PANIC_SP805_HARDLOCKUP, RDR_ERR,
 	 RDR_REBOOT_NOW, RDR_AP, RDR_AP, RDR_AP,
 	 (u32)RDR_REENTRANT_DISALLOW, (u32)AP_S_PANIC, HI_APPANIC_HARDLOCKUP, (u32)RDR_UPLOAD_YES, "ap", "ap",
+	 0, 0, 0},
+	{{0, 0}, MODID_AP_S_PANIC_Storage, MODID_AP_S_PANIC_Storage, RDR_ERR,
+	 RDR_REBOOT_NOW, RDR_AP, RDR_AP, RDR_AP,
+	 (u32)RDR_REENTRANT_DISALLOW, (u32)AP_S_PANIC, HI_APPANIC_Storage, (u32)RDR_UPLOAD_YES, "ap", "ap",
 	 0, 0, 0},
 	{{0, 0}, MODID_AP_S_NOC, MODID_AP_S_NOC, RDR_ERR,
 	 RDR_REBOOT_NOW, RDR_AP, RDR_AP, RDR_AP,
@@ -153,10 +165,29 @@ struct rdr_exception_info_s einfo[] = {
 	RDR_REBOOT_NO, RDR_AP, 0, RDR_AP,
 	(u32)RDR_REENTRANT_DISALLOW, AP_S_RESUME_SLOWY, 0, (u32)RDR_UPLOAD_YES,
 	"ap resumeslowy", "ap resumeslowy", 0, 0, 0},
+	{{0, 0}, MODID_AP_S_PANIC_ISP, MODID_AP_S_PANIC_ISP, RDR_ERR,
+	 RDR_REBOOT_NOW, RDR_AP, RDR_AP, RDR_AP,
+	 (u32)RDR_REENTRANT_DISALLOW, (u32)AP_S_PANIC, HI_APPANIC_ISP, (u32)RDR_UPLOAD_YES, "ap", "ap",
+	 0, 0, 0},
+	{{0, 0}, MODID_AP_S_PANIC_IVP, MODID_AP_S_PANIC_IVP, RDR_ERR,
+	 RDR_REBOOT_NOW, RDR_AP, RDR_AP, RDR_AP,
+	 (u32)RDR_REENTRANT_DISALLOW, (u32)AP_S_PANIC, HI_APPANIC_IVP, (u32)RDR_UPLOAD_YES, "ap", "ap",
+	 0, 0, 0},
+	{{0, 0}, MODID_AP_S_PANIC_AUDIO_CODEC, MODID_AP_S_PANIC_AUDIO_CODEC, RDR_ERR,
+	 RDR_REBOOT_NOW, RDR_AP, RDR_AP, RDR_AP,
+	 (u32)RDR_REENTRANT_DISALLOW, (u32)AUDIO_CODEC_EXCEPTION, 0, (u32)RDR_UPLOAD_YES,
+	 "audio codec error", "audio codec error", 0, 0, 0},
 };
 
 /* 以下是给AP的其他维测模块、IP使用的dump内存 */
 static unsigned int g_dump_modu_mem_size_tbl[MODU_MAX] = {0};
+static char g_dump_modu_compatible[MODU_MAX][AMNTN_MODULE_COMP_LEN] = {
+	[MODU_NOC] = {"ap_dump_mem_modu_noc_size"},
+	[MODU_DDR] = {"ap_dump_mem_modu_ddr_size"},
+	[MODU_TMC] = {""},
+	[MODU_MNTN_FAC] = {""},
+	[MODU_GAP] = {"ap_dump_mem_modu_gap_size"},
+};
 
 static int acpu_panic_loop_notify(struct notifier_block *nb,
 				  unsigned long event, void *buf);
@@ -207,15 +238,6 @@ static unsigned long exception_buf_len __attribute__((__section__(".data")));
  * You should not use this function to access IO space, use memcpy_toio()
  * or memcpy_fromio() instead.
  */
-__no_sanitize_address static void *memcpy_rdr(void *dest, const void *src, size_t count)
-{
-	char *tmp = dest;
-	const char *s = src;
-
-	while (count--)
-		*tmp++ = *s++;
-	return dest;
-}
 
 /*******************************************************************************
 Function:         get_ap_trace_mem_size_from_dts
@@ -342,7 +364,7 @@ Return:           0:读取成功, 非0:失败
 ********************************************************************************/
 static int get_ap_dump_mem_modu_size_from_dts(void)
 {
-	int ret;
+	int ret = 0;
 	struct device_node *np;
 	u32 i = 0;
 	np = of_find_compatible_node(NULL, NULL,
@@ -354,31 +376,19 @@ static int get_ap_dump_mem_modu_size_from_dts(void)
 		return -ENODEV;
 	}
 
-	ret = of_property_read_u32(np, "ap_dump_mem_modu_noc_size",
-				   &g_dump_modu_mem_size_tbl[i++]);
-	if (ret) {
-		BB_PRINT_ERR(
-		       "[%s], cannot find ap_dump_mem_modu_noc_size in dts!\n",
-		       __func__);
-		return ret;
-	}
-
-	ret = of_property_read_u32(np, "ap_dump_mem_modu_ddr_size",
-				   &g_dump_modu_mem_size_tbl[i++]);
-	if (ret) {
-		BB_PRINT_ERR(
-		       "[%s], cannot find ap_dump_mem_modu_ddr_size in dts!\n",
-		       __func__);
-		return ret;
-	}
-	g_dump_modu_mem_size_tbl[i++] = 0;
-	ret = of_property_read_u32(np, "ap_dump_mem_modu_gap_size",
-				   &g_dump_modu_mem_size_tbl[i++]);
-	if (ret) {
-		BB_PRINT_ERR(
-		       "[%s], cannot find ap_dump_mem_modu_gap_size in dts!\n",
-		       __func__);
-		return ret;
+	for (i = 0; i < MODU_MAX; i++) {
+		/* empty string, set size zero */
+		if (0 == g_dump_modu_compatible[i][0]) {
+			g_dump_modu_mem_size_tbl[i] = 0;
+			continue;
+		}
+		ret = of_property_read_u32(np, g_dump_modu_compatible[i],
+					   &g_dump_modu_mem_size_tbl[i]);
+		if (ret) {
+			BB_PRINT_ERR("[%s], cannot find %s in dts!\n", __func__,
+				g_dump_modu_compatible[i]);
+			return ret;
+		}
 	}
 
 	return ret;
@@ -443,7 +453,7 @@ void get_exception_info(unsigned long *buf, unsigned long *buf_len)
 		return;
 	}
 
-	*buf = (unsigned long)exception_buf;
+	*buf = (uintptr_t)exception_buf;
 	*buf_len = exception_buf_len;
 }
 
@@ -538,7 +548,7 @@ void print_debug_info(void)
 		pr_info(
 		       "[%s], reg_name [%s], reg_base [0x%pK], reg_size [0x%x], reg_dump_addr [0x%pK]\n",
 		       __func__, regs_info[i].reg_name,
-		       (void *)regs_info[i].reg_base,
+		       (void *)(uintptr_t)regs_info[i].reg_base,
 		       regs_info[i].reg_size,
 		       regs_info[i].reg_dump_addr);
 	}
@@ -637,7 +647,7 @@ int io_resources_init(void)
 		pr_info(
 		       "[%s], regs_info[%d].reg_name[%s], reg_base[0x%pK], reg_size[0x%x], map_addr[0x%pK]\n",
 		       __func__, i, regs[i].reg_name,
-		       (void *)regs[i].reg_base, regs[i].reg_size,
+		       (void *)(uintptr_t)regs[i].reg_base, regs[i].reg_size,
 		       regs[i].reg_map_addr);
 		if (!regs[i].reg_map_addr) {
 			BB_PRINT_ERR(
@@ -984,8 +994,8 @@ static int __init ap_dump_buffer_init(void)
 		    + last_task_struct_size;
 	}
 
-	g_rdr_ap_root->last_task_stack_dump_addr[0] = (unsigned char *)
-	    ALIGN(((unsigned long)g_rdr_ap_root->last_task_struct_dump_addr[NR_CPUS - 1] + last_task_struct_size), SIZE_1K);	/* 按1K对齐 */
+	g_rdr_ap_root->last_task_stack_dump_addr[0] = (unsigned char *)(uintptr_t)
+	    ALIGN(((uintptr_t)g_rdr_ap_root->last_task_struct_dump_addr[NR_CPUS - 1] + last_task_struct_size), SIZE_1K);	/* 按1K对齐 */
 	for (i = 1; i < NR_CPUS; i++) {
 		g_rdr_ap_root->last_task_stack_dump_addr[i] =
 		    g_rdr_ap_root->last_task_stack_dump_addr[i - 1] +
@@ -1103,59 +1113,7 @@ void regs_dump(void)
 	}
 }
 
-__no_sanitize_address void last_task_stack_dump(void)
-{
-	int i;
-	unsigned char *dst = NULL;
 
-	if (!get_ap_last_task_switch_from_dts()) {
-		BB_PRINT_ERR(
-		       "[%s], ap_last_task_switch is closed in dts!\n",
-		       __func__);
-		return;
-	}
-
-	if (!g_rdr_ap_root) {
-		BB_PRINT_ERR("[%s]:g_rdr_ap_root is invalid\n", __func__);
-		return;
-	}
-	for (i = 0; i < NR_CPUS; i++) {
-		dst = g_rdr_ap_root->last_task_struct_dump_addr[i];
-		if ((!dst)
-		    || (!g_last_task_ptr[i])) {
-			BB_PRINT_ERR(
-			       "[%s], last_task_struct_dump_addr[%d] [0x%pK] is invalid!\n",
-			       __func__, i, dst);
-			continue;
-		}
-		if (!kern_addr_valid((unsigned long)g_last_task_ptr[i])) {
-			BB_PRINT_ERR(
-			       "[%s], g_last_task_ptr[%d] [0x%pK] is invalid!\n",
-			       __func__, i, g_last_task_ptr[i]);
-			continue;
-		}
-		memcpy_rdr((void *)dst, (void *)g_last_task_ptr[i],
-		       sizeof(struct task_struct));
-
-		dst = g_rdr_ap_root->last_task_stack_dump_addr[i];
-		if ((!dst)
-		    || (!g_last_task_ptr[i]->stack)) {
-			BB_PRINT_ERR(
-			       "[%s], last_task_stack_dump_addr[%d] [0x%pK] is invalid!\n",
-			       __func__, i, dst);
-			continue;
-		}
-		if (!kern_addr_valid
-		    ((unsigned long)g_last_task_ptr[i]->stack)) {
-			BB_PRINT_ERR(
-			       "[%s], g_last_task_ptr[%d] stack [0x%pK] is invalid!\n",
-			       __func__, i, g_last_task_ptr[i]->stack);
-			continue;
-		}
-		memcpy_rdr((void *)dst, (void *)g_last_task_ptr[i]->stack,
-		       THREAD_SIZE);
-	}
-}
 static int hisi_trace_hook_install(void)
 {
 	int ret = 0;
@@ -1255,6 +1213,42 @@ int register_module_dump_mem_func(rdr_hisiap_dump_func_ptr func,
 }
 
 /*******************************************************************************
+Function:       get_module_dump_mem_addr
+Description:    获取dump模块的dump起始地址；
+Input:          modu:模块ID，此为统一分配;
+Output:         dump_addr:已分配给模块modu的dump内存起始地址
+Return:         0:获取成功，小于0:获取失败
+********************************************************************************/
+int get_module_dump_mem_addr(dump_mem_module modu, unsigned char **dump_addr)
+{
+	if (!rdr_get_ap_init_done()) {
+		BB_PRINT_ERR("[%s]rdr not init.\n", __func__);
+		return -EPERM;
+	}
+
+	if (modu >= MODU_MAX) {
+		BB_PRINT_ERR("[%s]modu [%d] is invalid\n", __func__, modu);
+		return -EINVAL;
+	}
+
+	if (NULL == dump_addr) {
+		BB_PRINT_ERR("[%s]dump_addr is invalid\n", __func__);
+		return -EINVAL;
+	}
+
+	mutex_lock(&dump_mem_mutex);
+	if (0 == g_rdr_ap_root->module_dump_info[modu].dump_size) {
+		BB_PRINT_ERR("[%s]modu[%d] dump_size is zero\n", __func__, modu);
+		mutex_unlock(&dump_mem_mutex);
+		return -EPERM;
+	}
+	*dump_addr = g_rdr_ap_root->module_dump_info[modu].dump_addr;
+	mutex_unlock(&dump_mem_mutex);
+
+	return 0;
+}
+
+/*******************************************************************************
 Function:       save_module_dump_mem
 Description:    异常复位前，调用AP维测模块及IP提供的内存dump注册函数；
 Input:          NA
@@ -1310,18 +1304,18 @@ int __init rdr_hisiap_dump_init(struct rdr_register_module_result *retinfo)
 
 	BB_PRINT_PN("[%s], begin.\n", __func__);
 
-	g_rdr_ap_root = (AP_EH_ROOT *) g_hisiap_addr;
+	g_rdr_ap_root = (AP_EH_ROOT *)(uintptr_t)g_hisiap_addr;
 	strncpy(g_log_path, g_rdr_ap_root->log_path, LOG_PATH_LEN - 1);
 	g_log_path[LOG_PATH_LEN - 1] = '\0';
 
 	/* 由于pmu扣板还没有，暂时用ap异常区的后8个字节替代 */
-	memset((void *)g_hisiap_addr, 0,
+	memset((void *)(uintptr_t)g_hisiap_addr, 0,
 	       retinfo->log_len - PMU_RESET_RECORD_DDR_AREA_SIZE);
-	g_rdr_ap_root = (AP_EH_ROOT *) g_hisiap_addr;
+	g_rdr_ap_root = (AP_EH_ROOT *)(uintptr_t) g_hisiap_addr;
 	g_rdr_ap_root->ap_rdr_info.log_addr = retinfo->log_addr;
 	g_rdr_ap_root->ap_rdr_info.log_len = retinfo->log_len;
 	g_rdr_ap_root->ap_rdr_info.nve = retinfo->nve;
-	g_rdr_ap_root->rdr_ap_area_map_addr = (void *)g_hisiap_addr;
+	g_rdr_ap_root->rdr_ap_area_map_addr = (void *)(uintptr_t)g_hisiap_addr;
 	get_device_platform(g_rdr_ap_root->device_id, PRODUCT_DEVICE_LEN);
 	g_rdr_ap_root->bbox_version = BBOX_VERSION;
 	g_rdr_ap_root->dump_magic = AP_DUMP_MAGIC;
@@ -1550,7 +1544,7 @@ static void save_kernel_dump(void *arg)
 	if (check_himntn(HIMNTN_KERNEL_DUMP_ENABLE)) {
 		/* On FPGA it will take half one hour to transfer kerneldump,
 		it's too slowly and useless to transfer kerneldump.
-		We just create the kerneldump file name. */ 
+		We just create the kerneldump file name. */
 		if (FPGA == g_bbox_fpga_flag) {
 			ret = rdr_copy_big_file_apend(dst_str, SRC_KERNELDUMP);
 		} else {
@@ -1718,7 +1712,7 @@ void rdr_hisiap_dump_root_head(u32 modid, u32 etype, u64 coreid)
 void rdr_hisiap_dump(u32 modid, u32 etype,
 	u64 coreid, char *log_path, pfn_cb_dump_done pfn_cb)
 {
-	unsigned long exception_info = 0;
+	uintptr_t exception_info = 0;
 	unsigned long exception_info_len = 0;
 
 	BB_PRINT_PN("[%s], begin.\n", __func__);
@@ -1751,7 +1745,7 @@ void rdr_hisiap_dump(u32 modid, u32 etype,
 	console_loglevel = 7;
 
 	/* 如果是panic，则需要将pc指针记录下来，并传递到fastboot  */
-	if (etype == AP_S_PANIC && g_bbox_ap_record_pc) {
+	if ((etype == AP_S_PANIC || etype == AP_S_VENDOR_PANIC) && g_bbox_ap_record_pc) {
 		get_exception_info(&exception_info,
 				   &exception_info_len);
 		memset(g_bbox_ap_record_pc->exception_info, 0,
@@ -1812,7 +1806,7 @@ out:
 void hisiap_nmi_notify_lpm3(void)
 {
 	unsigned int value;
-	u64 addr = 0;
+	uintptr_t addr = 0;
 
 	addr = g_mi_notify_lpm3_addr;
 	if (!addr) {
@@ -1931,7 +1925,7 @@ unsigned long long get_pmu_subtype_reg(void)
 void set_reboot_reason(unsigned int reboot_reason)
 {
 	unsigned int value = 0;
-	unsigned long long pmu_reset_reg;
+	uintptr_t pmu_reset_reg;
 
 	if (FPGA == g_bbox_fpga_flag) {
 		pmu_reset_reg = get_pmu_reset_reg();
@@ -1960,7 +1954,7 @@ void set_reboot_reason(unsigned int reboot_reason)
 unsigned int get_reboot_reason(void)
 {
 	unsigned int value = 0;
-	unsigned long long pmu_reset_reg;
+	uintptr_t pmu_reset_reg;
 
 	if (FPGA == g_bbox_fpga_flag) {
 		pmu_reset_reg = get_pmu_reset_reg();
@@ -2012,8 +2006,8 @@ static void rdr_hisiap_register_exception(void)
 		if (0 == i) {
 			/* 注册AP core公共callback函数，其他core有通知ap core dump，则调用此callback函数，
 			   RDR_COMMON_CALLBACK为公共callback标记，没有标记的为ap core私有callback函数 */
-			einfo[i].e_callback = (rdr_e_callback) (
-				(u64)(einfo[i].e_callback) | BBOX_COMMON_CALLBACK);
+			einfo[i].e_callback = (rdr_e_callback)(uintptr_t)(
+				(uintptr_t)(einfo[i].e_callback) | BBOX_COMMON_CALLBACK);
 		}
 		ret = rdr_register_exception(&einfo[i]);
 		if (ret == 0) {
@@ -2167,7 +2161,7 @@ Input:          dst_dir_str
 Output:         NA
 Return:         NA
 ********************************************************************************/
-static void save_pstore_info(char *dst_dir_str)
+static void save_pstore_info(const char *dst_dir_str)
 {
 	int i, ret, len, tmp_cnt;
 	char *pbuff;
@@ -2254,7 +2248,7 @@ Input:          dst_dir_str
 Output:         NA
 Return:         NA
 ********************************************************************************/
-static void save_fastboot_log(char *dst_dir_str)
+static void save_fastboot_log(const char *dst_dir_str)
 {
 	int ret, len;
 	char fastbootlog_path[NEXT_LOG_PATH_LEN];
@@ -2465,7 +2459,7 @@ int __init rdr_hisiap_init(void)
 
 	mutex_init(&dump_mem_mutex);
 
-	g_mi_notify_lpm3_addr = (u64)ioremap(NMI_NOTIFY_LPM3_ADDR, 0x4);
+	g_mi_notify_lpm3_addr = (uintptr_t)ioremap(NMI_NOTIFY_LPM3_ADDR, 0x4);
 	if (!g_mi_notify_lpm3_addr) {
 		BB_PRINT_ERR("[%s]", __func__);
 		return -1;
@@ -2489,7 +2483,7 @@ int __init rdr_hisiap_init(void)
 		       "%s g_bbox_ap_record_pc is NULLl\n", __func__);
 	}
 	g_hisiap_addr =
-	    (u64) hisi_bbox_map(current_info.log_addr +
+	    (uintptr_t) hisi_bbox_map(current_info.log_addr +
 				PMU_RESET_RECORD_DDR_AREA_SIZE,
 				current_info.log_len - PMU_RESET_RECORD_DDR_AREA_SIZE);
 	if (!g_hisiap_addr) {

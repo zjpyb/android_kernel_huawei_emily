@@ -27,9 +27,10 @@ HWLOG_REGIST();
 /* Hostcomm functions */
 void FUSB3601_ConfigureVdmResponses(struct Port *port, FSC_U8* bytes)
 {
-  IN_FUNCTION
   FSC_U16 _svid = 0;
   FSC_U32 _mode = 0;
+
+  IN_FUNCTION
 
   /*  TODO - Replace/explain magic numbers */
   if (*(bytes + 2)) {
@@ -190,9 +191,10 @@ FSC_S32 FUSB3601_ProcessVdmMessage(struct Port *port)
 //TODO: AMA Support
 FSC_S32 FUSB3601_ProcessDiscoverIdentity(struct Port *port, SopType sop)
 {
-  IN_FUNCTION
   doDataObject_t vdm_out[7] = {{0}};
   FSC_U8 num_data_obj = 4;
+
+  IN_FUNCTION
 
   /*  Must NAK or not respond to Discover ID with wrong SVID */
 
@@ -261,12 +263,13 @@ FSC_S32 FUSB3601_ProcessDiscoverIdentity(struct Port *port, SopType sop)
 
 FSC_S32 FUSB3601_ProcessDiscoverSvids(struct Port *port, SopType sop)
 {
-  IN_FUNCTION
 	doDataObject_t vdm_out[(Num_SVIDs_min_SOP >> 1) + 2] = {{0}};
 	FSC_U8 i;
 	FSC_U8 num_svids;
 	FSC_U8 max_data_obj;
 	FSC_U8 length = 1;
+
+	IN_FUNCTION
 
   /* Must NAK or not respond to Discover SVIDs with wrong SVID */
   if (port->policy_rx_data_obj_[0].SVDM.SVID != PD_SID) return -1;
@@ -332,11 +335,12 @@ FSC_S32 FUSB3601_ProcessDiscoverSvids(struct Port *port, SopType sop)
 
 FSC_S32 FUSB3601_ProcessDiscoverModes(struct Port *port, SopType sop)
 {
-  IN_FUNCTION
 	doDataObject_t vdm_out[SVID1_num_modes_min_SOP + 1] = {{0}};
 	ModesInfo modes_info;
 	FSC_U8 i;
 	FSC_U8 length = 1;
+
+	IN_FUNCTION
 
 	FUSB3601_platform_log(port->port_id_, "FUSB Discover Modes", -1);
 
@@ -398,12 +402,9 @@ FSC_S32 FUSB3601_ProcessDiscoverModes(struct Port *port, SopType sop)
 FSC_S32 FUSB3601_ProcessEnterMode(struct Port *port, SopType sop)
 {
 	doDataObject_t vdm_out[1] = {{0}};
-  FSC_BOOL mode_entered;
+	FSC_BOOL mode_entered;
 
-
-
-
-  IN_FUNCTION
+	IN_FUNCTION
   if (port->policy_rx_data_obj_[0].SVDM.CommandType == INITIATOR) {
 
       mode_entered = FUSB3601_VdmModeEntryRequest(port, port->policy_rx_data_obj_[0].SVDM.SVID,
@@ -493,8 +494,10 @@ FSC_S32 FUSB3601_ProcessExitMode(struct Port *port, SopType sop)
 
 FSC_S32 FUSB3601_ProcessAttention(struct Port *port, SopType sop)
 {
-  IN_FUNCTION
 	DisplayPortStatus_t __attention_status;
+
+	IN_FUNCTION
+
 	FUSB3601_platform_log(port->port_id_, "FUSB Process Attention, DpPpConfig: ", port->display_port_data_.DpPpConfig.word);
 
 	if (!port->mode_entered_) {
@@ -642,7 +645,6 @@ void FUSB3601_VdmExitModeResult(struct Port *port, FSC_BOOL success, FSC_U16 svi
 void FUSB3601_VdmInformModes(struct Port *port, SopType sop,
                     ModesInfo modes_info)
 {
-  IN_FUNCTION
 #ifdef FSC_HAVE_DP
   FSC_U32 i;
   if (modes_info.svid == DP_SID && modes_info.nack == FALSE) {
@@ -655,6 +657,8 @@ void FUSB3601_VdmInformModes(struct Port *port, SopType sop,
     }
   }
 #endif /*  FSC_HAVE_DP */
+
+  IN_FUNCTION
 }
 
 void FUSB3601_VdmInitDpm(struct Port *port)

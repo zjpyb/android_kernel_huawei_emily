@@ -739,7 +739,7 @@ VOS_UINT32 atQryCellInfoCnfProc(VOS_VOID *pMsgBlock)
 }
 
 
-VOS_VOID atLwclashInd(VOS_VOID *pMsgBlock)
+VOS_UINT32 atLwclashInd(VOS_VOID *pMsgBlock)
 {
     L4A_READ_LWCLASH_IND_STRU *pstLwclash = NULL;
 
@@ -776,21 +776,11 @@ VOS_VOID atLwclashInd(VOS_VOID *pMsgBlock)
                     gaucAtCrLf);
 
     At_SendResultData(AT_BROADCAST_CLIENT_INDEX_MODEM_0, pgucLAtSndCodeAddr, usLength);
+    return AT_FW_CLIENT_STATUS_READY;
 }
 
-/*****************************************************************************
- 函 数 名  : atLcacellInd
- 功能描述  : ^LCACELLURC命令主动上报处理
- 输入参数  : VOS_VOID *pMsgBlock
- 输出参数  : 无
- 返 回 值  : VOS_VOID
- 调用函数  :
- 被调函数  :
 
- 修改历史  :
-
-*****************************************************************************/
-VOS_VOID atLcacellInd(VOS_VOID *pMsgBlock)
+VOS_UINT32 atLcacellInd(VOS_VOID *pMsgBlock)
 {
     L4A_READ_LCACELL_IND_STRU *pstLcacell = NULL;
     VOS_UINT16 usLength = 0;
@@ -831,6 +821,8 @@ VOS_VOID atLcacellInd(VOS_VOID *pMsgBlock)
                 gaucAtCrLf);
 
     At_SendResultData(AT_BROADCAST_CLIENT_INDEX_MODEM_0, pgucLAtSndCodeAddr, usLength);
+
+    return AT_FW_CLIENT_STATUS_READY;
 }
 
 
@@ -860,8 +852,8 @@ static const AT_L4A_MSG_FUN_TABLE_STRU g_astAtL4aIndMsgFunTable[] = {
     {ID_MSG_L4A_ANLEVEL_IND         ,   atAnlevelInfoIndProc    },
     {ID_MSG_L4A_CERSSI_IND          ,   atCerssiInfoIndProc     },
     {ID_MSG_L4A_MODE_IND            ,   atSysModeIndProc        },
-    {ID_MSG_L4A_LWCLASH_IND         ,   (AT_L4A_MSG_FUN)atLwclashInd},
-    {ID_MSG_L4A_LCACELL_IND         ,   (AT_L4A_MSG_FUN)atLcacellInd},
+    {ID_MSG_L4A_LWCLASH_IND         ,   atLwclashInd},
+    {ID_MSG_L4A_LCACELL_IND         ,   atLcacellInd},
 };
 
 /******************************************************************************

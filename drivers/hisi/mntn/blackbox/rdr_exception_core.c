@@ -64,19 +64,19 @@ void rdr_callback(struct rdr_exception_info_s *p_exce_info, u32 mod_id,
 		spin_unlock(&__rdr_exception_list_lock);
 		if ((e_from_core != p_exce_info->e_from_core) &&
 		    (e_from_core & p_exce_info->e_notify_core_mask)) {
-			if ((u64) (e_callback) &
+			if ((uintptr_t)(e_callback) &
 			    BBOX_COMMON_CALLBACK) {
 				BB_PRINT_PN("%s: call core common callback function.\n", __func__);
-				((rdr_e_callback)((u64) (e_callback) &
+				((rdr_e_callback)(uintptr_t)((uintptr_t)(e_callback) &
 				  ~BBOX_CALLBACK_MASK)) (mod_id, logpath);
 			}
 		}
 		spin_lock(&__rdr_exception_list_lock);
 	}
 	spin_unlock(&__rdr_exception_list_lock);
-	if ((u64) (p_exce_info->e_callback) & ~BBOX_CALLBACK_MASK) {
+	if ((uintptr_t)(p_exce_info->e_callback) & ~BBOX_CALLBACK_MASK) {
 		BB_PRINT_PN("%s: call exception function.\n", __func__);
-		((rdr_e_callback)((u64) (p_exce_info->e_callback) &
+		((rdr_e_callback)(uintptr_t)((uintptr_t) (p_exce_info->e_callback) &
 		  ~BBOX_CALLBACK_MASK)) (mod_id, logpath);
 	}
 }
@@ -112,64 +112,6 @@ u32 rdr_check_modid(u32 modid, u32 modid_end)
 	}
 	spin_unlock(&__rdr_exception_list_lock);
 
-	return 0;
-}
-
-/*
- * func name: rdr_check_exception info
- * func args:
- *  rdr_exception_info_s  e;
- *	!= 0 error
- *	= 0 success
- */
-int rdr_check_exception_info(struct rdr_exception_info_s *e)
-{
-	BB_PRINT_START();
-	if (e->e_process_priority >= RDR_PPRI_MAX) {
-		BB_PRINT_ERR("invaild e_process_priority\n");
-		BB_PRINT_END();
-		return -1;
-	}
-	if (e->e_reboot_priority > RDR_REBOOT_MAX) {
-		BB_PRINT_ERR("invaild e_reboot_priority\n");
-		BB_PRINT_END();
-		return -1;
-	}
-	if (e->e_notify_core_mask >= 1 << RDR_CORE_MAX) {
-		BB_PRINT_ERR("invaild e_notify_core_mask\n");
-		BB_PRINT_END();
-		return -1;
-	}
-	if (e->e_reset_core_mask >= 1 << RDR_CORE_MAX) {
-		BB_PRINT_ERR("invaild e_reset_core_mask\n");
-		BB_PRINT_END();
-		return -1;
-	}
-	if (e->e_from_core >= 1 << RDR_CORE_MAX) {
-		BB_PRINT_ERR("invaild e_from_core\n");
-		BB_PRINT_END();
-		return -1;
-	}
-	if (e->e_reentrant != (u32)RDR_REENTRANT_ALLOW &&
-	    e->e_reentrant != (u32)RDR_REENTRANT_DISALLOW) {
-		BB_PRINT_ERR("invaild e_reentrant\n");
-		BB_PRINT_END();
-		return -1;
-	}
-	if (e->e_upload_flag != (u32)RDR_UPLOAD_YES &&
-	    e->e_upload_flag != (u32)RDR_UPLOAD_NO) {
-		BB_PRINT_ERR("invaild e_upload_flag\n");
-		BB_PRINT_END();
-		return -1;
-	}
-/*
-if(e->e_exce_type > ) {
-	BB_PRINT_ERR("invaild e_exce_type\n");
-	BB_PRINT_END();
-	return -1;
-}
-*/
-	BB_PRINT_END();
 	return 0;
 }
 
@@ -228,12 +170,6 @@ u32 rdr_register_exception(struct rdr_exception_info_s *e)
 		BB_PRINT_PN("mod_id exist already\n");
 		return 0;
 	}
-
-	/* if (0 != rdr_check_exception_info(e)) {
-	   BB_PRINT_ERR("mod_id exist already\n");
-	   BB_PRINT_END();
-	   return 0;
-	   } */
 
 	e_type_info = kmalloc(sizeof(struct rdr_exception_info_s), GFP_ATOMIC);
 	if (e_type_info == NULL) {

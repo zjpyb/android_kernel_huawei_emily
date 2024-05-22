@@ -130,7 +130,8 @@ void boot_record(char *str)
     hw_boottime[boot_log_count].Second = Second(tmp, 1000000000);
     tmp = ts;
     hw_boottime[boot_log_count].mSecond = mSecond(tmp, 1000000000);
-    strncpy( (char*)&hw_boottime[boot_log_count].event, str, BOOT_STR_SIZE );
+    memset(&hw_boottime[boot_log_count].event, 0, sizeof(hw_boottime[boot_log_count].event));
+    strncpy( (char*)&hw_boottime[boot_log_count].event, str, BOOT_STR_SIZE - 1 );
     boot_log_count++;
     mutex_unlock(&hw_boottime_lock);
 }

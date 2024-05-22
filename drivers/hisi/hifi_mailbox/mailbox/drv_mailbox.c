@@ -12,7 +12,7 @@
 *****************************************************************************/
 unsigned int mailbox_send_msg(
                 unsigned int            mailcode,
-                void                    *data,
+                const void              *data,
                 unsigned int            length);
 
 unsigned int mailbox_reg_msg_cb(
@@ -31,7 +31,7 @@ unsigned int mailbox_read_msg_data(
 
 unsigned int DRV_MAILBOX_SENDMAIL(
                 unsigned int           MailCode,
-                void                   *pData,
+                const void             *pData,
                 unsigned int           Length)
 {
 	return mailbox_send_msg(MailCode, pData, Length);

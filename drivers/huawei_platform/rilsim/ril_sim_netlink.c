@@ -1,3 +1,6 @@
+
+
+#include "ril_sim_netlink.h"
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -6,6 +9,12 @@
 #include <linux/semaphore.h>
 #include <linux/time.h>
 #include <linux/spinlock.h>
+#include <linux/skbuff.h>
+#include <linux/types.h>
+#include <linux/kthread.h>
+#include <linux/socket.h>
+#include <linux/netlink.h>
+#include <uapi/linux/netlink.h>
 #include <net/sock.h>
 #include <net/netlink.h>
 #include <net/ip.h>
@@ -13,422 +22,346 @@
 #include <net/route.h>
 #include <net/inet_hashtables.h>
 #include <net/net_namespace.h>
-#include <linux/skbuff.h>
 #include <huawei_platform/log/hw_log.h>
-#include <linux/types.h>
-#include <linux/netlink.h>
-#include <uapi/linux/netlink.h>
-#include <linux/kthread.h>
-#include <linux/socket.h>
-#include "ril_sim_netlink.h"
 
 #undef HWLOG_TAG
-#define HWLOG_TAG ril_sim_netlink
+#define HWLOG_TAG           ril_sim_netlink
+
 HWLOG_REGIST();
 MODULE_LICENSE("GPL");
 
-/************************************************************
-    MOCRO   DEFINES
-*************************************************************/
-DEFINE_MUTEX(ril_sim_receive_sem);
-DEFINE_MUTEX(ril_sim_send_sem);
+DEFINE_MUTEX(sim_receive_sem);
+DEFINE_MUTEX(sim_send_sem);
 
-#define KNL_SUCCESS     (0)
-#define KNL_FAILED      (-1)
+#define KNL_SUCCESS         0
+#define KNL_FAILED          -1
 
-#define KNL_TRUE        (1)
-#define KNL_FALSE       (0)
+static u32 req_pid = 0;
+static u32 rcv_msg_type = 0;
+static int req_slot_id = -1;
 
-/************************************************************
-    netlink variables for communicate between kernel and ril
-*************************************************************/
-/*netlink socket fd*/
-static struct sock *g_ril_sim_nlfd = NULL;
+static struct sock *sim_nlfd = NULL;    /* netlink socket fd */
+static struct task_struct *sim_netlink_task = NULL;
+static struct semaphore sim_netlink_sync_sema;
+static knl_sim_pin_info sim_pin_info[MAX_SIM_CNT];
 
-/*save user space progress pid when receive req from ril.*/
-static u32 g_ril_sim_req_pid = 0;
+static int is_slot_valid(int slot)
+{
+	if (slot < 0 || slot >= MAX_SIM_CNT) {
+		hwlog_err("%s: Invalid slot: %d\n", __func__, slot);
+		return 0;
+	}
+	return 1;
+}
 
-/*save user space message type when receive req from ril.*/
-static u32 g_ril_sim_rcv_msg_type = 0;
+static int process_sim_update_msg(struct nlmsghdr *nlh)
+{
+	int slot_id;
+	knl_sim_pin_info *pin_info = (knl_sim_pin_info *)nlmsg_data(nlh);
 
-/*save user space slot id when receive get_info_req from ril.*/
-static int g_ril_sim_get_info_req_slot_id = -1;
+	if (!pin_info) {
+		hwlog_err("%s: pin_info is NULL\n", __func__);
+		return KNL_FAILED;
+	}
 
-static struct task_struct *g_ril_sim_netlink_task = NULL;
+	slot_id = pin_info->sim_slot_id;
+	if (!is_slot_valid(slot_id)) {
+		hwlog_err("%s: with invalid slot_id: %d\n", __func__, slot_id);
+		return KNL_FAILED;
+	}
 
-/*the semaphone is used when need thread deal with the message*/
-static struct semaphore g_ril_sim_netlink_sync_sema;
+	memcpy(&sim_pin_info[slot_id], pin_info, sizeof(*pin_info));
+	hwlog_info("%s: sim%d success\n", __func__, slot_id);
+	return KNL_SUCCESS;
+}
 
-/*this lock is used to protect global variable.*/
-//static spinlock_t deact_sim_info_lock;
+static int process_sim_get_pin_msg(struct nlmsghdr *nlh)
+{
+	int slot_id;
+	knl_ril_sim_card_info *p_card_info = (knl_ril_sim_card_info *)nlmsg_data(nlh);
 
-/* PIN info saved in kernel. */
-static KNL_SIM_PIN_INFO gKnlSimPinInfo[MAX_SIM_CNT];
+	if (!p_card_info) {
+		hwlog_err("%s: p_card_info is NULL\n", __func__);
+		return KNL_FAILED;
+	}
 
-/************************************************************
-      STATIC  FUNCTION  DEFINES
-*************************************************************/
+	slot_id = p_card_info->sim_slot_id;
+	if (!is_slot_valid(slot_id)) {
+		hwlog_err("%s: SIM_GET_PIN_INFO_REQ with invalid slot_id: %d\n",
+			__func__, slot_id);
+		return KNL_FAILED;
+	}
 
-/* netlink socket's callback function,it will be called by system when
-user space send a message to kernel.*/
+	rcv_msg_type = NETLINK_KNL_SIM_GET_PIN_INFO_REQ;
+	req_pid = nlh->nlmsg_pid;
+	req_slot_id = slot_id;
+
+	up(&sim_netlink_sync_sema);
+	hwlog_info("%s: sim%d success\n", __func__, slot_id);
+	return KNL_SUCCESS;
+}
+
+static int process_sim_msg(struct nlmsghdr *nlh)
+{
+	int slot_id;
+
+	if (nlh->nlmsg_type == NETLINK_KNL_SIM_UPDATE_IND_MSG) {
+		return process_sim_update_msg(nlh);
+	} else if (nlh->nlmsg_type == NETLINK_KNL_SIM_GET_PIN_INFO_REQ) {
+		return process_sim_get_pin_msg(nlh);
+	} else if (nlh->nlmsg_type == NETLINK_KNL_SIM_QUERY_VARIFIED_REQ) {
+		rcv_msg_type = NETLINK_KNL_SIM_QUERY_VARIFIED_REQ;
+		req_pid = nlh->nlmsg_pid;
+		up(&sim_netlink_sync_sema);
+		hwlog_info("%s: SIM_QUERY_VARIFIED_REQ success\n", __func__);
+	} else if (nlh->nlmsg_type == NETLINK_KNL_SIM_CLEAR_ALL_VARIFIED_FLG) {
+		for (slot_id = 0; slot_id < MAX_SIM_CNT; ++slot_id)
+			sim_pin_info[slot_id].is_verified = 0; // 0 means not verified
+		hwlog_info("%s: SIM_CLEAR_ALL_VARIFIED_FLG success\n", __func__);
+	} else {
+		hwlog_err("%s: Invalid message from ril, nlmsg_type: %d\n",
+			__func__, nlh->nlmsg_type);
+	}
+
+	return KNL_SUCCESS;
+}
+
+/*
+ * netlink socket's callback function, it will be called by system when
+ * user space send a message to kernel.
+ */
 static void kernel_ril_sim_receive(struct sk_buff *__skb)
 {
-    struct nlmsghdr         *nlh            = NULL;
-    struct sk_buff          *skb            = NULL;
-    KNL_SIM_PIN_INFO        *pinInfo        = NULL;
-    KNL_RilSimCardInfo      *pCardInfo      = NULL;
-    int                     slotId          = 0;
+	int ret;
+	struct nlmsghdr *nlh;
+	struct sk_buff *skb;
 
-    hwlog_info("%s: enter\n", __func__);
+	hwlog_info("%s: enter\n", __func__);
+	if (!__skb) {
+		hwlog_err("%s: Invalid parameter: NULL pointer(__skb)\n", __func__);
+		return;
+	}
 
-    if (NULL == __skb)
-    {
-        hwlog_err("%s: Invalid parameter: NULL pointer reference(__skb)\n", __func__);
-        return;
-    }
+	skb = skb_get(__skb);
+	if (!skb) {
+		hwlog_err("%s: skb_get return NULL\n", __func__);
+		return;
+	}
 
-    skb = skb_get(__skb);
-    if (NULL == skb)
-    {
-        hwlog_err("%s: skb_get return NULL\n", __func__);
-        return;
-    }
+	mutex_lock(&sim_receive_sem);
+	if (skb->len >= NLMSG_HDRLEN) {
+		nlh = nlmsg_hdr(skb);
+		if (!nlh || nlh->nlmsg_pid <= 0) {
+			hwlog_err("%s: nlmsg_hdr is NULL or invalid nlmsg_pid\n", __func__);
+			goto end;
+		}
 
-    mutex_lock(&ril_sim_receive_sem);
-
-    if (skb->len >= NLMSG_HDRLEN)
-    {
-        nlh = nlmsg_hdr(skb);
-        if (NULL == nlh)
-        {
-            hwlog_err("%s: nlmsg_hdr return NULL\n", __func__);
-            kfree_skb(skb);
-            (void)mutex_unlock(&ril_sim_receive_sem);
-            return;
-        }
-
-        if (nlh->nlmsg_pid <= 0)
-        {
-            hwlog_err("%s: invalid nlmsg_pid: 0x%x\n", __func__, nlh->nlmsg_pid);
-            kfree_skb(skb);
-            (void)mutex_unlock(&ril_sim_receive_sem);
-            return;
-        }
-
-        if ((nlh->nlmsg_len >= sizeof(struct nlmsghdr))
-            && (skb->len >= nlh->nlmsg_len))
-        {
-            hwlog_info("%s: receive message form user space, nlmsg_type: %d, nlmsg_pid: %d\n", __func__,
-                nlh->nlmsg_type, nlh->nlmsg_pid);
-
-            if (NETLINK_KNL_SIM_UPDATE_IND_MSG == nlh->nlmsg_type)
-            {
-                pinInfo = (KNL_SIM_PIN_INFO *)nlmsg_data(nlh);
-                if (NULL == pinInfo)
-                {
-                    hwlog_err("%s: pinInfo is NULL\n", __func__);
-                    kfree_skb(skb);
-                    mutex_unlock(&ril_sim_receive_sem);
-                    return;
-                }
-
-                slotId = pinInfo->sim_slot_id;
-                if ((slotId < 0) || (slotId >= MAX_SIM_CNT))
-                {
-                    hwlog_err("%s: NETLINK_KNL_SIM_UPDATE_IND_MSG with invalid slotId: %d\n", __func__, slotId);
-                    kfree_skb(skb);
-                    mutex_unlock(&ril_sim_receive_sem);
-                    return;
-                }
-
-                /* 更新保存的PIN码信息 */
-                memcpy(&gKnlSimPinInfo[slotId], pinInfo, sizeof(KNL_SIM_PIN_INFO));
-            }
-            else if (NETLINK_KNL_SIM_GET_PIN_INFO_REQ == nlh->nlmsg_type)
-            {
-                pCardInfo = (KNL_RilSimCardInfo *)nlmsg_data(nlh);
-                if (NULL == pCardInfo)
-                {
-                    hwlog_err("%s: pCardInfo is NULL\n", __func__);
-                    kfree_skb(skb);
-                    mutex_unlock(&ril_sim_receive_sem);
-                    return;
-                }
-
-                slotId = pCardInfo->sim_slot_id;
-                if ((slotId < 0) || (slotId >= MAX_SIM_CNT))
-                {
-                    hwlog_err("%s: NETLINK_KNL_SIM_GET_PIN_INFO_REQ with invalid slotId: %d\n", __func__, slotId);
-                    kfree_skb(skb);
-                    mutex_unlock(&ril_sim_receive_sem);
-                    return;
-                }
-
-                g_ril_sim_rcv_msg_type          = NETLINK_KNL_SIM_GET_PIN_INFO_REQ;
-                g_ril_sim_req_pid               = nlh->nlmsg_pid;
-                g_ril_sim_get_info_req_slot_id  = slotId;
-
-                up(&g_ril_sim_netlink_sync_sema);
-            }
-            else if (NETLINK_KNL_SIM_QUERY_VARIFIED_REQ == nlh->nlmsg_type)
-            {
-                g_ril_sim_rcv_msg_type          = NETLINK_KNL_SIM_QUERY_VARIFIED_REQ;
-                g_ril_sim_req_pid               = nlh->nlmsg_pid;
-
-                up(&g_ril_sim_netlink_sync_sema);
-
-                hwlog_info("%s: receive NETLINK_KNL_SIM_QUERY_VARIFIED_REQ success\n", __func__);
-            }
-            else if (NETLINK_KNL_SIM_CLEAR_ALL_VARIFIED_FLG == nlh->nlmsg_type)
-            {
-                for (slotId = 0; slotId < MAX_SIM_CNT; ++slotId)
-                {
-                    gKnlSimPinInfo[slotId].is_verified = KNL_FALSE;
-                }
-                hwlog_info("%s: clear is_verified success\n", __func__);
-            }
-            else
-            {
-                hwlog_err("%s: Invalid message from RIL, nlmsg_type: %d\n", __func__, nlh->nlmsg_type);
-            }
-        }
-    }
-    else
-    {
-        hwlog_err("%s: Invalid len message, skb->len: %d\n", __func__, skb->len);
-    }
-    hwlog_info("%s: exit, skb->len: %d\n", __func__, skb->len);
-
-    kfree_skb(skb);
-    mutex_unlock(&ril_sim_receive_sem);
-
-}
-
-int ril_sim_send_get_pin_info_cnf(u32 pid, int slotId)
-{
-    int ret                          = KNL_SUCCESS;
-    int size                         = 0;
-    struct sk_buff  *skb             = NULL;
-    struct nlmsghdr *nlh             = NULL;
-
-    mutex_lock(&ril_sim_send_sem);
-
-    if (!pid || !g_ril_sim_nlfd)
-    {
-        hwlog_err("%s: Invalid pid or g_ril_sim_nlfd, pid: 0x%x\n", __func__, pid);
-        ret = KNL_FAILED;
-        goto end;
-    }
-
-    if ((slotId < 0) || (slotId >= MAX_SIM_CNT))
-    {
-        hwlog_err("%s: Invalid slotId: %d\n", __func__, slotId);
-        ret = KNL_FAILED;
-        goto end;
-    }
-
-    size = sizeof(KNL_SIM_PIN_INFO);
-    /* 新申请一个socket buffer ，其大小为: socket消息头大小 + netlink 消息头大小 + 用户消息大小 */
-    skb  = alloc_skb(size, GFP_ATOMIC);
-    if (!skb)
-    {
-        hwlog_err("%s: alloc skb fail\n", __func__);
-        ret = KNL_FAILED;
-        goto end;
-    }
-
-    /* 填充部分netlink消息头: skb, pid, seq, type, len, flags */
-    nlh = nlmsg_put(skb, pid, 0, NETLINK_KNL_SIM_GET_PIN_INFO_CNF, size, 0);
-    if (!nlh)
-    {
-        hwlog_err("%s: nlmsg_put return fail\n", __func__);
-        kfree_skb(skb);
-        skb = NULL;
-        ret = KNL_FAILED;
-        goto end;
-    }
-
-    /* From kernel */
-    NETLINK_CB(skb).portid = 0;
-    /* 如果目的组为内核或某一进程，该字段也置0 */
-    NETLINK_CB(skb).dst_group = 0;
-
-    /* 填充用户区数据 */
-    memcpy(nlmsg_data(nlh), &gKnlSimPinInfo[slotId], size);
-
-    /*skb will be freed in netlink_unicast*/
-    ret = netlink_unicast(g_ril_sim_nlfd, skb, pid, MSG_DONTWAIT);
-    hwlog_info("%s: send NETLINK_KNL_SIM_GET_PIN_INFO_CNF to RIL, pid: %d, ret: %d\n", __func__, pid, ret);
-
+		if (nlh->nlmsg_len >= sizeof(*nlh) && skb->len >= nlh->nlmsg_len) {
+			hwlog_info("%s: receive message form user space, nlmsg_type: %d, nlmsg_pid: %d\n",
+				__func__, nlh->nlmsg_type, nlh->nlmsg_pid);
+			ret = process_sim_msg(nlh);
+			hwlog_info("%s: process_sim_msg ret: %d\n", __func__, ret);
+		}
+	} else {
+		hwlog_err("%s: Invalid len message, skb->len: %d\n", __func__, skb->len);
+	}
 end:
-    mutex_unlock(&ril_sim_send_sem);
-    return ret;
+	hwlog_info("%s: exit, skb->len: %d\n", __func__, skb->len);
+	kfree_skb(skb);
+	mutex_unlock(&sim_receive_sem);
 }
 
-int ril_sim_send_query_verified_cnf(u32 pid)
+static int send_get_pin_info_cnf(u32 pid, int slot_id)
 {
-    int ret                          = KNL_SUCCESS;
-    int size                         = 0;
-    int slotIdx                      = 0;
-    int is_verified                  = KNL_TRUE;
-    struct sk_buff  *skb             = NULL;
-    struct nlmsghdr *nlh             = NULL;
+	int ret;
+	int size;
+	struct sk_buff *skb;
+	struct nlmsghdr *nlh;
 
-    mutex_lock(&ril_sim_send_sem);
+	mutex_lock(&sim_send_sem);
 
-    if (!pid || !g_ril_sim_nlfd)
-    {
-        hwlog_err("%s: Invalid pid or g_ril_sim_nlfd, pid: 0x%x\n", __func__, pid);
-        ret = KNL_FAILED;
-        goto end;
-    }
+	if (!pid || !sim_nlfd) {
+		hwlog_err("%s: Invalid pid or sim_nlfd, pid: %d\n", __func__, pid);
+		ret = KNL_FAILED;
+		goto end;
+	}
 
-    size = sizeof(int);
-    /* 新申请一个socket buffer ，其大小为:socket消息头大小 + netlink 消息头大小 + 用户消息大小*/
-    skb  = alloc_skb(size, GFP_ATOMIC);
-    if (!skb)
-    {
-        hwlog_err("%s: alloc skb fail\n", __func__);
-        ret = KNL_FAILED;
-        goto end;
-    }
+	if (!is_slot_valid(slot_id)) {
+		hwlog_err("%s: Invalid slot_id: %d\n", __func__, slot_id);
+		ret = KNL_FAILED;
+		goto end;
+	}
 
-    /*填充部分netlink消息头: skb, pid, seq, type, len, flags*/
-    nlh = nlmsg_put(skb, pid, 0, NETLINK_KNL_SIM_QUERY_VARIFIED_CNF, size, 0);
-    if (!nlh)
-    {
-        hwlog_err("%s: nlmsg_put return fail\n", __func__);
-        kfree_skb(skb);
-        skb = NULL;
-        ret = KNL_FAILED;
-        goto end;
-    }
+	size = sizeof(knl_sim_pin_info);
+	/* socket buffer size: socket head size + netlink size + user msg size */
+	skb = alloc_skb(size, GFP_ATOMIC);
+	if (!skb) {
+		hwlog_err("%s: alloc skb fail\n", __func__);
+		ret = KNL_FAILED;
+		goto end;
+	}
 
-    /* From kernel */
-    NETLINK_CB(skb).portid = 0;
-    /*如果目的组为内核或某一进程，该字段也置0 */
-    NETLINK_CB(skb).dst_group = 0;
+	/* fill part of netlink: skb, pid, seq, type, len, flags */
+	nlh = nlmsg_put(skb, pid, 0, NETLINK_KNL_SIM_GET_PIN_INFO_CNF, size, 0);
+	if (!nlh) {
+		hwlog_err("%s: nlmsg_put return fail\n", __func__);
+		kfree_skb(skb);
+		skb = NULL;
+		ret = KNL_FAILED;
+		goto end;
+	}
 
-    /*填充用户区数据*/
-    for (slotIdx = 0; slotIdx < MAX_SIM_CNT; ++slotIdx)
-    {
-        /* PIN信息有效，但未做PIN码校验，返回FALSE */
-        if ((KNL_TRUE == gKnlSimPinInfo[slotIdx].is_valid_flg)
-            && (KNL_FALSE == gKnlSimPinInfo[slotIdx].is_verified))
-        {
-            is_verified = KNL_FALSE;
-            break;
-        }
-    }
+	/* from kernel */
+	NETLINK_CB(skb).portid = 0;
+	NETLINK_CB(skb).dst_group = 0;
 
-    memcpy(nlmsg_data(nlh), &is_verified, size);
+	/* fill user data */
+	memcpy(nlmsg_data(nlh), &sim_pin_info[slot_id], size);
 
-    /*skb will be freed in netlink_unicast*/
-    ret = netlink_unicast(g_ril_sim_nlfd, skb, pid, MSG_DONTWAIT);
-    hwlog_info("%s: send NETLINK_KNL_SIM_QUERY_VARIFIED_CNF to RIL, pid: %d, is_verified: %d, ret: %d\n",
-        __func__, pid, is_verified, ret);
-
+	/* skb will be freed in netlink_unicast */
+	ret = netlink_unicast(sim_nlfd, skb, pid, MSG_DONTWAIT);
+	hwlog_info("%s: send to ril, pid: %d, ret: %d\n", __func__, pid, ret);
 end:
-    mutex_unlock(&ril_sim_send_sem);
-    return ret;
+	mutex_unlock(&sim_send_sem);
+	return ret;
 }
 
-static int ril_sim_netlink_thread(void *data)
+static int send_query_verified_cnf(u32 pid)
 {
-    hwlog_info("%s: enter\n", __func__);
+	int ret;
+	int size;
+	int slot_id;
+	int is_verified = 1; // 1 means verified
+	struct sk_buff *skb;
+	struct nlmsghdr *nlh;
 
-    while (1)
-    {
-        if (kthread_should_stop())
-        {
-            break;
-        }
+	mutex_lock(&sim_send_sem);
 
-        /*netlink thread will block at this semaphone when no message received,
-        only receive message from user space and then up the sema, this thread will go to next sentence.*/
-        down(&g_ril_sim_netlink_sync_sema);
+	if (!pid || !sim_nlfd) {
+		hwlog_err("%s: Invalid pid or sim_nlfd, pid: %d\n", __func__, pid);
+		ret = KNL_FAILED;
+		goto end;
+	}
 
-        hwlog_info("%s: g_ril_sim_rcv_msg_type: %d\n", __func__, g_ril_sim_rcv_msg_type);
+	size = sizeof(int);
+	/* socket buffer size: socket head size + netlink size + user msg size */
+	skb = alloc_skb(size, GFP_ATOMIC);
+	if (!skb) {
+		hwlog_err("%s: alloc skb fail\n", __func__);
+		ret = KNL_FAILED;
+		goto end;
+	}
 
-        if (NETLINK_KNL_SIM_GET_PIN_INFO_REQ == g_ril_sim_rcv_msg_type)
-        {
-            hwlog_info("%s: return NETLINK_KNL_SIM_GET_PIN_INFO_CNF to RIL, PID: %d, slot id: %d\n", __func__,
-                g_ril_sim_req_pid, g_ril_sim_get_info_req_slot_id);
+	/* fill part of netlink: skb, pid, seq, type, len, flags */
+	nlh = nlmsg_put(skb, pid, 0, NETLINK_KNL_SIM_QUERY_VARIFIED_CNF, size, 0);
+	if (!nlh) {
+		hwlog_err("%s: nlmsg_put return fail\n", __func__);
+		kfree_skb(skb);
+		skb = NULL;
+		ret = KNL_FAILED;
+		goto end;
+	}
 
-            (void)ril_sim_send_get_pin_info_cnf(g_ril_sim_req_pid, g_ril_sim_get_info_req_slot_id);
-        }
-        else if (NETLINK_KNL_SIM_QUERY_VARIFIED_REQ == g_ril_sim_rcv_msg_type)
-        {
-            hwlog_info("%s: return NETLINK_KNL_SIM_QUERY_VARIFIED_CNF to RIL, PID: %d\n", __func__,
-                g_ril_sim_req_pid);
+	/* from kernel */
+	NETLINK_CB(skb).portid = 0;
+	NETLINK_CB(skb).dst_group = 0;
 
-            (void)ril_sim_send_query_verified_cnf(g_ril_sim_req_pid);
-        }
-    }
+	/* fill user data */
+	for (slot_id = 0; slot_id < MAX_SIM_CNT; ++slot_id) {
+		/* PIN valid, but not verified, give back 0 */
+		if (sim_pin_info[slot_id].is_valid_flg &&
+			!(sim_pin_info[slot_id].is_verified)) {
+			is_verified = 0; // 0 means not verified
+			break;
+		}
+	}
+	memcpy(nlmsg_data(nlh), &is_verified, size);
 
-    hwlog_info("%s: end\n", __func__);
-    return 0;
+	/* skb will be freed in netlink_unicast */
+	ret = netlink_unicast(sim_nlfd, skb, pid, MSG_DONTWAIT);
+	hwlog_info("%s: send to ril, pid: %d, is_verified: %d, ret: %d\n",
+		__func__, pid, is_verified, ret);
+end:
+	mutex_unlock(&sim_send_sem);
+	return ret;
 }
 
-/*netlink init function.*/
-static void ril_sim_netlink_init(void)
+static int sim_netlink_thread(void *data)
 {
-    struct netlink_kernel_cfg ril_nl_cfg =
-    {
-        .input = kernel_ril_sim_receive,
-    };
+	int ret;
 
-    hwlog_info("%s: enter\n", __func__);
+	hwlog_info("%s: enter\n", __func__);
+	while (1) {
+		if (kthread_should_stop())
+			break;
 
-    g_ril_sim_nlfd = netlink_kernel_create(&init_net,
-        NETLINK_RIL_EVENT_SIM,
-        &ril_nl_cfg);
-    if (!g_ril_sim_nlfd)
-    {
-        hwlog_err("%s: netlink_kernel_create fail\n", __func__);
-    }
-    else
-    {
-        hwlog_info("%s: netlink_kernel_create success\n", __func__);
-    }
+		/* netlink thread will block at this semaphone when no message received,
+		only receive message from user space and then up the sema, this thread
+		will go to next sentence. */
+		down(&sim_netlink_sync_sema);
+		hwlog_info("%s: rcv_msg_type: %d\n", __func__, rcv_msg_type);
 
-    sema_init(&g_ril_sim_netlink_sync_sema, 0);
+		if (rcv_msg_type == NETLINK_KNL_SIM_GET_PIN_INFO_REQ) {
+			ret = send_get_pin_info_cnf(req_pid, req_slot_id);
+			hwlog_info("%s: send_get_pin_info_cnf slot%d ret: %d\n",
+				__func__, req_slot_id, ret);
+		} else if (rcv_msg_type == NETLINK_KNL_SIM_QUERY_VARIFIED_REQ) {
+			ret = send_query_verified_cnf(req_pid);
+			hwlog_info("%s: send_query_verified_cnf ret: %d\n", __func__, ret);
+		}
+	}
 
-    memset(gKnlSimPinInfo, 0, MAX_SIM_CNT * sizeof(KNL_SIM_PIN_INFO));
-
-    g_ril_sim_netlink_task = kthread_run(ril_sim_netlink_thread, NULL, "ril_sim_netlink_thread");
-
-    hwlog_info("%s: end\n", __func__);
+	hwlog_info("%s: end\n", __func__);
+	return KNL_SUCCESS;
 }
 
-/*netlink deinit function.*/
-static void ril_sim_netlink_deinit(void)
+static void sim_netlink_init(void)
 {
-    if (g_ril_sim_nlfd && g_ril_sim_nlfd->sk_socket)
-    {
-        sock_release(g_ril_sim_nlfd->sk_socket);
-        g_ril_sim_nlfd = NULL;
-    }
+	struct netlink_kernel_cfg ril_nl_cfg = {
+		.input = kernel_ril_sim_receive,
+	};
 
-    if (g_ril_sim_netlink_task)
-    {
-        kthread_stop(g_ril_sim_netlink_task);
-        g_ril_sim_netlink_task = NULL;
-    }
+	hwlog_info("%s: enter\n", __func__);
+
+	sim_nlfd = netlink_kernel_create(&init_net, NETLINK_RIL_EVENT_SIM, &ril_nl_cfg);
+	if (!sim_nlfd) {
+		hwlog_err("%s: netlink_kernel_create failed\n", __func__);
+		return;
+	} else {
+		hwlog_info("%s: netlink_kernel_create success\n", __func__);
+	}
+
+	sema_init(&sim_netlink_sync_sema, 0);
+	memset(sim_pin_info, 0, sizeof(sim_pin_info));
+	sim_netlink_task = kthread_run(sim_netlink_thread, NULL, "sim_netlink_thread");
+
+	hwlog_info("%s: end\n", __func__);
 }
 
-static int __init ril_sim_netlink_module_init(void)
+static void sim_netlink_deinit(void)
 {
-    ril_sim_netlink_init();
-    return 0;
+	if (sim_nlfd && sim_nlfd->sk_socket) {
+		sock_release(sim_nlfd->sk_socket);
+		sim_nlfd = NULL;
+	}
+
+	if (sim_netlink_task) {
+		kthread_stop(sim_netlink_task);
+		sim_netlink_task = NULL;
+	}
 }
 
-static void __exit ril_sim_netlink_module_exit(void)
+static int __init sim_netlink_module_init(void)
 {
-    ril_sim_netlink_deinit();
-    return;
+	sim_netlink_init();
+	return 0;
 }
 
-module_init(ril_sim_netlink_module_init);
-module_exit(ril_sim_netlink_module_exit);
+static void __exit sim_netlink_module_exit(void)
+{
+	sim_netlink_deinit();
+}
+
+module_init(sim_netlink_module_init);
+module_exit(sim_netlink_module_exit);
 

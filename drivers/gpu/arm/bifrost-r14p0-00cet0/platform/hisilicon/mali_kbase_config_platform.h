@@ -62,31 +62,35 @@
 #define KBASE_PWR_OVERRIDE_VALUE        0xc4b00960
 
 #if defined (CONFIG_MALI_TRYM)
-#define SYS_REG_SCTRL_BASE_ADDR        0xFA89B000
-#define MASK_TRYM_FPGA_VERSION_B010        0x36905010 /*trym b010 logic*/
-#define SYS_REG_SCTRL_SIZE             0x1000
-#define SCTRL_OFFSET  0xE00
-
 #define SYS_REG_PMCTRL_BASE_ADDR        0xFFF01000
 #define SYS_REG_CRG_BASE_ADDR           0xFFF05000 /* Crg control register base address */
 #define SYS_REG_PCTRL_BASE_ADDR         0xFE02E000
-#define PERI_CTRL19                     0x0E0
-#define PERI_STAT_FPGA_GPU_EXIST_MASK   0x40
 #else
 #define SYS_REG_PMCTRL_BASE_ADDR        0xFFF31000
 #define SYS_REG_CRG_BASE_ADDR           0xFFF35000 /* Crg control register base address */
 #define SYS_REG_PCTRL_BASE_ADDR         0xE8A09000
-#define PERI_CTRL19                     0x050
-#define PERI_STAT_FPGA_GPU_EXIST_MASK   0x400000
 #endif
+
+#define PERI_CTRL19                     0x050
 
 #define SYS_REG_PMCTRL_SIZE             0x1000
 #define SYS_REG_CRG_SIZE                0x1000 /* Crg control register size */
 
 #define G3DHPMBYPASS                    0x264
 #define PERI_CTRL93                     0x234
+#define PERI_CTRL92                     0x230
 #define MASK_PERI_CTRL93                0x70000
 
+#if defined (CONFIG_MALI_GONDUL)
+#define PERI_STAT_FPGA_GPU_EXIST        0xC4
+#define PERI_STAT_FPGA_GPU_EXIST_MASK   0x4
+#elif defined (CONFIG_MALI_TRYM)
+#define PERI_STAT_FPGA_GPU_EXIST        0xBC
+#define PERI_STAT_FPGA_GPU_EXIST_MASK   0x40
+#else
+#define PERI_STAT_FPGA_GPU_EXIST        0xBC
+#define PERI_STAT_FPGA_GPU_EXIST_MASK   0x400000
+#endif
 
 #if defined (CONFIG_MALI_MIMIR) || defined (CONFIG_MALI_SIGURD)
 #define G3DAUTOCLKDIVBYPASS             0x268
@@ -101,13 +105,32 @@
 #define G3DAUTOCLKDIVBYPASS             0x1D8
 #define VS_CTRL_2                       0x448
 #endif
-/* for norr cs */
+/* for cs */
 #define G3DAUTOCLKDIVBYPASS_2           0x248
 #define VS_CTRL_GPU                     0x448
 
+#if defined (CONFIG_MALI_TRYM)
+#define MASK_AUTOSDBYHW                 0x2        /* set [1]bit to 1, Hardware auto shutdown */
+#define MASK_ENABLEDSBYSF               0x1FFFF
+#define MASK_DISABLEDSBYSF              0xFFFE0000
+#define HW_AUTO_SHUTDOWN                PERI_CTRL93      /* Hardware auto shutdown */
+#define DEEP_SLEEP_BYSW                 PERI_CTRL92      /* deep sleep by software */
+#elif defined (CONFIG_MALI_GONDUL)
+#define MASK_AUTOSDBYHW                 0x2        /* set [1]bit to 1, Hardware auto shutdown */
+#define MASK_ENABLEDSBYSF               0x7F       /* gondul'PERI_CTRL92,6 regional ds respectively */
+#define MASK_DISABLEDSBYSF              0xFFFFFF80 /* gondul'PERI_CTRL92,6 regional ds respectively */
+#define PERI_CTRL91                     0x22C
+#define HW_AUTO_SHUTDOWN                PERI_CTRL91      /* Hardware auto shutdown */
+#define DEEP_SLEEP_BYSW                 PERI_CTRL92      /* deep sleep by software */
+#else
 #define MASK_AUTOSDBYHW                 0x80000000
 #define MASK_ENABLEDSBYSF               0x3FFFE
 #define MASK_DISABLEDSBYSF              0xFFFC0001
+#define HW_AUTO_SHUTDOWN                PERI_CTRL93      /* Hardware auto shutdown */
+#define DEEP_SLEEP_BYSW                 PERI_CTRL93      /* deep sleep by software */
+#endif
+
+#define MASK_HASH_STRIPING_GRANULE      0xE00
 
 #define PERI_CTRL21                     0x58
 #define MASK_ENABLESDBYSF               0x1FFFF
@@ -139,9 +162,6 @@
 #define GPU_CRG_CLOCK_VALUE             0x00000038
 #define GPU_CRG_CLOCK_POWER_OFF_MASK    0x00010000
 #define GPU_CRG_CLOCK_POWER_ON_MASK     0x00010001
-
-#define PERI_STAT_FPGA_GPU_EXIST        0xBC
-
 
 extern struct kbase_pm_callback_conf pm_callbacks;
 

@@ -51,10 +51,6 @@
 #include <huawei_platform/usb/hw_typec_dev.h>
 #include <huawei_platform/usb/hw_typec_platform.h>
 
-#ifdef CONFIG_LLT_TEST
-#include "tusb320_static_llt.h"
-#endif
-
 #define HWLOG_TAG tusb320_typec
 HWLOG_REGIST();
 
@@ -795,10 +791,6 @@ static __exit void tusb320_i2c_exit(void)
 {
     i2c_del_driver(&tusb320_i2c_driver);
 }
-
-#ifdef CONFIG_LLT_TEST
-#include "tusb320_static_llt.c"
-#endif
 
 /*lint -save -esym(528,* ) -e19 */
 module_init(tusb320_i2c_init);

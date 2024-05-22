@@ -11,6 +11,7 @@
 extern void ivp_reg_write(unsigned int off, u32 val);
 extern u32 ivp_reg_read(unsigned int off);
 static void *iram = NULL;
+extern void ivp_hw_runstall(struct ivp_device *devp,int mode);
 
 static void ivp_fama_addr_32bit_2_64bit(struct ivp_device *ivp_devp)
 {
@@ -253,6 +254,9 @@ int ivp_poweroff_pri(struct ivp_device *ivp_devp)
 {
     int ret = 0;
 
+    ivp_hw_runstall(ivp_devp,IVP_RUNSTALL_STALL);
+
+    ivp_hw_enable_reset(ivp_devp);
     ret = regulator_disable(ivp_devp->regulator);
     if (ret) {
         ivp_err("Power off failed [%d]!", ret);
@@ -335,9 +339,10 @@ static int ivp_setup_clk(struct platform_device *pdev,
     return ret;
 }
 
-int ivp_change_clk(struct ivp_device *ivp_devp)
+int ivp_change_clk(struct ivp_device *ivp_devp, unsigned int level)
 {
     int ret = 0;
+    ivp_devp->clk_level = level;
 
     switch (ivp_devp->clk_level) {
     case IVP_CLK_LEVEL_LOW:
@@ -447,3 +452,21 @@ int ivp_sec_loadimage(struct ivp_device *pdev)
     ivp_err("not support sec ivp!");
     return -EINVAL;
 }
+
+void ivp_dev_hwa_enable(void)
+{
+    /*enable apb gate clock , watdog ,timer*/
+    ivp_info("ivp will enable hwa.");
+    ivp_reg_write(IVP_REG_OFF_APB_GATE_CLOCK, 0x00003FFF);
+    ivp_reg_write(IVP_REG_OFF_TIMER_WDG_RST_DIS, 0x0000007F);
+
+    return;
+}
+
+void ivp_hw_enable_reset(struct ivp_device *devp)
+{
+    ivp_reg_write(IVP_REG_OFF_DSP_CORE_RESET_EN, 0x02);
+    ivp_reg_write(IVP_REG_OFF_DSP_CORE_RESET_EN, 0x01);
+    ivp_reg_write(IVP_REG_OFF_DSP_CORE_RESET_EN, 0x04);
+}
+

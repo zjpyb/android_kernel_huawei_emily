@@ -18,8 +18,10 @@
 #include <linux/wakelock.h>
 #include <linux/ion.h>
 #include <linux/hisi/hisi_ion.h>
-#include <linux/hisi/hisi-iommu.h>
-#include <linux/hisi/ion-iommu.h>
+#include <linux/hisi-iommu.h>
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
+#include <linux/ion-iommu.h>
+#endif
 #include <linux/syscalls.h>
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(3, 13, 0))
 #include <linux/clk-private.h>
@@ -40,9 +42,10 @@
 
 #define IVP_WDG_REG_BASE_OFFSET          (0x1000)
 #define IVP_SMMU_REG_BASE_OFFSET         (0x40000)
-#define IVP_IMAGE_DDR_DEFAULT_INDEX      (0x12)
 #define IVP_IMAGE_SUFFIX                  ".bin"
-#define IVP_IMAGE_SUFFIX_LENGTH           (sizeof(IVP_IMAGE_SUFFIX)-1)
+#define IVP_INIT_SUCESS                  (0x1234ABCD)
+#define IVP_INIT_RESULT_CHECK_TIMES      (0x0A)
+#define IVP_IMAGE_SUFFIX_LENGTH          (sizeof(IVP_IMAGE_SUFFIX)-1)
 
 static struct ivp_device ivp_dev;
 extern struct dsm_client *client_ivp;
@@ -65,10 +68,6 @@ enum {
 };
 
 enum {
-    IVP_RUNSTALL_RUN = 0,
-    IVP_RUNSTALL_STALL = 1,
-};
-enum {
     IVP_MEM_SLEEPMODE_NORMAL = 0,
     IVP_MEM_SLEEPMODE = 1,
     IVP_MEM_SLEEPMODE_DEEP = 2,
@@ -85,13 +84,18 @@ enum {
 
 static int ivp_check_image(const struct firmware* fw) {
 
+    errno_t ret;
     struct file_header mheader;
     if(sizeof(mheader) > fw->size)
     {
         ivp_err("(%s):image file mheader is err",__FUNCTION__);
         return -EINVAL;
     }
-    memcpy_s(&mheader, sizeof(mheader), fw->data, sizeof(mheader));
+    ret = memcpy_s(&mheader, sizeof(mheader), fw->data, sizeof(mheader));
+    if (ret != EOK) {
+        ivp_err("(%s):memcpy_s fail, ret [%d]",__FUNCTION__,ret);
+        return -EINVAL;
+    }
     if (strncmp(mheader.name, "IVP:", 4) != 0) {
         ivp_err("(%s):image file header is not for IVP",__FUNCTION__);
         return -EINVAL;
@@ -107,6 +111,7 @@ static int ivp_check_image(const struct firmware* fw) {
 static int ivp_get_validate_section_info(const struct firmware* fw,struct image_section_header *psect_header, unsigned int index)
 {
     int offset;
+    errno_t ret;
     if(NULL == psect_header) {
         ivp_err("%s,the input para section_header is NULL!",__func__);
         return -EINVAL;
@@ -119,8 +124,11 @@ static int ivp_get_validate_section_info(const struct firmware* fw,struct image_
         ivp_err("(%s):image index  is err",__FUNCTION__);
         return -EINVAL;
     }
-    memcpy_s(psect_header, sizeof(struct image_section_header), fw->data+offset,sizeof(struct image_section_header));
-
+    ret = memcpy_s(psect_header, sizeof(struct image_section_header), fw->data+offset,sizeof(struct image_section_header));
+    if (ret != EOK) {
+        ivp_err("(%s):memcpy_s fail, ret [%d]",__FUNCTION__,ret);
+        return -EINVAL;
+    }
     if((psect_header->offset + psect_header->size) > fw->size) {
         ivp_err("%s,get invalid offset 0x%x",__func__, psect_header->offset);
         return -EINVAL;
@@ -139,10 +147,10 @@ static int ivp_get_validate_section_info(const struct firmware* fw,struct image_
 }
 void *ivp_vmap(phys_addr_t paddr, size_t size, unsigned int * offset)
 {
-    int i;
+    unsigned int i;
     void *vaddr = NULL;
     pgprot_t pgprot;
-    int pages_count;
+    unsigned int pages_count;
     struct page **pages;
 
     *offset = paddr & ~PAGE_MASK;
@@ -181,16 +189,27 @@ static int ivp_load_section(const struct firmware* fw,struct image_section_heade
     unsigned long ivp_ddr_addr = 0;
     unsigned int *mem_addr = NULL;
     void *mem = NULL;
+    bool ddr_flag;
+    errno_t ret;
+
     iova = image_sect.vaddr;
     size = image_sect.size;
 
     source = (unsigned int*)(fw->data+image_sect.offset);
     type = image_sect.type;
-
+    if ((image_sect.vaddr >= ivp_dev.sects[3].ivp_addr)
+        && (image_sect.vaddr <= (ivp_dev.sects[3].ivp_addr + ivp_dev.sects[3].len)))
+    {
+        ddr_flag = true;
+    }
+    else
+    {
+        ddr_flag = false;
+    }
     switch(type) {
     case IMAGE_SECTION_TYPE_EXEC:
     case IMAGE_SECTION_TYPE_DATA: {
-        if(image_sect.index >= IVP_IMAGE_DDR_DEFAULT_INDEX) {
+        if(true == ddr_flag) {
             ivp_ddr_addr = (ivp_dev.sects[3].acpu_addr<<4) + iova - ivp_dev.sects[3].ivp_addr;
             mem = ivp_vmap(ivp_ddr_addr,image_sect.size,&offset);
         }
@@ -202,8 +221,13 @@ static int ivp_load_section(const struct firmware* fw,struct image_section_heade
             return -EINVAL;
         }
         mem_addr = (unsigned int *)mem;
-        if(image_sect.index >= IVP_IMAGE_DDR_DEFAULT_INDEX) {
-            memcpy_s(mem_addr, image_sect.size, source, image_sect.size);
+        if(true == ddr_flag) {
+            ret = memcpy_s(mem_addr, image_sect.size, source, image_sect.size);
+            if (ret != EOK) {
+                ivp_err("(%s):memcpy_s fail, ret [%d]",__FUNCTION__,ret);
+                vunmap(mem-offset);
+                return -EINVAL;
+            }
         } else {
             for(i = 0; i < image_sect.size/4; i++) {
                 *(mem_addr+i) = *(source+i);
@@ -222,7 +246,7 @@ static int ivp_load_section(const struct firmware* fw,struct image_section_heade
     }
     }
     if(mem != NULL) {
-        if(image_sect.index >= IVP_IMAGE_DDR_DEFAULT_INDEX) {
+        if(true == ddr_flag) {
             vunmap(mem-offset);
         }
         else {
@@ -236,8 +260,13 @@ static int ivp_load_section(const struct firmware* fw,struct image_section_heade
 static int ivp_load_firmware(const char* filename,const struct firmware* fw)
 {
     int i;
+    errno_t ret;
     struct file_header mheader;
-    memcpy_s(&mheader, sizeof(mheader), fw->data, sizeof(mheader));
+    ret = memcpy_s(&mheader, sizeof(mheader), fw->data, sizeof(mheader));
+    if (ret != EOK) {
+        ivp_err("(%s):memcpy_s fail, ret [%d]",__FUNCTION__,ret);
+        return -EINVAL;
+    }
     ivp_info("Begin to loading image %s, section counts 0x%x...", filename, mheader.sect_count);
     for (i = 0; i<mheader.sect_count; i++) {
         struct image_section_header sect;
@@ -367,7 +396,6 @@ inline u32 ivp_gic_reg_read(unsigned int off)
     u32 val = readl(reg);
     return val;
 }
-
 inline void ivp_hw_clr_wdg_irq(void)
 {
     //unlock reg
@@ -400,13 +428,6 @@ inline void ivp_hw_clockgate(struct ivp_device *devp, int state)
     ivp_reg_write(IVP_REG_OFF_DSPCORE_GATE, val & 0x01);
 }
 
-inline void ivp_hw_enable_reset(struct ivp_device *devp)
-{
-    ivp_reg_write(IVP_REG_OFF_DSP_CORE_RESET_EN, 0x02);
-    ivp_reg_write(IVP_REG_OFF_DSP_CORE_RESET_EN, 0x01);
-    ivp_reg_write(IVP_REG_OFF_DSP_CORE_RESET_EN, 0x04);
-}
-
 inline void ivp_hw_disable_reset(struct ivp_device *devp)
 {
     ivp_reg_write(IVP_REG_OFF_DSP_CORE_RESET_DIS, 0x04);
@@ -414,7 +435,7 @@ inline void ivp_hw_disable_reset(struct ivp_device *devp)
     ivp_reg_write(IVP_REG_OFF_DSP_CORE_RESET_DIS, 0x02);
 }
 
-static void ivp_hw_runstall(struct ivp_device *devp, int mode)
+void ivp_hw_runstall(struct ivp_device *devp, int mode)
 {
     u32 val = (u32)mode;
     ivp_reg_write(IVP_REG_OFF_RUNSTALL, val & 0x01);
@@ -584,10 +605,6 @@ static void ivp_dev_poweroff(struct ivp_device *devp)
 {
     int ret = 0;
 
-    ivp_hw_runstall(devp, IVP_RUNSTALL_STALL);
-
-    ivp_hw_enable_reset(devp);
-
     ret = ivp_poweroff_pri(devp);
     if (ret) {
         ivp_err("power on private setting failed [%d]!", ret);
@@ -603,10 +620,23 @@ static void ivp_dev_poweroff(struct ivp_device *devp)
 
 static void ivp_dev_run(struct ivp_device *devp)
 {
-    ivp_dbg("enter");
+    int i = 0;
+
     if (ivp_hw_query_runstall(devp) == IVP_RUNSTALL_RUN)
         return;
+
     ivp_hw_runstall(devp, IVP_RUNSTALL_RUN);
+
+    while (ivp_reg_read(IVP_REG_OFF_RESEVER_REG) != IVP_INIT_SUCESS && i < IVP_INIT_RESULT_CHECK_TIMES ) {
+        udelay(100);
+        if (i >= IVP_INIT_RESULT_CHECK_TIMES) {
+            ivp_err("%s ivp init fails", __func__);
+            return;
+        }
+        i++;
+    }
+
+    ivp_info("%s ivp init success!", __func__);
 }
 
 static void ivp_dev_stop(struct ivp_device *devp)
@@ -957,9 +987,11 @@ static void ivp_poweroff(struct ivp_device *pdev)
     }
     ivp_hw_clr_wdg_irq();
 
+    disable_irq(pdev->wdg_irq);
     free_irq(pdev->wdg_irq, pdev);
 
     if (NOSEC_MODE == pdev->ivp_secmode){
+        disable_irq(pdev->dwaxi_dlock_irq);
         free_irq(pdev->dwaxi_dlock_irq, pdev);
         ivp_dev_smmu_deinit(pdev);
     }
@@ -996,15 +1028,6 @@ static int ivp_release(struct inode *inode, struct file *fd)
 
     mutex_unlock(&ivp_open_release_mutex);
     return 0;
-}
-
-static void ivp_dev_hwa_enable(void)
-{
-    ivp_info("ivp will enable hwa.");
-    ivp_reg_write(IVP_REG_OFF_APB_GATE_CLOCK, 0x00003FFF);
-    ivp_reg_write(IVP_REG_OFF_TIMER_WDG_RST_DIS, 0x0000007F);
-
-    return;
 }
 
 static long ivp_ioctl(struct file *fd, unsigned int cmd, unsigned long args)
@@ -1202,8 +1225,7 @@ static long ivp_ioctl(struct file *fd, unsigned int cmd, unsigned long args)
             ivp_err("Invalid input param size.");
             return -EINVAL;
         }
-        pdev->clk_level = level;
-        ivp_change_clk(pdev);
+        ivp_change_clk(pdev, level);
         break;
     }
 
@@ -1220,7 +1242,7 @@ static long ivp_ioctl32(struct file *fd, unsigned int cmd, unsigned long arg)
 {
     long ret = 0;
     void *ptr_user = compat_ptr(arg);
-    ret = ivp_ioctl(fd, cmd, (unsigned long)ptr_user);
+    ret = ivp_ioctl(fd, cmd, (uintptr_t)ptr_user);
     return ret;
 }
 
@@ -1298,6 +1320,7 @@ static inline int ivp_setup_one_onchipmem_section(struct ivp_sect_info *sect, st
     const char *name = of_node_full_name(np);
     unsigned int settings[3] = {0};
     unsigned int len = strlen(name);
+    errno_t ret;
 
     if (of_property_read_u32_array(np, OF_IVP_SECTION_NAME, settings, ARRAY_SIZE(settings))) {/*lint -save -e30 -e84 -e514 -e846 -e866*/
         ivp_err("read reg fail.");
@@ -1305,7 +1328,11 @@ static inline int ivp_setup_one_onchipmem_section(struct ivp_sect_info *sect, st
     }
 
     len = (len >= sizeof(sect->name)) ? (sizeof(sect->name)-1) : len;
-    strncpy_s(sect->name, (sizeof(sect->name)-1), name, len);
+    ret = strncpy_s(sect->name, (sizeof(sect->name)-1), name, len);
+    if (ret != EOK) {
+        ivp_err("(%s):strncpy_s fail, ret[%d]",__FUNCTION__,ret);
+        return -EINVAL;
+    }
     sect->name[len] = '\0';
     sect->ivp_addr  = settings[0];
     sect->acpu_addr = settings[1];
@@ -1319,6 +1346,7 @@ static inline int ivp_setup_onchipmem_sections(struct platform_device *plat_devp
     struct device_node *parent = NULL, *child = NULL;
     size_t i = 0;
     size_t sects_size = 0;
+    errno_t ret;
 
     if (plat_devp == NULL || ivp_devp == NULL) {
         ivp_err("pointer is NULL.");
@@ -1343,7 +1371,7 @@ static inline int ivp_setup_onchipmem_sections(struct platform_device *plat_devp
     ivp_devp->sec_sects = (struct ivp_sect_info *)kzalloc(sects_size, GFP_KERNEL);
     if (NULL == ivp_devp->sec_sects){
         ivp_err("kmalloc sec_sects fail.");
-        return -ENOMEM;
+        goto err_sects;
     }
 
     ivp_info("section count:%d.", ivp_devp->sect_count);
@@ -1362,17 +1390,22 @@ static inline int ivp_setup_onchipmem_sections(struct platform_device *plat_devp
 
         i++;
     }
-    memcpy_s(ivp_devp->sec_sects, sects_size, ivp_devp->sects, sects_size);
+    ret = memcpy_s(ivp_devp->sec_sects, sects_size, ivp_devp->sects, sects_size);
+    if (ret != EOK) {
+        ivp_err("(%s):memcpy_s fail, ret[%d]",__FUNCTION__,ret);
+        goto err_out;
+    }
     /*lint -restore*/
     return 0;
 
 err_out:
-    if(ivp_devp->sects)
-        kfree(ivp_devp->sects);
     if(ivp_devp->sec_sects)
         kfree(ivp_devp->sec_sects);
-    ivp_devp->sects = NULL;
     ivp_devp->sec_sects = NULL;
+err_sects:
+    if(ivp_devp->sects)
+        kfree(ivp_devp->sects);
+    ivp_devp->sects = NULL;
     ivp_devp->sect_count = 0;
     return -EFAULT;
 }
@@ -1430,6 +1463,7 @@ static void ivp_release_iores(struct platform_device *plat_devp)
         ivp_err("%s: pdev is null", __func__);
         return;
     }
+
 
     if (NULL != pdev->io_res.gic_base_addr) {
         devm_iounmap(&plat_devp->dev, pdev->io_res.gic_base_addr);
@@ -1511,7 +1545,6 @@ static int ivp_init_reg_res(struct platform_device *pdev, struct ivp_device *ivp
         ret = -ENOMEM;
         goto ERR_EXIT;
     }
-
     return ret;
 
 ERR_EXIT:
@@ -1538,6 +1571,7 @@ static int ivp_remove(struct platform_device *plat_devp)
     pdev->sects = NULL;
     pdev->sec_sects = NULL;
     pdev->sect_count = 0;
+    ivp_release_iores(plat_devp);
 
     if (NULL != pdev->smmu_dev) {
         pdev->smmu_dev = NULL;
@@ -1615,7 +1649,10 @@ err_out_dwaxi_irq:
 err_out_wdg:
     if(ivp_dev.sects)
         kfree(ivp_dev.sects);
+    if(ivp_dev.sec_sects)
+        kfree(ivp_dev.sec_sects);
     ivp_dev.sects = NULL;
+    ivp_dev.sec_sects = NULL;
     ivp_dev.sect_count = 0;
 err_out_onchipmem:
     ivp_dev.smmu_dev = NULL;
@@ -1632,69 +1669,6 @@ err_out_misc:
     return ret;
 }
 
-int ivp_ion_phys(struct ion_client *client, struct ion_handle *handle,dma_addr_t *addr)
-{
-    int ret = -ENODEV;
-    int share_fd = 0;
-    struct dma_buf *buf = NULL;
-    struct dma_buf_attachment *attach = NULL;
-    struct sg_table *sgt = NULL;
-    struct scatterlist *sgl;
-    struct device *device = NULL;
-
-    ivp_dbg("[%s] +\n", __func__);
-
-    if ((IS_ERR(client))||(IS_ERR(handle))) {
-        ivp_err("hivp_ion_phys failed \n");
-        return -ENODEV;
-    }
-
-    device = &ivp_dev.ivp_pdev->dev;
-
-    share_fd = ion_share_dma_buf_fd(client, handle);
-    if (share_fd < 0) {
-        ivp_err("[%s] Failed : ion_share_dma_buf_fd, share_fd.%d\n", __func__, share_fd);
-        return share_fd;
-    }
-
-    buf = dma_buf_get(share_fd);
-    if (IS_ERR(buf)) {
-        ivp_err("[%s] Failed : dma_buf_get, buf.%pK\n", __func__, buf);
-        goto err_dma_buf_get;
-    }
-
-    attach = dma_buf_attach(buf, device);
-    if (IS_ERR(attach)) {
-        ivp_err("[%s] Failed : dma_buf_attach, attach.%pK\n", __func__, attach);
-        goto err_dma_buf_attach;
-    }
-
-    sgt = dma_buf_map_attachment(attach, DMA_BIDIRECTIONAL);
-    if (IS_ERR(sgt)) {
-        ivp_err("[%s] Failed : dma_buf_map_attachment, sgt.%pK\n", __func__, sgt);
-        goto err_dma_buf_map_attachment;
-    }
-
-    sgl = sgt->sgl;
-    if (sgl == NULL) {
-        ivp_err("[%s] Failed : sgl.NULL\n", __func__);
-        goto err_dma_buf_map_attachment;
-    }
-
-    // Get physical addresses from scatter list
-    *addr = sg_phys(sgl);/*[false alarm]:it's not the bounds of allocated memory */
-
-    ivp_dbg("[%s] -\n", __func__);
-    ret = 0;
-
-err_dma_buf_map_attachment:
-    dma_buf_detach(buf, attach);
-err_dma_buf_attach:
-    dma_buf_put(buf);
-err_dma_buf_get:
-    sys_close(share_fd);
-    return ret;
-}
 
 /*lint -restore*/
 

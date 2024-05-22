@@ -26,6 +26,8 @@
 #define LED_TWO 2
 #define LED_THREE 3
 
+#define GPIO_PULL_UP 1
+#define GPIO_PULL_DOWN 0
 
 enum backlight_ctrl_mode
 {
@@ -67,6 +69,7 @@ struct backlight_reg_info
 
 struct lcdkit_bl_ic_info
 {
+	unsigned int   bl_ic_numb;
 	unsigned int   bl_level;
 	unsigned int   bl_ctrl_mod;
 	unsigned int   ic_type;
@@ -74,6 +77,7 @@ struct lcdkit_bl_ic_info
     unsigned int   ic_init_delay;
     unsigned int   ovp_check_enable;
     unsigned int   fake_lcd_ovp_check;
+	unsigned int   bl_ic_en_gpio_disable;
 	struct backlight_ic_cmd init_cmds[LCD_BACKLIGHT_INIT_CMD_NUM];
 	unsigned int   num_of_init_cmds;
 	struct backlight_reg_info bl_lsb_reg_cmd;
@@ -81,6 +85,10 @@ struct lcdkit_bl_ic_info
 	struct backlight_ic_cmd bl_enable_cmd;
 	struct backlight_ic_cmd bl_disable_cmd;
 	struct backlight_ic_cmd disable_dev_cmd;
+	struct backlight_ic_cmd pull_down_vsp_cmd;
+	struct backlight_ic_cmd pull_down_vsn_cmd;
+	struct backlight_ic_cmd pull_down_boost_cmd;
+	struct backlight_ic_cmd sec_enable_cmd;
 	struct backlight_ic_cmd bl_fault_flag_cmd;
 	struct backlight_ic_cmd bias_enable_cmd;
 	struct backlight_ic_cmd bias_disable_cmd;
@@ -96,6 +104,8 @@ struct lcdkit_bl_ic_info
 	unsigned int   suspend_disbrightness_support;
 	unsigned int   bl_wq_support;
 	unsigned int   bl_enhance_support;
+	unsigned int pull_down_boost_support;
+	unsigned int pull_down_boost_delay;
 	unsigned int   bl_lowpower_delay;
 	unsigned int   bl_normal_level;
 	unsigned int   bl_enhance_level;
@@ -108,6 +118,11 @@ struct lcdkit_bl_ic_info
 	struct backlight_ic_cmd bl_enhance_cur_ramp_cmd;
 	struct backlight_ic_cmd bl_enhance_boost_cur_cmd;
 	struct backlight_ic_cmd bl_enhance_bl_sink_cmd;
+	unsigned int   bl_ocp_fault_bit;
+	unsigned int   bl_ovp_fault_bit;
+	unsigned int   bl_tsd_bit;
+	/* panel backlight slope */
+	struct backlight_ic_cmd backlight_slope;
 };
 
 struct lcdkit_bl_ic_device {
@@ -120,6 +135,7 @@ struct lcdkit_bl_ic_device {
 	struct hrtimer bl_resume_hrtimer;
 };
 
+bool hisi_get_bl_slope_status(void);
 int lcdkit_backlight_ic_inital(void);
 int lcdkit_backlight_ic_set_brightness(unsigned int level);
 int lcdkit_backlight_ic_enable_brightness(void);
@@ -130,6 +146,7 @@ int lcdkit_backlight_ic_bias(bool enable);
 void lcdkit_backlight_ic_get_chip_name(char *pname);
 void lcdkit_parse_backlight_ic_config(struct device_node *np);
 int lcdkit_backlight_ic_get_ctrl_mode(void);
+void lcdkit_pull_down_boost(void);
 struct lcdkit_bl_ic_info * lcdkit_get_lcd_backlight_ic_info(void);
 void lcdkit_before_init_delay(void);
 #if defined (CONFIG_HUAWEI_DSM)

@@ -6,9 +6,11 @@ endif
 
 EXTRA_CFLAGS += -Idrivers/video/hisi/dss \
 	-Idrivers/video/fbdev/hisi/dss \
+	-Idrivers/hisi/tzdriver/libhwsecurec \
 
 hisijpu-objs := \
 	hisi_jpu.o \
+	hisi_jpu_iommu.o \
 	hisi_jpu_utils.o \
 	hisi_jpu_isr.o
 

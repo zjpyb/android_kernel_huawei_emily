@@ -757,6 +757,11 @@ oal_void dmac_psm_process_tim_elm(dmac_vap_stru *pst_dmac_vap, oal_netbuf_stru *
         /* data is on the way, then set the appropriate flag else reset it */
         pst_mac_sta_pm_handle->en_more_data_expected = (ul_tim_dtim_present != 0) ? OAL_TRUE : OAL_FALSE;
 
+        if (ul_tim_dtim_present & DMAC_DTIM_IS_SET)
+        {
+            dmac_pm_sta_post_event(pst_dmac_vap, STA_PWR_EVENT_DTIM, 0, OAL_PTR_NULL);
+        }
+
 		/* staut会丢tbtt中断，软件暂时规避 */
         if (OAL_TRUE == (ul_tim_dtim_present & DMAC_TIM_IS_SET))
         {
@@ -859,30 +864,8 @@ oal_uint32  dmac_psm_rx_process_data_sta(dmac_vap_stru *pst_dmac_vap, oal_netbuf
             dmac_pm_sta_post_event(pst_dmac_vap, STA_PWR_EVENT_TBTT, 0, OAL_PTR_NULL);
         }
 
-        /* Handle Multicast/Broadcast frames and switch to DOZE state based on the More Data bit */
-        if (OAL_TRUE == ETHER_IS_MULTICAST(puc_dest_addr))
-        {
-            if (OAL_FALSE == dmac_psm_get_more_data_sta(pst_frame_hdr))
-            {
-                /* 收到最后一个广播组播,关闭广播组播超时等待定时器 */
-                if (OAL_TRUE == pst_mac_sta_pm_handle->st_mcast_timer.en_is_registerd)
-                {
-                    FRW_TIMER_IMMEDIATE_DESTROY_TIMER(&(pst_mac_sta_pm_handle->st_mcast_timer));
-                }
-
-                dmac_pm_sta_post_event(pst_dmac_vap, STA_PWR_EVENT_LAST_MCAST, 0, OAL_PTR_NULL);
-            }
-            else
-            {
-                pst_mac_sta_pm_handle->en_more_data_expected = OAL_TRUE;
-
-                /* 收到不是最后一个广播组播,重启定时器,再等待一个定时器时间 */
-                FRW_TIMER_RESTART_TIMER(&(pst_mac_sta_pm_handle->st_mcast_timer), pst_mac_sta_pm_handle->us_mcast_timeout, OAL_FALSE);
-            }
-        }
-
         /* 收到单播的处理 */
-        else
+        if (OAL_TRUE != ETHER_IS_MULTICAST(puc_dest_addr))
         {
             if (OAL_FALSE == dmac_psm_get_more_data_sta(pst_frame_hdr))
             {
@@ -900,6 +883,28 @@ oal_uint32  dmac_psm_rx_process_data_sta(dmac_vap_stru *pst_dmac_vap, oal_netbuf
                 pst_mac_sta_pm_handle->en_more_data_expected = OAL_TRUE;
             }
             dmac_process_rx_process_data_sta_prot(pst_dmac_vap, pst_buf);
+        }
+    }
+
+    /* Handle Multicast/Broadcast frames and switch to DOZE state based on the More Data bit */
+    if (OAL_TRUE == ETHER_IS_MULTICAST(puc_dest_addr))
+    {
+        if (OAL_FALSE == dmac_psm_get_more_data_sta(pst_frame_hdr))
+        {
+            /* 收到最后一个广播组播,关闭广播组播超时等待定时器 */
+            if (OAL_TRUE == pst_mac_sta_pm_handle->st_mcast_timer.en_is_registerd)
+            {
+                FRW_TIMER_IMMEDIATE_DESTROY_TIMER(&(pst_mac_sta_pm_handle->st_mcast_timer));
+            }
+
+            dmac_pm_sta_post_event(pst_dmac_vap, STA_PWR_EVENT_LAST_MCAST, 0, OAL_PTR_NULL);
+        }
+        else
+        {
+            pst_mac_sta_pm_handle->en_more_data_expected = OAL_TRUE;
+
+            /* 收到不是最后一个广播组播,重启定时器,再等待一个定时器时间 */
+            FRW_TIMER_RESTART_TIMER(&(pst_mac_sta_pm_handle->st_mcast_timer), pst_mac_sta_pm_handle->us_mcast_timeout, OAL_FALSE);
         }
     }
 
@@ -1372,6 +1377,10 @@ oal_void dmac_psm_process_tbtt_sta(dmac_vap_stru *pst_dmac_vap, mac_device_stru 
 #endif
 }
 
+#if (_PRE_OS_VERSION_RAW == _PRE_OS_VERSION)
+#pragma arm section rodata, code, rwdata, zidata  // return to default placement
+#endif
+
 
 oal_uint8  dmac_psm_is_hw_queues_empty(mac_device_stru  *pst_device)
 {
@@ -1432,10 +1441,6 @@ oal_uint8  dmac_psm_is_tid_queues_empty(dmac_vap_stru  *pst_dmac_vap)
     }
 
 }
-
-#if (_PRE_OS_VERSION_RAW == _PRE_OS_VERSION)
-#pragma arm section rodata, code, rwdata, zidata  // return to default placement
-#endif
 
 
 oal_uint32 dmac_send_pspoll_to_ap(dmac_vap_stru *pst_dmac_vap)

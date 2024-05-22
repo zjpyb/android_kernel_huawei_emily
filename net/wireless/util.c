@@ -1001,6 +1001,8 @@ void cfg80211_process_wdev_events(struct wireless_dev *wdev)
                         VDR_TAS_RSSI_REPORT, ev->dc.ie, ev->dc.ie_len);
             break;
 #endif
+		case EVENT_DRV_LAST:
+			break;
 		}
 		wdev_unlock(wdev);
 

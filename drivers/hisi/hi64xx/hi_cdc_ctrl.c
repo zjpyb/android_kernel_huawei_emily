@@ -15,6 +15,8 @@
 #include <linux/clk.h>
 #include <linux/regulator/consumer.h>
 #include <linux/pm_runtime.h>
+#include <linux/mfd/hisi_pmic.h>
+#include <rdr_hisi_audio_adapter.h>
 
 #include <linux/hisi/hi64xx/hi_cdc_ctrl.h>
 
@@ -40,6 +42,7 @@ struct hi_cdc_ctrl_priv {
 	int irq;
 	unsigned int regaddr8_begin;
 	unsigned int regaddr8_end;
+	unsigned int pmu_codec_mclk_addr;
 	struct mutex io_mutex;
 	struct reg_ops reg_ops;
 	struct clk *cdc_mclk;
@@ -120,16 +123,22 @@ unsigned int hi_cdcctrl_reg_read(struct hi_cdc_ctrl *cdc_ctrl,
 		if (pm_ret < 0) {
 			pr_err("[%s:%d] pm resume error, reg_addr:0x%pK pm_ret:%d\n", __FUNCTION__, __LINE__, (void *)(unsigned long)reg_addr, pm_ret);
 			mutex_unlock(&priv->io_mutex);
-			BUG_ON(true);
+			rdr_system_error(RDR_AUDIO_RUNTIME_SYNC_FAIL_MODID, 0, 0);
 			return 0;
 		}
 	}
 
-	if (reg_addr >= priv->regaddr8_begin && reg_addr <= priv->regaddr8_end)
+	if (reg_addr >= priv->regaddr8_begin && reg_addr <= priv->regaddr8_end) {
+		if (priv->cdc_ctrl.reg_read_twice) {
+			(void)priv->reg_ops.read8(reg_addr);
+		}
 		ret = priv->reg_ops.read8(reg_addr);
-	else
+	} else {
+		if (priv->cdc_ctrl.reg_read_twice) {
+			(void)priv->reg_ops.read32(reg_addr);
+		}
 		ret = priv->reg_ops.read32(reg_addr);
-
+	}
 	_record_reg_op(priv, 0, reg_addr, ret);
 
 	if (priv->cdc_ctrl.pm_runtime_support) {
@@ -156,7 +165,7 @@ int hi_cdcctrl_reg_write(struct hi_cdc_ctrl *cdc_ctrl,
 		if (pm_ret < 0) {
 			pr_err("[%s:%d] pm resume error, reg_addr:0x%pK pm_ret:%d\n", __FUNCTION__, __LINE__, (void *)(unsigned long)reg_addr, pm_ret);
 			mutex_unlock(&priv->io_mutex);
-			BUG_ON(true);
+			rdr_system_error(RDR_AUDIO_RUNTIME_SYNC_FAIL_MODID, 0, 0);
 			return 0;
 		}
 	}
@@ -190,7 +199,7 @@ void hi_cdcctrl_reg_update_bits(struct hi_cdc_ctrl *cdc_ctrl, unsigned int reg,
 		pm_ret = pm_runtime_get_sync(cdc_ctrl->dev);
 		if (pm_ret < 0) {
 			pr_err("[%s:%d] pm resume error, reg:0x%pK pm_ret:%d\n", __FUNCTION__, __LINE__, (void *)(unsigned long)reg, pm_ret);
-			BUG_ON(true);
+			rdr_system_error(RDR_AUDIO_RUNTIME_SYNC_FAIL_MODID, 0, 0);
 			return ;
 		}
 	}
@@ -269,6 +278,21 @@ int hi_cdcctrl_enable_clk(struct hi_cdc_ctrl *cdc_ctrl,
 }
 EXPORT_SYMBOL(hi_cdcctrl_enable_clk);
 
+unsigned int hi_cdcctrl_get_pmu_mclk_status()
+{
+	if (!cdc_ctrl_priv) {
+		pr_err("[%s:%d] cdc ctrl priv is null\n", __FUNCTION__, __LINE__);
+		return 0;
+	}
+
+	if (cdc_ctrl_priv->pmu_codec_mclk_addr == 0) {
+		pr_err("[%s:%d] codec mclk addr get error\n", __FUNCTION__, __LINE__);
+		return 0;
+	}
+
+	return hisi_pmic_reg_read(cdc_ctrl_priv->pmu_codec_mclk_addr);
+}
+
 static struct of_device_id of_codec_controller_child_match_tbl[] = {
 	/* hi64xx_irq */
 	{
@@ -299,6 +323,10 @@ void hi_cdc_bus_type_select(struct hi_cdc_ctrl_priv *priv,
 		if (of_property_read_bool(dev->of_node, "pm_runtime_support")) {
 			priv->cdc_ctrl.pm_runtime_support = true;
 		}
+
+		if (of_property_read_bool(dev->of_node, "reg_read_twice")) {
+			priv->cdc_ctrl.reg_read_twice = true;
+		}
 	}
 
 }
@@ -323,20 +351,39 @@ void hi_cdc_ioparam_read(struct platform_device *pdev, struct hi_cdc_ctrl_priv *
 	return;
 }
 
+#define LDO8_VOLTAGE 1800000
+#define LDO8_ENABLE 1
 static void hi_cdc_get_regulator(struct device *dev, struct hi_cdc_ctrl_priv *priv)
 {
-	unsigned int val = 0;
+	unsigned int supply_val = 0;
+	unsigned int set_val = 0;
+	bool set_flag = false;
 	struct device_node *np = dev->of_node;
 
-	if (!of_property_read_u32(np, "hisilicon,ldo8_supply", &val)) {
-		dev_info(dev, "ldo8 supply is %d\n", val);
-		if (val == 1) {
+	if (!of_property_read_u32(np, "codec_ldo8_set_voltage", &set_val)) {
+		dev_info(dev, "codec_ldo8_set_voltage is %d\n", set_val);
+		if (LDO8_ENABLE == set_val) {
+			set_flag = true;
+		}
+	}
+
+	if (!of_property_read_u32(np, "hisilicon,ldo8_supply", &supply_val)) {
+		dev_info(dev, "ldo8 supply is %d\n", supply_val);
+		if (LDO8_ENABLE == supply_val) {
 			priv->ldo8 = devm_regulator_get(dev, "codec_ldo8");
-			if (IS_ERR(priv->ldo8))
+			if (IS_ERR(priv->ldo8)) {
 				priv->ldo8 = NULL;
-			else
-				if (regulator_enable(priv->ldo8))
+			} else {
+				if (set_flag) {
+					if (regulator_set_voltage(priv->ldo8, LDO8_VOLTAGE, LDO8_VOLTAGE)) {
+						dev_err(dev, "failed to regulator_set_voltage\n");
+						return;
+					}
+				}
+				if (regulator_enable(priv->ldo8)) {
 					dev_err(dev, "failed to enable ldo8 supply\n");
+				}
+			}
 		}
 	} else {
 		dev_info(dev, "ldo8 is not support\n");
@@ -353,7 +400,6 @@ static int hi_cdcctrl_probe(struct platform_device *pdev)
 	enum of_gpio_flags flags;
 
 	dev_info(dev, "probe begin");
-
 	priv = devm_kzalloc(dev, sizeof(struct hi_cdc_ctrl_priv), GFP_KERNEL);
 	if (!priv) {
 		return -ENOMEM;
@@ -445,8 +491,11 @@ static int hi_cdcctrl_probe(struct platform_device *pdev)
 
 	hi_cdc_get_regulator(dev, priv);
 
-	dev_info(dev, "codec-controller probe ok, slimbusclk_drv:%d, slimbusdata_drv:%d, pm_runtime_support:%d\n",
-				priv->cdc_ctrl.slimbusclk_cdc_drv, priv->cdc_ctrl.slimbusdata_cdc_drv, priv->cdc_ctrl.pm_runtime_support);
+	(void)of_property_read_u32(np, "pmu_clkcodec_addr", &priv->pmu_codec_mclk_addr);
+
+	dev_info(dev, "codec-controller probe ok, slimbusclk_drv:%d, slimbusdata_drv:%d, pm runtime support:%d, read twice:%d\n",
+				priv->cdc_ctrl.slimbusclk_cdc_drv, priv->cdc_ctrl.slimbusdata_cdc_drv, priv->cdc_ctrl.pm_runtime_support,\
+				priv->cdc_ctrl.reg_read_twice);
 
 	return 0;
 
@@ -503,13 +552,13 @@ static int hi_cdcctrl_suspend(struct device *device)
 		(struct hi_cdc_ctrl_priv *)platform_get_drvdata(pdev);
 	int pm_ret = 0;
 
-	BUG_ON(NULL == priv);
+	WARN_ON(NULL == priv);
 
 	if (priv->cdc_ctrl.pm_runtime_support) {
 		pm_ret = pm_runtime_get_sync(priv->cdc_ctrl.dev);
 		if (pm_ret < 0) {
 			pr_err("[%s:%d] pm resume error, pm_ret:%d\n", __FUNCTION__, __LINE__, pm_ret);
-			BUG_ON(true);
+			rdr_system_error(RDR_AUDIO_RUNTIME_SYNC_FAIL_MODID, 0, 0);
 			return pm_ret;
 		}
 	}
@@ -530,7 +579,7 @@ static int hi_cdcctrl_resume(struct device *device)
 		(struct hi_cdc_ctrl_priv *)platform_get_drvdata(pdev);
 	int ret = 0;
 
-	BUG_ON(NULL == priv);
+	WARN_ON(NULL == priv);
 
 	ret = clk_prepare_enable(priv->cdc_mclk);
 	if (ret) {
@@ -568,7 +617,7 @@ void hi_cdcctrl_pm_get(void)
 		pm_ret = pm_runtime_get_sync(cdc_ctrl_priv->cdc_ctrl.dev);
 		if (pm_ret < 0) {
 			pr_err("[%s:%d] pm resume error, pm_ret:%d\n", __FUNCTION__, __LINE__, pm_ret);
-			BUG_ON(true);
+			rdr_system_error(RDR_AUDIO_RUNTIME_SYNC_FAIL_MODID, 0, 0);
 		}
 	}
 }

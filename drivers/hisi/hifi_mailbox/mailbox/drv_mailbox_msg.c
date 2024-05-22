@@ -51,7 +51,7 @@ MAILBOX_EXTERN unsigned int mailbox_reg_msg_cb(
 
 MAILBOX_EXTERN unsigned int mailbox_try_send_msg(
                 unsigned int            mailcode,
-                void                    *pdata,
+                const void              *pdata,
                 unsigned int            length)
 {
     struct mb_buff      *mb_buf = MAILBOX_NULL;
@@ -123,19 +123,16 @@ MAILBOX_GLOBAL unsigned int mailbox_read_msg_data(
 /*lint -e838*/
 
 extern bool is_hifi_loaded(void);
-
 MAILBOX_EXTERN unsigned int mailbox_send_msg(
                 unsigned int            mailcode,
-                void                    *data,
+                const void              *data,
                 unsigned int            length)
 {
 	int  ret_val = MAILBOX_OK;
 	unsigned int  try_go_on = MAILBOX_TRUE;
 	int  try_times = 0;
-
 	if (!is_hifi_loaded())
 		return MAILBOX_HIFI_NOT_LOAD;
-
 	ret_val= BSP_CPU_StateGet(mailbox_get_dst_id(mailcode));
 	if (!ret_val) {
 		return MAILBOX_TARGET_NOT_READY;

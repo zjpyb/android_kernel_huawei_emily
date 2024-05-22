@@ -135,12 +135,12 @@ static inline void dpm_vdm_get_svid_ops(
 	pd_event_t *pd_event, uint16_t *svid, uint8_t *ops)
 {
 	uint32_t vdm_hdr;
-	char buf[1024] = { 0 };
 
 	if (pd_event->pd_msg == NULL) {
-		snprintf(buf, sizeof(buf), "the pd msg is NULL\n");
+		PD_ERR("the pd msg is NULL\n");
 		return;
 	}
+
 	vdm_hdr = pd_event->pd_msg->payload[0];
 	if (svid)
 		*svid = PD_VDO_VID(vdm_hdr);

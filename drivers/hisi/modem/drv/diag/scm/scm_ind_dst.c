@@ -71,13 +71,13 @@
 **************************************************************************** */
 SCM_CODER_DEST_CFG_STRU g_astSCMIndCoderDstCfg=
 {
-    SCM_CHANNEL_UNINIT, 
-    SOCP_CODER_DST_OM_IND, 
-    SCM_CODER_DST_IND_SIZE, 
-    SCM_CODER_DST_THRESHOLD,  
+    SCM_CHANNEL_UNINIT,
+    SOCP_CODER_DST_OM_IND,
+    SCM_CODER_DST_IND_SIZE,
+    SCM_CODER_DST_THRESHOLD,
     SOCP_TIMEOUT_TRF_LONG,
-    NULL, 
-    NULL,  
+    NULL,
+    NULL,
     NULL
 };
 
@@ -96,7 +96,7 @@ u32 scm_malloc_ind_dst_buff(void)
     {
         /*2M申请失败重试1M*/
         g_astSCMIndCoderDstCfg.ulBufLen = 1*1024*1024;
-        
+
         /* 申请编码目的空间 */
         g_astSCMIndCoderDstCfg.pucBuf = (u8*)scm_UnCacheMemAlloc(g_astSCMIndCoderDstCfg.ulBufLen, &ulPHYAddr);
         if(NULL == g_astSCMIndCoderDstCfg.pucBuf)
@@ -150,8 +150,8 @@ u32 scm_rls_ind_dst_buff(u32 ulReadSize)
 {
     u32                          ulDataLen;
     SOCP_BUFFER_RW_STRU                 stBuffer;
-    SOCP_CODER_DST_ENUM_U32             ulChanlID; 
-    
+    SOCP_CODER_DST_ENUM_U32             ulChanlID;
+
     ulChanlID = g_astSCMIndCoderDstCfg.enChannelID;
 
     if(0 == ulReadSize) /*释放通道所有数据*/
@@ -325,7 +325,7 @@ void  scm_set_power_on_log(void)
     if(BSP_OK == bsp_socp_get_sd_logcfg(&stLogCfg))
     {
         ulRet = bsp_nvm_read(EN_NV_ID_POWER_ON_LOG_SWITCH, (u8*)&stPowerOnLog, sizeof(stPowerOnLog));
-        
+
         if(BSP_OK != ulRet)
         {
             (void)scm_printf("Read nv 0x%x fail.\n", EN_NV_ID_POWER_ON_LOG_SWITCH);
@@ -348,8 +348,17 @@ void  scm_set_power_on_log(void)
 
 }
 
+/* ****************************************************************************
+ 函 数 名  : SCM_CoderDestReadCB
+ 功能描述  : 处理编码目的通道的数据
+ 输入参数  : ulDstChID 目的通道ID
+ 输出参数  : 无
+ 返 回 值  : 无
+ 调用函数  :
+ 被调函数  :
 
-void scm_ind_dst_read_cb(void)
+**************************************************************************** */
+int scm_ind_dst_read_cb(unsigned int u32ChanID)
 {
     u32                          ulChType;
     SOCP_BUFFER_RW_STRU                 stBuffer;
@@ -365,13 +374,13 @@ void scm_ind_dst_read_cb(void)
     if (SOCP_CODER_DEST_CHAN != ulChType)
     {
         SCM_CODER_DST_ERR("SCM_CoderDestReadCB: Channel Type is Error", ulDstChID, ulChType);/* 记录Log */
-        return;
+        return ERR_MSP_INVALID_PARAMETER;
     }
 
     if (BSP_OK != bsp_socp_get_read_buff(ulDstChID, &stBuffer))
     {
         SCM_CODER_DST_ERR("SCM_CoderDestReadCB: Get Read Buffer is Error", ulDstChID, 0);/* 记录Log */
-        return;
+        return ERR_MSP_INVALID_PARAMETER;
     }
 
     diag_system_debug_rev_socp_data(stBuffer.u32RbSize + stBuffer.u32Size);
@@ -380,7 +389,7 @@ void scm_ind_dst_read_cb(void)
     if(NULL == g_astSCMIndCoderDstCfg.pfunc)
     {
         scm_printf("ind dst channel is null, delay log is open \n");
-        return;
+        return ERR_MSP_SUCCESS;
     }
 
     if((0 == (stBuffer.u32Size + stBuffer.u32RbSize))||(NULL == stBuffer.pBuffer))
@@ -388,12 +397,12 @@ void scm_ind_dst_read_cb(void)
         bsp_socp_read_data_done(ulDstChID, stBuffer.u32Size + stBuffer.u32RbSize);  /* 清空数据 */
         diag_system_debug_ind_dst_lost(EN_DIAG_DST_LOST_BRANCH, stBuffer.u32Size + stBuffer.u32RbSize);
         SCM_CODER_DST_ERR("SCM_CoderDestReadCB: Get RD error ", ulDstChID,0);/* 记录Log */
-        return;
+        return ERR_MSP_SUCCESS;
     }
 
     if(0 == stBuffer.u32Size)
     {
-        return;
+        return ERR_MSP_SUCCESS;
     }
 
     /* 发送数据 */
@@ -406,7 +415,7 @@ void scm_ind_dst_read_cb(void)
         bsp_socp_read_data_done(ulDstChID, stBuffer.u32Size + stBuffer.u32RbSize);  /* 清空数据 */
         diag_system_debug_ind_dst_lost(EN_DIAG_DST_LOST_BRANCH, stBuffer.u32Size + stBuffer.u32RbSize);
         SCM_CODER_DST_ERR("SCM_CoderDestReadCB:  stBuffer.pBuffer == NULL", ulDstChID, 0);/* 记录Log */
-        return;
+        return ERR_MSP_MALLOC_FAILUE;
     }
     ulTimerIn = bsp_get_slice_value();
 
@@ -415,7 +424,7 @@ void scm_ind_dst_read_cb(void)
     /* 记录回调函数的执行时间 */
     SCM_CODER_DST_LOG("SCM_CoderDestReadCB: Call channel Func Proc time", ulDstChID, (ulTimerOut - ulTimerIn));
 
-    return;
+    return ERR_MSP_SUCCESS;
 }
 
 u32 scm_ind_get_dst_buff_size(void)

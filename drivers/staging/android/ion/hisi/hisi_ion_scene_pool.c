@@ -25,7 +25,6 @@
 #include <linux/seq_file.h>
 #include <linux/slab.h>
 #include <linux/vmalloc.h>
-#include <linux/hisi/ion-iommu.h>
 #include <linux/sizes.h>
 #include <linux/module.h>
 #include <linux/kthread.h>
@@ -157,7 +156,7 @@ unsigned long ion_scene_pool_total_size(void)
 	void *pool = ion_get_scene_pool(ion_get_system_heap());
 
 	if (pool) {
-		size = (unsigned)ion_scene_pool_total_pages(pool);
+		size = (unsigned long)ion_scene_pool_total_pages(pool);/*lint !e571 */
 		size <<= PAGE_SHIFT;
 	}
 	return size;
@@ -332,7 +331,7 @@ static int shrink_memory(gfp_t gfp_mask, unsigned int order,
 	reclaim_state.reclaimed_slab = 0;
 	current->reclaim_state = &reclaim_state;
 
-	progress = try_to_free_pages(ac->zonelist,
+	progress = (int)try_to_free_pages(ac->zonelist,
 				     order, gfp_mask,
 				     ac->nodemask);
 #ifdef CONFIG_VM_EVENT_COUNTERS
@@ -447,11 +446,11 @@ static void set_thread_priority_and_cpu(struct task_struct *task,
 		(pool->worker_mask >> SPECIAL_SCENE_WORKER_PRIORITY_SHIFT)
 		& SPECIAL_SCENE_WORKER_PRIORITY_MASK;
 	int nice = PRIO_TO_NICE(priority);
-	long sched_ret;
-
-	WARN_ON(nice < MIN_NICE || nice > MAX_NICE);
-	sched_ret = sched_setaffinity(task->pid, to_cpumask(&cpumask));
-	WARN_ON(sched_ret < 0);
+	long sched_ret = sched_setaffinity(task->pid, to_cpumask(&cpumask));
+	if (sched_ret < 0)
+		pr_info("set_thread_priority_and_cpu ret %ld\n", sched_ret);
+	if (nice < MIN_NICE || nice > MAX_NICE)
+		return;
 	set_user_nice(task, nice);
 }
 
@@ -486,7 +485,7 @@ static bool has_enough_free_memory(struct ion_scene_pool *pool)
 		nr_free_pages += nr_zone_free;
 	}
 	if (nr_free_pages > atomic_read(&pool->total_watermark)) {
-		pr_info("There are enough free memory! free=%lu, need=%lu\n",
+		pr_info("There are enough free memory! free=%lu, need=%d\n",
 			nr_free_pages, atomic_read(&pool->total_watermark));
 		ret = true;
 	}
@@ -688,8 +687,8 @@ void ion_scene_pool_wakeup_process(
 		if (scene_pool->in_special_scene) {
 			scene_pool->pool_wait_flag = flag;
 			atomic_set(&scene_pool->scene_pool_can_fill_flag, 1);
-			set_thread_priority_and_cpu(scene_pool->pool_thread,
-						    scene_pool);
+			if (NULL != scene_pool->pool_thread)
+				set_thread_priority_and_cpu(scene_pool->pool_thread, scene_pool);
 		} else {
 			scene_pool->pool_wait_flag = F_FORCE_STOP;
 		}
@@ -697,8 +696,8 @@ void ion_scene_pool_wakeup_process(
 	if (scene_pool->worker_mask & SPECIAL_SCENE_SHRINK_MEMORY_WORKER) {
 		if (scene_pool->in_special_scene) {
 			scene_pool->shrink_wait_flag = flag;
-			set_thread_priority_and_cpu(scene_pool->shrink_thread,
-						    scene_pool);
+			if (NULL != scene_pool->shrink_thread)
+				set_thread_priority_and_cpu(scene_pool->shrink_thread, scene_pool);
 		} else {
 			scene_pool->shrink_wait_flag = F_FORCE_STOP;
 		}

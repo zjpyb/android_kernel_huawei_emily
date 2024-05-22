@@ -76,7 +76,6 @@
 #define WATCHDOG_DTS_COMP_NAME "hisilicon,sochifi-watchdog"
 #endif
 
-#define DRV_WATCHDOG_BASE_ADDR          (0xe804d000U)
 #define DRV_WATCHDOG_CONTROL            (DRV_WATCHDOG_BASE_ADDR + 0x008)
 #define DRV_WATCHDOG_INTCLR             (DRV_WATCHDOG_BASE_ADDR + 0x00C)
 #define DRV_WATCHDOG_LOCK               (DRV_WATCHDOG_BASE_ADDR + 0xC00)
@@ -94,7 +93,7 @@
 #define CFG_DSP_NMI                     (0x3C)               /*DSP NMI ,bit0-bit15*/
 #define CFG_MMBUF_REMAP_EN              (0x130)              /*mmbuf remap enable，9bit*/
 #define CFG_OCRAM_REMAP_EN              (0x13C)              /*ocram remap enable，9bit*/
-#define ASP_CFG_BASE                    (0xE804E000UL)
+#define ASP_CFG_BASE                    (SOC_ACPU_ASP_CFG_BASE_ADDR)
 
 struct rdr_soc_des_s {
 	uint32_t modid;
@@ -159,7 +158,8 @@ struct flag_info sochifi_flag[] = {
 #define FLAG_ROW_LEN (64)
 #define FLAG_COMMENT_LEN (128)
 #define PARSE_FLAG_LOG_SIZE (FLAG_ROW_LEN * ARRAY_SIZE(sochifi_flag) + FLAG_COMMENT_LEN)
-
+#define ICC_DEBUG_ONE_INFO_LEN (76)
+#define PARSE_ICC_DEBUG_LOG_SIZE (ICC_DEBUG_ONE_INFO_LEN*ICC_STAT_MSG_NUM*2 + 330)
 
 static void hisi_rdr_nmi_notify_hifi(void)
 {
@@ -390,15 +390,60 @@ static int parse_sochifi_flag(char *original_data, unsigned int original_data_si
 	return 0;
 }
 
+static int parse_sochifi_iccdebug(char *original_data, unsigned int original_data_size,
+	char *parsed_data, unsigned int parsed_data_size, unsigned int core_type)
+{
+	unsigned int i = 0;
+	struct icc_dbg *dbg;
+	struct icc_uni_msg_info *msg;
+
+	if (NULL == original_data || NULL == parsed_data) {
+		BB_PRINT_ERR("input data buffer is null\n");
+		return -EINVAL;
+	}
+
+	dbg = (struct icc_dbg*)original_data;
+	memset(parsed_data, 0, parsed_data_size);/* unsafe_function_ignore: memset */
+	snprintf(parsed_data, parsed_data_size, "\n\n/*********[iccdebug info begin]*********/\n\n");
+
+	msg = &dbg->msg_stat.send.msg[0];
+	snprintf(parsed_data + strlen(parsed_data), parsed_data_size - strlen(parsed_data),
+		"SEND MSG FIFO  front:%-4drear:%-4dsize:%-4d\nchannelid  timestamp   read   write  drop  sendpid  recvpid  length  msgid\n",
+		dbg->msg_stat.send.front, dbg->msg_stat.send.rear, dbg->msg_stat.send.size);
+	for (i = 0; i < ICC_STAT_MSG_NUM; i++) {
+		snprintf(parsed_data + strlen(parsed_data), parsed_data_size - strlen(parsed_data),
+			"%-11d0x%-10x%-7d%-7d%-6d%-9d%-9d%-8d0x%-4x\n",
+			msg[i].channel_id, msg[i].time, msg[i].fifo_read_pos, msg[i].fifo_write_pos,
+			msg[i].drop, msg[i].sender_pid, msg[i].receiver_pid, msg[i].packetlen, msg[i].msg_id);
+	}
+
+	msg = &dbg->msg_stat.recv.msg[0];
+	snprintf(parsed_data + strlen(parsed_data), parsed_data_size - strlen(parsed_data),
+		"\nRECV MSG FIFO:  front:%-4drear:%-4dsize:%-4d\nchannelid  timestamp   read   write  drop  sendpid  recvpid  length  msgid\n",
+		dbg->msg_stat.recv.front, dbg->msg_stat.recv.rear, dbg->msg_stat.recv.size);
+	for (i = 0; i < ICC_STAT_MSG_NUM; i++) {
+		snprintf(parsed_data + strlen(parsed_data), parsed_data_size - strlen(parsed_data),
+			"%-11d0x%-10x%-7d%-7d%-6d%-9d%-9d%-8d0x%-4x\n",
+			msg[i].channel_id, msg[i].time, msg[i].fifo_read_pos, msg[i].fifo_write_pos,
+			msg[i].drop, msg[i].sender_pid, msg[i].receiver_pid, msg[i].packetlen, msg[i].msg_id);
+	}
+
+	snprintf(parsed_data + strlen(parsed_data), parsed_data_size - strlen(parsed_data),
+		"\n\n/*********[iccdebug info end]*********/\n\n");
+
+	return 0;
+}
+
 struct parse_log parse_sochifi_log[] = {
 	{HIFI_OM_LOG_SIZE + DRV_DSP_UART_TO_MEM_SIZE, DRV_DSP_STACK_TO_MEM_SIZE, PARSER_SOCHIFI_TRACE_SIZE, parse_hifi_trace},
 	{RDR_FALG_OFFSET, HIFI_FLAG_DATA_SIZE, PARSE_FLAG_LOG_SIZE, parse_sochifi_flag},
 	{0, SOCHIFI_ORIGINAL_CPUVIEW_SIZE, PARSER_SOCHIFI_CPUVIEW_LOG_SIZE, parse_hifi_cpuview},
 	{SOCHIFI_ORIGINAL_CPUVIEW_SIZE, SOCHIFI_ORIGINAL_INNERLOG_SIZE, PARSE_INNERLOG_SIZE, parse_sochifi_innerlog},
 	{SOCHIFI_ORIGINAL_CPUVIEW_SIZE + SOCHIFI_ORIGINAL_INNERLOG_SIZE, SOCHIFI_ORIGINAL_DYNMEM_SIZE, PARSE_MEM_DYN_LOG_SIZE, parse_sochifi_dynmem},
+	{HIFI_OM_LOG_SIZE + DRV_DSP_UART_TO_MEM_SIZE + DRV_DSP_STACK_TO_MEM_SIZE, HIFI_ICC_DEBUG_SIZE, PARSE_ICC_DEBUG_LOG_SIZE, parse_sochifi_iccdebug},
 };
 
-static int dump_hifi_ddr(char *filepath)
+static int dump_hifi_ddr(const char *filepath)
 {
 	char *buf = NULL;
 	char *full_text = NULL;
@@ -565,11 +610,11 @@ static int save_icc_channel_fifo(void)
 }
 
 
-static void dump_hifi(char *filepath)
+static void dump_hifi(const char *filepath)
 {
 	int ret = 0;
 
-	BUG_ON(NULL == filepath);
+	WARN_ON(NULL == filepath);
 
 	ret = save_icc_channel_fifo();
 	BB_PRINT_PN("rdr:%s()save_icc_channel_fifo,%s\n", __func__, ret ? "fail" : "success");
@@ -577,8 +622,7 @@ static void dump_hifi(char *filepath)
 	ret = dump_hifi_ddr(filepath);
 	BB_PRINT_PN("rdr:%s():dump hifi ddr, %s\n", __func__, ret ? "fail" : "success");
 
-	if ((soc_des.modid >= (unsigned int)RDR_AUDIO_SOC_MODID_START) && (soc_des.modid <= RDR_AUDIO_SOC_MODID_END)) {
-		audio_dsm_report_info(AUDIO_CODEC, DSM_SOC_HIFI_RESET, "DSM_SOC_HIFI_RESET\n");
+	if (soc_des.modid == (unsigned int)RDR_AUDIO_SOC_WD_TIMEOUT_MODID) {
 	}
 
 	return;
@@ -682,7 +726,7 @@ static int irq_handler_thread(void *arg)
 		hifireset_runcbfun(DRV_RESET_CALLCBFUN_RESET_BEFORE);
 
 		BB_PRINT_PN("enter rdr process for sochifi watchdog\n");
-		rdr_system_error(RDR_AUDIO_SOC_WD_TIMEOUT_MODID, 0, 0);
+		rdr_system_error((unsigned int)RDR_AUDIO_SOC_WD_TIMEOUT_MODID, 0, 0);
 		BB_PRINT_PN("exit rdr process for sochifi watchdog\n");
 	}
 
@@ -693,8 +737,8 @@ static int irq_handler_thread(void *arg)
 
 void rdr_audio_soc_dump(u32 modid, char *pathname, pfn_cb_dump_done pfb)
 {
-	BUG_ON(NULL == pathname);
-	BUG_ON(NULL == pfb);
+	WARN_ON(NULL == pathname);
+	WARN_ON(NULL == pfb);
 
 	BB_PRINT_START();
 
@@ -753,8 +797,11 @@ static int rdr_hifi_cma_alloc(phys_addr_t *hifi_addr)
 		BB_PRINT_ERR("read align val err\n");
 		return -EINVAL;
 	}
-
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+	page = dma_alloc_from_contiguous(dev->device, HIFI_CMA_IMAGE_SIZE >> PAGE_SHIFT, align_val, GFP_KERNEL);
+#else
 	page = dma_alloc_from_contiguous(dev->device, HIFI_CMA_IMAGE_SIZE >> PAGE_SHIFT, align_val);
+#endif
 	if (!page) {
 		BB_PRINT_ERR("dma_alloc_from_contiguous (hifi) alloc err!\n");
 		return -ENOMEM;
@@ -1085,7 +1132,7 @@ int hifireset_doruncbfun(const char *pname, enum DRV_RESET_CALLCBFUN_MOMENT epar
 	int  iresult = BSP_RESET_OK;
 	struct sreset_mgr_lli  *phead = g_pmgr_hifireset_data;
 
-	BUG_ON(NULL == pname);
+	WARN_ON(NULL == pname);
 
 	/*不判断模块名字,按顺序执行*/
 	if (strncmp(pname, RESET_CBFUN_IGNORE_NAME, strlen(RESET_CBFUN_IGNORE_NAME)) == 0) {

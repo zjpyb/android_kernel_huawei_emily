@@ -142,7 +142,7 @@ extern SCM_SOFTDECODE_INFO_STRU   g_stScmSoftDecodeInfo;
 u32 SCM_SoftDecodeCfgDataRcv(u8 *pucBuffer, u32 ulLen);
 u32 SCM_SoftDecodeDataRcv(u8 *pucBuffer, u32 ulLen);
 int SCM_SoftDecodeCfgRcvTaskInit(void);
-void SCM_SoftDecodeCfgRcvSelfTask(void);
+int SCM_SoftDecodeCfgRcvSelfTask(void* para);
 void scm_soft_decode_init(void);
 u32 SCM_SoftDecodeAcpuRcvData(OM_HDLC_STRU *pstHdlcCtrl, u8 *pucData, u32 ulLen);
 u32 SCM_SoftDecodeCfgHdlcInit(OM_HDLC_STRU *pstHdlc);

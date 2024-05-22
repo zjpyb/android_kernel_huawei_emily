@@ -50,16 +50,32 @@
 #define TMD3702_MAX_ThRESHOLD_NUM    27
 #define TMD3702_MIN_ThRESHOLD_NUM    28
 
+#define TCS3701_MAX_ThRESHOLD_NUM    30
+#define TCS3701_MIN_ThRESHOLD_NUM    31
+
 #define VCNL36658_MAX_ThRESHOLD_NUM    28
 #define VCNL36658_MIN_ThRESHOLD_NUM    29
 
 #define TP_COORDINATE_THRESHOLD      (4)
 
-#define TSL2591_MAX_ThRESHOLD_NUM    12
-#define TSL2591_MIN_ThRESHOLD_NUM    13
+#define TSL2591_MAX_ThRESHOLD_NUM    13
+#define TSL2591_MIN_ThRESHOLD_NUM    14
 
 #define BH1726_MAX_ThRESHOLD_NUM    14
 #define BH1726_MIN_ThRESHOLD_NUM    15
+
+#define BH1749_MAX_ThRESHOLD_NUM 25
+#define BH1749_MIN_ThRESHOLD_NUM 26
+
+#define VD6281_MAX_ThRESHOLD_NUM    6
+#define VD6281_MIN_ThRESHOLD_NUM    7
+
+#define KB_DEFAULT_UART_NUM           (8)
+#define KB_DEFAULT_DETECT_ADC_NUM     (7)
+#define KB_DEFAULT_DISCONNECT_ADC_VOL (1700)
+
+#define CAP_MODEM_THRESHOLE_LEN        8
+#define CAP_CALIBRATE_THRESHOLE_LEN    4
 
 typedef uint16_t GPIO_NUM_TYPE;
 
@@ -82,6 +98,13 @@ typedef enum {
 	TOF,
 	TP_UD,
 	SH_AOD,
+	ACC1,
+	GYRO1,
+	ACC2,
+	GYRO2,
+	MAG1,
+	CAP_PROX1,
+	KB,
 	SENSOR_MAX
 }SENSOR_DETECT_LIST;
 
@@ -137,6 +160,7 @@ struct g_sensor_platform_data {
 	uint16_t z_calibrate_thredhold;
 	uint8_t wakeup_duration;
 	uint8_t g_sensor_extend_data[SENSOR_PLATFORM_EXTEND_DATA_SIZE];
+	uint8_t gpio_int2_sh_func;
 };
 
 struct gyro_platform_data {
@@ -199,40 +223,46 @@ struct als_platform_data {
 	uint8_t als_phone_tp_colour;
 	uint8_t als_extend_data[SENSOR_PLATFORM_EXTEND_ALS_DATA_SIZE];
 	uint8_t is_close;
+	uint8_t tp_info;
+	uint8_t is_bllevel_supported;
 };
 
 struct ps_platform_data {
 	struct sensor_combo_cfg cfg;
-	uint8_t ps_pulse_count;
-	GPIO_NUM_TYPE gpio_int1;
-	uint8_t persistent;
-	uint8_t ptime;
-	uint8_t p_on;		/*need to close oscillator*/
-	uint8_t ps_oily_threshold;
-	uint16_t poll_interval;
-	uint16_t init_time;
-	uint16_t use_oily_judge;
 	int min_proximity_value;
 	int pwindows_value;
 	int pwave_value;
 	int threshold_value;
-	int rdata_under_sun;
+	int rdata_under_sun;           /* threshold under sun detect */
+	int pwindows_screenon_value;
+	int pwave_screenon_value;
+	int threshold_screenon_value;
+	GPIO_NUM_TYPE gpio_int1;
+	uint16_t oily_max_near_pdata;
+	uint16_t max_oily_add_pdata;
+	uint16_t poll_interval;
+	uint16_t init_time;
+	uint16_t use_oily_judge;
+	uint16_t ps_tp_threshold;
 	uint16_t ps_calib_20cm_threshold;
 	uint16_t ps_calib_5cm_threshold;
 	uint16_t ps_calib_3cm_threshold;
-	uint8_t wtime;
-	uint8_t pulse_len;
-	uint8_t pgain;
-	uint8_t led_current;
-	uint8_t prox_avg;/* ps  Filtrate control*/
+	uint8_t ps_pulse_count;        /* Pulse number for proximity */
+	uint8_t persistent;            /* consecutive Interrupt persistence*/
+	uint8_t ptime;                 /* Prox integration time */
+	uint8_t p_on;  //need to close oscillator
+	uint8_t ps_oily_threshold;
+	uint8_t wtime; //wait time (ms)
+	uint8_t pulse_len; //pulse length (us)
+	uint8_t pgain; //ps gain
+	uint8_t led_current; //mA
+	uint8_t prox_avg;// open filter or not
 	uint8_t offset_max;
 	uint8_t offset_min;
-	uint16_t oily_max_near_pdata;
-	uint16_t max_oily_add_pdata;
 	uint8_t max_near_pdata_loop;
 	uint8_t oily_count_size;
-	uint16_t ps_tp_threshold;
-	uint8_t ps_extend_data[SENSOR_PLATFORM_EXTEND_DATA_SIZE];
+	uint8_t digital_offset_max;
+	uint8_t is_always_on;
 };
 
 struct airpress_platform_data {
@@ -311,10 +341,17 @@ struct semteck_sar_data {
 	uint8_t ph;
 	uint16_t calibrate_thred[4];
 };
+struct abov_sar_data {
+	uint16_t phone_type;
+	uint16_t threshold_to_modem[CAP_MODEM_THRESHOLE_LEN];
+	uint8_t ph;
+	uint16_t calibrate_thred[CAP_CALIBRATE_THRESHOLE_LEN];
+};
 union sar_data {
 	struct cypress_sar_data cypress_data;
 	struct adux_sar_data	adux_data;
 	struct semteck_sar_data	semteck_data;
+	struct abov_sar_data abov_data;
 	//add the others here
 };
 
@@ -326,16 +363,17 @@ union sar_data {
 struct sar_platform_data {
 	struct sensor_combo_cfg cfg;
 	GPIO_NUM_TYPE gpio_int;
+	GPIO_NUM_TYPE gpio_int_sh;
 	uint16_t poll_interval;
-	int  calibrate_type;
+	uint16_t  calibrate_type;
 	union sar_data	sar_datas;
 };
 
 struct sar_sensor_detect {
 	struct sensor_combo_cfg cfg;
 	uint8_t detect_flag;
-	uint8_t chip_id;
-	uint8_t chip_id_value[2];
+	uint16_t chip_id;
+	uint32_t chip_id_value[2];
 };
 
 struct cap_prox_platform_data {
@@ -395,11 +433,22 @@ struct tp_ud_platform_data {
 	GPIO_NUM_TYPE gpio_irq_sh;
 	GPIO_NUM_TYPE gpio_cs;
 	uint16_t pressure_support;
+	uint16_t anti_forgery_support;
 	uint32_t ic_type;
 	uint32_t hover_enable;
 	uint32_t i2c_max_speed_hz;
 	uint32_t spi_max_speed_hz;
 	uint8_t spi_mode;
+	uint16_t fw_power_config_reg;
+	uint16_t fw_touch_data_reg;
+	uint16_t fw_touch_command_reg;
+	uint16_t fw_addr_3;
+	uint16_t fw_addr_4;
+	uint16_t fw_addr_5;
+	uint16_t fw_addr_6;
+	uint16_t fw_addr_7;
+	uint16_t tp_sensorhub_irq_flag;
+	uint16_t tp_sensor_spi_sync_cs_low_delay_us;
 	struct tp_ud_algo_config algo_conf;
 };
 
@@ -449,6 +498,13 @@ struct rpc_platform_data {
 	uint16_t default_value;
 	uint16_t mask_enable;
 };
+struct kb_platform_data {
+	uint16_t uart_num;
+	uint16_t kb_detect_adc_num;
+	uint16_t kb_disconnect_adc_min;
+	uint16_t kb_disable_angle;
+};
+
 #define max_tx_rx_len 32
 struct detect_word {
 	struct sensor_combo_cfg cfg;
@@ -553,6 +609,12 @@ struct sensorlist_info{
 	uint32_t flags;
 };
 
+extern int mag_opend;
+extern int akm_need_charger_current;
+extern int akm_current_x_fac;
+extern int akm_current_y_fac;
+extern int akm_current_z_fac;
+
 int init_sensors_cfg_data_from_dts(void);
 extern SENSOR_DETECT_LIST get_id_by_sensor_tag(int tag);
 extern int sensor_set_cfg_data(void);
@@ -560,4 +622,5 @@ extern int send_fileid_to_mcu(void);
 void sensor_redetect_enter(void);
 void sensor_redetect_init(void);
 int sensor_set_fw_load(void);
+int sensor_get_als_bh1749_flag(void);
 #endif

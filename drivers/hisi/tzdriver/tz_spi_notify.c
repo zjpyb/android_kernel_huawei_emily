@@ -130,13 +130,13 @@ static struct workqueue_struct *tz_spi_wq;
 
 static void tc_notify_timer_fn(struct notify_data_entry *notify_data_entry)
 {
-	TC_NS_DEV_File *temp_dev_file;
-	TC_NS_Service *temp_svc;
+	TC_NS_DEV_File *temp_dev_file = NULL;
+	TC_NS_Service *temp_svc = NULL;
 	TC_NS_Session *temp_ses = NULL;
 	int enc_found = 0;
 	rtc_timer_callback_func callback_func;
-	struct TC_NS_Callback *callback_func_t;
-	struct notify_context_timer *tc_notify_data_timer;
+	struct TC_NS_Callback *callback_func_t = NULL;
+	struct notify_context_timer *tc_notify_data_timer = NULL;
 
 	tc_notify_data_timer =
 		&(notify_data_entry->context.timer);
@@ -266,7 +266,7 @@ static void tc_notify_wakeup_fn(struct notify_data_entry *entry)
 
 	tc_notify_wakeup = &(entry->context.wakeup);
 	smc_wakeup_ca(tc_notify_wakeup->ca_thread_id);
-	tlogd("notify_data_entry_wakeup ca: %llx\n", tc_notify_wakeup->ca_thread_id);
+	tlogd("notify_data_entry_wakeup ca: %d\n", tc_notify_wakeup->ca_thread_id);
 }
 
 static void tc_notify_shadow_fn(struct notify_data_entry *entry)
@@ -410,7 +410,7 @@ int TC_NS_RegisterServiceCallbackFunc(char *uuid, void *func,
 
 	/*create a new callback struct if we couldn't find it in list */
 	new_callback = kzalloc(sizeof(struct TC_NS_Callback), GFP_KERNEL);
-	if (!new_callback) {
+	if (NULL == new_callback) {
 		TCERR("kmalloc failed\n");
 		ret = -ENOMEM;
 		goto find_callback;
@@ -469,7 +469,7 @@ int TC_NS_TST_CMD(TC_NS_DEV_File *dev_id, void *argp)
 		{0xf4, 0x1a, 0xbc, 0x89, 0x22, 0x62, 0xbb, 0x3d}
 	};
 
-	if (!argp) {
+	if ( NULL == argp) {
 		TCERR("argp is NULL input buffer\n");
 		ret = -EINVAL;
 		return ret;
@@ -547,10 +547,10 @@ static int TC_NS_register_notify_data_memery(void)
 {
 	TC_NS_SMC_CMD smc_cmd = { 0 };
 	int ret;
-	struct mb_cmd_pack *mb_pack;
+	struct mb_cmd_pack *mb_pack = NULL;
 
 	mb_pack = mailbox_alloc_cmd_pack();
-	if (!mb_pack)
+	if (NULL == mb_pack)
 		return TEEC_ERROR_GENERIC;
 
 	mb_pack->operation.paramTypes =
@@ -567,7 +567,7 @@ static int TC_NS_register_notify_data_memery(void)
 	smc_cmd.operation_h_phys = virt_to_phys(&mb_pack->operation) >> 32;
 
 	TCDEBUG("cmd. context_phys:%x\n", smc_cmd.context_id);
-	ret = TC_NS_SMC(&smc_cmd, 0);
+	ret = (int)TC_NS_SMC(&smc_cmd, 0);
 
 	mailbox_free(mb_pack);
 
@@ -579,10 +579,10 @@ static int TC_NS_unregister_notify_data_memory(void)
 
 	TC_NS_SMC_CMD smc_cmd = { 0 };
 	int ret;
-	struct mb_cmd_pack *mb_pack;
+	struct mb_cmd_pack *mb_pack = NULL;
 
 	mb_pack = mailbox_alloc_cmd_pack();
-	if (!mb_pack)
+	if ( NULL == mb_pack)
 		return TEEC_ERROR_GENERIC;
 
 	mb_pack->operation.paramTypes =
@@ -599,7 +599,7 @@ static int TC_NS_unregister_notify_data_memory(void)
 	smc_cmd.operation_h_phys = virt_to_phys(&mb_pack->operation) >> 32;
 	TCDEBUG("cmd. context_phys:%x\n", smc_cmd.context_id);
 
-	ret = TC_NS_SMC(&smc_cmd, 0);
+	ret = (int)TC_NS_SMC(&smc_cmd, 0);
 
 	mailbox_free(mb_pack);
 

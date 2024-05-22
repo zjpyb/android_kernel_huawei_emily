@@ -179,6 +179,7 @@ of_thermal_get_trip_points(struct thermal_zone_device *tz)
 }
 EXPORT_SYMBOL_GPL(of_thermal_get_trip_points);
 
+#ifndef CONFIG_HISI_IPA_THERMAL
 /**
  * of_thermal_set_emul_temp - function to set emulated temperature
  *
@@ -197,6 +198,7 @@ static int of_thermal_set_emul_temp(struct thermal_zone_device *tz,
 
 	return data->ops->set_emul_temp(data->sensor_data, temp);
 }
+#endif
 
 static int of_thermal_get_trend(struct thermal_zone_device *tz, int trip,
 				enum thermal_trend *trend)
@@ -598,7 +600,7 @@ static int devm_thermal_zone_of_sensor_match(struct device *dev, void *res,
 	if (WARN_ON(!r || !*r))
 		return 0;
 
-	return *r == data;
+	return *r == data;//lint !e613
 }
 
 /**
@@ -1009,19 +1011,16 @@ int of_thermal_get_num_tbps(struct thermal_zone_device *tz)
 EXPORT_SYMBOL(of_thermal_get_num_tbps);
 
 int of_thermal_get_actor_weight(struct thermal_zone_device *tz, int i,
-				enum ipa_actor *actor, unsigned int *weight)
+				int *actor, unsigned int *weight)
 {
 	struct __thermal_zone *data = tz->devdata;
 
 	if (i >= data->num_tbps || i < 0)
 		return -EDOM;
 
-	if (!strncmp(data->tbps[i].cooling_device->name, "cluster0", sizeof("cluster0") - 1))
-		*actor = IPA_CLUSTER0;
-	else if (!strncmp(data->tbps[i].cooling_device->name, "cluster1", sizeof("cluster1") - 1))
-		*actor = IPA_CLUSTER1;
-	else
-		*actor = IPA_GPU;
+	*actor = ipa_get_actor_id(data->tbps[i].cooling_device->name);
+	if (*actor < 0)
+		*actor = ipa_get_actor_id("gpu");
 
 	*weight = data->tbps[i].usage;
 	pr_err("IPA: matched actor: %d, weight: %d\n", *actor, *weight);
@@ -1085,7 +1084,7 @@ int __init of_parse_thermal_zones(void)
 #ifdef CONFIG_HISI_IPA_THERMAL
 		/* set power allocator governor as defualt */
 		if (!of_property_read_string(child, "governor_name", (const char **)&gov_name))
-			strncpy(tzp->governor_name, gov_name, sizeof(tzp->governor_name));
+			strncpy(tzp->governor_name, gov_name, sizeof(tzp->governor_name));/* unsafe_function_ignore: strncpy */
 #endif
 
 		/* No hwmon because there might be hwmon drivers registering */

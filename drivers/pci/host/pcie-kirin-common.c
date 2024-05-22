@@ -61,8 +61,7 @@ int config_enable_dbi(u32 rc_id, int flag)
  */
 int set_bme(u32 rc_id, int flag)
 {
-	int ret;
-	struct pcie_port *pp;
+	u32 val;
 	struct kirin_pcie *pcie;
 
 	if (!kirin_pcie_valid(rc_id))
@@ -70,25 +69,33 @@ int set_bme(u32 rc_id, int flag)
 
 	pcie = &g_kirin_pcie[rc_id];
 
-	pp = &(pcie->pp);
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 69))
+	val = kirin_pcie_readl_rc(&(pcie->pp), PCI_COMMAND);
+#else
+	val = kirin_pcie_read_dbi(pcie->pci, pcie->pci->dbi_base, PCI_COMMAND, 0x4);
+#endif
 
-	config_enable_dbi(rc_id, ENABLE);
-
-	ret = readl(pp->dbi_base + PCI_COMMAND);
 	if (flag) {
 		PCIE_PR_INFO("Enable Bus master!!!");
-		ret |= PCI_COMMAND_MASTER;
+		val |= PCI_COMMAND_MASTER;
 	} else {
 		PCIE_PR_INFO("Disable Bus master!!!");
-		ret &= ~PCI_COMMAND_MASTER;/* [false alarm]:fortify */
+		val &= ~PCI_COMMAND_MASTER;/* [false alarm]:fortify */
 	}
-	writel(ret, pp->dbi_base + PCI_COMMAND);
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 69))
+	kirin_pcie_writel_rc(&(pcie->pp), PCI_COMMAND, val);
+#else
+	kirin_pcie_write_dbi(pcie->pci, pcie->pci->dbi_base, PCI_COMMAND, 0x4, val);
+#endif
 
 	udelay(5);//lint !e778  !e774  !e516 !e747
-	ret = readl(pp->dbi_base + PCI_COMMAND);
-	PCIE_PR_INFO("Register[0x4] value is [0x%x]", ret);
 
-	config_enable_dbi(rc_id, DISABLE);
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 69))
+	val = kirin_pcie_readl_rc(&(pcie->pp), PCI_COMMAND);
+#else
+	val = kirin_pcie_read_dbi(pcie->pci, pcie->pci->dbi_base, PCI_COMMAND, 0x4);
+#endif
+	PCIE_PR_INFO("Register[0x4] value is [0x%x]", val);
 
 	return 0;
 }
@@ -99,8 +106,7 @@ int set_bme(u32 rc_id, int flag)
  */
 int set_mse(u32 rc_id, int flag)
 {
-	int ret;
-	struct pcie_port *pp;
+	u32 val;
 	struct kirin_pcie *pcie;
 
 	if (!kirin_pcie_valid(rc_id))
@@ -108,25 +114,33 @@ int set_mse(u32 rc_id, int flag)
 
 	pcie = &g_kirin_pcie[rc_id];
 
-	pp = &(pcie->pp);
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 69))
+	val = kirin_pcie_readl_rc(&(pcie->pp), PCI_COMMAND);
+#else
+	val = kirin_pcie_read_dbi(pcie->pci, pcie->pci->dbi_base, PCI_COMMAND, 0x4);
+#endif
 
-	config_enable_dbi(rc_id, ENABLE);
-
-	ret = readl(pp->dbi_base + PCI_COMMAND);
 	if (flag) {
 		PCIE_PR_INFO("Enable MEM space!!!");
-		ret |= PCI_COMMAND_MEMORY;
+		val |= PCI_COMMAND_MEMORY;
 	} else {
 		PCIE_PR_INFO("Disable MEM space!!!");
-		ret &= ~PCI_COMMAND_MEMORY;/* [false alarm]:fortify */
+		val &= ~PCI_COMMAND_MEMORY;/* [false alarm]:fortify */
 	}
-	writel(ret, pp->dbi_base + PCI_COMMAND);
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 69))
+	kirin_pcie_writel_rc(&(pcie->pp), PCI_COMMAND, val);
+#else
+	kirin_pcie_write_dbi(pcie->pci, pcie->pci->dbi_base, PCI_COMMAND, 0x4, val);
+#endif
 
 	udelay(5);//lint !e778  !e774  !e516 !e747
-	ret = readl(pp->dbi_base + PCI_COMMAND);
-	PCIE_PR_INFO("Register[0x4] value is [0x%x]", ret);
 
-	config_enable_dbi(rc_id, DISABLE);
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 69))
+	val = kirin_pcie_readl_rc(&(pcie->pp), PCI_COMMAND);
+#else
+	val = kirin_pcie_read_dbi(pcie->pci, pcie->pci->dbi_base, PCI_COMMAND, 0x4);
+#endif
+	PCIE_PR_INFO("Register[0x4] value is [0x%x]", val);
 
 	return 0;
 }
@@ -170,7 +184,7 @@ void kirin_pcie_reset_phy(struct kirin_pcie *pcie)
 void kirin_pcie_config_l0sl1(u32 rc_id, enum link_aspm_state aspm_state)
 {
 	struct kirin_pcie *pcie;
-	u16 reg_val;
+	struct pci_dev *child, *temp;
 
 	if (!kirin_pcie_valid(rc_id))
 		return;
@@ -183,23 +197,23 @@ void kirin_pcie_config_l0sl1(u32 rc_id, enum link_aspm_state aspm_state)
 	}
 
 	if (aspm_state == ASPM_CLOSE) {
-		pcie_capability_clear_and_set_word(pcie->ep_dev, PCI_EXP_LNKCTL,
+		list_for_each_entry_safe(child, temp, &pcie->rc_dev->subordinate->devices, bus_list)
+			pcie_capability_clear_and_set_word(child, PCI_EXP_LNKCTL,
 						   PCI_EXP_LNKCTL_ASPMC, aspm_state);
 
 		pcie_capability_clear_and_set_word(pcie->rc_dev, PCI_EXP_LNKCTL,
 					PCI_EXP_LNKCTL_ASPMC, aspm_state);
-		pcie_capability_read_word(pcie->ep_dev, PCI_EXP_LNKCTL, &reg_val);
-		PCIE_PR_DEBUG("EP LNKCTL: 0x%x", reg_val);
 	} else {
 		pcie_capability_clear_and_set_word(pcie->rc_dev, PCI_EXP_LNKCTL,
 						   PCI_EXP_LNKCTL_ASPMC, aspm_state);
 
-		pcie_capability_clear_and_set_word(pcie->ep_dev, PCI_EXP_LNKCTL,
+		list_for_each_entry_safe(child, temp, &pcie->rc_dev->subordinate->devices, bus_list)
+			pcie_capability_clear_and_set_word(child, PCI_EXP_LNKCTL,
 					PCI_EXP_LNKCTL_ASPMC, aspm_state);
 	}
 }
 
-static void enable_req_clk(struct kirin_pcie *pcie, u32 enable_flag)
+void enable_req_clk(struct kirin_pcie *pcie, u32 enable_flag)
 {
 	u32 val;
 
@@ -213,10 +227,62 @@ static void enable_req_clk(struct kirin_pcie *pcie, u32 enable_flag)
 	kirin_elb_writel(pcie, val, SOC_PCIECTRL_CTRL1_ADDR);
 }
 
+void kirin_pcie_config_l1ss_ep(struct kirin_pcie *pcie, struct pci_dev *dev,
+					u32 enable_flag, enum l1ss_ctrl_state enable)
+{
+	u32 reg_val;
+	int ep_l1ss_pm, ep_ltr_pm;
+
+	PCIE_PR_DEBUG("Get EP PCI_EXT_L1SS_CAP_ID");
+	ep_l1ss_pm = pci_find_ext_capability(dev, PCI_EXT_L1SS_CAP_ID);
+	if (!ep_l1ss_pm) {
+		PCIE_PR_ERR("Failed to get EP PCI_EXT_L1SS_CAP_ID");
+		return;
+	}
+
+	if (enable_flag) {
+		/*EP: Power On Value & Scale*/
+		if (pcie->dtsinfo.ep_l1ss_ctrl2) {
+			pci_read_config_dword(dev, ep_l1ss_pm+ PCI_EXT_L1SS_CTRL2, &reg_val);
+			reg_val &= ~0xFF;
+			reg_val |= pcie->dtsinfo.ep_l1ss_ctrl2;
+			pci_write_config_dword(dev, ep_l1ss_pm + PCI_EXT_L1SS_CTRL2, reg_val);
+		}
+
+		/*EP: LTR Latency*/
+		if (pcie->dtsinfo.ep_ltr_latency) {
+			ep_ltr_pm= pci_find_ext_capability(dev, PCI_EXT_LTR_CAP_ID);
+			if (ep_ltr_pm)
+				pci_write_config_dword(dev, ep_ltr_pm + LTR_MAX_SNOOP_LATENCY,
+					pcie->dtsinfo.ep_ltr_latency);
+		}
+
+		pcie_capability_read_dword(dev, PCI_EXP_DEVCTL2, &reg_val);
+		reg_val |= (0x1 << 10);
+		pcie_capability_write_dword(dev, PCI_EXP_DEVCTL2, reg_val);
+
+		/*Enable*/
+		pci_read_config_dword(dev, ep_l1ss_pm + PCI_EXT_L1SS_CTRL1, &reg_val);
+		reg_val = pcie->dtsinfo.l1ss_ctrl1;
+		reg_val &= 0xFFFFFFF0;
+		reg_val |= enable;
+		pci_write_config_dword(dev, ep_l1ss_pm + PCI_EXT_L1SS_CTRL1, reg_val);
+	} else {
+		pcie_capability_read_dword(dev, PCI_EXP_DEVCTL2, &reg_val);
+		reg_val &= ~(0x1 << 10);
+		pcie_capability_write_dword(dev, PCI_EXP_DEVCTL2, reg_val);
+
+		/*disble L1ss*/
+		pci_read_config_dword(dev, ep_l1ss_pm + PCI_EXT_L1SS_CTRL1, &reg_val);
+		reg_val &= ~L1SS_PM_ASPM_ALL;
+		pci_write_config_dword(dev, ep_l1ss_pm + PCI_EXT_L1SS_CTRL1, reg_val);
+	}
+}
+
 void kirin_pcie_config_l1ss(u32 rc_id, enum l1ss_ctrl_state enable)
 {
 	u32 reg_val;
-	int rc_l1ss_pm, ep_l1ss_pm, ep_ltr_pm;
+	int rc_l1ss_pm;
 	struct kirin_pcie *pcie;
 	struct kirin_pcie_dtsinfo *dtsinfo;
 
@@ -232,6 +298,8 @@ void kirin_pcie_config_l1ss(u32 rc_id, enum l1ss_ctrl_state enable)
 		return;
 	}
 
+	kirin_pcie_config_l1ss_ep(pcie, pcie->ep_dev, DISABLE, enable);
+
 	PCIE_PR_DEBUG("Get RC PCI_EXT_L1SS_CAP_ID");
 	rc_l1ss_pm = pci_find_ext_capability(pcie->rc_dev, PCI_EXT_L1SS_CAP_ID);
 	if (!rc_l1ss_pm) {
@@ -239,27 +307,11 @@ void kirin_pcie_config_l1ss(u32 rc_id, enum l1ss_ctrl_state enable)
 		return;
 	}
 
-	PCIE_PR_DEBUG("Get EP PCI_EXT_L1SS_CAP_ID");
-	ep_l1ss_pm = pci_find_ext_capability(pcie->ep_dev, PCI_EXT_L1SS_CAP_ID);
-	if (!ep_l1ss_pm) {
-		PCIE_PR_ERR("Failed to get EP PCI_EXT_L1SS_CAP_ID");
-		return;
-	}
-
-	pcie_capability_read_dword(pcie->ep_dev, PCI_EXP_DEVCTL2, &reg_val);
-	reg_val &= ~(0x1 << 10);
-	pcie_capability_write_dword(pcie->ep_dev, PCI_EXP_DEVCTL2, reg_val);
-
 	pcie_capability_read_dword(pcie->rc_dev, PCI_EXP_DEVCTL2, &reg_val);
 	reg_val &= ~(0x1 << 10);
 	pcie_capability_write_dword(pcie->rc_dev, PCI_EXP_DEVCTL2, reg_val);
 
-
 	/*disble L1ss*/
-	pci_read_config_dword(pcie->ep_dev, ep_l1ss_pm + PCI_EXT_L1SS_CTRL1, &reg_val);
-	reg_val &= ~L1SS_PM_ASPM_ALL;
-	pci_write_config_dword(pcie->ep_dev, ep_l1ss_pm + PCI_EXT_L1SS_CTRL1, reg_val);
-
 	pci_read_config_dword(pcie->rc_dev, rc_l1ss_pm + PCI_EXT_L1SS_CTRL1, &reg_val);
 	reg_val &= ~L1SS_PM_ASPM_ALL;
 	pci_write_config_dword(pcie->rc_dev, rc_l1ss_pm + PCI_EXT_L1SS_CTRL1, reg_val);
@@ -279,25 +331,6 @@ void kirin_pcie_config_l1ss(u32 rc_id, enum l1ss_ctrl_state enable)
 		reg_val |= (0x1 << 10);
 		pcie_capability_write_dword(pcie->rc_dev, PCI_EXP_DEVCTL2, reg_val);
 
-		/*EP: Power On Value & Scale*/
-		if (dtsinfo->ep_l1ss_ctrl2) {
-			pci_read_config_dword(pcie->ep_dev, ep_l1ss_pm+ PCI_EXT_L1SS_CTRL2, &reg_val);
-			reg_val &= ~0xFF;
-			reg_val |= dtsinfo->ep_l1ss_ctrl2;
-			pci_write_config_dword(pcie->ep_dev, ep_l1ss_pm + PCI_EXT_L1SS_CTRL2, reg_val);
-		}
-
-		/*EP: LTR Latency*/
-		if (dtsinfo->ep_ltr_latency) {
-			ep_ltr_pm= pci_find_ext_capability(pcie->ep_dev, PCI_EXT_LTR_CAP_ID);
-			if (ep_ltr_pm)
-				pci_write_config_dword(pcie->ep_dev, ep_ltr_pm + LTR_MAX_SNOOP_LATENCY, dtsinfo->ep_ltr_latency);
-		}
-
-		pcie_capability_read_dword(pcie->ep_dev, PCI_EXP_DEVCTL2, &reg_val);
-		reg_val |= (0x1 << 10);
-		pcie_capability_write_dword(pcie->ep_dev, PCI_EXP_DEVCTL2, reg_val);
-
 		/*Enable*/
 		pci_read_config_dword(pcie->rc_dev, rc_l1ss_pm + PCI_EXT_L1SS_CTRL1, &reg_val);
 		reg_val = dtsinfo->l1ss_ctrl1;
@@ -305,18 +338,13 @@ void kirin_pcie_config_l1ss(u32 rc_id, enum l1ss_ctrl_state enable)
 		reg_val |= enable;
 		pci_write_config_dword(pcie->rc_dev, rc_l1ss_pm + PCI_EXT_L1SS_CTRL1, reg_val);
 
-		pci_read_config_dword(pcie->ep_dev, ep_l1ss_pm + PCI_EXT_L1SS_CTRL1, &reg_val);
-		reg_val = dtsinfo->l1ss_ctrl1;
-		reg_val &= 0xFFFFFFF0;
-		reg_val |= enable;
-		pci_write_config_dword(pcie->ep_dev, ep_l1ss_pm + PCI_EXT_L1SS_CTRL1, reg_val);
-
+		kirin_pcie_config_l1ss_ep(pcie, pcie->ep_dev, ENABLE, enable);
 	} else {
 		enable_req_clk(pcie, ENABLE);
 	}
 
 }
-
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 69))
 static void set_atu_addr(struct pcie_port *pp, int type, char *dbi_base,
 			u64 src_addr, u64 dst_addr, u32 size)
 {
@@ -330,14 +358,15 @@ static void set_atu_addr(struct pcie_port *pp, int type, char *dbi_base,
 	kirin_pcie_writel_rc(pp, iatu_offset + PCIE_ATU_CR2, (u32)PCIE_ATU_ENABLE);//lint !e648
 }
 
-static void kirin_pcie_atu_cfg(struct pcie_port *pp, u32 index, int direct,
+static void kirin_pcie_atu_cfg(struct kirin_pcie *pcie, u32 index, int direct,
 		int type, u64 src_addr, u64 dst_addr, u32 size)
 {
-	struct kirin_pcie *pcie;
+	struct pcie_port *pp;
 	char *dbi_base;
 	unsigned int base_addr;
 
-	pcie = to_kirin_pcie(pp);//lint !e826
+	pp = &pcie->pp;
+
 	if (!atomic_read(&(pcie->is_power_on))) {
 		PCIE_PR_ERR("PCIe is power off");
 		return;
@@ -358,57 +387,69 @@ static void kirin_pcie_atu_cfg(struct pcie_port *pp, u32 index, int direct,
 
 	set_atu_addr(pp, type, dbi_base, src_addr, dst_addr, size);
 }
-
+#endif
 void kirin_pcie_generate_msg(u32 rc_id, int index, u32 iatu_offset, int msg_type, u32 msg_code)
 {
 	u32 val;
 	struct kirin_pcie *pcie;
-	struct pcie_port *pp;
 
 	if (!kirin_pcie_valid(rc_id))
 		return;
 
 	pcie = &g_kirin_pcie[rc_id];
-	pp = &pcie->pp;
 
 	kirin_pcie_outbound_atu(rc_id, index, msg_type,
 				pcie->dtsinfo.dbi_base + MSG_CPU_ADDR, 0x0, MSG_CPU_ADDR_SIZE);
 
-	val = kirin_pcie_readl_rc(pp, iatu_offset + PCIE_ATU_CR2);
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 69))
+	val = kirin_pcie_readl_rc(&pcie->pp, iatu_offset + PCIE_ATU_CR2);
 	val |= (msg_code | INHIBIT_PAYLOAD);
-	kirin_pcie_writel_rc(pp, iatu_offset + PCIE_ATU_CR2, val);
+	kirin_pcie_writel_rc(&pcie->pp, iatu_offset + PCIE_ATU_CR2, val);
+#else
+	val = kirin_pcie_read_dbi(pcie->pci, pcie->pci->dbi_base, PCIE_GET_ATU_OUTB_UNR_REG_OFFSET(index) +
+			PCIE_ATU_UNR_REGION_CTRL2, 0x4);
+	val |= (msg_code | INHIBIT_PAYLOAD);
+	kirin_pcie_write_dbi(pcie->pci, pcie->pci->dbi_base, PCIE_GET_ATU_OUTB_UNR_REG_OFFSET(index) +
+			PCIE_ATU_UNR_REGION_CTRL2, 0x4, val);
+#endif
 
 	writel(0x0, pcie->pme_base);
 
 }
 
-int kirin_pcie_power_ctrl(struct pcie_port *pp, enum rc_power_status on_flag)
+int kirin_pcie_power_ctrl(struct kirin_pcie *pcie, enum rc_power_status on_flag)
 {
 	int ret;
 	u32 val;
-	struct kirin_pcie *pcie = to_kirin_pcie(pp);
 
 	PCIE_PR_INFO("++");
 
 	/*power on*/
 	if (on_flag == RC_POWER_ON || on_flag == RC_POWER_RESUME) {
-		spin_lock(&pcie->ep_ltssm_lock);
-		pcie->ep_link_status = DEVICE_LINK_UP;
-		spin_unlock(&pcie->ep_ltssm_lock);
-
-		ret = pcie->plat_ops->plat_on(pp, on_flag);
+		ret = pcie->plat_ops->plat_on(pcie, on_flag);
 		if (ret < 0)
 			return ret;
 
+		pcie->ep_link_status = DEVICE_LINK_UP;
+
 		if (pcie->dtsinfo.board_type == BOARD_FPGA) {
-			val = kirin_pcie_readl_rc(pp, KIRIN_PCIE_LNKCTL2);
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 69))
+			val = kirin_pcie_readl_rc(&pcie->pp, KIRIN_PCIE_LNKCTL2);
+#else
+			val = kirin_pcie_read_dbi(pcie->pci, pcie->pci->dbi_base, KIRIN_PCIE_LNKCTL2, 0x4);
+#endif
 			val &= ~SPEED_MASK;
 			val |= SPEED_GEN1;
-			kirin_pcie_writel_rc(pp, KIRIN_PCIE_LNKCTL2, val);
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 69))
+			kirin_pcie_writel_rc(&pcie->pp, KIRIN_PCIE_LNKCTL2, val);
+#else
+			kirin_pcie_write_dbi(pcie->pci, pcie->pci->dbi_base,
+					KIRIN_PCIE_LNKCTL2, 0x4, val);
+#endif
 		}
 
 	} else if (on_flag == RC_POWER_OFF || on_flag == RC_POWER_SUSPEND) {
-		ret = pcie->plat_ops->plat_off(pp, on_flag);
+		ret = pcie->plat_ops->plat_off(pcie, on_flag);
 	} else {
 		PCIE_PR_ERR("Invalid Param");
 		ret = -1;
@@ -568,7 +609,7 @@ int kirin_pcie_phy_init(struct kirin_pcie *pcie)
 
 	/* pull down phy_test_powerdown signal */
 	reg_val = kirin_apb_phy_readl(pcie, SOC_PCIEPHY_CTRL0_ADDR);
-	reg_val &= ~(0x1 << 22);
+	reg_val &= ~PHY_TEST_POWERDOWN;
 	kirin_apb_phy_writel(pcie, reg_val, SOC_PCIEPHY_CTRL0_ADDR);
 
 	if (pcie->dtsinfo.eco)
@@ -576,7 +617,10 @@ int kirin_pcie_phy_init(struct kirin_pcie *pcie)
 
 	/* deassert controller perst_n */
 	reg_val = kirin_elb_readl(pcie, SOC_PCIECTRL_CTRL12_ADDR);
-	reg_val |= (0x1 << 2);
+	if (pcie->dtsinfo.ep_flag)
+		reg_val |= PERST_IN_EP;
+	else
+		reg_val |= PERST_IN_RC;
 	kirin_elb_writel(pcie, reg_val, SOC_PCIECTRL_CTRL12_ADDR);
 	udelay(10);
 
@@ -611,8 +655,7 @@ void kirin_pcie_natural_cfg(struct kirin_pcie *pcie)
 		/* cfg as rc */
 		val = kirin_elb_readl(pcie, SOC_PCIECTRL_CTRL0_ADDR);
 		val &= ~(PCIE_TYPE_MASK << PCIE_TYPE_SHIFT);
-		if (!pcie->dtsinfo.ep_flag)
-			val |= (PCIE_TYPE_RC << PCIE_TYPE_SHIFT);
+		val |= (PCIE_TYPE_RC << PCIE_TYPE_SHIFT);
 		kirin_elb_writel(pcie, val, SOC_PCIECTRL_CTRL0_ADDR);
 
 		/* output, pull down */
@@ -630,20 +673,49 @@ void kirin_pcie_natural_cfg(struct kirin_pcie *pcie)
 	kirin_apb_phy_writel(pcie, val, SOC_PCIEPHY_CTRL1_ADDR);
 }
 
+/* Load FW for PHY Fix */
+int pcie_phy_fw_update(struct kirin_pcie *pcie, u16 *fw_data, u32 fw_size)
+{
+	u32 reg_addr, reg_val;
+
+	if (fw_size > PCIE_PHY_SRAM_SIZE)
+		return -EINVAL;
+
+	/*lint -e679 -esym(679,*) -e661 -esym(661,*) -e662 -esym(662,*) */
+	for (reg_addr = 0; reg_addr < fw_size; reg_addr++) {
+		kirin_sram_phy_writel(pcie, fw_data[reg_addr], reg_addr);
+	}
+	/*lint -e679 +esym(679,*) -e661 +esym(661,*) -e662 +esym(662,*) */
+
+	/* Vboost */
+	reg_val = kirin_natural_phy_readl(pcie, SUP_DIG_LVL_OVRD_IN);
+	reg_val &= ~SUP_DIG_LVL_MASK;
+	reg_val |= SUP_DIG_LVL_VAL;
+	kirin_natural_phy_writel(pcie, reg_val, SUP_DIG_LVL_OVRD_IN);
+
+	/* cdr_legacy_en */
+	reg_val = kirin_apb_phy_readl(pcie, PCIE_PHY_CTRL150);
+	reg_val |= CDR_LEGACY_ENABLE;
+	kirin_apb_phy_writel(pcie, reg_val, PCIE_PHY_CTRL150);
+
+	return 0;
+}
+
 void kirin_pcie_outbound_atu(u32 rc_id, int index,
 		int type, u64 cpu_addr, u64 pci_addr, u32 size)
 {
-	struct pcie_port *pp;
 	struct kirin_pcie *pcie;
 
 	if (!kirin_pcie_valid(rc_id))
 		return;
 
 	pcie = &g_kirin_pcie[rc_id];
-	pp = &(pcie->pp);
-
-	kirin_pcie_atu_cfg(pp, (u32)index, PCIE_ATU_REGION_OUTBOUND,
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 69))
+	kirin_pcie_atu_cfg(pcie, (u32)index, PCIE_ATU_REGION_OUTBOUND,
 					type, cpu_addr, pci_addr, size); //lint !e648
+#else
+	dw_pcie_prog_outbound_atu(pcie->pci, index, type, cpu_addr, pci_addr, size);
+#endif
 }
 
 /* adjust PCIeIO(diffbuf) driver */
@@ -684,17 +756,18 @@ void set_phy_eye_param(struct kirin_pcie *pcie)
 void kirin_pcie_inbound_atu(u32 rc_id, int index,
 		int type, u64 cpu_addr, u64 pci_addr, u32 size)
 {
-	struct pcie_port *pp;
 	struct kirin_pcie *pcie;
 
 	if (!kirin_pcie_valid(rc_id))
 		return;
 
 	pcie = &g_kirin_pcie[rc_id];
-	pp = &pcie->pp;
-
-	kirin_pcie_atu_cfg(pp, (u32)index, PCIE_ATU_REGION_INBOUND,
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 69))
+	kirin_pcie_atu_cfg(pcie, (u32)index, PCIE_ATU_REGION_INBOUND,
 					type, pci_addr, cpu_addr, size);
+#else
+	dw_pcie_prog_inbound_atu(pcie->pci, index, 0, cpu_addr, DW_PCIE_AS_MEM);
+#endif
 }
 
 /*
@@ -746,6 +819,7 @@ u32 show_link_state(u32 rc_id)
 		PCIE_PR_INFO("L-state: LoopBack");
 		break;
 	default:
+		PCIE_PR_ERR("LTSSM:%x", val);
 		val = LTSSM_OTHERS;
 		PCIE_PR_INFO("Other state");
 	}
@@ -753,59 +827,57 @@ u32 show_link_state(u32 rc_id)
 }
 EXPORT_SYMBOL_GPL(show_link_state);
 
-#if defined(CONFIG_KIRIN_PCIE_APR)
-int pcie_memcpy(ulong dst, ulong src, uint32_t size)
+void pcie_memcpy(ulong dst, ulong src, uint32_t size)
 {
-	memcpy((void *)dst, (void *)src, size);
-	return 0;
-}
-#else
-int pcie_memcpy(ulong dst, ulong src, uint32_t size)
-{
-	int error = 0;
-	uint dsize;
-	uint64_t data_64 = 0;
-	uint64_t data_32 = 0;
-	uint64_t data_8 = 0;
+	int ret;
 	ulong dst_t = dst;
 	ulong src_t = src;
+
+	if (IS_ENABLED(CONFIG_KIRIN_PCIE_MAR)) {
+		uint dsize;
+		uint64_t data_64 = 0;
+		uint64_t data_32 = 0;
+		uint64_t data_8 = 0;
 #if defined(CONFIG_64BIT)
-	bool is_64bit_unaligned = (dst_t & 0x7);
+		bool is_64bit_unaligned = (dst_t & 0x7);
 #endif
+		dsize = sizeof(uint64_t);
 
-	dsize = sizeof(uint64_t);
-
-	/* Do the transfer(s) */
-	while (size) {
-		if (size >= sizeof(uint64_t)) {
-			if (is_64bit_unaligned) {
-				data_32= pcie_rd_32((char *)src_t);
-				pcie_wr_32(data_32, (char *)dst_t);
-				size -= 4;
-				dst_t += 4;
-				src_t += 4;
-				is_64bit_unaligned = (dst_t & 0x7);
-				continue;
+		/* Do the transfer(s) */
+		while (size) {
+			if (size >= sizeof(uint64_t)) {
+				if (is_64bit_unaligned) {
+					data_32= pcie_rd_32((char *)(uintptr_t)src_t);
+					pcie_wr_32(data_32, (char *)(uintptr_t)dst_t);
+					size -= 4;
+					dst_t += 4;
+					src_t += 4;
+					is_64bit_unaligned = (dst_t & 0x7);
+					continue;
+				} else {
+					data_64= pcie_rd_64((char *)(uintptr_t)src_t);
+					pcie_wr_64(data_64, (char *)(uintptr_t)dst_t);
+				}
 			} else {
-				data_64= pcie_rd_64((char *)src_t);
-				pcie_wr_64(data_64, (char *)dst_t);
+				dsize = sizeof(uint8_t);
+				data_8= pcie_rd_8((char *)(uintptr_t)src_t);
+				pcie_wr_8(data_8, (char *)(uintptr_t)dst_t);
 			}
-		} else {
-			dsize = sizeof(uint8_t);
-			data_8= pcie_rd_8((char *)src_t);
-			pcie_wr_8(data_8, (char *)dst_t);
-		}
 
-		/* Adjust for next transfer (if any) */
-		if ((size -= dsize)) {
-			src_t += dsize;
-			dst_t += dsize;
+			/* Adjust for next transfer (if any) */
+			if ((size -= dsize)) {
+				src_t += dsize;
+				dst_t += dsize;
+			}
+		}
+	}else{
+		ret = memcpy_s((void *)(uintptr_t)dst_t, size, (void *)(uintptr_t)src_t, size);
+		if (ret) {
+			PCIE_PR_ERR("%s:Fail to do memcpy\n", __func__);
+			return;
 		}
 	}
-
-	return error;
 }
-#endif
 
 #ifdef CONFIG_KIRIN_PCIE_TEST
 int wlan_on(u32 rc_id, int on)
@@ -822,12 +894,19 @@ int wlan_on(u32 rc_id, int on)
 
 	pcie = &g_kirin_pcie[rc_id];
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 69))
 	if (!pcie->pp.dev) {
 		PCIE_PR_ERR("NO PCIe device");
 		return -1;
 	}
-
 	np = pcie->pp.dev->of_node;
+#else
+	if (!pcie->pci->dev) {
+		PCIE_PR_ERR("NO PCIe device");
+		return -1;
+	}
+	np = pcie->pci->dev->of_node;
+#endif
 	if (np) {
 		if (!(of_property_read_u32(np, "wl_power", &wl_power))) {
 			PCIE_PR_INFO("WL Power On Number is [%d] ", wl_power);
@@ -874,7 +953,11 @@ int retrain_link(u32 rc_id)
 	if (!kirin_pcie_valid(rc_id))
 		return -1;
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 69))
 	pp = &(g_kirin_pcie[rc_id].pp);
+#else
+	pp = &(g_kirin_pcie[rc_id].pci->pp);
+#endif
 
 	cap_pos = kirin_pcie_find_capability(pp, PCI_CAP_ID_EXP);
 	if (!cap_pos)
@@ -912,7 +995,11 @@ int set_link_speed(u32 rc_id, enum link_speed gen)
 	if (!kirin_pcie_valid(rc_id))
 		return -1;
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 69))
 	pp = &(g_kirin_pcie[rc_id].pp);
+#else
+	pp = &(g_kirin_pcie[rc_id].pci->pp);
+#endif
 
 	switch (gen) {
 	case GEN1:
@@ -969,6 +1056,11 @@ int show_link_speed(u32 rc_id)
 	}
 
 	return val;
+}
+
+int limit_link_speed(struct kirin_pcie *pcie)
+{
+	return set_link_speed(pcie->rc_id, pcie->speed_limit);
 }
 
 u32 kirin_pcie_find_capability(struct pcie_port *pp, int cap)

@@ -48,7 +48,9 @@ snd-soc-hi3650-hi6403-objs := hi3650_hi6403.o
 snd-soc-hi3660-hi6402-objs := hi3660_hi6402.o
 # HI3660-HI6403 Machine Support
 snd-soc-hi3660-hi6403-objs := hi3660_hi6403.o
-# HI3660-HI6403ES Machine Support
+# HI3XXX-HI6405 Machine Support
+snd-soc-hi3xxx-hi6405-objs := hi3xxx_hi6405.o
+snd-soc-hi3xxx-hicodecless-objs := hi3xxx_hicodecless.o
 
 obj-$(CONFIG_SND_HI3650_HI6402) += snd-soc-hi3650-hi6402.o
 obj-$(CONFIG_SND_HI3650_HI6403) += snd-soc-hi3650-hi6403.o
@@ -56,5 +58,7 @@ obj-$(CONFIG_SND_HI6250_HI6555C) +=snd-soc-hi6250-hi6555c.o
 obj-$(CONFIG_SND_HI6250_HI6402) += snd-soc-hi6250-hi6402.o
 obj-$(CONFIG_SND_HI3660_HI6402) += snd-soc-hi3660-hi6402.o
 obj-$(CONFIG_SND_HI3660_HI6403) += snd-soc-hi3660-hi6403.o
+obj-$(CONFIG_SND_HI3XXX_HI6405) += snd-soc-hi3xxx-hi6405.o
+obj-$(CONFIG_SND_HI3xxx_HICODECLESS) += snd-soc-hi3xxx-hicodecless.o
 obj-$(CONFIG_SND_SOC_DP_AUDIO) += snd-soc-dp.o
 obj-$(CONFIG_SND_AUTO_TEST) += auto_test/

@@ -25,6 +25,14 @@
 #include <net/inet_frag.h>
 #include <net/ping.h>
 
+#ifdef CONFIG_WIFI_DELAY_STATISTIC
+#include <hwnet/ipv4/wifi_delayst.h>
+#endif
+
+#ifdef CONFIG_HW_SNIFFER
+#include <hwnet/ipv4/sysctl_sniffer.h>
+#endif
+
 static int zero;
 static int one = 1;
 static int four = 4;
@@ -35,6 +43,8 @@ static int ip_local_port_range_min[] = { 1, 1 };
 static int ip_local_port_range_max[] = { 65535, 65535 };
 static int tcp_adv_win_scale_min = -31;
 static int tcp_adv_win_scale_max = 31;
+static int tcp_min_snd_mss_min = TCP_MIN_SND_MSS;
+static int tcp_min_snd_mss_max = 65535;
 static int ip_ttl_min = 1;
 static int ip_ttl_max = 255;
 static int tcp_syn_retries_min = 1;
@@ -140,8 +150,9 @@ static int ipv4_ping_group_range(struct ctl_table *table, int write,
 	if (write && ret == 0) {
 		low = make_kgid(user_ns, urange[0]);
 		high = make_kgid(user_ns, urange[1]);
-		if (!gid_valid(low) || !gid_valid(high) ||
-		    (urange[1] < urange[0]) || gid_lt(high, low)) {
+		if (!gid_valid(low) || !gid_valid(high))
+			return -EINVAL;
+		if (urange[1] < urange[0] || gid_lt(high, low)) {
 			low = make_kgid(&init_user_ns, 1);
 			high = make_kgid(&init_user_ns, 0);
 		}
@@ -227,8 +238,9 @@ static int proc_tcp_fastopen_key(struct ctl_table *ctl, int write,
 {
 	struct ctl_table tbl = { .maxlen = (TCP_FASTOPEN_KEY_LENGTH * 2 + 10) };
 	struct tcp_fastopen_context *ctxt;
-	int ret;
 	u32  user_key[4]; /* 16 bytes, matching TCP_FASTOPEN_KEY_LENGTH */
+	__le32 key[4];
+	int ret, i;
 
 	tbl.data = kmalloc(tbl.maxlen, GFP_KERNEL);
 	if (!tbl.data)
@@ -237,10 +249,13 @@ static int proc_tcp_fastopen_key(struct ctl_table *ctl, int write,
 	rcu_read_lock();
 	ctxt = rcu_dereference(tcp_fastopen_ctx);
 	if (ctxt)
-		memcpy(user_key, ctxt->key, TCP_FASTOPEN_KEY_LENGTH);
+		memcpy(key, ctxt->key, TCP_FASTOPEN_KEY_LENGTH);
 	else
-		memset(user_key, 0, sizeof(user_key));
+		memset(key, 0, sizeof(key));
 	rcu_read_unlock();
+
+	for (i = 0; i < ARRAY_SIZE(key); i++)
+		user_key[i] = le32_to_cpu(key[i]);
 
 	snprintf(tbl.data, tbl.maxlen, "%08x-%08x-%08x-%08x",
 		user_key[0], user_key[1], user_key[2], user_key[3]);
@@ -257,12 +272,16 @@ static int proc_tcp_fastopen_key(struct ctl_table *ctl, int write,
 		 * first invocation of tcp_fastopen_cookie_gen
 		 */
 		tcp_fastopen_init_key_once(false);
-		tcp_fastopen_reset_cipher(user_key, TCP_FASTOPEN_KEY_LENGTH);
+
+		for (i = 0; i < ARRAY_SIZE(user_key); i++)
+			key[i] = cpu_to_le32(user_key[i]);
+
+		tcp_fastopen_reset_cipher(key, TCP_FASTOPEN_KEY_LENGTH);
 	}
 
 bad_key:
 	pr_debug("proc FO key set 0x%x-%x-%x-%x <- 0x%s: %u\n",
-	       user_key[0], user_key[1], user_key[2], user_key[3],
+		 user_key[0], user_key[1], user_key[2], user_key[3],
 	       (char *)tbl.data, ret);
 	kfree(tbl.data);
 	return ret;
@@ -502,6 +521,38 @@ static struct ctl_table ipv4_table[] = {
 		.maxlen		= TCP_CA_NAME_MAX,
 		.proc_handler	= proc_tcp_congestion_control,
 	},
+#ifdef CONFIG_HW_SNIFFER
+	{
+		.procname	= "wifisniffer_01",
+		.mode		= 0644,
+		.maxlen		= PCAP_FILE_LEN,
+		.proc_handler	= proc_sniffer_read_01,
+	},
+	{
+		.procname	= "wifisniffer_02",
+		.mode		= 0644,
+		.maxlen		= PCAP_FILE_LEN,
+		.proc_handler	= proc_sniffer_read_02,
+	},
+	{
+		.procname	= "wifisniffer_03",
+		.mode		= 0644,
+		.maxlen		= PCAP_FILE_LEN,
+		.proc_handler	= proc_sniffer_read_03,
+	},
+	{
+		.procname	= "wifisniffer_04",
+		.mode		= 0644,
+		.maxlen		= PCAP_FILE_LEN,
+		.proc_handler	= proc_sniffer_read_04,
+	},
+	{
+		.procname	= "wifisniffer_05",
+		.mode		= 0644,
+		.maxlen		= PCAP_FILE_LEN,
+		.proc_handler	= proc_sniffer_read_05,
+	},
+#endif
 	{
 		.procname	= "tcp_workaround_signed_windows",
 		.data		= &sysctl_tcp_workaround_signed_windows,
@@ -530,6 +581,15 @@ static struct ctl_table ipv4_table[] = {
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec
 	},
+#ifdef CONFIG_WIFI_DELAY_STATISTIC
+	{
+		.procname       = "tcp_delay_filter",
+		.data           = tcp_delay_filter,
+		.maxlen         = DELAY_FILTER_NAME_MAX,
+		.mode           = 0644,
+		.proc_handler   = proc_wifi_delay_command,
+	},
+#endif
 #ifdef CONFIG_NETLABEL
 	{
 		.procname	= "cipso_cache_enable",
@@ -894,6 +954,15 @@ static struct ctl_table ipv4_net_table[] = {
 		.proc_handler	= proc_dointvec,
 	},
 	{
+		.procname	= "tcp_min_snd_mss",
+		.data		= &init_net.ipv4.sysctl_tcp_min_snd_mss,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= &tcp_min_snd_mss_min,
+		.extra2		= &tcp_min_snd_mss_max,
+	},
+	{
 		.procname	= "tcp_probe_threshold",
 		.data		= &init_net.ipv4.sysctl_tcp_probe_threshold,
 		.maxlen		= sizeof(int),
@@ -1076,6 +1145,15 @@ err_reg:
 err_alloc:
 	return -ENOMEM;
 }
+
+#ifndef CONFIG_HW_SNIFFER
+/* define a null function*/
+int proc_sniffer_write_file(const char *header_buff, unsigned int header_len,
+					const char *frame_buff, unsigned int frame_len, int flag_rx_tx)
+{
+	return 0;
+}
+#endif
 
 static __net_exit void ipv4_sysctl_exit_net(struct net *net)
 {

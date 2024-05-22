@@ -22,12 +22,17 @@
 #include <linux/wakelock.h>
 #include <linux/reboot.h>
 #include <linux/export.h>
+#include <linux/version.h>
 
 #include <linux/hisi/rdr_pub.h>
 #include <linux/hisi/util.h>
 #include <linux/hisi/hisi_bootup_keypoint.h>
 #include <libhwsecurec/securec.h>
 #include <linux/hisi/hisi_log.h>
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+#include <linux/sched/debug.h>
+#include <uapi/linux/sched/types.h>
+#endif
 #define HISI_LOG_TAG HISI_BLACKBOX_TAG
 
 #include "rdr_inner.h"
@@ -280,7 +285,10 @@ static void rdr_save_log
 			is_save_done = false;
 		}
 	} else {		/*if no dump need(like modem-reboot), don't create exc-dir, but date is a must. */
-		memset_s(date, DATATIME_MAXLEN, 0, DATATIME_MAXLEN);
+		if (EOK != memset_s(date, DATATIME_MAXLEN, 0, DATATIME_MAXLEN)) {
+			BB_PRINT_ERR("%s():%d:memset_s fail!\n", __func__, __LINE__);
+		}
+
 		ret = snprintf_s(date, DATATIME_MAXLEN, DATATIME_MAXLEN - 1, "%s-%08lld",
 			 rdr_get_timestamp(), rdr_get_tick());
 		if(unlikely(ret < 0)){
@@ -360,15 +368,10 @@ void rdr_syserr_process(struct rdr_syserr_param_s *p)
 		reboot_times = rdr_record_reboot_times2file();
 		BB_PRINT_PN("ap has reboot %d times.\n", reboot_times);
 		if (max_reboot_times < reboot_times) {
-			BB_PRINT_ERR("need reboot to erecovery.\n");
-
-			/*write "erecovery_enter_reason=2015" to cache*/
-			rdr_record_erecovery_reason();
 
 			/*reset the file of reboot_times*/
 			rdr_reset_reboot_times();
 
-			kernel_restart("erecovery");
 		}
 	}
 	rdr_notify_module_reset(mod_id, p_exce_info);

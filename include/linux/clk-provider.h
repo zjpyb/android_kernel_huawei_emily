@@ -253,7 +253,7 @@ struct clk_ops {
 	int		(*check_selreg)(struct clk_hw *hw);
 	int		(*check_divreg)(struct clk_hw *hw);
 	void __iomem *(*get_reg)(struct clk_hw *hw);
-	int		(*dump_reg)(struct clk_hw *hw, char* buf);
+	int		(*dump_reg)(struct clk_hw *hw, char* buf, struct seq_file *s);
 #endif
 #ifdef CONFIG_HISI_CLK
 	int     (*get_source)(struct clk_hw *hw);

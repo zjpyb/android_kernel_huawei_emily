@@ -23,7 +23,6 @@
 #include <linux/seq_file.h>
 #include <linux/slab.h>
 #include <linux/vmalloc.h>
-#include <linux/hisi/ion-iommu.h>
 #include <linux/sizes.h>
 #include <linux/module.h>
 #include <linux/kthread.h>
@@ -248,6 +247,12 @@ int ion_smart_pool_free(struct ion_smart_pool *pool, struct page *page)
 	}
 
 	order = compound_order(page);
+
+	if (!((order == smart_pool_orders[0]) || (order == smart_pool_orders[1])
+		|| (order == smart_pool_orders[2]))) {
+		pr_err("%s: order:%d is error!\n", __func__, order);
+		return -1;
+	}
 
 	if (sp_pool_total_pages(pool) < MAX_POOL_SIZE) {
 		ion_smart_sp_init_page(page);

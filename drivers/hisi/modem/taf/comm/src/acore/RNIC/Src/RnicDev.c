@@ -79,7 +79,9 @@
            .ndo_open                = RNIC_OpenNetCard,
            .ndo_start_xmit          = RNIC_StartXmit,
            .ndo_set_mac_address     = RNIC_SetMacAddress,
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0))
            .ndo_change_mtu          = RNIC_ChangeMtu,
+#endif
            .ndo_tx_timeout          = RNIC_ProcTxTimeout,
            .ndo_do_ioctl            = RNIC_Ioctrl,
            .ndo_get_stats           = RNIC_GetNetCardStats,
@@ -328,6 +330,7 @@ VOS_INT RNIC_SetMacAddress(
     return 0;
 }
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0))
 
 VOS_INT RNIC_ChangeMtu(
     struct net_device                  *pstNetDev,
@@ -370,6 +373,7 @@ VOS_INT RNIC_ChangeMtu(
 
     return 0;
 }
+#endif
 
 
 VOS_VOID RNIC_ProcTxTimeout(
@@ -466,6 +470,11 @@ VOS_INT __init RNIC_InitNetCard(VOS_VOID)
 
         /* 设置默认的MTU值 */
         pstDev->mtu = RNIC_DEFAULT_MTU;
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 10, 0))
+        pstDev->max_mtu = RNIC_RMNET_R_IS_VALID(ucIndex) ?
+                          RNIC_R_IMS_MAX_PACKET : RNIC_DEFAULT_MTU;
+#endif
+        pstDev->flags &= ~(IFF_BROADCAST | IFF_MULTICAST);
 
         snprintf(pstDev->name, sizeof(pstDev->name),
             "%s%s",

@@ -1,13 +1,9 @@
 /*
- * kcode.h
- *
- * the kcode.h for kernel code integrity checking
- *
- * Yongzheng Wu <Wu.Yongzheng@huawei.com>
- * likun <quentin.lee@huawei.com>
- * likan <likan82@huawei.com>
- *
- * Copyright (c) 2001-2021, Huawei Tech. Co., Ltd. All rights reserved.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2016-2018. All rights reserved.
+ * Description: the kcode.h for kernel code integrity checking
+ * Author: likun <quentin.lee@huawei.com>
+ *         likan <likan82@huawei.com>
+ * Create: 2016-06-18
  */
 
 #ifndef _KCODE_H_

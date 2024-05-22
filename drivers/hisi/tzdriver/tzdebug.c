@@ -40,9 +40,9 @@ static int send_dump_mem(void)
 {
 	TC_NS_SMC_CMD smc_cmd = {0};
 	int ret = 0;
-	struct mb_cmd_pack *mb_pack;
-	mb_pack = mailbox_alloc_cmd_pack();
-	if (!mb_pack) {
+	struct mb_cmd_pack *mb_pack = mailbox_alloc_cmd_pack();
+
+	if (NULL == mb_pack) {
 		return -ENOMEM;
 	}
 	mb_pack->uuid[0] = 1;
@@ -50,7 +50,7 @@ static int send_dump_mem(void)
 	smc_cmd.uuid_h_phys = virt_to_phys(mb_pack->uuid) >> 32; /*lint !e572*/
 	smc_cmd.cmd_id = GLOBAL_CMD_ID_DUMP_MEMINFO;
 	mb_pack->operation.paramTypes = TEE_PARAM_TYPE_NONE;
-	ret = TC_NS_SMC(&smc_cmd, 0);
+	ret = (int)TC_NS_SMC(&smc_cmd, 0);
 	mailbox_free(mb_pack);
 	if (ret) {
 	    tloge("send_dump_mem failed.\n");
@@ -92,7 +92,7 @@ static struct opt_ops optArr[]={
 };
 static void tzhelp(char* param)
 {
-	uint32_t i;
+	uint32_t i = 0;
 	(void)param;
 	for( i=0;i< sizeof(optArr)/sizeof(struct opt_ops);i++) {
 		tloge("cmd:%s\n",optArr[i].name);
@@ -104,10 +104,10 @@ static ssize_t tz_dbg_opt_write(struct file *filp,
                                loff_t *ppos)
 {
 	char buf[128] = {0};
-	char* value;
-	char* p;
-	int i;
-	if (!ubuf || !filp || !ppos)
+	char* value = NULL;
+	char* p = NULL;
+	int i = 0;
+	if ((NULL==ubuf) || (NULL == filp) || (NULL == ppos))
 		return -EINVAL;
 
 	if (cnt >= sizeof(buf))
@@ -142,14 +142,14 @@ static const struct file_operations tz_dbg_opt_fops = {
 static int __init tzdebug_init(void)
 {
 	tz_dbg_dentry = debugfs_create_dir("tzdebug", NULL);
-	if ( !tz_dbg_dentry)
+	if ( NULL == tz_dbg_dentry)
 		return 0;
 	debugfs_create_file("opt", 0220, tz_dbg_dentry,NULL, &tz_dbg_opt_fops);
 	return 0;
 }
 static void __exit tzdebug_exit(void)
 {
-	if (!tz_dbg_dentry)
+	if (NULL == tz_dbg_dentry)
 		return;
 	debugfs_remove_recursive(tz_dbg_dentry);
 	tz_dbg_dentry = NULL;

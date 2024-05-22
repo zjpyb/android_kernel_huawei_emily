@@ -141,14 +141,13 @@ static void gpio_keyplay_timer(unsigned long data)
 static irqreturn_t huawei_gpio_key_irq_handler(int irq, void *dev_id)
 {
 	struct huawei_gpio_key *gpio_key = (struct huawei_gpio_key *)dev_id;
-	int key_event = 0;
 
 	/* handle gpio key volume up & gpio key volume down event at here */
 	if (support_play_key && irq == gpio_key->key_play_irq) {
 		mod_timer(&(gpio_key->key_play_timer), jiffies + msecs_to_jiffies(TIMER_DEBOUNCE));
 		wake_lock_timeout(&play_key_lock, 50);
 	} else {
-		hwlog_err("%s-%d: invalid irq %d!\n", __func__, __LINE__);
+		hwlog_err("%s-%d: invalid irq!\n", __func__, __LINE__);
 	}
 	return IRQ_HANDLED;
 }

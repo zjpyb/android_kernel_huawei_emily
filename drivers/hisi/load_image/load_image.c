@@ -34,6 +34,8 @@
 #include <teek_client_id.h>
 #include "load_image.h"
 
+#include <linux/version.h>
+
 #define DEVICE_PATH  "/dev/block/bootdevice/by-name/"
 /* 1M Bytes */
 #define SECBOOT_BUFLEN  		  (0x100000)
@@ -295,7 +297,7 @@ static s32 trans_vrl_to_os(TEEC_Session *session,
 static s32 trans_data_to_os(TEEC_Session *session,
 			    SECBOOT_IMG_TYPE  image,
 			    u64 run_addr,
-			    void *buf,
+			    const void *buf,
 			    const unsigned int offset,
 			    const unsigned int size)
 {
@@ -340,6 +342,7 @@ int bsp_read_bin(const char *partion_name, unsigned int offset,
 	char *pathname;
 	unsigned long pathlen;
 	struct file *fp;
+	loff_t read_offset = offset;
 
 	if ((NULL == partion_name) || (NULL == buffer)) {
 		sec_print_err("partion_name(%pK) or buffer(%pK) is null!\n", partion_name, buffer);
@@ -369,7 +372,11 @@ int bsp_read_bin(const char *partion_name, unsigned int offset,
 		goto free_pname;
 	}
 
-	ret = kernel_read(fp, offset, buffer, length);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0))
+	ret = kernel_read(fp, buffer, length, &read_offset);
+#else
+	ret = kernel_read(fp, read_offset, buffer, length);
+#endif
 	if (ret != length) {
 		sec_print_err("read ops failed, ret=0x%x, len=0x%x!\n", ret, length);
 		ret = SEC_ERROR;
@@ -405,7 +412,7 @@ free_pname:
  */
 static s32 load_data_to_os(TEEC_Session *session,
 			   SECBOOT_IMG_TYPE  image,
-			   char *part_name,
+			   const char *part_name,
 			   u64 run_addr,
 			   u32 offset,
 			   u32 read_size)
@@ -469,7 +476,7 @@ static s32 load_data_to_os(TEEC_Session *session,
  */
 s32 load_vrl_to_os(TEEC_Session *session,
 		   SECBOOT_IMG_TYPE ecoretype,
-		   char *partion_name,
+		   const char *partion_name,
 		   u32 vrl_type)
 {
 	s32 ret;
@@ -614,6 +621,7 @@ int bsp_load_sec_img(struct load_image_info *img_info)
 	TEEC_Context context;
 	s32 ret = SEC_ERROR;
 
+	sec_print_err("bsp_load_sec_img +!\n");
 	mutex_lock(&copy_secimg_lock);
 
 	if (NULL == img_info) {
@@ -621,20 +629,22 @@ int bsp_load_sec_img(struct load_image_info *img_info)
 		mutex_unlock(&copy_secimg_lock);
 		return ret;
 	}
-
+	sec_print_err("TEEK_init +\n");
 	ret = TEEK_init(&session, &context);
 	if (SEC_OK != ret) {
 		sec_print_err("TEEK_InitializeContext failed!\n");
 		mutex_unlock(&copy_secimg_lock);
 		return ret;
 	}
-
+	sec_print_err("TEEK_init -\n");
+	sec_print_err("reset_soc_image +\n");
 	ret = reset_soc_image(&session, (SECBOOT_IMG_TYPE)img_info->ecoretype);
 	if (SEC_OK != ret) {
 		sec_print_err("reset_soc_image fail!\n");
 		goto err_out;
 	}
-
+	sec_print_err("reset_soc_image -\n");
+	sec_print_err("copy_img_from_os +\n");
 	/*copy img from tee to img run addr, if success, unreset soc*/
 	ret = copy_img_from_os(&session, (SECBOOT_IMG_TYPE)img_info->ecoretype,
 					img_info->image_addr);
@@ -642,12 +652,12 @@ int bsp_load_sec_img(struct load_image_info *img_info)
 		sec_print_err("copy_img_from_os fail!\n");
 		goto err_out;
 	}
-
+	sec_print_err("copy_img_from_os -\n");
 err_out:
 	TEEK_CloseSession(&session);
 	TEEK_FinalizeContext(&context);
 	mutex_unlock(&copy_secimg_lock);
-
+	sec_print_err("bsp_load_sec_img -\n");
 	return ret;
 }
 

@@ -127,7 +127,7 @@ extern oal_void  hmac_fsm_init_etc(oal_void);
 extern oal_uint32  hmac_fsm_call_func_ap_etc(hmac_vap_stru *pst_hmac_vap, hmac_fsm_input_type_enum_uint8 en_input, oal_void *p_param);
 extern oal_uint32  hmac_fsm_call_func_sta_etc(hmac_vap_stru *pst_hmac_vap, hmac_fsm_input_type_enum_uint8 en_input, oal_void *p_param);
 extern oal_void  hmac_fsm_change_state_etc(hmac_vap_stru *pst_hmac_vap, mac_vap_state_enum_uint8 en_vap_state);
-
+extern oal_void  hmac_fsm_change_state_check_etc(hmac_vap_stru *pst_hmac_vap, mac_vap_state_enum_uint8 en_comp_vap_state, mac_vap_state_enum_uint8 en_new_vap_state);
 
 #ifdef __cplusplus
     #if __cplusplus

@@ -965,11 +965,13 @@ static int fwu_do_reflash(void)
 static bool in_bounds(unsigned int  offset, unsigned int size, unsigned int  bound)
 {
 	if (offset > bound || size > bound) {
-		TS_LOG_ERR("%s: %lu or %lu > %lu\n", __func__, offset, size, bound);
+		TS_LOG_ERR("%s: %u or %u > %u\n",
+			__func__, offset, size, bound);
 		return false;
 	}
 	if (offset > (bound - size)) {
-		TS_LOG_ERR("%s: %lu > %lu - %lu\n", __func__, offset, bound, size);
+		TS_LOG_ERR("%s: %u > %u - %u\n",
+			__func__, offset, bound, size);
 		return false;
 	}
 	return true;
@@ -1220,8 +1222,9 @@ bool synap_check_fw_version(void)
 	size = FW_IMAGE_OFFSET + header.firmware_size;
 
 	if(fwu->image_size < size) {
-			TS_LOG_ERR("config_data = %p , fw_image = %p  , header size  =%d\n",fwu->config_data ,fw_image,header.firmware_size);
-			return false;
+		TS_LOG_ERR("config_data=%pK,fw_image=%pK,header size=%d\n",
+			fwu->config_data, fw_image, header.firmware_size);
+		return false;
 	}
 
 	flash_area = fwu_go_nogo(&header);

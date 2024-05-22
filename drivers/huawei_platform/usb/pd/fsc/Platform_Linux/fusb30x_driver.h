@@ -53,10 +53,6 @@ static const struct i2c_device_id fusb30x_i2c_device_id[] = {
     {}
 };
 MODULE_DEVICE_TABLE(i2c, fusb30x_i2c_device_id);                                // Used to generate map files used by depmod for module dependencies
-#ifdef CONFIG_CC_ANTI_CORROSION
-void fusb30x_set_cc_mode(int mode);
-int fusb30x_get_cc_mode(void);
-#endif
 
 /*******************************************************************************
  * Driver module functions
@@ -67,6 +63,9 @@ static int fusb30x_probe(struct i2c_client* client,                             
                          const struct i2c_device_id* id);
 static int fusb30x_remove(struct i2c_client* client);                                                   // Called when the associated device is removed
 
+/* Called when kernel shutdown */
+static void fusb30x_shutdown(struct i2c_client *client);
+
 /* Defines our driver's name, device-tree match, and required driver callbacks */
 static struct i2c_driver fusb30x_driver = {
     .driver = {
@@ -76,6 +75,8 @@ static struct i2c_driver fusb30x_driver = {
     },
     .probe = fusb30x_probe,                                                     // Called on device add, inits/starts driver
     .remove = fusb30x_remove,                                                   // Called on device remove, cleans up driver
+    /* Called on device shutdown */
+    .shutdown = fusb30x_shutdown,
     .id_table = fusb30x_i2c_device_id,                                          // I2C id structure to associate with our driver
 };
 

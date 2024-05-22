@@ -711,6 +711,10 @@ static int mdss_dsi_panel_power_off(struct mdss_panel_data *pdata)
 	}
 
 	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata, panel_data);
+	if (lcdkit_info.panel_infos.shutdown_sleep_support && is_device_reboot) {
+               gpio_set_value((ctrl_pdata->rst_gpio), 0);
+	}
+
     if(ts_kit_gesture_func && (g_tskit_ic_type == TDDI))
     {
         LCDKIT_INFO("TP gesture enabled, tddi panel keep special lcd reset high.\n");
@@ -987,9 +991,16 @@ static int mdss_dsi_panel_power_on(struct mdss_panel_data *pdata)
 		return -EINVAL;
 	}
 
+	LCDKIT_DEBUG("enter!");
 	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata, panel_data);
 
-    LCDKIT_DEBUG("enter!");
+	if (lcdkit_info.panel_infos.rst_set_low_before_resume &&
+	     (!ctrl_pdata->panel_data.panel_info.cont_splash_enabled)) {
+		LCDKIT_INFO("rst set low before resume \n");
+		gpio_set_value((ctrl_pdata->rst_gpio), 0);
+		if (lcdkit_info.panel_infos.tp_lcd_reset_sync)
+			gpio_set_value(ctrl_pdata->tp_rst_gpio, 0);
+	}
 
     if (!lcdkit_is_enter_sleep_mode())
     {

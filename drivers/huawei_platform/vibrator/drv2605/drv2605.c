@@ -28,6 +28,7 @@
 #include <linux/of_gpio.h>
 #include "drv2605.h"
 #include <linux/mtd/hisi_nve_interface.h>
+#include <linux/jiffies.h>
 #ifdef CONFIG_HUAWEI_HW_DEV_DCT
 #include <huawei_platform/devdetect/hw_dev_dec.h>
 #endif
@@ -37,6 +38,12 @@
 #include <dsm/dsm_pub.h>
 #endif
 
+static unsigned long g_enable_time_jef = 0;
+static unsigned long g_vibra_time_jef = 0;
+static long g_enable_time = 0;
+static long g_vibra_time = 0;
+
+#define MAX_TIME_DIFF 50
 
 #define GPIO_LEVEL_LOW 0
 #define GPIO_LEVEL_HIGH 1
@@ -462,12 +469,26 @@ static void drv2605_select_library(struct i2c_client *client, char lib)
 
 static void drv2605_set_rtp_val(struct i2c_client *client, char value)
 {
+	unsigned long vibra_jef = 0;
+	long time_dif = 0;
 	char rtp_val[] = {
 		REAL_TIME_PLAYBACK_REG, value
 	};
-	drv2605_write_reg_val(client, rtp_val, sizeof(rtp_val));
 
-	dev_info(&client->dev, "Strength: %02X value: \n", value);
+	if (value == 0) {
+		vibra_jef = jiffies - g_vibra_time_jef;
+		g_vibra_time = jiffies_to_msecs(vibra_jef);
+		time_dif = g_enable_time - g_vibra_time;
+		if ((time_dif > 0) && (time_dif < MAX_TIME_DIFF)) {
+			msleep(time_dif);
+		}
+		dev_info(&client->dev, "drv2605_set_rtp_val value=0 \
+			g_enable_time:%ld g_vibra_time:%ld\n", g_enable_time, g_vibra_time);
+	} else {
+		g_vibra_time_jef = jiffies;
+	}
+	drv2605_write_reg_val(client, rtp_val, sizeof(rtp_val));
+	dev_info(&client->dev, "Strength: %02X value: time_dif:%ld\n", value, time_dif);
 }
 
 static void drv2605_set_waveform_sequence(struct i2c_client *client,
@@ -685,7 +706,6 @@ static void vibrator_off(struct drv2605_data *data)
 		check_power_state();
 		#endif
 	}
-
 	dev_info(&(data->client->dev), "drv2605 off!");
 }
 
@@ -694,8 +714,9 @@ static void vibrator_on(struct drv2605_data *data)
 	int ret = 0;
 	if(data == NULL)
 		return;
+	mutex_lock(&data->lock);
 
-	if(data->value){
+	if (data->value) {
 		drv2605_change_mode(data->client, MODE_DEVICE_READY);
 		udelay(1000);
 		if (vib_init_calibdata == 0) {
@@ -717,13 +738,15 @@ static void vibrator_on(struct drv2605_data *data)
 			vibrator_is_playing = YES;
 		}
 		dev_info(&(data->client->dev), "drv2605 on!");
-	}else{
-		schedule_work(&data->work);
+	} else {
+		vibrator_off(data);
 	}
+	mutex_unlock(&data->lock);
 }
 static void vibrator_enable(struct led_classdev *dev, int value)
 {
 	struct drv2605_data *data = NULL;
+	unsigned long enable_time = 0;
 
 	if(dev == NULL)
 		return;
@@ -735,8 +758,13 @@ static void vibrator_enable(struct led_classdev *dev, int value)
 	}
 	data->value = value;
 	dev_info(&(data->client->dev), "drv2605 enable value: %d.\n", data->value);
+	if (value > 0) {
+		g_enable_time_jef = jiffies;
+	} else if (value == 0) {
+		enable_time = jiffies - g_enable_time_jef;
+		g_enable_time = jiffies_to_msecs(enable_time);
+	} else {}
 	schedule_work(&data->work_enable);
-
 }
 
 static void vibrator_work(struct work_struct *work)
@@ -756,7 +784,6 @@ static void vibrator_work_enable(struct work_struct *work)
 		return;
 	}
 
-	cancel_work_sync(&data->work);
 	vibrator_on(data);
 }
 

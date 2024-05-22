@@ -281,7 +281,7 @@ VOS_UINT32 RNIC_RcvTiDemandDialProtectExpired(
 );
 VOS_UINT32 RNIC_RcvTimerMsg(MsgBlock *pstMsg);
 VOS_UINT32 RNIC_RcvAtMsg(MsgBlock *pstMsg);
-VOS_UINT32 RNIC_ProcMsg (MsgBlock *pstMsg);
+VOS_VOID RNIC_ProcMsg (MsgBlock *pstMsg);
 VOS_VOID RNIC_MNTN_TraceDialConnEvt(VOS_VOID);
 VOS_VOID RNIC_MNTN_TraceDialDisconnEvt(
     VOS_UINT32                          ulPktNum,

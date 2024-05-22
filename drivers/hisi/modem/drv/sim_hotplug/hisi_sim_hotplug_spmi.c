@@ -38,7 +38,8 @@
 #include <linux/hisi-spmi.h>
 #include <linux/of_hisi_spmi.h>
 #include <linux/mfd/hisi_pmic.h>
-#include <linux/wakelock.h>
+#include <linux/device.h>
+#include <linux/pm_wakeup.h>
 #include <linux/hisi/hw_cmdline_parse.h>  // for runmode_is_factory
 #include "hisi_sim_hotplug.h"
 
@@ -75,7 +76,7 @@ struct hisi_sim_hotplug_info
     struct workqueue_struct *sim_hotplug_det_wq;
     struct workqueue_struct *sim_debounce_delay_wq;
     struct mutex            sim_hotplug_lock;
-    struct wake_lock        sim_hotplug_wklock;
+    struct wakeup_source    sim_hotplug_wklock;
     struct work_struct      sim_hotplug_hpd_work;
     struct work_struct      sim_hotplug_det_work;
     struct delayed_work     sim_debounce_delay_work;
@@ -1282,7 +1283,7 @@ static int sim_state_init(struct hisi_sim_hotplug_info *info, struct device *dev
     }
 
     mutex_init(&(info->sim_hotplug_lock));
-    wake_lock_init(&info->sim_hotplug_wklock, WAKE_LOCK_SUSPEND, "android-simhotplug");
+    wakeup_source_init(&info->sim_hotplug_wklock, "android-simhotplug");
 
     return 0;
 }
@@ -1421,7 +1422,7 @@ static int hisi_sim_hotplug_probe(struct spmi_device *pdev)
     return ret;
 
 free_sim_lock:
-    wake_lock_destroy(&info->sim_hotplug_wklock);
+    wakeup_source_trash(&info->sim_hotplug_wklock);
     mutex_destroy(&info->sim_hotplug_lock);
 
 free_sim_det_wq:
@@ -1452,7 +1453,7 @@ static int hisi_sim_hotplug_remove(struct spmi_device *pdev)
     }
 
     mutex_destroy(&info->sim_hotplug_lock);
-    wake_lock_destroy(&info->sim_hotplug_wklock);
+    wakeup_source_trash(&info->sim_hotplug_wklock);
 
     if (info->sim_hotplug_det_wq)
     {

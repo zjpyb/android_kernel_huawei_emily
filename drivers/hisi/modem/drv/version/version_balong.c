@@ -224,8 +224,7 @@ char * bsp_version_get_product_out_name(void)
 *****************************************************************************/
 char * bsp_version_get_build_date_time(void)
 {
-	static char * build_date   = __DATE__ ", " __TIME__;
-	return build_date;
+	return NULL;
 }
 
 /*****************************************************************************

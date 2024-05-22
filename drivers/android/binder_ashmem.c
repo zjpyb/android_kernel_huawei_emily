@@ -31,7 +31,7 @@ static inline void binder_ashmem_recycle_impl(struct binder_ashmem *ashmem,
 	}
 
 	if (unlikely(fcnt > MAX_VM_FILE_COUNT)) {
-		pr_err("Invalid file count of vm_file, %ld, %p\n", fcnt, ashmem->vm_file);
+		pr_err("Invalid file count of vm_file, %ld, %pK\n", fcnt, ashmem->vm_file);
 		flags = BINDER_ASHMEM_ERROR;
 	}
 
@@ -125,6 +125,9 @@ void binder_ashmem_translate(struct binder_buffer *buffer)
 	if (buffer->data_size < h_size) /* [false alarm]:unlikely(!buffer) */
 		return;
 
+	if (unlikely(!buffer->data))
+		return;
+
 	/* Check head of data to see if using ashmem */
 	header = (struct binder_ashmem_header *)buffer->data;
 	if (header->magic != BINDER_ASHMEM_MAGIC_CODE ||
@@ -172,6 +175,9 @@ int binder_ashmem_map(struct binder_alloc *alloc, struct binder_buffer *buffer)
 	if (likely(!ashmem->file))
 		return 0;
 
+	if (unlikely(!buffer->data))
+		return -EINVAL;
+
 	header = (struct binder_ashmem_header *)buffer->data;
 
 	if (unlikely(!binder_ashmem_acquire(&alloc->ashmem_size,
@@ -212,6 +218,9 @@ void binder_ashmem_unmap(struct binder_alloc *alloc,
 	if (likely(!ashmem->file))
 		return;
 
+	if (unlikely(!buffer->data))
+		return;
+
 	header = (struct binder_ashmem_header *)buffer->data;
 
 	/* Make sure ashmem is already mapped in process of receiver */
@@ -232,14 +241,17 @@ recycle_ashmem:
 void binder_ashmem_recycle(struct binder_buffer *buffer)
 {
 	struct binder_ashmem *ashmem;
+	struct binder_ashmem_header *header;
 
 	if (unlikely(!buffer))
 		return;
 
 	ashmem = &buffer->ashmem;
 	if (unlikely(ashmem->file)) {
-		struct binder_ashmem_header *header =
-			(struct binder_ashmem_header *)buffer->data;
+		if (unlikely(!buffer->data))
+			return;
+
+		header = (struct binder_ashmem_header *)buffer->data;
 
 		binder_ashmem_recycle_impl(ashmem, header->size, 0);
 	}

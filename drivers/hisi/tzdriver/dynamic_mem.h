@@ -1,13 +1,21 @@
 #ifndef _DYNAMIC_MMEM_H_
 #define _DYNAMIC_MMEM_H_
+#include <linux/version.h>
 #include <linux/hisi/hisi_ion.h>
+
 #include "teek_ns_client.h"
 #define CAFD_MAX         10 //concurrent opened session count
 #define SET_BIT(map, bit) (map |= (0x1<<(bit)))
 #define CLR_BIT(map, bit) (map &= (~(unsigned)(0x1<<(bit))))
 struct sg_memory {
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+	int dyn_shared_fd;
+	struct dma_buf *dyn_dma_buf;
+	phys_addr_t ion_phys_addr;
+#else
 	struct ion_handle *ion_handle;
 	ion_phys_addr_t ion_phys_addr;
+#endif
 	size_t len;
 	void *ion_virt_addr;
 };

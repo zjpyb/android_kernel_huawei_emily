@@ -44,10 +44,10 @@ mac_res_user_cnt_size_stru *g_pst_dmac_user_cnt_size = &g_st_dmac_user_cnt_size[
 
 #if defined(_PRE_PRODUCT_ID_HI110X_HOST)
 extern hmac_vap_stru g_ast_hmac_vap[WLAN_VAP_SUPPORT_MAX_NUM_LIMIT];
+extern hmac_user_stru g_ast_hmac_user[MAC_RES_MAX_USER_LIMIT];
 #endif
 
 #if (_PRE_PRODUCT_ID == _PRE_PRODUCT_ID_HI1151)
-
 #define MAC_VAP_STRUCT_SIZE   (OAL_SIZEOF(hmac_vap_stru) + OAL_SIZEOF(dmac_vap_stru) - OAL_SIZEOF(mac_vap_stru))
 #define MAC_RES_VAP_SIZE    ((MAC_VAP_STRUCT_SIZE) - ((MAC_VAP_STRUCT_SIZE) & (OAL_MEM_INFO_SIZE-1)) + OAL_MEM_INFO_SIZE)
 #define MAC_USER_STRUCT_SIZE  (OAL_SIZEOF(hmac_user_stru) + OAL_SIZEOF(dmac_user_stru) - OAL_SIZEOF(mac_user_stru))
@@ -68,7 +68,6 @@ mac_res_mem_vap_stru *g_pst_mac_res_vap = OAL_PTR_NULL;
 #else
 mac_res_mem_vap_stru g_ast_mac_res_vap[WLAN_VAP_SUPPORT_MAX_NUM_LIMIT];
 #endif
-
 #endif
 
 /* 后续放入定制化来刷 */
@@ -353,21 +352,13 @@ oal_uint32  mac_res_user_init_etc(oal_void)
             初始化USER的资源管理内容
     ***************************************************************************/
     /* 动态申请用户资源池相关内存 */
-    #if (defined(_PRE_PRODUCT_ID_HI110X_HOST))
-    p_user_info = oal_memalloc(OAL_SIZEOF(hmac_user_stru) * MAC_RES_MAX_USER_LIMIT);
-    #else
-    p_user_info = oal_memalloc(OAL_SIZEOF(mac_res_mem_user_stru) * MAC_RES_MAX_USER_LIMIT);
-    #endif
+    p_user_info = (oal_void *)g_ast_hmac_user;
+
     p_idx       = oal_memalloc(OAL_SIZEOF(oal_uint) * MAC_RES_MAX_USER_LIMIT);
     p_user_cnt  = oal_memalloc(OAL_SIZEOF(oal_uint8) * MAC_RES_MAX_USER_LIMIT);
     if ((OAL_PTR_NULL == p_user_info) || (OAL_PTR_NULL == p_idx) || (OAL_PTR_NULL == p_user_cnt))
     {
         OAM_ERROR_LOG0(0, OAM_SF_ANY, "{mac_res_user_init_etc::param null.}");
-
-        if (OAL_PTR_NULL != p_user_info)
-        {
-            oal_free(p_user_info);
-        }
 
         if (OAL_PTR_NULL != p_idx)
         {
@@ -424,13 +415,12 @@ oal_uint32  mac_res_user_init_etc(oal_void)
 oal_uint32  mac_res_exit_etc(void)
 {
     oal_uint ul_loop;
-    oal_free(g_pst_mac_res->st_user_res.past_user_info[0]);
     oal_free(g_pst_mac_res->st_user_res.pul_idx);
     oal_free(g_pst_mac_res->st_user_res.puc_user_cnt);
 #if (_PRE_PRODUCT_ID == _PRE_PRODUCT_ID_HI1151) && (_PRE_TEST_MODE != _PRE_TEST_MODE_UT)
-	oal_free(g_pst_mac_res_vap);
+    oal_free(g_pst_mac_res_vap);
 #endif
-	for (ul_loop = 0; ul_loop < MAC_RES_MAX_USER_LIMIT; ul_loop++)
+    for (ul_loop = 0; ul_loop < MAC_RES_MAX_USER_LIMIT; ul_loop++)
     {
        g_pst_mac_res->st_user_res.past_user_info[ul_loop]      = OAL_PTR_NULL;
     }
@@ -447,6 +437,13 @@ oal_uint32  mac_res_init_etc(oal_void)
     oal_uint        ul_loop;
     oal_uint32      ul_ret;
 
+    ul_ret = mac_res_check_spec_etc();
+    if (OAL_SUCC != ul_ret)
+    {
+        OAM_ERROR_LOG1(0, OAM_SF_ANY, "{mac_res_init_etc::mac_res_user_init_etc failed[%d].}", ul_ret);
+        return ul_ret;
+    }
+
     OAL_MEMZERO(g_pst_mac_res, OAL_SIZEOF(mac_res_stru));
     /***************************************************************************
             初始化DEV的资源管理内容
@@ -454,13 +451,6 @@ oal_uint32  mac_res_init_etc(oal_void)
     oal_queue_set(&(g_pst_mac_res->st_dev_res.st_queue),
                   g_pst_mac_res->st_dev_res.aul_idx,
                   MAC_RES_MAX_DEV_NUM);
-
-    ul_ret = mac_res_check_spec_etc();
-    if (OAL_SUCC != ul_ret)
-    {
-        OAM_ERROR_LOG1(0, OAM_SF_ANY, "{mac_res_init_etc::mac_res_user_init_etc failed[%d].}", ul_ret);
-        return ul_ret;
-    }
 
     for (ul_loop = 0; ul_loop < MAC_RES_MAX_DEV_NUM; ul_loop++)
     {

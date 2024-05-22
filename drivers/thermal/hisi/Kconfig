@@ -87,9 +87,8 @@ config HISI_THERMAL_AMBIENT
 	help
 	  Enable ambient temp calculation
 
-config HISI_THERMAL_TRIPPLE_CLUSTERS
-        bool "Hisi thermal support tripple clusters."
-        depends on HISI_IPA_THERMAL
-        default n
-        help
-          Support for the HISI tripple clusters.
+config HISI_HKADC_MODEM
+	bool "Hisi hkadc modem temp"
+	default n
+	help
+	  Enable hkadc modem temp

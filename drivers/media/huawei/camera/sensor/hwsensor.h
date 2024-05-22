@@ -58,7 +58,7 @@ typedef struct _tag_hwsensor_vtbl {
 
 typedef struct _tag_hwsensor_intf
 {
-    hwsensor_vtbl_t*                            vtbl;
+    hwsensor_vtbl_t *vtbl;
 } hwsensor_intf_t;
 
 static inline int
@@ -103,7 +103,7 @@ hwsensor_intf_match_id(hwsensor_intf_t* hsi,
 extern int hwsensor_register(struct platform_device *pdev,
                              hwsensor_intf_t* si);
 extern void
-hwsensor_unregister(hwsensor_intf_t* si);
+hwsensor_unregister(struct platform_device *pdev);
 /*
 *  use this function to notify video device an event
 *  pdev:  platform_device which creat by sensor module,like ov8865

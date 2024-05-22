@@ -431,9 +431,25 @@ oal_uint32 hmac_p2p_send_listen_expired_to_host_etc(hmac_vap_stru *pst_hmac_vap)
         OAM_WARNING_LOG0(pst_hmac_vap->st_vap_base_info.uc_vap_id, OAM_SF_P2P, "{hmac_send_mgmt_to_host_etc::pst_mac_device null.}");
         return OAL_ERR_CODE_PTR_NULL;
     }
+
     pst_p2p_info = &pst_mac_device->st_p2p_info;
 
-    /* 组装事件到WAL ，上报监听结束 */
+    /* 填写上报监听超时, 上报的网络设备应该采用p2p0 */
+    if (pst_hmac_vap->pst_p2p0_net_device && pst_hmac_vap->pst_p2p0_net_device->ieee80211_ptr)
+    {
+        pst_wdev = pst_hmac_vap->pst_p2p0_net_device->ieee80211_ptr;
+    }
+    else if(pst_hmac_vap->pst_net_device && pst_hmac_vap->pst_net_device->ieee80211_ptr)
+    {
+        pst_wdev = pst_hmac_vap->pst_net_device->ieee80211_ptr;
+    }
+    else
+    {
+        OAM_WARNING_LOG0(pst_hmac_vap->st_vap_base_info.uc_vap_id, OAM_SF_P2P, "{hmac_send_mgmt_to_host_etc::vap has deleted.}");
+        return OAL_FAIL;
+    }
+
+    /* 组装事件到WAL，上报监听结束 */
     pst_event_mem = FRW_EVENT_ALLOC(OAL_SIZEOF(hmac_p2p_listen_expired_stru));
     if (OAL_PTR_NULL == pst_event_mem)
     {
@@ -453,15 +469,6 @@ oal_uint32 hmac_p2p_send_listen_expired_to_host_etc(hmac_vap_stru *pst_hmac_vap)
                        pst_hmac_vap->st_vap_base_info.uc_device_id,
                        pst_hmac_vap->st_vap_base_info.uc_vap_id);
 
-    /* 填写上报监听超时, 上报的网络设备应该采用p2p0 */
-    if (pst_hmac_vap->pst_p2p0_net_device && pst_hmac_vap->pst_p2p0_net_device->ieee80211_ptr)
-    {
-        pst_wdev = pst_hmac_vap->pst_p2p0_net_device->ieee80211_ptr;
-    }
-    else
-    {
-        pst_wdev = pst_hmac_vap->pst_net_device->ieee80211_ptr;
-    }
     pst_p2p_listen_expired = (hmac_p2p_listen_expired_stru *)(pst_event->auc_event_data);
     pst_p2p_listen_expired->st_listen_channel = pst_p2p_info->st_listen_channel;
     pst_p2p_listen_expired->pst_wdev          = pst_wdev;

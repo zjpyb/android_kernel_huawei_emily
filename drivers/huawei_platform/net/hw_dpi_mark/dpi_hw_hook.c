@@ -126,7 +126,7 @@ static struct uid_netid *mplk_get_uid_netid_nl(const uid_t uid)
 	return mplk_uid_netid_tree_search(&uid_netid_tree, uid);
 }
 
-static void mplk_add_nw_bind(uid_t uid, uint32_t netid)
+void mplk_add_nw_bind(uid_t uid, uint32_t netid)
 {
 	struct uid_netid *uid_netid_entry;
 
@@ -162,7 +162,9 @@ static void mplk_add_nw_bind(uid_t uid, uint32_t netid)
 			uid, netid, uid_netid_entry_num);
 	}
 	uid_netid_entry->uid = uid;
-	uid_netid_entry->netid = netid;
+	if (netid > 0) {
+		uid_netid_entry->netid = netid;
+	}
 
 	//update them at the time of close sk.
 	uid_netid_entry->strategy = 0;
@@ -171,7 +173,7 @@ static void mplk_add_nw_bind(uid_t uid, uint32_t netid)
 	write_unlock_bh(&uid_netid_tree_lock);
 }
 
-static void mplk_del_nw_bind(uid_t uid)
+void mplk_del_nw_bind(uid_t uid)
 {
 	struct uid_netid *uid_netid_entry;
 
@@ -208,7 +210,7 @@ static void mplk_del_nw_bind(uid_t uid)
 *   FUTE :fake UDP socket TX error.    ( Value in low 4 bit of strategy is 0010, 0x2)
 *   FURE :fake UDP socket RX error.    ( Value in low 4 bit of strategy is 0100, 0x4)
 */
-static void mplk_close_socket_by_uid(uint32_t strategy, uid_t uid)
+void mplk_close_socket_by_uid(uint32_t strategy, uid_t uid)
 {
 	struct uid_netid *uid_netid_entry;
 
@@ -273,7 +275,7 @@ void mplk_try_nw_bind_for_udp(struct sock *sk)
 
 	read_lock_bh(&uid_netid_tree_lock);
 	uid_netid_entry = mplk_get_uid_netid_nl(uid);
-	if (uid_netid_entry) {
+	if (uid_netid_entry && uid_netid_entry->netid > 0) {
 		sk->sk_mark = uid_netid_entry->netid;
 		WIFIPRO_DEBUG("%u bound to %u", uid, uid_netid_entry->netid);
 	}
@@ -338,7 +340,7 @@ static void _proc_cmd(int cmd, int opt, const char *data)
 			mplk_close_socket_by_uid(p_dmr->dmr_mplk_strategy, p_dmr->dmr_app_uid);
 			break;
 		default:
-			pr_info("hwdpi:kernel_hw_receive cmd=%d is wrong\n", cmd);	
+			pr_info("hwdpi:kernel_hw_receive cmd=%d is wrong\n", cmd);
 	}
 }
 
@@ -426,9 +428,8 @@ void mark_skb_by_rule(struct sk_buff *skb, int tag){
     }
 }
 
-static unsigned int dpimark_hook_localout(const struct nf_hook_ops *ops,
-					 struct sk_buff *skb,
-					 const struct nf_hook_state *state)
+static unsigned int dpimark_hook_localout(void *ops, struct sk_buff *skb,
+		const struct nf_hook_state *state)
 {
 	/* match the packet for optimization */
     if (skb){

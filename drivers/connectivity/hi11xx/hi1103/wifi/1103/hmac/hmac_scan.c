@@ -46,6 +46,10 @@ extern "C" {
 #include "hmac_11k.h"
 #endif
 
+#ifdef _PRE_WLAN_FEATURE_SNIFFER
+#include <hwnet/ipv4/sysctl_sniffer.h>
+#endif
+
 #undef  THIS_FILE_ID
 #define THIS_FILE_ID OAM_FILE_ID_HMAC_SCAN_C
 
@@ -56,6 +60,7 @@ extern "C" {
 struct kobject     *g_scan_ct_sys_kobject = OAL_PTR_NULL;
 #endif
 hmac_scan_state_enum_uint8 g_en_bgscan_enable_flag_etc = HMAC_BGSCAN_ENABLE;
+oal_uint32 g_pd_bss_expire_time_etc = 0;
 
 /*****************************************************************************
   3 函数实现
@@ -213,6 +218,9 @@ oal_void hmac_scan_print_scanned_bss_info_etc(oal_uint8 uc_device_id)
                                    (oal_uint16) pst_bss_dscr->ul_mgmt_len,
                                    OAM_OTA_FRAME_DIRECTION_TYPE_RX);
             /*lint +e416*/
+#ifdef _PRE_WLAN_FEATURE_SNIFFER
+            proc_sniffer_write_file(NULL, 0, pst_bss_dscr->auc_mgmt_buff, (oal_uint16) pst_bss_dscr->ul_mgmt_len, 0);
+#endif
         }
     }
 
@@ -417,15 +425,20 @@ OAL_STATIC oal_void hmac_scan_clean_expire_scanned_bss(hmac_vap_stru *pst_hmac_v
         pst_scanned_bss = OAL_DLIST_GET_ENTRY(pst_entry, hmac_scanned_bss_info, st_dlist_head);
         pst_bss_dscr    = &(pst_scanned_bss->st_bss_dscr_info);
 
-        if (ul_curr_time_stamp - pst_bss_dscr->ul_timestamp < HMAC_SCAN_MAX_SCANNED_BSS_EXPIRE)
+        if (oal_time_after32(ul_curr_time_stamp, (pst_bss_dscr->ul_timestamp + HMAC_SCAN_MAX_SCANNED_BSS_EXPIRE)) == FALSE)
         {
             OAM_INFO_LOG0(0, OAM_SF_SCAN,
                              "{hmac_scan_clean_expire_scanned_bss::do not remove the BSS, because it has not expired.}");
             continue;
         }
+        /* 产线老化使能*/
+        if ((0 != g_pd_bss_expire_time_etc) && (ul_curr_time_stamp - pst_bss_dscr->ul_timestamp < g_pd_bss_expire_time_etc* 1000))
+        {
+            continue;
+        }
 
         /* 不老化当前正在关联的AP */
-        if(hmac_is_connected_ap_bssid(pst_scan_record->uc_device_id, pst_bss_dscr->auc_bssid))
+        if (hmac_is_connected_ap_bssid(pst_scan_record->uc_device_id, pst_bss_dscr->auc_bssid))
         {
             pst_bss_dscr->c_rssi = pst_hmac_vap->station_info.signal;
             continue;
@@ -1153,6 +1166,42 @@ OAL_STATIC oal_void  hmac_scan_update_bss_list_11ax(mac_bss_dscr_stru   *pst_bss
 
 #endif
 
+#ifdef _PRE_WLAN_FEATURE_BTCOEX
+
+oal_void hmac_scan_btcoex_backlist_check_by_oui_etc(
+                                                  mac_bss_dscr_stru *pst_bss_dscr,
+                                                  oal_uint8         *puc_frame_body,
+                                                  oal_uint16         us_frame_len)
+{
+    /* 初始化为非黑名单 */
+    pst_bss_dscr->en_btcoex_blacklist_chip_oui = 0;
+
+    if (OAL_PTR_NULL !=
+            mac_find_vendor_ie_etc(MAC_WLAN_CHIP_OUI_RALINK, MAC_WLAN_CHIP_OUI_TYPE_RALINK, puc_frame_body, us_frame_len) ||
+        OAL_PTR_NULL !=
+            mac_find_vendor_ie_etc(MAC_WLAN_CHIP_OUI_RALINK, MAC_WLAN_CHIP_OUI_TYPE_RALINK1, puc_frame_body, us_frame_len) ||
+        OAL_PTR_NULL !=
+            mac_find_vendor_ie_etc(MAC_WLAN_CHIP_OUI_SHENZHEN, MAC_WLAN_CHIP_OUI_TYPE_SHENZHEN, puc_frame_body, us_frame_len)||
+        OAL_PTR_NULL !=
+            mac_find_vendor_ie_etc(MAC_WLAN_CHIP_OUI_BROADCOM, MAC_WLAN_CHIP_OUI_TYPE_BROADCOM, puc_frame_body, us_frame_len))
+    {
+        pst_bss_dscr->en_btcoex_blacklist_chip_oui |= MAC_BTCOEX_BLACKLIST_LEV0;
+    }
+
+    if (((OAL_PTR_NULL !=
+            mac_find_vendor_ie_etc(MAC_WLAN_CHIP_OUI_APPLE1, MAC_WLAN_CHIP_OUI_TYPE_APPLE_1_1, puc_frame_body, us_frame_len)) ||
+        (OAL_PTR_NULL !=
+            mac_find_vendor_ie_etc(MAC_WLAN_CHIP_OUI_APPLE1, MAC_WLAN_CHIP_OUI_TYPE_APPLE_1_2, puc_frame_body, us_frame_len)) ||
+        (OAL_PTR_NULL !=
+            mac_find_vendor_ie_etc(MAC_WLAN_CHIP_OUI_APPLE2, MAC_WLAN_CHIP_OUI_TYPE_APPLE_2_1, puc_frame_body, us_frame_len))) &&
+        (OAL_PTR_NULL !=
+            mac_find_vendor_ie_etc(MAC_WLAN_CHIP_OUI_BROADCOM, MAC_WLAN_CHIP_OUI_TYPE_BROADCOM, puc_frame_body, us_frame_len)))
+    {
+        pst_bss_dscr->en_btcoex_blacklist_chip_oui |= MAC_BTCOEX_BLACKLIST_LEV1;
+    }
+}
+#endif
+
 
 OAL_STATIC OAL_INLINE oal_void  hmac_scan_update_bss_list_protocol(hmac_vap_stru *pst_hmac_vap,
                 mac_bss_dscr_stru *pst_bss_dscr,oal_uint8 *puc_frame_body,oal_uint16 us_frame_len)
@@ -1237,32 +1286,18 @@ OAL_STATIC OAL_INLINE oal_void  hmac_scan_update_bss_list_protocol(hmac_vap_stru
     hmac_scan_update_bss_list_nb(pst_bss_dscr, puc_frame_body, us_frame_len);
 #endif
 
-#ifdef _PRE_WLAN_1103_DDC_BUGFIX
     if (OAL_PTR_NULL !=
             mac_find_vendor_ie_etc(MAC_WLAN_CHIP_OUI_ATHEROSC, MAC_WLAN_CHIP_OUI_TYPE_ATHEROSC, puc_frame_body, us_frame_len))
     {
-        pst_bss_dscr->en_ddc_whitelist_chip_oui = OAL_TRUE;
+        pst_bss_dscr->en_atheros_chip_oui = OAL_TRUE;
     }
     else
     {
-        pst_bss_dscr->en_ddc_whitelist_chip_oui = OAL_FALSE;
+        pst_bss_dscr->en_atheros_chip_oui = OAL_FALSE;
     }
-#endif
 
 #ifdef _PRE_WLAN_FEATURE_BTCOEX
-    if (OAL_PTR_NULL !=
-            mac_find_vendor_ie_etc(MAC_WLAN_CHIP_OUI_RALINK, MAC_WLAN_CHIP_OUI_TYPE_RALINK, puc_frame_body, us_frame_len) ||
-        OAL_PTR_NULL !=
-            mac_find_vendor_ie_etc(MAC_WLAN_CHIP_OUI_RALINK, MAC_WLAN_CHIP_OUI_TYPE_RALINK1, puc_frame_body, us_frame_len) ||
-        OAL_PTR_NULL !=
-            mac_find_vendor_ie_etc(MAC_WLAN_CHIP_OUI_SHENZHEN, MAC_WLAN_CHIP_OUI_TYPE_SHENZHEN, puc_frame_body, us_frame_len))
-    {
-        pst_bss_dscr->en_btcoex_blacklist_chip_oui = OAL_TRUE;
-    }
-    else
-    {
-        pst_bss_dscr->en_btcoex_blacklist_chip_oui = OAL_FALSE;
-    }
+    hmac_scan_btcoex_backlist_check_by_oui_etc(pst_bss_dscr, puc_frame_body, us_frame_len);
 #endif
 
 #ifdef _PRE_WLAN_FEATURE_ROAM
@@ -1278,9 +1313,24 @@ OAL_STATIC OAL_INLINE oal_void  hmac_scan_update_bss_list_protocol(hmac_vap_stru
 #endif
 
     if (OAL_PTR_NULL !=
+            mac_find_vendor_ie_etc(MAC_WLAN_CHIP_OUI_MARVELL, MAC_WLAN_CHIP_OUI_TYPE_MARVELL, puc_frame_body, us_frame_len))
+    {
+        pst_bss_dscr->en_txbf_blacklist_chip_oui = OAL_TRUE;
+    }
+    else
+    {
+        pst_bss_dscr->en_txbf_blacklist_chip_oui = OAL_FALSE;
+    }
+
+    if (OAL_PTR_NULL !=
             mac_find_vendor_ie_etc(MAC_WLAN_CHIP_OUI_RALINK, MAC_WLAN_CHIP_OUI_TYPE_RALINK, puc_frame_body, us_frame_len))
     {
         pst_bss_dscr->en_is_tplink_oui = WLAN_AP_CHIP_OUI_RALINK;
+    }
+    else if(OAL_PTR_NULL !=
+            mac_find_vendor_ie_etc(MAC_WLAN_CHIP_OUI_BROADCOM, MAC_WLAN_CHIP_OUI_TYPE_BROADCOM, puc_frame_body, us_frame_len))
+    {
+        pst_bss_dscr->en_is_tplink_oui = WLAN_AP_CHIP_OUI_BCM;
     }
 
 #if 0
@@ -1369,6 +1419,40 @@ void hmac_scan_rm_repeat_sup_exsup_rates(mac_bss_dscr_stru *pst_bss_dscr,
 }
 
 
+OAL_STATIC OAL_INLINE oal_void hmac_scan_remove_11b_rate(oal_uint8 *puc_avail_rate, oal_uint8 *puc_rate_num)
+{
+    /* 基础速率大小在IE中表现为原数值大小乘2。11b速率大小为1, 2, 5.5, 11 */
+    oal_uint8           auc_11b_rate[MAC_DATARATES_80211B_NUM] = {2, 4, 11, 22};
+    oal_uint8           auc_target_rate[WLAN_USER_MAX_SUPP_RATES] = {0};
+    oal_uint8           uc_target_rate_num = 0;
+    oal_bool_enum_uint8 en_is_11b_rate;
+    oal_uint8           i, j;
+
+    for(i = 0; i < *puc_rate_num; i++)
+    {
+        en_is_11b_rate = OAL_FALSE;
+
+        for(j = 0; j < MAC_DATARATES_80211B_NUM; j++)
+        {
+            if(IS_EQUAL_RATES(puc_avail_rate[i], auc_11b_rate[j]))
+            {
+                en_is_11b_rate = OAL_TRUE;
+                break;
+            }
+        }
+
+        if(!en_is_11b_rate)
+        {
+            auc_target_rate[uc_target_rate_num++] = puc_avail_rate[i];
+        }
+    }
+
+    /* copy原速率集长度，用于清空后面多出来的速率 */
+    oal_memcopy(puc_avail_rate, auc_target_rate, *puc_rate_num);
+    *puc_rate_num = uc_target_rate_num;
+}
+
+
 OAL_STATIC OAL_INLINE oal_uint32  hmac_scan_update_bss_list_rates(mac_bss_dscr_stru *pst_bss_dscr,
                                                                           oal_uint8         *puc_frame_body,
                                                                           oal_uint16         us_frame_len,
@@ -1379,7 +1463,7 @@ OAL_STATIC OAL_INLINE oal_uint32  hmac_scan_update_bss_list_rates(mac_bss_dscr_s
     oal_uint8    uc_num_ex_rates = 0;
     oal_uint8    us_offset;
 #if (_PRE_PRODUCT_ID != _PRE_PRODUCT_ID_HI1151)
-    oal_uint8    auc_rates[MAC_DATARATES_PHY_80211G_NUM] = {0};
+    oal_uint8    auc_rates[WLAN_USER_MAX_SUPP_RATES] = {0};
 #endif
 
     /* 设置Beacon帧的field偏移量 */
@@ -1439,6 +1523,11 @@ OAL_STATIC OAL_INLINE oal_uint32  hmac_scan_update_bss_list_rates(mac_bss_dscr_s
             pst_bss_dscr->uc_num_supp_rates += uc_num_ex_rates;
 #endif
         }
+    }
+
+    if(WLAN_BAND_5G == pst_bss_dscr->st_channel.en_band)
+    {
+        hmac_scan_remove_11b_rate(pst_bss_dscr->auc_supp_rates, &pst_bss_dscr->uc_num_supp_rates);
     }
 
     return OAL_SUCC;
@@ -1784,7 +1873,7 @@ oal_uint32 hmac_scan_proc_scanned_bss_etc(frw_event_mem_stru *pst_event_mem)
 
         /* 释放上报的bss信息和beacon或者probe rsp帧的内存 */
         oal_netbuf_free(pst_bss_mgmt_netbuf);
-        return OAL_PTR_NULL;
+        return OAL_ERR_CODE_PTR_NULL;
     }
 
     /* 更新描述扫描结果的bss dscr结构体 */
@@ -1831,7 +1920,8 @@ oal_uint32 hmac_scan_proc_scanned_bss_etc(frw_event_mem_stru *pst_event_mem)
     {
         /* 1s中以内就采用之前的BSS保存的RSSI信息，否则就采用新的RSSI信息 */
         ul_curr_time_stamp = (oal_uint32)OAL_TIME_GET_STAMP_MS();
-        if ((ul_curr_time_stamp - pst_old_scanned_bss->st_bss_dscr_info.ul_timestamp) < HMAC_SCAN_MAX_SCANNED_RSSI_EXPIRE)
+
+        if (oal_time_after32((ul_curr_time_stamp), (pst_old_scanned_bss->st_bss_dscr_info.ul_timestamp + HMAC_SCAN_MAX_SCANNED_RSSI_EXPIRE)) == FALSE)
         {
             OAM_INFO_LOG0(uc_vap_id, OAM_SF_SCAN, "{hmac_scan_proc_scanned_bss_etc::update signal strength value.}");
             pst_new_scanned_bss->st_bss_dscr_info.c_rssi = pst_old_scanned_bss->st_bss_dscr_info.c_rssi;

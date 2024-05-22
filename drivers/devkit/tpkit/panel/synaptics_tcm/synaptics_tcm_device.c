@@ -169,23 +169,6 @@ static int device_capture_touch_report_config(unsigned int count)
 
 	if (device_hcd->raw_mode) {
 		return -EINVAL; // leon add
-		if (count < 3) {
-			TS_LOG_ERR("Invalid write data\n");
-			return -EINVAL;
-		}
-
-		size = le2_to_uint(&device_hcd->out.buf[1]);
-
-		if (count - 3 < size) {
-			TS_LOG_ERR("Incomplete write data\n");
-			return -EINVAL;
-		}
-
-		if (!size)
-			return 0;
-
-		data = &device_hcd->out.buf[3];
-		buf_size = device_hcd->out.buf_size - 3;
 	} else {
 		size = count - 1;
 
@@ -233,7 +216,6 @@ static int device_ioctl(struct inode *inp, struct file *filp, unsigned int cmd,
 #endif
 {
 	int retval = NO_ERR;
-	struct syna_tcm_hcd *tcm_hcd = device_hcd->tcm_hcd;
 
 	retval = 0;
 
@@ -243,7 +225,7 @@ static int device_ioctl(struct inode *inp, struct file *filp, unsigned int cmd,
 		break;
 	case DEVICE_IOC_IRQ:
 		/* leon remove it */
-		TS_LOG_INFO("Try to enable irq %d\n", arg);
+		TS_LOG_INFO("Try to enable irq %d\n", (int)arg);
 		if (arg == 0)
 			disable_irq(g_ts_kit_platform_data.irq_id);
 			//retval = tcm_hcd->enable_irq(tcm_hcd, false, false);
@@ -252,7 +234,7 @@ static int device_ioctl(struct inode *inp, struct file *filp, unsigned int cmd,
 			//retval = tcm_hcd->enable_irq(tcm_hcd, true, NULL);
 		break;
 	case DEVICE_IOC_RAW:
-		TS_LOG_INFO("Try to set raw mode %d\n", arg);
+		TS_LOG_INFO("Try to set raw mode %d\n", (int)arg);
 		if (arg == 0)
 			device_hcd->raw_mode = false;
 		else if (arg == 1)
@@ -424,7 +406,6 @@ exit:
 static int device_open(struct inode *inp, struct file *filp)
 {
 	int retval = NO_ERR;
-	struct syna_tcm_hcd *tcm_hcd = device_hcd->tcm_hcd;
 
 if (device_hcd->ref_count < 1) {
 		device_hcd->ref_count++;
@@ -439,8 +420,6 @@ if (device_hcd->ref_count < 1) {
 
 static int device_release(struct inode *inp, struct file *filp)
 {
-	struct syna_tcm_hcd *tcm_hcd = device_hcd->tcm_hcd;
-
 	if (device_hcd->ref_count)
 		device_hcd->ref_count--;
 	enable_irq(g_ts_kit_platform_data.irq_id);

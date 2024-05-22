@@ -134,7 +134,7 @@ oal_uint32 hmac_config_wapi_add_key_etc(mac_vap_stru *pst_mac_vap, mac_addkey_pa
         if (OAL_SUCC != ul_ret)
         {
             OAM_ERROR_LOG1(pst_mac_vap->uc_vap_id, OAM_SF_ANY, "{hmac_config_wapi_add_key_etc::mac_vap_find_user_by_macaddr_etc failed. %u}", ul_ret);
-            return OAL_PTR_NULL;
+            return OAL_ERR_CODE_PTR_NULL;
         }
     }
 

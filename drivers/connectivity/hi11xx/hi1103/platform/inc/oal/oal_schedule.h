@@ -42,6 +42,16 @@ extern "C" {
 
 #define oal_sys_bus_idle()
 
+#if defined(PLATFORM_DEBUG_ENABLE) && (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
+#define oal_debug_module_param         module_param
+#define oal_debug_module_param_string  module_param_string
+#define OAL_DEBUG_MODULE_PARM_DESC     MODULE_PARM_DESC
+#else
+#define oal_debug_module_param(_symbol, _type, _name)
+#define oal_debug_module_param_string(arg1, arg2, arg3, arg4)
+#define OAL_DEBUG_MODULE_PARM_DESC(arg1, arg2)
+#endif
+
 typedef enum
 {
     OAL_DFT_TRACE_OTHER = 0x0,
@@ -302,24 +312,35 @@ OAL_STATIC OAL_INLINE oal_int32 oal_wakelock_active(oal_wakelock_stru *pst_wakel
 OAL_STATIC OAL_INLINE  void oal_wake_lock_timeout(oal_wakelock_stru *pst_wakelock,oal_uint32 msec)
 {
 #if ((LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 37)) && (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION) )
+
     oal_ulong ul_flags;
+
     oal_spin_lock_irq_save(&pst_wakelock->lock, &ul_flags);
+
     __pm_wakeup_event(&pst_wakelock->st_wakelock,msec);
     pst_wakelock->locked_addr = (oal_ulong)_RET_IP_;
+
     oal_spin_unlock_irq_restore(&pst_wakelock->lock, &ul_flags);
 #endif
 }
+
 OAL_STATIC OAL_INLINE  void oal_wake_unlock_force(oal_wakelock_stru *pst_wakelock)
 {
 #if ((LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 37)) && (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION) )
+
     oal_ulong ul_flags;
+
     oal_spin_lock_irq_save(&pst_wakelock->lock, &ul_flags);
+
      __pm_relax(&pst_wakelock->st_wakelock);
      pst_wakelock->locked_addr = (oal_ulong)0x0;
      pst_wakelock->lock_count  = 0;
+
     oal_spin_unlock_irq_restore(&pst_wakelock->lock, &ul_flags);
 #endif
 }
+
+
 #ifdef __cplusplus
     #if __cplusplus
         }

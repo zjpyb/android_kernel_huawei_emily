@@ -23,12 +23,47 @@
 #include "ufs-kirin.h"
 #include "dsm_ufs.h"
 
+void set_device_clk(struct ufs_hba *hba)
+{
+	return;
+}
+
+void ufs_kirin_regulator_init(struct ufs_hba *hba)
+{
+	struct device *dev = hba->dev;
+
+	hba->vreg_info.vcc =
+		devm_kzalloc(dev, sizeof(struct ufs_vreg), GFP_KERNEL);
+	if (!hba->vreg_info.vcc) {
+		dev_err(dev, "vcc alloc error\n");
+		goto error;
+	}
+
+	hba->vreg_info.vcc->reg = devm_regulator_get(dev, "vcc");
+	if (IS_ERR(hba->vreg_info.vcc->reg)) {
+		dev_err(dev, "get regulator vcc failed\n");
+		goto error;
+	}
+
+	if (regulator_set_voltage(hba->vreg_info.vcc->reg, 2950000, 2950000)) {
+		dev_err(dev, "set vcc voltage failed\n");
+		goto error;
+	}
+
+	if (regulator_enable(hba->vreg_info.vcc->reg))
+		dev_err(dev, "regulator vcc enable failed\n");
+
+error:
+	return;
+}
+
 void ufs_clk_init(struct ufs_hba *hba)
 {
 	struct ufs_kirin_host *host = hba->priv;
 	int ret;
 
 	pr_info("%s ++\n", __func__);
+
 	pr_info("UFS use abb clk\n");
 
 	ret = clk_prepare_enable(host->clk_ufsio_ref);
@@ -692,8 +727,9 @@ void ufs_kirin_pwr_change_pre_change(struct ufs_hba *hba)
 {
 	uint32_t value;
 	pr_info("%s ++\n", __func__);
-
+#ifdef CONFIG_HISI_DEBUG_FS
 	pr_info("device manufacturer_id is 0x%x\n", hba->manufacturer_id);
+#endif
 
 	if (UFS_VENDOR_SKHYNIX == hba->manufacturer_id) {
 		pr_info("H**** device must set VS_DebugSaveConfigTime 0x10\n");

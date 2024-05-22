@@ -43,6 +43,7 @@ struct syna_tcm_board_data {
 	int y_max;
 	int x_max_mt;
 	int y_max_mt;
+	int use_old_projectid;
 	int max_finger_objects;
 	bool swap_axes;
 	int irq_gpio;

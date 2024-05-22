@@ -83,6 +83,9 @@ struct vendor_data {
 	unsigned int		fr_dsr;
 	unsigned int		fr_cts;
 	unsigned int		fr_ri;
+#if(LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0))
+	unsigned int		inv_fr;
+#endif
 	bool			access_32b;
 	bool			oversampling;
 	bool			dma_threshold;
@@ -228,7 +231,7 @@ int pl011_tx_work_uninit(struct uart_amba_port *uap);
 void pl011_console_write_tx(struct console *co, const char *s, unsigned int count);
 void pl011_console_putchar(struct uart_port *port, int ch);
 #endif
-void hisi_pl011_probe_console_enable(struct amba_device *dev, struct uart_amba_port *uap, char* amba_console_name);
+void hisi_pl011_probe_console_enable(struct amba_device *dev, struct uart_amba_port *uap, const char* amba_console_name);
 int hisi_pl011_probe_reset_func_enable(struct amba_device *dev, struct uart_amba_port *uap);
 int hisi_pl011_probe_get_clk_freq(struct amba_device *dev, struct uart_amba_port *uap, int i);
 void pl011_pm(struct uart_port *port, unsigned int state, unsigned int oldstate);

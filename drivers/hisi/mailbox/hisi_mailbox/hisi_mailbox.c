@@ -25,6 +25,10 @@
 #include <linux/hisi/rdr_hisi_ap_hook.h>
 #include <linux/hisi/rdr_hisi_platform.h>
 #include <linux/hisi/hisi_log.h>
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+#include <uapi/linux/sched/types.h>
+#endif
+
 #define HISI_LOG_TAG	AP_MAILBOX_TAG
 
 #define MBOX_PR_ERR(fmt, args ...)	\
@@ -535,7 +539,7 @@ static int hisi_mbox_tx_thread(void *context)
 
 static void hisi_mbox_rx_bh(unsigned long context)
 {
-	struct hisi_mbox_device *mdev = (struct hisi_mbox_device *)context;
+	struct hisi_mbox_device *mdev = (struct hisi_mbox_device *)(uintptr_t)context;
 	mbox_msg_t *rx_buffer = NULL;
 	mbox_msg_len_t rx_len = 0;
 	unsigned long flags;
@@ -754,7 +758,7 @@ static int hisi_mbox_startup(struct hisi_mbox_device *mdev, mbox_mail_type_t mai
 			}
 			/* tx mdev owns rx tasklet as well, for ipc ack msg. */
 		case RX_MAIL:
-			tasklet_init(&mdev->rx_bh, hisi_mbox_rx_bh, (unsigned long)mdev);
+			tasklet_init(&mdev->rx_bh, hisi_mbox_rx_bh, (uintptr_t)mdev);
 			break;
 		default:
 			ret = -EINVAL;

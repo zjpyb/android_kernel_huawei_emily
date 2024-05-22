@@ -70,13 +70,17 @@ static void mstar_of_property_read_u32_default(struct device_node *np,
 static void mstar_of_property_read_u16_default(struct device_node *np,
                            char *prop_name, u16 * out_value, u16 default_value)
 {
-    int ret = 0;
+	int ret;
+	u32 value = 0;
 
-    ret = of_property_read_u16(np, prop_name, out_value);
-    if (ret) {
-        TS_LOG_INFO("%s:%s not set in dts, use default\n", __func__, prop_name);
-        *out_value = default_value;
-    }
+	ret = of_property_read_u32(np, prop_name, &value);
+	if (ret) {
+		TS_LOG_INFO("%s:%s not set in dts, use default\n",
+			__func__, prop_name);
+		*out_value = default_value;
+	} else {
+		*out_value = (u16)value;
+	}
 }
 
 /*  query the configure from dts and store in prv_data */
@@ -114,7 +118,7 @@ int mstar_parse_dts(struct device_node *device, struct ts_kit_device_data *chip_
     if (retval) {
         TS_LOG_INFO("Not define need set Vddio value in Dts, use fault value\n");
         chip_data->regulator_ctr.need_set_vddio_value = 0;
-    } 
+    }
     if(chip_data->regulator_ctr.need_set_vddio_value) {
         retval = of_property_read_u32(device, MSTAR_VDDIO_LDO_VALUE, &chip_data->regulator_ctr.vddio_value);
         if (retval) {

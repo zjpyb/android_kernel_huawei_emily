@@ -40,6 +40,8 @@
 #define HISIFB_MDC_CHANNEL_INFO_RELEASE _IOW(HISIFB_IOCTL_MAGIC, 804, struct mdc_ch_info)
 #define HISIFB_MDC_POWER_DOWNUP_CTRL _IOW(HISIFB_IOCTL_MAGIC, 805, int)
 #define HISIFB_GRALLOC_GET_PHYS _IOW(HISIFB_IOCTL_MAGIC, 806, struct ion_phys_data)
+#define HISIFB_GRALLOC_MAP_IOVA _IOW(HISIFB_IOCTL_MAGIC, 807, struct iova_info)
+#define HISIFB_GRALLOC_UNMAP_IOVA _IOW(HISIFB_IOCTL_MAGIC, 808, struct iova_info)
 
 #define HISIFB_VSYNC_CTRL _IOW(HISIFB_IOCTL_MAGIC, 0x02, unsigned int)
 #define HISIFB_DSS_VOTE_CMD_SET _IOW(HISIFB_IOCTL_MAGIC, 0x04, struct dss_vote_cmd)
@@ -79,6 +81,9 @@
 #define HISIFB_DISPLAY_ENGINE_PARAM_SET _IOW(HISIFB_IOCTL_MAGIC, 0x73, struct display_engine_param)
 
 #define HISIFB_DPTX_GET_COLOR_BIT_MODE _IOW(HISIFB_IOCTL_MAGIC, 0x80, int)
+#define HISIFB_DPTX_GET_SOURCE_MODE _IOW(HISIFB_IOCTL_MAGIC, 0x81, int)
+
+#define HISIFB_PANEL_REGION_NOTIFY _IOW(HISIFB_IOCTL_MAGIC, 0x90, struct _panel_region_notify)
 
 #ifndef BIT
 #define BIT(x)	(1<<(x))
@@ -317,6 +322,13 @@ typedef struct dss_mmbuf {
 	uint32_t size;
 } dss_mmbuf_t;
 
+typedef struct iova_info {
+	uint64_t iova;
+	uint64_t size;
+	int share_fd;
+	int calling_pid;
+} iova_info_t;
+
 typedef struct dss_img {
 	uint32_t format;
 	uint32_t width;
@@ -332,17 +344,23 @@ typedef struct dss_img {
 	uint32_t offset_plane2;
 
 	uint64_t afbc_header_addr;
+	uint64_t afbc_header_offset;
 	uint64_t afbc_payload_addr;
+	uint64_t afbc_payload_offset;
 	uint32_t afbc_header_stride;
 	uint32_t afbc_payload_stride;
 	uint32_t afbc_scramble_mode;
 	uint32_t hfbcd_block_type;
 	uint64_t hfbc_header_addr0;
+	uint64_t hfbc_header_offset0;
 	uint64_t hfbc_payload_addr0;
+	uint64_t hfbc_payload_offset0;
 	uint32_t hfbc_header_stride0;
 	uint32_t hfbc_payload_stride0;
 	uint64_t hfbc_header_addr1;
+	uint64_t hfbc_header_offset1;
 	uint64_t hfbc_payload_addr1;
+	uint64_t hfbc_payload_offset1;
 	uint32_t hfbc_header_stride1;
 	uint32_t hfbc_payload_stride1;
 	uint32_t hfbc_scramble_mode;
@@ -487,6 +505,7 @@ enum {
 
 typedef struct mdc_ch_info {
 	uint32_t hold_flag;
+	uint32_t is_drm;
 	uint32_t rch_need_cap;
 	uint32_t wch_need_cap;
 	int32_t rch_idx;
@@ -538,10 +557,13 @@ typedef struct dss_overlay {
 	uint8_t mask_layer_exist;
 	uint8_t reserved_0;
 	uint8_t reserved_1;
+
+	uint32_t online_wait_timediff;
 } dss_overlay_t;
 
 typedef struct dss_vote_cmd {
 	uint64_t dss_pri_clk_rate;
+	uint64_t dss_axi_clk_rate;
 	uint64_t dss_pclk_dss_rate;
 	uint64_t dss_pclk_pctrl_rate;
 	uint64_t dss_mmbuf_rate;
@@ -667,11 +689,14 @@ enum display_engine_module_id {
 	DISPLAY_ENGINE_COLOR_RECTIFY = BIT(6),
 	DISPLAY_ENGINE_AMOLED_ALGO = BIT(7),
 	DISPLAY_ENGINE_FLICKER_DETECTOR = BIT(8),
+	DISPLAY_ENGINE_SHAREMEM = BIT(9),
+	DISPLAY_ENGINE_MANUFACTURE_BRIGHTNESS = BIT(10),
 };
 
 typedef struct display_engine_hbm_param {
 	uint8_t dimming;
 	uint32_t level;
+	uint8_t mmi_flag;
 } display_engine_hbm_param_t;
 
 typedef struct display_engine_amoled_param {
@@ -691,6 +716,11 @@ typedef struct display_engine_amoled_param {
 	int Lowac_DBV_XCCThres;
 	int Lowac_DBV_XCC_MinThres;
 	int Lowac_Fixed_DBVThres;
+	int DC_Brightness_Dimming_Enable;
+	int DC_Brightness_Dimming_Enable_Real;
+	int Lowac_DBV_Thre_DC;
+	int Lowac_Fixed_DBV_Thres_DC;
+	int DC_Backlight_Delayus;
 } display_engine_amoled_param_t;
 
 typedef struct display_engine_blc_param {
@@ -794,6 +824,18 @@ typedef struct display_engine_flicker_detector_config {
 	int32_t low_level_device_bl_delta_threshold;
 } display_engine_flicker_detector_config_t;
 
+
+#define SHARE_MEMORY_SIZE (128 * 128 * 4 * 2)  //w * h * bpp * buf_num
+
+typedef struct display_engine_share_memory {
+	uint64_t addr_virt;
+	uint64_t addr_phy;
+} display_engine_share_memory_t;
+
+typedef struct display_engine_manufacture_brightness {
+	uint32_t engine_mode;
+} display_engine_manufacture_brightness_t;
+
 typedef struct display_engine_param {
 	uint32_t modules;
 	display_engine_blc_param_t blc;
@@ -805,6 +847,8 @@ typedef struct display_engine_param {
 	display_engine_color_rectify_param_t color_param;
 	display_engine_amoled_param_t amoled_param;
 	display_engine_flicker_detector_config_t flicker_detector_config;
+	display_engine_share_memory_t share_mem;
+	display_engine_manufacture_brightness_t manufacture_brightness;
 } display_engine_param_t;
 
 typedef enum dss_module_id {
@@ -821,5 +865,25 @@ typedef enum dss_module_id {
 	DSS_EFFECT_MODULE_ACE		= BIT(10),
 	DSS_EFFECT_MODULE_MAX		= BIT(11),
 } dss_module_id;
+
+
+typedef enum {
+	EN_DISPLAY_REGION_NONE = 0,
+	EN_DISPLAY_REGION_A = 0x1,
+	EN_DISPLAY_REGION_B = 0x2,
+	EN_DISPLAY_REGION_AB = 0x3,
+	EN_DISPLAY_REGION_AB_FOLDED = 0x7,
+} ENUM_EN_DISPLAY_REGION;
+
+typedef enum {
+	EN_MODE_PRE_NOTIFY = 0x1,                   //the notify before state change
+	EN_MODE_REAL_SWITCH_NOTIFY = 0x2,           //the notify when state already change
+	EN_MODE_POWER_OFF_SWITCH_NOTIFY = 0x3,      //the notify when LCD power off
+} ENUM_EN_NOTIFY_MODE;
+
+typedef struct _panel_region_notify {
+	ENUM_EN_NOTIFY_MODE notify_mode;
+	ENUM_EN_DISPLAY_REGION panel_display_region;
+} panel_region_notify_t;
 
 #endif /*_HISI_DSS_H_*/

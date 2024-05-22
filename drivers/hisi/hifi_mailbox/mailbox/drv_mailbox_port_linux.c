@@ -19,6 +19,10 @@
 #include <linux/wakelock.h>
 #include <linux/wait.h>
 #include <linux/spinlock.h>
+#include <linux/version.h>
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+#include <uapi/linux/sched/types.h>
+#endif
 
 //#include "excDrv.h"
 //#include "BSP.h"
@@ -565,7 +569,7 @@ error_exit:
 }
 
 
-MAILBOX_EXTERN int mailbox_mutex_lock(void **mutexId)
+MAILBOX_EXTERN int mailbox_mutex_lock(void * const *mutexId)
 {
 	struct mb_mutex *mtx = (struct mb_mutex *)*mutexId;
 
@@ -579,7 +583,7 @@ MAILBOX_EXTERN int mailbox_mutex_lock(void **mutexId)
 }
 
 
-MAILBOX_EXTERN void mailbox_mutex_unlock(void **mutexId)
+MAILBOX_EXTERN void mailbox_mutex_unlock(void * const *mutexId)
 {
 	struct mb_mutex *mtx = (struct mb_mutex *)*mutexId;
 
@@ -617,7 +621,7 @@ MAILBOX_EXTERN void mailbox_complete(void **wait)
 	complete(*wait);
 }
 
-MAILBOX_EXTERN void mailbox_del_completion(void **wait)
+MAILBOX_EXTERN void mailbox_del_completion(void * const *wait)
 {
 	kfree(*wait);
 }

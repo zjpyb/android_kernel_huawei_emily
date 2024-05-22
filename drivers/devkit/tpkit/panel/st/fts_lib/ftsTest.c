@@ -393,7 +393,7 @@ int fts_calibrate(int calibrate_type)
 	int ret;
 	u8 cmd[FTS_CAL_CMD_LEN];
 	u16 address;
-	u8 readData[FIFO_EVENT_SIZE];
+	u8 readData[FIFO_EVENT_SIZE] = {0};
 	int eventToSearch[2] = {EVENTID_STATUS_UPDATE, EVENT_TYPE_CALIBRATE};
 
 	TS_LOG_ERR("%s: cal type:%d\n", __func__, calibrate_type);
@@ -448,9 +448,9 @@ int fts_calibrate(int calibrate_type)
 
 int production_test_initialization(u32 signature,TestResult *result)
 {
-	int res;
-	u8 cmd;
-	u8 readData[FIFO_EVENT_SIZE];
+	int res = 0;
+	u8 cmd = 0;
+	u8 readData[FIFO_EVENT_SIZE] = {0};
 	int eventToSearch[2] = {EVENTID_STATUS_UPDATE, EVENT_TYPE_FULL_INITIALIZATION};
 
 	if(result != NULL)
@@ -501,9 +501,9 @@ int production_test_initialization(u32 signature,TestResult *result)
 }
 
 int ms_compensation_tuning() {
-	int res;
-	u8 cmd;
-	u8 readData[FIFO_EVENT_SIZE];
+	int res = 0;
+	u8 cmd = 0;
+	u8 readData[FIFO_EVENT_SIZE] = {0};
 	int eventToSearch[2] = {EVENTID_STATUS_UPDATE, EVENT_TYPE_MS_TUNING_CMPL};
 
 
@@ -566,9 +566,9 @@ int ss_compensation_tuning() {
 }
 
 int lp_timer_calibration() {
-	int res;
-	u8 cmd;
-	u8 readData[FIFO_EVENT_SIZE];
+	int res = 0;
+	u8 cmd = 0;
+	u8 readData[FIFO_EVENT_SIZE] = {0};
 	int eventToSearch[2] = {EVENTID_STATUS_UPDATE, EVENT_TYPE_LPTIMER_TUNING_CMPL};
 
 	TS_LOG_INFO("%s LP TIMER CALIBRATION command sent...\n", __func__);
@@ -598,9 +598,9 @@ int lp_timer_calibration() {
 }
 
 int save_cx_tuning() {
-	int res;
-	u8 cmd;
-	u8 readData[FIFO_EVENT_SIZE];
+	int res = 0;
+	u8 cmd = 0;
+	u8 readData[FIFO_EVENT_SIZE] = {0};
 	int eventToSearch[2] = {EVENTID_STATUS_UPDATE, EVENT_TYPE_COMP_DATA_SAVED};
 
 	TS_LOG_INFO("%s SAVE CX command sent...\n", __func__);
@@ -1076,14 +1076,14 @@ int production_test_ms_key_raw(char *path_limits) {
 	return OK;
 
 ERROR:
-	if(msRawFrame.node_data!=NULL) kfree(msRawFrame.node_data);
-	if(thresholds!=NULL) kfree(thresholds);
+	kfree(msRawFrame.node_data);
+	kfree(thresholds);
 	TS_LOG_INFO("%s MS KEY RAW TEST:.................FAIL\n", __func__);
 	return (ERROR_PROD_TEST_DATA | ERROR_TEST_CHECK_FAIL);
 
 ERROR_LIMITS:
-	if(msRawFrame.node_data!=NULL) kfree(msRawFrame.node_data);
-	if(thresholds!=NULL) kfree(thresholds);
+	kfree(msRawFrame.node_data);
+	kfree(thresholds);
 	return ret;
 
 }
@@ -1092,7 +1092,6 @@ int production_test_ms_cx(char *path_limits, int stop_on_fail, TestToDo *todo,st
 
 	int ret;
 	int count_fail = 0;
-	int *thresholds = NULL;
 	int *thresholds_min = NULL;
 	int *thresholds_max = NULL;
 	int trows, tcolumns;
@@ -1167,10 +1166,11 @@ ERROR:
 		TS_LOG_INFO("%s MS CX testes finished!...OK\n", __func__);
 		kfree(msCompData.node_data);
 		msCompData.node_data = NULL;
+		kfree(thresholds_min);
+		kfree(thresholds_max);
 		return OK;
 	} else {
 		TS_LOG_INFO("%s MS CX testes finished!...FAILED  fails_count = %d\n", __func__, count_fail);
-		if(thresholds!= NULL) kfree(thresholds);
 		if(thresholds_min!= NULL) kfree(thresholds_min);
 		if(thresholds_max!= NULL) kfree(thresholds_max);
 		if(msCompData.node_data != NULL) kfree(msCompData.node_data);
@@ -1178,7 +1178,6 @@ ERROR:
 	}
 
 ERROR_LIMITS:
-	if(thresholds!= NULL) kfree(thresholds);
 	if(thresholds_min!= NULL) kfree(thresholds_min);
 	if(thresholds_max!= NULL) kfree(thresholds_max);
 	if(msCompData.node_data != NULL) kfree(msCompData.node_data);
@@ -1200,7 +1199,7 @@ int production_test_ms_key_cx(char *path_limits, int stop_on_fail, TestToDo *tod
 
 	u16 container;
 	u16 *total_cx = NULL;
-
+	u8 **matrix = NULL;
 
 	//MS CX TEST
 	TS_LOG_INFO("%s MS KEY CX Testes are starting...\n", __func__);
@@ -1324,7 +1323,12 @@ ERROR:
 	msCompData.node_data = NULL;
 		return OK;
 	} else {
-		print_frame_u8("MS Key Init Data (Cx2) =", array1dTo2d_u8(msCompData.node_data, msCompData.node_data_size, msCompData.header.sense_node), 1, msCompData.header.sense_node);
+		matrix = array1dTo2d_u8(msCompData.node_data,
+					msCompData.node_data_size,
+					msCompData.header.sense_node);
+		if (matrix != NULL)
+			print_frame_u8("MS Key Init Data (Cx2) =", matrix, 1,
+					msCompData.header.sense_node);
 		TS_LOG_INFO("%s MS Key CX testes finished!.................FAILED  fails_count = %d\n", __func__, count_fail);
 		if(thresholds != NULL) kfree(thresholds);
 		if(thresholds_min != NULL) kfree(thresholds_min);
@@ -1345,16 +1349,16 @@ ERROR_LIMITS:
 }
 
 int production_test_ss_raw(char *path_limits, int stop_on_fail, TestToDo *todo,struct ts_rawdata_info *info,TestResult *result) {
-	int ret;
+	int ret = 0;
 	int count_fail = 0;
-	int rows, columns;
-	short *ssforce_frame;
-	short *sssense_frame;
-	SelfSenseFrame ssRawFrame;
-	SelfSenseData comData;
-	short value[2] ={ 0};
+	int rows, columns = 0;
+	short *ssforce_frame = NULL;
+	short *sssense_frame = NULL;
+	SelfSenseFrame ssRawFrame = {0};
+	SelfSenseData comData = {0};
+	short value[2] = {0};
 	int *thresholds = NULL;
-	int trows, tcolumns;
+	int trows, tcolumns = 0;
 
 	memset(&ssRawFrame, 0, sizeof(SelfSenseFrame));
 	memset(&comData , 0 ,sizeof(SelfSenseData));
@@ -1435,7 +1439,8 @@ int production_test_ss_raw(char *path_limits, int stop_on_fail, TestToDo *todo,s
 		ret = getSSFrame(ADDR_NORM_PRX_FORCE, &ssforce_frame); /*self noise tx*/
 		if (ret < 0) {
 			TS_LOG_ERR("%s : ADDR_NORM_PRX_FORCE failed... ERROR %02X\n", __func__, ERROR_PROD_TEST_DATA);
-			return (ret | ERROR_PROD_TEST_DATA);
+			ret |= ERROR_PROD_TEST_DATA;
+			goto ERROR_LIMITS;
 		}
 		ret = parseProductionTestLimits(path_limits, SS_PRX_FORCE_MIN_MAX, &thresholds, &trows, &tcolumns);
 		if (ret < 0 || (trows != 1 || tcolumns != 2)) {
@@ -1464,7 +1469,8 @@ int production_test_ss_raw(char *path_limits, int stop_on_fail, TestToDo *todo,s
 		ret = getSSFrame(ADDR_NORM_PRX_SENSE, &sssense_frame); /*self noise rx*/
 		if (ret < 0) {
 			TS_LOG_ERR("%s : getSSFrame failed... ERROR %02X\n", __func__, ERROR_PROD_TEST_DATA);
-			return (ret | ERROR_PROD_TEST_DATA);
+			ret = ret | ERROR_PROD_TEST_DATA;
+			goto ERROR_LIMITS;
 		}
 		ret = parseProductionTestLimits(path_limits, SS_PRX_SENSE_MIN_MAX, &thresholds, &trows, &tcolumns);
 		if (ret < 0 || (trows != 1 || tcolumns != 2)) {
@@ -1489,7 +1495,9 @@ int production_test_ss_raw(char *path_limits, int stop_on_fail, TestToDo *todo,s
 		kfree(thresholds);
 		thresholds = NULL;
 
-		fts_disableInterrupt();
+		ret = fts_disableInterrupt();
+		if (ret < 0)
+			TS_LOG_ERR("%s : fts_disableInterrupt failed\n", __func__);
 		ret = readSelfSenseCompensationData(SS_KEY, &comData);
 		fts_enableInterrupt();
 		if (ret < 0) {
@@ -1576,7 +1584,10 @@ ERROR_LIMITS:
 	comData.cx2_fm = NULL;
 	kfree(comData.cx2_sn);
 	comData.cx2_sn = NULL;
-
+	kfree(ssforce_frame);
+	ssforce_frame = NULL;
+	kfree(sssense_frame);
+	sssense_frame = NULL;
 	kfree(ssRawFrame.force_data);
 	ssRawFrame.force_data = NULL;
 	kfree(ssRawFrame.sense_data);
@@ -1668,16 +1679,18 @@ int parseProductionTestLimits(char * path, char *label, int **data, int *row, in
 
 	int find=0;
 	char *token=NULL;
+	int ret = 0;
 	int i = 0;
 	int j = 0;
 	int z = 0;
-
+	int n = 0;
+	int size = 0;
+	int pointer = 0;
 
 	char *line2 = NULL;
-	char line[800];
+	char line[800] = {0};
 	int fd=-1;
 	char *buf = NULL;
-	int n,size,pointer=0, ret=OK;
 	char *data_file = NULL;
 	struct fts_ts_info *info = fts_get_info();
 	if(info->fw != NULL){
@@ -1707,7 +1720,8 @@ int parseProductionTestLimits(char * path, char *label, int **data, int *row, in
 					find = 1;
 					token = strsep(&line2, ",");
 					if (token != NULL) {
-						sscanf(token, "%d", row);
+						if (sscanf(token, "%d", row) != 1)
+							TS_LOG_ERR("%s sscanf get row fail\n", __func__);
 						TS_LOG_INFO("%s Row = %d\n", __func__, *row);
 					}
 					else {
@@ -1719,8 +1733,11 @@ int parseProductionTestLimits(char * path, char *label, int **data, int *row, in
 					}
 					token = strsep(&line2, ",");
 					if (token != NULL) {
-						sscanf(token, "%d", column);
-						TS_LOG_INFO("%s Column = %d\n", __func__, *column);
+						if (sscanf(token, "%d", column) != 1)
+							TS_LOG_ERR("%s sscanf fail\n",
+								__func__);
+						TS_LOG_INFO("%s Column = %d\n",
+							__func__, *column);
 					}
 					else {
 						TS_LOG_ERR("%s parseProductionTestLimits 2: ERROR %02X\n", __func__, ERROR_FILE_PARSE);
@@ -1764,7 +1781,9 @@ int parseProductionTestLimits(char * path, char *label, int **data, int *row, in
 						buf = line2;
 						token = strsep(&line2, ",");
 						for (z = 0; (z < *column) && (token != NULL); z++) {
-							sscanf(token, "%d", ((*data) + j));
+							ret = sscanf(token, "%d", ((*data) + j));
+							if (ret != 1)
+								TS_LOG_ERR("%s: sscanf failed\n", __func__);
 							j++;
 							token = strsep(&line2, ",");
 						}

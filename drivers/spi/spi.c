@@ -1148,21 +1148,25 @@ static void __spi_pump_messages(struct spi_master *master, bool in_kthread)
 		master->dummy_rx = NULL;
 		kfree(master->dummy_tx);
 		master->dummy_tx = NULL;
+#if defined CONFIG_HISI_SPI
+		mutex_lock(&master->msg_mutex);
+		disable_spi(master);
+		pl022_runtime_suspend(master->dev.parent);
+		mutex_unlock(&master->msg_mutex);
+		if (master->unprepare_transfer_hardware &&
+		    master->unprepare_transfer_hardware(master))
+			dev_err(&master->dev,
+				"failed to unprepare transfer hardware\n");
+#else
 		if (master->unprepare_transfer_hardware &&
 		    master->unprepare_transfer_hardware(master))
 			dev_err(&master->dev,
 				"failed to unprepare transfer hardware\n");
 		if (master->auto_runtime_pm) {
-#if defined CONFIG_HISI_SPI
-			mutex_lock(&master->msg_mutex);
 			pm_runtime_mark_last_busy(master->dev.parent);
 			pm_runtime_put_autosuspend(master->dev.parent);
-			mutex_unlock(&master->msg_mutex);
-#else
-			pm_runtime_mark_last_busy(master->dev.parent);
-			pm_runtime_put_autosuspend(master->dev.parent);
-#endif
 		}
+#endif
 		trace_spi_master_idle(master);
 
 		spin_lock_irqsave(&master->queue_lock, flags);
@@ -1184,6 +1188,35 @@ static void __spi_pump_messages(struct spi_master *master, bool in_kthread)
 
 	mutex_lock(&master->io_mutex);
 
+#if defined CONFIG_HISI_SPI
+	if (!was_busy)
+		trace_spi_master_busy(master);
+
+	if (!was_busy && master->prepare_transfer_hardware) {
+		ret = master->prepare_transfer_hardware(master);
+		if (ret) {
+			dev_err(&master->dev,
+				"failed to prepare transfer hardware\n");
+
+			mutex_unlock(&master->io_mutex);
+			return;
+		}
+	}
+
+	if (!was_busy){
+		ret = pl022_runtime_resume(master->dev.parent);
+		if (ret < 0) {
+			dev_err(&master->dev, "Failed to power device: %d\n", ret);
+
+			if (master->unprepare_transfer_hardware)
+				master->unprepare_transfer_hardware(master);
+
+			mutex_unlock(&master->io_mutex);
+			return;
+		}
+	}
+
+#else
 	if (!was_busy && master->auto_runtime_pm) {
 		ret = pm_runtime_get_sync(master->dev.parent);
 		if (ret < 0) {
@@ -1209,6 +1242,7 @@ static void __spi_pump_messages(struct spi_master *master, bool in_kthread)
 			return;
 		}
 	}
+#endif
 
 	trace_spi_message_start(master->cur_msg);
 
@@ -1863,10 +1897,10 @@ static int of_spi_register_master(struct spi_master *master)
 		return -ENOMEM;
 
 	for (i = 0; i < master->num_chipselect; i++)
-		cs[i] = -ENOENT;
+		cs[i] = -ENOENT; //lint !e613
 
 	for (i = 0; i < nb; i++)
-		cs[i] = of_get_named_gpio(np, "cs-gpios", i);
+		cs[i] = of_get_named_gpio(np, "cs-gpios", i); //lint !e613
 
 	return 0;
 }
@@ -2140,7 +2174,7 @@ EXPORT_SYMBOL_GPL(spi_busnum_to_master);
 void *spi_res_alloc(struct spi_device *spi,
 		    spi_res_release_t release,
 		    size_t size, gfp_t gfp)
-{
+{/*lint --e{429}*/
 	struct spi_res *sres;
 
 	sres = kzalloc(sizeof(*sres) + size, gfp);
@@ -2619,7 +2653,7 @@ static int __spi_validate(struct spi_device *spi, struct spi_message *message)
 			w_size = 4;
 
 		/* No partial transfers accepted */
-		if (xfer->len % w_size)
+		if (xfer->len % w_size) //lint !e573
 			return -EINVAL;
 
 		if (xfer->speed_hz && master->min_speed_hz &&
@@ -2870,8 +2904,8 @@ static int __spi_sync(struct spi_device *spi, struct spi_message *message)
 	message->context = &done;
 	message->spi = spi;
 
-	SPI_STATISTICS_INCREMENT_FIELD(&master->statistics, spi_sync);
-	SPI_STATISTICS_INCREMENT_FIELD(&spi->statistics, spi_sync);
+	SPI_STATISTICS_INCREMENT_FIELD(&master->statistics, spi_sync); //lint !e578
+	SPI_STATISTICS_INCREMENT_FIELD(&spi->statistics, spi_sync); //lint !e578
 
 	/* If we're not using the legacy transfer method then we will
 	 * try to transfer in the calling context so special case.
@@ -2895,29 +2929,16 @@ static int __spi_sync(struct spi_device *spi, struct spi_message *message)
 		 * can.
 		 */
 		if (master->transfer == spi_queued_transfer) {
+			//lint -e{578}
 			SPI_STATISTICS_INCREMENT_FIELD(&master->statistics,
 						       spi_sync_immediate);
+			//lint -e{578}
 			SPI_STATISTICS_INCREMENT_FIELD(&spi->statistics,
 						       spi_sync_immediate);
 			__spi_pump_messages(master, false);
 		}
-#if defined CONFIG_HISI_SPI
-		if (spi_use_dma_transmode(message)) {
-			if (!wait_for_completion_timeout(&done, 3*HZ)) {
-				dev_err(&master->dev, "spi transfer message timeout\n");
-				WARN_ON(1);
-				show_spi_register(master);
-				show_dma_register(master, master->tx_chan_no);
-				show_dma_register(master, master->rx_chan_no);
-				pl022_resume_all(master);
-				message->status = -ETIMEDOUT;
-			}
-		} else {
-			wait_for_completion(&done);
-		}
-#else
+
 		wait_for_completion(&done);
-#endif
 		status = message->status;
 	}
 	message->context = NULL;
@@ -2995,7 +3016,7 @@ EXPORT_SYMBOL_GPL(spi_sync_locked);
  * Return: always zero.
  */
 int spi_bus_lock(struct spi_master *master)
-{
+{/*lint --e{454}*/
 	unsigned long flags;
 
 	mutex_lock(&master->bus_lock_mutex);
@@ -3024,7 +3045,7 @@ EXPORT_SYMBOL_GPL(spi_bus_lock);
  * Return: always zero.
  */
 int spi_bus_unlock(struct spi_master *master)
-{
+{/*lint --e{455}*/
 	master->bus_lock_flag = 0;
 
 	mutex_unlock(&master->bus_lock_mutex);
@@ -3075,9 +3096,11 @@ int spi_write_then_read(struct spi_device *spi,
 	 * keep heap costs out of the hot path unless someone else is
 	 * using the pre-allocated buffer or the transfer is too large.
 	 */
-	if ((n_tx + n_rx) > SPI_BUFSIZ || !mutex_trylock(&lock)) {
+	if ((n_tx + n_rx) > SPI_BUFSIZ || !mutex_trylock(&lock)) { //lint !e574
+        /*lint -e666 */
 		local_buf = kmalloc(max((unsigned)SPI_BUFSIZ, n_tx + n_rx),
 				    GFP_KERNEL | GFP_DMA);
+        /*lint +e666 */
 		if (!local_buf)
 			return -ENOMEM;
 	} else {
@@ -3105,7 +3128,7 @@ int spi_write_then_read(struct spi_device *spi,
 		memcpy(rxbuf, x[1].rx_buf, n_rx);
 
 	if (x[0].tx_buf == buf)
-		mutex_unlock(&lock);
+		mutex_unlock(&lock); //lint !e455
 	else
 		kfree(local_buf);
 
@@ -3115,7 +3138,7 @@ EXPORT_SYMBOL_GPL(spi_write_then_read);
 
 /*-------------------------------------------------------------------------*/
 
-#if IS_ENABLED(CONFIG_OF_DYNAMIC)
+#if IS_ENABLED(CONFIG_OF_DYNAMIC) //lint !e553
 static int __spi_of_device_match(struct device *dev, void *data)
 {
 	return dev->of_node == data;
@@ -3205,7 +3228,7 @@ static struct notifier_block spi_of_notifier = {
 extern struct notifier_block spi_of_notifier;
 #endif /* IS_ENABLED(CONFIG_OF_DYNAMIC) */
 
-#if IS_ENABLED(CONFIG_ACPI)
+#if IS_ENABLED(CONFIG_ACPI) //lint !e553
 static int spi_acpi_master_match(struct device *dev, const void *data)
 {
 	return ACPI_COMPANION(dev->parent) == data;

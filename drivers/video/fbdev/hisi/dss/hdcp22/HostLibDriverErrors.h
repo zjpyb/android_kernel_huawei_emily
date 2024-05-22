@@ -1,24 +1,14 @@
-/*-----------------------------------------------------------------------
-//Copyright (c) 2017, Hisilicon Tech. Co., Ltd. All rights reserved.
-//
-// This software and the associated documentation are confidential and
-// proprietary to Synopsys, Inc. Your use or disclosure of this software
-// is subject to the terms and conditions of a written license agreement
-// between you, or your company, and Synopsys, Inc.
-//
-//  The entire notice above must be reproduced on all authorized copies.
-//
-//-----------------------------------------------------------------------
-//
-// Project:
-//
-// Host Library.
-//
-// Description:
-//
-// Driver interface error code definitions.
-//
-//-----------------------------------------------------------------------*/
+/*
+ *               (C) COPYRIGHT 2014 - 2016 SYNOPSYS, INC.
+ *                         ALL RIGHTS RESERVED.
+ *
+ * This software and the associated documentation are confidential and
+ * proprietary to Synopsys, Inc. Your use or disclosure of this software
+ * is subject to the terms and conditions of a written license agreement
+ * between you, or your company, and Synopsys, Inc.
+ *
+ *  The entire notice above must be reproduced on all authorized copies.
+ */
 
 #ifndef _HOSTLIB_DRIVER_ERRORS_H_
 #define _HOSTLIB_DRIVER_ERRORS_H_

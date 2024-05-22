@@ -39,8 +39,8 @@ SINT32 MEM_AddMemRecord(UADDR PhyAddr, VOID *VirAddr, UINT32 Length)
 
 	for (i = 0; i < MAX_MEM_MAN_RECORD_NUM; i++) {
 		if ((s_MemRecord[i].PhyAddr <= PhyAddr) && (PhyAddr < s_MemRecord[i].PhyAddr + s_MemRecord[i].Length)) {
-			dprint(PRN_ERROR, "%s : Phy [%pK ~ %pK] overlap with Record[%d] [%pK ~ %pK]\n",
-				__func__, (void *)(uintptr_t)PhyAddr, (void *)(uintptr_t)(PhyAddr + Length), i,
+			dprint(PRN_ERROR, "Phy [%pK ~ %pK] overlap with Record[%d] [%pK ~ %pK]\n",
+				(void *)(uintptr_t)PhyAddr, (void *)(uintptr_t)(PhyAddr + Length), i,
 				(void *)(uintptr_t)(s_MemRecord[i].PhyAddr), (void *)(uintptr_t)(s_MemRecord[i].PhyAddr + s_MemRecord[i].Length));
 			IsErrorFlag = 1;
 			break;

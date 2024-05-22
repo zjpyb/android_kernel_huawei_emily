@@ -215,7 +215,7 @@ static struct attribute_group kbase_ipa_attr_group = {
 
 static void init_ipa_groups(struct kbase_ipa_context *ctx)
 {
-	memcpy(ctx->groups, ipa_groups_def, sizeof(ctx->groups));
+	memcpy(ctx->groups, ipa_groups_def, sizeof(ctx->groups)); /* unsafe_function_ignore: memcpy */
 }
 
 #if defined(CONFIG_OF) && (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 7, 0))

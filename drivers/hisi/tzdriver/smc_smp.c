@@ -12,6 +12,7 @@
 #include <linux/spi/spi.h>
 #include <linux/spinlock.h>
 #include <asm/compiler.h>
+#include <asm/cacheflush.h>
 #include <linux/timer.h>
 #include <linux/rtc.h>
 #include <linux/clk-provider.h>
@@ -48,6 +49,9 @@
 #include "dynamic_mem.h"
 struct session_crypto_info *g_session_root_key = NULL;
 
+#define SECS_SUSPEND_STATUS   (0xA5A5)
+extern unsigned long g_secs_suspend_status;
+
 /*lint -save -e750 -e529*/
 #define MAX_EMPTY_RUNS		100
 
@@ -66,10 +70,10 @@ struct shadow_work {
 };
 unsigned long g_shadow_thread_id = 0;
 
-static struct task_struct *siq_thread;
-static struct task_struct *smc_svc_thread;
+static struct task_struct *siq_thread = NULL;
+static struct task_struct *smc_svc_thread = NULL;
 
-static struct task_struct *ipi_helper_thread;
+static struct task_struct *ipi_helper_thread = NULL;
 static DEFINE_KTHREAD_WORKER(ipi_helper_worker);
 
 static struct cpumask m;
@@ -96,7 +100,7 @@ typedef struct __attribute__ ((__packed__)) TC_NS_SMC_QUEUE {
 
 } TC_NS_SMC_QUEUE;
 
-TC_NS_SMC_QUEUE *cmd_data;
+TC_NS_SMC_QUEUE *cmd_data = NULL;
 phys_addr_t cmd_phys;
 
 static struct list_head g_pending_head;
@@ -122,6 +126,10 @@ static inline int occupy_free_smc_in_entry(TC_NS_SMC_CMD *cmd)
 {
 	int idx = -1, i;
 
+	if (cmd == NULL) {
+		tloge("Bad parameters! cmd is NULL.\n");
+		return -1;
+	}
 	/* Note:
 	 * acquire_smc_buf_lock will disable preempt and kernel will forbid
 	 * call mutex_lock in preempt disabled scenes.
@@ -228,6 +236,10 @@ enum cmd_reuse {
 
 static inline int copy_smc_out_entry(uint32_t idx, TC_NS_SMC_CMD *copy, enum cmd_reuse *usage)
 {
+	if ( copy == NULL || usage == NULL ) {
+		tloge("Bad parameters!\n");
+		return -1;
+	}
 	acquire_smc_buf_lock(&cmd_data->smc_lock);
 	if (!test_bit(idx, cmd_data->out_bitmap)) {
 		tloge("cmd out %d is not ready\n", idx);
@@ -292,7 +304,10 @@ static inline void release_smc_entry(uint32_t idx)
 static inline int copy_shadow_task_agent_cmd(TC_NS_SMC_CMD *copy)
 {
 	uint32_t i;
-
+	if (copy == NULL) {
+		tloge("Bad parameters! \n");
+		return -1;
+	}
 	acquire_smc_buf_lock(&cmd_data->smc_lock);
 	for (i=0; i<MAX_SMC_CMD; i++) {
 		if (test_bit(i, cmd_data->out_bitmap)
@@ -404,7 +419,7 @@ void show_cmd_bitmap(void)
 
 static struct pending_entry *init_pending_entry(pid_t pid)
 {
-	struct pending_entry *pe;
+	struct pending_entry *pe = NULL;
 
 	pe = kmalloc(sizeof(*pe), GFP_KERNEL);
 	if (!pe) {
@@ -425,7 +440,7 @@ static struct pending_entry *init_pending_entry(pid_t pid)
 
 struct pending_entry *find_pending_entry(pid_t pid)
 {
-	struct pending_entry *pe;
+	struct pending_entry *pe = NULL;
 
 	spin_lock(&pend_lock);
 	list_for_each_entry(pe, &g_pending_head, list) {
@@ -442,9 +457,9 @@ struct pending_entry *find_pending_entry(pid_t pid)
 
 void foreach_pending_entry(void (*func)(struct pending_entry *))
 {
-	struct pending_entry *pe;
+	struct pending_entry *pe = NULL;
 
-	if (!func)
+	if (func == NULL)
 		return;
 
 	spin_lock(&pend_lock);
@@ -572,7 +587,7 @@ retry:
 	wmb();
         tlogd("[cpu %d] return val %llx exit_reason %llx ta %llx targ %llx\n",
                         raw_smp_processor_id(), ret, exit_reason, ta, target);
-	if (!secret)
+	if (secret == NULL)
 		return ret;
 	secret_fill(secret, exit_reason, ta, target);
 	if (SMC_EXIT_PREEMPTED == exit_reason)
@@ -649,7 +664,7 @@ static void upload_audit_event(unsigned int eventindex)
 	ret = strncpy_s(item.name, STP_ITEM_NAME_LEN, item_info[ITRUSTEE].name, sizeof(item_info[ITRUSTEE].name));
 	if(EOK != ret)
 		tloge("strncpy_s failed  %x . \n", ret);
-	tlogd("stp get size %x succ \n", sizeof(item_info[ITRUSTEE].name));
+	tlogd("stp get size %lx succ \n", sizeof(item_info[ITRUSTEE].name));
 
 	ret = kernel_stp_upload(item, att_info);
 	if (ret != 0) {
@@ -697,12 +712,12 @@ static int shadow_thread_fn(void *arg)
 	u64 x4 = *(u64 *)arg;
 	u64 ret = 0, exit_reason = SMC_EXIT_MAX, ta = 0, target = 0;
 	int n_preempted = 0, n_idled = 0, ret_val = 0;
-	struct pending_entry *pe;
+	struct pending_entry *pe = NULL;
 	TC_NS_SMC_CMD cmd = {0};
 	bool agent_request = false;
 
 	pe = init_pending_entry(current->pid);
-	if (!pe) {
+	if (pe == NULL) {
 		tloge("init pending entry failed\n");
 		kfree(arg);
 		return -ENOMEM;
@@ -713,13 +728,14 @@ static int shadow_thread_fn(void *arg)
 	tlogd("%s: [cpu %d] x0=%llx x1=%llx x2=%llx x3=%llx x4=%llx\n", __func__,
 		raw_smp_processor_id(), x0, x1, x2, x3, x4);
 
+retry:
 	if (hisi_secs_power_on()) {
 		tloge("hisi_secs_power_on failed\n");
 		kfree(arg);
 		release_pending_entry(pe);
 		return -EINVAL;
 	}
-retry:
+retry_wo_pm:
 	if (exit_reason == SMC_EXIT_PREEMPTED) {
 		x0 = TSP_REQUEST;
 		x1 = SMC_OPS_SCHEDTO;
@@ -793,7 +809,7 @@ retry:
 				__func__, smp_processor_id());
 			n_preempted = 0;
 		}
-                goto retry;
+                goto retry_wo_pm;
         } else if (SMC_EXIT_NORMAL == exit_reason) {
 		if (!copy_shadow_task_agent_cmd(&cmd)) {
 			/* if it's a agent request */
@@ -809,16 +825,21 @@ retry:
 
 				agent_request = true;
 				/* cmd will be reused */
-				goto retry;
+				goto retry_wo_pm;
 			} else {
 				/* resume from agent */
 				agent_request = true;
 				/* cmd will be reused */
-				goto retry;
+				goto retry_wo_pm;
 			}
 		} else {
 			int rc, timeout;
 
+			if (hisi_secs_power_down()) {
+				tloge("hisi_secs_power_down failed\n");
+				ret_val = -1;
+				goto clean_wo_pm;
+			}
 			n_preempted = 0;
 			timeout = HZ * (10 + (current->pid & 0xF));
 			rc = wait_event_timeout(pe->wq, atomic_read(&pe->run), timeout);
@@ -827,6 +848,7 @@ retry:
 			}
 			if (SHADOW_EXIT_RUN == atomic_read(&pe->run)) {
 				tlogd("shadow thread work quit, be killed\n");
+				goto clean_wo_pm;
 			} else {
 				atomic_set(&pe->run, 0);
 				goto retry;
@@ -843,6 +865,7 @@ clean:
 		tloge("hisi_secs_power_down failed\n");
 		ret_val = -1;
 	}
+clean_wo_pm:
 	kfree(arg);
 	release_pending_entry(pe);
 
@@ -851,11 +874,11 @@ clean:
 
 static void shadow_work_func(struct kthread_work *work)
 {
-	struct task_struct *shadow_thread;
+	struct task_struct *shadow_thread = NULL;
 	struct shadow_work *s_work = container_of(work, struct shadow_work, kthwork);
 	uint64_t *target_arg = kmalloc(sizeof(uint64_t), GFP_KERNEL);
 
-	if (!target_arg) {
+	if (target_arg == NULL) {
 		tloge("%s: kmalloc(8 bytes) failed\n", __func__);
 		return;
 	}
@@ -929,10 +952,15 @@ void fiq_shadow_work_func(uint64_t target)
 		return;
 	}
 
+	if (g_secs_suspend_status == SECS_SUSPEND_STATUS) {
+		tloge("WARNING irq during suspend! No = %lld\n", target);
+	}
+
 	if (hisi_secs_power_on()) {
 		tloge("hisi_secs_power_on failed\n");
 		goto secs_power_err;
 	}
+
 	smp_smc_send(TSP_REQUEST, SMC_OPS_START_FIQSHD, current->pid, &secret);
 	if (hisi_secs_power_down()) {
 		tloge("hisi_secs_power_down failed\n");
@@ -1008,10 +1036,14 @@ static unsigned int smp_smc_send_func(TC_NS_SMC_CMD *in, uint32_t cmd_type,
 	smc_cmd_ret_t cmd_ret = {0};
 	int ret;
 	TC_NS_SMC_CMD cmd = {0};
-	struct pending_entry *pe;
+	struct pending_entry *pe = NULL;
 	u64 ops;
 	enum cmd_reuse cmd_usage = clear;
 
+	if (in == NULL) {
+		tloge("Bad parameters! \n");
+		return -ENOMEM;
+	}
 	set_drm_strategy();
 
 	pe = init_pending_entry(current->pid);
@@ -1075,6 +1107,7 @@ retry_with_filled_cmd:
 		cmd.ret_val = -1;
 		goto clean;
 	}
+
 	ret = smp_smc_send(TSP_REQUEST, ops, current->pid, &cmd_ret);
 	if (hisi_secs_power_down()) {
 		tloge("hisi_secs_power_down failed\n");
@@ -1098,7 +1131,6 @@ retry_with_filled_cmd:
 	}
 
 	if (!is_cmd_working_done(cmd_index)) {
-		
 		tlogd("smc-cmd NOT-done: smc-ret=%x smc-exit=%d cmd-ca=%d cmd-id=%x ev-nr=%d cmd-index=%d last-index=%d\n",
 			ret, (int)cmd_ret.exit,
 			cmd_data->in[cmd_index].ca_pid,
@@ -1194,7 +1226,7 @@ static int smc_svc_thread_fn(void *arg)
 	struct mb_cmd_pack *mb_pack = NULL;
 
 	mb_pack = mailbox_alloc_cmd_pack();
-	if (!mb_pack) {
+	if (mb_pack == NULL) {
 		tloge("alloc mailbox failed\n");
 		return TEEC_ERROR_GENERIC;
 	}
@@ -1217,7 +1249,6 @@ static int smc_svc_thread_fn(void *arg)
 			(void)spi_exit_secos(0);
 			goto spi_err;
 		}
-
 		ret = smp_smc_send_func(&smc_cmd, TC_NS_CMD_TYPE_NS_TO_SECURE, 0, false);
 
 		if (spi_exit_secos(0)) {
@@ -1234,27 +1265,30 @@ static int smc_svc_thread_fn(void *arg)
 
 	tloge("smc_svc_thread stop ...\n");
 	mailbox_free(mb_pack);
-
+    mb_pack = NULL;
 	return 0;
 
 spi_err:
 	mailbox_free(mb_pack);
+	mb_pack = NULL;
 	return -EINVAL;
 }
 
-#define HUNGTASK_LIST_LEN	13
-static const char* g_hungtask_monitor_list[HUNGTASK_LIST_LEN] = {
+static const char* g_hungtask_monitor_list[] = {
 	"system_server","fingerprintd", "atcmdserver", "keystore", "gatekeeperd",
 	"volisnotd", "secure_storage", "secure_storage_s", "mediaserver",
-	"vold", "tee_test_ut", "tee_test_secure_timer", "IFAAPluginThrea"};
+	"vold", 
+	"IFAAPluginThrea"};
 
 bool is_tee_hungtask(struct task_struct *t)
 {
-	uint32_t i;
+	int i;
+	int hungtask_num = sizeof(g_hungtask_monitor_list) / sizeof(g_hungtask_monitor_list[0]);
+
 	if (!t)
 		return false;
 
-	for (i=0; i < HUNGTASK_LIST_LEN; i++) {
+	for (i=0; i < hungtask_num; i++) {
 		if (!strcmp(t->comm, g_hungtask_monitor_list[i])) { /*lint !e421 */
 			tloge("tee_hungtask detected:the hungtask is %s\n",t->comm);
 			return true;
@@ -1329,7 +1363,6 @@ static unsigned int __TC_NS_SMC(TC_NS_SMC_CMD *cmd, uint8_t flags, bool reuse)
 			ret = (unsigned int)TEEC_ERROR_GENERIC;
 		goto spi_err;
 	}
-
 spi_err:
 	return ret;
 }
@@ -1349,13 +1382,15 @@ static void smc_work_no_wait(uint32_t type)
 	raw_smc_send(TSP_REQUEST, cmd_phys, type, true);
 }
 
-static void smc_work_set_cmd_buffer(void)
+static void smc_work_set_cmd_buffer(struct work_struct *work)
 {
+	(void)work;
 	smc_work_no_wait(TC_NS_CMD_TYPE_SECURE_CONFIG);
 }
 
-static void smc_work_init_secondary_cpus(void)
+static void smc_work_init_secondary_cpus(struct work_struct *work)
 {
+	(void)work;
 	smc_work_no_wait(TC_NS_CMD_TYPE_NS_TO_SECURE);
 }
 
@@ -1398,14 +1433,14 @@ static int get_session_root_key(void)
 	uint32_t *buffer = (uint32_t *)(cmd_data->in);
 	uint32_t tee_crc = 0;
 	uint32_t crc = 0;
-	if (!buffer || ((uint64_t)buffer & 0x3)) {
+	if (buffer == NULL || ((uint64_t)buffer & 0x3)) {
 		tloge("Session root key must be 4bytes aligned.\n");
 		return -EFAULT;
 	}
 
 	g_session_root_key = kzalloc(sizeof(struct session_crypto_info),
 				     GFP_KERNEL);
-	if (!g_session_root_key) {
+	if (g_session_root_key == NULL) {
 		tloge("No memory to store session root key.\n");
 		return -ENOMEM;
 	}
@@ -1464,6 +1499,9 @@ static void smc_set_cfc_info(void)
 	buffer->cfc_area_start = virt_to_phys(__cfc_area_start);
 	buffer->cfc_area_stop = virt_to_phys(__cfc_area_stop);
 	cfc_seqlock = (u32 *)__cfc_rules_start;
+	__dma_map_area((void *)__cfc_area_start,
+			       (__cfc_area_stop - __cfc_area_start),
+			       DMA_TO_DEVICE);
 }
 
 /* Sync with trustedcore_src TEE/cfc.h */
@@ -1589,7 +1627,7 @@ int init_smc_svc_thread(void)
 int teeos_log_exception_archive(unsigned int eventid,const char* exceptioninfo)
 {
 	int ret;
-	struct imonitor_eventobj *teeos_obj;
+	struct imonitor_eventobj *teeos_obj = NULL;
 
 	teeos_obj = imonitor_create_eventobj(eventid);
 	if ( exceptioninfo!=NULL ) {
@@ -1602,7 +1640,6 @@ int teeos_log_exception_archive(unsigned int eventid,const char* exceptioninfo)
 		imonitor_destroy_eventobj(teeos_obj);
 		return ret;
 	}
-
 	ret = imonitor_add_dynamic_path(teeos_obj, "/data/vendor/log/hisi_logs/tee");
 	if (0 != ret) {
 		tloge("add path  failed\n");

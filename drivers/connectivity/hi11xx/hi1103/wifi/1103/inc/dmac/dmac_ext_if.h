@@ -121,9 +121,12 @@ extern oal_uint8 g_auc_ip_filter_btable[MAC_MAX_IP_FILTER_BTABLE_SIZE];  /* rx i
 #define GNSS_DMAC_SCAN_RESULTS_VALID_MS         5000
 
 #ifdef _PRE_WLAN_FEATURE_TAS_ANT_SWITCH
-#define DMAC_WLAN_EVENT_TAS_ANT1_RSSI_INVALID_TYPE   OAL_RSSI_INIT_VALUE      /* 上报TAS天线测量C0不用事件 */
+#define DMAC_WLAN_EVENT_TAS_ANT_RSSI_INVALID_TYPE    OAL_RSSI_INIT_VALUE       /* 上报TAS天线测量不用事件 */
 #define DMAC_WLAN_EVENT_TAS_RSSI_MEASURING_TYPE      (-129)                    /* 上报TAS天线测量未完成事件 */
-#define DMAC_WLAN_EVENT_TAS_ANT1_AVAILABLE_TYPE      (-130)                    /* 上报TAS天线测量C0恢复可用事件 */
+#define DMAC_WLAN_EVENT_TAS_ANT_AVAILABLE_TYPE       (-130)                    /* 上报TAS天线测量恢复可用事件 */
+#define DMAC_WLAN_EVENT_TAS_ANT_MEASURE_TIMEOUT_TYPE (-131)                    /* 上报TAS天线测量超时事件 */
+
+#define DMAC_WLAN_TAS_RSSI_MEASURE_TIMER_PERIOD     (5000)                    /*动态校准每帧定时器5s定时*/
 #endif
 
 /*****************************************************************************
@@ -330,6 +333,7 @@ typedef enum
     CUSTOM_CFGID_PRIV_INI_RADIO_CAP_ID,
     CUSTOM_CFGID_PRIV_FASTSCAN_SWITCH_ID,
     CUSTOM_CFGID_PRIV_ANT_SWITCH_ID,
+    CUSTOM_CFGID_PRIV_LINKLOSS_THRESHOLD_FIXED_ID,
     CUSTOM_CFGID_PRIV_INI_BW_MAX_WITH_ID,
     CUSTOM_CFGID_PRIV_INI_LDPC_CODING_ID,
     CUSTOM_CFGID_PRIV_INI_RX_STBC_ID,
@@ -598,7 +602,6 @@ typedef enum
 }btcoex_rx_window_size_index_enum;
 typedef oal_uint8 btcoex_rx_window_size_index_enum_uint8;
 
-
 typedef enum
 {
     BTCOEX_RATE_THRESHOLD_MIN   = 0,
@@ -762,7 +765,14 @@ typedef struct
     oal_uint16              us_frame_len;
     oal_uint16              us_remain;
 }dmac_tx_event_stru;
-
+/* 存在MIMO兼容性AP，需抛事件通知hmac重关联，事件结构体 */
+typedef struct
+{
+    oal_uint16                 us_user_id;
+    mac_ap_type_enum_uint16    en_ap_type;
+    oal_uint8                  auc_mac_addr[WLAN_MAC_ADDR_LEN];
+    oal_uint8                  auc_resv[2];
+}dmac_to_hmac_mimo_compatibility_event_stru;
 
 typedef struct
 {
@@ -915,6 +925,7 @@ typedef struct
     oal_bool_enum_uint8     en_dot11FortyMHzOperationImplemented;         /* dot11FortyMHzOperationImplemented */
     oal_uint8               auc_resv;
     dmac_set_rate_stru      st_min_rate;          /* Update join req 需要配置的速率集参数 */
+    mac_ap_type_enum_uint16 en_ap_type;
 }dmac_ctx_join_req_set_reg_stru;
 
 /* wait join写寄存器参数的结构体定义 */
@@ -1317,6 +1328,14 @@ typedef struct
 }dmac_tid_tcp_ack_buf_stru;
 #endif
 
+typedef struct
+{
+    frw_timeout_stru                st_bar_send_timeout_timer;
+}dmac_tid_rom_stru;
+
+extern dmac_tid_rom_stru g_dmac_tid_rom[][WLAN_TID_MAX_NUM];
+
+#define DMAC_USER_TID_STRU(_pst_tid_queue)       ((dmac_tid_rom_stru *)(((dmac_tid_stru *)_pst_tid_queue)->_rom))
 
 typedef struct
 {
@@ -1545,11 +1564,22 @@ typedef struct
 #ifdef _PRE_WLAN_FEATURE_M2S
 typedef struct
 {
-    wlan_m2s_mgr_vap_stru                 ast_m2s_comp_vap[WLAN_SERVICE_STA_MAX_NUM_PER_DEVICE];
-    oal_bool_enum_uint8                   en_m2s_result;
-    oal_uint8                             uc_m2s_mode;                          /* 当前切换业务 */
-    oal_uint8                             uc_m2s_state;                         /* 当前m2s状态 */
-    oal_uint8                             uc_vap_num;
+    wlan_m2s_mgr_vap_stru            ast_m2s_comp_vap[WLAN_SERVICE_STA_MAX_NUM_PER_DEVICE];
+    oal_uint8                        uc_m2s_state;                         /* 当前m2s状态 */
+    union
+    {
+        struct
+        {
+            oal_bool_enum_uint8      en_m2s_result;
+            oal_uint8                uc_m2s_mode;                          /* 当前切换业务 */
+            oal_uint8                uc_vap_num;
+        }mss_result;
+
+        struct
+        {
+            oal_bool_enum_uint8  en_arp_detect_on;
+        }arp_detect_result;
+    }pri_data;
 }dmac_m2s_complete_syn_stru;
 #endif
 
@@ -2253,6 +2283,8 @@ extern oal_uint32 dmac_cfg_vap_init_event(frw_event_mem_stru *pst_event_mem);
 #endif
 extern oal_uint32 dmac_tx_reinit_tx_queue(mac_device_stru *pst_mac_device, hal_to_dmac_device_stru *pst_hal_device);
 extern oal_uint32  mac_vap_set_cb_tx_user_idx(mac_vap_stru *pst_mac_vap, mac_tx_ctl_stru *pst_tx_ctl, oal_uint8 *puc_data);
+
+extern oal_void dmac_tid_tx_queue_init_cb(dmac_tid_stru *past_tx_tid_queue, mac_user_stru *pst_user, oal_uint32 *pul_result);
 
 #ifdef __cplusplus
     #if __cplusplus

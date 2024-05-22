@@ -71,12 +71,12 @@ int hv_reg_write(struct hv_reg_cfg cfg, u32 val)
 	}
 	shift -= 1;
 	width = fls(cfg.rd_mask) - shift;
-	mask  = (1 << width) - 1;
+	mask  = (1 << (u32)width) - 1;
 
 	if (val > mask) {
 		val = mask;
 	}
-	writel(cfg.wr_mask | ((val & mask) << shift), cfg.reg);
+	writel(cfg.wr_mask | ((val & mask) << (u32)shift), cfg.reg);
 
 	return 0;
 }
@@ -90,7 +90,7 @@ int hv_reg_read(struct hv_reg_cfg cfg, u32 *val)
 		return -EINVAL;
 	}
 	shift -= 1;
-	*val = (readl(cfg.reg) & cfg.rd_mask) >> shift;
+	*val = ((u32)readl(cfg.reg) & cfg.rd_mask) >> (u32)shift;
 
 	return 0;
 }

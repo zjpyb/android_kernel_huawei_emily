@@ -11,7 +11,7 @@ struct urb_buffers {
 	unsigned long urb_buf_bitmap;
 };
 
-void free_urb_buf(struct urb_buffers *urb_bufs, void *addr);
+void free_urb_buf(struct urb_buffers *urb_bufs, const void *addr);
 void *alloc_urb_buf(struct urb_buffers *urb_bufs, dma_addr_t *dma_addr);
 int urb_buf_init(struct urb_buffers *urb_bufs);
 void urb_buf_destroy(struct urb_buffers *urb_bufs);

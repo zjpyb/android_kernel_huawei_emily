@@ -324,21 +324,22 @@ enum FW_uptate_state {
 	TS_UPDATE_STATE_UNDEFINE = 255,
 };
 #endif
+
 enum ts_gesture_num {
-/*      TS_NUM_TOTAL = 12, /* total gesture numbers  */
-	TS_DOUBLE_CLICK = KEY_F1,	/*0.Double tap:KEY_F1 */
-	TS_SLIDE_L2R = KEY_F2,	/*1.Single finger slide from left to right:KEY_F2 */
-	TS_SLIDE_R2L = KEY_F3,	/*2.Single finger slide from right to left:KEY_F3 */
-	TS_SLIDE_T2B = KEY_F4,	/*3.Single finger slide from top to bottom:KEY_F4 */
-	TS_SLIDE_B2T = KEY_F5,	/*4.Single finger slide from bottom to top:KEY_F5 */
-	TS_CIRCLE_SLIDE = KEY_F7,	/*5.Single finger slide circle:KEY_F7 */
-	TS_LETTER_c = KEY_F8,	/*6.Single finger write letter c*:KEY_F8 */
-	TS_LETTER_e = KEY_F9,	/*7.Single finger write letter e:KEY_F9 */
-	TS_LETTER_m = KEY_F10,	/*8.Single finger write letter m:KEY_F10 */
-	TS_LETTER_w = KEY_F11,	/*9.Single finger write letter w:KEY_F11 */
-	TS_PALM_COVERED = KEY_F12,	/*10.Palm off screen:KEY_F12 */
-	TS_GESTURE_INVALID = 0xFF,	/*FF.No gesture */
+	TS_DOUBLE_CLICK = KEY_F1,    /*0.Double tap:KEY_F1 */
+	TS_SLIDE_L2R = KEY_F2,    /*1.Single finger slide from left to right:KEY_F2 */
+	TS_SLIDE_R2L = KEY_F3,    /*2.Single finger slide from right to left:KEY_F3 */
+	TS_SLIDE_T2B = KEY_F4,    /*3.Single finger slide from top to bottom:KEY_F4 */
+	TS_SLIDE_B2T = KEY_F5,    /*4.Single finger slide from bottom to top:KEY_F5 */
+	TS_CIRCLE_SLIDE = KEY_F7,    /*5.Single finger slide circle:KEY_F7 */
+	TS_LETTER_c = KEY_F8,    /*6.Single finger write letter c*:KEY_F8 */
+	TS_LETTER_e = KEY_F9,    /*7.Single finger write letter e:KEY_F9 */
+	TS_LETTER_m = KEY_F10,    /*8.Single finger write letter m:KEY_F10 */
+	TS_LETTER_w = KEY_F11,    /*9.Single finger write letter w:KEY_F11 */
+	TS_PALM_COVERED = KEY_F12,    /*10.Palm off screen:KEY_F12 */
+	TS_GESTURE_INVALID = 0xFF,    /*FF.No gesture */
 };
+
 enum ts_gesture_enable_bit {
 	GESTURE_DOUBLE_CLICK = 0,
 	GESTURE_SLIDE_L2R,

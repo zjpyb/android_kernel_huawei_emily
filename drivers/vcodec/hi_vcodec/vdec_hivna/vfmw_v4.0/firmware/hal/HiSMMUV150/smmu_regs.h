@@ -10,12 +10,19 @@
 #define SMMU_INTSTAT_NS (0x0018)
 #define SMMU_SMRx_NS    (0x0020)    //(0x0020+n*0x4) SMMU control register per stream for non-secure
 #define SMMU_CB_TTBR0   (0x0204)    //SMMU translation table base register for non-secure context bank0
-#define SMMU_FAMA_CTRL1_NS (0x0224) //SMMU Control Register for FAMA for TCU of Non-Secure Context Bank
 #define SMMU_CB_TTBCR   (0x020C)    //SMMU Translation Table Base Control Register for Non-Secure Context Bank
+
+#ifdef HISMMUV170
+#define SMMU_CB_TTBR_MSB     (0x0224)
+#define SMMU_ERR_ADDR_MSB_NS (0x0300)
+#define SMMU_ERR_RDADDR_NS   (0x0304)
+#define SMMU_ERR_WRADDR_NS   (0x0308)
+#else
+#define SMMU_FAMA_CTRL1_NS (0x0224) //SMMU Control Register for FAMA for TCU of Non-Secure Context Bank
 #define SMMU_ADDR_MSB   (0x0300)    //Register for MSB of all 33-bits address configuration
 #define SMMU_ERR_RDADDR (0x0304)    //SMMU Error Address of TLB miss for Read transaction
 #define SMMU_ERR_WRADDR (0x0308)    //SMMU Error Address of TLB miss for Write transaction
-#define SMMU_SMRx_P     (0x10000)   //(0x10000 + n*0x4) SMMU Control Register per Stream
+#endif
 
 /**********************************************
 **MASTER(MFDE/SCD/BPD) registers

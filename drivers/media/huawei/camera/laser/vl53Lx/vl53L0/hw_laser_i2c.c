@@ -321,13 +321,11 @@ int laser_match_id(struct i2c_data * i2cdata)
     }
     laser_info("laser matchid = 0x%x", chipid);
     if (chipid == 0x0F) {        
-        //strncpy_s(i2cdata->chip_name, CHIP_NAME_LEN-1, laser_sharp_name, strlen(laser_sharp_name));
         laser_type = LASER_SHARP;
     } else {
         rc = laser_i2c_read(i2cdata->client, VL53L0_CHIP_ID, &chipid);
         laser_info("laser matchid = 0x%x", chipid);
         if (chipid == 0xEE) {
-            //strncpy_s(i2cdata->chip_name, CHIP_NAME_LEN-1, laser_st_name, strlen(laser_st_name));       
             laser_type = LASER_ST;
         }else{
             laser_type = LASER_UNUSED;

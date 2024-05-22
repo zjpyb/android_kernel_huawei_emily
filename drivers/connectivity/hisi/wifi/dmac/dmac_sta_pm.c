@@ -482,6 +482,16 @@ OAL_STATIC oal_uint32 sta_power_state_active_event(oal_void   *p_ctx,
         case STA_PWR_EVENT_TX_MGMT:
             dmac_pm_enable_front_end(pst_mac_device, OAL_TRUE);
         break;
+
+        case STA_PWR_EVENT_DTIM:
+            pst_pm_handler->en_more_data_expected = OAL_TRUE;
+            dmac_pm_sta_wait_for_mcast(pst_dmac_vap,pst_pm_handler);
+        break;
+
+        case STA_PWR_EVENT_LAST_MCAST:
+            pst_pm_handler->en_more_data_expected   = OAL_FALSE;
+        break;
+
         default:
         break;
     }
@@ -1027,9 +1037,7 @@ oal_uint32 dmac_pm_sta_post_event(oal_void* pst_oshandler, oal_uint16 us_type, o
         break;
 
         case STA_PWR_EVENT_RX_UCAST:
-        case STA_PWR_EVENT_LAST_MCAST:
         case STA_PWR_EVENT_TIM:
-        case STA_PWR_EVENT_DTIM:
         case STA_PWR_EVENT_NORMAL_SLEEP:
             if (STA_PWR_SAVE_STATE_AWAKE != uc_pm_state)
             {

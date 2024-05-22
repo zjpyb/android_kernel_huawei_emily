@@ -36,6 +36,7 @@
 #include "../pmic/hw_pmic.h"
 
 #define I2S(i) container_of(i, sensor_t, intf)
+#define Sensor2Pdev(s) container_of((s).dev, struct platform_device, dev)
 
 static struct sensor_power_setting imx286dual_power_setting[] = {
     //M0 AVDD0  2.80V  [LDO19]
@@ -556,7 +557,7 @@ imx286dual_platform_remove(
     sensor = I2S(intf);
 
     rpmsg_sensor_unregister((void*)&sensor);
-    hwsensor_unregister(intf);
+    hwsensor_unregister(pdev);
     return 0;
 }
 static int __init

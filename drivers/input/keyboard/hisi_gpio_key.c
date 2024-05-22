@@ -62,9 +62,15 @@
 #define GPIO_LOW_VOLTAGE    	 	(0)
 #define TIMER_DEBOUNCE				(15)
 
+#ifdef CONFIG_HISI_PMIC_VIBRATOR
+#define HISI_PMIC_VIBRATOR_SMARTKEY   	 	(3)
+extern int hisi_pmic_vibrator_haptics_set_type(int type);
+#endif
+
 static struct wake_lock volume_up_key_lock;
 static struct wake_lock volume_down_key_lock;
 static int support_smart_key = 0;
+static int smart_key_vibrate = 0;
 
 #if defined (CONFIG_HUAWEI_DSM)
 #define PRESS_KEY_INTERVAL	(80)   //the minimum press interval
@@ -332,11 +338,16 @@ static void hisi_gpio_keysmart_work(struct work_struct *work)
 
 	keysmart_value = gpio_get_value((unsigned int)gpio_key->gpio_smart);
 	/*judge key is pressed or released.*/
-	if (keysmart_value == GPIO_LOW_VOLTAGE)
+	if (keysmart_value == GPIO_LOW_VOLTAGE) {
 		report_action = GPIO_KEY_PRESS;
-	else if (keysmart_value == GPIO_HIGH_VOLTAGE)
+#ifdef CONFIG_HISI_PMIC_VIBRATOR
+		/* vibrator for vitrual btn */
+		if(smart_key_vibrate)
+			hisi_pmic_vibrator_haptics_set_type(HISI_PMIC_VIBRATOR_SMARTKEY);
+#endif
+	} else if (keysmart_value == GPIO_HIGH_VOLTAGE) {
 		report_action = GPIO_KEY_RELEASE;
-	else {
+	} else {
 		printk(KERN_ERR "[gpiokey][%s]invalid gpio key_value.\n", __FUNCTION__);
 		return;
 	}
@@ -355,7 +366,7 @@ static void hisi_gpio_keysmart_work(struct work_struct *work)
 static void gpio_keyup_timer(unsigned long data)
 {
 	int keyup_value;
-	struct hisi_gpio_key *gpio_key = (struct hisi_gpio_key *)data;
+	struct hisi_gpio_key *gpio_key = (struct hisi_gpio_key *)(uintptr_t)data;
 
 	keyup_value = gpio_get_value((unsigned int)gpio_key->gpio_up);
         /*judge key is pressed or released.*/
@@ -380,7 +391,7 @@ static void gpio_keyup_timer(unsigned long data)
 static void gpio_keydown_timer(unsigned long data)
 {
         int keydown_value;
-        struct hisi_gpio_key *gpio_key = (struct hisi_gpio_key *)data;
+        struct hisi_gpio_key *gpio_key = (struct hisi_gpio_key *)(uintptr_t)data;
 
         keydown_value = gpio_get_value((unsigned int)gpio_key->gpio_down);
         /*judge key is pressed or released.*/
@@ -424,7 +435,7 @@ static void gpio_keyback_timer(unsigned long data)
 static void gpio_keysmart_timer(unsigned long data)
 {
 	int keysmart_value;
-	struct hisi_gpio_key *gpio_key = (struct hisi_gpio_key *)data;
+	struct hisi_gpio_key *gpio_key = (struct hisi_gpio_key *)(uintptr_t)data;
 
 	keysmart_value = gpio_get_value((unsigned int)gpio_key->gpio_smart);
         /*judge key is pressed or released.*/
@@ -438,7 +449,7 @@ static void gpio_keysmart_timer(unsigned long data)
 #endif
 
 /*以下接口变量只用于组合键进入fastboot模式，完成dump功能*/
-static char s_vol_down_hold = 0;
+static unsigned char s_vol_down_hold = 0;
 static int vol_up_gpio = -1;
 static int vol_up_active_low = -1;
 static int vol_down_gpio = -1;
@@ -446,7 +457,7 @@ static int vol_down_active_low = -1;
 
 static void gpio_key_vol_updown_press_set_bit(int bit_number)
 {
-	s_vol_down_hold |= (1 << bit_number);
+	s_vol_down_hold |= (1 << (unsigned int)bit_number);
 }
 
 void gpio_key_vol_updown_press_set_zero(void)
@@ -456,7 +467,7 @@ void gpio_key_vol_updown_press_set_zero(void)
 
 int gpio_key_vol_updown_press_get(void)
 {
-	return s_vol_down_hold;
+	return (int)s_vol_down_hold;
 }
 
 int is_gpio_key_vol_updown_pressed(void)
@@ -471,8 +482,8 @@ int is_gpio_key_vol_updown_pressed(void)
 	}
 
 	mdelay(5);
-	state1 = (gpio_get_value_cansleep(vol_up_gpio) ? 1 : 0) ^ vol_up_active_low;
-	state2 = (gpio_get_value_cansleep(vol_down_gpio) ? 1 : 0) ^ vol_down_active_low;
+	state1 = (gpio_get_value_cansleep(vol_up_gpio) ? 1 : 0) ^ ((unsigned int)vol_up_active_low);
+	state2 = (gpio_get_value_cansleep(vol_down_gpio) ? 1 : 0) ^ ((unsigned int)vol_down_active_low);
 
 	if(!!state1 && !!state2){
 		return 1;
@@ -604,6 +615,14 @@ static int hisi_gpio_key_probe(struct platform_device* pdev)
 		printk(KERN_INFO "%s: Support smart_key: %d\n", __FUNCTION__, support_smart_key);
 	}
 
+	err = of_property_read_u32(pdev->dev.of_node, "smart_key_vibrate", (u32 *)&smart_key_vibrate);
+	if (err) {
+		smart_key_vibrate = 0;
+		printk(KERN_INFO "%s: Not support smart_key vibrate\n", __FUNCTION__);
+	} else {
+		printk(KERN_INFO "%s: Support smart_key vibrate: %d\n", __FUNCTION__, smart_key_vibrate);
+	}
+
 	gpio_key = devm_kzalloc(&pdev->dev, sizeof(struct hisi_gpio_key), GFP_KERNEL);
 	if (!gpio_key) {
 		dev_err(&pdev->dev, "Failed to allocate struct hisi_gpio_key!\n");
@@ -648,7 +667,7 @@ static int hisi_gpio_key_probe(struct platform_device* pdev)
 #endif
 #ifdef CONFIG_HISI_GPIO_KEY_SUPPORT_SMART_KEY
 	if (support_smart_key) {
-		INIT_DELAYED_WORK(&(gpio_key->gpio_keysmart_work), hisi_gpio_keysmart_work);
+		INIT_DELAYED_WORK((struct delayed_work *)(uintptr_t)(&(gpio_key->gpio_keysmart_work)), hisi_gpio_keysmart_work);
 		wake_lock_init(&smart_key_lock, WAKE_LOCK_SUSPEND, "key_smart_wake_lock");
 	}
 #endif
@@ -792,19 +811,19 @@ static int hisi_gpio_key_probe(struct platform_device* pdev)
 	volume_down_last_press_time = 0;
 #endif
 
-	setup_timer(&(gpio_key->key_up_timer), gpio_keyup_timer, (unsigned long )gpio_key);
-	setup_timer(&(gpio_key->key_down_timer), gpio_keydown_timer, (unsigned long )gpio_key);
+	setup_timer(&(gpio_key->key_up_timer), gpio_keyup_timer, (uintptr_t )gpio_key);
+	setup_timer(&(gpio_key->key_down_timer), gpio_keydown_timer, (uintptr_t )gpio_key);
 #ifdef CONFIG_HISI_GPIO_KEY_SUPPORT_HI6XXX
-	setup_timer(&(gpio_key->key_back_timer), gpio_keyback_timer, (unsigned long )gpio_key);
+	setup_timer(&(gpio_key->key_back_timer), gpio_keyback_timer, (uintptr_t )gpio_key);
 #endif
 #ifdef CONFIG_HISI_GPIO_KEY_SUPPORT_SMART_KEY
 	if (support_smart_key) {
-		setup_timer(&(gpio_key->key_smart_timer), gpio_keysmart_timer, (unsigned long )gpio_key);
+		setup_timer(&(gpio_key->key_smart_timer), gpio_keysmart_timer, (uintptr_t )gpio_key);
 	}
 #endif
 
 #if defined (CONFIG_HUAWEI_DSM)
-	setup_timer(&dsm_gpio_key_timer, dsm_gpio_key_timer_func, (unsigned long)gpio_key);
+	setup_timer(&dsm_gpio_key_timer, dsm_gpio_key_timer_func, (uintptr_t)gpio_key);
 #endif
 	/*
 	 * support failing irq that means volume-up-key is pressed,

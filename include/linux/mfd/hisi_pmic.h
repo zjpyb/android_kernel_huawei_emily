@@ -91,7 +91,7 @@ unsigned int hisi_pmic_reg_read(int addr);
 void hisi_pmic_reg_write(int addr, int val);
 void hisi_pmic_reg_write_lock(int addr, int val);
 int hisi_pmic_array_read(int addr, char *buff, unsigned int len);
-int hisi_pmic_array_write(int addr, char *buff, unsigned int len);
+int hisi_pmic_array_write(int addr, const char *buff, unsigned int len);
 extern int hisi_get_pmic_irq_byname(unsigned int pmic_irq_list);
 extern int hisi_pmic_get_vbus_status(void);
 extern int hisi_pmic_special_ocp_register(char *power_name, pmic_ocp_callback handler);
@@ -108,7 +108,7 @@ static inline unsigned int hisi_pmic_reg_read(int addr) { return 0; }
 static inline void hisi_pmic_reg_write(int addr, int val) {}
 static inline void hisi_pmic_reg_write_lock(int addr, int val) {}
 static inline int hisi_pmic_array_read(int addr, char *buff, unsigned int len) { return 0; }
-static inline int hisi_pmic_array_write(int addr, char *buff, unsigned int len) { return 0; }
+static inline int hisi_pmic_array_write(int addr, const char *buff, unsigned int len) { return 0; }
 static inline int hisi_get_pmic_irq_byname(unsigned int pmic_irq_list) { return -1; }
 static inline int hisi_pmic_get_vbus_status(void) { return 1; }
 static inline int hisi_pmic_special_ocp_register(char *power_name, pmic_ocp_callback handler){ return 0; }

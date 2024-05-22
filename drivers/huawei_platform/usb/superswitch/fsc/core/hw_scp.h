@@ -38,7 +38,7 @@
 
 
 #define FCP_POLL_TIME        (100)   /* 100ms */
-#define FCP_RETRY_MAX_TIMES     (2)  /* fcp retry max times */
+#define SW_FCP_RETRY_MAX_TIMES     (2)  /* fcp retry max times */
 #define ACCP_TRANSFER_POLLING_RETRY_TIMES (5)
 #define MAX_U8 (0xff)
 

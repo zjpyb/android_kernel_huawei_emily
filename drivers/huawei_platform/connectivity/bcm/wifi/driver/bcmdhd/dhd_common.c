@@ -111,10 +111,12 @@ extern int dhd_get_concurrent_capabilites(dhd_pub_t *dhd);
 #endif
 extern int dhd_socram_dump(struct dhd_bus *bus);
 #ifdef BCM_PATCH_CVE_2016_0801
+#ifdef DNGL_EVENT_SUPPORT
 static void dngl_host_event_process(dhd_pub_t *dhdp, bcm_dngl_event_t *event,
 	bcm_dngl_event_msg_t *dngl_event, size_t pktlen);
 static int dngl_host_event(dhd_pub_t *dhdp, void *pktdata, bcm_dngl_event_msg_t *dngl_event,
 	size_t pktlen);
+#endif /* DNGL_EVENT_SUPPORT */
 #else
 static void dngl_host_event_process(dhd_pub_t *dhdp, bcm_dngl_event_t *event);
 static int dngl_host_event(dhd_pub_t *dhdp, void *pktdata);
@@ -1612,6 +1614,7 @@ wl_show_host_event(dhd_pub_t *dhd_pub, wl_event_msg_t *event, void *event_data,
 
 /* Check whether packet is a BRCM dngl event pkt. If it is, process event data. */
 #ifdef BCM_PATCH_CVE_2016_0801
+#ifdef DNGL_EVENT_SUPPORT
 int
 dngl_host_event(dhd_pub_t *dhdp, void *pktdata, bcm_dngl_event_msg_t *dngl_event, size_t pktlen)
 {
@@ -1620,6 +1623,7 @@ dngl_host_event(dhd_pub_t *dhdp, void *pktdata, bcm_dngl_event_msg_t *dngl_event
 	dngl_host_event_process(dhdp, pvt_data, dngl_event, pktlen);
 	return BCME_OK;
 }
+#endif
 #else
 int
 dngl_host_event(dhd_pub_t *dhdp, void *pktdata)

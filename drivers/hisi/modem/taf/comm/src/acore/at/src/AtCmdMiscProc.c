@@ -6401,3 +6401,85 @@ VOS_UINT32 AT_RcvMtaCclkQryCnf(VOS_VOID *pMsg)
 
 
 
+VOS_UINT32 AT_SetPseudBtsPara(VOS_UINT8 ucIndex)
+{
+    AT_MTA_SET_PSEUDBTS_REQ_STRU        stAtCmd;
+    VOS_UINT32                          ulRet;
+
+    TAF_MEM_SET_S(&stAtCmd, sizeof(stAtCmd), 0x00, sizeof(AT_MTA_SET_PSEUDBTS_REQ_STRU));
+
+     /* 参数检查 */
+    if(AT_CMD_OPT_SET_PARA_CMD != g_stATParseCmd.ucCmdOptType)
+    {
+        return AT_CME_INCORRECT_PARAMETERS;
+    }
+
+    /* 参数个数不等于2个，返回AT_CME_INCORRECT_PARAMETERS */
+    if (2 != gucAtParaIndex)
+    {
+        AT_WARN_LOG("AT_SetPseudBtsPara: At Para Num Error.");
+        return AT_CME_INCORRECT_PARAMETERS;
+    }
+
+    /* 第1个参数长度为0，返回AT_CME_INCORR ECT_PARAMETERS */
+    if ( (0 == gastAtParaList[0].usParaLen)
+      || (0 == gastAtParaList[1].usParaLen))
+    {
+        AT_WARN_LOG("AT_SetPseudBtsPara: para Length = 0");
+        return AT_CME_INCORRECT_PARAMETERS;
+    }
+
+    stAtCmd.ucPseudRat         = (VOS_UINT8)gastAtParaList[0].ulParaValue;
+    stAtCmd.ucPseudBtsQryType  = (VOS_UINT8)gastAtParaList[1].ulParaValue;
+
+    ulRet = AT_FillAndSndAppReqMsg(gastAtClientTab[ucIndex].usClientId,
+                                  0,
+                                  ID_AT_MTA_PSEUDBTS_SET_REQ,
+                                  &stAtCmd,
+                                  sizeof(AT_MTA_SET_PSEUDBTS_REQ_STRU),
+                                  I0_UEPS_PID_MTA);
+
+    if (AT_SUCCESS != ulRet)
+    {
+        AT_WARN_LOG("AT_SetPseudBtsPara: AT_FillAndSndAppReqMsg Failed!");
+        return AT_ERROR;
+    }
+
+    gastAtClientTab[ucIndex].CmdCurrentOpt = AT_CMD_PSEUDBTS_SET;
+
+    return AT_WAIT_ASYNC_RETURN;
+
+}
+
+
+VOS_UINT32 AT_RcvMtaPseudBtsIdentInd(VOS_VOID *pMsg)
+{
+    AT_MTA_MSG_STRU                     *pstMtaMsg                  = VOS_NULL_PTR;
+    MTA_AT_PSEUD_BTS_IDENT_IND_STRU     *pstPseudBtsIdentInd        = VOS_NULL_PTR;
+    VOS_UINT8                            ucIndex;
+
+    pstMtaMsg                    = (AT_MTA_MSG_STRU*)pMsg;
+    pstPseudBtsIdentInd          = (MTA_AT_PSEUD_BTS_IDENT_IND_STRU *)pstMtaMsg->aucContent;
+
+    /* 通过ClientId获取ucIndex */
+    if ( AT_FAILURE == At_ClientIdToUserId(pstMtaMsg->stAppCtrl.usClientId, &ucIndex) )
+    {
+        AT_WARN_LOG("AT_RcvMtaPseudBtsIdentInd: WARNING:AT INDEX NOT FOUND!");
+        return VOS_ERR;
+    }
+
+    gstAtSendData.usBufLen = (VOS_UINT16)At_sprintf(AT_CMD_MAX_LEN,
+                                                   (VOS_CHAR *)pgucAtSndCodeAddr,
+                                                   (VOS_CHAR *)pgucAtSndCodeAddr,
+                                                   "%s%s: %d%s",
+                                                   gaucAtCrLf,
+                                                   gastAtStringTab[AT_STRING_PSEUDBTS].pucText,
+                                                   pstPseudBtsIdentInd->ulPseudBtsType,
+                                                   gaucAtCrLf);
+
+    At_SendResultData(ucIndex, pgucAtSndCodeAddr, gstAtSendData.usBufLen);
+
+    return VOS_OK;
+}
+
+

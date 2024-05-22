@@ -17,12 +17,13 @@
 #define DELAY_1MS            (1)
 #define DELAY_0MS            (0)
 #define I2S(i) container_of((i), sensor_t, intf)
+#define Sensor2Pdev(s) container_of((s).dev, struct platform_device, dev)
 
 static hwsensor_vtbl_t s_imx576_vtbl;
 static bool power_on_status = false;//false: power off, true:power on
 static int imx576_config(hwsensor_intf_t* si, void  *argp);
 struct mutex imx576_col_power_lock;
-static hwsensor_intf_t *s_intf = NULL;
+static struct platform_device *s_pdev = NULL;
 static sensor_t *s_sensor = NULL;
 
 static struct sensor_power_setting imx576_power_setting[] = {
@@ -352,11 +353,11 @@ static int32_t imx576_platform_probe(struct platform_device* pdev)
         cam_err("%s hwsensor_register failed rc %d\n", __func__, rc);
         return -ENODEV;
     }
-    s_intf = intf;
+    s_pdev = pdev;
     rc = rpmsg_sensor_register(pdev, (void*)sensor);
     if (rc < 0) {
-        hwsensor_unregister(intf);
-        s_intf = NULL;
+        hwsensor_unregister(s_pdev);
+        s_pdev = NULL;
         cam_err("%s rpmsg_sensor_register failed rc %d\n", __func__, rc);
         return -ENODEV;
     }
@@ -372,9 +373,9 @@ static int32_t imx576_platform_remove(
         rpmsg_sensor_unregister((void*)s_sensor);
         s_sensor = NULL;
     }
-    if (NULL != s_intf) {
-        hwsensor_unregister(s_intf);
-        s_intf = NULL;
+    if (NULL != s_pdev) {
+        hwsensor_unregister(s_pdev);
+        s_pdev = NULL;
     }
     return 0;
 }
@@ -388,9 +389,9 @@ static int __init imx576_init_module(void)
 
 static void __exit imx576_exit_module(void)
 {
-    if (NULL != s_intf) {
-        hwsensor_unregister(s_intf);
-        s_intf = NULL;
+    if (NULL != s_pdev) {
+        hwsensor_unregister(s_pdev);
+        s_pdev = NULL;
     }
 
     platform_driver_unregister(&s_imx576_driver);

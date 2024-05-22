@@ -23,7 +23,7 @@
 #include <asm/uaccess.h>
 #include <linux/list.h>
 
-#include <log/log_usertype/log-usertype.h>
+#include <log/log_usertype.h>
 
 #define ERROR_NO "[Error no]:"
 

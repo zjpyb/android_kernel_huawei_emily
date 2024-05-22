@@ -12,9 +12,7 @@ extern "C" {
 #include "oal_sdio_host_if.h"
 #include "oal_net.h"
 #include "oal_ext_if.h"
-#if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
-#include "board.h"
-#endif
+
 #ifdef CONFIG_MMC
 #include <linux/module.h>
 #include <linux/kernel.h>
@@ -69,28 +67,28 @@ oal_void oal_sdio_dispose_data(struct oal_sdio  *hi_sdio);
 oal_int32 oal_sdio_data_sg_irq_etc(struct oal_sdio *hi_sdio);
 
 oal_int32 hisdio_probe_fail_powerdown_bypass = 0;
-module_param(hisdio_probe_fail_powerdown_bypass, int, S_IRUGO | S_IWUSR);
+oal_debug_module_param(hisdio_probe_fail_powerdown_bypass, int, S_IRUGO | S_IWUSR);
 
 oal_int32 hisdio_intr_mode_etc = 1;  /* 0 -sdio 1-gpio*/
-module_param(hisdio_intr_mode_etc, int, S_IRUGO | S_IWUSR);
+oal_debug_module_param(hisdio_intr_mode_etc, int, S_IRUGO | S_IWUSR);
 
 #ifdef CONFIG_SDIO_FUNC_EXTEND
 oal_uint32 sdio_extend_func_etc = 1;
 #else
 oal_uint32 sdio_extend_func_etc = 0;
 #endif
-module_param(sdio_extend_func_etc, uint, S_IRUGO | S_IWUSR);
+oal_debug_module_param(sdio_extend_func_etc, uint, S_IRUGO | S_IWUSR);
 
 oal_uint32 wifi_patch_enable_etc = 1;
-module_param(wifi_patch_enable_etc, uint, S_IRUGO | S_IWUSR);
+oal_debug_module_param(wifi_patch_enable_etc, uint, S_IRUGO | S_IWUSR);
 
 #ifdef CONFIG_ARCH_HI1103_SDIO_DEBUG
 extern int g_sdio_reset_ip;
-module_param(g_sdio_reset_ip, int, S_IRUGO | S_IWUSR);
+oal_debug_module_param(g_sdio_reset_ip, int, S_IRUGO | S_IWUSR);
 oal_uint32 wifi_sdio_fail_painc_limit = 4;
-module_param(wifi_sdio_fail_painc_limit, uint, S_IRUGO | S_IWUSR);
+oal_debug_module_param(wifi_sdio_fail_painc_limit, uint, S_IRUGO | S_IWUSR);
 oal_uint32 wifi_sdio_fail_count = 0;
-module_param(wifi_sdio_fail_count, uint, S_IRUGO | S_IWUSR);
+oal_debug_module_param(wifi_sdio_fail_count, uint, S_IRUGO | S_IWUSR);
 #endif
 
 
@@ -113,14 +111,12 @@ extern oal_void dw_mci_sdio_card_detect_change(oal_void);
 
 oal_void oal_sdio_detectcard_to_core_etc(oal_int32 val)
 {
-#if 0
 #if (_PRE_PRODUCT_ID == _PRE_PRODUCT_ID_HI1102_HOST)
-    oal_print_hi11xx_log(HI11XX_LOG_INFO, "hi110x mmc detect, vendor id:0x%x  product id:0x%x",
+    oal_print_hi11xx_log(HI11XX_LOG_DBG, "hi110x mmc detect, vendor id:0x%x  product id:0x%x",
                                     HISDIO_VENDOR_ID_HI1102,HISDIO_PRODUCT_ID_HISI);
 #elif (_PRE_PRODUCT_ID == _PRE_PRODUCT_ID_HI1103_HOST)
-    oal_print_hi11xx_log(HI11XX_LOG_INFO, "hi110x mmc detect, vendor id:0x%x  product id:0x%x",
+    oal_print_hi11xx_log(HI11XX_LOG_DBG, "hi110x mmc detect, vendor id:0x%x  product id:0x%x",
                                     HISDIO_VENDOR_ID_HI1103,HISDIO_PRODUCT_ID_HISI);
-#endif
 #endif
     dw_mci_sdio_card_detect_change();
 }
@@ -890,7 +886,7 @@ oal_int32 oal_sdio_transfer_rx_reserved_buff_etc(struct oal_sdio *hi_sdio)
 #undef CONFIG_SDIO_RX_NETBUF_ALLOC_FAILED_DEBUG
 #ifdef CONFIG_SDIO_RX_NETBUF_ALLOC_FAILED_DEBUG
 oal_uint32 rx_alloc_netbuf_debug = 0;
-module_param(rx_alloc_netbuf_debug, uint, S_IRUGO | S_IWUSR);
+oal_debug_module_param(rx_alloc_netbuf_debug, uint, S_IRUGO | S_IWUSR);
 #endif
 
 oal_netbuf_stru *oal_sdio_alloc_rx_netbuf_etc(oal_uint32 ul_len)
@@ -1966,7 +1962,7 @@ OAL_STATIC oal_int32 oal_sdio_probe(struct sdio_func *func, const struct sdio_de
          return -OAL_EFAIL;
     };
 
-    //oal_print_hi11xx_log(HI11XX_LOG_INFO, "sdio function[%d] match,vendor id = %x;product id = %x",func->num, ids->vendor, ids->device);
+    oal_print_hi11xx_log(HI11XX_LOG_DBG, "sdio function[%d] match,vendor id = %x;product id = %x",func->num, ids->vendor, ids->device);
 
     /* alloce sdio control struct */
     hi_sdio = oal_sdio_alloc(func);
@@ -2301,6 +2297,9 @@ OAL_STATIC oal_int32 _oal_sdio_transfer_scatt(struct oal_sdio *hi_sdio, oal_int3
         sdio_release_host(func);
         return -OAL_EFAIL;
     }
+#ifdef CONFIG_HISI_SDIO_TIME_DEBUG
+    time_start = ktime_get();
+#endif
     ret = oal_mmc_io_rw_scat_extended_etc(hi_sdio, write,
                                    hi_sdio->func->num, addr,
                                    0, sg,
@@ -3396,31 +3395,6 @@ oal_uint32 oal_sdio_func_max_req_size_etc(struct oal_sdio *pst_hi_sdio)
 
 	size = OAL_MIN(size,size_device);
     return size;
-}
-
-
-oal_void hi_wlan_power_set_etc(oal_int32 on)
-{
-    /*
-     * this should be done in mpw1
-     * it depends on the gpio used to power up and down 1101 chip
-     *
-     * */
-#if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
-    if(on)
-    {
-        oal_print_hi11xx_log(HI11XX_LOG_INFO, "sdio probe:pull up power on gpio");
-        board_host_wakeup_dev_set(0);
-        board_power_on_etc(WLAN_POWER);
-    }
-    else
-    {
-        oal_print_hi11xx_log(HI11XX_LOG_INFO, "sdio probe:pull down power on gpio");
-        board_power_off_etc(WLAN_POWER);
-        board_host_wakeup_dev_set(0);
-    }
-#endif
-
 }
 
 

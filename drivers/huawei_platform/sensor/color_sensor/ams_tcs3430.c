@@ -67,7 +67,6 @@ HWLOG_REGIST();
 /****************************************************************************
  *                     OSAL Device Com Interface
  ****************************************************************************/
-static struct class *color_class;
 static bool ams_tcs3430_getDeviceInfo(ams_tcs3430_deviceInfo_t * info);
 static bool ams_tcs3430_deviceInit(ams_tcs3430_deviceCtx_t * ctx, AMS_PORT_portHndl * portHndl);
 static bool ams_tcs3430_deviceEventHandler(ams_tcs3430_deviceCtx_t * ctx, bool inCalMode);
@@ -330,7 +329,6 @@ static int ams_tcs3430_getField(AMS_PORT_portHndl * portHndl, ams_tcs3430_device
 static int ams_tcs3430_setField(AMS_PORT_portHndl * portHndl, ams_tcs3430_deviceRegister_t reg, UINT8 data, ams_tcs3430_regMask_t mask)
 {
 	int write_count = 1;
-	UINT8 length = 1;
 	UINT8 original_data = 0;
 	UINT8 new_data = 0;
 
@@ -353,6 +351,10 @@ static int ams_tcs3430_setField(AMS_PORT_portHndl * portHndl, ams_tcs3430_device
 	}
 
 	return write_count;
+}
+
+static int ams_tcs3430_rgb_report_type(void){
+    return AWB_SENSOR_RAW_SEQ_TYPE_R_G_B_IR;
 }
 
 static ams_tcs3430_deviceIdentifier_e ams_tcs3430_testForDevice(AMS_PORT_portHndl * portHndl){
@@ -414,39 +416,35 @@ static UINT8 ams_tcs3430_gainToReg(UINT32 x){
 }
 
 
-static INT32 ams_tcs3430_getGain(ams_tcs3430_deviceCtx_t * ctx){
+static INT32 ams_tcs3430_getGain(void *ctx)
+{
 	UINT8 cfg1_reg_data = 0;
 	UINT8 cfg2_reg_data = 0;
 	INT32 gain = 0;
 
-	if (ctx == NULL){
+	if (ctx == NULL) {
 		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
 		return true;
 	}
 
-	ams_tcs3430_getField(ctx->portHndl, AMS_TCS3430_DEVREG_CFG1, &cfg1_reg_data, MASK_AGAIN);
-	ams_tcs3430_getField(ctx->portHndl, AMS_TCS3430_DEVREG_CFG2, &cfg2_reg_data, MASK_HGAIN);
-	if (cfg2_reg_data)
-	{
+	ams_tcs3430_getField(((ams_tcs3430_deviceCtx_t *)ctx)->portHndl, AMS_TCS3430_DEVREG_CFG1, &cfg1_reg_data, MASK_AGAIN);
+	ams_tcs3430_getField(((ams_tcs3430_deviceCtx_t *)ctx)->portHndl, AMS_TCS3430_DEVREG_CFG2, &cfg2_reg_data, MASK_HGAIN);
+	if (cfg2_reg_data) {
 		if (cfg1_reg_data == AGAIN_64)
-		{
 		   	gain = ams_tcs3430_als_gains[cfg1_reg_data + 1];
-		}
-		else
-		{
+		else {
 		   	AMS_PORT_log_Msg(AMS_DEBUG,"WARNING: illegal gain setting, HGAIN set but AGAIN not 64x\n");
 		   	gain = ams_tcs3430_als_gains[cfg1_reg_data]; /* gain is undetermined, but the algorithm
 		                                     * needs a non-zero value */
 		}
-	}
-	else
-	{
-	    gain = ams_tcs3430_als_gains[cfg1_reg_data];
+        } else {
+		gain = ams_tcs3430_als_gains[cfg1_reg_data];
 	}
 	return gain;
 }
 
-static INT32 ams_tcs3430_setGain(ams_tcs3430_deviceCtx_t * ctx, uint32_t gain){
+static INT32 ams_tcs3430_setGain(void *ctx, int gain)
+{
 	INT32 ret = 0;
 
 	if (ctx == NULL){
@@ -455,27 +453,21 @@ static INT32 ams_tcs3430_setGain(ams_tcs3430_deviceCtx_t * ctx, uint32_t gain){
 	}
 
 	AMS_PORT_log_1("ams_tcs3430_setGain: %d\n", gain);
-
-	if (gain >= ams_tcs3430_alsGain_conversion[(sizeof(ams_tcs3430_alsGain_conversion) / sizeof(uint32_t)) -1])
-	{
+	if ((UINT32)gain >= ams_tcs3430_alsGain_conversion[(sizeof(ams_tcs3430_alsGain_conversion) / sizeof(uint32_t)) -1]) {
 	   	 /* First, set AGAIN to 64x in CFG1*/
-	    ret += ams_tcs3430_setField(ctx->portHndl, AMS_TCS3430_DEVREG_CFG1, AGAIN_64, MASK_AGAIN);
+	    ret += ams_tcs3430_setField(((ams_tcs3430_deviceCtx_t *)ctx)->portHndl, AMS_TCS3430_DEVREG_CFG1, AGAIN_64, MASK_AGAIN);
 
 	    	/* Second set the HGAIN bit in CFG2*/
-	    ret += ams_tcs3430_setField(ctx->portHndl, AMS_TCS3430_DEVREG_CFG2, HGAIN, MASK_HGAIN);
-	}
-	else
-	{
+	    ret += ams_tcs3430_setField(((ams_tcs3430_deviceCtx_t *)ctx)->portHndl, AMS_TCS3430_DEVREG_CFG2, HGAIN, MASK_HGAIN);
+	} else {
 	   	 /* Make sure HGAIN bit is clear in CFG2*/
-	    ret += ams_tcs3430_setField(ctx->portHndl, AMS_TCS3430_DEVREG_CFG2, 0, MASK_HGAIN);
+	    ret += ams_tcs3430_setField(((ams_tcs3430_deviceCtx_t *)ctx)->portHndl, AMS_TCS3430_DEVREG_CFG2, 0, MASK_HGAIN);
 
 	    	/* Set AGAIN in CFG1 */
-	    ret += ams_tcs3430_setField(ctx->portHndl, AMS_TCS3430_DEVREG_CFG1, ams_tcs3430_gainToReg(gain), MASK_AGAIN);
+	    ret += ams_tcs3430_setField(((ams_tcs3430_deviceCtx_t *)ctx)->portHndl, AMS_TCS3430_DEVREG_CFG1, ams_tcs3430_gainToReg((UINT32)gain), MASK_AGAIN);
 	}
-
-	ctx->algCtx.als_data.gain =  gain;
-
-	return (ret);
+	((ams_tcs3430_deviceCtx_t *)ctx)->algCtx.als_data.gain =  (UINT32)gain;
+	return ret;
 }
 
 static INT32 ams_tcs3430_setAtimeInMs(ams_tcs3430_deviceCtx_t * ctx, int atime_ms){
@@ -557,7 +549,7 @@ static bool ams_tcs3430_deviceSetConfig(ams_tcs3430_deviceCtx_t * ctx, ams_tcs34
 	return 0;
 }
 
-static bool ams_tcs3430_get_max_min_raw(ams_tcs3430_adc_data_t *current_raw, uint32_t* max, uint32_t *min)
+static void ams_tcs3430_get_max_min_raw(ams_tcs3430_adc_data_t *current_raw, uint32_t* max, uint32_t *min)
 {
 	*max = current_raw->x;
 	if (current_raw->y > *max)
@@ -587,7 +579,7 @@ static bool ams_tcs3430_get_max_min_raw(ams_tcs3430_adc_data_t *current_raw, uin
 static bool ams_tcs3430_saturation_check(ams_tcs3430_deviceCtx_t * ctx, ams_tcs3430_adc_data_t *current_raw)
 {
 	uint32_t saturation = 0;
-	saturation = (AMS_TCS3430_MS_TO_ATIME(ctx->algCtx.als_data.atime_ms) + 1) << 10 - 1;//calculate saturation value
+	saturation = ((AMS_TCS3430_MS_TO_ATIME(ctx->algCtx.als_data.atime_ms) + 1) << 10) - 1;//calculate saturation value
 	saturation *= 9;//threadhold ratio 0.9 for saturation
 	saturation /= 10;//threadhold ratio 0.9 for saturation
 
@@ -765,25 +757,6 @@ handleALS_exit:
 	return re_enable;
 }
 
-static void ams_tcs3430_amuxToggle(ams_tcs3430_deviceCtx_t * ctx)
-{
-    uint8_t reg_data =0;
-
-	if (ctx == NULL){
-		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
-		return true;
-	}
-
-    ams_tcs3430_getField(ctx->portHndl, AMS_TCS3430_DEVREG_CFG1, &reg_data, MASK_AMUX);
-
-    if (reg_data & MASK_AMUX)
-       	reg_data &= ~MASK_AMUX;  /* clear */
-    else
-        reg_data |= MASK_AMUX;   /* set */
-
-    ams_tcs3430_setField(ctx->portHndl, AMS_TCS3430_DEVREG_CFG1, reg_data, MASK_AMUX);
-}
-
 /* --------------------------------------------------------------------*/
 /* Called by the OSAL interrupt service routine                        */
 /* --------------------------------------------------------------------*/
@@ -802,9 +775,6 @@ static bool ams_tcs3430_deviceEventHandler(ams_tcs3430_deviceCtx_t * ctx, bool i
     if (ctx->algCtx.als_data.status & (MASK_AINT)){
 	    if (ctx->mode & AMS_TCS3430_MODE_ALS){
 			ret = ams_tcs3430_handleALS(ctx, inCalMode);
-	        /*ams_tcs3430_amuxToggle(ctx);*/
-			/* Clear the interrupt */
-			//ams_tcs3430_setField(ctx->portHndl, AMS_TCS3430_DEVREG_STATUS, (MASK_ASAT | MASK_AINT), AMS_TCS3430_HIGH);
 			ams_tcs3430_setByte(ctx->portHndl, AMS_TCS3430_DEVREG_STATUS, (MASK_ASAT | MASK_AINT));
 		}
     }
@@ -857,7 +827,7 @@ static void ams_tcs3430_getDefaultCalData(ams_tcs3430_calibrationData_t *cal_dat
 {
 	if (cal_data == NULL){
 		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
-		return true;
+		return;
 	}
 
     cal_data->timeBase_us = AMS_TCS3430_USEC_PER_TICK;
@@ -972,7 +942,7 @@ static int get_cal_para_from_nv(void)
 {
 	int i,ret;
 
-	ret = read_color_calibrate_data_from_nv(RGBAP_CALI_DATA_NV_NUM, RGBAP_CALI_DATA_SIZE, "RGBAP", &color_nv_para);
+	ret = read_color_calibrate_data_from_nv(RGBAP_CALI_DATA_NV_NUM, RGBAP_CALI_DATA_SIZE, "RGBAP", (char *)&color_nv_para);
 	if(ret < 0){
 		hwlog_err("\nAMS_Driver: %s: fail,use default para!!\n", __func__);
 		for (i = 0; i < CAL_STATE_GAIN_LAST; i++){
@@ -1043,7 +1013,7 @@ static int save_cal_para_to_nv(struct colorDriver_chip *chip)
 
 	}
 
-	ret = write_color_calibrate_data_to_nv(RGBAP_CALI_DATA_NV_NUM, RGBAP_CALI_DATA_SIZE, "RGBAP", &color_nv_para);
+	ret = write_color_calibrate_data_to_nv(RGBAP_CALI_DATA_NV_NUM, RGBAP_CALI_DATA_SIZE, "RGBAP", (char *)&color_nv_para);
 	if(ret < 0){
 		hwlog_err("\nAMS_Driver: %s: fail\n", __func__);
 	}
@@ -1256,72 +1226,6 @@ static void  osal_report_als(struct colorDriver_chip *chip)
 	}
 }
 
-#if defined(CONFIG_AMS_OPTICAL_SENSOR_ALS_XYZ)
-static ssize_t osal_als_x_show(struct device *dev,
-	struct device_attribute *attr, char *buf)
-{
-	export_alsData_t outData;
-	if(NULL == dev || NULL == attr || NULL == buf){
-		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
-		return 0;
-		}
-	struct colorDriver_chip *chip = dev_get_drvdata(dev);
-	ams_tcs3430_deviceGetAls(chip->deviceCtx, &outData);
-	return snprintf(buf, PAGE_SIZE, "%d\n", outData.rawX);
-}
-
-static ssize_t osal_als_y_show(struct device *dev,
-	struct device_attribute *attr, char *buf)
-{
-	export_alsData_t outData;
-	if(NULL == dev){
-		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
-		return 0;
-		}
-	struct colorDriver_chip *chip = dev_get_drvdata(dev);
-	ams_tcs3430_deviceGetAls(chip->deviceCtx, &outData);
-	return snprintf(buf, PAGE_SIZE, "%d\n", outData.rawY);
-}
-static ssize_t osal_als_z_show(struct device *dev,
-	struct device_attribute *attr, char *buf)
-{
-	export_alsData_t outData;
-	if(NULL == dev){
-		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
-		return 0;
-		}
-	struct colorDriver_chip *chip = dev_get_drvdata(dev);
-	ams_tcs3430_deviceGetAls(chip->deviceCtx, &outData);
-	return snprintf(buf, PAGE_SIZE, "%d\n", outData.rawZ);
-}
-
-static ssize_t osal_als_ir1_show(struct device *dev,
-	struct device_attribute *attr, char *buf)
-{
-	export_alsData_t outData;
-	if(NULL == dev){
-		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
-		return 0;
-		}
-	struct colorDriver_chip *chip = dev_get_drvdata(dev);
-	ams_tcs3430_deviceGetAls(chip->deviceCtx, &outData);
-	return snprintf(buf, PAGE_SIZE, "%d\n", outData.rawIR);
-}
-
-static ssize_t osal_als_ir2_show(struct device *dev,
-	struct device_attribute *attr, char *buf)
-{
-	export_alsData_t outData;
-	if(NULL == dev){
-		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
-		return 0;
-		}
-	struct colorDriver_chip *chip = dev_get_drvdata(dev);
-	ams_tcs3430_deviceGetAls(chip->deviceCtx, &outData);
-	return snprintf(buf, PAGE_SIZE, "%d\n", outData.rawIR2);
-}
- #endif /* End of  XYZ */
-
 int ams_tcs3430_setenable(bool enable)
 {
 	struct colorDriver_chip *chip = p_chip;
@@ -1335,49 +1239,6 @@ int ams_tcs3430_setenable(bool enable)
 	return 1;
 }
 EXPORT_SYMBOL_GPL(ams_tcs3430_setenable);
-
-static ssize_t osal_als_enable_show(struct device *dev,
-	struct device_attribute *attr, char *buf)
-{
-	if(NULL == dev){
-		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
-		return 0;
-		}
-	struct colorDriver_chip *chip = dev_get_drvdata(dev);
-	ams_tcs3430_ams_mode_t mode = AMS_TCS3430_MODE_OFF;
-
-	ams_tcs3430_deviceGetMode(chip->deviceCtx, &mode);
-
-	if (mode & AMS_TCS3430_MODE_ALS){
-		return snprintf(buf, PAGE_SIZE, "%d\n", 1);
-	} else {
-		return snprintf(buf, PAGE_SIZE, "%d\n", 0);
-	}
-}
-
-static ssize_t osal_als_enable_store(struct device *dev,
-				struct device_attribute *attr,
-				const char *buf, size_t size)
-{
-	if(NULL == dev ||NULL==attr || NULL==buf)
-	{
-		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
-		return 0;
-		}
-	struct colorDriver_chip *chip = dev_get_drvdata(dev);
-	bool value;
-
-	if (strtobool(buf, &value))
-		return -EINVAL;
-
-	if (value)
-		osal_als_enable_set(chip, AMSDRIVER_ALS_ENABLE);
-	else
-		osal_als_enable_set(chip, AMSDRIVER_ALS_DISABLE);
-
-	return size;
-}
-
 
 void ams_show_calibrate(struct colorDriver_chip *chip, color_sensor_output_para * out_para)
 {
@@ -1480,8 +1341,6 @@ void ams_show_enable(struct colorDriver_chip *chip, int *state)
 
 void ams_store_enable(struct colorDriver_chip *chip, int state)
 {
-	ams_tcs3430_ams_mode_t mode = 0;
-
 	if(NULL == chip){
 		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
 		return;
@@ -1500,100 +1359,19 @@ void ams_store_enable(struct colorDriver_chip *chip, int state)
  *                     OSAL Linux Input Driver
  ****************************************************************************/
 
-static int amsdriver_pltf_power_on(struct colorDriver_chip *chip)
-{
-	int rc = 0;
-	if(NULL == chip){
-		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
-		return rc;
-	}
-	return rc;
-}
-
-static int amsdriver_pltf_power_off(struct colorDriver_chip *chip)
-{
-	int rc = 0;
-	if(NULL == chip){
-		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
-		return rc;
-	}
-	return rc;
-}
-
-static int amsdriver_power_on(struct colorDriver_chip *chip)
-{
-	int rc = 0;
-	if(NULL == chip){
-		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
-		return rc;
-	}
-	rc = amsdriver_pltf_power_on(chip);
-	if (rc){
-		return rc;
-	}
-	dev_info(&chip->client->dev, "%s: chip was off, restoring regs\n",
-			__func__);
-	return ams_tcs3430_deviceInit((ams_tcs3430_deviceCtx_t*)chip->deviceCtx, chip->client);
-}
-
-#ifdef CONFIG_AMS_OPTICAL_SENSOR_ALS
-static int osal_als_idev_open(struct input_dev *idev)
-{
-	if(NULL == idev){
-		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
-		return 0;
-	}
-	struct colorDriver_chip *chip = dev_get_drvdata(&idev->dev);
-	int rc = 0;
-
-	dev_info(&idev->dev, "%s\n", __func__);
-	AMS_MUTEX_LOCK(&chip->lock);
-	if (chip->unpowered) {
-		rc = amsdriver_power_on(chip);
-		if (rc)
-			goto chip_on_err;
-	}
-
-	rc = osal_als_enable_set(chip, AMSDRIVER_ALS_ENABLE);
-	if (rc)
-		amsdriver_pltf_power_off(chip);
-chip_on_err:
-	AMS_MUTEX_UNLOCK(&chip->lock);
-	return 0;
-}
-
-static void osal_als_idev_close(struct input_dev *idev)
-{
-	if(NULL == idev){
-		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
-		return;
-	}
-	int rc = 0;
-	struct colorDriver_chip *chip = dev_get_drvdata(&idev->dev);
-	dev_info(&idev->dev, "%s\n", __func__);
-
-	AMS_MUTEX_LOCK(&chip->lock);
-	rc = osal_als_enable_set(chip, AMSDRIVER_ALS_DISABLE);
-	if (rc){
-		amsdriver_pltf_power_off(chip);
-	}
-	AMS_MUTEX_UNLOCK(&chip->lock);
-}
-#endif
-
 static void amsdriver_work(struct work_struct *work)
 {
 	int ret = 0;
 	bool re_enable = false;
 	ams_tcs3430_ams_mode_t mode = 0;
+	struct colorDriver_chip *chip = NULL;
 
-	if(NULL == work){
+	if (work == NULL) {
 		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
 		return;
 	}
-	struct colorDriver_chip *chip = \
-		container_of(work, struct colorDriver_chip, als_work);
-	if(NULL == chip){
+	chip = container_of(work, struct colorDriver_chip, als_work);
+	if (chip == NULL) {
 		hwlog_err("\nAMS_Driver: %s: Pointer chip is NULL\n", __func__);
 		return;
 	}
@@ -1628,33 +1406,27 @@ static void amsdriver_work(struct work_struct *work)
 	}
 #endif
 	ams_tcs3430_deviceGetMode(chip->deviceCtx, &mode);
-	if (((mode & AMS_TCS3430_MODE_ALS) == AMS_TCS3430_MODE_ALS)){
-		if(chip->inCalMode == false){
-			if (re_enable)
-			{
+	if (((mode & AMS_TCS3430_MODE_ALS) == AMS_TCS3430_MODE_ALS)) {
+		if (chip->inCalMode == false) {
+			if (re_enable) {
 				mod_timer(&chip->work_timer, jiffies + msecs_to_jiffies(106));// timer set as 106ms
 				hwlog_info("timer set as 106ms \n");
-			}
-			else
-			{
+			} else {
 				mod_timer(&chip->work_timer, jiffies + HZ/10);// timer set as 100ms
 				hwlog_info("timer set as 100ms \n");
 			}
-		}else{
+		} else {
 			mod_timer(&chip->work_timer, jiffies + msecs_to_jiffies(120));//calibrate mode set timer for 120ms
 			hwlog_info("in calibrate mode mod timer set as 120ms \n");
 		}
-	}else{
-		AMS_PORT_log_1("amsdriver_work: not mod timer mode = %d\n",mode);
+	} else {
+		AMS_PORT_log_1("amsdriver_work: not mod timer mode = %d\n", mode);
 	}
-
-bypass:
-
 	AMS_MUTEX_UNLOCK(&chip->lock);
 }
 
 #ifdef CONFIG_HUAWEI_DSM
-static void amsdriver_dmd_work(void)
+static void amsdriver_dmd_work(struct work_struct *work)
 {
 	if (!dsm_client_ocuppy(shb_dclient)) {
 		if (color_devcheck_dmd_result == false){
@@ -1671,16 +1443,16 @@ int amsdriver_probe(struct i2c_client *client,
 {
 	int ret = 0;
 	int i = 0;
-	if(NULL == client){
-		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
-		return -1;
-	}
 	struct device *dev = &client->dev;
 	static struct colorDriver_chip *chip = NULL;
 	struct driver_i2c_platform_data *pdata = dev->platform_data;
 	ams_tcs3430_deviceInfo_t amsDeviceInfo;
 	ams_tcs3430_deviceIdentifier_e deviceId;
 
+	if (client == NULL) {
+		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
+		return -1;
+	}
 	/****************************************/
 	/* Validate bus and device registration */
 	/****************************************/
@@ -1779,7 +1551,7 @@ int amsdriver_probe(struct i2c_client *client,
 	chip->color_enable_store_state = ams_store_enable;
 	chip->color_sensor_getGain = ams_tcs3430_getGain;
 	chip->color_sensor_setGain = ams_tcs3430_setGain;
-
+    chip->color_report_type = ams_tcs3430_rgb_report_type;
 	//dev_set_drvdata(chip->dev, chip);//add by zpl
 	p_chip = chip;
 
@@ -1796,10 +1568,6 @@ int amsdriver_probe(struct i2c_client *client,
 	/* Exit points for device functional failures (RemCon, Prox, ALS, Gesture)      */
 	/* This must be unwound in the correct order, reverse from initialization above */
 	/********************************************************************************/
-#ifdef CONFIG_AMS_OPTICAL_SENSOR_ALS
-
-input_a_alloc_failed:
-#endif
 
 	/********************************************************************************/
 	/* Exit points for general device initialization failures                       */
@@ -1818,12 +1586,14 @@ init_failed:
 
 int amsdriver_suspend(struct device *dev)
 {
-	if(NULL == dev){
+	struct colorDriver_chip  *chip = NULL;
+
+	if (dev == NULL) {
 		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
 		return -1;
 	}
-	struct colorDriver_chip  *chip = dev_get_drvdata(dev);
-	if(NULL == chip){
+	chip = dev_get_drvdata(dev);
+	if (chip == NULL) {
 		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
 		return -1;
 	}
@@ -1832,13 +1602,10 @@ int amsdriver_suspend(struct device *dev)
 	AMS_MUTEX_LOCK(&chip->lock);
 	chip->in_suspend = 1;
 
-	if (chip->wake_irq) {
+	if (chip->wake_irq)
 		irq_set_irq_wake(chip->client->irq, 1);
-	} else if (!chip->unpowered) {
+	else if (!chip->unpowered)
 		dev_info(dev, "powering off\n");
-		/* TODO
-		   platform power off */
-	}
 	AMS_MUTEX_UNLOCK(&chip->lock);
 
 	return 0;
@@ -1846,12 +1613,14 @@ int amsdriver_suspend(struct device *dev)
 
 int amsdriver_resume(struct device *dev)
 {
-	if(NULL == dev){
+	struct colorDriver_chip *chip = NULL;
+
+	if (dev == NULL) {
 		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
 		return -1;
 	}
-	struct colorDriver_chip *chip = dev_get_drvdata(dev);
-	if(NULL == chip){
+	chip = dev_get_drvdata(dev);
+	if (chip == NULL) {
 		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
 		return -1;
 	}
@@ -1874,21 +1643,19 @@ int amsdriver_resume(struct device *dev)
 
 int amsdriver_remove(struct i2c_client *client)
 {
-	if(NULL == client){
+	struct colorDriver_chip *chip = NULL;
+
+	if (client == NULL) {
 		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
 		return -1;
 	}
-	struct colorDriver_chip *chip = i2c_get_clientdata(client);
-	if(NULL == chip){
+	chip = i2c_get_clientdata(client);
+	if (chip == NULL) {
 		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
 		return -1;
 	}
 
 	free_irq(client->irq, chip);
-
-	/* TODO
-	   platform teardown */
-
 	i2c_set_clientdata(client, NULL);
 	kfree(chip->deviceCtx);
 	kfree(chip);

@@ -13,6 +13,8 @@
 #include <media/huawei/hisp200_cfg.h>
 #elif defined( HISP250_CAMERA  )
 #include <media/huawei/hisp250_cfg.h>
+#elif defined( HISP210_CAMERA  )
+#include <media/huawei/hisp210_cfg.h>
 #else
 #include <media/huawei/hisp_cfg.h>
 #endif
@@ -20,6 +22,7 @@
 #include <linux/rpmsg.h>
 #include <linux/platform_device.h>
 #include <linux/videodev2.h>
+#include <media/v4l2-subdev.h>
 #include <media/videobuf2-core.h>
 #include <linux/clk.h>
 #include <linux/dma-buf.h>
@@ -124,11 +127,11 @@ static inline char  *hisp_intf_get_name(hisp_intf_t *i)
 }
 
 extern int32_t
-hisp_register(
+hisp_register(struct platform_device *pdev,
 	      hisp_intf_t *hw, hisp_notify_intf_t **notify);
 
 extern void
-hisp_unregister(hisp_intf_t* isp_intf);
+hisp_unregister(struct platform_device* pdev);
 int hisp_get_dt_data(struct platform_device *pdev, hisp_dt_data_t *dt);
 
 extern int

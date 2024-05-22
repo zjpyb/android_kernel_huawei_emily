@@ -188,6 +188,9 @@ struct fts_ts_info;
 #define FTS_BARCODE_SIZE 39
 #define LOCKDOWN_2D_BAR_INFO_HEAD_LEN 2
 
+#define BUFFSIZE_INIT	(6 * 2)
+#define ST_DATALEN	9
+
 /*
  * Dispatch event handler
  */

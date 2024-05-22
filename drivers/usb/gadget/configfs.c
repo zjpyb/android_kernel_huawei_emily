@@ -30,7 +30,7 @@ static struct class *android_class;
 static struct device *android_device;
 static int index;
 
-struct device *create_function_device(char *name)
+struct device *create_function_device(const char *name)
 {
 	if (android_device && !IS_ERR(android_device))
 		return device_create(android_class, android_device,
@@ -1025,7 +1025,7 @@ end:
 static ssize_t ext_prop_data_show(struct config_item *item, char *page)
 {
 	struct usb_os_desc_ext_prop *ext_prop = to_usb_os_desc_ext_prop(item);
-	int len = ext_prop->data_len;
+	unsigned int len = (unsigned)ext_prop->data_len;
 
 	if (ext_prop->type == USB_EXT_PROP_UNICODE ||
 	    ext_prop->type == USB_EXT_PROP_UNICODE_ENV ||
@@ -1377,11 +1377,13 @@ static int configfs_composite_bind(struct usb_gadget *gadget,
 		gi->cdev.desc.iSerialNumber = s[USB_GADGET_SERIAL_IDX].id;
 	}
 
+	pr_info("%s:use_os_desc %d\n", __func__, gi->use_os_desc);
 	if (gi->use_os_desc) {
 		cdev->use_os_string = true;
 		cdev->b_vendor_code = gi->b_vendor_code;
 		memcpy(cdev->qw_sign, gi->qw_sign, OS_STRING_QW_SIGN_LEN);
-	}
+	} else
+		cdev->use_os_string = false;
 
 	if (gadget_is_otg(gadget) && !otg_desc[0]) {
 		struct usb_descriptor_header *usb_desc;

@@ -14,6 +14,7 @@ typedef enum {
 typedef struct {
 	const char *param_name;
 	big_data_param_type_t param_type;
+	int tag;
 } big_data_param_detail_t;
 
 typedef struct {

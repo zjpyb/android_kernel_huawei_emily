@@ -11,6 +11,7 @@
 #include <linux/init.h>
 #include <linux/string.h>
 #include <linux/mutex.h>
+#include <linux/slab.h>
 #include "../Platform_Linux/fusb3601_global.h"
 #include "../Platform_Linux/platform_helpers.h"
 
@@ -42,11 +43,11 @@ void superswitch_dsm_report(int num)
 {
 	FSC_U8 i = 0;
 	FSC_U8 data;
-	int ret;
-	char dsm_buff[SUPERSWITCH_DMDLOG_SIZE] = { 0 };
+	char *dsm_buff = NULL;
 	char buf[SUPERSWITCH_DMD_STRING_SIZE] = { 0 };
 	struct fusb3601_chip* chip = fusb3601_GetChip();
 	struct Port* port;
+
 	if (!chip) {
 		pr_err("FUSB  %s - Error: Chip structure is NULL!\n", __func__);
 		return;
@@ -57,7 +58,15 @@ void superswitch_dsm_report(int num)
 		return;
 	}
 
-	snprintf(dsm_buff, sizeof(dsm_buff), "tc_state= 0x%x\n", port->tc_state_);
+	dsm_buff = (char *)kzalloc(sizeof(char) * SUPERSWITCH_DMDLOG_SIZE,
+		GFP_KERNEL);
+	if (!dsm_buff) {
+		pr_err("%s: dsm_buff NULL!!!\n", __func__);
+		return;
+	}
+
+	snprintf(dsm_buff, sizeof(char) * SUPERSWITCH_DMDLOG_SIZE,
+		"tc_state= 0x%x\n", port->tc_state_);
 
 	for (i = 0; i < sizeof(reg_addr)/sizeof(reg_addr[0]); ++i) {
 		(void)FUSB3601_fusb_I2C_ReadData(reg_addr[i],&data);
@@ -67,6 +76,8 @@ void superswitch_dsm_report(int num)
 	}
 
 	power_dsm_dmd_report(POWER_DSM_SUPERSWITCH, num, dsm_buff);
+
+	kfree(dsm_buff);
 }
 #endif
 
@@ -950,6 +961,20 @@ void FUSB3601_ResetProtocolLayer(struct Port *port)
 	port->registers_.RxDetect.EN_HRD_RST = 1;
 	/* Commit the configuration to the device */
 	FUSB3601_WriteRegister(port, regRXDETECT);
+}
+
+int FUSB3601_GetStateCC(struct Port *port)
+{
+	int val = 0;
+	if (port->double56k) {
+		val = 0x5;
+		return val;
+	} else {
+		FUSB3601_ReadRegister(port, regCCSTAT);
+		val = port->registers_.CCStat.byte;
+		pr_info("FUSB  %s - CCStat: [0x%x], val = %d\n", __func__, port->registers_.CCStat.byte, val);
+		return val;
+	}
 }
 
 void FUSB3601_set_policy_state(struct Port *port, PolicyState_t state)

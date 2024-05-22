@@ -57,11 +57,8 @@ obj-y				+= char/
 # iommu/ comes before gpu as gpu are using iommu controllers
 obj-$(CONFIG_IOMMU_SUPPORT)	+= iommu/
 
-obj-$(CONFIG_GPU_GMC_GENERIC)	+= gpu/gmc/
-
 # gpu/ comes after char for AGP vs DRM startup and after iommu
-obj-y				+= gpu/drm/ gpu/host1x/ gpu/ipu-v3/ gpu/vga/
-obj-$(CONFIG_MALI_MIDGARD)	+= gpu/arm/
+obj-y				+= gpu/
 
 obj-$(CONFIG_CONNECTOR)		+= connector/
 
@@ -201,13 +198,13 @@ obj-$(CONFIG_HUAWEI_PLATFORM) += huawei_platform/
 obj-$(CONFIG_HUAWEI_DSM)        += dsm/
 obj-$(CONFIG_HUAWEI_WPA_DMD) += wpa_dmd/
 obj-$(CONFIG_CONNECTIVITY_HI110X) += connectivity/
-obj-$(CONFIG_LOG_EXCEPTION) += log_usertype/
 obj-$(CONFIG_LOGGER_EXTEND) += log/
 obj-$(CONFIG_CONTEXTHUB)        += contexthub/
 obj-$(CONFIG_HW_GADGET) += hwusb/
 obj-$(CONFIG_HUAWEI_BFM) += hwbfm/
 obj-$(CONFIG_HW_ZEROHUNG) += hwzerohung/
 obj-$(CONFIG_HW_FDLEAK) += hwfdleak/
+obj-$(CONFIG_HW_ERECOVERY) += hwerecovery/
 obj-$(CONFIG_HW_WIFI)       += hwnet/
 obj-y += devkit/tpkit/
 obj-$(CONFIG_AUDIOKIT) += devkit/audiokit/
@@ -216,3 +213,6 @@ obj-$(CONFIG_HW_MEMORY_MONITOR) += mmonitor/
 obj-$(CONFIG_HW_MEMORY_MONITOR) += allocpages_delayacct/
 obj-y += cfi/
 obj-$(CONFIG_HUAWEI_DUBAI) += dubai/
+obj-$(CONFIG_HUAWEI_STORAGE_ROFA) += storage_rofa/
+obj-$(CONFIG_OASES) += oases/
+obj-$(CONFIG_OAE_FW_PATCH) += oae_fw_patch/

@@ -298,7 +298,8 @@ int elan_parse_csvfile(char *file_path, char *target_name, int32_t  *data, int r
 		}
 	}
 	else {
-		TS_LOG_ERR("%s: ret=%d,read_ret=%d, buf=%p, stat.size=%lld\n", __func__, ret, read_ret, buf, stat.size);
+		TS_LOG_ERR("%s: ret=%d,read_ret=%d, buf=%pK, stat.size=%lld\n",
+			__func__, ret, read_ret, buf, stat.size);
 		ret = -ENXIO;
 		goto exit_free;
 	}
@@ -1045,12 +1046,14 @@ int elan_tx_open_check(void)
 	int res=NO_ERR;
 	const int rx=elan_ts->rx_num,tx=elan_ts->tx_num;
 	short (*databuf)[rx]=(short (*)[rx])totlebuf;
-	short (*txDiffData)[rx]=(short (*)[rx])kzalloc(sizeof(short)*(tx-1)*rx,GFP_KERNEL);
-	if(!txDiffData)
+	short (*txDiffData)[rx]= NULL;
+	short *tx_diff_buff = (short *)kzalloc(sizeof(short)*(tx-1)*rx,GFP_KERNEL);
+	if(!tx_diff_buff)
 	{
 		TS_LOG_ERR("[elan]:%s txDiffData buf is null!\n",__func__);
 		return -EINVAL;
 	}
+	txDiffData = (short (*)[rx])tx_diff_buff;
 	csvTxDiffHb=kzalloc(sizeof(u32)*(tx-1)*rx,GFP_KERNEL);
 	if(!csvTxDiffHb)
 	{
@@ -1132,9 +1135,10 @@ int elan_tx_open_check(void)
 		print_rawdata(rx,tx-1,RXTX_DIFF_PRINT,txDiffData);
 #endif
 
-	TS_LOG_INFO("[elan]:TxDiffData edgeoverHb=%d,overHb=%d,specialoverHb=%d\n",edgeoverHb,overHb,specialoverHb);
-	if((edgeoverHb>(rx*csvTxOverHBPTRatio/100))||((SpecialTXDifferHB>0)&&(specialoverHb>rx*SpecialTXOverHBPTRatio/100))||(overHb>rx*csvTxOverHBPTRatio/100))
-	{
+	TS_LOG_INFO("[elan]:TxDiffData edgeoverHb=%d,overHb=%d,specialoverHb=%d\n",
+		edgeoverHb, overHb, specialoverHb);
+	if ((edgeoverHb > (rx*csvTxOverHBPTRatio / 100)) ||
+		(overHb > rx * csvTxOverHBPTRatio / 100)) {
 		TS_LOG_ERR("[elan]:edgeoverHb is over spec!\n");
 		ret=-EINVAL;
 		goto tx_open_test_exit;
@@ -1209,13 +1213,15 @@ int elan_rx_open_test(void)
 	u32 data_buf[2]={0};
 	u32 *csvRxDifferHB=NULL;
 	short (*databuf)[rx]=(short (*)[rx])totlebuf;
-	short (*rxDiffData)[rx-1]=(short (*)[rx-1])kzalloc(sizeof(short)*tx*(rx-1),GFP_KERNEL);
+	short (*rxDiffData)[rx-1]= NULL;
+	short *rx_diff_buff = (short *)kzalloc(sizeof(short)*tx*(rx-1),GFP_KERNEL);
 
-	if(!rxDiffData)
+	if(!rx_diff_buff)
 	{
 		TS_LOG_ERR("[elan]:alloc rxDiffData buf fail\n");
 		return -EINVAL;
 	}
+	rxDiffData = (short (*)[rx - 1])rx_diff_buff;
 	csvRxDifferHB=kzalloc(sizeof(u32)*(rx-1)*tx,GFP_KERNEL);
 	if(!csvRxDifferHB)
 	{
@@ -1284,10 +1290,6 @@ int elan_rx_open_test(void)
 					overHb++;
 				}
 			}
-			if((SpecialRXDifferHB>0)&&(rxDiffData[i][j]>databuf[i][j]*SpecialRXDifferHB/100))
-			{
-				specialoverHb++;
-			}
 		}
 	}
 #ifdef PRINTRAWDATA
@@ -1295,9 +1297,10 @@ int elan_rx_open_test(void)
 	print_rawdata(rx-1,tx,RXTX_DIFF_PRINT,rxDiffData);
 #endif
 
-	TS_LOG_INFO("[elan]:RxDiffData edgeoverHb=%d,overHb=%d\n",edgeoverHb,overHb);
-	if((edgeoverHb>tx*csvRxOverHBPTRatio/100)||((SpecialRXDifferHB>0)&&(specialoverHb>tx*SpecialRXOverHBPTRatio/100))||(overHb>tx*csvRxOverHBPTRatio/100))
-	{
+	TS_LOG_INFO("[elan]:RxDiffData edgeoverHb=%d,overHb=%d\n",
+		edgeoverHb, overHb);
+	if ((edgeoverHb > tx * csvRxOverHBPTRatio / 100) ||
+		(overHb > tx * csvRxOverHBPTRatio / 100)) {
 		TS_LOG_ERR("[elan]:edgeoverHb is over spec!\n");
 		ret=-EINVAL;
 	}

@@ -466,6 +466,7 @@ static int32_t nvt_write_firmware(const u8 *fwdata, size_t fwsize)
 	uint16_t len = 0;
 	int32_t count = 0;
 	int32_t ret = 0;
+	int32_t i2c_ret;
 
 	memset(fwbuf, 0, (NVT_TANSFER_LEN+1));
 
@@ -508,7 +509,10 @@ static int32_t nvt_write_firmware(const u8 *fwdata, size_t fwsize)
 			//---write data into SRAM---
 			fwbuf[0] = SRAM_addr & 0x7F;	//offset
 			memcpy(fwbuf+1, &fwdata[BIN_addr], len);	//payload
-			novatek_ts_kit_write(I2C_FW_Address, fwbuf, len+1);
+			i2c_ret = novatek_ts_kit_write(I2C_FW_Address,
+				fwbuf, len + 1);
+			if (i2c_ret)
+				TS_LOG_ERR("%s: i2c write error\n", __func__);
 
 			SRAM_addr += NVT_TANSFER_LEN;
 			BIN_addr += NVT_TANSFER_LEN;
@@ -532,20 +536,27 @@ static void nvt_set_bld_crc_bank(uint32_t DES_ADDR, uint32_t SRAM_ADDR,
 		uint32_t LENGTH_ADDR, uint32_t size,
 		uint32_t G_CHECKSUM_ADDR, uint32_t crc)
 {
-	/* write destination address */
-	nvt_set_page(DES_ADDR);
+	uint32_t ret;
+
+	ret = nvt_set_page(DES_ADDR); /* write destination address */
+	if (ret)
+		TS_LOG_ERR("%s : nvt_set_page error\n", __func__);
 	fwbuf[0] = DES_ADDR & 0x7F;
 	fwbuf[1] = (SRAM_ADDR) & 0xFF;
 	fwbuf[2] = (SRAM_ADDR >> 8) & 0xFF;
 	fwbuf[3] = (SRAM_ADDR >> 16) & 0xFF;
-	novatek_ts_kit_write(I2C_FW_Address, fwbuf, 4);
+	ret = novatek_ts_kit_write(I2C_FW_Address, fwbuf, 4);
+	if (ret)
+		TS_LOG_ERR("%s : nvt_set_page error\n", __func__);
 
 	/* write length */
 	//nvt_set_page(LENGTH_ADDR);
 	fwbuf[0] = LENGTH_ADDR & 0x7F;
 	fwbuf[1] = (size) & 0xFF;
 	fwbuf[2] = (size >> 8) & 0xFF;
-	novatek_ts_kit_write(I2C_FW_Address, fwbuf, 3);
+	ret = novatek_ts_kit_write(I2C_FW_Address, fwbuf, 3);
+	if (ret)
+		TS_LOG_ERR("%s : nvt_set_page error\n", __func__);
 
 	/* write golden dlm checksum */
 	//nvt_set_page(G_CHECKSUM_ADDR);
@@ -554,7 +565,9 @@ static void nvt_set_bld_crc_bank(uint32_t DES_ADDR, uint32_t SRAM_ADDR,
 	fwbuf[2] = (crc >> 8) & 0xFF;
 	fwbuf[3] = (crc >> 16) & 0xFF;
 	fwbuf[4] = (crc >> 24) & 0xFF;
-	novatek_ts_kit_write(I2C_FW_Address, fwbuf, 5);
+	ret = novatek_ts_kit_write(I2C_FW_Address, fwbuf, 5);
+	if (ret)
+		TS_LOG_ERR("%s : nvt_set_page error\n", __func__);
 
 	return;
 }

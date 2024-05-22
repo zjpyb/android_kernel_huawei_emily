@@ -15,7 +15,7 @@
 #include <linux/dma-mapping.h>
 #include <asm/uaccess.h>
 #include <linux/iommu.h>
-#include <linux/hisi/hisi-iommu.h>
+#include <linux/hisi-iommu.h>
 #include <linux/dma-buf.h>
 #include <linux/scatterlist.h>
 #include <linux/clk.h>

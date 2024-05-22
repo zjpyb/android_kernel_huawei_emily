@@ -28,6 +28,9 @@ HWLOG_REGIST();
 #define LINE_FUNCTION hwlog_info("%s%d --\n", __func__,__LINE__);
 static FSC_U32 pd_limit_voltage = PD_09_V;
 
+#define PD_ADAPTER_5V                    5000
+#define PD_ADAPTER_20V                  20000
+
 void FUSB3601_SetPDLimitVoltage(int vol)
 {
 	if (vol < PD_ADAPTER_5V || vol > PD_ADAPTER_20V) {

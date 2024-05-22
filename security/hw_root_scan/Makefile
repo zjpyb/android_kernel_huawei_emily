@@ -1,14 +1,11 @@
-
 #
-# Makefile for the Huawei root scanner.
-#
-# likun <quentin.lee@huawei.com>
-#
-# Copyright (c) 2001-2021, Huawei Tech. Co., Ltd. All rights reserved.
+# Copyright (c) Huawei Technologies Co., Ltd. 2016-2018. All rights reserved.
+# Description: Makefile for the Huawei root scanner.
+# Author: likun <quentin.lee@huawei.com>
+# Create: 2016-06-18
 #
 
 obj-$(CONFIG_HW_ROOT_SCAN) += hw_rscan_utils.o
-obj-$(CONFIG_HW_ROOT_SCAN) += hw_rscan_proc.o
 obj-$(CONFIG_HW_ROOT_SCAN) += kcode.o
 obj-$(CONFIG_HW_ROOT_SCAN) += rproc.o
 obj-$(CONFIG_HW_ROOT_SCAN) += sescan.o

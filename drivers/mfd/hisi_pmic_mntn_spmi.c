@@ -21,6 +21,12 @@
 #define HISI_PMIC_DSM_MASK_STATE 0xFF
 #define HISI_PMIC_DSM_IGNORE_NUM 99
 
+#ifdef CONFIG_GCOV_KERNEL
+#define STATIC
+#else
+#define STATIC static
+#endif
+
 static PMIC_MNTN_DESC *g_pmic_mntn;
 
 static void __iomem *g_sysctrl_base;
@@ -70,12 +76,14 @@ EXPORT_SYMBOL_GPL(hisi_call_pmic_mntn_notifiers);
 #ifdef CONFIG_HISI_PMIC_DEBUG
 static int hisi_test_pmic_mntn_notifier_call(struct notifier_block *nb, unsigned long event, void *data)
 {
-	PMIC_MNTN_EXCP_INFO  ocp_ldo_msg ;
+	PMIC_MNTN_EXCP_INFO  *ocp_ldo_msg  = (PMIC_MNTN_EXCP_INFO *)(data);
+	if ( NULL == ocp_ldo_msg) {
+		pr_err("[%s] test pmic mnt ocp ldo msg is NULL!\n",__func__);
+		return -EPERM;
+	}
 
-	memset_s(&ocp_ldo_msg,sizeof(PMIC_MNTN_EXCP_INFO),0x0,sizeof(PMIC_MNTN_EXCP_INFO));
-	strncpy_s((PMIC_MNTN_EXCP_INFO *)(&ocp_ldo_msg),sizeof(PMIC_MNTN_EXCP_INFO),(PMIC_MNTN_EXCP_INFO *)(data),sizeof(PMIC_MNTN_EXCP_INFO));
 	if (event == HISI_PMIC_OCP_EVENT) {
-		pr_err("[%s] test pmic mnt %s ocp event!\n",__func__,ocp_ldo_msg.ldo_num);
+		pr_err("[%s] test pmic mnt %s ocp event!\n",__func__,ocp_ldo_msg->ldo_num);
 	}else {
 		pr_err("[%s]invalid event %d!\n", __func__,(int) (event));
 	}
@@ -238,7 +246,7 @@ static int hisi_pmic_ocp_special_handler(char *power_name, PMIC_MNTN_DESC *pmic_
 	return PMIC_OCP_NONE;
 }
 
-static void get_pmu_register_info(void)
+STATIC void get_pmu_register_info(void)
 {
 	int i;
 
@@ -674,6 +682,7 @@ static int hisi_pmic_otmp_mntn_initial(struct spmi_device *pdev, PMIC_MNTN_DESC 
 	struct device *dev = &pdev->dev;
 	struct device_node *np = dev->of_node;
 	unsigned char reg_value = 0;
+        int ret0 = 0, ret1 = 0, ret2 = 0;
 	s32 ret = 0;
 
 	root = of_find_compatible_node(np, NULL, "hisilicon-pmic-mntn-otmp");
@@ -682,17 +691,19 @@ static int hisi_pmic_otmp_mntn_initial(struct spmi_device *pdev, PMIC_MNTN_DESC 
 		return -ENODEV;
 	}
 
-	ret |= of_property_read_u32_array(root, "hisilicon,otmp-threshold-val", (u32 *)&pmic_mntn->otmp_thshd_val, 0x1);
-	ret |= of_property_read_u32_array(root, "hisilicon,otmp-threshold-reg", (u32 *)&pmic_mntn->otmp_thshd_reg, 0x3);
+	ret0 = of_property_read_u32_array(root, "hisilicon,otmp-threshold-val", (u32 *)&pmic_mntn->otmp_thshd_val, 0x1);
+	ret1 = of_property_read_u32_array(root, "hisilicon,otmp-threshold-reg", (u32 *)&pmic_mntn->otmp_thshd_reg, 0x3);
+        ret = (ret0 || ret1);
 	if (ret) {
 		dev_err(dev, "[%s]get pmic otmp attribute failed.\n", __func__);
 		return -ENODEV;
 	}
 
-	ret |= of_property_read_u32_array(root, "hisilicon,otmp-hreset-pwrdown-flag", (u32 *)&pmic_mntn->otmp_hreset_pwrdown_flag, 0x1);
-	ret |= of_property_read_u32_array(root, "hisilicon,otmp-hreset-pwrdown-val", (u32 *)&pmic_mntn->otmp_hreset_pwrdown_val, 0x1);
-	ret |= of_property_read_u32_array(root, "hisilicon,otmp-hreset-pwrdown-reg", (u32 *)&pmic_mntn->otmp_hreset_pwrdown_reg, 0x3);
-	if (ret) {
+	ret0 = of_property_read_u32_array(root, "hisilicon,otmp-hreset-pwrdown-flag", (u32 *)&pmic_mntn->otmp_hreset_pwrdown_flag, 0x1);
+	ret1 = of_property_read_u32_array(root, "hisilicon,otmp-hreset-pwrdown-val", (u32 *)&pmic_mntn->otmp_hreset_pwrdown_val, 0x1);
+	ret2 = of_property_read_u32_array(root, "hisilicon,otmp-hreset-pwrdown-reg", (u32 *)&pmic_mntn->otmp_hreset_pwrdown_reg, 0x3);
+        ret = (ret0 || ret1 || ret2);
+        if (ret) {
 		dev_err(dev, "[%s]get pmic otmp attribute failed.\n", __func__);
 		return -ENODEV;
 	}
@@ -739,6 +750,7 @@ static int hisi_pmic_smpl_mntn_initial(struct spmi_device *pdev, PMIC_MNTN_DESC 
 	struct device_node *np = dev->of_node;
 	unsigned char reg_value = 0;
 	s32 ret = 0;
+        s32 ret0, ret1, ret2, ret3;
 	unsigned int smpl_en_val;
 
 	root = of_find_compatible_node(np, NULL, "hisilicon-pmic-mntn-smpl");
@@ -747,10 +759,11 @@ static int hisi_pmic_smpl_mntn_initial(struct spmi_device *pdev, PMIC_MNTN_DESC 
 		return -ENODEV;
 	}
 
-	ret |= of_property_read_u32_array(root, "hisilicon,smpl-ctrl-en", &pmic_mntn->smpl_en_val, 0x1);
-	ret |= of_property_read_u32_array(root, "hisilicon,smpl-ctrl-en-reg", (u32 *)&pmic_mntn->smpl_en_reg, 0x3);
-	ret |= of_property_read_u32_array(root, "hisilicon,smpl-ctrl-time", &pmic_mntn->smpl_tm_val, 0x1);
-	ret |= of_property_read_u32_array(root, "hisilicon,smpl-ctrl-time-reg", (u32 *)&pmic_mntn->smpl_tm_reg, 0x3);
+	ret0 = of_property_read_u32_array(root, "hisilicon,smpl-ctrl-en", &pmic_mntn->smpl_en_val, 0x1);
+	ret1 = of_property_read_u32_array(root, "hisilicon,smpl-ctrl-en-reg", (u32 *)&pmic_mntn->smpl_en_reg, 0x3);
+	ret2 = of_property_read_u32_array(root, "hisilicon,smpl-ctrl-time", &pmic_mntn->smpl_tm_val, 0x1);
+	ret3 = of_property_read_u32_array(root, "hisilicon,smpl-ctrl-time-reg", (u32 *)&pmic_mntn->smpl_tm_reg, 0x3);
+        ret = (ret0||ret1||ret2||ret3);
 	if (ret) {
 		dev_err(dev, "[%s]get pmic smpl attribute failed.\n", __func__);
 		return -ENODEV;
@@ -850,11 +863,11 @@ static int hisi_pmic_ocp_mntn_initial(struct spmi_device *pdev, PMIC_MNTN_DESC *
 
 		ret = of_property_read_u32(root, "hisilicon,inacceptable-event", (u32 *)&exch_reg_tmp[index].inacceptable_event);
 		for (bit = 0; bit < pmic_mntn->data_width; bit++) {
-			ret |= of_property_read_string_index(root, "hisilicon,event-bit-name",
+			ret = ret || of_property_read_string_index(root, "hisilicon,event-bit-name",
 					bit, (const char **)&exch_reg_tmp[index].event_bit_name[bit]);
 		}
 
-		ret = of_property_read_u32(root, "hisilicon,check_ocp_nofify", (u32 *)&exch_reg_tmp[index].check_ocp_nofify);
+		ret = ret || of_property_read_u32(root, "hisilicon,check_ocp_nofify", (u32 *)&exch_reg_tmp[index].check_ocp_nofify);
 		if (ret) {
 			dev_err(dev, "[%s]read attribute of %s.\n", __func__, compatible_string);
 		}
@@ -1005,7 +1018,7 @@ static int hisi_pmic_record_mntn_initial(struct spmi_device *pdev, PMIC_MNTN_DES
 
 		ret = of_property_read_u32(root, "hisilicon,inacceptable-event", (u32 *)&exch_reg_tmp[index].inacceptable_event);
 		for (bit = 0; bit < pmic_mntn->data_width; bit++) {
-			ret |= of_property_read_string_index(root, "hisilicon,event-bit-name",
+			ret = ret || of_property_read_string_index(root, "hisilicon,event-bit-name",
 						bit, (const char **)&exch_reg_tmp[index].event_bit_name[bit]);
 		}
 
@@ -1241,7 +1254,7 @@ static struct spmi_driver hisi_pmic_mntn_driver = {
 #endif
 };
 
-static int __init hisi_pmic_mntn_init(void)
+STATIC int __init hisi_pmic_mntn_init(void)
 {
 	int ret = 0;
 	pr_info("\n===============[in %s ]=============\n", __func__);

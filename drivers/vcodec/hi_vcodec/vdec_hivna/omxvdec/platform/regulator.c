@@ -13,7 +13,7 @@
 #include "regulator.h"
 #include "platform.h"
 
-#include <linux/hisi/hisi-iommu.h>
+#include <linux/hisi-iommu.h>
 #include <linux/iommu.h>
 #include <linux/platform_device.h>
 #include <linux/regulator/consumer.h>
@@ -28,7 +28,10 @@
 #define VCODEC_CLOCK_NAME       "clk_vdec"
 #define VCODEC_CLK_RATE         "dec_clk_rate"
 
-static HI_U32  g_clock_values[] = {450000000, 300000000, 185000000};
+static HI_U32  g_clock_values[] = {450000000, 300000000, 185000000, 166000000};
+#ifdef LOWER_FREQUENCY_SUPPORT
+static HI_U32  g_VdecClkRate_lower = 166000000;
+#endif
 static HI_U32  g_VdecClkRate_l  = 185000000;
 static HI_U32  g_VdecClkRate_n  = 300000000;
 static HI_U32  g_VdecClkRate_h  = 450000000;
@@ -61,15 +64,18 @@ static HI_U32 g_VdecLowFreq        = 332000000;
 
 #ifdef HIVDEC_SMMU_SUPPORT
 
+extern OMXVDEC_ENTRY g_OmxVdecEntry;
 /*----------------------------------------
     func: iommu enable intf
  ----------------------------------------*/
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4,14,0)
 static HI_S32 VDEC_Enable_Iommu(VOID)
 {
 	g_VdecSmmuDomain = hisi_ion_enable_iommu(NULL);
 
 	return (g_VdecSmmuDomain == HI_NULL ? HI_FAILURE : HI_SUCCESS);
 }
+#endif
 
 static HI_VOID VDEC_Disable_Iommu(VOID)
 {
@@ -78,6 +84,7 @@ static HI_VOID VDEC_Disable_Iommu(VOID)
 
 static HI_U64 VDEC_GetSmmuBasePhy(VOID)
 {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4,14,0)
 	struct iommu_domain_data *domain_data = HI_NULL;
 
 	if (VDEC_Enable_Iommu() == HI_FAILURE)
@@ -86,6 +93,10 @@ static HI_U64 VDEC_GetSmmuBasePhy(VOID)
 	domain_data = (struct iommu_domain_data *)(g_VdecSmmuDomain->priv);
 
 	return (HI_U64) (domain_data->phy_pgd_base);
+#else
+
+    return (HI_U64)hisi_domain_get_ttbr(g_OmxVdecEntry.device);
+#endif
 }
 
 #endif
@@ -118,6 +129,9 @@ static HI_S32 VDEC_Init_ClockRate(struct device *dev)
 	ret  = read_clock_rate_value(dev->of_node, 0, &g_VdecClkRate_h);
 	ret += read_clock_rate_value(dev->of_node, 1, &g_VdecClkRate_n);
 	ret += read_clock_rate_value(dev->of_node, 2, &g_VdecClkRate_l);
+#ifdef LOWER_FREQUENCY_SUPPORT
+	ret += read_clock_rate_value(dev->of_node, 3, &g_VdecClkRate_lower);
+#endif
 	RETURN_FAIL_IF_COND_IS_TRUE(ret, "read clock failed");
 
 #ifdef CONFIG_ES_VDEC_LOW_FREQ
@@ -335,7 +349,6 @@ HI_S32 VDEC_Regulator_Enable(HI_VOID)
 		dprint(PRN_FATAL, "%s clk_prepare_enable failed\n", __func__);
 		goto error_regulator_disable;
 	}
-
 	ret  = clk_set_rate(g_PvdecClk, g_VdecClkRate_l);
 	if (ret)
 	{
@@ -349,10 +362,9 @@ HI_S32 VDEC_Regulator_Enable(HI_VOID)
 	}
 
 #ifdef PLATFORM_HIVCODECV300
-	ret = VDEC_Config_QOS();
+	ret = VDEC_Config_QOS();  //If VDEC_Config_QOS fail, it only effects performance
 	if (ret != HI_SUCCESS) {
 		dprint(PRN_FATAL, "%s config qos failed\n", __func__);
-		goto error_unprepare_clk;
 	}
 #endif
 
@@ -410,11 +422,19 @@ HI_S32 VDEC_Regulator_Disable(HI_VOID)
 		dprint(PRN_FATAL, "%s disable regulator failed\n", __func__);
 	}
 
-	ret = clk_set_rate(g_PvdecClk, g_VdecClkRate_l);
+#ifdef LOWER_FREQUENCY_SUPPORT
+	ret  = clk_set_rate(g_PvdecClk, g_VdecClkRate_lower);
+	if (ret) {
+		dprint(PRN_FATAL, "%s Failed to clk_set_rate:%u, return %d\n", __func__, g_VdecClkRate_lower, ret);
+		//goto error_exit;//continue, no return
+	}
+#else
+	ret  = clk_set_rate(g_PvdecClk, g_VdecClkRate_l);
 	if (ret) {
 		dprint(PRN_FATAL, "%s Failed to clk_set_rate:%u, return %d\n", __func__, g_VdecClkRate_l, ret);
 		//goto error_exit;//continue, no return
 	}
+#endif
 
 	clk_disable_unprepare(g_PvdecClk);
 
@@ -462,6 +482,11 @@ HI_S32 VDEC_Regulator_SetClkRate(CLK_RATE_E eClkRate)
 	}
 
 	switch (eClkRate) {
+#ifdef LOWER_FREQUENCY_SUPPORT
+	case VDEC_CLK_RATE_LOWER:
+		needClkRate = g_VdecClkRate_lower;
+		break;
+#endif
 	case VDEC_CLK_RATE_LOW:
 		needClkRate = g_VdecClkRate_l;
 		break;

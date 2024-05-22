@@ -1,20 +1,17 @@
 /*
- * hw_rscan_scanner.h
- *
- * the hw_rscan_scanner.h for kernel space root scan
- *
- * Yongzheng Wu <Wu.Yongzheng@huawei.com>
- * likun <quentin.lee@huawei.com>
- * likan <likan82@huawei.com>
- *
- * Copyright (c) 2001-2021, Huawei Tech. Co., Ltd. All rights reserved.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2016-2018. All rights reserved.
+ * Description: the hw_rscan_module.c for root scanner kernel space init and deinit
+ * Author: Yongzheng Wu <Wu.Yongzheng@huawei.com>
+ *         likun <quentin.lee@huawei.com>
+ *         likan <likan82@huawei.com>
+ * Create: 2016-06-18
  */
 
 #ifndef _HW_RSCAN_DYNAMIC_H_
 #define _HW_RSCAN_DYNAMIC_H_
 
 #include <chipset_common/security/root_scan.h>
-#include <linux/fs.h>	/* for reading "/vendor/etc/rootscan.conf" */
+#include <linux/fs.h>           /* for reading "/vendor/etc/rootscan.conf" */
 #include <linux/kernel.h>
 #include <linux/mutex.h>
 #include <linux/power_supply.h>
@@ -23,39 +20,40 @@
 #include <linux/string.h>
 #include <linux/time.h>
 #include <linux/types.h>
-#include <linux/uaccess.h>	/* for reading "/vendor/etc/rootscan.conf" */
+#include <linux/uaccess.h>      /* for reading "/vendor/etc/rootscan.conf" */
 #include "kcode.h"
 #include "rproc.h"
 #include "sescan.h"
 #include "setids.h"
 #include "hw_rscan_interface.h"
 #include "hw_rscan_utils.h"
+
 #ifdef CONFIG_TEE_ANTIROOT_CLIENT
 #include "rootagent.h"
 #else
 enum tee_rs_mask {
-   ROOTSTATE_BIT   = 0,            /* 0    on */
-   /* read from fastboot */
-   OEMINFO_BIT,                    /* 1    on */
-   FBLOCK_YELLOW_BIT,              /* 2    on */
-   FBLOCK_RED_BIT,                 /* 3    on */
-   FBLOCK_ORANGE_BIT,              /* 4    on */
-                                   /* 5    off */
-   /* dy scan result */
-   KERNELCODEBIT   = 6,            /* 6    on */
-   SYSTEMCALLBIT,                  /* 7    on */
-   ROOTPROCBIT,                    /* 8    on */
-   SESTATUSBIT,                    /* 9    on */
-   SEHOOKBIT       = 10,           /* 10   on */
-   SEPOLICYBIT,                    /* 11   off */
-   PROCINTERBIT,                   /* 12   off */
-   FRAMINTERBIT,                   /* 13   off */
-   INAPPINTERBIT,                  /* 14   off */
-   NOOPBIT        = 15,            /* 15   on */
-   ITIMEOUTBIT,                    /* 16   on */
-   EIMABIT,                        /*17    on */
-   SETIDBIT,                       /* 18   on */
-   CHECKFAILBIT,                   /* 19   on */
+	ROOTSTATE_BIT   = 0,            /* 0    on */
+	/* read from fastboot */
+	OEMINFO_BIT,                    /* 1    on */
+	FBLOCK_YELLOW_BIT,              /* 2    on */
+	FBLOCK_RED_BIT,                 /* 3    on */
+	FBLOCK_ORANGE_BIT,              /* 4    on */
+                                        /* 5    off */
+	/* dy scan result */
+	KERNELCODEBIT   = 6,            /* 6    on */
+	SYSTEMCALLBIT,                  /* 7    on */
+	ROOTPROCBIT,                    /* 8    on */
+	SESTATUSBIT,                    /* 9    on */
+	SEHOOKBIT       = 10,           /* 10   on */
+	SEPOLICYBIT,                    /* 11   off */
+	PROCINTERBIT,                   /* 12   off */
+	FRAMINTERBIT,                   /* 13   off */
+	INAPPINTERBIT,                  /* 14   off */
+	NOOPBIT        = 15,            /* 15   on */
+	ITIMEOUTBIT,                    /* 16   on */
+	EIMABIT,                        /* 17   on */
+	SETIDBIT,                       /* 18   on */
+	CHECKFAILBIT,                   /* 19   on */
 };
 
 static inline uint32_t get_tee_status(void)
@@ -75,7 +73,7 @@ enum ree_rs_mask {
 	RS_SETID,
 };
 
-#define check_status(status, type)    ((status >> type) & 0x1)
+#define check_status(status, type)    (((status) >> (type)) & (0x1))
 
 struct item_bits {
 	int item_ree_bit;
@@ -84,45 +82,6 @@ struct item_bits {
 };
 
 #define              MAX_NUM_OF_ITEM          6
-/*the order should be identical with item_info */
-static struct item_bits itembits[MAX_NUM_OF_ITEM] = {
-	//kcode
-	{
-		RS_KCODE,
-		KERNELCODEBIT,
-		D_RSOPID_KCODE,
-	},
-	//syscall
-	{
-		RS_SYS_CALL,
-		SYSTEMCALLBIT,
-		D_RSOPID_SYS_CALL,
-	},
-	//selinux
-	{
-		RS_SE_STATUS,
-		SESTATUSBIT,
-		D_RSOPID_SE_STATUS,
-	},
-	//se_hook
-	{
-		RS_SE_HOOKS,
-		SEHOOKBIT,
-		D_RSOPID_SE_HOOKS,
-	},
-	//root_proc
-	{
-		RS_RRPOCS,
-		ROOTPROCBIT,
-		D_RSOPID_RRPOCS,
-	},
-	//set_id
-	{
-		RS_SETID,
-		SETIDBIT,
-		D_RSOPID_SETID,
-	},
-};
 
 int rscan_dynamic_init(void);
 
@@ -142,7 +101,7 @@ int rscan_dynamic_init(void);
  *     to its bitmasks
  */
 int rscan_dynamic(uint op_mask, struct rscan_result_dynamic *result,
-							int *error_code);
+		int *error_code);
 
 int stp_rscan_trigger(void);
 

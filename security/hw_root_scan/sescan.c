@@ -1,13 +1,10 @@
 /*
- * sescan.c
- *
- * the sescan.c for selinux status checking
- *
- * Yongzheng Wu <Wu.Yongzheng@huawei.com>
- * likun <quentin.lee@huawei.com>
- * likan <likan82@huawei.com>
- *
- * Copyright (c) 2001-2021, Huawei Tech. Co., Ltd. All rights reserved.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2016-2018. All rights reserved.
+ * Description: the sescan.c for selinux status checking
+ * Author: Yongzheng Wu <Wu.Yongzheng@huawei.com>
+ *         likun <quentin.lee@huawei.com>
+ *         likan <likan82@huawei.com>
+ * Create: 2016-06-18
  */
 
 #include "./include/sescan.h"
@@ -32,7 +29,7 @@ int sescan_hookhash(uint8_t *hash)
 
 	if (IS_ERR(tfm)) {
 		RSLogError(TAG, "crypto_alloc_hash(sha256) error %ld",
-							PTR_ERR(tfm));
+			PTR_ERR(tfm));
 		return -ENOMEM;
 	}
 
@@ -50,19 +47,20 @@ int sescan_hookhash(uint8_t *hash)
 	struct security_operations **security_ops;
 
 	security_ops = kallsyms_lookup_name("security_ops");
-	if (!security_ops) {
+	if (security_ops == NULL) {
 		RSLogError(TAG, "get symbol security_ops addres failed");
 		return -EFAULT;
 	}
 
-	crypto_shash_update(shash,(char *)*security_ops, sizeof(struct security_operations));
+	crypto_shash_update(shash,(char *) *security_ops,
+			sizeof(struct security_operations));
 #else
 // reference security/security.c: call_void_hook
-#define DO_ONE_HEAD(FUNC) \
-	do { \
+#define DO_ONE_HEAD(FUNC) do { \
 		struct security_hook_list *P; \
 		list_for_each_entry(P, &security_hook_heads.FUNC, list) { \
-			crypto_shash_update(shash, (char *)&(P->hook.FUNC), sizeof(P->hook.FUNC)); \
+			crypto_shash_update(shash, (char *)&(P->hook.FUNC), \
+					sizeof(P->hook.FUNC)); \
 		} \
 	} while (0)
 	// reference initialization in security_hook_heads in security/security.c
@@ -82,7 +80,6 @@ int sescan_hookhash(uint8_t *hash)
 	DO_ONE_HEAD(vm_enough_memory);
 	DO_ONE_HEAD(bprm_set_creds);
 	DO_ONE_HEAD(bprm_check_security);
-	DO_ONE_HEAD(bprm_secureexec);
 	DO_ONE_HEAD(bprm_committing_creds);
 	DO_ONE_HEAD(bprm_committed_creds);
 	DO_ONE_HEAD(sb_alloc_security);
@@ -152,7 +149,6 @@ int sescan_hookhash(uint8_t *hash)
 	DO_ONE_HEAD(file_send_sigiotask);
 	DO_ONE_HEAD(file_receive);
 	DO_ONE_HEAD(file_open);
-	DO_ONE_HEAD(task_create);
 	DO_ONE_HEAD(task_free);
 	DO_ONE_HEAD(cred_alloc_blank);
 	DO_ONE_HEAD(cred_free);
@@ -165,6 +161,22 @@ int sescan_hookhash(uint8_t *hash)
 	DO_ONE_HEAD(kernel_fw_from_file);
 	DO_ONE_HEAD(kernel_module_request);
 	DO_ONE_HEAD(kernel_module_from_file);
+#endif
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+	DO_ONE_HEAD(task_alloc);
+	DO_ONE_HEAD(task_prlimit);
+#ifdef CONFIG_SECURITY_INFINIBAND
+	DO_ONE_HEAD(ib_pkey_access);
+	DO_ONE_HEAD(ib_endport_manage_subnet);
+	DO_ONE_HEAD(ib_alloc_security);
+	DO_ONE_HEAD(ib_free_security);
+#endif /* CONFIG_SECURITY_INFINIBAND */
+
+#else
+	DO_ONE_HEAD(bprm_secureexec);
+	DO_ONE_HEAD(task_create);
+	DO_ONE_HEAD(task_wait);
 #endif
 
 	DO_ONE_HEAD(task_fix_setuid);
@@ -180,7 +192,6 @@ int sescan_hookhash(uint8_t *hash)
 	DO_ONE_HEAD(task_getscheduler);
 	DO_ONE_HEAD(task_movememory);
 	DO_ONE_HEAD(task_kill);
-	DO_ONE_HEAD(task_wait);
 	DO_ONE_HEAD(task_prctl);
 	DO_ONE_HEAD(task_to_inode);
 	DO_ONE_HEAD(ipc_permission);

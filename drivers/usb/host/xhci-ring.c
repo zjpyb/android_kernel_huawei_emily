@@ -1734,7 +1734,7 @@ static void handle_port_status(struct xhci_hcd *xhci,
 	 * RExit to a disconnect state).  If so, let the the driver know it's
 	 * out of the RExit state.
 	 */
-	if (!DEV_SUPERSPEED_ANY(temp) &&
+	if (!DEV_SUPERSPEED_ANY(temp) && hcd->speed < HCD_USB3 &&
 			test_and_clear_bit(faked_port_index,
 				&bus_state->rexit_ports)) {
 		complete(&bus_state->rexit_done[faked_port_index]);
@@ -3500,8 +3500,8 @@ int xhci_queue_ctrl_tx(struct xhci_hcd *xhci, gfp_t mem_flags,
 		  /* Immediate data in pointer */
 		  field);
 
-#if defined(CONFIG_USB_DWC3_NOV) || defined(CONFIG_USB_DWC3_MAR)
-	if (urb->transfer_buffer_length > 0) {
+	if ((xhci->quirks & XHCI_DELAY_CTRL_DATA_STAGE) &&
+			urb->transfer_buffer_length > 0) {
 		xhci_dbg(xhci, "delay data stage\n");
 		first_trb_giveback = 1;
 		giveback_first_trb(xhci, slot_id, ep_index, 0,
@@ -3510,7 +3510,6 @@ int xhci_queue_ctrl_tx(struct xhci_hcd *xhci, gfp_t mem_flags,
 
 		mdelay(2);
 	}
-#endif
 
 	/* If there's data, queue data TRBs */
 	/* Only set interrupt on short packet for IN endpoints */

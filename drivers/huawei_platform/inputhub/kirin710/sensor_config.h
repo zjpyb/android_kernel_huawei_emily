@@ -11,6 +11,10 @@
 
 #include "sensor_detect.h"
 
+extern int stk3338_als_flag;
+extern int ltr2568_als_flag;
+extern int vishay_vcnl36832_als_flag;
+
 #define EXTEND_DATA_TYPE_IN_DTS_BYTE        0
 #define EXTEND_DATA_TYPE_IN_DTS_HALF_WORD   1
 #define EXTEND_DATA_TYPE_IN_DTS_WORD        2
@@ -42,8 +46,10 @@
 #define APDS9999_PARA_SIZE (24)
 #define TMD3702_PARA_SIZE (29)
 #define VCNL36658_PARA_SIZE (31)
-#define TSL2591_PARA_SIZE (14)
+#define TSL2591_PARA_SIZE 15
 #define BH1726_PARA_SIZE (16)
+#define MAX_PARA_SIZE (33)
+#define APDS9308_PARA_SIZE (14)
 #define ACC_OFFSET_NV_NUM	307
 #define ACC_OFFSET_NV_SIZE	(60)
 #define MAG_CALIBRATE_DATA_NV_NUM 233
@@ -93,10 +99,17 @@ struct sar_semtech_calibrate_data {
 	uint16_t offset;
 	uint16_t diff;
 };
+
+struct sar_abov_calibrate_data {
+	uint16_t offset;
+	uint16_t diff;
+};
+
 union sar_calibrate_data {
 	struct sar_cap_proc_calibrate_data cap_cali_data;
 	struct sar_cypress_calibrate_data cypres_cali_data;
 	struct sar_semtech_calibrate_data semtech_cali_data;
+	struct sar_abov_calibrate_data abov_cali_data;
 };
 
 typedef struct _BH1745_ALS_PARA_TABLE {
@@ -131,7 +144,6 @@ typedef struct _LTR582_ALS_PARA_TABLE {
 	uint8_t tp_color;
 	s16 ltr582_para[26];/*give to ltr582 rgb sensor use,output lux and cct will use these par*/
 } LTR582_ALS_PARA_TABLE;/*the ltr582_para size must small SENSOR_PLATFORM_EXTEND_DATA_SIZE*/
-
 
 typedef struct _PINHOLE_ALS_PARA_TABLE {
 	uint8_t phone_type;
@@ -193,6 +205,21 @@ typedef struct _BH1726_ALS_PARA_TABLE {
 	uint8_t tp_manufacture;
 	s16 bh1726_para[BH1726_PARA_SIZE];
 } BH1726_ALS_PARA_TABLE;
+
+typedef struct _APDS9308_ALS_PARA_TABLE {
+	uint8_t phone_type;
+	uint8_t phone_version;
+	uint8_t tp_manufacture;
+	s16 apds9308_para[APDS9308_PARA_SIZE];
+} APDS9308_ALS_PARA_TABLE;
+
+typedef struct {
+	uint8_t phone_type;
+	uint8_t phone_version;
+	uint8_t tp_manufacture;
+	uint8_t len;
+	s16 als_para[MAX_PARA_SIZE];
+} als_para_normal_table;
 
 extern int fill_extend_data_in_dts(struct device_node *dn, const char *name, unsigned char *dest, size_t max_size, int flag);
 extern int mcu_i2c_rw(uint8_t bus_num, uint8_t i2c_add, uint8_t *tx, uint32_t tx_len, uint8_t *rx_out, uint32_t rx_len);

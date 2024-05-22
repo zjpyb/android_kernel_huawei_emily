@@ -11,9 +11,6 @@
 #define STAT_SUCCESS            1
 #define STAT_ERROR              2
 
-#define PD_ADAPTER_5V                    5000
-#define PD_ADAPTER_20V                  20000
-
 /* Device FIFO Token Definitions */
 #define TXON                    0xA1
 #define SOP1                    0x12

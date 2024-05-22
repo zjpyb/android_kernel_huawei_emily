@@ -18,6 +18,12 @@
 #define  INPUT_AFT_GET_IO_TYPE  (0xBA)
 #define  INPUT_AFT_SET_IO_TYPE  (0xBB)
 
+struct double_click_data {
+	unsigned int key_code;
+	unsigned int x_position;
+	unsigned int y_position;
+};
+
 #define INPUT_AFT_IOCTL_CMD_GET_TS_FINGERS_INFO \
     _IOWR(INPUT_AFT_GET_IO_TYPE, 0x01, \
 struct ts_fingers)
@@ -36,7 +42,13 @@ struct ts_aft_algo_param)
     struct ts_fingers)
 
 #define INPUT_AFT_IOCTL_CMD_SET_SENSIBILITY_CFG \
-    _IOWR(INPUT_AFT_SET_IO_TYPE, 0x02,  int )
+	_IOWR(INPUT_AFT_SET_IO_TYPE, 0x02,  int)
+
+#define INPUT_IOCTL_CMD_SET_FLIP_KEY \
+	_IOWR(INPUT_AFT_SET_IO_TYPE, 0x03, unsigned int)
+
+#define INPUT_IOCTL_CMD_SET_DOUBLE_CLICK \
+	_IOWR(INPUT_AFT_SET_IO_TYPE, 0x04, struct double_click_data)
 
 extern int copy_fingers_to_aft_daemon(struct ts_kit_platform_data *pdata, struct ts_fingers *fingers);
 extern int ts_kit_misc_init(struct ts_kit_platform_data *pdata);

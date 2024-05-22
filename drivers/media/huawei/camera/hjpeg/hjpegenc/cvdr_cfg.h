@@ -28,8 +28,10 @@
 
 extern void hjpeg_config_cvdr(hjpeg_hw_ctl_t *hw_ctl, jpgenc_config_t* config);
 extern int is_hjpeg_qos_update(void);
-extern int is_hjpeg_wr_port_addr_update(void);
-extern int is_hjpeg_iova_update(void);
+extern int get_hjpeg_wr_port_addr_update(void);
+extern int get_hjpeg_iova_update(void);
+extern int is_pixel_fmt_update(void);
+extern int is_cvdr_cfg_update(void);
 
 #define EXP_PIX                              1
 #define ACCESS_LIMITER                       7
@@ -79,6 +81,19 @@ extern int is_hjpeg_iova_update(void);
 #define CVDR_AXI_JPEG_NR_RD_CFG_4                   0x1570
 #define CVDR_AXI_JPEG_LIMITER_NR_RD_4               0x1578
 
+typedef enum _cvdr_wr_port_update
+{
+   CVDR_WR_PORT_UPDATE_0,
+   CVDR_WR_PORT_ADDR_UPDATE = 1,
+   CVDR_WR_PORT_ADDR_AXILINE_UPDATE = 2,
+} cvdr_wr_port_update;
+
+typedef enum _cvdr_iova_update
+{
+   CVDR_IOVA_ADDR_32BITS, // 32bit addr
+   CVDR_IOVA_ADDR_34BITS // 34bit addr
+} cvdr_iova_update;
+
 typedef enum _cvdr_pix_fmt_e
 {
     DF_1PF8 = 0x0,
@@ -98,6 +113,32 @@ typedef enum _cvdr_pix_fmt_e
     DF_D64 = 0xE,
     DF_FMT_INVALID,
 } cvdr_pix_fmt_e;
+
+// new pixel format
+typedef enum _cvdr_pix_fmt_new_e
+{
+    PIX_FMT_1PF8 = 0x0,
+    PIX_FMT_2PF8 = 0x1,
+    PIX_FMT_3PF8 = 0x2,
+    PIX_FMT_4PF8 = 0x3,
+    PIX_FMT_1PF10 = 0x4,
+    PIX_FMT_2PF10 = 0x5,
+    PIX_FMT_3PF10 = 0x6,
+    PIX_FMT_4PF10 = 0x7,
+    PIX_FMT_1PF12 = 0x8,
+    PIX_FMT_2PF12 = 0x9,
+    PIX_FMT_3PF12 = 0xA,
+    PIX_FMT_4PF12 = 0xB,
+    PIX_FMT_1PF14 = 0xC,
+    PIX_FMT_2PF14 = 0xD,
+    PIX_FMT_3PF14 = 0xE,
+    PIX_FMT_4PF14 = 0xF,
+    PIX_FMT_D32   = 0x1C,
+    PIX_FMT_D48   = 0x1D,
+    PIX_FMT_D64   = 0x1E,
+    PIX_FMT_D128  = 0x1F,
+    PIX_FMT_INVALID,
+} cvdr_pix_fmt_new_e;
 
 typedef enum _cvdr_rd_port
 {
@@ -181,7 +222,7 @@ typedef union
 
 typedef struct _cvdr_wr_fmt_desc_t
 {
-    cvdr_pix_fmt_e      pix_fmt;
+    uint32_t            pix_fmt;
     unsigned char       pix_expan;
     unsigned char       access_limiter;
     uint32_t            last_page;
@@ -208,6 +249,7 @@ typedef union
 
 } U_VP_WR_CFG;
 
+// for 34 bit and old pixel format
 typedef union
 {
     /* Define the struct bits */
@@ -215,16 +257,31 @@ typedef union
     {
         uint32_t    vpwr_pixel_format     : 4   ; /* [3..0]  */
         uint32_t    vpwr_pixel_expansion  : 1   ; /* [4]  */
-        uint32_t    reserved_0            : 4   ; /* [8..5]  */
-        uint32_t    vpwr_access_limiter   : 4   ; /* [12..9]  */
-        uint32_t    vpwr_last_page        : 17  ; /* [29..13]  */
-        uint32_t    reserved_1            : 2   ; /* [31..30]  */
+        uint32_t    reserved_0            : 8   ; /* [12..5]  */
+        uint32_t    vpwr_last_page        : 19  ; /* [31..13]  */
     } bits;
 
     /* Define an unsigned member */
     uint32_t    reg32;
 
 } U_VP_WR_CFG_UPDATE;
+
+// for 34 bit and new pixel format
+typedef union
+{
+    /* Define the struct bits */
+    struct
+    {
+        uint32_t    vpwr_pixel_format     : 5   ; /* [4..0]  */
+        uint32_t    vpwr_pixel_expansion  : 1   ; /* [5]  */
+        uint32_t    reserved_0            : 7   ; /* [12..6]  */
+        uint32_t    vpwr_last_page        : 19  ; /* [31..13]  */
+    } bits;
+
+    /* Define an unsigned member */
+    uint32_t    reg32;
+
+} U_VP_WR_CFG_UPDATE_2;
 
 typedef union
 {
@@ -247,7 +304,24 @@ typedef union
     /* Define the struct bits */
     struct
     {
-        uint32_t    reserved_0            : 4   ; /* [3..0]  */
+        uint32_t    vpwr_line_stride          : 11  ; /* [10..0]  */
+        uint32_t    vpwr_line_start_wstrb_4   : 4   ; /* [14..11]  */
+        uint32_t    vpwr_line_wrap            : 14  ; /* [28..15]  */
+        uint32_t    reserved_1                : 3   ; /* [31..29]  */
+    } bits;
+
+    /* Define an unsigned member */
+    uint32_t    reg32;
+
+} U_VP_WR_AXI_LINE_UPDATE_2;
+
+//for 32bit
+typedef union
+{
+    /* Define the struct bits */
+    struct
+    {
+        uint32_t    reserved_0               : 4   ; /* [3..0]  */
         uint32_t    vpwr_address_frame_start : 28  ; /* [31..4]  */
     } bits;
 
@@ -255,6 +329,21 @@ typedef union
     uint32_t    reg32;
 
 } U_VP_WR_AXI_FS;
+
+// for 34bit update
+typedef union
+{
+    /* Define the struct bits */
+    struct
+    {
+        uint32_t    reserved_0               : 2   ; /* [1..0]  */
+        uint32_t    vpwr_address_frame_start : 30  ; /* [31..2]  */
+    } bits;
+
+    /* Define an unsigned member */
+    uint32_t    reg32;
+
+} U_VP_WR_AXI_FS_UPDATE;
 
 /* Define the union U_CVDR_SRT_NR_RD_CFG_1 */
 typedef union
@@ -300,5 +389,19 @@ typedef union
 
 } U_CVDR_SRT_LIMITER_NR_RD_1;
 
+typedef union
+{
+   struct
+   {
+       uint32_t axiwrite_du_threshold :6 ;/* [5..0] */
+       uint32_t reserved_0            :2 ;/* [7..6] */
+       uint32_t du_threshold_reached  :8 ;/* [15..8] */
+       uint32_t max_axiread_id        :6 ;/* [21..16] */
+       uint32_t reserved_1            :2 ;/* [23..22] */
+       uint32_t max_axiwrite_id       :5 ;/* [28..24] */
+       uint32_t reserved_2            :3 ;/* [31..29] */
+   }bits;
+   uint32_t reg32;
+}U_AXI_JPEG_CVDR_CFG;
 
 #endif  // _INCLUDE_CVDR_CFG_H

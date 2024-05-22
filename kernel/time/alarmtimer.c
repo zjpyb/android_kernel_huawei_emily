@@ -71,6 +71,7 @@ int set_power_on_alarm(long time_sec, bool enable_irq)
 	unsigned long rtc_current_time = 0;
 	unsigned long offset = 0;
 	unsigned long alarm_value = 0;
+	struct rtc_time setting_time = {0};
 	/* remove rtc alarm */
 	if (time_sec == 0) {
 		pr_info("%s(): remove rtc alarm\n", __func__);
@@ -82,7 +83,6 @@ int set_power_on_alarm(long time_sec, bool enable_irq)
 	}
 	getnstimeofday(&tmp_time);
 
-	struct rtc_time setting_time = {0};
 	rtc_time_to_tm(time_sec, &setting_time);
 	pr_info("%s() setting_time is : [%d-%d-%d] [%d:%d:%d] %lu\n",
 		__func__,

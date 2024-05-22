@@ -369,6 +369,7 @@ struct device_attribute *attr,char *buf)
 {
     cam_ldo *p_ldo = NULL;
     int buflen = 0;
+    int ret;
     cam_info("Enter : %s", __func__);
     mutex_lock(&ldo_lock);
     if(buf == NULL){
@@ -382,7 +383,12 @@ struct device_attribute *attr,char *buf)
     }else{
         p_ldo = &(camerafs_ldo[FRONT_POS]);
     }
-    memcpy_s((cam_ldo *)buf,buflen, p_ldo, buflen);
+    ret = memcpy_s((cam_ldo *)buf, buflen, p_ldo, buflen);
+    if (ret != 0) {
+        cam_err("%s, copy buf is fail\n", __func__);
+        mutex_unlock(&ldo_lock);
+        return -1;
+    }
     mutex_unlock(&ldo_lock);
     cam_info("Exit : %s\n", __func__);
     return buflen;
@@ -419,7 +425,7 @@ struct device_attribute *attr, const char *buf, size_t count)
     for(i=0; i< p_ldo->ldo_num; i++){
         sum_cur = 0;
         for(j=0; j<LDO_RUN_COUNT; j++){
-            cur_val = hisi_adc_get_current(p_ldo->ldo_channel[i]);
+	    cur_val = hisi_adc_get_current(p_ldo->ldo_channel[i]);
             if(cur_val < 0){
                 cam_err("%s ldo read data error cur_val = %d\n", __func__, cur_val);
                 sum_cur = -1;
@@ -490,7 +496,11 @@ static int hw_rt_get_ldo_data(void)
                     cam_err("%s failed %d\n", __func__, __LINE__);
                     return ret;
                 }
-                strncpy_s(p_ldo->ldo_name[i], LDO_NAME_LEN-1, pldoname, strlen(pldoname));
+                ret = strncpy_s(p_ldo->ldo_name[i], LDO_NAME_LEN - 1, pldoname, strlen(pldoname));
+                if (ret != 0) {
+                    cam_err("%s copy ldo name failed %d\n", __func__, __LINE__);
+                    return ret;
+                }
             }
         }
 
@@ -515,7 +525,11 @@ static int hw_rt_get_ldo_data(void)
                     cam_err("%s failed %d\n", __func__, __LINE__);
                     return ret;
                 }
-                strncpy_s(p_ldo->ldo_name[i], LDO_NAME_LEN-1, pldoname, strlen(pldoname));
+                ret = strncpy_s(p_ldo->ldo_name[i], LDO_NAME_LEN - 1, pldoname, strlen(pldoname));
+                if (ret != 0) {
+                    cam_err("%s copy ldo name failed %d\n", __func__, __LINE__);
+                    return ret;
+                }
             }
         }
         rt_ldo_detect_pos = REAR_POS;//default detect rear camera

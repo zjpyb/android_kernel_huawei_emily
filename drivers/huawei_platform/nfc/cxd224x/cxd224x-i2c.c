@@ -704,6 +704,7 @@ err_request_irq_failed:
 	misc_deregister(&cxd224x_dev->cxd224x_device);
 err_misc_register:
 	mutex_destroy(&cxd224x_dev->read_mutex);
+	mutex_destroy(&cxd224x_dev->lock);
 	kfree(cxd224x_dev);
 err_exit:
 	if(irq_gpio_ok)
@@ -740,6 +741,7 @@ static int cxd224x_remove(struct i2c_client *client)
 	free_irq(client->irq, cxd224x_dev);
 	misc_deregister(&cxd224x_dev->cxd224x_device);
 	mutex_destroy(&cxd224x_dev->read_mutex);
+	mutex_destroy(&cxd224x_dev->lock);
 		if(cxd224x_dev->gpio)
 		{
 			gpio_free(cxd224x_dev->gpio->irq_gpio);

@@ -19,8 +19,34 @@
 #include "lcd_kit_bl.h"
 #include <linux/hisi/hw_cmdline_parse.h>
 
+/*oem info*/
+static int oem_info_type = LCD_KIT_FAIL;
+static int lcd_get_2d_barcode(char *oem_data,
+	struct hisi_fb_data_type *hisifd);
+static int lcd_get_project_id(char *oem_data,
+	struct hisi_fb_data_type *hisifd);
+static int lcd_get_brightness_colorpoint(char *oem_data,
+	struct hisi_fb_data_type *hisifd);
+static int lcd_set_brightness_xcc_rgbw(char *oem_data,
+	struct hisi_fb_data_type *hisifd);
+
+static struct oem_info_cmd oem_read_cmds[] = {
+	{PROJECT_ID_TYPE, lcd_get_project_id},
+	{BARCODE_2D_TYPE, lcd_get_2d_barcode},
+	{BRIGHTNESS_COLOROFWHITE_TYPE, lcd_get_brightness_colorpoint},
+};
+
+static struct oem_info_cmd oem_write_cmds[] = {
+	{BRIGHTNESS_COLOROFWHITE_TYPE, lcd_set_brightness_xcc_rgbw},
+};
+
+//define ms time unit
+#define MILLISEC_TIME   1000
+
 /*extern declare*/
+#if defined(CONFIG_HISI_HKADC)
 extern int hisi_adc_get_value(int adc_channel);
+#endif
 
 static ssize_t lcd_model_show(struct device* dev,
 										struct device_attribute* attr, char* buf)
@@ -162,7 +188,7 @@ static ssize_t lcd_alpm_function_store(struct device* dev, struct device_attribu
 	if (disp_info->alpm.support) {
 		ret = sscanf(buf, "%u", &hisifd->aod_function);
 		if (!ret) {
-			LCD_KIT_ERR("sscanf return invaild:%d\n", ret);
+			LCD_KIT_ERR("sscanf return invaild:%zd\n", ret);
 			return LCD_KIT_FAIL;
 		}
 	}
@@ -191,7 +217,7 @@ static ssize_t lcd_alpm_setting_store(struct device* dev, struct device_attribut
 	}
 	ret = sscanf(buf, "%u", &mode);
 	if (!ret) {
-		LCD_KIT_ERR("sscanf return invaild:%d\n", ret);
+		LCD_KIT_ERR("sscanf return invaild:%zd\n", ret);
 		return LCD_KIT_FAIL;
 	}
 	down(&hisifd->blank_sem);
@@ -414,9 +440,9 @@ static ssize_t lcd_hkadc_debug_show(struct device* dev,
 {
 	int ret = LCD_KIT_OK;
 
-	if (disp_info->hkadc.support) {
+	if (disp_info->hkadc.support)
 		ret = snprintf(buf, PAGE_SIZE, "%d\n", disp_info->hkadc.value);
-	}
+
 	return ret;
 }
 
@@ -436,13 +462,43 @@ static ssize_t lcd_hkadc_debug_store(struct device* dev, struct device_attribute
 			LCD_KIT_ERR("ivalid parameter!\n");
 			return ret;
 		}
+#if defined(CONFIG_HISI_HKADC)
 		disp_info->hkadc.value = hisi_adc_get_value(channel);
+#endif
 	}
 	return count;
 }
 
-static ssize_t lcd_amoled_pcd_errflag_show(struct device* dev,
-		struct device_attribute* attr, char* buf)
+static ssize_t lcd_amoled_cmds_pcd_errflag(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	int ret = LCD_KIT_OK;
+	int check_result = 0;
+	struct hisi_fb_data_type *hisifd = NULL;
+
+	hisifd = dev_get_hisifd(dev);
+	if (hisifd == NULL) {
+		LCD_KIT_ERR("hisifd is null\n");
+		return LCD_KIT_FAIL;
+	}
+	if (buf == NULL) {
+		LCD_KIT_ERR("buf is null\n");
+		return LCD_KIT_FAIL;
+	}
+	if (hisifd->panel_power_on) {
+		if (disp_info->pcd_errflag.pcd_support ||
+			disp_info->pcd_errflag.errflag_support) {
+			check_result = lcd_kit_check_pcd_errflag_check(hisifd);
+			ret = snprintf(buf, PAGE_SIZE, "%d\n", check_result);
+			LCD_KIT_INFO("pcd_errflag, the check_result = %d\n",
+				check_result);
+		}
+	}
+	return ret;
+}
+
+static ssize_t lcd_amoled_gpio_pcd_errflag(struct device *dev,
+		struct device_attribute *attr, char *buf)
 {
 	int ret = PCD_ERRFLAG_SUCCESS;
 	int pcd_gpio = 0;
@@ -518,6 +574,23 @@ err_out:
 	LCD_KIT_INFO("The test cmd is pcd_errflag,and the result_value = %d\n",result_value);
 	ret = snprintf(buf, PAGE_SIZE, "%d\n", result_value);
 
+	return ret;
+}
+
+static ssize_t lcd_amoled_pcd_errflag_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	int ret = PCD_ERRFLAG_SUCCESS;
+
+	if (buf == NULL) {
+		LCD_KIT_ERR("buf is null\n");
+		return LCD_KIT_FAIL;
+	}
+	if (disp_info->pcd_errflag.pcd_support ||
+		disp_info->pcd_errflag.errflag_support)
+		ret = lcd_amoled_cmds_pcd_errflag(dev, attr, buf);
+	else
+		ret = lcd_amoled_gpio_pcd_errflag(dev, attr, buf);
 	return ret;
 }
 
@@ -1032,23 +1105,6 @@ static ssize_t lcd_current_detect_show(struct device* dev,
 	return snprintf(buf, PAGE_SIZE, "%d", ret);
 }
 
-/*oem info*/
-static int oem_info_type = -1;
-static int lcd_get_2d_barcode(char *oem_data,struct hisi_fb_data_type *hisifd);
-static int lcd_get_project_id(char *oem_data,struct hisi_fb_data_type *hisifd);
-static int lcd_get_brightness_colorpoint(char *oem_data,struct hisi_fb_data_type *hisifd);
-static void lcd_set_brightness_xcc_rgbw(char *oem_data, struct hisi_fb_data_type *hisifd);
-
-static struct oem_info_cmd oem_read_cmds[] = {
-	{PROJECT_ID_TYPE, lcd_get_project_id},
-	{BARCODE_2D_TYPE, lcd_get_2d_barcode},
-	{BRIGHTNESS_COLOROFWHITE_TYPE, lcd_get_brightness_colorpoint},
-};
-
-static struct oem_info_cmd oem_write_cmds[] = {
-	{BRIGHTNESS_COLOROFWHITE_TYPE, lcd_set_brightness_xcc_rgbw},
-};
-
 static int lcd_get_project_id(char *oem_data, struct hisi_fb_data_type *hisifd)
 {
 	struct lcd_kit_ops *lcd_ops = NULL;
@@ -1076,7 +1132,7 @@ static int lcd_get_project_id(char *oem_data, struct hisi_fb_data_type *hisifd)
 
 static int lcd_get_2d_barcode(char *oem_data, struct hisi_fb_data_type *hisifd)
 {
-	char read_value[OEM_INFO_SIZE_MAX+1] = {0};
+	char read_value[OEM_INFO_SIZE_MAX + 1];
 	int ret = 0;
 	struct lcd_kit_panel_ops *panel_ops = NULL;
 
@@ -1085,12 +1141,15 @@ static int lcd_get_2d_barcode(char *oem_data, struct hisi_fb_data_type *hisifd)
 		return panel_ops->lcd_get_2d_barcode(oem_data, hisifd);
 	}
 
+	memset(read_value, 0, OEM_INFO_SIZE_MAX + 1);
+
 	if (disp_info->oeminfo.barcode_2d.support) {
 		ret = lcd_kit_dsi_cmds_rx(hisifd, read_value, &disp_info->oeminfo.barcode_2d.cmds);
 		oem_data[0] = BARCODE_2D_TYPE;
-		oem_data[1] = BARCODE_BLOCK_NUM;
+		oem_data[1] = disp_info->oeminfo.barcode_2d.block_num;
 		strncat(oem_data, read_value, strlen(read_value));
 	}
+
 	return ret;
 }
 
@@ -1159,7 +1218,8 @@ static int lcd_get_brightness_colorpoint(char *oem_data, struct hisi_fb_data_typ
 	return ret;
 }
 
-static void lcd_set_brightness_xcc_rgbw(char *oem_data, struct hisi_fb_data_type *hisifd)
+static int lcd_set_brightness_xcc_rgbw(char *oem_data,
+	struct hisi_fb_data_type *hisifd)
 {
 	uint32_t i = 0;
 	uint32_t j = 0;
@@ -1171,7 +1231,7 @@ static void lcd_set_brightness_xcc_rgbw(char *oem_data, struct hisi_fb_data_type
 
 	if ((NULL == hisifd) || (NULL == oem_data)) {
 		LCD_KIT_ERR("NULL pointer\n");
-		return;
+		return LCD_KIT_FAIL;
 	}
 	for (i=0;i<oem_data[1];i++) {
 		LCD_KIT_INFO("oem_data[%d] = %d\n", i,oem_data[i]);
@@ -1194,6 +1254,7 @@ static void lcd_set_brightness_xcc_rgbw(char *oem_data, struct hisi_fb_data_type
 	if(ret != 0) {
 		LCD_KIT_ERR("realtime set lcd xcc failed!\n");
 	}
+	return ret;
 }
 
 static ssize_t lcd_oem_info_show(struct device* dev,
@@ -1202,7 +1263,7 @@ static ssize_t lcd_oem_info_show(struct device* dev,
 	int ret = LCD_KIT_OK;
 	int i = 0;
 	struct hisi_fb_data_type* hisifd = NULL;
-	char oem_info_data[OEM_INFO_SIZE_MAX] = {0};
+	char oem_info_data[OEM_INFO_SIZE_MAX];
 	char str_oem[OEM_INFO_SIZE_MAX+1] = {0};
 	char str_tmp[OEM_INFO_SIZE_MAX+1] = {0};
 
@@ -1219,6 +1280,8 @@ static ssize_t lcd_oem_info_show(struct device* dev,
 		LCD_KIT_ERR("first write ddic_oem_info, then read\n");
 		return LCD_KIT_FAIL;
 	}
+
+	memset(oem_info_data, 0, OEM_INFO_SIZE_MAX);
 	/*execute cmd func*/
 	down(&hisifd->blank_sem);
 	if (hisifd->panel_power_on) {
@@ -1302,12 +1365,14 @@ static ssize_t lcd_oem_info_store(struct device* dev,
 	return count;
 }
 
+#if defined(CONFIG_HISI_HKADC)
 extern int hisi_adc_get_current(int adc_channel);
+#endif
 static ssize_t lcd_ldo_check_show(struct device* dev,
 		struct device_attribute* attr, char* buf)
 {
     int i,j = 0;
-    int cur_val = 0;
+    int cur_val = -1; //init invalid value
     int sum_current = 0;
     int len = sizeof(struct lcd_kit_ldo_check);
     int temp_max_value = 0;
@@ -1319,8 +1384,8 @@ static ssize_t lcd_ldo_check_show(struct device* dev,
 		return LCD_KIT_FAIL;
 	}
 	if (!disp_info->ldo_check.support) {
-		LCD_KIT_ERR("ldo check not support\n");
-		return LCD_KIT_FAIL;
+		LCD_KIT_INFO("ldo check not support\n");
+		return len;
 	}
 
 	down(&hisifd->blank_sem);
@@ -1333,7 +1398,9 @@ static ssize_t lcd_ldo_check_show(struct device* dev,
 		sum_current = 0;
 		temp_max_value = 0;
 		for(j=0; j< LDO_CHECK_COUNT; j++) {
+#if defined(CONFIG_HISI_HKADC)
 			cur_val = hisi_adc_get_current(disp_info->ldo_check.ldo_channel[i]);
+#endif
 			if(cur_val < 0) {
 				sum_current = -1;
 				break;
@@ -1422,20 +1489,127 @@ static ssize_t lcd_effect_bl_store(struct device* dev,
 	return ret;
 }
 
-
-static int lcd_check_support(int index)
+static int lcd_vertical_line_avdd_test(struct hisi_fb_data_type *hisifd)
 {
-	struct hisi_fb_data_type* hisifd = NULL;
+	int ret = 0;
 
-	if (runmode_is_factory()) {
-		return SYSFS_SUPPORT;
+	down(&hisifd->blank_sem);
+	if (!hisifd->panel_power_on) {
+		LCD_KIT_ERR("panel is power off\n");
+		up(&hisifd->blank_sem);
+		return LCD_KIT_FAIL;
 	}
+	hisifb_activate_vsync(hisifd);
+	ret = lcd_kit_dsi_cmds_tx(hisifd, &disp_info->vertical_line.avdd_cmds);
+	if (ret)
+		LCD_KIT_ERR("send avdd cmd error\n");
+	hisifb_deactivate_vsync(hisifd);
+	up(&hisifd->blank_sem);
+	return ret;
+}
 
-	hisifd = hisifd_list[PRIMARY_PANEL_IDX];
+static int lcd_vertical_line_gnd_test(struct hisi_fb_data_type *hisifd)
+{
+	int ret = 0;
+
+	down(&hisifd->blank_sem);
+	if (!hisifd->panel_power_on) {
+		LCD_KIT_ERR("panel is power off\n");
+		up(&hisifd->blank_sem);
+		return LCD_KIT_FAIL;
+	}
+	hisifb_activate_vsync(hisifd);
+	ret = lcd_kit_dsi_cmds_tx(hisifd, &disp_info->vertical_line.gnd_cmds);
+	if (ret)
+		LCD_KIT_ERR("send gnd cmd error\n");
+	hisifb_deactivate_vsync(hisifd);
+	up(&hisifd->blank_sem);
+	return ret;
+}
+
+static int lcd_vertical_line_test(struct hisi_fb_data_type *hisifd)
+{
+	int ret = LCD_KIT_OK;
+	int is_disable_esd = 0;
+	struct hisi_panel_info *pinfo = NULL;
+
+	pinfo = &(hisifd->panel_info);
+	if (!pinfo) {
+		LCD_KIT_ERR("panel_info is NULL!\n");
+		return LCD_KIT_FAIL;
+	}
+	LCD_KIT_INFO("vertical line test start\n");
+	LCD_KIT_INFO("disp_info->vertical_line.test_period = %d\n", disp_info->vertical_line.test_period);
+	/*disable esd check*/
+	if (pinfo->esd_enable) {
+		pinfo->esd_enable = 0;
+		is_disable_esd = 1;
+		msleep(1000);
+	}
+	/*test avdd*/
+	if (disp_info->vertical_line.avdd_cmds.cmds) {
+		/*test avdd 30 min*/
+		ret = lcd_vertical_line_avdd_test(hisifd);
+		if (ret) {
+			LCD_KIT_ERR("avdd test fail\n");
+			/*recovery display*/
+			lcd_kit_recovery_display(hisifd);
+			return LCD_KIT_FAIL;
+		}
+		msleep(disp_info->vertical_line.test_period * MILLISEC_TIME);
+		/*recovery display*/
+		lcd_kit_recovery_display(hisifd);
+	}
+	/*test gnd*/
+	if (disp_info->vertical_line.gnd_cmds.cmds) {
+		/*test gnd 30 min*/
+		ret = lcd_vertical_line_gnd_test(hisifd);
+		if (ret) {
+			LCD_KIT_ERR("gnd test fail\n");
+			/*recovery display*/
+			lcd_kit_recovery_display(hisifd);
+			return LCD_KIT_FAIL;
+		}
+		msleep(disp_info->vertical_line.test_period * MILLISEC_TIME);
+		/*recovery display*/
+		lcd_kit_recovery_display(hisifd);
+	}
+	/*enable esd*/
+	if (is_disable_esd)
+		pinfo->esd_enable = 1;
+
+	LCD_KIT_INFO("vertical line test end\n");
+	return LCD_KIT_OK;
+}
+
+static ssize_t lcd_general_test_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	int ret = LCD_KIT_OK;
+	struct hisi_fb_data_type *hisifd = NULL;
+
+	hisifd = dev_get_hisifd(dev);
 	if (hisifd == NULL) {
 		LCD_KIT_ERR("hisifd is null\n");
 		return LCD_KIT_FAIL;
 	}
+	if (disp_info->vertical_line.support)
+		ret = lcd_vertical_line_test(hisifd);
+
+	if (ret == 0)
+		ret = snprintf(buf, PAGE_SIZE, "OK\n");
+	else
+		ret = snprintf(buf, PAGE_SIZE, "FAIL\n");
+
+	return ret;
+}
+
+static int lcd_check_support(int index)
+{
+	if (runmode_is_factory()) {
+		return SYSFS_SUPPORT;
+	}
+
 	switch (index) {
 		case LCD_MODEL_INDEX:
 			return SYSFS_SUPPORT;
@@ -1472,7 +1646,7 @@ static int lcd_check_support(int index)
 		case FRAME_UPDATE_INDEX:
 			return disp_info->vr_support;
 		case MIPI_DSI_CLK_UPT_INDEX:
-			return hisifd->panel_info.dsi_bit_clk_upt_support;
+			return SYSFS_SUPPORT;
 		case FPS_SCENCE_INDEX:
 			return disp_info->fps.support;
 		case ALPM_FUNCTION_INDEX:
@@ -1501,6 +1675,8 @@ static int lcd_check_support(int index)
 			return SYSFS_SUPPORT;
 		case EFFECT_BL_INDEX:
 			return SYSFS_SUPPORT;
+		case LCD_GENERAL_TEST_INDEX:
+			return SYSFS_NOT_SUPPORT;
 		default:
 			return SYSFS_NOT_SUPPORT;
 	}
@@ -1554,6 +1730,7 @@ struct lcd_kit_sysfs_ops g_lcd_sysfs_ops = {
 	.bl_self_test_show = lcd_bl_self_test_show,
 	.effect_bl_show = lcd_effect_bl_show,
 	.effect_bl_store = lcd_effect_bl_store,
+	.general_test_show = lcd_general_test_show,
 };
 
 int lcd_kit_sysfs_init(void)

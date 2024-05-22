@@ -27,7 +27,6 @@
 #include <linux/power/hisi/hisi_bci_battery.h>
 #endif
 #include <huawei_platform/power/huawei_charger.h>
-#include <huawei_platform/power/vbat_ovp.h>
 #ifdef CONFIG_TCPC_CLASS
 #include <huawei_platform/usb/hw_pd_dev.h>
 #endif
@@ -40,8 +39,12 @@
 #ifdef CONFIG_WIRELESS_CHARGER
 #include <huawei_platform/power/wireless_charger.h>
 #endif
-
+#ifdef CONFIG_DP_AUX_SWITCH
 #include "huawei_platform/dp_aux_switch/dp_aux_switch.h"
+#endif
+
+#include <huawei_platform/power/charger_protocol/charger_protocol.h>
+#include <huawei_platform/power/charger_protocol/charger_protocol_scp.h>
 
 #define CHARGE_DMDLOG_SIZE      (2048)
 #define REVERSE_OCP_CNT          3
@@ -161,32 +164,6 @@
 #define SCP_STEP_VSET_OFFSET 0xcc
 #define SCP_STEP_ISET_OFFSET 0xcd
 
-#define SCP_ADAPTOR_KEY_INDEX_REG 0xce
-#define SCP_ADAPTOR_KEY_INDEX_BASE 0x00
-#define SCP_ADAPTOR_KEY_INDEX_PUBLIC (SCP_ADAPTOR_KEY_INDEX_BASE+0x01)
-#define SCP_ADAPTOR_KEY_INDEX_1 (SCP_ADAPTOR_KEY_INDEX_BASE+0x02)
-#define SCP_ADAPTOR_KEY_INDEX_2 (SCP_ADAPTOR_KEY_INDEX_BASE+0x03)
-#define SCP_ADAPTOR_KEY_INDEX_3 (SCP_ADAPTOR_KEY_INDEX_BASE+0x04)
-#define SCP_ADAPTOR_KEY_INDEX_4 (SCP_ADAPTOR_KEY_INDEX_BASE+0x05)
-#define SCP_ADAPTOR_KEY_INDEX_5 (SCP_ADAPTOR_KEY_INDEX_BASE+0x06)
-#define SCP_ADAPTOR_KEY_INDEX_6 (SCP_ADAPTOR_KEY_INDEX_BASE+0x07)
-#define SCP_ADAPTOR_KEY_INDEX_7 (SCP_ADAPTOR_KEY_INDEX_BASE+0x08)
-#define SCP_ADAPTOR_KEY_INDEX_8 (SCP_ADAPTOR_KEY_INDEX_BASE+0x09)
-#define SCP_ADAPTOR_KEY_INDEX_9 (SCP_ADAPTOR_KEY_INDEX_BASE+0x0A)
-#define SCP_ADAPTOR_KEY_INDEX_10 (SCP_ADAPTOR_KEY_INDEX_BASE+0x0B)
-#define SCP_ADAPTOR_KEY_INDEX_RELEASE (SCP_ADAPTOR_KEY_INDEX_BASE+0xFF)
-
-#define SCP_ADAPTOR_ENCRYPT_INFO_REG 0xcf
-#define SCP_ADAPTOR_ENCRYPT_ENABLE BIT(7)
-#define SCP_ADAPTOR_ENCRYPT_COMPLETE BIT(7)
-
-#define SCP_ADAPTOR_RANDOM_NUM_HI_BASE_REG  0xa0
-#define SCP_ADAPTOR_RANDOM_NUM_HI_LEN  8
-
-#define SCP_ADAPTOR_RANDOM_NUM_LO_BASE_REG  0xa8
-#define SCP_ADAPTOR_RANDOM_NUM_LO_LEN  8
-
-#define SCP_ADAPTOR_DIGEST_BASE_REG  0xb0
 #define SCP_ADAPTOR_DIGEST_LEN  16
 #define SCP_ADAPTOR_DETECT_FAIL 1
 #define SCP_ADAPTOR_DETECT_SUCC 0
@@ -218,7 +195,7 @@
 #define INVALID -1
 #define VALID 0
 #define WAIT_LS_DISCHARGE 200
-#define MAX_TIMES_FOR_SET_ADAPTER_VOL_20 20
+#define MAX_TIMES_FOR_SET_ADAPTER_VOL_30 30
 #define ADAPTER_VOL_DIFFRENCE_300_MV 300
 #define MAX_ADAPTER_VOL_4400_MV 4400
 #define MIN_ADAPTER_VOL_STEP_20_MV 20
@@ -277,6 +254,11 @@
 #define C_OFFSET_MAX_LEN                        20
 #define C_OFFSET_A_MAX                          1200000
 #define C_OFFSET_A_MIN                          800000
+
+#define ADP_B_TYPE1                             3
+#define ADP_B_TYPE1_65W                         5
+
+#define MAX_RESIST_STR_SIZE                     (10)
 
 enum direct_charge_mode{
 	UNDEFINED_MODE = 0x0,
@@ -376,12 +358,14 @@ enum loadswitch_id {
 	LOADSWITCH_FAIRCHILD,
 	LOADSWITCH_NXP,
 	LOADSWITCH_SCHARGERV600,
+	LOADSWITCH_FPF2283,
 	LOADSWITCH_TOTAL,
 };
 
 enum switchcap_id {
 	SWITCHCAP_TI_BQ25970,
 	SWITCHCAP_SCHARGERV600,
+	SWITCHCAP_LTC7820,
 	SWITCHCAP_TOTAL,
 };
 
@@ -402,6 +386,8 @@ enum direct_charge_fault_type {
 	DIRECT_CHARGE_FAULT_IBUS_OCP,
 	DIRECT_CHARGE_FAULT_CONV_OCP,
 
+	DIRECT_CHARGE_FAULT_LTC7820,
+
 	DIRECT_CHARGE_FAULT_TOTAL,
 };
 
@@ -419,13 +405,17 @@ static const char *const loadswitch_name[] = {
 	[2] = "FAN54161",
 	[3] = "PCA9498",
 	[4] = "HI6526",
-	[5] = "ERROR",
+	[5] = "FPF2283",
+	[6] = "ERROR",
 };
+
 static const char *const switchcap_name[] = {
-	[0] = "SWITCHCAP_BQ25970",
+	[0] = "BQ25970",
 	[1] = "HI6526",
-	[2] = "ERROR",
+	[2] = "LTC7820",
+	[3] = "ERROR",
 };
+
 static const char *const scp_check_stage[] = {
 	[0] = "SCP_STAGE_DEFAULT",
 	[1] = "SCP_STAGE_SUPPORT_DETECT",
@@ -545,6 +535,8 @@ struct direct_charge_device {
 	struct dc_volt_para_info_group *orig_volt_para_p;
 	struct dc_temp_para_info temp_para[DC_TEMP_LEVEL];
 	struct dc_resist_para_info resist_para[DC_RESIST_LEVEL];
+	struct dc_resist_para_info std_resist_para[DC_RESIST_LEVEL];
+	struct dc_resist_para_info ctc_resist_para[DC_RESIST_LEVEL];
 	struct adaptor_info adp_info;
 	struct nty_data *fault_data;
 	int stage_need_to_jump[2*DC_VOLT_LEVEL];
@@ -554,7 +546,6 @@ struct direct_charge_device {
 	unsigned int use_8A;
 	int sysfs_enable_charger;
 	int sysfs_disable_charger[__MAX_DISABLE_DIRECT_CHAGER];
-	int vbat_ovp_enable_charger;
 	int sysfs_iin_thermal;
 	int threshold_caculation_interval;
 	int charge_control_interval;
@@ -591,17 +582,21 @@ struct direct_charge_device {
 	int scp_stop_charging_flag_error;
 	int max_dc_bat_vol;
 	int min_dc_bat_vol;
+	int super_ico_current;
+	int is_show_ico_first;
 	int bst_ctrl;
 	int scp_power_en;
 	int compensate_r;
 	int compensate_v;
 	int ls_id;
-	char* ls_name;
+	const char *ls_name;
 	int vol_err_th;
 	int full_path_res_max;
 	int standard_cable_full_path_res_max;
+	int ctc_cable_full_path_res_max;
 	int full_path_res_threshold;
 	int adaptor_leakage_current_th;
+	int adaptor_detect_by_voltage;
 	int direct_charge_succ_flag;
 	int first_cc_stage_timer_in_min;
 	int max_adaptor_cur;
@@ -610,6 +605,7 @@ struct direct_charge_device {
 	int cc_cable_detect_enable;
 	int cc_cable_detect_ok;
 	int max_current_for_none_standard_cable;
+	int max_current_for_ctc_cable;
 	enum direct_charge_fault_type charge_fault;
 	int adaptor_vendor_id;
 	int scp_work_on_charger;
@@ -630,12 +626,16 @@ struct direct_charge_device {
 	struct wake_lock direct_charge_lock;
 	int adaptor_test_result_type;
 	char thermal_reason[SCP_THERMAL_REASON_SIZE];
-	char adaptor_antifake_key_index;
+	int adaptor_antifake_key_index;
 	int adaptor_antifake_check_enable;
 	int dc_antifake_result;
 	struct completion dc_af_completion;
 	int sc_conv_ocp_count;
 	int iin_thermal_default;
+	int can_stop_kick_wdt;
+	int last_basp_level;
+	int gain_curr;
+	int reset_adap_volt_enabled;
 };
 
 struct smart_charge_ops {
@@ -649,9 +649,7 @@ struct smart_charge_ops {
 	int (*scp_get_adaptor_current)(void);
 	int (*scp_get_adaptor_current_set)(void);
 	int (*scp_get_adaptor_max_current)(void);
-	int (*scp_adaptor_reset)(void);
 	int (*scp_adaptor_output_enable)(int);
-	int (*scp_chip_reset)(void);
 	int (*scp_stop_charge_config)(void);
 	int (*is_scp_charger_type)(void);
 	int (*scp_get_adaptor_status)(void);
@@ -663,12 +661,6 @@ struct smart_charge_ops {
 	int (*scp_get_usb_port_leakage_current_info)(void);
 	void (*scp_set_direct_charge_mode)(int);
 	int (*scp_get_adaptor_type)(void);
-	int (*scp_set_adaptor_encrypt_enable)(int);
-	int (*scp_get_adaptor_encrypt_enable)(void);
-	int (*scp_set_adaptor_random_num)(char *);
-	int (*scp_get_adaptor_encrypt_completed)(void);
-	int (*scp_get_adaptor_random_num)(char *);
-	int (*scp_get_adaptor_encrypted_value)(char *);
 };
 
 struct scp_power_supply_ops {
@@ -692,7 +684,8 @@ void kick_watchdog_work(struct work_struct *work);
 void threshold_caculation_work(struct work_struct *work);
 void direct_charge_or_set_local_mode(int dc_mode);
 void direct_charge_and_set_local_mode(int dc_mode);
-void battery_aging_safe_policy(struct direct_charge_device *di);
+void battery_aging_safe_policy(struct direct_charge_device *di,
+				bool force_update);
 void scp_start_charging(void);
 int scp_security_check(void);
 int scp_direct_charge_init(void);
@@ -710,6 +703,7 @@ int direct_charge_get_sc_di(struct direct_charge_device **di);
 void direct_charge_lvc_check(void);
 void direct_charge_sc_check(void);
 int direct_charge_get_local_mode(void);
+int direct_charge_get_adapter_type(void);
 int scp_adaptor_type_detect(int *mode);
 void direct_charge_set_di(struct direct_charge_device *di);
 int cable_detect_ops_register(struct direct_charge_cable_detect_ops*);
@@ -731,11 +725,10 @@ int scp_adaptor_set_output_enable(int enable);
 int direct_charge_get_cutoff_normal_flag(void);
 int get_quick_charge_flag(void);
 int get_super_charge_flag(void);
-void vbat_ovp_exit_direct_charge(int enable_charge);
-int vbat_ovp_scp_handle(void);
 int is_direct_charge_failed(void);
 int is_in_scp_charging_stage(void);
 void direct_charge_send_quick_charge_uevent(void);
+void direct_charge_set_adapter_default_param(void);
 #ifdef CONFIG_SCHARGER_V300
 #define HI6523_CV_CUT 150
 extern bool is_hi6523_cv_limit(void);
@@ -745,6 +738,8 @@ extern struct blocking_notifier_head direct_charger_control_head;
 bool direct_charge_check_sc_mode(void);
 int direct_charge_gen_nl_init(struct platform_device *pdev);
 int do_adpator_antifake_check(void);
+int direct_charge_disable_usbpd(bool disable);
+int direct_charge_pre_check(void);
 enum direct_charge_mode direct_charge_get_adaptor_mode(void);
 
 #ifdef CONFIG_SYSFS
@@ -766,6 +761,8 @@ struct direct_charge_sysfs_field_info {
 };
 #endif
 
-#ifdef CONFIG_LLT_TEST
+#ifdef CONFIG_WIRELESS_CHARGER
+extern bool wltx_need_disable_wired_dc(void);
 #endif
+
 #endif

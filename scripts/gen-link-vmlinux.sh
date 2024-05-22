@@ -15,6 +15,15 @@ cp -rf scripts ${kernel_out_dir}
 cp -rf include ${kernel_out_dir}
 cp -rf arch/${SRCARCH}/include ${kernel_out_dir} --parents
 
+# clang LTO copy all the obj files
+# use DISABLE_LTO_CLANG flag to detect clang LTO
+if [ -n "${DISABLE_LTO_CLANG}" ]; then
+	for ofile in $@; do
+		odir=${ofile%/*}
+		cp -rf $odir ${kernel_out_dir} --parents
+	done
+fi
+
 cd ${srctree}
 cp -rf scripts ${kernel_src_dir}
 cp -rfL include ${kernel_src_dir}

@@ -5,6 +5,11 @@
 #include <linux/switch.h>
 #include <sound/soc.h>
 
+#ifdef CLT_AUDIO
+#define static_t
+#else
+#define static_t static
+#endif
 
 #define MICBIAS_PD_WAKE_LOCK_MS        3500
 #define MICBIAS_PD_DELAY_MS            3000
@@ -14,10 +19,16 @@
 #define HI6XXX_HKADC_CHN	14
 #define HI6XXX_INVALID_IRQ	(-1)
 
-#ifdef CLT_AUDIO
-#define static_t
+#ifdef CONFIG_SND_SOC_CODEC_HI6555V3
+#define HI6XXX_CHARGE_PUMP_CLK_PD CODEC_ANA_RW38_REG
+#define HI6XXX_MBHD_VREF_CTRL CODEC_ANA_RW34_REG
+#define HI6XXX_HS_PI_DETECT CODEC_ANA_RW32_REG
+#define HI6XXX_HSMICB_CFG CODEC_ANA_RW29_REG
 #else
-#define static_t static
+#define HI6XXX_CHARGE_PUMP_CLK_PD CODEC_ANA_RW37_REG
+#define HI6XXX_MBHD_VREF_CTRL CODEC_ANA_RW33_REG
+#define HI6XXX_HS_PI_DETECT CODEC_ANA_RW31_REG
+#define HI6XXX_HSMICB_CFG CODEC_ANA_RW28_REG
 #endif
 
 enum hi6xxx_jack_states {
@@ -111,6 +122,16 @@ struct hi6xxx_mbhc_priv {
 };
 
 /* irq */
+#ifdef CONFIG_SND_SOC_CODEC_HI6555V3
+#define IRQ_PLUG_OUT (0x1 << (ANA_IRQ_MASK_0_OFFSET + 7))
+#define IRQ_PLUG_IN (0x1 << (ANA_IRQ_MASK_0_OFFSET + 6))
+#define IRQ_ECO_BTN_DOWN (0x1 << (ANA_IRQ_MASK_0_OFFSET + 5))
+#define IRQ_ECO_BTN_UP (0x1 << (ANA_IRQ_MASK_0_OFFSET + 4))
+#define IRQ_COMP_L_BTN_DOWN (0x1 << (ANA_IRQ_MASK_0_OFFSET + 3))
+#define IRQ_COMP_L_BTN_UP (0x1 << (ANA_IRQ_MASK_0_OFFSET + 2))
+#define IRQ_COMP_H_BTN_DOWN (0x1 << (ANA_IRQ_MASK_0_OFFSET + 1))
+#define IRQ_COMP_H_BTN_UP (0x1 << (ANA_IRQ_MASK_0_OFFSET + 0))
+#else
 #define IRQ_PLUG_OUT (0x1 << (ANA_IRQ_MASK_OFFSET + 7))
 #define IRQ_PLUG_IN (0x1 << (ANA_IRQ_MASK_OFFSET + 6))
 #define IRQ_ECO_BTN_DOWN (0x1 << (ANA_IRQ_MASK_OFFSET + 5))
@@ -119,6 +140,8 @@ struct hi6xxx_mbhc_priv {
 #define IRQ_COMP_L_BTN_UP (0x1 << (ANA_IRQ_MASK_OFFSET + 2))
 #define IRQ_COMP_H_BTN_DOWN (0x1 << (ANA_IRQ_MASK_OFFSET + 1))
 #define IRQ_COMP_H_BTN_UP (0x1 << (ANA_IRQ_MASK_OFFSET + 0))
+#endif
+
 
 #define IRQ_MSK_COMP_H_BTN (IRQ_COMP_H_BTN_UP | IRQ_COMP_H_BTN_DOWN)
 #define IRQ_MSK_BTN_ECO (IRQ_ECO_BTN_UP | IRQ_ECO_BTN_DOWN)

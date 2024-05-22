@@ -26,6 +26,5 @@ VOID SMMU_SetMemCtlReg(VOID);
 #endif
 VOID SMMU_InitGlobalReg(VOID);
 VOID SMMU_IntServProc(VOID);
-VOID SMMU_ConfigSMR(VOID);
 
 #endif

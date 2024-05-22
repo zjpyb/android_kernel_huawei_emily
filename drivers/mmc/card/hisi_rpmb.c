@@ -10,7 +10,7 @@
 #include <asm-generic/fcntl.h>
 #include <linux/init.h>
 #include <linux/interrupt.h>
-#include <linux/mmc/rpmb.h>
+#include <linux/hisi/rpmb.h>
 #include <linux/mmc/core.h>
 #include <linux/mmc/ioctl.h>
 #include <linux/mmc/card.h>
@@ -102,7 +102,7 @@ static int rpmb_key_status = KEY_NOT_READY;
 DEFINE_MUTEX(rpmb_counter_lock);
 DEFINE_MUTEX(rpmb_ufs_cmd_lock);
 
-static void print_frame_buf(char* name, void *buf, int len, int format) {
+static void print_frame_buf(char* name, const void *buf, int len, int format) {
 	pr_err("%s \n", name);
 	print_hex_dump(KERN_ERR, "", DUMP_PREFIX_OFFSET, format, 1, buf,
 		len, false);
@@ -1303,7 +1303,7 @@ static void rpmb_key_status_check(void){
 
 u32 get_rpmb_support_key_num(void){
 	u32 key_num = 0;
-	int i;
+	unsigned int i;
 	for (i = 0;i < MAX_RPMB_REGION_NUM;i++) {
 		if (((rpmb_device_info.rpmb_region_enable >> i) & 0x1))
 			key_num++;
@@ -1710,6 +1710,8 @@ int mmc_blk_ioctl_rpmb_cmd(enum func_id id,
 	struct mmc_blk_ioc_rpmb_data *idata;
 	int err = 0, i = 0;
 	u32 status = 0;
+	bool switch_err = false;
+	int switch_retry = 3;
 
 	md = mmc_blk_get(bdev->bd_disk);
 	/* make sure this is a rpmb partition */
@@ -1733,9 +1735,12 @@ int mmc_blk_ioctl_rpmb_cmd(enum func_id id,
 	mmc_get_card(card);
 	/*mmc_claim_host(card->host);*/
 
+retry:
 	err = mmc_blk_part_switch(card, md);
-	if (err)
+	if (err) {
+		switch_err = true;
 		goto cmd_rel_host;
+	}
 
 	for (i = 0; i < MMC_IOC_MAX_RPMB_CMD; i++) {
 		struct mmc_blk_ioc_data *curr_data;
@@ -1817,6 +1822,15 @@ int mmc_blk_ioctl_rpmb_cmd(enum func_id id,
 	}
 
 cmd_rel_host:
+	if (err == -ENOMSG) {
+		if (!mmc_blk_reset(md, card->host, 0)) {
+			if (switch_err && switch_retry--) {
+				switch_err = false;
+				goto retry;
+			}
+		}
+	}
+
 	mmc_put_card(card);
 /*mmc_release_host(card->host);*/
 

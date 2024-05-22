@@ -102,6 +102,8 @@ static unsigned long clarify_token;
 DEFINE_MUTEX(module_mutex);
 EXPORT_SYMBOL_GPL(module_mutex);
 static LIST_HEAD(modules);
+DEFINE_MUTEX(klp_mutex);
+EXPORT_SYMBOL_GPL(klp_mutex);
 
 #ifdef CONFIG_MODULES_TREE_LOOKUP
 
@@ -1939,7 +1941,8 @@ static inline void hhee_lkm_update(const struct module_layout *layout)
 			layout->text_size, clarify_token, 0, 0, 0, 0, &res);
 
 	if (res.a0)
-		pr_err("service from hhee failed-test.\n");
+		pr_err("service from hhee failed test.\n");
+
 #else
 	(void *)layout;
 #endif
@@ -2773,8 +2776,11 @@ static inline void kmemleak_load_module(const struct module *mod,
 static int module_sig_check(struct load_info *info, int flags)
 {
 	int err = -ENOKEY;
+	int ret;
 	const unsigned long markerlen = sizeof(MODULE_SIG_STRING) - 1;
 	const void *mod = info->hdr;
+	struct stp_item item;
+	(void)memset(&item, 0, sizeof(item));
 
 	/*
 	 * Require flags == 0, as a module with version information
@@ -2792,14 +2798,12 @@ static int module_sig_check(struct load_info *info, int flags)
 		info->sig_ok = true;
 		return 0;
 	}
-	struct stp_item item;
-	(void)memset(&item, 0, sizeof(item));
 	item.id = item_info[MOD_SIGN].id;
 	item.status = STP_RISK;
 	item.credible = STP_CREDIBLE;
 	item.version = 0;
 	(void)strncpy(item.name, item_info[MOD_SIGN].name, STP_ITEM_NAME_LEN - 1);
-	int ret = kernel_stp_upload(item, NULL);
+	ret = kernel_stp_upload(item, NULL);
 	if (ret != 0) {
 		pr_err("stp mod_sign upload fail");
 	}
@@ -3706,21 +3710,26 @@ static int load_module(struct load_info *info, const char __user *uargs,
 
 	/* Set up MODINFO_ATTR fields */
 	setup_modinfo(mod, info);
-
+	mutex_lock(&klp_mutex);
 	/* Fix up syms, so that st_value is a pointer to location. */
 	err = simplify_symbols(mod, info);
-	if (err < 0)
+	if (err < 0) {
+		mutex_unlock(&klp_mutex);
 		goto free_modinfo;
+	}
 
 	err = apply_relocations(mod, info);
-	if (err < 0)
+	if (err < 0) {
+		mutex_unlock(&klp_mutex);
 		goto free_modinfo;
-
+	}
 	err = post_relocation(mod, info);
-	if (err < 0)
+	if (err < 0) {
+		mutex_unlock(&klp_mutex);
 		goto free_modinfo;
-
+	}
 	flush_module_icache(mod);
+	mutex_unlock(&klp_mutex);
 
 	/* Now copy in args */
 	mod->args = strndup_user(uargs, ~0UL >> 1);
@@ -3766,13 +3775,13 @@ static int load_module(struct load_info *info, const char __user *uargs,
 			goto sysfs_cleanup;
 	}
 
-	/* Get rid of temporary copy. */
-	free_copy(info);
-
 	/* Done! */
 	trace_module_load(mod);
 
-	return do_init_module(mod);
+	err = do_init_module(mod);
+	/* Get rid of temporary copy. */
+	free_copy(info);
+	return err;
 
  sysfs_cleanup:
 	mod_sysfs_teardown(mod);

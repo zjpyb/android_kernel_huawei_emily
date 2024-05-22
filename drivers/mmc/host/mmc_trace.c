@@ -42,6 +42,7 @@ extern "C" {
 #include <linux/hisi/util.h>
 #include <linux/hisi/mmc_trace.h>
 #include <linux/pm_runtime.h>
+#include <linux/hisi/rdr_hisi_platform.h>
 #include <mntn_subtype_exception.h>
 
 #ifdef CONFIG_HISILICON_PLATFORM_MAINTAIN
@@ -1216,7 +1217,7 @@ void mmc_trace_emmc_init_fail_reset(void)
 {
 	if (check_himntn(HIMNTN_MMC_TRACE) == 0) {
 		pr_err("%s:emmc init failed\n", __func__);
-		BUG_ON(true);
+		rdr_syserr_process_for_ap((u32)MODID_AP_S_PANIC_Storage, 0ull, 0ull);
 	}
 
 	if (NULL == mmc_trace_fd) {

@@ -37,6 +37,10 @@
 #ifdef CONFIG_HW_SD_HEALTH_DETECT
 static unsigned int g_sd_speed_class = 0;
 #endif
+#if defined(CONFIG_HISI_DEBUG_FS)
+extern struct workqueue_struct *sd_sdio_test_work;
+extern int sd_init_loop_work;
+#endif
 static const unsigned int tran_exp[] = {
 	10000,		100000,		1000000,	10000000,
 	0,		0,		0,		0
@@ -1075,6 +1079,24 @@ void mmc_sd_go_highspeed(struct mmc_card *card)
 }
 #endif
 
+#if defined(CONFIG_HISI_DEBUG_FS)
+/*
+ *Handle the sd_sdio loop test work when in mmc_sd_init_card function.
+ */
+void sd_sdio_testwork_start(struct mmc_host *host){
+	if(NULL != host->card)
+	{
+		if((0x5a5a == sd_init_loop_work) && mmc_card_sd(host->card))
+		{
+			sd_sdio_test_work = alloc_workqueue("sd_sdio_test_work",WQ_FREEZABLE | WQ_POWER_EFFICIENT,0);
+			INIT_DELAYED_WORK(&host->sd_sdio_test_work, sd_sdio_loop_test);
+			queue_delayed_work(sd_sdio_test_work,&host->sd_sdio_test_work, msecs_to_jiffies(1000));
+			sd_init_loop_work = 0;
+		}
+	}
+}
+#endif
+
 /*
  * Handle the detection and initialisation of a card.
  *
@@ -1094,6 +1116,8 @@ int mmc_sd_init_card(struct mmc_host *host, u32 ocr,
 
 	BUG_ON(!host);
 	WARN_ON(!host->claimed);
+
+        test_sd_delete_host_caps(host);
 
 	err = mmc_sd_get_cid(host, ocr, cid, &rocr);
 	if (err)
@@ -1313,6 +1337,9 @@ int mmc_sd_init_card(struct mmc_host *host, u32 ocr,
 locked_card:
 #endif
 	host->card = card;
+#if defined(CONFIG_HISI_DEBUG_FS)
+	sd_sdio_testwork_start(host);
+#endif
 	return 0;
 
 free_card:
@@ -1544,15 +1571,7 @@ static int mmc_sd_runtime_resume(struct mmc_host *host)
 
 	return 0;
 }
-#if 0
-static int mmc_sd_reset(struct mmc_host *host)
-{
-	mmc_power_cycle(host, host->card->ocr);
-	return mmc_sd_init_card(host, host->card->ocr, host->card);
-}
-#endif
 
-#ifdef CONFIG_SD_SDIO_CRC_RETUNING
 /*After power up sd card,try to reinit sd card in mmc_sd_power_restore*/
 static int mmc_sd_power_restore(struct mmc_host *host)
 {
@@ -1564,13 +1583,12 @@ static int mmc_sd_power_restore(struct mmc_host *host)
 
 	return ret;
 }
-#endif
 
 static const struct mmc_bus_ops mmc_sd_ops = {
 #ifdef CONFIG_SD_SDIO_CRC_RETUNING
 	.mmc_retuning = mmc_retuning,
-	.power_restore = mmc_sd_power_restore,
 #endif
+	.power_restore = mmc_sd_power_restore,
 	.remove = mmc_sd_remove,
 	.detect = mmc_sd_detect,
 	.runtime_suspend = mmc_sd_runtime_suspend,

@@ -41,9 +41,47 @@
 #define SAR_SEMTECH_USE_PH_NUM (2)
 #define LAYA_PHONE_TYPE 37
 
+#ifdef SENSOR_DATA_ACQUISITION
+static char *acc_test_name[ACC_CAL_NUM] =
+	{"ACC_CALI_X_OFFSET_MSG", "ACC_CALI_Y_OFFSET_MSG", "ACC_CALI_Z_OFFSET_MSG",
+	"ACC_CALI_X_SEN_MSG", "ACC_CALI_Y_SEN_MSG", "ACC_CALI_Z_SEN_MSG",
+	"ACC_CALI_XIS_00_MSG", "ACC_CALI_XIS_01_MSG", "ACC_CALI_XIS_02_MSG",
+	"ACC_CALI_XIS_10_MSG", "ACC_CALI_XIS_11_MSG", "ACC_CALI_XIS_12_MSG",
+	"ACC_CALI_XIS_20_MSG", "ACC_CALI_XIS_21_MSG", "ACC_CALI_XIS_22_MSG"};
+static char *gyro_test_name[GYRO_CAL_NUM] =
+	{"GYRO_CALI_X_OFFSET_MSG", "GYRO_CALI_Y_OFFSET_MSG", "GYRO_CALI_Z_OFFSET_MSG",
+	"GYRO_CALI_X_SEN_MSG", "GYRO_CALI_Y_SEN_MSG", "GYRO_CALI_Z_SEN_MSG",
+	"GYRO_CALI_XIS_00_MSG", "GYRO_CALI_XIS_01_MSG", "GYRO_CALI_XIS_02_MSG",
+	"GYRO_CALI_XIS_10_MSG", "GYRO_CALI_XIS_11_MSG", "GYRO_CALI_XIS_12_MSG",
+	"GYRO_CALI_XIS_20_MSG", "GYRO_CALI_XIS_21_MSG", "GYRO_CALI_XIS_22_MSG"};
+static char *als_test_name[ALS_CAL_NUM] =
+	{"ALS_CALI_R_MSG", "ALS_CALI_G_MSG", "ALS_CALI_B_MSG",
+	"ALS_CALI_C_MSG", "ALS_CALI_LUX_MSG", "ALS_CALI_CCT_MSG"};
+static char *ps_test_name[PS_CAL_NUM] =
+	{"PS_CALI_XTALK_MSG", "PS_FAR_PDATA_MSG", "PS_NEAR_PDATA_MSG","PS_OFFSET_PDATA_MSG",
+	"PS_SCREEN_ON_CALI_XTALK_MSG", "PS_SCREEN_ON_FAR_PDATA_MSG", "PS_SCREEN_ON_NEAR_PDATA_MSG","PS_SCREEN_ON_OFFSET_PDATA_MSG"};
+static char *ps_add_test_name = "PS_DIGITAL_OFFSET_MSG";
+static char *cap_prox_offset_test_name[CAP_PROX_CAL_NUM] =
+	{"SAR_SENSOR_PH1_OFFSET_MSG", "SAR_SENSOR_PH2_OFFSET_MSG"};
+static char *cap_prox_diff_test_name[CAP_PROX_CAL_NUM ] =
+	{"SAR_SENSOR_DIFF1_MSG", "SAR_SENSOR_DIFF2_MSG"};
+static char *airpress_test_name[AIRPRESS_CAL_NUM] =
+	{"AIRPRESS_CALI_OFFSET_MSG", "AIRPRESS_TOUCH_CALI_SLOPE_MSG", "AIRPRESS_TOUCH_CALI_BASEP_MSG",
+	"AIRPRESS_TOUCH_CALI_MAXP_MSG", "AIRPRESS_TOUCH_CALI_RAISEP_MSG", "AIRPRESS_TOUCH_CALI_MINP_MSG",
+	"AIRPRESS_TOUCH_CALI_TEMP_MSG", "AIRPRESS_TOUCH_CALI_SPEED_MSG", "AIRPRESS_TOUCH_CALI_RFLAG_MSG",
+	"AIRPRESS_TOUCH_TEST_SLOPE_MSG", "AIRPRESS_TOUCH_TEST_BASEP_MSG", "AIRPRESS_TOUCH_TEST_MAXP_MSG",
+	"AIRPRESS_TOUCH_TEST_RAISEP_MSG", "AIRPRESS_TOUCH_TEST_MINP_MSG", "AIRPRESS_TOUCH_TEST_TEMP_MSG",
+	"AIRPRESS_TOUCH_TEST_SPEED_MSG", "AIRPRESS_TOUCH_TEST_RFLAG_MSG"};
+#endif
+
 uint16_t sensorlist[SENSOR_LIST_NUM] = { 0 };
 unsigned int sensor_read_number[TAG_END] = {0,0,0,0,0};
 char *sar_calibrate_order;
+char *acc_sensor_id;
+char *gyro_sensor_id;
+char *mag_sensor_id;
+char *cap_sensor_id;
+char *sensor_in_board_status;
 volatile int hall_value;
 int hifi_supported = 0;
 bool fingersense_enabled;
@@ -55,6 +93,7 @@ int stop_auto_ps;
 int gyro_range = GYRO_DEFAULT_RANGE;
 static uint8_t debug_read_data_buf[DEBUG_DATA_LENGTH] = { 0 };
 static uint8_t i2c_rw16_data_buf[2] = { 0 };
+static uint8_t i2c_rw_16bit_reg_data_buf[DEBUG_DATA_LENGTH] = {0};
 static RET_TYPE return_calibration = RET_INIT;	/*acc calibrate result*/
 static int acc_close_after_calibrate = true;
 static RET_TYPE gyro_calibration_res = RET_INIT;	/*gyro  calibrate result*/
@@ -62,21 +101,32 @@ static RET_TYPE ps_calibration_res = RET_INIT;	/*ps calibrate result*/
 static RET_TYPE als_calibration_res = RET_INIT;	/*als calibrate result*/
 static RET_TYPE handpress_calibration_res = RET_INIT;/* handpress calibrate result*/
 static RET_TYPE return_cap_prox_calibration = RET_INIT;
+static RET_TYPE return_cap_prox1_calibration = RET_INIT;
+
 static int als_close_after_calibrate = true;
 static int gyro_close_after_calibrate = true;
-static int32_t ps_calib_data[3] = { 0 };
+extern int32_t ps_sensor_offset[PS_CALIBRATE_DATA_LENGTH];
 static int32_t gyro_calib_data[15] = {0};
 static int32_t set_gyro_calib_data[15] = {0};
 static int32_t set_acc_calib_data[15] = {0};
 static int cap_prox_calibrate_len = 0;
-static uint8_t cap_prox_calibrate_data[CAP_PROX_CALIDATA_NV_SIZE]={0};
+static int cap_prox1_calibrate_len;
+static uint8_t cap_prox_calibrate_data[CAP_PROX_CALIDATA_NV_SIZE] = {0};
+static uint8_t cap_prox1_calibrate_data[CAP_PROX1_CALIDATA_NV_SIZE] = {0};
+
 static struct work_struct cap_prox_calibrate_work;
+static struct work_struct cap_prox1_calibrate_work;
 static int airpress_cali_flag;
 static struct work_struct handpress_calibrate_work;
 static int is_gsensor_gather_enable;
 extern uint8_t tof_register_value;
-static int32_t ps_calib_data_for_data_collect[4] = { 0 };
+static int32_t ps_calib_data_for_data_collect[8] = { 0 };
 extern int hall_sen_type;
+static RET_TYPE acc1_return_calibration = RET_INIT;
+static int acc1_close_after_calibrate = true;
+static RET_TYPE gyro1_calibration_res = RET_INIT;
+static int gyro1_close_after_calibrate = true;
+static int32_t gyro1_calib_data[15] = {0};
 struct acc_gyr_offset_threshold acc_calib_threshold[CALIBRATE_DATA_LENGTH] = {
 	{-320, 320},  //x-offset unit:mg
 	{-320, 320},  //y-offset unit:mg
@@ -141,6 +191,9 @@ extern int vishay_vcnl36658_ps_flag;
 extern int ams_tof_flag;
 extern int sharp_tof_flag;
 extern int apds9253_006_ps_flag;
+extern int ams_tcs3701_ps_flag;
+extern int ams_tcs3701_rgb_flag;
+
 extern struct hisi_nve_info_user user_info;
 extern struct airpress_platform_data airpress_data;
 extern union sar_calibrate_data sar_calibrate_datas;
@@ -381,7 +434,6 @@ static int init_event_of_msg(struct event *events,struct sensor_eng_cal_test sen
 static int enq_msg_data_in_sensorhub_single(struct event events)
 {
 	struct message *msg = NULL;
-	char val[MAX_VAL_LEN];
 	int ret = -1;
 
 	msg = (struct message *)kzalloc(sizeof(struct message),GFP_KERNEL);
@@ -510,6 +562,57 @@ static void cap_prox_enq_notify_work(const int item_id, uint16_t value,uint16_t 
 }
 #endif
 
+static void abov_do_enq_work(int calibrate_index)
+{
+	int threshold_min[CAP_PROX_THRESHOLD_NUM] = {0};
+	int threshold_max[CAP_PROX_THRESHOLD_NUM] = {0};
+	int cap_prox_data[CAP_PROX_CAL_NUM] = {0};
+	struct sensor_eng_cal_test air_test;
+	int acc_test;
+	memset(&air_test, 0, sizeof(air_test));
+
+	switch (calibrate_index) {
+		case 1: // 1: near data
+			cap_prox_data[0] = sar_calibrate_datas.abov_cali_data.diff[0];
+			cap_prox_data[1] = sar_calibrate_datas.abov_cali_data.diff[1];
+			threshold_min[0] = sar_pdata.sar_datas.abov_data.calibrate_thred[DIFF_MIN_THREDHOLD];
+			threshold_max[0] = sar_pdata.sar_datas.abov_data.calibrate_thred[DIFF_MAX_THREDHOLD];
+			air_test.cal_value = cap_prox_data;
+			air_test.value_num = CAP_PROX_CAL_NUM;
+			air_test.threshold_num = CAP_PROX_THRESHOLD_NUM;
+			air_test.first_item = SAR_SENSOR_DIFF1_MSG;
+			air_test.min_threshold = threshold_min;
+			air_test.max_threshold = threshold_max;
+			memcpy(air_test.name, CAP_PROX_TEST_CAL, sizeof(CAP_PROX_TEST_CAL));
+			memcpy(air_test.result, CAP_PROX_RESULT, (strlen(CAP_PROX_RESULT) + 1));
+			for (acc_test = 0; acc_test < CAP_PROX_CAL_NUM; acc_test++) {
+				air_test.test_name[acc_test] = cap_prox_diff_test_name[acc_test];
+			}
+			enq_notify_work_sensor(air_test);
+			break;
+		case 2: // 2: far data
+			cap_prox_data[0] = sar_calibrate_datas.abov_cali_data.offset[0];
+			cap_prox_data[1] = sar_calibrate_datas.abov_cali_data.offset[1];
+			threshold_min[0] = sar_pdata.sar_datas.abov_data.calibrate_thred[OFFSET_MIN_THREDHOLD];
+			threshold_max[0] = sar_pdata.sar_datas.abov_data.calibrate_thred[OFFSET_MAX_THREDHOLD];
+			air_test.cal_value = cap_prox_data;
+			air_test.value_num = CAP_PROX_CAL_NUM;
+			air_test.threshold_num = CAP_PROX_THRESHOLD_NUM;
+			air_test.first_item = SAR_SENSOR_PH1_OFFSET_MSG;
+			air_test.min_threshold = threshold_min;
+			air_test.max_threshold = threshold_max;
+			memcpy(air_test.name, CAP_PROX_TEST_CAL, sizeof(CAP_PROX_TEST_CAL));
+			memcpy(air_test.result, CAP_PROX_RESULT, strlen(CAP_PROX_RESULT) + 1);
+			for (acc_test = 0; acc_test < CAP_PROX_CAL_NUM; acc_test++) {
+				air_test.test_name[acc_test] = cap_prox_offset_test_name[acc_test];
+			}
+			enq_notify_work_sensor(air_test);
+			break;
+		default:
+			break;
+	}
+}
+
 static void cap_prox_do_enq_work(int calibrate_index)
 {
 	int minThreshold[CAP_PROX_THRESHOLD_NUM] = {0};
@@ -560,6 +663,9 @@ static void cap_prox_do_enq_work(int calibrate_index)
 				break;
 		}
 	}
+	if (!strncmp(sensor_chip_info[CAP_PROX], "huawei,abov-a96t3x6", strlen("huawei,abov-a96t3x6"))) {
+		abov_do_enq_work(calibrate_index);
+	}
 	if(!strncmp(sensor_chip_info[CAP_PROX], "huawei,adi-adux1050", strlen("huawei,adi-adux1050"))){
 		switch(calibrate_index){
 			case 0:
@@ -603,6 +709,27 @@ static void cap_prox_do_enq_work(int calibrate_index)
 		}
 	}
 }
+
+/* add ps special data to factory big data */
+static void ps_add_do_enq_work(int32_t *ps_digital_offset)
+{
+	int32_t min_threshold = 0;
+	int32_t max_threshold = (int32_t)ps_data.digital_offset_max;
+	struct sensor_eng_cal_test ps_test;
+
+	memset(&ps_test, 0, sizeof(ps_test));
+	ps_test.cal_value = ps_digital_offset;
+	ps_test.value_num = PS_ADD_CAL_NUM;
+	ps_test.threshold_num = PS_ADD_THRESHOLD_NUM;
+	ps_test.first_item = PS_DIGITAL_OFFSET_PDATA;
+	ps_test.min_threshold = &min_threshold;
+	ps_test.max_threshold = &max_threshold;
+	memcpy(ps_test.name, PS_TEST_CAL, sizeof(PS_TEST_CAL));
+	memcpy(ps_test.result, PS_CAL_RESULT,
+		(strlen(PS_CAL_RESULT) + 1));
+	ps_test.test_name[0] = ps_add_test_name;
+	enq_notify_work_sensor(ps_test);
+}
 #endif
 static ssize_t i2c_rw_pi(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
@@ -626,7 +753,7 @@ static ssize_t i2c_rw_pi(struct device *dev, struct device_attribute *attr, cons
 	buf_temp[0] = reg_add;
 	buf_temp[1] = (uint8_t) (val & 0xff);
 
-	hwlog_info("In %s! bus_num = %d, i2c_address = %d, reg_add = %d, len = %d, rw = %d, buf_temp[1] = %d\n",
+	hwlog_info("In %s! bus_num = %d, i2c_address = %x, reg_add = %x, len = %d, rw = %d, buf_temp[1] = %d\n",
 	     __func__, bus_num, i2c_address, reg_add, len, rw, buf_temp[1]);
 	if (rw) {
 		ret = mcu_i2c_rw(bus_num, i2c_address, &buf_temp[0], 1, &buf_temp[1], len);
@@ -693,7 +820,7 @@ static ssize_t i2c_rw16_pi(struct device *dev, struct device_attribute *attr, co
 	buf_temp[1] = (uint8_t) (val >> 8);
 	buf_temp[2] = (uint8_t) (val & 0xff);
 
-	hwlog_info("In %s! bus_num=%d, i2c_address=%d, reg_add=%d, len=%d, rw=%d, buf_temp[1]=0x%02x, buf_temp[2]=0x%02x\n",
+	hwlog_info("In %s! bus_num=%d, i2c_address=%x, reg_add=%x, len=%d, rw=%d, buf_temp[1]=0x%02x, buf_temp[2]=0x%02x\n",
 	     __func__, bus_num, i2c_address, reg_add, len, rw, buf_temp[1], buf_temp[2]);
 	if (rw) {
 		ret = mcu_i2c_rw(bus_num, i2c_address, buf_temp, 1, &buf_temp[1], (uint32_t)len);
@@ -723,6 +850,82 @@ static ssize_t i2c_rw16_pi_show(struct device *dev, struct device_attribute *att
 	return 8;
 }
 static DEVICE_ATTR(i2c_rw16, 0664, i2c_rw16_pi_show, i2c_rw16_pi);
+
+static ssize_t i2c_rw_16bit_reg_pi(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	uint64_t val = 0;
+	int ret = 0;
+	uint8_t bus_num = 0, i2c_address = 0, len = 0,rw_info = 0,tx_buf_len = 0;
+	uint8_t rw = 0, buf_temp[DEBUG_DATA_LENGTH] = { 0 };
+	uint16_t reg_add = 0;
+
+	if (strict_strtoull(buf, 16, &val))
+		return -EINVAL;
+	/*##(bus_num 4bit)##(i2c_addr 8bit)##(reg_addr 16bit )##(rw 4bit)##(write data 32bit)*/
+	bus_num =(uint8_t) (val >> 60) & 0xf;
+	i2c_address = (val >> 52) & 0xff;
+	reg_add = (val >> 36) & 0xffff;
+	/*rw_info 4bit,highest bit rw,left is buf length*/
+	rw_info = (uint8_t)(val >> 32) & 0xf;
+	rw = rw_info & 0x8;
+	len = rw_info & 0x7;
+	buf_temp[0] = (uint8_t)(reg_add >> 8) & 0xff;
+	buf_temp[1] = (uint8_t) (reg_add & 0xff);
+	buf_temp[2] = (uint8_t)(val >> 24) & 0xff;
+	buf_temp[3] = (uint8_t)(val >> 16) & 0xff;
+	buf_temp[4] = (uint8_t)(val >> 8) & 0xff;
+	buf_temp[5] = (uint8_t)val & 0xff;
+
+	if(len>4){
+		hwlog_err("buf len is too long!!!\n");
+		return -EINVAL;
+	}
+	hwlog_info("In %s! bus_num = %d, i2c_address = %02x, reg_add = %x, len = %d, rw = %d\n",
+	     __func__, bus_num, i2c_address, reg_add, len, rw);
+	if (rw) {
+		ret = mcu_i2c_rw(bus_num, i2c_address, &buf_temp[0], 2, &buf_temp[2], len);
+	} else {
+		hwlog_info("reg %x write value is:%2x %2x %2x %2x\n",reg_add,buf_temp[2],buf_temp[3],buf_temp[4],buf_temp[5]);
+		/*set highest bit 1 to indicate 16bit reg*/
+		tx_buf_len = (uint8_t)((2 + len)|0x80);
+		ret = mcu_i2c_rw(bus_num, i2c_address, buf_temp, tx_buf_len, NULL, 0);
+	}
+	if (ret < 0)
+		hwlog_err("oper %d(1/32:r 0/31:w) i2c reg fail!\n", rw);
+	if (rw) {
+		hwlog_info("i2c reg %04x value %x %x %x %x\n", reg_add, buf_temp[2], buf_temp[3], buf_temp[4], buf_temp[5]);
+		memcpy(i2c_rw_16bit_reg_data_buf, &buf_temp[2], len);
+	}
+	return count;
+}
+
+static ssize_t i2c_rw_16bit_reg_pi_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	unsigned int i = 0;
+	unsigned int len = 0;
+	char *p = buf;
+	if (!buf)
+		return -1;
+
+	for (i = 0; i < DEBUG_DATA_LENGTH; i++) {
+		snprintf(p, 12, "0x%x,", i2c_rw_16bit_reg_data_buf[i]);
+		if (i2c_rw_16bit_reg_data_buf[i] > 0xf) {
+			p += 5;
+			len += 5;
+		} else {
+			p += 4;
+			len += 4;
+		}
+	}
+
+	p = buf;
+	*(p + len - 1) = 0;
+
+	p = NULL;
+	return len;
+}
+
+static DEVICE_ATTR(i2c_rw_16bit_reg, 0664, i2c_rw_16bit_reg_pi_show,i2c_rw_16bit_reg_pi);
 
 static void save_to_file(const char *file_path, const char *content)
 {
@@ -771,6 +974,37 @@ static ssize_t attr_acc_calibrate_show(struct device *dev, struct device_attribu
 	int val = return_calibration;
 	hwlog_info("acc_calibrate_show is old way,result=%d\n",val);
 	return snprintf(buf, PAGE_SIZE, "%d\n", val);
+}
+static int acc1_calibrate_save(const void *buf, int length)
+{
+	const int32_t *poffset_data = (const int32_t *)buf;
+	int ret = 0;
+	int i = 0;
+	if (buf == NULL || length <= 0) {
+		hwlog_err("%s invalid argument.", __func__);
+		acc1_return_calibration = EXEC_FAIL;
+		return -1;
+	}
+	hwlog_info("%s:acc1 calibrate ok, %d  %d  %d \n",
+		__func__, *poffset_data, *(poffset_data + 1),*(poffset_data + 2));
+
+	for(i=0; i < ACC_GYRO_OFFSET_CALIBRATE_LENGTH;i++)
+	{
+		if (*(poffset_data+ i) < acc_calib_threshold[i].low_threshold || *(poffset_data+ i) > acc_calib_threshold[i].high_threshold) {
+			hwlog_err("%s: acc1 calibrated_data is out of range. i = %d, num = %d.\n", __FUNCTION__, i, *(poffset_data+ i));
+			acc1_return_calibration = NV_FAIL;
+			return -1;
+		}
+	}
+
+	ret = write_gsensor1_offset_to_nv((char *)buf, length);
+	if (ret) {
+		hwlog_err("nv write fail.\n");
+		acc1_return_calibration = NV_FAIL;
+		return -1;
+	}
+	acc1_return_calibration = SUC;
+	return 0;
 }
 
 static int acc_calibrate_save(const void *buf, int length)
@@ -850,18 +1084,81 @@ static const char * acc_calibrate_param[] = {
 	ACC_CALI_XIS_20, ACC_CALI_XIS_21, ACC_CALI_XIS_22,
 };
 
+static ssize_t attr_acc1_calibrate_write(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	unsigned long val = 0;
+	int ret = 0;
+	interval_param_t param;
+	read_info_t read_pkg;
+
+	if (strict_strtoul(buf, 10, &val))
+		return -EINVAL;
+
+	if (1 != val) {
+		hwlog_err("send acc1 calibrate value is error value=%lu\n", val);
+		return count;
+	}
+
+	if (sensor_status.opened[TAG_ACC1] == 0) { /*if assistant_acc is not opened, open first*/
+		acc1_close_after_calibrate = true;
+		hwlog_info("send acc1 open cmd(during calibrate) to mcu.\n");
+		ret = inputhub_sensor_enable(TAG_ACC1, true);
+		if (ret) {
+			acc1_return_calibration = COMMU_FAIL;
+			hwlog_err("send acc1 open cmd(during calibrate) to mcu fail,ret=%d\n", ret);
+			return count;
+		}
+	} else {
+		acc1_close_after_calibrate = false;
+	}
+	/*period must <= 100 ms*/
+	if ((sensor_status.delay[TAG_ACC1] == 0) || (sensor_status.delay[TAG_ACCEL] > 20)) {
+		hwlog_info("send assistant_acc setdelay cmd(during calibrate) to mcu.\n");
+		memset(&param, 0, sizeof(param));
+		param.period = 20;
+		ret = inputhub_sensor_setdelay(TAG_ACC1, &param);
+		if (ret) {
+			acc1_return_calibration = COMMU_FAIL;
+			hwlog_err("send assistant_acc set delay cmd(during calibrate) to mcu fail,ret=%d\n", ret);
+			return count;
+		}
+	}
+
+	msleep(300);
+	/*send calibrate command, need set delay first*/
+	read_pkg = send_calibrate_cmd(TAG_ACC1, val, &acc1_return_calibration);
+	if (acc1_return_calibration == COMMU_FAIL) {
+		return count;
+	} else if (read_pkg.errno == 0) {
+		acc1_calibrate_save(read_pkg.data, read_pkg.data_length);
+	}
+
+
+	if (acc1_close_after_calibrate == true) {
+		acc1_close_after_calibrate = false;
+		hwlog_info("send acc1 close cmd(during calibrate) to mcu.\n");
+		ret = inputhub_sensor_enable(TAG_ACC1, false);
+		if (ret) {
+			acc1_return_calibration = COMMU_FAIL;
+			hwlog_err("send acc1 close cmd(during calibrate) to mcu fail,ret=%d\n", ret);
+			return count;
+		}
+	}
+	return count;
+}
+
 static ssize_t attr_acc_calibrate_write(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
 	unsigned long val = 0;
 	int ret = 0, i;
 	char content[CLI_CONTENT_LEN_MAX] = { 0 };
 	int32_t *acc_cali_data = NULL;
-	int32_t *minThreshold = NULL;
-	int32_t *maxThreshold = NULL;
 	char date_str[CLI_TIME_STR_LEN] = { 0 };
 	interval_param_t param;
 	read_info_t read_pkg;
 	#ifdef SENSOR_DATA_ACQUISITION
+	int32_t *minThreshold = NULL;
+	int32_t *maxThreshold = NULL;
 	int32_t minThreshold_acc[ACC_THRESHOLD_NUM] = {-gsensor_data.x_calibrate_thredhold,-gsensor_data.y_calibrate_thredhold,-gsensor_data.z_calibrate_thredhold};
 	int32_t maxThreshold_acc[ACC_THRESHOLD_NUM] = {gsensor_data.x_calibrate_thredhold,gsensor_data.y_calibrate_thredhold,gsensor_data.z_calibrate_thredhold};
 	struct sensor_eng_cal_test acc_test;
@@ -959,6 +1256,39 @@ static ssize_t attr_gyro_calibrate_show(struct device *dev, struct device_attrib
 	return snprintf(buf, PAGE_SIZE, "%d\n", val);
 }
 
+static int gyro1_calibrate_save(const void *buf, int length)
+{
+	const int32_t *poffset_data = (const int32_t *)buf;
+	int ret = 0;
+
+	int i = 0;
+	if (buf == NULL || length <= 0) {
+		hwlog_err("%s invalid argument.", __func__);
+		gyro1_calibration_res = EXEC_FAIL;
+		return -1;
+	}
+	hwlog_info( "%s:gyro1 calibrate ok, %d %d %d\n", __func__, *poffset_data, *(poffset_data + 1), *(poffset_data + 2));
+
+	for(i=0; i < ACC_GYRO_OFFSET_CALIBRATE_LENGTH;i++)
+	{
+		if (*(poffset_data+ i) < gyro_calib_threshold[i].low_threshold || *(poffset_data+ i) > gyro_calib_threshold[i].high_threshold) {
+			hwlog_err("%s: gyro1 calibrated_data is out of range. i = %d, num = %d.\n", __FUNCTION__, i, *(poffset_data+ i));
+			gyro1_calibration_res = NV_FAIL;
+			return -1;
+		}
+	}
+
+	ret = write_gyro1_sensor_offset_to_nv((char *)buf, length);
+	if (ret) {
+		hwlog_err("nv write fail.\n");
+		gyro1_calibration_res = NV_FAIL;
+		return -1;
+	}
+	gyro1_calibration_res = SUC;
+	return 0;
+}
+
+
 static int gyro_calibrate_save(const void *buf, int length)
 {
 	const int32_t *poffset_data = (const int32_t *)buf;
@@ -996,12 +1326,80 @@ static int gyro_calibrate_save(const void *buf, int length)
 	return 0;
 }
 
+static ssize_t attr_gyro1_calibrate_write(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	unsigned long val = 0;
+	int ret = 0;
+	read_info_t read_pkg;
+	const int32_t *gyro_cali_data = NULL;
+	interval_param_t param;
+
+	if (strict_strtoul(buf, 10, &val))
+		return -EINVAL;
+
+	if(val != 1) {
+		hwlog_err("set gyro1 calibrate val invalid,val=%lu\n", val);
+		return count;
+	}
+
+	if (sensor_status.opened[TAG_GYRO1] == 0) { /*if gyro1 is not opened, open first*/
+		gyro1_close_after_calibrate = true;
+		hwlog_info("send gyro1 open cmd(during calibrate) to mcu.\n");
+		ret = inputhub_sensor_enable(TAG_GYRO1, true);
+		if (ret) {
+			gyro1_calibration_res = COMMU_FAIL;
+			hwlog_err("send gyro open cmd(during calibrate) to mcu fail,ret=%d\n", ret);
+			return count;
+		}
+	} else {
+		gyro1_close_after_calibrate = false;
+	}
+
+	if ((sensor_status.delay[TAG_GYRO1] == 0) || (sensor_status.delay[TAG_GYRO1] > 10)) {
+		hwlog_info("send gyro1 setdelay cmd(during calibrate) to mcu.\n");
+		memset(&param, 0, sizeof(param));
+		param.period = 10;
+		ret = inputhub_sensor_setdelay(TAG_GYRO1, &param);
+		if (ret) {
+			gyro1_calibration_res = COMMU_FAIL;
+			hwlog_err("send gyro1 set delay cmd(during calibrate) to mcu fail,ret=%d\n", ret);
+			return count;
+		}
+	}
+	msleep(300);
+	/*send calibrate command, need set delay first*/
+	read_pkg = send_calibrate_cmd(TAG_GYRO1, val, &gyro1_calibration_res);
+	if (gyro1_calibration_res == COMMU_FAIL) {
+		return count;
+	} else if (read_pkg.errno == 0) {
+		gyro_cali_data = (const int32_t *)read_pkg.data;
+		gyro1_calib_data[0] = *gyro_cali_data;
+		gyro1_calib_data[1] = *(gyro_cali_data+1);
+		gyro1_calib_data[2] = *(gyro_cali_data+2);
+		gyro1_calibrate_save(gyro1_calib_data, sizeof(gyro1_calib_data));
+		hwlog_info("gyro calibrate success, val=%lu data=%d %d %d,len=%d\n",
+			val, gyro1_calib_data[0], gyro1_calib_data[1], gyro1_calib_data[2],read_pkg.data_length);
+
+	}
+
+	if (gyro1_close_after_calibrate == true) {
+		gyro1_close_after_calibrate = false;
+		hwlog_info("send gyro close cmd(during calibrate) to mcu.\n");
+		ret = inputhub_sensor_enable(TAG_GYRO1, false);
+		if (ret) {
+			gyro1_calibration_res = COMMU_FAIL;
+			hwlog_err("send gyro close cmd(during calibrate) to mcu fail,ret=%d\n", ret);
+			return count;
+		}
+	}
+	return count;
+}
+
 static const char * gyro_calibrate_param[] = {
 	GYRO_CALI_X_OFFSET, GYRO_CALI_Y_OFFSET, GYRO_CALI_Z_OFFSET, GYRO_CALI_X_SEN, GYRO_CALI_Y_SEN, GYRO_CALI_Z_SEN,
 	GYRO_CALI_XIS_00, GYRO_CALI_XIS_01, GYRO_CALI_XIS_02, GYRO_CALI_XIS_10, GYRO_CALI_XIS_11, GYRO_CALI_XIS_12,
 	GYRO_CALI_XIS_20, GYRO_CALI_XIS_21, GYRO_CALI_XIS_22,
 };
-
 static ssize_t attr_gyro_calibrate_write(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
 	unsigned long val = 0;
@@ -1009,11 +1407,11 @@ static ssize_t attr_gyro_calibrate_write(struct device *dev, struct device_attri
 	read_info_t read_pkg;
 	char content[CLI_CONTENT_LEN_MAX] = { 0 };
 	int32_t *gyro_cali_data = NULL;
-	int32_t *minThreshold = NULL;
-	int32_t *maxThreshold = NULL;
 	char date_str[CLI_TIME_STR_LEN] = { 0 };
 	interval_param_t param;
 	#ifdef SENSOR_DATA_ACQUISITION
+	int32_t *minThreshold = NULL;
+	int32_t *maxThreshold = NULL;
 	int32_t minThreshold_gyro[GYRO_THRESHOLD_NUM] = {-gyro_data.calibrate_thredhold,-gyro_data.calibrate_thredhold,-gyro_data.calibrate_thredhold};//-40dps
 	int32_t maxThreshold_gyro[GYRO_THRESHOLD_NUM] = {gyro_data.calibrate_thredhold,gyro_data.calibrate_thredhold,gyro_data.calibrate_thredhold};//40dps
 	struct sensor_eng_cal_test gyro_test;
@@ -1141,7 +1539,7 @@ static ssize_t attr_ps_calibrate_show(struct device *dev, struct device_attribut
 	return snprintf(buf, PAGE_SIZE, "%d\n", val);
 }
 
-static int write_ps_offset_to_nv(int *temp)
+int write_ps_offset_to_nv(int *temp)
 {
 	int ret = 0;
 	const int *poffset_data = (const int *)user_info.nv_data;
@@ -1155,7 +1553,7 @@ static int write_ps_offset_to_nv(int *temp)
 		return -1;
 
 	hwlog_info("write_ps_offset_to_nv temp: %d,%d,%d\n", temp[0],temp[1],temp[2]);
-	memcpy(&ps_sensor_calibrate_data, temp, sizeof(temp[0]) * 3);
+	memcpy(&ps_sensor_calibrate_data, temp, PS_CALIDATA_NV_SIZE);
 	hwlog_info( "nve_direct_access write temp (%d,%d,%d)\n", *poffset_data, *(poffset_data + 1), *(poffset_data + 2));
 	msleep(10);
 	if (read_calibrate_data_from_nv(PS_CALIDATA_NV_NUM, PS_CALIDATA_NV_SIZE, "PSENSOR"))
@@ -1189,22 +1587,24 @@ int write_tof_offset_to_nv(uint8_t *temp)
 
 static int ps_calibrate_save(const void *buf, int length)
 {
-	int temp_buf[3] = {0};
+	int32_t temp_buf[PS_CALIBRATE_DATA_LENGTH] = {0};
 	int ret=0;
-	if(buf == NULL||length <= 0 || length > 12)
-	{
+	if (buf == NULL||length <= 0 || length > sizeof(ps_sensor_offset)) {
 		hwlog_err("%s invalid argument.", __func__);
 		ps_calibration_res=EXEC_FAIL;
 		return -1;
 	}
 	memcpy(temp_buf, buf, length);
-	hwlog_info( "%s:psensor calibrate ok, %d,%d,%d \n", __func__, temp_buf[0], temp_buf[1], temp_buf[2]);
+	hwlog_info( "%s:psensor calibrate ok, %d,%d,%d,%d,%d,%d \n", __func__,
+		temp_buf[0], temp_buf[1], temp_buf[2], temp_buf[3], temp_buf[4], temp_buf[5]);
 	ret = write_ps_offset_to_nv(temp_buf);
-	if(ret)
-	{
-		hwlog_err("nv write fail.\n");
-		ps_calibration_res=NV_FAIL;
-		return -1;
+	if (ret) {
+		ret = mcu_save_calidata_to_nv(TAG_PS, temp_buf);
+		if (ret != 0) {
+			hwlog_err("nv write fail.\n");
+			ps_calibration_res = NV_FAIL;
+			return -1;
+		}
 	}
 	ps_calibration_res=SUC;
 	return 0;
@@ -1298,19 +1698,25 @@ static ssize_t attr_ps_calibrate_write(struct device *dev, struct device_attribu
 	char content[CLI_CONTENT_LEN_MAX] = {0};
 	char date_str[CLI_TIME_STR_LEN] = {0};
 	int32_t *ps_cali_data = NULL;
+	#ifdef SENSOR_DATA_ACQUISITION
 	int32_t *minThreshold = NULL;
 	int32_t *maxThreshold = NULL;
-	#ifdef SENSOR_DATA_ACQUISITION
 	struct sensor_eng_cal_test ps_test;
 	int pPsTest = 0;
-	int32_t minThreshold_ps[PS_CAL_NUM] = {0,0,0,-ps_data.offset_min};
-	int32_t maxThreshold_ps[PS_CAL_NUM] = {ps_data.ps_calib_20cm_threshold,ps_data.ps_calib_5cm_threshold,ps_data.ps_calib_3cm_threshold,ps_data.offset_max};
+	int32_t digital_offset = 0;
+	int32_t minThreshold_ps[PS_CAL_NUM] = {0, 0, 0, -ps_data.offset_min, 0, 0, 0, -ps_data.offset_min};
+	int32_t maxThreshold_ps[PS_CAL_NUM] = {ps_data.ps_calib_20cm_threshold, ps_data.ps_calib_5cm_threshold,
+			ps_data.ps_calib_3cm_threshold, ps_data.offset_max, ps_data.ps_calib_20cm_threshold,
+			ps_data.ps_calib_5cm_threshold, ps_data.ps_calib_3cm_threshold, ps_data.offset_max};
 	if((ams_tof_flag == 1) || (sharp_tof_flag == 1)){
-		int32_t minThreshold_ps[PS_CAL_NUM] = {0,0,0,0};
-		int32_t maxThreshold_ps[PS_CAL_NUM] = {tof_data.tof_calib_zero_threshold,
-			tof_data.tof_calib_6cm_threshold,
-			tof_data.tof_calib_10cm_threshold,
-			tof_data.tof_calib_60cm_threshold};
+		minThreshold_ps[0] = 0;
+		minThreshold_ps[1] = 0;
+		minThreshold_ps[2] = 0;
+		minThreshold_ps[3] = 0;
+		maxThreshold_ps[0] = tof_data.tof_calib_zero_threshold;
+		maxThreshold_ps[1] = tof_data.tof_calib_6cm_threshold;
+		maxThreshold_ps[2] = tof_data.tof_calib_10cm_threshold;
+		maxThreshold_ps[3] = tof_data.tof_calib_60cm_threshold;
 		hwlog_info("tof sensor maxThreshold %d %d %d %d\n",tof_data.tof_calib_zero_threshold,tof_data.tof_calib_6cm_threshold,
 			tof_data.tof_calib_10cm_threshold,tof_data.tof_calib_60cm_threshold);
 
@@ -1323,8 +1729,8 @@ static ssize_t attr_ps_calibrate_write(struct device *dev, struct device_attribu
 	memset(&ps_test,0,sizeof(ps_test));
 	#endif
 
-	if((txc_ps_flag != 1) && (ams_tmd2620_ps_flag != 1) &&	(avago_apds9110_ps_flag != 1) && (ams_tmd3725_ps_flag != 1) 
-		&& (liteon_ltr582_ps_flag != 1) && (apds9999_ps_flag != 1) && (ams_tmd3702_ps_flag != 1)
+	if((txc_ps_flag != 1) && (ams_tmd2620_ps_flag != 1) &&	(avago_apds9110_ps_flag != 1) && (ams_tmd3725_ps_flag != 1)
+		&& (liteon_ltr582_ps_flag != 1) && (apds9999_ps_flag != 1) && (ams_tmd3702_ps_flag != 1) && (ams_tcs3701_ps_flag != 1)
 		&& (ams_tof_flag != 1) && (sharp_tof_flag != 1)&& (vishay_vcnl36658_ps_flag != 1 )&&(apds9253_006_ps_flag != 1)) {
 		hwlog_info("ps sensor is not txc_ps_224 or ams_tmd2620 or avago_apds9110 or ams_tmd3725 or liteon_ltr582,no need calibrate\n");
 		return count;
@@ -1332,39 +1738,62 @@ static ssize_t attr_ps_calibrate_write(struct device *dev, struct device_attribu
 
 	if (strict_strtoul(buf, 10, &val))
 		return -EINVAL;
-	hwlog_info("ps or tof calibrate order is %d\n", val);
-	if((val < PS_XTALK_CALIBRATE)||(val > TOF_CALI_FOR_FIX)){
+	hwlog_info("ps or tof calibrate order is %lu\n", val);
+	if ((val < PS_XTALK_CALIBRATE)||(val > PS_SCREEN_ON_3CM_CALIBRATE)) {
 		hwlog_err("set ps or tof calibrate val invalid,val=%lu\n", val);
+		ps_calibration_res = EXEC_FAIL;
 		return count;
 	}
 	calibrate_order = (uint8_t)val;
-
-	if(val >= PS_XTALK_CALIBRATE && val <= PS_3CM_CALIBRATE && (ams_tof_flag != 1) && (sharp_tof_flag != 1)){//ps calibrate
+	if(((val >= PS_XTALK_CALIBRATE && val <= PS_3CM_CALIBRATE) || val == PS_MINPDATA_MODE || val == PS_SAVE_MINPDATA || val >= PS_SCREEN_ON_XTALK_CALIBRATE)
+		&& (ams_tof_flag != 1) && (sharp_tof_flag != 1)){//ps calibrate
 		pkg_mcu = send_calibrate_cmd(TAG_PS, val, &ps_calibration_res);
 		if (ps_calibration_res == COMMU_FAIL || ps_calibration_res == EXEC_FAIL)//COMMU_FAIL=4	EXEC_FAIL=2
 			goto save_log;
-		else if(pkg_mcu.errno == 0) {
-			if(val == 1){
-				ps_calib_data[val-1] = *((int32_t *)pkg_mcu.data);
-				ps_calibate_offset_0 = (int16_t)(ps_calib_data[val-1]&0x0000ffff);
-				ps_calibate_offset_3 = (int16_t)((ps_calib_data[val-1]&0xffff0000)>>16);
+		else if (pkg_mcu.errno == 0) {
+			if (val == PS_XTALK_CALIBRATE) {
+				ps_sensor_offset[val-1] = *((int32_t *)pkg_mcu.data);
+				ps_calibate_offset_0 = (int16_t)(ps_sensor_offset[val-1] & 0x0000ffff);
+				ps_calibate_offset_3 = (int16_t)((ps_sensor_offset[val-1] & 0xffff0000) >> 16);
 				ps_calib_data_for_data_collect[0] = (int32_t)ps_calibate_offset_0;
 				ps_calib_data_for_data_collect[3] = (int32_t)ps_calibate_offset_3;
+				ps_sensor_offset[1] = 0;//clear NV 5cm calibrated value
+				ps_sensor_offset[2] = 0;//clear NV 3cm calibrated value
 				//ps_calib_data[val-1] = ps_calibate_offset_3;
-				hwlog_info("ps calibrate success, ps_calibate_offset_0=%d, ps_calibate_offset_3=%d\n", ps_calibate_offset_0,ps_calibate_offset_3);
-				hwlog_info("ps calibrate success, data=%d, len=%d val=%d\n", ps_calib_data[val-1],pkg_mcu.data_length,val);
-			}else{
-				ps_calib_data[val-1] = *((int32_t *)pkg_mcu.data);
+				hwlog_info("ps calibrate success, ps_calibate_offset_0=%d, ps_calibate_offset_3=%d\n",
+					ps_calibate_offset_0, ps_calibate_offset_3);
+				hwlog_info("ps calibrate success, data=%d, len=%d val=%lu\n", ps_sensor_offset[val-1],
+					pkg_mcu.data_length, val);
+			} else if (val == PS_SAVE_MINPDATA) {
+				ps_sensor_offset[0] = *((int32_t *)pkg_mcu.data);
+				ps_calib_data_for_data_collect[0] = ps_sensor_offset[0];
+				hwlog_info("ps calibrate success, data=%d, len=%d val=%lu\n", ps_sensor_offset[0], pkg_mcu.data_length, val);
+			} else if (val == PS_SCREEN_ON_XTALK_CALIBRATE) {
+				ps_sensor_offset[3] = *((int32_t *)pkg_mcu.data);
+				ps_calib_data_for_data_collect[4] = (int32_t)(ps_sensor_offset[3] & 0x0000ffff);
+				ps_calib_data_for_data_collect[7] = (int32_t)((ps_sensor_offset[3] & 0xffff0000) >> 16);
+				ps_sensor_offset[4] = 0;//clear NV 5cm screen_on calibrated value
+				ps_sensor_offset[5] = 0;//clear NV 3cm screen_on calibrated value
+				hwlog_info("ps calibrate success, data=%d, len=%d val=%lu\n", ps_sensor_offset[3], pkg_mcu.data_length, val);
+			} else if (val == PS_SCREEN_ON_5CM_CALIBRATE) {
+				ps_sensor_offset[4] = *((int32_t *)pkg_mcu.data);
+				ps_calib_data_for_data_collect[5] = *((int32_t *)pkg_mcu.data);
+				hwlog_info("ps calibrate success, data=%d, len=%d val=%lu\n", ps_sensor_offset[4], pkg_mcu.data_length, val);
+			} else if (val == PS_SCREEN_ON_3CM_CALIBRATE) {
+				ps_sensor_offset[5] = *((int32_t *)pkg_mcu.data);
+				ps_calib_data_for_data_collect[6] = *((int32_t *)pkg_mcu.data);
+				hwlog_info("ps calibrate success, data=%d, len=%d val=%lu\n", ps_sensor_offset[5], pkg_mcu.data_length, val);
+			} else if (val != PS_MINPDATA_MODE) {
+				ps_sensor_offset[val-1] = *((int32_t *)pkg_mcu.data);
 				ps_calib_data_for_data_collect[val-1] = *((int32_t *)pkg_mcu.data);
-				hwlog_info("ps calibrate success, data=%d, len=%d val=%d\n", ps_calib_data[val-1],pkg_mcu.data_length,val);
+				hwlog_info("ps calibrate success, data=%d, len=%d val=%lu\n", ps_sensor_offset[val-1], pkg_mcu.data_length, val);
 			}
 		}
 
-		if(val == 2){
-			ps_calibration_res=SUC;
-		}else{
-			ps_calibrate_save(ps_calib_data, 3*pkg_mcu.data_length);
-		}
+		if ((val == PS_5CM_CALIBRATE)||(val == PS_MINPDATA_MODE)||(val == PS_SCREEN_ON_5CM_CALIBRATE))
+			ps_calibration_res = SUC;
+		else
+			ps_calibrate_save(ps_sensor_offset, sizeof(ps_sensor_offset));
 	}else{//TOF calibrate
 		if((TOF_ZERO_CALIBRATE == val) && sharp_tof_flag && (tof_register_value == 0x1f))
 		{
@@ -1410,6 +1839,12 @@ save_log:
 	ps_cali_data = ps_calib_data_for_data_collect;
 
 	#ifdef SENSOR_DATA_ACQUISITION
+	if (apds9253_006_ps_flag == 1) {
+		digital_offset = PS_GET_DIGITAL_OFFSET(ps_cali_data[3]);
+		ps_cali_data[3] = PS_GET_ANALOGOU_OFFSET(ps_cali_data[3]);
+		ps_add_do_enq_work(&digital_offset);
+		msleep(5);
+	}
 	minThreshold = minThreshold_ps;
 	maxThreshold = maxThreshold_ps;
 	ps_test.cal_value = ps_cali_data;
@@ -1428,7 +1863,7 @@ save_log:
 
 	if(val>=PS_XTALK_CALIBRATE && val<=PS_3CM_CALIBRATE){
 		memset(&content, 0, sizeof(content));
-		snprintf(content, CLI_CONTENT_LEN_MAX, PS_CALI_RAW_DATA, ps_calib_data[val-1],
+		snprintf(content, CLI_CONTENT_LEN_MAX, PS_CALI_RAW_DATA, ps_sensor_offset[val-1],
 			((ps_calibration_res == SUC) ? "pass":"fail"), (int)val, get_cali_error_code(ps_calibration_res), date_str);
 		save_to_file(DATA_CLLCT, content);
 	}
@@ -1509,9 +1944,9 @@ int write_als_dark_noise_offset_to_nv(uint16_t* dark_noise_offset)
 	return 0;
 }
 
+#ifdef SENSOR_DATA_ACQUISITION
 static void als_dark_noise_offset_enq_notify_work(const int item_id, uint16_t value,uint16_t min_threshold,uint16_t max_threshold)
 {
-	#ifdef SENSOR_DATA_ACQUISITION
 	int ret = -1;
 	struct event als_dark_noise_offset_event;
 	memset(&als_dark_noise_offset_event, 0, sizeof(als_dark_noise_offset_event));
@@ -1530,14 +1965,13 @@ static void als_dark_noise_offset_enq_notify_work(const int item_id, uint16_t va
 	}else{
 		hwlog_info("als_dark_noise_offset_enq_notify_work failed!!\n");
 	}
-	#endif
 }
+#endif
 
 static int als_calibrate_save(const void *buf, int length)
 {
 	const uint16_t *poffset_data = (const uint16_t *)buf;
 	int ret = 0;
-	uint16_t *bh1745_als_cal_result = (uint16_t *) buf;
 
 	if (buf == NULL || length <= 0) {
 		hwlog_err("%s invalid argument.", __func__);
@@ -1569,12 +2003,15 @@ static ssize_t attr_als_calibrate_write(struct device *dev, struct device_attrib
 	int ret = 0, i;
 	read_info_t pkg_mcu;
 	char content[CLI_CONTENT_LEN_MAX] = { 0 };
+#ifdef SENSOR_DATA_ACQUISITION
 	uint16_t *cali_data_u16 = NULL;
-	int32_t *als_cali_data = NULL;
 	int32_t *minThreshold = NULL;
 	int32_t *maxThreshold = NULL;
+#endif
+	int32_t *als_cali_data = NULL;
 	char date_str[CLI_TIME_STR_LEN] = { 0 };
 	interval_param_t param;
+	int bh1749_flag;
 	#ifdef SENSOR_DATA_ACQUISITION
 	int32_t als_cali_data_int32[ALS_CAL_NUM] = {0};
 	int32_t minThreshold_als[ALS_CAL_NUM] = {minThreshold_als_para,minThreshold_als_para,minThreshold_als_para,minThreshold_als_para,minThreshold_als_para,minThreshold_als_para};
@@ -1586,17 +2023,20 @@ static ssize_t attr_als_calibrate_write(struct device *dev, struct device_attrib
 	#ifdef SENSOR_DATA_ACQUISITION
 	memset(&als_test,0,sizeof(als_test));
 	#endif
-
-	if (rohm_rgb_flag != 1 && avago_rgb_flag != 1 && ams_tmd3725_rgb_flag != 1  && liteon_ltr582_rgb_flag != 1 && is_cali_supported !=1
-		&& apds9999_rgb_flag != 1 && ams_tmd3702_rgb_flag != 1 && apds9253_rgb_flag != 1 && vishay_vcnl36658_als_flag != 1) {
-		hwlog_info("als sensor is not rohm_bh1745 or avago apds9251 or ams_tmd3725 or liteon_ltr582 , is_cali_supported = %d, no need calibrate\n", is_cali_supported);
+	bh1749_flag = sensor_get_als_bh1749_flag();
+	if (rohm_rgb_flag != 1 && avago_rgb_flag != 1 && ams_tmd3725_rgb_flag != 1 && liteon_ltr582_rgb_flag != 1 &&
+	    is_cali_supported != 1 && apds9999_rgb_flag != 1 && ams_tmd3702_rgb_flag != 1 && apds9253_rgb_flag != 1 &&
+	    vishay_vcnl36658_als_flag != 1 && ams_tcs3701_rgb_flag != 1 && bh1749_flag != 1) {
+		hwlog_info("als sensor is not rohm_bh1745 or avago apds9251 or ams_tmd3725 or liteon_ltr582 , "
+			   "is_cali_supported = %d, no need calibrate\n",
+			   is_cali_supported);
 		return count;
 	}
 
 	if (strict_strtoul(buf, 10, &val))
 		return -EINVAL;
 
-	if (1 != val && !(2 == val && als_data.als_phone_type == LAYA_PHONE_TYPE))
+	if (1 != val && !(2 == val && (als_data.als_phone_type == LAYA_PHONE_TYPE || is_cali_supported)))
 		return count;
 
 	if (sensor_status.opened[TAG_ALS] == 0) { /*if ALS is not opened, open first*/
@@ -1639,7 +2079,7 @@ static ssize_t attr_als_calibrate_write(struct device *dev, struct device_attrib
 	get_test_time(date_str, sizeof(date_str));
 	als_cali_data = (int32_t *)pkg_mcu.data;
 
-	if (2 == val && als_data.als_phone_type == LAYA_PHONE_TYPE){
+	if (2 == val && (als_data.als_phone_type == LAYA_PHONE_TYPE || is_cali_supported)){
 		#ifdef SENSOR_DATA_ACQUISITION
 		cali_data_u16 = (uint16_t *)pkg_mcu.data;
 		als_dark_noise_offset_enq_notify_work(ALS_CALI_DARK_OFFSET_MSG, *cali_data_u16,
@@ -1698,6 +2138,124 @@ static ssize_t attr_als_calibrate_write(struct device *dev, struct device_attrib
 
 static DEVICE_ATTR(als_calibrate, 0664, attr_als_calibrate_show, attr_als_calibrate_write);
 
+static int cap_prox1_calibrate_save(void *buf, int length)
+{
+	int ret = 0;
+	u32 *pcaldata = NULL;
+
+	if (buf == NULL) {
+		hwlog_err("%s invalid argument.", __func__);
+		return_cap_prox1_calibration = EXEC_FAIL;
+		return -1;
+	}
+	pcaldata = (u32 *)buf;
+	hwlog_err("%s:cap_prox1 calibrate ok, %08x  %08x  %08x\n", __func__,
+		pcaldata[0], pcaldata[1], pcaldata[2]);
+
+	if (read_calibrate_data_from_nv(CAP_PROX1_CALIDATA_NV_NUM,
+		CAP_PROX1_CALIDATA_NV_SIZE, "CSENSOR1")) {
+		return_cap_prox1_calibration = EXEC_FAIL;
+		hwlog_err("nve_direct_access read error(%d)\n", ret);
+		return -2;
+	}
+
+	if (write_calibrate_data_to_nv(CAP_PROX1_CALIDATA_NV_NUM, length,
+		"CSENSOR1", buf)){
+		return_cap_prox1_calibration = EXEC_FAIL;
+		hwlog_err("nve_direct_access write error(%d)\n", ret);
+		return -3;
+	}
+	return_cap_prox1_calibration = SUC;
+	return 0;
+}
+
+static void cap_prox1_calibrate_work_func(struct work_struct *work)
+{
+	int ret = 0;
+
+	hwlog_info("cap_prox1 calibrate work enter ++\n");
+	ret = cap_prox1_calibrate_save(cap_prox1_calibrate_data,
+		cap_prox1_calibrate_len);
+	if (ret < 0)
+		hwlog_err("nv write failed\n");
+	hwlog_info("cap_prox1 calibrate work enter --\n");
+}
+
+static ssize_t attr_cap_prox1_calibrate_write(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
+{
+	long val = 0;
+	int calibrate_index;
+	read_info_t pkg_mcu;
+
+	hwlog_info("%s\n", __func__);
+	if (strict_strtoul(buf, 10, &val))
+		return -EINVAL;
+
+	if (strlen(sensor_chip_info[CAP_PROX1]) == 0) {
+		hwlog_err("no sar1 sensor\n");
+		return -EINVAL;
+	}
+	/* init the result failed */
+	return_cap_prox1_calibration = EXEC_FAIL;
+	calibrate_index = (int)val;
+	memset(&pkg_mcu, 0, sizeof(pkg_mcu));
+
+	hwlog_info("cap_prox1_calibrate : %lu\n", val);
+	if (val < 0) {
+		hwlog_err("val is less than 0\n");
+		return count;
+	}
+	pkg_mcu = send_calibrate_cmd(TAG_CAP_PROX1, val,
+		&return_cap_prox1_calibration);
+	if (return_cap_prox1_calibration == COMMU_FAIL)
+		return count;
+	if (pkg_mcu.errno != 0) {
+		hwlog_err("send_calibrate_cmd : return fail\n");
+		return count;
+	}
+	if (!strncmp(sensor_chip_info[CAP_PROX1], "huawei,semtech-sx9335",
+		strlen("huawei,semtech-sx9335"))) {
+		switch (calibrate_index) {
+		case 1: /* near data */
+			memcpy(sar_calibrate_datas.semtech_9335_cali_data.diff,
+				pkg_mcu.data,
+				sizeof(uint16_t) * SAR_SEMTECH_USE_PH_NUM);
+			break;
+		case 2: /* far data */
+			memcpy(sar_calibrate_datas.semtech_9335_cali_data.offset,
+				pkg_mcu.data,
+				sizeof(uint16_t) * SAR_SEMTECH_USE_PH_NUM);
+			break;
+		default:
+			hwlog_err(" semtech sar calibrate err\n");
+			break;
+		}
+		hwlog_info("semtech_9335_data offset1:%d offset2:%d diff1:%d\
+			diff2:%d\n",
+			sar_calibrate_datas.semtech_9335_cali_data.offset[0],
+			sar_calibrate_datas.semtech_9335_cali_data.offset[1],
+			sar_calibrate_datas.semtech_9335_cali_data.diff[0],
+			sar_calibrate_datas.semtech_9335_cali_data.diff[1]);
+		cap_prox1_calibrate_len = sizeof(sar_calibrate_datas);
+		if (cap_prox1_calibrate_len > sizeof(cap_prox1_calibrate_data))
+			cap_prox1_calibrate_len = sizeof(cap_prox1_calibrate_data);
+		memset(cap_prox1_calibrate_data, 0, cap_prox1_calibrate_len);
+		memcpy(cap_prox1_calibrate_data, &sar_calibrate_datas,
+			cap_prox1_calibrate_len);
+	} else{
+		cap_prox1_calibrate_len = pkg_mcu.data_length;
+		if (cap_prox1_calibrate_len > sizeof(cap_prox1_calibrate_data))
+			cap_prox1_calibrate_len = sizeof(cap_prox1_calibrate_data);
+		memcpy(cap_prox1_calibrate_data, pkg_mcu.data,
+			sizeof(cap_prox1_calibrate_data));
+	}
+	INIT_WORK(&cap_prox1_calibrate_work, cap_prox1_calibrate_work_func);
+	queue_work(system_power_efficient_wq, &cap_prox1_calibrate_work);
+
+	return count;
+}
+
 static ssize_t attr_cap_prox_calibrate_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	int ret = 0;
@@ -1751,6 +2309,34 @@ static void cap_prox_calibrate_work_func(struct work_struct *work)
 	}
 	hwlog_info("cap_prox calibrate work enter --\n");
 }
+
+static void attr_abov_calibrate_write(int calibrate_index, read_info_t pkg_mcu)
+{
+
+	switch (calibrate_index) {
+		case 1: /* 1: near data */
+			memcpy(sar_calibrate_datas.abov_cali_data.diff, pkg_mcu.data,
+			       sizeof(uint16_t) * SAR_ABOV_USE_PH_NUM);
+			break;
+		case 2: /* 2: far data */
+			memcpy(sar_calibrate_datas.abov_cali_data.offset, pkg_mcu.data,
+			       sizeof(uint16_t) * SAR_ABOV_USE_PH_NUM);
+			break;
+		default:
+			hwlog_err(" abov a96t3x6 sar calibrate err\n");
+			break;
+	}
+	hwlog_info("abov_data offset1:%d offset2:%d diff1:%d diff2:%d\n", sar_calibrate_datas.abov_cali_data.offset[0],
+	           sar_calibrate_datas.abov_cali_data.offset[1], sar_calibrate_datas.abov_cali_data.diff[0],
+	           sar_calibrate_datas.abov_cali_data.diff[1]);
+	cap_prox_calibrate_len = sizeof(sar_calibrate_datas);
+	if (cap_prox_calibrate_len > sizeof(cap_prox_calibrate_data)) {
+		cap_prox_calibrate_len = sizeof(cap_prox_calibrate_data);
+	}
+	memset(cap_prox_calibrate_data, 0, cap_prox_calibrate_len);
+	memcpy(cap_prox_calibrate_data, &sar_calibrate_datas, cap_prox_calibrate_len);
+}
+
 static ssize_t attr_cap_prox_calibrate_write(struct device *dev,
 					     struct device_attribute *attr, const char *buf, size_t count)
 {
@@ -1802,8 +2388,7 @@ static ssize_t attr_cap_prox_calibrate_write(struct device *dev,
 				cap_prox_calibrate_len = sizeof(cap_prox_calibrate_data);
 				memset(cap_prox_calibrate_data, 0, cap_prox_calibrate_len);
 				memcpy(cap_prox_calibrate_data, &sar_calibrate_datas, cap_prox_calibrate_len);
-		    }else if (!strncmp(sensor_chip_info[CAP_PROX], "huawei,semtech-sx9323", strlen("huawei,semtech-sx9323")))
-		    {
+			} else if (!strncmp(sensor_chip_info[CAP_PROX], "huawei,semtech-sx9323", strlen("huawei,semtech-sx9323"))) {
 				switch(calibrate_index) {
 					case 1: /* near data */
 						memcpy(sar_calibrate_datas.semtech_cali_data.diff, pkg_mcu.data, sizeof(uint16_t) * SAR_SEMTECH_USE_PH_NUM);
@@ -1824,13 +2409,15 @@ static ssize_t attr_cap_prox_calibrate_write(struct device *dev,
 				}
 				memset(cap_prox_calibrate_data, 0, cap_prox_calibrate_len);
 				memcpy(cap_prox_calibrate_data, &sar_calibrate_datas, cap_prox_calibrate_len);
-		    } else {
+			} else if (!strncmp(sensor_chip_info[CAP_PROX], "huawei,abov-a96t3x6", strlen("huawei,abov-a96t3x6"))) {
+				attr_abov_calibrate_write(calibrate_index, pkg_mcu);
+			} else {
 				cap_prox_calibrate_len = pkg_mcu.data_length;
 				if (cap_prox_calibrate_len > sizeof(cap_prox_calibrate_data)) {
 					cap_prox_calibrate_len = sizeof(cap_prox_calibrate_data);
 				}
 				memcpy(cap_prox_calibrate_data, pkg_mcu.data, sizeof(cap_prox_calibrate_data));
-		    }
+			}
 			INIT_WORK(&cap_prox_calibrate_work, cap_prox_calibrate_work_func);
 			queue_work(system_power_efficient_wq, &cap_prox_calibrate_work);
 			#ifdef SENSOR_DATA_ACQUISITION
@@ -2660,9 +3247,58 @@ ssize_t show_cap_prox_calibrate_method(struct device *dev, struct device_attribu
 {
 	return snprintf(buf, MAX_STR_SIZE, "%d\n", sar_pdata.calibrate_type);
 }
-ssize_t show_cap_prox_calibrate_orders(struct device *dev, struct device_attribute *attr, char *buf)
+
+ssize_t show_cap_prox_calibrate_orders(int tag, struct device *dev,
+	struct device_attribute *attr, char *buf)
 {
-	return snprintf(buf, MAX_STR_SIZE, "%s\n", sar_calibrate_order);
+	switch (tag) {
+	case TAG_CAP_PROX:
+		return snprintf(buf, MAX_STR_SIZE, "%s\n", sar_calibrate_order);
+		hwlog_info("tag %d cap_prox_calibrate_orders is %s\n",
+			tag, __func__);
+
+	case TAG_CAP_PROX1:
+		return snprintf(buf, MAX_STR_SIZE, "%s\n", sar_calibrate_order);
+		hwlog_info("tag %d cap_prox1_calibrate_orders is %s\n",
+			tag, __func__);
+
+	default:
+		hwlog_err("tag %d get cap_prox_calibrate_orders not\
+			implement in %s\n",tag, __func__);
+		break;
+	}
+
+	return 0;
+}
+
+ssize_t attr_get_acc_sensor_id(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	hwlog_info("%s is %s\n", __func__,acc_sensor_id);
+	return snprintf(buf, MAX_STR_SIZE, "%s\n", acc_sensor_id);
+}
+
+ssize_t attr_get_gyro_sensor_id(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	hwlog_info("%s is %s\n", __func__,gyro_sensor_id);
+	return snprintf(buf, MAX_STR_SIZE, "%s\n", gyro_sensor_id);
+}
+
+ssize_t attr_get_mag_sensor_id(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	hwlog_info("%s is %s\n", __func__,mag_sensor_id);
+	return snprintf(buf, MAX_STR_SIZE, "%s\n", mag_sensor_id);
+}
+
+ssize_t attr_get_cap_sensor_id(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	hwlog_info("%s is %s\n", __func__,cap_sensor_id);
+	return snprintf(buf, MAX_STR_SIZE, "%s\n", cap_sensor_id);
+}
+
+ssize_t show_sensor_in_board_status_sysfs(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	hwlog_info("%s is %s\n", __func__,sensor_in_board_status);
+	return snprintf(buf, MAX_STR_SIZE, "%s\n", sensor_in_board_status);
 }
 
 ssize_t show_sensor_read_airpress_common(struct device *dev,	 struct device_attribute *attr, char *buf)
@@ -2731,7 +3367,7 @@ static ssize_t store_airpress_set_calidata(struct device *dev, struct device_att
 	}
 	source = simple_strtol(buf, NULL, 10);
 	if (source > MAX_AIRPRESS_OFFSET || source < MIN_AIRPRESS_OFFSET) {
-		hwlog_err("Incorrect offset. source = %d\n", source);
+		hwlog_err("Incorrect offset. source = %ld\n", source);
 		return -1;
 	}
 	airpress_data.offset += (int)source;
@@ -2863,7 +3499,7 @@ static ssize_t store_gyro_set_calidata(struct device *dev, struct device_attribu
 		set_gyro_calib_data[13] = *(set_gyro_cali_data+13);
 		set_gyro_calib_data[14] = *(set_gyro_cali_data+14);
 	} else {
-		hwlog_err("%s:size %d is not equal to 15*4.\n",  __FUNCTION__, size);
+		hwlog_err("%s:size %lu is not equal to 15*4.\n",  __FUNCTION__, size);
 		return -1;
 	}
 	for(i=0; i < CALIBRATE_DATA_LENGTH;i++)
@@ -2943,7 +3579,7 @@ static ssize_t store_acc_set_calidata(struct device *dev, struct device_attribut
 		set_acc_calib_data[13] = *(set_acc_cali_data+13);
 		set_acc_calib_data[14] = *(set_acc_cali_data+14);
 	} else {
-		hwlog_err("%s:size %d is not equal to 15*4.\n",  __FUNCTION__, size);
+		hwlog_err("%s:size %lu is not equal to 15*4.\n",  __FUNCTION__, size);
 		return -1;
 	}
 	for(i=0; i < CALIBRATE_DATA_LENGTH;i++)
@@ -2994,7 +3630,7 @@ static ssize_t store_set_data_type(struct device *dev, struct device_attribute *
 		set_data_type[0] = *set_type;
 		set_data_type[1] = *(set_type+1);
 	} else {
-		hwlog_err("%s:size %d is not equal to 8.\n",  __FUNCTION__, size);
+		hwlog_err("%s:size %lu is not equal to 8.\n",  __FUNCTION__, size);
 		return -1;
 	}
 	if(!acc_cali_way)
@@ -3143,11 +3779,38 @@ hp_cali_out:
 }
 static DEVICE_ATTR(handpress_calibrate, 0664, attr_handpress_calibrate_show, attr_handpress_calibrate_write);
 
+ssize_t show_get_sensors_id(int tag, struct device *dev, struct device_attribute *attr, char *buf)
+{
+	switch (tag) {
+	case TAG_ACCEL:
+		hwlog_info("show_get_sensors_id acc\n");
+		return attr_get_acc_sensor_id(dev, attr, buf);
+
+	case TAG_GYRO:
+		return attr_get_gyro_sensor_id(dev, attr, buf);
+
+	case TAG_MAG:
+		return attr_get_mag_sensor_id(dev, attr, buf);
+
+	case TAG_CAP_PROX:
+		return attr_get_cap_sensor_id(dev, attr, buf);
+
+	default:
+		hwlog_err("tag %d get_sensors_id not implement in %s\n", tag, __func__);
+		break;
+	}
+
+	return 0;
+}
+
 ssize_t sensors_calibrate_show(int tag, struct device *dev, struct device_attribute *attr, char *buf)
 {
 	switch (tag) {
 	case TAG_ACCEL:
 		return snprintf(buf, PAGE_SIZE, "%d\n", return_calibration != SUC);	/*flyhorse k: SUC-->"0", OTHERS-->"1"*/
+
+	case TAG_ACC1:
+		return snprintf(buf, PAGE_SIZE, "%d\n", acc1_return_calibration != SUC);	/*flyhorse k: SUC-->"0", OTHERS-->"1"*/
 
 	case TAG_PS:
 		hwlog_info( "feima sensors_calibrate_show res=%d\n",ps_calibration_res);
@@ -3159,14 +3822,22 @@ ssize_t sensors_calibrate_show(int tag, struct device *dev, struct device_attrib
 	case TAG_GYRO:
 		return snprintf(buf, PAGE_SIZE, "%d\n", gyro_calibration_res != SUC); /*flyhorse k: SUC-->"0", OTHERS-->"1"*/
 
+	case TAG_GYRO1:
+		return snprintf(buf, PAGE_SIZE, "%d\n", gyro1_calibration_res != SUC); /*flyhorse k: SUC-->"0", OTHERS-->"1"*/
+
 	case TAG_PRESSURE:
 		return show_airpress_set_calidata(dev, attr, buf);
 
 	case TAG_HANDPRESS:
 		return snprintf(buf, PAGE_SIZE, "%d\n", handpress_calibration_res != SUC);
 
-        case TAG_CAP_PROX:
+	case TAG_CAP_PROX:
 		return snprintf(buf, PAGE_SIZE, "%d\n", return_cap_prox_calibration != SUC);
+
+	case TAG_CAP_PROX1:
+		return snprintf(buf, PAGE_SIZE, "%d\n",
+			return_cap_prox1_calibration != SUC);
+
 	default:
 		hwlog_err("tag %d calibrate not implement in %s\n", tag, __func__);
 		break;
@@ -3195,8 +3866,18 @@ ssize_t sensors_calibrate_store(int tag, struct device *dev, struct device_attri
 
 	case TAG_HANDPRESS:
 		return attr_handpress_calibrate_write(dev, attr, buf, count);
-     case TAG_CAP_PROX:
-              return attr_cap_prox_calibrate_write(dev, attr, buf, count);
+	case TAG_CAP_PROX:
+		return attr_cap_prox_calibrate_write(dev, attr, buf, count);
+
+	case TAG_ACC1:
+		return attr_acc1_calibrate_write(dev, attr, buf, count);
+
+	case TAG_GYRO1:
+		return attr_gyro1_calibrate_write(dev, attr, buf, count);
+
+	case TAG_CAP_PROX1:
+		return attr_cap_prox1_calibrate_write(dev, attr, buf, count);
+
 	default:
 		hwlog_err("tag %d calibrate not implement in %s\n", tag, __func__);
 		break;
@@ -3443,6 +4124,11 @@ static ssize_t show_sar_data(struct device *dev, struct device_attribute *attr, 
 			sar_calibrate_datas.semtech_cali_data.offset[0], sar_calibrate_datas.semtech_cali_data.offset[1],
 			sar_calibrate_datas.semtech_cali_data.diff[0], sar_calibrate_datas.semtech_cali_data.diff[1]);
 	}
+	if (!strncmp(sensor_chip_info[CAP_PROX], "huawei,abov-a96t3x6", strlen("huawei,abov-a96t3x6"))) {
+		return snprintf(buf, MAX_STR_SIZE, "offset1:%d offset2:%d diff1:%d diff2:%d\n",
+			sar_calibrate_datas.abov_cali_data.offset[0], sar_calibrate_datas.abov_cali_data.offset[1],
+			sar_calibrate_datas.abov_cali_data.diff[0], sar_calibrate_datas.abov_cali_data.diff[1]);
+	}
 
 	return -1;
 }
@@ -3506,6 +4192,7 @@ static struct attribute *sensor_attributes[] = {
 	&dev_attr_connectivity_selfTest.attr,
 	&dev_attr_i2c_rw.attr,
 	&dev_attr_i2c_rw16.attr,
+	&dev_attr_i2c_rw_16bit_reg.attr,
 	&dev_attr_acc_calibrate.attr,
 	&dev_attr_acc_enable.attr,
 	&dev_attr_acc_setdelay.attr,

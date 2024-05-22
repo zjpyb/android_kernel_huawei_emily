@@ -54,8 +54,8 @@
 /*cs conversion ratio*/
 #define MULTIPLE				(1000/HZ)
 /*data service string length*/
-#define DS_NET					("rmnet")
-#define DS_NET_LEN				(5)
+#define WEB_DS_NET				("rmnet")
+#define WEB_DS_NET_LEN			(5)
 
 #define SYN_NO_ACK_REPORT_TIME	(60*HZ)
 #define WEB_NO_ACK_REPORT_TIME	(60*HZ)
@@ -76,6 +76,7 @@
 #define NS_CONVERT_TO_MS  (1000000)
 #define FILTER_TIME_LIMIT (HZ/4)
 #define ALPHA_FILTER_PARA (8)
+#define MAX_VALID_NS (65534000000L)
 
 /*response and report type*/
 enum {
@@ -194,6 +195,13 @@ struct http_return {
 	u32 tcp_handshake_delay;
 	u32 http_get_delay;
 	u32 http_send_get_num;
+	u32 exception_cnt;
+	u32 data_direct;
+	u32 transport_delay;
+	u32 ip_delay;
+	u32 hmac_delay;
+	u32 driver_delay;
+	u32 android_uid;
 };
 
 /*this is temporarily stores the RTT*/
@@ -203,6 +211,16 @@ struct rtt_from_stack {
 	u32 uid;
 	u32 rtt_dst_addr;
 };
+
+typedef struct delay_chr_report{
+	u32 exception_cnt;
+	u32 data_direct;
+	u32 transport_delay;
+	u32 ip_delay;
+	u32 hmac_delay;
+	u32 driver_delay;
+	u32 android_uid;
+}DELAY_CHR_REPROT_T;
 
 /*CHR Key parameters*/
 struct chr_key_val {
@@ -215,6 +233,6 @@ struct chr_key_val {
 
 void wifi_disconnect_report(void);
 int set_report_app_uid(int index, u32 uid);
-
+extern void wifi_kernel_delay_report(DELAY_CHR_REPROT_T *p_delay_chr);
 #endif /*_WEB_HW_HOOK*/
 

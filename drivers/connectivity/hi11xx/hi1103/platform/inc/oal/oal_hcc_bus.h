@@ -200,7 +200,7 @@ typedef struct _hcc_bus_opt_ops{
 
     oal_int32 (*voltage_bias_init)(hcc_bus *pst_bus);
 
-    oal_void  (*chip_info)(hcc_bus *pst_bus);
+    oal_void  (*chip_info)(hcc_bus *pst_bus, oal_uint32 is_need_wakeup, oal_uint32 is_full_log);
 
     oal_void  (*print_trans_info)(hcc_bus *pst_bus, oal_uint64 print_flag);
     oal_void  (*reset_trans_info)(hcc_bus *pst_bus);
@@ -279,9 +279,10 @@ struct _hcc_bus_dev_
     oal_uint32                  init_bus_type;              /*init select bus type*/
     oal_uint32                  bus_cap;                    /*support bus type*/
 
-    oal_uint32                  bus_switch_enable;          /*1 for enable*/
-    oal_uint32                  bus_auto_switch;             /*自动切换*/
-    oal_wakelock_stru           st_switch_wakelock;         /*wake lock for switch*/
+    oal_uint32 pcie_bugfix_enable;        /* 1 for enable */
+    oal_uint32 bus_switch_enable;         /* 1 for enable */
+    oal_uint32 bus_auto_switch;           /* 自动切换 */
+    oal_wakelock_stru st_switch_wakelock; /* wake lock for switch */
 
     oal_uint32                  bus_auto_bindcpu;             /*动态绑核*/
 
@@ -418,6 +419,8 @@ extern oal_int32 hi110x_switch_to_hcc_highspeed_chan(oal_uint32 is_high);
 extern oal_int32 hcc_bus_performance_core_schedule(oal_uint32 dev_id);
 extern oal_int32 hcc_bus_performance_core_init(oal_uint32 dev_id);
 extern oal_int32 hcc_bus_pm_wakeup_device(hcc_bus *hi_bus);
+extern oal_int32 hcc_get_pcie_switch_flag(oal_void);
+extern oal_int32 hcc_set_pcie_switch_flag(oal_int32 flag);
 
 OAL_STATIC OAL_INLINE oal_void hcc_bus_rx_transfer_lock(hcc_bus *hi_bus)
 {
@@ -973,7 +976,7 @@ OAL_STATIC OAL_INLINE oal_int32 hcc_bus_switch_clean_res(hcc_bus *hi_bus)
     return hi_bus->opt_ops->switch_clean_res(hi_bus);
 }
 
-OAL_STATIC OAL_INLINE oal_void hcc_bus_chip_info(hcc_bus *hi_bus)
+OAL_STATIC OAL_INLINE oal_void hcc_bus_chip_info(hcc_bus *hi_bus, oal_uint32 is_need_wakeup, oal_uint32 is_full_log)
 {
     if(OAL_WARN_ON(NULL == hi_bus))
     {
@@ -985,7 +988,7 @@ OAL_STATIC OAL_INLINE oal_void hcc_bus_chip_info(hcc_bus *hi_bus)
         return;
     }
 
-    hi_bus->opt_ops->chip_info(hi_bus);
+    hi_bus->opt_ops->chip_info(hi_bus, is_need_wakeup, is_full_log);
 }
 
 #define HCC_PRINT_TRANS_FLAG_DEVICE_STAT   (1 << 0)

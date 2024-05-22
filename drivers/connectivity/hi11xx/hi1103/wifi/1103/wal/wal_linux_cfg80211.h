@@ -115,6 +115,7 @@ extern "C" {
 #define IEEE80211_STYPE_ACTION          0x00D0
 
 #define WAL_COOKIE_ARRAY_SIZE           8       /* 采用8bit 的map 作为保存cookie 的索引状态 */
+#define WAL_COOKIE_FULL_MASK            0xFF    /* cookie全部用尽掩码 */
 #define WAL_MGMT_TX_TIMEOUT_MSEC        500     
 #define WAL_MGMT_TX_RETRY_CNT           8       /* WAL 发送管理帧最大重传次数 */
 

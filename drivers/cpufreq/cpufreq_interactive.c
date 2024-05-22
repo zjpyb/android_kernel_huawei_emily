@@ -1330,7 +1330,6 @@ static bool cpufreq_interactive_get_policy_freq(struct cpufreq_policy *policy,
 	unsigned int delta_time;
 	u64 cputime_speedadj;
 	int cpu_load;
-	struct interactive_policy *ipolicy = policy->governor_data;
 	struct interactive_cpu *icpu;
 	struct interactive_tunables *tunables;
 	unsigned int new_freq;

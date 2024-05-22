@@ -86,6 +86,7 @@ typedef enum {
     APPEYE_SUIP_FREEZE,
     APPEYE_SUIP_INPUT,
     APPEYE_CRASH,
+    APPEYE_FWB_RECOVER,
     APPEYE_TEMP1,
     APPEYE_TEMP2,
     APPEYE_TEMP3,
@@ -133,6 +134,9 @@ typedef struct {
 	uint16_t msg_len; // end with '\0', = msg actual len + 1
 	char info[0];     // <cmd buf>0<buf>0
 } zrhung_write_event;
+
+struct file;
+struct shrink_control;
 
 int zrhung_is_id_valid(short wp_id);
 int zrhung_send_event(zrhung_wp_id id, const char* cmd_buf, const char*  buf);

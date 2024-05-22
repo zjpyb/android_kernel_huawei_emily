@@ -59,7 +59,7 @@ static unsigned int asp_cfg_reg_read(unsigned int reg)
 	unsigned int ret = 0;
 	unsigned long flag_sft = 0;
 
-	BUG_ON(NULL == priv);
+	WARN_ON(NULL == priv);
 
 	spin_lock_irqsave(&priv->lock, flag_sft);
 
@@ -76,7 +76,7 @@ static void asp_cfg_reg_write(unsigned int reg, unsigned int value)
 	struct asp_cfg_priv *priv = asp_cfg_priv;
 	unsigned long flag_sft = 0;
 
-	BUG_ON(NULL == priv);
+	WARN_ON(NULL == priv);
 
 	spin_lock_irqsave(&priv->lock, flag_sft);
 
@@ -92,7 +92,7 @@ static void asp_cfg_reg_set_bit(unsigned int reg, unsigned int offset)
 	unsigned int value = 0;
 	unsigned long flag_sft = 0;
 
-	BUG_ON(NULL == priv);
+	WARN_ON(NULL == priv);
 
 	spin_lock_irqsave(&priv->lock, flag_sft);
 
@@ -109,7 +109,7 @@ static void asp_cfg_reg_clr_bit(unsigned int reg, unsigned int offset)
 	unsigned int value = 0;
 	unsigned long flag_sft = 0;
 
-	BUG_ON(NULL == priv);
+	WARN_ON(NULL == priv);
 
 	spin_lock_irqsave(&priv->lock, flag_sft);
 
@@ -125,7 +125,7 @@ void h2x_module_set(unsigned int module, bool enable)
 	struct asp_cfg_priv *priv = asp_cfg_priv;
 	unsigned long flag_sft = 0;
 
-	BUG_ON(NULL == priv);
+	WARN_ON(NULL == priv);
 
 	spin_lock_irqsave(&priv->h2x_lock, flag_sft);
 	pr_info("%s:module %d, enable %d \n", __FUNCTION__, module, enable);
@@ -159,7 +159,8 @@ int usb_h2x_on(void)
 	int ret = 0;
 	struct asp_cfg_priv *priv = asp_cfg_priv;
 	struct clk *asp_subsys_clk = NULL;
-	BUG_ON(NULL == priv);
+
+	WARN_ON(NULL == priv);
 
 	ret = regulator_bulk_enable(1, &asp_cfg_priv->regu);
 	if (0 != ret) {
@@ -186,7 +187,8 @@ int usb_h2x_off(void)
 {
 	struct asp_cfg_priv *priv = asp_cfg_priv;
 	struct clk *asp_subsys_clk = NULL;
-	BUG_ON(NULL == priv);
+
+	WARN_ON(NULL == priv);
 
 	asp_subsys_clk = priv->asp_subsys_clk;
 	h2x_module_set(USB_H2X, false);
@@ -203,7 +205,7 @@ static void asp_cfg_h2x_module_enable(void)
 {
 	struct asp_cfg_priv *priv = asp_cfg_priv;
 
-	BUG_ON(NULL == priv);
+	WARN_ON(NULL == priv);
 
 	if (0 == priv->asp_h2x_module_count)
 		dp_h2x_on();
@@ -216,7 +218,7 @@ static void asp_cfg_h2x_module_disable(void)
 {
 	struct asp_cfg_priv *priv = asp_cfg_priv;
 
-	BUG_ON(NULL == priv);
+	WARN_ON(NULL == priv);
 
 	priv->asp_h2x_module_count--;
 	pr_info("[%s:%d],-asp_h2x_module_count = %d\n", __FUNCTION__, __LINE__, priv->asp_h2x_module_count);

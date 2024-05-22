@@ -147,7 +147,7 @@ static size_t iowp_format_events(unsigned int pos) {
 	    size_t w_len = iowp_event_format(&io_wp.events[s], iowp_logbuf + written_len, total_len - written_len);
 	    written_len += w_len;
 	}
-	IOWP_INFO("written_len: %d \n", written_len);
+	IOWP_INFO("written_len: %zu\n", written_len);
 	return written_len;
 }
 
@@ -223,7 +223,7 @@ void iowp_event_send_work(struct work_struct *work) {
 	iowp_format_cmd(zrhung_cmd);
 	IOWP_INFO("%s: cmd_buf: %s\n", __func__, zrhung_cmd);
 	zrhung_send_event(ZRHUNG_WP_IO, zrhung_cmd, iowp_logbuf);
-	IOWP_INFO("send event buffer: %s\n", __func__, iowp_logbuf);
+	IOWP_INFO("%s: send event buffer: %s\n", __func__, iowp_logbuf);
 }
 
 /*===========================================================================
@@ -300,7 +300,7 @@ void iowp_report(pid_t pid , pid_t tgid, char* name) {
 		size_t buf_len = iowp_format_events(pos);
 		io_wp.last_report_stamp = cur_event->stamp;
 		queue_work(io_wp_work.workq, &io_wp_work.send_work);
-		IOWP_WARN("buffer length (%d)\n", buf_len);
+		IOWP_WARN("buffer length (%zu)\n", buf_len);
 	}
 
 	return;

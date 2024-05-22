@@ -25,6 +25,7 @@
 #ifdef CONFIG_HUAWEI_DSM
 #include <dsm/dsm_pub.h>
 #endif
+#include "kbhub_channel.h"
 
 BLOCKING_NOTIFIER_HEAD(iom3_recovery_notifier_list);
 
@@ -63,6 +64,7 @@ extern int g_iom3_state;
 extern struct completion sensorhub_rdr_completion;
 extern uint32_t need_reset_io_power;
 extern uint32_t need_set_3v_io_power;
+extern uint32_t need_set_3_2v_io_power;
 extern struct regulator *sensorhub_vddio;
 extern char sensor_chip_info[SENSOR_MAX][MAX_CHIP_INFO_LEN];
 extern struct CONFIG_ON_DDR* pConfigOnDDr;
@@ -885,6 +887,10 @@ static int sensorhub_panic_notify(struct notifier_block *nb, unsigned long actio
 
 int sensorhub_noc_notify(int value)
 {
+	if(value <= 1){
+	    hwlog_warn("%s :read err,no need recovery iomcu\n", __func__);
+	    return 0;
+	}
 	hwlog_warn("%s start\n", __func__);
 	iom3_need_recovery(SENSORHUB_MODID, SH_FAULT_NOC);
 	wait_for_completion(&sensorhub_rdr_completion);
@@ -989,6 +995,13 @@ static void reset_sensor_power(void)
 		ret = regulator_set_voltage(sensorhub_vddio, SENSOR_VOLTAGE_3V, SENSOR_VOLTAGE_3V);
 		if (ret < 0) {
 			hwlog_err("failed to set sensorhub_vddio voltage to 3V\n");
+			return;
+		}
+	}
+	if (need_set_3_2v_io_power) {
+		ret = regulator_set_voltage(sensorhub_vddio, SENSOR_VOLTAGE_3_2V, SENSOR_VOLTAGE_3_2V);
+		if (ret < 0) {
+			hwlog_err("failed to set sensorhub_vddio voltage to 3_2V\n");
 			return;
 		}
 	}
@@ -1178,6 +1191,7 @@ static int shb_reboot_notifier(struct notifier_block *nb, unsigned long foo,
 		disable_fingerprint_when_sysreboot();
 		disable_fingerprint_ud_when_sysreboot();
 		disable_key_when_sysreboot();
+		disable_kb_when_sysreboot();
 	}
 	hwlog_info("shb:%s: -\n", __func__);
 	return 0;
@@ -1251,8 +1265,10 @@ int recovery_init(void)
 	if (get_iomcu_cfg_base())
 		return -1;
 	ret = rdr_sensorhub_init();
-	if (ret < 0)
+	if (ret < 0) {
 		hwlog_err("%s rdr_sensorhub_init ret=%d\n", __func__, ret);
+		return -EFAULT;
+	}
 	mutex_init(&mutex_recovery_cmd);
 	atomic_set(&iom3_rec_state, IOM3_RECOVERY_IDLE);
 	iom3_rec_wq = create_singlethread_workqueue("iom3_rec_wq");

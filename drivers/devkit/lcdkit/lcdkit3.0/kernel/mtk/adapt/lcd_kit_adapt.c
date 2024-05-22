@@ -19,7 +19,8 @@
 #include "lcm_drv.h"
 
 extern struct LCM_UTIL_FUNCS lcm_util_mtk;
-
+extern int do_lcm_vdo_lp_write(struct dsi_cmd_desc *write_table, unsigned int count);
+extern int do_lcm_vdo_lp_read(struct dsi_cmd_desc *cmd_tab, unsigned int count);
 #define mipi_dsi_cmds_tx(cmdq, cmds) \
 		lcm_util_mtk.mipi_dsi_cmds_tx(cmdq, cmds)
 
@@ -65,6 +66,25 @@ static int lcd_kit_cmds_to_mtk_dsi_cmds(struct lcd_kit_dsi_cmd_desc* lcd_kit_cmd
 	return LCD_KIT_OK;
 }
 
+static int lcd_kit_cmds_to_mtk_dsi_read_cmds(struct lcd_kit_dsi_cmd_desc* lcd_kit_cmds, struct dsi_cmd_desc* cmd)
+{
+	if (lcd_kit_cmds == NULL) {
+		LCD_KIT_ERR("lcd_kit_cmds is null point!\n");
+		return LCD_KIT_FAIL;
+	}
+	if (cmd == NULL) {
+		LCD_KIT_ERR("cmd is null point!\n");
+		return LCD_KIT_FAIL;
+	}
+
+	cmd->dtype = lcd_kit_cmds->payload[0];
+	cmd->vc =  lcd_kit_cmds->vc;
+	cmd->dlen =  lcd_kit_cmds->dlen;
+    cmd->link_state = 1;
+
+	return LCD_KIT_OK;
+}
+
 int mtk_mipi_dsi_cmds_tx(struct lcd_kit_dsi_cmd_desc *cmds, int cnt)
 {
 	struct lcd_kit_dsi_cmd_desc *cm = NULL;
@@ -100,6 +120,44 @@ int mtk_mipi_dsi_cmds_tx(struct lcd_kit_dsi_cmd_desc *cmds, int cnt)
 
 	return cnt;
 }
+
+int mtk_mipi_dsi_cmds_extern_tx(struct lcd_kit_dsi_cmd_desc *cmds, int cnt)
+{
+	struct lcd_kit_dsi_cmd_desc *cm = NULL;
+	struct dsi_cmd_desc dsi_cmd;
+	int i = 0;
+
+	if (NULL == cmds) {
+		LCD_KIT_ERR("cmds is NULL");
+		return -EINVAL;
+	}
+
+	cm = cmds;
+
+	for (i = 0; i < cnt; i++) {
+		lcd_kit_cmds_to_mtk_dsi_cmds(cm, &dsi_cmd);
+
+		(void)do_lcm_vdo_lp_write(&dsi_cmd, 1);
+LCD_KIT_ERR("dttype is 0x%x, len is %d, payload is 0x%x\n",dsi_cmd.dtype,dsi_cmd.dlen,*(dsi_cmd.payload));
+		if (cm->wait) {
+			if (cm->waittype == WAIT_TYPE_US)
+				udelay(cm->wait);
+			else if (cm->waittype == WAIT_TYPE_MS) {
+				if (cm->wait <= 10) {
+					mdelay(cm->wait);
+				} else {
+					msleep(cm->wait);
+				}
+			}
+			else
+				msleep(cm->wait * 1000);
+		}
+		cm++;
+	}
+
+	return cnt;
+}
+
 
 static int lcd_kit_cmd_is_write(struct lcd_kit_dsi_panel_cmds* cmd)
 {
@@ -186,6 +244,80 @@ int lcd_kit_dsi_cmds_rx(void* hld, uint8_t* out, struct lcd_kit_dsi_panel_cmds* 
     return ret;
 }
 
+int lcd_kit_dsi_cmds_extern_rx(uint8_t *out,
+				struct lcd_kit_dsi_panel_cmds *cmds,
+				unsigned int len)
+{
+	unsigned int i = 0;
+	unsigned int j = 0;
+	unsigned int k = 0;
+	int ret = 0;
+	struct dsi_cmd_desc dsi_cmd;
+	unsigned char *buffer = NULL;
+
+	if ((cmds == NULL)  || (out == NULL)){
+		LCD_KIT_ERR("out or cmds is null point!\n");
+		return LCD_KIT_FAIL;
+	}
+
+	for (i = 0; i < cmds->cmd_cnt; i++) {
+		if (lcd_kit_cmd_is_write(cmds)) {
+			mtk_mipi_dsi_cmds_extern_tx(&cmds->cmds[i], 1);
+		} else {
+			lcd_kit_cmds_to_mtk_dsi_read_cmds(&cmds->cmds[i], &dsi_cmd);
+			if (dsi_cmd.dlen == 0) {
+				LCD_KIT_ERR("cmd len is 0!\n");
+				return LCD_KIT_FAIL;
+			}
+			LCD_KIT_INFO("cmd len is %d!\n", dsi_cmd.dlen);
+			buffer = kzalloc(dsi_cmd.dlen, GFP_KERNEL);
+			if (buffer == NULL) {
+				LCD_KIT_ERR("buffer is NULL!\n");
+				return LCD_KIT_FAIL;
+			}
+			dsi_cmd.payload = buffer;
+			do_lcm_vdo_lp_read(&dsi_cmd, 1);
+			if (dsi_cmd.dlen == 0) {
+				LCD_KIT_ERR("read data len is 0!\n");
+				kfree(buffer);
+				buffer = NULL;
+				return LCD_KIT_FAIL;
+			}
+			for (j = 0; j < dsi_cmd.dlen; j++) {
+				if (k >= len) {
+					LCD_KIT_ERR("out buffer is full!\n");
+					break;
+				}
+				out[k] = buffer[j];
+				k++;
+				LCD_KIT_INFO("j is %d k is %d data1 is 0x%x\n",
+					j, k, buffer[j]);
+			}
+			kfree(buffer);
+			buffer = NULL;
+		}
+	}
+
+    return ret;
+}
+
+int lcd_kit_dsi_cmds_extern_tx(struct lcd_kit_dsi_panel_cmds* cmds)
+{
+    int i;
+
+	if (cmds == NULL) {
+		LCD_KIT_ERR("lcd_kit_cmds is null point!\n");
+		return LCD_KIT_FAIL;
+	}
+
+	for (i = 0; i < cmds->cmd_cnt; i++) {
+		mtk_mipi_dsi_cmds_extern_tx(&cmds->cmds[i], 1);
+	}
+
+	return 0;
+
+}
+
 static int lcd_kit_buf_trans(const char* inbuf, int inlen, char** outbuf, int* outlen)
 {
 	char* buf;
@@ -199,6 +331,10 @@ static int lcd_kit_buf_trans(const char* inbuf, int inlen, char** outbuf, int* o
  
 	/*The property is 4bytes long per element in cells: <>*/
 	bufsize = bufsize / 4;
+	if (bufsize <= 0) {
+		LCD_KIT_ERR("bufsize is less 0!\n");
+		return LCD_KIT_FAIL;
+	}
 	/*If use bype property: [], this division should be removed*/
 	buf = kzalloc(sizeof(char) * bufsize, GFP_KERNEL);
 	if (!buf) {
@@ -216,7 +352,6 @@ static int lcd_kit_buf_trans(const char* inbuf, int inlen, char** outbuf, int* o
 
 static int lcd_kit_gpio_enable(u32 type)
 {
-	lcd_kit_gpio_tx(type, GPIO_REQ);
 	lcd_kit_gpio_tx(type, GPIO_HIGH);
 	return LCD_KIT_OK;
 }
@@ -224,7 +359,6 @@ static int lcd_kit_gpio_enable(u32 type)
 static int lcd_kit_gpio_disable(u32 type)
 {
 	lcd_kit_gpio_tx(type, GPIO_LOW);
-	lcd_kit_gpio_tx(type, GPIO_FREE);
 	return LCD_KIT_OK;
 }
 

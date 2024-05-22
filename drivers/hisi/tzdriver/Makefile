@@ -19,6 +19,7 @@ obj-$(CONFIG_TZDRIVER) += security_auth_enhance.o agent.o gp_ops.o mem.o cmdmoni
 obj-$(CONFIG_TEELOG) += tlogger.o tee_rdr_register.o
 ifeq ($(CONFIG_TZDRIVER), y)
 obj-$(CONFIG_HISI_MMC_SECURE_RPMB) += agent_rpmb.o
+obj-$(CONFIG_HISI_RPMB) += agent_rpmb.o
 endif
 
 obj-$(CONFIG_TEE_TUI) += tui.o
@@ -40,4 +41,13 @@ ccflags-y += 	-Idrivers/video/hisi/dss \
 
 ifdef CONFIG_TEE_CFC
   rename-text-section-to := .cfc.text
+endif
+
+ifdef CONFIG_IMAGINATION_D5500_DRM_VCODEC
+ifeq ($(wildcard drivers/staging/android/ion/ion.h),)
+  ccflags-y += -DIMG_KERNEL_ION_HEADER="<linux/ion.h>"
+else
+  ccflags-y += -DIMG_KERNEL_ION_HEADER="<$(srctree)/drivers/staging/android/ion/ion.h>"
+endif
+  ccflags-y += -Idrivers/vcodec/imagination/D5500_DRM/imgvideo/platform/include
 endif

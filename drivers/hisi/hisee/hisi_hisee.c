@@ -41,7 +41,6 @@
 #include "hisi_hisee_fs.h"
 #include "hisi_hisee_upgrade.h"
 #include "hisi_hisee_chip_test.h"
-#include "hisi_hisee_autotest.h"
 #include <dsm/dsm_pub.h>
 
 
@@ -92,7 +91,8 @@ extern hisee_power_vote_status g_power_vote_status;
 extern unsigned int g_runtime_cosid;
 
 
-
+/*  hisee autoteset interface entryfor cmd "hisee_channel_test" */
+int hisee_auto_test_func(void *buf, int para);
 
 extern int efuse_check_secdebug_disable(bool *b_disabled);
 extern int get_rpmb_init_status(void);
@@ -153,12 +153,6 @@ static hisee_errcode_item_des g_errcode_items_des[] = {
 	{HISEE_FIRST_SMC_CMD_ERROR, "the fisrt step in smc transcation error\n"},
 	{HISEE_SMC_CMD_TIMEOUT_ERROR, "the smc transcation timeout error\n"},
 	{HISEE_SMC_CMD_PROCESS_ERROR, "the smc transcation failure error\n"},
-
-	{HISEE_CHANNEL_TEST_CMD_ERROR, "invalid channel test cmd error\n"},
-	{HISEE_CHANNEL_TEST_RESULT_MALLOC_ERROR, "channel test result buf malloc error\n"},
-	{HISEE_CHANNEL_TEST_PATH_ABSENT_ERROR, "channel test input file error\n"},
-	{HISEE_CHANNEL_TEST_WRITE_RESULT_ERROR, "channel test write result file error\n"},
-
 	{HISEE_GET_HISEE_VALUE_ERROR,"get hisee lcs mode error\n"},
 	{HISEE_SET_HISEE_VALUE_ERROR,"set hisee lcs mode error\n"},
 	{HISEE_SET_HISEE_STATE_ERROR,"set hisee state error\n"},
@@ -187,11 +181,12 @@ static hisee_errcode_item_des g_errcode_items_des[] = {
 
 static hisee_driver_function g_hisee_atf_function_list[] = {
 	{"cos_image_upgrade", cos_image_upgrade_func},
-	{"hisee_channel_test", hisee_channel_test_func},
+	{"hisee_channel_test", hisee_auto_test_func},
 	{"hisee_parallel_factory_action", hisee_parallel_manufacture_func},
 
 
 	{"hisee_factory_check", hisee_factory_check_func},
+	{"hisee_get_smx", hisee_get_smx_func},
 	{NULL, NULL},
 };
 
@@ -202,6 +197,15 @@ static hisee_driver_function g_hisee_lpm3_function_list[] = {
 	{"hisee_poweroff", hisee_poweroff_func},
 	{NULL, NULL},
 };
+
+/*
+    hisee autoteset interface entryfor cmd "hisee_channel_test"
+*/
+int hisee_auto_test_func(void *buf, int para)
+{
+	return HISEE_OK;
+}
+
 
 noinline int atfd_hisee_smc(u64 _function_id, u64 _arg0, u64 _arg1, u64 _arg2)
 {
@@ -409,7 +413,23 @@ int send_smc_process(atf_message_header *p_message_header, phys_addr_t phy_addr,
 	set_errno_and_return(ret);
 }
 
-static int write_apdu_command_func (char *apdu_buf, unsigned int apdu_len)
+/***************************************************************************
+* 函数：int hisee_get_smx_cfg(unsigned int *p_smx_cfg)
+* 参数：无
+* 返回：获取smx状态:TRUE or FALSE;
+* 处理：通过SMC向ATF发出获取smx状态的命令；
+* 实现：
+***************************************************************************/
+void hisee_get_smx_cfg(unsigned int *p_smx_cfg)
+{
+	if (NULL == p_smx_cfg) {
+		pr_err("hisee:%s() input param error!\n", __func__);
+		return;
+	}
+	*p_smx_cfg = SMX_PROCESS_1;
+}
+
+static int write_apdu_command_func (const char *apdu_buf, unsigned int apdu_len)
 {
 	atf_message_header *p_message_header;
 	int ret = HISEE_OK;
@@ -808,7 +828,7 @@ static int rpmb_ready_body(void *arg)
 	}
 	else
 	{
-		if (!g_hisee_is_fpga && (hisee_hibench_flag)) {
+		if (!g_hisee_is_fpga && (hisee_hibench_flag) && (false == is_hisee_chiptest_slt())) {
 			ret = cos_image_upgrade_by_self();
 			if(HISEE_OK != ret) {
 				pr_err("hisee:%s() cos_image_upgrade_by_self() failed, retcode=%d\n", __func__, ret);
@@ -1152,13 +1172,6 @@ static ssize_t hisee_ioctl_store (struct device *dev, struct device_attribute *a
 		set_errno_and_return(HISEE_INVALID_PARAMS); /*lint !e1058*/
 	}
 
-	/* one of the three cases makes this condition is false, than do next operation:
-	 * 1. cmd index is hisee_factory_action or hisee_slt_action or hisee_slt_read
-	 */
-	if ((cmd_index < MANAFACTOR_CMD_INDEX) && (hisee_get_power_status() != HISEE_POWER_STATUS_ON)) {
-		pr_err("%s hisee is not poweron\n", __func__);
-		set_errno_and_return(HISEE_POWERCTRL_FLOW_ERROR); /*lint !e1058*/
-	}
 	ret = g_hisee_atf_function_list[cmd_index].function_ptr((void *)(buf + strlen(g_hisee_atf_function_list[cmd_index].function_name)),
 															(int)(long)dev);
 	if (ret !=  HISEE_OK) {

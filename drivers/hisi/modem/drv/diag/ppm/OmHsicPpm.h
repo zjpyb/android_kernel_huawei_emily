@@ -96,7 +96,7 @@ typedef u32 OM_HSIC_PORT_STATUS_ENUM_UINT32;
 *****************************************************************************/
 void   PPM_HsicIndWriteDataCB(u8* pucVirData, u8* pucPhyData, s32 lLen);
 
-s32  PPM_HsicCfgReadDataCB(void);
+void   PPM_HsicCfgReadDataCB(void);
 
 void   PPM_HsicCfgWriteDataCB(u8* pucVirData, u8* pucPhyData, s32 lLen);
 

@@ -55,7 +55,7 @@ int hisi_soh_drv_register_atomic_notifier(struct notifier_block *nb);
 int hisi_soh_drv_unregister_atomic_notifier(struct notifier_block *nb);
 
 /*get array max value and min value.*/
-void max_min_value(int array[],u32 size, int *min, int *max)
+void max_min_value(const int array[],u32 size, int *min, int *max)
 {
     u32 i;
     int max_value;
@@ -312,6 +312,7 @@ static int soh_acr_rw_nv(struct hisi_soh_device *di, enum nv_rw_type rw)
     struct acr_nv_info acrinfo;
     struct hisi_nve_info_user nve;
     int ret;
+    errno_t err = EOK;
 
     if (!di)
         return -1;
@@ -328,7 +329,11 @@ static int soh_acr_rw_nv(struct hisi_soh_device *di, enum nv_rw_type rw)
         acrinfo.order_num = (acrinfo.order_num +1)%SOH_ACR_NV_DATA_NUM;
         memcpy_s(&acrinfo.soh_nv_acr_info[acrinfo.order_num],sizeof(struct acr_info), &di->soh_acr_dev.soh_acr_info, sizeof(struct acr_info));
         nve.nv_operation = NV_WRITE;
-        memcpy_s(nve.nv_data, sizeof(acrinfo), &acrinfo, sizeof(acrinfo));
+        err = memcpy_s(nve.nv_data, sizeof(acrinfo), &acrinfo, sizeof(acrinfo));
+        if(err != EOK) {
+               hisi_soh_err("[%s]memcpy_s fail, err=%d\n",__func__, err);
+               return -1;
+        }
         ret = hisi_nve_direct_access(&nve);
         if (ret)
             hisi_soh_err("[%s]acr save nv fail, ret=%d\n", __func__, ret);
@@ -340,8 +345,13 @@ static int soh_acr_rw_nv(struct hisi_soh_device *di, enum nv_rw_type rw)
         ret = hisi_nve_direct_access(&nve);
         if (ret)
             hisi_soh_err("acr read nv partion fail, ret=%d\n", ret);
-        else
-           memcpy_s(&di->soh_acr_dev.acr_nv, sizeof(struct acr_nv_info), nve.nv_data, sizeof(struct acr_nv_info));
+        else {
+         err = memcpy_s(&di->soh_acr_dev.acr_nv, sizeof(struct acr_nv_info), nve.nv_data, sizeof(struct acr_nv_info));
+         if(err != EOK) {
+             hisi_soh_err("[%s]memcpy_s fail, err=%d\n",__func__, err);
+             return -1;
+           }
+        }
     }
     return ret;
 }
@@ -360,6 +370,7 @@ static int soh_dcr_rw_nv(struct hisi_soh_device *di, enum nv_rw_type rw)
     struct dcr_nv_info dcrinfo;
     struct hisi_nve_info_user nve;
     int ret;
+    errno_t err = EOK;
 
     if (!di)
         return -1;
@@ -378,7 +389,11 @@ static int soh_dcr_rw_nv(struct hisi_soh_device *di, enum nv_rw_type rw)
         dcrinfo.order_num = (dcrinfo.order_num +1)%SOH_DCR_NV_DATA_NUM;
         memcpy_s(&dcrinfo.soh_nv_dcr_info[dcrinfo.order_num], sizeof(struct dcr_info), &di->soh_dcr_dev.soh_dcr_info, sizeof(struct dcr_info));
         nve.nv_operation = NV_WRITE;
-        memcpy_s(nve.nv_data, sizeof(dcrinfo), &dcrinfo, sizeof(dcrinfo));
+        err = memcpy_s(nve.nv_data, sizeof(dcrinfo), &dcrinfo, sizeof(dcrinfo));
+        if(err != EOK) {
+              hisi_soh_err("[%s]memcpy_s fail, err=%d\n",__func__, err);
+              return -1;
+        }
         ret = hisi_nve_direct_access(&nve);
         if (ret)
             hisi_soh_err("[%s]dcr save nv fail, ret=%d\n", __func__, ret);
@@ -389,8 +404,13 @@ static int soh_dcr_rw_nv(struct hisi_soh_device *di, enum nv_rw_type rw)
         ret = hisi_nve_direct_access(&nve);
         if (ret)
             hisi_soh_err("dcr read nv partion fail, ret=%d\n", ret);
-        else
-           memcpy_s(&di->soh_dcr_dev.dcr_nv, sizeof(struct dcr_nv_info), nve.nv_data, sizeof(struct dcr_nv_info));
+        else{
+           err = memcpy_s(&di->soh_dcr_dev.dcr_nv, sizeof(struct dcr_nv_info), nve.nv_data, sizeof(struct dcr_nv_info));
+           if(err != EOK) {
+               hisi_soh_err("[%s]memcpy_s fail, err=%d\n",__func__, err);
+               return -1;
+           }
+        }
     }
     return ret;
 }
@@ -409,6 +429,7 @@ static int soh_pd_leak_rw_nv(struct hisi_soh_device *di, enum nv_rw_type rw)
     struct pd_leak_nv_info pdinfo;
     struct hisi_nve_info_user nve;
     int ret;
+    errno_t err = EOK;
 
     if (!di)
         return -1;
@@ -427,7 +448,11 @@ static int soh_pd_leak_rw_nv(struct hisi_soh_device *di, enum nv_rw_type rw)
         pdinfo.order_num = (pdinfo.order_num +1)%SOH_PD_NV_DATA_NUM;
         memcpy_s(&pdinfo.soh_nv_pd_leak_current_info[pdinfo.order_num], sizeof(struct pd_leak_current_info), &di->soh_pd_leak_dev.soh_pd_leak_current_info, sizeof(struct pd_leak_current_info));
         nve.nv_operation = NV_WRITE;
-        memcpy_s(nve.nv_data, sizeof(pdinfo), &pdinfo, sizeof(pdinfo));
+        err = memcpy_s(nve.nv_data, sizeof(pdinfo), &pdinfo, sizeof(pdinfo));
+        if(err != EOK) {
+            hisi_soh_err("[%s]memcpy_s fail, err=%d\n",__func__, err);
+            return -1;
+        }
         ret = hisi_nve_direct_access(&nve);
         if (ret)
             hisi_soh_err("[%s]pd leak save nv fail, ret=%d\n", __func__, ret);
@@ -438,8 +463,13 @@ static int soh_pd_leak_rw_nv(struct hisi_soh_device *di, enum nv_rw_type rw)
         ret = hisi_nve_direct_access(&nve);
         if (ret)
             hisi_soh_err("pd read nv partion fail, ret=%d\n", ret);
-        else
-           memcpy_s(&di->soh_pd_leak_dev.pd_leak_nv, sizeof(struct pd_leak_nv_info), nve.nv_data, sizeof(struct pd_leak_nv_info));
+        else {
+           err = memcpy_s(&di->soh_pd_leak_dev.pd_leak_nv, sizeof(struct pd_leak_nv_info), nve.nv_data, sizeof(struct pd_leak_nv_info));
+           if(err != EOK) {
+               hisi_soh_err("[%s]memcpy_s fail, err=%d\n",__func__, err);
+               return -1;
+           }
+        }
     }
 
     return ret;
@@ -518,7 +548,6 @@ static int parse_soh_ovp_dts(struct hisi_soh_device *di)
 {
     struct device_node* np;
     int ret;
-
     if (!di)
         return -1;
 
@@ -561,7 +590,7 @@ static int parse_soh_ovp_dts(struct hisi_soh_device *di)
 	ret = of_property_read_u32_array(np, "soh_ovl_safe_thd", (u32 *)&di->soh_ovp_dev.soh_ovl_safe_thres, sizeof(struct soh_ovp_temp_vol_threshold)/sizeof(int));
 	if (ret) {
         memcpy_s(&di->soh_ovp_dev.soh_ovl_safe_thres, sizeof(default_ovl_safe_thres), &default_ovl_safe_thres, sizeof(default_ovl_safe_thres));
-		hisi_soh_err("[%s] get soh_ovl_safe_thres  fail!\n", __func__);
+        hisi_soh_err("[%s] get soh_ovl_safe_thres  fail!\n", __func__);
 	}
     hisi_soh_info("[%s] addr:soh_ovl_safe_thres temp[%d],vol[%d] !\n", __func__,di->soh_ovp_dev.soh_ovl_safe_thres.temp,di->soh_ovp_dev.soh_ovl_safe_thres.bat_vol_mv);
 
@@ -1016,13 +1045,17 @@ ssize_t acr_raw_show(struct device *dev, struct device_attribute *attr, char *bu
 {
     struct hisi_soh_device *di;
     struct soh_acr_device *acr_dev;
-
+    errno_t err = EOK;
     di = g_di;
     if(!di) {
         return -1;
     }
     acr_dev = &di->soh_acr_dev;
-    memcpy_s(buf, sizeof(struct acr_info), &acr_dev->soh_acr_info, sizeof(struct acr_info));
+    err = memcpy_s(buf, sizeof(struct acr_info), &acr_dev->soh_acr_info, sizeof(struct acr_info));
+    if(err != EOK) {
+        hisi_soh_err("[%s]memcpy_s fail, err=%d\n",__func__, err);
+        return -1;
+    }
     return sizeof(struct acr_info);
 }
 
@@ -1030,13 +1063,17 @@ ssize_t dcr_raw_show(struct device *dev, struct device_attribute *attr, char *bu
 {
     struct hisi_soh_device *di;
     struct soh_dcr_device *dcr_dev;
-
+    errno_t err = EOK;
     di = g_di;
     if(!di) {
         return -1;
     }
     dcr_dev = &di->soh_dcr_dev;
-    memcpy_s(buf, sizeof(struct dcr_info), &dcr_dev->soh_dcr_info, sizeof(struct dcr_info));
+    err = memcpy_s(buf, sizeof(struct dcr_info), &dcr_dev->soh_dcr_info, sizeof(struct dcr_info));
+    if(err != EOK) {
+        hisi_soh_err("[%s]memcpy_s fail, err=%d\n",__func__, err);
+        return -1;
+     }
     return sizeof(struct dcr_info);
 }
 
@@ -1874,7 +1911,7 @@ int soh_dcr_start_check(void)
 }
 
 /*************************************************************************
-  Function:        soh_dcr_get_info
+  Function:        soh_dcr_get_data2
   Description:     get dcr info and Check the validity of the info.
   Input:           NA
   Output:          *vol: fifo0 vol mV
@@ -1884,7 +1921,7 @@ int soh_dcr_start_check(void)
   Remark:          1 fifo current    [180, 220]mA
                    2 fifo vol diff   [-10, 10]mV
 **************************************************************************/
-STATIC int soh_dcr_get_info(int *i_ma, int *v_mv)
+STATIC int soh_dcr_get_data2(int *i_ma, int *v_mv)
 {
     struct hisi_soh_device *di = g_di;
     unsigned int fifo_depth;
@@ -1903,11 +1940,9 @@ STATIC int soh_dcr_get_info(int *i_ma, int *v_mv)
         return -1;
 
     for (i = fifo_depth - 1; i >= 0; i--) {
-
         ret = di->soh_dcr_dev.dcr_ops->get_dcr_info(&cur_ma, &vol_mv, i);
         if (ret)
             return -1;
-
         /*check fifo current */
         if (abs(cur_ma - DCR_CAL_DISCHARGE_BASE_CUR) > DCR_CAL_BAT_CUR_INC_MAX) {
             hisi_soh_err("[%s] dcr fifo current[%d]mA ,exceed the normal range!!\n",__func__ , cur_ma);
@@ -1918,14 +1953,53 @@ STATIC int soh_dcr_get_info(int *i_ma, int *v_mv)
             hisi_soh_err("[%s] dcr fifo vol[%d]mV ,exceed the normal range!!\n",__func__ , vol_mv);
             return -1;
         }
-
         last_vol_mv = vol_mv;
-
     }
 
     *i_ma = cur_ma;
     *v_mv = vol_mv;
     hisi_soh_debug("[%s] current = %d ma, vol = %d mv!!\n",__func__ , *i_ma, *v_mv);
+    return 0;
+}
+
+/*************************************************************************
+  Function:        soh_dcr_get_data1
+  Description:     get dcr info and Check the validity of the info.
+  Input:           NA
+  Output:          *vol: fifo0 vol mV
+                   *current: fifo0 current mA
+  Return:          0:info valid.
+                   other: info invalid.
+  Remark:          1 fifo current    [180, 220]mA
+                   2 fifo vol diff   [-10, 10]mV
+**************************************************************************/
+STATIC int soh_dcr_get_data1(int *i_ma, int *v_mv)
+{
+    struct hisi_soh_device *di = g_di;
+    int vol_mv, cur_ma;
+    int ret;
+
+    if (!di) {
+        hisi_soh_err("[%s]di is NULL!\n",__func__ );
+        return -1;
+    }
+
+    ret = di->soh_dcr_dev.dcr_ops->get_dcr_data1(&cur_ma, &vol_mv);
+        /* get from coul */
+    if (ret) {
+        vol_mv = hisi_battery_voltage();
+        cur_ma = hisi_battery_current();
+    }
+    /*check fifo current */
+    if (abs(cur_ma - DCR_CAL_DISCHARGE_BASE_CUR) > DCR_CAL_BAT_CUR_INC_MAX) {
+        hisi_soh_err("[%s] dcr fifo current[%d]mA ,exceed the normal range!!\n",__func__ , cur_ma);
+        return -1;
+    }
+
+    *i_ma = cur_ma;
+    *v_mv = vol_mv;
+    hisi_soh_debug("[%s] current = %d ma, vol = %d mv!!\n",__func__ , *i_ma, *v_mv);
+
     return 0;
 }
 
@@ -1951,7 +2025,7 @@ static void soh_dcr_calculate_work(struct work_struct *work)
     int v_bat0, v_bat1, v_bat2;
     int t_bat0, t_bat1, t_bat;
     int c_bat0, c_bat1;
-    int i_bat;
+    int i_bat1, i_bat2;
     int retry = DCR_RETRY_NUM; /*500s*/
     u32 dcr_flag;
     int dcr_t;
@@ -1963,6 +2037,9 @@ static void soh_dcr_calculate_work(struct work_struct *work)
         return ;
     }
 
+    /*set dcr sample timer*/
+    di->dcr_ops->set_dcr_timer(DCR_TIMER_32);
+
     dcr_t = di->dcr_ops->get_dcr_timer();
     if (!dcr_t) {
         /*set dcr work end*/
@@ -1972,7 +2049,6 @@ static void soh_dcr_calculate_work(struct work_struct *work)
         hisi_soh_err("[%s] dcr_t = 0 \n", __func__);
         return ;
     }
-
     /*acr cal don't allow  pmu to enter eco model*/
     soh_wake_lock(g_di);
 
@@ -1988,7 +2064,11 @@ static void soh_dcr_calculate_work(struct work_struct *work)
     mdelay(DCR_R0_WATI_MS);
 
     /*get r0 cal second vol*/
-    v_bat1 = hisi_battery_voltage();
+    ret = soh_dcr_get_data1(&i_bat1, &v_bat1);
+    if(ret) {
+        hisi_soh_err("[%s] get dcr data1 error %d !\n",__func__ , ret);
+        goto dcr_exit;
+    }
 
     /*get dcr flag*/
     do {
@@ -2008,9 +2088,9 @@ static void soh_dcr_calculate_work(struct work_struct *work)
         }
 
         /*check battery now current, Consider current accuracy error*/
-        i_bat = hisi_battery_current();
-        if (abs(i_bat - DCR_CAL_DISCHARGE_BASE_CUR) > DCR_CAL_BAT_CUR_INC_MAX) {
-            hisi_soh_err("[%s] bat current[%d]mA ,exceed the normal range!!\n",__func__ , i_bat);
+        i_bat2 = hisi_battery_current();
+        if (abs(i_bat2 - DCR_CAL_DISCHARGE_BASE_CUR) > DCR_CAL_BAT_CUR_INC_MAX) {
+            hisi_soh_err("[%s] bat current[%d]mA ,exceed the normal range!!\n",__func__ , i_bat2);
             if (i_check_cycle ++ > DCR_CURRENT_EXCD_MAX_CYCLE)
                 goto dcr_exit;
         }
@@ -2027,10 +2107,10 @@ static void soh_dcr_calculate_work(struct work_struct *work)
     c_bat1 = hisi_battery_cc_uah();
     t_bat1 = hisi_battery_temperature();
 
-    /*get dcr info*/
-    ret = soh_dcr_get_info(&i_bat,&v_bat2);
-    if (ret) {
-        hisi_soh_err("[%s]fifo cur or vol info err, exit!\n", __func__);
+    /*get dcr data2*/
+    ret = soh_dcr_get_data2(&i_bat2, &v_bat2);
+    if(ret) {
+        hisi_soh_err("[%s] get dcr data2 error %d, exit!\n",__func__ , ret);
         goto dcr_exit;
     }
 
@@ -2219,6 +2299,7 @@ static int soh_dcr_uninit(struct hisi_soh_device *di)
     hisi_soh_info("[%s]suc!\n", __func__);
     return 0;
 }
+
 /**********************************************************
 *  Function:      soh_pd_get_valid_data
 *  Discription:   get valid pd leak current data.
@@ -2274,9 +2355,9 @@ static int soh_pd_get_valid_data_cal_pd_current(struct hisi_soh_device *di, stru
 
     /*check ocv and rtc*/
     if (max_value->ocv_vol_uv > min_value->ocv_vol_uv && max_value->ocv_rtc > min_value->ocv_rtc ) {
-
+        /*
         hisi_soh_err("[%s] err:rtc not match ocv,min rtc = %d, max rtc = %d uv!\n", __func__, min_value->ocv_rtc, max_value->ocv_rtc);
-        /*return -1;*/
+        return -1;*/
     }
 
     /*get pd leak cal data*/
@@ -2295,7 +2376,7 @@ static int soh_pd_get_valid_data_cal_pd_current(struct hisi_soh_device *di, stru
 
     /*get uah by ocv*/
     ret  =  hisi_coul_cal_uah_by_ocv(max_value->ocv_vol_uv, &max_current_ocv_uah);
-    ret |=  hisi_coul_cal_uah_by_ocv(min_value->ocv_vol_uv, &min_current_ocv_uah);
+    ret  =  ret || hisi_coul_cal_uah_by_ocv(min_value->ocv_vol_uv, &min_current_ocv_uah);
     if (ret) {
         hisi_soh_err("[%s]cal uah fail\n", __func__);
         return -1;

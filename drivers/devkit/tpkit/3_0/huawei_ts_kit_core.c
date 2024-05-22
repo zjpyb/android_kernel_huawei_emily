@@ -36,11 +36,6 @@
 #include <huawei_ts_kit.h>
 #include <huawei_ts_kit_platform.h>
 #include <huawei_ts_kit_misc.h>
-//#ifdef CONFIG_HUAWEI_HW_DEV_DCT
-//#include <huawei_platform/devdetect/hw_dev_dec.h>
-//#endif
-//#include <linux/mfd/hisi_hi6xxx_pmic.h>
-//#include <linux/hisi/hi6xxx-lcd_type.h>
 #include <tpkit_platform_adapter.h>
 #include <huawei_ts_kit_api.h>
 #include <huawei_ts_kit_algo.h>
@@ -53,6 +48,15 @@
 
 #if defined (CONFIG_HISI_BCI_BATTERY)
 #include <linux/power/hisi/hisi_bci_battery.h>
+#endif
+
+#include <linux/version.h>
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+#include <uapi/linux/sched/types.h>
+#endif
+
+#ifdef CONFIG_HUAWEI_DEVKIT_HISI
+#include <huawei_platform/sensor/hw_comm_pmic.h>
 #endif
 
 #define SCHEDULE_DELAY_MILLiSECOND      200
@@ -85,6 +89,10 @@ EXPORT_SYMBOL(tee_tui_data);
 #endif
 u8 g_ts_kit_log_cfg = 0;
 
+#ifdef CONFIG_HUAWEI_DEVKIT_HISI
+static struct hw_comm_pmic_cfg_t tp_pmic_ldo_set;
+#endif
+
 static struct ts_cmd_node ping_cmd_buff;
 static struct ts_cmd_node pang_cmd_buff;
 static struct work_struct tp_init_work;
@@ -99,14 +107,13 @@ extern int thp_project_id_provider(char *project_id);
 int ts_kit_ops_register(struct ts_kit_ops *ops);
 int ts_kit_get_gesture_mode(void);
 int tskit_get_status_by_type(int type, int *status);
-#ifndef CONFIG_HUAWEI_DEVKIT_MTK_3_0
 int ts_gamma_data_info(u8 *buf, int len);
+
 struct ts_kit_ops ts_kit_ops = {
 	.ts_power_notify = ts_kit_power_control_notify,
 	.get_tp_status_by_type = tskit_get_status_by_type,
 	.read_otp_gamma  = ts_gamma_data_info,
 };
-#endif
 int ts_gamma_data_info(u8 *buf, int len)
 {
 	int error = NO_ERR;
@@ -114,11 +121,17 @@ int ts_gamma_data_info(u8 *buf, int len)
 	struct ts_oem_info_param *info = NULL;
 
 	TS_LOG_INFO("%s: called\n", __func__);
-	if (!g_ts_kit_platform_data.chip_data->support_gammadata_in_tp){
+	if (TS_UNINIT == atomic_read(&g_ts_kit_platform_data.state)) {
+		TS_LOG_INFO("ts is not init");
+		return -EINVAL;
+	}
+
+	if ((g_ts_kit_platform_data.chip_data == NULL) ||
+		(g_ts_kit_platform_data.chip_data->support_gammadata_in_tp == 0)) {
 		TS_LOG_INFO("%s no support gammadata \n", __func__);
 		goto out;
 	}
-	if(!buf || (len > TS_GAMMA_DATA_LEN)){
+	if ((buf == NULL) || (len > TS_GAMMA_DATA_LEN)) {
 		TS_LOG_INFO("%s invalid buf \n", __func__);
 			goto out;
 	}
@@ -177,11 +190,9 @@ int tskit_get_status_by_type(int type, int *status)
 		return -EINVAL;
 	}
 	switch (type) {
-#ifndef CONFIG_HUAWEI_DEVKIT_MTK_3_0
 	case TS_GESTURE_FUNCTION:
 		*status = ts_kit_gesture_func;
 		break;
-#endif
 	default:
 		TS_LOG_ERR("not support type\n");
 		ret = -EINVAL;
@@ -634,12 +645,12 @@ static void rawdata_proc_printf(struct seq_file *m,
 		seq_printf(m, "selfcap singleenddelta end\n");
 	}
 	if (g_ts_kit_platform_data.chip_data->trx_delta_test_support) {
-		seq_printf(m, "%s\n", info->tx_delta_buf);
-		seq_printf(m, "%s\n", info->rx_delta_buf);
+		seq_printf(m, "%s\n", (char *)info->tx_delta_buf);
+		seq_printf(m, "%s\n", (char *)info->rx_delta_buf);
 	}
 	if (g_ts_kit_platform_data.chip_data->td43xx_ee_short_test_support) {
-		seq_printf(m, "%s\n", info->td43xx_rt95_part_one);
-		seq_printf(m, "%s\n", info->td43xx_rt95_part_two);
+		seq_printf(m, "%s\n", (char *)info->td43xx_rt95_part_one);
+		seq_printf(m, "%s\n", (char *)info->td43xx_rt95_part_two);
 	}
 	return;
 }
@@ -823,7 +834,8 @@ static void rawdata_proc_newformat_printf(struct seq_file *m,
 	char pfstatus[RAW_DATA_END]={0};//0-NA,'P' pass,'F' false
 	char resulttemp[TS_RAWDATA_RESULT_CODE_LEN]={0};
 
-	TS_LOG_INFO("%s : devinfo:%s,nodenum:%d,alllength:%d\n",__func__,info->deviceinfo,info->listnodenum);
+	TS_LOG_INFO("%s : devinfo:%s,nodenum:%d\n",
+		__func__, info->deviceinfo, info->listnodenum);
 
 	/* i2c info */
 	seq_printf(m, "%s",info->i2cinfo);
@@ -868,20 +880,18 @@ static void rawdata_proc_newformat_printf(struct seq_file *m,
 	/* result info */
 	if (strlen(info->i2cerrinfo) > 0) {
 		resulttemp[0] = RAW_DATA_TYPE_IC + '0';
-		resulttemp[1] = '-';
-		resulttemp[2] = '\0';
-		seq_printf(m, "%s", resulttemp);
-		seq_printf(m, "%s", info->i2cerrinfo);
-		seq_printf(m, "%s", "-");
+		resulttemp[1] = '\0';
+		seq_printf(m, "%s",resulttemp);
+		seq_printf(m, "%s",info->i2cerrinfo);
+		seq_printf(m, "%s","-");
 	}
 	list_for_each_entry(rawdatanode, &info->rawdata_head, node) {
 		if (strlen(rawdatanode->tptestfailedreason) > 0) {
 			resulttemp[0] = rawdatanode->typeindex + '0';
-			resulttemp[1] = '-';
-			resulttemp[2] = '\0';
-			seq_printf(m, "%s", resulttemp);
-			seq_printf(m, "%s", rawdatanode->tptestfailedreason);
-			seq_printf(m, "%s", "-");
+			resulttemp[1] = '\0';
+			seq_printf(m, "%s",resulttemp);
+			seq_printf(m, "%s",rawdatanode->tptestfailedreason);
+			seq_printf(m, "%s","-");
 		}
 	}
 
@@ -895,25 +905,47 @@ static void rawdata_proc_newformat_printf(struct seq_file *m,
 		if(rawdatanode->size > 0)
 	seq_printf(m, "%s begin\n",rawdatanode->test_name);
 		if(rawdatanode->typeindex == RAW_DATA_TYPE_TrxDelta && rawdatanode->size > 0){
-			seq_printf(m, "RX:\n");
-			for(index = 0; index < (rawtest_size - info->tx); index++) {
-				seq_printf(m, "%d,", rawdatanode->values[index]);
-				tx_n++;
-				if(tx_n == info->tx){
-					seq_printf(m, "\n");
-					tx_n = 0;
+			if (g_ts_kit_platform_data.chip_data->print_all_trx_diffdata_for_newformat_flag) {
+				seq_puts(m, "RX:\n");
+				for (index = 0; index < rawtest_size; index++) {
+					seq_printf(m, "%d,", rawdatanode->values[index]);
+					tx_n++;
+					if (tx_n == info->tx) {
+						seq_puts(m, "\n");
+						tx_n = 0;
+					}
 				}
-			}
-			seq_printf(m, "\nTX:\n");
-			for(index = 0; index < (rawtest_size - info->rx); index++) {
-				seq_printf(m, "%d,", rawdatanode->values[rawtest_size + index]);
-				rx_n++;
-				if(rx_n == info->tx-1){
-					seq_printf(m, "\n");
-					rx_n = 0;
+				seq_puts(m, "\nTX:\n");
+				for (index = 0; index < rawtest_size; index++) {
+					seq_printf(m, "%d,", rawdatanode->values[rawtest_size + index]);
+					rx_n++;
+					if (rx_n == info->tx) {
+						seq_puts(m, "\n");
+						rx_n = 0;
+					}
 				}
+				seq_puts(m, "\n");
+			} else {
+				seq_printf(m, "RX:\n");
+				for(index = 0; index < (rawtest_size - info->tx); index++) {
+					seq_printf(m, "%d,", rawdatanode->values[index]);
+					tx_n++;
+					if(tx_n == info->tx){
+						seq_printf(m, "\n");
+						tx_n = 0;
+					}
+				}
+				seq_printf(m, "\nTX:\n");
+				for(index = 0; index < (rawtest_size - info->rx); index++) {
+					seq_printf(m, "%d,", rawdatanode->values[rawtest_size + index]);
+					rx_n++;
+					if(rx_n == info->tx-1){
+						seq_printf(m, "\n");
+						rx_n = 0;
+					}
+				}
+				seq_printf(m, "\n");
 			}
-			seq_printf(m, "\n");
 		}
 		else if (rawdatanode->typeindex == RAW_DATA_TYPE_SelfCap && rawdatanode->size > 0){
 			seq_printf(m, "rx:\n");
@@ -1065,13 +1097,19 @@ static int rawdata_proc_show(struct seq_file *m, void *v)
 	struct ts_cmd_node *cmd = NULL;
 	struct ts_rawdata_info *info = NULL;
 
+	if ((m == NULL) || (v == NULL)) {
+		TS_LOG_ERR("rawdata_proc_show, input null ptr\n");
+		return -EINVAL;
+	}
+
 	/**********************************************/
 	/* Rawdata rectification, if dts configured   */
 	/* with a new mark, take a new process        */
 	/**********************************************/
-    if (g_ts_kit_platform_data.chip_data->rawdata_newformatflag == TS_RAWDATA_NEWFORMAT){
-		return rawdata_proc_for_newformat(m,v);
-	}
+	if (g_ts_kit_platform_data.chip_data->rawdata_newformatflag ==
+		TS_RAWDATA_NEWFORMAT)
+		return rawdata_proc_for_newformat(m, v);
+
 	TS_LOG_INFO("rawdata_proc_show, buffer size = %ld\n", m->size);
 	if(m->size <= RAW_DATA_SIZE) {
 		m->count = m->size;
@@ -1447,7 +1485,7 @@ int ts_change_spi_mode(struct spi_device *spi, u16 mode)
 		spi->mode = mode;
 		ret = spi_setup(spi);
 		if (ret) {
-			TS_LOG_ERR("%s setup spi failed.\n");
+			TS_LOG_ERR("%s setup spi failed.\n", __func__);
 			return ret;
 		}
 	}
@@ -1830,6 +1868,7 @@ static int charger_detect_notifier_callback(struct notifier_block *self,
 	case VCHRG_CHARGE_DONE_EVENT:
 	case VCHRG_POWER_SUPPLY_OVERVOLTAGE:
 	case VCHRG_POWER_SUPPLY_WEAKSOURCE:
+	case VCHRG_CURRENT_FULL_EVENT:
 	case VCHRG_NOT_CHARGING_EVENT:
 		charger_state = USB_PIUG_IN;
 		break;
@@ -2376,9 +2415,10 @@ static int ts_kit_chip_init(void)
 	if (g_ts_kit_platform_data.chip_data->is_direct_proc_cmd == 0) {
 		if (dev->ops->chip_init) {
 			error = dev->ops->chip_init();
-			if (error)
-				TS_LOG_ERR("chip init failed\n");
 		}
+	}
+	if (error) {
+		TS_LOG_ERR("chip init failed\n");
 	}
 
 #ifdef CONFIG_HUAWEI_DSM
@@ -2503,7 +2543,7 @@ static int ts_kit_input_pen_device_register(struct input_dev *dev)
 static int ts_kit_input_device_register(struct input_dev *dev)
 {
 	int error = NO_ERR;
-	//dev is null, no use
+
 	error = ts_kit_input_tp_device_register(dev);
 	if (error) {
 		TS_LOG_ERR("failed to register for input tp dev\n");
@@ -2690,6 +2730,9 @@ static void ts_boot_detection(void)
 	struct ts_kit_device_data *dev = g_ts_kit_platform_data.chip_data;
 	if(dev->ops->chip_boot_detection && g_ts_kit_platform_data.chip_data->boot_detection_flag) {
 		value = dev->ops->chip_boot_detection();
+		if (value)
+			TS_LOG_ERR("%s: chip_boot_detection error: %d\n",
+				__func__, value);
 	}
 	return;
 }
@@ -2888,6 +2931,15 @@ static int get_one_cmd(struct ts_cmd_node *cmd)
 	return error;
 }
 
+static void ts_proc_freebuff(struct ts_cmd_node *proc_cmd)
+{
+	if (proc_cmd && proc_cmd->cmd_param.ts_cmd_freehook != NULL &&
+		proc_cmd->cmd_param.prv_params != NULL) {
+		proc_cmd->cmd_param.ts_cmd_freehook(proc_cmd->cmd_param.prv_params);
+	}
+	return;
+}
+
 static int ts_proc_command(struct ts_cmd_node *cmd)
 {
 	int error = NO_ERR;
@@ -2919,6 +2971,12 @@ static int ts_proc_command(struct ts_cmd_node *cmd)
 		break;
 	case TS_INPUT_ALGO:
 		ts_algo_calibrate(proc_cmd, out_cmd);
+		break;
+	case TS_PALM_KEY:
+		ts_palm_report(proc_cmd,out_cmd);
+		break;
+	case TS_REPORT_KEY:
+		ts_report_key_event(proc_cmd, out_cmd);
 		break;
 	case TS_REPORT_INPUT:
 		ts_report_input(proc_cmd, out_cmd);
@@ -3048,11 +3106,7 @@ static int ts_proc_command(struct ts_cmd_node *cmd)
 		ts_touch_switch_cmd();
 		break;
 	case TS_FREEBUFF:
-		if (proc_cmd->cmd_param.ts_cmd_freehook != NULL
-		    && proc_cmd->cmd_param.prv_params != NULL) {
-			proc_cmd->cmd_param.ts_cmd_freehook(proc_cmd->cmd_param.
-							    prv_params);
-		}
+		ts_proc_freebuff(proc_cmd);
 		break;
 	case TS_SET_SENSIBILITY:
 		ts_set_sensibility(proc_cmd, out_cmd);
@@ -3241,22 +3295,34 @@ int ts_kit_proc_command_directly(struct ts_cmd_node *cmd)
 void ts_dmd_report(int dmd_num, const char *pszFormat, ...)
 {
 	va_list args;
-	char input_buf[TS_CHIP_DMD_REPORT_SIZE] = {0};
-	char report_buf[TS_CHIP_DMD_REPORT_SIZE] = {0};
+	char *input_buf = kzalloc(TS_CHIP_DMD_REPORT_SIZE, GFP_KERNEL);
+	char *report_buf = kzalloc(TS_CHIP_DMD_REPORT_SIZE, GFP_KERNEL);
+
+	if ((!input_buf) || (!report_buf)) {
+		TS_LOG_ERR("%s: memeory is not enough!!\n", __func__);
+		goto exit;
+	}
 
 	va_start(args, pszFormat);
-	vsnprintf(input_buf, sizeof(input_buf) - 1, pszFormat, args);
+	vsnprintf(input_buf, TS_CHIP_DMD_REPORT_SIZE - 1, pszFormat, args);
 	va_end(args);
-	snprintf(report_buf, sizeof(report_buf), "%stp state:%d chip_name:%s version_name:%s irq_gpio:%d value:%d ",\
-		input_buf, atomic_read(&g_ts_kit_platform_data.power_state),g_ts_kit_platform_data.chip_data->chip_name,\
-		g_ts_kit_platform_data.chip_data->version_name,g_ts_kit_platform_data.irq_gpio, gpio_get_value(g_ts_kit_platform_data.irq_gpio));
+	snprintf(report_buf, TS_CHIP_DMD_REPORT_SIZE - 1,
+		"%stp state:%d chip_name:%s version_name:%s irq_gpio:%d value:%d ",
+		input_buf, atomic_read(&g_ts_kit_platform_data.power_state),
+		g_ts_kit_platform_data.chip_data->chip_name,
+		g_ts_kit_platform_data.chip_data->version_name,
+		g_ts_kit_platform_data.irq_gpio,
+		gpio_get_value(g_ts_kit_platform_data.irq_gpio));
 
 	if (!dsm_client_ocuppy(ts_dclient)) {
 		dsm_client_record(ts_dclient, report_buf);
 		dsm_client_notify(ts_dclient, dmd_num);
 		TS_LOG_INFO("ts_dmd_report %s\n", report_buf);
 	}
-	return;
+
+exit:
+	kfree(input_buf);
+	kfree(report_buf);
 }
 
 EXPORT_SYMBOL(ts_dmd_report);
@@ -3267,6 +3333,7 @@ static int ts_kit_init(void *data)
 	struct input_dev *input_dev = NULL;
 	atomic_set(&g_ts_kit_platform_data.state, TS_UNINIT);
 	atomic_set(&g_ts_kit_platform_data.ts_esd_state, TS_NO_ESD);
+	atomic_set(&g_ts_kit_platform_data.face_dct_en, 0);
 	TS_LOG_INFO("ts_kit_init\n");
 	g_ts_kit_platform_data.edge_wideth = EDGE_WIDTH_DEFAULT;
 	TS_LOG_DEBUG("ts init: cmd queue size : %d\n", TS_CMD_QUEUE_SIZE);
@@ -3412,7 +3479,6 @@ static void ts_kit_exit(void)
 	disable_irq(g_ts_kit_platform_data.irq_id);
 	ts_ic_shutdown();
 	free_irq(g_ts_kit_platform_data.irq_id, &g_ts_kit_platform_data);
-	//sysfs_remove_group(&g_ts_kit_platform_data.ts_dev->dev.kobj, &ts_attr_group);
 
 	input_unregister_device(g_ts_kit_platform_data.input_dev);
 	input_free_device(g_ts_kit_platform_data.input_dev);
@@ -3467,7 +3533,6 @@ static bool ts_task_continue(void)
 static int ts_thread(void *p)
 {
 	static const struct sched_param param = {
-		//.sched_priority = MAX_USER_RT_PRIO / 2,
 		.sched_priority = 99,
 	};
 	smp_wmb();
@@ -3507,7 +3572,6 @@ void ts_kit_chip_detect(struct ts_kit_device_data *chipdata, int timeout)
 	struct ts_cmd_node cmd;
 	TS_LOG_INFO("ts_kit_chip_detect called\n");
 	memset(&cmd, 0, sizeof(struct ts_cmd_node));
-	//atomic_set(&g_ts_kit_platform_data.state, TS_WORK);
 	cmd.command = TS_CHIP_DETECT;
 	cmd.cmd_param.pub_params.chip_data = chipdata;
 	error = ts_kit_put_one_cmd(&cmd, timeout);
@@ -3604,6 +3668,7 @@ static int ts_parse_captest_config(struct device_node *np,
 
 	ts_of_property_read_u32_quiet(np, "is_ic_rawdata_proc_printf",&chip_data->is_ic_rawdata_proc_printf);
 	ts_of_property_read_u8(np, "rawdata_newformatflag",&chip_data->rawdata_newformatflag);
+	ts_of_property_read_u8(np, "print_all_trx_diffdata_for_newformat_flag",&chip_data->print_all_trx_diffdata_for_newformat_flag);
 	ts_of_property_read_u32_quiet(np, "boot_detection_addr", &chip_data->boot_detection_addr);
 	ts_of_property_read_u32_quiet(np, "boot_detection_threshold", &chip_data->boot_detection_threshold);
 	ts_of_property_read_u8(np, "boot_detection_flag", &chip_data->boot_detection_flag);
@@ -3696,7 +3761,6 @@ static int ts_parse_feature_config(struct device_node *np,
 static int ts_parse_input_config(struct device_node *np,
 			       struct ts_kit_device_data *chip_data)
 {
-	int retval = 0;
 
 	ts_of_property_read_u32_default(np, "x_max", &chip_data->x_max, 1080);
 	ts_of_property_read_u32_default(np, "y_max", &chip_data->y_max, 1920);
@@ -3754,7 +3818,6 @@ int ts_parse_panel_specific_config(struct device_node *np,
 			       struct ts_kit_device_data *chip_data)
 {
 	int retval = 0;
-	int read_val = 0;
 	const char *producer = NULL;
 	ts_parse_captest_config(np, chip_data);
 	/* parse module name */
@@ -3798,6 +3861,9 @@ int ts_parse_panel_specific_config(struct device_node *np,
 	ts_of_property_read_u16_quiet(np, "touch_game_reg", &chip_data->touch_game_reg);
 	ts_of_property_read_u8_quiet(np, "game_control_bit", &chip_data->game_control_bit);
 	ts_of_property_read_u16_quiet(np, "touch_scene_reg", &chip_data->touch_scene_reg);
+	ts_of_property_read_u32_quiet(np, "face_dct_support", &chip_data->face_dct_support);
+	ts_of_property_read_u16_quiet(np, "face_dct_en_reg", &chip_data->face_dct_en_reg);
+	ts_of_property_read_u16_quiet(np, "face_dct_data_reg", &chip_data->face_dct_data_reg);
 
 	/*diff data report config*/
 	ts_of_property_read_u32(np, "diff_data_len", &chip_data->diff_data_len);
@@ -3889,6 +3955,17 @@ int ts_kit_power_supply_get(enum ts_kit_power_id power_id)
 			return ret;
 		}
 		break;
+	case TS_KIT_POWER_PMIC:
+#ifdef CONFIG_HUAWEI_DEVKIT_HISI
+		tp_pmic_ldo_set.pmic_num =  power->pmic_power.pmic_num;
+		tp_pmic_ldo_set.pmic_power_type =  power->pmic_power.ldo_num;
+		tp_pmic_ldo_set.pmic_power_voltage = power->pmic_power.value;
+		TS_LOG_INFO("%s call %d,%d,%d\n", __func__,
+			tp_pmic_ldo_set.pmic_num,
+			tp_pmic_ldo_set.pmic_power_type,
+			tp_pmic_ldo_set.pmic_power_voltage);
+#endif
+		break;
 	default:
 		TS_LOG_ERR("%s: invalid power type %d\n", __func__, power->type);
 		return -EINVAL;
@@ -3916,12 +3993,14 @@ int ts_kit_power_supply_put(enum ts_kit_power_id power_id)
 
 	switch (power->type) {
 	case TS_KIT_POWER_LDO:
-		// regulator_disable(power->regulator);
 		regulator_put(power->regulator);
 		break;
 	case TS_KIT_POWER_GPIO:
 		gpio_direction_output(power->gpio, 0);
 		gpio_free(power->gpio);
+		break;
+	case TS_KIT_POWER_PMIC:
+		TS_LOG_ERR("%s:release power\n", __func__);
 		break;
 	default:
 		TS_LOG_ERR("%s: invalid power type %d\n", __func__, power->type);
@@ -3963,6 +4042,15 @@ int ts_kit_power_supply_ctrl(enum ts_kit_power_id power_id, int status, unsigned
 		gpio_direction_output(power->gpio, status ? 1 : 0);
 		break;
 #endif
+	case TS_KIT_POWER_PMIC:
+#ifdef CONFIG_HUAWEI_DEVKIT_HISI
+		tp_pmic_ldo_set.pmic_power_state = (status ? 1 : 0);
+		rc = hw_pmic_power_cfg(TP_PMIC_REQ, &tp_pmic_ldo_set);
+		if (rc)
+			TS_LOG_ERR("%s:pmic %s failed, %d\n", __func__,
+				ts_kit_power_id2name(power_id), rc);
+#endif
+		break;
 	default:
 		TS_LOG_ERR("%s: invalid power type %d\n", __func__, power->type);
 		return -EINVAL;
@@ -3974,7 +4062,46 @@ int ts_kit_power_supply_ctrl(enum ts_kit_power_id power_id, int status, unsigned
 	return rc;
 }
 
-#define POWER_CONFIG_NAME_MAX 20
+#define POWER_CONFIG_NAME_MAX 30
+
+static void ts_kit_paser_pmic_power(struct device_node *chip_node,
+	struct ts_kit_platform_data *cd,
+	int power_id)
+{
+	const char *power_name = NULL;
+	char config_name[POWER_CONFIG_NAME_MAX] = {0};
+	struct ts_kit_power_supply *power = NULL;
+	int rc;
+
+	power_name = ts_kit_power_id2name(power_id);
+	power = &cd->ts_kit_powers[power_id];
+	snprintf(config_name, (POWER_CONFIG_NAME_MAX - 1),
+		"%s-value", power_name);
+	rc = of_property_read_u32(chip_node, config_name,
+		&power->pmic_power.value);
+	if (rc)
+		TS_LOG_ERR("%s:failed to get %s\n",
+			__func__, config_name);
+	snprintf(config_name, (POWER_CONFIG_NAME_MAX - 1),
+		"%s-ldo-num", power_name);
+	rc = of_property_read_u32(chip_node, config_name,
+		&power->pmic_power.ldo_num);
+	if (rc)
+		TS_LOG_ERR("%s:failed to get %s\n",
+			__func__, config_name);
+	snprintf(config_name, (POWER_CONFIG_NAME_MAX - 1),
+		"%s-pmic-num", power_name);
+	rc = of_property_read_u32(chip_node, config_name,
+		&power->pmic_power.pmic_num);
+	if (rc)
+		TS_LOG_ERR("%s:failed to get %s\n",
+			__func__, config_name);
+	TS_LOG_INFO("%s: to get %d, %d,%d\n", __func__,
+		power->pmic_power.ldo_num,
+		power->pmic_power.pmic_num,
+		power->pmic_power.value);
+}
+
 static int ts_kit_parse_one_power(struct device_node *chip_node,
 			struct ts_kit_platform_data *cd,
 			int power_id)
@@ -4011,6 +4138,9 @@ static int ts_kit_parse_one_power(struct device_node *chip_node,
 			TS_LOG_ERR("%s:failed to get %s\n", __func__, config_name);
 			return rc;
 		}
+		break;
+	case TS_KIT_POWER_PMIC:
+		ts_kit_paser_pmic_power(chip_node, cd, power_id);
 		break;
 	default:
 		TS_LOG_ERR("%s: invaild power type %d", __func__, power->type);
@@ -4098,7 +4228,6 @@ int ts_event_notify(ts_notify_event_type event)	// for panel use to notify event
 
 int ts_kit_get_pt_station_status(int *status)
 {
-#ifndef CONFIG_HUAWEI_DEVKIT_MTK_3_0
 	struct lcd_kit_ops *lcd_ops = lcd_kit_get_ops();
 	int retval;
 
@@ -4112,7 +4241,7 @@ int ts_kit_get_pt_station_status(int *status)
 			return retval;
 		}
 	}
-#endif
+
 	return 0;
 }
 
@@ -4154,13 +4283,13 @@ static int __init huawei_ts_module_init(void)
 	}
 
 	ts_init_flag = 1;
-#ifndef CONFIG_HUAWEI_DEVKIT_MTK_3_0
+
 	error = ts_kit_ops_register(&ts_kit_ops);
 	if (error) {
 		TS_LOG_ERR("ts_kit_ops_register failed :%d\n", error);
 		goto err_put_platform_dev;
 	}
-#endif
+
 	g_ts_kit_platform_data.ts_init_task =
 	    kthread_create(ts_kit_init, &g_ts_kit_platform_data,
 			   "ts_init_thread:%d", 0);

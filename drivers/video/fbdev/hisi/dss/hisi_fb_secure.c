@@ -16,7 +16,9 @@
 #include <linux/hisi/hisi_drmdriver.h>
 #include "tui.h"
 
-/*lint -e747 -e774 -e778 */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeclaration-after-statement"
+/*lint -e747 -e774 -e778 -e838 */
 #define DPTX_HDCP_MAX_AUTH_RETRY	10
 
 int configure_hdcp_service_security(unsigned int master_op_type, unsigned int value)
@@ -172,7 +174,6 @@ static void hisifb_secure_ctrl_wq_handler(struct work_struct *work)
 	HISI_FB_DEBUG(": secure_status = %d, secure_event = %d, frame_no = %d --- \n",
 		secure_ctrl->secure_status, secure_ctrl->secure_event, hisifd->ov_req.frame_no);
 }
-/*lint +e747 +e774 +e778 */
 
 /* receive switch tui request
  **1: secure enable
@@ -314,12 +315,11 @@ static ssize_t hisifb_secure_event_show(struct device *dev,
 	ret = strlen(buf) + 1;
 	return ret;
 }
-
-/*lint -e730 -e838 -e438 -e550 -e730 -e84 -e665*/
+/*lint +e747 +e774 +e778 +e838*/
+/*lint -e730 -e838 -e438 -e550 -e84 -e665*/
 static DEVICE_ATTR(dss_secure, S_IRUGO|S_IWUSR, hisifb_secure_event_show, hisifb_secure_event_store);
 
 /* for DRM config */
-/*lint +e730 +e838 +e438 +e550 +e730 +e84 +e665*/
 
 void hisifd_secure_ch_default_config(struct hisi_fb_data_type *hisifd)
 {
@@ -436,7 +436,7 @@ void hisi_drm_layer_online_config(struct hisi_fb_data_type *hisifd, dss_overlay_
 	hisi_drm_layer_online_clear(hisifd, pov_req_prev, sec_chn, j);
 }
 
-void hisi_drm_layer_online_clear(struct hisi_fb_data_type *hisifd, dss_overlay_t *pov_req_prev, int *seclist, int list_max)
+void hisi_drm_layer_online_clear(struct hisi_fb_data_type *hisifd, dss_overlay_t *pov_req_prev, const int *seclist, int list_max)
 {
 	int i = 0, j = 0, k = 0;
 	bool secure_layer = false;
@@ -444,8 +444,19 @@ void hisi_drm_layer_online_clear(struct hisi_fb_data_type *hisifd, dss_overlay_t
 	dss_overlay_block_t *pov_h_block_infos = NULL;
 	dss_overlay_block_t *pov_h_block = NULL;
 	struct hisifb_secure *secure_ctrl = NULL;
+
+	if (hisifd == NULL) {
+		HISI_FB_ERR("hisifd is null!\n");
+		return;
+	}
+
 	int compose_mode, cmd_mode;
 	compose_mode = (hisifd->index == PRIMARY_PANEL_IDX) ? ONLINE_COMPOSE_MODE : OVL1_ONLINE_COMPOSE_MODE;
+
+	if (pov_req_prev == NULL) {
+		HISI_FB_ERR("pov_req_prev is null!\n");
+		return;
+	}
 
 	secure_ctrl = &(hisifd->secure_ctrl);//lint !e838
 	pov_h_block_infos = (dss_overlay_block_t *)(pov_req_prev->ov_block_infos_ptr);//lint !e838
@@ -655,7 +666,7 @@ static bool check_tui_layer_chn_cfg_ok(struct hisi_fb_data_type *hisifd)
 		return false;
 	}
 
-	if (pov_h_block->layer_infos == NULL) {
+	if (pov_h_block->layer_infos == NULL) { //lint !e774
 		HISI_FB_INFO("pov_h_block->layer_infos is null!\n");
 		return false;
 	}
@@ -767,3 +778,5 @@ void hisifb_secure_unregister(struct platform_device *pdev)
 
 	secure_ctrl->secure_created = 0;
 }
+/*lint +e730 +e838 +e438 +e550 +e84 +e665 +e774*/
+#pragma GCC diagnostic pop

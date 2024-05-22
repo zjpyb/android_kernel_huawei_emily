@@ -616,8 +616,8 @@ out_nvm:
 int sec_ts_read_pid(struct sec_ts_data *ts)
 {
 	int ret = NO_ERR;
-	u8 data[SEC_TS_PROJECTID_MAX];
-	u8 retry;
+	u8 data[SEC_TS_PROJECTID_MAX] = {0};
+	u8 retry = 0;
 	u32 addr = SEC_TS_PID_ADDR;
 
 	if(ts->ic_name == S6SY761X){
@@ -879,7 +879,7 @@ static int sec_ts_firmware_update(struct sec_ts_data *ts, const u8 *data, size_t
 
 int sec_ts_firmware_update_on_probe(struct sec_ts_data *ts, bool force_update)
 {
-	const struct firmware *fw_entry;
+	const struct firmware *fw_entry = NULL;
 	const char *fw_path = ts->plat_data->firmware_name;
 	int result = 0;
 	int restore_cal = 0;

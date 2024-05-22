@@ -63,7 +63,7 @@
 #include <securec.h>
 
 
-u64 g_dma_mask = (u64)(-1);
+extern struct platform_device *modem_socp_pdev;
 /*****************************************************************************
  Function   : VOS_UnCacheMemAlloc
  Description: allocate uncached memory.
@@ -74,10 +74,8 @@ u64 g_dma_mask = (u64)(-1);
  *****************************************************************************/
 void *scm_UnCacheMemAlloc(u32 ulSize, unsigned long *pulRealAddr)
 {
-    void                           *pVirtAdd;
-    dma_addr_t                          ulAddress = 0;
-
-    struct device                       dev;
+    void                           *pVirtAdd = NULL;
+    dma_addr_t                      ulAddress = 0;
 
     if ( 0 == ulSize )
     {
@@ -93,10 +91,8 @@ void *scm_UnCacheMemAlloc(u32 ulSize, unsigned long *pulRealAddr)
     *pulRealAddr = 0;
     pVirtAdd     = 0;
 
-    memset_s(&dev, sizeof(dev), 0, sizeof(dev));
-    dma_set_mask_and_coherent(&dev, g_dma_mask);	
-    of_dma_configure(&dev, NULL);
-    pVirtAdd = dma_alloc_coherent(&dev, ulSize, &ulAddress, GFP_KERNEL);
+
+    pVirtAdd = dma_alloc_coherent(&modem_socp_pdev->dev, ulSize, &ulAddress, GFP_KERNEL);
 
     *pulRealAddr = (unsigned long)ulAddress;
 

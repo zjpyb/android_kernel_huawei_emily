@@ -170,10 +170,10 @@ oal_uint32  hmac_tx_report_eth_frame(mac_vap_stru   *pst_mac_vap,
 #endif
 
     /* 统计以太网下来的数据包统计 */
-    HMAC_VAP_DFT_STATS_PKT_INCR(pst_hmac_vap->st_query_stats.ul_rx_pkt_to_lan,1);
-    HMAC_VAP_DFT_STATS_PKT_INCR(pst_hmac_vap->st_query_stats.ul_rx_pkt_to_lan,OAL_NETBUF_LEN(pst_netbuf));
-    OAM_STAT_VAP_INCR(pst_mac_vap->uc_vap_id, tx_pkt_num_from_lan, 1);
-    OAM_STAT_VAP_INCR(pst_mac_vap->uc_vap_id, tx_bytes_from_lan, OAL_NETBUF_LEN(pst_netbuf));
+    //HMAC_VAP_DFT_STATS_PKT_INCR(pst_hmac_vap->st_query_stats.ul_rx_pkt_to_lan,1);
+    //HMAC_VAP_DFT_STATS_PKT_INCR(pst_hmac_vap->st_query_stats.ul_rx_pkt_to_lan,OAL_NETBUF_LEN(pst_netbuf));
+    //OAM_STAT_VAP_INCR(pst_mac_vap->uc_vap_id, tx_pkt_num_from_lan, 1);
+    //OAM_STAT_VAP_INCR(pst_mac_vap->uc_vap_id, tx_bytes_from_lan, OAL_NETBUF_LEN(pst_netbuf));
 
     /* 获取目的用户资源池id和用户MAC地址，用于过滤 */
     if (WLAN_VAP_MODE_BSS_AP == pst_mac_vap->en_vap_mode)
@@ -1697,6 +1697,28 @@ OAL_INLINE oal_uint32  hmac_tx_lan_to_wlan(mac_vap_stru *pst_vap, oal_netbuf_str
     return ul_ret;
 }
 
+
+OAL_STATIC oal_bool_enum_uint8 hmac_bridge_vap_should_drop(oal_netbuf_stru *pst_buf, mac_vap_stru *pst_vap)
+{
+    oal_uint8           uc_data_type;
+
+    /* P2P_CL和P2P_DEV共VAP,入网过程中触发p2p_listen,VAP状态切换为LISTEN,
+     * 在LISTEN状态不丢dhcp、eapol帧，防止入网失败 */
+    if (pst_vap->en_vap_state == MAC_VAP_STATE_STA_LISTEN)
+    {
+        uc_data_type =  mac_get_data_type_from_8023((oal_uint8 *)oal_netbuf_payload(pst_buf), MAC_NETBUFF_PAYLOAD_ETH);
+        if ((MAC_DATA_EAPOL == uc_data_type) || (MAC_DATA_DHCP == uc_data_type))
+        {
+            OAM_WARNING_LOG2(pst_vap->uc_vap_id, OAM_SF_TX,
+                            "{hmac_bridge_vap_should_drop::donot drop [%d]frame[EAPOL:3,DHCP:0]. vap state[%d].}",
+                            uc_data_type, pst_vap->en_vap_state);
+            return OAL_FALSE;
+        }
+    }
+    return OAL_TRUE;
+}
+
+
 oal_net_dev_tx_enum  hmac_bridge_vap_xmit(oal_netbuf_stru *pst_buf, oal_net_device_stru *pst_dev)
 {
     mac_vap_stru                *pst_vap;
@@ -1787,8 +1809,16 @@ oal_net_dev_tx_enum  hmac_bridge_vap_xmit(oal_netbuf_stru *pst_buf, oal_net_devi
         return OAL_NETDEV_TX_OK;
     }
 
+    /* 统计以太网下来的数据包统计 */
+    HMAC_VAP_DFT_STATS_PKT_INCR(pst_hmac_vap->st_query_stats.ul_tx_pkt_num_from_lan, 1);
+    HMAC_VAP_DFT_STATS_PKT_INCR(pst_hmac_vap->st_query_stats.ul_tx_bytes_from_lan, OAL_NETBUF_LEN(pst_buf));
+    OAM_STAT_VAP_INCR(pst_vap->uc_vap_id, tx_pkt_num_from_lan, 1);
+    OAM_STAT_VAP_INCR(pst_vap->uc_vap_id, tx_bytes_from_lan, OAL_NETBUF_LEN(pst_buf));
+
+#ifdef _PRE_WLAN_DFT_DUMP_FRAME
     /* 将以太网过来的帧上报SDT */
-    hmac_tx_report_eth_frame(pst_vap, pst_buf);
+    //hmac_tx_report_eth_frame(pst_vap, pst_buf);
+#endif /* _PRE_WLAN_DFT_DUMP_FRAME */
 
     if(OAL_GET_THRUPUT_BYPASS_ENABLE(OAL_TX_LINUX_BYPASS))
     {
@@ -1817,24 +1847,27 @@ oal_net_dev_tx_enum  hmac_bridge_vap_xmit(oal_netbuf_stru *pst_buf, oal_net_devi
     /* 判断VAP的状态，如果没有UP/PAUSE，则丢弃报文 */
     if (OAL_UNLIKELY(!((MAC_VAP_STATE_UP == pst_vap->en_vap_state) || (MAC_VAP_STATE_PAUSE == pst_vap->en_vap_state))))
     {
+        if (hmac_bridge_vap_should_drop(pst_buf, pst_vap) == OAL_TRUE)
+        {
 #if (_PRE_MULTI_CORE_MODE_OFFLOAD_DMAC == _PRE_MULTI_CORE_MODE)
-        /*filter the tx xmit pkts print*/
-        if(MAC_VAP_STATE_INIT == pst_vap->en_vap_state || MAC_VAP_STATE_BUTT == pst_vap->en_vap_state)
-        {
-            OAM_WARNING_LOG1(pst_vap->uc_vap_id, OAM_SF_TX, "{hmac_bridge_vap_xmit::vap state[%d] != MAC_VAP_STATE_{UP|PAUSE}!}\r\n", pst_vap->en_vap_state);
-        }
-        else
-        {
-            OAM_INFO_LOG1(pst_vap->uc_vap_id, OAM_SF_TX, "{hmac_bridge_vap_xmit::vap state[%d] != MAC_VAP_STATE_{UP|PAUSE}!}\r\n", pst_vap->en_vap_state);
-        }
+            /*filter the tx xmit pkts print*/
+            if(MAC_VAP_STATE_INIT == pst_vap->en_vap_state || MAC_VAP_STATE_BUTT == pst_vap->en_vap_state)
+            {
+                OAM_WARNING_LOG1(pst_vap->uc_vap_id, OAM_SF_TX, "{hmac_bridge_vap_xmit::vap state[%d] != MAC_VAP_STATE_{UP|PAUSE}!}\r\n", pst_vap->en_vap_state);
+            }
+            else
+            {
+                OAM_INFO_LOG1(pst_vap->uc_vap_id, OAM_SF_TX, "{hmac_bridge_vap_xmit::vap state[%d] != MAC_VAP_STATE_{UP|PAUSE}!}\r\n", pst_vap->en_vap_state);
+            }
 #else
-        OAM_WARNING_LOG1(pst_vap->uc_vap_id, OAM_SF_TX, "{hmac_bridge_vap_xmit::vap state[%d] != MAC_VAP_STATE_{UP|PAUSE}!}\r\n", pst_vap->en_vap_state);
+            OAM_WARNING_LOG1(pst_vap->uc_vap_id, OAM_SF_TX, "{hmac_bridge_vap_xmit::vap state[%d] != MAC_VAP_STATE_{UP|PAUSE}!}\r\n", pst_vap->en_vap_state);
 #endif
-        oal_netbuf_free(pst_buf);
-        OAM_STAT_VAP_INCR(pst_vap->uc_vap_id, tx_abnormal_msdu_dropped, 1);
+            oal_netbuf_free(pst_buf);
+            OAM_STAT_VAP_INCR(pst_vap->uc_vap_id, tx_abnormal_msdu_dropped, 1);
 
-        oal_spin_unlock_bh(&pst_hmac_vap->st_lock_state);
-        return OAL_NETDEV_TX_OK;
+            oal_spin_unlock_bh(&pst_hmac_vap->st_lock_state);
+            return OAL_NETDEV_TX_OK;
+        }
     }
 #ifdef _PRE_WLAN_FEATURE_ROAM
     }

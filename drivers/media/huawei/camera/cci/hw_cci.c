@@ -31,7 +31,6 @@ static inline int get_i2c_bus_mutex(int bus_mutex)
 			break;
 		}
 		udelay(ISP_I2C_POLL_INTERVAL);
-		//cam_err("%s: bus mutex lock and timeout, wait_flag %d, count %d", __func__, wait_flag, count);
 		count++;
 	}
 

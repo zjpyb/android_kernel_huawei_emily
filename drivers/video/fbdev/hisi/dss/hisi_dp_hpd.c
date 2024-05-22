@@ -1,4 +1,4 @@
-/* Copyright (c) 2010-2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2010-2015, Hisilicon Tech. Co., Ltd. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -14,7 +14,6 @@
 #include "hisi_fb.h"
 #include "hisi_dp.h"
 #include <linux/device.h>
-
 
 int hisi_dp_hpd_register(struct hisi_fb_data_type *hisifd)
 {

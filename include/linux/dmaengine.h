@@ -244,7 +244,6 @@ struct dma_router {
 	void (*route_free)(struct device *dev, void *route_data);
 };
 
-typedef void (*dmas_callback)(void *dma_param, int bit);
 /**
  * struct dma_chan - devices supply DMA channels, clients use them
  * @device: ptr to the dma device who supplies this channel, always !%NULL
@@ -279,8 +278,6 @@ struct dma_chan {
 	void *route_data;
 
 	void *private;
-	dmas_callback dmas_callback;
-	void *dmas_callback_param;
 };
 
 /**

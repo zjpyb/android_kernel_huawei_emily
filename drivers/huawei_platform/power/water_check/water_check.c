@@ -279,7 +279,7 @@ static int water_check_parse_extra_dts(struct device_node *np,struct water_check
 	int i,j;
 	int ret = -1;
 	int array_len = 0;
-	char * tmp_string = NULL;
+	const char * tmp_string = NULL;
 	char tmp_gpio_name[GPIO_NAME_SIZE];
 
 	/*water_check para*/

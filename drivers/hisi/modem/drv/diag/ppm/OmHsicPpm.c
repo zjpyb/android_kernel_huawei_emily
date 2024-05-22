@@ -55,6 +55,7 @@
 #include "diag_port_manager.h"
 #include "OmCommonPpm.h"
 #include "OmHsicPpm.h"
+#include "diag_system_debug.h"
 
 
 /* ****************************************************************************
@@ -96,14 +97,19 @@ void PPM_HsicIndWriteDataCB(u8* pucVirData, u8* pucPhyData, s32 lLen)
 
 
 
-s32 PPM_HsicCfgReadDataCB(void)
+void PPM_HsicCfgReadDataCB(void)
 {
+    u32 ret;
     if (OM_HSIC_PORT_STATUS_OFF == PPM_GetHsicPortStatus())
     {
-        return BSP_OK;
+        return;
     }
 
-    return PPM_ReadPortData(CPM_HSIC_CFG_PORT, g_astOMPortUDIHandle[OM_HSIC_CFG_PORT_HANDLE], OM_HSIC_CFG_PORT_HANDLE);
+    ret = PPM_ReadPortData(CPM_HSIC_CFG_PORT, g_astOMPortUDIHandle[OM_HSIC_CFG_PORT_HANDLE], OM_HSIC_CFG_PORT_HANDLE);
+    if (ret) {
+        ppm_printf("PPM_ReadPortData fail\n");
+    }
+    return;
 }
 
 

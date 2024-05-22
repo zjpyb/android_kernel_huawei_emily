@@ -88,6 +88,56 @@ DEFINE_EVENT(sched_wakeup_template, sched_waking,
 	     TP_PROTO(struct task_struct *p),
 	     TP_ARGS(p));
 
+#ifdef CONFIG_HW_QOS_THREAD
+/*
+ * Tracepoint for sched qos
+ */
+DECLARE_EVENT_CLASS(sched_qos_template,
+
+	TP_PROTO(struct task_struct *p, struct transact_qos *tq, int type),
+
+	TP_ARGS(__perf_task(p), tq, type),
+
+	TP_STRUCT__entry(
+		__array(char,   comm,   TASK_COMM_LEN)
+		__field(pid_t,  pid)
+		__field(int,    prio)
+		__field(int,    success)
+		__field(int,    target_cpu)
+		__field(int,    dynamic_qos)
+		__field(int,    trans_qos)
+		__field(pid_t,  trans_from)
+		__field(int,    trans_type)
+		__field(int,    trans_flags)
+		__field(int,    type)
+	),
+
+	TP_fast_assign(
+		memcpy(__entry->comm, p->comm, TASK_COMM_LEN);
+		__entry->pid         = p->pid;
+		__entry->prio        = p->prio;
+		__entry->success     = 1; /* rudiment, kill when possible */
+		__entry->target_cpu  = task_cpu(p);
+		__entry->dynamic_qos = atomic_read(&p->dynamic_qos);
+		__entry->trans_qos   = (tq == NULL) ? 0 : atomic_read(tq->qos);
+		__entry->trans_from  = (tq == NULL) ? 0 : tq->trans_from;
+		__entry->trans_type  = (tq == NULL) ? 0 : tq->trans_type;
+		__entry->trans_flags = atomic_read(&p->trans_flags);
+		__entry->type        = type;
+	),
+	TP_printk("comm=%s pid=%d prio=%d target_cpu=%03d dynamic_qos=%d trans_qos=%d trans_from=%d trans_type=%d trans_flags=%d type=%d",
+		__entry->comm, __entry->pid, __entry->prio,
+		__entry->target_cpu, __entry->dynamic_qos,
+		__entry->trans_qos, __entry->trans_from,
+		__entry->trans_type, __entry->trans_flags,
+		__entry->type)
+);
+
+DEFINE_EVENT(sched_qos_template, sched_qos,
+	     TP_PROTO(struct task_struct *p, struct transact_qos *tq, int type),
+	     TP_ARGS(p, tq, type));
+
+#endif
 /*
  * Tracepoint called when the task is actually woken; p->state == TASK_RUNNNG.
  * It it not always called from the waking context.
@@ -142,7 +192,7 @@ DECLARE_EVENT_CLASS(sched_vip_template,
 		memcpy(__entry->comm, p->comm, TASK_COMM_LEN);
 		__entry->pid		= p->pid;
 		__entry->prio		= p->prio;
-		memcpy(__entry->msg, msg, min(VIP_MSG_LEN, strlen(msg)+1));
+		memcpy(__entry->msg, msg, min((size_t)VIP_MSG_LEN, strlen(msg)+1));
 		__entry->target_cpu	= task_cpu(p);
 		__entry->dynamic_vip   = atomic64_read(&p->dynamic_vip);
 		__entry->vip_depth     = p->vip_depth;
@@ -952,7 +1002,7 @@ TRACE_EVENT(eas_attr_store,
  */
 TRACE_EVENT(sched_tune_boost,
 
-	TP_PROTO(char *name, int boost),
+	TP_PROTO(const char *name, int boost),
 
 	TP_ARGS(name, boost),
 
@@ -1284,9 +1334,9 @@ TRACE_EVENT(sched_group_energy,
 		__bitmask(cpumask, num_possible_cpus())
 		__field( int,	idle_idx	)
 		__field( int,	cap_idx	)
-		__field( long,	group_util	)
-		__field( long,	busy_energy	)
-		__field( long,	idle_energy	)
+		__field( unsigned long,	group_util	)
+		__field( int,	busy_energy	)
+		__field( int,	idle_energy	)
 	),
 
 	TP_fast_assign(

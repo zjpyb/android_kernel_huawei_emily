@@ -268,7 +268,7 @@ static irqreturn_t dp_dma_irq_handler(int irq, void *data)
 	if (!(asp_int & 0x1))
 		return IRQ_HANDLED;
 	/* loge("[%s:%d] dp irp come on!\n", __func__, __LINE__); */
-	BUG_ON(NULL == pcm);
+	WARN_ON(NULL == pcm);
 	substream = pcm->streams[SNDRV_PCM_STREAM_PLAYBACK].substream;
 	if (NULL == substream) {
 		loge("substream is NULL\n");
@@ -340,7 +340,7 @@ static int hisi_pcm_dp_open(struct snd_pcm_substream *substream)
 	int ret = 0;
 
 	pcm =  substream->pcm;
-	BUG_ON(NULL == pcm);
+	WARN_ON(NULL == pcm);
 
 	pr_info("[%s:%d] +\n", __func__, __LINE__);
 
@@ -356,7 +356,7 @@ static int hisi_pcm_dp_open(struct snd_pcm_substream *substream)
 	rtd = (struct snd_soc_pcm_runtime *)substream->private_data;
 	pdata = (struct hisi_dp_data *)snd_soc_platform_get_drvdata(rtd->platform);
 
-	BUG_ON(NULL == pdata);
+	WARN_ON(NULL == pdata);
 
 #ifdef CONFIG_PM_RUNTIME
 	pm_runtime_get_sync(pdata->dev);
@@ -433,7 +433,7 @@ static int hisi_pcm_dp_close(struct snd_pcm_substream *substream)
 		return -ENOMEM;
 	}
 
-	BUG_ON(NULL == prtd->pdata);
+	WARN_ON(NULL == prtd->pdata);
 
 	free_irq(prtd->pdata->irq, substream->pcm);
 
@@ -749,8 +749,8 @@ static int hisi_pcm_dp_new(struct snd_soc_pcm_runtime *rtd)
 	struct snd_pcm  *pcm  = rtd->pcm;
 	int ret = 0;
 
-	BUG_ON(NULL == card);
-	BUG_ON(NULL == pcm);
+	WARN_ON(NULL == card);
+	WARN_ON(NULL == pcm);
 
 	if(!card || !card->dev)
 	{
@@ -777,7 +777,7 @@ static int hisi_pcm_dp_new(struct snd_soc_pcm_runtime *rtd)
 
 static void hisi_pcm_dp_free(struct snd_pcm *pcm)
 {
-	BUG_ON(NULL == pcm);
+	WARN_ON(NULL == pcm);
 
 	hisi_pcm_free_dma_buffers(pcm);
 }
@@ -878,7 +878,7 @@ int hisi_dp_runtime_suspend(struct device *dev)
 {
 	struct hisi_dp_data *pdata = dev_get_drvdata(dev);
 
-	BUG_ON(NULL == pdata);
+	WARN_ON(NULL == pdata);
 
 	dev_info(dev, "[%s:%d]  +\n", __func__, __LINE__);
 
@@ -894,7 +894,7 @@ int hisi_dp_runtime_resume(struct device *dev)
 	struct hisi_dp_data *pdata = dev_get_drvdata(dev);
 	int ret;
 
-	BUG_ON(NULL == pdata);
+	WARN_ON(NULL == pdata);
 
 	dev_info(dev, "[%s:%d]  +\n", __func__, __LINE__);
 

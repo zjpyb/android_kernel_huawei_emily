@@ -347,14 +347,18 @@ static void thp_hx_timing_work(struct thp_device *tdev)
 
 int thp_hx83112_chip_detect(struct thp_device *tdev)
 {
-	int ret = 0;
+	int ret;
 	if (!tdev) {
 		THP_LOG_ERR("%s: tdev null\n", __func__);
 		return -EINVAL;
 	}
 	thp_hx_timing_work(tdev);
 
-	thp_bus_lock();
+	ret = thp_bus_lock();
+	if (ret < 0) {
+		THP_LOG_ERR("%s:get lock failed\n", __func__);
+		return -EINVAL;
+	}
 	ret =  thp_hx83112_communication_check(tdev);
 	thp_bus_unlock();
 
@@ -367,7 +371,7 @@ static int himax_get_DSRAM_data(struct thp_device *tdev,char *info_data, unsigne
 	unsigned char tmp_addr[HIMAX_NORMAL_ADDR_LEN];
 	unsigned int read_size = len;
 	uint8_t *temp_info_data;
-	int ret = 0;
+	int ret;
 	struct himax_thp_private_data *himax_p = tdev->private_data;
 
 	temp_info_data = kzalloc(read_size,GFP_KERNEL);
@@ -375,7 +379,11 @@ static int himax_get_DSRAM_data(struct thp_device *tdev,char *info_data, unsigne
 		THP_LOG_ERR("%s: temp_info_data malloc fail\n", __func__);
 		return -ENOMEM;
 	}
-	thp_bus_lock();
+	ret = thp_bus_lock();
+	if (ret < 0) {
+		THP_LOG_ERR("%s:get lock failed\n", __func__);
+		return -EINVAL;
+	}
 
 	himax_assign_data(HIMAX_RAWDATA_ADDR, tmp_addr);
 	if(himax_p->hx_get_frame_optimized_flag){
@@ -418,7 +426,7 @@ int thp_hx83112_get_frame(struct thp_device *tdev,
 int thp_hx83112_resume(struct thp_device *tdev)
 {
 	uint8_t tmp_data[HIMAX_NORMAL_DATA_LEN];
-
+	int rc;
 	THP_LOG_DEBUG("%s: called_\n", __func__);
 
 	if (!tdev) {
@@ -432,7 +440,11 @@ int thp_hx83112_resume(struct thp_device *tdev)
 
 	tmp_data[0] = HIMAX_SSOFF_CMD_FIRST;
 
-	thp_bus_lock();
+	rc = thp_bus_lock();
+	if (rc < 0) {
+		THP_LOG_ERR("%s:get lock failed\n", __func__);
+		return -EINVAL;
+	}
 	if ( himax_bus_write(tdev,HIMAX_SSOFF_ADDR_FIRST,tmp_data, 1, HIMAX_BUS_RETRY_TIMES) < 0) {
 		THP_LOG_ERR("%s: i2c first access fail!\n", __func__);
 			goto ERROR;

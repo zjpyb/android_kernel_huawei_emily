@@ -36,17 +36,31 @@ extern "C" {
 /*****************************************************************************
   2 函数原型声明
 *****************************************************************************/
-mac_frame_cb g_st_mac_frame_rom_cb = {mac_set_ext_capabilities_ie_rom_cb,
-                                      mac_set_ht_cap_ie_rom_cb,//set_ht_cap_ie
-                                      OAL_PTR_NULL,//set_ht_opern_ie
-                                      OAL_PTR_NULL,//set_rsn_ie
-                                      OAL_PTR_NULL,//set_vht_cap_ie_cb
-                                      OAL_PTR_NULL,//set_vht_opern_ie_cb
-                                      OAL_PTR_NULL,//set_wpa_ie_cb
-                                      OAL_PTR_NULL,//set_nb_ie_cb
-                                      mac_set_vht_capinfo_field_cb};//set_vht_capinfo
-
-
+#if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
+mac_frame_cb g_st_mac_frame_rom_cb = {
+    .set_ext_cap_ie_cb        = mac_set_ext_capabilities_ie_rom_cb,
+    .set_ht_cap_ie_cb         = mac_set_ht_cap_ie_rom_cb,//set_ht_cap_ie
+    .set_ht_opern_ie_cb       = OAL_PTR_NULL,//set_ht_opern_ie
+    .set_rsn_ie_cb            = OAL_PTR_NULL,//set_rsn_ie
+    .set_vht_cap_ie_cb        = OAL_PTR_NULL,//set_vht_cap_ie_cb
+    .set_vht_opern_ie_cb      = OAL_PTR_NULL,//set_vht_opern_ie_cb
+    .set_wpa_ie_cb            = OAL_PTR_NULL,//set_wpa_ie_cb
+    .set_nb_ie_cb             = OAL_PTR_NULL,//set_nb_ie_cb
+    .set_vht_capinfo_field_cb = mac_set_vht_capinfo_field_cb//set_vht_capinfo
+    };
+#else
+mac_frame_cb g_st_mac_frame_rom_cb = {
+    .set_ext_cap_ie_cb        = OAL_PTR_NULL,
+    .set_ht_cap_ie_cb         = OAL_PTR_NULL,//set_ht_cap_ie
+    .set_ht_opern_ie_cb       = OAL_PTR_NULL,//set_ht_opern_ie
+    .set_rsn_ie_cb            = OAL_PTR_NULL,//set_rsn_ie
+    .set_vht_cap_ie_cb        = OAL_PTR_NULL,//set_vht_cap_ie_cb
+    .set_vht_opern_ie_cb      = OAL_PTR_NULL,//set_vht_opern_ie_cb
+    .set_wpa_ie_cb            = OAL_PTR_NULL,//set_wpa_ie_cb
+    .set_nb_ie_cb             = OAL_PTR_NULL,//set_nb_ie_cb
+    .set_vht_capinfo_field_cb = OAL_PTR_NULL//set_vht_capinfo
+    };
+#endif
 
 
 
@@ -428,6 +442,12 @@ oal_uint8 *mac_find_p2p_attribute_etc(oal_uint8 uc_eid, oal_uint8 *puc_ies, oal_
 oal_uint8 *mac_find_ie_etc(oal_uint8 uc_eid, oal_uint8 *puc_ies, oal_int32 l_len)
 {
     if (OAL_PTR_NULL == puc_ies)
+    {
+        return OAL_PTR_NULL;
+    }
+
+    /* buffer长度超过1500字节认为入参异常，不做查找操作 */
+    if (l_len > 1500)
     {
         return OAL_PTR_NULL;
     }
@@ -3080,10 +3100,12 @@ oal_uint8*  mac_get_wmm_ie_etc(oal_uint8 *puc_beacon_body, oal_uint16 us_frame_l
 
 oal_uint16 mac_get_rsn_capability_etc(const oal_uint8 *puc_rsn_ie)
 {
-    oal_uint16  us_pairwise_count      = 0;
-    oal_uint16  us_akm_count           = 0;
-    oal_uint16  us_rsn_capability      = 0;
-    oal_uint16  us_index               = 0;
+    oal_uint16      us_pairwise_count      = 0;
+    oal_uint16      us_akm_count           = 0;
+    oal_uint16      us_rsn_capability      = 0;
+    oal_uint8       uc_ie_len;
+    oal_uint16      us_suite_idx;
+    oal_uint16      us_index;
 
     if (OAL_PTR_NULL == puc_rsn_ie)
     {
@@ -3109,32 +3131,64 @@ oal_uint16 mac_get_rsn_capability_etc(const oal_uint8 *puc_rsn_ie)
     /* --------------------------------------------------------------------- */
     /*                                                                       */
     /*************************************************************************/
-    if (puc_rsn_ie[1] < MAC_MIN_RSN_LEN)
+    uc_ie_len  = puc_rsn_ie[1];
+    if (uc_ie_len < MAC_MIN_RSN_LEN)
     {
         OAM_WARNING_LOG1(0, OAM_SF_WPA, "{hmac_get_rsn_capability::invalid rsn ie len[%d].}", puc_rsn_ie[1]);
         return 0;
     }
 
-    us_index += 8;
-    us_pairwise_count = OAL_MAKE_WORD16(puc_rsn_ie[us_index] ,puc_rsn_ie[us_index+1]);
+    us_index          = 8;
+    /*获取Pairwise Suite Count*/
+    us_pairwise_count = OAL_MAKE_WORD16(puc_rsn_ie[us_index] ,puc_rsn_ie[us_index + 1]);
     if (us_pairwise_count > MAC_PAIRWISE_CIPHER_SUITES_NUM)
     {
         OAM_WARNING_LOG1(0, OAM_SF_WPA, "{hmac_get_rsn_capability::invalid us_pairwise_count[%d].}", us_pairwise_count);
         return 0;
     }
+    us_index += 2;
 
-    us_index += 2 + 4 * (oal_uint8)us_pairwise_count;
+    /*Pairwise Cipher Suite List */
+    for (us_suite_idx = 0; us_suite_idx < us_pairwise_count; us_suite_idx++)
+    {
+        if(OAL_FALSE == MAC_IE_REAMIN_LEN_IS_ENOUGH(&puc_rsn_ie[2], &puc_rsn_ie[us_index], uc_ie_len, 4))
+        {
+            return 0;
+        }
+        us_index += 4;
+    }
 
-    us_akm_count = OAL_MAKE_WORD16(puc_rsn_ie[us_index] ,puc_rsn_ie[us_index+1]);
+    /*AKM Suite Count*/
+    if (OAL_FALSE == MAC_IE_REAMIN_LEN_IS_ENOUGH(&puc_rsn_ie[2], &puc_rsn_ie[us_index], uc_ie_len, 2))
+    {
+        return 0;
+    }
+    us_akm_count = OAL_MAKE_WORD16(puc_rsn_ie[us_index] ,puc_rsn_ie[us_index + 1]);
     if (us_akm_count > WLAN_AUTHENTICATION_SUITES)
     {
         OAM_WARNING_LOG1(0, OAM_SF_WPA, "{hmac_get_rsn_capability::invalid us_akm_count[%d].}", us_akm_count);
         return 0;
     }
+    us_index += 2;
 
-    us_index += 2 + 4 * (oal_uint8)us_akm_count;
+    /* AKM Suite List*/
+    for (us_suite_idx = 0; us_suite_idx < us_akm_count; us_suite_idx++)
+    {
+        if (OAL_FALSE ==  MAC_IE_REAMIN_LEN_IS_ENOUGH(&puc_rsn_ie[2], &puc_rsn_ie[us_index], uc_ie_len, 4))
+        {
+            return 0;
+        }
+        us_index += 4;
+    }
 
-    us_rsn_capability = OAL_MAKE_WORD16(puc_rsn_ie[us_index] ,puc_rsn_ie[us_index+1]);
+    /* 越过RSN Capabilities */
+    if(OAL_FALSE == MAC_IE_REAMIN_LEN_IS_ENOUGH(&puc_rsn_ie[2], &puc_rsn_ie[us_index], uc_ie_len, 2))
+    {
+        return 0;
+    }
+
+    us_rsn_capability = OAL_MAKE_WORD16(puc_rsn_ie[us_index] ,puc_rsn_ie[us_index + 1]);
+
     return us_rsn_capability;
 
 }

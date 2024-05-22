@@ -228,7 +228,7 @@ static int __mxt_cache_write(struct  ts_kit_device_data *chip_data, u16 addr,
 		extend = 0;
 		if (test_flag(I2C_ACCESS_NO_CACHE, &flag))
 			w_cache = (u8 *) val;
-			w_cache_pa = (u8 *) val;
+		w_cache_pa = (u8 *) val;
 	} else {
 		extend = 2;  //need 2 bytes for reg addr
 		if (test_flag(I2C_ACCESS_NO_CACHE, &flag)) {
@@ -538,6 +538,7 @@ err:
 static int atmel_power_on(struct mxt_data *data)
 {
 	int error = NO_ERR;
+	int ret = 0;
 	if(NULL == data || data->atmel_chip_data == NULL || data->atmel_chip_data->ts_platform_data == NULL) {
 		TS_LOG_ERR("%s, param invalid\n", __func__);
 		error = -EINVAL;
@@ -584,7 +585,10 @@ enable_avdd_err:
 		gpio_direction_output(data->atmel_chip_data->vddio_gpio_ctrl, 0);
 	} else if(PMU_LDO_TYPE == data->atmel_chip_data->vddio_regulator_type) {
 		if (!IS_ERR(data->reg_vddio)) {
-			regulator_disable(data->reg_vddio);
+			ret = regulator_disable(data->reg_vddio);
+			if (ret < 0)
+				TS_LOG_INFO("%s: failed to disable regulator vddio.\n",
+					__func__);
 		}
 	}
 err:
@@ -687,7 +691,7 @@ static int atmel_pinctl_get(struct mxt_data *data)
 	return 0;
 
 err:
-	if(!IS_ERR(data->pctrl) || data->pctrl) {
+	if (!IS_ERR(data->pctrl)) {
 		devm_pinctrl_put(data->pctrl);
 		data->pctrl = NULL;
 	}
@@ -742,7 +746,9 @@ static void atmel_power_off(struct mxt_data *data)
 			gpio_direction_output(data->atmel_chip_data->vci_gpio_ctrl, 0);
 	} else if(PMU_LDO_TYPE == data->atmel_chip_data->vci_regulator_type) {
 		if (!IS_ERR(data->reg_avdd)) {
-			regulator_disable(data->reg_avdd);
+			error = regulator_disable(data->reg_avdd);
+			if (error < 0)
+				TS_LOG_INFO("%s: failed to disable regulator avdd.\n", __func__);
 			TS_LOG_INFO("reg_avdd disable is success\n");
 		}
 	}
@@ -752,7 +758,9 @@ static void atmel_power_off(struct mxt_data *data)
 			gpio_direction_output(data->atmel_chip_data->vddio_gpio_ctrl, 0);
 	} else if(PMU_LDO_TYPE == data->atmel_chip_data->vddio_regulator_type) {
 		if (!IS_ERR(data->reg_vddio)) {
-			regulator_disable(data->reg_vddio);
+			error = regulator_disable(data->reg_vddio);
+			if (error < 0)
+				TS_LOG_INFO("%s: failed to disable regulator vdda.\n", __func__);
 			TS_LOG_INFO("reg_vddio disable is success\n");
 		}
 	}
@@ -3309,7 +3317,6 @@ static void mxt_proc_T81_messages(struct mxt_data *data, u8 *msg)
 	TS_LOG_DEBUG("T81 Status 0x%x Info: %x %x %x %x\n",
 		     status, msg[2], msg[3], msg[4], msg[5]);
 
-	msg[0] -= data->T81_reportid_min;
 
 	msg[0] = reportid;
 }
@@ -4192,8 +4199,8 @@ static void mxt_start(struct mxt_data *data, bool resume)
 {
 	int ret = 0;
 	if (!data || !data->suspended || data->in_bootloader) {
-		TS_LOG_DEBUG("mxt_start exit, suspend:%d, in_bootloader:%d\n",
-			     data->suspended, data->in_bootloader);
+		TS_LOG_ERR("%s exit,data is null,or suspend or in_bootloader is 0\n",
+			__func__);
 		return;
 	}
 
@@ -4202,14 +4209,15 @@ static void mxt_start(struct mxt_data *data, bool resume)
 	if (data->sleep_mode == POWER_DOWN_MODE) {
 		TS_LOG_DEBUG("atmel regulators enable\n");
 		ret = atmel_pinctl_select_normal(data);
-		if (ret < 0) {
+		if (ret < 0)
 			TS_LOG_ERR("set iomux normal error, %d\n", ret);
-		}
 		atmel_power_on(data);
 	} else {
 		mxt_atmel_process_messages_until_invalid(data);
 		mxt_set_t7_power_cfg(data, MXT_POWER_CFG_RUN);
-		atmel_soft_reset(data);
+		ret = atmel_soft_reset(data);
+		if (ret)
+			TS_LOG_ERR("%s, atmel_soft_reset failed\n", __func__);
 		atmel_t6_command(data, MXT_COMMAND_CALIBRATE, 1, false);
 	}
 
@@ -4221,9 +4229,8 @@ static void mxt_stop(struct mxt_data *data, bool suspend)
 {
 	int ret = 0;
 
-	if (!data ||data->suspended || data->in_bootloader) {
-		TS_LOG_DEBUG("mxt_stop exit, suspend:%d, in_bootloader:%d\n",
-			     data->suspended, data->in_bootloader);
+	if ((data == NULL) || (data->suspended) || (data->in_bootloader)) {
+		TS_LOG_DEBUG("mxt_stop exit\n");
 		return;
 	}
 
@@ -4234,9 +4241,8 @@ static void mxt_stop(struct mxt_data *data, bool suspend)
 	if (data->sleep_mode == POWER_DOWN_MODE) { // delete g_tp_power_ctrl ?
 		TS_LOG_DEBUG("atmel regulators disable\n");
 		ret = atmel_pinctl_select_idle(data);
-		if (ret < 0) {
+		if (ret < 0)
 			TS_LOG_ERR("set iomux normal error, %d\n", ret);
-		}
 		atmel_power_off(data);
 	} else {
 		mxt_set_t7_power_cfg(data, MXT_POWER_CFG_DEEPSLEEP);
@@ -4763,13 +4769,15 @@ static int atmel_get_one_value(const char *buf, uint32_t *offset)
 	int value = -1;
 	char tmp_buffer[10] = {0};
 	uint32_t count = 0;
-	uint32_t tmp_offset = *offset;
+	uint32_t tmp_offset = 0;
 	int m=0,n=0;
 
 	if(!buf || !offset) {
 		TS_LOG_ERR("%s,param invalid\n", __func__);
 		return -EINVAL;
 	}
+	tmp_offset = *offset;
+
 	/* Bypass extra commas */
 	m=tmp_offset + 1;
 	while (buf[tmp_offset] == ASCII_COMMA

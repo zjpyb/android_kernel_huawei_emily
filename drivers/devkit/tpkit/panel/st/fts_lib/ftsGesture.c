@@ -70,7 +70,7 @@ int updateGestureMask(u8 *mask, int size, int en) {
 			return ERROR_OP_NOT_ALLOW;
 		}
 	} else {
-		TS_LOG_ERR("%s: Size not valid! %d > %d ERROR\n", size, GESTURE_MASK_SIZE);
+		TS_LOG_ERR("%s: Size not valid! %d > %d ERROR\n", __func__, size, GESTURE_MASK_SIZE);
 		return ERROR_OP_NOT_ALLOW;
 	}
 
@@ -78,8 +78,9 @@ int updateGestureMask(u8 *mask, int size, int en) {
 
 int enableGesture(u8 *mask, int size) {
 	u8 cmd[GESTURE_MASK_SIZE + 2];
-	u8 readData[FIFO_EVENT_SIZE];
-	int i, res;
+	u8 readData[FIFO_EVENT_SIZE] = {0};
+	int i = 0;
+	int res = 0;
 	int event_to_search[4] = { EVENTID_GESTURE, EVENT_TYPE_ENB, 0x00, GESTURE_ENABLE };
 
 	TS_LOG_INFO("%s:Trying to enable gesture...\n", __func__);
@@ -139,10 +140,10 @@ END:
 
 
 int disableGesture(u8 *mask, int size) {
-	u8 cmd[2 + GESTURE_MASK_SIZE];
-	u8 readData[FIFO_EVENT_SIZE];
-	u8 temp;
-	int i, res;
+	u8 cmd[2 + GESTURE_MASK_SIZE] = {0};
+	u8 readData[FIFO_EVENT_SIZE] = {0};
+	u8 temp = 0;
+	int i, res = 0;
 	int event_to_search[4] = { EVENTID_GESTURE, EVENT_TYPE_ENB, 0x00, GESTURE_DISABLE };
 
 	TS_LOG_INFO("%s:Trying to disable gesture\n", __func__);
@@ -202,8 +203,8 @@ END:
 
 int startAddCustomGesture(u8 gestureID) {
 	u8 cmd[3] = { FTS_CMD_GESTURE_CMD, GESTURE_START_ADD,  gestureID };
-	int res;
-	u8 readData[FIFO_EVENT_SIZE];
+	int res = 0;
+	u8 readData[FIFO_EVENT_SIZE] = {0};
 	int event_to_search[4] = { EVENTID_GESTURE,EVENT_TYPE_ENB,gestureID,GESTURE_START_ADD };
 
 	res = fts_writeFwCmd(cmd, 3);
@@ -232,8 +233,8 @@ int startAddCustomGesture(u8 gestureID) {
 
 int finishAddCustomGesture(u8 gestureID) {
 	u8 cmd[3] = { FTS_CMD_GESTURE_CMD, GESTURE_FINISH_ADD,  gestureID };
-	int res;
-	u8 readData[FIFO_EVENT_SIZE];
+	int res = 0;
+	u8 readData[FIFO_EVENT_SIZE] = {0};
 	int event_to_search[4] = { EVENTID_GESTURE,EVENT_TYPE_ENB,gestureID,GESTURE_FINISH_ADD };
 
 	res = fts_writeFwCmd(cmd, 3);
@@ -263,7 +264,7 @@ int loadCustomGesture(u8 *template, u8 gestureID) {
 	int toWrite, offset = 0;
 	u8 cmd[TEMPLATE_CHUNK + 5];
 	int event_to_search[4] = { EVENTID_GESTURE,EVENT_TYPE_ENB,gestureID,GESTURE_DATA_ADD };
-	u8 readData[FIFO_EVENT_SIZE];
+	u8 readData[FIFO_EVENT_SIZE] = {0};
 
 	TS_LOG_INFO("%s Starting adding custom gesture procedure...\n", __func__);
 
@@ -487,9 +488,9 @@ int gestureIDtoGestureMask(u8 id, u8 *mask) {
 int readGestureCoords(u8 *event){
 	int i = 0;
 	u8 rCmd[3] = {FTS_CMD_FRAMEBUFFER_R, 0x00, 0x00 };
-	int res;
+	int res = 0;
 
-	unsigned char val[GESTURE_COORDS_REPORT_MAX*4+1];			//the max coordinates to read are GESTURE_COORDS_REPORT_MAX*4(because each coordinate is a short(*2) and we have x and y) + dummy byte
+	unsigned char val[GESTURE_COORDS_REPORT_MAX*4+1] = {0};			//the max coordinates to read are GESTURE_COORDS_REPORT_MAX*4(because each coordinate is a short(*2) and we have x and y) + dummy byte
 
 	if(event[0]==EVENTID_GESTURE && event[1] == EVENT_TYPE_GESTURE_DTC2) {
 		rCmd[1] = event[4];    // Offset address L

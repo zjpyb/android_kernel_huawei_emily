@@ -121,11 +121,13 @@ void blk_mq_wake_waiters(struct request_queue *q)
 {
 	struct blk_mq_hw_ctx *hctx;
 	unsigned int i;
+#ifdef CONFIG_HISI_BLK
+	int ret = -EPERM;
+#endif
 
 	queue_for_each_hw_ctx(q, hctx, i)
 		if (blk_mq_hw_queue_mapped(hctx)) {
-		#ifdef CONFIG_HISI_BLK
-			int ret = -EPERM;
+#ifdef CONFIG_HISI_BLK
 			if (q->hisi_queue_ops && q->hisi_queue_ops->mq_tag_wakeup_all_fn)
 				ret = q->hisi_queue_ops->mq_tag_wakeup_all_fn(hctx->tags);
 			if (ret) {
@@ -138,9 +140,9 @@ void blk_mq_wake_waiters(struct request_queue *q)
 			#endif
 				}
 			}
-		#else
+#else
 			blk_mq_tag_wakeup_all(hctx->tags, true);
-		#endif
+#endif
 		}
 
 	/*
@@ -528,14 +530,17 @@ static void __blk_mq_complete_request(struct request *rq)
 void blk_mq_complete_request(struct request *rq, int error)
 {
 	struct request_queue *q = rq->q;
+#ifdef CONFIG_HISI_BLK
+	int ret = -EPERM;
+#endif
+
 	if (unlikely(blk_should_fake_timeout(q)))
 		return;
 	if (likely(!blk_mark_rq_complete(rq))) {
-	#ifdef CONFIG_WBT
+#ifdef CONFIG_WBT
 		blk_mq_stat_add(rq);
-	#endif
-	#ifdef CONFIG_HISI_BLK
-		int ret = -EPERM;
+#endif
+#ifdef CONFIG_HISI_BLK
 		rq->errors = error;
 		if (q->hisi_queue_ops && q->hisi_queue_ops->mq_req_complete_fn)
 			ret  = q->hisi_queue_ops->mq_req_complete_fn(rq, q, true);
@@ -549,10 +554,10 @@ void blk_mq_complete_request(struct request *rq, int error)
 			#endif
 			}
 		}
-	#else
+#else
 		rq->errors = error;
 		__blk_mq_complete_request(rq);
-	#endif
+#endif
 	}
 }
 EXPORT_SYMBOL(blk_mq_complete_request);
@@ -823,14 +828,16 @@ static void blk_mq_check_expired(struct blk_mq_hw_ctx *hctx,
 		struct request *rq, void *priv, bool reserved)
 {
 	struct blk_mq_timeout_data *data = priv;
+#ifdef CONFIG_HISI_BLK
+	int ret = -EPERM;
+#endif
 
 	if (!test_bit(REQ_ATOM_STARTED, &rq->atomic_flags))
 		return;
 
 	if (time_after_eq(jiffies, rq->deadline)) {
 		if (!blk_mark_rq_complete(rq)) {
-		#ifdef CONFIG_HISI_BLK
-			int ret = -EPERM;
+#ifdef CONFIG_HISI_BLK
 			if (rq->q->hisi_queue_ops && rq->q->hisi_queue_ops->mq_req_timeout_fn)
 				ret = rq->q->hisi_queue_ops->mq_req_timeout_fn(rq, reserved);
 			if (ret) {
@@ -843,9 +850,9 @@ static void blk_mq_check_expired(struct blk_mq_hw_ctx *hctx,
 				#endif
 				}
 			}
-		#else
+#else
 			blk_mq_rq_timed_out(rq, reserved);
-		#endif
+#endif
 		}
 	} else if (!data->next_set || time_after(data->next, rq->deadline)) {
 		data->next = rq->deadline;
@@ -1511,7 +1518,7 @@ struct request *blk_mq_map_request(struct request_queue *q,
 	hctx = blk_mq_map_queue(q, ctx->cpu);
 
 	if (rw_is_sync(bio_op(bio), bio->bi_opf))
-		op_flags |= REQ_SYNC;
+		op_flags = (unsigned int)op_flags | REQ_SYNC;
 
 	trace_block_getrq(q, bio, op);
 	blk_mq_set_alloc_data(&alloc_data, q, 0, ctx, hctx);
@@ -2148,6 +2155,9 @@ static void blk_mq_map_swqueue(struct request_queue *q,
 	struct blk_mq_hw_ctx *hctx;
 	struct blk_mq_ctx *ctx;
 	struct blk_mq_tag_set *set = q->tag_set;
+#ifdef CONFIG_HISI_BLK
+	int ret = -EPERM;
+#endif
 
 	/*
 	 * Avoid others reading imcomplete hctx->cpumask through sysfs
@@ -2181,7 +2191,6 @@ static void blk_mq_map_swqueue(struct request_queue *q,
 		 */
 		if (!hctx->nr_ctx) {
 #ifdef CONFIG_HISI_BLK
-			int ret = -EPERM;
 			if (q->hisi_queue_ops && q->hisi_queue_ops->mq_hctx_free_in_ctx_map_fn)
 				ret = q->hisi_queue_ops->mq_hctx_free_in_ctx_map_fn(q, hctx);
 			if (ret) {
@@ -2460,18 +2469,19 @@ struct request_queue *blk_mq_init_allocated_queue(struct blk_mq_tag_set *set,
 
 	blk_mq_init_cpu_queues(q, set->nr_hw_queues);
 
-	get_online_cpus();
 	mutex_lock(&all_q_mutex);
+	get_online_cpus();
 
 	list_add_tail(&q->all_q_node, &all_q_list);
 	blk_mq_add_queue_tag_set(set, q);
 	blk_mq_map_swqueue(q, cpu_online_mask);
 
-	mutex_unlock(&all_q_mutex);
 	put_online_cpus();
+	mutex_unlock(&all_q_mutex);
 #ifdef CONFIG_HISI_BLK
 	hisi_blk_mq_init_allocated_queue(q);
 #endif
+
 	return q;
 
 err_hctxs:
@@ -2575,9 +2585,9 @@ static int blk_mq_queue_reinit_prepare(unsigned int cpu)
 
 static int __blk_mq_alloc_rq_maps(struct blk_mq_tag_set *set)
 {
-	unsigned int i;
+	int i;
 
-	for (i = 0; i < set->nr_hw_queues; i++) {
+	for (i = 0; i < set->nr_hw_queues; i++) { /*lint !e574*/
 		set->tags[i] = blk_mq_init_rq_map(set, i);
 		if (!set->tags[i])
 			goto out_unwind;
@@ -2586,7 +2596,7 @@ static int __blk_mq_alloc_rq_maps(struct blk_mq_tag_set *set)
 	return 0;
 
 out_unwind:
-	while (--i >= 0)/*lint !e568 !e685*/
+	while (--i >= 0)
 #ifdef CONFIG_HISI_BLK
 		blk_mq_free_rq_map(set, set->tags[i], i, NULL);
 #else

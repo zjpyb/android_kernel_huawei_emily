@@ -15,6 +15,11 @@
 #include <linux/mount.h>
 #include "fscrypt_private.h"
 
+#ifdef CONFIG_HWAA
+#include <linux/security.h>
+#include <huawei_platform/hwaa/hwaa_fs_hooks.h>
+#endif
+
 /*
  * check whether an encryption policy is consistent with an encryption context
  */
@@ -69,7 +74,7 @@ static int create_encryption_context_from_policy(struct inode *inode,
 				FS_KEY_DESC_PREFIX, FS_KEY_DESC_PREFIX_SIZE);
 	if (IS_ERR(keyring_key)) {
 		if (inode->i_sb->s_cop->key_prefix) {
-			u8 *prefix = inode->i_sb->s_cop->key_prefix;
+			const u8 *prefix = inode->i_sb->s_cop->key_prefix;
 			int prefix_size;
 
 			prefix_size = strlen(prefix);
@@ -287,11 +292,12 @@ int fscrypt_has_permitted_context(struct inode *parent, struct inode *child)
 	parent_ci = parent->i_crypt_info;
 	child_ci = child->i_crypt_info;
 
-	/* In case child is non-opened sdp file */
-	if (child_ci && child_ci->ci_sdp_flag)
-		return 1;
-
-	if (parent_ci && child_ci) {
+	/* TicketNo:AR000B5MBD -- For HWAA file we just use the i_crypt_info
+	 *     since the ci_master_key in struct i_crypt_info is not changed. */
+	/* TicketNo:AR0009DF3P -- For SDP file we use original CE context since
+	 *     the ci_master_key in struct i_crypt_info is changed.
+	 * The file is protected by SDP if (ci_hw_enc_flag & 0x0F) is not 0 */
+	if (parent_ci && child_ci && !(child_ci->ci_hw_enc_flag & 0x0F)) {
 		return memcmp(parent_ci->ci_master_key, child_ci->ci_master_key,
 			      FS_KEY_DESCRIPTOR_SIZE) == 0 &&
 			(parent_ci->ci_data_mode == child_ci->ci_data_mode) &&
@@ -299,6 +305,8 @@ int fscrypt_has_permitted_context(struct inode *parent, struct inode *child)
 			 child_ci->ci_filename_mode) &&
 			(parent_ci->ci_flags == child_ci->ci_flags);
 	}
+	/* TicketNo:AR0009DF3P END */
+	/* TicketNo:AR000B5MBD END */
 
 	res = cops->get_context(parent, &parent_ctx, sizeof(parent_ctx), NULL);
 	if (res != sizeof(parent_ctx))
@@ -371,3 +379,91 @@ int fscrypt_inherit_context(struct inode *parent, struct inode *child,
 	return preload ? fscrypt_get_encryption_info(child): 0;
 }
 EXPORT_SYMBOL(fscrypt_inherit_context);
+
+#ifdef CONFIG_HWAA
+static int f2fs_set_hwaa_enable_flags(struct inode *inode, void *fs_data)
+{
+	u32 flags;
+	int res = 0;
+
+	res = inode->i_sb->s_cop->get_hwaa_flags(inode, fs_data, &flags);
+	if (res) {
+		printk_once(KERN_ERR "%s:get inode (%lu) hwaa flags err (%d).\n",
+			__func__, inode->i_ino, res);
+		return -EINVAL;
+	}
+	flags |= HWAA_XATTR_ENABLE_FLAG;
+	res = inode->i_sb->s_cop->set_hwaa_flags(inode, fs_data, &flags);
+	if(res) {
+		printk_once(KERN_ERR "%s:set inode (%lu) hwaa flags err (%d).\n",
+			__func__, inode->i_ino, res);
+		return -EINVAL;
+	}
+
+	return res;
+}
+
+/*
+ * Code is mainly copied from fscrypt_inherit_context
+ *
+ * funcs except hwaa_create_fek must not return EAGAIN
+ *
+ * Return:
+ *  o 0: SUCC
+ *  o other errno: the file is not supported by policy
+ */
+int hwaa_inherit_context(struct inode *parent, struct inode *inode,
+	struct dentry *dentry, void *fs_data, bool preload)
+{
+	uint8_t *encoded_wfek = NULL;
+	uint8_t *fek = NULL;
+	uint32_t encoded_len, fek_len;
+	int err;
+	/*
+	 * called by __recover_do_dentries or
+	 * f2fs_add_inline_entries or recover_dentry?
+	 */
+	if (!dentry)
+		return -EAGAIN;
+	if (!S_ISREG(inode->i_mode))
+		return 0;
+	/* create fek from hwaa, may delete fek later */
+	err = hwaa_create_fek(inode, dentry, &encoded_wfek, &encoded_len,
+		&fek, &fek_len, GFP_NOFS);
+	if (err == -HWAA_ERR_NOT_SUPPORTED) {
+		pr_info_once("hwaa ino %lu not protected\n", inode->i_ino);
+		err = 0;
+		goto free_buf;
+	} else if (err) {
+		pr_err("hwaa ino %lu create fek err %d\n", inode->i_ino, err);
+		goto free_buf;
+	}
+	if (parent->i_sb->s_cop->set_hwaa_attr) {
+		err = parent->i_sb->s_cop->set_hwaa_attr(inode, encoded_wfek,
+			encoded_len, fs_data);
+	} else {
+		pr_info_once("hwaa ino %lu no setxattr\n", inode->i_ino);
+		err = 0;
+		goto free_hwaa;
+	}
+	if (err) {
+		pr_err("hwaa ino %lu setxattr err %d\n", inode->i_ino, err);
+		goto free_hwaa;
+	}
+	/* set new user type xattr and flags for HWAA */
+	err = f2fs_set_hwaa_enable_flags(inode, fs_data);
+	if (err) {
+		pr_err_once("hwaa ino %lu set hwaa enable flags err %d\n",
+			inode->i_ino, err);
+		goto free_hwaa;
+	}
+	if (preload)
+		err = hwaa_get_context(inode);
+free_hwaa:
+	kfree(encoded_wfek);
+free_buf:
+	kzfree(fek); //may delete fek later
+	return err;
+}
+EXPORT_SYMBOL(hwaa_inherit_context);
+#endif

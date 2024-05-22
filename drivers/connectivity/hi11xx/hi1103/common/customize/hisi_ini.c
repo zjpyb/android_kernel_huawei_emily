@@ -34,6 +34,9 @@
 #ifdef HISI_DTS_SUPPORT
 #include "board.h"
 #endif
+
+#include "oal_util.h"
+
 /*
  * 2 Global Variable Definition
  */
@@ -78,7 +81,8 @@ static int32 ko_read_line(INI_FILE *fp, char *addr)
     int8  auc_tmp[MAX_READ_LINE_NUM] = {0};
     int32 cnt = 0;
 
-    l_ret = kernel_read(fp, fp->f_pos, auc_tmp, MAX_READ_LINE_NUM);
+    l_ret = oal_file_read_ext(fp, fp->f_pos, auc_tmp, MAX_READ_LINE_NUM);
+
     if (0 > l_ret)
     {
         INI_ERROR("kernel_line read l_ret < 0");
@@ -797,7 +801,7 @@ int8 *get_str_from_file(int8 *pc_file_path, const int8 *pc_mask_str, const int8 
 {
     INI_FILE *fp;
     int32 ret, loop, l_len;
-    int8 ac_read_buf[INI_KERNEL_READ_LEN];
+    int8 ac_read_buf[INI_KERNEL_READ_LEN] = {0};
     int8 *pc_find_str = NULL;
     int8 *data;
     uint8 uc_str_check_len;
@@ -818,7 +822,7 @@ int8 *get_str_from_file(int8 *pc_file_path, const int8 *pc_mask_str, const int8 
     INI_INFO("open file %s success to find str \"%s\"!", pc_file_path, pc_mask_str);
     uc_str_check_len = OAL_STRLEN(pc_mask_str);
     /* 由于每次比较都会留uc_str_check_len不比较所以不是0 */
-    while (uc_str_check_len != (ret =kernel_read(fp, fp->f_pos, ac_read_buf, INI_KERNEL_READ_LEN)))
+    while (uc_str_check_len != (ret =oal_file_read_ext(fp, fp->f_pos, ac_read_buf, INI_KERNEL_READ_LEN)))
     {
         for (loop = 0; loop < INI_KERNEL_READ_LEN-uc_str_check_len; loop++)
         {
@@ -907,7 +911,7 @@ void ini_cfg_exit_etc(void)
 
 #if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
 /*lint -e578*//*lint -e132*//*lint -e745*//*lint -e101*//*lint -e49*//*lint -e601*/
-oal_module_param_string(g_ini_file_name_etc, g_ini_file_name_etc, INI_FILE_PATH_LEN, OAL_S_IRUGO);
+oal_debug_module_param_string(g_ini_file_name_etc, g_ini_file_name_etc, INI_FILE_PATH_LEN, OAL_S_IRUGO);
 /*lint +e578*//*lint +e132*//*lint +e745*//*lint +e101*//*lint +e49*//*lint +e601*/
 #endif
 

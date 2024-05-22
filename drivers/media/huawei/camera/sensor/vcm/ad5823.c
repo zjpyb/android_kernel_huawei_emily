@@ -153,7 +153,7 @@ static int __init hw_ad5823_module_init(void)
 
 static void __exit hw_ad5823_module_exit(void)
 {
-	hw_vcm_unregister(&s_ad5823.intf);
+	hw_vcm_unregister(s_ad5823.intf.subdev);
 	platform_driver_unregister(&hw_ad5823_platform_driver);
 }
 

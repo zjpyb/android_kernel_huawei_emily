@@ -52,7 +52,7 @@ extern "C" {
 struct kobject     *g_scan_ct_sys_kobject = OAL_PTR_NULL;
 #endif
 oal_bool_enum_uint8 g_en_bgscan_enable_flag = OAL_TRUE;
-
+oal_uint32	g_pd_bss_expire_time = 0;
 /*****************************************************************************
   3 函数实现
 *****************************************************************************/
@@ -416,9 +416,14 @@ OAL_STATIC oal_void hmac_scan_clean_expire_scanned_bss(hmac_vap_stru *pst_hmac_v
                              "{hmac_scan_clean_expire_scanned_bss::do not remove the BSS, because it has not expired.}");
             continue;
         }
+        /* 产线老化使能*/
+        if ((0 != g_pd_bss_expire_time) && (ul_curr_time_stamp - pst_bss_dscr->ul_timestamp < g_pd_bss_expire_time * 1000))
+        {
+            continue;
+        }
 
         /* 不老化当前正在关联的AP */
-        if(hmac_is_connected_ap_bssid(pst_scan_record->uc_device_id, pst_bss_dscr->auc_bssid))
+        if (hmac_is_connected_ap_bssid(pst_scan_record->uc_device_id, pst_bss_dscr->auc_bssid))
         {
             pst_bss_dscr->c_rssi = pst_hmac_vap->station_info.signal;
             continue;

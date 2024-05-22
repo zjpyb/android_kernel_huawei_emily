@@ -33,6 +33,7 @@
 #include "core.h"
 #include "pinconf.h"
 #include "pinctrl-sec.h"
+#include "../hisi/tzdriver/libhwsecurec/securec.h"
 
 #include <asm/compiler.h>
 
@@ -625,6 +626,7 @@ static int pinctrl_sec_add_pin(struct pinctrl_sec_device *pinctrl_sec, unsigned 
 	struct pinctrl_pin_desc *pin;
 	struct pinctrl_sec_name *pn;
 	int i;
+	int ret;
 
 	i = pinctrl_sec->pins.cur;
 	if (i >= (int)pinctrl_sec->desc.npins) {
@@ -635,8 +637,9 @@ static int pinctrl_sec_add_pin(struct pinctrl_sec_device *pinctrl_sec, unsigned 
 
 	pin = &pinctrl_sec->pins.pa[i];
 	pn = &pinctrl_sec->names[i];
-	snprintf(pn->name, sizeof(pn->name), "%lx.%u",/*lint !e421*/
+	ret = snprintf_s(pn->name, sizeof(pn->name), sizeof(pn->name) - 1, "%lx.%u",/*lint !e421*/
 		(unsigned long)pinctrl_sec->res->start + offset, pin_pos);
+	dev_err(pinctrl_sec->dev, "%s snprintf_s : ret = %d, pn->name = %s.\n", __func__, ret, pn->name);
 	pin->name = pn->name;
 	pin->number = (unsigned int)i;
 	pinctrl_sec->pins.cur++;
@@ -729,6 +732,7 @@ static struct pinctrl_sec_function *pinctrl_sec_add_function(struct pinctrl_sec_
 					unsigned npgnames)
 {
 	struct pinctrl_sec_function *function;
+	int ret;
 
 	function = devm_kzalloc(pinctrl_sec->dev, sizeof(*function), GFP_KERNEL);
 	if (!function)
@@ -742,7 +746,10 @@ static struct pinctrl_sec_function *pinctrl_sec_add_function(struct pinctrl_sec_
 
 	mutex_lock(&pinctrl_sec->mutex);
 	list_add_tail(&function->node, &pinctrl_sec->functions);
-	radix_tree_insert(&pinctrl_sec->ftree, (unsigned long)pinctrl_sec->nfuncs, function);
+	ret = radix_tree_insert(&pinctrl_sec->ftree, (unsigned long)pinctrl_sec->nfuncs, function);
+	if(ret){
+		dev_err(pinctrl_sec->dev, "%s radix_tree_insert failed\n",__func__);
+	}
 	pinctrl_sec->nfuncs++;
 	mutex_unlock(&pinctrl_sec->mutex);
 
@@ -781,6 +788,7 @@ static int pinctrl_sec_add_pingroup(struct pinctrl_sec_device *pinctrl_sec,
 					int ngpins)
 {
 	struct pinctrl_sec_pingroup *pingroup;
+	int ret;
 
 	pingroup = devm_kzalloc(pinctrl_sec->dev, sizeof(*pingroup), GFP_KERNEL);
 	if (!pingroup)
@@ -793,7 +801,10 @@ static int pinctrl_sec_add_pingroup(struct pinctrl_sec_device *pinctrl_sec,
 
 	mutex_lock(&pinctrl_sec->mutex);
 	list_add_tail(&pingroup->node, &pinctrl_sec->pingroups);
-	radix_tree_insert(&pinctrl_sec->pgtree, (unsigned long)pinctrl_sec->ngroups, pingroup);
+	ret = radix_tree_insert(&pinctrl_sec->pgtree, (unsigned long)pinctrl_sec->ngroups, pingroup);
+	if(ret){
+		dev_err(pinctrl_sec->dev, "%s radix_tree_insert failed\n",__func__);
+	}
 	pinctrl_sec->ngroups++;
 	mutex_unlock(&pinctrl_sec->mutex);
 
@@ -865,7 +876,8 @@ static void pinctrl_sec_add_conf2(struct pinctrl_sec_device *pinctrl_sec, struct
 			  const char *name, enum pin_config_param param,
 			  struct pinctrl_sec_conf_vals **conf, unsigned long **settings)
 {
-	unsigned value[2], shift;
+	unsigned value[2] = {0};
+	unsigned shift;
 	int ret;
 
 	ret = of_property_read_u32_array(np, name, value, (unsigned long)2);
@@ -884,7 +896,7 @@ static void pinctrl_sec_add_conf4(struct pinctrl_sec_device *pinctrl_sec, struct
 			  const char *name, enum pin_config_param param,
 			  struct pinctrl_sec_conf_vals **conf, unsigned long **settings)
 {
-	unsigned value[4];
+	unsigned value[4] = {0};
 	int ret;
 
 	/* value to set, enable, disable, mask */
@@ -1225,7 +1237,7 @@ static int pinctrl_sec_dt_node_to_map(struct pinctrl_dev *pctldev,
 
 	*num_maps = 0;
 
-	pgnames = devm_kzalloc(pinctrl_sec->dev, sizeof(*pgnames), GFP_KERNEL);
+	pgnames = devm_kzalloc(pinctrl_sec->dev, sizeof(char *), GFP_KERNEL);
 	if (!pgnames) {
 		ret = -ENOMEM;
 		goto free_map;
@@ -1430,7 +1442,10 @@ static int pinctrl_sec_probe(struct platform_device *pdev)
 	INIT_LIST_HEAD(&pinctrl_sec->gpiofuncs);
 	soc = match->data;
 	pinctrl_sec->flags = soc->flags;
-	memcpy(&pinctrl_sec->socdata, soc, sizeof(*soc));
+	ret = memcpy_s(&pinctrl_sec->socdata, sizeof(pinctrl_sec->socdata), soc, sizeof(*soc));
+	if(ret){
+		dev_err(&pdev->dev, "memcpy_s failed,ret = %d\n",ret);
+	}
 
 	PCS_GET_PROP_U32("pinctrl-single,register-width", &pinctrl_sec->width,
 			 "register width not specified\n");/*lint !e429*/

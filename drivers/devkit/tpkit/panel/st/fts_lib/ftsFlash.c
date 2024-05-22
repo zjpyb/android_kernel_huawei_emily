@@ -169,7 +169,7 @@ int flashProcedure(const char* path, int force, int keep_cx)
 int wait_for_flash_ready(u8 type)
 {
 	u8 cmd[2] = {FLASH_CMD_READ_REGISTER, type};
-	u8 readData;
+	u8 readData = 0;
 	int i, res = -1;
 
 	TS_LOG_INFO("%s Waiting for flash ready ...\n", __func__);

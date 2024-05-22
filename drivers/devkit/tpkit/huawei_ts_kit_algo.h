@@ -2,12 +2,6 @@
 #define __HUAWEI_TOUCHSCREEN_ALGO_H_
 
 #include "huawei_ts_kit.h"
-/*
-#define TP_FINGER				1
-#define TP_STYLUS				2
-#define TP_GLOVE				6
-#define FILTER_GLOVE_NUMBER	4
-*/
 #define PEN_MOV_LENGTH      120	/*move length (pixels)*/
 #define FINGER_REL_TIME     300	/*the time pen checked after finger released shouldn't less than this value(ms)*/
 
@@ -15,7 +9,6 @@
 #define AFT_EDGE 1
 #define NOT_AFT_EDGE 0
 
-//static char first_touch_tag = 0;
 #define FINGER_PRESS_TIME_MIN_ALGO1    20 * 1000 /* mil second */
 #define FINGER_PRESS_TIME_MIN_ALGO3    20 * 1000 /* mil second */
 #define FINGER_PRESS_TIMES_IN_MIN_TIME_ALGO1    5

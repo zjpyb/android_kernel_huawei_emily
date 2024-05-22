@@ -14,6 +14,7 @@
 #include "../pmic/hw_pmic.h"
 
 #define I2S(i) container_of(i, sensor_t, intf)
+#define Sensor2Pdev(s) container_of((s).dev, struct platform_device, dev)
 //lint -save -e826 -e838 -e715 -e826 -e747 -e785 -e846 -e866 -e30 -e84 -e64 -e785 -e753 -e514 -e528 -esym(753,*)
 //lint -save -e528 -e2 -e78 -e102 -e132 -e401 -e515 -e516 -e530 -e533 -e578 -e728 -e732 -e745 -e752 -e774
 
@@ -606,7 +607,7 @@ imx486hybird_platform_remove(
     sensor = I2S(intf);
 
     rpmsg_sensor_unregister((void*)&sensor);
-    hwsensor_unregister(intf);
+    hwsensor_unregister(pdev);
     return 0;
 }
 static int __init

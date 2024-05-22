@@ -33,7 +33,7 @@
  */
 
 #ifndef __COLOR_SENSOR_H__
-#define	__COLOR_SENSOR_H__
+#define __COLOR_SENSOR_H__
 
 #define UINT8   uint8_t
 #define  INT8    int8_t
@@ -42,7 +42,12 @@
 #define UINT32  uint32_t
 #define  INT32   int32_t
 
-#ifdef	__cplusplus
+//this two prams should be controled by product config micro,, and also must be set, or compile will be wrong
+#define COLOR_PRODUCT_TCS3707
+//#define COLOR_PRODUCT_BESIDES_TCS3707
+
+
+#ifdef __cplusplus
 extern "C" {
 #endif
 
@@ -55,6 +60,10 @@ typedef enum color_sensor_cal_states{
 	CAL_STATE_GAIN_LAST
 }color_sensor_cal_states_t;
 
+#define MAX_TARGET_CALI_LEN 9
+#define MAX_REPORT_LEN 9
+#define MAX_RAW_DATA_LEN (MAX_REPORT_LEN-1)
+
 typedef struct color_sensor_cali_nv{
 	uint32_t 	nv_Xtarget;
 	uint32_t 	nv_Ytarget;
@@ -66,21 +75,49 @@ typedef struct color_sensor_cali_nv{
 	uint32_t 	calIratio[CAL_STATE_GAIN_LAST];
 }color_sensor_cali_para_nv;
 
+typedef struct at_color_sensor_cali_nv{
+	uint32_t 	nv_Ctarget;
+	uint32_t 	nv_Rtarget;
+	uint32_t 	nv_Gtarget;
+	uint32_t 	nv_Btarget;
+	uint32_t 	nv_Wtarget;
+	uint32_t 	reserved[3];
+	uint16_t 	calCratio[CAL_STATE_GAIN_LAST];
+	uint16_t 	calRratio[CAL_STATE_GAIN_LAST];
+	uint16_t 	calGratio[CAL_STATE_GAIN_LAST];
+	uint16_t 	calBratio[CAL_STATE_GAIN_LAST];
+	uint16_t 	calWratio[CAL_STATE_GAIN_LAST];
+	uint16_t 	reserved_1[7];
+}at_color_sensor_cali_para_nv;
+
 typedef struct color_sensor_input {
-	UINT32 tar_x;
-	UINT32 tar_y;
-	UINT32 tar_z;
-	UINT32 tar_ir;
-	UINT32 enable;
+	uint32_t tar_x;
+	uint32_t tar_y;
+	uint32_t tar_z;
+	uint32_t tar_ir;
+	uint32_t enable;
 }color_sensor_input_para;
 
+typedef struct at_color_sensor_input{
+	uint32_t enable;
+	uint32_t reserverd[MAX_RAW_DATA_LEN];
+}at_color_sensor_input_para;
+
 typedef struct color_sensor_output {
-	UINT32 result;
-	UINT32 report_x[CAL_STATE_GAIN_LAST];
-	UINT32 report_y[CAL_STATE_GAIN_LAST];
-	UINT32 report_z[CAL_STATE_GAIN_LAST];
-	UINT32 report_ir[CAL_STATE_GAIN_LAST];
+	uint32_t result;
+	uint32_t report_x[CAL_STATE_GAIN_LAST];
+	uint32_t report_y[CAL_STATE_GAIN_LAST];
+	uint32_t report_z[CAL_STATE_GAIN_LAST];
+	uint32_t report_ir[CAL_STATE_GAIN_LAST];
 }color_sensor_output_para;
+
+typedef struct at_color_sensor_output {
+	uint32_t result;
+	uint32_t gain_arr;
+	uint32_t color_arr;
+	uint32_t report_gain[CAL_STATE_GAIN_LAST];
+	uint32_t report_raw[MAX_RAW_DATA_LEN][CAL_STATE_GAIN_LAST];
+}at_color_sensor_output_para;
 
 typedef struct color_sensor_calibration{
 	enum color_sensor_cal_states calState;
@@ -97,7 +134,39 @@ typedef struct color_sensor_calibration{
 	uint32_t 	calZresult[CAL_STATE_GAIN_LAST];
 	uint32_t 	calIRresult[CAL_STATE_GAIN_LAST];
 	uint32_t  calSampleCounter;
+//	enum color_sensor_cal_states calState;
+	uint32_t 	calCsample;
+	uint32_t 	calRsample;
+	uint32_t 	calGsample;
+	uint32_t 	calBsample;
+	uint32_t 	calWsample;
+	uint32_t 	calCtarget;
+	uint32_t 	calRtarget;
+	uint32_t 	calGtarget;
+	uint32_t 	calBtarget;
+	uint32_t 	calWtarget;
+	uint32_t 	calCresult[CAL_STATE_GAIN_LAST];
+	uint32_t 	calRresult[CAL_STATE_GAIN_LAST];
+	uint32_t 	calGresult[CAL_STATE_GAIN_LAST];
+	uint32_t 	calBresult[CAL_STATE_GAIN_LAST];
+	uint32_t 	calWresult[CAL_STATE_GAIN_LAST];
+//	uint32_t  calSampleCounter;
 }color_sensor_calibration_t;
+
+enum ReportType{
+    /* invalid report type*/
+    AWB_SENSOR_RAW_SEQ_TYPE_INVALID = 0,
+
+    /*16 raw data SEQ: r,g,b,ir,0,...,0 */
+    AWB_SENSOR_RAW_SEQ_TYPE_R_G_B_IR = 1,
+
+    /*16 raw data SEQ: c,r,g,b,w,0,...,0 */
+    AWB_SENSOR_RAW_SEQ_TYPE_C_R_G_B_W = 2,
+
+    /* the final 16 raw data SEQ , must be aligned with camera HAL's data structure£º awb_sensor_info_t */
+    AWB_SENSOR_RAW_SEQ_TYPE_COMMON = 9,
+    AWB_SENSOR_RAW_SEQ_TYPE_MAX,
+};
 
 struct colorDriver_chip {
 	struct mutex lock;
@@ -111,17 +180,26 @@ struct colorDriver_chip {
 	struct color_sensor_calibration calibrationCtx;
 	u8 device_index;
 	void * deviceCtx;
-    struct timer_list work_timer;
+	struct timer_list work_timer;
+	struct timer_list fd_timer;
     struct work_struct als_work;
+	struct work_struct fd_work;
 	struct device *dev;
-	void (*color_show_calibrate_state)(struct rohmDriver_chip *, color_sensor_output_para*);
-	void (*color_store_calibrate_state)(struct rohmDriver_chip *, color_sensor_input_para*);
-	void (*color_enable_show_state)(struct rohmDriver_chip *, int *);
-	void (*color_enable_store_state)(struct rohmDriver_chip *, int);
+	void (*color_show_calibrate_state)(struct colorDriver_chip *, color_sensor_output_para*);
+	void (*color_store_calibrate_state)(struct colorDriver_chip *, color_sensor_input_para*);
+	void (*at_color_store_calibrate_state)(struct colorDriver_chip *, at_color_sensor_input_para*);
+	void (*at_color_show_calibrate_state)(struct colorDriver_chip *, at_color_sensor_output_para*);
+	void (*color_enable_show_state)(struct colorDriver_chip *, int *);
+	void (*color_enable_store_state)(struct colorDriver_chip *, int);
+	void (*flicker_enable_store_state)(struct colorDriver_chip *, int);
+	void (*get_flicker_data)(struct colorDriver_chip *, char *);
 	INT32 (*color_sensor_getGain)(void*);
 	INT32 (*color_sensor_setGain)(void*, int);
+	void (*flicker_enable_show_state)(struct colorDriver_chip *, int *);
+    int (*color_report_type)(void);
+//	void (*flicker_enable_store_state)(struct colorDriver_chip *, int);
 };
-#ifdef	__cplusplus
+#ifdef __cplusplus
 }
 #endif
 

@@ -47,12 +47,26 @@
 
 #include "debug.h"
 
-#include "dwc3-otg.h"
-#include "dwc3-hisi.h"
+#include <linux/hisi/usb/dwc3_usb_interface.h>
+#include "hisi/dwc3-otg.h"
 
 #define DWC3_DEFAULT_AUTOSUSPEND_DELAY	5000 /* ms */
 
 #define DBG(format, arg...) pr_info("[%s]" format, __func__, ##arg)
+
+
+ATOMIC_NOTIFIER_HEAD(device_event_nh);
+
+
+int dwc3_device_event_notifier_register(struct notifier_block *nb)
+{
+	return atomic_notifier_chain_register(&device_event_nh, nb);
+}
+
+int dwc3_device_event_notifier_unregister(struct notifier_block *nb)
+{
+	return atomic_notifier_chain_unregister(&device_event_nh, nb);
+}
 
 /**
  * dwc3_get_dr_mode - Validates and sets dr_mode
@@ -170,6 +184,9 @@ static int dwc3_core_soft_reset(struct dwc3 *dwc)
 
 		udelay(1);
 	} while (--retries);
+
+	phy_exit(dwc->usb3_generic_phy);
+	phy_exit(dwc->usb2_generic_phy);
 
 	return -ETIMEDOUT;
 }
@@ -919,7 +936,8 @@ static void dwc3_core_exit_mode(struct dwc3 *dwc)
 }
 
 #define DWC3_ALIGN_MASK		(16 - 1)
-
+extern int usb3_interface_register(struct dwc3 * dwc);
+extern int usb3_interface_unregister(struct dwc3 * dwc);
 static int dwc3_probe(struct platform_device *pdev)
 {
 	struct device		*dev = &pdev->dev;
@@ -950,6 +968,7 @@ static int dwc3_probe(struct platform_device *pdev)
 		return -ENODEV;
 	}
 
+	usb3_interface_register(dwc);
 	dwc->xhci_resources[0].start = res->start;
 	dwc->xhci_resources[0].end = dwc->xhci_resources[0].start +
 					DWC3_XHCI_REGS_END;
@@ -1039,6 +1058,12 @@ static int dwc3_probe(struct platform_device *pdev)
 				"snps,ctrl_nyet_abnormal");
 	dwc->warm_reset_after_init = device_property_read_bool(dev,
 				"snps,warm_reset_after_init");
+	dwc->dis_split_quirk = device_property_read_bool(dev,
+				"snps,dis-split-quirk");
+	dwc->gctl_reset_quirk = device_property_read_bool(dev,
+				"snps,gctl-reset-quirk");
+	dwc->xhci_delay_ctrl_data_stage = device_property_read_bool(dev,
+				"snps,xhci-delay-ctrl-data-stage");
 
 	dwc->lpm_nyet_threshold = lpm_nyet_threshold;
 	dwc->tx_de_emphasis = tx_de_emphasis;
@@ -1136,7 +1161,6 @@ static int dwc3_probe(struct platform_device *pdev)
 
 	dwc3_debugfs_init(dwc);
 	pm_runtime_put(dev);
-
 	DBG("-\n");
 
 	return 0;
@@ -1168,7 +1192,7 @@ err0:
 	 * memory region the next time probe is called.
 	 */
 	res->start -= DWC3_GLOBALS_REGS_START;
-
+	usb3_interface_unregister(dwc);
 	return ret;
 }
 
@@ -1199,6 +1223,8 @@ static int dwc3_remove(struct platform_device *pdev)
 
 	dwc3_free_event_buffers(dwc);
 	dwc3_free_scratch_buffers(dwc);
+
+	usb3_interface_unregister(dwc);
 
 	return 0;
 }

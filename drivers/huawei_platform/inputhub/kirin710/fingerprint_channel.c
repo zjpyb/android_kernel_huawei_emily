@@ -410,7 +410,6 @@ static int __init fingerprinthub_init(void)
     }
     register_iom3_recovery_notifier(&fingerprint_recovery_notify);
     init_waitqueue_head(&ipc_wait);
-    //hwlog_info( "%s  ok \n", __func__);
 
     return ret;
 }

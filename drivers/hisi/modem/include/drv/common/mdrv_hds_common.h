@@ -44,8 +44,8 @@ extern "C"
 #define DIAG_CMD_BOARD_TRACE_IND_CCORE          (0x90000002)
 
 
-typedef int (*bsp_hds_func)(unsigned char *pstReq);
-typedef int (*hds_cnf_func)(void *hds_cnf, void *data, unsigned int len);
+typedef unsigned int (*bsp_hds_func)(unsigned char *pstReq);
+typedef unsigned int (*hds_cnf_func)(void *hds_cnf, void *data, unsigned int len);
 int mdrv_hds_printlog_conn(void);
 int mdrv_hds_translog_conn(void);
 int mdrv_hds_printlog_disconn(void);

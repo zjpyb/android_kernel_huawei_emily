@@ -25,10 +25,10 @@
 #include <huawei_platform/log/hw_log.h>
 #include <linux/workqueue.h>
 #include <linux/bitops.h>
+#include "port.h"
 #include "../Platform_Linux/platform_helpers.h"
 #include "hw_scp.h"
 #include "core.h"
-#include "port.h"
 #include "../Platform_Linux/fusb3601_global.h"
 #include <huawei_platform/power/wired_channel_switch.h>
 #ifdef CONFIG_DIRECT_CHARGER
@@ -106,8 +106,6 @@ static int FUSB3601_is_support_scp(void);
 #define HWLOG_TAG FUSB3601_scp
 HWLOG_REGIST();
 
-static u32 FUSB3601_fcp_support = 0;
-static u32 FUSB3601_scp_support = 0;
 static u32 FUSB3601_scp_error_flag = 0;/*scp error flag*/
 
 static int FUSB3601_is_support_fcp(void);
@@ -390,7 +388,7 @@ static int FUSB3601_accp_adapter_reg_read(int* val, int reg)
 	mutex_lock(&FUSB3601_accp_adaptor_reg_lock);
 
 	hwlog_info("%s: reg_addr = 0x%x\n", __func__, reg);
-	for (i = 0; i< FCP_RETRY_MAX_TIMES; i++) {
+	for (i = 0; i< SW_FCP_RETRY_MAX_TIMES; i++) {
 		/*before send cmd, clear event2 and event3*/
 		ret = FUSB3601_clear_event2_and_event3();
 		if (ret) {
@@ -425,7 +423,10 @@ static int FUSB3601_accp_adapter_reg_read(int* val, int reg)
 	if (ret) {
 		hwlog_info("%s,%d,data = 0x%x\n", __func__, __LINE__,data);
 		if (data & FUSB3601_SCP_B_DETECT) {
-			FUSB3601_core_redo_bc12(&chip->port);
+			/* if 0x7e register read fail, can not redo bc1.2 */
+			if (reg != SCP_ADP_TYPE0) {
+				FUSB3601_core_redo_bc12(&chip->port);
+			}
 		}
 	}
 	mutex_unlock(&FUSB3601_accp_adaptor_reg_lock);
@@ -458,7 +459,7 @@ static int FUSB3601_accp_adapter_reg_write(int val, int reg)
 	data = (FSC_U8)val;
 
 	mutex_lock(&FUSB3601_accp_adaptor_reg_lock);
-	for (i = 0; i< FCP_RETRY_MAX_TIMES; i++) {
+	for (i = 0; i< SW_FCP_RETRY_MAX_TIMES; i++) {
 		/*before send cmd, clear event2 and event3*/
 		ret = FUSB3601_clear_event2_and_event3();
 		if (ret) {
@@ -664,13 +665,11 @@ static int FUSB3601_fcp_get_adapter_output_vol(int *vol)
   Return:        0: success
                 -1: fail
 ***************************************************************************/
-static int FUSB3601_fcp_set_adapter_output_vol(int *output_vol)
+static int FUSB3601_fcp_set_adapter_output_vol(int output_vol)
 {
     int val = 0;
     int vol = 0;
     int ret = 0;
-    int reg_val2;
-    FSC_U8 data;
 
     /*read ID OUTI , for identify huawei adapter*/
     ret = FUSB3601_accp_adapter_reg_read(&val, FCP_SLAVE_REG_ID_OUT0);
@@ -681,20 +680,34 @@ static int FUSB3601_fcp_set_adapter_output_vol(int *output_vol)
     }
     hwlog_info("%s: id out reg[0x4] = %d.\n", __func__, val);
 
-    /*get adapter max output vol value*/
-    ret = FUSB3601_fcp_get_adapter_output_vol(&vol);
-    if(ret < 0)
-    {
-        hwlog_err("%s: fcp get adapter output vol err.\n", __func__);
-        return -1;
-    }
+	switch (output_vol) {
+	case FCP_OUTPUT_VOL_5V:
+		ret = FUSB3601_accp_adapter_reg_read(&vol,
+			FCP_SLAVE_REG_DISCRETE_OUT_V(0));
+		if (ret < 0) {
+			hwlog_err("%s get output_vol error\n", __func__);
+			return -1;
+		}
+		break;
+	case FCP_OUTPUT_VOL_9V:
+		/* get adapter max output vol value */
+		ret = FUSB3601_fcp_get_adapter_output_vol(&vol);
+		if (ret < 0) {
+			hwlog_err("%s: fcp get adapter output vol err\n",
+				__func__);
+			return -1;
+		}
+		if (vol > (FCP_OUTPUT_VOL_9V * FCP_VOL_STEP)) {
+			vol = FCP_OUTPUT_VOL_9V * FCP_VOL_STEP;
+			hwlog_info("limit adap to 9V, while support 12V\n");
+		}
+		break;
+	default:
+		hwlog_err("input val is invalid\n");
+		return -1;
+	}
 
-    /* PLK only support 5V/9V */
-    if(vol > FCP_OUTPUT_VOL_9V * FCP_VOL_STEP)
-    {
-        vol = FCP_OUTPUT_VOL_9V * FCP_VOL_STEP;
-    }
-    *output_vol = vol/FCP_VOL_STEP;
+	hwlog_info("%s: output_vol=%d\n", __func__, vol);
 
     /*retry if write fail */
     ret |= FUSB3601_accp_adapter_reg_write(vol, FCP_SLAVE_REG_VOUT_CONFIG);
@@ -811,243 +824,19 @@ static int FUSB3601_fcp_read_adapter_status (void)
     return 0;
 }
 #ifdef CONFIG_DIRECT_CHARGER
-static int FUSB3601_scp_adaptor_detect(void)
-{
-    int ret;
-    int val;
-
-    FUSB3601_scp_error_flag = 0;
-    ret = FUSB3601_accp_adapter_detect();
-    if (ACCP_ADAPTOR_DETECT_OTHER == ret)
-    {
-        hwlog_info("scp adapter other detect\n");
-        return SCP_ADAPTOR_DETECT_OTHER;
-    }
-    if (ACCP_ADAPTOR_DETECT_FAIL == ret)
-    {
-        hwlog_info("scp adapter detect fail\n");
-        return SCP_ADAPTOR_DETECT_FAIL;
-    }
-    ret = FUSB3601_scp_adapter_reg_read(&val, SCP_ADP_TYPE);
-    if(ret)
-    {
-        hwlog_err("%s : read SCP_ADP_TYPE fail ,ret = %d \n",__func__,ret);
-        return SCP_ADAPTOR_DETECT_OTHER;
-    }
-    hwlog_info("%s : read SCP_ADP_TYPE val = %d \n",__func__,val);
-    if ((val & SCP_ADP_TYPE_B_MASK) == SCP_ADP_TYPE_B)
-    {
-        hwlog_info("scp type B adapter detect\n ");
-        ret = FUSB3601_scp_adapter_reg_read(&val, SCP_B_ADP_TYPE);
-        if (ret)
-        {
-            hwlog_err("%s : read SCP_B_ADP_TYPE fail ,ret = %d \n",__func__,ret);
-            return SCP_ADAPTOR_DETECT_OTHER;/*not scp adapter*/
-        }
-        hwlog_info("%s : read SCP_B_ADP_TYPE val = %d \n",__func__,val);
-        if (SCP_B_DIRECT_ADP == val)
-        {
-                hwlog_info("scp type B direct charge adapter detect\n ");
-                return SCP_ADAPTOR_DETECT_SUCC;
-        }
-    }
-
-    return SCP_ADAPTOR_DETECT_OTHER;
-
-}
-static int FUSB3601_scp_output_mode_enable(int enable)
-{
-    int val;
-    int ret;
-    ret = FUSB3601_scp_adapter_reg_read(&val, SCP_CTRL_BYTE0);
-    if(ret)
-    {
-        hwlog_err("%s : read failed ,ret = %d \n",__func__,ret);
-        return -1;
-    }
-    hwlog_info("[%s]val befor is %d \n", __func__, val);
-    val &= ~(SCP_OUTPUT_MODE_MASK);
-    val |= enable ? SCP_OUTPUT_MODE_ENABLE:SCP_OUTPUT_MODE_DISABLE;
-    hwlog_info("[%s]val after is %d \n", __func__, val);
-    ret = FUSB3601_scp_adapter_reg_write(val, SCP_CTRL_BYTE0);
-    if(ret < 0)
-    {
-        hwlog_err("%s : failed \n ",__func__);
-        return -1;
-    }
-    return 0;
-}
-
-static int FUSB3601_scp_adaptor_output_enable(int enable)
-{
-    int val;
-    int ret;
-
-    ret = FUSB3601_scp_output_mode_enable(1);
-    if(ret)
-    {
-        hwlog_err("%s : scp output mode enable failed ,ret = %d \n",__func__,ret);
-        return -1;
-    }
-
-    ret = FUSB3601_scp_adapter_reg_read(&val, SCP_CTRL_BYTE0);
-    if(ret)
-    {
-        hwlog_err("%s : read failed ,ret = %d \n",__func__,ret);
-        return -1;
-    }
-    hwlog_info("[%s]val befor is %d \n", __func__, val);
-    val &= ~(SCP_OUTPUT_MASK);
-    val |= enable ? SCP_OUTPUT_ENABLE:SCP_OUTPUT_DISABLE;
-    hwlog_info("[%s]val after is %d \n", __func__, val);
-    ret = FUSB3601_scp_adapter_reg_write(val, SCP_CTRL_BYTE0);
-    if(ret < 0)
-    {
-        hwlog_err("%s : failed \n ",__func__);
-        return -1;
-    }
-    return 0;
-}
-static int FUSB3601_scp_adaptor_reg_reset(int enable)
-{
-    int val;
-    int ret;
-    ret = FUSB3601_scp_adapter_reg_read(&val, SCP_CTRL_BYTE0);
-    if(ret)
-    {
-        hwlog_err("%s : read failed ,ret = %d \n",__func__,ret);
-        return -1;
-    }
-    hwlog_info("[%s]val befor is %d \n", __func__, val);
-    val &= ~(SCP_ADAPTOR_RESET_MASK);
-    val |= enable ? SCP_ADAPTOR_RESET_ENABLE:SCP_ADAPTOR_RESET_DISABLE;
-    hwlog_info("[%s]val after is %d \n", __func__, val);
-    ret = FUSB3601_scp_adapter_reg_write(val, SCP_CTRL_BYTE0);
-    if(ret < 0)
-    {
-        hwlog_err("%s : failed \n ",__func__);
-        return -1;
-    }
-    return 0;
-}
-
-
 static int FUSB3601_is_support_scp(void)
 {
     return 0;
 }
-static int FUSB3601_scp_config_iset_boundary(int iboundary)
-{
-    int val;
-    int ret;
 
-    /*high byte store in low address*/
-    val = (iboundary >> BITS_PER_BYTE) & 0xff;
-    ret = FUSB3601_scp_adapter_reg_write(val, SCP_ISET_BOUNDARY_L);
-    if (ret)
-        return ret;
-    /*low byte store in high address*/
-    val = iboundary & 0xff;
-    ret |= FUSB3601_scp_adapter_reg_write(val, SCP_ISET_BOUNDARY_H);
-    if(ret < 0)
-    {
-        hwlog_err("%s : failed \n ",__func__);
-    }
-    return ret;
-
-}
-static int FUSB3601_scp_config_vset_boundary(int vboundary)
-{
-    int val;
-    int ret;
-
-    /*high byte store in low address*/
-    hwlog_info("[%s], %d\n", __func__, __LINE__);
-    val = (vboundary >> BITS_PER_BYTE) & 0xff;
-    ret = FUSB3601_scp_adapter_reg_write(val, SCP_VSET_BOUNDARY_L);
-    if (ret)
-        return ret;
-    /*low byte store in high address*/
-    val = vboundary & 0xff;
-    ret |= FUSB3601_scp_adapter_reg_write(val, SCP_VSET_BOUNDARY_H);
-    if(ret < 0)
-    {
-        hwlog_err("%s : failed \n ",__func__);
-    }
-    hwlog_info("[%s], %d\n", __func__, __LINE__);
-    return ret;
-
-}
-static int FUSB3601_scp_set_adaptor_voltage(int vol)
-{
-    int val;
-    int ret;
-
-    val = vol - VSSET_OFFSET;
-    val = val / VSSET_STEP;
-    ret = FUSB3601_scp_adapter_reg_write(val, SCP_VSSET);
-    if(ret < 0)
-    {
-        hwlog_err("%s : failed \n ",__func__);
-        return -1;
-    }
-    return 0;
-}
-static int FUSB3601_scp_set_watchdog_timer(int second)
-{
-    int val;
-    int ret;
-
-    ret = FUSB3601_scp_adapter_reg_read(&val, SCP_CTRL_BYTE1);
-    if(ret)
-    {
-        hwlog_err("%s : read failed ,ret = %d \n",__func__,ret);
-        return -1;
-    }
-    hwlog_info("[%s]val befor is %d \n", __func__, val);
-    val &= ~(SCP_WATCHDOG_MASK);
-    val |= (second * SCP_WATCHDOG_BITS_PER_SECOND) & SCP_WATCHDOG_MASK; /*1 bit means 0.5 second*/
-    hwlog_info("[%s]val after is %d \n", __func__, val);
-    ret = FUSB3601_scp_adapter_reg_write(val, SCP_CTRL_BYTE1);
-    if(ret < 0)
-    {
-        hwlog_err("%s : failed \n ",__func__);
-        return -1;
-    }
-    return 0;
-}
-static int FUSB3601_scp_set_dp_delitch(void)
-{
-    int val;
-    int ret;
-
-    ret = FUSB3601_scp_adapter_reg_read(&val, SCP_CTRL_BYTE1);
-    if(ret)
-    {
-        hwlog_err("%s : read failed ,ret = %d \n",__func__,ret);
-        return -1;
-    }
-    hwlog_info("[%s]val befor is %d \n", __func__, val);
-    val &= ~(SCP_DP_DELITCH_MASK);
-    val |= SCP_DP_DELITCH_5_MS;
-    hwlog_info("[%s]val after is %d \n", __func__, val);
-    ret = FUSB3601_scp_adapter_reg_write(val, SCP_CTRL_BYTE1);
-    if(ret < 0)
-    {
-        hwlog_err("%s : failed \n ",__func__);
-        return -1;
-    }
-    return 0;
-}
-
-static int FUSB3601_scp_init(struct scp_init_data * sid)
+static int FUSB3601_scp_init(void)
 {
 	int ret;
-	int val;
 	FSC_U8 data;
-	FUSB3601_scp_error_flag = 0;
 	struct fusb3601_chip* chip = fusb3601_GetChip();
 	struct Port* port;
+
+	FUSB3601_scp_error_flag = 0;
 	if (!chip) {
 		hwlog_err("FUSB  %s - Chip structure is NULL!\n", __func__);
 		return -1;
@@ -1073,61 +862,12 @@ static int FUSB3601_scp_init(struct scp_init_data * sid)
 		ret = FUSB3601_fusb_I2C_WriteData(FUSB3601_SCP_ENABLE2, 1, &data);
 		FUSB3601_set_vbus_detach(port, VBUS_DETACH_DISABLE);
 		FUSB3601_ReadRegister(port, regFM_CONTROL4);
-		hwlog_info("%s:FM_CONTROL4 after writing is : [0x%x]\n", __func__, port->registers_.FMControl4);
 	}
-	ret = FUSB3601_scp_output_mode_enable(sid->scp_mode_enable);
-	if(ret)
-		return ret;
-	if (RICHTEK_ADAPTER == FUSB3601_scp_get_adapter_vendor_id()) {
-		FUSB3601_scp_set_dp_delitch();
-	}
-	ret = FUSB3601_scp_set_watchdog_timer(sid->watchdog_timer);
-	if(ret)
-		return ret;
-	ret = FUSB3601_scp_config_vset_boundary(sid->vset_boundary);
-	if(ret)
-		return ret;
-	ret = FUSB3601_scp_config_iset_boundary(sid->iset_boundary);
-	if(ret)
-		return ret;
-	ret = FUSB3601_scp_set_adaptor_voltage(sid->init_adaptor_voltage);
-	if(ret)
-		return ret;
-	ret = FUSB3601_scp_adapter_reg_read(&val, SCP_CTRL_BYTE0);
-	if(ret)
-		return ret;
-	hwlog_info("%s : CTRL_BYTE0 = 0x%x \n ",__func__, val);
-	ret = FUSB3601_scp_adapter_reg_read(&val, SCP_CTRL_BYTE1);
-	if(ret)
-		return ret;
-	hwlog_info("%s : CTRL_BYTE1 = 0x%x \n ",__func__, val);
-	ret = FUSB3601_scp_adapter_reg_read(&val, SCP_STATUS_BYTE0);
-	if(ret)
-		return ret;
-	hwlog_info("%s : STATUS_BYTE0 = 0x%x \n ",__func__, val);
-	ret = FUSB3601_scp_adapter_reg_read(&val, SCP_STATUS_BYTE1);
-	if(ret)
-		return ret;
-	hwlog_info("%s : STATUS_BYTE1 = 0x%x \n ",__func__, val);
-	ret = FUSB3601_scp_adapter_reg_read(&val, SCP_VSET_BOUNDARY_H);
-	if(ret)
-		return ret;
-	hwlog_info("%s : VSET_BOUNDARY_H = 0x%x \n ",__func__, val);
-	ret = FUSB3601_scp_adapter_reg_read(&val, SCP_VSET_BOUNDARY_L);
-	if(ret)
-		return ret;
-	hwlog_info("%s : VSET_BOUNDARY_L = 0x%x \n ",__func__, val);
-	ret = FUSB3601_scp_adapter_reg_read(&val, SCP_ISET_BOUNDARY_H);
-	if(ret)
-		return ret;
-	hwlog_info("%s : ISET_BOUNDARY_H = 0x%x \n ",__func__, val);
-	ret = FUSB3601_scp_adapter_reg_read(&val, SCP_ISET_BOUNDARY_L);
-	if(ret)
-		return ret;
-	hwlog_info("%s : ISET_BOUNDARY_L = 0x%x \n ",__func__, val);
-	return ret;
+
+	hwlog_info("%s\n", __func__);
+	return 0;
 }
-static int FUSB3601_scp_exit(struct direct_charge_device* di)
+static int FUSB3601_scp_exit(void)
 {
 	int ret;
 	FSC_U8 data;
@@ -1142,7 +882,7 @@ static int FUSB3601_scp_exit(struct direct_charge_device* di)
 		hwlog_err("FUSB  %s - port structure is NULL!\n", __func__);
 		return -1;
 	}
-	ret = FUSB3601_scp_output_mode_enable(0);
+
 	FUSB3601_vout_enable(1);
 	if (get_dpd_enable()) {
 #ifdef CONFIG_USB_ANALOG_HS_INTERFACE
@@ -1153,211 +893,13 @@ static int FUSB3601_scp_exit(struct direct_charge_device* di)
 		ret = FUSB3601_fusb_I2C_WriteData(FUSB3601_SCP_ENABLE2, 1, &data);
 		FUSB3601_set_vbus_detach(port, VBUS_DETACH_ENABLE);
 		FUSB3601_ReadRegister(port, regFM_CONTROL4);
-		hwlog_info("%s:FM_CONTROL4 after writing is : [0x%x]\n", __func__, port->registers_.FMControl4);
 		state_machine_need_resched = 1;
 		queue_work(chip->highpri_wq,&chip->sm_worker);
 	}
-	switch(di->adaptor_vendor_id)
-	{
-		case IWATT_ADAPTER:
-			ret  |= FUSB3601_scp_adaptor_reg_reset(1);
-			break;
-		default:
-			hwlog_info("%s:not iWatt\n",__func__);
-	}
-	msleep(50);
-	hwlog_err("%s\n",__func__);
+
+	hwlog_info("%s\n", __func__);
 	FUSB3601_scp_error_flag = 0;
 	return 0;
-}
-static int FUSB3601_scp_get_adaptor_voltage(void)
-{
-    int val;
-    int ret;
-    ret = FUSB3601_scp_adapter_reg_read(&val, SCP_SREAD_VOUT);
-    if(ret)
-    {
-        hwlog_err("%s : read failed ,ret = %d \n",__func__,ret);
-        return -1;
-    }
-    val = val * SCP_SREAD_VOUT_STEP + SCP_SREAD_VOUT_OFFSET;
-    hwlog_info("[%s]val is %d \n", __func__, val);
-    return val;
-}
-static int FUSB3601_scp_set_adaptor_current(int cur)
-{
-    int val;
-    int ret;
-
-    val = cur / ISSET_STEP;
-    ret = FUSB3601_scp_adapter_reg_write(val, SCP_ISSET);
-    if(ret < 0)
-    {
-        hwlog_err("%s : failed \n ",__func__);
-        return -1;
-    }
-    return 0;
-}
-static int FUSB3601_scp_get_adaptor_current(void)
-{
-    int val;
-    int ret;
-    ret = FUSB3601_scp_adapter_reg_read(&val, SCP_SREAD_IOUT);
-    if(ret)
-    {
-        hwlog_err("%s : read failed ,ret = %d \n",__func__,ret);
-        return -1;
-    }
-    val = val*SCP_SREAD_IOUT_STEP;
-    hwlog_info("[%s]val is %d \n", __func__, val);
-    return val;
-}
-static int FUSB3601_scp_get_adaptor_current_set(void)
-{
-    int val;
-    int ret;
-    ret = FUSB3601_scp_adapter_reg_read(&val, SCP_ISSET);
-    if(ret)
-    {
-        hwlog_err("%s : read failed ,ret = %d \n",__func__,ret);
-        return -1;
-    }
-    val = val*ISSET_STEP;
-    hwlog_info("[%s]val is %d \n", __func__, val);
-    return val;
-}
-
-static int FUSB3601_scp_get_adaptor_max_current(void)
-{
-    int val;
-    int ret;
-    int A;
-    int B;
-    int rs;
-
-    ret = FUSB3601_scp_adapter_reg_read(&val, SCP_MAX_IOUT);
-    if(ret)
-    {
-        hwlog_err("%s : read MAX_IOUT failed ,ret = %d \n",__func__,ret);
-        return -1;
-    }
-    hwlog_info("[%s]max_iout reg is %d \n", __func__, val);
-    A = (SCP_MAX_IOUT_A_MASK & val) >> SCP_MAX_IOUT_A_SHIFT;
-    B = SCP_MAX_IOUT_B_MASK & val;
-    switch (A){
-	case MAX_IOUT_EXP_0:
-		A = TEN_EXP_0;
-		break;
-	case MAX_IOUT_EXP_1:
-		A = TEN_EXP_1;
-		break;
-	case MAX_IOUT_EXP_2:
-		A = TEN_EXP_2;
-		break;
-	case MAX_IOUT_EXP_3:
-		A = TEN_EXP_3;
-		break;
-	default:
-	    return -1;
-    }
-    rs = B*A;
-    hwlog_info("[%s]MAX IOUT initial is %d \n", __func__, rs);
-    ret = FUSB3601_scp_adapter_reg_read(&val, SCP_SSTS);
-    if(ret)
-    {
-        hwlog_err("%s : read SSTS failed ,ret = %d \n",__func__,ret);
-        return -1;
-    }
-    hwlog_info("[%s]ssts reg is %d \n", __func__, val);
-    B = (SCP_SSTS_B_MASK & val) >> SCP_SSTS_B_SHIFT;
-    A = SCP_SSTS_A_MASK & val;
-    if (DROP_POWER_FLAG == B)
-    {
-	rs = rs * A / DROP_POWER_FACTOR;
-    }
-    hwlog_info("[%s]MAX IOUT final is %d \n", __func__, rs);
-    return rs;
-}
-
-static int FUSB3601_scp_get_adaptor_temp(int* temp)
-{
-    int val = 0;
-    int ret;
-
-    ret = FUSB3601_scp_adapter_reg_read(&val, SCP_INSIDE_TMP);
-    if(ret)
-    {
-        hwlog_err("%s : read failed ,ret = %d \n",__func__,ret);
-        return -1;
-    }
-    hwlog_info("[%s]val is %d \n", __func__, val);
-    *temp = val;
-
-    return 0;
-}
-static int FUSB3601_scp_cable_detect(void)
-{
-    int val;
-    int ret;
-    ret = FUSB3601_scp_adapter_reg_read(&val, SCP_STATUS_BYTE0);
-    if(ret)
-    {
-        hwlog_err("%s : read failed ,ret = %d \n",__func__,ret);
-        return SCP_CABLE_DETECT_ERROR;
-    }
-    hwlog_info("[%s]val is %d \n", __func__, val);
-    if (val & SCP_CABLE_STS_MASK)
-    {
-        return SCP_CABLE_DETECT_SUCC;
-    }
-    return SCP_CABLE_DETECT_FAIL;
-}
-static int FUSB3601_scp_stop_charge_config(void)
-{
-    return 0;
-}
-static int FUSB3601_scp_get_adaptor_status(void)
-{
-    return 0;
-}
-static int FUSB3601_scp_get_adaptor_info(void* info)
-{
-    int ret;
-    struct adaptor_info* p = (struct adaptor_info*)info;
-
-    ret = FUSB3601_scp_adapter_reg_read(&(p->b_adp_type), SCP_B_ADP_TYPE);
-    if(ret)
-        return ret;
-    ret = FUSB3601_scp_adapter_reg_read(&(p->vendor_id_h), SCP_VENDOR_ID_H);
-    if(ret)
-        return ret;
-    ret = FUSB3601_scp_adapter_reg_read(&(p->vendor_id_l), SCP_VENDOR_ID_L);
-    if(ret)
-        return ret;
-    ret = FUSB3601_scp_adapter_reg_read(&(p->module_id_h), SCP_MODULE_ID_H);
-    if(ret)
-        return ret;
-    ret = FUSB3601_scp_adapter_reg_read(&(p->module_id_l), SCP_MODULE_ID_L);
-    if(ret)
-        return ret;
-    ret = FUSB3601_scp_adapter_reg_read(&(p->serrial_no_h), SCP_SERRIAL_NO_H);
-    if(ret)
-        return ret;
-    ret = FUSB3601_scp_adapter_reg_read(&(p->serrial_no_l), SCP_SERRIAL_NO_L);
-    if(ret)
-        return ret;
-    ret = FUSB3601_scp_adapter_reg_read(&(p->pchip_id), SCP_PCHIP_ID);
-    if(ret)
-        return ret;
-    ret = FUSB3601_scp_adapter_reg_read(&(p->hwver), SCP_HWVER);
-    if(ret)
-        return ret;
-    ret = FUSB3601_scp_adapter_reg_read(&(p->fwver_h), SCP_FWVER_H);
-    if(ret)
-        return ret;
-    ret = FUSB3601_scp_adapter_reg_read(&(p->fwver_l), SCP_FWVER_L);
-
-    return ret;
 }
 static int FUSB3601_scp_get_adapter_vendor_id(void)
 {
@@ -1390,27 +932,7 @@ static int FUSB3601_scp_get_adapter_vendor_id(void)
 			return val;
 	}
 }
-static int FUSB3601_scp_get_usb_port_leakage_current_info(void)
-{
-	int val = 0;
-	int ret;
 
-	ret = FUSB3601_scp_adapter_reg_read(&val, SCP_STATUS_BYTE0);
-	if(ret)
-	{
-		hwlog_err("%s : read failed ,ret = %d \n",__func__,ret);
-		return -1;
-	}
-	hwlog_info("[%s]val is 0x%x \n", __func__, val);
-	val &= SCP_PORT_LEAKAGE_INFO;
-	val = val>>SCP_PORT_LEAKAGE_SHIFT;
-	hwlog_info("[%s]val is 0x%x \n", __func__, val);
-	return val;
-}
-static int FUSB3601_scp_get_chip_status(void)
-{
-    return 0;
-}
 static int FUSB3601_scp_adaptor_reset(void)
 {
 	return 0;
@@ -1442,43 +964,6 @@ static enum hisi_charger_type FUSB3601_get_charger_type(void)
     return charger_type;
 }
 
-static void FUSB3601_scp_set_direct_charge_mode(int mode)
-{
-	hwlog_info("[%s]mode is 0x%x \n", __func__, mode);
-	return;
-}
-
-static int FUSB3601_scp_get_adaptor_type(void)
-{
-	return LVC_MODE;
-}
-
-struct smart_charge_ops FUSB3601_scp_ops = {
-    .is_support_scp = FUSB3601_is_support_scp,
-    .scp_init = FUSB3601_scp_init,
-    .scp_exit = FUSB3601_scp_exit,
-    .scp_adaptor_detect = FUSB3601_scp_adaptor_detect,
-    .scp_set_adaptor_voltage = FUSB3601_scp_set_adaptor_voltage,
-    .scp_get_adaptor_voltage = FUSB3601_scp_get_adaptor_voltage,
-    .scp_set_adaptor_current = FUSB3601_scp_set_adaptor_current,
-    .scp_get_adaptor_current = FUSB3601_scp_get_adaptor_current,
-    .scp_get_adaptor_current_set = FUSB3601_scp_get_adaptor_current_set,
-    .scp_get_adaptor_max_current = FUSB3601_scp_get_adaptor_max_current,
-    .scp_adaptor_reset = FUSB3601_scp_adaptor_reset,
-    .scp_adaptor_output_enable = FUSB3601_scp_adaptor_output_enable,
-    .scp_chip_reset = FUSB3601_chip_reset_nothing,
-    .scp_stop_charge_config = FUSB3601_scp_stop_charge_config,
-    .is_scp_charger_type = NULL,
-    .scp_get_adaptor_status = FUSB3601_scp_get_adaptor_status,
-    .scp_get_adaptor_info = FUSB3601_scp_get_adaptor_info,
-    .scp_get_chip_status = FUSB3601_scp_get_chip_status,
-    .scp_cable_detect = FUSB3601_scp_cable_detect,
-    .scp_get_adaptor_temp = FUSB3601_scp_get_adaptor_temp,
-    .scp_get_adapter_vendor_id = FUSB3601_scp_get_adapter_vendor_id,
-    .scp_get_usb_port_leakage_current_info = FUSB3601_scp_get_usb_port_leakage_current_info,
-    .scp_set_direct_charge_mode = FUSB3601_scp_set_direct_charge_mode,
-    .scp_get_adaptor_type = FUSB3601_scp_get_adaptor_type,
-};
 #endif
 struct fcp_adapter_device_ops FUSB3601_fcp_ops = {
     .get_adapter_output_current = FUSB3601_fcp_get_adapter_output_current,
@@ -1498,6 +983,54 @@ struct charge_switch_ops FUSB3601_switch_ops = {
 	.is_water_intrused = NULL,
 };
 
+static int fusb3601_scp_reg_read_block(int reg, int *val, int num)
+{
+	int ret = 0;
+	int i = 0;
+	int data = 0;
+	FUSB3601_scp_error_flag = 0;
+
+	for (i = 0; i < num; i++) {
+		ret = FUSB3601_scp_adapter_reg_read(&data, reg + i);
+		if (ret) {
+			hwlog_err("error: scp read failed(reg=0x%x)!\n", reg + i);
+			return -1;
+		}
+
+		val[i] = data;
+	}
+
+	return 0;
+}
+
+static int fusb3601_scp_reg_write_block(int reg, int *val, int num)
+{
+	int ret = 0;
+	int i = 0;
+	FUSB3601_scp_error_flag = 0;
+
+	for (i = 0; i < num; i++) {
+		ret = FUSB3601_scp_adapter_reg_write(val[i], reg + i);
+		if (ret) {
+			hwlog_err("error: scp write failed(reg=0x%x)!\n", reg + i);
+			return -1;
+		}
+	}
+
+	return 0;
+}
+
+static struct scp_protocol_ops fusb3601_scp_protocol_ops = {
+	.chip_name = "fusb3601",
+	.reg_read = fusb3601_scp_reg_read_block,
+	.reg_write = fusb3601_scp_reg_write_block,
+	.detect_adapter = FUSB3601_accp_adapter_detect,
+	.soft_reset_master = FUSB3601_chip_reset_nothing,
+	.soft_reset_slave = FUSB3601_scp_adaptor_reset,
+	.pre_init = FUSB3601_scp_init,
+	.pre_exit = FUSB3601_scp_exit,
+};
+
 #ifdef CONFIG_SUPERSWITCH_FSC
 static int FUSB3601_chsw_set_wired_channel(int flag)
 {
@@ -1513,7 +1046,7 @@ static int FUSB3601_chsw_set_wired_channel(int flag)
 		wired_channel_status = flag;
 	return ret;
 }
-static FUSB3601_chsw_get_wired_channel(void)
+static int FUSB3601_chsw_get_wired_channel(void)
 {
 	return wired_channel_status;
 }
@@ -1580,12 +1113,7 @@ void FUSB3601_charge_register_callback(void)
     {
         hwlog_info(" fcp adapter ops register success!\n");
     }
-#ifdef CONFIG_DIRECT_CHARGER
-    if( 0 == FUSB3601_is_support_scp() && 0 ==scp_ops_register(&FUSB3601_scp_ops))
-    {
-        hwlog_info(" scp adapter ops register success!\n");
-    }
-#endif
+
     if(0 == charge_switch_ops_register(&FUSB3601_switch_ops))
     {
         hwlog_info(" charge switch ops register success!\n");
@@ -1593,5 +1121,12 @@ void FUSB3601_charge_register_callback(void)
 #ifdef CONFIG_SUPERSWITCH_FSC
 	FUSB3601_wired_chsw_ops_register();
 #endif
+
+#ifdef CONFIG_DIRECT_CHARGER
+	if (0 == FUSB3601_is_support_scp()) {
+		scp_protocol_ops_register(&fusb3601_scp_protocol_ops);
+	}
+#endif
+
 	hwlog_info(" %s--!\n", __func__);
 }

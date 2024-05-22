@@ -52,64 +52,6 @@
 #ifdef __KERNEL__
 #include <linux/wait.h>
 
-
-typedef int (*osl_wait_func_t)(void* data);
-
-struct osl_wait_data
-{
-	void* task;
-	osl_wait_func_t func;
-	void* data;
-};
-
-int try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags);
-
-static inline int osl_wait_wake_function(wait_queue_t *curr, unsigned mode, int wake_flags,
-			  void *key)
-{
-	int ret = 0;
-	struct osl_wait_data* data = (struct osl_wait_data*)curr->private;
-
-	if(data->func(data->data))
-		ret =  try_to_wake_up((struct task_struct *)data->task, mode, wake_flags);
-
-	if (ret)
-		list_del_init(&curr->task_list);
-	return ret;
-}
-
-#define __wait_event_timeout_func(wq, ret, condition_func, condition_data)			\
-do {			\
-	struct osl_wait_data __private_data = {              \
-		.task = current,	\
-		.func = condition_func,	\
-		.data = condition_data,		\
-		};\
-	wait_queue_t __wait = {						\
-		.private	= &__private_data,				\
-		.func		= osl_wait_wake_function,				\
-		.task_list	= LIST_HEAD_INIT((__wait).task_list),	\
-		};			\
-									\
-	for (;;) {							\
-		prepare_to_wait(&wq, &__wait, TASK_UNINTERRUPTIBLE);	\
-		if (condition_func(condition_data))						\
-			break;						\
-		ret = schedule_timeout(ret);				\
-		if (!ret)						\
-			break;						\
-	}								\
-	finish_wait(&wq, &__wait);					\
-} while (0)
-
-#define wait_event_timeout_func(wq, timeout, condition_func, condition_data)			\
-{									\
-	long __ret = timeout;						\
-	if (!(condition_func(condition_data))) 						\
-		__wait_event_timeout_func(wq, __ret, condition_func, condition_data);		\
-	__ret=__ret;								\
-}
-
 #elif defined(__OS_VXWORKS__)
 
 #include <vxWorks.h>

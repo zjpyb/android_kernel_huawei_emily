@@ -93,7 +93,10 @@ extern "C" {
 #define HISI_AP_AUDIO_WAKEUP_MODEL_SIZE  (0x1000)
 #define HIFI_UNSEC_RESERVE_SIZE             (0x4AC00)
 #define HIFI_PCM_THREAD_DATA_SIZE           (0x48)
-
+#ifdef HISI_EXTERNAL_MODEM
+#define HISI_AP_B5000_NV_SIZE (0x32c00)
+#define HISI_AP_OM_BUFFER_SIZE (0x50000)
+#endif
 #define HIFI_MUSIC_DATA_LOCATION        (HIFI_UNSEC_BASE_ADDR)
 #define PCM_PLAY_BUFF_LOCATION          (HIFI_MUSIC_DATA_LOCATION + HIFI_MUSIC_DATA_SIZE)
 #define DRV_DSP_UART_TO_MEM             (PCM_PLAY_BUFF_LOCATION + PCM_PLAY_BUFF_SIZE)
@@ -114,8 +117,13 @@ extern "C" {
 #define HISI_AP_AUDIO_WAKEUP_RINGBUFFER_ADDR           (HISI_AP_AUDIO_PA_ADDR + HISI_AP_AUDIO_PA_BUFF_SIZE)
 #define HISI_AP_AUDIO_WAKEUP_CAPTURE_ADDR (HISI_AP_AUDIO_WAKEUP_RINGBUFFER_ADDR + HISI_AP_AUDIO_WAKEUP_RINGBUFEER_SIZE)
 #define HISI_AP_AUDIO_WAKEUP_MODEL_ADDR           (HISI_AP_AUDIO_WAKEUP_CAPTURE_ADDR + HISI_AP_AUDIO_WAKEUP_CAPTURE_SIZE)
-#define HIFI_UNSEC_RESERVE_ADDR         (HISI_AP_AUDIO_WAKEUP_MODEL_ADDR + HISI_AP_AUDIO_WAKEUP_MODEL_SIZE)
-
+#ifdef HISI_EXTERNAL_MODEM
+#define HISI_AP_B5000_NV_ADDR (HISI_AP_AUDIO_WAKEUP_MODEL_ADDR + HISI_AP_AUDIO_WAKEUP_MODEL_SIZE)
+#define HISI_AP_OM_BUFFER_ADDR (HISI_AP_B5000_NV_ADDR + HISI_AP_B5000_NV_SIZE)
+#define HIFI_UNSEC_RESERVE_ADDR (HISI_AP_OM_BUFFER_ADDR + HISI_AP_OM_BUFFER_SIZE)
+#else
+#define HIFI_UNSEC_RESERVE_ADDR (HISI_AP_AUDIO_WAKEUP_MODEL_ADDR + HISI_AP_AUDIO_WAKEUP_MODEL_SIZE)
+#endif
 #define HIFI_OM_LOG_SIZE                (0xA000)
 #define HIFI_OM_LOG_ADDR                (DRV_DSP_UART_TO_MEM - HIFI_OM_LOG_SIZE)
 #define HIFI_DUMP_BIN_SIZE              (HIFI_AP_MAILBOX_BASE_ADDR + HIFI_AP_MAILBOX_TOTAL_SIZE - HIFI_OM_LOG_ADDR)
@@ -173,6 +181,7 @@ extern "C" {
 #define HIFI_SEC_HEAD_LOCATION          (HIFI_IMAGE_TCMBAK_LOCATION + HIFI_IMAGE_TCMBAK_SIZE)
 #define HIFI_SEC_RESERVE_ADDR           (HIFI_SEC_HEAD_LOCATION + HIFI_SEC_HEAD_SIZE)
 
+#define DRV_WATCHDOG_BASE_ADDR          (SOC_ACPU_ASP_WD_BASE_ADDR)
 #else
 #define HIFI_SEC_REGION_SIZE            (0xB80000)
 #define HIFI_RUN_SIZE                   (0xB00000)
@@ -188,6 +197,8 @@ extern "C" {
 #define HIFI_SEC_HEAD_LOCATION          (HIFI_IMAGE_TCMBAK_LOCATION + HIFI_IMAGE_TCMBAK_SIZE)
 #define HIFI_SEC_RESERVE_ADDR           (HIFI_SEC_HEAD_LOCATION + HIFI_SEC_HEAD_SIZE)
 #define HIFI_RUN_LOCATION               (HIFI_SEC_RESERVE_ADDR + HIFI_SEC_RESERVE_SIZE)
+
+#define DRV_WATCHDOG_BASE_ADDR          (SOC_ACPU_ASP_Watchdog_BASE_ADDR)
 #endif
 
 #define SIZE_PARAM_PRIV                         (206408) /*refer from function dsp_nv_init in dsp_soc_para_ctl.c  */
@@ -204,6 +215,11 @@ extern "C" {
 
 #define BUFFER_NUM	8
 #define MAX_NODE_COUNT 10
+
+#define SYSCACHE_QUOTA_REQUEST 1
+#define SYSCACHE_QUOTA_RELEASE 0
+#define SYSCACHE_QUOTA_SIZE_MAX 0x100000
+#define SYSCACHE_QUOTA_SIZE_ALIGN 0x40000
 
 /*****************************************************************************
   3 Ã¶¾Ù¶¨Òå
@@ -289,6 +305,12 @@ typedef enum HIFI_MSG_ID_ {
 	ID_AP_HIFI_REQUEST_GET_PARA_CMD     = 0xDF09,    /* HIFI GET PARAM MSG */
 	ID_AP_HIFI_REQUEST_GET_PARA_CNF     = 0xDF0A,    /* HIFI GET PARAM MSG */
 	ID_HIFI_AP_BIGDATA_CMD              = 0xDF10,   /*bigdata*/
+	ID_HIFI_AP_SMARTPA_DFT_REPORT_CMD   = 0xDF11,
+	ID_AP_AUDIO_CMD_SET_COMBINE_RECORD_FUNC_CMD  = 0xDF22,/* hal notify HIFI combine record cmd */
+#ifdef HISI_EXTERNAL_MODEM
+	ID_HIFI_AP_OM_DATA_IND = 0xDF05,
+#endif
+	ID_HIFI_AP_SYSCACHE_QUOTA_CMD = 0xDF32, /* syscache quota MSG */
 } HIFI_MSG_ID;
 
 typedef enum HI6402_DP_CLK_STATE_ {
@@ -366,12 +388,27 @@ struct usbaudio_ioctl_input {
 	unsigned int input2;
 };
 
-int hifi_send_msg(unsigned int mailcode, void *data, unsigned int length);
+#ifdef HISI_EXTERNAL_MODEM
+struct hifi_ap_om_data_notify {
+	unsigned int chunk_index;
+	unsigned int len;
+};
+#endif
+
+struct syscache_quota_msg {
+	unsigned int msg_type;
+	unsigned int quota_size;
+};
+
+int hifi_send_msg(unsigned int mailcode, const void *data, unsigned int length);
 void hifi_get_log_signal(void);
 void hifi_release_log_signal(void);
 void sochifi_watchdog_send_event(void);
 unsigned long try_copy_from_user(void *to, const void __user *from, unsigned long n);
 unsigned long try_copy_to_user(void __user *to, const void *from, unsigned long n);
+#ifdef HISI_EXTERNAL_MODEM
+unsigned char *get_hifi_viradr(void);
+#endif
 enum hifi_dsp_platform_type hifi_misc_get_platform_type(void);
 
 #ifdef __cplusplus

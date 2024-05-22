@@ -690,6 +690,7 @@ enum PRIV_NL80211_CHAN_WIDTH {
   10 º¯ÊýÉùÃ÷
 *****************************************************************************/
 extern oal_void  oal_cfg80211_put_bss_etc(oal_wiphy_stru *pst_wiphy, oal_cfg80211_bss_stru *pst_cfg80211_bss);
+extern oal_void  oal_cfg80211_unlink_bss_etc(oal_wiphy_stru *pst_wiphy, oal_cfg80211_bss_stru *pst_cfg80211_bss);
 oal_cfg80211_bss_stru *oal_cfg80211_get_bss_etc(oal_wiphy_stru *pst_wiphy,
                       oal_ieee80211_channel_stru *pst_channel,
                       oal_uint8 *puc_bssid,

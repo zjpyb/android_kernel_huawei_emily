@@ -229,7 +229,7 @@ MAILBOX_EXTERN int mailbox_release_buff(struct mb_buff * mb_buf);
 
 MAILBOX_EXTERN  int mailbox_write_buff(
                 struct mb_queue      *queue,
-                 char                *data,
+                 const char          *data,
                 unsigned int         size);
 
 MAILBOX_EXTERN int mailbox_read_buff(

@@ -43,10 +43,94 @@ struct rdr_codec_des_s {
 };
 static struct rdr_codec_des_s codec_des;
 
-/*lint -e838*/
-static int dump_codec(char *filepath)
+#define MODID_AP_S_PANIC_AUDIO_CODEC 0x80000029 /* must be same with rdr_hisi_platform.h */
+#define CODEC_ERR_RECORD_FILE "/data/hisi_logs/codecerr_times.log"
+#define CODEC_ERR_REBOOT_THRESHOLD 3
+
+static unsigned char rdr_audio_get_codec_err_times(void)
 {
-	BUG_ON(NULL == filepath);
+	struct file *fp;
+	ssize_t red_len;
+	unsigned char times  = 0;
+	mm_segment_t fs = 0;
+
+	fp = filp_open(CODEC_ERR_RECORD_FILE, O_RDONLY, 0660);
+	if (IS_ERR(fp)) {
+		BB_PRINT_PN("open %s fail\n", CODEC_ERR_RECORD_FILE);
+		return 0;
+	}
+
+	fs = get_fs();
+	set_fs(KERNEL_DS);/*lint !e501*/
+
+	vfs_llseek(fp, 0L, SEEK_SET);
+	red_len = vfs_read(fp, &times, sizeof(times), &fp->f_pos);
+	if (red_len == 0) {
+		times = 0;
+	}
+
+	set_fs(fs);
+	filp_close(fp, NULL);
+
+	return times;
+}
+
+static void rdr_audio_set_codec_err_times(unsigned char times)
+{
+	struct file *fp;
+	ssize_t write_len;
+	char buf  = 0;
+	mm_segment_t fs = 0;
+
+	fp = filp_open(CODEC_ERR_RECORD_FILE, O_CREAT | O_RDWR, 0660);
+	if (IS_ERR(fp)) {
+		BB_PRINT_ERR("open %s fail\n", CODEC_ERR_RECORD_FILE);
+		return;
+	}
+
+	fs = get_fs();
+	set_fs(KERNEL_DS);/*lint !e501*/
+
+	vfs_llseek(fp, 0L, SEEK_SET);
+	write_len = vfs_write(fp, &times, sizeof(times), &(fp->f_pos));
+	if (write_len == sizeof(buf)) {
+		vfs_fsync(fp, 0);
+	}
+
+	set_fs(fs);
+	filp_close(fp, NULL);
+
+	return;
+}
+
+void rdr_audio_clear_reboot_times()
+{
+	if (rdr_audio_get_codec_err_times() > 0) {
+		BB_PRINT_PN("have rebooted before, clear count\n");
+		rdr_audio_set_codec_err_times(0);
+	}
+}
+
+void rdr_audio_codec_err_process()
+{
+	unsigned char err_times;
+
+	err_times = rdr_audio_get_codec_err_times();
+	err_times++;
+	if (err_times <= CODEC_ERR_REBOOT_THRESHOLD) {
+		BB_PRINT_ERR("reboot for codec error %u times, reboot now\n", err_times);
+		rdr_audio_set_codec_err_times(err_times);
+		rdr_syserr_process_for_ap((u32)MODID_AP_S_PANIC_AUDIO_CODEC, 0UL, 0UL);
+	} else {
+		BB_PRINT_ERR("reboot for codec error %u times, more than %u times, do not reboot again\n",
+			err_times, CODEC_ERR_REBOOT_THRESHOLD);
+	}
+}
+
+/*lint -e838*/
+static int dump_codec(const char *filepath)
+{
+	WARN_ON(NULL == filepath);
 	hi64xx_hifi_dump_with_path(filepath);
 
 	return 0;
@@ -77,7 +161,7 @@ static int irq_handler_thread(void *arg)
 			BB_PRINT_PN("%s():codechifi watchdog coming\n", __func__);
 
 		BB_PRINT_PN("enter rdr process for codechifi watchdog\n");
-		rdr_system_error(RDR_AUDIO_CODEC_WD_TIMEOUT_MODID, 0, 0);
+		rdr_system_error((unsigned int)RDR_AUDIO_CODEC_WD_TIMEOUT_MODID, 0, 0);
 		BB_PRINT_PN("exit rdr process for codechifi watchdog\n");
 	}
 
@@ -116,7 +200,7 @@ static int dump_thread(void *arg)
 
 void rdr_audio_codec_dump(u32 modid, char *pathname, pfn_cb_dump_done pfb)
 {
-	BUG_ON(NULL == pathname);
+	WARN_ON(NULL == pathname);
 
 	BB_PRINT_START();
 

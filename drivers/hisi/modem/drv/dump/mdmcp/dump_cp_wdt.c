@@ -51,7 +51,6 @@
 #include <linux/thread_info.h>
 #include <linux/syslog.h>
 #include <linux/errno.h>
-#include <linux/kthread.h>
 #include <linux/semaphore.h>
 #include <linux/delay.h>
 #include <linux/kernel.h>
@@ -63,7 +62,6 @@
 #include <linux/slab.h>
 #include <linux/of.h>
 #include <linux/delay.h>
-#include <linux/wakelock.h>
 #include <asm/string.h>
 #include <asm/traps.h>
 #include "product_config.h"

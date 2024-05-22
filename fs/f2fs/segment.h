@@ -246,11 +246,14 @@ struct segment_allocation {
  */
 #define ATOMIC_WRITTEN_PAGE		((unsigned long)-1)
 #define DUMMY_WRITTEN_PAGE		((unsigned long)-2)
+#define BGGC_NODE_PAGE			((unsigned long)-3)
 
 #define IS_ATOMIC_WRITTEN_PAGE(page)			\
 		(page_private(page) == (unsigned long)ATOMIC_WRITTEN_PAGE)
 #define IS_DUMMY_WRITTEN_PAGE(page)			\
 		(page_private(page) == (unsigned long)DUMMY_WRITTEN_PAGE)
+#define IS_BGGC_NODE_PAGE(page)				\
+		(page_private(page) == (unsigned long)BGGC_NODE_PAGE)
 
 struct inmem_pages {
 	struct list_head list;
@@ -558,6 +561,13 @@ static inline unsigned int dirty_segments(struct f2fs_sb_info *sbi)
 		DIRTY_I(sbi)->nr_dirty[DIRTY_HOT_NODE] +
 		DIRTY_I(sbi)->nr_dirty[DIRTY_WARM_NODE] +
 		DIRTY_I(sbi)->nr_dirty[DIRTY_COLD_NODE];
+}
+
+static inline unsigned int dirty_data_segments(struct f2fs_sb_info *sbi)
+{
+	return DIRTY_I(sbi)->nr_dirty[DIRTY_HOT_DATA] +
+		DIRTY_I(sbi)->nr_dirty[DIRTY_WARM_DATA] +
+		DIRTY_I(sbi)->nr_dirty[DIRTY_COLD_DATA];
 }
 
 static inline int overprovision_segments(struct f2fs_sb_info *sbi)

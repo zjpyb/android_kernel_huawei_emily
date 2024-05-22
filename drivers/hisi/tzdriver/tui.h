@@ -149,11 +149,11 @@ typedef enum Ttf_File_Type ttf_type;
 #ifdef CONFIG_TEE_TUI
 extern int ts_tui_report_input(void *finger_data);
 extern int tui_fp_notify(void);
-int __init init_tui(struct device *dev);
+int __init init_tui(const struct device *dev);
 void tui_exit(void);
 int tui_send_event(int event, unsigned int value);
 int register_tui_driver(tui_drv_init fun, const char *name,
-					void *pdata);
+					 void *pdata);
 void unregister_tui_driver(const char *name);
 /*
  * TUI has different state that can recieve given types of message,
@@ -169,7 +169,7 @@ int load_tui_font_file(ttf_type type, unsigned int arg);
 void do_ns_tui_release(void);
 int tui_pid_status(int pid_value);
 #else
-static inline int init_tui(struct device *dev)
+static inline int init_tui(const struct device *dev)
 {
 	return 0;
 }
@@ -179,7 +179,7 @@ static inline void tui_exit(void)
 }
 
 static inline int register_tui_driver(tui_drv_init fun,
-		const char *name, void *pdata)
+		const char *name, const void *pdata)
 {
 	return 0;
 }
@@ -188,7 +188,7 @@ static inline void unregister_tui_driver(const char *name)
 {
 }
 
-static inline int send_tui_msg_config(int type, int val, void *data)
+static inline int send_tui_msg_config(int type, int val, const void *data)
 {
 	return 0;
 }

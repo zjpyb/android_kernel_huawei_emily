@@ -9,6 +9,11 @@
 #include <linux/module.h>
 #include <linux/hisi/hisi_hkip.h>
 
+#include <linux/version.h>
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+#include <linux/sched/signal.h>
+#endif
+
 #define DEFINE_HKIP_BITS(name, count) \
 	u8 hkip_##name[ALIGN(DIV_ROUND_UP(count, 8), PAGE_SIZE)] \
 		__aligned(PAGE_SIZE)
@@ -17,7 +22,7 @@ EXPORT_SYMBOL(hkip_hvc4);
 
 static int __init hkip_register_bits(u8 *base, size_t size)
 {
-	unsigned long addr = (unsigned long)base;
+	unsigned long addr = (unsigned long)(uintptr_t)base;
 
 	BUG_ON((addr | size) & ~PAGE_MASK);
 

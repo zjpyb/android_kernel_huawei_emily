@@ -89,7 +89,7 @@ OAL_STATIC oal_uint32 hmac_btcoex_delba_from_user(mac_vap_stru *pst_mac_vap, hma
 
             /* 发起reassoc req */
             //hmac_roam_trigger_handle_etc(pst_hmac_vap, -122, OAL_TRUE);
-            hmac_roam_start_etc(pst_hmac_vap, ROAM_SCAN_CHANNEL_ORG_0, OAL_TRUE, ROAM_TRIGGER_COEX);
+            hmac_roam_start_etc(pst_hmac_vap, ROAM_SCAN_CHANNEL_ORG_0, OAL_FALSE, NULL, ROAM_TRIGGER_COEX);
 
             /* 重关联之后，刷新为允许建立聚合 */
             pst_hmac_user->st_hmac_user_btcoex.st_hmac_btcoex_addba_req.en_ba_handle_allow = OAL_TRUE;
@@ -204,7 +204,7 @@ OAL_STATIC oal_uint32 hmac_btcoex_delba_send_timeout(oal_void *p_arg)
             pst_hmac_user_btcoex->uc_rx_no_pkt_count = 0;
 
             /* 发起reassoc req */
-            hmac_roam_start_etc(pst_hmac_vap, ROAM_SCAN_CHANNEL_ORG_0, OAL_TRUE, ROAM_TRIGGER_COEX);
+            hmac_roam_start_etc(pst_hmac_vap, ROAM_SCAN_CHANNEL_ORG_0, OAL_FALSE, NULL, ROAM_TRIGGER_COEX);
 
             /* 保证wifi恢复聚合64 */
             pst_hmac_user->st_hmac_user_btcoex.us_ba_size = 0;

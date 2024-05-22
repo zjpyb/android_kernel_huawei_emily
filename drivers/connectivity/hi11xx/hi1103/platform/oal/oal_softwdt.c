@@ -31,7 +31,7 @@ OAL_STATIC oal_int32 disable_wdt_flag = 0;
 #else
 OAL_STATIC oal_int32 disable_wdt_flag = 1;
 #endif
-module_param(disable_wdt_flag, int, S_IRUGO | S_IWUSR);
+oal_debug_module_param(disable_wdt_flag, int, S_IRUGO | S_IWUSR);
 
 #if 0
 oal_void oal_softwdt_enable(oal_void)

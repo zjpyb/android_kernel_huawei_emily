@@ -32,6 +32,11 @@ config DEVFREQ_GOV_GPU_SCENE_AWARE
     depends on ARCH_HISI && PM_DEVFREQ
     select PM_OPP
 
+config DEVFREQ_GOV_NPU_PM_QOS
+    tristate "Hisilicon NPU PM QOS"
+    depends on ARCH_HISI && PM_DEVFREQ
+    select PM_OPP
+
 config HISI_DDR_CHINTLV
     bool "Hisilicon ddr devfreq chintlv"
     default n
@@ -74,6 +79,13 @@ config HISI_DEVFREQ_DEVBW
           DDR bandwidth votes. This driver provides a SoC topology
           agnostic interface to so that some of the devfreq governors can be
           shared across SoCs.
+
+config DDR_HW_VOTE_15BITS
+        bool "Hisilicon ddr dfs hardware vote 15 bits"
+        depends on HISI_DDR_DEVFREQ
+        default n
+        help
+          Hisilicon ddr dfs "hardware vote 15 bits" enbale.
 
 source "drivers/devfreq/hisi/dsu_pctrl/Kconfig"
 source "drivers/devfreq/hisi/l3c_devfreq/Kconfig"

@@ -49,7 +49,7 @@ static void swap_2byte(unsigned char *buf, unsigned int size)
 	}
 
 	for (i = 0; i < size; i += REG_SIZE)
-		be16_to_cpus(buf + i);
+		be16_to_cpus((__u16 *)(buf + i));
 }
 
 static int thp_bu21150_spi_transfer(struct thp_device *tdev,
@@ -61,7 +61,11 @@ static int thp_bu21150_spi_transfer(struct thp_device *tdev,
 	THP_LOG_DEBUG("%s called\n", __func__);
 
 	spi_message_add_tail(xfer, msg);
-	thp_bus_lock();
+	rc = thp_bus_lock();
+	if (rc < 0) {
+		THP_LOG_ERR("%s:get lock failed\n", __func__);
+		return -EINVAL;
+	}
 	rc = thp_spi_sync(sdev, msg);
 	thp_bus_unlock();
 

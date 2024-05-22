@@ -72,6 +72,7 @@ void lcdkit_parse_platform_dts(struct device_node* np,  void* pdata)
     OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-panel-fps-updt-support", &pinfo->fps_updt_support, 0);
     OF_PROPERTY_READ_U32_DEFAULT(np, "hw,lcdkit-panel-bl-v200", &pinfo->bl_v200,0);
     OF_PROPERTY_READ_U32_DEFAULT(np, "hw,lcdkit-panel-bl-otm", &pinfo->bl_otm,0);
+    OF_PROPERTY_READ_U32_DEFAULT(np, "hw,lcdkit-esd-recovery-max-count", &pinfo->esd_recovery_max_count, 10);
 
     OF_PROPERTY_READ_U64_RETURN(np, "hw,lcdkit-panel-pxl-clk", &pinfo->pxl_clk_rate);
     OF_PROPERTY_READ_U32_RETURN(np, "hw,lcdkit-panel-pxl-clk-div", &pinfo->pxl_clk_rate_div);
@@ -217,6 +218,7 @@ void lcdkit_parse_platform_dts(struct device_node* np,  void* pdata)
     OF_PROPERTY_READ_U32_RETURN(np, "hw,lcdkit-mipi-data-t-hs-prepare-adjust", &pinfo->mipi.data_t_hs_prepare_adjust);
     OF_PROPERTY_READ_U32_RETURN(np, "hw,lcdkit-mipi-data-t-hs-zero-adjust", &pinfo->mipi.data_t_hs_zero_adjust);
     OF_PROPERTY_READ_S8_RETURN(np, "hw,lcdkit-mipi-data-t-lpx-adjust", &pinfo->mipi.data_t_lpx_adjust);
+	OF_PROPERTY_READ_U8_RETURN(np, "hw,lcdkit-mipi-txoff-rxulps-enable", &pinfo->mipi.txoff_rxulps_en);
     OF_PROPERTY_READ_U32_DEFAULT(np, "hw,lcdkit-platform-esd-support", &g_lcdkit_pri_info.platform_esd_support, 0);
     OF_PROPERTY_READ_U32_DEFAULT(np, "hw,hw,lcdkit-platform-esd-reg", &g_lcdkit_pri_info.platform_esd_reg, 0xc0);
     OF_PROPERTY_READ_U32_DEFAULT(np, "hw,hw,lcdkit-platform-esd-value", &g_lcdkit_pri_info.platform_esd_value, 0x80);

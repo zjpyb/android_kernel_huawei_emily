@@ -113,7 +113,7 @@ void *wifi_mem_prealloc(int section, unsigned long size) {
     int mem_idx = 0;
     if (section == DHD_PREALLOC_PROT) {
         if (size > DHD_PREALLOC_PROT_SIZE) {
-            printk("bcmdhd request prot(%lu) is bigger than static size(%ld).\n",
+            printk("bcmdhd request prot(%lu) is bigger than static size(%d).\n",
                 size, DHD_PREALLOC_PROT_SIZE);
             return NULL;
         }
@@ -278,7 +278,7 @@ static int init_wifi_mem(void) {
     }
 #endif /* !defined(CONFIG_BCMDHD_PCIE) */
     return 0;
-
+#if !defined(CONFIG_BCMDHD_PCIE)
 err_sec_alloc:
     for (i = 0; i < PREALLOC_WLAN_SEC_NUM; i++) {
         if (wifi_mem_array[i].mem_ptr != NULL) {
@@ -288,7 +288,7 @@ err_sec_alloc:
             break;
         }
     }
-
+#endif /* !defined(CONFIG_BCMDHD_PCIE) */
 err_mem_alloc:
 
     if (wlan_static_prot)
@@ -394,7 +394,7 @@ static void read_from_global_buf(unsigned char * buf)
 	hwlog_info("get MAC from g_wifimac: mac=%02x:%02x:**:**:%02x:%02x\n",buf[0],buf[1],buf[4],buf[5]);
 	return;
 }
-
+#ifdef CONFIG_LLT_TEST
 static int char2_byte( char* strori, char* outbuf )
 {
 	int i = 0;
@@ -485,7 +485,7 @@ static int read_from_mac_file(unsigned char * buf)
 
 	return 0;
 }
-
+#endif
 int char2byte( char* strori, char* outbuf )
 {
     int i = 0;
@@ -520,7 +520,17 @@ int char2byte( char* strori, char* outbuf )
     return sum;
 }
 
+static bool validate_wifi_addr(unsigned char macAddr)
+{
+	unsigned char mac1 = macAddr & 0x0F;
 
+	// legal wifi mac, mac1 should be 0,4,8 or ox0c
+	if (mac1 == 0x00 || mac1 == 0x04 || mac1 == 0x08 || mac1 == 0x0c)
+		return true;
+
+	hwlog_err("%s: illeagle wifi address: %02x", __func__, macAddr);
+	return false;
+}
 /*****************************************************************************
  函 数 名  : bcm_wifi_get_mac_addr
  功能描述  : 从nvram中获取mac地址
@@ -530,7 +540,7 @@ int char2byte( char* strori, char* outbuf )
 *****************************************************************************/
 int bcm_wifi_get_mac_addr(unsigned char *buf)
 {
-    struct bcm_nve_info_user st_info;
+    struct hisi_nve_info_user st_info;
     int l_ret = -1;
     int l_sum = 0;
 
@@ -559,7 +569,7 @@ int bcm_wifi_get_mac_addr(unsigned char *buf)
     if (!l_ret)
     {
         l_sum = char2byte(st_info.nv_data, buf);
-        if (0 != l_sum)
+        if (0 != l_sum && validate_wifi_addr(buf[0]))
         {
             hwlog_info("get MAC from NV: mac=%02x:%02x:%02x:%02x:%02x:%02x\n",buf[0],buf[1],buf[2],buf[3],buf[4],buf[5]);
             memcpy(g_wifimac, buf, WLAN_MAC_LEN);
@@ -626,10 +636,7 @@ int bcm_wifi_power(int on)
         }
 #endif
 		wifi_host->bEnable = true;
-		//hi_sdio_set_power(on); 
 	} else {
-		//hi_sdio_set_power(on);
-		//dump_stack();
 #if defined(CONFIG_BCMDHD_SDIO) && (defined(CONFIG_MMC_DW_HI6XXX) || defined(CONFIG_MMC_DW_HI3XXX))
 		/* set LowerPower mode*/
 		if (!(IS_ERR(wifi_host->pctrl)||IS_ERR(wifi_host->pins_idle))){
@@ -704,7 +711,6 @@ static int bcm_wifi_get_chip_type(char *val, int len)
 #ifdef HW_CUSTOM_BCN_TIMEOUT
 static int bcm_wifi_get_bcn_timeout(void)
 {
-    // hwlog_info("%s, bcn_timeout: %d\n", __func__, wifi_host->bcn_timeout);
     return wifi_host ? wifi_host->bcn_timeout : -1;
 }
 #endif /* HW_CUSTOM_BCN_TIMEOUT */
@@ -751,11 +757,12 @@ static ssize_t restore_wifi_debug_level(struct device *dev, struct device_attrib
 
 static ssize_t show_wifi_wrong_action_flag(struct device *dev,
         struct device_attribute *attr, char *buf) {
+    int has_wrong_action;
     if(dev_handle.wl_get_wrong_action_flag_handle == NULL) {
         hwlog_err("%s: handle has not been registered\n", __func__);
         return -1;
     }
-    int has_wrong_action = dev_handle.wl_get_wrong_action_flag_handle();
+    has_wrong_action = dev_handle.wl_get_wrong_action_flag_handle();
     hwlog_info("%s has wrong action %d\n", __func__, has_wrong_action);
     return sprintf(buf, "%d\n", has_wrong_action);
 }
@@ -1071,7 +1078,6 @@ int dhd_wlan_dev_wake(int on)
 		hwlog_info("%s Enter: dev_wake is not support\n", __func__);
 		return -EIO;
 	}
-	//pr_info("%s Enter: dev_wake %s\n", __func__, on ? "on" : "off");
 
 	if (on) {
 		if (gpio_direction_output(gpio_wl_dev_wake, 1)) {
@@ -1367,7 +1373,6 @@ err_clk_get:
 	kfree(wifi_host);
 	wifi_host = NULL;
 err_malloc_wifi_host:
-	//deinit_wifi_mem();
 	return ret;
 }
 

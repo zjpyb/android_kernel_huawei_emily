@@ -64,7 +64,7 @@ static DEFINE_MUTEX(secs_mutex_lock);
 static DEFINE_TIMER(secs_timer, hisi_secs_timer_func, 0, 0);/*lint -e785 */
 
 static unsigned long g_secs_power_ctrl_count = 0;
-static unsigned long g_secs_suspend_status = 0;
+unsigned long g_secs_suspend_status = 0;
 static struct regulator_bulk_data regu_burning;
 static struct clk *secs_clk = NULL;
 static struct device_node *secs_np = NULL;
@@ -194,13 +194,10 @@ int hisi_secs_power_on(void)
 		}
 
 		mutex_lock(&secs_mutex_lock);
-		ret = devm_regulator_bulk_get(secs_dev, 1, &regu_burning);
-		if (ret) {
-			dev_err(secs_dev,"fail get sec_burning regulator %d\n", ret);
+		if(regu_burning.supply == NULL && regu_burning.consumer == NULL){
 			mutex_unlock(&secs_mutex_lock);
 			return ret;
 		}
-
 		ret = regulator_bulk_enable(1, &regu_burning);
 		if (ret)
 			pr_err("failed to enable secs regulators %d\n", ret);
@@ -258,13 +255,10 @@ int hisi_secs_power_down(void)
 
 	if (of_get_property(secs_np, "sec-s-regulator-enable", NULL)) {
 		mutex_lock(&secs_mutex_lock);
-		ret = devm_regulator_bulk_get(secs_dev, 1, &regu_burning);
-		if (ret) {
-			dev_err(secs_dev,"fail get sec_burning regulator %d\n", ret);
+		if(regu_burning.supply == NULL && regu_burning.consumer == NULL){
 			mutex_unlock(&secs_mutex_lock);
 			return ret;
 		}
-
 		ret = regulator_bulk_disable(1, &regu_burning);
 		if (ret)
 			pr_err("failed to disable secs regulators %d\n", ret);
@@ -310,6 +304,11 @@ static int hisi_secs_power_ctrl_probe(struct platform_device *pdev)
 	if (of_get_property(secs_np, "sec-s-regulator-enable", NULL)) {
 		/* remove regulator buck process for priority of tzdriver&regulator */
 		regu_burning.supply = "sec-s-buring";
+		ret = devm_regulator_bulk_get(secs_dev, 1, &regu_burning);
+		if (ret) {
+			dev_err(secs_dev,"fail get sec_burning regulator %d\n", ret);
+			return ret;
+		}
 	}
 
 	if (of_get_property(secs_np, "secs-clk-freq-adapt", NULL)) {
@@ -325,6 +324,9 @@ static int hisi_secs_power_ctrl_probe(struct platform_device *pdev)
 
 static int hisi_secs_power_ctrl_remove(struct platform_device *pdev)
 {
+	if(regu_burning.consumer != NULL){
+		devm_regulator_put(regu_burning.consumer);
+	}
 	SECS_UNUSED(pdev);
 	return 0;
 }

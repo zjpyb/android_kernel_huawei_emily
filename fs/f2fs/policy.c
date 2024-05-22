@@ -437,7 +437,7 @@ int f2fs_is_permitted_context(struct inode *parent, struct inode *child)
 {
 	if (S_ISREG(child->i_mode)
 	    && child->i_crypt_info
-	    && F2FS_INODE_IS_ENABLED_SDP_ENCRYPTION(child->i_crypt_info->ci_sdp_flag))
+	    && F2FS_INODE_IS_ENABLED_SDP_ENCRYPTION(child->i_crypt_info->ci_hw_enc_flag))
 		return 1;
 
 	return 0;

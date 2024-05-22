@@ -14,7 +14,7 @@
 #include "hisi_overlay_utils.h"
 #include "hisi_block_algorithm.h"
 #include "hisi_overlay_cmdlist_utils.h"
-
+/*lint -e570 -e648 -e666 -e838 -e574*/
 static int hisi_check_two_wch_wb_finish(struct hisi_fb_data_type *hisifd, uint32_t last_cmdlist_idxs,
 	int last_mctl_idx, uint32_t cmdlist_idxs, int mctl_idx)
 {
@@ -284,6 +284,7 @@ static void hisi_offline_clear(struct hisi_fb_data_type *hisifd,
 	}
 
 	hisi_drm_layer_offline_clear(hisifd, pov_req);
+	hisifb_buf_sync_signal(hisifd);
 
 	pov_h_block_infos = (dss_overlay_block_t *)pov_req->ov_block_infos_ptr;
 	if (pov_h_block_infos == NULL) {
@@ -485,12 +486,12 @@ static int hisi_vactive0_start_wait(struct hisi_fb_data_type *hisifd, dss_overla
 		hisifb_get_timestamp(&tv0);
 		if (is_mipi_cmd_panel(online_hisifd) && (online_hisifd->vactive0_start_flag == 0)) {
 		REDO_CMD:
-			ret = wait_event_interruptible_timeout(online_hisifd->vactive0_start_wq, online_hisifd->vactive0_start_flag, msecs_to_jiffies(timeout_interval));
+			ret = wait_event_interruptible_timeout(online_hisifd->vactive0_start_wq, online_hisifd->vactive0_start_flag, msecs_to_jiffies(timeout_interval)); //lint !e666
 		} else if (!is_mipi_cmd_panel(online_hisifd)) {
 			prev_vactive0_start = online_hisifd->vactive0_start_flag;
 		REDO_VIDEO:
 			ret = wait_event_interruptible_timeout(online_hisifd->vactive0_start_wq,(prev_vactive0_start != online_hisifd->vactive0_start_flag),
-												   msecs_to_jiffies(timeout_interval));
+												   msecs_to_jiffies(timeout_interval)); //lint !e666
 		}
 
 		if (ret == -ERESTARTSYS) {
@@ -730,7 +731,7 @@ static int hisi_ov_block_config(struct hisi_fb_data_type *hisifd, dss_overlay_t 
 			for (i = 0; i < pov_h_v_block->layer_nums; i++) {
 				layer = &(pov_h_v_block->layer_infos[i]);
 				memset(&clip_rect, 0, sizeof(dss_rect_ltrb_t));
-				memset(&aligned_rect, 0, sizeof(dss_rect_ltrb_t));
+				memset(&aligned_rect, 0, sizeof(dss_rect_t));
 				rdma_stretch_enable = false;
 
 				ret = hisi_ov_compose_handler(hisifd, pov_req_h_v, pov_h_v_block, layer, &wb_layer4block->dst_rect,
@@ -866,6 +867,7 @@ int hisi_ov_offline_play(struct hisi_fb_data_type *hisifd, void __user *argp)
 		HISI_FB_ERR("fb%d, hisifb_offline_layerbuf_lock failed! ret=%d\n", hisifd->index, ret);
 		goto err_return_sem0;
 	}
+	hisifb_layerbuf_flush(hisifd, &lock_list);
 
 	hisifd->mmbuf_info = hisi_dss_mmbuf_info_get(hisifd, 0);
 
@@ -924,7 +926,7 @@ int hisi_ov_offline_play(struct hisi_fb_data_type *hisifd, void __user *argp)
 		hisi_cmdlist_flush_cache(hisifd, cmdlist_idxs);
 	}
 
-	hisifb_buf_sync_handle_offline(hisifd, pov_req);
+	hisifb_buf_sync_handle(hisifd, pov_req);
 
 	up(&(hisifd->cmdlist_info->cmdlist_wb_common_sem));
 
@@ -979,7 +981,7 @@ int hisi_ov_offline_play(struct hisi_fb_data_type *hisifd, void __user *argp)
 	REDO:
 		ret = wait_event_interruptible_timeout(hisifd->cmdlist_info->cmdlist_wb_wq[wb_type],
 			(hisifd->cmdlist_info->cmdlist_wb_done[wb_type] == 1),
-			msecs_to_jiffies(timeout_interval));
+			msecs_to_jiffies(timeout_interval)); //lint !e666
 
 		if (ret == -ERESTARTSYS) {
 			if (times < 50) {
@@ -1023,7 +1025,6 @@ int hisi_ov_offline_play(struct hisi_fb_data_type *hisifd, void __user *argp)
 	}
 
 err_return_sem1:
-	hisifb_offline_layerbuf_unlock(hisifd, &lock_list);
 	if (parallel_compose_flag) {
 		hisi_offline_clear(hisifd, pov_req, enable_cmdlist, hisifd->wb_info.cmdlist_idxs | cmdlist_idxs, reset, debug);
 		memset(&hisifd->wb_info, 0, sizeof(dss_wb_info_t));
@@ -1052,8 +1053,6 @@ err_return_sem1:
 
 err_return_sem0:
 	debug = hisi_get_debug_flag();
-	hisifb_offline_layerbuf_unlock(hisifd, &lock_list);
-
 	reset = true;
 	if (pov_req) {
 		hisi_offline_clear(hisifd, pov_req, enable_cmdlist, cmdlist_idxs, reset, debug);
@@ -1070,7 +1069,6 @@ err_return_sem0:
 	return ret;
 
 return_parallel_compose:
-	hisifb_offline_layerbuf_unlock(hisifd, &lock_list);
 	if (pov_req) {
 		if (pov_h_block_infos) {
 			kfree(pov_h_block_infos);
@@ -1096,3 +1094,4 @@ return_parallel_compose:
 
 	return ret;
 }
+/*lint +e570 +e648 +e666 +e838 +e574*/

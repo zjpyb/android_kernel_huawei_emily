@@ -284,6 +284,15 @@ oal_void hmac_chr_get_disasoc_reason(hmac_chr_disasoc_reason_stru *pst_disasoc_r
     return;
 }
 
+oal_void hmac_chr_set_ba_session_num(oal_uint8 uc_ba_num)
+{
+    hmac_chr_del_ba_info_stru *pst_del_ba_info = OAL_PTR_NULL;
+
+    pst_del_ba_info = hmac_chr_del_ba_info_get_pointer();
+    pst_del_ba_info->uc_ba_num = uc_ba_num;
+    return;
+}
+
 /*打点*/
 /*梳理删减聚合的流程 计数统计*/
 oal_void hmac_chr_set_del_ba_info(oal_uint8 uc_tid, oal_uint16 reason_id)
@@ -291,7 +300,7 @@ oal_void hmac_chr_set_del_ba_info(oal_uint8 uc_tid, oal_uint16 reason_id)
     hmac_chr_del_ba_info_stru *pst_del_ba_info = OAL_PTR_NULL;
 
     pst_del_ba_info = hmac_chr_del_ba_info_get_pointer();
-    
+
     pst_del_ba_info->uc_del_ba_tid = uc_tid;
     pst_del_ba_info->en_del_ba_reason = (mac_reason_code_enum)reason_id;
 
@@ -300,12 +309,12 @@ oal_void hmac_chr_set_del_ba_info(oal_uint8 uc_tid, oal_uint16 reason_id)
 
 /*获取*/
 oal_void hmac_chr_get_del_ba_info(mac_vap_stru *pst_mac_vap, hmac_chr_del_ba_info_stru *pst_del_ba_reason)
-{   
+{
     hmac_chr_del_ba_info_stru *pst_del_ba_info = OAL_PTR_NULL;
 
     pst_del_ba_info = hmac_chr_del_ba_info_get_pointer();
-    
-    pst_del_ba_reason->uc_ba_num = mac_mib_get_TxBASessionNumber(pst_mac_vap);
+
+    pst_del_ba_reason->uc_ba_num = pst_del_ba_info->uc_ba_num;
     pst_del_ba_reason->uc_del_ba_tid = pst_del_ba_info->uc_del_ba_tid;
     pst_del_ba_reason->en_del_ba_reason = pst_del_ba_info->en_del_ba_reason;
 
@@ -331,14 +340,14 @@ oal_void hmac_chr_get_vap_info(mac_vap_stru *pst_mac_vap, hmac_chr_vap_info_stru
 {
     mac_user_stru     *pst_mac_user;
     mac_device_stru   *pst_mac_device;
-    
+
     pst_mac_device = mac_res_get_dev_etc(0);
 
     pst_vap_info->uc_vap_state  = pst_mac_vap->en_vap_state;
     pst_vap_info->uc_vap_num    = pst_mac_device->uc_vap_num;
     pst_vap_info->uc_vap_rx_nss = pst_mac_vap->en_vap_rx_nss;
     pst_vap_info->uc_protocol   = pst_mac_vap->en_protocol;
-    
+
     /*sta 关联的AP的能力*/
     pst_mac_user = mac_res_get_mac_user_etc(pst_mac_vap->us_assoc_vap_id);
     if (OAL_PTR_NULL != pst_mac_user)
@@ -370,24 +379,24 @@ oal_uint32  hmac_chr_get_chip_info(oal_uint32 chr_event_id)
     pst_buf = OAL_MEM_NETBUF_ALLOC(OAL_NORMAL_NETBUF, HMAC_CHR_NETBUF_ALLOC_SIZE, OAL_NETBUF_PRIORITY_MID);
     if (OAL_UNLIKELY(OAL_PTR_NULL == pst_buf))
     {
-        return OAL_PTR_NULL;
+        return OAL_ERR_CODE_PTR_NULL;
     }
 
     /*OAL_SIZEOF(dmac_chr_info) 实测大小252*/
     oal_netbuf_put(pst_buf, OAL_SIZEOF(hmac_chr_info));
     pst_hmac_chr_info = (hmac_chr_info*)OAL_NETBUF_DATA(pst_buf);
     oal_memset(pst_hmac_chr_info, 0, OAL_SIZEOF(hmac_chr_info));
-    
+
     pst_mac_device = mac_res_get_dev_etc(0);
     if (OAL_PTR_NULL == pst_mac_device)
     {
         OAM_ERROR_LOG0(0, OAM_SF_ACS, "{hmac_chr_get_chip_info::pst_mac_device null.}");
-        return OAL_FALSE;
+        return OAL_ERR_CODE_PTR_NULL;
     }
 
     if (0 == pst_mac_device->uc_vap_num)
     {
-        return OAL_FALSE;
+        return OAL_ERR_CODE_PTR_NULL;
     }
 
     for (uc_vap_index = 0; uc_vap_index < pst_mac_device->uc_vap_num; uc_vap_index++)
@@ -397,7 +406,7 @@ oal_uint32  hmac_chr_get_chip_info(oal_uint32 chr_event_id)
         {
             return OAL_ERR_CODE_PTR_NULL;
         }
-        
+
         if(IS_LEGACY_STA(pst_mac_vap))
         {
             /*原子接口*/
@@ -436,20 +445,20 @@ oal_uint32  hmac_get_chr_info_event_hander(oal_uint32 chr_event_id)
         default:
             break;
     }
-    
+
     return OAL_SUCC;
 }
 
 oal_void hmac_chr_connect_fail_query_and_report(hmac_vap_stru *pst_hmac_vap, mac_status_code_enum_uint16 connet_code)
 {
     mac_chr_connect_fail_report_stru st_chr_connect_fail_report = {0};
-    
+
     if (IS_LEGACY_STA(&pst_hmac_vap->st_vap_base_info))
     {
         /*主动查询*/
         hmac_chr_set_connect_code(connet_code);
         /*主动上报*/
-#if(LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0))
+#ifdef CONFIG_HW_GET_EXT_SIG
         st_chr_connect_fail_report.ul_noise = pst_hmac_vap->station_info.noise;
         st_chr_connect_fail_report.ul_chload = pst_hmac_vap->station_info.chload;
 #endif

@@ -258,7 +258,7 @@ void rdr_save_args(u32 modid, u32 arg1, u32 arg2)
 	BB_PRINT_END();
 }
 
-void rdr_fill_edata(struct rdr_exception_info_s *e, char *date)
+void rdr_fill_edata(struct rdr_exception_info_s *e,const char *date)
 {
 	BB_PRINT_START();
 	pbb->base_info.e_core = e->e_from_core;

@@ -25,6 +25,7 @@
 #include <linux/of.h>
 #include <linux/mutex.h>
 #include <linux/kthread.h>
+#include "securec.h"
 
 #include <hisi_ddr_secprotect.h>
 #include <global_ddr_map.h>
@@ -37,6 +38,8 @@
 #define DMR_SHARE_MEM_PHY_BASE (HISI_SUB_RESERVED_BL31_SHARE_MEM_PHYMEM_BASE + DRM_SHARE_MEM_OFFSET)
 
 u64 *g_dmss_intr_fiq;
+
+
 struct semaphore modemddrc_happen_sem;
 
 void dmss_ipi_handler(void)
@@ -91,6 +94,7 @@ void dmss_fiq_handler(void)
 	}
 }
 
+
 int hisi_sec_ddr_set(DRM_SEC_CFG *sec_cfg, DYNAMIC_DDR_SEC_TYPE type)
 {
 	int ret;
@@ -118,17 +122,20 @@ int hisi_sec_ddr_clr(DYNAMIC_DDR_SEC_TYPE type)
 
 static int hisi_ddr_secprotect_probe(struct platform_device *pdev)
 {
-	g_dmss_intr_fiq = ioremap_nocache(HISI_SUB_RESERVED_BL31_SHARE_MEM_PHYMEM_BASE, 8);
-	if (NULL == g_dmss_intr_fiq) {
-		printk(" ddr ioremap_nocache fail\n");
-		return -ENOMEM;
-	}
 
-	sema_init(&modemddrc_happen_sem, 0);
-	if (!kthread_run(modemddrc_happen, NULL, "modemddrc_emit"))
-		pr_err("create thread modemddrc_happen faild.\n");
+    g_dmss_intr_fiq = ioremap_nocache(HISI_SUB_RESERVED_BL31_SHARE_MEM_PHYMEM_BASE, 8);
+    if (NULL == g_dmss_intr_fiq) {
+        printk(" ddr ioremap_nocache fail\n");
+        return -ENOMEM;
+    }
 
-	return 0;
+    sema_init(&modemddrc_happen_sem, 0);
+
+
+
+    if (!kthread_run(modemddrc_happen, NULL, "modemddrc_emit"))
+        pr_err("create thread modemddrc_happen faild.\n");
+    return 0;
 }
 
 static int hisi_ddr_secprotect_remove(struct platform_device *pdev)

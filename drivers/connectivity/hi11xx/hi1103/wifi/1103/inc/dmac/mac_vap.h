@@ -294,17 +294,17 @@ extern "C" {
 #if(_PRE_PRODUCT_ID == _PRE_PRODUCT_ID_HI1103_DEV) || (_PRE_PRODUCT_ID == _PRE_PRODUCT_ID_HI1103_HOST)
 /* 03只处理2G场景 */
 #define MAC_BTCOEX_CHECK_VALID_VAP(_pst_mac_vap)  \
-    ((WLAN_BAND_2G == MAC_GET_VAP_BAND(_pst_mac_vap)) ? OAL_TRUE : OAL_FALSE)
+    ((((_pst_mac_vap)->st_cap_flag.bit_bt20dbm)||(WLAN_BAND_2G == MAC_GET_VAP_BAND(_pst_mac_vap))) ? OAL_TRUE : OAL_FALSE)
 
 /* 1103考虑gc, 未关联之前是5g，满足要求 */
 #define MAC_BTCOEX_CHECK_VALID_STA(_pst_mac_vap)  \
     ((IS_STA(_pst_mac_vap) && \
-       (WLAN_BAND_2G == MAC_GET_VAP_BAND(_pst_mac_vap))) ? OAL_TRUE : OAL_FALSE)
+      (((_pst_mac_vap)->st_cap_flag.bit_bt20dbm)||(WLAN_BAND_2G == MAC_GET_VAP_BAND(_pst_mac_vap)))) ? OAL_TRUE : OAL_FALSE)
 
 /* ap形态考虑go */
 #define MAC_BTCOEX_CHECK_VALID_AP(_pst_mac_vap)  \
     ((IS_AP(_pst_mac_vap) && \
-       (WLAN_BAND_2G == MAC_GET_VAP_BAND(_pst_mac_vap))) ? OAL_TRUE : OAL_FALSE)
+       ((((_pst_mac_vap)->st_cap_flag.bit_bt20dbm)|| WLAN_BAND_2G == MAC_GET_VAP_BAND(_pst_mac_vap)))) ? OAL_TRUE : OAL_FALSE)
 #else
 /* 02打桩 */
 #define MAC_BTCOEX_CHECK_VALID_VAP(_pst_mac_vap)  \
@@ -925,6 +925,9 @@ typedef oal_uint8  mac_ftm_mode_enum_uint8;
 /*****************************************************************************
   4 全局变量声明
 *****************************************************************************/
+#ifdef _PRE_WLAN_FEATURE_M2S
+extern oal_bool_enum_uint8 g_en_mimo_blacklist_etc;
+#endif
 
 
 /*****************************************************************************
@@ -1078,7 +1081,8 @@ typedef struct
                 bit_2040_autoswitch                : 1,                 /* 是否支持随环境自动2040带宽切换 */
                 bit_2g_custom_siso                 : 1,                 /* 2g是否定制化单天线siso,默认等于0,初始双天线 */
                 bit_5g_custom_siso                 : 1,                 /* 5g是否定制化单天线siso,默认等于0,初始双天线 */
-                bit_resv                           : 4;
+                bit_bt20dbm                        : 1,                 /* 20dbm是否使能，用于host做sta做删聚合判断 */
+                bit_resv                           : 3;
 }mac_cap_flag_stru;
 
 /* VAP收发包统计 */
@@ -1208,6 +1212,25 @@ typedef struct
     wlan_bw_cap_enum_uint8              en_cur_bandwidth;       /* 默认值与en_avail_bandwidth相同,供算法调用修改 */
     oal_uint8                           auc_rsv[3];
 }mac_d2h_syn_info_stru;
+
+#ifdef _PRE_WLAN_DELAY_STATISTIC
+#define DL_TIME_ARRAY_LEN    10
+#define TID_DELAY_STAT       0
+#define AIR_DELAY_STAT       1
+typedef struct
+{
+    oal_uint16                          dl_time_array[DL_TIME_ARRAY_LEN];
+    oal_uint8                           dl_measure_type;
+}user_delay_info_stru;
+
+typedef struct
+{
+    oal_uint32                          dmac_packet_count_num;
+    oal_uint32                          dmac_report_interval;
+    oal_uint8                           dmac_stat_enable;
+    oal_uint8                           reserved[3];
+}user_delay_switch_stru;
+#endif
 
 typedef struct
 {
@@ -1572,9 +1595,9 @@ typedef	 struct
 typedef enum
 {
     NO_POWERSAVE     = 0,
-    MIN_FAST_PS      = 1,
-    MAX_FAST_PS      = 2,
-    MIN_PSPOLL_PS    = 3,
+    MIN_FAST_PS      = 1,       /* idle 时间采用ini中的上限*/
+    MAX_FAST_PS      = 2,       /* idle 时间采用ini中的下限*/
+    AUTO_FAST_PS     = 3,       /* 根据算法自动调整idle时间用ini中的上限还是下限值*/
     MAX_PSPOLL_PS    = 4,
     NUM_PS_MODE      = 5
 } ps_user_mode_enum;
@@ -1863,7 +1886,7 @@ typedef struct
     mac_protection_stru                 st_protection;                                   /*与保护相关变量*/
     mac_app_ie_stru                     ast_app_ie[OAL_APP_IE_NUM];
     oal_bool_enum_uint8                 en_40M_intol_user;                               /* ap下是否有关联的40M intolerant的user*/
-    oal_bool_enum_uint8                 en_vap_wmm;                                  /* ap wmm 开关 */
+    oal_bool_enum_uint8                 en_vap_wmm;                                      /* ap wmm 开关 */
 #ifdef _PRE_WLAN_PRODUCT_1151V200
     oal_uint8                           uc_1st_asoc_done;                               /* 第一次关联 */
     oal_uint8                           uc_force_resp_mode_80M;                         /* sifs响应帧使用80M带宽 */
@@ -3162,9 +3185,9 @@ typedef struct
 
 typedef struct
 {
-    oal_uint8  uc_scan_type;
+    oal_uint8            uc_scan_type;
     oal_bool_enum_uint8  en_current_bss_ignore;
-    oal_uint8  auc_resv[2];
+    oal_uint8            auc_bssid[OAL_MAC_ADDR_LEN];
 }mac_cfg_set_roam_start_stru;
 
 typedef struct
@@ -3729,7 +3752,7 @@ typedef struct
 {
     oal_int8                      c_trigger_2G;
     oal_int8                      c_trigger_5G;
-    oal_uint8                     auc_resv[2];
+    oal_uint16                    us_roam_interval;
 }mac_roam_trigger_stru;
 
 /* roam hmac 同步 dmac数据结构体 */
@@ -3808,10 +3831,10 @@ typedef struct
     oal_uint8                   uc_far_dist_dsss_scale_promote_switch;   /* 超远距11b 1m 2m dbb scale提升使能开关 */
 #if (_PRE_PRODUCT_ID == _PRE_PRODUCT_ID_HI1103_HOST)
     oal_uint8                   uc_chn_radio_cap;
-    oal_uint8                   auc_resv[1];
 #else
-    oal_uint8                   auc_resv[2];
+    oal_uint8                   auc_resv[1];
 #endif
+    oal_int8                    c_delta_cca_ed_high_80th_5g;
 
     /* 注意，如果修改了对应的位置，需要同步修改函数: hal_config_custom_rf  */
     oal_int8                    c_delta_cca_ed_high_20th_2g;
@@ -4183,7 +4206,7 @@ typedef struct
     oal_uint16   us_tcp_ack_buf_throughput_low_80M;
     oal_uint16   us_tcp_ack_buf_throughput_high_160M;
     oal_uint16   us_tcp_ack_buf_throughput_low_160M;
-    oal_uint16   us_resv;
+    oal_uint16   us_tcp_ack_smooth_throughput;
 }mac_tcp_ack_buf_switch_stru;
 extern mac_tcp_ack_buf_switch_stru g_st_tcp_ack_buf_switch;
 

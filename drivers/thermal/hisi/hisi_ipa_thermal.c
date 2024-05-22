@@ -25,6 +25,9 @@
 #include <linux/slab.h>
 #include <linux/cpu.h>
 #include <linux/kthread.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 69)
+#include <uapi/linux/sched/types.h>
+#endif
 #include "securec.h"
 
 #ifdef CONFIG_HISI_THERMAL_SPM
@@ -34,11 +37,6 @@
 #define IPA_SENSOR_SYSTEM_H "system_h"
 #define IPA_SENSOR_MAXID    255
 #define IPA_INIT_OK  0x05a5a5a5b
-#ifdef CONFIG_HISI_THERMAL_TRIPPLE_CLUSTERS
-#define NUM_CLUSTERS 3
-#else
-#define NUM_CLUSTERS 2
-#endif
 #define IPA_SOC_INIT_TEMP  (85000)
 #ifdef CONFIG_HISI_THERMAL_SPM
 #define MAX_SHOW_STR 5
@@ -55,12 +53,6 @@ int cpufreq_update_policies(void);
 
 typedef int (*ipa_get_sensor_id_t)(const char *);
 
-/*lint -e749 -esym(749,*)*/
-enum cluster_type {
-	CLUSTER_LITTLE = 0,
-	CLUSTER_BIG
-};
-/*lint -e749 +esym(749,*)*/
 #ifdef CONFIG_HISI_THERMAL_SPM
 struct spm_t {
 	struct device *device;
@@ -74,10 +66,20 @@ enum {
 	BOARD
 };
 
+u32 g_cluster_num = 2;
+u32 g_ipa_sensor_num = 3;
+/* the num of ipa cpufreq table equals cluster num , but
+*  cluster num is a variable. So define a larger arrays in advance.
+*/
+#define CAPACITY_OF_ARRAY  10
+u32 ipa_cpufreq_table_index[CAPACITY_OF_ARRAY];
+const char *ipa_actor_name[CAPACITY_OF_ARRAY];
+u32 ipa_actor_index[CAPACITY_OF_ARRAY];
+
 struct capacitances {
-	u32 cluster_dyn_capacitance[NUM_CLUSTERS];
-	u32 cluster_static_capacitance[NUM_CLUSTERS];
-	u32 cache_capacitance[NUM_CLUSTERS];
+	u32 cluster_dyn_capacitance[CAPACITY_OF_ARRAY];
+	u32 cluster_static_capacitance[CAPACITY_OF_ARRAY];
+	u32 cache_capacitance[CAPACITY_OF_ARRAY];
 	const char *temperature_scale_capacitance[NUM_TEMP_SCALE_CAPS];
 	bool initialized;
 };
@@ -108,6 +110,7 @@ struct hotplug_t {
 	struct device *device;
 	int cpu_down_threshold;
 	int cpu_up_threshold;
+	unsigned int cpu_hotplug_mask;
 	bool need_down;
 	bool need_up;
 	long current_temp;
@@ -189,6 +192,9 @@ hotplug_emul_temp_store(struct device *dev, struct device_attribute *attr,
 	if (kstrtoint(buf, 10, &temperature))
 		return -EINVAL;
 
+#ifdef CONFIG_HISI_IPA_THERMAL
+	temperature = thermal_zone_temp_check(temperature);
+#endif
 	thermal_info.hotplug.emul_temp = temperature;
 	pr_err("hotplug emul temp set : %d\n", temperature);
 
@@ -249,7 +255,8 @@ u32 get_charger_power(void)
 	return 0;
 }
 
-int get_sensor_id_by_name(const char *name) {
+int get_sensor_id_by_name(const char *name)
+{
 	int ret = 0;
 	unsigned long i;
 
@@ -273,84 +280,42 @@ int get_sensor_id_by_name(const char *name) {
 extern struct cpufreq_frequency_table *cpufreq_frequency_get_table(unsigned int cpu);
 static void update_cpufreqs(void)
 {
-	cpufreq_update_policy(0);
-	cpufreq_update_policy(4);
+	int i = 0;
+
+	for (i = 0; i < (int)g_cluster_num; i++) {
+		cpufreq_update_policy(ipa_cpufreq_table_index[i]);
+	}
 }
 
-static bool setfreq_available(unsigned int idx , u32 freq) {
+static bool setfreq_available(unsigned int idx, u32 freq)
+{
 	struct cpufreq_frequency_table *pos, *table = NULL;
 	int ret = false;
 
-	switch (idx) {
-#ifdef CONFIG_HISI_THERMAL_TRIPPLE_CLUSTERS
-			case 0: //Little core
-				table = cpufreq_frequency_get_table(0);
-				if (!table) {
-					pr_err("%s: Unable to find freq table(0)\n", __func__);
-					return false;
-				}
-				break;
-			case 1: //middle core
-				table = cpufreq_frequency_get_table(4);
-				if (!table) {
-					pr_err("%s: Unable to find freq table(4)\n", __func__);
-					return false;
-				}
-				break;
-			case 2: //Big core
-				table = cpufreq_frequency_get_table(6);
-				if (!table) {
-					pr_err("%s: Unable to find freq table(6)\n", __func__);
-					return false;
-				}
-				break;
-
-			case 3: //GPU
-					ret = true;
-					break;
-#else
-		case 0: //Little core
-			table = cpufreq_frequency_get_table(0);
-			if (!table) {
-				pr_err("%s: Unable to find freq table(0)\n", __func__);
-				return false;
-			}
-			break;
-		case 1: //Big core
-			table = cpufreq_frequency_get_table(4);
-			if (!table) {
-				pr_err("%s: Unable to find freq table(4)\n", __func__);
-				return false;
-			}
-			break;
-		case 2: //GPU
-			ret = true;
-			break;
-#endif
-		default:
-			break;
+	if (idx < g_cluster_num) {
+		table = cpufreq_frequency_get_table(ipa_cpufreq_table_index[idx]);//cpu core
+		if (!table) {
+			pr_err("%s: Unable to find freq table(0)\n", __func__);
+			return false;
+		}
+	} else {
+		ret = true;//GPU
 	}
-#ifdef CONFIG_HISI_THERMAL_TRIPPLE_CLUSTERS
-	if (idx == 0 || idx == 1 || idx == 2){
-#else
-	if (idx == 0 || idx == 1){
-#endif
+
+	if (idx < g_cluster_num) {
 		cpufreq_for_each_valid_entry(pos, table) {/*lint !e613*//* [false alarm]:调用此函数时pos初始值指向了table，table在前面已经判空，因此pos不用判空 */
-			if(freq == pos->frequency)/*lint !e613*/
+			if (freq == pos->frequency)/*lint !e613*/
 				ret = true;
 		}
-		if (ret!=true)
+		if (ret != true)
 			pr_err("idx %d : freq %d don't match any available freq.\n ", idx, freq);
 	}
 
 	return ret;
 }
-#ifdef CONFIG_HISI_THERMAL_TRIPPLE_CLUSTERS
-#define MAX_POWERHAL_ACTOR	4UL
-#else
-#define MAX_POWERHAL_ACTOR	3UL
-#endif
-unsigned int powerhal_profiles[3][MAX_POWERHAL_ACTOR];
+
+unsigned int g_powerhal_actor_num = 3;
+unsigned int powerhal_profiles[3][CAPACITY_OF_ARRAY] = {{0}, {0}, {0} };
 
 // cppcheck-suppress *
 #define SHOW_MODE(mode_name)					\
@@ -407,7 +372,7 @@ vr_freq_store(struct device *dev, struct device_attribute *attr,
 	u32 freq;
 	unsigned int i = 0;
 	char *token;
-	char temp_buf[40]={0};
+	char temp_buf[40] = {0};
 	char *s;
 
 	if (dev == NULL || attr == NULL)
@@ -416,12 +381,12 @@ vr_freq_store(struct device *dev, struct device_attribute *attr,
 	strncpy(temp_buf, buf, sizeof(temp_buf) - 1);
 	s = temp_buf;
 
-	for(token = strsep(&s, ","); (token != NULL) && (i < MAX_POWERHAL_ACTOR); token = strsep(&s, ","),i++) {
+	for (token = strsep(&s, ","); (token != NULL) && (i < g_ipa_actor_num); token = strsep(&s, ","), i++) {
 		if (kstrtouint(token, 10, &freq))
 			return -EINVAL;
 		else {
-			if(setfreq_available(i,freq)) {
-				powerhal_profiles[1][i]=freq;
+			if (setfreq_available(i, freq)) {
+				powerhal_profiles[1][i] = freq;
 			}
 		}
 	}
@@ -439,8 +404,8 @@ vr_freq_show(struct device *dev, struct device_attribute *devattr,
 	if (dev == NULL || devattr == NULL)
 		return 0;
 
-	for (i = 0; i < MAX_POWERHAL_ACTOR; i++)
-		ret += snprintf(buf + ret, 12UL, "%u%s", powerhal_profiles[1][i],",");
+	for (i = 0; i < g_ipa_actor_num; i++)
+		ret += snprintf(buf + ret, 12UL, "%u%s", powerhal_profiles[1][i], ",");
 
 	ret += snprintf(buf + ret - 1, 2UL, "\n");
 	return ret;
@@ -454,7 +419,7 @@ spm_freq_store(struct device *dev, struct device_attribute *attr,
 	u32 freq;
 	unsigned int i = 0;
 	char *token;
-	char temp_buf[40]={0};
+	char temp_buf[40] = {0};
 	char *s;
 
 	if (dev == NULL || attr == NULL)
@@ -463,12 +428,12 @@ spm_freq_store(struct device *dev, struct device_attribute *attr,
 	strncpy(temp_buf, buf, sizeof(temp_buf) - 1);
 	s = temp_buf;
 
-	for(token = strsep(&s, ","); (token != NULL) && (i < MAX_POWERHAL_ACTOR); token = strsep(&s, ","), i++) {
+	for (token = strsep(&s, ","); (token != NULL) && (i < g_ipa_actor_num); token = strsep(&s, ","), i++) {
 		if (kstrtouint(token, 10, &freq))
 			return -EINVAL;
 		else {
-			if(setfreq_available(i,freq)) {
-				powerhal_profiles[0][i]=freq;
+			if (setfreq_available(i, freq)) {
+				powerhal_profiles[0][i] = freq;
 			}
 		}
 	}
@@ -486,8 +451,8 @@ spm_freq_show(struct device *dev, struct device_attribute *devattr,
 	if (dev == NULL || devattr == NULL)
 		return 0;
 
-	for (i = 0; i < MAX_POWERHAL_ACTOR; i++)
-		ret += snprintf(buf + ret, 12UL, "%u%s", powerhal_profiles[0][i],",");
+	for (i = 0; i < g_ipa_actor_num; i++)
+		ret += snprintf(buf + ret, 12UL, "%u%s", powerhal_profiles[0][i], ",");
 
 	ret += snprintf(buf + ret - 1, 2UL, "\n");
 	return ret;
@@ -501,7 +466,7 @@ min_freq_store(struct device *dev, struct device_attribute *attr,
 	u32 freq;
 	unsigned int i = 0;
 	char *token;
-	char temp_buf[40]={0};
+	char temp_buf[40] = {0};
 	char *s;
 
 	if (dev == NULL || attr == NULL)
@@ -510,12 +475,12 @@ min_freq_store(struct device *dev, struct device_attribute *attr,
 	strncpy(temp_buf, buf, sizeof(temp_buf) - 1);
 	s = temp_buf;
 
-	for(token = strsep(&s, ","); (token != NULL) && (i < MAX_POWERHAL_ACTOR); token = strsep(&s, ","),i++) {
+	for (token = strsep(&s, ","); (token != NULL) && (i < g_ipa_actor_num); token = strsep(&s, ","), i++) {
 		if (kstrtouint(token, 10, &freq))
 			return -EINVAL;
 		else {
-			if(setfreq_available(i,freq)) {
-				powerhal_profiles[2][i]=freq;
+			if (setfreq_available(i, freq)) {
+				powerhal_profiles[2][i] = freq;
 			}
 		}
 	}
@@ -533,8 +498,8 @@ min_freq_show(struct device *dev, struct device_attribute *devattr,
 	if (dev == NULL || devattr == NULL)
 		return 0;
 
-	for (i = 0; i < MAX_POWERHAL_ACTOR; i++)
-		ret += snprintf(buf + ret, 12UL, "%u%s", powerhal_profiles[2][i],",");
+	for (i = 0; i < g_ipa_actor_num; i++)
+		ret += snprintf(buf + ret, 12UL, "%u%s", powerhal_profiles[2][i], ",");
 
 	ret += snprintf(buf + ret - 1, 2UL, "\n");
 	return ret;
@@ -548,39 +513,55 @@ bool is_spm_mode_enabled(void)
 
 EXPORT_SYMBOL(is_spm_mode_enabled);
 
-unsigned int get_powerhal_profile(enum ipa_actor actor)
+int ipa_get_actor_id(const char *name)
+{
+	int ret = -ENODEV;
+	u32 id = 0;
+
+	for (id = 0; id < g_ipa_sensor_num; id++) {
+		if (!strncmp(name, ipa_actor_name[id], strlen(name))) {
+			ret = id;
+			return ret;
+		}
+	}
+
+	return ret;
+
+}
+EXPORT_SYMBOL_GPL(ipa_get_actor_id);
+
+unsigned int get_powerhal_profile(int actor)
 {
 	int cur_policy = -1;
 	unsigned int freq = 0;
+	int gpu_id = -1;
 
-#if 1
 	if (thermal_info.spm.vr_mode)
 		cur_policy = 1;
 	else if (thermal_info.spm.spm_mode)
 		cur_policy = 0;
 
-	if (cur_policy != -1 && actor <= IPA_GPU)
-		freq = powerhal_profiles[cur_policy][actor];
-#else
-extern int get_profile_cpu_freq(enum ipa_actor actor, unsigned int *freq);
-extern unsigned int get_profile_gpu_freq(void);
+	gpu_id = ipa_get_actor_id("gpu");
+	if (gpu_id < 0)
+		return freq;
 
-	if (actor < IPA_GPU) {
-		(void)get_profile_cpu_freq(actor, &freq);
-	} else {
-		freq = get_profile_gpu_freq();
-	}
-#endif
+	if (cur_policy != -1 && actor <= gpu_id)
+		freq = powerhal_profiles[cur_policy][actor];
 
 	return freq;
 }
 EXPORT_SYMBOL(get_powerhal_profile);
 
-unsigned int get_minfreq_profile(enum ipa_actor actor)
+unsigned int get_minfreq_profile(int actor)
 {
 	unsigned int freq = 0;
+	int gpu_id = -1;
 
-	if (actor <= IPA_GPU)
+	gpu_id = ipa_get_actor_id("gpu");
+	if (gpu_id < 0)
+		return freq;
+
+	if (actor <= gpu_id)
 		freq = powerhal_profiles[2][actor];
 
 	return freq;
@@ -600,7 +581,7 @@ int get_soc_temp(void)
 }
 EXPORT_SYMBOL(get_soc_temp);
 
-static u32 get_dyn_power_coeff(enum cluster_type cluster, struct ipa_thermal *ipa_dev)
+static u32 get_dyn_power_coeff(int cluster, struct ipa_thermal *ipa_dev)
 {
 	if (NULL == ipa_dev) {
 		pr_err("%s parm null\n", __func__);
@@ -610,14 +591,14 @@ static u32 get_dyn_power_coeff(enum cluster_type cluster, struct ipa_thermal *ip
 	return ipa_dev->caps->cluster_dyn_capacitance[cluster];
 }
 
-static u32 get_cpu_static_power_coeff(enum cluster_type cluster)
+static u32 get_cpu_static_power_coeff(int cluster)
 {
 	struct capacitances *caps = &g_caps;
 
 	return caps->cluster_static_capacitance[cluster];
 }
 
-static u32 get_cache_static_power_coeff(enum cluster_type cluster)
+static u32 get_cache_static_power_coeff(int cluster)
 {
 	struct capacitances *caps = &g_caps;
 
@@ -661,8 +642,7 @@ static int hisi_cluster_get_static_power(cpumask_t *cpumask, int interval,
 	unsigned long t_scale, v_scale;
 	u32 cpu_coeff;
 	u32 nr_cpus = cpumask_weight(cpumask);
-	enum cluster_type cluster =
-		(enum cluster_type)topology_physical_package_id(cpumask_any(cpumask));
+	int cluster = topology_physical_package_id(cpumask_any(cpumask));
 
 	temperature = get_soc_temp();
 	temperature /= 1000;
@@ -680,35 +660,7 @@ static int hisi_cluster_get_static_power(cpumask_t *cpumask, int interval,
 
 	return 0;
 }
-/*lint -e715 -esym(715,*)*/
-#ifdef CONFIG_HISI_THERMAL_SPM
-int hisi_calc_static_power(const struct cpumask *cpumask, int temp,
-				unsigned long u_volt, u32 *static_power)
-{
-	unsigned long t_scale, v_scale;
-	int temperature;
-	u32 cpu_coeff;
-	int nr_cpus = (int)cpumask_weight(cpumask);
-	int cluster =
-		topology_physical_package_id(cpumask_any(cpumask));
-
-	temperature = temp / 1000;
-
-	cpu_coeff = (u32)get_cpu_static_power_coeff((enum cluster_type)cluster);
-
-	t_scale = get_temperature_scale(temperature);
-	v_scale = get_voltage_scale(u_volt);
-	*static_power = (u32)(nr_cpus * (cpu_coeff * t_scale * v_scale) / 1000000); //lint !e737
-
-	if (nr_cpus) {
-		u32 cache_coeff = get_cache_static_power_coeff((enum cluster_type)cluster);
-		*static_power += (u32)((cache_coeff * v_scale * t_scale) / 1000000); /* cache leakage */
-	}
-
-	return 0;
-}
-EXPORT_SYMBOL(hisi_calc_static_power);
-#endif
+/*lint -e715 +esym(715,*)*/
 
 #ifdef CONFIG_HISI_THERMAL_HOTPLUG
 /*lint -e715*/
@@ -740,34 +692,35 @@ static int thermal_hotplug_task(void *data)
 			thermal_info.hotplug.need_down = false;
 			thermal_info.hotplug.cpu_downed = true;
 			spin_unlock_irqrestore(&thermal_info.hotplug.hotplug_lock, flags);
-
 			pr_err("cluster_big temp = %ld, cpu_down!!!\n", sensor_val);
-			for (cpu_num = 4; cpu_num <= 7; cpu_num++) {
-				cpu_dev = get_cpu_device(cpu_num);
-				if (cpu_dev != NULL) {
-					device_lock(cpu_dev);
-					cpu_down(cpu_num);
-					cpu_dev->offline = true;
-					device_unlock(cpu_dev);
+			for (cpu_num = 0; cpu_num < NR_CPUS; cpu_num++) {
+				if ((1 << cpu_num) & thermal_info.hotplug.cpu_hotplug_mask) {
+					cpu_dev = get_cpu_device(cpu_num);
+					if (cpu_dev != NULL) {
+						device_lock(cpu_dev);
+						cpu_down(cpu_num);
+						cpu_dev->offline = true;
+						device_unlock(cpu_dev);
+					}
 				}
 			}
 		} else if (thermal_info.hotplug.need_up) {
 			thermal_info.hotplug.need_up = false;
 			thermal_info.hotplug.cpu_downed = false;
 			spin_unlock_irqrestore(&thermal_info.hotplug.hotplug_lock, flags);
-
 			pr_err("cluster_big temp = %ld, cpu_up!!!\n", sensor_val);
-			for (cpu_num = 7; cpu_num >= 4; cpu_num--) {
-				cpu_dev = get_cpu_device(cpu_num);
-				if (cpu_dev != NULL) {
-					device_lock(cpu_dev);
-					cpu_up(cpu_num);
-					cpu_dev->offline = false;
-					device_unlock(cpu_dev);
+			for (cpu_num = 0; cpu_num < NR_CPUS; cpu_num++) {
+				if ((1 << cpu_num) & thermal_info.hotplug.cpu_hotplug_mask) {
+					cpu_dev = get_cpu_device(cpu_num);
+					if (cpu_dev != NULL) {
+						device_lock(cpu_dev);
+						cpu_up(cpu_num);
+						cpu_dev->offline = false;
+						device_unlock(cpu_dev);
+					}
 				}
 			}
 		}
-
 		trace_IPA_hot_plug(thermal_info.hotplug.cpu_downed, sensor_val, thermal_info.hotplug.cpu_up_threshold,
 				thermal_info.hotplug.cpu_down_threshold);
 	}
@@ -830,9 +783,17 @@ void hisi_thermal_hotplug_check(int *temp)
 }
 #endif
 
+#define MAX_ALPHA 256
+u32 thermal_zone_alpha_check(u32 alpha)
+{
+	if (alpha > MAX_ALPHA)
+		alpha = MAX_ALPHA;
+	return alpha;
+}
+
 static int get_temp_value(void *data, int *temp)
 {
-	int sensor_val[IPA_SENSOR_NUM] = {0};
+	int sensor_val[CAPACITY_OF_ARRAY] = {0};
 	struct ipa_sensor *sensor = (struct ipa_sensor *)data;
 	int val = 0;
 	int val_max = 0;
@@ -845,37 +806,37 @@ static int get_temp_value(void *data, int *temp)
 
 	if (IPA_SENSOR_MAXID == sensor->sensor_id) {
 		/*read all sensor*/
-		for (id = 0; id < IPA_SENSOR_NUM; id++) {
+		for (id = 0; id < (int)g_ipa_sensor_num; id++) {
 			ret = ipa_get_sensor_value((u32)id, &val);
 			sensor_val[id] = val;
 			if (ret)
 				return ret;
 		}
 #ifdef CONFIG_HISI_THERMAL_HOTPLUG
-		hisi_thermal_hotplug_check(&sensor_val[CLUSTER_BIG]);
+		hisi_thermal_hotplug_check(&sensor_val[g_cluster_num - 1]);
 #endif
 		val_max = sensor_val[0];
-		for (id = 1; id < IPA_SENSOR_NUM; id++) {
+		for (id = 1; id < (int)g_ipa_sensor_num; id++) {
 			if (sensor_val[id] > val_max)
 				val_max = sensor_val[id];
 		}
 
 		val = val_max;
 
-		trace_IPA_get_tsens_value(sensor_val[0], sensor_val[1], sensor_val[2], val_max);
+		trace_IPA_get_tsens_value(g_ipa_sensor_num, sensor_val, val_max);
 #ifdef CONFIG_HISI_THERMAL_SHELL
 	} else if (IPA_SENSOR_SHELLID == sensor->sensor_id) {
 		shell_tz = thermal_zone_get_zone_by_name(IPA_SENSOR_SHELL);
 		ret = hisi_get_shell_temp(shell_tz, temp);
-		trace_IPA_get_tsens_value(0, 0, 0, *temp);
+		trace_IPA_get_tsens_value(g_ipa_sensor_num, sensor_val, *temp);
 		if (ret)
 			return ret;
 		else
 			return 0;
 #endif
- 	} else if (sensor->sensor_id < IPA_PERIPH_NUM) {
+	} else if (sensor->sensor_id < IPA_PERIPH_NUM) {
 		ret = ipa_get_periph_value(sensor->sensor_id, &val);
-		trace_IPA_get_tsens_value(0, 0, 0, val);
+		trace_IPA_get_tsens_value(g_ipa_sensor_num, sensor_val, val);
 		if (ret)
 			return ret;
 		val = val < 0 ? 0 : val;
@@ -886,6 +847,9 @@ static int get_temp_value(void *data, int *temp)
 	if (!sensor->prev_temp)
 		sensor->prev_temp = val;
 	 /*lint -e776*/
+	val = thermal_zone_temp_check(val);
+	sensor->prev_temp = thermal_zone_temp_check(sensor->prev_temp);
+	sensor->alpha = thermal_zone_alpha_check(sensor->alpha);
 	est_temp = mul_frac(sensor->alpha, val) +
 		mul_frac(int_to_frac(1) - sensor->alpha, sensor->prev_temp);
 	 /*lint +e776*/
@@ -955,6 +919,12 @@ static int thermal_hotplug_init(void)
 			goto node_put;
 		}
 
+		ret = of_property_read_u32(hotplug_np, "hisilicon,cpu_hotplug_mask", (u32 *)&thermal_info.hotplug.cpu_hotplug_mask);
+		if (ret) {
+			pr_err("%s hotplug maskd read err\n", __func__);
+			goto node_put;
+		}
+
 		spin_lock_init(&thermal_info.hotplug.hotplug_lock);
 		thermal_info.hotplug.hotplug_task = kthread_create(thermal_hotplug_task, NULL, "thermal_hotplug");
 		if (IS_ERR(thermal_info.hotplug.hotplug_task)) {
@@ -982,6 +952,61 @@ node_put:
 }
 #endif
 
+int of_parse_ipa_sensor_index_table(void)
+{
+	int ret, i;
+	struct device_node *np;
+
+	np = of_find_node_by_name(NULL, "ipa_sensors_info");
+	if (!np) {
+		pr_err("ipa_sensors_info node not found\n");
+		return -ENODEV;
+	}
+
+	ret = of_property_read_u32(np, "hisilicon,cluster_num", &g_cluster_num);
+	if (ret) {
+		pr_err("%s cluster_num read err\n", __func__);
+		goto node_put;
+	}
+
+	ret = of_property_read_u32(np, "hisilicon,ipa_sensor_num", &g_ipa_sensor_num);
+	if (ret) {
+		pr_err("%s ipa_sensor_num read err\n", __func__);
+		goto node_put;
+	}
+
+	for (i = 0; i < (int)g_ipa_sensor_num; i++) {
+		ret =  of_property_read_string_index(np, "hisilicon,ipa_actor_name",
+			i, &ipa_actor_name[i]);
+		if (ret) {
+			pr_err("%s ipa_actor_name [%d] read err\n",
+				__func__, i);
+			goto node_put;
+		}
+	}
+
+	ret = of_property_read_u32_array(np, "hisilicon,ipa_actor_index",
+		ipa_actor_index, g_ipa_sensor_num);
+	if (ret) {
+		pr_err("%s ipa_actor_index read err\n", __func__);
+		goto node_put;
+	}
+
+	ret = of_property_read_u32_array(np, "hisilicon,ipa_cpufreq_table_index",
+		ipa_cpufreq_table_index, g_cluster_num);
+	if (ret) {
+		pr_err("%s ipa_cpufreq_table_index read err\n", __func__);
+		goto node_put;
+	}
+
+	of_node_put(np);
+	return 0;
+node_put:
+	of_node_put(np);
+	return ret;
+}
+EXPORT_SYMBOL(of_parse_ipa_sensor_index_table);
+
 static int of_parse_thermal_zone_caps(void)
 {
 	int ret, i;
@@ -994,19 +1019,19 @@ static int of_parse_thermal_zone_caps(void)
 			return -ENODEV;
 		}
 
-		ret = of_property_read_u32_array(np, "hisilicon,cluster_dyn_capacitance", g_caps.cluster_dyn_capacitance, (unsigned long)NUM_CLUSTERS);
+		ret = of_property_read_u32_array(np, "hisilicon,cluster_dyn_capacitance", g_caps.cluster_dyn_capacitance, g_cluster_num);
 		if (ret) {
 			pr_err("%s actor_dyn_capacitance read err\n", __func__);
 			goto node_put;
 		}
 
-		ret = of_property_read_u32_array(np, "hisilicon,cluster_static_capacitance", g_caps.cluster_static_capacitance, (unsigned long)NUM_CLUSTERS);
+		ret = of_property_read_u32_array(np, "hisilicon,cluster_static_capacitance", g_caps.cluster_static_capacitance, g_cluster_num);
 		if (ret) {
 			pr_err("%s actor_dyn_capacitance read err\n", __func__);
 			goto node_put;
 		}
 
-		ret = of_property_read_u32_array(np, "hisilicon,cache_capacitance", g_caps.cache_capacitance, (unsigned long)NUM_CLUSTERS);
+		ret = of_property_read_u32_array(np, "hisilicon,cache_capacitance", g_caps.cache_capacitance, g_cluster_num);
 		if (ret) {
 			pr_err("%s actor_dyn_capacitance read err\n", __func__);
 			goto node_put;
@@ -1035,35 +1060,37 @@ static int ipa_register_soc_cdev(struct ipa_thermal *thermal_data, struct platfo
 {
 	int ret = 0;
 	int cpuid;
-	enum cluster_type cluster;
+	int cluster;
 	struct device_node *cdev_np;
 	int i;
-	struct cpumask cpu_masks[NUM_CLUSTERS];
+	struct cpumask cpu_masks[CAPACITY_OF_ARRAY];
 	int cpu;
 	char node[16];
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 69)
+	struct cpufreq_policy *policy;
+#endif
 
-
-	memset(cpu_masks, 0, sizeof(struct cpumask) * NUM_CLUSTERS);
+	memset(cpu_masks, 0, sizeof(struct cpumask) * CAPACITY_OF_ARRAY);
 	for_each_online_cpu(cpu) { /*lint !e713*/
 		int cluster_id = topology_physical_package_id(cpu);
-		if (cluster_id > NUM_CLUSTERS) {
-			pr_warn("IPA:Cluster id: %d > %d\n", cluster_id, NUM_CLUSTERS);
+		if (cluster_id > (int)g_cluster_num) {
+			pr_warn("IPA:Cluster id: %d > %d\n", cluster_id, g_cluster_num);
 			return -ENODEV;
 		}
 		cpumask_set_cpu((u32)cpu, &cpu_masks[cluster_id]);
 	}
 
-	thermal_data->cdevs = kcalloc((size_t)NUM_CLUSTERS, sizeof(struct thermal_cooling_device *), GFP_KERNEL); /*lint !e433*/
+	thermal_data->cdevs = kcalloc((size_t)g_cluster_num, sizeof(struct thermal_cooling_device *), GFP_KERNEL); /*lint !e433*/
 	if (!thermal_data->cdevs) {
 		ret = -ENOMEM;
 		goto end;
 	}
 
-	for (i = 0; i < NUM_CLUSTERS; i++) {
+	for (i = 0; i < (int)g_cluster_num; i++) {
 		cpuid = (int)cpumask_any(&cpu_masks[i]);
 		if (cpuid >= nr_cpu_ids)
 			continue;
-		cluster = (enum cluster_type)topology_physical_package_id(cpuid);
+		cluster = topology_physical_package_id(cpuid);
 
 		snprintf(node, sizeof(node), "cluster%d", i);
 		cdev_np = of_find_node_by_name(NULL, node);
@@ -1073,19 +1100,38 @@ static int ipa_register_soc_cdev(struct ipa_thermal *thermal_data, struct platfo
 			continue;
 		}
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 69)
+		policy = cpufreq_cpu_get(cpuid);
+		thermal_data->cdevs[i] =
+			of_cpufreq_power_cooling_register(cdev_np,
+						policy,
+						get_dyn_power_coeff(cluster, thermal_data),
+						hisi_cluster_get_static_power);
+#else
 		thermal_data->cdevs[i] =
 			of_cpufreq_power_cooling_register(cdev_np,
 						&cpu_masks[i],
 						get_dyn_power_coeff(cluster, thermal_data),
 						hisi_cluster_get_static_power);
+#endif
 		if (IS_ERR(thermal_data->cdevs[i])) {
 			ret = (int)PTR_ERR(thermal_data->cdevs[i]);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 69)
+			if (policy) {
+				cpufreq_cpu_put(policy);
+			}
+#endif
 			dev_err(&pdev->dev,
-				"IPA:Error registering cpu power actor:  cluster [%d] ERROR_ID [%lld]\n",
-				i, (long long)thermal_data->cdevs[i]);
+				"IPA:Error registering cpu power actor:  cluster [%d] ERROR_ID [%d]\n",
+				i, ret);
 			goto cdevs_unregister;
 		}
 		thermal_data->cdevs_num++;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 69)
+		if (policy) {
+			cpufreq_cpu_put(policy);
+		}
+#endif
 		of_node_put(cdev_np);
 	}
 
@@ -1135,8 +1181,7 @@ static int ipa_register_board_cdev(struct ipa_thermal *thermal_data, struct plat
 			of_node_put(board_np);
 			ret = PTR_ERR(thermal_data->cdevs[thermal_data->cdevs_num]); /*lint !e712*/
 			dev_err(&pdev->dev,
-				"IPA:Error registering board power actor: ERROR_ID [%lld]\n",
-				(long long)thermal_data->cdevs[thermal_data->cdevs_num]);
+				"IPA:Error registering board power actor: ERROR_ID [%d]\n", ret);
 			goto cdevs_unregister;
 		}
 		thermal_data->cdevs_num++;
@@ -1335,7 +1380,7 @@ static int powerhal_cfg_init(void)
 {
 	struct device_node *node;
 	int ret;
-	unsigned int data[MAX_POWERHAL_ACTOR] = {0};
+	unsigned int data[CAPACITY_OF_ARRAY] = {0};
 
 	node = of_find_compatible_node(NULL, NULL, "hisi,powerhal");
 	if (!node) {
@@ -1343,21 +1388,27 @@ static int powerhal_cfg_init(void)
 		return -ENODEV;
 	}
 
-	ret = of_property_read_u32_array(node, "hisi,powerhal-spm-cfg", data, MAX_POWERHAL_ACTOR);
+	ret = of_property_count_u32_elems(node, "hisi,powerhal-spm-cfg");
+	if (ret < 0) {
+		pr_err("%s cannot find hisi,powerhal-spm-cfg.\n", __func__);
+		return -ENODEV;
+	}
+	g_powerhal_actor_num = ret;
+	ret = of_property_read_u32_array(node, "hisi,powerhal-spm-cfg", data, g_powerhal_actor_num);
 	if (ret) {
 		pr_err("%s cannot find hisi,powerhal-spm-cfg.\n", __func__);
 		return -ENODEV;
 	}
 	memcpy(powerhal_profiles[0], data, sizeof(data));
 
-	ret = of_property_read_u32_array(node, "hisi,powerhal-vr-cfg", data, MAX_POWERHAL_ACTOR);
+	ret = of_property_read_u32_array(node, "hisi,powerhal-vr-cfg", data, g_powerhal_actor_num);
 	if (ret) {
 		pr_err("%s cannot find hisi,powerhal-spm-cfg.\n", __func__);
 		return -ENODEV;
 	}
 	memcpy(powerhal_profiles[1], data, sizeof(data));
 
-	ret = of_property_read_u32_array(node, "hisi,powerhal-min-cfg", data, MAX_POWERHAL_ACTOR);
+	ret = of_property_read_u32_array(node, "hisi,powerhal-min-cfg", data, g_powerhal_actor_num);
 	if (ret) {
 		pr_err("%s cannot find hisi,powerhal-spm-cfg.\n", __func__);
 		return -ENODEV;
@@ -1369,37 +1420,16 @@ static int powerhal_cfg_init(void)
 }
 #endif
 
-#ifdef CONFIG_HISI_THERMAL_TRIPPLE_CLUSTERS
-#define MAX_WEIGHTSL_ACTOR	4UL
-#define IPA_CLUSTER2_WEIGHT_VALUE      (256)
-#define IPA_CLUSTER2_WEIGHT_BOOST      (256)
-#else
-#define MAX_WEIGHTSL_ACTOR	3UL
-#endif
-#define IPA_CLUSTER0_WEIGHT_VALUE      (768)  //default value
-#define IPA_CLUSTER1_WEIGHT_VALUE      (256)
-#define IPA_GPU_WEIGHT_VALUE           (256)
-#define IPA_CLUSTER0_WEIGHT_BOOST      (768)  //boost value
-#define IPA_CLUSTER1_WEIGHT_BOOST      (256)
-#define IPA_GPU_WEIGHT_BOOST           (768)
+unsigned int g_ipa_actor_num = 3;
+unsigned int weights_profiles[2][CAPACITY_OF_ARRAY] = {{0}, {0} };
+extern unsigned int g_ipa_gpu_boost_weights[CAPACITY_OF_ARRAY];
+extern unsigned int g_ipa_normal_weights[CAPACITY_OF_ARRAY];
 
-
-unsigned int weights_profiles[2][MAX_WEIGHTSL_ACTOR] = {
-#ifdef CONFIG_HISI_THERMAL_TRIPPLE_CLUSTERS
-		{IPA_CLUSTER0_WEIGHT_VALUE,IPA_CLUSTER1_WEIGHT_VALUE,IPA_CLUSTER2_WEIGHT_VALUE,IPA_GPU_WEIGHT_VALUE},
-		{IPA_CLUSTER0_WEIGHT_BOOST,IPA_CLUSTER1_WEIGHT_BOOST,IPA_CLUSTER2_WEIGHT_BOOST,IPA_GPU_WEIGHT_BOOST}};
-#else
-                                            {IPA_CLUSTER0_WEIGHT_VALUE,IPA_CLUSTER1_WEIGHT_VALUE,IPA_GPU_WEIGHT_VALUE},
-                                            {IPA_CLUSTER0_WEIGHT_BOOST,IPA_CLUSTER1_WEIGHT_BOOST,IPA_GPU_WEIGHT_BOOST}};
-#endif
-extern unsigned int g_ipa_gpu_boost_weights[IPA_ACTOR_MAX];
-extern unsigned int g_ipa_normal_weights[IPA_ACTOR_MAX];
-
-static int ipa_weights_cfg_init(void)
+int ipa_weights_cfg_init(void)
 {
 	struct device_node *node;
 	int ret;
-	unsigned int data[2][MAX_WEIGHTSL_ACTOR] = {{0}, {0}};
+	unsigned int data[2][CAPACITY_OF_ARRAY] = {{0}, {0} };
 
 #if CONFIG_OF
 	node = of_find_compatible_node(NULL, NULL, "hisi,weights");
@@ -1407,43 +1437,43 @@ static int ipa_weights_cfg_init(void)
 		pr_err("%s cannot find weights dts.\n", __func__);
 		return -ENODEV;
 	}
-#endif
 
-#if CONFIG_OF
-	ret = of_property_read_u32_array(node, "hisi,weights-default-cfg", data[0], IPA_ACTOR_MAX);
+	ret = of_property_count_u32_elems(node, "hisi,weights-default-cfg");
+	if (ret < 0) {
+		pr_err("%s cannot find hisi,weights-default-cfg.\n", __func__);
+		return -ENODEV;
+	}
+	g_ipa_actor_num = ret;
+
+	ret = of_property_read_u32_array(node, "hisi,weights-default-cfg", data[0], g_ipa_actor_num);
 	if (ret) {
 		pr_err("%s cannot find hisi,weights-default-cfg.\n", __func__);
 		return -ENODEV;
 	}
-#endif
+
 	memcpy_s(weights_profiles[0], sizeof(weights_profiles[0]), data[0], sizeof(weights_profiles[0]));
 
-#if CONFIG_OF
-	ret = of_property_read_u32_array(node, "hisi,weights-boost-cfg", data[1], IPA_ACTOR_MAX);
+	ret = of_property_read_u32_array(node, "hisi,weights-boost-cfg", data[1], g_ipa_actor_num);
 	if (ret) {
 		pr_err("%s cannot find hisi,weights-boost-cfg.\n", __func__);
 		return -ENODEV;
-	}/*lint !e419*/
-#endif
-	memcpy_s(weights_profiles[1], sizeof(weights_profiles[1]), data[1], sizeof(weights_profiles[1]));
+	} /*lint !e419*/
 
+	memcpy_s(weights_profiles[1], sizeof(weights_profiles[1]), data[1], sizeof(weights_profiles[1]));
+#endif
 	return 0;
 }
-
-void dynipa_get_weights_cfg(unsigned int * weight0, unsigned int * weight1)
+EXPORT_SYMBOL(ipa_weights_cfg_init);
+void dynipa_get_weights_cfg(unsigned int *weight0, unsigned int *weight1)
 {
-	memcpy_s(weight0, sizeof(*weight0) * MAX_WEIGHTSL_ACTOR, weights_profiles[0], sizeof(*weight0) * MAX_WEIGHTSL_ACTOR);
-	memcpy_s(weight1, sizeof(*weight1) * MAX_WEIGHTSL_ACTOR, weights_profiles[1], sizeof(*weight1) * MAX_WEIGHTSL_ACTOR);
+	memcpy_s(weight0, sizeof(*weight0) * g_ipa_actor_num, weights_profiles[0], sizeof(*weight0) * g_ipa_actor_num);
+	memcpy_s(weight1, sizeof(*weight1) * g_ipa_actor_num, weights_profiles[1], sizeof(*weight1) * g_ipa_actor_num);
 }
 EXPORT_SYMBOL(dynipa_get_weights_cfg);
 
 static int hisi_thermal_init(void)
 {
 	int ret = 0;
-
-	if (ipa_weights_cfg_init()) {
-		pr_err("%s: ipa_weights_init error, use default value.\n", __func__);
-	}
 
 	dynipa_get_weights_cfg(g_ipa_normal_weights, g_ipa_gpu_boost_weights);
 

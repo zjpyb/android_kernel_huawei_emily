@@ -37,6 +37,7 @@
 #include <sound/initval.h>
 #include <linux/hisi/usb/hisi_usb.h>
 #include <huawei_platform/audio/usb_audio_power.h>
+#include <huawei_platform/audio/usb_audio_power_v600.h>
 #include <linux/wakelock.h>
 
 #include "usbaudio.h"
@@ -47,7 +48,6 @@
 #include "usbaudio_dsp_client.h"
 #include "usbaudio_ioctl.h"
 #include "huawei_platform/log/imonitor.h"
-#include "huawei_platform/log/imonitor_keys.h"
 
 
 #ifdef CLT_AUDIO
@@ -66,7 +66,6 @@
 static unsigned int insert_times;
 static DEFINE_MUTEX(connect_mutex);
 static DEFINE_MUTEX(usbaudio_wakeup_mutex);
-
 struct usbaudio_dsp_client_ops {
 	bool (*controller_switch)(struct usb_device *dev, u32 usb_id, struct usb_host_interface *ctrl_intf, int ctrlif, struct usbaudio_pcms *pcms);
 	int (*disconnect)(struct snd_usb_audio *chip, unsigned int dsp_reset_flag);
@@ -91,6 +90,8 @@ struct usbaudio_dsp  {
 	bool usbaudio_connected;
 	unsigned int dn_rate;
 	unsigned int up_rate;
+	unsigned int dn_period;
+	unsigned int up_period;
 	bool wake_up;
 };
 
@@ -227,27 +228,37 @@ int usbaudio_ctrl_set_pipeout_interface(unsigned int running, unsigned int rate)
 	return ret;
 }
 
-int usbaudio_ctrl_set_pipein_interface(unsigned int running, unsigned int rate)
+int usbaudio_ctrl_set_pipein_interface(unsigned int running, unsigned int rate, unsigned int period)
 {
-	int ret;
+	int ret = 0;
 	mutex_lock(&connect_mutex);
-	if (!usbaudio_hifi || !usbaudio_hifi->chip) {
-		ret = 0;
-	} else {
-		if (running == usbaudio_hifi->pipein_running_flag && usbaudio_hifi->up_rate == rate) {
-			pr_err("usbaudio_ctrl_set_pipein_interface RETURN. running:%d rate %d \n", running, rate);
-			ret = 0;
-		} else {
-			usbaudio_hifi->pipein_running_flag = running;
-			if (running == STOP_STREAM)
-				usbaudio_resume();
-			ret = usbaudio_hifi->ops->set_pipein_interface(usbaudio_hifi->chip, &usbaudio_hifi->pcms, running, rate);
-			usbaudio_hifi->up_rate = rate;
-		}
-		usbaudio_hifi->ops->setinterface_complete(SNDRV_PCM_STREAM_CAPTURE, running, ret, rate);
-	}
-	mutex_unlock(&connect_mutex);
 
+	if (!usbaudio_hifi || !usbaudio_hifi->chip) {
+		mutex_unlock(&connect_mutex);
+		return 0;
+	}
+
+	if (running == usbaudio_hifi->pipein_running_flag && usbaudio_hifi->up_rate == rate
+		&& usbaudio_hifi->up_period == period) {
+		mutex_unlock(&connect_mutex);
+		return 0;
+	}
+
+	pr_info("usbaudio_ctrl_set_pipein_interface: running:%d rate %d period: %d old_running: %d old_rate: %d old_period: %d\n",
+			running, rate, period, usbaudio_hifi->pipein_running_flag, usbaudio_hifi->up_rate, usbaudio_hifi->up_period);
+
+	if (running != usbaudio_hifi->pipein_running_flag || usbaudio_hifi->up_rate != rate) { /*change period do not need to update interface*/
+		if (running == STOP_STREAM) {
+			usbaudio_resume();
+		}
+		ret = usbaudio_hifi->ops->set_pipein_interface(usbaudio_hifi->chip, &usbaudio_hifi->pcms, running, rate);
+	}
+	usbaudio_hifi->pipein_running_flag = running;
+	usbaudio_hifi->up_rate = rate;
+	usbaudio_hifi->up_period = period;
+	usbaudio_hifi->ops->setinterface_complete(SNDRV_PCM_STREAM_CAPTURE, running, ret, rate);/*send complete msg to hifi*/
+
+	mutex_unlock(&connect_mutex);
 	return ret;
 }
 
@@ -308,12 +319,12 @@ static int usbaudio_ctrl_typeC_log_upload(void *data)
 		pr_err("imonitor create eventobj error\n");
 		return ret;
 	}
-	imonitor_set_param(obj, E931001000_USBID_INT, (long)info->usb_id);
-	imonitor_set_param(obj, E931001000_IC_VARCHAR, (long)info->dev->manufacturer);
-	imonitor_set_param(obj, E931001000_MODULE_VARCHAR, (long)info->card->shortname);
-	imonitor_set_param(obj, E931001000_ISN_VARCHAR, (long)info->dev->serial);
-	imonitor_set_param(obj, E931001000_TIMES_INT, (long)insert_times);
-	imonitor_set_param(obj, E931001000_VER_INT, (long)info->dev->descriptor.bcdDevice);
+	imonitor_set_param_integer_v2(obj, "usbid", info->usb_id);
+	imonitor_set_param_string_v2(obj, "IC", info->dev->manufacturer);
+	imonitor_set_param_string_v2(obj, "module", info->card->shortname);
+	imonitor_set_param_string_v2(obj, "isn", info->dev->serial);
+	imonitor_set_param_integer_v2(obj, "times", insert_times);
+	imonitor_set_param_integer_v2(obj, "ver", info->dev->descriptor.bcdDevice);
 	ret = imonitor_send_event(obj);
 	if(obj){
 		imonitor_destroy_eventobj(obj);
@@ -353,6 +364,8 @@ void usbaudio_ctrl_set_chip(struct snd_usb_audio *chip)
 			&& ((!strncmp(chip->card->shortname, HUAWEI_USB_HEADSET_PRENAME, strlen(HUAWEI_USB_HEADSET_PRENAME)))
 				|| (!strncmp(chip->card->shortname, BBIITT_USB_HEADSET_PRENAME, strlen(BBIITT_USB_HEADSET_PRENAME))))) {
 			usb_audio_power_buckboost();
+			set_otg_switch_enable_v600();
+			usb_headset_plug_in();
 		}
 	}
 

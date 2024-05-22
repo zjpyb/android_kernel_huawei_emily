@@ -52,7 +52,7 @@
 #define MAX_MEMDUMP_NAME 16
 
 #define memdump_remap(phys_addr, size) memdump_remap_type(phys_addr, size, PAGE_KERNEL)
-#define memdump_unmap(vaddr) vunmap((void *)(((unsigned long)vaddr) & (~(PAGE_SIZE - 1))))
+#define memdump_unmap(vaddr) vunmap((void *)(uintptr_t)(((uintptr_t)vaddr) & (~(PAGE_SIZE - 1))))
 
 unsigned int g_dump_flag;
 unsigned int g_ddr_size = 0x80000000;
@@ -78,14 +78,14 @@ extern void etb_nve_read(unsigned char *config);
 extern unsigned long hisi_get_reserve_mem_size(void);
 extern int memblock_free(phys_addr_t base, phys_addr_t size);
 
-static inline void *memdump_remap_type(unsigned long phys_addr, size_t size,
+static inline void *memdump_remap_type(uintptr_t phys_addr, size_t size,
 				       pgprot_t pgprot)
 {
 	int i;
 	u8 *vaddr;
 	int npages =
 	    PAGE_ALIGN((phys_addr & (PAGE_SIZE - 1)) + size) >> PAGE_SHIFT;
-	unsigned long offset = phys_addr & (PAGE_SIZE - 1);
+	uintptr_t offset = phys_addr & (PAGE_SIZE - 1);
 	struct page **pages;
 	pages = vmalloc(sizeof(struct page *) * npages);
 	if (!pages) {
@@ -94,7 +94,7 @@ static inline void *memdump_remap_type(unsigned long phys_addr, size_t size,
 	}
 	pages[0] = phys_to_page(phys_addr);
 	for (i = 0; i < npages - 1; i++) {
-		pages[i + 1] = pages[i] + (unsigned long)1;/*lint !e679*/
+		pages[i + 1] = pages[i] + (uintptr_t)1;/*lint !e679*/
 	}
 	vaddr = (u8 *) vmap(pages, npages, VM_MAP, pgprot);
 	if (vaddr == 0) {
@@ -132,7 +132,7 @@ static ssize_t dump_phy_mem_proc_file_read(struct file *file,
 
 	copy = (ssize_t) min(bytes, (size_t) (info->size - *off));
 
-	p = memdump_remap((phys_addr_t) ((char *)info->p + *off), copy);
+	p = memdump_remap((phys_addr_t)(uintptr_t)((char *)info->p + *off), copy);
 	if (NULL == p) {
 		BB_PRINT_ERR("%s ioremap fail\n", __func__);
 		return -ENOMEM;
@@ -198,7 +198,7 @@ static void create_dump_phy_mem_proc_file(char *name, unsigned long phy_addr,
 		return;
 	}
 
-	info->p = (void *)(phy_addr);
+	info->p = (void *)(uintptr_t)(phy_addr);
 	info->size = size;
 
 	balong_create_memory_proc_entry(name, S_IRUSR | S_IRGRP,

@@ -46,7 +46,6 @@ EXPORT_SYMBOL(vibrator_shake);
 struct hisi_vibrator_data {
 	struct device *dev;
 	struct led_classdev cdev;
-	/* struct mutex lock; */
 	struct regulator *ldo;
 	unsigned min_voltage;
 	unsigned max_voltage;
@@ -58,38 +57,6 @@ struct hisi_vibrator_data {
 	unsigned vibrator_bit_current;
 };
 
-/*
-static void  hisi_vibrator_ldo_ctrl(struct led_classdev *cdev, int state)
-{
-	struct hisi_vibrator_data *vdata
-		= container_of(cdev, struct hisi_vibrator_data, cdev);
-	int ret = 0;
-
-	if (vdata == NULL) {
-		pr_err("%s: vibrator data is NULL", __FUNCTION__);
-		return;
-	}
-	if (vdata->ldo == NULL) {
-		dev_err(vdata->dev, "no pwero ldo");
-		return;
-	}
-
-	mutex_lock(&vdata->lock);
-	if (state) {
-		vibrator_shake = 1;
-		ret = regulator_enable(vdata->ldo);
-	} else {
-		vibrator_shake = 0;
-		ret = regulator_disable(vdata->ldo);
-	}
-	mutex_unlock(&vdata->lock);
-
-	if (ret)
-		dev_err(vdata->dev, "failed to ctrl power ldo\n");
-	return;
-}
-*/
-
 static void hisi_vibrator_ldo_ctrl(struct led_classdev *cdev, enum led_brightness state)
 {
 	struct hisi_vibrator_data *vdata
@@ -100,16 +67,16 @@ static void hisi_vibrator_ldo_ctrl(struct led_classdev *cdev, enum led_brightnes
 		return;
 	}
 	/* no blocking, the lock should not be used */
-	/* mutex_lock(&vdata->lock); */
 	if (state) {
 		vibrator_shake = 1;
 		hisi_pmic_reg_write(vdata->vibrator_reg_on,
 				vdata->vibrator_bit_on);
+		dev_info(vdata->dev, "hisi_vibrator open\n");
 	} else {
 		vibrator_shake = 0;
 		hisi_pmic_reg_write(vdata->vibrator_reg_off,VIBRATOR_OFF);
+		dev_info(vdata->dev, "hisi_vibrator close\n");
 	}
-	/* mutex_unlock(&vdata->lock); */
 
 	return;
 }
@@ -117,23 +84,20 @@ static void hisi_vibrator_ldo_ctrl(struct led_classdev *cdev, enum led_brightnes
 static int hisi_vibrator_get_dr_vout(struct hisi_vibrator_data *vdata)
 {
 	struct device_node *dn;
-	unsigned data;
 	int ret;
 
 	dn = vdata->dev->of_node;
-	ret = of_property_read_u32(dn, "vibrator-reg-current", &data);
+	ret = of_property_read_u32(dn, "vibrator-reg-current", &vdata->vibrator_reg_current);
 	if (ret) {
 		dev_err(vdata->dev, "get vibrator-reg-current failed\n");
 		return ret;
 	}
-	vdata->vibrator_reg_current = data;
 
-	ret = of_property_read_u32(dn, "vibrator-bit-current", &data);
+	ret = of_property_read_u32(dn, "vibrator-bit-current", &vdata->vibrator_bit_current);
 	if (ret) {
 		dev_err(vdata->dev, "get vibrator-bit-current failed\n");
 		return ret;
 	}
-	vdata->vibrator_bit_current = data;
 
 	hisi_pmic_reg_write(vdata->vibrator_reg_current, vdata->vibrator_bit_current);
 

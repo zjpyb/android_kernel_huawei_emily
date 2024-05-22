@@ -810,6 +810,7 @@ typedef enum
     OAM_FILE_ID_DMAC_APF_C                  = 3005,
     OAM_FILE_ID_DMAC_APF_H                  = 3006,
 #endif
+    OAM_FILE_ID_OAML_QUEUE_H             = 3007,
     OAM_FILE_ID_BUTT
 }oam_file_id_enum;
 typedef oal_uint32 oam_file_id_enum_uint32;

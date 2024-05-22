@@ -340,7 +340,7 @@ mmc_send_cxd_native(struct mmc_host *host, u32 arg, u32 *cxd, int opcode)
  */
 static int
 mmc_send_cxd_data(struct mmc_card *card, struct mmc_host *host,
-		u32 opcode, void *buf, unsigned len)
+		u32 opcode, const void *buf, unsigned len)
 {
 	struct mmc_request mrq = {NULL};
 	struct mmc_command cmd = {0};
@@ -974,7 +974,7 @@ int sd_wait_lock_unlock_cmd(struct mmc_card *card,int mode)
 	/* set timeout for forced erase operation to 3 min. (see MMC spec) */
 	erase_timeout = jiffies + 180 * HZ;
 	normal_timeout = jiffies + 10 * HZ;
-	if(mode & MMC_LOCK_MODE_ERASE) {
+	if((unsigned int)mode & MMC_LOCK_MODE_ERASE) {
 		do {
 			/* we cannot use "retries" here because the
 			 * R1_LOCK_UNLOCK_FAILED bit is cleared by subsequent reads to
@@ -1077,10 +1077,10 @@ sdlock_retry:
 	}
 	memset(data_buf, 0, max_buf_size);
 	data_buf[0] |= mode;
-	if (mode & MMC_LOCK_MODE_UNLOCK)
+	if ((unsigned int)mode & MMC_LOCK_MODE_UNLOCK)
 		data_buf[0] &= ~MMC_LOCK_MODE_UNLOCK;
 
-	if (!(mode & MMC_LOCK_MODE_ERASE)) {
+	if (!((unsigned int)mode & MMC_LOCK_MODE_ERASE)) {
 		data_buf[1] = key_len-2; //exclude end 2 chars (0xFF 0xFF)
 		memcpy(data_buf + 2, key_buf, key_len);
 	} else {

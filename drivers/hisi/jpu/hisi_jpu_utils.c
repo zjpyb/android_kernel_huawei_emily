@@ -10,14 +10,15 @@
 * GNU General Public License for more details.
 *
 */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-variable"
+
+
 #include <linux/delay.h>
 #include <linux/version.h>
 #include <media/camera/jpeg/jpeg_base.h>
-#include "hisifb_ion.h"
 #include "hisi_jpu.h"
 #include <linux/device.h>
-
-#define MAX_INPUT_DATA_LEN (8192*8192*4)
 
 /******************************************************************************
 **
@@ -514,7 +515,8 @@ int hisijpu_clk_enable(struct hisi_jpu_data_type *hisijd)
 		HISI_JPU_DEBUG("jpg func clk default rate is: %ld.\n", JPG_FUNC_CLK_DEFAULT_RATE);
 		ret = jpeg_dec_set_rate(hisijd->jpg_func_clk, JPG_FUNC_CLK_DEFAULT_RATE);
 	}else if (hisijd->jpu_support_platform == HISI_DSS_V500
-		|| hisijd->jpu_support_platform == HISI_DSS_V501) {
+		|| hisijd->jpu_support_platform == HISI_DSS_V501
+		|| hisijd->jpu_support_platform == HISI_DSS_V510) {
 		HISI_JPU_DEBUG("jpg func clk default rate is: %ld.\n", JPG_FUNC_CLK_DEFAULT_RATE_V501);
 		ret = jpeg_dec_set_rate(hisijd->jpg_func_clk, JPG_FUNC_CLK_DEFAULT_RATE_V501);
 	}else {
@@ -594,110 +596,6 @@ int hisijpu_clk_disable(struct hisi_jpu_data_type *hisijd)
 	return 0;
 }
 
-static int hisijpu_enable_iommu(struct hisi_jpu_data_type *hisijd)
-{
-	struct iommu_domain *domain = NULL;
-
-	if(!hisijd) {
-		HISI_JPU_ERR("hisijd is NULL!\n");
-		return -EINVAL;
-	}
-
-	/* create iommu domain */
-	domain = hisi_ion_enable_iommu(NULL);
-	if (!domain) {
-		HISI_JPU_ERR("failed to hisi_ion_enable_iommu!\n");
-		return -EINVAL;
-	}
-
-	hisijd->jpu_domain = domain;
-
-	return 0;
-}
-
-static int hisi_jpu_lb_alloc(struct hisi_jpu_data_type *hisijd)
-{
-	int ret = 0;
-	size_t lb_size = 0;
-
-	if (!hisijd || !(hisijd->pdev)) {
-		HISI_JPU_ERR("hisijd is NULL!\n");
-		return -EINVAL;
-	}
-
-	if (!hisijd->ion_client) {
-		HISI_JPU_ERR("ion_client is NULL!\n");
-		return -EINVAL;
-	}
-
-	lb_size = JPU_LB_SIZE;
-
-	/*alloc jpu dec lb buffer, start end shoulf 32KB align*/
-	hisijd->lb_ion_handle = ion_alloc(hisijd->ion_client, lb_size,
-		0, ION_HEAP(ION_SYSTEM_HEAP_ID), 0);
-	if (IS_ERR_OR_NULL(hisijd->lb_ion_handle)) {
-		HISI_JPU_ERR("failed to ion alloc lb_ion_handle!");
-		ret = -ENOMEM;
-		goto err_ion_handle;
-	}
-
-	if (!ion_map_kernel(hisijd->ion_client, hisijd->lb_ion_handle)) {
-		HISI_JPU_ERR("failed to ion_map_kernel!");
-		ret = -ENOMEM;
-		goto err_map_kernel;
-	}
-
-	if(ion_map_iommu(hisijd->ion_client, hisijd->lb_ion_handle, &(hisijd->iommu_format))) {
-		ret = -ENOMEM;
-		HISI_JPU_ERR("failed to ion_map_iommu!");
-		goto err_map_iommu;
-	}
-	hisijd->lb_addr = (uint32_t)(hisijd->iommu_format.iova_start >> 4);
-
-	/* start address for line buffer, unit is 16 byte, must align to 128 byte */
-	if (hisijd->lb_addr & (JPU_LB_ADDR_ALIGN - 1)) {
-		HISI_JPU_ERR("lb_addr(0x%x) is not %d bytes aligned!\n",
-			hisijd->lb_addr, JPU_LB_ADDR_ALIGN - 1);
-		ret = -EINVAL;
-		goto err_addr;
-	}
-
-	HISI_JPU_INFO("lb_size=%zu, hisijd->lb_addr 0x%x\n",lb_size, hisijd->lb_addr);
-	return 0;
-
-err_addr:
-	ion_unmap_iommu(hisijd->ion_client, hisijd->lb_ion_handle);
-
-err_map_iommu:
-	if (hisijd->lb_ion_handle) {
-		ion_unmap_kernel(hisijd->ion_client, hisijd->lb_ion_handle);
-	}
-
-err_map_kernel:
-	if (hisijd->lb_ion_handle) {
-		ion_free(hisijd->ion_client, hisijd->lb_ion_handle);
-		hisijd->lb_ion_handle = NULL;
-	}
-
-err_ion_handle:
-	return ret;
-}
-
-static void hisi_jpu_lb_free(struct hisi_jpu_data_type *hisijd)
-{
-	if (!hisijd) {
-		HISI_JPU_ERR("hisijd is NULL!\n");
-		return ;
-	}
-
-	if (hisijd->ion_client && hisijd->lb_ion_handle) {
-		ion_unmap_iommu(hisijd->ion_client, hisijd->lb_ion_handle);
-		ion_unmap_kernel(hisijd->ion_client, hisijd->lb_ion_handle);
-		ion_free(hisijd->ion_client, hisijd->lb_ion_handle);
-		hisijd->lb_ion_handle = NULL;
-	}
-}
-
 int hisi_jpu_register(struct hisi_jpu_data_type *hisijd)
 {
 	int ret = 0;
@@ -713,10 +611,9 @@ int hisi_jpu_register(struct hisi_jpu_data_type *hisijd)
 	sema_init(&hisijd->blank_sem, 1);
 	hisijd->power_on = false;
 	hisijd->jpu_res_initialized = false;
-	hisijd->ion_client = hisi_ion_client_create(HISI_JPU_ION_CLIENT_NAME);
 
-	if (IS_ERR_OR_NULL(hisijd->ion_client)) {
-		dev_err(&hisijd->pdev->dev, "failed to create ion client!\n");
+	if (hisijpu_create_buffer_client(hisijd)) {
+		dev_err(&hisijd->pdev->dev, "create buffer client failed!\n");
 		return -ENOMEM;
 	}
 
@@ -766,10 +663,7 @@ int hisi_jpu_unregister(struct hisi_jpu_data_type *hisijd)
 
 	hisi_jpu_lb_free(hisijd);
 
-	if (hisijd->ion_client) {
-		ion_client_destroy(hisijd->ion_client);
-		hisijd->ion_client = NULL;
-	}
+	hisijpu_destroy_buffer_client(hisijd);
 
 	return 0;
 }
@@ -778,7 +672,7 @@ int hisi_jpu_unregister(struct hisi_jpu_data_type *hisijd)
 /*******************************************************************************
 **
 */
-static int hisijpu_check_reg_state(char __iomem *addr, uint32_t val)
+static int hisijpu_check_reg_state(const char __iomem *addr, uint32_t val)
 {
 	uint32_t tmp = 0;
 	int delay_count = 0;
@@ -818,7 +712,8 @@ void hisi_jpu_dec_normal_reset(struct hisi_jpu_data_type *hisijd)
 		return;
 	}
 
-	if(hisijd->jpu_support_platform == HISI_DSS_V501) {
+	if(hisijd->jpu_support_platform == HISI_DSS_V501
+		|| hisijd->jpu_support_platform == HISI_DSS_V510) {
 		hisijpu_set_reg(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_RD_CFG_8_CS, 0x1, 1, 25);
 		ret = hisijpu_check_reg_state(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_RD_CFG_8_CS, 0x01000000);
 		if (ret) {
@@ -848,7 +743,8 @@ void hisi_jpu_dec_error_reset(struct hisi_jpu_data_type *hisijd)
 
 	/* step1 */
 	hisijpu_set_reg(hisijd->jpu_top_base + JPGDEC_CRG_CFG1, 0x00010000, 32, 0);
-	if(hisijd->jpu_support_platform == HISI_DSS_V501) {
+	if(hisijd->jpu_support_platform == HISI_DSS_V501
+		|| hisijd->jpu_support_platform == HISI_DSS_V510) {
 		hisijpu_set_reg(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_RD_CFG_8_CS, 0x1, 1, 25);
 		hisijpu_set_reg(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_RD_CFG_9_CS, 0x1, 1, 25);
 		hisijpu_set_reg(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_WR_CFG_8_CS, 0x1, 1, 25);
@@ -865,7 +761,8 @@ void hisi_jpu_dec_error_reset(struct hisi_jpu_data_type *hisijd)
 	if(ret) {
 		HISI_JPU_ERR("fail to wait JPGDEC_RO_STATE!\n");
 	}
-	if(hisijd->jpu_support_platform == HISI_DSS_V501) {
+	if(hisijd->jpu_support_platform == HISI_DSS_V501
+		|| hisijd->jpu_support_platform == HISI_DSS_V510) {
 		ret = hisijpu_check_reg_state(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_RD_CFG_8_CS, 0x01000000);
 		if(ret) {
 			HISI_JPU_ERR("fail to wait JPGDEC_CVDR_AXI_JPEG_NR_RD_CFG_8_CS!\n");
@@ -914,7 +811,8 @@ void hisi_jpu_dec_error_reset(struct hisi_jpu_data_type *hisijd)
 	}
 
 	/* step4 */
-	if(hisijd->jpu_support_platform == HISI_DSS_V501) {
+	if(hisijd->jpu_support_platform == HISI_DSS_V501
+		|| hisijd->jpu_support_platform == HISI_DSS_V510) {
 		hisijpu_set_reg(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_RD_CFG_8_CS, 0x0, 1, 25);
 		hisijpu_set_reg(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_RD_CFG_9_CS, 0x0, 1, 25);
 		hisijpu_set_reg(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_WR_CFG_8_CS, 0x0, 1, 25);
@@ -930,18 +828,14 @@ void hisi_jpu_dec_error_reset(struct hisi_jpu_data_type *hisijd)
 
 void hisijpu_smmu_on(struct hisi_jpu_data_type *hisijd)
 {
-	uint32_t phy_pgd_base = 0;
-	struct iommu_domain_data *domain_data = NULL;
 	uint32_t fama_ptw_msb = 0;
 
 	if(!hisijd){
 		HISI_JPU_ERR("hisijd is NULL!\n");
 		return;
 	}
-
 	HISI_JPU_DEBUG("+.\n");
 
-	HISI_JPU_DEBUG("CONFIG_JPU_SMMU_ENABLE.\n");
 	/*
 	** Set global mode:
 	** SMMU_SCR_S.glb_nscfg = 0x3
@@ -971,23 +865,19 @@ void hisijpu_smmu_on(struct hisi_jpu_data_type *hisijd)
 	** Set non-secure pagetable type:
 	** SMMU_CB_TTBCR.cb_ttbcr_des= 0x1 (long descriptor)
 	*/
-	if(!hisijd->jpu_domain) {
-		HISI_JPU_ERR("jpu_domain null.\n");
+	if(!hisi_jpu_domain_get_ttbr(hisijd)) {
+		HISI_JPU_ERR("get ttbr failed!\n");
 		return;
 	}
-	domain_data = (struct iommu_domain_data *)(hisijd->jpu_domain->priv);
-
-	phy_pgd_base = (uint32_t)(domain_data->phy_pgd_base);
-	fama_ptw_msb = (domain_data->phy_pgd_base >> 32) & 0x0000007F;
-
-	hisijpu_set_reg(hisijd->jpu_smmu_base + SMMU_CB_TTBR0, phy_pgd_base, 32, 0);
+	hisijpu_set_reg(hisijd->jpu_smmu_base + SMMU_CB_TTBR0,
+		(uint32_t)hisi_jpu_domain_get_ttbr(hisijd), 32, 0);
 	hisijpu_set_reg(hisijd->jpu_smmu_base + SMMU_CB_TTBCR, 0x1, 1, 0);
 
 	/* FAMA configuration */
+	fama_ptw_msb = (hisi_jpu_domain_get_ttbr(hisijd) >> 32) & 0x0000007F;
 	hisijpu_set_reg(hisijd->jpu_smmu_base + SMMU_FAMA_CTRL0, 0x80, 14, 0);
 	hisijpu_set_reg(hisijd->jpu_smmu_base + SMMU_FAMA_CTRL1, fama_ptw_msb, 7, 0);
 	HISI_JPU_DEBUG("-.\n");
-
 }
 
 int hisi_jpu_on(struct hisi_jpu_data_type *hisijd)
@@ -1129,7 +1019,8 @@ static int hisi_jpu_dec_reg_default(struct hisi_jpu_data_type *hisijd)
 	/* cppcheck-suppress * */
 	memset(jpu_dec_reg, 0, sizeof(jpu_dec_reg_t));
 
-	if(hisijd->jpu_support_platform == HISI_DSS_V501) {
+	if(hisijd->jpu_support_platform == HISI_DSS_V501
+		|| hisijd->jpu_support_platform == HISI_DSS_V510) {
 		jpu_dec_reg->dec_start = inp32(jpu_dec_base + JPEG_DEC_START_CS);
 		jpu_dec_reg->preftch_ctrl = inp32(jpu_dec_base + JPEG_DEC_PREFTCH_CTRL_CS);
 		jpu_dec_reg->frame_size = inp32(jpu_dec_base + JPEG_DEC_FRAME_SIZE_CS);
@@ -1238,19 +1129,21 @@ static int hisi_jpu_dec_set_cvdr(struct hisi_jpu_data_type *hisijd)
 		HISI_JPU_ERR("jpu_cvdr_base is NULL!\n");
 		return -EINVAL;
 	}
-	if(hisijd->jpu_support_platform == HISI_DSS_V501) {
+	if(hisijd->jpu_support_platform == HISI_DSS_V501
+		|| hisijd->jpu_support_platform == HISI_DSS_V510) {
 		outp32(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_CVDR_CFG_CS, 0x070f2000);
 
 		outp32(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_WR_CFG_8_CS, 0x80060000);
 		outp32(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_WR_CFG_9_CS, 0x80060000);
 
-	if (hisijd->jpu_support_platform == HISI_KIRIN_970) {
-		outp32(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_WR_CFG_0, 0x80000000);
-		outp32(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_WR_CFG_1, 0x80000000);
-	}else if (hisijd->jpu_support_platform == HISI_DSS_V501) {
-		outp32(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_WR_CFG_0, 0x80060000);
-		outp32(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_WR_CFG_1, 0x80060000);
-	}
+		if (hisijd->jpu_support_platform == HISI_KIRIN_970) {
+			outp32(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_WR_CFG_0, 0x80000000);
+			outp32(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_WR_CFG_1, 0x80000000);
+		}else if (hisijd->jpu_support_platform == HISI_DSS_V501
+			|| hisijd->jpu_support_platform == HISI_DSS_V510) {
+			outp32(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_WR_CFG_0, 0x80060000);
+			outp32(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_WR_CFG_1, 0x80060000);
+		}
 		/* Wr_qos_max:0x1;wr_qos_threshold_01_start:0x1;wr_qos_threshold_01_stop:0x1,WR_QOS&RD_QOS encode will also set this */
 		outp32(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_CVDR_WR_QOS_CFG_CS, 0x10333311);
 		outp32(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_CVDR_RD_QOS_CFG_CS, 0x10333311);
@@ -1410,7 +1303,8 @@ static int hisi_jpu_dec_set_reg(struct hisi_jpu_data_type *hisijd, jpu_dec_reg_t
 		jpu_dec_reg->csc_trans_coef4);
 	}
 
-	if(hisijd->jpu_support_platform == HISI_DSS_V501) {
+	if(hisijd->jpu_support_platform == HISI_DSS_V501
+		|| hisijd->jpu_support_platform == HISI_DSS_V510) {
 		outp32(jpu_dec_base + JPEG_DEC_PREFTCH_CTRL_CS, jpu_dec_reg->preftch_ctrl);
 		outp32(jpu_dec_base + JPEG_DEC_FRAME_SIZE_CS, jpu_dec_reg->frame_size);
 		outp32(jpu_dec_base + JPEG_DEC_CROP_HORIZONTAL_CS, jpu_dec_reg->crop_horizontal);
@@ -1629,89 +1523,6 @@ static int hisi_jpu_check_inbuff_par(jpu_data_t *jpu_req)
 	return 0;
 }
 
-static long hisi_jpu_check_inbuff_addr(struct hisi_jpu_data_type *hisijd, jpu_data_t *jpu_req)
-{
-	struct ion_handle *inhnd = NULL;
-	struct iommu_map_format iommu_in_format;
-	size_t buf_len = 0;
-	unsigned long buf_addr = 0;
-	bool succ = true;
-
-	if (!hisijd || !(hisijd->pdev)) {
-		HISI_JPU_ERR("hisijd is NULL!\n");
-		return -EINVAL;
-	}
-
-	if (!hisijd->ion_client) {
-		HISI_JPU_ERR("ion_client is NULL!\n");
-		return -EINVAL;
-	}
-
-	if (!jpu_req) {
-		HISI_JPU_ERR("jpu_req is NULL!\n");
-		return -EINVAL;
-	}
-
-	if (jpu_req->in_sharefd < 0) {
-		HISI_JPU_ERR("in_sharefd=%d invalid!\n", jpu_req->in_sharefd);
-		return -EINVAL;
-	}
-
-	if (jpu_req->end_addr <= jpu_req->start_addr) {
-		HISI_JPU_ERR("end_addr invalid!\n");
-		return -EINVAL;
-	}
-
-	if (jpu_req->addr_offset > jpu_req->start_addr || jpu_req->addr_offset > MAX_INPUT_DATA_LEN) {
-		HISI_JPU_ERR("addr offset invalid!\n");
-		return -EINVAL;
-	}
-
-	memset(&iommu_in_format, 0, sizeof(struct iommu_map_format));
-
-	//check input buffer addr
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0)
-	inhnd = ion_import_dma_buf_fd(hisijd->ion_client, jpu_req->in_sharefd);
-#else
-	inhnd = ion_import_dma_buf(hisijd->ion_client, jpu_req->in_sharefd);
-#endif
-	if (IS_ERR(inhnd)) {
-		HISI_JPU_ERR("inhnd ion_import_dma_buf fail ! \n");
-		inhnd = NULL;
-		return -EINVAL;
-	}
-
-	if (jpu_req->smmu_enable == 1) {
-		if (ion_map_iommu(hisijd->ion_client, inhnd, &iommu_in_format)) {
-			HISI_JPU_ERR("inhnd ion_map_iommu fail ! \n");
-			succ = false;
-		} else {
-			if ((jpu_req->start_addr - jpu_req->addr_offset) != iommu_in_format.iova_start) {
-				HISI_JPU_ERR("inbuffer ion_map_iommu check fail ! \n");
-				succ = false;
-			}
-			ion_unmap_iommu(hisijd->ion_client, inhnd);
-		}
-	} else {
-		if (hisifb_ion_phys(hisijd->ion_client, inhnd, &(hisijd->pdev->dev), &buf_addr, &buf_len)) {
-			HISI_JPU_ERR("inhnd ion_phys fail ! \n");
-			succ = false;
-		} else {
-			if (buf_addr != (jpu_req->start_addr - jpu_req->addr_offset)) {
-				HISI_JPU_ERR("inbuffer ion_phys check fail ! \n");
-				succ = false;
-			}
-		}
-	}
-
-	ion_free(hisijd->ion_client, inhnd);
-
-	if (!succ)
-		return -EINVAL;
-	else
-		return 0;
-}
-
 static int hisijpu_check_outbuffer_par(jpu_data_t *jpu_req)
 {
 	uint32_t out_addr_align = 0;
@@ -1787,88 +1598,6 @@ static int hisijpu_check_outbuffer_par(jpu_data_t *jpu_req)
 	}
 
 	return 0;
-}
-
-static long hisi_jpu_check_outbuff_addr(struct hisi_jpu_data_type *hisijd, jpu_data_t *jpu_req)
-{
-	struct ion_handle *outhnd = NULL;
-	struct iommu_map_format iommu_out_format;
-	size_t buf_len = 0;
-	unsigned long buf_addr = 0;
-	bool succ = true;
-
-	if (!hisijd || !(hisijd->pdev)) {
-		HISI_JPU_ERR("hisijd is NULL!\n");
-		return -EINVAL;
-	}
-
-	if (!hisijd->ion_client) {
-		HISI_JPU_ERR("ion_client is NULL!\n");
-		return -EINVAL;
-	}
-
-	if (!jpu_req) {
-		HISI_JPU_ERR("jpu_req is NULL!\n");
-		return -EINVAL;
-	}
-
-	if (jpu_req->out_sharefd < 0) {
-		HISI_JPU_ERR("out_sharefd=%d invalid!\n", jpu_req->out_sharefd);
-		return -EINVAL;
-	}
-
-	//start_addr unit is 16 byte, page unit is 32KB, so start_addr need to devide 2048
-	if ( (jpu_req->last_page_y < ( jpu_req->start_addr_y / 2048 )) ||
-		(jpu_req->last_page_c < ( jpu_req->start_addr_c / 2048 )) ) {
-		HISI_JPU_ERR("last_page_y invalid!\n");
-		return -EINVAL;
-	}
-
-	/*uint32_t restart_interval;*/
-
-	memset(&iommu_out_format, 0, sizeof(struct iommu_map_format));
-
-	//check output buffer addr
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0)
-	outhnd = ion_import_dma_buf_fd(hisijd->ion_client, jpu_req->out_sharefd);
-#else
-	outhnd = ion_import_dma_buf(hisijd->ion_client, jpu_req->out_sharefd);
-#endif
-	if (IS_ERR(outhnd)) {
-		HISI_JPU_ERR("outhnd ion_import_dma_buf fail ! \n");
-		outhnd = NULL;
-		return -EINVAL;
-	}
-
-	if (jpu_req->smmu_enable == 1) {
-		if (ion_map_iommu(hisijd->ion_client, outhnd, &iommu_out_format)) {
-			HISI_JPU_ERR("outhnd ion_map_iommu fail ! \n");
-			succ = false;
-		} else {
-			if (jpu_req->start_addr_y != (iommu_out_format.iova_start / 16)) {
-				HISI_JPU_ERR("outbuffer ion_map_iommu check fail !\n");
-				succ = false;
-			}
-			ion_unmap_iommu(hisijd->ion_client, outhnd);
-		}
-	} else {
-		if (hisifb_ion_phys(hisijd->ion_client, outhnd, &(hisijd->pdev->dev), &buf_addr, &buf_len)) {
-			HISI_JPU_ERR("outhnd ion_phys fail ! \n");
-			succ = false;
-		} else {
-			if ((buf_addr / 16) != jpu_req->start_addr_y) {
-				HISI_JPU_ERR("outbuffer ion_phys check fail ! \n");
-				succ = false;
-			}
-		}
-	}
-
-	ion_free(hisijd->ion_client, outhnd);
-
-	if (!succ)
-		return -EINVAL;
-	else
-		return 0;
 }
 
 static int hisijpu_check_region_decode_info(jpu_data_t *jpu_req)
@@ -1978,7 +1707,7 @@ static int hisijpu_check_buffers(struct hisi_jpu_data_type *hisijd, jpu_data_t *
 {
 	int ret = 0;
 
-	if ((!hisijd) || (!jpu_req)) {
+	if (!hisijd || !jpu_req) {
 		HISI_JPU_ERR("hisijd or jpu_req is NULL!\n");
 		return -EINVAL;
 	}
@@ -2037,7 +1766,8 @@ static int hisijpu_check_userdata(struct hisi_jpu_data_type *hisijd, jpu_data_t 
 		return -EINVAL;
 	}
 
-	if(hisijd->jpu_support_platform != HISI_DSS_V501) {
+	if(hisijd->jpu_support_platform != HISI_DSS_V501
+		&& hisijd->jpu_support_platform != HISI_DSS_V510) {
 		/* is format can handle for chip limit*/
 		ret = hisijpu_check_format(jpu_req);
 		if (ret) {
@@ -2083,7 +1813,7 @@ void hisi_jpu_dump_reg(struct hisi_jpu_data_type *hisijd)
 	}
 }
 
-int hisijpu_job_exec(struct hisi_jpu_data_type *hisijd, void __user *argp)
+int hisijpu_job_exec(struct hisi_jpu_data_type *hisijd, const void __user *argp)
 {
 	int ret = 0;
 	unsigned long ret1 = 0;
@@ -2178,12 +1908,14 @@ int hisijpu_job_exec(struct hisi_jpu_data_type *hisijd, void __user *argp)
 		((jpu_req->pix_width - 1) | ((jpu_req->pix_height - 1) << 16)), 32, 0);
 
 	/* input bitstreams addr */
-	if(hisijd->jpu_support_platform == HISI_DSS_V501) {
+	if(hisijd->jpu_support_platform == HISI_DSS_V501
+		|| hisijd->jpu_support_platform == HISI_DSS_V510) {
 		pjpu_dec_reg->bitstreams_start_h = (jpu_req->start_addr >> 32) & 0x3;
 	}
 	pjpu_dec_reg->bitstreams_start = jpu_set_bits32(pjpu_dec_reg->bitstreams_start,
 		(uint32_t)jpu_req->start_addr, 32, 0);
-	if(hisijd->jpu_support_platform == HISI_DSS_V501) {
+	if(hisijd->jpu_support_platform == HISI_DSS_V501
+		|| hisijd->jpu_support_platform == HISI_DSS_V510) {
 		pjpu_dec_reg->bitstreams_end_h = (jpu_req->end_addr >> 32) & 0x3;
 	}
 	pjpu_dec_reg->bitstreams_end = jpu_set_bits32(pjpu_dec_reg->bitstreams_end,
@@ -2279,6 +2011,12 @@ int hisijpu_job_exec(struct hisi_jpu_data_type *hisijd, void __user *argp)
 		hisi_jpu_dump_reg(hisijd);
 	}
 
+	if (g_debug_jpu_dec_job_timediff) {
+		jpu_get_timestamp(&tv1);
+		timediff = jpu_timestamp_diff(&tv0, &tv1);
+		HISI_JPU_INFO("jpu job exec timediff is %ld us!", timediff);
+	}
+
 err_out:
 	ret1 = hisi_jpu_off(hisijd);
 	if (ret1) {
@@ -2287,13 +2025,8 @@ err_out:
 
 	up(&hisijd->blank_sem);
 
-	if (g_debug_jpu_dec_job_timediff) {
-		jpu_get_timestamp(&tv1);
-		timediff = jpu_timestamp_diff(&tv0, &tv1);
-		HISI_JPU_INFO("jpu job exec timediff is %ld us!", timediff);
-	}
-
 	HISI_JPU_DEBUG("-.\n");
 
 	return ret;
 }
+#pragma GCC diagnostic pop

@@ -202,6 +202,43 @@ VOS_UINT32               g_ulVosDumpMemFlag;
 
 
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+
+struct platform_device *modem_osa_pdev;
+
+static int osa_driver_probe(struct platform_device *pdev)
+{
+    dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(64));
+
+    modem_osa_pdev = pdev;
+
+    return VOS_OK;
+}
+
+static int osa_driver_remove(struct platform_device *pdev)
+{
+    return VOS_OK;
+}
+
+static const struct of_device_id osa_dev_of_match[] = {
+    {
+        .compatible = "hisilicon,hisi-osa",
+        .data = NULL,
+    },
+    {},
+};
+
+static struct platform_driver osa_driver = {
+    .probe  = osa_driver_probe,
+    .remove = osa_driver_remove,
+    .driver = {
+        .name = "hisi-osa",
+        .of_match_table = osa_dev_of_match,
+    },
+};
+
+#endif
+
 /*****************************************************************************
  Function   : VOS_MemCtrlBlkInit_1
  Description: Init one memory control block
@@ -310,6 +347,10 @@ VOS_UINT32 VOS_MemInit( VOS_VOID )
     VOS_UINT_PTR ulSpaceEnd;
     VOS_UINT_PTR ulCtrlStart;
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+    VOS_INT32 lRegResult = 0;
+#endif
+
     /* calculate msg+mem's size */
     for ( i=0; i<VOS_MEM_CTRL_BLOCK_NUMBER; i++ )
     {
@@ -397,6 +438,17 @@ VOS_UINT32 VOS_MemInit( VOS_VOID )
     VOS_SpinLockInit(&g_stVosDumpMemSpinLock);
     g_ulVosDumpMemFlag = VOS_TRUE;
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+
+    lRegResult = platform_driver_register(&osa_driver);
+
+    if (lRegResult)
+    {
+        LogPrint1("<VOS_MemInit> platform_driver_register fail, lRegResult=%d.\n",lRegResult);
+    }
+
+#endif
+
     return VOS_OK;
 }
 
@@ -437,68 +489,7 @@ VOS_UINT32 VOS_MemDumpCheck(VOS_VOID)
  *****************************************************************************/
 VOS_VOID VOS_DumpVosMem(VOS_MEM_HEAD_BLOCK *pstHeadBlock, VOS_UINT_PTR ulUsrAddr, VOS_UINT32 ulErrNo, VOS_UINT32 ulFileID, VOS_INT32 usLineNo)
 {
-
-    VOS_UINT8           *pucDumpBuffer;
-    VOS_MEM_HEAD_BLOCK  *pstTmpMemHead = pstHeadBlock;
-    VOS_CHAR            *pucUserAddr = (VOS_CHAR *)ulUsrAddr;
-    VOS_MEM_HEAD_BLOCK   astMemHead[VOS_DUMP_MEM_HEAD_TOTAL_NUM];
-
-    if ( VOS_NULL_PTR == VOS_MemSet_s(astMemHead, sizeof(astMemHead), 0, sizeof(astMemHead)) )
-    {
-        mdrv_om_system_error(VOS_REBOOT_MEMSET_MEM, 0, (VOS_INT)((THIS_FILE_ID << 16) | __LINE__), 0, 0);
-    }
-
-    /* 借用空间保存部分信息 */
-    astMemHead[0].ulMemCtrlAddress = (VOS_UINT_PTR)pstHeadBlock;
-    astMemHead[0].ulMemAddress = ulUsrAddr;
-    astMemHead[0].ulMemUsedFlag = ulErrNo;
-
-    /* 保存出错的控制块前后个一个，总共3个控制块 */
-    if ( VOS_NULL_PTR != pstHeadBlock )
-    {
-        pstTmpMemHead--;
-
-        if ( VOS_NULL_PTR == VOS_MemCpy_s((VOS_CHAR *)(&(astMemHead[1])), VOS_DUMP_MEM_HEAD_NUM*sizeof(VOS_MEM_HEAD_BLOCK), (VOS_CHAR *)pstTmpMemHead, VOS_DUMP_MEM_HEAD_NUM*sizeof(VOS_MEM_HEAD_BLOCK)) )
-        {
-            mdrv_om_system_error(VOS_REBOOT_MEMCPY_MEM, 0, (VOS_INT)((THIS_FILE_ID << 16) | __LINE__), 0, 0);
-        }
-    }
-
-    if (VOS_FALSE == VOS_MemDumpCheck())
-    {
-        LogPrint("VOS_DumpVosMem not need dump\r\n");
-
-        return;
-    }
-
-    pucDumpBuffer = (VOS_UINT8 *)VOS_EXCH_MEM_MALLOC;
-
-    if (VOS_NULL_PTR == pucDumpBuffer)
-    {
-        VOS_ProtectionReboot(OSA_CHECK_MEM_ERROR, (VOS_INT)ulFileID, (VOS_INT)usLineNo, (VOS_CHAR *)astMemHead, sizeof(astMemHead));
-
-        return;
-    }
-
-    (VOS_VOID)VOS_TaskLock();
-
-    if ( VOS_NULL_PTR == VOS_MemSet_s((VOS_VOID *)pucDumpBuffer, VOS_DUMP_MEM_TOTAL_SIZE, 0, VOS_DUMP_MEM_TOTAL_SIZE) )
-    {
-        mdrv_om_system_error(VOS_REBOOT_MEMSET_MEM, 0, (VOS_INT)((THIS_FILE_ID << 16) | __LINE__), 0, 0);
-    }
-
-    /* 保存出错的地址前后各一半的空间 */
-    pucUserAddr -= (VOS_DUMP_MEM_TOTAL_SIZE >>1);
-
-    if ( VOS_NULL_PTR == VOS_MemCpy_s((VOS_CHAR *)pucDumpBuffer, VOS_DUMP_MEM_TOTAL_SIZE, pucUserAddr, VOS_DUMP_MEM_TOTAL_SIZE) )
-    {
-        mdrv_om_system_error(VOS_REBOOT_MEMCPY_MEM, 0, (VOS_INT)((THIS_FILE_ID << 16) | __LINE__), 0, 0);
-    }
-
-    VOS_ProtectionReboot(OSA_CHECK_MEM_ERROR, (VOS_INT)ulFileID, (VOS_INT)usLineNo, (VOS_CHAR *)astMemHead, sizeof(astMemHead));
-
-    (VOS_VOID)VOS_TaskUnlock();
-
+    VOS_ProtectionReboot(OSA_CHECK_MEM_ERROR, (VOS_INT)ulFileID, (VOS_INT)usLineNo, 0, 0);
     return;
 }
 
@@ -519,8 +510,6 @@ VOS_VOID* VOS_MemCtrlBlkMalloc( VOS_MEM_CTRL_BLOCK *VOS_MemCtrlBlock,
     VOS_UINT_PTR         *pulTemp;
     VOS_UINT_PTR          ulBlockAddr;
     VOS_UINT32            ulCrcTag;
-    VOS_UINT_PTR          ulRebootAddress1;
-    VOS_UINT_PTR          ulRebootAddress2;
 
     /*intLockLevel = VOS_SplIMP();*/
     VOS_SpinLockIntLock(&g_stVosMemSpinLock, ulLockLevel);
@@ -536,40 +525,9 @@ VOS_VOID* VOS_MemCtrlBlkMalloc( VOS_MEM_CTRL_BLOCK *VOS_MemCtrlBlock,
     {
         VOS_MemCtrlBlock->IdleBlockNumber--;
 
-        if (VOS_NULL_PTR != VOS_MemCtrlBlock->Blocks)
-        {
-            if ((VOS_UINT_PTR)(VOS_MemCtrlBlock->Blocks) < g_ulVosMemCtrlSpaceStart
-                || (VOS_UINT_PTR)(VOS_MemCtrlBlock->Blocks) >= g_ulVosMemCtrlSpaceEnd)
-            {
-                ulRebootAddress1 = (VOS_UINT_PTR)VOS_MemCtrlBlock;
-                ulRebootAddress2 = (VOS_UINT_PTR)VOS_MemCtrlBlock->Blocks;
-
-                VOS_ProtectionReboot(VOS_MEMCTRL_ADDR_ERROR1,
-                                     (VOS_INT)ulRebootAddress1,
-                                     (VOS_INT)ulRebootAddress2,
-                                     (VOS_CHAR *)VOS_MemCtrlBlock,
-                                     (VOS_INT)sizeof(VOS_MEM_CTRL_BLOCK));
-            }
-        }
-
         Block = VOS_MemCtrlBlock->Blocks;
+
         Block->ulMemUsedFlag = VOS_USED;
-
-        if (VOS_NULL_PTR != Block->pstNext)
-        {
-            if ((VOS_UINT_PTR)(Block->pstNext) < g_ulVosMemCtrlSpaceStart
-                || (VOS_UINT_PTR)(Block->pstNext) >= g_ulVosMemCtrlSpaceEnd)
-            {
-                ulRebootAddress1 = (VOS_UINT_PTR)VOS_MemCtrlBlock;
-                ulRebootAddress2 = (VOS_UINT_PTR)Block->pstNext;
-
-                VOS_ProtectionReboot(VOS_MEMCTRL_ADDR_ERROR2,
-                                     (VOS_INT)ulRebootAddress1,
-                                     (VOS_INT)ulRebootAddress2,
-                                     (VOS_CHAR *)Block,
-                                     (VOS_INT)sizeof(VOS_MEM_HEAD_BLOCK));
-            }
-        }
 
         VOS_MemCtrlBlock->Blocks = Block->pstNext;
     }
@@ -668,8 +626,6 @@ VOS_UINT32 VOS_MemCtrlBlkFree( VOS_MEM_CTRL_BLOCK *VOS_MemCtrlBlock,
 {
     VOS_ULONG             ulLockLevel;
     VOS_MEM_CTRL_BLOCK   *pstTemp;
-    VOS_UINT_PTR          ulRebootAddress1;
-    VOS_UINT_PTR          ulRebootAddress2;
 
     /*intLockLevel = VOS_SplIMP();*/
     VOS_SpinLockIntLock(&g_stVosMemSpinLock, ulLockLevel);
@@ -713,22 +669,6 @@ VOS_UINT32 VOS_MemCtrlBlkFree( VOS_MEM_CTRL_BLOCK *VOS_MemCtrlBlock,
     Block->ulMemUsedFlag = VOS_NOT_USED;
 
     Block->pstNext = VOS_MemCtrlBlock->Blocks;
-
-    if (VOS_NULL_PTR != Block)
-    {
-        if ((VOS_UINT_PTR)Block < g_ulVosMemCtrlSpaceStart
-            || (VOS_UINT_PTR)Block >= g_ulVosMemCtrlSpaceEnd)
-        {
-            ulRebootAddress1 = (VOS_UINT_PTR)VOS_MemCtrlBlock;
-            ulRebootAddress2 = (VOS_UINT_PTR)Block;
-
-            VOS_ProtectionReboot(VOS_MEMCTRL_ADDR_ERROR3,
-                                 (VOS_INT)ulRebootAddress1,
-                                 (VOS_INT)ulRebootAddress2,
-                                 (VOS_CHAR *)Block,
-                                 (VOS_INT)sizeof(VOS_MEM_HEAD_BLOCK));
-        }
-    }
 
     VOS_MemCtrlBlock->Blocks = Block;/*[false alarm]:屏蔽Fortify的Redundant Null Check告警*/
 
@@ -2163,7 +2103,10 @@ VOS_VOID *VOS_UnCacheMemAllocDebug(VOS_UINT32 ulSize, VOS_UINT_PTR *pulRealAddr,
 
     dma_addr_t                          ulAddress = 0;
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+#else
     struct device                       dev;
+#endif
 
 
     if ( 0 == ulSize )
@@ -2183,6 +2126,16 @@ VOS_VOID *VOS_UnCacheMemAllocDebug(VOS_UINT32 ulSize, VOS_UINT_PTR *pulRealAddr,
 
 
 
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+    if (modem_osa_pdev == VOS_NULL_PTR) {
+        (VOS_VOID)vos_printf("[pam_osa]:<VOS_UnCacheMemAllocDebug> modem_osa_pdev is NULL.\r\n");
+
+        return VOS_NULL_PTR;
+    }
+
+    pVirtAdd = dma_alloc_coherent(&modem_osa_pdev->dev, ulSize, &ulAddress, GFP_KERNEL);
+#else
     if ( VOS_NULL_PTR == VOS_MemSet_s(&dev, sizeof(dev), 0, sizeof(dev)) )
     {
         mdrv_om_system_error(VOS_REBOOT_MEMSET_MEM, 0, (VOS_INT)((THIS_FILE_ID << 16) | __LINE__), 0, 0);
@@ -2192,6 +2145,8 @@ VOS_VOID *VOS_UnCacheMemAllocDebug(VOS_UINT32 ulSize, VOS_UINT_PTR *pulRealAddr,
     of_dma_configure(&dev, dev.of_node);
 #endif
     pVirtAdd = dma_alloc_coherent(&dev, ulSize, &ulAddress, GFP_KERNEL);
+#endif
+
 
     *pulRealAddr = (VOS_UINT_PTR)ulAddress;
 
@@ -2209,7 +2164,13 @@ VOS_VOID *VOS_UnCacheMemAllocDebug(VOS_UINT32 ulSize, VOS_UINT_PTR *pulRealAddr,
  *****************************************************************************/
 VOS_VOID VOS_UnCacheMemFree(VOS_VOID *pVirtAddr, VOS_VOID *pPhyAddr, VOS_UINT32 ulSize)
 {
-    dma_addr_t  ulAddress;
+    dma_addr_t                          ulAddress;
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+#else
+    struct device                       dev;
+#endif
+
 
     if ( 0 == ulSize )
     {
@@ -2225,7 +2186,28 @@ VOS_VOID VOS_UnCacheMemFree(VOS_VOID *pVirtAddr, VOS_VOID *pPhyAddr, VOS_UINT32 
 
     *(dma_addr_t *)(&ulAddress) = (dma_addr_t)pPhyAddr;
 
-    dma_free_coherent(VOS_NULL_PTR, ulSize, pVirtAddr, ulAddress);
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+    if (modem_osa_pdev == VOS_NULL_PTR) {
+        (VOS_VOID)vos_printf("[pam_osa]:<VOS_UnCacheMemFree> modem_osa_pdev is NULL.\r\n");
+
+        return;
+    }
+
+    dma_free_coherent(&modem_osa_pdev->dev, ulSize, pVirtAddr, ulAddress);
+#else
+    if ( VOS_NULL_PTR == VOS_MemSet_s(&dev, sizeof(dev), 0, sizeof(dev)) )
+    {
+        mdrv_om_system_error(VOS_REBOOT_MEMSET_MEM, 0, (VOS_INT)((THIS_FILE_ID << 16) | __LINE__), 0, 0);
+    }
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
+    dma_set_mask_and_coherent(&dev, 0xffffffffffffffff);
+    of_dma_configure(&dev, dev.of_node);
+#endif
+    dma_free_coherent(&dev, ulSize, pVirtAddr, ulAddress);
+#endif
+
+
 
 
     return;

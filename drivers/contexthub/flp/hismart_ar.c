@@ -24,7 +24,7 @@
 
 static ar_device_t  g_ar_dev;
 
-static int ar_send_cmd_through_shmem(ar_hdr_t * head, char  *buf, size_t count)
+static int ar_send_cmd_through_shmem(ar_hdr_t * head, const char  *buf, size_t count)
 {
 	int ret;
 	char *data;
@@ -38,8 +38,17 @@ static int ar_send_cmd_through_shmem(ar_hdr_t * head, char  *buf, size_t count)
 		printk(KERN_ERR "hismart:[%s]:line[%d] shmem send kzalloc[%d] fail\n", __func__, __LINE__, (int)len);
 		return -ENOMEM;
 	}
-	memcpy_s(data, sizeof(ar_hdr_t), head, len - count);
-	memcpy_s(data + sizeof(ar_hdr_t), count, buf, len - sizeof(ar_hdr_t));
+	ret = memcpy_s(data, sizeof(ar_hdr_t), head, len - count);
+	if (ret) {
+		printk(KERN_ERR "hismart [%s] memcpy_s fail\n", __func__);
+	}
+	if (len > sizeof(ar_hdr_t)) {
+		ret = memcpy_s(data + sizeof(ar_hdr_t), count, buf, len - sizeof(ar_hdr_t));
+		if (ret) {
+			printk(KERN_ERR"hismart [%s] memset_s fail[%d]\n", __func__, ret);
+		}
+	}
+
 #ifdef CONFIG_CONTEXTHUB_SHMEM
 	ret = shmem_send(TAG_AR, (void *)data, len);
 #else
@@ -88,6 +97,7 @@ static int ar_send_cmd_from_kernel_response(unsigned char cmd_tag, unsigned char
 static void fifo_in(ar_data_buf_t *pdata, char *data, unsigned int len, unsigned int align)
 {
 	unsigned int deta;
+	int ret;
 
 	if ((!pdata) || (!data) || (!pdata->data_buf)) {
 		pr_err("hismart:[%s]:pdata[%pK] data[%pK] parm is null\n", __func__, pdata, data);
@@ -105,11 +115,20 @@ static void fifo_in(ar_data_buf_t *pdata, char *data, unsigned int len, unsigned
 	}
 	/*copy data to flp pdr driver buffer*/
 	if ((pdata->write_index + len) >  pdata->buf_size) {
-		memcpy_s(pdata->data_buf + pdata->write_index ,pdata->buf_size, data, (size_t)(pdata->buf_size - pdata->write_index));
-		memcpy_s(pdata->data_buf,pdata->buf_size, data + pdata->buf_size - pdata->write_index,
+		ret = memcpy_s(pdata->data_buf + pdata->write_index ,pdata->buf_size, data, (size_t)(pdata->buf_size - pdata->write_index));
+		if (ret) {
+			printk(KERN_ERR"hismart [%s] memset_s fail[%d]\n", __func__, ret);
+		}
+		ret = memcpy_s(pdata->data_buf,pdata->buf_size, data + pdata->buf_size - pdata->write_index,
 			(size_t)(len + pdata->write_index - pdata->buf_size));
+		if (ret) {
+			printk(KERN_ERR"hismart [%s] memset_s fail[%d]\n", __func__, ret);
+		}
 	} else {
-		memcpy_s(pdata->data_buf + pdata->write_index, pdata->buf_size - pdata->write_index, data , (size_t)len);
+		ret = memcpy_s(pdata->data_buf + pdata->write_index, pdata->buf_size - pdata->write_index, data , (size_t)len);
+		if (ret) {
+			printk(KERN_ERR"hismart [%s] memset_s fail[%d]\n", __func__, ret);
+		}
 	}
 
 	pdata->write_index = (pdata->write_index + len)%pdata->buf_size;
@@ -122,6 +141,7 @@ static void fifo_in(ar_data_buf_t *pdata, char *data, unsigned int len, unsigned
 
 static int fifo_out(ar_data_buf_t *pdata,  unsigned char *data, unsigned int count)
 {
+	int ret;
 	if ((!pdata) || (!data) || (!pdata->data_buf)) {
 		pr_err("hismart:[%s]:pdata[%pK] data[%pK] parm is null\n", __func__, pdata, data);
 		return -EINVAL;
@@ -133,11 +153,17 @@ static int fifo_out(ar_data_buf_t *pdata,  unsigned char *data, unsigned int cou
 
 	/*copy data to user buffer*/
 	if ((pdata->read_index + count) >  pdata->buf_size) {
-		memcpy_s(data, count, pdata->data_buf + pdata->read_index, (size_t)(pdata->buf_size - pdata->read_index));
-		memcpy_s(data + pdata->buf_size - pdata->read_index, count,
+		ret = memcpy_s(data, count, pdata->data_buf + pdata->read_index, (size_t)(pdata->buf_size - pdata->read_index));
+		if (ret) {
+			pr_err("hismart:[%s] memcpy_s fail\n", __func__);
+		}
+		ret = memcpy_s(data + pdata->buf_size - pdata->read_index, count,
 		pdata->data_buf, (size_t)(count + pdata->read_index - pdata->buf_size));
 	} else {
-		memcpy_s(data, pdata->buf_size - pdata->read_index, pdata->data_buf + pdata->read_index, (size_t)count);
+		ret = memcpy_s(data, pdata->buf_size - pdata->read_index, pdata->data_buf + pdata->read_index, (size_t)count);
+	}
+	if (ret) {
+		pr_err("hismart:[%s] memcpy_s fail\n", __func__);
 	}
 	pdata->read_index = (pdata->read_index + count)%pdata->buf_size;
 	pdata->data_count -= count;
@@ -153,18 +179,25 @@ static unsigned int fifo_len(ar_data_buf_t *pdata)
 static unsigned int  context_cfg_set_to_iomcu(unsigned int context_max,
 	context_iomcu_cfg_t *cur, context_iomcu_cfg_t *old_set)
 {
+	int ret;
 	unsigned int i;
 	unsigned char *ultimate_data = (unsigned char *)cur->context_list;
 	memset_s((void*)cur, sizeof(context_iomcu_cfg_t), 0 ,sizeof(context_iomcu_cfg_t));
 	cur->report_interval = old_set->report_interval < 1?1:old_set->report_interval;
 	for(i = 0;i < context_max; i++) {
 		if(old_set->context_list[i].head.event_type) {
-			memcpy_s((void*)ultimate_data, sizeof(ar_context_cfg_header_t),
+			ret = memcpy_s((void*)ultimate_data, sizeof(ar_context_cfg_header_t),
 				(void*)&old_set->context_list[i], (unsigned long)sizeof(ar_context_cfg_header_t));
+			if (ret) {
+				printk(KERN_ERR"hismart [%s] memset_s fail[%d]\n", __func__, ret);
+			}
 			ultimate_data += sizeof(ar_context_cfg_header_t);
 			if(old_set->context_list[i].head.len && old_set->context_list[i].head.len <= CONTEXT_PRIVATE_DATA_MAX) {
-				memcpy_s((void*)ultimate_data, CONTEXT_PRIVATE_DATA_MAX,
+				ret = memcpy_s((void*)ultimate_data, CONTEXT_PRIVATE_DATA_MAX,
 					old_set->context_list[i].buf, (unsigned long)old_set->context_list[i].head.len);
+				if (ret) {
+					printk(KERN_ERR"hismart [%s] memset_s fail[%d]\n", __func__, ret);
+				}
 				ultimate_data += old_set->context_list[i].head.len;
 			}
 			cur->context_num++;
@@ -341,6 +374,7 @@ static int create_ar_port_cfg(context_iomcu_cfg_t *config,
 context_dev_info_t* devinfo, unsigned int context_max)
 {
 	unsigned int i;
+	int ret;
 	context_config_t  *plist = (context_config_t  *)devinfo->cfg.context_list;
 	memset_s(config, sizeof(context_iomcu_cfg_t), 0, sizeof(context_iomcu_cfg_t));
 	config->report_interval = devinfo->cfg.report_interval;
@@ -354,7 +388,10 @@ context_dev_info_t* devinfo, unsigned int context_max)
 			return -EPERM;
 		}
 
-		memcpy_s((void*)&config->context_list[plist->head.context], sizeof(context_config_t), (void*)plist, sizeof(context_config_t));
+		ret = memcpy_s((void*)&config->context_list[plist->head.context], sizeof(context_config_t), (void*)plist, sizeof(context_config_t));
+		if (ret) {
+			printk(KERN_ERR"hismart [%s] memset_s fail[%d]\n", __func__, ret);
+		}
 	}
 	return 0;
 }
@@ -409,7 +446,10 @@ static int ar_config_to_iomcu(ar_port_t *ar_port)
 			ret = -ENOMEM;
 			goto CFG_IOMCU_FIN;
 		}
-		memcpy_s(pcfg, sizeof(context_iomcu_cfg_t), &ar_port->ar_config, sizeof(context_iomcu_cfg_t));
+		ret = memcpy_s(pcfg, sizeof(context_iomcu_cfg_t), &ar_port->ar_config, sizeof(context_iomcu_cfg_t));
+		if (ret) {
+			printk(KERN_ERR"hismart [%s] memset_s fail[%d]\n", __func__, ret);
+		}
 		ar_multi_instance(&g_ar_dev, pcfg);
 		devinfo->cfg_sz = context_cfg_set_to_iomcu(AR_STATE_BUTT, &devinfo->cfg, pcfg);
 		kfree((void*)pcfg);
@@ -584,7 +624,10 @@ static int env_enable_cmd(ar_port_t *ar_port, unsigned long arg)
 
 	printk(HISI_AR_DEBUG"hismart:[%s]:line[%d] e[%u]c[%u]r[%u]len[%u]\n", __func__, __LINE__, enable.head.event_type, enable.head.context, enable.head.report_interval, enable.head.len);
 
-	memcpy_s((void*)&env_enable[enable.head.context], sizeof(env_enable_t), &enable, sizeof(env_enable_t));
+	ret = memcpy_s((void*)&env_enable[enable.head.context], sizeof(env_enable_t), &enable, sizeof(env_enable_t));
+	if (ret) {
+		printk(KERN_ERR"hismart [%s] memset_s fail[%d]\n", __func__, ret);
+	}
 #ifdef CONFIG_INPUTHUB_20
 	ret = ar_send_cmd_from_kernel(TAG_ENVIRONMENT, CMD_CMN_CONFIG_REQ, SUB_CMD_ENVIRONMENT_ENABLE_REQ,
 	(char *)&enable, sizeof(env_enable_t));
@@ -874,6 +917,7 @@ ENV_DATA_FIN:
 
 static int ar_state_shmem(const pkt_header_t *head)
 {
+	int ret;
 	ar_state_t *staus = (ar_state_t *)(head + 1);
 	if (head->length < (uint16_t)sizeof(unsigned int) || (head->length > sizeof(ar_state_shmen_t))) {
 		pr_err("hismart:[%s]:line[%d] get state len is invalid[%d]\n", __func__, __LINE__, (int)head->length);
@@ -886,7 +930,11 @@ static int ar_state_shmem(const pkt_header_t *head)
 	}
 
 	g_ar_dev.activity_shemem.user_len = (unsigned int)(head->length - sizeof(unsigned int));
-	memcpy_s(g_ar_dev.activity_shemem.context_event, sizeof(ar_state_shmen_t) - sizeof(int), staus->context_event, g_ar_dev.activity_shemem.user_len);
+	ret = memcpy_s(g_ar_dev.activity_shemem.context_event, sizeof(ar_state_shmen_t) - sizeof(int), staus->context_event, g_ar_dev.activity_shemem.user_len);
+	if (ret) {
+		pr_err("hismart:[%s] memcpy_s fail\n", __func__);
+	}
+
 STATE_SHMEM_ERROR:
 	complete(&g_ar_dev.get_complete);
 	return 0;
@@ -928,24 +976,22 @@ STATE_V2_ERR:
 static int ar_state_v2_cmd(ar_port_t *ar_port, unsigned long arg)
 {
 	int ret = 0;
-#ifndef CONFIG_INPUTHUB_20
-	struct read_info rd;
-#endif
-
 	mutex_lock(&g_ar_dev.state_lock);
 	if (!(FLP_AR_DATA & ar_port->channel_type) || !(FLP_AR_DATA & g_ar_dev.service_type)) {
 		pr_err("hismart:[%s]:line[%d] channel[0x%x] service[0x%x]\n", __func__, __LINE__, ar_port->channel_type, g_ar_dev.service_type);
 		goto AR_STATE_V2_ERR;
 	}
 
-
-#ifdef CONFIG_INPUTHUB_20
 	memset_s(&g_ar_dev.activity_shemem, sizeof(ar_state_shmen_t), 0, sizeof(ar_state_shmen_t));
 	reinit_completion(&g_ar_dev.get_complete);
 
+#ifdef CONFIG_INPUTHUB_20
 	ret = ar_send_cmd_from_kernel(TAG_AR, CMD_CMN_CONFIG_REQ,
 		SUB_CMD_FLP_AR_GET_STATE_REQ, NULL, (size_t)0);
-
+#else
+	ret = ar_send_cmd_from_kernel(TAG_AR, CMD_CMN_CONFIG_REQ,
+		CMD_FLP_AR_GET_STATE_REQ, NULL, (size_t)0);
+#endif
 	if (ret) {
 		pr_err("hismart:[%s]:line[%d] ar_send_cmd_from_kernel ERR[%d]\n", __func__, __LINE__, ret);
 		ret = -EFAULT;
@@ -972,22 +1018,7 @@ static int ar_state_v2_cmd(ar_port_t *ar_port, unsigned long arg)
 
 	ret = (int)g_ar_dev.activity_shemem.user_len;
 
-#else
-	memset_s((void*)&rd, sizeof(struct read_info), 0,sizeof(struct read_info));
-	ret = ar_send_cmd_from_kernel_response(TAG_AR, CMD_CMN_CONFIG_REQ,
-		CMD_FLP_AR_GET_STATE_REQ, NULL, (size_t)0, &rd);
 
-	if (ret) {
-		pr_err("hismart:[%s]:line[%d] ar_send_cmd_from_kernel_response err[%d]\n", __func__, __LINE__, rd.errno);
-		goto AR_STATE_V2_ERR;
-	}
-
-	ret = state_v2_cmd(&rd, arg);
-	if (ret < 0) {
-		pr_err("hismart:[%s]:line[%d] state_v2_cmd err[%d]\n", __func__, __LINE__, ret);
-		goto AR_STATE_V2_ERR;
-	}
-#endif
 
 AR_STATE_V2_ERR:
 	mutex_unlock(&g_ar_dev.state_lock);
@@ -1056,7 +1087,10 @@ static int  env_init_cmd(ar_port_t *ar_port, unsigned long arg)
 		goto ENV_INIT_ERR;
 	}
 
-	memcpy_s((void*)&envdev_priv->env_init[env_init.context],sizeof(env_init_t), &env_init, sizeof(env_init_t));
+	ret = memcpy_s((void*)&envdev_priv->env_init[env_init.context],sizeof(env_init_t), &env_init, sizeof(env_init_t));
+	if (ret) {
+		printk(KERN_ERR"hismart [%s] memset_s fail[%d]\n", __func__, ret);
+	}
 #ifdef CONFIG_INPUTHUB_20
 	ret = ar_send_cmd_from_kernel(TAG_ENVIRONMENT, CMD_CMN_CONFIG_REQ, SUB_CMD_ENVIRONMENT_INIT_REQ,
 		(char *)&env_init, sizeof(env_init_t));
@@ -1608,6 +1642,7 @@ static struct miscdevice ar_miscdev =
 static int database_req(const pkt_header_t *head)
 {
 	unsigned char *data= NULL;
+	int ret;
 	env_database_head_t *dbase = (env_database_head_t *)(head + 1);
 	struct sk_buff *skb;
 
@@ -1632,7 +1667,10 @@ static int database_req(const pkt_header_t *head)
 		goto DATABASE_REQ_FIN;
 	}
 
-	memcpy_s(data,dbase->len, dbase, dbase->len);
+	ret = memcpy_s(data,dbase->len, dbase, dbase->len);
+	if (ret) {
+		printk(KERN_ERR"hismart [%s] memset_s fail[%d]\n", __func__, ret);
+	}
 	HISI_AR_DEBUG_DUMP_OPT(HISI_AR_DEBUG_DUMP, "data: ", DUMP_PREFIX_ADDRESS,
 		16, 1, dbase, dbase->len, true);
 	context_gnetlink_send(g_ar_dev.envdev_priv.env_port, skb);
@@ -1682,6 +1720,7 @@ static int __init ar_init(void)
 	register_mcu_event_notifier(TAG_AR, CMD_FLP_AR_DATA_REQ, get_ar_data_from_mcu);
 	register_mcu_event_notifier(TAG_ENVIRONMENT, CMD_ENVIRONMENT_DATA_REQ, get_env_data_from_mcu);
 	register_mcu_event_notifier(TAG_ENVIRONMENT, CMD_ENVIRONMENT_DATABASE_REQ, database_req);
+	register_mcu_event_notifier(TAG_AR, CMD_FLP_AR_GET_STATE_RESP, ar_state_shmem);
 #endif
 	register_iom3_recovery_notifier(&ar_reboot_notify);
 	return ret;
@@ -1696,14 +1735,15 @@ static void ar_exit(void)
 	int ret = 0;
 	misc_deregister(&ar_miscdev);
 #ifdef CONFIG_INPUTHUB_20
-	ret |= unregister_mcu_event_notifier(TAG_AR, CMD_DATA_REQ, get_ar_data_from_mcu);
-	ret |= unregister_mcu_event_notifier(TAG_ENVIRONMENT, SUB_CMD_ENVIRONMENT_DATABASE_REQ, database_req);
-	ret |= unregister_mcu_event_notifier(TAG_ENVIRONMENT, CMD_DATA_REQ, get_env_data_from_mcu);
-	ret |= unregister_mcu_event_notifier(TAG_AR, SUB_CMD_FLP_AR_SHMEM_STATE_REQ, ar_state_shmem);
+	ret += unregister_mcu_event_notifier(TAG_AR, CMD_DATA_REQ, get_ar_data_from_mcu);
+	ret += unregister_mcu_event_notifier(TAG_ENVIRONMENT, SUB_CMD_ENVIRONMENT_DATABASE_REQ, database_req);
+	ret += unregister_mcu_event_notifier(TAG_ENVIRONMENT, CMD_DATA_REQ, get_env_data_from_mcu);
+	ret += unregister_mcu_event_notifier(TAG_AR, SUB_CMD_FLP_AR_SHMEM_STATE_REQ, ar_state_shmem);
 #else
-	ret |= unregister_mcu_event_notifier(TAG_AR, CMD_FLP_AR_DATA_REQ, get_ar_data_from_mcu);
-	ret |= unregister_mcu_event_notifier(TAG_ENVIRONMENT, CMD_ENVIRONMENT_DATA_REQ, get_env_data_from_mcu);
-	ret |= unregister_mcu_event_notifier(TAG_ENVIRONMENT, CMD_ENVIRONMENT_DATABASE_REQ, database_req);
+	ret += unregister_mcu_event_notifier(TAG_AR, CMD_FLP_AR_DATA_REQ, get_ar_data_from_mcu);
+	ret += unregister_mcu_event_notifier(TAG_ENVIRONMENT, CMD_ENVIRONMENT_DATA_REQ, get_env_data_from_mcu);
+	ret += unregister_mcu_event_notifier(TAG_ENVIRONMENT, CMD_ENVIRONMENT_DATABASE_REQ, database_req);
+	ret += unregister_mcu_event_notifier(TAG_AR, CMD_FLP_AR_GET_STATE_RESP, ar_state_shmem);
 #endif
 	if(ret) {
 		pr_err("hismart:[%s]:line[%d] ret[%d]err\n", __func__, __LINE__, ret);
