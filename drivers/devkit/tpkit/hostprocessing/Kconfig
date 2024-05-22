@@ -31,3 +31,15 @@ menuconfig HUAWEI_THP_SYNAPTICS
 	default n
 	help
 	  If you say yes here you get support for Synaptics hostprocessing touchscreen.
+
+menuconfig HUAWEI_THP_GOODIX
+	tristate "Goodix thp drivers"
+	default n
+	help
+	  If you say yes here you get support for Synaptics hostprocessing touchscreen.
+
+menuconfig HUAWEI_THP_SOLOMON
+	tristate "Solomon thp drivers"
+	default n
+	help
+	  If you say yes here you get support for Synaptics hostprocessing touchscreen.

@@ -14,6 +14,7 @@
 #include <linux/err.h>
 #include <linux/slab.h>
 #include <linux/io.h>
+#include <linux/gpio.h>
 #include <linux/miscdevice.h>
 #include <linux/uaccess.h>
 #include <huawei_platform/inputhub/sensorhub.h>
@@ -27,6 +28,7 @@ int ps_first_start_flag;
 int txc_ps_flag;
 int ams_tmd2620_ps_flag;
 int avago_apds9110_ps_flag;
+int ltr578_ps_external_ir_calibrate_flag = 0;
 int als_first_start_flag;
 int gyro_first_start_flag;
 int handpress_first_start_flag;
@@ -38,6 +40,7 @@ extern int read_gsensor_offset_from_nv(void);
 extern int read_airpress_calibrate_data_from_nv(void);
 extern int read_gyro_sensor_offset_from_nv(void);
 extern int read_handpress_offset_from_nv(void);
+extern struct ps_external_ir_param ps_external_ir_param;
 /*******************************************************************************************
 Function:       shb_read
 Description:    定义/dev/sensorhub节点的读函数，从kernel的事件缓冲区中读数据
@@ -130,7 +133,7 @@ extern int read_ps_offset_from_nv(void);
 static void get_psensor_calibrate_data(void)
 {
     int ret = 0;
-    if (0 == ps_first_start_flag &&  (txc_ps_flag == 1 || ams_tmd2620_ps_flag == 1 || avago_apds9110_ps_flag == 1))
+    if (0 == ps_first_start_flag &&  (txc_ps_flag == 1 || ams_tmd2620_ps_flag == 1 || avago_apds9110_ps_flag == 1 || ltr578_ps_external_ir_calibrate_flag == 1))
     {
         ret=read_ps_offset_from_nv();
         if(ret) hwlog_err( "get_ps_calibrate_data read from nv fail, ret=%d", ret);
@@ -142,9 +145,12 @@ static void get_psensor_calibrate_data(void)
 }
 
 extern int read_als_offset_from_nv(void);
+extern int get_tpcolor_from_nv(void);
+
 static void get_als_calibrate_data(void)
 {
     int ret = 0;
+    int ret_color = 0;
     if ((0 == als_first_start_flag) && ((rohm_rgb_flag == 1) || (avago_rgb_flag == 1) || (1 == is_cali_supported)))
     {
         ret=read_als_offset_from_nv();
@@ -152,6 +158,12 @@ static void get_als_calibrate_data(void)
         else
         {
             hwlog_info("read nv success\n");
+        }
+
+        ret_color = get_tpcolor_from_nv();
+        if(ret_color)
+        {
+            hwlog_err( "get_tpcolor_from_nv read from nv fail, ret=%d", ret);
         }
     }
 }
@@ -327,7 +339,20 @@ int __init sensorhub_init(void)
         hwlog_err( "cannot register miscdev err=%d\n", ret);
         return ret;
     }
-
+    if(ps_external_ir_param.external_ir == 1) {
+	    hwlog_info("external_ir  enable!\n");
+	    ret = gpio_request(ps_external_ir_param.external_ir_enable_gpio, "ir_enable_gpio");//for external ir power enable
+	    if(ret) {
+		    hwlog_err("%s: external_ir request gpio%d  failed, ret:%d.\n",
+			    __func__,ps_external_ir_param.external_ir_enable_gpio, ret);
+		    ps_external_ir_param.external_ir = 0;
+	    }else{
+		    hwlog_info("external_ir_enable_gpio set low as defult!\n");
+		    gpio_direction_output(ps_external_ir_param.external_ir_enable_gpio, 0);
+	    }
+    }
+    else
+        hwlog_info("external_ir not enable!\n");
     hwlog_info("%s ok\n", __func__);
 
     return 0;

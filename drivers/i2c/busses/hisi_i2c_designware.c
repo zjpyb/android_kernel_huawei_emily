@@ -82,7 +82,7 @@ static u32 hs_i2c_dw_get_clk_rate_khz(struct dw_i2c_dev *dev)
 	u32 rate;
 
 	rate = clk_get_rate(dev->clk) /1000;
-	dev_info(dev->dev, "input_clock_khz value is %d\n", rate);
+	dev_dbg(dev->dev, "input_clock_khz value is %d\n", rate);
 
 	return rate;
 }
@@ -279,7 +279,7 @@ static void i2c_dw_dma_tx_callback(void *data)
 	dev_dbg(dev->dev, "%s: entry.\n", __func__);
 
 	controller->dmacr &= ~DW_IC_TXDMAE;
-	writew(controller->dmacr, dev->base + DW_IC_DMA_CR);/*lint !e144*/
+	dw_writel(dev, controller->dmacr & 0xffff, DW_IC_DMA_CR);/*lint !e144*/
 	controller->using_tx_dma = false;
 
 	if (!(controller->using_tx_dma) && !(controller->using_rx_dma))
@@ -365,7 +365,7 @@ static void i2c_dw_dma_rx_callback(void *data)
 	dma_sync_sg_for_cpu(dev->dev, &dmarx->sg, 1, DMA_FROM_DEVICE);
 
 	controller->dmacr &= ~DW_IC_RXDMAE;
-	writew(controller->dmacr, dev->base + DW_IC_DMA_CR);/*lint !e144*/
+	dw_writel(dev, controller->dmacr & 0xffff, DW_IC_DMA_CR);/*lint !e144*/
 
 	for (; dev->msg_read_idx < dev->msgs_num; dev->msg_read_idx++) {
 		if (!(msgs[dev->msg_read_idx].flags & I2C_M_RD))
@@ -492,7 +492,7 @@ void i2c_dw_dma_clear(struct dw_i2c_dev *dev)
 
 	controller->using_dma = false;
 	controller->dmacr = 0;
-	writew(controller->dmacr, dev->base + DW_IC_DMA_CR);/*lint !e144*/
+	dw_writel(dev, controller->dmacr & 0xffff, DW_IC_DMA_CR);/*lint !e144*/
 }
 
 void i2c_dw_dma_fifo_cfg(struct dw_i2c_dev *dev)
@@ -646,7 +646,7 @@ int i2c_dw_xfer_msg_dma(struct dw_i2c_dev *dev, int *alllen)
 		goto error;
 	}
 
-	writew(controller->dmacr, dev->base + DW_IC_DMA_CR);/*lint !e144*/
+	dw_writel(dev, controller->dmacr & 0xffff, DW_IC_DMA_CR);/*lint !e144*/
 
 	ret = 0;
 error:
@@ -701,17 +701,17 @@ void hisi_dw_i2c_scl_recover_bus(struct i2c_adapter *adap)
 				bri->sda_gpio);
 
 	/* disable IC */
-	writel(0, dev->base + HISI_DW_IC_ENABLE);
+	dw_writel(dev, 0, HISI_DW_IC_ENABLE);
 
 	/* speed is 100KHz*/
-	writel(HISI_DW_IC_CON_RECOVERY_CFG, dev->base + HISI_DW_IC_CON);
+	dw_writel(dev, HISI_DW_IC_CON_RECOVERY_CFG, HISI_DW_IC_CON);
 
 	/* config slave address to  0x7f */
-	writel(HISI_DW_IC_TAR_RECOVERY_CFG, dev->base + HISI_DW_IC_TAR);
+	dw_writel(dev, HISI_DW_IC_TAR_RECOVERY_CFG, HISI_DW_IC_TAR);
 	/* enable IC */
-	writel(1, dev->base + HISI_DW_IC_ENABLE);
+	dw_writel(dev, 1, HISI_DW_IC_ENABLE);
 	/* recived data from bus*/
-	writel(HISI_DW_IC_RD_CFG, dev->base + HISI_DW_IC_DATA_CMD);
+	dw_writel(dev, HISI_DW_IC_RD_CFG, HISI_DW_IC_DATA_CMD);
 
 	msleep(100);
 
@@ -807,6 +807,24 @@ static struct i2c_algorithm hs_i2c_dw_algo = {
 	.functionality	= i2c_dw_func,
 };
 
+void i2c_frequency_division(struct dw_i2c_dev *dev, u32 clk)
+{
+	u32 sda_falling_time, scl_falling_time;
+
+	sda_falling_time = dev->sda_falling_time ?: 300; /* ns */
+	scl_falling_time = dev->scl_falling_time ?: 300; /* ns */
+
+	dev->hs_hcnt = i2c_dw_scl_hcnt(clk,
+					100,    /* tHD;STA = tHIGH = 0.1 us */
+					sda_falling_time,   /* tf = 0.3 us */
+					0,      /* 0: DW default, 1: Ideal */
+					0);     /* No offset */
+	dev->hs_lcnt = i2c_dw_scl_lcnt(clk,
+					200,    /* tLOW = 0.2 us */
+					scl_falling_time,   /* tf = 0.3 us */
+					0);     /* No offset */
+}
+
 static int hs_dw_i2c_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
@@ -822,6 +840,7 @@ static int hs_dw_i2c_probe(struct platform_device *pdev)
 	u32 timeout = 0;
 	u32 input_clock_khz;
 	int gpio_scl, gpio_sda, r;
+	u32 secure_mode = 0;
 
 	d = devm_kzalloc(dev, sizeof(struct dw_i2c_dev), GFP_KERNEL);
 	if (!d) {
@@ -849,13 +868,29 @@ static int hs_dw_i2c_probe(struct platform_device *pdev)
 	if (!iores)
 		return -EINVAL;/*lint !e429*/
 
+	r = of_property_read_u32(dev->of_node, "secure-mode", &secure_mode);
+	if (r) {
+		secure_mode = 0;
+	}
+	d->secure_mode = secure_mode;
+
 	controller->mapbase  = iores->start;
-	d->base = ioremap(iores->start, resource_size(iores));
-	if (!d->base)
-		return -EADDRNOTAVAIL;/*lint !e429*/
+	if (secure_mode) {
+		d->base = 0;
+	} else {
+		d->base = ioremap(iores->start, resource_size(iores));
+		if (!d->base)
+			return -EADDRNOTAVAIL;/*lint !e429*/
+	}
 
 	controller->pinctrl_flag = 0;
 	controller->pinctrl = NULL;
+
+	if (of_find_property(dev->of_node, "i2c3-usf", NULL)) {
+		d->setpin = 0;
+	} else {
+		d->setpin = 1;
+	}
 
 	r = of_property_read_u32_array(dev->of_node, "reset-reg-base", &data[0], 4);
 	if (r) {
@@ -946,6 +981,9 @@ cs_gpio_err:
 		return  -EINVAL;/*lint !e429*/
 	}
 
+	input_clock_khz = hs_i2c_dw_get_clk_rate_khz(d);
+	i2c_frequency_division(d, input_clock_khz);
+
 	init_completion(&d->cmd_complete);
 	init_completion(&controller->dma_complete);
 	mutex_init(&d->lock);
@@ -966,15 +1004,13 @@ cs_gpio_err:
 	hs_i2c_dw_reset_controller(d);
 
 	{
-		u32 param1 = readl(d->base + DW_IC_COMP_PARAM_1);
+		u32 param1 = dw_readl(d, DW_IC_COMP_PARAM_1);
 
 		d->tx_fifo_depth = ((param1 >> 16) & 0xff) + 1;
 		d->rx_fifo_depth = ((param1 >> 8)  & 0xff) + 1;
 		dev_info(dev, "tx_fifo_depth: %d, rx_fifo_depth: %d\n",
 				 d->tx_fifo_depth, d->rx_fifo_depth);
 	}
-
-	input_clock_khz = hs_i2c_dw_get_clk_rate_khz(d);
 
 	if(I2C_DELAY_70NS == controller->delay_off)
 		d->sda_hold_time = (input_clock_khz * 70)/1000000;

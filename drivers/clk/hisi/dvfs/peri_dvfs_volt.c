@@ -60,16 +60,17 @@ struct peri_volt_poll *__perivolt_lookup(unsigned int dev_id, const char *name)
 {
 	struct peri_volt_poll *pvp;
 
-	if (!dev_id) {
+	if (name) {
 		list_for_each_entry(pvp, &perivolt_list, node)
-			if (!strncmp(pvp->name, name, strlen(pvp->name)))
+			if (!strncmp(pvp->name, name, strlen(name)>strlen(pvp->name)?strlen(name) : strlen(pvp->name)))
 				return pvp;
 	}
-	if (NULL == name) {
+	if (dev_id) {
 		list_for_each_entry(pvp, &perivolt_list, node)
 			if (dev_id == pvp->dev_id)
 				return pvp;
 	}
+
 	return NULL;
 }
 
@@ -259,8 +260,10 @@ int perivolt_register(struct device *dev, struct peri_volt_poll *pvp)
 		goto fail_name;
 	}
 	perivolt->dev_id = pvp->dev_id;
+	perivolt->perivolt_avs_ip = pvp->perivolt_avs_ip;
 	perivolt->addr = pvp->addr;
 	perivolt->addr_0 = pvp->addr_0;
+	perivolt->sysreg_base = pvp->sysreg_base;
 	perivolt->bitsmask = pvp->bitsmask;
 	perivolt->bitsshift = pvp->bitsshift;
 	perivolt->ops = pvp->ops;

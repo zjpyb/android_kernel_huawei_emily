@@ -48,13 +48,14 @@ extern char novatek_kit_project_id[];
 extern uint8_t nvt_fw_ver;
 extern struct nvt_ts_data *nvt_ts;
 
-extern int32_t novatek_ts_kit_i2c_read(struct i2c_client *client, uint16_t address, uint8_t *buf, uint16_t len);
-extern int32_t novatek_ts_kit_i2c_write(struct i2c_client *client, uint16_t address, uint8_t *buf, uint16_t len);
+extern int32_t novatek_ts_kit_read(uint16_t address, uint8_t *buf, uint16_t len);
+extern int32_t novatek_ts_kit_write(uint16_t address, uint8_t *buf, uint16_t len);
 extern void nvt_kit_bootloader_reset(void);
 extern int32_t nvt_kit_check_fw_reset_state(RST_COMPLETE_STATE check_reset_state);
 extern void nvt_kit_sw_reset_idle(void);
 extern int8_t nvt_kit_get_fw_info(void);
 extern int32_t novatek_kit_read_projectid(void);
+extern void nvt_stop_crc_reboot(void);
 
 /*******************************************************
 Description:
@@ -130,7 +131,7 @@ static int32_t Check_FW_Ver(void)
 	buf[0] = 0xFF;
 	buf[1] = (nvt_ts->mmap->EVENT_BUF_ADDR >> 16) & 0xFF;
 	buf[2] = (nvt_ts->mmap->EVENT_BUF_ADDR >> 8) & 0xFF;
-	ret = novatek_ts_kit_i2c_write(nvt_ts->client, I2C_BLDR_Address, buf, 3);
+	ret = novatek_ts_kit_write(I2C_BLDR_Address, buf, 3);
 	if (ret < 0) {
 		TS_LOG_ERR("%s: i2c write error!(%d)\n", __func__, ret);
 		return ret;
@@ -140,7 +141,7 @@ static int32_t Check_FW_Ver(void)
 	buf[0] = 0x78;
 	buf[1] = 0x00;
 	buf[2] = 0x00;
-	ret = novatek_ts_kit_i2c_read(nvt_ts->client, I2C_BLDR_Address, buf, 3);
+	ret = novatek_ts_kit_read(I2C_BLDR_Address, buf, 3);
 	if (ret < 0) {
 		TS_LOG_ERR("%s: i2c read error!(%d)\n", __func__, ret);
 		return ret;
@@ -178,7 +179,7 @@ int32_t Nova_Resume_PD(void)
 	// Resume Command
 	buf[0] = 0x00;
 	buf[1] = 0xAB;
-	ret = novatek_ts_kit_i2c_write(nvt_ts->client, I2C_HW_Address, buf, 2);
+	ret = novatek_ts_kit_write(I2C_HW_Address, buf, 2);
 	if (ret < 0) {
 		TS_LOG_ERR("%s: Write Enable error!!(%d)\n", __func__, ret);
 		return ret;
@@ -188,7 +189,7 @@ int32_t Nova_Resume_PD(void)
 	// Check 0xAA (Resume Command)
 	buf[0] = 0x00;
 	buf[1] = 0x00;
-	ret = novatek_ts_kit_i2c_read(nvt_ts->client, I2C_HW_Address, buf, 2);
+	ret = novatek_ts_kit_read(I2C_HW_Address, buf, 2);
 	if (ret < 0) {
 		TS_LOG_ERR("%s: Check 0xAA (Resume Command) error!!(%d)\n", __func__, ret);
 		return ret;
@@ -246,7 +247,7 @@ static int32_t Check_CheckSum(void)
 			buf[4] = 0x00;
 			buf[5] = ((len_in_blk - 1) >> 8) & 0xFF;
 			buf[6] = (len_in_blk - 1) & 0xFF;
-			ret = novatek_ts_kit_i2c_write(nvt_ts->client, I2C_HW_Address, buf, 7);
+			ret = novatek_ts_kit_write(I2C_HW_Address, buf, 7);
 			if (ret < 0) {
 				TS_LOG_ERR("%s: Fast Read Command error!!(%d)\n", __func__, ret);
 				return ret;
@@ -257,7 +258,7 @@ static int32_t Check_CheckSum(void)
 				msleep(80);
 				buf[0] = 0x00;
 				buf[1] = 0x00;
-				ret = novatek_ts_kit_i2c_read(nvt_ts->client, I2C_HW_Address, buf, 2);
+				ret = novatek_ts_kit_read(I2C_HW_Address, buf, 2);
 				if (ret < 0) {
 					TS_LOG_ERR("%s: Check 0xAA (Fast Read Command) error!!(%d)\n", __func__, ret);
 					return ret;
@@ -275,7 +276,7 @@ static int32_t Check_CheckSum(void)
 			buf[0] = 0xFF;
 			buf[1] = XDATA_Addr >> 16;
 			buf[2] = (XDATA_Addr >> 8) & 0xFF;
-			ret = novatek_ts_kit_i2c_write(nvt_ts->client, I2C_BLDR_Address, buf, 3);
+			ret = novatek_ts_kit_write(I2C_BLDR_Address, buf, 3);
 			if (ret < 0) {
 				TS_LOG_ERR("%s: Read Checksum (write addr high byte & middle byte) error!!(%d)\n", __func__, ret);
 				return ret;
@@ -284,7 +285,7 @@ static int32_t Check_CheckSum(void)
 			buf[0] = (XDATA_Addr) & 0xFF;
 			buf[1] = 0x00;
 			buf[2] = 0x00;
-			ret = novatek_ts_kit_i2c_read(nvt_ts->client, I2C_BLDR_Address, buf, 3);
+			ret = novatek_ts_kit_read(I2C_BLDR_Address, buf, 3);
 			if (ret < 0) {
 				TS_LOG_ERR("%s: Read Checksum error!!(%d)\n", __func__, ret);
 				return ret;
@@ -323,7 +324,7 @@ int32_t Nova_Init_BootLoader(void)
 	buf[0] = 0x00;
 	buf[1] = 0x00;
 	buf[2] = I2C_FW_Address;
-	ret = novatek_ts_kit_i2c_write(nvt_ts->client, I2C_HW_Address, buf, 2);
+	ret = novatek_ts_kit_write(I2C_HW_Address, buf, 2);
 	if (ret < 0) {
 		TS_LOG_ERR("%s: Inittial Flash Block error!!(%d)\n", __func__, ret);
 		return ret;
@@ -333,7 +334,7 @@ int32_t Nova_Init_BootLoader(void)
 	// Check 0xAA (Initiate Flash Block)
 	buf[0] = 0x00;
 	buf[1] = 0x00;
-	ret = novatek_ts_kit_i2c_read(nvt_ts->client, I2C_HW_Address, buf, 2);
+	ret = novatek_ts_kit_read(I2C_HW_Address, buf, 2);
 	if (ret < 0) {
 		TS_LOG_ERR("%s: Check 0xAA (Inittial Flash Block) error!!(%d)\n", __func__, ret);
 		return ret;
@@ -368,7 +369,7 @@ static int32_t Erase_Flash(void)
 	// Write Enable
 	buf[0] = NVTTDDI_DOUBLE_ZERO_CMD;
 	buf[1] = NVTTDDI_ZERO_SIX_CMD;
-	ret = novatek_ts_kit_i2c_write(nvt_ts->client, I2C_HW_Address, buf, NVTTDDI_TWO_BYTES_LENGTH);
+	ret = novatek_ts_kit_write(I2C_HW_Address, buf, NVTTDDI_TWO_BYTES_LENGTH);
 	if (ret < NO_ERR) {
 		TS_LOG_ERR("%s: Write Enable (for Write Status Register) error!!(%d)\n", __func__, ret);
 		return ret;
@@ -377,7 +378,7 @@ static int32_t Erase_Flash(void)
 	// Check 0xAA (Write Enable)
 	buf[0] = NVTTDDI_DOUBLE_ZERO_CMD;
 	buf[1] = NVTTDDI_DOUBLE_ZERO_CMD;
-	ret = novatek_ts_kit_i2c_read(nvt_ts->client, I2C_HW_Address, buf, NVTTDDI_TWO_BYTES_LENGTH);
+	ret = novatek_ts_kit_read(I2C_HW_Address, buf, NVTTDDI_TWO_BYTES_LENGTH);
 	if (ret < NO_ERR) {
 		TS_LOG_ERR("%s: Check 0xAA (Write Enable for Write Status Register) error!!(%d)\n", __func__, ret);
 		return ret;
@@ -392,7 +393,7 @@ static int32_t Erase_Flash(void)
 	buf[0] = NVTTDDI_DOUBLE_ZERO_CMD;
 	buf[1] = NVTTDDI_ZERO_ONE_CMD;
 	buf[2] = NVTTDDI_DOUBLE_ZERO_CMD;
-	ret = novatek_ts_kit_i2c_write(nvt_ts->client, I2C_HW_Address, buf, NVTTDDI_THREE_BYTES_LENGTH);
+	ret = novatek_ts_kit_write(I2C_HW_Address, buf, NVTTDDI_THREE_BYTES_LENGTH);
 	if (ret < 0) {
 		TS_LOG_ERR("%s: Write Status Register error!!(%d)\n", __func__, ret);
 		return ret;
@@ -401,7 +402,7 @@ static int32_t Erase_Flash(void)
 	// Check 0xAA (Write Status Register)
 	buf[0] = NVTTDDI_DOUBLE_ZERO_CMD;
 	buf[1] = NVTTDDI_DOUBLE_ZERO_CMD;
-	ret = novatek_ts_kit_i2c_read(nvt_ts->client, I2C_HW_Address, buf, NVTTDDI_TWO_BYTES_LENGTH);
+	ret = novatek_ts_kit_read(I2C_HW_Address, buf, NVTTDDI_TWO_BYTES_LENGTH);
 	if (ret < NO_ERR) {
 		TS_LOG_ERR("%s: Check 0xAA (Write Status Register) error!!(%d)\n", __func__, ret);
 		return ret;
@@ -418,7 +419,7 @@ static int32_t Erase_Flash(void)
 		mdelay(NVTTDDI_DELAY_30_MS);
 		buf[0] = NVTTDDI_DOUBLE_ZERO_CMD;
 		buf[1] = NVTTDDI_ZERO_FIVE_CMD;
-		ret = novatek_ts_kit_i2c_write(nvt_ts->client, I2C_HW_Address, buf, NVTTDDI_TWO_BYTES_LENGTH);
+		ret = novatek_ts_kit_write(I2C_HW_Address, buf, NVTTDDI_TWO_BYTES_LENGTH);
 		if (ret < NO_ERR) {
 			TS_LOG_ERR("%s: Read Status (for Write Status Register) error!!(%d)\n", __func__, ret);
 			return ret;
@@ -428,7 +429,7 @@ static int32_t Erase_Flash(void)
 		buf[0] = NVTTDDI_DOUBLE_ZERO_CMD;
 		buf[1] = NVTTDDI_DOUBLE_ZERO_CMD;
 		buf[2] = NVTTDDI_DOUBLE_ZERO_CMD;
-		ret = novatek_ts_kit_i2c_read(nvt_ts->client, I2C_HW_Address, buf, NVTTDDI_THREE_BYTES_LENGTH);
+		ret = novatek_ts_kit_read(I2C_HW_Address, buf, NVTTDDI_THREE_BYTES_LENGTH);
 		if (ret < NO_ERR) {
 			TS_LOG_ERR("%s: Check 0xAA (Read Status for Write Status Register) error!!(%d)\n", __func__, ret);
 			return ret;
@@ -452,7 +453,7 @@ static int32_t Erase_Flash(void)
 		// Write Enable
 		buf[0] = 0x00;
 		buf[1] = 0x06;
-		ret = novatek_ts_kit_i2c_write(nvt_ts->client, I2C_HW_Address, buf, 2);
+		ret = novatek_ts_kit_write(I2C_HW_Address, buf, 2);
 		if (ret < 0) {
 			TS_LOG_ERR("%s: Write Enable error!!(%d,%d)\n", __func__, ret, i);
 			return ret;
@@ -462,7 +463,7 @@ static int32_t Erase_Flash(void)
 		// Check 0xAA (Write Enable)
 		buf[0] = 0x00;
 		buf[1] = 0x00;
-		ret = novatek_ts_kit_i2c_read(nvt_ts->client, I2C_HW_Address, buf, 2);
+		ret = novatek_ts_kit_read(I2C_HW_Address, buf, 2);
 		if (ret < 0) {
 			TS_LOG_ERR("%s: Check 0xAA (Write Enable) error!!(%d,%d)\n", __func__, ret, i);
 			return ret;
@@ -481,7 +482,7 @@ static int32_t Erase_Flash(void)
 		buf[2] = ((Flash_Address >> 16) & 0xFF);
 		buf[3] = ((Flash_Address >> 8) & 0xFF);
 		buf[4] = (Flash_Address & 0xFF);
-		ret = novatek_ts_kit_i2c_write(nvt_ts->client, I2C_HW_Address, buf, 5);
+		ret = novatek_ts_kit_write(I2C_HW_Address, buf, 5);
 		if (ret < 0) {
 			TS_LOG_ERR("%s: Sector Erase error!!(%d,%d)\n", __func__, ret, i);
 			return ret;
@@ -493,7 +494,7 @@ static int32_t Erase_Flash(void)
 			// Check 0xAA (Sector Erase)
 			buf[0] = 0x00;
 			buf[1] = 0x00;
-			ret = novatek_ts_kit_i2c_read(nvt_ts->client, I2C_HW_Address, buf, 2);
+			ret = novatek_ts_kit_read(I2C_HW_Address, buf, 2);
 			if (ret < 0) {
 				TS_LOG_ERR("%s: Check 0xAA (Sector Erase) error!!(%d,%d)\n", __func__, ret, i);
 				return ret;
@@ -515,7 +516,7 @@ static int32_t Erase_Flash(void)
 			mdelay(30);
 			buf[0] = 0x00;
 			buf[1] = 0x05;
-			ret = novatek_ts_kit_i2c_write(nvt_ts->client, I2C_HW_Address, buf, 2);
+			ret = novatek_ts_kit_write(I2C_HW_Address, buf, 2);
 			if (ret < 0) {
 				TS_LOG_ERR("%s: Read Status error!!(%d,%d)\n", __func__, ret, i);
 				return ret;
@@ -525,7 +526,7 @@ static int32_t Erase_Flash(void)
 			buf[0] = 0x00;
 			buf[1] = 0x00;
 			buf[2] = 0x00;
-			ret = novatek_ts_kit_i2c_read(nvt_ts->client, I2C_HW_Address, buf, 3);
+			ret = novatek_ts_kit_read(I2C_HW_Address, buf, 3);
 			if (ret < 0) {
 				TS_LOG_ERR("%s: Check 0xAA (Read Status) error!!(%d,%d)\n", __func__, ret, i);
 				return ret;
@@ -568,7 +569,7 @@ static int32_t Write_Flash(void)
 	buf[0] = 0xFF;
 	buf[1] = XDATA_Addr >> 16;
 	buf[2] = (XDATA_Addr >> 8) & 0xFF;
-	ret = novatek_ts_kit_i2c_write(nvt_ts->client, I2C_BLDR_Address, buf, 3);
+	ret = novatek_ts_kit_write(I2C_BLDR_Address, buf, 3);
 	if (ret < 0) {
 		TS_LOG_ERR("%s: change I2C buffer index error!!(%d)\n", __func__, ret);
 		return ret;
@@ -585,7 +586,7 @@ static int32_t Write_Flash(void)
 		// Write Enable
 		buf[0] = 0x00;
 		buf[1] = 0x06;
-		ret = novatek_ts_kit_i2c_write(nvt_ts->client, I2C_HW_Address, buf, 2);
+		ret = novatek_ts_kit_write(I2C_HW_Address, buf, 2);
 		if (ret < 0) {
 			TS_LOG_ERR("%s: Write Enable error!!(%d)\n", __func__, ret);
 			return ret;
@@ -598,7 +599,7 @@ static int32_t Write_Flash(void)
 			for (k = 0; k < 32; k++) {
 				buf[1 + k] = fw_entry->data[Flash_Address + j + k];
 			}
-			ret = novatek_ts_kit_i2c_write(nvt_ts->client, I2C_BLDR_Address, buf, 33);
+			ret = novatek_ts_kit_write(I2C_BLDR_Address, buf, 33);
 			if (ret < 0) {
 				TS_LOG_ERR("%s: Write Page error!!(%d), j=%d\n", __func__, ret, j);
 				return ret;
@@ -623,7 +624,7 @@ static int32_t Write_Flash(void)
 		buf[5] = 0x00;
 		buf[6] = min(fw_entry->size - Flash_Address,(size_t)NVT_ONE_PAGE_SIZE) - 1;
 		buf[7] = tmpvalue;
-		ret = novatek_ts_kit_i2c_write(nvt_ts->client, I2C_HW_Address, buf, 8);
+		ret = novatek_ts_kit_write(I2C_HW_Address, buf, 8);
 		if (ret < 0) {
 			TS_LOG_ERR("%s: Page Program error!!(%d), i=%d\n", __func__, ret, i);
 			return ret;
@@ -635,7 +636,7 @@ static int32_t Write_Flash(void)
 			mdelay(3);
 			buf[0] = 0x00;
 			buf[1] = 0x00;
-			ret = novatek_ts_kit_i2c_read(nvt_ts->client, I2C_HW_Address, buf, 2);
+			ret = novatek_ts_kit_read(I2C_HW_Address, buf, 2);
 			if (ret < 0) {
 				TS_LOG_ERR("%s: Page Program error!!(%d)\n", __func__, ret);
 				return ret;
@@ -660,7 +661,7 @@ static int32_t Write_Flash(void)
 			mdelay(2);
 			buf[0] = 0x00;
 			buf[1] = 0x05;
-			ret = novatek_ts_kit_i2c_write(nvt_ts->client, I2C_HW_Address, buf, 2);
+			ret = novatek_ts_kit_write(I2C_HW_Address, buf, 2);
 			if (ret < 0) {
 				TS_LOG_ERR("%s: Read Status error!!(%d)\n", __func__, ret);
 				return ret;
@@ -670,7 +671,7 @@ static int32_t Write_Flash(void)
 			buf[0] = 0x00;
 			buf[1] = 0x00;
 			buf[2] = 0x00;
-			ret = novatek_ts_kit_i2c_read(nvt_ts->client, I2C_HW_Address, buf, 3);
+			ret = novatek_ts_kit_read(I2C_HW_Address, buf, 3);
 			if (ret < 0) {
 				TS_LOG_ERR("%s: Check 0xAA (Read Status) error!!(%d)\n", __func__, ret);
 				return ret;
@@ -738,7 +739,7 @@ static int32_t Verify_Flash(void)
 			buf[4] = 0x00;
 			buf[5] = ((len_in_blk - 1) >> 8) & 0xFF;
 			buf[6] = (len_in_blk - 1) & 0xFF;
-			ret = novatek_ts_kit_i2c_write(nvt_ts->client, I2C_HW_Address, buf, 7);
+			ret = novatek_ts_kit_write(I2C_HW_Address, buf, 7);
 			if (ret < 0) {
 				TS_LOG_ERR("%s: Fast Read Command error!!(%d)\n", __func__, ret);
 				return ret;
@@ -749,7 +750,7 @@ static int32_t Verify_Flash(void)
 				msleep(80);
 				buf[0] = 0x00;
 				buf[1] = 0x00;
-				ret = novatek_ts_kit_i2c_read(nvt_ts->client, I2C_HW_Address, buf, 2);
+				ret = novatek_ts_kit_read(I2C_HW_Address, buf, 2);
 				if (ret < 0) {
 					TS_LOG_ERR("%s: Check 0xAA (Fast Read Command) error!!(%d)\n", __func__, ret);
 					return ret;
@@ -767,7 +768,7 @@ static int32_t Verify_Flash(void)
 			buf[0] = 0xFF;
 			buf[1] = XDATA_Addr >> 16;
 			buf[2] = (XDATA_Addr >> 8) & 0xFF;
-			ret = novatek_ts_kit_i2c_write(nvt_ts->client, I2C_BLDR_Address, buf, 3);
+			ret = novatek_ts_kit_write(I2C_BLDR_Address, buf, 3);
 			if (ret < 0) {
 				TS_LOG_ERR("%s: Read Checksum (write addr high byte & middle byte) error!!(%d)\n", __func__, ret);
 				return ret;
@@ -776,7 +777,7 @@ static int32_t Verify_Flash(void)
 			buf[0] = (XDATA_Addr) & 0xFF;
 			buf[1] = 0x00;
 			buf[2] = 0x00;
-			ret = novatek_ts_kit_i2c_read(nvt_ts->client, I2C_BLDR_Address, buf, 3);
+			ret = novatek_ts_kit_read(I2C_BLDR_Address, buf, 3);
 			if (ret < 0) {
 				TS_LOG_ERR("%s: Read Checksum error!!(%d)\n", __func__, ret);
 				return ret;

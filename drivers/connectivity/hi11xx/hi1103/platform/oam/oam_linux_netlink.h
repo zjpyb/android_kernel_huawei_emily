@@ -59,8 +59,8 @@ typedef struct
 /*****************************************************************************
   5 全局变量声明
 *****************************************************************************/
-extern oam_netlink_stru        g_st_netlink;
-extern oam_netlink_proto_ops   g_st_netlink_ops;
+extern oam_netlink_stru        g_st_netlink_etc;
+extern oam_netlink_proto_ops   g_st_netlink_ops_etc;
 
 
 /*****************************************************************************
@@ -86,8 +86,8 @@ extern oam_netlink_proto_ops   g_st_netlink_ops;
 /*****************************************************************************
   10 函数声明
 *****************************************************************************/
-extern oal_uint32  oam_netlink_kernel_create(oal_void);
-extern oal_void oam_netlink_kernel_release(oal_void);
+extern oal_uint32  oam_netlink_kernel_create_etc(oal_void);
+extern oal_void oam_netlink_kernel_release_etc(oal_void);
 
 
 #ifdef __cplusplus

@@ -3,7 +3,7 @@
 
 #ifdef CONFIG_HW_NETWORK_MEASUREMENT
 #define NM_DNS_PORT		53
-#define SA_STA_SIZE		24
+#define SA_STA_SIZE		32
 #define SA_RES_SIZE		640
 #define NM_FUNC_HTTP		(1 << 0)
 #define NM_FUNC_DNSP		(1 << 1)

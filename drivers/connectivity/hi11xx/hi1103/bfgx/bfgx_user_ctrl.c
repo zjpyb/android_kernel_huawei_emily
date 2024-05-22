@@ -12,31 +12,33 @@
 #include "oneimage.h"
 #include "oal_kernel_file.h"
 #include "oal_sdio_host_if.h"
+#include "oal_hcc_host_if.h"
 #include "plat_pm_wlan.h"
 #include "hisi_ini.h"
 #include "plat_uart.h"
 #include "board.h"
 #include "plat_firmware.h"
+#include "oam_rdr.h"
 
 /*****************************************************************************
   2 Define global variable
 *****************************************************************************/
-struct kobject *g_sysfs_hi110x_bfgx    = NULL;
-struct kobject *g_sysfs_hisi_pmdbg     = NULL;
+struct kobject *g_sysfs_hi110x_bfgx_etc    = NULL;
+struct kobject *g_sysfs_hisi_pmdbg_etc     = NULL;
 
 #ifdef PLATFORM_DEBUG_ENABLE
-struct kobject *g_sysfs_hi110x_debug   = NULL;
-int32 g_uart_rx_dump  = UART_DUMP_CLOSE;
+struct kobject *g_sysfs_hi110x_debug_etc   = NULL;
+int32 g_uart_rx_dump_etc  = UART_DUMP_CLOSE;
 #endif
 
 #ifdef HAVE_HISI_NFC
 struct kobject *g_sysfs_hisi_nfc = NULL;
 #endif
 
-int32 g_plat_loglevel = PLAT_LOG_INFO;
-int32 g_bug_on_enable = BUG_ON_DISABLE;
+int32 g_plat_loglevel_etc = PLAT_LOG_INFO;
+int32 g_bug_on_enable_etc = BUG_ON_DISABLE;
 
-extern FIRMWARE_GLOBALS_STRUCT  g_st_cfg_info;
+extern FIRMWARE_GLOBALS_STRUCT  g_st_cfg_info_etc;
 
 #ifdef CONFIG_HISI_PMU_RTC_READCOUNT
 extern unsigned long hisi_pmu_rtc_readcount(void);
@@ -48,7 +50,7 @@ extern unsigned long hisi_pmu_rtc_readcount(void);
 
 STATIC ssize_t show_wifi_pmdbg(struct device *dev, struct kobj_attribute *attr, int8 *buf)
 {
-   struct wlan_pm_s *pst_wlan_pm = wlan_pm_get_drv();
+   struct wlan_pm_s *pst_wlan_pm = wlan_pm_get_drv_etc();
    oal_int32         ret = 0;
 
    if (NULL == buf)
@@ -58,23 +60,27 @@ STATIC ssize_t show_wifi_pmdbg(struct device *dev, struct kobj_attribute *attr, 
    }
 
 #ifdef PLATFORM_DEBUG_ENABLE
-   ret += snprintf(buf + ret , PAGE_SIZE - ret, "wifi_pm_debug usage: \n"
+   ret = snprintf(buf, PAGE_SIZE, "wifi_pm_debug usage: \n"
                        " 1:dump host info 2:dump device info\n"
                        " 3:open wifi      4:close wifi \n"
                        " 5:enable pm      6:disable pm \n");
 #else
-  ret += snprintf(buf + ret , PAGE_SIZE - ret, "wifi_pm_debug usage: \n"
+   ret = snprintf(buf, PAGE_SIZE, "wifi_pm_debug usage: \n"
                        " 1:dump host info 2:dump device info\n");
 #endif
+   if (0 >= ret)
+   {
+      return ret;
+   }
 
-   ret += wlan_pm_host_info_print(pst_wlan_pm, buf + ret, PAGE_SIZE - ret);
+   ret = wlan_pm_host_info_print_etc(pst_wlan_pm, buf + ret, PAGE_SIZE - ret);
 
    return ret;
 }
 
 STATIC ssize_t store_wifi_pmdbg(struct device *dev, struct kobj_attribute *attr, const char *buf, size_t count)
 {
-    struct wlan_pm_s *pst_wlan_pm = wlan_pm_get_drv();
+    struct wlan_pm_s *pst_wlan_pm = wlan_pm_get_drv_etc();
     int input = 0;
 
     if (NULL == buf)
@@ -94,23 +100,23 @@ STATIC ssize_t store_wifi_pmdbg(struct device *dev, struct kobj_attribute *attr,
     switch(input)
     {
        case 1:
-        wlan_pm_dump_host_info();
+        wlan_pm_dump_host_info_etc();
        break;
        case 2:
-        wlan_pm_dump_device_info();
+        wlan_pm_dump_device_info_etc();
        break;
 #ifdef PLATFORM_DEBUG_ENABLE
        case 3:
-        wlan_pm_open();
+        wlan_pm_open_etc();
        break;
        case 4:
-        wlan_pm_close();
+        wlan_pm_close_etc();
        break;
        case 5:
-        wlan_pm_enable();
+        wlan_pm_enable_etc();
        break;
        case 6:
-        wlan_pm_disable();
+        wlan_pm_disable_etc();
        break;
 #endif
        default:
@@ -130,7 +136,7 @@ STATIC ssize_t show_bfgx_pmdbg(struct device *dev, struct kobj_attribute *attr, 
         return -FAILURE;
     }
 
-    return snprintf(buf, SNPRINT_LIMIT_TO_KERNEL, "cmd       func     \n"
+    return snprintf(buf, PAGE_SIZE, "cmd       func     \n"
                         "  1  plat pm enable\n  2  plat pm disable\n"
                         "  3   bt  pm enable\n  4   bt  pm disable\n"
                         "  5  gnss pm enable\n  6  gnss pm disable\n"
@@ -143,7 +149,9 @@ extern  void plat_pm_debug_switch(void);
 STATIC ssize_t store_bfgx_pmdbg(struct device *dev, struct kobj_attribute *attr, const char *buf, size_t count)
 {
     struct pm_drv_data *pm_data = NULL;
+    struct ps_core_s *ps_core_d = NULL;
     int32  cmd = 0;
+    int32 ret;
 
     if (NULL == buf)
     {
@@ -154,10 +162,24 @@ STATIC ssize_t store_bfgx_pmdbg(struct device *dev, struct kobj_attribute *attr,
     cmd = simple_strtol(buf, NULL, 10);
     PS_PRINT_INFO("cmd:%d\n", cmd);
 
-    pm_data = pm_get_drvdata();
+    pm_data = pm_get_drvdata_etc();
     if (NULL == pm_data)
     {
         PS_PRINT_ERR("pm_data is NULL!\n");
+        return -FAILURE;
+    }
+
+    ps_get_core_reference_etc(&ps_core_d);
+    if (NULL == ps_core_d)
+    {
+        PS_PRINT_ERR("ps_core_d is NULL\n");
+        return -FAILURE;
+    }
+
+    ret = prepare_to_visit_node_etc(ps_core_d);
+    if (ret < 0)
+    {
+        PS_PRINT_ERR("prepare work FAIL\n");
         return -FAILURE;
     }
 
@@ -165,21 +187,35 @@ STATIC ssize_t store_bfgx_pmdbg(struct device *dev, struct kobj_attribute *attr,
     {
         case 1: /* disable plat lowpower function */
             pm_data->bfgx_lowpower_enable = BFGX_PM_ENABLE;
+            PS_PRINT_INFO("bfgx platform pm enable\n");
+            ps_tx_sys_cmd_etc(ps_core_d, SYS_MSG, SYS_CFG_PL_ENABLE_PM);
+            mod_timer(&pm_data->bfg_timer, jiffies + (BT_SLEEP_TIME * HZ/1000));
+            pm_data->bfg_timer_mod_cnt++;
             break;
         case 2: /* enable plat lowpower function */
             pm_data->bfgx_lowpower_enable = BFGX_PM_DISABLE;
+            PS_PRINT_INFO("bfgx platform pm disable\n");
+            ps_tx_sys_cmd_etc(ps_core_d, SYS_MSG, SYS_CFG_PL_DISABLE_PM);
             break;
         case 3: /* enable bt lowpower function */
             pm_data->bfgx_bt_lowpower_enable = BFGX_PM_ENABLE;
+            PS_PRINT_INFO("bfgx bt pm enable\n");
+            ps_tx_sys_cmd_etc(ps_core_d, SYS_MSG, SYS_CFG_BT_ENABLE_PM);
             break;
         case 4: /* disable bt lowpower function */
             pm_data->bfgx_bt_lowpower_enable = BFGX_PM_DISABLE;
+            PS_PRINT_INFO("bfgx bt pm disable\n");
+            ps_tx_sys_cmd_etc(ps_core_d, SYS_MSG, SYS_CFG_BT_DISABLE_PM);
             break;
         case 5: /* enable gnss lowpower function */
             pm_data->bfgx_gnss_lowpower_enable = BFGX_PM_ENABLE;
+            PS_PRINT_INFO("bfgx gnss pm enable\n");
+            ps_tx_sys_cmd_etc(ps_core_d, SYS_MSG, SYS_CFG_GNSS_ENABLE_PM);
             break;
         case 6: /* disable gnss lowpower function */
             pm_data->bfgx_gnss_lowpower_enable = BFGX_PM_DISABLE;
+            PS_PRINT_INFO("bfgx gnss pm disable\n");
+            ps_tx_sys_cmd_etc(ps_core_d, SYS_MSG, SYS_CFG_GNSS_DISABLE_PM);
             break;
         case 7: /* enable nfc lowpower function */
             pm_data->bfgx_nfc_lowpower_enable = BFGX_PM_ENABLE;
@@ -194,13 +230,15 @@ STATIC ssize_t store_bfgx_pmdbg(struct device *dev, struct kobj_attribute *attr,
             pm_data->bfgx_pm_ctrl_enable = BFGX_PM_DISABLE;
             break;
         case 11:
-            plat_pm_debug_switch();
+            ps_tx_sys_cmd_etc(ps_core_d, SYS_MSG, PL_PM_DEBUG);
             break;
 
         default:
             PS_PRINT_ERR("unknown cmd %d\n", cmd);
             break;
     }
+
+    post_to_visit_node_etc(ps_core_d);
 
     return count;
 }
@@ -229,7 +267,7 @@ STATIC ssize_t show_download_mode(struct device *dev, struct kobj_attribute *att
         PS_PRINT_ERR("buf is NULL\n");
         return -FAILURE;
     }
-    board_info = get_hi110x_board_info();
+    board_info = get_hi110x_board_info_etc();
     if(NULL == board_info)
     {
         PS_PRINT_ERR("board_info is null");
@@ -238,8 +276,8 @@ STATIC ssize_t show_download_mode(struct device *dev, struct kobj_attribute *att
     if (((board_info->wlan_download_channel) < MODE_DOWNLOAD_BUTT)
         && (board_info->bfgn_download_channel < MODE_DOWNLOAD_BUTT))
     {
-        return snprintf(buf, SNPRINT_LIMIT_TO_KERNEL, "wlan:%s,bfgn:%s\n",
-                device_download_mode_list[board_info->wlan_download_channel].name, device_download_mode_list[board_info->bfgn_download_channel].name);
+        return snprintf(buf, PAGE_SIZE, "wlan:%s,bfgn:%s\n",
+                device_download_mode_list_etc[board_info->wlan_download_channel].name, device_download_mode_list_etc[board_info->bfgn_download_channel].name);
     }
     else
     {
@@ -261,14 +299,14 @@ STATIC ssize_t show_install(struct device *dev, struct kobj_attribute *attr, int
         return -FAILURE;
     }
 
-    pm_data = dev_get_drvdata(&hw_ps_device->dev);
+    pm_data = dev_get_drvdata(&hw_ps_device_etc->dev);
     if (NULL == pm_data)
     {
         PS_PRINT_ERR("pm_data is NULL!\n");
         return -FAILURE;
     }
 
-    return snprintf(buf, SNPRINT_LIMIT_TO_KERNEL, "%d\n", pm_data->ldisc_install);
+    return snprintf(buf, PAGE_SIZE, "%d\n", pm_data->ldisc_install);
 }
 
 /* read by octty from hal to decide open which uart */
@@ -284,14 +322,14 @@ STATIC ssize_t show_dev_name(struct device *dev, struct kobj_attribute *attr, in
         return -FAILURE;
     }
 
-    pm_data = dev_get_drvdata(&hw_ps_device->dev);
+    pm_data = dev_get_drvdata(&hw_ps_device_etc->dev);
     if (NULL == pm_data)
     {
         PS_PRINT_ERR("pm_data is NULL!\n");
         return -FAILURE;
     }
 
-    return snprintf(buf, SNPRINT_LIMIT_TO_KERNEL, "%s\n", pm_data->dev_name);
+    return snprintf(buf, PAGE_SIZE, "%s\n", pm_data->dev_name);
 }
 
 /* read by octty from hal to decide what baud rate to use */
@@ -307,14 +345,14 @@ STATIC ssize_t show_baud_rate(struct device *dev, struct kobj_attribute *attr, i
         return -FAILURE;
     }
 
-    pm_data = dev_get_drvdata(&hw_ps_device->dev);
+    pm_data = dev_get_drvdata(&hw_ps_device_etc->dev);
     if (NULL == pm_data)
     {
         PS_PRINT_ERR("pm_data is NULL!\n");
         return -FAILURE;
     }
 
-    return snprintf(buf, SNPRINT_LIMIT_TO_KERNEL, "%ld\n", pm_data->baud_rate);
+    return snprintf(buf, PAGE_SIZE, "%ld\n", pm_data->baud_rate);
 }
 
 /* read by octty from hal to decide whether or not use flow cntrl */
@@ -330,14 +368,14 @@ STATIC ssize_t show_flow_cntrl(struct device *dev, struct kobj_attribute *attr, 
         return -FAILURE;
     }
 
-    pm_data = dev_get_drvdata(&hw_ps_device->dev);
+    pm_data = dev_get_drvdata(&hw_ps_device_etc->dev);
     if (NULL == pm_data)
     {
         PS_PRINT_ERR("pm_data is NULL!\n");
         return -FAILURE;
     }
 
-    return snprintf(buf, SNPRINT_LIMIT_TO_KERNEL, "%d\n", pm_data->flow_cntrl);
+    return snprintf(buf, PAGE_SIZE, "%d\n", pm_data->flow_cntrl);
 }
 
 /* show curr bfgx proto yes or not opened state */
@@ -362,7 +400,7 @@ STATIC ssize_t show_bfgx_active_state(struct device *dev, struct kobj_attribute 
         return -FAILURE;
     }
 
-    pm_data = dev_get_drvdata(&hw_ps_device->dev);
+    pm_data = dev_get_drvdata(&hw_ps_device_etc->dev);
     if (NULL == pm_data)
     {
         PS_PRINT_ERR("pm_data is NULL!\n");
@@ -399,13 +437,13 @@ STATIC ssize_t show_bfgx_active_state(struct device *dev, struct kobj_attribute 
 #endif
 
 #if ((defined HAVE_HISI_IR) && (defined HAVE_HISI_NFC))
-    return snprintf(buf, SNPRINT_LIMIT_TO_KERNEL, "bt:%d; fm:%d; gnss:%d; ir:%d; nfc:%d;\n", bt_state, fm_state, gnss_state, ir_state, nfc_state);
+    return snprintf(buf, PAGE_SIZE, "bt:%d; fm:%d; gnss:%d; ir:%d; nfc:%d;\n", bt_state, fm_state, gnss_state, ir_state, nfc_state);
 #elif (!(defined HAVE_HISI_IR) && !(defined HAVE_HISI_NFC))
-    return snprintf(buf, SNPRINT_LIMIT_TO_KERNEL, "bt:%d; fm:%d; gnss:%d;\n", bt_state, fm_state, gnss_state);
+    return snprintf(buf, PAGE_SIZE, "bt:%d; fm:%d; gnss:%d;\n", bt_state, fm_state, gnss_state);
 #elif ((defined HAVE_HISI_IR))
-    return snprintf(buf, SNPRINT_LIMIT_TO_KERNEL, "bt:%d; fm:%d; gnss:%d; ir:%d;\n", bt_state, fm_state, gnss_state, ir_state);
+    return snprintf(buf, PAGE_SIZE, "bt:%d; fm:%d; gnss:%d; ir:%d;\n", bt_state, fm_state, gnss_state, ir_state);
 #else
-    return snprintf(buf, SNPRINT_LIMIT_TO_KERNEL, "bt:%d; fm:%d; gnss:%d; nfc:%d;\n", bt_state, fm_state, gnss_state, nfc_state);
+    return snprintf(buf, PAGE_SIZE, "bt:%d; fm:%d; gnss:%d; nfc:%d;\n", bt_state, fm_state, gnss_state, nfc_state);
 #endif
 }
 
@@ -417,7 +455,7 @@ STATIC ssize_t show_ini_file_name(struct device *dev, struct kobj_attribute *att
         return -FAILURE;
     }
 
-    return snprintf(buf, INI_FILE_PATH_LEN, "%s", g_ini_file_name);
+    return snprintf(buf, INI_FILE_PATH_LEN, "%s", g_ini_file_name_etc);
 }
 
 STATIC ssize_t show_country_code(struct device *dev, struct kobj_attribute *attr, char *buf)
@@ -433,10 +471,10 @@ STATIC ssize_t show_country_code(struct device *dev, struct kobj_attribute *attr
         return -FAILURE;
     }
 
-    country_code = hwifi_get_country_code();
+    country_code = hwifi_get_country_code_etc();
     if (strncmp(country_code, "99", strlen("99")) == 0)
     {
-        ret = get_cust_conf_string(INI_MODU_WIFI, STR_COUNTRY_CODE, ibuf, sizeof(ibuf)-1);
+        ret = get_cust_conf_string_etc(INI_MODU_WIFI, STR_COUNTRY_CODE, ibuf, sizeof(ibuf)-1);
         if (ret == INI_SUCC)
         {
             strncpy(buf, ibuf, COUNTRY_CODE_LEN);
@@ -457,22 +495,28 @@ STATIC ssize_t show_country_code(struct device *dev, struct kobj_attribute *attr
     return -FAILURE;
 #endif
 }
-
-STATIC ssize_t show_bfgx_exception_count(struct device *dev, struct kobj_attribute *attr, int8 *buf)
+STATIC ssize_t show_exception_info(struct device *dev, struct kobj_attribute *attr, int8 *buf)
 {
-    PS_PRINT_DBG("exception debug: bfgx rst count is %d\n", plat_get_excp_total_cnt(SUBSYS_BFGX));
-    return snprintf(buf, SNPRINT_LIMIT_TO_KERNEL, "%d\n", plat_get_excp_total_cnt(SUBSYS_BFGX));
+    PS_PRINT_INFO("%s\n", __func__);
+
+    if (NULL == buf)
+    {
+        PS_PRINT_ERR("buf is NULL\n");
+        return -FAILURE;
+    }
+
+    return hisi_conn_save_stat_info(buf, plat_get_dfr_sinfo(buf, 0), PAGE_SIZE);;
 }
 
-STATIC ssize_t show_wifi_exception_count(struct device *dev, struct kobj_attribute *attr, int8 *buf)
+STATIC ssize_t show_exception_count(struct device *dev, struct kobj_attribute *attr, int8 *buf)
 {
-    PS_PRINT_DBG("exception debug: wifi rst count is %d\n", plat_get_excp_total_cnt(SUBSYS_WIFI));
-    return snprintf(buf, SNPRINT_LIMIT_TO_KERNEL, "%d\n",  plat_get_excp_total_cnt(SUBSYS_WIFI));
+    PS_PRINT_DBG("exception debug: wifi rst count is %d\n", plat_get_excp_total_cnt());
+    return snprintf(buf, PAGE_SIZE, "%d\n",  plat_get_excp_total_cnt());
 }
 #ifdef HAVE_HISI_GNSS
 STATIC ssize_t show_gnss_lowpower_state(struct device *dev, struct kobj_attribute *attr, char *buf, size_t count)
 {
-    struct pm_drv_data *pm_data = pm_get_drvdata();
+    struct pm_drv_data *pm_data = pm_get_drvdata_etc();
 
     PS_PRINT_DBG("show_gnss_lowpower_state!\n");
 
@@ -488,7 +532,7 @@ STATIC ssize_t show_gnss_lowpower_state(struct device *dev, struct kobj_attribut
         return -FAILURE;
     }
 
-    return snprintf(buf, SNPRINT_LIMIT_TO_KERNEL, "%d\n", atomic_read(&pm_data->gnss_sleep_flag));
+    return snprintf(buf, PAGE_SIZE, "%d\n", atomic_read(&pm_data->gnss_sleep_flag));
 }
 
 STATIC ssize_t gnss_lowpower_state_store(struct device *dev, struct kobj_attribute *attr, const char *buf, size_t count)
@@ -496,15 +540,13 @@ STATIC ssize_t gnss_lowpower_state_store(struct device *dev, struct kobj_attribu
     int flag = 0;
     struct pm_drv_data *pm_data = NULL;
 
-    PS_PRINT_INFO("gnss_lowpower_state_store!\n");
-
     if (NULL == buf)
     {
         PS_PRINT_ERR("buf is NULL\n");
         return -FAILURE;
     }
 
-    pm_data = pm_get_drvdata();
+    pm_data = pm_get_drvdata_etc();
     if (NULL == pm_data)
     {
         PS_PRINT_ERR("pm_data is NULL!\n");
@@ -512,6 +554,8 @@ STATIC ssize_t gnss_lowpower_state_store(struct device *dev, struct kobj_attribu
     }
 
     flag = simple_strtol(buf, NULL, 10);
+    PS_PRINT_INFO("flag = %d!\n",flag);
+
     /*gnss write the flag to request sleep*/
     if (1 == flag)
     {
@@ -526,13 +570,15 @@ STATIC ssize_t gnss_lowpower_state_store(struct device *dev, struct kobj_attribu
             return -FAILURE;
         }
         /*if bt and fm are both shutdown ,we will pull down gpio directly*/
-        PS_PRINT_DBG("flag = 1!\n");
 
         if (!timer_pending(&pm_data->bfg_timer))
         {
-            PS_PRINT_SUC("gnss low power request sleep!\n");
-            //host_allow_bfg_sleep(pm_data->ps_pm_interface->ps_core_data);
-            queue_work(pm_data->wkup_dev_workqueue, &pm_data->send_allow_sleep_work);
+            PS_PRINT_INFO("gnss low power request sleep!\n");
+            //host_allow_bfg_sleep_etc(pm_data->ps_pm_interface->ps_core_data);
+            if(true!=queue_work(pm_data->wkup_dev_workqueue, &pm_data->send_allow_sleep_work))
+            {
+                PS_PRINT_INFO("queue_work send_allow_sleep_work not return true\n");
+            }
         }
 
         /*set the flag to 1 means gnss request sleep*/
@@ -558,7 +604,7 @@ STATIC ssize_t show_loglevel(struct device *dev, struct kobj_attribute *attr, in
         return -FAILURE;
     }
 
-    return snprintf(buf, SNPRINT_LIMIT_TO_KERNEL, "curr loglevel=%d, curr bug_on=%d\nalert:0\nerr:1\nwarning:2\nfunc|succ|info:3\ndebug:4\nbug_on enable:b\nbug_on disable:B\n", g_plat_loglevel, g_bug_on_enable);
+    return snprintf(buf, PAGE_SIZE, "curr loglevel=%d, curr bug_on=%d\nalert:0\nerr:1\nwarning:2\nfunc|succ|info:3\ndebug:4\nbug_on enable:b\nbug_on disable:B\n", g_plat_loglevel_etc, g_bug_on_enable_etc);
 }
 
 STATIC ssize_t store_loglevel(struct device *dev, struct kobj_attribute *attr, const char *buf, size_t count)
@@ -576,29 +622,29 @@ STATIC ssize_t store_loglevel(struct device *dev, struct kobj_attribute *attr, c
     /*bug on set*/
     if ('b' == *buf)
     {
-        g_bug_on_enable = BUG_ON_ENABLE;
-        PS_PRINT_INFO("BUG_ON enable sucess, g_bug_on_enable = %d\n", g_bug_on_enable);
+        g_bug_on_enable_etc = BUG_ON_ENABLE;
+        PS_PRINT_INFO("BUG_ON enable sucess, g_bug_on_enable_etc = %d\n", g_bug_on_enable_etc);
         return count;
     }
     else if ('B' == *buf)
     {
-        g_bug_on_enable = BUG_ON_DISABLE;
-        PS_PRINT_INFO("BUG_ON disable sucess, g_bug_on_enable = %d\n", g_bug_on_enable);
+        g_bug_on_enable_etc = BUG_ON_DISABLE;
+        PS_PRINT_INFO("BUG_ON disable sucess, g_bug_on_enable_etc = %d\n", g_bug_on_enable_etc);
         return count;
     }
 
     loglevel = simple_strtol(buf, NULL, 10);
     if(PLAT_LOG_ALERT > loglevel)
     {
-        g_plat_loglevel = PLAT_LOG_ALERT;
+        g_plat_loglevel_etc = PLAT_LOG_ALERT;
     }
     else if(PLAT_LOG_DEBUG < loglevel)
     {
-        g_plat_loglevel = PLAT_LOG_DEBUG;
+        g_plat_loglevel_etc = PLAT_LOG_DEBUG;
     }
     else
     {
-        g_plat_loglevel = loglevel;
+        g_plat_loglevel_etc = loglevel;
     }
 
     return count;
@@ -607,7 +653,7 @@ STATIC ssize_t store_loglevel(struct device *dev, struct kobj_attribute *attr, c
 #ifdef HAVE_HISI_IR
 STATIC ssize_t show_ir_mode(struct device *dev, struct kobj_attribute *attr, int8 *buf)
 {
-    struct pm_drv_data *pm_data = pm_get_drvdata();
+    struct pm_drv_data *pm_data = pm_get_drvdata_etc();
 
     PS_PRINT_INFO("%s\n", __func__);
 
@@ -617,7 +663,7 @@ STATIC ssize_t show_ir_mode(struct device *dev, struct kobj_attribute *attr, int
         return -FAILURE;
     }
 
-    if (!g_board_info.have_ir) {
+    if (!g_board_info_etc.have_ir) {
         PS_PRINT_ERR("board have no ir module");
         return -FAILURE;
     }
@@ -627,19 +673,19 @@ STATIC ssize_t show_ir_mode(struct device *dev, struct kobj_attribute *attr, int
         return -FAILURE;
     }
 
-    if (!isAsic())
+    if (!isAsic_etc())
     {
         PS_PRINT_ERR("HI1102 FPGA VERSION, ir contral gpio not exist\n");
         return -FAILURE;
     }
 
-    if (IR_GPIO_CTRL == g_board_info.irled_power_type)
+    if (IR_GPIO_CTRL == g_board_info_etc.irled_power_type)
     {
-        return snprintf(buf, SNPRINT_LIMIT_TO_KERNEL, "%d\n", gpio_get_value(pm_data->board->bfgx_ir_ctrl_gpio));
+        return snprintf(buf, PAGE_SIZE, "%d\n", gpio_get_value(pm_data->board->bfgx_ir_ctrl_gpio));
     }
-    else if (IR_LDO_CTRL == g_board_info.irled_power_type)
+    else if (IR_LDO_CTRL == g_board_info_etc.irled_power_type)
     {
-        return snprintf(buf, SNPRINT_LIMIT_TO_KERNEL, "%d\n",(regulator_is_enabled(pm_data->board->bfgn_ir_ctrl_ldo)) > 0 ? 1:0);
+        return snprintf(buf, PAGE_SIZE, "%d\n",(regulator_is_enabled(pm_data->board->bfgn_ir_ctrl_ldo)) > 0 ? 1:0);
     }
 
     return -FAILURE;
@@ -650,7 +696,7 @@ STATIC ssize_t store_ir_mode(struct device *dev, struct kobj_attribute *attr, co
     int32 ir_ctrl_level;
     int ret;
 
-    struct pm_drv_data *pm_data = pm_get_drvdata();
+    struct pm_drv_data *pm_data = pm_get_drvdata_etc();
 
     if (NULL == pm_data)
     {
@@ -666,7 +712,7 @@ STATIC ssize_t store_ir_mode(struct device *dev, struct kobj_attribute *attr, co
         return -FAILURE;
     }
 
-    if (!g_board_info.have_ir)
+    if (!g_board_info_etc.have_ir)
     {
         PS_PRINT_ERR("board have no ir module");
         return -FAILURE;
@@ -674,7 +720,7 @@ STATIC ssize_t store_ir_mode(struct device *dev, struct kobj_attribute *attr, co
 
     if (IR_GPIO_CTRL == pm_data->board->irled_power_type)
     {
-        if (!isAsic())
+        if (!isAsic_etc())
         {
             PS_PRINT_ERR("HI1102 FPGA VERSION, ignore ir contral gpio\n");
             return count;
@@ -738,7 +784,7 @@ STATIC ssize_t store_ir_mode(struct device *dev, struct kobj_attribute *attr, co
 
 STATIC ssize_t bfgx_sleep_state_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
-    struct pm_drv_data *pm_data = pm_get_drvdata();
+    struct pm_drv_data *pm_data = pm_get_drvdata_etc();
 
     if (NULL == buf)
     {
@@ -752,12 +798,12 @@ STATIC ssize_t bfgx_sleep_state_show(struct kobject *kobj, struct kobj_attribute
         return -FAILURE;
     }
 
-    return snprintf(buf, SNPRINT_LIMIT_TO_KERNEL, "%d\n", pm_data->bfgx_dev_state);
+    return snprintf(buf, PAGE_SIZE, "%d\n", pm_data->bfgx_dev_state);
 }
 
 STATIC ssize_t bfgx_wkup_host_count_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
-    struct pm_drv_data *pm_data = pm_get_drvdata();
+    struct pm_drv_data *pm_data = pm_get_drvdata_etc();
 
     if (NULL == buf)
     {
@@ -771,7 +817,7 @@ STATIC ssize_t bfgx_wkup_host_count_show(struct kobject *kobj, struct kobj_attri
         return -FAILURE;
     }
 
-    return snprintf(buf, SNPRINT_LIMIT_TO_KERNEL, "%d\n", pm_data->bfg_wakeup_host);
+    return snprintf(buf, PAGE_SIZE, "%d\n", pm_data->bfg_wakeup_host);
 }
 
 STATIC int8 **get_bin_file_path(int32 *bin_file_num)
@@ -786,9 +832,9 @@ STATIC int8 **get_bin_file_path(int32 *bin_file_num)
     }
     *bin_file_num = 0;
     /* 找到全局变量中储存的文件的个数 */
-    for (loop = 0; loop < g_st_cfg_info.al_count[BFGX_AND_WIFI_CFG]; loop++)
+    for (loop = 0; loop < g_st_cfg_info_etc.al_count[BFGX_AND_WIFI_CFG]; loop++)
     {
-        if (FILE_TYPE_CMD == g_st_cfg_info.apst_cmd[BFGX_AND_WIFI_CFG][loop].cmd_type)
+        if (FILE_TYPE_CMD == g_st_cfg_info_etc.apst_cmd[BFGX_AND_WIFI_CFG][loop].cmd_type)
         {
             (*bin_file_num)++;
         }
@@ -803,11 +849,11 @@ STATIC int8 **get_bin_file_path(int32 *bin_file_num)
     /* 保证没有使用的数组元素全都指向NULL,防止错误释放 */
     OS_MEM_SET((void *)path, 0, (*bin_file_num) * OAL_SIZEOF(int8 *));
     /* 将bin文件的路径全部拷贝到一个指针数组中 */
-    for (loop = 0; loop < g_st_cfg_info.al_count[BFGX_AND_WIFI_CFG]; loop++)
+    for (loop = 0; loop < g_st_cfg_info_etc.al_count[BFGX_AND_WIFI_CFG]; loop++)
     {
-        if (FILE_TYPE_CMD == g_st_cfg_info.apst_cmd[BFGX_AND_WIFI_CFG][loop].cmd_type && index < *bin_file_num)
+        if (FILE_TYPE_CMD == g_st_cfg_info_etc.apst_cmd[BFGX_AND_WIFI_CFG][loop].cmd_type && index < *bin_file_num)
         {
-            begin = OS_STR_CHR(g_st_cfg_info.apst_cmd[BFGX_AND_WIFI_CFG][loop].cmd_para, '/');
+            begin = OS_STR_CHR(g_st_cfg_info_etc.apst_cmd[BFGX_AND_WIFI_CFG][loop].cmd_para, '/');
             if (NULL == begin)
             {
                 continue ;
@@ -845,7 +891,7 @@ STATIC ssize_t dev_version_show(struct device *dev, struct kobj_attribute *attr,
         PS_PRINT_ERR("buf is NULL\n");
         return -FAILURE;
     }
-    hi110x_board_info = get_hi110x_board_info();
+    hi110x_board_info = get_hi110x_board_info_etc();
     if (unlikely(NULL == hi110x_board_info))
     {
         PS_PRINT_ERR("get board info fail\n");
@@ -855,22 +901,22 @@ STATIC ssize_t dev_version_show(struct device *dev, struct kobj_attribute *attr,
     /* 非1103系统暂时不支持device软件版本号 */
     if (hi110x_board_info->chip_nr != BOARD_VERSION_HI1103)
     {
-        return snprintf(buf, SNPRINT_LIMIT_TO_KERNEL, "%s.\n%s.\n""NOTE:\n"
+        return snprintf(buf, PAGE_SIZE, "%s.\n%s.\n""NOTE:\n"
                         "     device software version only support on hi1103 now!!!\n",
-                        hi110x_board_info->chip_type, g_param_version.param_version);
+                        hi110x_board_info->chip_type, g_param_version_etc.param_version);
     }
     /* 检查device是否打开过，cfg配置文件是否解析过, 否则全局变量里没有数据, 提示用户加载一下frimware */
-    if (0 == g_st_cfg_info.al_count[BFGX_AND_WIFI_CFG])
+    if (0 == g_st_cfg_info_etc.al_count[BFGX_AND_WIFI_CFG])
     {
-        return snprintf(buf, SNPRINT_LIMIT_TO_KERNEL, "%s.\n%s.\n""NOTE:\n"
+        return snprintf(buf, PAGE_SIZE, "%s.\n%s.\n""NOTE:\n"
                         "You need open bt or wifi once to download frimware to get device bin file path to parse!\n",
-                        hi110x_board_info->chip_type, g_param_version.param_version);
+                        hi110x_board_info->chip_type, g_param_version_etc.param_version);
     }
     /* 从全局变量中获取bin文件的路径返回指向bin文件绝对路径的指针数组 */
     pca_bin_file_path = get_bin_file_path(&bin_file_num);
     if (unlikely(NULL == pca_bin_file_path))
     {
-        PS_PRINT_ERR("get bin file path from g_st_cfg_info fail\n");
+        PS_PRINT_ERR("get bin file path from g_st_cfg_info_etc fail\n");
         return -FAILURE;
     }
     /* 遍历找到的所有的bin文件查找device软件版本号 */
@@ -890,9 +936,9 @@ STATIC ssize_t dev_version_show(struct device *dev, struct kobj_attribute *attr,
             break;
         }
     }
-    ret = snprintf(buf, SNPRINT_LIMIT_TO_KERNEL,
+    ret = snprintf(buf, PAGE_SIZE,
                         "%s.\n%s.\nBFGX DEVICE VERSION:%s.\nWIFI DEVICE VERSION:%s.\n",
-                        hi110x_board_info->chip_type, g_param_version.param_version,
+                        hi110x_board_info->chip_type, g_param_version_etc.param_version,
                         dev_version_bfgx,dev_version_wifi);
     /* 释放申请的所有内存空间 */
     for (loop = 0; loop < bin_file_num; loop++)
@@ -924,6 +970,220 @@ STATIC ssize_t show_hisi_gnss_ext_rtc_count(struct device *dev, struct kobj_attr
     return sizeof(rtc_count);
 }
 #endif
+STATIC struct kobj_attribute plat_exception_info =
+__ATTR(excp_info, 0444, (void *)show_exception_info, NULL);
+
+#ifdef CONFIG_HI110X_GPS_SYNC
+STATIC int32 gnss_sync_convert_mode_modem0(int32 rat_mode)
+{
+    int32 sync_mode;
+    switch (rat_mode)
+    {
+        case gnss_rat_mode_gsm:
+            sync_mode = gnss_sync_mode_g1;
+            break;
+        case gnss_rat_mode_wcdma:
+            sync_mode = gnss_sync_mode_pw;
+            break;
+        case gnss_rat_mode_lte:
+            sync_mode = gnss_sync_mode_lte;
+            break;
+        case gnss_rat_mode_cdma:
+            sync_mode = gnss_sync_mode_cdma;
+            break;
+        default:
+            sync_mode = gnss_sync_mode_unknown;
+            break;
+    }
+    return sync_mode;
+}
+
+STATIC int32 gnss_sync_convert_mode_modem1(int32 rat_mode)
+{
+    int32 sync_mode;
+    switch (rat_mode)
+    {
+        case gnss_rat_mode_gsm:
+            sync_mode = gnss_sync_mode_g2;
+            break;
+        case gnss_rat_mode_wcdma:
+            sync_mode = gnss_sync_mode_sw;
+            break;
+        case gnss_rat_mode_lte:
+            sync_mode = gnss_sync_mode_lte2;
+            break;
+        case gnss_rat_mode_cdma:
+            sync_mode = gnss_sync_mode_cdma;
+            break;
+        default:
+            sync_mode = gnss_sync_mode_unknown;
+            break;
+    }
+    return sync_mode;
+}
+
+STATIC int32 gnss_sync_convert_mode_modem2(int32 rat_mode)
+{
+    int32 sync_mode;
+    switch (rat_mode)
+    {
+        case gnss_rat_mode_gsm:
+            sync_mode = gnss_sync_mode_g3;
+            break;
+        case gnss_rat_mode_cdma:
+            sync_mode = gnss_sync_mode_cdma;
+            break;
+        default:
+            sync_mode = gnss_sync_mode_unknown;
+            break;
+    }
+    return sync_mode;
+}
+
+/* ************************************************************** */
+/* Driver与Host接口定义为以下几个参数，每个参数之间用‘,’分割    */
+/* "modem_id,rat_mode"                                            */
+/* ************************************************************** */
+STATIC int32 gnss_sync_convert_mode(const int8* rcv_data, int32* set_mode)
+{
+    int8 *pc_split = ",";
+    int8 *pc_str1 = (int8*)rcv_data;
+    int8 *pc_str2;
+    int32 modem_id;
+    int32 rat_mode;
+
+    if (OAL_PTR_NULL == pc_str1 || OAL_PTR_NULL == set_mode)
+    {
+        PS_PRINT_ERR("received data or set mode is null\n");
+        return -FAILURE;
+    }
+
+    modem_id = oal_atoi(pc_str1);
+    if (modem_id < 0)
+    {
+        PS_PRINT_ERR("modem id is invalid\n");
+        return -FAILURE;
+    }
+
+    pc_str2 = oal_strstr(pc_str1, pc_split);
+    if (OAL_PTR_NULL == pc_str2)
+    {
+        PS_PRINT_ERR("cannot find the split\n");
+        return -FAILURE;
+    }
+
+    pc_str2++;
+    rat_mode = oal_atoi(pc_str2);
+    if (rat_mode < gnss_rat_mode_no_service || rat_mode >= gnss_rat_mode_butt)
+    {
+        PS_PRINT_ERR("rat mode is invalid\n");
+        return -FAILURE;
+    }
+
+    switch (modem_id)
+    {
+        case 0:
+            *set_mode = gnss_sync_convert_mode_modem0(rat_mode);
+            break;
+        case 1:
+            *set_mode = gnss_sync_convert_mode_modem1(rat_mode);
+            break;
+        case 2:
+            *set_mode = gnss_sync_convert_mode_modem2(rat_mode);
+            break;
+        default:
+            *set_mode = gnss_sync_mode_unknown;
+            break;
+    }
+
+    return SUCCESS;
+}
+
+STATIC ssize_t show_hisi_gnss_sync_mode(struct device *dev, struct kobj_attribute *attr, char *buf, size_t count)
+{
+    int32 mode;
+    struct gnss_sync_data *sync_data = gnss_get_sync_data();
+
+    PS_PRINT_DBG("show hisi gnss sync mode!\n");
+
+    if (NULL == buf)
+    {
+        PS_PRINT_ERR("buf is NULL\n");
+        return -FAILURE;
+    }
+
+    if (NULL == sync_data)
+    {
+        PS_PRINT_ERR("sync_data is NULL!\n");
+        return -FAILURE;
+    }
+
+    if (NULL == sync_data->addr_base_virt)
+    {
+        PS_PRINT_ERR("register virutal address is NULL!\n");
+        return -FAILURE;
+    }
+
+    mode = readl(sync_data->addr_base_virt + sync_data->addr_offset);
+
+    return snprintf(buf, PAGE_SIZE, "%d\n", mode);
+}
+
+STATIC ssize_t store_hisi_gnss_sync_mode(struct device *dev, struct kobj_attribute *attr, const char *buf, size_t count)
+{
+    int32 ret = -FAILURE;
+    int32 set_mode = gnss_sync_mode_unknown;
+    struct gnss_sync_data *sync_data = NULL;
+
+    PS_PRINT_INFO("store hisi gnss sync mode!\n");
+
+    if (NULL == buf)
+    {
+        PS_PRINT_ERR("buf is NULL\n");
+        return -FAILURE;
+    }
+
+    sync_data = gnss_get_sync_data();
+    if (NULL == sync_data)
+    {
+        PS_PRINT_ERR("sync_data is NULL!\n");
+        return -FAILURE;
+    }
+
+    if (NULL == sync_data->addr_base_virt)
+    {
+        PS_PRINT_ERR("register virutal address is NULL!\n");
+        return -FAILURE;
+    }
+
+    if (sync_data->version == 1)
+    {
+        ret = gnss_sync_convert_mode(buf, &set_mode);
+    }
+    else
+    {
+        PS_PRINT_INFO("sync version %d has not been realized!\n", sync_data->version);
+        return -FAILURE;
+    }
+
+    if (ret != SUCCESS)
+    {
+        return ret;
+    }
+    PS_PRINT_INFO("gnss sync mode \"%s\" convert to %d", buf, set_mode);
+
+    if (set_mode != gnss_sync_mode_unknown)
+    {
+        writel(set_mode, (sync_data->addr_base_virt + sync_data->addr_offset));
+    }
+    else
+    {
+        return -FAILURE;
+    }
+
+    return count;
+}
+#endif
 
 STATIC struct kobj_attribute download_mode =
 __ATTR(device_download_mode, 0444, (void *)show_download_mode, NULL);
@@ -949,11 +1209,8 @@ __ATTR(ini_file_name, 0444, (void *)show_ini_file_name, NULL);
 STATIC struct kobj_attribute country_code =
 __ATTR(country_code, 0444, (void *)show_country_code, NULL);
 
-STATIC struct kobj_attribute bfgx_rst_count =
-__ATTR(bfgx_rst_count, 0444, (void *)show_bfgx_exception_count, NULL);
-
-STATIC struct kobj_attribute wifi_rst_count =
-__ATTR(wifi_rst_count, 0444, (void *)show_wifi_exception_count, NULL);
+STATIC struct kobj_attribute rst_count =
+__ATTR(rst_count, 0444, (void *)show_exception_count, NULL);
 
 #ifdef HAVE_HISI_GNSS
 STATIC struct kobj_attribute gnss_lowpower_cntrl =
@@ -971,6 +1228,11 @@ __ATTR(ir_ctrl, 0664, (void *)show_ir_mode, (void *)store_ir_mode);
 #ifdef CONFIG_HISI_PMU_RTC_READCOUNT
 STATIC struct kobj_attribute hisi_gnss_ext_rtc =
 __ATTR(gnss_ext_rtc, 0444, (void *)show_hisi_gnss_ext_rtc_count, NULL);
+#endif
+
+#ifdef CONFIG_HI110X_GPS_SYNC
+STATIC struct kobj_attribute hisi_gnss_sync =
+__ATTR(gnss_sync, 0664, (void *)show_hisi_gnss_sync_mode, (void *)store_hisi_gnss_sync_mode);
 #endif
 
 STATIC struct kobj_attribute bfgx_sleep_attr =
@@ -991,8 +1253,8 @@ STATIC struct attribute *bfgx_attrs[] = {
         &bfgx_active_state.attr,
         &ini_file_name.attr,
         &country_code.attr,
-        &bfgx_rst_count.attr,
-        &wifi_rst_count.attr,
+        &rst_count.attr,
+        &plat_exception_info.attr,
 #ifdef HAVE_HISI_GNSS
         &gnss_lowpower_cntrl.attr,
 #endif
@@ -1006,6 +1268,9 @@ STATIC struct attribute *bfgx_attrs[] = {
 #ifdef CONFIG_HISI_PMU_RTC_READCOUNT
         &hisi_gnss_ext_rtc.attr,
 #endif
+#ifdef CONFIG_HI110X_GPS_SYNC
+        &hisi_gnss_sync.attr,
+#endif
         NULL,
 };
 
@@ -1016,7 +1281,6 @@ STATIC struct attribute_group bfgx_attr_grp = {
 #ifdef PLATFORM_DEBUG_ENABLE
 STATIC ssize_t show_exception_dbg(struct device *dev, struct kobj_attribute *attr, int8 *buf)
 {
-    int32 index = 0;
     PS_PRINT_INFO("%s\n", __func__);
 
     if (NULL == buf)
@@ -1025,14 +1289,20 @@ STATIC ssize_t show_exception_dbg(struct device *dev, struct kobj_attribute *att
         return -FAILURE;
     }
 
-
-    index = snprintf(buf, PAGE_SIZE,
+    return snprintf(buf, PAGE_SIZE,
                         "==========cmd  func             \n"
-                        "   1  close bt          \n"
-                        "   2  set beat flat to 0\n"
+                        "   1  clear dfr info          \n"
+                        "   2  cause bfgx beattimer timerout\n"
                         "   3  enable dfr subsystem rst\n"
-                        "   4  disble dfr subsystem rst\n");
-    return plat_get_dfr_sinfo(buf,index);
+                        "   4  disble dfr subsystem rst\n"
+                        "   5  en dfr bfgx pwron fail\n"
+                        "   6  en dfr bfgx pwroff fail\n"
+                        "   7  en dfr wifi wkup fail\n"
+                        "   8  cause bfgx panic\n"
+                        "   9  cause bfgx arp exception system rst\n"
+                        "   10 bfgx wkup fail\n"
+                        "   11 wifi WIFI_TRANS_FAIL\n"
+                        "   12 wifi WIFI_POWER ON FAIL\n");
 }
 
 STATIC ssize_t store_exception_dbg(struct device *dev, struct kobj_attribute *attr, const char *buf, size_t count)
@@ -1041,62 +1311,146 @@ STATIC ssize_t store_exception_dbg(struct device *dev, struct kobj_attribute *at
     int32  ret = 0;
     struct ps_core_s *ps_core_d = NULL;
     struct st_exception_info *pst_exception_data = NULL;
+    struct wlan_pm_s    *pst_wlan_pm = wlan_pm_get_drv_etc();
+    hcc_bus* hi_bus = hcc_get_current_110x_bus();
+    struct hcc_handler* pst_hcc = hcc_get_110x_handler();
 
     if (NULL == buf)
     {
-        PS_PRINT_ERR("buf is NULL\n");
+        PS_PRINT_ERR("[dfr_test]buf is NULL\n");
+        return -FAILURE;
+    }
+    if(NULL == hi_bus)
+    {
+        PS_PRINT_ERR("[dfr_test]hi_bus is null");
         return -FAILURE;
     }
 
-    get_exception_info_reference(&pst_exception_data);
+    get_exception_info_reference_etc(&pst_exception_data);
     if (NULL == pst_exception_data)
     {
-        PS_PRINT_ERR("get exception info reference is error\n");
+        PS_PRINT_ERR("[dfr_test]get exception info reference is error\n");
         return 0;
     }
 
-    ps_get_core_reference(&ps_core_d);
+    ps_get_core_reference_etc(&ps_core_d);
     if (NULL == ps_core_d)
     {
-        PS_PRINT_ERR("ps_core_d is NULL\n");
+        PS_PRINT_ERR("[dfr_test]ps_core_d is NULL\n");
         return 0;
     }
 
     cmd = simple_strtol(buf, NULL, 10);
-    PS_PRINT_INFO("cmd:%d\n", cmd);
-
-    ret = prepare_to_visit_node(ps_core_d);
-    if (ret < 0)
-    {
-        PS_PRINT_ERR("prepare work FAIL\n");
-        return ret;
-    }
+    PS_PRINT_INFO("[dfr_test]cmd:%d\n", cmd);
 
     switch (cmd)
     {
         case 1:
-            PS_PRINT_INFO("exception debug test: close BT\n");
-            ps_tx_sys_cmd(ps_core_d, SYS_MSG, SYS_CFG_CLOSE_BT);
+            PS_PRINT_INFO("[dfr_test]clear dfr info\n");
+            memset(&pst_exception_data->etype_info,0,sizeof(pst_exception_data->etype_info));
             break;
         case 2:
-            PS_PRINT_INFO("exception: set debug beat flag to 0\n");
+            PS_PRINT_INFO("[dfr_test]bfgx device timeout cause ++\n");
+            ret = prepare_to_visit_node_etc(ps_core_d);
+            if (ret < 0)
+            {
+                PS_PRINT_ERR("[dfr_test]prepare work FAIL\n");
+                return ret;
+            }
             pst_exception_data->debug_beat_flag = 0;
+            /*等待dfr完成，等待进入dfr流程，防止睡眠*/
+           while(PLAT_EXCEPTION_RESET_IDLE == atomic_read(&pst_exception_data->is_reseting_device));
+            post_to_visit_node_etc(ps_core_d);
+            PS_PRINT_INFO("[dfr_test]bfgx device timeout cause --\n");
             break;
         case 3:
-            PS_PRINT_INFO("enable dfr subsystem rst\n");
-            pst_exception_data->subsystem_rst_en = DFR_SUSUBS_ENABLE;
+            PS_PRINT_INFO("[dfr_test]enable dfr subsystem rst\n");
+            pst_exception_data->subsystem_rst_en = DFR_TEST_ENABLE;
             break;
         case 4:
-            PS_PRINT_INFO("disable dfr subsystem rst\n");
-            pst_exception_data->subsystem_rst_en = DFR_SUSUBS_DISABLE;
+            PS_PRINT_INFO("[dfr_test]disable dfr subsystem rst\n");
+            pst_exception_data->subsystem_rst_en = DFR_TEST_DISABLE;
             break;
+        case 5:
+            PS_PRINT_INFO("[dfr_test]bfgx powon fail dfr test en,next poweron will fail\n");
+            set_excp_test_en(BFGX_POWEON_FAULT);
+            break;
+        case 6:
+            PS_PRINT_INFO("[dfr_test]bfgx pwr off dfr test en,next poweroff will fail\n");
+            set_excp_test_en(BFGX_POWEOFF_FAULT);
+            break;
+        case 7:
+            if(NULL == pst_hcc)
+            {
+                PS_PRINT_INFO("pst_hcc is null\n");
+                break;
+            }
+            if(HCC_ON != oal_atomic_read(&pst_hcc->state))
+            {
+                PS_PRINT_INFO("wifi is closed\n");
+                break;
+            }
+            PS_PRINT_INFO("[dfr_test]wifi wkup dfr test en,next wkup will fail\n");
+            if (HOST_ALLOW_TO_SLEEP == pst_wlan_pm->ul_wlan_dev_state)
+            {
+                hcc_tx_transfer_lock(hcc_get_110x_handler());
+                set_excp_test_en(WIFI_WKUP_FAULT);
+                wlan_pm_wakeup_dev_etc();
+                hcc_tx_transfer_unlock(hcc_get_110x_handler());
+            }
+            else
+            {
+                PS_PRINT_WARNING("[dfr_test]wifi wkup dfr trigger fail , cur state:%ld\n", pst_wlan_pm->ul_wlan_dev_state);
+            }
+            break;
+        case 8:
+            ret = prepare_to_visit_node_etc(ps_core_d);
+            if (ret < 0)
+            {
+                PS_PRINT_ERR("[dfr_test]prepare work FAIL\n");
+                return ret;
+            }
+            PS_PRINT_INFO("[dfr_test]bfgx device panic cause\n");
+            ps_tx_sys_cmd_etc(ps_core_d, SYS_MSG, SYS_CFG_DEV_PANIC);
+            post_to_visit_node_etc(ps_core_d);
+            break;
+        case 9:
+            PS_PRINT_INFO("[dfr_test]trigger hal BFGX_ARP_TIMEOUT exception\n");
+            plat_exception_handler_etc(SUBSYS_BFGX, THREAD_GNSS, BFGX_ARP_TIMEOUT);
+            break;
+        case 10:
+            PS_PRINT_INFO("[dfr_test]bfgx wkup dfr test en,next wkup will fail \n");
+            plat_exception_handler_etc(SUBSYS_BFGX, THREAD_NFC, BFGX_WAKEUP_FAIL);
+            break;
+        case 11:
+            if(NULL == pst_hcc)
+            {
+                PS_PRINT_INFO("pst_hcc is null\n");
+                break;
+            }
+            if(HCC_ON != oal_atomic_read(&pst_hcc->state))
+            {
+                PS_PRINT_INFO("wifi is closed\n");
+                break;
+            }
+            PS_PRINT_INFO("[dfr_test]wifi WIFI_TRANS_FAIL submit \n");
+            hcc_tx_transfer_lock(pst_hcc);
+            if(OAL_SUCC == hcc_bus_pm_wakeup_device(hi_bus))
+            {
+            hcc_bus_exception_submit(hi_bus, WIFI_TRANS_FAIL);
+            }
+            hcc_tx_transfer_unlock(pst_hcc);
+            break;
+
+        case 12:
+            PS_PRINT_INFO("[dfr_test]wifi WIFI_power on failed\n");
+            set_excp_test_en(WIFI_POWER_ON_FAULT);
+            break;
+
         default:
-            PS_PRINT_ERR("unknown cmd %d\n", cmd);
+            PS_PRINT_ERR("[dfr_test]unknown cmd %d\n", cmd);
             break;
     }
-
-    post_to_visit_node(ps_core_d);
-
     return count;
 }
 
@@ -1110,7 +1464,7 @@ STATIC ssize_t show_uart_rx_dump(struct device *dev, struct kobj_attribute *attr
         return -FAILURE;
     }
 
-    return snprintf(buf, SNPRINT_LIMIT_TO_KERNEL, "curr uart dump status =%d\n no:0\n yes:1\n", g_uart_rx_dump);
+    return snprintf(buf, PAGE_SIZE, "curr uart dump status =%d\n no:0\n yes:1\n", g_uart_rx_dump_etc);
 }
 
 STATIC ssize_t store_uart_rx_dump(struct device *dev, struct kobj_attribute *attr, const char *buf, size_t count)
@@ -1121,8 +1475,8 @@ STATIC ssize_t store_uart_rx_dump(struct device *dev, struct kobj_attribute *att
         return -FAILURE;
     }
 
-    g_uart_rx_dump = simple_strtol(buf, NULL, 10);
-    PS_PRINT_INFO("g_uart_rx_dump aft %d\n", g_uart_rx_dump);
+    g_uart_rx_dump_etc = simple_strtol(buf, NULL, 10);
+    PS_PRINT_INFO("g_uart_rx_dump_etc aft %d\n", g_uart_rx_dump_etc);
     return count;
 }
 
@@ -1136,20 +1490,23 @@ STATIC ssize_t show_dev_test(struct device *dev, struct kobj_attribute *attr, in
         return -FAILURE;
     }
 
-    return snprintf(buf, SNPRINT_LIMIT_TO_KERNEL, "cmd  func\n  1  cause bfgx panic\n  2  enable exception recovery\n  3  enable wifi open bcpu\n"
+    return snprintf(buf, PAGE_SIZE, "cmd  func\n  1  cause bfgx panic\n  2  enable exception recovery\n  3  enable wifi open bcpu\n"
                                    "  4  pull up power gpio\n  5  pull down power gpio\n  6  uart loop test\n"
                                    "  7  wifi download test\n  8  open uart\n  9  close uart\n"
                                    "  10 open bt\n  11 bfg download test\n  12 bfg wifi download test\n"
-                                   "  13 wlan_pm_open_bcpu\n  14 wlan_power_on \n  15 wlan_power_off\n"
-                                   "  16 wlan_pm_open\n  17 wlan_pm_close\n  18 wlan gpio power on\n  19 bfg gpio power on\n  20 gnss monitor enable\n");
+                                   "  13 wlan_pm_open_bcpu_etc\n  14 wlan_power_on_etc \n  15 wlan_power_off_etc\n"
+                                   "  16 wlan_pm_open_etc\n  17 wlan_pm_close_etc\n  18 wlan gpio power on\n  19 bfg gpio power on\n  20 gnss monitor enable\n"
+                                   "  21 rdr test\n  22 bfgx power on\n");
 }
-oal_uint  wlan_pm_open_bcpu(oal_void);
-extern int32 uart_loop_test(void);
-extern int firmware_download_function(uint32 which_cfg);
+oal_uint  wlan_pm_open_bcpu_etc(oal_void);
+extern int32 uart_loop_test_etc(void);
+extern int firmware_download_function_etc(uint32 which_cfg);
 extern  int32 hi1103_wlan_power_on(void);
 extern  int32 hi1103_wlan_power_off(void);
-extern oal_uint32 wlan_pm_close(oal_void);
+extern oal_uint32 wlan_pm_close_etc(oal_void);
 extern int32 g_device_monitor_enable;
+extern int32 bfgx_dev_power_control_etc(uint8 subsys, uint8 flag);
+
 STATIC ssize_t store_dev_test(struct device *dev, struct kobj_attribute *attr, const char *buf, size_t count)
 {
     int32 cmd;
@@ -1161,7 +1518,7 @@ STATIC ssize_t store_dev_test(struct device *dev, struct kobj_attribute *attr, c
 
     PS_PRINT_INFO("%s\n", __func__);
 
-    bd_info = get_hi110x_board_info();
+    bd_info = get_hi110x_board_info_etc();
     if (unlikely(NULL == bd_info))
     {
         PS_PRINT_ERR("board info is err\n");
@@ -1174,14 +1531,14 @@ STATIC ssize_t store_dev_test(struct device *dev, struct kobj_attribute *attr, c
         return -FAILURE;
     }
 
-    get_exception_info_reference(&pst_exception_data);
+    get_exception_info_reference_etc(&pst_exception_data);
     if (NULL == pst_exception_data)
     {
         PS_PRINT_ERR("get exception info reference is error\n");
         return 0;
     }
 
-    ps_get_core_reference(&ps_core_d);
+    ps_get_core_reference_etc(&ps_core_d);
     if (unlikely(NULL == ps_core_d))
     {
         PS_PRINT_ERR("ps_core_d is NULL\n");
@@ -1192,7 +1549,7 @@ STATIC ssize_t store_dev_test(struct device *dev, struct kobj_attribute *attr, c
     switch (cmd)
     {
         case 1:
-            ret = prepare_to_visit_node(ps_core_d);
+            ret = prepare_to_visit_node_etc(ps_core_d);
             if (ret < 0)
             {
                 PS_PRINT_ERR("prepare work FAIL\n");
@@ -1200,9 +1557,9 @@ STATIC ssize_t store_dev_test(struct device *dev, struct kobj_attribute *attr, c
             }
 
             PS_PRINT_INFO("bfgx test cmd %d, cause device panic\n", cmd);
-            ps_tx_sys_cmd(ps_core_d, SYS_MSG, SYS_CFG_DEV_PANIC);
+            ps_tx_sys_cmd_etc(ps_core_d, SYS_MSG, SYS_CFG_DEV_PANIC);
 
-            post_to_visit_node(ps_core_d);
+            post_to_visit_node_etc(ps_core_d);
             break;
         case 2:
             PS_PRINT_INFO("cmd %d,enable platform dfr\n", cmd);
@@ -1210,45 +1567,47 @@ STATIC ssize_t store_dev_test(struct device *dev, struct kobj_attribute *attr, c
             break;
         case 3:
             PS_PRINT_INFO("cmd %d,enable wifi open bcpu\n", cmd);
-            wifi_open_bcpu_set(1);
+            wifi_open_bcpu_set_etc(1);
             break;
         case 4:
             PS_PRINT_INFO("cmd %d,test pull up power gpio\n", cmd);
-            bd_info->bd_ops.board_power_on(WLAN_POWER);
+            bd_info->bd_ops.board_power_on_etc(WLAN_POWER);
+            break;
         case 5:
             PS_PRINT_INFO("cmd %d,test pull down power gpio\n", cmd);
-            bd_info->bd_ops.board_power_off(WLAN_POWER);
+            bd_info->bd_ops.board_power_off_etc(WLAN_POWER);
+            break;
         case 6:
             PS_PRINT_INFO("cmd %d,start uart loop test\n", cmd);
-            uart_loop_test();
+            uart_loop_test_etc();
             break;
         case 7:
             PS_PRINT_INFO("cmd %d,firmware download wifi_cfg\n", cmd);
-            firmware_download_function(1); //wifi_cfg
+            firmware_download_function_etc(1); //wifi_cfg
             break;
         case 8:
             PS_PRINT_INFO("cmd %d,open uart\n", cmd);
-            open_tty_drv(ps_core_d->pm_data);
+            open_tty_drv_etc(ps_core_d->pm_data);
             break;
         case 9:
             PS_PRINT_INFO("cmd %d,close uart\n", cmd);
-            release_tty_drv(ps_core_d->pm_data);
+            release_tty_drv_etc(ps_core_d->pm_data);
             break;
         case 10:
             PS_PRINT_INFO("cmd %d,uart cmd test\n", cmd);
-            ps_write_tty(ps_core_d, send_data, sizeof(send_data));
+            ps_write_tty_etc(ps_core_d, send_data, sizeof(send_data));
             break;
         case 11:
             PS_PRINT_INFO("cmd %d,firmware download bfgx_cfg\n", cmd);
-            firmware_download_function(2);
+            firmware_download_function_etc(2);
             break;
         case 12:
             PS_PRINT_INFO("cmd %d,firmware download bfgx_and_wifi cfg\n", cmd);
-            firmware_download_function(0);
+            firmware_download_function_etc(0);
             break;
         case 13:
-            PS_PRINT_INFO("cmd %d,wlan_pm_open_bcpu\n", cmd);
-            wlan_pm_open_bcpu();
+            PS_PRINT_INFO("cmd %d,wlan_pm_open_bcpu_etc\n", cmd);
+            wlan_pm_open_bcpu_etc();
             break;
         case 14:
             PS_PRINT_INFO("cmd %d,hi1103_wlan_power_on\n", cmd);
@@ -1259,25 +1618,37 @@ STATIC ssize_t store_dev_test(struct device *dev, struct kobj_attribute *attr, c
             hi1103_wlan_power_off();
             break;
         case 16:
-            PS_PRINT_INFO("cmd %d,wlan_pm_open\n", cmd);
-            wlan_pm_open();
+            PS_PRINT_INFO("cmd %d,wlan_pm_open_etc\n", cmd);
+            wlan_pm_open_etc();
             break;
         case 17:
-            PS_PRINT_INFO("cmd %d,wlan_pm_close\n", cmd);
-            wlan_pm_close();
+            PS_PRINT_INFO("cmd %d,wlan_pm_close_etc\n", cmd);
+            wlan_pm_close_etc();
             break;
         case 18:
             PS_PRINT_INFO("cmd %d,wlan gpio power on\n", cmd);
-            bd_info->bd_ops.board_power_on(WLAN_POWER);
+            bd_info->bd_ops.board_power_on_etc(WLAN_POWER);
             break;
         case 19:
             PS_PRINT_INFO("cmd %d,bfgx gpio power on\n", cmd);
-            bd_info->bd_ops.board_power_on(BFGX_POWER);
+            bd_info->bd_ops.board_power_on_etc(BFGX_POWER);
             break;
         case 20:
             PS_PRINT_INFO("cmd %d,bfgx gpio power on\n", cmd);
             g_device_monitor_enable = 1;
             break;
+        case 21:
+            RDR_EXCEPTION(MODID_CONN_WIFI_EXEC);
+            RDR_EXCEPTION(MODID_CONN_WIFI_CHAN_EXEC);
+            RDR_EXCEPTION(MODID_CONN_WIFI_WAKEUP_FAIL);
+            RDR_EXCEPTION(MODID_CONN_BFGX_EXEC);
+            RDR_EXCEPTION(MODID_CONN_BFGX_BEAT_TIMEOUT);
+            RDR_EXCEPTION(MODID_CONN_BFGX_WAKEUP_FAIL);
+            break;
+      case 22:
+        PS_PRINT_ERR("bfgx power on %d\n", cmd);
+        bfgx_dev_power_control_etc(BFGX_BT, BFG_POWER_GPIO_UP);
+        break;
         default:
             PS_PRINT_ERR("unknown cmd %d\n", cmd);
             break;
@@ -1296,7 +1667,7 @@ STATIC ssize_t show_wifi_mem_dump(struct device *dev, struct kobj_attribute *att
         return -FAILURE;
     }
 
-    return snprintf(buf, SNPRINT_LIMIT_TO_KERNEL, "cmd         func             \n"
+    return snprintf(buf, PAGE_SIZE, "cmd         func             \n"
                         " 1    uart halt wcpu         \n"
                         " 2    uart read wifi pub reg \n"
                         " 3    uart read wifi priv reg\n"
@@ -1319,21 +1690,21 @@ STATIC ssize_t store_wifi_mem_dump(struct device *dev, struct kobj_attribute *at
         return -FAILURE;
     }
 
-    get_exception_info_reference(&pst_exception_data);
+    get_exception_info_reference_etc(&pst_exception_data);
     if (NULL == pst_exception_data)
     {
         PS_PRINT_ERR("get exception info reference is error\n");
         return 0;
     }
 
-    ps_get_core_reference(&ps_core_d);
+    ps_get_core_reference_etc(&ps_core_d);
     if (unlikely(NULL == ps_core_d))
     {
         PS_PRINT_ERR("ps_core_d is NULL\n");
         return -EINVAL;
     }
 
-    ret = prepare_to_visit_node(ps_core_d);
+    ret = prepare_to_visit_node_etc(ps_core_d);
     if (ret < 0)
     {
         PS_PRINT_ERR("prepare work FAIL\n");
@@ -1345,57 +1716,57 @@ STATIC ssize_t store_wifi_mem_dump(struct device *dev, struct kobj_attribute *at
     {
         case 1:
             PS_PRINT_INFO("wifi mem dump cmd %d, halt wcpu\n", cmd);
-            uart_halt_wcpu();
+            uart_halt_wcpu_etc();
             break;
         case 2:
             PS_PRINT_INFO("wifi mem dump cmd %d, read wifi public register\n", cmd);
-            plat_wait_last_rotate_finish();
-            if (EXCEPTION_SUCCESS == uart_read_wifi_mem(WIFI_PUB_REG))
+            //plat_wait_last_rotate_finish_etc();
+            if (EXCEPTION_SUCCESS == uart_read_wifi_mem_etc(WIFI_PUB_REG))
             {
                 /*send cmd to oam_hisi to rotate file*/
-                plat_send_rotate_cmd_2_app(CMD_READM_WIFI_UART);
+                //plat_send_rotate_cmd_2_app_etc(CMD_READM_WIFI_UART);
             }
             else
             {
-                plat_rotate_finish_set();
+                //plat_rotate_finish_set_etc();
             };
             break;
         case 3:
             PS_PRINT_INFO("wifi mem dump cmd %d, read wifi priv register\n", cmd);
-            plat_wait_last_rotate_finish();
-            if (EXCEPTION_SUCCESS == uart_read_wifi_mem(WIFI_PRIV_REG))
+//            plat_wait_last_rotate_finish_etc();
+            if (EXCEPTION_SUCCESS == uart_read_wifi_mem_etc(WIFI_PRIV_REG))
             {
                 /*send cmd to oam_hisi to rotate file*/
-                plat_send_rotate_cmd_2_app(CMD_READM_WIFI_UART);
+                //plat_send_rotate_cmd_2_app_etc(CMD_READM_WIFI_UART);
             }
             else
             {
-                plat_rotate_finish_set();
+               // plat_rotate_finish_set_etc();
             };
             break;
         case 4:
             PS_PRINT_INFO("wifi mem dump cmd %d, read wifi mem\n", cmd);
-            plat_wait_last_rotate_finish();
-            if (EXCEPTION_SUCCESS == uart_read_wifi_mem(WIFI_MEM))
+  //          plat_wait_last_rotate_finish_etc();
+            if (EXCEPTION_SUCCESS == uart_read_wifi_mem_etc(WIFI_MEM))
             {
                 /*send cmd to oam_hisi to rotate file*/
-                plat_send_rotate_cmd_2_app(CMD_READM_WIFI_UART);
+                //plat_send_rotate_cmd_2_app_etc(CMD_READM_WIFI_UART);
             }
             else
             {
-                plat_rotate_finish_set();
+               // plat_rotate_finish_set_etc();
             };
             break;
         case 5:
             PS_PRINT_INFO("wifi mem dump cmd %d\n", cmd);
-            debug_uart_read_wifi_mem(1);
+            debug_uart_read_wifi_mem_etc(1);
             break;
         default:
             PS_PRINT_ERR("error cmd:[%d]\n", cmd);
             break;
     }
 
-    post_to_visit_node(ps_core_d);
+    post_to_visit_node_etc(ps_core_d);
 
     return count;
 }
@@ -1411,7 +1782,7 @@ STATIC ssize_t show_bfgx_dump(struct device *dev, struct kobj_attribute *attr, i
         return -FAILURE;
     }
 
-    return snprintf(buf,SNPRINT_LIMIT_TO_KERNEL, "cmd           func            \n"
+    return snprintf(buf, PAGE_SIZE, "cmd           func            \n"
                         " 1    sdio read bcpu pub reg  \n"
                         " 2    sdio read bcpu priv reg \n"
                         " 3    sdio read bcpu mem      \n"
@@ -1433,21 +1804,21 @@ STATIC ssize_t store_bfgx_reg_and_reg_dump(struct device *dev, struct kobj_attri
         return -FAILURE;
     }
 
-    get_exception_info_reference(&pst_exception_data);
+    get_exception_info_reference_etc(&pst_exception_data);
     if (NULL == pst_exception_data)
     {
         PS_PRINT_ERR("get exception info reference is error\n");
         return 0;
     }
 
-    ps_get_core_reference(&ps_core_d);
+    ps_get_core_reference_etc(&ps_core_d);
     if (unlikely(NULL == ps_core_d))
     {
         PS_PRINT_ERR("ps_core_d is NULL\n");
         return -EINVAL;
     }
 
-    ret = prepare_to_visit_node(ps_core_d);
+    ret = prepare_to_visit_node_etc(ps_core_d);
     if (ret < 0)
     {
         PS_PRINT_ERR("prepare work FAIL\n");
@@ -1459,26 +1830,26 @@ STATIC ssize_t store_bfgx_reg_and_reg_dump(struct device *dev, struct kobj_attri
     {
         case 1:
             PS_PRINT_INFO("bfgx mem dump cmd %d,sdio read bcpu pub reg\n", cmd);
-            debug_sdio_read_bfgx_reg_and_mem(BFGX_PUB_REG);
+            debug_sdio_read_bfgx_reg_and_mem_etc(BFGX_PUB_REG);
             break;
         case 2:
             PS_PRINT_INFO("bfgx mem dump cmd %d, sdio read bcpu priv reg\n", cmd);
-            debug_sdio_read_bfgx_reg_and_mem(BFGX_PRIV_REG);
+            debug_sdio_read_bfgx_reg_and_mem_etc(BFGX_PRIV_REG);
             break;
         case 3:
             PS_PRINT_INFO("bfgx mem dump cmd %d, sdio read bcpu mem\n", cmd);
-            debug_sdio_read_bfgx_reg_and_mem(BFGX_MEM);
+            debug_sdio_read_bfgx_reg_and_mem_etc(BFGX_MEM);
             break;
         case 4:
             PS_PRINT_INFO("bfgx mem dump cmd %d, sdio read bcpu reg and mem\n", cmd);
-            debug_sdio_read_bfgx_reg_and_mem(SDIO_BFGX_MEM_DUMP_BOTTOM);
+            debug_sdio_read_bfgx_reg_and_mem_etc(SDIO_BFGX_MEM_DUMP_BOTTOM);
             break;
         default:
             PS_PRINT_ERR("error cmd:[%d]\n", cmd);
             break;
     }
 
-    post_to_visit_node(ps_core_d);
+    post_to_visit_node_etc(ps_core_d);
 
     return count;
 }
@@ -1495,7 +1866,7 @@ STATIC ssize_t show_bfgx_uart_download(struct device *dev, struct kobj_attribute
         return -FAILURE;
     }
 
-    return snprintf(buf,SNPRINT_LIMIT_TO_KERNEL, "baud:%-14s file_len:%-10d send_len:%-10d status:%-5d speed(byte/ms):%-6d usedtime(ms):%-6d \n",
+    return snprintf(buf,PAGE_SIZE, "baud:%-14s file_len:%-10d send_len:%-10d status:%-5d speed(byte/ms):%-6d usedtime(ms):%-6d \n",
                     g_st_uart_download_test.baud, g_st_uart_download_test.file_len, g_st_uart_download_test.xmodern_len,
                     g_st_uart_download_test.send_status,g_st_uart_download_test.file_len/g_st_uart_download_test.used_time,
                     g_st_uart_download_test.used_time);
@@ -1587,7 +1958,7 @@ STATIC ssize_t show_wifi_download(struct device *dev, struct kobj_attribute *att
         return -FAILURE;
     }
 
-    return snprintf(buf, SNPRINT_LIMIT_TO_KERNEL,"total:%-10d file_len:%-10d on_succ:%-10d on_fail:%-10d off_succ:%-10d off_fail:%-10d\n",
+    return snprintf(buf, PAGE_SIZE, "total:%-10d file_len:%-10d on_succ:%-10d on_fail:%-10d off_succ:%-10d off_fail:%-10d\n",
                             g_ul_wifi_boot_total, g_ul_wifi_boot_file_len, g_ul_wifi_power_on_succ,g_ul_wifi_power_on_fail,
                             g_ul_wifi_power_off_succ, g_ul_wifi_power_off_fail);;
 }
@@ -1610,6 +1981,7 @@ void wifi_boot_download_test(uint32  ul_test_len)
     if (OAL_IS_ERR_OR_NULL(fp))
     {
         PS_PRINT_ERR("create file error,fp = 0x%p\n", fp);
+        return;
     }
     fs = get_fs();
     set_fs(KERNEL_DS);
@@ -1709,7 +2081,7 @@ STATIC ssize_t show_ssi_test(struct device *dev, struct kobj_attribute *attr, in
         PS_PRINT_ERR("buf is NULL\n");
         return -FAILURE;
     }
-    return snprintf(buf,SNPRINT_LIMIT_TO_KERNEL, "len:%-14d time:%-14d status:%-5d speed(byte/ms):%-8d\n", ssi_test_st.trans_len, ssi_test_st.used_time, ssi_test_st.send_status, ssi_test_st.trans_len/ssi_test_st.used_time);
+    return snprintf(buf, PAGE_SIZE, "len:%-14d time:%-14d status:%-5d speed(byte/ms):%-8d\n", ssi_test_st.trans_len, ssi_test_st.used_time, ssi_test_st.send_status, ssi_test_st.trans_len/ssi_test_st.used_time);
 }
 extern int32 test_hd_ssi_write(void);
 STATIC ssize_t store_ssi_test(struct device *dev, struct kobj_attribute *attr, const char *buf, size_t count)
@@ -1733,14 +2105,14 @@ STATIC ssize_t store_ssi_test(struct device *dev, struct kobj_attribute *attr, c
         return -FAILURE;
     }
 
-    ps_get_core_reference(&ps_core_d);
+    ps_get_core_reference_etc(&ps_core_d);
     if (unlikely(NULL == ps_core_d))
     {
         PS_PRINT_ERR("ps_core_d is NULL\n");
         return -EINVAL;
     }
 
-    //ret = prepare_to_visit_node(ps_core_d);
+    //ret = prepare_to_visit_node_etc(ps_core_d);
     //if (ret < 0)
     //{
     //    PS_PRINT_ERR("prepare work FAIL\n");
@@ -1853,7 +2225,7 @@ STATIC ssize_t store_ssi_test(struct device *dev, struct kobj_attribute *attr, c
             break;
     }
 
-    //post_to_visit_node(ps_core_d);
+    //post_to_visit_node_etc(ps_core_d);
 
     return count;
 }
@@ -1920,11 +2292,11 @@ STATIC ssize_t show_hisi_nfc_conf_name(struct device *dev, struct kobj_attribute
         return -FAILURE;
     }
 
-    ret = read_nfc_conf_name_from_dts(hisi_nfc_conf_name, sizeof(hisi_nfc_conf_name),
+    ret = read_nfc_conf_name_from_dts_etc(hisi_nfc_conf_name, sizeof(hisi_nfc_conf_name),
                                        DTS_COMP_HISI_NFC_NAME, DTS_COMP_HW_HISI_NFC_CONFIG_NAME);
     if (ret < 0)
     {
-        PS_PRINT_ERR("read_nfc_conf_name_from_dts %s,ret = %d\n", DTS_COMP_HW_HISI_NFC_CONFIG_NAME, ret);
+        PS_PRINT_ERR("read_nfc_conf_name_from_dts_etc %s,ret = %d\n", DTS_COMP_HW_HISI_NFC_CONFIG_NAME, ret);
         return ret;
     }
 
@@ -1942,11 +2314,11 @@ STATIC ssize_t show_brcm_nfc_conf_name(struct device *dev, struct kobj_attribute
         return -FAILURE;
     }
 
-    ret = read_nfc_conf_name_from_dts(brcm_nfc_conf_name, sizeof(brcm_nfc_conf_name),
+    ret = read_nfc_conf_name_from_dts_etc(brcm_nfc_conf_name, sizeof(brcm_nfc_conf_name),
                                        DTS_COMP_HISI_NFC_NAME, DTS_COMP_HW_BRCM_NFC_CONFIG_NAME);
     if (ret < 0)
     {
-        PS_PRINT_ERR("read_nfc_conf_name_from_dts %s,ret = %d\n", DTS_COMP_HW_BRCM_NFC_CONFIG_NAME, ret);
+        PS_PRINT_ERR("read_nfc_conf_name_from_dts_etc %s,ret = %d\n", DTS_COMP_HW_BRCM_NFC_CONFIG_NAME, ret);
         return ret;
     }
 
@@ -1970,64 +2342,64 @@ STATIC struct attribute_group hisi_nfc_attr_grp = {
 };
 #endif
 
-int32 bfgx_user_ctrl_init(void)
+int32 bfgx_user_ctrl_init_etc(void)
 {
     int status;
     struct kobject *pst_root_object = NULL;
 
-    pst_root_object = oal_get_sysfs_root_object();
+    pst_root_object = oal_get_sysfs_root_object_etc();
     if(NULL == pst_root_object)
     {
         PS_PRINT_ERR("[E]get root sysfs object failed!\n");
         return -EFAULT;
     }
 
-    g_sysfs_hisi_pmdbg = kobject_create_and_add("pmdbg", pst_root_object);
-    if (NULL == g_sysfs_hisi_pmdbg)
+    g_sysfs_hisi_pmdbg_etc = kobject_create_and_add("pmdbg", pst_root_object);
+    if (NULL == g_sysfs_hisi_pmdbg_etc)
     {
-        PS_PRINT_ERR("Failed to creat g_sysfs_hisi_pmdbg !!!\n ");
+        PS_PRINT_ERR("Failed to creat g_sysfs_hisi_pmdbg_etc !!!\n ");
 		goto fail_g_sysfs_hisi_pmdbg;
     }
 
-    status = sysfs_create_group(g_sysfs_hisi_pmdbg, &pmdbg_attr_grp);
+    status = oal_debug_sysfs_create_group(g_sysfs_hisi_pmdbg_etc, &pmdbg_attr_grp);
     if (status)
     {
-		PS_PRINT_ERR("failed to create g_sysfs_hisi_pmdbg sysfs entries\n");
+		PS_PRINT_ERR("failed to create g_sysfs_hisi_pmdbg_etc sysfs entries\n");
 		goto fail_create_pmdbg_group;
     }
 
-    g_sysfs_hi110x_bfgx = kobject_create_and_add("hi110x_ps", NULL);
-    if (NULL == g_sysfs_hi110x_bfgx)
+    g_sysfs_hi110x_bfgx_etc = kobject_create_and_add("hi110x_ps", NULL);
+    if (NULL == g_sysfs_hi110x_bfgx_etc)
     {
         PS_PRINT_ERR("Failed to creat g_sysfs_hi110x_ps !!!\n ");
 		goto fail_g_sysfs_hi110x_bfgx;
     }
 
-    status = sysfs_create_group(g_sysfs_hi110x_bfgx, &bfgx_attr_grp);
+    status = sysfs_create_group(g_sysfs_hi110x_bfgx_etc, &bfgx_attr_grp);
     if (status)
     {
-		PS_PRINT_ERR("failed to create g_sysfs_hi110x_bfgx sysfs entries\n");
+		PS_PRINT_ERR("failed to create g_sysfs_hi110x_bfgx_etc sysfs entries\n");
 		goto fail_create_bfgx_group;
     }
 
 #ifdef PLATFORM_DEBUG_ENABLE
-    g_sysfs_hi110x_debug = kobject_create_and_add("hi110x_debug", NULL);
-    if (NULL == g_sysfs_hi110x_debug)
+    g_sysfs_hi110x_debug_etc = kobject_create_and_add("hi110x_debug", NULL);
+    if (NULL == g_sysfs_hi110x_debug_etc)
     {
-        PS_PRINT_ERR("Failed to creat g_sysfs_hi110x_debug !!!\n ");
+        PS_PRINT_ERR("Failed to creat g_sysfs_hi110x_debug_etc !!!\n ");
         goto fail_g_sysfs_hi110x_debug;
     }
 
-    status = sysfs_create_group(g_sysfs_hi110x_debug, &hi110x_debug_attr_grp);
+    status = oal_debug_sysfs_create_group(g_sysfs_hi110x_debug_etc, &hi110x_debug_attr_grp);
     if (status)
     {
-        PS_PRINT_ERR("failed to create g_sysfs_hi110x_debug sysfs entries\n");
+        PS_PRINT_ERR("failed to create g_sysfs_hi110x_debug_etc sysfs entries\n");
         goto fail_create_hi110x_debug_group;
     }
 #endif
 
 #ifdef HAVE_HISI_NFC
-    if (!is_my_nfc_chip())
+    if (!is_my_nfc_chip_etc())
     {
         PS_PRINT_ERR("cfg dev board nfc chip type is not match, skip driver init\n");
     }
@@ -2041,7 +2413,7 @@ int32 bfgx_user_ctrl_init(void)
             goto fail_g_sysfs_hisi_nfc;
         }
 
-        status = sysfs_create_group(g_sysfs_hisi_nfc, &hisi_nfc_attr_grp);
+        status = oal_debug_sysfs_create_group(g_sysfs_hisi_nfc, &hisi_nfc_attr_grp);
         if (status)
         {
             PS_PRINT_ERR("failed to create g_sysfs_hisi_nfc sysfs entries\n");
@@ -2056,43 +2428,45 @@ int32 bfgx_user_ctrl_init(void)
 fail_create_hisi_nfc_group:
     kobject_put(g_sysfs_hisi_nfc);
 fail_g_sysfs_hisi_nfc:
+#ifdef PLATFORM_DEBUG_ENABLE
+    oal_debug_sysfs_remove_group(g_sysfs_hi110x_debug_etc, &hi110x_debug_attr_grp);
+#endif
 #endif
 #ifdef PLATFORM_DEBUG_ENABLE
-    sysfs_remove_group(g_sysfs_hi110x_debug, &hi110x_debug_attr_grp);
 fail_create_hi110x_debug_group:
-    kobject_put(g_sysfs_hi110x_debug);
+    kobject_put(g_sysfs_hi110x_debug_etc);
 fail_g_sysfs_hi110x_debug:
 #endif
-    sysfs_remove_group(g_sysfs_hi110x_bfgx, &bfgx_attr_grp);
+    sysfs_remove_group(g_sysfs_hi110x_bfgx_etc, &bfgx_attr_grp);
 fail_create_bfgx_group:
-    kobject_put(g_sysfs_hi110x_bfgx);
+    kobject_put(g_sysfs_hi110x_bfgx_etc);
 fail_g_sysfs_hi110x_bfgx:
-    sysfs_remove_group(g_sysfs_hisi_pmdbg, &pmdbg_attr_grp);
+    oal_debug_sysfs_remove_group(g_sysfs_hisi_pmdbg_etc, &pmdbg_attr_grp);
 fail_create_pmdbg_group:
-    kobject_put(g_sysfs_hisi_pmdbg);
+    kobject_put(g_sysfs_hisi_pmdbg_etc);
 fail_g_sysfs_hisi_pmdbg:
     return -EFAULT;
 }
 
-void bfgx_user_ctrl_exit(void)
+void bfgx_user_ctrl_exit_etc(void)
 {
 #ifdef HAVE_HISI_NFC
-    if (is_my_nfc_chip())
+    if (is_my_nfc_chip_etc())
     {
-        sysfs_remove_group(g_sysfs_hisi_nfc, &hisi_nfc_attr_grp);
+        oal_debug_sysfs_remove_group(g_sysfs_hisi_nfc, &hisi_nfc_attr_grp);
         kobject_put(g_sysfs_hisi_nfc);
     }
 #endif
 
 #ifdef PLATFORM_DEBUG_ENABLE
-	sysfs_remove_group(g_sysfs_hi110x_debug, &hi110x_debug_attr_grp);
-	kobject_put(g_sysfs_hi110x_debug);
+	oal_debug_sysfs_remove_group(g_sysfs_hi110x_debug_etc, &hi110x_debug_attr_grp);
+	kobject_put(g_sysfs_hi110x_debug_etc);
 #endif
 
-	sysfs_remove_group(g_sysfs_hi110x_bfgx, &bfgx_attr_grp);
-	kobject_put(g_sysfs_hi110x_bfgx);
+	sysfs_remove_group(g_sysfs_hi110x_bfgx_etc, &bfgx_attr_grp);
+	kobject_put(g_sysfs_hi110x_bfgx_etc);
 
-	sysfs_remove_group(g_sysfs_hisi_pmdbg, &pmdbg_attr_grp);
-	kobject_put(g_sysfs_hisi_pmdbg);
+	oal_debug_sysfs_remove_group(g_sysfs_hisi_pmdbg_etc, &pmdbg_attr_grp);
+	kobject_put(g_sysfs_hisi_pmdbg_etc);
 }
 

@@ -490,11 +490,9 @@ VOS_UINT32 AT_TestCpbrPara(VOS_UINT8 ucIndex)
         return AT_ERROR;
     }
 }
-/* Added by f62575 for AT Project, 2011-10-28, begin */
 
 VOS_UINT32 AT_TestCnmaPara(VOS_UINT8 ucIndex)
 {
-    /* Modified by l60609 for DSDA Phase III, 2013-2-20, Begin */
     AT_MODEM_SMS_CTX_STRU              *pstSmsCtx = VOS_NULL_PTR;
 
     pstSmsCtx = AT_GetModemSmsCtxAddrFromClientId(ucIndex);
@@ -510,7 +508,6 @@ VOS_UINT32 AT_TestCnmaPara(VOS_UINT8 ucIndex)
     {
         gstAtSendData.usBufLen = 0;
     }
-    /* Modified by l60609 for DSDA Phase III, 2013-2-20, End */
 
     return AT_OK;
 }
@@ -541,7 +538,6 @@ VOS_UINT32 AT_TestCscbPara(VOS_UINT8 ucIndex)
 VOS_UINT32 AT_TestCpmsPara(VOS_UINT8 ucIndex)
 {
     VOS_UINT16                          usLength;
-    /* Modified by l60609 for DSDA Phase III, 2013-2-20, Begin */
     AT_MODEM_SMS_CTX_STRU              *pstSmsCtx = VOS_NULL_PTR;
 
     usLength  = 0;
@@ -563,12 +559,10 @@ VOS_UINT32 AT_TestCpmsPara(VOS_UINT8 ucIndex)
     }
 
     gstAtSendData.usBufLen = usLength;
-    /* Modified by l60609 for DSDA Phase III, 2013-2-20, End */
 
     return AT_OK;
 }
 
-/* Added by f62575 for AT Project, 2011-10-28, end */
 
 
 VOS_UINT32 AT_TestCsgIdSearchPara(VOS_UINT8 ucIndex)
@@ -626,7 +620,6 @@ VOS_UINT32 At_TestCpolPara(VOS_UINT8 ucIndex)
 {
     VOS_UINT32                          ulRst;
 
-    /* Modified by l60609 for DSDA Phase III, 2013-2-22, Begin */
     AT_MODEM_NET_CTX_STRU              *pstNetCtx = VOS_NULL_PTR;
 
     /* ²ÎÊý¼ì²é */
@@ -641,7 +634,6 @@ VOS_UINT32 At_TestCpolPara(VOS_UINT8 ucIndex)
                                 gastAtClientTab[ucIndex].usClientId,
                                 0,
                                 pstNetCtx->enPrefPlmnType);
-    /* Modified by l60609 for DSDA Phase III, 2013-2-22, End */
 
     if (VOS_TRUE == ulRst)
     {
@@ -727,7 +719,6 @@ VOS_UINT32 At_TestCgansPara(VOS_UINT8 ucIndex)
     return AT_OK;
 }
 
-/* Added by l60609 for V3R3 PPP RPOJECT 2013-06-07, Begin */
 
 VOS_UINT32 At_TestCgansExtPara(VOS_UINT8 ucIndex)
 {
@@ -745,7 +736,6 @@ VOS_UINT32 At_TestCgansExtPara(VOS_UINT8 ucIndex)
 
     return AT_OK;
 }
-/* Added by l60609 for V3R3 PPP RPOJECT 2013-06-07, End*/
 
 
 VOS_UINT32 At_TestCgdnsPara(VOS_UINT8 ucIndex)

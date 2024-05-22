@@ -1,6 +1,13 @@
-#include "batt_info.h"
+#include <huawei_platform/power/batt_info.h>
+#include <huawei_platform/power/power_dsm.h>
+#include <huawei_platform/power/huawei_charger.h>
+#include <linux/power/hisi/coul/hisi_coul_drv.h>
 
-#define HWLOG_TAG HW_BATT_INFO
+#ifdef  HWLOG_TAG
+#undef  HWLOG_TAG
+#endif
+
+#define HWLOG_TAG BATT_INFO
 HWLOG_REGIST();
 
 /*
@@ -12,184 +19,214 @@ HWLOG_REGIST();
 
 /* battery certification operations */
 static batt_ct_ops bco = {
-    .get_ic_dev_node  = NULL,
-    .get_id           = NULL,
-    .get_id_len       = NULL,
-    .get_mac          = NULL,
-    .get_mac_len      = NULL,
-    .get_mac_resource = NULL,
+    .get_ic_type        = NULL,
+    .get_ic_id          = NULL,
+    .get_batt_sn        = NULL,
+    .check_ic_status    = NULL,
+    .certification      = NULL,
+    .get_ct_src         = NULL,
+    .set_batt_safe_info = NULL,
+    .get_batt_safe_info = NULL,
 };
 
 /* battery check result */
 static battery_check_result batt_chk_rlt = {
-    .official       = OFFICAL_BATTERY,
-    .binding        = BINDING_BATTERY,
-    .lim_en         = BATT_LIM_ON,
-    .check_ready    = CHECK_RUNNING,
-    .limit_current  = MAX_CHARGE_CURRENT,
-    .limit_voltage  = MAX_CHARGE_VOLTAGE,
+    .ic_status          = IC_FAIL_UNKOWN,
+    .key_status         = KEY_UNREADY,
+    .sn_status          = SN_UNREADY,
+#ifdef BATTBD_FORCE_MATCH
+    .check_mode         = FACTORY_CHECK_MODE,
+#else
+    .check_mode         = COMMERCIAL_CHECK_MODE,
+#endif
+
 };
 
-/* battery constraints */
-static battery_constraint batt_cons = {
-    .id_mask        = NULL,
-    .id_example     = NULL,
-    .mac            = NULL,
-    .bind_id        = NULL,
-    .limit_sw       = NULL,
-    .no_limit       = NULL,
-    .id_len         = 0,
-    .mac_len        = 0,
-    .srv_on         = 0,
-    .validity       = 0,
-    .limit_current  = MAX_CHARGE_CURRENT,
-    .limit_voltage  = MAX_CHARGE_VOLTAGE,
+/* binding information on board */
+static binding_info bbinfo = {
+    .version = ILLEGAL_BIND_VERSION,
+    .info = {0},
 };
 
-struct list_head batt_ct_head = LIST_HEAD_INIT(batt_ct_head);
+#ifdef CONFIG_HUAWEI_DSM
+static const int battery_detect_err_count[] = {
+    [DMD_INVALID]        = 0,
+    [DMD_ROM_ID_ERROR]   = DSM_BATTERY_ROM_ID_CERTIFICATION_FAIL,
+    [DMD_IC_STATE_ERROR] = DSM_BATTERY_IC_EEPROM_STATE_ERROR,
+    [DMD_IC_KEY_ERROR]   = DSM_BATTERY_IC_KEY_CERTIFICATION_FAIL,
+    [DMD_OO_UNMATCH]     = DSM_OLD_BOARD_AND_OLD_BATTERY_UNMATCH,
+    [DMD_OBD_UNMATCH]    = DSM_OLD_BOARD_AND_NEW_BATTERY_UNMATCH,
+    [DMD_OBT_UNMATCH]    = DSM_NEW_BOARD_AND_OLD_BATTERY_UNMATCH,
+    [DMD_NV_ERROR]       = DSM_BATTERY_NV_DATA_READ_FAIL,
+    [DMD_SERVICE_ERROR]  = DSM_CERTIFICATION_SERVICE_IS_NOT_RESPONDING,
+};
+static const char *battery_detect_err_str[] = {
+    [DMD_INVALID]        = "",
+    [DMD_ROM_ID_ERROR]   = "DSM_BATTERY_ROM_ID_CERTIFICATION_FAIL",
+    [DMD_IC_STATE_ERROR] = "DSM_BATTERY_IC_EEPROM_STATE_ERROR",
+    [DMD_IC_KEY_ERROR]   = "DSM_BATTERY_IC_KEY_CERTIFICATION_FAIL",
+    [DMD_OO_UNMATCH]     = "DSM_OLD_BOARD_AND_OLD_BATTERY_UNMATCH",
+    [DMD_OBD_UNMATCH]    = "DSM_OLD_BOARD_AND_NEW_BATTERY_UNMATCH",
+    [DMD_OBT_UNMATCH]    = "DSM_NEW_BOARD_AND_OLD_BATTERY_UNMATCH",
+    [DMD_NV_ERROR]       = "DSM_BATTERY_NV_DATA_READ_FAIL",
+    [DMD_SERVICE_ERROR]  = "DSM_CERTIFICATION_SERVICE_IS_NOT_RESPONDING",
+};
+#endif
+
+/* board free runtime limitation (min) */
+static int free_runtime = -1;
+static int runtime_step = -1;
+
+/* record board runtime (min) */
+static int board_runtime = -1;
+
+/* record board runtime (min) */
+static unsigned int free_cycles = -1;
+
+/* record battery rematch ability on booting */
+static enum BATT_MATCH_TYPE batt_rematch_abi_onboot = 0;
+
+/* all delayed work declear */
+static struct delayed_work check_last_result_dw;
+static struct delayed_work send_src_to_srv_dw;
+static struct delayed_work dmd_report_dw;
+
+static int check_last_result_retry;
+static int send_src_to_srv_retry;
+static int dmd_report_retry;
+
+/* DMD needs to report */
+static int dmd_no[BATT_INFO_DMD_GROUPS] = {0};
+
+/* set it when checking finished */
+static int do_action = 0;
+
+/* lock for key verify */
+struct mutex key_lock;
+static int key_ct_ready;
+
+/*
+ * All possible certification driver should be add to this head
+ * for battery information scheduling and validation testing.
+ */
+LIST_HEAD(batt_ct_head);
+/*-----------------------------------------------------------------------------------------------*/
+/*-------------------------------------boot mode parse start-------------------------------------*/
+/*-----------------------------------------------------------------------------------------------*/
+enum phone_work_mode_t {
+    NORMAL_MODE = 0,
+    CHARGER_MODE,
+    RECOVERY_MODE,
+    ERECOVERY_MODE,
+};
+
+const static char *work_mode_str[] = {
+    [NORMAL_MODE]    = "NORMAL",
+    [CHARGER_MODE]   = "CHARGER",
+    [RECOVERY_MODE]  = "RECOVERY",
+    [ERECOVERY_MODE] = "ERECOVERY",
+};
+
+static enum phone_work_mode_t work_mode = NORMAL_MODE;
+
+static void update_work_mode(void)
+{
+    if(strstr(saved_command_line, "androidboot.mode=charger")) {
+        work_mode = CHARGER_MODE;
+        goto print_work_mode;
+    }
+    if(strstr(saved_command_line, "enter_erecovery=1")) {
+        work_mode = ERECOVERY_MODE;
+        goto print_work_mode;
+    }
+    if(strstr(saved_command_line, "enter_recovery=1")) {
+        work_mode = RECOVERY_MODE;
+        goto print_work_mode;
+    }
+    work_mode = NORMAL_MODE;
+
+print_work_mode:
+    hwlog_info("work mode is %s.\n", work_mode_str[work_mode]);
+}
+/*-----------------------------------------------------------------------------------------------*/
+/*--------------------------------------boot mode parse end--------------------------------------*/
+/*-----------------------------------------------------------------------------------------------*/
 
 /*-----------------------------------------------------------------------------------------------*/
 /*-------------------------------------Generic netlink start-------------------------------------*/
 /*-----------------------------------------------------------------------------------------------*/
+/* BATT_SERVICE_ON handler */
+static int batt_srv_on_cb(void);
+static void binding_check(void);
+static void check_result(void);
 
-/* attribute policy */
-static struct nla_policy batt_genl_policy[__BATT_MESG_MAX] = {
-    // [BATT_MAC_MESSAGE] = {},
-    // [BATT_RAW_MESSAGE] = {},
+/* BATT_CERTIFICAION_MAC handler */
+static int batt_mac_mesg_cb(unsigned char version, void * data, int len)
+{
+    /* certification MAC */
+    hwlog_info("Battery-driver:Certification running!\n");
+    mutex_lock(&key_lock);
+    if(key_ct_ready) {
+        mutex_unlock(&key_lock);
+        return 0;
+    } else {
+        key_ct_ready = 1;
+    }
+    mutex_unlock(&key_lock);
+    bco.certification(data, len, &batt_chk_rlt.key_status, MAC_RESOURCE_TPYE1);
+    if(batt_chk_rlt.key_status == KEY_PASS) {
+        hwlog_info("key certification success.\n");
+        /* checking binding info if key is right, this is last step */
+        binding_check();
+    } else {
+        hwlog_info("key certification failed(%u).\n", batt_chk_rlt.key_status);
+        check_result();
+    }
+
+    return 0;
+}
+
+static int batt_shutdown_cb(unsigned char version, void * data, int len)
+{
+    hwlog_info("battery shutdown call back called!\n");
+    if(len != strlen(BATT_SHUTDOWN_MAGIC2)) {
+        return -1;
+    }
+    if(memcmp(BATT_SHUTDOWN_MAGIC2, data, len)) {
+        return -1;
+    }
+    return 0;
+}
+
+#define BATT_INFO_NL_OPS_NUM    2
+
+static const easy_cbs_t batt_ops[BATT_INFO_NL_OPS_NUM] = {
+    {
+     .cmd = BATT_MAXIM_SECRET_MAC,
+     .doit = batt_mac_mesg_cb,
+    },
+    {
+     .cmd = BATT_SHUTDOWN_CMD,
+     .doit = batt_shutdown_cb,
+    }
 };
 
-/* family definition */
-static struct genl_family batt_genl_family = {
-    .id      = GENL_ID_GENERATE,
-    .hdrsize = BATT_GNNL_HEAD_LEN,
-    .name    = BATT_GNNL_FAMILY,
-    .version = BATT_GNNL_VERSION,
-    .maxattr = __BATT_MESG_MAX,
+static power_mesg_node_t batt_info_node = {
+    .target = POWERCT_PORT,
+    .name = "BATT_INFO",
+    .ops = batt_ops,
+    .n_ops = BATT_INFO_NL_OPS_NUM,
+    .srv_on_cb = batt_srv_on_cb,
 };
 
 /* BATT_SERVICE_ON handler */
-static int batt_srv_on_cb(struct sk_buff *skb_in, struct genl_info *info)
+static int batt_srv_on_cb(void)
 {
-    void *msg_head;
-    int i;
-    int ret;
-    struct sk_buff *skb;
-    mac_resource mac_res;
-
-    batt_cons.srv_on += 1;
-
-    /* set random first */
-    for(i = 0; i < MAX_RETRY_TIME; i++ ) {
-        ret = bco.set_random();
-        if(!ret) break;
-    }
-    if(ret){
-        hwlog_info("Set random for certification failed in %s", __func__);
-    }
-
-    for(i = 0; i < MAX_RETRY_TIME; i++ ) {
-        ret = bco.get_mac_resource(&mac_res, CT_MAC_TPYE0);
-        if(!ret) break;
-    }
-
-    if(!ret) {
-        /* send a message back*/
-        /* allocate some memory, since the size is not yet known use NLMSG_GOODSIZE*/
-        skb = genlmsg_new(NLMSG_GOODSIZE, GFP_KERNEL);
-        if(skb == NULL) {
-            hwlog_err("sk_buff is NULL found in %s.\n", __func__);
-            return 0;
-        }
-        /* create the message headers */
-        msg_head = genlmsg_put(skb, BATT_GNNL_PORTID, info->snd_seq + 1, &batt_genl_family,
-                               BATT_COMMON_FLAG, mac_res.ic_type | BATT_CERTIFICAION_MAC);
-        if (msg_head == NULL) {
-            hwlog_err("Create message for genlmsg failed in %s.\n", __func__);
-            goto nosend;
-        }
-        /* add a TEST_ATTR_MSG attribute (actual value to be sent) */
-        ret = nla_put(skb, BATT_RAW_MESSAGE, mac_res.len, mac_res.datum);
-        if (ret != 0) {
-            hwlog_err("Add attribute to genlmsg failed in %s. Error: %d.\n", __func__, ret);
-            goto nosend;
-        }
-
-        /* finalize the message */
-        genlmsg_end(skb, msg_head);
-
-        /* send the message back */
-        ret = genlmsg_unicast(&init_net, skb, info->snd_portid);
-        if (ret != 0) {
-            hwlog_err("Unicast genlmsg failed in %s. Error: %d.\n", __func__, ret);
-            return 0;
-        }
-        hwlog_info("MAC source data is sent.");
-    } else {
-        hwlog_err("Synchronizing battery information failed in %s.\n", __func__);
-    }
-    return 0;
-
-nosend:
-    kfree_skb(skb);
-    return 0;
-}
-
-/* BATT_CERTIFICAION_MAC handler */
-static int batt_mac_mesg_cb(struct sk_buff *skb_in, struct genl_info *info)
-{
-    int ret;
-    struct nlattr *nla;
-    char * mydata;
-    unsigned char *ic_mac;
-
-    hwlog_info("Battery-driver:Certification running!\n");
-
-    BATTERY_DRIVE_NULL_POINT(info);
-
-    ret = bco.get_mac(&ic_mac);
-    if(ret) {
-        hwlog_err("Get mac failed(%d) in %s", ret, __func__);
-        return 0;
-    }
-
-    /* certification MAC */
-    nla = info->attrs[BATT_RAW_MESSAGE];
-    if (nla) {
-        mydata = (char *)nla_data(nla);
-        if ( (mydata == NULL) || (nla->nla_len != batt_cons.mac_len + NLA_HDRLEN) ) {
-            hwlog_err("Error receiving data, %s\n", __func__);
-        } else {
-            if(memcmp(mydata, ic_mac, batt_cons.mac_len)) {
-                batt_chk_rlt.official = OFFICAL_BATTERY;
-                hwlog_info("Battery-driver:Certification Failed!\n");
-            } else {
-                batt_chk_rlt.official = !OFFICAL_BATTERY;
-                hwlog_info("Battery-driver:Certification Success!\n");
-            }
-        }
-    } else {
-        hwlog_err("no info->attrs %i\n, %s", BATT_RAW_MESSAGE, __func__);
+    if(work_mode == NORMAL_MODE || work_mode == CHARGER_MODE) {
+        schedule_delayed_work(&check_last_result_dw,0);
     }
     return 0;
 }
-
-/* generic netlink operation definition */
-static struct genl_ops batt_genl_ops_cb[BATT_GNNL_CB_NUM] = {
-    {
-        .cmd = BATT_CERTIFICAION_MAC,
-        .flags = 0,
-        .policy = batt_genl_policy,
-        .doit = batt_mac_mesg_cb,
-        .dumpit = NULL,
-    },
-    {
-        .cmd = BATT_SERVICE_ON,
-        .flags = 0,
-        .policy = batt_genl_policy,
-        .doit = batt_srv_on_cb,
-        .dumpit = NULL,
-    },
-};
 /*-----------------------------------------------------------------------------------------------*/
 /*--------------------------------------Generic netlink end--------------------------------------*/
 /*-----------------------------------------------------------------------------------------------*/
@@ -197,539 +234,1054 @@ static struct genl_ops batt_genl_ops_cb[BATT_GNNL_CB_NUM] = {
 /*-----------------------------------------------------------------------------------------------*/
 /*-------------------------------------NVME operations start-------------------------------------*/
 /*-----------------------------------------------------------------------------------------------*/
-static int get_bind_id(void)
+static int is_new_board(int rt)
+{
+    if(free_runtime == -1) {
+        return true;
+    }
+    return rt < free_runtime;
+}
+
+static int is_new_battery(void)
+{
+    return batt_rematch_abi_onboot == BATTERY_REMATCHABLE;
+}
+
+static int get_binding_id(void)
 {
     int ret;
-    struct hisi_nve_info_user bbinfo;
-    BATTERY_DRIVE_NULL_POINT(batt_cons.bind_id);
-    bbinfo.nv_operation = NV_READ;
-    bbinfo.nv_number = BBINFO_NV_NUMBER;
-    strncpy(bbinfo.nv_name, BBINFO_NV_NAME, NV_NAME_LENGTH);
-    bbinfo.valid_size = NVE_NV_DATA_SIZE;
-    ret = hisi_nve_direct_access(&bbinfo);
-    if(ret) {
-        hwlog_err("Battery-driver: read BBINFO NV failed in %s, error code %d.\n", __func__, ret);
+    struct hisi_nve_info_user nvinfo;
+
+    nvinfo.nv_operation = NV_READ;
+    nvinfo.nv_number = BBINFO_NV_NUMBER;
+    strncpy(nvinfo.nv_name, BBINFO_NV_NAME, NV_NAME_LENGTH);
+    nvinfo.valid_size = sizeof(binding_info);
+    if(nvinfo.valid_size > NVE_NV_DATA_SIZE) {
+        hwlog_err("%s: binding_info is too long to write or read from a single NV.\n", __func__);
         return BATTERY_DRIVER_FAIL;
     }
-    memcpy(batt_cons.bind_id, bbinfo.nv_data + BBINFO_BATT_ID_OFFSET, batt_cons.id_len);
+    ret = hisi_nve_direct_access(&nvinfo);
+    if(ret) {
+        hwlog_err("Read BBINFO NV failed in %s, error code %d.\n", __func__, ret);
+        return BATTERY_DRIVER_FAIL;
+    }
+    memcpy(&bbinfo, nvinfo.nv_data, nvinfo.valid_size);
     return BATTERY_DRIVER_SUCCESS;
 }
 
-static int set_bind_id(void)
+static int check_binding_id(void)
 {
-    int ret;
-    struct hisi_nve_info_user bbinfo;
-    unsigned char *id;
+    int ret, i;
+    const unsigned char *sn;
+    unsigned int sn_len;
+    char temp[MAX_SN_LEN] = {0};
 
-    ret = bco.get_id(&id);
-    if(ret) {
-        hwlog_err("Get ic id failed in %s.\n", __func__);
+    ret = bco.get_batt_sn(&sn, &sn_len, NULL);
+
+    if(ret || !sn) {
+        hwlog_err("Get sn from ic failed in %s.\n", __func__);
+        batt_chk_rlt.sn_status = SN_FAIL_IC_TIMEOUT;
+        return BATTERY_DRIVER_SUCCESS;
+    }
+
+    if(sn_len <= 0 || sn_len > MAX_SN_LEN) {
+        hwlog_err("sn_len illegal found in %s.\n", __func__);
+        batt_chk_rlt.sn_status = SN_FAIL_IC_TIMEOUT;
         return BATTERY_DRIVER_FAIL;
     }
 
-    bbinfo.nv_operation = NV_WRITE;
-    bbinfo.nv_number = BBINFO_NV_NUMBER;
-    strncpy(bbinfo.nv_name, BBINFO_NV_NAME, NV_NAME_LENGTH);
-    bbinfo.valid_size = NVE_NV_DATA_SIZE;
-    memset(bbinfo.nv_data, 0, BBINFO_BATT_ID_OFFSET);
-    memcpy(bbinfo.nv_data + BBINFO_BATT_ID_OFFSET, id, batt_cons.id_len);
-    ret = hisi_nve_direct_access(&bbinfo);
-    if(ret) {
-        hwlog_err("Battery-driver: write BBINFO NV failed in %s, error code %d.\n", __func__, ret);
+    switch (bbinfo.version) {
+    case RAW_BIND_VERSION:
+        for(i = 0; i < MAX_SN_BUFF_LENGTH; i++) {
+            if(!memcmp(bbinfo.info[i], sn, sn_len)) {
+                batt_chk_rlt.sn_status = SN_PASS;
+                hwlog_info("board and battery are well matched.\n");
+                if(i > 0) {
+                    memcpy(temp, bbinfo.info[i], MAX_SN_LEN);
+                    for( ; i > 0; i--) {
+                        memcpy(bbinfo.info[i], bbinfo.info[i - 1], MAX_SN_LEN);
+                    }
+                    memcpy(bbinfo.info[0], temp, MAX_SN_LEN);
+                }
+                return BATTERY_DRIVER_SUCCESS;
+            }
+        }
+        break;
+    default:
+        break;
+    }
+
+    if(board_runtime < 0) {
+        hwlog_err("Get board runtime fail(%d) in %s.\n", board_runtime, __func__);
         return BATTERY_DRIVER_FAIL;
     }
-    return BATTERY_DRIVER_SUCCESS;
-}
 
-static void check_batt_id(void)
-{
-    unsigned char *id = NULL;
-    int ret;
-
-    ret = bco.get_id(&id);
-    if(ret) {
-        hwlog_err("Get ic id failed in %s.\n", __func__);
-        return;
-    }
-
-    if((!batt_cons.bind_id) || (!id)) {
-        batt_chk_rlt.binding = UNBIND_BATTERY;
-        return;
-    }
-
-    if(memcmp(batt_cons.bind_id, id, batt_cons.id_len)) {
-        batt_chk_rlt.binding = UNBIND_BATTERY;
+    if(!is_new_battery() && is_new_board(board_runtime)) {
+        batt_chk_rlt.sn_status = SN_OBT_REMATCH;
+    } else if(!is_new_board(board_runtime) && is_new_battery()) {
+        batt_chk_rlt.sn_status = SN_OBD_REMATCH;
+    } else if(is_new_battery() && is_new_board(board_runtime)) {
+        batt_chk_rlt.sn_status = SN_NN_REMATCH;
     } else {
-        batt_chk_rlt.binding = BINDING_BATTERY;
+        batt_chk_rlt.sn_status = SN_OO_UNMATCH;
     }
-}
 
-static int get_lim_sw(void)
-{
-    int ret;
-    struct hisi_nve_info_user blimsw;
-    BATTERY_DRIVE_NULL_POINT(batt_cons.limit_sw);
-    blimsw.nv_operation = NV_READ;
-    blimsw.nv_number = BLIMSW_NV_NUMBER;
-    strncpy(blimsw.nv_name, BLIMSW_NV_NAME, NV_NAME_LENGTH);
-    blimsw.valid_size = NVE_NV_DATA_SIZE;
-    ret = hisi_nve_direct_access(&blimsw);
-    if(ret) {
-        hwlog_err("Battery-driver: read BLIMSW NV failed in %s, error code %d.\n", __func__, ret);
-        return BATTERY_DRIVER_FAIL;
+    bbinfo.version = RAW_BIND_VERSION;
+#ifdef BATTBD_FORCE_MATCH
+    for(i = 0; i < MAX_SN_BUFF_LENGTH; i++) {
+        memcpy(bbinfo.info[i], sn, sn_len);
     }
-    memcpy(batt_cons.limit_sw, blimsw.nv_data, LIMIT_SWITCH_SIZE);
+#else
+    if (batt_chk_rlt.sn_status == SN_OBT_REMATCH || batt_chk_rlt.sn_status == SN_OBD_REMATCH ||
+        batt_chk_rlt.sn_status == SN_NN_REMATCH) {
+        for(i = MAX_SN_BUFF_LENGTH - 1; i > 0; i--) {
+            memcpy(bbinfo.info[i], bbinfo.info[i - 1], MAX_SN_LEN);
+        }
+        memcpy(bbinfo.info[0], sn, sn_len);
+    }
+#endif
+
     return BATTERY_DRIVER_SUCCESS;
 }
 
-static int set_lim_sw(int mode)
+/*
+ * nv operation in this function not retry
+ * if the result is same as before, the function return directly without write operation.
+ */
+static int get_check_result(battery_check_result *result)
 {
     int ret;
-    struct hisi_nve_info_user blimsw;
+    struct hisi_nve_info_user nvinfo;
 
-    BATTERY_DRIVE_NULL_POINT(batt_cons.no_limit);
-
-    blimsw.nv_operation = NV_WRITE;
-    blimsw.nv_number = BLIMSW_NV_NUMBER;
-    strncpy(blimsw.nv_name, BLIMSW_NV_NAME, NV_NAME_LENGTH);
-    blimsw.valid_size = NVE_NV_DATA_SIZE;
-
-    if(mode == BATT_LIM_ON) {
-        memset(blimsw.nv_data, 0, LIMIT_SWITCH_SIZE);
-    } else {
-        memcpy(blimsw.nv_data, batt_cons.no_limit, LIMIT_SWITCH_SIZE);
-    }
-
-    ret = hisi_nve_direct_access(&blimsw);
+    nvinfo.nv_operation = NV_READ;
+    nvinfo.nv_number = BLIMSW_NV_NUMBER;
+    strncpy(nvinfo.nv_name, BLIMSW_NV_NAME, NV_NAME_LENGTH);
+    nvinfo.valid_size = NVE_NV_DATA_SIZE;
+    ret = hisi_nve_direct_access(&nvinfo);
     if(ret) {
-        hwlog_err("Battery-driver: write BLIMSW NV failed in %s, error code %d.\n", __func__, ret);
+        hwlog_err("Read BLIMSW NV failed in %s, error code %d.\n", __func__, ret);
         return BATTERY_DRIVER_FAIL;
     }
-    return BATTERY_DRIVER_SUCCESS;
-}
 
-static void check_lim_sw(void)
-{
-    if((!batt_cons.no_limit) || (!batt_cons.limit_sw)) {
-        batt_chk_rlt.lim_en = BATT_LIM_ON;
-        return;
-    }
-    if(memcmp(batt_cons.no_limit, batt_cons.limit_sw, LIMIT_SWITCH_SIZE)) {
-        batt_chk_rlt.lim_en = BATT_LIM_ON;
-    } else {
-        batt_chk_rlt.lim_en = BATT_LIM_OFF;
-    }
+    result->ic_status = nvinfo.nv_data[IC_STATUS_OFFSET];
+    result->key_status = nvinfo.nv_data[KEY_STATUS_OFFSET];
+    result->sn_status = nvinfo.nv_data[SN_STATUS_OFFSET];
+    result->check_mode = nvinfo.nv_data[CHECK_MODE_OFFSET];
+
+    return BATTERY_DRIVER_SUCCESS;
 }
 /*-----------------------------------------------------------------------------------------------*/
 /*--------------------------------------NVME operations end--------------------------------------*/
 /*-----------------------------------------------------------------------------------------------*/
 
 /*-----------------------------------------------------------------------------------------------*/
-/*----------------------------------------sys node start-----------------------------------------*/
+/*------------------------------------delayed work start-----------------------------------------*/
 /*-----------------------------------------------------------------------------------------------*/
-static ssize_t batt_id_show(struct device *dev, struct device_attribute *attr, char *buf)
+static int runtime_update(struct notifier_block *nb, unsigned long action, void *data)
 {
-    int i;
-    int total_size = 0;
-    unsigned char *id;
+    if(data) {
+        board_runtime = *(int *)data;
+        return NOTIFY_OK;
+    }
+    return NOTIFY_DONE;
+}
+
+static void binding_check(void)
+{
     int ret;
 
-    ret = bco.get_id(&id);
+    ret = get_binding_id();
     if(ret) {
-        hwlog_err("Get ic id failed in %s.\n", __func__);
-        return 0;
+        batt_chk_rlt.sn_status = SN_FAIL_NV_TIMEOUT;
+        hwlog_err("get binding info from local failed.\n");
+        check_result();
+        return;
     }
-
-    if(!id) {
-        return snprintf(buf, PAGE_SIZE, "ERROR:NULL ID");
+    ret = check_binding_id();
+    if(ret) {
+        batt_chk_rlt.sn_status = SN_FAIL_NV_TIMEOUT;
+        hwlog_err("get binding info from remote failed.\n");
+        check_result();
+        return;
     }
-    if(PAGE_SIZE <= (batt_cons.id_len * BATT_ID_PRINT_SIZE_PER_CHAR)) {
-        return snprintf(buf, PAGE_SIZE, "ERROR:ID SIZE");
-    }
-    for(i = 0; i < batt_cons.id_len; i++) {
-        total_size += snprintf(&(buf[total_size]), BATT_ID_PRINT_SIZE_PER_CHAR, "%02x", id[i]);
-    }
-    return total_size;
+    hwlog_info("Checking binding infomation result is %d.\n", batt_chk_rlt.sn_status);
+    check_result();
 }
 
-static ssize_t official_show(struct device *dev, struct device_attribute *attr, char *buf)
+static void safe_action(int action)
 {
-    if(batt_chk_rlt.official == OFFICAL_BATTERY) {
-        return snprintf(buf, PAGE_SIZE, "1");
-    } else {
-        return snprintf(buf, PAGE_SIZE, "0");
+    char *data;
+    const unsigned char *sn;
+    unsigned int sn_len;
+    int data_len = strlen(BATT_SHUTDOWN_MAGIC1) + MAGIC_NUM_OFFSET + sizeof(bbinfo);
+
+    data = kzalloc(data_len, GFP_KERNEL);
+    if(!data) {
+        hwlog_err("alloc for data failed in %s.\n", __func__);
+        return ;
     }
+    data[IC_STATUS_OFFSET] = batt_chk_rlt.ic_status;
+    data[KEY_STATUS_OFFSET] = batt_chk_rlt.key_status;
+    data[SN_STATUS_OFFSET] = batt_chk_rlt.sn_status;
+    data[CHECK_MODE_OFFSET] = batt_chk_rlt.check_mode;
+
+    if(action) {
+        switch (work_mode) {
+        case NORMAL_MODE:
+            memcpy(data+MAGIC_NUM_OFFSET, BATT_SHUTDOWN_MAGIC1, strlen(BATT_SHUTDOWN_MAGIC1));
+            break;
+        case CHARGER_MODE:
+            if(disable_chargers(0, 1, BATT_CERTIFICATION_TYPE)) {
+                hwlog_err("stop all charge types failed.\n");
+            }
+            break;
+        default:
+            break;
+        }
+    }
+
+    memcpy(data + BATT_SN_OFFSET, &bbinfo, sizeof(bbinfo));
+    if(power_easy_send(&batt_info_node, BATT_SHUTDOWN_CMD, 0, data, data_len)) {
+        hwlog_err("action mesg send failed in %s.\n", __func__);
+    }
+    kfree(data);
 }
 
-static ssize_t bind_id_show(struct device *dev, struct device_attribute *attr, char *buf)
+static int is_legal_status(const battery_check_result *result)
 {
-    int i;
-    int total_size = 0;
-
-    if(!batt_cons.bind_id) {
-        return snprintf(buf, PAGE_SIZE, "ERROR:NULL ID");
+    if(result->ic_status == IC_PASS && result->key_status == KEY_PASS &&
+       result->sn_status <= SN_NN_REMATCH) {
+        return 1;
     }
-    if(PAGE_SIZE < (batt_cons.id_len * BATT_ID_PRINT_SIZE_PER_CHAR)) {
-        return snprintf(buf, PAGE_SIZE, "ERROR:ID SIZE");
-    }
-    for(i = 0; i < batt_cons.id_len; i++) {
-        total_size += snprintf(&(buf[total_size]), BATT_ID_PRINT_SIZE_PER_CHAR, "%02x",
-                               batt_cons.bind_id[i]);
-    }
-    return total_size;
-}
-
-static ssize_t binding_show(struct device *dev, struct device_attribute *attr, char *buf)
-{
-    if(batt_chk_rlt.binding == BINDING_BATTERY
-       && batt_chk_rlt.official == OFFICAL_BATTERY) {
-        return snprintf(buf, PAGE_SIZE, "1");
-    } else {
-        return snprintf(buf, PAGE_SIZE, "0");
-    }
-}
-
-static ssize_t lim_sw_show(struct device *dev, struct device_attribute *attr, char *buf)
-{
-    if(batt_chk_rlt.lim_en == BATT_LIM_OFF) {
-        return snprintf(buf, PAGE_SIZE, "0");
-    } else {
-        return snprintf(buf, PAGE_SIZE, "1");
-    }
-}
-
-static ssize_t service_show(struct device *dev, struct device_attribute *attr, char *buf)
-{
-    return snprintf(buf, PAGE_SIZE, "%02x", batt_cons.srv_on);
-}
-
-
-static DEVICE_ATTR_RO(batt_id);
-static DEVICE_ATTR_RO(official);
-static DEVICE_ATTR_RO(bind_id);
-static DEVICE_ATTR_RO(binding);
-static DEVICE_ATTR_RO(lim_sw);
-static DEVICE_ATTR_RO(service);
-
-static struct attribute *batt_ic_attrs[] = {
-    &dev_attr_batt_id.attr,
-    &dev_attr_official.attr,
-    &dev_attr_bind_id.attr,
-    &dev_attr_binding.attr,
-    &dev_attr_lim_sw.attr,
-    &dev_attr_service.attr,
-    NULL, /* sysfs_create_files need last one be NULL */
-};
-/*-----------------------------------------------------------------------------------------------*/
-/*-----------------------------------------sys node end------------------------------------------*/
-/*-----------------------------------------------------------------------------------------------*/
-
-/*-----------------------------------------------------------------------------------------------*/
-/*----------------------------------------cdev node start----------------------------------------*/
-/*-----------------------------------------------------------------------------------------------*/
-static int batt_cdev_open(struct inode *inode, struct file *filp)
-{
     return 0;
 }
 
-static int batt_cdev_release(struct inode *inode, struct file *filp)
+static void safe_strategy(void)
 {
-    return 0;
+    int retry = 0;
+
+    if(work_mode == NORMAL_MODE) {
+        schedule_delayed_work(&dmd_report_dw, 3*HZ);
+    }
+
+    safe_action(do_action);
 }
 
-static ssize_t batt_cdev_read(struct file *filp, char __user *buf, size_t size, loff_t *ppos)
+/* this is the function checking battery information result and acting safe strategies */
+static void check_result(void)
 {
-    return 0;
-}
-
-long batt_cdev_unlocked_ioctl(struct file *filep, unsigned int cmd, unsigned long arg)
-{
-    int ret;
-
-    switch (cmd) {
-    case BATT_BIND_CMD:
-        ret = set_bind_id();
-        if(ret) {
-            hwlog_err("Battery-driver: set bind id fail in %s. Error: %d.\n", __func__, ret);
-            return -EINVAL;
-        }
-        ret = get_bind_id();
-        if(ret) {
-            hwlog_err("Battery-driver: get bind id fail in %s. Error: %d.\n", __func__, ret);
-            return -EINVAL;
-        }
-        check_batt_id();
-        if(batt_chk_rlt.binding != BINDING_BATTERY) {
-            hwlog_err("Battery-driver: BATT_BIND_CMD fail in %s.\n", __func__);
-            return -EINVAL;
-        }
+    hwlog_info("Checking battery certification result(key_status:%02x, ic_status:%02x, "
+               "sn_status:%02x).\n", batt_chk_rlt.key_status, batt_chk_rlt.ic_status,
+               batt_chk_rlt.sn_status);
+    switch (batt_chk_rlt.ic_status)
+    {
+    case IC_FAIL_UNMATCH:
+    case IC_FAIL_UNKOWN:
+        dmd_no[IC_DMD_GROUP] = DMD_ROM_ID_ERROR;
+        do_action = 1;
         break;
-    case BATT_LIM_ON_CMD:
-        ret = set_lim_sw(BATT_LIM_ON);
-        if(ret) {
-            hwlog_err("Battery-driver: set lim sw fail in %s. Error: %d.\n", __func__, ret);
-            return -EINVAL;
-        }
-        ret = get_lim_sw();
-        if(ret) {
-            hwlog_err("Battery-driver: get lim sw fail in %s. Error: %d.\n", __func__, ret);
-            return -EINVAL;
-        }
-        check_lim_sw();
-        if(batt_chk_rlt.lim_en != BATT_LIM_ON) {
-            hwlog_err("Battery-driver: BATT_LIM_ON fail in %s.\n", __func__);
-            return -EINVAL;
-        }
+    case IC_FAIL_MEM_STATUS:
+        dmd_no[IC_DMD_GROUP] = DMD_IC_STATE_ERROR;
+        do_action = 1;
         break;
-    case BATT_LIM_OFF_CMD:
-        ret = set_lim_sw(BATT_LIM_OFF);
-        if(ret) {
-            hwlog_err("Battery-driver: set lim sw fail in %s. Error: %d.\n", __func__, ret);
-            return -EINVAL;
-        }
-        ret = get_lim_sw();
-        if(ret) {
-            hwlog_err("Battery-driver: get lim sw fail in %s. Error: %d.\n", __func__, ret);
-            return -EINVAL;
-        }
-        check_lim_sw();
-        if(batt_chk_rlt.lim_en != BATT_LIM_OFF) {
-            hwlog_err("Battery-driver: BATT_LIM_ON fail in %s.\n", __func__);
-            return -EINVAL;
-        }
+    case IC_PASS:
         break;
     default:
-        return -EINVAL;
+        hwlog_err("illegal IC checking result(%d).\n", batt_chk_rlt.ic_status);
+        break;
     }
-    return 0;
+
+    if(do_action) {
+        goto batt_info_cr_action;
+    }
+
+    switch(batt_chk_rlt.key_status) {
+    case KEY_FAIL_TIMEOUT:
+        dmd_no[KEY_DMD_GROUP] = DMD_SERVICE_ERROR;
+        break;
+    case KEY_FAIL_UNMATCH:
+        dmd_no[KEY_DMD_GROUP] = DMD_IC_KEY_ERROR;
+        do_action = 1;
+        break;
+    case KEY_PASS:
+        break;
+    default:
+        hwlog_err("illegal KEY checking result(%d).\n", batt_chk_rlt.key_status);
+        break;
+    }
+
+    if(do_action || batt_chk_rlt.key_status == KEY_FAIL_TIMEOUT ||
+       batt_chk_rlt.key_status == KEY_FAIL_UNMATCH) {
+        goto batt_info_cr_action;
+    }
+
+    switch (batt_chk_rlt.sn_status)
+    {
+    case SN_FAIL_NV_TIMEOUT:
+        dmd_no[SN_DMD_GROUP] = DMD_NV_ERROR;
+        break;
+    case SN_FAIL_IC_TIMEOUT:
+        dmd_no[IC_DMD_GROUP] = DMD_ROM_ID_ERROR;
+        do_action = 1;
+        break;
+    case SN_OO_UNMATCH:
+        dmd_no[SN_DMD_GROUP] = DMD_OO_UNMATCH;
+        do_action = 1;
+        break;
+    case SN_OBD_REMATCH:
+        dmd_no[SN_DMD_GROUP] = DMD_OBD_UNMATCH;
+        break;
+    case SN_OBT_REMATCH:
+        dmd_no[SN_DMD_GROUP] = DMD_OBT_UNMATCH;
+        break;
+    case SN_NN_REMATCH:
+        break;
+    case SN_PASS:
+        break;
+    default:
+        hwlog_err("illegal SN checking result(%d).\n", batt_chk_rlt.sn_status);
+        break;
+    }
+batt_info_cr_action:
+    safe_strategy();
 }
 
-static struct file_operations batt_cdev_fops = {
-    .owner = THIS_MODULE,
-    .open = batt_cdev_open,
-    .release = batt_cdev_release,
-    .unlocked_ioctl = batt_cdev_unlocked_ioctl,
-    .read = batt_cdev_read,
-};
-/*-----------------------------------------------------------------------------------------------*/
-/*-----------------------------------------cdev node end-----------------------------------------*/
-/*-----------------------------------------------------------------------------------------------*/
-
-/*-----------------------------------------------------------------------------------------------*/
-/*---------------------------------------work process start--------------------------------------*/
-/*-----------------------------------------------------------------------------------------------*/
-static struct delayed_work batt_nvme_work;
-
-static void checkout_batt_nvme(struct work_struct *work)
+static void send_src_to_srv(struct work_struct *work)
 {
-    int ret;
-    hwlog_info("Checking battery NVME...\n");
-    if(!(BIND_ID_VALIDITY_BIT&batt_cons.validity)){
-        ret = get_bind_id();
-        if(ret) {
-            hwlog_err("Battery-driver: get bind id fail in %s. Error: %d.\n", __func__, ret);
-            schedule_delayed_work(&batt_nvme_work, msecs_to_jiffies(WAIT_FOR_NVME_MS));
-            return ;
-        }
-        check_batt_id();
-        batt_cons.validity |= BIND_ID_VALIDITY_BIT;
+    mac_resource mac_res;
+
+    mutex_lock(&key_lock);
+    if(key_ct_ready) {
+        mutex_unlock(&key_lock);
+        return;
+    }
+    mutex_unlock(&key_lock);
+
+    if(bco.get_ct_src(&mac_res, MAC_RESOURCE_TPYE1)) {
+        hwlog_err("Get mac resource for certification failed in %s.\n", __func__);
+        batt_chk_rlt.ic_status = IC_FAIL_UNKOWN;
+        check_result();
+        return ;
     }
 
-    if(!(LIM_SW_VALIDITY_BIT&batt_cons.validity)){
-        ret = get_lim_sw();
-        if(ret) {
-            hwlog_err("Battery-driver: get lim sw fail in %s. Error: %d.\n", __func__, ret);
-            schedule_delayed_work(&batt_nvme_work, msecs_to_jiffies(WAIT_FOR_NVME_MS));
+    if(power_easy_send(&batt_info_node, BATT_MAXIM_SECRET_MAC, 0, mac_res.datum, mac_res.len)) {
+        hwlog_err("Send data to server failed(%d).\n", send_src_to_srv_retry);
+        send_src_to_srv_retry++;
+        if(send_src_to_srv_retry < 3) {
+            schedule_delayed_work(&send_src_to_srv_dw, 0);
             return ;
         }
-        check_lim_sw();
-        batt_cons.validity |= LIM_SW_VALIDITY_BIT;
+    } else {
+        send_src_to_srv_retry++;
+        if(send_src_to_srv_retry < 3) {
+            schedule_delayed_work(&send_src_to_srv_dw, msecs_to_jiffies(500));
+            return ;
+        }
     }
-    hwlog_info("Checking battery NVME finined.\n");
+    batt_chk_rlt.key_status = KEY_FAIL_TIMEOUT;
+    check_result();
+    return ;
 }
 
+static void check_battery(void)
+{
+    hwlog_info("check battery now really start.\n");
+    /* check ic status first */
+    bco.check_ic_status(&batt_chk_rlt.ic_status);
+    if(batt_chk_rlt.ic_status != IC_PASS) {
+        hwlog_err("Battery IC status is illegal(%u).\n", batt_chk_rlt.ic_status);
+        check_result();
+        return ;
+    }
+
+    /* go to check key */
+    schedule_delayed_work(&send_src_to_srv_dw, 0);
+}
+
+static void check_last_result(struct work_struct *work)
+{
+    battery_check_result result;
+    int battery_removed;
+
+    if(get_check_result(&result)) {
+        hwlog_err("get last check result failed(%d).\n", check_last_result_retry);
+        check_last_result_retry++;
+        if(check_last_result_retry < 5) {
+            schedule_delayed_work(&check_last_result_dw, msecs_to_jiffies(500));
+            return ;
+        }
+    }
+    hwlog_info("last check result: ic(%d), key(%d), sn(%d), mode(%d).\n", result.ic_status,
+               result.key_status, result.sn_status, result.check_mode);
+#ifdef BATTBD_FORCE_MATCH
+    check_battery();
+#else
+    battery_removed = hisi_battery_removed_before_boot();
+    if(battery_removed < 0) {
+        hwlog_err("whether battery was removed between last boot and this boot is unknown.\n");
+        battery_removed = 0;
+    } else {
+        hwlog_info("battery is %s removed.\n", battery_removed?"really":"not");
+    }
+    if(battery_removed || !is_legal_status(&result) || result.check_mode == FACTORY_CHECK_MODE) {
+        check_battery();
+    } else {
+        memcpy(&batt_chk_rlt, &result, sizeof(battery_check_result));
+    }
+#endif
+}
+static void dmd_report(struct work_struct *work)
+{
+    int i;
+    int ret;
+
+    for(i = 0; i < BATT_INFO_DMD_GROUPS; i++) {
+        if(dmd_no[i] != DMD_INVALID) {
+            ret = power_dsm_dmd_report(POWER_DSM_BATTERY_DETECT, battery_detect_err_count[dmd_no[i]],
+                                       (char *)battery_detect_err_str[dmd_no[i]]);
+            dmd_no[i] = ret ? dmd_no[i] : DMD_INVALID;
+        }
+        if(dmd_no[i] != DMD_INVALID && dmd_report_retry < 20) {
+            hwlog_info("%dth times dmd report failed.\n", dmd_report_retry);
+            dmd_report_retry++;
+            schedule_delayed_work(&dmd_report_dw, 3*HZ);
+            return;
+        }
+    }
+
+}
 /*-----------------------------------------------------------------------------------------------*/
 /*----------------------------------------work process end---------------------------------------*/
 /*-----------------------------------------------------------------------------------------------*/
 
 /*-----------------------------------------------------------------------------------------------*/
-/*----------------------------------------driver init start--------------------------------------*/
+/*----------------------------------------sys node start-----------------------------------------*/
 /*-----------------------------------------------------------------------------------------------*/
-static dev_t devno;
-static struct class *batt_class;
-static struct device *batt_device;
-static struct cdev *batt_cdev;
+static const char *ic_type2name[] = {
+    [LOCAL_IC_TYPE]     = "INVALID_DEFAULT_IC",
+    [MAXIM_SHA256_TYPE] = "DS28EL15",
+};
+
+static ssize_t ic_type_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    int type;
+
+    type = bco.get_ic_type();
+    if(type < ARRAY_SIZE(ic_type2name) && type >= 0) {
+        return snprintf(buf, PAGE_SIZE, "%s", ic_type2name[type]);
+    } else {
+        return snprintf(buf, PAGE_SIZE, "ERROR_TYPE");
+    }
+}
+
+static ssize_t ic_id_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    int i;
+    int total_size = 0;
+    const unsigned char *id;
+    unsigned int id_len;
+    int ret;
+
+    ret = bco.get_ic_id(&id, &id_len);
+    if(ret) {
+        hwlog_err("Get ic id failed in %s.\n", __func__);
+        return snprintf(buf, PAGE_SIZE, "ERROR:UNKOWN IC");
+    }
+
+    if(!id) {
+        return snprintf(buf, PAGE_SIZE, "ERROR:NULL ID");
+    }
+    if(PAGE_SIZE <= (id_len * BATT_ID_PRINT_SIZE_PER_CHAR)) {
+        return snprintf(buf, PAGE_SIZE, "ERROR:ID SIZE");
+    }
+    for(i = 0; i < id_len; i++) {
+        total_size += snprintf(&(buf[total_size]), BATT_ID_PRINT_SIZE_PER_CHAR, "%02x", id[i]);
+    }
+    return total_size;
+}
+
+static ssize_t batt_id_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    const unsigned char *sn;
+    unsigned int sn_len;
+    int ret;
+
+    ret = bco.get_batt_sn(&sn, &sn_len, NULL);
+    if(ret) {
+        hwlog_err("Get battery SN failed in %s.\n", __func__);
+        return snprintf(buf, PAGE_SIZE, "ERROR:UNKOWN IC");
+    }
+    if(!sn) {
+        return snprintf(buf, PAGE_SIZE, "ERROR:NULL SN");
+    }
+    if(sn_len >= PAGE_SIZE) {
+        return snprintf(buf, PAGE_SIZE, "SN is too long(%u) to print!", sn_len);
+    }
+    memcpy(buf, sn, sn_len);
+    buf[sn_len] = 0;
+    return sn_len;
+}
+
+static ssize_t batt_id_v_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    unsigned char sn_version;
+    int ret;
+
+    ret = bco.get_batt_sn(NULL, NULL, &sn_version);
+    if(ret) {
+        hwlog_err("Get battery SN failed in %s.\n", __func__);
+        return snprintf(buf, PAGE_SIZE, "ERROR:UNKOWN IC");;
+    }
+    if(!sn_version) {
+        return snprintf(buf, PAGE_SIZE, "ERROR:NULL SN");
+    }
+    return snprintf(buf, PAGE_SIZE, "%02x", sn_version);
+}
+
+static ssize_t ic_status_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    return snprintf(buf, PAGE_SIZE, "%d", batt_chk_rlt.ic_status);
+}
+
+static ssize_t key_status_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    return snprintf(buf, PAGE_SIZE, "%d", batt_chk_rlt.key_status);
+
+}
+
+static ssize_t sn_status_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    return snprintf(buf, PAGE_SIZE, "%d", batt_chk_rlt.sn_status);
+
+}
+
+static ssize_t official_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    return snprintf(buf, PAGE_SIZE, "%d", is_legal_status(&batt_chk_rlt));
+}
+
+static ssize_t check_mode_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    return snprintf(buf, PAGE_SIZE, "%02x", batt_chk_rlt.check_mode);
+}
+
+static ssize_t rt_lim_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    return snprintf(buf, PAGE_SIZE, "%d", free_runtime);
+}
+
+#ifdef BATTERY_LIMIT_DEBUG
+static ssize_t bind_info_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    int count = 0;
+    int i;
+    (void) get_binding_id();
+    for(i = 0; i < MAX_SN_BUFF_LENGTH; i++) {
+        memcpy(buf + count, bbinfo.info[i], MAX_SN_LEN);
+        count += MAX_SN_LEN;
+        buf[count++] = '\n';
+    }
+    return count;
+}
+
+static ssize_t new_board_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    return snprintf(buf, PAGE_SIZE, "%s", is_new_board(board_runtime)?"YES":"NO");
+}
+
+static ssize_t rematchable_onboot_show(struct device *dev,
+                                                 struct device_attribute *attr, char *buf)
+{
+    return snprintf(buf, PAGE_SIZE, "%d", batt_rematch_abi_onboot);
+}
+
+static ssize_t rematchable_battery_show(struct device *dev,
+                                                   struct device_attribute *attr, char *buf)
+{
+    int ret;
+    enum BATT_MATCH_TYPE temp;
+    ret = bco.get_batt_safe_info(BATT_MATCH_ABILITY, &temp);
+    if(ret) {
+        return snprintf(buf, PAGE_SIZE, "%s", "Error");
+    }
+    return snprintf(buf, PAGE_SIZE, "%s", temp == BATTERY_REMATCHABLE ? "YES":"NO");
+}
+
+static ssize_t lock_battery_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    int ret;
+    enum BATT_MATCH_TYPE temp = BATTERY_UNREMATCHABLE;
+    ret = bco.get_batt_safe_info(BATT_MATCH_ABILITY, &temp);
+    if(ret) {
+        return snprintf(buf, PAGE_SIZE, "%s", "Error");
+    }
+    return snprintf(buf, PAGE_SIZE, "%s", temp == BATTERY_UNREMATCHABLE?"Locked":"Unlocked");
+}
+static ssize_t lock_battery_store(struct device *dev, struct device_attribute *attr,
+                                          const char *buf, size_t count)
+{
+    int ret;
+    enum BATT_MATCH_TYPE temp = BATTERY_UNREMATCHABLE;
+    if (count < 1 || buf[0] != '1')
+    {
+        return -1;
+    }
+    ret = bco.set_batt_safe_info(BATT_MATCH_ABILITY, &temp);
+    if(ret) {
+        return -1;
+    }
+    return count;
+}
+
+static ssize_t free_cycles_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    return snprintf(buf, PAGE_SIZE, "%d", free_cycles);
+}
+static ssize_t free_cycles_store(struct device *dev, struct device_attribute *attr,
+                                        const char *buf, size_t count)
+{
+    if(buf[count - 1] == '\n' && !kstrtoint(buf, 10, &free_cycles)) {
+        return -1;
+    }
+    return count;
+}
+
+static ssize_t free_runtime_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    return snprintf(buf, PAGE_SIZE, "%d", free_runtime);
+}
+static ssize_t free_runtime_store(struct device *dev, struct device_attribute *attr,
+                                        const char *buf, size_t count)
+{
+    if(buf[count - 1] == '\n' && !kstrtoint(buf, 10, &free_runtime)) {
+        return -1;
+    }
+    return count;
+}
+
+static ssize_t check_result_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    return snprintf(buf, PAGE_SIZE, "%d %d %d", batt_chk_rlt.ic_status, batt_chk_rlt.key_status,
+                    batt_chk_rlt.sn_status);
+}
+static ssize_t check_result_store(struct device *dev, struct device_attribute *attr,
+                                  const char *buf, size_t count)
+{
+    char *sub, *cur;
+    int temp0, temp1, temp2;
+    char str[64] = {0};
+    size_t len;
+
+    len = min_t(size_t, sizeof(str) - 1, count);
+    memcpy(str, buf, len);
+    cur = &str[0];
+    sub = strsep(&cur, " ");
+    if( !sub || kstrtoint(sub, 0, &temp0)) {
+        return -1;
+    }
+    sub = strsep(&cur, " ");
+    if( !sub || kstrtoint(sub, 0, &temp1)) {
+        return -1;
+    }
+    if(kstrtoint(cur, 0, &temp2)) {
+        return -1;
+    }
+    batt_chk_rlt.ic_status = temp0;
+    batt_chk_rlt.key_status = temp1;
+    batt_chk_rlt.sn_status = temp2;
+    return count;
+}
+static ssize_t check_battery_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    key_ct_ready = 0;
+    check_battery();
+    return snprintf(buf, PAGE_SIZE, "check battery start...");
+}
+#endif
+
+const static DEVICE_ATTR_RO(ic_type);
+const static DEVICE_ATTR_RO(ic_id);
+const static DEVICE_ATTR_RO(ic_status);
+const static DEVICE_ATTR_RO(key_status);
+const static DEVICE_ATTR_RO(sn_status);
+const static DEVICE_ATTR_RO(batt_id);
+const static DEVICE_ATTR_RO(batt_id_v);
+const static DEVICE_ATTR_RO(official);
+const static DEVICE_ATTR_RO(check_mode);
+const static DEVICE_ATTR_RO(rt_lim);
+#ifdef BATTERY_LIMIT_DEBUG
+const static DEVICE_ATTR_RO(bind_info);
+const static DEVICE_ATTR_RO(new_board);
+const static DEVICE_ATTR_RO(rematchable_onboot);
+const static DEVICE_ATTR_RO(rematchable_battery);
+const static DEVICE_ATTR_RW(lock_battery);
+const static DEVICE_ATTR_RW(free_runtime);
+const static DEVICE_ATTR_RW(free_cycles);
+const static DEVICE_ATTR_RW(check_result);
+const static DEVICE_ATTR_RO(check_battery);
+#endif
+
+
+static const struct attribute *batt_info_attrs[] = {
+    &dev_attr_ic_type.attr,
+    &dev_attr_ic_id.attr,
+    &dev_attr_ic_status.attr,
+    &dev_attr_key_status.attr,
+    &dev_attr_sn_status.attr,
+    &dev_attr_batt_id.attr,
+    &dev_attr_batt_id_v.attr,
+    &dev_attr_official.attr,
+    &dev_attr_check_mode.attr,
+    &dev_attr_rt_lim.attr,
+#ifdef BATTERY_LIMIT_DEBUG
+    &dev_attr_bind_info.attr,
+    &dev_attr_new_board.attr,
+    &dev_attr_rematchable_onboot.attr,
+    &dev_attr_rematchable_battery.attr,
+    &dev_attr_lock_battery.attr,
+    &dev_attr_free_runtime.attr,
+    &dev_attr_free_cycles.attr,
+    &dev_attr_check_result.attr,
+    &dev_attr_check_battery.attr,
+#endif
+    NULL, /* sysfs_create_files need last one be NULL */
+};
 
 /* create all node needed by driver */
 static int batt_node_create(struct platform_device *pdev)
 {
-    int ret;
-    batt_cdev = cdev_alloc();
-    if(!batt_cdev) {
-        hwlog_err("Battery-driver: cdev alloc failed for batt_cdev.\n");
+    if(sysfs_create_files(&pdev->dev.kobj, batt_info_attrs)) {
+        hwlog_err("Can't create all expected nodes under %s in %s.\n",
+                  pdev->dev.kobj.name, __func__);
         return BATTERY_DRIVER_FAIL;
     }
-    batt_cdev->ops = &batt_cdev_fops;
-    batt_cdev->owner = THIS_MODULE;
-    ret = alloc_chrdev_region(&devno, 0, 1, "BattDRV");
-    if (ret < 0) {
-        hwlog_err("Can't get devno for cdev.\n");
-        return BATTERY_DRIVER_FAIL;
-    }
-    ret = cdev_add(batt_cdev, devno, 1);
-    if(ret < 0) {
-        hwlog_err("Can't add cdev in battery information driver.\n");
-        return BATTERY_DRIVER_FAIL;
-    }
-    batt_class = class_create(THIS_MODULE, "battery");
-    if(!batt_class) {
-        hwlog_err("Can't create class: battery.\n");
-        return BATTERY_DRIVER_FAIL;
-    }
-    batt_device = device_create(batt_class, NULL, devno, NULL, "batt_info");
-    if(!batt_device) {
-        hwlog_err("Can't create /dev/batt_info.\n");
-        return BATTERY_DRIVER_FAIL;
-    }
+    return BATTERY_DRIVER_SUCCESS;
+}
 
-    ret = sysfs_create_files(&pdev->dev.kobj, batt_ic_attrs);
+/*-----------------------------------------------------------------------------------------------*/
+/*-----------------------------------------sys node end------------------------------------------*/
+/*-----------------------------------------------------------------------------------------------*/
+
+/*-----------------------------------------------------------------------------------------------*/
+/*----------------------------------default ic operations start----------------------------------*/
+/*-----------------------------------------------------------------------------------------------*/
+static batt_ic_type local_get_ic_type(void)
+{
+    return LOCAL_IC_TYPE;
+}
+static int local_get_ic_id(const unsigned char **id, unsigned int *id_len)
+{
+    return -1;
+}
+
+static int local_get_batt_sn(const unsigned char **sn, unsigned int *sn_len_bits,
+                                     unsigned char *sn_version)
+{
+    return -1;
+}
+
+static int local_certification(void *data, int data_len, enum KEY_CR *result, int type)
+{
+    *result = KEY_FAIL_UNMATCH;
+    return 0;
+}
+
+static int local_get_ct_src(mac_resource *mac_rsc, unsigned int type)
+{
+    return -1;
+}
+
+static int local_set_batt_safe_info(batt_safe_info_type type, void *value)
+{
+    return -1;
+}
+
+static int local_get_batt_safe_info(batt_safe_info_type type, void *value)
+{
+    return -1;
+}
+
+static int local_check_ic_status(enum IC_CR *result)
+{
+    *result = IC_FAIL_UNKOWN;
+    return 0;
+}
+
+static void using_local_ct_ops(void)
+{
+    bco.get_ic_type        = local_get_ic_type;
+    bco.get_ic_id          = local_get_ic_id;
+    bco.get_batt_sn        = local_get_batt_sn;
+    bco.check_ic_status    = local_check_ic_status;
+    bco.certification      = local_certification;
+    bco.get_ct_src         = local_get_ct_src;
+    bco.set_batt_safe_info = local_set_batt_safe_info;
+    bco.get_batt_safe_info = local_get_batt_safe_info;
+}
+/*-----------------------------------------------------------------------------------------------*/
+/*-----------------------------------default ic operations end-----------------------------------*/
+/*-----------------------------------------------------------------------------------------------*/
+
+/*
+ * Battery ID Interface
+ * success return 0 name[0] = 'A'~'Z' name[1] = 'A'~'Z'
+ * fail return 1
+ */
+int get_battery_type(unsigned char *name) {
+    const unsigned char *sn;
+    int ret;
+    if (!bco.get_batt_sn) {
+        hwlog_err("bco.get_batt_sn in %s.\n", __func__);
+        return BATTERY_DRIVER_FAIL;
+    }
+    ret = bco.get_batt_sn(&sn, NULL, NULL);
     if(ret) {
-        hwlog_err("Can't create nodes under /sys/devices/platform/huawei_batt_info.\n");
+        hwlog_err("Get sn failed in %s.\n", __func__);
         return BATTERY_DRIVER_FAIL;
     }
-
+    *name = sn[BATTERY_PACK_FACTORY];
+    name++;
+    *name = sn[BATTERY_CELL_FACTORY];
     return BATTERY_DRIVER_SUCCESS;
 }
 
-/* Battery constraints initialization */
-static int batt_cons_init(struct platform_device *pdev,
-                          struct device_node *batt_ic_np)
+/*-----------------------------------------------------------------------------------------------*/
+/*----------------------------------------driver init start--------------------------------------*/
+/*-----------------------------------------------------------------------------------------------*/
+static int battery_charge_cycles_cb(struct notifier_block *nb, unsigned long action, void *data)
+{
+    int charge_cycles;
+    int ret;
+    static int lock_battery_task_done = 0;
+    enum BATT_MATCH_TYPE temp = BATTERY_UNREMATCHABLE;
+    if(action == HISI_EEPROM_CYC) {
+        if(!data) {
+            hwlog_err("Null data point found in %s.\n", __func__);
+	    return NOTIFY_BAD;
+        }
+        /* coul-data:charger_cycles is 100*real charge cycles */
+        charge_cycles = (*(unsigned *)data)/100;
+        if(lock_battery_task_done == 0 && batt_rematch_abi_onboot == BATTERY_REMATCHABLE &&
+           free_cycles <= charge_cycles) {
+            ret = bco.set_batt_safe_info(BATT_MATCH_ABILITY, &temp);
+            if(ret) {
+                hwlog_err("Set battery to unrematchable failed in %s.\n", __func__);
+            } else {
+                lock_battery_task_done = 1;
+            }
+        }
+        return NOTIFY_OK;
+    }
+    return NOTIFY_DONE;
+}
+
+static struct notifier_block battery_charge_cycles_listener = {
+    .notifier_call = battery_charge_cycles_cb,
+};
+
+static int check_batt_ct_ops(void)
+{
+    int ret = BATTERY_DRIVER_SUCCESS;
+    if(!bco.get_ic_id) {
+        ret = BATTERY_DRIVER_FAIL;
+        hwlog_err("battery information interface: get_ic_id is not valid!");
+    }
+    if(!bco.check_ic_status) {
+        ret = BATTERY_DRIVER_FAIL;
+        hwlog_err("battery information interface: check_ic_status is not valid!");
+    }
+    if(!bco.certification) {
+        ret = BATTERY_DRIVER_FAIL;
+        hwlog_err("battery information interface: certification is not valid!");
+    }
+    if(!bco.get_batt_sn) {
+        ret = BATTERY_DRIVER_FAIL;
+        hwlog_err("battery information interface: get_batt_sn is not valid!");
+    }
+    if(!bco.get_ct_src) {
+        ret = BATTERY_DRIVER_FAIL;
+        hwlog_err("battery information interface: get_ct_src is not valid!");
+    }
+    if(!bco.set_batt_safe_info) {
+        ret = BATTERY_DRIVER_FAIL;
+        hwlog_err("battery information interface: set_batt_safe_info is not valid!");
+    }
+    if(!bco.get_batt_safe_info) {
+        ret = BATTERY_DRIVER_FAIL;
+        hwlog_err("battery information interface: get_batt_safe_info is not valid!");
+    }
+    return ret;
+}
+
+static int batt_mesg_init(struct platform_device *pdev)
 {
     int ret;
 
-    /* get certification information length */
-    batt_cons.id_len = bco.get_id_len();
-    hwlog_info("ID length:0x%x",batt_cons.id_len);
-    batt_cons.mac_len = bco.get_mac_len();
-    hwlog_info("MAC length:0x%x",batt_cons.mac_len);
-
-    /* Allocate memory for battery constraint infomation */
-    batt_cons.id_mask = (unsigned char *)devm_kzalloc(&pdev->dev,
-                                                      batt_cons.id_len,
-                                                      GFP_KERNEL);
-    BATTERY_DRIVE_NULL_POINT(batt_cons.id_mask);
-    batt_cons.id_example = (unsigned char *)devm_kzalloc(&pdev->dev,
-                                                         batt_cons.id_len,
-                                                         GFP_KERNEL);
-    BATTERY_DRIVE_NULL_POINT(batt_cons.id_example);
-    batt_cons.mac = (unsigned char *)devm_kzalloc(&pdev->dev,
-                                                  batt_cons.mac_len,
-                                                  GFP_KERNEL);
-    BATTERY_DRIVE_NULL_POINT(batt_cons.mac);
-    batt_cons.bind_id = (unsigned char *)devm_kzalloc(&pdev->dev,
-                                                      batt_cons.id_len,
-                                                      GFP_KERNEL);
-    BATTERY_DRIVE_NULL_POINT(batt_cons.bind_id);
-    batt_cons.limit_sw = (unsigned char *)devm_kzalloc(&pdev->dev,
-                                                       LIMIT_SWITCH_SIZE,
-                                                       GFP_KERNEL);
-    BATTERY_DRIVE_NULL_POINT(batt_cons.limit_sw);
-
-    /* Get battery id mask & id example */
-    if(batt_ic_np) {
-        ret = of_property_read_u8_array(batt_ic_np, "id-mask",
-                                        batt_cons.id_mask,
-                                        batt_cons.id_len);
-        BATTERY_DRIVE_DTS_READ_ERROR("id-mask");
-        ret = of_property_read_u8_array(batt_ic_np, "id-example",
-                                        batt_cons.id_example,
-                                        batt_cons.id_len);
-        BATTERY_DRIVE_DTS_READ_ERROR("id-example");
-    } else {
-        memset(batt_cons.id_mask,0,batt_cons.id_len);
-        memset(batt_cons.id_example,0,batt_cons.id_len);
+    ret = power_easy_node_register(&batt_info_node);
+    if(ret) {
+        hwlog_err("power_genl_add_op failed!\n");
+        return ret;
     }
 
-    /* get battery no limitation flags */
-    ret = of_property_read_string(pdev->dev.of_node, "no-limit", &(batt_cons.no_limit));
-    BATTERY_DRIVE_DTS_READ_ERROR("no-limit");
-
-    /* get battery voltage limitation */
-    ret = of_property_read_u32(pdev->dev.of_node, "limit-voltage", &(batt_cons.limit_voltage));
-    BATTERY_DRIVE_DTS_READ_ERROR("limit-voltage");
-
-    /* get battery current limitation */
-    ret = of_property_read_u32(pdev->dev.of_node, "limit-current", &(batt_cons.limit_current));
-    BATTERY_DRIVE_DTS_READ_ERROR("limit-current");
-
-    /* NVME not finish at now, so delay 3ms to get bind ID and limitation switch */
-    INIT_DELAYED_WORK(&batt_nvme_work, checkout_batt_nvme);
-    schedule_delayed_work(&batt_nvme_work, msecs_to_jiffies(WAIT_FOR_NVME_MS));
-
     return BATTERY_DRIVER_SUCCESS;
 }
 
-static int battery_driver_probe(struct platform_device *pdev)
+static int get_ic_ops(struct platform_device *pdev)
 {
-    int ret;
     int i;
+    int ic_unready = -1;
     ct_ops_reg_list *pos;
-    struct device_node *batt_ic_np;
-
-    hwlog_info("Battery information driver is going to probing...\n");
-
-    /* find the working battery ic */
-    for( i = 0; i < IC_DECT_RETRY_NUM; i++) {
+    /* find ic first */
+    for( i = 0; i < 5; i++) {
         list_for_each_entry(pos, &batt_ct_head, node) {
             if(pos->ct_ops_register != NULL) {
-                ret = pos->ct_ops_register(&bco);
+                ic_unready = pos->ct_ops_register(&bco);
             } else {
-                ret = BATTERY_DRIVER_FAIL;
+                ic_unready = BATTERY_DRIVER_FAIL;
             }
-            if(!ret) {
-                hwlog_info("Find valid battery certification ic.");
+            if(!ic_unready) {
+                hwlog_info("Find valid battery certification ic.\n");
                 break;
             }
         }
-        if(!ret) {
+        if(!ic_unready) {
             list_del_init(&pos->node);
             break;
         }
     }
-
-    /* check battery certification interface */
-    BATTERY_DRIVE_NULL_POINT(bco.get_ic_dev_node);
-    BATTERY_DRIVE_NULL_POINT(bco.get_id);
-    BATTERY_DRIVE_NULL_POINT(bco.get_id_len);
-    BATTERY_DRIVE_NULL_POINT(bco.get_mac);
-    BATTERY_DRIVE_NULL_POINT(bco.get_mac_len);
-    BATTERY_DRIVE_NULL_POINT(bco.get_mac_resource);
-    BATTERY_DRIVE_NULL_POINT(bco.set_random);
-
-    /* battery constraints initialization */
-    batt_ic_np = bco.get_ic_dev_node();
-    ret = batt_cons_init(pdev, batt_ic_np);
-    BATTERY_DRIVE_FUNC_PROCESS("batt_cons_init");
-
-    /* battery node initialization */
-    ret = batt_node_create(pdev);
-    BATTERY_DRIVE_FUNC_PROCESS("batt_node_create");
-
-    /* register netlink  */
-    ret = genl_register_family_with_ops(&batt_genl_family, batt_genl_ops_cb);
-    if(ret) {
-        hwlog_err("Battery-driver: register generic netlink failed. Error:%d.\n", ret);
-    }
-    BATTERY_DRIVE_FUNC_PROCESS("genl_register_family_with_ops");
-
-    /* free memory of other battery ic */
+	/* release useless memory allocated for ic */
     list_for_each_entry(pos, &batt_ct_head, node) {
         if(pos->ic_memory_release != NULL) {
             pos->ic_memory_release();
         }
     }
 
-    hwlog_info("Battery information driver was probed.\n");
+	if(ic_unready) {
+        batt_chk_rlt.ic_status = IC_FAIL_UNKOWN;
+        using_local_ct_ops();
+        hwlog_info("None valid battery ic found in %s.\n", __func__);
+    }
+
+    /* check battery battery information interface */
+    if(check_batt_ct_ops()) {
+        batt_chk_rlt.ic_status = IC_FAIL_UNKOWN;
+        using_local_ct_ops();
+        hwlog_err("Using local default certification operations!/n");
+    }
+    return ic_unready;
+}
+
+static int board_runtime_init(struct platform_device *pdev)
+{
+    int ret;
+
+    /* board runtime limitation  */
+    ret = of_property_read_u32(pdev->dev.of_node, "free-runtime", &free_runtime);
+    if(ret || free_runtime < 0) {
+        hwlog_info("Using default board free minutes value(illegal value: %d).\n", free_runtime);
+        board_runtime = 0;
+        return -1;
+    };
+    ret = of_property_read_u32(pdev->dev.of_node, "runtime-step", &runtime_step);
+    if(ret || runtime_step < 0) {
+        hwlog_info("Using default board runtime step value(illegal value: %d).\n", runtime_step);
+        board_runtime = 0;
+        return -1;
+    };
+    return 0;
+}
+
+static void battery_cycles_limit_init(struct platform_device *pdev)
+{
+    int type;
+    int ret;
+
+    /* battery charge cycles limitation */
+    ret = of_property_read_u32(pdev->dev.of_node, "free-cycles", &free_cycles);
+    if(ret || free_cycles < 0) {
+        hwlog_info("Using default battery free cycles value(illegal value: %d).\n", free_cycles);
+        free_cycles = -1;
+    };
+
+    type = bco.get_ic_type();
+    switch (type) {
+    case MAXIM_SHA256_TYPE:
+/* if not on factory mode */
+#ifndef BATTBD_FORCE_MATCH
+        ret = bco.get_batt_safe_info(BATT_MATCH_ABILITY, &batt_rematch_abi_onboot);
+        if(ret) {
+            hwlog_err("Get battery matchable status fail(%d) in %s.\n", ret, __func__);
+            batt_rematch_abi_onboot = BATTERY_UNREMATCHABLE;
+        }
+        /* register notifier list for update battery to unrematchable */
+        if(batt_rematch_abi_onboot == BATTERY_REMATCHABLE) {
+            if(hisi_coul_register_blocking_notifier(&battery_charge_cycles_listener)) {
+                hwlog_err("[%s]battery_charge_cycles_listener failed!\n", __func__);
+            }
+        }
+#endif
+        break;
+    default:
+        break;
+    }
+}
+
+static int battery_driver_probe(struct platform_device *pdev)
+{
+    int ret = -1;
+    char batt_vendor[3] = {0};
+    int local_ic;
+    struct notifier_block *runtime_nb;
+
+    hwlog_info("Battery information driver is going to probing...\n");
+
+    /* ic ops should get first */
+    local_ic = get_ic_ops(pdev);
+    /* try get battery vendor here */
+    if(local_ic || get_battery_type(batt_vendor)) {
+        hwlog_err("get_battery_type failed in %s(%s).\n", __func__, local_ic?"local ops":"dev ops");
+    } else {
+        hwlog_info("battery vendor is %s.\n", batt_vendor);
+    }
+    /* battery node initialization */
+    if(batt_node_create(pdev)) {
+        hwlog_err("battery information nodes create failed(%d) in %s.\n", ret, __func__);
+    }
+	/* find mode need battery checking */
+    update_work_mode();
+    /* under recovery mode no need further check */
+    if(work_mode == RECOVERY_MODE || work_mode == ERECOVERY_MODE) {
+        hwlog_info("Recovery mode not support now.\n");
+        return BATTERY_DRIVER_SUCCESS;
+    }
+    INIT_DELAYED_WORK(&check_last_result_dw, check_last_result);
+    INIT_DELAYED_WORK(&send_src_to_srv_dw, send_src_to_srv);
+    INIT_DELAYED_WORK(&dmd_report_dw, dmd_report);
+    check_last_result_retry = 0;
+    send_src_to_srv_retry = 0;
+    dmd_report_retry = 0;
+    mutex_init(&key_lock);
+    /* get borad runtime which distingush the old from the new */
+    if(!board_runtime_init(pdev)) {
+        runtime_nb = devm_kzalloc(&pdev->dev, sizeof(struct notifier_block), GFP_KERNEL);
+        if(!runtime_nb) {
+            hwlog_err("runtime_nb devm_kzalloc failed in %s.", __func__);
+        } else {
+            runtime_nb->notifier_call = runtime_update;
+            if(board_runtime_register(runtime_step, free_runtime, runtime_nb)) {
+                board_runtime = 0;
+                hwlog_err("board_runtime_register failed in %s.", __func__);
+            }
+        }
+    }
+    /* get battery cycles which distingush the old from the new */
+    battery_cycles_limit_init(pdev);
+	/* now init mesg interface which is used to communicate with native server */
+    if(batt_mesg_init(pdev)) {
+        hwlog_err("general netlink initialize failed in %s.\n", __func__);
+    }
+
+    hwlog_info("Battery information driver was probed successfully.\n");
     return BATTERY_DRIVER_SUCCESS;
 }
 
@@ -746,9 +1298,9 @@ static struct of_device_id huawei_battery_match_table[] = {
 };
 
 static struct platform_driver huawei_battery_driver = {
-    .probe		= battery_driver_probe,
-    .remove		= battery_driver_remove,
-    .driver		= {
+    .probe      = battery_driver_probe,
+    .remove     = battery_driver_remove,
+    .driver     = {
         .name = "huawei_battery",
         .owner = THIS_MODULE,
         .of_match_table = huawei_battery_match_table,
@@ -767,7 +1319,7 @@ void __exit battery_driver_exit(void)
     platform_driver_unregister(&huawei_battery_driver);
 }
 
-late_initcall(battery_driver_init);
+subsys_initcall_sync(battery_driver_init);
 module_exit(battery_driver_exit);
 /*-----------------------------------------------------------------------------------------------*/
 /*-----------------------------------------driver init end---------------------------------------*/

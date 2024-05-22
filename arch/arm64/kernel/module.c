@@ -127,8 +127,8 @@ static int reloc_data_loaded(struct module *me, enum aarch64_reloc_op op,
 {
 	int ret, numpages, size = 4;
 	bool readonly;
-	unsigned long core = (unsigned long)me->module_core;
-	unsigned long core_size = me->core_size;
+	unsigned long core = (unsigned long)me->core_layout.base;
+	unsigned long core_size = me->core_layout.size;
 	unsigned long loc = (unsigned long)place;
 
 	if (loc < core || loc >= core + core_size)
@@ -137,7 +137,7 @@ static int reloc_data_loaded(struct module *me, enum aarch64_reloc_op op,
 	readonly = false;
 #ifdef CONFIG_DEBUG_SET_MODULE_RONX
 	if(!is_hkip_enabled())
-		if (loc < core + me->core_ro_size)
+		if (loc < core + me->core_layout.ro_size)
 			readonly = true;
 #endif
 
@@ -212,17 +212,18 @@ static int reloc_insn_movw_loaded(struct module *me, enum aarch64_reloc_op op,
 {
         int ret;
         bool readonly;
-        unsigned long core = (unsigned long)me->module_core;
-        unsigned long core_size = me->core_size;
-        unsigned long loc = (unsigned long)place;
+		unsigned long core = (unsigned long)me->core_layout.base;
+		unsigned long core_size = me->core_layout.size;
+		unsigned long loc = (unsigned long)place;
 
-        if (loc < core || loc >= core + core_size)
-                return -EINVAL;
+		if (loc < core || loc >= core + core_size)
+			return -EINVAL;
+
 
         readonly = false;
 #ifdef CONFIG_DEBUG_SET_MODULE_RONX
 	if(!is_hkip_enabled())
-		if (loc < core + me->core_ro_size)
+		if (loc < core + me->core_layout.ro_size)
 			readonly = true;
 #endif
 
@@ -284,17 +285,18 @@ static int reloc_insn_imm_loaded(struct module *me, enum aarch64_reloc_op op,
 {
 	int ret;
 	bool readonly;
-	unsigned long core = (unsigned long)me->module_core;
-	unsigned long core_size = me->core_size;
-	unsigned long loc = (unsigned long)place;
+		unsigned long core = (unsigned long)me->core_layout.base;
+		unsigned long core_size = me->core_layout.size;
+		unsigned long loc = (unsigned long)place;
 
-	if (loc < core || loc >= core + core_size)
-		return -EINVAL;
+		if (loc < core || loc >= core + core_size)
+			return -EINVAL;
+
 
 	readonly = false;
 #ifdef CONFIG_DEBUG_SET_MODULE_RONX
 	if(!is_hkip_enabled())
-		if (loc < core + me->core_ro_size)
+		if (loc < core + me->core_layout.ro_size)
 			readonly = true;
 #endif
 

@@ -11,14 +11,13 @@
 #include <huawei_platform/power/wired_channel_switch.h>
 #include <huawei_platform/power/wireless_otg.h>
 #include <huawei_platform/power/wireless_charger.h>
+#ifdef CONFIG_BOOST_5V
+#include <huawei_platform/power/boost_5v.h>
+#endif
 
 static int gpio_otg_switch;
-static int gpio_otg_5vboost;
 static int otg_channel = 0;
 static bool otg_mode = NOT_IN_OTG_MODE;
-static unsigned int boost_status = 0;
-static DEFINE_MUTEX(boost_op_mutex);
-static int boost_initialized = 0;
 
 #define HWLOG_TAG wireless_otg
 HWLOG_REGIST();
@@ -26,79 +25,30 @@ int wireless_otg_get_mode(void)
 {
 	return otg_mode;
 }
-int boost_enable(boost_ctrl_type_t type)
-{
-	int ret = 0;
 
-	hwlog_info("%s: count(%d), type(%d)\n", __func__, boost_status, type);
-	if (!boost_initialized) {
-		hwlog_err("%s: 5v boost not initialized!\n", __func__);
-		return -ENODEV;
-	}
-
-	if (type >= BOOST_CTRL_MAX) {
-		hwlog_err("%s: type(%d) is invalid!\n", __func__, type);
-		return -EINVAL;
-	}
-
-	mutex_lock(&boost_op_mutex);
-	if (boost_status == 0) {
-		gpio_set_value(gpio_otg_5vboost, OTG_5VBOOST_ENABLE);
-	}
-	boost_status =  boost_status | (1 << type);
-
-	mutex_unlock(&boost_op_mutex);
-
-	hwlog_info("%s: regulator enable(%d) success!\n", __func__, type);
-	return 0;
-}
-int boost_disable(boost_ctrl_type_t type)
-{
-	int ret = 0;
-
-	hwlog_info("%s: count(%d), type(%d)\n", __func__, boost_status, type);
-	if (!boost_initialized) {
-		hwlog_err("%s: 5v boost not initialized!\n", __func__);
-		return -ENODEV;
-	}
-
-	if (type >= BOOST_CTRL_MAX) {
-		hwlog_err("%s: type(%d) is invalid!\n", __func__, type);
-		return -EINVAL;
-	}
-
-	mutex_lock(&boost_op_mutex);
-	if (boost_status != 0) {
-		boost_status = boost_status & (~(1 << type));
-		if (boost_status == 0) {
-			gpio_set_value(gpio_otg_5vboost, OTG_5VBOOST_DISABLE);
-		}
-	}
-	mutex_unlock(&boost_op_mutex);
-
-	hwlog_info("%s: regulator disable(%d) success!\n", __func__, type);
-	return 0;
-
-}
 static void wireless_otg_start_config(int flag)
 {
 	hwlog_info("---->START OTG MODE, flag = %d\n", flag);
 	otg_mode = IN_OTG_MODE;
 	wired_chsw_set_wired_channel(WIRED_CHANNEL_CUTOFF);
 	msleep(100);
+#ifdef CONFIG_BOOST_5V
+	boost_5v_enable(BOOST_5V_ENABLE, BOOST_CTRL_WIRELESS_OTG);
+#endif
 	gpio_set_value(gpio_otg_switch, OTG_SWITCH_ENABLE);
-	boost_enable(BOOST_CTRL_WIRELESS_OTG);
 }
 static void wireless_otg_stop_config(int flag)
 {
 	hwlog_info("---->STOP OTG MODE, flag = %d\n", flag);
 	gpio_set_value(gpio_otg_switch, OTG_SWITCH_DISABLE);
-	boost_disable(BOOST_CTRL_WIRELESS_OTG);
+#ifdef CONFIG_BOOST_5V
+	boost_5v_enable(BOOST_5V_DISABLE, BOOST_CTRL_WIRELESS_OTG);
+#endif
 	if (flag)
 		otg_mode = NOT_IN_OTG_MODE;
 	if (WIRELESS_CHANNEL_OFF ==
 		wireless_charge_get_wireless_channel_state()  && flag) {
-		wired_chsw_set_wired_channel(WIRED_CHANNEL_RESTORE);
+		//wired_chsw_set_wired_channel(WIRED_CHANNEL_RESTORE);
        }
 }
 void wireless_otg_detach_handler(int flag)
@@ -146,26 +96,8 @@ static int wireless_otg_gpio_init(struct device_node *np)
 		goto gpio_init_fail_0;
 	}
 	gpio_direction_output(gpio_otg_switch, 0);
-
-	gpio_otg_5vboost = of_get_named_gpio(np, "gpio_otg_5vboost", 0);
-	hwlog_info("%s: gpio_otg_5vboost = %d\n", __func__, gpio_otg_5vboost);
-	if (!gpio_is_valid(gpio_otg_5vboost)) {
-		hwlog_err("gpio_otg_5vboost is not valid\n");
-		ret =  -EINVAL;
-		goto gpio_init_fail_1;
-	}
-	ret = gpio_request(gpio_otg_5vboost, "gpio_otg_5vboost");
-	if (ret) {
-		hwlog_err("could not request gpio_otg_5vboost\n");
-		ret =  -ENOMEM;
-		goto gpio_init_fail_1;
-	}
-	gpio_direction_output(gpio_otg_5vboost, 0);
-	boost_initialized = 1;
 	return 0;
 
-gpio_init_fail_1:
-	gpio_free(gpio_otg_switch);
 gpio_init_fail_0:
 	otg_channel = 0;
 	return ret;

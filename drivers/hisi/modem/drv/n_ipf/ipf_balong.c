@@ -53,6 +53,7 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/platform_device.h>
+#include <linux/of_platform.h>
 #include <linux/clk.h>
 #include <linux/of.h>
 #include <linux/slab.h>
@@ -251,6 +252,8 @@ static int ipf_ctx_init(void)
 	g_ipf_ctx.share_mem = sm;
 
     g_ipf_ctx.dma_mask = g_ipf_ctx.desc->dma_mask;
+    dma_set_mask_and_coherent(g_ipf_ctx.dev, g_ipf_ctx.dma_mask);
+    of_dma_configure(g_ipf_ctx.dev, g_ipf_ctx.dev->of_node);
     
     g_ipf_ctx.ul_info.pstIpfBDQ     = dmam_alloc_coherent(
                 g_ipf_ctx.dev, 

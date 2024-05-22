@@ -107,11 +107,8 @@ enum AT_USER_TYPE_ENUM
     AT_HSIC2_USER                       = 14,
     AT_HSIC3_USER                       = 15,
 
-    /* Added by L47619 for V7R1C50 A-GPS Project, 2012/06/28, begin */
     AT_HSIC4_USER                       = 16,
-    /* Added by L47619 for V7R1C50 A-GPS Project, 2012/06/28, end */
 
-    /* Added by L60609 for MUX£¬2012-08-03,  Begin */
     AT_MUX1_USER                        = 17,
     AT_MUX2_USER                        = 18,
     AT_MUX3_USER                        = 19,
@@ -120,8 +117,6 @@ enum AT_USER_TYPE_ENUM
     AT_MUX6_USER                        = 22,
     AT_MUX7_USER                        = 23,
     AT_MUX8_USER                        = 24,
-    /* Added by L60609 for MUX£¬2012-08-03,  End */
-
     AT_HSUART_USER                      = 25,
 
     AT_BUTT_USER                        = 0xff

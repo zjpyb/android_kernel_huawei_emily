@@ -54,9 +54,7 @@
 #include "AtTestParaCmd.h"
 
 
-/* ADD by c64416 for V9R1/V7R1 AT, 2013/09/18 begin */
 #include "at_lte_common.h"
-/* ADD by c64416 for V9R1/V7R1 AT, 2013/09/18 end */
 
 
 /*****************************************************************************
@@ -256,7 +254,6 @@ VOS_UINT32 At_GetBasicCmdNum(VOS_VOID)
 }
 
 
-/* Added by c64416 for AT Project 2011-10-23  Begin */
 
 VOS_UINT32 At_CheckIfDCmdValidChar(VOS_UINT8 ucChar)
 {
@@ -332,6 +329,5 @@ VOS_UINT8* At_GetFirstBasicCmdAddr(VOS_UINT8 *pData, VOS_UINT32* pulLen)
 
     return pucAddr;
 }
-/* Added by c64416 for AT Project 2011-10-23  End*/
 
 

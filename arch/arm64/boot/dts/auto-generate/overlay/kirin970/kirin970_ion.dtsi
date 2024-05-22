@@ -66,6 +66,7 @@
 
 			heap-size = <0x8000000>;
 			heap-attr = <0>;
+			pool-shift = <16>;
 			per-alloc-size = <0x0 0x2000000>;
 			per-bit-size = <0x0 0x200000>;
 			water-mark = <0x0 0x1000000>;
@@ -85,13 +86,13 @@
 			water-mark = <0x0 0x400000>;
 			status = "ok";
 		};
-		sec_heap@18 {
+		sec_heap@5 {
 			heap-name = "sec_heap";
 			heap-type = "ion_sec";
-			heap-id   = <0x12>;
+			heap-id   = <0x5>;
 			heap-base = <0x0>;
 
-			heap-size = <0x8000000>;
+			heap-size = <0x10000000>;
 			heap-attr = <2>;
 			per-alloc-size = <0x0 0x4000000>;
 			per-bit-size = <0x0 0x200000>;
@@ -108,6 +109,7 @@
 			heap-attr = <1>;
 			per-alloc-size = <0x0 0x4000000>;
 			per-bit-size = <0x0 0x200000>;
+			memory-region = <&pgtable_mem>;
 			status = "ok";
 		};
 

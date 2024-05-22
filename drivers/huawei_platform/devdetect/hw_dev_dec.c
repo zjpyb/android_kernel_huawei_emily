@@ -69,9 +69,9 @@ int dev_dct_probe_flag = 0;
 int set_hw_dev_flag( int dev_id ){
     if( (dev_id >= 0) && ( dev_id < DEV_I2C_MAX ) ){
         mutex_lock(&devcheck_lock);
-        hwlog_info("now set the dev_flag, and device id is  :%d !\n",dev_id);
+        //hwlog_info("now set the dev_flag, and device id is  :%d !\n",dev_id);
         dev_flag_long = dev_flag_long | ((uint64_t)1 << dev_id);
-        hwlog_info("set the dev_flag successfully in set dev_flag, and dev_flag  is  :%lld !\n",dev_flag_long);
+        hwlog_info("set the dev_flag successfully in set dev_flag, and dev_id is :%d, dev_flag  is  :%lld !\n", dev_id, dev_flag_long);
         mutex_unlock(&devcheck_lock);
     }
     else{

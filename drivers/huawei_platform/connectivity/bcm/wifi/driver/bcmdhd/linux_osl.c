@@ -48,7 +48,11 @@
 
 
 #ifdef CONFIG_ARM64
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
+#include <linux/pci-dma-compat.h>
+#else
 #include <asm-generic/pci-dma-compat.h>
+#endif
 #endif
 #include <linux/fs.h>
 
@@ -366,7 +370,7 @@ osl_attach(void *pdev, uint bustype, bool pkttag)
 	if (!(osh = kmalloc(sizeof(osl_t), flags)))
 		return osh;
 
-	ASSERT(osh);
+	//ASSERT(osh);
 
 	bzero(osh, sizeof(osl_t));
 
@@ -1437,6 +1441,33 @@ osl_pktclear_static(osl_t *osh)
 }
 #endif /* CONFIG_DHD_USE_STATIC_BUF */
 #endif /* BCM_PCIE_UPDATE */
+
+void
+osl_pktfree_all_static(osl_t *osh)
+{
+#ifdef DHD_USE_STATIC_CTRLBUF
+        int i;
+        unsigned long flags;
+#endif /* DHD_USE_STATIC_CTRLBUF */
+
+        if (!bcm_static_skb) {
+                printf("%s: bcm_static_skb is NULL\n", __FUNCTION__);
+                return;
+        }
+
+#ifdef DHD_USE_STATIC_CTRLBUF
+        spin_lock_irqsave(&bcm_static_skb->osl_pkt_lock, flags);
+
+        for (i = 0; i < STATIC_PKT_2PAGE_NUM; i++) {
+                if (bcm_static_skb->pkt_use[i] != 0) {
+                        bcm_static_skb->pkt_use[i] = 0;
+                        bcm_static_skb->skb_8k[i]->mac_len = PREALLOC_FREE_MAGIC;
+                }
+        }
+        spin_unlock_irqrestore(&bcm_static_skb->osl_pkt_lock, flags);
+        printf("%s: bcm_static_skb pkt_use is clear\n", __FUNCTION__);
+#endif /* DHD_USE_STATIC_CTRLBUF */
+}
 
 uint32
 osl_pci_read_config(osl_t *osh, uint offset, uint size)

@@ -23,6 +23,9 @@
 
 typedef enum {
 	NFC_SERVICE = 0,
+#ifdef CONFIG_HISEE_SUPPORT_INSE_ENCRYPT
+	INSE_ENCRYPT = 1,/* ID for pin code , 3D face and fingerprint. */
+#endif
 	MAX_TIMEOUT_ID,
 }hisee_timeout_vote_id_type;
 
@@ -62,7 +65,12 @@ typedef union {
 		unsigned int chip_test_and_upgrade:8;
 		unsigned int unknow_id:8;
 		unsigned int time_out:8;
+#ifdef CONFIG_HISEE_SUPPORT_INSE_ENCRYPT
+		unsigned int inse_encrypt:8;
+		unsigned int reserved:16;
+#else
 		unsigned int reserved:24;
+#endif
 	} status;
 }hisee_power_vote_status;
 
@@ -86,5 +94,10 @@ int hisee_poweron_upgrade_func(void *buf, int para);
 int hisee_poweroff_func(void *buf, int para);
 int hisee_poweron_timeout_func(void *buf, int para);
 hisee_power_status hisee_get_power_status(void);
-
+#ifdef CONFIG_HISI_SMX_PROCESS
+int smx_process(hisee_power_operation op_type, unsigned int op_cosid, int power_cmd);
+#endif
+#ifdef CONFIG_HISEE_NFC_IRQ_SWITCH
+int hisee_nfc_irq_switch_func(void * buf, int para);
+#endif
 #endif

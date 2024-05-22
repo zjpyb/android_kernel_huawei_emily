@@ -160,20 +160,14 @@ AT_E5_RIGHT_FLAG_ENUM_U32               g_enATE5RightFlag;
    重新定义NV项用来保存密码  */
 VOS_INT8                                g_acATOpwordPwd[AT_OPWORD_PWD_LEN+1];
 
-/* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
 /* 用于当前是否有权限操作AT端口 */
 AT_RIGHT_OPEN_FLAG_STRU                 g_stAtRightOpenFlg;
-/* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
 
-/* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
 /* 使能禁止SD卡时需要的密码 */
 VOS_INT8                                g_acATE5DissdPwd[AT_DISSD_PWD_LEN+1];
-/* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, end */
 
-/* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
 /*命令不支持提示字串*/
 VOS_UINT8                               gaucAtCmdNotSupportStr[AT_NOTSUPPORT_STR_LEN+4];
-/* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, end */
 
 AT_ABORT_CMD_CTX_STRU                   gstAtAbortCmdCtx;   /* 用于保存打断的信息 */
 
@@ -192,9 +186,7 @@ VOS_UINT8                               ucAtS6          = 2;                    
 VOS_UINT8                               ucAtS7          = 50;                   /* Number of seconds in which connection must be established or call will be disconnected,
                                                                                    default value = 50(refer to Q)*/
 
-/* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
 AT_CMEE_TYPE                            gucAtCmeeType;                          /* E5错误码默认错误编号 */
-/* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, end */
 
 TAF_UINT32                              g_ulSTKFunctionFlag = TAF_FALSE;
 
@@ -587,9 +579,7 @@ VOS_VOID AT_InitModemSmsCtx(MODEM_ID_ENUM_UINT16 enModemId)
 
     /* ME存储状态初始化 */
     pstSmsCtx->enMsgMeStorageStatus = MN_MSG_ME_STORAGE_DISABLE;
-    /* modified by l65478 for 2013-05-23 begin */
     pstSmsCtx->ucLocalStoreFlg      = VOS_TRUE;
-    /* modified by l65478 for 2013-05-23 end */
 
     pstSmsCtx->stCnmiType.CnmiModeType    = AT_CNMI_MODE_BUFFER_TYPE;
     pstSmsCtx->stCnmiType.CnmiMtType      = AT_CNMI_MT_NO_SEND_TYPE;
@@ -886,10 +876,8 @@ VOS_VOID AT_InitCommCtx(VOS_VOID)
     /* 初始化MUX相关的上下文 */
     TAF_MEM_SET_S(&(pstCommCtx->stMuxCtx), (VOS_UINT32)sizeof(pstCommCtx->stMuxCtx), 0x00, (VOS_UINT32)sizeof(AT_MUX_CTX_STRU));
 
-    /* Modified by l60609 for V9R1 IPv6&TAF/SM Project, 2013-5-2, begin */
     /* 初始化PS域公共的上下文 */
     AT_InitCommPsCtx();
-    /* Modified by l60609 for V9R1 IPv6&TAF/SM Project, 2013-5-2, end */
 
     AT_InitCommPbCtx();
 
@@ -923,9 +911,7 @@ VOS_VOID AT_InitModemCtx(MODEM_ID_ENUM_UINT16 enModemId)
 
     AT_InitModemAgpsCtx(enModemId);
 
-    /* Modified by l60609 for V9R1 IPv6&TAF/SM Project, 2013-5-2, begin */
     AT_InitModemPsCtx(enModemId);
-    /* Modified by l60609 for V9R1 IPv6&TAF/SM Project, 2013-5-2, end */
 
     AT_InitModemImsCtx(enModemId);
 

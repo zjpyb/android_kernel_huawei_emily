@@ -85,13 +85,10 @@ static int next_xfer_id;
 #define ipp_warn(fmt, ...) pr_warn("STMVL53L1 IPP wng in %s %d : "fmt"\n",\
 		__func__, __LINE__, ##__VA_ARGS__)
 
-#if 0
-#define ipp_dbg(fmt, ...) pr_info("IPP %s %d " fmt "\n",\
-		__func__, __LINE__, ##__VA_ARGS__)
-#else
 #	define ipp_dbg(...) (void)0
-#endif
 
+
+extern int memcpy_s(void *dest, size_t destMax, const void *src, size_t count);
 /**
  * get and managed increment of next xfer_id
  * @note will get ipp_mutex
@@ -127,7 +124,7 @@ static int send_client_msg(void *msg_data, int msg_size)
 	NETLINK_CB(skb_out).dst_group = 0; /* not in mcast group */
 
 	nl_data = nlmsg_data(nlh); /*get data ptr from header*/
-	memcpy(nl_data, msg_data, msg_size);
+	memcpy_s(nl_data, msg_size, msg_data, msg_size);
 
 	/* FIXME do we real need to lock to send a data other nl_sk ? */
 	mutex_lock(&ipp_mutex);
@@ -146,13 +143,16 @@ static int send_client_msg(void *msg_data, int msg_size)
  */
 int ipp_in_process(struct ipp_work_t *pwork)
 {
-	struct stmvl53l1_data *data;
+	struct stmvl53l1_data *data = NULL;
 
 	ipp_dbg("enter");
 	_ipp_dump_work(pwork, IPP_WORK_MAX_PAYLOAD, STMVL53L1_CFG_MAX_DEV);
 
 	/* work id check already done */
 	data = stmvl53l1_dev_table[pwork->dev_id];
+	if(NULL == data){
+		return 0;
+	}
 	ipp_dbg("to lock ");
 	mutex_unlock(&ipp_mutex);
 	mutex_lock(&data->work_mutex);
@@ -160,7 +160,7 @@ int ipp_in_process(struct ipp_work_t *pwork)
 		/* if  it was already handled ignore it */
 		if (data->ipp.waited_xfer_id == pwork->xfer_id) {
 			/* ok that is what we are expecting back */
-			memcpy(&data->ipp.work_out, pwork, pwork->payload);
+			memcpy_s(&data->ipp.work_out, pwork->payload, pwork, pwork->payload);
 			data->ipp.buzy |= IPP_STATE_COMPLETED;
 			ipp_dbg("to wake ipp waiter as buzy state %d",
 					data->ipp.buzy);
@@ -281,7 +281,7 @@ static void stmvl53l1_nl_recv_msg(struct sk_buff *skb_in)
 
 	mutex_lock(&ipp_mutex);
 
-	if (pwork->dev_id >= STMVL53L1_CFG_MAX_DEV) {
+	if ((pwork->dev_id >= STMVL53L1_CFG_MAX_DEV) || (pwork->dev_id < 0)){
 		ipp_err("invalid dev id on msg %d", pwork->dev_id);
 		_ipp_dump_work(pwork, IPP_WORK_MAX_PAYLOAD,
 			STMVL53L1_CFG_MAX_DEV);

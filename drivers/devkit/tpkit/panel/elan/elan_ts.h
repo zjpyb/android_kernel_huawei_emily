@@ -40,7 +40,8 @@
 #define ELAN_KTF_NAME 	"elan"
 #define ELAN_IC_NAME 	"ekth5512c_"
 #define ELAN_TP_IC_TYPE "ic_type"
-#define MAX_FINGER_PRESSURE		4096
+#define LCD_PANEL_TYPE_DEVICE_NODE_NAME     "huawei,lcd_panel_type"
+#define MAX_FINGER_PRESSURE		255
 #define MAX_FINGER_SIZE		10
 #define ELAN_RECV_DATA_LEN	67
 #define ELAN_SEND_DATA_LEN	37
@@ -48,7 +49,7 @@
 #define PEN_REPORT_ID	0x07
 #define FINGER_REPORT_ID	0x01
 #define ELAN_SLAVE_ADDR			"slave_address"
-#define FW_SUFFIX	".ekt"
+#define FW_SUFFIX	".bin"
 #define ELAN_I2C_ADRR	 0x10
 #define CHIP_NAME_LEN 	10
 #define TP_MODULE_NAME	"null"
@@ -58,7 +59,7 @@
 #define ELAN_TOOL_TYPE_NONE  0
 #define FINGER_OSR	64
 #define PEN_OSR		260
-#define MAX_PEN_PRESSURE	255
+#define MAX_PEN_PRESSURE	2047
 #define ELAN_IAP
 #define TEN_FINGER_DATA_LEN	90
 #define REPORT_DATA_LEN	18
@@ -85,7 +86,7 @@
 #define FingerX_Point_LByte	3
 #define FingerY_Point_HByte	6
 #define FingerY_Point_LByte	5
-#define Finger_Pressure	100
+#define Finger_Pressure	255
 #define Finger_Major	100
 #define Finger_Minor	100
 #define Value_Offset	7
@@ -109,6 +110,9 @@
 #define FW_INFO_INDEX 5
 #define RX_NUM_INDEX 6
 #define TX_NUM_INDEX 7
+#define PROJECT_ID_POLL	5
+#define LCD_PANEL_INFO_MAX_LEN  128
+#define ELAN_PANEL_ID_START_BIT	6
 
 struct elan_ktf_ts_data {
 	int gpio_3v3_en;
@@ -138,6 +142,9 @@ struct elan_ktf_ts_data {
 	char color_id[2];
 	struct wake_lock wake_lock;
 	bool sd_fw_updata;
+	bool pen_detected;
+	char lcd_panel_info[LCD_PANEL_INFO_MAX_LEN];
+	char lcd_module_name[MAX_STR_LEN];
 };
 
 extern int elan_i2c_write(u8* buf, u16 length);

@@ -44,7 +44,7 @@
 
 bool bfr_safe_mode_has_been_enabled(void)
 {
-    return false;
+    return true;
 }
 
 

@@ -232,7 +232,7 @@ static HI_S32 VENC_DRV_Close(struct inode *finode, struct file  *ffile)
 HI_S32 VENC_DRV_Suspend(struct platform_device *pltdev, pm_message_t state)
 {
 	HI_S32 Ret = 0;
-	HI_INFO_VENC("enter\n");
+	HI_INFO_VENC("+");
 
 	Ret = HiVENC_DOWN_INTERRUPTIBLE(&g_VencMutex);
 	if (Ret) {
@@ -241,9 +241,7 @@ HI_S32 VENC_DRV_Suspend(struct platform_device *pltdev, pm_message_t state)
 	}
 
 	if (!g_vencOpenFlag) {
-		HI_INFO_VENC("venc device already suspend\n");
-		HiVENC_UP_INTERRUPTIBLE(&g_VencMutex);
-		return HI_SUCCESS;
+		goto exit;
 	}
 
 	Ret = VENC_DRV_EflSuspendVedu();
@@ -255,16 +253,16 @@ HI_S32 VENC_DRV_Suspend(struct platform_device *pltdev, pm_message_t state)
 
 	VENC_DRV_BoardDeinit();
 	g_hw_done_event.flag = 0;
+exit:
 	HiVENC_UP_INTERRUPTIBLE(&g_VencMutex);
-
-	HI_INFO_VENC("exit\n");
+	HI_INFO_VENC("-");
 	return HI_SUCCESS;
 }/*lint !e715*/
 
 HI_S32 VENC_DRV_Resume(struct platform_device *pltdev)
 {
 	HI_S32 Ret = 0;
-	HI_INFO_VENC("enter\n");
+	HI_INFO_VENC("+");
 
 	Ret = HiVENC_DOWN_INTERRUPTIBLE(&g_VencMutex);
 	if (Ret) {
@@ -273,9 +271,7 @@ HI_S32 VENC_DRV_Resume(struct platform_device *pltdev)
 	}
 
 	if (!g_vencOpenFlag) {
-		HI_INFO_VENC("venc device already resume\n");
-		HiVENC_UP_INTERRUPTIBLE(&g_VencMutex);
-		return 0;
+		goto exit;
 	}
 	Ret = VENC_DRV_BoardInit();
 	if (Ret != HI_SUCCESS) {
@@ -291,9 +287,9 @@ HI_S32 VENC_DRV_Resume(struct platform_device *pltdev)
 		HiVENC_UP_INTERRUPTIBLE(&g_VencMutex);
 		return HI_FAILURE;
 	}
-
+exit:
 	HiVENC_UP_INTERRUPTIBLE(&g_VencMutex);
-	HI_INFO_VENC("exit\n");
+	HI_INFO_VENC("-");
 	return HI_SUCCESS;
 }/*lint !e715*/
 
@@ -939,19 +935,15 @@ static struct platform_driver Venc_driver = {
 	},/*lint !e785 */
 };/*lint !e785 */
 
-static struct platform_device Venc_device = {
-	.name = "hi_venc",
-	.id   = -1,
-	.dev  = {
-	.platform_data = NULL,
-	.release   = NULL,
-	},/*lint !e785 */
-};/*lint !e785 */
-
 extern HI_U64 gSmmuPageBaseAddr;
 static ssize_t VENC_DRV_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 #ifdef USER_DISABLE_VENC_PROC
+	if (buf == HI_NULL) {
+		HI_ERR_VENC("%s buf is null\n", __func__);
+		return 0;
+	}
+
 	return snprintf(buf, PAGE_SIZE, "0x%pK\n", (void *)(uintptr_t)gSmmuPageBaseAddr); /* unsafe_function_ignore: snprintf */
 #else
 	return 0;
@@ -1173,38 +1165,30 @@ static HI_S32 VENC_DRV_Remove(struct platform_device *pltdev)
 HI_S32 __init VENC_DRV_ModInit(HI_VOID)
 {
 	HI_S32 ret = 0;
+
 	HI_INFO_VENC("enter %s()\n", __func__);
 
-	ret = platform_device_register(&Venc_device);
-	if (ret < 0) {
-		HI_ERR_VENC("regist platform device failed\n");
+	ret = platform_driver_register(&Venc_driver);/*lint !e64 */
+	if (ret) {
+		HI_ERR_VENC("register platform driver failed\n");
 		return ret;
 	}
-
-	ret = platform_driver_register(&Venc_driver);/*lint !e64 */
-	if (ret < 0) {
-		HI_ERR_VENC("regist platform driver failed\n");
-		goto exit;
-	}
 	HI_INFO_VENC("success\n");
+
 #ifdef MODULE
 	HI_INFO_VENC("Load hi_venc.ko success\t(%s)\n", VERSION_STRING);
 #endif
+
 	HI_INFO_VENC("exit %s()\n", __func__);
-	return HI_SUCCESS;
-exit:
-	platform_device_unregister(&Venc_device);
-#ifdef MODULE
-	HI_ERR_VENC("Load hi_venc.ko failed\t(%s)\n", VERSION_STRING);
-#endif
+
 	return ret;
 }
 
 HI_VOID VENC_DRV_ModExit(HI_VOID)
 {
 	HI_INFO_VENC("enter %s()\n", __func__);
+
 	platform_driver_unregister(&Venc_driver);
-	platform_device_unregister(&Venc_device);
 
 	HI_INFO_VENC("exit %s()\n", __func__);
 	return;

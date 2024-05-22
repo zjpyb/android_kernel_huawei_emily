@@ -51,7 +51,6 @@
  * V4L2 subdev internal operations
  */
 
-
 #define cam_err(fmt, ...) \
     do { \
             pr_err("[klaser]" "ERROR: " fmt "\n", ##__VA_ARGS__); \
@@ -120,7 +119,25 @@ static int laser_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 
 static int laser_close(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
-    return 0;
+    long rc = -EINVAL;
+    laser_t* s;
+    hw_laser_ctrl_t *ctrl;
+
+    if (NULL == sd) {
+        cam_err("%s, sd laser is NULL \n", __func__);
+        return -EINVAL;
+    }
+
+    s = SD2Laser(sd);
+    ctrl = (hw_laser_ctrl_t*)s->ctrl;
+    //cam_dbg("hw laser cmd = %x",cmd);
+    if(ctrl->func_tbl && ctrl->func_tbl->laser_ioctl && ctrl->data)
+    {
+        rc = ctrl->func_tbl->laser_ioctl(ctrl->data,HWLASER_IOCTL_STOP, NULL);
+        rc |= ctrl->func_tbl->laser_ioctl(ctrl->data,HWLASER_IOCTL_POWEROFF, NULL);
+    }
+    cam_err("laser is closed.");
+    return rc;
 }
 
 static int laser_subdev_subscribe_event(struct v4l2_subdev *sd,
@@ -162,9 +179,6 @@ void laser_notify_data_event(hw_laser_ctrl_t *ctrl, const struct v4l2_event *ev)
         return;
     }
 
-#if 0 /* fix panic */
-    v4l2_event_queue_fh(ctrl->fh, ev);
-#endif
 }
 EXPORT_SYMBOL(laser_notify_data_event);
 
@@ -200,11 +214,8 @@ int laser_probe(struct i2c_client *client,
 
     mutex_init(&laser->lock);
 
-    media_entity_init(&sd->entity, 0, NULL, 0);
-    sd->entity.type = MEDIA_ENT_T_V4L2_SUBDEV;
-    sd->entity.group_id = HWCAM_SUBDEV_LASER;
-
-    ret = hwcam_cfgdev_register_subdev(sd);
+    init_subdev_media_entity(sd,HWCAM_SUBDEV_LASER);
+    ret = hwcam_cfgdev_register_subdev(sd,HWCAM_SUBDEV_LASER);
     cam_info("ret = %d register video devices %s sucessful, major = %d, minor = %d, entity.name = %s",ret, sd->name, sd->entity.info.dev.major, sd->entity.info.dev.minor, sd->entity.name);
     if (ret)
         goto error;

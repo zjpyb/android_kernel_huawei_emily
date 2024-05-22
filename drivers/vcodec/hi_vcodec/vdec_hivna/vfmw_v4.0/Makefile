@@ -7,6 +7,7 @@ endif
 
 ifeq ($(CONFIG_VCODEC_PLATFORM_HIVCODECV300), y)
 include $(VFMW_DIR)/vfmw_v4.0/firmware/product/HiVCodecV200/NOR_CFG/vfmw_make.cfg
+EXTRA_CFLAGS += -DSECURE_VS_NOR_SECURE
 endif
 
 ifeq ($(CONFIG_VCODEC_PLATFORM_HIVCODECV210), y)

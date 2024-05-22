@@ -56,6 +56,7 @@ struct mmc_ioc_multi_cmd {
 	struct mmc_ioc_cmd cmds[0];
 };
 
+
 #define MMC_IOC_CMD _IOWR(MMC_BLOCK_MAJOR, 0, struct mmc_ioc_cmd)
 /*
  * MMC_IOC_MULTI_CMD: Used to send an array of MMC commands described by

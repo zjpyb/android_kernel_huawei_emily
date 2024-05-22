@@ -15,7 +15,6 @@
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
 #include <linux/mm.h>
-#include <linux/sched.h>
 #include <linux/slab.h>
 #include <asm/sections.h>
 
@@ -208,8 +207,11 @@ static inline const char *check_heap_object(const void *ptr, unsigned long n,
 	 * Some architectures (arm64) return true for virt_addr_valid() on
 	 * vmalloced addresses. Work around this by checking for vmalloc
 	 * first.
+	 *
+	 * We also need to check for module addresses explicitly since we
+	 * may copy static data from modules to userspace
 	 */
-	if (is_vmalloc_addr(ptr))
+	if (is_vmalloc_or_module_addr(ptr))
 		return NULL;
 
 	if (!virt_addr_valid(ptr))
@@ -244,6 +246,30 @@ void __check_object_size(const void *ptr, unsigned long n, bool to_user)
 	if (err)
 		goto report;
 
+#if !defined(CONFIG_HARDENED_USERCOPY_PAGESPAN) && !defined(CONFIG_ARCH_THREAD_STACK_ALLOCATOR) && (THREAD_SIZE >= PAGE_SIZE || defined(CONFIG_VMAP_STACK))
+	/* Check for bad stack object. */
+	switch (check_stack_object(ptr, n)) {
+	case NOT_STACK:
+		/* Object is not touching the current process stack. */
+		break;
+	case GOOD_FRAME:
+	case GOOD_STACK:
+		/*
+		 * Object is either in the correct frame (when it
+		 * is possible to check) or just generally on the
+		 * process stack (when frame checking not available).
+		 */
+		return;
+	default:
+		err = "<process stack>";
+		goto report;
+	}
+
+	/* Check for bad heap object. */
+	err = check_heap_object(ptr, n, to_user);
+	if (err)
+		goto report;
+#else
 	/* Check for bad heap object. */
 	err = check_heap_object(ptr, n, to_user);
 	if (err)
@@ -266,6 +292,7 @@ void __check_object_size(const void *ptr, unsigned long n, bool to_user)
 		err = "<process stack>";
 		goto report;
 	}
+#endif
 
 	/* Check for object in kernel to avoid text exposure. */
 	err = check_kernel_text_object(ptr, n);

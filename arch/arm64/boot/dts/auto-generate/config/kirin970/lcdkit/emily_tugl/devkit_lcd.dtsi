@@ -8,6 +8,7 @@
 /include/ "emily_tugl_auo_otm1901a_5p2_1080p_video_default_1.dtsi"
 /include/ "emily_tugl_auo_otm1901a_5p2_1080p_video_default_2.dtsi"
 /include/ "emily_tugl_boe_hx83112a_5p82_1080plus_video.dtsi"
+/include/ "emily_tugl_boe_hx83112e_5p82_1080plus_cmd.dtsi"
 /include/ "emily_tugl_jdi_hx83112a_5p82_1080plus_video.dtsi"
 /include/ "emily_tugl_jdi_hx83112c_5p82_1080plus_cmd.dtsi"
 /include/ "emily_tugl_jdi_hx83112c_cut2_5p82_1080plus_cmd.dtsi"

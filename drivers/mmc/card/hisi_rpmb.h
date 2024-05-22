@@ -158,19 +158,13 @@ enum rpmb_state {
 
 struct request_info {
 	unsigned int func_id;
-	unsigned int rqst_type;
-	unsigned int base;
 	unsigned int blks;
-	unsigned char *src_buf;
-	unsigned char *des_buf;
-	unsigned int counter;
 	enum rpmb_state state;
 	uint8_t rpmb_region_num;
 	struct _current_rqst {
 		unsigned int offset; /* offset upon to request_info.base */
 		unsigned int blks;   /* current request size */
 	} current_rqst;
-	void (*issue_fn)(uint64_t result);
 };
 
 #define RPMB_BLK_SZ (512)
@@ -186,6 +180,7 @@ struct rpmb_request {
 	unsigned char hmac_buf[MAX_HAMC_BUF_SZ];
 	struct rpmb_frame status_frame;
 	struct rpmb_frame key_frame;
+	struct rpmb_frame error_frame;
 	struct request_info info;
 	uint16_t key_frame_status;
 	uint16_t rpmb_request_status;
@@ -198,7 +193,7 @@ struct rpmb_request {
 		uint64_t test_hisee_atf_read_time;
 		uint64_t test_hisee_atf_write_time;
 		uint64_t test_hisee_atf_counter_time;
-		uint32_t key_id;
+		uint32_t key_num;
 		uint32_t func_id;
 		uint16_t start;
 		uint16_t block_count;

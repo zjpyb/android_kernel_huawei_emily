@@ -37,6 +37,10 @@ HWLOG_REGIST();
 #define LOG_LEVEL_FATAL 0
 /* Number of z-axis samples required by FingerSense at 1.6KHz ODR */
 #define FINGERSENSE_DATA_NSAMPLES 128
+#define HALL_ONE_DATA_NUM 4   //number type of one ext_hall data
+#define HALL_DATA_NUM 3
+#define MAX_EXT_HALL_VALUE 3
+#define SLIDE_HALL_TYPE 1
 
 #define MAX_SEND_LEN (32)
 struct link_package {
@@ -64,6 +68,12 @@ struct mcu_notifier {
 	struct workqueue_struct *mcu_notifier_wq;
 };
 
+static struct {
+	int ext_hall_adapt;
+	int ext_hall_value[HALL_ONE_DATA_NUM];
+} ext_hall_table[] = {
+    { 0, {1, 0, 2, -1}},
+};
 
 #define OFFSET(struct_t, member)                    offsetof(struct_t, member)
 #define OFFSET_OF_END_MEM(struct_t, member)         ((unsigned long)(&(((struct_t *)0)->member) + 1))
@@ -111,7 +121,7 @@ struct sensor_status {
 	char gyro_selfTest_result[5];
 	char mag_selfTest_result[5];
 	char accel_selfTest_result[5];
-	char gps_4774_i2c_selfTest_result[5];
+	char connectivity_selfTest_result[5];
 	char handpress_selfTest_result[5];
 	char selftest_result[TAG_SENSOR_END][5];
 	int gyro_ois_status;

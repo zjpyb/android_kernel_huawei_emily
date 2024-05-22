@@ -50,12 +50,40 @@
 #define  FP_IOC_CMD_SET_WAKELOCK_STATUS  _IO(FP_IOC_MAGIC, 5)
 #define  FP_IOC_CMD_SEND_SENSORID      _IO(FP_IOC_MAGIC, 6)
 #define  FP_IOC_CMD_SET_IPC_WAKELOCKS      _IO(FP_IOC_MAGIC, 7)
+#define  FP_IOC_CMD_CHECK_HBM_STATUS      _IO(FP_IOC_MAGIC, 8)
+#define  FP_IOC_CMD_RESET_HBM_STATUS      _IO(FP_IOC_MAGIC, 9)
+#define  FP_IOC_CMD_SET_POWEROFF     _IO(FP_IOC_MAGIC,10)
+#define  FP_IOC_CMD_GET_BIGDATA     _IO(FP_IOC_MAGIC,11)
+//define sensor_id_ud length
+#define MAX_SENSOR_ID_UD_LENGTH (20)
 
 enum module_vendor_info
 {
     MODULEID_LOW = 0,
     MODULEID_HIGT,
     MODULEID_FLOATING,
+};
+
+enum hbm_status
+{
+    HBM_ON = 0,
+    HBM_NONE,
+};
+enum fp_irq_scheme
+{
+    FP_IRQ_SCHEME_ONE = 1,
+};
+enum fp_poweroff_scheme
+{
+    FP_POWEROFF_SCHEME_ONE = 1,
+    FP_POWEROFF_SCHEME_TWO = 2,
+};
+enum fp_custom_timing_scheme
+{
+    fp_CUSTOM_TIMING_SCHEME_ONE = 1,
+    fp_CUSTOM_TIMING_SCHEME_TWO = 2,
+    fp_CUSTOM_TIMING_SCHEME_THREE = 3,
+    fp_CUSTOM_TIMING_SCHEME_FOUR = 4,
 };
 
 // Defined in vendor/huawei/chipset_common/devkit/tpkit/huawei_ts_kit.h
@@ -66,6 +94,12 @@ typedef enum {
     /* add event before here */
     TS_EVENT_MAX,           /* max event type */
 } ts_notify_event_type;
+
+typedef struct {
+    int lcd_charge_time;
+    int lcd_on_time;
+    int cpu_wakeup_time;
+} fingerprint_bigdata_t;
 
 struct fp_data
 {
@@ -103,13 +137,19 @@ struct fp_data
     bool wakeup_enabled;
     bool read_image_flag;
     unsigned int sensor_id;
+    char sensor_id_ud[MAX_SENSOR_ID_UD_LENGTH];
     struct pinctrl* pctrl;
     struct pinctrl_state* pins_default;
     struct pinctrl_state* pins_idle;
     char module_id[64];
     char module_id_ud[64];
     bool irq_enabled;
+    bool irq_sensorhub_enabled;
     unsigned int pen_anti_enable;
+    int hbm_status;
+    wait_queue_head_t hbm_queue;
+    unsigned int irq_custom_scheme;
+    fingerprint_bigdata_t fingerprint_bigdata;
 };
 
 #ifdef CONFIG_LLT_TEST

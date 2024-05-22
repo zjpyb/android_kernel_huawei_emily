@@ -181,22 +181,18 @@ typedef TAF_VOID (*AT_QRY_PARA_PROC_FUNC)(TAF_UINT8   ucIndex,
                                           TAF_UINT8   OpId,
                                           TAF_VOID    *pPara);
 
-/*lint -e958 -e959 修改人:l60609;原因:64bit*/
 typedef struct
 {
     VOS_UINT32                          QueryType;                              /* 查询类型 */
     AT_QRY_PARA_PROC_FUNC               AtQryParaProcFunc;                      /* 查询类型对应的处理函数 */
 }AT_QUERY_TYPE_FUNC_STRU;
-/*lint +e958 +e959 修改人:l60609;原因:64bit*/
 
-/* Added by f62575 for V9R1 STK升级, 2013-6-26, begin */
 
 typedef struct
 {
     TAF_MSG_ERROR_ENUM_UINT32           enMsgErrorCode;
     AT_RRETURN_CODE_ENUM_UINT32         enAtErrorCode;
 }AT_SMS_ERROR_CODE_MAP_STRU;
-/* Added by f62575 for V9R1 STK升级, 2013-6-26, end */
 
 
 typedef struct
@@ -1065,12 +1061,10 @@ VOS_UINT32 AT_RcvTafPsEvtReportRaInfo(
 
 #endif
 
-/* Added by l60609 for PS Project,2012-12-21,Begin */
 VOS_UINT32 AT_RcvTafPsEvtPdpDisconnectInd(
     VOS_UINT8                           ucIndex,
     VOS_VOID                           *pEvtInfo
 );
-/* Added by l60609 for PS Project,2012-12-21,End */
 
 VOS_VOID AT_QryParaRspCeregProc(
     VOS_UINT8                           ucIndex,
@@ -1111,20 +1105,16 @@ VOS_VOID AT_ConvertNasMccToBcdType(
 );
 
 
-/* Added by L60609 for V7R1C50 AT&T&DCM, 2012-6-19, begin */
 VOS_VOID AT_RcvMmaNsmStatusInd(
     TAF_UINT8                           ucIndex,
     TAF_PHONE_EVENT_INFO_STRU          *pEvent
 );
-/* Added by L60609 for V7R1C50 AT&T&DCM, 2012-6-19, end */
 
-/* Modified by l60609 for DSDA Phase III, 2013-3-5, Begin */
 VOS_UINT32 AT_CheckRptCmdStatus(
     VOS_UINT8                          *pucRptCfg,
     AT_CMD_RPT_CTRL_TYPE_ENUM_UINT8     enRptCtrlType,
     AT_RPT_CMD_INDEX_ENUM_UINT8         enRptCmdIndex
 );
-/* Modified by l60609 for DSDA Phase III, 2013-3-5, End */
 
 VOS_VOID AT_ReportCCallstateResult(
     VOS_UINT16                          usClientId,
@@ -1164,8 +1154,6 @@ VOS_VOID AT_RcvMmaRssiChangeInd(
 );
 
 
-
-/* Added by k902809 for Iteration 11, 2015-3-26, begin */
 VOS_VOID AT_PhNetScanReportSuccess(
     VOS_UINT8                           ucIndex,
     TAF_MMA_NET_SCAN_CNF_STRU          *pstNetScanCnf
@@ -1180,10 +1168,6 @@ TAF_UINT32 AT_ProcOperModeWhenLteOn(VOS_UINT8 ucIndex);
 
 VOS_VOID AT_RcvMnCallChannelInfoInd(VOS_VOID *pEvtInfo);
 
-
-/* Deleted by k902809 for Iteration 11, 2015-3-30, begin */
-
-/* Deleted by k902809 for Iteration 11, Iteration 11 2015-3-30, end */
 
 /*****************************************************************************
  函 数 名  : At_RcvXlemaQryCnf
@@ -1210,9 +1194,7 @@ VOS_UINT32 AT_GetSsEventErrorCode(
     VOS_UINT8                           ucIndex,
     TAF_SS_CALL_INDEPENDENT_EVENT_STRU *pEvent);
 
-/* Deleted by k902809 for Iteration 11, 2015-3-27, begin */
 
-/* Deleted by k902809 for Iteration 11, Iteration 11 2015-3-27, end */
 
 VOS_UINT32 At_QryParaPlmnListProc(
     VOS_VOID                           *pMsg
@@ -1254,12 +1236,7 @@ VOS_VOID AT_RcvTafCallStopDtmfRslt(
     MN_AT_IND_EVT_STRU                 *pstData
 );
 
-/* Added by x65241 for ACC&SPLMN, 2013-10-15 Begin */
 VOS_VOID AT_PhEOPlmnQueryCnfProc(TAF_UINT8 *pData);
-/* Deleted by k902809 for Iteration 11, 2015-3-24, begin */
-
-/* Deleted by k902809 for Iteration 11, Iteration 11 2015-3-24, end */
-/* Added by x65241 for ACC&SPLMN, 2013-10-15 End */
 
 extern VOS_VOID AtBase64Encode(const VOS_VOID* pdata,const VOS_UINT32 data_size,VOS_VOID* out_pcode);
 

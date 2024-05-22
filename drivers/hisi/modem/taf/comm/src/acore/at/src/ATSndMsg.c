@@ -81,11 +81,9 @@ VOS_UINT32  AT_FillAppReqMsgHeader(
     pAppMsgHeader->opId                 = ucOpId;
     pAppMsgHeader->usMsgName            = usMsgType;
     pAppMsgHeader->ulSenderPid          = WUEPS_PID_AT;
-    /* Added by l60609 for DSDA Phase II, 2012-12-17, Begin */
     pAppMsgHeader->ulReceiverPid        = AT_GetDestPid(usClientId, ulRcvPid);
     pAppMsgHeader->ulSenderCpuId        = VOS_LOCAL_CPUID;
     pAppMsgHeader->ulReceiverCpuId      = VOS_LOCAL_CPUID;
-    /* Added by l60609 for DSDA Phase II, 2012-12-17, End */
 
     return VOS_OK;
 }

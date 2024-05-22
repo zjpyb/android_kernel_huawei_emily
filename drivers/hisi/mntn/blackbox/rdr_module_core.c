@@ -11,8 +11,11 @@
 #include <linux/spinlock.h>
 #include <linux/list.h>
 #include <linux/slab.h>
+#include <linux/export.h>
 
 #include <linux/hisi/rdr_pub.h>
+#include <linux/hisi/hisi_log.h>
+#define HISI_LOG_TAG HISI_BLACKBOX_TAG
 #include "rdr_inner.h"
 #include "rdr_field.h"
 #include "rdr_print.h"
@@ -39,13 +42,13 @@ static void __rdr_register_module_ops(struct rdr_module_ops_s *ops)
 	unsigned long lock_flag;
 	BB_PRINT_START();
 	if (ops == NULL) {
-		BB_PRINT_PN("invalid  parameter. ops:%pK\n", ops);
+		BB_PRINT_ERR("invalid  parameter. ops:%pK\n", ops);
 		BB_PRINT_END();
 		return;
 	}
 	spin_lock_irqsave(&__rdr_module_ops_list_lock, lock_flag);
 	if (list_empty(&__rdr_module_ops_list)) {
-		BB_PRINT_ERR("list_add_tail coreid is [0x%llx]\n",
+		BB_PRINT_DBG("list_add_tail coreid is [0x%llx]\n",
 			     ops->s_core_id);
 		list_add_tail(&(ops->s_list), &__rdr_module_ops_list);
 		goto out;
@@ -54,13 +57,13 @@ static void __rdr_register_module_ops(struct rdr_module_ops_s *ops)
 	list_for_each_safe(cur, next, &__rdr_module_ops_list) {
 		p_info = list_entry(cur, struct rdr_module_ops_s, s_list);
 		if (ops->s_core_id > p_info->s_core_id) {
-			BB_PRINT_ERR("list_add2 coreid is [0x%llx]\n",
+			BB_PRINT_DBG("list_add2 coreid is [0x%llx]\n",
 				     ops->s_core_id);
 			list_add(&(ops->s_list), cur);
 			goto out;
 		}
 	}
-	BB_PRINT_ERR("list_add_tail2 coreid is [0x%llx]\n", ops->s_core_id);
+	BB_PRINT_DBG("list_add_tail2 coreid is [0x%llx]\n", ops->s_core_id);
 	list_add_tail(&(ops->s_list), &__rdr_module_ops_list);
 out:
 	spin_unlock_irqrestore(&__rdr_module_ops_list_lock, lock_flag);
@@ -86,7 +89,7 @@ u64 rdr_check_coreid(u64 core_id)
 	list_for_each_safe(cur, next, &__rdr_module_ops_list) {
 		p_module_ops = list_entry(cur, struct rdr_module_ops_s, s_list);
 		if (p_module_ops == NULL) {
-			BB_PRINT_DBG("It might be better to look around here. %s:%d\n",
+			BB_PRINT_ERR("It might be better to look around here. %s:%d\n",
 			     __func__, __LINE__);
 			continue;
 		}
@@ -154,6 +157,12 @@ int rdr_get_module_info(u64 coreid, struct rdr_register_module_result *retinfo)
 	case RDR_NPU:
 		ret = rdr_get_areainfo(RDR_AREA_NPU, retinfo);
 		break;
+	case RDR_CONN:
+		ret = rdr_get_areainfo(RDR_AREA_CONN, retinfo);
+		break;
+	case RDR_EXCEPTION_TRACE:
+		ret = rdr_get_areainfo(RDR_AREA_EXCEPTION_TRACE, retinfo);
+		break;
 	default:
 		ret = -1;
 	}
@@ -188,12 +197,12 @@ int rdr_register_module_ops(u64 coreid,
 		return ret;
 	}
 	if (ops == NULL) {
-		BB_PRINT_PN("invalid  parameter. ops:%pK\n", ops);
+		BB_PRINT_ERR("invalid  parameter. ops:%pK\n", ops);
 		BB_PRINT_END();
 		return ret;
 	}
 	if (ops->ops_dump == NULL && ops->ops_reset == NULL) {
-		BB_PRINT_PN("invalid  parameter. ops.dump or reset:%pK\n", ops);
+		BB_PRINT_ERR("invalid  parameter. ops.dump or reset:%pK\n", ops);
 		BB_PRINT_END();
 		return ret;
 	}
@@ -205,7 +214,7 @@ int rdr_register_module_ops(u64 coreid,
 	}
 	p_module_ops = kmalloc(sizeof(struct rdr_module_ops_s), GFP_ATOMIC);
 	if (p_module_ops == NULL) {
-		BB_PRINT_PN("kmalloc error, e_tpye_info\n");
+		BB_PRINT_ERR("kmalloc error, e_tpye_info\n");
 		BB_PRINT_END();
 		return ret;
 	}
@@ -220,10 +229,11 @@ int rdr_register_module_ops(u64 coreid,
 	rdr_add_cur_regcore(coreid);
 
 	ret = rdr_get_module_info(coreid, retinfo);
-	BB_PRINT_ERR("rdr_register_module_ops success.\n");
+	BB_PRINT_DBG("rdr_register_module_ops success.\n");
 	BB_PRINT_END();
 	return ret;
 }
+EXPORT_SYMBOL(rdr_register_module_ops);
 
 /*
  * func name: rdr_unregister_module_ops
@@ -245,7 +255,7 @@ int rdr_unregister_module_ops(u64 coreid)
 	list_for_each_safe(cur, next, &__rdr_module_ops_list) {
 		p_module_ops = list_entry(cur, struct rdr_module_ops_s, s_list);
 		if (p_module_ops == NULL) {
-			BB_PRINT_DBG("It might be better to look around here. %s:%d\n",
+			BB_PRINT_ERR("It might be better to look around here. %s:%d\n",
 			     __func__, __LINE__);
 			continue;
 		}
@@ -260,6 +270,7 @@ int rdr_unregister_module_ops(u64 coreid)
 	BB_PRINT_END();
 	return 0;
 }
+EXPORT_SYMBOL(rdr_unregister_module_ops);
 
 static u64 current_coremk;
 static u32 current_modid;
@@ -294,7 +305,7 @@ static inline u32 get_curr_modid(void)
 void rdr_dump_done(u32 modid, u64 coreid)
 {
 	BB_PRINT_START();
-	BB_PRINT_ERR("%s: modid:[0x%x], coreid:[0x%llx]\n",
+	BB_PRINT_PN("%s: modid:[0x%x], coreid:[0x%llx]\n",
 		     __func__, modid, coreid);
 	if (modid != get_curr_modid()) {
 		BB_PRINT_ERR("%s: invaild modid!!!\n", __func__);
@@ -306,7 +317,7 @@ void rdr_dump_done(u32 modid, u64 coreid)
 		return;
 	}
 	current_mask |= coreid;
-	BB_PRINT_ERR("rdr_dump_done current mask:[0x%llx]\n", current_mask);
+	BB_PRINT_PN("rdr_dump_done current mask:[0x%llx]\n", current_mask);
 	BB_PRINT_END();
 }
 
@@ -321,12 +332,12 @@ u64 rdr_get_dump_result(u32 modid)
 {
 	BB_PRINT_START();
 	if (modid != get_curr_modid()) {
-		BB_PRINT_DBG("invalid modid :[0x%x]:[0x%x]\n",
+		BB_PRINT_PN("invalid modid :[0x%x]:[0x%x]\n",
 			     modid, get_curr_modid());
 		BB_PRINT_END();
 		return 0;
 	}
-	BB_PRINT_DBG("current mask:[0x%llx]\n", current_mask);
+	BB_PRINT_PN("current mask:[0x%llx]\n", current_mask);
 	BB_PRINT_END();
 	return current_mask;
 }
@@ -352,7 +363,7 @@ void rdr_notify_module_reset(u32 modid, struct rdr_exception_info_s *e_info)
 	BB_PRINT_START();
 
 	if (e_info == NULL) {
-		BB_PRINT_PN("invalid  parameter. e:%pK\n", e_info);
+		BB_PRINT_ERR("invalid  parameter. e:%pK\n", e_info);
 		BB_PRINT_END();
 		return;
 	}
@@ -361,15 +372,15 @@ void rdr_notify_module_reset(u32 modid, struct rdr_exception_info_s *e_info)
 	list_for_each_safe(cur, next, &__rdr_module_ops_list) {
 		p_module_ops = list_entry(cur, struct rdr_module_ops_s, s_list);
 		if (p_module_ops == NULL) {
-			BB_PRINT_DBG("It might be better to look around here. %s:%d\n",
+			BB_PRINT_ERR("It might be better to look around here. %s:%d\n",
 			     __func__, __LINE__);
 			continue;
 		}
-		BB_PRINT_ERR("p_module_ops->s_core_id is [0x%llx]\n",
+		BB_PRINT_PN("p_module_ops->s_core_id is [0x%llx]\n",
 			     p_module_ops->s_core_id);
 		/* 针对AP复位的特殊处理 */
 		if (p_module_ops->s_core_id == RDR_AP) {
-			BB_PRINT_ERR("reboot priority[%s], need reboot flag[%s]"
+			BB_PRINT_PN("reboot priority[%s], need reboot flag[%s]"
 				     " syserr list[%s], coreid mask[0x%llx]\n",
 				     e_info->e_reboot_priority == RDR_REBOOT_NOW ? "Now" : "Later",
 				     rdr_reboot_later_flag == true ? "true" : "false",
@@ -382,7 +393,7 @@ void rdr_notify_module_reset(u32 modid, struct rdr_exception_info_s *e_info)
 			if (e_info->e_reboot_priority == RDR_REBOOT_NOW ||
 			    ((rdr_reboot_later_flag || (mask & p_module_ops->s_core_id))
 			     && rdr_syserr_list_empty())) {
-				BB_PRINT_ERR("reboot now!\n");
+				BB_PRINT_PN("reboot now!\n");
 				spin_unlock_irqrestore(&__rdr_module_ops_list_lock, lock_flag);
 				(*(p_module_ops->s_ops.ops_reset)) (modid,
 								    e_info->e_exce_type, 
@@ -390,19 +401,19 @@ void rdr_notify_module_reset(u32 modid, struct rdr_exception_info_s *e_info)
 				spin_lock_irqsave(&__rdr_module_ops_list_lock, lock_flag);
 			} else if ((mask & p_module_ops->s_core_id)
 				   && !rdr_syserr_list_empty()) {
-				BB_PRINT_ERR("reboot later!\n");
+				BB_PRINT_PN("reboot later!\n");
 				rdr_reboot_later_flag = true;
 			}
 		} else if ((mask & p_module_ops->s_core_id) &&
 			   (p_module_ops->s_ops.ops_reset != NULL)) {
-			BB_PRINT_ERR("reset module [%s] start!\n",
+			BB_PRINT_PN("reset module [%s] start!\n",
 				     rdr_get_exception_core(p_module_ops->s_core_id));
 			spin_unlock_irqrestore(&__rdr_module_ops_list_lock, lock_flag);
 			(*(p_module_ops->s_ops.ops_reset)) (modid,
 							    e_info->e_exce_type,
 							    e_info->e_from_core);
 			spin_lock_irqsave(&__rdr_module_ops_list_lock, lock_flag);
-			BB_PRINT_ERR("reset module [%s] end!\n",
+			BB_PRINT_PN("reset module [%s] end!\n",
 				     rdr_get_exception_core(p_module_ops->s_core_id));
 		}
 	}
@@ -433,7 +444,7 @@ u64 rdr_notify_onemodule_dump(u32 modid, u64 core, u32 type,
 	BB_PRINT_START();
 
 	if (path == NULL) {
-		BB_PRINT_PN("invalid  parameter. path:%pK\n", path);
+		BB_PRINT_ERR("invalid  parameter. path:%pK\n", path);
 		BB_PRINT_END();
 		return 0;
 	}
@@ -441,16 +452,16 @@ u64 rdr_notify_onemodule_dump(u32 modid, u64 core, u32 type,
 	list_for_each_safe(cur, next, &__rdr_module_ops_list) {
 		p_module_ops = list_entry(cur, struct rdr_module_ops_s, s_list);
 		if (p_module_ops == NULL) {
-			BB_PRINT_DBG("It might be better to look around here. %s:%d\n",
+			BB_PRINT_ERR("It might be better to look around here. %s:%d\n",
 			     __func__, __LINE__);
 			continue;
 		}
-		BB_PRINT_DBG
+		BB_PRINT_PN
 		    ("[%s][%d]core is [%llx],p_module_ops->s_core_id is [%llx]\n",
 		     __func__, __LINE__, core, p_module_ops->s_core_id);
 		if ((core & p_module_ops->s_core_id)
 		    && (p_module_ops->s_ops.ops_dump != NULL)) {
-			BB_PRINT_ERR("dump module data [%s] start!\n",
+			BB_PRINT_PN("dump module data [%s] start!\n",
 				     rdr_get_exception_core(p_module_ops->
 							    s_core_id));
 			spin_unlock_irqrestore(&__rdr_module_ops_list_lock,
@@ -460,7 +471,7 @@ u64 rdr_notify_onemodule_dump(u32 modid, u64 core, u32 type,
 							   rdr_dump_done);
 			spin_lock_irqsave(&__rdr_module_ops_list_lock,
 					  lock_flag);
-			BB_PRINT_ERR("dump module data [%s] end!\n",
+			BB_PRINT_PN("dump module data [%s] end!\n",
 				     rdr_get_exception_core(p_module_ops->
 							    s_core_id));
 			/*spin_unlock(&__rdr_module_ops_list_lock);*/
@@ -496,7 +507,7 @@ u64 rdr_notify_module_dump(u32 modid, struct rdr_exception_info_s *e_info,
 
 	BB_PRINT_START();
 	if (e_info == NULL) {
-		BB_PRINT_PN("invalid  parameter. e:%pK, p:%pK\n", e_info, path);
+		BB_PRINT_ERR("invalid  parameter. e:%pK, p:%pK\n", e_info, path);
 		BB_PRINT_END();
 		return ret;
 	}
@@ -506,7 +517,7 @@ u64 rdr_notify_module_dump(u32 modid, struct rdr_exception_info_s *e_info,
 	list_for_each_safe(cur, next, &__rdr_module_ops_list) {
 		p_module_ops = list_entry(cur, struct rdr_module_ops_s, s_list);
 		if (p_module_ops == NULL) {
-			BB_PRINT_DBG("It might be better to look around here. %s:%d\n",
+			BB_PRINT_ERR("It might be better to look around here. %s:%d\n",
 			     __func__, __LINE__);
 			continue;
 		}
@@ -517,14 +528,14 @@ u64 rdr_notify_module_dump(u32 modid, struct rdr_exception_info_s *e_info,
 		 */
 		if ( (!ret && e_info->e_from_core != p_module_ops->s_core_id)
 				||(ret && (e_info->e_from_core == p_module_ops->s_core_id)) ) {
-			BB_PRINT_DBG("Skip module core [0x%llx]. %s:%d\n",
+			BB_PRINT_PN("Skip module core [0x%llx]. %s:%d\n",
 				p_module_ops->s_core_id, __func__, __LINE__);
 			continue;
 		}
 
 		if ((mask & p_module_ops->s_core_id) &&
 		    (p_module_ops->s_ops.ops_dump != NULL)) {
-			BB_PRINT_ERR("dump module data [%s] start!\n",
+			BB_PRINT_PN("dump module data [%s] start!\n",
 				     rdr_get_exception_core(p_module_ops->s_core_id));
 			spin_unlock_irqrestore(&__rdr_module_ops_list_lock,
 					       lock_flag);
@@ -534,7 +545,7 @@ u64 rdr_notify_module_dump(u32 modid, struct rdr_exception_info_s *e_info,
 					rdr_dump_done);
 			spin_lock_irqsave(&__rdr_module_ops_list_lock,
 					  lock_flag);
-			BB_PRINT_ERR("dump module data [%s] end!\n",
+			BB_PRINT_PN("dump module data [%s] end!\n",
 				     rdr_get_exception_core(p_module_ops->s_core_id));
 			ret |= p_module_ops->s_core_id;
 		}
@@ -570,18 +581,18 @@ void rdr_print_all_ops(void)
 	list_for_each_safe(cur, next, &__rdr_module_ops_list) {
 		p_module_ops = list_entry(cur, struct rdr_module_ops_s, s_list);
 		if (p_module_ops == NULL) {
-			BB_PRINT_DBG("It might be better to look around here. %s:%d\n",
+			BB_PRINT_ERR("It might be better to look around here. %s:%d\n",
 			     __func__, __LINE__);
 			continue;
 		}
-		BB_PRINT_DBG("==========[%.2d]-start==========\n", index);
-		BB_PRINT_DBG(" core-id:        [0x%llx]\n",
+		BB_PRINT_PN("==========[%.2d]-start==========\n", index);
+		BB_PRINT_PN(" core-id:        [0x%llx]\n",
 			     p_module_ops->s_core_id);
-		BB_PRINT_DBG(" dump-fn:        [0x%pK]\n",
+		BB_PRINT_PN(" dump-fn:        [0x%pK]\n",
 			     p_module_ops->s_ops.ops_dump);
-		BB_PRINT_DBG(" reset-fn:       [0x%pK]\n",
+		BB_PRINT_PN(" reset-fn:       [0x%pK]\n",
 			     p_module_ops->s_ops.ops_reset);
-		BB_PRINT_DBG("==========[%.2d]-e n d==========\n", index);
+		BB_PRINT_PN("==========[%.2d]-e n d==========\n", index);
 		index++;
 	}
 	spin_unlock(&__rdr_module_ops_list_lock);

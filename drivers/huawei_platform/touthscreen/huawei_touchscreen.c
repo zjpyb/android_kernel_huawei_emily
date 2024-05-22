@@ -52,6 +52,8 @@
 static struct mutex easy_wake_guesure_lock;
 
 #define	EDGE_WIDTH_DEFAULT	10
+#define BUFFER1_LEN  6
+#define BUFFER2_LEN  50
 
 #if defined (CONFIG_HUAWEI_DSM)
 static struct dsm_dev dsm_tp = {
@@ -661,10 +663,14 @@ ssize_t ts_calibration_info_show(struct device *dev, struct device_attribute *at
 	}
 	error = snprintf(buf, PAGE_SIZE, "%d\n", info->calibration_crc);
 out:
-	if (cmd)
+	if (cmd){
 		kfree(cmd);
-	if (info)
+		cmd =NULL;
+	}
+	if (info){
 		kfree(info);
+		info =NULL;
+	}
 	TS_LOG_INFO("%s done\n", __FUNCTION__);
 
 	return error;
@@ -767,10 +773,14 @@ static ssize_t ts_oem_info_show(struct device *dev, struct device_attribute *att
 		}
 
 	out:
-		if (cmd)
+		if (cmd){
 			kfree(cmd);
-		if (info)
+			cmd =NULL;
+		}
+		if (info){
 			kfree(info);
+			info =NULL;
+		}
 		TS_LOG_DEBUG("%s done\n", __func__);
 		return error;
 }
@@ -842,10 +852,14 @@ ssize_t ts_ome_info_store(struct device *dev, struct device_attribute *attr,
 
 	error = count;
 out:
-	if (cmd)
+	if (cmd){
 		kfree(cmd);
-	if (info)
+		cmd =NULL;
+	}
+	if (info){
 		kfree(info);
+		info =NULL;
+	}
 	TS_LOG_DEBUG("%s: done\n",  __func__);
 	return error;
 }
@@ -904,8 +918,10 @@ ssize_t ts_chip_info_show(struct device *dev, struct device_attribute *attr,
 			     info->fw_vendor);
 	}
 out:
-	if (cmd)
+	if (cmd){
 		kfree(cmd);
+		cmd = NULL;
+	}
 	TS_LOG_DEBUG("ts_chip_info_show done\n");
 	return error;
 }
@@ -963,10 +979,14 @@ ssize_t ts_chip_info_store(struct device *dev, struct device_attribute *attr,
 	}
 	error = count;
 out:
-	if (cmd)
+	if (cmd){
 		kfree(cmd);
-	if (info)
+		cmd =NULL;
+	}
+	if (info){
 		kfree(info);
+		info =NULL;
+	}
 	TS_LOG_DEBUG("ts_chip_info_store done\n");
 	return error;
 }
@@ -1008,8 +1028,10 @@ static ssize_t ts_dsm_debug_show(struct device *dev,
 		error = snprintf(buf, MAX_STR_LEN, "%s\n", "failed");
 
 out:
-	if (cmd)
+	if (cmd){
 		kfree(cmd);
+		cmd = NULL;
+	}
 	TS_LOG_DEBUG("ts_debug_show done\n");
 	return error;
 }
@@ -1054,8 +1076,10 @@ static ssize_t ts_calibrate_wakeup_gesture_show(struct device *dev,
 		error = snprintf(buf, MAX_STR_LEN, "%s\n", "failed");
 
 out:
-	if (cmd)
+	if (cmd){
 		kfree(cmd);
+		cmd = NULL;
+	}
 	TS_LOG_DEBUG("%s done\n", __func__);
 	return error;
 }
@@ -1103,8 +1127,10 @@ static ssize_t ts_calibrate_show(struct device *dev,
 		error = snprintf(buf, MAX_STR_LEN, "%s\n", "failed");
 
 out:
-	if (cmd)
+	if (cmd){
 		kfree(cmd);
+		cmd = NULL;
+	}
 	TS_LOG_DEBUG("ts_calibrate_show done\n");
 	return error;
 }
@@ -1179,10 +1205,14 @@ static ssize_t ts_glove_mode_show(struct device *dev,
 		error = -EFAULT;
 
 out:
-	if (cmd)
+	if (cmd){
 		kfree(cmd);
-	if (info)
+		cmd =NULL;
+	}
+	if (info){
 		kfree(info);
+		info =NULL;
+	}
 	TS_LOG_DEBUG("ts_glove_mode_show done\n");
 	return error;
 }
@@ -1246,8 +1276,10 @@ static ssize_t ts_glove_mode_store(struct device *dev,
 	error = count;
 
 out:
-	if (cmd)
+	if (cmd){
 		kfree(cmd);
+		cmd = NULL;
+	}
 	TS_LOG_DEBUG("ts_glove_mode_store done\n");
 	return error;
 }
@@ -1313,6 +1345,7 @@ static int ts_wakeup_gesture_enable_cmd(u8 switch_value)
 	}
 
 out:
+
 	return error;
 }
 
@@ -1335,7 +1368,7 @@ static int ts_send_init_cmd(void)
 	return error;
 }
 
-static int proc_init_cmd(void){
+static void proc_init_cmd(void){
 	schedule_work(&tp_init_work);
 	return;
 }
@@ -1600,10 +1633,14 @@ static ssize_t ts_hand_detect_show(struct device *dev,
 		error = -EFAULT;
 
 out:
-	if (cmd)
+	if (cmd){
 		kfree(cmd);
-	if (info)
+		cmd =NULL;
+	}
+	if (info){
 		kfree(info);
+		info =NULL;
+	}
 	TS_LOG_DEBUG("done\n");
 	return error;
 }
@@ -1730,6 +1767,7 @@ static ssize_t ts_fw_update_sd_store(struct device *dev,
 		TS_LOG_ERR("ts_fw_update_sd_store failed:%d\n", error);
 	}
 	TS_LOG_INFO("ts_fw_update_sd_store done\n");
+
 	return count;
 }
 
@@ -1949,12 +1987,16 @@ static ssize_t ts_register_store(struct device *dev,
 	error = count;
 
 free_memory:
-	if (info)
+	if (info){
 		kfree(info);
-	if (cmd)
+		info = NULL;}
+	if (cmd){
 		kfree(cmd);
-	if (value)
+		cmd = NULL;
+	}
+	if (value){
 		kfree(value);
+		value = NULL;}
 out:
 	TS_LOG_INFO("ts_reg_operate_store done\n");
 	return error;
@@ -2065,7 +2107,7 @@ static ssize_t ts_easy_wakeup_gesture_store(struct device *dev,
 	ret = kstrtoul(buf, 10, &value);
 	if (ret < 0)
 		return ret;
-	if (value > TS_GESTURE_INVALID_COMMAND || value < 0)
+	if (value > TS_GESTURE_INVALID_COMMAND)
 		return -1;
 	info->easy_wakeup_gesture = (u16) value & TS_GESTURE_COMMAND;
 	info->palm_cover_flag =
@@ -2119,10 +2161,14 @@ static ssize_t ts_easy_wakeup_gesture_store(struct device *dev,
 	}
 	ret = size;
 out:
-	if (palm_info)
+	if (palm_info){
 		kfree(palm_info);
-	if (cmd)
+		palm_info =NULL;
+	}
+	if (cmd){
 		kfree(cmd);
+		cmd =NULL;
+	}
 	TS_LOG_DEBUG("ts gesture wakeup no done\n");
 
 	return ret;
@@ -2143,7 +2189,7 @@ static ssize_t ts_easy_wakeup_control_store(struct device *dev,
 	if (ret < 0)
 		return ret;
 
-	if (value > TS_GESTURE_INVALID_CONTROL_NO && value < 0)
+	if (value > TS_GESTURE_INVALID_CONTROL_NO )
 		return -1;
 
 	value = (u8) value & TS_GESTURE_COMMAND;
@@ -2181,6 +2227,9 @@ static ssize_t ts_easy_wakeup_position_show(struct device *dev,
 		    snprintf(temp, (sizeof(u32) * 2 + 1), "%08x",
 			     g_ts_data.chip_data->easy_wakeup_info.
 			     easywake_position[i]);
+		if(ret < 0){
+			TS_LOG_ERR("snprintf failed \n");
+		}
 		strncat(buf, temp, (sizeof(u32) * 2 + 1));
 	}
 	strncat(buf, "\n", 1);
@@ -2328,17 +2377,17 @@ static ssize_t ts_roi_data_debug_show(struct device *dev,
 
 	for (i = ROI_HEAD_DATA_LENGTH; i < ROI_DATA_READ_LENGTH; i += 2, j++) {
 		roi_data_16[j] = roi_data_p[i] | (roi_data_p[i + 1] << 8);
-		cnt = snprintf(buf, PAGE_SIZE - count, "%4d\t", roi_data_16[j]);
+		cnt = snprintf(buf, PAGE_SIZE - count -1, "%4d\t", roi_data_16[j]);
 		buf += cnt;
 		count += cnt;
 
 		if ((j + 1) % 7 == 0) {
-			cnt = snprintf(buf, PAGE_SIZE - count, "\n");
+			cnt = snprintf(buf, PAGE_SIZE - count - 1, "\n");
 			buf += cnt;
 			count += cnt;
 		}
 	}
-	snprintf(buf, PAGE_SIZE - count, "\n");
+	snprintf(buf, PAGE_SIZE - count - 1, "\n");
 	count++;
 	return count;
 }
@@ -2394,10 +2443,14 @@ static ssize_t ts_capacitance_test_type_show(struct device *dev,
 		error = -EFAULT;
 
 out:
-	if (cmd)
+	if (cmd){
 		kfree(cmd);
-	if (info)
+		cmd =NULL;
+	}
+	if (info){
 		kfree(info);
+		info =NULL;
+	}
 	TS_LOG_DEBUG("ts_touch_test_mode_show done\n");
 	return error;
 }
@@ -2462,16 +2515,16 @@ static ssize_t ts_rawdata_debug_test_show(struct device *dev,
 					  struct device_attribute *attr,
 					  char *buf)
 {
-	int index;
-	int index1;
+	int index = 0;
+	int index1 = 0;
 	int count = 0;
 	short row_size = 0;
 	int range_size = 0;
 	int error = NO_ERR;
 	struct ts_cmd_node *cmd = NULL;
 	struct ts_diff_data_info *info = NULL;
-	char buffer1[6];
-	char buffer2[50];
+	char buffer1[BUFFER1_LEN] = { 0 };
+	char buffer2[BUFFER2_LEN] = { 0 };
 
 	TS_LOG_INFO("ts_rawdata_debug_test_show called\n");
 
@@ -2514,6 +2567,10 @@ static ssize_t ts_rawdata_debug_test_show(struct device *dev,
 	count = count + 42;
 
 	row_size = info->buff[0];
+	if ((row_size <= 0) || (info->used_size) <= 0){
+		TS_LOG_ERR("%s data error! DO NOT surport this mode!", __func__);
+		goto out;
+	}
 	range_size = info->buff[1];
 	sprintf(buffer2, "rx: %d, tx : %d\n ", row_size, range_size);
 	strncat(buf, buffer2, strlen(buffer2));
@@ -2538,10 +2595,14 @@ static ssize_t ts_rawdata_debug_test_show(struct device *dev,
 	error = count;
 
 out:
-	if (info)
-		kfree(info);
-	if (cmd)
+	if (cmd){
 		kfree(cmd);
+		cmd =NULL;
+	}
+	if (info){
+		kfree(info);
+		info =NULL;
+	}
 
 	TS_LOG_INFO("ts_rawdata_debug_test_show done\n");
 	return error;
@@ -3887,9 +3948,9 @@ out:
 	if (!
 	    (atomic_read(&(g_rawdata_timeout_info.idle_flag)) ==
 	     TS_RAWDATA_WORK)) {
-		TS_LOG_INFO("rawdata_proc_show done:status=%d, result: %s\n",
+		if(info){
+			TS_LOG_INFO("rawdata_proc_show done:status=%d, result: %s\n",
 			    error, info->result);
-		if (info) {
 			kfree(info);
 			info = NULL;
 			g_rawdata_timeout_info.info = NULL;
@@ -3898,7 +3959,7 @@ out:
 		TS_LOG_ERR("rawdata_proc_show done:status=%d, timeout error!\n",
 			   error);
 	}
-	if (cmd) {
+	if (cmd){
 		kfree(cmd);
 		cmd = NULL;
 	}
@@ -4067,6 +4128,7 @@ static int calibration_proc_show(struct seq_file *m, void *v)
 
 out_free_cmd:
 	kfree(cmd);
+	cmd = NULL;
 out_free_info:
 	kfree(info);
 out:
@@ -4336,10 +4398,6 @@ static int fb_notifier_callback(struct notifier_block *self,
 					}
 				}
 			}
-			break;
-		default:
-			TS_LOG_DEBUG("resume: event = %lu, not care\n",
-				     event);
 			break;
 		}
 		break;
@@ -5889,7 +5947,11 @@ static long ts_ioctl_get_fingers_info(unsigned long arg)
 	}
 	/* wait event */
 	atomic_set(&g_ts_data.fingers_waitq_flag, AFT_WAITQ_WAIT);
-	down_interruptible(&g_ts_data.fingers_aft_send);
+	ret = down_interruptible(&g_ts_data.fingers_aft_send);
+	if(ret){
+		TS_LOG_ERR("ret of down_interruptible: %d\n",ret);
+	}
+	ret = 0;
 	if(atomic_read(&g_ts_data.fingers_waitq_flag) == AFT_WAITQ_WAIT)
 	{
 	      atomic_set(&g_ts_data.fingers_waitq_flag, AFT_WAITQ_IGNORE);
@@ -5961,7 +6023,7 @@ static long ts_ioctl_set_coordinates(unsigned long arg)
 
 	if(!input_dev){
 		TS_LOG_ERR("The command node or input device is not exist!\n");
-		return;
+		return -EINVAL;
 	}
 
 	//TS_LOG_ERR("[MUTI_AFT] ts_ioctl_set_coordinates enter\n");
@@ -6698,10 +6760,14 @@ void check_tp_calibration_info(void)
 		goto out;
 	}
 out:
-	if (cmd)
+	if (cmd){
 		kfree(cmd);
-	if (info)
+		cmd =NULL;
+	}
+	if (info){
 		kfree(info);
+		info =NULL;
+	}
 	TS_LOG_INFO("%s done\n", __FUNCTION__);
 
 	return error;

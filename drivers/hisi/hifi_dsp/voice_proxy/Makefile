@@ -2,7 +2,6 @@
 ifeq ($(CONFIG_HIFI_IPC_3650),y)
 EXTRA_CFLAGS += -DPLATFORM_HI3XXX
 EXTRA_CFLAGS += -DPLATFORM_HI365X
-EXTRA_CFLAGS += -DMULTI_MIC
 endif
 
 ifeq ($(CONFIG_HIFI_IPC_6250),y)
@@ -24,3 +23,4 @@ EXTRA_CFLAGS += -Idrivers/hisi/hifi_dsp
 obj-$(CONFIG_VOICE_PROXY) += voice_proxy.o
 obj-$(CONFIG_VOICE_PROXY_VOLTE) += voice_proxy_volte.o
 obj-$(CONFIG_VOICE_PROXY_VOWIFI) += voice_proxy_vowifi.o
+obj-$(CONFIG_VOICE_PROXY_RTT) += voice_proxy_rtt.o

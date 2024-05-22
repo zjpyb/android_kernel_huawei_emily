@@ -54,8 +54,49 @@ do {\
 #define CHECK_OK(ret) do { if (HISEE_OK != (ret)) goto err_process; } while (0)
 
 
+hisee_at_type g_at_cmd_type = HISEE_AT_MAX;
+
+/* flag to indicate running status of flash otp1 */
+static E_RUN_STATUS g_hisee_flash_otp1_status;
+
 /* hisee manufacture function begin */
+
+/* tell the flash_otp_task to write which is created by set/get efuse _securitydebug_value  */
+/* this interface is defined in hisi_flash_hisee_otp.c  */
 extern void release_hisee_semphore(void);/*should be semaphore; whatever..*/
+/* check the flash_otp_task which is created by set/get efuse _securitydebug_value  */
+/* this interface is defined in hisi_flash_hisee_otp.c  */
+extern bool flash_otp_task_is_started(void);
+
+/* set the otp1 write work status */
+void hisee_chiptest_set_otp1_status(E_RUN_STATUS status)
+{
+	g_hisee_flash_otp1_status = status;
+	pr_err("hisee set otp1 status %x\n", g_hisee_flash_otp1_status);
+}
+
+E_RUN_STATUS hisee_chiptest_get_otp1_status(void)
+{
+	return g_hisee_flash_otp1_status;
+}
+
+/* check otp1 write work is running */
+/* flash_otp_task may not being created by set/get efuse _securitydebug_value */
+bool hisee_chiptest_otp1_is_runing(void)
+{
+	pr_info("hisee otp1 work status %x\n", g_hisee_flash_otp1_status);
+	if (RUNING == g_hisee_flash_otp1_status) {
+		return true;
+	}
+
+	if (PREPARED == g_hisee_flash_otp1_status &&
+	    true == flash_otp_task_is_started()) {
+		return true;
+	}
+
+	return false;
+}
+
 static int otp_image_upgrade_func(void *buf, int para)
 {
     int ret;
@@ -71,10 +112,16 @@ static int otp_image_upgrade_func(void *buf, int para)
 		pr_err("hisee:%s() cosid=%d not support otp image upgrade now, bypass!\n", __func__, cos_id);
 		return ret;
 	}
-    ret = write_hisee_otp_value(OTP_IMG_TYPE);
-    check_and_print_result();
+	ret = hisee_poweron_booting_func((void *)buf, 0);
 
-    set_errno_and_return(ret);/*lint !e1058*/
+	if (HISEE_OK == ret) {
+		ret = write_hisee_otp_value(OTP_IMG_TYPE);
+
+		(void)hisee_poweroff_func((void *)buf, (int)HISEE_PWROFF_LOCK);
+	}
+	check_and_print_result();
+
+	set_errno_and_return(ret);/*lint !e1058*/
 }/*lint !e715*/
 
 static int hisee_write_rpmb_key(void *buf, int para)
@@ -142,7 +189,7 @@ static int upgrade_one_file_func(char *filename, se_smc_cmd cmd)
     phys_addr_t buff_phy = 0;
     atf_message_header *p_message_header;
     int ret = HISEE_OK;
-    int image_size;
+    size_t image_size;
     unsigned int result_offset;
 
     /* alloc coherent buff with vir&phy addr (64K for upgrade file) */
@@ -154,14 +201,15 @@ static int upgrade_one_file_func(char *filename, se_smc_cmd cmd)
     }
     memset(buff_virt, 0, HISEE_SHARE_BUFF_SIZE);
 
+    image_size = 0;
     /* read given file to buff */
-    ret = hisee_read_file((const char *)filename, (buff_virt + HISEE_ATF_MESSAGE_HEADER_LEN), 0, 0);
+    ret = filesys_read_img_from_file((const char *)filename, (buff_virt + HISEE_ATF_MESSAGE_HEADER_LEN), &image_size, HISEE_MAX_IMG_SIZE);
     if (ret < HISEE_OK) {
         pr_err("%s(): hisee_read_file failed, filename=%s, ret=%d\n", __func__, filename, ret);
         dma_free_coherent(g_hisee_data.cma_device, (unsigned long)HISEE_SHARE_BUFF_SIZE, buff_virt, buff_phy);
         set_errno_and_return(ret);
     }
-    image_size = (ret + HISEE_ATF_MESSAGE_HEADER_LEN);
+    image_size = (image_size + HISEE_ATF_MESSAGE_HEADER_LEN);
 
     /* init and config the message */
     p_message_header = (atf_message_header *)buff_virt; /*lint !e826*/
@@ -193,7 +241,7 @@ static int upgrade_one_file_func(char *filename, se_smc_cmd cmd)
 static int hisee_apdu_test_func(void *buf, int para)
 {
     int ret;
-    ret = upgrade_one_file_func("/hisee_fs/test.apdu.bin", CMD_FACTORY_APDU_TEST);
+    ret = upgrade_one_file_func("/mnt/hisee_fs/test.apdu.bin", CMD_FACTORY_APDU_TEST);
     check_and_print_result();
     set_errno_and_return(ret);
 }
@@ -233,10 +281,6 @@ static int hisee_verify_isd_key(hisee_cos_imgid_type cos_id)
 	return ret;
 }
 
-static int hisee_write_casd_key(void)
-{
-    return HISEE_OK;
-}
 
 static int g_hisee_flag_protect_lcs = 0;
 int hisee_debug(void)
@@ -246,7 +290,8 @@ int hisee_debug(void)
 
 static int hisee_write_rpmb_key_process(void *buf)
 {
-    int ret = HISEE_OK;
+    int ret = HISEE_ERROR;
+    int ret_pm;
     int write_rpmbkey_try = 5;
 
     while (write_rpmbkey_try--) {
@@ -255,10 +300,10 @@ static int hisee_write_rpmb_key_process(void *buf)
             break;
         }
 
-        ret = hisee_poweroff_func(buf, HISEE_PWROFF_LOCK);
-        CHECK_OK(ret);
-        ret = hisee_poweron_upgrade_func(buf, 0);
-        CHECK_OK(ret);
+        ret_pm = hisee_poweroff_func(buf, HISEE_PWROFF_LOCK);
+        CHECK_OK(ret_pm);
+        ret_pm = hisee_poweron_upgrade_func(buf, 0);
+        CHECK_OK(ret_pm);
         hisee_mdelay(DELAY_FOR_HISEE_POWERON_UPGRADE); /*lint !e744 !e747 !e748*/
     }
 
@@ -343,9 +388,6 @@ static int hisee_poweron_booting_misc_process(void *buf)
     ret = wait_hisee_ready(HISEE_STATE_MISC_READY, 30000);
     CHECK_OK(ret);
 
-    /* write casd key should be combined with misc image upgrade and be in right order */
-    ret = hisee_write_casd_key();
-    CHECK_OK(ret);
 
     /* cos patch upgrade only supported in this function */
     ret = hisee_cos_patch_read(img_type + (HISEE_MAX_MISC_IMAGE_NUMBER * cos_id));
@@ -403,7 +445,7 @@ static int run_hisee_nvmformat(void)
 
     image_size = HISEE_ATF_MESSAGE_HEADER_LEN;
     ret = send_smc_process(p_message_header, buff_phy, (unsigned int)image_size,
-                            HISEE_ATF_GENERAL_TIMEOUT, CMD_FORMAT_RPMB);
+                            HISEE_ATF_NVM_FORMAT_TIMEOUT, CMD_FORMAT_RPMB);
     if (HISEE_OK != ret) {
         pr_err("%s(): hisee reported fail code=%d\n", __func__, ret);
     }
@@ -500,6 +542,7 @@ err_process:
     hisee_mdelay(DELAY_FOR_HISEE_POWEROFF);
 
     if (HISEE_OK == ret) {
+        hisee_chiptest_set_otp1_status(PREPARED);
         release_hisee_semphore();/*sync signal for flash_otp_task*/
     }
 
@@ -531,7 +574,8 @@ int hisee_parallel_manufacture_func(void *buf, int para)
     int ret = HISEE_OK;
     struct task_struct *factory_test_task = NULL;
 
-    if (HISEE_FACTORY_TEST_RUNNING != g_hisee_data.factory_test_state) {
+    if (HISEE_FACTORY_TEST_RUNNING != g_hisee_data.factory_test_state &&
+        false == hisee_chiptest_otp1_is_runing()) {
         g_hisee_data.factory_test_state = HISEE_FACTORY_TEST_RUNNING;
         factory_test_task = kthread_run(factory_test_body, NULL, "factory_test_body");
         if (!factory_test_task) {
@@ -546,4 +590,49 @@ int hisee_parallel_manufacture_func(void *buf, int para)
 
 /* hisee slt test function begin */
 /* hisee slt test function end */
+
+/****************************************************************************//**
+ * @brief      : hisee_factory_check_func
+ * @param[in]  : buf: include the information of cos id, processor id.
+ * @param[in]  : para: to indicate it is in which mode, like factory or usr.
+ * @return     : ::int
+ * @note       :
+********************************************************************************/
+int hisee_factory_check_func(void *buf, int para)
+{
+	int ret = HISEE_OK;
+
+	g_hisee_data.factory_test_state = HISEE_FACTORY_TEST_SUCCESS;
+	set_errno_and_return(ret);
+}
+
+
+
+/****************************************************************************//**
+ * @brief      : hisee_at_result_show, use this function to print AT result
+ * @param[in]  : dev
+ * @param[in]  : attr
+ * @param[in]  : buf
+ * @return     : ::ssize_t
+ * @note       :
+********************************************************************************/
+ssize_t hisee_at_result_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    int ret = HISEE_ERROR;
+
+    if (NULL == buf) {
+        pr_err("%s buf paramters is null\n", __func__);
+        set_errno_and_return(HISEE_INVALID_PARAMS);
+    }
+    *buf = 0;
+    ret = atomic_read(&g_hisee_errno);
+
+    switch (g_at_cmd_type) {
+        default:
+            snprintf(buf, (size_t)HISEE_BUF_SHOW_LEN, "^HISEE:Para Error");
+            break;
+    }
+    g_at_cmd_type = HISEE_AT_MAX;
+    return (ssize_t)strlen(buf);
+}
 

@@ -10,6 +10,11 @@
 #include "vendor_info.h"
 #include <linux/init.h>
 #include <linux/string.h>
+#include <linux/mutex.h>
+#include "../Platform_Linux/fusb3601_global.h"
+#include "../Platform_Linux/platform_helpers.h"
+
+#include <huawei_platform/power/power_dsm.h>
 
 /* Initialize
  *
@@ -17,8 +22,53 @@
  * I2C read data from the device, configures capability objects, and writes
  * initial configuration values to the device.
  */
+#if defined(CONFIG_HUAWEI_DSM)
+#define SUPERSWITCH_DMDLOG_SIZE      (2048)
+#define SUPERSWITCH_DMD_STRING_SIZE 128
+static int reg_addr[] = {
+	0x10, 0x11, 0x12, 0x13, 0x14, 0x15,
+	0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d,
+	0x1e, 0x1f, 0x80, 0x81, 0x82, 0x83,
+	0x86, 0x87, 0x88, 0xd1, 0xd2, 0xd3,
+	0xd4, 0xd5, 0xd6, 0xdc, 0xdd, 0xde,
+	0xdf, 0xe0, 0xe1, 0xe7, 0xe8, 0xe9
+};
+#endif
+static DEFINE_MUTEX(FMControl4_mutex);
 void FUSB3601_dump_register(void);
 int get_source_max_output_current(void);
+#if defined(CONFIG_HUAWEI_DSM)
+void superswitch_dsm_report(int num)
+{
+	FSC_U8 i = 0;
+	FSC_U8 data;
+	int ret;
+	char dsm_buff[SUPERSWITCH_DMDLOG_SIZE] = { 0 };
+	char buf[SUPERSWITCH_DMD_STRING_SIZE] = { 0 };
+	struct fusb3601_chip* chip = fusb3601_GetChip();
+	struct Port* port;
+	if (!chip) {
+		pr_err("FUSB  %s - Error: Chip structure is NULL!\n", __func__);
+		return;
+	}
+	port = &chip->port;
+	if (!port) {
+		pr_err("FUSB  %s - Error: port structure is NULL!\n", __func__);
+		return;
+	}
+
+	snprintf(dsm_buff, sizeof(dsm_buff), "tc_state= 0x%x\n", port->tc_state_);
+
+	for (i = 0; i < sizeof(reg_addr)/sizeof(reg_addr[0]); ++i) {
+		(void)FUSB3601_fusb_I2C_ReadData(reg_addr[i],&data);
+		memset(buf, 0, sizeof(buf));
+		snprintf(buf, sizeof(buf), "reg[0x%x]= 0x%x\n", reg_addr[i], data);
+		strncat(dsm_buff, buf, strlen(buf));
+	}
+
+	power_dsm_dmd_report(POWER_DSM_SUPERSWITCH, num, dsm_buff);
+}
+#endif
 
 void FUSB3601_InitializeVars(struct Port *port, FSC_U8 id, FSC_U8 i2c_addr)
 {
@@ -989,6 +1039,9 @@ void FUSB3601_PolicySourceStartupHelper(struct Port *port){
 
 /* CC1 - close, CC2 - close, NONE - open */
 void FUSB3601_set_usb_switch(struct Port *port, CCOrientation orientation) {
+
+	mutex_lock(&FMControl4_mutex);
+	FUSB3601_ReadRegister(port, regFM_CONTROL4);
 	switch(orientation) {
 	case CC1:
 		port->registers_.FMControl4.USB_SWITCH = 0b011; /* Close Top USB */
@@ -1002,6 +1055,24 @@ void FUSB3601_set_usb_switch(struct Port *port, CCOrientation orientation) {
 		break;
 	}
 	FUSB3601_WriteRegister(port, regFM_CONTROL4);
+	mutex_unlock(&FMControl4_mutex);
+}
+void FUSB3601_set_vbus_detach(struct Port *port, VbusDetach_t enable)
+{
+	mutex_lock(&FMControl4_mutex);
+	FUSB3601_ReadRegister(port, regFM_CONTROL4);
+	switch(enable) {
+		case VBUS_DETACH_ENABLE:
+			port->registers_.FMControl4.VBUS_DETATCH_DET = 1;
+			break;
+		case VBUS_DETACH_DISABLE:
+			port->registers_.FMControl4.VBUS_DETATCH_DET = 0;
+			break;
+		default:
+			break;
+	}
+	FUSB3601_WriteRegister(port, regFM_CONTROL4);
+	mutex_unlock(&FMControl4_mutex);
 }
 void FUSB3601_set_sbu_switch(struct Port *port, SbuSwitch_t SbuSwitch)
 {

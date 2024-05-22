@@ -88,6 +88,8 @@
 #define SAVE_OCV_LEVEL            (BIT(5) | BIT(4) | BIT(3) | BIT(2))
 #define OCV_LEVEL_SHIFT           (2)
 
+#define DRAINED_BATTERY_FLAG_ADDR         PMIC_HRST_REG12_ADDR(0)
+#define DRAINED_BATTERY_FLAG_BIT          BIT(0)
 /************************************************************
     coul register of smartstar
 ************************************************************/
@@ -161,12 +163,17 @@ extern int hisi_pmic_array_write(int addr, char *buff, unsigned int len);
 #define HI6421V600_REGS_READ(regAddr,buf,size)   hisi_pmic_array_read((int)(regAddr),(char*)(buf),(int)(size))
 #define HI6421V600_REGS_WRITE(regAddr,buf,size)  hisi_pmic_array_write((int)(regAddr),(char*)(buf),(int)(size))
 
-
+#define HI6421V600_COUL_INFO
+#ifndef HI6421V600_COUL_INFO
+/*pimc soh print interface*/
+#define HI6421V600_COUL_ERR(fmt,args...)              do {} while (0)
+#define HI6421V600_COUL_EVT(fmt,args...)              do {} while (0)
+#define HI6421V600_COUL_INF(fmt,args...)              do {} while (0)
+#else
 #define HI6421V600_COUL_ERR(fmt,args...) do { printk(KERN_ERR    "[hisi_hi6421v600_coul]" fmt, ## args); } while (0)
 #define HI6421V600_COUL_EVT(fmt,args...) do { printk(KERN_WARNING"[hisi_hi6421v600_coul]" fmt, ## args); } while (0)
 #define HI6421V600_COUL_INF(fmt,args...) do { printk(KERN_INFO   "[hisi_hi6421v600_coul]" fmt, ## args); } while (0)
-
-
+#endif
 struct hi6421v600_coul_device_info
 {
     struct device *dev;

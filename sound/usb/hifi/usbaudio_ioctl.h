@@ -3,6 +3,7 @@
 
 #define USBAUDIO_INFONAME_LEN (256)
 #define USBAUDIO_PCM_NUM (2)
+#define MAX_SAMPLE_RATE_NUM 7
 
 enum usbaudio_stream_type
 {
@@ -34,7 +35,7 @@ enum usbaudio_dsp_reset_status
 struct usbaudio_info
 {
 	unsigned int usbid;
-	unsigned int dnlink_rate_table[5];
+	unsigned int dnlink_rate_table[MAX_SAMPLE_RATE_NUM];
 	int controller_location;
 	unsigned short uplink_channels;
 	unsigned short dnlink_channels;
@@ -45,4 +46,5 @@ struct usbaudio_info
 void usbaudio_ctrl_query_info(struct usbaudio_info *usbinfo);
 void usbaudio_ctrl_hifi_reset_inform(void);
 int usbaudio_ctrl_usb_resume(void);
+void usbaudio_set_nv_ready(void);
 #endif /* __USBAUDIO_IOCTL_H*/

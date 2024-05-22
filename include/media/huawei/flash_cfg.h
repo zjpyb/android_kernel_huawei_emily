@@ -23,6 +23,7 @@ typedef enum {
 	TORCH_LEFT_MODE,
 	TORCH_RIGHT_MODE,
 	PREFLASH_MODE,
+	FLASH_STROBE_MODE, // strobe is a trigger method of FLASH mode
 	MAX_MODE,
 } flash_mode;
 

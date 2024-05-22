@@ -1,4 +1,4 @@
-/* drivers/misc/uid_cputime.c
+/* drivers/misc/uid_sys_stats.c
  *
  * Copyright (C) 2014 - 2015 Google, Inc.
  *
@@ -14,6 +14,7 @@
  */
 
 #include <linux/atomic.h>
+#include <linux/cpufreq_times.h>
 #include <linux/err.h>
 #include <linux/hashtable.h>
 #include <linux/init.h>
@@ -36,7 +37,6 @@
 #define UID_HASH_BITS	10
 DECLARE_HASHTABLE(hash_table, UID_HASH_BITS);
 
-/*lint -e666*/
 static DEFINE_RT_MUTEX(uid_lock);
 static struct proc_dir_entry *cpu_parent;
 static struct proc_dir_entry *io_parent;
@@ -60,6 +60,9 @@ struct io_stats {
 #define UID_STATE_SIZE		5
 
 #define MAX_TASK_COMM_LEN 256
+
+#define PID_NODE_CNT_WARNING_THRESHOLD 5000
+#define PID_ENTRY_CNT_WARNING_THRESHOLD 1000
 
 struct task_entry {
 	char comm[MAX_TASK_COMM_LEN];
@@ -357,13 +360,13 @@ static int uid_cputime_show(struct seq_file *m, void *v)
 #endif
 	}
 
-	read_lock(&tasklist_lock);
+	rcu_read_lock();
 	do_each_thread(temp, task) {
 		uid = from_kuid_munged(user_ns, task_uid(task));
 		if (!uid_entry || uid_entry->uid != uid)
 			uid_entry = find_or_register_uid(uid);
 		if (!uid_entry) {
-			read_unlock(&tasklist_lock);
+			rcu_read_unlock();
 			rt_mutex_unlock(&uid_lock);
 			pr_err("%s: failed to find the uid_entry for uid %d\n",
 				__func__, uid);
@@ -383,7 +386,7 @@ static int uid_cputime_show(struct seq_file *m, void *v)
 		uid_entry->active_power += task->cpu_power;
 #endif
 	} while_each_thread(temp, task);
-	read_unlock(&tasklist_lock);
+	rcu_read_unlock();
 
 	hash_for_each(hash_table, bkt, uid_entry, hash) {
 		cputime_t total_utime = uid_entry->utime +
@@ -457,6 +460,10 @@ static ssize_t uid_remove_write(struct file *file,
 		uid_start > uid_end) {
 		return -EINVAL;
 	}
+
+	/* Also remove uids from /proc/uid_time_in_state */
+	cpufreq_task_times_remove_uids(uid_start, uid_end);
+
 	rt_mutex_lock(&uid_lock);
 
 	hash_for_each_safe(hash_table, bkt, tmp, uid_entry, hash) {
@@ -746,6 +753,8 @@ static struct pid_node * add_pid_node(struct pid_entry *pid_entry, u64 the_pid)
 	the_node->state = PID_STATE_FG;
 	list_add(&the_node->list, pre);
 	pid_entry->pid_node_cnt++;
+	if(pid_entry->pid_node_cnt >= PID_NODE_CNT_WARNING_THRESHOLD && pid_entry->pid_node_cnt % 100 == 0)
+		pr_err("%s: pid_debug WARNING: %s pid_node_list length reaches %d", __func__, pid_entry->task_name, pid_entry->pid_node_cnt);
 	return the_node;
 }
 static struct pid_node * find_pid_node(struct pid_entry *pid_entry, u64 the_pid)
@@ -907,11 +916,13 @@ static void pid_merge_same_name_entry(void)
 }
 static struct pid_entry *find_pid_entry(u64 uid, u64 tgid,char* find_task_name)
 {
+	int count = 0;
 	struct pid_entry *pid_entry = NULL;
 	struct pid_node *curr_pid_node = NULL;
 	if (find_task_name == NULL)
 		return NULL;
 	hash_for_each_possible(pid_hash_table, pid_entry, hash, uid) {
+		count++;
 		if (uid != pid_entry->uid)
 			continue;
 		if (!strncmp(pid_entry->task_name, find_task_name, MAX_PROCTITLE_LEN -1)) {
@@ -929,6 +940,8 @@ static struct pid_entry *find_pid_entry(u64 uid, u64 tgid,char* find_task_name)
 			}
 		}
 	}
+	if (count >= PID_ENTRY_CNT_WARNING_THRESHOLD && count % 100 == 0)
+		pr_err("%s: pid_debug WARNING: pid_hash_list count is %d", __func__, count);
 	return NULL;
 }
 static struct pid_entry *find_or_register_pid(struct task_struct *task, struct pid_node **ppcurr_pid_node)

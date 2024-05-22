@@ -389,7 +389,7 @@ static void usb_analog_hs_free_gpio(struct usb_ana_hs_isl54405_data *data)
         gpio_free(data->gpio_usb_hs_switch);
 }
 
-
+#ifdef USB_ANALOG_HS_ISL54405_DEBUG
 static ssize_t usb_ana_hs_isl54405_mic_switch_show(struct device *dev,
                       struct device_attribute *attr, char *buf)
 {
@@ -453,6 +453,7 @@ static struct attribute *usb_ana_hs_isl54405_attributes[] = {
 static const struct attribute_group usb_ana_hs_isl54405_attr_group = {
     .attrs = usb_ana_hs_isl54405_attributes,
 };
+#endif
 
 static long usb_ana_hs_isl54405_ioctl(struct file *file, unsigned int cmd,
                                unsigned long arg)
@@ -568,9 +569,11 @@ static int usb_ana_hs_isl54405_probe(struct platform_device *pdev)
         goto isl54405_err_misc_register;
     }
 
+#ifdef USB_ANALOG_HS_ISL54405_DEBUG
     ret = sysfs_create_group(&dev->kobj, &usb_ana_hs_isl54405_attr_group);
     if (ret < 0)
         loge("failed to register sysfs\n");
+#endif
 
     logi("usb_analog_hs probe success!\n");
     return 0;
@@ -617,7 +620,11 @@ static int usb_ana_hs_isl54405_remove(struct platform_device *pdev)
 
     usb_analog_hs_free_gpio(g_pdata_isl54405);
     misc_deregister(&usb_ana_hs_isl54405_device);
+
+#ifdef USB_ANALOG_HS_ISL54405_DEBUG
     sysfs_remove_group(&pdev->dev.kobj, &usb_ana_hs_isl54405_attr_group);
+#endif
+
     kfree(g_pdata_isl54405);
     g_pdata_isl54405 = NULL;
 

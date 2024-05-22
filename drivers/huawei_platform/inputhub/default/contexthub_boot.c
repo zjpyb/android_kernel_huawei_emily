@@ -47,6 +47,10 @@ int (*send_func) (int) = NULL;
 extern uint32_t need_reset_io_power;
 extern uint32_t need_set_3v_io_power;
 extern atomic_t iom3_rec_state;
+#ifdef CONFIG_HISI_COUL
+extern int c_offset_a;
+extern int c_offset_b;
+#endif
 
 static int isSensorMcuMode;	/*mcu power mode: 0 power off;  1 power on */
 static struct notifier_block nb;
@@ -312,7 +316,7 @@ static int8_t get_lcd_info(uint8_t index)
 	np = of_find_compatible_node(NULL, NULL, lcd_info[index].dts_comp_mipi);
 	ret = of_device_is_available(np);
 	if (np && ret) {
-		hwlog_info("%s is present\n", lcd_info[index].dts_comp_mipi);
+		//hwlog_info("%s is present\n", lcd_info[index].dts_comp_mipi);
 		return lcd_info[index].tplcd;
 	} else
 		return -1;
@@ -321,7 +325,7 @@ static int8_t get_lcd_info(uint8_t index)
 static int8_t get_lcd_model(const char *lcd_model, uint8_t index)
 {
 	if(!strncmp(lcd_model, lcd_model_info[index].dts_comp_lcd_model, strlen(lcd_model_info[index].dts_comp_lcd_model))){
-		hwlog_info("%s is present\n", lcd_model_info[index].dts_comp_lcd_model);
+		//hwlog_info("%s is present\n", lcd_model_info[index].dts_comp_lcd_model);
 		return lcd_model_info[index].tplcd;
 	} else
 		return -1;
@@ -349,7 +353,7 @@ static int get_lcd_module(void)
 		hwlog_err("not find lcd_model in dts\n");
 		return -1;
 	}
-	hwlog_info("find lcd_panel_type suc in dts!!lcd_panel_type = %s\n",lcd_model);
+	hwlog_info("find lcd_panel_type suc in dts!!\n");
 
 	for(index=0; index<ARRAY_SIZE(lcd_model_info); index++) {
 		tplcd = get_lcd_model(lcd_model, index);
@@ -565,6 +569,12 @@ static int write_defualt_config_info_to_sharemem(void)
     memset(pConfigOnDDr, 0, sizeof(struct CONFIG_ON_DDR));
     pConfigOnDDr->LogBuffCBBackup.mutex = 0;
     pConfigOnDDr->log_level = INFO_LEVEL;
+#ifdef CONFIG_HISI_COUL
+    pConfigOnDDr->coul_info.c_offset_a = c_offset_a;
+    pConfigOnDDr->coul_info.c_offset_b = c_offset_b;
+    of_property_read_u32(of_find_compatible_node(NULL, NULL, "hisi,coul_core"),
+                         "r_coul_mohm", &pConfigOnDDr->coul_info.r_coul_mohm);
+#endif
     return 0;
 }
 

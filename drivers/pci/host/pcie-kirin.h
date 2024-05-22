@@ -46,83 +46,108 @@
 #include <linux/wait.h>
 #include <linux/freezer.h>
 
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0))
-#include "kirin-pcie-designware.h"
-#else
 #include "pcie-designware.h"
-#endif
 
 #define to_kirin_pcie(x)	container_of(x, struct kirin_pcie, pp)
+#define PCIE_LINK_UP_TIME	200
+#define MAX_IRQ_NUM 			5
+#define IRQ_INTA 			0
+#define IRQ_INTB 			1
+#define IRQ_MSI 			1
+#define IRQ_INTC 			2
+#define IRQ_INTD 			3
+#define IRQ_LINKDOWN 			4
+#define IRQ_CPLTIMEOUT			5
 
-#define MAX_IRQ_NUM 5
-#define IRQ_INTA 0
-#define IRQ_INTB 1
-#define IRQ_MSI 1
-#define IRQ_INTC 2
-#define IRQ_INTD 3
-#define IRQ_LINKDOWN 4
+#define TYPE_POST			0
+#define TYPE_NONPOST			1
+#define TYPE_CPL			2
 
-#define REF_CLK_FREQ 100000000
-#define AXI_CLK_FREQ 207500000
+#define REF_CLK_FREQ 			100000000
+#define AXI_CLK_FREQ 			207500000
 
-#define TEST_BUS0_OFFSET 0x0
-#define TEST_BUS1_OFFSET 0x1000000
+#define TEST_BUS0_OFFSET 		0x0
+#define TEST_BUS1_OFFSET 		0x1000000
 
 /* PCIe ELBI registers */
-#define SOC_PCIECTRL_CTRL0_ADDR 0x000
-#define SOC_PCIECTRL_CTRL1_ADDR 0x004
-#define SOC_PCIECTRL_CTRL7_ADDR 0x01c
-#define SOC_PCIECTRL_CTRL8_ADDR 0x020
-#define SOC_PCIECTRL_CTRL11_ADDR 0x02c
-#define SOC_PCIECTRL_CTRL12_ADDR 0x030
-#define SOC_PCIECTRL_CTRL20_ADDR 0x050
-#define SOC_PCIECTRL_CTRL21_ADDR 0x054
-#define SOC_PCIECTRL_STATE1_ADDR 0x404
-#define SOC_PCIECTRL_STATE4_ADDR 0x410
-#define SOC_PCIECTRL_STATE5_ADDR 0x414
+#define SOC_PCIECTRL_CTRL0_ADDR 	0x000
+#define SOC_PCIECTRL_CTRL1_ADDR 	0x004
+#define SOC_PCIECTRL_CTRL6_ADDR 	0x018
+#define SOC_PCIECTRL_CTRL7_ADDR 	0x01c
+#define SOC_PCIECTRL_CTRL8_ADDR 	0x020
+#define SOC_PCIECTRL_CTRL11_ADDR 	0x02c
+#define SOC_PCIECTRL_CTRL12_ADDR 	0x030
+#define SOC_PCIECTRL_CTRL20_ADDR 	0x050
+#define SOC_PCIECTRL_CTRL21_ADDR 	0x054
+#define SOC_PCIECTRL_CTRL22_ADDR 	0x058
+#define SOC_PCIECTRL_STATE1_ADDR 	0x404
+#define SOC_PCIECTRL_STATE4_ADDR 	0x410
+#define SOC_PCIECTRL_STATE5_ADDR 	0x414
+#define SOC_PCIECTRL_STATE12_ADDR 	0x430
+#define SOC_PCIECTRL_STATE13_ADDR 	0x434
+#define SOC_PCIECTRL_STATE14_ADDR 	0x438
+#define SOC_PCIECTRL_STATE15_ADDR 	0x43c
 
-#define SOC_PCIEPHY_CTRL0_ADDR 0x000
-#define SOC_PCIEPHY_CTRL1_ADDR 0x004
-#define SOC_PCIEPHY_CTRL2_ADDR 0x008
-#define SOC_PCIEPHY_CTRL3_ADDR 0x00c
-#define SOC_PCIEPHY_CTRL33_ADDR 0x0084
-#define SOC_PCIEPHY_CTRL34_ADDR 0x0088
-#define SOC_PCIEPHY_CTRL38_ADDR 0x0098
-#define SOC_PCIEPHY_CTRL40_ADDR 0x00A0
-#define SOC_PCIEPHY_STATE0_ADDR 0x400
-#define SOC_PCIEPHY_STATE39_ADDR 0x049c
+#define SOC_PCIEPHY_CTRL0_ADDR 		0x000
+#define SOC_PCIEPHY_CTRL1_ADDR 		0x004
+#define SOC_PCIEPHY_CTRL2_ADDR 		0x008
+#define SOC_PCIEPHY_CTRL3_ADDR 		0x00c
+#define SOC_PCIEPHY_CTRL33_ADDR 	0x0084
+#define SOC_PCIEPHY_CTRL34_ADDR 	0x0088
+#define SOC_PCIEPHY_CTRL38_ADDR 	0x0098
+#define SOC_PCIEPHY_CTRL40_ADDR 	0x00A0
+#define SOC_PCIEPHY_STATE0_ADDR 	0x400
+#define SOC_PCIEPHY_STATE39_ADDR 	0x049c
 
-
-#define PCIE_APB_CLK_REQ	(0x1 << 23)
-#define PERST_FUN_SEC 0x2006
-#define PERST_ASSERT_EN 0x1
-
-#define ENTRY_L23_BIT (0x1 << 2)
+#define PCIE_APB_CLK_REQ		(0x1 << 23)
+#define PERST_FUN_SEC 			0x2006
+#define PERST_ASSERT_EN 		0x1
+#define CLR_COMP_TIMEOUT_BIT		(0x1 << 22)
+#define ENTRY_L23_BIT 			(0x1 << 2)
 #define PCIE_ELBI_SLV_DBI_ENABLE	(0x1 << 21)
-#define PME_TURN_OFF_BIT (0x1 << 8)
-#define PME_ACK_BIT (0x1<<16)
-#define PCI_ANY_ID (~0)
+#define APP_DBI_RO_WR_DISABLE		(0x1 << 22)
+#define PME_TURN_OFF_BIT 		(0x1 << 8)
+#define PME_ACK_BIT 			(0x1<<16)
+#define PCIE_CLKREQ_OUT_CTRL0		(0x1 << 0)
 
-#define RD_FLAG 0
-#define WR_FLAG 1
-#define IOMG_GPIO 0
-#define IOMG_CLKREQ 1
-#define BOARD_FPGA 0
-#define BOARD_EMU  1
-#define BOARD_ASIC 2
-#define ENABLE 1
-#define DISABLE 0
+#define PCI_ANY_ID 			(~0)
+#define PCIE_VENDOR_ID_HUAWEI		0x19e5
+#define PCIE_DEV_ID_SHIFT		16
+#define PCI_CLASS_CODE_SHIFT		16
+#define KIRIN_PCIE_EXP_LNKCTL2		0xa0
+#define PCIE_TARGET_SPEED_MASK		0xf
+#define PCIE_TARGET_SPEED_GEN1		1
 
-#define PCI_EXT_LTR_CAP_ID	0x18
-#define LTR_MAX_SNOOP_LATENCY	0x04
-#define PCI_EXT_L1SS_CAP_ID 0x1E
-#define PCI_EXT_L1SS_CTRL1	0x08
-#define PCI_EXT_L1SS_CTRL2 	0x0C
+#define RD_FLAG 			0
+#define WR_FLAG 			1
+#define IOMG_GPIO 			0
+#define IOMG_CLKREQ 			1
+#define BOARD_FPGA 			0
+#define BOARD_EMU  			1
+#define BOARD_ASIC 			2
+#define ENABLE 				1
+#define DISABLE 			0
+
+#define PCI_EXT_LTR_CAP_ID		0x18
+#define LTR_MAX_SNOOP_LATENCY		0x04
+#define PCI_EXT_L1SS_CAP_ID 		0x1E
+#define PCI_EXT_L1SS_CTRL1		0x08
+#define PCI_EXT_L1SS_CTRL2 		0x0C
 
 #define PCIE_APP_LTSSM_ENABLE		0x01c
 #define PCIE_ELBI_RDLH_LINKUP		0x400
 #define PCIE_LINKUP_ENABLE		(0x8020)
-#define PCIE_LTSSM_ENABLE_BIT	  (0x1 << 11)
+#define PCIE_LTSSM_ENABLE_BIT	  	(0x1 << 11)
+
+#define PCIE_CREDIT_HEADER_OFFS		12
+#define PCIE_CREDIT_HEADER_MASK		0xFF000
+#define PCIE_CREDIT_DATA_MASK		0xFFF
+/*SOC_PCIECTRL_STATE15_ADDR*/
+#define NO_PENDING_DLLP			(1 << 0)
+#define NO_EXPECTING_ACK		(1 << 1)
+#define HAD_ENOUGH_CREDIT		(1 << 2)
+#define NO_PENDING_TLP			(1 << 3)
+#define NO_FC				(1 << 4)
 
 /*designware register*/
 /*lint -e648 -e750 -esym(750,*) -esym(648,*)*/
@@ -132,7 +157,7 @@
 #define PCIE_GEN2_CTRL_MASK		0xFF
 #define PCIE_ATU_VIEWPORT		0x900
 #define PCIE_ATU_REGION_INBOUND		(0x1 << 31)
-#define PCIE_ATU_REGION_OUTBOUND		(0x0 << 31)
+#define PCIE_ATU_REGION_OUTBOUND	(0x0 << 31)
 #define PCIE_ATU_REGION_INDEX1		(0x1 << 0)
 #define PCIE_ATU_REGION_INDEX0		(0x0 << 0)
 #define PCIE_ATU_CR1			0x4
@@ -141,6 +166,7 @@
 #define PCIE_ATU_TYPE_MSG		0x14
 #define PCIE_ATU_CR2			0x8
 #define PCIE_ATU_ENABLE			(0x1 << 31)
+#define INHIBIT_PAYLOAD                 (0x1 << 22)
 #define PCIE_ATU_LOWER_BASE		0xC
 #define PCIE_ATU_UPPER_BASE		0x10
 #define PCIE_ATU_LIMIT			0x14
@@ -148,24 +174,38 @@
 #define PCIE_ATU_UPPER_TARGET		0x1C
 
 /* port logic register */
-#define PROT_FORCE_LINK_REG			0x708
-#define PORT_LINK_CTRL_REG 			0x710
-#define PORT_MSI_CTRL_ADDR			0x820
-#define PORT_MSI_CTRL_UPPER_ADDR		0x824
-#define PORT_MSI_CTRL_INT0_ENABLE		0x828
-#define PORT_GEN3_CTRL_REG			0x890
+#define PROT_FORCE_LINK_REG		0x708
+#define PORT_LINK_CTRL_REG 		0x710
+#define PORT_MSI_CTRL_ADDR		0x820
+#define PORT_MSI_CTRL_UPPER_ADDR	0x824
+#define PORT_MSI_CTRL_INT0_ENABLE	0x828
+#define PORT_GEN3_CTRL_REG		0x890
 #define PORT_PIPE_LOOPBACK_REG 		0x8B8
 
-#define MSG_CODE_PME_TURN_OFF 25
-#define MSG_TYPE_ROUTE_BROADCAST 0x13
-#define MSG_CPU_ADDR 0xf6000000
-#define MSG_CPU_ADDR_SIZE 0x100
+#define MSG_CODE_ASSERT_INTA		0x20
+#define MSG_CODE_ASSERT_INTB		0x21
+#define MSG_CODE_DEASSERT_INTA		0x24
+#define MSG_CODE_DEASSERT_INTB		0x25
+#define MSG_CODE_PME_TURN_OFF 		25
+#define MSG_TYPE_ROUTE_BROADCAST 	0x13
+#define MSG_CPU_ADDR 			0x3000000
+#define MSG_CPU_ADDR_SIZE 		0x100
 
-#define LTSSM_LINK_DOWN		0xFFFFFFFF
-#define ADDR_OFFSET_4BYTE	0x4
+#define LTSSM_LINK_DOWN			0xFFFFFFFF
+#define ADDR_OFFSET_4BYTE		0x4
+#define TRIPLE_TUPLE			0x3
 
 /*PCIe capability register*/
-#define ENTER_COMPLIANCE	(0x1 << 4)
+#define KIRIN_PCIE_LNKCTL2		0xA0
+#define ENTER_COMPLIANCE		(0x1 << 4)
+#define SPEED_MASK			0xF
+#define SPEED_GEN1			1
+#define PCIE_TYPE_MASK			0xF
+#define PCIE_TYPE_SHIFT			28
+#define PCIE_TYPE_RC			4
+
+#define PCIE_ENABLE_DBI_READ_FLAG		0x5a5aa5a5
+
 /*lint -e648 -e750 +esym(648,*) +esym(750,*)*/
 struct kirin_pcie_irq_info {
 	char *name;
@@ -189,14 +229,15 @@ struct kirin_pcie_dtsinfo {
 	u32 		t_ref2perst[2];
 	u32 		t_perst2access[2];
 	u32 		t_perst2rst[2];
-	u32		eye_param_vboost;
-	u32 		eye_param_iboost;
-	u32		eye_param_pre;
-	u32		eye_param_post;
-	u32		eye_param_main;
-	u32		io_driver_impedance;
+	u32		eye_param_nums;
+	u32		*eye_param_data;
+	u32		io_driver[TRIPLE_TUPLE];
 	u32		pll_source;
 	u32		ioref_clk_source;
+	u32		noc_target_id;
+	u32		noc_mntn;
+	u32		phy_cal;
+	u32		dbi_base;
 };
 
 enum rc_power_status {
@@ -211,6 +252,7 @@ struct pcie_platform_ops {
 	int (*sram_ext_load)(void *data);
 	int (*plat_on)(struct pcie_port *pp, enum rc_power_status on_flag);
 	int (*plat_off)(struct pcie_port *pp, enum rc_power_status off_flag);
+	void (*cal_alg_adjust)(void *data, bool clear);
 };
 
 struct kirin_pcie {
@@ -220,6 +262,8 @@ struct kirin_pcie {
 	void __iomem				*sctrl_base;
 	void __iomem				*pmctrl_base;
 	void __iomem				*pme_base;
+	void __iomem				*crgperiph_base;
+	void __iomem				*hsdtcrg_base;
 	u32					natural_phy_offset;
 	u32					apb_phy_offset;
 	u32					sram_phy_offset;
@@ -232,19 +276,18 @@ struct kirin_pcie {
 	struct  pcie_port			pp;
 	struct  pci_dev				*rc_dev;
 	struct  pci_dev				*ep_dev;
-	unsigned int				ep_devid;
-	unsigned int				ep_venid;
 	atomic_t				usr_suspend;
 	atomic_t				is_ready;  //driver is ready
 	atomic_t				is_power_on;
 	atomic_t				is_enumerated;
 	struct mutex				pm_lock;
 	spinlock_t				ep_ltssm_lock;
-	struct mutex			power_lock;
+	struct mutex				power_lock;
 	struct pci_saved_state			*rc_saved_state;
 	struct work_struct			handle_work;
+	struct work_struct			handle_cpltimeout_work;
 	struct kirin_pcie_register_event	*event_reg;
-	struct kirin_pcie_irq_info		irq[5];
+	struct kirin_pcie_irq_info		irq[MAX_IRQ_NUM + 1];
 	u32					msi_controller_config[3];
 	u32					aer_config;
 	u32					rc_id;
@@ -301,6 +344,7 @@ enum dsm_err_id {
 	DSM_ERR_ESTABLISH_LINK,
 	DSM_ERR_ENUMERATE,
 	DSM_ERR_LINK_DOWN,
+	DSM_ERR_CPL_TIMEOUT,
 };
 
 enum RST_TYPE{
@@ -316,13 +360,16 @@ enum {
 };
 
 enum pcie_test_result {
-	RESULT_OK,
+	RESULT_OK = 0,
 	ERR_DATA_TRANS,
+    ERR_L0,
 	ERR_L0S,
 	ERR_L1,
 	ERR_L0S_L1,
 	ERR_L1_1,
 	ERR_L1_2,
+	ERR_EP_ON,
+	ERR_EP_OFF,
 	ERR_OTHER
 };
 enum pcie_voltage {
@@ -342,19 +389,19 @@ enum {
 
 #define PCIE_PR_ERR(fmt, args ...) \
 	do { \
-		printk(KERN_ERR "[PCIE]%s:" fmt "\n", \
+		printk(KERN_ERR "[Kirin_pcie]%s:" fmt "\n", \
 		__FUNCTION__, ##args); \
 	} while (0)
 
 #define PCIE_PR_INFO(fmt, args ...)	\
 	do { \
-		printk(KERN_INFO "[PCIE]%s:" fmt "\n", \
+		printk(KERN_INFO "[Kirin_pcie]%s:" fmt "\n", \
 		__FUNCTION__, ##args); \
 	} while (0)
 
 #define PCIE_PR_DEBUG(fmt, args ...) \
 	do { \
-		printk(KERN_DEBUG "[PCIE]%s:" fmt "\n", \
+		printk(KERN_DEBUG "[Kirin_pcie]%s:" fmt "\n", \
 		__FUNCTION__, ##args); \
 	} while (0)
 
@@ -378,11 +425,8 @@ u32 kirin_natural_phy_readl(struct kirin_pcie *pcie, u32 reg);
 void kirin_sram_phy_writel(struct kirin_pcie *pcie, u32 val, u32 reg);
 
 u32 kirin_sram_phy_readl(struct kirin_pcie *pcie, u32 reg);
-
-void kirin_pcie_readl_rc(struct pcie_port *pp,
-					void __iomem *dbi_base, u32 *val);
-void kirin_pcie_writel_rc(struct pcie_port *pp,
-					u32 val, void __iomem *dbi_base);
+u32 kirin_pcie_readl_rc(struct pcie_port *pp, u32 reg);
+void kirin_pcie_writel_rc(struct pcie_port *pp, u32 reg, u32 val);
 int kirin_pcie_rd_own_conf(struct pcie_port *pp, int where, int size,
 				u32 *val);
 int kirin_pcie_wr_own_conf(struct pcie_port *pp, int where, int size,
@@ -400,12 +444,21 @@ int kirin_pcie_perst_cfg(struct kirin_pcie *pcie, int pull_up);
 int pcie_plat_init(struct platform_device *pdev, struct kirin_pcie *pcie);
 int32_t kirin_pcie_get_dtsinfo(u32 *rc_id, struct platform_device *pdev);
 
-#if defined(CONFIG_KIRIN_PCIE_EYEPARAM)
-void pcie_debug_init(void *dev_data);
-#endif
+void set_phy_eye_param(struct kirin_pcie *pcie);
 
 #if defined(CONFIG_PCIE_KIRIN_SLT)
-int pcie_slt_wlan_on(struct kirin_pcie *pcie, int on);
+void pcie_slt_resource_init(struct kirin_pcie *pcie);
+enum pcie_test_result pcie_slt_vary_voltage_test(struct kirin_pcie *pcie);
+#else
+static inline void pcie_slt_resource_init(struct kirin_pcie *pcie)
+{
+	return;
+}
+static inline enum pcie_test_result pcie_slt_vary_voltage_test(struct kirin_pcie *pcie)
+{
+	return RESULT_OK;
+}
+
 #endif
 #endif
 

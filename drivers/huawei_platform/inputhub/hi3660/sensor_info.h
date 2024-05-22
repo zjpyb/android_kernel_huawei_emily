@@ -528,6 +528,7 @@ struct magn_bracket_platform_data {
 };
 struct motion_platform_data {
 	int angle_gap;
+	u8 pickup_data_flag;
 };
 
 struct rpc_platform_data {

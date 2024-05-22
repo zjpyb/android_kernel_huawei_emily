@@ -391,7 +391,7 @@ static ssize_t rmidev_read(struct file *filp, char __user *buf,
 	address = (unsigned short)(*f_pos);
 
 	if (address != rmidev->rmi4_data->rmi4_feature.f01_data_base_addr) {
-		TS_LOG_ERR("read:f01_data_base_addr error");
+		TS_LOG_DEBUG("read:f01_data_base_addr error");
 		goto clean_up;
 	}
 
@@ -467,7 +467,8 @@ static ssize_t rmidev_write(struct file *filp, const char __user *buf,
 	if (count > (REG_ADDR_LIMIT - *f_pos))
 		count = REG_ADDR_LIMIT - *f_pos;
 
-	if (count == 0){
+	if ((count <= 0) || (count > I2C_WRITE_DATA_LIMIT)){
+		TS_LOG_ERR("count =%d is invalid",count);
 		retval =  0;
 		goto clean_up;
 	}
@@ -511,12 +512,13 @@ static int rmidev_open(struct inode *inp, struct file *filp)
 	    container_of(inp->i_cdev, struct rmidev_data, main_dev);
 	char *comm = NULL;
 
-	comm = current->group_leader->comm;
-
-	if(0 != strncmp(comm,"ptics.redremote",strlen("ptics.redremote")))
-	{
-		TS_LOG_ERR("invaild pid,comm is %s\n",comm);
-		return -EPERM;
+	if( !rmi4_data->synaptics_chip_data->synaptics3718_Tp_Pressure_flag ){
+		comm = current->group_leader->comm;
+		if(0 != strncmp(comm,"ptics.redremote",strlen("ptics.redremote")))
+		{
+			TS_LOG_ERR("invaild pid,comm is %s\n",comm);
+			return -EPERM;
+		}
 	}
 
 	if (!dev_data)
@@ -554,9 +556,8 @@ static int rmidev_release(struct inode *inp, struct file *filp)
 	if (!dev_data)
 		return -EACCES;
 
-	rmi4_data->reset_device(rmi4_data);
-
 	mutex_lock(&(dev_data->file_mutex));
+	rmi4_data->reset_device(rmi4_data);
 
 	dev_data->ref_count--;
 	if (dev_data->ref_count < 0)

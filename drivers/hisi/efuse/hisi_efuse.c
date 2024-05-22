@@ -100,6 +100,12 @@ static char *g_efusec_attributions[] = {
 #define EFUSE_FN_GET_FREQ                                        0xc500000E
 #define EFUSE_FN_SET_HISEE                                0xc5000013
 #define EFUSE_FN_GET_HISEE                                0xc5000014
+#define EFUSE_FN_GET_DESKEW               			0xc5000015
+/* define SECURE DEBUG MODE value */
+#define ARMDEBUG_CTRL_ENABLE_MODE        0x0
+#define ARMDEBUG_CTRL_PASSWORD_MODE      0x1
+#define ARMDEBUG_CTRL_CERTIFICATION_MODE 0x2
+#define ARMDEBUG_CTRL_EFUSE_MODE         0x3
 
 /***********************************************************
  Function: vote_efuse_volt --efuse voltage hold at 0.75v when writing
@@ -219,6 +225,39 @@ int get_efuse_dieid_value(unsigned char *pu8Buffer, unsigned int u32Length, unsi
 	return ret;
 }
 
+/*****************************************************************************
+函 数 名  : get_efuse_deskew_value
+功能描述  : 获取boston平台1756位efuse的bit值
+输入参数  : unsigned char *buf(接收返回值的内存指针)
+            u32 size_t(接收返回值的内存大小)
+            u32 timeout  		(获取bit值超时时间，单位毫秒，一般为1000)
+输出参数  : 无
+返 回 值  : s32
+			成功    0
+			失败其他值
+*****************************************************************************/
+s32 get_efuse_deskew_value(unsigned char *buf, u32 size, u32 timeout)
+{
+	s32 ret;
+
+	if ((!buf) ||(size > EFUSE_DESKEW_LENGTH_BYTES)){
+		pr_err("%s: buf is NULL.\n", __func__);
+		return -EFAULT;
+	}
+	check_efuse_module_ready();
+	BUG_ON(in_interrupt());
+
+	mutex_lock(&g_efusec_data.efuse_mutex);
+	ret = g_efusec_data.invoke_efuse_fn(EFUSE_FN_GET_DESKEW, (u64)g_efusec_data.buf_phy_addr,
+			     (u64)size, (u64)timeout);
+	if (OK == ret)
+		memmove((void *)buf, (void *)g_efusec_data.buf_virt_addr, size);
+	mutex_unlock(&g_efusec_data.efuse_mutex);
+
+	pr_info("%s: ret=%d.\n", __func__, ret);
+	return ret;
+}
+
 int get_efuse_chipid_value(unsigned char *pu8Buffer, unsigned int u32Length, unsigned int timeout)
 {
 	int ret;
@@ -303,6 +342,7 @@ static int set_efuse_authkey_value(unsigned char *pu8Buffer, unsigned int u32Len
 	return ret;
 }
 
+
 static int get_efuse_securitydebug_value(unsigned char *pu8Buffer, unsigned int u32Length, unsigned int timeout)
 {
 	int ret;
@@ -314,14 +354,55 @@ static int get_efuse_securitydebug_value(unsigned char *pu8Buffer, unsigned int 
 	check_efuse_module_ready();
 	BUG_ON(in_interrupt());
 	mutex_lock(&g_efusec_data.efuse_mutex);
+
 	ret = g_efusec_data.invoke_efuse_fn(EFUSE_FN_GET_SECURITYDEBUG, (u64) g_efusec_data.buf_phy_addr, (u64) u32Length, (u64) timeout);
 	if (OK == ret) {
 		memmove((void *)pu8Buffer, (void *)g_efusec_data.buf_virt_addr, u32Length);
 	}
+
 	mutex_unlock(&g_efusec_data.efuse_mutex);
-	efuse_print_info(log_level_error, "%s: ret=%d.\n", __func__, ret);
+	efuse_print_info(log_level_error, "%s: ret=%d\n", __func__, ret);
+
 	return ret;
 }
+
+
+/* check secret_mode is disabled mode */
+static bool efuse_secdebug_is_disabled(u32 secret_mode)
+{
+	if (ARMDEBUG_CTRL_ENABLE_MODE == secret_mode ||
+	    ARMDEBUG_CTRL_PASSWORD_MODE == secret_mode ||
+	    ARMDEBUG_CTRL_CERTIFICATION_MODE == secret_mode ||
+	    ARMDEBUG_CTRL_EFUSE_MODE == secret_mode) {
+		return true;
+	}
+	return false;
+}
+
+/* check secure debug efuse is disabled */
+int efuse_check_secdebug_disable(bool *b_disabled)
+{
+	u32 sec_debug_value;
+	int ret;
+
+	if (NULL == b_disabled) {
+		return -EINVAL;
+	}
+
+	sec_debug_value = ARMDEBUG_CTRL_ENABLE_MODE;
+
+	ret = get_efuse_securitydebug_value((u8 *)&sec_debug_value,
+			sizeof(sec_debug_value),
+			EFUSE_MAILBOX_TIMEOUT_1000MS);
+
+	if (OK != ret) {
+		return ERROR;
+	}
+
+	*b_disabled = efuse_secdebug_is_disabled(sec_debug_value);
+	return OK;
+}
+
 
 static int set_efuse_securitydebug_value(unsigned char *pu8Buffer, unsigned int timeout)
 {
@@ -335,14 +416,24 @@ static int set_efuse_securitydebug_value(unsigned char *pu8Buffer, unsigned int 
 	check_efuse_module_ready();
 	BUG_ON(in_interrupt());
 	mutex_lock(&g_efusec_data.efuse_mutex);
+
 	vote_efuse_volt_flag = vote_efuse_volt();
+
 	memmove((void *)g_efusec_data.buf_virt_addr, (void *)pu8Buffer, sizeof(unsigned int));
 	ret = g_efusec_data.invoke_efuse_fn(EFUSE_FN_SET_SECURITYDEBUG, (u64) g_efusec_data.buf_phy_addr, (u64) 0, (u64) timeout);
 	if (OK == vote_efuse_volt_flag)
 		restore_efuse_volt();
+
+	/* start hisee otp1 write task, if secure debug is disabled */
+	if (OK == ret && true == efuse_secdebug_is_disabled(*(u32 *)pu8Buffer)) {
+		efuse_print_info(log_level_error, "debug efuse set %x start otp \n", (*(u32 *)pu8Buffer));
+		/* start otp1 flash stask for hisee pinstall task */
+		creat_flash_otp_thread();
+	}
+
 	mutex_unlock(&g_efusec_data.efuse_mutex);
 	efuse_print_info(log_level_error, "%s: ret=%d.\n", __func__, ret);
-	creat_flash_otp_thread();
+
 	return ret;
 }
 
@@ -434,10 +525,11 @@ static long efusec_ioctl(struct file *file, u_int cmd, u_long arg)
 	/*20 bytes be enough for these efuse field now, need to make larger if
 	 *the length of efuse field more than 20!
 	 */
-	unsigned char buffer[20] = { 0 };
+	u32 read_buf[20/sizeof(u32)] = { 0 };
+	u8 *buffer = (u8 *)read_buf;
 
 	efuse_print_info(log_level_error, "%s: %d: cmd=0x%x.\n", __func__, __LINE__, cmd);
-	if (!arg) {
+	if (!argp) {
 		ret = -EFAULT;
 		return ret;
 	}
@@ -454,7 +546,6 @@ static long efusec_ioctl(struct file *file, u_int cmd, u_long arg)
 		for (i = 0; i < bytes; i++) {
 			efuse_print_info(log_level_error, "line%d, get_efuse_chipid_value[%d] = %2x.\n", __LINE__, i, buffer[i]);
 		}
-
 		/*send back to user */
 		if (copy_to_user(argp, &buffer[0], bytes)) {
 			ret = -EFAULT;
@@ -499,7 +590,6 @@ static long efusec_ioctl(struct file *file, u_int cmd, u_long arg)
 		for (i = 0; i < bytes; i++) {
 			efuse_print_info(log_level_error, "line%d, get_efuse_authkey_value[%d] = %2x.\n", __LINE__, i, buffer[i]);
 		}
-
 		/*send back to user */
 		if (copy_to_user(argp, &buffer[0], bytes)) {
 			ret = -EFAULT;
@@ -604,7 +694,6 @@ static int __init hisi_efusec_init(void)
 	unsigned int i;
 	u32 data[2] = { 0 };
 	phys_addr_t bl31_smem_base = HISI_SUB_RESERVED_BL31_SHARE_MEM_PHYMEM_BASE;
-
 	memset(&g_efusec_data, 0, sizeof(g_efusec_data));
 	np = of_find_compatible_node(NULL, NULL, "hisilicon, efuse");
 	if (!np) {

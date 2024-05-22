@@ -73,14 +73,17 @@ HWLOG_REGIST();
 struct imonitor_param;
 struct imonitor_param {
 	int key;
+	char *key_v2;
 	char *value;
 	struct imonitor_param *next;
 };
+
 /*event obj struct*/
 struct imonitor_eventobj {
 	unsigned int eventid;
 	const unsigned short *desc;
 	unsigned int params_count;
+	char api_version;
 
 	/*record params linked list*/
 	struct imonitor_param *head;
@@ -95,6 +98,26 @@ struct imonitor_eventobj {
 	char *dynamic_path_delete[MAX_PATH_NUMBER];
 };
 
+#define CHECK_V1_API(obj) \
+do { \
+	if (obj->api_version == 0) { \
+		obj->api_version = 1; \
+	} else if (obj->api_version == 2) { \
+		hwlog_err("cannot use v1 api (%s) after v2 api used", __FUNCTION__); \
+		return -1; \
+	} \
+}while(0)
+
+#define CHECK_V2_API(obj) \
+do { \
+	if (obj->api_version == 0) { \
+		obj->api_version = 2; \
+	} else if (obj->api_version == 1) { \
+		hwlog_err("cannot use v2 api (%s) after v1 api used", __FUNCTION__); \
+		return -1; \
+	} \
+}while(0)
+
 #ifndef IMONITOR_NEW_API
 int imonitor_set_param_integer(struct imonitor_eventobj *eventobj,
 		unsigned short paramid, long value);
@@ -103,16 +126,60 @@ int imonitor_set_param_string(struct imonitor_eventobj *eventobj,
 		unsigned short paramid, const char* value);
 #endif
 
+#ifndef IMONITOR_NEW_API_V2
+int imonitor_set_param_integer_v2(struct imonitor_eventobj *eventobj,
+		const char* param, long value);
+
+int imonitor_set_param_string_v2(struct imonitor_eventobj *eventobj,
+		const char* param, const char* value);
+
+int imonitor_unset_param_v2(struct imonitor_eventobj *eventobj,
+		const char* param);
+#endif
+
 static int imonitor_convert_string(struct imonitor_eventobj *eventobj, char **pbuf);
-static struct imonitor_param* get_imonitor_param(struct imonitor_param *head, int key);
-static void del_imonitor_param(struct imonitor_eventobj *obj, int key);
+static struct imonitor_param* create_imonitor_param(void);
+static void destroy_imonitor_param(struct imonitor_param* p);
+static struct imonitor_param* get_imonitor_param(struct imonitor_param *head, int key, const char* key_s);
+static void del_imonitor_param(struct imonitor_eventobj *obj, int key, const char* key_s);
 static void add_imonitor_param(struct imonitor_eventobj *obj, struct imonitor_param *param);
 
-static struct imonitor_param* get_imonitor_param(struct imonitor_param *head, int key)
+static struct imonitor_param* create_imonitor_param(void)
+{
+	struct imonitor_param* param = (struct imonitor_param *)vmalloc(sizeof(struct imonitor_param));
+	if (param == NULL) {
+		return NULL;
+	}
+	param->key = -1;
+	param->key_v2 = NULL;
+	param->value = NULL;
+	param->next = NULL;
+	return param;
+}
+
+static void destroy_imonitor_param(struct imonitor_param* p)
+{
+	if (p == NULL) {
+		return;
+	}
+	if (p->value != NULL) {
+		vfree(p->value);
+	}
+	if (p->key_v2 != NULL) {
+		kfree(p->key_v2);
+	}
+	vfree(p);
+}
+
+static struct imonitor_param* get_imonitor_param(struct imonitor_param *head, int key, const char* key_s)
 {
 	struct imonitor_param *p = head;
 	while (p != NULL) {
-		if (p->key == key) {
+		if (key_s != NULL) {
+			if (strcmp(p->key_v2, key_s) == 0) {
+				return p;
+			}
+		} else if (p->key == key) {
 			return p;
 		}
 		p = p->next;
@@ -120,21 +187,26 @@ static struct imonitor_param* get_imonitor_param(struct imonitor_param *head, in
 	return NULL;
 }
 
-static void del_imonitor_param(struct imonitor_eventobj *obj, int key)
+static void del_imonitor_param(struct imonitor_eventobj *obj, int key, const char* key_s)
 {
 	struct imonitor_param *prev = NULL;
 	struct imonitor_param *p = obj->head;
 	while (p != NULL) {
-		if (p->key == key) {
+		int is_found = 0;
+		if (key_s != NULL) {
+			if (strcmp(p->key_v2, key_s) == 0) {
+				is_found = 1;
+			}
+		} else if (p->key == key) {
+			is_found = 1;
+		}
+		if (is_found) {
 			if (prev == NULL) {
 				obj->head = p->next;
 			} else {
 				prev->next = p->next;
 			}
-			if (p->value != NULL) {
-				vfree(p->value);
-			}
-			vfree(p);
+			destroy_imonitor_param(p);
 			break;
 		}
 		prev = p;
@@ -194,6 +266,7 @@ struct imonitor_eventobj *imonitor_create_eventobj(unsigned int eventid)
 	if (NULL == eventobj)
 		return NULL;
 	eventobj->eventid = eventid;
+	eventobj->api_version = 0;
 	hwlog_info("imonitor_create_eventobj: %d", eventid);
 
 	/*Initial path NULL*/
@@ -308,15 +381,14 @@ int imonitor_set_param_integer(struct imonitor_eventobj *eventobj,
 		hwlog_err("Bad param for imonitor_set_param_integer");
 		return -EINVAL;
 	}
-	param = get_imonitor_param(eventobj->head, (int)paramid);
+	CHECK_V1_API(eventobj);
+	param = get_imonitor_param(eventobj->head, (int)paramid, NULL);
 	if (param == NULL) {
-		param = (struct imonitor_param *)vmalloc(sizeof(struct imonitor_param));
+		param = create_imonitor_param();
 		if (param == NULL) {
 			return -ENOMEM;
 		}
 		param->key = paramid;
-		param->value = NULL;
-		param->next = NULL;
 		add_imonitor_param(eventobj, param);
 	}
 	if (param->value != NULL) {
@@ -336,19 +408,18 @@ int imonitor_set_param_string(struct imonitor_eventobj *eventobj,
 {
 	struct imonitor_param *param;
 	int len;
-	if (NULL == eventobj) {
-		hwlog_err("Bad param for imonitor_set_param_integer");
+	if (NULL == eventobj || NULL == value) {
+		hwlog_err("Bad param for imonitor_set_param_string");
 		return -EINVAL;
 	}
-	param = get_imonitor_param(eventobj->head, (int)paramid);
+	CHECK_V1_API(eventobj);
+	param = get_imonitor_param(eventobj->head, (int)paramid, NULL);
 	if (param == NULL) {
-		param = (struct imonitor_param *)vmalloc(sizeof(struct imonitor_param));
+		param = create_imonitor_param();
 		if (param == NULL) {
 			return -ENOMEM;
 		}
 		param->key = paramid;
-		param->value = NULL;
-		param->next = NULL;
 		add_imonitor_param(eventobj, param);
 	}
 	if (param->value != NULL) {
@@ -377,10 +448,92 @@ int imonitor_unset_param(struct imonitor_eventobj *eventobj,
 		return -EINVAL;
 	}
 
-	del_imonitor_param(eventobj, (int)paramid);
+	CHECK_V1_API(eventobj);
+	del_imonitor_param(eventobj, (int)paramid, NULL);
 	return 0;
 }
 EXPORT_SYMBOL(imonitor_unset_param);
+
+int imonitor_set_param_integer_v2(struct imonitor_eventobj *eventobj,
+		const char* param, long value)
+{
+	struct imonitor_param *i_param;
+	if (NULL == eventobj || NULL == param) {
+		hwlog_err("Bad param for imonitor_set_param_integer_v2");
+		return -EINVAL;
+	}
+	CHECK_V2_API(eventobj);
+	i_param = get_imonitor_param(eventobj->head, -1, param);
+	if (i_param == NULL) {
+		i_param = create_imonitor_param();
+		if (i_param == NULL) {
+			return -ENOMEM;
+		}
+		i_param->key_v2 = kstrdup(param, GFP_ATOMIC);
+		add_imonitor_param(eventobj, i_param);
+	}
+	if (i_param->value != NULL) {
+		vfree(i_param->value);
+	}
+	i_param->value = (char*)vmalloc(21);
+	if (i_param->value == NULL) {
+		return -ENOMEM;
+	}
+	snprintf(i_param->value, 21, "%d", (int)value);
+	return 0;
+}
+EXPORT_SYMBOL(imonitor_set_param_integer_v2);
+
+int imonitor_set_param_string_v2(struct imonitor_eventobj *eventobj,
+		const char* param, const char* value)
+{
+	struct imonitor_param *i_param;
+	int len;
+	if (NULL == eventobj || NULL == param || NULL == value) {
+		hwlog_err("Bad param for imonitor_set_param_string_v2");
+		return -EINVAL;
+	}
+	CHECK_V2_API(eventobj);
+	i_param = get_imonitor_param(eventobj->head, -1, param);
+	if (i_param == NULL) {
+		i_param = create_imonitor_param();
+		if (i_param == NULL) {
+			return -ENOMEM;
+		}
+		i_param->key_v2 = kstrdup(param, GFP_ATOMIC);
+		add_imonitor_param(eventobj, i_param);
+	}
+	if (i_param->value != NULL) {
+		vfree(i_param->value);
+	}
+	len = strlen(value);
+	if (len > MAX_STR_LEN) {
+		// prevent length larger than MAX_STR_LEN
+		len = MAX_STR_LEN;
+	}
+	i_param->value = vmalloc(len + 1);
+	if (i_param->value == NULL) {
+		return -ENOMEM;
+	}
+	strncpy(i_param->value, value, len);
+	i_param->value[len] = '\0';
+	return 0;
+}
+EXPORT_SYMBOL(imonitor_set_param_string_v2);
+
+int imonitor_unset_param_v2(struct imonitor_eventobj *eventobj,
+		const char* param)
+{
+	if (NULL == eventobj || NULL == param) {
+		hwlog_err("Bad param for imonitor_unset_param_v2");
+		return -EINVAL;
+	}
+
+	CHECK_V2_API(eventobj);
+	del_imonitor_param(eventobj, -1, param);
+	return 0;
+}
+EXPORT_SYMBOL(imonitor_unset_param_v2);
 
 int imonitor_set_time(struct imonitor_eventobj *eventobj, long long seconds)
 {
@@ -393,7 +546,7 @@ int imonitor_set_time(struct imonitor_eventobj *eventobj, long long seconds)
 }
 EXPORT_SYMBOL(imonitor_set_time);
 
-static int add_path(const char **pool, const char *path)
+static int add_path(char **pool, const char *path)
 {
 	int i;
 
@@ -428,7 +581,6 @@ int imonitor_add_dynamic_path(struct imonitor_eventobj *eventobj,
 		hwlog_err("Bad param imonitor_add_dynamic_path");
 		return -EINVAL;
 	}
-
 	return add_path(eventobj->dynamic_path, path);
 }
 EXPORT_SYMBOL(imonitor_add_dynamic_path);
@@ -440,7 +592,6 @@ int imonitor_add_and_del_dynamic_path(struct imonitor_eventobj *eventobj,
 		hwlog_err("Bad param imonitor_add_and_del_dynamic_path");
 		return -EINVAL;
 	}
-
 	return add_path(eventobj->dynamic_path_delete, path);
 }
 EXPORT_SYMBOL(imonitor_add_and_del_dynamic_path);
@@ -487,15 +638,16 @@ static char *make_regular(char *value)
 static int imonitor_convert_string(struct imonitor_eventobj *eventobj, char **pbuf)
 {
 	int len;
+	char *tmp;
+	int tmplen;
+	unsigned int i = 0;
+	unsigned int keycount = 0;
+	struct imonitor_param *p;
 	char *buf = vmalloc(EVENT_INFO_BUF_LEN);
 	if(NULL == buf)
 	{
 		goto ERRORDONE;
 	}
-	char *tmp;
-	int tmplen;
-	unsigned int i = 0;
-	unsigned int keycount = 0;
 
 	len = EVENT_INFO_BUF_LEN;
 	tmp = buf;
@@ -525,14 +677,13 @@ static int imonitor_convert_string(struct imonitor_eventobj *eventobj, char **pb
 		BUF_POINTER_FORWARD;
 	}
 
-	/*if no parameters for this event*/
-	if (0 == eventobj->params_count)
-		goto DONE;
-
 	/*fill the param info*/
 	keycount = 0;
-	struct imonitor_param *p = eventobj->head;
+	p = eventobj->head;
 	while (p != NULL) {
+		char *value, *regular_value;
+		int need_free = 1;
+
 		if (p->value == NULL) {
 			p = p->next;
 			continue;
@@ -543,13 +694,14 @@ static int imonitor_convert_string(struct imonitor_eventobj *eventobj, char **pb
 		}
 		keycount++;
 		/*fill key*/
-		tmplen = snprintf(tmp, len, "%d:", p->key);
+		if (p->key_v2 != NULL) {
+			tmplen = snprintf(tmp, len, "%s:", p->key_v2);
+		} else  {
+			tmplen = snprintf(tmp, len, "%d:", p->key);
+		}
 		BUF_POINTER_FORWARD;
 		/*fill value*/
 		tmplen = 0;
-
-		char *value, *regular_value;
-		int need_free = 1;
 
 		value = p->value;
 		regular_value = make_regular(value);
@@ -565,7 +717,6 @@ static int imonitor_convert_string(struct imonitor_eventobj *eventobj, char **pb
 		p = p->next;
 	}
 
-DONE:
 	*pbuf = buf;
 	return (EVENT_INFO_BUF_LEN - len);
 
@@ -668,11 +819,8 @@ void imonitor_destroy_eventobj(struct imonitor_eventobj *eventobj)
 	p = eventobj->head;
 	while (p != NULL) {
 		struct imonitor_param *del = p;
-		if (p->value != NULL) {
-			vfree(p->value);
-		}
 		p = p->next;
-		vfree(del);
+		destroy_imonitor_param(del);
 	}
 	eventobj->head = NULL;
 

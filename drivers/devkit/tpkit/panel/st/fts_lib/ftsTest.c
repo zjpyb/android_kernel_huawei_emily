@@ -50,6 +50,9 @@
 #include <linux/regulator/consumer.h>
 #include <linux/of_gpio.h>
 
+
+int check_MutualRawResGap(void);
+
 static int check_gap_limit(short* data, int row, int column, int threshold)
 {
 	int i;
@@ -874,7 +877,7 @@ static void print_data_s16(short *data, int rows, int columns)
 int production_test_ms_raw(char *path_limits, int stop_on_fail,
 	TestToDo *todo,struct ts_rawdata_info *info, TestResult *result)
 {
-
+	struct fts_ts_info *fts_info = fts_get_info();
 	int ret,count_fail=0;
 	MutualSenseFrame msRawFrame;
 	MutualSenseFrame msStrengthFrame;
@@ -930,11 +933,23 @@ int production_test_ms_raw(char *path_limits, int stop_on_fail,
 		/* check mutal raw gap limit */
 		if (todo->MutualRawGap == 1) {
 			TS_LOG_INFO("%s MS RAW GAP TEST:\n", __func__);
-			ret = parseProductionTestLimits(path_limits, MS_RAW_GAP, &thresholds, &trows, &tcolumns);
-			if (ret < 0 || (trows != 1 || tcolumns != 1)) {
-				TS_LOG_ERR("%s : parseProductionTestLimits MS_RAW_GAP failed... ERROR %02X\n", __func__, ERROR_PROD_TEST_DATA);
-				ret |= ERROR_PROD_TEST_DATA;
-				goto ERROR_LIMITS;
+			if(fts_info->check_MutualRawGap_after_callibrate){
+				ret = parseProductionTestLimits(path_limits, MS_RAW_GAP_CHECK_AFTER_CAL, &thresholds, &trows, &tcolumns);
+				if (ret < 0 || (trows != 1 || tcolumns != 1)) {
+					TS_LOG_ERR("%s : parseProductionTestLimits MS_RAW_GAP failed... ERROR %02X\n", __func__, ERROR_PROD_TEST_DATA);
+					ret |= ERROR_PROD_TEST_DATA;
+					goto ERROR_LIMITS;
+				}
+				TS_LOG_INFO("%s : check_MutualRawGap_after_callibrate:thresholds =%d\n", __func__,thresholds[0]);
+			}
+			else
+			{
+				ret = parseProductionTestLimits(path_limits, MS_RAW_GAP, &thresholds, &trows, &tcolumns);
+				if (ret < 0 || (trows != 1 || tcolumns != 1)) {
+					TS_LOG_ERR("%s : parseProductionTestLimits MS_RAW_GAP failed... ERROR %02X\n", __func__, ERROR_PROD_TEST_DATA);
+					ret |= ERROR_PROD_TEST_DATA;
+					goto ERROR_LIMITS;
+				}
 			}
 			TS_LOG_INFO(" [%s] -> %d|%d|%d\n",__func__,msRawFrame.header.force_node,
 									msRawFrame.header.sense_node, thresholds[0]);
@@ -1575,6 +1590,7 @@ ERROR_LIMITS:
 
 int production_test_data(char *path_limits, int stop_on_fail, TestToDo *todo,struct ts_rawdata_info *info, TestResult *result) {
 	int res = OK, ret;
+	int fd = -1;
 
 	if (todo == NULL) {
 		TS_LOG_ERR("%s production_test_data: No TestToDo specified!! ERROR = %02X\n", __func__, (ERROR_OP_NOT_ALLOW | ERROR_PROD_TEST_DATA));
@@ -1583,7 +1599,13 @@ int production_test_data(char *path_limits, int stop_on_fail, TestToDo *todo,str
 
 
 	TS_LOG_INFO("%s: test starting...\n", __func__);
-
+	struct fts_ts_info *fts_info = fts_get_info();
+	fd = request_firmware(&(fts_info->fw),path_limits, fts_info->i2c_cmd_dev);
+	TS_LOG_INFO("%s Start to reading %s...:%d\n", __func__, path_limits,fd);
+	if(fd != 0) {
+		TS_LOG_ERR("%s file not found: ERROR %02X\n", __func__, ERROR_FILE_NOT_FOUND);
+		return ERROR_FILE_NOT_FOUND;
+	}
 
 	ret = production_test_ms_raw(path_limits, stop_on_fail, todo, info, result);
 	res |= ret;
@@ -1605,8 +1627,9 @@ int production_test_data(char *path_limits, int stop_on_fail, TestToDo *todo,str
 		TS_LOG_ERR("%s production_test_data: production_test_ss_raw failed... ERROR = %02X\n", __func__, ret);
 		if (stop_on_fail == 1) goto END;
 	}
-
 END:
+	release_firmware(fts_info->fw);
+	fts_info->fw = NULL;
 	if (res < OK)
 		TS_LOG_INFO("%s DATA Production test failed!\n", __func__);
 	else
@@ -1657,15 +1680,9 @@ int parseProductionTestLimits(char * path, char *label, int **data, int *row, in
 	int n,size,pointer=0, ret=OK;
 	char *data_file = NULL;
 	struct fts_ts_info *info = fts_get_info();
-	const struct firmware *fw = NULL;
-
-	fd = request_firmware(&fw,path, info->i2c_cmd_dev);
-	TS_LOG_ERR("%s Start to reading %s...:%d\n", __func__, path,fd);
-
-
-	if (fd ==0){
-		size = fw->size;
-		data_file = (char * )fw->data;
+	if(info->fw != NULL){
+		size = info->fw->size;
+		data_file = (char * )info->fw->data;
 		TS_LOG_INFO("%s Start to reading %s...\n", __func__, path);
 		TS_LOG_INFO("%s The size of the limits file is %d bytes...\n", __func__, size);
 
@@ -1776,7 +1793,6 @@ int parseProductionTestLimits(char * path, char *label, int **data, int *row, in
 		ret = ERROR_LABEL_NOT_FOUND;
 END:
 		if(buf!=NULL) kfree(buf);
-		release_firmware(fw);
 		return ret;
 
 	}

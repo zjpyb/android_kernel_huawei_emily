@@ -153,8 +153,6 @@ static void input_pass_values(struct input_dev *dev,
 
 	rcu_read_unlock();
 
-	add_input_randomness(vals->type, vals->code, vals->value);
-
 	/* trigger auto repeat for key events */
 	if (test_bit(EV_REP, dev->evbit) && test_bit(EV_KEY, dev->evbit)) {
 		for (v = vals; v != vals + count; v++) {
@@ -371,9 +369,10 @@ static int input_get_disposition(struct input_dev *dev,
 static void input_handle_event(struct input_dev *dev,
 			       unsigned int type, unsigned int code, int value)
 {
-	int disposition;
+	int disposition = input_get_disposition(dev, type, code, &value);
 
-	disposition = input_get_disposition(dev, type, code, &value);
+	if (disposition != INPUT_IGNORE_EVENT && type != EV_SYN)
+		add_input_randomness(type, code, value);
 
 	if ((disposition & INPUT_PASS_TO_DEVICE) && dev->event)
 		dev->event(dev, type, code, value);
@@ -686,7 +685,7 @@ static void input_dev_release_keys(struct input_dev *dev)
 		if (need_sync)
 			input_pass_event(dev, EV_SYN, SYN_REPORT, 1);
 
-		memset(dev->key, 0, sizeof(dev->key));/*[false alarm]:return */
+		memset(dev->key, 0, sizeof(dev->key));
 	}
 }
 
@@ -1015,7 +1014,7 @@ static int input_bits_to_string(char *buf, int buf_size,
 {
 	int len = 0;
 
-	if (INPUT_COMPAT_TEST) {
+	if (in_compat_syscall()) {
 		u32 dword = bits >> 32;
 		if (dword || !skip_empty)
 			len += snprintf(buf, buf_size, "%x ", dword);
@@ -2002,14 +2001,14 @@ static unsigned int input_estimate_events_per_packet(struct input_dev *dev)
 
 static void input_cleanse_bitmasks(struct input_dev *dev)
 {
-	INPUT_CLEANSE_BITMASK(dev, KEY, key);/*[false alarm]:return */
-	INPUT_CLEANSE_BITMASK(dev, REL, rel);/*[false alarm]:return */
-	INPUT_CLEANSE_BITMASK(dev, ABS, abs);/*[false alarm]:return */
-	INPUT_CLEANSE_BITMASK(dev, MSC, msc);/*[false alarm]:return */
-	INPUT_CLEANSE_BITMASK(dev, LED, led);/*[false alarm]:return */
-	INPUT_CLEANSE_BITMASK(dev, SND, snd);/*[false alarm]:return */
-	INPUT_CLEANSE_BITMASK(dev, FF, ff);/*[false alarm]:return */
-	INPUT_CLEANSE_BITMASK(dev, SW, sw);/*[false alarm]:return */
+	INPUT_CLEANSE_BITMASK(dev, KEY, key);
+	INPUT_CLEANSE_BITMASK(dev, REL, rel);
+	INPUT_CLEANSE_BITMASK(dev, ABS, abs);
+	INPUT_CLEANSE_BITMASK(dev, MSC, msc);
+	INPUT_CLEANSE_BITMASK(dev, LED, led);
+	INPUT_CLEANSE_BITMASK(dev, SND, snd);
+	INPUT_CLEANSE_BITMASK(dev, FF, ff);
+	INPUT_CLEANSE_BITMASK(dev, SW, sw);
 }
 
 static void __input_unregister_device(struct input_dev *dev)

@@ -23,6 +23,8 @@ HWLOG_REGIST();
 #define MAX_CABLE_LOOP  20
 extern int ignore_unattach_once;
 extern int state_machine_need_resched;
+extern void usb_analog_hs_fsa4476_set_gpio_state(int enn, int en1, int en2);
+extern void FUSB3601_platform_notify_dual_role_instance_changed(void);
 void FUSB3601_resetDp(struct Port *port);
 /* Entry point to the Type-C FUSB3601_State machine */
 void FUSB3601_dump_register(void);
@@ -264,6 +266,10 @@ void FUSB3601_StateMachineAttachWaitSource(struct Port *port)
 						}
 					}
 				}
+			}
+			hwlog_info("%s: port->cc_term = %d, port->vconn_term = %d\n", __func__, port->cc_term_, port->vconn_term_);
+			if (port->vconn_term_ == SRC_RA) {
+				usb_analog_hs_fsa4476_set_gpio_state(0, 0, 0);
 			}
 		}
 	}
@@ -785,7 +791,8 @@ void FUSB3601_SetStateUnattached(struct Port *port)
 		FUSB3601_TimerStart(&port->tc_state_timer_, 100 * kMSTimeFactor);
 		FUSB3601_TimerStart(&port->policy_state_timer_, 500 * kMSTimeFactor);
 	}
-
+	hwlog_info("%s: port->cc_term = %d, port->vconn_term = %d\n", __func__, port->cc_term_, port->vconn_term_);
+	usb_analog_hs_fsa4476_set_gpio_state(1, 0, 0);
 }
 
 #ifdef FSC_HAVE_SNK
@@ -953,6 +960,10 @@ void FUSB3601_SetStateAttachedSink(struct Port *port)
 	FUSB3601_platform_notify_cc_orientation(port->registers_.TcpcCtrl.ORIENT);
 
 	FUSB3601_PDEnable(port, FALSE);
+	hwlog_info("%s: port->cc_term = %d, port->vconn_term = %d\n", __func__, port->cc_term_, port->vconn_term_);
+	if (port->vconn_term_ == SRC_RA) {
+		usb_analog_hs_fsa4476_set_gpio_state(0, 0, 0);
+	}
 }
 #endif /* FSC_HAVE_SNK */
 
@@ -973,6 +984,7 @@ void FUSB3601_RoleSwapToAttachedSink(struct Port *port)
 		port->registers_.RoleCtrl.CC2_TERM = CCRoleOpen;
 	}
 
+	FUSB3601_platform_notify_dual_role_instance_changed();
 	FUSB3601_WriteRegister(port, regROLECTRL);
 
 	/* Manually disable VBus */
@@ -1016,6 +1028,7 @@ void FUSB3601_RoleSwapToAttachedSource(struct Port *port)
 		port->registers_.RoleCtrl.CC2_TERM = CCRoleOpen;
 	}
 
+	FUSB3601_platform_notify_dual_role_instance_changed();
 	FUSB3601_WriteRegister(port, regROLECTRL);
 	port->registers_.AlertMskH.M_VBUS_SNK_DISC = 0;
 	FUSB3601_WriteRegisters(port, regALERTMSKH, 1);

@@ -22,24 +22,19 @@
 #include <asm/irq_regs.h>
 #include <asm/perf_event.h>
 #include <asm/sysreg.h>
+#include <asm/virt.h>
 
 #include <linux/acpi.h>
 #include <linux/of.h>
 #include <linux/perf/arm_pmu.h>
 #include <linux/platform_device.h>
 
+static DEFINE_PER_CPU(bool, is_hotplugging);
+
 /*
  * ARMv8 PMUv3 Performance Events handling code.
- * Common event types.
+ * Common event types (some are defined in asm/perf_event.h).
  */
-
-/* Required events. */
-#define ARMV8_PMUV3_PERFCTR_SW_INCR				0x00
-#define ARMV8_PMUV3_PERFCTR_L1D_CACHE_REFILL			0x03
-#define ARMV8_PMUV3_PERFCTR_L1D_CACHE				0x04
-#define ARMV8_PMUV3_PERFCTR_BR_MIS_PRED				0x10
-#define ARMV8_PMUV3_PERFCTR_CPU_CYCLES				0x11
-#define ARMV8_PMUV3_PERFCTR_BR_PRED				0x12
 
 /* At least one of the following is required. */
 #define ARMV8_PMUV3_PERFCTR_INST_RETIRED			0x08
@@ -210,11 +205,18 @@
 static const unsigned armv8_pmuv3_perf_map[PERF_COUNT_HW_MAX] = {
 	PERF_MAP_ALL_UNSUPPORTED,
 	[PERF_COUNT_HW_CPU_CYCLES]		= ARMV8_PMUV3_PERFCTR_CPU_CYCLES,
+#ifdef CONFIG_HISI_HW_PERF_EVENTS
+	[PERF_COUNT_HW_INSTRUCTIONS]		= HW_OP_UNSUPPORTED,
+	[PERF_COUNT_HW_CACHE_REFERENCES]	= HW_OP_UNSUPPORTED,
+	[PERF_COUNT_HW_CACHE_MISSES]		= HW_OP_UNSUPPORTED,
+	[PERF_COUNT_HW_BRANCH_MISSES]		= HW_OP_UNSUPPORTED,
+#else
 	[PERF_COUNT_HW_INSTRUCTIONS]		= ARMV8_PMUV3_PERFCTR_INST_RETIRED,
 	[PERF_COUNT_HW_CACHE_REFERENCES]	= ARMV8_PMUV3_PERFCTR_L1D_CACHE,
 	[PERF_COUNT_HW_CACHE_MISSES]		= ARMV8_PMUV3_PERFCTR_L1D_CACHE_REFILL,
-	[PERF_COUNT_HW_BRANCH_INSTRUCTIONS]	= ARMV8_PMUV3_PERFCTR_PC_WRITE_RETIRED,
 	[PERF_COUNT_HW_BRANCH_MISSES]		= ARMV8_PMUV3_PERFCTR_BR_MIS_PRED,
+#endif
+	[PERF_COUNT_HW_BRANCH_INSTRUCTIONS]	= ARMV8_PMUV3_PERFCTR_PC_WRITE_RETIRED,
 	[PERF_COUNT_HW_BUS_CYCLES]		= ARMV8_PMUV3_PERFCTR_BUS_CYCLES,
 	[PERF_COUNT_HW_STALLED_CYCLES_FRONTEND]	= ARMV8_PMUV3_PERFCTR_STALL_FRONTEND,
 	[PERF_COUNT_HW_STALLED_CYCLES_BACKEND]	= ARMV8_PMUV3_PERFCTR_STALL_BACKEND,
@@ -576,6 +578,27 @@ static inline int armv8pmu_select_counter(int idx)
 	return idx;
 }
 
+#ifdef CONFIG_HISI_HARDEN_BRANCH_PREDICTOR
+u32 armv8pmu_get_counter(struct perf_event *event)
+{
+	struct arm_pmu *cpu_pmu = to_arm_pmu(event->pmu);
+	struct hw_perf_event *hwc = &event->hw;
+	int idx = hwc->idx;
+	u32 counter = 0;
+
+	if (!armv8pmu_counter_valid(cpu_pmu, idx)) {
+		pr_err("CPU%u reading wrong counter %d\n",
+			smp_processor_id(), idx);
+		/* set the value to zero */
+		counter = ARMV8_IDX_CYCLE_COUNTER;
+	}  else	{
+		counter = ARMV8_IDX_TO_COUNTER(idx);
+	}
+
+	return counter;
+}
+#endif
+
 static inline u32 armv8pmu_read_counter(struct perf_event *event)
 {
 	struct arm_pmu *cpu_pmu = to_arm_pmu(event->pmu);
@@ -763,8 +786,8 @@ static irqreturn_t armv8pmu_handle_irq(int irq_num, void *dev)
 		struct perf_event *event = cpuc->events[idx];
 		struct hw_perf_event *hwc;
 
-		/* Ignore if we don't have an event. */
-		if (!event)
+		/* Ignore if we don't have an event or if it's a zombie event */
+		if (!event || event->state == PERF_EVENT_STATE_ZOMBIE)
 			continue;
 
 		/*
@@ -852,12 +875,23 @@ static int armv8pmu_set_event_filter(struct hw_perf_event *event,
 {
 	unsigned long config_base = 0;
 
+	/*
+	 * If we're running in hyp mode, then we *are* the hypervisor.
+	 * Therefore we ignore exclude_hv in this configuration, since
+	 * there's no hypervisor to sample anyway. This is consistent
+	 * with other architectures (x86 and Power).
+	 */
+	if (is_kernel_in_hyp_mode()) {
+		if (!attr->exclude_kernel)
+			config_base |= ARMV8_PMU_INCLUDE_EL2;
+	} else {
+		if (attr->exclude_kernel)
+			config_base |= ARMV8_PMU_EXCLUDE_EL1;
+		if (!attr->exclude_hv)
+			config_base |= ARMV8_PMU_INCLUDE_EL2;
+	}
 	if (attr->exclude_user)
 		config_base |= ARMV8_PMU_EXCLUDE_EL0;
-	if (attr->exclude_kernel)
-		config_base |= ARMV8_PMU_EXCLUDE_EL1;
-	if (!attr->exclude_hv)
-		config_base |= ARMV8_PMU_INCLUDE_EL2;
 
 	/*
 	 * Install the filter into config_base as this is used to
@@ -884,7 +918,7 @@ static void armv8pmu_reset(void *info)
 	 * 64 bit cycle counter but cheat in armv8pmu_write_counter().
 	 */
 	armv8pmu_pmcr_write(ARMV8_PMU_PMCR_P | ARMV8_PMU_PMCR_C |
-			    ARMV8_PMU_PMCR_LC);
+			ARMV8_PMU_PMCR_LC);
 }
 
 static int __armv8_pmuv3_map_event(struct perf_event *event,
@@ -968,7 +1002,7 @@ static void __armv8pmu_probe_pmu(void *info)
 	int pmuver;
 
 	dfr0 = read_sysreg(id_aa64dfr0_el1);
-	pmuver = cpuid_feature_extract_field(dfr0,
+	pmuver = cpuid_feature_extract_signed_field(dfr0,
 			ID_AA64DFR0_PMUVER_SHIFT);
 	if (pmuver < 1)
 		return;
@@ -990,6 +1024,55 @@ static void __armv8pmu_probe_pmu(void *info)
 			     ARRAY_SIZE(pmceid));
 }
 
+static void armv8pmu_idle_update(struct arm_pmu *cpu_pmu)
+{
+	struct pmu_hw_events *hw_events;
+	struct perf_event *event;
+	int idx;
+
+	if (!cpu_pmu)
+		return;
+
+	if (__this_cpu_read(is_hotplugging))
+		return;
+
+	hw_events = this_cpu_ptr(cpu_pmu->hw_events);
+
+	if (!hw_events)
+		return;
+
+	for (idx = 0; idx < cpu_pmu->num_events; ++idx) {
+
+		if (!test_bit(idx, hw_events->used_mask))
+			continue;
+
+		event = hw_events->events[idx];
+
+		if (!event || !event->attr.exclude_idle ||
+				event->state != PERF_EVENT_STATE_ACTIVE)
+			continue;
+
+		cpu_pmu->pmu.read(event);
+	}
+}
+
+struct arm_pmu_and_idle_nb {
+	struct arm_pmu *cpu_pmu;
+	struct notifier_block perf_cpu_idle_nb;
+};
+
+static int perf_cpu_idle_notifier(struct notifier_block *nb,
+				unsigned long action, void *data)
+{
+	struct arm_pmu_and_idle_nb *pmu_nb = container_of(nb,
+				struct arm_pmu_and_idle_nb, perf_cpu_idle_nb);
+
+	if (action == IDLE_START)
+		armv8pmu_idle_update(pmu_nb->cpu_pmu);
+
+	return NOTIFY_OK;
+}
+
 static int armv8pmu_probe_pmu(struct arm_pmu *cpu_pmu)
 {
 	struct armv8pmu_probe_info probe = {
@@ -997,10 +1080,22 @@ static int armv8pmu_probe_pmu(struct arm_pmu *cpu_pmu)
 		.present = false,
 	};
 	int ret;
+	struct arm_pmu_and_idle_nb *pmu_idle_nb;
+
+	pmu_idle_nb = devm_kzalloc(&cpu_pmu->plat_device->dev,
+					sizeof(*pmu_idle_nb), GFP_KERNEL);
+	if (!pmu_idle_nb)
+		return -ENOMEM;
+
+	pmu_idle_nb->cpu_pmu = cpu_pmu;
+	pmu_idle_nb->perf_cpu_idle_nb.notifier_call = perf_cpu_idle_notifier;
 
 	ret = smp_call_function_any(&cpu_pmu->supported_cpus,
 				    __armv8pmu_probe_pmu,
 				    &probe, 1);
+	if (!ret && probe.present)
+		idle_notifier_register(&pmu_idle_nb->perf_cpu_idle_nb);
+
 	if (ret)
 		return ret;
 
@@ -1205,6 +1300,37 @@ static const struct of_device_id armv8_pmu_of_device_ids[] = {
 	{},
 };
 
+#ifdef CONFIG_HOTPLUG_CPU
+static int perf_event_hotplug_coming_up(unsigned int cpu)
+{
+	per_cpu(is_hotplugging, cpu) = false;
+	return 0;
+}
+
+static int perf_event_hotplug_going_down(unsigned int cpu)
+{
+	per_cpu(is_hotplugging, cpu) = true;
+	return 0;
+}
+
+static int perf_event_cpu_hp_init(void)
+{
+	int ret;
+
+	ret = cpuhp_setup_state_nocalls(CPUHP_AP_NOTIFY_PERF_ONLINE,
+				"PERF_EVENT/CPUHP_AP_NOTIFY_PERF_ONLINE",
+				perf_event_hotplug_coming_up,
+				perf_event_hotplug_going_down);
+	if (ret)
+		pr_err("CPU hotplug notifier for perf_event.c could not be registered: %d\n",
+		       ret);
+
+	return ret;
+}
+#else
+static int perf_event_cpu_hp_init(void) { return 0; }
+#endif
+
 /*
  * Non DT systems have their micro/arch events probed at run-time.
  * A fairly complete list of generic events are provided and ones that
@@ -1217,12 +1343,26 @@ static const struct pmu_probe_info armv8_pmu_probe_table[] = {
 
 static int armv8_pmu_device_probe(struct platform_device *pdev)
 {
-	if (acpi_disabled)
-		return arm_pmu_device_probe(pdev, armv8_pmu_of_device_ids,
-					    NULL);
+	int ret, cpu;
 
-	return arm_pmu_device_probe(pdev, armv8_pmu_of_device_ids,
-				    armv8_pmu_probe_table);
+	/* set to true so armv8pmu_idle_update doesn't try to load
+	 * hw_events before arm_pmu_device_probe has initialized it.
+	 */
+	for_each_possible_cpu(cpu) {
+		per_cpu(is_hotplugging, cpu) = true;
+	}
+
+	ret = arm_pmu_device_probe(pdev, armv8_pmu_of_device_ids,
+		(acpi_disabled ?  NULL : armv8_pmu_probe_table));
+
+	if (!ret) {
+		for_each_possible_cpu(cpu)
+			per_cpu(is_hotplugging, cpu) = false;
+
+		ret = perf_event_cpu_hp_init();
+	}
+
+	return ret;
 }
 
 static struct platform_driver armv8_pmu_driver = {

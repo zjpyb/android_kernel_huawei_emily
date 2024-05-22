@@ -78,13 +78,11 @@ VOS_UINT32 AT_StartRelTimer(
     VOS_UINT32                          ulRet;
     AT_TIMER_OPERATION_STRU             stTimer;
 
-    /* Added by L60609 for AT Project£¬2011-10-22,  Begin*/
     if (0 == ulLength)
     {
         AT_ERR_LOG("AT_StartRelTimer: Start Rel Timer Length is 0!");
         return VOS_ERR;
     }
-    /* Added by L60609 for AT Project£¬2011-10-22,  End*/
 
     if ( ulLength >= VOS_TIMER_MAX_LENGTH )
     {

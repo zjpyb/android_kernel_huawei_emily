@@ -29,7 +29,7 @@
 
 #define MAX_PRIORITY_DATA_MEM			1500
 #define MAX_PRIORITY_DATA_PKT			1330
-
+#define MAX_COUNT_SIZE				1024
 #define WAIT_SOCK_PROP_TIMEOUT			(3 * HZ)
 
 #define MOBILE_NAME						"rmnet"
@@ -119,6 +119,10 @@ static int32_t bastet_send_priority_data(struct sock *sk,
 	uint32_t i;
 
 	count = size / MAX_PRIORITY_DATA_PKT;
+	if (MAX_COUNT_SIZE < count) {
+		BASTET_LOGE("invalid count size %d", count);
+		return -EINVAL;
+	}
 	for (i = 0; i <= count; i++) {
 		len = count > i
 			? MAX_PRIORITY_DATA_PKT : size % MAX_PRIORITY_DATA_PKT;

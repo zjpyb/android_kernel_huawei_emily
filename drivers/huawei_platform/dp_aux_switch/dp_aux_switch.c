@@ -25,21 +25,22 @@
 #include <linux/regulator/consumer.h>
 #include <linux/regulator/driver.h>
 #include <linux/regulator/machine.h>
+#include <huawei_platform/log/hw_log.h>
 #include <huawei_platform/dp_aux_switch/dp_aux_switch.h>
 #include <huawei_platform/audio/usb_analog_hs_interface.h>
 
-static uint32_t g_dp_aux_gpio;
-static uint32_t g_dp_aux_uart_gpio;
+#define HWLOG_TAG dp_aux_switch
+HWLOG_REGIST();
 
-static struct regulator *g_dp_aux_ldo_supply = NULL;
-static unsigned int g_dp_aux_ldo_status = 0;
-static DEFINE_MUTEX(g_dp_aux_ldo_op_mutex);
+static int g_dp_aux_gpio = -1;
+static int g_dp_aux_uart_gpio = -1;
 
 #define SET_GPIO_HIGH 1
 #define SET_GPIO_LOW  0
 #define DTS_DP_AUX_SWITCH "huawei,dp_aux_switch"
 
 static bool g_aux_switch_from_fsa4476 = false;
+static bool g_aux_switch_with_uart = false;
 static uint32_t g_aux_ch_polarity = 0;
 
 enum aux_switch_channel_type get_aux_switch_channel(void)
@@ -49,6 +50,8 @@ enum aux_switch_channel_type get_aux_switch_channel(void)
 	else
 		return channel_superswitch;
 }
+
+// aux polarity switch
 void dp_aux_switch_op(uint32_t value)
 {
 	if (g_aux_switch_from_fsa4476) {
@@ -63,6 +66,9 @@ void dp_aux_switch_op(uint32_t value)
 	}
 }
 
+// NOTE: Don't pay attention to the name of the function!!!
+// 1. aux-uart switch is existed: this func is switch aux or uart.
+// 2. aux-uart switch is not existed: this func is dp aux enable or disable.
 void dp_aux_uart_switch_enable(void)
 {
 	if (g_aux_switch_from_fsa4476) {
@@ -78,7 +84,13 @@ void dp_aux_uart_switch_enable(void)
 			usb_analog_hs_plug_in_out_handle(DP_PLUG_IN);
 			printk(KERN_INFO "%s: dp plug in.\n", __func__);
 		}
-		return;
+
+		// 1. aux-uart switch is not existed.
+		// 2. aux polarity switch of dp by fsa4476.
+		// Then, return directly.
+		if (!g_aux_switch_with_uart) {
+			return;
+		}
 	}
 
 	if (gpio_is_valid(g_dp_aux_uart_gpio)) {
@@ -94,7 +106,11 @@ void dp_aux_uart_switch_disable(void)
 		// ENN H, EN1/EN2 00
 		usb_analog_hs_plug_in_out_handle(DP_PLUG_OUT);
 		printk(KERN_INFO "%s: dp plug out.\n", __func__);
-		return;
+
+		// aux-uart switch is not existed.
+		if (!g_aux_switch_with_uart) {
+			return;
+		}
 	}
 
 	if (gpio_is_valid(g_dp_aux_uart_gpio)) {
@@ -104,102 +120,32 @@ void dp_aux_uart_switch_disable(void)
 	}
 }
 
-int dp_aux_ldo_supply_enable(dp_aux_ldo_ctrl_type_t type)
-{
-	int ret = 0;
-
-	printk(KERN_INFO "%s: count(%d), type(%d)\n", __func__, g_dp_aux_ldo_status, type);
-	if (g_dp_aux_ldo_supply == NULL) {
-		printk(KERN_ERR "%s: g_dp_aux_power_supply is NULL!\n", __func__);
-		return -ENODEV;
-	}
-
-	if (type >= DP_AUX_LDO_CTRL_MAX) {
-		printk(KERN_ERR "%s: type(%d) is invalid!\n", __func__, type);
-		return -EINVAL;
-	}
-
-	mutex_lock(&g_dp_aux_ldo_op_mutex);
-	if (g_dp_aux_ldo_status == 0) {
-		ret = regulator_enable(g_dp_aux_ldo_supply);
-		if (ret) {
-			printk(KERN_ERR "%s: regulator enable failed(%d)!\n", __func__, ret);
-			mutex_unlock(&g_dp_aux_ldo_op_mutex);
-			return -EPERM;
-		}
-	}
-	g_dp_aux_ldo_status =  g_dp_aux_ldo_status | (1 << type);
-
-	mutex_unlock(&g_dp_aux_ldo_op_mutex);
-
-	printk(KERN_INFO "%s: regulator enable(%d) success!\n", __func__, type);
-	return 0;
-}
-EXPORT_SYMBOL_GPL(dp_aux_ldo_supply_enable);
-
-int dp_aux_ldo_supply_disable(dp_aux_ldo_ctrl_type_t type)
-{
-	int ret = 0;
-
-	printk(KERN_INFO "%s: count(%d), type(%d)\n", __func__, g_dp_aux_ldo_status, type);
-	if (g_dp_aux_ldo_supply == NULL) {
-		printk(KERN_ERR "%s: g_dp_aux_power_supply is NULL!\n", __func__);
-		return -ENODEV;
-	}
-
-	if (type >= DP_AUX_LDO_CTRL_MAX) {
-		printk(KERN_ERR "%s: type(%d) is invalid!\n", __func__, type);
-		return -EINVAL;
-	}
-
-	mutex_lock(&g_dp_aux_ldo_op_mutex);
-	if (g_dp_aux_ldo_status != 0) {
-		g_dp_aux_ldo_status = g_dp_aux_ldo_status & (~(1 << type));
-		if (g_dp_aux_ldo_status == 0) {
-			ret = regulator_disable(g_dp_aux_ldo_supply);
-			if (ret) {
-				printk(KERN_ERR "%s: regulator disable failed(%d)!\n", __func__, ret);
-				mutex_unlock(&g_dp_aux_ldo_op_mutex);
-				return -EPERM;
-			}
-		}
-	}
-	mutex_unlock(&g_dp_aux_ldo_op_mutex);
-
-	printk(KERN_INFO "%s: regulator disable(%d) success!\n", __func__, type);
-	return 0;
-
-}
-EXPORT_SYMBOL_GPL(dp_aux_ldo_supply_disable);
-
-static int dp_aux_ldo_supply_dts(struct device *dev)
-{
-	struct regulator *supply = NULL;
-
-	if (dev == NULL) {
-		printk(KERN_ERR "%s: dev is NULL!\n", __func__);
-		return -1;
-	}
-
-	supply = regulator_get(dev, "auxldo");
-	if (IS_ERR(supply)) {
-		printk(KERN_ERR "%s: get regulator failed!\n", __func__);
-		return -1;
-	}
-
-	int ret = regulator_get_voltage(supply);
-	printk(KERN_INFO "%s: auxldo regulator_get_voltage=%d!\n", __func__, ret);
-
-	g_dp_aux_ldo_supply = supply;
-	printk(KERN_INFO "%s: get regulator from dts success.\n", __func__);
-	return 0;
-}
-
 static int dp_aux_switch_probe(struct platform_device *pdev)
 {
-	int ret = dp_aux_ldo_supply_dts(&pdev->dev);
-	if (ret < 0) {
-		printk(KERN_ERR "%s: get aux ldo supply failed!\n", __func__);
+	struct device *dev = &pdev->dev;
+	int ret = 0;
+
+	if (of_property_read_bool(dev->of_node, "aux_switch_with_uart")) {
+		g_aux_switch_with_uart = true;
+		hwlog_info("%s: aux switch with uart.\n", __func__);
+	}
+
+	if (g_aux_switch_with_uart) {
+		g_dp_aux_uart_gpio = of_get_named_gpio(dev->of_node, "aux_uart-gpio", 0);
+		if (!gpio_is_valid(g_dp_aux_uart_gpio)) {
+			hwlog_err("%s: get aux_uart-gpio failed %d!\n", __func__, g_dp_aux_uart_gpio);
+			g_dp_aux_uart_gpio = -1;
+		} else {
+			/*request aux uart gpio*/
+			ret = gpio_request(g_dp_aux_uart_gpio, "dp_aux_uart_gpio");
+			if (ret < 0) {
+				hwlog_err("%s: request aux_uart-gpio failed %d!\n", __func__, ret);
+				g_dp_aux_uart_gpio = -1;
+			} else {
+				gpio_direction_output(g_dp_aux_uart_gpio, SET_GPIO_LOW);
+				hwlog_info("%s: init aux_uart-gpio success %d.\n", __func__, g_dp_aux_uart_gpio);
+			}
+		}
 	}
 
 	return 0;
@@ -207,6 +153,12 @@ static int dp_aux_switch_probe(struct platform_device *pdev)
 
 static int dp_aux_switch_remove(struct platform_device *pdev)
 {
+	if (g_aux_switch_with_uart) {
+		if (gpio_is_valid(g_dp_aux_uart_gpio)) {
+			gpio_free((unsigned)g_dp_aux_uart_gpio);
+			g_dp_aux_uart_gpio = -1;
+		}
+	}
 	return 0;
 }
 
@@ -228,9 +180,9 @@ static struct platform_driver dp_aux_switch_driver = {
 static int __init dp_aux_switch_init(void)
 {
 	int ret = 0;
-	struct device_node *np;
-	printk(KERN_INFO "%s: enter\n", __func__);
+	struct device_node *np = NULL;
 
+	hwlog_info("%s: enter...\n", __func__);
 	ret = platform_driver_register(&dp_aux_switch_driver);
 	if (ret < 0) {
 		printk("%s: register dp_aux_switch_driver failed!\n", __func__);
@@ -243,6 +195,11 @@ static int __init dp_aux_switch_init(void)
 		goto err_return;
 	}
 
+	if (!of_device_is_available(np)) {
+		hwlog_info("%s: dts node %s not available.\n", __func__, np->name);
+		return 0;
+	}
+
 	if (of_property_read_bool(np, "aux_switch_from_fsa4476")) {
 		g_aux_switch_from_fsa4476 = true;
 		printk(KERN_INFO "%s: aux switch from fsa4476\n", __func__);
@@ -251,6 +208,7 @@ static int __init dp_aux_switch_init(void)
 
 	g_dp_aux_gpio = of_get_named_gpio(np, "cs-gpios", 0);
 	g_dp_aux_uart_gpio = of_get_named_gpio(np, "cs-gpios", 1);
+	hwlog_info("%s: get aux gpio %d, %d.\n", __func__, g_dp_aux_gpio, g_dp_aux_uart_gpio);
 
 	if (!gpio_is_valid(g_dp_aux_gpio)) {
 		printk(KERN_ERR "%s, Gpio is invalid:%d.\n", __func__, g_dp_aux_gpio);
@@ -260,7 +218,10 @@ static int __init dp_aux_switch_init(void)
 		ret = gpio_request(g_dp_aux_gpio, "dp_aux_gpio");
 		if (ret < 0) {
 			printk(KERN_ERR "%s, Fail to request gpio:%d. ret = %d\n", __func__, g_dp_aux_gpio, ret);
-			goto err_return;
+			// NOTE:
+			// For blanc, here gpio_request failed, because of gpio requested by fsa4476.
+			// But, g_dp_aux_uart_gpio need gpio_request, so don't goto return.
+			//goto err_return;
 		}
 		/*set aux gpio output low*/
 		gpio_direction_output(g_dp_aux_gpio, SET_GPIO_LOW);
@@ -280,10 +241,32 @@ static int __init dp_aux_switch_init(void)
 	}
 
 	/*set aux uart gpio output low*/
-	printk(KERN_INFO "%s: sucess\n", __func__, ret);
+	printk(KERN_INFO "%s: sucess %d\n", __func__, ret);
 
 err_return:
 	return ret;
 }
 
+static void __exit dp_aux_switch_exit(void)
+{
+	hwlog_info("%s: enter...\n", __func__);
+	platform_driver_unregister(&dp_aux_switch_driver);
+
+	if (gpio_is_valid(g_dp_aux_gpio)) {
+		gpio_free((unsigned)g_dp_aux_gpio);
+		g_dp_aux_gpio = -1;
+	}
+
+	if (gpio_is_valid(g_dp_aux_uart_gpio)) {
+		gpio_free((unsigned)g_dp_aux_uart_gpio);
+		g_dp_aux_uart_gpio = -1;
+	}
+}
+
 module_init(dp_aux_switch_init);
+module_exit(dp_aux_switch_exit);
+
+MODULE_LICENSE("GPL");
+MODULE_DESCRIPTION("Huawei dp aux driver");
+MODULE_AUTHOR("<wangping48@huawei.com>");
+

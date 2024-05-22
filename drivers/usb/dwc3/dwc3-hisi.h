@@ -9,7 +9,6 @@
 #include <linux/regulator/consumer.h>
 #include <linux/completion.h>
 
-#define REG_BASE_PERI_CRG                		(0xFFF35000)
 #define PERI_CRG_CLK_EN4				(0x40)
 #define PERI_CRG_CLK_DIS4				(0x44)
 #define PERI_CRG_RSTDIS4                   		(0x94)
@@ -29,11 +28,6 @@
 #define IP_RST_USB3OTG_32K				(1 << 6)
 #define IP_RST_USB3OTG					(1 << 5)
 #define IP_RST_USB3OTGPHY_POR				(1 << 3)
-
-#define GT_CLK_USB3OTG_REF				(1 << 0)
-#define GT_ACLK_USB3OTG					(1 << 1)
-#define GT_CLK_USB3PHY_REF				(1 << 2)
-#define GT_HCLK_USB3OTG_MISC			(1 << 25)
 
 /*
  * hisi dwc3 phy registers
@@ -170,6 +164,11 @@
 
 #define usb_dbg(format, arg...)    \
 	do {                 \
+		printk(KERN_DEBUG "[USB3][%s]"format, __func__, ##arg); \
+	} while (0)
+
+#define usb_info(format, arg...)    \
+	do {                 \
 		printk(KERN_INFO "[USB3][%s]"format, __func__, ##arg); \
 	} while (0)
 
@@ -220,6 +219,8 @@ struct hisi_dwc3_device {
 	void __iomem *sctrl_reg_base;
 	void __iomem *pmctrl_reg_base;
 	void __iomem *bc_ctrl_reg;
+	void __iomem *mmc0crg_reg_base;
+	void __iomem *hsdt_sctrl_reg_base;
 
 	struct regulator *usb_regu;
 	unsigned int is_regu_on;
@@ -241,6 +242,9 @@ struct hisi_dwc3_device {
 	struct wake_lock wake_lock;
 	struct blocking_notifier_head charger_type_notifier;
 	struct work_struct event_work;
+#ifdef CONFIG_HISI_DEBUG_FS
+	struct work_struct usb_core_reg_dump_work;
+#endif /* hisi debug */
 	struct work_struct speed_change_work;
 
 	u32 eye_diagram_param;	/* this param will be set to USBOTG3_CTRL4 */
@@ -261,6 +265,7 @@ struct hisi_dwc3_device {
 	struct clk *gt_hclk_usb3otg;
 	struct clk *gt_clk_usb3_tcxo_en;
 	struct clk *gt_clk_usb2phy_ref;
+	struct clk *gt_clk_usb2_drd_32k;
 
 	int eventmask;
 	u32 dma_mask_bit;
@@ -281,9 +286,10 @@ struct hisi_dwc3_device {
 	/* event queue for handle event */
 	struct hiusb_event_queue event_queue;
 
-	u32 quirk_dplus_gpio;
 	u32 support_dp;
 	struct usb3_phy_ops *phy_ops;
+	struct regulator *usb20phy_power;
+	unsigned usb20phy_power_flag;
 
 	u32 is_hanle_event_sync;
 	struct completion event_completion;
@@ -302,6 +308,7 @@ struct hisi_dwc3_device {
 	unsigned int hifi_ip_first;
 	unsigned int plug_orien;
 	TCPC_MUX_CTRL_TYPE mode_type;
+	u32 es_firmware;
 };
 
 #ifdef CONFIG_PM
@@ -318,11 +325,10 @@ struct usb3_phy_ops {
 	int (*init)(struct hisi_dwc3_device *hisi_dwc3);
 	int (*shutdown)(struct hisi_dwc3_device *hisi_dwc3);
 	int (*shared_phy_init)(struct hisi_dwc3_device *hisi_dwc3, unsigned int combophy_flag);
-	int (*shared_phy_shutdown)(struct hisi_dwc3_device *hisi_dwc3, unsigned int combophy_flag);
+	int (*shared_phy_shutdown)(struct hisi_dwc3_device *hisi_dwc3,
+			unsigned int combophy_flag, unsigned int keep_power);
 	int (*get_dts_resource)(struct hisi_dwc3_device *hisi_dwc3);
 	void (*set_hi_impedance)(struct hisi_dwc3_device *hisi_dwc3);
-	int (*clk_check)(struct hisi_dwc3_device *hisi_dwc3);
-	int (*event_sync)(struct hisi_dwc3_device *hisi_dwc3);
 	void (*notify_speed)(struct hisi_dwc3_device *hisi_dwc3);
 	void (*check_voltage)(struct hisi_dwc3_device *hisi_dwc3);
 	int (*cptest_enable)(struct hisi_dwc3_device *hisi_dwc3);
@@ -330,6 +336,14 @@ struct usb3_phy_ops {
 	int (*tcpc_is_usb_only)(void);
 };
 
+#ifdef CONFIG_HISI_DEBUG_FS
+struct usb3_hisi_debug_node {
+	atomic_t hisi_dwc3_linkstate_flag;
+	atomic_t hisi_dwc3_noc_flag;
+	uint32_t usb_test_noc_addr;
+	atomic_t hisi_dwc3_lbintpll_flag;
+};
+#endif
 
 typedef ssize_t (*hiusb_debug_show_ops)(void *, char *, ssize_t);
 typedef ssize_t (*hiusb_debug_store_ops)(void *, const char *, ssize_t);
@@ -371,5 +385,43 @@ void hisi_dwc3_cpmode_enable(void);
 void dwc3_lscdtimer_set(void);
 void hisi_dwc3_platform_host_quirks(void);
 void hisi_dwc3_platform_device_quirks(void);
+int hisi_dwc3_is_fpga(void);
+int hisi_dwc3_is_es(void);
+
+/*
+ * hisi usb debug
+ */
+#ifdef CONFIG_HISI_DEBUG_FS
+void usb_start_dump(void);
+int hisi_dwc3_is_linkstate_dump(void);
+int hisi_dwc3_is_test_noc_addr(void);
+uint32_t hisi_dwc3_get_noc_addr(uint32_t addr);
+int hisi_dwc3_select_lbintpll_clk(void);
+#else
+static inline void usb_start_dump(void)
+{
+	return ;
+}
+
+static inline int hisi_dwc3_is_linkstate_dump(void)
+{
+	return 0;
+}
+
+static inline int hisi_dwc3_is_test_noc_addr(void)
+{
+	return 0;
+}
+
+static inline uint32_t hisi_dwc3_get_noc_addr(uint32_t addr)
+{
+	return addr;
+}
+
+static inline int hisi_dwc3_select_lbintpll_clk(void)
+{
+	return 0;
+}
+#endif
 
 #endif /* _DWC3_HISI_H_ */

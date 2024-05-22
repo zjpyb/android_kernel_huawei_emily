@@ -23,7 +23,6 @@
 #include <linux/spinlock.h>
 #include <linux/timer.h>
 #include <linux/of.h>
-#include <linux/omap-dma.h>
 #include <linux/mmc/host.h>
 #include <linux/mmc/card.h>
 #include <linux/mmc/mmc.h>
@@ -313,7 +312,6 @@ mmc_omap_show_cover_switch(struct device *dev, struct device_attribute *attr,
 	struct mmc_host *mmc = container_of(dev, struct mmc_host, class_dev);
 	struct mmc_omap_slot *slot = mmc_priv(mmc);
 
-	/*cppcheck-suppress * */
 	return sprintf(buf, "%s\n", mmc_omap_cover_is_open(slot) ? "open" :
 		       "closed");
 }
@@ -327,7 +325,6 @@ mmc_omap_show_slot_name(struct device *dev, struct device_attribute *attr,
 	struct mmc_host *mmc = container_of(dev, struct mmc_host, class_dev);
 	struct mmc_omap_slot *slot = mmc_priv(mmc);
 
-	/*cppcheck-suppress * */
 	return sprintf(buf, "%s\n", slot->pdata->name);
 }
 
@@ -707,12 +704,10 @@ static void mmc_omap_report_irq(struct mmc_omap_host *host, u16 status)
 	int i;
 	char res[64], *buf = res;
 
-	/*cppcheck-suppress * */
 	buf += sprintf(buf, "MMC IRQ 0x%x:", status);
 
 	for (i = 0; i < ARRAY_SIZE(mmc_omap_status_bits); i++)
 		if (status & (1 << i))
-			/*cppcheck-suppress * */
 			buf += sprintf(buf, " %s", mmc_omap_status_bits[i]);
 	dev_vdbg(mmc_dev(host->mmc), "%s\n", res);
 }
@@ -1021,14 +1016,16 @@ mmc_omap_prepare_data(struct mmc_omap_host *host, struct mmc_request *req)
 
 		/* Only reconfigure if we have a different burst size */
 		if (*bp != burst) {
-			struct dma_slave_config cfg;
-
-			cfg.src_addr = host->phys_base + OMAP_MMC_REG(host, DATA);
-			cfg.dst_addr = host->phys_base + OMAP_MMC_REG(host, DATA);
-			cfg.src_addr_width = DMA_SLAVE_BUSWIDTH_2_BYTES;
-			cfg.dst_addr_width = DMA_SLAVE_BUSWIDTH_2_BYTES;
-			cfg.src_maxburst = burst;
-			cfg.dst_maxburst = burst;
+			struct dma_slave_config cfg = {
+				.src_addr = host->phys_base +
+					    OMAP_MMC_REG(host, DATA),
+				.dst_addr = host->phys_base +
+					    OMAP_MMC_REG(host, DATA),
+				.src_addr_width = DMA_SLAVE_BUSWIDTH_2_BYTES,
+				.dst_addr_width = DMA_SLAVE_BUSWIDTH_2_BYTES,
+				.src_maxburst = burst,
+				.dst_maxburst = burst,
+			};
 
 			if (dmaengine_slave_config(c, &cfg))
 				goto use_pio;
@@ -1325,8 +1322,6 @@ static int mmc_omap_probe(struct platform_device *pdev)
 	struct omap_mmc_platform_data *pdata = pdev->dev.platform_data;
 	struct mmc_omap_host *host = NULL;
 	struct resource *res;
-	dma_cap_mask_t mask;
-	unsigned sig = 0;
 	int i, ret = 0;
 	int irq;
 
@@ -1386,29 +1381,34 @@ static int mmc_omap_probe(struct platform_device *pdev)
 		goto err_free_iclk;
 	}
 
-	dma_cap_zero(mask);
-	dma_cap_set(DMA_SLAVE, mask);
-
 	host->dma_tx_burst = -1;
 	host->dma_rx_burst = -1;
 
-	res = platform_get_resource_byname(pdev, IORESOURCE_DMA, "tx");
-	if (res)
-		sig = res->start;
-	host->dma_tx = dma_request_slave_channel_compat(mask,
-				omap_dma_filter_fn, &sig, &pdev->dev, "tx");
-	if (!host->dma_tx)
-		dev_warn(host->dev, "unable to obtain TX DMA engine channel %u\n",
-			sig);
+	host->dma_tx = dma_request_chan(&pdev->dev, "tx");
+	if (IS_ERR(host->dma_tx)) {
+		ret = PTR_ERR(host->dma_tx);
+		if (ret == -EPROBE_DEFER) {
+			clk_put(host->fclk);
+			goto err_free_iclk;
+		}
 
-	res = platform_get_resource_byname(pdev, IORESOURCE_DMA, "rx");
-	if (res)
-		sig = res->start;
-	host->dma_rx = dma_request_slave_channel_compat(mask,
-				omap_dma_filter_fn, &sig, &pdev->dev, "rx");
-	if (!host->dma_rx)
-		dev_warn(host->dev, "unable to obtain RX DMA engine channel %u\n",
-			sig);
+		host->dma_tx = NULL;
+		dev_warn(host->dev, "TX DMA channel request failed\n");
+	}
+
+	host->dma_rx = dma_request_chan(&pdev->dev, "rx");
+	if (IS_ERR(host->dma_rx)) {
+		ret = PTR_ERR(host->dma_rx);
+		if (ret == -EPROBE_DEFER) {
+			if (host->dma_tx)
+				dma_release_channel(host->dma_tx);
+			clk_put(host->fclk);
+			goto err_free_iclk;
+		}
+
+		host->dma_rx = NULL;
+		dev_warn(host->dev, "RX DMA channel request failed\n");
+	}
 
 	ret = request_irq(host->irq, mmc_omap_irq, 0, DRIVER_NAME, host);
 	if (ret)

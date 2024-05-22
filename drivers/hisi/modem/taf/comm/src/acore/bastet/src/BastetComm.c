@@ -32,7 +32,6 @@ struct bst_modem_rab_id {
     uint16_t modem_id;
     uint16_t rab_id;
 };
-extern void aspen_crosslayer_recovery(void *info, int length);
 
 extern char cur_netdev_name[IFNAMSIZ];
 extern void ind_hisi_com(void *info, u32 len);
@@ -97,28 +96,15 @@ int bastet_comm_keypsInfo_write(u32 ulState)
     return 0;
 }
 
-static void bastet_aspen_pkt_drop_proc(BST_ASPEN_PKT_DROP_STRU *pstAspenMsg)
-{
-    if (NULL == pstAspenMsg)
-    {
-        printk(KERN_ERR "pstAspenMsg is empty.\n");
-        return;
-    }
-
-    aspen_crosslayer_recovery((void *)pstAspenMsg->stPkt, (int)pstAspenMsg->ulPktNum);
-}
 
 void bastet_comm_recv(MsgBlock *pMsg)
 {
     u32                 len;
     BST_ACOM_MSG_STRU  *pTmpMsg;
-    BST_ASPEN_PKT_DROP_STRU *pstAspenMsg;
-    u32                *pulAspenInfoType;
 
     /*lint -e826*/
     pTmpMsg             = (BST_ACOM_MSG_STRU *)pMsg;
     /*lint +e826*/
-    pulAspenInfoType    = (u32 *)pTmpMsg->aucValue;
     if ( NULL == pMsg )
     {
         printk(KERN_ERR "MsgBlock is empty\n");
@@ -133,34 +119,6 @@ void bastet_comm_recv(MsgBlock *pMsg)
 
     switch( pTmpMsg->enMsgType )
     {
-        case BST_ACORE_CORE_MSG_TYPE_ASPEN:
-        {
-            if (*pulAspenInfoType == BST_ASPEN_INFO_PKT_DROP )
-            {
-                /*lint -e826*/
-                pstAspenMsg = (BST_ASPEN_PKT_DROP_STRU *)pTmpMsg->aucValue;
-                /*lint +e826*/
-                if (len < ( sizeof(*pstAspenMsg) - sizeof(pstAspenMsg->stPkt) ) )
-                {
-                    printk(KERN_ERR "MsgBlock size is too small\n");
-                }
-                else if (len == (sizeof(BST_ASPEN_PKT_DROP_STRU) - (BST_ASPEN_PKT_DROP_SIZE - pstAspenMsg->ulPktNum)*sizeof(BST_ASPEN_TCP_INFO_STRU)))
-                {
-                    /*lint -e826*/
-                    bastet_aspen_pkt_drop_proc((BST_ASPEN_PKT_DROP_STRU *)pTmpMsg->aucValue);
-                /*lint +e826*/
-                }
-                else
-                {
-                    printk(KERN_ERR "MsgBlock size is wrong(%d)\n", len);
-                }
-            }
-            else
-            {
-                printk(KERN_ERR "MsgBlock info type is wrong(%d)\n", *pulAspenInfoType);
-            }
-            break;
-        }
         case BST_ACORE_CORE_MSG_TYPE_DSPP:
         {
             ind_hisi_com( pTmpMsg->aucValue, len );

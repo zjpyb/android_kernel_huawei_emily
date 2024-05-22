@@ -34,21 +34,6 @@
 #define HI6421V700_VOL_OFFSET_A_ADDR_0     PMIC_OTP0_59_W_ADDR(0)
 #define HI6421V700_VOL_OFFSET_A_ADDR_1     PMIC_OTP0_58_W_ADDR(0)
 
-#define HI6421V700_V_OCV_BASE   PMIC_V_OCV_PRE1_OUT0_ADDR(0)
-#define HI6421V700_I_OCV_BASE  PMIC_I_OCV_PRE1_OUT0_ADDR(0)
-#define HI6421V700_OFTV_OCV_BASE PMIC_OFTV_OCV_PRE1_OUT0_ADDR(0)
-#define HI6421V700_T_OCV_BASE PMIC_T_OCV_PRE1_OUT0_ADDR(0)
-#define HI6421V700_RTC_OCV_BASE PMIC_T_OCV_PRE1_OUT0_ADDR(0)
-
-#define HI6421V700_DCR_EN     PMIC_DCR_EN_ADDR(0)
-#define DCR_ENABLE         (0x5A)
-#define DCR_DISABLE         (0xAC)
-
-#define HI6421V700_DCR_V_BASE  PMIC_DCR_V_PRE0_OUT0_ADDR(0)
-#define HI6421V700_DCR_I_BASE  PMIC_DCR_I_PRE0_OUT0_ADDR(0)
-
-#define HI6421V700_DCR_IRQ_FLAG  PMIC_ACR_SOH_IRQ_ADDR(0)
-#define DCR_FLAG_MASK                   BIT(3)
 
 
 #define HI6421V700_COUL_TEMP_CTRL PMIC_COUL_TEMP_CTRL_ADDR(0)
@@ -83,8 +68,7 @@
 #define HI6421V700_FIFO_CLEAR             PMIC_CLJ_CTRL_REGS2_ADDR(0)         //use bit 1
 #define HI6421V700_DEBUG1_REG             PMIC_CLJ_DEBUG1_ADDR(0)
 
-#define HI6421V700_PD_OCV_ONOFF             PMIC_CLJ_DEBUG1_ADDR(0)
-#define PD_OCV_ONOFF_BITMASK     BIT(4)
+
 
 #define HI6421V700_OFFSET_CUR_MODIFY_BASE PMIC_OFFSET_CURRENT_MOD_0_ADDR(0)
 #define HI6421V700_OFFSET_VOL_MODIFY_BASE PMIC_OFFSET_VOLTAGE_MOD_0_ADDR(0)
@@ -124,6 +108,16 @@
 #define HI6421V700_OCV_LEVEL_ADDR  PMIC_HRST_REG7_ADDR(0)/*last soc 2-5bit */
 #define SAVE_OCV_LEVEL            (BIT(5) | BIT(4) | BIT(3) | BIT(2))
 #define OCV_LEVEL_SHIFT           (2)
+
+#define HI6421V700_ECO_OCV_ADDR  PMIC_HRST_REG7_ADDR(0)/*6-7bit */
+#define EN_ECO_SAMPLE            BIT(6)
+#define CLR_ECO_SAMPLE           BIT(7)
+
+#define HI6421V700_BOOT_OCV_ADDR  PMIC_HRST_REG12_ADDR(0)/*bit 1 */
+#define EN_BOOT_OCV_SAMPLE            BIT(1)
+
+#define DRAINED_BATTERY_FLAG_ADDR         PMIC_HRST_REG12_ADDR(0)
+#define DRAINED_BATTERY_FLAG_BIT          BIT(0)
 /************************************************************
     coul register of smartstar
 ************************************************************/
@@ -177,7 +171,10 @@
 #define DEFAULT_BATTERY_VOL_0_PERCENT    3150
 
 #define HI6421V700_COUL_VERSION_ADDR     PMIC_VERSION4_ADDR(0)
-#define COUL_HI6421V7XX                  0x7
+#define COUL_HI6421V7XX                  0x07
+#define COUL_HI6421V700                  0x0700
+#define COUL_HI6421V710                  0x0710
+
 
 #define HI6421V700_COUL_STATE_REG         PMIC_STATE_TEST_ADDR(0)   //Warning: bit change
 #define COUL_WORKING     (0x5)
@@ -214,10 +211,16 @@ extern int hisi_pmic_array_write(int addr, char *buff, unsigned int len);
 #define HI6421V700_REG_WRITE(regAddr,regval)     hisi_pmic_reg_write((int)(regAddr),(int)regval)
 #define HI6421V700_REGS_READ(regAddr,buf,size)   hisi_pmic_array_read((int)(regAddr),(char*)(buf),(int)(size))
 #define HI6421V700_REGS_WRITE(regAddr,buf,size)  hisi_pmic_array_write((int)(regAddr),(char*)(buf),(int)(size))
-
+#define HI6421V700_COUL_INFO
+#ifndef HI6421V700_COUL_INFO
+#define HI6421V700_COUL_ERR(fmt,args...)              do {} while (0)
+#define HI6421V700_COUL_EVT(fmt,args...)              do {} while (0)
+#define HI6421V700_COUL_INF(fmt,args...)              do {} while (0)
+#else
 #define HI6421V700_COUL_ERR(fmt,args...) do { printk(KERN_ERR    "[hisi_hi6421v700_coul]" fmt, ## args); } while (0)
 #define HI6421V700_COUL_EVT(fmt,args...) do { printk(KERN_WARNING"[hisi_hi6421v700_coul]" fmt, ## args); } while (0)
 #define HI6421V700_COUL_INF(fmt,args...) do { printk(KERN_INFO   "[hisi_hi6421v700_coul]" fmt, ## args); } while (0)
+#endif
 
 struct hi6421v700_coul_device_info
 {
@@ -225,6 +228,7 @@ struct hi6421v700_coul_device_info
     struct delayed_work irq_work;
     int irq;
     unsigned char irq_mask;
+    u16 chip_version;
 };
 #endif
 

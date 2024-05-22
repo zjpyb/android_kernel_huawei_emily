@@ -16,6 +16,32 @@
 #include "vmarea.h"
 #include "patch_api.h"
 
+/* TODO: */
+#if defined(__arm__)
+
+int oases_set_vmarea_ro(unsigned long addr, int numpages)
+{
+	return 0;
+}
+
+int oases_set_vmarea_rw(unsigned long addr, int numpages)
+{
+	return 0;
+}
+
+int oases_set_vmarea_x(unsigned long addr, int numpages)
+{
+	return 0;
+}
+
+int oases_set_vmarea_nx(unsigned long addr, int numpages)
+{
+	return 0;
+}
+
+#else
+
+
 /*
  * From 4.5.0 and on, set_memory_* allows vmalloc regions
  */
@@ -30,22 +56,22 @@
 #endif
 
 /*
- * clear_pte_bit/set_pte_bit moved from mm/pageattr.c
+ * Mainline: clear_pte_bit/set_pte_bit moved from mm/pageattr.c
  * to asm/pgtable.h from 3.18+
+ *
+ * some lower versions from vendor backported this
  */
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 18, 0)
-static inline pte_t clear_pte_bit(pte_t pte, pgprot_t prot)
+static inline pte_t oases_clear_pte_bit(pte_t pte, pgprot_t prot)
 {
 	pte_val(pte) &= ~pgprot_val(prot);
 	return pte;
 }
 
-static inline pte_t set_pte_bit(pte_t pte, pgprot_t prot)
+static inline pte_t oases_set_pte_bit(pte_t pte, pgprot_t prot)
 {
 	pte_val(pte) |= pgprot_val(prot);
 	return pte;
 }
-#endif
 
 struct page_change_data {
 	pgprot_t set_mask;
@@ -58,8 +84,8 @@ static int change_page_range(pte_t *ptep, pgtable_t token, unsigned long addr,
 	struct page_change_data *cdata = data;
 	pte_t pte = *ptep;
 
-	pte = clear_pte_bit(pte, cdata->clear_mask);
-	pte = set_pte_bit(pte, cdata->set_mask);
+	pte = oases_clear_pte_bit(pte, cdata->clear_mask);
+	pte = oases_set_pte_bit(pte, cdata->set_mask);
 
 	set_pte(ptep, pte);
 	return 0;
@@ -96,8 +122,8 @@ static int change_memory_common(unsigned long addr, int numpages,
 
 	area = find_vm_area((void *)addr);
 	if (!area ||
-	    end > (unsigned long)area->addr + area->size ||
-	    !(area->flags & VM_ALLOC))
+		end > (unsigned long)area->addr + area->size ||
+		!(area->flags & VM_ALLOC))
 		return -EINVAL;
 
 	if (!numpages)
@@ -133,24 +159,27 @@ int oases_set_vmarea_nx(unsigned long addr, int numpages)
 					__pgprot(PTE_PXN),
 					__pgprot(0));
 }
+
 #else
 int oases_set_vmarea_ro(unsigned long addr, int numpages)
 {
-    return set_memory_ro(addr, numpages);
+	return set_memory_ro(addr, numpages);
 }
 
 int oases_set_vmarea_rw(unsigned long addr, int numpages)
 {
-    return set_memory_rw(addr, numpages);
+	return set_memory_rw(addr, numpages);
 }
 
 int oases_set_vmarea_x(unsigned long addr, int numpages)
 {
-    return set_memory_x(addr, numpages);
+	return set_memory_x(addr, numpages);
 }
 
 int oases_set_vmarea_nx(unsigned long addr, int numpages)
 {
-    return set_memory_nx(addr, numpages);
+	return set_memory_nx(addr, numpages);
 }
 #endif /* LINUX_VERSION_CODE < KERNEL_VERSION(4, 5, 0) */
+
+#endif

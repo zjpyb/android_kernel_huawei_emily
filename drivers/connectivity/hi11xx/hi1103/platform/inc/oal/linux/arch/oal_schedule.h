@@ -30,11 +30,9 @@ extern "C" {
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,0,0))
 #include <linux/stacktrace.h>
 #endif
-
-#ifdef CONFIG_WAKELOCK
-#include <linux/wakelock.h>
+#if ((LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 37)) && (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION) )
+#include <linux/pm_wakeup.h>
 #endif
-
 #include "linux/time.h"
 #include "linux/timex.h"
 #include "linux/rtc.h"
@@ -171,7 +169,7 @@ typedef oal_uint32 (*oal_module_func_t)(oal_void);
 
 #define oal_smp_call_function_single(core, task, info, wait) smp_call_function_single(core, task, info, wait)
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 44))
-#define OAL_IS_ERR_OR_NULL IS_ERR_OR_NULL
+#define OAL_IS_ERR_OR_NULL(ptr)  (!(ptr) || IS_ERR(ptr))
 #else
 static inline bool __must_check OAL_IS_ERR_OR_NULL(__force const void *ptr)
 {
@@ -558,8 +556,8 @@ OAL_STATIC OAL_INLINE oal_long  oal_wait_for_completion_interruptible_timeout(oa
 
 #ifdef _PRE_OAL_FEATURE_TASK_NEST_LOCK
 
-extern oal_void _oal_smp_task_lock_(oal_task_lock_stru* pst_lock,oal_ulong  claim_addr);
-#define oal_smp_task_lock(lock)    _oal_smp_task_lock_(lock, (oal_ulong)_THIS_IP_)
+extern oal_void _oal_smp_task_lock__etc(oal_task_lock_stru* pst_lock,oal_ulong  claim_addr);
+#define oal_smp_task_lock(lock)    _oal_smp_task_lock__etc(lock, (oal_ulong)_THIS_IP_)
 
 
 OAL_STATIC OAL_INLINE oal_void oal_smp_task_unlock(oal_task_lock_stru* pst_lock)

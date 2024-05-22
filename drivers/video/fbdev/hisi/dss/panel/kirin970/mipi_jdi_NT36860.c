@@ -67,6 +67,8 @@ static char test_0x02[] = {
 	0x05,
 };
 
+//for video ifbc none mode.
+
 static char page_select_2[] = {
 	0xFF,
 	0x27,
@@ -86,6 +88,8 @@ static char disable_powersaving_mode[] = {
 	0x8D,
 	0x00,
 };
+
+//for video ifbc none mode
 
 static char page_select_4[] = {
 	0xFF,
@@ -256,6 +260,7 @@ static struct dsi_cmd_desc lcd_display_init_cmds[] = {
 
 	{DTYPE_DCS_WRITE1, 0,10, WAIT_TYPE_US,
 		sizeof(exvcom), exvcom},
+//for video ifbc none mode.
 	{DTYPE_DCS_WRITE1, 0,10, WAIT_TYPE_US,
 		sizeof(page_select_2), page_select_2},
 	{DTYPE_DCS_WRITE1, 0,10, WAIT_TYPE_US,
@@ -269,6 +274,7 @@ static struct dsi_cmd_desc lcd_display_init_cmds[] = {
 		sizeof(reload), reload},
 	{DTYPE_DCS_WRITE1, 0,10, WAIT_TYPE_US,
 		sizeof(disable_powersaving_mode), disable_powersaving_mode},
+//for video ifbc none mode.
 	{DTYPE_DCS_WRITE1, 0,10, WAIT_TYPE_US,
 		sizeof(page_select_4), page_select_4},
 	{DTYPE_DCS_WRITE1, 0,10, WAIT_TYPE_US,

@@ -23,6 +23,20 @@ config HISI_CAMERA_LM3642_FRONT
     ---help---
         LM3642 front camera flash driver
 
+config HISI_CAMERA_LM3642_IR
+    tristate "LM3642 ir flash driver"
+    depends on HISI_CAMERA_FLASH
+    default n
+    ---help---
+        LM3642 ir camera flash driver
+
+config HISI_CAMERA_MP3331_IR
+    tristate "MP3331 ir flash driver"
+    depends on HISI_CAMERA_FLASH
+    default n
+    ---help---
+        MP3331 front camera flash driver
+
 config HISI_CAMERA_MP3331
     tristate "MP3331  flash driver"
     depends on HISI_CAMERA_FLASH
@@ -36,6 +50,13 @@ config HISI_CAMERA_MP3331_FRONT
     default n
     ---help---
         MP3331 front camera flash driver
+
+config HISI_CAMERA_AW3642
+    tristate "AW3642 flash driver"
+    depends on HISI_CAMERA_FLASH
+    default n
+    ---help---
+        AW3642 camera flash driver
 
 config HISI_CAMERA_LM3646_FRONT
     tristate "LM3646 FRONT control camera flash driver"
@@ -77,6 +98,13 @@ config HISI_CAMERA_MP3336_MIX_IR
     depends on HISI_CAMERA_FLASH
     ---help---
         MP3336 mix camera flash driver with IR
+
+config HISI_CAMERA_LM3646_MIX_IR
+    bool "LM3646 mix camera flash driver with IR"
+    default n
+    depends on HISI_CAMERA_FLASH
+    ---help---
+        LM3646 mix camera flash driver with IR
 
 config HISI_CAMERA_PMU_LED
     tristate "PMU LED camera flash driver"

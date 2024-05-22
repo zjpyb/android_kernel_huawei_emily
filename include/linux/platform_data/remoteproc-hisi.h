@@ -12,16 +12,16 @@
 #ifndef _PLAT_REMOTEPROC_HISI_ISP_H
 #define _PLAT_REMOTEPROC_HISI_ISP_H
 
-#include <linux/rproc_share.h>
 #include <linux/firmware.h>
 #include <linux/remoteproc.h>
 #include <linux/iommu.h>
 #include <linux/gpio.h>
+#include <asm/page.h>
 
 #define ISPCPU_COREDUMP_ADDR        (0xC4000000)
-#define ISPCPU_COREDUMP_SIZE        (0x01300000)
-#define MEM_RAW2YUV_DA              (0xC6000000) /*  the mdc iova addr */
-#define MEM_RAW2YUV_SIZE            (0x02000000) /*  the mdc iova size */
+#define ISPCPU_COREDUMP_SIZE        (0x01500000) /*should equal DEFAULT_ROTATE_SIZE*/
+#define MEM_RAW2YUV_DA              (0xC8000000) /*  the raw2yuv iova addr */
+#define MEM_RAW2YUV_SIZE            (0x04000000) /*  the raw2yuv size */
 
 struct rproc_ops;
 struct platform_device;
@@ -128,11 +128,15 @@ struct rproc_cache_entry {
  * @node: list node
  */
 struct rproc_page {
-	void *va;
-	u32 num;
+	struct sg_table *table;
 	struct list_head node;
 };
 
+struct rproc_page_info {
+	struct page *page;
+	unsigned int order;
+	struct list_head node;
+};
 /*
  * struct omap_rproc_pdata - omap remoteproc's platform data
  * @name: the remoteproc's name
@@ -200,6 +204,10 @@ enum HISP_CLK_TYPE {
     ISPFUNC_CLK = 1,
     ISPI2C_CLK  = 2,
     VIVOBUS_CLK = 3,
+    ISPFUNC2_CLK = 3,
+    ISPFUNC3_CLK = 4,
+    ISPFUNC4_CLK = 5,
+    ISP_SYS_CLK = 6,
     ISP_CLK_MAX
 };
 
@@ -211,36 +219,22 @@ enum HISP_CLKDOWN_TYPE {
     HISP_CLKDOWN_MAX
 };
 
-int rpmsg_sensor_ioctl(unsigned int cmd, int index, char* name);
-typedef enum {
-	RESET = 0,
-	POWERDOWN,
-	DPHY_TXRXZ,
-	DPHY_RSTZCAL,
-	CAM_1V05_EN,
-	CAM_1V2_EN,
-	CAM_1V8_EN,
-	CAM_2V85_EN,
-	CAM_VCM_2V85_EN,
-	CAM_VCM_POWER,
-	GPIO_MAX
-} gpio_type;
+enum hisi_soc_reg_type {
+    CRGPERI     = 0,
+    ISPCORE     = 1,
+    PMCTRL      = 2,
+    PCTRL       = 3,
+    SCTRL       = 4,
+    VIVOBUS     = 5,
+    CSSYS       = 6,
+    SUBCTRL     = 7,
+    WDT         = 8,
+    MEDIA1      = 9,
+    HISP_MAX_REGTYPE
+};
 
-typedef struct hwsensor_board_info
-{
-	char*                   sensor_name;
-	int                     camera_id;
-	int gpio_num;
-	struct gpio gpios[GPIO_MAX];
-	struct list_head        link;
-	void *psensor;
-} hwsensor_board_info;
-/*
-void rpmsg_sensor_unregister(void *ptr_sensor);
-int rpmsg_sensor_register(struct platform_device *pdev, void *psensor);
-int do_sensor_power_on(int index, const char *name);
-int do_sensor_power_off(int index, const char *name);
-*/
+int rpmsg_sensor_ioctl(unsigned int cmd, int index, char* name);
+
 /**
  * enum rpmsg_client_choice- choose which rpmsg client driver for debug
  *
@@ -296,11 +290,11 @@ struct hisi_isp_fstcma_mdc_s {
 #define CORE_DUMP_RTOS_FINISH   (1 << 2)
 #define CORE_DUMP_ALL_FINISH    (1 << 3)
 #define ISP_CPU_POWER_DOWN      (1 << 7)
-#define CORE_DUMP_EXCEPTION      (1 << 5)
+#define CORE_DUMP_EXCEPTION     (1 << 5)
 
-#define DUMP_ISPCPU_PC_TIMES (3)
-#define MAX_RESULT_LENGTH (8)
-
+#define DUMP_ISPCPU_PC_TIMES    (3)
+#define MAX_RESULT_LENGTH       (8)
+#define DUMP_ISP_BOOT_SIZE      (64)
 struct hisi_nsec_cpu_dump_s {
     unsigned int reg_addr;
     unsigned int actual_value;
@@ -311,11 +305,11 @@ struct hisi_nsec_cpu_dump_s {
 };
 
 struct hisi_isp_clk_dump_s {
-    unsigned int enable;
+    bool enable;
     unsigned int ispcpu_stat;
     unsigned int ispcpu_pc[DUMP_ISPCPU_PC_TIMES];
-    unsigned long freq_ispcpu;
-    unsigned long freq_ispfunc;
+    unsigned long freq[ISP_CLK_MAX];
+	unsigned int freqmask;
 };
 enum hisi_isp_clk_info_e {
     ISPCPU          = 0x0,
@@ -341,7 +335,7 @@ void hisi_fstcma_free(void *va, dma_addr_t dma_handle, size_t size);
 void atfisp_set_nonsec(void);
 int atfisp_isptop_power_up(void);
 int atfisp_isptop_power_down(void);
-void atfisp_disreset_ispcpu(void);
+int atfisp_disreset_ispcpu(void);
 int use_nonsec_isp(void);
 int ispcpu_qos_cfg(void);
 int use_sec_isp(void);
@@ -377,17 +371,23 @@ int hisp_jpeg_powerup(void);
 int check_dvfs_valid(void);
 int hisp_set_clk_rate(unsigned int type, unsigned int rate);
 int secnsec_setclkrate(unsigned int type, unsigned int rate);
+unsigned long hisp_get_clk_rate(unsigned int type);
+unsigned long secnsec_getclkrate(unsigned int type);
 int nsec_setclkrate(unsigned int type, unsigned int rate);
 int sec_setclkrate(unsigned int type, unsigned int rate);
 int bypass_power_updn(void);
 int set_power_updn(int bypass);
+void __iomem *get_regaddr_by_pa(unsigned int type);
 extern void hisi_isp_boot_stat_dump(void);
+void dump_media1_regs(void);
 extern u64 hisi_getcurtime(void);
 extern size_t print_time(u64 ts, char *buf);
 extern unsigned int get_slice_time(void);
 unsigned int a7_mmu_map(struct scatterlist *sgl, unsigned int size, unsigned int prot, unsigned int flag);
 void a7_mmu_unmap(unsigned int va, unsigned int size);
 #ifdef CONFIG_HISI_ISP_RDR
+int rdr_isp_init(void);
+void rdr_isp_exit(void);
 extern u64 get_isprdr_addr(void);
 void ispperfctrl_update(void);
 void isploglevel_update(void);
@@ -400,6 +400,8 @@ int start_isplogcat(void);
 void stop_isplogcat(void);
 extern void ap_send_fiq2ispcpu(void);
 #else
+static inline int rdr_isp_init(void){return 0;};
+static inline void rdr_isp_exit(void){return;};
 static inline u64 get_isprdr_addr(void){return 0;}
 static inline void ispperfctrl_update(void){return;}
 static inline void isploglevel_update(void){return;}
@@ -433,8 +435,9 @@ extern int hisi_atfisp_remove(struct platform_device *pdev);
 extern int secisp_device_enable(void);
 extern int secisp_device_disable(void);
 extern void rproc_resource_cleanup(struct rproc *rproc);
+extern void hisp_dynamic_mem_pool_clean(void);
 extern void rproc_fw_config_virtio(const struct firmware *fw, void *context);
-extern int hisp_meminit(unsigned int etype, unsigned long paddr);
+extern int hisp_mem_type_pa_init(unsigned int etype, unsigned long paddr);
 extern int sec_rproc_boot(struct rproc *rproc);
 extern int hisp_rsctable_init(void);
 extern void sec_rscwork_func(struct work_struct *work);
@@ -478,6 +481,7 @@ extern struct hisi_isp_ion_s *get_nesc_addr_ion(size_t size, \
 extern void free_nesc_addr_ion(struct hisi_isp_ion_s *hisi_nescaddr_ion);
 extern int get_isp_mdc_flag(void);
 extern int get_ispcpu_cfg_info(void);
+int hisp_mntn_dumpregs(void);
 u32 get_share_exc_flag(void);
 extern struct hisi_isp_fstcma_mdc_s *get_fstcma_mdc(unsigned int size);
 void *get_mdc_addr_va(void);
@@ -499,6 +503,9 @@ extern int set_debug_isp_clk_freq(unsigned int type, unsigned long value);
 extern unsigned long get_debug_isp_clk_freq(unsigned int type);
 extern struct hisi_nsec_cpu_dump_s* get_debug_ispcpu_param(void);
 extern int last_boot_state;
-
+extern int get_ispcpu_idle_stat(unsigned int isppd_adb_flag);
+extern void dump_hisi_isp_boot(struct rproc *rproc,unsigned int size);
+unsigned int wait_share_excflag_timeout(unsigned int flag, unsigned int time);
+int hisp_ion_phys(struct ion_client *client, struct ion_handle *handle, dma_addr_t *addr);
 #endif /* _PLAT_REMOTEPROC_HISI_ISP_H */
 

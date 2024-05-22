@@ -52,6 +52,8 @@ long zrhung_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	case LOGGER_GET_HCFG_FLAG:
 		ret = hcfgk_get_cfg_flag(file, (void*)arg);
 		break;
+	case LOGGER_SET_FEATURE:
+		ret = hcfgk_set_feature(file, (void*)arg);
 	default:
 		break;
 	}

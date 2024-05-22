@@ -7,6 +7,7 @@
  *  Date:   2016.3.10
  *
  */
+#include <linux/version.h>
 #include <linux/module.h>
 #include <linux/types.h>
 #include <linux/init.h>
@@ -22,7 +23,7 @@
 #include "contexthub_boot.h"
 #include "protocol.h"
 #include <linux/cdev.h>
-#include <../../../drivers/staging/android/timed_output.h>
+#include<linux/leds.h>
 #include <linux/device.h>
 #include "sensor_config.h"
 #include "sensor_feima.h"
@@ -33,13 +34,14 @@
 #include <linux/delay.h>
 
 struct drv2605_data {
+	struct led_classdev cclassdev;
 	int gpio_enable;
 	int gpio_pwm;
 	int max_timeout_ms;
 	int reduce_timeout_ms;
 	int play_effect_time;
 	volatile int should_stop;
-	struct timed_output_dev dev;
+	//struct timed_output_dev dev;
 	struct hrtimer timer;
 	struct mutex lock;
 	struct work_struct work;
@@ -57,6 +59,7 @@ static int vib_calib_result = 0;
 static char reg_add = 0;
 static char reg_value = 0;
 extern struct vibrator_paltform_data vibrator_data;
+static int vib_time =0;
 #if defined(CONFIG_HISI_VIBRATOR)
 extern volatile int vibrator_shake;
 #else
@@ -135,7 +138,7 @@ struct {
     { 33, {0x2C,0,0,0,0,0,0,0},200},
 };
 
-static int vibrator_enable(struct timed_output_dev *dev, int value);
+static int vibrator_enable(struct led_classdev *cdev, int value);
 static void vibrator_set_time(int val);
 
 static void vibrator_operate_reg(char reg, char rw_state, char write_regval, char* read_regval)
@@ -238,24 +241,14 @@ static read_info_t vibrator_send_cali_test_cmd(char* cmd, int len, RET_TYPE *rty
 	}
 	return pkg_mcu;
 }
-
-static enum hrtimer_restart vibrator_timer_func(struct hrtimer *timer)
-{
-	schedule_work(&data->work);
-	return HRTIMER_NORESTART;
-}
-
-static void vibrator_work(struct work_struct *work)
-{
-	msleep(25);//delay 25ms for vibrator quickly off
-	hwlog_info("vibrator off ap delay time end\n");
-	vibrator_shake = 0;
-}
-
 static int vibrator_off(void)
 {
 	vibrator_set_time(VIB_OFF);
 	vibrator_shake = 0;
+}
+static void vibra_set_work(void)
+{
+	vibrator_set_time(vib_time);
 }
 static void haptics_play_effect(void)
 {
@@ -638,21 +631,6 @@ static struct attribute *vb_attributes[] = {
 static const struct attribute_group vb_attr_group = {
 	.attrs = vb_attributes,
 };
-
-static int vibrator_get_time(struct timed_output_dev *dev)
-{
-	struct drv2605_data *datat;
-
-	hwlog_err("vibrator_get_time\n");
-	datat = container_of(dev, struct drv2605_data, dev);
-	if (hrtimer_active(&(datat->timer))) {
-		ktime_t r = hrtimer_get_remaining(&datat->timer);
-		return ktime_to_ms(r);
-	}
-
-	return 0;
-}
-
 static void vibrator_set_time(int val){
 	int ret = 0;
 	write_info_t pkg_ap;
@@ -675,14 +653,11 @@ static void vibrator_set_time(int val){
 		hwlog_err("send tag %d vibrator_set_time fail, %d\n", TAG_VIBRATOR, pkg_mcu.errno);
 	}
 }
-static int vibrator_enable(struct timed_output_dev *dev, int value)
+static int vibrator_enable(struct led_classdev *cdev, int value)
 {
 	int val = value;
 
 	hwlog_err("vibrator_enable, time = %d\n", val);
-	mutex_lock(&data->lock);
-	hrtimer_cancel(&data->timer);
-	cancel_work_sync(&data->work);
 	if (val > 0) {
 		vibrator_shake = 1;
 		if (vibrator_data.reduce_timeout_ms) {
@@ -693,15 +668,16 @@ static int vibrator_enable(struct timed_output_dev *dev, int value)
 		if (val > vibrator_data.max_timeout_ms) {
 			val = vibrator_data.max_timeout_ms;
 		}
-		vibrator_set_time(val);
-		hrtimer_start(&data->timer,
-				  ns_to_ktime((u64) val * NSEC_PER_MSEC),
-				  HRTIMER_MODE_REL);
+		vib_time = val;
+		//vibrator_set_time(val);
+		hwlog_err("vibrator_enable, time = %d end\n", val);
 	}else{
-		vibrator_set_time(VIB_OFF);
+		//vibrator_set_time(VIB_OFF);
+		hwlog_err("vibrator_enable, time = %d end\n", val);
+		vib_time = 0;
 		vibrator_shake = 0;
 	}
-	mutex_unlock(&data->lock);
+	schedule_work(&data->work);
 	return 0;
 }
 
@@ -721,12 +697,14 @@ static ssize_t haptics_write(struct file* filp, const char* buff, size_t len, lo
 	uint64_t type = 0;
 	char write_buf[MAX_BUF_LEGTH] = {0};
 
-	mutex_lock(&data->lock);
 	if(len>MAX_BUF_LEGTH || buff == NULL || filp == NULL || off == NULL){
 		hwlog_err("[haptics_write] bad value\n");
-		goto out;
+		return len;
 	}
+
 	struct drv2605_data *data = (struct drv2605_data *)filp->private_data;
+
+	mutex_lock(&data->lock);
 
 	if(copy_from_user(write_buf, buff, len)){
 		hwlog_err("[haptics_write] copy_from_user failed\n");
@@ -740,8 +718,8 @@ static ssize_t haptics_write(struct file* filp, const char* buff, size_t len, lo
 
 	if (type == HAPTIC_STOP) {
 		data->should_stop = YES;
-		hrtimer_cancel(&data->timer);
-		cancel_work_sync(&data->work);
+		//hrtimer_cancel(&data->timer);
+		//cancel_work_sync(&data->work);
 		vibrator_off();
 		goto out;
 	}
@@ -759,8 +737,6 @@ static ssize_t haptics_write(struct file* filp, const char* buff, size_t len, lo
 		goto out;
 	} else {
 		data->should_stop = YES;
-		hrtimer_cancel(&data->timer);
-		cancel_work_sync(&data->work);
 		vibrator_off();
 		memcpy(&data->sequence, &haptics_table_hub[table_num].haptics_value,HAPTICS_NUM);
 		hwlog_info("[haptics write] sequence1-4: 0x%x,0x%x,0x%x,0x%x.\n", data->sequence[0],
@@ -770,7 +746,6 @@ static ssize_t haptics_write(struct file* filp, const char* buff, size_t len, lo
 		data->play_effect_time = haptics_table_hub[table_num].time;
 		data->should_stop = NO;
 		schedule_work(&data->work_play_eff);
-		//haptics_play_effect();
 	}
 out:
 	mutex_unlock(&data->lock);
@@ -892,28 +867,26 @@ static int __init vibratorhub_init(void)
 		return -ENOMEM;
 	}
 	mutex_init(&data->lock);
-	data->dev.name = vb_name;
-	data->dev.get_time = vibrator_get_time;
-	data->dev.enable = vibrator_enable;
-
-	rc = timed_output_dev_register(&data->dev);
+	data->cclassdev.name = vb_name;
+	data->cclassdev.flags = 0;
+	data->cclassdev.brightness_set = vibrator_enable;
+	data->cclassdev.default_trigger = "transient";
+	rc = led_classdev_register(NULL, &data->cclassdev);
 	if (rc) {
 		hwlog_err("%s, unable to register with timed_output\n", __func__);
 		kfree(data);
 		return -ENOMEM;
 	}
-	ret = sysfs_create_group(&data->dev.dev->kobj, &vb_attr_group);
+	ret = sysfs_create_group(&data->cclassdev.dev->kobj, &vb_attr_group);
 	if (ret) {
 		hwlog_err("%s, unable create vibrator's sysfs,DBC check IC fail\n", __func__);
-		timed_output_dev_unregister(&data->dev);
+		led_classdev_unregister(&data->cclassdev);
 		kfree(data);
 		return -ENOMEM;
 	}
 
-	hrtimer_init(&data->timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
-	data->timer.function = vibrator_timer_func;
-	INIT_WORK(&data->work, vibrator_work);
 	INIT_WORK(&data->work_play_eff, haptics_play_effect);
+	INIT_WORK(&data->work, vibra_set_work);
 
 	haptics_probe(data);
 	hwlog_info("%s success!", __func__);
@@ -933,11 +906,10 @@ Return:         void
 static void __exit vibratorhub_exit(void)
 {
 	mutex_destroy(&data->lock);
-	sysfs_remove_group(&data->dev.dev->kobj, &vb_attr_group);
-	timed_output_dev_unregister(&data->dev);
-	hrtimer_cancel(&data->timer);
-	cancel_work_sync(&data->work);
+	sysfs_remove_group(&data->cclassdev.dev->kobj, &vb_attr_group);
+	led_classdev_unregister(&data->cclassdev);
 	cancel_work_sync(&data->work_play_eff);
+	cancel_work_sync(&data->work);
 	hwlog_info("exit %s\n", __func__);
 }
 

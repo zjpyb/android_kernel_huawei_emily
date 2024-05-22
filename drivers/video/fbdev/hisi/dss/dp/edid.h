@@ -46,6 +46,9 @@ static const uint8_t edid_v1_header[8] = {0x00, 0xff, 0xff, 0xff,
 #define EDID_HEADER	               0x00
 #define EDID_HEADER_END	           0x07
 
+#define EDID_FACTORY_START	           0x08
+#define EDID_FACTORY_END			0x11
+
 #define EDID_STRUCT_VERSION	       0x12
 #define EDID_STRUCT_REVISION       0x13
 

@@ -32,6 +32,6 @@ extern void tcp_measure_deinit(struct sock *sk);
 extern void udp_measure_init(struct sock *sk, struct sk_buff *skb);
 extern void udp_measure_deinit(struct sock *sk);
 extern void nm_nse(struct sock *sk, struct sk_buff *skb, int protocol,
-		   int direction, u8 func);
+		   int offset, int len, int direction, u8 func);
 #endif /* CONFIG_HW_NETWORK_MEASUREMENT */
 #endif /* __NETWORK_MEASUREMENT_H__ */

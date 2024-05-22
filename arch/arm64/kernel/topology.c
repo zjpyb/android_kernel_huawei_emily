@@ -227,7 +227,7 @@ out:
 struct cpu_topology cpu_topology[NR_CPUS];
 EXPORT_SYMBOL_GPL(cpu_topology);
 
-#ifdef CONFIG_HISI_EAS_SCHED
+#ifdef CONFIG_ARCH_HISI
 static const char * const little_cores[] = {
 	"arm,cortex-a53",
 	NULL,

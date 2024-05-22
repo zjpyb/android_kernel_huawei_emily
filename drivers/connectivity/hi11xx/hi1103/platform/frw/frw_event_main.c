@@ -67,12 +67,12 @@ OAL_STATIC frw_event_cfg_stru g_ast_event_queue_cfg_table[] = WLAN_FRW_EVENT_CFG
 /******************************************************************************
     事件管理实体
 *******************************************************************************/
-frw_event_mgmt_stru g_ast_event_manager[WLAN_FRW_MAX_NUM_CORES];
+frw_event_mgmt_stru g_ast_event_manager_etc[WLAN_FRW_MAX_NUM_CORES];
 
 /******************************************************************************
     事件表全局变量
 *******************************************************************************/
-frw_event_table_item_stru g_ast_event_table[FRW_EVENT_TABLE_MAX_ITEMS];
+frw_event_table_item_stru g_ast_event_table_etc[FRW_EVENT_TABLE_MAX_ITEMS];
 
 /******************************************************************************
     IPC注册管理实体
@@ -81,19 +81,19 @@ OAL_STATIC frw_event_ipc_register_stru g_st_ipc_register;
 
 #ifdef _PRE_DEBUG_MODE
 #if (_PRE_MULTI_CORE_MODE_OFFLOAD_DMAC == _PRE_MULTI_CORE_MODE)
-frw_event_track_time_stru g_ast_event_time_track[FRW_RX_EVENT_TRACK_NUM];
-oal_uint32                g_ul_rx_event_idx = 0;
+frw_event_track_time_stru g_ast_event_time_track_etc[FRW_RX_EVENT_TRACK_NUM];
+oal_uint32                g_ul_rx_event_idx_etc = 0;
 #endif
-oal_bool_enum_uint8       g_en_event_track_switch = OAL_TRUE;
-oal_uint32                g_ul_schedule_idx = 0;
-oal_uint32                g_aul_schedule_time[FRW_RX_EVENT_TRACK_NUM] = {0};
-oal_uint32                g_ul_mac_process_event;    //for debug, adjust the event cnt per frw task scheldued 
+oal_bool_enum_uint8       g_en_event_track_switch_etc = OAL_TRUE;
+oal_uint32                g_ul_schedule_idx_etc = 0;
+oal_uint32                g_aul_schedule_time_etc[FRW_RX_EVENT_TRACK_NUM] = {0};
+oal_uint32                g_ul_mac_process_event;    //for debug, adjust the event cnt per frw task scheldued
 #endif
 
 #ifdef _PRE_OAL_FEATURE_TASK_NEST_LOCK
 /*smp os use the task lock to protect the event process*/
-oal_task_lock_stru  g_frw_event_task_lock;
-oal_module_symbol(g_frw_event_task_lock);
+oal_task_lock_stru  g_frw_event_task_lock_etc;
+oal_module_symbol(g_frw_event_task_lock_etc);
 #endif
 
 #ifdef _PRE_CONFIG_HISI_PANIC_DUMP_SUPPORT
@@ -105,7 +105,7 @@ OAL_STATIC oal_int32 frw_trace_print_event_item(frw_event_trace_item_stru* pst_e
     oal_uint64  timestamp = pst_event_trace->timestamp;
 
     rem_nsec = do_div(timestamp, 1000000000);
-    ret +=  snprintf(buf + ret , buf_len - ret, "%u,%u,%u,%u,%5lu.%06lu\n",
+    ret =  snprintf(buf, buf_len, "%u,%u,%u,%u,%5lu.%06lu\n",
                         pst_event_trace->st_event_seg.uc_vap_id,
                         pst_event_trace->st_event_seg.en_pipeline,
                         pst_event_trace->st_event_seg.en_type,
@@ -117,70 +117,110 @@ OAL_STATIC oal_int32 frw_trace_print_event_item(frw_event_trace_item_stru* pst_e
 #endif
 
 #if defined(_PRE_FRW_TIMER_BIND_CPU) && defined(CONFIG_NR_CPUS)
-extern oal_uint32 g_ul_frw_timer_cpu_count[];
+extern oal_uint32 g_ul_frw_timer_cpu_count_etc[];
 #endif
 
 OAL_STATIC oal_int32 frw_print_panic_stat(oal_void* data, char* buf, oal_int32 buf_len)
 {
-    oal_int32 ret = 0;
+    oal_int32 ret;
+    oal_int32 count = 0;
     oal_uint32    ul_core_id;
     oal_uint32 i;
 
     OAL_REFERENCE(data);
 #ifdef _PRE_OAL_FEATURE_TASK_NEST_LOCK
-    if(g_frw_event_task_lock.claimer)
-        ret +=  snprintf(buf + ret , buf_len - ret, "frw task lock claimer:%s\n",g_frw_event_task_lock.claimer->comm);
+    if(g_frw_event_task_lock_etc.claimer)
+    {
+        ret = snprintf(buf + count, buf_len - count, "frw task lock claimer:%s\n",g_frw_event_task_lock_etc.claimer->comm);
+        if (0 >= ret)
+        {
+            return count;
+        }
+        count += ret;
+    }
 #endif
 #ifdef  _PRE_FRW_EVENT_PROCESS_TRACE_DEBUG
     for (ul_core_id = 0; ul_core_id < WLAN_FRW_MAX_NUM_CORES; ul_core_id++)
     {
-        ret +=  snprintf(buf + ret , buf_len - ret, "last pc:%s,line:%d\n",
-                                    g_ast_event_manager[ul_core_id].pst_frw_trace->pst_func_name,
-                                    g_ast_event_manager[ul_core_id].pst_frw_trace->line_num);
+
+        ret = snprintf(buf + count, buf_len - count, "last pc:%s,line:%d\n",
+                                    g_ast_event_manager_etc[ul_core_id].pst_frw_trace->pst_func_name,
+                                    g_ast_event_manager_etc[ul_core_id].pst_frw_trace->line_num);
+        if (0 >= ret)
+        {
+            return count;
+        }
+        count += ret;
+
 #if (_PRE_FRW_FEATURE_PROCCESS_ENTITY_TYPE == _PRE_FRW_FEATURE_PROCCESS_ENTITY_THREAD)
-        ret +=  snprintf(buf + ret, buf_len - ret, "task thread total cnt:%u,event cnt:%u,empty max count:%u\n",
-                                        g_ast_event_task[ul_core_id].ul_total_loop_cnt,
-                                        g_ast_event_task[ul_core_id].ul_total_event_cnt,
-                                        g_ast_event_task[ul_core_id].ul_max_empty_count);
+        ret = snprintf(buf + count, buf_len - count, "task thread total cnt:%u,event cnt:%u,empty max count:%u\n",
+                                        g_ast_event_task_etc[ul_core_id].ul_total_loop_cnt,
+                                        g_ast_event_task_etc[ul_core_id].ul_total_event_cnt,
+                                        g_ast_event_task_etc[ul_core_id].ul_max_empty_count);
+        if (0 >= ret)
+        {
+            return count;
+        }
+        count += ret;
 #endif
 
-        ret +=  snprintf(buf + ret , buf_len - ret, "frw event trace buff:\n");
+        ret = snprintf(buf + count, buf_len - count, "frw event trace buff:\n");
+        if (0 >= ret)
+        {
+            return count;
+        }
+        count += ret;
 
 #if defined(_PRE_FRW_TIMER_BIND_CPU) && defined(CONFIG_NR_CPUS)
         do{
             oal_uint32 cpu_id;
             for(cpu_id = 0; cpu_id < CONFIG_NR_CPUS; cpu_id++)
             {
-                if(g_ul_frw_timer_cpu_count[cpu_id])
+                if(g_ul_frw_timer_cpu_count_etc[cpu_id])
                 {
-                    ret +=  snprintf(buf + ret , buf_len - ret, "[cpu:%u]count:%u\n",cpu_id, g_ul_frw_timer_cpu_count[cpu_id]);
+                    ret =  snprintf(buf + count, buf_len - count, "[cpu:%u]count:%u\n",cpu_id, g_ul_frw_timer_cpu_count_etc[cpu_id]);
+                    if (0 >= ret)
+                    {
+                        return count;
+                    }
+                    count += ret;
                 }
             }
         }while(0);
 #endif
 
-        if(1 == g_ast_event_manager[ul_core_id].pst_frw_trace->ul_over_flag)
+        if(1 == g_ast_event_manager_etc[ul_core_id].pst_frw_trace->ul_over_flag)
         {
             /*overturn*/
-            for(i = g_ast_event_manager[ul_core_id].pst_frw_trace->ul_current_pos; i < CONFIG_FRW_MAX_TRACE_EVENT_NUMS;i++)
+            for(i = g_ast_event_manager_etc[ul_core_id].pst_frw_trace->ul_current_pos; i < CONFIG_FRW_MAX_TRACE_EVENT_NUMS;i++)
             {
-                ret += frw_trace_print_event_item(&g_ast_event_manager[ul_core_id].pst_frw_trace->st_trace_item[i],buf + ret, buf_len - ret);
+                ret = frw_trace_print_event_item(&g_ast_event_manager_etc[ul_core_id].pst_frw_trace->st_trace_item[i], buf + count, buf_len - count);
+                if (0 >= ret)
+                {
+                    return count;
+                }
+                count += ret;
             }
         }
 
         i = 0;
-        for(i = 0; i < g_ast_event_manager[ul_core_id].pst_frw_trace->ul_current_pos; i++)
+        for(i = 0; i < g_ast_event_manager_etc[ul_core_id].pst_frw_trace->ul_current_pos; i++)
         {
-            ret += frw_trace_print_event_item(&g_ast_event_manager[ul_core_id].pst_frw_trace->st_trace_item[i], buf + ret,buf_len - ret);
+            ret = frw_trace_print_event_item(&g_ast_event_manager_etc[ul_core_id].pst_frw_trace->st_trace_item[i], buf + count, buf_len - count);
+            if (0 >= ret)
+            {
+                return count;
+            }
+            count += ret;
         }
-
     }
 #else
     OAL_REFERENCE(i);
     OAL_REFERENCE(ul_core_id);
     OAL_REFERENCE(ret);
+    OAL_REFERENCE(count);
 #endif
-    return ret;
+    return count;
 }
 OAL_STATIC DECLARE_WIFI_PANIC_STRU(frw_panic_stat,frw_print_panic_stat);
 #endif
@@ -200,7 +240,7 @@ OAL_STATIC oal_uint32  frw_event_init_event_queue(oal_void)
         /* 循环初始化事件队列 */
         for (us_qid = 0; us_qid < FRW_EVENT_MAX_NUM_QUEUES; us_qid++)
         {
-            ul_ret = frw_event_queue_init(&g_ast_event_manager[ul_core_id].st_event_queue[us_qid],
+            ul_ret = frw_event_queue_init_etc(&g_ast_event_manager_etc[ul_core_id].st_event_queue[us_qid],
                               g_ast_event_queue_cfg_table[us_qid].uc_weight,
                               g_ast_event_queue_cfg_table[us_qid].en_policy,
                               FRW_EVENT_QUEUE_STATE_INACTIVE,
@@ -208,7 +248,7 @@ OAL_STATIC oal_uint32  frw_event_init_event_queue(oal_void)
 
             if (OAL_UNLIKELY(OAL_SUCC != ul_ret))
             {
-                OAM_WARNING_LOG1(0, OAM_SF_FRW, "{frw_event_init_event_queue, frw_event_queue_init return != OAL_SUCC!%d}", ul_ret);
+                OAM_WARNING_LOG1(0, OAM_SF_FRW, "{frw_event_init_event_queue, frw_event_queue_init_etc return != OAL_SUCC!%d}", ul_ret);
                 return ul_ret;
             }
         }
@@ -226,7 +266,7 @@ OAL_STATIC oal_void  frw_event_destroy_event_queue(oal_uint32 ul_core_id)
     /* 循环销毁事件队列 */
     for (us_qid = 0; us_qid < FRW_EVENT_MAX_NUM_QUEUES; us_qid++)
     {
-        frw_event_queue_destroy(&g_ast_event_manager[ul_core_id].st_event_queue[us_qid]);
+        frw_event_queue_destroy_etc(&g_ast_event_manager_etc[ul_core_id].st_event_queue[us_qid]);
     }
 }
 
@@ -242,11 +282,11 @@ OAL_STATIC oal_uint32  frw_event_init_sched(oal_void)
         /* 循环初始化调度器 */
         for (us_qid = 0; us_qid < FRW_SCHED_POLICY_BUTT; us_qid++)
         {
-            ul_ret = frw_event_sched_init(&g_ast_event_manager[ul_core_id].st_sched_queue[us_qid]);
+            ul_ret = frw_event_sched_init_etc(&g_ast_event_manager_etc[ul_core_id].st_sched_queue[us_qid]);
 
             if (OAL_UNLIKELY(OAL_SUCC != ul_ret))
             {
-                OAM_WARNING_LOG1(0, OAM_SF_FRW, "{frw_event_init_sched, frw_event_sched_init return != OAL_SUCC!%d}", ul_ret);
+                OAM_WARNING_LOG1(0, OAM_SF_FRW, "{frw_event_init_sched, frw_event_sched_init_etc return != OAL_SUCC!%d}", ul_ret);
                 return ul_ret;
             }
         }
@@ -263,15 +303,15 @@ OAL_STATIC oal_uint32 frw_event_trace_init(oal_void)
     for (ul_core_id = 0; ul_core_id < WLAN_FRW_MAX_NUM_CORES; ul_core_id++)
     {
 
-        g_ast_event_manager[ul_core_id].pst_frw_trace = (frw_event_trace_stru*)vmalloc(OAL_SIZEOF(frw_event_trace_stru));
-        if(NULL == g_ast_event_manager[ul_core_id].pst_frw_trace)
+        g_ast_event_manager_etc[ul_core_id].pst_frw_trace = (frw_event_trace_stru*)vmalloc(OAL_SIZEOF(frw_event_trace_stru));
+        if(NULL == g_ast_event_manager_etc[ul_core_id].pst_frw_trace)
         {
             OAL_IO_PRINT("frw_event_init_sched coreid:%u, alloc frw event trace %u bytes failed! \n",
                           ul_core_id,
                           (oal_uint32)OAL_SIZEOF(frw_event_trace_stru));
             return OAL_ERR_CODE_PTR_NULL;
         }
-        oal_memset((oal_void*)g_ast_event_manager[ul_core_id].pst_frw_trace,0,OAL_SIZEOF(frw_event_trace_stru));
+        oal_memset((oal_void*)g_ast_event_manager_etc[ul_core_id].pst_frw_trace,0,OAL_SIZEOF(frw_event_trace_stru));
     }
     return OAL_SUCC;
 }
@@ -282,17 +322,17 @@ OAL_STATIC oal_void frw_event_trace_exit(oal_void)
     oal_uint32    ul_core_id;
     for (ul_core_id = 0; ul_core_id < WLAN_FRW_MAX_NUM_CORES; ul_core_id++)
     {
-        if(NULL != g_ast_event_manager[ul_core_id].pst_frw_trace)
+        if(NULL != g_ast_event_manager_etc[ul_core_id].pst_frw_trace)
         {
-            vfree(g_ast_event_manager[ul_core_id].pst_frw_trace);
-            g_ast_event_manager[ul_core_id].pst_frw_trace = NULL;
+            vfree(g_ast_event_manager_etc[ul_core_id].pst_frw_trace);
+            g_ast_event_manager_etc[ul_core_id].pst_frw_trace = NULL;
         }
     }
 }
 #endif
 
 
-oal_uint32  frw_event_dispatch_event(frw_event_mem_stru *pst_event_mem)
+oal_uint32  frw_event_dispatch_event_etc(frw_event_mem_stru *pst_event_mem)
 {
 #if (_PRE_MULTI_CORE_MODE_PIPELINE_AMP == _PRE_MULTI_CORE_MODE)
     frw_event_deploy_enum_uint8    en_deploy;
@@ -305,7 +345,7 @@ oal_uint32  frw_event_dispatch_event(frw_event_mem_stru *pst_event_mem)
 
     if (OAL_UNLIKELY(OAL_PTR_NULL == pst_event_mem))
     {
-        OAM_ERROR_LOG0(0, OAM_SF_FRW, "{frw_event_dispatch_event: pst_event_mem is null ptr!}");
+        OAM_ERROR_LOG0(0, OAM_SF_FRW, "{frw_event_dispatch_event_etc: pst_event_mem is null ptr!}");
         return OAL_ERR_CODE_PTR_NULL;
     }
 
@@ -314,7 +354,7 @@ oal_uint32  frw_event_dispatch_event(frw_event_mem_stru *pst_event_mem)
     ul_dog_tag = (*((oal_uint32 *)(pst_event_mem->puc_origin_data + pst_event_mem->us_len - OAL_DOG_TAG_SIZE)));
     if (OAL_DOG_TAG != ul_dog_tag)
     {
-        OAM_ERROR_LOG1(0, OAM_SF_FRW, "frw_event_dispatch_event, ul_dog_tag changed is[%d]changed", ul_dog_tag);
+        OAM_ERROR_LOG1(0, OAM_SF_FRW, "frw_event_dispatch_event_etc, ul_dog_tag changed is[%d]changed", ul_dog_tag);
         return OAL_ERR_CODE_OAL_MEM_DOG_TAG;
     }
     frw_event_report(pst_event_mem);
@@ -330,7 +370,7 @@ oal_uint32  frw_event_dispatch_event(frw_event_mem_stru *pst_event_mem)
     ul_ret = st_ipc_register.p_frw_event_deploy_pipeline_func(pst_event_mem, &en_deploy);
     if (OAL_SUCC != ul_ret)
     {
-        OAM_WARNING_LOG1(0, OAM_SF_FRW, "{frw_event_dispatch_event, p_frw_event_deploy_pipeline_func return != OAL_SUCC!%d}", ul_ret);
+        OAM_WARNING_LOG1(0, OAM_SF_FRW, "{frw_event_dispatch_event_etc, p_frw_event_deploy_pipeline_func return != OAL_SUCC!%d}", ul_ret);
         return ul_ret;
     }
 
@@ -349,9 +389,24 @@ OAL_STATIC ssize_t  frw_get_event_trace(struct device *dev, struct device_attrib
 {
     int ret = 0;
 
-    OAL_BUG_ON(NULL == dev);
-    OAL_BUG_ON(NULL == attr);
-    OAL_BUG_ON(NULL == buf);
+    if (NULL == buf)
+    {
+        OAL_IO_PRINT("buf is null r failed!%s\n",__FUNCTION__);
+        return 0;
+    }
+
+    if (NULL == attr)
+    {
+        OAL_IO_PRINT("attr is null r failed!%s\n",__FUNCTION__);
+        return 0;
+    }
+
+    if (NULL == dev)
+    {
+        OAL_IO_PRINT("dev is null r failed!%s\n",__FUNCTION__);
+        return 0;
+    }
+
     ret += frw_print_panic_stat(NULL,buf,PAGE_SIZE - ret);
     return ret;
 }
@@ -372,7 +427,7 @@ OAL_STATIC oal_int32 frw_sysfs_entry_init(oal_void)
 {
     oal_int32       ret = OAL_SUCC;
     oal_kobject*     pst_root_object = NULL;
-    pst_root_object = oal_get_sysfs_root_object();
+    pst_root_object = oal_get_sysfs_root_object_etc();
     if(NULL == pst_root_object)
     {
         OAM_ERROR_LOG0(0,OAM_SF_ANY,"{frw_sysfs_entry_init::get sysfs root object failed!}");
@@ -380,7 +435,7 @@ OAL_STATIC oal_int32 frw_sysfs_entry_init(oal_void)
     }
 
 
-    ret = sysfs_create_group(pst_root_object, &frw_attribute_group);
+    ret = oal_debug_sysfs_create_group(pst_root_object, &frw_attribute_group);
     if (ret)
     {
         OAM_ERROR_LOG0(0,OAM_SF_ANY,"{frw_sysfs_entry_init::sysfs create group failed!}");
@@ -392,10 +447,10 @@ OAL_STATIC oal_int32 frw_sysfs_entry_init(oal_void)
 OAL_STATIC oal_int32 frw_sysfs_entry_exit(oal_void)
 {
     oal_kobject*     pst_root_object = NULL;
-    pst_root_object = oal_get_sysfs_root_object();
+    pst_root_object = oal_get_sysfs_root_object_etc();
     if(NULL != pst_root_object)
     {
-        sysfs_remove_group(pst_root_object, &frw_attribute_group);
+        oal_debug_sysfs_remove_group(pst_root_object, &frw_attribute_group);
     }
 
     return OAL_SUCC;
@@ -403,14 +458,14 @@ OAL_STATIC oal_int32 frw_sysfs_entry_exit(oal_void)
 #endif
 
 
-oal_uint32 frw_event_init(oal_void)
+oal_uint32 frw_event_init_etc(oal_void)
 {
     oal_uint32    ul_ret;
 
     OAL_MEMZERO(&g_st_ipc_register, OAL_SIZEOF(g_st_ipc_register));
 #if defined(_PRE_DEBUG_MODE) && (_PRE_MULTI_CORE_MODE_OFFLOAD_DMAC == _PRE_MULTI_CORE_MODE)
 
-    OAL_MEMZERO(&g_ast_event_time_track, FRW_RX_EVENT_TRACK_NUM * OAL_SIZEOF(frw_event_track_time_stru));
+    OAL_MEMZERO(&g_ast_event_time_track_etc, FRW_RX_EVENT_TRACK_NUM * OAL_SIZEOF(frw_event_track_time_stru));
 #endif
 
 #ifdef _PRE_DEBUG_MODE
@@ -419,14 +474,14 @@ oal_uint32 frw_event_init(oal_void)
 
 
 #ifdef _PRE_OAL_FEATURE_TASK_NEST_LOCK
-    oal_smp_task_lock_init(&g_frw_event_task_lock);
+    oal_smp_task_lock_init(&g_frw_event_task_lock_etc);
 #endif
 
     /* 初始化事件队列 */
     ul_ret = frw_event_init_event_queue();
     if (OAL_UNLIKELY(OAL_SUCC != ul_ret))
     {
-        OAM_WARNING_LOG1(0, OAM_SF_FRW, "{frw_event_init, frw_event_init_event_queue != OAL_SUCC!%d}", ul_ret);
+        OAM_WARNING_LOG1(0, OAM_SF_FRW, "{frw_event_init_etc, frw_event_init_event_queue != OAL_SUCC!%d}", ul_ret);
         return ul_ret;
     }
 
@@ -434,7 +489,7 @@ oal_uint32 frw_event_init(oal_void)
     ul_ret = frw_event_init_sched();
     if (OAL_UNLIKELY(OAL_SUCC != ul_ret))
     {
-        OAM_WARNING_LOG1(0, OAM_SF_FRW, "frw_event_init, frw_event_init_sched != OAL_SUCC!%d", ul_ret);
+        OAM_WARNING_LOG1(0, OAM_SF_FRW, "frw_event_init_etc, frw_event_init_sched != OAL_SUCC!%d", ul_ret);
         return ul_ret;
     }
 
@@ -442,16 +497,16 @@ oal_uint32 frw_event_init(oal_void)
     ul_ret = frw_event_trace_init();
     if (OAL_UNLIKELY(OAL_SUCC != ul_ret))
     {
-        OAM_ERROR_LOG1(0, OAM_SF_FRW, "frw_event_init, frw_event_trace_init != OAL_SUCC!%d", ul_ret);
+        OAM_ERROR_LOG1(0, OAM_SF_FRW, "frw_event_init_etc, frw_event_trace_init != OAL_SUCC!%d", ul_ret);
         return ul_ret;
     }
 #endif
 
 #ifdef _PRE_CONFIG_HISI_PANIC_DUMP_SUPPORT
-    hwifi_panic_log_register(&frw_panic_stat,NULL);
+    hwifi_panic_log_register_etc(&frw_panic_stat,NULL);
 #endif
 
-    frw_task_event_handler_register(frw_event_process_all_event);
+    frw_task_event_handler_register_etc(frw_event_process_all_event_etc);
 
 #if defined(_PRE_CONFIG_CONN_HISI_SYSFS_SUPPORT) && defined(_PRE_CONFIG_HISI_PANIC_DUMP_SUPPORT)
     frw_sysfs_entry_init();
@@ -461,7 +516,7 @@ oal_uint32 frw_event_init(oal_void)
 }
 
 
-oal_uint32  frw_event_exit(oal_void)
+oal_uint32  frw_event_exit_etc(oal_void)
 {
     oal_uint32    ul_core_id;
 #if defined(_PRE_CONFIG_CONN_HISI_SYSFS_SUPPORT) && defined(_PRE_CONFIG_HISI_PANIC_DUMP_SUPPORT)
@@ -482,7 +537,7 @@ oal_uint32  frw_event_exit(oal_void)
 }
 
 #if (_PRE_MULTI_CORE_MODE_OFFLOAD_DMAC == _PRE_MULTI_CORE_MODE)
-oal_void frw_event_sub_rx_adapt_table_init(frw_event_sub_table_item_stru *pst_sub_table, oal_uint32 ul_table_nums,
+oal_void frw_event_sub_rx_adapt_table_init_etc(frw_event_sub_table_item_stru *pst_sub_table, oal_uint32 ul_table_nums,
                                                 frw_event_mem_stru *(*p_rx_adapt_func)(frw_event_mem_stru *))
 {
     oal_uint32 i;
@@ -496,7 +551,7 @@ oal_void frw_event_sub_rx_adapt_table_init(frw_event_sub_table_item_stru *pst_su
 #endif
 
 
-oal_uint32  frw_event_queue_enqueue(frw_event_queue_stru *pst_event_queue, frw_event_mem_stru *pst_event_mem)
+oal_uint32  frw_event_queue_enqueue_etc(frw_event_queue_stru *pst_event_queue, frw_event_mem_stru *pst_event_mem)
 {
     oal_uint32                  ul_ret;
     oal_uint                     ul_irq_flag;
@@ -508,7 +563,7 @@ oal_uint32  frw_event_queue_enqueue(frw_event_queue_stru *pst_event_queue, frw_e
 }
 
 
-frw_event_mem_stru *frw_event_queue_dequeue(frw_event_queue_stru *pst_event_queue)
+frw_event_mem_stru *frw_event_queue_dequeue_etc(frw_event_queue_stru *pst_event_queue)
 {
     frw_event_mem_stru *pst_event_mem;
     oal_uint                    ul_irq_flag;
@@ -520,7 +575,7 @@ frw_event_mem_stru *frw_event_queue_dequeue(frw_event_queue_stru *pst_event_queu
 }
 
 
-oal_uint32  frw_event_post_event(frw_event_mem_stru *pst_event_mem,oal_uint32 ul_core_id)
+oal_uint32  frw_event_post_event_etc(frw_event_mem_stru *pst_event_mem,oal_uint32 ul_core_id)
 {
     oal_uint16                   us_qid;
     frw_event_mgmt_stru         *pst_event_mgmt;
@@ -534,25 +589,25 @@ oal_uint32  frw_event_post_event(frw_event_mem_stru *pst_event_mem,oal_uint32 ul
     ul_ret = frw_event_to_qid(pst_event_mem, &us_qid);
     if (OAL_UNLIKELY(OAL_SUCC != ul_ret))
     {
-        OAM_WARNING_LOG1(0, OAM_SF_FRW, "{frw_event_post_event, frw_event_to_qid return != OAL_SUCC!%d}", ul_ret);
+        OAM_WARNING_LOG1(0, OAM_SF_FRW, "{frw_event_post_event_etc, frw_event_to_qid return != OAL_SUCC!%d}", ul_ret);
         return ul_ret;
     }
 
     if (OAL_UNLIKELY(ul_core_id >= WLAN_FRW_MAX_NUM_CORES))
     {
-        OAM_ERROR_LOG1(0, OAM_SF_FRW, "{frw_event_post_event, array overflow!%d}", ul_core_id);
+        OAM_ERROR_LOG1(0, OAM_SF_FRW, "{frw_event_post_event_etc, array overflow!%d}", ul_core_id);
         return OAL_ERR_CODE_ARRAY_OVERFLOW;
     }
 
     /* 根据核号 + 队列ID，找到相应的事件队列 */
-    pst_event_mgmt  = &g_ast_event_manager[ul_core_id];
+    pst_event_mgmt  = &g_ast_event_manager_etc[ul_core_id];
 
     pst_event_queue = &pst_event_mgmt->st_event_queue[us_qid];
 
     /* 检查policy */
     if (OAL_UNLIKELY(pst_event_queue->en_policy >= FRW_SCHED_POLICY_BUTT))
     {
-        OAM_ERROR_LOG1(0, OAM_SF_FRW, "{frw_event_post_event, array overflow!%d}", pst_event_queue->en_policy);
+        OAM_ERROR_LOG1(0, OAM_SF_FRW, "{frw_event_post_event_etc, array overflow!%d}", pst_event_queue->en_policy);
         return OAL_ERR_CODE_ARRAY_OVERFLOW;
     }
 
@@ -573,12 +628,12 @@ oal_uint32  frw_event_post_event(frw_event_mem_stru *pst_event_mem,oal_uint32 ul
     pst_event_mem->uc_user_cnt++;
 
     /* 事件入队 */
-    ul_ret = frw_event_queue_enqueue(pst_event_queue, pst_event_mem);
+    ul_ret = frw_event_queue_enqueue_etc(pst_event_queue, pst_event_mem);
     if (OAL_UNLIKELY(OAL_SUCC != ul_ret))
     {
         pst_event_hdr = (frw_event_hdr_stru *)(frw_get_event_data(pst_event_mem));
 #if (_PRE_MULTI_CORE_MODE_OFFLOAD_DMAC == _PRE_MULTI_CORE_MODE)
-        OAM_WARNING_LOG4(0, OAM_SF_FRW, "frw_event_post_event:: enqueue fail. core %d, type %d, sub type %d, pipeline %d ",
+        OAM_WARNING_LOG4(0, OAM_SF_FRW, "frw_event_post_event_etc:: enqueue fail. core %d, type %d, sub type %d, pipeline %d ",
                                       ul_core_id,
                                       pst_event_hdr->en_type,
                                       pst_event_hdr->uc_sub_type,
@@ -591,7 +646,7 @@ oal_uint32  frw_event_post_event(frw_event_mem_stru *pst_event_mem,oal_uint32 ul
                         pst_event_queue->st_queue.uc_max_elements);
 #else
         /*因CPU动态调频造成跑流个别事件入队失败，暂时修改为warning*/
-        OAM_WARNING_LOG4(0, OAM_SF_FRW, "frw_event_post_event:: enqueue fail. core %d, type %d, sub type %d, pipeline %d ",
+        OAM_WARNING_LOG4(0, OAM_SF_FRW, "frw_event_post_event_etc:: enqueue fail. core %d, type %d, sub type %d, pipeline %d ",
                                       ul_core_id,
                                       pst_event_hdr->en_type,
                                       pst_event_hdr->uc_sub_type,
@@ -627,34 +682,34 @@ oal_uint32  frw_event_post_event(frw_event_mem_stru *pst_event_mem,oal_uint32 ul
     /*此处不能返回，调度策略都需要在自旋锁内完成.*/
 
     /* 根据所属调度策略，将事件队列加入可调度队列 */
-    ul_ret = frw_event_sched_activate_queue(pst_sched_queue, pst_event_queue);
+    ul_ret = frw_event_sched_activate_queue_etc(pst_sched_queue, pst_event_queue);
     if (OAL_UNLIKELY(OAL_SUCC != ul_ret))
     {
-        OAM_ERROR_LOG1(0, OAM_SF_FRW, "{frw_event_post_event, frw_event_sched_activate_queue return != OAL_SUCC! %d}", ul_ret);
+        OAM_ERROR_LOG1(0, OAM_SF_FRW, "{frw_event_post_event_etc, frw_event_sched_activate_queue_etc return != OAL_SUCC! %d}", ul_ret);
         return ul_ret;
     }
 
 #if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
     #ifdef _PRE_DEBUG_MODE
         #if (_PRE_FRW_FEATURE_PROCCESS_ENTITY_TYPE == _PRE_FRW_FEATURE_PROCCESS_ENTITY_TASKLET)
-        if (OAL_TRUE == g_en_event_track_switch)
+        if (OAL_TRUE == g_en_event_track_switch_etc)
         {
-            if (!oal_task_is_scheduled(&g_ast_event_task[ul_core_id].st_event_tasklet))
+            if (!oal_task_is_scheduled(&g_ast_event_task_etc[ul_core_id].st_event_tasklet))
             {
-                g_aul_schedule_time[g_ul_schedule_idx] = oal_5115timer_get_10ns();
+                g_aul_schedule_time_etc[g_ul_schedule_idx_etc] = oal_5115timer_get_10ns();
             }
         }
         #endif
     #endif
 #endif
 
-    frw_task_sched(ul_core_id);
+    frw_task_sched_etc(ul_core_id);
 
     return OAL_SUCC;
 }
 
 
-oal_void  frw_event_table_register(
+oal_void  frw_event_table_register_etc(
                 frw_event_type_enum_uint8      en_type,
                 frw_event_pipeline_enum        en_pipeline,
                 frw_event_sub_table_item_stru *pst_sub_table)
@@ -663,7 +718,7 @@ oal_void  frw_event_table_register(
 
     if (OAL_UNLIKELY(OAL_PTR_NULL == pst_sub_table))
     {
-        OAM_ERROR_LOG0(0, OAM_SF_FRW, "{frw_event_table_register: pst_sub_table is null ptr!}");
+        OAM_ERROR_LOG0(0, OAM_SF_FRW, "{frw_event_table_register_etc: pst_sub_table is null ptr!}");
         return;
     }
 
@@ -672,34 +727,34 @@ oal_void  frw_event_table_register(
 
     if (OAL_UNLIKELY(uc_index >= FRW_EVENT_TABLE_MAX_ITEMS))
     {
-        OAM_ERROR_LOG1(0, OAM_SF_FRW, "{frw_event_table_register, array overflow! %d}", uc_index);
+        OAM_ERROR_LOG1(0, OAM_SF_FRW, "{frw_event_table_register_etc, array overflow! %d}", uc_index);
         return;
     }
 
-    g_ast_event_table[uc_index].pst_sub_table = pst_sub_table;
+    g_ast_event_table_etc[uc_index].pst_sub_table = pst_sub_table;
 }
 
 
-oal_void  frw_event_deploy_register(oal_uint32 (*p_func)(frw_event_mem_stru *pst_event_mem, frw_event_deploy_enum_uint8 *pen_deploy_result))
+oal_void  frw_event_deploy_register_etc(oal_uint32 (*p_func)(frw_event_mem_stru *pst_event_mem, frw_event_deploy_enum_uint8 *pen_deploy_result))
 {
     g_st_ipc_register.p_frw_event_deploy_pipeline_func = p_func;
 }
 
 
-oal_void  frw_event_ipc_event_queue_full_register(oal_uint32 (*p_func)(oal_void))
+oal_void  frw_event_ipc_event_queue_full_register_etc(oal_uint32 (*p_func)(oal_void))
 {
     g_st_ipc_register.p_frw_ipc_event_queue_full_func = p_func;
 }
 
 
-oal_void  frw_event_ipc_event_queue_empty_register(oal_uint32 (*p_func)(oal_void))
+oal_void  frw_event_ipc_event_queue_empty_register_etc(oal_uint32 (*p_func)(oal_void))
 {
     g_st_ipc_register.p_frw_ipc_event_queue_empty_func = p_func;
 }
 
 
 
-oal_void  frw_event_process_all_event(oal_uint ui_data)
+oal_void  frw_event_process_all_event_etc(oal_uint ui_data)
 {
     oal_uint32                     ul_core_id;
     frw_event_mem_stru            *pst_event_mem;
@@ -724,10 +779,10 @@ oal_void  frw_event_process_all_event(oal_uint ui_data)
     oal_uint32                     ul_timestamp_end;
     oal_uint32                     ul_event_index;
 #endif
-    if (OAL_TRUE == g_en_event_track_switch)
+    if (OAL_TRUE == g_en_event_track_switch_etc)
     {
-        g_aul_schedule_time[g_ul_schedule_idx] = g_aul_schedule_time[g_ul_schedule_idx] - oal_5115timer_get_10ns();
-        OAL_INCR(g_ul_schedule_idx, FRW_RX_EVENT_TRACK_NUM);
+        g_aul_schedule_time_etc[g_ul_schedule_idx_etc] = g_aul_schedule_time_etc[g_ul_schedule_idx_etc] - oal_5115timer_get_10ns();
+        OAL_INCR(g_ul_schedule_idx_etc, FRW_RX_EVENT_TRACK_NUM);
     }
 #endif
 
@@ -737,7 +792,7 @@ oal_void  frw_event_process_all_event(oal_uint ui_data)
 
     if (OAL_UNLIKELY(ul_core_id >= WLAN_FRW_MAX_NUM_CORES))
     {
-        OAM_ERROR_LOG1(0, OAM_SF_FRW, "{frw_event_process_all_event, array overflow! %d}", ul_core_id);
+        OAM_ERROR_LOG1(0, OAM_SF_FRW, "{frw_event_process_all_event_etc, array overflow! %d}", ul_core_id);
         return;
     }
 
@@ -748,17 +803,17 @@ oal_void  frw_event_process_all_event(oal_uint ui_data)
     }
 #endif
 
-    pst_sched_queue = g_ast_event_manager[ul_core_id].st_sched_queue;
+    pst_sched_queue = g_ast_event_manager_etc[ul_core_id].st_sched_queue;
 
     /* 调用事件调度模块，选择一个事件 */
     pst_event_mem = (frw_event_mem_stru *)frw_event_schedule(pst_sched_queue);
 
 #if defined(_PRE_DEBUG_MODE) && (_PRE_MULTI_CORE_MODE_OFFLOAD_DMAC == _PRE_MULTI_CORE_MODE)
 
-    if (OAL_TRUE == g_en_event_track_switch)
+    if (OAL_TRUE == g_en_event_track_switch_etc)
     {
-        OAL_INCR(g_ul_rx_event_idx, FRW_RX_EVENT_TRACK_NUM);
-        g_ast_event_time_track[g_ul_rx_event_idx].ul_event_cnt = 0;
+        OAL_INCR(g_ul_rx_event_idx_etc, FRW_RX_EVENT_TRACK_NUM);
+        g_ast_event_time_track_etc[g_ul_rx_event_idx_etc].ul_event_cnt = 0;
     }
 
 #endif
@@ -780,13 +835,13 @@ oal_void  frw_event_process_all_event(oal_uint ui_data)
            pst_event               = frw_get_event_stru(pst_event_mem);
            pst_wlan_rx_event       = (hal_wlan_rx_event_stru *)(pst_event->auc_event_data);
            pst_device              = pst_wlan_rx_event->pst_hal_device;
-     
+
            if(OAL_UNLIKELY(OAL_PTR_NULL == pst_device))
            {
-               OAM_ERROR_LOG0(0, OAM_SF_RX, "{frw_event_process_all_event::pst_device null.}");
+               OAM_ERROR_LOG0(0, OAM_SF_RX, "{frw_event_process_all_event_etc::pst_device null.}");
                break;
            }
-     
+
            if(OAL_TRUE == pst_device->en_test_is_on_waveapp_flag)
            {
                ul_mac_process_event = 1;
@@ -834,17 +889,17 @@ oal_void  frw_event_process_all_event(oal_uint ui_data)
         frw_event_task_unlock();
 
 #if defined(_PRE_DEBUG_MODE) && (_PRE_MULTI_CORE_MODE_OFFLOAD_DMAC == _PRE_MULTI_CORE_MODE)
-        if (OAL_TRUE == g_en_event_track_switch)
+        if (OAL_TRUE == g_en_event_track_switch_etc)
         {
             ul_timestamp_end = oal_5115timer_get_10ns();
-            ul_event_index = g_ast_event_time_track[g_ul_rx_event_idx].ul_event_cnt;
+            ul_event_index = g_ast_event_time_track_etc[g_ul_rx_event_idx_etc].ul_event_cnt;
             if (FRW_EVENT_TRACK_NUM > ul_event_index)
             {
-                g_ast_event_time_track[g_ul_rx_event_idx].aul_event_time[ul_event_index]    = ul_timestamp_start - ul_timestamp_end;
-                g_ast_event_time_track[g_ul_rx_event_idx].us_event_type[ul_event_index]     = pst_event_hrd->en_type;
-                g_ast_event_time_track[g_ul_rx_event_idx].us_event_sub_type[ul_event_index] = pst_event_hrd->uc_sub_type;
+                g_ast_event_time_track_etc[g_ul_rx_event_idx_etc].aul_event_time[ul_event_index]    = ul_timestamp_start - ul_timestamp_end;
+                g_ast_event_time_track_etc[g_ul_rx_event_idx_etc].us_event_type[ul_event_index]     = pst_event_hrd->en_type;
+                g_ast_event_time_track_etc[g_ul_rx_event_idx_etc].us_event_sub_type[ul_event_index] = pst_event_hrd->uc_sub_type;
             }
-            g_ast_event_time_track[g_ul_rx_event_idx].ul_event_cnt++;
+            g_ast_event_time_track_etc[g_ul_rx_event_idx_etc].ul_event_cnt++;
 
         }
 
@@ -854,7 +909,7 @@ oal_void  frw_event_process_all_event(oal_uint ui_data)
 #if (_PRE_FRW_FEATURE_PROCCESS_ENTITY_TYPE == _PRE_FRW_FEATURE_PROCCESS_ENTITY_THREAD)
         if(OAL_LIKELY(ul_core_id < WLAN_FRW_MAX_NUM_CORES))
         {
-            g_ast_event_task[ul_core_id].ul_total_event_cnt++;
+            g_ast_event_task_etc[ul_core_id].ul_total_event_cnt++;
         }
 #endif
 
@@ -869,7 +924,7 @@ oal_void  frw_event_process_all_event(oal_uint ui_data)
         }
         else
         {
-            frw_task_sched(ul_core_id);
+            frw_task_sched_etc(ul_core_id);
             break;
         }
     }
@@ -880,7 +935,7 @@ oal_void  frw_event_process_all_event(oal_uint ui_data)
 }
 
 
-oal_uint32  frw_event_flush_event_queue(frw_event_type_enum_uint8 uc_event_type)
+oal_uint32  frw_event_flush_event_queue_etc(frw_event_type_enum_uint8 uc_event_type)
 {
     oal_uint32              ul_core_id;
     oal_uint16              us_qid;
@@ -899,13 +954,13 @@ oal_uint32  frw_event_flush_event_queue(frw_event_type_enum_uint8 uc_event_type)
             us_qid = uc_vap_id * FRW_EVENT_TYPE_BUTT + uc_event_type;
 
             /* 根据核号 + 队列ID，找到相应的事件队列 */
-            pst_event_mgmt  = &g_ast_event_manager[ul_core_id];
+            pst_event_mgmt  = &g_ast_event_manager_etc[ul_core_id];
             pst_event_queue = &pst_event_mgmt->st_event_queue[us_qid];
 
             /*flush所有的event*/
             while( 0 != pst_event_queue->st_queue.uc_element_cnt)
             {
-                pst_event_mem = (frw_event_mem_stru *)frw_event_queue_dequeue(pst_event_queue);
+                pst_event_mem = (frw_event_mem_stru *)frw_event_queue_dequeue_etc(pst_event_queue);
                 if (OAL_PTR_NULL == pst_event_mem)
                 {
                     continue;
@@ -926,7 +981,7 @@ oal_uint32  frw_event_flush_event_queue(frw_event_type_enum_uint8 uc_event_type)
             /* 如果事件队列变空，需要将其从调度队列上删除，并将事件队列状态置为不活跃(不可被调度) */
             if (0 == pst_event_queue->st_queue.uc_element_cnt)
             {
-                frw_event_sched_deactivate_queue(&g_ast_event_manager[ul_core_id].st_sched_queue[pst_event_queue->en_policy], pst_event_queue);
+                frw_event_sched_deactivate_queue_etc(&g_ast_event_manager_etc[ul_core_id].st_sched_queue[pst_event_queue->en_policy], pst_event_queue);
             }
 #endif
         }
@@ -936,7 +991,7 @@ oal_uint32  frw_event_flush_event_queue(frw_event_type_enum_uint8 uc_event_type)
 }
 
 
-oal_void  frw_event_dump_event(oal_uint8 *puc_event)
+oal_void  frw_event_dump_event_etc(oal_uint8 *puc_event)
 {
     frw_event_stru       *pst_event = (frw_event_stru *)puc_event;
     frw_event_hdr_stru   *pst_event_hdr   = &pst_event->st_event_hdr;
@@ -963,7 +1018,7 @@ oal_void  frw_event_dump_event(oal_uint8 *puc_event)
 }
 
 
-OAL_STATIC oal_void  frw_event_get_info_from_event_queue(frw_event_queue_stru *pst_event_queue)
+OAL_STATIC oal_void  frw_event_get_info_from_event_queue_etc(frw_event_queue_stru *pst_event_queue)
 {
     frw_event_stru              *pst_event;
     oal_queue_stru              *pst_queue;
@@ -1022,7 +1077,7 @@ OAL_STATIC oal_void  frw_event_get_info_from_event_queue(frw_event_queue_stru *p
 
 
 
-oal_uint32  frw_event_queue_info(oal_void)
+oal_uint32  frw_event_queue_info_etc(oal_void)
 {
     oal_uint32                      ul_core_id;
     oal_uint16                      us_qid;
@@ -1034,15 +1089,15 @@ oal_uint32  frw_event_queue_info(oal_void)
 
     /* 获取核号 */
     ul_core_id = OAL_GET_CORE_ID();
-    OAL_IO_PRINT("frw_event_queue_info get core id is %d.\n", ul_core_id);
+    OAL_IO_PRINT("frw_event_queue_info_etc get core id is %d.\n", ul_core_id);
 
 
     for (ul_core_id = 0; ul_core_id < WLAN_FRW_MAX_NUM_CORES; ul_core_id++)
     {
-        OAL_IO_PRINT("-------------frw_event_queue_info core id is %d--------------.\n", ul_core_id);
+        OAL_IO_PRINT("-------------frw_event_queue_info_etc core id is %d--------------.\n", ul_core_id);
         for (us_qid = 0; us_qid < FRW_EVENT_MAX_NUM_QUEUES; us_qid++)
         {
-            pst_event_queue = &g_ast_event_manager[ul_core_id].st_event_queue[us_qid];
+            pst_event_queue = &g_ast_event_manager_etc[ul_core_id].st_event_queue[us_qid];
             oal_spin_lock_irq_save(&pst_event_queue->st_lock, &ul_irq_flag);
 
             if(0!=pst_event_queue->st_queue.uc_element_cnt)
@@ -1051,13 +1106,13 @@ oal_uint32  frw_event_queue_info(oal_void)
                               us_qid,pst_event_queue->en_state, pst_event_queue->st_queue.uc_element_cnt, pst_event_queue->st_queue.uc_max_elements,
                               pst_event_queue->uc_weight,pst_event_queue->st_queue.uc_head_index,pst_event_queue->st_queue.uc_tail_index,
                               pst_event_queue->st_list.pst_prev,pst_event_queue->st_list.pst_next);
-                frw_event_get_info_from_event_queue(pst_event_queue);
+                frw_event_get_info_from_event_queue_etc(pst_event_queue);
             }
             oal_spin_unlock_irq_restore(&pst_event_queue->st_lock, &ul_irq_flag);
 
         }
          /* 根据核号，找到相应的事件管理结构体 */
-        pst_event_mgmt  = &g_ast_event_manager[ul_core_id];
+        pst_event_mgmt  = &g_ast_event_manager_etc[ul_core_id];
 
         /* 遍历获取调度队列 */
         for (us_qid = 0; us_qid < FRW_SCHED_POLICY_BUTT; us_qid++)
@@ -1075,7 +1130,7 @@ oal_uint32  frw_event_queue_info(oal_void)
 
                     /* 获取队列中每一个事件的事件头信息 */
                     oal_spin_lock(&pst_event_queue->st_lock);
-                    frw_event_get_info_from_event_queue(pst_event_queue);
+                    frw_event_get_info_from_event_queue_etc(pst_event_queue);
                     oal_spin_unlock(&pst_event_queue->st_lock);
                 }
             }
@@ -1093,7 +1148,7 @@ oal_uint32  frw_event_queue_info(oal_void)
 }
 
 
-oal_void frw_event_vap_pause_event(oal_uint8 uc_vap_id)
+oal_void frw_event_vap_pause_event_etc(oal_uint8 uc_vap_id)
 {
     oal_uint32                    ul_core_id;
     oal_uint16                    us_qid;
@@ -1104,12 +1159,12 @@ oal_void frw_event_vap_pause_event(oal_uint8 uc_vap_id)
     ul_core_id = OAL_GET_CORE_ID();
     if (OAL_UNLIKELY(ul_core_id >= WLAN_FRW_MAX_NUM_CORES))
     {
-        OAM_ERROR_LOG1(0, OAM_SF_FRW, "{frw_event_process_all_event, array overflow!%d}", ul_core_id);
+        OAM_ERROR_LOG1(0, OAM_SF_FRW, "{frw_event_process_all_event_etc, array overflow!%d}", ul_core_id);
         return;
     }
 
     /* 根据核号，找到相应的事件管理 */
-    pst_event_mgmt = &g_ast_event_manager[ul_core_id];
+    pst_event_mgmt = &g_ast_event_manager_etc[ul_core_id];
 
     /* 根据队列ID，找到相应的VAP的第一个事件队列 */
     pst_event_queue = &pst_event_mgmt->st_event_queue[uc_vap_id * FRW_EVENT_TYPE_BUTT];
@@ -1124,15 +1179,15 @@ oal_void frw_event_vap_pause_event(oal_uint8 uc_vap_id)
     {
         /* 根据队列ID，找到相应的事件队列 */
         pst_event_queue = &pst_event_mgmt->st_event_queue[uc_vap_id * FRW_EVENT_TYPE_BUTT + us_qid];
-        pst_sched_queue = &g_ast_event_manager[ul_core_id].st_sched_queue[pst_event_queue->en_policy];
+        pst_sched_queue = &g_ast_event_manager_etc[ul_core_id].st_sched_queue[pst_event_queue->en_policy];
 
-        frw_event_sched_pause_queue(pst_sched_queue, pst_event_queue);
+        frw_event_sched_pause_queue_etc(pst_sched_queue, pst_event_queue);
     }
 }
 
 
 
-oal_void frw_event_vap_resume_event(oal_uint8 uc_vap_id)
+oal_void frw_event_vap_resume_event_etc(oal_uint8 uc_vap_id)
 {
     oal_uint32                    ul_core_id;
     oal_uint16                    us_qid;
@@ -1143,12 +1198,12 @@ oal_void frw_event_vap_resume_event(oal_uint8 uc_vap_id)
     ul_core_id = OAL_GET_CORE_ID();
     if (OAL_UNLIKELY(ul_core_id >= WLAN_FRW_MAX_NUM_CORES))
     {
-        OAM_ERROR_LOG1(0, OAM_SF_FRW, "{frw_event_process_all_event, array overflow!%d}", ul_core_id);
+        OAM_ERROR_LOG1(0, OAM_SF_FRW, "{frw_event_process_all_event_etc, array overflow!%d}", ul_core_id);
         return;
     }
 
     /* 根据核号，找到相应的事件管理 */
-    pst_event_mgmt = &g_ast_event_manager[ul_core_id];
+    pst_event_mgmt = &g_ast_event_manager_etc[ul_core_id];
 
     /* 根据队列ID，找到相应的VAP的第一个事件队列 */
     pst_event_queue = &pst_event_mgmt->st_event_queue[uc_vap_id * FRW_EVENT_TYPE_BUTT];
@@ -1163,19 +1218,19 @@ oal_void frw_event_vap_resume_event(oal_uint8 uc_vap_id)
     {
         /* 根据队列ID，找到相应的事件队列 */
         pst_event_queue = &pst_event_mgmt->st_event_queue[uc_vap_id * FRW_EVENT_TYPE_BUTT + us_qid];
-        pst_sched_queue = &g_ast_event_manager[ul_core_id].st_sched_queue[pst_event_queue->en_policy];
+        pst_sched_queue = &g_ast_event_manager_etc[ul_core_id].st_sched_queue[pst_event_queue->en_policy];
 
-        frw_event_sched_resume_queue(pst_sched_queue, pst_event_queue);
+        frw_event_sched_resume_queue_etc(pst_sched_queue, pst_event_queue);
     }
 
     /* 唤醒线程 */
-    frw_task_sched(ul_core_id);
+    frw_task_sched_etc(ul_core_id);
 
 }
 
 
 
-oal_uint32  frw_event_vap_flush_event(oal_uint8           uc_vap_id,
+oal_uint32  frw_event_vap_flush_event_etc(oal_uint8           uc_vap_id,
                                       frw_event_type_enum_uint8 en_event_type,
                                       oal_bool_enum_uint8       en_drop)
 {
@@ -1190,7 +1245,7 @@ oal_uint32  frw_event_vap_flush_event(oal_uint8           uc_vap_id,
     ul_core_id = OAL_GET_CORE_ID();
     if(OAL_UNLIKELY(ul_core_id >= WLAN_FRW_MAX_NUM_CORES))
     {
-        OAM_ERROR_LOG1(0, OAM_SF_FRW, "{frw_event_vap_flush_event, array overflow!%d}", ul_core_id);
+        OAM_ERROR_LOG1(0, OAM_SF_FRW, "{frw_event_vap_flush_event_etc, array overflow!%d}", ul_core_id);
         return OAL_ERR_CODE_ARRAY_OVERFLOW;
     }
 
@@ -1202,7 +1257,7 @@ oal_uint32  frw_event_vap_flush_event(oal_uint8           uc_vap_id,
     us_qid = uc_vap_id * FRW_EVENT_TYPE_BUTT + en_event_type;
 
     /* 根据核号 + 队列ID，找到相应的事件队列 */
-    pst_event_mgmt  = &g_ast_event_manager[ul_core_id];
+    pst_event_mgmt  = &g_ast_event_manager_etc[ul_core_id];
     pst_event_queue = &pst_event_mgmt->st_event_queue[us_qid];
 
     /* 如果事件队列本身为空，没有事件，不在调度队列，返回错误 */
@@ -1214,7 +1269,7 @@ oal_uint32  frw_event_vap_flush_event(oal_uint8           uc_vap_id,
     /* flush所有的event */
     while(0 != pst_event_queue->st_queue.uc_element_cnt)
     {
-        pst_event_mem = (frw_event_mem_stru *)frw_event_queue_dequeue(pst_event_queue);
+        pst_event_mem = (frw_event_mem_stru *)frw_event_queue_dequeue_etc(pst_event_queue);
         if (OAL_PTR_NULL == pst_event_mem)
         {
             return OAL_ERR_CODE_PTR_NULL;
@@ -1238,7 +1293,7 @@ oal_uint32  frw_event_vap_flush_event(oal_uint8           uc_vap_id,
     /* 若事件队列已经变空，需要将其从调度队列上删除，并将事件队列状态置为不活跃(不可被调度) */
     if(0 == pst_event_queue->st_queue.uc_element_cnt)
     {
-        frw_event_sched_deactivate_queue(&g_ast_event_manager[ul_core_id].st_sched_queue[pst_event_queue->en_policy], pst_event_queue);
+        frw_event_sched_deactivate_queue_etc(&g_ast_event_manager_etc[ul_core_id].st_sched_queue[pst_event_queue->en_policy], pst_event_queue);
     }
     else
     {
@@ -1249,18 +1304,18 @@ oal_uint32  frw_event_vap_flush_event(oal_uint8           uc_vap_id,
 }
 
 
-frw_event_sched_queue_stru* frw_event_get_sched_queue(oal_uint32 ul_core_id, frw_sched_policy_enum_uint8 en_policy)
+frw_event_sched_queue_stru* frw_event_get_sched_queue_etc(oal_uint32 ul_core_id, frw_sched_policy_enum_uint8 en_policy)
 {
     if (OAL_UNLIKELY((ul_core_id >= WLAN_FRW_MAX_NUM_CORES) || (en_policy >= FRW_SCHED_POLICY_BUTT)))
     {
         return OAL_PTR_NULL;
     }
 
-    return &(g_ast_event_manager[ul_core_id].st_sched_queue[en_policy]);
+    return &(g_ast_event_manager_etc[ul_core_id].st_sched_queue[en_policy]);
 }
 
 
-oal_bool_enum_uint8  frw_is_event_queue_empty(frw_event_type_enum_uint8 uc_event_type)
+oal_bool_enum_uint8  frw_is_event_queue_empty_etc(frw_event_type_enum_uint8 uc_event_type)
 {
     oal_uint32              ul_core_id;
     oal_uint8               uc_vap_id;
@@ -1272,12 +1327,12 @@ oal_bool_enum_uint8  frw_is_event_queue_empty(frw_event_type_enum_uint8 uc_event
     ul_core_id = OAL_GET_CORE_ID();
     if(OAL_UNLIKELY(ul_core_id >= WLAN_FRW_MAX_NUM_CORES))
     {
-        OAM_ERROR_LOG1(0, OAM_SF_FRW, "{frw_event_post_event, core id = %d overflow!}", ul_core_id);
+        OAM_ERROR_LOG1(0, OAM_SF_FRW, "{frw_event_post_event_etc, core id = %d overflow!}", ul_core_id);
 
         return OAL_ERR_CODE_ARRAY_OVERFLOW;
     }
 
-    pst_event_mgmt = &g_ast_event_manager[ul_core_id];
+    pst_event_mgmt = &g_ast_event_manager_etc[ul_core_id];
 
     /* 遍历该核上每个VAP对应的事件队列， */
     for (uc_vap_id = 0; uc_vap_id < WLAN_VAP_SUPPORT_MAX_NUM_LIMIT; uc_vap_id++)
@@ -1297,7 +1352,7 @@ oal_bool_enum_uint8  frw_is_event_queue_empty(frw_event_type_enum_uint8 uc_event
 }
 
 
-oal_bool_enum_uint8  frw_is_vap_event_queue_empty(oal_uint32 ul_core_id, oal_uint8 uc_vap_id, oal_uint8 event_type)
+oal_bool_enum_uint8  frw_is_vap_event_queue_empty_etc(oal_uint32 ul_core_id, oal_uint8 uc_vap_id, oal_uint8 event_type)
 {
     frw_event_mgmt_stru         *pst_event_mgmt;
     frw_event_queue_stru        *pst_event_queue;
@@ -1310,7 +1365,7 @@ oal_bool_enum_uint8  frw_is_vap_event_queue_empty(oal_uint32 ul_core_id, oal_uin
 #endif
 
     /* 根据核号 + 队列ID，找到相应的事件队列 */
-    pst_event_mgmt = &g_ast_event_manager[ul_core_id];
+    pst_event_mgmt = &g_ast_event_manager_etc[ul_core_id];
 
     pst_event_queue = &pst_event_mgmt->st_event_queue[us_qid];
 
@@ -1323,7 +1378,7 @@ oal_bool_enum_uint8  frw_is_vap_event_queue_empty(oal_uint32 ul_core_id, oal_uin
 }
 
 
-oal_uint8 frw_task_thread_condition_check(oal_uint32 ul_core_id)
+oal_uint8 frw_task_thread_condition_check_etc(oal_uint32 ul_core_id)
 {
     /* 返回OAL_TRUE
         1.调度队列非空
@@ -1335,7 +1390,7 @@ oal_uint8 frw_task_thread_condition_check(oal_uint32 ul_core_id)
     frw_event_sched_queue_stru    *pst_sched_queue;
     frw_event_queue_stru          *pst_event_queue = OAL_PTR_NULL;
 
-    pst_sched_queue = g_ast_event_manager[ul_core_id].st_sched_queue;
+    pst_sched_queue = g_ast_event_manager_etc[ul_core_id].st_sched_queue;
 
     for(sched_policy = 0; sched_policy < FRW_SCHED_POLICY_BUTT; sched_policy++)
     {
@@ -1365,33 +1420,33 @@ oal_uint8 frw_task_thread_condition_check(oal_uint32 ul_core_id)
 }
 
 /*lint -e578*//*lint -e19*/
-oal_module_symbol(frw_event_alloc);
-oal_module_symbol(frw_event_free);
-oal_module_symbol(frw_event_dispatch_event);
-oal_module_symbol(frw_event_post_event);
-oal_module_symbol(frw_event_table_register);
-oal_module_symbol(frw_event_dump_event);
-oal_module_symbol(frw_event_process_all_event);
-oal_module_symbol(frw_event_flush_event_queue);
-oal_module_symbol(frw_event_queue_info);
-oal_module_symbol(frw_event_get_info_from_event_queue);
-oal_module_symbol(frw_event_vap_pause_event);
-oal_module_symbol(frw_event_vap_resume_event);
-oal_module_symbol(frw_event_vap_flush_event);
-oal_module_symbol(frw_event_get_sched_queue);
+oal_module_symbol(frw_event_alloc_etc);
+oal_module_symbol(frw_event_free_etc);
+oal_module_symbol(frw_event_dispatch_event_etc);
+oal_module_symbol(frw_event_post_event_etc);
+oal_module_symbol(frw_event_table_register_etc);
+oal_module_symbol(frw_event_dump_event_etc);
+oal_module_symbol(frw_event_process_all_event_etc);
+oal_module_symbol(frw_event_flush_event_queue_etc);
+oal_module_symbol(frw_event_queue_info_etc);
+oal_module_symbol(frw_event_get_info_from_event_queue_etc);
+oal_module_symbol(frw_event_vap_pause_event_etc);
+oal_module_symbol(frw_event_vap_resume_event_etc);
+oal_module_symbol(frw_event_vap_flush_event_etc);
+oal_module_symbol(frw_event_get_sched_queue_etc);
 
-oal_module_symbol(frw_is_event_queue_empty);
+oal_module_symbol(frw_is_event_queue_empty_etc);
 #if (_PRE_MULTI_CORE_MODE_OFFLOAD_DMAC == _PRE_MULTI_CORE_MODE)
-oal_module_symbol(frw_event_sub_rx_adapt_table_init);
+oal_module_symbol(frw_event_sub_rx_adapt_table_init_etc);
 #endif
 #if defined(_PRE_DEBUG_MODE) && (_PRE_MULTI_CORE_MODE_OFFLOAD_DMAC == _PRE_MULTI_CORE_MODE)
-oal_module_symbol(g_ast_event_time_track);
-oal_module_symbol(g_ul_rx_event_idx);
+oal_module_symbol(g_ast_event_time_track_etc);
+oal_module_symbol(g_ul_rx_event_idx_etc);
 #endif
 #ifdef _PRE_DEBUG_MODE
-oal_module_symbol(g_en_event_track_switch);
-oal_module_symbol(g_ul_schedule_idx);
-oal_module_symbol(g_aul_schedule_time);
+oal_module_symbol(g_en_event_track_switch_etc);
+oal_module_symbol(g_ul_schedule_idx_etc);
+oal_module_symbol(g_aul_schedule_time_etc);
 oal_module_symbol(g_ul_mac_process_event);
 #endif
 

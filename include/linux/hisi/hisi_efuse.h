@@ -82,6 +82,7 @@ typedef struct tag_efusec_data{
 #endif
 #define HISI_EFUSE_WRITE_DJTAGDEBUG             0xc000
 #define HISI_EFUSE_READ_DJTAGDEBUG              0xd000
+#define HISI_EFUSE_READ_DESKEW             		0xe000
 
 #define EFUSE_BUF_SIZE                     (256)
 #define EFUSE_MAILBOX_TIMEOUT_1000MS       (1000)
@@ -94,6 +95,7 @@ typedef struct tag_efusec_data{
 #define EFUSE_SECDBG_LENGTH_BYTES          (4)
 #define EFUSE_THERMAL_LENGTH_BYTES         (8)
 #define EFUSE_FREQ_LENGTH_BYTES            (4)
+#define EFUSE_DESKEW_LENGTH_BYTES          (1)
 
 #ifdef CONFIG_HI3XXX_EFUSE
 extern int get_efuse_dieid_value(unsigned char *pu8Buffer, unsigned int u32Lenght, unsigned int timeout);
@@ -104,6 +106,7 @@ extern int set_efuse_hisee_value(unsigned char *pu8Buffer, unsigned int u32Lengt
 extern int get_efuse_freq_value(unsigned char *pu8Buffer, unsigned int u32Length);
 extern int get_efuse_kce_value(unsigned char *pu8Buffer, unsigned int u32Length, unsigned int timeout);
 extern int set_efuse_kce_value(unsigned char *pu8Buffer, unsigned int u32Length, unsigned int timeout);
+extern s32 get_efuse_deskew_value(unsigned char *buf, u32 size, u32 timeout);
 #else
 static inline int get_efuse_dieid_value(unsigned char *pu8Buffer, unsigned int u32Lenght, unsigned int timeout)
 {
@@ -141,6 +144,10 @@ static inline int get_efuse_kce_value(unsigned char *pu8Buffer, unsigned int u32
 }
 
 static inline int set_efuse_kce_value(unsigned char *pu8Buffer, unsigned int u32Length, unsigned int timeout)
+{
+	return OK;
+}
+static inline s32 get_efuse_deskew_value(unsigned char *buf, u32 size, u32 timeout)
 {
 	return OK;
 }

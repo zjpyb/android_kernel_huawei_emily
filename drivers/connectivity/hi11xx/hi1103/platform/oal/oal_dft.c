@@ -26,10 +26,10 @@ oal_int32 hi11xx_loglevel = HI11XX_LOG_INFO;  /**/
 module_param(hi11xx_loglevel, int, S_IRUGO | S_IWUSR);
 
 #ifdef _PRE_OAL_FEATURE_KEY_PROCESS_TRACE
-OAL_DEFINE_SPINLOCK(g_dft_head_lock);
-OAL_LIST_CREATE_HEAD(g_dft_head);
-oal_module_symbol(g_dft_head_lock);
-oal_module_symbol(g_dft_head);
+OAL_DEFINE_SPINLOCK(g_dft_head_lock_etc);
+OAL_LIST_CREATE_HEAD(g_dft_head_etc);
+oal_module_symbol(g_dft_head_lock_etc);
+oal_module_symbol(g_dft_head_etc);
 
 #ifdef _PRE_CONFIG_CONN_HISI_SYSFS_SUPPORT
 #define KERN_PRINT  (BIT0)
@@ -39,8 +39,9 @@ OAL_STATIC oal_uint32 dft_print_mask = (KERN_PRINT | BUFF_PRINT);
 module_param(dft_print_mask, uint, S_IRUGO | S_IWUSR);
 OAL_STATIC oal_int32 oal_dft_dump_key_info(char* buf,oal_int32 key_type, oal_uint32 print_tag)
 {
-    oal_int32 ret = 0;
+    oal_int32 ret;
     oal_ulong flags;
+    oal_int32 count = 0;
 
     oal_int32 last_time_flag;
 
@@ -52,16 +53,16 @@ OAL_STATIC oal_int32 oal_dft_dump_key_info(char* buf,oal_int32 key_type, oal_uin
     oal_list_entry_stru *pst_pos;
     oal_dft_trace_item  *pst_dft_item;
 
-    oal_spin_lock_irq_save(&g_dft_head_lock, &flags);
-    OAL_LIST_SEARCH_FOR_EACH(pst_pos, &g_dft_head)
+    oal_spin_lock_irq_save(&g_dft_head_lock_etc, &flags);
+    OAL_LIST_SEARCH_FOR_EACH(pst_pos, &g_dft_head_etc)
     {
-        oal_spin_unlock_irq_restore(&g_dft_head_lock, &flags);
+        oal_spin_unlock_irq_restore(&g_dft_head_lock_etc, &flags);
         last_time_flag = 0;
         pst_dft_item = OAL_LIST_GET_ENTRY(pst_pos,oal_dft_trace_item,list);
 
         if(key_type != pst_dft_item->dft_type)
         {
-            oal_spin_lock_irq_save(&g_dft_head_lock, &flags);
+            oal_spin_lock_irq_save(&g_dft_head_lock_etc, &flags);
             continue;
         }
 
@@ -92,12 +93,18 @@ OAL_STATIC oal_int32 oal_dft_dump_key_info(char* buf,oal_int32 key_type, oal_uin
             {
                 if (NULL != buf)
                 {
-                    ret +=  snprintf(buf + ret , PAGE_SIZE - ret, "%s,1st at %02d:%02d:%02d:%02d:%02d,total:%u\n",
+                    ret = snprintf(buf + count, PAGE_SIZE - count, "%s,1st at %02d:%02d:%02d:%02d:%02d,total:%u\n",
                             pst_dft_item->name,
                             first_tm.tm_mon+1,
                             first_tm.tm_mday,
                             first_tm.tm_hour, first_tm.tm_min, first_tm.tm_sec,
                             pst_dft_item->trace_count);
+
+                    if (0 >= ret)
+                    {
+                        return count;
+                    }
+                    count += ret;
                 }
             }
         }
@@ -117,7 +124,7 @@ OAL_STATIC oal_int32 oal_dft_dump_key_info(char* buf,oal_int32 key_type, oal_uin
             {
                 if (NULL != buf)
                 {
-                    ret +=  snprintf(buf + ret , PAGE_SIZE - ret, "%s,1st at %02d:%02d:%02d:%02d:%02d,last at %02d:%02d:%02d:%02d:%02d,total:%u\n",
+                    ret = snprintf(buf + count, PAGE_SIZE - count, "%s,1st at %02d:%02d:%02d:%02d:%02d,last at %02d:%02d:%02d:%02d:%02d,total:%u\n",
                             pst_dft_item->name,
                             first_tm.tm_mon+1,
                             first_tm.tm_mday,
@@ -126,18 +133,23 @@ OAL_STATIC oal_int32 oal_dft_dump_key_info(char* buf,oal_int32 key_type, oal_uin
                             last_tm.tm_mday,
                             last_tm.tm_hour, last_tm.tm_min, last_tm.tm_sec,
                             pst_dft_item->trace_count);
+                    if (0 >= ret)
+                    {
+                        return count;
+                    }
+                    count += ret;
                 }
             }
         }
 
-        oal_spin_lock_irq_save(&g_dft_head_lock, &flags);
+        oal_spin_lock_irq_save(&g_dft_head_lock_etc, &flags);
     }
-    oal_spin_unlock_irq_restore(&g_dft_head_lock, &flags);
+    oal_spin_unlock_irq_restore(&g_dft_head_lock_etc, &flags);
 
-    return ret;
+    return count;
 }
 
-oal_void oal_dft_print_error_key_info(oal_void)
+oal_void oal_dft_print_error_key_info_etc(oal_void)
 {
     oal_int32 i;
     printk(KERN_WARNING"[E]dump error key_info:\n");
@@ -146,9 +158,9 @@ oal_void oal_dft_print_error_key_info(oal_void)
         oal_dft_dump_key_info(NULL, i, (KERN_PRINT));
     }
 }
-oal_module_symbol(oal_dft_print_error_key_info);
+oal_module_symbol(oal_dft_print_error_key_info_etc);
 
-oal_void oal_dft_print_all_key_info(oal_void)
+oal_void oal_dft_print_all_key_info_etc(oal_void)
 {
     oal_int32 i;
     for(i = 0; i < OAL_DFT_TRACE_BUTT ; i++)
@@ -156,7 +168,7 @@ oal_void oal_dft_print_all_key_info(oal_void)
         oal_dft_dump_key_info(NULL, i, (KERN_PRINT));
     }
 }
-oal_module_symbol(oal_dft_print_all_key_info);
+oal_module_symbol(oal_dft_print_all_key_info_etc);
 
 OAL_STATIC ssize_t  oal_dft_get_key_info(struct device *dev, struct device_attribute *attr, char* buf)
 {
@@ -165,14 +177,28 @@ OAL_STATIC ssize_t  oal_dft_get_key_info(struct device *dev, struct device_attri
 
     oal_uint32 dft_mask;
 
-    OAL_BUG_ON(NULL == dev);
-    OAL_BUG_ON(NULL == attr);
-    OAL_BUG_ON(NULL == buf);
+    if (NULL == buf)
+    {
+        OAL_IO_PRINT("buf is null r failed!%s\n",__FUNCTION__);
+        return 0;
+    }
+
+    if (NULL == attr)
+    {
+        OAL_IO_PRINT("attr is null r failed!%s\n",__FUNCTION__);
+        return 0;
+    }
+
+    if (NULL == dev)
+    {
+        OAL_IO_PRINT("dev is null r failed!%s\n",__FUNCTION__);
+        return 0;
+    }
 
     dft_mask = dft_print_mask & (KERN_PRINT|BUFF_PRINT);
     dft_print_mask = dft_mask;
 
-    if(oal_list_is_empty(&g_dft_head))
+    if(oal_list_is_empty(&g_dft_head_etc))
     {
         printk(KERN_DEBUG"key info empty\n");
         ret +=  snprintf(buf + ret , PAGE_SIZE - ret, "key info empty\n");
@@ -186,7 +212,7 @@ OAL_STATIC ssize_t  oal_dft_get_key_info(struct device *dev, struct device_attri
     {
         ret += oal_dft_dump_key_info(buf + ret, i, dft_mask);
     }
-    
+
     return ret;
 }
 OAL_STATIC DEVICE_ATTR(key_info, S_IRUGO, oal_dft_get_key_info, NULL);
@@ -194,8 +220,8 @@ OAL_STATIC DEVICE_ATTR(key_info, S_IRUGO, oal_dft_get_key_info, NULL);
 #ifdef HI110X_DRV_VERSION
 OAL_STATIC oal_int32 oal_dft_print_version_info(char* buf)
 {
-    oal_int32 ret = 0;
-    ret +=  snprintf(buf + ret , PAGE_SIZE - ret, "%s\n",HI110X_DRV_VERSION);
+    oal_int32 ret;
+    ret = snprintf(buf, PAGE_SIZE, "%s\n",HI110X_DRV_VERSION);
     return ret;
 }
 
@@ -203,12 +229,26 @@ OAL_STATIC ssize_t  oal_dft_get_version_info(struct device *dev, struct device_a
 {
     oal_int32 ret = 0;
 
-    OAL_BUG_ON(NULL == dev);
-    OAL_BUG_ON(NULL == attr);
-    OAL_BUG_ON(NULL == buf);
+    if (NULL == buf)
+    {
+        OAL_IO_PRINT("buf is null r failed!%s\n",__FUNCTION__);
+        return 0;
+    }
+
+    if (NULL == attr)
+    {
+        OAL_IO_PRINT("attr is null r failed!%s\n",__FUNCTION__);
+        return 0;
+    }
+
+    if (NULL == dev)
+    {
+        OAL_IO_PRINT("dev is null r failed!%s\n",__FUNCTION__);
+        return 0;
+    }
 
     ret += oal_dft_print_version_info(buf + ret);
-    
+
     return ret;
 }
 OAL_STATIC DEVICE_ATTR(version, S_IRUGO, oal_dft_get_version_info, NULL);
@@ -231,7 +271,7 @@ OAL_STATIC oal_int32 dft_sysfs_entry_init(oal_void)
 {
     oal_int32       ret = OAL_SUCC;
     oal_kobject*     pst_root_object = NULL;
-    pst_root_object = oal_get_sysfs_root_object();
+    pst_root_object = oal_get_sysfs_root_object_etc();
     if(NULL == pst_root_object)
     {
         OAL_IO_PRINT("{frw_sysfs_entry_init::get sysfs root object failed!}\n");
@@ -250,7 +290,7 @@ OAL_STATIC oal_int32 dft_sysfs_entry_init(oal_void)
 OAL_STATIC oal_int32 dft_sysfs_entry_exit(oal_void)
 {
     oal_kobject*     pst_root_object = NULL;
-    pst_root_object = oal_get_sysfs_root_object();
+    pst_root_object = oal_get_sysfs_root_object_etc();
     if(NULL != pst_root_object)
     {
         sysfs_remove_group(pst_root_object, &dft_attribute_group);
@@ -260,7 +300,7 @@ OAL_STATIC oal_int32 dft_sysfs_entry_exit(oal_void)
 }
 #endif
 
-oal_int32 oal_dft_init(oal_void)
+oal_int32 oal_dft_init_etc(oal_void)
 {
     oal_int32 ret = OAL_SUCC;
 #ifdef _PRE_CONFIG_CONN_HISI_SYSFS_SUPPORT
@@ -269,15 +309,15 @@ oal_int32 oal_dft_init(oal_void)
     return ret;
 }
 
-oal_void oal_dft_exit(oal_void)
+oal_void oal_dft_exit_etc(oal_void)
 {
 #ifdef _PRE_CONFIG_CONN_HISI_SYSFS_SUPPORT
     dft_sysfs_entry_exit();
 #endif
 }
 
-oal_module_symbol(oal_dft_init);
-oal_module_symbol(oal_dft_exit);
+oal_module_symbol(oal_dft_init_etc);
+oal_module_symbol(oal_dft_exit_etc);
 #endif
 
 #ifdef __cplusplus

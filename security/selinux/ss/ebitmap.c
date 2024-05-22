@@ -61,6 +61,7 @@ static inline void try_free(bool protectable, struct ebitmap_node *n)
 	else
 		kfree(n);
 }
+
 int ebitmap_cpy(struct ebitmap *dst, struct ebitmap *src,
 		const bool protectable)
 {
@@ -181,7 +182,7 @@ int ebitmap_netlbl_import(struct ebitmap *ebmap,
 			e_iter = try_alloc(ebmap->protectable);
 			if (e_iter == NULL)
 				goto netlbl_import_failure;
-			e_iter->startbit = offset & ~(EBITMAP_SIZE - 1);
+			e_iter->startbit = offset - (offset % EBITMAP_SIZE);
 			if (e_prev == NULL)
 				ebmap->node = e_iter;
 			else
@@ -390,6 +391,9 @@ int ebitmap_read(struct ebitmap *e, void *fp, bool protectable)
 		goto ok;
 	}
 
+	if (e->highbit && !count)
+		goto bad;
+
 	for (i = 0; i < count; i++) {
 		rc = next_entry(&startbit, fp, sizeof(u32));
 		if (rc < 0) {
@@ -441,7 +445,7 @@ int ebitmap_read(struct ebitmap *e, void *fp, bool protectable)
 		}
 		map = le64_to_cpu(map);
 
-		index = (startbit - n->startbit) / EBITMAP_UNIT_SIZE; /* [false alarm]:original code */
+		index = (startbit - n->startbit) / EBITMAP_UNIT_SIZE;/* [false alarm]:original code */
 		while (map) {
 			n->maps[index++] = map & (-1UL);
 			map = EBITMAP_SHIFT_UNIT_SIZE(map);

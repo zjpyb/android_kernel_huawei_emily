@@ -34,7 +34,10 @@ struct wifi_platform_data {
 	int (*get_fw_path)(char *val, int len);
 	int (*get_chip_type)(char *val, int len);
 #endif /* HW_WIFI_DRIVER_NORMALIZE */
+#ifdef HW_CUSTOM_BCN_TIMEOUT
+	int (*get_bcn_timeout)(void);
+#endif /* HW_CUSTOM_BCN_TIMEOUT */
 #endif
-};
+}__no_randomize_layout;
 
 #endif

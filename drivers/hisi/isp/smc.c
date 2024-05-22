@@ -21,12 +21,16 @@
 #define ISP_FN_SET_NONSEC       (0xC500AB26)
 #define ISP_FN_DISRESET_ISPCPU  (0xC500AB27)
 #define ISP_FN_ISPSMMU_NS_INIT  (0xC500AB28)
-#define ISP_FN_RESET_ISPCPU     (0xC500AB29)
+#define ISP_FN_GET_ISPCPU_IDLE  (0xC500AB29)
 #define ISP_FN_ISPTOP_PU        (0xC500AB30)
 #define ISP_FN_ISPTOP_PD        (0xC500AB31)
 
-noinline int atfd_hisi_service_isp_smc(u64 funcid, u64 arg0, u64 arg1, u64 arg2)
+noinline int atfd_hisi_service_isp_smc(u64 _funcid, u64 _arg0, u64 _arg1, u64 _arg2)
 {
+       register u64 funcid asm("x0") = _funcid;
+       register u64 arg0 asm("x1") = _arg0;
+       register u64 arg1 asm("x2") = _arg1;
+       register u64 arg2 asm("x3") = _arg2;
        asm volatile (
             __asmeq("%0", "x0")
             __asmeq("%1", "x1")
@@ -67,9 +71,9 @@ void atfisp_isp_exit(void)
     atfd_hisi_service_isp_smc(ISP_FN_ISP_EXIT, 0, 0, 0);
 }
 
-void atfisp_ispcpu_init(void)
+int atfisp_ispcpu_init(void)
 {
-    atfd_hisi_service_isp_smc(ISP_FN_ISPCPU_INIT, 0, 0, 0);
+    return atfd_hisi_service_isp_smc(ISP_FN_ISPCPU_INIT, 0, 0, 0);
 }
 
 void atfisp_ispcpu_exit(void)
@@ -77,9 +81,9 @@ void atfisp_ispcpu_exit(void)
     atfd_hisi_service_isp_smc(ISP_FN_ISPCPU_EXIT, 1, 0, 0);
 }
 
-void atfisp_ispcpu_map(void)
+int atfisp_ispcpu_map(void)
 {
-    atfd_hisi_service_isp_smc(ISP_FN_ISPCPU_MAP, 0, 0, 0);
+    return atfd_hisi_service_isp_smc(ISP_FN_ISPCPU_MAP, 0, 0, 0);
 }
 
 void atfisp_ispcpu_unmap(void)
@@ -92,9 +96,9 @@ void atfisp_set_nonsec(void)
     atfd_hisi_service_isp_smc(ISP_FN_SET_NONSEC, 0, 0, 0);
 }
 
-void atfisp_disreset_ispcpu(void)
+int atfisp_disreset_ispcpu(void)
 {
-    atfd_hisi_service_isp_smc(ISP_FN_DISRESET_ISPCPU, 0, 0, 0);
+    return atfd_hisi_service_isp_smc(ISP_FN_DISRESET_ISPCPU, 0, 0, 0);
 }
 
 void atfisp_ispsmmu_ns_init(u64 pgt_addr)
@@ -102,9 +106,9 @@ void atfisp_ispsmmu_ns_init(u64 pgt_addr)
     atfd_hisi_service_isp_smc(ISP_FN_ISPSMMU_NS_INIT, pgt_addr, 0, 0);
 }
 
-int atfisp_reset_ispcpu(void)
+int atfisp_get_ispcpu_idle(void)
 {
-    return atfd_hisi_service_isp_smc(ISP_FN_RESET_ISPCPU, 0, 0, 0);
+    return atfd_hisi_service_isp_smc(ISP_FN_GET_ISPCPU_IDLE, 0, 0, 0);
 }
 
 int atfisp_isptop_power_up(void)

@@ -32,7 +32,7 @@ static oal_kobj_uevent_env_stru env;
   3 函数实现
 *****************************************************************************/
 
-oal_void oal_cfg80211_ready_on_channel(oal_wireless_dev_stru       *pst_wdev,
+oal_void oal_cfg80211_ready_on_channel_etc(oal_wireless_dev_stru       *pst_wdev,
                                         oal_uint64                  ull_cookie,
                                         oal_ieee80211_channel_stru *pst_chan,
                                         oal_uint32                  ul_duration,
@@ -43,7 +43,7 @@ oal_void oal_cfg80211_ready_on_channel(oal_wireless_dev_stru       *pst_wdev,
 #endif
 }
 
-oal_void oal_cfg80211_vowifi_report(oal_net_device_stru       *pst_netdev,
+oal_void oal_cfg80211_vowifi_report_etc(oal_net_device_stru       *pst_netdev,
                                             oal_gfp_enum_uint8         en_gfp)
 {
 #ifdef CONFIG_HW_VOWIFI
@@ -53,7 +53,7 @@ oal_void oal_cfg80211_vowifi_report(oal_net_device_stru       *pst_netdev,
 }
 
 
-oal_void oal_cfg80211_remain_on_channel_expired(oal_wireless_dev_stru        *pst_wdev,
+oal_void oal_cfg80211_remain_on_channel_expired_etc(oal_wireless_dev_stru        *pst_wdev,
                                         oal_uint64                   ull_cookie,
                                         oal_ieee80211_channel_stru  *pst_listen_channel,
                                         oal_gfp_enum_uint8           en_gfp)
@@ -66,7 +66,7 @@ oal_void oal_cfg80211_remain_on_channel_expired(oal_wireless_dev_stru        *ps
 #endif
 }
 
-oal_void oal_cfg80211_mgmt_tx_status(struct wireless_dev *wdev, oal_uint64 cookie,
+oal_void oal_cfg80211_mgmt_tx_status_etc(struct wireless_dev *wdev, oal_uint64 cookie,
                  OAL_CONST oal_uint8 *buf, size_t len, oal_bool_enum_uint8 ack, oal_gfp_enum_uint8 gfp)
 {
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 44))
@@ -870,7 +870,7 @@ oal_uint32  oal_cfg80211_notify_cac_event(
 
 
 
-oal_void  oal_cfg80211_sched_scan_result(oal_wiphy_stru *pst_wiphy)
+oal_void  oal_cfg80211_sched_scan_result_etc(oal_wiphy_stru *pst_wiphy)
 {
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,10,44))
     cfg80211_sched_scan_results(pst_wiphy);
@@ -882,7 +882,7 @@ oal_void  oal_cfg80211_sched_scan_result(oal_wiphy_stru *pst_wiphy)
 }
 
 #if defined(_PRE_PRODUCT_ID_HI110X_HOST)
-oal_void oal_kobject_uevent_env_sta_join(oal_net_device_stru *pst_net_device, const oal_uint8 *puc_mac_addr)
+oal_void oal_kobject_uevent_env_sta_join_etc(oal_net_device_stru *pst_net_device, const oal_uint8 *puc_mac_addr)
 {
     oal_memset(&env, 0, sizeof(env));
 	/* Android上层需要STA_JOIN和mac地址，中间参数无效，但是必须是4个参数 */
@@ -895,7 +895,7 @@ oal_void oal_kobject_uevent_env_sta_join(oal_net_device_stru *pst_net_device, co
 #endif
 }
 
-oal_void oal_kobject_uevent_env_sta_leave(oal_net_device_stru *pst_net_device, const oal_uint8 *puc_mac_addr)
+oal_void oal_kobject_uevent_env_sta_leave_etc(oal_net_device_stru *pst_net_device, const oal_uint8 *puc_mac_addr)
 {
     oal_memset(&env, 0, sizeof(env));
 	/* Android上层需要STA_LEAVE和mac地址，中间参数无效，但是必须是4个参数 */
@@ -910,7 +910,7 @@ oal_void oal_kobject_uevent_env_sta_leave(oal_net_device_stru *pst_net_device, c
 #endif
 
 
-oal_void  oal_cfg80211_put_bss(oal_wiphy_stru *pst_wiphy, oal_cfg80211_bss_stru *pst_cfg80211_bss)
+oal_void  oal_cfg80211_put_bss_etc(oal_wiphy_stru *pst_wiphy, oal_cfg80211_bss_stru *pst_cfg80211_bss)
 {
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,10,44))
     cfg80211_put_bss(pst_wiphy, pst_cfg80211_bss);
@@ -920,7 +920,7 @@ oal_void  oal_cfg80211_put_bss(oal_wiphy_stru *pst_wiphy, oal_cfg80211_bss_stru 
 }
 
 
-oal_cfg80211_bss_stru *oal_cfg80211_get_bss(oal_wiphy_stru *pst_wiphy,
+oal_cfg80211_bss_stru *oal_cfg80211_get_bss_etc(oal_wiphy_stru *pst_wiphy,
                       oal_ieee80211_channel_stru *pst_channel,
                       oal_uint8 *puc_bssid,
                       oal_uint8 *puc_ssid,
@@ -936,7 +936,7 @@ oal_cfg80211_bss_stru *oal_cfg80211_get_bss(oal_wiphy_stru *pst_wiphy,
 }
 
 
-oal_cfg80211_bss_stru *oal_cfg80211_inform_bss_frame(
+oal_cfg80211_bss_stru *oal_cfg80211_inform_bss_frame_etc(
                                 oal_wiphy_stru              *pst_wiphy,
                                 oal_ieee80211_channel_stru  *pst_ieee80211_channel,
                                 oal_ieee80211_mgmt_stru     *pst_mgmt,
@@ -948,14 +948,20 @@ oal_cfg80211_bss_stru *oal_cfg80211_inform_bss_frame(
 }
 
 
-oal_void  oal_cfg80211_scan_done(oal_cfg80211_scan_request_stru *pst_cfg80211_scan_request,oal_int8 c_aborted)
+oal_void  oal_cfg80211_scan_done_etc(oal_cfg80211_scan_request_stru *pst_cfg80211_scan_request,oal_int8 c_aborted)
 {
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,8,0))
+    struct cfg80211_scan_info info = {0};
+    info.aborted = c_aborted;
+    cfg80211_scan_done(pst_cfg80211_scan_request, &info);
+#else
     cfg80211_scan_done(pst_cfg80211_scan_request,c_aborted);
+#endif
 }
 
 
 
-oal_uint32  oal_cfg80211_connect_result(
+oal_uint32  oal_cfg80211_connect_result_etc(
                         oal_net_device_stru         *pst_net_device,
                         const oal_uint8             *puc_bssid,
                         const oal_uint8             *puc_req_ie,
@@ -1002,7 +1008,7 @@ oal_uint32  oal_cfg80211_connect_result(
 }
 
 
-oal_uint32  oal_cfg80211_disconnected(
+oal_uint32  oal_cfg80211_disconnected_etc(
                     oal_net_device_stru        *pst_net_device,
                     oal_uint16                  us_reason,
                     oal_uint8                  *puc_ie,
@@ -1045,7 +1051,7 @@ oal_uint32  oal_cfg80211_disconnected(
 }
 
 
-oal_uint32  oal_cfg80211_roamed(
+oal_uint32  oal_cfg80211_roamed_etc(
                         oal_net_device_stru         *pst_net_device,
                         struct ieee80211_channel    *pst_channel,
                         const oal_uint8             *puc_bssid,
@@ -1068,7 +1074,7 @@ oal_uint32  oal_cfg80211_roamed(
 }
 
 
-oal_uint32  oal_cfg80211_ft_event(oal_net_device_stru *pst_net_device, oal_cfg80211_ft_event_stru  *pst_ft_event)
+oal_uint32  oal_cfg80211_ft_event_etc(oal_net_device_stru *pst_net_device, oal_cfg80211_ft_event_stru  *pst_ft_event)
 {
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,34))
     cfg80211_ft_event(pst_net_device, pst_ft_event);
@@ -1081,14 +1087,14 @@ oal_uint32  oal_cfg80211_ft_event(oal_net_device_stru *pst_net_device, oal_cfg80
 }
 
 
-oal_uint32  oal_cfg80211_new_sta(
+oal_uint32  oal_cfg80211_new_sta_etc(
                 oal_net_device_stru     *pst_net_device,
                 const oal_uint8         *puc_mac_addr,
                 oal_station_info_stru   *pst_station_info,
                 oal_gfp_enum_uint8      en_gfp)
 {
 #if defined(_PRE_PRODUCT_ID_HI110X_HOST) && (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,34))
-    oal_kobject_uevent_env_sta_join(pst_net_device, puc_mac_addr);
+    oal_kobject_uevent_env_sta_join_etc(pst_net_device, puc_mac_addr);
 #endif
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,34))
@@ -1140,7 +1146,7 @@ oal_void  oal_cfg80211_send_rx_auth(oal_net_device_stru *pst_dev,
 #endif
 
 
-oal_void  oal_cfg80211_mic_failure(
+oal_void  oal_cfg80211_mic_failure_etc(
                         oal_net_device_stru     *pst_net_device,
                         const oal_uint8         *puc_mac_addr,
                         enum nl80211_key_type    key_type,
@@ -1217,12 +1223,12 @@ nla_put_failure:
 }
 
 
-oal_int32  oal_cfg80211_del_sta(oal_net_device_stru *pst_net_device,
+oal_int32  oal_cfg80211_del_sta_etc(oal_net_device_stru *pst_net_device,
                                    const oal_uint8      *puc_mac_addr,
                                    oal_gfp_enum_uint8    en_gfp)
 {
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,34)) && defined(_PRE_PRODUCT_ID_HI110X_HOST)
-    oal_kobject_uevent_env_sta_leave(pst_net_device, puc_mac_addr);
+    oal_kobject_uevent_env_sta_leave_etc(pst_net_device, puc_mac_addr);
 #endif
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,10,44))
@@ -1278,7 +1284,7 @@ oal_int32  oal_cfg80211_del_sta(oal_net_device_stru *pst_net_device,
 }
 
 
-oal_uint32 oal_cfg80211_rx_mgmt(oal_net_device_stru *pst_dev,
+oal_uint32 oal_cfg80211_rx_mgmt_etc(oal_net_device_stru *pst_dev,
                                                     oal_int32               l_freq,
                                                     oal_uint8               uc_rssi,
                                                     const oal_uint8        *puc_buf,
@@ -1313,18 +1319,18 @@ oal_uint32 oal_cfg80211_rx_mgmt(oal_net_device_stru *pst_dev,
 }
 
 
-oal_uint32  oal_cfg80211_rx_exception(oal_net_device_stru *pst_netdev,
+oal_uint32  oal_cfg80211_rx_exception_etc(oal_net_device_stru *pst_netdev,
                                                oal_uint8           *puc_data,
                                                oal_uint32          ul_data_len)
 {
  //   genl_msg_send_to_user(puc_data, ul_data_len);
-    dev_netlink_send (puc_data, ul_data_len);
+    dev_netlink_send_etc (puc_data, ul_data_len);
     OAL_IO_PRINT("DFR OAL send[%s] over\n", puc_data);
     return OAL_SUCC;
 }
 
 
-oal_netbuf_stru * oal_cfg80211_vendor_cmd_alloc_reply_skb(oal_wiphy_stru * pst_wiphy, oal_uint32 ul_len)
+oal_netbuf_stru * oal_cfg80211_vendor_cmd_alloc_reply_skb_etc(oal_wiphy_stru * pst_wiphy, oal_uint32 ul_len)
 {
 #if defined(_PRE_PRODUCT_ID_HI110X_HOST) && (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,34))
     return cfg80211_vendor_cmd_alloc_reply_skb(pst_wiphy, ul_len);
@@ -1334,7 +1340,7 @@ oal_netbuf_stru * oal_cfg80211_vendor_cmd_alloc_reply_skb(oal_wiphy_stru * pst_w
 }
 
 
-oal_int32 oal_cfg80211_vendor_cmd_reply(oal_netbuf_stru *pst_skb)
+oal_int32 oal_cfg80211_vendor_cmd_reply_etc(oal_netbuf_stru *pst_skb)
 {
 #if defined(_PRE_PRODUCT_ID_HI110X_HOST) && (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,34))
     return cfg80211_vendor_cmd_reply(pst_skb);
@@ -1343,15 +1349,36 @@ oal_int32 oal_cfg80211_vendor_cmd_reply(oal_netbuf_stru *pst_skb)
 #endif
 }
 
+
+oal_void oal_cfg80211_m2s_status_report(oal_net_device_stru       *pst_netdev,
+    oal_gfp_enum_uint8 en_gfp, oal_uint8 *puc_buf, oal_uint32 ul_len)
+{
+#ifdef  CONFIG_HW_WIFI_MSS
+    /* 此接口为终端实现的内核接口，定义处用内核宏CONFIG_HW_WIFI_MSS包裹 */
+    cfg80211_drv_mss_result(pst_netdev, en_gfp, puc_buf, ul_len);
+#endif
+}
+
+#ifdef _PRE_WLAN_FEATURE_TAS_ANT_SWITCH
+
+oal_void oal_cfg80211_tas_rssi_access_report(oal_net_device_stru *pst_netdev, oal_gfp_enum_uint8 en_gfp,
+                                                         oal_uint8 *puc_buf, oal_uint32 ul_len)
+{
+#ifdef  CONFIG_HW_WIFI_RSSI
+    cfg80211_drv_tas_result(pst_netdev, en_gfp, puc_buf, ul_len);
+#endif
+}
+#endif
+
 #elif (_PRE_OS_VERSION_WIN32 == _PRE_OS_VERSION)
 
-oal_void  oal_cfg80211_put_bss(oal_wiphy_stru *pst_wiphy, oal_cfg80211_bss_stru *pst_cfg80211_bss)
+oal_void  oal_cfg80211_put_bss_etc(oal_wiphy_stru *pst_wiphy, oal_cfg80211_bss_stru *pst_cfg80211_bss)
 {
 
 }
 
 
-oal_cfg80211_bss_stru *oal_cfg80211_get_bss(oal_wiphy_stru *pst_wiphy,
+oal_cfg80211_bss_stru *oal_cfg80211_get_bss_etc(oal_wiphy_stru *pst_wiphy,
                       oal_ieee80211_channel_stru *pst_channel,
                       oal_uint8 *puc_bssid,
                       oal_uint8 *puc_ssid,
@@ -1361,7 +1388,7 @@ oal_cfg80211_bss_stru *oal_cfg80211_get_bss(oal_wiphy_stru *pst_wiphy,
 }
 
 
-oal_cfg80211_bss_stru *oal_cfg80211_inform_bss_frame(
+oal_cfg80211_bss_stru *oal_cfg80211_inform_bss_frame_etc(
                                 oal_wiphy_stru              *pst_wiphy,
                                 oal_ieee80211_channel_stru  *pst_ieee80211_channel,
                                 oal_ieee80211_mgmt_stru     *pst_mgmt,
@@ -1373,19 +1400,19 @@ oal_cfg80211_bss_stru *oal_cfg80211_inform_bss_frame(
 }
 
 
-oal_void  oal_cfg80211_scan_done(oal_cfg80211_scan_request_stru *pst_cfg80211_scan_req, oal_int8 c_aborted)
+oal_void  oal_cfg80211_scan_done_etc(oal_cfg80211_scan_request_stru *pst_cfg80211_scan_req, oal_int8 c_aborted)
 {
 
 }
 
 
-oal_void  oal_cfg80211_sched_scan_result(oal_wiphy_stru *pst_wiphy)
+oal_void  oal_cfg80211_sched_scan_result_etc(oal_wiphy_stru *pst_wiphy)
 {
     return;
 }
 
 
-oal_uint32  oal_cfg80211_connect_result(
+oal_uint32  oal_cfg80211_connect_result_etc(
                         oal_net_device_stru         *pst_net_device,
                         const oal_uint8             *puc_bssid,
                         const oal_uint8             *puc_req_ie,
@@ -1412,7 +1439,7 @@ oal_uint32  oal_cfg80211_connect_result(
 
 
 
-oal_uint32  oal_cfg80211_roamed(
+oal_uint32  oal_cfg80211_roamed_etc(
                         oal_net_device_stru         *pst_net_device,
                         struct ieee80211_channel    *pst_channel,
                         const oal_uint8             *puc_bssid,
@@ -1426,13 +1453,13 @@ oal_uint32  oal_cfg80211_roamed(
 }
 
 
-oal_uint32  oal_cfg80211_ft_event(oal_net_device_stru *pst_net_device, oal_cfg80211_ft_event_stru  *pst_ft_event)
+oal_uint32  oal_cfg80211_ft_event_etc(oal_net_device_stru *pst_net_device, oal_cfg80211_ft_event_stru  *pst_ft_event)
 {
     return OAL_SUCC;
 }
 
 
-oal_uint32  oal_cfg80211_disconnected(
+oal_uint32  oal_cfg80211_disconnected_etc(
                     oal_net_device_stru        *pst_net_device,
                     oal_uint16                  us_reason,
                     oal_uint8                   *puc_ie,
@@ -1443,7 +1470,7 @@ oal_uint32  oal_cfg80211_disconnected(
 }
 
 
-oal_uint32  oal_cfg80211_new_sta(
+oal_uint32  oal_cfg80211_new_sta_etc(
                        oal_net_device_stru     *pst_net_device,
                        const oal_uint8         *puc_mac_addr,
                        oal_station_info_stru   *pst_station_info,
@@ -1463,7 +1490,7 @@ oal_uint32  oal_cfg80211_fbt_notify_find_sta(
 }
 
 
-oal_void  oal_cfg80211_mic_failure(
+oal_void  oal_cfg80211_mic_failure_etc(
                         oal_net_device_stru     *pst_net_device,
                         const oal_uint8         *puc_mac_addr,
                         enum nl80211_key_type    key_type,
@@ -1475,7 +1502,7 @@ oal_void  oal_cfg80211_mic_failure(
 }
 
 
-oal_int32  oal_cfg80211_del_sta(oal_net_device_stru *pst_net_device,
+oal_int32  oal_cfg80211_del_sta_etc(oal_net_device_stru *pst_net_device,
                                    const oal_uint8      *puc_mac_addr,
                                    oal_gfp_enum_uint8    en_gfp)
 {
@@ -1483,7 +1510,7 @@ oal_int32  oal_cfg80211_del_sta(oal_net_device_stru *pst_net_device,
 }
 
 
-oal_uint32 oal_cfg80211_rx_mgmt(oal_net_device_stru   *pst_dev,
+oal_uint32 oal_cfg80211_rx_mgmt_etc(oal_net_device_stru   *pst_dev,
                                 oal_int32              l_freq,
                                 oal_uint8              uc_rssi,
                                 const oal_uint8       *puc_buf,
@@ -1494,7 +1521,7 @@ oal_uint32 oal_cfg80211_rx_mgmt(oal_net_device_stru   *pst_dev,
 }
 
 
-oal_uint32  oal_cfg80211_rx_exception(oal_net_device_stru *pst_netdev,
+oal_uint32  oal_cfg80211_rx_exception_etc(oal_net_device_stru *pst_netdev,
                                                oal_uint8          *puc_data,
                                                oal_uint32          ul_data_len)
 
@@ -1505,13 +1532,13 @@ oal_uint32  oal_cfg80211_rx_exception(oal_net_device_stru *pst_netdev,
 }
 
 
-oal_netbuf_stru * oal_cfg80211_vendor_cmd_alloc_reply_skb(oal_wiphy_stru * pst_wiphy, oal_uint32 ul_approxlen)
+oal_netbuf_stru * oal_cfg80211_vendor_cmd_alloc_reply_skb_etc(oal_wiphy_stru * pst_wiphy, oal_uint32 ul_approxlen)
 {
     return (oal_netbuf_stru *)OAL_PTR_NULL;
 }
 
 
-oal_int32 oal_cfg80211_vendor_cmd_reply(oal_netbuf_stru *pst_skb)
+oal_int32 oal_cfg80211_vendor_cmd_reply_etc(oal_netbuf_stru *pst_skb)
 {
     return OAL_SUCC;
 }
@@ -1527,43 +1554,48 @@ oal_void  oal_cfg80211_send_rx_auth(oal_net_device_stru *pst_dev,
 #endif
 
 /*lint -e578*//*lint -e19*/
-oal_module_symbol(oal_cfg80211_put_bss);
-oal_module_symbol(oal_cfg80211_get_bss);
-oal_module_symbol(oal_cfg80211_inform_bss_frame);
-oal_module_symbol(oal_cfg80211_scan_done);
-oal_module_symbol(oal_cfg80211_sched_scan_result);
-oal_module_symbol(oal_cfg80211_connect_result);
+oal_module_symbol(oal_cfg80211_put_bss_etc);
+oal_module_symbol(oal_cfg80211_get_bss_etc);
+oal_module_symbol(oal_cfg80211_inform_bss_frame_etc);
+oal_module_symbol(oal_cfg80211_scan_done_etc);
+oal_module_symbol(oal_cfg80211_sched_scan_result_etc);
+oal_module_symbol(oal_cfg80211_connect_result_etc);
 #if (_PRE_CONFIG_TARGET_PRODUCT == _PRE_TARGET_PRODUCT_TYPE_E5) || (_PRE_CONFIG_TARGET_PRODUCT == _PRE_TARGET_PRODUCT_TYPE_CPE)
 oal_module_symbol(oal_cfg80211_notify_cac_event);
 #endif
-oal_module_symbol(oal_cfg80211_roamed);
-oal_module_symbol(oal_cfg80211_ft_event);
-oal_module_symbol(oal_cfg80211_disconnected);
-oal_module_symbol(oal_cfg80211_new_sta);
+oal_module_symbol(oal_cfg80211_roamed_etc);
+oal_module_symbol(oal_cfg80211_ft_event_etc);
+oal_module_symbol(oal_cfg80211_disconnected_etc);
+oal_module_symbol(oal_cfg80211_new_sta_etc);
 #ifdef _PRE_WLAN_FEATURE_11R_AP
 oal_module_symbol(oal_cfg80211_send_rx_auth);
 #endif
 #ifdef _PRE_WLAN_FEATURE_HILINK
 oal_module_symbol(oal_cfg80211_fbt_notify_find_sta);
 #endif
-oal_module_symbol(oal_cfg80211_mic_failure);
-oal_module_symbol(oal_cfg80211_del_sta);
-oal_module_symbol(oal_cfg80211_rx_mgmt);
-oal_module_symbol(oal_cfg80211_mgmt_tx_status);
-oal_module_symbol(oal_cfg80211_ready_on_channel);
-oal_module_symbol(oal_cfg80211_remain_on_channel_expired);
+oal_module_symbol(oal_cfg80211_mic_failure_etc);
+oal_module_symbol(oal_cfg80211_del_sta_etc);
+oal_module_symbol(oal_cfg80211_rx_mgmt_etc);
+oal_module_symbol(oal_cfg80211_mgmt_tx_status_etc);
+oal_module_symbol(oal_cfg80211_ready_on_channel_etc);
+oal_module_symbol(oal_cfg80211_remain_on_channel_expired_etc);
 #if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
 #if defined(_PRE_PRODUCT_ID_HI110X_HOST)
-oal_module_symbol(oal_kobject_uevent_env_sta_join);
-oal_module_symbol(oal_kobject_uevent_env_sta_leave);
+oal_module_symbol(oal_kobject_uevent_env_sta_join_etc);
+oal_module_symbol(oal_kobject_uevent_env_sta_leave_etc);
 #endif
 #endif
 
-oal_module_symbol(oal_cfg80211_rx_exception);
-oal_module_symbol(oal_cfg80211_vendor_cmd_alloc_reply_skb);
-oal_module_symbol(oal_cfg80211_vendor_cmd_reply);
+oal_module_symbol(oal_cfg80211_rx_exception_etc);
+oal_module_symbol(oal_cfg80211_vendor_cmd_alloc_reply_skb_etc);
+oal_module_symbol(oal_cfg80211_vendor_cmd_reply_etc);
 
-oal_module_symbol(oal_cfg80211_vowifi_report);
+oal_module_symbol(oal_cfg80211_vowifi_report_etc);
+oal_module_symbol(oal_cfg80211_m2s_status_report);
+#ifdef _PRE_WLAN_FEATURE_TAS_ANT_SWITCH
+oal_module_symbol(oal_cfg80211_tas_rssi_access_report);
+#endif
+
 #ifdef __cplusplus
     #if __cplusplus
         }

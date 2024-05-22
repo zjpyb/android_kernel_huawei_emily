@@ -299,7 +299,7 @@ static int get_task_exe(struct mm_struct *mm, pid_t pid, char *out,
 	}
 	pathname = d_path(&exe_file->f_path, dbuf, dbuflen);
 	fput(exe_file);
-	if (IS_ERR(pathname)) {
+	if (pathname == NULL || IS_ERR(pathname)) {
 		RSLogError(TAG, "get task exe d_path %d failed", pid);
 		return 0;
 	}

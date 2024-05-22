@@ -13,6 +13,8 @@
 #include "sensor_sysfs.h"
 #include "contexthub_ext_log.h"
 #include "sensor_detect.h"
+#include <huawei_platform/log/hwlog_kernel.h>
+
 
 static aod_display_pos_t *g_aod_pos;
 static char show_str[MAX_STR_SIZE] = {0};
@@ -24,9 +26,12 @@ iomcu_power_status i_power_status;
 static DEFINE_MUTEX(mutex_pstatus);
 
 extern int iom3_need_recovery(int modid, exp_source_t f);
+extern uint64_t iomcu_dubai_log_fetch(uint8_t event_type);
+
 extern struct als_platform_data als_data;
 extern struct ps_platform_data ps_data;
 extern struct sar_platform_data sar_pdata;
+extern struct adux_sar_add_data_t adux_sar_add_data;
 extern char sensor_chip_info[SENSOR_MAX][MAX_CHIP_INFO_LEN];
 
 extern int g_iom3_state;
@@ -57,7 +62,7 @@ static char *iomcu_app_id_str[] = {
 	[TAG_AR] = "TAG_AR",
 	[TAG_FINGERSENSE] = "TAG_FINGERSENSE",
 	[TAG_PHONECALL] = "TAG_PHONECALL",
-	[TAG_GPS_4774_I2C] = "TAG_GPS_4774_I2C",
+	[TAG_CONNECTIVITY] = "TAG_CONNECTIVITY",
 	[TAG_MAG_UNCALIBRATED] = "TAG_MAG_UNCALIBRATED",
 	[TAG_GYRO_UNCALIBRATED] = "TAG_GYRO_UNCALIBRATED",
 	[TAG_HANDPRESS] = "TAG_HANDPRESS",
@@ -68,12 +73,14 @@ static char *iomcu_app_id_str[] = {
 	[TAG_KEY] = "TAG_KEY",
 	[TAG_AOD] = "TAG_AOD",
 	[TAG_MAGN_BRACKET] = "TAG_MAGN_BRACKET",
-	[TAG_GPS] = "TAG_GPS",
+	[TAG_CONNECTIVITY_AGENT] = "TAG_CONNECTIVITY_AGENT",
 	[TAG_FLP] = "TAG_FLP",
 	[TAG_TILT_DETECTOR] = "TAG_TILT_DETECTOR",
 	[TAG_RPC] = "TAG_RPC",
 	[TAG_FP_UD] = "TAG_FP_UD",
 	[TAG_ACCEL_UNCALIBRATED] = "TAG_ACCEL_UNCALIBRATED",
+	[TAG_DROP] = "TAG_DROP",
+	[TAG_BIG_DATA] = "TAG_BIG_DATA",
 	[TAG_HW_PRIVATE_APP_END] = "TAG_HW_PRIVATE_APP_END",
 };
 
@@ -110,6 +117,9 @@ static const struct sensor_debug_tag_map tag_map_tab[] = {
 	{"environment", TAG_ENVIRONMENT},
 	{"fingerprint_ud", TAG_FP_UD},
 	{"acceluncalibrated", TAG_ACCEL_UNCALIBRATED},
+	{"tof", TAG_TOF},
+	{"drop", TAG_DROP},
+	{"ext_hall", TAG_EXT_HALL},
 };
 
 static const char *fault_type_table[] = {
@@ -265,6 +275,44 @@ static int set_sensor_softiron(int tag, int argv[], int argc)
 		hwlog_err("set %s sensor_softiron failed, ret = %d in %s\n", obj_tag_str[tag], ret, __func__);
 		return -1;
 	}
+	return 0;
+}
+
+static void iomcu_big_data_flush(uint32_t event_id)
+{
+	write_info_t pkg_ap;
+	int ret= -1;
+
+	memset(&pkg_ap, 0, sizeof(pkg_ap));
+
+	pkg_ap.tag = TAG_BIG_DATA;
+	pkg_ap.cmd = CMD_BIG_DATA_SEND_TO_AP;
+	pkg_ap.wr_buf = &event_id;
+	pkg_ap.wr_len = sizeof(event_id);
+
+	ret = write_customize_cmd(&pkg_ap, NULL, false);
+}
+
+static int big_data_test(int tag, int argv[], int argc)
+{
+	write_info_t pkg_ap;
+	uint32_t def, sel;
+	uint64_t fetch_data;
+	int ret = -1;
+
+	if (argc != 2)
+		return -1;
+
+	def = argv[0];
+	sel = argv[1];
+
+	if(0 == sel){
+		iomcu_big_data_flush(def);
+	}else{
+		fetch_data = iomcu_dubai_log_fetch(def);
+		hwlog_info("big data test fetch type = %d, res = hi: %d , low: %d\n", def,  (uint32_t) (fetch_data >> 32), (uint32_t) (fetch_data));
+	}
+
 	return 0;
 }
 
@@ -792,6 +840,67 @@ static int ps_param_write(int tag, int argv[], int argc)
 	return ret;
 }
 
+static int sar_param_set(int tag, int argv[], int argc)
+{
+	write_info_t pkg_ap;
+	read_info_t pkg_mcu;
+	pkt_parameter_req_t spkt;
+	pkt_header_t *shd = (pkt_header_t *)&spkt;
+	int ret = 0;
+	int i = 0;
+	memset(&pkg_ap, 0, sizeof(pkg_ap));
+	memset(&pkg_mcu, 0, sizeof(pkg_mcu));
+	memset(&spkt, 0, sizeof(spkt));
+
+	if (SAR_SET_REGISTER == argv[0]) {
+		if ((argc - 1) > ADI_SAR_INIT_REG_VAL_LENGTH) {
+			hwlog_err("%s: The number of input data is larger than init_reg_val array.\n", __FUNCTION__);
+			return -1;
+		}
+		spkt.subcmd = SUB_CMD_SET_PARAMET_REQ;
+		for (i = 1; i < argc; i++)
+		sar_pdata.sar_datas.adux_data.init_reg_val[i - 1] = argv[i];
+		memcpy(spkt.para, &sar_pdata, sizeof(sar_pdata));
+	}
+
+	if (SAR_SET_THRESHOLD == argv[0]) {
+		if ((argc - 1) > ADI_SAR_THRESHOLD_TO_MODEM_LENGTH * STG_SUPPORTED_NUM) {
+			hwlog_err("%s: The number of input data is larger than threshold_to_modem array.\n", __FUNCTION__);
+			return -1;
+		}
+		spkt.subcmd = SUB_CMD_SET_ADD_DATA_REQ;
+		memset(&adux_sar_add_data, 0x00, sizeof(adux_sar_add_data));
+		for (i = 1; i < argc; i++)
+			adux_sar_add_data.threshold_to_modem_stg[i - 1] = argv[i];
+		memcpy(spkt.para, &adux_sar_add_data, sizeof(adux_sar_add_data));
+	}
+
+	pkg_ap.tag = TAG_CAP_PROX;
+	pkg_ap.cmd=CMD_CMN_CONFIG_REQ;
+	pkg_ap.wr_buf=&shd[1];
+	pkg_ap.wr_len=sizeof(sar_pdata)+SUBCMD_LEN;
+
+	hwlog_info("%s g_iom3_state = %d,tag =%d ,cmd =%d\n",__func__,g_iom3_state, pkg_ap.tag, pkg_ap.cmd);
+
+	if (g_iom3_state == IOM3_ST_RECOVERY || iom3_power_state == ST_SLEEP)
+	{
+		ret = write_customize_cmd(&pkg_ap, NULL, false);
+	}else {
+		ret = write_customize_cmd(&pkg_ap, &pkg_mcu, true);
+	}
+
+	if (ret){
+		hwlog_err("send tag %d cfg data to mcu fail,ret=%d\n", pkg_ap.tag, ret);
+	}else{
+		if (pkg_mcu.errno != 0) {
+			hwlog_err("send sar param to mcu fail\n");
+		}else{
+			hwlog_info("send sar param to mcu succes\n");
+		}
+	}
+	return ret;
+}
+
 static int sar_param_write(int tag, int argv[], int argc)
 {
 	write_info_t pkg_ap;
@@ -1022,6 +1131,7 @@ static void register_my_debug_operations(void)
 	REGISTER_SENSORHUB_DEBUG_OPERATION(close_sensor);
 	REGISTER_SENSORHUB_DEBUG_OPERATION(set_sensor_slave_addr);
 	REGISTER_SENSORHUB_DEBUG_OPERATION(set_sensor_softiron);
+	REGISTER_SENSORHUB_DEBUG_OPERATION(big_data_test);
 	REGISTER_SENSORHUB_DEBUG_OPERATION(set_sensor_data_mode);
 	REGISTER_SENSORHUB_DEBUG_OPERATION(set_fault_type);
 	REGISTER_SENSORHUB_DEBUG_OPERATION(set_fault_addr);
@@ -1036,7 +1146,7 @@ static void register_my_debug_operations(void)
 	REGISTER_SENSORHUB_DEBUG_OPERATION(ps_param_write);
 	REGISTER_SENSORHUB_DEBUG_OPERATION(sar_param_write);
 	REGISTER_SENSORHUB_DEBUG_OPERATION(change_sar_mode);
-
+	REGISTER_SENSORHUB_DEBUG_OPERATION(sar_param_set);
 
 }
 
@@ -1047,6 +1157,7 @@ static void unregister_my_debug_operations(void)
 	UNREGISTER_SENSORHUB_DEBUG_OPERATION(close_sensor);
 	UNREGISTER_SENSORHUB_DEBUG_OPERATION(set_sensor_slave_addr);
 	UNREGISTER_SENSORHUB_DEBUG_OPERATION(set_sensor_softiron);
+	UNREGISTER_SENSORHUB_DEBUG_OPERATION(big_data_test);
 	UNREGISTER_SENSORHUB_DEBUG_OPERATION(set_sensor_data_mode);
 	UNREGISTER_SENSORHUB_DEBUG_OPERATION(set_fault_type);
 	UNREGISTER_SENSORHUB_DEBUG_OPERATION(set_fault_addr);
@@ -1061,7 +1172,7 @@ static void unregister_my_debug_operations(void)
 	UNREGISTER_SENSORHUB_DEBUG_OPERATION(ps_param_write);
 	UNREGISTER_SENSORHUB_DEBUG_OPERATION(sar_param_write);
 	UNREGISTER_SENSORHUB_DEBUG_OPERATION(change_sar_mode);
-
+	UNREGISTER_SENSORHUB_DEBUG_OPERATION(sar_param_set);
 }
 
 static inline bool is_space_ch(char ch)
@@ -1402,6 +1513,7 @@ static const char *get_iomcu_active_app_during_suspend(void)
 	return show_str;
 }
 
+
 static int mcu_power_log_process(const pkt_header_t *head)
 {
 	hwlog_info("mcu_power_log_process in\n");
@@ -1506,6 +1618,7 @@ static int sensorhub_debug_init(void)
 	register_my_debug_operations();
 	iomcu_power_info_init();
 	inputhub_ext_log_init();
+
 	return 0;
 }
 

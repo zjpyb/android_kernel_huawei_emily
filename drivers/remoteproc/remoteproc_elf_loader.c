@@ -166,18 +166,18 @@ rproc_elf_load_segments(struct rproc *rproc, const struct firmware *fw)
 			continue;
 
 		dev_dbg(dev, "phdr: type %d da 0x%x memsz 0x%x filesz 0x%x\n",
-					phdr->p_type, da, memsz, filesz);
+			phdr->p_type, da, memsz, filesz);
 
 		if (filesz > memsz) {
 			dev_err(dev, "bad phdr filesz 0x%x memsz 0x%x\n",
-							filesz, memsz);
+				filesz, memsz);
 			ret = -EINVAL;
 			break;
 		}
 
 		if (offset + filesz > fw->size) {
 			dev_err(dev, "truncated fw: need 0x%x avail 0x%zx\n",
-					offset + filesz, fw->size);
+				offset + filesz, fw->size);
 			ret = -EINVAL;
 			break;
 		}
@@ -219,13 +219,13 @@ find_table(struct device *dev, struct elf32_hdr *ehdr, size_t fw_size)
 
 	/* look for the resource table and handle it */
 	shdr = (struct elf32_shdr *)(elf_data + ehdr->e_shoff);
-	name_table = elf_data + shdr[ehdr->e_shstrndx].sh_offset; /*lint !e64 */ 
+	name_table = elf_data + shdr[ehdr->e_shstrndx].sh_offset;
 
 	for (i = 0; i < ehdr->e_shnum; i++, shdr++) {
 		u32 size = shdr->sh_size;
 		u32 offset = shdr->sh_offset;
 
-		if (strcmp(name_table + shdr->sh_name, ".resource_table")) /*lint !e421*/
+		if (strcmp(name_table + shdr->sh_name, ".resource_table"))
 			continue;
 
 		table = (struct resource_table *)(elf_data + offset);

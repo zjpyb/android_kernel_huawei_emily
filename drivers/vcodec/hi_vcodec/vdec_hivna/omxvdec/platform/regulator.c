@@ -174,6 +174,11 @@ static HI_S32 VDEC_GetDtsConfigInfo(struct device *dev, VFMW_DTS_CONFIG_S *pDtsC
 		dprint(PRN_ALWS, "current is not fpga\n");
 	}
 
+	ret = of_property_read_u32(np, "vdec_qos_mode", &pDtsConfig->VdecQosMode);
+	if (ret) {
+		dprint(PRN_ALWS, "vdecQosMode is %d \n", pDtsConfig->VdecQosMode);
+	}
+
 	ret = VDEC_Init_ClockRate(dev);
 	RETURN_FAIL_IF_COND_IS_TRUE(ret != HI_SUCCESS, "init clock failed");
 

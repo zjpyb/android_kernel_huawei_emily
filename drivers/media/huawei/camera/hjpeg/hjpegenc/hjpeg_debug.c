@@ -259,16 +259,6 @@ int cfg_powerdn_regs(void)
     if (0 != ret) {
         cam_err("[%s] Failed: isp power down, ret=%d\n", __func__, ret);
     }
-#if 0
-    ret |= cfg_reg_sets_array(vivobus_reg_sets_powerdown, sizeof(vivobus_reg_sets_powerdown)/sizeof(struct reg_sets));
-    if (0 != ret) {
-        cam_err("[%s] Failed: vivobus power down, ret=%d\n", __func__, ret);
-    }
-    ret |= cfg_reg_sets_array(media_subsys_powerdown, sizeof(media_subsys_powerdown)/sizeof(struct reg_sets));
-    if (0 != ret) {
-        cam_err("[%s] Failed: media subsys power down, ret=%d\n", __func__, ret);
-    }
-#endif
 
     return 0;
 }

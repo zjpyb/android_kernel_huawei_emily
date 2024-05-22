@@ -30,6 +30,9 @@ static bool lm36923_init_status = false;
 static unsigned int g_reg_val[LM36923_RW_REG_MAX] = {0,0,0xf,0x85,0xa3,0x79,0,0,0,0,0,0,4,0};
 static int lm36923_hw_en_gpio = 0;
 #define GPIO_LM36923_EN_NAME "lm36923_hw_en"
+#define ENABLE_REG_DEFAULT	0x0
+#define LSB_REG_DEFAULT	0x0
+#define MSB_REG_DEFAULT	0x0
 static struct gpio_desc lm36923_hw_en_on_cmds[] = {
 	{DTYPE_GPIO_REQUEST, WAIT_TYPE_US, 0,
 		GPIO_LM36923_EN_NAME, &lm36923_hw_en_gpio, 0},
@@ -252,6 +255,10 @@ ssize_t lm36923_resume_init(struct lm36923_chip_data *pchip)
 {
 	int ret = 0;
 
+	ret = regmap_write(pchip->regmap, REG_ENABLE,ENABLE_REG_DEFAULT);
+	if (ret < 0)
+		goto out;
+
 	ret = regmap_write(pchip->regmap, REG_BRT_CTR, g_reg_val[3]);
 	if (ret < 0)
 		goto out;
@@ -259,6 +266,16 @@ ssize_t lm36923_resume_init(struct lm36923_chip_data *pchip)
 	ret = regmap_write(pchip->regmap, REG_BOOST_CTR1, g_reg_val[5]);
 	if (ret < 0)
 		goto out;
+
+	ret = regmap_update_bits(pchip->regmap, REG_BRT_VAL_L, MASK_BL_LSB,LSB_REG_DEFAULT);
+	if (ret < 0) {
+		goto out;
+	}
+
+	ret = regmap_write(pchip->regmap, REG_BRT_VAL_M, MSB_REG_DEFAULT);
+	if (ret < 0) {
+		goto out;
+	}
 
 	ret = regmap_write(pchip->regmap, REG_ENABLE, g_reg_val[2]);
 	if (ret < 0)

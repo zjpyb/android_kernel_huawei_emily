@@ -1,6 +1,6 @@
 #include "pcie-kirin-common.h"
 
-/*lint -e618  -e826 -e648 -e438 -e550 -e713 -e732 -e737 -e774 -e838 -esym(618,*) -esym(826,*) -esym(648,*) -esym(438,*) -esym(550,*) -esym(713,*) -esym(732,*) -esym(737,*) -esym(774,*) -esym(838,*) */
+/*lint -e618 -e647 -e679 -e826 -e648 -e438 -e550 -e713 -e732 -e737 -e774 -e838 -esym(618,*) -esym(647,*) -esym(679,*) -esym(826,*) -esym(648,*) -esym(438,*) -esym(550,*) -esym(713,*) -esym(732,*) -esym(737,*) -esym(774,*) -esym(838,*) */
 
 /**
  * config_enable_dbi - make it possible to access the rc configuration registers in the CDM,
@@ -320,17 +320,17 @@ void kirin_pcie_config_l1ss(u32 rc_id, enum l1ss_ctrl_state enable)
 static void set_atu_addr(struct pcie_port *pp, int type, char *dbi_base,
 			u64 src_addr, u64 dst_addr, u32 size)
 {
-	kirin_pcie_writel_rc(pp, lower_32_bits(src_addr), dbi_base + PCIE_ATU_LOWER_BASE);
-	kirin_pcie_writel_rc(pp, upper_32_bits(src_addr), dbi_base + PCIE_ATU_UPPER_BASE);
-	kirin_pcie_writel_rc(pp, lower_32_bits(src_addr + size - 1),
-			  dbi_base + PCIE_ATU_LIMIT);
-	kirin_pcie_writel_rc(pp, lower_32_bits(dst_addr), dbi_base + PCIE_ATU_LOWER_TARGET);
-	kirin_pcie_writel_rc(pp, upper_32_bits(dst_addr), dbi_base + PCIE_ATU_UPPER_TARGET);
-	kirin_pcie_writel_rc(pp, type, dbi_base + PCIE_ATU_CR1);
-	kirin_pcie_writel_rc(pp, (u32)PCIE_ATU_ENABLE, dbi_base + PCIE_ATU_CR2);//lint !e648
+	u32 iatu_offset = lower_32_bits(dbi_base - (char *)(pp->dbi_base));
+	kirin_pcie_writel_rc(pp, iatu_offset + PCIE_ATU_LOWER_BASE, lower_32_bits(src_addr));
+	kirin_pcie_writel_rc(pp, iatu_offset + PCIE_ATU_UPPER_BASE, upper_32_bits(src_addr));
+	kirin_pcie_writel_rc(pp, iatu_offset + PCIE_ATU_LIMIT, lower_32_bits(src_addr + size - 1));
+	kirin_pcie_writel_rc(pp, iatu_offset + PCIE_ATU_LOWER_TARGET, lower_32_bits(dst_addr));
+	kirin_pcie_writel_rc(pp, iatu_offset + PCIE_ATU_UPPER_TARGET, upper_32_bits(dst_addr));
+	kirin_pcie_writel_rc(pp, iatu_offset + PCIE_ATU_CR1, type);
+	kirin_pcie_writel_rc(pp, iatu_offset + PCIE_ATU_CR2, (u32)PCIE_ATU_ENABLE);//lint !e648
 }
 
-static void kirin_pcie_atu_cfg(struct pcie_port *pp, int index, int direct,
+static void kirin_pcie_atu_cfg(struct pcie_port *pp, u32 index, int direct,
 		int type, u64 src_addr, u64 dst_addr, u32 size)
 {
 	struct kirin_pcie *pcie;
@@ -346,36 +346,49 @@ static void kirin_pcie_atu_cfg(struct pcie_port *pp, int index, int direct,
 	dbi_base = pp->dbi_base;
 	base_addr = pcie->dtsinfo.iatu_base_offset;
 
-	if (direct == (int)PCIE_ATU_REGION_OUTBOUND)//lint !e648)
-		index &= 0x7FFFFFFF;
-	else
-		index |= direct;
-
 	if (base_addr != PCIE_ATU_VIEWPORT) {
 		base_addr += index * 0x200;
 		if (direct == (int)PCIE_ATU_REGION_INBOUND)//lint !e648
 			base_addr += INBOUNT_OFFSET;
 	} else
-		kirin_pcie_writel_rc(pp, index, dbi_base + PCIE_ATU_VIEWPORT);//lint !e648
+
+	kirin_pcie_writel_rc(pp, PCIE_ATU_VIEWPORT, (index | direct));//lint !e648
 
 	dbi_base += base_addr;
 
 	set_atu_addr(pp, type, dbi_base, src_addr, dst_addr, size);
 }
 
-void dw_pcie_prog_outbound_atu(struct pcie_port *pp, int index,
-		int type, u64 cpu_addr, u64 pci_addr, u32 size)
+void kirin_pcie_generate_msg(u32 rc_id, int index, u32 iatu_offset, int msg_type, u32 msg_code)
 {
-	kirin_pcie_atu_cfg(pp, index, PCIE_ATU_REGION_OUTBOUND,
-					type, cpu_addr, pci_addr, size);//lint !e648
+	u32 val;
+	struct kirin_pcie *pcie;
+	struct pcie_port *pp;
+
+	if (!kirin_pcie_valid(rc_id))
+		return;
+
+	pcie = &g_kirin_pcie[rc_id];
+	pp = &pcie->pp;
+
+	kirin_pcie_outbound_atu(rc_id, index, msg_type,
+				pcie->dtsinfo.dbi_base + MSG_CPU_ADDR, 0x0, MSG_CPU_ADDR_SIZE);
+
+	val = kirin_pcie_readl_rc(pp, iatu_offset + PCIE_ATU_CR2);
+	val |= (msg_code | INHIBIT_PAYLOAD);
+	kirin_pcie_writel_rc(pp, iatu_offset + PCIE_ATU_CR2, val);
+
+	writel(0x0, pcie->pme_base);
+
 }
 
 int kirin_pcie_power_ctrl(struct pcie_port *pp, enum rc_power_status on_flag)
 {
 	int ret;
+	u32 val;
 	struct kirin_pcie *pcie = to_kirin_pcie(pp);
 
-	PCIE_PR_DEBUG("++");
+	PCIE_PR_INFO("++");
 
 	/*power on*/
 	if (on_flag == RC_POWER_ON || on_flag == RC_POWER_RESUME) {
@@ -384,17 +397,24 @@ int kirin_pcie_power_ctrl(struct pcie_port *pp, enum rc_power_status on_flag)
 		spin_unlock(&pcie->ep_ltssm_lock);
 
 		ret = pcie->plat_ops->plat_on(pp, on_flag);
+		if (ret < 0)
+			return ret;
+
+		if (pcie->dtsinfo.board_type == BOARD_FPGA) {
+			val = kirin_pcie_readl_rc(pp, KIRIN_PCIE_LNKCTL2);
+			val &= ~SPEED_MASK;
+			val |= SPEED_GEN1;
+			kirin_pcie_writel_rc(pp, KIRIN_PCIE_LNKCTL2, val);
+		}
 
 	} else if (on_flag == RC_POWER_OFF || on_flag == RC_POWER_SUSPEND) {
-
 		ret = pcie->plat_ops->plat_off(pp, on_flag);
-
 	} else {
 		PCIE_PR_ERR("Invalid Param");
 		ret = -1;
 	}
 
-	PCIE_PR_DEBUG("--");
+	PCIE_PR_INFO("--");
 	return ret;
 }
 
@@ -418,7 +438,6 @@ bool is_pipe_clk_stable(struct kirin_pcie *pcie)
 
 	return true;
 }
-
 /* ECO Function for PHY Debug */
 #define ECO				1
 #define ECO_TEST		2
@@ -437,7 +456,7 @@ int kirin_pcie_cfg_eco(struct kirin_pcie *pcie)
 	void __iomem *sramdata = pcie->phy_base + pcie->sram_phy_offset;
 #endif
 
-	PCIE_PR_DEBUG("+");
+	PCIE_PR_INFO("+");
 	dtsinfo = &(pcie->dtsinfo);
 
 	reg_val = kirin_apb_phy_readl(pcie, SOC_PCIEPHY_STATE39_ADDR);
@@ -488,7 +507,7 @@ int kirin_pcie_cfg_eco(struct kirin_pcie *pcie)
 	reg_val |= (0x1 << 4);
 	kirin_apb_phy_writel(pcie, reg_val, SOC_PCIEPHY_CTRL40_ADDR);
 
-	PCIE_PR_DEBUG("-");
+	PCIE_PR_INFO("-");
 	return 0;
 
 #ifdef CONFIG_KIRIN_PCIE_TEST
@@ -552,10 +571,6 @@ int kirin_pcie_phy_init(struct kirin_pcie *pcie)
 	reg_val &= ~(0x1 << 22);
 	kirin_apb_phy_writel(pcie, reg_val, SOC_PCIEPHY_CTRL0_ADDR);
 
-	reg_val = kirin_apb_phy_readl(pcie, SOC_PCIEPHY_CTRL33_ADDR);
-	reg_val |= (0x1 << 1);
-	kirin_apb_phy_writel(pcie, reg_val, SOC_PCIEPHY_CTRL33_ADDR);
-
 	if (pcie->dtsinfo.eco)
 		kirin_pcie_reset_phy(pcie);
 
@@ -595,8 +610,11 @@ void kirin_pcie_natural_cfg(struct kirin_pcie *pcie)
 	} else {
 		/* cfg as rc */
 		val = kirin_elb_readl(pcie, SOC_PCIECTRL_CTRL0_ADDR);
-		val &= 0x4FFFFFFF;
+		val &= ~(PCIE_TYPE_MASK << PCIE_TYPE_SHIFT);
+		if (!pcie->dtsinfo.ep_flag)
+			val |= (PCIE_TYPE_RC << PCIE_TYPE_SHIFT);
 		kirin_elb_writel(pcie, val, SOC_PCIECTRL_CTRL0_ADDR);
+
 		/* output, pull down */
 		val = kirin_elb_readl(pcie, SOC_PCIECTRL_CTRL12_ADDR);
 		val &= ~(0x3 << 2);
@@ -624,8 +642,43 @@ void kirin_pcie_outbound_atu(u32 rc_id, int index,
 	pcie = &g_kirin_pcie[rc_id];
 	pp = &(pcie->pp);
 
-	kirin_pcie_atu_cfg(pp, index, PCIE_ATU_REGION_OUTBOUND,
+	kirin_pcie_atu_cfg(pp, (u32)index, PCIE_ATU_REGION_OUTBOUND,
 					type, cpu_addr, pci_addr, size); //lint !e648
+}
+
+/* adjust PCIeIO(diffbuf) driver */
+void pcie_io_adjust(struct kirin_pcie *pcie)
+{
+	struct kirin_pcie_dtsinfo *dtsinfo = &pcie->dtsinfo;
+	u32 reg_val;
+
+	if (dtsinfo->io_driver[2]) {
+		reg_val = kirin_elb_readl(pcie, dtsinfo->io_driver[0]);
+		reg_val &= ~dtsinfo->io_driver[1];
+		reg_val |= dtsinfo->io_driver[2];
+		kirin_elb_writel(pcie, reg_val, dtsinfo->io_driver[0]);
+	}
+}
+
+void set_phy_eye_param(struct kirin_pcie *pcie)
+{
+	u32 reg_val;
+	u32 i;
+	u32 *base;
+	struct kirin_pcie_dtsinfo *dtsinfo = &(pcie->dtsinfo);
+
+	if (!dtsinfo->eye_param_nums)
+		return;
+
+	for (i = 0; i < dtsinfo->eye_param_nums; i++) {
+		base = dtsinfo->eye_param_data + i * TRIPLE_TUPLE;
+		if (*(base + 2) != 0xFFFF) {
+			reg_val = kirin_natural_phy_readl(pcie, *(base + 0));
+			reg_val &= ~(*(base + 1));
+			reg_val |= *(base + 2);
+			kirin_natural_phy_writel(pcie, reg_val, *(base + 0));
+		}
+	}
 }
 
 void kirin_pcie_inbound_atu(u32 rc_id, int index,
@@ -640,7 +693,7 @@ void kirin_pcie_inbound_atu(u32 rc_id, int index,
 	pcie = &g_kirin_pcie[rc_id];
 	pp = &pcie->pp;
 
-	kirin_pcie_atu_cfg(pp, index, PCIE_ATU_REGION_INBOUND,
+	kirin_pcie_atu_cfg(pp, (u32)index, PCIE_ATU_REGION_INBOUND,
 					type, pci_addr, cpu_addr, size);
 }
 
@@ -699,6 +752,60 @@ u32 show_link_state(u32 rc_id)
 	return val;
 }
 EXPORT_SYMBOL_GPL(show_link_state);
+
+#if defined(CONFIG_KIRIN_PCIE_APR)
+int pcie_memcpy(ulong dst, ulong src, uint32_t size)
+{
+	memcpy((void *)dst, (void *)src, size);
+	return 0;
+}
+#else
+int pcie_memcpy(ulong dst, ulong src, uint32_t size)
+{
+	int error = 0;
+	uint dsize;
+	uint64_t data_64 = 0;
+	uint64_t data_32 = 0;
+	uint64_t data_8 = 0;
+	ulong dst_t = dst;
+	ulong src_t = src;
+#if defined(CONFIG_64BIT)
+	bool is_64bit_unaligned = (dst_t & 0x7);
+#endif
+
+	dsize = sizeof(uint64_t);
+
+	/* Do the transfer(s) */
+	while (size) {
+		if (size >= sizeof(uint64_t)) {
+			if (is_64bit_unaligned) {
+				data_32= pcie_rd_32((char *)src_t);
+				pcie_wr_32(data_32, (char *)dst_t);
+				size -= 4;
+				dst_t += 4;
+				src_t += 4;
+				is_64bit_unaligned = (dst_t & 0x7);
+				continue;
+			} else {
+				data_64= pcie_rd_64((char *)src_t);
+				pcie_wr_64(data_64, (char *)dst_t);
+			}
+		} else {
+			dsize = sizeof(uint8_t);
+			data_8= pcie_rd_8((char *)src_t);
+			pcie_wr_8(data_8, (char *)dst_t);
+		}
+
+		/* Adjust for next transfer (if any) */
+		if ((size -= dsize)) {
+			src_t += dsize;
+			dst_t += dsize;
+		}
+	}
+
+	return error;
+}
+#endif
 
 #ifdef CONFIG_KIRIN_PCIE_TEST
 int wlan_on(u32 rc_id, int on)
@@ -773,10 +880,10 @@ int retrain_link(u32 rc_id)
 	if (!cap_pos)
 		return -1;
 
-	kirin_pcie_rd_own_conf(pp, (int)cap_pos + PCI_EXP_LNKCTL2, 4, &val);
+	kirin_pcie_rd_own_conf(pp, (int)cap_pos + PCI_EXP_LNKCTL, 4, &val);
 	/* Retrain link */
 	val |= PCI_EXP_LNKCTL_RL;
-	kirin_pcie_wr_own_conf(pp, (int)cap_pos + PCI_EXP_LNKCTL2, 4, val);
+	kirin_pcie_wr_own_conf(pp, (int)cap_pos + PCI_EXP_LNKCTL, 4, val);
 
 	/* Wait for link training end. Break out after waiting for timeout */
 	start_jiffies = jiffies;
@@ -797,9 +904,9 @@ int retrain_link(u32 rc_id)
 int set_link_speed(u32 rc_id, enum link_speed gen)
 {
 	u32 val = 0x1;
-	u32 reg_val;
+	u32 reg_val = 0x0;
 	int ret = 0;
-	u32 cap_pos;
+	u32 cap_pos = 0x0;
 	struct pcie_port *pp;
 
 	if (!kirin_pcie_valid(rc_id))
@@ -889,5 +996,5 @@ u32 kirin_pcie_find_capability(struct pcie_port *pp, int cap)
 }
 
 #endif
-/*lint -e618  -e826 -e648 -e438 -e550 -e713 -e732 -e737 -e774 -e838 -esym(618,*) -esym(826,*) -esym(648,*) -esym(438,*) -esym(550,*) -esym(713,*) -esym(732,*) -esym(737,*) -esym(774,*) -esym(838,*) */
+/*lint -e618  -e826 -e648 -e647 -e679 -e438 -e550 -e713 -e732 -e737 -e774 -e838 -esym(618,*) -esym(826,*) -esym(648,*) -esym(847,*) -esym(679,*) -esym(438,*) -esym(550,*) -esym(713,*) -esym(732,*) -esym(737,*) -esym(774,*) -esym(838,*) */
 

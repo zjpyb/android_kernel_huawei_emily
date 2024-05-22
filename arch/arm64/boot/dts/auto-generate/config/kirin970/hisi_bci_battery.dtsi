@@ -12,5 +12,7 @@
 		temp_shutdown = <68>;
 		temp_below_vr_min = <0>;
 		bci_soc_at_term = <100>;
+		vth_correct_en = <1>;
+		vth_correct_para = <6 3687>, <10 3694>;
     }; 	
 };

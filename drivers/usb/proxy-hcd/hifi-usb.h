@@ -13,7 +13,8 @@
 #include "hifi-usb-urb-buf.h"
 #include "hifi-usb-stat.h"
 
-#define HIFI_USB_CONFIRM_UDEV_TIME (5 * HZ)
+#define HIFI_USB_CONFIRM_UDEV_CONNECT_TIME (2 * HZ)
+#define HIFI_USB_CONFIRM_UDEV_RECONNECT_TIME (5 * HZ)
 
 struct hifi_usb_msg_wrap {
 	struct list_head node;
@@ -58,7 +59,7 @@ struct hifi_usb_proxy {
 	struct notifier_block		fb_notify;
 	unsigned int			hibernation_ctrl; /* hibernation allowed when all bits cleared */
 
-	unsigned int 			port_status;
+	__u32				port_status;
 	unsigned int			hibernation_count;
 	unsigned int			revive_time;
 	unsigned int 			max_revive_time;
@@ -72,7 +73,10 @@ struct hifi_usb_proxy {
 };
 
 void hifi_usb_msg_receiver(struct hifi_usb_op_msg *__msg);
+void hifi_usb_announce_udev(struct usb_device *udev);
 int always_use_hifi_usb(int val);
 int never_use_hifi_usb(int val);
+
+#define HUAWEI_USB_C_AUDIO_ADAPTER "HUAWEI USB-C TO 3.5MM AUDIO ADAPTER"
 
 #endif /* _HIFI_USB_H_ */

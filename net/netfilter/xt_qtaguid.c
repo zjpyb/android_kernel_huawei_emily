@@ -28,7 +28,9 @@
 #include <net/sock.h>
 #include <net/tcp.h>
 #include <net/udp.h>
+#ifdef CONFIG_HUAWEI_BASTET
 #include <huawei_platform/power/bastet/bastet.h>
+#endif
 #if defined(CONFIG_IP6_NF_IPTABLES) || defined(CONFIG_IP6_NF_IPTABLES_MODULE)
 #include <linux/netfilter_ipv6/ip6_tables.h>
 #endif
@@ -47,13 +49,16 @@ extern void wifipro_update_tcp_statistics(int mib_type, const struct sk_buff *sk
 #include <huawei_platform/net/qtaguid_pid/qtaguid_pid.h>
 #endif
 
+#ifdef CONFIG_SMART_MP
+#include <huawei_platform/emcom/emcom_xengine.h>
+#endif
+
 /*
  * We only use the xt_socket funcs within a similar context to avoid unexpected
  * return values.
  */
 #define XT_SOCKET_SUPPORTED_HOOKS \
 	((1 << NF_INET_PRE_ROUTING) | (1 << NF_INET_LOCAL_IN))
-
 
 static const char *module_procdirname = "xt_qtaguid";
 static struct proc_dir_entry *xt_qtaguid_procdir;
@@ -984,9 +989,8 @@ static void iface_stat_create(struct net_device *net_dev,
 		for (ifa = in_dev->ifa_list; ifa; ifa = ifa->ifa_next) {
 			IF_DEBUG("qtaguid: iface_stat: create(%s): "
 				 "ifa=%p ifa_label=%s\n",
-				 ifname, ifa,
-				 ifa->ifa_label ? ifa->ifa_label : "(null)");
-			if (ifa->ifa_label && !strcmp(ifname, ifa->ifa_label))
+				 ifname, ifa, ifa->ifa_label);
+			if (!strcmp(ifname, ifa->ifa_label))
 				break;
 		}
 	}
@@ -1693,14 +1697,6 @@ static struct sock *qtaguid_find_sk(const struct sk_buff *skb,
 	if (sk) {
 		MT_DEBUG("qtaguid[%d]: %p->sk_proto=%u->sk_state=%d\n",
 			 par->hooknum, sk, sk->sk_protocol, sk->sk_state);
-		/*
-		 * When in TCP_TIME_WAIT the sk is not a "struct sock" but
-		 * "struct inet_timewait_sock" which is missing fields.
-		 */
-		if (!sk_fullsock(sk) || sk->sk_state  == TCP_TIME_WAIT) {
-			sock_gen_put(sk);
-			sk = NULL;
-		}
 	}
 	return sk;
 }
@@ -1715,14 +1711,21 @@ static void account_for_uid(const struct sk_buff *skb,
 
 	get_dev_and_dir(skb, par, &direction, &el_dev);
 	proto = ipx_proto(skb, par);
+
+#ifdef CONFIG_SMART_MP
+	if (Emcom_Xengine_SmartMpEnable() &&
+	    Emcom_Xengine_CheckUidAccount(skb, &uid, alternate_sk, proto) == false)
+		return;
+#endif
+
 	MT_DEBUG("qtaguid[%d]: dev name=%s type=%d fam=%d proto=%d dir=%d\n",
 		 par->hooknum, el_dev->name, el_dev->type,
 		 par->family, proto, direction);
 
 	if_tag_stat_update(el_dev->name, uid,
-			skb->sk ? skb->sk : alternate_sk,
-			direction,
-			proto, skb->len);
+			   skb->sk ? skb->sk : alternate_sk,
+			   direction,
+			   proto, skb->len);
 
 #ifdef CONFIG_HW_QTAGUID_PID
 	if_pid_stat_update(el_dev->name, uid,
@@ -1766,7 +1769,27 @@ static bool qtaguid_mt(const struct sk_buff *skb, struct xt_action_param *par)
 	case NF_INET_PRE_ROUTING:
 	case NF_INET_POST_ROUTING:
 		atomic64_inc(&qtu_events.match_calls_prepost);
+#ifdef CONFIG_SMART_MP
+		if (Emcom_Xengine_SmartMpEnable()) {
+			int proto = ipx_proto(skb, par);
+			sk = skb_to_full_sk(skb);
+			if (sk == NULL) {
+				sk = qtaguid_find_sk(skb, par);
+				if (sk) {
+					if (Emcom_Xengine_CheckIfaceAccount(sk, proto))
+						iface_stat_update_from_skb(skb, par);
+					sock_gen_put(sk);
+				}
+			} else {
+				if (Emcom_Xengine_CheckIfaceAccount(sk, proto))
+					iface_stat_update_from_skb(skb, par);
+			}
+		} else {
+			iface_stat_update_from_skb(skb, par);
+		}
+#else
 		iface_stat_update_from_skb(skb, par);
+#endif
 		/*
 		 * We are done in pre/post. The skb will get processed
 		 * further alter.
@@ -1792,10 +1815,25 @@ static bool qtaguid_mt(const struct sk_buff *skb, struct xt_action_param *par)
 		 */
 		sk = qtaguid_find_sk(skb, par);
 		/*
-		 * If we got the socket from the find_sk(), we will need to put
-		 * it back, as nf_tproxy_get_sock_v4() got it.
+		 * TCP_NEW_SYN_RECV are not "struct sock" but "struct request_sock"
+		 * where we can get a pointer to a full socket to retrieve uid/gid.
+		 * When in TCP_TIME_WAIT, sk is a struct inet_timewait_sock
+		 * which is missing fields and does not contain any reference
+		 * to a full socket, so just ignore the socket.
 		 */
-		got_sock = sk;
+		if (sk && sk->sk_state == TCP_NEW_SYN_RECV) {
+			sock_gen_put(sk);
+			sk = sk_to_full_sk(sk);
+		} else if (sk && (!sk_fullsock(sk) || sk->sk_state == TCP_TIME_WAIT)) {
+			sock_gen_put(sk);
+			sk = NULL;
+		} else {
+			/*
+			 * If we got the socket from the find_sk(), we will need to put
+			 * it back, as nf_tproxy_get_sock_v4() got it.
+			 */
+			got_sock = sk;
+		}
 		if (sk)
 			atomic64_inc(&qtu_events.match_found_sk_in_ct);
 		else
@@ -1872,7 +1910,21 @@ static bool qtaguid_mt(const struct sk_buff *skb, struct xt_action_param *par)
 			res = false;
 			goto put_sock_ret_res;
 		}
+		//Thus (!a && b) || (a && !b) == a ^ b
+	} else if (info->match & XT_QTAGUID_PID) {
+		if ((sk->sk_socket == NULL)) {
+			res = false;
+			goto put_sock_ret_res;
+		}
+
+		if (((sk->sk_socket->pid >= info->xt_pid_min) && (sk->sk_socket->pid <= info->xt_pid_max)) ^ !(info->invert & XT_QTAGUID_PID)) {
+			MT_DEBUG("qtaguid-PID XT_QTAGUID_PID[%d]: leaving Pid not matching\n",
+				par->hooknum);
+			res = false;
+			goto put_sock_ret_res;
+		}
 	}
+
 	MT_DEBUG("qtaguid[%d]: leaving matched\n", par->hooknum);
 	res = true;
 

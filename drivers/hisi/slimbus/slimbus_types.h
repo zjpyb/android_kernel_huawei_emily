@@ -40,7 +40,7 @@ typedef enum {
 #define SLIMBUS_VOICE_UP_2CH                            (2)
 #define SLIMBUS_IMAGE_DOWNLOAD_CHANNELS                 (1)
 #define SLIMBUS_ECREF_CHANNELS                          (2)
-#define SLIMBUS_SOUND_TRIGGER_CHANNELS                  (1)
+#define SLIMBUS_SOUND_TRIGGER_CHANNELS                  (2)
 #define SLIMBUS_VOICE_UP_SOUNDTRIGGER                   (1)
 #define SLIMBUS_DEBUG_CHANNELS                          (1)
 
@@ -271,6 +271,7 @@ typedef enum
 	SLIMBUS_DUMP_IRQ					= 0,
 	SLIMBUS_DUMP_FRAMER 				= 1,
 	SLIMBUS_DUMP_LOSTMS 				= 2,
+	SLIMBUS_DUMP_ALL				    = 3,
 	SLIMBUS_DUMP_MAX
 } slimbus_dump_state_t;
 
@@ -286,7 +287,8 @@ typedef enum {
 	SLIMBUS_SCENE_CONFIG_FAST_PLAY_AND_REC  = 8,
 	SLIMBUS_SCENE_CONFIG_FAST_PLAY_AND_ST   = 9,
 	SLIMBUS_SCENE_CONFIG_CALL_12288         = 10,
-	SLIMBUS_SCENE_CONFIG_MAX                = 11,
+	SLIMBUS_SCENE_CONFIG_ENHANCE_ST_6144   = 11,
+	SLIMBUS_SCENE_CONFIG_MAX                = 12,
 
 } slimbus_scene_config_type_t;
 

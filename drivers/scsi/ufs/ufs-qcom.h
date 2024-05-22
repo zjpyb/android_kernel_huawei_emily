@@ -106,6 +106,22 @@ enum ufs_qcom_phy_init_type {
 	UFS_PHY_INIT_CFG_RESTORE,
 };
 
+/* QCOM UFS debug print bit mask */
+#define UFS_QCOM_DBG_PRINT_REGS_EN	BIT(0)
+#define UFS_QCOM_DBG_PRINT_ICE_REGS_EN	BIT(1)
+#define UFS_QCOM_DBG_PRINT_TEST_BUS_EN	BIT(2)
+
+#define UFS_QCOM_DBG_PRINT_ALL	\
+	(UFS_QCOM_DBG_PRINT_REGS_EN | UFS_QCOM_DBG_PRINT_ICE_REGS_EN | \
+	 UFS_QCOM_DBG_PRINT_TEST_BUS_EN)
+
+/* QUniPro Vendor specific attributes */
+#define PA_VS_CONFIG_REG1	0x9000
+#define DME_VS_CORE_CLK_CTRL	0xD002
+/* bit and mask definitions for DME_VS_CORE_CLK_CTRL attribute */
+#define DME_VS_CORE_CLK_CTRL_CORE_CLK_DIV_EN_BIT		BIT(8)
+#define DME_VS_CORE_CLK_CTRL_MAX_CORE_CLK_1US_CYCLES_MASK	0xFF
+
 static inline void
 ufs_qcom_get_controller_revision(struct ufs_hba *hba,
 				 u8 *major, u16 *minor, u16 *step)
@@ -179,6 +195,15 @@ struct ufs_qcom_host {
 	bool is_lane_clks_enabled;
 
 	struct ufs_hw_version hw_ver;
+};
+
+static inline u32
+ufs_qcom_get_debug_reg_offset(struct ufs_qcom_host *host, u32 reg)
+{
+	if (host->hw_ver.major <= 0x02)
+		return UFS_CNTLR_2_x_x_VEN_REGS_OFFSET(reg);
+
+	return UFS_CNTLR_3_x_x_VEN_REGS_OFFSET(reg);
 };
 
 #define ufs_qcom_is_link_off(hba) ufshcd_is_link_off(hba)

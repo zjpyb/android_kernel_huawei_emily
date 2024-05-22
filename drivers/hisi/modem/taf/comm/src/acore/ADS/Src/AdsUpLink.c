@@ -597,16 +597,18 @@ VOS_VOID ADS_UL_ConfigBD(VOS_UINT32 ulBdNum)
 
         ulBeginSlice  = ADS_UL_GET_SLICE_FROM_IMM(pstImmZc);
         pstUlCfgParam = ADS_UL_GET_BD_CFG_PARA_PTR(ulCnt);
-        pstUlCfgParam->Data    = (modem_phy_addr)virt_to_phys((VOS_VOID *)pstImmZc->data);
+        /* Attribute: 中断使能，过滤加搬移，过滤器组号modem0用0，modem1用1 */
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
+        pstUlCfgParam->Data         = (modem_phy_addr)virt_to_phys((VOS_VOID *)pstImmZc->data);
+        pstUlCfgParam->mode         = IPF_MODE_FILTERANDTRANS;
+        pstUlCfgParam->fc_head      = ADS_UL_GetBdFcHead(ulInstance, uc1XorHrpdUlIpfFlag);
         pstUlCfgParam->u16Len       = (VOS_UINT16)pstImmZc->len;
+#endif
         pstUlCfgParam->u16UsrField1 = (VOS_UINT16)ADS_UL_BUILD_BD_USER_FIELD_1(ulInstance, ulRabId);
         pstUlCfgParam->u32UsrField3 = (VOS_UINT32)ADS_UL_CalcBuffTime(ulBeginSlice, ulEndSlice);
         pstUlCfgParam->u32UsrField2  = 0;
         pstUlCfgParam->u32UsrField2 |= ADS_UL_GetAccState( pstImmZc );
 
-        /* Attribute: 中断使能，过滤加搬移，过滤器组号modem0用0，modem1用1 */
-        pstUlCfgParam->mode    = IPF_MODE_FILTERANDTRANS;
-        pstUlCfgParam->fc_head = ADS_UL_GetBdFcHead(ulInstance, uc1XorHrpdUlIpfFlag);
         ADS_MNTN_RecULIpPktInfo(pstImmZc,
                                 pstUlCfgParam->u16UsrField1,
                                 pstUlCfgParam->u32UsrField2,
@@ -615,6 +617,13 @@ VOS_VOID ADS_UL_ConfigBD(VOS_UINT32 ulBdNum)
 
         /* 刷CAHCE */
         ADS_IPF_UL_MEM_MAP(pstImmZc, pstImmZc->len);
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
+        pstUlCfgParam->Data         = (modem_phy_addr)ADS_IPF_GetMemDma(pstImmZc);
+        pstUlCfgParam->mode         = IPF_MODE_FILTERANDTRANS;
+        pstUlCfgParam->fc_head      = ADS_UL_GetBdFcHead(ulInstance, uc1XorHrpdUlIpfFlag);
+        pstUlCfgParam->u16Len       = (VOS_UINT16)pstImmZc->len;
+#endif
     }
 
     /* 配置上行数据个数为0 */

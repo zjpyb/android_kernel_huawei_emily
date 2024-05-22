@@ -29,6 +29,7 @@
 #include <huawei_platform/usb/pd/richtek/rt-regmap.h>
 #define RT_REGMAP_MAX_ARRAY_SIZE_64 64
 #define RT_REGMAP_MAX_ARRAY_SIZE_128 128
+#define ERR_MSG_SIZE 128
 struct rt_regmap_ops {
 	int (*regmap_block_write)(struct rt_regmap_device *rd, u32 reg,
 			 int bytes, const void *data);
@@ -1477,11 +1478,15 @@ static ssize_t general_write(struct file *file, const char __user *ubuf,
 			if ((size - 1)*3 + 5 != count) {
 				dev_err(&rd->dev, "wrong input length\n");
 				if (rd->error_occurred) {
-					sprintf(rd->err_msg +
-						strlen(rd->err_msg),
+					snprintf(rd->err_msg + strlen(rd->err_msg),
+						ERR_MSG_SIZE - strlen(rd->err_msg),
 						"Error, wrong input length\n");
+					if (strlen(rd->err_msg) >= ERR_MSG_SIZE - 1) {
+						dev_err(&rd->dev, "Err_msg buf full\n");
+					}
 				} else {
-					sprintf(rd->err_msg,
+					snprintf(rd->err_msg,
+						ERR_MSG_SIZE,
 						"Error, wrong input length\n");
 					rd->error_occurred = 1;
 				}
@@ -1492,11 +1497,15 @@ static ssize_t general_write(struct file *file, const char __user *ubuf,
 			if (rc < 0) {
 				dev_err(&rd->dev, "get datas fail\n");
 				if (rd->error_occurred) {
-					sprintf(rd->err_msg +
-					strlen(rd->err_msg),
-					"Error, get datas fail\n");
+					snprintf(rd->err_msg + strlen(rd->err_msg),
+						ERR_MSG_SIZE - strlen(rd->err_msg),
+						"Error, get datas fail\n");
+					if (strlen(rd->err_msg) >= ERR_MSG_SIZE - 1) {
+						dev_err(&rd->dev, "Err_msg buf full\n");
+					}
 				} else {
-					sprintf(rd->err_msg,
+					snprintf(rd->err_msg,
+						ERR_MSG_SIZE,
 						"Error, get datas fail\n");
 					rd->error_occurred = 1;
 				}
@@ -1509,14 +1518,18 @@ static ssize_t general_write(struct file *file, const char __user *ubuf,
 			if (rc < 0) {
 				dev_err(&rd->dev, "chip block write fail\n");
 				if (rd->error_occurred) {
-					sprintf(rd->err_msg +
-					strlen(rd->err_msg),
-				"Error chip block write fail at 0x%02x\n",
-					rd->dbg_data.reg_addr);
+					snprintf(rd->err_msg + strlen(rd->err_msg),
+						ERR_MSG_SIZE - strlen(rd->err_msg),
+						"Error chip block write fail at 0x%02x\n",
+						rd->dbg_data.reg_addr);
+					if (strlen(rd->err_msg) >= ERR_MSG_SIZE - 1) {
+						dev_err(&rd->dev, "Err_msg buf full\n");
+					}
 				} else {
-					sprintf(rd->err_msg,
-				"Error chip block write fail at 0x%02x\n",
-					rd->dbg_data.reg_addr);
+					snprintf(rd->err_msg,
+						ERR_MSG_SIZE,
+						"Error chip block write fail at 0x%02x\n",
+						rd->dbg_data.reg_addr);
 					rd->error_occurred = 1;
 				}
 				return -EIO;
@@ -1529,10 +1542,15 @@ static ssize_t general_write(struct file *file, const char __user *ubuf,
 		if ((size - 1)*3 + 5 != count) {
 			dev_err(&rd->dev, "wrong input length\n");
 			if (rd->error_occurred) {
-				sprintf(rd->err_msg + strlen(rd->err_msg),
+				snprintf(rd->err_msg + strlen(rd->err_msg),
+					ERR_MSG_SIZE - strlen(rd->err_msg),
 					"Error, wrong input length\n");
+				if (strlen(rd->err_msg) >= ERR_MSG_SIZE - 1) {
+					dev_err(&rd->dev, "Err_msg buf full\n");
+				}
 			} else {
-				sprintf(rd->err_msg,
+				snprintf(rd->err_msg,
+					ERR_MSG_SIZE,
 					"Error, wrong input length\n");
 				rd->error_occurred = 1;
 			}
@@ -1543,11 +1561,16 @@ static ssize_t general_write(struct file *file, const char __user *ubuf,
 		if (rc < 0) {
 			dev_err(&rd->dev, "get datas fail\n");
 			if (rd->error_occurred) {
-				sprintf(rd->err_msg + strlen(rd->err_msg),
-				"Error, get datas fail\n");
+				snprintf(rd->err_msg + strlen(rd->err_msg),
+					ERR_MSG_SIZE - strlen(rd->err_msg),
+					"Error, get datas fail\n");
+				if (strlen(rd->err_msg) >= ERR_MSG_SIZE - 1) {
+					dev_err(&rd->dev, "Err_msg buf full\n");
+				}
 			} else {
-				sprintf(rd->err_msg,
-				"Error, get datas fail\n");
+				snprintf(rd->err_msg,
+					ERR_MSG_SIZE,
+					"Error, get datas fail\n");
 				rd->error_occurred = 1;
 			}
 			return -EINVAL;
@@ -1560,13 +1583,18 @@ static ssize_t general_write(struct file *file, const char __user *ubuf,
 		if (rc < 0) {
 			dev_err(&rd->dev, "regmap block write fail\n");
 			if (rd->error_occurred) {
-				sprintf(rd->err_msg + strlen(rd->err_msg),
-				"Error regmap block write fail at 0x%02x\n",
-				rd->dbg_data.reg_addr);
+				snprintf(rd->err_msg + strlen(rd->err_msg),
+					ERR_MSG_SIZE - strlen(rd->err_msg),
+					"Error regmap block write fail at 0x%02x\n",
+					rd->dbg_data.reg_addr);
+				if (strlen(rd->err_msg) >= ERR_MSG_SIZE - 1) {
+					dev_err(&rd->dev, "Err_msg buf full\n");
+				}
 			} else {
-				sprintf(rd->err_msg,
-				"Error regmap block write fail at 0x%02x\n",
-				rd->dbg_data.reg_addr);
+				snprintf(rd->err_msg,
+					ERR_MSG_SIZE,
+					"Error regmap block write fail at 0x%02x\n",
+					rd->dbg_data.reg_addr);
 				rd->error_occurred = 1;
 			}
 			return -EIO;
@@ -1591,11 +1619,16 @@ static ssize_t general_write(struct file *file, const char __user *ubuf,
 			up(&rd->semaphore);
 		} else {
 			if (rd->error_occurred) {
-				sprintf(rd->err_msg + strlen(rd->err_msg),
-				"Error, size must > 0\n");
+				snprintf(rd->err_msg + strlen(rd->err_msg),
+					ERR_MSG_SIZE - strlen(rd->err_msg),
+					"Error, size must > 0\n");
+				if (strlen(rd->err_msg) >= ERR_MSG_SIZE - 1) {
+					dev_err(&rd->dev, "Err_msg buf full\n");
+				}
 			} else {
-				sprintf(rd->err_msg,
-				"Error, size must > 0\n");
+				snprintf(rd->err_msg,
+					ERR_MSG_SIZE,
+					"Error, size must > 0\n");
 				rd->error_occurred = 1;
 			}
 			return -EINVAL;
@@ -2060,7 +2093,7 @@ struct rt_regmap_device *rt_regmap_device_register
 	}
 
 	rd->rops = rops;
-	rd->err_msg = devm_kzalloc(parent, 128*sizeof(char), GFP_KERNEL);
+	rd->err_msg = devm_kzalloc(parent, ERR_MSG_SIZE*sizeof(char), GFP_KERNEL);
 
 	if (!(rd->props.rt_regmap_mode &  RT_BYTE_MODE_MASK)) {
 		ret = rt_create_simple_map(rd);

@@ -31,7 +31,6 @@
 #define frac_to_int(x) ((x) >> FRAC_BITS)
 
 #ifdef CONFIG_HISI_IPA_THERMAL
-#define SOC_THERMAL_NAME "soc_thermal"
 #define MIN_POWER_DIFF 50
 #define BOARDIPA_PID_RESET_TEMP 2000
 extern unsigned int g_ipa_board_state[];
@@ -358,6 +357,44 @@ static void divvy_up_power(u32 *req_power, u32 *max_power, int num_actors,
 	/*lint +e666*/
 }
 
+static void get_cur_power(struct thermal_zone_device *tz)
+{
+	struct thermal_instance *instance;
+	struct power_allocator_params *params = tz->governor_data;
+	u32 total_req_power;
+	int trip_max_desired_temperature = params->trip_max_desired_temperature;
+
+	if (0 == tz->tzp->cur_enable)
+		return;
+
+	mutex_lock(&tz->lock);
+
+	total_req_power = 0;
+
+	list_for_each_entry(instance, &tz->thermal_instances, tz_node) {
+		struct thermal_cooling_device *cdev = instance->cdev;
+		u32 req_power;
+
+		if (instance->trip != trip_max_desired_temperature)
+			continue;
+
+		if (!cdev_is_power_actor(cdev))
+			continue;
+
+		if (cdev->ops->get_requested_power(cdev, tz, &req_power))
+			continue;
+
+		total_req_power += req_power;
+
+		cdev->cdev_cur_power += req_power;
+	}
+
+	tz->tzp->cur_ipa_total_power += total_req_power;
+	tz->tzp->check_cnt ++;
+
+	mutex_unlock(&tz->lock);
+}
+
 #ifdef CONFIG_HISI_IPA_THERMAL
 static inline int power_actor_set_powers(struct thermal_zone_device *tz,
 				struct thermal_instance *instance, u32 *soc_sustainable_power,
@@ -403,6 +440,45 @@ static inline int power_actor_set_powers(struct thermal_zone_device *tz,
 	return 0;
 }
 
+#ifdef CONFIG_HISI_IPA_THERMAL
+int thermal_zone_cdev_get_power(const char *thermal_zone_name, const char *cdev_name, unsigned int *power)
+{
+	struct thermal_instance *instance;
+	int ret = 0;
+	struct thermal_zone_device *tz;
+	int find = 0;
+
+	tz = thermal_zone_get_zone_by_name(thermal_zone_name);
+	if (IS_ERR(tz)) {
+		return -ENODEV;
+	}
+
+	mutex_lock(&tz->lock);
+	list_for_each_entry(instance, &tz->thermal_instances, tz_node) {
+		struct thermal_cooling_device *cdev = instance->cdev;
+
+		if (!cdev_is_power_actor(cdev))
+			continue;
+
+		if (strncasecmp(instance->cdev->type, cdev_name, THERMAL_NAME_LENGTH))
+			continue;
+
+		if (!cdev->ops->get_requested_power(cdev, tz, power)) {
+			find = 1;
+			break;
+		}
+	}
+
+	if(!find)
+		ret = -ENODEV;
+
+	mutex_unlock(&tz->lock);
+	return ret;
+}
+EXPORT_SYMBOL(thermal_zone_cdev_get_power);
+
+#endif
+
 static int allocate_power(struct thermal_zone_device *tz,
 			int control_temp,
 			int switch_temp)
@@ -419,6 +495,7 @@ static int allocate_power(struct thermal_zone_device *tz,
 	u32 total_granted_power, power_range;
 	int i, num_actors, total_weight, ret = 0;
 	int trip_max_desired_temperature = params->trip_max_desired_temperature;
+	u32 cur_enable;
 #ifdef CONFIG_HISI_IPA_THERMAL
 	u32 soc_sustainable_power = 0;
 #endif
@@ -467,6 +544,7 @@ static int allocate_power(struct thermal_zone_device *tz,
 	total_weighted_req_power = 0;
 	total_req_power = 0;
 	max_allocatable_power = 0;
+	cur_enable = tz->tzp->cur_enable;
 
 	list_for_each_entry(instance, &tz->thermal_instances, tz_node) {
 		int weight;
@@ -495,8 +573,15 @@ static int allocate_power(struct thermal_zone_device *tz,
 		total_req_power += req_power[i];
 		max_allocatable_power += max_power[i];/*lint !e661*/
 		total_weighted_req_power += weighted_req_power[i];/*lint !e661 !e662*/
+		if (cur_enable > 0)
+			cdev->cdev_cur_power += req_power[i];
 
 		i++;
+	}
+	if (cur_enable > 0)
+	{
+		tz->tzp->cur_ipa_total_power += total_req_power;
+		tz->tzp->check_cnt ++;
 	}
 
 	power_range = pid_controller(tz, control_temp, max_allocatable_power);
@@ -615,15 +700,19 @@ static void allow_maximum_power(struct thermal_zone_device *tz)
 	struct thermal_instance *instance;
 	struct power_allocator_params *params = tz->governor_data;
 
+	mutex_lock(&tz->lock);
 	list_for_each_entry(instance, &tz->thermal_instances, tz_node) {
 		if ((instance->trip != params->trip_max_desired_temperature) ||
 		    (!cdev_is_power_actor(instance->cdev)))
 			continue;
 
 		instance->target = 0;
+		mutex_lock(&instance->cdev->lock);
 		instance->cdev->updated = false;
+		mutex_unlock(&instance->cdev->lock);
 		thermal_cdev_update(instance->cdev);
 	}
+	mutex_unlock(&tz->lock);
 }
 
 /**
@@ -728,6 +817,7 @@ static int power_allocator_throttle(struct thermal_zone_device *tz, int trip)
 #endif
 		reset_pid_controller(params);
 		allow_maximum_power(tz);
+		get_cur_power(tz);
 		return 0;
 	}
 

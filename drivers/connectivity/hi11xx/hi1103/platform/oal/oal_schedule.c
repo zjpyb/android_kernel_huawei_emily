@@ -20,7 +20,8 @@ extern "C" {
 /*****************************************************************************
   2 全局变量定义
 *****************************************************************************/
-#ifdef CONFIG_WAKELOCK
+#if ((LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 37)) && (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION) )
+
 OAL_DLIST_CREATE_HEAD(g_wakelock_head);
 OAL_DEFINE_SPINLOCK(g_wakelock_lock);
 /*lint -e19*/
@@ -60,7 +61,7 @@ oal_int32  oal_timer_start(oal_timer_list_stru *pst_timer, oal_uint ui_expires)
 {
 
 #ifdef  _PRE_WIFI_DMT
-	DmtStub_StartTimer(MGMT_TIMER, ui_expires);  /*15ms 的定时任务，触发frw_timer_timeout_proc_event */
+	DmtStub_StartTimer(MGMT_TIMER, ui_expires);  /*15ms 的定时任务，触发frw_timer_timeout_proc_event_etc */
 #endif
 
     return OAL_SUCC;
@@ -69,7 +70,7 @@ oal_int32  oal_timer_start(oal_timer_list_stru *pst_timer, oal_uint ui_expires)
 #endif
 
 #ifdef _PRE_OAL_FEATURE_TASK_NEST_LOCK
-oal_void _oal_smp_task_lock_(oal_task_lock_stru* pst_lock,oal_ulong  claim_addr)
+oal_void _oal_smp_task_lock__etc(oal_task_lock_stru* pst_lock,oal_ulong  claim_addr)
 {
 	DECLARE_WAITQUEUE(wait, current);
 
@@ -102,26 +103,22 @@ oal_void _oal_smp_task_lock_(oal_task_lock_stru* pst_lock,oal_ulong  claim_addr)
 	oal_spin_unlock_irq_restore(&pst_lock->lock, &flags);
 	remove_wait_queue(&pst_lock->wq, &wait);
 }
-oal_module_symbol(_oal_smp_task_lock_);
+oal_module_symbol(_oal_smp_task_lock__etc);
 #endif
 
 oal_int32  oal_print_all_wakelock_buff(char* buf, oal_int32 buf_len)
 {
     oal_int32 ret = 0;
-#ifdef CONFIG_WAKELOCK
+#if ((LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 37)) && (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION) )
     oal_dlist_head_stru      *pst_entry;
     oal_dlist_head_stru      *pst_entry_temp;
     ret +=  snprintf(buf + ret , buf_len - ret,"lockname     lockcnt  debug  lockuser \n");
     OAL_DLIST_SEARCH_FOR_EACH_SAFE(pst_entry, pst_entry_temp, &g_wakelock_head)
     {
         oal_wakelock_stru* pst_wakelock = (oal_wakelock_stru*)OAL_DLIST_GET_ENTRY(pst_entry, oal_wakelock_stru, list);
-        if(NULL == pst_wakelock)
-        {
-            continue;
-        }
 
-        ret +=  snprintf(buf + ret , buf_len - ret,"%s     %lu   %s %pf\n", 
-                            pst_wakelock->st_wakelock.ws.name, 
+        ret +=  snprintf(buf + ret , buf_len - ret,"%s     %lu   %s %pf\n",
+                            pst_wakelock->st_wakelock.name,
                             pst_wakelock->lock_count,
                             pst_wakelock->debug ? "on ":"off",
                             (oal_void*)pst_wakelock->locked_addr);
@@ -137,7 +134,7 @@ oal_int32  oal_print_all_wakelock_buff(char* buf, oal_int32 buf_len)
 
 oal_void oal_print_all_wakelock_info(oal_void)
 {
-#ifdef CONFIG_WAKELOCK
+#if ((LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 37)) && (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION) )
     oal_void* pst_mem = oal_memalloc(PAGE_SIZE);
     if(NULL == pst_mem)
     {
@@ -153,28 +150,25 @@ oal_void oal_print_all_wakelock_info(oal_void)
 
 oal_int32  oal_set_wakelock_debuglevel(char* name, oal_uint32 level)
 {
-#ifdef CONFIG_WAKELOCK
+#if ((LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 37)) && (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION) )
+
     oal_dlist_head_stru      *pst_entry;
     oal_dlist_head_stru      *pst_entry_temp;
     OAL_IO_PRINT("lockname     lockcnt  debug  lockuser");
     OAL_DLIST_SEARCH_FOR_EACH_SAFE(pst_entry, pst_entry_temp, &g_wakelock_head)
     {
         oal_wakelock_stru* pst_wakelock = (oal_wakelock_stru*)OAL_DLIST_GET_ENTRY(pst_entry, oal_wakelock_stru, list);
-        if(NULL == pst_wakelock)
-        {
-            continue;
-        }
 
-        if(!oal_strcmp(name, pst_wakelock->st_wakelock.ws.name))
+        if(!oal_strcmp(name, pst_wakelock->st_wakelock.name))
         {
-            OAL_IO_PRINT("set wakelock %s debuglevel from %u to %u\n", pst_wakelock->st_wakelock.ws.name, pst_wakelock->debug, level);
+            OAL_IO_PRINT("set wakelock %s debuglevel from %u to %u\n", pst_wakelock->st_wakelock.name, pst_wakelock->debug, level);
             pst_wakelock->debug = level;
             return OAL_SUCC;
         }
     }
 #else
     OAL_REFERENCE(name);
-    OAL_REFERENCE(level);    
+    OAL_REFERENCE(level);
 #endif
     return -OAL_ENODEV;
 }

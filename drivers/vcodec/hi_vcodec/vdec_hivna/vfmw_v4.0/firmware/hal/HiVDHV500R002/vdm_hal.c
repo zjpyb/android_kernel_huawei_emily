@@ -40,6 +40,8 @@
 #include "smmu.h"
 #endif
 
+#define HW_HEIF_MEM_SIZE  (2 * 1024 * 1024)
+
 // cppcheck-suppress *
 #define VDH_CHECK_CFG_ADDR_EQ_RETURN(vdhcfg, else_print, cmpPhy) \
 do {\
@@ -163,10 +165,19 @@ SINT32 VDMHAL_CfgRpReg(OMXVDH_REG_CFG_S *pVdhRegCfg, MEM_BUFFER_S* pVdhMemMap)
 	return VDMHAL_OK;
 }
 
+#ifdef PLATFORM_HIVCODECV200
+static VOID VDMHAL_CfgMemCtlReg(VOID)
+{
+	UINT32 D32  = 0x03400260;
+	WR_VREG(VREG_VDH_ROM_RFT_EMA, D32, 0);
+	SMMU_SetMemCtlReg();
+}
+#endif
+
 VOID VDMHAL_IMP_Init(VOID)
 {
-	memset(g_HwMem, 0, sizeof(g_HwMem));
-	memset(&g_VdmRegState, 0, sizeof(g_VdmRegState));
+	memset(g_HwMem, 0, sizeof(g_HwMem)); /* unsafe_function_ignore: memset */
+	memset(&g_VdmRegState, 0, sizeof(g_VdmRegState)); /* unsafe_function_ignore: memset */
 
 	g_HwMem[0].pVdmRegVirAddr  = (SINT32 *) MEM_Phy2Vir(gVdhRegBaseAddr);
 
@@ -339,6 +350,82 @@ SINT32 VDMHAL_IMP_OpenHAL(MEM_BUFFER_S* pOpenParam)
 #endif
 	return VDMHAL_OK;
 }
+
+
+#define HEIF_UPMSG_SLOT_INDEX           (0)
+#define HEIF_DOWNMSG_HEAD_SLOT_INDEX    (4)
+#define HEIF_DOWNMSG_SLOT_INDEX         (5)
+#define HEIF_DOWNMSG_SLICE_SLOT_INDEX   (6)
+#define HEIF_DOWNMSG_SLICE_NUM_MAX      (5)
+
+#define HEIF_VDM_BUF_ALIGN_SIZE         (16) //by byte
+#define HEIF_MSG_UNIT_SIZE              (4)  //by word
+#define HEIF_UPMSG_STEP_SIZE            (4)
+// down msg maybe add one slice for fault-tolerant, so up msg max num add 1
+#define HEIF_UPMSG_SLICE_NUM_MAX        (HEIF_DOWNMSG_SLICE_NUM_MAX + 1)
+#define HEIF_UP_MSG_SIZE                (HEIF_UPMSG_SLICE_NUM_MAX * HEIF_MSG_UNIT_SIZE)//by byte
+
+#define HEIF_BURST_SIZE                 (64)//by word
+#define HEIF_BURST_NUM_MAX              (5)
+#define HEIF_VDM_MAX_MSG_NUM            (HEIF_DOWNMSG_SLICE_NUM_MAX + HEIF_DOWNMSG_SLICE_SLOT_INDEX)
+#define HEIF_VDM_ONE_MSG_SIZE           (HEIF_BURST_SIZE * HEIF_BURST_NUM_MAX)//by word
+
+#define HEIF_HEVC_CA_MN_BUF_SIZE        (1024)
+#define HEIF_TILE_SEGMENT_INFO_LEN      (2048)
+
+#define HEIF_PMV_LEFT_BUF_SIZE          (64 * 4 * 4096)//heif needn't it, support it for video stream
+
+#define HEIF_VDM_MSG_BUF_SIZE           (HEIF_VDM_MAX_MSG_NUM * HEIF_MSG_UNIT_SIZE * HEIF_VDM_ONE_MSG_SIZE + \
+                                        HEIF_HEVC_CA_MN_BUF_SIZE + \
+                                        HEIF_TILE_SEGMENT_INFO_LEN + \
+                                        HEIF_PMV_LEFT_BUF_SIZE + \
+                                        HEIF_VDM_BUF_ALIGN_SIZE)
+
+SINT32 VDMHAL_IMP_OpenHeifHAL(MEM_BUFFER_S* pOpenParam)
+{
+	UINT32 i = 0;
+	UADDR  PhyAddr;
+	UADDR  MemBaseAddr;
+	SINT32 Size, VdhId;
+
+	VDMHAL_ASSERT_RET(NULL != pOpenParam, "pOpenParam is error ");
+	VDMHAL_ASSERT_RET(0 != pOpenParam->u8IsMapped, "Message no map");
+
+	MemBaseAddr = pOpenParam->u32StartPhyAddr;
+	Size = pOpenParam->u32Size;
+	VdhId = 1;
+
+	VDMHAL_ASSERT_RET(0 != MemBaseAddr, "MemBaseAddr error");
+	VDMHAL_ASSERT_RET(Size >= HEIF_VDM_MSG_BUF_SIZE, "VDMHAL_OpenHAL: Heif Size error");
+
+	/* overall info */
+	g_HwMem[VdhId].HALMemBaseAddr = MemBaseAddr ;
+	g_HwMem[VdhId].HALMemSize = Size;
+
+
+	/* message pool */
+	PhyAddr = g_HwMem[VdhId].HALMemBaseAddr;
+	PhyAddr = (PhyAddr + 0xF) & (~0xF);
+	for (i = 0; i < HEIF_VDM_MAX_MSG_NUM; i++) {
+		g_HwMem[VdhId].MsgSlotAddr[i] = PhyAddr + i * HEIF_MSG_UNIT_SIZE * HEIF_VDM_ONE_MSG_SIZE;
+	}
+
+	PhyAddr += HEIF_VDM_MAX_MSG_NUM * HEIF_MSG_UNIT_SIZE * HEIF_VDM_ONE_MSG_SIZE;
+	g_HwMem[VdhId].ValidMsgSlotNum = HEIF_VDM_MAX_MSG_NUM;
+
+	g_HwMem[VdhId].mn_phy_addr = PhyAddr;
+	// TODO:determin phy addr len
+	PhyAddr += HEIF_HEVC_CA_MN_BUF_SIZE;
+
+	g_HwMem[VdhId].tile_segment_info_phy_addr = PhyAddr;
+	PhyAddr += HEIF_TILE_SEGMENT_INFO_LEN;
+
+	g_HwMem[VdhId].pmv_left_phy_addr = PhyAddr;
+	PhyAddr += HEIF_PMV_LEFT_BUF_SIZE;
+
+	return VDMHAL_OK;
+}
+
 #endif
 
 VOID VDMHAL_IMP_ResetVdm(SINT32 VdhId)
@@ -421,7 +508,9 @@ VOID VDMHAL_IMP_GlbReset(VOID)
 	/* clear reset require */
 	*(volatile UINT32 *)pResetVirAddr = reg & (UINT32) (~(1 << ALL_RESET_CTRL_BIT));
 
-
+#ifdef PLATFORM_HIVCODECV200
+	VDMHAL_CfgMemCtlReg();
+#endif
 	return;
 }
 
@@ -497,10 +586,13 @@ SINT32 VDMHAL_IMP_CheckReg(REG_ID_E reg_id, SINT32 VdhId)
 
 SINT32 VDMHAL_IMP_CheckCfgAddress(OMXVDH_REG_CFG_S *pVdhRegCfg, MEM_BUFFER_S* pVdhMemMap)
 {
-	HI_S32 index;
+	HI_U32 index;
+	HI_S32 ret;
+	HI_U32 vdhCfg;
 	HI_U32 u32MapMsgAddr;
 	HI_U32 u32StartStreamPhyAddr;
 	HI_U32 u32EndStreamPhyAddr;
+	HI_U32 vdhStreamBufNum;
 #ifdef VFMW_HEVC_SUPPORT
 	HI_S32 msg_slot_size = HEVC_ONE_MSG_SLOT_LEN;
 #else
@@ -510,7 +602,14 @@ SINT32 VDMHAL_IMP_CheckCfgAddress(OMXVDH_REG_CFG_S *pVdhRegCfg, MEM_BUFFER_S* pV
 
 	VDMHAL_ASSERT_RET(pVdhMemMap != NULL, "pVdhMemMap is NULL");
 	VDMHAL_ASSERT_RET(pVdhMemMap[VDH_SHAREFD_MESSAGE_POOL].u8IsMapped != 0, "MESSAGE_POOL is not map");
-	VDMHAL_ASSERT_RET(pVdhMemMap[VDH_SHAREFD_STREAM_BUF].u8IsMapped != 0, "STREAM_BUF is not map");
+	VDMHAL_ASSERT_RET(pVdhRegCfg->vdhStreamBufNum <= VDH_STREAM_BUF_CNT, "stream buffer num is out of range");
+
+	vdhStreamBufNum = VDH_SHAREFD_STREAM_BUF + pVdhRegCfg->vdhStreamBufNum;
+	for (index = VDH_SHAREFD_STREAM_BUF; index < vdhStreamBufNum; index++) {
+		VDMHAL_ASSERT_RET(pVdhMemMap[index].u8IsMapped != 0, "STREAM_BUF is not map");
+		VDMHAL_ASSERT_RET(pVdhMemMap[index].u32ShareFd != INVALID_SHAREFD, "pVdhMemMap fd is 0");
+	}
+
 	VDMHAL_ASSERT_RET(pVdhRegCfg->VdhYstAddr != 0, "pVdhRegCfg->VdhYstAddr is NULL");
 	VDMHAL_ASSERT_RET((pVdhRegCfg->VdhYstride >= 0) && (pVdhRegCfg->VdhYstride <= MAX_STRIDE),
 			"pVdhRegCfg->VdhYstride is error");
@@ -535,11 +634,27 @@ SINT32 VDMHAL_IMP_CheckCfgAddress(OMXVDH_REG_CFG_S *pVdhRegCfg, MEM_BUFFER_S* pV
 	VDH_CHECK_CFG_ADDR_EQ_RETURN(pVdhRegCfg->VdhCfgInfoAddr, "hfbc message", u32MapMsgAddr);
 
 	/* stream  check */
-	u32StartStreamPhyAddr = pVdhMemMap[VDH_SHAREFD_STREAM_BUF].u32StartPhyAddr;
-	u32EndStreamPhyAddr = (pVdhMemMap[VDH_SHAREFD_STREAM_BUF].u32StartPhyAddr
-				+ pVdhMemMap[VDH_SHAREFD_STREAM_BUF].u32Size);
-	VDH_CHECK_CFG_ADDR_RETURN(((STREAM_BASE_ADDR *)(&(pVdhRegCfg->VdhStreamBaseAddr)))->stream_base_addr,
-				"stream base", u32StartStreamPhyAddr, u32EndStreamPhyAddr);
+	for (index = VDH_SHAREFD_STREAM_BUF; index < vdhStreamBufNum; index++) {
+		u32StartStreamPhyAddr = pVdhMemMap[index].u32StartPhyAddr;
+		u32EndStreamPhyAddr = (pVdhMemMap[index].u32StartPhyAddr
+					+ pVdhMemMap[index].u32Size);
+		vdhCfg = ((STREAM_BASE_ADDR *)(&(pVdhRegCfg->VdhStreamBaseAddr)))->stream_base_addr;
+		/* VDH_CHECK_CFG_ADDR_RETURN(((STREAM_BASE_ADDR *)(&(pVdhRegCfg->VdhStreamBaseAddr)))->stream_base_addr,
+					"stream base", u32StartStreamPhyAddr, u32EndStreamPhyAddr); */
+
+		 if ((vdhCfg != 0) && (vdhCfg >= u32StartStreamPhyAddr)
+		 		&& (vdhCfg <= u32EndStreamPhyAddr)) {
+			ret = VDMHAL_OK;
+			break;
+		 }
+
+		 ret = VDMHAL_ERR;
+	}
+
+	if (ret != VDMHAL_OK) {
+		dprint(PRN_FATAL, "%s VdhStreamBaseAddr is out of range \n", __func__);
+		return ret;
+	}
 
 	/* output  check */
 	for (index = VDH_SHAREFD_FRM_BUF; index < VDH_SHAREFD_MAX; index++) {
@@ -547,7 +662,8 @@ SINT32 VDMHAL_IMP_CheckCfgAddress(OMXVDH_REG_CFG_S *pVdhRegCfg, MEM_BUFFER_S* pV
 			break;
 		}
 		if (((USIGN)(pVdhRegCfg->VdhYstAddr) >= pVdhMemMap[index].u32StartPhyAddr)
-			&& (pVdhRegCfg->VdhUvoffset > 0)
+			&& ((pVdhRegCfg->VdhUvoffset > 0)
+				&& ((HI_U32)pVdhRegCfg->VdhUvoffset < pVdhMemMap[index].u32Size))
 			&& ((USIGN)(pVdhRegCfg->VdhYstAddr)
 				< (pVdhMemMap[index].u32StartPhyAddr
 					+ pVdhMemMap[index].u32Size
@@ -706,7 +822,7 @@ SINT32 VDMHAL_IMP_BackupInfo(VOID)
 
 VOID VDMHAL_GetRegState(VDMHAL_BACKUP_S *pVdmRegState)
 {
-	memcpy(pVdmRegState, &g_VdmRegState, sizeof(*pVdmRegState));
+	memcpy(pVdmRegState, &g_VdmRegState, sizeof(*pVdmRegState)); /* unsafe_function_ignore: memcpy */
 	s_VdmState = VDM_IDLE_STATE;
 }
 

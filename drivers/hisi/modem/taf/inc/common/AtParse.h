@@ -53,9 +53,7 @@
 #include "msp_at.h"
 #include "AtParseCmd.h"
 #include "MnClient.h"
-/* Added by l60609 for AP适配项目 ，2012-08-30 Begin */
 #include "product_config.h"
-/* Added by l60609 for AP适配项目 ，2012-08-30 End */
 
 #ifdef __cplusplus
 #if __cplusplus
@@ -65,15 +63,12 @@ extern "C" {
 
 #pragma pack(4)
 
-/* Added by L60609 for AT Project，2011-10-09,  Begin*/
 #define AT_CMD_MAX_LEN                          5000
 
-/* Added by f62575 for SS FDN&Call Control, 2013-05-06, begin */
 #define AT_CMD_OUTPUT_MAX_LEN                   (1500)                          /* 所有支持AT命令的通道MODEM限制最小为1500BYTE
                                                                                    VCOM通道限制为4K，其他通道由DMS模块限制为5120字节，
                                                                                    此处按最小的MODEM限制
                                                                                 */
-/* Added by f62575 for SS FDN&Call Control, 2013-05-06, end */
 
 #define AT_CMD_ECONF_DIAL_MAX_PARA_NUM          (11)
 #define AT_CMD_ECONF_DIAL_MIN_PARA_NUM          (7)
@@ -209,10 +204,8 @@ enum AT_RRETURN_CODE_ENUM
 
     AT_CME_SERVICE_NOT_PROVISIONED,
 
-    /* Added by L60609 for V7R1C50 AT&T&DCM, 2012-6-16, begin */
     AT_CME_PDP_ACT_LIMIT,
     AT_CME_NET_SEL_MENU_DISABLE,
-    /* Added by L60609 for V7R1C50 AT&T&DCM, 2012-6-16, end */
 
     AT_CME_CS_IMS_SERV_EXIST,
 
@@ -467,8 +460,6 @@ enum AT_RRETURN_CODE_ENUM
 typedef VOS_UINT32 AT_RRETURN_CODE_ENUM_UINT32;
 
 
-/* Added by L60609 for AT Project，2011-10-09,  End*/
-
 #if (FEATURE_ON == FEATURE_UE_MODE_CDMA)
 #if (FEATURE_ON == FEATURE_CHINA_TELECOM_VOICE_ENCRYPT)
 
@@ -719,9 +710,7 @@ typedef VOS_UINT32 (*PFN_AT_FW_MSG_PROC)(VOS_UINT8 ucClientId, VOS_VOID *pMsgBlo
 #define CGANS_CMD_PARA_STRING           "(0,1),(\"NULL\"),(1-11)"
 #endif  /* FEATURE_ON == FEATURE_LTE */
 
-/* Added by l60609 for V3R3 PPP RPOJECT 2013-06-07, Begin */
 #define CGANS_EXT_CMD_PARA_STRING       "(0,1)"
-/* Added by l60609 for V3R3 PPP RPOJECT 2013-06-07, End */
 
 #if (FEATURE_ON == FEATURE_LTE)
 #define CGDATA_CMD_PARA_STRING          "(\"NULL\"),(1-31),(1-31),(1-31),(1-31),(1-31),(1-31),(1-31),(1-31),(1-31),(1-31),(1-31)"
@@ -746,7 +735,6 @@ typedef VOS_UINT32 (*PFN_AT_FW_MSG_PROC)(VOS_UINT8 ucClientId, VOS_VOID *pMsgBlo
 #else
 #define CGEQREQ_CMD_PARA_STRING         "(1-31),(0-4),(0-11480),(0-42000),(0-11480),(0-42000),(0-2),(0-1520),(\"0E0\",\"1E2\",\"7E3\",\"1E3\",\"1E4\",\"1E5\",\"1E6\",\"1E1\"),(\"0E0\",\"5E2\",\"1E2\",\"5E3\",\"4E3\",\"1E3\",\"1E4\",\"1E5\",\"1E6\",\"6E8\"),(0-3),(0-4100),(0-3),(0-1),(0-1)"
 #define CGEQMIN_CMD_PARA_STRING         "(1-31),(0-4),(0-11480),(0-42000),(0-11480),(0-42000),(0-2),(0-1520),(\"0E0\",\"1E2\",\"7E3\",\"1E3\",\"1E4\",\"1E5\",\"1E6\",\"1E1\"),(\"0E0\",\"5E2\",\"1E2\",\"5E3\",\"4E3\",\"1E3\",\"1E4\",\"1E5\",\"1E6\",\"6E8\"),(0-3),(0-4100),(0-3),(0-1),(0-1)"
-/* Modified  by f62575 for AT Project, 2011-11-24, end */
 #endif  /* PS_UE_REL_VER < PS_PTL_VER_R5 */
 
 #else
@@ -759,7 +747,6 @@ typedef VOS_UINT32 (*PFN_AT_FW_MSG_PROC)(VOS_UINT8 ucClientId, VOS_VOID *pMsgBlo
 #else
 #define CGEQREQ_CMD_PARA_STRING         "(1-11),(0-4),(0-11480),(0-42000),(0-11480),(0-42000),(0-2),(0-1520),(\"0E0\",\"1E2\",\"7E3\",\"1E3\",\"1E4\",\"1E5\",\"1E6\",\"1E1\"),(\"0E0\",\"5E2\",\"1E2\",\"5E3\",\"4E3\",\"1E3\",\"1E4\",\"1E5\",\"1E6\",\"6E8\"),(0-3),(0-4100),(0-3),(0-1),(0-1)"
 #define CGEQMIN_CMD_PARA_STRING         "(1-11),(0-4),(0-11480),(0-42000),(0-11480),(0-42000),(0-2),(0-1520),(\"0E0\",\"1E2\",\"7E3\",\"1E3\",\"1E4\",\"1E5\",\"1E6\",\"1E1\"),(\"0E0\",\"5E2\",\"1E2\",\"5E3\",\"4E3\",\"1E3\",\"1E4\",\"1E5\",\"1E6\",\"6E8\"),(0-3),(0-4100),(0-3),(0-1),(0-1)"
-/* Modified  by f62575 for AT Project, 2011-11-24, end */
 #endif  /* PS_UE_REL_VER < PS_PTL_VER_R5 */
 
 #endif  /* FEATURE_ON == FEATURE_LTE */
@@ -792,14 +779,12 @@ typedef VOS_UINT32 (*PFN_AT_FW_MSG_PROC)(VOS_UINT8 ucClientId, VOS_VOID *pMsgBlo
 #define NDISCONN_TEST_CMD_PARA_STRING    "(1-16),(0,1),(apn),(username),(passwd),(0-65535)"
 #endif
 
-/* Added by l47619 for C50 IPC Project, 2012-03-19, begin */
 #if (FEATURE_ON == FEATURE_LTE)
 #define DNSQUERY_TEST_CMD_PARA_STRING   "(1-31)"
 #else
 #define DNSQUERY_TEST_CMD_PARA_STRING   "(1-11)"
 #endif  /* FEATURE_ON == FEATURE_LTE */
 
-/* Modified by l60609 for V9R1 IPv6&TAF/SM Project, 2013-4-25, begin */
 #if (FEATURE_ON == FEATURE_LTE)
 #if (MULTI_MODEM_NUMBER >= 2)
 #if (MULTI_MODEM_NUMBER == 3)
@@ -821,9 +806,7 @@ typedef VOS_UINT32 (*PFN_AT_FW_MSG_PROC)(VOS_UINT8 ucClientId, VOS_VOID *pMsgBlo
 #define CHDATA_TEST_CMD_PARA_STRING   "(1-11),(1-3)"
 #endif
 #endif  /* FEATURE_ON == FEATURE_LTE */
-/* Modified by l60609 for V9R1 IPv6&TAF/SM Project, 2013-4-25, end */
 
-/* Added by l47619 for C50 IPC Project, 2012-03-19, end */
 #if (FEATURE_ON == FEATURE_LTE)
 #if (FEATURE_ON == FEATURE_IPV6)
 #define PDPROFMOD_CMD_PARA_STRING       "(1-31),(\"IP\",\"IPV6\",\"IPV4V6\",\"\"),(APN),(username),(passwd),(0-2)"
@@ -860,7 +843,6 @@ typedef VOS_UINT32 (*PFN_AT_FW_MSG_PROC)(VOS_UINT8 ucClientId, VOS_VOID *pMsgBlo
   |       保留      |CLAC是否显示|E5 DOCK命令 |SIM锁定限制 | E5密码保护 |
    -----------------------------------------------------------------------
  */
- /*lint -e958 修改人:l60609;原因:64bit*/
  typedef struct
 {
     VOS_UINT32 ulCmdIndex;
@@ -883,11 +865,9 @@ typedef VOS_UINT32 (*PFN_AT_FW_MSG_PROC)(VOS_UINT8 ucClientId, VOS_VOID *pMsgBlo
     const VOS_UINT8* pszCmdName;
     const VOS_UINT8* pszParam;
 } AT_PAR_CMD_ELEMENT_STRU;
-/*lint +e958 修改人:l60609;原因:64bit*/
 
 
 /* SMS命令脚本类型 */
-/*lint -e958 -e959 修改人:l60609;原因:64bit*/
 typedef struct
 {
     VOS_UINT32 ulCmdIndex;
@@ -908,7 +888,6 @@ typedef struct
     const VOS_UINT8* ParaText;           /* 文本参数脚本 */
     const VOS_UINT8* ParaPDU;            /* PDU参数脚本 */
 }AT_SMS_CMD_TAB_STRU;
-/*lint +e958 +e959 修改人:l60609;原因:64bit*/
 
 
 typedef struct tagAT_PAR_CMDTBL_LIST_STRU
@@ -920,7 +899,6 @@ typedef struct tagAT_PAR_CMDTBL_LIST_STRU
     HI_LIST_S                           stCmdTblList;
 } AT_PAR_CMDTBL_LIST_STRU;
 
-/*lint -e958 -e959 修改人:l60609;原因:64bit*/
 typedef struct
 {
     VOS_UINT8 ucClientStatus;    /* AT_FW_CLIENT_STATUS_READY/PEND */
@@ -947,7 +925,6 @@ typedef struct
 
     HTIMER hTimer;
 } AT_PARSE_CONTEXT_STRU;
-/*lint +e958 +e959 修改人:l60609;原因:64bit*/
 
 #define AT_PARA_MAX_NUM                         AT_MAX_PARA_NUMBER
 
@@ -955,7 +932,6 @@ typedef struct
 
 /*extern HI_LIST_S g_stCmdTblList; */
 
-/* Added by L60609 for AT Project，2011-10-09,  Begin*/
 extern TAF_UINT32   At_UpString(TAF_UINT8 *pData,TAF_UINT16 usLen);
 extern TAF_UINT32   At_Auc2ul(TAF_UINT8 *nptr,TAF_UINT16 usLen,TAF_UINT32 *pRtn);
 

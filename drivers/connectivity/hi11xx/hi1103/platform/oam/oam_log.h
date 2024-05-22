@@ -109,7 +109,7 @@ typedef struct
 /*****************************************************************************
   10 º¯ÊýÉùÃ÷
 *****************************************************************************/
-extern oal_uint32  oam_log_init(oal_void);
+extern oal_uint32  oam_log_init_etc(oal_void);
 #ifdef _PRE_WLAN_REPORT_PRODUCT_LOG
 extern void hw_wifi_log_dbg(oal_uint32 uiChipIndex, oal_uint32 uiEvent, oal_uint32 uilevel, char* fmt, ...);
 #endif

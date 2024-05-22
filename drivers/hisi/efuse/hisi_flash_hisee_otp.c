@@ -43,16 +43,30 @@ static int flash_otp_task(void *arg)
 	ret = down_timeout(&g_hisee_sem, MAX_SCHEDULE_TIMEOUT);
 	if (-ETIME == ret) {
 		efuse_print_info(log_level_error, "wait hisee factory test finished semphore timeout.\n");
-		return ret;
 	} else {
-		return flash_hisee_otp_value();
+		ret = flash_hisee_otp_value();
 	}
+	flash_hisee_otp_task = NULL;
+	return ret;
 }
 
 void release_hisee_semphore(void)
 {
 	up(&g_hisee_sem);
 	return;
+}
+
+bool flash_otp_task_is_started(void)
+{
+	if (NULL == flash_hisee_otp_task) {
+		return false;
+	}
+
+	if (IS_ERR(flash_hisee_otp_task)) {
+		return false;
+	}
+
+	return true;
 }
 
 void register_flash_hisee_otp_fn(int (*fn_ptr) (void))
@@ -66,7 +80,8 @@ void creat_flash_otp_thread(void)
 {
 	if (!flash_hisee_otp_task) {
 		flash_hisee_otp_task = kthread_run(flash_otp_task, NULL, "flash_otp_task");
-		if (!flash_hisee_otp_task) {
+		if (IS_ERR(flash_hisee_otp_task)) {
+			flash_hisee_otp_task = NULL;
 			efuse_print_info(log_level_error, "%s:create flash_otp_task failed\n", __func__);
 		}
 	}

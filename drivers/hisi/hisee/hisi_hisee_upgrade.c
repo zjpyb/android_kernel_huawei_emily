@@ -283,6 +283,7 @@ static int cos_upgrade_check_version(int para, unsigned int cos_id)
 	return ret;
 }
 
+atomic_t g_is_patch_free = ATOMIC_INIT(0);
 char *g_patch_buff_virt;
 phys_addr_t g_patch_buff_phy;
 int hisee_cos_patch_read(hisee_img_file_type img_type) //MISC4_IMG_TYPE
@@ -295,9 +296,15 @@ int hisee_cos_patch_read(hisee_img_file_type img_type) //MISC4_IMG_TYPE
 	atf_message_header *p_message_header;
 
 	pr_err("%s(): enter, img_type=%d.\n", __func__, (int)img_type);
+	if (HISEE_COS_PATCH_FREE_CNT != atomic_inc_return(&g_is_patch_free)) {
+		atomic_dec(&g_is_patch_free);
+		ret = HISEE_ERROR;
+		set_errno_and_return(ret); /*lint !e1058*/
+	}
+
 	if (!g_patch_buff_virt) {
-		pr_err("%s(): alloc HISEE_COS_PATCH_BUFF_SIZE\n", __func__);
-		buff_virt = (void *)dma_alloc_coherent(g_hisee_data.cma_device, HISEE_COS_PATCH_BUFF_SIZE,
+		pr_err("%s(): alloc HISEE_SHARE_BUFF_SIZE\n", __func__);
+		buff_virt = (void *)dma_alloc_coherent(g_hisee_data.cma_device, HISEE_SHARE_BUFF_SIZE,
 											&buff_phy, GFP_KERNEL);
 		g_patch_buff_virt = buff_virt;
 		g_patch_buff_phy = buff_phy;
@@ -308,19 +315,21 @@ int hisee_cos_patch_read(hisee_img_file_type img_type) //MISC4_IMG_TYPE
 
 	if (buff_virt == NULL) {
 		pr_err("%s(): dma_alloc_coherent failed\n", __func__);
+		atomic_dec(&g_is_patch_free);
 		ret = HISEE_NO_RESOURCES;
 		set_errno_and_return(ret); /*lint !e1058*/
 	}
 
-	memset(buff_virt, 0, HISEE_COS_PATCH_BUFF_SIZE);
+	memset(buff_virt, 0, HISEE_SHARE_BUFF_SIZE);
 	p_message_header = (atf_message_header *)buff_virt;
 	set_message_header(p_message_header, CMD_UPGRADE_COS_PATCH);
 	ret = filesys_hisee_read_image(img_type, (buff_virt + HISEE_ATF_MESSAGE_HEADER_LEN));
 	if (ret < HISEE_OK) {
 		pr_err("%s(): filesys_hisee_read_image failed, ret=%d\n", __func__, ret);
-		dma_free_coherent(g_hisee_data.cma_device, (unsigned long)HISEE_COS_PATCH_BUFF_SIZE, g_patch_buff_virt, g_patch_buff_phy);
+		dma_free_coherent(g_hisee_data.cma_device, (unsigned long)HISEE_SHARE_BUFF_SIZE, g_patch_buff_virt, g_patch_buff_phy);
 		g_patch_buff_virt = NULL;
 		g_patch_buff_phy = 0;
+		atomic_dec(&g_is_patch_free);
 		set_errno_and_return(ret); /*lint !e1058*/
 	}
 	image_size = (unsigned int)(ret + HISEE_ATF_MESSAGE_HEADER_LEN);
@@ -333,6 +342,7 @@ int hisee_cos_patch_read(hisee_img_file_type img_type) //MISC4_IMG_TYPE
 
 	/*free is in hisee_check_ready_show()*/
 
+	atomic_dec(&g_is_patch_free);
 	pr_err("%s(): exit, img_type=%d.\n", __func__, (int)img_type);
 	return ret;
 }
@@ -371,7 +381,7 @@ void cos_patch_upgrade(void *buf)
 	}
 
 	/* wait hisee cos ready for later process */
-	ret = wait_hisee_ready(HISEE_STATE_COS_READY, 10000);
+	ret = wait_hisee_ready(HISEE_STATE_COS_READY, HISEE_ATF_GENERAL_TIMEOUT);
 	if (HISEE_OK != ret) {
 		pr_err("%s(): wait_hisee_ready failed ret=%x\n", __func__, ret);
 	}

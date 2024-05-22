@@ -5,6 +5,12 @@
 		interrupts = <0 45 4>;
 		status = "ok";
 	};
+	direct_charge_ps: direct_charge_ps {
+		compatible = "huawei,direct_charge_ps";
+		boost_5v_support_scp_power = <0>;
+		huawei_charger_support_scp_power = <0>;
+		status = "disabled";
+	};
 	huawei_charger: huawei_charger{
 		compatible = "huawei,charger";
 		pd_support = <0>;
@@ -18,6 +24,18 @@
 		charger_removed_dsm = <0>;
 		status = "disabled";
 	};
+	power_thermalzone: power_thermalzone {
+		compatible = "huawei,power_thermalzone";
+		status = "disabled";
+		sensors{
+			sensor0{
+				sensor_name = "usb_port";
+				ops_name = "hisi_adc";
+				adc_channel = <3>;
+				ntc_index = <2>;
+			};
+		};
+	};
 	wireless_charger: wireless_charger {
 		compatible = "huawei,wireless_charger";
 		status = "disabled";
@@ -26,13 +44,23 @@
 		compatible = "huawei,wireless_otg";
 		status = "disabled";
 	};
+	boost_5v: boost_5v {
+		compatible = "huawei,boost_5v";
+		status = "disabled";
+	};
 	wired_channel_switch: wired_channel_switch {
 		compatible = "huawei,wired_channel_switch";
+		use_ovp_cutoff_wired_channel = <1>;
+		use_super_switch_cutoff_wired_channel = <0>;
+		use_wireless_switch_cutoff_wired_channel = <0>;
+		status = "disabled";
+	};
+	ovp_channel_switch: ovp_channel_switch {
+		compatible = "huawei,ovp_channel_switch";
 		status = "disabled";
 	};
 	ncp3902_channel_switch: ncp3902_channel_switch {
 		compatible = "huawei,ncp3902_channel_switch";
-		support_cutoff_wired_channel = <0>;
 		status = "disabled";
 	};
 	vbat_ovp: vbat_ovp{
@@ -61,7 +89,6 @@
 		standard_cable_full_path_res_max = <160>;
 		max_current_for_none_standard_cable = <3000>;
 		adaptor_leakage_current_th = <300>;
-		use_gpio_for_ovp_en = <1>;
 		stage_need_to_jump = "-1";
 		temp_para =
 			"-32767", "10", "0",
@@ -192,12 +219,8 @@
 				gpio_int = <&gpio22 4 0>;
 				bat_comp = <60>;
 				vclamp = <192>;
-				scp_need_extra_power = <0>;
-				boost_5v_use_common_gpio = <0>;
-				is_need_bst_ctrl = <0>;
 				adc_channel_vbat_sys = <14>;
 				single_phase_buck = <0>;
-				bst_ctrl_use_common_gpio = <0>;
 				fcp_support = <0>;
 				status = "disabled";
             };
@@ -227,10 +250,6 @@
 				gpio_int = <&gpio22 4 0>;
 				bat_comp = <60>;
 				vclamp = <192>;
-				scp_need_extra_power = <0>;
-				boost_5v_use_common_gpio = <0>;
-				bst_ctrl_use_common_gpio = <0>;
-				is_need_bst_ctrl = <0>;
 				adc_channel_vbat_sys = <14>;
 				single_phase_buck = <0>;
 				fcp_support = <0>;
@@ -244,6 +263,7 @@
 				gpio_sleep_en = <&gpio20 1 0>;
 				rx_fod_5v = <5313 4256 4248 4248 4251 4252 5140 0>;
 				rx_fod_9v = <11670 11656 10376 10374 6534 6534 0 0>;
+				rx_fod_12v = <11670 11656 10376 10374 6534 6534 0 0>;
 				status = "disabled";
 			};
 		};

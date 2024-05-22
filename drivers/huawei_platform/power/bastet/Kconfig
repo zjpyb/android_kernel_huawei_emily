@@ -14,6 +14,12 @@ config BASTET_BALONG_COMM
 	---help---
 	  This driver provides Balong modem comm interface for Huawei Bastet.
 
+config HUAWEI_BASTET_COMM_NEW
+	bool "Bastet new Balong comm driver support"
+	default n
+	---help---
+	  This driver provides new Balong modem comm interface for Huawei Bastet.
+
 config HUAWEI_WIFI_WEIXIN_HONGBAO_ENABLE_PRIORITY
 	bool "Huawei Weixin Hongbao priority support"
 	depends on HUAWEI_BASTET

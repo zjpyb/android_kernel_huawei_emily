@@ -118,6 +118,7 @@ int hisi_sensorhub_aod_unblank(void)
 
 	sh_aod_blank_refcount++;
 	HISI_FB_INFO("fb%d +, sh_aod_blank_refcount=%d!\n", hisifd->index, sh_aod_blank_refcount);
+	HISI_FB_INFO("Power State Reg is 0x%x\n", inp32(hisifd->sctrl_base + SCBAKDATA0));
 
 	if (sh_aod_blank_refcount != 1) {
 		HISI_FB_ERR("fb%d, sh_aod_blank_refcount=%d is error\n", hisifd->index, sh_aod_blank_refcount);
@@ -173,12 +174,13 @@ int hisi_sensorhub_aod_unblank(void)
 			hisifd->index, ret);
 		goto hw_unlock;
 	} else {
-		set_reg(hisifd->sctrl_base + SCBAKDATA11, 0x1, 2, 6);
+		set_reg(hisifd->sctrl_base + SCBAKDATA0, 0x1, 2, 6);
+		HISI_FB_INFO("Power State Reg is 0x%x\n", inp32(hisifd->sctrl_base + SCBAKDATA0));
 		goto up_blank_sem;
 	}
 
 hw_unlock:
-	set_reg(hisifd->sctrl_base + SCBAKDATA11, 0x3, 2, 6);
+	set_reg(hisifd->sctrl_base + SCBAKDATA0, 0x3, 2, 6);
 	if (!hisi_sensorhub_aod_hw_unlock(hisifd)) {
 		HISI_FB_ERR("aod_hw_unlock fail!\n");
 	}
@@ -205,8 +207,9 @@ int hisi_sensorhub_aod_blank(void)
 	down(&hisi_sensorhub_aod_blank_sem);
 	sh_aod_blank_refcount--;
 	HISI_FB_INFO("fb%d +, sh_aod_blank_refcount=%d!\n", hisifd->index, sh_aod_blank_refcount);
+	HISI_FB_INFO("Power State Reg is 0x%x\n", inp32(hisifd->sctrl_base + SCBAKDATA0));
 	if (sh_aod_blank_refcount != 0) {
-		set_reg(hisifd->sctrl_base + SCBAKDATA11, 0x3, 2, 6);
+		set_reg(hisifd->sctrl_base + SCBAKDATA0, 0x3, 2, 6);
 		HISI_FB_ERR("fb%d, sh_aod_blank_refcount=%d is error\n", hisifd->index, sh_aod_blank_refcount);
 		goto up_blank_sem;
 	}
@@ -224,7 +227,8 @@ int hisi_sensorhub_aod_blank(void)
 		HISI_FB_ERR("aod_hw_unlock fail!\n");
 	}
 
-	set_reg(hisifd->sctrl_base + SCBAKDATA11, 0x2, 2, 6);
+	HISI_FB_INFO("Power State Reg is 0x%x\n", inp32(hisifd->sctrl_base + SCBAKDATA0));
+	set_reg(hisifd->sctrl_base + SCBAKDATA0, 0x2, 2, 6);
 up_blank_sem:
 	up(&hisi_sensorhub_aod_blank_sem);
 

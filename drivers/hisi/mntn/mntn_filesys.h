@@ -17,7 +17,7 @@
  * Macro define here
  ***************************************************************************
 */
-#define MNTN_FILESYS_PRINT		printk
+#define MNTN_FILESYS_PRINT		pr_err
 
 #define MNTN_FILESYS_FNAME_LEN 128 	/*the max length of file/dir name.*/
 #define MNTN_FILESYS_DEFAULT_MODE 0770  /*default mode when creating a file or dir if user doesn't set mode*/

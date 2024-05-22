@@ -819,7 +819,7 @@ static snd_pcm_uframes_t audio_pcm_pointer(struct snd_pcm_substream *substream)
 	ssize_t bytes = audio->buffer_pos - audio->buffer_start;
 
 	/* return offset of next frame to fill in our buffer */
-	return bytes_to_frames(runtime, bytes);/* [false alarm]:original code */
+	return bytes_to_frames(runtime, bytes);
 }
 
 static int audio_pcm_playback_trigger(struct snd_pcm_substream *substream,

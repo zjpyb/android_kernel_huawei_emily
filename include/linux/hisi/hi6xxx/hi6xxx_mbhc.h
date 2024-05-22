@@ -5,7 +5,20 @@
 #include <linux/switch.h>
 #include <sound/soc.h>
 
+
+#define MICBIAS_PD_WAKE_LOCK_MS        3500
+#define MICBIAS_PD_DELAY_MS            3000
+#define IRQ_HANDLE_WAKE_LOCK_MS        2000
+#define LINEOUT_PO_RECHK_WAKE_LOCK_MS  3500
+#define LINEOUT_PO_RECHK_DELAY_MS      800
 #define HI6XXX_HKADC_CHN	14
+#define HI6XXX_INVALID_IRQ	(-1)
+
+#ifdef CLT_AUDIO
+#define static_t
+#else
+#define static_t static
+#endif
 
 enum hi6xxx_jack_states {
 	HI6XXX_JACK_BIT_NONE           = 0, /* unpluged */
@@ -42,6 +55,8 @@ struct hi6xxx_mbhc_config {/*mV*/
 	int btn_volume_up_max_voltage;
 	int btn_volume_down_min_voltage;
 	int btn_volume_down_max_voltage;
+	int btn_voice_assistant_min_voltage;
+	int btn_voice_assistant_max_voltage;
 };
 
 /* defination of public data */
@@ -56,7 +71,7 @@ struct hi6xxx_mbhc_priv {
 	enum hi6xxx_jack_states  hs_status;
 	enum hi6xxx_jack_states  old_hs_status;
 	int pressed_btn_type;
-	unsigned short adc_voltage;
+	int adc_voltage;
 	/* work queue for headset */
 	struct workqueue_struct *hs_pi_dwq; /* headset plugin delayed work queue */
 	struct delayed_work hs_pi_dw;
@@ -118,7 +133,7 @@ struct hi6xxx_mbhc_priv {
 /* 0-eco btn event     1- no eco btn event */
 #define IRQ_STAT_ECO_KEY_EVENT (0x1 << HS_MIC_ECO_IRQ_OFFSET)
 
-#define JACK_RPT_MSK_BTN (SND_JACK_BTN_0 | SND_JACK_BTN_1 | SND_JACK_BTN_2)
+#define JACK_RPT_MSK_BTN (SND_JACK_BTN_0 | SND_JACK_BTN_1 | SND_JACK_BTN_2 | SND_JACK_BTN_3)
 
 extern int hi6xxx_mbhc_init(struct snd_soc_codec *codec, struct hi6xxx_mbhc **mbhc);
 extern void hi6xxx_mbhc_deinit(struct hi6xxx_mbhc *mbhc);
@@ -126,6 +141,3 @@ extern void hi6xxx_hs_micbias_dapm_enable(struct hi6xxx_mbhc *mbhc, bool enable)
 
 #endif
 
-#ifdef CLT_AUDIO
-extern void hs_jack_report(struct hi6xxx_mbhc_priv *priv);
-#endif

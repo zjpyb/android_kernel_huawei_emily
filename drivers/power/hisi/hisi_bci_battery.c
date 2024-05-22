@@ -52,9 +52,7 @@
 #include <huawei_platform/usb/hw_pd_dev.h>
 #endif
 
-#ifdef CONFIG_HUAWEI_DSM
-#include <dsm/dsm_pub.h>
-#endif
+#include <huawei_platform/power/power_dsm.h>
 
 #ifdef  CONFIG_HUAWEI_USB_SHORT_CIRCUIT_PROTECT
 #include <huawei_platform/power/usb_short_circuit_protect.h>
@@ -63,15 +61,17 @@
 #include <huawei_platform/power/wireless_charger.h>
 #endif
 
-#ifdef CONFIG_HUAWEI_PLATFORM
-#include <huawei_platform/log/hw_log.h>
-#define HWLOG_TAG hisi_bci/*lint !e547 */
-HWLOG_REGIST();
+#define BCI_LOG_INFO
+#ifndef BCI_LOG_INFO
+#define bci_debug(fmt, args...)do {} while (0)
+#define bci_info(fmt, args...) do {} while (0)
+#define bci_warn(fmt, args...) do {} while (0)
+#define bci_err(fmt, args...)  do {} while (0)
 #else
-#define hwlog_debug(fmt, args...)do { printk(KERN_DEBUG   "[hisi_bci]" fmt, ## args); } while (0)
-#define hwlog_info(fmt, args...) do { printk(KERN_INFO    "[hisi_bci]" fmt, ## args); } while (0)
-#define hwlog_warn(fmt, args...) do { printk(KERN_WARNING"[hisi_bci]" fmt, ## args); } while (0)
-#define hwlog_err(fmt, args...)  do { printk(KERN_ERR   "[hisi_bci]" fmt, ## args); } while (0)
+#define bci_debug(fmt, args...)do { printk(KERN_DEBUG   "[hisi_bci]" fmt, ## args); } while (0)
+#define bci_info(fmt, args...) do { printk(KERN_INFO    "[hisi_bci]" fmt, ## args); } while (0)
+#define bci_warn(fmt, args...) do { printk(KERN_WARNING"[hisi_bci]" fmt, ## args); } while (0)
+#define bci_err(fmt, args...)  do { printk(KERN_ERR   "[hisi_bci]" fmt, ## args); } while (0)
 #endif
 
 #define WINDOW_LEN                   (10)
@@ -79,6 +79,7 @@ HWLOG_REGIST();
 struct batt_dsm {
 	int error_no;
 	bool notify_enable;
+	void (*dump)(char*);
 	int (*check_error) (char *buf);
 };
 static struct wake_lock low_power_lock;
@@ -99,32 +100,6 @@ static int google_battery_node = 0;
 struct kobject *g_sysfs_bq_bci = NULL;
 module_param(is_fake_battery, int, 0644);
 
-#if defined(CONFIG_HUAWEI_DSM)
-static struct dsm_dev dsm_battery = {
-	.name = "dsm_battery",
-	.fops = NULL,
-	.buff_size = DSM_BATTERY_MAX_SIZE,
-};
-
-static struct dsm_dev dsm_charge_monitor = {
-	.name = "dsm_charge_monitor",
-	.fops = NULL,
-	.buff_size = DSM_CHARGE_MONITOR_BUF_SIZE,
-};
-
-static struct dsm_client *battery_dclient = NULL;
-static struct dsm_client *charge_monitor_dclient = NULL;
-
-struct dsm_client *get_battery_dclient(void)
-{
-	return battery_dclient;
-}
-
-struct dsm_client *get_chargemonitor_dclient(void)
-{
-	return charge_monitor_dclient;
-}
-#endif
 struct hisi_bci_device_info {
 	int bat_voltage;
 	int bat_max_volt;
@@ -171,8 +146,14 @@ struct hisi_bci_device_info {
 	struct delayed_work hisi_bci_monitor_work;
 	struct work_interval_para interval_data[WORK_INTERVAL_PARA_LEVEL];
 	struct hrtimer capacity_dec_timer;
+	int capacity_dec_base_decimal;
+	int capacity_dec_sample_nums;
 	int capacity_dec_timer_interval;
+	int capacity_dec_total_level;
+	struct capacity_dec_para cap_dec_para[CAPATICY_DEC_PARA_LEVEL];
 	unsigned int capacity_dec;
+    struct cap_lock_para vth_correct_data[CAP_LOCK_PARA_LEVEL];
+    unsigned int vth_correct_en;
 };
 
 struct hisi_bci_device_info *g_hisi_bci_dev;
@@ -205,6 +186,7 @@ static enum power_supply_property hisi_bci_battery_props[] = {
 	POWER_SUPPLY_PROP_BAT_OVP,
 	POWER_SUPPLY_PROP_CHARGE_COUNTER,
 	POWER_SUPPLY_PROP_CAPACITY_DEC,
+	POWER_SUPPLY_PROP_BAT_QMAX,
 };
 
 static enum power_supply_property hisi_usb_props[] = {
@@ -268,7 +250,7 @@ static int hisi_force_full_timer(int curr_capacity,
 	if (curr_capacity > CHG_CANT_FULL_THRESHOLD) {
 		di->charge_full_count++;
 		if (di->charge_full_count >= CHARGE_FULL_TIME) {
-			hwlog_info("FORCE_CHARGE_FULL = %d\n", curr_capacity);
+			bci_info("FORCE_CHARGE_FULL = %d\n", curr_capacity);
 			di->charge_full_count = CHARGE_FULL_TIME;
 			curr_capacity = CAPACITY_FULL;
 		}
@@ -337,12 +319,12 @@ static void hisi_reset_capacity_fifo(int curr_capacity)
 
 #ifdef CONFIG_DIRECT_CHARGER
 /* enter scp (example : 87% to 87.5%) */
-static void hisi_reset_capacity_dec_fifo(void)
+static void hisi_reset_capacity_dec_fifo(struct hisi_bci_device_info *di)
 {
 	int curr_capacity = 0;
 	unsigned int i = 0;
 
-	curr_capacity = (capacity_sum * BASE_DECIMAL) / WINDOW_LEN;
+	curr_capacity = (capacity_sum * di->capacity_dec_base_decimal) / WINDOW_LEN;
 
 	capacity_dec_sum = 0;
 
@@ -351,7 +333,7 @@ static void hisi_reset_capacity_dec_fifo(void)
 		capacity_dec_sum += capacity_dec_filter[i];
 	}
 
-	hwlog_info("%s capacity_filter=%d\n", __func__, capacity_dec_filter[0]);
+	bci_info("%s capacity_filter=%d\n", __func__, capacity_dec_filter[0]);
 
 	capacity_dec_init_value = curr_capacity;
 	capacity_dec_cnt = 0;
@@ -375,9 +357,49 @@ void bci_set_work_interval(int capacity, struct hisi_bci_device_info *di)
 
     if (hisi_coul_low_temp_opt() && (hisi_battery_temperature() < 5) && (di->monitoring_interval > (WORK_INTERVAL_NOARMAL/2)))
         di->monitoring_interval = WORK_INTERVAL_NOARMAL/2;
-
+#ifdef CONFIG_DIRECT_CHARGER
+    if (get_super_charge_flag() && di->ac_online && (di->monitoring_interval > (WORK_INTERVAL_NOARMAL/2)))
+        di->monitoring_interval = WORK_INTERVAL_NOARMAL/2;
+#endif
 	if (capacity > CHG_CANT_FULL_THRESHOLD)
 		di->monitoring_interval = WORK_INTERVAL_REACH_FULL;
+}
+/*******************************************************
+  Function:       vth_correct_soc
+  Description:    correct soc according to voltage threshhold
+  Input:
+                  int curr_capacity ---- soc now
+                  struct hisi_bci_device_info di ---- device info
+  Output:         NULL
+  Return:         soc after adjusted
+********************************************************/
+static int vth_correct_soc(int curr_capacity, struct hisi_bci_device_info *di)
+{
+    int battery_volt;
+    int i;
+	int bat_cur;
+	int rbat;
+
+    if (0 == di->vth_correct_en)
+        return curr_capacity;
+	rbat = hisi_battery_resistance();
+	bat_cur = hisi_battery_current_avg();
+	if (IMPOSSIBLE_IAVG == bat_cur) {
+		return curr_capacity;
+	}
+    if((POWER_SUPPLY_STATUS_DISCHARGING == di->charge_status) ||
+	    (POWER_SUPPLY_STATUS_NOT_CHARGING == di->charge_status)) {
+        for (i = 0; i < CAP_LOCK_PARA_LEVEL; i++) {
+            if (curr_capacity < di->vth_correct_data[i].cap) {
+				battery_volt = hisi_battery_voltage() - bat_cur*rbat/1000;
+                if (battery_volt >= di->vth_correct_data[i].level_vol) {
+                    bci_info("low capacity reported, battery_vol = %d mv,capacity = %d, lock_cap:%d\n", battery_volt, curr_capacity,  di->vth_correct_data[i].cap);
+                    return di->vth_correct_data[i].cap;
+                }
+            }
+        }
+    }
+    return curr_capacity;
 }
 static int capacity_changed(struct hisi_bci_device_info *di)
 {
@@ -424,7 +446,7 @@ static int capacity_changed(struct hisi_bci_device_info *di)
 	/*Only availability if the capacity changed */
 	if (curr_capacity != di->prev_capacity) {
 		if (abs(di->prev_capacity - curr_capacity) >= CHG_ODD_CAPACITY) {
-			hwlog_info("prev_capacity = %d\n"
+			bci_info("prev_capacity = %d\n"
 				   "curr_capacity = %d\n"
 				   "curr_voltage = %d\n", di->prev_capacity,
 				   curr_capacity, hisi_battery_voltage());
@@ -441,7 +463,7 @@ static int capacity_changed(struct hisi_bci_device_info *di)
 			return 1;
 		}
 
-		hwlog_info("low capacity reported, battery_vol = %d mv, capacity = %d\n", battery_volt, curr_capacity);
+		bci_info("low capacity reported, battery_vol = %d mv, capacity = %d\n", battery_volt, curr_capacity);
 		return 0;
 	}
 
@@ -454,7 +476,7 @@ static int capacity_changed(struct hisi_bci_device_info *di)
 		if (hisi_battery_current_avg() >= 0) {
 			if (hisi_battery_voltage() >= (di->bat_max_volt - RECHG_PROTECT_THRESHOLD)) {
 				curr_capacity = CAPACITY_FULL;
-				hwlog_info("Force soc=100\n");
+				bci_info("Force soc=100\n");
 			}
 		}
 		di->charge_full_count = 0;
@@ -469,12 +491,12 @@ static int capacity_changed(struct hisi_bci_device_info *di)
 		break;
 
 	default:
-		hwlog_err("%s defualt run.\n", __func__);
+		bci_err("%s defualt run.\n", __func__);
 		break;
 	}
 
 	bci_set_work_interval(curr_capacity, di);
-
+    curr_capacity = vth_correct_soc(curr_capacity, di);
     low_temp_capacity_record = curr_capacity;
 
 	/*filter */
@@ -482,9 +504,9 @@ static int capacity_changed(struct hisi_bci_device_info *di)
 
 
     if (hisi_coul_low_temp_opt() && (hisi_battery_temperature() < (-5)) && (curr_capacity - low_temp_capacity_record > 1)){
-        hwlog_info("low_temp_opt:filter_curr_capacity = %d, low_temp_capacity_record= %d\n", curr_capacity,low_temp_capacity_record);
+        bci_info("low_temp_opt:filter_curr_capacity = %d, low_temp_capacity_record= %d\n", curr_capacity,low_temp_capacity_record);
         curr_capacity -= 1;
-        hwlog_info("low_temp_opt: low_temp_capacity = %d\n", curr_capacity);
+        bci_info("low_temp_opt: low_temp_capacity = %d\n", curr_capacity);
     }
 
 	if (di->prev_capacity == curr_capacity)
@@ -503,7 +525,7 @@ static int capacity_changed(struct hisi_bci_device_info *di)
 			return 0;
 	}
 
-	hwlog_info("Capacity Updated = %d, charge_full_count = %d, charge_status = %d\n",
+	bci_info("Capacity Updated = %d, charge_full_count = %d, charge_status = %d\n",
 							curr_capacity, di->charge_full_count, di->charge_status);
 
 	di->capacity = curr_capacity;
@@ -522,27 +544,30 @@ static int get_capacity_decimal(struct hisi_bci_device_info *di)
 	int capacity_new = 0;
 
 	/* first: get decimal capacity (example: 875) */
-	if (capacity_dec_cnt < CAPACITY_DEC_SAMPLE_NUMS) {
-		if (capacity_dec_init_value < 800) /* soc=80% */
+	if (capacity_dec_cnt < di->capacity_dec_sample_nums) {
+		if (capacity_dec_init_value < 80 * di->capacity_dec_base_decimal) /* soc=80% */
 			curr_capacity = capacity_dec_init_value + (capacity_dec_cnt++ / 3) + 3;
-		else
+		else if ((capacity_dec_init_value >= 80 * di->capacity_dec_base_decimal) && \
+			(capacity_dec_init_value < 90 * di->capacity_dec_base_decimal))
 			curr_capacity = capacity_dec_init_value + (capacity_dec_cnt++ / 4);
+		else
+			curr_capacity = capacity_dec_init_value + (capacity_dec_cnt++ / 5);
 	}
 	else {
-		return (di->capacity * BASE_DECIMAL);
+		return (di->capacity * di->capacity_dec_base_decimal);
 	}
 
 	/* second : filter (example: 87.5%) */
 	rep_capacity = hisi_capacity_dec_pulling_filter(curr_capacity, di);
-	capacity_round = (rep_capacity / BASE_DECIMAL);
-	capacity_remain =  (rep_capacity % BASE_DECIMAL);
+	capacity_round = (rep_capacity / di->capacity_dec_base_decimal);
+	capacity_remain =  (rep_capacity % di->capacity_dec_base_decimal);
 
-	hwlog_info("%s times=%d curr_cap_dec=%d rep_cap_dec=%d prev_cap=%d rep_cap=%d\n", __func__ ,\
+	bci_info("%s times=%d curr_cap_dec=%d rep_cap_dec=%d prev_cap=%d rep_cap=%d\n", __func__ ,\
 		capacity_dec_cnt, curr_capacity, rep_capacity, capacity_prev, capacity_round);
 
 	/* third: reset capcity fifo */
 	hisi_reset_capacity_fifo(capacity_round);
-	capacity_new = (rep_capacity * WINDOW_LEN / BASE_DECIMAL) - capacity_round * (WINDOW_LEN - 1);
+	capacity_new = (rep_capacity * WINDOW_LEN / di->capacity_dec_base_decimal) - capacity_round * (WINDOW_LEN - 1);
 	hisi_capacity_pulling_filter(capacity_new, di);
 
 	/* forth: capacity changed (example: 86% to 87%) */
@@ -565,7 +590,7 @@ static int get_capacity_decimal(struct hisi_bci_device_info *di)
 static int get_capacity_dec(struct hisi_bci_device_info *di)
 {
 	if( NULL == di) {
-		hwlog_info("NULL point in [%s]\n", __func__);
+		bci_info("NULL point in [%s]\n", __func__);
 		return -1;
 	}
 	else {
@@ -579,7 +604,7 @@ static void capacity_dec_timer_start(struct hisi_bci_device_info *di)
 	int interval = 0;
 
 	if( NULL == di) {
-		hwlog_info("NULL point in [%s]\n", __func__);
+		bci_info("NULL point in [%s]\n", __func__);
 		return;
 	}
 
@@ -593,14 +618,18 @@ static enum hrtimer_restart capacity_dec_timer_func(struct hrtimer *timer)
 {
 	struct hisi_bci_device_info *di;
 
-	if (capacity_dec_cnt >= CAPACITY_DEC_SAMPLE_NUMS) {
-		return HRTIMER_NORESTART;
-	}
-
 	di = container_of(timer, struct hisi_bci_device_info, capacity_dec_timer);
 
 	if (NULL == di) {
-		hwlog_info("NULL point in [%s]\n", __func__);
+		bci_info("NULL point in [%s]\n", __func__);
+		return HRTIMER_NORESTART;
+	}
+
+	if (di->ac_online == 0) {
+		return HRTIMER_NORESTART;
+	}
+
+	if (capacity_dec_cnt >= di->capacity_dec_sample_nums) {
 		return HRTIMER_NORESTART;
 	}
 
@@ -608,13 +637,14 @@ static enum hrtimer_restart capacity_dec_timer_func(struct hrtimer *timer)
 
 	capacity_dec_timer_start(di);
 
-	hwlog_info("%s,%d cnt=%d capacity_dec=%d\n", __func__, __LINE__, capacity_dec_cnt, di->capacity_dec);
+	bci_info("%s,%d cnt=%d capacity_dec=%d\n", __func__, __LINE__, capacity_dec_cnt, di->capacity_dec);
 
 	return HRTIMER_NORESTART;
 }
 static void update_charging_status(struct hisi_bci_device_info *di, unsigned long event)
 {
-	if ((di->usb_online || di->ac_online) && di->capacity == CAPACITY_FULL)
+	if ((di->usb_online || di->ac_online) && di->capacity == CAPACITY_FULL &&
+		 di->charge_status != POWER_SUPPLY_STATUS_NOT_CHARGING )
 		di->charge_status = POWER_SUPPLY_STATUS_FULL;
 	/*in case charger can not get the report of charger removed, so
 	 * update the status of charger.*/
@@ -725,15 +755,17 @@ static int hisi_charger_event(struct notifier_block *nb, unsigned long event,
 	case BATTERY_MOVE:
 		di->bat_exist = is_hisi_battery_exist();
 		break;/*lint !e456*/
+	case WIRELESS_TX_STATUS_CHANGED:
+		break;
 	default:
-		hwlog_err("%s defualt run.\n", __func__);
+		bci_err("%s defualt run.\n", __func__);
 		break;/*lint !e456*/
 	}
 
 	update_charging_status(di, event);
 
 	if (VCHRG_START_CHARGING_EVENT != event)
-		hwlog_info("received event = %lx, charge_status = %d\n", event, di->charge_status);
+		bci_info("received event = %lx, charge_status = %d\n", event, di->charge_status);
 	#if (LINUX_VERSION_CODE < KERNEL_VERSION(3, 13, 0))
 	power_supply_changed(&di->bat);
 	#else
@@ -750,16 +782,7 @@ static int hisi_charger_event(struct notifier_block *nb, unsigned long event,
 int check_batt_not_exist(char *buf)
 {
 #ifndef CONFIG_HLTHERM_RUNTEST
-	int batt_temp = hisi_battery_temperature();
-	int batt_id = hisi_battery_id_voltage();
-	int usb_temp = INVALID_TEMP_VAL;
-	char *batt_brand = hisi_battery_brand();
 	if (!is_hisi_battery_exist()) {
-#ifdef  CONFIG_HUAWEI_USB_SHORT_CIRCUIT_PROTECT
-		usb_temp = get_usb_ntc_temp();
-#endif
-		snprintf(buf, DSM_BATTERY_MAX_SIZE, "batt_temp = %d,batt_id = %d,batt_brand: %s,usb_temp = %d\n",
-			batt_temp, batt_id, batt_brand, usb_temp);
 		return 1;
 	}
 #endif
@@ -768,15 +791,9 @@ int check_batt_not_exist(char *buf)
 
 int check_batt_temp_overlow(char *buf)
 {
-#ifndef CONFIG_HLTHERM_RUNTEST
 	int batt_temp = hisi_battery_temperature();
-	int batt_id = hisi_battery_id_voltage();
-	int usb_temp = INVALID_TEMP_VAL;
+#ifndef CONFIG_HLTHERM_RUNTEST
 	if (batt_temp < BATT_TEMP_OVERLOW_TH) {
-#ifdef  CONFIG_HUAWEI_USB_SHORT_CIRCUIT_PROTECT
-		usb_temp = get_usb_ntc_temp();
-#endif
-		snprintf(buf, DSM_BATTERY_MAX_SIZE, "batt_temp = %d,batt_id = %d,usb_temp = %d\n", batt_temp,batt_id,usb_temp);
 		return 1;
 	}
 #endif
@@ -785,11 +802,9 @@ int check_batt_temp_overlow(char *buf)
 
 int check_batt_volt_overhigh(char *buf)
 {
-	int volt, capacity, curr, avg_curr;
+	int volt;
 	int check_cnt = 0;
 	int avg_volt = 0;
-	int vbus = INVALID_VOLTAGE_VAL;
-	int charger_type = CHARGER_REMOVED;
 
 	volt = hisi_battery_voltage();
 	if (BATT_VOLT_OVERHIGH_TH < volt) {
@@ -799,13 +814,7 @@ int check_batt_volt_overhigh(char *buf)
 		}
 		avg_volt = (int)(volt/(MAX_CONFIRM_CNT));
 		if(BATT_VOLT_OVERHIGH_TH < avg_volt){
-			capacity = hisi_battery_capacity();
-			curr = hisi_battery_current();
-			avg_curr = hisi_battery_current_avg();
-			vbus = get_charger_vbus_vol();
-			charger_type = charge_get_charger_type();
-			snprintf(buf, DSM_BATTERY_MAX_SIZE, "batt_volt = %dmV, capacity = %d, curr = %dmA, avg_curr = %dmA, vbus = %dmV, charger_type = %d\n",
-				avg_volt, capacity, curr, avg_curr, vbus, charger_type);
+			snprintf(buf, DSM_BATTERY_MAX_SIZE, "avg_batt_volt = %dmV\n", avg_volt);
 			return 1;
 		}
 	}
@@ -814,11 +823,9 @@ int check_batt_volt_overhigh(char *buf)
 
 int check_batt_volt_overlow(char *buf)
 {
-	int volt, capacity, curr, avg_curr;
+	int volt;
 	int avg_volt = 0;
 	int check_cnt = 0;
-	int vbus = INVALID_VOLTAGE_VAL;
-	int charger_type = CHARGER_REMOVED;
 
 	volt = hisi_battery_voltage();
 	if (volt < BATT_VOLT_OVERLOW_TH) {
@@ -828,13 +835,7 @@ int check_batt_volt_overlow(char *buf)
 		}
 		avg_volt = (int)(volt/(MAX_CONFIRM_CNT));
 		if( BATT_VOLT_OVERLOW_TH > avg_volt){
-			capacity = hisi_battery_capacity();
-			curr = hisi_battery_current();
-			avg_curr = hisi_battery_current_avg();
-			vbus = get_charger_vbus_vol();
-			charger_type = charge_get_charger_type();
-			snprintf(buf, DSM_BATTERY_MAX_SIZE, "batt_volt = %dmV, capacity = %d, curr = %dmA, avg_curr = %dmA, vbus = %dmV, charger_type = %d\n",
-				avg_volt, capacity, curr, avg_curr, vbus, charger_type);
+			snprintf(buf, DSM_BATTERY_MAX_SIZE, "avg_batt_volt = %dmV\n", avg_volt);
 			return 1;
 		}
 	}
@@ -845,30 +846,12 @@ int check_batt_terminate_too_early(char *buf)
 {
 	struct hisi_bci_device_info *di = g_hisi_bci_dev;
 	int capacity = hisi_battery_capacity();
-	int volt, current_now, avg_curr, rm;
-	char *batt_brand;
-	int charger_type;
-	int batt_fcc;
-	int batt_cycle_count;
-	int batt_temp;
 
 	if(NULL == di){
-		hwlog_info("NULL point in [%s]\n", __func__);
+		bci_info("NULL point in [%s]\n", __func__);
 		return -1;
 	}
 	if (di->chargedone_stat && capacity <= CHG_CANT_FULL_THRESHOLD) {
-		batt_brand = hisi_battery_brand();
-		volt = hisi_battery_voltage();
-		current_now = -hisi_battery_current();
-		avg_curr = hisi_battery_current_avg();
-		rm = hisi_battery_rm();
-		charger_type = charge_get_charger_type();
-		batt_fcc = hisi_battery_fcc();
-		batt_cycle_count = hisi_battery_cycle_count();
-		batt_temp = hisi_battery_temperature();
-		snprintf(buf, DSM_BATTERY_MAX_SIZE, "battery: %s, charger_type = %d, batt_volt = %dmV, batt_curr = %dmA, "
-			"avg_curr = %dmA, capacity = %d, rm = %dmAh, batt_fcc = %d, batt_cycle_count = %d, batt_temp = %d\n",
-			batt_brand, charger_type, volt, current_now, avg_curr, capacity, rm, batt_fcc, batt_cycle_count, batt_temp);
 		return 1;
 	}
 	return 0;
@@ -881,13 +864,10 @@ int check_batt_not_terminate(char *buf)
 	int current_now = 0;
 	static int times = 0;
 	int dpm_state = 0;
-	int vbatt = 0;
-	int charger_type;
-	int capacity;
     struct hisi_bci_device_info *di = g_hisi_bci_dev;
 
 	if(NULL == di){
-		hwlog_info("NULL point in [%s]\n", __func__);
+		bci_info("NULL point in [%s]\n", __func__);
 		return -1;
 	}
 	if (COUL_HISI == hisi_coulometer_type())
@@ -905,12 +885,8 @@ int check_batt_not_terminate(char *buf)
 		}
 		if (times == DSM_CHECK_TIMES_LV3) {
 			times = 0;
-			vbatt = hisi_battery_voltage();
-			charger_type = charge_get_charger_type();
-			capacity = hisi_battery_capacity();
-			snprintf(buf, DSM_BATTERY_MAX_SIZE, "current_avg = %dmA, current_now = %dmA, vbat = %dmV, "
-				"charger_type = %d, charge_event = %ld, capacity = %d\n",
-				current_avg, current_now, vbatt, charger_type, di->event, capacity);
+			snprintf(buf, DSM_BATTERY_MAX_SIZE, "current_avg = %dmA, current_now = %dmA, "
+				"charge_event = %ld\n", current_avg, current_now, di->event);
 			return 1;
 		}
 	}
@@ -922,10 +898,9 @@ int check_batt_bad_curr_sensor(char *buf)
 	int current_now;
 	struct hisi_bci_device_info *di = g_hisi_bci_dev;
 	int plugged = 0;
-	int avg_curr = 0;
 
 	if(NULL == di){
-		hwlog_info("NULL point in [%s]\n", __func__);
+		bci_info("NULL point in [%s]\n", __func__);
 		return -1;
 	}
 	current_now = -hisi_battery_current();
@@ -939,9 +914,8 @@ int check_batt_bad_curr_sensor(char *buf)
 	}
 	if (times == DSM_CHECK_TIMES_LV2) {
 		times = 0;
-		avg_curr = hisi_battery_current_avg();
-		snprintf(buf, DSM_BATTERY_MAX_SIZE, "current = %dmA, avg_curr = %dmA, charge_status = %d\n",
-			current_now, avg_curr, di->charge_status);
+		snprintf(buf, DSM_BATTERY_MAX_SIZE, "current = %dmA, charge_status = %d\n",
+			current_now, di->charge_status);
 		return 1;
 	}
 	return 0;
@@ -951,11 +925,9 @@ int check_vbus_volt_overhigh(char *buf)
 {
 	static int times = 0;
 	struct hisi_bci_device_info *di = g_hisi_bci_dev;
-	int vbatt;
-	int vbus = INVALID_VOLTAGE_VAL;
 
 	if(NULL == di){
-		hwlog_info("NULL point in [%s]\n", __func__);
+		bci_info("NULL point in [%s]\n", __func__);
 		return -1;
 	}
 	if (di->power_supply_status == POWER_SUPPLY_HEALTH_OVERVOLTAGE)
@@ -965,10 +937,6 @@ int check_vbus_volt_overhigh(char *buf)
 
 	if (times == DSM_CHECK_TIMES_LV2) {
 		times = 0;
-		vbus = get_charger_vbus_vol();
-		vbatt = hisi_battery_voltage();
-		snprintf(buf, DSM_BATTERY_MAX_SIZE, "vbus_status = %s,vbus = %dmv,vbatt = %dmV\n",
-			"POWER_SUPPLY_HEALTH_OVERVOLTAGE", vbus,vbatt);
 		return 1;
 	}
 	return 0;
@@ -978,7 +946,7 @@ int check_watchdog_timer_expiration(char *buf)
 {
 	struct hisi_bci_device_info *di = g_hisi_bci_dev;
 	if(NULL == di){
-		hwlog_info("NULL point in [%s]\n", __func__);
+		bci_info("NULL point in [%s]\n", __func__);
 		return -1;
 	}
 	if (di->watchdog_timer_status == POWER_SUPPLY_HEALTH_WATCHDOG_TIMER_EXPIRE) {
@@ -992,10 +960,6 @@ int check_charge_curr_overhigh(char *buf)
 {
 	int i;
 	int current_now[DSM_CHECK_TIMES_LV1];
-	int batt_volt;
-	int vbus;
-	int ibus;
-	int charger_type;
 
 	for (i = 0; i < DSM_CHECK_TIMES_LV1; i++) {
 		current_now[i] = -hisi_battery_current();
@@ -1006,12 +970,8 @@ int check_charge_curr_overhigh(char *buf)
 
 	}
 	if (DSM_CHECK_TIMES_LV1 == i) {
-		batt_volt = hisi_battery_voltage();
-		vbus = get_charger_vbus_vol();
-		ibus = get_charger_ibus_curr();
-		charger_type = charge_get_charger_type();
-		snprintf(buf, DSM_BATTERY_MAX_SIZE, "current = %d, %d, %d, batt_volt = %d, vbus = %d, ibus = %d, charger_type = %d\n",
-			current_now[0], current_now[1], current_now[2], batt_volt, vbus, ibus, charger_type);
+		snprintf(buf, DSM_BATTERY_MAX_SIZE, "current = %d, %d, %d\n",
+			current_now[0], current_now[1], current_now[2]);
 		return 1;
 	}
 	return 0;
@@ -1022,10 +982,9 @@ int check_discharge_curr_overhigh(char *buf)
 	int i;
 	int current_now[DSM_CHECK_TIMES_LV1];
 	struct hisi_bci_device_info *di = g_hisi_bci_dev;
-	int batt_volt;
 
 	if(NULL == di){
-		hwlog_info("NULL point in [%s]\n", __func__);
+		bci_info("NULL point in [%s]\n", __func__);
 		return -1;
 	}
 	for (i = 0; i < DSM_CHECK_TIMES_LV1; i++) {
@@ -1037,10 +996,10 @@ int check_discharge_curr_overhigh(char *buf)
 			break;
 		}
 	}
+
 	if (DSM_CHECK_TIMES_LV1 == i) {
-		batt_volt = hisi_battery_voltage();
-		snprintf(buf, DSM_BATTERY_MAX_SIZE, "current = %d, %d, %d, batt_volt = %d\n",
-			current_now[0], current_now[1], current_now[2], batt_volt);
+		snprintf(buf, DSM_BATTERY_MAX_SIZE, "current = %d, %d, %d\n",
+			current_now[0], current_now[1], current_now[2]);
 		return 1;
 	}
 	return 0;
@@ -1065,7 +1024,6 @@ int check_charge_curr_zero(char *buf)
 
 	if (g_curr_zero_times == DSM_CHECK_TIMES_LV2) {
 		g_curr_zero_times = 0;
-		snprintf(buf, DSM_BATTERY_MAX_SIZE, "current = %d\n", current_now);
 		return 1;
 	}
 	return 0;
@@ -1077,24 +1035,15 @@ int check_charge_temp_fault(char *buf)
 {
 #ifndef CONFIG_HLTHERM_RUNTEST
 	struct hisi_bci_device_info *di = g_hisi_bci_dev;
-	int usb_temp = INVALID_TEMP_VAL;
 	int batt_temp = INVALID_TEMP_VAL;
-	int ichg;
-	int ibus;
 
 	if(NULL == di){
-		hwlog_info("NULL point in [%s]\n", __func__);
+		bci_info("NULL point in [%s]\n", __func__);
 		return 0;//null pointer, return no_err
 	}
 	batt_temp = hisi_battery_temperature();
 	if ((HIGH_TEMP <= batt_temp || LOW_TEMP > batt_temp) && (di->usb_online || di->ac_online)) {
-#ifdef  CONFIG_HUAWEI_USB_SHORT_CIRCUIT_PROTECT
-		usb_temp = get_usb_ntc_temp();
-#endif
-		ichg =  -hisi_battery_current();
-		ibus = get_charger_ibus_curr();
-		snprintf(buf, DSM_BATTERY_MAX_SIZE, "temp fault cause not charging, batt_temp = %d, ichg = %d, ibus = %d, usb_temp = %d\n",
-			batt_temp, ichg, ibus, usb_temp);
+		snprintf(buf, DSM_BATTERY_MAX_SIZE, "temp fault cause not charging\n");
 		return 1;
 	}
 #endif
@@ -1107,16 +1056,9 @@ int check_charge_warm_status(char *buf)
 #ifndef CONFIG_HLTHERM_RUNTEST
 	struct hisi_bci_device_info *di = g_hisi_bci_dev;
 	int temp = hisi_battery_temperature();
-	int usb_temp = INVALID_TEMP_VAL;
-	int ibatt = -hisi_battery_current();
-
-#ifdef  CONFIG_HUAWEI_USB_SHORT_CIRCUIT_PROTECT
-			usb_temp = get_usb_ntc_temp();
-#endif
 
 	if (temp >= WARM_TEMP && temp < HIGH_TEMP && (di->usb_online || di->ac_online)) {
-		snprintf(buf, DSM_BATTERY_MAX_SIZE, "warm temp triggered: temp = %d, ibatt = %d, usb_temp = %d\n",
-			temp, ibatt, usb_temp);
+		snprintf(buf, DSM_BATTERY_MAX_SIZE, "warm temp triggered: temp = %d\n", temp);
 		return 1;
 	}
 #endif
@@ -1128,18 +1070,9 @@ int check_charge_batt_shutdown_temp(char *buf)
 {
 #ifndef CONFIG_HLTHERM_RUNTEST
 	int temp = hisi_battery_temperature();
-	int usb_temp = INVALID_TEMP_VAL;
-	int ibatt;
-	int ibus;
 
 	if (SHUTDOWN_TEMP <= temp) {
-#ifdef  CONFIG_HUAWEI_USB_SHORT_CIRCUIT_PROTECT
-		usb_temp = get_usb_ntc_temp();
-#endif
-		ibatt =  -hisi_battery_current();
-		ibus = get_charger_ibus_curr();
-		snprintf(buf, DSM_BATTERY_MAX_SIZE, "shutdown because batt_temp = %d, ibatt = %d, ibus = %d, usb_temp = %d\n",
-			temp, ibatt, ibus, usb_temp);
+		snprintf(buf, DSM_BATTERY_MAX_SIZE, "shutdown because batt_temp = %d\n", temp);
 		return 1;
 	}
 #endif
@@ -1152,21 +1085,11 @@ int check_charge_batt_capacity(char *buf)
 	int full_rm = di->bat_rm;
 	int fcc_design = hisi_battery_fcc_design();
 	int batt_temp = hisi_battery_temperature();
-	int charger_type = CHARGER_REMOVED;
-	int batt_fcc;
-	int batt_cycle_count;
-	char *batt_brand;
 
 	if ((VCHRG_CHARGE_DONE_EVENT == di->event)
 		&& (full_rm < fcc_design*BATT_CAPACITY_REDUCE_TH/CAPACITY_FULL)
 		&& (batt_temp > LOW_TEMP)) {
-		batt_fcc = hisi_battery_fcc();
-		charger_type = charge_get_charger_type();
-		batt_cycle_count = hisi_battery_cycle_count();
-		batt_brand = hisi_battery_brand();
-		snprintf(buf, DSM_BATTERY_MAX_SIZE, "battery: %s, batt_vol = %dmV, capacity = %dmAh, "
-			"full capacity = %dmAh, charger_type = %d, batt_cycle_count = %d\n",
-			batt_brand, di->bat_voltage, di->bat_rm, batt_fcc, charger_type, batt_cycle_count);
+		snprintf(buf, DSM_BATTERY_MAX_SIZE, "full_rm = %dmAh, fcc_design = %dmAh\n", di->bat_rm, fcc_design);
 		return 1;
 	}
 	return 0;
@@ -1190,7 +1113,7 @@ int check_charge_otg_ture(char *buf)
 		typec_mode = typec_detect_port_mode();
 		if (typec_mode < 0)
 		{
-			hwlog_err("typec not ready %d!!!\n", typec_mode);
+			bci_err("typec not ready %d!!!\n", typec_mode);
 			return 0;
 		}
 		if (TYPEC_DEV_PORT_MODE_DFP != typec_mode && TYPEC_DEV_PORT_MODE_NOT_READY != typec_mode) {
@@ -1221,7 +1144,7 @@ int check_soc_vary_err(char *buf)
 
 	if( NULL == di )
 	{
-		hwlog_info("NULL point in [%s]\n", __func__);
+		bci_info("NULL point in [%s]\n", __func__);
 		return -EINVAL;
 	}
 
@@ -1241,27 +1164,66 @@ int check_soc_vary_err(char *buf)
 #endif
 	return report_flag;
 }
+void batt_info_dump(char* pstr)
+{
+	if (!pstr) {
+		bci_err("%s: para null\n", __func__);
+		return;
+	}
+	char buf[CHARGE_DMDLOG_SIZE] = {0};
 
-static struct batt_dsm batt_dsm_array[] = {
-	{ERROR_BATT_NOT_EXIST, true, check_batt_not_exist},
-	{ERROR_BATT_TEMP_LOW, true, check_batt_temp_overlow},
-	{ERROR_BATT_VOLT_HIGH, true, check_batt_volt_overhigh},
-	{ERROR_BATT_VOLT_LOW, true, check_batt_volt_overlow},
-	{ERROR_BATT_TERMINATE_TOO_EARLY, true, check_batt_terminate_too_early},
-	{ERROR_BATT_NOT_TERMINATE, true, check_batt_not_terminate},
-	{ERROR_BATT_BAD_CURR_SENSOR, true, check_batt_bad_curr_sensor},
-	{ERROR_VBUS_VOLT_HIGH, true, check_vbus_volt_overhigh},
-	{ERROR_WATCHDOG_RESET, true, check_watchdog_timer_expiration},
-	{ERROR_CHARGE_CURR_OVERHIGH, true, check_charge_curr_overhigh},
-	{ERROR_DISCHARGE_CURR_OVERHIGH, true, check_discharge_curr_overhigh},
-	{ERROR_CHARGE_CURR_ZERO, true, check_charge_curr_zero},
-	{ERROR_CHARGE_TEMP_FAULT, true, check_charge_temp_fault},
-	{ERROR_CHARGE_BATT_TEMP_SHUTDOWN, true, check_charge_batt_shutdown_temp},
-	{ERROR_CHARGE_BATT_CAPACITY, true, check_charge_batt_capacity},
-	{ERROR_CHARGE_CHARGER_TS, true, check_charge_charger_ts},
-	{ERROR_CHARGE_OTG, true, check_charge_otg_ture},
-	{ERROR_BATT_SOC_CHANGE_FAST, true, check_soc_vary_err},
-	{ERROR_CHARGE_TEMP_WARM, true, check_charge_warm_status},
+	char* batt_brand = hisi_battery_brand();
+	int batt_id = hisi_battery_id_voltage();
+	int batt_cycle = hisi_battery_cycle_count();
+	int fcc_design = hisi_battery_fcc_design();
+	int fcc = hisi_battery_fcc();
+	int rm = hisi_battery_rm();
+	int soc = hisi_battery_capacity();
+
+	int vbatt = hisi_battery_voltage();
+	int vbus = get_charger_vbus_vol();
+
+	int ibus = get_charger_ibus_curr();
+	int ichg =  -hisi_battery_current();
+	int curr_now = -hisi_battery_current();
+	int avg_curr = hisi_battery_current_avg();
+
+	int tbatt = hisi_battery_temperature();
+#ifdef  CONFIG_HUAWEI_USB_SHORT_CIRCUIT_PROTECT
+	int tusb = get_usb_ntc_temp();
+#else
+	int tusb = INVALID_TEMP_VAL;
+#endif
+
+	enum usb_charger_type charger_type = charge_get_charger_type();
+
+	snprintf(buf, sizeof(buf)-1, "battery: %s, batt_id = %d, batt_cycle = %d, fcc_design = %dmAh, fcc = %dmAh, rm = %dmAh, soc = %d, "
+		"batt_volt = %dmV, charger_vbus = %dmV, charger_ibus = %dmA, ichrg = %dmA, curr_now = %dmA, avg_curr = %dmA, "
+		"tbatt = %d, tusb = %d, charger_type = %d\n",
+		batt_brand, batt_id, batt_cycle, fcc_design, fcc, rm, soc,
+		vbatt, vbus, ibus, ichg, curr_now, avg_curr, tbatt, tusb, charger_type);
+	strncat(pstr,buf,strlen(buf));
+}
+struct batt_dsm batt_dsm_array[] = {
+	{ERROR_BATT_NOT_EXIST, true, .dump = batt_info_dump, check_batt_not_exist},
+	{ERROR_BATT_TEMP_LOW, true, .dump = batt_info_dump, check_batt_temp_overlow},
+	{ERROR_BATT_VOLT_HIGH, true, .dump = batt_info_dump, check_batt_volt_overhigh},
+	{ERROR_BATT_VOLT_LOW, true, .dump = batt_info_dump, check_batt_volt_overlow},
+	{ERROR_BATT_TERMINATE_TOO_EARLY, true, .dump = batt_info_dump, check_batt_terminate_too_early},
+	{ERROR_BATT_NOT_TERMINATE, true, .dump = batt_info_dump, check_batt_not_terminate},
+	{ERROR_BATT_BAD_CURR_SENSOR, true, .dump = batt_info_dump, check_batt_bad_curr_sensor},
+	{ERROR_VBUS_VOLT_HIGH, true, .dump = batt_info_dump, check_vbus_volt_overhigh},
+	{ERROR_WATCHDOG_RESET, true, .dump = batt_info_dump, check_watchdog_timer_expiration},
+	{ERROR_CHARGE_CURR_OVERHIGH, true, .dump = batt_info_dump, check_charge_curr_overhigh},
+	{ERROR_DISCHARGE_CURR_OVERHIGH, true, .dump = batt_info_dump, check_discharge_curr_overhigh},
+	{ERROR_CHARGE_CURR_ZERO, true, .dump = batt_info_dump, check_charge_curr_zero},
+	{ERROR_CHARGE_TEMP_FAULT, true, .dump = batt_info_dump, check_charge_temp_fault},
+	{ERROR_CHARGE_BATT_TEMP_SHUTDOWN, true, .dump = batt_info_dump, check_charge_batt_shutdown_temp},
+	{ERROR_CHARGE_BATT_CAPACITY, true, .dump = batt_info_dump, check_charge_batt_capacity},
+	{ERROR_CHARGE_CHARGER_TS, true, .dump = batt_info_dump, check_charge_charger_ts},
+	{ERROR_CHARGE_OTG, true, .dump = batt_info_dump, check_charge_otg_ture},
+	{ERROR_BATT_SOC_CHANGE_FAST, true, .dump = batt_info_dump, check_soc_vary_err},
+	{ERROR_CHARGE_TEMP_WARM, true, .dump = batt_info_dump, check_charge_warm_status},
 };
 
 static void hisi_get_error_info(struct hisi_bci_device_info *di)
@@ -1276,18 +1238,20 @@ static void hisi_get_error_info(struct hisi_bci_device_info *di)
 			if (batt_dsm_array[i].check_error(buf)) {
 				di->bat_err = batt_dsm_array[i].error_no;
 #if defined(CONFIG_HUAWEI_DSM)
-				if (!dsm_client_ocuppy(battery_dclient)) {
+				if (!dsm_client_ocuppy(power_dsm_get_dclient(POWER_DSM_BATTERY))) {
 					buf[DSM_BATTERY_MAX_SIZE-1] = 0;
 					dev_err(di->dev, "%s", buf);
-					dsm_client_record(battery_dclient, "%s", buf);
-					dsm_client_notify(battery_dclient, di->bat_err);
+					if (batt_dsm_array[i].dump)
+						batt_dsm_array[i].dump(buf);
+					dsm_client_record(power_dsm_get_dclient(POWER_DSM_BATTERY), "%s", buf);
+					dsm_client_notify(power_dsm_get_dclient(POWER_DSM_BATTERY), di->bat_err);
 					batt_dsm_array[i].notify_enable = false;
 					break;
 				}
 #else
 				buf[DSM_BATTERY_MAX_SIZE-1] = 0;
-				hwlog_err("error_no = %d!!!\n", di->bat_err);
-				hwlog_err("error_buf = %s\n", buf);
+				bci_err("error_no = %d!!!\n", di->bat_err);
+				bci_err("error_buf = %s\n", buf);
 				break;
 #endif
 			}
@@ -1313,6 +1277,12 @@ static void hisi_get_battery_info(struct hisi_bci_device_info *di)
 		di->bat_technolog = hisi_battery_technology();
 		di->bat_temperature = hisi_battery_temperature();
 	}
+}
+
+unsigned int get_bci_soc(void)
+{
+	/* if bci driver load uncorrectly, full soc will be returned */
+	return g_hisi_bci_dev?g_hisi_bci_dev->capacity:CAPACITY_FULL;
 }
 
 static void hisi_bci_battery_work(struct work_struct *work)
@@ -1341,7 +1311,7 @@ static int hisi_ac_get_property(struct power_supply *psy,
     struct hisi_bci_device_info *di = g_hisi_bci_dev;
 	if( NULL == di )
 	{
-		hwlog_info("NULL point in [%s]\n", __func__);
+		bci_info("NULL point in [%s]\n", __func__);
 		return -EINVAL;
     }
 	switch (psp) {
@@ -1366,7 +1336,7 @@ static int hisi_usb_get_property(struct power_supply *psy,
 
 	if( NULL == di )
 	{
-		hwlog_info("NULL point in [%s]\n", __func__);
+		bci_info("NULL point in [%s]\n", __func__);
 		return -EINVAL;
 	}
 	switch (psp) {
@@ -1426,19 +1396,19 @@ static int hisi_bci_battery_get_fcp_status(struct hisi_bci_device_info *di)
 		else if (true == pd_dpm_get_optional_max_power_status() && di->ac_online)
 		{
 			intval = 1;
-			hwlog_info("pd_dpm_get_optional_max_power_status intval 1 [%s]\n", __func__);
+			bci_info("pd_dpm_get_optional_max_power_status intval 1 [%s]\n", __func__);
 		}
 #endif
 #ifdef CONFIG_WIRELESS_CHARGER
 		else if (wireless_charge_get_fast_charge_flag() && di->ac_online) {
 		intval = 1;
-		hwlog_info("%s wireless fast charging\n", __func__);
+		bci_info("%s wireless fast charging\n", __func__);
 		}
 #endif
 		else
 		{
 			intval = 0;
-			hwlog_info("intval 0 [%s]\n", __func__);
+			bci_info("intval 0 [%s]\n", __func__);
 		}
 		return intval;
 }
@@ -1466,7 +1436,7 @@ static int hisi_bci_battery_get_property(struct power_supply *psy,
 
 	if( NULL == di )
 	{
-		hwlog_info("NULL point in [%s]\n", __func__);
+		bci_info("NULL point in [%s]\n", __func__);
 		return -EINVAL;
 	}
 	switch (psp) {
@@ -1554,21 +1524,24 @@ static int hisi_bci_battery_get_property(struct power_supply *psy,
 		val->intval = 0;
 #ifdef CONFIG_HUAWEI_CHARGER_AP
 		val->intval = get_vbat_ovp_status();
-		hwlog_info("%s:get_vbat_ovp_status interval = %d\n",__func__,val->intval);
+		bci_info("%s:get_vbat_ovp_status interval = %d\n",__func__,val->intval);
 #endif
 		break;
 	case POWER_SUPPLY_PROP_CHARGE_COUNTER:
 		val->intval = hisi_battery_cc();
-		val->intval = abs(val->intval);
+		val->intval = abs(val->intval) + 1;
 		break;
 	case POWER_SUPPLY_PROP_CAPACITY_DEC:
-		val->intval = (di->capacity * BASE_DECIMAL);
+		val->intval = (di->capacity * di->capacity_dec_base_decimal);
 #ifdef CONFIG_DIRECT_CHARGER
 		if ((1 == scp_status) && (1 == capacity_dec_start_event_flag)) {
 			val->intval = get_capacity_dec(di);
 		}
 #endif
 		break;
+    case POWER_SUPPLY_PROP_BAT_QMAX:
+        val->intval = hisi_battery_get_qmax();
+        break;
 	default:
 		return -EINVAL;
 	}
@@ -1581,12 +1554,12 @@ int hisi_bci_show_capacity(void)
 
 	if( NULL == di )
 	{
-		hwlog_info("NULL point in [%s]\n", __func__);
+		bci_info("NULL point in [%s]\n", __func__);
 		return -EINVAL;
 	}
 
 	if(di->capacity > CAPACITY_FULL) {
-		hwlog_err("error capacity, will rewrite from %d to 100\n", di->capacity);
+		bci_err("error capacity, will rewrite from %d to 100\n", di->capacity);
 		di->capacity = CAPACITY_FULL;
 	}
 	return di->capacity;
@@ -1656,9 +1629,10 @@ static ssize_t hisi_bci_set_capacity_dec_start_event(struct device *dev,
 	long val = 0;
 #endif
 	struct hisi_bci_device_info *di = g_hisi_bci_dev;
+	int cap_dec_index = 0;
 
 	if (NULL == di) {
-		hwlog_info("NULL point in [%s]\n", __func__);
+		bci_info("NULL point in [%s]\n", __func__);
 		return -EINVAL;
 	}
 
@@ -1670,13 +1644,19 @@ static ssize_t hisi_bci_set_capacity_dec_start_event(struct device *dev,
 
 	if ((1 == val) && (1 == get_super_charge_flag())) {
 		capacity_dec_start_event_flag = 1;
-		hisi_reset_capacity_dec_fifo();
+		if (di->capacity_dec_total_level > 1 &&
+			direct_charge_get_adaptor_mode() == SC_MODE) {
+			cap_dec_index = 1;  //sc charge
+		}
+		di->capacity_dec_base_decimal = di->cap_dec_para[cap_dec_index].cap_dec_base_decimal;
+		di->capacity_dec_sample_nums = di->cap_dec_para[cap_dec_index].cap_dec_sample_nums;
+		di->capacity_dec_timer_interval = di->cap_dec_para[cap_dec_index].cap_dec_timer_interval;
+		hisi_reset_capacity_dec_fifo(di);
 
 		di->capacity_dec = capacity_dec_init_value;
 
 		capacity_dec_timer_start(di);
-	}
-	else {
+	} else {
 		capacity_dec_start_event_flag = 0;
 	}
 #endif
@@ -1755,6 +1735,89 @@ static const struct power_supply_desc hisi_bci_bat_google_desc = {
 	.get_property		= hisi_bci_battery_get_property,
 };
 #endif
+/**********************************************************
+*  Function:       parse_cap_dec_dts
+*  Discription:    parse the module dts config value of capacity decimal
+*  Parameters:   np:device_node
+*                      di:hisi_bci_device_info
+*  return value:  null
+**********************************************************/
+static void parse_cap_dec_dts(struct device_node *np, struct hisi_bci_device_info *di)
+{
+	int ret = 0;
+	int i = 0;
+	int array_len = 0;
+	u32 cap_dec_tmp[CAP_DEC_PARA_TOTAL*CAPATICY_DEC_PARA_LEVEL] = {0};
+
+	array_len = of_property_count_u32_elems(np, "capacity_dec_para");
+	if ((array_len <= 0) ||(array_len % CAP_DEC_PARA_TOTAL != 0)) {
+		bci_err("capacity_dec_para is invaild, please check capacity_dec_para number!!\n");
+		goto FuncEnd;
+	} else if (array_len > CAPATICY_DEC_PARA_LEVEL * CAP_DEC_PARA_TOTAL) {
+		bci_err("capacity_dec_para is too long, please check capacity_dec_para number!!\n");
+		goto FuncEnd;
+	} else {
+		ret = of_property_read_u32_array(np, "capacity_dec_para", cap_dec_tmp, array_len);
+		if (ret) {
+			bci_err("dts:get capacity_dec_para fail!\n");
+			goto FuncEnd;
+		} else {
+			di->capacity_dec_total_level = array_len/CAP_DEC_PARA_TOTAL;
+			for (i = 0; i < di->capacity_dec_total_level; i++) {
+				di->cap_dec_para[i].cap_dec_base_decimal =
+					cap_dec_tmp[(int)(CAP_DEC_BASE_DECIMAL+CAP_DEC_PARA_TOTAL*i)];
+				di->cap_dec_para[i].cap_dec_sample_nums =
+					cap_dec_tmp[(int)(CAP_DEC_SAMPLE_NUMS+CAP_DEC_PARA_TOTAL*i)];
+				di->cap_dec_para[i].cap_dec_timer_interval =
+					cap_dec_tmp[(int)(CAP_DEC_TIMER_INTERVAL+CAP_DEC_PARA_TOTAL*i)];
+				bci_info("cap_dec_para[%d], base_decimal: %-3d sample_nums: %-3d timer_interval: %-3d\n",
+						i, di->cap_dec_para[i].cap_dec_base_decimal,
+						di->cap_dec_para[i].cap_dec_sample_nums, di->cap_dec_para[i].cap_dec_timer_interval);
+			}
+			return;
+		}
+	}
+
+FuncEnd:
+	di->capacity_dec_total_level = 1;
+	di->cap_dec_para[0].cap_dec_base_decimal = BASE_DECIMAL;
+	di->cap_dec_para[0].cap_dec_sample_nums = CAPACITY_DEC_SAMPLE_NUMS;
+	di->cap_dec_para[0].cap_dec_timer_interval = CAPATICY_DEC_TIMER_INTERVAL;
+	bci_info("cap_dec_para[0], base_decimal: %-3d sample_nums: %-3d timer_interval: %-3d\n",
+			di->cap_dec_para[0].cap_dec_base_decimal,
+			di->cap_dec_para[0].cap_dec_sample_nums, di->cap_dec_para[0].cap_dec_timer_interval);
+}
+/**********************************************************
+*  Function:       parse_cap_lock_dts
+*  Discription:    parse the module dts config value
+*  Parameters:   np:device_node
+*                      di:hisi_bci_device_info
+*  return value:  0-sucess or others-fail
+**********************************************************/
+static int parse_vth_correct_dts(struct device_node *np, struct hisi_bci_device_info *di)
+{
+	int i = 0;
+
+	if (of_property_read_u32(np, "vth_correct_en", (u32 *)&di->vth_correct_en)) {
+		di->vth_correct_en = 0;
+		bci_err("error:get vth_correct_en value failed, used default value!\n");
+	}
+
+    if (of_property_read_u32_array(np, "vth_correct_para",
+            (u32 *)&di->vth_correct_data[0],
+            sizeof(di->vth_correct_data) / sizeof(int))) {
+        di->vth_correct_en = 0;
+		bci_err("get vth_correct_para fail!!\n");
+		return -EINVAL;
+	}
+
+    for (i = 0; i < CAP_LOCK_PARA_LEVEL; i++) {
+        bci_info("di->vth_correct_data[%d]:%d,%d\n", i,
+            di->vth_correct_data[i].cap, di->vth_correct_data[i].level_vol);
+    }
+    return 0;
+
+}
 
 /**********************************************************
 *  Function:       hisi_bci_parse_dts
@@ -1773,37 +1836,37 @@ static int hisi_bci_parse_dts(struct device_node *np, struct hisi_bci_device_inf
 
 	if (of_property_read_u32(np, "battery_design_fcc", (u32 *)&di->bat_design_fcc)) {
 		di->bat_design_fcc = hisi_battery_fcc_design();
-		hwlog_err("error:get battery_design_fcc value failed, used default value from batt_parm!\n");
+		bci_err("error:get battery_design_fcc value failed, used default value from batt_parm!\n");
 	}
 
 	if (of_property_read_u32(np, "bci_soc_at_term", (u32 *)&di->bci_soc_at_term)) {
 		di->bci_soc_at_term = 100;
-		hwlog_err("error:get bci_soc_at_term value failed, no early term in bci !\n");
+		bci_err("error:get bci_soc_at_term value failed, no early term in bci !\n");
 	}
-	hwlog_info("bci_soc_at_term =%d",di->bci_soc_at_term);
+	bci_info("bci_soc_at_term =%d",di->bci_soc_at_term);
 
 	if (of_property_read_u32(np, "battery_is_removable", (u32 *)&removable_batt_flag)) {
 		removable_batt_flag = 0;
-		hwlog_err("error:get removable_batt_flag value failed!\n");
+		bci_err("error:get removable_batt_flag value failed!\n");
 	}
 	if (of_property_read_u32(np, "battery_board_type",(u32 *)&is_board_type)) {
 		is_board_type = BAT_BOARD_SFT;
-		hwlog_err("error:get battery_board_type value failed!\n");
+		bci_err("error:get battery_board_type value failed!\n");
 	}
 	if (of_property_read_u32(np, "google_battery_node", (u32 *)&google_battery_node)) {
 		google_battery_node = 0;
-		hwlog_err("error:get google_battery_node value failed!\n");
+		bci_err("error:get google_battery_node value failed!\n");
 	}
 
 	/*bci_work_interval_para*/
 	array_len = of_property_count_strings(np, "bci_work_interval_para");
 	if ((array_len <= 0) || (array_len % WORK_INTERVAL_PARA_TOTAL != 0)) {
-		hwlog_err("bci_work_interval_para is invaild,please check iput number!!\n");
+		bci_err("bci_work_interval_para is invaild,please check iput number!!\n");
 		return -EINVAL;
 	}
 
 	if (array_len > WORK_INTERVAL_PARA_LEVEL * WORK_INTERVAL_PARA_TOTAL) {
-		hwlog_err("bci_work_interval_para is too long,use only front %d paras!!\n", array_len);
+		bci_err("bci_work_interval_para is too long,use only front %d paras!!\n", array_len);
 		return -EINVAL;
 	}
 
@@ -1812,7 +1875,7 @@ static int hisi_bci_parse_dts(struct device_node *np, struct hisi_bci_device_inf
 	for (i = 0; i < array_len; i++) {
 		ret = of_property_read_string_index(np, "bci_work_interval_para", i, &bci_data_string);
 		if (ret) {
-			hwlog_err("get bci_work_interval_para failed\n");
+			bci_err("get bci_work_interval_para failed\n");
 			return -EINVAL;
 		}
 
@@ -1820,30 +1883,31 @@ static int hisi_bci_parse_dts(struct device_node *np, struct hisi_bci_device_inf
 		switch (i % WORK_INTERVAL_PARA_TOTAL) {
 		case WORK_INTERVAL_CAP_MIN:
 			if ((idata < CAPACITY_MIN) || (idata > CAPACITY_MAX)) {
-				hwlog_err("the bci_work_interval_para cap_min is out of range!!\n");
+				bci_err("the bci_work_interval_para cap_min is out of range!!\n");
 				return -EINVAL;
 			}
 			di->interval_data[i / (WORK_INTERVAL_PARA_TOTAL)].cap_min = idata;
 			break;
 		case WORK_INTERVAL_CAP_MAX:
 			if ((idata < CAPACITY_MIN) || (idata > CAPACITY_MAX)) {
-				hwlog_err("the bci_work_interval_para cap_max is out of range!!\n");
+				bci_err("the bci_work_interval_para cap_max is out of range!!\n");
 				return -EINVAL;
 			}
 			di->interval_data[i / (WORK_INTERVAL_PARA_TOTAL)].cap_max = idata;
 			break;
 		case WORK_INTERVAL_VALUE:
 			if( (idata < WORK_INTERVAL_MIN) || (idata > WORK_INTERVAL_MAX)) {
-				hwlog_err("the bci_work_interval_para work_interval is out of range!!\n");
+				bci_err("the bci_work_interval_para work_interval is out of range!!\n");
 				return -EINVAL;
 			}
 			di->interval_data[i / (WORK_INTERVAL_PARA_TOTAL)].work_interval = idata;
 			break;
 		}
-		hwlog_info("di->interval_data[%d][%d] = %d\n",
+		bci_info("di->interval_data[%d][%d] = %d\n",
 					i / (WORK_INTERVAL_PARA_TOTAL), i % (WORK_INTERVAL_PARA_TOTAL), idata);
 	}
-
+	parse_cap_dec_dts(np,di);
+    ret |= parse_vth_correct_dts(np, di);
 	return ret;
 }
 
@@ -1918,12 +1982,11 @@ static int hisi_bci_battery_probe(struct platform_device *pdev)
 	for (i = 0; i < WINDOW_LEN; i++) {
 		capacity_filter[i] = (unsigned int)hisi_battery_capacity();
 		capacity_sum += capacity_filter[i];
-		hwlog_info("capacity_filter[%d] = %d\n", i, capacity_filter[i]);
+		bci_info("capacity_filter[%d] = %d\n", i, capacity_filter[i]);
 	}
 
 	hrtimer_init(&di->capacity_dec_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
 	di->capacity_dec_timer.function	= capacity_dec_timer_func;
-	di->capacity_dec_timer_interval = CAPATICY_DEC_TIMER_INTERVAL;
 
 	hisi_get_battery_info(di);
 
@@ -1943,64 +2006,64 @@ static int hisi_bci_battery_probe(struct platform_device *pdev)
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(3, 13, 0))
 	ret = power_supply_register(&pdev->dev, &di->bat);
 	if (ret) {
-		hwlog_debug("failed to register main battery\n");
+		bci_debug("failed to register main battery\n");
 		goto batt_failed;
 	}
 
 	ret = power_supply_register(&pdev->dev, &di->usb);
 	if (ret) {
-		hwlog_debug("failed to register usb power supply\n");
+		bci_debug("failed to register usb power supply\n");
 		goto usb_failed;
 	}
 
 	ret = power_supply_register(&pdev->dev, &di->ac);
 	if (ret) {
-		hwlog_debug("failed to register ac power supply\n");
+		bci_debug("failed to register ac power supply\n");
 		goto ac_failed;
 	}
 
 	ret = power_supply_register(&pdev->dev, &di->bk_bat);
 	if (ret) {
-		hwlog_debug("failed to register backup battery\n");
+		bci_debug("failed to register backup battery\n");
 		goto bk_batt_failed;
 	}
 
 	if(google_battery_node){
 		ret = power_supply_register(&pdev->dev, &di->bat_google);
 		if (ret) {
-			hwlog_debug("failed to register google battery\n");
+			bci_debug("failed to register google battery\n");
 			goto bat_google_failed;
 		}
 	}
 #else
 	di->bat = power_supply_register(&pdev->dev, &hisi_bci_battery_desc, &hisi_bci_battery_cfg);/*lint !e456*/
 	if (IS_ERR(di->bat)) {
-		hwlog_debug("failed to register main battery\n");
+		bci_debug("failed to register main battery\n");
 		goto batt_failed;
 	}
 
 	di->usb = power_supply_register(&pdev->dev, &hisi_bci_usb_desc, NULL);
 	if (IS_ERR(di->usb)) {
-		hwlog_debug("failed to register usb power supply\n");
+		bci_debug("failed to register usb power supply\n");
 		goto usb_failed;
 	}
 
 	di->ac = power_supply_register(&pdev->dev, &hisi_bci_mains_desc, NULL);
 	if (IS_ERR(di->ac)) {
-		hwlog_debug("failed to register ac power supply\n");
+		bci_debug("failed to register ac power supply\n");
 		goto ac_failed;
 	}
 
 	di->bk_bat = power_supply_register(&pdev->dev, &hisi_bci_bk_battery_desc, NULL);
 	if (IS_ERR(di->bk_bat)) {
-		hwlog_debug("failed to register backup battery\n");
+		bci_debug("failed to register backup battery\n");
 		goto bk_batt_failed;
 	}
 
 	if(google_battery_node){
 		di->bat_google= power_supply_register(&pdev->dev, &hisi_bci_bat_google_desc, &hisi_bci_battery_cfg);
 		if (IS_ERR(di->bat_google)) {
-			hwlog_debug("failed to register google battery\n");
+			bci_debug("failed to register google battery\n");
 			goto bat_google_failed;
 		}
 	}
@@ -2016,10 +2079,10 @@ static int hisi_bci_battery_probe(struct platform_device *pdev)
 			g_sysfs_bq_bci = &new_dev->kobj;
 			ret = sysfs_create_group(&new_dev->kobj, &hisi_bci_attr_group);
 			if (ret) {
-				hwlog_err("%s, could not create sysfs files hisi_bci!\n", __func__);
+				bci_err("%s, could not create sysfs files hisi_bci!\n", __func__);
 			}
 		} else {
-			hwlog_err("%s, could not create dev hisi_bci!\n", __func__);
+			bci_err("%s, could not create dev hisi_bci!\n", __func__);
 		}
 	}
 
@@ -2028,15 +2091,7 @@ static int hisi_bci_battery_probe(struct platform_device *pdev)
 
 	di->nb.notifier_call = hisi_charger_event;
 	hisi_register_notifier(&di->nb, 1);
-	hwlog_info("hisi_bci probe ok!\n");
-#if defined(CONFIG_HUAWEI_DSM)
-	if (!battery_dclient && (BAT_BOARD_ASIC == is_board_type))
-		battery_dclient = dsm_register_client(&dsm_battery);
-
-	if (!charge_monitor_dclient && (BAT_BOARD_ASIC == is_board_type)) {
-		charge_monitor_dclient = dsm_register_client(&dsm_charge_monitor);
-	}
-#endif
+	bci_info("hisi_bci probe ok!\n");
 
 	return 0;/*lint !e454*/
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(3, 13, 0))
@@ -2079,7 +2134,7 @@ static int hisi_bci_battery_remove(struct platform_device *pdev)
 	struct hisi_bci_device_info *di = platform_get_drvdata(pdev);
 
 	if (di == NULL) {
-		hwlog_err("di is NULL!\n");
+		bci_err("di is NULL!\n");
 		return -ENODEV;
 	}
 
@@ -2097,16 +2152,16 @@ static void hisi_bci_battery_shutdown(struct platform_device *pdev)
 {
 	struct hisi_bci_device_info *di = platform_get_drvdata(pdev);
 
-	hwlog_info("%s ++\n", __func__);
+	bci_info("%s ++\n", __func__);
 	if (di == NULL) {
-		hwlog_err("di is NULL!\n");
+		bci_err("di is NULL!\n");
 		return;
 	}
 
 	hisi_unregister_notifier(&di->nb, 1);
 	cancel_delayed_work(&di->hisi_bci_monitor_work);
 	wake_lock_destroy(&low_power_lock);
-	hwlog_info("%s --\n", __func__);
+	bci_info("%s --\n", __func__);
 
 	return;
 }
@@ -2118,13 +2173,13 @@ static int hisi_bci_battery_suspend(struct platform_device *pdev,
 	struct hisi_bci_device_info *di = platform_get_drvdata(pdev);
 
 	if (di == NULL) {
-		hwlog_err("di is NULL!\n");
+		bci_err("di is NULL!\n");
 		return -ENODEV;
 	}
-	hwlog_info("%s:+\n", __func__);
+	bci_info("%s:+\n", __func__);
 	suspend_capacity = hisi_battery_capacity();
 	cancel_delayed_work(&di->hisi_bci_monitor_work);
-	hwlog_info("%s:-\n", __func__);
+	bci_info("%s:-\n", __func__);
 	return 0;
 }
 
@@ -2134,11 +2189,11 @@ static int hisi_bci_battery_resume(struct platform_device *pdev)
 	int i = 0, resume_capacity = 0;
 
 	if (di == NULL) {
-		hwlog_err("di is NULL!\n");
+		bci_err("di is NULL!\n");
 		return -ENODEV;
 	}
 
-	hwlog_info("%s:+\n", __func__);
+	bci_info("%s:+\n", __func__);
 	capacity_debounce_flag = true;
 
 	resume_capacity = hisi_battery_capacity();
@@ -2156,7 +2211,7 @@ static int hisi_bci_battery_resume(struct platform_device *pdev)
 	g_curr_zero_times = 0;
 #endif
 	queue_delayed_work(system_power_efficient_wq, &di->hisi_bci_monitor_work, 0);
-	hwlog_info("%s:-\n", __func__);
+	bci_info("%s:-\n", __func__);
 	return 0;
 }
 #endif /* CONFIG_PM */
@@ -2167,7 +2222,7 @@ struct class *hw_power_get_class(void)
 	if (NULL == hw_power_class) {
 		hw_power_class = class_create(THIS_MODULE, "hw_power");
 		if (IS_ERR(hw_power_class)) {
-			hwlog_err("hw_power_class create fail");
+			bci_err("hw_power_class create fail");
 			return NULL;
 		}
 	}

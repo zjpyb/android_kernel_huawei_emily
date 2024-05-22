@@ -193,6 +193,8 @@ typedef enum bfr_recovery_method_running_status
     RMRSC_ERECOVERY_START_INSTALL_PACKAGES,
     RMRSC_ERECOVERY_INSTALL_PACKAGES_SUCCESS,
     RMRSC_ERECOVERY_INSTALL_PACKAGES_FAILED,
+    RMRSC_ERECOVERY_MOUNT_USERDATA_FAILED,
+    RMRSC_ERECOVERY_MOUNT_USERDATA_SUCCESS,
 } bfr_recovery_method_running_status_e;
 
 typedef enum bfr_recovery_method_run_result
@@ -232,7 +234,8 @@ typedef struct bfr_recovery_record
     unsigned int factory_reset_flag;
     unsigned int recovery_method_original;
     unsigned int boot_fail_time; /* boot time when bootfail happened */
-    char reserved[84];
+    char bootfail_detail[16];
+    char reserved[68];
 } bfr_recovery_record_t;
 
 typedef struct bfr_recovery_record_param
@@ -281,6 +284,8 @@ typedef enum bfr_misc_cmd
 #define BFR_RRECORD_THIRD_PART_OFFSET (BFR_RRECORD_SECOND_PART_OFFSET + BFR_EACH_RECORD_PART_SIZE)
 #define BFR_SAFE_MODE_ENABLE_FLAG ((unsigned int)0x656e736d) /*ensm*/
 #define BFR_FACTORY_RESET_DONE ((unsigned int)0x6672646e) /*frdn*/
+#define BFR_FSCK_BEFORE_FORMAT_DATA ((unsigned int)0x6673666d) /* fsfm */
+#define BFR_FORMAT_DATA_WITHOUT_FSCK ((unsigned int)0x666d6474) /* fmdt */
 #define bfr_is_download_recovery_method(recovery_method) \
     (((unsigned int)FRM_GOTO_ERECOVERY_DOWNLOAD_RECOVERY == recovery_method) \
     || ((unsigned int)FRM_GOTO_ERECOVERY_DOWNLOAD_RECOVERY_AND_DEL_FILES == recovery_method) \
@@ -293,6 +298,7 @@ typedef enum bfr_misc_cmd
 /*----export function prototypes--------------------------------------------------------*/
 
 #ifdef CONFIG_USE_BOOTFAIL_RECOVERY_SOLUTION
+int bfr_get_hardware_fault_times(bfmr_get_hw_fault_info_param_t *pfault_info_param);
 int bfr_get_real_recovery_info(bfr_real_recovery_info_t *preal_recovery_info);
 char* bfr_get_recovery_method_desc(int recovery_method);
 
@@ -347,6 +353,11 @@ bfr_recovery_method_e try_to_recovery(
 */
 int bfr_init(void);
 #else
+static inline int bfr_get_hardware_fault_times(bfmr_get_hw_fault_info_param_t *pfault_info_param)
+{
+    return -1;
+}
+
 static inline int bfr_get_real_recovery_info(bfr_real_recovery_info_t *preal_recovery_info)
 {
     return 0;

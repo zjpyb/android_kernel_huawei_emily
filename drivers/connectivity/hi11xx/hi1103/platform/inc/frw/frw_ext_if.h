@@ -20,15 +20,15 @@ extern "C" {
 #define THIS_FILE_ID OAM_FILE_ID_FRW_EXT_IF_H
 
 #define FRW_TIMER_RESTART_TIMER(_pst_timeout, _ul_timeout, _en_is_periodic) \
-        frw_timer_restart_timer(_pst_timeout, _ul_timeout, _en_is_periodic)
+        frw_timer_restart_timer_etc(_pst_timeout, _ul_timeout, _en_is_periodic)
 #define FRW_TIMER_STOP_TIMER(_pst_timeout) \
-        frw_timer_stop_timer(_pst_timeout)
+        frw_timer_stop_timer_etc(_pst_timeout)
 #define FRW_TIMER_CREATE_TIMER(_pst_timeout, _p_timeout_func, _ul_timeout, _p_timeout_arg, _en_is_periodic, _en_module_id, _ul_core_id) \
-        frw_timer_create_timer(THIS_FILE_ID, __LINE__, _pst_timeout, _p_timeout_func, _ul_timeout, _p_timeout_arg, _en_is_periodic, _en_module_id, _ul_core_id)
+        frw_timer_create_timer_etc(THIS_FILE_ID, __LINE__, _pst_timeout, _p_timeout_func, _ul_timeout, _p_timeout_arg, _en_is_periodic, _en_module_id, _ul_core_id)
 #define FRW_TIMER_DESTROY_TIMER(_pst_timeout)\
-        frw_timer_immediate_destroy_timer(THIS_FILE_ID, __LINE__, _pst_timeout)
+        frw_timer_immediate_destroy_timer_etc(THIS_FILE_ID, __LINE__, _pst_timeout)
 #define FRW_TIMER_IMMEDIATE_DESTROY_TIMER(_pst_timeout)\
-        frw_timer_immediate_destroy_timer(THIS_FILE_ID, __LINE__, _pst_timeout)
+        frw_timer_immediate_destroy_timer_etc(THIS_FILE_ID, __LINE__, _pst_timeout)
 
 #define FRW_TIMER_TRACK_NUM     256
 #define FRW_TIMEOUT_TRACK_NUM   256
@@ -314,17 +314,17 @@ typedef struct
 //#define FRW_GET_EVENT_DATA(_pst_event_mem) ((_pst_event_mem)->puc_data)
 
 #define FRW_EVENT_ALLOC(_us_len) \
-    frw_event_alloc(THIS_FILE_ID, __LINE__, _us_len);
+    frw_event_alloc_etc(THIS_FILE_ID, __LINE__, _us_len);
 
 #define FRW_EVENT_FREE(_pst_event_mem) \
-    frw_event_free(THIS_FILE_ID, __LINE__, _pst_event_mem)
+    frw_event_free_etc(THIS_FILE_ID, __LINE__, _pst_event_mem)
 
 /* Hi10X共仓代码适配51，Hi10X为了编译时进行检查，后续可能会有调整 */
 #define FRW_EVENT_ALLOC_BIG(_us_len) \
-    frw_event_alloc(THIS_FILE_ID, __LINE__, _us_len);
+    frw_event_alloc_etc(THIS_FILE_ID, __LINE__, _us_len);
 
 #define FRW_EVENT_ALLOC_LARGE(_us_len) \
-    frw_event_alloc(THIS_FILE_ID, __LINE__, _us_len);
+    frw_event_alloc_etc(THIS_FILE_ID, __LINE__, _us_len);
 
 /* 事件头初始化宏 */
 #define FRW_EVENT_HDR_INIT(_pst_event_hdr, _en_type, _uc_sub_type, _us_length, _en_pipeline, _uc_chip_id, _uc_device_id, _uc_vap_id) \
@@ -350,7 +350,7 @@ typedef struct
 *****************************************************************************/
 
 
-OAL_STATIC OAL_INLINE frw_event_mem_stru*  frw_event_alloc(oal_uint32    ul_file_id,
+OAL_STATIC OAL_INLINE frw_event_mem_stru*  frw_event_alloc_etc(oal_uint32    ul_file_id,
                                                            oal_uint32    ul_line_num,
                                                            oal_uint16    us_payload_length)
 {
@@ -358,11 +358,11 @@ OAL_STATIC OAL_INLINE frw_event_mem_stru*  frw_event_alloc(oal_uint32    ul_file
 
     us_payload_length += OAL_MEM_INFO_SIZE;
 
-    pst_event_mem = oal_mem_alloc_enhanced(ul_file_id, ul_line_num, OAL_MEM_POOL_ID_EVENT, (us_payload_length + FRW_EVENT_HDR_LEN), OAL_TRUE);
+    pst_event_mem = oal_mem_alloc_enhanced_etc(ul_file_id, ul_line_num, OAL_MEM_POOL_ID_EVENT, (us_payload_length + FRW_EVENT_HDR_LEN), OAL_TRUE);
     if (OAL_UNLIKELY(OAL_PTR_NULL == pst_event_mem))
     {
 #if (_PRE_MULTI_CORE_MODE_OFFLOAD_DMAC == _PRE_MULTI_CORE_MODE)
-        oal_mem_print_normal_pool_info(OAL_MEM_POOL_ID_EVENT);
+        oal_mem_print_normal_pool_info_etc(OAL_MEM_POOL_ID_EVENT);
 #endif
 
         return OAL_PTR_NULL;
@@ -380,7 +380,7 @@ OAL_STATIC OAL_INLINE frw_event_mem_stru*  frw_event_alloc(oal_uint32    ul_file
 }
 
 
-OAL_STATIC OAL_INLINE oal_uint32  frw_event_free(oal_uint32            ul_file_id,
+OAL_STATIC OAL_INLINE oal_uint32  frw_event_free_etc(oal_uint32            ul_file_id,
                                                  oal_uint32            ul_line_num,
                                                  frw_event_mem_stru   *pst_event_mem)
 {
@@ -391,7 +391,7 @@ OAL_STATIC OAL_INLINE oal_uint32  frw_event_free(oal_uint32            ul_file_i
     /* 中断上半部会申请事件，所以需要关中断 */
     //oal_irq_save(&ul_irq_flag, OAL_5115IRQ_FEF);
 
-    ul_ret = oal_mem_free_enhanced(ul_file_id, ul_line_num, pst_event_mem, OAL_TRUE);
+    ul_ret = oal_mem_free_enhanced_etc(ul_file_id, ul_line_num, pst_event_mem, OAL_TRUE);
     if(OAL_WARN_ON(OAL_SUCC != ul_ret))
     {
         pst_frw_event = frw_get_event_stru(pst_event_mem);
@@ -407,46 +407,46 @@ OAL_STATIC OAL_INLINE oal_uint32  frw_event_free(oal_uint32            ul_file_i
   10 函数声明
 *****************************************************************************/
 #ifdef _PRE_DEBUG_MODE
-extern oal_uint32                g_ul_rx_event_idx;
-extern oal_bool_enum_uint8       g_en_event_track_switch;
-extern oal_uint32                g_ul_schedule_idx;
-extern oal_uint32                g_aul_schedule_time[FRW_RX_EVENT_TRACK_NUM];
+extern oal_uint32                g_ul_rx_event_idx_etc;
+extern oal_bool_enum_uint8       g_en_event_track_switch_etc;
+extern oal_uint32                g_ul_schedule_idx_etc;
+extern oal_uint32                g_aul_schedule_time_etc[FRW_RX_EVENT_TRACK_NUM];
 extern oal_uint32                g_ul_mac_process_event;
 #endif
 
 #if defined(_PRE_DEBUG_MODE) && (_PRE_MULTI_CORE_MODE_OFFLOAD_DMAC == _PRE_MULTI_CORE_MODE)
-extern frw_event_track_time_stru g_ast_event_time_track[FRW_RX_EVENT_TRACK_NUM];
-extern frw_timeout_track_stru    g_st_timeout_track[FRW_TIMEOUT_TRACK_NUM];
-extern oal_uint8                 g_uc_timeout_track_idx;
+extern frw_event_track_time_stru g_ast_event_time_track_etc[FRW_RX_EVENT_TRACK_NUM];
+extern frw_timeout_track_stru    g_st_timeout_track_etc[FRW_TIMEOUT_TRACK_NUM];
+extern oal_uint8                 g_uc_timeout_track_idx_etc;
 #endif
 
-extern oal_uint8 g_uc_timer_pause;
-extern oal_int32  frw_main_init(oal_void);
-extern oal_void  frw_main_exit(oal_void);
-extern oal_void  frw_set_init_state(frw_init_enum_uint16 en_init_state);
-extern frw_init_enum_uint16  frw_get_init_state(oal_void);
-extern oal_uint32  frw_event_exit(oal_void);
-extern oal_uint32 frw_event_init(oal_void);
-extern oal_uint32  frw_event_dispatch_event(frw_event_mem_stru *pst_mem);
+extern oal_uint8 g_uc_timer_pause_etc;
+extern oal_int32  frw_main_init_etc(oal_void);
+extern oal_void  frw_main_exit_etc(oal_void);
+extern oal_void  frw_set_init_state_etc(frw_init_enum_uint16 en_init_state);
+extern frw_init_enum_uint16  frw_get_init_state_etc(oal_void);
+extern oal_uint32  frw_event_exit_etc(oal_void);
+extern oal_uint32 frw_event_init_etc(oal_void);
+extern oal_uint32  frw_event_dispatch_event_etc(frw_event_mem_stru *pst_mem);
 #if (_PRE_MULTI_CORE_MODE_OFFLOAD_DMAC != _PRE_MULTI_CORE_MODE)
-extern oal_uint32  frw_event_post_event(frw_event_mem_stru *pst_event_mem,oal_uint32 ul_core_id);
+extern oal_uint32  frw_event_post_event_etc(frw_event_mem_stru *pst_event_mem,oal_uint32 ul_core_id);
 #endif
-extern oal_void  frw_event_table_register(
+extern oal_void  frw_event_table_register_etc(
                 frw_event_type_enum_uint8      en_event_type,
                 frw_event_pipeline_enum        en_pipeline,
                 frw_event_sub_table_item_stru *pst_sub_table);
 #if (_PRE_MULTI_CORE_MODE_OFFLOAD_DMAC == _PRE_MULTI_CORE_MODE)
-oal_void frw_event_sub_rx_adapt_table_init(frw_event_sub_table_item_stru *pst_sub_table, oal_uint32 ul_table_nums,
+oal_void frw_event_sub_rx_adapt_table_init_etc(frw_event_sub_table_item_stru *pst_sub_table, oal_uint32 ul_table_nums,
                                                 frw_event_mem_stru *(*p_rx_adapt_func)(frw_event_mem_stru *));
 #endif
-extern oal_void  frw_event_dump_event(oal_uint8 *puc_event);
-extern oal_uint32  frw_event_flush_event_queue(frw_event_type_enum_uint8 uc_event_type);
-extern oal_void frw_event_vap_pause_event(oal_uint8 uc_vap_id);
-extern oal_void frw_event_vap_resume_event(oal_uint8 uc_vap_id);
-extern oal_uint32 frw_event_vap_flush_event(oal_uint8                 uc_vap_id,
+extern oal_void  frw_event_dump_event_etc(oal_uint8 *puc_event);
+extern oal_uint32  frw_event_flush_event_queue_etc(frw_event_type_enum_uint8 uc_event_type);
+extern oal_void frw_event_vap_pause_event_etc(oal_uint8 uc_vap_id);
+extern oal_void frw_event_vap_resume_event_etc(oal_uint8 uc_vap_id);
+extern oal_uint32 frw_event_vap_flush_event_etc(oal_uint8                 uc_vap_id,
                                             frw_event_type_enum_uint8 en_event_type,
                                             oal_bool_enum_uint8       en_drop);
-extern oal_void  frw_timer_create_timer(
+extern oal_void  frw_timer_create_timer_etc(
                                             oal_uint32 ul_file_id,
                                             oal_uint32 ul_line_num,
                                             frw_timeout_stru *pst_timeout,
@@ -456,22 +456,22 @@ extern oal_void  frw_timer_create_timer(
                                             oal_bool_enum_uint8  en_is_periodic,
                                             oam_module_id_enum_uint16   en_module_id,
                                             oal_uint32 ul_core_id);
-extern oal_void  frw_timer_immediate_destroy_timer(oal_uint32 ul_file_id,
+extern oal_void  frw_timer_immediate_destroy_timer_etc(oal_uint32 ul_file_id,
                                                            oal_uint32 ul_line_num,
                                                            frw_timeout_stru *pst_timeout);
-extern oal_void  frw_timer_restart_timer(frw_timeout_stru *pst_timeout, oal_uint32 ul_timeout, oal_bool_enum_uint8  en_is_periodic);
-extern oal_void  frw_timer_add_timer(frw_timeout_stru *pst_timeout);
-extern oal_void  frw_timer_stop_timer(frw_timeout_stru *pst_timeout);
-extern oal_void  frw_timer_dump_timer(oal_uint32 ul_core_id);
-extern oal_void  frw_timer_delete_all_timer(oal_void);
-extern oal_uint32  frw_event_queue_info(oal_void);
-extern oal_void  frw_event_process_all_event(oal_uint ui_data);
-extern oal_bool_enum_uint8  frw_is_event_queue_empty(frw_event_type_enum_uint8 uc_event_type);
-extern oal_bool_enum_uint8  frw_is_vap_event_queue_empty(oal_uint32 ul_core_id, oal_uint8 uc_vap_id, oal_uint8 event_type);
-extern oal_uint8 frw_task_thread_condition_check(oal_uint32 ul_core_id);
+extern oal_void  frw_timer_restart_timer_etc(frw_timeout_stru *pst_timeout, oal_uint32 ul_timeout, oal_bool_enum_uint8  en_is_periodic);
+extern oal_void  frw_timer_add_timer_etc(frw_timeout_stru *pst_timeout);
+extern oal_void  frw_timer_stop_timer_etc(frw_timeout_stru *pst_timeout);
+extern oal_void  frw_timer_dump_timer_etc(oal_uint32 ul_core_id);
+extern oal_void  frw_timer_delete_all_timer_etc(oal_void);
+extern oal_uint32  frw_event_queue_info_etc(oal_void);
+extern oal_void  frw_event_process_all_event_etc(oal_uint ui_data);
+extern oal_bool_enum_uint8  frw_is_event_queue_empty_etc(frw_event_type_enum_uint8 uc_event_type);
+extern oal_bool_enum_uint8  frw_is_vap_event_queue_empty_etc(oal_uint32 ul_core_id, oal_uint8 uc_vap_id, oal_uint8 event_type);
+extern oal_uint8 frw_task_thread_condition_check_etc(oal_uint32 ul_core_id);
 
 #ifdef _PRE_WLAN_FEATURE_OFFLOAD_FLOWCTL
-extern oal_void   hcc_host_update_vi_flowctl_param(oal_uint32 be_cwmin, oal_uint32 vi_cwmin);
+extern oal_void   hcc_host_update_vi_flowctl_param_etc(oal_uint32 be_cwmin, oal_uint32 vi_cwmin);
 #endif
 extern oal_void   frw_timer_clean_timer(oam_module_id_enum_uint16 en_module_id);
 

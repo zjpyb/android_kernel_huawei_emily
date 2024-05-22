@@ -127,24 +127,41 @@ VOID SCDDRV_ExitSleep(VOID)
 	VFMW_OSAL_SemaUp(G_SCD_SEM);
 }
 
-SINT32 SCDDRV_CheckCfgAddress(SCD_CONFIG_REG_S *pSmCtrlReg, MEM_BUFFER_S* pScdMemMap)
+static SINT32 SCDDRV_CheckAddress(UADDR scdcfg, HI_U32 startPhy, HI_U32 endPhy)
 {
-	HI_U32 u32StartOutPutPhyAddr;
-	HI_U32 u32EndOutPutPhyAddr;
-	SINT32 DownMsgMaxOffset = (SM_MAX_DOWNMSG_SIZE + 15) & (~15);
-	SINT32 UpMsgMaxOffset   = (SM_MAX_UPMSG_SIZE + 15) & (~15);
-
-	if ((pScdMemMap[SCD_SHAREFD_MESSAGE_POOL].u8IsMapped == 0)
-		|| (pScdMemMap[SCD_SHAREFD_OUTPUT_BUF].u8IsMapped == 0)) {
-		dprint(PRN_FATAL, "%s parameter error: no map \n", __func__);
+	if ((scdcfg == 0) || (scdcfg < startPhy) || (scdcfg > endPhy)) {
 		return SCDDRV_ERR;
 	}
+
+	return SCDDRV_OK;
+}
+
+SINT32 SCDDRV_CheckCfgAddress(SCD_CONFIG_REG_S *pSmCtrlReg, MEM_BUFFER_S* pScdMemMap)
+{
+	UINT32 i;
+	SINT32 ret = SCDDRV_OK;
+	HI_U32 u32StartOutPutPhyAddr;
+	HI_U32 u32EndOutPutPhyAddr;
+	/* SINT32 DownMsgMaxOffset = (SM_MAX_DOWNMSG_SIZE + 15) & (~15);  */
+	SINT32 UpMsgMaxOffset   = (SM_MAX_UPMSG_SIZE + 15) & (~15);
+	UINT32 maxScdBufNum     = (pSmCtrlReg->ScdOutputBufNum + SCD_SHAREFD_OUTPUT_BUF) < SCD_SHAREFD_MAX ?
+								(pSmCtrlReg->ScdOutputBufNum + SCD_SHAREFD_OUTPUT_BUF) : SCD_SHAREFD_MAX;
+
+	for (i = SCD_SHAREFD_MESSAGE_POOL; i < maxScdBufNum; i++) {
+		if ((INVALID_SHAREFD == pScdMemMap[i].u32ShareFd)
+			|| (pScdMemMap[i].u8IsMapped == 0)) {
+			dprint(PRN_FATAL, "%s parameter error: buffer no map. index: %d, isMapped: %d, shareFd: %d \n",
+				__func__, i, pScdMemMap[i].u8IsMapped, pScdMemMap[i].u32ShareFd);
+			return SCDDRV_ERR;
+		}
+	}
+
 	if ((pSmCtrlReg->DownMsgPhyAddr == 0)
 		|| (pSmCtrlReg->DownMsgPhyAddr < pScdMemMap[SCD_SHAREFD_MESSAGE_POOL].u32StartPhyAddr)
 		|| (pSmCtrlReg->DownMsgPhyAddr
 			> (pScdMemMap[SCD_SHAREFD_MESSAGE_POOL].u32StartPhyAddr
 				+ pScdMemMap[SCD_SHAREFD_MESSAGE_POOL].u32Size
-				- DownMsgMaxOffset))) {
+				/* - DownMsgMaxOffset */))) {
 		dprint(PRN_FATAL, "%s DownMsgPhyAddr is out of range \n", __func__);
 		return SCDDRV_ERR;
 	}
@@ -153,7 +170,7 @@ SINT32 SCDDRV_CheckCfgAddress(SCD_CONFIG_REG_S *pSmCtrlReg, MEM_BUFFER_S* pScdMe
 		|| (pSmCtrlReg->UpMsgPhyAddr
 			> (pScdMemMap[SCD_SHAREFD_MESSAGE_POOL].u32StartPhyAddr
 				+ pScdMemMap[SCD_SHAREFD_MESSAGE_POOL].u32Size
-				- UpMsgMaxOffset))) {
+				/* - UpMsgMaxOffset */))) {
 		dprint(PRN_FATAL, "%s UpMsgPhyAddr  is out of range \n", __func__);
 		return SCDDRV_ERR;
 	}
@@ -162,14 +179,25 @@ SINT32 SCDDRV_CheckCfgAddress(SCD_CONFIG_REG_S *pSmCtrlReg, MEM_BUFFER_S* pScdMe
 		dprint(PRN_FATAL, "%s UpLen is out of range \n", __func__);
 		return SCDDRV_ERR;
 	}
-	u32StartOutPutPhyAddr = pScdMemMap[SCD_SHAREFD_OUTPUT_BUF].u32StartPhyAddr;
-	u32EndOutPutPhyAddr   = pScdMemMap[SCD_SHAREFD_OUTPUT_BUF].u32StartPhyAddr
-				+ pScdMemMap[SCD_SHAREFD_OUTPUT_BUF].u32Size;
 
-	SCD_CHECK_CFG_ADDR_RETURN(pSmCtrlReg->BufferFirst, "BufferFirst", u32StartOutPutPhyAddr, u32EndOutPutPhyAddr);
-	SCD_CHECK_CFG_ADDR_RETURN(pSmCtrlReg->BufferLast, "BufferLast", u32StartOutPutPhyAddr, u32EndOutPutPhyAddr);
-	SCD_CHECK_CFG_ADDR_RETURN(pSmCtrlReg->BufferIni, "First_Ini_Last", pSmCtrlReg->BufferFirst, pSmCtrlReg->BufferLast);
-	return SCDDRV_OK;
+
+	for (i = SCD_SHAREFD_OUTPUT_BUF; i < maxScdBufNum; i++) {
+		u32StartOutPutPhyAddr = pScdMemMap[i].u32StartPhyAddr;
+		u32EndOutPutPhyAddr   = pScdMemMap[i].u32StartPhyAddr + pScdMemMap[i].u32Size;
+		ret = SCDDRV_OK;
+		ret += SCDDRV_CheckAddress(pSmCtrlReg->BufferFirst,
+			u32StartOutPutPhyAddr, u32EndOutPutPhyAddr);
+		ret += SCDDRV_CheckAddress(pSmCtrlReg->BufferLast,
+			u32StartOutPutPhyAddr, u32EndOutPutPhyAddr);
+		ret += SCDDRV_CheckAddress(pSmCtrlReg->BufferIni,
+			pSmCtrlReg->BufferFirst, pSmCtrlReg->BufferLast);
+
+		if (SCDDRV_OK == ret) {
+			break;
+		}
+	}
+
+	return ret;
 }
 
 SINT32 SCDDRV_WriteReg(SCD_CONFIG_REG_S *pSmCtrlReg, MEM_BUFFER_S* pScdMemMap)
@@ -252,7 +280,7 @@ VOID SCDDRV_SaveStateReg(VOID)
 
 VOID SCDDRV_init(VOID)
 {
-	memset(&gScdStateReg, 0, sizeof(gScdStateReg));
+	memset(&gScdStateReg, 0, sizeof(gScdStateReg)); /* unsafe_function_ignore: memset */
 	s_eScdDrvSleepStage = SCDDRV_SLEEP_STAGE_NONE;
 	s_SCDState = SCD_IDLE;
 }
@@ -280,7 +308,7 @@ VOID SCDDRV_ISR(VOID)
 
 VOID SCDDRV_GetRegState(SCD_STATE_REG_S *pScdStateReg)
 {
-	memcpy(pScdStateReg, &gScdStateReg, sizeof(*pScdStateReg));
+	memcpy(pScdStateReg, &gScdStateReg, sizeof(*pScdStateReg)); /* unsafe_function_ignore: memcpy */
 	s_SCDState = SCD_IDLE;
 }
 
@@ -303,7 +331,7 @@ SINT32 WaitSCDFinish(VOID)
 static VOID PrintScdVtrlReg(VOID)
 {
 	SCD_CONFIG_REG_S SmCtrlReg;
-	memset(&SmCtrlReg, 0, sizeof(SmCtrlReg));
+	memset(&SmCtrlReg, 0, sizeof(SmCtrlReg)); /* unsafe_function_ignore: memset */
 
 	SmCtrlReg.DownMsgPhyAddr = RD_SCDREG(REG_LIST_ADDRESS);
 	SmCtrlReg.UpMsgPhyAddr   = RD_SCDREG(REG_UP_ADDRESS);

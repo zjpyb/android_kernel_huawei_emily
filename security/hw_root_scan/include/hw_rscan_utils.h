@@ -23,12 +23,22 @@
 #include <linux/vmalloc.h>
 #include "hw_rscan_interface.h"
 
-
-#define FILE_SIZE_MAX (4096)
+//#define FILE_SIZE_MAX (4096)
 #define EOF (-1)
 #define LINE_LEN_SHORT (200)
 
-#define DEFAULT_PROP_FILE   "/default.prop"
+//#define DEFAULT_PROP_FILE   "/default.prop"
+
+/*
+ * the length of list of rproc is limited to 840 byte,
+ * otherwise, upload contents will be empty
+ */
+
+/*
+ * the length of list of rproc is limited to 840 byte,
+ * otherwise, upload contents will be empty
+ */
+#define RPROC_VALUE_LEN_MAX  840
 
 #define RSCAN_UNINIT    0
 #define RSCAN_INIT      1
@@ -83,37 +93,6 @@
 #else
 #define RSLogDebug(tag, fmt, args...) no_printk(fmt, ##args)
 #endif
-
-/*
- * file_open - a helper to open file in kernel space
- * Description: a wrapper interface of filp_open,
- *  open file and return file pointer
- * @path, path to open
- * @flag, open flags, as O_RDONLY, O_WRONLY, O_RDWR, etc.
- * @mode, mode for the new file if O_CREAT is set, else ignored
- * @return:
- *      file pointer.
- */
-struct file *file_open(const char *path, int flag, umode_t mode);
-
-/*
- * file_close - a helper to close file in kernel space
- * Description: a wrapper interface of filp_close to close file
- * @filp, file pointer
- */
-void file_close(struct file *filp);
-
-/*
- * file_read - a helper to read file in kernel space
- * Description: a wrapper interface of vfs_read,
- *  read contents from file to buffer
- * @filp, file pointer
- * @buf, buffer for user to carry the readed contents
- * @len, size of buf
- * @return:
- *     return actual size of the file, or return failed codes
- */
-ssize_t file_read(struct file *filp, char *buf, ssize_t len);
 
 #endif
 

@@ -99,7 +99,6 @@ VOS_UINT32 TAF_AGENT_IsValidMsg(MsgBlock* pstMsg)
 
     pstMsgHeader = (MSG_HEADER_STRU *)pstMsg;
 
-    /* Modified by l60609 for DSDA Phase II, 2012-12-24, Begin */
     if ((I0_WUEPS_PID_TAF == pstMsgHeader->ulSenderPid)
      || (I1_WUEPS_PID_TAF == pstMsgHeader->ulSenderPid)
      || (I2_WUEPS_PID_TAF == pstMsgHeader->ulSenderPid)
@@ -114,7 +113,6 @@ VOS_UINT32 TAF_AGENT_IsValidMsg(MsgBlock* pstMsg)
             return VOS_OK;
         }
     }
-    /* Modified by l60609 for DSDA Phase II, 2012-12-24, End */
 
    return VOS_ERR;
 }
@@ -774,11 +772,9 @@ VOS_UINT32 TAF_AGENT_GetCallInfoReq(
     TAF_AGENT_SET_ACPU_CNF_SEM_LOCK_FLG(VOS_TRUE);
 
     /* 发送异步应用请求 */
-    /* Modified by l60609 for DSDA PhaseIII, 2013-3-13, begin */
     ulResult = MN_CALL_SendAppRequest(ID_TAFAGENT_MN_GET_CALL_INFO_REQ,
                                       usClientId, 0, 0,
                                       VOS_NULL_PTR);
-    /* Modified by l60609 for DSDA PhaseIII, 2013-3-13, end */
     if (MN_ERR_NO_ERROR != ulResult)
     {
         TAFAGENT_ERROR_LOG(ACPU_PID_TAFAGENT, "TAF_AGENT_GetCallInfoReq: Malloc Msg Failed!");

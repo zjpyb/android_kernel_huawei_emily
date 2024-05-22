@@ -17,6 +17,8 @@
 #include "../mntn_filesys.h"
 #include "../../hisee/hisi_hisee.h"
 #include <dsm/dsm_pub.h>
+#include <mntn_subtype_exception.h>
+
 #define HISEE_MNTN_LPM3_STR		"lpm3"
 #define HISEE_MNTN_ATF_STR		"atf"
 /*lint -e785*/
@@ -31,6 +33,7 @@ struct rdr_exception_info_s hisee_excetption_info[] = {
 		.e_from_core        = RDR_HISEE,
 		.e_reentrant        = (u32)RDR_REENTRANT_DISALLOW,
 		.e_exce_type        = HISEE_S_EXCEPTION,
+		.e_exce_subtype     = EXC_SENSOR_CTRL,
 		.e_upload_flag      = (u32)RDR_UPLOAD_YES,
 		.e_from_module      = "HISEE SENSOR",
 		.e_desc             = "HISEE",
@@ -45,6 +48,7 @@ struct rdr_exception_info_s hisee_excetption_info[] = {
 		.e_from_core        = RDR_HISEE,
 		.e_reentrant        = (u32)RDR_REENTRANT_DISALLOW,
 		.e_exce_type        = HISEE_S_EXCEPTION,
+		.e_exce_subtype     = EXC_SIC,
 		.e_upload_flag      = (u32)RDR_UPLOAD_YES,
 		.e_from_module      = "HISEE SIC",
 		.e_desc             = "HISEE",
@@ -59,6 +63,7 @@ struct rdr_exception_info_s hisee_excetption_info[] = {
 		.e_from_core        = RDR_HISEE,
 		.e_reentrant        = (u32)RDR_REENTRANT_DISALLOW,
 		.e_exce_type        = HISEE_S_EXCEPTION,
+		.e_exce_subtype     = EXC_MED_ROM,
 		.e_upload_flag      = (u32)RDR_UPLOAD_YES,
 		.e_from_module      = "HISEE ROM",
 		.e_desc             = "HISEE",
@@ -73,6 +78,7 @@ struct rdr_exception_info_s hisee_excetption_info[] = {
 		.e_from_core        = RDR_HISEE,
 		.e_reentrant        = (u32)RDR_REENTRANT_DISALLOW,
 		.e_exce_type        = HISEE_S_EXCEPTION,
+		.e_exce_subtype     = EXC_MED_RAM,
 		.e_upload_flag      = (u32)RDR_UPLOAD_YES,
 		.e_from_module      = "HISEE RAM",
 		.e_desc             = "HISEE",
@@ -87,6 +93,7 @@ struct rdr_exception_info_s hisee_excetption_info[] = {
 		.e_from_core        = RDR_HISEE,
 		.e_reentrant        = (u32)RDR_REENTRANT_DISALLOW,
 		.e_exce_type        = HISEE_S_EXCEPTION,
+		.e_exce_subtype     = EXC_OTPC,
 		.e_upload_flag      = (u32)RDR_UPLOAD_YES,
 		.e_from_module      = "HISEE OTPC",
 		.e_desc             = "HISEE",
@@ -101,6 +108,7 @@ struct rdr_exception_info_s hisee_excetption_info[] = {
 		.e_from_core        = RDR_HISEE,
 		.e_reentrant        = (u32)RDR_REENTRANT_DISALLOW,
 		.e_exce_type        = HISEE_S_EXCEPTION,
+		.e_exce_subtype     = EXC_HARD,
 		.e_upload_flag      = (u32)RDR_UPLOAD_YES,
 		.e_from_module      = "HISEE HARD",
 		.e_desc             = "HISEE",
@@ -115,6 +123,7 @@ struct rdr_exception_info_s hisee_excetption_info[] = {
 		.e_from_core        = RDR_HISEE,
 		.e_reentrant        = (u32)RDR_REENTRANT_DISALLOW,
 		.e_exce_type        = HISEE_S_EXCEPTION,
+		.e_exce_subtype     = EXC_IPC_MAILBOX,
 		.e_upload_flag      = (u32)RDR_UPLOAD_YES,
 		.e_from_module      = "HISEE IPC MAILBOX",
 		.e_desc             = "HISEE",
@@ -129,6 +138,7 @@ struct rdr_exception_info_s hisee_excetption_info[] = {
 		.e_from_core        = RDR_HISEE,
 		.e_reentrant        = (u32)RDR_REENTRANT_DISALLOW,
 		.e_exce_type        = HISEE_S_EXCEPTION,
+		.e_exce_subtype     = EXC_MPU,
 		.e_upload_flag      = (u32)RDR_UPLOAD_YES,
 		.e_from_module      = "HISEE MPU",
 		.e_desc             = "HISEE",
@@ -143,6 +153,7 @@ struct rdr_exception_info_s hisee_excetption_info[] = {
 		.e_from_core        = RDR_HISEE,
 		.e_reentrant        = (u32)RDR_REENTRANT_DISALLOW,
 		.e_exce_type        = HISEE_S_EXCEPTION,
+		.e_exce_subtype     = EXC_BUS,
 		.e_upload_flag      = (u32)RDR_UPLOAD_YES,
 		.e_from_module      = "HISEE RPMB",
 		.e_desc             = "HISEE",
@@ -157,6 +168,7 @@ struct rdr_exception_info_s hisee_excetption_info[] = {
 		.e_from_core        = RDR_HISEE,
 		.e_reentrant        = (u32)RDR_REENTRANT_DISALLOW,
 		.e_exce_type        = HISEE_S_EXCEPTION,
+		.e_exce_subtype     = EXC_TIMER,
 		.e_upload_flag      = (u32)RDR_UPLOAD_YES,
 		.e_from_module      = "HISEE TIMER",
 		.e_desc             = "HISEE",
@@ -171,6 +183,7 @@ struct rdr_exception_info_s hisee_excetption_info[] = {
 		.e_from_core        = RDR_HISEE,
 		.e_reentrant        = (u32)RDR_REENTRANT_DISALLOW,
 		.e_exce_type        = HISEE_S_EXCEPTION,
+		.e_exce_subtype     = EXC_SEC_EXTERN,
 		.e_upload_flag      = (u32)RDR_UPLOAD_YES,
 		.e_from_module      = "HISEE SEC EXTERN",
 		.e_desc             = "HISEE",
@@ -185,6 +198,7 @@ struct rdr_exception_info_s hisee_excetption_info[] = {
 		.e_from_core        = RDR_HISEE,
 		.e_reentrant        = (u32)RDR_REENTRANT_DISALLOW,
 		.e_exce_type        = HISEE_S_EXCEPTION,
+		.e_exce_subtype     = EXC_WDG,
 		.e_upload_flag      = (u32)RDR_UPLOAD_YES,
 		.e_from_module      = "HISEE WDG",
 		.e_desc             = "HISEE",
@@ -199,6 +213,7 @@ struct rdr_exception_info_s hisee_excetption_info[] = {
 		.e_from_core        = RDR_HISEE,
 		.e_reentrant        = (u32)RDR_REENTRANT_DISALLOW,
 		.e_exce_type        = HISEE_S_EXCEPTION,
+		.e_exce_subtype     = EXC_SYSALARM,
 		.e_upload_flag      = (u32)RDR_UPLOAD_YES,
 		.e_from_module      = "HISEE SYSALARM",
 		.e_desc             = "HISEE",
@@ -213,6 +228,7 @@ struct rdr_exception_info_s hisee_excetption_info[] = {
 		.e_from_core        = RDR_HISEE,
 		.e_reentrant        = (u32)RDR_REENTRANT_DISALLOW,
 		.e_exce_type        = HISEE_S_EXCEPTION,
+		.e_exce_subtype     = EXC_NV_COUNTER,
 		.e_upload_flag      = (u32)RDR_UPLOAD_YES,
 		.e_from_module      = "HISEE NV_COUNTER",
 		.e_desc             = "HISEE",
@@ -227,6 +243,7 @@ struct rdr_exception_info_s hisee_excetption_info[] = {
 		.e_from_core        = RDR_HISEE,
 		.e_reentrant        = (u32)RDR_REENTRANT_DISALLOW,
 		.e_exce_type        = HISEE_S_EXCEPTION,
+		.e_exce_subtype     = EXC_SWP,
 		.e_upload_flag      = (u32)RDR_UPLOAD_YES,
 		.e_from_module      = "HISEE SWP",
 		.e_desc             = "HISEE",
@@ -241,6 +258,7 @@ struct rdr_exception_info_s hisee_excetption_info[] = {
 		.e_from_core        = RDR_HISEE,
 		.e_reentrant        = (u32)RDR_REENTRANT_DISALLOW,
 		.e_exce_type        = HISEE_S_EXCEPTION,
+		.e_exce_subtype     = EXC_COS,
 		.e_upload_flag      = (u32)RDR_UPLOAD_YES,
 		.e_from_module      = "HISEE COS",
 		.e_desc             = "HISEE",
@@ -255,6 +273,7 @@ struct rdr_exception_info_s hisee_excetption_info[] = {
 		.e_from_core        = RDR_HISEE,
 		.e_reentrant        = (u32)RDR_REENTRANT_DISALLOW,
 		.e_exce_type        = HISEE_S_EXCEPTION,
+		.e_exce_subtype     = EXC_SECENG_TRNG,
 		.e_upload_flag      = (u32)RDR_UPLOAD_YES,
 		.e_from_module      = "HISEE SECENG TRNG",
 		.e_desc             = "HISEE",
@@ -269,6 +288,7 @@ struct rdr_exception_info_s hisee_excetption_info[] = {
 		.e_from_core        = RDR_HISEE,
 		.e_reentrant        = (u32)RDR_REENTRANT_DISALLOW,
 		.e_exce_type        = HISEE_S_EXCEPTION,
+		.e_exce_subtype     = EXC_SECENG_TRIM,
 		.e_upload_flag      = (u32)RDR_UPLOAD_YES,
 		.e_from_module      = "HISEE SECENG TRIM",
 		.e_desc             = "HISEE",
@@ -283,6 +303,7 @@ struct rdr_exception_info_s hisee_excetption_info[] = {
 		.e_from_core        = RDR_HISEE,
 		.e_reentrant        = (u32)RDR_REENTRANT_DISALLOW,
 		.e_exce_type        = HISEE_S_EXCEPTION,
+		.e_exce_subtype     = EXC_SECENG_SCE,
 		.e_upload_flag      = (u32)RDR_UPLOAD_YES,
 		.e_from_module      = "HISEE SECENG SCE",
 		.e_desc             = "HISEE",
@@ -297,6 +318,7 @@ struct rdr_exception_info_s hisee_excetption_info[] = {
 		.e_from_core        = RDR_HISEE,
 		.e_reentrant        = (u32)RDR_REENTRANT_DISALLOW,
 		.e_exce_type        = HISEE_S_EXCEPTION,
+		.e_exce_subtype     = EXC_SECENG_RSA,
 		.e_upload_flag      = (u32)RDR_UPLOAD_YES,
 		.e_from_module      = "HISEE SECENG RSA",
 		.e_desc             = "HISEE",
@@ -311,6 +333,7 @@ struct rdr_exception_info_s hisee_excetption_info[] = {
 		.e_from_core        = RDR_HISEE,
 		.e_reentrant        = (u32)RDR_REENTRANT_DISALLOW,
 		.e_exce_type        = HISEE_S_EXCEPTION,
+		.e_exce_subtype     = EXC_SECENG_SM2,
 		.e_upload_flag      = (u32)RDR_UPLOAD_YES,
 		.e_from_module      = "HISEE SECENG SM2",
 		.e_desc             = "HISEE",
@@ -325,6 +348,7 @@ struct rdr_exception_info_s hisee_excetption_info[] = {
 		.e_from_core        = RDR_HISEE,
 		.e_reentrant        = (u32)RDR_REENTRANT_DISALLOW,
 		.e_exce_type        = HISEE_S_EXCEPTION,
+		.e_exce_subtype     = EXC_SECENG_KM,
 		.e_upload_flag      = (u32)RDR_UPLOAD_YES,
 		.e_from_module      = "HISEE SECENG KM",
 		.e_desc             = "HISEE",
@@ -339,6 +363,7 @@ struct rdr_exception_info_s hisee_excetption_info[] = {
 		.e_from_core        = RDR_HISEE,
 		.e_reentrant        = (u32)RDR_REENTRANT_DISALLOW,
 		.e_exce_type        = HISEE_S_EXCEPTION,
+		.e_exce_subtype     = EXC_SECENG_SCRAMBLING,
 		.e_upload_flag      = (u32)RDR_UPLOAD_YES,
 		.e_from_module      = "HISEE SECENG SCRAMBLING",
 		.e_desc             = "HISEE",
@@ -353,6 +378,7 @@ struct rdr_exception_info_s hisee_excetption_info[] = {
 		.e_from_core        = RDR_HISEE,
 		.e_reentrant        = (u32)RDR_REENTRANT_DISALLOW,
 		.e_exce_type        = HISEE_S_EXCEPTION,
+		.e_exce_subtype     = EXC_BOTTOM,
 		.e_upload_flag      = (u32)RDR_UPLOAD_YES,
 		.e_from_module      = "HISEE BOTTOM",
 		.e_desc             = "HISEE",
@@ -367,6 +393,7 @@ struct rdr_exception_info_s hisee_excetption_info[] = {
 		.e_from_core        = RDR_HISEE,
 		.e_reentrant        = (u32)RDR_REENTRANT_DISALLOW,
 		.e_exce_type        = HISEE_S_EXCEPTION,
+		.e_exce_subtype     = EXC_ALARM0,
 		.e_upload_flag      = (u32)RDR_UPLOAD_YES,
 		.e_from_module      = "HISEE ALARM0",
 		.e_desc             = "HISEE",
@@ -381,6 +408,7 @@ struct rdr_exception_info_s hisee_excetption_info[] = {
 		.e_from_core        = RDR_HISEE,
 		.e_reentrant        = (u32)RDR_REENTRANT_DISALLOW,
 		.e_exce_type        = HISEE_S_EXCEPTION,
+		.e_exce_subtype     = EXC_ALARM1,
 		.e_upload_flag      = (u32)RDR_UPLOAD_YES,
 		.e_from_module      = "HISEE ALARM1",
 		.e_desc             = "HISEE",
@@ -395,6 +423,7 @@ struct rdr_exception_info_s hisee_excetption_info[] = {
 		.e_from_core        = RDR_HISEE,
 		.e_reentrant        = (u32)RDR_REENTRANT_DISALLOW,
 		.e_exce_type        = HISEE_S_EXCEPTION,
+		.e_exce_subtype     = EXC_AS2AP_IRQ,
 		.e_upload_flag      = (u32)RDR_UPLOAD_YES,
 		.e_from_module      = "HISEE AS2AP IRQ",
 		.e_desc             = "HISEE",
@@ -409,6 +438,7 @@ struct rdr_exception_info_s hisee_excetption_info[] = {
 		.e_from_core        = RDR_HISEE,
 		.e_reentrant        = (u32)RDR_REENTRANT_DISALLOW,
 		.e_exce_type        = HISEE_S_EXCEPTION,
+		.e_exce_subtype     = EXC_DS2AP_IRQ,
 		.e_upload_flag      = (u32)RDR_UPLOAD_YES,
 		.e_from_module      = "HISEE DS2AP IRQ",
 		.e_desc             = "HISEE",
@@ -423,6 +453,7 @@ struct rdr_exception_info_s hisee_excetption_info[] = {
 		.e_from_core        = RDR_HISEE,
 		.e_reentrant        = (u32)RDR_REENTRANT_DISALLOW,
 		.e_exce_type        = HISEE_S_EXCEPTION,
+		.e_exce_subtype     = EXC_SENC2AP_IRQ,
 		.e_upload_flag      = (u32)RDR_UPLOAD_YES,
 		.e_from_module      = "HISEE SENC2AP IRQ",
 		.e_desc             = "HISEE",
@@ -437,6 +468,7 @@ struct rdr_exception_info_s hisee_excetption_info[] = {
 		.e_from_core        = RDR_HISEE,
 		.e_reentrant        = (u32)RDR_REENTRANT_DISALLOW,
 		.e_exce_type        = HISEE_S_EXCEPTION,
+		.e_exce_subtype     = EXC_SENC2AP_IRQ0,
 		.e_upload_flag      = (u32)RDR_UPLOAD_YES,
 		.e_from_module      = "HISEE SENC2AP IRQ0",
 		.e_desc             = "HISEE",
@@ -451,6 +483,7 @@ struct rdr_exception_info_s hisee_excetption_info[] = {
 		.e_from_core        = RDR_HISEE,
 		.e_reentrant        = (u32)RDR_REENTRANT_DISALLOW,
 		.e_exce_type        = HISEE_S_EXCEPTION,
+		.e_exce_subtype     = EXC_SENC2AP_IRQ1,
 		.e_upload_flag      = (u32)RDR_UPLOAD_YES,
 		.e_from_module      = "HISEE SENC2AP IRQ1",
 		.e_desc             = "HISEE",
@@ -465,6 +498,7 @@ struct rdr_exception_info_s hisee_excetption_info[] = {
 		.e_from_core        = RDR_HISEE,
 		.e_reentrant        = (u32)RDR_REENTRANT_DISALLOW,
 		.e_exce_type        = HISEE_S_EXCEPTION,
+		.e_exce_subtype     = EXC_LOCKUP,
 		.e_upload_flag      = (u32)RDR_UPLOAD_YES,
 		.e_from_module      = "HISEE LOCKUP",
 		.e_desc             = "HISEE",
@@ -479,6 +513,7 @@ struct rdr_exception_info_s hisee_excetption_info[] = {
 		.e_from_core        = RDR_HISEE,
 		.e_reentrant        = (u32)RDR_REENTRANT_DISALLOW,
 		.e_exce_type        = HISEE_S_EXCEPTION,
+		.e_exce_subtype     = EXC_EH2H_SLV,
 		.e_upload_flag      = (u32)RDR_UPLOAD_YES,
 		.e_from_module      = "HISEE EH2H SLV",
 		.e_desc             = "HISEE",
@@ -493,6 +528,7 @@ struct rdr_exception_info_s hisee_excetption_info[] = {
 		.e_from_core        = RDR_HISEE,
 		.e_reentrant        = (u32)RDR_REENTRANT_DISALLOW,
 		.e_exce_type        = HISEE_S_EXCEPTION,
+		.e_exce_subtype     = EXC_TSENSOR1,
 		.e_upload_flag      = (u32)RDR_UPLOAD_YES,
 		.e_from_module      = "HISEE TSENSOR1",
 		.e_desc             = "HISEE",
@@ -507,6 +543,7 @@ struct rdr_exception_info_s hisee_excetption_info[] = {
 		.e_from_core        = RDR_HISEE,
 		.e_reentrant        = (u32)RDR_REENTRANT_DISALLOW,
 		.e_exce_type        = HISEE_S_EXCEPTION,
+		.e_exce_subtype     = SIMULATE_EXC_RPMB_KO,
 		.e_upload_flag      = (u32)RDR_UPLOAD_YES,
 		.e_from_module      = "FAIL TO RESET RPMB",
 		.e_desc             = "HISEE",
@@ -521,6 +558,7 @@ struct rdr_exception_info_s hisee_excetption_info[] = {
 		.e_from_core        = RDR_HISEE,
 		.e_reentrant        = (u32)RDR_REENTRANT_DISALLOW,
 		.e_exce_type        = HISEE_S_EXCEPTION,
+		.e_exce_subtype     = EXC_UNKNOWN,
 		.e_upload_flag      = (u32)RDR_UPLOAD_YES,
 		.e_from_module      = "HISEE UNKNOWN",
 		.e_desc             = "HISEE",
@@ -552,7 +590,6 @@ static u32	 g_vote_val_lpm3 = 0;
 static u32	 g_vote_val_atf = 0;
 static int	 g_need_run_flag = HISEE_OK;/*flag that make sure only run this function after last running is over*/
 static int	 g_rpmb_status_flag = HISEE_OK;/*whether rpmb is ok: 0->ok; !0->ko*/
-
 static struct notifier_block hisee_ipc_block;
 static struct rdr_register_module_result hisee_info;
 static void *hisee_mntn_addr;
@@ -638,11 +675,15 @@ output:	NA
 return:	NA
 ********************************************************************/
 /*lint -e715*/
-noinline u64 atfd_hisi_service_hisee_mntn_smc(u64 function_id,
-	u64 arg0,
-	u64 arg1,
-	u64 arg2)
+noinline u64 atfd_hisi_service_hisee_mntn_smc(u64 _function_id,
+	u64 _arg0,
+	u64 _arg1,
+	u64 _arg2)
 {
+	register u64 function_id asm("x0") = _function_id;
+	register u64 arg0 asm("x1") = _arg0;
+	register u64 arg1 asm("x2") = _arg1;
+	register u64 arg2 asm("x3") = _arg2;
 	asm volatile(
 		__asmeq("%0", "x0")
 		__asmeq("%1", "x1")
@@ -786,6 +827,7 @@ int hisee_mntn_printverinfo_thread(void *arg)
 					pr_err("%s:fail to get misc ver\n", __func__);
 				}
 				hisee_mntn_print_cos_info();
+	/*this pdswipe init must be put here, to make sure that is after fs ready*/
 				kthread_stop(hisee_mntn_print_verinfo);
 				break;
 			}
@@ -891,7 +933,7 @@ input:	modid:module id
 output:	NA
 return:	NA
 ********************************************************************/
-void rdr_hisee_reset(u32 modid, u32 etype, u64 coreid)
+void rdr_hisee_reset_common(u32 modid, u32 etype, u64 coreid)
 {
 	unsigned int msg[2];
 
@@ -905,6 +947,22 @@ void rdr_hisee_reset(u32 modid, u32 etype, u64 coreid)
 	pr_err(" ====================================\n");
 
 	hisee_mntn_send_msg_to_lpm3(msg, 2);
+}
+
+/****************************************************************************//**
+ * @brief      : rdr_hisee_reset
+ * @param[in]  : modid
+ * @param[in]  : etype
+ * @param[in]  : coreid
+ * @return     : void
+ * @note       :
+********************************************************************************/
+void rdr_hisee_reset(u32 modid, u32 etype, u64 coreid)
+{
+	if ((u32)MODID_SIMULATE_EXC_PD_SWIPE != hisee_exception_modid)
+		rdr_hisee_reset_common(modid, etype, coreid);
+	else
+		pr_err("Hisee exception happed in pd swipe, so needn't reset hisee now\n");
 }
 /********************************************************************
 Description: get the pointer to the name str of mod
@@ -935,8 +993,7 @@ input:	modid: module id
 output:	NA
 return:	NA
 ********************************************************************/
-void rdr_hisee_dump(u32 modid,
-	u32 etype,
+void rdr_hisee_dump_common(u32 modid,
 	u64 coreid,
 	char *pathname,
 	pfn_cb_dump_done pfn_cb)
@@ -951,11 +1008,6 @@ void rdr_hisee_dump(u32 modid,
 		pr_err("%s:pointer is NULL !!\n",  __func__);
 		return;
 	}
-	pr_err(" ====================================\n");
-	pr_err(" modid:          [0x%x]\n",   modid);
-	pr_err(" coreid:         [0x%llx]\n", coreid);
-	pr_err(" exce tpye:      [0x%x]\n",   etype);
-	pr_err(" path name:      [%s]\n",     pathname);
 	atfd_hisi_service_hisee_mntn_smc((u64)HISEE_MNTN_ID,
 		(u64)HISEE_SMC_GET_LOG, (u64)0x0, (u64)0x0);
 	snprintf(path, (unsigned long)HISEE_MNTN_PATH_MAXLEN, "%s/%s", pathname, HISEE_LOG_FLIENAME);
@@ -1007,6 +1059,35 @@ void rdr_hisee_dump(u32 modid,
 	if (pfn_cb)
 		pfn_cb(modid, coreid);
 
+}
+
+
+/****************************************************************************//**
+ * @brief      : rdr_hisee_dump
+ * @param[in]  : modid
+ * @param[in]  : etype
+ * @param[in]  : coreid
+ * @param[in]  : pathname
+ * @param[in]  : pfn_cb
+ * @return     : void
+ * @note       :
+********************************************************************************/
+void rdr_hisee_dump(u32 modid,
+	u32 etype,
+	u64 coreid,
+	char *pathname,
+	pfn_cb_dump_done pfn_cb)
+{
+	if (NULL == pathname) {
+		pr_err("%s:pointer is NULL !!\n",  __func__);
+		return;
+	}
+	pr_err(" ====================================\n");
+	pr_err(" modid:          [0x%x]\n",   modid);
+	pr_err(" coreid:         [0x%llx]\n", coreid);
+	pr_err(" exce tpye:      [0x%x]\n",   etype);
+	pr_err(" path name:      [%s]\n",     pathname);
+	rdr_hisee_dump_common(modid, coreid, pathname, pfn_cb);
 }
 
 /********************************************************************
@@ -1211,6 +1292,8 @@ int hisee_mntn_collect_vote_value_cmd(void)
 	}
 	return ret;
 }
+
+
 /********************************************************************
 Description:	hisee mntn initialization
 input:	NA
@@ -1262,9 +1345,10 @@ static int hisee_mntn_probe(struct platform_device *pdev)
 	if (!hisee_dclient) {
 		hisee_dclient = dsm_register_client(&dsm_hisee);
 	}
-	pr_err("exit %s\n", __func__);
 
 	g_hisee_mntn_state = HISEE_STATE_READY;
+
+	pr_err("exit %s\n", __func__);
 	return 0;
 }
 

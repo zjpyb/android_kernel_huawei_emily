@@ -30,19 +30,83 @@
 
 #define UART_NR			14
 
+enum {
+	REG_DR,
+	REG_ST_DMAWM,
+	REG_ST_TIMEOUT,
+	REG_FR,
+	REG_LCRH_RX,
+	REG_LCRH_TX,
+	REG_IBRD,
+	REG_FBRD,
+	REG_CR,
+	REG_IFLS,
+	REG_IMSC,
+	REG_RIS,
+	REG_MIS,
+	REG_ICR,
+	REG_DMACR,
+	REG_ST_XFCR,
+	REG_ST_XON1,
+	REG_ST_XON2,
+	REG_ST_XOFF1,
+	REG_ST_XOFF2,
+	REG_ST_ITCR,
+	REG_ST_ITIP,
+	REG_ST_ABCR,
+	REG_ST_ABIMSC,
+
+	/* The size of the array - must be last */
+	REG_ARRAY_SIZE,
+};
+
+static u16 pl011_std_offsets[REG_ARRAY_SIZE] = {
+	[REG_DR] = UART01x_DR,
+	[REG_FR] = UART01x_FR,
+	[REG_LCRH_RX] = UART011_LCRH,
+	[REG_LCRH_TX] = UART011_LCRH,
+	[REG_IBRD] = UART011_IBRD,
+	[REG_FBRD] = UART011_FBRD,
+	[REG_CR] = UART011_CR,
+	[REG_IFLS] = UART011_IFLS,
+	[REG_IMSC] = UART011_IMSC,
+	[REG_RIS] = UART011_RIS,
+	[REG_MIS] = UART011_MIS,
+	[REG_ICR] = UART011_ICR,
+	[REG_DMACR] = UART011_DMACR,
+};
+
 struct vendor_data {
+	const u16		*reg_offset;
 	unsigned int		ifls;
-	unsigned int		lcrh_tx;
-	unsigned int		lcrh_rx;
+	unsigned int		fr_busy;
+	unsigned int		fr_dsr;
+	unsigned int		fr_cts;
+	unsigned int		fr_ri;
+	bool			access_32b;
 	bool			oversampling;
 	bool			dma_threshold;
 	bool			cts_event_workaround;
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0))
 	bool			always_enabled;
 	bool			fixed_options;
-#endif
-
 	unsigned int (*get_fifosize)(struct amba_device *dev);
+};
+
+unsigned int get_fifosize_arm(struct amba_device *dev);
+
+static struct vendor_data vendor_arm = {
+	.reg_offset		= pl011_std_offsets,
+	.ifls			= UART011_IFLS_RX2_8|UART011_IFLS_TX4_8 | (4<<6),
+	.fr_busy		= UART01x_FR_BUSY,
+	.fr_dsr			= UART01x_FR_DSR,
+	.fr_cts			= UART01x_FR_CTS,
+	.fr_ri			= UART011_FR_RI,
+	.oversampling		= false,
+	.dma_threshold		= false,
+	.cts_event_workaround	= false,
+	.always_enabled		= false,
+	.fixed_options		= false,
+	.get_fifosize		= get_fifosize_arm,
 };
 
 struct pl011_sgbuf {
@@ -107,6 +171,7 @@ struct uart_tx_unit {
 
  struct uart_amba_port {
 	struct uart_port	port;
+	const u16		*reg_offset;
 	struct clk		*clk;
 	/* Two optional pin states - default & sleep */
 	struct pinctrl		*pinctrl;
@@ -117,17 +182,9 @@ struct uart_tx_unit {
 	unsigned int		im;		/* interrupt mask */
 	unsigned int		old_status;
 	unsigned int		fifosize;	/* vendor-specific */
-	unsigned int		lcrh_tx;	/* vendor-specific */
-	unsigned int		lcrh_rx;	/* vendor-specific */
 	unsigned int		old_cr;		/* state during shutdown */
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0))
-#else
-	struct delayed_work	tx_softirq_work;
-#endif
 	bool			autorts;
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0))
 	unsigned int		fixed_baud;	/* vendor-set fixed baud rate */
-#endif
 	unsigned int		tx_irq_seen;	/* 0=none, 1=1, 2=2 or more */
 	char			type[12];
 #ifdef CONFIG_DMA_ENGINE
@@ -152,8 +209,16 @@ struct uart_tx_unit {
 	u32 console_lcrh_tx;
 	struct uart_tx_unit tx_unit;
 #endif
+#ifdef CONFIG_HISI_AMBA_PL011
+	bool			rx_dma_disabled;
+#endif
 };
 static struct uart_amba_port *amba_ports[UART_NR];
+
+unsigned int pl011_reg_to_offset(const struct uart_amba_port *uap, unsigned int reg);
+unsigned int pl011_read(const struct uart_amba_port *uap, unsigned int reg);
+void pl011_write(unsigned int val, const struct uart_amba_port *uap, unsigned int reg);
+bool pl011_split_lcrh(const struct uart_amba_port *uap);
 
 void uart_chip_reset_endisable(struct uart_amba_port *dev, unsigned int enable);
 void hisi_pl011_console_write(struct console *co, const char *s, unsigned int count);

@@ -616,14 +616,14 @@ typedef struct
 #endif
 
 extern wlan_cust_country_code_ingore_flag_stru g_st_cust_country_code_ignore_flag;
-extern wlan_customize_stru g_st_wlan_customize;
-extern int hwifi_config_init(int);
-extern int hwifi_get_init_value(int, int);
-extern char *hwifi_get_country_code(void);
-extern void hwifi_set_country_code(char*, const unsigned int);
-extern int hwifi_get_mac_addr(unsigned char *);
-extern unsigned short *hwifi_get_nvram_params(void);
-extern int hwifi_is_regdomain_changed(const countrycode_t, const countrycode_t);
+extern wlan_customize_stru g_st_wlan_customize_etc;
+extern int hwifi_config_init_etc(int);
+extern int hwifi_get_init_value_etc(int, int);
+extern char *hwifi_get_country_code_etc(void);
+extern void hwifi_set_country_code_etc(char*, const unsigned int);
+extern int hwifi_get_mac_addr_etc(unsigned char *);
+extern unsigned short *hwifi_get_nvram_params_etc(void);
+extern int hwifi_is_regdomain_changed_etc(const countrycode_t, const countrycode_t);
 extern int hwifi_get_cfg_params(void);
 extern oal_int32 hwifi_get_init_priv_value(oal_int32 l_cfg_id, oal_int32 *pl_priv_value);
 extern char* hwifi_get_chip_id_cfg(oal_uint8 uc_chip_id);

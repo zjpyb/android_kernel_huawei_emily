@@ -20,6 +20,7 @@
 #define IVP_CLKRATE_HIGH       (554000000)
 #define IVP_CLKRATE_MEDIUM     (415000000)
 #define IVP_CLKRATE_LOW        (238000000)
+#define GIC_IRQ_CLEAR_REG      (0xe82b11a4)
 
 struct ivp_iomem_res {
     char __iomem *cfg_base_addr;
@@ -41,6 +42,7 @@ struct ivp_device {
     struct semaphore wdg_sem;
     int sect_count;
     struct ivp_sect_info *sects;
+    struct ivp_sect_info *sec_sects;
     struct dentry *debugfs;
     struct miscdevice device;
     struct regulator *regulator;
@@ -48,11 +50,16 @@ struct ivp_device {
     unsigned long       smmu_pgd_base;
     struct ivp_smmu_dev *smmu_dev;
     atomic_t accessible;
+    atomic_t poweron_access;
+    atomic_t poweron_success;
     void *vaddr_memory;
 
     int ivp_meminddr_len;
     unsigned int dynamic_mem_size;
     unsigned int dynamic_mem_section_size;
+    unsigned int ivp_sec_support;
+    unsigned int ivp_secmode;
+    struct platform_device *ivp_pdev;
 };
 
 extern int ivp_poweron_pri(struct ivp_device *ivp_devp);
@@ -61,5 +68,9 @@ extern int ivp_poweroff_pri(struct ivp_device *ivp_devp);
 extern int ivp_init_pri(struct platform_device *pdev, struct ivp_device *ivp_devp);
 extern void ivp_deinit_pri(struct ivp_device *ivp_devp);
 extern int ivp_change_clk(struct ivp_device *ivp_devp);
+extern int ivp_init_resethandler(struct ivp_device *pdev);
+extern void ivp_deinit_resethandler(struct ivp_device *pdev);
+extern int ivp_check_resethandler(struct ivp_device *pdev);
+extern int  ivp_sec_loadimage(struct ivp_device *pdev);
 
 #endif /* _IVP_PLATFORM_H_ */

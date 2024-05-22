@@ -73,25 +73,14 @@ struct memlat_hwmon {
 };
 
 #ifdef CONFIG_DEVFREQ_GOV_MEMLAT
+extern bool hisi_cluster_cpu_all_pwrdn(void);
+extern unsigned long get_dev_votefreq(struct device *dev);
+extern void set_dev_votefreq(struct device *dev, unsigned long new_freq);
+
 int register_memlat(struct device *dev, struct memlat_hwmon *hw);
-int update_memlat(struct memlat_hwmon *hw);
-unsigned long get_min_core_freq(int cpu, unsigned long cur_ddr_freq);
-unsigned long get_max_target_freq(int cpu, unsigned long cur_cpu_freq);
 #else
 static inline int register_memlat(struct device *dev,
 					struct memlat_hwmon *hw)
-{
-	return 0;
-}
-static inline int update_memlat(struct memlat_hwmon *hw)
-{
-	return 0;
-}
-unsigned long get_min_core_freq(int cpu, unsigned long cur_ddr_freq)
-{
-	return 0;
-}
-unsigned long get_max_target_freq(int cpu, unsigned long cur_cpu_freq)
 {
 	return 0;
 }

@@ -37,9 +37,17 @@ extern "C" {
 #undef  THIS_FILE_ID
 #define THIS_FILE_ID OAM_FILE_ID_MAC_AUTO_ADJUST_FREQ_C
 
+
+#define HMAC_AUTO_FREQ_NORMAL_CPU   0
+#define HMAC_AUTO_FREQ_BUSY_CPU     1
+
+#define HMAC_AUTO_FREQ_CPU_NUM      4
+
 /*****************************************************************************
   2 全局变量定义
 *****************************************************************************/
+extern hmac_rxdata_thread_stru     g_st_rxdata_thread;
+
 #ifndef WIN32
 OAL_STATIC oal_uint32 pre_jiffies            = 0;
 OAL_STATIC oal_uint32 g_adjust_count            = 0;
@@ -297,8 +305,63 @@ oal_bool_enum_uint8 hmac_set_ddr_freq_raw(oal_uint8 uc_freq_type, oal_uint32 ul_
     return 0;
 }
 #endif
+
+
+oal_void  hmac_auto_freq_set_thread_affinity(oal_uint32 ul_total_sdio_rate)
+{
+#ifdef CONFIG_NR_CPUS
+#if (CONFIG_NR_CPUS > HMAC_AUTO_FREQ_CPU_NUM)
+    OAL_STATIC oal_uint32 ul_current_cpu = HMAC_AUTO_FREQ_NORMAL_CPU;
+    struct cpumask cpu_mask;
+
+    if ((ul_total_sdio_rate >= g_host_speed_freq_level[FREQ_HIGHEST].ul_speed_level)
+        && (HMAC_AUTO_FREQ_NORMAL_CPU == ul_current_cpu))
+    {
+        cpumask_setall(&cpu_mask);
+        ul_current_cpu = HMAC_AUTO_FREQ_BUSY_CPU;
+        /* 设置wifi 线程到CPU4~7 */
+        cpumask_clear_cpu(0, &cpu_mask);
+        cpumask_clear_cpu(1, &cpu_mask);
+        cpumask_clear_cpu(2, &cpu_mask);
+        cpumask_clear_cpu(3, &cpu_mask);
+    }
+    else if ((ul_total_sdio_rate <= g_host_speed_freq_level[FREQ_HIGHER].ul_speed_level)
+        && (HMAC_AUTO_FREQ_BUSY_CPU == ul_current_cpu))
+    {
+        cpumask_setall(&cpu_mask);
+        ul_current_cpu = HMAC_AUTO_FREQ_NORMAL_CPU;
+        /* 设置wifi 线程到CPU1~3 */
+        cpumask_clear_cpu(0, &cpu_mask);
+        cpumask_clear_cpu(4, &cpu_mask);
+        cpumask_clear_cpu(5, &cpu_mask);
+        cpumask_clear_cpu(6, &cpu_mask);
+        cpumask_clear_cpu(7, &cpu_mask);
+    }
+    else
+    {
+        return;
+    }
+
+    if (OAL_PTR_NULL != g_st_rxdata_thread.pst_rxdata_thread)
+    {
+        set_cpus_allowed_ptr(g_st_rxdata_thread.pst_rxdata_thread, &cpu_mask);
+    }
+
+    if (OAL_PTR_NULL != hcc_get_default_handler()->hcc_transer_info.hcc_transfer_thread)
+    {
+        set_cpus_allowed_ptr(hcc_get_default_handler()->hcc_transer_info.hcc_transfer_thread, &cpu_mask);
+    }
+#endif  /* CONFIG_NR_CPUS > HMAC_AUTO_FREQ_CPU_NUM */
+#endif  /* CONFIG_NR_CPUS */
+}
+
+
 oal_void hmac_adjust_freq_to_level(oal_void)
 {
+    /* 根据帧速率调整wifi 线程绑定大核/小核 */
+    hmac_auto_freq_set_thread_affinity(g_freq_lock_control.ul_total_sdio_rate);
+
+#if 0
     oal_uint8 uc_req_lock_level = g_freq_lock_control.uc_req_lock_level;
 
     OAM_WARNING_LOG2(0,OAM_SF_PWR,"{hmac_adjust_freq_to_level: freq to [%d][%d]}",g_freq_lock_control.uc_curr_lock_level,uc_req_lock_level);
@@ -315,6 +378,7 @@ oal_void hmac_adjust_freq_to_level(oal_void)
     }
 
     g_freq_lock_control.uc_curr_lock_level = uc_req_lock_level;
+#endif
 }
 
 
@@ -555,6 +619,12 @@ oal_uint32 hmac_hcc_auto_freq_process(oal_void)
     {
         hmac_adjust_freq();
     }
+
+#ifdef _PRE_WLAN_TCP_OPT
+    /* 根据流量pps 来控制 启动/关闭 TCP_ACK 优化功能 */
+    hmac_tcp_ack_opt_switch_ctrol(ul_return_total_count);
+#endif  /* _PRE_WLAN_TCP_OPT */
+
     g_ul_wifi_rxtx_total = 0;
     return ul_return_total_count;
 }

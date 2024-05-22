@@ -302,6 +302,7 @@ struct magn_bracket_platform_data magn_bracket_data = {
 };
 struct motion_platform_data motion_data = {
 	.angle_gap = 67.5,
+	.pickup_data_flag = 0,
 };
 
 struct rpc_platform_data rpc_data={
@@ -1305,6 +1306,25 @@ static void read_motion_data_from_dts(struct device_node *dn)
 	motion_data.angle_gap = (int)wia[0];
 
 	hwlog_info("read_motion_data_from_dts angle_gap %d\n", motion_data.angle_gap);
+
+	prop = of_find_property(dn, "pickup_data_flag", NULL);
+	if (!prop) {
+		hwlog_err("%s! prop is NULL!\n", __func__);
+		return;
+	}
+	if (!prop->value) {
+		hwlog_err("%s! prop->value is NULL!\n", __func__);
+		return;
+	}
+	len = prop->length / 4;
+	if (of_property_read_u32_array(dn, "pickup_data_flag", wia, len)) {
+		hwlog_err("%s:read angle_gap from dts fail!\n",  __func__);
+		return;
+	}
+
+	motion_data.pickup_data_flag = (u8)wia[0];
+
+	hwlog_info("read_motion_data_from_dts pickup_data_flag %d\n", motion_data.pickup_data_flag);
 
 }
 

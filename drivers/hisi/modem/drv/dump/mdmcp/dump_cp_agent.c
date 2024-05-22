@@ -275,7 +275,7 @@ void dump_save_mdm_dts_file(char* dir_name)
         && (DUMP_ACCESS_MDD_DDR_NON_SEC== dump_get_access_mdmddr_type()))
     {
         memset_s(file_name, sizeof(file_name),0, sizeof(file_name));
-        snprintf(file_name, sizeof(file_name), "%smodem_dts.bin", dir_name);
+        snprintf_s(file_name, sizeof(file_name),(sizeof(file_name)-1), "%smodem_dts.bin", dir_name);
 
         if(NULL == addr)
         {

@@ -46,7 +46,7 @@ extern "C" {
 #define FRW_INFO_VAR(_uc_vap_id, _c_fmt, ...)
 
 #ifdef _PRE_DEBUG_MODE
-#define FRW_EVENT_INTERNAL(_puc_macaddr, _uc_vap_id, en_event_type, _puc_string)       oam_event_report(_puc_macaddr, _uc_vap_id, OAM_MODULE_ID_FRW, en_event_type, _puc_string)
+#define FRW_EVENT_INTERNAL(_puc_macaddr, _uc_vap_id, en_event_type, _puc_string)       oam_event_report_etc(_puc_macaddr, _uc_vap_id, OAM_MODULE_ID_FRW, en_event_type, _puc_string)
 #else
 #define FRW_EVENT_INTERNAL(_puc_macaddr, _uc_vap_id, en_event_type, _puc_string)
 #endif
@@ -103,10 +103,10 @@ typedef oal_uint8 hmac_timeout_event_sub_type_enum_uint8;
 /*****************************************************************************
   10 º¯ÊýÉùÃ÷
 *****************************************************************************/
-extern oal_int32  frw_main_init(oal_void);
-extern oal_void  frw_main_exit(oal_void);
-extern oal_void  frw_set_init_state(frw_init_enum_uint16 en_init_state);
-extern frw_init_enum_uint16  frw_get_init_state(oal_void);
+extern oal_int32  frw_main_init_etc(oal_void);
+extern oal_void  frw_main_exit_etc(oal_void);
+extern oal_void  frw_set_init_state_etc(frw_init_enum_uint16 en_init_state);
+extern frw_init_enum_uint16  frw_get_init_state_etc(oal_void);
 
 
 

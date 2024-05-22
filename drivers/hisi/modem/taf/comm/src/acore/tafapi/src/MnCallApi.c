@@ -180,7 +180,6 @@ VOS_UINT32  MN_CALL_End(
     return ulResult;
 }
 
-/* Added by f62575 for AT Project, 2011-10-04,  Begin */
 
 VOS_UINT32  MN_CALL_QryCdur(
     MN_CLIENT_ID_T                      clientId,
@@ -197,7 +196,6 @@ VOS_UINT32  MN_CALL_QryCdur(
 
     return ulResult;
 }
-/* Added by f62575 for AT Project, 2011-10-04,  End */
 
 
 VOS_UINT32  TAF_CALL_SendDtmf(
@@ -356,7 +354,6 @@ VOS_UINT32  TAF_XCALL_SendFlashReq(
     return VOS_OK;
 }
 
-/* Added by f279542 for CDMA 1X Iteration 4, 2014-11-10, begin */
 
 VOS_UINT32  TAF_XCALL_SendBurstDtmf(
     MN_CLIENT_ID_T                      clientId,
@@ -399,7 +396,6 @@ VOS_UINT32  TAF_XCALL_SendBurstDtmf(
 
     return VOS_OK;
 }
-/* Added by f279542 for CDMA 1X Iteration 4, 2014-11-10, end */
 
 
 VOS_UINT32  TAF_XCALL_SendCustomDialReq(

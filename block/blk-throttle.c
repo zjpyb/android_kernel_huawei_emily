@@ -11,7 +11,9 @@
 #include <linux/blktrace_api.h>
 #include <linux/blk-cgroup.h>
 #include "blk.h"
+#ifdef CONFIG_HUAWEI_IO_TRACING
 #include <trace/iotrace.h>
+#endif
 
 #define SHARE_SHIFT (14)
 #define MAX_SHARE (1 << SHARE_SHIFT)
@@ -228,11 +230,6 @@ struct throtl_data
 	/* Total Number of queued bios on READ and WRITE lists */
 	unsigned int nr_queued[2];
 
-	/*
-	 * number of total undestroyed groups
-	 */
-	unsigned int nr_undestroyed_grps;
-
 	/* Work for dispatching throttled bios */
 	struct work_struct dispatch_work;
 	uint64_t        bw_slice;
@@ -338,15 +335,14 @@ static inline unsigned int queue_iops_slice(struct throtl_data *td)
  *
  * The messages are prefixed with "throtl BLKG_NAME" if @sq belongs to a
  * throtl_grp; otherwise, just "throtl".
- *
- * TODO: this should be made a function and name formatting should happen
- * after testing whether blktrace is enabled.
  */
 #define throtl_log(sq, fmt, args...)	do {				\
 	struct throtl_grp *__tg = sq_to_tg((sq));			\
 	struct throtl_data *__td = sq_to_td((sq));			\
 									\
 	(void)__td;							\
+	if (likely(!blk_trace_note_message_enabled(__td->queue)))	\
+		break;							\
 	if ((__tg)) {							\
 		char __pbuf[128];					\
 									\
@@ -377,10 +373,6 @@ static void throtl_qnode_init(struct throtl_qnode *qn, struct throtl_grp *tg)
 static void throtl_qnode_add_bio(struct bio *bio, struct throtl_qnode *qn,
 				 struct list_head *queued)
 {
-#ifdef CONFIG_HISI_BLK_CORE
-	if (bio->io_in_count & HISI_IO_IN_COUNT_SET)
-		bio->io_in_count |= HISI_IO_IN_COUNT_WILL_BE_SEND_AGAIN;
-#endif
 	bio_list_add(&qn->bios, bio);
 	if (list_empty(&qn->node)) {
 		list_add_tail(&qn->node, queued);
@@ -770,6 +762,17 @@ static void throtl_dequeue_tg(struct throtl_grp *tg)
 static void throtl_schedule_pending_timer(struct throtl_service_queue *sq,
 					  unsigned long expires)
 {
+	unsigned long max_expire = jiffies + 8 * throtl_slice;
+
+	/*
+	 * Since we are adjusting the throttle limit dynamically, the sleep
+	 * time calculated according to previous limit might be invalid. It's
+	 * possible the cgroup sleep time is very long and no other cgroups
+	 * have IO running so notify the limit changes. Make sure the cgroup
+	 * doesn't sleep too long to avoid the missed notification.
+	 */
+	if (time_after(expires, max_expire))
+		expires = max_expire;
 	mod_timer(&sq->pending_timer, expires);
 	/*lint -save -e747*/
 	throtl_log(sq, "schedule timer. delay=%lu jiffies=%lu",
@@ -1118,9 +1121,11 @@ static bool tg_may_dispatch(struct throtl_grp *tg, struct bio *bio,
 	/*
 	 * If previous slice expired, start a new one otherwise renew/extend
 	 * existing slice to make sure it is at least throtl_slice interval
-	 * long since now.
+	 * long since now. New slice is started only for empty throttle group.
+	 * If there is queued bio, that means there should be an active
+	 * slice and it should be extended instead.
 	 */
-	if (throtl_slice_used(tg, rw))
+	if (throtl_slice_used(tg, rw) && !(tg->service_queue.nr_queued[rw]))
 		throtl_start_new_slice(tg, rw);
 	else {
 		/*lint -save -e550 -e774 -e1072*/
@@ -1129,11 +1134,12 @@ static bool tg_may_dispatch(struct throtl_grp *tg, struct bio *bio,
 		/*lint -restore*/
 	}
 
-	if (io_cost_with_in_limit(tg, bio, &max_wait)) {
+	 if (io_cost_with_in_limit(tg, bio, &max_wait)) {
 		if (wait)
 			*wait = 0;
 		return true;
 	}
+
 
 	if (wait)
 		*wait = max_wait;
@@ -1154,6 +1160,7 @@ static inline void io_cost_charge_bio(struct throtl_grp *tg, struct bio *bio)
 	tg->io_cost.bytes_disp[index] += bio->bi_iter.bi_size;
 	tg->io_cost.io_disp[index]++;
 }
+
 static void throtl_charge_bio(struct throtl_grp *tg, struct bio *bio)
 {
 	io_cost_charge_bio(tg, bio);
@@ -1164,8 +1171,8 @@ static void throtl_charge_bio(struct throtl_grp *tg, struct bio *bio)
 	 * is being charged to a tg.
 	 */
 	/*lint -save -e712 -e747*/
-	if (!(bio->bi_rw & REQ_THROTTLED))
-		bio->bi_rw |= REQ_THROTTLED;
+	if (!(bio->bi_opf & REQ_THROTTLED))
+		bio->bi_opf |= REQ_THROTTLED;
 	/*lint -restore*/
 }
 
@@ -1499,10 +1506,10 @@ static void throtl_pop_bio_weight_trace(struct bio *bio, struct throtl_grp *tg)
                 atomic_set(&tg->max_delay, (int)delay);
                 atomic_inc(&tg->delay_cnt);
                 /*lint -restore*/
-		printk("io-latency: [throtl] [%s] sector=%lu size=%u flag=0x%lx delay=%d weight=%d type=%d\n",
-			bdevname(bio->bi_bdev, b), bio->bi_iter.bi_sector,
-                        bio->bi_iter.bi_size, bio->bi_rw, delay,
-			tg_to_blkg(tg)->weight, tg_to_blkg(tg)->blkcg->type);
+                printk("io-latency: [throtl] [%s] sector=%lu size=%u flag=0x%lx delay=%d weight=%d type=%d\n",
+                        bdevname(bio->bi_bdev, b), bio->bi_iter.bi_sector,
+                        bio->bi_iter.bi_size, (unsigned long)bio->bi_opf, delay,
+                        tg_to_blkg(tg)->weight, tg_to_blkg(tg)->blkcg->type);
         }
 #ifdef CONFIG_HUAWEI_IO_TRACING
         trace_block_throttle_bio_out(bio, (long)delay);
@@ -3125,8 +3132,8 @@ bool blk_throtl_bio(struct request_queue *q, struct blkcg_gq *blkg,
 	WARN_ON_ONCE(!rcu_read_lock_held());
 
 	/* see throtl_charge_bio() */
-	if ((bio->bi_rw & (REQ_THROTTLED |REQ_META | REQ_FLUSH |
-		REQ_FUA | REQ_DISCARD | REQ_CHAINED)))
+	if ((bio->bi_opf & (REQ_THROTTLED |REQ_META | REQ_PREFLUSH |
+		REQ_FUA | REQ_OP_DISCARD | REQ_CHAINED)))
 		goto out;
 
 	/* If we are on the way of memory reclaim, skip throttle */
@@ -3134,7 +3141,7 @@ bool blk_throtl_bio(struct request_queue *q, struct blkcg_gq *blkg,
 		goto out;
 
 	if (task_in_pagefault(current))
-                goto out;
+		goto out;
 again:
 	if (!blkg)
 		goto out;
@@ -3146,24 +3153,23 @@ again:
 	/*lint -save -e613*/
 	blkcg = blkg->blkcg;
 	if (td_weight_based(td) &&
-		(blkcg == &blkcg_root || !blk_throtl_weight_offon))
+	       (blkcg == &blkcg_root || !blk_throtl_weight_offon))
 		goto out;
 	/*lint -restore*/
 
 	if (blkcg->type <= BLK_THROTL_FG)
-		bio->bi_rw |= REQ_FG;
+		bio->bi_opf |= REQ_FG;
 
 	if (td_weight_based(td) &&
-	    (blk_throtl_weight_offon == BLK_THROTL_WEIGHT_ON_FS))
+		(blk_throtl_weight_offon == BLK_THROTL_WEIGHT_ON_FS))
 		goto out;
-
 	/*
-	 * Now we just support limit control for one layer.
-	 */
+	* Now we just support limit control for one layer.
+	*/
 	/*lint -save -e438 -e529 -e666*/
 	if (ACCESS_ONCE(tg->td->max_inflights) && !bio->bi_throtl_private1 &&
-	    current->mm &&
-	    ACCESS_ONCE(current->mm->io_limit->max_inflights)) {
+	   current->mm &&
+	   ACCESS_ONCE(current->mm->io_limit->max_inflights)) {
 	/*lint -restore*/
 		struct blk_throtl_io_limit *io_limit = current->mm->io_limit;
 		int ret;
@@ -3188,11 +3194,12 @@ again:
 		} else if (ret == 2)
 			goto skip;
 
-		blk_throtl_io_limit_get(io_limit);
-		bio->bi_throtl_private1 = io_limit;
-		bio->bi_throtl_end_io1 = blk_throtl_limit_io_done;
+	       blk_throtl_io_limit_get(io_limit);
+	       bio->bi_throtl_private1 = io_limit;
+	       bio->bi_throtl_end_io1 = blk_throtl_limit_io_done;
 	}
 skip:
+
 	spin_lock_irq(q->queue_lock);
 
 	/*lint -save -e730*/
@@ -3204,15 +3211,15 @@ skip:
 		goto out_unlock;
 
 	if (unlikely(blk_throtl_weight_offon != BLK_THROTL_WEIGHT_ON_BLK))
-		goto out_unlock;
+		 goto out_unlock;
 
 	if (td_weight_based(td)) {
 		struct bio_list bios;
 
 		/*
-		 * Now we just support weight based throttle for
-		 * one layer.
-		 */
+		* Now we just support weight based throttle for
+		* one layer.
+		*/
 		if (bio->bi_throtl_end_io2)
 			goto out_unlock;
 
@@ -3311,7 +3318,7 @@ out:
 	 */
 	if (!throttled)
 		/*lint -save -e613*/
-		bio->bi_rw &= ~REQ_THROTTLED;
+		bio->bi_opf &= ~REQ_THROTTLED;
 		/*lint -restore*/
 	return throttled;
 }

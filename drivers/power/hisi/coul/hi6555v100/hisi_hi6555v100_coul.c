@@ -1123,6 +1123,14 @@ static void hi6555v100_coul_get_ocv_level(u8 *level)
 	val &= SAVE_OCV_LEVEL;
 	*level = val >> OCV_LEVEL_SHIFT;
 }
+static int hi6555v100_coul_get_drained_battery_flag(void)
+{
+    return 0;
+}
+static void hi6555v100_coul_clear_drained_battery_flag(void)
+{
+    return;
+}
 #ifdef CONFIG_SYSFS
 
 static long g_reg_addr = 0;
@@ -1233,6 +1241,8 @@ struct coul_device_ops hi6555v100_coul_ops =
     .cali_auto_off                = hi6555v100_coul_auto_cali,
     .save_ocv_level               = hi6555v100_coul_save_ocv_level,
     .get_ocv_level                = hi6555v100_coul_get_ocv_level,
+    .get_drained_battery_flag     = hi6555v100_coul_get_drained_battery_flag,
+    .clear_drained_battery_flag   = hi6555v100_coul_clear_drained_battery_flag,
 };
 
 

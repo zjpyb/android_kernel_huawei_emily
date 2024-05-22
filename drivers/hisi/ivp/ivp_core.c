@@ -10,16 +10,24 @@
 #include <linux/clk.h>
 #include <linux/io.h>
 #include <linux/of.h>
+#include <linux/dma-buf.h>
 #include <linux/interrupt.h>
 #include <linux/dma-mapping.h>
 #include <linux/delay.h>
 #include <linux/version.h>
 #include <linux/wakelock.h>
+#include <linux/ion.h>
+#include <linux/hisi/hisi_ion.h>
+#include <linux/hisi/hisi-iommu.h>
+#include <linux/hisi/ion-iommu.h>
+#include <linux/syscalls.h>
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(3, 13, 0))
 #include <linux/clk-private.h>
 #endif
 #include <linux/clk-provider.h>
 #include <linux/bitops.h>
+#include <linux/firmware.h>
+#include "libhwsecurec/securec.h"
 #include "ivp.h"
 #include "ivp_log.h"
 #include "ivp_core.h"
@@ -32,16 +40,24 @@
 
 #define IVP_WDG_REG_BASE_OFFSET          (0x1000)
 #define IVP_SMMU_REG_BASE_OFFSET         (0x40000)
-#define REMAP_ADD                        (0xe8d00000)
-#define DEAD_FLAG                        (0xdeadbeef)
-#define SIZE_16K                         (16 * 1024)
-#define GIC_IRQ_CLEAR_REG                (0xe82b11a4)
+#define IVP_IMAGE_DDR_DEFAULT_INDEX      (0x12)
+#define IVP_IMAGE_SUFFIX                  ".bin"
+#define IVP_IMAGE_SUFFIX_LENGTH           (sizeof(IVP_IMAGE_SUFFIX)-1)
 
 static struct ivp_device ivp_dev;
 extern struct dsm_client *client_ivp;
+struct mutex ivp_sec_mem_mutex;
 static struct wake_lock ivp_power_wakelock;
 static struct mutex ivp_wake_lock_mutex;
-static void *iram = NULL;
+static struct mutex ivp_load_image_mutex;
+struct mutex ivp_power_up_off_mutex;
+struct mutex ivp_open_release_mutex;
+
+enum {
+    IMAGE_SECTION_TYPE_EXEC = 0,
+    IMAGE_SECTION_TYPE_DATA,
+    IMAGE_SECTION_TYPE_BSS,
+};
 
 enum {
     IVP_BOOT_FROM_IRAM = 0,
@@ -64,6 +80,211 @@ enum {
     IVP_DISABLE = 0,
     IVP_ENABLE  = 1,
 };
+
+
+
+static int ivp_check_image(const struct firmware* fw) {
+
+    struct file_header mheader;
+    if(sizeof(mheader) > fw->size)
+    {
+        ivp_err("(%s):image file mheader is err",__FUNCTION__);
+        return -EINVAL;
+    }
+    memcpy_s(&mheader, sizeof(mheader), fw->data, sizeof(mheader));
+    if (strncmp(mheader.name, "IVP:", 4) != 0) {
+        ivp_err("(%s):image file header is not for IVP",__FUNCTION__);
+        return -EINVAL;
+    }
+
+    if(fw->size != mheader.image_size) {
+        ivp_err("image file request_firmware size 0x%zx is not equal to mheader size 0x%08x", fw->size, mheader.image_size);
+        return -EINVAL;
+    }
+    return 0;
+
+}
+static int ivp_get_validate_section_info(const struct firmware* fw,struct image_section_header *psect_header, unsigned int index)
+{
+    int offset;
+    if(NULL == psect_header) {
+        ivp_err("%s,the input para section_header is NULL!",__func__);
+        return -EINVAL;
+    }
+
+    offset = sizeof(struct file_header);
+    offset += sizeof(struct image_section_header) * index;
+    if ((offset + sizeof(struct image_section_header)) > fw->size)
+    {
+        ivp_err("(%s):image index  is err",__FUNCTION__);
+        return -EINVAL;
+    }
+    memcpy_s(psect_header, sizeof(struct image_section_header), fw->data+offset,sizeof(struct image_section_header));
+
+    if((psect_header->offset + psect_header->size) > fw->size) {
+        ivp_err("%s,get invalid offset 0x%x",__func__, psect_header->offset);
+        return -EINVAL;
+    }
+
+    if(((psect_header->vaddr >= ivp_dev.sects[0].ivp_addr) && (psect_header->vaddr < (ivp_dev.sects[0].ivp_addr + ivp_dev.sects[0].len)))
+      || ((psect_header->vaddr >= ivp_dev.sects[1].ivp_addr) && (psect_header->vaddr < (ivp_dev.sects[1].ivp_addr + ivp_dev.sects[1].len)))
+      || ((psect_header->vaddr >= ivp_dev.sects[2].ivp_addr) && (psect_header->vaddr < (ivp_dev.sects[2].ivp_addr + ivp_dev.sects[2].len)))
+      || ((psect_header->vaddr >= ivp_dev.sects[3].ivp_addr) && (psect_header->vaddr < (ivp_dev.sects[3].ivp_addr + ivp_dev.sects[3].len)))) {
+        return 0;
+    }
+
+    ivp_err("%s,get invalid addr",__func__);
+    return -EINVAL;
+
+}
+void *ivp_vmap(phys_addr_t paddr, size_t size, unsigned int * offset)
+{
+    int i;
+    void *vaddr = NULL;
+    pgprot_t pgprot;
+    int pages_count;
+    struct page **pages;
+
+    *offset = paddr & ~PAGE_MASK;
+    paddr &= PAGE_MASK;
+    pages_count = PAGE_ALIGN(size + *offset) / PAGE_SIZE;
+
+    pages = kzalloc(sizeof(struct page *) * pages_count, GFP_KERNEL);
+    if (!pages)
+        return NULL;
+
+    pgprot = pgprot_writecombine(PAGE_KERNEL);
+
+    for (i = 0; i < pages_count; i++) {
+        *(pages + i) = phys_to_page(paddr + PAGE_SIZE * i);
+    }
+
+    vaddr = vmap(pages, pages_count, VM_MAP, pgprot);
+    kfree(pages);
+    if (NULL == vaddr)
+        return NULL;
+
+    return *offset + (char *)vaddr;
+}
+
+bool is_ivp_in_secmode(void)
+{
+    return ((1 == ivp_dev.ivp_sec_support)
+            &&(SECURE_MODE == ivp_dev.ivp_secmode));
+}
+
+static int ivp_load_section(const struct firmware* fw,struct image_section_header image_sect)
+{
+    unsigned int iova = 0, size = 0, i = 0, offset = 0;
+    unsigned int* source = NULL;
+    unsigned char type = 0;
+    unsigned long ivp_ddr_addr = 0;
+    unsigned int *mem_addr = NULL;
+    void *mem = NULL;
+    iova = image_sect.vaddr;
+    size = image_sect.size;
+
+    source = (unsigned int*)(fw->data+image_sect.offset);
+    type = image_sect.type;
+
+    switch(type) {
+    case IMAGE_SECTION_TYPE_EXEC:
+    case IMAGE_SECTION_TYPE_DATA: {
+        if(image_sect.index >= IVP_IMAGE_DDR_DEFAULT_INDEX) {
+            ivp_ddr_addr = (ivp_dev.sects[3].acpu_addr<<4) + iova - ivp_dev.sects[3].ivp_addr;
+            mem = ivp_vmap(ivp_ddr_addr,image_sect.size,&offset);
+        }
+        else {
+            mem = ioremap_nocache(image_sect.vaddr,image_sect.size);
+        }
+        if (!mem) {
+            ivp_err("Can't map base address");
+            return -EINVAL;
+        }
+        mem_addr = (unsigned int *)mem;
+        if(image_sect.index >= IVP_IMAGE_DDR_DEFAULT_INDEX) {
+            memcpy_s(mem_addr, image_sect.size, source, image_sect.size);
+        } else {
+            for(i = 0; i < image_sect.size/4; i++) {
+                *(mem_addr+i) = *(source+i);
+        }
+        }
+    }
+    break;
+
+    case IMAGE_SECTION_TYPE_BSS: {
+    }
+    break;
+
+    default: {
+        ivp_err("Unsupported section type %d", type);
+        return -EINVAL;
+    }
+    }
+    if(mem != NULL) {
+        if(image_sect.index >= IVP_IMAGE_DDR_DEFAULT_INDEX) {
+            vunmap(mem-offset);
+        }
+        else {
+            iounmap(mem);
+        }
+    }
+    return 0;
+}
+
+
+static int ivp_load_firmware(const char* filename,const struct firmware* fw)
+{
+    int i;
+    struct file_header mheader;
+    memcpy_s(&mheader, sizeof(mheader), fw->data, sizeof(mheader));
+    ivp_info("Begin to loading image %s, section counts 0x%x...", filename, mheader.sect_count);
+    for (i = 0; i<mheader.sect_count; i++) {
+        struct image_section_header sect;
+        if(ivp_get_validate_section_info(fw, &sect, i)) {
+            ivp_err("get section %d fails ...", i);
+            return -EINVAL;
+        }
+
+        if(ivp_load_section(fw,sect)) {
+            ivp_err("load section %d fails ...", i);
+            return -EINVAL;
+        }
+    }
+    return 0;
+}
+static int ivp_load_image(const char* name)
+{
+    int ret = 0;
+    const struct firmware *firmware = NULL;
+    struct device *dev ;
+    if( name == NULL ) {
+        ivp_err("ivp image file name is invalid in function %s",  __FUNCTION__);
+        return -EINVAL;
+    }
+
+    dev = ivp_dev.device.this_device;
+    if(dev == NULL) {
+        ivp_err("ivp miscdevice element struce device is null");
+        return -EINVAL;
+    }
+    ret = request_firmware(&firmware,name,dev);
+    if(ret) {
+        ivp_err("request_firmware return error value %d for file (%s)",ret, name);
+        return ret;
+    }
+
+    ret = ivp_check_image(firmware);
+    if(ret != 0) {
+        release_firmware(firmware);
+        ivp_err("check ivp image %s fail and return value 0x%x ", name , ret);
+        return ret;
+    }
+
+    ret = ivp_load_firmware(name,firmware);
+    release_firmware(firmware);
+    return ret;
+}
 
 /*lint -save -e30 -e31 -e64 -e142 -e438 -e529
 -e530 -e550 -e695 -e712 -e713 -e715 -e732 -e744
@@ -314,7 +535,14 @@ static int ivp_dev_poweron(struct ivp_device *devp)
     }
 
     //set auto gate clk etc.
-    ivp_dev_set_dynamic_clk(IVP_ENABLE);
+    if (SECURE_MODE == devp->ivp_secmode)
+    {
+        ivp_dev_set_dynamic_clk(IVP_DISABLE);
+    }
+    else
+    {
+        ivp_dev_set_dynamic_clk(IVP_ENABLE);
+    }
 
     ret = ivp_poweron_remap(devp);
     if (ret) {
@@ -619,65 +847,58 @@ static irqreturn_t ivp_dwaxi_irq_handler(int irq, void *dev_id)
 
     return IRQ_HANDLED;
 }
-
-static int ivp_init_resethandler(struct ivp_device *pdev)
-{
-    /* init code to remap address */
-    iram = ioremap(REMAP_ADD, SIZE_16K);
-    if (!iram) {
-        ivp_err("Can't map ivp base address: 0x%x", REMAP_ADD);
-        return -1;
-    }
-
-    iowrite32(DEAD_FLAG, iram);
-
-    return 0;
-}
-
-static int ivp_check_resethandler(void)
-{
-    /* check init code in remap address */
-    int inited = 0;
-    uint32_t flag = ioread32(iram);
-    if (flag != DEAD_FLAG)
-        inited = 1;
-
-    return inited;
-}
-
-static void ivp_deinit_resethandler(void)
-{
-    /* deinit remap address */
-    if(iram) {
-        iounmap(iram);
-    }
-}
-
 static int ivp_open(struct inode *inode, struct file *fd)
 {
     struct ivp_device *pdev = &ivp_dev;
-    int ret = 0;
+    mutex_lock(&ivp_open_release_mutex);
 
     if (atomic_read(&pdev->accessible) == 0) {
+        mutex_unlock(&ivp_open_release_mutex);
         ivp_err("maybe ivp dev has been opened!");
         return -EBUSY;
     }
 
     atomic_dec(&pdev->accessible);
 
+    mutex_unlock(&ivp_open_release_mutex);
+    return 0;
+}
+static int ivp_poweron(struct ivp_device *pdev, unsigned int secMode)
+{
+    int ret = 0;
+
+    if (atomic_read(&pdev->poweron_access) == 0) {
+        ivp_err("maybe ivp dev has power on!");
+        return -EBUSY;
+    }
+    atomic_dec(&pdev->poweron_access);
     atomic_set(&pdev->wdg_sleep, 0);
     sema_init(&pdev->wdg_sem, 0);
 
+    if ((SECURE_MODE == secMode)
+        &&(0 == pdev->ivp_sec_support)){
+        ivp_err("ivp don't support secure mode");
+        goto err_ivp_dev_poweron;
+    }
+    pdev->ivp_secmode = secMode;
     ret = ivp_dev_poweron(pdev);
     if (ret < 0) {
         ivp_err("Failed to power on ivp.");
         goto err_ivp_dev_poweron;
     }
 
-    ret = ivp_dev_smmu_init(pdev);
-    if (ret) {
-        ivp_err("Failed to init smmu.");
-        goto err_ivp_dev_smmu_init;
+    if (NOSEC_MODE == pdev->ivp_secmode){
+
+        ret = ivp_dev_smmu_init(pdev);
+        if (ret) {
+            ivp_err("Failed to init smmu.");
+            goto err_ivp_dev_smmu_init;
+        }
+        ret = request_irq(pdev->dwaxi_dlock_irq, ivp_dwaxi_irq_handler, 0, "ivp_dwaxi_irq", (void *)pdev);
+        if (ret) {
+            ivp_err("Failed to request dwaxi irq.%d", ret);
+            goto err_request_irq_dwaxi;
+        }
     }
 
     ret = request_irq(pdev->wdg_irq, ivp_wdg_irq_handler, 0, "ivp_wdg_irq", (void *)pdev);
@@ -686,75 +907,94 @@ static int ivp_open(struct inode *inode, struct file *fd)
         goto err_request_irq_wdg;
     }
 
-    ret = request_irq(pdev->dwaxi_dlock_irq, ivp_dwaxi_irq_handler, 0, "ivp_dwaxi_irq", (void *)pdev);
-    if (ret) {
-        ivp_err("Failed to request dwaxi irq.%d", ret);
-        goto err_request_irq_dwaxi;
-    }
-
     ret = ivp_init_resethandler(pdev);
     if (ret) {
         ivp_err("Failed to init reset handler.");
         goto err_ivp_init_resethandler;
     }
 
-    fd->private_data = (void *)pdev;
-
     ivp_info("open ivp device sucess!");
+    atomic_dec(&pdev->poweron_success);
 
     return ret;
 
 err_ivp_init_resethandler:
-    free_irq(pdev->dwaxi_dlock_irq, pdev);
-err_request_irq_dwaxi:
     free_irq(pdev->wdg_irq, pdev);
 err_request_irq_wdg:
-    ivp_dev_smmu_deinit(pdev);
+    if (NOSEC_MODE == pdev->ivp_secmode)
+        free_irq(pdev->dwaxi_dlock_irq, pdev);
+err_request_irq_dwaxi:
+    if (NOSEC_MODE == pdev->ivp_secmode)
+        ivp_dev_smmu_deinit(pdev);
 err_ivp_dev_smmu_init:
     ivp_dev_poweroff(pdev);
 err_ivp_dev_poweron:
-    atomic_inc(&pdev->accessible);
-
+    pdev->ivp_secmode = NOSEC_MODE;
+    atomic_inc(&pdev->poweron_access);
     if (!dsm_client_ocuppy(client_ivp)) {
          dsm_client_record(client_ivp, "ivp\n");
          dsm_client_notify(client_ivp, DSM_IVP_OPEN_ERROR_NO);
          ivp_info("[I/DSM] %s dsm_client_ivp_open", client_ivp->client_name);
     }
 
-    ivp_info("open ivp device fail!");
+    ivp_info("poweron ivp device fail!");
     return ret;
+
 }
 
-static int ivp_release(struct inode *inode, struct file *fd)
+static void ivp_poweroff(struct ivp_device *pdev)
 {
-    struct ivp_device *pdev = (struct ivp_device *)fd->private_data;
-    if (NULL == pdev) {
-        ivp_err("dev is NULL.");
-        return -ENODEV;
+    if (atomic_read(&pdev->poweron_success) != 0) {
+        ivp_err("maybe ivp dev not poweron success!");
+        return;
     }
 
-    if (atomic_read(&pdev->accessible) != 0) {
-        ivp_err("maybe ivp dev not opened!");
-        return -1;
-    }
-
-    ivp_deinit_resethandler();
+    ivp_deinit_resethandler(pdev);
 
     ivp_hw_runstall(pdev, IVP_RUNSTALL_STALL);
     if (ivp_hw_query_runstall(pdev) != IVP_RUNSTALL_STALL) {
         ivp_err("Failed to stall ivp.");
     }
-
     ivp_hw_clr_wdg_irq();
-    free_irq(pdev->dwaxi_dlock_irq, pdev);
+
     free_irq(pdev->wdg_irq, pdev);
-    ivp_dev_smmu_deinit(pdev);
+
+    if (NOSEC_MODE == pdev->ivp_secmode){
+        free_irq(pdev->dwaxi_dlock_irq, pdev);
+        ivp_dev_smmu_deinit(pdev);
+    }
+
     ivp_dev_poweroff(pdev);
+
+    pdev->ivp_secmode = NOSEC_MODE;
+    atomic_inc(&pdev->poweron_access);
+    atomic_inc(&pdev->poweron_success);
+}
+
+static int ivp_release(struct inode *inode, struct file *fd)
+{
+    struct ivp_device *pdev = &ivp_dev;
+    if (NULL == pdev) {
+        ivp_err("dev is NULL.");
+        return -ENODEV;
+    }
+
+    mutex_lock(&ivp_open_release_mutex);
+    if (atomic_read(&pdev->accessible) != 0) {
+        mutex_unlock(&ivp_open_release_mutex);
+        ivp_err("maybe ivp dev not opened!");
+        return -1;
+    }
+
+    mutex_lock(&ivp_power_up_off_mutex);
+    ivp_poweroff(pdev);
+    mutex_unlock(&ivp_power_up_off_mutex);
 
     ivp_info("ivp device closed.");
 
     atomic_inc(&pdev->accessible);
 
+    mutex_unlock(&ivp_open_release_mutex);
     return 0;
 }
 
@@ -770,18 +1010,58 @@ static void ivp_dev_hwa_enable(void)
 static long ivp_ioctl(struct file *fd, unsigned int cmd, unsigned long args)
 {
     long ret = 0;
-    struct ivp_device *pdev = (struct ivp_device *)fd->private_data;
+    struct ivp_device *pdev = &ivp_dev;
+
+    if ((atomic_read(&pdev->poweron_success) != 0)&&(IVP_IOCTL_POWER_UP != cmd))
+    {
+        ivp_err("ivp dev has not powered up, ioctl cmd is error %d", cmd);
+        return -EINVAL;
+    }
 
     switch (cmd) {
+    case IVP_IOCTL_POWER_UP:{
+        unsigned int secMode = 0;
+        if (!args) {
+            ivp_err("Invalid input args 0");
+            return -EINVAL;
+        }
+        mutex_lock(&ivp_power_up_off_mutex);
+        if (0 != copy_from_user(&secMode, (void *)args, sizeof(unsigned int))) {
+            ivp_err("Invalid input param size.");
+            mutex_unlock(&ivp_power_up_off_mutex);
+            return -EINVAL;
+        }
+
+        if(secMode != SECURE_MODE && secMode != NOSEC_MODE) {
+            ivp_err("Invalid input secMode value:%d",secMode);
+            mutex_unlock(&ivp_power_up_off_mutex);
+            return -EINVAL;
+        }
+
+        ret = ivp_poweron(&ivp_dev, secMode);
+        if (!ret){
+            fd->private_data = (void *)&ivp_dev;
+        }
+        mutex_unlock(&ivp_power_up_off_mutex);
+        }
+        break;
     case IVP_IOCTL_SECTCOUNT: {
         unsigned int sect_count = ivp_dev.sect_count;
         ivp_info("IOCTL:get sect count:%#x.", sect_count);
+        if (!args) {
+            ivp_err("Invalid input args 0");
+            return -EINVAL;
+        }
         ret = copy_to_user((void *)args, &sect_count, sizeof(sect_count));
         }
         break;
 
     case IVP_IOCTL_SECTINFO: {
         struct ivp_sect_info info;
+        if (!args) {
+            ivp_err("Invalid input args 0");
+            return -EINVAL;
+        }
         if (0 != copy_from_user(&info, (void *)args, sizeof(info))) {
             ivp_err("Invalid input param size.");
             return -EINVAL;
@@ -793,12 +1073,62 @@ static long ivp_ioctl(struct file *fd, unsigned int cmd, unsigned long args)
             return -EINVAL;
         }
 
-        ret = copy_to_user((void *)args, &ivp_dev.sects[info.index], sizeof(struct ivp_sect_info));
+        if (SECURE_MODE == ivp_dev.ivp_secmode){
+            ret = copy_to_user((void *)args, &ivp_dev.sec_sects[info.index], sizeof(struct ivp_sect_info));
+
+        }
+        else
+        {
+            ret = copy_to_user((void *)args, &ivp_dev.sects[info.index], sizeof(struct ivp_sect_info));
+        }
+
         }
         break;
 
+    case IVP_IOCTL_LOAD_FIRMWARE: {
+        struct ivp_image_info info;
+        if (!args) {
+            ivp_err("Invalid input args 0");
+            return -EINVAL;
+        }
+
+        if (ivp_hw_query_runstall(pdev) == IVP_RUNSTALL_RUN) {
+            ivp_err("Invalid ivp status: ivp alredy run ");
+            return -EINVAL;
+        }
+        mutex_lock(&ivp_load_image_mutex);
+        memset_s((char *)&info, sizeof(info), 0, sizeof(info));
+        if (0 != copy_from_user(&info, (void *)args, sizeof(info))) {
+            ivp_err("invalid input param size.");
+            mutex_unlock(&ivp_load_image_mutex);
+            return -EINVAL;
+        }
+        info.name[sizeof(info.name)-1] = '\0';
+        if((info.length > (sizeof(info.name)-1))
+         ||(info.length <= IVP_IMAGE_SUFFIX_LENGTH)
+         ||(info.length != strlen(info.name))){
+            ivp_err("image file:but pass param length:%d", info.length);
+            mutex_unlock(&ivp_load_image_mutex);
+            return -EINVAL;
+        }
+        if (strcmp((const char *)&info.name[info.length-IVP_IMAGE_SUFFIX_LENGTH], IVP_IMAGE_SUFFIX))
+        {
+            ivp_err("image is not bin file");
+            mutex_unlock(&ivp_load_image_mutex);
+            return -EINVAL;
+        }
+        if (SECURE_MODE == pdev->ivp_secmode){
+            ret = ivp_sec_loadimage(pdev);
+        }
+        else
+        {
+            ret = ivp_load_image(info.name);
+        }
+        mutex_unlock(&ivp_load_image_mutex);
+        }
+        break;
     case IVP_IOCTL_DSP_RUN:
-        if (ivp_check_resethandler() == 1) {
+        if (ivp_check_resethandler(pdev) == 1) {
             ivp_dev_run(pdev);
         } else {
             ivp_err("ivp image not upload.");
@@ -811,7 +1141,7 @@ static long ivp_ioctl(struct file *fd, unsigned int cmd, unsigned long args)
         break;
 
     case IVP_IOCTL_DSP_RESUME:
-        if (ivp_check_resethandler() == 1) {
+        if (ivp_check_resethandler(pdev) == 1) {
             ivp_dev_resume(pdev);
         } else {
             ivp_err("ivp image not upload.");
@@ -824,13 +1154,21 @@ static long ivp_ioctl(struct file *fd, unsigned int cmd, unsigned long args)
 
     case IVP_IOCTL_QUERY_RUNSTALL: {
         unsigned int runstall = (u32)ivp_hw_query_runstall(pdev);
-        put_user(runstall, (unsigned int *)args);
+        if (!args) {
+            ivp_err("Invalid input args 0");
+            return -EINVAL;
+        }
+        ret = copy_to_user((void *)args, &runstall, sizeof(runstall));
         }
         break;
 
     case IVP_IOCTL_QUERY_WAITI: {
         unsigned int waiti = (u32)ivp_hw_query_waitmode(pdev);
-        put_user(waiti, (unsigned int *)args);
+        if (!args) {
+            ivp_err("Invalid input args 0");
+            return -EINVAL;
+        }
+        ret = copy_to_user((void *)args, &waiti, sizeof(waiti));
         }
         break;
 
@@ -856,6 +1194,10 @@ static long ivp_ioctl(struct file *fd, unsigned int cmd, unsigned long args)
 
     case IVP_IOCTL_CLK_LEVEL: {
         unsigned int level = 0;
+        if (!args) {
+            ivp_err("Invalid input args 0");
+            return -EINVAL;
+        }
         if (0 != copy_from_user(&level, (void *)args, sizeof(unsigned int))) {
             ivp_err("Invalid input param size.");
             return -EINVAL;
@@ -889,17 +1231,30 @@ static int ivp_mmap(struct file *fd, struct vm_area_struct *vma)
     unsigned int size = 0;
     unsigned long mm_pgoff = (vma->vm_pgoff << IVP_MMAP_SHIFT);
     unsigned long phy_addr = vma->vm_pgoff << (PAGE_SHIFT + IVP_MMAP_SHIFT);
+    struct ivp_sect_info *psects = NULL;
 
+    if (atomic_read(&ivp_dev.poweron_success) != 0)
+    {
+        ivp_err("Invalid mmap, not powerup!");
+        return -EINVAL;
+    }
     size = vma->vm_end - vma->vm_start;
     if (size > LISTENTRY_SIZE) {
         ivp_err("Invalid size = 0x%08x.", size);
         return -EINVAL;
     }
 
+    if (SECURE_MODE == ivp_dev.ivp_secmode){
+        psects = ivp_dev.sec_sects;
+    }
+    else
+    {
+        psects = ivp_dev.sects;
+    }
     for (; i < ivp_dev.sect_count; i++) {
-        if (phy_addr >= (ivp_dev.sects[i].acpu_addr << IVP_MMAP_SHIFT) &&
-             phy_addr <= ((ivp_dev.sects[i].acpu_addr << IVP_MMAP_SHIFT) + ivp_dev.sects[i].len) &&
-            (phy_addr + size) <= ((ivp_dev.sects[i].acpu_addr << IVP_MMAP_SHIFT) + ivp_dev.sects[i].len)) {
+        if (phy_addr >= (psects[i].acpu_addr << IVP_MMAP_SHIFT) &&
+             phy_addr <= ((psects[i].acpu_addr << IVP_MMAP_SHIFT) + psects[i].len) &&
+            (phy_addr + size) <= ((psects[i].acpu_addr << IVP_MMAP_SHIFT) + psects[i].len)) {
             ivp_info("Valid section %d for target.", i);
             break;
         }
@@ -950,7 +1305,7 @@ static inline int ivp_setup_one_onchipmem_section(struct ivp_sect_info *sect, st
     }
 
     len = (len >= sizeof(sect->name)) ? (sizeof(sect->name)-1) : len;
-    strncpy(sect->name, name, len); // unsafe_function_ignore: strncpy
+    strncpy_s(sect->name, (sizeof(sect->name)-1), name, len);
     sect->name[len] = '\0';
     sect->ivp_addr  = settings[0];
     sect->acpu_addr = settings[1];
@@ -963,6 +1318,7 @@ static inline int ivp_setup_onchipmem_sections(struct platform_device *plat_devp
 {
     struct device_node *parent = NULL, *child = NULL;
     size_t i = 0;
+    size_t sects_size = 0;
 
     if (plat_devp == NULL || ivp_devp == NULL) {
         ivp_err("pointer is NULL.");
@@ -977,11 +1333,16 @@ static inline int ivp_setup_onchipmem_sections(struct platform_device *plat_devp
 
     /*lint -save -e737 -e838*/
     ivp_devp->sect_count = of_get_child_count(parent);
-    ivp_devp->sects = (struct ivp_sect_info *)
-                      kzalloc(sizeof(struct ivp_sect_info) * ivp_devp->sect_count, GFP_KERNEL);
+    sects_size = sizeof(struct ivp_sect_info) * ivp_devp->sect_count;
+    ivp_devp->sects = (struct ivp_sect_info *)kzalloc(sects_size, GFP_KERNEL);
+    if (NULL == ivp_devp->sects){
+        ivp_err("kmalloc sects fail.");
+        return -ENOMEM;
+    }
 
-    if (NULL == ivp_devp->sects) {
-        ivp_err("kmalloc fail.");
+    ivp_devp->sec_sects = (struct ivp_sect_info *)kzalloc(sects_size, GFP_KERNEL);
+    if (NULL == ivp_devp->sec_sects){
+        ivp_err("kmalloc sec_sects fail.");
         return -ENOMEM;
     }
 
@@ -1001,13 +1362,17 @@ static inline int ivp_setup_onchipmem_sections(struct platform_device *plat_devp
 
         i++;
     }
+    memcpy_s(ivp_devp->sec_sects, sects_size, ivp_devp->sects, sects_size);
     /*lint -restore*/
     return 0;
 
 err_out:
     if(ivp_devp->sects)
         kfree(ivp_devp->sects);
+    if(ivp_devp->sec_sects)
+        kfree(ivp_devp->sec_sects);
     ivp_devp->sects = NULL;
+    ivp_devp->sec_sects = NULL;
     ivp_devp->sect_count = 0;
     return -EFAULT;
 }
@@ -1169,7 +1534,9 @@ static int ivp_remove(struct platform_device *plat_devp)
     ivp_deinit_pri(pdev);
 
     kfree(pdev->sects);
+    kfree(pdev->sec_sects);
     pdev->sects = NULL;
+    pdev->sec_sects = NULL;
     pdev->sect_count = 0;
 
     if (NULL != pdev->smmu_dev) {
@@ -1177,6 +1544,10 @@ static int ivp_remove(struct platform_device *plat_devp)
     }
     wake_lock_destroy(&ivp_power_wakelock);
     mutex_destroy(&ivp_wake_lock_mutex);
+    mutex_destroy(&ivp_sec_mem_mutex);
+    mutex_destroy(&ivp_load_image_mutex);
+    mutex_destroy(&ivp_power_up_off_mutex);
+    mutex_destroy(&ivp_open_release_mutex);
 
     return 0;
 }
@@ -1184,12 +1555,18 @@ static int ivp_remove(struct platform_device *plat_devp)
 static int ivp_probe(struct platform_device *pdev)
 {
     int ret = 0;
-
+    ivp_dev.ivp_pdev = pdev;
     platform_set_drvdata(pdev, &ivp_dev);
     atomic_set(&ivp_dev.accessible, 1);
+    atomic_set(&ivp_dev.poweron_access, 1);
+    atomic_set(&ivp_dev.poweron_success, 1);
 
     wake_lock_init(&ivp_power_wakelock, WAKE_LOCK_SUSPEND, "ivp_power_wakelock");
     mutex_init(&ivp_wake_lock_mutex);
+    mutex_init(&ivp_sec_mem_mutex);
+    mutex_init(&ivp_load_image_mutex);
+    mutex_init(&ivp_power_up_off_mutex);
+    mutex_init(&ivp_open_release_mutex);
 
     /*lint -save -e838*/
     ret = misc_register(&ivp_dev.device);
@@ -1246,10 +1623,79 @@ err_out_smmu:
     misc_deregister(&ivp_dev.device);
 err_out_misc:
     mutex_destroy(&ivp_wake_lock_mutex);
+    mutex_destroy(&ivp_sec_mem_mutex);
+    mutex_destroy(&ivp_load_image_mutex);
+    mutex_destroy(&ivp_power_up_off_mutex);
+    mutex_destroy(&ivp_open_release_mutex);
     wake_lock_destroy(&ivp_power_wakelock);
 
     return ret;
 }
+
+int ivp_ion_phys(struct ion_client *client, struct ion_handle *handle,dma_addr_t *addr)
+{
+    int ret = -ENODEV;
+    int share_fd = 0;
+    struct dma_buf *buf = NULL;
+    struct dma_buf_attachment *attach = NULL;
+    struct sg_table *sgt = NULL;
+    struct scatterlist *sgl;
+    struct device *device = NULL;
+
+    ivp_dbg("[%s] +\n", __func__);
+
+    if ((IS_ERR(client))||(IS_ERR(handle))) {
+        ivp_err("hivp_ion_phys failed \n");
+        return -ENODEV;
+    }
+
+    device = &ivp_dev.ivp_pdev->dev;
+
+    share_fd = ion_share_dma_buf_fd(client, handle);
+    if (share_fd < 0) {
+        ivp_err("[%s] Failed : ion_share_dma_buf_fd, share_fd.%d\n", __func__, share_fd);
+        return share_fd;
+    }
+
+    buf = dma_buf_get(share_fd);
+    if (IS_ERR(buf)) {
+        ivp_err("[%s] Failed : dma_buf_get, buf.%pK\n", __func__, buf);
+        goto err_dma_buf_get;
+    }
+
+    attach = dma_buf_attach(buf, device);
+    if (IS_ERR(attach)) {
+        ivp_err("[%s] Failed : dma_buf_attach, attach.%pK\n", __func__, attach);
+        goto err_dma_buf_attach;
+    }
+
+    sgt = dma_buf_map_attachment(attach, DMA_BIDIRECTIONAL);
+    if (IS_ERR(sgt)) {
+        ivp_err("[%s] Failed : dma_buf_map_attachment, sgt.%pK\n", __func__, sgt);
+        goto err_dma_buf_map_attachment;
+    }
+
+    sgl = sgt->sgl;
+    if (sgl == NULL) {
+        ivp_err("[%s] Failed : sgl.NULL\n", __func__);
+        goto err_dma_buf_map_attachment;
+    }
+
+    // Get physical addresses from scatter list
+    *addr = sg_phys(sgl);/*[false alarm]:it's not the bounds of allocated memory */
+
+    ivp_dbg("[%s] -\n", __func__);
+    ret = 0;
+
+err_dma_buf_map_attachment:
+    dma_buf_detach(buf, attach);
+err_dma_buf_attach:
+    dma_buf_put(buf);
+err_dma_buf_get:
+    sys_close(share_fd);
+    return ret;
+}
+
 /*lint -restore*/
 
 /*lint -save -e785 -e64*/

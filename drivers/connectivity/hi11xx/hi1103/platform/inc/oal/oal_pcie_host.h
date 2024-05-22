@@ -36,9 +36,9 @@ typedef enum _PCI_LOG_TYPE_{
 
 /*when deepsleep not S/R, pcie is PCI_WLAN_LINK_UP,
   when deepsleep under S/R, pcie is PCI_WLAN_LINK_DOWN,
-  when down firmware , pcie is PCI_WLAN_LINK_MEM_UP, 
+  when down firmware , pcie is PCI_WLAN_LINK_MEM_UP,
   after wcpu main func up device ready, pcie is PCI_WLAN_LINK_DMA_UP,
-  we can't access pcie ep's AXI interface when it's  power down, 
+  we can't access pcie ep's AXI interface when it's  power down,
   cased host bus error*/
 typedef enum _PCI_WLAN_LINK_STATE_
 {
@@ -108,6 +108,7 @@ typedef enum _PCI_WLAN_LINK_STATE_
 #define HI1103_W_CTL_BASE                          pst_wctrl
 #define HI1103_W_CTL_WTOPCRG_SOFT_CLKEN_REG       (HI1103_W_CTL_BASE + 0x40)
 #define HI1103_W_CTL_W_TCXO_SEL_REG               (HI1103_W_CTL_BASE + 0x80)      /* WLAN TCXO/PLL时钟模式选择寄存器 */
+#define HI1103_W_CTL_CLKMUX_STS_REG               (HI1103_W_CTL_BASE + 0x88)
 
 extern char* g_pcie_link_state_str[PCI_WLAN_LINK_BUTT+1];
 extern oal_int32 hipcie_loglevel;
@@ -140,7 +141,7 @@ OAL_STATIC OAL_INLINE oal_void oal_pcie_log_record(PCI_LOG_TYPE type)
     do \
     {\
         oal_int32 ret_t;\
-        oal_uint32 reg_t;\
+        oal_uint32 reg_t = 0;\
         ret_t = oal_pci_read_config_dword(dev, reg_name, &reg_t);\
         if(!ret_t){\
             OAL_IO_PRINT(" [0x%8x:0x%8x]\n", reg_name, reg_t);\
@@ -150,6 +151,13 @@ OAL_STATIC OAL_INLINE oal_void oal_pcie_log_record(PCI_LOG_TYPE type)
     }while(0)
 
 typedef oal_uint32 pcie_dev_ptr;/*Device CPU 指针大小，目前都是32bits*/
+
+typedef struct _oal_reg_bits_stru_
+{
+    oal_uint32 flag;
+    oal_uint32 value;
+    char* name;
+}oal_reg_bits_stru;
 
 typedef struct _oal_pcie_msi_stru_
 {
@@ -203,6 +211,7 @@ typedef struct _pcie_h2d_res_
     pci_addr_map ringbuf_data_dma_addr;/*ringbuf buf地址*/
     pci_addr_map ringbuf_ctrl_dma_addr;/*ringbuf 控制结构体地址*/
     oal_netbuf_head_stru txq;/*正在发送中的netbuf队列*/
+    oal_atomic  tx_ringbuf_sync_cond;
     oal_spin_lock_stru lock;
     oal_pcie_h2d_stat stat;
 }pcie_h2d_res;
@@ -329,7 +338,7 @@ typedef struct _oal_pcie_res__
     pcie_d2h_res      st_rx_res;
     pcie_message_res  st_message_res;/*Message Ringbuf*/
     pcie_comm_ringbuf_res st_ringbuf_res;
-    
+
 
     oal_pcie_trans_stat stat;
 
@@ -417,6 +426,8 @@ oal_int32 oal_pcie_transfer_done(oal_pcie_res* pst_pci_res);
 oal_int32 oal_pcie_tx_is_idle(oal_pcie_res* pst_pci_res, PCIE_H2D_RINGBUF_QTYPE qtype);
 oal_int32 oal_pcie_read_d2h_message(oal_pcie_res* pst_pci_res, oal_uint32 *message);
 oal_int32 oal_pcie_send_message_to_dev(oal_pcie_res* pst_pci_res, oal_uint32 message);
+oal_int32 oal_pcie_get_host_trans_count(oal_pcie_res* pst_pci_res, oal_uint64 *tx, oal_uint64 *rx);
+oal_int32 oal_pcie_sleep_request_host_check(oal_pcie_res* pst_pci_res);
 oal_int32 oal_pcie_disable_regions(oal_pcie_res* pst_pci_res);
 oal_int32 oal_pcie_enable_regions(oal_pcie_res* pst_pci_res);
 oal_int32 oal_pcie_transfer_res_init(oal_pcie_res * pst_pci_res);
@@ -426,14 +437,32 @@ oal_int32 oal_pcie_check_link_state(oal_pcie_res* pst_pci_res);
 oal_int32 oal_pcie_set_l1pm_ctrl(oal_pcie_res* pst_pci_res, oal_int32 enable);
 oal_int32 oal_pcie_read_dsm32(oal_pcie_res* pst_pci_res, PCIE_SHARED_DEVICE_ADDR_TYPE type, oal_uint32 *val);
 oal_int32 oal_pcie_set_device_soft_fifo_enable(oal_pcie_res* pst_pci_res);
+oal_int32 oal_pcie_set_device_dma_check_enable(oal_pcie_res* pst_pci_res);
+oal_int32 oal_pcie_set_device_ringbuf_bugfix_enable(oal_pcie_res* pst_pci_res);
 oal_int32 oal_pcie_device_aspm_init(oal_pcie_res* pst_pci_res);
 oal_int32 oal_pcie_device_auxclk_init(oal_pcie_res* pst_pci_res);
+oal_int32 oal_pcie_copy_from_device_by_dword(oal_pcie_res* pst_pci_res,
+                                                        oal_void* ddr_address,
+                                                        oal_ulong start,
+                                                        oal_uint32 data_size);
+oal_int32 oal_pcie_copy_to_device_by_dword(oal_pcie_res* pst_pci_res,
+                                                        oal_void* ddr_address,
+                                                        oal_ulong start,
+                                                        oal_uint32 data_size);
+oal_ulong oal_pcie_get_deivce_dtcm_cpuaddr(oal_pcie_res* pst_pci_res);
 oal_int32 oal_pcie_device_changeto_high_cpufreq(oal_pcie_res* pst_pci_res);
 oal_int32 oal_pcie_device_mem_scanall(oal_pcie_res* pst_pci_res);
 oal_int32 oal_pcie_get_gen_mode(oal_pcie_res* pst_pci_res);
 oal_int32 oal_pcie_unmask_device_link_erros(oal_pcie_res* pst_pci_res);
 oal_int32 oal_pcie_check_device_link_errors(oal_pcie_res* pst_pci_res);
 oal_void oal_pcie_print_ringbuf_info(pcie_ringbuf* pst_ringbuf, PCI_LOG_TYPE level);
+oal_void oal_pcie_set_voltage_bias_param(oal_uint32 phy_0v9_bias, oal_uint32 phy_1v8_bias);
+oal_int32 oal_pcie_voltage_bias_init(oal_pcie_res* pst_pci_res);
+oal_void oal_pcie_print_transfer_info(oal_pcie_res* pst_pci_res, oal_uint64 print_flag);
+oal_void oal_pcie_reset_transfer_info(oal_pcie_res* pst_pci_res);
+oal_int32 oal_pcie_ringbuf_h2d_refresh(oal_pcie_res* pst_pci_res);
+oal_int32 oal_pcie_host_pending_signal_check(oal_pcie_res* pst_pci_res);
+oal_int32 oal_pcie_host_pending_signal_process(oal_pcie_res* pst_pci_res);
 /*Inline functions*/
 
 OAL_STATIC OAL_INLINE oal_void oal_pci_cache_flush(oal_pci_dev_stru* hwdev,  oal_void *pa, oal_int32 size)
@@ -522,13 +551,62 @@ OAL_STATIC OAL_INLINE oal_uint64 oal_pcie_read_mem64( oal_ulong va)
 	return data;
 }
 
+extern oal_void oal_pcie_memport_copy(oal_void* dst, oal_void* src, oal_int32 size);
+extern oal_void oal_pcie_mem32_copy(oal_uint32* dst, oal_uint32* src, oal_int32 size);
+extern oal_int32 pcie_memcopy_type;
 /*dst/src 有一端地址在PCIE EP侧，PCIE按burst方式传输*/
 OAL_STATIC OAL_INLINE oal_void oal_pcie_memcopy(oal_ulong dst, oal_ulong src, oal_uint32 size)
 {
 #if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
     /*Kernel's memcpy will copy as busrt 4/8 & align to PCIE,
       refer to arch/arm64/lib/memcpy.S*/
-    memcpy((oal_void*)dst, (oal_void*)src, size);
+    if(0 == pcie_memcopy_type)
+    {
+        memcpy((oal_void*)dst, (oal_void*)src, size);
+    }
+    else if(1 == pcie_memcopy_type)
+    {
+        if(WARN((dst & 0x3),"invalid dst address 0x%lx", dst)||
+        WARN((src & 0x3),"invalid src address 0x%lx", dst) ||
+        WARN((size & 0x3),"invalid size address 0x%lx", dst))
+        {
+            return;
+        }
+#ifdef CONFIG_64BIT
+        oal_pcie_memport_copy((oal_void*)dst, (oal_void*)src, (oal_int32)size);
+#else
+        oal_pcie_mem32_copy((oal_uint32*)dst, (oal_uint32*)src, (oal_int32)size);
+#endif
+    }
+    else if(2 == pcie_memcopy_type)
+    {
+        oal_uint32 i;
+        oal_uint32 value;
+        /*最长4字节对齐访问, Test Code 暂时不考虑 单字节 ，双字节*/
+        if(WARN((dst & 0x3),"invalid dst address 0x%lx", dst)||
+        WARN((src & 0x3),"invalid src address 0x%lx", dst) ||
+        WARN((size & 0x3),"invalid size address 0x%lx", dst))
+        {
+            return;
+        }
+
+        for(i = 0 ; i < size ; i += 4)
+        {
+            value = oal_readl((void*)(src + i));
+            oal_writel(value , (void*)(dst + i));
+        }
+    }
+    else if(3 == pcie_memcopy_type)
+    {
+        if(WARN((dst & 0x3),"invalid dst address 0x%lx", dst)||
+        WARN((src & 0x3),"invalid src address 0x%lx", dst) ||
+        WARN((size & 0x3),"invalid size address 0x%lx", dst))
+        {
+            return;
+        }
+
+        oal_pcie_mem32_copy((oal_uint32*)dst, (oal_uint32*)src, (oal_int32)size);
+    }
 #else
     oal_memcopy((oal_void*)dst, (oal_void*)src, size);
 #endif
@@ -545,19 +623,18 @@ OAL_STATIC OAL_INLINE oal_uint32 pcie_ringbuf_len(pcie_ringbuf* pst_ringbuf)
 #ifdef _PRE_PLAT_FEATURE_PCIE_DEBUG
     if(len % pst_ringbuf->item_len)
     {
-        OAL_IO_PRINT("pcie_ringbuf_len, size:%u, wr:%u, rd:%u"NEWLINE, 
-                        pst_ringbuf->size, 
-                        pst_ringbuf->wr, 
+        OAL_IO_PRINT("pcie_ringbuf_len, size:%u, wr:%u, rd:%u"NEWLINE,
+                        pst_ringbuf->size,
+                        pst_ringbuf->wr,
                         pst_ringbuf->rd);
-        OAL_BUG_ON(1);
     }
 #endif
     if(pst_ringbuf->item_mask)
     {
         /*item len 如果是2的N次幂，则移位*/
         len = len >> pst_ringbuf->item_mask;
-    } 
-    else 
+    }
+    else
     {
         len /= pst_ringbuf->item_len;
     }
@@ -660,6 +737,7 @@ OAL_STATIC OAL_INLINE char* oal_pcie_get_link_state_str(PCI_WLAN_LINK_STATE link
     if(OAL_WARN_ON(PCI_WLAN_LINK_BUTT < link_state))
     {
         PCI_PRINT_LOG(PCI_LOG_WARN, "invalid link_state:%d", link_state);
+        return "overrun";
     }
 
     if(NULL == g_pcie_link_state_str[link_state])

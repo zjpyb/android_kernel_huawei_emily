@@ -78,18 +78,6 @@ void blk_queue_lld_busy(struct request_queue *q, lld_busy_fn *fn)
 EXPORT_SYMBOL_GPL(blk_queue_lld_busy);
 
 /**
- * blk_urgent_request() - Set an urgent_request handler function for queue
- * @q:		queue
- * @fn:		handler for urgent requests
- *
- */
-void blk_urgent_request(struct request_queue *q, request_fn_proc *fn)
-{
-	q->urgent_request_fn = fn;
-}
-EXPORT_SYMBOL(blk_urgent_request);
-
-/**
  * blk_set_default_limits - reset limits to default values
  * @lim:  the queue_limits structure to reset
  *
@@ -205,7 +193,7 @@ void blk_queue_bounce_limit(struct request_queue *q, u64 max_addr)
 	int dma = 0;
 
 	q->bounce_gfp = GFP_NOIO;
-#ifdef CONFIG_MMC_BLOCK_IOMMU_64BIT
+#if BITS_PER_LONG == 64
 	/*
 	 * Assume anything <= 4GB can be handled by IOMMU.  Actually
 	 * some IOMMUs can handle everything, but I don't know of a
@@ -251,8 +239,8 @@ void blk_queue_max_hw_sectors(struct request_queue *q, unsigned int max_hw_secto
 	struct queue_limits *limits = &q->limits;
 	unsigned int max_sectors;
 
-	if ((max_hw_sectors << 9) < PAGE_CACHE_SIZE) {
-		max_hw_sectors = 1 << (PAGE_CACHE_SHIFT - 9);
+	if ((max_hw_sectors << 9) < PAGE_SIZE) {
+		max_hw_sectors = 1 << (PAGE_SHIFT - 9);
 		printk(KERN_INFO "%s: set to minimum %d\n",
 		       __func__, max_hw_sectors);
 	}
@@ -341,8 +329,8 @@ EXPORT_SYMBOL(blk_queue_max_segments);
  **/
 void blk_queue_max_segment_size(struct request_queue *q, unsigned int max_size)
 {
-	if (max_size < PAGE_CACHE_SIZE) {
-		max_size = PAGE_CACHE_SIZE;
+	if (max_size < PAGE_SIZE) {
+		max_size = PAGE_SIZE;
 		printk(KERN_INFO "%s: set to minimum %d\n",
 		       __func__, max_size);
 	}
@@ -772,8 +760,8 @@ EXPORT_SYMBOL_GPL(blk_queue_dma_drain);
  **/
 void blk_queue_segment_boundary(struct request_queue *q, unsigned long mask)
 {
-	if (mask < PAGE_CACHE_SIZE - 1) {
-		mask = PAGE_CACHE_SIZE - 1;
+	if (mask < PAGE_SIZE - 1) {
+		mask = PAGE_SIZE - 1;
 		printk(KERN_INFO "%s: set to minimum %lx\n",
 		       __func__, mask);
 	}
@@ -845,8 +833,8 @@ EXPORT_SYMBOL_GPL(blk_queue_flush_queueable);
 
 /**
  * blk_set_queue_depth - tell the block layer about the device queue depth
- * @q:		the request queue for the device
- * @depth:		queue depth
+ * @q:          the request queue for the device
+ * @depth:      queue depth
  *
  */
 void blk_set_queue_depth(struct request_queue *q, unsigned int depth)
@@ -876,8 +864,6 @@ void blk_queue_write_cache(struct request_queue *q, bool wc, bool fua)
 	else
 		queue_flag_clear(QUEUE_FLAG_FUA, q);
 	spin_unlock_irq(q->queue_lock);
-
-	wbt_set_write_cache(q->rq_wb, test_bit(QUEUE_FLAG_WC, &q->queue_flags));
 }
 EXPORT_SYMBOL_GPL(blk_queue_write_cache);
 

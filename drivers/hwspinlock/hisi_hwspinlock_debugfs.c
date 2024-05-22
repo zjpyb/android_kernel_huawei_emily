@@ -13,8 +13,10 @@
 #include <linux/debugfs.h>
 #include <linux/uaccess.h>
 #include <asm/io.h>
-
 #include "hwspinlock_internal.h"
+#include <linux/hisi/hisi_log.h>
+
+#define HISI_LOG_TAG  HISI_HWSPINLOCK_DEBUGFS_TAG
 /*
  * debugfs file node:
  * - dev/debugfs/hwspinlock/debug

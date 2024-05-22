@@ -2089,7 +2089,7 @@ int ispcvdr_init(void)
 
     pr_info("[%s] +\n", __func__);
 
-    isp_regs_base = get_regaddr_by_pa(ISP_CORE_CFG_BASE_ADDR);
+    isp_regs_base = get_regaddr_by_pa(ISPCORE);
     if (unlikely(!isp_regs_base)) {
         pr_err("[%s] isp_regs_base failed!\n", __func__);
         return -ENOMEM;
@@ -2147,7 +2147,7 @@ int ispmmu_init(void)
 
     pr_info("[%s] +\n", __func__);
 
-    isp_regs_base = get_regaddr_by_pa(ISP_CORE_CFG_BASE_ADDR);
+    isp_regs_base = get_regaddr_by_pa(ISPCORE);
     if (unlikely(!isp_regs_base)) {
         pr_err("[%s] isp_regs_base failed\n", __func__);
         return -ENOMEM;

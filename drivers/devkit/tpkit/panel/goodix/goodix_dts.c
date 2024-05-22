@@ -77,6 +77,14 @@ int goodix_parse_dts(struct goodix_ts_data *ts)
 		GTP_INFO("get only_open_once_captest_threshold = %d", ts->only_open_once_captest_threshold);
 	}
 
+	ret = of_property_read_u32(device, GTP_LOAD_CFG_VIA_PROJECT_ID, &ts->load_cfg_via_project_id);
+	if (ret) {
+		ts->load_cfg_via_project_id = 0;
+		GTP_INFO("get load_cfg_via_project_id from dts failed,use default 0");
+	} else {
+		GTP_INFO("get load_cfg_via_project_id = %d", ts->load_cfg_via_project_id);
+	}
+
 	return 0;
 err:
 	return ret;
@@ -134,15 +142,26 @@ int goodix_parse_cfg_data(struct goodix_ts_data *ts,
 	char project_id[20];
 	int correct_len;
 
-	sprintf(project_id, "goodix-sensorid-%u", sid);
-	self = of_find_compatible_node(ts->pdev->dev.of_node,
-			NULL, project_id);
-	if (!self) {
-		GTP_ERROR("No chip specific dts: %s, need to parse",
-			    project_id);
-		return -EINVAL;
+	if (ts->load_cfg_via_project_id) {
+		self = of_find_node_by_name(ts->pdev->dev.of_node, ts->project_id);
+		if (!self) {
+			GTP_ERROR("Find %s node error", ts->project_id);
+			return -EINVAL;
+		}
+		GTP_INFO("Parse [%s] data from dts[SENSORID:%u][ProjectID:%s]", cfg_type,
+			sid, ts->project_id);
+	} else {
+		sprintf(project_id, "goodix-sensorid-%u", sid);
+		self = of_find_compatible_node(ts->pdev->dev.of_node,
+				NULL, project_id);
+		if (!self) {
+			GTP_ERROR("No chip specific dts: %s, need to parse",
+				    project_id);
+			return -EINVAL;
+		}
+		GTP_INFO("Parse [%s] data from dts[SENSORID:%u]", cfg_type, sid);
 	}
-	GTP_INFO("Parse [%s] data from dts[SENSORID%u]", cfg_type, sid);
+
 	prop = of_find_property(self, cfg_type, cfg_len);
 	if (!prop || !prop->value || *cfg_len == 0)
 		return -EINVAL;/* fail */

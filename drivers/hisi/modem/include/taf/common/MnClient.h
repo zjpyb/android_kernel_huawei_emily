@@ -73,7 +73,6 @@ extern "C" {
 /*广播Client Id，供MODEM侧使用 */
 #define MN_CLIENT_ID_BROADCAST          (0xFFFF)
 
-/* Modified by l60609 for DSDA Phase II, 2012-12-15, Begin */
 /* 广播ClientId说明，最高的2个bit位表示ModemId。
    Modem0对应的广播Client为0011111111111111(0x3FFF)，
    Modem1对应的广播Client为0111111111111111(0x7FFF)
@@ -88,7 +87,6 @@ extern "C" {
 /* Modem 2的广播Client Id */
 #define AT_BROADCAST_CLIENT_ID_MODEM_2  (0xBFFF)
 
-/* Modified by l60609 for DSDA Phase II, 2012-12-15, End */
 
 #if (FEATURE_ON == FEATURE_VCOM_EXT)
 #define AT_MAX_APP_CLIENT_ID            (AT_CLIENT_ID_APP52)

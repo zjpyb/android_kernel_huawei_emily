@@ -49,7 +49,7 @@ int zrhung_send_event(zrhung_wp_id id, const char* cmd_buf, const char* msg_buf)
         return -EINVAL;
     }*/
     memset(&evt, 0, sizeof(evt));
-    if (id <= ZRHUNG_WP_NONE || id >= ZRHUNG_WP_NUM_MAX) {
+    if (zrhung_is_id_valid(id) < 0) {
         hwlog_err("Bad watchpoint id");
         return -EINVAL;
     }

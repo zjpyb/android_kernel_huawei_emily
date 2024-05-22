@@ -194,7 +194,7 @@ struct cmdq_host_ops {
 	int (*discard_task)(struct mmc_host *mmc, u32 tag, bool entire);
 	int (*tuning_move)(struct mmc_host *mmc, int is_move_strobe, int flag);
 	void (*clean_irqs)(struct mmc_host *mmc, u32 clean);
-	void (*dump_vendor_regs)(struct mmc_host *mmc);
+	int (*dump_vendor_regs)(struct mmc_host *mmc);
 	int (*card_busy)(struct mmc_host *mmc);
 	void (*write_l)(struct cmdq_host *host, u32 val, int reg);
 	u32 (*read_l)(struct cmdq_host *host, int reg);

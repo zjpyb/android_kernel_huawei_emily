@@ -11,7 +11,6 @@
  */
 
 #include "./include/sescan.h"
-#include <linux/version.h>
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0)
 #include <linux/lsm_hooks.h>
@@ -26,18 +25,26 @@ int get_selinux_enforcing(void)
 
 int sescan_hookhash(uint8_t *hash)
 {
-	struct scatterlist sg;
-	struct hash_desc desc;
 	int err;
-	desc.flags = 0;
+	struct crypto_shash *tfm = crypto_alloc_shash("sha256", 0, 0);
 
-	desc.tfm = crypto_alloc_hash("sha256", 0, CRYPTO_ALG_ASYNC);
-	if (IS_ERR(desc.tfm)) {
-		RSLogError(TAG, "crypto alloc hash error %ld",
-							PTR_ERR(desc.tfm));
+	SHASH_DESC_ON_STACK(shash, tfm);
+
+	if (IS_ERR(tfm)) {
+		RSLogError(TAG, "crypto_alloc_hash(sha256) error %ld",
+							PTR_ERR(tfm));
 		return -ENOMEM;
 	}
-	crypto_hash_init(&desc);
+
+	shash->tfm = tfm;
+	shash->flags = 0;
+
+	err = crypto_shash_init(shash);
+	if (err < 0) {
+		RSLogError(TAG, "crypto_shash_init error: %d", err);
+		crypto_free_shash(tfm);
+		return err;
+	}
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 2, 0)
 	struct security_operations **security_ops;
@@ -48,17 +55,14 @@ int sescan_hookhash(uint8_t *hash)
 		return -EFAULT;
 	}
 
-	sg_init_one(&sg, *security_ops,
-				(uint)sizeof(struct security_operations));
-	crypto_hash_update(&desc, &sg, sizeof(struct security_operations));
+	crypto_shash_update(shash,(char *)*security_ops, sizeof(struct security_operations));
 #else
 // reference security/security.c: call_void_hook
 #define DO_ONE_HEAD(FUNC) \
 	do { \
 		struct security_hook_list *P; \
 		list_for_each_entry(P, &security_hook_heads.FUNC, list) { \
-			sg_init_one(&sg, &(P->hook.FUNC), sizeof(P->hook.FUNC)); \
-			crypto_hash_update(&desc, &sg, sizeof(P->hook.FUNC)); \
+			crypto_shash_update(shash, (char *)&(P->hook.FUNC), sizeof(P->hook.FUNC)); \
 		} \
 	} while (0)
 	// reference initialization in security_hook_heads in security/security.c
@@ -156,9 +160,13 @@ int sescan_hookhash(uint8_t *hash)
 	DO_ONE_HEAD(cred_transfer);
 	DO_ONE_HEAD(kernel_act_as);
 	DO_ONE_HEAD(kernel_create_files_as);
+
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
 	DO_ONE_HEAD(kernel_fw_from_file);
 	DO_ONE_HEAD(kernel_module_request);
 	DO_ONE_HEAD(kernel_module_from_file);
+#endif
+
 	DO_ONE_HEAD(task_fix_setuid);
 	DO_ONE_HEAD(task_setpgid);
 	DO_ONE_HEAD(task_getpgid);
@@ -270,9 +278,10 @@ int sescan_hookhash(uint8_t *hash)
 	DO_ONE_HEAD(audit_rule_free);
 #endif /* CONFIG_AUDIT */
 #endif /* LINUX_VERSION_CODE */
-	err = crypto_hash_final(&desc, (u8 *)hash);
+	err = crypto_shash_final(shash, (u8 *)hash);
 	RSLogDebug(TAG, "sescan result %d", err);
 
-	crypto_free_hash(desc.tfm);
+	crypto_free_shash(tfm);
 	return err;
 }
+

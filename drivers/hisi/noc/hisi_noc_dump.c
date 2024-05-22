@@ -31,6 +31,8 @@
 #include <linux/hisi/util.h>
 #include <linux/hisi/reset.h>
 #include <linux/clk.h>
+#include <linux/hisi/hisi_log.h>
+#define HISI_LOG_TAG HISI_NOC_TAG
 
 #include "hisi_noc.h"
 #include "hisi_noc_err_probe.h"
@@ -56,8 +58,7 @@ static int noc_dump_err_log_parse(struct err_probe_msg *pt_err_msg)
 		    pt_err_msg->target_flow.pt_str);
 	NOC_L_D_PRT("[target_subrange]: %d\n", pt_err_msg->targetsubrange);
 	/* ERR LOG 3,4 */
-	NOC_L_D_PRT("ADDRESS_LOW = 0x%llx  (0x%x)\n",
-		    pt_err_msg->addr_low + pt_err_msg->base_addr,
+	NOC_L_D_PRT("ADDRESS_LOW = 0x%x\n",
 		    pt_err_msg->addr_low);
 	NOC_L_D_PRT("ADDRESS_HIGH = 0x%x\n", pt_err_msg->addr_high);
 	NOC_L_D_PRT("adjusted ADDRESS = 0x%llx\n",
@@ -185,18 +186,18 @@ static int noc_dump(void *dump_addr, unsigned int size)
 	uint *ptr;
 	u8 __iomem *iobase;
 	uint ret_size = 0;
-    unsigned int node_idx = 0;
-    unsigned int reg_num = 0;
+	unsigned int node_idx = 0;
+	unsigned int reg_num = 0;
 	unsigned int uPERI_INT0_STAT, uSCPERSTATUS6;
+
+	if (NULL == pt_dump) {
+                pr_err("noc_dump: pt_dump malloc error\n");
+                return 0;
+	}
 
 	pr_info("noc_dump:addr=0x%llx,size=[0x%x/0x%x]",
 		(unsigned long long)dump_addr, (unsigned int)sizeof(*pt_dump),
 		size);
-
-	if (pt_dump == NULL) {
-		pr_err("noc_dump: pt_dump malloc error\n");
-		goto malloc_free;
-	}
 
 	for (i = 0; i < (NOC_DUMP_SYNC_LEN - 2); i++) {
 		/* sync head 1 */

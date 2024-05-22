@@ -65,7 +65,7 @@ void log_trace_print(uint32_t module, uint32_t level, uint32_t function,
 	if (function && !trace_function)
 		return;
 
-	if (!(module & trace_module))
+	if (!(module & (unsigned int)trace_module))
 		return;
 
 	if (level > trace_level)

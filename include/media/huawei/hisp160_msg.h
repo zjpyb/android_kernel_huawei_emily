@@ -217,6 +217,7 @@ typedef enum _ucfg_ext_e
     RESERVED             = 1 << 14,
 } ucfg_ext_e;
 
+
 typedef enum _ucfg_scene_e
 {
     CAMERA_SCENE_NORMAL = 0,
@@ -1544,6 +1545,11 @@ typedef enum
     SUBCMD_SET_OIS_POSITION = 207,
     SUBCMD_MANUAL_MAX_EXPO_TIM = 208,
     SUBCMD_SET_AF_ALWAYS = 209,
+    SUBCMD_SET_AFSTAT_ALGO_RESULT = 210,
+    SUBCMD_SET_LCD_FLASH_MODE = 212,
+    SUBCMD_SET_MASTER_AI_SCENE_ID_ENABLE = 213,
+    SUBCMD_OIS_CONTROL_SHAKE_INFO = 214,
+    SUBCMD_IR_LIGHT_SWITCH_MODE = 215,
     SUBCMD_MAX,
 } extendset_info_e;
 
@@ -1624,6 +1630,7 @@ typedef enum
     EVENT_AF_DIRECT_TRANS_BASE,
     EVENT_AF_OTP_CALIB_DATA,
     EVENT_AF_SELF_LEARN_DATA,
+    EVENT_AF_STAT_INFO,
 } event_info_e;
 
 typedef struct _msg_subreq_es_watchdog_t

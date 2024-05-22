@@ -72,6 +72,10 @@
 #define WLAN_INTERFACE (1)
 #define RNT_STAT_SIZE (2)
 #define MAX_JIFFIES	(0xFFFFFFFFFFFFFFFF)
+#define MAX_VALID_U16     (65534)
+#define NS_CONVERT_TO_MS  (1000000)
+#define FILTER_TIME_LIMIT (HZ/4)
+#define ALPHA_FILTER_PARA (8)
 
 /*response and report type*/
 enum {
@@ -122,6 +126,9 @@ struct http_stream {
 };
 
 #define CHR_MAX_REPORT_APP_COUNT (10)
+
+#define DATA_REG_TECH_TAG (20)
+#define GET_AP_REPORT_TAG (21)
 
 struct report_app_stat {
 	u32 tcp_rtt;
@@ -196,6 +203,16 @@ struct rtt_from_stack {
 	u32 uid;
 	u32 rtt_dst_addr;
 };
+
+/*CHR Key parameters*/
+struct chr_key_val {
+	atomic64_t tcp_buf_time;
+	atomic64_t udp_buf_time;
+	volatile unsigned long tcp_last;
+	volatile unsigned long udp_last;
+};
+
+
 void wifi_disconnect_report(void);
 int set_report_app_uid(int index, u32 uid);
 

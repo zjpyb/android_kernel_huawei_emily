@@ -16,7 +16,7 @@ static char *hibernation_policy_name[] = {
 };
 
 static int hibernation_show(struct seq_file *s, void *unused)
-{
+{/*lint !e578 */
 	struct hifi_usb_proxy *hifi_usb = s->private;
 	int complete_urb_count;
 	struct list_head *pos;
@@ -99,7 +99,7 @@ static const struct file_operations hibernation_fops = {
 };
 
 static int never_use_hifi_usb_show(struct seq_file *s, void *unused)
-{
+{/*lint !e578 */
 	seq_printf(s, "If you want never use hifi usb, "
 			"write \"1\" to this file.\n"
 			"If you don't want never use hifi usb, "
@@ -141,7 +141,7 @@ static const struct file_operations never_use_hifi_usb_fops = {
 };
 
 static int always_use_hifi_usb_show(struct seq_file *s, void *unused)
-{
+{/*lint !e578 */
 	seq_printf(s, "If you want always use hifi usb, "
 			"write \"1\" to this file.\n"
 			"If you don't want always use hifi usb, "
@@ -183,7 +183,7 @@ static const struct file_operations always_use_hifi_usb_fops = {
 };
 
 static int urb_bufs_show(struct seq_file *s, void *unused)
-{
+{/*lint !e578 */
 	struct hifi_usb_proxy *hifi_usb = s->private;
 	struct urb_buffers *bufs;
 
@@ -211,7 +211,7 @@ static const struct file_operations urb_bufs_fops = {
 };
 
 static int hifi_usb_stat_show(struct seq_file *s, void *unused)
-{
+{/*lint !e578 */
 	struct hifi_usb_proxy *hifi_usb = s->private;
 	struct hifi_usb_stats *stats;
 
@@ -319,7 +319,7 @@ static int send_print_debug_msg(unsigned int flags)
 }
 
 static int hifi_print_dbg_show(struct seq_file *s, void *unused)
-{
+{/*lint !e578 */
 	seq_printf(s, "Usage: echo <value> >/d/usb/hifiusb/print_dbg\n"
 		      "<value> = \n"
 		      "print_usb_debug   -> 0x1\n"
@@ -370,7 +370,7 @@ static const struct file_operations hifi_print_dbg_fops = {
 static unsigned char hifi_usb_sr_state;
 
 static int hifi_usb_sr_show(struct seq_file *s, void *unused)
-{
+{/*lint !e578 */
 	struct hifi_usb_proxy *hifi_usb = s->private;
 	struct hifi_usb_test_msg mesg;
 	char *state;
@@ -523,7 +523,7 @@ const struct fault_inject_point fault_inject_points_table[] = {
 };
 
 static int hifi_test_show(struct seq_file *s, void *unused)
-{
+{/*lint !e578 */
 	seq_printf(s, "Usage:\n"
 		      "1. echo \"start_hifi_usb\" >/d/usb/hifiusb/hifi_test\n"
 		      "2. echo \"reset_hifi @fun\" >/d/usb/hifiusb/hifi_test\n"

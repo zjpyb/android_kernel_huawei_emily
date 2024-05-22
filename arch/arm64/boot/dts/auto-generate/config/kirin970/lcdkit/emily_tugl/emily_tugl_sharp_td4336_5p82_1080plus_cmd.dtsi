@@ -63,7 +63,7 @@
 			0x15 0x01 0x00 0x00 0x0a 0x00 0x02 0x6C 0xFF
 			0x15 0x01 0x00 0x00 0x0a 0x00 0x02 0x6E 0x00
 			0x15 0x01 0x00 0x00 0x0a 0x00 0x02 0xD6 0x00
-			0x15 0x01 0x00 0x00 0x0a 0x00 0x02 0xE7 0x50
+			0x39 0x01 0x00 0x00 0x0a 0x00 0x0b 0xE7 0x50 0x04 0x00 0x00 0xFF 0xFF 0x00 0x00 0xFF 0xFF
 			0x39 0x01 0x00 0x00 0x0a 0x00 0x05 0x2A 0x00 0x00 0x04 0x37
 			0x39 0x01 0x00 0x00 0x0a 0x00 0x05 0x2B 0x00 0x00 0x08 0xC3
 			0x05 0x01 0x00 0x00 0x0a 0x00 0x02 0x29 0x00
@@ -163,16 +163,16 @@
 		hw,lcdkit-panel-mipi-detect-support = <0>;
 		hw,lcdkit-panel-dynamic-sram-check-support = <0>;
 		hw,lcdkit-panel-fps-to-thirty-command = <0x29 0x01 0x00 0x00 0x0a 0x00 0x02 0xB0 0x04
-				0x29 0x01 0x00 0x00 0x0a 0x00 0x04 0xF0 0xE7 0x00 0x51>;
+				0x29 0x01 0x00 0x00 0x0a 0x00 0x02 0xF4 0x17>;
 		hw,lcdkit-panel-fps-to-thirty-command-state = "dsi_hs_mode";
 		hw,lcdkit-panel-fps-to-sixty-command = <0x29 0x01 0x00 0x00 0x0a 0x00 0x02 0xB0 0x04
-				0x29 0x01 0x00 0x00 0x0a 0x00 0x04 0xF0 0xE7 0x00 0x50>;
+				0x29 0x01 0x00 0x00 0x0a 0x00 0x02 0xF4 0x16>;
 		hw,lcdkit-panel-fps-to-sixty-command-state = "dsi_hs_mode";
 		hw,lcdkit-panel-dfr-enable-command = <0x29 0x01 0x00 0x00 0x0a 0x00 0x02 0xB0 0x04
-				0x29 0x01 0x00 0x00 0x0a 0x00 0x04 0xF0 0xE7 0x00 0x52>;
+				0x29 0x01 0x00 0x00 0x0a 0x00 0x02 0xF4 0x19>;
 		hw,lcdkit-panel-dfr-enable-command-state = "dsi_hs_mode";
 		hw,lcdkit-panel-fps-updt-support = <0>;
-		hw,lcdkit-panel-fps-func-switch = <0>;
+		hw,lcdkit-panel-fps-func-switch = <1>;
 		hw,lcdkit-panel-check-reg-on-support = <0>;
 		hw,lcdkit-panel-fps-tscall-support = <0>;
 		hw,lcdkit-panel-dis-on-cmds-delay-margin-support = <0>;
@@ -196,6 +196,8 @@
 		hw,lcdkit-panel-bl-type = <4>;
 		hw,lcdkit-panel-blmin = <15>;
 		hw,lcdkit-panel-blmax = <8820>;
+		hw,lcdkit-mask-delay-time-before-fp = <16666>;
+		hw,lcdkit-mask-delay-time-after-fp = <16666>;
 		hw,lcdkit-panel-bl-def = <4000>;
 		hw,lcdkit-panel-bl-maxnit = <750>;
 		hw,lcdkit-panel-getblmaxnit-type = <0>;
@@ -214,7 +216,9 @@
 		hw,lcdkit-is-hostprocessing = <1>;
 		hw,lcdkit-host-info-all-in-ddic = <1>;
 		hw,lcdkit-panel-dsi-upt-support = <1>;
+		hw,mipiclk-updt-support-new = <0>;
 		hw,lcdkit-panel-vsyn-ctr-type = <7>;
+		hw,lcdkit-panel-bl-pwm-preci-no-convert = <0>;
 		hw,lcdkit-panel-bl-pwm-preci-type = <2>;
 		hw,lcdkit-panel-bl-ic-ctrl-type = <8>;
 		hw,lcdkit-panel-fps-updt-only = <0>;
@@ -346,6 +350,9 @@
 		hw,lcdkit-imin-lcd-luminance = <3>;
 		hw,lcdkit-cfg-name = "/product/etc/display/effect/algorithm/hdr_engine.xml";
 		hw,lcdkit-effect-support-mode = <65537>;
+		hw,lcdkit-bl-support-mode = <0>;
+		hw,lcdkit-bl-enhance = <0>;
+		hw,lcdkit-bl-normal = <0>;
 		hw,lcdkit-delay-af-rst-off = <6>;
 		hw,lcdkit-h-back-porch = <16>;
 		hw,lcdkit-h-front-porch = <16>;
@@ -393,6 +400,7 @@
 		hw,lcdkit-delay-af-vsn-on = <2>;
 		hw,lcdkit-delay-af-lp11 = <5>;
 		hw,lcdkit-delay-af-tp-reset = <2>;
+		hw,lcdkit-tp-reset-before-lcd-reset = <0>;
 		hw,lcdkit-delay-af-vsn-off = <2>;
 		hw,lcdkit-delay-af-vsp-off = <2>;
 		hw,lcdkit-delay-af-bias-off = <0>;
@@ -456,6 +464,26 @@
 		hw_lm36923,lcdkit-bl-ic-num-of-led = <2>;
 		hw_lm36923,lcdkit-bl-ic-brt-ctrl-cmd = <0x01 0x11 0x00 0xff>;
 		hw_lm36923,lcdkit-bl-ic-fault-ctrl-cmd = <0x01 0x1e 0x00 0xff>;
+		hw_lm36923,lcdkit-bl-ic-hidden-reg-surpport = <0>;
+		hw_lm36923,lcdkit-bl-ic-sec-reg-enable-cmd = <0x00 0x00 0x00 0x00>;
+		hw_lm36923,lcdkit-bl-ic-sec-reg-disable-cmd = <0x00 0x00 0x00 0x00>;
+		hw_lm36923,lcdkit-bl-ic-hidden-reg-cmd = <0x00 0x00 0x00 0x00>;
+		hw_lm36923,lcdkit-bl-ic-hidden-reg-val-mask = <0>;
+		hw_lm36923,lcdkit-bl-ic-suspend-disbright-support = <0>;
+		hw_lm36923,lcdkit-bl-ic-bl-wq-support = <0>;
+		hw_lm36923,lcdkit-bl-ic-bl-enahnce-support = <0>;
+		hw_lm36923,lcdkit-bl-ic-bl-lowpower-delay = <0>;
+		hw_lm36923,lcdkit-bl-ic-bl-normal-level = <0>;
+		hw_lm36923,lcdkit-bl-ic-bl-enhance-level = <0>;
+		hw_lm36923,lcdkit-bl-ic-bl-enhance-hrdtimer-time = <0>;
+		hw_lm36923,lcdkit-bl-ic-bl-normal-ovp-cmd = <0x00 0x00 0x00 0x00>;
+		hw_lm36923,lcdkit-bl-ic-bl-normal-cur-ramp-cmd = <0x00 0x00 0x00 0x00>;
+		hw_lm36923,lcdkit-bl-ic-bl-normal-boost-cur-cmd = <0x00 0x00 0x00 0x00>;
+		hw_lm36923,lcdkit-bl-ic-bl-normal-sink-cmd = <0x00 0x00 0x00 0x00>;
+		hw_lm36923,lcdkit-bl-ic-bl-enhance-ovp-cmd = <0x00 0x00 0x00 0x00>;
+		hw_lm36923,lcdkit-bl-ic-bl-enhance-cur-ramp-cmd = <0x00 0x00 0x00 0x00>;
+		hw_lm36923,lcdkit-bl-ic-bl-enhance-boost-cur-cmd = <0x00 0x00 0x00 0x00>;
+		hw_lm36923,lcdkit-bl-ic-bl-enhance-sink-cmd = <0x00 0x00 0x00 0x00>;
 		hw_mp3313,lcdkit-bl-ic-level = <2047>;
 		hw_mp3313,lcdkit-bl-ic-ctrl-mode = <0>;
 		hw_mp3313,lcdkit-bl-ic-type = <0>;
@@ -483,5 +511,25 @@
 		hw_mp3313,lcdkit-bl-ic-num-of-led = <2>;
 		hw_mp3313,lcdkit-bl-ic-brt-ctrl-cmd = <0x01 0x11 0x00 0xff>;
 		hw_mp3313,lcdkit-bl-ic-fault-ctrl-cmd = <0x01 0x1e 0x00 0xff>;
+		hw_mp3313,lcdkit-bl-ic-hidden-reg-surpport = <0>;
+		hw_mp3313,lcdkit-bl-ic-sec-reg-enable-cmd = <0x00 0x00 0x00 0x00>;
+		hw_mp3313,lcdkit-bl-ic-sec-reg-disable-cmd = <0x00 0x00 0x00 0x00>;
+		hw_mp3313,lcdkit-bl-ic-hidden-reg-cmd = <0x00 0x00 0x00 0x00>;
+		hw_mp3313,lcdkit-bl-ic-hidden-reg-val-mask = <0>;
+		hw_mp3313,lcdkit-bl-ic-suspend-disbright-support = <0>;
+		hw_mp3313,lcdkit-bl-ic-bl-wq-support = <0>;
+		hw_mp3313,lcdkit-bl-ic-bl-enahnce-support = <0>;
+		hw_mp3313,lcdkit-bl-ic-bl-lowpower-delay = <0>;
+		hw_mp3313,lcdkit-bl-ic-bl-normal-level = <0>;
+		hw_mp3313,lcdkit-bl-ic-bl-enhance-level = <0>;
+		hw_mp3313,lcdkit-bl-ic-bl-enhance-hrdtimer-time = <0>;
+		hw_mp3313,lcdkit-bl-ic-bl-normal-ovp-cmd = <0x00 0x00 0x00 0x00>;
+		hw_mp3313,lcdkit-bl-ic-bl-normal-cur-ramp-cmd = <0x00 0x00 0x00 0x00>;
+		hw_mp3313,lcdkit-bl-ic-bl-normal-boost-cur-cmd = <0x00 0x00 0x00 0x00>;
+		hw_mp3313,lcdkit-bl-ic-bl-normal-sink-cmd = <0x00 0x00 0x00 0x00>;
+		hw_mp3313,lcdkit-bl-ic-bl-enhance-ovp-cmd = <0x00 0x00 0x00 0x00>;
+		hw_mp3313,lcdkit-bl-ic-bl-enhance-cur-ramp-cmd = <0x00 0x00 0x00 0x00>;
+		hw_mp3313,lcdkit-bl-ic-bl-enhance-boost-cur-cmd = <0x00 0x00 0x00 0x00>;
+		hw_mp3313,lcdkit-bl-ic-bl-enhance-sink-cmd = <0x00 0x00 0x00 0x00>;
     };
 };

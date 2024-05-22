@@ -63,11 +63,16 @@ static struct reg_default tfa9872_reg[] = {
 	{ 0x00, 0x1801 },
 	{ 0x01, 0x0014 },
 };
+#ifdef TFA9872_DEBUG
 static ssize_t tfa9872_register_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	unsigned int value = 0, i;
-	char valStr[20];
+	char valStr[20] = {0};
 	struct tfa98xx_priv *p = NULL;
+
+	if (NULL == buf) {
+		return -EINVAL;
+	}
 	p = find_tfa98xx_by_dev(dev);
 	if (NULL == p) {
 		return 0;
@@ -105,6 +110,9 @@ static DEVICE_ATTR(register_write, 0660, NULL, tfa9872_register_write);
 static ssize_t tfa9872_num_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct tfa98xx_priv *p = NULL;
+	if (NULL == buf) {
+		return -EINVAL;
+	}
 	p = find_tfa98xx_by_dev(dev);
 	if (NULL == p) {
 		return 0;
@@ -121,6 +129,8 @@ static struct attribute *tfa9872_attributes[] = {
 static const struct attribute_group tfa9872_attr_group = {
 	.attrs = tfa9872_attributes,
 };
+#endif
+
 static int tfa9872_get_version(struct list_head *tfa98xx, unsigned int type, unsigned int *value)
 {
 	//to do: return version with 0
@@ -790,12 +800,17 @@ static int tfa9872_i2c_probe(struct i2c_client *i2c, const struct i2c_device_id 
 			goto err_out;
 		}
 	}
+#ifdef TFA9872_DEBUG
 	if ((ret = sysfs_create_group(&i2c->dev.kobj, &tfa9872_attr_group)) < 0) {
 		hwlog_err("%s: failed to register smartPA type[%d]'s i2c sysfs, ret =%d\n", __func__, tfa9872->type, ret);
 	}
+#endif
+
 	if (tfa98xx_ioctl_isregist()) {
 		tfa98xx_ioctl_regist(&tfa9872_ioctl_ops);
 	}
+
+#ifdef TFA9872_DEBUG
 	/* Register the sysfs files for climax backdoor access */
 	ret = device_create_bin_file(&i2c->dev, &dev_attr_rw);
 	if (ret)
@@ -803,6 +818,8 @@ static int tfa9872_i2c_probe(struct i2c_client *i2c, const struct i2c_device_id 
 	ret = device_create_bin_file(&i2c->dev, &dev_attr_reg);
 	if (ret)
 		dev_info(&i2c->dev, "error creating sysfs files\n");
+#endif
+
 	hwlog_info("%s: ret %d\n", __func__, ret);
 err_out:
 	if (ret < 0) {

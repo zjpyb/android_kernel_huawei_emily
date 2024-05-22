@@ -15,9 +15,9 @@
 #include <linux/notifier.h>    /*for struct charge_device_info*/
 #include <linux/workqueue.h>    /*for struct charge_device_info*/
 #include <linux/power_supply.h>    /*for struct charge_device_info*/
-#ifdef CONFIG_HUAWEI_DSM
-#include <dsm/dsm_pub.h>
-#endif
+
+#include <huawei_platform/power/power_dsm.h>
+
 #ifndef _HUAWEI_CHARGER
 #define _HUAWEI_CHARGER
 
@@ -252,6 +252,8 @@ struct charge_device_ops{
     int (*get_vbus)(unsigned int *value);
     int (*check_charger_plugged)(void);
     int (*check_input_dpm_state)(void);
+    int (*check_input_vdpm_state)(void);
+    int (*check_input_idpm_state)(void);
     int (*fcp_chip_init)(void);
     int (*set_covn_start)(int enable);
     int (*set_charger_hiz)(int enable);

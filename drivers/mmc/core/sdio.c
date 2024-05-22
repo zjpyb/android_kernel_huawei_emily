@@ -117,8 +117,6 @@ static int sdio_read_cccr(struct mmc_card *card, u32 ocr)
 	unsigned char data;
 	unsigned char speed;
 
-	memset(&card->cccr, 0, sizeof(struct sdio_cccr));
-
 	ret = mmc_io_rw_direct(card, 0, 0, SDIO_CCCR_CCCR, 0, &data);
 	if (ret)
 		goto out;
@@ -827,12 +825,12 @@ err:
  */
 static void mmc_sdio_remove(struct mmc_host *host)
 {
-	int i;
+	unsigned int i;
 
 	BUG_ON(!host);
 	BUG_ON(!host->card);
 
-	for (i = 0;i < host->card->sdio_funcs;i++) {/*lint !e574*/
+	for (i = 0;i < host->card->sdio_funcs;i++) {
 		if (host->card->sdio_func[i]) {
 			sdio_remove_func(host->card->sdio_func[i]);
 			host->card->sdio_func[i] = NULL;
@@ -911,9 +909,10 @@ out:
  */
 static int mmc_sdio_pre_suspend(struct mmc_host *host)
 {
-	int i, err = 0;
+	int err = 0;
+	unsigned int i = 0;
 
-	for (i = 0; i < host->card->sdio_funcs; i++) {/*lint !e547 !e574*/
+	for (i = 0; i < host->card->sdio_funcs; i++) {
 		struct sdio_func *func = host->card->sdio_func[i];
 		if (func && sdio_func_present(func) && func->dev.driver) {
 			const struct dev_pm_ops *pmops = func->dev.driver->pm;

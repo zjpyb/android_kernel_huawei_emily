@@ -36,6 +36,7 @@
 #include <linux/miscdevice.h>
 #include <linux/fs.h>
 #include <linux/input.h>
+#include <linux/wakelock.h>
 #include <linux/clk.h>
 #include <linux/hwspinlock.h>
 #include <asm/uaccess.h>
@@ -90,8 +91,6 @@
 #define RDCONFIG_DWORD  _IOR(MAGIC_NUM, 3, unsigned int)
 #define WRCONFIG_DWORD  _IOW(MAGIC_NUM, 6, unsigned int*)//_IOW(MAGIC_NUM, 6, unsigned long[2])
 #define IN_TASKQUEUE    _IOW(MAGIC_NUM, 9, unsigned int*)//_IOW(MAGIC_NUM, 9, taskElement)
-#define RDCONFIG_QWORD  _IOR(MAGIC_NUM, 10, unsigned int)
-#define WRCONFIG_QWORD  _IOW(MAGIC_NUM, 11, unsigned int*)
 #define SETCONFIG_MAP	_IOW(MAGIC_NUM, 37, struct map_data)
 #define SETCONFIG_UNMAP	_IOW(MAGIC_NUM, 38, struct map_data)
 #define SETCONFIG_RESET_STATISTIC  _IOW(MAGIC_NUM, 30, unsigned int)
@@ -125,7 +124,7 @@
 #define NORMAL_START_BIT (0)
 #define NORMAL_START_MASK (0x1 << NORMAL_START_BIT)
 
-#define WATCHDOG_TIMEOUT_THD_MS (600)
+#define WATCHDOG_TIMEOUT_THD_MS (3000)
 
 #define SMMU_OUTSTANDING		(4)
 #define IPU_BASELINE_RATE_MHZ	(960)
@@ -280,44 +279,6 @@ long ipu_set_profile(struct cambricon_ipu_private *, unsigned long, struct ioctl
 static bool cambricon_ipu_workqueue(void);
 static void performance_monitor_open(void);
 
-static long ipu_write_qword(struct cambricon_ipu_private *dev, unsigned long arg, struct ioctl_out_params *out_params)
-{
-	unsigned long off_val[2];
-
-	if (!adapter->feature_tree.wr_qword) {
-		printk(KERN_ERR"[%s]: IPU_ERROR:unsupport op in this platform!\n", __func__);
-		return -EINVAL;
-	}
-
-	if (copy_from_user(off_val, (void *)arg, sizeof(off_val))) {
-		printk(KERN_ERR"[%s]: IPU_ERROR:Copy data from user failed!\n", __func__);
-		return -EFAULT;
-	} else {
-		unsigned int *offset = (unsigned int *)off_val;
-		unsigned long *data = (unsigned long *)off_val+1;
-
-		printk(KERN_DEBUG"[%s]: Write CONFIG REG qword offset 0x%pK, value is 0x%lu\n", __func__, (void *)off_val[0], (unsigned long)*data);
-		iowrite32(((*data) & 0xffffffff), (void *)((unsigned long)adapter->config_reg_virt_addr + *offset));
-		iowrite32(((*data >> 32) & 0xffffffff), (void *)((unsigned long)adapter->config_reg_virt_addr + (*offset + 4)));
-	}
-	return 0;
-}
-
-static long ipu_read_qword(struct cambricon_ipu_private *dev, unsigned long arg, struct ioctl_out_params *out_params)
-{
-	unsigned long ret_value;
-
-	if (!adapter->feature_tree.wr_qword) {
-		printk(KERN_ERR"[%s]: IPU_ERROR:unsupport op in this platform!\n", __func__);
-		return 0;
-	}
-
-	ret_value = ioread32((void *)((unsigned long)adapter->config_reg_virt_addr + arg));
-	ret_value += ((unsigned long)ioread32((void *)((unsigned long)adapter->config_reg_virt_addr + arg + 4))) << 32;
-	printk(KERN_DEBUG"[%s]: Read CONFIG REG dword offset 0x%x, read value=0x%lx\n", __func__, (unsigned int)arg, ret_value);
-	return ret_value;
-}
-
 static const struct ipu_ioctl_map ipu_ioctl_maps[] = {
 	{RDCONFIG_DWORD,			ipu_read_dword},
 	{WRCONFIG_DWORD,			ipu_write_dword},
@@ -329,8 +290,6 @@ static const struct ipu_ioctl_map ipu_ioctl_maps[] = {
 	{SETCONFIG_UPDATE_PTE,		ipu_set_update_pte},
 	{IN_TASKQUEUE,				ipu_process_workqueue},
 	{SETCONFIG_IPU_PROFILE,		ipu_set_profile},
-	{RDCONFIG_QWORD,			ipu_read_qword},
-	{WRCONFIG_QWORD,			ipu_write_qword},
 };
 
 static void ipu_watchdog_init(struct ipu_wtd *watchdog, bool enable, void *callback)
@@ -656,6 +615,8 @@ bool ipu_get_reset_offset (struct device *dev)
 
 bool ipu_get_feature_tree (struct device *dev)
 {
+	UNUSED_PARAMETER(dev);
+
 	memset(&adapter->feature_tree, 0, sizeof(adapter->feature_tree));// coverity[secure_coding]
 
 	adapter->feature_tree.finish_irq_expand_ns = true;
@@ -1090,7 +1051,7 @@ void ipu_reset_proc(unsigned int addr)
 	mutex_unlock(&adapter->bandwidth_lmt_mutex);
 
 	ipu_smmu_init(adapter->smmu_ttbr0,
-		(unsigned long)adapter->smmu_rw_err_phy_addr, adapter->feature_tree.smmu_port_select, adapter->feature_tree.smmu_mstr_hardware_start);
+		(unsigned long)adapter->smmu_rw_err_virtual_addr, adapter->feature_tree.smmu_port_select, adapter->feature_tree.smmu_mstr_hardware_start);
 
 	ipu_interrupt_init();
 
@@ -1481,7 +1442,7 @@ int ipu_power_up(void)
 	do_gettimeofday(&tv3);
 
 	ipu_smmu_init(adapter->smmu_ttbr0,
-		(unsigned long)adapter->smmu_rw_err_phy_addr, adapter->feature_tree.smmu_port_select, adapter->feature_tree.smmu_mstr_hardware_start);
+		(unsigned long)adapter->smmu_rw_err_virtual_addr, adapter->feature_tree.smmu_port_select, adapter->feature_tree.smmu_mstr_hardware_start);
 
 	mutex_lock(&adapter->stat_mutex);
 	if (adapter->smmu_stat_en) {
@@ -1529,6 +1490,7 @@ static int ipu_open(struct inode *inode, struct file *filp)
 		mutex_unlock(&adapter->open_mutex);
 		return -EBUSY;
 	} else {
+		wake_lock(&adapter->wakelock);
 		adapter->ipu_device_opened = true;
 	}
 
@@ -1543,6 +1505,8 @@ static int ipu_open(struct inode *inode, struct file *filp)
 	mutex_lock(&adapter->stat_mutex);
 	adapter->smmu_stat_en = false;
 	memset(&adapter->stat, 0, sizeof(adapter->stat));
+
+	ipu_clock_set_start_default(&adapter->clk);
 
 	mutex_unlock(&adapter->stat_mutex);
 	mutex_unlock(&adapter->open_mutex);
@@ -1651,11 +1615,13 @@ static int ipu_release(struct inode *inode, struct file *filp)
 
 	ipu_watchdog_stop(&adapter->reset_wtd);
 
+	mutex_lock(&adapter->power_mutex);
 	ret = stop_ipu();
 	if (ret) {
 		/* not return here, ignore, to release other resource */
 		printk(KERN_ERR"[%s]: IPU_ERROR:ipu_power_down fail\n", __func__);
 	}
+	mutex_unlock(&adapter->power_mutex);
 
 	ipu_mem_mngr_deinit(&adapter->reset_va);
 
@@ -1664,6 +1630,12 @@ static int ipu_release(struct inode *inode, struct file *filp)
 	adapter->boot_inst_set.boot_inst_recorded_is_config = false;
 	mutex_unlock(&adapter->boot_inst_set.boot_mutex);
 
+	mutex_lock(&adapter->clk.clk_mutex);
+	ipu_vote_peri_withdraw(&adapter->clk);
+	adapter->clk.voted_peri_volt = 0;
+	mutex_unlock(&adapter->clk.clk_mutex);
+
+	wake_unlock(&adapter->wakelock);
 	adapter->ipu_device_opened = false;
 	mutex_unlock(&adapter->open_mutex);/*lint !e455*/
 
@@ -2498,8 +2470,8 @@ static int cambricon_ipu_probe(struct platform_device *pdev)
 		goto unmap_bandwidth_lmt;
 	}
 
-	adapter->smmu_rw_err_phy_addr = devm_kzalloc(&pdev->dev, ICS_SMMU_WR_ERR_BUFF_LEN, GFP_KERNEL);
-	if (!adapter->smmu_rw_err_phy_addr) {
+	adapter->smmu_rw_err_virtual_addr = devm_kzalloc(&pdev->dev, ICS_SMMU_WR_ERR_BUFF_LEN + 0X80, GFP_KERNEL);
+	if (!adapter->smmu_rw_err_virtual_addr) {
 		err = -ENOMEM;
 		printk(KERN_ERR"[%s]: Failed to allocate memory for smmu read and write phy addr in error case\n", __func__);
 		goto exit_error;
@@ -2513,6 +2485,8 @@ static int cambricon_ipu_probe(struct platform_device *pdev)
 		printk(KERN_ERR"[%s]: Call ipu_mntn_rdr_init is failed!ret=%d\n", __func__, err);
 		goto exit_error;
 	}
+
+	wake_lock_init(&adapter->wakelock, WAKE_LOCK_SUSPEND, "ipu_process");
 
 	ipu_watchdog_init(&adapter->reset_wtd, adapter->feature_tree.soft_watchdog_enable, ipu_reset_irq);
 
@@ -2597,6 +2571,8 @@ static int __exit cambricon_ipu_remove(struct platform_device *pdev)
 			adapter->ics_irq_io_addr = NULL;
 		}
 
+		wake_lock_destroy(&adapter->wakelock);
+
 		cdev_del(&(adapter->cdev));
 
 		free_irq(adapter->irq, &(adapter->cdev));
@@ -2623,9 +2599,9 @@ static int __exit cambricon_ipu_remove(struct platform_device *pdev)
 
 
 
-		if (adapter->smmu_rw_err_phy_addr) {
-			devm_kfree(&pdev->dev, adapter->smmu_rw_err_phy_addr);
-			adapter->smmu_rw_err_phy_addr = NULL;
+		if (adapter->smmu_rw_err_virtual_addr) {
+			devm_kfree(&pdev->dev, adapter->smmu_rw_err_virtual_addr);
+			adapter->smmu_rw_err_virtual_addr = NULL;
 		}
 
 		devm_kfree(&pdev->dev, adapter);

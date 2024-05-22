@@ -29,7 +29,7 @@
 
 #include <linux/regulator/consumer.h>
 #include <huawei_platform/log/log_jank.h>
-#include "../../huawei_ts_kit_algo.h"
+#include "../../huawei_ts_kit.h"
 #if defined (CONFIG_HUAWEI_DSM)
 #include <dsm/dsm_pub.h>
 #endif
@@ -69,8 +69,6 @@ static int32_t RawData_Diff[40 * 40] = {0};
 static int32_t RawData_FWMutual[40 * 40] = {0};
 static int32_t RawData_FW_CC[40 * 40] = {0};
 
-#define TP_MMI_RESULT_LEN 80
-
 #define PASS 0
 #define FAIL -1
 #define TEST_LMT_SIZE 1
@@ -90,7 +88,7 @@ static int32_t RawData_FW_CC[40 * 40] = {0};
 #define	CSV_TP_CAP_RAW_DELTA_X "PS_Config_Lmt_FW_Rawdata_X_Delta"
 #define	CSV_TP_CAP_RAW_DELTA_Y "PS_Config_Lmt_FW_Rawdata_Y_Delta"
 
-static char mmitest_result[80] = {0};/*store mmi test result*/
+static char mmitest_result[TS_RAWDATA_RESULT_MAX] = {0};/*store mmi test result*/
 
 #define CHANNEL_NUM 2//tx and rx
 #define TARGET_NAME_SIZE	128
@@ -124,9 +122,9 @@ static int8_t nvt_mp_isInitialed = 0;
 
 
 extern struct nvt_ts_data *nvt_ts;
-extern int32_t novatek_ts_kit_i2c_read(struct i2c_client *client, uint16_t i2c_addr, uint8_t *buf, uint16_t len);
-extern int32_t novatek_ts_kit_i2c_dummy_read(struct i2c_client *client, uint16_t i2c_addr);
-extern int32_t novatek_ts_kit_i2c_write(struct i2c_client *client, uint16_t i2c_addr, uint8_t *buf, uint16_t len);
+extern int32_t novatek_ts_kit_read(uint16_t i2c_addr, uint8_t *buf, uint16_t len);
+extern int32_t novatek_ts_kit_dummy_read(uint16_t i2c_addr);
+extern int32_t novatek_ts_kit_write(uint16_t i2c_addr, uint8_t *buf, uint16_t len);
 extern void nvt_kit_sw_reset_idle(void);
 extern void nvt_kit_bootloader_reset(void);
 extern int32_t nvt_kit_check_fw_reset_state(RST_COMPLETE_STATE check_reset_state);
@@ -140,6 +138,7 @@ extern void nvt_kit_read_mdata(uint32_t xdata_addr, uint32_t xdata_btn_addr);
 extern void nvt_kit_get_mdata(int32_t *buf, uint8_t *m_x_num, uint8_t *m_y_num);
 extern int32_t novatek_kit_read_projectid(void);
 extern char novatek_kit_project_id[PROJECT_ID_LEN+1];
+extern uint8_t nvt_fw_ver;
 
 typedef enum mp_criteria_item {
 	E_Raw_Lim_Open_Pos,
@@ -256,11 +255,11 @@ static int32_t nvt_check_asr_error(void)
 	buf[0] = 0xFF;
 	buf[1] = 0x01;
 	buf[2] = 0xF6;
-	novatek_ts_kit_i2c_write(nvt_ts->client, I2C_FW_Address, buf, 3);
+	novatek_ts_kit_write(I2C_FW_Address, buf, 3);
 
 	//---read ASR error flag---
 	buf[0] = 0x96;
-	novatek_ts_kit_i2c_read(nvt_ts->client, I2C_FW_Address, buf, 3);
+	novatek_ts_kit_read(I2C_FW_Address, buf, 3);
 
 	if((buf[1] & 0x01) || (buf[2] & 0x01)) {
 		TS_LOG_ERR("%s: Error!, buf[1]=0x%02X, buf[2]=0x%02X\n", __func__, buf[1], buf[2]);
@@ -285,13 +284,13 @@ static void nvt_clean_asr_error_flag(void)
 	buf[0] = 0xFF;
 	buf[1] = 0x01;
 	buf[2] = 0xF6;
-	novatek_ts_kit_i2c_write(nvt_ts->client, I2C_FW_Address, buf, 3);
-	
+	novatek_ts_kit_write(I2C_FW_Address, buf, 3);
+
 	//---clean ASR error flag---
 	buf[0] = 0x96;
 	buf[1] = 0x00;
 	buf[2] = 0x00;
-	novatek_ts_kit_i2c_write(nvt_ts->client, I2C_FW_Address, buf, 3);
+	novatek_ts_kit_write(I2C_FW_Address, buf, 3);
 }
 
 static int32_t nvt_load_mp_ctrlram_ini(void)
@@ -817,24 +816,24 @@ static int32_t nvt_set_adc_oper(void)
 		buf[0] = 0xFF;
 		buf[1] = 0x01;
 		buf[2] = 0xF4;
-		novatek_ts_kit_i2c_write(nvt_ts->client, I2C_FW_Address, buf, 3);
+		novatek_ts_kit_write(I2C_FW_Address, buf, 3);
 
 		//---write i2c cmds to clear ADC operation---
 		buf[0] = 0x4C;
 		buf[1] = 0x00;
-		novatek_ts_kit_i2c_write(nvt_ts->client, I2C_FW_Address, buf, 2);
+		novatek_ts_kit_write(I2C_FW_Address, buf, 2);
 
 		msleep(10);
 		//---write i2c cmds to set ADC operation---
 		buf[0] = 0x4C;
 		buf[1] = 0x01;
-		novatek_ts_kit_i2c_write(nvt_ts->client, I2C_FW_Address, buf, 2);
+		novatek_ts_kit_write(I2C_FW_Address, buf, 2);
 
 		for (j = 0; j < retry_adc_status; j++) {
 			//---read ADC status---
 			buf[0] = 0x4C;
 			buf[1] = 0x00;
-			novatek_ts_kit_i2c_read(nvt_ts->client, I2C_FW_Address, buf, 2);
+			novatek_ts_kit_read(I2C_FW_Address, buf, 2);
 
 			if (buf[1] == 0x00)
 				break;
@@ -873,22 +872,19 @@ static void nvt_write_test_cmd(struct test_cmd *cmds, int32_t cmd_num)
 
 	for (i = 0; i < cmd_num; i++) {
 		//---set xdata index---
-		buf[0] = 0xFF;
-		buf[1] = ((cmds[i].addr >> 16) & 0xFF);
-		buf[2] = ((cmds[i].addr >> 8) & 0xFF);
-		novatek_ts_kit_i2c_write(nvt_ts->client, I2C_FW_Address, buf, 3);
+		nvt_set_page(cmds[i].addr);
 
 		//---write test cmds---
 		buf[0] = (cmds[i].addr & 0xFF);
 		for (j = 0; j < cmds[i].len; j++) {
 			buf[1 + j] = cmds[i].data[j];
 		}
-		novatek_ts_kit_i2c_write(nvt_ts->client, I2C_FW_Address, buf, 1 + cmds[i].len);
+		novatek_ts_kit_write(I2C_FW_Address, buf, 1 + cmds[i].len);
 
 /*
 		//---read test cmds (debug)---
 		buf[0] = (cmds[i].addr & 0xFF);
-		novatek_ts_kit_i2c_read(nvt_ts->client, I2C_FW_Address, buf, 1 + cmds[i].len);
+		novatek_ts_kit_read(I2C_FW_Address, buf, 1 + cmds[i].len);
 		printk("0x%08X, ", cmds[i].addr);
 		for (j = 0; j < cmds[i].len; j++) {
 			printk("0x%02X, ", buf[j + 1]);
@@ -904,10 +900,7 @@ static int32_t nvt_set_memory(uint32_t addr, uint8_t data)
 	uint8_t buf[64] = {0};
 
 	//---set xdata index---
-	buf[0] = 0xFF;
-	buf[1] = (addr >> 16) & 0xFF;
-	buf[2] = (addr >> 8) & 0xFF;
-	ret = novatek_ts_kit_i2c_write(nvt_ts->client, I2C_FW_Address, buf, 3);
+	ret = nvt_set_page(addr);
 	if (ret < 0) {
 		TS_LOG_ERR("%s: write xdata index failed!(%d)\n", __func__, ret);
 		return ret;
@@ -916,7 +909,7 @@ static int32_t nvt_set_memory(uint32_t addr, uint8_t data)
 	//---write data---
 	buf[0] = addr & 0xFF;
 	buf[1] = data;
-	ret = novatek_ts_kit_i2c_write(nvt_ts->client, I2C_FW_Address, buf, 2);
+	ret = novatek_ts_kit_write(I2C_FW_Address, buf, 2);
 	if (ret < 0) {
 		TS_LOG_ERR("%s: write data failed!(%d)\n", __func__, ret);
 		return ret;
@@ -926,7 +919,7 @@ static int32_t nvt_set_memory(uint32_t addr, uint8_t data)
 	//---read data (debug)---
 	buf[0] = addr & 0xFF;
 	buf[1] = 0x00;
-	ret = novatek_ts_kit_i2c_read(nvt_ts->client, I2C_FW_Address, buf, 2);
+	ret = novatek_ts_kit_read(I2C_FW_Address, buf, 2);
 	printk("0x%08X, 0x%02X\n", addr, buf[1]);
 */
 
@@ -939,10 +932,7 @@ static int32_t nvt_get_memory(uint32_t addr, uint8_t *data)
 	uint8_t buf[64] = {0};
 
 	//---set xdata index---
-	buf[0] = 0xFF;
-	buf[1] = (addr >> 16) & 0xFF;
-	buf[2] = (addr >> 8) & 0xFF;
-	ret = novatek_ts_kit_i2c_write(nvt_ts->client, I2C_FW_Address, buf, 3);
+	ret = nvt_set_page(addr);
 	if (ret < 0) {
 		TS_LOG_ERR("%s: write xdata index failed!(%d)\n", __func__, ret);
 		return ret;
@@ -951,7 +941,7 @@ static int32_t nvt_get_memory(uint32_t addr, uint8_t *data)
 	//---read data---
 	buf[0] = addr & 0xFF;
 	buf[1] = 0;
-	ret = novatek_ts_kit_i2c_read(nvt_ts->client, I2C_FW_Address, buf, 2);
+	ret = novatek_ts_kit_read(I2C_FW_Address, buf, 2);
 	if (ret < 0) {
 		TS_LOG_ERR("%s: read data failed!(%d)\n", __func__, ret);
 		return ret;
@@ -1366,13 +1356,17 @@ static int32_t nvt_read_open(void)
 
 	for (y = 0; y < IC_Y_CFG_SIZE; y++) {
 		//---change xdata index---
-		buf[0] = 0xFF;
-		buf[1] = 0x01;
-		buf[2] = (uint8_t)(((TableType1_GLOBAL0_RAW_BASE_ADDR + y * IC_X_CFG_SIZE * 2) & 0xFF00) >> 8);
-		novatek_ts_kit_i2c_write(nvt_ts->client, I2C_FW_Address, buf, 3);
+		if(nvt_ts->btype == TS_BUS_I2C) {
+			buf[0] = 0xFF;
+			buf[1] = 0x01;
+			buf[2] = (uint8_t)(((TableType1_GLOBAL0_RAW_BASE_ADDR + y * IC_X_CFG_SIZE * 2) & 0xFF00) >> 8);
+			novatek_ts_kit_write(I2C_FW_Address, buf, 3);
+		} else {
+			nvt_set_page(TableType1_GLOBAL0_RAW_BASE_ADDR + y * IC_X_CFG_SIZE * 2);
+		}
 		//---read data---
 		buf[0] = (uint8_t)((TableType1_GLOBAL0_RAW_BASE_ADDR + y * IC_X_CFG_SIZE * 2) & 0xFF);
-		novatek_ts_kit_i2c_read(nvt_ts->client, I2C_FW_Address, buf, IC_X_CFG_SIZE * 2 + 1);
+		novatek_ts_kit_read(I2C_FW_Address, buf, IC_X_CFG_SIZE * 2 + 1);
 		memcpy(rawdata_buf + y * IC_X_CFG_SIZE * 2, buf + 1, IC_X_CFG_SIZE * 2);
 	}
 
@@ -1422,22 +1416,19 @@ static int8_t nvt_switch_FreqHopEnDis(uint8_t FreqHopEnDis)
 	TS_LOG_INFO("%s:++\n", __func__);
 
 	for (retry = 0; retry < 20; retry++) {
-		//---set xdata index to 0x11E00---
-		buf[0] = 0xFF;
-		buf[1] = (nvt_ts->mmap->EVENT_BUF_ADDR >> 16) & 0xFF;
-		buf[2] = (nvt_ts->mmap->EVENT_BUF_ADDR >> 8) & 0xFF;
-		novatek_ts_kit_i2c_write(nvt_ts->client, I2C_FW_Address, buf, 3);
+		//---set xdata index to EVENT BUF ADDR---
+		nvt_set_page(nvt_ts->mmap->EVENT_BUF_ADDR | EVENT_MAP_HOST_CMD);
 
 		//---switch FreqHopEnDis---
-		buf[0] = 0x50;
+		buf[0] = EVENT_MAP_HOST_CMD;
 		buf[1] = FreqHopEnDis;
-		novatek_ts_kit_i2c_write(nvt_ts->client, I2C_FW_Address, buf, 2);
+		novatek_ts_kit_write(I2C_FW_Address, buf, 2);
 
 		msleep(35);
 
-		buf[0] = 0x50;
+		buf[0] = EVENT_MAP_HOST_CMD;
 		buf[1] = 0xFF;
-		novatek_ts_kit_i2c_read(nvt_ts->client, I2C_FW_Address, buf, 2);
+		novatek_ts_kit_read(I2C_FW_Address, buf, 2);
 
 		if (buf[1] == 0x00)
 			break;
@@ -1626,19 +1617,16 @@ static void nvt_enable_short_test(void)
 {
 	uint8_t buf[8] = {0};
 
-	//---set xdata index to 0x11E00---
-	buf[0] = 0xFF;
-	buf[1] = (nvt_ts->mmap->EVENT_BUF_ADDR >> 16) & 0xFF;
-	buf[2] = (nvt_ts->mmap->EVENT_BUF_ADDR >> 8) & 0xFF;
-	novatek_ts_kit_i2c_write(nvt_ts->client, I2C_FW_Address, buf, 3);
+	//---set xdata index to EVENT BUF ADDR---
+	nvt_set_page(nvt_ts->mmap->EVENT_BUF_ADDR | EVENT_MAP_HOST_CMD);
 
 	//---enable short test---
-	buf[0] = 0x50;
+	buf[0] = EVENT_MAP_HOST_CMD;
 	buf[1] = 0x43;
 	buf[2] = 0xAA;
 	buf[3] = 0x02;
 	buf[4] = 0x00;
-	novatek_ts_kit_i2c_write(nvt_ts->client, I2C_FW_Address, buf, 5);
+	novatek_ts_kit_write(I2C_FW_Address, buf, 5);
 }
 
 static int32_t nvt_polling_hand_shake_status(void)
@@ -1648,16 +1636,13 @@ static int32_t nvt_polling_hand_shake_status(void)
 	const int32_t retry = 200;
 
 	for (i = 0; i < retry; i++) {
-		//---set xdata index to 0x11E00---
-		buf[0] = 0xFF;
-		buf[1] = (nvt_ts->mmap->EVENT_BUF_ADDR >> 16) & 0xFF;
-		buf[2] = (nvt_ts->mmap->EVENT_BUF_ADDR >> 8) & 0xFF;
-		novatek_ts_kit_i2c_write(nvt_ts->client, I2C_FW_Address, buf, 3);
+		//---set xdata index to EVENT BUF ADDR---
+		nvt_set_page(nvt_ts->mmap->EVENT_BUF_ADDR | EVENT_MAP_HANDSHAKING_or_SUB_CMD_BYTE);
 
 		//---read fw status---
-		buf[0] = 0x51;
+		buf[0] = EVENT_MAP_HANDSHAKING_or_SUB_CMD_BYTE;
 		buf[1] = 0x00;
-		novatek_ts_kit_i2c_read(nvt_ts->client, I2C_FW_Address, buf, 2);
+		novatek_ts_kit_read(I2C_FW_Address, buf, 2);
 
 		if ((buf[1] == 0xA0) || (buf[1] == 0xA1))
 			break;
@@ -1667,6 +1652,18 @@ static int32_t nvt_polling_hand_shake_status(void)
 
 	if (i >= retry) {
 		TS_LOG_ERR("%s: polling hand shake status failed, buf[1]=0x%02X\n", __func__, buf[1]);
+		// Read back 5 bytes from offset EVENT_MAP_HOST_CMD for debug check
+		if(nvt_ts->btype == TS_BUS_SPI) {
+			nvt_set_page(nvt_ts->mmap->EVENT_BUF_ADDR | EVENT_MAP_HOST_CMD);
+			buf[0] = EVENT_MAP_HOST_CMD;
+			buf[1] = 0x00;
+			buf[2] = 0x00;
+			buf[3] = 0x00;
+			buf[4] = 0x00;
+			buf[5] = 0x00;
+			novatek_ts_kit_read(I2C_FW_Address, buf, 6);
+			TS_LOG_ERR("Read back 5 bytes from offset EVENT_MAP_HOST_CMD: 0x%02X, 0x%02X, 0x%02X, 0x%02X, 0x%02X\n", buf[1], buf[2], buf[3], buf[4], buf[5]);
+		}
 		return -1;
 	} else {
 		return 0;
@@ -1677,38 +1674,46 @@ static void nvt_tddi_enable_noise_collect(int32_t frame_num)
 {
 	uint8_t buf[8] = {0};
 
-	//---set xdata index to 0x11E00---
-	buf[0] = NVTTDDI_DOUBLE_F_CMD;
-	buf[1] = (nvt_ts->mmap->EVENT_BUF_ADDR >> 16) & 0xFF;
-	buf[2] = (nvt_ts->mmap->EVENT_BUF_ADDR >> 8) & 0xFF;
-	novatek_ts_kit_i2c_write(nvt_ts->client, I2C_FW_Address, buf, NVTTDDI_THREE_BYTES_LENGTH);
+	//---set xdata index to EVENT BUF ADDR---
+	if(nvt_ts->btype == TS_BUS_I2C) {
+		buf[0] = NVTTDDI_DOUBLE_F_CMD;
+		buf[1] = (nvt_ts->mmap->EVENT_BUF_ADDR >> 16) & 0xFF;
+		buf[2] = (nvt_ts->mmap->EVENT_BUF_ADDR >> 8) & 0xFF;
+		novatek_ts_kit_write(I2C_FW_Address, buf, NVTTDDI_THREE_BYTES_LENGTH);
+	} else {
+		nvt_set_page(nvt_ts->mmap->EVENT_BUF_ADDR | EVENT_MAP_HOST_CMD);
+	}
 
 	//---enable noise collect test---
-	buf[0] = NVTTDDI_FIVE_ZERO_CMD;
+	buf[0] = EVENT_MAP_HOST_CMD;
 	buf[1] = NVTTDDI_FOUR_SEVEN_CMD;
 	buf[2] = NVTTDDI_DOUBLE_A_CMD;
 	buf[3] = frame_num;
 	buf[4] = NVTTDDI_DOUBLE_ZERO_CMD;
-	novatek_ts_kit_i2c_write(nvt_ts->client, I2C_FW_Address, buf, NVTTDDI_FIVE_BYTES_LENGTH);
+	novatek_ts_kit_write(I2C_FW_Address, buf, NVTTDDI_FIVE_BYTES_LENGTH);
 }
 
 static void nvt_tddi_enable_open_test(void)
 {
 	uint8_t buf[8] = {0};
 
-	//---set xdata index to 0x11E00---
-	buf[0] = NVTTDDI_DOUBLE_F_CMD;
-	buf[1] = (nvt_ts->mmap->EVENT_BUF_ADDR >> 16) & 0xFF;
-	buf[2] = (nvt_ts->mmap->EVENT_BUF_ADDR >> 8) & 0xFF;
-	novatek_ts_kit_i2c_write(nvt_ts->client, I2C_FW_Address, buf, NVTTDDI_THREE_BYTES_LENGTH);
+	//---set xdata index to EVENT BUF ADDR---
+	if(nvt_ts->btype == TS_BUS_I2C) {
+		buf[0] = NVTTDDI_DOUBLE_F_CMD;
+		buf[1] = (nvt_ts->mmap->EVENT_BUF_ADDR >> 16) & 0xFF;
+		buf[2] = (nvt_ts->mmap->EVENT_BUF_ADDR >> 8) & 0xFF;
+		novatek_ts_kit_write(I2C_FW_Address, buf, NVTTDDI_THREE_BYTES_LENGTH);
+	} else {
+		nvt_set_page(nvt_ts->mmap->EVENT_BUF_ADDR | EVENT_MAP_HOST_CMD);
+	}
 
 	//---enable open test---
-	buf[0] = NVTTDDI_FIVE_ZERO_CMD;
+	buf[0] = EVENT_MAP_HOST_CMD;
 	buf[1] = NVTTDDI_FOUR_FIVE_CMD;
 	buf[2] = NVTTDDI_DOUBLE_A_CMD;
 	buf[3] = NVTTDDI_ZERO_TWO_CMD;
 	buf[4] = NVTTDDI_DOUBLE_ZERO_CMD;
-	novatek_ts_kit_i2c_write(nvt_ts->client, I2C_FW_Address, buf, NVTTDDI_FIVE_BYTES_LENGTH);
+	novatek_ts_kit_write(I2C_FW_Address, buf, NVTTDDI_FIVE_BYTES_LENGTH);
 }
 
 #define NVT_TDDI_ABS(x) (x >= 0 ? x : (-x))
@@ -1905,13 +1910,17 @@ static int32_t nvt_tddi_read_fw_open(void)
 
 	for (y = NO_ERR; y < IC_Y_CFG_SIZE; y++) {
 		//---change xdata index---
-		buf[0] = NVTTDDI_DOUBLE_F_CMD;
-		buf[1] = (uint8_t)(HIGHT_EIGHT_BITS(raw_pipe_addr + y * IC_X_CFG_SIZE * NVTTDDI_MULTIPLY_2_NUM));
-		buf[2] = (uint8_t)(MIDDLE_EIGHT_BITS(raw_pipe_addr + y * IC_X_CFG_SIZE * NVTTDDI_MULTIPLY_2_NUM));
-		novatek_ts_kit_i2c_write(nvt_ts->client, I2C_FW_Address, buf, NVTTDDI_THREE_BYTES_LENGTH);
+		if(nvt_ts->btype == TS_BUS_I2C) {
+			buf[0] = NVTTDDI_DOUBLE_F_CMD;
+			buf[1] = (uint8_t)(HIGHT_EIGHT_BITS(raw_pipe_addr + y * IC_X_CFG_SIZE * NVTTDDI_MULTIPLY_2_NUM));
+			buf[2] = (uint8_t)(MIDDLE_EIGHT_BITS(raw_pipe_addr + y * IC_X_CFG_SIZE * NVTTDDI_MULTIPLY_2_NUM));
+			novatek_ts_kit_write(I2C_FW_Address, buf, NVTTDDI_THREE_BYTES_LENGTH);
+		} else {
+			nvt_set_page(raw_pipe_addr + y * IC_X_CFG_SIZE * NVTTDDI_MULTIPLY_2_NUM);
+		}
 		//---read data---
 		buf[0] = (uint8_t)(LOW_EIGHT_BITS(raw_pipe_addr + y * IC_X_CFG_SIZE * NVTTDDI_MULTIPLY_2_NUM));
-		novatek_ts_kit_i2c_read(nvt_ts->client, I2C_FW_Address, buf, IC_X_CFG_SIZE * NVTTDDI_MULTIPLY_2_NUM + NVTTDDI_PLUS_ONE);
+		novatek_ts_kit_read(I2C_FW_Address, buf, IC_X_CFG_SIZE * NVTTDDI_MULTIPLY_2_NUM + NVTTDDI_PLUS_ONE);
 		memcpy(rawdata_buf + y * IC_X_CFG_SIZE * NVTTDDI_MULTIPLY_2_NUM, buf + NVTTDDI_PLUS_ONE, IC_X_CFG_SIZE * NVTTDDI_MULTIPLY_2_NUM);
 	}
 
@@ -1964,6 +1973,7 @@ static int nvt_get_threshold_from_csvfile(int columns, int rows, char* target_na
 			nvt_ts->chip_data->chip_name,
 			novatek_kit_project_id,
 			nvt_ts->chip_data->module_name);
+	TS_LOG_INFO("%s: file_name=%s\n", __func__, file_name);
 
 	if (CSV_PRODUCT_SYSTEM == nvt_ts->csvfile_use_system) {
 		snprintf(file_path, sizeof(file_path), "/product/etc/firmware/ts/%s", file_name);
@@ -2035,16 +2045,20 @@ static int32_t nvt_rawdata_up_low(int32_t rawdata[], uint8_t RecordResult[], uin
 
 	//---Check Lower & Upper Limit---
 	for (j = 0; j < y_len; j++) {
-		for (i = 0; i < x_len; i++) {		
+		for (i = 0; i < x_len; i++) {
 			RecordResult[j * x_len + i] = NO_ERR;
 			if(rawdata[j * x_len + i] > Upper_Lmt[j * x_len + i]) {
 				RecordResult[j * x_len + i] |= 0x01;
 				retval = -1;
+				TS_LOG_ERR("%s, [%2d, %2d] Val is [%5d] ,limit is[%5d, %5d]", parse_target_name_up, i, j, rawdata[j * x_len + i],
+					Lower_Lmt[j * x_len + i], Upper_Lmt[j * x_len + i]);
 			}
 
 			if(rawdata[j * x_len + i] < Lower_Lmt[j * x_len + i]) {
 				RecordResult[j * x_len + i] |= 0x02;
 				retval = -1;
+				TS_LOG_ERR("%s, [%2d, %2d] Val is [%5d] ,limit is[%5d, %5d]", parse_target_name_up, i, j, rawdata[j * x_len + i],
+					Lower_Lmt[j * x_len + i], Upper_Lmt[j * x_len + i]);
 			}
 		}
 	}
@@ -2114,7 +2128,7 @@ static int32_t nvt_rawdata_delta(int32_t rawdata[], uint8_t x_len, uint8_t y_len
 			RecordResult_FWMutual_X_Delta[j * (x_len-1) + i] = (rawdata[j * x_len + i] - rawdata[j * x_len + (i+1)]);
 		}
 	}
-	
+
 	printk("%s:RawData_X_Delta:\n", __func__);
 	for (j = 0; j < y_len; j++) {
 		for (i = 0; i < (x_len-1); i++) {
@@ -2123,8 +2137,9 @@ static int32_t nvt_rawdata_delta(int32_t rawdata[], uint8_t x_len, uint8_t y_len
 			} else {
 				delta = (0 - RecordResult_FWMutual_X_Delta[j * (x_len-1) + i]);
 			}
-			
+
 			if (delta > PS_Config_Lmt_FW_Rawdata_X_Delta[j * (x_len-1) + i]) {
+				TS_LOG_ERR("%s, [%2d, %2d] Val is [%5d] ,limit is[0, %5d]", CSV_TP_CAP_RAW_DELTA_X, i, j, delta, PS_Config_Lmt_FW_Rawdata_X_Delta[j * (x_len-1) + i]);
 				retval = -1;
 			}
 			printk("%5d, ", delta);
@@ -2132,7 +2147,7 @@ static int32_t nvt_rawdata_delta(int32_t rawdata[], uint8_t x_len, uint8_t y_len
 		printk("\n");
 	}
 	printk("\n");
-	
+
 
 	//---Check Y Delta---
 	for (j = 0; j < x_len; j++) {
@@ -2140,7 +2155,7 @@ static int32_t nvt_rawdata_delta(int32_t rawdata[], uint8_t x_len, uint8_t y_len
 			RecordResult_FWMutual_Y_Delta[i * x_len + j] = (rawdata[i * x_len + j] - rawdata[(i+1) * x_len + j]);
 		}
 	}
-	
+
 	printk("%s:RawData_Y_Delta:\n", __func__);
 	for (j = 0; j < (y_len-1); j++) {
 		for (i = 0; i < x_len; i++) {
@@ -2151,13 +2166,14 @@ static int32_t nvt_rawdata_delta(int32_t rawdata[], uint8_t x_len, uint8_t y_len
 			}
 
 			if (delta > PS_Config_Lmt_FW_Rawdata_Y_Delta[j * x_len + i]) {
+				TS_LOG_ERR("%s, [%2d, %2d] Val is [%5d] ,limit is[0, %5d]", CSV_TP_CAP_RAW_DELTA_Y, i, j, delta, PS_Config_Lmt_FW_Rawdata_Y_Delta[j * (x_len-1) + i]);
 				retval = -1;
 			}
 			printk("%5d, ", delta);
 		}
 		printk("\n");
 	}
-	printk("\n");	
+	printk("\n");
 
 exit:
 	if (rawdata_up)
@@ -2235,11 +2251,15 @@ static int32_t RawDataTest_Sub(int32_t rawdata[], uint8_t RecordResult[], uint8_
 				iTolHighBound = Rawdata_Limit_Postive;
 			}
 
-			if(rawdata[iArrayIndex] > iTolHighBound)
+			if(rawdata[iArrayIndex] > iTolHighBound) {
 				RecordResult[iArrayIndex] |= 0x01;
+				TS_LOG_ERR("%s, [%2d, %2d] Val is [%5d] ,limit is[%5d, %5d]", parse_target_name_up, i, j, rawdata[iArrayIndex], iTolLowBound, iTolHighBound);
+			}
 
-			if(rawdata[iArrayIndex] < iTolLowBound)
+			if(rawdata[iArrayIndex] < iTolLowBound) {
 				RecordResult[iArrayIndex] |= 0x02;
+				TS_LOG_ERR("%s, [%2d, %2d] Val is [%5d] ,limit is[%5d, %5d]", parse_target_name_up, i, j, rawdata[iArrayIndex], iTolLowBound, iTolHighBound);
+			}
 		}
 	}
 
@@ -2270,7 +2290,9 @@ static int16_t nvt_get_avg(int32_t *p)
 {
 	int32_t sum=0;
 	int i;
-
+	if(!X_Channel || !Y_Channel) {
+		TS_LOG_INFO("X_Channel or Y_Channel is 0\n");
+	}
 	for(i=0; i < (X_Channel*Y_Channel); i++){
 	sum +=p[i];
 	}
@@ -2294,11 +2316,11 @@ static int16_t nvt_get_min(int32_t *p)
 {
 	int32_t min=INT_MAX;
 	int i;
-    
+
 	for (i = 0; i <  (X_Channel*Y_Channel); i++) {
 		min = min >  p[i] ? p[i] : min;
 	}
-	
+
 	return  (int16_t) min;
 }
 static int mmi_add_static_data(void)
@@ -2306,21 +2328,21 @@ static int mmi_add_static_data(void)
  	int i;
 
 	i=  strlen (mmitest_result);
-	if  (i >=TP_MMI_RESULT_LEN) {
+	if  (i >=TS_RAWDATA_RESULT_MAX) {
 		return -EINVAL;
 	}
-	snprintf((mmitest_result+i),TP_MMI_RESULT_LEN - i,"[%5d,%5d,%5d]",
+	snprintf((mmitest_result+i), TS_RAWDATA_RESULT_MAX - i,"[%5d,%5d,%5d]",
    	 nvt_get_avg(RawData_FWMutual), nvt_get_max(RawData_FWMutual),nvt_get_min(RawData_FWMutual));
 
 	i= strlen(mmitest_result);
-	if  (i >=TP_MMI_RESULT_LEN) {
+	if  (i >= TS_RAWDATA_RESULT_MAX) {
 		return -EINVAL;
 	}
-	snprintf((mmitest_result+i),TP_MMI_RESULT_LEN - i,"[%5d,%5d,%5d]",
+	snprintf((mmitest_result+i), TS_RAWDATA_RESULT_MAX - i,"[%5d,%5d,%5d]",
    	 nvt_get_avg(RawData_Diff), nvt_get_max(RawData_Diff),nvt_get_min(RawData_Diff));
 
 	return 0;
-	
+
 }
 /*******************************************************
 Description:
@@ -2330,93 +2352,91 @@ Description:
 return:
 	n.a.
 *******************************************************/
+static void nvt_print_lmt_array(int32_t *array, int32_t x_ch, int32_t y_ch)
+{
+	int32_t i = 0;
+	int32_t j = 0;
+
+	for (j = 0; j < y_ch; j++) {
+		for(i = 0; i < x_ch; i++) {
+			printk("%5d ", array[j * x_ch + i]);
+		}
+		printk("\n");
+	}
+}
+
 static void nvt_print_criteria(void)
 {
-	uint32_t x = 0;
 	uint32_t y = 0;
-	int32_t iArrayIndex = 0;
 
 	TS_LOG_INFO("%s:++\n", __func__);
 
 	//---PS_Config_Lmt_FW_Rawdata---
 	printk("PS_Config_Lmt_FW_Rawdata_P:\n");
-	for (y = 0; y < Y_Channel; y++) {
-		for (x = 0; x < X_Channel; x++) {
-			iArrayIndex = y * X_Channel + x;
-			printk("%5d ", PS_Config_Lmt_FW_Rawdata_P[iArrayIndex]);
-		}
-		printk("\n");
-	}
+	nvt_print_lmt_array(PS_Config_Lmt_FW_Rawdata_P, X_Channel, Y_Channel);
 	printk("PS_Config_Lmt_FW_Rawdata_N:\n");
-	for (y = 0; y < Y_Channel; y++) {
-		for (x = 0; x < X_Channel; x++) {
-			iArrayIndex = y * X_Channel + x;
-			printk("%5d ", PS_Config_Lmt_FW_Rawdata_N[iArrayIndex]);
-		}
-		printk("\n");
-	}
+	nvt_print_lmt_array(PS_Config_Lmt_FW_Rawdata_N, X_Channel, Y_Channel);
 
 	//---PS_Config_Lmt_FW_CC---
-	printk("PS_Config_Lmt_FW_CC_P: %5d\n", PS_Config_Lmt_FW_CC_P);
-	printk("PS_Config_Lmt_FW_CC_N: %5d\n", PS_Config_Lmt_FW_CC_N);
-
+	if(nvt_ts->rawdate_pointer_to_pointer) {
+		printk("PS_Config_Lmt_FW_CC_P:\n");
+		nvt_print_lmt_array(PS_Config_Lmt_FW_CC_P_A, X_Channel, Y_Channel);
+		printk("PS_Config_Lmt_FW_CC_N:\n");
+		nvt_print_lmt_array(PS_Config_Lmt_FW_CC_N_A, X_Channel, Y_Channel);
+	} else {
+		printk("PS_Config_Lmt_FW_CC_P: %5d\n", PS_Config_Lmt_FW_CC_P);
+		printk("PS_Config_Lmt_FW_CC_N: %5d\n", PS_Config_Lmt_FW_CC_N);
+	}
 	//---PS_Config_Lmt_FW_Diff---
-	printk("PS_Config_Lmt_FW_Diff_P: %5d\n", PS_Config_Lmt_FW_Diff_P);
-	printk("PS_Config_Lmt_FW_Diff_N: %5d\n", PS_Config_Lmt_FW_Diff_N);
+	if(nvt_ts->rawdate_pointer_to_pointer) {
+		printk("PS_Config_Lmt_FW_Diff_P:\n");
+		nvt_print_lmt_array(PS_Config_Lmt_FW_Diff_P_A, X_Channel, Y_Channel);
+		printk("PS_Config_Lmt_FW_Diff_N:\n");
+		nvt_print_lmt_array(PS_Config_Lmt_FW_Diff_N_A, X_Channel, Y_Channel);
+	} else {
+		printk("PS_Config_Lmt_FW_Diff_P: %5d\n", PS_Config_Lmt_FW_Diff_P);
+		printk("PS_Config_Lmt_FW_Diff_N: %5d\n", PS_Config_Lmt_FW_Diff_N);
+	}
 
 	//---PS_Config_Lmt_FW_Rawdata_Delta---
 	printk("PS_Config_Lmt_FW_Rawdata_X_Delta:\n");
-	for (y = 0; y < Y_Channel; y++) {
-		for (x = 0; x < (X_Channel-1); x++) {
-			iArrayIndex = y * (X_Channel-1) + x;
-			printk("%5d ", PS_Config_Lmt_FW_Rawdata_X_Delta[iArrayIndex]);
-		}
-		printk("\n");
-	}
+	nvt_print_lmt_array(PS_Config_Lmt_FW_Rawdata_X_Delta, (X_Channel - 1), Y_Channel);
 	printk("PS_Config_Lmt_FW_Rawdata_Y_Delta:\n");
-	for (y = 0; y < (Y_Channel-1); y++) {
-		for (x = 0; x < X_Channel; x++) {
-			iArrayIndex = y * X_Channel + x;
-			printk("%5d ", PS_Config_Lmt_FW_Rawdata_Y_Delta[iArrayIndex]);
-		}
-		printk("\n");
-	}
+	nvt_print_lmt_array(PS_Config_Lmt_FW_Rawdata_Y_Delta, X_Channel, (Y_Channel - 1));
 
 	//---PS_Config_Lmt_Short_Rawdata---
-	printk("PS_Config_Lmt_Short_Rawdata_P: %5d\n", PS_Config_Lmt_Short_Rawdata_P);
-	printk("PS_Config_Lmt_Short_Rawdata_N: %5d\n", PS_Config_Lmt_Short_Rawdata_N);		
+	if(nvt_ts->rawdate_pointer_to_pointer) {
+		printk("PS_Config_Lmt_Short_Rawdata_P:\n");
+		nvt_print_lmt_array(PS_Config_Lmt_Short_Rawdata_P_A, X_Channel, Y_Channel);
+		printk("PS_Config_Lmt_Short_Rawdata_N:\n");
+		nvt_print_lmt_array(PS_Config_Lmt_Short_Rawdata_N_A, X_Channel, Y_Channel);
+	} else {
+		printk("PS_Config_Lmt_Short_Rawdata_P: %5d\n", PS_Config_Lmt_Short_Rawdata_P);
+		printk("PS_Config_Lmt_Short_Rawdata_N: %5d\n", PS_Config_Lmt_Short_Rawdata_N);
+	}
+
 	//---PS_Config_Lmt_Open_Rawdata---
 	if (nvt_ts->open_test_by_fw > NO_ERR) {
 		printk("PS_Config_Lmt_Open_Rawdata_P_A:\n");
-		for (y = NO_ERR; y < IC_Y_CFG_SIZE; y++) {
-			for (x = NO_ERR; x < (IC_X_CFG_SIZE); x++) {
-				iArrayIndex = y * (IC_X_CFG_SIZE) + x;
-				printk("%5d ", PS_Config_Lmt_Open_Rawdata_P_A[iArrayIndex]);
-			}
-			printk("\n");
-		}
+		nvt_print_lmt_array(PS_Config_Lmt_Open_Rawdata_P_A, X_Channel, Y_Channel);
 		printk("PS_Config_Lmt_Open_Rawdata_N_A:\n");
-		for (y = NO_ERR; y < IC_Y_CFG_SIZE; y++) {
-			for (x = NO_ERR; x < (IC_X_CFG_SIZE); x++) {
-				iArrayIndex = y * (IC_X_CFG_SIZE) + x;
-				printk("%5d ", PS_Config_Lmt_Open_Rawdata_N_A[iArrayIndex]);
-			}
-			printk("\n");
-		}
+		nvt_print_lmt_array(PS_Config_Lmt_Open_Rawdata_N_A, X_Channel, Y_Channel);
 	} else {
 		printk("PS_Config_Lmt_Open_Rawdata_P: %5d\n", PS_Config_Lmt_Open_Rawdata_P);
 		printk("PS_Config_Lmt_Open_Rawdata_N: %5d\n", PS_Config_Lmt_Open_Rawdata_N);
 	}
+	printk("AIN_X:\n");
 	for (y = NO_ERR; y < IC_X_CFG_SIZE; y++) {
 		printk("%5u ", AIN_X[y]);
 	}
 	printk("\n");
+	printk("AIN_Y:\n");
 	for (y = NO_ERR; y < IC_Y_CFG_SIZE; y++) {
 		printk("%5u ", AIN_Y[y]);
 	}
 	printk("\n");
 	//---mADCOper_Cnt---
-	printk("mADCOper_Cnt: %5d\n", mADCOper_Cnt);	
+	printk("mADCOper_Cnt: %5d\n", mADCOper_Cnt);
 
 	TS_LOG_INFO("%s:--\n", __func__);
 }
@@ -2445,7 +2465,168 @@ static int set_parse_target_name(const char *up, const char* low)
 
 	return PASS;
 }
+static void nvt_kit_rawdata_test(struct ts_rawdata_info *info)
+{
+	if (nvt_read_raw(RawData_FWMutual) != 0) {
+		TestResult_FWMutual = 1;
+		TS_LOG_INFO("%s: nvt_read_raw ERROR! TestResult_FWMutual=%d\n", __func__, TestResult_FWMutual);
+		info->buff[0] = 0;
+		info->buff[1] = 0;
+		info->used_size = 0;
+	} else {
+		if (FLAG_EXIST == nvt_ts->test_capacitance_via_csvfile) {
+			nvt_parse_csvifle_ready = set_parse_target_name(CSV_TP_CAP_RAW_MAX, CSV_TP_CAP_RAW_MIN);
+		}
+		TestResult_FWMutual = nvt_rawdata_up_low(RawData_FWMutual, RecordResult_FWMutual, X_Channel, Y_Channel,
+													PS_Config_Lmt_FW_Rawdata_P, PS_Config_Lmt_FW_Rawdata_N);
+		if (TestResult_FWMutual == -1){
+			TS_LOG_INFO("%s: FW RAWDATA TEST FAIL! TestResult_FWMutual=%d\n", __func__, TestResult_FWMutual);
+		} else {
+			TS_LOG_INFO("%s: FW RAWDATA TEST PASS! TestResult_FWMutual=%d\n", __func__, TestResult_FWMutual);
+		}
+	}
+}
 
+static void nvt_kit_CC_test(struct ts_rawdata_info *info)
+{
+	if (nvt_read_CC(RawData_FW_CC) != 0) {
+		TestResult_FW_CC = 1;
+		TS_LOG_INFO("%s: nvt_read_CC ERROR! TestResult_FW_CC=%d\n", __func__, TestResult_FW_CC);
+		info->buff[0] = 0;
+		info->buff[1] = 0;
+		info->used_size = 0;
+	} else {
+		if (FLAG_EXIST == nvt_ts->test_capacitance_via_csvfile) {
+			nvt_parse_csvifle_ready = set_parse_target_name(CSV_TP_CAP_CC_MAX, CSV_TP_CAP_CC_MIN);
+		}
+		if(nvt_ts->rawdate_pointer_to_pointer) {
+			TestResult_FW_CC = nvt_rawdata_up_low(RawData_FW_CC, RecordResult_FW_CC, X_Channel, Y_Channel,
+												PS_Config_Lmt_FW_CC_P_A, PS_Config_Lmt_FW_CC_N_A);
+		} else {
+			TestResult_FW_CC = RawDataTest_Sub(RawData_FW_CC, RecordResult_FW_CC, X_Channel, Y_Channel,
+												PS_Config_Lmt_FW_CC_P, PS_Config_Lmt_FW_CC_N);
+		}
+		if (TestResult_FW_CC == -1){
+			TS_LOG_INFO("%s: FW CC TEST FAIL! TestResult_FW_CC=%d\n", __func__, TestResult_FW_CC);
+		} else {
+			TS_LOG_INFO("%s: FW CC TEST PASS! TestResult_FW_CC=%d\n", __func__, TestResult_FW_CC);
+		}
+	}
+}
+
+static void nvt_kit_delta_test(struct ts_rawdata_info *info)
+{
+	if (nvt_rawdata_delta(RawData_FWMutual, X_Channel, Y_Channel) != 0) {
+		TestResult_FWMutual_Delta = -1;	// -1: FAIL
+		TS_LOG_INFO("%s: XY Nearby Delta Test FAIL! TestResult_FWMutual_Delta=%d\n", __func__, TestResult_FWMutual_Delta);
+		info->buff[0] = 0;
+		info->buff[1] = 0;
+		info->used_size = 0;
+	} else {
+		TestResult_FWMutual_Delta = 0;
+		TS_LOG_INFO("%s: XY Nearby Delta Test PASS! TestResult_FWMutual_Delta=%d\n", __func__, TestResult_FWMutual_Delta);
+	}
+}
+static void  nvt_kit_noise_test(struct ts_rawdata_info *info)
+{
+	int32_t noise_ret = NO_ERR;
+
+	if (nvt_ts->noise_test_frame > NO_ERR) {
+		noise_ret = nvt_tddi_read_fw_noise(RawData_Diff);
+	} else {
+		noise_ret = nvt_read_noise();
+	}
+	if (noise_ret != NO_ERR) {
+		TestResult_Noise = 1;	// 1: ERROR
+		TestResult_FW_Diff = 1;
+		TS_LOG_INFO("%s: nvt_read_noise ERROR! TestResult_Noise=%d\n", __func__, TestResult_Noise);
+		info->buff[0] = 0;
+		info->buff[1] = 0;
+		info->used_size = 0;
+	} else {
+		if (FLAG_EXIST == nvt_ts->test_capacitance_via_csvfile) {
+			nvt_parse_csvifle_ready = set_parse_target_name(CSV_TP_CAP_DIFF_MAX, CSV_TP_CAP_DIFF_MIN);
+		}
+		if(nvt_ts->rawdate_pointer_to_pointer) {
+			TestResult_FW_Diff = nvt_rawdata_up_low(RawData_Diff, RecordResult_FW_Diff, X_Channel, Y_Channel,
+												PS_Config_Lmt_FW_Diff_P_A, PS_Config_Lmt_FW_Diff_N_A);
+		} else {
+			TestResult_FW_Diff = RawDataTest_Sub(RawData_Diff, RecordResult_FW_Diff, X_Channel, Y_Channel,
+												PS_Config_Lmt_FW_Diff_P, PS_Config_Lmt_FW_Diff_N);
+		}
+		if (TestResult_FW_Diff == -1) {
+			TestResult_Noise = -1;
+			TS_LOG_INFO("%s: NOISE TEST FAIL! TestResult_Noise=%d\n", __func__, TestResult_Noise);
+		} else {
+			TestResult_Noise = 0;
+			TS_LOG_INFO("%s: NOISE TEST PASS! TestResult_Noise=%d\n", __func__, TestResult_Noise);
+		}
+	}
+}
+
+static void nvt_kit_short_test(struct ts_rawdata_info *info)
+{
+	if (nvt_read_fw_short(RawData_Short) != 0) {
+		TestResult_Short = 1; // 1:ERROR
+		TS_LOG_INFO("%s: nvt_read_short ERROR! TestResult_Short=%d\n", __func__, TestResult_Short);
+		info->buff[0] = 0;
+		info->buff[1] = 0;
+		info->used_size = 0;
+	} else {
+		if (FLAG_EXIST == nvt_ts->test_capacitance_via_csvfile) {
+			nvt_parse_csvifle_ready = set_parse_target_name(CSV_TP_CAP_SHORT_MAX, CSV_TP_CAP_SHORT_MIN);
+		}
+		//---Self Test Check --- // 0:PASS, -1:FAIL
+		if(nvt_ts->rawdate_pointer_to_pointer) {
+			TestResult_Short = nvt_rawdata_up_low(RawData_Short, RecordResult_Short, X_Channel, Y_Channel,
+												PS_Config_Lmt_Short_Rawdata_P_A, PS_Config_Lmt_Short_Rawdata_N_A);
+		} else {
+			TestResult_Short = RawDataTest_Sub(RawData_Short, RecordResult_Short, X_Channel, Y_Channel,
+												PS_Config_Lmt_Short_Rawdata_P, PS_Config_Lmt_Short_Rawdata_N);
+		}
+		if (TestResult_Short == -1){
+			TS_LOG_INFO("%s: SHORT TEST FAIL! TestResult_Short=%d\n", __func__, TestResult_Short);
+		} else {
+			TS_LOG_INFO("%s: SHORT TEST PASS! TestResult_Short=%d\n", __func__, TestResult_Short);
+		}
+	}
+}
+
+static void nvt_kit_open_test(struct ts_rawdata_info *info, uint8_t x_channel_size, uint8_t y_channel_size)
+{
+	int32_t open_ret = NO_ERR;
+
+	if (nvt_ts->open_test_by_fw > NO_ERR) {
+		open_ret = nvt_tddi_read_fw_open();
+	} else {
+		open_ret = nvt_read_open();
+	}
+	//---Open Test---
+	if (open_ret != NO_ERR) {
+		TestResult_Open = 1;	// 1:ERROR
+		TS_LOG_INFO("%s: nvt_read_open ERROR! TestResult_Open=%d\n", __func__, TestResult_Open);
+		info->buff[0] = 0;
+		info->buff[1] = 0;
+		info->used_size = 0;
+	} else {
+		//---Self Test Check --- // 0:PASS, -1:FAIL
+		if (nvt_ts->open_test_by_fw > NO_ERR) {
+			if (FLAG_EXIST == nvt_ts->test_capacitance_via_csvfile) {
+				nvt_parse_csvifle_ready = set_parse_target_name(CSV_TP_CAP_OPEN_MAX, CSV_TP_CAP_OPEN_MIN);
+			}
+			TestResult_Open = nvt_rawdata_up_low(RawData_Open, RecordResult_Open, x_channel_size, y_channel_size,
+											PS_Config_Lmt_Open_Rawdata_P_A, PS_Config_Lmt_Open_Rawdata_N_A);
+		} else {
+			TestResult_Open = RawDataTest_Sub(RawData_Open, RecordResult_Open, X_Channel, Y_Channel,
+											PS_Config_Lmt_Open_Rawdata_P, PS_Config_Lmt_Open_Rawdata_N);
+		}
+		if (TestResult_Open == -1){
+			TS_LOG_INFO("%s: OPEN TEST FAIL! TestResult_Open=%d\n", __func__, TestResult_Open);
+		} else {
+			TS_LOG_INFO("%s: OPEN TEST PASS! TestResult_Open=%d\n", __func__, TestResult_Open);
+		}
+	}
+}
 /*******************************************************
 Description:
 	Novatek touchscreen selftest function for huawei_touchscreen.
@@ -2492,7 +2673,11 @@ int32_t nvt_kit_selftest(struct ts_rawdata_info *info)
 		x_channel_size = IC_X_CFG_SIZE;
 		y_channel_size = IC_Y_CFG_SIZE;
 	}
-
+	//--Mutex Lock---
+	if (mutex_lock_interruptible(&nvt_ts->lock)) {
+		TS_LOG_ERR("%s: acquire nvt_ts mutex lock FAIL!", __func__);
+		return -ERESTARTSYS;
+	}
 	//---For Debug : Test Time, Mallon 20160907---
 	unsigned long timer_start=0,timer_end=0;
 	timer_start=jiffies;
@@ -2508,28 +2693,46 @@ int32_t nvt_kit_selftest(struct ts_rawdata_info *info)
 	//---Get ProjectID to match input & output files---
 	//novatek_read_projectid();
 
-	//---Test I2C Transfer---
-	buf[0] = 0x00;
-	if (novatek_ts_kit_i2c_read(nvt_ts->client, I2C_FW_Address, buf, 2) < 0) {
-		TS_LOG_ERR("%s: I2C READ FAIL!", __func__);
-		strcpy(test_0_result, "0F-");
-		strcpy(test_1_result, "1F-");
-		strcpy(test_2_result, "2F-");
-		strcpy(test_3_result, "3F-");
-		strcpy(test_4_result, "4F");
-		goto err_nvt_i2c_read;
-	} else {
-		strcpy(test_0_result, "0P-");
+	if (nvt_ts->btype == TS_BUS_I2C) {
+		//---Test I2C Transfer---
+		buf[0] = 0x00;
+		if (novatek_ts_kit_read(I2C_FW_Address, buf, 2) < 0) {
+			TS_LOG_ERR("%s: I2C READ FAIL!", __func__);
+			strcpy(test_0_result, "0F-");
+			strcpy(test_1_result, "1F-");
+			strcpy(test_2_result, "2F-");
+			strcpy(test_3_result, "3F-");
+			strcpy(test_4_result, "4F");
+			goto err_nvt_i2c_read;
+		} else {
+			strcpy(test_0_result, "0P-");
+		}
+	} else if (nvt_ts->btype == TS_BUS_SPI) {
+		//---Test SPI Transfer---
+		buf[0] = 0x00;
+		if (novatek_ts_kit_read(I2C_FW_Address, buf, 2) < 0) {
+			TS_LOG_ERR("%s: SPI READ FAIL!", __func__);
+			strcpy(test_0_result, "0F-");
+			strcpy(test_1_result, "1F-");
+			strcpy(test_2_result, "2F-");
+			strcpy(test_3_result, "3F-");
+			strcpy(test_4_result, "4F");
+			goto err_nvt_spi_read;
+		} else {
+			strcpy(test_0_result, "0P-");
+		}
 	}
 
-	//--Mutex Lock---
-	if (mutex_lock_interruptible(&nvt_ts->mp_mutex) != 0) {
-		TS_LOG_ERR("%s: mutex_lock_interruptible FAIL!", __func__);
-		strcpy(test_1_result, "1F-");
-		strcpy(test_2_result, "2F-");
-		strcpy(test_3_result, "3F-");
-		strcpy(test_4_result, "4F");
-		goto err_mutex_lock_interruptible;
+	if (nvt_ts->btype == TS_BUS_SPI) {
+		//---Download MP FW---
+		if (nvt_kit_fw_update_boot_spi(nvt_ts->fw_name_mp)) {
+			TS_LOG_ERR("%s: load MP firmware FAIL!", __func__);
+			strcpy(test_1_result, "1F-");
+			strcpy(test_2_result, "2F-");
+			strcpy(test_3_result, "3F-");
+			strcpy(test_4_result, "4F");
+			goto err_load_mp_fw;
+		}
 	}
 
 	//---Reset IC---
@@ -2562,46 +2765,13 @@ int32_t nvt_kit_selftest(struct ts_rawdata_info *info)
 		TS_LOG_ERR("%s: nvt_get_fw_info  FAIL!", __func__);
 		goto err_nvt_get_fw_info;
 	}
+	TS_LOG_INFO("%s: FW Version: %d\n", __func__, nvt_fw_ver);
 
 	//---FW Rawdata Test---
-	if (nvt_read_raw(RawData_FWMutual) != 0) {
-		TestResult_FWMutual = 1;
-		TS_LOG_INFO("%s: nvt_read_raw ERROR! TestResult_FWMutual=%d\n", __func__, TestResult_FWMutual);
-		info->buff[0] = 0;
-		info->buff[1] = 0;
-		info->used_size = 0;
-	} else {
-		if (FLAG_EXIST == nvt_ts->test_capacitance_via_csvfile) {
-			nvt_parse_csvifle_ready = set_parse_target_name(CSV_TP_CAP_RAW_MAX, CSV_TP_CAP_RAW_MIN);
-		}
-		TestResult_FWMutual = nvt_rawdata_up_low(RawData_FWMutual, RecordResult_FWMutual, X_Channel, Y_Channel, 
-													PS_Config_Lmt_FW_Rawdata_P, PS_Config_Lmt_FW_Rawdata_N);
-		if (TestResult_FWMutual == -1){
-			TS_LOG_INFO("%s: FW RAWDATA TEST FAIL! TestResult_FWMutual=%d\n", __func__, TestResult_FWMutual);
-		} else {
-			TS_LOG_INFO("%s: FW RAWDATA TEST PASS! TestResult_FWMutual=%d\n", __func__, TestResult_FWMutual);
-		}
-	}
+	nvt_kit_rawdata_test(info);
 
 	//---FW CC Test---	
-	if (nvt_read_CC(RawData_FW_CC) != 0) {
-		TestResult_FW_CC = 1;
-		TS_LOG_INFO("%s: nvt_read_CC ERROR! TestResult_FW_CC=%d\n", __func__, TestResult_FW_CC);
-		info->buff[0] = 0;
-		info->buff[1] = 0;
-		info->used_size = 0;
-	} else {
-		if (FLAG_EXIST == nvt_ts->test_capacitance_via_csvfile) {
-			nvt_parse_csvifle_ready = set_parse_target_name(CSV_TP_CAP_CC_MAX, CSV_TP_CAP_CC_MIN);
-		}
-		TestResult_FW_CC = RawDataTest_Sub(RawData_FW_CC, RecordResult_FW_CC, X_Channel, Y_Channel,
-											PS_Config_Lmt_FW_CC_P, PS_Config_Lmt_FW_CC_N);
-		if (TestResult_FW_CC == -1){
-			TS_LOG_INFO("%s: FW CC TEST FAIL! TestResult_FW_CC=%d\n", __func__, TestResult_FW_CC);
-		} else {
-			TS_LOG_INFO("%s: FW CC TEST PASS! TestResult_FW_CC=%d\n", __func__, TestResult_FW_CC);
-		}
-	}
+	nvt_kit_CC_test(info);
 
 	//--- Result for FW Rawdata & CC Test---
 	if ((TestResult_FWMutual != 0) || (TestResult_FW_CC != 0)) {
@@ -2612,16 +2782,7 @@ int32_t nvt_kit_selftest(struct ts_rawdata_info *info)
 
 	//---Offset between Columns and Raws---
 	//---XY Nearby Delta Test---
-	if (nvt_rawdata_delta(RawData_FWMutual, X_Channel, Y_Channel) != 0) {
-		TestResult_FWMutual_Delta = -1;	// -1: FAIL
-		TS_LOG_INFO("%s: XY Nearby Delta Test FAIL! TestResult_FWMutual_Delta=%d\n", __func__, TestResult_FWMutual_Delta);
-		info->buff[0] = 0;
-		info->buff[1] = 0;
-		info->used_size = 0;
-	} else {
-		TestResult_FWMutual_Delta = 0;
-		TS_LOG_INFO("%s: XY Nearby Delta Test PASS! TestResult_FWMutual_Delta=%d\n", __func__, TestResult_FWMutual_Delta);
-	}
+	nvt_kit_delta_test(info);
 
 	//--- Result for XY Nearby Delta Test---
 	if (TestResult_FWMutual_Delta != 0) {
@@ -2637,32 +2798,7 @@ int32_t nvt_kit_selftest(struct ts_rawdata_info *info)
 	TS_LOG_INFO("%s: nvt_ts->noise_test_frame = %d\n", __func__, nvt_ts->noise_test_frame);
 
 	//---Noise Test---
-	if (nvt_ts->noise_test_frame > NO_ERR) {
-		noise_ret = nvt_tddi_read_fw_noise(RawData_Diff);
-	} else {
-		noise_ret = nvt_read_noise();
-	}
-	if (noise_ret != NO_ERR) {
-		TestResult_Noise = 1;	// 1: ERROR
-		TestResult_FW_Diff = 1;
-		TS_LOG_INFO("%s: nvt_read_noise ERROR! TestResult_Noise=%d\n", __func__, TestResult_Noise);
-		info->buff[0] = 0;
-		info->buff[1] = 0;
-		info->used_size = 0;
-	} else {
-		if (FLAG_EXIST == nvt_ts->test_capacitance_via_csvfile) {
-			nvt_parse_csvifle_ready = set_parse_target_name(CSV_TP_CAP_DIFF_MAX, CSV_TP_CAP_DIFF_MIN);
-		}
-		TestResult_FW_Diff = RawDataTest_Sub(RawData_Diff, RecordResult_FW_Diff, X_Channel, Y_Channel,
-											PS_Config_Lmt_FW_Diff_P, PS_Config_Lmt_FW_Diff_N);
-		if (TestResult_FW_Diff == -1) {
-			TestResult_Noise = -1;
-			TS_LOG_INFO("%s: NOISE TEST FAIL! TestResult_Noise=%d\n", __func__, TestResult_Noise);
-		} else {
-			TestResult_Noise = 0;
-			TS_LOG_INFO("%s: NOISE TEST PASS! TestResult_Noise=%d\n", __func__, TestResult_Noise);
-		}
-	}
+	nvt_kit_noise_test(info);
 
 	//--- Result for Noise Test---
 	if (TestResult_Noise != 0) {
@@ -2675,61 +2811,14 @@ int32_t nvt_kit_selftest(struct ts_rawdata_info *info)
 		nvt_kit_change_mode(NORMAL_MODE);
 	}
 	//---Short Test (in FW)---
-	if (nvt_read_fw_short(RawData_Short) != 0) {
-		TestResult_Short = 1; // 1:ERROR
-		TS_LOG_INFO("%s: nvt_read_short ERROR! TestResult_Short=%d\n", __func__, TestResult_Short);
-		info->buff[0] = 0;
-		info->buff[1] = 0;
-		info->used_size = 0;
-	} else {
-		if (FLAG_EXIST == nvt_ts->test_capacitance_via_csvfile) {
-			nvt_parse_csvifle_ready = set_parse_target_name(CSV_TP_CAP_SHORT_MAX, CSV_TP_CAP_SHORT_MIN);
-		}
-		//---Self Test Check --- // 0:PASS, -1:FAIL
-		TestResult_Short = RawDataTest_Sub(RawData_Short, RecordResult_Short, X_Channel, Y_Channel,
-											PS_Config_Lmt_Short_Rawdata_P, PS_Config_Lmt_Short_Rawdata_N);
-		if (TestResult_Short == -1){
-			TS_LOG_INFO("%s: SHORT TEST FAIL! TestResult_Short=%d\n", __func__, TestResult_Short);
-		} else {
-			TS_LOG_INFO("%s: SHORT TEST PASS! TestResult_Short=%d\n", __func__, TestResult_Short);
-		}
-	}
+	nvt_kit_short_test(info);
 
 	//---Enable FW Frequence Hopping---
 	//invt_switch_FreqHopEnDis(FREQ_HOP_ENABLE);
 
 	TS_LOG_INFO("%s: nvt_ts->open_test_by_fw = %d\n", __func__, nvt_ts->open_test_by_fw);
-
-	if (nvt_ts->open_test_by_fw > NO_ERR) {
-		open_ret = nvt_tddi_read_fw_open();
-	} else {
-		open_ret = nvt_read_open();
-	}
 	//---Open Test---
-	if (open_ret != NO_ERR) {
-		TestResult_Open = 1;	// 1:ERROR
-		TS_LOG_INFO("%s: nvt_read_open ERROR! TestResult_Open=%d\n", __func__, TestResult_Open);
-		info->buff[0] = 0;
-		info->buff[1] = 0;
-		info->used_size = 0;
-	} else {
-		//---Self Test Check --- // 0:PASS, -1:FAIL
-		if (nvt_ts->open_test_by_fw > NO_ERR) {
-			if (FLAG_EXIST == nvt_ts->test_capacitance_via_csvfile) {
-				nvt_parse_csvifle_ready = set_parse_target_name(CSV_TP_CAP_OPEN_MAX, CSV_TP_CAP_OPEN_MIN);
-			}
-			TestResult_Open = nvt_rawdata_up_low(RawData_Open, RecordResult_Open, x_channel_size, y_channel_size,
-											PS_Config_Lmt_Open_Rawdata_P_A, PS_Config_Lmt_Open_Rawdata_N_A);
-		} else {
-			TestResult_Open = RawDataTest_Sub(RawData_Open, RecordResult_Open, X_Channel, Y_Channel,
-											PS_Config_Lmt_Open_Rawdata_P, PS_Config_Lmt_Open_Rawdata_N);
-		}
-		if (TestResult_Open == -1){
-			TS_LOG_INFO("%s: OPEN TEST FAIL! TestResult_Open=%d\n", __func__, TestResult_Open);
-		} else {
-			TS_LOG_INFO("%s: OPEN TEST PASS! TestResult_Open=%d\n", __func__, TestResult_Open);
-		}
-	}
+	nvt_kit_open_test(info,x_channel_size, y_channel_size);
 
 	//--- Result for Open & Short Test---
 	if ((TestResult_Short != 0) || (TestResult_Open != 0)) {
@@ -2739,7 +2828,13 @@ int32_t nvt_kit_selftest(struct ts_rawdata_info *info)
 	}
 
 	//---Reset IC---
-	nvt_kit_bootloader_reset();
+	if (nvt_ts->btype == TS_BUS_I2C) {
+		nvt_kit_bootloader_reset();
+	} else if (nvt_ts->btype == TS_BUS_SPI) {
+		//---Download Normal FW---
+		nvt_kit_fw_update_boot_spi(nvt_ts->fw_name);
+	}
+
 	uint32_t bytes_of_array;
 	//---Copy Data to info->buff---
 	if(nvt_ts->criteria_threshold_flag){
@@ -2793,13 +2888,14 @@ int32_t nvt_kit_selftest(struct ts_rawdata_info *info)
 	}
 
 err_nvt_get_fw_info:
-err_nvt_check_fw_status:	
+err_nvt_check_fw_status:
 err_nvt_clear_fw_status:
-err_nvt_check_fw_reset_state:	
-	//---Mutex Unlock---
-	mutex_unlock(&nvt_ts->mp_mutex);
-err_mutex_lock_interruptible:
+err_nvt_check_fw_reset_state:
+err_load_mp_fw:
 err_nvt_i2c_read:
+err_nvt_spi_read:
+	//---Mutex Unlock---
+	mutex_unlock(&nvt_ts->lock);
 	//---Check Fail Reason---
 	if((TestResult_Short == -1) || (TestResult_Open == -1) ||
 		(TestResult_FWMutual_Delta == -1) || (TestResult_Noise ==-1)||

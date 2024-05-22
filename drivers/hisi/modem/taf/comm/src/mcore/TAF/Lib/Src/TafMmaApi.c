@@ -588,9 +588,6 @@ VOS_UINT32 TAF_SetAutoReselStub(
                                   I0_WUEPS_PID_MMA);
 }
 
-/* Deleted by k902809 for Iteration 11, 2015-3-25, begin */
-
-/* Deleted by k902809 for Iteration 11, Iteration 11 2015-3-25, end */
 
 
 TAF_UINT32 TAF_QryUsimInfo(
@@ -639,9 +636,6 @@ TAF_UINT32 TAF_QryCpnnInfo(
                              I0_WUEPS_PID_MMA);
 }
 
-/* Deleted by k902809 for Iteration 11, 2015-3-24, begin */
-
-/* Deleted by k902809 for Iteration 11, Iteration 11 2015-3-24, end */
 
 
 
@@ -2825,23 +2819,7 @@ VOS_UINT32  TAF_MMA_ProcResetNtf(
     return VOS_TRUE;
 }
 
-/*****************************************************************************
-  Function Name     :   TAF_MMA_QryCLocInfoReq
-  Description       :   Allocate the memory for message.
-                        Sends the message to MMA.
-                        Returns VOS_FALSE on failure of senfing message.
 
-  Input parameters  :   UINT32                              ulModuleId,
-                        MN_CLIENT_ID_T                      ClientId,
-                        MN_OPERATION_ID_T                   OpId
-  Outout parameters :
-  Return Value      :   VOS_FALSE or VOS_TRUE
-
-  Modify History:
-      1)  Date      :   2015-03-25
-          Author    :   k902809
-          Modify content :    Create
-*****************************************************************************/
 VOS_UINT32 TAF_MMA_QryCLocInfoReq(
     VOS_UINT32                          ulModuleId,
     MN_CLIENT_ID_T                      usClientId,
@@ -3425,24 +3403,7 @@ VOS_UINT32 TAF_MMA_SetCmmReq(
     return VOS_TRUE;
 }
 
-/* Added by k902809 for Iteration 11, 2015-3-23, begin */
-/*****************************************************************************
-  Function Name     :   TAF_MMA_QryAcInfoReq
-  Description       :   Allocate the memory for message.
-                        Sends the message to MMA.
-                        Returns VOS_FALSE on failure of senfing message.
 
-  Input parameters  :   UINT32                              ulModuleId,
-                        MN_CLIENT_ID_T                      ClientId,
-                        MN_OPERATION_ID_T                   OpId
-  Outout parameters :
-  Return Value      :   VOS_FALSE or VOS_TRUE
-
-  Modify History:
-      1)  Date      :   2015-03-21
-          Author    :   k902809
-          Modify content :    Create
-*****************************************************************************/
 VOS_UINT32 TAF_MMA_QryAcInfoReq(
     VOS_UINT32                          ulModuleId,
     MN_CLIENT_ID_T                      usClientId,
@@ -3481,24 +3442,7 @@ VOS_UINT32 TAF_MMA_QryAcInfoReq(
     return VOS_TRUE;
 }
 
-/*****************************************************************************
-  Function Name     :   TAF_MMA_QryCopnInfoReq
-  Description       :   Allocate the memory for message.
-                        Sends the message to MMA
-                        Returns AT_FAILURE on failure of senfing message.
 
-  Input parameters  :   UINT32                              ulModuleId,
-                        MN_CLIENT_ID_T                      ClientId,
-                        VOS_UINT16                          usFromIndex,
-                        MN_OPERATION_ID_T                   OpId
-  Outout parameters :
-  Return Value      :   VOS_FALSE or VOS_TRUE
-
-  Modify History:
-      1)  Date      :   2015-03-24
-          Author    :   k902809
-          Modify content :    Create
-*****************************************************************************/
 VOS_UINT32 TAF_MMA_QryCopnInfoReq(
     VOS_UINT32                          ulModuleId,
     MN_CLIENT_ID_T                      usClientId,
@@ -3546,24 +3490,7 @@ VOS_UINT32 TAF_MMA_QryCopnInfoReq(
     return VOS_TRUE;
 }
 
-/*****************************************************************************
-  Function Name     :   TAF_MMA_SimInsertReq
-  Description       :   Allocate the memory for sim insert message.
-                        Sends the message to MMA
-                        Returns AT_FAILURE on failure of senfing message.
 
-  Input parameters  :   UINT32                              ulModuleId
-                        MN_CLIENT_ID_T                      ClientId
-                        MN_OPERATION_ID_T                   OpId
-                        TAF_SIM_INSERT_STATE_ENUM_UINT32    enSimInsertState
-  Outout parameters :
-  Return Value      :   VOS_FALSE or VOS_TRUE
-
-  Modify History:
-      1)  Date      :   2015-03-24
-          Author    :   k902809
-          Modify content :    Create
-*****************************************************************************/
 VOS_UINT32 TAF_MMA_SimInsertReq(
     VOS_UINT32                          ulModuleId,
     MN_CLIENT_ID_T                      usClientId,
@@ -3605,24 +3532,7 @@ VOS_UINT32 TAF_MMA_SimInsertReq(
 }
 
 
-/*****************************************************************************
-  Function Name     :   TAF_MMA_SetEOPlmnReq
-  Description       :   Allocate the memory for EOPlmn.
-                        Sends the message to MMA
-                        Returns AT_FAILURE on failure of senfing message.
 
-  Input parameters  :   UINT32                              ulModuleId;
-                        MN_CLIENT_ID_T                      ClientId,
-                        MN_OPERATION_ID_T                   OpId
-                        TAF_MMA_SET_EOPLMN_LIST_STRU       *pstEOPlmnCfg
-  Outout parameters :
-  Return Value      :   VOS_FALSE or VOS_TRUE
-
-  Modify History:
-      1)  Date      :   2015-03-24
-          Author    :   k902809
-          Modify content :    Create
-*****************************************************************************/
 VOS_UINT32 TAF_MMA_SetEOPlmnReq(
     VOS_UINT32                          ulModuleId,
     MN_CLIENT_ID_T                      usClientId,
@@ -3670,24 +3580,7 @@ VOS_UINT32 TAF_MMA_SetEOPlmnReq(
 }
 
 
-/*****************************************************************************
-  Function Name     :   TAF_MMA_EOPlmnQryReq
-  Description       :   Allocate the memory for EOPlmn.
-                        Sends the message to MMA
-                        Returns AT_FAILURE on failure of senfing message.
 
-  Input parameters  :   UINT32                              ulModuleId;
-                        MN_CLIENT_ID_T                      ClientId,
-                        MN_OPERATION_ID_T                   OpId
-                        TAF_MMA_SET_EOPLMN_LIST_STRU       *pstEOPlmnCfg
-  Outout parameters :
-  Return Value      :   VOS_FALSE or VOS_TRUE
-
-  Modify History:
-      1)  Date      :   2015-03-30
-          Author    :   k902809
-          Modify content :    Create
-*****************************************************************************/
 VOS_UINT32 TAF_MMA_QryEOPlmnReq(
     VOS_UINT32                          ulModuleId,
     MN_CLIENT_ID_T                      usClientId,
@@ -3726,24 +3619,7 @@ VOS_UINT32 TAF_MMA_QryEOPlmnReq(
     return VOS_TRUE;
 }
 
-/*****************************************************************************
-  Function Name     :   TAF_MMA_NetScanReq
-  Description       :   Allocate the memory for message.
-                        Sends the message to MMA.
-                        Returns VOS_FALSE on failure of senfing message.
 
-  Input parameters  :   UINT32                              ulModuleId,
-                        MN_CLIENT_ID_T                      ClientId,
-                        MN_OPERATION_ID_T                   OpId,
-                        TAF_MMA_NET_SCAN_REQ_STRU          *pstRecvNetScanSetPara
-  Outout parameters :
-  Return Value      :   VOS_FALSE or VOS_TRUE
-
-  Modify History:
-      1)  Date      :   2015-03-21
-          Author    :   k902809
-          Modify content :    Create
-*****************************************************************************/
 VOS_UINT32 TAF_MMA_NetScanReq(
     VOS_UINT32                          ulModuleId,
     MN_CLIENT_ID_T                      usClientId,
@@ -3792,23 +3668,7 @@ VOS_UINT32 TAF_MMA_NetScanReq(
     return VOS_TRUE;
 }
 
-/*****************************************************************************
-  Function Name     :   TAF_MMA_NetScanAbortReq
-  Description       :   Allocate the memory for message.
-                        Sends the message to MMA.
-                        Returns VOS_FALSE on failure of senfing message.
 
-  Input parameters  :   UINT32                              ulModuleId,
-                        MN_CLIENT_ID_T                      ClientId,
-                        MN_OPERATION_ID_T                   OpId
-  Outout parameters :
-  Return Value      :   VOS_FALSE or VOS_TRUE
-
-  Modify History:
-      1)  Date      :   2015-03-21
-          Author    :   k902809
-          Modify content :    Create
-*****************************************************************************/
 VOS_UINT32 TAF_MMA_NetScanAbortReq(
     VOS_UINT32                          ulModuleId,
     MN_CLIENT_ID_T                      usClientId,
@@ -3848,23 +3708,7 @@ VOS_UINT32 TAF_MMA_NetScanAbortReq(
 }
 
 
-/*****************************************************************************
-  Function Name     :   TAF_MMA_QrySpnReq
-  Description       :   Allocate the memory for message.
-                        Sends the message to MMA.
-                        Returns VOS_FALSE on failure of senfing message.
 
-  Input parameters  :   UINT32                              ulModuleId,
-                        MN_CLIENT_ID_T                      ClientId,
-                        MN_OPERATION_ID_T                   OpId
-  Outout parameters :
-  Return Value      :   VOS_FALSE or VOS_TRUE
-
-  Modify History:
-      1)  Date      :   2015-03-30
-          Author    :   k902809
-          Modify content :    Create
-*****************************************************************************/
 VOS_UINT32 TAF_MMA_QrySpnReq(
     VOS_UINT32                          ulModuleId,
     MN_CLIENT_ID_T                      usClientId,
@@ -3905,23 +3749,7 @@ VOS_UINT32 TAF_MMA_QrySpnReq(
 
 
 
-/*****************************************************************************
-  Function Name     :   TAF_MMA_QryMMPlmnInfoReq
-  Description       :   Allocate the memory for message.
-                        Sends the message to MMA.
-                        Returns VOS_FALSE on failure of senfing message.
 
-  Input parameters  :   UINT32                              ulModuleId,
-                        MN_CLIENT_ID_T                      ClientId,
-                        MN_OPERATION_ID_T                   OpId
-  Outout parameters :
-  Return Value      :   VOS_FALSE or VOS_TRUE
-
-  Modify History:
-      1)  Date      :   2015-03-30
-          Author    :   k902809
-          Modify content :    Create
-*****************************************************************************/
 VOS_UINT32 TAF_MMA_QryMMPlmnInfoReq(
     VOS_UINT32                          ulModuleId,
     MN_CLIENT_ID_T                      usClientId,
@@ -3960,23 +3788,7 @@ VOS_UINT32 TAF_MMA_QryMMPlmnInfoReq(
     return VOS_TRUE;
 }
 
-/*****************************************************************************
-  Function Name     :   TAF_MMA_QryPlmnReq
-  Description       :   Allocate the memory for message.
-                        Sends the message to MMA.
-                        Returns VOS_FALSE on failure of senfing message.
 
-  Input parameters  :   UINT32                              ulModuleId,
-                        MN_CLIENT_ID_T                      ClientId,
-                        MN_OPERATION_ID_T                   OpId
-  Outout parameters :
-  Return Value      :   VOS_FALSE or VOS_TRUE
-
-  Modify History:
-      1)  Date      :   2015-03-30
-          Author    :   k902809
-          Modify content :    Create
-*****************************************************************************/
 VOS_UINT32 TAF_MMA_QryPlmnReq(
     VOS_UINT32                          ulModuleId,
     MN_CLIENT_ID_T                      usClientId,
@@ -4015,23 +3827,7 @@ VOS_UINT32 TAF_MMA_QryPlmnReq(
     return VOS_TRUE;
 }
 
-/*****************************************************************************
-  Function Name     :   TAF_MMA_QryUserSrvStateReq
-  Description       :   Allocate the memory for message.
-                        Sends the message to MMA.
-                        Returns VOS_FALSE on failure of senfing message.
 
-  Input parameters  :   UINT32                              ulModuleId,
-                        MN_CLIENT_ID_T                      ClientId,
-                        MN_OPERATION_ID_T                   OpId
-  Outout parameters :
-  Return Value      :   VOS_FALSE or VOS_TRUE
-
-  Modify History:
-      1)  Date      :   2015-03-27
-          Author    :   k902809
-          Modify content :    Create
-*****************************************************************************/
 VOS_UINT32 TAF_MMA_QryUserSrvStateReq(
     VOS_UINT32                          ulModuleId,
     MN_CLIENT_ID_T                      usClientId,
@@ -4071,23 +3867,7 @@ VOS_UINT32 TAF_MMA_QryUserSrvStateReq(
 }
 
 
-/*****************************************************************************
-  Function Name     :   TAF_MMA_QryApPwrOnAndRegTimeReq
-  Description       :   Allocate the memory for message.
-                        Sends the message to MMA.
-                        Returns VOS_FALSE on failure of senfing message.
 
-  Input parameters  :   UINT32                              ulModuleId,
-                        MN_CLIENT_ID_T                      ClientId,
-                        MN_OPERATION_ID_T                   OpId
-  Outout parameters :
-  Return Value      :   VOS_FALSE or VOS_TRUE
-
-  Modify History:
-      1)  Date      :   2015-03-27
-          Author    :   k902809
-          Modify content :    Create
-*****************************************************************************/
 VOS_UINT32 TAF_MMA_QryApPwrOnAndRegTimeReq(
     VOS_UINT32                          ulModuleId,
     MN_CLIENT_ID_T                      usClientId,
@@ -4126,7 +3906,6 @@ VOS_UINT32 TAF_MMA_QryApPwrOnAndRegTimeReq(
     return VOS_TRUE;
 }
 
-/* Added by k902809 for Iteration 11, Iteration 11 2015-3-23, end */
 
 
 VOS_UINT32  TAF_MMA_SetAutoAttachReq(

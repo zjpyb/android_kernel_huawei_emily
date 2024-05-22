@@ -17,6 +17,7 @@
 #include <linux/bootdevice.h>
 #endif
 
+#ifdef CONFIG_PM
 /**
  * ufs_rpmb_pm_runtime_delay_enable - when rpmb_pm_work in workqueue is scheduled, after 1 second pm_runtime dalay time set 5ms
 * @work: pointer to work structure
@@ -27,9 +28,12 @@ void ufs_rpmb_pm_runtime_delay_enable(struct work_struct *work){
 	/*lint -e826*/
 	hba = container_of(work, struct ufs_hba, rpmb_pm_work);
 	/*lint -e826*/
-	msleep(1000);
+	msleep(3000);
 
-	pm_runtime_set_autosuspend_delay(hba->dev, 5);
+	if (ufshcd_is_auto_hibern8_allowed(hba))
+		ufshcd_set_auto_hibern8_delay(hba, UFS_AHIT_AUTOH8_TIMER);
+	else
+		pm_runtime_set_autosuspend_delay(hba->dev, 5);
 }
 
 /**
@@ -37,13 +41,31 @@ void ufs_rpmb_pm_runtime_delay_enable(struct work_struct *work){
  * @hba: pointer to adapter instance
  *
  */
-void ufs_rpmb_pm_runtime_delay_process(struct ufs_hba *hba){
-	if(hba->dev->power.autosuspend_delay == 5){
-
-		pm_runtime_set_autosuspend_delay(hba->dev, RPMB_ACCESS_PM_RUNTIME_DELAY_TIME);
-		schedule_work(&hba->rpmb_pm_work);
+void ufs_rpmb_pm_runtime_delay_process(struct ufs_hba *hba)
+{
+	if (ufshcd_is_auto_hibern8_allowed(hba)) {
+		if (hba->ahit == UFS_AHIT_AUTOH8_TIMER) {
+			ufshcd_set_auto_hibern8_delay(
+				hba, UFS_AHIT_AUTOH8_RPMB_TIMER);
+			schedule_work(&hba->rpmb_pm_work);
+		}
+	} else {
+		if (hba->dev->power.autosuspend_delay == 5) {
+			pm_runtime_set_autosuspend_delay(
+				hba->dev, RPMB_ACCESS_PM_RUNTIME_DELAY_TIME);
+			schedule_work(&hba->rpmb_pm_work);
+		}
 	}
 }
+#else
+void ufs_rpmb_pm_runtime_delay_enable(struct work_struct *work)
+{
+}
+
+void ufs_rpmb_pm_runtime_delay_process(struct ufs_hba *hba)
+{
+}
+#endif
 
 /**
  * ufs_get_rpmb_info - get rpmb info from device and set the rpmb config

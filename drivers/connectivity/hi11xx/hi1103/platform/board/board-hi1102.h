@@ -50,16 +50,16 @@
   5 EXTERN FUNCTION
 *****************************************************************************/
 extern int32 hi1102_get_board_power_gpio(void);
-extern void hi1102_free_board_power_gpio(void);
-extern int32 hi1102_board_wakeup_gpio_init(void);
-extern void hi1102_free_board_wakeup_gpio(void);
+extern void hi1102_free_board_power_gpio_etc(void);
+extern int32 hi1102_board_wakeup_gpio_init_etc(void);
+extern void hi1102_free_board_wakeup_gpio_etc(void);
 extern int32 hi1102_bfgx_dev_power_on(void);
 extern int32 hi1102_bfgx_dev_power_off(void);
 extern int32 hi1102_wlan_power_off(void);
 extern int32 hi1102_wlan_power_on(void);
-extern void hi1102_board_power_on(uint32 ul_subsystem);
-extern void hi1102_board_power_off(uint32 ul_subsystem);
-extern void hi1102_board_power_reset(uint32 ul_subsystem);
+extern int32 hi1102_board_power_on(uint32 ul_subsystem);
+extern int32 hi1102_board_power_off(uint32 ul_subsystem);
+extern int32 hi1102_board_power_reset(uint32 ul_subsystem);
 extern int32 hi1102_get_board_pmu_clk32k(void);
 extern int32 hi1102_get_board_uart_port(void);
 extern int32 hi1102_board_ir_ctrl_init(struct platform_device *pdev);

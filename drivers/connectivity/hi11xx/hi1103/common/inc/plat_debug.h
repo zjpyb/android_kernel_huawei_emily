@@ -12,21 +12,21 @@
   2 Define macro
 *****************************************************************************/
 #define PS_PRINT_FUNCTION_NAME				do { \
-		if (PLAT_LOG_DEBUG <= g_plat_loglevel) \
+		if (PLAT_LOG_DEBUG <= g_plat_loglevel_etc) \
 		{ \
 			printk(KERN_DEBUG KBUILD_MODNAME ":D]%s]" ,__func__);     \
 		} \
 	}while(0)
 
 #define PS_PRINT_DBG(s, args...)            do{ \
-		if (PLAT_LOG_DEBUG <= g_plat_loglevel) \
+		if (PLAT_LOG_DEBUG <= g_plat_loglevel_etc) \
 		{ \
 			printk(KERN_DEBUG KBUILD_MODNAME ":D]%s]" s,__func__, ## args); \
 		}\
 	}while(0)
 
 #define PS_PRINT_INFO(s, args...)           do{ \
-		if (PLAT_LOG_INFO <= g_plat_loglevel) \
+		if (PLAT_LOG_INFO <= g_plat_loglevel_etc) \
 		{ \
 			printk(KERN_DEBUG KBUILD_MODNAME ":I]%s]" s,__func__, ## args);\
 			CHR_LOG(CHR_LOG_INFO, CHR_LOG_TAG_PLAT, s, ##args); \
@@ -34,7 +34,7 @@
 	}while(0)
 
 #define PS_PRINT_SUC(s, args...)            do{ \
-		if (PLAT_LOG_INFO <= g_plat_loglevel) \
+		if (PLAT_LOG_INFO <= g_plat_loglevel_etc) \
 		{ \
 			printk(KERN_DEBUG KBUILD_MODNAME ":S]%s]" s,__func__, ## args); \
 			CHR_LOG(CHR_LOG_INFO, CHR_LOG_TAG_PLAT, s, ##args); \
@@ -42,7 +42,7 @@
 	}while(0)
 
 #define PS_PRINT_WARNING(s, args...)        do{ \
-		if (PLAT_LOG_WARNING <= g_plat_loglevel) \
+		if (PLAT_LOG_WARNING <= g_plat_loglevel_etc) \
 		{ \
 			printk(KERN_WARNING KBUILD_MODNAME ":W]%s]" s,__func__, ## args);\
 			CHR_LOG(CHR_LOG_WARN, CHR_LOG_TAG_PLAT, s, ##args); \
@@ -50,7 +50,7 @@
 	}while(0)
 
 #define PS_PRINT_ERR(s, args...)            do{ \
-		if (PLAT_LOG_ERR <= g_plat_loglevel) \
+		if (PLAT_LOG_ERR <= g_plat_loglevel_etc) \
 		{ \
 			printk(KERN_ERR KBUILD_MODNAME ":E]%s]" s,__func__, ## args); \
 			CHR_LOG(CHR_LOG_ERROR, CHR_LOG_TAG_PLAT, s, ##args); \
@@ -58,7 +58,7 @@
 	}while(0)
 
 #define PS_PRINT_ALERT(s, args...)          do{ \
-		if (PLAT_LOG_ALERT <= g_plat_loglevel) \
+		if (PLAT_LOG_ALERT <= g_plat_loglevel_etc) \
 		{ \
 			printk(KERN_ALERT KBUILD_MODNAME ":ALERT]%s]" s,__func__, ## args); \
 			CHR_LOG(CHR_LOG_ERROR, CHR_LOG_TAG_PLAT, s, ##args); \
@@ -66,7 +66,7 @@
 	}while(0)
 
 #define PS_BUG_ON(s)                       do{ \
-        if((BUG_ON_ENABLE == g_bug_on_enable)) \
+        if((BUG_ON_ENABLE == g_bug_on_enable_etc)) \
         { \
            BUG_ON(s);\
         } \

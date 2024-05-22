@@ -30,12 +30,14 @@
 #include "contexthub_pm.h"
 #include <huawei_platform/inputhub/motionhub.h>
 #include <huawei_platform/inputhub/sensorhub.h>
+#include <huawei_platform/log/imonitor.h>
 
 #ifdef CONFIG_CONTEXTHUB_SHMEM
 #include "shmem.h"
 #endif
 
 #define ROUTE_BUFFER_MAX_SIZE (1024 * 128)
+#define SENSOR_DROP_IMONITOR_ID 936005000
 #ifdef TIMESTAMP_SIZE
 #undef TIMESTAMP_SIZE
 #define TIMESTAMP_SIZE (8)
@@ -48,6 +50,7 @@ int resume_skip_flag;
 int get_airpress_data;
 int get_temperature_data;
 int fobidden_comm; /*once this flag set to 1, ap/iom3 will not transfer commd */
+int ext_hall_type = 0;
 struct sensor_status sensor_status;
 spinlock_t	fsdata_lock;
 bool fingersense_data_ready;
@@ -62,6 +65,7 @@ static struct mutex mutex_unpack;
 static uint16_t tranid;
 static struct mcu_notifier mcu_notifier = { LIST_HEAD_INIT(mcu_notifier.head) };
 static int ps_value; /*save ps value for phonecall dmd*/
+static int tof_value = 0;
 static int als_retry_cnt = ALS_RESET_COUNT;
 static int ps_retry_cnt = PS_RESET_COUNT;
 static int64_t sensors_tm[TAG_SENSOR_END] = { 0, };
@@ -73,6 +77,7 @@ static uint32_t recovery_step_count;
 static uint32_t valid_floor_count = 0;
 static uint32_t recovery_floor_count = 0;
 static struct workqueue_struct *mcu_aod_wq;
+static int adapt_ext_hall_index = 0;
 static DEFINE_MUTEX(mutex_update);
 
 extern struct CONFIG_ON_DDR *pConfigOnDDr;
@@ -97,9 +102,10 @@ extern uint32_t need_reset_io_power;
 extern uint8_t tag_to_hal_sensor_type[TAG_SENSOR_END];
 
 extern int ak8789_register_report_data(int ms);
-extern int ams_tcs3430_setenable(bool enable);
+extern int color_sensor_enable(bool enable);
 extern void fingerprint_ipc_cgbe_abort_handle(void);
 
+extern int hall_number ;
 static struct inputhub_route_table package_route_tbl[] = {
 	{ROUTE_SHB_PORT, {NULL, 0}, {NULL, 0}, {NULL, 0}, __WAIT_QUEUE_HEAD_INITIALIZER(package_route_tbl[0].read_wait)},
 	{ROUTE_MOTION_PORT, {NULL, 0}, {NULL, 0}, {NULL, 0}, __WAIT_QUEUE_HEAD_INITIALIZER(package_route_tbl[1].read_wait)},
@@ -321,12 +327,16 @@ t_ap_sensor_ops_record all_ap_sensor_operations[TAG_SENSOR_END] = {
 		.work_on_ap = true,
 		.ops = {.setdelay = ak8789_register_report_data},
 	},
+	[TAG_EXT_HALL] = {
+		.work_on_ap = true,
+		.ops = {.setdelay = ak8789_register_report_data},
+	},
 #endif
 #ifdef CONFIG_SENSORS_COLOR_AP
 	[TAG_COLOR] = {
 		.work_on_ap = true,
 		.ops = {//.setdelay = ams_tcs3430_setdelay,
-				.enable = ams_tcs3430_setenable},
+				.enable = color_sensor_enable},
 	},
 #endif
 };
@@ -390,10 +400,36 @@ int report_sensor_event(int tag, int value[], int length)
 		event.length + OFFSET_OF_END_MEM(struct sensor_data, length));
 }
 
+static int adapt_hall_value(int value)
+{
+	int ext_val = 0;
+
+	if(adapt_ext_hall_index >= ARRAY_SIZE(ext_hall_table)){
+		return -EPERM;
+	}
+	if(value > MAX_EXT_HALL_VALUE){
+		return -EPERM;
+	}
+	return ext_hall_table[adapt_ext_hall_index].ext_hall_value[value];
+}
+
 int ap_hall_report(int value)
 {
+	int double_hall_value[3] = {0};
+	int ext_hall_value[HALL_DATA_NUM] = {0};
 	hall_value = value;
-	return report_sensor_event(TAG_HALL, &value, sizeof(value));
+	double_hall_value[0] = value;
+	if(hall_number == 2){
+		double_hall_value[1] = 2;
+	}else{
+		ext_hall_value[0] = SLIDE_HALL_TYPE;
+		ext_hall_value[1] = adapt_hall_value(value);
+	}
+	//return diff sensor type
+	report_sensor_event(TAG_HALL, double_hall_value, sizeof(double_hall_value));
+	report_sensor_event(TAG_EXT_HALL, ext_hall_value, sizeof(ext_hall_value));
+
+	return 0;
 }
 int ap_color_report(int value[], int length)
 {
@@ -404,7 +440,7 @@ bool ap_sensor_enable(int tag, bool enable)
 {
 	bool work_on_ap = false;
 
-	if (tag >= TAG_SENSOR_END)
+	if (tag < TAG_SENSOR_BEGIN ||tag >= TAG_SENSOR_END)
 		return false;
 
 	work_on_ap = all_ap_sensor_operations[tag].work_on_ap;
@@ -421,7 +457,7 @@ bool ap_sensor_setdelay(int tag, int ms)
 {
 	bool work_on_ap;
 
-	if (tag>=TAG_SENSOR_END)
+	if (tag < TAG_SENSOR_BEGIN ||tag>=TAG_SENSOR_END)
 		return false;
 
 	work_on_ap = all_ap_sensor_operations[tag].work_on_ap;
@@ -610,7 +646,7 @@ static int unpack(const void *buf, unsigned int length)
 		goto out;
 	} else {
 		char send_partial_buf[MAX_SEND_LEN];
-		int send_cnt = 0;
+		unsigned int send_cnt = 0;
 
 		/*send head*/
 		ret = inputhub_mcu_send((const char *)buf, MAX_SEND_LEN);
@@ -618,11 +654,11 @@ static int unpack(const void *buf, unsigned int length)
 			goto out;
 
 		((pkt_part_header_t *) send_partial_buf)->tag = TAG_END;
-		for (send_cnt = MAX_SEND_LEN; send_cnt < (int)length;
+		for (send_cnt = MAX_SEND_LEN; send_cnt < length;
 		     send_cnt += (MAX_SEND_LEN - sizeof(pkt_part_header_t))) {
 			((pkt_part_header_t *) send_partial_buf)->partial_order = partial_order++;	/*inc partial_order in partial pkt*/
 			memcpy(send_partial_buf + sizeof(pkt_part_header_t),
-			       (const char *)buf + send_cnt, min(MAX_SEND_LEN - sizeof(pkt_part_header_t), (int)length - send_cnt));
+			       (const char *)buf + send_cnt, min(MAX_SEND_LEN - sizeof(pkt_part_header_t), (unsigned long)(length - send_cnt)));
 			ret = inputhub_mcu_send(send_partial_buf, MAX_SEND_LEN);
 			if (ret != 0)
 				goto out;
@@ -717,7 +753,7 @@ char *obj_tag_str[] = {
 	[TAG_CAP_PROX] = "TAG_CAP_PROX",
 	[TAG_FINGERSENSE] = "TAG_FINGERSENSE",
 	[TAG_PHONECALL] = "TAG_PHONECALL",
-	[TAG_GPS_4774_I2C] = "TAG_GPS_4774_I2C",
+	[TAG_CONNECTIVITY] = "TAG_CONNECTIVITY",
 	[TAG_CA] = "TAG_CA",
 	[TAG_OIS] = "TAG_OIS",
 	[TAG_TP] = "TAG_TP",
@@ -743,6 +779,9 @@ char *obj_tag_str[] = {
 	[TAG_COLOR]="TAG_COLOR",
 	[TAG_FP_UD] = "TAG_FP_UD",
 	[TAG_ACCEL_UNCALIBRATED] = "TAG_ACCEL_UNCALIBRATED",
+	[TAG_TOF]="TAG_TOF",
+	[TAG_DROP] = "TAG_DROP",
+	[TAG_EXT_HALL] = "TAG_EXT_HALL",
 	[TAG_END] = "TAG_END",
 };
 
@@ -1361,12 +1400,10 @@ static void step_counter_data_process(pkt_step_counter_data_req_t *head)
 		char motion_data[extend_effect_len + 1];	/*reserve 1 byte for motion type*/
 		motion_data[0] = MOTIONHUB_TYPE_HW_STEP_COUNTER;	/*add motion type*/
 		memcpy(motion_data + 1, &head->begin_time, extend_effect_len);	/*the offset rely on sizeof enum motion_type_t of mcu, now it is 1, we suggest motion_type_t use uint8_t, because sizeof(enum) may diffrernt between AP and mcu;*/
-		hwlog_info("write extend step counter data to motion event buffer, record_count = %d!\n",
-		     (head->record_count > EXT_PEDO_VERSION_2) ? (head->record_count -EXT_PEDO_VERSION_2) : (head->record_count));
 		inputhub_route_write(ROUTE_MOTION_PORT, motion_data, extend_effect_len + 1);	/*report extend step counter date to motion HAL*/
 	}
 
-	hwlog_info("convert to standard step counter data to sensor event buffer, step_count = %d!\n", head->step_count);
+	hwlog_info("convert to standard step counter data to sensor event buffer\n");
 	head->hd.length = standard_data_len;	/*avoid report extend data to sensor HAL, convert to standard step counter data, just report member step_count to sensor HAL*/
 }
 
@@ -1493,8 +1530,15 @@ static void update_client_info(uint8_t dmd_case)
 			dsm_sensorhub.ic_name = "SAR_ADUX1050";
 			break;
 		case 0x49:
-			dsm_sensorhub.ic_name = "TP_FTM4CD56D";
+			dsm_sensorhub.ic_name = "TP_FTM4CD56D_ALS_TMD3702";
 			break;
+		case 0x41:
+			dsm_sensorhub.ic_name = "TOF_TFM8701";
+			break;
+		case 0x29:
+			dsm_sensorhub.ic_name = "TOF_GP2AP02VT00F";
+			break;
+
 		default:
 			hwlog_err("update_client_info uncorrect dmd case %x.\n", dmd_case);
 			return;
@@ -1595,6 +1639,19 @@ static void process_ps_report(const pkt_header_t* head)
 		hwlog_info("Kernel get near event!!!!pdata=%d\n", sensor_event->xyz[0].y);
 }
 
+static void process_tof_report(const pkt_header_t* head)
+{
+	pkt_batch_data_req_t* sensor_event = NULL;
+
+	if(head == NULL){
+		return;
+	}
+	sensor_event = (pkt_batch_data_req_t*) head;
+	tof_value = sensor_event->xyz[0].x;
+	//wake_lock_timeout(&wlock, HZ);
+	//hwlog_info("Kernel get tof event!!!!data=%d, %d, %d\n", sensor_event->xyz[0].x ,sensor_event->xyz[0].y ,sensor_event->xyz[0].z);
+}
+
 static void process_phonecall_report(const pkt_header_t* head)
 {
 	pkt_batch_data_req_t* sensor_event = (pkt_batch_data_req_t*) head;
@@ -1615,6 +1672,53 @@ static void process_step_counter_report(const pkt_header_t* head)
 	report_sensor_event(head->tag, (int*)(&((pkt_step_counter_data_req_t*) head)->step_count), head->length);
 }
 
+static int process_drop_report(const pkt_drop_data_req_t* head)
+{
+	struct imonitor_eventobj* obj = NULL;
+	int ret = 0, yaw = 0, speed = 0, shell = 0, film = 0;
+
+	if (!head) {
+		hwlog_err("%s para error\n", __func__);
+		return -1;
+	}
+
+	hwlog_info("Kernel get drop type %d, initial_speed %d, height %d, angle_pitch %d, angle_roll %d, impact %d\n",
+			   head->data.type, head->data.initial_speed, head->data.height, head->data.angle_pitch, head->data.angle_roll, head->data.material);
+
+	obj = imonitor_create_eventobj(SENSOR_DROP_IMONITOR_ID);
+
+	if (!obj) {
+		hwlog_err("%s imonitor_create_eventobj failed\n", __func__);
+		return -1;
+	}
+
+	ret += imonitor_set_param(obj, E936005000_TYPE_TINYINT, (long)(head->data.type));
+	ret += imonitor_set_param(obj, E936005000_INITSPEED_INT, (long)(head->data.initial_speed));
+	ret += imonitor_set_param(obj, E936005000_HEIGHT_INT, (long)(head->data.height));
+	ret += imonitor_set_param(obj, E936005000_PITCH_INT, (long)(head->data.angle_pitch));
+	ret += imonitor_set_param(obj, E936005000_ROLL_INT, (long)(head->data.angle_roll));
+	ret += imonitor_set_param(obj, E936005000_MATERIAL_TINYINT, (long)(head->data.material));
+	ret += imonitor_set_param(obj, E936005000_YAW_INT, (long)(yaw));
+	ret += imonitor_set_param(obj, E936005000_SPEED_INT, (long)(speed));
+	ret += imonitor_set_param(obj, E936005000_SHELL_TINYINT, (long)(shell));
+	ret += imonitor_set_param(obj, E936005000_FILM_TINYINT, (long)(film));
+
+	if (ret) {
+		imonitor_destroy_eventobj(obj);
+		hwlog_err("%s imonitor_set_param failed, ret %d\n", __func__, ret);
+		return ret;
+	}
+
+	ret = imonitor_send_event(obj);
+
+	if (ret < 0) {
+		hwlog_err("%s imonitor_send_event failed, ret %d\n", __func__, ret);
+	}
+
+	imonitor_destroy_eventobj(obj);
+	return ret;
+}
+
 static int process_sensors_report(const pkt_header_t* head)
 {
 	pkt_batch_data_req_t* sensor_event = (pkt_batch_data_req_t*) head;
@@ -1630,6 +1734,10 @@ static int process_sensors_report(const pkt_header_t* head)
 				hwlog_info("%s not report ps_data for dt\n", __func__);
 				return -1;
 			}
+			break;
+		case TAG_TOF:
+			process_tof_report(head);
+			//hwlog_info("%s not report tof_data for dt\n", __func__);
 			break;
 		case TAG_CAP_PROX:
 			hwlog_debug("TAG_CAP_PROX!!!!data[0]=%d,data[1]=%d,data[2]=%d.\n",
@@ -1665,6 +1773,9 @@ static int process_sensors_report(const pkt_header_t* head)
 		case TAG_RPC:
 			hwlog_debug("TAG_RPC!data[0]=%d,data[1]=%d,data[2]=%d.\n",
 				sensor_event->xyz[0].x,sensor_event->xyz[0].y,sensor_event->xyz[0].z);
+			break;
+		case TAG_DROP:
+			process_drop_report((pkt_drop_data_req_t*)head);
 			break;
 		default:
 			break;
@@ -1769,6 +1880,10 @@ static void inputhub_process_additional_info_report(const pkt_header_t* head)
 
 	addi_info = (pkt_additional_info_req_t*)head;
         timestamp = getTimestamp();
+        if (head->tag >= TAG_SENSOR_END) {
+            hwlog_err("%s head->tag = %d\n", __func__, head->tag);
+            return;
+        }
         if (addi_info->serial == 1) {//create a begin event
             event.type = SENSORHUB_TYPE_ADDITIONAL_INFO;
             event.serial = 0;
@@ -1830,6 +1945,11 @@ static int inputhub_process_fingerprint_report(const pkt_header_t* head)
 	char* fingerprint_data = NULL;
 	const fingerprint_upload_pkt_t* fingerprint_data_upload = (const fingerprint_upload_pkt_t*)head;
 
+	if (NULL == fingerprint_data_upload) {
+		hwlog_err("%s fingerprint_data_upload is NULL\n", __func__);
+		return -EINVAL;
+	}
+
 	wake_lock_timeout(&wlock, 2 * HZ);
 
 	hwlog_info("fingerprint: %s: tag = %d, data:%d\n", __func__, fingerprint_data_upload->fhd.hd.tag, fingerprint_data_upload->data);
@@ -1876,6 +1996,7 @@ int inputhub_route_recv_mcu_data(const char *buf, unsigned int length)
 		return -EINVAL;
 	}
 
+
 	++ipc_debug_info.event_cnt[head->tag];
 	wake_up_mcu_event_waiter(head);
 
@@ -1911,6 +2032,12 @@ int inputhub_route_recv_mcu_data(const char *buf, unsigned int length)
 		pkt_fingersense_data_report_req_t* zaxis_report = (pkt_fingersense_data_report_req_t*) head;
 		update_fingersense_zaxis_data(zaxis_report->zaxis_data, zaxis_report->hd.length /sizeof(s16));
 	} else if (is_sensor_data_report(head)) {
+
+		if(head->tag == TAG_PS){
+			hwlog_info("hold lock  avoid system suspend for ps");
+			//hold wakelock 1ms avoid system suspend
+			wake_lock_timeout(&wlock, 1);
+		}
 	#ifdef CONFIG_CONTEXTHUB_SHMEM
 		mcu_notifier_queue_work(head, inputhub_process_sensor_report_notifier_handler);
 	#else

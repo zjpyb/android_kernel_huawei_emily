@@ -69,6 +69,10 @@ extern  struct ts_kit_device_data *g_focal_dev_data ;
 #define FTS_REG_DOZE_HOLDOFF_TIME	0x87
 #define FTS_DOZE_ENABLE				1
 #define FTS_DOZE_DISABLE			0
+#define FTS_FT86XX_HIGH                              0x86
+#define FTS_PALM_IRON				0x55
+#define FTS_IS_CHARGER_IN			(1)
+#define FTS_IS_CHARGER_OUT			(0)
 
 #define GESTURE_DOUBLECLICK                     0x24
 #define FTS_REG_GESTURE_EN      			(0xD0)
@@ -84,10 +88,14 @@ extern  struct ts_kit_device_data *g_focal_dev_data ;
 #define FTS_GESTRUE_POINTS_HEADER           (8)
 #define FTS_GESTRUE_POINTS                  (255)
 
+#define FTS_PACKAGE_SIZE		128
+#define FTS_PACKAGE_SIZE_SPI	((4*1024) - 4)
+
 #define FTS_READ_REG_LEN                  (1)
 #define FTS_GESTURE_EANBLE                  (1)
 #define FTS_SLEEP_TIME_100                  (100)
 #define FTS_SLEEP_TIME_220                  (220)
+#define FTS_SLEEP_TIME_265                  (265)
 #define FTS_SELF_CTRL_POWER			1
 #define FTS_VCI_LDO_POWER			1
 #define FTS_VDDIO_LDO_POWER			1
@@ -100,12 +108,26 @@ extern  struct ts_kit_device_data *g_focal_dev_data ;
 #define ABS_MT_TOUCH_MINOR_MAX			255
 #define ABS_MT_TOUCH_MAJOR_MAX			255
 #define MAX_COMMAND_LENGTH			16
+#define CHAR_MIN			-128
+#define CHAR_MAX			127
+#define FTS_FW_STATE_ERROR		0xEF
+#define FTS_FW_DOWNLOAD_MODE         0x02
+#define FOCAL_RESET_DELAY_TIME			10
+#define FOCAL_AFTER_WRITE_55_DELAY_TIME 	8
 
 enum focal_ic_type {
 	FOCAL_FT8716 = 0,
 	FOCAL_FT8607,
 	FOCAL_FT5X46,
 	FOCAL_FT8719,
+	FOCAL_FT8201,
+	FOCAL_FT8006U,
+};
+
+enum roi_data_status {
+	ROI_DATA_NOT_NEET_READ = 0,
+	ROI_DATA_READY,
+	ROI_DATA_NOT_READY,
 };
 
 #if defined (CONFIG_HUAWEI_DSM)
@@ -140,6 +162,7 @@ struct ts_event {
 	u8 finger_id[FTS_MAX_TOUCH_POINTS];
 	u8 touch_point;
 	u8 touch_point_num;
+	u8 palm_iron_num;
 	int touchs;
 };
 
@@ -186,13 +209,22 @@ struct focal_platform_data {
 	u32 aft_wxy_enable;
 	u32 roi_pkg_num_addr;
 	int need_distinguish_lcd;
+	int hide_plain_lcd_log;
 	int fw_only_depend_on_lcd;//0 : fw depend on TP and others ,1 : fw only depend on lcd.
 	char lcd_panel_info[LCD_PANEL_INFO_MAX_LEN];
 	char lcd_module_name[FULL_NAME_MAX_LEN];
+	char lcd_hide_module_name[MAX_STR_LEN];
 	int fw_is_running;/* confirm fw is running,default 0 */
 	char fw_name[MAX_STR_LEN];
 	u8 lcd_noise_threshold;
 	u8 touch_switch_game_reg;
+	u8 touch_switch_scene_reg;
+	u8 touch_switch_fm_reg;
+	u8 read_debug_reg_and_differ;
+	u32 fts_use_pinctrl;
+	u32 palm_iron_support;
+	struct mutex spilock;
+	unsigned int fw_update_duration_check;
 };
 
 /* spi interface communication*/
@@ -216,6 +248,8 @@ char *focal_strncat(char *dest, char *src, size_t dest_size);
 char *focal_strncatint(char *dest, int src, char *format, size_t dest_size);
 int focal_strtolow(char *src_str, size_t size);
 int focal_esdcheck_set_upgrade_flag(u8 boot_upgrade);
+extern int focal_8201_get_raw_data(struct ts_rawdata_info *info, struct ts_cmd_node *out_cmd);
+extern int focal_get_raw_data(struct ts_rawdata_info *info, struct ts_cmd_node *out_cmd);
 
 #endif
 

@@ -18,14 +18,18 @@
  * GNU General Public License for more details.
  *
  */
-
+#include <linux/version.h>
 #include <media/camera/jpeg/jpeg_base.h>
+
 #include <linux/mutex.h>
 #include "cam_log.h"
+
+#define MAX(a,b) ((a)>(b)?(a):(b))
 
 enum {
     JPEG_ENC = 0,
     JPEG_DEC,
+    JPEG_IPP,
     JPEG_MAX
 };
 
@@ -89,6 +93,7 @@ void jpeg_enc_clk_disable_unprepare(struct clk *clk)
     if (jpeg_enable_ref == 0) {
         jpeg_rate[JPEG_ENC] = 0;
         jpeg_rate[JPEG_DEC] = 0;
+	jpeg_rate[JPEG_IPP] = 0;
     }
 
     mutex_unlock(&jpeg_base_lock);
@@ -147,6 +152,68 @@ void jpeg_dec_clk_disable_unprepare(struct clk *clk)
     if (jpeg_enable_ref == 0) {
         jpeg_rate[JPEG_ENC] = 0;
         jpeg_rate[JPEG_DEC] = 0;
+	jpeg_rate[JPEG_IPP] = 0;
+    }
+
+    mutex_unlock(&jpeg_base_lock);
+}
+
+int jpeg_ipp_set_rate(struct clk* clk, unsigned long rate)
+{
+    if (clk == NULL)
+    {
+        cam_err("%s: ipp clk is null! (%d)", __func__, __LINE__);
+        return -EINVAL;
+    }
+
+    if (rate == 0)
+    {
+        cam_err("%s: ipp rate is zero! (%d)", __func__, __LINE__);
+        return -EINVAL;
+    }
+
+    return jpeg_set_rate(clk, rate, JPEG_IPP);
+}
+
+int jpeg_ipp_clk_prepare_enable(struct clk* clk)
+{
+    int ret;
+
+    if (clk == NULL)
+    {
+        cam_err("%s: ipp clk is null! (%d)", __func__, __LINE__);
+        return -EINVAL;
+    }
+
+    mutex_lock(&jpeg_base_lock);
+    jpeg_enable_ref++;
+    ret = clk_prepare_enable(clk);
+    mutex_unlock(&jpeg_base_lock);
+	
+    return ret;
+}
+
+void jpeg_ipp_clk_disable_unprepare(struct clk* clk)
+{
+    if (clk == NULL)
+    {
+        cam_err("%s: ipp clk is null! (%d)", __func__, __LINE__);
+        return;
+    }
+
+    mutex_lock(&jpeg_base_lock);
+    clk_disable_unprepare(clk);
+
+    if (jpeg_enable_ref > 0)
+    {
+        jpeg_enable_ref--;
+    }
+
+    if (jpeg_enable_ref == 0)
+    {
+        jpeg_rate[JPEG_ENC] = 0;
+        jpeg_rate[JPEG_DEC] = 0;
+        jpeg_rate[JPEG_IPP] = 0;
     }
 
     mutex_unlock(&jpeg_base_lock);
@@ -161,9 +228,7 @@ static int jpeg_set_rate(struct clk *clk, unsigned long rate, int index)
 
     jpeg_rate[index] = rate;
 
-    max_rate = (jpeg_rate[JPEG_ENC] > jpeg_rate[JPEG_DEC]) ?
-        jpeg_rate[JPEG_ENC] : jpeg_rate[JPEG_DEC];
-
+    max_rate =MAX(MAX(jpeg_rate[JPEG_ENC], jpeg_rate[JPEG_DEC]), jpeg_rate[JPEG_IPP]);
 
     if (max_rate > rate) {
         cam_info("%s: index(%d) just return", __func__, index);

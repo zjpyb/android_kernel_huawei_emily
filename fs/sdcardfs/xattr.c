@@ -17,17 +17,25 @@ int sdcardfs_setxattr(struct dentry *dentry, const char *name,
 	const void *value, size_t size, int flags)
 {
 	int rc;
-	struct dentry *lower_dentry = sdcardfs_get_lower_dentry(dentry);
-	struct inode *lower_inode = d_inode(lower_dentry);
+	struct path lower_path;
+	struct dentry *lower_dentry;
+	const struct cred *saved_cred = NULL;
 
-	if (unlikely(lower_inode->i_op->setxattr == NULL)) {
-		rc = -EOPNOTSUPP;
-		goto out;
+	/* save current_cred and override it */
+	saved_cred = override_fsids(SDCARDFS_SB(dentry->d_inode->i_sb),
+				    SDCARDFS_I(dentry->d_inode)->data);
+	if (!saved_cred) {
+	    return -ENOMEM;
 	}
+	sdcardfs_get_lower_path(dentry, &lower_path);
+	lower_dentry = lower_path.dentry;
+	dget(lower_dentry);
 
-	rc = vfs_setxattr(lower_dentry, name, value, size, flags);
-out:
+	rc = vfs_setxattr(NULL, lower_dentry, name, value, size, flags);
+
 	dput(lower_dentry);
+	sdcardfs_put_lower_path(dentry, &lower_path);
+	revert_fsids(saved_cred);
 	return rc;
 }
 
@@ -35,52 +43,102 @@ ssize_t sdcardfs_getxattr(struct dentry *dentry,
 	const char *name, void *value, size_t size)
 {
 	ssize_t rc;
-	struct dentry *lower_dentry = sdcardfs_get_lower_dentry(dentry);
-	struct inode *lower_inode = d_inode(lower_dentry);
+	struct path lower_path;
+	struct dentry *lower_dentry;
+	const struct cred *saved_cred = NULL;
 
-	if (unlikely(lower_inode->i_op->getxattr == NULL)) {
-		rc = -EOPNOTSUPP;
-		goto out;
+	/* save current_cred and override it */
+	saved_cred = override_fsids(SDCARDFS_SB(dentry->d_inode->i_sb),
+				    SDCARDFS_I(dentry->d_inode)->data);
+	if (!saved_cred) {
+	    return -ENOMEM;
 	}
+	sdcardfs_get_lower_path(dentry, &lower_path);
+	lower_dentry = lower_path.dentry;
+	dget(lower_dentry);
 
-	rc = lower_inode->i_op->getxattr(lower_dentry, name, value, size);
-out:
+	rc = vfs_getxattr(NULL, lower_dentry, name, value, size);
+
 	dput(lower_dentry);
+	sdcardfs_put_lower_path(dentry, &lower_path);
+	revert_fsids(saved_cred);
 	return rc;
 }
 
 ssize_t sdcardfs_listxattr(struct dentry *dentry, char *list, size_t size)
 {
 	ssize_t rc;
-	struct dentry *lower_dentry = sdcardfs_get_lower_dentry(dentry);
-	struct inode *lower_inode = d_inode(lower_dentry);
+	struct path lower_path;
+	struct dentry *lower_dentry;
+	const struct cred *saved_cred = NULL;
 
-	if (unlikely(lower_inode->i_op->listxattr == NULL)) {
-		rc = -EOPNOTSUPP;
-		goto out;
+	/* save current_cred and override it */
+	saved_cred = override_fsids(SDCARDFS_SB(dentry->d_inode->i_sb),
+				    SDCARDFS_I(dentry->d_inode)->data);
+	if (!saved_cred) {
+	    return -ENOMEM;
 	}
+	sdcardfs_get_lower_path(dentry, &lower_path);
+	lower_dentry = lower_path.dentry;
+	dget(lower_dentry);
 
-	rc = lower_inode->i_op->listxattr(lower_dentry, list, size);
-out:
+	rc = vfs_listxattr(lower_dentry, list, size);
+
 	dput(lower_dentry);
+	sdcardfs_put_lower_path(dentry, &lower_path);
+	revert_fsids(saved_cred);
 	return rc;
 }
 
 int sdcardfs_removexattr(struct dentry *dentry, const char *name)
 {
 	ssize_t rc;
-	struct dentry *lower_dentry = sdcardfs_get_lower_dentry(dentry);
-	struct inode *lower_inode = d_inode(lower_dentry);
+	struct path lower_path;
+	struct dentry *lower_dentry;
+	const struct cred *saved_cred = NULL;
 
-	if (unlikely(lower_inode->i_op->removexattr == NULL)) {
-		rc = -EOPNOTSUPP;
-		goto out;
+	/* save current_cred and override it */
+	saved_cred = override_fsids(SDCARDFS_SB(dentry->d_inode->i_sb),
+				    SDCARDFS_I(dentry->d_inode)->data);
+	if (!saved_cred) {
+	    return -ENOMEM;
 	}
+	sdcardfs_get_lower_path(dentry, &lower_path);
+	lower_dentry = lower_path.dentry;
+	dget(lower_dentry);
 
-	inode_lock(lower_inode);
-	rc = lower_inode->i_op->removexattr(lower_dentry, name);
-	inode_unlock(lower_inode);
-out:
+	rc = vfs_removexattr(NULL, lower_dentry, name);
+
 	dput(lower_dentry);
+	sdcardfs_put_lower_path(dentry, &lower_path);
+	revert_fsids(saved_cred);
 	return rc;
 }
+
+static int sdcardfs_xattr_get(const struct xattr_handler *handler,
+			 struct dentry *dentry, struct inode *inode,
+			 const char *name, void *value, size_t size)
+{
+	return (int)sdcardfs_getxattr(dentry, name, value, size);
+}
+
+static int sdcardfs_xattr_set(const struct xattr_handler *handler,
+			  struct dentry *dentry, struct inode *inode,
+			  const char *name, const void *value, size_t size,
+			  int flags)
+{
+	if (!value)
+		return sdcardfs_removexattr(dentry, name);
+
+	return sdcardfs_setxattr(dentry, name, value, size, flags);
+}
+static const struct xattr_handler sdcardfs_xattr_handler = {
+	.prefix = "",
+	.get    = sdcardfs_xattr_get,
+	.set    = sdcardfs_xattr_set,
+};
+
+const struct xattr_handler *sdcardfs_xattr_handlers[] = {
+	&sdcardfs_xattr_handler,
+	NULL
+};

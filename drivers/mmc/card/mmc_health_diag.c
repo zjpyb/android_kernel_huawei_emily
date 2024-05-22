@@ -78,6 +78,10 @@ void mmc_clear_report_info(void)
    g_sd_write_times = 0;
 }
 
+void mmc_report_info_set(void)
+{
+   g_sd_write_times++;
+}
 
 /*===========================================================================
  * FUNCTION: mmc_get_err_infor_from_err_table
@@ -248,7 +252,7 @@ unsigned int mmc_calculate_ioworkload_and_rwspeed(unsigned long long time,struct
    if(t_period >= (unsigned long long )PRT_TIME_PERIOD)
    {
        t_usage = mmcqd_t_usage_wr + mmcqd_t_usage_rd;// total real rw time
-       printk("mmcqd/1 rw time:%lld ms,write time:%lld ms,read time:%lld ms\n",t_usage,mmcqd_t_usage_wr,mmcqd_t_usage_rd);
+       printk("mmcqd/1 rw time:%lld ns,write time:%lld ns,read time:%lld ns\n",t_usage,mmcqd_t_usage_wr,mmcqd_t_usage_rd);
        /* worload < 0.01*/
        if(t_period > t_usage*100)// io workload < 1%
        {
@@ -257,8 +261,8 @@ unsigned int mmc_calculate_ioworkload_and_rwspeed(unsigned long long time,struct
        else
        {
           do_div(t_period, 100);// divided by 100,just to get %
-          t_percent =((unsigned int)t_usage)/((unsigned int)t_period);//   real rw time/stat time
-          t_percent_wr = ((unsigned int)mmcqd_t_usage_wr)/((unsigned int)t_period);//    real write time/stat time-->to get write workload
+          t_percent = (unsigned int)(t_usage/t_period);//   real rw time/stat time
+          t_percent_wr = (unsigned int)(mmcqd_t_usage_wr/t_period);//    real write time/stat time-->to get write workload
           printk("mmcqd/1 rw_workload = %d%%, w_workload = %d%%, duty %lld, period %lld00, req_cnt=%d\n",t_percent, t_percent_wr, t_usage, t_period,mmcqd_rq_count);
        }
 
@@ -273,29 +277,34 @@ unsigned int mmc_calculate_ioworkload_and_rwspeed(unsigned long long time,struct
               perf_meter = (mmcqd_rq_size_wr)/((unsigned int)mmcqd_t_usage_wr);
               if((t_percent_wr >= SD_IO_BUSY) &&(perf_meter < LOW_SPEED_WARTING_VALUE))
               {
-                 if(wr_speed_abnor_times == 1)
+                 wr_speed_abnor_times++;
+                 if(wr_speed_abnor_times == MAX_WRITE_SPEED_ABNOR_TIMES)
                  {
                      wr_speed_abnor_times = 0;
                      mmc_diag_sd_health_status(disk,MMC_BLK_WR_SPEED_ERR);
                      printk(KERN_ERR "mmcqd/1:sd_spec:%d,the card wr_speed is lower than spec\n",mmc_get_sd_speed());
 
 #ifdef CONFIG_HUAWEI_SDCARD_DSM
-					dsm_sdcard_report(DSM_SDCARD_STATUS_BLK_WR_SPEED_ERR,
-										DSM_SDCARD_BLK_WR_SPEED_ERR);
+                     dsm_sdcard_report(DSM_SDCARD_STATUS_BLK_WR_SPEED_ERR,
+                         DSM_SDCARD_BLK_WR_SPEED_ERR);
 #endif
 
-                 }
-                 else
-                 {
-                     wr_speed_abnor_times ++;
                  }
               }
               else
               {
                  wr_speed_abnor_times = 0;
               }
-              printk("mmcqd/1 Write Throughput=%d KB/s, size: %d bytes, time:%lld ms\n",perf_meter,mmcqd_rq_size_wr,mmcqd_t_usage_wr);
+              printk("mmcqd/1 Write Throughput=%d kB/s, size: %d bytes, time:%lld ms\n",perf_meter,mmcqd_rq_size_wr,mmcqd_t_usage_wr);
           }
+          else
+          {
+              wr_speed_abnor_times = 0;
+          }
+       }
+       else
+       {
+           wr_speed_abnor_times = 0;
        }
 
        /* get read speed*/
@@ -388,7 +397,6 @@ int mmc_trigger_ro_check(struct request *rqc,struct gendisk *disk,unsigned int r
    }
    if(rqc && (rq_data_dir(rqc) == WRITE) && (g_sd_write_times == 0))
    {
-      mmc_diag_sd_health_status(disk,MMC_RO_CHECK_ERR);
       g_sd_write_times++;
    }
    return 0;

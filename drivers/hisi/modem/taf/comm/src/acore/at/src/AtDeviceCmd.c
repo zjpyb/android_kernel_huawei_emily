@@ -51,18 +51,14 @@
 *****************************************************************************/
 #include "AtParse.h"
 #include "ATCmdProc.h"
-/* Added by f62575 for SMALL IMAGE, 2012-1-3, begin */
 #include "AtDeviceCmd.h"
 #include "AtCheckFunc.h"
 #include "mdrv.h"
-/* Added by f62575 for SMALL IMAGE, 2012-1-3, end   */
 #include "AtCmdMsgProc.h"
 #include "AtInputProc.h"
 #include "AtTestParaCmd.h"
 
-/* ADD by c64416 for V9R1/V7R1 AT, 2013/09/18 begin */
 #include "at_lte_common.h"
-/* ADD by c64416 for V9R1/V7R1 AT, 2013/09/18 end */
 #include "nv_stru_lps.h"
 
 #include "nv_stru_cas.h"
@@ -160,13 +156,11 @@ AT_PAR_CMD_ELEMENT_STRU g_astAtDeviceCmdTbl[] = {
     AT_CME_INCORRECT_PARAMETERS,    CMD_TBL_PIN_IS_LOCKED,
     (VOS_UINT8*)"^SFM",     (VOS_UINT8*)"(0,1)"},
 
-    /* Added by f62575 for SMALL IMAGE, 2012-1-3, begin */
     {AT_CMD_TMODE,
     At_SetTModePara,     AT_SET_PARA_TIME,   At_QryTModePara,       AT_QRY_PARA_TIME ,  At_TestTmodePara , AT_TEST_PARA_TIME,
     VOS_NULL_PTR,        AT_NOT_SET_TIME,
     AT_CME_INCORRECT_PARAMETERS,    CMD_TBL_PIN_IS_LOCKED,
     (VOS_UINT8*)"^TMODE",    (VOS_UINT8*)"(0,1,2,3,4,11,12,13,14,15,16,17,18,19)"},
-    /* Added by f62575 for SMALL IMAGE, 2012-1-3, end   */
 
     {AT_CMD_FCHAN,
     At_SetFChanPara,     AT_SET_PARA_TIME,   At_QryFChanPara,       AT_QRY_PARA_TIME,   VOS_NULL_PTR ,    AT_NOT_SET_TIME,
@@ -295,7 +289,6 @@ AT_PAR_CMD_ELEMENT_STRU g_astAtDeviceCmdTbl[] = {
     AT_CME_INCORRECT_PARAMETERS,    CMD_TBL_PIN_IS_LOCKED,
     (VOS_UINT8*)"^SECUBOOTFEATURE",  (VOS_UINT8*)"(0-3)"},
 
-    /* Modified by f62575 for B050 Project, 2012-2-3, begin   */
     {AT_CMD_SECUBOOT,
     At_SetSecuBootPara,  AT_SET_PARA_TIME,    At_QrySecuBootPara,    AT_QRY_PARA_TIME,  VOS_NULL_PTR ,    AT_NOT_SET_TIME,
     VOS_NULL_PTR,        AT_NOT_SET_TIME,
@@ -313,8 +306,6 @@ AT_PAR_CMD_ELEMENT_STRU g_astAtDeviceCmdTbl[] = {
     VOS_NULL_PTR,        AT_NOT_SET_TIME,
     AT_CME_INCORRECT_PARAMETERS,    CMD_TBL_PIN_IS_LOCKED,
     (VOS_UINT8*)"^GETKEYINFO", (VOS_UINT8*)"(1-4)"},
-
-    /* Modified by f62575 for B050 Project, 2012-2-3, end */
 
     {AT_CMD_TMMI,
     AT_SetTmmiPara,      AT_NOT_SET_TIME,    AT_QryTmmiPara,        AT_NOT_SET_TIME,   At_CmdTestProcERROR, AT_NOT_SET_TIME,
@@ -437,13 +428,11 @@ AT_PAR_CMD_ELEMENT_STRU g_astAtDeviceCmdTbl[] = {
     AT_CME_INCORRECT_PARAMETERS, CMD_TBL_PIN_IS_LOCKED,
     (VOS_UINT8*)"^WIRPCKG",  (VOS_UINT8*)"(0)"},
 
-/* Add by z60575 for multi_ssid, 2012-9-5 begin */
     {AT_CMD_SSID,
     AT_SetWiFiSsidPara,   AT_NOT_SET_TIME, AT_QryWiFiSsidPara,   AT_NOT_SET_TIME, AT_TestSsidPara, AT_NOT_SET_TIME,
     VOS_NULL_PTR,        AT_NOT_SET_TIME,
     AT_CME_INCORRECT_PARAMETERS, CMD_TBL_PIN_IS_LOCKED,
     (VOS_UINT8*)"^SSID",  (VOS_UINT8*)"(0-3),(@SSID)"},
-/* Add by z60575 for multi_ssid, 2012-9-5 end */
 
     {AT_CMD_WIKEY,
     AT_SetWiFiKeyPara,    AT_NOT_SET_TIME, AT_QryWiFiKeyPara,    AT_NOT_SET_TIME, AT_TestWikeyPara, AT_NOT_SET_TIME,
@@ -482,7 +471,6 @@ AT_PAR_CMD_ELEMENT_STRU g_astAtDeviceCmdTbl[] = {
     VOS_NULL_PTR,        AT_NOT_SET_TIME,
     AT_ERROR, CMD_TBL_PIN_IS_LOCKED,
     (VOS_UINT8*)"^CURC", (VOS_UINT8*)"(0-2)"},
-    /* Added by 傅映君/f62575 for AT Project, SIM卡保护标志确认, 2011/11/15, end */
 
 
     {AT_CMD_SN,
@@ -492,7 +480,6 @@ AT_PAR_CMD_ELEMENT_STRU g_astAtDeviceCmdTbl[] = {
     (TAF_UINT8*)"^SN",       VOS_NULL_PTR},
 
 
-    /* Added by f62575 for SMALL IMAGE, 2012-1-3, begin */
     {AT_CMD_TBAT,
     AT_SetTbatPara,     AT_SET_PARA_TIME,   AT_QryTbatPara,  AT_QRY_PARA_TIME,  VOS_NULL_PTR, AT_SET_PARA_TIME,
     VOS_NULL_PTR,        AT_NOT_SET_TIME,
@@ -505,13 +492,11 @@ AT_PAR_CMD_ELEMENT_STRU g_astAtDeviceCmdTbl[] = {
     AT_CME_INCORRECT_PARAMETERS, CMD_TBL_PIN_IS_LOCKED,
     (TAF_UINT8*)"^PSTANDBY",    (VOS_UINT8 *)"(0-65535),(0-65535)"},
 
-/* Add by z60575 for multi_ssid, 2012-9-5 begin */
     {AT_CMD_WIWEP,
     AT_SetWiwepPara,        AT_SET_PARA_TIME,   AT_QryWiwepPara,  AT_QRY_PARA_TIME,  AT_TestWiwepPara, AT_SET_PARA_TIME,
     VOS_NULL_PTR,        AT_NOT_SET_TIME,
     AT_CME_INCORRECT_PARAMETERS, CMD_TBL_PIN_IS_LOCKED,
     (TAF_UINT8*)"^WIWEP",    (VOS_UINT8 *)"(0-3),(@wifikey),(0-3)"},
-/* Add by z60575 for multi_ssid, 2012-9-5 end */
 
     {AT_CMD_CMDLEN,
     AT_SetCmdlenPara,        AT_SET_PARA_TIME,   AT_QryCmdlenPara,  AT_QRY_PARA_TIME,  At_CmdTestProcOK, AT_SET_PARA_TIME,
@@ -524,7 +509,6 @@ AT_PAR_CMD_ELEMENT_STRU g_astAtDeviceCmdTbl[] = {
     VOS_NULL_PTR,        AT_NOT_SET_TIME,
     AT_CME_INCORRECT_PARAMETERS, CMD_TBL_PIN_IS_LOCKED,
     (TAF_UINT8*)"^TSELRF",    (VOS_UINT8 *)"(0-255),(0-255)"},
-    /* Added by f62575 for SMALL IMAGE, 2012-1-3, end   */
 
     {AT_CMD_HUK,
     AT_SetHukPara,              AT_SET_PARA_TIME,   VOS_NULL_PTR,   AT_NOT_SET_TIME,  AT_TestHsicCmdPara,  AT_NOT_SET_TIME,
@@ -1139,39 +1123,31 @@ VOS_UINT32 At_RegisterDeviceCmdTable(VOS_VOID)
     return AT_RegisterCmdTable(g_astAtDeviceCmdTbl, sizeof(g_astAtDeviceCmdTbl)/sizeof(g_astAtDeviceCmdTbl[0]));
 }
 
-/* Added by f62575 for AT Project, 2011-10-28, begin */
 
 
 VOS_UINT32 AT_TestSsidPara(VOS_UINT8 ucIndex)
 {
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
     if (BSP_MODULE_UNSUPPORT == mdrv_misc_support_check(BSP_MODULE_TYPE_WIFI))
     {
         return AT_ERROR;
     }
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
 
-    /* Modified by z60575 for multi_ssid, 2012-9-5 begin */
     gstAtSendData.usBufLen = (TAF_UINT16)At_sprintf(AT_CMD_MAX_LEN,
                                                     (TAF_CHAR *)pgucAtSndCodeAddr,
                                                     (TAF_CHAR *)pgucAtSndCodeAddr,
                                                     "%s:%d",
                                                     g_stParseContext[ucIndex].pstCmdElement->pszCmdName,
                                                     AT_WIFI_MAX_SSID_NUM);
-    /* Modified by z60575 for multi_ssid, 2012-9-5 end */
     return AT_OK;
 }
 
 
 VOS_UINT32 AT_TestWikeyPara(VOS_UINT8 ucIndex)
 {
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
     if (BSP_MODULE_UNSUPPORT == mdrv_misc_support_check(BSP_MODULE_TYPE_WIFI) )
     {
         return AT_ERROR;
     }
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
-
     gstAtSendData.usBufLen = (TAF_UINT16)At_sprintf(AT_CMD_MAX_LEN,
                                                     (TAF_CHAR *)pgucAtSndCodeAddr,
                                                     (TAF_CHAR *)pgucAtSndCodeAddr,
@@ -1181,9 +1157,7 @@ VOS_UINT32 AT_TestWikeyPara(VOS_UINT8 ucIndex)
     return AT_OK;
 }
 
-/* Added by f62575 for AT Project, 2011-10-28, end */
 
-/* Added by f62575 for SMALL IMAGE, 2012-1-3, begin   */
 
 VOS_UINT32 AT_SetTbatPara(VOS_UINT8 ucIndex)
 {
@@ -1217,12 +1191,10 @@ VOS_UINT32 AT_QryTbatPara(VOS_UINT8 ucIndex)
         return AT_DEVICE_OTHER_ERROR;
     }
 
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
     if (BSP_MODULE_UNSUPPORT == mdrv_misc_support_check(BSP_MODULE_TYPE_CHARGE) )
     {
         return AT_ERROR;
     }
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
 
     if (TAF_SUCCESS == AT_FillAndSndAppReqMsg(gastAtClientTab[ucIndex].usClientId,
                                                gastAtClientTab[ucIndex].opId,
@@ -1245,11 +1217,9 @@ VOS_UINT32 AT_SetPstandbyPara(VOS_UINT8 ucIndex)
 {
     DRV_AGENT_PSTANDBY_REQ_STRU         stPstandbyInfo;
 
-    /* Added by c64416 for ^PSTANDBY low power proc, 2013-9-13, Begin */
 
     TAF_MMA_PHONE_MODE_PARA_STRU        stPhoneModePara;
 
-    /* Added by c64416 for ^PSTANDBY low power proc, 2013-9-13, End */
 
     /* ^PSTANDBY设置命令有且仅有2个参数: 进入待机状态的时间长度和单板进入待机状态的切换时间 */
     if(AT_CMD_OPT_SET_PARA_CMD != g_stATParseCmd.ucCmdOptType)
@@ -1282,7 +1252,6 @@ VOS_UINT32 AT_SetPstandbyPara(VOS_UINT8 ucIndex)
     3、关中断
     4、调用底软接口进入深睡
     */
-    /* Modify by f62575 for V7代码同步, 2012-04-07, Begin   */
     stPstandbyInfo.ulStandbyTime = gastAtParaList[0].ulParaValue;
     stPstandbyInfo.ulSwitchTime   = gastAtParaList[1].ulParaValue;
 
@@ -1299,7 +1268,6 @@ VOS_UINT32 AT_SetPstandbyPara(VOS_UINT8 ucIndex)
         AT_ERR_LOG("AT_SetPstandbyPara: AT_FillAndSndAppReqMsg fail.");
     }
 
-    /* Added by c64416 for ^PSTANDBY low power proc, 2013-9-13, Begin */
     /* V7R2采用关机进入低功耗流程流程 */
 
     stPhoneModePara.PhMode = TAF_PH_MODE_MINI;
@@ -1311,12 +1279,10 @@ VOS_UINT32 AT_SetPstandbyPara(VOS_UINT8 ucIndex)
 
         return AT_WAIT_ASYNC_RETURN;    /* 返回命令处理挂起状态 */
     }
-    /* Added by c64416 for ^PSTANDBY low power proc, 2013-9-13, End */
 
     return AT_SUCCESS;
 }
 
-/* Modify by z60575 for multi_ssid, 2012-9-5 begin */
 
 VOS_UINT32 AT_WriteWiWep(
     VOS_UINT32                          ulIndex,
@@ -1381,12 +1347,10 @@ VOS_UINT32 AT_SetWiwepPara(VOS_UINT8 ucIndex)
     VOS_UINT32                          ulRet;
     TAF_AT_MULTI_WIFI_SEC_STRU         *pstWifiSecInfo;
 
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
     if (BSP_MODULE_UNSUPPORT == mdrv_misc_support_check(BSP_MODULE_TYPE_WIFI))
     {
         return AT_ERROR;
     }
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
 
     /* 输入参数检查: 有且仅有< index >和< content >两个参数 */
     if(AT_CMD_OPT_SET_PARA_CMD != g_stATParseCmd.ucCmdOptType)
@@ -1461,12 +1425,10 @@ VOS_UINT32 AT_QryWiwepPara(VOS_UINT8 ucIndex)
     VOS_UINT8                           aucWepKeyLen4[AT_WIFI_MAX_SSID_NUM];
     VOS_UINT8                           ucWepKeyNum;
 
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
     if (BSP_MODULE_UNSUPPORT == mdrv_misc_support_check(BSP_MODULE_TYPE_WIFI))
     {
         return AT_ERROR;
     }
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
 
     /* 为读取WIFI KEY申请内存，读NV项en_NV_Item_WIFI_KEY获取WIFI KEY信息 */
     pstWifiSecInfo = (TAF_AT_MULTI_WIFI_SEC_STRU *)PS_MEM_ALLOC(WUEPS_PID_AT,
@@ -1634,18 +1596,14 @@ VOS_UINT32 AT_QryWiwepPara(VOS_UINT8 ucIndex)
 
     return AT_OK;
 }
-/* Modify by z60575 for multi_ssid, 2012-9-5 end */
 
 
 VOS_UINT32 AT_TestWiwepPara(VOS_UINT8 ucIndex)
 {
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
     if (BSP_MODULE_UNSUPPORT == mdrv_misc_support_check(BSP_MODULE_TYPE_WIFI) )
     {
         return AT_ERROR;
     }
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
-
     gstAtSendData.usBufLen = (VOS_UINT16)At_sprintf(AT_CMD_MAX_LEN,
                                                    (VOS_CHAR *)pgucAtSndCodeAddr,
                                                    (VOS_CHAR *)pgucAtSndCodeAddr,
@@ -1661,12 +1619,10 @@ VOS_UINT32 AT_TestWifiPaRangePara (VOS_UINT8 ucIndex)
 {
     AT_WIFI_MODE_ENUM_UINT8             ucWifiMode;
 
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
     if (BSP_MODULE_UNSUPPORT == mdrv_misc_support_check(BSP_MODULE_TYPE_WIFI) )
     {
         return AT_ERROR;
     }
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
 
     /* 初始化 */
     ucWifiMode                          = (VOS_UINT8)WIFI_GET_PA_MODE();
@@ -1788,7 +1744,6 @@ VOS_UINT32 AT_SetTseLrfPara(VOS_UINT8 ucIndex)
 
     if (AT_TSELRF_PATH_WIFI == gastAtParaList[0].ulParaValue)
     {
-        /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
         if ( BSP_MODULE_SUPPORT == mdrv_misc_support_check(BSP_MODULE_TYPE_WIFI) )
         {
             /*WIFI未Enable直接返回失败*/
@@ -1805,7 +1760,6 @@ VOS_UINT32 AT_SetTseLrfPara(VOS_UINT8 ucIndex)
         {
             return AT_ERROR;
         }
-        /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, end */
     }
 
     if (AT_TMODE_FTM != g_stAtDevCmdCtrl.ucCurrentTMode)
@@ -1833,13 +1787,11 @@ VOS_UINT32 AT_SetTseLrfPara(VOS_UINT8 ucIndex)
         return AT_WAIT_ASYNC_RETURN;
     }
 
-    /* Modify by f62575 for V7代码同步, 2012-04-07, Begin   */
     if ((AT_TSELRF_PATH_GSM != gastAtParaList[0].ulParaValue)
      && (AT_TSELRF_PATH_WCDMA_PRI != gastAtParaList[0].ulParaValue))
     {
         return AT_ERROR;
     }
-    /* Modify by f62575 for V7代码同步, 2012-04-07, End   */
 
     if (AT_TSELRF_PATH_WCDMA_PRI == gastAtParaList[0].ulParaValue)
     {
@@ -1983,8 +1935,6 @@ VOS_UINT32 AT_UpdateMacPara(
 
 VOS_UINT32 AT_SetTmodeAutoPowerOff(VOS_UINT8 ucIndex)
 {
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
-
     TAF_MMA_PHONE_MODE_PARA_STRU        stPhModeSet;
 
     VOS_UINT8                             *pucSystemAppConfig;
@@ -2013,12 +1963,9 @@ VOS_UINT32 AT_SetTmodeAutoPowerOff(VOS_UINT8 ucIndex)
         }
 
     }
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, end */
-
     return AT_ERROR;
 
 }
-/* Added by f62575 for SMALL IMAGE, 2012-1-3, end   */
 
 
 
@@ -2039,7 +1986,6 @@ VOS_UINT32 AT_SDParamErrCode(VOS_VOID)
 }
 
 
-/* Added by f62575 for B050 Project, 2012-2-3, Begin   */
 
 VOS_VOID AT_GetSpecificPort(
     VOS_UINT8                           ucPortType,
@@ -2331,7 +2277,6 @@ VOS_UINT32 AT_CheckSetPortRight(
     return AT_OK;
 }
 
-/* Added by f62575 for B050 Project, 2012-2-3, end   */
 
 
 VOS_UINT32 AT_SetHsspt(VOS_UINT8 ucIndex)
@@ -2407,9 +2352,7 @@ VOS_UINT32 AT_QryHsspt(VOS_UINT8 ucIndex)
 VOS_UINT32 AT_TestHsicCmdPara(VOS_UINT8 ucIndex)
 {
     /* 通道检查 */
-    /* Modified by L60609 for MUX，2012-08-13,  Begin */
     if (VOS_FALSE == AT_IsApPort(ucIndex))
-    /* Modified by L60609 for MUX，2012-08-13,  End */
     {
         return AT_ERROR;
     }

@@ -38,7 +38,7 @@ extern "C" {
   5 函数实现
 *****************************************************************************/
 
-oal_uint32  frw_event_sched_deactivate_queue_no_lock(
+oal_uint32  frw_event_sched_deactivate_queue_no_lock_etc(
                 frw_event_sched_queue_stru         *pst_sched_queue,
                 frw_event_queue_stru               *pst_event_queue)
 {
@@ -56,8 +56,8 @@ oal_uint32  frw_event_sched_deactivate_queue_no_lock(
     /* mayuan debug */
     if ((oal_uint)&pst_event_queue->st_list == (oal_uint)&pst_sched_queue->st_head)
     {
-        OAM_ERROR_LOG0(0, OAM_SF_FRW, "frw_event_sched_deactivate_queue, delete header itself.");
-        OAL_BUG_ON(1);
+        OAM_ERROR_LOG0(0, OAM_SF_FRW, "frw_event_sched_deactivate_queue_etc, delete header itself.");
+        return OAL_FAIL;
     }
 
     /* 将事件队列从调度链表上删除 */
@@ -71,7 +71,7 @@ oal_uint32  frw_event_sched_deactivate_queue_no_lock(
 }
 
 
-oal_uint32  frw_event_sched_activate_queue_no_lock(
+oal_uint32  frw_event_sched_activate_queue_no_lock_etc(
                 frw_event_sched_queue_stru   *pst_sched_queue,
                 frw_event_queue_stru         *pst_event_queue)
 {
@@ -99,7 +99,7 @@ oal_uint32  frw_event_sched_activate_queue_no_lock(
 
 
 
-oal_void* frw_event_sched_pick_next_event_queue_wrr(frw_event_sched_queue_stru *pst_sched_queue)
+oal_void* frw_event_sched_pick_next_event_queue_wrr_etc(frw_event_sched_queue_stru *pst_sched_queue)
 {
     oal_dlist_head_stru       *pst_list;
     frw_event_queue_stru   *pst_event_queue = OAL_PTR_NULL;
@@ -134,12 +134,12 @@ oal_void* frw_event_sched_pick_next_event_queue_wrr(frw_event_sched_queue_stru *
         pst_sched_queue->ul_total_weight_cnt--;
 
         /* 从事件队列中取出一个事件 */
-        p_event = frw_event_queue_dequeue(pst_event_queue);
+        p_event = frw_event_queue_dequeue_etc(pst_event_queue);
 
         /* 如果事件队列变空，需要将其从调度队列上删除，并将事件队列状态置为不活跃(不可被调度) */
       //  if (0 == pst_event_queue->st_queue.uc_element_cnt)
         {
-            frw_event_sched_deactivate_queue_no_lock(pst_sched_queue, pst_event_queue);
+            frw_event_sched_deactivate_queue_no_lock_etc(pst_sched_queue, pst_event_queue);
         }
 
         break;
@@ -156,11 +156,11 @@ oal_void* frw_event_sched_pick_next_event_queue_wrr(frw_event_sched_queue_stru *
 }
 
 
-oal_uint32  frw_event_sched_init(frw_event_sched_queue_stru *pst_sched_queue)
+oal_uint32  frw_event_sched_init_etc(frw_event_sched_queue_stru *pst_sched_queue)
 {
     if (OAL_UNLIKELY(OAL_PTR_NULL == pst_sched_queue))
     {
-        OAM_ERROR_LOG0(0, OAM_SF_FRW, "{frw_event_sched_init:: pointer is NULL!}");
+        OAM_ERROR_LOG0(0, OAM_SF_FRW, "{frw_event_sched_init_etc:: pointer is NULL!}");
         return OAL_ERR_CODE_PTR_NULL;
     }
 
@@ -192,7 +192,7 @@ OAL_STATIC oal_void frw_event_queue_set(
 }
 
 
-oal_uint32  frw_event_queue_init(
+oal_uint32  frw_event_queue_init_etc(
                 frw_event_queue_stru               *pst_event_queue,
                 oal_uint8                           uc_weight,
                 frw_sched_policy_enum_uint8         en_policy,
@@ -204,7 +204,7 @@ oal_uint32  frw_event_queue_init(
 
     if (OAL_UNLIKELY(OAL_PTR_NULL == pst_event_queue))
     {
-        OAM_ERROR_LOG0(0, OAM_SF_FRW, "{frw_event_queue_init:: pointer is NULL!}");
+        OAM_ERROR_LOG0(0, OAM_SF_FRW, "{frw_event_queue_init_etc:: pointer is NULL!}");
         return OAL_ERR_CODE_PTR_NULL;
     }
 
@@ -214,7 +214,7 @@ oal_uint32  frw_event_queue_init(
     ul_ret = oal_queue_init(&pst_event_queue->st_queue, uc_max_events);
     if (OAL_UNLIKELY(OAL_SUCC != ul_ret))
     {
-        OAM_WARNING_LOG1(0, OAM_SF_FRW, "{frw_event_queue_init:: OAL_QUEUE_INIT return != OAL_SUCC! %d}", ul_ret);
+        OAM_WARNING_LOG1(0, OAM_SF_FRW, "{frw_event_queue_init_etc:: OAL_QUEUE_INIT return != OAL_SUCC! %d}", ul_ret);
         frw_event_queue_set(pst_event_queue, 0, FRW_SCHED_POLICY_BUTT, FRW_EVENT_QUEUE_STATE_INACTIVE);
 
         return ul_ret;
@@ -226,11 +226,11 @@ oal_uint32  frw_event_queue_init(
 }
 
 
-oal_void  frw_event_queue_destroy(frw_event_queue_stru *pst_event_queue)
+oal_void  frw_event_queue_destroy_etc(frw_event_queue_stru *pst_event_queue)
 {
     if (OAL_UNLIKELY(OAL_PTR_NULL == pst_event_queue))
     {
-        OAM_ERROR_LOG0(0, OAM_SF_FRW, "{frw_event_queue_destroy:: pointer is NULL!}");
+        OAM_ERROR_LOG0(0, OAM_SF_FRW, "{frw_event_queue_destroy_etc:: pointer is NULL!}");
         return;
     }
 
@@ -240,7 +240,7 @@ oal_void  frw_event_queue_destroy(frw_event_queue_stru *pst_event_queue)
 }
 
 
-oal_uint32  frw_event_sched_deactivate_queue(
+oal_uint32  frw_event_sched_deactivate_queue_etc(
                 frw_event_sched_queue_stru         *pst_sched_queue,
                 frw_event_queue_stru               *pst_event_queue)
 {
@@ -251,7 +251,7 @@ oal_uint32  frw_event_sched_deactivate_queue(
     /* 关中断，加锁 */
     oal_spin_lock_irq_save(&pst_sched_queue->st_lock, &ul_flag);
 
-    ul_ret = frw_event_sched_deactivate_queue_no_lock(pst_sched_queue, pst_event_queue);
+    ul_ret = frw_event_sched_deactivate_queue_no_lock_etc(pst_sched_queue, pst_event_queue);
 
     /* 解锁，开中断 */
     oal_spin_unlock_irq_restore(&pst_sched_queue->st_lock, &ul_flag);
@@ -260,7 +260,7 @@ oal_uint32  frw_event_sched_deactivate_queue(
 }
 
 
-oal_uint32  frw_event_sched_activate_queue(
+oal_uint32  frw_event_sched_activate_queue_etc(
                 frw_event_sched_queue_stru   *pst_sched_queue,
                 frw_event_queue_stru         *pst_event_queue)
 {
@@ -269,7 +269,7 @@ oal_uint32  frw_event_sched_activate_queue(
 
     oal_spin_lock_irq_save(&pst_sched_queue->st_lock, &ul_flag);
 
-    ul_ret = frw_event_sched_activate_queue_no_lock(pst_sched_queue, pst_event_queue);
+    ul_ret = frw_event_sched_activate_queue_no_lock_etc(pst_sched_queue, pst_event_queue);
 
     oal_spin_unlock_irq_restore(&pst_sched_queue->st_lock, &ul_flag);
 
@@ -277,7 +277,7 @@ oal_uint32  frw_event_sched_activate_queue(
 }
 
 
-oal_void  frw_event_sched_pause_queue(
+oal_void  frw_event_sched_pause_queue_etc(
                 frw_event_sched_queue_stru   *pst_sched_queue,
                 frw_event_queue_stru         *pst_event_queue)
 {
@@ -298,7 +298,7 @@ oal_void  frw_event_sched_pause_queue(
 }
 
 
-oal_void  frw_event_sched_resume_queue(
+oal_void  frw_event_sched_resume_queue_etc(
                 frw_event_sched_queue_stru   *pst_sched_queue,
                 frw_event_queue_stru         *pst_event_queue)
 {

@@ -6,7 +6,7 @@
 #define NM_SAMPLE_UID_BUF_MAX		1024
 #define VALVE_CLOSED			0U
 #define VALVE_OPEN			1U
-#define VALVE_TS_SHIFT			1
+#define VALVE_TS_SHIFT			1U
 
 static inline int nm_turn_on_valve(struct timespec *__tv)
 {

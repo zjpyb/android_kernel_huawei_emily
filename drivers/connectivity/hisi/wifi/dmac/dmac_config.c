@@ -111,6 +111,7 @@ extern "C" {
 
 #ifdef _PRE_WLAN_FEATURE_BTCOEX
 #include "dmac_btcoex.h"
+#include "hal_coex_reg.h"
 #endif
 
 #if defined(_PRE_PRODUCT_ID_HI110X_DEV)
@@ -4833,34 +4834,71 @@ OAL_STATIC oal_uint32  dmac_config_get_ant(mac_vap_stru *pst_mac_vap, oal_uint8 
 #endif
 #ifdef _PRE_PLAT_FEATURE_CUSTOMIZE
 
-OAL_STATIC oal_bool_enum_uint8 is_fcc_country(oal_int8* country_code)
+OAL_STATIC oal_bool_enum_uint8 is_county_code_in_array(oal_int8 *puc_country_code, OAL_CONST oal_int8 **ac_country_array)
 {
-    oal_int8   *ac_fcc_country[] = {"AD", "AR", "AS", "AU",
-                                    "BB", "BM", "BS",
-                                    "CA", "CO",
-                                    "DO",
-                                    "GD", "GT", "GU",
-                                    "ID",
-                                    "JM",
-                                    "MN", "MO", "MP", "MT", "MX",
-                                    "NI", "NZ",
-                                    "OM",
-                                    "PA", "PH", "PR", "PS", "PY", "RW",
-                                    "TW", "TZ",
-                                    "US", "UZ",
-                                    "VI",
-                                    OAL_PTR_NULL};
-    oal_int8  **pp_country = ac_fcc_country;
+    OAL_CONST oal_int8  **pp_country = ac_country_array;
 
     while (*pp_country != OAL_PTR_NULL)
     {
-        if (oal_memcmp(country_code, *(pp_country++), WLAN_COUNTRY_STR_LEN) == 0)
+        if (oal_memcmp(puc_country_code, *(pp_country++), WLAN_COUNTRY_STR_LEN) == 0)
         {
             return OAL_TRUE;
         }
     }
     return OAL_FALSE;
 }
+
+
+OAL_STATIC hal_regdomain_enum dmac_config_get_regdomain_from_country_code(oal_int8 * pc_country_code)
+{
+    OAL_STATIC OAL_CONST oal_int8   *ac_fcc_country[] = {"AD", "AR", "AS", "AU",
+                                    "BB", "BM", "BS",
+                                    "CA", "CO",
+                                    "DO",
+                                    "GD", "GT", "GU",
+                                    "ID",
+                                    "JM",
+                                    "MN", "MO", "MP", "MX",
+                                    "NI", "NZ",
+                                    "OM",
+                                    "PA", "PH", "PR", "PS", "PY",
+                                    "RW",
+                                    "TW", "TZ",
+                                    "US", "UZ",
+                                    "VI",
+                                    OAL_PTR_NULL};
+
+    OAL_STATIC OAL_CONST oal_int8   *ac_ce_country[] = {"AL", "AT",
+                                    "BA", "BE", "BG",
+                                    "CH", "CY", "CZ",
+                                    "DE", "DK",
+                                    "EE", "ES",
+                                    "FI", "FR",
+                                    "GB", "GR",
+                                    "HR", "HU",
+                                    "IE", "IS", "IT",
+                                    "LT", "LU", "LV",
+                                    "ME", "MK", "MT",
+                                    "NL", "NO",
+                                    "PL", "PT",
+                                    "RO",
+                                    "SE", "SI", "SK",
+                                    "TR",
+                                    OAL_PTR_NULL};
+
+    if (is_county_code_in_array(pc_country_code, ac_fcc_country) == OAL_TRUE)
+    {
+        return HAL_REGDOMAIN_FCC;
+    }
+
+    if (is_county_code_in_array(pc_country_code, ac_ce_country) == OAL_TRUE)
+    {
+        return HAL_REGDOMAIN_ETSI;
+    }
+
+    return HAL_REGDOMAIN_COMMON;
+}
+
 #endif
 
 OAL_STATIC oal_uint32  dmac_config_set_country(mac_vap_stru *pst_mac_vap, oal_uint8 uc_len, oal_uint8 *puc_param)
@@ -4903,7 +4941,9 @@ OAL_STATIC oal_uint32  dmac_config_set_country(mac_vap_stru *pst_mac_vap, oal_ui
     }
     pst_hal_device = pst_mac_device->pst_device_stru;
     /* 根据是否FCC认证要求国家，更新标志位 */
-    pst_hal_device->uc_fcc_country = is_fcc_country(pst_mac_regdom->ac_country) ? OAL_TRUE : OAL_FALSE;
+    pst_hal_device->en_current_reg_domain = dmac_config_get_regdomain_from_country_code(pst_mac_regdom->ac_country);
+    OAM_WARNING_LOG3(0, OAM_SF_DFS, "{dmac_config_set_country::set country %c%c, reg_domain: %d}",
+                pst_mac_regdom->ac_country[0], pst_mac_regdom->ac_country[1], pst_hal_device->en_current_reg_domain);
 #endif
 
     return OAL_SUCC;
@@ -6806,7 +6846,9 @@ OAL_STATIC oal_uint32  dmac_add_p2p_cl_vap(mac_vap_stru *pst_mac_vap, oal_uint8 
 #endif
     /* 初始化业务VAP，区分AP、STA和WDS模式 */
     dmac_alg_create_vap_notify(pst_dmac_vap);
-
+#ifdef _PRE_WLAN_FEATURE_BTCOEX
+    dmac_btcoex_ps_stop_check_and_notify();
+#endif
 #ifdef _PRE_WLAN_FEATURE_STA_PM
     /* 初始化P2P CLIENT 节能状态机 */
     dmac_pm_sta_attach(pst_dmac_vap);
@@ -6890,8 +6932,9 @@ OAL_STATIC oal_uint32  dmac_del_p2p_cl_vap(mac_vap_stru *pst_mac_vap, oal_uint8 
 
     /* 删除与算法相关的接口 */
     dmac_alg_delete_vap_notify(pst_dmac_vap);
-
-
+#ifdef _PRE_WLAN_FEATURE_BTCOEX
+    dmac_btcoex_ps_stop_check_and_notify();
+#endif
     if (WLAN_VAP_MODE_CONFIG == pst_mac_vap->en_vap_mode)
     {
         OAM_WARNING_LOG0(pst_mac_vap->uc_vap_id, OAM_SF_CFG, "{dmac_del_p2p_cl_vap::config vap should not be here.}");
@@ -7085,7 +7128,9 @@ OAL_STATIC oal_uint32  dmac_config_add_vap(mac_vap_stru *pst_mac_vap, oal_uint8 
         mac_vap_set_aid(pst_mac_vap, 0);
     }
 #endif
-
+#ifdef _PRE_WLAN_FEATURE_BTCOEX
+    dmac_btcoex_ps_stop_check_and_notify();
+#endif
     /* 初始化linkloss检测工具 */
     dmac_vap_linkloss_init(pst_dmac_vap);
 
@@ -7327,7 +7372,11 @@ OAL_STATIC oal_uint32 dmac_config_offload_start_vap(mac_vap_stru *pst_mac_vap, o
 
 #ifdef _PRE_WLAN_FEATURE_P2P
         /* P2P0 和P2P-P2P0 共VAP 结构，P2P CL UP时候，不需要设置vap 状态 */
-        if (WLAN_P2P_CL_MODE != pst_start_vap_param->en_p2p_mode)
+        if (WLAN_P2P_CL_MODE == pst_start_vap_param->en_p2p_mode)
+        {
+            pst_mac_vap->st_channel.uc_chan_number = 0;
+        }
+        else
 #endif
         {
         #ifdef _PRE_WLAN_FEATURE_ROAM
@@ -7495,6 +7544,7 @@ OAL_STATIC oal_uint32  dmac_config_del_vap(mac_vap_stru *pst_mac_vap, oal_uint8 
     }
 #endif //_PRE_WLAN_FEATURE_11K
 #ifdef _PRE_WLAN_FEATURE_BTCOEX
+    dmac_btcoex_ps_stop_check_and_notify();
     /* 共存恢复优先级 */
     dmac_btcoex_wlan_priority_set(pst_mac_vap, 0, 0);
     hal_set_btcoex_occupied_period(0);
@@ -9164,6 +9214,7 @@ oal_uint32  dmac_config_roam_enable(mac_vap_stru *pst_mac_vap, oal_uint8 uc_len,
         OAM_WARNING_LOG0(pst_mac_vap->uc_vap_id, OAM_SF_ROAM, "{dmac_config_roam_enable:: [MAC_VAP_STATE_UP]->[MAC_VAP_STATE_ROAMING]}");
         pst_mac_vap->en_vap_state = MAC_VAP_STATE_ROAMING;
 #ifdef _PRE_WLAN_FEATURE_BTCOEX
+        dmac_btcoex_ps_pause_check_and_notify(pst_mac_device->pst_device_stru);
         dmac_btcoex_wlan_priority_set(pst_mac_vap, 1, BTCOEX_PRIO_TIMEOUT_100MS);
 #endif //_PRE_WLAN_FEATURE_BTCOEX
 #ifdef _PRE_WLAN_FEATURE_SMARTANT
@@ -9516,6 +9567,31 @@ oal_uint32 dmac_config_set_all_log_level(mac_vap_stru *pst_mac_vap, oal_uint8 uc
     }
     return OAL_SUCC;
 }
+#ifdef _PRE_WLAN_FEATURE_BTCOEX
+
+oal_uint32 dmac_config_set_btcoex_ps_switch(mac_vap_stru *pst_mac_vap, oal_uint8 uc_len, oal_uint8 *puc_param)
+{
+    if (OAL_PTR_NULL == pst_mac_vap || OAL_PTR_NULL == puc_param)
+    {
+        OAM_ERROR_LOG2(0, OAM_SF_CFG, "{dmac_config_set_all_log_level:: pointer is null,pst_mac_vap[0x%x], puc_param[0x%x] .}", pst_mac_vap, puc_param);
+        return OAL_ERR_CODE_PTR_NULL;
+    }
+    g_st_customize.ul_btcoex_ps_switch = *(oal_uint32 *)puc_param;
+    if (1 == g_st_customize.ul_btcoex_ps_switch)
+    {
+        hal_set_btcoex_soc_gpreg1(OAL_TRUE, BTCOEX_WIFI_STATUS_REG1_PS_MODE_MASK, BTCOEX_WIFI_STATUS_REG1_PS_MODE_OFFSET);
+    }
+    else if (0 == g_st_customize.ul_btcoex_ps_switch)
+    {
+        hal_set_btcoex_soc_gpreg1(OAL_FALSE, BTCOEX_WIFI_STATUS_REG1_PS_MODE_MASK, BTCOEX_WIFI_STATUS_REG1_PS_MODE_OFFSET);
+    }
+    else
+    {
+        OAM_ERROR_LOG1(0,OAM_SF_CFG,"dmac_config_set_btcoex_ps_mode:btcoex_ps_mode[%d] is error",g_st_customize.ul_btcoex_ps_switch);
+    }
+    return OAL_SUCC;
+}
+#endif
 
 oal_uint32 dmac_config_set_d2h_hcc_assemble_cnt(mac_vap_stru *pst_mac_vap, oal_uint8 uc_len, oal_uint8 *puc_param)
 {
@@ -9595,6 +9671,8 @@ oal_uint32 dmac_config_set_cus_rf(mac_vap_stru *pst_mac_vap, oal_uint8 uc_len, o
     oal_memcopy(&g_st_customize.st_rf, puc_param, OAL_SIZEOF(g_st_customize.st_rf));
     ul_offset += OAL_SIZEOF(g_st_customize.st_rf);
     oal_memcopy(&g_st_customize.st_ratio_temp_pwr_comp, puc_param + ul_offset, OAL_SIZEOF(g_st_customize.st_ratio_temp_pwr_comp));
+    ul_offset += OAL_SIZEOF(g_st_customize.st_ratio_temp_pwr_comp);
+    oal_memcopy(&g_st_customize.st_ce_5g_hi_band_params, puc_param + ul_offset, OAL_SIZEOF(g_st_customize.st_ce_5g_hi_band_params));
 
     /* refresh cca ed threshold after phy init */
     hal_set_ed_high_th(pst_mac_dev->pst_device_stru,
@@ -9605,6 +9683,12 @@ oal_uint32 dmac_config_set_cus_rf(mac_vap_stru *pst_mac_vap, oal_uint8 uc_len, o
                     g_st_customize.st_rf.c_delta_cca_ed_high_40th_2g,
                     g_st_customize.st_rf.c_delta_cca_ed_high_20th_5g,
                     g_st_customize.st_rf.c_delta_cca_ed_high_40th_5g);
+
+    OAM_WARNING_LOG4(pst_mac_vap->uc_vap_id, OAM_SF_CFG, "dmac_config_set_cus_rf::[CE HI BAND] tx power[%d], dbbscale [0x%X, 0x%X, 0x%X].",
+                    g_st_customize.st_ce_5g_hi_band_params.uc_max_txpower,
+                    g_st_customize.st_ce_5g_hi_band_params.uc_dbb_scale_11a_ht20_vht20,
+                    g_st_customize.st_ce_5g_hi_band_params.uc_dbb_scale_ht40_vht40,
+                    g_st_customize.st_ce_5g_hi_band_params.uc_dbb_scale_vht80);
 
     /* 计算 2g power0 ref */
     for (uc_band_idx = 0; uc_band_idx < HAL_DEVICE_2G_BAND_NUM_FOR_LOSS; ++uc_band_idx)
@@ -9792,9 +9876,19 @@ oal_void dmac_config_update_rate_pow_table(oal_void)
     /*  390 Mb */   g_auc_rate_pow_table_margin[41][1] = past_src[44].uc_max_txpower;
 }
 
-oal_void dmac_config_update_scaling_reg(oal_void)
+oal_void dmac_config_update_scaling_reg(oal_uint8 uc_device_id)
 {
-    hal_cfg_customize_nvram_params_stru* past_src = g_st_customize.ast_nvram_params;
+    mac_device_stru         *pst_mac_device;
+
+    pst_mac_device = mac_res_get_dev(uc_device_id);
+    if ((OAL_PTR_NULL == pst_mac_device) || (OAL_PTR_NULL == pst_mac_device->pst_device_stru))
+    {
+        OAM_ERROR_LOG1(0, OAM_SF_CFG, "{dmac_config_update_scaling_reg::get mac_device is null. device_id[%d]}", uc_device_id);
+        return;
+    }
+
+    hal_update_scaling_reg(pst_mac_device->pst_device_stru, (oal_void *)&g_st_customize.ast_nvram_params);
+#if 0
 #if (_PRE_PRODUCT_ID == _PRE_PRODUCT_ID_HI1102_DEV)
     /* 11b DBB scaling */
     HI1102_REG_WRITE32(HI1102_PHY_SCALING_VALUE_11B_REG,
@@ -9909,6 +10003,7 @@ oal_void dmac_config_update_scaling_reg(oal_void)
     HI1103_REG_WRITE32(HI1103_PHY_U3_SCALING_VALUE_11N40M_REG,
                         OAL_JOIN_WORD32(past_src[38].uc_dbb_scale, past_src[20].uc_dbb_scale, 0x00, 0x00));
 #endif
+#endif
 }
 
 
@@ -9978,13 +10073,15 @@ oal_uint32 dmac_config_set_cus_nvram_params(mac_vap_stru *pst_mac_vap, oal_uint8
     /* update rate_pow_table */
     dmac_config_update_rate_pow_table();
     /* update phy scaling reg */
-    dmac_config_update_scaling_reg();
+    dmac_config_update_scaling_reg(pst_mac_vap->uc_device_id);
 
     return OAL_SUCC;
 }
 
 oal_uint32 dmac_config_customize_info(mac_vap_stru *pst_mac_vap, oal_uint8 uc_len, oal_uint8 *puc_param)
 {
+    oal_uint8 uc_loop;
+
     if (OAL_PTR_NULL == pst_mac_vap || OAL_PTR_NULL == puc_param)
     {
         OAM_ERROR_LOG2(0, OAM_SF_CFG, "{dmac_config_customize_info:: pointer is null,pst_mac_vap[0x%x], puc_param[0x%x] .}", pst_mac_vap, puc_param);
@@ -9992,6 +10089,27 @@ oal_uint32 dmac_config_customize_info(mac_vap_stru *pst_mac_vap, oal_uint8 uc_le
     }
     /* 调试使用:打印必要参数信息 */
     OAM_WARNING_LOG2(0, OAM_SF_CFG, "[CUSTOMIZE::[dpd:%d][11ac2g_cap_bit:%d].]", g_st_customize.uc_dpd_enable, pst_mac_vap->st_cap_flag.bit_11ac2g);
+
+    /* 输出nvram 信息 */
+    for (uc_loop = 0; uc_loop < NUM_OF_NV_MAX_TXPOWER; uc_loop++)
+    {
+        OAM_WARNING_LOG3(0, OAM_SF_CFG, "[CUSTOMIZE] nvram idx %02d ---- tx_power 0x%02X ---- dbbscale 0x%02X",
+                        uc_loop, g_st_customize.ast_nvram_params[uc_loop].uc_max_txpower, g_st_customize.ast_nvram_params[uc_loop].uc_dbb_scale);
+    }
+
+    /* 输出FCC 边带定制化信息 */
+    for (uc_loop = 0; uc_loop < NUM_OF_BAND_EDGE_LIMIT; uc_loop++)
+    {
+        OAM_WARNING_LOG3(0, OAM_SF_CFG, "[CUSTOMIZE] fcc_edge_band idx %02d ---- tx_power 0x%03d ---- dbbscale 0x%02X",
+                        uc_loop, g_st_customize.ast_band_edge_limit[uc_loop].uc_max_txpower, g_st_customize.ast_band_edge_limit[uc_loop].uc_dbb_scale);
+    }
+
+    /* 输出CE 高band 定制化信息 */
+    OAM_WARNING_LOG4(0, OAM_SF_CFG, "[CUSTOMIZE] ce_high_band tx_power %d, dbbscale 20MHz 0x%X, 40MHz 0x%X, 80MHz 0x%X",
+                    g_st_customize.st_ce_5g_hi_band_params.uc_max_txpower,
+                    g_st_customize.st_ce_5g_hi_band_params.uc_dbb_scale_11a_ht20_vht20,
+                    g_st_customize.st_ce_5g_hi_band_params.uc_dbb_scale_ht40_vht40,
+                    g_st_customize.st_ce_5g_hi_band_params.uc_dbb_scale_vht80);
 
     return OAL_SUCC;
 }
@@ -10220,6 +10338,9 @@ OAL_STATIC OAL_CONST dmac_config_syn_stru g_ast_dmac_config_syn[] =
     {WLAN_CFGID_SET_DEVICE_FREQ,   {0, 0},         dmac_config_set_device_freq},
 #endif
 #ifdef _PRE_PLAT_FEATURE_CUSTOMIZE
+#ifdef _PRE_WLAN_FEATURE_BTCOEX
+    {WLAN_CFGID_SET_BTCOEX_PS_SWITCH,     {0, 0},       dmac_config_set_btcoex_ps_switch},
+#endif
     {WLAN_CFGID_SET_LINKLOSS_THRESHOLD,     {0, 0},       dmac_config_set_linkloss_threshold},
     {WLAN_CFGID_SET_ALL_LOG_LEVEL,          {0, 0},       dmac_config_set_all_log_level},
     {WLAN_CFGID_SET_D2H_HCC_ASSEMBLE_CNT,   {0, 0},       dmac_config_set_d2h_hcc_assemble_cnt},

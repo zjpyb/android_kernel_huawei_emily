@@ -40,7 +40,7 @@ struct gpu_store {
 
 struct gpu_store store;
 static spinlock_t gpu_lock;
-static bool enable_update_gpu_info;
+static atomic_t enable_update_gpu_info;
 
 /*
  * lookup or create the gpu information
@@ -73,7 +73,7 @@ int dubai_update_gpu_info(unsigned long freq, unsigned long busy_time,
 	struct gpu_info *info = NULL;
 	unsigned long temp = 0;
 
-	if (!enable_update_gpu_info || 0 == freq)
+	if (!atomic_read(&enable_update_gpu_info) || 0 == freq)
 		return -1;
 
 	spin_lock_bh(&gpu_lock);
@@ -97,7 +97,7 @@ int dubai_update_gpu_info(unsigned long freq, unsigned long busy_time,
 
 void dubai_set_gpu_enable(bool enable)
 {
-	enable_update_gpu_info = enable;
+	atomic_set(&enable_update_gpu_info, enable ? 1 : 0);
 	DUBAI_LOGI("gpu enable: %d", enable);
 }
 
@@ -144,7 +144,7 @@ void dubai_gpu_init(void)
 {
 	memset(&store, 0, sizeof(struct gpu_store));/* unsafe_function_ignore: memset */
 	spin_lock_init(&gpu_lock);
-	enable_update_gpu_info = false;
+	atomic_set(&enable_update_gpu_info, 0);
 }
 
 void dubai_gpu_exit(void)

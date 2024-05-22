@@ -30,6 +30,8 @@ enum {
 	PERI_VOLT_3,
 };
 
+#define SC_SCBAKDATA24_ADDR		0x46C
+#define AVS_BITMASK_FLAG		28
 #define PERIVOLT_POLL_HWLOCK 			19
 #define HWLOCK_TIMEOUT				1000
 #define PMCTRL_PERI_CTRL4_VDD_MASK		0x30000000
@@ -80,14 +82,32 @@ static int peri_fast_avs(struct peri_volt_poll *pvp, unsigned int target_volt)
 static int peri_avs_notify_m3(struct peri_volt_poll *pvp, unsigned int target_volt)
 {
 	int ret = 0;
+	u32 val = 0;
 	u32 avs_ipc_cmd[LPM3_CMD_LEN] = {LPM3_CMD_CLOCK_EN, FAST_AVS_ID};
+	/*send ipc for avs ip do not care scene*/
+	if(pvp->perivolt_avs_ip){
+		ret = hisi_clkmbox_send_msg(avs_ipc_cmd);
+		if (ret < 0) {
+			pr_err("[%s]fail to notify LPM3 for avs ip !\n",
+				__func__);
+		}
+		return ret;
+	}
 
-	/*send ipc when volt up and down*/
-	ret = hisi_clkmbox_send_msg(avs_ipc_cmd);
+	/*volt up: send ipc immediately
+	 *volt down:volt will be change 5ms later by ddr dvfs
+	 */
+	if (target_volt > PERI_VOLT_0) {
+		val = (readl(pvp->addr_0) & PMCTRL_PERI_CTRL4_VDD_MASK);
+		val = val >> PMCTRL_PERI_CTRL4_VDD_SHIFT;
+		if (val < target_volt) {
+			ret = hisi_clkmbox_send_msg(avs_ipc_cmd);
 			if (ret < 0) {
-				pr_err("[%s]fail to notify LPM3 !\n",
+				pr_err("[%s]fail to notify LPM3 for non-avs  ip!\n",
 					__func__);
 			}
+		}
+	}
 	return ret;
 }
 #endif
@@ -146,6 +166,12 @@ static int hisi_peri_set_volt(struct peri_volt_poll *pvp, unsigned int volt)
 #endif
 
 #ifdef CONFIG_HISI_PERI_AVS_IPC_NOTIFY
+	if(pvp->perivolt_avs_ip){
+		/*clear avs status*/
+		val = readl(pvp->sysreg_base + SC_SCBAKDATA24_ADDR);
+		val = val & (~BIT(AVS_BITMASK_FLAG));
+		writel(val, pvp->sysreg_base + SC_SCBAKDATA24_ADDR);
+	}
 	/*avs send ipc to notify lpm3*/
 	ret = peri_avs_notify_m3(pvp, volt);
 #endif
@@ -248,7 +274,9 @@ static void peri_volt_poll_init(struct device_node *np)
 	u32 pdata[2] = {0};
 	u32 ctrl4_reg = 0;
 	u32 perivolt_id = 0;
+	u32 perivolt_avs_ip = 0;
 	int ret = 0;
+	struct device_node *dev_np;
 
 	reg_base = perivolt_get_base(np);
 	if (!reg_base) {
@@ -274,6 +302,8 @@ static void peri_volt_poll_init(struct device_node *np)
 		pr_err("[%s] %s node doesn't have perivolt-poll-id property\n",
 			 __func__, np->name);
 	}
+	if (of_property_read_u32(np, "perivolt-avs-ip", &perivolt_avs_ip))
+		perivolt_avs_ip = 0;
 	pvolt = kzalloc(sizeof(struct peri_volt_poll), GFP_KERNEL);
 	if (!pvolt) {
 		pr_err("[%s] fail to alloc pvolt!\n", __func__);
@@ -281,8 +311,11 @@ static void peri_volt_poll_init(struct device_node *np)
 	}
 	pvolt->name = kstrdup(poll_name, GFP_KERNEL);
 	pvolt->dev_id = perivolt_id;
+	pvolt->perivolt_avs_ip = perivolt_avs_ip;
 	pvolt->addr = reg_base + pdata[0];
 	pvolt->addr_0 = reg_base + ctrl4_reg;
+	dev_np = of_find_compatible_node(NULL, NULL, "hisilicon,sysctrl");
+	pvolt->sysreg_base = of_iomap(dev_np, 0);
 	pvolt->bitsmask = pdata[1];
 	pvolt->bitsshift = ffs(pdata[1]) - 1;
 	pvolt->ops = &hisi_peri_volt_ops;

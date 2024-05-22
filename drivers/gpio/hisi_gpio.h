@@ -30,6 +30,7 @@ struct pl061_gpio {
 #ifdef CONFIG_PM
 	struct pl061_context_save_regs csave_regs;
 #endif
+	struct amba_device *adev;
 };
 
 int pl061_check_security_status(struct pl061_gpio *chip);

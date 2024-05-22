@@ -46,16 +46,7 @@
  *
  */
 
-/************************************************************************
-  Copyright    : 1999-2008, Huawei Tech. Co., Ltd.
-  File name    : OMRingBuffer.c
-  Author       : H59254
-  Version      : V00R001
-  Date         : 2008-06
-  Description  : 该C文件实现了一个ring buffer的使用
-  Function List:
-  History      :
-************************************************************************/
+
 
 #include "omringbuffer.h"
 #include "omprivate.h"

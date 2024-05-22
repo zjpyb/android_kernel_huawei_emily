@@ -18,6 +18,12 @@
     board_id = <6010>;
 };
 
+&rootparam {
+    hisi,boardid = <6 0 1 0>;
+    hisi,boardname = "kirin970_udp_cs";
+};
+
+
 	&chosen{};
 
         &psci {
@@ -60,7 +66,11 @@
 	};
 
 	&pd_dpm {
-		vconn_en = <&gpio25 2 0>;
+		status = "ok";
+	};
+
+	&boost_5v {
+		gpio_5v_boost = <&gpio25 2 0>;
 		status = "ok";
 	};
 
@@ -1213,6 +1223,7 @@
 
 &nfc_exist {
 	nfc_exist_flag = "1";
+	hisee_exist_flag = "1";
 	status = "ok";
 };
 

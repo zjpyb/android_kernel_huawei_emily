@@ -26,7 +26,11 @@ typedef struct _hisi_conn_softwdt_
 
 OAL_STATIC hisi_conn_softwdt g_hisi_softwdt;
 
+#ifdef PLATFORM_SSI_FULL_LOG
 OAL_STATIC oal_int32 disable_wdt_flag = 0;
+#else
+OAL_STATIC oal_int32 disable_wdt_flag = 1;
+#endif
 module_param(disable_wdt_flag, int, S_IRUGO | S_IWUSR);
 
 #if 0
@@ -76,7 +80,6 @@ OAL_STATIC oal_void oal_softwdt_timeout(oal_uint data)
 #endif
         DECLARE_DFT_TRACE_KEY_INFO("oal_softwdt_timeout", OAL_DFT_TRACE_EXCEP);
         OAL_WARN_ON(1);
-        //OAL_BUG_ON(1);
         g_hisi_softwdt.wdt_timeout_count = 0;
     }
 
@@ -91,14 +94,14 @@ OAL_STATIC oal_void oal_softwdt_feed_task(oal_work_stru *pst_work)
 	return;
 }
 
-oal_void oal_softwdt_abort_kick(oal_void)
+oal_void oal_softwdt_abort_kick_etc(oal_void)
 {
     oal_cancel_delayed_work_sync(&g_hisi_softwdt.wdt_delayed_work);
-    OAL_IO_PRINT("oal_softwdt_abort_kick done\n");
+    OAL_IO_PRINT("oal_softwdt_abort_kick_etc done\n");
     return;
 }
 
-oal_int32 oal_softwdt_init(oal_void)
+oal_int32 oal_softwdt_init_etc(oal_void)
 {
     if(disable_wdt_flag)
         return OAL_SUCC;
@@ -118,9 +121,9 @@ oal_int32 oal_softwdt_init(oal_void)
     oal_queue_delayed_work_on(0, g_hisi_softwdt.wdt_wq, &g_hisi_softwdt.wdt_delayed_work, 0);
     return OAL_SUCC;
 }
-oal_module_symbol(oal_softwdt_init);
+oal_module_symbol(oal_softwdt_init_etc);
 
-oal_void oal_softwdt_exit(oal_void)
+oal_void oal_softwdt_exit_etc(oal_void)
 {
     if(disable_wdt_flag)
         return;
@@ -129,7 +132,7 @@ oal_void oal_softwdt_exit(oal_void)
     oal_cancel_delayed_work_sync(&g_hisi_softwdt.wdt_delayed_work);
     oal_destroy_workqueue(g_hisi_softwdt.wdt_wq);
 }
-oal_module_symbol(oal_softwdt_exit);
+oal_module_symbol(oal_softwdt_exit_etc);
 #endif
 
 #ifdef __cplusplus

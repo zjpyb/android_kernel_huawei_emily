@@ -68,7 +68,6 @@
 /* HiLink模式: 正常模式或网关模式 */
 AT_HILINK_MODE_ENUM_U8                  g_enHiLinkMode       = AT_HILINK_NORMAL_MODE;
 
-/* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
 /* 协议栈发起PDP激活的类型 */
 TAF_PDP_TYPE_ENUM_UINT8                g_enAtNdisActPdpType;
 
@@ -108,7 +107,6 @@ VOS_UINT32                              g_ulIpAddr = 0;
 
 AT_FCID_MAP_STRU                        g_stFcIdMaptoFcPri[FC_ID_BUTT];
 
-/* Added by l60609 for DSDA Phase II, 2012-12-18, Begin */
 AT_PS_RMNET_ID_TAB                      g_astPsRmNetIdTab[] =
 {
     {MODEM_ID_0, FC_ID_NIC_1, AT_PS_USER_CID_1},
@@ -120,9 +118,6 @@ AT_PS_RMNET_ID_TAB                      g_astPsRmNetIdTab[] =
     {MODEM_ID_2, FC_ID_NIC_6, AT_PS_USER_CID_1},
     {MODEM_ID_2, FC_ID_NIC_7, AT_PS_USER_CID_2}
 };
-/* Added by l60609 for DSDA Phase II, 2012-12-18, End */
-
-/* Added by l60609 for V9R1 IPv6&TAF/SM Project, 2013-4-24, begin */
 /* ^DCONN上报函数表 */
 AT_PS_REPORT_CONN_RESULT_STRU           g_astAtRptConnectedResultTab[] =
 {
@@ -201,7 +196,6 @@ AT_CHDATA_RNIC_RMNET_ID_STRU            g_astAtChdataRnicRmNetIdTab[] =
     {AT_CH_DATA_CHANNEL_ID_7, RNIC_RMNET_ID_6, {0, 0, 0}}
 };
 
-/* Added by l60609 for V9R1 IPv6&TAF/SM Project, 2013-4-24, end */
 /*****************************************************************************
    3 函数、变量声明
 *****************************************************************************/
@@ -260,23 +254,7 @@ VOS_UINT32 AT_GetLanAddr32(
 }
 
 
-/******************************************************************************
- Function:       AT_DHCPGetIPMask
- Description:    根据IP地址计算子网掩码
- Calls:
- Data Accessed:
- Data Updated:
- Input:         TAF_UINT32 ulIpAddrHL   IP地址   主机序
- Output:
- Return:        TAF_UINT32 ulNetMask    子网掩码 主机序
- Others:
-                记住IP地址的bit[0]
-                依次循环读取IP地址的每个bit，直到某bit[x]不等于bit[0]
-                则掩码主机位为 0--x位
-  1.Date        : 2009-08-03
-    Author      : S62952
-    Modification: Created function
-******************************************************************************/
+
 TAF_UINT32 AT_DHCPGetIPMask(
     TAF_UINT32                          ulIpAddrHL
 )
@@ -301,22 +279,7 @@ TAF_UINT32 AT_DHCPGetIPMask(
 
     return ulMask;
 }
-/******************************************************************************
- Function:       AT_DHCPGetGateWay
- Description:    根据IP地址，子网掩码计算网关
- Calls:
- Data Accessed:
- Data Updated:
- Input:         VOS_UINT32 ulIpAddrHL   IP地址   主机序
-                VOS_UINT32 ulMaskHL     子网掩码 主机序
- Output:
- Return:        VOS_UINT32 ulGateWay    网关 主机序
- Others:
-                根据IP+掩码，计算网关，和IP在同一网段即?
-   1.Date        : 2009-08-03
-    Author      : S62952
-    Modification: Created function
-******************************************************************************/
+
 VOS_UINT32 AT_DHCPGetGateWay(
     VOS_UINT32                          ulIpAddrHL,
     VOS_UINT32                          ulMaskHL
@@ -1929,21 +1892,7 @@ VOS_UINT32 AT_BuildUdpHdr(
     return VOS_OK;
 }
 
-/******************************************************************************
- Function:       AT_DHCPCheckCfg
- Description:    检查DHCP配置参数是否合法，IP地址不为全0或全1即可
- Calls:
- Data Accessed:
- Data Updated:
- Input:         AT_AP_DHCP_SETUP_PARAM_ST *ptrDHCPCfg DHCP配置参数
- Output:
- Return:        VOS_OK      正确
-                VOS_ERR     错误
- Others:        IP地址为非全0，非全1
-     1.Date        : 2009-08-03-
-    Author      : S62952
-    Modification: Created function
-******************************************************************************/
+
 VOS_UINT32 AT_DHCPCheckCfg(
     AT_DHCP_SETUP_PARAM_ST             *ptrDHCPCfg
 )
@@ -2110,12 +2059,10 @@ VOS_VOID AT_CtrlConnIndProc(
     }
     else
     {
-        /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
         if (AT_NDIS_USER == ucUserType)
         {
             AT_NdisAddrProc(&stConfig, pstEvent);
         }
-        /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, end */
 
         if (AT_APP_USER == ucUserType)
         {
@@ -2402,7 +2349,6 @@ VOS_VOID AT_NotifyFcWhenPdpModify(
 /***************************************************************************
                以下代码实现NDIS相关功能
 *****************************************************************************/
-/* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
 
 
 VOS_UINT8* AT_PutNetworkAddr32(
@@ -2528,7 +2474,6 @@ VOS_UINT32 AT_SendNdisRelReq(
     TAF_PS_CALL_PDP_DEACTIVATE_CNF_STRU        *pstEvent
 )
 {
-    /* Modified by l60609 for PS Project, 2011-12-21, Begin */
     AT_NDIS_PDNINFO_REL_REQ_STRU        stNdisRelReq;
     MODEM_ID_ENUM_UINT16                enModemId;
     VOS_UINT32                          ulRet;
@@ -2544,12 +2489,9 @@ VOS_UINT32 AT_SendNdisRelReq(
     }
 
     /* 构造消息 */
-    /* Modified by l60609 for DSDA Phase II, 2012-12-27, Begin */
     stNdisRelReq.enModemId = enModemId;
-    /* Modified by l60609 for DSDA Phase II, 2012-12-27, End */
     stNdisRelReq.ucRabId   = pstEvent->ucRabId;
 
-    /* Modified by l60609 for PS Project, 2011-12-21, End */
 
 
     /* 发送消息 */
@@ -3496,7 +3438,6 @@ VOS_VOID AT_NdisSetState(
     {
         g_stAtNdisDhcpPara.enIpv4State   = enState;
     }
-/* Modified by s62952 for AT Project，2011-10-17,  Begin*/
     else if (TAF_PDP_IPV6 == ucPdpType)
     {
         g_stAtNdisDhcpPara.enIpv6State   = enState;
@@ -3508,8 +3449,6 @@ VOS_VOID AT_NdisSetState(
     else
     {}
 
-
-/* Modified by s62952 for AT Project，2011-10-17,  Begin*/
 
     return;
 }
@@ -4064,7 +4003,6 @@ VOS_UINT32 AT_RegNdisFCPoint(
     MODEM_ID_ENUM_UINT16                enModemId
 )
 {
-    /* Modified by l60609 for DSDA Phase II, 2012-12-17, Begin */
     FC_REG_POINT_STRU                   stRegFcPoint;
     VOS_UINT32                          ulRet;
     FC_PRI_ENUM_UINT8                   enFCPri;
@@ -4130,7 +4068,6 @@ VOS_UINT32 AT_RegNdisFCPoint(
         return VOS_ERR;
     }
 
-    /* Modified by l60609 for DSDA Phase II, 2012-12-17, End */
 
     /* 设置FCID与FC Pri的映射关系 */
     g_stFcIdMaptoFcPri[FC_ID_NIC_1].ulUsed      = VOS_TRUE;
@@ -5059,9 +4996,7 @@ VOS_UINT32 AT_SendRnicIpv4ActInd(VOS_UINT8 ucRmNetId)
 
     /* 填写消息体 */
     pstMsg->ucRabId         = g_stAtAppPdpEntity.stIpv4Dhcp.ucRabId;
-    /* Added by l60609 for DSDA Phase II, 2012-12-18, Begin */
     pstMsg->ucRmNetId       = ucRmNetId;
-    /* Added by l60609 for DSDA Phase II, 2012-12-18, End */
     pstMsg->ulIpv4Addr      = g_stAtAppPdpEntity.stIpv4Dhcp.ulIpv4Addr;
     pstMsg->ulNetMask       = g_stAtAppPdpEntity.stIpv4Dhcp.ulIpv4NetMask;
     pstMsg->ulGateWay       = g_stAtAppPdpEntity.stIpv4Dhcp.ulIpv4GateWay;
@@ -6894,21 +6829,7 @@ TAF_VOID At_PppReleaseIndProc(
     return;
 }
 
-/*****************************************************************************
- Prototype      : At_PsRab2PppId
- Description    : 由已知Rab ID获取PPP ID
- Input          : RabId     --- 已知的RAB ID
- Output         : pusPppId  --- PPP ID
- Return Value   : AT_SUCCESS --- 成功
-                  AT_FAILURE --- 失败
- Calls          : ---
- Called By      : ---
 
- History        :
-  1.Date        : 2008-03-05
-    Author      : g45205
-    Modification: Created function
-*****************************************************************************/
 TAF_UINT32 At_PsRab2PppId(
     TAF_UINT8                           ucExRabId,
     TAF_UINT16                         *pusPppId
@@ -6963,21 +6884,7 @@ TAF_UINT32 At_PsRab2PppId(
 } /* At_PsRab2PppId */
 
 
-/*****************************************************************************
- Prototype      : At_PppId2PsRab
- Description    : 由已知PPP ID获取Rab ID
- Input          : usPppId   ---  已知的PPP ID
- Output         : pucRabId  ---  RAB ID
- Return Value   : AT_SUCCESS --- 成功
-                  AT_FAILURE --- 失败
- Calls          : ---
- Called By      : ---
 
- History        :
-  1.Date        : 2008-03-05
-    Author      : g45205
-    Modification: Created function
-*****************************************************************************/
 TAF_UINT32 At_PppId2PsRab(
     TAF_UINT16                          usPppId,
     TAF_UINT8                          *pucExRabId
@@ -7036,7 +6943,6 @@ VOS_UINT32 AT_RegModemPsDataFCPoint(
     FC_REG_POINT_STRU                   stRegFcPoint;
     VOS_UINT32                          ulRet;
     FC_PRI_ENUM_UINT8                   enFcPri;
-    /* Modified by l60609 for DSDA Phase II, 2012-12-21, Begin */
     MODEM_ID_ENUM_UINT16                enModemId;
     AT_UART_CTX_STRU                   *pstUartCtx = VOS_NULL_PTR;
 
@@ -7085,7 +6991,6 @@ VOS_UINT32 AT_RegModemPsDataFCPoint(
 
     stRegFcPoint.ulParam1           = (VOS_UINT32)g_alAtUdiHandle[ucIndex];
     stRegFcPoint.enModemId          = enModemId;
-    /* Modified by l60609 for DSDA Phase II, 2012-12-21, End */
     stRegFcPoint.ulParam2           = enFcId;
     stRegFcPoint.pRstFunc           = AT_ResetFlowCtl;
 
@@ -7148,7 +7053,6 @@ VOS_UINT32 AT_DeRegModemPsDataFCPoint(
 )
 {
     VOS_UINT32                          ulRet;
-    /* Modified by l60609 for DSDA Phase II, 2012-12-28, Begin */
     MODEM_ID_ENUM_UINT16                enModemId;
     AT_UART_CTX_STRU                   *pstUartCtx = VOS_NULL_PTR;
 
@@ -7169,7 +7073,6 @@ VOS_UINT32 AT_DeRegModemPsDataFCPoint(
         AT_ERR_LOG("AT_DeRegModemPsDataFCPoint: Get modem id fail.");
         return VOS_ERR;
     }
-    /* Modified by l60609 for DSDA Phase II, 2012-12-21, Begin */
     /* 删除流控模块映射关系 */
     FC_ChannelMapDelete(ucRabId, enModemId);
 
@@ -7179,7 +7082,6 @@ VOS_UINT32 AT_DeRegModemPsDataFCPoint(
         AT_ERR_LOG("AT_DeRegModemPsDataFCPoint: ERROR: FC DeRegPoint Failed.");
         return VOS_ERR;
     }
-    /* Modified by l60609 for DSDA Phase II, 2012-12-21, End */
 
     /* 清除FCID与FC Pri的映射关系 */
     g_stFcIdMaptoFcPri[FC_ID_MODEM].ulUsed      = VOS_FALSE;
@@ -7193,7 +7095,6 @@ VOS_UINT32 AT_DeRegModemPsDataFCPoint(
 
     return VOS_OK;
 }
-/* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, end */
 
 
 VOS_UINT32 AT_ChangeFCPoint(
@@ -7287,7 +7188,6 @@ VOS_UINT32 AT_RegHsicFCPoint(
     FC_PRI_ENUM_UINT8                   enFCPri;
     UDI_DEVICE_ID_E                     enDataChannelId;
     FC_ID_ENUM_UINT8                    enFcId;
-    /* Modified by l60609 for DSDA Phase II, 2012-12-21, Begin */
     MODEM_ID_ENUM_UINT16                enModemId;
     AT_MODEM_PS_CTX_STRU               *pstPsModemCtx = VOS_NULL_PTR;
 
@@ -7316,7 +7216,6 @@ VOS_UINT32 AT_RegHsicFCPoint(
         return VOS_ERR;
     }
 
-    /* Modified by L47619 for C52 HSIC ACM->NCM Project, 2012/09/06, begin */
     switch ( enDataChannelId )
     {
         case UDI_ACM_HSIC_ACM1_ID:
@@ -7335,7 +7234,6 @@ VOS_UINT32 AT_RegHsicFCPoint(
             AT_WARN_LOG("AT_RegHsicFCPoint: WARNING: data channel id is abnormal.");
             return VOS_ERR;
     }
-    /* Modified by L47619 for C52 HSIC ACM->NCM Project, 2012/09/06, end */
 
     /* 配置通道与RABID映射关系 */
     FC_ChannelMapCreate(enFcId, pstEvent->ucRabId, enModemId);
@@ -7359,7 +7257,6 @@ VOS_UINT32 AT_RegHsicFCPoint(
     stRegFcPoint.pSetFunc           = AT_EnableHsicFlowCtl;
     stRegFcPoint.ulParam1           = (VOS_UINT32)DIPC_GetDevHandleByRabId(pstEvent->ucRabId);
     stRegFcPoint.enModemId          = enModemId;
-    /* Modified by l60609 for DSDA Phase II, 2012-12-21, End */
     stRegFcPoint.ulParam2           = enFcId;
     stRegFcPoint.pRstFunc           = AT_ResetFlowCtl;
 
@@ -7416,7 +7313,6 @@ VOS_UINT32 AT_DeRegHsicFCPoint(
     FC_ID_ENUM_UINT8                    enFcId;
     VOS_UINT32                          ulRet;
     UDI_DEVICE_ID_E                     enDataChannelId;
-    /* Modified by l60609 for DSDA Phase II, 2012-12-21, Begin */
     MODEM_ID_ENUM_UINT16                enModemId;
     AT_MODEM_PS_CTX_STRU               *pstPsModemCtx = VOS_NULL_PTR;
 
@@ -7443,7 +7339,6 @@ VOS_UINT32 AT_DeRegHsicFCPoint(
         return VOS_ERR;
     }
 
-    /* Modified by L47619 for C52 HSIC ACM->NCM Project, 2012/09/06, begin */
     switch ( enDataChannelId )
     {
         case UDI_ACM_HSIC_ACM1_ID:
@@ -7462,7 +7357,6 @@ VOS_UINT32 AT_DeRegHsicFCPoint(
             AT_WARN_LOG("AT_DeRegHsicFCPoint: WARNING: data channel id is abnormal.");
             return VOS_ERR;
     }
-    /* Modified by L47619 for C52 HSIC ACM->NCM Project, 2012/09/06, end */
 
     /* 删除流控模块映射关系 */
     FC_ChannelMapDelete(pstEvent->ucRabId, enModemId);
@@ -7473,7 +7367,6 @@ VOS_UINT32 AT_DeRegHsicFCPoint(
         AT_ERR_LOG("AT_DeRegHsicFCPoint: ERROR: de reg point Failed.");
         return VOS_ERR;
     }
-    /* Modified by l60609 for DSDA Phase II, 2012-12-21, End */
 
     /* 清除FCID与FC Pri的映射关系 */
     g_stFcIdMaptoFcPri[enFcId].ulUsed       = VOS_FALSE;
@@ -7599,7 +7492,6 @@ VOS_VOID  AT_HsicPsRspEvtPdpDeactivatedProc(
     return;
 }
 
-/* Modified by l60609 for AP适配项目 ，2012-09-10 Begin */
 
 VOS_UINT32 AT_SendRnicCgactIpv4ActInd(
     VOS_UINT8                           ucRabId,
@@ -7724,7 +7616,6 @@ VOS_VOID  AT_ProcAppPsRspEvtPdpDeActCnf(
 
     return;
 }
-/* Modified by l60609 for AP适配项目 ，2012-09-10 End */
 
 VOS_VOID AT_ProcAppPsRspEvtPdpDeactivated(
     VOS_UINT8                           ucIndex,
@@ -7899,7 +7790,6 @@ VOS_UINT32 AT_PS_GetIpAddrByRabId(
     return ulIpAddr;
 }
 
-/* Added by l60609 for DSDA Phase II, 2012-12-18, Begin */
 
 VOS_UINT32 AT_PS_GetRmNetIdByCid(
     VOS_UINT16                          usClientId,
@@ -7945,7 +7835,6 @@ VOS_UINT32 AT_PS_GetRmNetIdByCid(
     return VOS_OK;
 }
 
-/* Added by l60609 for DSDA Phase II, 2012-12-18, End */
 
 
 VOS_UINT32 AT_ResetFlowCtl(
@@ -7990,7 +7879,6 @@ VOS_UINT32 AT_ResetFlowCtl(
     return VOS_OK;
 }
 
-/* Added by l60609 for V9R1 IPv6&TAF/SM Project, 2013-4-24, begin */
 
 
 VOS_UINT32 AT_PS_GetRnicRmNetIdFromChDataValue(
@@ -10166,47 +10054,47 @@ VOS_VOID AT_PS_ProcIpv6RaInfo(TAF_PS_IPV6_INFO_IND_STRU *pstRaInfoNotifyInd)
     {
         /* IPv6拨号成功 */
         AT_PS_SndCallConnectedResult(pstRaInfoNotifyInd->stCtrl.usClientId, ucCallId, TAF_PDP_IPV6);
+
+        /* 记录IPv6前缀 */
+        pstIpv6RaInfo->bitOpPrefixAddr    = VOS_TRUE;
+        pstIpv6RaInfo->ulPrefixBitLen     = pstRaInfoNotifyInd->stIpv6RaInfo.astPrefixList[0].ulBitPrefixLen;
+        TAF_MEM_CPY_S(pstIpv6RaInfo->aucPrefixAddr,
+                      sizeof(pstIpv6RaInfo->aucPrefixAddr),
+                      pstRaInfoNotifyInd->stIpv6RaInfo.astPrefixList[0].aucPrefix,
+                      TAF_IPV6_ADDR_LEN);
+
+        ullIID = AT_PS_GetIPv6IID(enModemId,
+                                  pstCallEntity->stUsrDialParam.aucAPN,
+                                  pstIpv6RaInfo->aucPrefixAddr);
+        if (0 == ullIID)
+        {
+            ullIID = AT_PS_GenerateRandomIPv6IID();
+        }
+
+        /* 记录IPv6全局地址 */
+        pstIpv6RaInfo->bitOpLanAddr = VOS_TRUE;
+        TAF_MEM_CPY_S(pstIpv6RaInfo->aucLanAddr,
+                      TAF_IPV6_PREFIX_LEN,
+                      pstIpv6RaInfo->aucPrefixAddr,
+                      TAF_IPV6_PREFIX_LEN);
+
+        TAF_MEM_CPY_S(pstIpv6RaInfo->aucLanAddr + TAF_IPV6_PREFIX_LEN,
+                      TAF_IPV6_IID_LEN,
+                      &ullIID,
+                      sizeof(ullIID));
+
+        /* 更新DHCPV6信息中的IPv6临时地址 */
+        TAF_MEM_CPY_S(pstCallEntity->stIpv6DhcpInfo.aucIpv6TmpAddr,
+                      TAF_IPV6_PREFIX_LEN,
+                      pstIpv6RaInfo->aucPrefixAddr,
+                      TAF_IPV6_PREFIX_LEN);
+
+        /* 更新DHCPV6信息中的IPv6全局地址 */
+        TAF_MEM_CPY_S(pstCallEntity->stIpv6DhcpInfo.aucIpv6Addr,
+                      sizeof(pstCallEntity->stIpv6DhcpInfo.aucIpv6Addr),
+                      pstIpv6RaInfo->aucLanAddr,
+                      sizeof(pstIpv6RaInfo->aucLanAddr));
     }
-
-    /* 记录IPv6前缀 */
-    pstIpv6RaInfo->bitOpPrefixAddr    = VOS_TRUE;
-    pstIpv6RaInfo->ulPrefixBitLen     = pstRaInfoNotifyInd->stIpv6RaInfo.astPrefixList[0].ulBitPrefixLen;
-    TAF_MEM_CPY_S(pstIpv6RaInfo->aucPrefixAddr,
-                  sizeof(pstIpv6RaInfo->aucPrefixAddr),
-                  pstRaInfoNotifyInd->stIpv6RaInfo.astPrefixList[0].aucPrefix,
-                  TAF_IPV6_ADDR_LEN);
-
-    ullIID = AT_PS_GetIPv6IID(enModemId,
-                              pstCallEntity->stUsrDialParam.aucAPN,
-                              pstIpv6RaInfo->aucPrefixAddr);
-    if (0 == ullIID)
-    {
-        ullIID = AT_PS_GenerateRandomIPv6IID();
-    }
-
-    /* 记录IPv6全局地址 */
-    pstIpv6RaInfo->bitOpLanAddr = VOS_TRUE;
-    TAF_MEM_CPY_S(pstIpv6RaInfo->aucLanAddr,
-                  TAF_IPV6_PREFIX_LEN,
-                  pstIpv6RaInfo->aucPrefixAddr,
-                  TAF_IPV6_PREFIX_LEN);
-
-    TAF_MEM_CPY_S(pstIpv6RaInfo->aucLanAddr + TAF_IPV6_PREFIX_LEN,
-                  TAF_IPV6_IID_LEN,
-                  &ullIID,
-                  sizeof(ullIID));
-
-    /* 更新DHCPV6信息中的IPv6临时地址 */
-    TAF_MEM_CPY_S(pstCallEntity->stIpv6DhcpInfo.aucIpv6TmpAddr,
-                  TAF_IPV6_PREFIX_LEN,
-                  pstIpv6RaInfo->aucPrefixAddr,
-                  TAF_IPV6_PREFIX_LEN);
-
-    /* 更新DHCPV6信息中的IPv6全局地址 */
-    TAF_MEM_CPY_S(pstCallEntity->stIpv6DhcpInfo.aucIpv6Addr,
-                  sizeof(pstCallEntity->stIpv6DhcpInfo.aucIpv6Addr),
-                  pstIpv6RaInfo->aucLanAddr,
-                  sizeof(pstIpv6RaInfo->aucLanAddr));
 
     /* 记录Preferred Lifetime */
     pstIpv6RaInfo->bitOpPreferredLifetime = VOS_TRUE;
@@ -12850,7 +12738,6 @@ VOS_UINT32 AT_PS_ProcDialCmd(VOS_UINT8 ucIndex)
 
     return ulRslt;
 }
-/* Added by l60609 for V9R1 IPv6&TAF/SM Project, 2013-4-24, end */
 
 
 VOS_VOID  AT_PS_ProcDeactSharePdpState(

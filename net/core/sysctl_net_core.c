@@ -22,10 +22,6 @@
 #include <net/busy_poll.h>
 #include <net/pkt_sched.h>
 
-#ifdef CONFIG_HW_CROSSLAYER_OPT
-#include <net/tcp_crosslayer.h>
-#endif
-
 #ifdef CONFIG_HW_NETWORK_MEASUREMENT
 #include <huawei_platform/emcom/smartcare/network_measurement/nm.h>
 #endif /* CONFIG_HW_NETWORK_MEASUREMENT */
@@ -303,8 +299,23 @@ static struct ctl_table net_core_table[] = {
 		.data		= &bpf_jit_enable,
 		.maxlen		= sizeof(int),
 		.mode		= 0644,
+#ifndef CONFIG_BPF_JIT_ALWAYS_ON
 		.proc_handler	= proc_dointvec
+#else
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= &one,
+		.extra2		= &one,
+#endif
 	},
+# ifdef CONFIG_HAVE_EBPF_JIT
+	{
+		.procname	= "bpf_jit_harden",
+		.data		= &bpf_jit_harden,
+		.maxlen		= sizeof(int),
+		.mode		= 0600,
+		.proc_handler	= proc_dointvec,
+	},
+# endif
 #endif
 	{
 		.procname	= "netdev_tstamp_prequeue",
@@ -371,14 +382,16 @@ static struct ctl_table net_core_table[] = {
 		.data		= &sysctl_net_busy_poll,
 		.maxlen		= sizeof(unsigned int),
 		.mode		= 0644,
-		.proc_handler	= proc_dointvec
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= &zero,
 	},
 	{
 		.procname	= "busy_read",
 		.data		= &sysctl_net_busy_read,
 		.maxlen		= sizeof(unsigned int),
 		.mode		= 0644,
-		.proc_handler	= proc_dointvec
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= &zero,
 	},
 #endif
 #ifdef CONFIG_NET_SCHED
@@ -422,39 +435,6 @@ static struct ctl_table net_core_table[] = {
 		.proc_handler	= proc_dointvec
 	},
 #endif
-#ifdef CONFIG_HW_CROSSLAYER_OPT
-	{
-		/* Aspen log level */
-		.procname	= "aspen_log_level",
-		.data		= &aspen_log_level,
-		.maxlen		= sizeof(int),
-		.mode		= 0600,
-		.proc_handler   = proc_dointvec
-	},
-	{
-		/* Switch of crosslayer dropped notification */
-		.procname	= "aspen_tcp_cdn",
-		.data		= &aspen_tcp_cdn,
-		.maxlen		= sizeof(int),
-		.mode		= 0600,
-		.proc_handler	= proc_dointvec
-	},
-#ifdef CONFIG_HW_CROSSLAYER_OPT_DBG_MODULE
-	{
-		.procname       = "aspen_monitor_port_range",
-		.data           = &aspen_monitor_ports.range,
-		.maxlen         = sizeof(aspen_monitor_ports.range),
-		.mode           = 0600,
-		.proc_handler   = proc_aspen_monitor_port_range,
-	},
-	{
-		.procname       = "aspen_monitor",
-		.maxlen         = ASPEN_MONITOR_BUF_MAX,
-		.mode           = 0400,
-		.proc_handler   = proc_aspen_monitor_info,
-	},
-#endif /* CONFIG_HW_CROSSLAYER_OPT_DBG_MODULE */
-#endif /* CONFIG_HW_CROSSLAYER_OPT */
 #ifdef CONFIG_HW_NETWORK_MEASUREMENT
 	{
 		.procname	= "netmeasure",
@@ -501,8 +481,6 @@ static struct ctl_table netns_core_table[] = {
 static __net_init int sysctl_core_net_init(struct net *net)
 {
 	struct ctl_table *tbl;
-
-	net->core.sysctl_somaxconn = SOMAXCONN;
 
 	tbl = netns_core_table;
 	if (!net_eq(net, &init_net)) {

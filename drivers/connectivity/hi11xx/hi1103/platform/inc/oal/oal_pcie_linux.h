@@ -51,10 +51,17 @@ typedef struct _oal_pcie_linux_res__
 oal_int32 oal_wifi_platform_load_pcie(oal_void);
 oal_void oal_wifi_platform_unload_pcie(oal_void);
 
+oal_int32 oal_pcie_set_loglevel(oal_int32 loglevel);
+oal_int32 oal_pcie_set_hi11xx_loglevel(oal_int32 loglevel);
 oal_int32 oal_pcie_firmware_read(oal_pcie_linux_res *pst_pcie_lres, oal_uint8* buff, oal_int32 len, oal_uint32 timeout);
 oal_int32 oal_pcie_firmware_write(oal_pcie_linux_res *pst_pcie_lres, oal_uint8* buff, oal_int32 len);
 oal_int32 oal_disable_pcie_irq(oal_pcie_linux_res* pst_pci_lres);
 oal_int32 oal_pcie_ip_factory_test(hcc_bus *pst_bus, oal_int32 test_count);
+oal_int32 oal_pcie_ip_voltage_bias_init(hcc_bus *pst_bus);
+oal_void oal_pcie_chip_info(hcc_bus *pst_bus);
+oal_int32 oal_pcie_rc_slt_chip_transfer(hcc_bus *pst_bus, oal_void* ddr_address, 
+                                              oal_uint32 data_size, oal_int32 direction);
+oal_int32 oal_pcie_ip_init(hcc_bus *pst_bus);
 oal_int32 oal_pcie_110x_working_check(oal_void);
 
 #ifdef CONFIG_ARCH_KIRIN_PCIE

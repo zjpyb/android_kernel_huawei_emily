@@ -12,3 +12,9 @@
 / {
 	board_id = <6017>;
 };
+
+&rootparam {
+    hisi,boardid = <6 0 1 7>;
+    hisi,boardname = "kirin970_udp_cs_EVB7";
+};
+

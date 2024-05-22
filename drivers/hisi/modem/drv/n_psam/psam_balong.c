@@ -49,6 +49,7 @@
 #include <linux/delay.h>
 #include <linux/module.h>
 #include <linux/platform_device.h>
+#include <linux/of_platform.h>
 #include <linux/clk.h>
 #include <linux/of.h>
 #include <linux/irqreturn.h>
@@ -446,6 +447,7 @@ static int psam_probe(struct platform_device *pdev)
     struct resource *regs;
     int i;
     int ret;
+    u64 mask = (u64)-1;
 
     memset_s(&g_psam_ctx, sizeof(g_psam_ctx), 0, sizeof(struct psam_device));
     g_psam_device = &g_psam_ctx;
@@ -483,6 +485,9 @@ static int psam_probe(struct platform_device *pdev)
     g_psam_device->desc_num[0] = PSAM_DLAD0_DESC_NUM;
     g_psam_device->desc_num[1] = PSAM_DLAD1_DESC_NUM;
     g_psam_device->pm = &psam_pm;
+
+    dma_set_mask_and_coherent(g_psam_device->dev, mask);
+    of_dma_configure(g_psam_device->dev, g_psam_device->dev->of_node);
 
     for (i = 0; i < PSAM_ADQ_NUM; i++) {
         g_psam_device->desc[i] = dmam_alloc_coherent(g_psam_device->dev,

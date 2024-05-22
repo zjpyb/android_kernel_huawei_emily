@@ -66,9 +66,26 @@
 }while(0)
 
 #define CHR_MAGIC                   'C'
-#define CHR_MAX_NR                  1
+#define CHR_MAX_NR                  2
 #define chr_ERRNO_WRITE_NR          1
 #define CHR_ERRNO_WRITE             _IOW(CHR_MAGIC, 1, int32)
+#define CHR_ERRNO_ASK               _IOW(CHR_MAGIC, 2, int32)
+
+#define CHR_ID_MSK                  1000000
+#define CHR_HOST                    (1)
+#define CHR_DEVICE                  (0)
+
+
+enum CHR_ID_ENUM
+{
+    CHR_WIFI = 909,
+    CHR_BT   = 913,
+    CHR_GNSS = 910,
+    CHR_ENUM
+};
+
+
+
 /*****************************************************************************
   3 数据类型定义
 *****************************************************************************/
@@ -84,40 +101,6 @@ typedef long                        int64;
 /*****************************************************************************
   4 枚举类型定义
 *****************************************************************************/
-typedef enum chr_dev_index{
-    CHR_INDEX_KMSG_PLAT = 0,
-    CHR_INDEX_KMSG_WIFI,
-    CHR_INDEX_APP_WIFI,
-    CHR_INDEX_APP_GNSS,
-    CHR_INDEX_APP_BT,
-#ifdef CONFIG_CHR_OTHER_DEVS
-    CHR_INDEX_APP_FM,
-    CHR_INDEX_APP_NFC,
-    CHR_INDEX_APP_IR,
-#endif
-    CHR_INDEX_MUTT,
-}CHR_DEV_INDEX;
-
-typedef enum chr_LogPriority{
-    CHR_LOG_DEBUG = 0,
-    CHR_LOG_INFO,
-    CHR_LOG_WARN,
-    CHR_LOG_ERROR,
-    CHR_LOG_MUTT,
-}CHR_LOGPRIORITY;
-
-typedef enum chr_LogTag{
-    CHR_LOG_TAG_PLAT = 0,
-    CHR_LOG_TAG_WIFI,
-    CHR_LOG_TAG_GNSS,
-    CHR_LOG_TAG_BT,
-#ifdef CONFIG_CHR_OTHER_DEVS
-    CHR_LOG_TAG_FM,
-    CHR_LOG_TAG_NFC,
-    CHR_LOG_TAG_IR,
-#endif
-    CHR_LOG_TAG_MUTT,
-}CHR_LOG_TAG;
 
 enum return_type
 {
@@ -133,14 +116,35 @@ typedef struct {
     struct sk_buff_head     errno_queue;
     struct semaphore        errno_sem;
 }CHR_EVENT;
-
 typedef struct
 {
     uint8  framehead;
     uint8  reserved[3];
-    uint32 errno;
+    uint32 error;
     uint8  frametail;
 }CHR_DEV_EXCEPTION_STRU;
+
+typedef struct
+{
+    uint32 errno;
+    uint16 errlen;
+    uint16 flag:1;
+    uint16 resv:15;
+
+}CHR_DEV_EXCEPTION_STRU_PARA;
+
+typedef struct stru_callback
+{
+    uint32 (*chr_get_wifi_info)(uint32);
+}chr_callback_stru;
+
+typedef struct
+{
+    uint32 chr_errno;
+    uint16 chr_len;
+    uint8 *chr_ptr;
+}CHR_HOST_EXCEPTION_STRU;
+
 
 #endif
 

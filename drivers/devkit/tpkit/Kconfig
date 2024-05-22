@@ -35,6 +35,7 @@ menuconfig HUAWEI_DEVKIT_QCOM
 
 source "drivers/devkit/tpkit/hostprocessing/Kconfig"
 source "drivers/devkit/tpkit/panel/Kconfig"
+source "drivers/devkit/tpkit/3_0/Kconfig"
 
 #sensor unification for differ platform
 menuconfig HUAWEI_TP_KIT_COLOR_INFO

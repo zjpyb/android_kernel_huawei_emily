@@ -45,7 +45,7 @@ uint32_t dptx_byte_to_dword(uint8_t b3, uint8_t b2, uint8_t b1, uint8_t b0)
 int dptx_dtd_parse(struct dp_ctrl *dptx, struct dtd *mdtd, uint8_t data[18])
 {
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return -EINVAL;
 	}
 
@@ -78,16 +78,16 @@ int dptx_dtd_parse(struct dp_ctrl *dptx, struct dtd *mdtd, uint8_t data[18])
 	mdtd->h_sync_polarity = dptx_bit_field(data[17], 1, 1) == 0;
 	if (mdtd->interlaced == 1)
 		mdtd->v_active /= 2;
-	HISI_FB_INFO("DTD pixel_clock: %llu interlaced: %d\n",
+	HISI_FB_INFO("[DP] DTD pixel_clock: %llu interlaced: %d\n",
 		 mdtd->pixel_clock, mdtd->interlaced);
-	HISI_FB_INFO("h_active: %d h_blanking: %d h_sync_offset: %d\n",
+	HISI_FB_INFO("[DP] h_active: %d h_blanking: %d h_sync_offset: %d\n",
 		 mdtd->h_active, mdtd->h_blanking, mdtd->h_sync_offset);
-	HISI_FB_INFO("h_sync_pulse_width: %d h_image_size: %d h_sync_polarity: %d\n",
+	HISI_FB_INFO("[DP] h_sync_pulse_width: %d h_image_size: %d h_sync_polarity: %d\n",
 		 mdtd->h_sync_pulse_width, mdtd->h_image_size,
 		 mdtd->h_sync_polarity);
-	HISI_FB_INFO("v_active: %d v_blanking: %d v_sync_offset: %d\n",
+	HISI_FB_INFO("[DP] v_active: %d v_blanking: %d v_sync_offset: %d\n",
 		 mdtd->v_active, mdtd->v_blanking, mdtd->v_sync_offset);
-	HISI_FB_INFO("v_sync_pulse_width: %d v_image_size: %d v_sync_polarity: %d\n",
+	HISI_FB_INFO("[DP] v_sync_pulse_width: %d v_image_size: %d v_sync_polarity: %d\n",
 		 mdtd->v_sync_pulse_width, mdtd->v_image_size,
 		 mdtd->v_sync_polarity);
 	mdtd->pixel_clock *= 10;
@@ -99,7 +99,7 @@ void dptx_audio_sdp_en(struct dp_ctrl *dptx)
 	uint32_t reg;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return;
 	}
 
@@ -117,7 +117,7 @@ void dptx_audio_timestamp_sdp_en(struct dp_ctrl *dptx)
 	uint32_t reg;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return;
 	}
 
@@ -126,59 +126,105 @@ void dptx_audio_timestamp_sdp_en(struct dp_ctrl *dptx)
 	dptx_writel(dptx, DPTX_SDP_VERTICAL_CTRL, reg);
 }
 
+static uint8_t dptx_audio_get_sample_freq_cfg(struct audio_params *aparams)
+{
+	uint8_t iec_orig_samp_freq = 0;
+	uint8_t iec_samp_freq = 0;
+	uint8_t sample_freq_cfg = 0;
+
+	iec_orig_samp_freq = aparams->iec_orig_samp_freq;
+	iec_samp_freq = aparams->iec_samp_freq;
+
+	if (iec_orig_samp_freq == IEC_ORIG_SAMP_FREQ_32K && iec_samp_freq == IEC_SAMP_FREQ_32K) {
+		sample_freq_cfg = DPTX_AUDIO_SAMPLE_FREQ_32K;
+	} else if (iec_orig_samp_freq == IEC_ORIG_SAMP_FREQ_48K && iec_samp_freq == IEC_SAMP_FREQ_48K) {
+		sample_freq_cfg = DPTX_AUDIO_SAMPLE_FREQ_48K;
+	} else if (iec_orig_samp_freq == IEC_ORIG_SAMP_FREQ_96K && iec_samp_freq == IEC_SAMP_FREQ_96K) {
+		sample_freq_cfg = DPTX_AUDIO_SAMPLE_FREQ_96K;
+	} else if (iec_orig_samp_freq == IEC_ORIG_SAMP_FREQ_192K && iec_samp_freq == IEC_SAMP_FREQ_192K) {
+		sample_freq_cfg = DPTX_AUDIO_SAMPLE_FREQ_192K;
+	} else {
+		sample_freq_cfg = DPTX_AUDIO_REFER_TO_STREAM_HEADER;
+	}
+
+	return sample_freq_cfg;
+}
+
+static uint8_t dptx_audio_get_data_width_cfg(struct audio_params *aparams)
+{
+	uint8_t data_width_cfg = 0;
+
+	if (aparams->data_width == 16) {
+		data_width_cfg = DPTX_AUDIO_SAMPLE_SIZE_16BIT;
+	} else if (aparams->data_width == 24) {
+		data_width_cfg = DPTX_AUDIO_SAMPLE_SIZE_24BIT;
+	} else {
+		data_width_cfg = DPTX_AUDIO_REFER_TO_STREAM_HEADER;
+	}
+
+	return data_width_cfg;
+}
+
+static uint8_t dptx_audio_get_num_channels_cfg(struct audio_params *aparams)
+{
+	uint8_t num_channels_cfg = 0;
+
+	if (aparams->num_channels == 2) {
+		num_channels_cfg = DPTX_AUDIO_CHANNEL_CNT_2CH;
+	} else if (aparams->num_channels == 8) {
+		num_channels_cfg = DPTX_AUDIO_CHANNEL_CNT_8CH;
+	} else {
+		num_channels_cfg = DPTX_AUDIO_REFER_TO_STREAM_HEADER;
+	}
+
+	return num_channels_cfg;
+}
+
+static uint8_t dptx_audio_get_speaker_map_cfg(struct audio_params *aparams)
+{
+	uint8_t speaker_map_cfg = 0;
+
+	if (aparams->num_channels == 2) {
+		speaker_map_cfg = DPTX_AUDIO_SPEAKER_MAPPING_2CH;
+	} else {
+		speaker_map_cfg = DPTX_AUDIO_SPEAKER_MAPPING_8CH;
+	}
+
+	return speaker_map_cfg;
+}
 void dptx_audio_infoframe_sdp_send(struct dp_ctrl *dptx)
 {
-	uint32_t reg;
+	uint32_t reg = 0;
+	uint8_t sample_freq_cfg = 0;
+	uint8_t data_width_cfg = 0;
+	uint8_t num_channels_cfg = 0;
+	uint8_t speaker_map_cfg = 0;
 	uint32_t audio_infoframe_header = AUDIO_INFOFREAME_HEADER;
-	uint32_t audio_infoframe_data[3] = {0x00000710, 0x0, 0x0};
-	uint8_t orig_sample_freq;
-	uint8_t sample_freq;
-	struct audio_params *aparams;
+	uint32_t audio_infoframe_data[3] = {0x0, 0x0, 0x0};
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return;
 	}
 
-	aparams = &dptx->aparams;
-	sample_freq = aparams->iec_samp_freq;
-	orig_sample_freq = aparams->iec_orig_samp_freq;
+	sample_freq_cfg = dptx_audio_get_sample_freq_cfg(&dptx->aparams);
+	audio_infoframe_data[0] |= sample_freq_cfg << DPTX_AUDIO_SAMPLE_FREQ_SHIFT;
 
-	if (orig_sample_freq == 12 && sample_freq == 3)
-		audio_infoframe_data[0] = 0x00000710;
-	else if (orig_sample_freq == 15 && sample_freq == 0)
-		audio_infoframe_data[0] = 0x00000B10;
-	else if (orig_sample_freq == 13 && sample_freq == 2)
-		audio_infoframe_data[0] = 0x00000F10;
-	else if (orig_sample_freq == 7 && sample_freq == 8)
-		audio_infoframe_data[0] = 0x00001310;
-	else if (orig_sample_freq == 5 && sample_freq == 10)
-		audio_infoframe_data[0] = 0x00001710;
-	else if (orig_sample_freq == 3 && sample_freq == 12)
-		audio_infoframe_data[0] = 0x00001B10;
-	else
-		audio_infoframe_data[0] = 0x00001F10;
+	data_width_cfg = dptx_audio_get_data_width_cfg(&dptx->aparams);
+	audio_infoframe_data[0] |= data_width_cfg << DPTX_AUDIO_SAMPLE_SIZE_SHIFT;
 
-	audio_infoframe_data[0] |= (aparams->num_channels - 1);
-	if (aparams->num_channels == 3)
-		audio_infoframe_data[0] |= 0x02000000;
-	else if (aparams->num_channels == 4)
-		audio_infoframe_data[0] |= 0x03000000;
-	else if (aparams->num_channels == 5)
-		audio_infoframe_data[0] |= 0x07000000;
-	else if (aparams->num_channels == 6)
-		audio_infoframe_data[0] |= 0x0b000000;
-	else if (aparams->num_channels == 7)
-		audio_infoframe_data[0] |= 0x0f000000;
-	else if (aparams->num_channels == 8)
-		audio_infoframe_data[0] |= 0x13000000;
+	num_channels_cfg = dptx_audio_get_num_channels_cfg(&dptx->aparams);
+	audio_infoframe_data[0] |= num_channels_cfg << DPTX_AUDIO_CHANNEL_CNT_SHIFT;
+
+	speaker_map_cfg = dptx_audio_get_speaker_map_cfg(&dptx->aparams);
+	audio_infoframe_data[0] |= speaker_map_cfg << DPTX_AUDIO_SPEAKER_MAPPING_SHIFT;
 
 	dptx->sdp_list[0].payload[0] = audio_infoframe_header;
 	dptx_writel(dptx, DPTX_SDP_BANK, audio_infoframe_header);
 	/* Synosys FAE luheng:
 		set reg offset 0x604 to all zero. When infoframe is zero, sink just check stream head.
 		Otherwire sink would checkout if inforame equal stream head info */
-	/* dptx_writel(dptx, DPTX_SDP_BANK + 4, audio_infoframe_data[0]); */
+	dptx_writel(dptx, DPTX_SDP_BANK + 4, audio_infoframe_data[0]);
 	dptx_writel(dptx, DPTX_SDP_BANK + 8, audio_infoframe_data[1]);
 	dptx_writel(dptx, DPTX_SDP_BANK + 12, audio_infoframe_data[2]);
 
@@ -192,12 +238,12 @@ void dptx_disable_sdp(struct dp_ctrl *dptx, uint32_t *payload)
 	int i;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return;
 	}
 
 	if (payload == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return;
 	}
 
@@ -215,12 +261,12 @@ void dptx_enable_sdp(struct dp_ctrl *dptx, struct sdp_full_data *data)
 	int sdp_offset;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return;
 	}
 
 	if (data == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return;
 	}
 
@@ -268,12 +314,12 @@ void dptx_enable_sdp(struct dp_ctrl *dptx, struct sdp_full_data *data)
 void dptx_fill_sdp(struct dp_ctrl *dptx, struct sdp_full_data *data)
 {
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return;
 	}
 
 	if (data == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return;
 	}
 
@@ -288,7 +334,7 @@ void dptx_en_audio_channel(struct dp_ctrl *dptx, int ch_num, int enable)
 	uint32_t data_en = 0;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return;
 	}
 
@@ -364,7 +410,7 @@ void dptx_video_reset(struct dp_ctrl *dptx, int enable)
 	uint32_t reg;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return;
 	}
 
@@ -382,7 +428,7 @@ void dptx_audio_mute(struct dp_ctrl *dptx)
 	struct audio_params *aparams;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return;
 	}
 
@@ -399,7 +445,7 @@ void dptx_audio_mute(struct dp_ctrl *dptx)
 void dptx_audio_config(struct dp_ctrl *dptx)
 {
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return;
 	}
 
@@ -416,7 +462,7 @@ void dptx_audio_core_config(struct dp_ctrl *dptx)
 	uint32_t reg;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return;
 	}
 
@@ -441,7 +487,7 @@ void dptx_audio_inf_type_change(struct dp_ctrl *dptx)
 	uint32_t reg;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return;
 	}
 
@@ -455,12 +501,12 @@ void dptx_audio_inf_type_change(struct dp_ctrl *dptx)
 
 void dptx_audio_num_ch_change(struct dp_ctrl *dptx)
 {
-	uint32_t reg;
-	uint32_t num_ch_map;
+	uint32_t reg = 0;
+	uint32_t num_ch_map = 0;
 	struct audio_params *aparams;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return;
 	}
 
@@ -469,12 +515,11 @@ void dptx_audio_num_ch_change(struct dp_ctrl *dptx)
 	reg = (uint32_t)dptx_readl(dptx, DPTX_AUD_CONFIG1);
 	reg &= ~DPTX_AUD_CONFIG1_NCH_MASK;
 
-	if (aparams->num_channels == 1)
-		num_ch_map = 0;
-	else if (aparams->num_channels == 2)
-		num_ch_map = 1;
-	else
+	if (aparams->num_channels > 0 && aparams->num_channels <= 8) {
 		num_ch_map = aparams->num_channels - 1;
+	} else {
+		num_ch_map = DPTX_AUD_CONFIG1_NCH_DEFAULT_VALUE;
+	}
 
 	reg |= num_ch_map << (unsigned int)DPTX_AUD_CONFIG1_NCH_SHIFT;
 	dptx_writel(dptx, DPTX_AUD_CONFIG1, reg);
@@ -486,7 +531,7 @@ void dptx_audio_data_width_change(struct dp_ctrl *dptx)
 	struct audio_params *aparams;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return;
 	}
 
@@ -504,21 +549,21 @@ bool dptx_check_low_temperature(struct dp_ctrl *dptx)
 	struct hisi_fb_data_type *hisifd;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return FALSE;
 	}
 
 	hisifd = dptx->hisifd;
 
 	if (hisifd == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return FALSE;
 	}
 
 	perictrl4 = inp32(hisifd->pmctrl_base + MIDIA_PERI_CTRL4);
 	perictrl4 &= PMCTRL_PERI_CTRL4_TEMPERATURE_MASK;
 	perictrl4 = (perictrl4 >> PMCTRL_PERI_CTRL4_TEMPERATURE_SHIFT);
-	HISI_FB_INFO("Get current temperature: %d \n", perictrl4);
+	HISI_FB_INFO("[DP] Get current temperature: %d \n", perictrl4);
 
 	if (perictrl4 != NORMAL_TEMPRATURE)
 		return TRUE;
@@ -531,7 +576,7 @@ bool dptx_check_low_temperature(struct dp_ctrl *dptx)
 void dptx_video_timing_change(struct dp_ctrl *dptx)
 {
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return;
 	}
 
@@ -567,7 +612,7 @@ int dptx_change_video_mode_user(struct dp_ctrl *dptx)
 	bool needchanged;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return -EINVAL;
 	}
 
@@ -578,7 +623,7 @@ int dptx_change_video_mode_user(struct dp_ctrl *dptx)
 			vparams->video_format = VCEA;
 			vparams->mode = 16; /*Siwtch to 1080p on PC mode*/
 			needchanged = TRUE;
-			HISI_FB_INFO("Video mode is changed by different source!\n");
+			HISI_FB_INFO("[DP] Video mode is changed by different source!\n");
 		}
 	}
 
@@ -586,13 +631,13 @@ int dptx_change_video_mode_user(struct dp_ctrl *dptx)
 		vparams->video_format = dptx->user_mode_format;
 		vparams->mode = dptx->user_mode; /*Siwtch to user setting*/
 		needchanged = TRUE;
-		HISI_FB_INFO("Video mode is changed by user setting!\n");
+		HISI_FB_INFO("[DP] Video mode is changed by user setting!\n");
 	}
 
 	if (needchanged) {
 		retval = dptx_video_mode_change(dptx, vparams->mode);
 		if (retval) {
-			HISI_FB_ERR("Change mode error!\n");
+			HISI_FB_ERR("[DP] Change mode error!\n");
 			return retval;
 		}
 	}
@@ -601,11 +646,11 @@ int dptx_change_video_mode_user(struct dp_ctrl *dptx)
 		if((vparams->mdtd.h_active > FHD_TIMING_H_ACTIVE) || (vparams->mdtd.v_active > FHD_TIMING_V_ACTIVE)) {
 			vparams->video_format = VCEA;
 			vparams->mode = 16; /*Siwtch to 1080p on PC mode*/
-			HISI_FB_INFO("Video mode is changed by low temperature!\n");
+			HISI_FB_INFO("[DP] Video mode is changed by low temperature!\n");
 
 			retval = dptx_video_mode_change(dptx, vparams->mode);
 			if (retval) {
-				HISI_FB_ERR("Change mode error!\n");
+				HISI_FB_ERR("[DP] Change mode error!\n");
 				return retval;
 			}
 		}
@@ -620,36 +665,28 @@ int dptx_change_video_mode_user(struct dp_ctrl *dptx)
 int dptx_video_mode_change(struct dp_ctrl *dptx, uint8_t vmode)
 {
 	int retval;
-	int i;
 	struct video_params *vparams;
 	struct dtd mdtd;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return -EINVAL;
 	}
 	vparams = &dptx->vparams;
 	vparams->mode = vmode;
 
-	for(i = 0; i < VIDEO_DEFAULT_MODE_MAX; i++)
-	{
-		if (!dptx_dtd_fill(&mdtd, vparams->mode, vparams->refresh_rate,
-				   vparams->video_format)) {
-			HISI_FB_ERR("Invalid video mode value %d\n",
-							vparams->mode);
-			return -EINVAL;
-		}
-		vparams->mdtd = mdtd;
-		retval = dptx_video_ts_calculate(dptx, dptx->link.lanes,
-						 dptx->link.rate, vparams->bpc,
-						 vparams->pix_enc, mdtd.pixel_clock);
-		if(retval == 0)
-			break;
-		if(vparams->mode == 1)
-			return retval;
-		vparams->mode = dptx_change_video_mode_tu_fail(dptx);
-		HISI_FB_INFO("The mode is changed as [%d]\n", vparams->mode);
+	if (!dptx_dtd_fill(&mdtd, vparams->mode, vparams->refresh_rate,
+			   vparams->video_format)) {
+		HISI_FB_ERR("[DP] Invalid video mode value %d\n",
+						vparams->mode);
+		return -EINVAL;
 	}
+	vparams->mdtd = mdtd;
+	retval = dptx_video_ts_calculate(dptx, dptx->link.lanes,
+					 dptx->link.rate, vparams->bpc,
+					 vparams->pix_enc, mdtd.pixel_clock);
+
+	HISI_FB_INFO("[DP] The mode is changed as [%d]\n", vparams->mode);
 
 	return retval;
 }
@@ -660,7 +697,7 @@ int dptx_video_config(struct dp_ctrl *dptx)
 	struct dtd *mdtd;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return -EINVAL;
 	}
 
@@ -681,7 +718,7 @@ void dptx_video_core_config(struct dp_ctrl *dptx)
 	uint8_t vmode;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return;
 	}
 
@@ -768,7 +805,7 @@ int dptx_video_ts_calculate(struct dp_ctrl *dptx, int lane_num, int rate,
 	int color_dep;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return -EINVAL;
 	}
 
@@ -845,7 +882,7 @@ int dptx_video_ts_calculate(struct dp_ctrl *dptx, int lane_num, int rate,
 	}
 
 	if (lane_num * link_rate == 0) {
-		HISI_FB_ERR("lane_num = %d, link_rate = %d", lane_num, link_rate);
+		HISI_FB_ERR("[DP] lane_num = %d, link_rate = %d", lane_num, link_rate);
 		return -EINVAL;
 	}
 
@@ -854,7 +891,7 @@ int dptx_video_ts_calculate(struct dp_ctrl *dptx, int lane_num, int rate,
 	dp_imonitor_set_param(DP_PARAM_TU, &tu);
 
 	if (tu >= 65) {
-		HISI_FB_ERR("tu(%d) > 65", tu);
+		HISI_FB_ERR("[DP] tu(%d) > 65", tu);
 		return -EINVAL;
 	}
 
@@ -868,7 +905,7 @@ int dptx_video_ts_calculate(struct dp_ctrl *dptx, int lane_num, int rate,
 	else
 		vparams->init_threshold = 15;
 
-	HISI_FB_INFO("tu = %d\n", tu);
+	HISI_FB_INFO("[DP] tu = %d\n", tu);
 
 	vparams->aver_bytes_per_tu = (uint8_t)tu;
 
@@ -883,7 +920,7 @@ void dptx_video_ts_change(struct dp_ctrl *dptx)
 	struct video_params *vparams;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return;
 	}
 
@@ -907,7 +944,7 @@ void dptx_video_ts_change(struct dp_ctrl *dptx)
 void dptx_video_bpc_change(struct dp_ctrl *dptx)
 {
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return;
 	}
 
@@ -923,7 +960,7 @@ void dptx_video_set_core_bpc(struct dp_ctrl *dptx)
 	struct video_params *vparams;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return;
 	}
 
@@ -1012,7 +1049,7 @@ void dptx_video_set_sink_col(struct dp_ctrl *dptx)
 	enum pixel_enc_type pix_enc;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return;
 	}
 
@@ -1066,7 +1103,7 @@ void dptx_video_set_sink_bpc(struct dp_ctrl *dptx)
 	enum pixel_enc_type pix_enc;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return;
 	}
 
@@ -1159,7 +1196,7 @@ void dptx_disable_default_video_stream(struct dp_ctrl *dptx)
 	uint32_t vsamplectrl;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return;
 	}
 
@@ -1168,7 +1205,7 @@ void dptx_disable_default_video_stream(struct dp_ctrl *dptx)
 	dptx_writel(dptx, DPTX_VSAMPLE_CTRL, vsamplectrl);
 
 	if ((dptx->dptx_vr) && (dptx->dptx_detect_inited)) {
-		HISI_FB_INFO("Cancel dptx detect err count when disable video stream.\n");
+		HISI_FB_INFO("[DP] Cancel dptx detect err count when disable video stream.\n");
 		hrtimer_cancel(&dptx->dptx_hrtimer);
 	}
 }
@@ -1178,7 +1215,7 @@ void dptx_enable_default_video_stream(struct dp_ctrl *dptx)
 	uint32_t vsamplectrl;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return;
 	}
 
@@ -1187,7 +1224,7 @@ void dptx_enable_default_video_stream(struct dp_ctrl *dptx)
 	dptx_writel(dptx, DPTX_VSAMPLE_CTRL, vsamplectrl);
 
 	if ((dptx->dptx_vr) && (dptx->dptx_detect_inited)) {
-		HISI_FB_INFO("restart dptx detect err count when enable video stream.\n");
+		HISI_FB_INFO("[DP] restart dptx detect err count when enable video stream.\n");
 		hrtimer_restart(&dptx->dptx_hrtimer);
 	}
 }
@@ -1199,7 +1236,7 @@ void dptx_enable_default_video_stream(struct dp_ctrl *dptx)
 void dptx_audio_params_reset(struct audio_params *params)
 {
 	if (params == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return;
 	}
 
@@ -1220,7 +1257,7 @@ void dptx_audio_params_reset(struct audio_params *params)
 void dptx_video_params_reset(struct video_params *params)
 {
 	if (params == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return;
 	}
 
@@ -1245,7 +1282,7 @@ void dptx_video_params_reset(struct video_params *params)
 void dwc_dptx_dtd_reset(struct dtd *mdtd)
 {
 	if (mdtd == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return;
 	}
 
@@ -1270,7 +1307,7 @@ bool dptx_dtd_fill(struct dtd *mdtd, uint8_t code, uint32_t refresh_rate,
 		  uint8_t video_format)
 {
 	if (mdtd == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return false;
 	}
 
@@ -3099,7 +3136,7 @@ bool dptx_dtd_fill(struct dtd *mdtd, uint8_t code, uint32_t refresh_rate,
 			return false;
 		}
 	} else {
-		HISI_FB_ERR("Video Format is ERROR\n");
+		HISI_FB_ERR("[DP] Video Format is ERROR\n");
 		return false;
 	}
 

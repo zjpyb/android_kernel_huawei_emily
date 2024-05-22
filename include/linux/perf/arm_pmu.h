@@ -84,6 +84,12 @@ enum armpmu_attr_groups {
 	ARMPMU_NR_ATTR_GROUPS
 };
 
+enum armpmu_pmu_states {
+	ARM_PMU_STATE_OFF,
+	ARM_PMU_STATE_RUNNING,
+	ARM_PMU_STATE_GOING_DOWN,
+};
+
 struct arm_pmu {
 	struct pmu	pmu;
 	cpumask_t	active_irqs;
@@ -108,6 +114,8 @@ struct arm_pmu {
 	void		(*free_irq)(struct arm_pmu *);
 	int		(*map_event)(struct perf_event *event);
 	int		num_events;
+	int		pmu_state;
+	int		percpu_irq;
 	atomic_t	active_events;
 	struct mutex	reserve_mutex;
 	u64		max_period;
@@ -119,7 +127,7 @@ struct arm_pmu {
 	DECLARE_BITMAP(pmceid_bitmap, ARMV8_PMUV3_MAX_COMMON_EVENTS);
 	struct platform_device	*plat_device;
 	struct pmu_hw_events	__percpu *hw_events;
-	struct notifier_block	hotplug_nb;
+	struct hlist_node	node;
 	struct notifier_block	cpu_pm_nb;
 	/* the attr_groups array must be NULL-terminated */
 	const struct attribute_group *attr_groups[ARMPMU_NR_ATTR_GROUPS + 1];

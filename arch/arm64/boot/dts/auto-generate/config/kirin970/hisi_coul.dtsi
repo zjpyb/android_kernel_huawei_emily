@@ -9,6 +9,7 @@
 	    r_pcb = <26000>;	
 	    r_coul_mohm = <10>;
 	    current_offset_a = <1000000>;						
+	current_full_enable = <0>;
         multi_ocv_open = <1>;
         fcc_update_limit = <1>;
         low_temp_opt_enable = <0>;

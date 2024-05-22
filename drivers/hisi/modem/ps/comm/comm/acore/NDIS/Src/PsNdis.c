@@ -1603,6 +1603,10 @@ VOS_VOID Ndis_AtMsgProc( const MsgBlock *pMsgBlock )
     AT_FW_CMD_BINARY_MSG_STRU        *pstAtMsg;
     AT_NDIS_MSG_TYPE_ENUM_UINT32      ulMsgId;
 
+    /*begin: Ó¥ÑÛ²å×®*/
+    COVERITY_TAINTED_SET(pMsgBlock->aucValue);
+    /*end: Ó¥ÑÛ²å×®*/
+
     if (ID_MSG_AT_FW_CMD_BINARY_MSG != pstAtFw->ulMsgId)
     {
         PS_PRINTF("Ndis_AtMsgProc: Fw msg type Error,ID is %x!",pstAtFw->ulMsgId);
@@ -1633,6 +1637,10 @@ VOS_VOID Ndis_AtMsgProc( const MsgBlock *pMsgBlock )
 VOS_VOID Ndis_AdsMsgProc(const MsgBlock* pMsgBlock )
 {
     ADS_NDIS_DATA_IND_STRU  *pstAdsNdisMsg  = (ADS_NDIS_DATA_IND_STRU*)(VOS_VOID*)pMsgBlock;
+
+    /*begin: Ó¥ÑÛ²å×®*/
+    COVERITY_TAINTED_SET(pMsgBlock->aucValue);
+    /*end: Ó¥ÑÛ²å×®*/
 
     if (VOS_NULL_PTR == pstAdsNdisMsg->pstSkBuff)
     {

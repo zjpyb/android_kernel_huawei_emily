@@ -130,8 +130,12 @@ oal_uint32  wal_cfg80211_start_scan(oal_net_device_stru *pst_net_dev, mac_cfg802
 
 oal_uint32  wal_cfg80211_start_sched_scan(oal_net_device_stru *pst_net_dev, mac_pno_scan_stru *pst_pno_scan_info)
 {
+    wal_msg_write_stru      st_write_msg;
+    wal_msg_stru           *pst_rsp_msg = OAL_PTR_NULL;
+    oal_uint32              ul_err_code;
     mac_pno_scan_stru      *pst_pno_scan_params;
-    oal_uint32              ul_ret = 0;
+    oal_int32               l_ret = 0;
+
     /* 申请pno调度扫描参数，此处申请hmac层释放 */
     pst_pno_scan_params = (mac_pno_scan_stru *)OAL_MEM_ALLOC(OAL_MEM_POOL_ID_LOCAL, OAL_SIZEOF(mac_pno_scan_stru), OAL_FALSE);
     if (OAL_PTR_NULL == pst_pno_scan_params)
@@ -142,13 +146,41 @@ oal_uint32  wal_cfg80211_start_sched_scan(oal_net_device_stru *pst_net_dev, mac_
 
     oal_memcopy(pst_pno_scan_params, pst_pno_scan_info, OAL_SIZEOF(mac_pno_scan_stru));
 
-    ul_ret = (oal_uint32)wal_cfg80211_start_req(pst_net_dev, &pst_pno_scan_params,
-                                    OAL_SIZEOF(pst_pno_scan_params), WLAN_CFGID_CFG80211_START_SCHED_SCAN, OAL_TRUE);
 
-    if(OAL_SUCC != ul_ret)
+    OAL_MEMZERO(&st_write_msg, OAL_SIZEOF(st_write_msg));
+    /* 填写 msg 消息头*/
+    st_write_msg.en_wid = WLAN_CFGID_CFG80211_START_SCHED_SCAN;
+    st_write_msg.us_len = OAL_SIZEOF(pst_pno_scan_params);
+
+    /* 填写 msg 消息体 */
+    oal_memcopy(st_write_msg.auc_value, &pst_pno_scan_params, OAL_SIZEOF(pst_pno_scan_params));
+
+    /***************************************************************************
+           抛事件到wal层处理
+    ***************************************************************************/
+    l_ret = wal_send_cfg_event(pst_net_dev,
+                           WAL_MSG_TYPE_WRITE,
+                           WAL_MSG_WRITE_MSG_HDR_LENGTH + OAL_SIZEOF(pst_pno_scan_params),
+                           (oal_uint8 *)&st_write_msg,
+                           OAL_TRUE,
+                           &pst_rsp_msg);
+    if (OAL_UNLIKELY((l_ret != OAL_SUCC) && (l_ret != -OAL_ETIMEDOUT)))
     {
+        OAM_WARNING_LOG1(0, OAM_SF_SCAN, "{wal_cfg80211_start_sched_scan::wal_send_cfg_event return err code %d!}\r\n", l_ret);
+
         OAL_MEM_FREE(pst_pno_scan_params, OAL_TRUE);
-        return ul_ret;
+        return l_ret;
+    }
+
+    if((OAL_PTR_NULL != pst_rsp_msg))
+    {
+        /* 读取返回的错误码 */
+        ul_err_code = wal_check_and_release_msg_resp(pst_rsp_msg);
+        if(OAL_SUCC != ul_err_code)
+        {
+            OAM_WARNING_LOG1(0, OAM_SF_SCAN, "{wal_cfg80211_start_sched_scan::wal_send_cfg_event return err code:[%u]}", ul_err_code);
+            return -OAL_EFAIL;
+        }
     }
 
     return OAL_SUCC;

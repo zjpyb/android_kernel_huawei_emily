@@ -12,6 +12,7 @@
 #include <linux/delay.h>
 #include <linux/io.h>
 #include <linux/workqueue.h>
+#include <linux/wakelock.h>
 #include "shmem.h"
 #include "inputhub_api.h"
 #include "common.h"
@@ -61,6 +62,7 @@ struct shmem {
 };
 
 static struct shmem shmem_gov;
+static struct wake_lock shmem_lock;
 
 static int shmem_ipc_send(unsigned char cmd, obj_tag_t module_id,
 			  unsigned int size)
@@ -157,6 +159,7 @@ const pkt_header_t *shmempack(const char *buf, unsigned int length)
 
 	switch (msg->data.msg_type) {
 	case SHMEM_MSG_TYPE_NORMAL:
+		wake_lock_timeout(&shmem_lock, HZ / 2);
 		memcpy_s(&receive_response_work.data, sizeof(receive_response_work.data), &msg->data, sizeof(receive_response_work.data));
 		queue_work(receive_response_wq, &receive_response_work.worker);
 		break;
@@ -180,8 +183,7 @@ const pkt_header_t *shmempack(const char *buf, unsigned int length)
 
 static int shmem_recv_init(void)
 {
-	receive_response_wq =
-	    create_freezable_workqueue("sharemem_receive_response");
+	receive_response_wq = alloc_ordered_workqueue("sharemem_receive_response", __WQ_LEGACY | WQ_MEM_RECLAIM | WQ_FREEZABLE);
 	if (!receive_response_wq) {
 		pr_err("failed to create sharemem_receive_response workqueue\n");
 		return -1;
@@ -286,6 +288,7 @@ int contexthub_shmem_init(void)
 	if (ret)
 		return ret;
 	shmem_gov.init_flag = SHMEM_INIT_OK;
+	wake_lock_init(&shmem_lock, WAKE_LOCK_SUSPEND, "ch_shmem_lock");
 	return ret;
 }
 

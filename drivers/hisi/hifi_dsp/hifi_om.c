@@ -68,8 +68,6 @@ static struct hifi_dsp_dump_info s_dsp_dump_info[] = {
 	{DSP_NORMAL, DUMP_DSP_BIN, FILE_NAME_DUMP_DSP_BIN, UNCONFIRM_ADDR, HIFI_DUMP_BIN_SIZE},
 	{DSP_PANIC,  DUMP_DSP_LOG, FILE_NAME_DUMP_DSP_PANIC_LOG, UNCONFIRM_ADDR, (DRV_DSP_UART_TO_MEM_SIZE-DRV_DSP_UART_TO_MEM_RESERVE_SIZE)},
 	{DSP_PANIC,  DUMP_DSP_BIN, FILE_NAME_DUMP_DSP_PANIC_BIN, UNCONFIRM_ADDR, HIFI_DUMP_BIN_SIZE},
-	{DSP_PANIC,  DUMP_DSP_BIN, FILE_NAME_DUMP_DSP_OCRAM_BIN, UNCONFIRM_ADDR, HIFI_IMAGE_OCRAMBAK_SIZE},
-	{DSP_PANIC,  DUMP_DSP_BIN, FILE_NAME_DUMP_DSP_TCM_BIN,	 UNCONFIRM_ADDR, HIFI_IMAGE_TCMBAK_SIZE},
 };
 
 static struct hifi_effect_info_stru effect_algo[] = {
@@ -707,15 +705,6 @@ static void hifi_dump_dsp(DUMP_DSP_INDEX index)
 	s_dsp_dump_info[NORMAL_LOG].data_addr = g_om_data.dsp_log_addr + DRV_DSP_UART_TO_MEM_RESERVE_SIZE;
 	s_dsp_dump_info[PANIC_LOG].data_addr  = g_om_data.dsp_log_addr + DRV_DSP_UART_TO_MEM_RESERVE_SIZE;
 
-	if(index == OCRAM_BIN)
-	{
-		s_dsp_dump_info[index].data_addr = (char*)ioremap_wc(HIFI_OCRAM_BASE_ADDR, HIFI_IMAGE_OCRAMBAK_SIZE);
-	}
-	if(index == TCM_BIN)
-	{
-		s_dsp_dump_info[index].data_addr = (char*)ioremap_wc(HIFI_TCM_BASE_ADDR, HIFI_IMAGE_TCMBAK_SIZE);
-	}
-
 	if (NULL == s_dsp_dump_info[index].data_addr) {
 		loge("dsp log ioremap fail.\n");
 		goto END;
@@ -800,12 +789,6 @@ END:
 		filp_close(fp, 0);
 	}
 	set_fs(fs);
-
-	if((index == OCRAM_BIN || index == TCM_BIN) && (NULL != s_dsp_dump_info[index].data_addr))
-	{
-		iounmap(s_dsp_dump_info[index].data_addr);
-		s_dsp_dump_info[index].data_addr = NULL;
-	}
 
 	hifi_release_log_signal();
 
@@ -915,11 +898,12 @@ static bool hifi_check_img_loaded(void)
 	return dsp_loaded;
 }
 
-bool hifi_is_loaded(void)
+bool is_hifi_loaded(void)
 {
-	if(!g_om_data.dsp_loaded) {
+	if (!g_om_data.dsp_loaded) {
 		loge("hifi isn't load, errno is 0x%x.\n", g_om_data.dsp_loaded_sign);
 	}
+
 	return g_om_data.dsp_loaded;
 }
 

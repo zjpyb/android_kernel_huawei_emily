@@ -1507,7 +1507,7 @@ static int synaptics_set_oem_info(struct ts_oem_info_param *info)
 	if (g_ts_data.chip_data->is_new_oem_structure){
 		int latest_index = 0;
 		latest_index = synaptics_get_NVstructure_cur_index(info, type);
-		if (!latest_index){
+		if (!latest_index||latest_index < 0){
 			TS_LOG_ERR("%s: set oem data find current line fail line=%d\n", __func__,
 				   __LINE__);
 			tp_result_info[0] = TS_CHIP_WRITE_ERROR;
@@ -1708,7 +1708,10 @@ static int synaptics_chip_get_info(struct ts_chip_info_param *info)
 							  sizeof(buf));
 				if (retval < 0)
 					TS_LOG_ERR("failed to get configid\n");
-				synaptics_fw_data_init(rmi4_data);
+				retval = synaptics_fw_data_init(rmi4_data);
+				if (retval) {
+					TS_LOG_ERR("%s, failed\n", __func__);
+				}
 				synaptics_fw_data_release();
 			} else {
 				retval =
@@ -1716,7 +1719,10 @@ static int synaptics_chip_get_info(struct ts_chip_info_param *info)
 								sizeof(buf));
 				if (retval < 0)
 					TS_LOG_ERR("failed to get configid\n");
-				synaptics_fw_data_s3718_init(rmi4_data);
+				retval = synaptics_fw_data_s3718_init(rmi4_data);
+				if (retval) {
+					TS_LOG_ERR("%s, failed\n", __func__);
+				}
 				synaptics_fw_data_s3718_release();
 				synaptics_rmi4_status_resume(rmi4_data);
 			}
@@ -1732,6 +1738,7 @@ static int synaptics_chip_get_info(struct ts_chip_info_param *info)
 	}
 	memcpy(&info->ic_vendor, string_id_buf, strlen(string_id_buf));
 	memcpy(&info->mod_vendor, synaptics_sett_param_regs->module_name,
+		strlen(synaptics_sett_param_regs->module_name)>CHIP_INFO_LENGTH? CHIP_INFO_LENGTH:
 	       strlen(synaptics_sett_param_regs->module_name));
 	memcpy(&info->fw_vendor, buf, strlen(buf));
 	return NO_ERR;
@@ -3185,16 +3192,14 @@ static int synaptics_init_chip(void)
 		}
 	}
 	synaptics_sett_param_regs = NULL;
-	if (NULL == synaptics_sett_param_regs) {
 		TS_LOG_ERR("no ic_type or module name is found\n");
 		rc = -EINVAL;
-	}
 out:
-	if (NULL != rmi4_data->module_name) {
+	if ((NULL != rmi4_data->module_name)&&(NULL != synaptics_sett_param_regs)) {
 		synaptics_sett_param_regs->module_name = rmi4_data->module_name;
+		TS_LOG_INFO("module id is %s\n",
+			synaptics_sett_param_regs->module_name);
 	}
-	TS_LOG_INFO("module id is %s\n",
-		    synaptics_sett_param_regs->module_name);
 	return rc;
 }
 
@@ -3258,7 +3263,7 @@ static int synaptics_fw_update_boot(char *file_name)
 							  DSM_TP_FWUPDATE_ERROR_NO);
 				}
 				strncpy(g_ts_data.dsm_info.fw_update_result,
-					"failed", strlen("failed"));
+					"failed", strlen("failed")+1);
 #endif
 
 			} else {
@@ -3314,7 +3319,7 @@ static int synaptics_fw_update_boot(char *file_name)
 							  DSM_TP_FWUPDATE_ERROR_NO);
 				}
 				strncpy(g_ts_data.dsm_info.fw_update_result,
-					"failed", strlen("failed"));
+					"failed", strlen("failed") + 1);
 #endif
 			} else {
 				TS_LOG_INFO("successfully s3718 update fw\n");
@@ -3578,7 +3583,7 @@ static int s3320_set_effective_window(struct synaptics_rmi4_data *rmi4_data)
 static int synaptics_set_wakeup_gesture_enable_switch(u8 enable)
 {
 	int retval = NO_ERR;
-	u8 holster_temp_value;
+	u8 holster_temp_value = 0;
 	unsigned short holster_enable_addr;
 	unsigned char holster_bit_num;
 
@@ -3624,7 +3629,7 @@ out:
 static int synaptics_set_charger_switch(u8 charger_switch)
 {
 	int retval = NO_ERR;
-	u8 charger_temp_value;
+	u8 charger_temp_value = 0;
 	unsigned short charger_enable_addr;
 	unsigned char charger_bit_num;
 
@@ -3700,7 +3705,7 @@ static int synaptics_charger_switch(struct ts_charger_info *info)
 static int synaptics_set_holster_switch(u8 holster_switch)
 {
 	int retval = NO_ERR;
-	int holster_temp_value;
+	int holster_temp_value = 0;
 	unsigned short holster_enable_addr;
 	unsigned char holster_bit_num;
 
@@ -3781,7 +3786,8 @@ static int synaptics_set_roi_switch(u8 roi_switch)
 	int retval = NO_ERR;
 	int i;
 	unsigned short roi_ctrl_addr = 0;
-	u8 roi_control_bit, temp_roi_switch;
+	u8 roi_control_bit = 0;
+	u8 temp_roi_switch = 0 ;
 
 #ifdef ROI
 	if (!f51found)
@@ -3837,7 +3843,8 @@ static int synaptics_read_roi_switch(void)
 {
 	int retval = NO_ERR;
 	unsigned short roi_ctrl_addr = 0;
-	u8 roi_control_bit, roi_switch;
+	u8 roi_control_bit = 0;
+	u8 roi_switch = 0;
 #ifdef ROI
 	if (!f51found)
 		return -ENODEV;
@@ -3947,10 +3954,16 @@ static int synaptics_do_calibrate(unsigned char write_value, int count)
 		goto out;
 	}
 
-	synaptics_rmi4_i2c_write(rmi4_data, addr, &write_value, 1);
+	ret = synaptics_rmi4_i2c_write(rmi4_data, addr, &write_value, 1);
+	if (ret < 0) {
+		TS_LOG_ERR("write glove information failed: %d\n", ret);
+	}
 	do {
 		count--;
-		synaptics_rmi4_i2c_read(rmi4_data, addr, &value, sizeof(value));
+		ret = synaptics_rmi4_i2c_read(rmi4_data, addr, &value, sizeof(value));
+		if (ret < 0) {
+			TS_LOG_ERR("write glove information failed: %d\n", ret);
+		}
 		TS_LOG_INFO("remain count = %d, value is 0x%04x\n", count,
 			    value);
 		if (!value) {
@@ -4050,7 +4063,7 @@ out:
 static int synaptics_set_glove_switch(u8 glove_switch)
 {
 	int retval = NO_ERR;
-	int glove_temp_value;
+	int glove_temp_value = 0;
 	unsigned short glove_enable_addr;
 	unsigned char glove_bit_num;
 
@@ -4317,7 +4330,7 @@ static int synaptics_before_suspend(void)
 static void synaptics_put_device_into_easy_wakeup(void)
 {
 	int retval;
-	unsigned char device_ctrl;
+	unsigned char device_ctrl = 0;
 	unsigned char device_ctrl_data[4] = { 0 };
 	unsigned short f12_ctrl_base = 0;
 	unsigned char gusture_ctrl_offset = 0;
@@ -4570,7 +4583,7 @@ static void synaptics_put_device_outof_easy_wakeup(struct synaptics_rmi4_data
 static void synaptics_sensor_sleep(struct synaptics_rmi4_data *rmi4_data)
 {
 	int retval;
-	unsigned char device_ctrl;
+	unsigned char device_ctrl = 0;
 
 	retval = synaptics_rmi4_i2c_read(rmi4_data,
 					 rmi4_data->rmi4_feature.
@@ -4628,7 +4641,7 @@ static int synatpics_sleep_mode_in(struct synaptics_rmi4_data *rmi4_data)
 static void synaptics_sleep_mode_out(struct synaptics_rmi4_data *rmi4_data)
 {
 	int retval;
-	unsigned char device_ctrl;
+	unsigned char device_ctrl = 0;
 
 	TS_LOG_INFO("synaptics_sleep_mode_out\n");
 	retval = synaptics_rmi4_i2c_read(rmi4_data,
@@ -4994,7 +5007,6 @@ static int synaptics_rmi4_set_page_f35(struct synaptics_rmi4_data *rmi4_data,uns
 {
 
 	int retval = 0;
-	unsigned char retry;
 	unsigned char buf[PAGE_SELECT_LEN];
 	unsigned char page;
 	struct i2c_client *i2c = to_i2c_client(rmi4_data->synaptics_dev->dev.parent);
@@ -5008,14 +5020,6 @@ static int synaptics_rmi4_set_page_f35(struct synaptics_rmi4_data *rmi4_data,uns
 	page = ((addr >> 8) & MASK_8BIT);
 	buf[0] = MASK_8BIT;
 	buf[1] = page;
-
-	for (retry = 0; retry < SYN_I2C_RETRY_TIMES; retry++) {
-		if (i2c_transfer(g_ts_data.client->adapter, msg, 1) == 1) {
-			retval = PAGE_SELECT_LEN;
-			break;
-		}
-		msleep(20);
-	}
 
 	return retval;
 }
@@ -5058,17 +5062,6 @@ static int synaptics_rmi4_i2c_read_f35(struct synaptics_rmi4_data *rmi4_data,uns
 	while (remaining_msgs) {
 		xfer_msgs = remaining_msgs;
 
-		for (retry = 0; retry < SYN_I2C_RETRY_TIMES; retry++) {
-			retval = i2c_transfer(adap, &msg[index], xfer_msgs);
-			if (retval == xfer_msgs)
-				break;
-
-			dev_err(rmi4_data->synaptics_dev->dev.parent,
-					"%s: I2C retry %d\n",
-					__func__, retry + 1);
-			msleep(20);
-		}
-
 		if (retry == SYN_I2C_RETRY_TIMES) {
 			dev_err(rmi4_data->synaptics_dev->dev.parent,
 					"%s: I2C read over retry limit\n",
@@ -5077,11 +5070,7 @@ static int synaptics_rmi4_i2c_read_f35(struct synaptics_rmi4_data *rmi4_data,uns
 			goto exit;
 		}
 
-		remaining_msgs -= xfer_msgs;
-		index += xfer_msgs;
 	}
-
-	retval = length;
 
 exit:
 	return retval;
@@ -5124,17 +5113,11 @@ static int synaptics_rmi4_i2c_write_f35(struct synaptics_rmi4_data *rmi4_data,un
 	msg[0].len = length + 1;
 	msg[0].buf = buf;
 
-	for (retry = 0; retry < SYN_I2C_RETRY_TIMES; retry++) {
-		if (i2c_transfer(g_ts_data.client->adapter, msg, 1) == 1) {
-			retval = length;
-			break;
-		}
-		msleep(20);
-	}
 	if (retry == SYN_I2C_RETRY_TIMES)
 		retval = -EIO;
 
 	kfree(buf);
+	buf = NULL;
 exit:
 	return retval;
 
@@ -7215,7 +7198,7 @@ static void synaptics_rmi4_f51_report(struct synaptics_rmi4_data *rmi4_data,
 	unsigned short ctrl_base_addr = 0;
 	unsigned short data_addr = 0;
 	unsigned short touchplus_offset = 0;
-	unsigned char touchplus_data;
+	unsigned char touchplus_data = 0;
 	unsigned char button_number;
 	unsigned char button_flag;
 

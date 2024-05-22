@@ -123,11 +123,11 @@ static int gps_geofence_wake_release(struct inode *inode, struct file *filp)
 	return 0;
 }
 
-static int gps_geofence_wake_ioctl(struct file *filp, unsigned int cmd,
-				   unsigned int arg)
+static long gps_geofence_wake_ioctl(struct file *filp, unsigned int cmd,
+				   unsigned long arg)
 {
 	GPSINFO("be called.");
-	return 0;
+	return (long)0;
 }
 
 static const struct file_operations gps_geofence_wake_fops = {
@@ -220,14 +220,6 @@ static int gps_gpio_irq_init(int gpio)
 	return irq;
 }
 
-/* cleanup GPIO and IRQ*/
-static void gps_gpio_irq_cleanup(int gpio, int irq)
-{
-	GPSDBG("be called.");
-	gpio_free(gpio);
-	free_irq(irq, NULL);
-}
-
 static ssize_t gps_write_proc_nstandby(struct file *filp,
 				       const char __user *buffer, size_t len,
 				       loff_t *off)
@@ -265,7 +257,7 @@ static ssize_t gps_write_proc_nstandby(struct file *filp,
 }
 
 static ssize_t gps_read_proc_nstandby(struct file *filp,
-				      const char __user *buffer, size_t len,
+				      char __user *buffer, size_t len,
 				      loff_t *off)
 {
 	int gps_nstandby = 0;
@@ -291,7 +283,7 @@ static ssize_t gps_read_proc_nstandby(struct file *filp,
 	sprintf(tmp, "%d", gps_nstandby);
 	GPSINFO(" gps nstandby status[%s]", tmp);
 
-	if (copy_to_user(buffer, tmp, len)) {
+	if (copy_to_user((void __user *)buffer, (void *)tmp, len)) {
 		GPSERR("[GPS] gps_read_proc_nstandby copy_to_user failed!");
 		return -EFAULT;
 	}
@@ -343,7 +335,7 @@ static ssize_t gps_write_proc_mcureq(struct file *filp,
 }
 
 static ssize_t gps_read_proc_mcureq(struct file *filp,
-				    const char __user *buffer, size_t len,
+				    char __user *buffer, size_t len,
 				    loff_t *off)
 {
 	int gps_nstandby = 0;
@@ -369,7 +361,7 @@ static ssize_t gps_read_proc_mcureq(struct file *filp,
 	sprintf(tmp, "%d", gps_nstandby);
 	GPSINFO(" gps mcu_req status[%s]", tmp);
 
-	if (copy_to_user(buffer, tmp, len)) {
+	if (copy_to_user((void __user *)buffer, (void*)tmp, len)) {
 		GPSERR(" mcu_req copy_to_user failed!");
 		return -EFAULT;
 	}
@@ -385,17 +377,17 @@ static const struct file_operations gps_proc_fops_mcureq = {
 
 /* For read */
 static ssize_t gps_read_proc_mcureq_rsp(struct file *filp,
-					const char __user *buffer, size_t len,
+					char __user *buffer, size_t len,
 					loff_t *off)
 {
 	int gps_reqrsp_data = 0;
-	char tmp[2];
+	char tmp[2] = {0};
+
 	if(buffer == NULL  || off == NULL )
 	{
 		pr_err("[GPS]NULL Pointer to platform device\n");
 		return -EINVAL;
 	}
-	memset(tmp, 0, sizeof(tmp));
 
 	if (1 > len || NULL == g_gps_bcm) {
 		GPSERR(" gps_read_proc_mcureq  g_gps_bcm is NULL or read length = 0.");
@@ -409,10 +401,18 @@ static ssize_t gps_read_proc_mcureq_rsp(struct file *filp,
 		return 0;
 	}
 	gps_reqrsp_data = gpio_get_value(g_gps_bcm->mcu_req_rsp.gpio);
-	sprintf(tmp, "%d", gps_reqrsp_data);
+	if (0 == gps_reqrsp_data)
+	{
+		tmp[0] = '0';
+	}
+	else if (1 == gps_reqrsp_data)
+	{
+		tmp[0] = '1';
+	}
+
 	GPSINFO(" gps gps_reqrsp_data status[%s]", tmp);
 
-	if (copy_to_user(buffer, tmp, len)) {
+	if (copy_to_user((void __user *)buffer, (void*)tmp, len)) {
 		GPSERR(" gps_read_proc_nstandby copy_to_user failed!");
 		return -EFAULT;
 	}
@@ -489,7 +489,7 @@ int gps_bcm4774_node_init(struct device_node *np, struct gpio *Pgpio, int node,
 		       Pgpio->gpio, Gps_DeviceNodeName[node], ret);
 		return ret;
 	}
-
+/*
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 13, 0))
 	ret = gpiod_export(gpio_to_desc(Pgpio->gpio), false);
 #else
@@ -500,7 +500,7 @@ int gps_bcm4774_node_init(struct device_node *np, struct gpio *Pgpio, int node,
 		       Pgpio->gpio, ret);
 		return ret;
 	}
-
+*/
 	/* For req */
 	ret = gpio_direction_input(Pgpio->gpio);
 	if (ret) {
@@ -518,7 +518,7 @@ int gps_bcm4774_node_init(struct device_node *np, struct gpio *Pgpio, int node,
 	}
 
 	ret =
-	    proc_create(Gps_DeviceNodeName[node],
+            (int)proc_create(Gps_DeviceNodeName[node],
 			S_IRUGO | S_IWUSR | S_IWGRP | S_IFREG, gps_dir,
 			gps_proc_fops);
 	if (!ret) {
@@ -533,18 +533,22 @@ int gps_bcm4774_node_init(struct device_node *np, struct gpio *Pgpio, int node,
 
 static int k3_gps_bcm_probe(struct platform_device *pdev)
 {
+	GPS_BCM_INFO *gps_bcm = NULL;
+	struct device *gps_power_dev = NULL;
+	struct device_node *np = NULL;
+	enum of_gpio_flags gpio_flags;
+	int ret = 0;
+	int irq = 0;
+	struct gps_geofence_wake *ac_data = NULL;
 	if(pdev == NULL )
 	{
 		pr_err("[GPS]NULL Pointer to platform device\n");
 		return -EINVAL;
 	}
-	GPS_BCM_INFO *gps_bcm = NULL;
-	struct device *gps_power_dev = &pdev->dev;
-	struct device_node *np = gps_power_dev->of_node;
-	enum of_gpio_flags gpio_flags;
-	int ret = 0;
-	int irq = 0;
-	struct gps_geofence_wake *ac_data = &g_geofence_wake;
+
+	gps_power_dev = &pdev->dev;
+	np = gps_power_dev->of_node;
+	ac_data = &g_geofence_wake;
 
 	GPSINFO(" start find gps_power and ic type is 4774");
 	gps_bcm = kzalloc(sizeof(GPS_BCM_INFO), GFP_KERNEL);
@@ -562,7 +566,7 @@ static int k3_gps_bcm_probe(struct platform_device *pdev)
 
 	ret =
 	    gps_bcm4774_node_init(np, &gps_bcm->gpioid_en, GPS_PROC_EN,
-				  &gps_proc_fops_nstandby);
+				  (struct file_operations*)&gps_proc_fops_nstandby);
 	if (0 != ret) {
 		GPSERR(" gps_bcm4774_node_init  gps_bcm  failed.");
 		ret = -1;
@@ -628,7 +632,7 @@ static int k3_gps_bcm_probe(struct platform_device *pdev)
 
 	ret =
 	    gps_bcm4774_node_init(np, &gps_bcm->mcu_req, GPS_PROC_MCUREQ,
-				  &gps_proc_fops_mcureq);
+				  (struct file_operations*)&gps_proc_fops_mcureq);
 	if (0 != ret) {
 		GPSERR(" gps_bcm4774_node_init  mcu_req  failed");
 		goto err_free_mcureq;
@@ -637,7 +641,7 @@ static int k3_gps_bcm_probe(struct platform_device *pdev)
 	ret =
 	    gps_bcm4774_node_init(np, &gps_bcm->mcu_req_rsp,
 				  GPS_PROC_MCUREQ_RSP,
-				  &gps_proc_fops_mcureq_rsp);
+				  (struct file_operations*)&gps_proc_fops_mcureq_rsp);
 	if (0 != ret) {
 		GPSERR("gps_bcm4774_node_init  mcu_req_rsp  failed");
 		goto err_free_mcureq_rsp;
@@ -722,13 +726,13 @@ err_free_gps:
 
 static void K3_gps_bcm_shutdown(struct platform_device *pdev)
 {
+	GPS_BCM_INFO *gps_bcm = NULL;
 	if(pdev == NULL )
 	{
 		pr_err("[GPS]NULL Pointer to platform device\n");
-		return -EINVAL;
+		return;
 	}
-	GPS_BCM_INFO *gps_bcm = platform_get_drvdata(pdev);
-
+	gps_bcm = platform_get_drvdata(pdev);
 	GPSINFO(" K3_gps_bcm_shutdown!");
 
 	if (!gps_bcm) {

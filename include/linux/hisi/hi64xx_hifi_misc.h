@@ -102,6 +102,25 @@ struct codec_io_dump_buf_param {
 #define HI6402_HIFI_MISC_IOCTL_MLIB_TEST_MSG   _IOWR('A', 0x92, struct misc_io_sync_param)
 #define HI64XX_HIFI_MISC_IOCTL_CODEC_DISPLAY_MSG      _IOWR('A', 0x93, struct codec_io_dump_buf_param)
 
+#define FAKE_MSG_MAX_LEN 120
+struct fake_dsp2ap_msg {
+	unsigned int reserved;
+	unsigned int msg_id;
+	char msg_buf[FAKE_MSG_MAX_LEN];
+};
+
+struct fake_sync_msg {
+	unsigned short msg_id;
+	unsigned short reserved;
+	unsigned int param1;
+	unsigned int param2;
+	unsigned int param3;
+};
+
+#define HI64XX_HIFI_MISC_IOCTL_KCOV_FAKE_DSP2AP_MSG   _IOWR('A', 0x94, struct fake_dsp2ap_msg)
+#define HI64XX_HIFI_MISC_IOCTL_KCOV_FAKE_SYNCMSG  _IOWR('A', 0x95, struct fake_sync_msg)
+#define HI64XX_HIFI_MISC_IOCTL_KCOV_FAKE_DUMP_LOG  _IOW('A', 0x96, unsigned int)
+
 /*
  *  dsp img download
  */
@@ -317,5 +336,6 @@ unsigned int hi64xx_misc_get_itcm_start_addr(void);
 unsigned int hi64xx_misc_get_itcm_size(void);
 unsigned int hi64xx_misc_get_dtcm_start_addr(void);
 unsigned int hi64xx_misc_get_dtcm_size(void);
+void hi64xx_soundtrigger_close_codec_dma(void);
 
 #endif/*__HI6402_DSP_H__*/

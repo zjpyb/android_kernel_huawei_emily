@@ -86,11 +86,21 @@ extern oal_uint32  dmac_switch_channel_off(
                 mac_vap_stru        *pst_mac_vap,
                 mac_channel_stru    *pst_dst_chl,
                 oal_uint16           us_protect_time);
+extern oal_uint32  dmac_switch_same_channel_off(
+                mac_device_stru     *pst_mac_device,
+                mac_vap_stru        *pst_mac_vap,
+                oal_uint16           us_protect_time);
+extern oal_uint32  dmac_switch_channel_off_enhanced_self_channel(
+                mac_device_stru     *pst_mac_device,
+                mac_vap_stru        *pst_mac_vap1,
+                mac_vap_stru        *pst_mac_vap2,
+                oal_uint16           us_protect_time);
+
 extern oal_void dmac_scan_begin(mac_device_stru *pst_mac_device);
 extern oal_void dmac_scan_end(mac_device_stru *pst_mac_device);
 extern oal_void  dmac_scan_abort(mac_device_stru *pst_mac_device);
 extern oal_uint32  dmac_scan_after_p2pgo_send_noa(void *p_arg);
-
+extern oal_void  dmac_scan_switch_home_channel_work(mac_device_stru *pst_mac_device);
 
 /* 中断事件处理函数 */
 extern oal_uint32 dmac_scan_channel_statistics_complete(frw_event_mem_stru *pst_event_mem);

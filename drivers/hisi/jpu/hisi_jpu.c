@@ -11,6 +11,7 @@
 *
 */
 #include "hisi_jpu.h"
+#include <linux/device.h>
 
 uint32_t hisi_jpu_msg_level = 7;
 /*lint -save -e21 -e64 -e514 -e84 -e528 -e708 -e753 -e778 -e846 -e866*/
@@ -18,8 +19,12 @@ module_param_named(debug_msg_level, hisi_jpu_msg_level, int, 0644);
 MODULE_PARM_DESC(debug_msg_level, "hisi jpu msg level");
 
 int g_debug_jpu_dec = 0;
+module_param_named(debug_jpu_dec, g_debug_jpu_dec, int, 0644);
+MODULE_PARM_DESC(debug_jpu_dec, "hisi jpu decode debug");
 
 int g_debug_jpu_dec_job_timediff = 0;
+module_param_named(debug_jpu_decode_job_timediff , g_debug_jpu_dec_job_timediff , int, 0644);
+MODULE_PARM_DESC(debug_jpu_decode_job_timediff , "hisi jpu decode job timediff debug");
 /* lint -restore */
 
 static struct hisi_jpu_data_type *gs_hisijd = NULL;
@@ -155,9 +160,15 @@ static int hisi_jpu_set_platform(struct hisi_jpu_data_type *hisijd, struct devic
 
 	if (strncmp(hisijd->jpg_platform_name, "kirin_970", 9) == 0) {
 		hisijd->jpu_support_platform = HISI_KIRIN_970;
+		HISI_JPU_INFO("hisijd jpg platform is %d\n", hisijd->jpu_support_platform);
+		return ret;
+	}else if (strncmp(hisijd->jpg_platform_name, "dss_v500", 8) == 0) {
+		hisijd->jpu_support_platform = HISI_DSS_V500;
+		HISI_JPU_INFO("hisijd jpg platform is %d\n", hisijd->jpu_support_platform);
 		return ret;
 	}else if (strncmp(hisijd->jpg_platform_name, "dss_v501", 8) == 0) {
 		hisijd->jpu_support_platform = HISI_DSS_V501;
+		HISI_JPU_INFO("hisijd jpg platform is %d\n", hisijd->jpu_support_platform);
 		return ret;
 	}else {
 		hisijd->jpu_support_platform = UNSUPPORT_PLATFORM;
@@ -438,6 +449,7 @@ static int hisi_jpu_probe(struct platform_device *pdev)
 	int ret1 = 0;
 	struct hisi_jpu_data_type *hisijd = NULL;
 	struct device_node *np = NULL;
+	struct device *dev = NULL;
 
 	HISI_JPU_INFO("+.\n");
 
@@ -446,15 +458,16 @@ static int hisi_jpu_probe(struct platform_device *pdev)
 		return -ENXIO;
 	}
 
+	dev = &pdev->dev;
 	np = of_find_compatible_node(NULL, NULL, DTS_COMP_JPU_NAME);
 	if (!np) {
-		HISI_JPU_ERR("NOT FOUND device node %s!\n", DTS_COMP_JPU_NAME);
+		dev_err(dev, "NOT FOUND device node %s!\n", DTS_COMP_JPU_NAME);
 		return -ENXIO;
 	}
 
 	hisijd = (struct hisi_jpu_data_type *)kzalloc(sizeof(struct hisi_jpu_data_type), GFP_KERNEL);
 	if (!hisijd) {
-		HISI_JPU_ERR("failed to alloc hisijd.\n");
+		dev_err(dev, "failed to alloc hisijd.\n");
 		return -ENXIO;
 	}
 
@@ -465,7 +478,7 @@ static int hisi_jpu_probe(struct platform_device *pdev)
 
 	ret = of_property_read_u32(np, "fpga_flag", &(hisijd->fpga_flag));
 	if (ret) {
-		HISI_JPU_ERR("failed to get fpga_flag resource.\n");
+		dev_err(dev, "failed to get fpga_flag resource.\n");
 		ret = -ENXIO;
 		goto err_device_put;
 	}
@@ -473,7 +486,7 @@ static int hisi_jpu_probe(struct platform_device *pdev)
 
 	/* get irq no */
 	if (hisi_jpu_get_irqs(hisijd, np)) {
-		HISI_JPU_ERR("failed to get jpu irq.\n");
+		dev_err(dev, "failed to get jpu irq.\n");
 		ret = -ENXIO;
 		goto err_device_put;
 	}
@@ -482,13 +495,13 @@ static int hisi_jpu_probe(struct platform_device *pdev)
 		hisijd->jpu_err_irq, hisijd->jpu_done_irq, hisijd->jpu_other_irq);
 
 	if (hisi_jpu_get_reg_base(hisijd, np)) {
-		HISI_JPU_ERR("failed to get reg base resource.\n");
+		dev_err(dev, "failed to get reg base resource.\n");
 		ret = -ENXIO;
 		goto err_device_put;
 	}
 
 	if (hisi_jpu_get_regulators(hisijd)) {
-		HISI_JPU_ERR("failed to get jpu regulator.\n");
+		dev_err(dev, "failed to get jpu regulator.\n");
 		ret = -ENXIO;
 		goto err_device_put;
 	}
@@ -496,28 +509,28 @@ static int hisi_jpu_probe(struct platform_device *pdev)
 	/* get jpg_func_clk_name resource */
 	ret = of_property_read_string_index(np, "clock-names", 0, &(hisijd->jpg_func_clk_name));
 	if (ret != 0) {
-		HISI_JPU_ERR("failed to get jpg_func_clk_name resource! ret=%d.\n", ret);
+		dev_err(dev, "failed to get jpg_func_clk_name resource! ret=%d.\n", ret);
 		ret = -ENXIO;
 		goto err_device_put;
 	}
 
 	/* get jpg platfrom name resource */
 	if (hisi_jpu_set_platform(hisijd, np)) {
-		HISI_JPU_ERR("failed to set platform info.\n");
+		dev_err(dev, "failed to set platform info.\n");
 		ret = -ENXIO;
 		goto err_device_put;
 	}
 
 	hisijd->jpg_func_clk = devm_clk_get(&(hisijd->pdev->dev), hisijd->jpg_func_clk_name);
 	if (IS_ERR(hisijd->jpg_func_clk)) {
-		HISI_JPU_ERR("jpg_func_clk devm_clk_get error!");
+		dev_err(dev, "jpg_func_clk devm_clk_get error!");
 		ret = -ENXIO;
 		goto err_device_put;
 	}
 
 	ret = hisi_jpu_chrdev_setup(hisijd);
 	if (ret != 0) {
-		HISI_JPU_ERR("fail to hisi_jpu_chrdev_setup!\n");
+		dev_err(dev, "fail to hisi_jpu_chrdev_setup!\n");
 		goto err_device_put;
 	}
 
@@ -525,14 +538,14 @@ static int hisi_jpu_probe(struct platform_device *pdev)
 	gs_hisijd = platform_get_drvdata(pdev);
 
 	if (!gs_hisijd) {
-		HISI_JPU_ERR("hisijd load and reload failed!\n");
+		dev_err(dev, "hisijd load and reload failed!\n");
 		goto err_device_put;
 	}
 
 	/* jpu register */
 	ret = hisi_jpu_register(hisijd);
 	if (ret != 0) {
-		HISI_JPU_ERR("fail to hisi_jpu_register!\n");
+		dev_err(dev, "fail to hisi_jpu_register!\n");
 		goto err_device_put;
 	}
 
@@ -543,7 +556,7 @@ static int hisi_jpu_probe(struct platform_device *pdev)
 err_device_put:
 	ret1 = hisi_jpu_remove(pdev);
 	if (ret1) {
-		HISI_JPU_ERR("hisi_jpu_remove failed!\n");
+		dev_err(dev, "hisi_jpu_remove failed!\n");
 	}
 
 	return ret;

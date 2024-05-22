@@ -45,6 +45,7 @@
 #define MAX_COUNT			0xFF
 #define NO_VOTE_MAX_COUNT		0xFFFFFFFF
 
+
 hisee_power_vote_status g_power_vote_status;
 unsigned int g_power_vote_cnt;
 unsigned int g_cos_id;
@@ -145,6 +146,42 @@ static int hisee_power_ctrl(hisee_power_operation op_type, unsigned int op_cosid
 
 end:
 	set_errno_and_return(ret);
+}
+
+int smx_process(hisee_power_operation op_type, unsigned int op_cosid, int power_cmd)
+{
+	int ret = SMX_PROCESS_UNSUPPORT;
+	u64 cmd_to_atf;
+
+	/* check para */
+	if ((SMX_PROCESS_STEP1_CMD != power_cmd) && (SMX_PROCESS_STEP2_CMD != power_cmd)) {
+		pr_err("%s() para check failed.\n", __func__);
+		return SMX_PROCESS_INVALID_PARAMS;
+	}
+
+	if (SMX_PROCESS_STEP1_CMD == power_cmd) {
+		cmd_to_atf = (u64)CMD_SMX_PROCESS_STEP1;
+		if (true == g_power_pre_enable_clk) {
+			ret = clk_prepare_enable(g_hisee_data.hisee_clk);
+			if (ret < 0) {
+				pr_err("%s() clk_prepare_enable failed ret=%d.\n", __func__, ret);
+				return SMX_PROCESS_CLK_ENABLE_ERROR;
+			}
+		}
+	} else {
+		cmd_to_atf = (u64)CMD_SMX_PROCESS_STEP2;
+	}
+
+	/* send power command to atf */
+	ret = atfd_hisee_smc((u64)SMX_PROCESS_FN_MAIN_SERVICE_CMD, cmd_to_atf, (u64)op_type, (u64)op_cosid);
+	if (SMX_PROCESS_SUPPORT_BUT_ERROR == ret) {
+		pr_err("%s(): power_cmd=%d to atf failed, ret=%d\n",  __func__, power_cmd, ret);
+	} else if (SMX_PROCESS_STEP2_CMD == power_cmd) {
+		if (true == g_power_pre_enable_clk) {
+			clk_disable_unprepare(g_hisee_data.hisee_clk);
+		}
+	}
+	return ret;
 }
 
 static int hisee_set_power_vote_status(u32 vote_process, hisee_power_cmd power_cmd)
@@ -341,7 +378,7 @@ int hisee_poweron_booting_func(void *buf, int para)
 	}
 
 	if ((HISEE_POWER_VOTE_RECORD_PRO == g_vote_record_method)
-				&& (process_id >= COS_PROCESS_TIMEOUT)) {
+				&& ((MAX_POWER_PROCESS_ID <= process_id) || (COS_PROCESS_TIMEOUT == process_id))) {
 		ret = HISEE_INVALID_PARAMS;
 		pr_err("%s() process_id: %u error ret=%d\n", __func__, process_id, ret);
 		goto end;
@@ -431,7 +468,7 @@ int hisee_poweroff_func(void *buf, int para)
 		goto end;
 	}
 	if ((HISEE_POWER_VOTE_RECORD_PRO == g_vote_record_method)
-				&& (process_id >= COS_PROCESS_TIMEOUT)) {
+				&& ((MAX_POWER_PROCESS_ID <= process_id) || (COS_PROCESS_TIMEOUT == process_id))) {
 		ret = HISEE_INVALID_PARAMS;
 		pr_err("%s() process_id error ret=%d\n", __func__, ret);
 		goto end;
@@ -738,13 +775,16 @@ ssize_t hisee_check_ready_show(struct device *dev, struct device_attribute *attr
 	if (HISEE_STATE_COS_READY == state) {
 		snprintf(buf, (u64)3, "%d,", 0);
 		strncat(buf, "cos ready", (unsigned long)strlen("cos ready"));
-	/*free memory alloc in hisee_cos_patch_read*/
-	if (NULL != g_patch_buff_virt) {
-		pr_err("%s free  COS_PATCH_BUFF\n", __func__);
-		dma_free_coherent(g_hisee_data.cma_device, (unsigned long)HISEE_COS_PATCH_BUFF_SIZE, g_patch_buff_virt, g_patch_buff_phy);
-		g_patch_buff_virt	= NULL;
-		g_patch_buff_phy = 0;
+	/*free memory alloc in hisee_cos_patch_read only once.*/
+	if (HISEE_COS_PATCH_FREE_CNT == atomic_inc_return(&g_is_patch_free)) {
+		if (NULL != g_patch_buff_virt) {
+			pr_err("%s free  COS_PATCH_BUFF\n", __func__);
+			dma_free_coherent(g_hisee_data.cma_device, (unsigned long)HISEE_SHARE_BUFF_SIZE, g_patch_buff_virt, g_patch_buff_phy);
+			g_patch_buff_virt	= NULL;
+			g_patch_buff_phy = 0;
+		}
 	}
+	atomic_dec(&g_is_patch_free);
 	} else if (HISEE_STATE_POWER_DOWN == state
 				|| HISEE_STATE_POWER_UP == state
 				|| HISEE_STATE_MISC_READY == state
@@ -765,4 +805,7 @@ ssize_t hisee_check_ready_show(struct device *dev, struct device_attribute *attr
 	pr_err("%s(): state=%d, %s\n", __func__, (int)state, buf);
 	return (ssize_t)strlen(buf);
 }/*lint !e715*/
+
+
+
 

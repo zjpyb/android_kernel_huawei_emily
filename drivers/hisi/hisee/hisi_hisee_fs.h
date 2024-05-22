@@ -17,9 +17,11 @@
 #define HISEE_MISC_NO_UPGRADE_NUMBER (1)
 #endif
 
-#define HISEE_FS_PARTITION_NAME     "/hisee_fs/"
-#define HISEE_COS_FLASH_IMG_NAME     "cos_flash.img"
-#define HISEE_COS_FLASH_IMG_FULLNAME "/hisee_fs/cos_flash.img"
+#define HISEE_FS_PARTITION_NAME         "/mnt/hisee_fs/"
+#define HISEE_COS_FLASH_IMG_NAME        "cos_flash.img"
+#define HISEE_COS_FLASH_IMG_FULLNAME    "/mnt/hisee_fs/cos_flash.img"
+#define HISEE_CASD_IMG_FULLNAME         "/mnt/hisee_fs/casd.img"
+
 
 /* Hisee module specific error code*/
 #define HISEE_COS_VERIFICATITON_ERROR  (-1002)
@@ -206,7 +208,7 @@ typedef struct _HISEE_IMG_HEADER {
 #define HISEE_ENCOS_SUB_FILE_MAX    HISEE_MAX_EMMC_COS_NUMBER
 #define HISEE_ENCOS_SUB_FILES_LEN 16
 #define HISEE_ENCOS_SUB_FILE_NAME_LEN 8
-#define HISEE_ENCOS_SUB_FILE_LEN (640 * SIZE_1K)
+#define HISEE_ENCOS_SUB_FILE_LEN (HISEE_MAX_IMG_SIZE)
 #define HISEE_ENCOS_MAGIC_VALUE "encd_cos"
 #define HISEE_ENCOS_TOTAL_FILE_SIZE (HISEE_ENCOS_SUB_FILE_MAX * HISEE_ENCOS_SUB_FILE_LEN)
 
@@ -234,6 +236,12 @@ typedef enum _HISEE_IMAGE_A_ACCESS_TYPE_ {
 	COS_UPGRADE_INFO_READ_TYPE = 6,
 	COS_UPGRADE_INFO_WRITE_TYPE,
 } hisee_image_a_access_type;
+
+#define HISEE_IS_WRITE_ACCESS(access_type)    \
+		((SW_VERSION_WRITE_TYPE == (access_type)) \
+		|| (COS_UPGRADE_RUN_WRITE_TYPE == (access_type)) \
+		|| (MISC_VERSION_WRITE_TYPE == (access_type)) \
+		|| (COS_UPGRADE_INFO_WRITE_TYPE == (access_type)))
 
 typedef enum  _HISEE_IMG_FILE_TYPE {
 	SLOADER_IMG_TYPE = 0,
@@ -298,18 +306,20 @@ int write_hisee_otp_value(hisee_img_file_type otp_img_index);
 int hisee_parse_img_header(char *buffer);
 int filesys_hisee_read_image(hisee_img_file_type type, char *buffer);
 int hisee_read_file(const char *fullname, char *buffer, size_t offset, size_t size);
+int filesys_read_img_from_file(const char *filename, char *buffer, size_t *file_size, size_t max_read_size);
+int hisee_write_file(const char *fullname, char *buffer, size_t size);
+int hisee_get_partition_path(char full_path[MAX_PATH_NAME_LEN]);
 
 #ifdef CONFIG_HISEE_SUPPORT_MULTI_COS
 extern hisee_encos_header g_hisee_encos_header;
 int hisee_encos_header_init(void);
 int hisee_encos_read(char *data_buf, unsigned int size, unsigned int cos_id);
 int hisee_encos_write(char *data_buf, unsigned int size, unsigned int cos_id);
-int filesys_read_cos_flash_file(const char *filename, char *buffer, size_t *file_size);
 int filesys_rm_cos_flash_file(void);
 int check_cos_flash_file_exist(unsigned int *exist_flg);
 #endif
 
 int access_hisee_image_partition(char *data_buf, hisee_image_a_access_type access_type);
-void parse_timestamp(const char *timestamp_str, timestamp_info *timestamp_value);
+void parse_timestamp(const char timestamp_str[HISEE_IMG_TIME_STAMP_LEN], timestamp_info *timestamp_value);
 
 #endif

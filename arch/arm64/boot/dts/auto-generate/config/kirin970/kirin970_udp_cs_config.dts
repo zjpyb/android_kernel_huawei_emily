@@ -30,6 +30,7 @@
 /include/ "hisi_battery.dtsi"
 /include/ "huawei_charger.dtsi"
 /include/ "hisi_coul_spmi.dtsi"
+/include/ "huawei_soft_isc.dtsi"
 /include/ "fastboot_battery.dtsi"
 /include/ "fastboot_charger.dtsi"
 /include/ "default_3000_68k_4352.dtsi"
@@ -68,6 +69,10 @@
 	hisi,camera_arch_csudp = "platform_cs_udp";
 
 	chosen: chosen{};
+
+	rootparam: rootparam {
+	};
+
 
         psci: psci {
                 compatible      = "arm,psci";

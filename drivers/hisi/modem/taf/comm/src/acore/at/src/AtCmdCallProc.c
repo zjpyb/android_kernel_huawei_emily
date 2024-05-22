@@ -103,7 +103,6 @@ VOS_UINT32 At_RcvVcMsgDtmfDecoderIndProc(
 
     return VOS_OK;
 }
-/* Added by l60609 for CDMA 1X Iteration 2, 2014-9-5, begin */
 
 VOS_UINT32 AT_CheckCfshNumber(
     VOS_UINT8                          *pucAtPara,
@@ -236,9 +235,7 @@ VOS_VOID AT_RcvTafCallSndFlashRslt(
 
     return;
 }
-/* Added by l60609 for CDMA 1X Iteration 2, 2014-9-5, end */
 
-/* Added by f279542 for CDMA 1X Iteration 4, 2014-11-10, begin */
 
 VOS_UINT32 At_TestCBurstDTMFPara(VOS_UINT8 ucIndex)
 {
@@ -367,8 +364,6 @@ VOS_UINT32 AT_RcvTafCallSndBurstDTMFRslt(
 {
     return VOS_OK;
 }
-
-/* Added by f279542 for CDMA 1X Iteration 4, 2014-11-10, end */
 
 
 VOS_UINT32 AT_RcvTafCallCalledNumInfoInd(

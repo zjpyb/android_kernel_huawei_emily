@@ -6,6 +6,7 @@
 #include <linux/hisi/hisi_powerkey_event.h>
 #include <linux/input.h>
 #include <linux/notifier.h>
+#include <log/log_usertype/log-usertype.h>
 
 #define POWER_KEY_RELEASE		(0)
 #define POWER_KEY_PRESS			(1)
@@ -18,6 +19,12 @@ static int mini_bugreport_powerkey_notifier_call(struct notifier_block *powerkey
 	/*we only focus on the event when press power key for 6s!*/
 	if(event == HISI_PRESS_KEY_6S)
 	{
+#ifndef CONFIG_MINI_BUGREPORT_ENG
+		if(BETA_USER != get_logusertype_flag())
+		{
+			return NOTIFY_DONE;
+		}
+#endif
 		pr_info("[%s]response long press 6s interrupt!\n",__func__);
 		input_report_key(key_dev, KEY_F23, POWER_KEY_PRESS);
 		input_sync(key_dev);

@@ -1,6 +1,7 @@
 
 
 #include <linux/types.h>
+#include <linux/string.h>
 #include "huawei_platform/emcom/smartcare/nse/psr_pub.h"
 #include "huawei_platform/emcom/smartcare/nse/psr_base.h"
 #include "huawei_platform/emcom/smartcare/nse/psr_ac.h"

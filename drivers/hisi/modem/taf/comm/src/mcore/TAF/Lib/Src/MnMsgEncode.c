@@ -54,9 +54,7 @@
 #include  "MnErrorCode.h"
 #include  "MnMsgApi.h"
 #include  "MnMsgTs.h"
-/* Added by f62575 for V9R1 STK升级, 2013-6-26, begin */
 #include "TafStdlib.h"
-/* Added by f62575 for V9R1 STK升级, 2013-6-26, end */
 
 
 
@@ -84,7 +82,7 @@ VOS_UINT32 MSG_EncodeUserData(
 /*****************************************************************************
   5 函数实现
 *****************************************************************************/
-/* Added by f62575 for AT Project, 2011-10-24, begin */
+
 
 
 
@@ -181,7 +179,6 @@ VOS_UINT32 MN_MSG_ChkDate(
     }
 }
 
-/* Added by f62575 for AT Project, 2011-10-24, end */
 
 
 LOCAL VOS_UINT32 MSG_EncodeTimeStamp(
@@ -465,7 +462,6 @@ VOS_UINT32 MN_MSG_EncodeAddress(
     if ((VOS_TRUE != bRpAddr)
      && (MN_MSG_TON_ALPHANUMERIC == pstAsciiAddr->enNumType))
     {
-        /* Modified by f62575 for V9R1 STK升级, 2013-6-26, begin */
         ulRet = TAF_STD_Pack7Bit(pstAsciiAddr->aucAsciiNum,
                                  pstAsciiAddr->ulLen,
                                  0,
@@ -475,7 +471,6 @@ VOS_UINT32 MN_MSG_EncodeAddress(
         {
             return MN_ERR_CLASS_INVALID_TP_ADDRESS;
         }
-        /* Modified by f62575 for V9R1 STK升级, 2013-6-26, end */
         ucAddrBcdLen = (VOS_UINT8)ulAlphaNumLen;
     }
     else
@@ -888,7 +883,6 @@ VOS_UINT32 MSG_EncodeUserData(
         }
 
         /*字符转换为GSM 7 bit default alphabet，填充UD中的FillBit SM数据区，并输出FillBit SM占用的字节数*/
-        /* Modified by f62575 for V9R1 STK升级, 2013-6-26, begin */
         ulRet   = TAF_STD_Pack7Bit(pstUserData->aucOrgData,
                                    pstUserData->ulLen,
                                    ucFillBit,
@@ -898,7 +892,6 @@ VOS_UINT32 MSG_EncodeUserData(
         {
             return MN_ERR_CLASS_INVALID_TP_UD;
         }
-        /* Modified by f62575 for V9R1 STK升级, 2013-6-26, end */
 
         /*计算UDL UD总共占用的字节数*/
         *pucLen = 1 + (((pucUserData[0] * 7) + 7)/8);

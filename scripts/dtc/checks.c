@@ -106,8 +106,7 @@ static inline void check_msg(struct check *c, const char *fmt, ...)
 	va_list ap;
 	va_start(ap, fmt);
 
-	if ((c->warn && (quiet < 1))
-	    || (c->error && (quiet < 2))) {
+	if (c->error && (quiet < 2)) {
 		fprintf(stderr, "%s (%s): ",
 			(c->error) ? "ERROR" : "Warning", c->name);
 		vfprintf(stderr, fmt, ap);
@@ -293,6 +292,30 @@ static void check_node_name_format(struct check *c, struct node *dt,
 		     node->fullpath);
 }
 NODE_ERROR(node_name_format, NULL, &node_name_chars);
+
+static void check_unit_address_vs_reg(struct check *c, struct node *dt,
+			     struct node *node)
+{
+	const char *unitname = get_unitname(node);
+	struct property *prop = get_property(node, "reg");
+
+	if (!prop) {
+		prop = get_property(node, "ranges");
+		if (prop && !prop->val.len)
+			prop = NULL;
+	}
+
+	if (prop) {
+		if (!unitname[0])
+			FAIL(c, "Node %s has a reg or ranges property, but no unit name",
+			    node->fullpath);
+	} else {
+		if (unitname[0])
+			FAIL(c, "Node %s has a unit name, but no reg property",
+			    node->fullpath);
+	}
+}
+NODE_WARNING(unit_address_vs_reg, NULL);
 
 static void check_property_name_chars(struct check *c, struct node *dt,
 				      struct node *node, struct property *prop)
@@ -560,7 +583,7 @@ static void check_reg_format(struct check *c, struct node *dt,
 	size_cells = node_size_cells(node->parent);
 	entrylen = (addr_cells + size_cells) * sizeof(cell_t);
 
-	if ((prop->val.len % entrylen) != 0)
+	if (!entrylen || (prop->val.len % entrylen) != 0)
 		FAIL(c, "\"reg\" property in %s has invalid length (%d bytes) "
 		     "(#address-cells == %d, #size-cells == %d)",
 		     node->fullpath, prop->val.len, addr_cells, size_cells);
@@ -666,6 +689,8 @@ static struct check *check_table[] = {
 	&device_type_is_string, &model_is_string, &status_is_string,
 
 	&addr_size_cells, &reg_format, &ranges_format,
+
+	&unit_address_vs_reg,
 
 	&avoid_default_addr_size,
 	&obsolete_chosen_interrupt_controller,

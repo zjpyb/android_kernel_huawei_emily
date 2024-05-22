@@ -3,6 +3,7 @@
 #include "switch_fsa9685_common.h"
 #include <huawei_platform/log/hw_log.h>
 #include <protocol.h>
+#include <linux/errno.h>
 
 #define HWLOG_TAG sensorhub
 HWLOG_REGIST();

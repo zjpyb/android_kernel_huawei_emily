@@ -22,7 +22,6 @@
 
 #include <soc_acpu_baseaddr_interface.h>
 #include <soc_syscounter_interface.h>
-#include <soc_isp_watchdog_interface.h>
 #include <soc_sctrl_interface.h>
 #include <global_ddr_map.h>
 #include <m3_rdr_ddr_map.h>
@@ -177,14 +176,14 @@ u64 address_map(u64 orig_addr)
 void m3_nmi_send(void)
 {
 	/* SCLPMCUCTRL nmi_in */
-	pr_err("%s start\n", __func__);
+	BB_PRINT_PN("%s start\n", __func__);
 	/* rdr will send the NMI to lpm3 */
 	if (sctrl_base) {
 		writel(0x1 << 2, (void *)(SOC_SCTRL_SCLPMCUCTRL_ADDR(sctrl_base)));/* the addr need ioremap */
 	} else {
-		pr_err("%s err\n", __func__);
+		BB_PRINT_ERR("%s err\n", __func__);
 	}
-	pr_err("%s end\n", __func__);
+	BB_PRINT_PN("%s end\n", __func__);
 }
 #define LPMCU_DDR_MEM_PART_PATH_LEN 48UL
 char g_lpmcu_ddr_memory_path[LOG_PATH_LEN + LPMCU_DDR_MEM_PART_PATH_LEN];
@@ -196,7 +195,7 @@ static void fn_dump(u32 modid, u32 etype, u64 coreid,
 	/*pr_err("[%s] [0x%x 0x%x] start\n", __func__, readl(SOC_SYSCOUNTER_CNTCV_H32_ADDR(counter_base)),
 											readl(SOC_SYSCOUNTER_CNTCV_L32_ADDR(counter_base)));*/
 
-	pr_err("modid:0x%x,etype:0x%x,coreid:0x%llx,%s,pfn_cb:%pK\n", modid, etype, coreid, pathname, pfn_cb);
+	BB_PRINT_PN("modid:0x%x,etype:0x%x,coreid:0x%llx,%s,pfn_cb:%pK\n", modid, etype, coreid, pathname, pfn_cb);
 	msg[1] = modid;
 	pfn_cb_dumpdone = pfn_cb;
 	g_modid = modid;
@@ -204,10 +203,10 @@ static void fn_dump(u32 modid, u32 etype, u64 coreid,
 
 	ret = RPROC_ASYNC_SEND(HISI_RPROC_LPM3_MBX17, (mbox_msg_t *)&msg, 2);
 	if (ret != 0) {
-		pr_err("%s:RPROC_ASYNC_SEND failed! return (0x%x)\n", __func__, ret);
+		BB_PRINT_ERR("%s:RPROC_ASYNC_SEND failed! return (0x%x)\n", __func__, ret);
 	}
 
-	pr_err("%s end\n", __func__);
+	BB_PRINT_PN("%s end\n", __func__);
 	return;
 }
 static void fn_reset(u32 modid, u32 etype, u64 coreid)
@@ -223,10 +222,10 @@ static int rdr_lpm3_msg_handler(struct notifier_block *nb,
 										unsigned long len, void *msg)
 {
 	u32 *_msg = msg;
-	pr_err("%s, [lpm3] -> [ap]: 0x%x\n", __func__, _msg[0]);
+	BB_PRINT_PN("%s, [lpm3] -> [ap]: 0x%x\n", __func__, _msg[0]);
 	if (_msg[0] == LPM3_RDR_SAVE_DONE) {	/*lint !e845 *//* lpm3 -> ap: "my sys context save is done" */
 		up(&rdr_lpm3_sem);
-		pr_err("%s lpm3 tell me that its sys context has saved\n", __func__);
+		BB_PRINT_PN("%s lpm3 tell me that its sys context has saved\n", __func__);
 	}
 	return 0;
 }/*lint !e715 */
@@ -239,7 +238,7 @@ static int rdr_lpm3_thread_body(void *arg)
 		if (down_interruptible(&rdr_lpm3_sem)) {
 			return -1;
 		}
-		pr_err(" %s %d pfn_cb_dumpdone:%pK\n", __func__, __LINE__, pfn_cb_dumpdone);
+		BB_PRINT_PN(" %s %d pfn_cb_dumpdone:%pK\n", __func__, __LINE__, pfn_cb_dumpdone);
 		if (pfn_cb_dumpdone != NULL) {
 			strncat(g_lpmcu_ddr_memory_path, "/lpmcu_log/lpmcu_ddr_memory.bin", LPMCU_DDR_MEM_PART_PATH_LEN);/* unsafe_function_ignore: strncat*/
 			lpmcu_ddr_base = (char *)ioremap((phys_addr_t)HISI_RESERVED_LPMX_CORE_PHYMEM_BASE_UNIQUE, HISI_RESERVED_LPMX_CORE_PHYMEM_SIZE);/*lint !e747*/
@@ -250,7 +249,7 @@ static int rdr_lpm3_thread_body(void *arg)
 			}
 			pfn_cb_dumpdone(g_modid, current_core_id);
 			pfn_cb_dumpdone = NULL;
-			pr_err("modid:0x%x,coreid:0x%llx\n", g_modid, current_core_id);
+			BB_PRINT_PN("modid:0x%x,coreid:0x%llx\n", g_modid, current_core_id);
 		}
 	}
 }/*lint !e715*/
@@ -267,10 +266,10 @@ int rdr_lpm3_reset_off(int mod, int sw)
 
 		ret = RPROC_ASYNC_SEND(HISI_RPROC_LPM3_MBX17, (mbox_msg_t *)msg, 2);
 		if (ret != 0) {
-			pr_err("RPROC_ASYNC_SEND failed! return 0x%x, &msg:(%pK)\n", ret, msg);
+			BB_PRINT_ERR("RPROC_ASYNC_SEND failed! return 0x%x, &msg:(%pK)\n", ret, msg);
 			return ret;
 		}
-		pr_err("%s: (ap)->(lpm3) ipc send (0x%x 0x%x)!\n", __func__, msg[0], msg[1]);
+		BB_PRINT_PN("%s: (ap)->(lpm3) ipc send (0x%x 0x%x)!\n", __func__, msg[0], msg[1]);
 	} else if (LPMCU_RESET_OFF_MODID_WDT == mod) {
 		if (sctrl_base) {
 			tmp = (unsigned int)readl(SOC_SCTRL_SCBAKDATA10_ADDR(sctrl_base));
@@ -287,7 +286,6 @@ int rdr_lpm3_reset_off(int mod, int sw)
 
 }/*lint !e550*/
 
-
 int rdr_lpm3_stat_dump(void)
 {
 	s32 ret;
@@ -296,7 +294,7 @@ int rdr_lpm3_stat_dump(void)
 	ret = RPROC_ASYNC_SEND(HISI_RPROC_LPM3_MBX17, (mbox_msg_t *)&msg, 1);
 
 	if (ret != 0) {
-		pr_err("RPROC_ASYNC_SEND failed! return 0x%x, msg:(0x%x)\n", ret, msg);
+		BB_PRINT_ERR("RPROC_ASYNC_SEND failed! return 0x%x, msg:(0x%x)\n", ret, msg);
 		return ret;
 	}
 
@@ -312,7 +310,7 @@ static int system_reg_prase(char *dir_path, s8 *file_name, u64 log_addr, u32 log
 
 	fp = bbox_cleartext_get_filep(dir_path, file_name);
 	if (IS_ERR_OR_NULL(fp)) {
-		printk(KERN_ERR "%s() error:fp 0x%pK.\n", __func__, fp);
+		BB_PRINT_ERR("%s() error:fp 0x%pK.\n", __func__, fp);
 		return -1;
 	}
 
@@ -340,7 +338,7 @@ static int head_info_prase(char *dir_path, s8 *file_name, u64 log_addr, u32 log_
 
 	fp = bbox_cleartext_get_filep(dir_path, file_name);
 	if (IS_ERR_OR_NULL(fp)) {
-		printk(KERN_ERR "%s() error:fp 0x%pK.\n", __func__, fp);
+		BB_PRINT_ERR("%s() error:fp 0x%pK.\n", __func__, fp);
 		return -1;
 	}
 
@@ -351,9 +349,9 @@ static int head_info_prase(char *dir_path, s8 *file_name, u64 log_addr, u32 log_
 		pc_info[PC_INFO_STR_MAX_LENGTH - 1] = '\0';
 
 		data_low = *((u32 volatile *)(log_addr + cpu_idx * sizeof(u64)));
-		printk(KERN_ERR "lpm3 cleartest head_info low: 0x%x.\n", data_low);
+		BB_PRINT_PN("lpm3 cleartest head_info low: 0x%x.\n", data_low);
 		data_high= *((u32 volatile *)(log_addr + cpu_idx * sizeof(u64) + sizeof(u32)));
-		printk(KERN_ERR "lpm3 cleartest head_info high: 0x%x.\n", data_high);
+		BB_PRINT_PN("lpm3 cleartest head_info high: 0x%x.\n", data_high);
 
 		if (data_low == PC_LO_PWR_DOWN && data_high == PC_HI_PWR_DOWN)
 			ret = snprintf_s(pc_info, PC_INFO_STR_MAX_LENGTH, PC_INFO_STR_MAX_LENGTH - 1, "cpu%d: %s\n", cpu_idx, "PWR_DOWN");
@@ -388,7 +386,7 @@ static int lpm3_exc_special_prase(char *dir_path, s8 *file_name, u64 log_addr, u
 
 	fp = bbox_cleartext_get_filep(dir_path, file_name);
 	if (IS_ERR_OR_NULL(fp)) {
-		printk(KERN_ERR "%s() error:fp 0x%pK.\n", __func__, fp);
+		BB_PRINT_ERR("%s() error:fp 0x%pK.\n", __func__, fp);
 		return -1;
 	}
 
@@ -431,7 +429,7 @@ static int lpm3_core_reg_prase(char *dir_path, s8 *file_name, u64 log_addr, u32 
 
 	fp = bbox_cleartext_get_filep(dir_path, file_name);
 	if (IS_ERR_OR_NULL(fp)) {
-		printk(KERN_ERR "%s() error:fp 0x%pK.\n", __func__, fp);
+		BB_PRINT_ERR("%s() error:fp 0x%pK.\n", __func__, fp);
 		return -1;
 	}
 
@@ -489,7 +487,7 @@ static int lpm3_nvic_reg_prase(char *dir_path, s8 *file_name, u64 log_addr, u32 
 
 	fp = bbox_cleartext_get_filep(dir_path, file_name);
 	if (IS_ERR_OR_NULL(fp)) {
-		printk(KERN_ERR "%s() error:fp 0x%pK.\n", __func__, fp);
+		BB_PRINT_ERR("%s() error:fp 0x%pK.\n", __func__, fp);
 		return -1;
 	}
 
@@ -553,18 +551,18 @@ static int lpm3_log_prase(char *dir_path, s8 *file_name, u64 log_addr, u32 log_l
 
 	fp = bbox_cleartext_get_filep(dir_path, file_name);
 	if (IS_ERR_OR_NULL(fp)) {
-		printk(KERN_ERR "%s() error:fp 0x%pK.\n", __func__, fp);
+		BB_PRINT_ERR("%s() error:fp 0x%pK.\n", __func__, fp);
 		return -1;
 	}
 
 	log_buff = (s8 *)kzalloc(log_size, GFP_KERNEL);
 	if (NULL == log_buff) {
-		printk(KERN_ERR "kmalloc fail for lpm3_log\n");
+		BB_PRINT_ERR("kmalloc fail for lpm3_log\n");
 		return -1;
 	}
 
 	if (memcpy_s((void *)log_buff, log_len, (void *)(log_addr), log_len)) {
-		printk(KERN_ERR "memcpy fail for lpm3_log\n");
+		BB_PRINT_ERR("memcpy fail for lpm3_log\n");
 		ret = -1;
 		goto out;
 	}
@@ -573,7 +571,7 @@ static int lpm3_log_prase(char *dir_path, s8 *file_name, u64 log_addr, u32 log_l
 
 	ret = vfs_write(fp, log_buff, (size_t)log_len, &(fp->f_pos));/*lint !e613 */
 	if (ret != log_len) {
-		printk(KERN_ERR "%s():write file exception with ret %d.\n", __func__, ret);
+		BB_PRINT_ERR("%s():write file exception with ret %d.\n", __func__, ret);
 		ret = -1;
 		goto out;
 	}
@@ -602,19 +600,19 @@ static int rdr_hisi_lpm3_cleartext_print(char *dir_path, u64 log_addr, u32 log_l
 	s32 ret = 0;
 
 	if (IS_ERR_OR_NULL(dir_path) || IS_ERR_OR_NULL((void *)log_addr)) {
-		printk(KERN_ERR "%s() error:dir_path 0x%pK log_addr 0x%pK.\n", __func__, dir_path, (void *)log_addr);
+		BB_PRINT_ERR("%s() error:dir_path 0x%pK log_addr 0x%pK.\n", __func__, dir_path, (void *)log_addr);
 		return -1;
 	}
 
 	if (M3_RDR_SYS_CONTEXT_SIZE != log_len) {
-		printk(KERN_ERR "log_len error:0x%x.\n", log_len);
+		BB_PRINT_ERR("log_len error:0x%x.\n", log_len);
 		return -1;
 	}
 
 	for(idx = 0; idx < sizeof(g_lpm3_cleartext) / sizeof(log_lpm3_cleartext_t); idx++) {
 		log_name_creat = g_lpm3_cleartext[idx].file_name;
 		if (IS_ERR_OR_NULL(log_name_creat)) {
-			printk(KERN_ERR "lpm3_log_name: %s error.\n", log_name_creat);
+			BB_PRINT_ERR("lpm3_log_name: %s error.\n", log_name_creat);
 			return -1;
 		}
 
@@ -632,45 +630,44 @@ int __init rdr_lpm3_init(void)
 	struct rdr_exception_info_s einfo;
 	s32 ret = -1;
 	static u32 msg[4] = {0};
-	pr_err("enter %s\n", __func__);
+	BB_PRINT_PN("enter %s\n", __func__);
 
 
 	/*counter_base = (char*)ioremap((phys_addr_t)SOC_ACPU_SYS_CNT_BASE_ADDR,0x1000);*/
 	sctrl_base = (char *)ioremap((phys_addr_t)SOC_ACPU_SCTRL_BASE_ADDR, 0x1000UL);
 
 	/*pr_err("counter_base: %p, sctrl_base: %p\n", counter_base, sctrl_base);*/
-	pr_err("sctrl_base: %pK\n", sctrl_base);
+	BB_PRINT_PN("sctrl_base: %pK\n", sctrl_base);
 
 
 	rdr_ipc_block.next = NULL;
 	rdr_ipc_block.notifier_call = rdr_lpm3_msg_handler;
 	ret = RPROC_MONITOR_REGISTER(HISI_RPROC_RDR_MBX1, &rdr_ipc_block);/*lint !e838*/
 	if (ret != 0) {
-		pr_info("%s:RPROC_MONITOR_REGISTER failed", __func__);
+		BB_PRINT_ERR("%s:RPROC_MONITOR_REGISTER failed", __func__);
 		return ret;
 	}
 
 	sema_init(&rdr_lpm3_sem, 0);
 	if (!kthread_run(rdr_lpm3_thread_body, NULL, "rdr_lpm3_thread")) {
-		pr_err("%s: create thread rdr_main_thread faild.\n", __func__);
+		BB_PRINT_ERR("%s: create thread rdr_main_thread faild.\n", __func__);
 		return -1;
 	}
-
 
 	s_module_ops.ops_dump = fn_dump;
 	s_module_ops.ops_reset = fn_reset;
 	ret = rdr_register_module_ops(current_core_id, &s_module_ops, &current_info);
 	if (ret != 0) {
-		pr_err("rdr_register_module_ops failed! return 0x%x\n", ret);
+		BB_PRINT_ERR("rdr_register_module_ops failed! return 0x%x\n", ret);
 		return ret;
 	}
 
 	ret = rdr_register_cleartext_ops(current_core_id, rdr_hisi_lpm3_cleartext_print);
 	if(ret < 0) {
-		pr_err("rdr_register_cleartext_ops failed! return 0x%x\n", ret);
+		BB_PRINT_ERR("rdr_register_cleartext_ops failed! return 0x%x\n", ret);
 		return ret;
 	}
-	pr_err("rdr_register_cleartext_success\n");
+	BB_PRINT_PN("rdr_register_cleartext_success\n");
 
 	memset(&einfo, 0, sizeof(struct rdr_exception_info_s));/* unsafe_function_ignore: memset*/
 	einfo.e_modid = (unsigned int)M3_WDT_TIMEOUT;
@@ -691,10 +688,13 @@ int __init rdr_lpm3_init(void)
 	rdr_lpm3_buf_addr = address_map(current_info.log_addr);
 	rdr_lpm3_buf_len = current_info.log_len;
 
+	BB_PRINT_PN("%s: log_addr = 0x%llx, log_len = %u\n", __func__, current_info.log_addr, current_info.log_len);
 	g_lpmcu_rdr_ddr_addr = (char *)hisi_bbox_map((phys_addr_t)current_info.log_addr, (unsigned long)current_info.log_len);
 
-	if (g_lpmcu_rdr_ddr_addr)
+	if (g_lpmcu_rdr_ddr_addr){
+		BB_PRINT_ERR("rdr_ddr_addr success\n");
 		memset(g_lpmcu_rdr_ddr_addr, 0 , (unsigned long)rdr_lpm3_buf_len);/* unsafe_function_ignore: memset*/
+	}
 
 	msg[0] = PSCI_MSG_TYPE_M3_RDRBUF;
 	msg[1] = (unsigned int)rdr_lpm3_buf_addr;
@@ -704,10 +704,10 @@ int __init rdr_lpm3_init(void)
 	ret = RPROC_ASYNC_SEND(HISI_RPROC_LPM3_MBX17, (mbox_msg_t *)msg, 4);/*lint !e838*/
 
 	if (ret != 0) {
-		pr_err("RPROC_ASYNC_SEND failed! return 0x%x, &msg:(%pK)\n", ret, msg);
+		BB_PRINT_ERR("RPROC_ASYNC_SEND failed! return 0x%x, &msg:(%pK)\n", ret, msg);
 		/*return ret;*/
 	}
-	pr_err("%s: (ap)->(lpm3) ipc send (0x%x 0x%x 0x%x 0x%x)!\n", __func__, msg[0], msg[1], msg[2], msg[3]);
+	BB_PRINT_PN("%s: (ap)->(lpm3) ipc send (0x%x 0x%x 0x%x 0x%x)!\n", __func__, msg[0], msg[1], msg[2], msg[3]);
 
 	(void)rdr_lpm3_reset_off(LPMCU_RESET_OFF_MODID_PANIC, check_himntn(HIMNTN_LPM3_PANIC_INTO_LOOP));
 

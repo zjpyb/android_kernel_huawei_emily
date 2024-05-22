@@ -344,7 +344,6 @@ typedef struct
 
 
 
-/* Deleted SSA_USSD_DCS_DECODE_HOOK_STRU by f62575 for V9R1 STKÉý¼¶, 2013-6-26 */
 
 
 
@@ -400,9 +399,7 @@ extern VOS_VOID Spy_SarSendToDsp(MODEM_ID_ENUM_UINT16 enModemID, MN_APP_SAR_INFO
 
 extern VOS_UINT16 Spy_SarGetReduction(VOS_VOID);
 
-/* Deleted by f62575 for V9R1 STKÉý¼¶, 2013-6-26, begin */
 /* Deleted SSA_GetDcsMsgCoding */
-/* Deleted by f62575 for V9R1 STKÉý¼¶, 2013-6-26, end */
 
 extern VOS_VOID SSA_UssdDcsHook(
     VOS_UINT32                          ulReceiverPid,

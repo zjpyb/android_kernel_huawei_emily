@@ -6,7 +6,7 @@
 
 #include <linux/tracepoint.h>
 
-TRACE_EVENT(thermal_power_allocator, /* [false alarm]:fortify */
+TRACE_EVENT(thermal_power_allocator,/* [false alarm]:原生宏定义 */
 	TP_PROTO(struct thermal_zone_device *tz, u32 *req_power,
 		 u32 total_req_power, u32 *granted_power,
 		 u32 total_granted_power, size_t num_actors,
@@ -54,7 +54,7 @@ TRACE_EVENT(thermal_power_allocator, /* [false alarm]:fortify */
 		__entry->delta_temp)
 );
 
-TRACE_EVENT(thermal_power_allocator_pid, /* [false alarm]:fortify */
+TRACE_EVENT(thermal_power_allocator_pid,/* [false alarm]:原生宏定义 */
 	TP_PROTO(struct thermal_zone_device *tz, s32 err, s32 err_integral,
 		 s64 p, s64 i, s64 d, s32 output),
 	TP_ARGS(tz, err, err_integral, p, i, d, output),
@@ -82,7 +82,7 @@ TRACE_EVENT(thermal_power_allocator_pid, /* [false alarm]:fortify */
 		  __entry->p, __entry->i, __entry->d, __entry->output)
 );
 
-TRACE_EVENT(thermal_power_actor_cpu_limit, /* [false alarm]:fortify */
+TRACE_EVENT(thermal_power_actor_cpu_limit,/* [false alarm]:原生宏定义 */
 	TP_PROTO(const struct cpumask *cpus, unsigned int freq,
 		unsigned long cdev_state, u32 power),
 
@@ -136,7 +136,7 @@ TRACE_EVENT(thermal_power_actor_gpu_get_power,
 );/* [false alarm]:fortify */
 
 TRACE_EVENT(IPA_allocator,
-	TP_PROTO(int current_temp, int control_temp, int switch_temp, s32 delta_temp,
+	TP_PROTO(unsigned long current_temp, unsigned long control_temp, unsigned long switch_temp, s32 delta_temp,
 			 u32 num_actors,
 			 u32 power_range,
 			 u32 *req_power, u32 total_req_power,
@@ -150,9 +150,9 @@ TRACE_EVENT(IPA_allocator,
 			granted_power, total_granted_power
 		),
 	TP_STRUCT__entry(
-		__field(int, current_temp             )
-		__field(int, control_temp             )
-		__field(int, switch_temp             )
+		__field(unsigned long, current_temp             )
+		__field(unsigned long, control_temp             )
+		__field(unsigned long, switch_temp             )
 		__field(s32,           delta_temp               )
 		__field(u32,           num_actors               )
 		__field(u32,           power_range              )
@@ -182,7 +182,7 @@ TRACE_EVENT(IPA_allocator,
 		__entry->max_allocatable_power = max_allocatable_power;
 	),
 
-	TP_printk("%d,%d,%d,%d,%u,%s,%u,%s,%u,%s,%u",
+	TP_printk("%lu,%lu,%lu,%d,%u,%s,%u,%s,%u,%s,%u",
 			__entry->current_temp,__entry->control_temp,__entry->switch_temp,
 			__entry->delta_temp,
 			__entry->power_range,
@@ -376,17 +376,17 @@ TRACE_EVENT(IPA_actor_gpu_get_power,
 );/* [false alarm]:fortify */
 
 
-TRACE_EVENT(IPA_get_tsens_value, /* [false alarm]:fortify */
-	TP_PROTO(int tsens_value0, int tsens_value1, int tsens_value2,
-	         int tsens_value_max),
+TRACE_EVENT(IPA_get_tsens_value,/* [false alarm]:原生宏定义 */
+	TP_PROTO(long tsens_value0, long tsens_value1, long tsens_value2,
+	         long tsens_value_max),
 
 	TP_ARGS(tsens_value0, tsens_value1, tsens_value2, tsens_value_max),
 
 	TP_STRUCT__entry(
-		__field(int, tsens_value0   )
-		__field(int, tsens_value1   )
-		__field(int, tsens_value2   )
-		__field(int, tsens_value_max)
+		__field(long, tsens_value0   )
+		__field(long, tsens_value1   )
+		__field(long, tsens_value2   )
+		__field(long, tsens_value_max)
 	),
 
 	TP_fast_assign(
@@ -396,7 +396,7 @@ TRACE_EVENT(IPA_get_tsens_value, /* [false alarm]:fortify */
 		__entry->tsens_value_max = tsens_value_max;
 	),
 
-	TP_printk("%d,%d,%d,%d",
+	TP_printk("%ld,%ld,%ld,%ld",
 		 __entry->tsens_value0, __entry->tsens_value1, __entry->tsens_value2,
 		 __entry->tsens_value_max)
 ); /* [false alarm]:fortify */

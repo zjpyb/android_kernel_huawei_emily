@@ -72,7 +72,10 @@ typedef enum  rate_info_flags  oal_rate_info_flags;
 /*****************************************************************************
   10 º¯ÊýÉùÃ÷
 *****************************************************************************/
-
+extern void cfg80211_drv_mss_result(struct net_device *dev, gfp_t gfp, const u8 *buf, size_t len);
+#ifdef _PRE_WLAN_FEATURE_TAS_ANT_SWITCH
+extern void cfg80211_drv_tas_result(struct net_device *dev, gfp_t gfp, const u8 *buf, size_t len);
+#endif
 
 #ifdef __cplusplus
     #if __cplusplus

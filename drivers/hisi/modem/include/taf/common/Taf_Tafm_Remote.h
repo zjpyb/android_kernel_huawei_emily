@@ -106,9 +106,7 @@ typedef enum
 
     TAF_MSG_MMA_GET_CURRENT_ATTACH_STATUS,      /*请求获取CS和PS的注册状态*/
 
-    /* Deleted by f62575 for SS FDN&Call Control, 2013-05-06, begin */
     /* Deleted SSA消息 */
-    /* Deleted by f62575 for SS FDN&Call Control, 2013-05-06, end */
 
     TAF_MSG_MMA_USIM_INFO,
     TAF_MSG_MMA_CPNN_INFO,

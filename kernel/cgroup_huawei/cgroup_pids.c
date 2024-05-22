@@ -891,7 +891,6 @@ struct cgroup_subsys pids_cgrp_subsys = {
 	.can_attach = pids_can_attach,
 	.cancel_attach = pids_cancel_attach,
 	.attach = pids_attach,
-	.allow_attach = subsys_cgroup_allow_attach,
 	.fork = pids_fork,
 	.exit = pids_exit,
 	.legacy_cftypes = files,

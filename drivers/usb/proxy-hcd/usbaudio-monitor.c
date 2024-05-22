@@ -4,9 +4,66 @@
 #include <linux/hisi/usb/hisi_usb.h>
 #include <linux/hisi/usb/hisi_hifi_usb.h>
 
+#include "hifi-usb.h"
+
 #define ERR(format, arg...) pr_err("[usbaudio-minitor]%s: " format, __func__, ##arg)
 #define DBG(format, arg...) pr_info("[usbaudio-minitor]%s: " format, __func__, ##arg)
 
+#ifdef CONFIG_HISI_DEBUG_FS
+static int never_hifi_usb;
+static int always_hifi_usb;
+
+int never_use_hifi_usb(int val)
+{
+	never_hifi_usb = val;
+	return val;
+}
+
+int always_use_hifi_usb(int val)
+{
+	always_hifi_usb = val;
+	return val;
+}
+#else
+#define never_hifi_usb 0
+#define always_hifi_usb 0
+#endif
+
+int get_never_hifi_usb_value(void)
+{
+	return never_hifi_usb;
+}
+EXPORT_SYMBOL(get_never_hifi_usb_value);
+
+int get_always_hifi_usb_value(void)
+{
+	return always_hifi_usb;
+}
+EXPORT_SYMBOL(get_always_hifi_usb_value);
+
+bool is_huawei_usb_c_audio_adapter(struct usb_device *udev)
+{
+	if (udev->parent == NULL) {
+		WARN_ON(1);
+		return false;
+	}
+	if (udev->parent->parent != NULL) {
+		WARN_ON(1);
+		return false;
+	}
+
+	if ((le16_to_cpu(udev->descriptor.idVendor) != 0x12d1)
+			|| (le16_to_cpu(udev->descriptor.idProduct) != 0x3a07))
+		return false;
+
+	if (udev->product) {
+		if (strncmp(udev->product, HUAWEI_USB_C_AUDIO_ADAPTER,
+				sizeof(HUAWEI_USB_C_AUDIO_ADAPTER)) == 0) {
+			return true;
+		}
+	}
+	return false;
+}
 
 static bool is_usbaudio_device(struct usb_device *udev, int configuration)
 {
@@ -80,11 +137,17 @@ static bool is_non_usbaudio_device(struct usb_device *udev, int configuration)
 		return false;
 	}
 
+	if (is_huawei_usb_c_audio_adapter(udev))
+		return false;
+
 	return !is_usbaudio_device(udev, configuration);
 }
 
-bool check_non_usbaudio_device(struct usb_device *udev, int configuration)
+bool stop_hifi_usb_when_non_usbaudio(struct usb_device *udev, int configuration)
 {
+	if (get_always_hifi_usb_value())
+		return false;
+
 	if (is_non_usbaudio_device(udev, configuration)) {
 		DBG("it need call hisi_usb_stop_hifi_usb\n");
 		hisi_usb_stop_hifi_usb();
@@ -100,13 +163,41 @@ static int usb_notifier_call(struct notifier_block *nb,
 	int configuration;
 
 	if (action == USB_DEVICE_ADD) {
-		if ((udev->parent != NULL) && (udev->parent->parent == NULL)
-				&& hisi_usb_using_hifi_usb(udev)
-				&& udev->actconfig) {
-			configuration = udev->actconfig->desc.bConfigurationValue;
-			DBG("configuration %d\n", configuration);
-			check_non_usbaudio_device(udev, configuration);
+		if ((udev->parent != NULL) && (udev->parent->parent == NULL)) {
+			if (hisi_usb_using_hifi_usb(udev)) {
+				if (udev->actconfig) {
+					configuration = udev->actconfig->desc.bConfigurationValue;
+					DBG("configuration %d\n", configuration);
+					stop_hifi_usb_when_non_usbaudio(udev, configuration);
+				} else {
+					/*
+					 * Some error happened, host does not
+					 * send SET_CONFIGURATION to device.
+					 * Just stop hifi usb.
+					 */
+					DBG("device has no actconfig, switch to arm usb\n");
+					hisi_usb_stop_hifi_usb();
+				}
+			} else {
+				if (udev->actconfig) {
+					configuration = udev->actconfig->desc.bConfigurationValue;
+					if (is_huawei_usb_c_audio_adapter(udev)
+							&& !is_usbaudio_device(udev, configuration)) {
+						DBG("HUAWEI USB-C TO 3.5MM AUDIO ADAPTER\n"
+							"to start hifi usb\n");
+						(void)hisi_usb_start_hifi_usb();
+					}
+#ifdef CONFIG_HISI_DEBUG_FS
+					else if (get_always_hifi_usb_value()) {
+						DBG("always_hifi_usb, to start hifi usb\n");
+						(void)hisi_usb_start_hifi_usb();
+					}
+#endif
+				}
+			}
 		}
+
+		hifi_usb_announce_udev(udev);
 	}
 
 	return 0;

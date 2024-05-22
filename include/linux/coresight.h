@@ -262,8 +262,9 @@ struct coresight_ops_source {
 	int (*cpu_id)(struct coresight_device *csdev);
 	int (*trace_id)(struct coresight_device *csdev);
 	int (*enable)(struct coresight_device *csdev,
-		      struct perf_event_attr *attr,  u32 mode);
-	void (*disable)(struct coresight_device *csdev);
+		      struct perf_event *event,  u32 mode);
+	void (*disable)(struct coresight_device *csdev,
+			struct perf_event *event);
 #else
 	int (*trace_id)(struct coresight_device *csdev);
 	int (*enable)(struct coresight_device *csdev);
@@ -290,6 +291,9 @@ extern void coresight_refresh_path(struct coresight_device *csdev, int enable);
 extern int _etm4_cpuilde_restore(void);
 extern int check_cpu_online(struct coresight_device *csdev);
 extern void etm4_disable_all(void);
+extern void noc_trace_disable_all(void);
+extern void stm_trace_disable_all(void);
+extern void coresight_disable_all(void);
 extern void *get_etb_drvdata_bydevnode(struct device_node *np);
 extern int etbetf_restore(void *drv);
 extern void *get_funnel_drvdata_bydevnode(struct device_node *np);
@@ -304,8 +308,11 @@ static inline void coresight_disable(struct coresight_device *csdev) {}
 static inline int coresight_timeout(void __iomem *addr, u32 offset,
 				     int position, int value) { return 1; }
 static inline unsigned int coresight_access_enabled(void) { return 0; }
-static inline int _etm4_cpuilde_restore(void) { return 0; }
+static inline int _etm4_cpuilde_restore(void) {return 0; }
 static inline void etm4_disable_all(void) {}
+static inline void noc_trace_disable_all(void) {};
+static inline void stm_trace_disable_all(void) {};
+static inline void coresight_disable_all(void) {};
 static inline void *get_etb_drvdata_bydevnode(struct device_node *np) { return NULL; }
 static inline int etbetf_restore(void *drv) { return -1; }
 static inline void *get_funnel_drvdata_bydevnode(struct device_node *np) { return NULL; }

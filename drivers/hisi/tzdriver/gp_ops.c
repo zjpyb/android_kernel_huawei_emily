@@ -22,7 +22,7 @@
 #include "gp_ops.h"
 #include "mem.h"
 #include "mailbox_mempool.h"
-
+#include "dynamic_mem.h"
 #include "tlogger.h"
 #include "cfc.h"
 
@@ -132,7 +132,7 @@ static inline int copy_from_client(void *dest, void __user *src, size_t size,
 
 	if (kernel_api) {
 		/* Source is kernel valid address */
-		if ((virt_addr_valid(src) || vmalloc_addr_valid(src))) { /*lint !e648 */
+		if ((virt_addr_valid(src) || vmalloc_addr_valid(src) || modules_addr_valid(src))) { /*lint !e648 */
 			s_ret = memcpy_s(dest, size, src, size);
 			if (EOK != s_ret) {
 				tloge("copy_from_client _s fail. line=%d, s_ret=%d.\n",
@@ -142,7 +142,7 @@ static inline int copy_from_client(void *dest, void __user *src, size_t size,
 				return 0;
 			}
 		} else {
-			tloge("copy_from_client check kernel addr failed.\n");
+			tloge("copy_from_client check kernel addr %llx failed.\n", (uint64_t)src);
 			return -EFAULT;
 		}
 	} else {
@@ -173,15 +173,15 @@ static inline int copy_to_client(void __user *dest, void *src, size_t size,
 
 	/* Dest is kernel valid address */
 	if (kernel_api) {
-		if ((virt_addr_valid(dest) || vmalloc_addr_valid(dest))) { /*lint !e648 */
-		    s_ret = memcpy_s(dest, size, src, size);
-		    if (EOK != s_ret) {
-			    tloge("copy_to_client _s fail. line=%d, s_ret=%d.\n",
+		if ((virt_addr_valid(dest) || vmalloc_addr_valid(dest) || modules_addr_valid(dest))) { /*lint !e648 */
+			s_ret = memcpy_s(dest, size, src, size);
+			if (EOK != s_ret) {
+				tloge("copy_to_client _s fail. line=%d, s_ret=%d.\n",
 					__LINE__, s_ret);
-			    return s_ret;
+				return s_ret;
 			}
 		} else {
-			tloge("copy_to_client check dst addr failed.\n");
+			tloge("copy_to_client check dst addr %llx failed.\n", (uint64_t)dest);
 			return -EFAULT;
 		}
 	} else {
@@ -436,8 +436,13 @@ static int alloc_operation(TC_NS_DEV_File *dev_file,
 				unsigned int ion_shared_fd =
 					operation->params[i].value.a;
 				struct ion_handle *drm_ion_handle =
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
+					ion_import_dma_buf_fd(drm_ion_client,
+							   ion_shared_fd);
+#else
 					ion_import_dma_buf(drm_ion_client,
 							   ion_shared_fd);
+#endif
 				if (IS_ERR(drm_ion_handle)) {
 					tloge("in %s err: fd=%d\n",
 					      __func__, ion_shared_fd);
@@ -445,11 +450,16 @@ static int alloc_operation(TC_NS_DEV_File *dev_file,
 					break;
 				}
 
-
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
+				ret = ion_secmem_get_phys(drm_ion_client, drm_ion_handle,
+					       &drm_ion_phys, &drm_ion_size);
+#else
 				ret = ion_phys(drm_ion_client, drm_ion_handle,
 					       &drm_ion_phys, &drm_ion_size);
+#endif
 
 				if (ret) {
+					ion_free(drm_ion_client, drm_ion_handle);
 					tloge("in %s err:ret=%d fd=%d\n",
 					      __func__, ret, ion_shared_fd);
 					ret = -EFAULT;
@@ -948,7 +958,8 @@ int TZMP2_uid(TC_NS_ClientContext *client_context, TC_NS_SMC_CMD *smc_cmd, bool 
 		if (smc_cmd->cmd_id == GLOBAL_CMD_ID_OPEN_SESSION && global) {
 			/* save tzmp_uid */
 			mutex_lock(&tzmp_lock);
-			tzmp_uid = smc_cmd->uid;
+			tzmp_uid = 0; /*for multisesion, we use same uid*/
+			smc_cmd->uid = 0;
 			tlogv("openSession , tzmp_uid.uid is %d", tzmp_uid);
 			mutex_unlock(&tzmp_lock);
 
@@ -1064,7 +1075,7 @@ int tc_client_call(TC_NS_ClientContext *client_context,
 	smc_cmd->login_method = client_context->login.method;
 	needchecklogin = sizeof(uint32_t) == dev_file->pub_key_len &&
 		GLOBAL_CMD_ID_OPEN_SESSION == smc_cmd->cmd_id &&
-		(current->mm != NULL);
+		(current->mm != NULL) && global;
 	if (needchecklogin) {
 		ret = do_encryption(g_ca_auth_hash_buf,
 		                    sizeof(g_ca_auth_hash_buf),
@@ -1088,6 +1099,7 @@ int tc_client_call(TC_NS_ClientContext *client_context,
 		smc_cmd->login_data_len = 0;
 	}
 
+	smc_cmd->ca_pid = current->pid;
 	smc_cmd->real_pid = current->pid;
 	is_token_work = (!global)
 		|| (smc_cmd->cmd_id == GLOBAL_CMD_ID_OPEN_SESSION);
@@ -1222,6 +1234,13 @@ error:
 	/* kfree(NULL) is safe and this check is probably not required*/
 	client_context->returns.code = tee_ret;
 	client_context->returns.origin = smc_cmd->err_origin;
+	if (TEE_ERROR_TAGET_DEAD == tee_ret) {
+		uint64_t phys_addr = smc_cmd->uuid_phys | (uint64_t)(((uint64_t)smc_cmd->uuid_h_phys)<<32);
+		unsigned char *uuidchar = (void *)phys_to_virt(phys_addr);
+		TEEC_UUID *uuid = (TEEC_UUID*)(uuidchar + 1);
+		tloge("ta_crash uuid\n");
+		kill_ion_by_uuid((TEEC_UUID*)uuid);
+	}
 	kfree(smc_cmd);
 	if (operation_init)
 		free_operation(client_context, &mb_pack->operation, local_temp_buffer);
@@ -1276,6 +1295,9 @@ static int do_encryption(uint8_t *buffer, uint32_t buffer_size,
 		return -EINVAL;
 	}
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
+#endif
+
 	/* Payload + Head + Padding */
 	plaintext_size = payload_size + sizeof(struct encryption_head);
 	plaintext_aligned_size = ROUND_UP(plaintext_size,
@@ -1286,13 +1308,15 @@ static int do_encryption(uint8_t *buffer, uint32_t buffer_size,
 
 	if (total_size > buffer_size) {
 		tloge("Do encryption buffer is not enough!\n");
-		return -ENOMEM;
+		ret = -ENOMEM;
+		goto end;
 	}
 
 	cryptotext = kzalloc(total_size, GFP_KERNEL);
 	if (!cryptotext) {
 		tloge("Malloc failed when doing encryption!\n");
-		return -ENOMEM;
+		ret = -ENOMEM;
+		goto end;
 	}
 
 	/* Setting encryption head */
@@ -1337,7 +1361,10 @@ static int do_encryption(uint8_t *buffer, uint32_t buffer_size,
 		tloge("Copy cryptotext failed, ret=%d.\n", ret);
 
 end:
-	kfree(cryptotext);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
+#endif
+	if (cryptotext)
+		kfree(cryptotext);
 	return ret;
 }
 

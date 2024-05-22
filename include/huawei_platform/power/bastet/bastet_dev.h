@@ -265,6 +265,6 @@ struct freezer_state {
 };
 
 #define BST_MAX_WRITE_PAYLOAD (2048)
-#define BST_MAX_READ_PAYLOAD (BST_MAX_WRITE_PAYLOAD + sizeof(bst_device_ind))
+#define BST_MAX_READ_PAYLOAD (BST_MAX_WRITE_PAYLOAD + sizeof(struct bst_device_ind))
 
 #endif /* _BASTET_DEV_H */

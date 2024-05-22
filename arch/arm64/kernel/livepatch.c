@@ -146,6 +146,9 @@ void notrace klp_walk_stackframe(struct stackframe *frame,
 	while (1) {
 		int ret;
 
+		if (!frame->fp || !frame->sp)
+			break;
+
 		if (fn(frame, data))
 			break;
 		ret = unwind_frame(NULL, frame);

@@ -65,7 +65,10 @@ OAL_STATIC OAL_INLINE oal_int32  oal_wait_event_timeout(oal_wait_queue_head_stru
 {
     return 50;
 }
-
+OAL_STATIC OAL_INLINE oal_long  oal_wait_for_completion_interruptible_timeout(int *pst_completion, oal_ulong ul_timeout)
+{
+    return 0;
+}
 
 #define OAL_WAIT_EVENT_INTERRUPTIBLE_TIMEOUT(_st_wq, _condition, _timeout)      oal_wait_event_interruptible_timeout((_st_wq), (_condition), (_timeout))
 

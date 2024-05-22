@@ -209,7 +209,7 @@ static void asp_cfg_h2x_module_enable(void)
 		dp_h2x_on();
 
 	 priv->asp_h2x_module_count++;
-	 pr_info("[%s:%d],+asp_h2x_module_count=%d\n", __FUNCTION__, __LINE__, priv->asp_h2x_module_count);
+	 pr_info("[%s:%d],+asp_h2x_module_count = %d\n", __FUNCTION__, __LINE__, priv->asp_h2x_module_count);
 }
 
 static void asp_cfg_h2x_module_disable(void)
@@ -219,7 +219,7 @@ static void asp_cfg_h2x_module_disable(void)
 	BUG_ON(NULL == priv);
 
 	priv->asp_h2x_module_count--;
-	pr_info("[%s:%d],-asp_h2x_module_count=%d\n", __FUNCTION__, __LINE__, priv->asp_h2x_module_count);
+	pr_info("[%s:%d],-asp_h2x_module_count = %d\n", __FUNCTION__, __LINE__, priv->asp_h2x_module_count);
 	if (0 == priv->asp_h2x_module_count)
 		dp_h2x_off();
 }

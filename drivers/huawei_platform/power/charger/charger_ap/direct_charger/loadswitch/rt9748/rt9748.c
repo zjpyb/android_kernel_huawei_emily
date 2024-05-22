@@ -165,29 +165,6 @@ static int rt9748_read_byte(u8 reg, u8 *value)
 	return rt9748_read_block(di, value, reg, 1);
 }
 
-/*lint -save -e* */
-static ssize_t rt9748_sysfs_show(struct device *dev, struct device_attribute *attr, char *buf)
-{
-	return 0;
-}
-
-/**********************************************************
-*  Function:       fan54151_sysfs_store
-*  Discription:    set the value for all fan54151 device's node
-*  Parameters:   dev:device
-*                      attr:device_attribute
-*                      buf:string of node value
-*                      count:unused
-*  return value:  0-sucess or others-fail
-**********************************************************/
-static ssize_t rt9748_sysfs_store(struct device *dev,
-					struct device_attribute *attr,
-					const char *buf, size_t count)
-{
-	return count;
-}
-/*lint -restore*/
-
 /**********************************************************
 *  Function:       fan54151_sysfs_create_group
 *  Discription:    create the fan54151 device sysfs group
@@ -232,32 +209,6 @@ static int rt9748_write_mask(u8 reg, u8 MASK, u8 SHIFT, u8 value)
 	ret = rt9748_write_byte(reg, val);
 
 	return ret;
-}
-
-/**********************************************************
-*  Function:       rt9748_read_mask
-*  Discription:    register read mask interface
-*  Parameters:   reg:register name
-*                      MASK:mask value of the function
-*                      SHIFT:shift number of the function
-*                      value:register value
-*  return value:  0-sucess or others-fail
-**********************************************************/
-
-/*lint -save -e* */
-static int rt9748_read_mask(u8 reg, u8 MASK, u8 SHIFT, u8 *value)
-{
-	int ret = 0;
-	u8 val = 0;
-
-	ret = rt9748_read_byte(reg, &val);
-	if (ret < 0)
-		return ret;
-	val &= MASK;
-	val >>= SHIFT;
-	*value = val;
-
-	return 0;
 }
 static int rt9748_watchdog_config(int time)
 {
@@ -1288,6 +1239,8 @@ static int rt9748_get_bat_current_ma(int * ibat)
 			polarity = (reg_high & RT9748_IBAT_POLARITY_MASK) >> (LENTH_OF_BYTE - 1);
 			*ibat = (reg_high & RT9748_IBAT_ADC_MASK) * RT9748_IBAT_HIGH_LSB;
 			*ibat += reg_low * RT9748_IBAT_LOW_LSB;
+			*ibat *= SENSE_R_5_MOHM;
+			*ibat /= g_rt9748_dev->sense_r_mohm;
 			if (1 == polarity)
 				*ibat *= -1;
 			break;
@@ -1304,6 +1257,8 @@ static int rt9748_get_bat_current_ma(int * ibat)
 			polarity = (reg_high &BQ25870_IBAT_POLARITY_MASK) >> (LENTH_OF_BYTE - 1);
 			*ibat = (reg_high & BQ25870_IBAT_ADC_MASK) *BQ25870_IBAT_HIGH_LSB;
 			*ibat += reg_low * BQ25870_IBAT_LOW_LSB;
+			*ibat *= SENSE_R_5_MOHM;
+			*ibat /= g_rt9748_dev->sense_r_mohm;
 			if (1 == polarity)
 				*ibat *= -1;
 			break;
@@ -1320,6 +1275,8 @@ static int rt9748_get_bat_current_ma(int * ibat)
 			polarity = (reg_high & FAN54161_IBAT_POLARITY_MASK) >> (LENTH_OF_BYTE - 1);
 			*ibat = (reg_high & FAN54161_IBAT_ADC_MASK) * FAN54161_IBAT_HIGH_LSB;
 			*ibat += reg_low * FAN54161_IBAT_LOW_LSB;
+			*ibat *= SENSE_R_5_MOHM;
+			*ibat /= g_rt9748_dev->sense_r_mohm;
 			if (1 == polarity)
 				*ibat *= -1;
 			break;
@@ -1336,6 +1293,8 @@ static int rt9748_get_bat_current_ma(int * ibat)
 			polarity = (reg_high & PCA9498UK_IBAT_POLARITY_MASK) >> (LENTH_OF_BYTE - 1);
 			*ibat = (reg_high & PCA9498UK_IBAT_ADC_MASK) * PCA9498UK_IBAT_HIGH_LSB;
 			*ibat += reg_low * PCA9498UK_IBAT_LOW_LSB;
+			*ibat *= SENSE_R_5_MOHM;
+			*ibat /= g_rt9748_dev->sense_r_mohm;
 			if (1 == polarity)
 				*ibat *= -1;
 			break;
@@ -1654,6 +1613,9 @@ static void rt9748_irq_work(struct work_struct *work)
 	u8 event2;
 	u8 status;
 	struct nty_data * data = &(di->nty_data);
+	struct atomic_notifier_head *direct_charge_fault_notifier_list;
+
+	direct_charge_lvc_get_fault_notifier(&direct_charge_fault_notifier_list);
 
 	rt9748_read_byte(RT9748_EVENT_1, &event1);
 	rt9748_read_byte(RT9748_EVENT_2, &event2);
@@ -1669,27 +1631,27 @@ static void rt9748_irq_work(struct work_struct *work)
 		if (event1 & RT9748_VBUS_OVP_FLT)
 		{
 			hwlog_err("vbus ovp happened\n");
-			atomic_notifier_call_chain(&direct_charge_fault_notifier_list, DIRECT_CHARGE_FAULT_VBUS_OVP, data);
+			atomic_notifier_call_chain(direct_charge_fault_notifier_list, DIRECT_CHARGE_FAULT_VBUS_OVP, data);
 		}
 		else if (event1 & RT9748_IBUS_REVERSE_OCP_FLT)
 		{
 			hwlog_err("ibus reverse ocp happened\n");
-			atomic_notifier_call_chain(&direct_charge_fault_notifier_list, DIRECT_CHARGE_FAULT_REVERSE_OCP, data);
+			atomic_notifier_call_chain(direct_charge_fault_notifier_list, DIRECT_CHARGE_FAULT_REVERSE_OCP, data);
 		}
 		else if (event2 & RT9748_OTP_FLT)
 		{
 			hwlog_err("otp happened\n");
-			atomic_notifier_call_chain(&direct_charge_fault_notifier_list, DIRECT_CHARGE_FAULT_OTP, data);
+			atomic_notifier_call_chain(direct_charge_fault_notifier_list, DIRECT_CHARGE_FAULT_OTP, data);
 		}
 		else if (event2 & RT9748_INPUT_OCP_FLT)
 		{
 			hwlog_err("input ocp happened\n");
-			atomic_notifier_call_chain(&direct_charge_fault_notifier_list, DIRECT_CHARGE_FAULT_INPUT_OCP, data);
+			atomic_notifier_call_chain(direct_charge_fault_notifier_list, DIRECT_CHARGE_FAULT_INPUT_OCP, data);
 		}
 		else if (event2 & RT9748_VDROP_OVP_FLT)
 		{
 			hwlog_err("vdrop ovp happened\n");
-			atomic_notifier_call_chain(&direct_charge_fault_notifier_list, DIRECT_CHARGE_FAULT_VDROP_OVP, data);
+			atomic_notifier_call_chain(direct_charge_fault_notifier_list, DIRECT_CHARGE_FAULT_VDROP_OVP, data);
 		}
 		else
 		{
@@ -1726,6 +1688,16 @@ static irqreturn_t rt9748_interrupt(int irq, void *_di)
 }
 static void parse_dts(struct device_node *np, struct rt9748_device_info *di)
 {
+	int ret = 0;
+
+	ret = of_property_read_u32(np, "sense_r_mohm", (u32 *)&(di->sense_r_mohm));
+	if (ret)
+	{
+		di->sense_r_mohm = SENSE_R_5_MOHM; /* default is 5mohm */
+		hwlog_err("sense_r_mohm get failed\n");
+	}
+	hwlog_info("%s: sense_r_mohm = %d mohm\n", __func__, di->sense_r_mohm);
+
 	return;
 }
 /*lint -restore*/
@@ -1809,7 +1781,7 @@ static int rt9748_probe(struct i2c_client *client, const struct i2c_device_id *i
 		hwlog_err("register loadswitch ops failed!\n");
 		goto rt9748_fail_3;
 	}
-	ret = batinfo_ops_register(&rt9748_batinfo_ops);
+	ret = batinfo_lvc_ops_register(&rt9748_batinfo_ops);
 	if (ret)
 	{
 		hwlog_err("register ina231 ops failed!\n");
@@ -1928,6 +1900,7 @@ module_exit(rt9748_exit);
 static int __init rt9748_mutex_lock_init(void)
 {
 	mutex_init(&loadswitch_i2c_mutex_lock);
+	return 0;
 }
 static void __exit rt9748_mutex_lock_exit(void)
 {

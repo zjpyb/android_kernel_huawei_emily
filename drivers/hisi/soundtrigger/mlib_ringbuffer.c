@@ -27,21 +27,21 @@ struct _RingBuffer {
 
 
 
-RingBuffer *RingBuffer_Init(void * ringbufferAddr)
+RingBuffer *RingBuffer_Init(void * ringbufferAddr, int element_size, int element_cnt)
 {
 	RingBuffer *rb;
-
+	int ringbuffer_size;
 	rb = ringbufferAddr;
-
+	ringbuffer_size = element_size * element_cnt;
 	if (NULL == rb)
 	{
 		return NULL;
 	}
 
-	memset(rb,0X00,HEAD_SIZE+RINGBUFFER_SIZE);
+	memset(rb,0X00,HEAD_SIZE+ringbuffer_size);
 
-	rb->element_size = ELEMENT_SIZE;
-	rb->size = ELEMENT_CNT;
+	rb->element_size = element_size;
+	rb->size = element_cnt;
 	rb->start = 0;
 	rb->count = 0;
 	rb->transFlag = 0;
@@ -89,7 +89,7 @@ int RingBuffer_Get(RingBuffer *rb, void *element)
 		memcpy(element, rb->buffer + rb->start * rb->element_size, rb->element_size);/*lint !e679*/
 		rb->start = (rb->start + 1) % rb->size;
 		--rb->count;
-		retval = 320;
+		retval = rb->element_size;
 	}
 	else
 	{
@@ -191,9 +191,14 @@ int RingBuffer_Backspace(RingBuffer *rb, unsigned int skip_cnt)
 
 void RingBuffer_DeInit(RingBuffer *rb)
 {
+	unsigned long st_ringbuff_size = 0;
+	unsigned long buffer_size = 0;
+
 	if (rb)
 	{
-		memset(rb, 0, RINGBUFFER_SIZE + HEAD_SIZE);
+		buffer_size = (unsigned long)rb->element_size * rb->size;
+		st_ringbuff_size = (unsigned long)HEAD_SIZE + buffer_size;
+		memset(rb, 0, st_ringbuff_size);
 		rb = NULL;
 	}
 }

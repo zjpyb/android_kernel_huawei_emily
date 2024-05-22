@@ -35,8 +35,8 @@ enum ion_heap_ids {
 	ION_GRALLOC_HEAP_ID = 2,
 	ION_DMA_HEAP_ID = 3,
 	ION_DMA_POOL_HEAP_ID = 4,
-	ION_CPU_DRAW_HEAP_ID = 5,
-	ION_CAMERA_DAEMON_HEAP_ID=6,
+	ION_IRIS_DAEMON_HEAP_ID = 5,
+	ION_CAMERA_DAEMON_HEAP_ID = 6,
 	ION_OVERLAY_HEAP_ID = 7,
 	ION_VCODEC_HEAP_ID = 8,
 	ION_ISP_HEAP_ID = 9,
@@ -45,12 +45,13 @@ enum ion_heap_ids {
 	ION_JPU_HEAP_ID = 12,
 	HISI_ION_HEAP_IOMMU_ID = 13,
 	ION_MISC_HEAP_ID = 14,
-	ION_DRM_GRALLOC_HEAP_ID=15,
-	ION_DRM_VCODEC_HEAP_ID =16,
-	ION_TUI_HEAP_ID=17,
-	ION_IRIS_HEAP_ID=18,
+	ION_DRM_GRALLOC_HEAP_ID = 15,
+	ION_DRM_VCODEC_HEAP_ID = 16,
+	ION_TUI_HEAP_ID = 17,
+	ION_IRIS_HEAP_ID = 18,
 	ION_CAMERA_HEAP_ID = 19,
-	ION_DRM_HEAP_ID=20,
+	ION_DRM_HEAP_ID = 20,
+	ION_ALGO_HEAP_ID = 21,
 #ifdef CONFIG_ION_HISI_FAMA_MISC
 	ION_FAMA_MISC_HEAP_ID = 30,
 #endif
@@ -75,7 +76,7 @@ enum ion_heap_ids {
 
 #define ION_IS_CACHED(__flags)	((__flags) & ION_FLAG_CACHED)
 
-//struct used for get phys addr of contig heap
+/* struct used for get phys addr of contig heap */
 struct ion_phys_data {
 	int fd_buffer;
 	unsigned int size;
@@ -106,9 +107,9 @@ struct ion_special_scene_pool_info_data {
 #define HISI_ION_NAME_LEN 16
 
 struct ion_heap_info_data{
-    char name[HISI_ION_NAME_LEN];
-    phys_addr_t heap_phy;
-    unsigned int  heap_size;
+	char name[HISI_ION_NAME_LEN];
+	phys_addr_t heap_phy;
+	unsigned int  heap_size;
 };
 struct ion_kern_va_data {
 	int handle_id;
@@ -127,18 +128,18 @@ struct ion_flush_data {
 };
 
 
-//user command add for additional use
+/* user command add for additional use */
 enum ION_HISI_CUSTOM_CMD {
 	ION_HISI_CUSTOM_PHYS,
 	ION_HISI_CLEAN_CACHES,
 	ION_HISI_INV_CACHES,
 	ION_HISI_CLEAN_INV_CACHES,
-    ION_HISI_CUSTOM_GET_KERN_VA,
-    ION_HISI_CUSTOM_FREE_KERN_VA,
-    ION_HISI_CUSTOM_ISSUPPORT_IOMMU,
-    ION_HISI_CUSTOM_GET_MEDIA_HEAP_MODE,
-    ION_HISI_CUSTOM_SET_FLAG,
-    ION_HISI_CUSTOM_SET_SMART_POOL_INFO,
+	ION_HISI_CUSTOM_GET_KERN_VA,
+	ION_HISI_CUSTOM_FREE_KERN_VA,
+	ION_HISI_CUSTOM_ISSUPPORT_IOMMU,
+	ION_HISI_CUSTOM_GET_MEDIA_HEAP_MODE,
+	ION_HISI_CUSTOM_SET_FLAG,
+	ION_HISI_CUSTOM_SET_SMART_POOL_INFO,
 #ifdef CONFIG_HISI_SPECIAL_SCENE_POOL
 	ION_HISI_CUSTOM_SPECIAL_SCENE_ENTER,
 	ION_HISI_CUSTOM_SPECIAL_SCENE_EXIT,
@@ -146,15 +147,22 @@ enum ION_HISI_CUSTOM_CMD {
 };
 
 enum ION_HISI_HEAP_MODE {
-    ION_CARVEROUT_MODE=0,
-    ION_IOMMU_MODE=1,
+	ION_CARVEROUT_MODE=0,
+	ION_IOMMU_MODE=1,
 };
 
 #ifdef CONFIG_ION_HISI_SECSG
 enum ion_ta_tag{
-	ION_SEC_CMD_TABLE_CLEAN = 0x0,
-	ION_SEC_CMD_TABLE_SET = 0x1,
-	ION_SEC_CMD_SMMU_TABLE_INIT = 0x2,
+	ION_SEC_CMD_PGATBLE_INIT = 0,
+	ION_SEC_CMD_ALLOC,
+	ION_SEC_CMD_FREE,
+	ION_SEC_CMD_MAP_IOMMU,
+	ION_SEC_CMD_UNMAP_IOMMU,
+	ION_SEC_CMD_MAP_USER,
+	ION_SEC_CMD_UNMAP_USER,
+	ION_SEC_CMD_TABLE_SET,
+	ION_SEC_CMD_TABLE_CLEAN,
+	ION_SEC_CMD_MAX,
 };
 #endif
 
@@ -169,12 +177,13 @@ enum ion_ta_tag{
  * This function should called by high-level user in kernel. Before users
  * can access a buffer, they should get a client via calling this function.
  */
-struct ion_client *
-hisi_ion_client_create(const char *name);
+struct ion_client *hisi_ion_client_create(const char *name);
 int hisi_ion_get_heap_info(unsigned int id,struct ion_heap_info_data* data);
 int hisi_ion_get_media_mode(void);
 unsigned long long get_system_type(void);
 struct ion_device * get_ion_device(void);
+struct platform_device *get_hisi_ion_platform_device(void);
+
 #define ION_IOC_HISI_MAGIC 'H'
 /**
  *DOC: ION_IOC_FLUSH_ALL_CACHES - flush all the caches pf L1 and L2
@@ -193,9 +202,9 @@ static inline unsigned long hisi_ion_total(void)
 }
 #endif
 
-/*k3 add to calc free memory*/
+/* add to calc free memory */
 void hisi_ionsysinfo(struct sysinfo *si);
 int ion_handle_get_flags(struct ion_client *client, struct ion_handle *handle,
-				unsigned long *flags);
+			 unsigned long *flags);
 int hisi_ion_memory_info(bool verbose);
 #endif

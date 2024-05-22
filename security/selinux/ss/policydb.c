@@ -336,6 +336,7 @@ static int common_index(void *key, void *datum, void *datap)
 	p = datap;
 	if (!comdatum->value || comdatum->value > p->p_commons.nprim)
 		return -EINVAL;
+
 	p->p_common_val_to_name[comdatum->value - 1] = key;
 	return 0;
 }
@@ -365,6 +366,7 @@ static int role_index(void *key, void *datum, void *datap)
 	    || role->value > p->p_roles.nprim
 	    || role->bounds > p->p_roles.nprim)
 		return -EINVAL;
+
 	p->p_role_val_to_name[role->value - 1] = key;
 	p->role_val_to_struct[role->value - 1] = role;
 	return 0;
@@ -401,6 +403,7 @@ static int user_index(void *key, void *datum, void *datap)
 	    || usrdatum->value > p->p_users.nprim
 	    || usrdatum->bounds > p->p_users.nprim)
 		return -EINVAL;
+
 	p->p_user_val_to_name[usrdatum->value - 1] = key;
 	p->user_val_to_struct[usrdatum->value - 1] = usrdatum;
 	return 0;
@@ -492,9 +495,9 @@ static int policydb_index(struct policydb *p)
 	printk(KERN_DEBUG "SELinux:  %d users, %d roles, %d types, %d bools",
 	       p->p_users.nprim, p->p_roles.nprim, p->p_types.nprim, p->p_bools.nprim);
 	if (p->mls_enabled)
-		printk(", %d sens, %d cats", p->p_levels.nprim,
+		printk(KERN_CONT ", %d sens, %d cats", p->p_levels.nprim,
 		       p->p_cats.nprim);
-	printk("\n");
+	printk(KERN_CONT "\n");
 
 	printk(KERN_DEBUG "SELinux:  %d classes, %d rules\n",
 	       p->p_classes.nprim, p->te_avtab.nel);
@@ -905,7 +908,7 @@ int policydb_context_isvalid(struct policydb *p, struct context *c)
 		 * Role must be authorized for the type.
 		 */
 		role = p->role_val_to_struct[c->role - 1];
-		if (!ebitmap_get_bit(&role->types, c->type - 1))
+		if (!role || !ebitmap_get_bit(&role->types, c->type - 1))
 			/* role may not be associated with type */
 			return 0;
 
@@ -1034,6 +1037,9 @@ static int str_read(char **strp, gfp_t flags, void *fp, u32 len)
 {
 	int rc;
 	char *str;
+
+	if ((len == 0) || (len == (u32)-1))
+		return -EINVAL;
 
 	str = pmalloc(selinux_pool, len + 1, flags);
 	if (!str)
@@ -2357,6 +2363,7 @@ int policydb_read(struct policydb *p, void *fp)
 		} else
 			tr->tclass = p->process_class;
 
+		rc = -EINVAL;
 		if (!policydb_role_isvalid(p, tr->role) ||
 		    !policydb_type_isvalid(p, tr->type) ||
 		    !policydb_class_isvalid(p, tr->tclass) ||

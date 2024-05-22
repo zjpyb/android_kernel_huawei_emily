@@ -18,7 +18,7 @@
 #include "hw_cci.h"
 #include "../io/hw_isp_io.h"
 //lint -save -e679 -e527 -e574
-
+extern int memcpy_s(void *dest, size_t destMax, const void *src, size_t count);
 
 static inline int get_i2c_bus_mutex(int bus_mutex)
 {
@@ -295,7 +295,7 @@ int hw_isp_write_sensor_seq(i2c_t *i2c_info, const struct sensor_i2c_reg *buf, u
     int rc = 0;
     i2c_t t_i2c_info;
 
-    memcpy(&t_i2c_info, i2c_info, sizeof(i2c_t));
+    memcpy_s(&t_i2c_info,sizeof(i2c_t) ,i2c_info, sizeof(i2c_t));
 
     /* use AP write mode */
     for (i = 0; i < size; i++) {

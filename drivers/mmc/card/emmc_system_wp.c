@@ -22,7 +22,7 @@
 #include <linux/uaccess.h>
 
 #include "queue.h"
-
+#include "mmc_hisi_card.h"
 #include <linux/mmc/hw_write_protect.h>
 #include <linux/scatterlist.h>
 
@@ -33,6 +33,7 @@
 /* get write protection block info */
 static int do_get_write_protection(struct gendisk *disk, struct hd_struct *part)
 {
+	struct mmc_blk_data *md;
 	struct mmc_card *card;
 	struct mmc_request mrq = {NULL};
 	struct mmc_command cmd = {0};
@@ -277,9 +278,10 @@ static int get_card_status(struct mmc_card *card, u32 *status, int retries)
 static int mmc_wp_start(struct mmc_card *card, struct hd_struct *part)
 {
 	unsigned int sector_start, sector_size, wp_group_size;
-	unsigned int loop_count, status, i;
+	unsigned int loop_count, status;
 	struct mmc_command cmd = {0};
 	int err = 0;
+	unsigned int i = 0;
 
 	sector_start = (unsigned int)(part->start_sect);
 	sector_size  = (unsigned int)(part->nr_sects);
@@ -325,6 +327,7 @@ static int do_set_write_protection(struct gendisk *disk, struct hd_struct *part)
 	if (IS_ERR(card)) {
 		return PTR_ERR(card);
 	}
+
 	err = mmc_wp_condition_check_for_part(card, part);
 	if (err)
 		return err;
@@ -351,15 +354,14 @@ static int part_wp_action(struct block_device *bdev, const char *partname,
 	/* Don't show non-partitionable
 	 * removable devices or empty devices */
 	if (!get_capacity(sgp) || (!disk_max_parts(sgp) &&
-				((unsigned int)(sgp->flags) & GENHD_FL_REMOVABLE)))
+				(sgp->flags & GENHD_FL_REMOVABLE)))
 		return -1;
-	if ((unsigned int)(sgp->flags) & GENHD_FL_SUPPRESS_PARTITION_INFO)
+	if (sgp->flags & GENHD_FL_SUPPRESS_PARTITION_INFO)
 		return -1;
 
 	/* show the full disk and all non-0 size partitions of it */
 	disk_part_iter_init(&piter, sgp, DISK_PITER_INCL_PART0);
 	while ((part = disk_part_iter_next(&piter))) {
-		/*lint -save -e64*/
 		if (part->info && part->info->volname[0] &&
 				!strncmp(part->info->volname,
 					partname, strlen(partname))) {
@@ -367,7 +369,6 @@ static int part_wp_action(struct block_device *bdev, const char *partname,
 			ret = func(sgp, part);
 			break;
 		}
-		/*lint -restore */
 	}
 	disk_part_iter_exit(&piter);
 	return ret;

@@ -346,7 +346,6 @@ typedef struct
 
 #define RTC_UPPER_TIMER_NUMBER                        (RTC_MAX_TIMER_NUMBER/10)
 
-/* Added by g47350 for DRX timer Project, 2012/11/5, begin */
 #define DRX_TIMER_NOT_USED_FLAG                       (1)
 #define DRX_TIMER_USED_FLAG                           (2)
 
@@ -356,7 +355,6 @@ typedef struct
 #define DRX_TIMER_MAX_NUMBER                          (7)
 #endif
 #define DRX_TIMER_TIMEOUT_INTERVAL                    (10*32768)
-/* Added by g47350 for DRX timer Project, 2012/11/5, end */
 
 VOS_UINT32 VOS_TimerCtrlBlkInit(VOS_VOID);
 
@@ -548,12 +546,10 @@ VOS_VOID RTC_ReportOmInfo(VOS_VOID);
 
 /* RTC timer end */
 
-/* Added by g47350 for DRX timer Project, 2012/11/5, begin */
 
 VOS_UINT32 VOS_DrxTimerCtrlBlkInit(VOS_VOID);
 VOS_UINT32 VOS_DrxTimerTaskCreat(VOS_VOID);
 
-/* Added by g47350 for DRX timer Project, 2012/11/5, end */
 
 
 #ifdef __cplusplus

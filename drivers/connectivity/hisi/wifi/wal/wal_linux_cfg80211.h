@@ -122,7 +122,9 @@ extern "C" {
 #define IEEE80211_FCTL_STYPE            0x00f0
 #define IEEE80211_FTYPE_MGMT            0x0000
 
-#define WAL_GET_STATION_THRESHOLD 1000 /* 固定时间内允许一次抛事件读DMAC RSSI */
+#define WAL_GET_STATION_THRESHOLD         1000 /* 固定时间内允许一次抛事件读DMAC RSSI */
+#define WAL_VOWIFI_GET_STATION_THRESHOLD  200  /*亮屏且vowifi正在使用时*/
+
 
 typedef struct cookie_arry
 {

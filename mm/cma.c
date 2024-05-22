@@ -38,6 +38,7 @@
 #include <trace/events/cma.h>
 
 #include "cma.h"
+#include "internal.h"
 
 #ifdef CONFIG_HISI_CMA_DEBUG
 #include <linux/hisi/hisi_cma_debug.h>
@@ -58,7 +59,7 @@ unsigned long cma_get_size(const struct cma *cma)
 }
 
 static unsigned long cma_bitmap_aligned_mask(const struct cma *cma,
-					     int align_order)
+					     unsigned int align_order)
 {
 	if (align_order <= cma->order_per_bit)
 		return 0;
@@ -66,17 +67,14 @@ static unsigned long cma_bitmap_aligned_mask(const struct cma *cma,
 }
 
 /*
- * Find a PFN aligned to the specified order and return an offset represented in
- * order_per_bits.
+ * Find the offset of the base PFN from the specified align_order.
+ * The value returned is represented in order_per_bits.
  */
 static unsigned long cma_bitmap_aligned_offset(const struct cma *cma,
-					       int align_order)
+					       unsigned int align_order)
 {
-	if (align_order <= cma->order_per_bit)
-		return 0;
-
-	return (ALIGN(cma->base_pfn, (1UL << align_order))
-		- cma->base_pfn) >> cma->order_per_bit;
+	return (cma->base_pfn & ((1UL << align_order) - 1))
+		>> cma->order_per_bit;
 }
 
 static unsigned long cma_bitmap_pages_to_bits(const struct cma *cma,
@@ -150,7 +148,7 @@ static int __init cma_init_reserved_areas(void)
 {
 	int i;
 
-	for (i = 0; i < cma_area_count; i++) {
+	for (i = 0; i < cma_area_count; i++) {/*lint !e574*/
 		int ret = cma_activate_area(&cma_areas[i]);
 
 		if (ret)
@@ -272,7 +270,7 @@ int __init cma_declare_contiguous(phys_addr_t base,
 	 * you couldn't get a contiguous memory, which is not what we want.
 	 */
 	alignment = max(alignment,  (phys_addr_t)PAGE_SIZE <<
-			  max_t(unsigned long, MAX_ORDER - 1, pageblock_order));
+			  max_t(unsigned long, MAX_ORDER - 1, pageblock_order));/*lint !e666*/
 	base = ALIGN(base, alignment);
 	size = ALIGN(size, alignment);
 	limit &= ~(alignment - 1);
@@ -340,7 +338,7 @@ int __init cma_declare_contiguous(phys_addr_t base,
 		 * kmemleak scans/reads tracked objects for pointers to other
 		 * objects but this address isn't mapped and accessible
 		 */
-		kmemleak_ignore(phys_to_virt(addr));
+		kmemleak_ignore_phys(addr);
 		base = addr;
 	}
 
@@ -369,13 +367,8 @@ err:
 struct page *cma_alloc(struct cma *cma, size_t count, unsigned int align)
 {
 	unsigned long mask, offset;
-	unsigned long pfn = -1;
+	unsigned long pfn = -1;/*lint !e570*/
 	unsigned long start = 0;
-#ifdef CONFIG_HISI_CMA_DEBUG
-	unsigned int used = 0;
-	unsigned long maxchunk = 0;
-	unsigned long fail_nr = 0;
-#endif
 	unsigned long bitmap_maxno, bitmap_no, bitmap_count;
 	struct page *page = NULL;
 	int ret;
@@ -393,6 +386,9 @@ struct page *cma_alloc(struct cma *cma, size_t count, unsigned int align)
 	offset = cma_bitmap_aligned_offset(cma, align);
 	bitmap_maxno = cma_bitmap_maxno(cma);
 	bitmap_count = cma_bitmap_pages_to_bits(cma, count);
+
+	if (bitmap_count > bitmap_maxno)
+		return NULL;
 
 	for (;;) {
 		mutex_lock(&cma->lock);
@@ -432,21 +428,12 @@ struct page *cma_alloc(struct cma *cma, size_t count, unsigned int align)
 			 __func__, pfn_to_page(pfn));
 		/* try again with a bit different memory target */
 		start = bitmap_no + mask + 1;
-#ifdef CONFIG_HISI_CMA_DEBUG
-		fail_nr++;
-#endif
 	}
+
 #ifdef CONFIG_HISI_CMA_DEBUG
-	if (ret) {
-		used = cma_bitmap_used(cma);
-		maxchunk = cma_bitmap_maxchunk(cma);
-		pr_info("total %lu KB mask 0x%lx used %u KB "
-				"maxchunk %lu KB alloc %lu KB fail %lu times\n",
-					cma->count << (PAGE_SHIFT - 10), mask,
-					used << (PAGE_SHIFT - 10),
-					maxchunk << (PAGE_SHIFT - 10),
-					count << (PAGE_SHIFT - 10), fail_nr);
-	}
+	if (ret)
+		dump_cma_page(cma, count, mask, offset,
+				bitmap_maxno, bitmap_count);
 #endif
 
 	trace_cma_alloc(pfn, page, count, align);

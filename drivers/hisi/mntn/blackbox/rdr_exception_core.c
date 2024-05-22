@@ -11,8 +11,11 @@
 #include <linux/spinlock.h>
 #include <linux/list.h>
 #include <linux/slab.h>
+#include <linux/export.h>
 
 #include <linux/hisi/rdr_pub.h>
+#include <linux/hisi/hisi_log.h>
+#define HISI_LOG_TAG HISI_BLACKBOX_TAG
 #include "rdr_inner.h"
 #include "rdr_print.h"
 
@@ -21,16 +24,13 @@ static DEFINE_SPINLOCK(__rdr_exception_list_lock);
 
 void __rdr_register_exception(struct rdr_exception_info_s *e)
 {
-	BB_PRINT_START();
 	if (e == NULL) {
-		BB_PRINT_PN("invalid  parameter. e:%pK\n", e);
-		BB_PRINT_END();
+		BB_PRINT_ERR("invalid  parameter. e:%pK\n", e);
 		return;
 	}
 	spin_lock(&__rdr_exception_list_lock);
 	list_add_tail(&(e->e_list), &__rdr_exception_list);
 	spin_unlock(&__rdr_exception_list_lock);
-	BB_PRINT_END();
 }
 
 /*
@@ -53,7 +53,7 @@ void rdr_callback(struct rdr_exception_info_s *p_exce_info, u32 mod_id,
 	list_for_each_safe(cur, next, &__rdr_exception_list) {
 		e_type_info = list_entry(cur, struct rdr_exception_info_s, e_list);
 		if (e_type_info == NULL) {
-			BB_PRINT_DBG("It might be better to look around here. %s:%d",
+			BB_PRINT_ERR("It might be better to look around here. %s:%d",
 			     __func__, __LINE__);
 			continue;
 		}
@@ -66,7 +66,7 @@ void rdr_callback(struct rdr_exception_info_s *p_exce_info, u32 mod_id,
 		    (e_from_core & p_exce_info->e_notify_core_mask)) {
 			if ((u64) (e_callback) &
 			    BBOX_COMMON_CALLBACK) {
-				BB_PRINT_DBG("%s: call core common callback function.\n", __func__);
+				BB_PRINT_PN("%s: call core common callback function.\n", __func__);
 				((rdr_e_callback)((u64) (e_callback) &
 				  ~BBOX_CALLBACK_MASK)) (mod_id, logpath);
 			}
@@ -75,7 +75,7 @@ void rdr_callback(struct rdr_exception_info_s *p_exce_info, u32 mod_id,
 	}
 	spin_unlock(&__rdr_exception_list_lock);
 	if ((u64) (p_exce_info->e_callback) & ~BBOX_CALLBACK_MASK) {
-		BB_PRINT_DBG("%s: call exception function.\n", __func__);
+		BB_PRINT_PN("%s: call exception function.\n", __func__);
 		((rdr_e_callback)((u64) (p_exce_info->e_callback) &
 		  ~BBOX_CALLBACK_MASK)) (mod_id, logpath);
 	}
@@ -94,12 +94,11 @@ u32 rdr_check_modid(u32 modid, u32 modid_end)
 	struct rdr_exception_info_s *e_type_info = NULL;
 	struct list_head *cur = NULL;
 	struct list_head *next = NULL;
-	BB_PRINT_START();
 	spin_lock(&__rdr_exception_list_lock);
 	list_for_each_safe(cur, next, &__rdr_exception_list) {
 		e_type_info = list_entry(cur, struct rdr_exception_info_s, e_list);
 		if (e_type_info == NULL) {
-			BB_PRINT_DBG("It might be better to look around here. %s:%d",
+			BB_PRINT_ERR("It might be better to look around here. %s:%d",
 			     __func__, __LINE__);
 			continue;
 		}
@@ -108,13 +107,11 @@ u32 rdr_check_modid(u32 modid, u32 modid_end)
 		    (modid_end >= e_type_info->e_modid &&
 		     modid_end <= e_type_info->e_modid_end)) {
 			spin_unlock(&__rdr_exception_list_lock);
-			BB_PRINT_END();
 			return modid;
 		}
 	}
 	spin_unlock(&__rdr_exception_list_lock);
 
-	BB_PRINT_END();
 	return 0;
 }
 
@@ -210,29 +207,25 @@ u32 rdr_register_exception(struct rdr_exception_info_s *e)
 {
 	struct rdr_exception_info_s *e_type_info = NULL;
 	u32 modid_end;
-	BB_PRINT_START();
 	if (!rdr_init_done()) {
 		BB_PRINT_ERR("rdr init faild!\n");
-		BB_PRINT_END();
 		return 0;
 	}
 	if (e == NULL) {
-		BB_PRINT_PN("rdr_register_exception_type parameter is NULL!\n");
-		BB_PRINT_END();
+		BB_PRINT_ERR("rdr_register_exception_type parameter is NULL!\n");
 		return 0;
 	}
 
 	modid_end = e->e_modid_end;
 	if (e->e_modid_end == 0 || e->e_modid_end < e->e_modid) {
-		BB_PRINT_DBG("modid[0x%x ~ 0x%x], but modid end is invalid.\
+		BB_PRINT_ERR("modid[0x%x ~ 0x%x], but modid end is invalid.\
 			modify modid_end = [0x%x]\n", e->e_modid, e->e_modid_end, e->e_modid);
 		modid_end = e->e_modid;
 	}
 	BB_PRINT_DBG("register modid [0x%x ~ 0x%x]\n", e->e_modid, modid_end);
 
 	if (0 != rdr_check_modid(e->e_modid, modid_end)) {
-		BB_PRINT_ERR("mod_id exist already\n");
-		BB_PRINT_END();
+		BB_PRINT_PN("mod_id exist already\n");
 		return 0;
 	}
 
@@ -244,8 +237,7 @@ u32 rdr_register_exception(struct rdr_exception_info_s *e)
 
 	e_type_info = kmalloc(sizeof(struct rdr_exception_info_s), GFP_ATOMIC);
 	if (e_type_info == NULL) {
-		BB_PRINT_PN("kmalloc failed for e_tpye_info\n");
-		BB_PRINT_END();
+		BB_PRINT_ERR("kmalloc failed for e_tpye_info\n");
 		return 0;
 	}
 	memset(e_type_info, 0, sizeof(struct rdr_exception_info_s));
@@ -258,10 +250,9 @@ u32 rdr_register_exception(struct rdr_exception_info_s *e)
 
 	BB_PRINT_DBG("register exception succeed.\n");
 
-	BB_PRINT_END();
 	return e_type_info->e_modid_end;
 }
-
+EXPORT_SYMBOL(rdr_register_exception);
 /*
  * func name: bb_unregister_exception
  * func args:
@@ -281,7 +272,7 @@ int rdr_unregister_exception(u32 modid)
 	list_for_each_safe(cur, next, &__rdr_exception_list) {
 		e_type_info = list_entry(cur, struct rdr_exception_info_s, e_list);
 		if (e_type_info == NULL) {
-			BB_PRINT_DBG("It might be better to look around here. %s:%d",
+			BB_PRINT_ERR("It might be better to look around here. %s:%d",
 			     __func__, __LINE__);
 			continue;
 		}
@@ -300,7 +291,7 @@ int rdr_unregister_exception(u32 modid)
 	/*return e_type_info->e_modid_end; */
 	return 0;
 }
-
+EXPORT_SYMBOL(rdr_unregister_exception);
 /*
  * func name: rdr_get_exception_info
  * func args:
@@ -322,7 +313,7 @@ struct rdr_exception_info_s *rdr_get_exception_info(u32 modid)
 	list_for_each_safe(cur, next, &__rdr_exception_list) {
 		e_type_info = list_entry(cur, struct rdr_exception_info_s, e_list);
 		if (e_type_info == NULL) {
-			BB_PRINT_DBG("It might be better to look around here. %s:%d",
+			BB_PRINT_ERR("It might be better to look around here. %s:%d",
 			     __func__, __LINE__);
 			continue;
 		}
@@ -346,21 +337,21 @@ void rdr_print_one_exc(struct rdr_exception_info_s *e)
 	e->e_desc[STR_EXCEPTIONDESC_MAXLEN - 1] = '\0';
 	e->e_from_module[MODULE_NAME_LEN - 1] = '\0';
 
-	BB_PRINT_DBG(" modid:          [0x%x]\n", e->e_modid);
-	BB_PRINT_DBG(" modid_end:      [0x%x]\n", e->e_modid_end);
-	BB_PRINT_DBG(" process_pri:    [0x%x]\n", e->e_process_priority);
-	BB_PRINT_DBG(" reboot_pri:     [0x%x]\n", e->e_reboot_priority);
-	BB_PRINT_DBG(" notify_core_mk: [0x%llx]\n", e->e_notify_core_mask);
-	BB_PRINT_DBG(" reset_core_mk:  [0x%llx]\n", e->e_reset_core_mask);
-	BB_PRINT_DBG(" reentrant:      [0x%x]\n", e->e_reentrant);
-	BB_PRINT_DBG(" exce_type:      [0x%x]\n", e->e_exce_type);
-	BB_PRINT_DBG(" exce_subtype:   [0x%x]\n", e->e_exce_subtype);
-	BB_PRINT_DBG(" from_core:      [0x%llx]\n", e->e_from_core);
-	BB_PRINT_DBG(" from_module:    [%s]\n", e->e_from_module);
-	BB_PRINT_DBG(" desc:           [%s]\n", e->e_desc);
-	BB_PRINT_DBG(" callback:       [0x%pK]\n", e->e_callback);
-	BB_PRINT_DBG(" reserve_u32:    [0x%x]\n", e->e_reserve_u32);
-	BB_PRINT_DBG(" reserve_p:      [0x%pK]\n", e->e_reserve_p);
+	BB_PRINT_PN(" modid:          [0x%x]\n", e->e_modid);
+	BB_PRINT_PN(" modid_end:      [0x%x]\n", e->e_modid_end);
+	BB_PRINT_PN(" process_pri:    [0x%x]\n", e->e_process_priority);
+	BB_PRINT_PN(" reboot_pri:     [0x%x]\n", e->e_reboot_priority);
+	BB_PRINT_PN(" notify_core_mk: [0x%llx]\n", e->e_notify_core_mask);
+	BB_PRINT_PN(" reset_core_mk:  [0x%llx]\n", e->e_reset_core_mask);
+	BB_PRINT_PN(" reentrant:      [0x%x]\n", e->e_reentrant);
+	BB_PRINT_PN(" exce_type:      [0x%x]\n", e->e_exce_type);
+	BB_PRINT_PN(" exce_subtype:   [0x%x]\n", e->e_exce_subtype);
+	BB_PRINT_PN(" from_core:      [0x%llx]\n", e->e_from_core);
+	BB_PRINT_PN(" from_module:    [%s]\n", e->e_from_module);
+	BB_PRINT_PN(" desc:           [%s]\n", e->e_desc);
+	BB_PRINT_PN(" callback:       [0x%pK]\n", e->e_callback);
+	BB_PRINT_PN(" reserve_u32:    [0x%x]\n", e->e_reserve_u32);
+	BB_PRINT_PN(" reserve_p:      [0x%pK]\n", e->e_reserve_p);
 }
 
 /*
@@ -379,14 +370,14 @@ void rdr_print_all_exc(void)
 	list_for_each_safe(cur, next, &__rdr_exception_list) {
 		e_type_info = list_entry(cur, struct rdr_exception_info_s, e_list);
 		if (e_type_info == NULL) {
-			BB_PRINT_DBG("It might be better to look around here. %s:%d",
+			BB_PRINT_ERR("It might be better to look around here. %s:%d",
 			     __func__, __LINE__);
 			continue;
 		}
 
-		BB_PRINT_DBG("==========[%.2d]-start==========\n", index);
+		BB_PRINT_PN("==========[%.2d]-start==========\n", index);
 		rdr_print_one_exc(e_type_info);
-		BB_PRINT_DBG("==========[%.2d]-e n d==========\n", index);
+		BB_PRINT_PN("==========[%.2d]-e n d==========\n", index);
 		index++;
 	}
 	spin_unlock(&__rdr_exception_list_lock);

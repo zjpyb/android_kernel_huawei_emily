@@ -81,6 +81,7 @@ struct dubai_cputime {
 	uid_t uid;
 	pid_t pid;
 	unsigned long long time;
+	unsigned long long power;
 	unsigned char cmdline;
 	char name[NAME_LEN];
 } __packed;
@@ -89,6 +90,9 @@ static struct dubai_thread_entry {
 	pid_t pid;
 	cputime_t utime;
 	cputime_t stime;
+#ifdef CONFIG_HUAWEI_DUBAI_TASK_CPU_POWER
+	unsigned long long power;
+#endif
 	bool alive;
 	char name[NAME_LEN];
 	struct list_head node;
@@ -101,6 +105,10 @@ static struct dubai_proc_entry {
 	cputime_t stime;
 	cputime_t active_utime;
 	cputime_t active_stime;
+#ifdef CONFIG_HUAWEI_DUBAI_TASK_CPU_POWER
+	unsigned long long active_power;
+	unsigned long long power;
+#endif
 	bool alive;
 	bool cmdline;
 	char name[NAME_LEN];
@@ -110,7 +118,6 @@ static struct dubai_proc_entry {
 
 static struct dubai_cputime_transmit {
 	long long timestamp;
-	int event;
 	int type;
 	int count;
 	unsigned char value[0];
@@ -125,12 +132,15 @@ static DECLARE_HASHTABLE(proc_hash_table, PROC_HASH_BITS);
 static DEFINE_MUTEX(dubai_proc_lock);
 
 static atomic_t proc_cputime_enable;
-static long long polling_timestamp;
-static int polling_event;
-static int dead_count;
-static int active_count;
+static atomic_t dead_count;
+static atomic_t active_count;
 static int decompose_count;
 static struct dubai_proc_decompose proc_decompose[PROC_DECOMPOSE_MAX];
+#ifdef CONFIG_HUAWEI_DUBAI_TASK_CPU_POWER
+static const atomic_t task_power_enable = ATOMIC_INIT(1);
+#else
+static const atomic_t task_power_enable = ATOMIC_INIT(0);
+#endif
 
 static inline unsigned long long dubai_cputime_to_usecs(cputime_t time)
 {
@@ -159,15 +169,23 @@ static inline int dubai_get_task_state(const struct task_struct *task)
 
 static bool dubai_task_alive(const struct task_struct *task)
 {
+#ifdef CONFIG_HUAWEI_DUBAI_TASK_CPU_POWER
+	/*
+	 * if this task is exiting, we have already accounted for the
+	 * time and power.
+	 */
+	if (task->cpu_power == ULLONG_MAX)
+		return false;
+#else
 	if ((task == NULL)
 		|| (task->flags & PF_EXITING)
 		|| (task->flags & PF_EXITPIDONE)
 		|| (task->flags & PF_SIGNALED)
-		|| (dubai_get_task_state(task) >= TASK_STATE_DEAD)) {
+		|| (dubai_get_task_state(task) >= TASK_STATE_DEAD))
 		return false;
-	}
-
-	return true;
+#endif
+	else
+		return true;
 }
 
 static void dubai_copy_name(char *to, const char *from)
@@ -270,7 +288,7 @@ static void dubai_check_proc_decompose(void)
 /*
  * Create log entry to store process cputime structures
  */
-static struct buffered_log_entry *dubai_create_log_entry(int count, int type)
+static struct buffered_log_entry *dubai_create_log_entry(long long timestamp, int count, int type)
 {
 	long long size = 0;
 	struct buffered_log_entry *entry = NULL;
@@ -294,8 +312,7 @@ static struct buffered_log_entry *dubai_create_log_entry(int count, int type)
 	}
 
 	transmit = (struct dubai_cputime_transmit *)entry->data;
-	transmit->timestamp = polling_timestamp;
-	transmit->event = polling_event;
+	transmit->timestamp = timestamp;
 	transmit->type = type;
 	transmit->count = count;
 
@@ -314,6 +331,9 @@ static void dubai_proc_entry_copy(unsigned char *value, const struct dubai_proc_
 	stat.uid = entry->uid;
 	stat.pid = entry->tgid;
 	stat.time = dubai_cputime_to_usecs(total_time);
+#ifdef CONFIG_HUAWEI_DUBAI_TASK_CPU_POWER
+	stat.power = entry->active_power + entry->power;
+#endif
 	stat.cmdline = entry->cmdline? CMDLINE_PROCESS : CMDLINE_NEED_TO_GET;
 	dubai_copy_name(stat.name, entry->name);
 
@@ -328,6 +348,9 @@ static void dubai_thread_entry_copy(unsigned char *value, uid_t uid, const struc
 	stat.uid = uid;
 	stat.pid = thread->pid;
 	stat.time = dubai_cputime_to_usecs(thread->utime + thread->stime);
+#ifdef CONFIG_HUAWEI_DUBAI_TASK_CPU_POWER
+	stat.power = thread->power;
+#endif
 	stat.cmdline = CMDLINE_THREAD;
 	dubai_copy_name(stat.name, thread->name);
 
@@ -362,7 +385,7 @@ static struct dubai_thread_entry *dubai_find_or_register_thread(pid_t pid,
 		snprintf(thread->name, NAME_LEN - 1, "%s_%s", entry->name, comm);/* unsafe_function_ignore: snprintf */
 
 	list_add_tail(&thread->node, &entry->threads);
-	active_count++;
+	atomic_inc(&active_count);
 
 	return thread;
 }
@@ -424,7 +447,7 @@ static struct dubai_proc_entry *dubai_find_or_register_proc(const struct task_st
 	*thread = dubai_find_or_register_thread(pid, task->comm, entry);
 
 	hash_add(proc_hash_table, &entry->hash, tgid);
-	active_count++;
+	atomic_inc(&active_count);
 
 	return entry;
 }
@@ -457,9 +480,15 @@ int dubai_update_proc_cputime(void)
 		task_cputime_adjusted(task, &utime, &stime);
 		entry->active_utime += utime;
 		entry->active_stime += stime;
+#ifdef CONFIG_HUAWEI_DUBAI_TASK_CPU_POWER
+		entry->active_power += task->cpu_power;
+#endif
 		if (thread != NULL) {
 			thread->utime = utime;
 			thread->stime = stime;
+#ifdef CONFIG_HUAWEI_DUBAI_TASK_CPU_POWER
+			thread->power = task->cpu_power;
+#endif
 		}
 	} while_each_thread(temp, task);
 	rcu_read_unlock();
@@ -489,6 +518,9 @@ static void dubai_clear_dead_entry(struct dubai_cputime_transmit *transmit)
 		decompose = false;
 		entry->active_stime = 0;
 		entry->active_utime = 0;
+#ifdef CONFIG_HUAWEI_DUBAI_TASK_CPU_POWER
+		entry->active_power = 0;
+#endif
 
 		if (!list_empty(&entry->threads)) {
 			decompose= true;
@@ -524,13 +556,14 @@ static void dubai_clear_dead_entry(struct dubai_cputime_transmit *transmit)
 	}
 }
 
-static int dubai_clear_and_update(void)
+static int dubai_clear_and_update(long long timestamp)
 {
-	int ret = 0;
+	int ret = 0, count = 0;
 	struct dubai_cputime_transmit *transmit;
 	struct buffered_log_entry *entry;
 
-	entry = dubai_create_log_entry(dead_count, PROCESS_STATE_DEAD);
+	count = atomic_read(&dead_count);
+	entry = dubai_create_log_entry(timestamp, count, PROCESS_STATE_DEAD);
 	if (entry == NULL) {
 		DUBAI_LOGE("Failed to create log entry for dead processes");
 		return -ENOMEM;
@@ -540,7 +573,7 @@ static int dubai_clear_and_update(void)
 	mutex_lock(&dubai_proc_lock);
 
 	dubai_clear_dead_entry(transmit);
-	dead_count = 0;
+	atomic_set(&dead_count, 0);
 	dubai_check_proc_decompose();
 
 	ret = dubai_update_proc_cputime();
@@ -564,7 +597,7 @@ exit:
 	return ret;
 }
 
-static int dubai_send_active_process(void)
+static int dubai_send_active_process(long long timestamp)
 {
 	int ret = 0, max = 0;
 	cputime_t active_time;
@@ -575,7 +608,8 @@ static int dubai_send_active_process(void)
 	struct buffered_log_entry *log_entry;
 	struct dubai_thread_entry *thread;
 
-	log_entry = dubai_create_log_entry(active_count, PROCESS_STATE_ACTIVE);
+	max = atomic_read(&active_count);
+	log_entry = dubai_create_log_entry(timestamp, max, PROCESS_STATE_ACTIVE);
 	if (log_entry == NULL) {
 		DUBAI_LOGE("Failed to create log entry for active processes");
 		return -ENOMEM;
@@ -631,28 +665,20 @@ static int dubai_send_active_process(void)
  * we should clear these dead processes
  * in case of pid reused
  */
-int dubai_get_proc_cputime(struct polling_event *event)
+int dubai_get_proc_cputime(long long timestamp)
 {
 	int ret = 0;
 
 	if (!atomic_read(&proc_cputime_enable))
 		return -EPERM;
 
-	if (event == NULL) {
-		DUBAI_LOGE("Invalid parameter");
-		return -EINVAL;
-	}
-
-	polling_timestamp = event->timestamp;
-	polling_event = event->event;
-
-	ret = dubai_clear_and_update();
+	ret = dubai_clear_and_update(timestamp);
 	if (ret < 0) {
 		DUBAI_LOGE("Failed to clear dead process and update list");
 		goto exit;
 	}
 
-	ret = dubai_send_active_process();
+	ret = dubai_send_active_process(timestamp);
 	if (ret < 0) {
 		DUBAI_LOGE("Failed to send active process cpu time");
 	}
@@ -702,15 +728,18 @@ static int dubai_process_notifier(struct notifier_block *self, unsigned long cmd
 	bool got_cmdline = false;
 	cputime_t utime, stime;
 	struct task_struct *task = v;
-	pid_t tgid = task->tgid;
-	pid_t pid = task->pid;
-	struct task_struct *leader = task->group_leader;
+	pid_t tgid, pid;
+	struct task_struct *leader = NULL;
 	struct dubai_proc_entry *entry = NULL;
 	struct dubai_thread_entry *thread = NULL;
 	char cmdline[MAX_CMDLINE_LEN] = {0};
 
 	if (task == NULL || !atomic_read(&proc_cputime_enable))
 		return NOTIFY_OK;
+
+	tgid = task->tgid;
+	pid = task->pid;
+	leader = task->group_leader;
 
 	/* kernel thread, we assume tgid is 0 */
 	if (task->flags & PF_KTHREAD)
@@ -754,24 +783,30 @@ static int dubai_process_notifier(struct notifier_block *self, unsigned long cmd
 	task_cputime_adjusted(task, &utime, &stime);
 	entry->utime += utime;
 	entry->stime += stime;
+#ifdef CONFIG_HUAWEI_DUBAI_TASK_CPU_POWER
+	entry->power += task->cpu_power;
+#endif
 	if (thread != NULL) {
 		thread->utime = utime;
 		thread->stime = stime;
+#ifdef CONFIG_HUAWEI_DUBAI_TASK_CPU_POWER
+		thread->power = task->cpu_power;
+#endif
 	}
 
 	/* process has died */
 	if (entry->tgid == task->pid && entry->alive) {
 		entry->alive = false;
-		active_count--;
-		dead_count++;
+		atomic_dec(&active_count);
+		atomic_inc(&dead_count);
 		dubai_remove_proc_decompose(entry->tgid);
 	}
 
 exit:
 	if (thread != NULL && thread->alive) {
 		thread->alive = false;
-		active_count--;
-		dead_count++;
+		atomic_dec(&active_count);
+		atomic_inc(&dead_count);
 	}
 
 	mutex_unlock(&dubai_proc_lock);
@@ -781,6 +816,7 @@ exit:
 
 static struct notifier_block process_notifier_block = {
 	.notifier_call	= dubai_process_notifier,
+	.priority = INT_MAX,
 };
 
 static void dubai_proc_cputime_reset(void)
@@ -807,8 +843,8 @@ static void dubai_proc_cputime_reset(void)
 		proc_decompose[id].tgid = -1;
 	}
 	decompose_count = 0;
-	dead_count = 0;
-	active_count = 0;
+	atomic_set(&dead_count, 0);
+	atomic_set(&active_count, 0);
 	atomic_set(&proc_cputime_enable, 0);
 	hash_init(proc_hash_table);
 
@@ -821,6 +857,10 @@ void dubai_proc_cputime_enable(bool enable)
 
 	if (enable)
 		atomic_set(&proc_cputime_enable, 1);
+}
+
+bool dubai_get_task_cpupower_enable(void) {
+	return !!atomic_read(&task_power_enable);
 }
 
 void dubai_proc_cputime_init(void)

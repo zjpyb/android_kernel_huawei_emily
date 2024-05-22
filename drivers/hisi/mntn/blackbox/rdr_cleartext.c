@@ -31,7 +31,11 @@
 #include <linux/mfd/hisi_pmic.h>
 #include <linux/hisi/rdr_hisi_platform.h>
 #include <libhwsecurec/securec.h>
+#include <linux/hisi/rdr_hisi_ap_ringbuffer.h>
+#include <linux/hisi/hisi_log.h>
+#define HISI_LOG_TAG HISI_BLACKBOX_TAG
 
+#include "../bl31/hisi_bl31_exception.h"
 #include "rdr_inner.h"
 #include "rdr_print.h"
 #include "rdr_field.h"
@@ -56,7 +60,16 @@ static u64 g_coreid_from_area_id[RDR_AREA_MAXIMUM] =
     RDR_REGULATOR,
     RDR_BFM,
     RDR_HISEE,
-    RDR_NPU
+    RDR_NPU,
+    RDR_CONN,
+	RDR_EXCEPTION_TRACE
+};
+
+static int rdr_exception_trace_ap_cleartext_print(char *dir_path, u64 log_addr, u32 log_len);
+static pfn_cleartext_ops g_exception_cleartext_fn[EXCEPTION_TRACE_ENUM] =
+{
+	rdr_exception_trace_ap_cleartext_print,
+	rdr_exception_trace_bl31_cleartext_print,
 };
 
 /*
@@ -73,10 +86,10 @@ static u64 g_coreid_from_area_id[RDR_AREA_MAXIMUM] =
  */
 void rdr_cleartext_print(struct file *fp, bool *error, const char *format, ...)
 {
-	char buffer[PATH_MAXLEN];
-	int ret;
-	size_t len;
 	va_list arglist;
+	size_t  len;
+	char    buffer[PATH_MAXLEN];
+	int     ret;
 
 	if ( unlikely(IS_ERR_OR_NULL(fp) || IS_ERR_OR_NULL(error)) ) {
 		return;
@@ -131,8 +144,8 @@ void rdr_cleartext_print(struct file *fp, bool *error, const char *format, ...)
 struct file *bbox_cleartext_get_filep(char *dir_path, char *file_name)
 {
 	struct file *fp;
-	int flags, ret;
-	char path[PATH_MAXLEN];
+	char        path[PATH_MAXLEN];
+	int         flags, ret;
 
 	if ( unlikely(IS_ERR_OR_NULL(dir_path) || IS_ERR_OR_NULL(file_name)) ) {
 		BB_PRINT_ERR("[%s], invalid file path dir_path %pK file_name %pK!\n",
@@ -177,8 +190,8 @@ struct file *bbox_cleartext_get_filep(char *dir_path, char *file_name)
  */
 void bbox_cleartext_end_filep(struct file *fp, char *dir_path, char *file_name)
 {
-	int ret;
 	char path[PATH_MAXLEN];
+	int  ret;
 
 	if ( unlikely(IS_ERR_OR_NULL(fp) 
 		|| IS_ERR_OR_NULL(dir_path) 
@@ -224,9 +237,9 @@ void bbox_cleartext_end_filep(struct file *fp, char *dir_path, char *file_name)
  */
 static int bbox_head_cleartext_print(char *dir_path, u64 log_addr, u32 log_len)
 {
-	bool error;
-	struct file *fp;
 	struct rdr_struct_s *p = (struct rdr_struct_s *)log_addr;
+	struct file         *fp;
+	bool                error;
 
 	if (unlikely(IS_ERR_OR_NULL(dir_path) || IS_ERR_OR_NULL(p))) {
 		BB_PRINT_ERR("%s() error:dir_path 0x%pK log_addr 0x%pK.\n", __func__, dir_path, p);
@@ -242,7 +255,7 @@ static int bbox_head_cleartext_print(char *dir_path, u64 log_addr, u32 log_len)
 	/* get the file descriptor from the specified directory path */
 	fp = bbox_cleartext_get_filep(dir_path, "BBOX_HEAD_INFO.txt");
 	if (unlikely(IS_ERR_OR_NULL(fp))) {
-		printk(KERN_ERR "%s() error:fp 0x%pK.\n", __func__, fp);
+		BB_PRINT_ERR("%s() error:fp 0x%pK.\n", __func__, fp);
 		return -1;
 	}
 
@@ -288,6 +301,217 @@ static int bbox_head_cleartext_print(char *dir_path, u64 log_addr, u32 log_len)
 }
 
 /*
+ * func name: _incorrect_reboot_reason_analysis
+ *
+ * in the case of reboot reason error reported, we must correct it to the real
+ * real reboot reason.
+ *
+ * func args:
+ * @fp: the file descriptor of saved clear text
+ * @error: to fast the cpu process when there is error happened
+ *         before nowadays print, please refer the function
+ *         bbox_head_cleartext_print to get the use of this parameter.
+ * @e_from_core: the reboot exception comes from which core
+ * @e_exce_type: the reboot exception type
+ * @e_exce_subtype: the reboot exception subtype
+ *
+ * return value
+ *
+ */
+static void _incorrect_reboot_reason_analysis(struct file *fp,
+	                                          bool        *error, 
+	                                          u64         e_from_core,
+	                                          u32         e_exce_type,
+	                                          u32         e_exce_subtype)
+{
+	char *subtype_name;
+
+	subtype_name = rdr_get_subtype_name(e_exce_type, e_exce_subtype);
+	if (subtype_name) {
+		rdr_cleartext_print(fp, error,
+			 "system exception core [%s], reason [%s:%s], category [%s]\n",
+			rdr_get_exception_core(e_from_core),
+			rdr_get_exception_type(e_exce_type),
+			subtype_name,
+			rdr_get_category_name(e_exce_type, e_exce_subtype));
+	}
+	else {
+		rdr_cleartext_print(fp, error,
+			 "system exception core [%s], reason [%s], category [%s]\n",
+			rdr_get_exception_core(e_from_core),
+			rdr_get_exception_type(e_exce_type),
+			rdr_get_category_name(e_exce_type, e_exce_subtype));
+	}
+}
+
+/*
+ * func name: incorrect_reboot_reason_analysis
+ *
+ * in the case of reboot reason error reported, we must correct it to the real
+ * real reboot reason.
+ *
+ * func args:
+ * @dir_path: the file directory of saved clear text
+ * @exception: the corrected real reboot exception
+ *
+ * return value
+ *
+ */
+void incorrect_reboot_reason_analysis(char *dir_path, struct rdr_exception_info_s *exception)
+{
+	struct file *fp;
+	bool        error;
+
+	if ( unlikely(IS_ERR_OR_NULL(dir_path) || IS_ERR_OR_NULL(exception)) ) {
+		BB_PRINT_ERR("%s() error:dir_path 0x%pK exception 0x%pK.\n",
+			__func__, dir_path, exception);
+		return;
+	}
+
+	/* get the file descriptor from the specified directory path */
+	fp = bbox_cleartext_get_filep(dir_path, "incorrect_reboot_reason.txt");
+	if (unlikely(IS_ERR_OR_NULL(fp))) {
+		BB_PRINT_ERR(KERN_ERR "%s() error:fp 0x%pK.\n", __func__, fp);
+		return;
+	}
+
+	error = false;
+
+	rdr_cleartext_print(fp, &error, "<incorrect reboot reason>\n");
+	_incorrect_reboot_reason_analysis(fp, &error, RDR_AP, rdr_get_reboot_type(),
+		rdr_get_exec_subtype_value());
+
+	rdr_cleartext_print(fp, &error, "<correct reboot reason>\n");
+	_incorrect_reboot_reason_analysis(fp, &error, exception->e_from_core, 
+		exception->e_exce_type, exception->e_exce_subtype);
+
+	/* the cleaning of specified file descriptor */
+	bbox_cleartext_end_filep(fp, dir_path, "incorrect_reboot_reason.txt");
+	return;
+}
+
+/*
+ * func name: rdr_exception_trace_ap_cleartext_print
+ *
+ * The clear text printing for the reserved debug memory of ap exceptiontrace
+ *
+ * func args:
+ * @dir_path: the file directory of saved clear text
+ * @log_addr: the start address of reserved memory for specified core
+ * @log_len: the length of reserved memory for specified core
+ *
+ * return value
+ * 0 success
+ * -1 failed
+ *
+ */
+/*lint -e679*/
+static int rdr_exception_trace_ap_cleartext_print(char *dir_path, u64 log_addr, u32 log_len)
+{
+	struct hisiap_ringbuffer_s *q;
+	rdr_exception_trace_t      *trace;
+	struct file                *fp;
+	bool                       error;
+	u32                        start, end, i;
+
+	q = (struct hisiap_ringbuffer_s *)log_addr;
+	if (unlikely(is_ringbuffer_invalid(sizeof(rdr_exception_trace_t), log_len, q))) {
+		BB_PRINT_ERR("%s() fail:check_ringbuffer_invalid.\n", __func__);
+		return -1;
+	}
+
+	/* ring buffer is empty, return directly */
+	if (is_ringbuffer_empty(q)) {
+		BB_PRINT_DBG("%s():ring buffer is empty.\n", __func__);
+		return 0;
+	}
+
+	/* get the file descriptor from the specified directory path */
+	fp = bbox_cleartext_get_filep(dir_path, "exception_trace_ap.txt");
+	if (unlikely(IS_ERR_OR_NULL(fp))) {
+		BB_PRINT_ERR("%s() error:fp 0x%pK.\n", __func__, fp);
+		return -1;
+	}
+
+	error = false;
+
+	rdr_cleartext_print(fp, &error, "slice          reset_core_mask   from_core      "
+		"exception_type           exception_subtype        \n");
+
+	get_ringbuffer_start_end(q, &start, &end);
+	for (i = start; i <= end; i++) {
+		trace = (rdr_exception_trace_t *)&q->data[(i % q->max_num) * q->field_count];
+		rdr_cleartext_print(fp, &error, "%-15llu0x%-16llx%-15s%-25s%-25s\n",
+			trace->e_32k_time, trace->e_reset_core_mask, rdr_get_exception_core(trace->e_from_core), 
+			rdr_get_exception_type(trace->e_exce_type),
+			rdr_get_subtype_name(trace->e_exce_type, trace->e_exce_subtype)
+		);
+	}
+
+	/* the cleaning of specified file descriptor */
+	bbox_cleartext_end_filep(fp, dir_path, "exception_trace_ap.txt");
+
+	if (unlikely(true == error)) {
+		return -1;
+	}
+	return 0;
+}
+/*lint +e679*/
+
+/*
+ * func name: rdr_hisi_exception_trace_cleartext_print
+ *
+ * The clear text printing for the reserved debug memory of core exceptiontrace
+ *
+ * func args:
+ * @dir_path: the file directory of saved clear text
+ * @log_addr: the start address of reserved memory for specified core
+ * @log_len: the length of reserved memory for specified core
+ *
+ * return value
+ * 0 success
+ * -1 failed
+ *
+ */
+int rdr_exception_trace_cleartext_print(char *dir_path, u64 log_addr, u32 log_len)
+{
+	pfn_cleartext_ops ops_fn;
+	u32               i, num, size[EXCEPTION_TRACE_ENUM], offset;
+
+	if ( unlikely(IS_ERR_OR_NULL(dir_path) || IS_ERR_OR_NULL((void *)log_addr)) ) {
+		BB_PRINT_ERR("%s() error:dir_path 0x%pK log_addr 0x%pK.\n",
+			__func__, dir_path, (void *)log_addr);
+		return -1;
+	}
+
+	if (get_every_core_exception_info(&num, size)) {
+		BB_PRINT_ERR("[%s], bbox_get_every_core_area_info fail!\n", __func__);
+		return -1;
+	}
+
+	offset = 0;
+	for (i = 0; i < EXCEPTION_TRACE_ENUM; i++) {
+		ops_fn = g_exception_cleartext_fn[i];
+
+		if (unlikely(offset + size[i] > log_len)) {
+			BB_PRINT_ERR("[%s], offset %u overflow! core %u size %u log_len %u\n",
+					 __func__, offset, i, size[i], log_len);
+			return -1;
+		}
+
+		if ( unlikely(ops_fn && ops_fn(dir_path, log_addr + offset, size[i])) ) {
+			BB_PRINT_ERR("[%s], pfn_cleartext_ops 0x%pK fail! core %u size %u\n",
+					 __func__, ops_fn, i, size[i]);
+			return -1;
+		}
+
+		offset += size[i];
+	}
+
+	return 0;
+}
+
+/*
  * func name: rdr_get_coreid_from_areaid
  *
  * The core id mapping from the memory area id
@@ -326,11 +550,11 @@ static inline int64_t rdr_get_coreid_from_areaid(u32 area_id)
 static pfn_cleartext_ops rdr_get_cleartext_fn(u32 area_id)
 {
 	struct rdr_cleartext_ops_s *p_cleartext_ops = NULL;
-	pfn_cleartext_ops ops;
-	struct list_head *cur = NULL;
-	unsigned long lock_flag;
-	int64_t ret;
-	u64 coreid;
+	pfn_cleartext_ops          ops;
+	struct list_head           *cur = NULL;
+	unsigned long              lock_flag;
+	int64_t                    ret;
+	u64                        coreid;
 
 	ret = rdr_get_coreid_from_areaid(area_id);
 	if (unlikely(ret < 0))
@@ -368,11 +592,14 @@ static pfn_cleartext_ops rdr_get_cleartext_fn(u32 area_id)
  * return value
  *
  */
-static void bbox_save_cleartext(char *dir_path, u64 log_addr, u32 log_len,
-	u32 area_id, u32 is_bbox_head)
+static void bbox_save_cleartext(char *dir_path,
+                                u64  log_addr,
+                                u32  log_len,
+                                u32  area_id,
+                                u32  is_bbox_head)
 {
 	pfn_cleartext_ops ops;
-	int ret;
+	int               ret;
 
 	BB_PRINT_START();
 
@@ -413,7 +640,7 @@ static void bbox_save_cleartext(char *dir_path, u64 log_addr, u32 log_len,
 int bbox_get_every_core_area_info(u32 *value, u32 *data, struct device_node **npp)
 {
 	struct device_node *np;
-	int ret;
+	int                ret;
 
 	np = of_find_compatible_node(NULL, NULL, "hisilicon,rdr");
 	if (unlikely(!np)) {
@@ -466,12 +693,12 @@ int bbox_get_every_core_area_info(u32 *value, u32 *data, struct device_node **np
  */
 void bbox_cleartext_proc(const char *path, const char *base_addr)
 {
-	int ret;
-	u32 value, size, i;
-	u32 data[RDR_CORE_MAX];
-	char dir_path[PATH_MAXLEN];
 	struct device_node *np;
-	char *addr;
+	char               *addr;
+	char               dir_path[PATH_MAXLEN];
+	int                ret;
+	u32                value, size, i;
+	u32                data[RDR_CORE_MAX];
 
 	if (unlikely(bbox_get_every_core_area_info(&value, data, &np))) {
 		BB_PRINT_ERR("[%s], bbox_get_every_core_area_info fail!\n",
@@ -529,7 +756,7 @@ int rdr_cleartext_body(void *arg)
 {
 	char path[PATH_MAXLEN];
 	char *date;
-	int ret = 0;
+	int  ret = 0;
 
 	/*
 	 * in the case of multiple continuos rdr_syserr_process 
@@ -539,7 +766,7 @@ int rdr_cleartext_body(void *arg)
 	while (1) {
 		down(&rdr_cleartext_sem);
 
-		BB_PRINT_ERR("rdr_cleartext_body enter\n");
+		BB_PRINT_PN("rdr_cleartext_body enter\n");
 
 
 		date = rdr_field_get_datetime();
@@ -553,7 +780,7 @@ int rdr_cleartext_body(void *arg)
 		/* save the cleartext dumplog over flag to avoid 
 		the same saving during the next reboot procedure */
 		rdr_cleartext_dumplog_done();
-		BB_PRINT_ERR("rdr_cleartext_dumplog_done\n");
+		BB_PRINT_PN("rdr_cleartext_dumplog_done\n");
 	}
 
 	return 0; /*lint !e527*/
@@ -624,8 +851,7 @@ void rdr_exceptionboot_save_cleartext(void)
 static void __rdr_register_cleartext_ops(struct rdr_cleartext_ops_s *ops)
 {
 	struct rdr_cleartext_ops_s *p_info;
-	struct list_head *cur;
-	struct list_head *next;
+	struct list_head          *cur, *next;
 
 	BB_PRINT_START();
 
@@ -658,9 +884,9 @@ int rdr_register_cleartext_ops(u64 coreid, pfn_cleartext_ops ops_fn)
 {
 	/*lint -e429*/
 	struct rdr_cleartext_ops_s *p_cleartext_ops;
-	struct list_head *cur;
-	unsigned long lock_flag;
-	int ret = -1;
+	struct list_head           *cur;
+	unsigned long              lock_flag;
+	int                        ret = -1;
 
 	BB_PRINT_START();
 
@@ -720,10 +946,10 @@ int rdr_register_cleartext_ops(u64 coreid, pfn_cleartext_ops ops_fn)
  */
 void rdr_cleartext_print_ops(void)
 {
-	int index = 1;
 	struct rdr_cleartext_ops_s *p_cleartext_ops = NULL;
-	struct list_head *cur = NULL;
-	struct list_head *next = NULL;
+	struct list_head           *cur = NULL;
+	struct list_head           *next = NULL;
+	int                        index = 1;
 
 	BB_PRINT_START();
 	index = 1;
@@ -742,4 +968,3 @@ void rdr_cleartext_print_ops(void)
 	BB_PRINT_END();
 	return;
 }
-

@@ -173,12 +173,16 @@ extern bool g_ec_6555v200;
 #define HI6555V200_REG_WRITE(regAddr,regval)     hisi_pmic_reg_write((int)(regAddr),(int)regval)
 #define HI6555V200_REGS_READ(regAddr,buf,size)   hisi_pmic_array_read((int)(regAddr),(char*)(buf),(int)(size))
 #define HI6555V200_REGS_WRITE(regAddr,buf,size)  hisi_pmic_array_write((int)(regAddr),(char*)(buf),(int)(size))
-
-
+#define HI6555V200_COUL_INFO
+#ifndef HI6555V200_COUL_INFO
+#define HI6555V200_COUL_ERR(fmt,args...)              do {} while (0)
+#define HI6555V200_COUL_EVT(fmt,args...)              do {} while (0)
+#define HI6555V200_COUL_INF(fmt,args...)              do {} while (0)
+#else
 #define HI6555V200_COUL_ERR(fmt,args...) do { printk(KERN_ERR    "[hisi_HI6555V200_coul]" fmt, ## args); } while (0)
 #define HI6555V200_COUL_EVT(fmt,args...) do { printk(KERN_WARNING"[hisi_HI6555V200_coul]" fmt, ## args); } while (0)
 #define HI6555V200_COUL_INF(fmt,args...) do { printk(KERN_INFO   "[hisi_HI6555V200_coul]" fmt, ## args); } while (0)
-
+#endif
 
 struct hi6555v200_coul_device_info
 {

@@ -2923,9 +2923,7 @@ dmac_rx_frame_ctrl_enum_uint8  dmac_rx_process_frame(
     oal_nl80211_key_type                en_key_type;
     oal_uint32                          ul_ret;
     oal_uint16                          us_dscr_status;
-#ifdef _PRE_WLAN_HW_TEST
     mac_device_stru                    *pst_mac_device = OAL_PTR_NULL;
-#endif
 
 #ifdef _PRE_WLAN_DFT_STAT
     dmac_vap_stru               *pst_dmac_vap;
@@ -2976,15 +2974,14 @@ dmac_rx_frame_ctrl_enum_uint8  dmac_rx_process_frame(
     /* 对单播帧进行过滤 不是发给我的帧，直接过滤掉 */
     if (OAL_FALSE == ETHER_IS_MULTICAST(puc_dest_addr))
     {
-#ifdef _PRE_WLAN_FEATURE_P2P
-        ul_ret = oal_compare_mac_addr(puc_dest_addr, pst_vap->pst_mib_info->st_wlan_mib_sta_config.auc_dot11StationID)
-                    && oal_compare_mac_addr(puc_dest_addr, pst_vap->pst_mib_info->st_wlan_mib_sta_config.auc_p2p0_dot11StationID);
-#else
-        ul_ret = oal_compare_mac_addr(puc_dest_addr, pst_vap->pst_mib_info->st_wlan_mib_sta_config.auc_dot11StationID);
-#endif  /* _PRE_WLAN_FEATURE_P2P */
-        if (0 != ul_ret)
+        if ((oal_compare_mac_addr(puc_dest_addr, pst_vap->pst_mib_info->st_wlan_mib_sta_config.auc_dot11StationID) != 0)
+            && (oal_compare_mac_addr(puc_dest_addr, pst_vap->pst_mib_info->st_wlan_mib_sta_config.auc_p2p0_dot11StationID) != 0))
         {
-            goto rx_pkt_drop;
+            pst_mac_device = mac_res_get_dev(pst_vap->uc_device_id);
+            if ((pst_mac_device == OAL_PTR_NULL) || (oal_compare_mac_addr(puc_dest_addr, pst_mac_device->auc_original_mac_addr) != 0))
+            {
+                goto rx_pkt_drop;
+            }
         }
     }
     OAL_MIPS_RX_STATISTIC(DMAC_PROFILING_FUNC_RX_DMAC_HANDLE_PER_MPDU_FILTER_ADDR_VAP);

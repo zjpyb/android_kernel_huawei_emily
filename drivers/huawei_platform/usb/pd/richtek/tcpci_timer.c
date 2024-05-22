@@ -21,9 +21,6 @@
 #include <linux/kthread.h>
 #include <linux/hrtimer.h>
 #include <linux/version.h>
-#ifdef CONFIG_HUAWEI_DSM
-#include <dsm/dsm_pub.h>
-#endif
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 9, 0))
 #include <linux/sched/rt.h>
@@ -190,6 +187,9 @@ const char *tcpc_timer_name[] = {
 	"TYPEC_TIMER_ERROR_RECOVERY",
 	"TYPEC_TIMER_WAKEUP_TOUT",
 	"TYPEC_TIMER_DRP_SRC_TOGGLE",
+#ifdef CONFIG_TYPEC_CAP_NORP_SRC
+	"TYPEC_TIMER_NORP_SRC",
+#endif	/* CONFIG_TYPEC_CAP_NORP_SRC */
 #else
 	"TYPEC_RT_TIMER_SAFE0V_DELAY",
 	"TYPEC_RT_TIMER_SAFE0V_TOUT",
@@ -212,6 +212,9 @@ const char *tcpc_timer_name[] = {
 	"TYPEC_TIMER_TRYSRCDEBOUNCE",
 	"TYPEC_TIMER_WAKEUP_TOUT",
 	"TYPEC_TIMER_DRP_SRC_TOGGLE",
+#ifdef CONFIG_TYPEC_CAP_NORP_SRC
+	"TYPEC_TIMER_NORP_SRC",
+#endif	/* CONFIG_TYPEC_CAP_NORP_SRC */
 #endif /* CONFIG_USB_POWER_DELIVERY */
 };
 
@@ -244,7 +247,7 @@ static const uint32_t tcpc_timer_timeout[PD_TIMER_NR] = {
 	TIMEOUT_RANGE(310, 620),	/* PD_TIMER_SINK_WAIT_CAP */
 	TIMEOUT_RANGE(40, 50),		/* PD_TIMER_SOURCE_ACTIVITY (no used) */
 	TIMEOUT_RANGE(100, 200),	/* PD_TIMER_SOURCE_CAPABILITY */
-	TIMEOUT_VAL(20),		/* PD_TIMER_SOURCE_START */
+	TIMEOUT_VAL(100),		/* PD_TIMER_SOURCE_START */
 	TIMEOUT_VAL(100),		/* PD_TIMER_VCONN_ON */
 	TIMEOUT_RANGE(40, 50),		/* PD_TIMER_VDM_MODE_ENTRY */
 	TIMEOUT_RANGE(40, 50),		/* PD_TIMER_VDM_MODE_EXIT */
@@ -288,13 +291,16 @@ static const uint32_t tcpc_timer_timeout[PD_TIMER_NR] = {
 	TIMEOUT_RANGE(400, 800),	/* TYPEC_TRY_TIMER_DRP_TRYWAIT */
 
 	/* TYPEC-DEBOUNCE-TIMER */
-	TIMEOUT_RANGE(100, 200),	/* TYPEC_TIMER_CCDEBOUNCE */
+	TIMEOUT_RANGE(100, 110),	/* TYPEC_TIMER_CCDEBOUNCE */
 	TIMEOUT_RANGE(10, 10),		/* TYPEC_TIMER_PDDEBOUNCE */
 	TIMEOUT_RANGE(20, 20),		/* TYPEC_TIMER_TRYSRCDEBOUNCE */
 	TIMEOUT_RANGE(25, 25),		/* TYPEC_TIMER_ERROR_RECOVERY */
 
 	TIMEOUT_VAL(300*1000),	/* TYPEC_TIMER_WAKEUP_TOUT (out of spec) */
 	TIMEOUT_VAL(60),		/* TYPEC_TIMER_DRP_SRC_TOGGLE */
+#ifdef CONFIG_TYPEC_CAP_NORP_SRC
+	TIMEOUT_VAL(300),		/* TYPEC_TIMER_NORP_SRC */
+#endif	/* CONFIG_TYPEC_CAP_NORP_SRC */
 #else
 	/* TYPEC-RT-TIMER */
 	TYPEC_RT_TIMER_SAFE0V_DLY_TOUT,	/* TYPEC_RT_TIMER_SAFE0V_DELAY */
@@ -315,12 +321,15 @@ static const uint32_t tcpc_timer_timeout[PD_TIMER_NR] = {
 	TIMEOUT_RANGE(75, 150),		/* TYPEC_TRY_TIMER_DRP_TRY */
 	TIMEOUT_RANGE(400, 800),	/* TYPEC_TRY_TIMER_DRP_TRYWAIT */
 
-	TIMEOUT_RANGE(100, 200),	/* TYPEC_TIMER_CCDEBOUNCE */
+	TIMEOUT_RANGE(100, 110),	/* TYPEC_TIMER_CCDEBOUNCE */
 	TIMEOUT_RANGE(10, 10),		/* TYPEC_TIMER_PDDEBOUNCE */
 	TIMEOUT_RANGE(20, 20),		/* TYPEC_TIMER_TRYSRCDEBOUNCE */
 
 	TIMEOUT_VAL(300*1000),	/* TYPEC_TIMER_WAKEUP_TOUT (out of spec) */
 	TIMEOUT_VAL(60),			/* TYPEC_TIMER_DRP_SRC_TOGGLE */
+#ifdef CONFIG_TYPEC_CAP_NORP_SRC
+	TIMEOUT_VAL(300),		/* TYPEC_TIMER_NORP_SRC */
+#endif	/* CONFIG_TYPEC_CAP_NORP_SRC */
 #endif /* CONFIG_USB_POWER_DELIVERY */
 };
 
@@ -892,6 +901,18 @@ static enum hrtimer_restart tcpc_timer_drp_src_toggle(struct hrtimer *timer)
 	return HRTIMER_NORESTART;
 }
 
+#ifdef CONFIG_TYPEC_CAP_NORP_SRC
+static enum hrtimer_restart tcpc_timer_norp_src(struct hrtimer *timer)
+{
+	int index = TYPEC_TIMER_NORP_SRC;
+	struct tcpc_device *tcpc_dev =
+		container_of(timer, struct tcpc_device, tcpc_timer[index]);
+
+	TCPC_TIMER_TRIGGER();
+	return HRTIMER_NORESTART;
+}
+#endif	/* CONFIG_TYPEC_CAP_NORP_SRC */
+
 static tcpc_hrtimer_call tcpc_timer_call[PD_TIMER_NR] = {
 #ifdef CONFIG_USB_POWER_DELIVERY
 	[PD_TIMER_BIST_CONT_MODE] = tcpc_timer_bist_cont_mode,
@@ -949,6 +970,10 @@ static tcpc_hrtimer_call tcpc_timer_call[PD_TIMER_NR] = {
 	[TYPEC_TIMER_ERROR_RECOVERY] = tcpc_timer_error_recovery,
 	[TYPEC_TIMER_WAKEUP] = tcpc_timer_wakeup,
 	[TYPEC_TIMER_DRP_SRC_TOGGLE] = tcpc_timer_drp_src_toggle,
+
+#ifdef CONFIG_TYPEC_CAP_NORP_SRC
+	[TYPEC_TIMER_NORP_SRC] = tcpc_timer_norp_src,
+#endif	/* CONFIG_TYPEC_CAP_NORP_SRC */
 #else
 	[TYPEC_RT_TIMER_SAFE0V_DELAY] = tcpc_timer_rt_vsafe0v_delay,
 	[TYPEC_RT_TIMER_SAFE0V_TOUT] = tcpc_timer_rt_vsafe0v_tout,
@@ -971,6 +996,9 @@ static tcpc_hrtimer_call tcpc_timer_call[PD_TIMER_NR] = {
 	[TYPEC_TIMER_TRYSRCDEBOUNCE] = tcpc_timer_trysrcdebounce,
 	[TYPEC_TIMER_WAKEUP] = tcpc_timer_wakeup,
 	[TYPEC_TIMER_DRP_SRC_TOGGLE] = tcpc_timer_drp_src_toggle,
+#ifdef CONFIG_TYPEC_CAP_NORP_SRC
+	[TYPEC_TIMER_NORP_SRC] = tcpc_timer_norp_src,
+#endif	/* CONFIG_TYPEC_CAP_NORP_SRC */
 #endif /* CONFIG_USB_POWER_DELIVERY */
 };
 
@@ -1013,14 +1041,11 @@ void tcpc_enable_timer(struct tcpc_device *tcpc, uint32_t timer_id)
 	TCPC_TIMER_EN_DBG(tcpc, timer_id);
 	if(timer_id >= PD_TIMER_NR) {
 		snprintf(buf, sizeof(buf), "the timer_id %d is over PD_TIMER_NR\n", timer_id);
-#ifdef CONFIG_HUAWEI_DSM
-		rt_dsm_report(ERROR_RT_PD_TIMER_NR, buf);
-#endif
 		return;
 	}
 	mutex_lock(&tcpc->timer_lock);
-	if (timer_id >= TYPEC_TIMER_START_ID)
-		tcpc_reset_timer_range(tcpc, TYPEC_TIMER_START_ID, PD_TIMER_NR);
+	if ((timer_id >= TYPEC_TIMER_START_ID) && (timer_id <= TYPEC_TIMER_DRP_SRC_TOGGLE))
+		tcpc_reset_timer_range(tcpc, TYPEC_TIMER_START_ID, TYPEC_TIMER_DRP_SRC_TOGGLE);
 
 	tcpc_set_timer_enable_mask(tcpc, timer_id);
 
@@ -1049,9 +1074,6 @@ void tcpc_disable_timer(struct tcpc_device *tcpc_dev, uint32_t timer_id)
 
 	if(timer_id >= PD_TIMER_NR) {
 		snprintf(buf, sizeof(buf), "the timer_id %d is over PD_TIMER_NR\n", timer_id);
-#ifdef CONFIG_HUAWEI_DSM
-		rt_dsm_report(ERROR_RT_PD_TIMER_NR, buf);
-#endif
 		return;
 	}
 	if (mask & RT_MASK64(timer_id)) {
@@ -1084,7 +1106,7 @@ void tcpc_reset_pe_timer(struct tcpc_device *tcpc_dev)
 void tcpc_reset_typec_debounce_timer(struct tcpc_device *tcpc)
 {
 	mutex_lock(&tcpc->timer_lock);
-	tcpc_reset_timer_range(tcpc, TYPEC_TIMER_START_ID, PD_TIMER_NR);
+	tcpc_reset_timer_range(tcpc, TYPEC_TIMER_START_ID, TYPEC_TIMER_DRP_SRC_TOGGLE);
 	mutex_unlock(&tcpc->timer_lock);
 }
 

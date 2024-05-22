@@ -9,25 +9,14 @@
 #include <linux/of_address.h>
 #include <linux/version.h>
 #include <linux/power/hisi/coul/hisi_coul_drv.h>
+#include <linux/hisi/hisi_log.h>
+#define HISI_LOG_TAG HISI_PMIC_MNTN_TAG
 
 #ifndef CONFIG_HISI_HI6421V600_PMU
-#if defined (CONFIG_HUAWEI_DSM)
-#include <dsm/dsm_pub.h>
-
-static struct dsm_dev pmic_dsm_dev = {
-	.name = "dsm_pmu_ocp",
-	.device_name = NULL,
-	.ic_name = NULL,
-	.module_name = NULL,
-	.fops = NULL,
-	.buff_size = 1024,
-};
+#include <huawei_platform/power/power_dsm.h>
 
 #define HISI_PMIC_DSM_MASK_STATE 0xFF
 #define HISI_PMIC_DSM_IGNORE_NUM 99
-
-static struct dsm_client *pmic_dsm_dclient;
-#endif
 #endif
 
 static PMIC_MNTN_DESC *g_pmic_mntn;
@@ -275,12 +264,10 @@ static void hisi_pmic_ocp_scan(PMIC_MNTN_DESC *pmic_mntn)
 						&& (!(pmic_mntn->dsm_ocp_reset_mask[index] & BIT(bit)))\
 						&& ((unsigned int)pmic_ocp_error_offset < pmic_mntn->ocp_error_dmd_offset_n)\
 						&& (HISI_PMIC_DSM_IGNORE_NUM != pmic_mntn->ocp_error_dmd_offset[pmic_ocp_error_offset])) {
-						if (dsm_client_ocuppy(pmic_dsm_dclient)) {
-							pr_err("pmic_dsm_dclient dsm_client_ocuppy failed\n");
-						} else {
+						if (!dsm_client_ocuppy(power_dsm_get_dclient(POWER_DSM_PMU_OCP))) {
 							pr_err("pmic %s_ocp happened, please pay attention!\n", bit_name);
-							dsm_client_record(pmic_dsm_dclient, "pmic %s_ocp happened, please pay attention!\n", bit_name);
-							dsm_client_notify(pmic_dsm_dclient, DSM_PMU_OCP_ERROR_NO_BASE + pmic_mntn->ocp_error_dmd_offset[pmic_ocp_error_offset]);
+							dsm_client_record(power_dsm_get_dclient(POWER_DSM_PMU_OCP), "pmic %s_ocp happened, please pay attention!\n", bit_name);
+							dsm_client_notify(power_dsm_get_dclient(POWER_DSM_PMU_OCP), DSM_PMU_OCP_ERROR_NO_BASE + pmic_mntn->ocp_error_dmd_offset[pmic_ocp_error_offset]);
 						}
 					}
 #endif
@@ -343,15 +330,13 @@ static void hisi_pmic_record_events(PMIC_MNTN_DESC *pmic_mntn)
 					&& (pmic_mntn->dsm_ocp_reset_mask[index] & BIT(i)) \
 					&& ((unsigned int)pmic_record_error_offset < pmic_mntn->ocp_error_dmd_offset_n) \
 					&& (HISI_PMIC_DSM_IGNORE_NUM != pmic_mntn->ocp_error_dmd_offset[pmic_record_error_offset])) {
-					if (dsm_client_ocuppy(pmic_dsm_dclient)) {
-						pr_err("pmic_dsm_dclient dsm_client_ocuppy failed\n");
-					} else {
+					if (!dsm_client_ocuppy(power_dsm_get_dclient(POWER_DSM_PMU_OCP))) {
 						hisi_pmic_get_batt_info(&vbatt, &batt_brand, &batt_temp, &capacity);
 						pr_err("pmic %s happened, please pay attention! vbatt:%d, batt_brand:%s, batt_temp:%d, capacity:%d\n",
 							pmic_mntn->record_exch_desc[index].event_bit_name[i], vbatt, batt_brand, batt_temp, capacity);
-						dsm_client_record(pmic_dsm_dclient, "pmic %s happened, please pay attention! vbatt:%d, batt_brand:%s, batt_temp:%d, capacity:%d\n",
+						dsm_client_record(power_dsm_get_dclient(POWER_DSM_PMU_OCP), "pmic %s happened, please pay attention! vbatt:%d, batt_brand:%s, batt_temp:%d, capacity:%d\n",
 							pmic_mntn->record_exch_desc[index].event_bit_name[i], vbatt, batt_brand, batt_temp, capacity);
-						dsm_client_notify(pmic_dsm_dclient, DSM_PMU_OCP_ERROR_NO_BASE + pmic_mntn->ocp_error_dmd_offset[pmic_record_error_offset]);
+						dsm_client_notify(power_dsm_get_dclient(POWER_DSM_PMU_OCP), DSM_PMU_OCP_ERROR_NO_BASE + pmic_mntn->ocp_error_dmd_offset[pmic_record_error_offset]);
 					}
 				}
 				pmic_record_error_offset++;
@@ -1236,17 +1221,6 @@ static int hisi_pmic_mntn_probe(struct platform_device *pdev)
 			return ret;
 		}
 	}
-
-#ifndef CONFIG_HISI_HI6421V600_PMU
-#if defined (CONFIG_HUAWEI_DSM)
-	if (!pmic_dsm_dclient) {
-		pmic_dsm_dclient = dsm_register_client(&pmic_dsm_dev);
-		if (NULL == pmic_dsm_dclient) {
-			dev_err(dev, "[%s]dsm_register_client register fail.\n", __func__);
-		}
-	}
-#endif
-#endif
 
 	hisi_pmic_record_events(pmic_mntn);
 

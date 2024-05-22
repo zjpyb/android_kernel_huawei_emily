@@ -12,6 +12,11 @@
 #include <linux/reboot.h>
 #include <linux/syscalls.h>
 #include <linux/hisi/hisi_bootup_keypoint.h>
+#include <linux/hisi/hisi_bbox_diaginfo.h>
+#include <libhwsecurec/securec.h>
+#include <linux/hisi/hisi_pstore.h>
+#include <linux/hisi/hisi_log.h>
+#define HISI_LOG_TAG HISI_BLACKBOX_TAG
 
 #include "platform_ap/rdr_hisi_ap_adapter.h"
 #include "rdr_inner.h"
@@ -36,7 +41,7 @@ static void rdr_check_log_save(u32 boot_type)
 
 	if (need_save_mntndump_log(boot_type)) {
 		if (save_mntndump_log("need save done.")) {
-			pr_err("save_mntndump_log fail\n");
+			BB_PRINT_ERR("save_mntndump_log fail\n");
 		}
 	}
 }
@@ -112,10 +117,10 @@ static inline void rdr_bootcheck_notify_dump(char *path, struct bootcheck *info)
 {
 	u64 result;
 
-	BB_PRINT_DBG("create dump file path:[%s].\n", path);
+	BB_PRINT_PN("create dump file path:[%s].\n", path);
 	while (info->mask) {
 		if ((rdr_get_cur_regcore() & info->mask) == 0) {
-			BB_PRINT_DBG
+			BB_PRINT_PN
 			    ("wait module register. cur:[0x%llx],need[0x%llx]\n",
 			     rdr_get_cur_regcore(), info->mask);
 			msleep(1000);
@@ -123,16 +128,53 @@ static inline void rdr_bootcheck_notify_dump(char *path, struct bootcheck *info)
 		}
 		result = rdr_notify_onemodule_dump(info->modid, info->mask,
 						info->type, info->core, path);
-		BB_PRINT_ERR("info.mask is [%llx], result = [0x%llx]\n", info->mask,
+		BB_PRINT_PN("info.mask is [%llx], result = [0x%llx]\n", info->mask,
 			     result);
 		if (result) {
 			info->mask &= (~result);
 		} else {
 			break;
 		}
-		BB_PRINT_ERR("rdr: notify [%s] core dump data done.\n",
+		BB_PRINT_PN("rdr: notify [%s] core dump data done.\n",
 			     rdr_get_exception_core(result));
 	}
+}
+
+static int rdr_save_history_log_back(void)
+{
+	struct rdr_exception_info_s temp;
+	char date[DATATIME_MAXLEN];
+	int ret;
+
+	ret = snprintf_s(date, DATATIME_MAXLEN, DATATIME_MAXLEN-1, "%s-%08lld",
+		  rdr_get_timestamp(), rdr_get_tick());
+	if(unlikely(ret < 0)){
+		BB_PRINT_ERR("[%s], snprintf_s date ret %d!\n", __func__, ret);
+		return -1;
+	}
+
+	temp.e_from_core = RDR_AP;
+	temp.e_reset_core_mask = RDR_AP;
+	temp.e_exce_type = rdr_get_reboot_type();
+	temp.e_exce_subtype = rdr_get_exec_subtype_value();
+
+	/* reboot reason ap wdt which is error reported, means other failure result into ap wdt */
+	if (unlikely(0 == ap_awdt_analysis(&temp))) {
+		BB_PRINT_ERR("[%s], ap_awdt_analysis correct reboot reason [%s]!\n",
+			__func__, rdr_get_exception_type(temp.e_exce_type));
+	}
+
+	if (temp.e_exce_type == LPM3_S_EXCEPTION) {
+		temp.e_from_core = RDR_LPM3;
+	}
+
+	if (temp.e_exce_type == MMC_S_EXCEPTION) {
+		temp.e_from_core = RDR_EMMC;
+	}
+
+	rdr_save_history_log(&temp, &date[0], false, get_last_boot_keypoint());
+
+	return 0;
 }
 
 int rdr_bootcheck_thread_body(void *arg)
@@ -150,26 +192,26 @@ int rdr_bootcheck_thread_body(void *arg)
 
 	save_hwbootfailInfo_to_file();
 
-	BB_PRINT_DBG("============wait for fs ready start =============\n");
+	BB_PRINT_PN("============wait for fs ready start =============\n");
 	while (rdr_wait_partition("/data/lost+found", 1000) != 0)
 		;
-	BB_PRINT_DBG("============wait for fs ready e n d =============\n");
+	BB_PRINT_PN("============wait for fs ready e n d =============\n");
 
 	if (is_need_save_dfx2file()) {
 		save_dfxpartition_to_file();
 	}
 
 	if (RDR_NEED_SAVE_MEM != rdr_check_exceptionboot(&info)) {
-		BB_PRINT_ERR("need not save dump file when boot.\n");
+		BB_PRINT_PN("need not save dump file when boot.\n");
 		goto end;
 	}
 
 	temp_pbb = rdr_get_tmppbb();
 	if (RDR_UNEXPECTED_REBOOT_MARK_ADDR == temp_pbb->top_head.reserve) {
 		cur_reboot_times = rdr_record_reboot_times2file();
-		printk(KERN_ERR "ap has reboot %d times\n", cur_reboot_times);
+		BB_PRINT_PN("ap has reboot %d times\n", cur_reboot_times);
 		if (max_reboot_times < cur_reboot_times) {
-			printk(KERN_ERR "need reboot to erecovery.\n");
+			BB_PRINT_ERR("need reboot to erecovery.\n");
 
 			/*write "erecovery_enter_reason:=2015" to cache*/
 			rdr_record_erecovery_reason();
@@ -182,7 +224,15 @@ int rdr_bootcheck_thread_body(void *arg)
 	} else {
 		rdr_reset_reboot_times();
 	}
-    p.modid = info.modid, p.arg1 = info.core, p.arg2 = info.type;
+	p.modid = info.modid, p.arg1 = info.core, p.arg2 = info.type;
+
+	if (!rdr_check_log_rights()) {
+		ret = rdr_save_history_log_back();
+		if (ret < 0) {
+			goto end;
+		}
+		goto check_log;
+	}
 
 	ret = rdr_create_epath_bc(path);
 	if (-1 == ret) {
@@ -207,11 +257,16 @@ int rdr_bootcheck_thread_body(void *arg)
 
 	rdr_set_saving_state(0);
 
-	BB_PRINT_DBG("saving data done.\n");
+	BB_PRINT_PN("saving data done.\n");
+check_log:
 	rdr_count_size();
-	BB_PRINT_DBG("rdr_count_size: done.\n");
+	BB_PRINT_PN("rdr_count_size: done.\n");
 end:
+
+	hisi_free_persist_store();
+	bbox_diaginfo_exception_save2fs();
 	rdr_clear_tmppbb();
+
 	BB_PRINT_END();
 	return 0;
 }

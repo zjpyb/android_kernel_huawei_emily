@@ -39,7 +39,9 @@
 #endif
 #include <linux/raid/pq.h>
 #include <huawei_platform/power/huawei_charger.h>
+#ifdef CONFIG_HISI_BCI_BATTERY
 #include <linux/power/hisi/hisi_bci_battery.h>
+#endif
 #include <bq25892_charger_aux.h>
 #include <../dual_charger.h>
 #include <linux/hisi/hisi_adc.h>
@@ -652,10 +654,9 @@ static int bq25892_aux_set_covn_start(int enable)
 	return 0;
 }
 
-static int bq25892_aux_chip_init(void)
+static int bq25892_aux_5v_chip_init(struct bq25892_aux_device_info *di)
 {
 	int ret = 0;
-	struct bq25892_aux_device_info *di = g_bq25892_aux_dev;
 
 	/*reg init */
 	/*bq25892_aux_write_mask(REG0x14,BQ25892_REG_RST_MASK,BQ25892_REG_RST_SHIFT,0x01);*/
@@ -1191,13 +1192,12 @@ static int bq25892_aux_set_charger_hiz(int enable)
 /**********************************************************
 *  Function:       bq25892_aux_fcp_chip_init
 *  Discription:    bq25892_aux chipIC initialization for high voltage adapter
-*  Parameters:   NULL
+*  Parameters:   struct bq25892_aux_device_info *di
 *  return value:  0-sucess or others-fail
 **********************************************************/
-static int bq25892_aux_fcp_chip_init(void)
+static int bq25892_aux_9v_chip_init(struct bq25892_aux_device_info *di)
 {
 	int ret = 0;
-	struct bq25892_aux_device_info *di = g_bq25892_aux_dev;
 
 	/*reg init */
 	/*bq25892_write_mask(REG0x14,BQ25892_AUX_REG_RST_MASK,BQ25892_AUX_REG_RST_SHIFT,0x01);*/
@@ -1215,8 +1215,8 @@ static int bq25892_aux_fcp_chip_init(void)
 	/*07 EN_TERM 1,Watchdog Timer 80s,EN_TIMER 1,Charge Timer 20h,JEITA Low Temperature Current Setting 1 */
 	ret |= bq25892_aux_write_byte(BQ25892_AUX_REG_07, 0x2f);
 	/*08 IR compensation voatge clamp = 224mV ,IR compensation resistor setting = 80mohm */
-	ret |= bq25892_aux_set_bat_comp(g_bq25892_aux_dev->param_dts.bat_comp);
-	ret |= bq25892_aux_set_vclamp(g_bq25892_aux_dev->param_dts.vclamp);
+	ret |= bq25892_aux_set_bat_comp(di->param_dts.bat_comp);
+	ret |= bq25892_aux_set_vclamp(di->param_dts.vclamp);
 	/*09 FORCE_ICO 0,TMR2X_EN 1,BATFET_DIS 0,JEITA_VSET 0,BATFET_RST_EN 1 */
 	ret |= bq25892_aux_write_byte(BQ25892_AUX_REG_09, 0x44);
 	/*boost mode current limit = 500mA,boostv 4.998v */
@@ -1227,6 +1227,27 @@ static int bq25892_aux_fcp_chip_init(void)
 	ret = bq25892_aux_set_dpm_voltage(4700);
 
 	gpio_set_value(di->gpio_cd, 0);	/*enable charging*/
+	return ret;
+}
+static int bq25892_aux_chip_init(struct chip_init_crit* init_crit)
+{
+	int ret = -1;
+	struct bq25892_aux_device_info *di = g_bq25892_aux_dev;
+	if (!di || !init_crit) {
+		hwlog_err("%s: di or init_crit is null\n", __func__);
+		return -ENOMEM;
+	}
+	switch(init_crit->vbus) {
+		case ADAPTER_5V:
+			ret = bq25892_aux_5v_chip_init(di);
+			break;
+		case ADAPTER_9V:
+			ret = bq25892_aux_9v_chip_init(di);
+			break;
+		default:
+			hwlog_err("%s: init mode err\n", __func__);
+			break;
+	}
 	return ret;
 }
 
@@ -1277,7 +1298,6 @@ static int bq25892_aux_stop_charge_config(void)
 
 struct charge_device_ops bq25892_aux_ops = {
 	.chip_init = bq25892_aux_chip_init,
-	.fcp_chip_init = bq25892_aux_fcp_chip_init,
 	.dev_check = bq25892_aux_device_check,
 	.set_adc_conv_rate = bq25892_aux_set_adc_conv_rate,
 	.set_input_current = bq25892_aux_set_input_current,

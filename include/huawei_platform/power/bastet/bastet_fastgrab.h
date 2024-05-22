@@ -13,7 +13,7 @@
 #define BST_FG_MAX_KW_LEN		(0xFFU) // Current Max keyword lenght is 16
 #define BST_FG_MAX_KW_NUMBER	(0x04U)
 #define BST_FG_MAX_PID_NUMBER	(0x200U)
-
+#define BST_FG_MAX_US_COPY_NUM	(4096)
 #define BST_FG_ROLE_SNDER	(0x01U)
 #define BST_FG_ROLE_RCVER	(0x02U)
 
@@ -36,6 +36,13 @@
 	(BST_FG_FLAG_WECHAT_RCVD) |\
 	(BST_FG_FLAG_WECHAT_GET) |\
 	(BST_FG_FLAG_WECHAT_VALID))
+
+#define BST_FG_MAX_CUSTOM_APP   (10)
+#define BST_FG_TCP_BITMAP   (0x01)
+#define BST_FG_UDP_BITMAP   (0x02)
+
+#define BST_FG_ACC_BITMAP           (0x01)
+#define BST_FG_CONGESTION_BITMAP   (0x02)
 
 #define BST_FG_SetFlag(var, idx)	((var) |= (0x01<<(idx)))
 #define BST_FG_ClrFlag(var)	((var)  = 0U)
@@ -74,6 +81,25 @@
 		} \
 	}
 
+#define BST_MIN(x,y)                      ((x) < (y) ? (x) : (y))
+#define BST_MAX(x,y)                      ((x) > (y) ? (x) : (y))
+
+#define BST_FG_SetDiscardTimer(sk, value) \
+    { \
+        (sk)->discard_duration = (value); \
+    }
+
+#ifdef CONFIG_HW_DPIMARK_MODULE
+#define BST_FG_SetAppType(sk, value) \
+    { \
+        (sk)->__sk_common.skc_hwdpi_mark |= (value << 8); \
+    }
+
+#define BST_FG_InitAppType(sk) \
+    { \
+        (sk)->__sk_common.skc_hwdpi_mark &= (0xFFFF00FF); \
+    }
+#endif
 
 typedef void(*BST_FG_PKT_PROC_T)(struct sock *, uint8_t*, uint32_t uint32_t);
 
@@ -86,6 +112,7 @@ typedef enum {
 	CMD_UPDATE_TID,
 	CMD_UPDATE_DSCP,
 	CMD_UPDATE_ACC_UID,
+	CMD_UPDATE_CUSTOM,
 } fastgrab_cmd;
 
 typedef enum {
@@ -156,6 +183,27 @@ typedef struct {
 } BST_FG_TID_COMM_STRU;
 
 typedef struct {
+	uid_t lUid;
+	uint8_t ucProtocolBitMap; /* BIT0:tcp; BIT1:udp */
+	uint8_t ucTcpRetranDiscard; /* Bit7 is switch flag, bit0~bit6 is value */
+	uint8_t ucDiscardTimer;
+	uint8_t ucAppType;
+} BST_FG_CUSTOM_INFO;
+
+typedef struct {
+	uint8_t ucHongbaoDurationTime; /* unit: second*/
+	uint8_t rsv[2];
+	uint8_t ucAPPNum;
+	BST_FG_CUSTOM_INFO astCustomInfo[BST_FG_MAX_CUSTOM_APP];
+} BST_FG_CUSTOM_STRU;
+
+typedef struct {
+	uint8_t ucCongestionProcFlag;
+	uint8_t ucDurationTime; /* unit: second*/
+	long ulStartTime;
+} BST_FG_HONGBAO_STRU;
+
+typedef struct {
 	fastgrab_cmd cmd;
 	uint16_t len;
 	uint8_t pData[0];
@@ -192,7 +240,10 @@ bool BST_FG_Hook_Ul_Stub(struct sock *pstSock, struct msghdr *msg);
 void BST_FG_Hook_Ul_Stub(struct sock *pstSock, struct msghdr *msg);
 #endif
 #endif
-
+#ifdef CONFIG_HUAWEI_BASTET
+void BST_FG_Custom_Process(struct sock *pstSock, struct msghdr *msg, uint8_t ucProtocolBitMap);
+#endif
+uint8_t BST_FG_Encode_Discard_timer(unsigned long ulTimer);
 /*****************************************************************************
   9 OTHERS∂®“Â
 *****************************************************************************/

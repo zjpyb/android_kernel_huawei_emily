@@ -9,6 +9,7 @@
 #define CREATE_TRACE_POINTS
 #include "lowmem_trace.h"
 
+#include <linux/version.h>
 #define ZONE_DMA_LOWMEM_RATIO 30
 
 static int nzones = -1;
@@ -40,7 +41,11 @@ int hisi_lowmem_tune(int *other_free, int *other_file,
 		/*lint -save -e834 */
 		zone_free = (int)zone_page_state(dma_zone, NR_FREE_PAGES)
 			- (int)zone_page_state(dma_zone, NR_FREE_CMA_PAGES)
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
 			- (int)dma_zone->totalreserve_pages;
+#else
+			- (int)dma_zone->zone_pgdat->totalreserve_pages;
+#endif
 		zone_file = (int)zone_page_state(dma_zone, NR_FILE_PAGES)
 			- (int)zone_page_state(dma_zone, NR_SHMEM)
 			- (int)zone_page_state(dma_zone, NR_SWAPCACHE);

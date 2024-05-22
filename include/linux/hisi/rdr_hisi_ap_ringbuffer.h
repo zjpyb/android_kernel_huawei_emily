@@ -9,25 +9,24 @@
  * published by the Free Software Foundation.
  */
 #include <linux/kernel.h>
-
-#define HISIAP_KEYS_MAX  71
-struct hisiap_ringbuffer_s {
-	u32 max_num;
-	u32 field_count;
-	u32 rear;
-	u32 is_full;
-	char keys[HISIAP_KEYS_MAX + 1];	/*For parsing with PC tools */
-	u8 data[1];
-};
+#include <mntn_public_interface.h>
 
 #ifdef CONFIG_HISI_BB
 int hisiap_ringbuffer_init(struct hisiap_ringbuffer_s *q, u32 bytes,
 			   u32 fieldcnt, const char *keys);
 void hisiap_ringbuffer_write(struct hisiap_ringbuffer_s *q, u8 *element);
+int  hisiap_ringbuffer_read(struct hisiap_ringbuffer_s *q, u8 *element, u32 len);
 int  hisiap_is_ringbuffer_full(const void *buffer_addr);
+void get_ringbuffer_start_end(struct hisiap_ringbuffer_s *q, u32 *start, u32 *end);
+bool is_ringbuffer_empty(struct hisiap_ringbuffer_s *q);
+bool is_ringbuffer_invalid(u32 field_count, u32 len, struct hisiap_ringbuffer_s *q);
 #else
 static inline int hisiap_ringbuffer_init(struct hisiap_ringbuffer_s *q, u32 bytes,
 			   u32 fieldcnt, const char *keys){return 0;}
 static inline void hisiap_ringbuffer_write(struct hisiap_ringbuffer_s *q, u8 *element){ return;}
+static inline int  hisiap_ringbuffer_read(struct hisiap_ringbuffer_s *q, u8 *element, u32 len){return 0;}
 static inline int  hisiap_is_ringbuffer_full(const void *buffer_addr){return 0;}
+static inline void get_ringbuffer_start_end(struct hisiap_ringbuffer_s *q, u32 *start, u32 *end){return;}
+static inline bool is_ringbuffer_empty(struct hisiap_ringbuffer_s *q){return true;}
+static inline bool is_ringbuffer_invalid(u32 field_count, u32 len, struct hisiap_ringbuffer_s *q){return true;}
 #endif

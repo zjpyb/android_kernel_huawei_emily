@@ -209,6 +209,11 @@ static inline int tcpci_set_vconn(struct tcpc_device *tcpc, int enable)
 	return tcpc->ops->set_vconn(tcpc, enable);
 }
 
+static inline int tcpci_mask_vsafe0v(struct tcpc_device *tcpc, int enable)
+{
+	return tcpc->ops->mask_vsafe0v(tcpc, enable);
+}
+
 static inline int tcpci_is_low_power_mode(struct tcpc_device *tcpc)
 {
 	int rv = 1;
@@ -333,6 +338,7 @@ static inline int tcpci_notify_typec_state(
 	struct tcpc_device *tcpc)
 {
 	struct pd_dpm_typec_state typec_state;
+	memset(&typec_state, 0, sizeof(typec_state));
 	typec_state.polarity = tcpc->typec_polarity;
 	typec_state.old_state = tcpc->typec_attach_old;
 	typec_state.new_state = tcpc->typec_attach_new;
@@ -653,8 +659,6 @@ static inline int tcpci_dp_configure(
 	event.typec_orien = tcpc->typec_polarity;
 	ret = pd_dpm_handle_combphy_event(event);
 
-	extern void hisi_usb_otg_update_mode_type(TCPC_MUX_CTRL_TYPE mode_type);
-	hisi_usb_otg_update_mode_type(TCPC_DP);
 	pr_info("\nhuawei_pd %s pd_event_notify ret = %d, mux_type = %d\n", __func__, ret, g_mux_type);
 #endif
 	return srcu_notifier_call_chain(&tcpc->evt_nh,

@@ -127,6 +127,9 @@ void dhd_unregister_handle(void)
 	unregister_dev_wifi_handle();
 }
 
+#ifdef HW_CE_5G_HIGH_BAND
+int g_ce_5g_high_band = 0;
+#endif
 
 /* Customized Locale convertor
 *  input : ISO 3166-1 country abbreviation
@@ -135,9 +138,15 @@ void dhd_unregister_handle(void)
 void get_customized_country_code_for_hw(char *country_iso_code, wl_country_t *cspec)
 {
 	int size, i;
+#ifdef HW_CE_5G_HIGH_BAND
+	int size_ce;
+#endif
 
 	HW_PRINT_HI("enter : %s.\n", __FUNCTION__);
 	size = ARRAYSIZE(hw_translate_custom_table);
+#ifdef HW_CE_5G_HIGH_BAND
+	size_ce = ARRAYSIZE(hw_translate_custom_table_ce);
+#endif
 
 	if (cspec == 0)
 		 return;
@@ -152,10 +161,23 @@ void get_customized_country_code_for_hw(char *country_iso_code, wl_country_t *cs
 			memcpy(cspec->country_abbrev, hw_translate_custom_table[i].custom_locale, WLC_CNTRY_BUF_SZ);
 			cspec->rev = hw_translate_custom_table[i].custom_locale_rev;
 			HW_PRINT_HI("output country code: %s, ver: %d.\n", cspec->ccode, cspec->rev);
-			return;
+			break;
 		}
 	}
-	
+
+#ifdef HW_CE_5G_HIGH_BAND
+	if (g_ce_5g_high_band) {
+		for (i = 0; i < size_ce; i++) {
+			if (strcmp(country_iso_code, hw_translate_custom_table_ce[i].iso_abbrev) == 0) {
+				memcpy(cspec->ccode, hw_translate_custom_table_ce[i].custom_locale, WLC_CNTRY_BUF_SZ);
+				memcpy(cspec->country_abbrev, hw_translate_custom_table_ce[i].custom_locale, WLC_CNTRY_BUF_SZ);
+				cspec->rev = hw_translate_custom_table_ce[i].custom_locale_rev;
+				HW_PRINT_HI("replace output country code: %s, ver: %d.\n", cspec->ccode, cspec->rev);
+				return;
+			}
+		}
+	}
+#endif
 	return;
 }
 
@@ -395,13 +417,14 @@ void dump_ipv6_addr(unsigned short *addr)
 
 static uint8_t *get_next_ipv6_chain_header(uint8_t **headerscan, uint8_t *headtype, int8_t *done, uint16_t *payload_len)
 {
+	if(headerscan == NULL || (*payload_len == 0) || (*done)){
+		return NULL;
+	}
+
 	uint16_t next_header_offset = 0;
 	uint8_t * payload_ptr = *headerscan;
 	uint8_t * return_header_ptr = *headerscan;
 
-	if(headerscan == NULL || (*payload_len == 0) || (*done)){
-		return NULL;
-	}
 	*done = 0;
 
 	switch(*headtype){
@@ -544,11 +567,11 @@ static void parse_ipv6_packet(struct sk_buff *skb)
 	*just print src and dst addr
 	*/
 	return;
-	payload = (char *)nh + sizeof(struct ipv6hdr);
+	/* payload = (char *)nh + sizeof(struct ipv6hdr);
 
 	get_ipv6_protocal_ports(payload, nh->payload_len, nh->nexthdr, &src_port, &des_port);
 
-	return;
+	return;*/
 }
 
 /***************************************************************************
@@ -1740,7 +1763,7 @@ int hw_get_filter_pkg_stat(hw_wifi_filter_item *list, int max_count, int* count)
 
 exit:
     MFREE(hw_dhd_pub_t->osh, iovbuf, WLC_IOCTL_MAXLEN);
-    return;
+    return 0;
 }
 #endif
 #ifdef HW_LP_OVERSEA
@@ -1770,9 +1793,12 @@ void hw_set_pmlock(dhd_pub_t *dhd) {
 static int dhd_looplog_idx = 0;
 static char dhd_log_buf[DHD_LOG_BUF_SIZE];
 static char dhd_loop_buf[DHD_LOOPLOG_BUF_SIZE];
+static DEFINE_MUTEX(hw_log_mutex);
 
 void hw_dhd_looplog_start(void) {
+    mutex_lock(&hw_log_mutex);
     dhd_looplog_idx = 0;
+    mutex_unlock(&hw_log_mutex);
     memset(dhd_loop_buf, 0, DHD_LOOPLOG_BUF_SIZE);
 }
 
@@ -1789,14 +1815,15 @@ void hw_dhd_looplog(const char *fmt, ...) {
     if (!is_beta_user()) {
         return;
     }
-
     va_start(ap, fmt);
+    mutex_lock(&hw_log_mutex);
     if(fmt && dhd_looplog_idx < DHD_LOOPLOG_BUF_SIZE) {
         len = vsnprintf(dhd_loop_buf + dhd_looplog_idx, DHD_LOOPLOG_BUF_SIZE - dhd_looplog_idx, fmt, ap);
         if (len > 0) {
             dhd_looplog_idx += len;
         }
     }
+    mutex_unlock(&hw_log_mutex);
     va_end(ap);
 }
 

@@ -42,6 +42,9 @@
 #include <huawei_platform/power/huawei_charger.h>
 #include <linux/power/hisi/hisi_bci_battery.h>
 #include <bq2560x_charger.h>
+#ifdef  CONFIG_HUAWEI_USB_SHORT_CIRCUIT_PROTECT
+#include <huawei_platform/power/usb_short_circuit_protect.h>
+#endif
 
 #define HWLOG_TAG bq2560x_charger
 HWLOG_REGIST();
@@ -49,11 +52,15 @@ HWLOG_REGIST();
 struct bq2560x_device_info *g_bq2560x_dev;
 static unsigned int rilim = 220;	/*this should be configured in dts file based on the real value of the Iin limit resistance*/
 static unsigned int adc_channel_iin = 10;	/*this should be configured in dts file based on the real adc channel number*/
+static bool g_hiz_mode = FALSE;
+static int hiz_iin_limit_flag = HIZ_IIN_FLAG_FALSE;
 #define BQ2560X_REG_NONE                    (0x00)
 #define BQ2560X_REG_NONE_MASK                    (0xFF)
 #define BQ2560X_REG_NONE_SHIFT                  (0x00)
 #define MSG_LEN                                     (2)
 #define BUF_LEN                                     (26)
+#define BOOSTV_5000        5000
+#define BOOSTLIM_1200      1200
 
 /**********************************************************
 *  Function:       params_to_reg
@@ -446,27 +453,26 @@ static int bq2560x_device_check(void)
 	ret = bq2560x_read_byte(BQ2560X_REG_VPRS, &reg);
 	if (ret) {
 		hwlog_err("read bq2560x charger version error !\n");
-		return 0;
+		return CHARGE_IC_BAD;
 	}
 
 	if (((reg & BQ2560X_REG_VPRS_PN_MASK)>>BQ2560X_REG_VPRS_PN_SHIFT) == VENDOR_ID) {
-		return 1;
+		return CHARGE_IC_GOOD;
 	}
 
-	return 0;
+	return CHARGE_IC_BAD;
 }
 
 /**********************************************************
-*  Function:       bq2560x_chip_init
+*  Function:       bq2560x_5v_chip_init
 *  Discription:    bq2560x chipIC initialization
-*  Parameters:   NULL
+*  Parameters:   struct bq2560x_device_info *di
 *  return value:  0-sucess or others-fail
 **********************************************************/
-static int bq2560x_chip_init(void)
+static int bq2560x_5v_chip_init(struct bq2560x_device_info *di)
 {
 	int ret = 0;
-	struct bq2560x_device_info *di = g_bq2560x_dev;
-
+	g_hiz_mode = FALSE;
 	/*boost mode current limit = 1000mA */
 	ret = bq2560x_write_byte(BQ2560X_REG_CCC, 0xa1);
 	/*I2C watchdog timer setting = 80s */
@@ -477,9 +483,28 @@ static int bq2560x_chip_init(void)
 	ret |= bq2560x_write_mask(BQ2560X_REG_MOC,
 				  BQ2560X_REG_MOC_VDPM_BAT_TRACK_MASK,
 				  BQ2560X_REG_MOC_VDPM_BAT_TRACK_SHIFT,
-				  REG07_VDPM_BAT_TRACK_200MV);
+				  REG07_VDPM_BAT_TRACK_DISABLE);
+	hiz_iin_limit_flag = HIZ_IIN_FLAG_FALSE;
 	gpio_set_value(di->gpio_cd, 0);	/*enable charging*/
 
+	return ret;
+}
+static int bq2560x_chip_init(struct chip_init_crit* init_crit)
+{
+	int ret = -1;
+	struct bq2560x_device_info *di = g_bq2560x_dev;
+	if (!di || !init_crit) {
+		hwlog_err("%s: di or init_crit is null\n", __func__);
+		return -ENOMEM;
+	}
+	switch(init_crit->vbus) {
+		case ADAPTER_5V:
+			ret = bq2560x_5v_chip_init(di);
+			break;
+		default:
+			hwlog_err("%s: init mode err\n", __func__);
+			break;
+	}
 	return ret;
 }
 
@@ -492,8 +517,11 @@ static int bq2560x_chip_init(void)
 static int bq2560x_set_input_current(int value)
 {
 	int val = 0;
-	val = (value - REG00_IINLIM_BASE) / REG00_IINLIM_LSB;
 
+	if (value >= AC_IIN_MAX_CURRENT){
+		value = EX_AC_IIN_MAX_CURRENT;
+	}
+	val = (value - REG00_IINLIM_BASE) / REG00_IINLIM_LSB;
 	return bq2560x_write_mask(BQ2560X_REG_ISC,
 				  BQ2560X_REG_ISC_IINLIM_MASK,
 				  BQ2560X_REG_ISC_IINLIM_SHIFT, val);
@@ -515,6 +543,28 @@ static int bq2560x_set_charge_current(int value)
 				  BQ2560X_REG_CCC_ICHG_MASK,
 				  BQ2560X_REG_CCC_ICHG_SHIFT, val);
 }
+
+
+/**********************************************************
+*  Function:       bq2560x_set_boost_current
+*  Discription:    set the OTG current in charging process
+*  Parameters:   value:otg boost current value
+*  return value:  0-sucess or others-fail
+**********************************************************/
+static int bq2560x_set_boost_current(int curr)
+{
+	int val = 0;
+
+	if (curr == BOOST_LIM_0P5A)
+		val = REG02_BOOST_LIM_0P5A;
+	else
+		val = REG02_BOOST_LIM_1P2A;
+
+	return bq2560x_write_mask(BQ2560X_REG_REG_BVTRC,
+				  BQ2560X_REG_REG_BVTRC_BOOSTV_MASK,
+				  BQ2560X_REG_REG_BVTRC_BOOSTV_SHIFT, val);
+}
+
 
 /**********************************************************
 *  Function:       bq2560x_set_terminal_voltage
@@ -541,12 +591,12 @@ static int bq2560x_set_terminal_voltage(int value)
 **********************************************************/
 static int bq2560x_set_dpm_voltage(int value)
 {
-	//int val = 0;
-	return 0;
-	//val = (value - REG06_VINDPM_BASE) / REG06_VINDPM_LSB;
-//	return bq2560x_write_mask(BQ2560X_REG_REG_BVTRC,
-//				  BQ2560X_REG_REG_BVTRC_VINDPM_MASK,
-//				  BQ2560X_REG_REG_BVTRC_VINDPM_SHIFT, val);
+	int val = 0;
+
+	val = (value - REG06_VINDPM_BASE) / REG06_VINDPM_LSB;
+	return bq2560x_write_mask(BQ2560X_REG_REG_BVTRC,
+				  BQ2560X_REG_REG_BVTRC_VINDPM_MASK,
+				  BQ2560X_REG_REG_BVTRC_VINDPM_SHIFT, val);
 }
 
 /**********************************************************
@@ -579,6 +629,31 @@ static int bq2560x_set_charge_enable(int enable)
 	return bq2560x_write_mask(BQ2560X_REG_POC,
 				  BQ2560X_REG_POC_CHG_CONFIG_MASK,
 				  BQ2560X_REG_POC_CHG_CONFIG_SHIFT, enable);
+}
+
+/**********************************************************
+*  Function:       bq2560x_set_otg_vboost
+*  Discription:    set the otg vboost voltage range
+*  Parameters:   voltage
+*  return value:  0-sucess or others-fail
+**********************************************************/
+static int bq2560x_set_boost_voltage(int voltage)
+{
+	int val = 0;
+	struct bq2560x_device_info *di = g_bq2560x_dev;
+
+	if (voltage== BOOSTV_4850)
+		val = REG06_BOOSTV_4P85V;
+	else if (voltage == BOOSTV_5150)
+		val = REG06_BOOSTV_5P15V;
+	else if (voltage == BOOSTV_5300)
+		val = REG06_BOOSTV_5P3V;
+	else
+		val = REG06_BOOSTV_5V;
+
+	return bq2560x_write_mask(BQ2560X_REG_REG_BVTRC,
+				  BQ2560X_REG_REG_BVTRC_BOOSTV_MASK,
+				  BQ2560X_REG_REG_BVTRC_BOOSTV_SHIFT, val);
 }
 
 /**********************************************************
@@ -726,6 +801,54 @@ static int bq2560x_check_input_dpm_state(void)
 }
 
 /**********************************************************
+*  Function:       bq2560x_check_input_vdpm_state
+*  Discription:    check whether VINDPM
+*  Parameters:     NULL
+*  return value:   TRUE means VINDPM
+*                  FALSE means NoT VINDPM
+**********************************************************/
+static int bq2560x_check_input_vdpm_state(void)
+{
+	u8 reg = 0;
+	int ret = -1;
+
+	ret = bq2560x_read_byte(BQ2560X_REG_VINS, &reg);
+	if (ret < 0) {
+		hwlog_err("bq2560x_check_input_vdpm_state err\n");
+		return ret;
+	}
+
+	if (reg & BQ2560X_REG_VINS_VINDPM_STAT_MASK)
+		return TRUE;
+	else
+		return FALSE;
+}
+
+/**********************************************************
+*  Function:       bq2560x_check_input_idpm_state
+*  Discription:    check whether IINDPM
+*  Parameters:     NULL
+*  return value:   TRUE means  IINDPM
+*                  FALSE means NoT IINDPM
+**********************************************************/
+static int bq2560x_check_input_idpm_state(void)
+{
+	u8 reg = 0;
+	int ret = -1;
+
+	ret = bq2560x_read_byte(BQ2560X_REG_VINS, &reg);
+	if (ret < 0) {
+		hwlog_err("bq2560x_check_input_idpm_state err\n");
+		return ret;
+	}
+
+	if (reg & BQ2560X_REG_VINS_IINDPM_STAT_MASK)
+		return TRUE;
+	else
+		return FALSE;
+}
+
+/**********************************************************
 *  Function:       bq2560x_dump_register
 *  Discription:    print the register value in charging process
 *  Parameters:   reg_value:string for save register value
@@ -788,9 +911,29 @@ static int bq2560x_set_batfet_disable(int disable)
 **********************************************************/
 static int bq2560x_set_watchdog_timer(int value)
 {
-	return bq2560x_write_mask(BQ2560X_REG_POC,
-				  BQ2560X_REG_POC_WDT_RESET_MASK,
-				  BQ2560X_REG_POC_WDT_RESET_SHIFT, value);
+	int ret = 0;
+	int val = 0;
+
+	if (value == WDT_BASE || TRUE == g_hiz_mode)
+		val = REG05_WDT_DISABLE;
+	else if (value <= WDT_40S)
+		val = REG05_WDT_40S;
+	else if (value <= WDT_80S)
+		val = REG05_WDT_80S;
+	else
+		val = REG05_WDT_160S;
+
+	ret = bq2560x_write_mask(BQ2560X_REG_CTTC,
+			   BQ2560X_REG_CTTC_WDT_MASK,
+			   BQ2560X_REG_CTTC_WDT_SHIFT, val);
+	if (ret) {
+                hwlog_err("bq2560x_set_watchdog_timer err\n");
+        }
+
+	if(value > 0){
+		ret = bq2560x_reset_watchdog_timer();
+	}
+	return ret;
 }
 
 /**********************************************************
@@ -802,16 +945,47 @@ static int bq2560x_set_watchdog_timer(int value)
 static int bq2560x_set_charger_hiz(int enable)
 {
 	int ret = 0;
+	int ret2 = 0;
+	static int first_in = 1;
+	struct bq2560x_device_info *di = g_bq2560x_dev;
 
-	if (enable > 0)
-		ret |= bq2560x_write_mask(BQ2560X_REG_ISC,
-					  BQ2560X_REG_ISC_EN_HIZ_MASK,
-					  BQ2560X_REG_ISC_EN_HIZ_SHIFT, TRUE);
-	else
+	if(NULL == di){
+		hwlog_err("[%s] di is NULL!\n", __func__);
+		return 0;
+	}
+
+	if (enable > 0){
+#ifdef  CONFIG_HUAWEI_USB_SHORT_CIRCUIT_PROTECT
+		if(1 == di->hiz_iin_limit && is_uscp_hiz_mode() && !is_in_rt_uscp_mode()){
+			hiz_iin_limit_flag = HIZ_IIN_FLAG_TRUE;
+			if(first_in){
+				hwlog_err("[%s] is_uscp_hiz_mode HIZ,enable:%d,set 100mA\n", __func__, enable);
+				first_in = 0;
+				return bq2560x_set_input_current(IINLIM_100);//set inputcurrent to 100mA
+			}else{
+				return 0;
+			}
+		}else{
+#endif
+			ret |= bq2560x_write_mask(BQ2560X_REG_ISC,
+						  BQ2560X_REG_ISC_EN_HIZ_MASK,
+						  BQ2560X_REG_ISC_EN_HIZ_SHIFT, TRUE);
+			g_hiz_mode = TRUE;
+			ret2 = bq2560x_set_watchdog_timer(WATCHDOG_TIMER_DISABLE);
+			if(ret2){
+				hwlog_err("bq2560x_set_watchdog_timer err\n");
+			}
+#ifdef  CONFIG_HUAWEI_USB_SHORT_CIRCUIT_PROTECT
+		}
+#endif
+	}else{
+		hiz_iin_limit_flag = HIZ_IIN_FLAG_FALSE;
+		first_in = 1;
 		ret |= bq2560x_write_mask(BQ2560X_REG_ISC,
 					  BQ2560X_REG_ISC_EN_HIZ_MASK,
 					  BQ2560X_REG_ISC_EN_HIZ_SHIFT, FALSE);
-
+		g_hiz_mode = FALSE;
+	}
 	return ret;
 }
 
@@ -825,6 +999,7 @@ struct charge_device_ops bq2560x_ops = {
 	.set_terminal_current = bq2560x_set_terminal_current,
 	.set_charge_enable = bq2560x_set_charge_enable,
 	.set_otg_enable = bq2560x_set_otg_enable,
+	.set_otg_current = bq2560x_set_boost_current,
 	.set_term_enable = bq2560x_set_term_enable,
 	.get_charge_state = bq2560x_get_charge_state,
 	.reset_watchdog_timer = bq2560x_reset_watchdog_timer,
@@ -835,8 +1010,11 @@ struct charge_device_ops bq2560x_ops = {
 	.get_ibus = bq2560x_get_ilim,
 	.check_charger_plugged = bq2560x_check_charger_plugged,
 	.check_input_dpm_state = bq2560x_check_input_dpm_state,
+	.check_input_vdpm_state = bq2560x_check_input_vdpm_state,
+	.check_input_idpm_state = bq2560x_check_input_idpm_state,
 	.set_charger_hiz = bq2560x_set_charger_hiz,
 	.get_charge_current = NULL,
+	.set_boost_voltage = bq2560x_set_boost_voltage,
 };
 
 /**********************************************************
@@ -917,6 +1095,19 @@ static int bq2560x_probe(struct i2c_client *client,
 	di->client = client;
 	i2c_set_clientdata(client, di);
 
+	/* check if bq2560x exist */
+	if (CHARGE_IC_BAD == bq2560x_device_check()) {
+		hwlog_err("%s: bq2560x not exists.\n", __func__);
+		ret = -EINVAL;
+		goto bq2560x_fail_0;
+	}
+
+	if(of_property_read_u32(np, "hiz_iin_limit", &(di->hiz_iin_limit))){
+		hwlog_err("get hiz_iin_limit failed\n");
+		di->hiz_iin_limit = 0;
+	}
+	hwlog_info("prase_dts hiz_iin_limit = %d\n", di->hiz_iin_limit);
+
 	INIT_WORK(&di->irq_work, bq2560x_irq_work);
 	di->gpio_cd = of_get_named_gpio(np, "gpio_cd", 0);
 	if (!gpio_is_valid(di->gpio_cd)) {
@@ -980,6 +1171,11 @@ static int bq2560x_probe(struct i2c_client *client,
 			hwlog_err("create link to bq2560x fail.\n");
 			goto bq2560x_fail_4;
 		}
+	}
+	/*set bq2560x boost voltage*/
+	ret = bq2560x_set_boost_voltage(BOOSTV_5000);
+	if (ret < 0) {
+		hwlog_err("set bq2560x boost voltage fail\n");
 	}
 
 	hwlog_info("bq2560x probe ok!\n");

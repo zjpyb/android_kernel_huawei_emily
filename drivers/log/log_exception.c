@@ -5,13 +5,14 @@
 #include<linux/uaccess.h>
 #include<linux/aio.h>
 #include<linux/types.h>
+#include<linux/version.h>
 #include<uapi/linux/uio.h>
 
 #include <huawei_platform/log/hw_log.h>
 #define HWLOG_TAG	log_exception
 HWLOG_REGIST();
 
-static const int CHECK_CODE = 0x7BCDABCD;
+static int CHECK_CODE = 0x7BCDABCD;
 
 /**
 *  tag: the tag of this command
@@ -56,7 +57,11 @@ int log_to_exception(char* tag, char* msg)
 	vec[vcount].iov_base = msg;
 	vec[vcount++].iov_len = strlen(msg)+1;
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
+	ret = vfs_writev(filp, vec, vcount, &filp->f_pos, 0);
+#else
 	ret = vfs_writev(filp, vec, vcount, &filp->f_pos);
+#endif
 	if (ret < 0) {
 		hwlog_err("%s: write '%s' fail %d\n", __func__, LOG_EXCEPTION_FS, ret);
 		filp_close(filp, NULL);
@@ -85,7 +90,7 @@ int logbuf_to_exception(char category, int level, char log_type, char sn, void *
 		return -EINVAL;
 	}
 
-	hwlog_info("%s: exception msg '%s'", __func__, msg);
+	hwlog_info("%s: exception msg '%s'", __func__, (char *)msg);
 
 	oldfs = get_fs();
 	set_fs(KERNEL_DS);
@@ -110,7 +115,11 @@ int logbuf_to_exception(char category, int level, char log_type, char sn, void *
 	vec[vcount].iov_base = msg;
 	vec[vcount++].iov_len = msglen;
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
+	ret = vfs_writev(filp, vec, vcount, &filp->f_pos, 0);
+#else
 	ret = vfs_writev(filp, vec, vcount, &filp->f_pos);
+#endif
 	if (ret < 0) {
 		hwlog_err("%s: write '%s' fail %d\n", __func__, LOG_EXCEPTION_FS, ret);
 		filp_close(filp, NULL);

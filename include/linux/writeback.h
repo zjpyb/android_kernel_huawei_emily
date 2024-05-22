@@ -86,6 +86,7 @@ struct writeback_control {
 	unsigned for_reclaim:1;		/* Invoked from the page allocator */
 	unsigned range_cyclic:1;	/* range_start is cyclic */
 	unsigned for_sync:1;		/* sync(2) WB_SYNC_ALL writeback */
+	unsigned for_free_mem:1;	/* writeback for free some memory */
 #ifdef CONFIG_CGROUP_WRITEBACK
 	struct bdi_writeback *wb;	/* wb this writeback is issued under */
 	struct inode *inode;		/* inode being written out */
@@ -102,7 +103,6 @@ struct writeback_control {
 	bool ishibernation_rec;
 	unsigned nr_writedblock;  /*the number of blocks that was writebacked*/
 #endif
-	enum wb_reason reason;
 };
 
 /*
@@ -172,7 +172,7 @@ static inline void wb_domain_size_changed(struct wb_domain *dom)
 
 /*
  * fs/fs-writeback.c
- */
+ */	
 struct bdi_writeback;
 void writeback_inodes_sb(struct super_block *, enum wb_reason reason);
 void writeback_inodes_sb_nr(struct super_block *, unsigned long nr,
@@ -191,14 +191,14 @@ static inline void wait_on_inode(struct inode *inode)
 	wait_on_bit(&inode->i_state, __I_NEW, TASK_UNINTERRUPTIBLE);
 }
 
-static inline int wbc_to_write_cmd(struct writeback_control *wbc)
+static inline int wbc_to_write_flag(struct writeback_control *wbc)
 {
 	if (wbc->sync_mode == WB_SYNC_ALL)
 		return WRITE_SYNC;
 	else if (wbc->for_kupdate || wbc->for_background)
 		return WRITE_BG;
 
-	return WRITE;
+	return 0;
 }
 
 #ifdef CONFIG_CGROUP_WRITEBACK
@@ -334,8 +334,7 @@ void laptop_mode_timer_fn(unsigned long data);
 #else
 static inline void laptop_sync_completion(void) { }
 #endif
-void throttle_vm_writeout(gfp_t gfp_mask);
-bool zone_dirty_ok(struct zone *zone);
+bool node_dirty_ok(struct pglist_data *pgdat);
 int wb_domain_init(struct wb_domain *dom, gfp_t gfp);
 #ifdef CONFIG_CGROUP_WRITEBACK
 void wb_domain_exit(struct wb_domain *dom);
@@ -398,5 +397,8 @@ void tag_pages_for_writeback(struct address_space *mapping,
 			     pgoff_t start, pgoff_t end);
 
 void account_page_redirty(struct page *page);
+
+void sb_mark_inode_writeback(struct inode *inode);
+void sb_clear_inode_writeback(struct inode *inode);
 
 #endif		/* WRITEBACK_H */

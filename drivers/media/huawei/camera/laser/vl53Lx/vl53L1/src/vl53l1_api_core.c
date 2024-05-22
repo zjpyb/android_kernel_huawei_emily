@@ -136,6 +136,7 @@
 	level, VL53L1_TRACE_FUNCTION_NONE, ##__VA_ARGS__)
 
 #define VL53L1_MAX_I2C_XFER_SIZE 256
+extern int memcpy_s(void *dest, size_t destMax, const void *src, size_t count);
 
 VL53L1_Error VL53L1_get_version(
 	VL53L1_DEV           Dev,
@@ -151,7 +152,7 @@ VL53L1_Error VL53L1_get_version(
 
 	VL53L1_init_version(Dev);
 
-	memcpy(pdata, &(pdev->version), sizeof(VL53L1_ll_version_t));
+	memcpy_s(pdata, sizeof(VL53L1_ll_version_t), &(pdev->version), sizeof(VL53L1_ll_version_t));
 
 	return VL53L1_ERROR_NONE;
 }
@@ -771,50 +772,50 @@ VL53L1_Error VL53L1_set_part_to_part_data(
 
 
 
-		memcpy(
-			&(pdev->customer),
+		memcpy_s(
+			&(pdev->customer),sizeof(VL53L1_customer_nvm_managed_t),
 			&(pcal_data->customer),
 			sizeof(VL53L1_customer_nvm_managed_t));
 
 
 
-		memcpy(
-			&(pdev->add_off_cal_data),
+		memcpy_s(
+			&(pdev->add_off_cal_data),sizeof(VL53L1_additional_offset_cal_data_t),
 			&(pcal_data->add_off_cal_data),
 			sizeof(VL53L1_additional_offset_cal_data_t));
 
 
 
-		memcpy(
-			&(pdev->fmt_dmax_cal),
+		memcpy_s(
+			&(pdev->fmt_dmax_cal),sizeof(VL53L1_dmax_calibration_data_t),
 			&(pcal_data->fmt_dmax_cal),
 			sizeof(VL53L1_dmax_calibration_data_t));
 
 
 
-		memcpy(
-			&(pdev->cust_dmax_cal),
+		memcpy_s(
+			&(pdev->cust_dmax_cal),sizeof(VL53L1_dmax_calibration_data_t),
 			&(pcal_data->cust_dmax_cal),
 			sizeof(VL53L1_dmax_calibration_data_t));
 
 
 
-		memcpy(
-			&(pdev->xtalk_shapes),
+		memcpy_s(
+			&(pdev->xtalk_shapes),sizeof(VL53L1_xtalk_histogram_data_t),
 			&(pcal_data->xtalkhisto),
 			sizeof(VL53L1_xtalk_histogram_data_t));
 
 
 
-		memcpy(
-			&(pdev->gain_cal),
+		memcpy_s(
+			&(pdev->gain_cal),sizeof(VL53L1_gain_calibration_data_t),
 			&(pcal_data->gain_cal),
 			sizeof(VL53L1_gain_calibration_data_t));
 
 
 
-		memcpy(
-			&(pdev->cal_peak_rate_map),
+		memcpy_s(
+			&(pdev->cal_peak_rate_map),sizeof(VL53L1_cal_peak_rate_map_t),
 			&(pcal_data->cal_peak_rate_map),
 			sizeof(VL53L1_cal_peak_rate_map_t));
 
@@ -888,8 +889,8 @@ VL53L1_Error VL53L1_get_part_to_part_data(
 
 
 
-	memcpy(
-		&(pcal_data->customer),
+	memcpy_s(
+		&(pcal_data->customer),sizeof(VL53L1_customer_nvm_managed_t),
 		&(pdev->customer),
 		sizeof(VL53L1_customer_nvm_managed_t));
 
@@ -1567,7 +1568,7 @@ VL53L1_Error VL53L1_set_zone_config(
 
 
 
-	memcpy(&(pdev->zone_cfg.user_zones), &(pzone_cfg->user_zones),
+	memcpy_s(&(pdev->zone_cfg.user_zones),sizeof(pdev->zone_cfg.user_zones), &(pzone_cfg->user_zones),
 			sizeof(pdev->zone_cfg.user_zones));
 
 
@@ -4347,8 +4348,8 @@ VL53L1_Error VL53L1_get_device_results(
 
 
 
-	memcpy(
-		prange_results,
+	memcpy_s(
+		prange_results,sizeof(VL53L1_range_results_t),
 		presults,
 		sizeof(VL53L1_range_results_t));
 
@@ -5057,7 +5058,7 @@ VL53L1_Error VL53L1_set_GPIO_interrupt_config_struct(
 
 
 
-	memcpy(pintconf, &(intconf), sizeof(VL53L1_GPIO_interrupt_config_t));
+	memcpy_s(pintconf, sizeof(VL53L1_GPIO_interrupt_config_t), &(intconf), sizeof(VL53L1_GPIO_interrupt_config_t));
 
 
 
@@ -5118,7 +5119,7 @@ VL53L1_Error VL53L1_get_GPIO_interrupt_config(
 
 
 
-		memcpy(pintconf, &(pdev->gpio_interrupt_config),
+		memcpy_s(pintconf, sizeof(VL53L1_GPIO_interrupt_config_t), &(pdev->gpio_interrupt_config),
 				sizeof(VL53L1_GPIO_interrupt_config_t));
 	}
 
@@ -5209,15 +5210,15 @@ VL53L1_Error VL53L1_get_dmax_calibration_data(
 	break;
 
 	case VL53L1_DEVICEDMAXMODE__CUST_CAL_DATA:
-		memcpy(
-			pdmax_cal,
+		memcpy_s(
+			pdmax_cal,sizeof(VL53L1_dmax_calibration_data_t),
 			&(pdev->cust_dmax_cal),
 			sizeof(VL53L1_dmax_calibration_data_t));
 	break;
 
 	case VL53L1_DEVICEDMAXMODE__FMT_CAL_DATA:
-		memcpy(
-			pdmax_cal,
+		memcpy_s(
+			pdmax_cal,sizeof(VL53L1_dmax_calibration_data_t),
 			&(pdev->fmt_dmax_cal),
 			sizeof(VL53L1_dmax_calibration_data_t));
 	break;
@@ -5252,8 +5253,8 @@ VL53L1_Error VL53L1_set_hist_dmax_config(
 
 
 
-	memcpy(
-		&(pdev->dmax_cfg),
+	memcpy_s(
+		&(pdev->dmax_cfg),sizeof(VL53L1_hist_gen3_dmax_config_t),
 		pdmax_cfg,
 		sizeof(VL53L1_hist_gen3_dmax_config_t));
 
@@ -5281,8 +5282,8 @@ VL53L1_Error VL53L1_get_hist_dmax_config(
 
 
 
-	memcpy(
-		pdmax_cfg,
+	memcpy_s(
+		pdmax_cfg,sizeof(VL53L1_hist_gen3_dmax_config_t),
 		&(pdev->dmax_cfg),
 		sizeof(VL53L1_hist_gen3_dmax_config_t));
 
@@ -5415,8 +5416,8 @@ VL53L1_Error VL53L1_set_zone_calibration_data(
 	if (status == VL53L1_ERROR_NONE)
 
 
-		memcpy(
-			&(pres->zone_cal),
+		memcpy_s(
+			&(pres->zone_cal),sizeof(VL53L1_zone_calibration_results_t),
 			pzone_cal,
 			sizeof(VL53L1_zone_calibration_results_t));
 
@@ -5444,8 +5445,8 @@ VL53L1_Error VL53L1_get_zone_calibration_data(
 
 
 
-	memcpy(
-		pzone_cal,
+	memcpy_s(
+		pzone_cal,sizeof(VL53L1_zone_calibration_results_t),
 		&(pres->zone_cal),
 		sizeof(VL53L1_zone_calibration_results_t));
 

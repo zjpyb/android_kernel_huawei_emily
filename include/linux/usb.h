@@ -379,7 +379,6 @@ struct usb_bus {
 	struct usb_devmap devmap;	/* device address allocation map */
 	struct usb_device *root_hub;	/* Root hub */
 	struct usb_bus *hs_companion;	/* Companion EHCI bus, if any */
-	struct list_head bus_list;	/* list of busses */
 
 	int bandwidth_allocated;	/* on this bus: how much of the time
 					 * reserved for periodic (intr/iso)
@@ -524,7 +523,6 @@ struct usb3_lpm_parameters {
  * @usb2_hw_lpm_besl_capable: device can perform USB2 hardware BESL LPM
  * @usb2_hw_lpm_enabled: USB2 hardware LPM is enabled
  * @usb2_hw_lpm_allowed: Userspace allows USB 2.0 LPM to be enabled
- * @usb3_lpm_enabled: USB3 hardware LPM enabled
  * @usb3_lpm_u1_enabled: USB3 hardware U1 LPM enabled
  * @usb3_lpm_u2_enabled: USB3 hardware U2 LPM enabled
  * @string_langid: language ID for strings
@@ -599,7 +597,6 @@ struct usb_device {
 	unsigned usb2_hw_lpm_besl_capable:1;
 	unsigned usb2_hw_lpm_enabled:1;
 	unsigned usb2_hw_lpm_allowed:1;
-	unsigned usb3_lpm_enabled:1;
 	unsigned usb3_lpm_u1_enabled:1;
 	unsigned usb3_lpm_u2_enabled:1;
 	int string_langid;
@@ -624,6 +621,7 @@ struct usb_device {
 	unsigned do_remote_wakeup:1;
 	unsigned reset_resume:1;
 	unsigned port_is_suspended:1;
+	unsigned do_dpm_resume:1;
 #endif
 	struct wusb_dev *wusb_dev;
 	int slot_id;
@@ -658,9 +656,10 @@ extern struct usb_device *usb_hub_find_child(struct usb_device *hdev,
 		if (!child) continue; else
 
 /* USB device locking */
-#define usb_lock_device(udev)		device_lock(&(udev)->dev)
-#define usb_unlock_device(udev)		device_unlock(&(udev)->dev)
-#define usb_trylock_device(udev)	device_trylock(&(udev)->dev)
+#define usb_lock_device(udev)			device_lock(&(udev)->dev)
+#define usb_unlock_device(udev)			device_unlock(&(udev)->dev)
+#define usb_lock_device_interruptible(udev)	device_lock_interruptible(&(udev)->dev)
+#define usb_trylock_device(udev)		device_trylock(&(udev)->dev)
 extern int usb_lock_device_for_reset(struct usb_device *udev,
 				     const struct usb_interface *iface);
 
@@ -1835,7 +1834,7 @@ void usb_sg_wait(struct usb_sg_request *io);
 static inline unsigned int __create_pipe(struct usb_device *dev,
 		unsigned int endpoint)
 {
-	return (dev->devnum << 8) | (endpoint << 15); /* [false alarm]:this is original code */
+	return (dev->devnum << 8) | (endpoint << 15); /*[false alarm]:it is a false alarm*/
 }
 
 /* Create various pipes... */
@@ -1883,7 +1882,7 @@ usb_maxpacket(struct usb_device *udev, int pipe, int is_out)
 		return 0;
 
 	/* NOTE:  only 0x07ff bits are for packet size... */
-	return usb_endpoint_maxp(&ep->desc); /* [false alarm]:this is original code */
+	return usb_endpoint_maxp(&ep->desc); /*[false alarm]:it is a false alarm*/
 }
 
 /* ----------------------------------------------------------------------- */

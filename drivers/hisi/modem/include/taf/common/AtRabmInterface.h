@@ -202,9 +202,7 @@ typedef struct
     MSG_HEADER_STRU                     stMsgHeader;                            /* 消息头 */ /*_H2ASN_Skip*/
     MN_CLIENT_ID_T                      usClientId;                             /* AT发消息给RABM所带的ClientId */
     MN_OPERATION_ID_T                   ucOpId;                                 /* AT发消息给RABM所带的OpId */
-    /* Added by l60609 for B070 Project, 2012/03/20, begin */
     VOS_UINT8                           ucRslt;                                 /* 结果 */
-    /* Added by l60609 for B070 Project, 2012/03/20, end */
     AT_RABM_FASTDORM_PARA_STRU          stFastDormPara;                         /* 查询返回的当前参数 */
 }RABM_AT_QRY_FASTDORM_PARA_CNF_STRU;
 

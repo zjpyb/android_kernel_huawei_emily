@@ -249,7 +249,7 @@ struct dp_source_data {
 };
 
 int dp_source_mode_parse_dts(void);
-static int dp_source_setup_sysfs(struct device *dev);
+//static int dp_source_setup_sysfs(struct device *dev);
 void dp_send_event(enum dp_event_type event);
 
 

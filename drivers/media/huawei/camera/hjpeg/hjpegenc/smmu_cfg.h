@@ -29,6 +29,7 @@
 #define CONFIG_SMMU_RWERRADDR 1
 
 extern int hjpeg_smmu_config(hjpeg_hw_ctl_t *hw_ctl, void* fama_pgd);
+extern int is_hjpeg_qos_update(void);
 
 #define SMMU_RW_ERR_ADDR_SIZE (128)
 

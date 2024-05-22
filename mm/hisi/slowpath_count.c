@@ -51,9 +51,7 @@ static int is_background(void)
 
 	adj = current->signal->oom_score_adj;
 	mm = current->mm;
-	/*lint -e666 -esym(666,*)*/
-	uid = current_uid(); /*lint !e64 */
-	/*lint +e666 +esym(666,*)*/
+	uid = current_uid();/*lint !e666*/
 
 	if (!mm || uid_lt(uid, FIRST_APP_UID) || uid_gt(uid, LAST_APP_UID))
 		return 1;

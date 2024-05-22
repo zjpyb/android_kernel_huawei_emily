@@ -75,6 +75,7 @@ struct tcpc_desc {
 	uint8_t role_def;
 	uint8_t rp_lvl;
 	int notifier_supply_num;
+	int vcon_ocp_enable;
 	char *name;
 };
 
@@ -169,6 +170,7 @@ struct tcpc_ops {
 	int (*set_polarity)(struct tcpc_device *tcpc, int polarity);
 	int (*set_vconn)(struct tcpc_device *tcpc, int enable);
 	int (*deinit)(struct tcpc_device *tcpc);
+	int (*mask_vsafe0v)(struct tcpc_device *tcpc, int enable);
 
 #ifdef CONFIG_TCPC_LOW_POWER_MODE
 	int (*is_low_power_mode)(struct tcpc_device *tcpc);
@@ -338,6 +340,7 @@ struct tcpc_device {
 	struct notifier_block dpm_nb;
 	bool huawei_dock_svid_exist;
 	bool typec_during_direct_charge;
+	uint8_t no_rpsrc_state;
 };
 
 

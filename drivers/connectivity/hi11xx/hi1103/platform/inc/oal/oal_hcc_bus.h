@@ -29,7 +29,8 @@ extern "C" {
 #define OAL_BUS_DISPOSE_THREAD_PRIORITY      (10)
 
 /*高性能CPU，默认值*/
-#define OAL_BUS_HPCPU_NUM  (4)
+#define OAL_BUS_HPCPU_NUM   (4)
+#define OAL_BUS_HPCPU_NUM_1 (5)
 
 #define OAL_BUS_STATE_TX        (1<<0)
 #define OAL_BUS_STATE_RX        (1<<1)
@@ -163,18 +164,20 @@ typedef struct _hcc_bus_opt_ops{
 
     oal_int32 (*tx_condition)(hcc_bus *pst_bus, hcc_netbuf_queue_type qtype);/*ip idle ?, 1 is idle, 0 is busy*/
 
-    oal_int32 (*send_msg)(hcc_bus *pst_bus, oal_uint32 val);
+    oal_int32 (*send_msg_etc)(hcc_bus *pst_bus, oal_uint32 val);
 
     oal_int32 (*lock)(hcc_bus *pst_bus);
     oal_int32 (*unlock)(hcc_bus *pst_bus);
 
     oal_int32 (*sleep_request)(hcc_bus *pst_bus);/*硬件行为 通知DEV睡眠*/
+    oal_int32 (*sleep_request_host)(hcc_bus *pst_bus);/*检查Host是否满足睡眠条件*/
     oal_int32 (*wakeup_request)(hcc_bus *pst_bus);/*硬件行为 唤醒DEV*/
     oal_int32 (*get_sleep_state)(hcc_bus *pst_bus);
     oal_int32 (*wakeup_complete)(hcc_bus *pst_bus);
 
     oal_int32 (*switch_suspend_tx)(hcc_bus *pst_bus);
     oal_int32 (*switch_resume_tx)(hcc_bus *pst_bus);
+    oal_int32 (*get_trans_count)(hcc_bus *pst_bus, oal_uint64 *tx, oal_uint64 *rx);/*the pkt nums had transfer done*/
 
     oal_int32 (*switch_clean_res)(hcc_bus* pst_bus);
 
@@ -194,6 +197,15 @@ typedef struct _hcc_bus_opt_ops{
     oal_int32 (*patch_write)(hcc_bus *pst_bus, oal_uint8* buff, oal_int32 len);
 
     oal_int32 (*bindcpu)(hcc_bus *pst_bus, oal_uint32 chan, oal_int32 is_bind);/*绑定相关任务，提高处理能力*/
+
+    oal_int32 (*voltage_bias_init)(hcc_bus *pst_bus);
+
+    oal_void  (*chip_info)(hcc_bus *pst_bus);
+
+    oal_void  (*print_trans_info)(hcc_bus *pst_bus, oal_uint64 print_flag);
+    oal_void  (*reset_trans_info)(hcc_bus *pst_bus);
+    oal_int32 (*pending_signal_check)(hcc_bus *pst_bus);/*调度中检查process条件是否符合, 0:不符合   非0:符合*/
+    oal_int32 (*pending_signal_process)(hcc_bus *pst_bus);/*process中要清掉调度标记，否者会死循环*/
 }hcc_bus_opt_ops;
 
 typedef struct _hcc_bus_cap_
@@ -248,6 +260,7 @@ struct _hcc_bus_{
     oal_work_stru               bus_excp_worker;
     oal_int32                   bus_excp_type;
     oal_spin_lock_stru          bus_excp_lock;
+    oal_wakelock_stru           bus_excp_wlock;/*kernel wakelock*/
 
     oal_uint64                  gpio_int_count;
     oal_uint64                  data_int_count;
@@ -291,7 +304,7 @@ struct _hcc_bus_dev_
     oal_int32                   switch_state;
     oal_spin_lock_stru          st_switch_lock;
     struct task_struct *        pst_switch_task;
-    
+
     oal_uint32                  bus_num;                    /*for each cap bit*/
     char*                       name;
 
@@ -346,7 +359,7 @@ extern hcc_bus_dev* hcc_get_bus_dev(oal_uint32 dev_id);
 extern oal_int32  hcc_bus_bindcpu(hcc_bus *hi_bus, oal_uint32 chan, oal_int32 is_bind);
 extern oal_int32 hcc_dev_bindcpu(oal_uint32 dev_id, oal_int32 is_bind);
 extern oal_int32 hi110x_hcc_dev_bindcpu(oal_int32 is_bind);
-#if defined(CONFIG_HISI_RT_OPT)
+#if defined(CONFIG_ARCH_HISI)
 extern void hisi_get_slow_cpus(struct cpumask *cpumask);
 extern void hisi_get_fast_cpus(struct cpumask *cpumask);
 #endif
@@ -359,16 +372,16 @@ extern void hisi_get_fast_cpus(struct cpumask *cpumask);
 
 
 #define hcc_bus_wakelock_active(pst_hi_bus)   oal_wakelock_active(&pst_hi_bus->st_bus_wakelock)
-extern struct task_struct *oal_thread_create(int (*threadfn)(void *data),
+extern struct task_struct *oal_thread_create_etc(int (*threadfn)(void *data),
                                         void                    *data,
                                         struct semaphore        *sema_sync,
                                         const char*               namefmt,
                                         oal_uint32                   policy,
                                         oal_int32                    prio,
                                         oal_int32                    cpuid);
-extern void oal_thread_stop( struct task_struct      *tsk,
+extern void oal_thread_stop_etc( struct task_struct      *tsk,
                           struct semaphore        *sema_sync);
-extern void oal_set_thread_property(struct task_struct *p,int policy,
+extern void oal_set_thread_property_etc(struct task_struct *p,int policy,
                                         const struct sched_param *param,
                                         long nice);
 
@@ -386,14 +399,14 @@ extern oal_void hcc_bus_exception_submit(hcc_bus *hi_bus, oal_int32 excep_type);
 extern oal_uint32 hcc_bus_dump_mem_check(hcc_bus *hi_bus);
 extern oal_void hcc_bus_try_to_dump_device_mem(hcc_bus *hi_bus, oal_int32 is_sync);
 extern oal_void hcc_bus_wakelocks_release_detect(hcc_bus *pst_bus);
-extern oal_void oal_wlan_gpio_intr_enable(hcc_bus_dev *pst_bus_dev,oal_uint32  ul_en);
+extern oal_void oal_wlan_gpio_intr_enable_etc(hcc_bus_dev *pst_bus_dev,oal_uint32  ul_en);
 
 extern oal_int32 hcc_bus_message_register(hcc_bus *hi_bus,oal_uint8 msg, hcc_bus_msg_rx cb, oal_void* data);
 extern oal_void hcc_bus_message_unregister(hcc_bus *hi_bus,oal_uint8 msg);
 extern oal_int32 hcc_bus_transfer_rx_register(hcc_bus *hi_bus, oal_void* data,hcc_bus_data_rx rx);
 extern oal_void hcc_bus_transfer_rx_unregister(hcc_bus *hi_bus);
 extern oal_int32 hcc_bus_cap_init(oal_uint32 dev_id, char* bus_select);
-extern oal_uint64 oal_get_gpio_int_count_para(oal_void);
+extern oal_uint64 oal_get_gpio_int_count_para_etc(oal_void);
 extern oal_int32  hcc_switch_action_register(hcc_switch_action* action, void* data);
 extern oal_void   hcc_switch_action_unregister(hcc_switch_action* action);
 extern oal_int32 hcc_switch_bus(oal_uint32 dev_id, oal_uint32 bus_type);
@@ -441,8 +454,23 @@ OAL_STATIC OAL_INLINE oal_uint32 hcc_bus_get_max_trans_size(hcc_bus* hi_bus)
 
 OAL_STATIC OAL_INLINE oal_int32 hcc_bus_get_state(hcc_bus *hi_bus, oal_uint32 mask)
 {
-    OAL_BUG_ON(!hi_bus);
-    OAL_BUG_ON(!hi_bus->opt_ops->get_bus_state);
+    if(OAL_WARN_ON(NULL == hi_bus))
+    {
+        oal_print_hi11xx_log(HI11XX_LOG_ERR, "hcc_bus_get_state: hibus is null");
+        return 0;
+    }
+
+    if(OAL_WARN_ON(NULL == hi_bus->opt_ops))
+    {
+         oal_print_hi11xx_log(HI11XX_LOG_ERR, "hcc_bus_get_state: hi_bus->opt_ops is null");
+        return 0;
+    }
+
+    if(NULL == hi_bus->opt_ops->get_bus_state)
+    {
+        oal_print_hi11xx_log(HI11XX_LOG_ERR, "hcc_bus_get_state: hi_bus->opt_ops->get_bus_state is null");
+        return 0;
+    }
 
     return hi_bus->opt_ops->get_bus_state(hi_bus, mask);
 }
@@ -550,6 +578,26 @@ OAL_STATIC OAL_INLINE oal_int32 hcc_bus_sleep_request(hcc_bus *hi_bus)
     return hi_bus->opt_ops->sleep_request(hi_bus);
 }
 
+OAL_STATIC OAL_INLINE oal_int32 hcc_bus_sleep_request_host(hcc_bus *hi_bus)
+{
+    if(OAL_WARN_ON(NULL == hi_bus))
+    {
+        return -OAL_ENODEV;
+    }
+
+    if(OAL_WARN_ON(NULL == hi_bus->opt_ops))
+    {
+        return -OAL_ENODEV;
+    }
+
+    if(NULL == hi_bus->opt_ops->sleep_request_host)
+    {
+        return -OAL_EIO;
+    }
+
+    return hi_bus->opt_ops->sleep_request_host(hi_bus);
+}
+
 OAL_STATIC OAL_INLINE oal_int32 hcc_bus_get_sleep_state(hcc_bus *hi_bus)
 {
     if(OAL_WARN_ON(NULL == hi_bus))
@@ -608,6 +656,32 @@ OAL_STATIC OAL_INLINE oal_int32 hcc_bus_rx_int_unmask(hcc_bus *hi_bus)
     }
 
     return hi_bus->opt_ops->rx_int_mask(hi_bus, 0);
+}
+
+OAL_STATIC OAL_INLINE oal_int32 hcc_bus_get_trans_count(hcc_bus *hi_bus, oal_uint64 *tx, oal_uint64 *rx)
+{
+    if(OAL_LIKELY(tx))
+    {
+        *tx = 0;
+    }
+
+    if(OAL_LIKELY(rx))
+    {
+        *rx = 0;
+    }
+
+    if(OAL_WARN_ON(NULL == hi_bus))
+    {
+        return -OAL_ENODEV;
+    }
+
+    if(NULL == hi_bus->opt_ops->get_trans_count)
+    {
+        return -OAL_EIO;
+    }
+
+    return hi_bus->opt_ops->get_trans_count(hi_bus, tx, rx);
+
 }
 
 OAL_STATIC OAL_INLINE oal_int32 hcc_bus_wakeup_request(hcc_bus *hi_bus)
@@ -687,9 +761,9 @@ OAL_STATIC OAL_INLINE oal_int32 hcc_bus_send_message(hcc_bus *hi_bus, oal_uint32
         return -OAL_EINVAL;
     }
 
-    if(OAL_LIKELY(hi_bus->opt_ops->send_msg))
+    if(OAL_LIKELY(hi_bus->opt_ops->send_msg_etc))
     {
-        return hi_bus->opt_ops->send_msg(hi_bus, val);
+        return hi_bus->opt_ops->send_msg_etc(hi_bus, val);
     }
     else
     {
@@ -701,12 +775,18 @@ extern oal_uint32 g_hcc_tx_err_cnt;
 OAL_STATIC OAL_INLINE oal_int32 hcc_bus_tx_netbuf_list(hcc_bus *hi_bus, oal_netbuf_head_stru* pst_head, hcc_netbuf_queue_type qtype)
 {
     oal_int32 ret;
-    OAL_BUG_ON(!hi_bus);
+
+    if(OAL_UNLIKELY(!hi_bus))
+    {
+        oal_print_hi11xx_log(HI11XX_LOG_ERR, "hcc_bus_tx_netbuf_list: bus is null");
+        return-OAL_EINVAL ;
+    }
+
     if(OAL_LIKELY(hi_bus->opt_ops->tx_netbuf_list))
     {
-        oal_print_hi11xx_log(HI11XX_LOG_DBG, "tx netbuf list:%s, skb head:%p, len:%d, qtype:%d", 
-                                                    hi_bus->bus_type == HCC_BUS_SDIO ? "sdio":"pcie", 
-                                                    OAL_NETBUF_HEAD_NEXT(pst_head), 
+        oal_print_hi11xx_log(HI11XX_LOG_DBG, "tx netbuf list:%s, skb head:%p, len:%d, qtype:%d",
+                                                    hi_bus->bus_type == HCC_BUS_SDIO ? "sdio":"pcie",
+                                                    OAL_NETBUF_HEAD_NEXT(pst_head),
                                                     oal_netbuf_list_len(pst_head),
                                                     qtype);
 
@@ -739,7 +819,12 @@ OAL_STATIC OAL_INLINE oal_int32 hcc_bus_tx_netbuf_list(hcc_bus *hi_bus, oal_netb
 
 OAL_STATIC OAL_INLINE oal_int32 hcc_bus_rx_netbuf_list(hcc_bus *hi_bus, oal_netbuf_head_stru* pst_head)
 {
-    OAL_BUG_ON(!hi_bus);
+    if(OAL_UNLIKELY(!hi_bus))
+    {
+        oal_print_hi11xx_log(HI11XX_LOG_ERR, "hcc_bus_rx_netbuf_list: bus is null");
+        return-OAL_EINVAL ;
+    }
+
     if(OAL_LIKELY(hi_bus->opt_ops->rx_netbuf_list))
     {
         return hi_bus->opt_ops->rx_netbuf_list(hi_bus, pst_head);
@@ -763,6 +848,21 @@ OAL_STATIC OAL_INLINE oal_int32 hcc_bus_reinit(hcc_bus *hi_bus)
     }
 
     return hi_bus->opt_ops->reinit(hi_bus);
+}
+
+OAL_STATIC OAL_INLINE oal_int32 hcc_bus_voltage_bias_init(hcc_bus *hi_bus)
+{
+    if(OAL_UNLIKELY(NULL == hi_bus))
+    {
+        return -OAL_EINVAL;
+    }
+
+    if(OAL_UNLIKELY(NULL == hi_bus->opt_ops->voltage_bias_init))
+    {
+        return -OAL_ENODEV;
+    }
+
+    return hi_bus->opt_ops->voltage_bias_init(hi_bus);
 }
 
 OAL_STATIC OAL_INLINE oal_int32 hcc_bus_check_tx_condition(hcc_bus* hi_bus, hcc_netbuf_queue_type qtype)
@@ -871,6 +971,84 @@ OAL_STATIC OAL_INLINE oal_int32 hcc_bus_switch_clean_res(hcc_bus *hi_bus)
     }
 
     return hi_bus->opt_ops->switch_clean_res(hi_bus);
+}
+
+OAL_STATIC OAL_INLINE oal_void hcc_bus_chip_info(hcc_bus *hi_bus)
+{
+    if(OAL_WARN_ON(NULL == hi_bus))
+    {
+        return;
+    }
+
+    if(OAL_UNLIKELY(NULL == hi_bus->opt_ops->chip_info))
+    {
+        return;
+    }
+
+    hi_bus->opt_ops->chip_info(hi_bus);
+}
+
+#define HCC_PRINT_TRANS_FLAG_DEVICE_STAT   (1 << 0)
+#define HCC_PRINT_TRANS_FLAG_DEVICE_REGS   (1 << 1)
+OAL_STATIC OAL_INLINE oal_void hcc_bus_print_trans_info(hcc_bus *hi_bus, oal_uint64 print_flag)
+{
+    if(OAL_WARN_ON(NULL == hi_bus))
+    {
+        return;
+    }
+
+    if(OAL_UNLIKELY(NULL == hi_bus->opt_ops->print_trans_info))
+    {
+        return;
+    }
+
+    /*打印device信息要保证打印过程中 不会进入深睡*/
+    hi_bus->opt_ops->print_trans_info(hi_bus, print_flag);
+}
+
+OAL_STATIC OAL_INLINE oal_void hcc_bus_reset_trans_info(hcc_bus *hi_bus)
+{
+    if(OAL_WARN_ON(NULL == hi_bus))
+    {
+        return;
+    }
+
+    if(OAL_UNLIKELY(NULL == hi_bus->opt_ops->reset_trans_info))
+    {
+        return;
+    }
+
+    hi_bus->opt_ops->reset_trans_info(hi_bus);
+}
+
+OAL_STATIC OAL_INLINE oal_int32 hcc_bus_pending_signal_check(hcc_bus *hi_bus)
+{
+    if(OAL_UNLIKELY(NULL == hi_bus))
+    {
+        return OAL_FALSE;
+    }
+
+    if(OAL_UNLIKELY(NULL == hi_bus->opt_ops->pending_signal_check))
+    {
+        return OAL_FALSE;
+    }
+
+    return hi_bus->opt_ops->pending_signal_check(hi_bus);
+}
+
+OAL_STATIC OAL_INLINE oal_int32 hcc_bus_pending_signal_process(hcc_bus *hi_bus)
+{
+    if(OAL_UNLIKELY(NULL == hi_bus))
+    {
+        return 0;
+    }
+
+    if(OAL_UNLIKELY(NULL == hi_bus->opt_ops->pending_signal_process))
+    {
+        return 0;
+    }
+
+    return hi_bus->opt_ops->pending_signal_process(hi_bus);
 }
 
 #ifdef __cplusplus

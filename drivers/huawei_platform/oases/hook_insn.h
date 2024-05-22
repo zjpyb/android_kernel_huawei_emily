@@ -3,6 +3,7 @@
 
 /* no trampoline needed */
 #define OASES_INSN_FLAG_NO_IC 1
+#define OSAES_PLT_SIZE 16
 
 struct oases_insn {
 	void *address;

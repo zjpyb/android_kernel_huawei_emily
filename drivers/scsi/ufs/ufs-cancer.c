@@ -11,6 +11,9 @@
  * GNU General Public License for more details.
  *
  */
+
+#define pr_fmt(fmt) "ufshcd :" fmt
+
 #include <linux/mfd/hisi_pmic.h>
 #include <soc_sctrl_interface.h>
 #include <soc_ufs_sysctrl_interface.h>
@@ -18,8 +21,6 @@
 #include "ufshcd.h"
 #include "ufs-kirin.h"
 #include "dsm_ufs.h"
-#include "ufs_mphy_firmware.h"
-
 
 void ufs_clk_init(struct ufs_hba *hba)
 {
@@ -31,7 +32,8 @@ void ufs_soc_init(struct ufs_hba *hba)
 	struct ufs_kirin_host *host = (struct ufs_kirin_host *)hba->priv;
 	u32 reg;
 
-	pr_info("%s ++\n", __func__);
+	dev_info(hba->dev, "%s ++\n", __func__);
+
 	/* eS LOW TEMP 207M */
 	writel(BIT(SOC_SCTRL_SCPERDIS4_gt_clk_ufs_subsys_START),
 		SOC_SCTRL_SCPERDIS4_ADDR(host->sysctrl));
@@ -127,6 +129,10 @@ void ufs_soc_init(struct ufs_hba *hba)
 	}
 	mdelay(10);
 
+	/* disable EC bypass, make effective */
+	ufs_sys_ctrl_clr_bits(host, WDP_BYPASS_EC_BIT, PHY_ISO_EN);
+	ufs_sys_ctrl_set_bits(host, OVERALL_BYPASS_EC_BIT, UFS_SYS_MK2_CTRL);
+
 	writel(1<<(SOC_UFS_Sysctrl_CRG_UFS_CFG_ip_rst_ufs_START+16) |\
 		1<<SOC_UFS_Sysctrl_CRG_UFS_CFG_ip_rst_ufs_START,\
 		SOC_UFS_Sysctrl_CRG_UFS_CFG_ADDR(host->ufs_sys_ctrl));
@@ -136,9 +142,10 @@ void ufs_soc_init(struct ufs_hba *hba)
 		mdelay(1);
 
 	/*set SOC_SCTRL_SCBAKDATA11_ADDR ufs bit to 1 when init*/
-	hisi_idle_sleep_vote(ID_UFS, 1);
+	if (!ufshcd_is_auto_hibern8_allowed(hba))
+		hisi_idle_sleep_vote(ID_UFS, 1);
 
-	pr_info("%s --\n", __func__);
+	dev_info(hba->dev, "%s --\n", __func__);
 	return;
 }
 
@@ -176,7 +183,8 @@ int ufs_kirin_suspend(struct ufs_hba *hba, enum ufs_pm_op pm_op)
 	struct ufs_kirin_host *host = hba->priv;
 
 	/*set SOC_SCTRL_SCBAKDATA11_ADDR ufs bit to 0 when idle*/
-	hisi_idle_sleep_vote(ID_UFS, 0);
+	if (!ufshcd_is_auto_hibern8_allowed(hba))
+		hisi_idle_sleep_vote(ID_UFS, 0);
 
 	if (ufshcd_is_runtime_pm(pm_op))
 		return 0;
@@ -200,7 +208,8 @@ int ufs_kirin_resume(struct ufs_hba *hba, enum ufs_pm_op pm_op)
 	struct ufs_kirin_host *host = hba->priv;
 
 	/*set SOC_SCTRL_SCBAKDATA11_ADDR ufs bit to 1 when busy*/
-	hisi_idle_sleep_vote(ID_UFS, 1);
+	if (!ufshcd_is_auto_hibern8_allowed(hba))
+		hisi_idle_sleep_vote(ID_UFS, 1);
 
 	if (!host->in_suspend)
 		return 0;
@@ -234,27 +243,6 @@ void ufs_kirin_device_hw_reset(struct ufs_hba *hba)
 		ufs_i2c_writel(hba, (unsigned int)BIT(6), SC_RSTEN);
 	/* some device need at least 40ms */
 	mdelay(40);
-}
-
-int config_mphy_reg(struct ufs_hba *hba)
-{
-	uint32_t i;
-	uint32_t size = sizeof(phy_value) / sizeof(phy_value[0]);
-	uint32_t set;
-	int err = 0;
-	mutex_lock(&hba->uic_cmd_mutex);
-	set = ufshcd_readl(hba, REG_INTERRUPT_ENABLE);
-	ufshcd_writel(hba, set & ~UIC_COMMAND_COMPL, REG_INTERRUPT_ENABLE);
-
-	for (i = 0; i < size; i++) {
-		err = ufs_kirin_polling_mphy_write(hba, PHY_START + i, phy_value[i]);
-		if (err)
-			goto out;
-	}
-out:
-	ufshcd_writel(hba, set, REG_INTERRUPT_ENABLE);
-	mutex_unlock(&hba->uic_cmd_mutex);
-	return err;
 }
 
 /* Workaround: PWM-amplitude reduce & PMC and H8's glitch */
@@ -306,38 +294,9 @@ static void mphy_amplitude_glitch_workaround(struct ufs_hba *hba)
 	ufs_kirin_mphy_write(hba, 0x11A3, value3 | 1); /* LANEN_DIG_ANA_TX_EQ_OVRD_OUT_0[0](TX_ANA_LOAD_CLK) */
 	ufs_kirin_mphy_write(hba, 0x10A3, value3); /* LANEN_DIG_ANA_TX_EQ_OVRD_OUT_0[0](TX_ANA_LOAD_CLK) */
 	ufs_kirin_mphy_write(hba, 0x11A3, value3); /* LANEN_DIG_ANA_TX_EQ_OVRD_OUT_0[0](TX_ANA_LOAD_CLK) */
-
-	ufs_kirin_mphy_write(hba, 0x203B, 0x0); /* disable override ref_clk_en */
 }
 
 /*lint -e648 -e845*/
-int cancer_update_hc_fw(struct ufs_hba *hba)
-{
-	int retry = 100;
-	int err = 0;
-	struct ufs_kirin_host *host = hba->priv;
-
-	if (unlikely(hba->host->is_emulator))
-		return 0;
-
-	while ((0 == (UFS_SYS_PHY_SRAM_INIT_DONE &
-			    ufs_sys_ctrl_readl(
-				    host, UFS_SYS_PHY_SRAM_MEM_CTRL_S))) && retry--) {
-		msleep(1);
-	}
-	if (retry < 0) {
-		pr_info("%s, wait PHY_SRAM_INIT_DONE timeout\n", __func__);
-	}
-
-	err = config_mphy_reg(hba);
-
-	/* enable sram_ext_ld_done*/
-	ufs_sys_ctrl_set_bits(
-		host, SRAM_EXT_LD_DONE_BIT, UFS_SYS_PHY_SRAM_MEM_CTRL_S);
-
-	return err;
-}
-
 /* snps asic mphy specific configuration */
 int ufs_kirin_dme_setup_snps_asic_mphy(struct ufs_hba *hba)
 {
@@ -351,13 +310,25 @@ int ufs_kirin_dme_setup_snps_asic_mphy(struct ufs_hba *hba)
 
 	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL(0xD0C1, 0x0), 0x1); /* Unipro VS_mphy_disable */
 
-	ufshcd_dme_get(hba, UIC_ARG_MIB_SEL(0x800a, 0x4), &value1);
-	ufshcd_dme_get(hba, UIC_ARG_MIB_SEL(0x800a, 0x5), &value2);
-	/* rx_disable_ovr_en_rw set bit1 */
-	value1 |= BIT_RX_DISABLE_OVR_EN_WR;
-	value2 |= BIT_RX_DISABLE_OVR_EN_WR;
-	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL(0x800a, 0x4), value1);
-	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL(0x800a, 0x5), value2);
+	if (host->caps & RX_CANNOT_DISABLE) {
+		ufshcd_dme_get(hba, UIC_ARG_MIB_SEL(0x800a, 0x4), &value1);
+		ufshcd_dme_get(hba, UIC_ARG_MIB_SEL(0x800a, 0x5), &value2);
+		/* bit[5:4] = 2b'00, not do override, let the FSM control the
+		 *            RX status, normally during H8, the RX will be
+		 *            disabled to save power. CS chip will use this
+		 *            configure, which is default also.
+		 * bit[5:4] = 2b'01, do override, not disable RX in any status,
+		 *            include H8, which cause high power consume,
+		 *            ES chip need this bugfix, otherwise the RX
+		 *            will not work again if enabled after disable.
+		 * bit[5:4] = 2b'11, do override, disable RX in any status,
+		 *            link startup will fail if configured this.
+		 */
+		value1 |= BIT_RX_DISABLE_OVR_EN_WR;
+		value2 |= BIT_RX_DISABLE_OVR_EN_WR;
+		ufshcd_dme_set(hba, UIC_ARG_MIB_SEL(0x800a, 0x4), value1);
+		ufshcd_dme_set(hba, UIC_ARG_MIB_SEL(0x800a, 0x5), value2);
+	}
 
 	if (ufs_sctrl_readl(host, SCDEEPSLEEPED_OFFSET) & EFUSE_RHOLD_BIT) {
 		ufshcd_dme_set(hba, UIC_ARG_MIB_SEL(0x8013, 0x4), 0x2); /* MPHY RXRHOLDCTRLOPT */
@@ -379,7 +350,26 @@ int ufs_kirin_dme_setup_snps_asic_mphy(struct ufs_hba *hba)
 	ufs_kirin_mphy_write(hba, 0x203B, 0x30); /* RAWCMN_DIG_AON_CMN_SUP_OVRD_IN[5:4] = 2'b11, open phy clk during H8 */
 	/* Workaround: PWM-amplitude reduce & PMC and H8's glitch clean end */
 
-	err = cancer_update_hc_fw(hba);
+	/* Workaround: clear P-N abnormal common voltage begin*/
+	ufs_kirin_mphy_write(hba, 0x10e0, 0x10);/* LANEN_ANA_TX_OVRD_MEAS[5]=0,LANEN_DIG_ANA_TX_OVRD_MEAS[4]=1 */
+	ufs_kirin_mphy_write(hba, 0x11e0, 0x10);/* LANEN_ANA_TX_OVRD_MEAS[5]=0,LANEN_DIG_ANA_TX_OVRD_MEAS[4]=1 */
+	/* Workaround: clear P-N abnormal common voltage end*/
+
+	/* close AFE calibration */
+	ufs_kirin_mphy_write(hba, 0x401c, 0x0004);
+	ufs_kirin_mphy_write(hba, 0x411c, 0x0004);
+
+	/* slow process */
+	value1 = ufs_kirin_mphy_read(hba, 0x401e);
+	value2 = ufs_kirin_mphy_read(hba, 0x411e);
+	ufs_kirin_mphy_write(hba, 0x401e, value1 | 0x1);
+	ufs_kirin_mphy_write(hba, 0x411e, value2 | 0x1);
+	value1 = ufs_kirin_mphy_read(hba, 0x401f);
+	value2 = ufs_kirin_mphy_read(hba, 0x411f);
+	ufs_kirin_mphy_write(hba, 0x401f, value1 | 0x1);
+	ufs_kirin_mphy_write(hba, 0x411f, value2 | 0x1);
+
+	err = ufs_update_hc_fw(hba);
 	if (err) {
 		pr_err("phy firmware update error\n");
 		return err;
@@ -392,8 +382,9 @@ int ufs_kirin_dme_setup_snps_asic_mphy(struct ufs_hba *hba)
 	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL(0x8009, 0x5), 0x1); /* MPHY RXSQCONTROL rx1 */
 	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL(0xD085, 0x0), 0x1); /* Unipro VS_MphyCfgUpdt */
 
-	/* SUP_ANA_BG1 */
-	ufs_kirin_mphy_write(hba, 0x0042, 0x28);
+	if (host->caps & RX_VCO_VREF)
+		/* SUP_ANA_BG1: rx_vco_vref = 501mV */
+		ufs_kirin_mphy_write(hba, 0x0042, 0x28);
 
 	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL(0x8113, 0x0), 0x1);/* CBENBLCPBATTRWR */
 	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL(0xD085, 0x0), 0x1);
@@ -434,9 +425,9 @@ int ufs_kirin_dme_setup_snps_asic_mphy(struct ufs_hba *hba)
 	if (likely(!hba->host->is_emulator))
 		mphy_amplitude_glitch_workaround(hba);
 
-#ifdef CONFIG_SCSI_UFS_HS_ERROR_RECOVER
-	ufs_kirin_set_vol(hba, hba->v_tx, hba->v_rx);
-#endif
+	/* disable override ref_clk_en */
+	ufs_kirin_mphy_write(hba, 0x203B, 0x0);
+
 	pr_info("%s --\n", __func__);
 	return err;
 }
@@ -484,20 +475,6 @@ int ufs_kirin_link_startup_pre_change(struct ufs_hba *hba)
 		pr_warn("Warring!!! close VS_Mk2ExtnSupport failed\n");
 	}
 	if (!(host->caps & USE_HISI_MPHY_TC)) {
-#if 0
-		/*FPGA with HISI PHY not configure equalizer*/
-		if (35 == host->tx_equalizer) {
-			ufs_kirin_mphy_write(hba, 0x1002, 0xAC78);
-			ufs_kirin_mphy_write(hba, 0x1102, 0xAC78);
-			ufs_kirin_mphy_write(hba, 0x1003, 0x2440);
-			ufs_kirin_mphy_write(hba, 0x1103, 0x2440);
-		} else if (60 == host->tx_equalizer) {
-			ufs_kirin_mphy_write(hba, 0x1002, 0xAA78);
-			ufs_kirin_mphy_write(hba, 0x1102, 0xAA78);
-			ufs_kirin_mphy_write(hba, 0x1003, 0x2640);
-			ufs_kirin_mphy_write(hba, 0x1103, 0x2640);
-		}
-#endif
 		if (35 == host->tx_equalizer) {
 			ufshcd_dme_set(
 				hba, UIC_ARG_MIB_SEL((u32)0x0037, 0x0), 0x1);
@@ -544,7 +521,7 @@ static void hisi_mphy_link_post_config(struct ufs_hba *hba,
 
 void set_device_clk(struct ufs_hba *hba)
 {
-	uint32_t max_rx_hsgear;
+	uint32_t max_rx_hsgear = 0;
 	/* Read PA_MaxRxHSGear(0x1587) to see if it is UFS3.0 device
 	which supports HS gear 4, this checking must be done after linkstartup */
 	ufshcd_dme_get(hba, UIC_ARG_MIB(0x1587), &max_rx_hsgear);
@@ -587,13 +564,9 @@ int ufs_kirin_link_startup_post_change(struct ufs_hba *hba)
 		ufs_sys_ctrl_clr_bits(host, MASK_UFS_SYSCRTL_BYPASS, UFS_SYSCTRL);
 	}
 
-	if (host->caps & USE_AUTO_H8) {
+	if (host->hba->caps & UFSHCD_CAP_AUTO_HIBERN8)
 		/* disable power-gating in auto hibernate 8 */
 		ufshcd_rmwl(hba, (LP_AH8_PGE | LP_PGE), 0, UFS_REG_OCPTHRTL);
-
-		/* enable auto H8 */
-		ufshcd_writel(hba, UFS_AHIT_AUTOH8_TIMER, REG_CONTROLLER_AHIT);
-	}
 
 	ufshcd_dme_set(hba, UIC_ARG_MIB(0xd09a), 0x80000000); /* select received symbol cnt */
 	ufshcd_dme_set(hba, UIC_ARG_MIB(0xd09c), 0x00000005); /* reset counter0 and enable */
@@ -666,6 +639,14 @@ void ufs_kirin_full_reset(struct ufs_hba *hba)
 	dsm_ufs_disable_volt_irq(hba);
 #endif
 	disable_irq(hba->irq);
+
+	/*
+	 * Cancer platform need a full reset when error handler occurs.
+	 * If a request sending in ufshcd_queuecommand passed through
+	 * ufshcd_state check. And eh may reset host controller, a NOC
+	 * error happens. 1000ms sleep is enough for waiting those requests.
+	 **/
+	msleep(1000);
 
 	ufs_soc_init(hba);
 

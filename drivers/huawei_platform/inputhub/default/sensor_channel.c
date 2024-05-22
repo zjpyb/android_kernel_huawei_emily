@@ -44,6 +44,18 @@ int ltr578_flag;
 int apds9922_flag;
 int rpr531_flag;
 int tmd2745_flag;
+int apds9999_rgb_flag;
+int apds9999_ps_flag;
+int  ams_tmd3702_rgb_flag;
+int  ams_tmd3702_ps_flag;
+int apds9253_rgb_flag;
+int vishay_vcnl36658_als_flag;
+int vishay_vcnl36658_ps_flag;
+int ams_tof_flag;
+int sharp_tof_flag;
+int tsl2591_flag;
+int bh1726_flag;
+int apds9253_006_ps_flag;
 
 extern char sensor_chip_info[SENSOR_MAX][MAX_CHIP_INFO_LEN];
 extern t_ap_sensor_ops_record all_ap_sensor_operations[TAG_SENSOR_END];
@@ -91,6 +103,9 @@ static const struct sensors_cmd_map sensors_cmd_map_tab[] = {
 	{SENSORHUB_TYPE_AGT, TAG_AGT},
 	{SENSORHUB_TYPE_COLOR,TAG_COLOR},
 	{SENSORHUB_TYPE_ACCELEROMETER_UNCALIBRATED, TAG_ACCEL_UNCALIBRATED},
+	{SENSORHUB_TYPE_TOF, TAG_TOF},
+	{SENSORHUB_TYPE_DROP, TAG_DROP},
+	{SENSORHUB_TYPE_EXT_HALL, TAG_EXT_HALL},
 };
 
 static void init_hash_tables(void)
@@ -152,7 +167,7 @@ static int send_sensor_batch_flush_cmd(unsigned int cmd, struct ioctl_para *para
 			batch_param.batch_count = (para->timeout_ms > para->period_ms) ? (para->timeout_ms /para->period_ms) : 1;
 		}else{
 			batch_param.batch_count = 1;
-			hwlog_info("%s para->period_ms is zero, set count to 1\n");
+			hwlog_info("para->period_ms is zero, set count to 1\n");
 		}
 
 		hwlog_info("%s batch period=%d, count=%d\n", __func__, para->period_ms, batch_param.batch_count);
@@ -369,10 +384,13 @@ static void get_airpress_calibrate_data(void)
 }
 
 extern int send_ps_calibrate_data_to_mcu(void);
+extern int send_tof_calibrate_data_to_mcu(void);
 static void get_psensor_calibrate_data(void)
 {
     int ret = 0;
-    if (0 == ps_first_start_flag &&  (txc_ps_flag == 1 || ams_tmd2620_ps_flag == 1 || avago_apds9110_ps_flag == 1 || ams_tmd3725_ps_flag == 1 || liteon_ltr582_ps_flag == 1))
+    if (0 == ps_first_start_flag &&  (txc_ps_flag == 1 || ams_tmd2620_ps_flag == 1 || avago_apds9110_ps_flag == 1 
+		|| ams_tmd3725_ps_flag == 1 || liteon_ltr582_ps_flag == 1 || apds9999_ps_flag == 1 
+		|| ams_tmd3702_ps_flag == 1 || vishay_vcnl36658_ps_flag ==1 || apds9253_006_ps_flag == 1))
     {
         ret=send_ps_calibrate_data_to_mcu();
         if(ret) hwlog_err( "get_ps_calibrate_data read from nv fail, ret=%d", ret);
@@ -381,13 +399,25 @@ static void get_psensor_calibrate_data(void)
             hwlog_info("read nv success\n");
         }
     }
+    if(0 == ps_first_start_flag && (ams_tof_flag == 1 || sharp_tof_flag == 1)){
+        ret=send_tof_calibrate_data_to_mcu();
+        if(ret){
+            hwlog_err( "get_tof_calibrate_data read from nv fail, ret=%d", ret);
+        }
+        else
+        {
+            hwlog_info("tof read nv success\n");
+        }
+    }
 }
 
 extern int send_als_calibrate_data_to_mcu(void);
 static void get_als_calibrate_data(void)
 {
     int ret = 0;
-    if ((0 == als_first_start_flag) && ((rohm_rgb_flag == 1) || (avago_rgb_flag == 1) || (ams_tmd3725_rgb_flag == 1) || (liteon_ltr582_rgb_flag == 1) || ( 1==is_cali_supported)))
+    if ((0 == als_first_start_flag) && ((rohm_rgb_flag == 1) || (avago_rgb_flag == 1) || (ams_tmd3725_rgb_flag == 1)
+		|| (liteon_ltr582_rgb_flag == 1) || ( 1==is_cali_supported) || (apds9999_rgb_flag == 1) || (ams_tmd3702_rgb_flag == 1)
+		|| (apds9253_rgb_flag == 1) || (vishay_vcnl36658_als_flag ==1) ))
     {
         ret=send_als_calibrate_data_to_mcu();
         if(ret) hwlog_err( "get_als_calibrate_data read from nv fail, ret=%d", ret);

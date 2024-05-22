@@ -11,7 +11,7 @@
   /{
     nve_himntn:himntn {
         compatible = "hisilicon,hisi-himntn";
-        himntn = "0111111111111010001011000000000000000010";
+        himntn = "011111111111101000101100000000000000001000001";
     };
 
     rdr_ap_adapter {
@@ -52,6 +52,7 @@
         ap_trace_syscall_size = <0x0>;         /*0x0 0k*/
         ap_trace_hung_task_size = <0x1000>;    /*0x1000 4k*/
         ap_trace_tasklet_size = <0x2000>;      /*0x2000 8k*/
+        ap_trace_diaginfo_size = <0x10000>;    /*0x10000 64k*/
         /***********AP last task memory alloc switch***********
         * ap_last_task_switch          1:on    0:off
         * ap_last_task_struct_size     (NR_CPUS * 0xBB0 + 0x380)  0x6100 24.25k == 8 * 0xBB0 + 0x380 °´1k×Ö½Ú¶ÔÆë
@@ -85,19 +86,32 @@
         bbox_addr = <&mntn_mem>;
         rdr-dumpctl = "1111111111100000";
         rdr-log-max-size = <0x1F400000>; /*boston hisi_logs size from 400M to 500M*/
+        rdr-log-max-nums = <20>;
+        rdr-diaginfo-size = <0x20000>;
         wait-dumplog-timeout = <120000>;
-        rdr_area_num = <15>;
+        rdr_area_num = <17>;
         unexpected-max-reboot-times = <0x5>;
-        bbox_area_names = "AP", "CP", "TEEOS", "HIFI", "LPM3", "IOM3", "ISP", "IVP", "EMMC", "MODEMAP","CLK", "REGULATOR", "BFM", "HISEE", "NPU";
-        bbox_area_coreid = <0x1 0x2 0x4 0x8 0x10 0x20 0x40 0x80 0x100 0x200 0x400 0x800 0x1000 0x2000 0x4000>;
+        /* EXCEPTIONTRACE is not a core but to get the system exception trace record for each core, it's shared memory for each core. it's just used for getting the memory  */
+        bbox_area_names = "AP", "CP", "TEEOS", "HIFI", "LPM3", "IOM3", "ISP", "IVP", "EMMC", "MODEMAP","CLK", "REGULATOR", "BFM", "HISEE", "NPU", "CONN", "EXCEPTIONTRACE";
+        bbox_area_coreid = <0x1 0x2 0x4 0x8 0x10 0x20 0x40 0x80 0x100 0x200 0x400 0x800 0x1000 0x2000 0x4000 0x8000 0x10000>;
         /* bbox_men_addr and bbox_mem_size is configured in kirin970_memory.dtsi, node_name is mntn_mem:bbox-mem
          * bbox_men_size:0x800000 8M
          * RDR_BASEINFO_SIZE:0x200 0.5k
          * AP_size = bbox_men_size - RDR_BASEINFO_SIZE - CP_size - TEEOS_size - HIFI_size - LPM3_size - IOM3_size - ISP_size
-         *           - IVP_size - EMMC_size - MODEMAP_size - CLK_size - REGULATOR_size - BFM_size - HISEE_size - NPU_size
+         *           - IVP_size - EMMC_size - MODEMAP_size - CLK_size - REGULATOR_size - BFM_size - HISEE_size - NPU_size - CONN_SIZE - EXCEPTIONTRACE_size
          *         = 0x46FE00  4543.5K
          */
-        rdr_area_sizes = <0 0x180000 0x40000 0x40000 0x40000 0x40000 0x40000 0x40000 0x40000 0x0 0x10000 0x10000 0x10000 0x10000 0x10000>;
+        rdr_area_sizes = <0 0x180000 0x40000 0x40000 0x40000 0x40000 0x40000 0x40000 0x40000 0x0 0x10000 0x10000 0x10000 0x10000 0x10000 0x2000 0x40000>;
+        status = "ok";
+    };
+
+    exceptiontrace {
+        compatible = "hisilicon,exceptiontrace";
+
+        area_num = <2>;
+        area_names = "AP", "BL31";
+        /* Note: the total size coming from above rdr dts record */
+        area_sizes = <0x200 0x3F100>;
         status = "ok";
     };
 
@@ -129,6 +143,7 @@
         memory-region = <&fastboot_cma>;
         enable-status = "true";
         hisi-align = <0x6>;
+        cma-sec-config = "secos";
         status = "ok";
     };
 

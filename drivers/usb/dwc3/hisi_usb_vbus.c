@@ -28,7 +28,7 @@ static int vbus_connect_irq, vbus_disconnect_irq;
 int hisi_usb_vbus_request_irq(void *pdev, const struct usb_vbus_ops *vbus_ops)
 {
 	int ret = 0;
-	printk("[%s]+\n", __func__);
+	pr_info("[%s]+\n", __func__);
 
 	if (usb_vbus_is_error_ops(vbus_ops)) {
 		pr_err("bad usb vbus ops\n");
@@ -73,7 +73,7 @@ int hisi_usb_vbus_request_irq(void *pdev, const struct usb_vbus_ops *vbus_ops)
 		hisi_usb_otg_event(CHARGER_DISCONNECT_EVENT);
 	}
 
-	printk("[%s]-\n", __func__);
+	pr_info("[%s]-\n", __func__);
 
 	return ret;
 }

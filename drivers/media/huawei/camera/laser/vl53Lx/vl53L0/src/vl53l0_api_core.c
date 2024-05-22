@@ -839,15 +839,15 @@ VL53L0_Error VL53L0_set_vcsel_pulse_period(VL53L0_DEV Dev,
 	VL53L0_VcselPeriod VcselPeriodType, uint8_t VCSELPulsePeriodPCLK)
 {
 	VL53L0_Error Status = VL53L0_ERROR_NONE;
-	uint8_t vcsel_period_reg;
+	uint8_t vcsel_period_reg = 0;
 	uint8_t MinPreVcselPeriodPCLK = 12;
 	uint8_t MaxPreVcselPeriodPCLK = 18;
 	uint8_t MinFinalVcselPeriodPCLK = 8;
 	uint8_t MaxFinalVcselPeriodPCLK = 14;
-	uint32_t MeasurementTimingBudgetMicroSeconds;
-	uint32_t FinalRangeTimeoutMicroSeconds;
-	uint32_t PreRangeTimeoutMicroSeconds;
-	uint32_t MsrcTimeoutMicroSeconds;
+	uint32_t MeasurementTimingBudgetMicroSeconds = 0;
+	uint32_t FinalRangeTimeoutMicroSeconds = 0;
+	uint32_t PreRangeTimeoutMicroSeconds = 0;
+	uint32_t MsrcTimeoutMicroSeconds = 0;
 	uint8_t PhaseCalInt = 0;
 
 	/* Check if valid clock period requested */
@@ -1089,7 +1089,7 @@ VL53L0_Error VL53L0_get_vcsel_pulse_period(VL53L0_DEV Dev,
 	VL53L0_VcselPeriod VcselPeriodType, uint8_t *pVCSELPulsePeriodPCLK)
 {
 	VL53L0_Error Status = VL53L0_ERROR_NONE;
-	uint8_t vcsel_period_reg;
+	uint8_t vcsel_period_reg = 0;
 
 	switch (VcselPeriodType) {
 	case VL53L0_VCSEL_PERIOD_PRE_RANGE:
@@ -1533,6 +1533,7 @@ VL53L0_Error VL53L0_calc_dmax(
 	FixPoint1616_t amb0, amb1, dmax0, dmax1;
 	FixPoint1616_t dmax_mm;
 	FixPoint1616_t linearSlope;
+    CurrentParameters.InterMeasurementPeriodMilliSeconds = 0;
 
 	LOG_FUNCTION_START("");
 
@@ -1915,8 +1916,8 @@ VL53L0_Error VL53L0_get_pal_range_status(VL53L0_DEV Dev,
 	uint8_t RangeIgnoreThresholdLimitCheckEnable = 0;
 	FixPoint1616_t SigmaEstimate;
 	FixPoint1616_t SigmaLimitValue;
-	FixPoint1616_t SignalRefClipValue;
-	FixPoint1616_t RangeIgnoreThresholdValue;
+	FixPoint1616_t SignalRefClipValue = 0;
+	FixPoint1616_t RangeIgnoreThresholdValue = 0;
 	FixPoint1616_t SignalRatePerSpad;
 	uint8_t DeviceRangeStatusInternal = 0;
 	uint16_t tmpWord = 0;

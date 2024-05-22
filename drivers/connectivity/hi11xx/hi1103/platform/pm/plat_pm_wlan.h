@@ -9,8 +9,8 @@
 #if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
 #include <linux/mutex.h>
 #include <linux/kernel.h>
-#ifdef CONFIG_WAKELOCK
-#include <linux/wakelock.h>
+#if ((LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 37)) && (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION) )
+#include <linux/pm_wakeup.h>
 #endif
 #include <linux/mmc/host.h>
 #include <linux/mmc/sdio_func.h>
@@ -22,7 +22,9 @@
 
 #include "oal_ext_if.h"
 
-
+#ifdef WIN32
+#include "plat_type.h"
+#endif
 
 #define WLAN_WAKUP_MSG_WAIT_TIMEOUT     (1000)
 #define WLAN_SLEEP_MSG_WAIT_TIMEOUT     (10000)
@@ -30,12 +32,16 @@
 #define WLAN_OPEN_BCPU_WAIT_TIMEOUT     (1000)
 #define WLAN_HALT_BCPU_TIMEOUT          (1000)
 #define WLAN_SLEEP_TIMER_PERIOD         (20)    /*睡眠定时器50ms定时*/
-#define WLAN_SLEEP_DEFAULT_CHECK_CNT    (5)     /*默认检查2次，即100ms*/
+#define WLAN_SLEEP_DEFAULT_CHECK_CNT    (5)     /*默认100ms*/
 #define WLAN_SLEEP_LONG_CHECK_CNT       (20)    /*入网阶段,延长至400ms*/
 #define WLAN_SLEEP_FAST_CHECK_CNT       (1)     /*fast sleep,20ms*/
+#define WLAN_WAKELOCK_HOLD_TIME         (500)   /*hold wakelock 500ms*/
 
 #define WLAN_SDIO_MSG_RETRY_NUM         (3)
-#define WLAN_WAKEUP_FAIL_MAX_TIMES      (1)  /* 连续多少次wakeup失败，可进入DFR流程 */
+#define WLAN_WAKEUP_FAIL_MAX_TIMES      (1)     /* 连续多少次wakeup失败，可进入DFR流程 */
+#define WLAN_PACKET_CHECK_TIME          (5000)  /* 唤醒后，每5s打印一次报文个数用于持锁是否异常的debug*/
+#define WLAN_SLEEP_FORBID_CHECK_TIME    (2*60*1000) /* 连续2分钟sleep forbid*/
+
 
 #define WLAN_PM_MODULE               "[wlan]"
 
@@ -75,16 +81,13 @@ typedef oal_void (*wifi_srv_open_notify)(oal_bool_enum_uint8);
 typedef oal_void (*wifi_srv_pm_state_notify)(oal_bool_enum_uint8);
 
 #ifdef _PRE_WLAN_WAKEUP_SRC_PARSE
-typedef oal_void (*wifi_srv_host_wkup_dev_print_en_func)(oal_bool_enum_uint8);
+typedef oal_void (*wifi_srv_data_wkup_print_en_func)(oal_bool_enum_uint8);
 #endif
 struct wifi_srv_callback_handler
 {
     wifi_srv_get_pm_pause_func     p_wifi_srv_get_pm_pause_func;
     wifi_srv_open_notify           p_wifi_srv_open_notify;
     wifi_srv_pm_state_notify       p_wifi_srv_pm_state_notify;
-#ifdef _PRE_WLAN_WAKEUP_SRC_PARSE
-    wifi_srv_host_wkup_dev_print_en_func     p_host_wkup_dev_print_en_func;
-#endif
 };
 
 
@@ -103,8 +106,13 @@ struct wlan_pm_s
     oal_work_stru           st_sleep_work;        //sleep work
     oal_work_stru           st_ram_reg_test_work;  //ram_reg_test work
 
-    struct timer_list       st_watchdog_timer;   //sleep watch dog
-    oal_uint32              ul_packet_cnt;       //睡眠周期内统计的packet个数
+    oal_timer_list_stru     st_watchdog_timer;   //sleep watch dog
+    oal_timer_list_stru     st_deepsleep_delay_timer;
+    oal_wakelock_stru       st_deepsleep_wakelock;
+    oal_uint32              ul_packet_cnt;        //睡眠周期内统计的packet个数
+    oal_uint32              ul_packet_total_cnt;  //从上次唤醒至今的packet个数，定期输出for debug
+    unsigned long           ul_packet_check_time;
+    unsigned long           ul_sleep_forbid_check_time;
     oal_uint32              ul_wdg_timeout_cnt;  //timeout check cnt
     oal_uint32              ul_wdg_timeout_curr_cnt;  //timeout check current cnt
     volatile oal_uint       ul_sleep_stage;      //睡眠过程阶段标识
@@ -118,6 +126,9 @@ struct wlan_pm_s
     oal_completion          st_halt_bcpu_done;
     oal_completion          st_wifi_powerup_done;
 
+#ifdef _PRE_WLAN_WAKEUP_SRC_PARSE
+    oal_uint32              ul_wkup_src_print_en;
+#endif
 
     struct wifi_srv_callback_handler st_wifi_srv_handler;
 
@@ -141,7 +152,9 @@ struct wlan_pm_s
     oal_uint32              ul_sleep_fail_request;
     oal_uint32              ul_sleep_fail_wait_timeout;
     oal_uint32              ul_sleep_fail_set_reg;
+    oal_uint32              ul_sleep_request_host_forbid;
     oal_uint32              ul_sleep_fail_forbid;
+    oal_uint32              ul_sleep_fail_forbid_cnt;/*forbid 计数，当睡眠成功后清除，维测信息*/
     oal_uint32              ul_sleep_work_submit;
 
 
@@ -155,55 +168,58 @@ typedef struct wlan_memdump_s{
 /*****************************************************************************
   4 EXTERN VARIABLE
 *****************************************************************************/
-extern oal_bool_enum g_wlan_pm_switch;
+extern oal_bool_enum g_wlan_pm_switch_etc;
 extern oal_uint8 g_wlan_device_pm_switch;
 extern oal_uint8 g_wlan_fast_check_cnt;
 #if (_PRE_MULTI_CORE_MODE_OFFLOAD_DMAC == _PRE_MULTI_CORE_MODE) && (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
-extern oal_uint8 g_uc_custom_cali_done;
+extern oal_uint8 g_uc_custom_cali_done_etc;
 #endif
 
 /*****************************************************************************
   5 EXTERN FUNCTION
 *****************************************************************************/
-extern struct wlan_pm_s*  wlan_pm_get_drv(oal_void);
-extern oal_void wlan_pm_debug_sleep(void);
-extern oal_void wlan_pm_debug_wakeup(void);
-extern void wlan_pm_dump_host_info(void);
-extern oal_int32 wlan_pm_host_info_print(struct wlan_pm_s *pst_wlan_pm,char* buf,oal_int32 buf_len);
-extern void wlan_pm_dump_device_info(void);
-extern oal_void wlan_pm_debug_wake_lock(void);
-extern oal_void wlan_pm_debug_wake_unlock(void);
-extern struct wlan_pm_s*  wlan_pm_init(oal_void);
-extern oal_uint  wlan_pm_exit(oal_void);
-extern oal_uint32 wlan_pm_is_poweron(oal_void);
-extern oal_int32 wlan_pm_open(oal_void);
-extern oal_uint32 wlan_pm_close(oal_void);
-extern oal_uint wlan_pm_init_dev(void);
-extern oal_uint wlan_pm_wakeup_dev(oal_void);
-extern oal_uint wlan_pm_wakeup_host(void);
-extern oal_uint  wlan_pm_open_bcpu(oal_void);
-extern oal_uint wlan_pm_state_get(void);
-extern oal_uint32 wlan_pm_enable(oal_void);
-extern oal_uint32 wlan_pm_disable(oal_void);
+extern struct wlan_pm_s*  wlan_pm_get_drv_etc(oal_void);
+extern oal_void wlan_pm_debug_sleep_etc(void);
+extern oal_void wlan_pm_debug_wakeup_etc(void);
+extern void wlan_pm_dump_host_info_etc(void);
+extern oal_int32 wlan_pm_host_info_print_etc(struct wlan_pm_s *pst_wlan_pm,char* buf,oal_int32 buf_len);
+extern void wlan_pm_dump_device_info_etc(void);
+extern oal_void wlan_pm_debug_wake_lock_etc(void);
+extern oal_void wlan_pm_debug_wake_unlock_etc(void);
+extern struct wlan_pm_s*  wlan_pm_init_etc(oal_void);
+extern oal_uint  wlan_pm_exit_etc(oal_void);
+extern oal_uint32 wlan_pm_is_poweron_etc(oal_void);
+extern oal_int32 wlan_pm_open_etc(oal_void);
+extern oal_uint32 wlan_pm_close_etc(oal_void);
+extern oal_uint wlan_pm_init_dev_etc(void);
+extern oal_uint wlan_pm_wakeup_dev_etc(oal_void);
+extern oal_uint wlan_pm_wakeup_host_etc(void);
+extern oal_uint  wlan_pm_open_bcpu_etc(oal_void);
+extern oal_uint wlan_pm_state_get_etc(void);
+extern oal_uint32 wlan_pm_enable_etc(oal_void);
+extern oal_uint32 wlan_pm_disable_etc(oal_void);
 extern oal_uint32 wlan_pm_statesave(oal_void);
 extern oal_uint32 wlan_pm_staterestore(oal_void);
-extern oal_uint32 wlan_pm_disable_check_wakeup(oal_int32 flag);
-struct wifi_srv_callback_handler* wlan_pm_get_wifi_srv_handler(oal_void);
-extern oal_void wlan_pm_wakeup_dev_ack(oal_void);
-extern oal_void  wlan_pm_set_timeout(oal_uint32 ul_timeout);
-extern oal_int32 wlan_pm_poweroff_cmd(oal_void);
-extern oal_int32 wlan_pm_shutdown_bcpu_cmd(oal_void);
-extern oal_void  wlan_pm_feed_wdg(oal_void);
-extern oal_int32 wlan_pm_stop_wdg(struct wlan_pm_s *pst_wlan_pm_info);
-extern void wlan_pm_info_clean(void);
+extern oal_uint32 wlan_pm_disable_check_wakeup_etc(oal_int32 flag);
+struct wifi_srv_callback_handler* wlan_pm_get_wifi_srv_handler_etc(oal_void);
+extern oal_void wlan_pm_wakeup_dev_ack_etc(oal_void);
+extern oal_void  wlan_pm_set_timeout_etc(oal_uint32 ul_timeout);
+extern oal_int32 wlan_pm_poweroff_cmd_etc(oal_void);
+extern oal_int32 wlan_pm_shutdown_bcpu_cmd_etc(oal_void);
+extern oal_void  wlan_pm_feed_wdg_etc(oal_void);
+extern oal_int32 wlan_pm_stop_wdg_etc(struct wlan_pm_s *pst_wlan_pm_info);
+extern void wlan_pm_info_clean_etc(void);
+extern void wlan_pm_wkup_src_debug_set(oal_uint32 ul_en);
+extern oal_uint32 wlan_pm_wkup_src_debug_get(void);
 extern wlan_memdump_t* get_wlan_memdump_cfg(void);
 extern oal_int32     wlan_mem_check_mdelay;
+extern oal_int32           bfgx_mem_check_mdelay;
 extern wlan_memdump_t* get_wlan_memdump_cfg(void);
 
 #if (defined(_PRE_PRODUCT_ID_HI110X_DEV) || defined(_PRE_PRODUCT_ID_HI110X_HOST))
-extern oal_int32 wlan_device_mem_check(void);
-extern oal_int32 wlan_device_mem_check_result(unsigned long long *time);
-extern oal_void wlan_device_mem_check_work(oal_work_stru *pst_worker);
+extern oal_int32 wlan_device_mem_check_etc(void);
+extern oal_int32 wlan_device_mem_check_result_etc(unsigned long long *time);
+extern oal_void wlan_device_mem_check_work_etc(oal_work_stru *pst_worker);
 #endif
 
 #if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)

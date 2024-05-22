@@ -27,7 +27,7 @@
 #include <huawei_ts_kit.h>
 #include <huawei_ts_kit_api.h>
 #include <tpkit_platform_adapter.h>
-#include "../lcdkit/include/lcdkit_ext.h"
+#include "../lcdkit/lcdkit1.0/include/lcdkit_ext.h"
 
 #if defined (CONFIG_HUAWEI_DSM)
 #include <dsm/dsm_pub.h>
@@ -60,9 +60,8 @@ static inline void dump_fingers_info_debug(struct ts_finger *fingers)
 
 	for (; i < TS_MAX_FINGER; i++) {
 		if (fingers[i].status)
-			TS_LOG_INFO("%s:id=%d status:%d x=%d y=%d pressure=%d or=%d maj=%d min=%d wx=%d wy=%d ewx=%d ewy=%d xer=%d yer=%d\n",
-			__func__, i, fingers[i].status, fingers[i].x, fingers[i].y,
-			fingers[i].pressure, fingers[i].orientation,
+			TS_LOG_INFO("%s:id=%d status:%d pressure=%d or=%d maj=%d min=%d wx=%d wy=%d ewx=%d ewy=%d xer=%d yer=%d\n",
+			__func__, i, fingers[i].status,fingers[i].pressure, fingers[i].orientation,
 			fingers[i].major, fingers[i].minor, fingers[i].wx,
 			fingers[i].wy, fingers[i].ewx, fingers[i].ewy,
 			fingers[i].xer, fingers[i].yer);
@@ -269,7 +268,7 @@ void ts_report_pen(struct ts_cmd_node* in_cmd, struct ts_cmd_node* out_cmd)
 	int id = 0;
 	int key_value = 0;
 
-	if(!in_cmd || !out_cmd){
+	if(!in_cmd || !out_cmd || !input){
 		TS_LOG_ERR("parameters is null!\n", __func__);
 		return;
 	}
@@ -322,6 +321,25 @@ void ts_report_pen(struct ts_cmd_node* in_cmd, struct ts_cmd_node* out_cmd)
 	//pen or rubber report point
 	ts_report_pen_event(input, pens->tool, pens->tool.pressure, pens->tool.tool_type, pens->tool.pen_inrange_status);
 }
+
+void ts_palm_report(struct ts_cmd_node* in_cmd, struct ts_cmd_node* out_cmd){
+	unsigned int key = 0;
+	struct input_dev *input_dev = g_ts_kit_platform_data.input_dev;
+
+	TS_LOG_INFO("%s is called\n",__func__);
+	if(!input_dev || !in_cmd){
+		TS_LOG_ERR("The command node or input device is not exist!\n");
+		return;
+	}
+	key = in_cmd->cmd_param.pub_params.ts_key;
+
+	TS_LOG_DEBUG("palm_button_key is %d\n",key);
+	input_report_key(input_dev, key, 1);
+	input_sync(input_dev);
+	input_report_key(input_dev, key, 0);
+	input_sync (input_dev);
+	atomic_set(&g_ts_kit_data_report_over, 1);
+}
 void ts_report_input(struct ts_cmd_node* in_cmd, struct ts_cmd_node* out_cmd)
 {
     struct ts_fingers* finger = NULL;
@@ -364,8 +382,7 @@ void ts_report_input(struct ts_cmd_node* in_cmd, struct ts_cmd_node* out_cmd)
         {
             if (lcdkit_fps_support_query() && lcdkit_fps_tscall_support_query())
                 lcdkit_fps_ts_callback();
-            TS_LOG_DEBUG("down: id is %d, finger->fingers[id].pressure = %d, finger->fingers[id].x = %d, finger->fingers[id].y = %d\n",
-                         id, finger->fingers[id].pressure, finger->fingers[id].x, finger->fingers[id].y);
+            TS_LOG_DEBUG("down: id is %d, finger->fingers[id].pressure = %d,\n",id, finger->fingers[id].pressure);
             finger_num++;
             input_report_abs(input_dev, ABS_MT_PRESSURE, finger->fingers[id].pressure);
             input_report_abs(input_dev, ABS_MT_POSITION_X, finger->fingers[id].x);
@@ -607,6 +624,10 @@ int ts_touch_window(struct ts_cmd_node* in_cmd, struct ts_cmd_node* out_cmd)
 		return -EINVAL;
 	}
     info = (struct ts_window_info*)in_cmd->cmd_param.prv_params;
+	if (!info) {
+		TS_LOG_ERR("%s, find a null pointer\n", __func__);
+		return -EINVAL;
+	}
     g_ts_kit_platform_data.feature_info.window_info.window_enable = info->window_enable;
     g_ts_kit_platform_data.feature_info.window_info.top_left_x0 = info->top_left_x0;
     g_ts_kit_platform_data.feature_info.window_info.top_left_y0 = info->top_left_y0;
@@ -733,6 +754,13 @@ bool ts_cmd_need_process(struct ts_cmd_node* cmd)
                     break;
                 case TS_TOUCH_WINDOW:
                     is_need_process = true;
+                    break;
+                case TS_TOUCH_SWITCH:
+                    if(g_ts_kit_platform_data.touch_switch_need_process) {
+                        is_need_process = true;
+                    } else {
+                        is_need_process = false;
+                    }
                     break;
                 case TS_INT_PROCESS:
                 case TS_INT_ERR_OCCUR:
@@ -870,6 +898,10 @@ int ts_read_debug_data(struct ts_cmd_node* in_cmd, struct ts_cmd_node* out_cmd, 
 		return -EINVAL;
 	}
 	info = (struct ts_diff_data_info*)in_cmd->cmd_param.prv_params;
+	if (!info) {
+		TS_LOG_ERR("%s, find a null pointer\n", __func__);
+		return -EINVAL;
+	}
     if (dev->ops->chip_get_debug_data)
     { error = dev->ops->chip_get_debug_data(info, out_cmd); }
 
@@ -909,7 +941,10 @@ int ts_read_rawdata_for_newformat(struct ts_cmd_node* in_cmd, struct ts_cmd_node
 	}
 	
 	info = (struct ts_rawdata_info_new*)in_cmd->cmd_param.prv_params;
-
+	if (!info) {
+		TS_LOG_ERR("%s, find a null pointer\n", __func__);
+		return -EINVAL;
+	}
 	if(!g_ts_kit_platform_data.chip_data->is_parade_solution){
         ts_stop_wd_timer(&g_ts_kit_platform_data);
     }
@@ -952,6 +987,10 @@ int ts_read_rawdata(struct ts_cmd_node* in_cmd, struct ts_cmd_node* out_cmd, str
 		return -EINVAL;
 	}
 	info = (struct ts_rawdata_info*)in_cmd->cmd_param.prv_params;
+	if (!info) {
+		TS_LOG_ERR("%s, find a null pointer\n", __func__);
+		return -EINVAL;
+	}
     if(!g_ts_kit_platform_data.chip_data->is_parade_solution)
     {
         ts_stop_wd_timer(&g_ts_kit_platform_data);
@@ -1013,6 +1052,11 @@ out:
 	struct ts_kit_device_data *dev = g_ts_kit_platform_data.chip_data;
 	struct ts_calibration_data_info *info = (struct ts_calibration_data_info *)in_cmd->cmd_param.prv_params;
 
+	if (!info) {
+		TS_LOG_ERR("%s, find a null pointer\n", __func__);
+		return -EINVAL;
+	}
+
 	TS_LOG_INFO("%s called\n", __FUNCTION__);
 
 	if (dev->ops->chip_get_calibration_data)
@@ -1045,6 +1089,10 @@ out:
 	struct ts_kit_device_data *dev = g_ts_kit_platform_data.chip_data;
 	struct ts_calibration_info_param *info = (struct ts_calibration_info_param *)in_cmd->cmd_param.prv_params;
 
+	if (!info) {
+		TS_LOG_ERR("%s, find a null pointer\n", __func__);
+		return -EINVAL;
+	}
 	TS_LOG_INFO("%s called\n", __FUNCTION__);
 
 	if (dev->ops->chip_get_calibration_info)
@@ -1103,6 +1151,10 @@ int ts_get_chip_info(struct ts_cmd_node* in_cmd, struct ts_cmd_node* out_cmd)
     struct ts_kit_device_data* dev = g_ts_kit_platform_data.chip_data;
     struct ts_chip_info_param* info = (struct ts_chip_info_param*)in_cmd->cmd_param.prv_params;
 
+	if (!info) {
+		TS_LOG_ERR("%s, find a null pointer\n", __func__);
+		return -EINVAL;
+	}
     TS_LOG_INFO("get chip info called\n");
     if(!g_ts_kit_platform_data.chip_data->is_parade_solution)
     {
@@ -1135,6 +1187,10 @@ int ts_set_info_flag(struct ts_cmd_node* in_cmd, struct ts_cmd_node* out_cmd)
         return -EINVAL;
     }
     info = (struct ts_kit_platform_data *)in_cmd->cmd_param.prv_params;
+	if (!info) {
+		TS_LOG_ERR("%s, find a null pointer\n", __func__);
+		return -EINVAL;
+	}
     if (dev->ops->chip_set_info_flag)
     { error = dev->ops->chip_set_info_flag(info); }
     return error;
@@ -1174,6 +1230,10 @@ int ts_calibrate_wakeup_gesture(struct ts_cmd_node* in_cmd, struct ts_cmd_node* 
     struct ts_kit_device_data* dev = g_ts_kit_platform_data.chip_data;
     struct ts_calibrate_info* info = (struct ts_calibrate_info*)in_cmd->cmd_param.prv_params;
 
+	if (!info) {
+		TS_LOG_ERR("%s, find a null pointer\n", __func__);
+		return -EINVAL;
+	}
     TS_LOG_DEBUG("process firmware calibrate\n");
 
     if (dev->ops->chip_calibrate_wakeup_gesture)
@@ -1197,6 +1257,10 @@ int ts_dsm_debug(struct ts_cmd_node* in_cmd, struct ts_cmd_node* out_cmd)
     struct ts_kit_device_data* dev = g_ts_kit_platform_data.chip_data;
     struct ts_dsm_debug_info* info = (struct ts_dsm_debug_info*)in_cmd->cmd_param.prv_params;
 
+	if (!info) {
+		TS_LOG_ERR("%s, find a null pointer\n", __func__);
+		return -EINVAL;
+	}
     TS_LOG_INFO("ts dsm debug is called\n");
 
     if (dev->ops->chip_dsm_debug)
@@ -1221,6 +1285,10 @@ int ts_glove_switch(struct ts_cmd_node* in_cmd, struct ts_cmd_node* out_cmd)
 		return -EINVAL;
 	}
     info = (struct ts_glove_info *)in_cmd->cmd_param.prv_params;
+	if (!info) {
+		TS_LOG_ERR("%s, find a null pointer\n", __func__);
+		return -EINVAL;
+	}
     TS_LOG_DEBUG("glove action :%d, value:%d", info->op_action, info->glove_switch);
 
     if (dev->ops->chip_glove_switch)
@@ -1248,6 +1316,10 @@ int ts_get_capacitance_test_type(struct ts_cmd_node* in_cmd, struct ts_cmd_node*
 		return -EINVAL;
 	}
     info = (struct ts_test_type_info *)in_cmd->cmd_param.prv_params;
+	if (!info) {
+		TS_LOG_ERR("%s, find a null pointer\n", __func__);
+		return -EINVAL;
+	}
     if (dev->ops->chip_get_capacitance_test_type)
     { error = dev->ops->chip_get_capacitance_test_type(info); }
 
@@ -1305,6 +1377,11 @@ int ts_palm_switch(struct ts_cmd_node* in_cmd, struct ts_cmd_node* out_cmd, stru
     struct ts_kit_device_data* dev = g_ts_kit_platform_data.chip_data;
     struct ts_palm_info* info = (struct ts_palm_info*)in_cmd->cmd_param.prv_params;
 
+	if (!info) {
+		TS_LOG_ERR("%s, find a null pointer\n", __func__);
+		return -EINVAL;
+	}
+
     TS_LOG_DEBUG("palm action :%d, value:%d", info->op_action, info->palm_switch);
 
     if (dev->ops->chip_palm_switch)
@@ -1333,6 +1410,11 @@ int ts_hand_detect(struct ts_cmd_node* in_cmd, struct ts_cmd_node* out_cmd)
     int error = -EIO;
     struct ts_kit_device_data* dev = g_ts_kit_platform_data.chip_data;
     struct ts_hand_info* info = (struct ts_hand_info*)in_cmd->cmd_param.prv_params;
+
+	if (!info) {
+		TS_LOG_ERR("%s, find a null pointer\n", __func__);
+		return -EINVAL;
+	}
 
     if (dev->ops->chip_hand_detect)
     { error = dev->ops->chip_hand_detect(info); }
@@ -1432,6 +1514,11 @@ int ts_wakeup_gesture_enable_switch(struct ts_cmd_node* in_cmd, struct ts_cmd_no
     struct ts_kit_device_data* dev = g_ts_kit_platform_data.chip_data;
     struct ts_wakeup_gesture_enable_info* info = (struct ts_wakeup_gesture_enable_info*)in_cmd->cmd_param.prv_params;
 
+	if (!info) {
+		TS_LOG_ERR("%s, find a null pointer\n", __func__);
+		return -EINVAL;
+	}
+
     TS_LOG_INFO("%s: write value: %d", __func__, info->switch_value);
 
     if (atomic_read(&g_ts_kit_platform_data.state) == TS_WORK_IN_SLEEP && dev->ops->chip_wakeup_gesture_enable_switch)
@@ -1466,6 +1553,10 @@ int ts_holster_switch(struct ts_cmd_node* in_cmd, struct ts_cmd_node* out_cmd)
 		return -EINVAL;
 	}
 	info = (struct ts_holster_info*)in_cmd->cmd_param.prv_params;
+	if (!info) {
+		TS_LOG_ERR("%s, find a null pointer\n", __func__);
+		return -EINVAL;
+	}
     TS_LOG_DEBUG("Holster action :%d, value:%d", info->op_action, info->holster_switch);
 
     if (dev->ops->chip_holster_switch)
@@ -1495,6 +1586,10 @@ int ts_roi_switch(struct ts_cmd_node* in_cmd, struct ts_cmd_node* out_cmd)
 		return -EINVAL;
 	}
 	info = (struct ts_roi_info*)in_cmd->cmd_param.prv_params;
+	if (!info) {
+		TS_LOG_ERR("%s, find a null pointer\n", __func__);
+		return -EINVAL;
+	}
     if (dev->ops->chip_roi_switch)
     { error = dev->ops->chip_roi_switch(info); }
 
@@ -1522,6 +1617,10 @@ int ts_chip_regs_operate(struct ts_cmd_node* in_cmd, struct ts_cmd_node* out_cmd
 		return -EINVAL;
 	}
 	info = (struct ts_regs_info*)in_cmd->cmd_param.prv_params;
+	if (!info) {
+		TS_LOG_ERR("%s, find a null pointer\n", __func__);
+		return -EINVAL;
+	}
     if (dev->ops->chip_regs_operate)
     { error = dev->ops->chip_regs_operate(info); }
 
@@ -1564,6 +1663,10 @@ void ts_special_hardware_test_switch(struct ts_cmd_node* in_cmd, struct ts_cmd_n
     struct ts_kit_device_data* dev = g_ts_kit_platform_data.chip_data;
     struct ts_special_hardware_test_info* info = (struct ts_special_hardware_test_info*)in_cmd->cmd_param.prv_params;
 
+	if (!info) {
+		TS_LOG_ERR("%s, find a null pointer\n", __func__);
+		return -EINVAL;
+	}
     TS_LOG_INFO("%s, action :%d, value:%d\n", __func__, info->op_action, info->switch_value);
     if (dev->ops->chip_special_hardware_test_swtich)
     {

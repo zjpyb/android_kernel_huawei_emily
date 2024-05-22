@@ -23,7 +23,7 @@
 #include "goodix_ts.h"
 #include "goodix_dts.h"
 
-
+bool gtp_detect_sucess = false;
 struct goodix_ts_data *goodix_ts;
 struct ts_kit_device_data *g_goodix_dev_data = NULL;
 
@@ -1067,6 +1067,8 @@ static int goodix_chip_init(void)
 	if (ts->tools_support)
 		init_wr_node();
 
+	goodix_param_init();
+
 	/* init config data, normal/glove/hoslter config data */
 	ret = goodix_init_configs(ts);
 	if (ret < 0) {
@@ -1089,8 +1091,6 @@ static int goodix_chip_init(void)
 #ifdef ROI
 	goodix_ts_roi_init(&goodix_ts->roi);
 #endif
-
-	goodix_param_init();
 
 	goodix_get_fw_data();
 
@@ -1821,6 +1821,9 @@ static int
 	ret = goodix_i2c_test();
 	if (ret < 0)
 		goto err_power_on;
+
+	gtp_detect_sucess = true;
+
 	return 0;
 
 err_power_on:

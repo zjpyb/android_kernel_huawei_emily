@@ -57,14 +57,13 @@ static int thp_bu21150_spi_transfer(struct thp_device *tdev,
 {
 	int rc;
 	struct spi_device *sdev = tdev->sdev;
-	struct mutex *spi_mutex_lock = tdev->spi_mutex;
 
 	THP_LOG_DEBUG("%s called\n", __func__);
 
 	spi_message_add_tail(xfer, msg);
-	mutex_lock(spi_mutex_lock);
-	rc = spi_sync(sdev, msg);
-	mutex_unlock(spi_mutex_lock);
+	thp_bus_lock();
+	rc = thp_spi_sync(sdev, msg);
+	thp_bus_unlock();
 
 	return rc;
 }
@@ -352,7 +351,7 @@ static void thp_bu21150_exit(struct thp_device *tdev)
 	kfree(tdev);
 }
 
-static const struct thp_device_ops bu21150_dev_ops = {
+static struct thp_device_ops bu21150_dev_ops = {
 	.init = thp_bu21150_init,
 	.detect = thp_bu21150_chip_detect,
 	.get_frame = thp_bu21150_get_frame,
@@ -380,6 +379,7 @@ static int __init thp_bu21150_module_init(void)
 	}
 
 	dev->ic_name = BU21150_IC_NAME;
+	dev->dev_node_name = THP_BU21150_DEV_NODE_NAME;
 	dev->ops = &bu21150_dev_ops;
 
 	rc = thp_register_dev(dev);
@@ -387,9 +387,9 @@ static int __init thp_bu21150_module_init(void)
 		THP_LOG_ERR("%s: register fail\n", __func__);
 		goto err;
 	}
-
+#ifndef CONFIG_LCD_KIT_DRIVER
 	lcd_huawei_thp_register(&ts_thp_ops);
-
+#endif
 	return rc;
 err:
 	if(dev->tx_buff){

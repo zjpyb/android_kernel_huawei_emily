@@ -158,10 +158,17 @@ extern int hisi_pmic_array_write(int addr, char *buff, unsigned int len);
 #define HI6421V500_REGS_WRITE(regAddr,buf,size)  hisi_pmic_array_write((int)(regAddr),(char*)(buf),(int)(size))
 
 
+#define HI6421V500_COUL_INFO
+#ifndef HI6421V500_COUL_INFO
+/*pimc soh print interface*/
+#define HI6421V500_COUL_ERR(fmt,args...)              do {} while (0)
+#define HI6421V500_COUL_EVT(fmt,args...)              do {} while (0)
+#define HI6421V500_COUL_INF(fmt,args...)              do {} while (0)
+#else
 #define HI6421V500_COUL_ERR(fmt,args...) do { printk(KERN_ERR    "[hisi_hi6421v500_coul]" fmt, ## args); } while (0)
 #define HI6421V500_COUL_EVT(fmt,args...) do { printk(KERN_WARNING"[hisi_hi6421v500_coul]" fmt, ## args); } while (0)
 #define HI6421V500_COUL_INF(fmt,args...) do { printk(KERN_INFO   "[hisi_hi6421v500_coul]" fmt, ## args); } while (0)
-
+#endif
 
 struct hi6421v500_coul_device_info
 {

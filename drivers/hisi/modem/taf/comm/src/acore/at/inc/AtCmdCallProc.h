@@ -54,9 +54,7 @@
 *****************************************************************************/
 #include "AtCtx.h"
 #include "AtParse.h"
-/* Added by l60609 for CDMA 1X Iteration 2, 2014-9-5, begin */
 #include "AtMnInterface.h"
-/* Added by l60609 for CDMA 1X Iteration 2, 2014-9-5, end */
 
 #ifdef __cplusplus
 #if __cplusplus
@@ -130,14 +128,10 @@ VOS_UINT32 At_RcvVcMsgDtmfDecoderIndProc(
 );
 
 #if (FEATURE_ON == FEATURE_UE_MODE_CDMA)
-/* Added by l60609 for CDMA 1X Iteration 2, 2014-9-5, begin */
 VOS_VOID AT_RcvTafCallSndFlashRslt(
     MN_AT_IND_EVT_STRU                 *pEvtInfo
 );
 
-/* Added by l60609 for CDMA 1X Iteration 2, 2014-9-5, end */
-
-/* Added by f279542 for CDMA 1X SS Project, 2014-11-10, begin */
 extern VOS_UINT32 AT_RcvTafCallSndBurstDTMFCnf(
     MN_AT_IND_EVT_STRU                 *pEvtInfo
 );
@@ -145,9 +139,7 @@ extern VOS_UINT32 AT_RcvTafCallSndBurstDTMFCnf(
 extern VOS_UINT32 AT_RcvTafCallSndBurstDTMFRslt(
     MN_AT_IND_EVT_STRU                 *pEvtInfo
 );
-/* Added by f279542 for CDMA 1X SS Project, 2014-11-10, end */
 
-/* Added by f279542 for CDMA 1X Iteration 4, 2014-11-12, begin */
 extern VOS_UINT32 At_TestCBurstDTMFPara(VOS_UINT8 ucIndex);
 
 extern VOS_UINT32 AT_SetCBurstDTMFPara(VOS_UINT8 ucIndex);
@@ -158,7 +150,6 @@ extern VOS_UINT32 AT_CheckCfshNumber(
     VOS_UINT8                          *pucAtPara,
     VOS_UINT16                          usLen
 );
-/* Added by f279542 for CDMA 1X Iteration 4, 2014-11-12, end */
 
 extern VOS_UINT32 AT_RcvTafCallCalledNumInfoInd(
     MN_AT_IND_EVT_STRU                 *pEvtInfo

@@ -97,14 +97,14 @@ static int snd_ctl_open(struct inode *inode, struct file *file)
       __error1:
 	if (card)
 		snd_card_unref(card);
-	return err;
+      	return err;
 }
 
 static void snd_ctl_empty_read_queue(struct snd_ctl_file * ctl)
 {
 	unsigned long flags;
 	struct snd_kctl_event *cread;
-
+	
 	spin_lock_irqsave(&ctl->read_lock, flags);
 	while (!list_empty(&ctl->events)) {
 		cread = snd_kctl_event(ctl->events.next);
@@ -158,7 +158,7 @@ void snd_ctl_notify(struct snd_card *card, unsigned int mask,
 	unsigned long flags;
 	struct snd_ctl_file *ctl;
 	struct snd_kctl_event *ev;
-
+	
 	if (snd_BUG_ON(!card || !id))
 		return;
 	if (card->shutdown)
@@ -212,7 +212,7 @@ static int snd_ctl_new(struct snd_kcontrol **kctl, unsigned int count,
 {
 	unsigned int size;
 	unsigned int idx;
-
+	
 	if (count == 0 || count > MAX_CONTROL_COUNT)
 		return -EINVAL;
 
@@ -237,7 +237,7 @@ static int snd_ctl_new(struct snd_kcontrol **kctl, unsigned int count,
  * @ncontrol: the initialization record
  * @private_data: the private data to set
  *
- * Allocates a new struct snd_kcontrol instance and initialize from the given
+ * Allocates a new struct snd_kcontrol instance and initialize from the given 
  * template.  When the access field of ncontrol is 0, it's assumed as
  * READWRITE access. When the count field is 0, it's assumes as one.
  *
@@ -250,7 +250,7 @@ struct snd_kcontrol *snd_ctl_new1(const struct snd_kcontrol_new *ncontrol,
 	unsigned int count;
 	unsigned int access;
 	int err;
-
+	
 	if (snd_BUG_ON(!ncontrol || !ncontrol->info))
 		return NULL;
 
@@ -752,7 +752,7 @@ static int snd_ctl_elem_list(struct snd_card *card,
 	struct snd_kcontrol *kctl;
 	struct snd_ctl_elem_id *dst, *id;
 	unsigned int offset, space, jidx;
-
+	
 	if (copy_from_user(&list, _list, sizeof(list)))
 		return -EFAULT;
 	offset = list.offset;
@@ -824,6 +824,36 @@ static int snd_ctl_elem_list(struct snd_card *card,
 	return 0;
 }
 
+static bool validate_element_member_dimension(struct snd_ctl_elem_info *info)
+{
+	unsigned int members;
+	unsigned int i;
+
+	if (info->dimen.d[0] == 0)
+		return true;
+
+	members = 1;
+	for (i = 0; i < ARRAY_SIZE(info->dimen.d); ++i) {
+		if (info->dimen.d[i] == 0)
+			break;
+		members *= info->dimen.d[i];
+
+		/*
+		 * info->count should be validated in advance, to guarantee
+		 * calculation soundness.
+		 */
+		if (members > info->count)
+			return false;
+	}
+
+	for (++i; i < ARRAY_SIZE(info->dimen.d); ++i) {
+		if (info->dimen.d[i] > 0)
+			return false;
+	}
+
+	return members == info->count;
+}
+
 static int snd_ctl_elem_info(struct snd_ctl_file *ctl,
 			     struct snd_ctl_elem_info *info)
 {
@@ -832,7 +862,7 @@ static int snd_ctl_elem_info(struct snd_ctl_file *ctl,
 	struct snd_kcontrol_volatile *vd;
 	unsigned int index_offset;
 	int result;
-
+	
 	down_read(&card->controls_rwsem);
 	kctl = snd_ctl_find_id(card, &info->id);
 	if (kctl == NULL) {
@@ -995,7 +1025,7 @@ static int snd_ctl_elem_lock(struct snd_ctl_file *file,
 	struct snd_kcontrol *kctl;
 	struct snd_kcontrol_volatile *vd;
 	int result;
-
+	
 	if (copy_from_user(&id, _id, sizeof(id)))
 		return -EFAULT;
 	down_write(&card->controls_rwsem);
@@ -1023,7 +1053,7 @@ static int snd_ctl_elem_unlock(struct snd_ctl_file *file,
 	struct snd_kcontrol *kctl;
 	struct snd_kcontrol_volatile *vd;
 	int result;
-
+	
 	if (copy_from_user(&id, _id, sizeof(id)))
 		return -EFAULT;
 	down_write(&card->controls_rwsem);
@@ -1290,6 +1320,8 @@ static int snd_ctl_elem_add(struct snd_ctl_file *file,
 		return -EINVAL;
 	if (info->count < 1 ||
 	    info->count > max_value_counts[info->type])
+		return -EINVAL;
+	if (!validate_element_member_dimension(info))
 		return -EINVAL;
 	private_size = value_sizes[info->type] * info->count;
 
@@ -1597,7 +1629,7 @@ static ssize_t snd_ctl_read(struct file *file, char __user *buffer,
       __end_lock:
 	spin_unlock_irq(&ctl->read_lock);
       __end:
-	return result > 0 ? result : err;
+      	return result > 0 ? result : err;
 }
 
 static unsigned int snd_ctl_poll(struct file *file, poll_table * wait)

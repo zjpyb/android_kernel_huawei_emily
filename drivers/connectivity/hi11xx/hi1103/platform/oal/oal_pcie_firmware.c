@@ -1,5 +1,5 @@
 
- 
+
 #ifdef __cplusplus
     #if __cplusplus
         extern "C" {
@@ -148,7 +148,7 @@ oal_int32 oal_pcie_firmware_cmd_send_quit(oal_pcie_res *pst_pcie_res, oal_uint8*
     oal_pci_cache_flush(pst_pcie_dev, (oal_void*)addr_map.pa, sizeof(value));
     oal_pci_cache_inv(pst_pcie_dev, (oal_void*)addr_map.pa, sizeof(value));
 #endif
-
+    oal_msleep(10);/*wait tcxo effect*/
     PCI_PRINT_LOG(PCI_LOG_INFO, "pcie quit cmd,  change 0x%8x from 0x%4x to 0x%4x callback-read= 0x%4x\n", \
                       DEV_PCIE_SDIO_SEL_REG, old, value, oal_readw((void*)addr_map.va));
 
@@ -239,6 +239,7 @@ oal_int32 oal_pcie_firmware_cmd_read_files(oal_pcie_res *pst_pcie_res, oal_uint8
 
         size = OAL_MIN(strlen(STR_FILES_READY), len-1);
         strncpy(buff, STR_FILES_READY, size);
+        buff[len - 1] = '\0';
 
         g_ul_files_flag = FILES_BIN_SEND;
         return OAL_SUCC;
@@ -249,6 +250,7 @@ oal_int32 oal_pcie_firmware_cmd_read_files(oal_pcie_res *pst_pcie_res, oal_uint8
 
         size = OAL_MIN(strlen(STR_FILES_OK), len-1);
         strncpy(buff, STR_FILES_OK, size);
+        buff[len - 1] = '\0';
 
         g_ul_files_flag = FILES_CMD_SEND;
         return OAL_SUCC;
@@ -316,7 +318,7 @@ oal_int32 oal_pcie_firmware_cmd_read_version(oal_pcie_res *pst_pcie_res, oal_uin
 
     if(PCI_DBG_CONDTION())
     {
-        oal_print_hex_dump((oal_uint8 *)addr_map.va, len, 32, "version: ");   
+        oal_print_hex_dump((oal_uint8 *)addr_map.va, len, 32, "version: ");
     }
 
     return OAL_SUCC;
@@ -390,6 +392,7 @@ oal_int32 oal_pcie_firmware_cmd_read_writem(oal_pcie_res *pst_pcie_res, oal_uint
 
     size = OAL_MIN(strlen(STR_WRITEM_OK), len-1);
     strncpy(buff, STR_WRITEM_OK, size);
+    buff[len - 1] = '\0';
 
     return OAL_SUCC;
 }
@@ -606,7 +609,7 @@ oal_int32 oal_pcie_firmware_write(oal_pcie_linux_res *pst_pcie_lres, oal_uint8* 
 
     g_pstCurrentFirmwareCmd = oal_pcie_firmware_search_cmd(buff, len);
     if (NULL != g_pstCurrentFirmwareCmd)
-    {     
+    {
         lState = oal_pcie_firmware_get_param(buff, len);
         if (OAL_SUCC == lState)
         {

@@ -75,7 +75,10 @@
 #define SECBOOT_BUFLEN  (0x100000)      /*1MB*/
 
 #define MODEM_IMAGE_PATH    "/modem_fw/"
+#define MODEM_IMAGE_PATH_VENDOR    "/vendor/modem/modem_fw/"
 #define VRL_SIZE                    (0x1000)  /*VRL 4K*/
+
+char* modem_fw_dir = MODEM_IMAGE_PATH;
 
 /* 带安全OS需要安全加载，预留连续内存，否则在系统长时间运行后，单独复位时可能申请不到连续内存 */
 static  u8 SECBOOT_BUFFER[SECBOOT_BUFLEN];
@@ -104,6 +107,28 @@ struct image_type_name modem_images[] =
 /*lint -save -e651 -e708 -e570 -e64 -e785*/
 static DEFINE_MUTEX(load_proc_lock);
 /*lint -restore */
+
+
+ int modem_dir_init(void)
+{
+
+    if(!bsp_access((s8*) MODEM_IMAGE_PATH_VENDOR,0))
+    {
+         modem_fw_dir = MODEM_IMAGE_PATH_VENDOR;
+     }
+     else  if(!bsp_access((s8*) MODEM_IMAGE_PATH,0))
+     {
+          modem_fw_dir = MODEM_IMAGE_PATH;
+     }
+     else
+     {
+         sec_print_err("error: path /vendor/modem/modem_fw/  and path /modem_fw/ can't access, return\n" );
+         return -EACCES;
+     }
+
+    sec_print_info("info: path %s   can access\n",modem_fw_dir );
+    return 0;
+}
 
 static int get_image(struct image_type_name** image, enum SVC_SECBOOT_IMG_TYPE etype,u32 run_addr, u32 ddr_size)
 {
@@ -159,7 +184,7 @@ static int get_file_name(char *file_name, const struct image_type_name *image, b
     /* 尝试以sec_开头的安全镜像 */
     *is_sec = true;
     file_name[0] = '\0';
-    strncat(file_name, MODEM_IMAGE_PATH, strlen(MODEM_IMAGE_PATH));
+    strncat(file_name, modem_fw_dir, strlen(modem_fw_dir));
     strncat(file_name, "sec_", strlen("sec_"));
     strncat(file_name, image->name, strlen(image->name));
     sec_print_info("loading %s  image\n", file_name);
@@ -170,7 +195,7 @@ static int get_file_name(char *file_name, const struct image_type_name *image, b
         /* 尝试以非安全镜像 */
         *is_sec = false;
         file_name[0] = '\0';
-        strncat(file_name, MODEM_IMAGE_PATH, strlen(MODEM_IMAGE_PATH));
+        strncat(file_name, modem_fw_dir, strlen(modem_fw_dir));
         strncat(file_name, image->name, strlen(image->name));
 
         if(bsp_access((s8*) file_name, RFILE_RDONLY))
@@ -825,6 +850,14 @@ int bsp_load_modem_images(void)
     int ret;
 
     mutex_lock(&load_proc_lock);
+
+    ret = modem_dir_init();
+    if(ret)
+    {
+        mutex_unlock(&load_proc_lock);
+        sec_print_err("modem_dir_init failed, ret %#x\n", ret);
+        return ret;
+    }
 
     ret = TEEK_init();
     if(ret)

@@ -78,12 +78,12 @@ static void mdp5_plane_install_rotation_property(struct drm_device *dev,
 	if (!dev->mode_config.rotation_property)
 		dev->mode_config.rotation_property =
 			drm_mode_create_rotation_property(dev,
-			BIT(DRM_REFLECT_X) | BIT(DRM_REFLECT_Y));
+				DRM_ROTATE_0 | DRM_REFLECT_X | DRM_REFLECT_Y);
 
 	if (dev->mode_config.rotation_property)
 		drm_object_attach_property(&plane->base,
 			dev->mode_config.rotation_property,
-			0);
+			DRM_ROTATE_0);
 }
 
 /* helper to install properties which are common to planes and crtcs */
@@ -218,9 +218,10 @@ mdp5_plane_duplicate_state(struct drm_plane *plane)
 
 	mdp5_state = kmemdup(to_mdp5_plane_state(plane->state),
 			sizeof(*mdp5_state), GFP_KERNEL);
+	if (!mdp5_state)
+		return NULL;
 
-	if (mdp5_state && mdp5_state->base.fb)
-		drm_framebuffer_reference(mdp5_state->base.fb);
+	__drm_atomic_helper_plane_duplicate_state(plane, &mdp5_state->base);
 
 	mdp5_state->mode_changed = false;
 	mdp5_state->pending = false;
@@ -250,7 +251,7 @@ static const struct drm_plane_funcs mdp5_plane_funcs = {
 };
 
 static int mdp5_plane_prepare_fb(struct drm_plane *plane,
-		const struct drm_plane_state *new_state)
+				 struct drm_plane_state *new_state)
 {
 	struct mdp5_plane *mdp5_plane = to_mdp5_plane(plane);
 	struct mdp5_kms *mdp5_kms = get_kms(plane);
@@ -264,7 +265,7 @@ static int mdp5_plane_prepare_fb(struct drm_plane *plane,
 }
 
 static void mdp5_plane_cleanup_fb(struct drm_plane *plane,
-		const struct drm_plane_state *old_state)
+				  struct drm_plane_state *old_state)
 {
 	struct mdp5_plane *mdp5_plane = to_mdp5_plane(plane);
 	struct mdp5_kms *mdp5_kms = get_kms(plane);
@@ -292,8 +293,7 @@ static int mdp5_plane_atomic_check(struct drm_plane *plane,
 		format = to_mdp_format(msm_framebuffer_format(state->fb));
 		if (MDP_FORMAT_IS_YUV(format) &&
 			!pipe_supports_yuv(mdp5_plane->caps)) {
-			dev_err(plane->dev->dev,
-				"Pipe doesn't support YUV\n");
+			DBG("Pipe doesn't support YUV\n");
 
 			return -EINVAL;
 		}
@@ -301,20 +301,18 @@ static int mdp5_plane_atomic_check(struct drm_plane *plane,
 		if (!(mdp5_plane->caps & MDP_PIPE_CAP_SCALE) &&
 			(((state->src_w >> 16) != state->crtc_w) ||
 			((state->src_h >> 16) != state->crtc_h))) {
-			dev_err(plane->dev->dev,
-				"Pipe doesn't support scaling (%dx%d -> %dx%d)\n",
+			DBG("Pipe doesn't support scaling (%dx%d -> %dx%d)\n",
 				state->src_w >> 16, state->src_h >> 16,
 				state->crtc_w, state->crtc_h);
 
 			return -EINVAL;
 		}
 
-		hflip = !!(state->rotation & BIT(DRM_REFLECT_X));
-		vflip = !!(state->rotation & BIT(DRM_REFLECT_Y));
+		hflip = !!(state->rotation & DRM_REFLECT_X);
+		vflip = !!(state->rotation & DRM_REFLECT_Y);
 		if ((vflip && !(mdp5_plane->caps & MDP_PIPE_CAP_VFLIP)) ||
 			(hflip && !(mdp5_plane->caps & MDP_PIPE_CAP_HFLIP))) {
-			dev_err(plane->dev->dev,
-				"Pipe doesn't support flip\n");
+			DBG("Pipe doesn't support flip\n");
 
 			return -EINVAL;
 		}
@@ -743,8 +741,8 @@ static int mdp5_plane_mode_set(struct drm_plane *plane,
 	config |= get_scale_config(format, src_h, crtc_h, false);
 	DBG("scale config = %x", config);
 
-	hflip = !!(pstate->rotation & BIT(DRM_REFLECT_X));
-	vflip = !!(pstate->rotation & BIT(DRM_REFLECT_Y));
+	hflip = !!(pstate->rotation & DRM_REFLECT_X);
+	vflip = !!(pstate->rotation & DRM_REFLECT_Y);
 
 	spin_lock_irqsave(&mdp5_plane->pipe_lock, flags);
 
@@ -904,7 +902,7 @@ struct drm_plane *mdp5_plane_init(struct drm_device *dev,
 	type = private_plane ? DRM_PLANE_TYPE_PRIMARY : DRM_PLANE_TYPE_OVERLAY;
 	ret = drm_universal_plane_init(dev, plane, 0xff, &mdp5_plane_funcs,
 				 mdp5_plane->formats, mdp5_plane->nformats,
-				 type);
+				 type, NULL);
 	if (ret)
 		goto fail;
 

@@ -33,6 +33,16 @@ enum global_service_cmd_id {
 	GLOBAL_CMD_ID_REGISTER_MAILBOX = 0x17,
 	GLOBAL_CMD_ID_REGISTER_UNUSUAL_TTF_MEM = 0x18,
 	GLOBAL_CMD_ID_REGISTER_ION_MEM = 0x19,
+	GLOBAL_CMD_ID_DUMP_MEMINFO = 0x1a,
+#ifdef CONFIG_TEE_SMP
+	/* this cmd will be used to service no ca handle cmd */
+	GLOBAL_CMD_ID_SET_SERVE_CMD = 0x1b,
+#endif
+	GLOBAL_CMD_ID_ADD_DYNAMIC_ION = 0x1c,
+	GLOBAL_CMD_ID_DEL_DYNAMIC_ION = 0x1d,
+	GLOBAL_CMD_ID_LOAD_SECURE_APP_ION = 0x1e,
+	/* this cmd for tui to get notch_size */
+	GLOBAL_CMD_ID_TUI_NOTCH = 0x1f,
 	GLOBAL_CMD_ID_UNKNOWN = 0x7FFFFFFE,
 	GLOBAL_CMD_ID_MAX = 0x7FFFFFFF
 };
@@ -78,6 +88,7 @@ enum TEEC_Result {
 	TEEC_ERROR_MAC_INVALID = 0xFFFF3071,
 	TEEC_CLIENT_INTR = 0xFFFF4000,
 	TEE_ERROR_CA_AUTH_FAIL = 0xFFFFCFE5,
+	TEE_ERROR_AUDIT_FAIL = 0xFFFF9112,
 };
 
 /****************************************************

@@ -148,3 +148,7 @@ config HW_GET_EXT_SIG
 	bool "BCM GET EXT SIG"
 	depends on BCMDHD
 
+config HW_GET_P2P_TX_RATE
+        bool "BCM GET P2P DEVICE TX RATE"
+        depends on BCMDHD
+        default n

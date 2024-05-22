@@ -31,7 +31,10 @@
 #include <linux/slab.h>
 #include <linux/rculist.h>
 #include <linux/kernel.h>
+#include <linux/version.h>
 #include "securec.h"
+#include <linux/hisi/hisi_log.h>
+#define HISI_LOG_TAG MEMORY_DUMP_TAG
 
 /* the max size of mod->core_size is 4M */
 #define MODULE_MAX_CORE_SIZE (4 * 1024 * 1024)

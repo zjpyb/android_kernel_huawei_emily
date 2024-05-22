@@ -69,7 +69,6 @@
   3 函数实现
 *****************************************************************************/
 
-/* Modified by l60609 for V9R1 IPv6&TAF/SM Project, 2013-4-27, begin */
 
 AT_APP_CONN_STATE_ENUM_U32 AT_AppConvertPdpStateToConnStatus(
     AT_PDP_STATE_ENUM_U8                enPdpState
@@ -185,7 +184,6 @@ VOS_UINT32 AT_SetChdataPara_HsicUser(VOS_UINT8 ucIndex)
 
     enDataChannelId = gastAtParaList[1].ulParaValue;
 
-    /* Modified by L47619 for C52 HSIC ACM->NCM Project, 2012/09/06, begin */
     /* 低软接口返回值修改，之前返回PS_TRUE的为SUPPORT */
     if (BSP_MODULE_SUPPORT == mdrv_misc_support_check(BSP_MODULE_TYPE_HSIC_NCM))
     {
@@ -217,7 +215,6 @@ VOS_UINT32 AT_SetChdataPara_HsicUser(VOS_UINT8 ucIndex)
             enUdiDevId = UDI_ACM_HSIC_ACM5_ID;
         }
     }
-    /* Modified by L47619 for C52 HSIC ACM->NCM Project, 2012/09/06, end */
 
     /* 查找是否有不同的<CID>配置了相同的<enUdiDevId> */
     for (ucLoop = 1; ucLoop <= TAF_MAX_CID; ucLoop++)
@@ -388,7 +385,6 @@ VOS_UINT32 AT_QryChdataPara_HsicUser(TAF_UINT8 ucIndex)
             usLength += (VOS_UINT16)At_sprintf(AT_CMD_MAX_LEN,(VOS_CHAR*)pgucAtSndCodeAddr,(VOS_CHAR*)pgucAtSndCodeAddr + usLength,"%d", ucLoop);
 
             /* <datachannel> */
-            /* Modified by L47619 for C52 HSIC ACM->NCM Project, 2012/09/06, begin */
             switch ( pstPsModemCtx->astChannelCfg[ucLoop].ulRmNetId)
             {
                 case UDI_ACM_HSIC_ACM1_ID:
@@ -406,7 +402,6 @@ VOS_UINT32 AT_QryChdataPara_HsicUser(TAF_UINT8 ucIndex)
                 default:
                     return AT_ERROR;
             }
-            /* Modified by L47619 for C52 HSIC ACM->NCM Project, 2012/09/06, end */
             usLength += (VOS_UINT16)At_sprintf(AT_CMD_MAX_LEN,(VOS_CHAR*)pgucAtSndCodeAddr,(VOS_CHAR*)pgucAtSndCodeAddr + usLength,",%d", enDataChannelId);
 
             ucNum++;
@@ -476,13 +471,11 @@ VOS_UINT32 AT_QryChdataPara(TAF_UINT8 ucIndex)
 
 VOS_UINT32 AT_TestChdataPara(VOS_UINT8 ucIndex)
 {
-    /* Modified by l60609 for AP适配项目 ，2012-09-10 Begin */
     /* 通道检查 */
     if (VOS_FALSE == AT_IsApPort(ucIndex))
     {
         return AT_ERROR;
     }
-    /* Modified by l60609 for AP适配项目 ，2012-09-10 End */
 
     gstAtSendData.usBufLen = (VOS_UINT16)At_sprintf(AT_CMD_MAX_LEN,
                                        (VOS_CHAR *)pgucAtSndCodeAddr,
@@ -623,7 +616,6 @@ VOS_UINT32 At_QryDhcpPara_NdisUser(VOS_UINT8 ucIndex)
     VOS_UINT32                          ulPdpDeactingFlg;
     VOS_UINT16                          usLength;
 
-    /* Modified by S62952 for IPV6, 2011-04-19, begin */
     ulPdpActingFlg      = AT_NdisCheckIpv4PdpState(AT_PDP_STATE_ACTING);
     ulPdpDeactingFlg    = AT_NdisCheckIpv4PdpState(AT_PDP_STATE_DEACTING);
     usLength            = 0;
@@ -656,7 +648,6 @@ VOS_UINT32 At_QryDhcpPara_NdisUser(VOS_UINT8 ucIndex)
     usLength += (VOS_UINT16)At_sprintf(AT_CMD_MAX_LEN, (VOS_CHAR*)pgucAtSndCodeAddr, (VOS_CHAR*)pgucAtSndCodeAddr + usLength,"%X,",stDhcpConfig.stDhcpCfg.ulSndDNS);
     usLength += (VOS_UINT16)At_sprintf(AT_CMD_MAX_LEN, (VOS_CHAR*)pgucAtSndCodeAddr, (VOS_CHAR*)pgucAtSndCodeAddr + usLength,"%s,",stSpeed.ucDlSpeed);
     usLength += (VOS_UINT16)At_sprintf(AT_CMD_MAX_LEN, (VOS_CHAR*)pgucAtSndCodeAddr, (VOS_CHAR*)pgucAtSndCodeAddr + usLength,"%s",stSpeed.ucUlSpeed);
-    /* Modified by S62952 for IPV6, 2011-04-19, end */
 
     gstAtSendData.usBufLen = usLength;
 
@@ -2134,7 +2125,6 @@ VOS_UINT32 AT_TestApThroughputPara(VOS_UINT8 ucIndex)
 
     return AT_OK;
 }
-/* Modified by l60609 for V9R1 IPv6&TAF/SM Project, 2013-4-27, end */
 
 
 VOS_UINT32 AT_SetApEndPppPara(VOS_UINT8 ucIndex)

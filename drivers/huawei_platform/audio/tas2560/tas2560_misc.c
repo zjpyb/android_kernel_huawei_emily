@@ -513,8 +513,10 @@ static long tas2560_file_compact_ioctl(struct file *file, unsigned int command, 
 static struct file_operations fops =
 {
 	.owner = THIS_MODULE,
+#ifdef TAS2560_DEBUG
 	.read = tas2560_file_read,
 	.write = tas2560_file_write,
+#endif
 	.unlocked_ioctl = tas2560_file_unlocked_ioctl,
 #ifdef CONFIG_COMPAT
 	.compat_ioctl    = tas2560_file_compact_ioctl,

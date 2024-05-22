@@ -6,5 +6,8 @@
 
 
 /include/ "blanc_tugl_auo_otm1901a_5p2_1080p_video_default.dtsi"
+/include/ "blanc_tugl_auo_otm1901a_5p2_1080p_video_default_1.dtsi"
 /include/ "blanc_tugl_samsung_ea8074_6p01_1080plus_cmd.dtsi"
 /include/ "blanc_tugl_samsung_v2_ea8074_6p01_1080plus_cmd.dtsi"
+/include/ "blanc_tugl_samsung_v3_ea8074_6p01_1080plus_cmd.dtsi"
+/include/ "blanc_tugl_tianma_rm69299_6p01_1080plus_cmd.dtsi"

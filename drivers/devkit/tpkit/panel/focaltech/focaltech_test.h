@@ -35,6 +35,7 @@
 
 #define FTS_LCD_PRE_FRAME_TIME		16
 #define FTS_MAX_CAP_TEST_NUM		6
+#define FTS_8201_MAX_CAP_TEST_NUM	7
 #define FTS_LCD_NOISE_TEST_DELAY_TIME	50
 #define FTS_ENTER_FACTORY_DELAY_TIME	100
 #define FTS_OPEN_HDFILT_REG_DELAY_TIME	100
@@ -55,12 +56,15 @@
 
 #define FTS_REG_VALUE_0X20		0x20
 #define FTS_REG_VALUE_0X21		0x21
+#define FTS_REG_VALUE_0X23		0x23
 #define FTS_REG_VALUE_0X31		0x31
 #define FTS_REG_VALUE_0X32		0x32
 #define FTS_REG_VALUE_0X0E	0x0e
 #define FTS_REG_VALUE_0XA0	0xa0
+#define FTS_REG_VALUE_0XD0	0xd0
 #define FTS_WRITE_VALUE_0X03			0x03
 #define FTS_WRITE_VALUE_0X02			0x02
+#define FTS_WRITE_VALUE_0X01			0x01
 #define FTS_WAIT_TIMES_VALUE			500
 #define FTS_STATE_INIT_VALUE			0xff
 #define FTS_10MS_MSLEEP_VALUE		10
@@ -73,11 +77,15 @@
 #define FTS_8716_VALUE					2
 #define FTS_8716U_VALUE					6
 #define FTS_8719_VALUE					11
+#define FTS_8006U_VALUE					11/*do not use this macro because it is same with 8719,please use ic_type in dts to distinguish different ICs*/
 #define OPEN_ROW_COLUMN_TEST		1
 #define OPEN_LCD_NOISE_DATA_TEST	1
 #define CAP_TEST_BUF_SIZE		100
 #define RAW_POINT_BY_POINT_JUDGE	1
 #define ROW_COLUMN_DELTA_TEST_POINT_BY_POINT	1
+#define CB_TEST_POINT_BY_POINT			1
+#define SHORT_TEST_POINT_BY_POINT		1
+#define OPEN_TEST_POINT_BY_POINT		1
 #define FTS_RETRY_READ_RAWDATA		3
 #define RAW_DATA_BUF_SIZE		2
 struct focal_test_threshold {
@@ -94,8 +102,17 @@ struct focal_test_threshold {
 	int  lcd_noise_max;
 	int open_test_cb_min;
 	int row_column_delta_max;
+	int cb_uniformity_x;
+	int cb_uniformity_y;
+	int cb_increase_level;
+	int cb_increase_min;
 	int raw_data_min_array[TX_NUM_MAX*RX_NUM_MAX];
 	int raw_data_max_array[TX_NUM_MAX*RX_NUM_MAX];
+	int cb_test_min_array[TX_NUM_MAX*RX_NUM_MAX];
+	int cb_test_max_array[TX_NUM_MAX*RX_NUM_MAX];
+	int open_test_cb_min_array[TX_NUM_MAX*RX_NUM_MAX];
+	int open_test_cb_max_array[TX_NUM_MAX*RX_NUM_MAX];
+	int short_test_min_array[TX_NUM_MAX*RX_NUM_MAX];
 	int row_column_delta_max_array[TX_NUM_MAX*RX_NUM_MAX*2];
 };
 
@@ -111,6 +128,9 @@ struct focal_test_params {
 	u8 channel_x_num;
 	u8 channel_y_num;
 	u8 key_num;
+	int cb_test_point_by_point;
+	int open_test_cb_point_by_point;
+	int short_test_point_by_point;
 };
 
 struct focal_test_result {
@@ -143,6 +163,9 @@ int focal_get_debug_data(struct ts_diff_data_info *info,
 	struct ts_cmd_node *out_cmd);
 int focal_chip_get_capacitance_test_type(struct ts_test_type_info *info);
 void focal_prase_threshold_for_csv(const char *project_id,
+	struct focal_test_threshold *threshold,
+	struct focal_test_params *params);
+void focal_8201_prase_threshold_for_csv(const char *project_id,
 	struct focal_test_threshold *threshold,
 	struct focal_test_params *params);
 

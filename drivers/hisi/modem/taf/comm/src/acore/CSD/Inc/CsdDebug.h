@@ -53,9 +53,7 @@
   1 其他头文件包含
 *****************************************************************************/
 #include  "vos.h"
-/* Added by l60609 for AP适配项目 ，2012-08-30 Begin */
 #include "product_config.h"
-/* Added by l60609 for AP适配项目 ，2012-08-30 End */
 
 #ifdef __cplusplus
 #if __cplusplus

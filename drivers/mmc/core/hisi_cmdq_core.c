@@ -230,9 +230,6 @@ EXPORT_SYMBOL(mmc_discard_queue);
  */
 int mmc_cmdq_discard_queue(struct mmc_host *host, u32 tasks)
 {
-#if 0
-	return mmc_discard_queue(host, tasks);
-#else
 	int ret;
 
 	ret = host->cmdq_ops->discard_task(host, tasks, true);
@@ -240,6 +237,5 @@ int mmc_cmdq_discard_queue(struct mmc_host *host, u32 tasks)
 		pr_err("%s: discard queue fail\n", __func__);
 
 	return ret;
-#endif
 }
 EXPORT_SYMBOL(mmc_cmdq_discard_queue);

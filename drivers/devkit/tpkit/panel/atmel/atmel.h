@@ -755,6 +755,7 @@ struct mxt_data {
 	u32 support_get_tp_color;
 	bool is_firmware_broken;
 	bool fw_need_depend_on_lcd;
+	u32 noise_debug_enable;
 };
 
 #define MXT_DRIVER_NEED_UPDATE_MESSAGE 1

@@ -16,6 +16,7 @@
 #include <linux/of.h>
 
 #include <linux/hisi/rdr_pub.h>
+#include <linux/hisi/rdr_dfx_core.h>
 #include <mntn_public_interface.h>
 
 #define PATH_MAXLEN         128
@@ -26,8 +27,8 @@
 #define RDR_BIN             "bbox.bin"
 #define RDX_BIN             "bbox_aft.bin"
 #define DFX_BIN             "dfx.bin"
-#define CONSOLE_RAMOOPS     "/sys/fs/pstore/console-ramoops"
-#define PMSG_RAMOOPS        "/sys/fs/pstore/pmsg-ramoops-0"
+#define CONSOLE_RAMOOPS     "/proc/balong/pstore/console-ramoops"
+#define PMSG_RAMOOPS        "/proc/balong/pstore/pmsg-ramoops-0"
 #define BBOX_SPLIT_BIN      "/bbox_split_bin/"
 #define BBOX_HEAD_INFO      "BBOX_HEAD_INFO"
 #define ROOT_UID		0
@@ -85,10 +86,16 @@ struct blackbox_modid_list {
 	char *modid_str;
 };
 
+struct rdr_file_attr {
+	unsigned int uid;
+	unsigned int gid;
+};
+
 /* variable extern */
 extern u32 g_cleartext_test;
 extern struct semaphore rdr_cleartext_sem;
-
+extern u32 dfx_size_tbl[DFX_MAX_MODULE];
+extern u32 dfx_addr_tbl[DFX_MAX_MODULE];
 
 void rdr_callback(struct rdr_exception_info_s *p_exce_info, u32 mod_id,
 		  char *logpath);
@@ -114,6 +121,7 @@ int bbox_create_dfxlog_path(char *path, char *date);
 int rdr_create_epath_bc(char *path);
 
 void rdr_count_size(void);
+bool rdr_check_log_rights(void);
 
 int rdr_dump_init(void *arg);
 void rdr_dump_exit(void);
@@ -214,6 +222,7 @@ int rdr_record_reboot_times2file(void);
 u32 rdr_get_reboot_times(void);
 void save_dfxpartition_to_file(void);
 bool is_need_save_dfx2file(void);
+void get_dfx_core_info(u32 *dfx_size_tbl, u32 size_tbl_len, u32 *dfx_addr_tbl, u32 addr_tbl_len);
 bool need_save_mntndump_log(u32 reboot_type_s);
 int rdr_create_dir(const char *path);
 void bbox_cleartext_proc(const char *path, const char *base_addr);
@@ -222,5 +231,16 @@ int rdr_cleartext_body(void *arg);
 int bbox_get_every_core_area_info(u32 *value, u32 *data, struct device_node **npp);
 void rdr_cleartext_print_ops(void);
 void rdr_hisiap_dump_root_head(u32 modid, u32 etype, u64 coreid);
-
+void save_hisiap_log(char *log_path, u32 modid);
+int rdr_exception_trace_init(void);
+int rdr_exception_trace_record(u64 e_reset_core_mask, u64 e_from_core, 
+	u32 e_exce_type, u32 e_exce_subtype);
+int rdr_exception_trace_cleartext_print(char *dir_path, u64 log_addr, u32 log_len);
+int get_every_core_exception_info(u32 *num, u32 *size);
+int ap_awdt_analysis(struct rdr_exception_info_s *exception);
+void incorrect_reboot_reason_analysis(char *dir_path, struct rdr_exception_info_s *exception);
+int exception_trace_buffer_init(u8 *addr, unsigned int size);
+int rdr_exception_analysis_ap(u64 etime, u8 *addr, u32 len,
+	struct rdr_exception_info_s *exception);
+int get_pmu_reset_base_addr(void);
 #endif /* End #define __BB_INNER_H__ */

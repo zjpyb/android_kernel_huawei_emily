@@ -31,7 +31,7 @@ typedef struct _RingBuffer RingBuffer;
  输入参数  : element_count: Ring Buffer总元素个数
  返 回 值  : RING_BUFFER_NORMAL：Success, RING_BUFFER_ALLOCATE_FAIL: Fail
 *****************************************************************************/
-extern RingBuffer *RingBuffer_Init(void * ringbufferAddr);
+extern RingBuffer *RingBuffer_Init(void * ringbufferAddr, int element_size, int element_cnt);
 
 /*****************************************************************************
  函 数 名  : RingBuffer_GetCount

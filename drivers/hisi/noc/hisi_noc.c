@@ -29,6 +29,8 @@
 #include <linux/string.h>
 #include <linux/clk.h>
 #include <linux/hisi/util.h>
+#include <linux/hisi/hisi_log.h>
+#define HISI_LOG_TAG HISI_NOC_TAG
 
 #include <linux/hisi/rdr_hisi_platform.h>
 #include "hisi_noc.h"
@@ -126,6 +128,28 @@ static unsigned int noc_clock_enable(struct hisi_noc_device *noc_dev,
 
 	return flag;
 }
+
+static int position_of_pmctrl_power_idle_reg(unsigned int pwrack_bit)
+{
+	unsigned long long pwr_bit = 1;
+
+	pwr_bit = pwr_bit << pwrack_bit;
+
+	if (0 != (MASK_PMCTRL_POWER_IDLE & pwr_bit)) {
+		return PMCTRL_POWER_IDLE_POISION;
+	}
+
+	if (0 != (MASK_PMCTRL_POWER_IDLE1 & pwr_bit)) {
+		return PMCTRL_POWER_IDLE_POISION1;
+	}
+
+	if (0 != (MASK_PMCTRL_POWER_IDLE2 & pwr_bit)) {
+		return PMCTRL_POWER_IDLE_POISION2;
+	}
+
+	return -1;
+}
+
 /*
  * is_noc_node_available - check power & clock for this node state, on/off
  * @node: poiter to the noc node;
@@ -135,7 +159,9 @@ static unsigned int noc_clock_enable(struct hisi_noc_device *noc_dev,
 int is_noc_node_available(struct noc_node *node)
 {
 	struct hisi_noc_device *noc_dev = NULL;
-	unsigned int request, ack, status;
+	unsigned int request = 0, ack = 0, status = 0, position = 0,
+		     pwrack_bit = 0;
+	unsigned long long pwr_bit = 1;
 
 	if (NULL == g_this_pdev || NULL == node) {
 		pr_err("[%s] g_this_pdev or node is NULL!!!\n", __func__);
@@ -148,14 +174,67 @@ int is_noc_node_available(struct noc_node *node)
 		return 0;
 	}
 
-	request = readl_relaxed(noc_dev->pmctrl_base +
-				noc_dev->preg_list->pmctrl_power_idlereq_offset);
-	ack =  readl_relaxed(noc_dev->pmctrl_base +
-				noc_dev->preg_list->pmctrl_power_idleack_offset);
-	status =  readl_relaxed(noc_dev->pmctrl_base +
-				noc_dev->preg_list->pmctrl_power_idle_offset);
-	if (!((request|ack|status) & (1 << node->pwrack_bit))
-	    && noc_clock_enable(noc_dev, node)) {
+	position = position_of_pmctrl_power_idle_reg(node->pwrack_bit);
+
+	pwr_bit = pwr_bit << node->pwrack_bit;
+
+	switch (position) {
+	case PMCTRL_POWER_IDLE_POISION: {
+		request = readl_relaxed(
+			noc_dev->pmctrl_base +
+			noc_dev->preg_list->pmctrl_power_idlereq_offset);
+		ack = readl_relaxed(
+			noc_dev->pmctrl_base +
+			noc_dev->preg_list->pmctrl_power_idleack_offset);
+		status = readl_relaxed(
+			noc_dev->pmctrl_base +
+			noc_dev->preg_list->pmctrl_power_idle_offset);
+		pwrack_bit = (unsigned int)(MASK_PMCTRL_POWER_IDLE & pwr_bit);
+
+		break;
+	}
+
+	case PMCTRL_POWER_IDLE_POISION1: {
+		request = readl_relaxed(
+			noc_dev->pmctrl_base +
+			noc_dev->preg_list->pmctrl_power_idlereq1_offset);
+		ack = readl_relaxed(
+			noc_dev->pmctrl_base +
+			noc_dev->preg_list->pmctrl_power_idleack1_offset);
+		status = readl_relaxed(
+			noc_dev->pmctrl_base +
+			noc_dev->preg_list->pmctrl_power_idle1_offset);
+		pwrack_bit =
+			(unsigned int)((MASK_PMCTRL_POWER_IDLE1 & pwr_bit) >>
+				       GET_PMCTRL_POWER_IDLE1);
+
+		break;
+	}
+
+	case PMCTRL_POWER_IDLE_POISION2: {
+		request = readl_relaxed(
+			noc_dev->pmctrl_base +
+			noc_dev->preg_list->pmctrl_power_idlereq2_offset);
+		ack = readl_relaxed(
+			noc_dev->pmctrl_base +
+			noc_dev->preg_list->pmctrl_power_idleack2_offset);
+		status = readl_relaxed(
+			noc_dev->pmctrl_base +
+			noc_dev->preg_list->pmctrl_power_idle2_offset);
+		pwrack_bit =
+			(unsigned int)((MASK_PMCTRL_POWER_IDLE2 & pwr_bit) >>
+				       GET_PMCTRL_POWER_IDLE2);
+
+		break;
+	}
+
+	default:
+		pr_err("[%s] value of node->pwrack_bit is error !!\n",
+			__func__);
+		return 0;
+	}
+	if (!((request | ack | status) & pwrack_bit) &&
+		noc_clock_enable(noc_dev, node)) {
 		return 1;
 	}
 
@@ -165,8 +244,11 @@ int is_noc_node_available(struct noc_node *node)
 int noc_node_try_to_giveup_idle(struct noc_node *node)
 {
 	struct hisi_noc_device *noc_dev = NULL;
-	unsigned long status = 0;
+	unsigned int status = 0, position = 0;
+	unsigned int pwrack_bit = 0;
+	unsigned long long pwr_bit = 1;
 	void __iomem *pm_idlereq_reg = NULL;
+	void __iomem *pm_idle_reg = NULL;
 
 	if (NULL == g_this_pdev || NULL == node) {
 		pr_err("[%s] g_this_pdev or node is NULL!!!\n", __func__);
@@ -179,21 +261,62 @@ int noc_node_try_to_giveup_idle(struct noc_node *node)
 		return -1;
 	}
 
-	status = readl_relaxed(noc_dev->pmctrl_base +
-					noc_dev->preg_list->pmctrl_power_idle_offset);
-	pr_err("[%s] before +, NOC_POWER_IDLE = 0x%lx;\n", __func__, status);
+	position = position_of_pmctrl_power_idle_reg(node->pwrack_bit);
+
+	pwr_bit = pwr_bit << node->pwrack_bit;
 
 	/* try to exit idle state */
-	pm_idlereq_reg =
-		noc_dev->pmctrl_base + noc_dev->preg_list->pmctrl_power_idlereq_offset;
+	switch (position) {
+	case PMCTRL_POWER_IDLE_POISION: {
+		pm_idlereq_reg =
+			noc_dev->pmctrl_base +
+			noc_dev->preg_list->pmctrl_power_idlereq_offset;
+		pm_idle_reg = noc_dev->pmctrl_base +
+			      noc_dev->preg_list->pmctrl_power_idle_offset;
+		pwrack_bit = (unsigned int)(MASK_PMCTRL_POWER_IDLE & pwr_bit);
+		break;
+	}
+
+	case PMCTRL_POWER_IDLE_POISION1: {
+		pm_idlereq_reg =
+			noc_dev->pmctrl_base +
+			noc_dev->preg_list->pmctrl_power_idlereq1_offset;
+		pm_idle_reg = noc_dev->pmctrl_base +
+			      noc_dev->preg_list->pmctrl_power_idle1_offset;
+		pwrack_bit =
+			(unsigned int)((MASK_PMCTRL_POWER_IDLE1 & pwr_bit) >>
+				       GET_PMCTRL_POWER_IDLE1);
+		break;
+	}
+
+	case PMCTRL_POWER_IDLE_POISION2: {
+		pm_idlereq_reg =
+			noc_dev->pmctrl_base +
+			noc_dev->preg_list->pmctrl_power_idlereq2_offset;
+		pm_idle_reg = noc_dev->pmctrl_base +
+			      noc_dev->preg_list->pmctrl_power_idle2_offset;
+		pwrack_bit =
+			(unsigned int)((MASK_PMCTRL_POWER_IDLE2 & pwr_bit) >>
+				       GET_PMCTRL_POWER_IDLE2);
+		break;
+	}
+
+	default:
+		pr_err("[%s] value of node->pwrack_bit is error !!\n",
+			__func__);
+		return -1;
+	}
+
+	status = readl_relaxed(pm_idle_reg);
+	pr_err("[%s] before +, NOC_POWER_IDLE = 0x%x;\n", __func__, status);
+
 	status = readl_relaxed(pm_idlereq_reg);
-	status &= ~((unsigned long)(1UL << (node->pwrack_bit)));
-	status |= (unsigned)(1 << (node->pwrack_bit + 16));
+	status &= ~pwrack_bit;
+	status |= (pwrack_bit << 16);
 	writel_relaxed(status, pm_idlereq_reg);
 
-	status = readl_relaxed(noc_dev->pmctrl_base +
-					noc_dev->preg_list->pmctrl_power_idle_offset);
-	pr_err("[%s] after -, NOC_POWER_IDLE = 0x%lx;\n", __func__, status);
+	status = readl_relaxed(pm_idle_reg);
+	pr_err("[%s] after -, NOC_POWER_IDLE = 0x%x;\n", __func__, status);
 	return 0;
 }
 
@@ -1529,6 +1652,8 @@ static int hisi_noc_probe(struct platform_device *pdev)
     /* enable noc packet probe */
 	if (noc_property_dt.packet_enable)
 		enable_noc_packet_probe(dev);
+	/* noc err worker register */
+	noc_err_probe_init();
 
 	ret = platform_get_irq(pdev, 0);
 	if (ret < 0) {
@@ -1556,7 +1681,6 @@ static int hisi_noc_probe(struct platform_device *pdev)
 	if (-1 == noc_dump_init())
 		pr_err("[%s] noc_dump_init failed!\n", __func__);
 
-	noc_err_probe_init();
 	g_noc_init = 1;
 	return 0; /*lint !e429*/
 

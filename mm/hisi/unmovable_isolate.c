@@ -119,7 +119,7 @@ static int __init early_unmovable_isolate1(char *p)
 	parse_unmovable_isolate_size(size_cmdline_ui1, p);
 	return 0;
 }
-/* lint -e85 -e528 */
+
 early_param("unmovable_isolate1", early_unmovable_isolate1);
 
 static int __init early_unmovable_isolate2(char *p)
@@ -128,7 +128,7 @@ static int __init early_unmovable_isolate2(char *p)
 	parse_unmovable_isolate_size(size_cmdline_ui2, p);
 	return 0;
 }
-/* lint -e85 -e528 */
+
 early_param("unmovable_isolate2", early_unmovable_isolate2);
 
 #ifdef CONFIG_HUAWEI_ENHANCED_RESERVE
@@ -153,7 +153,7 @@ static int __init early_ddr_size(char *p)
 	ddr_size_cmdline = simple_strtoll(p, &tmp, 0);
 	return 0;
 }
-/* lint -e85 -e528 */
+
 early_param("androidboot.ddrsize", early_ddr_size);
 
 /*
@@ -166,7 +166,6 @@ early_param("androidboot.ddrsize", early_ddr_size);
  */
 int is_DMA_zone(struct zone* zone)
 {
-	/* lint -e115 */
 	if (zone != NULL && zone_idx(zone) == ZONE_DMA)
 		return 1;
 	else
@@ -359,11 +358,9 @@ void setup_zone_migrate_unmovable_isolate(struct zone *zone,
 
 	/* init the different unmovable-isolate type */
 	if (is_unmovable_isolate1(unmovable_isolate_type)) {
-		/* lint -e115 */
 		zone_ui_block = &(zone->nr_migrate_unmovable_isolate1_block);
 		ui_stat_item = NR_FREE_UNMOVABLE_ISOLATE1_PAGES;
 	} else if (is_unmovable_isolate2(unmovable_isolate_type)) {
-		/* lint -e115 */
 		zone_ui_block = &(zone->nr_migrate_unmovable_isolate2_block);
 		ui_stat_item = NR_FREE_UNMOVABLE_ISOLATE2_PAGES;
 	} else {
@@ -392,7 +389,6 @@ void setup_zone_migrate_unmovable_isolate(struct zone *zone,
 	 * make sure that we always check pfn_valid for the first page in
 	 * the block.
 	 */
-	/* lint -e115 */
 	start_pfn = zone->zone_start_pfn;
 	end_pfn = zone_end_pfn(zone);
 	start_pfn = roundup(start_pfn, pageblock_nr_pages);

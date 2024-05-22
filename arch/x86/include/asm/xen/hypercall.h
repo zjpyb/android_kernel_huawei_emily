@@ -43,6 +43,7 @@
 
 #include <asm/page.h>
 #include <asm/pgtable.h>
+#include <asm/smap.h>
 
 #include <xen/interface/xen.h>
 #include <xen/interface/sched.h>
@@ -112,7 +113,7 @@ extern struct { char _entry[32]; } hypercall_page[];
 	register unsigned long __arg4 asm(__HYPERCALL_ARG4REG) = __arg4; \
 	register unsigned long __arg5 asm(__HYPERCALL_ARG5REG) = __arg5;
 
-#define __HYPERCALL_0PARAM	"=r" (__res)
+#define __HYPERCALL_0PARAM	"=r" (__res), ASM_CALL_CONSTRAINT
 #define __HYPERCALL_1PARAM	__HYPERCALL_0PARAM, "+r" (__arg1)
 #define __HYPERCALL_2PARAM	__HYPERCALL_1PARAM, "+r" (__arg2)
 #define __HYPERCALL_3PARAM	__HYPERCALL_2PARAM, "+r" (__arg3)
@@ -213,10 +214,12 @@ privcmd_call(unsigned call,
 	__HYPERCALL_DECLS;
 	__HYPERCALL_5ARG(a1, a2, a3, a4, a5);
 
+	stac();
 	asm volatile("call *%[call]"
 		     : __HYPERCALL_5PARAM
 		     : [call] "a" (&hypercall_page[call])
 		     : __HYPERCALL_CLOBBER5);
+	clac();
 
 	return (long)__res;
 }
@@ -310,10 +313,10 @@ HYPERVISOR_mca(struct xen_mc *mc_op)
 }
 
 static inline int
-HYPERVISOR_dom0_op(struct xen_platform_op *platform_op)
+HYPERVISOR_platform_op(struct xen_platform_op *op)
 {
-	platform_op->interface_version = XENPF_INTERFACE_VERSION;
-	return _hypercall1(int, dom0_op, platform_op);
+	op->interface_version = XENPF_INTERFACE_VERSION;
+	return _hypercall1(int, platform_op, op);
 }
 
 static inline int

@@ -78,23 +78,23 @@ typedef struct
 /*****************************************************************************
   9 OTHERS定义
 *****************************************************************************/
-extern oam_customize_stru g_oam_customize;
+extern oam_customize_stru g_oam_customize_etc;
 
 /*****************************************************************************
   10 函数声明
 *****************************************************************************/
-extern oal_void  oam_register_init_hook(oam_msg_moduleid_enum_uint8 en_moduleid,  p_oam_customize_init_func p_func);
-extern oal_int32  oam_cfg_get_one_item(
+extern oal_void  oam_register_init_hook_etc(oam_msg_moduleid_enum_uint8 en_moduleid,  p_oam_customize_init_func p_func);
+extern oal_int32  oam_cfg_get_one_item_etc(
                                            oal_int8   *pc_cfg_data_buf,
                                            oal_int8   *pc_section,
                                            oal_int8   *pc_key,
                                           oal_int32   *pl_val);
 
-extern oal_int32  oam_cfg_read_file_to_buf(
+extern oal_int32  oam_cfg_read_file_to_buf_etc(
                                                     oal_int8   *pc_cfg_data_buf,
                                                     oal_uint32  ul_file_size);
 
-extern oal_uint32  oam_cfg_decrypt_all_item(
+extern oal_uint32  oam_cfg_decrypt_all_item_etc(
                                               oal_aes_key_stru *pst_aes_key,
                                               oal_int8         *pc_ciphertext,
                                               oal_int8         *pc_plaintext,

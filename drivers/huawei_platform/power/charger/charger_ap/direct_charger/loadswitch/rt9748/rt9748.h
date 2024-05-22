@@ -21,6 +21,7 @@ struct rt9748_device_info {
 	int gpio_en;
 	int chip_already_init;
 	int device_id;
+	int sense_r_mohm;
 };
 
 enum loadswitch{
@@ -29,6 +30,11 @@ enum loadswitch{
 	loadswitch_fair_child = 2,
 	loadswitch_nxp = 3,
 };
+
+#define SENSE_R_2_MOHM 20 /* 2 mohm */
+#define SENSE_R_2P5_MOHM 25 /* 2.5 mohm */
+#define SENSE_R_5_MOHM 50 /* 5 mohm */
+#define SENSE_R_10_MOHM 100 /* 10 mohm */
 
 #define DEVICE_ID_RICHTEK 0
 #define DEVICE_ID_TI 1

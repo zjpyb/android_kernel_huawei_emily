@@ -131,8 +131,12 @@ bool ap_fw_loaded = FALSE;
 #endif /* DHD_DEBUG */
 
 #if defined(DHD_DEBUG)
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
+const char dhd_version[] = "Dongle Host Driver, version " EPI_VERSION_STR;
+#else
 const char dhd_version[] = "Dongle Host Driver, version " EPI_VERSION_STR
 	DHD_COMPILED " on " __DATE__ " at " __TIME__;
+#endif
 #else
 const char dhd_version[] = "\nDongle Host Driver, version " EPI_VERSION_STR "\nCompiled from ";
 #endif
@@ -1752,6 +1756,9 @@ dngl_host_event_process(dhd_pub_t *dhdp, bcm_dngl_event_t *event)
 	break;
 	}
 }
+#ifdef HW_READ_FW_LOG
+extern void dhd_read_console_ex(dhd_pub_t *dhd);
+#endif
 #ifdef BCM_PATCH_CVE_2016_0801
 /* Check whether packet is a BRCM event pkt. If it is, record event data. */
 int wl_host_event_get_data(void *pktdata, uint pktlen, bcm_event_msg_u_t *evu)
@@ -1887,6 +1894,14 @@ int wl_host_event(dhd_pub_t *dhd_pub, int *ifidx, void *pktdata,
 	hostidx = dhd_ifidx2hostidx(dhd_pub->info, event->ifidx);
 
 	switch (type) {
+#ifdef HW_WATCHDOG_MS
+	case WLC_E_EXTLOG_MSG:
+		DHD_ERROR(("%s: firmware log report event\n", __FUNCTION__));
+#ifdef HW_READ_FW_LOG
+		dhd_read_console_ex(dhd_pub);
+#endif
+		break;
+#endif
 #ifdef PROP_TXSTATUS
 	case WLC_E_FIFO_CREDIT_MAP:
 		dhd_wlfc_enable(dhd_pub);

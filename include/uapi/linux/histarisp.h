@@ -30,6 +30,8 @@
 #define HISP_POOL_ALLOC             _IOWR('i', 0x1214, rpmsg_ioctl_arg_t)
 #define HISP_POOL_FREE              _IOWR('i', 0x1215, rpmsg_ioctl_arg_t)
 
+#define SENSOR_NAME_SIZE (64)
+
 typedef struct addrparams{
     unsigned int moduleaddr;
     unsigned int iova;
@@ -51,7 +53,7 @@ typedef struct map_hisp_cfg_data {
 
 typedef struct rpmsg_ioctl_arg {
 	int index;
-	char name[32];
+	char name[SENSOR_NAME_SIZE];
 }rpmsg_ioctl_arg_t;
 
 typedef enum

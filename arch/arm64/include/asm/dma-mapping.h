@@ -25,7 +25,8 @@
 #include <asm/xen/hypervisor.h>
 
 #define DMA_ERROR_CODE	(~(dma_addr_t)0)
-extern struct dma_map_ops *dma_ops;
+extern struct dma_map_ops dummy_dma_ops;
+
 static inline struct dma_map_ops *__generic_dma_ops(struct device *dev)
 {
 	if (dev && dev->archdata.dma_ops)
@@ -35,7 +36,7 @@ static inline struct dma_map_ops *__generic_dma_ops(struct device *dev)
 	 * We expect no ISA devices, and all other DMA masters are expected to
 	 * have someone call arch_setup_dma_ops at device creation time.
 	 */
-	return dma_ops;
+	return &dummy_dma_ops;
 }
 
 static inline struct dma_map_ops *get_dma_ops(struct device *dev)
@@ -47,7 +48,7 @@ static inline struct dma_map_ops *get_dma_ops(struct device *dev)
 }
 
 void arch_setup_dma_ops(struct device *dev, u64 dma_base, u64 size,
-			struct iommu_ops *iommu, bool coherent);
+			const struct iommu_ops *iommu, bool coherent);
 #define arch_setup_dma_ops	arch_setup_dma_ops
 
 #ifdef CONFIG_IOMMU_DMA
@@ -63,16 +64,18 @@ static inline bool is_device_dma_coherent(struct device *dev)
 	return dev->archdata.dma_coherent;
 }
 
-#include <asm-generic/dma-mapping-common.h>
-
 static inline dma_addr_t phys_to_dma(struct device *dev, phys_addr_t paddr)
 {
-	return (dma_addr_t)paddr;
+	dma_addr_t dev_addr = (dma_addr_t)paddr;
+
+	return dev_addr - ((dma_addr_t)dev->dma_pfn_offset << PAGE_SHIFT);
 }
 
 static inline phys_addr_t dma_to_phys(struct device *dev, dma_addr_t dev_addr)
 {
-	return (phys_addr_t)dev_addr;
+	phys_addr_t paddr = (phys_addr_t)dev_addr;
+
+	return paddr + ((phys_addr_t)dev->dma_pfn_offset << PAGE_SHIFT);
 }
 
 static inline bool dma_capable(struct device *dev, dma_addr_t addr, size_t size)
@@ -86,6 +89,15 @@ static inline bool dma_capable(struct device *dev, dma_addr_t addr, size_t size)
 static inline void dma_mark_clean(void *addr, size_t size)
 {
 }
+
+/* Override for dma_max_pfn() */
+static inline unsigned long dma_max_pfn(struct device *dev)
+{
+	dma_addr_t dma_max = (dma_addr_t)*dev->dma_mask;
+
+	return (ulong)dma_to_phys(dev, dma_max) >> PAGE_SHIFT;
+}
+#define dma_max_pfn(dev) dma_max_pfn(dev)
 
 #endif	/* __KERNEL__ */
 #endif	/* __ASM_DMA_MAPPING_H */

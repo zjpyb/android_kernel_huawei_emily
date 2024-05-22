@@ -14,8 +14,10 @@
 #include "zrhung_wp_sochalt.h"
 
 static int is_soc_halt;
+static int is_longpress;
 
 #define SOCHALT_INFO         "BR_PRESS_10S"
+#define ZRHUNG_POWERKEY_LONGPRESS_EVENT "AP_S_PRESS6S"
 #define SR_POSITION_KEYWORD  "sr position:"
 #define FASTBOOT_LOG_PATH    "/proc/balong/log/fastboot_log"
 #define BUFFER_SIZE_FASTBOOT (4 * 1024) //4KB buffer for reading fastboot log
@@ -23,13 +25,26 @@ static int is_soc_halt;
 static int __init wp_reboot_reason_cmdline(char *reboot_reason_cmdline)
 {
 	if (!strcmp(reboot_reason_cmdline, SOCHALT_INFO)) {  /*lint !e421*/
+		printk(KERN_ERR "%s %d: LONGPRESS10S_EVENT happen! should report zerohung. \n", __FUNCTION__, __LINE__);
 		is_soc_halt = 1;
+	}
+	if (!strcmp(reboot_reason_cmdline, ZRHUNG_POWERKEY_LONGPRESS_EVENT)) { /*lint !e421*/
+		printk(KERN_ERR "%s %d: LONGPRESS6S_EVENT happen! should report zerohung. \n", __FUNCTION__, __LINE__);
+		is_longpress = 1;
 	}
 
 	return 0;
 }
 
 early_param("reboot_reason", wp_reboot_reason_cmdline);
+
+void zrhung_get_longpress_event(void)
+{
+	if (is_soc_halt || is_longpress) {
+		printk(KERN_ERR "%s %d: POWERKEY_LONGPRESS_EVENT send to zerohung. \n", __FUNCTION__, __LINE__);
+		zrhung_send_event(ZRHUNG_EVENT_LONGPRESS, NULL, NULL);
+	}
+}
 
 int wp_get_sochalt(zrhung_write_event* we)
 {

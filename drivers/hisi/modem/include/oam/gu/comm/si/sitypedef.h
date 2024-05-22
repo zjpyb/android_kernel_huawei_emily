@@ -46,22 +46,7 @@
  *
  */
 
-/******************************************************************************
 
-              Copyright (C), 2001-2011, Huawei Tech. Co., Ltd.
-
- ******************************************************************************
-  File name   : SiTypeDef.h
-  Version     : V200R001
-  Author      : H59254
-  Date        : 2008-10-10
-  Description : This file contains general types and macros that are of use
-                to all modules.
-  History     :
-  1.Date         : 2008-10-10
-    Author       : H59254
-    Modification : Create
-******************************************************************************/
 #ifndef  SI_TYPE_DEF_H
 #define  SI_TYPE_DEF_H
 

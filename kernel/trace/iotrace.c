@@ -1,5 +1,6 @@
 
 #include <linux/kernel.h>
+#include <linux/version.h>
 #include <linux/module.h>
 #include <linux/blkdev.h>
 #include <linux/percpu.h>
@@ -18,7 +19,9 @@
 #include <linux/bootdevice.h>
 #include <scsi/ufs/ufs.h>
 #include <scsi/ufs/ufshcd.h>
-
+#include <scsi/ufs/ufs-kirin.h>
+#include <linux/namei.h>
+#include <linux/f2fs_fs.h>
 #include <trace/iotrace.h>
 #include "huawei_platform/log/imonitor.h"
 
@@ -231,6 +234,11 @@ enum IO_TRACE_TYPE
 	__IO_TRACE_META,		/* metadata io request */
 	__IO_TRACE_PRIO,		/* boost priority in cfq */
 	__IO_TRACE_DISCARD,		/* request to discard sectors */
+    __IO_TRACE_SECURE_ERASE,
+    __IO_TRACE_WRITE_SAME,
+    __IO_TRACE_FLUSH,
+    __IO_TRACE_FUA,
+    __IO_TRACE_FG,
 };
 /*lint -restore*/
 
@@ -239,8 +247,14 @@ enum IO_TRACE_TYPE
 #define IO_TRACE_SYNC   (1 << __IO_TRACE_SYNC)
 #define IO_TRACE_META   (1 << __IO_TRACE_META)
 #define IO_TRACE_DISCARD (1 << __IO_TRACE_DISCARD)
+#define IO_TRACE_SECURE_ERASE (1 << __IO_TRACE_SECURE_ERASE)
+#define IO_TRACE_WRITE_SAME  (1 <<  __IO_TRACE_WRITE_SAME)
+#define IO_TRACE_FLUSH (1 << __IO_TRACE_FLUSH)
+#define IO_TRACE_FUA (1 << __IO_TRACE_FUA)
+#define IO_TRACE_FG (1 << __IO_TRACE_FG)
 /*lint -save -e64*/
-static unsigned char *rw_name[] = {"R", "W", "N", "N", "S", "M", "P", "D"};
+static unsigned char *rw_name[] = {"R", "W", "N", "N", "S", "M", "P", "D"
+            , "E", "A", "F", "U", "G"};
 /*lint -restore*/
 #define IO_F_NAME_LEN  (32)
 #define IO_P_NAME_LEN  (16)
@@ -261,29 +275,6 @@ struct io_trace_log_entry
     char f_name[IO_F_NAME_LEN];
 };
 
-struct vfs_uid_count
-{
-    unsigned long uid;
-    unsigned long long uid_read_bytes;
-    unsigned long long uid_write_bytes;
-    unsigned long long uid_fg_read_bytes;
-    unsigned long long uid_fg_write_bytes;
-    unsigned long long uid_bg_read_bytes;
-    unsigned long long uid_bg_write_bytes;
-};
-
-struct delay_io_count
-{
-    unsigned long stage_one[2];
-    unsigned long stage_two[2];
-    unsigned long stage_thr[2];
-    unsigned long stage_fou[2];
-    unsigned long stage_fiv[2];
-    unsigned long max_delay[2];
-    unsigned long cnt[2];
-    unsigned long total_delay[2];
-};
-
 #define IO_MAX_PROCESS  (32768)
 #define IO_RUNNING_MAX_PROCESS  (32)
 
@@ -296,12 +287,19 @@ struct delay_io_count
 #define IO_MAX_LOG_PER_BUF ((IO_MAX_BUF_ENTRY) / sizeof(struct io_trace_log_entry))
 #define IO_MAX_LOG_PER_GLOBAL \
     (((IO_MAX_GLOBAL_ENTRY) / sizeof(struct io_trace_log_entry)) - 1)
-
 #define IO_TRACE_LIMIT_LOG  (50000000)
 #define io_ns_to_ms(ns) ((ns) / 1000000)
 
+#define UFS_DELAY_DMD_CODE   (914009000)
+static struct task_struct *io_count_thread = NULL;
+static int io_count_thread_fn(void *data);
+#define UFS_IO_COUNT_UPLOAD_INTER (2 * 3600)//2 hours
+//#define UFS_IO_COUNT_UPLOAD_INTER (60)//60s for debug
+#define KB              (1024)
+static struct ufs_hba *fsr_hba = NULL;
+#define UFS_VENDOR_HI1861 0x8B6
+
 #ifdef CONFIG_SCSI_UFS_HI1861_VCMD
-static struct scsi_cmnd *fsr_scsi = NULL;
 static int iotrace_ufs_fsr_get(void);
 static int io_fsr_log_get(struct file *filp);
 
@@ -310,7 +308,7 @@ static struct task_struct *apr_work_thread = NULL;
 static int apr_work_thread_fn(void *data);
 
 #define UFS_HI1861_FSR_DMD_CODE  938008000
-#define UFS_HI1861_FSR_UPLOAD_INTER  (1 * 24 * 3600)//24 hours
+#define UFS_HI1861_FSR_UPLOAD_INTER  (1 * 12 * 3600)//24 hours
 //#define UFS_HI1861_FSR_UPLOAD_INTER  (60)
 #define UFS_HI1861_FSR_UPLOAD_FIRST_INTER (5 * 60)//5 minus
 #endif
@@ -468,6 +466,14 @@ enum
     SYS_IO_NUM,
 };
 
+//add for io delay monitor
+static unsigned int write_512k_max = 0, write_512k_min = 0, write_512k_avg = 0;
+static unsigned int write_4k_max = 0, write_4k_min = 0, write_4k_avg = 0;
+static unsigned int read_512k_max = 0, read_512k_min = 0, read_512k_avg = 0;
+static unsigned int read_4k_max = 0, read_4k_min = 0, read_4k_avg = 0;
+static unsigned int read_4k_cnt = 0, write_4k_cnt = 0, read_512k_cnt = 0, write_512k_cnt = 0;
+static unsigned int all_read_cnt = 0, all_write_cnt = 0;
+
 static struct file *open_log_file(char *name)
 {
     mm_segment_t oldfs;
@@ -499,8 +505,11 @@ static int write_file(struct file *filp, struct iovec *vec)
 
     oldfs = get_fs();
     set_fs(get_ds());
-
+#if LINUX_VERSION_CODE>= KERNEL_VERSION(4,9,0)
+    ret = vfs_writev(filp, vec, 1, &filp->f_pos, 0);
+#else
     ret = vfs_writev(filp, vec, 1, &filp->f_pos);
+#endif
     set_fs(oldfs);
     if (unlikely(ret < 0))
     {
@@ -530,7 +539,12 @@ static int write_io_monlog_kernel(struct file *filp, unsigned char *buf, int len
     oldfs = get_fs();
     set_fs(get_ds());
 
+#if LINUX_VERSION_CODE>= KERNEL_VERSION(4,9,0)
+    ret = vfs_writev(filp, vec, 1, &filp->f_pos, 0);
+#else
     ret = vfs_writev(filp, vec, 1, &filp->f_pos);
+#endif
+
     set_fs(oldfs);
 
     if (unlikely(ret < 0)){
@@ -545,17 +559,72 @@ static int write_io_monlog_kernel(struct file *filp, unsigned char *buf, int len
     return ret;
 }
 
+static int io_trace_count_upload(void)
+{
+    unsigned int ret = 0;
+    struct imonitor_eventobj *obj = imonitor_create_eventobj(UFS_DELAY_DMD_CODE);
+
+    if (!obj) {
+        io_trace_print("obj create failed! %d\n", UFS_DELAY_DMD_CODE);
+        return -1;
+    }
+
+    //DMD upload io delay
+    ret = ret | imonitor_set_param(obj, E914009000_READ_DELAY_4K_FIVE_INT, read_4k_cnt);
+    ret = ret | imonitor_set_param(obj, E914009000_WRITE_DELAY_4K_FIVE_INT, write_4k_cnt);
+    ret = ret | imonitor_set_param(obj, E914009000_READ_DELAY_4K_TWO_INT, read_4k_max);
+    ret = ret | imonitor_set_param(obj, E914009000_WRITE_DELAY_4K_TWO_INT, write_4k_max);
+    ret = ret | imonitor_set_param(obj, E914009000_READ_DELAY_4K_ONE_INT, read_4k_min);
+    ret = ret | imonitor_set_param(obj, E914009000_WRITE_DELAY_4K_ONE_INT, write_4k_min);
+    ret = ret | imonitor_set_param(obj, E914009000_READ_DELAY_512K_FIVE_INT, read_512k_cnt);
+    ret = ret | imonitor_set_param(obj, E914009000_WRITE_DELAY_512K_FIVE_INT, write_512k_cnt);
+    ret = ret | imonitor_set_param(obj, E914009000_READ_DELAY_512K_TWO_INT, read_512k_max);
+    ret = ret | imonitor_set_param(obj, E914009000_WRITE_DELAY_512K_TWO_INT, write_512k_max);
+    ret = ret | imonitor_set_param(obj, E914009000_READ_DELAY_512K_ONE_INT , read_512k_min);
+    ret = ret | imonitor_set_param(obj, E914009000_WRITE_DELAY_512K_ONE_INT , write_512k_min);
+    ret = ret | imonitor_set_param(obj, E914009000_READ_DELAY_4K_AVERAGE_INT , read_4k_avg);
+    ret = ret | imonitor_set_param(obj, E914009000_WRITE_DELAY_4K_AVERAGE_INT, write_4k_avg);
+    ret = ret | imonitor_set_param(obj, E914009000_READ_DELAY_512K_AVERAGE_INT , read_512k_avg);
+    ret = ret | imonitor_set_param(obj, E914009000_WRITE_DELAY_512K_AVERAGE_INT , write_512k_avg);
+    ret = ret | imonitor_set_param(obj, E914009000_READ_RUN_IO_NUM_INT, all_read_cnt);
+    ret = ret | imonitor_set_param(obj, E914009000_WRITE_RUN_IO_NUM_INT, all_write_cnt);
+
+#if 0
+	io_trace_print("io_delay: r_4_max: %d,r_4_min: %d,r_4_avg: %d,w_4_max: %d,w_4_min: %d,w_4_avg: %d\n",
+		read_4k_max, read_4k_min, read_4k_avg, write_4k_max, write_4k_min, write_4k_avg);
+	io_trace_print("io_delay: r_512_max: %d,r_512_min: %d,r_512_avg: %d,w_512_max: %d,w_512_min: %d,w_512_avg: %d\n",
+		read_512k_max, read_512k_min, read_512k_avg, write_512k_max, write_512k_min, write_512k_avg);
+    io_trace_print("io_cnt: r_4_cnt: %d, r_512_cnt: %d, w_4_cnt: %d, w_512_cnt: %d\n",
+            read_4k_cnt, read_512k_cnt, write_4k_cnt, write_512k_cnt);
+#endif
+    read_4k_max = read_4k_min = read_4k_avg = write_4k_max = write_4k_min = write_4k_avg = 0;
+    read_512k_max = read_512k_min = read_512k_avg = write_512k_max = write_512k_min = write_512k_avg = 0;
+    read_4k_cnt = read_512k_cnt = write_4k_cnt = write_512k_cnt = 0;
+    all_read_cnt = all_write_cnt = 0;
+
+	if (ret){
+		return -1;
+	} else {
+		imonitor_send_event(obj);
+		io_trace_print("%d, upload iocount and io delay succeed!\n", UFS_DELAY_DMD_CODE);
+	}
+
+    imonitor_destroy_eventobj(obj);
+
+    return 0;
+}
+
 #ifdef CONFIG_SCSI_UFS_HI1861_VCMD
 static int io_trace_fsr_upload(void)
 {
-    unsigned int ret;
-
     struct imonitor_eventobj *obj = imonitor_create_eventobj(UFS_HI1861_FSR_DMD_CODE);
 
     if (!obj) {
         io_trace_print("obj_fsr create failed!\n");
         return -1;
     }
+
+    io_trace_print("obj_fsr upload ing \n");
 
     imonitor_send_event(obj);
 
@@ -574,6 +643,7 @@ static int io_copy_interface_data(struct io_trace_interface *in_itface,
     int i;
     int len = -1;
 
+    in_itface->magic = out_itface->magic;
     in_itface->buff_len = out_itface->buff_len;
     in_itface->circum = out_itface->circum;
     in_itface->pid_num = out_itface->pid_num;
@@ -611,49 +681,7 @@ static int io_copy_interface_data(struct io_trace_interface *in_itface,
 
     return len;
 }
-/*
-static int do_io_accounting(struct task_struct *task, struct io_stat_output_entry *buffer, int whole)
-{
-	struct task_io_accounting acct = task->ioac;
-	unsigned long flags;
-	int result = 0;
-    struct io_stat_output_entry *entry = buffer;
 
-	result = mutex_lock_killable(&task->signal->cred_guard_mutex);
-	if (result)
-    {
-        io_trace_print("mutex lock killable failed!\n");
-		return result;
-    }
-
-//	if (!ptrace_may_access(task, PTRACE_MODE_READ)) {
-//		result = -EACCES;
-//		goto out_unlock;
-//	}
-
-	task_io_accounting_add(&acct, &task->signal->ioac);
-	if (whole && lock_task_sighand(task, &flags))
-    {
-		struct task_struct *t = task;
-		while_each_thread(task, t)
-			task_io_accounting_add(&acct, &t->ioac);
-
-		unlock_task_sighand(task, &flags);
-	}
-
-    entry->rchar = acct.rchar;
-    entry->wchar = acct.wchar;
-    entry->syscr = acct.syscr;
-    entry->syscw = acct.syscw;
-    entry->read_bytes = acct.read_bytes;
-    entry->write_bytes = acct.write_bytes;
-    entry->cancel_write_bytes = acct.cancelled_write_bytes;
-
-	mutex_unlock(&task->signal->cred_guard_mutex);
-
-	return result;
-}
-*/
 static inline int io_log_allow_pid(unsigned int pid_num, pid_t *o_pid, pid_t pid)
 {
     unsigned int i;
@@ -750,68 +778,17 @@ static struct io_trace_log_entry *io_trace_find_log(struct io_trace_interface *i
                 io_log_allow_action(entry->action))
         {
             trace_ctrl->out_log_index = index;
-            //find_flag = 1;
+            find_flag = 1;
             break;
         }
     }
-    return entry;
-    /*write file*/
-    /*lint -save -e438 -e527 -e578 -e774 -e838*/
-    if(find_flag)
-    {
-        int ret;
-
-        struct io_trace_log_entry *blk_entry = NULL;
-
-		unsigned int file_log_count = trace_ctrl->out_log_count;
-        unsigned int file_log_index = trace_ctrl->out_log_index;
-        unsigned int happen = 0;
-
-        ret = write_log_kernel(trace_ctrl->filp, entry);
-        if(ret < 0)
-        {
-            io_trace_print("write log kernel failed![%d]\n", ret);
-            return NULL;
-        }
-
-        while(file_log_count < total_count)
-        {
-            /*scan the request*/
-            file_log_count ++;
-            blk_entry = (((struct io_trace_log_entry *)(trace_ctrl->mem_mngt->all_trace_buff)) +
-                file_log_index);
-            file_log_index = (file_log_index == 0) ? (total_count - 1) : (file_log_index - 1);
-
-			/*happen the jank log index*/
-            if(!happen)
-            {
-                trace_ctrl->out_log_index = file_log_index;
-                trace_ctrl->out_log_count = file_log_count;
-            }
-            /*this is only one break*/
-            if(blk_entry->time < (entry->time - entry->delay))
-            {
-                break;
-            }
-
-            if((io_log_allow_pid(itface->pid_num, itface->pid, entry->tgid) &&
-                        io_log_allow_action(entry->action)))
-            {
-                happen = 1;
-            }
-
-            ret = write_log_kernel(trace_ctrl->filp, blk_entry);
-            if(ret < 0)
-            {
-                io_trace_print("write log kernel failed![%d]\n", ret);
-                return NULL;
-            }
-        }
+    if (find_flag == 1) {
+        return entry;
     }
-    /*lint restore*/
-    io_trace_print("loop all the log: %d\n", trace_ctrl->out_log_count);
-
-    return NULL;
+    else {
+        /* can't find */
+        return NULL;
+    }
 }
 
 static ssize_t io_log_data_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
@@ -825,6 +802,7 @@ static ssize_t io_log_data_show(struct kobject *kobj, struct kobj_attribute *att
     unsigned int r_max_delay = 0, r_total_delay = 0;
     unsigned int w_max_delay = 0, w_total_delay = 0;
     unsigned int r_cnt = 0, w_cnt = 0;
+	unsigned int count = 0;
 
 	struct io_trace_log_entry *blk_entry = NULL;
 
@@ -935,19 +913,21 @@ static ssize_t io_log_data_show(struct kobject *kobj, struct kobj_attribute *att
 log_end:
     /* store all 4mb buff log entry */
     /*lint -save -e713 -e574 -e737 -e747*/
-    if (io_trace_this->all_log_count > 0 && ((r_cnt + w_cnt) > 0))
+    if (io_trace_this->all_log_count > 0 && (((r_cnt + w_cnt) > 0) || (itface->magic == 0x5B)))
     {
 
 /* get hi1861 fsr log when blocked */
 #ifdef CONFIG_SCSI_UFS_HI1861_VCMD
-        ret_e = io_fsr_log_get(io_trace_this->filp);
+        if (ufs_manufacture == UFS_VENDOR_HI1861) {
+            ret_e = io_fsr_log_get(io_trace_this->filp);
 
-        if (ret_e < 0){
-            io_trace_print("fsr write log kernel failed:[%d]\n", ret_e);
+            if (ret_e < 0){
+                io_trace_print("fsr write log kernel failed:[%d]\n", ret_e);
+            }
         }
 #endif
 
-        unsigned int count = io_trace_this->all_log_count;
+        count = io_trace_this->all_log_count;
 
         for(i = io_trace_this->all_log_index, j = 0; j < count; j++)
         {
@@ -1022,7 +1002,7 @@ static ssize_t io_log_data_store(struct kobject *kobj,
         return ret;
     }
 
-    if(out_itface->magic == 0x5A)
+    if(out_itface->magic == 0x5A || out_itface->magic == 0x5B)
     {
         unsigned char *mem= io_mem_mngt_alloc(io_trace_this->mem_mngt);
         if(mem == NULL)
@@ -1088,10 +1068,12 @@ static ssize_t sysfs_io_trace_attr_show(struct device *dev,
             return ret;
         }
 #ifdef CONFIG_SCSI_UFS_HI1861_VCMD
-        ret_e = io_fsr_log_get(io_trace_this->filp);
- 
-        if (ret_e < 0){
-            io_trace_print("fsr write log kernel failed:[%d]\n", ret_e);
+        if (ufs_manufacture == UFS_VENDOR_HI1861) {
+            ret_e = io_fsr_log_get(io_trace_this->filp);
+
+            if (ret_e < 0){
+                io_trace_print("fsr write log kernel failed:[%d]\n", ret_e);
+            }
         }
 #endif
         write_head_kernel(io_trace_this->filp);
@@ -1125,7 +1107,7 @@ static ssize_t sysfs_io_trace_attr_show(struct device *dev,
         io_trace_this->enable = 0;
 
         ret = iotrace_ufs_fsr_get();
- 
+
         if(ret >= 0)
             ret = sprintf(buf, "Succeed\n");
         else{
@@ -1135,6 +1117,7 @@ static ssize_t sysfs_io_trace_attr_show(struct device *dev,
         io_trace_this->enable = 1;
 
     }
+
 #endif
     return ret;
 }
@@ -1151,7 +1134,7 @@ static ssize_t sysfs_io_trace_attr_store(struct device *dev,
         sscanf(buf, "%u", &value);
         if(value == 1)
         {
-            if((io_trace_this->first == 0))
+            if(io_trace_this->first == 0)
             {
                 ret = trace_mm_init(io_trace_this);
                 if(ret < 0)
@@ -1205,32 +1188,32 @@ static ssize_t sysfs_io_trace_attr_store(struct device *dev,
 }
 
 #ifdef CONFIG_SCSI_UFS_HI1861_VCMD
-extern int ufshcd_get_fsr_command(struct scsi_cmnd *cmd, unsigned char *buf, unsigned int size);
+extern int ufshcd_get_fsr_command(struct ufs_hba *hba, unsigned char *buf, unsigned int size);
 static int iotrace_ufs_fsr_get(void)
 {
-    struct scsi_cmnd *fsr_scsi_tmp = fsr_scsi;
-    if(fsr_scsi_tmp == NULL)
-        return -1;
+	struct ufs_kirin_host *host_kirin = NULL;
+    static struct file *fsr_filp = NULL;
+	int ret = 0;
+    char file_name[128];
 
-    struct ufs_hba *hba;
-    struct Scsi_Host *host = fsr_scsi_tmp->device->host;
-    hba = shost_priv(host);
-
-    if(!hba)
+    if(!fsr_hba)
     {
         io_trace_print("%s shost_priv host failed\n", __func__);
         return -1;
     }
 
-    if ( (hba->manufacturer_id == NULL) || (hba->manufacturer_id != 0x8B6) )
+    if ( (fsr_hba->manufacturer_id == 0) || (UFS_VENDOR_HI1861 != fsr_hba->manufacturer_id) )
     {
         io_trace_print("fsr is only for hi1861!\n");
         return -1;
     }
 
-	int ret = 0;
-    char file_name[128];
-    static struct file *fsr_filp = NULL;
+    host_kirin = fsr_hba->priv;
+
+    if ( host_kirin -> in_suspend ){
+        io_trace_print("hiVV device is in suspend!\n");
+        return -1;
+    }
 
     sprintf(file_name, "/sdcard/log_%s", "fsr");
     fsr_filp = open_log_file(file_name);
@@ -1256,28 +1239,30 @@ static int iotrace_ufs_fsr_get(void)
 
 static int io_fsr_log_get(struct file *filp)
 {
-    struct scsi_cmnd *fsr_scsi_tmp = fsr_scsi;
-    if(fsr_scsi_tmp == NULL)
-        return -1;
+	struct ufs_kirin_host *host_kirin = NULL;
+	unsigned char *mem = NULL;
+	int ret = 0;
 
-    struct ufs_hba *hba;
-    struct Scsi_Host *host = fsr_scsi_tmp->device->host;
-    hba = shost_priv(host);
-
-    if(!hba)
+    if(!fsr_hba)
     {
         io_trace_print("%s shost_priv host failed\n", __func__);
         return -1;
     }
 
-    if ( (hba->manufacturer_id == NULL) || (hba->manufacturer_id != 0x8B6) )
+    if ( (fsr_hba->manufacturer_id == 0) || (UFS_VENDOR_HI1861 != fsr_hba->manufacturer_id) )
     {
         io_trace_print("fsr is only for hi1861!\n");
         return -1;
     }
 
-    int ret = 0;
-    unsigned char *mem = io_mem_mngt_alloc(io_trace_this->mem_mngt);
+    host_kirin = fsr_hba->priv;
+
+    if ( host_kirin -> in_suspend ) {
+        io_trace_print("hiVV is in suspend!\n");
+        return -1;
+    }
+
+    mem = io_mem_mngt_alloc(io_trace_this->mem_mngt);
 
     if(filp == NULL)
     {
@@ -1292,7 +1277,7 @@ static int io_fsr_log_get(struct file *filp)
         goto end;
     }
 
-    ret = ufshcd_get_fsr_command(fsr_scsi_tmp, mem, IO_MAX_BUF_ENTRY);
+    ret = ufshcd_get_fsr_command(fsr_hba, mem, IO_MAX_BUF_ENTRY);
 
     if(ret < 0){
         io_trace_print("get fsr log kernel failed !\n");
@@ -1372,10 +1357,17 @@ static int write_log_kernel(struct file *filp, struct io_trace_log_entry *entry)
     // format: <priority:1><message:N>\0
     io_entry_rw(entry->rw, rw_type);
     /*lint -save -e705*/
-    len = sprintf(buf, "%-5d&%-10d&%-10d&%-20s&%-20ld&%-12ld&%-10d&%-12s&%-15ld&%-5s&%-10s&%-10ld\n", entry->cpu,
-            entry->tgid, entry->pid, entry->comm, entry->time, entry->inode, entry->nr_bytes,
-            all_trace_action[entry->action].name, entry->delay,
-            rw_type, entry->f_name, entry->f_time);
+    if ( entry->action != SCSI_BLK_CMD_RW_END_TAG) {
+        len = sprintf(buf, "%-5d&%-10d&%-10d&%-20s&%-20ld&%-12ld&%-10d&%-12s&%-15ld&%-5s&%-10s&%-10ld\n", entry->cpu,
+                entry->tgid, entry->pid, entry->comm, entry->time, entry->inode, entry->nr_bytes,
+                all_trace_action[entry->action].name, entry->delay,
+                rw_type, entry->f_name, entry->f_time);
+    } else {
+         len = sprintf(buf, "%-5d&%-10d&%-10d&%-20s&%-20ld&%-12ld&%-10d&%-12s&0x%-13lx&%-5s&%-10s&%-10ld\n", entry->cpu,
+                entry->tgid, entry->pid, entry->comm, entry->time, entry->inode, entry->nr_bytes,
+                all_trace_action[entry->action].name, entry->delay,
+                rw_type, entry->f_name, entry->f_time);
+    }
     /*lint restore*/
     vec[0].iov_base = buf;
     vec[0].iov_len  = len;
@@ -1475,38 +1467,45 @@ struct io_trace_tag_attr
     void (*handler)(struct io_trace_pid *trace_pid, unsigned int action,
             unsigned int parent, unsigned long inode);
 };
-/*
+
 static unsigned int io_trace_find_index(struct io_trace_log_entry *begin_entry,
-        unsigned int log_index, unsigned int log_count, unsigned int action,
-        unsigned int parent, unsigned long inode)
+        unsigned int count_all,unsigned int log_index, unsigned int log_count, unsigned int action,
+        unsigned int parent, unsigned long inode, unsigned int nr_bytes)
 {
     unsigned int index;
-    unsigned int index_cnt = 0;
     struct io_trace_log_entry *entry = NULL;
-
+    unsigned int count = (count_all >= 5000) ? 5000 : count;
     io_trace_assert(action > parent);
 
     index = log_index;
     while(log_count > 0)
     {
-        index = (index == 0) ? (IO_MAX_LOG_PER_GLOBAL - 1) : (index - 1);
+        index = (index == 0) ? (count_all - 1) : (index - 1);
         entry = (((struct io_trace_log_entry *)(begin_entry)) + index);
-        index_cnt ++;
-        if(entry->action == parent && inode == entry->inode)
-        {
+        if (entry != NULL){
+            if((entry->action == parent) && (inode == entry->inode) && (entry->nr_bytes == nr_bytes)) {
+                break;
+            } else if(entry->action == parent) {
+                log_count --;
+            }
+        } else {
             break;
         }
-        log_count --;
+        //add for when can't find start on entry
+        count --;
+        if (count <= 0) {
+            break;
+        }
     }
 
-    if(!log_count)
+    if((!log_count) || (count <= 0))
     {
         return (unsigned int)-1;
     }
 
     return index;
 }
-*/
+
 
 static unsigned long io_trace_direct_delay(struct io_trace_pid *trace_pid,
         unsigned int action, unsigned int parent, unsigned long log_time,
@@ -1571,6 +1570,115 @@ static void io_trace_global_log(unsigned int action, unsigned long sector,
     if(sector == ((unsigned long)-1))
     {
         sector = (unsigned long)0;
+    }
+
+    if (action == BLOCK_RQ_COMPLETE_TAG) {
+        if ((rw_flags & IO_TRACE_WRITE) == 0)
+            all_read_cnt ++;
+        else if ((rw_flags & IO_TRACE_WRITE) == 1)
+            all_write_cnt ++;
+    }
+
+    if(parent && (sector != 0) && (action == BLOCK_RQ_COMPLETE_TAG) &&
+            ((nr_bytes == (4 * KB)) || (nr_bytes == (512 * KB))) && (io_trace_this->all_log_count >= IO_MAX_LOG_PER_GLOBAL)){
+        //char rw_type[32];
+        struct io_trace_log_entry *begin =
+            (struct io_trace_log_entry *)(trace_ctrl->mem_mngt->all_trace_buff);
+        unsigned int count = io_trace_this->all_log_count;
+        struct io_trace_log_entry *index_entry;
+        unsigned int index;
+        unsigned int cnt_flag = 1;
+        //unsigned int time_flag = 1, delay_type = 0;
+
+        index = io_trace_find_index(begin, count, trace_ctrl->all_log_index, 32, action, parent,
+                sector ,nr_bytes);
+
+        if(index != (unsigned int)(-1)){
+            index_entry = (begin + index);
+            delay = log_time - index_entry->time;
+        } else {
+            delay = 0xFFFFFFFF;
+        }
+
+        if(delay != 0xFFFFFFFF){
+            if((rw_flags & IO_TRACE_WRITE) == 0){//it's read io
+                if (nr_bytes == (4 * KB)){
+					if (read_4k_max == 0 && read_4k_min == 0 && read_4k_avg == 0)
+					{
+						read_4k_avg = read_4k_max = read_4k_min = delay;
+					} else {
+						if (delay > read_4k_max)
+						{
+							read_4k_max = delay;
+						}
+						if (delay < read_4k_min)
+						{
+							read_4k_min = delay;
+						}
+						read_4k_avg = (delay + read_4k_avg) / 2;
+					}
+				    read_4k_cnt ++;
+                } else if (nr_bytes == (512 * KB)){
+					if (read_512k_max == 0 && read_512k_min == 0 && read_512k_avg == 0)
+					{
+						read_512k_avg = read_512k_max = read_512k_min = delay;
+					} else {
+						if (delay > read_512k_max)
+						{
+							read_512k_max = delay;
+						}
+						if (delay < read_512k_min)
+						{
+							read_512k_min = delay;
+						}
+						read_512k_avg = (delay + read_512k_avg) / 2;
+					}
+				    read_512k_cnt ++;
+                }
+            } else if ((rw_flags & IO_TRACE_WRITE) == 1){//it's write io
+                if (nr_bytes == (4 * KB)){
+					if (write_4k_max == 0 && write_4k_min == 0 && write_4k_avg == 0)
+					{
+						write_4k_avg = write_4k_max = write_4k_min = delay;
+					} else {
+						if (delay > write_4k_max)
+						{
+							write_4k_max = delay;
+						}
+						if (delay < write_4k_min)
+					    {
+							write_4k_min = delay;
+						}
+						write_4k_avg = (delay + write_4k_avg) / 2;
+					}
+				    write_4k_cnt ++;
+                } else if (nr_bytes == (512 * KB)){
+					if (write_512k_max == 0 && write_512k_min == 0 && write_512k_avg == 0)
+					{
+						write_512k_avg = write_512k_max = write_512k_min = delay;
+					} else {
+						if (delay > write_512k_max)
+						{
+							write_512k_max = delay;
+						}
+						if (delay < write_512k_min)
+						{
+							write_512k_min = delay;
+						}
+						write_512k_avg = (delay + write_512k_avg) / 2;
+					}
+				    write_512k_cnt ++;
+                }
+            }
+        }else{
+            delay = 0;
+        }
+#if 0
+
+        //io_trace_print("scsi cmd delay is %ld sector : %ld ,size : %ld, rw_type : %s\n", delay, sector, nr_bytes, rw_type);
+        io_trace_print("%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d\n",write_512k_max, write_512k_min, write_512k_avg, write_4k_max,
+                write_4k_min,write_4k_avg,read_512k_max,read_512k_min,read_512k_avg,read_4k_max, read_4k_min, read_4k_avg);
+#endif
     }
 
     all_log_entry = io_get_all_buf(trace_ctrl);
@@ -1709,15 +1817,18 @@ static void io_trace_add_log(unsigned int action, unsigned long i_ino,
 
 static int io_entry_fname(struct io_trace_tag_attr *tag, struct file *filp)
 {
-    struct dentry *dir = filp->f_path.dentry;
     unsigned int len = (sizeof(tag->f_name) - 1);
+    struct dentry *dir = filp->f_path.dentry;
+
+    if (dir == NULL) {
+        return 0;
+    }
 
     if(dir->d_name.name)
     {
         len = len > dir->d_name.len ? dir->d_name.len : len;
         memcpy(tag->f_name, dir->d_name.name, len);
         tag->f_name[len] = '\0';
-
         return 1;
     }
     else
@@ -1757,16 +1868,20 @@ static void io_generic_file_read_begin(void *ignore, struct file *filp, size_t c
 
 static void io_generic_file_read_end(void *ignore, struct file *filp, size_t count)
 {
-	struct inode *inode = filp->f_mapping->host;
+	struct inode *inode = NULL;
     struct io_trace_tag_attr tag_attr;
     int ret = 0;
 
     io_tag_attr_init(&tag_attr);
     tag_attr.parent = READ_BEGIN_TAG;
     tag_attr.func = io_trace_direct_delay;
-    tag_attr.rw_flags = IO_TRACE_READ; 
+    tag_attr.rw_flags = IO_TRACE_READ;
     tag_attr.nr_bytes = count;
 
+    if (filp == NULL) {
+        return;
+    }
+    inode = filp->f_mapping->host;
     ret = io_entry_fname(&tag_attr, filp);
     if(ret)
     {
@@ -1781,15 +1896,19 @@ static void io_generic_file_read_end(void *ignore, struct file *filp, size_t cou
     return;
 }
 
-static void io_generic_perform_write_enter(void *ignore, struct file *file,
+static void io_generic_perform_write_enter(void *ignore, struct file *filp,
         size_t count, loff_t pos)
-{ 
-	struct inode *inode = file->f_mapping->host;
+{
+	struct inode *inode = NULL;
     struct io_trace_tag_attr tag_attr;
 
     io_tag_attr_init(&tag_attr);
-    tag_attr.rw_flags = IO_TRACE_WRITE; 
+    tag_attr.rw_flags = IO_TRACE_WRITE;
 
+    if (filp == NULL) {
+        return;
+    }
+	inode = filp->f_mapping->host;
     if(io_trace_this->enable)
     {
         io_trace_add_log(WRITE_BEGIN_TAG, inode->i_ino, &tag_attr);
@@ -1798,19 +1917,23 @@ static void io_generic_perform_write_enter(void *ignore, struct file *file,
     return;
 }
 
-static void io_generic_perform_write_end(void *ignore, struct file *file, size_t count)
+static void io_generic_perform_write_end(void *ignore, struct file *filp, size_t count)
 {
-	struct inode *inode = file->f_mapping->host;
+	struct inode *inode = NULL;
     struct io_trace_tag_attr tag_attr;
     int ret = 0;
 
     io_tag_attr_init(&tag_attr);
     tag_attr.parent = WRITE_BEGIN_TAG;
     tag_attr.func = io_trace_direct_delay;
-    tag_attr.rw_flags = IO_TRACE_WRITE; 
+    tag_attr.rw_flags = IO_TRACE_WRITE;
     tag_attr.nr_bytes = count;
 
-    ret = io_entry_fname(&tag_attr, file);
+    if (filp == NULL) {
+        return;
+    }
+    inode = filp->f_mapping->host;
+    ret = io_entry_fname(&tag_attr, filp);
     if(ret)
     {
         tag_attr.fname_flag = 1;
@@ -1830,7 +1953,7 @@ static void io_ext4_da_write_begin(void *ignore, struct inode *inode,
     struct io_trace_tag_attr tag_attr;
 
     io_tag_attr_init(&tag_attr);
-    tag_attr.rw_flags = IO_TRACE_WRITE; 
+    tag_attr.rw_flags = IO_TRACE_WRITE;
 
     if(io_trace_this->enable)
     {
@@ -1878,18 +2001,22 @@ static void io_ext4_sync_write_wait_end(void *ignore, struct file *file, int dat
     return;
 }
 
-static void io_ext4_sync_file_end(void *ignore, struct file *file, int ret)
+static void io_ext4_sync_file_end(void *ignore, struct file *filp, int ret)
 {
-	struct inode *inode = file->f_mapping->host;
+	int r = 0;
+	struct inode *inode = NULL;
     struct io_trace_tag_attr tag_attr;
-    int r = 0;
 
     io_tag_attr_init(&tag_attr);
     tag_attr.parent = EXT4_SYNC_ENTER_TAG;
     tag_attr.func = io_trace_direct_delay;
-    tag_attr.rw_flags = IO_TRACE_WRITE; 
+    tag_attr.rw_flags = IO_TRACE_WRITE;
 
-    r = io_entry_fname(&tag_attr, file);
+	if (filp == NULL) {
+        return;
+    }
+    inode = filp->f_mapping->host;
+    r = io_entry_fname(&tag_attr, filp);
     if(r)
     {
         tag_attr.fname_flag = 1;
@@ -2019,12 +2146,60 @@ static void blk_dm_request(void *ignore, struct request_queue *q, struct bio *bi
 }
 #endif
 
+#if LINUX_VERSION_CODE>= KERNEL_VERSION(4,9,0)
+static int iotrace_io_type_parse(unsigned long long op, unsigned long long flag)
+{
+    unsigned int rw_type = 0;
+
+    switch(op) {
+        case REQ_OP_READ:
+            rw_type = rw_type | IO_TRACE_READ;
+            break;
+        case REQ_OP_WRITE:
+            rw_type = rw_type | IO_TRACE_WRITE;
+            break;
+        case REQ_OP_DISCARD:
+            rw_type = rw_type | IO_TRACE_DISCARD;
+            break;
+        case REQ_OP_SECURE_ERASE:
+            rw_type = rw_type | IO_TRACE_SECURE_ERASE;
+            break;
+        case REQ_OP_WRITE_SAME:
+            rw_type = rw_type | IO_TRACE_WRITE_SAME;
+            break;
+        case REQ_OP_FLUSH:
+            rw_type = rw_type | IO_TRACE_FLUSH;
+            break;
+        default:
+            break;
+    }
+
+    if (flag & REQ_FUA)
+        rw_type = rw_type | IO_TRACE_FUA;
+    if (flag & REQ_SYNC)
+        rw_type = rw_type | IO_TRACE_SYNC;
+    if (flag & REQ_META)
+        rw_type = rw_type | IO_TRACE_META;
+    if (flag & REQ_FG)
+        rw_type = rw_type | IO_TRACE_FG;
+
+    return rw_type;
+}
+#endif
+
+#if 0
 static void blk_add_trace_bio_wbt_done(void *ignore, struct bio *bio)
 {
     if(io_trace_this->enable)
     {
+#if LINUX_VERSION_CODE>= KERNEL_VERSION(4,9,0)
+        unsigned int rw_type = iotrace_io_type_parse(bio_op(bio), bio->bi_opf);
+        io_trace_global_log(BLOCK_BIO_WBT_TAG, bio->bi_iter.bi_sector, bio->bi_iter.bi_size,
+                0, 0, 0, rw_type, NULL, 0);
+#else
         io_trace_global_log(BLOCK_BIO_WBT_TAG, bio->bi_iter.bi_sector, bio->bi_iter.bi_size,
                 0, 0, 0, bio->bi_rw, NULL, 0);
+#endif
     }
 
     return;
@@ -2034,17 +2209,30 @@ static void io_f2fs_detected_quasi(void *ignore, struct bio *bio)
 {
     if(io_trace_this->enable)
     {
+#if LINUX_VERSION_CODE>= KERNEL_VERSION(4,9,0)
+        unsigned int rw_type = iotrace_io_type_parse(bio_op(bio), bio->bi_opf);
+        io_trace_global_log(F2FS_QUASI_DETECTED_TAG, bio->bi_iter.bi_sector, bio->bi_iter.bi_size,
+                0, 0, 0, rw_type, NULL, 0);
+#else
         io_trace_global_log(F2FS_QUASI_DETECTED_TAG, bio->bi_iter.bi_sector, bio->bi_iter.bi_size,
                 0, 0, 0, bio->bi_rw, NULL, 0);
+#endif
     }
 }
+#endif
 
 static void blk_add_trace_rq_insert(void *ignore, struct request_queue *q, struct request *rq)
 {
     if(io_trace_this->enable)
     {
+#if LINUX_VERSION_CODE>= KERNEL_VERSION(4,9,0)
+        unsigned int rw_type = iotrace_io_type_parse(req_op(rq), rq->cmd_flags);
+        io_trace_global_log(BLOCK_RQ_INSERT_TAG, blk_rq_pos(rq), blk_rq_bytes(rq),
+                0, 0, 0, rw_type, NULL, 0);
+#else
         io_trace_global_log(BLOCK_RQ_INSERT_TAG, blk_rq_pos(rq), blk_rq_bytes(rq),
                 0, 0, 0, rq->cmd_flags, NULL, 0);
+#endif
     }
 
     return;
@@ -2054,8 +2242,14 @@ static void blk_add_trace_rq_issue(void *ignore, struct request_queue *q, struct
 
     if(io_trace_this->enable)
     {
+#if LINUX_VERSION_CODE>= KERNEL_VERSION(4,9,0)
+        unsigned int rw_type = iotrace_io_type_parse(req_op(rq), rq->cmd_flags);
+        io_trace_global_log(BLOCK_RQ_ISSUE_TAG, blk_rq_pos(rq), blk_rq_bytes(rq),
+                BLOCK_BIO_QUEUE_TAG, 0, 0, rw_type, NULL, 0);
+#else
         io_trace_global_log(BLOCK_RQ_ISSUE_TAG, blk_rq_pos(rq), blk_rq_bytes(rq),
                 BLOCK_BIO_QUEUE_TAG, 0, 0, rq->cmd_flags, NULL, 0);
+#endif
     }
 
     return;
@@ -2064,26 +2258,34 @@ static void blk_add_trace_rq_issue(void *ignore, struct request_queue *q, struct
 static void blk_add_trace_rq_complete(void *ignore, struct request_queue *q,
         struct request *rq, unsigned int nr_bytes)
 {
-
     if(io_trace_this->enable)
     {
+#if LINUX_VERSION_CODE>= KERNEL_VERSION(4,9,0)
+        unsigned int rw_type = iotrace_io_type_parse(req_op(rq), rq->cmd_flags);
+        io_trace_global_log(BLOCK_RQ_COMPLETE_TAG, blk_rq_pos(rq), blk_rq_bytes(rq),
+                BLOCK_RQ_ISSUE_TAG, 0, 0, rw_type, NULL, 0);
+#else
         io_trace_global_log(BLOCK_RQ_COMPLETE_TAG, blk_rq_pos(rq), blk_rq_bytes(rq),
                 BLOCK_RQ_ISSUE_TAG, 0, 0, rq->cmd_flags, NULL, 0);
+#endif
     }
-
     return;
 }
 
 static void blk_add_trace_rq_abort(void *ignore, struct request_queue *q,
         struct request *rq)
 {
-
     if(io_trace_this->enable)
     {
+#if LINUX_VERSION_CODE>= KERNEL_VERSION(4,9,0)
+        unsigned int rw_type = iotrace_io_type_parse(req_op(rq), rq->cmd_flags);
         io_trace_global_log(BLOCK_RQ_ABORT_TAG, blk_rq_pos(rq), blk_rq_bytes(rq),
+                0, 0, 0, rw_type, NULL, 0);
+#else
+		io_trace_global_log(BLOCK_RQ_ABORT_TAG, blk_rq_pos(rq), blk_rq_bytes(rq),
                 0, 0, 0, rq->cmd_flags, NULL, 0);
+#endif
     }
-
     return;
 }
 
@@ -2108,8 +2310,14 @@ static void blk_add_trace_sleeprq(void *ignore, struct request_queue *q,
 
     if(io_trace_this->enable && bio)
     {
+#if LINUX_VERSION_CODE>= KERNEL_VERSION(4,9,0)
+        unsigned int rw_type = iotrace_io_type_parse(bio_op(bio), bio->bi_opf);
+        io_trace_global_log(BLOCK_RQ_SLEEP_TAG,  bio->bi_iter.bi_sector, bio->bi_iter.bi_size,
+               0, 0, 0, rw_type, NULL, 0);
+#else
         io_trace_global_log(BLOCK_RQ_SLEEP_TAG,  bio->bi_iter.bi_sector, bio->bi_iter.bi_size,
                0, 0, 0, bio->bi_rw, NULL, 0);
+#endif
     }
 
     return;
@@ -2120,8 +2328,14 @@ static void blk_add_trace_bio_remap(void *ignore, struct request_queue *q,
 {
     if(io_trace_this->enable)
     {
+#if LINUX_VERSION_CODE>= KERNEL_VERSION(4,9,0)
+        unsigned int rw_type = iotrace_io_type_parse(bio_op(bio), bio->bi_opf);
+        io_trace_global_log(BLOCK_BIO_REMAP_TAG, bio->bi_iter.bi_sector, bio->bi_iter.bi_size,
+                0, 0, from, rw_type, NULL, 0);
+#else
         io_trace_global_log(BLOCK_BIO_REMAP_TAG, bio->bi_iter.bi_sector, bio->bi_iter.bi_size,
                 0, 0, from, bio->bi_rw, NULL, 0);
+#endif
     }
 
     return;
@@ -2207,9 +2421,7 @@ static void scsi_dispatch_cmd_start(void *ignore, struct scsi_cmnd *cmd)
     unsigned char len[2];
     unsigned int *addr;
     unsigned short *size;
-#ifdef CONFIG_SCSI_UFS_HI1861_VCMD
-    fsr_scsi = NULL;
-#endif
+
     c[0] = cmd->cmnd[5];
     c[1] = cmd->cmnd[4];
     c[2] = cmd->cmnd[3];
@@ -2241,9 +2453,23 @@ static void scsi_dispatch_cmd_done(void *ignore, struct scsi_cmnd *cmd)
     unsigned char len[2];
     unsigned int *addr;
     unsigned short *size;
-#ifdef CONFIG_SCSI_UFS_HI1861_VCMD
+    struct scsi_cmnd *fsr_scsi = NULL;
+	struct Scsi_Host *host = NULL;
+
     fsr_scsi = (struct scsi_cmnd *)cmd;
-#endif
+
+    if(fsr_scsi->device->host == NULL)
+        return;
+
+    host = fsr_scsi->device->host;
+    fsr_hba = shost_priv(host);
+
+    if(!fsr_hba)
+    {
+        io_trace_print("%s shost_priv host failed\n", __func__);
+        return;
+    }
+
     c[0] = cmd->cmnd[5];
     c[1] = cmd->cmnd[4];
     c[2] = cmd->cmnd[3];
@@ -2263,7 +2489,7 @@ static void scsi_dispatch_cmd_done(void *ignore, struct scsi_cmnd *cmd)
     }
 
     if (io_trace_this->enable){
-        io_trace_global_log(SCSI_BLK_CMD_RW_END_TAG, (*addr) * 8, (*size) * 16, SCSI_BLK_CMD_RW_START_TAG, 0, 0, rw_flags, NULL, 0);
+        io_trace_global_log(SCSI_BLK_CMD_RW_END_TAG, (*addr) * 8, (*size) * 16, SCSI_BLK_CMD_RW_START_TAG, 0, fsr_hba->lrb_in_use, rw_flags, NULL, 0);
     }
     return;
 }
@@ -2448,6 +2674,9 @@ static void iotrace_register_tracepoints(void)
     ret = register_trace_f2fs_write_checkpoint(io_f2fs_write_checkpoint, NULL);
     WARN_ON(ret);
 #if 0
+    ret = register_trace_f2fs_submit_page_bio(io_f2fs_submit_page_bio, NULL);
+    WARN_ON(ret);
+
     /* to detect quasi */
     ret = register_trace_f2fs_detected_quasi(io_f2fs_detected_quasi, NULL);
     WARN_ON(ret);
@@ -2758,6 +2987,37 @@ failed:
 
 }
 
+static int io_count_thread_fn(void *data)
+{
+    int ret = 0;
+
+    while (1) {
+        set_current_state(TASK_UNINTERRUPTIBLE);
+        if (kthread_should_stop()) {
+            break;
+        }
+        schedule_timeout(UFS_IO_COUNT_UPLOAD_INTER * HZ);
+
+        __set_current_state(TASK_RUNNING);
+
+        if (!io_trace_this->enable)
+        {
+            continue;
+        }
+
+        io_trace_this->enable = 0;
+
+        ret = io_trace_count_upload();
+
+        if (ret < 0){
+            io_trace_print("io_count upload failed!\n");
+        }
+
+        io_trace_this->enable = 1;
+    }
+    return 0;
+}
+
 #ifdef CONFIG_SCSI_UFS_HI1861_VCMD
 static int apr_work_thread_fn(void *data)
 {
@@ -2781,7 +3041,7 @@ static int apr_work_thread_fn(void *data)
             schedule_timeout(UFS_HI1861_FSR_UPLOAD_INTER * HZ);
         }
 
-        if((ufs_manufacture != 0x8b6) && apr_work_thread)
+        if((ufs_manufacture != UFS_VENDOR_HI1861) && apr_work_thread)
         {
             //io_trace_print("add by Somic,fsr thread kill\n");
             apr_work_thread = NULL;
@@ -2789,7 +3049,7 @@ static int apr_work_thread_fn(void *data)
         }
 
         __set_current_state(TASK_RUNNING);
-        if ((!io_trace_this->enable) || (fsr_scsi == NULL))
+        if ((!io_trace_this->enable) || (fsr_hba == NULL))
         {
             continue;
         }
@@ -2855,13 +3115,29 @@ static int __init io_trace_init(void)
     spin_lock_init(&global_spinlock);
     mutex_init(&output_mutex);
 
+    if (io_count_thread == NULL){
+        io_count_thread = kthread_create(io_count_thread_fn, NULL, "iotrace_delay");
+
+        if(IS_ERR(io_count_thread))
+        {
+            io_trace_print("Unable to start io count upload thread!\n");
+            err = PTR_ERR(io_count_thread);
+            io_count_thread = NULL;
+        }
+
+        if (!err)
+        {
+            io_trace_print("io count upload thread start succeed, %d\n", io_count_thread);
+            wake_up_process(io_count_thread);
+        }
+    }
 #ifdef CONFIG_SCSI_UFS_HI1861_VCMD
     ufs_manufacture = get_bootdevice_manfid();
 
     io_trace_print("manfid : 0x%x\n", ufs_manufacture);
 
     //start fsr get thead
-    if((ufs_manufacture == 0x8b6) && (apr_work_thread == NULL)){
+    if((ufs_manufacture == UFS_VENDOR_HI1861) && (apr_work_thread == NULL)){
         apr_work_thread = kthread_create(apr_work_thread_fn, NULL, "hi1861-fsr");
 
         if(IS_ERR(apr_work_thread))

@@ -7,6 +7,9 @@ int nl80211_init(void);
 void nl80211_exit(void);
 void nl80211_notify_wiphy(struct cfg80211_registered_device *rdev,
 			  enum nl80211_commands cmd);
+void nl80211_notify_iface(struct cfg80211_registered_device *rdev,
+			  struct wireless_dev *wdev,
+			  enum nl80211_commands cmd);
 void nl80211_send_scan_start(struct cfg80211_registered_device *rdev,
 			     struct wireless_dev *wdev);
 struct sk_buff *nl80211_build_scan_msg(struct cfg80211_registered_device *rdev,
@@ -55,7 +58,7 @@ void nl80211_send_connect_result(struct cfg80211_registered_device *rdev,
 				 struct net_device *netdev, const u8 *bssid,
 				 const u8 *req_ie, size_t req_ie_len,
 				 const u8 *resp_ie, size_t resp_ie_len,
-				 u16 status, gfp_t gfp);
+				 int status, gfp_t gfp);
 void nl80211_send_roamed(struct cfg80211_registered_device *rdev,
 			 struct net_device *netdev, const u8 *bssid,
 			 const u8 *req_ie, size_t req_ie_len,
@@ -96,5 +99,9 @@ void cfg80211_rdev_free_coalesce(struct cfg80211_registered_device *rdev);
 #if (defined (CONFIG_HW_VOWIFI) || defined (CONFIG_HW_ABS))
 void
 cfg80211_do_drv_private(struct net_device *dev, gfp_t gfp, enum nl80211_commands command);
+#endif
+#if (defined (CONFIG_HW_WIFI_MSS) || defined (CONFIG_HW_WIFI_RSSI))
+void cfg80211_do_drv_private_params(struct net_device *dev, gfp_t gfp,
+			enum nl80211_commands command, u32 subcmd, const u8 *ie, size_t ie_len);
 #endif
 #endif /* __NET_WIRELESS_NL80211_H */

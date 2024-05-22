@@ -84,24 +84,24 @@ typedef oal_uint8   oam_ratelimit_output_enum_uint8;
 /*****************************************************************************
   4 全局变量声明
 *****************************************************************************/
-//extern oam_mng_ctx_stru             g_st_oam_mng_ctx;
-extern oam_software_feature_stru    gst_oam_feature_list[];
+//extern oam_mng_ctx_stru             g_st_oam_mng_ctx_etc;
+extern oam_software_feature_stru    gst_oam_feature_list_etc[];
 
 /*****************************************************************************
   10 函数声明
 *****************************************************************************/
-extern oal_int32  oam_main_init(oal_void);
-extern oal_void   oam_main_exit(oal_void);
-extern oal_uint32   oam_send_device_data2sdt(oal_uint8* pc_string, oal_uint16 len);
-extern oal_uint32  oam_set_file_path(oal_int8 *pc_file_path, oal_uint32 ul_length);
-extern oal_uint32  oam_set_output_type(oam_output_type_enum_uint8 en_output_type);
-extern oal_uint32  oam_print(oal_int8 *pc_string);
-extern oal_uint32  oam_print_to_file(oal_int8 *pc_string);
-extern oal_uint32  oam_print_to_sdt(oal_int8 *pc_string);
-extern oal_uint32  oam_print_to_console(oal_int8 *pc_string);
-extern oal_uint32  oam_upload_log_to_sdt(oal_int8 *pc_string);
-extern oal_void oam_dump_buff_by_hex(oal_uint8 *puc_buff, oal_int32 l_len, oal_int32 l_num);
-extern oam_ratelimit_output_enum_uint8 oam_log_ratelimit(oam_ratelimit_type_enum_uint8 en_ratelimit_type );
+extern oal_int32  oam_main_init_etc(oal_void);
+extern oal_void   oam_main_exit_etc(oal_void);
+extern oal_uint32   oam_send_device_data2sdt_etc(oal_uint8* pc_string, oal_uint16 len);
+extern oal_uint32  oam_set_file_path_etc(oal_int8 *pc_file_path, oal_uint32 ul_length);
+extern oal_uint32  oam_set_output_type_etc(oam_output_type_enum_uint8 en_output_type);
+extern oal_uint32  oam_print_etc(oal_int8 *pc_string);
+extern oal_uint32  oam_print_to_file_etc(oal_int8 *pc_string);
+extern oal_uint32  oam_print_to_sdt_etc(oal_int8 *pc_string);
+extern oal_uint32  oam_print_to_console_etc(oal_int8 *pc_string);
+extern oal_uint32  oam_upload_log_to_sdt_etc(oal_int8 *pc_string);
+extern oal_void oam_dump_buff_by_hex_etc(oal_uint8 *puc_buff, oal_int32 l_len, oal_int32 l_num);
+extern oam_ratelimit_output_enum_uint8 oam_log_ratelimit_etc(oam_ratelimit_type_enum_uint8 en_ratelimit_type );
 
 
 #ifdef __cplusplus

@@ -85,7 +85,13 @@ static int do_cfg_smmu(hjpeg_hw_ctl_t *hw_ctl, void* pgd)
     smmu_scr.reg32 = get_reg_val((void __iomem*)((char*)smmu_base_addr + SMMU_GLOBAL_BYPASS));
 
     smmu_scr.bits.glb_bypass = 0x0;
-    smmu_scr.bits.ptw_pf     = 0x1;
+
+    if (is_hjpeg_qos_update()) {
+        smmu_scr.bits.ptw_pf     = 0x5;
+    } else {
+        smmu_scr.bits.ptw_pf     = 0x1;
+    }
+
     smmu_scr.bits.ptw_mid    = 0x1d;
     cam_notice("%s: set reg 0x%x = 0x%x", __func__, SMMU_GLOBAL_BYPASS, smmu_scr.reg32);
     set_reg_val((void __iomem*)((char*)smmu_base_addr + SMMU_GLOBAL_BYPASS), smmu_scr.reg32);

@@ -98,7 +98,6 @@
 #define FPROTECTLRUSET	0x545E
 #define FPROTECTLRUGET	0x545F
 #endif
-
 /*
  * Some arches already define FIOQSIZE due to a historical
  * conflict with a Hayes modem-specific ioctl value.

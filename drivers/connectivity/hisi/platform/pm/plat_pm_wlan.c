@@ -82,6 +82,8 @@ EXPORT_SYMBOL_GPL(g_us_download_rate_limit_pps);
 int32 wlan_pm_stop_wdg(struct wlan_pm_s *pst_wlan_pm_info);
 oal_int wlan_pm_work_submit(struct wlan_pm_s    *pst_wlan_pm, oal_work_stru* pst_worker);
 void wlan_pm_info_clean(void);
+void wlan_pm_deepsleep_delay_timeout_02(struct wlan_pm_s *pm_data);
+int32 wlan_pm_stop_deepsleep_delay_timer_02(struct wlan_pm_s *pm_data);
 
 extern oal_atomic g_wakeup_dev_wait_ack;
 
@@ -201,11 +203,21 @@ struct wlan_pm_s*  wlan_pm_init(oal_void)
     pst_wlan_pm->ul_wdg_timeout_curr_cnt       = 0;
     pst_wlan_pm->ul_packet_cnt                 = 0;
 
+
+    /*sleep timer初始化*/
+    init_timer(&pst_wlan_pm->st_deepsleep_delay_timer);
+    pst_wlan_pm->st_deepsleep_delay_timer.data        = (unsigned long)pst_wlan_pm;
+    pst_wlan_pm->st_deepsleep_delay_timer.function    = (void *)wlan_pm_deepsleep_delay_timeout_02;
+
+    oal_wake_lock_init(&pst_wlan_pm->st_deepsleep_wakelock, "wifi_deeepsleep_delay_wakelock");
     pst_wlan_pm->ul_wlan_power_state           = POWER_STATE_SHUTDOWN;
     pst_wlan_pm->ul_wlan_dev_state             = HOST_ALLOW_TO_SLEEP;
     pst_wlan_pm->ul_sleep_stage                = SLEEP_STAGE_INIT;
 
     pst_wlan_pm->st_wifi_srv_handler.p_wifi_srv_get_pm_pause_func = OAL_PTR_NULL;
+#ifdef _PRE_WLAN_WAKEUP_SRC_PARSE
+    pst_wlan_pm->st_wifi_srv_handler.p_data_wkup_print_en_func = OAL_PTR_NULL;
+#endif
 
     gpst_wlan_pm_info = pst_wlan_pm;
 
@@ -230,10 +242,6 @@ struct wlan_pm_s*  wlan_pm_init(oal_void)
     pst_wlan_pm->pst_sdio->data_int_count = 0;
     pst_wlan_pm->pst_sdio->wakeup_int_count = 0;
 
-#ifndef CONFIG_WAKELOCK
-#error "CONFIG_WAKELOCK is not defined!!!\n"
-#endif
-
     OAL_IO_PRINT("[plat_pm]wlan_pm_init ok!");
     return  pst_wlan_pm;
 }
@@ -250,6 +258,7 @@ oal_uint  wlan_pm_exit(oal_void)
 
     wlan_pm_stop_wdg(pst_wlan_pm);
 
+    wlan_pm_stop_deepsleep_delay_timer_02(pst_wlan_pm);
     oal_sdio_message_unregister(pst_wlan_pm->pst_sdio,D2H_MSG_WAKEUP_SUCC);
     oal_sdio_message_unregister(pst_wlan_pm->pst_sdio,D2H_MSG_WLAN_READY);
     oal_sdio_message_unregister(pst_wlan_pm->pst_sdio,D2H_MSG_ALLOW_SLEEP);
@@ -511,6 +520,8 @@ oal_uint32 wlan_pm_close(oal_void)
 
     wlan_pm_stop_wdg(pst_wlan_pm);
 
+    wlan_pm_stop_deepsleep_delay_timer_02(pst_wlan_pm);
+
     wlan_pm_info_clean();
 
     /*mask rx sdio data interrupt*/
@@ -712,6 +723,9 @@ oal_uint wlan_pm_wakeup_dev(oal_void)
     {
       return OAL_SUCC;
     }
+
+
+    wlan_pm_stop_deepsleep_delay_timer_02(pst_wlan_pm);
 
 wakeup_again:
 
@@ -1197,8 +1211,12 @@ void wlan_pm_sleep_work(oal_work_stru *pst_worker)
 
    pst_wlan_pm->ul_sleep_stage = SLEEP_CMD_SND;
 
-   hcc_tx_transfer_unlock(hcc_get_default_handler());
+   /*继续持锁500ms, 防止系统频繁进入退出PM*/
+   oal_wake_lock(&pst_wlan_pm->st_deepsleep_wakelock);
+   mod_timer(&pst_wlan_pm->st_deepsleep_delay_timer, jiffies + msecs_to_jiffies(WLAN_WAKELOCK_HOLD_TIME));
+
    oal_sdio_wake_unlock(pst_wlan_pm->pst_sdio);
+   hcc_tx_transfer_unlock(hcc_get_default_handler());
 
    DECLARE_DFT_TRACE_KEY_INFO("wlan_sleep_ok",OAL_DFT_TRACE_SUCC);
    pst_wlan_pm->ul_sleep_succ++;
@@ -1414,6 +1432,32 @@ restart_timer:
 
     return;
 
+}
+
+void wlan_pm_deepsleep_delay_timeout_02(struct wlan_pm_s *pm_data)
+{
+    oal_wake_unlock(&pm_data->st_deepsleep_wakelock);
+
+    OAL_IO_PRINT("wlan_pm_deepsleep_delay_timeout release wakelock....%lu", pm_data->st_deepsleep_wakelock.lock_count);
+}
+
+int32 wlan_pm_stop_deepsleep_delay_timer_02(struct wlan_pm_s *pm_data)
+{
+    oal_wake_unlock(&pm_data->st_deepsleep_wakelock);
+
+    if(0!=pm_data->st_deepsleep_wakelock.lock_count)
+    {
+       OAM_WARNING_LOG1(0, OAM_SF_PWR,"wlan_pm_stop_deepsleep_delay_timer release wakelock %lu!\n",pm_data->st_deepsleep_wakelock.lock_count);
+    }
+
+    if(in_interrupt())
+    {
+        return del_timer(&pm_data->st_deepsleep_delay_timer);
+    }
+    else
+    {
+        return del_timer_sync(&pm_data->st_deepsleep_delay_timer);
+    }
 }
 
 

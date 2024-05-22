@@ -79,7 +79,6 @@
 /*****************************************************************************
   3 枚举定义
 *****************************************************************************/
-/* Added by f62575 for AT Project，2011-10-03,  Begin*/
 
 enum AT_MN_MSGTYPE_ENUM
 {
@@ -121,13 +120,9 @@ enum AT_MN_MSGTYPE_ENUM
 
     MN_CALL_QRY_ECALL_INFO_REQ,                                                 /* _H2ASN_MsgChoice MN_CALL_QRY_ECALL_INFO_REQ_STRU */
 
-    /* Added by l60609 for CDMA 1X Iteration 2, 2014-9-3, begin */
     TAF_CALL_APP_SEND_FLASH_REQ,                                                /* _H2ASN_MsgChoice TAF_CALL_APP_SEND_FLASH_REQ_STRU*/
-    /* Added by l60609 for CDMA 1X Iteration 2, 2014-9-3, end */
 
-    /* Added by f279542 for CDMA 1X Iteration 4, 2014-11-10, begin */
     TAF_CALL_APP_SEND_BURST_DTMF_REQ,                                           /* _H2ASN_MsgChoice TAF_CALL_BURST_DTMF_REQ_MSG_STRU*/
-    /* Added by f279542 for CDMA 1X Iteration 4, 2014-11-10, end */
 
     TAF_CALL_APP_SEND_CUSTOM_DIAL_REQ,
 
@@ -181,7 +176,6 @@ enum AT_MN_MSGTYPE_ENUM
 
     /* AT与SSA模块间消息 */
     MN_APP_MSG_CLASS_SSA                                    = TAF_SSA_APP_MSG_BASE,
-/* Added by f62575 for SS FDN&Call Control, 2013-05-06, begin */
     /*补充业务发起操作时的消息类型*/
     TAF_MSG_REGISTERSS_MSG,
     TAF_MSG_ERASESS_MSG,
@@ -193,7 +187,6 @@ enum AT_MN_MSGTYPE_ENUM
     TAF_MSG_ERASECCENTRY_MSG,
     TAF_MSG_RLEASE_MSG,
     TAF_MSG_SET_USSDMODE_MSG,
-/* Added by f62575 for SS FDN&Call Control, 2013-05-06, end */
 
     /* AT与MMA模块间消息 */
     MN_APP_MSG_CLASS_MMA                                    = TAF_MMA_APP_MSG_BASE,
@@ -217,7 +210,6 @@ typedef VOS_UINT16 AT_MN_MSGTYPE_ENUM_UINT16;
 typedef AT_MN_MSGTYPE_ENUM_UINT16 MN_MSG_MSGTYPE_ENUM_U16;
 
 typedef VOS_UINT32  MN_CALL_APP_REQ_ENUM_UINT32;
-/* Added by f62575 for AT Project，2011-10-03,  End*/
 
 /*****************************************************************************
  枚举名    : AT_CC_MSGTYPE_ENUM
@@ -256,7 +248,6 @@ typedef struct
     VOS_UINT8                           aucReserved[1];
 } AT_APPCTRL_STRU;
 
-/* Added by f62575 for AT Project，2011-10-03,  Begin*/
 /* MN发往AT的事件结构 */
 typedef struct
 {
@@ -302,7 +293,6 @@ typedef struct
     VOS_MSG_HEADER
     AT_MN_MSG_DATA                      stMsgData;
 }AtMnInterface_MSG;
-/* Added by f62575 for AT Project，2011-10-03,  End*/
 
 /*****************************************************************************
  枚举名    : MN_APP_REQ_MSG_STRU

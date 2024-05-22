@@ -31,6 +31,7 @@
 
 #include "xhci.h"
 #include "xhci-trace.h"
+#include "xhci-mtk.h"
 
 #define DRIVER_AUTHOR "Sarah Sharp"
 #define DRIVER_DESC "'eXtensible' Host Controller (xHC) Driver"
@@ -121,6 +122,36 @@ int xhci_halt(struct xhci_hcd *xhci)
 	return ret;
 }
 
+static void warm_reset(struct usb_hcd *hcd)
+{
+	int max_ports;
+	__le32 __iomem **port_array;
+	struct xhci_hcd	*xhci = hcd_to_xhci(hcd);
+	u32 temp;
+	int i;
+
+	if (hcd->speed >= HCD_USB3) {
+		max_ports = xhci->num_usb3_ports;
+		port_array = xhci->usb3_ports;
+	} else {
+		return;
+	}
+
+	for (i = 0; i < max_ports; i++) {
+		xhci_info(xhci, "%s port %d\n", __func__, i);
+		temp = readl(port_array[i]);
+		if (temp == 0xffffffff) {
+			continue;
+		}
+
+		temp = xhci_port_state_to_neutral(temp);
+
+		temp |= PORT_WR; /*lint !e648 */
+		writel(temp, port_array[i]);
+	}
+}
+
+
 /*
  * Set the run bit and wait for the host to be running.
  */
@@ -148,6 +179,12 @@ static int xhci_start(struct xhci_hcd *xhci)
 	if (!ret)
 		/* clear state flags. Including dying, halted or removing */
 		xhci->xhc_state = 0;
+
+	if (xhci->quirks & XHCI_WARM_RESET_AFTER_INIT) {
+		if (xhci->shared_hcd && xhci->shared_hcd->speed >= HCD_USB3) {
+			warm_reset(xhci->shared_hcd);
+		}
+	}
 
 	return ret;
 }
@@ -190,6 +227,9 @@ int xhci_reset(struct xhci_hcd *xhci)
 			CMD_RESET, 0, 10 * 1000 * 1000);
 	if (ret)
 		return ret;
+
+	if (xhci->quirks & XHCI_ASMEDIA_MODIFY_FLOWCONTROL)
+		usb_asmedia_modifyflowcontrol(to_pci_dev(xhci_to_hcd(xhci)->self.controller));
 
 	xhci_dbg_trace(xhci, trace_xhci_dbg_init,
 			 "Wait for controller to be ready for doorbell rings");
@@ -294,10 +334,8 @@ static int xhci_setup_msix(struct xhci_hcd *xhci)
 	xhci->msix_entries =
 		kmalloc((sizeof(struct msix_entry))*xhci->msix_count,
 				GFP_KERNEL);
-	if (!xhci->msix_entries) {
-		xhci_err(xhci, "Failed to allocate MSI-X entries\n");
+	if (!xhci->msix_entries)
 		return -ENOMEM;
-	}
 
 	for (i = 0; i < xhci->msix_count; i++) {
 		xhci->msix_entries[i].entry = i;
@@ -489,8 +527,6 @@ static void compliance_mode_recovery_timer_init(struct xhci_hcd *xhci)
 	xhci->comp_mode_recovery_timer.expires = jiffies +
 			msecs_to_jiffies(COMP_MODE_RCVRY_MSECS);
 
-	set_timer_slack(&xhci->comp_mode_recovery_timer,
-			msecs_to_jiffies(COMP_MODE_RCVRY_MSECS));
 	add_timer(&xhci->comp_mode_recovery_timer);
 	xhci_dbg_trace(xhci, trace_xhci_dbg_quirks,
 			"Compliance mode recovery timer initialized");
@@ -635,7 +671,11 @@ int xhci_run(struct usb_hcd *hcd)
 			"// Set the interrupt modulation register");
 	temp = readl(&xhci->ir_set->irq_control);
 	temp &= ~ER_IRQ_INTERVAL_MASK;
-	temp |= (u32) 160;
+	/*
+	 * the increment interval is 8 times as much as that defined
+	 * in xHCI spec on MTK's controller
+	 */
+	temp |= (u32) ((xhci->quirks & XHCI_MTK_HOST) ? 20 : 160);
 	writel(temp, &xhci->ir_set->irq_control);
 
 	/* Set the HCD state before we enable the irqs */
@@ -1125,6 +1165,9 @@ int xhci_resume(struct xhci_hcd *xhci, bool hibernated)
 	if ((xhci->quirks & XHCI_COMP_MODE_QUIRK) && !comp_timer_running)
 		compliance_mode_recovery_timer_init(xhci);
 
+	if (xhci->quirks & XHCI_ASMEDIA_MODIFY_FLOWCONTROL)
+		usb_asmedia_modifyflowcontrol(to_pci_dev(hcd->self.controller));
+
 	/* Re-enable port polling. */
 	xhci_dbg(xhci, "%s: starting port polling.\n", __func__);
 	set_bit(HCD_FLAG_POLL_RH, &xhci->shared_hcd->flags);
@@ -1176,7 +1219,7 @@ unsigned int xhci_get_endpoint_address(unsigned int ep_index)
  */
 unsigned int xhci_get_endpoint_flag(struct usb_endpoint_descriptor *desc)
 {
-	return 1 << (xhci_get_endpoint_index(desc) + 1);/* [false alarm]:this is original code */
+	return 1 << (xhci_get_endpoint_index(desc) + 1); /*[false alarm]: it is a false alarm*/
 }
 
 /* Find the flag for this endpoint (for use in the control context).  Use the
@@ -1185,7 +1228,7 @@ unsigned int xhci_get_endpoint_flag(struct usb_endpoint_descriptor *desc)
  */
 unsigned int xhci_get_endpoint_flag_from_index(unsigned int ep_index)
 {
-	return 1 << (ep_index + 1);/* [false alarm]:this is original code */
+	return 1 << (ep_index + 1); /*[false alarm]: it is a false alarm*/
 }
 
 /* Compute the last valid endpoint context index.  Basically, this is the
@@ -1196,7 +1239,7 @@ unsigned int xhci_get_endpoint_flag_from_index(unsigned int ep_index)
  */
 unsigned int xhci_last_valid_endpoint(u32 added_ctxs)
 {
-	return fls(added_ctxs) - 1;/* [false alarm]:this is original code */
+	return fls(added_ctxs) - 1; /*[false alarm]: it is a false alarm*/
 }
 
 /* Returns 1 if the arguments are OK;
@@ -1461,47 +1504,6 @@ free_priv:
 	return ret;
 }
 
-/* Get the right ring for the given URB.
- * If the endpoint supports streams, boundary check the URB's stream ID.
- * If the endpoint doesn't support streams, return the singular endpoint ring.
- */
-static struct xhci_ring *xhci_urb_to_transfer_ring(struct xhci_hcd *xhci,
-		struct urb *urb)
-{
-	unsigned int slot_id;
-	unsigned int ep_index;
-	unsigned int stream_id;
-	struct xhci_virt_ep *ep;
-
-	slot_id = urb->dev->slot_id;
-	ep_index = xhci_get_endpoint_index(&urb->ep->desc);
-	stream_id = urb->stream_id;
-	ep = &xhci->devs[slot_id]->eps[ep_index];
-	/* Common case: no streams */
-	if (!(ep->ep_state & EP_HAS_STREAMS))
-		return ep->ring;
-
-	if (stream_id == 0) {
-		xhci_warn(xhci,
-				"WARN: Slot ID %u, ep index %u has streams, "
-				"but URB has no stream ID.\n",
-				slot_id, ep_index);
-		return NULL;
-	}
-
-	if (stream_id < ep->stream_info->num_streams)
-		return ep->stream_info->stream_rings[stream_id];
-
-	xhci_warn(xhci,
-			"WARN: Slot ID %u, ep index %u has "
-			"stream IDs 1 to %u allocated, "
-			"but stream ID %u is requested.\n",
-			slot_id, ep_index,
-			ep->stream_info->num_streams - 1,
-			stream_id);
-	return NULL;
-}
-
 /*
  * Remove the URB's TD from the endpoint ring.  This may cause the HC to stop
  * USB transfers, potentially stopping in the middle of a TRB buffer.  The HC
@@ -1712,6 +1714,9 @@ int xhci_drop_endpoint(struct usb_hcd *hcd, struct usb_device *udev,
 
 	xhci_endpoint_zero(xhci, xhci->devs[udev->slot_id], ep);
 
+	if (xhci->quirks & XHCI_MTK_HOST)
+		xhci_mtk_drop_ep_quirk(hcd, udev, ep);
+
 	xhci_dbg(xhci, "drop ep 0x%x, slot id %d, new drop flags = %#x, new add flags = %#x\n",
 			(unsigned int) ep->desc.bEndpointAddress,
 			udev->slot_id,
@@ -1805,6 +1810,15 @@ int xhci_add_endpoint(struct usb_hcd *hcd, struct usb_device *udev,
 		dev_dbg(&udev->dev, "%s - could not initialize ep %#x\n",
 				__func__, ep->desc.bEndpointAddress);
 		return -ENOMEM;
+	}
+
+	if (xhci->quirks & XHCI_MTK_HOST) {
+		ret = xhci_mtk_add_ep_quirk(hcd, udev, ep);
+		if (ret < 0) {
+			xhci_free_or_cache_endpoint_ring(xhci,
+				virt_dev, ep_index);
+			return ret;
+		}
 	}
 
 	ctrl_ctx->add_flags |= cpu_to_le32(added_ctxs);
@@ -3178,6 +3192,7 @@ int xhci_alloc_streams(struct usb_hcd *hcd, struct usb_device *udev,
 	struct xhci_input_control_ctx *ctrl_ctx;
 	unsigned int ep_index;
 	unsigned int num_stream_ctxs;
+	unsigned int max_packet;
 	unsigned long flags;
 	u32 changed_ep_bitmask = 0;
 
@@ -3251,9 +3266,11 @@ int xhci_alloc_streams(struct usb_hcd *hcd, struct usb_device *udev,
 
 	for (i = 0; i < num_eps; i++) {
 		ep_index = xhci_get_endpoint_index(&eps[i]->desc);
+		max_packet = GET_MAX_PACKET(usb_endpoint_maxp(&eps[i]->desc));
 		vdev->eps[ep_index].stream_info = xhci_alloc_stream_info(xhci,
 				num_stream_ctxs,
-				num_streams, mem_flags);
+				num_streams,
+				max_packet, mem_flags);
 		if (!vdev->eps[ep_index].stream_info)
 			goto cleanup;
 		/* Set maxPstreams in endpoint context and update deq ptr to
@@ -3727,7 +3744,8 @@ int xhci_alloc_dev(struct usb_hcd *hcd, struct usb_device *udev)
 {
 	struct xhci_hcd *xhci = hcd_to_xhci(hcd);
 	unsigned long flags;
-	int ret, slot_id, timeleft;
+	int ret, slot_id;
+	int timeleft;
 	struct xhci_command *command;
 
 	command = xhci_alloc_command(xhci, false, false, GFP_KERNEL);
@@ -3751,7 +3769,7 @@ int xhci_alloc_dev(struct usb_hcd *hcd, struct usb_device *udev)
 
 	timeleft = wait_for_completion_timeout(command->completion, XHCI_CMD_DEFAULT_TIMEOUT * 2);
 	if (timeleft <= 0) {
-		xhci_warn(xhci, "%s while waiting for alloc dev \n",
+		xhci_warn(xhci, "%s while waiting for alloc dev\n",
 				timeleft == 0 ? "Timeout" : "Signal");
 		mutex_unlock(&xhci->mutex);
 		kfree(command);
@@ -4924,7 +4942,8 @@ int xhci_gen_setup(struct usb_hcd *hcd, xhci_get_quirks_t get_quirks)
 		 */
 		hcd->has_tt = 1;
 	} else {
-		if (xhci->sbrn == 0x31) {
+		/* Some 3.1 hosts return sbrn 0x30, can't rely on sbrn alone */
+		if (xhci->sbrn == 0x31 || xhci->usb3_rhub.min_rev >= 1) {
 			xhci_info(xhci, "Host supports USB 3.1 Enhanced SuperSpeed\n");
 			hcd->speed = HCD_USB31;
 			hcd->self.root_hub->speed = USB_SPEED_SUPER_PLUS;
@@ -4952,7 +4971,7 @@ int xhci_gen_setup(struct usb_hcd *hcd, xhci_get_quirks_t get_quirks)
 		xhci->hcc_params2 = readl(&xhci->cap_regs->hcc_params2);
 	xhci_print_registers(xhci);
 
-	xhci->quirks = quirks;
+	xhci->quirks |= quirks;
 
 	get_quirks(dev, xhci);
 
@@ -4979,6 +4998,16 @@ int xhci_gen_setup(struct usb_hcd *hcd, xhci_get_quirks_t get_quirks)
 	if (retval)
 		return retval;
 	xhci_dbg(xhci, "Reset complete\n");
+
+	/*
+	 * On some xHCI controllers (e.g. R-Car SoCs), the AC64 bit (bit 0)
+	 * of HCCPARAMS1 is set to 1. However, the xHCs don't support 64-bit
+	 * address memory pointers actually. So, this driver clears the AC64
+	 * bit of xhci->hcc_params to call dma_set_coherent_mask(dev,
+	 * DMA_BIT_MASK(32)) in this xhci_gen_setup().
+	 */
+	if (xhci->quirks & XHCI_NO_64BIT_SUPPORT)
+		xhci->hcc_params &= ~BIT(0);
 
 	/* Set dma_mask and coherent_dma_mask to 64-bits,
 	 * if xHC supports 64-bit addressing */
@@ -5013,7 +5042,7 @@ int xhci_gen_setup(struct usb_hcd *hcd, xhci_get_quirks_t get_quirks)
 		return retval;
 	xhci_dbg(xhci, "Called HCD init\n");
 
-	xhci_info(xhci, "hcc params 0x%08x hci version 0x%x quirks 0x%08x\n",
+	xhci_info(xhci, "hcc params 0x%08x hci version 0x%x quirks 0x%016llx\n",
 		  xhci->hcc_params, xhci->hci_version, xhci->quirks);
 
 	return 0;
@@ -5023,7 +5052,7 @@ EXPORT_SYMBOL_GPL(xhci_gen_setup);
 static const struct hc_driver xhci_hc_driver = {
 	.description =		"xhci-hcd",
 	.product_desc =		"xHCI Host Controller",
-	.hcd_priv_size =	sizeof(struct xhci_hcd *),
+	.hcd_priv_size =	sizeof(struct xhci_hcd),
 
 	/*
 	 * generic hardware linkage

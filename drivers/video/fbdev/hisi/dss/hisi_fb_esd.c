@@ -15,6 +15,7 @@
 #include "lcdkit_panel.h"
 extern struct lcdkit_esd_error_info g_esd_error_info;
 
+
 #define HISI_ESD_RECOVER_MAX_COUNT   (10)
 #define HISI_ESD_CHECK_MAX_COUNT     (3)
 
@@ -24,7 +25,7 @@ static void hisifb_frame_refresh_for_esd(struct hisi_fb_data_type *hisifd)
 {
 	char *envp[2];
 	char buf[64];
-	snprintf(buf, sizeof(buf), "ESD_HAPPENDED=1");
+	snprintf(buf, sizeof(buf), "Refresh=1");
 	envp[0] = buf;
 	envp[1] = NULL;
 	kobject_uevent_env(&(hisifd->fbi->dev->kobj), KOBJ_CHANGE, envp);
@@ -88,6 +89,7 @@ static void dsm_client_record_esd_err(void)
 		dsm_client_record(lcd_dclient, "\n");
 		dsm_client_notify(lcd_dclient, DSM_LCD_ESD_STATUS_ERROR_NO);
 	}
+
 	return;
 }
 
@@ -194,12 +196,12 @@ void hisifb_esd_register(struct platform_device *pdev)
 	}
 	hisifd = platform_get_drvdata(pdev);
 	if (NULL == hisifd) {
-		HISI_FB_ERR("hisifd is NULL");
+		dev_err(&pdev->dev, "hisifd is NULL");
 		return;
 	}
 	esd_ctrl = &(hisifd->esd_ctrl);
 	if (NULL == esd_ctrl) {
-		HISI_FB_ERR("esd_ctrl is NULL");
+		dev_err(&pdev->dev, "esd_ctrl is NULL");
 		return;
 	}
 
@@ -214,7 +216,7 @@ void hisifb_esd_register(struct platform_device *pdev)
 
 		esd_ctrl->esd_check_wq = create_singlethread_workqueue("esd_check");
 		if (!esd_ctrl->esd_check_wq) {
-			HISI_FB_ERR("create esd_check_wq failed\n");
+			dev_err(&pdev->dev, "create esd_check_wq failed\n");
 		}
 
 		INIT_WORK(&esd_ctrl->esd_check_work, hisifb_esd_check_wq_handler);
@@ -240,12 +242,12 @@ void hisifb_esd_unregister(struct platform_device *pdev)
 	}
 	hisifd = platform_get_drvdata(pdev);
 	if (NULL == hisifd) {
-		HISI_FB_ERR("hisifd is NULL");
+		dev_err(&pdev->dev, "hisifd is NULL");
 		return;
 	}
 	esd_ctrl = &(hisifd->esd_ctrl);
 	if (NULL == esd_ctrl) {
-		HISI_FB_ERR("esd_ctrl is NULL");
+		dev_err(&pdev->dev, "esd_ctrl is NULL");
 		return;
 	}
 

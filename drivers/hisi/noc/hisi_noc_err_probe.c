@@ -38,9 +38,9 @@ static struct err_probe_msg g_err_msg;
 
 extern int sensorhub_noc_notify(int value);
 
-#define TARGET_PORT_PCIE 0x17
-extern void dump_pcie_apb_info(u32 rc_id);
-extern void set_pcie_dump_flag(void);
+bool is_pcie_target(int target_id);
+extern void dump_pcie_apb_info(void);
+extern void set_pcie_dump_flag(int target_id);
 extern bool get_pcie_dump_flag(void);
 
 int __weak sensorhub_noc_notify(int value)
@@ -146,8 +146,8 @@ u64 print_errlog1(unsigned int val, unsigned int idx, int *pinitflow)
 	if ((unsigned int)targetflow < noc_bus->targetflow_array_size) {
 		pr_err("\t[target_flow=%d]: %s\n", targetflow,
 		       noc_bus->targetflow_array[targetflow]);
-		if (TARGET_PORT_PCIE == (unsigned int)targetflow)
-			set_pcie_dump_flag();
+		if (is_pcie_target(targetflow))
+			set_pcie_dump_flag(targetflow);
 	} else {
 		pr_err("\t[target_flow=%d]: %s\n", targetflow,
 		       "index is out of range!");
@@ -496,7 +496,7 @@ void noc_err_probe_hanlder(void __iomem *base, struct noc_node *node)
 			g_noc_dev->perr_probe_reg->err_probe_errclr_offset);
 
 	if (get_pcie_dump_flag()) {
-		dump_pcie_apb_info(0);
+		dump_pcie_apb_info();
 	}
 
 	if (check_himntn(HIMNTN_NOC_ERROR_REBOOT)) {

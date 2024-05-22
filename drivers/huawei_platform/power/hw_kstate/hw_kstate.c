@@ -84,6 +84,10 @@ static int send_to_user(struct ksmsg *msg)
 		goto err;
 	}
 	len = sizeof(struct ksmsg) + msg->length;
+	if (len > 1024 * 1024) {
+		pr_err("hw_kstate %s: invalid len: %d!\n", __func__, len);
+		goto err;
+	}
 	skb = alloc_skb(NLMSG_SPACE(len), GFP_ATOMIC);
 	if (IS_ERR_OR_NULL(skb)) {
 		pr_err("hw_kstate %s: alloc skb failed!\n", __func__);
@@ -94,7 +98,7 @@ static int send_to_user(struct ksmsg *msg)
 	memcpy(NLMSG_DATA(nlh), msg, len);
 	/*send up msg*/
 	if (netlink_unicast(nlfd, skb, kstate_user_pid, MSG_DONTWAIT) < 0) {
-		pr_err("hw_kstate %s: netlink_unicast failed!\n", __func__);
+		//pr_err("hw_kstate %s: netlink_unicast failed!\n", __func__);
 		goto err;
 	}
 	ret = 0;
@@ -119,7 +123,7 @@ static int fifo_out(void *data) {
 		while (0 != kfifo_out(&kstate_fifo, &msg, sizeof(struct ksmsg*))) {
 			/*send msg to user space*/
 			if (send_to_user(msg) < 0) {
-				pr_err("hw_kstate %s: send msg to user failed!\n", __func__);
+				//pr_err("hw_kstate %s: send msg to user failed!\n", __func__);
 			}
 			kfree(msg);
 		}
@@ -242,8 +246,10 @@ static void recv_from_user(struct sk_buff *skb)
 		len = NLMSG_PAYLOAD(nlh, 0);
 		data = (struct ksmsg*)NLMSG_DATA(nlh);
 
-		if (len >= (sizeof(struct ksmsg) + data->length)
-			&& tmp_skb->len >= nlh->nlmsg_len) {
+		if ((len >= (sizeof(struct ksmsg) + data->length))
+			&& (len < 1024 * 1024)
+			&& (len > 0)
+			&& (tmp_skb->len >= nlh->nlmsg_len)) {
 			msg = (struct ksmsg*)kmalloc(len, GFP_ATOMIC);
 			if (IS_ERR_OR_NULL(msg)) {
 				pr_err("hw_kstate %s: msg is NULL!\n", __func__);

@@ -167,12 +167,16 @@ do{\
 }while(0)
 #define HI6555V100_REGS_WRITE(regAddr,buf,size)  hisi_pmic_array_write((int)(regAddr),(char*)(buf),(int)(size))
 
-
+#define HI6555V100_COUL_INFO
+#ifndef HI6555V100_COUL_INFO
+#define HI6555V100_COUL_ERR(fmt,args...)              do {} while (0)
+#define HI6555V100_COUL_EVT(fmt,args...)              do {} while (0)
+#define HI6555V100_COUL_INF(fmt,args...)              do {} while (0)
+#else
 #define HI6555V100_COUL_ERR(fmt,args...) do { printk(KERN_ERR    "[hisi_HI6555V100_coul]" fmt, ## args); } while (0)
 #define HI6555V100_COUL_EVT(fmt,args...) do { printk(KERN_WARNING"[hisi_HI6555V100_coul]" fmt, ## args); } while (0)
 #define HI6555V100_COUL_INF(fmt,args...) do { printk(KERN_INFO   "[hisi_HI6555V100_coul]" fmt, ## args); } while (0)
-
-
+#endif
 struct hi6555v100_coul_device_info
 {
     struct device *dev;

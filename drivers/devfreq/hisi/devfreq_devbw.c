@@ -33,37 +33,32 @@
 #include <linux/cpu.h>
 #include <linux/cpu_pm.h>
 #include <linux/of_address.h>
+#include <linux/of_device.h>
 #include <linux/cpufreq.h>
 #include "governor_memlat.h"
 
 struct vote_reg {
-        void __iomem    *reg;           /* ddr frequency vote register */
+        void __iomem    *reg;           /* dev frequency vote register */
         u8              shift;
         u8              width;
         u32             mbits;          /* mask bits */
 };
 
 struct dev_data {
-	int cur_ddr_freq;
-	unsigned int idle_ddr_freq;
-	int min_core_freq;
+	unsigned long cur_dev_freq;
 	struct vote_reg hw_vote;
-	bool idle_vote_enabled;
 	cpumask_t cpus;
 	spinlock_t vote_spinlock;
 	struct devfreq *df;
 	struct devfreq_dev_profile dp;
 };
 
-bool notifier_inited;
-DEFINE_PER_CPU(struct dev_data *, dev_data);
-
-#define WIDTH_TO_MASK(width)    ((1 << (width)) - 1)
+#define WIDTH_TO_MASK(width)    ((1UL << (width)) - 1)
 
 static void find_freq(struct devfreq_dev_profile *p, unsigned long *freq,
 			u32 flags);
 
-void set_hw_vote_reg(struct vote_reg *hw_vote, int value)
+void set_hw_vote_reg(struct vote_reg *hw_vote, unsigned long value)
 {
 	u32 data = 0;
 
@@ -76,117 +71,48 @@ void set_hw_vote_reg(struct vote_reg *hw_vote, int value)
 	writel(data, hw_vote->reg);
 }
 
-void set_ddr_freq(struct dev_data *d, int cpu, int value)
+void set_dev_freq(struct dev_data *d, unsigned long new_freq)
 {
-	if (value == d->cur_ddr_freq)
+	if (new_freq == d->cur_dev_freq)
 		return ;
 
-	set_hw_vote_reg(&d->hw_vote, value);
+	set_hw_vote_reg(&d->hw_vote, new_freq);
 
-	d->cur_ddr_freq = value;
-	if (value)
-		d->min_core_freq = get_min_core_freq(cpu, value);
-	else
-		d->min_core_freq = 0;
+	d->cur_dev_freq = new_freq;
 }
 
-
-bool hisi_cluster_cpu_all_pwrdn(void);
-
-static int event_idle_notif(struct notifier_block *nb, unsigned long action,
-                                                        void *data)
+void set_dev_votefreq(struct device *dev, unsigned long new_freq)
 {
-	bool cores_pwrdn;
-	unsigned long freq;
-	int cpu = get_cpu();
-	struct dev_data *d = per_cpu(dev_data, cpu);
-	put_cpu();
+	struct dev_data *d = dev_get_drvdata(dev);
+	unsigned long freq = new_freq;
 
-	/* device hasn't been initilzed yet */
-	if (!d)
-		return NOTIFY_OK;
-
-	if (!d->idle_vote_enabled)
-		return NOTIFY_OK;
-
-	switch (action) {
-	case CPU_PM_ENTER:
-			cores_pwrdn = hisi_cluster_cpu_all_pwrdn();
-			if (cores_pwrdn) {
-				freq = 0;
-				find_freq(&d->dp, &freq, 0);
-				spin_lock(&d->vote_spinlock);
-				d->idle_ddr_freq = d->cur_ddr_freq;
-				set_ddr_freq(d, cpu, freq);
-				spin_unlock(&d->vote_spinlock);
-				trace_memlat_set_ddr_freq("idle_vote", \
-					cpu, d->min_core_freq, 0, freq);
-			}
-
-			break;
-
-	case CPU_PM_ENTER_FAILED:
-	case CPU_PM_EXIT:
-			spin_lock(&d->vote_spinlock);
-			if (d->idle_ddr_freq != 0
-				&& d->idle_ddr_freq != d->cur_ddr_freq) {
-				set_ddr_freq(d, cpu, d->idle_ddr_freq);
-				d->idle_ddr_freq = 0;
-
-				trace_memlat_set_ddr_freq("idle_restore_vote", \
-					cpu, d->min_core_freq, 0, d->idle_ddr_freq);
-			}
-			spin_unlock(&d->vote_spinlock);
-			break;
-	}
-
-	return NOTIFY_OK;
-}
-
-static struct notifier_block perf_event_idle_nb = {
-        .notifier_call = event_idle_notif,
-};
-
-static int cpufreq_notifier_trans(struct notifier_block *nb,
-		unsigned long val, void *data)
-{
-	struct cpufreq_freqs *freq = (struct cpufreq_freqs *)data;
-	unsigned int cpu = freq->cpu, new_freq = freq->new;
-	struct dev_data *d = per_cpu(dev_data, cpu);
-	unsigned long max_target_freq;
-
-	if (!d)
-		return 0;
-
-	if (val != CPUFREQ_POSTCHANGE || !new_freq)
-		return 0;
-
-	/* KHZ -> MHZ */
-	new_freq = new_freq / 1000;
-
-	/*
-	 * need to re-evaluate if the cpu_freq
-	 * is lower than the threshold.
-	 */
 	spin_lock(&d->vote_spinlock);
-	if ((int)new_freq < d->min_core_freq) {
-		max_target_freq = get_max_target_freq(cpu, new_freq);
-		if (max_target_freq != ULONG_MAX) {
-			find_freq(&d->dp, &max_target_freq, 0);
+	find_freq(&d->dp, &freq, 0);
 
-			trace_memlat_set_ddr_freq("freq_change", \
-					cpu, d->min_core_freq, new_freq, max_target_freq);
-			set_ddr_freq(d, cpu, max_target_freq);
-		}
+	if (freq == d->cur_dev_freq) {
+		spin_unlock(&d->vote_spinlock);
+		return ;
 	}
+
+	set_hw_vote_reg(&d->hw_vote, freq);
+
+	d->cur_dev_freq = freq;
+	spin_unlock(&d->vote_spinlock);
+}
+EXPORT_SYMBOL(set_dev_votefreq);
+
+unsigned long get_dev_votefreq(struct device *dev)
+{
+	struct dev_data *d = dev_get_drvdata(dev);
+	unsigned int freq;
+
+	spin_lock(&d->vote_spinlock);
+	freq = d->cur_dev_freq;
 	spin_unlock(&d->vote_spinlock);
 
-	return 0;
+	return freq;
 }
-
-static struct notifier_block notifier_trans_block = {
-	.notifier_call = cpufreq_notifier_trans
-};
+EXPORT_SYMBOL(get_dev_votefreq);
 
 static void find_freq(struct devfreq_dev_profile *p, unsigned long *freq,
 			u32 flags)
@@ -210,19 +136,17 @@ static void find_freq(struct devfreq_dev_profile *p, unsigned long *freq,
 		*freq = atleast;
 }
 
-
 static int devbw_target(struct device *dev, unsigned long *freq, u32 flags)
 {
 	struct dev_data *d = dev_get_drvdata(dev);
-	int cpu = cpumask_any(&d->cpus);
 
 	find_freq(&d->dp, freq, flags);
 
 	spin_lock(&d->vote_spinlock);
-	set_ddr_freq(d, cpu, *freq);
+	set_dev_freq(d, *freq);
 	spin_unlock(&d->vote_spinlock);
-	trace_memlat_set_ddr_freq("periodic_update",	\
-			cpu, d->min_core_freq, 0, *freq);
+	trace_memlat_set_dev_freq(dev_name(dev), "periodic_update",	\
+			cpumask_any(&d->cpus), 0, 0, *freq);
 
 	return 0;
 }
@@ -259,7 +183,6 @@ static int get_mask_from_dev_handle(struct platform_device *pdev,
 	return ret;
 }
 
-
 #define PROP_TBL "hisi,freq-tbl"
 
 /*lint -e429*/
@@ -274,7 +197,7 @@ int devfreq_add_devbw(struct platform_device *pdev)
 	u32 temp[2] = {0};
 	void __iomem *reg_base;
 	struct vote_reg *hw_vote;
-	int cpu;
+	const char *name_str = NULL;
 
 	reg_base = of_iomap(dev->of_node, 0);
 	if (!reg_base) {
@@ -296,12 +219,13 @@ int devfreq_add_devbw(struct platform_device *pdev)
 		ret = -ENODEV;
 		goto error;
 	}
-	dev_set_name(dev, "%s%d", "memlat_cpu", cpumask_first(&d->cpus));
 
-	for_each_cpu(cpu, &d->cpus)
-		per_cpu(dev_data, cpu) = d;
-
-	d->idle_vote_enabled = of_property_read_bool(dev->of_node, "idle-vote-enabled");
+	name_str = of_device_get_match_data(dev);
+	if (name_str) {
+		dev_set_name(dev, "%s%d", name_str, cpumask_first(&d->cpus));
+	} else {
+		dev_err(dev, "name_str cannot found!\n");
+	}
 
 	spin_lock_init(&d->vote_spinlock);
 
@@ -354,13 +278,6 @@ int devfreq_add_devbw(struct platform_device *pdev)
 		p->max_state = len;
 	}
 
-	if (!notifier_inited) {
-		cpu_pm_register_notifier(&perf_event_idle_nb);
-		ret = cpufreq_register_notifier(&notifier_trans_block,
-						CPUFREQ_TRANSITION_NOTIFIER);
-		notifier_inited = true;
-	}
-
 	if (of_property_read_string(dev->of_node, "governor", &gov_name))
 		gov_name = "mem_latency";
 
@@ -382,12 +299,11 @@ int devfreq_remove_devbw(struct device *dev)
 {
 	struct dev_data *d = dev_get_drvdata(dev);
 	unsigned long freq = 0;
-	int cpu = cpumask_any(&d->cpus);
 
 	find_freq(&d->dp, &freq, 0);
 
 	spin_lock(&d->vote_spinlock);
-	set_ddr_freq(d, cpu, freq);
+	set_dev_freq(d, freq);
 	spin_unlock(&d->vote_spinlock);
 
 	devfreq_remove_device(d->df);
@@ -398,12 +314,11 @@ int devfreq_suspend_devbw(struct device *dev)
 {
 	struct dev_data *d = dev_get_drvdata(dev);
 	unsigned long freq = 0;
-	int cpu = cpumask_any(&d->cpus);
 
 	find_freq(&d->dp, &freq, 0);
 
 	spin_lock(&d->vote_spinlock);
-	set_ddr_freq(d, cpu, freq);
+	set_dev_freq(d, freq);
 	spin_unlock(&d->vote_spinlock);
 
 	return devfreq_suspend_device(d->df);
@@ -426,7 +341,8 @@ static int devfreq_devbw_remove(struct platform_device *pdev)
 }
 
 static struct of_device_id match_table[] = {
-	{ .compatible = "hisi,devbw" },
+	{ .compatible = "hisi,devbw", .data="memlat_cpu" },
+	{ .compatible = "hisi,l3-devbw", .data="l3_memlat_cpu"},
 	{}
 };
 

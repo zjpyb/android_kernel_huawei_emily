@@ -134,7 +134,7 @@ extern "C" {
 #define IS_UEPS_PID_LL(x)               ((I0_UEPS_PID_LL == x)     || (I1_UEPS_PID_LL == x)  || (I2_UEPS_PID_LL == x))
 #define IS_UEPS_PID_GRM(x)              ((I0_UEPS_PID_GRM == x)    || (I1_UEPS_PID_GRM == x) || (I2_UEPS_PID_GRM == x))
 #define IS_UEPS_PID_DL(x)               ((I0_UEPS_PID_DL == x)     || (I1_UEPS_PID_DL == x)  || (I2_UEPS_PID_DL == x))
-#define IS_UEPS_PID_MM(x)               ((I0_WUEPS_PID_MM == x)    || (I1_WUEPS_PID_MM == x) || (I2_WUEPS_PID_MM == x))
+#define IS_UEPS_PID_GMM(x)               ((I0_WUEPS_PID_GMM == x)  || (I1_WUEPS_PID_GMM == x)|| (I2_WUEPS_PID_GMM == x))
 #define IS_UEPS_PID_SMS(x)              ((I0_WUEPS_PID_SMS == x)   || (I1_WUEPS_PID_SMS == x)|| (I2_WUEPS_PID_SMS == x))
 #define IS_UEPS_PID_GAS(x)              ((I0_UEPS_PID_GAS == x)    || (I1_UEPS_PID_GAS == x) || (I2_UEPS_PID_GAS == x))
 #define IS_UEPS_PID_GPHY(x)             ((I0_DSP_PID_GPHY == x)    || (I1_DSP_PID_GPHY == x) || (I2_DSP_PID_GPHY == x))

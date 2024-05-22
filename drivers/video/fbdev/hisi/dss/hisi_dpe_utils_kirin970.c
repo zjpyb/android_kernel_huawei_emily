@@ -28,6 +28,7 @@ unsigned int g_led_rg_para2 = 30983;
 #define OFFSET_FRACTIONAL_BITS	(11)
 #define ROUND1(x,y)	((x) / (y) + ((x) % (y)  ? 1 : 0))
 #define gmp_cnt_cofe (729)
+#define xcc_cnt_cofe (12)
 
 static uint32_t sbl_al_calib_lut[33] = {/*lint -save -e* */
 	0x0000, 0x0800, 0x1000, 0x1800, 0x2000, 0x2800, 0x3000, 0x3800, 0x4000, 0x4800,
@@ -416,7 +417,7 @@ int dpe_set_clk_rate(struct platform_device *pdev)
 #define PERI_VOLTAGE_LEVEL0_065V		(0) // 0.65v
 #define PERI_VOLTAGE_LEVEL1_075V		(2) // 0.75v
 #define PERI_VOLTAGE_LEVEL2_080V		(3) // 0.80v
-int dpe_get_votage_value(struct hisi_fb_data_type *hisifd, dss_vote_cmd_t *vote_cmd)
+int dpe_get_voltage_value(struct hisi_fb_data_type *hisifd, dss_vote_cmd_t *vote_cmd)
 {
 	if (!vote_cmd) {
 		HISI_FB_ERR("vote_cmd is null\n");
@@ -436,7 +437,7 @@ int dpe_get_votage_value(struct hisi_fb_data_type *hisifd, dss_vote_cmd_t *vote_
 	}
 }
 
-int dpe_get_votage_level(struct hisi_fb_data_type *hisifd, int votage_value)
+int dpe_get_voltage_level(struct hisi_fb_data_type *hisifd, int votage_value)
 {
 	switch (votage_value) {
 		case PERI_VOLTAGE_LEVEL0_065V: // 0.65v
@@ -1872,6 +1873,9 @@ void init_ldi(struct hisi_fb_data_type *hisifd, bool fastboot_enable)
 		set_reg(ldi_base + LDI_CTRL, 0x0, 1, 0);
 	}
 
+	if (pinfo->dpi01_exchange_flag == 1){
+		set_reg(ldi_base + LDI_DPI_SET, 0x01, 1, 0);
+	}
 	HISI_FB_DEBUG("-.!\n");
 }
 
@@ -2851,7 +2855,7 @@ void init_igm_gmp_xcc_gm(struct hisi_fb_data_type *hisifd)
 	//XCC
 	if (pinfo->xcc_support == 1) {
 		// XCC matrix
-		if (pinfo->xcc_table_len > 0 && pinfo->xcc_table) {
+		if (pinfo->xcc_table_len ==xcc_cnt_cofe && pinfo->xcc_table) {
 			outp32(xcc_base + XCC_COEF_00, pinfo->xcc_table[0]);
 			outp32(xcc_base + XCC_COEF_01, pinfo->xcc_table[1]
 				* g_led_rg_csc_value[0] / 32768 * color_temp_rectify_R / 32768);
@@ -2882,20 +2886,19 @@ void init_igm_gmp_xcc_gm(struct hisi_fb_data_type *hisifd)
 		set_reg(gmp_base + GMP_EN, 0x0, 1, 0);
 
 		//gmp lut
-		if (pinfo->gmp_lut_table_len > 0
+		if (pinfo->gmp_lut_table_len == gmp_cnt_cofe
 			&& pinfo->gmp_lut_table_low32bit
 			&& pinfo->gmp_lut_table_high4bit) {
 			for (i = 0; i < gmp_cnt_cofe; i++) {
 				outp32(gmp_lut_base + i * 2 * 4, pinfo->gmp_lut_table_low32bit[i]);
 				outp32(gmp_lut_base + i * 2 * 4 + 4, pinfo->gmp_lut_table_high4bit[i]);
 			}
+			gmp_lut_sel = (uint32_t)inp32(gmp_base + GMP_LUT_SEL);
+			set_reg(gmp_base + GMP_LUT_SEL, (~(gmp_lut_sel & 0x1)) & 0x1, 1, 0);
+			//not enable gmp
+			set_reg(gmp_base + GMP_EN, 0x0, 1, 0);
+			g_gmp_State = 1;
 		}
-
-		gmp_lut_sel = (uint32_t)inp32(gmp_base + GMP_LUT_SEL);
-		set_reg(gmp_base + GMP_LUT_SEL, (~(gmp_lut_sel & 0x1)) & 0x1, 1, 0);
-		//not enable gmp
-		set_reg(gmp_base + GMP_EN, 0x0, 1, 0);
-		g_gmp_State = 1;
 	} else {
 		//gmp memory shutdown
 		outp32(gmp_base + GMP_MEM_CTRL, 0x4);

@@ -1,3 +1,4 @@
+#include <linux/version.h>
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/device.h>
@@ -15,6 +16,8 @@
 #include <asm/uaccess.h>
 #include <linux/iommu.h>
 #include <linux/hisi/hisi-iommu.h>
+#include <linux/dma-buf.h>
+#include <linux/scatterlist.h>
 #include <linux/clk.h>
 #include <linux/regulator/consumer.h>
 #include <linux/regulator/driver.h>
@@ -29,7 +32,7 @@ s64 PRE_time,TME_time;
 s64 total_time;
 uint32_t g_flags,g_mask;
 
-//static struct fd_device fd_dev;
+extern int memset_s(void *dest, size_t destMax, int c, size_t count);
 
 static int fd_need_powerup(unsigned int refs)
 {
@@ -246,8 +249,7 @@ static int fd_res_init(struct platform_device *pdev,struct fd_device *fd_dev)
 {
     int ret = 0, i;
     if(!fd_dev) return -1;
-    mutex_init(&fd_dev->wlock);
-    mutex_init(&fd_dev->rlock);
+    mutex_init(&fd_dev->lock);
     atomic_set(&(fd_dev->tme_mode), MODE_MANUAL_TME);//lint !e1058
     for(i = 0; i < RESULT_TYPE_COUNT; i++)
     {
@@ -365,15 +367,15 @@ int  fd_smmu_cfg(struct fd_device *pdev,int bypass)
     tmp = tmp|(1<<16);
     fd_smmu_w(pdev,tmp,SMMU_GLOBAL_BYPASS);
     if (bypass) {
-    /* disable SMMU only for FD stream id */
-    int i ;
-    for(i=MIN_FD_SMMU_STREAM_ID;i<MAX_FD_SMMU_STREAM_ID;i++)
-    {
-        fd_smmu_w(pdev,(fd_smmu_r(pdev,smmu_offset_list[2]+i*SMMU_STREAM_OFFSET))|0x1,
-             smmu_offset_list[2]+i*SMMU_STREAM_OFFSET);
+        /* disable SMMU only for FD stream id */
+        int i ;
+        for(i=MIN_FD_SMMU_STREAM_ID;i<MAX_FD_SMMU_STREAM_ID;i++)
+        {
+            fd_smmu_w(pdev,(fd_smmu_r(pdev,smmu_offset_list[2]+i*SMMU_STREAM_OFFSET))|0x1,
+                 smmu_offset_list[2]+i*SMMU_STREAM_OFFSET);
+        }
+        goto exit;
     }
-    goto exit;
-}
     fd_smmu_w(pdev,0xFF,smmu_offset_list[1]);
     fd_smmu_w(pdev,0x0,smmu_offset_list[0]);
     //SMMU Context Config
@@ -413,7 +415,7 @@ int  fd_smmu_master_cfg(struct fd_device *pdev,int bypass,IO_IPU_MAPS_va *maps_V
         }
         goto exit;
     }
-   /* config smmu master ics*/
+    /* config smmu master ics*/
     tmp = fd_smmu_mstr_r(pdev,mstr_offset_list[0]);
     tmp = (tmp |0x7FF);
     fd_smmu_mstr_w(pdev,tmp,mstr_offset_list[0]);
@@ -426,10 +428,7 @@ int  fd_smmu_master_cfg(struct fd_device *pdev,int bypass,IO_IPU_MAPS_va *maps_V
     tmp =maps_Va->preImg_va[1];
     fd_smmu_mstr_w(pdev,tmp,(mstr_offset_list[3]+1*SMMU_STREAM_OFFSET));
     //stream 2 va_start
-    if(i<=FD_MSTR_STREAM_ID_2)
-    tmp = maps_Va->preImg_va[0];
-    else
-    tmp =maps_Va->preMap_va_1[0];
+    tmp = maps_Va->preMap_va_1[0];
     fd_smmu_mstr_w(pdev,tmp,(mstr_offset_list[3]+2*SMMU_STREAM_OFFSET));
     //stream 3 va_start
     tmp =maps_Va->preMap_va_1[0];
@@ -438,7 +437,7 @@ int  fd_smmu_master_cfg(struct fd_device *pdev,int bypass,IO_IPU_MAPS_va *maps_V
     tmp =maps_Va->preMap_va_1[0];
     fd_smmu_mstr_w(pdev,tmp,(mstr_offset_list[3]+4*SMMU_STREAM_OFFSET));
     //stream 5 va_start
-   tmp = maps_Va->preMap_va_1[0];
+    tmp = maps_Va->preMap_va_1[0];
     fd_smmu_mstr_w(pdev,tmp,(mstr_offset_list[3]+5*SMMU_STREAM_OFFSET));
     //stream 6 va_start
     tmp = maps_Va->preMap_va_1[0];
@@ -464,10 +463,7 @@ int  fd_smmu_master_cfg(struct fd_device *pdev,int bypass,IO_IPU_MAPS_va *maps_V
     fd_smmu_mstr_w(pdev,tmp,(mstr_offset_list[4]+1*SMMU_STREAM_OFFSET));
 
     //stream 2 va_end
-    if(i<=FD_MSTR_STREAM_ID_2)
-    tmp = (u32)maps_Va->preImg_va[0]+(i*32*1024); //300k to 320k -32k = 288k   //2752k -32k = 2720k
-    else
-    tmp =maps_Va->preMap_va_1[0]+2785280;
+    tmp = maps_Va->preMap_va_1[0]+2785280;
     fd_smmu_mstr_w(pdev,tmp,(mstr_offset_list[4]+2*SMMU_STREAM_OFFSET));
     //stream 3 va_end
     tmp =maps_Va->preMap_va_1[0]+2785280;//300k to 320k - 32k = 288k
@@ -478,11 +474,11 @@ int  fd_smmu_master_cfg(struct fd_device *pdev,int bypass,IO_IPU_MAPS_va *maps_V
     fd_smmu_mstr_w(pdev,tmp,(mstr_offset_list[4]+4*SMMU_STREAM_OFFSET));
 
     //stream 5 va_end
-   tmp =maps_Va->preMap_va_1[0]+2785280;// 150k to 160k - 32k = 128k
+    tmp =maps_Va->preMap_va_1[0]+2785280;// 150k to 160k - 32k = 128k
     fd_smmu_mstr_w(pdev,tmp,(mstr_offset_list[4]+5*SMMU_STREAM_OFFSET));
 
     //stream 6 va_end
-   tmp =maps_Va->preMap_va_1[0]+2785280; //75k to 96k - 32k = 64k
+    tmp =maps_Va->preMap_va_1[0]+2785280; //75k to 96k - 32k = 64k
     fd_smmu_mstr_w(pdev,tmp,(mstr_offset_list[4]+6*SMMU_STREAM_OFFSET));
 
     //stream 7 va_end
@@ -511,7 +507,7 @@ static int fd_open(struct inode *inode, struct file *fd)
     struct miscdevice *miscdev = fd->private_data;
     struct fd_device *pdev = container_of(miscdev, struct fd_device, device);
 
-    fd_info("AHFD device open.");
+    fd_dbg("AHFD device open.");
     if (!atomic_dec_and_test(&pdev->accessible)) {
         fd_err("fd dev has been opened!");
         atomic_inc(&pdev->accessible);
@@ -522,16 +518,27 @@ static int fd_open(struct inode *inode, struct file *fd)
         fd_err("Failed to power on fd.");
         goto err_out1;
     }
+    pdev->ion_client = hisi_ion_client_create("hisi-fd");
+    if (IS_ERR_OR_NULL(pdev->ion_client )) {
+        fd_err("failed to create ion client!\n");
+        goto err_out2;
+    }
     ret = request_irq(pdev->fd_irq, fd_irq_handler, 0, "fd_irq", (void *)pdev);
     if (ret) {
         fd_err("Failed to request fd irq.%d", ret);
         goto err_out;
     }
     fd->private_data = (void *)pdev;
+
+    pdev->smmu_img_fd = -1;
+    pdev->smmu_ipu_fd = -1;
+
     return ret;
+
 err_out:
+    ion_client_destroy(pdev->ion_client);
+err_out2:
     fd_poweroff(pdev);
-    return ret;
 err_out1:
     atomic_inc(&pdev->accessible);
     return ret;
@@ -541,20 +548,25 @@ err_out1:
 static int fd_release(struct inode *inode, struct file *fd)
 {
     struct fd_device *pdev = (struct fd_device *)fd->private_data;
+    struct ion_client*  ion = NULL;
     if (NULL == pdev) {
         fd_err("dev is NULL.");
         return -ENODEV;
     }
-    fd_info("FD device close.");
+    fd_dbg("FD device close.");
     if (atomic_sub_and_test(0, &pdev->accessible)) {
         free_irq(pdev->fd_irq, pdev);
+        swap(ion, pdev->ion_client);
+        if (ion) {
+            ion_client_destroy(ion);
+        }
         fd_poweroff(pdev);
         atomic_inc(&pdev->accessible);
     }
     else {
         fd_warn("accessible not zero.");
     }
-    fd_info("AHFD Release");
+    fd_dbg("AHFD Release");
     return 0;
 }
 static long AHFD_Get_Version(struct fd_device *pdev, unsigned int cmd, unsigned long arg)
@@ -576,217 +588,532 @@ static long AHFD_Get_Version(struct fd_device *pdev, unsigned int cmd, unsigned 
     return 0;
 }
 
-/* Check if input register range is within AHFD register space */
-static int fd_access_ok(uint32_t offset, uint32_t size)
+/*
+* Check if buffer is correctly organized as described in fd_drv_cfg.h and does
+* not try any bogus accesses
+*/
+#define FD_REGISTER_PRE_OUT_SIZE     (0x40)
+
+#define FD_REGISTER_TME_TMM0_MFN     (0x2E0)
+#define FD_REGISTER_TME_TMM1_MFN     (0x2E4)
+#define FD_REGISTER_TME_TMM2_MFN     (0x2E8)
+#define FD_REGISTER_TME_TMM3_MFN     (0x2EC)
+#define FD_REGISTER_TME_TMM4_MFN     (0x2F0)
+#define FD_REGISTER_TME_TMM5_MFN     (0x2F4)
+
+#define FD_REGISTER_IPP_RD_CROP_LINE (0x424)
+#define FD_REGISTER_IPP_RD_STRD_Y_CB (0x434)
+#define FD_REGISTER_IPP_RD_STRD_CR   (0x438)
+
+#define FD_REGISTER_TME_CLK          (0x318)
+#define FD_REGISTER_TME_WR_BA        (0x468)
+#define FD_REGISTER_IPU_RD_Y_BA      (0x428)
+#define FD_REGISTER_IPU_RD_CB_BA     (0x42C)
+#define FD_REGISTER_IPU_RD_CR_BA     (0x430)
+#define FD_REGISTER_PRE_MAP4_WR_BA   (0x440)
+#define FD_REGISTER_PRE_MAP11_WR_BA  (0x444)
+#define FD_REGISTER_PRE_MAP12_WR_BA  (0x448)
+#define FD_REGISTER_PRE_MAP13_WR_BA  (0x44C)
+#define FD_REGISTER_PRE_MAP2_WR_BA   (0x450)
+#define FD_REGISTER_PRE_MAP3_WR_BA   (0x454)
+#define FD_REGISTER_PRE_MAP5_WR_BA   (0x458)
+#define FD_REGISTER_IPP_CTRL         (0x41C)
+#define FD_REGISTER_TME_BLK_EN       (0x31C)
+
+#define FD_PRE_MAP4_SIZE             (256 * 4 * 3)
+
+typedef enum register_type {
+    FD_REGS_ERROR = 0,
+    FD_REGS_PRE,
+    FD_REGS_TME,
+    FD_REGS_WRAPPERS,
+    FD_REGS_LUT,
+} REGISTER_TYPE;
+
+typedef struct register_range {
+    unsigned int start;
+    unsigned int end;
+    REGISTER_TYPE reg_type;
+} REGISTER_RANGE;
+
+static REGISTER_RANGE reg_lut[] =
 {
-    /*
-    * offset and size are unsigned, therefore always positive.
-    * There can be no resulting access of address lower than register space base address.
-    * Check offsets to upper bounds of register space.
-    */
-    if (offset            > AHFD_MAX_OFFSET     ||
-        size              > AHFD_MAX_OFFSET / 4 ||
-        offset + 4 * size > AHFD_MAX_OFFSET)
-    {
-        fd_err("Illegal address access");
+    {0x00000, 0x00058, FD_REGS_PRE},
+    {0x00200, 0x0031C, FD_REGS_TME},
+    {0x00400, 0x00478, FD_REGS_WRAPPERS},
+    {0x01000, 0x0151C, FD_REGS_LUT},
+    {0x01800, 0x01AFC, FD_REGS_LUT},
+    {0x02000, 0x02BFC, FD_REGS_LUT},
+    {0x03000, 0x03BFC, FD_REGS_LUT},
+    {0x04000, 0x057FC, FD_REGS_LUT},
+    {0x06000, 0x0B4FC, FD_REGS_LUT},
+    {0x0B800, 0x0BAFC, FD_REGS_LUT},
+    {0x0C000, 0x0CBFC, FD_REGS_LUT},
+    {0x0D000, 0x0DBFC, FD_REGS_LUT},
+    {0x0E000, 0x0F7FC, FD_REGS_LUT},
+    {0x10000, 0x154FC, FD_REGS_LUT},
+};
+
+static REGISTER_TYPE fd_get_register_type(uint32_t offset, uint32_t size)
+{
+    int i;
+    int array_size = sizeof(reg_lut)/sizeof(REGISTER_RANGE);
+    uint32_t offset_end = offset + (size - 1) * sizeof(uint32_t);
+
+    if (offset_end < offset)
+        return FD_REGS_ERROR;
+
+    for (i = 0; i < array_size; i++) {
+        if ((offset >= reg_lut[i].start) && (offset <= reg_lut[i].end) && (offset_end <= reg_lut[i].end))
+            return reg_lut[i].reg_type;
+    }
+
+    return FD_REGS_ERROR;
+}
+
+static bool check_buffer_valid(uint32_t base_addr, uint32_t size, ion_phys_addr_t phys_addr, size_t phys_size)
+{
+    if (0 == base_addr)
+        return true;
+
+    if (0 == size)
+        return false;
+
+    if (base_addr < phys_addr)
+        return false;
+
+    if (base_addr >= (phys_addr + phys_size))
+        return false;
+
+    if (size > phys_size)
+        return false;
+
+    if ((base_addr + size) > (phys_addr + phys_size))
+        return false;
+
+    return true;
+}
+
+static long get_buffer_info_from_fd(struct fd_device *pdev, int share_fd, unsigned long *addr, size_t *size)
+{
+    long rc = 0;
+    if (0 == pdev->smmu_flag) {
+        struct dma_buf *buf = NULL;
+        struct dma_buf_attachment *attach = NULL;
+        struct sg_table *sgt = NULL;
+        struct scatterlist *sgl = NULL;
+
+        buf = dma_buf_get(share_fd);
+        if (IS_ERR(buf))
+            return -1;
+
+        attach = dma_buf_attach(buf, pdev->device.this_device);
+        if (IS_ERR(attach)) {
+            rc = -1;
+            goto _err_dma_buf_attach;
+        }
+
+        sgt = dma_buf_map_attachment(attach, DMA_BIDIRECTIONAL);
+        if (IS_ERR_OR_NULL(sgt)) {
+            rc = -1;
+            goto _err_dma_buf_map_attachment;
+        }
+
+        sgl = sgt->sgl;
+        if (IS_ERR_OR_NULL(sgl)) {
+            rc = -1;
+            goto _err_dma_buf_map_attachment;
+        }
+
+        // Get physical addresses from scatter list
+        *addr = (unsigned long)sg_phys(sgl);
+        *size = sg_dma_len(sgl);
+
+        _err_dma_buf_map_attachment:
+        dma_buf_detach(buf, attach);
+        _err_dma_buf_attach:
+        dma_buf_put(buf);
+        return rc;
+    } else {
+        struct ion_handle *ionhnd;
+        struct iommu_map_format iommu_format;
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4,9,0))
+        ionhnd = ion_import_dma_buf(pdev->ion_client, share_fd);/*lint !e838*/
+#else
+        ionhnd = ion_import_dma_buf_fd(pdev->ion_client, share_fd);/*lint !e838*/
+#endif
+        if (IS_ERR(ionhnd)) {
+            fd_err("%s:invalid ion handle ipu share fd", __func__);
+            return -1;
+        }
+
+        memset_s(&iommu_format, sizeof(struct iommu_map_format), 0, sizeof(struct iommu_map_format));
+        if (ion_map_iommu(pdev->ion_client, ionhnd, &iommu_format)) {
+            fd_err("%s, ion_map_iommu error(ipu)", __func__);
+            ion_free(pdev->ion_client, ionhnd);
+            return -1;
+        }
+        *addr = iommu_format.iova_start;
+        *size = iommu_format.iova_size;
+        ion_unmap_iommu(pdev->ion_client, ionhnd);
+
+        ion_free(pdev->ion_client, ionhnd);
+    }
+
+    return rc;
+}
+
+static long get_buffer_addr(struct fd_device *pdev)
+{
+    if (0 != get_buffer_info_from_fd(pdev, pdev->ipu_share_fd, &pdev->mem_base.ipu_phys_addr, &pdev->mem_base.ipu_size))
         return -1;
+
+    if (0 != get_buffer_info_from_fd(pdev, pdev->img_share_fd, &pdev->mem_base.img_phys_addr, &pdev->mem_base.img_size))
+        return -1;
+
+    return 0;
+}
+
+static void fd_get_image_size(struct fd_device *pdev, uint32_t *image_y_size,  uint32_t *image_cb_size,  uint32_t *image_cr_size)
+{
+    uint32_t read_strd_y_cb = FD_HW_READ_32(pdev->fd_viraddr + FD_REGISTER_IPP_RD_STRD_Y_CB);
+    uint32_t read_strd_y = read_strd_y_cb & 0xFFFF;
+    uint32_t read_strd_cb = (read_strd_y_cb >> 16) & 0xFFFF;
+    uint32_t read_strd_cr = FD_HW_READ_32(pdev->fd_viraddr + FD_REGISTER_IPP_RD_STRD_CR) & 0xFFFF;
+    uint32_t image_height = ((FD_HW_READ_32(pdev->fd_viraddr + FD_REGISTER_IPP_RD_CROP_LINE) >> 16) & 0x1FFF) + 1;
+
+    *image_y_size  = (read_strd_y  * image_height);
+    *image_cb_size = ((read_strd_cb * image_height) >> 2);
+    *image_cr_size = ((read_strd_cr * image_height) >> 2);
+}
+
+static uint32_t fd_get_pre_map_size(struct fd_device *pdev)
+{
+    uint32_t pre_out_size = FD_HW_READ_32(pdev->fd_viraddr + FD_REGISTER_PRE_OUT_SIZE);
+    return ((pre_out_size & 0x3FF) * ((pre_out_size >> 16) & 0x3FF));
+}
+
+static uint32_t fd_get_tme_out_size(struct fd_device *pdev)
+{
+    uint32_t mfn = FD_HW_READ_32(pdev->fd_viraddr + FD_REGISTER_TME_TMM0_MFN);
+    mfn += FD_HW_READ_32(pdev->fd_viraddr + FD_REGISTER_TME_TMM1_MFN);
+    mfn += FD_HW_READ_32(pdev->fd_viraddr + FD_REGISTER_TME_TMM2_MFN);
+    mfn += FD_HW_READ_32(pdev->fd_viraddr + FD_REGISTER_TME_TMM3_MFN);
+    mfn += FD_HW_READ_32(pdev->fd_viraddr + FD_REGISTER_TME_TMM4_MFN);
+    mfn += FD_HW_READ_32(pdev->fd_viraddr + FD_REGISTER_TME_TMM5_MFN);
+    return mfn * 8;
+}
+
+static bool fd_check_base_address_valid(struct fd_device *pdev)
+{
+    uint32_t pre_base_size = fd_get_pre_map_size(pdev);
+    uint32_t image_y_size;
+    uint32_t image_cb_size;
+    uint32_t image_cr_size;
+
+    if ((pdev->smmu_img_fd != pdev->img_share_fd) || (pdev->smmu_ipu_fd != pdev->ipu_share_fd))
+        return false;
+
+    if (0 != get_buffer_addr(pdev))
+        return false;
+
+    fd_get_image_size(pdev, &image_y_size, &image_cb_size, &image_cr_size);
+
+    /* IPU READ */
+    if (!check_buffer_valid(FD_HW_READ_32(pdev->fd_viraddr + FD_REGISTER_IPU_RD_Y_BA), image_y_size, pdev->mem_base.img_phys_addr, pdev->mem_base.img_size))
+        return false;
+
+    if (!check_buffer_valid(FD_HW_READ_32(pdev->fd_viraddr + FD_REGISTER_IPU_RD_CB_BA), image_cb_size, pdev->mem_base.img_phys_addr, pdev->mem_base.img_size))
+        return false;
+
+    if (!check_buffer_valid(FD_HW_READ_32(pdev->fd_viraddr + FD_REGISTER_IPU_RD_CR_BA), image_cr_size, pdev->mem_base.img_phys_addr, pdev->mem_base.img_size))
+        return false;
+
+    /* TME OUTPUT */
+    if (!check_buffer_valid(FD_HW_READ_32(pdev->fd_viraddr + FD_REGISTER_TME_WR_BA), fd_get_tme_out_size(pdev), pdev->mem_base.ipu_phys_addr, pdev->mem_base.ipu_size))
+        return false;
+
+    /* PRE MAPS */
+    if (!check_buffer_valid(FD_HW_READ_32(pdev->fd_viraddr + FD_REGISTER_PRE_MAP4_WR_BA), FD_PRE_MAP4_SIZE, pdev->mem_base.ipu_phys_addr, pdev->mem_base.ipu_size))
+        return false;
+
+    if (!check_buffer_valid(FD_HW_READ_32(pdev->fd_viraddr + FD_REGISTER_PRE_MAP11_WR_BA), pre_base_size, pdev->mem_base.ipu_phys_addr, pdev->mem_base.ipu_size))
+        return false;
+
+    if (!check_buffer_valid(FD_HW_READ_32(pdev->fd_viraddr + FD_REGISTER_PRE_MAP12_WR_BA), (pre_base_size >> 2), pdev->mem_base.ipu_phys_addr, pdev->mem_base.ipu_size))
+        return false;
+
+    if (!check_buffer_valid(FD_HW_READ_32(pdev->fd_viraddr + FD_REGISTER_PRE_MAP13_WR_BA), (pre_base_size >> 2), pdev->mem_base.ipu_phys_addr, pdev->mem_base.ipu_size))
+        return false;
+
+    if (!check_buffer_valid(FD_HW_READ_32(pdev->fd_viraddr + FD_REGISTER_PRE_MAP2_WR_BA), (pre_base_size >> 2), pdev->mem_base.ipu_phys_addr, pdev->mem_base.ipu_size))
+        return false;
+
+    if (!check_buffer_valid(FD_HW_READ_32(pdev->fd_viraddr + FD_REGISTER_PRE_MAP3_WR_BA), pre_base_size, pdev->mem_base.ipu_phys_addr, pdev->mem_base.ipu_size))
+        return false;
+
+    if (!check_buffer_valid(FD_HW_READ_32(pdev->fd_viraddr + FD_REGISTER_PRE_MAP5_WR_BA), (pre_base_size << 2), pdev->mem_base.ipu_phys_addr, pdev->mem_base.ipu_size))
+        return false;
+
+    return true;
+}
+
+static uint32_t unwriteable_reg_list[] =
+{ 0x54, 0x2F8, 0x2FC, 0x300, 0x304, 0x308, 0x30c, 0x310, 0x414, 0x418, 0x464, 0x470, 0x474}; //0x474 is APB REVERSE, do not set
+
+static bool is_writeable_reg(uint32_t offset)
+{
+    int i;
+    int size = sizeof(unwriteable_reg_list) / sizeof(uint32_t);
+    for (i = 0; i < size; i++) {
+        if (unwriteable_reg_list[i] == offset)
+            return false;
+    }
+
+    return true;
+}
+
+static bool check_reg_value(uint32_t value)
+{
+    uint32_t format = value & 0x03;
+    uint32_t rdm    = value & 0x08;
+
+    if (0 != (value & 0xFFFFFFE0))
+        return false;
+
+    if (3 == format) {
+        return false;
+    } else if (2 == format) {
+        if (0 == rdm)
+            return false;
+    } else {
+        if (1 == rdm)
+            return false;
+    }
+
+    return true;
+}
+
+static int fd_write_reg(struct fd_device *pdev, uint32_t * regStart)
+{
+    uint32_t offset = *(regStart++);
+    uint32_t size   = *(regStart++);
+    char __iomem* addr = pdev->fd_viraddr + offset;
+    uint32_t reg_val;
+    uint32_t k;
+
+    for (k = 0; k < size; k++) {
+        reg_val = *(regStart++);
+        if ((FD_REGISTER_IPP_CTRL == offset) && !check_reg_value(reg_val))
+        {
+             return -1;
+        }
+        if (((FD_REGISTER_IPP_CTRL == offset) && (0 != (reg_val & 4)))
+                || ((FD_REGISTER_TME_BLK_EN == offset) && (0 != (reg_val & 1)))) {
+            if (!fd_check_base_address_valid(pdev)) {
+                fd_err("fd_check_base_address_valid failed!");
+                return -1;
+            }
+        }
+        if (is_writeable_reg(offset)) {
+            FD_HW_WRITE_32(reg_val, addr);
+        }
+        /*for FD perf count*/
+        /*if(offset == 0x041C)
+        {
+            uint32_t tmp = reg_val & 0x4;
+            if(tmp !=0)
+            {
+                pre_start = ktime_get();
+            }
+        }
+        if((offset == 0x031C)&&(reg_val == 1))
+        {
+            tme_start = ktime_get();
+        }*/
+        addr += 4;
+        offset +=4;
     }
 
     return 0;
 }
 
-/*
-* Check if buffer is correctly organized as described in fd_drv_cfg.h and does
-* not try any bogus accesses
-*/
-static int fd_register_buffer_ok(uint32_t *start, uint32_t length)
+static long fd_do_write_reg(struct fd_device *pdev, uint32_t *regStart, uint32_t buffer_length)
 {
+    char __iomem *base_addr = pdev->fd_viraddr;
     uint32_t size, offset;
-    uint32_t arr_pos = 0;
+    REGISTER_TYPE type;
 
-    /* Check that the buffer still has an available offset and size */
-    while(length > 2)
+    while(buffer_length > 2)
     {
-        offset = start[arr_pos];
-        size   = start[(arr_pos + 1)];/*lint !e679 */
+        offset = *regStart;
+        size   = *(regStart + 1);
 
-        /* No empty sub-arrays */
-        if(0 == size)
+        /* Check buffer validity */
+        if (0 != (offset % 4))
             return -1;
 
-        /* Check if respects AHFD register space boundaries */
-        if(fd_access_ok(offset, size) < 0)
+        if ((0 == size))
             return -1;
 
-        /* Sub-array length exceeds buffer length */
-        if(length < size + 2)
+        if (size > (buffer_length - 2))
             return -1;
 
-        length  -= (size + 2);
-        arr_pos += (size + 2);
+        type = fd_get_register_type(offset, size);
+        if (FD_REGS_ERROR == type) {
+            fd_err("AHFD_WRITE_REGS registers error");
+            return -1;
+        }
+
+        if ((FD_REGS_LUT == type) && (0 == (FD_HW_READ_32(base_addr + FD_REGISTER_TME_CLK) & 1))) {
+            fd_err("AHFD_WRITE_REGS write lut registers without clk enable");
+            return -1;
+        }
+
+        if (0 != fd_write_reg(pdev, regStart)) {
+            fd_err("AHFD_WRITE_REGS fd_write_reg error");
+            return -1;
+        }
+
+        //fd_info("offset = 0x%x, size = %d", offset, size);
+        regStart += (size + 2);//lint !e679
+        buffer_length -= (size + 2);
     }
 
-    /* If there are any dangling offset [and size] */
-    if(length > 0)
-        return -1;
-
-    return 0;
+    return (0 == buffer_length) ? 0 : -1;
 }
 
 static long AHFD_Write_Regs(struct fd_device *pdev, unsigned int cmd, unsigned long arg)
 {
     long rc = 0;
     struct fd_reg_array regs;
-    if (mutex_lock_interruptible(&pdev->wlock))
-    {
-        fd_err("AHFD_WRITE_REGS mutex interrupt error");
-        return -EINTR;
-    }
+
     fd_dbg("AHFD_WRITE_REGS:\n");
     if (copy_from_user(&regs, (struct fd_reg_array*)arg, sizeof(struct fd_reg_array)))
     {
         fd_err("AHFD_WRITE_REGS can't copy from user1");
-        rc = -EFAULT;
-        goto _write_exit;
+        return -EFAULT;
     }
-    if((regs.length > FD_REG_MAX_ARRAY) || (regs.length==0) || (!regs.values) ||((regs.length* sizeof(uint32_t)) > (FD_REG_MAX_ARRAY* sizeof(uint32_t))))
+    if ((regs.length > FD_REG_MAX_ARRAY) || (0 == regs.length) || (!regs.values)
+            || ((regs.length * sizeof(uint32_t)) > (FD_REG_MAX_ARRAY * sizeof(uint32_t))))//for HW_CBG_C_COPY_FROM_USER
     {
         fd_err("AHFD_WRITE_REGS invalid input");
-        rc = -EINVAL;
-        goto _write_exit;
+        return -EINVAL;
     }
     if (copy_from_user(pdev->registerBufferWrite, regs.values, regs.length * sizeof(uint32_t)))
     {
         fd_err("AHFD_WRITE_REGS can't copy from user2");
-        rc = -EFAULT;
-        goto _write_exit;
+        return -EFAULT;
     }
-    if(NULL != pdev->fd_viraddr)
+    if (NULL != pdev->fd_viraddr)
     {
-        char __iomem *base_addr = pdev->fd_viraddr;
-        char __iomem *addr;
-        uint32_t size, k, offset;
-        uint32_t *regStart = pdev->registerBufferWrite;
-        uint32_t buffer_length = regs.length;
-        uint32_t regVal;
-        if(fd_register_buffer_ok(regStart, buffer_length) < 0)
-        {
-            fd_err("AHFD_WRITE_REGS invalid input");
-            rc = -EACCES;
-            goto _write_exit;
-        }
-        while(buffer_length >0)
-        {
-            offset = *(regStart++);
-            size   = *(regStart++);
-            addr   = base_addr + offset;
-            /* Check buffer validity */
-
-            //fd_info("offset = 0x%x, size = %d", offset, size);
-
-            for(k = size; k != 0; k--)
-            {
-                regVal = *(regStart++);
-                FD_HW_WRITE_32(regVal, addr);
-                /*for FD perf count*/
-                /*if(offset == 0x041C)
-                {
-                    uint32_t tmp = regVal & 0x4;
-                    if(tmp !=0)
-                    {
-                        pre_start = ktime_get();
-                    }
-                }
-                if((offset == 0x031C)&&(regVal == 1))
-                {
-                    tme_start = ktime_get();
-                }*/
-
-                addr += 4;
-            }
-            buffer_length -= (size + 2);
-        }
+        pdev->img_share_fd = regs.img_share_fd;
+        pdev->ipu_share_fd = regs.ipu_share_fd;
+        rc = fd_do_write_reg(pdev, pdev->registerBufferWrite, regs.length);
+        pdev->img_share_fd = -1;
+        pdev->ipu_share_fd = -1;
+        memset_s(&pdev->mem_base, sizeof(struct mem_base), 0, sizeof(struct mem_base));
     }
-_write_exit:
-            mutex_unlock(&pdev->wlock);//lint !e455
-            return rc;
+    else
+    {
+        rc = -EFAULT;
+    }
+
+    return rc;
 }
+
+static long fd_do_read_reg(struct fd_device *pdev, uint32_t *regStart, uint32_t buffer_length)
+{
+    char __iomem *base_addr = pdev->fd_viraddr;
+    char __iomem* addr;
+    uint32_t size, offset;
+    REGISTER_TYPE type;
+    uint32_t k;
+
+    while(buffer_length > 2)
+    {
+        offset = *(regStart++);
+        size   = *(regStart++);
+
+        /* Check buffer validity */
+        if (0 != (offset % 4))
+            return -1;
+
+        if ((0 == size))
+            return -1;
+
+        if (size > (buffer_length - 2))
+            return -1;
+
+        type = fd_get_register_type(offset, size);
+        if (FD_REGS_ERROR == type)
+        {
+            fd_err("AHFD_READ_REGS registers error");
+            return -1;
+        }
+
+        if ((FD_REGS_LUT == type) && (0 == (FD_HW_READ_32(base_addr + FD_REGISTER_TME_CLK) & 1)))
+        {
+            fd_err("AHFD_READ_REGS read lut registers without clk enable");
+            return -1;
+        }
+
+        addr = base_addr + offset;
+
+        for (k = 0; k < size; k++) {
+            *(regStart++) = FD_HW_READ_32(addr);
+            addr += 4;
+        }
+
+        //fd_info("offset = 0x%x, size = %d", offset, size);
+        buffer_length -= (size + 2);
+    }
+
+    return (0 == buffer_length) ? 0 : -1;
+}
+
 static long AHFD_Read_Regs(struct fd_device *pdev, unsigned int cmd, unsigned long arg)
 {
     long rc = 0;
     struct fd_reg_array regs;
 
-    if (mutex_lock_interruptible(&pdev->rlock))
-    {
-        fd_err("AHFD_READ_REGS mutex interrupt error");
-        return  -EINTR;
-    }
     fd_dbg("AHFD_READ_REGS:\n");
     if (copy_from_user(&regs, (struct fd_reg_array*)arg, sizeof(struct fd_reg_array)))
     {
         fd_err("AHFD_READ_REGS can't copy from user1");
-        rc = -EFAULT;
-        goto _read_exit;
+        return -EFAULT;
     }
-    if((regs.length > FD_REG_MAX_ARRAY) || (regs.length==0) || (!regs.values) ||((regs.length* sizeof(uint32_t)) > (FD_REG_MAX_ARRAY* sizeof(uint32_t))))
+    if ((regs.length > FD_REG_MAX_ARRAY) || (0 == regs.length) || (!regs.values)
+            || ((regs.length * sizeof(uint32_t)) > (FD_REG_MAX_ARRAY * sizeof(uint32_t))))//for HW_CBG_C_COPY_FROM_USER
     {
         fd_err("AHFD_READ_REGS invalid input");
-        rc = -EINVAL;
-        goto _read_exit;
+        return -EINVAL;
     }
-
     if (copy_from_user(pdev->registerBufferRead, regs.values, regs.length * sizeof(uint32_t)))
     {
         fd_err("AHFD_READ_REGS can't copy from user2");
-        rc = -EFAULT;
-        goto _read_exit;
+        return -EFAULT;
     }
-    if(NULL != pdev->fd_viraddr)
+    if (NULL != pdev->fd_viraddr)
     {
-        char __iomem *base_addr = pdev->fd_viraddr;
-        char __iomem *addr;
-        uint32_t size, k, offset;
-        uint32_t *regStart = pdev->registerBufferRead;
-        uint32_t buffer_length = regs.length;
-        uint32_t regVal;
-        if(fd_register_buffer_ok(regStart, regs.length) < 0)
-        {
-            fd_err("AHFD_READ_REGS invalid input");
-            rc = -EACCES;
-            goto _read_exit;
-        }
-        while(buffer_length >0)
-        {
-            offset = *(regStart++);
-            size   = *(regStart++);
-            addr   = base_addr + offset;
-            //fd_info("offset = 0x%x, size = %d", offset, size);
+        rc = fd_do_read_reg(pdev, pdev->registerBufferRead, regs.length);
+        if (0 != rc)
+            return rc;
 
-            for(k = size; k != 0; k--)
-            {
-                regVal = FD_HW_READ_32(addr);
-                *(regStart++) = regVal;
-                addr += 4;
-            }
-            buffer_length -= (size + 2);
+        if (copy_to_user(regs.values, pdev->registerBufferRead, regs.length * sizeof(uint32_t)))
+        {
+            fd_err("AHFD_READ_REGS can't copy to user");
+            return -EFAULT;
         }
     }
-    if((regs.length* sizeof(uint32_t)) > (FD_REG_MAX_ARRAY* sizeof(uint32_t)))
+    else
     {
-        fd_err("AHFD_READ_REGS invalid input");
-        rc = -EINVAL;
-        goto _read_exit;
-    }
-    if (copy_to_user(regs.values, pdev->registerBufferRead, regs.length * sizeof(uint32_t)))
-    {
-        fd_err("AHFD_READ_REGS can't copy to user");
         rc = -EFAULT;
-        goto _read_exit;
     }
-_read_exit:
-        mutex_unlock(&pdev->rlock);//lint !e455
-        return rc;
+
+    return rc;
 }
+
 static long AHFD_Wait_Result(struct fd_device *pdev, unsigned int cmd, unsigned long arg)
 {
     long rc = 0;
@@ -805,8 +1132,12 @@ static long AHFD_Wait_Result(struct fd_device *pdev, unsigned int cmd, unsigned 
 
     if(waitType & RESULT_TYPE_PRE)
     {
-        // wait if flag is not WAIT_RESULT_PENDING ( = 0)
-        wait_event_interruptible(pdev->wq[IDX_WAIT_PRE], !atomic_sub_and_test(WAIT_RESULT_PENDING, &pdev->waitFlag[IDX_WAIT_PRE]));//lint !e666
+        // wait if flag is not WAIT_RESULT_PENDING ( = 0) or 100ms for time out.
+        if (0 == wait_event_interruptible_timeout(pdev->wq[IDX_WAIT_PRE], !atomic_sub_and_test(WAIT_RESULT_PENDING, &pdev->waitFlag[IDX_WAIT_PRE]), msecs_to_jiffies(100)))//lint !e666
+        {
+            fd_err("wait pre interrupt time out!");
+        }
+
         // check for error flag and reset flag to WAIT_RESULT_PENDING (= 0)
         if(!atomic_sub_and_test(WAIT_RESULT_READY, &pdev->waitFlag[IDX_WAIT_PRE]))
         {
@@ -819,8 +1150,11 @@ static long AHFD_Wait_Result(struct fd_device *pdev, unsigned int cmd, unsigned 
 
     if(waitType & RESULT_TYPE_TME)
     {
-        // wait if flag is not WAIT_RESULT_PENDING ( = 0)
-        wait_event_interruptible(pdev->wq[IDX_WAIT_TME], !atomic_sub_and_test(WAIT_RESULT_PENDING, &pdev->waitFlag[IDX_WAIT_TME]));//lint !e666
+        // wait if flag is not WAIT_RESULT_PENDING ( = 0) or 100ms for time out.
+        if (0 == wait_event_interruptible_timeout(pdev->wq[IDX_WAIT_TME], !atomic_sub_and_test(WAIT_RESULT_PENDING, &pdev->waitFlag[IDX_WAIT_TME]), msecs_to_jiffies(100)))//lint !e666
+        {
+            fd_err("wait tme interrupt time out!");
+        }
 
         // check for error flag and reset flag to WAIT_RESULT_PENDING (= 0)
         if(!atomic_sub_and_test(WAIT_RESULT_READY, &pdev->waitFlag[IDX_WAIT_TME]))
@@ -860,20 +1194,79 @@ static long AHFD_Set_Mode(struct fd_device *pdev, unsigned int cmd, unsigned lon
     return 0;
 }
 
+static long check_smmu_cfg(struct fd_device *pdev, IO_IPU_MAPS_va* maps_Va)
+{
+    uint32_t pre_base_size;
+    long rc = get_buffer_addr(pdev);
+
+    if (0 != rc)
+        return -1;
+
+    pre_base_size = fd_get_pre_map_size(pdev);
+
+    if (!check_buffer_valid(maps_Va->preImg_va[0], maps_Va->img_size_Y, pdev->mem_base.img_phys_addr, pdev->mem_base.img_size))
+        return -1;
+
+    if (!check_buffer_valid(maps_Va->preImg_va[1], maps_Va->img_size_UV, pdev->mem_base.img_phys_addr, pdev->mem_base.img_size))
+        return -1;
+
+    if (!check_buffer_valid(maps_Va->preImg_va[2], maps_Va->img_size_UV, pdev->mem_base.img_phys_addr, pdev->mem_base.img_size))
+        return -1;
+
+    if (!check_buffer_valid(maps_Va->preMap_va_1[0], pre_base_size, pdev->mem_base.ipu_phys_addr, pdev->mem_base.ipu_size))
+        return -1;
+
+    if (!check_buffer_valid(maps_Va->preMap_va_1[1], (pre_base_size >> 2), pdev->mem_base.ipu_phys_addr, pdev->mem_base.ipu_size))
+        return -1;
+
+    if (!check_buffer_valid(maps_Va->preMap_va_1[2], (pre_base_size >> 2), pdev->mem_base.ipu_phys_addr, pdev->mem_base.ipu_size))
+        return -1;
+
+    if (!check_buffer_valid(maps_Va->preMap_va_2, (pre_base_size >> 2), pdev->mem_base.ipu_phys_addr, pdev->mem_base.ipu_size))
+        return -1;
+
+    if (!check_buffer_valid(maps_Va->preMap_va_3, pre_base_size, pdev->mem_base.ipu_phys_addr, pdev->mem_base.ipu_size))
+        return -1;
+
+    if (!check_buffer_valid(maps_Va->preMap_va_4, FD_PRE_MAP4_SIZE, pdev->mem_base.ipu_phys_addr, pdev->mem_base.ipu_size))
+        return -1;
+
+    if (!check_buffer_valid(maps_Va->preMap_va_5, (pre_base_size << 2), pdev->mem_base.ipu_phys_addr, pdev->mem_base.ipu_size))
+        return -1;
+
+    if (!check_buffer_valid(maps_Va->tmeMap_va, fd_get_tme_out_size(pdev), pdev->mem_base.ipu_phys_addr, pdev->mem_base.ipu_size))
+        return -1;
+
+    return 0;
+}
+
 static long AHFD_set_smmu_cfg(struct fd_device *pdev, unsigned int cmd, unsigned long arg)
 {
     long rc = 0;
     int bypass = 0;
+
+    IO_IPU_MAPS_va maps_Va;
+    if (copy_from_user(&maps_Va, (IO_IPU_MAPS_va *)arg, sizeof(IO_IPU_MAPS_va)))
+    {
+        fd_err("AHFD_set_smmu_cfg can't copy from user");
+        return -EFAULT;
+    }
+
     if(pdev->smmu_flag == 1)
     {
-        IO_IPU_MAPS_va maps_Va;
-        if (copy_from_user(&maps_Va, (IO_IPU_MAPS_va *)arg, sizeof(IO_IPU_MAPS_va)))
-        {
-            fd_err("AHFD_set_smmu_cfg can't copy from user");
-            rc = -EFAULT;
-            goto _set_exit;
-        }
         bypass = 0;
+        pdev->img_share_fd = maps_Va.img_share_fd;
+        pdev->ipu_share_fd = maps_Va.ipu_share_fd;
+        rc = check_smmu_cfg(pdev, &maps_Va);
+        pdev->img_share_fd = -1;
+        pdev->ipu_share_fd = -1;
+        memset_s(&pdev->mem_base, sizeof(struct mem_base), 0, sizeof(struct mem_base));
+        rc = 0;
+        if (0 != rc) {
+            fd_err("AHFD_set_smmu_cfg check smmu config error!");
+            return rc;
+        }
+
         fd_smmu_cfg(pdev,bypass);
         fd_smmu_master_cfg(pdev,bypass,&maps_Va);
     }
@@ -883,9 +1276,50 @@ static long AHFD_set_smmu_cfg(struct fd_device *pdev, unsigned int cmd, unsigned
         fd_smmu_cfg(pdev,bypass);
         fd_smmu_master_cfg(pdev,bypass,NULL);
     }
-_set_exit:
-            return rc;
+
+    pdev->smmu_img_fd = maps_Va.img_share_fd;
+    pdev->smmu_ipu_fd = maps_Va.ipu_share_fd;
+
+    return rc;
 }
+
+static long AHFD_get_ion_buffer(struct fd_device *pdev, unsigned int cmd, unsigned long arg)
+{
+    long rc = 0;
+    unsigned long phys_addr = 0;
+    size_t size = 0;
+    struct fd_ion_buffer_info buffer_info;
+
+    if (copy_from_user(&buffer_info, (struct fd_ion_buffer_info*)arg, sizeof(struct fd_ion_buffer_info))) {
+        fd_err("AHFD_GET_ION_BUFFER can't copy from user");
+        rc = -EFAULT;
+        return rc;
+    }
+
+    if (buffer_info.shared_fd < 0)
+    {
+        fd_err("AHFD_GET_ION_BUFFER fd is invalid");
+        rc = -EFAULT;
+        return rc;
+    }
+
+    rc = get_buffer_info_from_fd(pdev, buffer_info.shared_fd, &phys_addr, &size);
+    if (0 != rc) {
+        fd_err("AHFD_GET_ION_BUFFER get buffer info failed!");
+        return rc;
+    }
+
+    buffer_info.phys_addr = phys_addr;
+
+    if (copy_to_user((struct fd_ion_buffer_info*)arg, &buffer_info, sizeof(struct fd_ion_buffer_info))) {
+        fd_err("AHFD_GET_ION_BUFFER can't copy to user");
+        rc = -EFAULT;
+        return rc;
+    }
+
+    return rc;
+}
+
 static long fd_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
     long rc = 0;
@@ -901,11 +1335,17 @@ static long fd_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
         fd_err("Invalid argument 0");
         return -EINVAL;
     }
+
+    if (mutex_lock_interruptible(&pdev->lock)) {
+        fd_err("fd_ioctl mutex interrupt error");
+        return -EINTR;
+    }
+
     switch (cmd) {
         case AHFD_GET_VERSION:
             {
-                 rc = AHFD_Get_Version(pdev, cmd, arg);
-                 break;
+                rc = AHFD_Get_Version(pdev, cmd, arg);
+                break;
             }
         case AHFD_WRITE_REGS:
             {
@@ -924,19 +1364,27 @@ static long fd_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
             }
         case AHFD_SET_MODE:
             {
-                rc =  AHFD_Set_Mode(pdev, cmd, arg);
+                rc = AHFD_Set_Mode(pdev, cmd, arg);
                 break;
             }
         case AHFD_SET_MASTER_VA:
             {
-                rc =  AHFD_set_smmu_cfg(pdev, cmd, arg);
+                rc = AHFD_set_smmu_cfg(pdev, cmd, arg);
+                break;
+            }
+        case AHFD_GET_ION_BUFFER:
+            {
+                rc = AHFD_get_ion_buffer(pdev, cmd, arg);
                 break;
             }
         default:
-        {
-            return -EINVAL;
-        }
+            {
+                rc = -EINVAL;
+                break;
+            }
     }
+
+    mutex_unlock(&pdev->lock);//lint !e455
 
     return rc;
 }

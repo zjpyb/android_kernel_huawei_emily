@@ -60,6 +60,15 @@
       } \
 }
 
+#define loge_if(x) \
+{\
+      int ret = (x); \
+      if (ret) \
+      {\
+          cam_err("'%s' failed, ret = 0x%x", #x, ret); \
+      } \
+}
+
 #ifdef CONFIG_LLT_TEST
 
 struct UT_TEST_HW_FLASH
@@ -140,7 +149,7 @@ struct hw_flash_i2c_msgs_t {
 struct hw_flash_i2c_fn_t {
 	int (*i2c_read) (struct hw_flash_i2c_client *, u8, u8 *);
 	int (*i2c_write) (struct hw_flash_i2c_client *, u8, u8);
-	int (*i2c_writex) (struct hw_flash_i2c_client *, struct hw_flash_i2c_msgs_t *, int);
+    int (*i2c_write_block) (struct hw_flash_i2c_client *, u8, u8 *, int);
 };
 
 struct hw_flash_ctrl_t {

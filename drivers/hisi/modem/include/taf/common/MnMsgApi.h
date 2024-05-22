@@ -70,11 +70,8 @@ extern "C" {
 /*****************************************************************************
   2 常量定义
 *****************************************************************************/
-/* Added by f62575 for AT Project, 2011-10-24, begin */
-/* Deleted by f62575 for V9R1 STK升级, 2013-6-26, begin */
 /* Deleted MN_MSG_7BIT_MASK */
 #define MN_MSG_RP_REPORT_CAUSE_VALUE_MASK                   (0xff)
-/* Deleted by f62575 for V9R1 STK升级, 2013-6-26, end */
 
 
 /*------------------------TP-MTI(TP-Message-Type-Indicator,Bit 0 and 1)---------*/
@@ -94,7 +91,6 @@ extern "C" {
 #define MN_MSG_NVIM_ITEM_ACTIVE                             (1)                 /*NVIM项已激活*/
 #define MN_MSG_NVIM_ITEM_INACTIVE                           (0)                 /*NVIM项未激活*/
 
-/* Added by f62575 for AT Project, 2011-10-24, end */
 
 typedef  VOS_UINT8   MN_MSG_ADDR_NUM_TYPE_T;
 
@@ -117,18 +113,14 @@ typedef VOS_UINT8    MN_MSG_OPER_TYPE_T;
 
 #define MN_MSG_ABSOLUTE_TIMESTAMP_LEN                       0x07
 
-/*->f62575*/
 #define MN_MSG_MAX_UDH_EO_DATA_LEN                          131
 #define MN_MSG_MAX_UDH_EO_NUM                               7
-/*<-f62575*/
 
 #define MN_MSG_ACTIVE_MESSAGE_MAX_URL_LEN                   (160)
 #define MN_MSG_ACTIVE_MESSAGE_PARA_LEN                      ((MN_MSG_ACTIVE_MESSAGE_MAX_URL_LEN) + 8)
 
-/* Added by f62575 for AT Project, 2011-10-04,  Begin */
 #define MN_GET_ADDRTYPE(ucAddrType, enNumType, enNumPlan)                           \
                         ((ucAddrType) = 0x80 | (VOS_UINT8)((enNumType) << 4) | enNumPlan)
-/* Added by f62575 for AT Project, 2011-10-04,  End */
 
 #if ((FEATURE_ON == FEATURE_GCBS) || (FEATURE_ON == FEATURE_WCBS))
 
@@ -143,10 +135,8 @@ typedef VOS_UINT8    MN_MSG_OPER_TYPE_T;
 
 #endif
 
-/* Added by f62575 for V9R1 STK升级, 2013-6-26, begin */
 /* DCS GROUP为1，则CB DATA字段携带语言类型，占2个7位位组长度 */
 #define TAF_MSG_CBA_LANG_LENGTH                             (2)
-/* Added by f62575 for V9R1 STK升级, 2013-6-26, end */
 
 #define MN_MSG_OTA_SECURITY_SMS_DSC_DATA                    (0xf6)
 
@@ -172,7 +162,6 @@ enum MN_MSG_MO_DOMAIN_CUSTOMIZE_TYPE
 };
 typedef VOS_UINT8 MN_MSG_MO_DOMAIN_CUSTOMIZE_TYPE_UINT8;
 
-/* Added by f62575 for AT Project，2011-10-03,  Begin*/
 enum MN_MSG_DATE_INVALID_TYPE_ENUM
 {
     MN_MSG_DATE_INVALID_YEAR            = 0x01,
@@ -218,7 +207,6 @@ enum MN_MSG_STUB_TYPE_ENUM
     MN_MSG_STUB_TYPE_BUTT
 };
 typedef VOS_UINT32 MN_MSG_STUB_TYPE_ENUM_U32;
-/* Added by f62575 for AT Project，2011-10-03,  End*/
 
 enum MN_MSG_LINK_CTRL
 {
@@ -622,7 +610,6 @@ enum MN_MSG_RPT_STATUS_ENUM
 } ;
 typedef VOS_UINT8      MN_MSG_RPT_STATUS_ENUM_U8;
 
-/*->f62575*/
 enum MN_MSG_EO_TYPE_ENUM
 {
     MN_MSG_UDH_EO_PRE_DEF_SOUND,
@@ -643,7 +630,6 @@ enum MN_MSG_COMPRESSION_ALGORITHM
     MN_MSG_COMPRESSION_LZSS
 };
 typedef VOS_UINT8 MN_MSG_COMPRESSION_ALGORITHM_U8;
-/*<-f62575*/
 
 enum MN_MSG_CLASS0_TAILOR
 {
@@ -783,13 +769,11 @@ typedef struct
  ASN.1描述 :
  结构说明  : 短信TPDU结构, 包括TPDU长度(单位: 字节)和TPDU码流
 *******************************************************************************/
-/*lint -e958 -e959 修改人:l60609;原因:64bit*/
 typedef struct
 {
     VOS_UINT32                          ulLen;
     VOS_UINT8                          *pucTpdu;
 }MN_MSG_TPDU_STRU;
-/*lint +e958 +e959 修改人:l60609;原因:64bit*/
 
 typedef struct
 {
@@ -936,7 +920,6 @@ enum MN_MSG_UDH_TYPE_ENUM
     MN_MSG_UDH_SMALL_PIC,                                                       /*Small Pic (16*16 = 32 bytes)*/
     MN_MSG_UDH_VAR_PIC,                                                         /*Variable Pic*/
     MN_MSG_UDH_USER_PROMPT                                  = 0x13,             /*User prompt indicator*/
-/*->f62575*/
     MN_MSG_UDH_EO,                                                              /*Extended Object*/
     MN_MSG_UDH_REO,                                                             /*Reused Extended Object*/
     MN_MSG_UDH_CC,                                                              /*Compression Control*/
@@ -944,13 +927,10 @@ enum MN_MSG_UDH_TYPE_ENUM
     MN_MSG_UDH_STD_WVG_OBJ,                                                  /*Standard WVG object*/
     MN_MSG_UDH_CHAR_SIZE_WVG_OBJ,                                            /*Character Size WVG object*/
     MN_MSG_UDH_EXT_OBJECT_DATA_REQ_CMD,                                         /*Extended Object Data Request Command*/
-/*<-f62575*/
     MN_MSG_UDH_RFC822                                       = 0x20,             /*RFC 822 E-Mail Header*/
-/*->f62575*/
     MN_MSG_UDH_HYPERLINK_FORMAT,
     MN_MSG_UDH_REPLY_ADDR,
     MN_MSG_UDH_ENHANCED_VOICE_MAIL_INF,
-/*<-f62575*/
     MN_MSG_UDH_MAX                                          = 0xFFFF
 } ;
 typedef VOS_UINT8  MN_MSG_UDH_TYPE_ENUM_U8;
@@ -1199,7 +1179,6 @@ typedef struct
     VOS_UINT8                           aucReserve1[3];
 }MN_MSG_UDH_SOURCE_IND_STRU;
 
-/*->f62575*/
 /*MN_MSG_MAX_UDH_EO_DATA_LEN * MN_MSG_MAX_UDH_EO_NUM - 3 */
 #define MN_MSG_MAX_UDH_LONG_EO_DATA_LEN                     914
 typedef struct
@@ -1266,7 +1245,6 @@ typedef struct
     MN_MSG_ASCII_ADDR_STRU stReplyAddr;
 }MN_MSG_UDH_REPLY_ADDR_STRU;
 
-/*->f62575*/
 
 /*Content of Other TP User Data Header*/
 
@@ -1527,7 +1505,6 @@ typedef struct
     VOS_UINT8                           aucReserve1[2];
 }MN_MSG_RP_CAUSE_STRU;
 
-/* Added by f62575 for V9R1 STK升级, 2013-6-26, begin */
 
 enum TAF_MSG_ERROR_ENUM
 {
@@ -1621,7 +1598,6 @@ enum TAF_MSG_ERROR_ENUM
     TAF_MSG_ERROR_ERROR_BUTT              = 0xFFFFFFFF
 };
 typedef VOS_UINT32 TAF_MSG_ERROR_ENUM_UINT32;
-/* Added by f62575 for V9R1 STK升级, 2013-6-26, end */
 
 /*event report:MN_MSG_SUBMIT_RPT_EVT_INFO_STRU*/
 
@@ -1863,7 +1839,6 @@ typedef struct
     VOS_UINT8                           aucReserved[3];
 }MN_MSG_LINK_CTRL_EVT_INFO_STRU;
 
-/* Added by f62575 for AT Project，2011-10-03,  Begin*/
 /*****************************************************************************
  枚举名    : MN_MSG_STUB_EVT_INFO_STRU
  结构说明  : 短信桩相关操作结果上报
@@ -1872,7 +1847,6 @@ typedef struct
 {
     VOS_UINT32                          ulErrorCode;                            /*set(get) success or failure */
 }MN_MSG_RESULT_EVT_INFO_STRU;
-/* Added by f62575 for AT Project，2011-10-03,  End*/
 
 #if ((FEATURE_ON == FEATURE_GCBS) || (FEATURE_ON == FEATURE_WCBS))
 
@@ -2050,9 +2024,7 @@ enum MN_MSG_EVENT_ENUM
     MN_MSG_EVT_INIT_RESULT,                                                     /*initialization of sms finished */
     MN_MSG_EVT_SET_LINK_CTRL_PARAM,                                             /*sms set link ctrl parameter*/
     MN_MSG_EVT_GET_LINK_CTRL_PARAM,                                             /*sms get link ctrl parameter*/
-    /* Added by f62575 for AT Project，2011-10-03,  Begin*/
     MN_MSG_EVT_STUB_RESULT,                                                     /* 短信相关操作结果上报事件 */
-    /* Added by f62575 for AT Project，2011-10-03,  End*/
     /*#if ((FEATURE_ON == FEATURE_GCBS) || (FEATURE_ON == FEATURE_WCBS))*/
     MN_MSG_EVT_DELIVER_CBM,                                                     /*rcv a new msg*/
     MN_MSG_EVT_GET_CBTYPE,                                                      /*Get Cbs Type*/
@@ -2092,9 +2064,7 @@ typedef struct
     MN_MSG_INIT_EVT_INFO_STRU           stInitResultInfo;                       /*event report:MN_MSG_EVT_INIT_RESULT*/
     MN_MSG_INIT_SMSP_EVT_INFO_STRU      stInitSmspResultInfo;
     MN_MSG_LINK_CTRL_EVT_INFO_STRU      stLinkCtrlInfo;                         /*event report:MN_MSG_EVT_SET_LINK_CTRL_PARAM,MN_MSG_EVT_GET_LINK_CTRL_PARAM*/
-    /* Added by f62575 for AT Project，2011-10-03,  Begin*/
     MN_MSG_RESULT_EVT_INFO_STRU         stResult;                               /*event report:MN_MSG_EVT_GET_LINK_CTRL_PARAM, etc */
-    /* Added by f62575 for AT Project，2011-10-03,  End*/
 #if ((FEATURE_ON == FEATURE_GCBS) || (FEATURE_ON == FEATURE_WCBS))
     MN_MSG_CB_DELIVER_EVT_INFO_STRU     stCbsDeliverInfo;                       /*event report:MN_MSG_EVT_DELIVER_CBS*/
     MN_MSG_CBMIDS_CHANGE_EVT_INFO_STRU  stCbsChangeInfo;
@@ -2112,7 +2082,6 @@ typedef struct
     MN_MSG_LINK_CTRL_U8 enRelayLinkCtrl;
 }MN_MSG_SET_LINK_CTRL_STRU;
 
-/* Added by f62575 for AT Project，2011-10-03,  Begin*/
 /*****************************************************************************
  枚举名    : MN_MSG_STUB_MSG_STRU
  结构说明  : 短信相关桩消息参数结构
@@ -2137,7 +2106,6 @@ typedef struct
     MN_MSG_STUB_TYPE_ENUM_U32           enStubType;
     VOS_UINT32                          ulValue;
 }MN_MSG_STUB_MSG_STRU;
-/* Added by f62575 for AT Project，2011-10-03,  End*/
 
 enum MN_MSG_CLIENT_TYPE_ENUM
 {
@@ -2565,7 +2533,6 @@ VOS_VOID MN_MSG_GetSmsServicePara(
     MN_MSG_ME_STORAGE_STATUS_ENUM_UINT8 *penMeStorageEnable
 );
 
-/* Added by f62575 for AT Project，2011-10-03,  Begin*/
 
 VOS_UINT32 MN_MSG_ReqStub(
     MN_CLIENT_ID_T                      clientId,
@@ -2579,7 +2546,6 @@ VOS_UINT32 MN_MSG_ChkDate(
     MN_MSG_DATE_INVALID_TYPE_ENUM_UINT8 *pucInvalidType
 );
 
-/* Added by f62575 for AT Project，2011-10-03,  End*/
 
 
 VOS_VOID MN_MSG_GetMoSmsCtrlFlag(

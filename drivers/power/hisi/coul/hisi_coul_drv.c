@@ -18,15 +18,17 @@
 #include <huawei_platform/devdetect/hw_dev_dec.h>
 #endif
 
-#ifdef CONFIG_HUAWEI_PLATFORM
-#include <huawei_platform/log/hw_log.h>
-#define HWLOG_TAG hisi_coul_drv
-HWLOG_REGIST();
+#define COUL_DRV_LOG_INFO
+#ifndef COUL_DRV_LOG_INFO
+#define coul_drv_debug(fmt, args...)do {} while (0)
+#define coul_drv_info(fmt, args...) do {} while (0)
+#define coul_drv_warn(fmt, args...) do {} while (0)
+#define coul_drv_err(fmt, args...)  do {} while (0)
 #else
-#define hwlog_debug(fmt, args...)do { printk(KERN_DEBUG   "[hisi_coul_drv]" fmt, ## args); } while (0)
-#define hwlog_info(fmt, args...) do { printk(KERN_INFO    "[hisi_coul_drv]" fmt, ## args); } while (0)
-#define hwlog_warn(fmt, args...) do { printk(KERN_WARNING"[hisi_coul_drv]" fmt, ## args); } while (0)
-#define hwlog_err(fmt, args...)  do { printk(KERN_ERR   "[hisi_coul_drv]" fmt, ## args); } while (0)
+#define coul_drv_debug(fmt, args...)do { printk(KERN_DEBUG   "[coul_drv]" fmt, ## args); } while (0)
+#define coul_drv_info(fmt, args...) do { printk(KERN_INFO    "[coul_drv]" fmt, ## args); } while (0)
+#define coul_drv_warn(fmt, args...) do { printk(KERN_WARNING"[coul_drv]" fmt, ## args); } while (0)
+#define coul_drv_err(fmt, args...)  do { printk(KERN_ERR   "[coul_drv]" fmt, ## args); } while (0)
 #endif
 #define HISI_COUL_LOCK()    do {} while (0)
 #define HISI_COUL_UNLOCK()  do {} while (0)
@@ -94,6 +96,22 @@ int is_hisi_fcc_debounce(void)
 }
 
 /*******************************************************
+  Function:        hisi_battery_get_qmax
+  Description:     get battery qmax
+  Input:           NULL
+  Output:          NULL
+  Return:          0: no  other:success
+********************************************************/
+int hisi_battery_get_qmax(void)
+{
+	/*declare the local variable of struct hisi_coul_ops */
+	LOCAL_HISI_COUL_OPS();
+
+	/*execute the operation of coul module */
+	HISI_EXEC_COUL_OP(get_qmax);
+	return 0;
+}
+/*******************************************************
   Function:        hisi_coul_set_hltherm_flag
   Description:     set the flag for high or low temperature test
   Input:           temp_flag: 1 hltherm test
@@ -144,7 +162,7 @@ int is_hisi_battery_exist(void)
 	LOCAL_HISI_COUL_OPS();
 	if (NULL != g_hisi_coul_test_info) {
 		if (g_hisi_coul_test_info->test_start_flag & 0x0001) {
-			hwlog_info("hisi_battery exist status is %d\n", g_hisi_coul_test_info->input_batt_exist);
+			coul_drv_info("hisi_battery exist status is %d\n", g_hisi_coul_test_info->input_batt_exist);
 			return g_hisi_coul_test_info->input_batt_exist;
 		}
 	}
@@ -226,7 +244,7 @@ int hisi_battery_voltage(void)
 	LOCAL_HISI_COUL_OPS();
 	if (NULL != g_hisi_coul_test_info) {
 		if (g_hisi_coul_test_info->test_start_flag & 0x0004) {
-			hwlog_info("the battery voltage is %d\n", g_hisi_coul_test_info->input_batt_volt);
+			coul_drv_info("the battery voltage is %d\n", g_hisi_coul_test_info->input_batt_volt);
 			return g_hisi_coul_test_info->input_batt_volt;
 		}
 	}
@@ -270,12 +288,41 @@ int hisi_battery_current(void)
 	LOCAL_HISI_COUL_OPS();
 	if (NULL != g_hisi_coul_test_info) {
 		if (g_hisi_coul_test_info->test_start_flag & 0x0008) {
-			hwlog_info("the input batt cur is %d\n", g_hisi_coul_test_info->input_batt_cur);
+			coul_drv_info("the input batt cur is %d\n", g_hisi_coul_test_info->input_batt_cur);
 			return g_hisi_coul_test_info->input_batt_cur;
 		}
 	}
 	/*execute the operation of coul module */
 	HISI_EXEC_COUL_OP(battery_current);
+
+	return 0;
+}
+int hisi_get_coul_calibration_status(void)
+{
+	/*declare the local variable of struct hisi_coul_ops */
+	LOCAL_HISI_COUL_OPS();
+
+	/*execute the operation of coul module */
+	HISI_EXEC_COUL_OP(get_coul_calibration_status);
+
+	return 0;
+
+}
+
+/****************************************************************************
+  Function:     hisi_battery_resistance
+  Description:  return the resistance of battery
+  Input:        NA
+  Output:       NA
+  Return:       return the resistance of battery.
+****************************************************************************/
+int hisi_battery_resistance(void)
+{
+	/*declare the local variable of struct hisi_coul_ops */
+	LOCAL_HISI_COUL_OPS();
+
+	/*execute the operation of coul module */
+	HISI_EXEC_COUL_OP(battery_resistance);
 
 	return 0;
 }
@@ -355,7 +402,7 @@ int hisi_battery_capacity(void)
 	LOCAL_HISI_COUL_OPS();
 	if (NULL != g_hisi_coul_test_info) {
 		if (g_hisi_coul_test_info->test_start_flag & 0x0010) {
-			hwlog_info("input batt cap is %d\n", g_hisi_coul_test_info->input_batt_capacity);
+			coul_drv_info("input batt cap is %d\n", g_hisi_coul_test_info->input_batt_capacity);
 			return g_hisi_coul_test_info->input_batt_capacity;
 		}
 	}
@@ -379,7 +426,7 @@ int hisi_battery_temperature(void)
 	LOCAL_HISI_COUL_OPS();
 	if (NULL != g_hisi_coul_test_info) {
 		if (g_hisi_coul_test_info->test_start_flag & 0x0020) {
-			hwlog_info("input batt temp is %d\n", g_hisi_coul_test_info->input_batt_temp);
+			coul_drv_info("input batt temp is %d\n", g_hisi_coul_test_info->input_batt_temp);
 			return g_hisi_coul_test_info->input_batt_temp;
 		}
 	}
@@ -403,7 +450,7 @@ int hisi_battery_temperature_for_charger(void)
 	LOCAL_HISI_COUL_OPS();
 	if (NULL != g_hisi_coul_test_info) {
 		if (g_hisi_coul_test_info->test_start_flag & 0x0020) {
-			hwlog_info("input batt temp is %d\n", g_hisi_coul_test_info->input_batt_temp);
+			coul_drv_info("input batt temp is %d\n", g_hisi_coul_test_info->input_batt_temp);
 			return g_hisi_coul_test_info->input_batt_temp;
 		}
 	}
@@ -468,7 +515,7 @@ int hisi_battery_fcc(void)
 	LOCAL_HISI_COUL_OPS();
 	if (NULL != g_hisi_coul_test_info) {
 		if (g_hisi_coul_test_info->test_start_flag & 0x0040) {
-			hwlog_info("input batt fcc is %d\n", g_hisi_coul_test_info->input_batt_fcc);
+			coul_drv_info("input batt fcc is %d\n", g_hisi_coul_test_info->input_batt_fcc);
 			return g_hisi_coul_test_info->input_batt_fcc;
 		}
 	}
@@ -608,6 +655,24 @@ struct chrg_para_lut *hisi_battery_charge_params(void)
 }
 
 /****************************************************************************
+  Function:     hisi_battery_ifull
+  Description:  get the ifull of the battery
+  Input:         NA
+  Output:       NA
+  Return:       ifull
+****************************************************************************/
+int hisi_battery_ifull(void)
+{
+	/*declare the local variable of struct hisi_coul_ops */
+	LOCAL_HISI_COUL_OPS();
+
+	/*execute the operation of coul module */
+	HISI_EXEC_COUL_OP(battery_ifull);
+	return -EPERM;
+}
+
+
+/****************************************************************************
   Function:     hisi_battery_vbat_max
   Description:  get the max battery voltage
   Input:         NA
@@ -690,6 +755,25 @@ int hisi_battery_cc(void)
 	LOCAL_HISI_COUL_OPS();
 
 	/*execute the operation of coul module */
+	if (ops && ops->battery_cc) {
+		return ops->battery_cc()/1000;
+    }
+	return -EPERM;
+}
+
+/****************************************************************************
+  Function:     hisi_battery_cc_uah
+  Description:  get battery cc uah
+  Input:         NA
+  Output:       NA
+  Return:       battery cc Or < 0 if something fails
+****************************************************************************/
+int hisi_battery_cc_uah(void)
+{
+	/*declare the local variable of struct hisi_coul_ops */
+	LOCAL_HISI_COUL_OPS();
+
+	/*execute the operation of coul module */
 	HISI_EXEC_COUL_OP(battery_cc);
 	return -EPERM;
 }
@@ -723,13 +807,13 @@ void hisi_coul_charger_event_rcv(unsigned int event)
 	LOCAL_HISI_COUL_OPS();
 	if (NULL != g_hisi_coul_test_info) {
 		if (g_hisi_coul_test_info->test_start_flag & 0x0080) {
-			hwlog_info("input event is %d\n", g_hisi_coul_test_info->input_event);
+			coul_drv_info("input event is %d\n", g_hisi_coul_test_info->input_event);
 			event = g_hisi_coul_test_info->input_event;
 		}
 	}
 	/*execute the operation of coul module */
 	if (ops && ops->charger_event_rcv) {
-		hwlog_info("charger event = 0x%x\n", (int)event);
+		coul_drv_info("charger event = 0x%x\n", (int)event);
 		ops->charger_event_rcv(event);
 	}
 
@@ -755,6 +839,75 @@ int hisi_coul_low_temp_opt(void)
 }
 
 /****************************************************************************
+  Function:     hisi_coul_battery_fifo_curr
+  Description:  get the fifo curr in ua
+  Input:        NA
+  Output:       NA
+  Return:       current in ua
+			    0:no ops registered
+****************************************************************************/
+int hisi_coul_battery_fifo_curr(unsigned int index)
+{
+	/*declare the local variable of struct hisi_coul_ops */
+	LOCAL_HISI_COUL_OPS();
+    if (ops && ops->battery_fifo_curr) {
+        return ops->battery_fifo_curr(index);
+    }
+	return 0;
+}
+
+/****************************************************************************
+  Function:     hisi_coul_battery_fifo_depth
+  Description:  get the depth of fifo
+  Input:        NA
+  Output:       NA
+  Return:       depth of fifo
+			    0:no ops registered
+****************************************************************************/
+int hisi_coul_battery_fifo_depth(void)
+{
+	/*declare the local variable of struct hisi_coul_ops */
+    LOCAL_HISI_COUL_OPS();
+	/*execute the operation of coul module */
+    HISI_EXEC_COUL_OP(battery_fifo_depth);
+	return 0;
+}
+
+/****************************************************************************
+  Function:     hisi_coul_battery_fifo_depth
+  Description:  get the depth of fifo
+  Input:        NA
+  Output:       NA
+  Return:       depth of fifo
+			    0:no ops registered
+****************************************************************************/
+int hisi_coul_battery_ufcapacity_tenth(void)
+{
+	/*declare the local variable of struct hisi_coul_ops */
+    LOCAL_HISI_COUL_OPS();
+	/*execute the operation of coul module */
+    HISI_EXEC_COUL_OP(battery_ufcapacity_tenth);
+	return 0;
+}
+
+/****************************************************************************
+  Function:     hisi_battery_removed_before_boot
+  Description:  battery removed between this boot and last boot
+  Input:        NA
+  Output:       NA
+  Return:       1 battery is removed between this boot and last boot
+                0 battery is not removed between this boot and last boot
+                -1 unknow yet
+****************************************************************************/
+int hisi_battery_removed_before_boot(void)
+{
+    /*declare the local variable of struct hisi_coul_ops */
+    LOCAL_HISI_COUL_OPS();
+    /*execute the operation of coul module */
+    HISI_EXEC_COUL_OP(battery_removed_before_boot);
+    return -1;
+}
+/****************************************************************************
   Function:     hisi_coul_ops_register
   Description:  register the hisi coul ops
   Input:        struct hisi_coul_ops *ops
@@ -768,7 +921,7 @@ int hisi_coul_ops_register(struct hisi_coul_ops *coul_ops, enum HISI_COULOMETER_
 	HISI_COUL_LOCK();
 	if (g_hisi_coul_ops) {
 		HISI_COUL_UNLOCK();
-		hwlog_err("coul ops have registered already\n");
+		coul_drv_err("coul ops have registered already\n");
 		return -EBUSY;
 	}
 
@@ -779,6 +932,126 @@ int hisi_coul_ops_register(struct hisi_coul_ops *coul_ops, enum HISI_COULOMETER_
 	return 0;
 }
 
+/****************************************************************************
+  Function:     hisi_coul_convert_regval2ua
+  Description:  convert current regval to ua
+  Input:        reg_val
+  Output:       NA
+  Return:       ua
+****************************************************************************/
+int hisi_coul_convert_regval2ua(unsigned int reg_val)
+{
+    /*declare the local variable of struct hisi_coul_ops */
+    LOCAL_HISI_COUL_OPS();
+
+    /*execute the operation of coul module */
+    if (ops && ops->convert_regval2ua)
+    {
+        return ops->convert_regval2ua(reg_val);
+    }
+    return -EPERM;
+}
+
+/****************************************************************************
+  Function:     hisi_coul_convert_regval2uv
+  Description:  convert vol regval to uv
+  Input:        reg_val
+  Output:       NA
+  Return:       uv
+****************************************************************************/
+int hisi_coul_convert_regval2uv(unsigned int reg_val)
+{
+    /*declare the local variable of struct hisi_coul_ops */
+    LOCAL_HISI_COUL_OPS();
+
+    /*execute the operation of coul module */
+    if (ops && ops->convert_regval2uv)
+    {
+        return ops->convert_regval2uv(reg_val);
+    }
+    return -EPERM;
+}
+
+
+/****************************************************************************
+  Function:     hisi_coul_convert_regval2temp
+  Description:  convert chip temperature regval to бу
+  Input:        reg_val
+  Output:       NA
+  Return:       бу
+****************************************************************************/
+int hisi_coul_convert_regval2temp(unsigned int reg_val)
+{
+    /*declare the local variable of struct hisi_coul_ops */
+    LOCAL_HISI_COUL_OPS();
+
+    /*execute the operation of coul module */
+    if (ops && ops->convert_regval2temp)
+    {
+        return ops->convert_regval2temp(reg_val);
+    }
+    return -EPERM;
+}
+
+/****************************************************************************
+  Function:     hisi_coul_convert_mv2regval
+  Description:  convert voltage to regval
+  Input:        vol mv
+  Output:       NA
+  Return:       regval
+****************************************************************************/
+int hisi_coul_convert_mv2regval(int vol_mv)
+{
+    /*declare the local variable of struct hisi_coul_ops */
+    LOCAL_HISI_COUL_OPS();
+
+    /*execute the operation of coul module */
+    if (ops && ops->convert_mv2regval)
+    {
+        return ops->convert_mv2regval(vol_mv);
+    }
+    return -EPERM;
+}
+
+/****************************************************************************
+  Function:     hisi_coul_cal_uah_by_ocv
+  Description:  cal uah by ocv
+  Input:        ocv_uv
+  Output:       ocv_soc_uAh
+  Return:       SUCCESS ro ERROR;
+****************************************************************************/
+int hisi_coul_cal_uah_by_ocv(int ocv_uv, int *ocv_soc_uAh)
+{
+    /*declare the local variable of struct hisi_coul_ops */
+    LOCAL_HISI_COUL_OPS();
+
+    /*execute the operation of coul module */
+    if (ops && ops->cal_uah_by_ocv)
+    {
+        return ops->cal_uah_by_ocv(ocv_uv, ocv_soc_uAh);
+    }
+    return -EPERM;
+}
+
+/****************************************************************************
+  Function:     hisi_coul_temp_to_adc
+  Description:  convernt temp to adc value.
+  Input:        temperature.
+  Output:       NA
+  Return:       adc value.
+****************************************************************************/
+int hisi_coul_convert_temp_to_adc(int temp)
+{
+    /*declare the local variable of struct hisi_coul_ops */
+    LOCAL_HISI_COUL_OPS();
+
+    /*execute the operation of coul module */
+    if (ops && ops->convert_temp_to_adc)
+    {
+        return ops->convert_temp_to_adc(temp);
+    }
+    return -EPERM;
+}
 /****************************************************************************
   Function:     hisi_coul_ops_unregister
   Description:  UNregister the hisi coul ops
@@ -807,17 +1080,17 @@ int __init hisi_coul_init(void)
 	/* detect coul device successful, set the flag as present */
 	if (NULL != g_hisi_coul_ops && NULL != g_hisi_coul_ops->dev_check) {
 		if (COUL_IC_GOOD == g_hisi_coul_ops->dev_check()) {
-			hwlog_info("coul ic is good.\n");
+			coul_drv_info("coul ic is good.\n");
 			set_hw_dev_flag(DEV_I2C_COUL);
 		} else {
-			hwlog_err("coul ic is bad.\n");
+			coul_drv_err("coul ic is bad.\n");
 		}
 	} else {
-		hwlog_err("ops dev_check is null.\n");
+		coul_drv_err("ops dev_check is null.\n");
 	}
 #endif
 
-	hwlog_info("hisi_coul_init\n");
+	coul_drv_info("hisi_coul_init\n");
 	return 0;
 }
 

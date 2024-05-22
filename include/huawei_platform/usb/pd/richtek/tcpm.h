@@ -23,12 +23,21 @@
 #include <huawei_platform/usb/hw_pd_dev.h>
 #include <huawei_platform/log/hw_log.h>
 
+#include <huawei_platform/power/power_dsm.h>
+
 #ifndef HWLOG_TAG
 #define HWLOG_TAG huawei_pd
 HWLOG_REGIST();
 #endif
 
 struct tcpc_device;
+
+struct local_sink_cap {
+	int mv;
+	int ma;
+	int uw;
+};
+
 
 /*
  * Type-C Port Notify Chain
@@ -48,6 +57,10 @@ enum typec_attach_type {
 #ifdef CONFIG_TYPEC_CAP_CUSTOM_SRC
 	TYPEC_ATTACHED_CUSTOM_SRC,		/* Same Rp */
 #endif	/* CONFIG_TYPEC_CAP_CUSTOM_SRC */
+#ifdef CONFIG_TYPEC_CAP_NORP_SRC
+/* CONFIG_TYPEC_CAP_NORP_SRC */
+	TYPEC_ATTACHED_NORP_SRC,	/* No Rp */
+#endif	/* CONFIG_TYPEC_CAP_NORP_SRC */
 };
 
 #if 0
@@ -478,6 +491,8 @@ extern int tcpm_get_source_cap(
 	struct tcpc_device *tcpc_dev, struct tcpm_power_cap *cap);
 extern int tcpm_get_sink_cap(
 	struct tcpc_device *tcpc_dev, struct tcpm_power_cap *cap);
+extern int tcpm_get_local_sink_cap(
+	struct tcpc_device *tcpc_dev, struct local_sink_cap *cap);
 extern int tcpm_bist_cm2(struct tcpc_device *tcpc_dev);
 extern int tcpm_request(
 	struct tcpc_device *tcpc_dev, int mv, int ma);
@@ -523,27 +538,9 @@ extern int tcpm_send_uvdm(struct tcpc_device *tcpc_dev,
 	uint8_t cnt, uint32_t *data, bool wait_resp);
 #endif	/* CONFIG_USB_PD_UVDM */
 
-
-/* PD DMD */
-#if defined(CONFIG_HUAWEI_DSM)
-struct dsm_client;
-
-struct dsm_client *get_pd_dsm_client(void);
-
-#define pd_dsm_report(err_no, fmt, args...) \
-do { \
-	if (get_pd_dsm_client()) { \
-		if(!dsm_client_ocuppy(get_pd_dsm_client())) { \
-			dsm_client_record(get_pd_dsm_client(), fmt, ##args); \
-			dsm_client_notify(get_pd_dsm_client(), err_no); \
-			pr_info("[PD_DSM]pd dsm report err_no:%d\n", err_no); \
-		} else \
-			pr_err("[PD_DSM]pd dsm is busy! err_no:%d\n", err_no); \
-	} else \
-		pr_err("[PD_DSM]pd dsm clinet is NULL!\n"); \
-} while (0)
-#else
-#define pd_dsm_report(err_no, fmt, args...)
+#ifdef CONFIG_POGO_PIN
+extern int tcpm_typec_disable_function(
+        struct tcpc_device *tcpc_dev, bool disable);
 #endif
 
 #endif /* TCPM_H_ */

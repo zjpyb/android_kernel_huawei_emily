@@ -167,14 +167,14 @@ extern oal_void                       *g_pst_5610_gpio2;
 /*****************************************************************************
   10 º¯ÊýÉùÃ÷
 *****************************************************************************/
-extern oal_int32   oal_main_init(oal_void);
-extern oal_void    oal_main_exit(oal_void);
-extern oal_uint32 oal_chip_get_version(oal_void);
-extern oal_uint8 oal_chip_get_device_num(oal_uint32 ul_chip_ver);
+extern oal_int32   oal_main_init_etc(oal_void);
+extern oal_void    oal_main_exit_etc(oal_void);
+extern oal_uint32 oal_chip_get_version_etc(oal_void);
+extern oal_uint8 oal_chip_get_device_num_etc(oal_uint32 ul_chip_ver);
 extern oal_uint8 oal_board_get_service_vap_start_id(oal_void);
 #ifdef HAVE_HISI_NFC
-extern oal_void save_nfc_lowpower_log(oal_void);
-extern oal_void hi_wlan_power_off(void);
+extern oal_void save_nfc_lowpower_log_etc(oal_void);
+extern oal_void hi_wlan_power_off_etc(void);
 #endif
 
 #ifdef _PRE_DEBUG_PROFILING

@@ -174,7 +174,7 @@ extern "C" {
 #define Structured_VDM_Version_SOP 0            //; 0: V1.0
 #define Data_Capable_as_USB_Host_SOP YES
 #define Data_Capable_as_USB_Device_SOP YES
-#define Product_Type_SOP 5            //; 0: Undefined 2:peripheral 5: AMA
+#define Product_Type_SOP 2            //; 0: Undefined 2:peripheral 5: AMA
 #define Modal_Operation_Supported_SOP YES
 #define USB_VID_SOP 0x12D1
 #define PID_SOP 0x107E

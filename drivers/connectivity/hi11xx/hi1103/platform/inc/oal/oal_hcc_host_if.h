@@ -106,8 +106,6 @@ OAL_STATIC OAL_INLINE oal_void  hcc_hdr_param_init(struct hcc_transfer_param* pa
                                                         oal_uint32 fc_flag,
                                                         oal_uint32 queue_id)
 {
-    //OAL_BUG_ON(main_type >= HCC_ACTION_TYPE_BUTT);
-    //OAL_WARN_ON(extend_len > HCC_HDR_RESERVED_MAX_LEN);
     param->main_type = main_type;
     param->sub_type = sub_type;
     param->extend_len = extend_len;
@@ -213,14 +211,15 @@ typedef struct _hcc_trans_queues_
 
 #ifdef _PRE_WLAN_FEATURE_OFFLOAD_FLOWCTL
 typedef oal_bool_enum_uint8 (*hcc_flowctl_get_mode)(oal_void);
-oal_void hcc_flowctl_get_device_mode_register(hcc_flowctl_get_mode get_mode);
+oal_void hcc_flowctl_get_device_mode_register_etc(hcc_flowctl_get_mode get_mode);
 
 typedef oal_void (*hcc_flowctl_start_subq)(oal_uint16 us_queue_idx);
 typedef oal_void (*hcc_flowctl_stop_subq)(oal_uint16 us_queue_idx);
-oal_void hcc_flowctl_operate_subq_register(hcc_flowctl_start_subq start_subq, hcc_flowctl_stop_subq stop_subq);
-oal_void   hcc_host_set_flowctl_param(oal_uint8 uc_queue_type, oal_uint16 us_burst_limit, oal_uint16 us_low_waterline, oal_uint16 us_high_waterline);
-oal_void   hcc_host_get_flowctl_stat(oal_void);
+oal_void hcc_flowctl_operate_subq_register_etc(hcc_flowctl_start_subq start_subq, hcc_flowctl_stop_subq stop_subq);
+oal_void   hcc_host_set_flowctl_param_etc(oal_uint8 uc_queue_type, oal_uint16 us_burst_limit, oal_uint16 us_low_waterline, oal_uint16 us_high_waterline);
+oal_void   hcc_host_get_flowctl_stat_etc(oal_void);
 #endif
+oal_int32 hcc_print_current_trans_info(oal_uint32 print_device_info);
 
 typedef oal_void (*flowctrl_cb)(oal_void);
 
@@ -258,7 +257,7 @@ typedef struct _hcc_thread_stat_
 
 struct hcc_transfer_handler
 {
-    struct task_struct         *hcc_transfer_thread;
+    struct task_struct         *hcc_transfer_thread_etc;
     oal_wait_queue_head_stru    hcc_transfer_wq;
 #ifdef _PRE_CONFIG_WLAN_THRANS_THREAD_DEBUG
     hcc_thread_stat             thread_stat;
@@ -322,36 +321,37 @@ struct hcc_tx_cb_stru
 
 typedef hcc_bus_msg_rx hcc_msg_rx;
 
-oal_int32 hcc_tx(struct hcc_handler* hcc, oal_netbuf_stru* netbuf, struct hcc_transfer_param* param);
+oal_int32 hcc_tx_etc(struct hcc_handler* hcc, oal_netbuf_stru* netbuf, struct hcc_transfer_param* param);
 #ifdef _PRE_WLAN_TCP_OPT
-oal_int32 hcc_thread_process(struct hcc_handler *hcc);
-oal_int32 hcc_transfer_thread(oal_void *data);
+oal_int32 hcc_thread_process_etc(struct hcc_handler *hcc);
+oal_int32 hcc_transfer_thread_etc(oal_void *data);
 #endif
 #ifndef _PRE_WLAN_FEATURE_OFFLOAD_FLOWCTL
-oal_void hcc_tx_flow_ctrl_cb_register(flowctrl_cb stopall, flowctrl_cb startall);
+oal_void hcc_tx_flow_ctrl_cb_register_etc(flowctrl_cb stopall, flowctrl_cb startall);
 #endif
 
-struct hcc_handler* hcc_module_init(hcc_bus_dev* pst_bus_dev);
+struct hcc_handler* hcc_module_init_etc(hcc_bus_dev* pst_bus_dev);
 
-oal_void hcc_tx_assem_info_reset(struct hcc_handler *hcc);
+oal_void hcc_tx_assem_info_reset_etc(struct hcc_handler *hcc);
 oal_void oal_sdio_rx_assem_info_reset(struct hcc_handler *hcc);
 oal_void hcc_assem_info_reset(struct hcc_handler* hcc);
 
-oal_void hcc_module_exit(struct hcc_handler*);
+oal_void hcc_module_exit_etc(struct hcc_handler*);
 
 
-oal_int32 hcc_message_register(struct hcc_handler* hcc, oal_uint8 msg,
+oal_int32 hcc_message_register_etc(struct hcc_handler* hcc, oal_uint8 msg,
                                     hcc_msg_rx cb, oal_void* data);
-oal_void hcc_message_unregister(struct hcc_handler* hcc, oal_uint8 msg);
+oal_void hcc_message_unregister_etc(struct hcc_handler* hcc, oal_uint8 msg);
 
-oal_void hcc_clear_all_queues(struct hcc_handler * hcc, oal_int32 is_need_lock);
-oal_void hcc_enable(struct hcc_handler * hcc, oal_int32 is_need_lock);
-oal_void hcc_disable(struct hcc_handler * hcc, oal_int32 is_need_lock);
+oal_void hcc_clear_all_queues_etc(struct hcc_handler * hcc, oal_int32 is_need_lock);
+oal_void hcc_enable_etc(struct hcc_handler * hcc, oal_int32 is_need_lock);
+oal_void hcc_disable_etc(struct hcc_handler * hcc, oal_int32 is_need_lock);
 
 /*获取默认的HCC通道句柄*/
 extern struct hcc_handler* hcc_get_110x_handler(oal_void);
-extern oal_void hcc_dev_flowctrl_on(struct hcc_handler *hcc, oal_uint8 need_notify_dev);
-extern oal_void hcc_dev_flowctrl_off(struct hcc_handler *hcc);
+extern oal_void hcc_dev_flowctrl_on_etc(struct hcc_handler *hcc, oal_uint8 need_notify_dev);
+extern oal_void hcc_dev_flowctrl_off_etc(struct hcc_handler *hcc);
+extern oal_int32 hcc_set_all_loglevel(oal_int32 loglevel);
 extern oal_uint32 hcc_get_max_buf_len(oal_void);
 extern oal_uint32 hcc_get_max_trans_size(struct hcc_handler* hcc);
 extern oal_int32 hcc_transfer_rx_register(struct hcc_handler* hcc, oal_void* data,hcc_bus_data_rx rx);
@@ -363,12 +363,18 @@ struct custom_process_func_handler
 {
     custom_cali_func p_custom_cali_func;
 };
-extern struct custom_process_func_handler* oal_get_custom_process_func(oal_void);
+extern struct custom_process_func_handler* oal_get_custom_process_func_etc(oal_void);
 
 #endif
 
 OAL_STATIC OAL_INLINE void hcc_tx_transfer_lock(struct hcc_handler *hcc)
 {
+    if(OAL_UNLIKELY(NULL == hcc))
+    {
+        OAL_IO_PRINT("%s,hcc is null\n",__FUNCTION__);
+        return;
+    }
+
 #if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
     mutex_lock(&hcc->tx_transfer_lock);
 #endif
@@ -440,40 +446,41 @@ OAL_STATIC OAL_INLINE oal_void hcc_sched_transfer(struct hcc_handler *hcc)
     wake_up_interruptible(&hcc->hcc_transer_info.hcc_transfer_wq);
 #endif
 }
-extern oal_void hcc_set_tcpack_cnt(oal_uint32 ul_val);
-extern oal_int32 hcc_rx_register(struct hcc_handler *hcc, oal_uint8 mtype, hcc_rx_post_do post_do, hcc_rx_pre_do pre_do);
-extern oal_int32 hcc_rx_unregister(struct hcc_handler *hcc, oal_uint8 mtype);
-extern oal_void hcc_tx_wlan_queue_map_set(struct hcc_handler* hcc,hcc_queue_type hcc_queue_id,wlan_net_queue_type wlan_queue_id);
+extern oal_void hcc_set_tcpack_cnt_etc(oal_uint32 ul_val);
+extern oal_int32 hcc_rx_register_etc(struct hcc_handler *hcc, oal_uint8 mtype, hcc_rx_post_do post_do, hcc_rx_pre_do pre_do);
+extern oal_int32 hcc_rx_unregister_etc(struct hcc_handler *hcc, oal_uint8 mtype);
+extern oal_void hcc_tx_wlan_queue_map_set_etc(struct hcc_handler* hcc,hcc_queue_type hcc_queue_id,wlan_net_queue_type wlan_queue_id);
 
-extern oal_void hi_wlan_power_set(oal_int32 on);
+extern oal_void hi_wlan_power_set_etc(oal_int32 on);
 extern oal_void hcc_rx_submit(struct hcc_handler* hcc, oal_netbuf_stru* pst_netbuf);
 extern oal_void  hcc_restore_assemble_netbuf_list(struct hcc_handler *hcc);
 extern oal_void hcc_restore_tx_netbuf(struct hcc_handler *hcc, oal_netbuf_stru *pst_netbuf);
+extern oal_void hcc_change_state_exception_etc(oal_void);
 
 #ifdef _PRE_CONFIG_CONN_HISI_SYSFS_SUPPORT
-extern oal_int32  hcc_test_init_module(struct hcc_handler* hcc);
-extern oal_void  hcc_test_exit_module(struct hcc_handler* hcc);
+extern oal_int32  hcc_test_init_module_etc(struct hcc_handler* hcc);
+extern oal_void  hcc_test_exit_module_etc(struct hcc_handler* hcc);
 #else
 /*function stub*/
-OAL_STATIC OAL_INLINE oal_int32  hcc_test_init_module(struct hcc_handler* hcc)
+OAL_STATIC OAL_INLINE oal_int32  hcc_test_init_module_etc(struct hcc_handler* hcc)
 {
     OAL_REFERENCE(hcc);
     return OAL_SUCC;
 }
 
-OAL_STATIC OAL_INLINE oal_void  hcc_test_exit_module(struct hcc_handler* hcc)
+OAL_STATIC OAL_INLINE oal_void  hcc_test_exit_module_etc(struct hcc_handler* hcc)
 {
     OAL_REFERENCE(hcc);
     return;
 }
 #endif
 
-extern oal_void hcc_print_device_mem_info(oal_void);
-extern oal_void hcc_trigger_device_panic(oal_void);
+extern oal_void hcc_print_device_mem_info_etc(oal_void);
+extern oal_void hcc_trigger_device_panic_etc(oal_void);
 
 
 #ifdef _PRE_PLAT_FEATURE_CUSTOMIZE
-extern struct custom_process_func_handler g_pst_custom_process_func;
+extern struct custom_process_func_handler g_pst_custom_process_func_etc;
 #endif
 
 
@@ -508,7 +515,11 @@ OAL_STATIC OAL_INLINE oal_void hcc_tx_netbuf_free(oal_netbuf_stru* pst_netbuf)
 {
     struct hcc_tx_cb_stru* pst_cb_stru;
 
-    OAL_BUG_ON(NULL == pst_netbuf);
+    if(OAL_WARN_ON(NULL == pst_netbuf))
+    {
+        OAL_IO_PRINT("[Error] pst_netbuf is null r failed!%s\n",__FUNCTION__);
+        return;
+    }
 
     pst_cb_stru = (struct hcc_tx_cb_stru*)OAL_NETBUF_CB(pst_netbuf);
 

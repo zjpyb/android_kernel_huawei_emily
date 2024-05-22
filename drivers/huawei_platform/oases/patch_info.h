@@ -3,7 +3,6 @@
 
 #include <linux/types.h>
 #include <linux/kobject.h>
-#include <linux/uidgid.h>
 
 #include "patch_base.h"
 #include "patch_file.h"
@@ -17,10 +16,17 @@ enum {
 #define OASES_LOG_NODE_MAX 20
 
 struct oases_attack_log {
-	kuid_t uid;
+	long uid;
 	unsigned long count;
 	unsigned long start_time;
 	unsigned long end_time;
+};
+
+struct patch_callbacks {
+	void (*init)(void); /* not used */
+	void (*exit)(void);
+	void (*enable)(void);
+	void (*disable)(void);
 };
 
 struct oases_patch_info {
@@ -51,6 +57,8 @@ struct oases_patch_info {
 	struct kobject kobj;
 	struct list_head list;
 	int attached;
+
+	struct patch_callbacks cbs;
 };
 
 static inline int valid_patch_pointer(void *info, void *p)

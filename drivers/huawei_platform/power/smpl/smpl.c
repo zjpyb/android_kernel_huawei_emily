@@ -13,22 +13,19 @@
 #include <linux/of.h>
 #include <linux/platform_device.h>
 #include <huawei_platform/log/hw_log.h>
-#include <dsm/dsm_pub.h>
 #include <linux/wakelock.h>
 #include <linux/mfd/hisi_pmic_mntn.h>
 #include <linux/hisi/usb/hisi_usb.h>
+#ifdef CONFIG_HISI_BCI_BATTERY
 #include <linux/power/hisi/hisi_bci_battery.h>
+#endif
+#ifdef CONFIG_HISI_COUL
 #include <linux/power/hisi/coul/hisi_coul_drv.h>
+#endif
 #include <huawei_platform/power/huawei_charger.h>
 
 #define HWLOG_TAG smpl
 HWLOG_REGIST();
-static struct dsm_dev dsm_smpl = {
-    .name = "dsm_smpl",
-    .fops = NULL,
-    .buff_size = 1024,
-};
-static struct dsm_client *smpl_client = NULL;
 
 struct smpl_device_info {
     struct device   *dev;
@@ -48,7 +45,7 @@ static int __init early_parse_normal_reset_type_cmdline(char * p)
 {
     if (p)
     {
-        if (!strncmp(p,"SMPL", 5))
+        if (!strncmp(p,"AP_S_SMPL", strlen("AP_S_SMPL") + 1))
         {
             smpl_happened = 1;
         }
@@ -68,7 +65,7 @@ static void smpl_work(struct work_struct *work)
 
     if(smpl_happened)
     {
-        if (!dsm_client_ocuppy(smpl_client))
+        if (!dsm_client_ocuppy(power_dsm_get_dclient(POWER_DSM_SMPL)))
         {
             batt_vol = hisi_battery_voltage();
             batt_temp = hisi_battery_temperature();
@@ -77,9 +74,9 @@ static void smpl_work(struct work_struct *work)
             batt_soc = hisi_bci_show_capacity();
 
             hwlog_info("smpl record and notify\n");
-            dsm_client_record(smpl_client, "smpl happened,vbatt = %d,temp = %d,ufsoc = %d,afsoc = %d,soc = %d\n",
+            dsm_client_record(power_dsm_get_dclient(POWER_DSM_SMPL), "smpl happened,vbatt = %d,temp = %d,ufsoc = %d,afsoc = %d,soc = %d\n",
                     batt_vol,batt_temp,batt_ufsoc,batt_afsoc,batt_soc);
-            dsm_client_notify(smpl_client, ERROR_NO_SMPL);
+            dsm_client_notify(power_dsm_get_dclient(POWER_DSM_SMPL), ERROR_NO_SMPL);
         }
     }
 }
@@ -192,17 +189,7 @@ static int smpl_probe(struct platform_device *pdev)
         hwlog_err("di is NULL\n");
         return -ENOMEM;
     }
-    if (!smpl_client)
-    {
-        smpl_client = dsm_register_client(&dsm_smpl);
-    }
-    if (NULL == smpl_client)
-    {
-        hwlog_err("smpl register dsm fail\n");
-        kfree(di);
-        di = NULL;
-        return -1;
-    }
+
     INIT_DELAYED_WORK(&di->smpl_delayed_work, smpl_work);
     schedule_delayed_work(&di->smpl_delayed_work, 10);
 

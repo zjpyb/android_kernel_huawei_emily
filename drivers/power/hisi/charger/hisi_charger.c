@@ -32,9 +32,9 @@
 #include <huawei_platform/devdetect/hw_dev_dec.h>
 #endif
 #include <linux/raid/pq.h>
-#if defined (CONFIG_HUAWEI_DSM)
-#include <dsm/dsm_pub.h>
-#endif
+
+#include <huawei_platform/power/power_dsm.h>
+
 #include <linux/power/hisi/hisi_bci_battery.h>
 #include <linux/power/hisi/charger/hisi_charger.h>
 #include <linux/power/hisi/coul/hisi_coul_drv.h>
@@ -88,9 +88,7 @@ static struct charger_dsm err_count[]=
     {ERROR_SAFE_PLOICY_LEARN2, true, "safe ploicy learn 2"},
     {ERROR_SAFE_PLOICY_LEARN3, true, "safe ploicy learn 3"},
 };
-#if defined (CONFIG_HUAWEI_DSM)
-extern struct dsm_client *get_battery_dclient(void);
-#endif
+
 /**********************************************************
 *  Function:       charge_wake_lock
 *  Description:   apply charge wake_lock
@@ -119,35 +117,7 @@ static void charge_wake_unlock(void)
         hwlog_info("charge wake unlock\n");
      }
 }
-/**********************************************************
-*  Function:       dsm_report
-*  Discription:    dsm report interface
-*  Parameters:     err_no buf
-*  return value:  0 :succ -1:fail
-**********************************************************/
-int dsm_report(int err_no,void* buf)
-{
- #if defined (CONFIG_HUAWEI_DSM)
-    if(NULL == buf || NULL == get_battery_dclient())
-    {
-       hwlog_info("buf is NULL or battery_dclient is NULL!\n");
-       return -1;
-    }
 
-    if(!dsm_client_ocuppy(get_battery_dclient()))
-    {
-        dsm_client_record(get_battery_dclient(), "%s", buf);
-        dsm_client_notify(get_battery_dclient(),err_no);
-        hwlog_info("charger dsm report err_no:%d\n",err_no);
-        return 0;
-    }
-    hwlog_info("charger dsm is busy!\n");
-    return -1;
- #else
-
-    return -1;
- #endif
-}
 /**********************************************************
 *  Function:       charger_dsm_report
 *  Discription:    charger dsm report
@@ -173,7 +143,7 @@ int charger_dsm_report (int err_no,int *val)
 
     if(true == err_count[get_index(err_no)].notify_enable)/*every err_no report one times*/
     {
-        if (!dsm_report(err_no,temp))
+        if (!power_dsm_dmd_report(POWER_DSM_BATTERY, err_no, temp))
         {
             err_count[get_index(err_no)].notify_enable = false;/*when it be set 1,it will not report */
             return 0;

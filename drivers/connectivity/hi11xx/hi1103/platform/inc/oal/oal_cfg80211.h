@@ -689,23 +689,23 @@ enum PRIV_NL80211_CHAN_WIDTH {
 /*****************************************************************************
   10 º¯ÊýÉùÃ÷
 *****************************************************************************/
-extern oal_void  oal_cfg80211_put_bss(oal_wiphy_stru *pst_wiphy, oal_cfg80211_bss_stru *pst_cfg80211_bss);
-oal_cfg80211_bss_stru *oal_cfg80211_get_bss(oal_wiphy_stru *pst_wiphy,
+extern oal_void  oal_cfg80211_put_bss_etc(oal_wiphy_stru *pst_wiphy, oal_cfg80211_bss_stru *pst_cfg80211_bss);
+oal_cfg80211_bss_stru *oal_cfg80211_get_bss_etc(oal_wiphy_stru *pst_wiphy,
                       oal_ieee80211_channel_stru *pst_channel,
                       oal_uint8 *puc_bssid,
                       oal_uint8 *puc_ssid,
                       oal_uint32 ul_ssid_len);
-extern oal_cfg80211_bss_stru *oal_cfg80211_inform_bss_frame(
+extern oal_cfg80211_bss_stru *oal_cfg80211_inform_bss_frame_etc(
                                 oal_wiphy_stru              *pst_wiphy,
                                 oal_ieee80211_channel_stru  *pst_ieee80211_channel,
                                 oal_ieee80211_mgmt_stru     *pst_mgmt,
                                 oal_uint32                   ul_len,
                                 oal_int32                    l_signal,
                                 oal_gfp_enum_uint8           en_ftp);
-extern oal_void  oal_cfg80211_scan_done(
+extern oal_void  oal_cfg80211_scan_done_etc(
                 oal_cfg80211_scan_request_stru *pst_cfg80211_scan_request,oal_int8 c_aborted);
-extern oal_void  oal_cfg80211_sched_scan_result(oal_wiphy_stru *pst_wiphy);
-extern oal_uint32  oal_cfg80211_connect_result(
+extern oal_void  oal_cfg80211_sched_scan_result_etc(oal_wiphy_stru *pst_wiphy);
+extern oal_uint32  oal_cfg80211_connect_result_etc(
                         oal_net_device_stru         *pst_net_device,
                         const oal_uint8             *puc_bssid,
                         const oal_uint8             *puc_req_ie,
@@ -722,13 +722,13 @@ extern oal_uint32  oal_cfg80211_notify_cac_event(
                        enum PRIV_NL80211_RADAR_EVENT en_event,
                        oal_gfp_enum_uint8            en_gfp);
 #endif
-extern  oal_uint32  oal_cfg80211_disconnected(
+extern  oal_uint32  oal_cfg80211_disconnected_etc(
                     oal_net_device_stru        *pst_net_device,
                     oal_uint16                  us_reason,
                     oal_uint8                   *puc_ie,
                     oal_uint32                  ul_ie_len,
                     oal_gfp_enum_uint8          en_gfp);
-extern  oal_uint32  oal_cfg80211_new_sta(
+extern  oal_uint32  oal_cfg80211_new_sta_etc(
                         oal_net_device_stru     *pst_net_device,
                         const oal_uint8         *puc_mac_addr,
                         oal_station_info_stru   *pst_station_info,
@@ -746,39 +746,39 @@ extern  oal_uint32  oal_cfg80211_fbt_notify_find_sta(
                         oal_station_info_stru   *pst_station_info,
                         oal_gfp_enum_uint8      en_gfp);
 #endif
-extern oal_void  oal_cfg80211_mic_failure(
+extern oal_void  oal_cfg80211_mic_failure_etc(
                         oal_net_device_stru     *pst_net_device,
                         const oal_uint8         *puc_mac_addr,
                         enum nl80211_key_type    key_type,
                         oal_int32                key_id,
                         const oal_uint8         *tsc,
                         oal_gfp_enum_uint8       en_gfp);
-extern oal_int32  oal_cfg80211_del_sta(
+extern oal_int32  oal_cfg80211_del_sta_etc(
                                    oal_net_device_stru  *pst_net_device,
                                    const oal_uint8      *puc_mac_addr,
                                    oal_gfp_enum_uint8    en_gfp);
-extern oal_uint32 oal_cfg80211_rx_mgmt(
+extern oal_uint32 oal_cfg80211_rx_mgmt_etc(
                                    oal_net_device_stru  *pst_dev,
                                    oal_int32             l_freq,
                                    oal_uint8             uc_rssi,
                                    const oal_uint8      *puc_buf,
                                    oal_uint32            ul_len,
                                    oal_gfp_enum_uint8    en_gfp);
-extern oal_void oal_cfg80211_ready_on_channel(oal_wireless_dev_stru       *pst_wdev,
+extern oal_void oal_cfg80211_ready_on_channel_etc(oal_wireless_dev_stru       *pst_wdev,
                                         oal_uint64                  ull_cookie,
 			                            oal_ieee80211_channel_stru *pst_chan,
                                         oal_uint32                  ul_duration,
                                         oal_gfp_enum_uint8          en_gfp);
-extern oal_void oal_cfg80211_vowifi_report(oal_net_device_stru       *pst_netdev,
+extern oal_void oal_cfg80211_vowifi_report_etc(oal_net_device_stru       *pst_netdev,
                                             oal_gfp_enum_uint8         en_gfp);
-extern oal_void oal_cfg80211_remain_on_channel_expired(oal_wireless_dev_stru        *pst_wdev,
+extern oal_void oal_cfg80211_remain_on_channel_expired_etc(oal_wireless_dev_stru        *pst_wdev,
                                         oal_uint64                   ull_cookie,
 					                    oal_ieee80211_channel_stru  *pst_listen_channel,
 					                    oal_gfp_enum_uint8           en_gfp);
 
-extern oal_void oal_cfg80211_mgmt_tx_status(struct wireless_dev *wdev, oal_uint64 cookie,
+extern oal_void oal_cfg80211_mgmt_tx_status_etc(struct wireless_dev *wdev, oal_uint64 cookie,
 			     OAL_CONST oal_uint8 *buf, size_t len, oal_bool_enum_uint8 ack, oal_gfp_enum_uint8 gfp);
-extern oal_uint32  oal_cfg80211_roamed(
+extern oal_uint32  oal_cfg80211_roamed_etc(
                         oal_net_device_stru         *pst_net_device,
                         struct ieee80211_channel    *pst_channel,
                         const oal_uint8             *puc_bssid,
@@ -787,20 +787,25 @@ extern oal_uint32  oal_cfg80211_roamed(
                         const oal_uint8             *puc_resp_ie,
                               oal_uint32             ul_resp_ie_len,
                         oal_gfp_enum_uint8           en_gfp);
-extern oal_uint32  oal_cfg80211_ft_event(oal_net_device_stru *pst_net_device, oal_cfg80211_ft_event_stru  *pst_ft_event);
+extern oal_uint32  oal_cfg80211_ft_event_etc(oal_net_device_stru *pst_net_device, oal_cfg80211_ft_event_stru  *pst_ft_event);
 #if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
 #if defined(_PRE_PRODUCT_ID_HI110X_HOST)
-extern oal_void oal_kobject_uevent_env_sta_join(oal_net_device_stru *pst_net_device, const oal_uint8 *puc_mac_addr);
-extern oal_void oal_kobject_uevent_env_sta_leave(oal_net_device_stru *pst_net_device, const oal_uint8 *puc_mac_addr);
+extern oal_void oal_kobject_uevent_env_sta_join_etc(oal_net_device_stru *pst_net_device, const oal_uint8 *puc_mac_addr);
+extern oal_void oal_kobject_uevent_env_sta_leave_etc(oal_net_device_stru *pst_net_device, const oal_uint8 *puc_mac_addr);
 #endif
 #endif
 
-extern oal_uint32  oal_cfg80211_rx_exception(oal_net_device_stru *pst_netdev,
+extern oal_uint32  oal_cfg80211_rx_exception_etc(oal_net_device_stru *pst_netdev,
                                                oal_uint8          *puc_data,
                                                oal_uint32          ul_data_len);
-oal_netbuf_stru * oal_cfg80211_vendor_cmd_alloc_reply_skb(oal_wiphy_stru * pst_wiphy, oal_uint32 ul_len);
-oal_int32 oal_cfg80211_vendor_cmd_reply(oal_netbuf_stru *pst_skb);
-
+oal_netbuf_stru * oal_cfg80211_vendor_cmd_alloc_reply_skb_etc(oal_wiphy_stru * pst_wiphy, oal_uint32 ul_len);
+oal_int32 oal_cfg80211_vendor_cmd_reply_etc(oal_netbuf_stru *pst_skb);
+extern oal_void oal_cfg80211_m2s_status_report(oal_net_device_stru       *pst_netdev,
+    oal_gfp_enum_uint8 en_gfp, oal_uint8 *puc_buf, oal_uint32 ul_len);
+#ifdef _PRE_WLAN_FEATURE_TAS_ANT_SWITCH
+extern oal_void oal_cfg80211_tas_rssi_access_report(oal_net_device_stru *pst_netdev, oal_gfp_enum_uint8 en_gfp,
+                                                         oal_uint8 *puc_buf, oal_uint32 ul_len);
+#endif
 extern oal_uint32  oal_cfg80211_init(oal_void);
 extern oal_void  oal_cfg80211_exit(oal_void);
 

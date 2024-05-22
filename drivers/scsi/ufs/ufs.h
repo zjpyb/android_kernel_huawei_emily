@@ -67,7 +67,7 @@
 #define UFS_UPIU_MAX_GENERAL_LUN	8
 
 /* IOCTL opcode for command - ufs set device read only */
-#define UFS_IOCTL_BLKROSET /*lint -save -e845 */     BLKROSET /*lint -restore */
+#define UFS_IOCTL_BLKROSET      BLKROSET
 
 /* Well known logical unit id in LUN field of UPIU */
 enum {
@@ -145,7 +145,6 @@ enum {
 	UPIU_QUERY_FUNC_STANDARD_WRITE_REQUEST          = 0x81,
 };
 
-
 enum desc_header_offset {
 	QUERY_DESC_LENGTH_OFFSET	= 0x00,
 	QUERY_DESC_DESC_TYPE_OFFSET	= 0x01,
@@ -161,7 +160,7 @@ enum ufs_desc_max_size {
 	 * of descriptor header.
 	 */
 	QUERY_DESC_STRING_MAX_SIZE		= 0xFE,
-	QUERY_DESC_GEOMETRY_MAZ_SIZE		= 0x44,
+	QUERY_DESC_GEOMETRY_MAX_SIZE		= 0x44,
 	QUERY_DESC_RPMB_UNIT_MAZ_SIZE		= 0x22,
 	QUERY_DESC_POWER_MAX_SIZE		= 0x62,
 	QUERY_DESC_HEALTH_MAX_SIZE		= 0x37,
@@ -509,6 +508,7 @@ struct ufs_vreg {
 	struct regulator *reg;
 	const char *name;
 	bool enabled;
+	bool unused;
 	int min_uV;
 	int max_uV;
 	int min_uA;

@@ -23,7 +23,6 @@
 
 extern int static_relocate(struct module *mod, unsigned long type,
 			void * loc, unsigned long value);
-
 #ifdef CONFIG_ARM64_MODULE_PLTS
 struct mod_plt_sec {
 	struct elf64_shdr	*plt;

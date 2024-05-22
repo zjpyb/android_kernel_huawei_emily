@@ -98,7 +98,7 @@ rename_retry:
 		return end;
 	}
 	namelen = strlen(base);
-	if (flags & NFS_PATH_CANONICAL) {
+	if (*end == '/') {
 		/* Strip off excess slashes in base string */
 		while (namelen > 0 && base[namelen - 1] == '/')
 			namelen--;
@@ -226,7 +226,7 @@ static struct vfsmount *nfs_do_clone_mount(struct nfs_server *server,
 					   const char *devname,
 					   struct nfs_clone_mount *mountdata)
 {
-	return vfs_kern_mount(&nfs_xdev_fs_type, 0, devname, mountdata);
+	return vfs_submount(mountdata->dentry, &nfs_xdev_fs_type, devname, mountdata);
 }
 
 /**
@@ -258,7 +258,7 @@ struct vfsmount *nfs_do_submount(struct dentry *dentry, struct nfs_fh *fh,
 	if (page == NULL)
 		goto out;
 	devname = nfs_devname(dentry, page, PAGE_SIZE);
-	mnt = (struct vfsmount *)devname;
+	mnt = ERR_CAST(devname);
 	if (IS_ERR(devname))
 		goto free_page;
 	mnt = nfs_do_clone_mount(NFS_SB(dentry->d_sb), devname, &mountdata);

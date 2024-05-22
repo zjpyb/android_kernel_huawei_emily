@@ -186,6 +186,7 @@ enum {
 	PPLL2,
 	PPLL3,
 	PPLL4,
+	PPLL5,
 	PPLL6 = 0x6,
 	PPLL7 = 0x7,
 	PPLLMAX,
@@ -296,6 +297,8 @@ struct hs_clk {
 	void __iomem	*media1crg;
 	void __iomem	*media2crg;
 	void __iomem	*mmc1crg;
+	void __iomem	*hsdtcrg;
+	void __iomem	*mmc0crg;
 	spinlock_t	lock;
 };
 static struct hwspinlock	*clk_hwlock_9;
@@ -365,7 +368,7 @@ static int peri_dvfs_set_volt(u32 poll_id, u32 volt_level)
 			}
 			if (volt < volt_level) {
 				loop--;
-				usleep_range(1500, 3000);
+				usleep_range(150, 300);
 			}
 		} while (volt < volt_level && loop > 0);
 		if (volt < volt_level) {
@@ -1502,6 +1505,7 @@ static int kirin_ppll_enable_open(struct hi3xxx_ppll_clk *ppll_clk, int ppll)
 	switch (ppll) {
 	case PPLL2:
 	case PPLL3:
+	case PPLL5:
 	case PPLL6:
 	case PPLL7:
 		val = BIT(ppll_clk->gt_ctrl[1] + PLL_MASK_OFFSET);
@@ -1525,6 +1529,7 @@ static void kirin_ppll_nogate(struct hi3xxx_ppll_clk *ppll_clk, int ppll)
 	switch (ppll) {
 	case PPLL2:
 	case PPLL3:
+	case PPLL5:
 	case PPLL6:
 	case PPLL7:
 		val = BIT(ppll_clk->bypass_ctrl[1] + PLL_MASK_OFFSET);
@@ -1549,6 +1554,7 @@ static int kirin_ppll_enable_ready(struct hi3xxx_ppll_clk *ppll_clk, int ppll)
 	switch (ppll) {
 	case PPLL2:
 	case PPLL3:
+	case PPLL5:
 	case PPLL6:
 	case PPLL7:
 		do {
@@ -1574,6 +1580,7 @@ static void kirin_ppll_disable(struct hi3xxx_ppll_clk *ppll_clk, int ppll)
 	switch (ppll) {
 	case PPLL2:
 	case PPLL3:
+	case PPLL5:
 	case PPLL6:
 	case PPLL7:
 		/*output clock gate*/
@@ -2346,6 +2353,10 @@ int xfreq_clk_table_init(struct device_node *np, struct hi3xxx_xfreq_clk *xfreqc
 					ret);
 				return ret;
 			}
+			if(k >= MAX_FREQ_NUM){
+				pr_err("%s: sizeof freq and volt in device tree illegal!, k = %d\n", __func__, k);
+				return ret;
+			}
 			xfreqclk->freq[k] = (unsigned int)(rate / 1000);
 			xfreqclk->volt[k] = volt;
 			k++;
@@ -2721,8 +2732,11 @@ static int hi3xxx_mclk_prepare(struct clk_hw *hw)
 		}
 	}
 #endif
-
+#ifdef CONFIG_HISI_CLK_MAILBOX_SUPPORT
 	return ret;
+#else
+	return 0;
+#endif
 }
 
 static void hi3xxx_mclk_unprepare(struct clk_hw *hw)
@@ -2875,6 +2889,8 @@ static const struct of_device_id hs_of_match[] = {
 	{ .compatible = "hisilicon,media1-crg",	.data = (void *)HS_MEDIA1CRG, },
 	{ .compatible = "hisilicon,media2-crg",	.data = (void *)HS_MEDIA2CRG, },
 	{ .compatible = "hisilicon,mmc1-crg",	.data = (void *)HS_MMC1CRG, },
+	{ .compatible = "hisilicon,hsdt-crg",	.data = (void *)HS_HSDTCRG, },
+	{ .compatible = "hisilicon,mmc0-crg",	.data = (void *)HS_MMC0CRG, },
 	{},/*lint !e785 */
 };
 
@@ -2904,6 +2920,12 @@ void __iomem __init *hs_clk_base(u32 ctrl)
 		break;
 	case HS_MMC1CRG:
 		np = of_find_compatible_node(NULL, NULL, "hisilicon,mmc1_sysctrl");
+		break;
+	case HS_HSDTCRG:
+		np = of_find_compatible_node(NULL, NULL, "hisilicon,hsdt_crg");
+		break;
+	case HS_MMC0CRG:
+		np = of_find_compatible_node(NULL, NULL, "hisilicon,mmc0crg");
 		break;
 	default:
 		pr_err("[%s] ctrl err!\n", __func__);
@@ -3025,6 +3047,24 @@ static void __iomem __init *hs_clk_get_base(struct device_node *np)
 			hs_clk.mmc1crg = ret;
 		}else{
 			ret = hs_clk.mmc1crg;
+		}
+		break;
+	case HS_HSDTCRG:
+		if(!hs_clk.hsdtcrg) {
+			ret = of_iomap(parent, 0);
+			WARN_ON(!ret);/*lint !e730 */
+			hs_clk.hsdtcrg= ret;
+		}else{
+			ret = hs_clk.hsdtcrg;
+		}
+		break;
+	case HS_MMC0CRG:
+		if(!hs_clk.mmc0crg) {
+			ret = of_iomap(parent, 0);
+			WARN_ON(!ret);/*lint !e730 */
+			hs_clk.mmc0crg= ret;
+		}else{
+			ret = hs_clk.mmc0crg;
 		}
 		break;
 

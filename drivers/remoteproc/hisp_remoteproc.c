@@ -10,7 +10,6 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  */
-
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/err.h>
@@ -36,22 +35,39 @@
 #include <linux/sched/rt.h>
 #include <linux/kthread.h>
 #include <global_ddr_map.h>
+#include <isp_ddr_map.h>
 #include <asm/cacheflush.h>
 #include <linux/firmware.h>
 #include <linux/iommu.h>
 #include <linux/hisi/hisi-iommu.h>
 #include <linux/crc32.h>
-#include <soc_acpu_baseaddr_interface.h>
-#include <soc_pctrl_interface.h>
 #include <linux/ion.h>
 #include <linux/hisi/hisi_ion.h>
 #include <linux/spinlock.h>
-#include "soc_vivo_bus_interface.h"
-#include "soc_crgperiph_interface.h"
 #include "isp_ddr_map.h"
+#include <linux/dma-buf.h>
+#include <linux/version.h>
+#include <linux/syscalls.h>
+#include <dsm/dsm_pub.h>
+#include <linux/hisi/hisi_efuse.h>
 
 #define DTS_COMP_NAME   "hisilicon,isp"
 #define DTS_COMP_LOGIC_NAME   "hisilicon,isplogic"
+
+struct dsm_client *client_isp;
+struct dsm_client_ops ops6 = {
+    .poll_state = NULL,
+    .dump_func = NULL,
+};
+
+struct dsm_dev dev_isp = {
+    .name = "dsm_isp",
+    .device_name = NULL,
+    .ic_name = NULL,
+    .module_name = NULL,
+    .fops = &ops6,
+    .buff_size = 256,
+};
 
 typedef	unsigned int mbox_msg_t;
 static unsigned int communicat_msg[8] = {0};
@@ -80,6 +96,8 @@ module_param_named(debug_mask, debug_mask, int, S_IRUGO | S_IWUSR | S_IWGRP);
 			printk("Hisi rprocDrv Dump: [%s] " fmt, __func__, ##args); \
 	} while (0)
 
+#define HISP_MIN(a, b) (((a) < (b)) ? (a) : (b))
+
 #define RPMSG_RX_FIFO_DEEP  257
 #define MBOX_REG_COUNT      8
 
@@ -88,7 +106,6 @@ module_param_named(debug_mask, debug_mask, int, S_IRUGO | S_IWUSR | S_IWGRP);
 #define EN_RSTSATA_OFFSET   0x8
 #define EN_SATA_OFFSET      0xC
 
-#define REG_BASE_CSSYS_PHY  0xEC050000
 #define A7PC_OFFSET         0xA0
 #define PMEVCNTR0_EL0       0x1000
 #define PMCCNTR_EL0         0x107C
@@ -110,12 +127,37 @@ module_param_named(debug_mask, debug_mask, int, S_IRUGO | S_IWUSR | S_IWGRP);
 #define ISPA7_VINITHI_HIGH                  (1 << 1)
 #define ISPA7_REMAP_ENABLE                  (1 << 11)
 
+#define CRGPERIPH_CLKDIV10_ADDR         (0x0D0)
+#define CRGPERIPH_CLKDIV18_ADDR         (0x0F0)
+#define CRGPERIPH_CLKDIV20_ADDR         (0x0F8)
+#define CRGPERIPH_PERCLKEN0_ADDR        (0x008)
+#define CRGPERIPH_PERSTAT0_ADDR         (0x00C)
+#define CRGPERIPH_PERCLKEN3_ADDR        (0x038)
+#define CRGPERIPH_PERSTAT3_ADDR         (0x03C)
+#define CRGPERIPH_PERCLKEN5_ADDR        (0x058)
+#define CRGPERIPH_PERSTAT5_ADDR         (0x05C)
+#define CRGPERIPH_PERRSTSTAT0_ADDR      (0x068)
+#define CRGPERIPH_PERRSTSTAT3_ADDR      (0x08C)
+#define CRGPERIPH_ISOSTAT_ADDR          (0x14C)
+#define CRGPERIPH_PERPWRSTAT_ADDR       (0x158)
+#define CRGPERIPH_PERPWRACK_ADDR        (0x15C)
+
 /* PMCtrl Regs Offset */
 #define PMCTRL_384_NOC_POWER_IDLEACK        (0x384)
 #define PMCTRL_388_NOC_POWER_IDLE           (0x388)
 
 /* ISP Regs Offset */
 #define REVISION_ID_OFFSET                  (0x20008)
+
+/* PCtrl Regs Offset */
+#define PCTRL_PERI_STAT10_ADDR      (0x0BC)
+
+/* MEDIA1 Regs Offset */
+#define MEDIA1_PERCLKEN0_ADDR        (0x008)
+#define MEDIA1_PERSTAT0_ADDR         (0x00C)
+#define MEDIA1_PERCLKEN1_ADDR        (0x018)
+#define MEDIA1_PERSTAT1_ADDR         (0x01C)
+#define MEDIA1_CLKDIV9_ADDR          (0x084)
 
 enum hisi_boardid {
     HI3650_BOARDID  = 0x00000003,
@@ -155,13 +197,6 @@ typedef struct rproc_camera {
 struct rproc_boot_device {
     unsigned int boardid;
     struct platform_device *isp_pdev;
-    void __iomem *crgperi_base;
-    void __iomem *pctrl_base;
-    void __iomem* vivobus_base;
-    void __iomem *cssys_base;
-    void __iomem *isp_base;
-    void __iomem *pmc_base;
-    void __iomem *isp_subctrl_base;
     u64 remap_addr;
     u64 nsec_remap_addr;
     void *remap_va;
@@ -169,8 +204,12 @@ struct rproc_boot_device {
     struct clk *ispa7_clk;
     struct clk *isp_timer;
     unsigned int ispa7_clk_value;
+    unsigned int isppd_adb_flag;
     struct hisi_isp_rproc *isp_rproc;
     struct isp_plat_cfg tmp_plat_cfg;
+    struct resource *r[HISP_MAX_REGTYPE];
+    void __iomem *reg[HISP_MAX_REGTYPE];
+    unsigned int reg_num;
     rproc_camera_t isp_data;
     int isp_subsys_power_flag;
     unsigned int a7_ap_mbox;
@@ -196,6 +235,7 @@ struct rproc_boot_device {
 #endif
     int probe_finished;
     struct hisi_isp_clk_dump_s hisi_isp_clk;
+    unsigned char isp_efuse_flag;
 } rproc_boot_dev;
 
 int last_boot_state;
@@ -276,29 +316,213 @@ void hisp_rproc_init(struct rproc *rproc)
 	INIT_LIST_HEAD(&rproc->cdas);
 	INIT_LIST_HEAD(&rproc->pages);
 }
-static void hisi_isp_data_text_vunmap(struct rproc *rproc)
+
+/* page order */
+static const unsigned int orders[] = {8, 4, 0};
+#define ISP_NUM_ORDERS ARRAY_SIZE(orders)
+static inline unsigned int order_to_size(int order)
 {
-	struct rproc_mem_entry *entry, *tmp;
-    if (use_sec_isp())
-        return;
-	/* clean up dynamic allocations */
-	list_for_each_entry_safe(entry, tmp, &rproc->dynamic_mems, node) {
-		if ((!strncmp(entry->priv, "ISP_MEM_TEXT", strlen(entry->priv)) || (!strncmp(entry->priv, "ISP_MEM_DATA", strlen(entry->priv)))))/*lint !e64 */
-		{
-			vunmap(entry->va);
-			list_del(&entry->node);
-			kfree(entry);
-		}
-	}
+    return PAGE_SIZE << order;
 }
+/* try to alloc largest page orders */
+static struct page *alloc_largest_pages(gfp_t gfp_mask, unsigned long size, unsigned int max_order, unsigned int *order)
+{
+    struct page *page   = NULL;
+    gfp_t gfp_flags     = 0;
+    int i               = 0;
+
+    if (order == NULL){
+        pr_err("%s: order is NULL \n", __func__);
+        return NULL;
+        }
+
+    for (i = 0; i < ISP_NUM_ORDERS; i++) {/*lint !e574*/
+        if (size < order_to_size(orders[i]))
+            continue;
+        if (max_order < orders[i])
+            continue;
+
+        if (orders[i] >= 8) {
+            gfp_flags = gfp_mask & (~__GFP_RECLAIM);
+            gfp_flags |= __GFP_NOWARN;
+            gfp_flags |= __GFP_NORETRY;
+        }
+        else if ( orders[i] >= 4) {
+            gfp_flags = gfp_mask & (~__GFP_DIRECT_RECLAIM);
+            gfp_flags |= __GFP_NOWARN;
+            gfp_flags |= __GFP_NORETRY;
+        }
+        else
+            gfp_flags = gfp_mask;
+
+        page = alloc_pages(gfp_flags,orders[i]);
+        if (!page){
+            continue;
+        }
+        *order = orders[i];
+
+        return page;
+    }
+
+    return NULL;
+}
+/* dynamic alloc page and creat sg_table */
+static struct sg_table *isp_mem_sg_table_allocate(unsigned long length)
+{
+    struct list_head pages_list             = { 0 };
+    struct rproc_page_info *page_info       = NULL;
+    struct rproc_page_info *tmp_page_info   = NULL;
+    struct sg_table *table       = NULL;
+    struct scatterlist *sg       = NULL;
+    unsigned long size_remaining = PAGE_ALIGN(length);
+    unsigned int max_order       = orders[0];
+    int alloc_pages_num          = 0;
+
+    INIT_LIST_HEAD(&pages_list);
+
+    while (size_remaining > 0) {
+        page_info = kzalloc(sizeof(struct rproc_page_info), GFP_KERNEL);
+        if (!page_info) {
+            pr_err("%s: alloc rproc_page_info fail\n", __func__);
+            goto free_pages;
+        }
+        page_info->page = alloc_largest_pages(GFP_KERNEL, size_remaining, max_order, &page_info->order);
+        if (!page_info->page) {
+            pr_err("%s: alloc largest pages failed!\n",__func__);
+            kfree(page_info);
+            goto free_pages;
+        }
+
+        list_add_tail(&page_info->node, &pages_list);
+        size_remaining -= PAGE_SIZE << page_info->order;
+        max_order = page_info->order;
+        alloc_pages_num++;
+    }
+    table = kmalloc(sizeof(struct sg_table), GFP_KERNEL);
+    if (!table)
+        goto free_pages;
+
+    if (sg_alloc_table(table, alloc_pages_num, GFP_KERNEL))
+        goto free_table;
+
+    sg = table->sgl;
+    list_for_each_entry_safe(page_info, tmp_page_info, &pages_list, node){
+        sg_set_page(sg, page_info->page, PAGE_SIZE << page_info->order, 0);
+        sg = sg_next(sg);
+        list_del(&page_info->node);
+        kfree(page_info);
+    }
+    pr_debug("%s: pages num = %d, length = 0x%lx \n", __func__, alloc_pages_num,length);
+    return table;
+
+free_table:
+    kfree(table);
+free_pages:
+    list_for_each_entry_safe(page_info, tmp_page_info, &pages_list, node){
+        __free_pages(page_info->page,page_info->order);
+        list_del(&page_info->node);
+        kfree(page_info);
+    }
+
+    return NULL;
+}
+/* dynamic free page and sg_table */
+static void isp_mem_sg_table_free(struct sg_table *table)
+{
+    struct scatterlist *sg  = NULL;
+    int i                   = 0;
+
+    if(!table)
+    {
+        pr_err("%s: table is NULL \n", __func__);
+        return;
+    }
+    pr_debug("%s: table = 0x%pK \n", __func__, table);
+    for_each_sg(table->sgl, sg, table->nents, i){/*lint !e574*/
+        __free_pages(sg_page(sg),get_order(PAGE_ALIGN(sg->length)));
+    }
+    sg_free_table(table);
+    kfree(table);
+}
+/* dynamic map kernel addr with sg_table */
+static void *isp_mem_map_kernel(struct sg_table *table,unsigned long length)
+{
+    struct scatterlist *sg  = NULL;
+    struct page *page       = NULL;
+    void *vaddr             = NULL;
+    int npages = PAGE_ALIGN(length) / PAGE_SIZE;
+    int npages_this_entry   = 0;
+    struct page **pages     = vmalloc(sizeof(struct page *) * npages);
+    struct page **tmp       = pages;
+    int i, j;
+
+    if(!pages)
+    {
+        pr_err("%s: vmalloc failed. \n", __func__);
+        return NULL;
+    }
+    if(!table)
+    {
+        pr_err("%s: table is NULL \n", __func__);
+        return NULL;
+    }
+
+    for_each_sg(table->sgl, sg, table->nents, i) {/*lint !e574*/
+        npages_this_entry = PAGE_ALIGN(sg->length) / PAGE_SIZE;
+        page = sg_page(sg);
+        BUG_ON(i >= npages);
+        for (j = 0; j < npages_this_entry; j++)
+            *(tmp++) = page++;/*lint !e613*/
+    }
+
+    vaddr = vmap(pages, npages, VM_MAP, PAGE_KERNEL);
+    vfree(pages);
+    if (!vaddr) {
+        pr_err("%s: vmap failed.\n", __func__);
+        return NULL;
+    }
+    return vaddr;
+}
+/* dynamic unmap kernel addr with sg_table */
+static void isp_mem_unmap_kernel(void *va)
+{
+    if(!va)
+    {
+        pr_err("%s: va is NULL \n", __func__);
+        return;
+    }
+    vunmap(va);
+}
+/* dynamic sg_table list_add_tail in page list */
+/*lint -e429*/
+static int isp_mem_add_page_list(struct rproc *rproc, struct sg_table *table)
+{
+    struct rproc_page *r_page    = NULL;/*lint !e429 */
+
+    if(!table || !rproc)
+    {
+        pr_err("%s: table or rproc is NULL!\n", __func__);
+        return -ENOENT;
+    }
+
+    r_page = kzalloc(sizeof(struct rproc_page), GFP_KERNEL);
+    if (!r_page) {
+        pr_err("%s: kzalloc failed. \n", __func__);
+        return -ENOMEM;
+    }
+
+    r_page->table = table;
+
+    list_add_tail(&r_page->node, &rproc->pages);
+    return 0;
+}
+/*lint +e429*/
 void hisp_rproc_resource_cleanup(struct rproc *rproc)
 {
 	struct rproc_mem_entry *entry, *tmp;
 	struct rproc_page *page_entry, *page_tmp;
 	struct rproc_cache_entry *cache_entry, *cache_tmp;
 	struct device *dev = &rproc->dev;
-	struct page **tmp_page;
-	unsigned int i;
 
 	/* clean up debugfs cda entries */
 	list_for_each_entry_safe(entry, tmp, &rproc->cdas, node) {
@@ -345,17 +569,7 @@ void hisp_rproc_resource_cleanup(struct rproc *rproc)
 
 	/* free page */
 	list_for_each_entry_safe(page_entry, page_tmp, &rproc->pages, node) {
-		i = 0;
-		tmp_page = (struct page **)page_entry->va;
-		while (NULL != tmp_page && i < page_entry->num) {
-			if (NULL != *tmp_page)
-				__free_page(*tmp_page);
-			else
-				pr_info("tmp_page: %pK, i: %d, page_num: %u", tmp_page, i, page_entry->num);
-			tmp_page++;
-			i++;
-		}
-		vfree(page_entry->va);
+		isp_mem_sg_table_free(page_entry->table);
 		list_del(&page_entry->node);
 		kfree(page_entry);
 	}
@@ -365,6 +579,8 @@ void hisp_rproc_resource_cleanup(struct rproc *rproc)
 		list_del(&cache_entry->node);
 		kfree(cache_entry);
 	}
+	/* clean dynamic mem pool */
+	hisp_dynamic_mem_pool_clean();
 }
 
 void hisp_virtio_boot_complete(struct rproc *rproc, int flag)
@@ -433,17 +649,20 @@ int hisp_rproc_boot(struct rproc *rproc)
 		ret = -EINVAL;
 		goto unlock_mutex;
 	}
-
 	/* skip the boot process if rproc is already powered up */
 	if (atomic_inc_return(&rproc->power) > 1) {
-		ret = 0;
+		dev_err(dev, "%s: rproc already powed up!\n", __func__);
+		ret = -EEXIST;
 		goto unlock_mutex;
 	}
 
 	dev_info(dev, "powering up %s\n", rproc->name);
 
 	if (use_sec_isp()) {
-		ret= sec_rproc_boot(rproc);
+		ret = sec_rproc_boot(rproc);
+		if (0 != ret) {
+			pr_err("%s: sec_rproc_boot failed.\n", __func__);
+		}
 		goto unlock_mutex;
 	}
 
@@ -465,38 +684,34 @@ int hisp_rproc_boot(struct rproc *rproc)
 	ret = request_firmware(&firmware_p, rproc->firmware, dev);
 	if (ret < 0) {
 		dev_err(dev, "request_firmware failed: %d\n", ret);
-		goto downref_rproc;
+		goto unlock_mutex;
 	}
+
 
 	ret = rproc_fw_boot(rproc, firmware_p);
 	release_firmware(firmware_p);
 	if (0 != ret) {
 		pr_err("%s: rproc_fw_boot failed.\n", __func__);
-		goto downref_rproc;
+		goto unlock_mutex;
 	}
 
 	/* load bootware */
 	ret = request_firmware(&firmware_p, rproc->bootware, dev);
 	if (ret < 0) {
 		dev_err(dev, "Failed: bootware request_firmware.%d\n", ret);
-		goto downref_rproc;
+		goto unlock_mutex;
 	}
 
 	ret = rproc_bw_load(rproc, firmware_p);
 	release_firmware(firmware_p);
 	if (0 != ret) {
 		pr_err("%s: rproc_bw_load failed.\n", __func__);
-		goto downref_rproc;
+		goto unlock_mutex;
 	}
 
 	/* flush memory cache */
 	rproc_memory_cache_flush(rproc);
 
-downref_rproc:
-	if (ret) {
-		module_put(dev->parent->driver->owner);
-		atomic_dec(&rproc->power);
-	}
 unlock_mutex:
 	mutex_unlock(&rproc->lock);/*lint !e455 */
 
@@ -537,16 +752,16 @@ int rpmsg_vdev_map_resource(struct virtio_device *vdev, dma_addr_t dma, int tota
 			rvring = &rvdev->vring[i];
 			index = A7VRING0 + i;
 			size = PAGE_ALIGN(vring_size(rvring->len, rvring->align));/*lint !e666 */
-			if ((ret = hisp_meminit(index, rvring->dma)) < 0) {
-				pr_err("[%s] Failed : hisp_meminit.%d.(0x%x, 0x%llx)\n", __func__, ret, index, (unsigned long long)rvring->dma);
+			if ((ret = hisp_mem_type_pa_init(index, rvring->dma)) < 0) {
+				pr_err("[%s] Failed : hisp_meminit.%d.(0x%x)\n", __func__, ret, index);
 				return ret;
 			}
 		}
 
 		/* map virtqueue */
 		index = A7VQ;
-		if ((ret = hisp_meminit(index, dma)) < 0) {
-			pr_err("[%s] Failed : hisp_meminit.%d.(0x%x, 0x%llx)\n", __func__, ret, index, (unsigned long long)dma);
+		if ((ret = hisp_mem_type_pa_init(index, dma)) < 0) {
+			pr_err("[%s] Failed : hisp_meminit.%d.(0x%x)\n", __func__, ret, index);
 			return ret;
 		}
 		return 0;
@@ -585,7 +800,6 @@ int rpmsg_vdev_map_resource(struct virtio_device *vdev, dma_addr_t dma, int tota
 		vringmapping[i]->da = rvring->da;
 		vringmapping[i]->len = size;
 		list_add_tail(&vringmapping[i]->node, &rproc->mappings);
-        pr_info("[%s] Vring.%d : 0x%lx -> 0x%x\n", __func__, i, (unsigned long)rvring->dma, (unsigned int)rvring->da);
 	}
 
 	/* map virtqueue*/
@@ -593,7 +807,7 @@ int rpmsg_vdev_map_resource(struct virtio_device *vdev, dma_addr_t dma, int tota
 	ret = iommu_map(rproc->domain, rproc->ipc_addr, (phys_addr_t)(dma),
                 total_space, prot);
 	if (ret) {
-		pr_err("[%s] Failed : iommu_map.%d, 0x%lx -> 0x%x\n", __func__, ret, (unsigned long)dma, (unsigned int)rproc->ipc_addr);
+		pr_err("[%s] Failed : iommu_map.%d\n", __func__, ret);
         goto exit_vdevmap;
 	}
 
@@ -610,7 +824,6 @@ int rpmsg_vdev_map_resource(struct virtio_device *vdev, dma_addr_t dma, int tota
 	vqmapping->da = rproc->ipc_addr;
 	vqmapping->len = total_space;
 	list_add_tail(&vqmapping->node, &rproc->mappings);
-    pr_info("[%s] VQ : 0x%lx -> 0x%x\n", __func__, (unsigned long)dma, (unsigned int)rproc->ipc_addr);
 
 	return 0;
 exit_vdevmap:
@@ -647,14 +860,6 @@ int sec_rproc_boot(struct rproc *rproc)
 		dev_err(dev, "Failed : resource checksum 0x%x = 0x%x\n", rproc->table_csum, crc32(0, table, tablesz));
 		return -EINVAL;
 	}
-#if 0
-	/* handle fw resources which are required to boot rproc */
-	ret = rproc_handle_resources(rproc, tablesz, rproc_loading_handlers);
-	if (ret) {
-		dev_err(dev, "Failed to process resources: %d\n", ret);
-		return ret;
-    }
-#endif
 	/* set shared parameters for rproc*/
 	ret = rproc_set_shared_para();
 	if (ret) {
@@ -716,11 +921,11 @@ void sec_rscwork_func(struct work_struct *work)
 
 struct rproc_shared_para *rproc_get_share_para(void)
 {
-    pr_info("%s: enter.\n", __func__);
+    pr_debug("%s: enter.\n", __func__);
     if (isp_share_para)
         return isp_share_para;
 
-    pr_info("%s: failed.\n", __func__);
+    pr_debug("%s: failed.\n", __func__);
     return NULL;
 }
 
@@ -737,7 +942,6 @@ void set_shared_mdc_pa_addr(u64 mdc_pa_addr)
     }
 
     share_para->mdc_pa_addr = mdc_pa_addr;
-    pr_debug("[%s] share_para->mdc_pa_addr.0x%llx\n", __func__,share_para->mdc_pa_addr);
     hisp_unlock_sharedbuf();
 }
 /*lint -save -e429*/
@@ -759,11 +963,78 @@ void free_nesc_addr_ion(struct hisi_isp_ion_s *hisi_nescaddr_ion)
     hisi_nescaddr_ion->virt_addr  = NULL;
 }
 
+int hisp_ion_phys(struct ion_client *client, struct ion_handle *handle,
+         dma_addr_t *addr)
+{
+    int ret = -ENODEV;
+    int share_fd = 0;
+    struct dma_buf *buf = NULL;
+    struct dma_buf_attachment *attach = NULL;
+    struct sg_table *sgt = NULL;
+    struct scatterlist *sgl;
+    struct rproc_boot_device *rproc_dev = &rproc_boot_dev;
+    struct device *device = NULL;
+
+    pr_info("[%s] +\n", __func__);
+
+    if ((IS_ERR(client))||(IS_ERR(handle))) {
+        pr_err("hisp_ion_phys failed \n");
+        return -ENODEV;
+    }
+
+    device = &rproc_dev->isp_pdev->dev;
+
+    share_fd = ion_share_dma_buf_fd(client, handle);
+    if (share_fd < 0) {
+        pr_err("[%s] Failed : ion_share_dma_buf_fd, share_fd.%d\n", __func__, share_fd);
+        return share_fd;
+    }
+
+    buf = dma_buf_get(share_fd);
+    if (IS_ERR(buf)) {
+        pr_err("[%s] Failed : dma_buf_get, buf.%pK\n", __func__, buf);
+        goto err_dma_buf_get;
+    }
+
+    attach = dma_buf_attach(buf, device);
+    if (IS_ERR(attach)) {
+        pr_err("[%s] Failed : dma_buf_attach, attach.%pK\n", __func__, attach);
+        goto err_dma_buf_attach;
+    }
+
+    sgt = dma_buf_map_attachment(attach, DMA_BIDIRECTIONAL);
+    if (IS_ERR(sgt)) {
+        pr_err("[%s] Failed : dma_buf_map_attachment, sgt.%pK\n", __func__, sgt);
+        goto err_dma_buf_map_attachment;
+    }
+
+    sgl = sgt->sgl;
+    if (sgl == NULL) {
+        pr_err("[%s] Failed : sgl.NULL\n", __func__);
+        goto err_sgl;
+    }
+
+    // Get physical addresses from scatter list
+    *addr = sg_phys(sgl);/*[false alarm]:it's not the bounds of allocated memory */
+
+    pr_info("[%s] -\n", __func__);
+    ret = 0;
+
+err_sgl:
+    dma_buf_unmap_attachment(attach, sgt, DMA_BIDIRECTIONAL);
+err_dma_buf_map_attachment:
+    dma_buf_detach(buf, attach);
+err_dma_buf_attach:
+    dma_buf_put(buf);
+err_dma_buf_get:
+    sys_close(share_fd);
+    return ret;
+}
+
 struct hisi_isp_ion_s *get_nesc_addr_ion(size_t size, size_t align, unsigned int heap_id_mask, unsigned int flags)
 {
     struct hisi_isp_ion_s *hisi_nescaddr_ion = NULL;
     ion_phys_addr_t nesc_addr_ion_phys = 0x0 ;
-    size_t nesc_addr_ion_size = 0;
     int ret = 0;
 
     hisi_nescaddr_ion = kzalloc(sizeof(struct hisi_isp_ion_s), GFP_KERNEL);/*lint !e838 */
@@ -796,7 +1067,7 @@ struct hisi_isp_ion_s *get_nesc_addr_ion(size_t size, size_t align, unsigned int
         return NULL;
     }
 
-    ret = ion_phys(hisi_nescaddr_ion->ion_client, hisi_nescaddr_ion->ion_handle,&nesc_addr_ion_phys, &nesc_addr_ion_size);/*lint !e838 */
+    ret = hisp_ion_phys(hisi_nescaddr_ion->ion_client, hisi_nescaddr_ion->ion_handle,(dma_addr_t *)&nesc_addr_ion_phys);/*lint !e838 */
     if (ret < 0)
     {
         pr_err("%s, failed to get phy addr,ret:%d!\n", __func__, ret);
@@ -957,97 +1228,6 @@ void rproc_memory_cache_flush(struct rproc *rproc)
 		__flush_dcache_area(tmp->va, tmp->len);
 }
 
-/* package vaddr to physical addr(sgl) */
-/*lint -save -e429*/
-int vaddr_to_sgl(struct rproc *rproc, void **vaddr,
-                        unsigned int length, struct sg_table **table)
-{
-	int ret;
-	char *vaddr_tmp = (char *)vaddr;
-	unsigned int len = 0;
-	struct scatterlist *sg;
-	struct page **pages, **tmp;
-	struct rproc_page *r_page;
-	int npages = 0, alloced = 0;
-
-	npages = PAGE_ALIGN(length) / PAGE_SIZE;
-	if (0 == npages)
-		return -EINVAL;
-
-	//pr_info("%s: length = 0x%x, npages = %d.\n", __func__, length, npages);
-
-	r_page = kzalloc(sizeof(struct rproc_page), GFP_KERNEL);
-	if (!r_page) {
-		pr_err("%s: kzalloc failed. \n", __func__);
-		return -ENOMEM;
-	}
-
-	pages = vmalloc(sizeof(struct page *) * npages);
-	if (!pages) {
-		pr_err("%s: vmalloc failed. \n", __func__);
-		goto vmalloc_fail;
-	}
-
-	tmp = pages;
-
-	*table = kzalloc(sizeof(struct sg_table), GFP_KERNEL);
-	if (!(*table)) {
-		pr_err("%s: vmalloc failed. \n", __func__);
-		goto kmalloc_fail;
-	}
-
-	ret = sg_alloc_table(*table, npages, GFP_KERNEL);
-	if (ret) {
-		pr_err("%s:sg_alloc_table failed. \n", __func__);
-		goto sg_fail;
-	}
-
-	while (alloced < npages) {
-		*(tmp++) = alloc_page(GFP_KERNEL | GFP_DMA | __GFP_ZERO);
-		alloced++;
-	}
-
-	*vaddr = vmap(pages, npages, VM_MAP, PAGE_KERNEL);
-	if (!(*vaddr)) {
-		pr_err("%s: vmap failed.\n", __func__);
-		goto vmap_fail;
-	}
-
-	sg = (*table)->sgl;
-	tmp = pages;
-	alloced = 0;
-	while (len < length && alloced < npages) {
-		struct page *page = *(tmp++);
-		sg_set_page(sg, page, PAGE_SIZE, 0);
-		sg = sg_next(sg);
-
-		len += PAGE_SIZE;
-		vaddr_tmp += PAGE_SIZE;
-	}
-
-	r_page->va = (void *)pages;
-	r_page->num = npages;
-	list_add_tail(&r_page->node, &rproc->pages);
-	pr_info("%s:len = 0x%x, length = 0x%x \n", __func__, len, length);
-	return 0;
-
-vmap_fail:
-	alloced = 0;
-	tmp = pages;
-	while (alloced < npages) {
-		__free_page(*(tmp++));
-		alloced++;
-	}
-sg_fail:
-	kfree(*table);
-kmalloc_fail:
-	vfree(pages);
-vmalloc_fail:
-	kfree(r_page);
-
-	return -ENOMEM;
-}
-/*lint -restore */
 /**
 * rproc_handle_dynamic_memory() - handle phys non-contiguous memory allocation requests
 * @rproc: rproc handle
@@ -1089,8 +1269,7 @@ int rproc_handle_dynamic_memory(struct rproc *rproc,
 		return -EINVAL;
 	}
 
-	dev_dbg(dev, "dynamic_mem rsc: da %x, pa %x, len %x, flags %x\n",
-	rsc->da, rsc->pa, rsc->len, rsc->flags);
+	dev_info(dev, "dynamic_mem rsc: len %x, flags %x\n", rsc->len, rsc->flags);
 
 	cache_entry = kzalloc(sizeof(*cache_entry), GFP_KERNEL);
 	if (!cache_entry) {
@@ -1104,17 +1283,23 @@ int rproc_handle_dynamic_memory(struct rproc *rproc,
 		ret = -ENOMEM;
 		goto free_cache;
 	}
-#if 0
-	va = vmalloc(rsc->len);
-	if (!va) {
-		dev_err(dev, "%s:vmalloc failed\n", __func__);
-		goto free_memory;
-	}
-#endif
-	ret = vaddr_to_sgl(rproc, &va, rsc->len, &table);
-	if (0 != ret) {
+
+	table = isp_mem_sg_table_allocate(rsc->len);
+	if(table == NULL){
 		dev_err(dev, "%s:vaddr_to_sgl failed\n", __func__);
 		goto free_memory;
+	}
+
+	ret = isp_mem_add_page_list(rproc,table);
+	if (ret < 0) {
+		dev_err(dev, "isp_mem_add_page_list failed: ret %d \n", ret);
+		goto free_memory;
+	}
+
+	va = isp_mem_map_kernel(table,rsc->len);
+	if(va == NULL){
+		dev_err(dev, "%s:vaddr_to_sgl failed\n", __func__);
+		goto free_table;
 	}
 
 	/* mapping */
@@ -1123,10 +1308,11 @@ int rproc_handle_dynamic_memory(struct rproc *rproc,
 		if (!mapping) {
 			dev_err(dev, "kzalloc mapping failed\n");
 			ret = -ENOMEM;
-			goto free_sgl;
+			goto free_map;
 		}
-		ret = iommu_map_sg(rproc->domain, rsc->da, table->sgl, sg_nents(table->sgl), rsc->flags);
-		if (ret != sg_nents(table->sgl)*PAGE_SIZE) {
+
+        ret = iommu_map_sg(rproc->domain, rsc->da, table->sgl, sg_nents(table->sgl), rsc->flags);
+		if (ret != rsc->len) {
 			dev_err(dev, "hisi_iommu_map_range failed: ret %d len %d\n", ret, rsc->len);
 			goto free_mapping;
 		}
@@ -1142,10 +1328,6 @@ int rproc_handle_dynamic_memory(struct rproc *rproc,
 		mapping->len = rsc->len;
 		list_add_tail(&mapping->node, &rproc->mappings);
 	}
-
-    /* free table */
-    sg_free_table(table);
-    kfree(table);
 
 	/*
 	* Some remote processors might need to know the pa
@@ -1182,9 +1364,10 @@ int rproc_handle_dynamic_memory(struct rproc *rproc,
 
 free_mapping:
 	kfree(mapping);
-free_sgl:
-	sg_free_table(table);
-	kfree(table);
+free_map:
+	isp_mem_unmap_kernel(va);
+free_table:
+	isp_mem_sg_table_free(table);
 free_memory:
 	kfree(dynamic_mem);
 free_cache:
@@ -1229,8 +1412,6 @@ int rproc_handle_reserved_memory(struct rproc *rproc,
     }
     else
         addr = rsc->pa;
-    dev_err(dev, "%s : da.0x%x, pa.0x%llx, len.0x%x, flags.0x%x\n",
-                rsc->name, rsc->da, addr, rsc->len, rsc->flags);
 
 	cache_entry = kzalloc(sizeof(*cache_entry), GFP_KERNEL);
 	if (!cache_entry) {
@@ -1263,14 +1444,11 @@ int rproc_handle_reserved_memory(struct rproc *rproc,
     } else {
         va = ioremap(addr, rsc->len);/*lint !e747 */
         if (!va) {
-            dev_err(dev, "ioremap failed addr.0x%llx\n", addr);
+            dev_err(dev, "ioremap failed addr\n");
             ret = -ENOMEM;
             goto free_memory;
         }
     }
-
-    pr_info("%s: addr.0x%llx, len.0x%x, kva.%pK, name.%s\n",
-            __func__, addr, rsc->len, va, rsc->name);
 
 	if (rproc->domain) {
 		mapping = kzalloc(sizeof(*mapping), GFP_KERNEL);
@@ -1333,8 +1511,7 @@ int rproc_handle_rdr_memory(struct rproc *rproc,
 	u64 isprdr_addr;
 
 	isprdr_addr = get_isprdr_addr();
-	pr_info("ispRDR Paddr.0x%llx ==>> (DA.0x%x, PA.0x%x, Len.0x%x, Flag.0x%x).%s\n",
-					isprdr_addr, rsc->da, rsc->pa, rsc->len, rsc->flags, rsc->name);
+	pr_info("ispRDR ==>> (Len.0x%x, Flag.0x%x).%s\n", rsc->len, rsc->flags, rsc->name);
 
 	if (0 == isprdr_addr) {
 		pr_info("%s: rdr func is off.\n", __func__);
@@ -1403,8 +1580,8 @@ int rproc_handle_shared_memory(struct rproc *rproc,
 	}
 
 	a7sharedmem_addr = get_a7sharedmem_addr();
-	dev_err(dev, "%s: da %x, pa %llx, len %x, flags %x\n",
-					rsc->name, rsc->da, a7sharedmem_addr, rsc->len, rsc->flags);
+	dev_err(dev, "%s: len %x, flags %x\n",
+					rsc->name, rsc->len, rsc->flags);
 
 	reserved_mem = kzalloc(sizeof(*reserved_mem), GFP_KERNEL);
 	if (!reserved_mem) {
@@ -1417,7 +1594,7 @@ int rproc_handle_shared_memory(struct rproc *rproc,
     else {
         va = ioremap_wc(a7sharedmem_addr, rsc->len);
         if (!va) {
-            dev_err(dev, "ioremap failed a7sharedmem_addr.0x%llx\n", a7sharedmem_addr);
+            dev_err(dev, "ioremap failed a7sharedmem_addr\n");
             ret = -ENOMEM;
             goto free_memory;
         }
@@ -1450,7 +1627,7 @@ int rproc_handle_shared_memory(struct rproc *rproc,
 	reserved_mem->priv = rsc->name;
 
 	list_add_tail(&reserved_mem->node, &rproc->reserved_mems);
-    pr_info("[%s] name.%s, (0x%x, 0x%x) -> %pK\n", __func__, rsc->name, rsc->da, rsc->len, va);
+    pr_info("[%s] name.%s, (0x%x) -> %pK\n", __func__, rsc->name, rsc->len, va);
 
     hisp_lock_sharedbuf();
 	isp_share_para = (struct rproc_shared_para *)va;
@@ -1495,17 +1672,27 @@ unsigned int dynamic_memory_map(struct scatterlist *sgl,\
         pr_err("%s: isp_rproc is NULL\n",__func__);
         return 0;
     }
-    pr_info("[%s] addr.0x%lx, size.0x%lx, prot.0x%x\n", __func__, addr, size, prot);
+    pr_info("[%s] size.0x%lx, prot.0x%x\n", __func__, size, prot);
     rproc = rproc_dev->isp_rproc->rproc;
+    if(rproc->domain == NULL)
+    {
+        pr_err("%s: rproc->domain is NULL!\n",__func__);
+        return 0;
+    }
+    if(sgl == NULL)
+    {
+        pr_err("%s: sgl is NULL!\n",__func__);
+        return 0;
+    }
     phy_len = iommu_map_sg(rproc->domain, addr, sgl, sg_nents(sgl), prot);
     if (phy_len != size) {
-        pr_err("%s: iommu_map_sg failed! addr.0x%lx, phy_len.0x%lx, size.0x%lx\n",__func__, addr, phy_len, size);
+        pr_err("%s: iommu_map_sg failed! phy_len.0x%lx, size.0x%lx\n",__func__, phy_len, size);
         dynamic_memory_unmap(addr,phy_len);
         return 0;
     }
     return addr;
 }
-int dynamic_memory_unmap(    size_t addr, size_t size)
+int dynamic_memory_unmap(size_t addr, size_t size)
 {
     struct rproc_boot_device *rproc_dev = &rproc_boot_dev;
     struct rproc *rproc;
@@ -1517,11 +1704,15 @@ int dynamic_memory_unmap(    size_t addr, size_t size)
         return -EINVAL;
     }
     rproc = rproc_dev->isp_rproc->rproc;
-    if((addr == 0) || (size == 0)){
+    if((addr != MEM_RAW2YUV_DA) || (size != MEM_RAW2YUV_SIZE)){
         pr_err("%s: check mem error!addr = 0x%lx; size = 0x%lx\n",__func__, addr, size);
         return -EINVAL;
     }
-
+    if(rproc->domain == NULL)
+    {
+        pr_err("%s: rproc->domain is NULL!\n",__func__);
+        return -ENOMEM;
+    }
     phy_len = iommu_unmap(rproc->domain, addr, size);
     if (phy_len != size) {
         pr_err("%s: iommu_unmap failed: phy_len 0x%lx size 0x%lx\n\n",__func__, phy_len, size);
@@ -1591,9 +1782,9 @@ int set_plat_parameters(void)
         param->logx_switch         |= ISPCPU_LOG_TIMESTAMP_FPGAMOD;
 
     param->bootware_paddr           = get_a7remap_addr();
-    RPROC_INFO("platform_id = %d, isp_local_timer = %d, perf_power = %d, logx_switch.0x%x, bootware_addr.0x%llx\n",
+    RPROC_INFO("platform_id = %d, isp_local_timer = %d, perf_power = %d, logx_switch.0x%x\n",
         param->plat_cfg.platform_id, param->plat_cfg.isp_local_timer,
-        param->plat_cfg.perf_power, param->logx_switch, param->bootware_paddr);
+        param->plat_cfg.perf_power, param->logx_switch);
     hisp_unlock_sharedbuf();
 
     isploglevel_update();
@@ -1625,7 +1816,6 @@ int rproc_set_shared_para(void)
 	}
 
     share_para->bootware_paddr = get_a7remap_addr();
-    pr_info("%s: bootware_addr.0x%llx.\n", __func__, share_para->bootware_paddr);
 
 	if (get_isprdr_addr())
 		share_para->rdr_enable = 1;
@@ -1641,6 +1831,82 @@ int rproc_set_shared_para(void)
     hisp_unlock_sharedbuf();
 
 	return ret;
+}
+
+void rproc_set_shared_clk_value(int type,unsigned int value)
+{
+	struct rproc_shared_para *share_para = NULL;
+
+	if((type >= ISP_CLK_MAX) || (type < 0)) {
+		pr_err("%s:type error.%d\n", __func__,type);
+		return;
+	}
+
+	hisp_lock_sharedbuf();
+	share_para = rproc_get_share_para();
+	if (!share_para) {
+		pr_err("%s:rproc_get_share_para failed.\n", __func__);
+		hisp_unlock_sharedbuf();
+		return;
+	}
+	share_para->clk_value[type] = value;
+	pr_debug("%s type.%d = %u\n", __func__,type,value);
+	hisp_unlock_sharedbuf();
+
+	return;
+}
+
+static void rproc_set_shared_clk_init(void)
+{
+	struct rproc_shared_para *share_para = NULL;
+
+	hisp_lock_sharedbuf();
+	share_para = rproc_get_share_para();
+	if (!share_para) {
+		pr_err("%s:rproc_get_share_para failed.\n", __func__);
+		hisp_unlock_sharedbuf();
+		return;
+	}
+	memset(share_para->clk_value, 0, sizeof(share_para->clk_value));/*lint !e838 */
+	hisp_unlock_sharedbuf();
+
+	return;
+}
+
+static void hisi_isp_efuse_deskew(void)
+{
+    int ret = 0;
+    unsigned char efuse = 0xFF;
+    struct rproc_shared_para *share_para = NULL;
+    struct rproc_boot_device *rproc_dev = &rproc_boot_dev;
+
+    RPROC_INFO("+\n");
+    if(rproc_dev->probe_finished != 1) {
+        RPROC_ERR("hisi_rproc_probe failed\n");
+        return;
+    }
+
+    if (rproc_dev->isp_efuse_flag == 0) {
+        RPROC_ERR("isp_efuse_flag.%d\n", rproc_dev->isp_efuse_flag);
+        return;
+    }
+
+    if ((ret = get_efuse_deskew_value(&efuse, 1, 1000)) < 0) {
+        pr_err("[%s] Failed: pefuse.%d, ret.%d\n", __func__, efuse, ret);
+    }
+    pr_err("[%s] : efuse.%d\n", __func__, efuse);
+
+    hisp_lock_sharedbuf();
+    share_para = rproc_get_share_para();
+    if (!share_para) {
+        pr_err("%s:rproc_get_share_para failed.\n", __func__);
+        hisp_unlock_sharedbuf();
+        return;
+    }
+    share_para->isp_efuse = efuse;
+    hisp_unlock_sharedbuf();
+
+    RPROC_INFO("-\n");
 }
 
 int rproc_bootware_attach(struct rproc *rproc, const char *bootware)
@@ -1745,6 +2011,23 @@ int hisp_set_clk_rate(unsigned int type, unsigned int rate)
     }
 
     return ret;
+}
+
+unsigned long hisp_get_clk_rate(unsigned int type)
+{
+    struct rproc_boot_device *dev = &rproc_boot_dev;
+
+    if(dev->probe_finished != 1) {
+        RPROC_ERR("hisi_rproc_probe failed\n");
+        return 0;
+    }
+
+    if(get_rproc_enable_status() == 0) {
+        pr_err("[%s] ispcpu not start!\n", __func__);
+        return 0;
+    }
+
+    return secnsec_getclkrate(type);
 }
 
 int hisi_isp_rproc_setpinctl(struct pinctrl *isp_pinctrl, struct pinctrl_state *pinctrl_def, struct pinctrl_state *pinctrl_idle)
@@ -1931,9 +2214,9 @@ static void dump_ispa7_regs(void)
 {
 #define DUMP_A7PC_TIMES (3)
     struct rproc_boot_device *dev = &rproc_boot_dev;
-    void __iomem *crg_base = dev->crgperi_base;
-    void __iomem *cssys_base = dev->cssys_base;
-    void __iomem *isp_base = dev->isp_base;
+    void __iomem *crg_base = dev->reg[CRGPERI];
+    void __iomem *cssys_base = dev->reg[CSSYS];
+    void __iomem *isp_base = dev->reg[ISPCORE];
     unsigned int sec_rststat;
     int i = 0;
 
@@ -1959,7 +2242,7 @@ static void dump_ispa7_regs(void)
 static void dump_crg_regs(void)
 {
     struct rproc_boot_device *dev = &rproc_boot_dev;
-    void __iomem *crg_base = dev->crgperi_base;
+    void __iomem *crg_base = dev->reg[CRGPERI];
 
     if (crg_base == NULL) {
         RPROC_ERR("Failed : ioremap crg_base\n");
@@ -1967,29 +2250,29 @@ static void dump_crg_regs(void)
     }
 
     pr_alert("DIV10.0x%x, DIV18.0x%x, DIV20.0x%x\n",
-        __raw_readl(SOC_CRGPERIPH_CLKDIV10_ADDR(crg_base)),
-        __raw_readl(SOC_CRGPERIPH_CLKDIV18_ADDR(crg_base)),
-        __raw_readl(SOC_CRGPERIPH_CLKDIV20_ADDR(crg_base)));
+        __raw_readl((volatile void __iomem*)(crg_base + CRGPERIPH_CLKDIV10_ADDR)),
+        __raw_readl((volatile void __iomem*)(crg_base + CRGPERIPH_CLKDIV18_ADDR)),
+        __raw_readl((volatile void __iomem*)(crg_base + CRGPERIPH_CLKDIV20_ADDR)));
     pr_alert("CLKEN0.0x%x, STAT0.0x%x, CLKEN3.0x%x, STAT3.0x%x, CLKEN5.0x%x, STAT5.0x%x\n",
-        __raw_readl(SOC_CRGPERIPH_PERCLKEN0_ADDR(crg_base)),
-        __raw_readl(SOC_CRGPERIPH_PERSTAT0_ADDR(crg_base)),
-        __raw_readl(SOC_CRGPERIPH_PERCLKEN3_ADDR(crg_base)),
-        __raw_readl(SOC_CRGPERIPH_PERSTAT3_ADDR(crg_base)),
-        __raw_readl(SOC_CRGPERIPH_PERCLKEN5_ADDR(crg_base)),
-        __raw_readl(SOC_CRGPERIPH_PERSTAT5_ADDR(crg_base)));
+        __raw_readl((volatile void __iomem*)(crg_base + CRGPERIPH_PERCLKEN0_ADDR)),
+        __raw_readl((volatile void __iomem*)(crg_base + CRGPERIPH_PERSTAT0_ADDR)),
+        __raw_readl((volatile void __iomem*)(crg_base + CRGPERIPH_PERCLKEN3_ADDR)),
+        __raw_readl((volatile void __iomem*)(crg_base + CRGPERIPH_PERSTAT3_ADDR)),
+        __raw_readl((volatile void __iomem*)(crg_base + CRGPERIPH_PERCLKEN5_ADDR)),
+        __raw_readl((volatile void __iomem*)(crg_base + CRGPERIPH_PERSTAT5_ADDR)));
     pr_alert("RSTSTAT0.0x%x, RSTSTAT3.0x%x, RSTSTAT.0x%x, ISOSTAT.0x%x, PWRSTAT.0x%x, PWRACK.0x%x\n",
-        __raw_readl(SOC_CRGPERIPH_PERRSTSTAT0_ADDR(crg_base)),
-        __raw_readl(SOC_CRGPERIPH_PERRSTSTAT3_ADDR(crg_base)),
-        __raw_readl((crg_base) + CRG_C88_PERIPHISP_SEC_RSTSTAT),
-        __raw_readl(SOC_CRGPERIPH_ISOSTAT_ADDR(crg_base)),
-        __raw_readl(SOC_CRGPERIPH_PERPWRSTAT_ADDR(crg_base)),
-        __raw_readl(SOC_CRGPERIPH_PERPWRACK_ADDR(crg_base)));
+        __raw_readl((volatile void __iomem*)(crg_base + CRGPERIPH_PERRSTSTAT0_ADDR)),
+        __raw_readl((volatile void __iomem*)(crg_base + CRGPERIPH_PERRSTSTAT3_ADDR)),
+        __raw_readl((volatile void __iomem*)(crg_base + CRG_C88_PERIPHISP_SEC_RSTSTAT)),
+        __raw_readl((volatile void __iomem*)(crg_base + CRGPERIPH_ISOSTAT_ADDR)),
+        __raw_readl((volatile void __iomem*)(crg_base + CRGPERIPH_PERPWRSTAT_ADDR)),
+        __raw_readl((volatile void __iomem*)(crg_base + CRGPERIPH_PERPWRACK_ADDR)));
 }
 
 static void dump_noc_regs(void)
 {
     struct rproc_boot_device *dev = &rproc_boot_dev;
-    void __iomem *pmc_base = dev->pmc_base;
+    void __iomem *pmc_base = dev->reg[PMCTRL];
 
     if (pmc_base == NULL) {
         RPROC_ERR("Failed : ioremap pmc_base\n");
@@ -2024,6 +2307,27 @@ static int dump_a7boot_stone(void)
     return entry;
 }
 
+void dump_media1_regs(void)
+{
+#ifdef CONFIG_HUAWEI_CAMERA_USE_HISP200
+    void __iomem *media1_base = NULL;
+
+    media1_base = get_regaddr_by_pa(MEDIA1);
+
+    if (media1_base == NULL) {
+        RPROC_ERR("Failed : ioremap media1_base\n");
+        return;
+    }
+
+    pr_alert("MEDIA1_POWER:PERCLKEN0.0x%x, PERSTAT0.0x%x, PERCLKEN1.0x%x, PERSTAT1.0x%x, CLKDIV9.0x%x\n",
+        __raw_readl(media1_base + MEDIA1_PERCLKEN0_ADDR),
+        __raw_readl(media1_base + MEDIA1_PERSTAT0_ADDR),
+        __raw_readl(media1_base + MEDIA1_PERCLKEN1_ADDR),
+        __raw_readl(media1_base + MEDIA1_PERSTAT1_ADDR),
+        __raw_readl(media1_base + MEDIA1_CLKDIV9_ADDR));
+#endif
+}
+
 void hisi_isp_boot_stat_dump(void)
 {
     pr_alert("[%s] +\n", __func__);
@@ -2047,7 +2351,7 @@ void hisi_isp_boot_stat_dump(void)
 static int cpu_debug_init(void)
 {
     struct rproc_boot_device *dev = &rproc_boot_dev;
-    void __iomem *cssys_base = dev->cssys_base;
+    void __iomem *cssys_base = dev->reg[CSSYS];
 
     if (cssys_base == NULL) {
         RPROC_ERR("Failed : ioremap cssys_base\n");
@@ -2073,7 +2377,7 @@ static int dis_reset_a7(struct rproc_boot_device *dev)
      * ip_hrst_isp = 1, ip_rst_ispa7cfg = 1, ip_rst_ispa7 = 1
      */
     value = 0xFF;
-    addr = CRG_C84_PERIPHISP_SEC_RSTDIS + dev->crgperi_base;
+    addr = CRG_C84_PERIPHISP_SEC_RSTDIS + dev->reg[CRGPERI];
     RPROC_INFO("CRGPERI_A7_SEC_RSTDIS : %pK = 0x%x\n", addr, value);
     if ((ret = dis_rststat_poll(addr, value)) != 0)
         RPROC_ERR("Failed : ISP_SEC_RSTDIS : %pK = 0x%x, ret.0x%x\n", addr, value, ret);
@@ -2146,10 +2450,13 @@ static void remap_a7_entry(struct rproc_boot_device *dev)
 {
     u64 addr = dev->remap_addr;
 
-    RPROC_INFO("remap start.0x%llx\n", addr);
+    if(dev->reg[CRGPERI] == NULL){
+        pr_err("%s: CRGPERI is NULL\n", __func__);
+        return;
+    }
 
     __raw_writel((unsigned int)(addr >> 4) | ISPA7_VINITHI_HIGH | ISPA7_REMAP_ENABLE | ISPA7_DBGPWRDUP
-            , CRG_C90_PERIPHISP_ISPA7_CTRL_BASE + dev->crgperi_base);
+            , (volatile void __iomem *)(CRG_C90_PERIPHISP_ISPA7_CTRL_BASE + dev->reg[CRGPERI]));
 }
 
 static void power_down_isp_subsys(struct rproc_boot_device *dev)
@@ -2185,6 +2492,7 @@ static int default_isp_device_disable(void)
 
     return 0;
 }
+
 static int isp_device_disable(void)
 {
     struct rproc_boot_device *dev = &rproc_boot_dev;
@@ -2196,6 +2504,11 @@ static int isp_device_disable(void)
             if ((ret = get_ispcpu_cfg_info()) < 0)
                 RPROC_ERR("Failed : get_ispcpu_cfg_info.%d\n", ret);
             wait_firmware_coredump();
+            if(get_ispcpu_idle_stat(dev->isppd_adb_flag) < 0) {
+                if(dev->isppd_adb_flag){
+                    dump_hisi_isp_boot(dev->isp_rproc->rproc,DUMP_ISP_BOOT_SIZE);
+                    }
+                }
             if ((ret = secisp_device_disable()) < 0)
                 RPROC_ERR("Failed : secisp_device_disable.%d\n", ret);
             break;
@@ -2203,8 +2516,11 @@ static int isp_device_disable(void)
             if ((ret = get_ispcpu_cfg_info()) < 0)
                 RPROC_ERR("Failed : get_ispcpu_cfg_info.%d\n", ret);
             wait_firmware_coredump();
-            if ((ret = set_ispcpu_reset()) < 0)
-                RPROC_ERR("Failed : set_ispcpu_reset.%d\n", ret);
+            if(get_ispcpu_idle_stat(dev->isppd_adb_flag) < 0) {
+                if(dev->isppd_adb_flag){
+                    dump_hisi_isp_boot(dev->isp_rproc->rproc,DUMP_ISP_BOOT_SIZE);
+                    }
+                }
             if ((ret = nonsec_isp_device_disable()) < 0)
                 RPROC_ERR("Failed : nonsec_isp_device_disable.%d\n", ret);
             break;
@@ -2292,6 +2608,8 @@ static int isp_device_enable(void)
         case NONSEC_CASE:
             if ((ret = nonsec_isp_device_enable()) < 0)
                 RPROC_ERR("Failed : nonsec_isp_device_enable.%d\n", ret);
+            if ( hisp_mntn_dumpregs() < 0)
+                RPROC_ERR("Failed : get_ispcpu_cfg_info");
             break;
         default:
             if ((ret = default_isp_device_enable()) < 0)
@@ -2544,7 +2862,7 @@ int set_isp_remap_addr(u64 remap_addr)
     struct rproc_shared_para *param = NULL;
 
     if(!remap_addr){
-        RPROC_ERR("Failed : remap_addr.0x%llx\n", remap_addr);
+        RPROC_ERR("Failed : remap_addr.0\n");
         return -ENOMEM;
     }
     dev->remap_addr = remap_addr;
@@ -2613,14 +2931,20 @@ int hisi_isp_rproc_disable(void)
         }
         mutex_lock(&rproc_dev->hisi_isp_power_mutex);
         rproc_dev->hisi_isp_power_state = HISP_ISP_POWER_OFF;
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
         rproc_remove_virtio_dev(rvdev);
+#endif
         mutex_unlock(&rproc_dev->hisi_isp_power_mutex);
     }
-
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
+    rproc_shutdown(rproc);
+#else
     /* Free the copy of the resource table */
     kfree(rproc->cached_table);
+#endif
+    rproc_set_shared_clk_init();
+    rproc->domain = NULL;
 
-	rproc->domain = NULL;
     rproc_set_sync_flag(true);
 disable_out:
     if (atomic_read(&rproc_dev->rproc_enable_status) == 1 )
@@ -2711,10 +3035,11 @@ int hisi_isp_rproc_enable(void)
         RPROC_ERR("Failed : hisi_isp_rproc_pgd_set.%d\n", err);
         goto enable_err;
     }
-    hisi_isp_data_text_vunmap(rproc);
     mutex_lock(&rproc_dev->hisi_isp_power_mutex);
     rproc_dev->hisi_isp_power_state = HISP_ISP_POWER_ON;
     mutex_unlock(&rproc_dev->hisi_isp_power_mutex);
+    hisi_isp_efuse_deskew();
+    rproc_set_shared_clk_init();
     err = isp_device_enable();
     if (0 != err) {
         RPROC_ERR("Failed : isp_device_enable.%d\n", err);
@@ -2814,7 +3139,7 @@ static struct rproc_ops hisi_rproc_ops = {
     .start      = hisi_rproc_start,
     .stop       = hisi_rproc_stop,
     .kick       = hisi_rproc_kick,
-//    .da_to_va   = hisp_rproc_da_to_va,// Diff between 4.1 and 4.4, use after 4.1 removed.
+    .da_to_va   = hisp_rproc_da_to_va,
 };
 
 int hisi_rproc_select_def(void)
@@ -2907,19 +3232,14 @@ int set_debug_isp_clk_freq(unsigned int type, unsigned long value)
 {
     struct rproc_boot_device *dev = &rproc_boot_dev;
 
-    switch (type)
-        {
-        case ISPCPU:
-            dev->hisi_isp_clk.freq_ispcpu = value;
-            break;
-        case ISPFUNC:
-            dev->hisi_isp_clk.freq_ispfunc = value;
-            break;
-        default:
-            pr_err("[%s] Errpr type.%d\n", __func__, type);
-            break;
-        }
-    pr_info("%s: set type.%d freq = %ld\n", __func__,type,value);
+    if (type >= ISP_CLK_MAX || type & dev->hisi_isp_clk.freqmask) {
+        pr_err("[%s] Failed : type.%d, freqmask.0x%x\n", __func__, type, dev->hisi_isp_clk.freqmask);
+        return -EINVAL;
+    }
+
+    dev->hisi_isp_clk.freq[type] = value;
+    pr_info("[%s] freq.%ld -> type.%d\n", __func__, value, type);
+
     return 0;
 }
 
@@ -2928,24 +3248,16 @@ unsigned long get_debug_isp_clk_freq(unsigned int type)
     struct rproc_boot_device *dev = &rproc_boot_dev;
     unsigned long freq = 0;
 
-    if(!get_debug_isp_clk_enable()){
-        pr_err("[%s] isp clk not enable!\n", __func__);
+    if (!get_debug_isp_clk_enable()) {
         return 0;
-        }
+    }
 
-    switch (type)
-        {
-        case ISPCPU:
-            freq = dev->hisi_isp_clk.freq_ispcpu;
-            break;
-        case ISPFUNC:
-            freq = dev->hisi_isp_clk.freq_ispfunc;
-            break;
-        default:
-            pr_err("[%s] Errpr type.%d\n", __func__, type);
-            break;
-        }
-    pr_info("%s: get type.%d freq = %ld\n", __func__,type,freq);
+    if (type >= ISP_CLK_MAX || type & dev->hisi_isp_clk.freqmask) {
+        pr_err("[%s] Failed : type.%d, freqmask.0x%x\n", __func__, type, dev->hisi_isp_clk.freqmask);
+        return 0;
+    }
+    freq = dev->hisi_isp_clk.freq[type];
+    pr_info("[%s] type.%d freq.%ld\n", __func__, type, freq);
     return freq;
 }
 
@@ -2976,8 +3288,6 @@ static unsigned int hisp_get_isplogic(void)
 static unsigned int get_boardid(void)
 {
 #define BOARDID_SIZE (4)
-#define ISP_1_PIPE_FLAG (1 << 21)
-#define ISP_2_PIPE_FLAG (1 << 20)
     struct rproc_boot_device *dev = &rproc_boot_dev;
     unsigned int boardid[BOARDID_SIZE] = {0};
     struct device_node *root = NULL;
@@ -3004,17 +3314,15 @@ static unsigned int get_boardid(void)
             dev->bypass_pwr_updn = 1;
             break;
         case ISP_FPGA:
-            if ((dev->pctrl_base = (void __iomem *)ioremap(SOC_ACPU_PCTRL_BASE_ADDR, SZ_4K)) == NULL) {/*lint !e747  */
-                RPROC_ERR("Failed : pctrl_base ioremap.%pK\n", dev->pctrl_base);
+            if (dev->reg[PCTRL] == NULL) {/*lint !e747  */
+                RPROC_ERR("Failed : pctrl_base ioremap.\n");
                 break;
             }
-            pctrl_stat10 = readl(SOC_PCTRL_PERI_STAT10_ADDR(dev->pctrl_base));/*lint !e732 */
-            if ((pctrl_stat10 & (ISP_1_PIPE_FLAG | ISP_2_PIPE_FLAG)) == 0) {
+            pctrl_stat10 = readl((volatile void __iomem*)(dev->reg[PCTRL] + ISP_PCTRL_PERI_STAT_ADDR));/*lint !e732 */
+            if ((pctrl_stat10 & (ISP_PCTRL_PERI_FLAG)) == 0) {
                 RPROC_ERR("ISP/Camera Power Up and Down May be Bypassed, pctrl_stat10.0x%x\n", pctrl_stat10);
                 dev->bypass_pwr_updn = 1;
             }
-            iounmap(dev->pctrl_base);
-            dev->pctrl_base = NULL;
             break;
         case ISP_UDP:
         case ISP_FPGA_EXC:
@@ -3036,6 +3344,8 @@ static struct hisi_rproc_data *hisi_rproc_data_dtget(struct device *pdev)
     struct hisi_rproc_data *data;
     const char *name = NULL;
     unsigned int addr, platform_info, ispa7_clk;
+    unsigned int isppd_adb_flag = 0;
+    unsigned int isp_efuse_flag = 0;
     int ret;
 
     if (!np) {
@@ -3125,6 +3435,20 @@ static struct hisi_rproc_data *hisi_rproc_data_dtget(struct device *pdev)
 	dev->ispa7_clk_value = ispa7_clk;
 	RPROC_INFO("ispa7_clk.%d\n", dev->ispa7_clk_value);
 
+	if ((ret = of_property_read_u32(np, "isppd-adb-flag", &isppd_adb_flag)) < 0 ) {
+		RPROC_ERR("Failed: isppd-adb-flag.0x%x of_property_read_u32.%d\n", isppd_adb_flag, ret);
+		return NULL;
+	}
+	dev->isppd_adb_flag = isppd_adb_flag;
+	RPROC_INFO("isppd_adb_flag.%d\n", dev->isppd_adb_flag);
+
+	if ((ret = of_property_read_u32(np, "isp-efuse-flag", &isp_efuse_flag)) < 0 ) {
+		RPROC_ERR("Failed: isp-efuse-flag.0x%x of_property_read_u32.%d\n", isp_efuse_flag, ret);
+		return NULL;
+	}
+	dev->isp_efuse_flag = isp_efuse_flag;
+	RPROC_INFO("isppd_adb_flag.%d\n", dev->isp_efuse_flag);
+
     if (IS_HI6250(dev->boardid)) {
         if ((ret = of_property_read_string_index(np, "clock-names", 1, &name)) < 0) {
             RPROC_ERR("Failed : isp_timer clock-names boardid.0x%x, ret.%d\n", dev->boardid, ret);
@@ -3154,21 +3478,12 @@ void coresight_mem_init(struct device *dev)
     void *addr_vir;
     dma_addr_t dma_addr = 0;
 
-#if 0
-    if ((addr_vir = hisi_fstcma_alloc(&dma_addr, 0x1000, GFP_KERNEL)) == NULL) {
-        pr_err("[coresight] [%s] coresight_mem_init.%pK\n", __func__, addr_vir);
-        return -ENOMEM;
-    }
-    pr_err("[coresight] [%s] coresight_mem_init  addr_vir:%pK addr_ph:%pK \n", __func__, addr_vir, dma_addr);
-
-#else
     if ((addr_vir = dma_alloc_coherent(dev, 0x1000, &dma_addr, GFP_KERNEL)) == NULL) {
         pr_err("[coresight] [%s] coresight_mem_init.%pK\n", __func__, addr_vir);
         return;
     }
 
     pr_err("[coresight] [%s] coresight_mem_init  addr_vir:%pK addr_ph:%pK \n", __func__, (void *)addr_vir, (void *)dma_addr);
-#endif
     /*lint !e110 !e82 !e533*/
     g_cs_para.coresight_addr_da = (unsigned long long)dma_addr;  /*lint !e110 !e82 !e533 !e626 */
     g_cs_para.coresight_addr_vir = (unsigned long long)addr_vir; /*lint !e110 !e82 !e533 !e626 */
@@ -3198,7 +3513,6 @@ void *get_vring_dma_addr(u64 *dma_handle, size_t size, unsigned int index)
         return NULL;
     }
     *dma_handle = hisi_isp_vring->paddr;
-    pr_debug("%s: dma_handle.0x%llx-->%pK,virt_addr.0x%pK\n", __func__,hisi_isp_vring->paddr,dma_handle,hisi_isp_vring->virt_addr);
     RPROC_INFO("-\n");
     return hisi_isp_vring->virt_addr;
 }
@@ -3232,7 +3546,6 @@ static int get_vring_dma_addr_probe(struct platform_device *pdev)
         if (!hisi_isp_vring->virt_addr) {
             return -ENOMEM;
         }
-        pr_debug("%s: hisi_isp_vring %d :paddr.0x%llx,size.0x%lx\n", __func__,i,hisi_isp_vring->paddr,hisi_isp_vring->size);
     }
     return 0;
 }
@@ -3259,146 +3572,82 @@ static int get_vring_dma_addr_remove(struct platform_device *pdev)
 }
 #endif
 
-void __iomem *get_regaddr_by_pa(unsigned int paddr)
+void __iomem *get_regaddr_by_pa(unsigned int type)
 {
-    struct rproc_boot_device *rproc_dev = &rproc_boot_dev;
-    void __iomem *addr = NULL;
+    struct rproc_boot_device *dev = &rproc_boot_dev;
 
-    switch(paddr) {
-        case SOC_ACPU_NOC_ISP_Service_Target_BASE_ADDR:
-            if (rproc_dev->vivobus_base) {
-                addr = rproc_dev->vivobus_base;
-            }
-            break;
-
-        case ISP_CORE_CFG_BASE_ADDR:
-            if (rproc_dev->isp_base) {
-                addr = rproc_dev->isp_base;
-            }
-            break;
-
-        case SOC_ACPU_PERI_CRG_BASE_ADDR:
-            if (rproc_dev->crgperi_base) {
-                addr = rproc_dev->crgperi_base;
-            }
-            break;
-
-        case SOC_ACPU_ISP_SUB_CTRL_BASE_ADDR:
-            if (rproc_dev->isp_subctrl_base) {
-                addr = rproc_dev->isp_subctrl_base;
-            }
-            break;
-
-        default:
-            pr_err("[%s] Unsupported crg_base.%d\n", __func__, paddr);
-            break;
+    if (type >= HISP_MIN(HISP_MAX_REGTYPE, dev->reg_num)) {
+        pr_err("[%s] unsupported type.0x%x\n", __func__, type);
+        return NULL;
     }
 
-    pr_info("[%s] paddr.0x%x, addr.%pK", __func__, paddr, addr);
-
-    return addr;
+    return (dev->reg[type] ? dev->reg[type] : NULL); /*lint !e661 !e662 */ 
 }
 
-static int hisp_regaddr_init(void)
+static int hisp_regaddr_init(struct platform_device *pdev)
 {
     struct rproc_boot_device *rproc_dev = &rproc_boot_dev;
+    struct device * dev = NULL;
+    struct device_node *np = NULL;
+    int i = 0, ret = 0;
 
-    RPROC_INFO("+\n");
-
-    rproc_dev->vivobus_base = (void __iomem *)ioremap(SOC_ACPU_NOC_ISP_Service_Target_BASE_ADDR, SZ_4K);
-    if (rproc_dev->vivobus_base == NULL) {
-        pr_err("[%s] vivobus_base ioremap fail\n", __func__);
-        return -ENOMEM;
+    if (!pdev) {
+        RPROC_ERR("Failed : platform device not exit\n");
+        return -ENXIO;
     }
-    pr_info("[%s] vivobus_base.%pK, ", __func__, rproc_dev->vivobus_base);
 
-    rproc_dev->cssys_base = (void __iomem *)ioremap(REG_BASE_CSSYS_PHY, SZ_8K);
-    if (rproc_dev->cssys_base == NULL) {
-        pr_err("[%s] cssys_base ioremap fail\n", __func__);
-        goto free_vivobus_base;
+    dev = &pdev->dev;
+    if (!dev) {
+        RPROC_ERR("Failed : No device\n");
+        return -ENXIO;
     }
-    pr_info("[%s] cssys_base.%pK, ", __func__, rproc_dev->cssys_base);
 
-    rproc_dev->isp_base = (void __iomem *)ioremap(ISP_CORE_CFG_BASE_ADDR, SZ_2M);
-    if (rproc_dev->isp_base == NULL) {
-        pr_err("[%s] isp_base ioremap fail\n", __func__);
-        goto free_cssys_base;
+    np = dev->of_node;
+    if (!np) {
+        RPROC_ERR("Failed : No dt node\n");
+        return -ENXIO;
     }
-    pr_info("[%s] isp_base.%pK, ", __func__, rproc_dev->isp_base);
 
-    if ((rproc_dev->pmc_base = (void __iomem *)ioremap(ISP_PMC_BASE_ADDR, SZ_4K)) == NULL) {
-        pr_err("[%s] pmc_base ioremap fail\n", __func__);
-        goto free_isp_base;
+    if ((ret = of_property_read_u32(np, "reg-num", (unsigned int *)(&rproc_dev->reg_num))) < 0){
+        pr_err("[%s] Failed: reg-num of_property_read_u32.%d\n", __func__, ret);
+        return -EINVAL;
     }
-    pr_info("[%s] pmc_base.%pK, ", __func__, rproc_dev->pmc_base);
 
-    if ((rproc_dev->crgperi_base = (void __iomem *)ioremap(SOC_ACPU_PERI_CRG_BASE_ADDR, SZ_4K)) == NULL) {
-        pr_err("[%s] crgperi_base ioremap fail\n", __func__);
-        goto free_pmc_base;
+    for (i = 0; i < HISP_MIN(HISP_MAX_REGTYPE, rproc_dev->reg_num); i ++) {/*lint !e574 */
+        if ((rproc_dev->r[i] = platform_get_resource(pdev, IORESOURCE_MEM, i)) == NULL) {
+            pr_err("[%s] Failed : platform_get_resource.%pK\n", __func__, rproc_dev->r[i]);
+            return -ENXIO;
+        }
+
+        rproc_dev->reg[i] = (void __iomem *)ioremap(rproc_dev->r[i]->start, resource_size(rproc_dev->r[i]));
+        if (rproc_dev->reg[i] == NULL) {
+            pr_err("[%s] resource.%d ioremap fail\n", __func__, i);
+            goto error;
+        }
     }
-    pr_info("[%s] crgperi_base.%pK, ", __func__, rproc_dev->crgperi_base);
 
-    if ((rproc_dev->isp_subctrl_base = (void __iomem *)ioremap(SOC_ACPU_ISP_SUB_CTRL_BASE_ADDR, SZ_4K)) == NULL) {
-        pr_err("[%s] isp_subctrl_base ioremap fail\n", __func__);
-        goto free_crgperi_base;
-    }
-    pr_info("[%s] isp_subctrl_base.%pK, ", __func__, rproc_dev->isp_subctrl_base);
-
-    RPROC_INFO("-\n");
     return 0;
 
-free_crgperi_base:
-    iounmap(rproc_dev->crgperi_base);
-    rproc_dev->crgperi_base = NULL;
-
-free_pmc_base:
-    iounmap(rproc_dev->pmc_base);
-    rproc_dev->pmc_base = NULL;
-
-free_isp_base:
-    iounmap(rproc_dev->isp_base);
-    rproc_dev->isp_base = NULL;
-
-free_cssys_base:
-    iounmap(rproc_dev->cssys_base);
-    rproc_dev->cssys_base = NULL;
-
-free_vivobus_base:
-    iounmap(rproc_dev->vivobus_base);
-    rproc_dev->vivobus_base = NULL;
-
+error:
+    for(; i >= 0; i --) {
+        if (rproc_dev->reg[i] != NULL){
+            iounmap(rproc_dev->reg[i]);
+            rproc_dev->reg[i] = NULL;
+        }
+    }
     return -ENOMEM;
 }
 
-static void hisp_regaddr_deinit(void)
-{
+static void hisp_regaddr_deinit(void){
     struct rproc_boot_device *rproc_dev = &rproc_boot_dev;
+    int i;
 
     RPROC_INFO("+\n");
-    if (rproc_dev->vivobus_base) {
-        iounmap(rproc_dev->vivobus_base);
-        rproc_dev->vivobus_base = NULL;
-    }
-    if (rproc_dev->cssys_base) {
-        iounmap(rproc_dev->cssys_base);
-        rproc_dev->cssys_base = NULL;
-    }
-    if (rproc_dev->isp_base) {
-        iounmap(rproc_dev->isp_base);
-        rproc_dev->isp_base = NULL;
-    }
-    if (rproc_dev->pmc_base) {
-        iounmap(rproc_dev->pmc_base);
-        rproc_dev->pmc_base = NULL;
-    }
-    if (rproc_dev->crgperi_base) {
-        iounmap(rproc_dev->crgperi_base);
-        rproc_dev->crgperi_base = NULL;
-    }
-
-    if (rproc_dev->isp_subctrl_base) {
-        iounmap(rproc_dev->isp_subctrl_base);
-        rproc_dev->isp_subctrl_base = NULL;
+    for (i = 0; i < HISP_MIN(HISP_MAX_REGTYPE, rproc_dev->reg_num); i ++) {/*lint !e574 */ 
+        if (rproc_dev->reg[i]) {
+            iounmap(rproc_dev->reg[i]);
+            rproc_dev->reg[i] = NULL;
+        }
     }
     RPROC_INFO("-\n");
 }
@@ -3425,9 +3674,15 @@ static int hisi_rproc_probe(struct platform_device *pdev)
     mutex_init(&rproc_dev->hisi_isp_power_mutex);
     spin_lock_init(&rproc_dev->rpmsg_ready_spin_mutex);
 
-    if ((ret = hisp_regaddr_init()) < 0) {
+    if ((ret = hisp_regaddr_init(pdev)) < 0) {
         pr_err("[%s] Failed : hisp_regaddr_init.%d\n", __func__, ret);
         return -ENOMEM;
+    }
+
+    ret = rdr_isp_init();
+    if (ret) {
+        pr_err("%s: rdr_isp_init failed.%d", __func__, ret);
+        goto free_regaddr_init;
     }
 
     ret = hisi_isp_rproc_case_set(DEFAULT_CASE);
@@ -3503,6 +3758,8 @@ static int hisi_rproc_probe(struct platform_device *pdev)
     hproc = hisi_rproc->priv;
     hproc->rproc = hisi_rproc;
     rproc_dev->isp_rproc = hproc;
+    rproc_dev->hisi_isp_clk.freqmask = (1 << ISPI2C_CLK);
+    rproc_dev->hisi_isp_clk.enable = 0;
 
 	RPROC_INFO("hproc->rproc.%pK, hproc.%pK\n", hproc->rproc, hproc);
 
@@ -3539,6 +3796,9 @@ static int hisi_rproc_probe(struct platform_device *pdev)
 #ifdef ISP_CORESIGHT
     coresight_mem_init(dev);
 #endif
+
+    if (!client_isp)
+        client_isp = dsm_register_client(&dev_isp);
     rproc_dev->probe_finished = 1;
     RPROC_INFO("-\n");
     return 0;
@@ -3553,7 +3813,6 @@ free_hisi_rproc:
 
 free_regaddr_init:
     hisp_regaddr_deinit();
-
     return ret;
 }
 
@@ -3591,6 +3850,9 @@ static int hisi_rproc_remove(struct platform_device *pdev)
     mutex_destroy(&rproc_dev->ispcpu_mutex);
     mutex_destroy(&rproc_dev->sharedbuf_mutex);
     mutex_destroy(&rproc_dev->rpmsg_ready_mutex);
+
+    rdr_isp_exit();
+
 #ifdef CONFIG_HISI_REMOTEPROC_DMAALLOC_DEBUG
     ret = get_vring_dma_addr_remove(pdev);
     if (ret < 0)
@@ -3607,7 +3869,6 @@ static int hisi_rproc_remove(struct platform_device *pdev)
             RPROC_ERR("Failed : hisi_isp_nsec_remove.%d\n", ret);
         free_mdc_ion(MEM_MDC_SIZE);
     }
-
     hisp_regaddr_deinit();
 
     RPROC_INFO("-\n");

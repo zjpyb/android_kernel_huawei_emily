@@ -15,13 +15,13 @@ extern "C" {
 /*****************************************************************************
   2 全局变量定义
 *****************************************************************************/
-uint8 g_uc_hi110x_ec_version = V100;
+uint8 g_uc_hi110x_ec_version_etc = V100;
 
 /*****************************************************************************
   3 函数实现
 *****************************************************************************/
 
-void read_efuse_ec_version(void)
+void read_efuse_ec_version_etc(void)
 {
     int32 ret = 0;
     uint8 buff[EFUSE_REG_WIDTH] = {0x00};
@@ -34,14 +34,14 @@ void read_efuse_ec_version(void)
         return;
     }
 
-    ret = number_type_cmd_send(RMEM_CMD_KEYWORD, GET_EFUSE_EC_VERSION);
+    ret = number_type_cmd_send_etc(RMEM_CMD_KEYWORD, GET_EFUSE_EC_VERSION);
     if (0 > ret)
     {
         PS_PRINT_WARNING("send cmd %s:%s fail,ret = %d\n", RMEM_CMD_KEYWORD, GET_EFUSE_EC_VERSION, ret);
         return;
     }
 
-    ret = read_msg((uint8*)buff, sizeof(buff));
+    ret = read_msg_etc((uint8*)buff, sizeof(buff));
     if (0 > ret)
     {
         PS_PRINT_WARNING("read efuse ec version fail, read_len = %d, return = %d\n", (int32)sizeof(buff), ret);
@@ -59,21 +59,21 @@ void read_efuse_ec_version(void)
     if (V100 == uc_ec_version)
     {
         PS_PRINT_INFO("hi110x read efuse V100[0x%x]\n", uc_ec_version);
-        g_uc_hi110x_ec_version = V100;
+        g_uc_hi110x_ec_version_etc = V100;
     }
     else
     {
         PS_PRINT_INFO("hi110x read efuse V120[0x%x]\n", uc_ec_version);
-        g_uc_hi110x_ec_version = V120;
+        g_uc_hi110x_ec_version_etc = V120;
     }
 
     return;
 }
 
 
-uint8 get_ec_version(void)
+uint8 get_ec_version_etc(void)
 {
-    return g_uc_hi110x_ec_version;
+    return g_uc_hi110x_ec_version_etc;
 }
 
 
@@ -122,14 +122,14 @@ static int32 get_efuse_from_device(uint32* buff, int32 len)
         return -EFAIL;
     }
 
-    ret = number_type_cmd_send(RMEM_CMD_KEYWORD, GET_EFUSE_CMD);
+    ret = number_type_cmd_send_etc(RMEM_CMD_KEYWORD, GET_EFUSE_CMD);
     if (0 > ret)
     {
         PS_PRINT_WARNING("send cmd %s:%s fail,ret = %d\n", RMEM_CMD_KEYWORD, GET_EFUSE_CMD, ret);
         return -EFAIL;
     }
 
-    ret = read_msg((uint8*)buff, len);
+    ret = read_msg_etc((uint8*)buff, len);
     if (0 > ret)
     {
         PS_PRINT_WARNING("read efuse fail, read_len = %d, return = %d\n", len, ret);
@@ -190,7 +190,7 @@ static int32 store_efuse_into_file(uint32* buff)
 }
 
 
-void store_efuse_info(void)
+void store_efuse_info_etc(void)
 {
     int32  ret = 0;
     uint32 buff[EFUSE_REG_NUM] = {0x00};
@@ -202,7 +202,7 @@ void store_efuse_info(void)
     }
     retry_count++;
 
-    read_efuse_ec_version();
+    read_efuse_ec_version_etc();
 
     ret = check_efuse_file_exist();
     if (ret == SUCC)

@@ -39,7 +39,8 @@
 ******************************************************************************/
 BST_FG_APP_INFO_STRU g_FastGrabAppInfo[BST_FG_MAX_APP_NUMBER];
 uid_t      g_CurrntAccUId;
-
+BST_FG_CUSTOM_STRU g_stBastetFgCustom;
+BST_FG_HONGBAO_STRU g_stBastetFgHongbao;
 /******************************************************************************
    6 º¯ÊýÊµÏÖ
 ******************************************************************************/
@@ -58,6 +59,18 @@ void BST_FG_Init(void)
 			g_FastGrabAppInfo[usLooper1].pstKws[usLooper2] = NULL;
 	}
 	g_CurrntAccUId = BST_FG_INVALID_UID;
+
+	g_stBastetFgCustom.ucAPPNum = 0;
+	for (usLooper1 = 0; usLooper1 < BST_FG_MAX_CUSTOM_APP; usLooper1++) {
+		g_stBastetFgCustom.astCustomInfo[usLooper1].lUid = 0;
+		g_stBastetFgCustom.astCustomInfo[usLooper1].ucProtocolBitMap = 0;
+		g_stBastetFgCustom.astCustomInfo[usLooper1].ucDiscardTimer = 0;
+		g_stBastetFgCustom.astCustomInfo[usLooper1].ucTcpRetranDiscard = 0;
+		g_stBastetFgCustom.astCustomInfo[usLooper1].ucAppType = 0;
+	}
+
+	g_stBastetFgHongbao.ucCongestionProcFlag = false;
+	g_stBastetFgHongbao.ucDurationTime = 0;
 }
 
 
@@ -199,7 +212,8 @@ static uint8_t BST_FG_ProcWXPacket_UL(
 		/**
 		 * too short.
 		 */
-		if (ulLength < pstKwdIns->stLenPorp.usCopy) {
+		if ((ulLength < pstKwdIns->stLenPorp.usCopy)||(BST_FG_MAX_US_COPY_NUM < pstKwdIns->stLenPorp.usCopy)) {
+			BASTET_LOGI("BST_FG_ProcWXPacket_UL pstKwdIns->stLenPorp.usCopy is invalid");
 			BST_FG_SetSockSpecial(pstSock, BST_FG_NO_SPEC);
 			return 0;
 		}
@@ -552,7 +566,7 @@ static void BST_FG_SaveTidInfo(unsigned long arg)
 	}
 	if (!BST_FG_IsAppIdxValid(stTidComm.usIndex))
 		return;
-	if ((uint32_t)stTidComm.usTotle > BST_FG_MAX_PID_NUMBER) { /*lint !e571*/
+	if (((uint32_t)stTidComm.usTotle > BST_FG_MAX_PID_NUMBER)||(0 == stTidComm.usTotle)) { /*lint !e571*/
 		return;
 	}
 
@@ -619,6 +633,7 @@ static void BST_FG_Update_Acc(unsigned long arg)
 {
 	void __user *argp = (void __user *)arg;
 	uid_t      lUid = 0;
+	BST_FG_APP_INFO_STRU *pstAppIns = NULL;
 
 	/**
 	 * Get dscp message from usr space
@@ -630,6 +645,13 @@ static void BST_FG_Update_Acc(unsigned long arg)
 
 	g_CurrntAccUId = lUid;
 
+	pstAppIns = BST_FG_GetAppIns(BST_FG_IDX_WECHAT);
+	if ((lUid == pstAppIns->lUid) && (0 != g_stBastetFgHongbao.ucDurationTime))
+	{
+		g_stBastetFgHongbao.ucCongestionProcFlag = true;
+		g_stBastetFgHongbao.ulStartTime = jiffies;
+		BASTET_LOGI("BST_FG_CUSTOM:hongbao congestion start,duration time is %d", g_stBastetFgHongbao.ucDurationTime);
+	}
 
 	return;
 }
@@ -747,6 +769,158 @@ bool BST_FG_Hook_Ul_Stub(struct sock *pstSock, struct msghdr *msg)
 #endif
 
 
+static void BST_FG_Save_Custom_Info(unsigned long arg)
+{
+	uint8_t ucLoop;
+	uint8_t ucAPPNum;
+	void __user *argp = (void __user *)arg;
+	BST_FG_CUSTOM_STRU *pstCustom;
+	/**
+	 * Get policy message from usr space
+	 */
+	if (copy_from_user(&g_stBastetFgCustom, argp, sizeof(BST_FG_CUSTOM_STRU))) {
+		BASTET_LOGE("BST_FG_CUSTOM:save custom info error");
+		return;
+	}
+
+	g_stBastetFgCustom.ucAPPNum = BST_MIN(g_stBastetFgCustom.ucAPPNum, BST_FG_MAX_CUSTOM_APP);
+
+	g_stBastetFgHongbao.ucDurationTime = g_stBastetFgCustom.ucHongbaoDurationTime;
+
+	for (ucLoop = 0; ucLoop < g_stBastetFgCustom.ucAPPNum; ucLoop++) {
+		BASTET_LOGI("BST_FG_CUSTOM:Save Custom Info UID is %d,discard_timer is %d,app_type is %d,ProtocolBitMap is %d, RetranDiscardFlag is %d",
+																				g_stBastetFgCustom.astCustomInfo[ucLoop].lUid,
+																				g_stBastetFgCustom.astCustomInfo[ucLoop].ucDiscardTimer,
+																				g_stBastetFgCustom.astCustomInfo[ucLoop].ucAppType,
+																				g_stBastetFgCustom.astCustomInfo[ucLoop].ucProtocolBitMap,
+																				g_stBastetFgCustom.astCustomInfo[ucLoop].ucTcpRetranDiscard);
+	}
+
+	return;
+}
+
+
+uint8_t BST_FG_Encode_Discard_timer(unsigned long ulTimer)
+{
+	uint8_t discard_timer = 0;
+
+	if ((ulTimer >= 0) && (ulTimer <= 630)) {
+		discard_timer = 0x00 | ((ulTimer + 10 -1) / 10);
+	}else if ((ulTimer > 630) && (ulTimer <= 3160)) {
+		discard_timer = 0x40 | (((ulTimer - 640) + 40 -1) / 40);
+	}else if ((ulTimer > 3160) && (ulTimer <= 9500)) {
+		discard_timer = 0x80 | (((ulTimer - 3200) + 100 -1) / 100);
+	}else if ((ulTimer > 9500) && (ulTimer <= 34800)) {
+		discard_timer = 0xC0 | (((ulTimer - 9600) + 400 -1) / 400);
+	}else {
+		discard_timer = 0;
+	}
+
+	return discard_timer;
+}
+
+
+void BST_FG_HongBao_Process(struct sock *pstSock, uid_t lSockUid, uint8_t ucProtocolBitMap)
+{
+	BST_FG_APP_INFO_STRU *pstAppIns = NULL;
+
+	if (BST_FG_TCP_BITMAP != ucProtocolBitMap)
+	{
+		return;
+	}
+
+	pstAppIns = BST_FG_GetAppIns(BST_FG_IDX_WECHAT);
+	if ((g_stBastetFgHongbao.ucCongestionProcFlag) && (lSockUid == pstAppIns->lUid))
+	{
+		if (before((g_stBastetFgHongbao.ulStartTime + g_stBastetFgHongbao.ucDurationTime*HZ), jiffies))
+		{
+			g_stBastetFgHongbao.ucCongestionProcFlag = false;
+
+			BASTET_LOGI("BST_FG_CUSTOM:hongbao congestion stop,HZ is %u", HZ);
+			return;
+		}
+
+#ifdef CONFIG_HW_DPIMARK_MODULE
+		BST_FG_SetAppType(pstSock, (BST_FG_ACC_BITMAP | BST_FG_CONGESTION_BITMAP));
+#endif
+	}
+}
+
+#ifdef CONFIG_HUAWEI_BASTET
+
+void BST_FG_Custom_Process(struct sock *pstSock, struct msghdr *msg, uint8_t ucProtocolBitMap)
+{
+	uid_t lSockUid;
+	uint8_t ucLoop;
+	uint8_t ucAPPNum;
+	uint8_t ucDiscardTimer;
+	unsigned long timeout;
+	BST_FG_CUSTOM_INFO *pastCustomInfo = NULL;
+	struct inet_connection_sock *pInetSock;
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 10)
+	lSockUid = sock_i_uid(pstSock).val;
+#else
+	lSockUid = sock_i_uid(pstSock);
+#endif
+
+	BST_FG_SetDiscardTimer(pstSock, 0);
+#ifdef CONFIG_HW_DPIMARK_MODULE
+	BST_FG_InitAppType(pstSock);
+#endif
+
+	if(!BST_FG_IsUidValid(lSockUid))
+	{
+		return;
+	}
+
+	BST_FG_HongBao_Process(pstSock, lSockUid, ucProtocolBitMap);
+
+	ucAPPNum = BST_MIN(g_stBastetFgCustom.ucAPPNum, BST_FG_MAX_CUSTOM_APP);
+	for (ucLoop = 0; ucLoop < ucAPPNum; ucLoop++) {
+		if (lSockUid == g_stBastetFgCustom.astCustomInfo[ucLoop].lUid) {
+			pastCustomInfo = &(g_stBastetFgCustom.astCustomInfo[ucLoop]);
+			break;
+		}
+	}
+
+	if (NULL == pastCustomInfo) {
+		return;
+	}
+
+	if (!(ucProtocolBitMap & pastCustomInfo->ucProtocolBitMap)) {
+		return;
+	}
+
+	if ((pastCustomInfo->ucTcpRetranDiscard & 0x80) && (BST_FG_TCP_BITMAP == ucProtocolBitMap)) {
+		pInetSock = inet_csk(pstSock);
+		timeout = (pInetSock->icsk_timeout > jiffies) ? (pInetSock->icsk_timeout - jiffies) : 0;
+		BASTET_LOGD("BST_FG_CUSTOM:TCP Timeout is 0x%x",timeout);
+		if ((0 != timeout) && (0 != HZ)) {
+			timeout = ((timeout * 1000) / HZ) + (20 * (pastCustomInfo->ucTcpRetranDiscard & 0x7F));
+			ucDiscardTimer = BST_FG_Encode_Discard_timer(timeout);
+			BST_FG_SetDiscardTimer(pstSock, ucDiscardTimer);
+		}
+	}else {
+		ucDiscardTimer = pastCustomInfo->ucDiscardTimer;
+		BST_FG_SetDiscardTimer(pstSock, ucDiscardTimer);
+	}
+#ifdef CONFIG_HW_DPIMARK_MODULE
+	BST_FG_SetAppType(pstSock, pastCustomInfo->ucAppType);
+#endif
+
+#ifdef CONFIG_HW_DPIMARK_MODULE
+	BASTET_LOGD("BST_FG_CUSTOM:DPI_MARK is 0x%x",pstSock->__sk_common.skc_hwdpi_mark);
+#endif
+	BASTET_LOGD("BST_FG_CUSTOM:Find sock UID is %d,discard_timer is %d,app_type is %d,ProtocolBitMap is %d, RetranDiscardFlag is %d",
+																				lSockUid,
+																				ucDiscardTimer,
+																				pastCustomInfo->ucAppType,
+																				ucProtocolBitMap,
+																				pastCustomInfo->ucTcpRetranDiscard);
+}
+#endif
+
 
 void BST_FG_IoCtrl(unsigned long arg)
 {
@@ -784,6 +958,9 @@ void BST_FG_IoCtrl(unsigned long arg)
 		break;
 	case CMD_UPDATE_ACC_UID:
 		BST_FG_Update_Acc(arg + sizeof(fastgrab_info));
+		break;
+	case CMD_UPDATE_CUSTOM:
+		BST_FG_Save_Custom_Info(arg + sizeof(fastgrab_info));
 		break;
 	default:
 		break;

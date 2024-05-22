@@ -17,7 +17,6 @@
 #include "contexthub_route.h"
 
 #include <linux/module.h>
-
 #include <linux/compat.h>
 #include <linux/types.h>
 #include <linux/errno.h>
@@ -41,7 +40,7 @@
 #include <linux/iommu.h>
 #include <linux/of_reserved_mem.h>
 #include <linux/delay.h>
-
+#include "hisifb_ion.h"
 #include <asm/fb.h>
 
 #define ALIGN_UP(val, al)    (((val) + ((al)-1)) & ~((al)-1))
@@ -117,6 +116,13 @@ enum aod_fb_pixel_format {
 	AOD_FB_PIXEL_FORMAT_YVYU_422_Pkg,
 	AOD_FB_PIXEL_FORMAT_VYUY_422_Pkg,
 };
+
+
+typedef enum aod_dmd_type {
+	AOD_DMD_SET_POWER_MODE_RECOVERY = 0,
+	AOD_DMD_SENSORHUB_RECOVERY,
+	AOD_DMD_BUTT,
+}AOD_DMD_TYPE_T;
 
 /*aod start*/
 typedef struct aod_notif {

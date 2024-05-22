@@ -1871,38 +1871,43 @@ int scharger_flash_torch_timeout_config(unsigned int timeoutSec)
 /**********************************************************
 *  Function:     hi6522_chip_init()
 *  Discription:  chip init for hi6523
-*  Parameters:   NULL
+*  Parameters:   chip_init_crit
 *  return value:
 *                 0-sucess or others-fail
 **********************************************************/
-int hi6522_chip_init(void)
+int hi6522_chip_init(struct chip_init_crit* init_crit)
 {
 	int ret = 0;
 	struct hi6522_device_info *di = g_hi6522_dev;
-	if (NULL == di) {
-		SCHARGER_ERR("%s hi6522_device_info is NULL!\n", __func__);
+	if (NULL == di || !init_crit) {
+		SCHARGER_ERR("%s hi6522_device_info or init_crit is NULL!\n", __func__);
 		return -ENOMEM;
 	}
-
-	ret |= hi6522_set_fast_safe_timer(CHG_FAST_SAFE_TIMER_MAX);
-	ret |= hi6522_set_term_enable(CHG_TERM_DIS);
-	ret |= hi6522_set_input_current(IINLIM_500);
-	ret |= hi6522_set_charge_current(CHG_FAST_ICHG_VALUE(500));
-	ret |= hi6522_set_terminal_voltage(CHG_FAST_VCHG_VALUE(4350));
-	ret |= hi6522_set_terminal_current(CHG_TERM_ICHG_150MA);
-	ret |= hi6522_set_watchdog_timer(WATCHDOG_TIMER_40_S);
-	ret |= hi6522_set_precharge_current(CHG_PRG_ICHG_200MA);
-	ret |= hi6522_set_precharge_voltage(CHG_PRG_VCHG_2800);
-	ret |= hi6522_set_batfet_ctrl(CHG_BATFET_EN);
-	ret |= hi6522_set_dpm_voltage(VINDPM_4520);
-	/*IR compensation voatge clamp ,IR compensation resistor setting */
-	ret |= hi6522_set_vclamp(di->param_dts.vclamp);
-	ret |= hi6522_set_otg_current(BOOST_LIM_MAX);
-	ret |= hi6522_set_otg_enable(CHG_OTG_FORCE_DIS);
+	switch(init_crit->vbus) {
+		case ADAPTER_5V:
+			ret |= hi6522_set_fast_safe_timer(CHG_FAST_SAFE_TIMER_MAX);
+			ret |= hi6522_set_term_enable(CHG_TERM_DIS);
+			ret |= hi6522_set_input_current(IINLIM_500);
+			ret |= hi6522_set_charge_current(CHG_FAST_ICHG_VALUE(500));
+			ret |= hi6522_set_terminal_voltage(CHG_FAST_VCHG_VALUE(4350));
+			ret |= hi6522_set_terminal_current(CHG_TERM_ICHG_150MA);
+			ret |= hi6522_set_watchdog_timer(WATCHDOG_TIMER_40_S);
+			ret |= hi6522_set_precharge_current(CHG_PRG_ICHG_200MA);
+			ret |= hi6522_set_precharge_voltage(CHG_PRG_VCHG_2800);
+			ret |= hi6522_set_batfet_ctrl(CHG_BATFET_EN);
+			ret |= hi6522_set_dpm_voltage(VINDPM_4520);
+			/*IR compensation voatge clamp ,IR compensation resistor setting */
+			ret |= hi6522_set_vclamp(di->param_dts.vclamp);
+			ret |= hi6522_set_otg_current(BOOST_LIM_MAX);
+			ret |= hi6522_set_otg_enable(CHG_OTG_FORCE_DIS);
+			break;
+		default:
+			SCHARGER_ERR("%s: init mode err\n", __func__);
+			return -EINVAL;
+	}
 
 	return ret;
 }
-
 /**********************************************************
 *  Function:        hi6522_get_ibus_ma
 *  Discription:     get ibus
@@ -2657,7 +2662,7 @@ static void hi6522_irq_work_handle(struct work_struct *work)
 					   NULL);
 	}
 
-	if (irq_status[2] & CHG_IRQ2_FLASH_BST_UVP) {
+	if (irq_status[2] & CHG_IRQ2_FLASH_BST_UVP) {/*lint !e690*/
 		di->flash_bst_en = CHG_POWER_DIS;
 		hi6522_config_flash_boost_enable(di);
 		SCHARGER_ERR
@@ -2668,7 +2673,7 @@ static void hi6522_irq_work_handle(struct work_struct *work)
 					   NULL);
 	}
 
-	if (irq_status[2] & CHG_IRQ2_FLASH_BST_OVP) {
+	if (irq_status[2] & CHG_IRQ2_FLASH_BST_OVP) {/*lint !e690*/
 		di->flash_bst_en = CHG_POWER_DIS;
 		hi6522_config_flash_boost_enable(di);
 		SCHARGER_ERR
@@ -2679,7 +2684,7 @@ static void hi6522_irq_work_handle(struct work_struct *work)
 					   NULL);
 	}
 
-	if (irq_status[2] & CHG_IRQ2_FLASH_BST_SCP) {
+	if (irq_status[2] & CHG_IRQ2_FLASH_BST_SCP) {/*lint !e690*/
 		/*To avoid Scharger v210 chip problem */
 		flash_bst_scp_cnt++;
 		if (flash_bst_scp_cnt > 3) {
@@ -2695,7 +2700,7 @@ static void hi6522_irq_work_handle(struct work_struct *work)
 		}
 	}
 
-	if (irq_status[2] & CHG_IRQ2_FLASH_LED_SHORT) {
+	if (irq_status[2] & CHG_IRQ2_FLASH_LED_SHORT) {/*lint !e690*/
 		di->flash_led_flash_en = CHG_POWER_DIS;
 		di->flash_led_torch_en = CHG_POWER_DIS;
 		hi6522_config_flash_led_flash_enable(di);
@@ -2708,7 +2713,7 @@ static void hi6522_irq_work_handle(struct work_struct *work)
 					   NULL);
 	}
 
-	if (irq_status[2] & CHG_IRQ2_FLASH_LED_OPEN) {
+	if (irq_status[2] & CHG_IRQ2_FLASH_LED_OPEN) {/*lint !e690*/
 		di->flash_led_flash_en = CHG_POWER_DIS;
 		di->flash_led_torch_en = CHG_POWER_DIS;
 		hi6522_config_flash_led_flash_enable(di);
@@ -2721,7 +2726,7 @@ static void hi6522_irq_work_handle(struct work_struct *work)
 					   NULL);
 	}
 
-	if (irq_status[3] & CHG_IRQ3_LCD_NCP_SCP) {
+	if (irq_status[3] & CHG_IRQ3_LCD_NCP_SCP) {/*lint !e690*/
 		di->lcd_bst_en = CHG_POWER_DIS;
 		di->lcd_ncp_en = CHG_POWER_DIS;
 		di->lcd_ldo_en = CHG_POWER_DIS;
@@ -2736,7 +2741,7 @@ static void hi6522_irq_work_handle(struct work_struct *work)
 					   NULL);
 	}
 
-	if (irq_status[3] & CHG_IRQ3_LCD_BST_UVP) {
+	if (irq_status[3] & CHG_IRQ3_LCD_BST_UVP) {/*lint !e690*/
 		di->lcd_bst_en = CHG_POWER_DIS;
 		di->lcd_ncp_en = CHG_POWER_DIS;
 		di->lcd_ldo_en = CHG_POWER_DIS;
@@ -2751,7 +2756,7 @@ static void hi6522_irq_work_handle(struct work_struct *work)
 					   NULL);
 	}
 
-	if (irq_status[3] & CHG_IRQ3_LCD_BST_OVP) {
+	if (irq_status[3] & CHG_IRQ3_LCD_BST_OVP) {/*lint !e690*/
 		di->lcd_bst_en = CHG_POWER_DIS;
 		di->lcd_ncp_en = CHG_POWER_DIS;
 		di->lcd_ldo_en = CHG_POWER_DIS;
@@ -2766,7 +2771,7 @@ static void hi6522_irq_work_handle(struct work_struct *work)
 					   NULL);
 	}
 
-	if (irq_status[3] & CHG_IRQ3_LCD_BST_SCP) {
+	if (irq_status[3] & CHG_IRQ3_LCD_BST_SCP) {/*lint !e690*/
 		hi6522_read_byte(SOC_SCHARGER_LCD_BOOST_REG10_ADDR(0),
 				 &reg_read);
 		if (0x55 == reg_read) {
@@ -2789,7 +2794,7 @@ static void hi6522_irq_work_handle(struct work_struct *work)
 					   NULL);
 	}
 
-	if (irq_status[3] & CHG_IRQ3_LCD_LDO_OCP) {
+	if (irq_status[3] & CHG_IRQ3_LCD_LDO_OCP) {/*lint !e690*/
 		di->lcd_bst_en = CHG_POWER_DIS;
 		di->lcd_ncp_en = CHG_POWER_DIS;
 		di->lcd_ldo_en = CHG_POWER_DIS;
@@ -2804,7 +2809,7 @@ static void hi6522_irq_work_handle(struct work_struct *work)
 					   NULL);
 	}
 
-	if (irq_status[3] & CHG_IRQ3_LDO1_200MA_OCP) {
+	if (irq_status[3] & CHG_IRQ3_LDO1_200MA_OCP) {/*lint !e690*/
 		di->ldo1_200ma_en = CHG_POWER_DIS;
 		hi6522_config_ldo1_200ma_enable(di);
 		SCHARGER_ERR
@@ -2815,7 +2820,7 @@ static void hi6522_irq_work_handle(struct work_struct *work)
 					   NULL);
 	}
 
-	if (irq_status[3] & CHG_IRQ3_LDO2_200MA_OCP) {
+	if (irq_status[3] & CHG_IRQ3_LDO2_200MA_OCP) {/*lint !e690*/
 		di->ldo2_200ma_en = CHG_POWER_DIS;
 		hi6522_config_ldo2_200ma_enable(di);
 		SCHARGER_ERR
@@ -2826,7 +2831,7 @@ static void hi6522_irq_work_handle(struct work_struct *work)
 					   NULL);
 	}
 
-	if (irq_status[4] & CHG_IRQ4_OTG_SCP) {
+	if (irq_status[4] & CHG_IRQ4_OTG_SCP) {/*lint !e690*/
 		otg_scp_cnt++;
 		hi6522_write_byte(CHG_IRQ_REG4,
 				  irq_status[4] & CHG_IRQ4_OTG_SCP);
@@ -2847,7 +2852,7 @@ static void hi6522_irq_work_handle(struct work_struct *work)
 		}
 	}
 
-	if (irq_status[4] & CHG_IRQ4_OTG_UVP) {
+	if (irq_status[4] & CHG_IRQ4_OTG_UVP) {/*lint !e690*/
 		otg_uvp_cnt++;
 		hi6522_write_byte(CHG_IRQ_REG4,
 				  irq_status[4] & CHG_IRQ4_OTG_UVP);
@@ -2870,9 +2875,9 @@ static void hi6522_irq_work_handle(struct work_struct *work)
 	/*clean irq */
 	hi6522_write_byte(CHG_IRQ_REG0, irq_status[0]);
 	hi6522_write_byte(CHG_IRQ_REG1, irq_status[1]);
-	hi6522_write_byte(CHG_IRQ_REG2, irq_status[2]);
-	hi6522_write_byte(CHG_IRQ_REG3, irq_status[3]);
-	hi6522_write_byte(CHG_IRQ_REG4, irq_status[4]);
+	hi6522_write_byte(CHG_IRQ_REG2, irq_status[2]);/*lint !e690*/
+	hi6522_write_byte(CHG_IRQ_REG3, irq_status[3]);/*lint !e690*/
+	hi6522_write_byte(CHG_IRQ_REG4, irq_status[4]);/*lint !e690*/
 
 	enable_irq(di->irq_int);
 #ifdef CONFIG_HUAWEI_OCP

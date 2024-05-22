@@ -235,6 +235,15 @@ extern "C" {
 #define NDIS_SPE_MEM_UNMAP(pstImmZc, ulLen)
 #endif
 
+/*Ó¥ÑÛ²å×®*/
+#ifdef __EAGLEYE__
+extern VOS_VOID Coverity_Tainted_Set(VOS_VOID* pkt);
+#define COVERITY_TAINTED_SET(pkt) { \
+    Coverity_Tainted_Set(pkt); \
+}
+#else
+#define COVERITY_TAINTED_SET(pkt)
+#endif
 
 
 #ifdef _lint

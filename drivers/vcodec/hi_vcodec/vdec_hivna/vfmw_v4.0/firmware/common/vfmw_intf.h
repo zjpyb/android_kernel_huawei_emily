@@ -3,6 +3,7 @@
 #include "memory.h"
 #include "vdm_drv.h"
 #include "scd_drv.h"
+#include "platform.h"
 
 #define VCTRL_OK                0
 #define VCTRL_ERR              -1
@@ -15,7 +16,8 @@ typedef struct hiDRV_MEM_S {
 typedef struct {
 	MEM_BUFFER_S scd[SCD_SHAREFD_MAX];
 	MEM_BUFFER_S vdh[VDH_SHAREFD_MAX];
-	struct file *file ;
+	CLK_RATE_E   clk_rate;
+	struct file  *file ;
 }VDEC_MEM_INFO;
 
 #ifdef MSG_POOL_ADDR_CHECK

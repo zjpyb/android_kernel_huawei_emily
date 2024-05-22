@@ -15,8 +15,6 @@
 
 #include <linux/types.h>
 
-struct task_struct;
-
 /* User-level do most of the mapping between kernel and user
    capabilities based on the version tag given by the kernel. The
    kernel might be somewhat backwards compatible, but don't bet on
@@ -351,8 +349,9 @@ struct vfs_cap_data {
 
 #define CAP_AUDIT_READ		37
 
+#define CAP_PERF_EVENT		38
 
-#define CAP_LAST_CAP         CAP_AUDIT_READ
+#define CAP_LAST_CAP         CAP_PERF_EVENT
 
 #define cap_valid(x) ((x) >= 0 && (x) <= CAP_LAST_CAP)
 

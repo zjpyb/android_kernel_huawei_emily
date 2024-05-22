@@ -763,9 +763,10 @@ OAL_STATIC oal_void  dmac_event_fsm_action_subtable_register(oal_void)
 
     /* 注册DMAC模块TBTT事件字表 */
     g_ast_dmac_tbtt_event_sub_table[HAL_EVENT_TBTT_SUB_TYPE].p_func = dmac_tbtt_event_handler;
-
-    /* 注册DMAC模块ERR事件子表 */
-    g_ast_dmac_high_prio_event_sub_table[HAL_EVENT_ERROR_IRQ_MAC_ERROR].p_func = dmac_mac_error_process_event;
+#ifdef _PRE_WLAN_FEATURE_BTCOEX
+    /* 为了提高PS事件的处理速度故注册到高优先级队列 */
+    g_ast_dmac_high_prio_event_sub_table[HAL_EVENT_DMAC_BTCOEX_PS].p_func = dmac_btcoex_ps_status_handler;
+#endif
 #if (_PRE_PRODUCT_ID == _PRE_PRODUCT_ID_HI1151)
     g_ast_dmac_high_prio_event_sub_table[HAL_EVENT_ERROR_IRQ_SOC_ERROR].p_func = dmac_soc_error_process_event;
 #endif
@@ -786,6 +787,9 @@ OAL_STATIC oal_void  dmac_event_fsm_action_subtable_register(oal_void)
 #endif
 
     g_ast_dmac_misc_event_sub_table[HAL_EVENT_DMAC_BEACON_TIMEOUT].p_func = dmac_beacon_timeout_event_hander;
+
+    /* 注册DMAC模块ERR事件子表 */
+    g_ast_dmac_misc_event_sub_table[HAL_EVENT_ERROR_IRQ_MAC_ERROR].p_func = dmac_mac_error_process_event;
 
 #ifdef _PRE_WLAN_FEATURE_P2P
     g_ast_dmac_misc_event_sub_table[HAL_EVENT_DMAC_P2P_NOA_ABSENT_START].p_func  = dmac_p2p_noa_absent_start_event;

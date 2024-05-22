@@ -365,9 +365,9 @@ static ssize_t mipi_dsi_bit_clk_upt_store(struct platform_device *pdev,
 	}
 	pinfo->mipi.dsi_bit_clk_upt = dsi_bit_clk_upt_tmp;
 
-	HISI_FB_INFO("switch mipi clk to %d.\n", pinfo->mipi.dsi_bit_clk_upt);
+	panel_next_snd_mipi_clk_cmd_store(pdev, pinfo->mipi.dsi_bit_clk_upt);
 
-	HISI_FB_DEBUG("fb%d, -.\n", hisifd->index);
+	HISI_FB_INFO("switch mipi clk to %d.\n", pinfo->mipi.dsi_bit_clk_upt);
 
 	return count;
 }
@@ -390,7 +390,7 @@ static ssize_t mipi_dsi_bit_clk_upt_show(struct platform_device *pdev, char *buf
 	pinfo = &(hisifd->panel_info);
 
 	if (!hisifd->panel_info.dsi_bit_clk_upt_support) {
-		HISI_FB_ERR("fb%d, not support!\n", hisifd->index);
+		HISI_FB_INFO("fb%d, panel_info.dsi_bit_clk_upt_support 0 !\n", hisifd->index);
 		return -1;
 	}
 
@@ -1257,7 +1257,7 @@ static int mipi_dsi_probe(struct platform_device *pdev)
 	}
 	hisifd = platform_get_drvdata(pdev);
 	if (NULL == hisifd) {
-		HISI_FB_ERR("hisifd is NULL");
+		dev_err(&pdev->dev, "hisifd is NULL");
 		return -EINVAL;
 	}
 
@@ -1265,14 +1265,14 @@ static int mipi_dsi_probe(struct platform_device *pdev)
 
 	ret = mipi_dsi_clk_irq_setup(pdev);
 	if (ret) {
-		HISI_FB_ERR("fb%d mipi_dsi_irq_clk_setup failed, error=%d!\n", hisifd->index, ret);
+		dev_err(&pdev->dev, "fb%d mipi_dsi_irq_clk_setup failed, error=%d!\n", hisifd->index, ret);
 		goto err;
 	}
 
 	/* alloc device */
 	dpp_dev = platform_device_alloc(DEV_NAME_DSS_DPE, pdev->id);
 	if (!dpp_dev) {
-		HISI_FB_ERR("fb%d platform_device_alloc failed, error=%d!\n", hisifd->index, ret);
+		dev_err(&pdev->dev, "fb%d platform_device_alloc failed, error=%d!\n", hisifd->index, ret);
 		ret = -ENOMEM;
 		goto err_device_alloc;
 	}
@@ -1284,7 +1284,7 @@ static int mipi_dsi_probe(struct platform_device *pdev)
 	ret = platform_device_add_data(dpp_dev, dev_get_platdata(&pdev->dev),
 		sizeof(struct hisi_fb_panel_data));
 	if (ret) {
-		HISI_FB_ERR("fb%d platform_device_add_data failed error=%d!\n", hisifd->index, ret);
+		dev_err(&pdev->dev, "fb%d platform_device_add_data failed error=%d!\n", hisifd->index, ret);
 		goto err_device_put;
 	}
 
@@ -1348,7 +1348,7 @@ static int mipi_dsi_probe(struct platform_device *pdev)
 	/* device add */
 	ret = platform_device_add(dpp_dev);
 	if (ret) {
-		HISI_FB_ERR("fb%d platform_device_add failed, error=%d!\n", hisifd->index, ret);
+		dev_err(&pdev->dev, "fb%d platform_device_add failed, error=%d!\n", hisifd->index, ret);
 		goto err_device_put;
 	}
 

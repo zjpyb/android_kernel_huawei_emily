@@ -183,6 +183,7 @@ void phcd_update_port_status(struct proxy_hcd *phcd, __u16 port_index,
 			__u32 status);
 int phcd_urb_complete(struct proxy_hcd *phcd, struct urb_msg *urb_msg);
 void phcd_mark_all_endpoint_dropped(struct proxy_hcd *phcd);
+__u32 phcd_current_port_status(struct proxy_hcd *phcd);
 
 int phcd_register_client(struct proxy_hcd_client *client);
 void phcd_unregister_client(struct proxy_hcd_client *client);
@@ -198,6 +199,7 @@ enum hibernation_policy phcd_get_hibernation_policy(struct proxy_hcd_client *cli
 /*
  * usbaudio-monirot.c
  */
-bool check_non_usbaudio_device(struct usb_device *udev, int configuration);
+bool stop_hifi_usb_when_non_usbaudio(struct usb_device *udev, int configuration);
+bool is_huawei_usb_c_audio_adapter(struct usb_device *udev);
 
 #endif

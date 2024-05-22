@@ -62,12 +62,7 @@
 #include "nv_partition_img.h"
 #include "bsp_dump.h"
 
-/* NV工作分区白名单 */
-s8 g_nv_img_white_list[][RFILE_NAME_MAX] =
-{
-    "/mnvm2:0/nv.bin",
-    "/mnvm2:0/modem_nv/nv.bin"
-};
+extern struct nv_path_info_stru g_nv_path;
 
 u32 s_delet_ret = NV_OK;
 
@@ -87,7 +82,7 @@ void nv_img_clear_check_result(void)
 *************************************************************************/
 u32 nv_img_get_white_list_num(void)
 {
-    return (sizeof(g_nv_img_white_list)/RFILE_NAME_MAX);
+    return NV_MAX;
 }
 
 /************************************************************************
@@ -107,8 +102,8 @@ bool nv_img_is_white_file(const s8 * pfile)
 
     for(index = 0; index < file_num; index++)
     {
-        if(0 == strncmp((char *)pfile, (char *)g_nv_img_white_list[index],
-                                strlen((char *)g_nv_img_white_list[index]) + 1))
+        if(0 == strncmp((char *)pfile, (char *)g_nv_path.file_path[index],
+                                strlen((char *)(g_nv_path.file_path[index])) + 1))
         {
             return TRUE;
         }
@@ -276,7 +271,7 @@ u32 nv_img_boot_check(const s8 * pdir)
     /* 检查文件路径是否超过长度限制 */
     for(index = 0; index < file_num; index++)
     {
-        if(strlen((char*)g_nv_img_white_list[index]) > RFILE_NAME_MAX)
+        if(strlen((char*)(g_nv_path.file_path[index])) > DRV_NAME_MAX)
         {
             bsp_trace(BSP_LOG_LEVEL_ERROR, BSP_MODU_NV, "[%s] file len error.\n", __FUNCTION__);
             return NV_ERROR;
@@ -314,10 +309,10 @@ u32 nv_img_write(u8* pdata, u32 len, u32 file_offset)
 
     nv_debug_record(NV_DEBUG_FLUSHEX_OPEN_START);
 
-    if(nv_file_access((s8*)NV_IMG_PATH,0))
+    if(nv_file_access((s8*)g_nv_path.file_path[NV_IMG],0))
     {
         nv_printf("no nv file, create when first write!\n");
-        fp = nv_file_open((s8*)NV_IMG_PATH,(s8*)NV_FILE_WRITE);
+        fp = nv_file_open((s8*)g_nv_path.file_path[NV_IMG],(s8*)NV_FILE_WRITE);
         if(NULL == fp)
         {
             nv_printf("create nv file failed!\n");
@@ -330,7 +325,7 @@ u32 nv_img_write(u8* pdata, u32 len, u32 file_offset)
     }
     else
     {
-        fp = nv_file_open((s8*)NV_IMG_PATH,(s8*)NV_FILE_RW);
+        fp = nv_file_open((s8*)g_nv_path.file_path[NV_IMG],(s8*)NV_FILE_RW);
         if(NULL == fp)
         {
             nv_printf("open nv file failed!\n");
@@ -371,7 +366,7 @@ u32 nv_img_flush_all(void)
     nv_create_flag_file((s8*)NV_IMG_FLAG_PATH);
     nv_debug(NV_API_FLUSH,0,0,0,0);
 
-    fp = nv_file_open((s8*)NV_IMG_PATH,(s8*)NV_FILE_WRITE);
+    fp = nv_file_open((s8*)g_nv_path.file_path[NV_IMG],(s8*)NV_FILE_WRITE);
     if(NULL == fp)
     {
         ret = BSP_ERR_NV_NO_FILE;
@@ -458,7 +453,7 @@ u32 nv_img_resume_item(nv_item_info_s *item_info, u32 modem_id)
         need_crc        = false;
     }
 
-    if(true != nv_check_file_validity((s8 *)NV_IMG_PATH, (s8 *)NV_IMG_FLAG_PATH))
+    if(true != nv_check_file_validity((s8 *)g_nv_path.file_path[NV_IMG], (s8 *)NV_IMG_FLAG_PATH))
     {
         nv_debug(NV_FUN_RESUME_IMG_ITEM,1,0,0,0);
         nv_record("resume nvid, img file is invalid itemid=0x%x!\n", item_info->itemid);
@@ -473,7 +468,7 @@ u32 nv_img_resume_item(nv_item_info_s *item_info, u32 modem_id)
         return BSP_ERR_NV_MALLOC_FAIL;
     }
 
-    ret = nv_read_file(NV_IMG_PATH, file_offset, temp_buff, &buff_size);
+    ret = nv_read_file(g_nv_path.file_path[NV_IMG], file_offset, temp_buff, &buff_size);
     if(ret)
     {
         vfree(temp_buff);

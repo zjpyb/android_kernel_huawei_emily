@@ -84,21 +84,7 @@
    5 函数实现
 ******************************************************************************/
 /*lint -save -e958 */
-/******************************************************************************
- Prototype      : TTF_QLink
- Description    : 初始化队列节点，在使用该节点之前，必须调用该函数初始化
- Input          : pItem -- 包含队列节点的数据
-                  pLink -- 队列节点
- Output         : NULL
- Return Value   : None
- Calls          :
- Called By      :
 
- History        : ---
-  1.Date        : 2006-08-31
-    Author      : g45205
-    Modification: Created function
-******************************************************************************/
 VOS_VOID TTF_QLink(VOS_UINT32 ulPid, VOS_VOID *pItem, TTF_Q_LINK_ST *pLink)
 {
     if (VOS_NULL_PTR == pLink)
@@ -110,18 +96,7 @@ VOS_VOID TTF_QLink(VOS_UINT32 ulPid, VOS_VOID *pItem, TTF_Q_LINK_ST *pLink)
 } /* TTF_QLink */
 
 
-/******************************************************************************
- Prototype       : TTF_QInit
- Description     : 初始化队列
- Input           : ulPid   -- 调用此函数的模块的Pid
-                   pQ      -- 队列指针
- Output          : None
- Return Value    : VOS_VOID
- History         :
-  1.Date         : 2006-08-31
-    Author       : g45205
-    Modification : Created function
-******************************************************************************/
+
 VOS_VOID TTF_QInit(VOS_UINT32 ulPid, TTF_Q_ST *pQ)
 {
     if (VOS_NULL_PTR == pQ)
@@ -136,20 +111,7 @@ VOS_VOID TTF_QInit(VOS_UINT32 ulPid, TTF_Q_ST *pQ)
 } /* TTF_QInit */
 
 
-/******************************************************************************
- Prototype       : TTF_QIn
- Description     : 数据入队列
- Input           : ulPid   -- 调用此函数的模块的Pid
-                   pQ      -- 队列指针
-                   pLink   -- 队列节点
- Output          : NONE
- Return Value    : VOS_OK  -- 成功
-                   VOS_ERR -- 失败
- History         :
-  1.Date         : 2006-08-31
-    Author       : g45205
-    Modification : Created function
-******************************************************************************/
+
 VOS_UINT32 TTF_QIn(VOS_UINT32 ulPid, TTF_Q_ST *pQ, TTF_Q_LINK_ST *pLink)
 {
 
@@ -167,19 +129,7 @@ VOS_UINT32 TTF_QIn(VOS_UINT32 ulPid, TTF_Q_ST *pQ, TTF_Q_LINK_ST *pLink)
 } /*TTF_QIn*/
 
 
-/******************************************************************************
- Prototype       : TTF_QOut
- Description     : 数据出队列，返回出队的数据的指针
-                   注意此函数与TTF_QueuePeek()的区别
- Input           : ulPid  -- 调用此函数的模块的Pid
-                   pQueue -- 队列指针
- Output          : NONE
- Return Value    : 出队数据的指针
- History         :
-  1.Date         : 2006-08-31
-    Author       : g45205
-    Modification : Created function
-******************************************************************************/
+
 VOS_VOID *TTF_QOut(VOS_UINT32 ulPid, TTF_Q_ST *pQ)
 {
     TTF_Q_LINK_ST  *pLink;
@@ -212,20 +162,7 @@ VOS_VOID *TTF_QOut(VOS_UINT32 ulPid, TTF_Q_ST *pQ)
 } /* TTF_QOut */
 
 
-/******************************************************************************
- Prototype      : TTF_MbufNew
- Description    : 申请指定长度的内存单元，数据附在TTF_BLK_ST结构之后
- Input          : usLen  -- 要申请的内存单元的大小，字节为单位
- Output         : NULL
- Return Value   : 申请的内存单元的地址
- Calls          :
- Called By      :
 
- History        : ---
-  1.Date        : 2006-08-31
-    Author      : g45205
-    Modification: Created function
-******************************************************************************/
 TTF_MBUF_ST *TTF_MbufNew(VOS_UINT32 ulPid, VOS_UINT16 usLen)
 {
     TTF_MBUF_ST    *pMbuf;
@@ -260,20 +197,7 @@ TTF_MBUF_ST *TTF_MbufNew(VOS_UINT32 ulPid, VOS_UINT16 usLen)
 } /*TTF_MbufNew*/
 
 
-/******************************************************************************
- Prototype      : TTF_MbufFree
- Description    : 释放指定结构的内存
- Input          : pMbuf -- 要释放的内存单元的地址
- Output         : pMbuf
- Return Value   : None
- Calls          :
- Called By      :
 
- History        : ---
-  1.Date        : 2006-08-31
-    Author      : g45205
-    Modification: Created function
-******************************************************************************/
 void TTF_MbufFree(VOS_UINT32 ulPid, TTF_MBUF_ST *pMbuf)
 {
     TTF_MBUF_ST    *pNext;
@@ -289,20 +213,7 @@ void TTF_MbufFree(VOS_UINT32 ulPid, TTF_MBUF_ST *pMbuf)
 } /*TTF_MbufFree*/
 
 
-/******************************************************************************
- Prototype      : TTF_MbufGetLen
- Description    : 获取给定内存单元的总字节数，包括整个数据链
- Input          : pMbuf -- 要计算长度的内存单元
- Output         : 给定内存单元的长度
- Return Value   : None
- Calls          :
- Called By      :
 
- History        : ---
-  1.Date        : 2006-08-31
-    Author      : g45205
-    Modification: Created function
-******************************************************************************/
 VOS_UINT16 TTF_MbufGetLen(VOS_UINT32 ulPid, TTF_MBUF_ST *pMbuf)
 {
     VOS_UINT16      usLen   = 0;

@@ -48,7 +48,7 @@ typedef uint32_t WindowSelection;
 	/*!< Measure Ambient Signal only */
 #define VL53L0_AMBIENT_AND_SIGNAL_WINDOW ((WindowSelection) 1)
 	/*!< Measure Combined Ambient and Signal Rate. */
-
+extern int memcpy_s(void *dest, size_t destMax, const void *src, size_t count);
 
 VL53L0_Error VL53L0_start_histogram_measurement(VL53L0_DEV Dev,
 			VL53L0_HistogramModes histoMode,
@@ -157,7 +157,7 @@ VL53L0_Error VL53L0_perform_single_histogram_measurement(VL53L0_DEV Dev,
 		VL53L0_HistogramMeasurementData_t *pHistogramMeasurementData)
 {
 	VL53L0_Error Status = VL53L0_ERROR_NONE;
-	VL53L0_DeviceModes DeviceMode;
+	VL53L0_DeviceModes DeviceMode = 0;
 	VL53L0_HistogramModes HistogramMode = VL53L0_HISTOGRAMMODE_DISABLED;
 	uint32_t MeasCount;
 	uint32_t Measurements;
@@ -323,13 +323,13 @@ VL53L0_Error VL53L0_read_histo_measurement(VL53L0_DEV Dev,
 			 * VL53L0_REG_RESULT_CORE_AMBIENT_WINDOW_EVENTS_REF
 			 */
 
-			memcpy(&histoData[offset1], &localBuffer[4],
+			memcpy_s(&histoData[offset1], cDataSize, &localBuffer[4],
 				cDataSize); /* rtn */
-			memcpy(&histoData[offset1 + 1], &localBuffer[24],
+			memcpy_s(&histoData[offset1 + 1], cDataSize,&localBuffer[24],
 				cDataSize); /* ref */
-			memcpy(&histoData[offset1 + 2], &localBuffer[0],
+			memcpy_s(&histoData[offset1 + 2], cDataSize,&localBuffer[0],
 				cDataSize); /* rtn */
-			memcpy(&histoData[offset1 + 3], &localBuffer[20],
+			memcpy_s(&histoData[offset1 + 3], cDataSize,&localBuffer[20],
 				cDataSize); /* ref */
 
 		} else {
@@ -367,10 +367,11 @@ VL53L0_Error VL53L0_get_max_spads(VL53L0_DEV Dev,
 {
 	VL53L0_Error Status = VL53L0_ERROR_NONE;
 	uint8_t TCC_Enabled;
-	uint8_t MSRC_Enabled;
+	uint8_t MSRC_Enabled = 0;
 	VL53L0_RangingMeasurementData_t RangingMeasurementData;
 	FixPoint1616_t ratio = 0;
 	uint32_t max_spads = 0;
+	RangingMeasurementData.EffectiveSpadRtnCount = 0;
 
 	/* Get the value of the TCC */
 	if (Status == VL53L0_ERROR_NONE)
@@ -675,7 +676,7 @@ VL53L0_Error VL53L0_perform_xtalk_measurement(VL53L0_DEV dev,
 	uint32_t amb_events = 0;
 	uint32_t meas_timing_budget_us;
 	VL53L0_DeviceModes device_mode;
-	uint8_t final_range_vcsel_period_pclks;
+	uint8_t final_range_vcsel_period_pclks = 0;
 	uint32_t max_spads;
 
 	/* Get Current DeviceMode */

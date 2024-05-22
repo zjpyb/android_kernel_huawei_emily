@@ -58,15 +58,14 @@ void blk_execute_rq_nowait(struct request_queue *q, struct gendisk *bd_disk,
 	WARN_ON(rq->cmd_type == REQ_TYPE_FS);
 
 	rq->rq_disk = bd_disk;
-#ifdef CONFIG_HISI_BLK_CORE
-	blk_execute_request_in_count_check(q,rq,done);
-#else
 	rq->end_io = done;
+#ifdef CONFIG_HISI_BLK
+	hisi_blk_request_execute_nowait(q, bd_disk, rq, at_head, done);
 #endif
 
 	/*
 	 * don't check dying flag for MQ because the request won't
-	 * be resued after dying flag is set
+	 * be reused after dying flag is set
 	 */
 	if (q->mq_ops) {
 		blk_mq_insert_request(rq, at_head, true, false);

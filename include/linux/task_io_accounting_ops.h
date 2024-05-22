@@ -7,7 +7,6 @@
 #include <linux/sched.h>
 
 #ifdef CONFIG_TASK_IO_ACCOUNTING
-
 static inline void task_io_account_read(size_t bytes)
 {
 	current->ioac.read_bytes += bytes;

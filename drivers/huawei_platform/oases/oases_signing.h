@@ -3,7 +3,7 @@
 
 enum {
 	SIG_TYPE_OASES,
-	SIG_TYPE_SYSTEM
+	SIG_TYPE_VENDOR
 };
 
 int __init oases_init_signing_keys(void);

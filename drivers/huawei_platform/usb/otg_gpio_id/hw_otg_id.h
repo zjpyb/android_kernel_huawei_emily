@@ -4,11 +4,9 @@
 /* include platform head-file */
 #if defined(CONFIG_DEC_USB)
 #include "dwc_otg_dec.h"
-#else
-#error "Passable some error, It should be set a platform"
+#include "dwc_otg_cil.h"
 #endif
 
-#include "dwc_otg_cil.h"
 
 #define SAMPLE_DOING	 (0)
 #define SAMPLE_DONE      (1)
@@ -17,11 +15,13 @@ struct otg_gpio_id_dev {
 	struct platform_device *pdev;
 	struct notifier_block otg_nb;
 	unsigned int otg_adc_channel;
+	bool ycable_support;
 	int gpio;
 	int irq;
 	unsigned int fpga_flag;
     unsigned int sampling_time_optimize;
 	struct work_struct  otg_intb_work;
+	bool otg_irq_enabled;
 };
 
 

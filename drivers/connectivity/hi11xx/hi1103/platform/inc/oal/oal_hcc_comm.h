@@ -86,6 +86,8 @@ typedef enum _hcc_test_subtype_
 #define   HCC_TEST_CMD_START_LOOP        (2)
 #define   HCC_TEST_CMD_STOP_TEST         (3)
 #define   HCC_TEST_CMD_CFG_FIX_FREQ      (4)
+#define   HCC_TEST_CMD_PCIE_MAC_LOOPBACK_TST      (5)
+#define   HCC_TEST_CMD_PCIE_PHY_LOOPBACK_TST      (6)
 
 typedef struct _hcc_test_cmd_stru_
 {

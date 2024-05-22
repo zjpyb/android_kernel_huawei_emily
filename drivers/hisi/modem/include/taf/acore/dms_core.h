@@ -127,10 +127,7 @@ extern "C" {
 #define DMS_GET_SLICE_FILE_LEN          (17)
 
 #if (VOS_OS_VER == VOS_LINUX)
-#define DMS_CACHE_FLUSH_WITH_DEV(dev, data, len)      dma_map_single(dev, data, len, DMA_TO_DEVICE)
 
-#define DMS_CACHE_FLUSH(data, len)      dma_map_single(0, data, len, DMA_TO_DEVICE)
-#define DMS_CACHE_INVALIDATE(data, len) dma_map_single(0, data, len, DMA_FROM_DEVICE)
 #else
 #define DMS_CACHE_FLUSH(data, len)      (0x00001)
 #define DMS_CACHE_INVALIDATE(data, len) (0x00002)
@@ -364,9 +361,6 @@ typedef struct
     struct wake_lock                    stwakelock;
     VOS_UINT8                           aucModemStatus[3];
     VOS_UINT8                           aucReserved1[5];
-
-    struct device                       stDev;
-
 
 } DMS_MAIN_INFO;
 

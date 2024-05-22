@@ -384,6 +384,9 @@ static struct sk_buff *rndis_add_header(struct gether *port,
 {
 	struct sk_buff *skb2;
 
+	if (!skb)
+		return NULL;
+
 	skb2 = skb_realloc_headroom(skb, sizeof(struct rndis_packet_msg_type));
 	rndis_add_hdr(skb2);
 
@@ -432,6 +435,7 @@ static void rndis_response_complete(struct usb_ep *ep, struct usb_request *req)
 	case -ECONNRESET:
 	case -ESHUTDOWN:
 		/* connection gone */
+		/* set notify_count -1 */
 		pr_info("RNDIS connection gone");
 		atomic_set(&rndis->notify_count, -1);
 		break;
@@ -466,6 +470,7 @@ static void rndis_command_complete(struct usb_ep *ep, struct usb_request *req)
 	rndis_init_msg_type		*buf;
 	int				req_status = req->status;
 
+	/* check req->status */
 	if (req_status) {
 		pr_err("RNDIS %s command error %d, %d/%d\n",
 				ep->name, req_status,
@@ -591,6 +596,7 @@ static int rndis_set_alt(struct usb_function *f, unsigned intf, unsigned alt)
 			if (config_ep_by_speed(cdev->gadget, f, rndis->notify))
 				goto fail;
 		}
+		/* init notify_count */
 		atomic_set(&rndis->notify_count, 0);
 		usb_ep_enable(rndis->notify);
 
@@ -704,12 +710,6 @@ static inline bool can_support_rndis(struct usb_configuration *c)
 
 /* ethernet function driver setup/binding */
 
-#ifdef CONFIG_HISI_USB_CONFIGFS
-static int hisi_rndis_create_net(struct f_rndis_opts *opts,
-		struct usb_gadget *g);
-static void hisi_rndis_free_net(struct f_rndis_opts *opts);
-#endif
-
 static int
 rndis_bind(struct usb_configuration *c, struct usb_function *f)
 {
@@ -726,37 +726,12 @@ rndis_bind(struct usb_configuration *c, struct usb_function *f)
 
 	rndis_opts = container_of(f->fi, struct f_rndis_opts, func_inst);
 
-#ifdef CONFIG_HISI_USB_CONFIGFS
-	{
-		int ret;
-
-		mutex_lock(&rndis_opts->lock);
-		ret = hisi_rndis_create_net(rndis_opts, c->cdev->gadget);
-		if (ret) {
-			pr_err("[%s] hisi_rndis_create_net error %d\n",
-					__func__, ret);
-			mutex_unlock(&rndis_opts->lock);
-			return ret;
-		}
-
-		gether_get_host_addr_u8(rndis_opts->net, rndis->ethaddr);
-		rndis->port.ioport = netdev_priv(rndis_opts->net);
-		mutex_unlock(&rndis_opts->lock);
-	}
-#endif
-
 	if (cdev->use_os_string) {
 		f->os_desc_table = kzalloc(sizeof(*f->os_desc_table),
 					   GFP_KERNEL);
-#ifdef CONFIG_HISI_USB_CONFIGFS
-		if (!f->os_desc_table) {
-			status = -ENOMEM;
-			goto fail_create_net;
-		}
-#else
 		if (!f->os_desc_table)
 			return -ENOMEM;
-#endif
+
 		f->os_desc_n = 1;
 		f->os_desc_table[0].os_desc = &rndis_opts->rndis_os_desc;
 	}
@@ -769,7 +744,13 @@ rndis_bind(struct usb_configuration *c, struct usb_function *f)
 	 * with regard to rndis_opts->bound access
 	 */
 	if (!rndis_opts->bound) {
+#ifdef CONFIG_HISI_USB_CONFIGFS
+		gether_set_gadget_without_set_netdev(rndis_opts->net,
+				cdev->gadget);
+		SET_NETDEV_DEV(rndis_opts->net, &rndis_opts->dev);
+#else
 		gether_set_gadget(rndis_opts->net, cdev->gadget);
+#endif
 		status = gether_register_netdev(rndis_opts->net);
 		if (status)
 			goto fail;
@@ -897,12 +878,6 @@ fail:
 		kfree(rndis->notify_req->buf);
 		usb_ep_free_request(rndis->notify, rndis->notify_req);
 	}
-#ifdef CONFIG_HISI_USB_CONFIGFS
-fail_create_net:
-	mutex_lock(&rndis_opts->lock);
-	hisi_rndis_free_net(rndis_opts);
-	mutex_unlock(&rndis_opts->lock);
-#endif
 
 	ERROR(cdev, "%s: can't bind, err %d\n", f->name, status);
 
@@ -932,7 +907,6 @@ static inline struct f_rndis_opts *to_f_rndis_opts(struct config_item *item)
 /* f_rndis_item_ops */
 USB_ETHERNET_CONFIGFS_ITEM(rndis);
 
-#ifndef CONFIG_HISI_USB_CONFIGFS
 /* f_rndis_opts_dev_addr */
 USB_ETHERNET_CONFIGFS_ITEM_ATTR_DEV_ADDR(rndis);
 
@@ -952,19 +926,13 @@ static struct configfs_attribute *rndis_attrs[] = {
 	&rndis_opts_attr_ifname,
 	NULL,
 };
-#endif
 
 static struct config_item_type rndis_func_type = {
 	.ct_item_ops	= &rndis_item_ops,
-#ifndef CONFIG_HISI_USB_CONFIGFS
 	.ct_attrs	= rndis_attrs,
-#endif
 	.ct_owner	= THIS_MODULE,
 };
 
-#ifdef CONFIG_HISI_USB_CONFIGFS
-#include "function-hisi/f_rndis_hisi.c"
-#else
 static void rndis_free_inst(struct usb_function_instance *f)
 {
 	struct f_rndis_opts *opts;
@@ -977,16 +945,23 @@ static void rndis_free_inst(struct usb_function_instance *f)
 			free_netdev(opts->net);
 	}
 
-	kfree(opts->rndis_os_desc.group.default_groups); /* single VLA chunk */
+#ifdef CONFIG_HISI_USB_CONFIGFS
+	device_unregister(&opts->dev);
+#endif
+
+	kfree(opts->rndis_interf_group);	/* single VLA chunk */
 	kfree(opts);
 }
 
-
+#ifdef CONFIG_HISI_USB_CONFIGFS
+#include "function-hisi/f_rndis_hisi.c"
+#else
 static struct usb_function_instance *rndis_alloc_inst(void)
 {
 	struct f_rndis_opts *opts;
 	struct usb_os_desc *descs[1];
 	char *names[1];
+	struct config_group *rndis_interf_group;
 
 	opts = kzalloc(sizeof(*opts), GFP_KERNEL);
 	if (!opts)
@@ -1005,10 +980,16 @@ static struct usb_function_instance *rndis_alloc_inst(void)
 
 	descs[0] = &opts->rndis_os_desc;
 	names[0] = "rndis";
-	usb_os_desc_prepare_interf_dir(&opts->func_inst.group, 1, descs,
-				       names, THIS_MODULE);
 	config_group_init_type_name(&opts->func_inst.group, "",
 				    &rndis_func_type);
+	rndis_interf_group =
+		usb_os_desc_prepare_interf_dir(&opts->func_inst.group, 1, descs,
+					       names, THIS_MODULE);
+	if (IS_ERR(rndis_interf_group)) {
+		rndis_free_inst(&opts->func_inst);
+		return ERR_CAST(rndis_interf_group);
+	}
+	opts->rndis_interf_group = rndis_interf_group;
 
 	return &opts->func_inst;
 }
@@ -1038,16 +1019,6 @@ static void rndis_unbind(struct usb_configuration *c, struct usb_function *f)
 
 	kfree(rndis->notify_req->buf);
 	usb_ep_free_request(rndis->notify, rndis->notify_req);
-#ifdef CONFIG_HISI_USB_CONFIGFS
-	{
-		struct f_rndis_opts *opts;
-
-		opts = container_of(f->fi, struct f_rndis_opts, func_inst);
-		mutex_lock(&opts->lock);
-		hisi_rndis_free_net(opts);
-		mutex_unlock(&opts->lock);
-	}
-#endif
 }
 
 static struct usb_function *rndis_alloc(struct usb_function_instance *fi)
@@ -1065,15 +1036,11 @@ static struct usb_function *rndis_alloc(struct usb_function_instance *fi)
 	mutex_lock(&opts->lock);
 	opts->refcnt++;
 
-#ifndef CONFIG_HISI_USB_CONFIGFS
 	gether_get_host_addr_u8(opts->net, rndis->ethaddr);
-#endif
 	rndis->vendorID = opts->vendor_id;
 	rndis->manufacturer = opts->manufacturer;
 
-#ifndef CONFIG_HISI_USB_CONFIGFS
 	rndis->port.ioport = netdev_priv(opts->net);
-#endif
 	mutex_unlock(&opts->lock);
 	/* RNDIS activates when the host changes this filter */
 	rndis->port.cdc_filter = 0;

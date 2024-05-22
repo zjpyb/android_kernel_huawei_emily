@@ -59,7 +59,7 @@ extern "C" {
 /*****************************************************************************
   4 全局变量声明
 *****************************************************************************/
-extern void __iomem *g_l2cache_base;
+extern void __iomem *g_l2cache_base_etc;
 
 /*****************************************************************************
   5 消息头定义
@@ -102,9 +102,9 @@ OAL_STATIC OAL_INLINE oal_void  oal_l2cache_dcache_lock(oal_bool_enum_uint8 en_f
 #if ((_PRE_TARGET_PRODUCT_TYPE_5610EVB == _PRE_CONFIG_TARGET_PRODUCT)\
     ||(_PRE_TARGET_PRODUCT_TYPE_VSPM310DMB == _PRE_CONFIG_TARGET_PRODUCT)\
     ||(_PRE_TARGET_PRODUCT_TYPE_WS835DMB == _PRE_CONFIG_TARGET_PRODUCT))
-    ul_reg = readl(g_l2cache_base + REG_L2_DLOCKWAY);
+    ul_reg = readl(g_l2cache_base_etc + REG_L2_DLOCKWAY);
 #else
-    ul_reg = readl(g_l2cache_base + HI_REG_L2_DLOCKWAY);
+    ul_reg = readl(g_l2cache_base_etc + HI_REG_L2_DLOCKWAY);
 #endif
 
     ul_reg = (ul_reg & (~(1 << ul_way))) | (en_flag << ul_way);
@@ -112,9 +112,9 @@ OAL_STATIC OAL_INLINE oal_void  oal_l2cache_dcache_lock(oal_bool_enum_uint8 en_f
 #if ((_PRE_TARGET_PRODUCT_TYPE_5610EVB == _PRE_CONFIG_TARGET_PRODUCT)\
     ||(_PRE_TARGET_PRODUCT_TYPE_VSPM310DMB == _PRE_CONFIG_TARGET_PRODUCT)\
     ||(_PRE_TARGET_PRODUCT_TYPE_WS835DMB == _PRE_CONFIG_TARGET_PRODUCT))
-    writel(ul_reg, g_l2cache_base + REG_L2_DLOCKWAY);
+    writel(ul_reg, g_l2cache_base_etc + REG_L2_DLOCKWAY);
 #else
-    writel(ul_reg, g_l2cache_base + HI_REG_L2_DLOCKWAY);
+    writel(ul_reg, g_l2cache_base_etc + HI_REG_L2_DLOCKWAY);
 #endif
 
     return;
@@ -127,18 +127,18 @@ OAL_STATIC OAL_INLINE oal_void  oal_l2cache_icache_lock(oal_bool_enum_uint8 en_f
 #if ((_PRE_TARGET_PRODUCT_TYPE_5610EVB == _PRE_CONFIG_TARGET_PRODUCT)\
     ||(_PRE_TARGET_PRODUCT_TYPE_VSPM310DMB == _PRE_CONFIG_TARGET_PRODUCT)\
     ||(_PRE_TARGET_PRODUCT_TYPE_WS835DMB == _PRE_CONFIG_TARGET_PRODUCT))
-    ul_reg = readl(g_l2cache_base + REG_L2_ILOCKWAY);
+    ul_reg = readl(g_l2cache_base_etc + REG_L2_ILOCKWAY);
 #else
-    ul_reg = readl(g_l2cache_base + HI_REG_L2_ILOCKWAY);
+    ul_reg = readl(g_l2cache_base_etc + HI_REG_L2_ILOCKWAY);
 #endif
     ul_reg = (ul_reg & (~(1 << ul_way))) | (en_flag << ul_way);
 
 #if ((_PRE_TARGET_PRODUCT_TYPE_5610EVB == _PRE_CONFIG_TARGET_PRODUCT)\
     ||(_PRE_TARGET_PRODUCT_TYPE_VSPM310DMB == _PRE_CONFIG_TARGET_PRODUCT)\
     ||(_PRE_TARGET_PRODUCT_TYPE_WS835DMB == _PRE_CONFIG_TARGET_PRODUCT))
-    writel(ul_reg, g_l2cache_base + REG_L2_ILOCKWAY);
+    writel(ul_reg, g_l2cache_base_etc + REG_L2_ILOCKWAY);
 #else
-    writel(ul_reg, g_l2cache_base + HI_REG_L2_ILOCKWAY);
+    writel(ul_reg, g_l2cache_base_etc + HI_REG_L2_ILOCKWAY);
 #endif
     return;
 
@@ -156,9 +156,9 @@ OAL_STATIC OAL_INLINE oal_void  oal_cache_rxtx_lock(oal_void)
 #if ((_PRE_TARGET_PRODUCT_TYPE_5610EVB == _PRE_CONFIG_TARGET_PRODUCT)\
     ||(_PRE_TARGET_PRODUCT_TYPE_VSPM310DMB == _PRE_CONFIG_TARGET_PRODUCT)\
     ||(_PRE_TARGET_PRODUCT_TYPE_WS835DMB == _PRE_CONFIG_TARGET_PRODUCT))
-    g_l2cache_base = (void __iomem *)ioremap(REG_BASE_L2CACHE, OAL_SIZEOF(void *));
+    g_l2cache_base_etc = (void __iomem *)ioremap(REG_BASE_L2CACHE, OAL_SIZEOF(void *));
 #else
-    g_l2cache_base = (void __iomem *)ioremap(HI_REG_BASE_L2CACHE, OAL_SIZEOF(void *));
+    g_l2cache_base_etc = (void __iomem *)ioremap(HI_REG_BASE_L2CACHE, OAL_SIZEOF(void *));
 #endif
 }
 #endif

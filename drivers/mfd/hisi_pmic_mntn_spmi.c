@@ -10,28 +10,83 @@
 #include <linux/version.h>
 #include <linux/hisi-spmi.h>
 #include <linux/of_hisi_spmi.h>
+#include <linux/notifier.h>
+#include <linux/export.h>
+#include "securec.h"
+#include <linux/hisi/hisi_log.h>
+#define HISI_LOG_TAG HISI_PMIC_MNTN_TAG
 
-#if defined (CONFIG_HUAWEI_DSM)
-#include <dsm/dsm_pub.h>
-
-static struct dsm_dev pmic_dsm_dev = {
-	.name = "dsm_pmu_ocp",
-	.device_name = NULL,
-	.ic_name = NULL,
-	.module_name = NULL,
-	.fops = NULL,
-	.buff_size = 1024,
-};
+#include <huawei_platform/power/power_dsm.h>
 
 #define HISI_PMIC_DSM_MASK_STATE 0xFF
 #define HISI_PMIC_DSM_IGNORE_NUM 99
 
-static struct dsm_client *pmic_dsm_dclient;
-#endif
-
 static PMIC_MNTN_DESC *g_pmic_mntn;
 
 static void __iomem *g_sysctrl_base;
+
+int hisi_pmic_set_cold_reset(unsigned char status)
+{
+	unsigned char reg_value = 0;
+
+	PMIC_MNTN_DESC *pmic_mntn = g_pmic_mntn;
+	if (!pmic_mntn) {
+		pr_err("%s:pmic mntn is null.\n", __func__);
+		return -EPERM;
+	}
+
+	reg_value = hisi_pmic_reg_read(pmic_mntn->otmp_hreset_pwrdown_reg.addr);
+	pr_err("%s:Into:HRESET_PWRDOWN_CTRL register val is 0x%x!\n",__func__,reg_value);
+
+	if( (PMIC_HRESET_COLD == status) || (PMIC_HRESET_HOT == status) ){
+		hisi_pmic_reg_write(pmic_mntn->otmp_hreset_pwrdown_reg.addr,status);
+	}
+
+	reg_value = hisi_pmic_reg_read(pmic_mntn->otmp_hreset_pwrdown_reg.addr);
+	pr_err("%s:Out:HRESET_PWRDOWN_CTRL register val is 0x%x!\n",__func__,reg_value);
+
+	return 0;
+}
+
+static ATOMIC_NOTIFIER_HEAD(hisi_pmic_mntn_notifier_list);
+int hisi_pmic_mntn_register_notifier(struct notifier_block *nb)
+{
+	return atomic_notifier_chain_register(&hisi_pmic_mntn_notifier_list, nb);
+}
+EXPORT_SYMBOL_GPL(hisi_pmic_mntn_register_notifier);
+
+int hisi_pmic_mntn_unregister_notifier(struct notifier_block *nb)
+{
+	return atomic_notifier_chain_unregister(&hisi_pmic_mntn_notifier_list, nb);
+}
+EXPORT_SYMBOL_GPL(hisi_pmic_mntn_unregister_notifier);
+
+int hisi_call_pmic_mntn_notifiers(int val,void *v)
+{
+	return atomic_notifier_call_chain(&hisi_pmic_mntn_notifier_list,(unsigned long)val, v);/*lint !e571*/
+}
+EXPORT_SYMBOL_GPL(hisi_call_pmic_mntn_notifiers);
+
+#ifdef CONFIG_HISI_PMIC_DEBUG
+static int hisi_test_pmic_mntn_notifier_call(struct notifier_block *nb, unsigned long event, void *data)
+{
+	PMIC_MNTN_EXCP_INFO  ocp_ldo_msg ;
+
+	memset_s(&ocp_ldo_msg,sizeof(PMIC_MNTN_EXCP_INFO),0x0,sizeof(PMIC_MNTN_EXCP_INFO));
+	strncpy_s((PMIC_MNTN_EXCP_INFO *)(&ocp_ldo_msg),sizeof(PMIC_MNTN_EXCP_INFO),(PMIC_MNTN_EXCP_INFO *)(data),sizeof(PMIC_MNTN_EXCP_INFO));
+	if (event == HISI_PMIC_OCP_EVENT) {
+		pr_err("[%s] test pmic mnt %s ocp event!\n",__func__,ocp_ldo_msg.ldo_num);
+	}else {
+		pr_err("[%s]invalid event %d!\n", __func__,(int) (event));
+	}
+	return 0;
+}
+
+static struct notifier_block hisi_pmic_mntn_test_nb = {
+	.notifier_call = hisi_test_pmic_mntn_notifier_call,
+	.priority = INT_MIN,
+};
+#endif
 
 static void hisi_pmic_panic_handler(void)
 {
@@ -228,10 +283,13 @@ static void hisi_pmic_ocp_scan(PMIC_MNTN_DESC *pmic_mntn)
 	char *cur_str = NULL;
 	unsigned int bit_reg = 0;
 	int ret = 0;
+	PMIC_MNTN_EXCP_INFO  ocp_ldo_msg;
 
 #if defined (CONFIG_HUAWEI_DSM)
 	int pmic_ocp_error_offset = 0;
 #endif
+
+	memset_s(&ocp_ldo_msg,sizeof(PMIC_MNTN_EXCP_INFO), 0, sizeof(PMIC_MNTN_EXCP_INFO));
 
 	reg_buff  = pmic_mntn->ocp_event_buff; /*lint !e64 */
 	exch_desc = pmic_mntn->ocp_exch_desc;
@@ -259,12 +317,10 @@ static void hisi_pmic_ocp_scan(PMIC_MNTN_DESC *pmic_mntn)
 						&& (!(pmic_mntn->dsm_ocp_reset_mask[index] & BIT(bit)))\
 						&& ((unsigned int)pmic_ocp_error_offset < pmic_mntn->ocp_error_dmd_offset_n)\
 						&& (HISI_PMIC_DSM_IGNORE_NUM != pmic_mntn->ocp_error_dmd_offset[pmic_ocp_error_offset])) {
-						if (dsm_client_ocuppy(pmic_dsm_dclient)) {
-							pr_err("pmic_dsm_dclient dsm_client_ocuppy failed\n");
-						} else {
+						if (!dsm_client_ocuppy(power_dsm_get_dclient(POWER_DSM_PMU_OCP))) {
 							pr_err("pmic %s_ocp happened, please pay attention!\n", bit_name);
-							dsm_client_record(pmic_dsm_dclient, "pmic %s_ocp happened, please pay attention!\n", bit_name);
-							dsm_client_notify(pmic_dsm_dclient, DSM_PMU_OCP_ERROR_NO_BASE + pmic_mntn->ocp_error_dmd_offset[pmic_ocp_error_offset]);
+							dsm_client_record(power_dsm_get_dclient(POWER_DSM_PMU_OCP), "pmic %s_ocp happened, please pay attention!\n", bit_name);
+							dsm_client_notify(power_dsm_get_dclient(POWER_DSM_PMU_OCP), DSM_PMU_OCP_ERROR_NO_BASE + pmic_mntn->ocp_error_dmd_offset[pmic_ocp_error_offset]);
 						}
 					}
 #endif
@@ -272,14 +328,42 @@ static void hisi_pmic_ocp_scan(PMIC_MNTN_DESC *pmic_mntn)
 					if (INVALID_REG_ADDR != bit_reg) {
 						hisi_pmic_reg_write(bit_reg, CLOSE_REGULATOR_CONTROL);
 					}
+
 					/*clear interrupt*/
 					hisi_pmic_reg_write(pmic_mntn->ocp_regs[index], care_bit);
 
-					if (!pmic_mntn->ocp_mold_switch)
-						ret = hisi_pmic_ocp_special_handler(bit_name, pmic_mntn);
-					if (PMIC_OCP_NONE == ret) {
-						if (care_bit & exch_desc[index].inacceptable_event) {
-						pmic_mntn->health |= BIT(PMIC_HEALTH_OCP_EXCH_HAPPENED);
+					if( unlikely(strstr(saved_command_line, "androidboot.swtype=factory")||
+						((exch_desc[index].check_ocp_num[bit] == 0)&&((care_bit & exch_desc[index].check_ocp_nofify) == 0)
+								&&((care_bit & exch_desc[index].check_ocp_reset) == 0))) ){
+						if (!pmic_mntn->ocp_mold_switch){
+							ret = hisi_pmic_ocp_special_handler(bit_name, pmic_mntn);
+						}
+
+						if (PMIC_OCP_NONE == ret) {
+							if (care_bit & exch_desc[index].inacceptable_event) {
+								pmic_mntn->health |= BIT(PMIC_HEALTH_OCP_EXCH_HAPPENED);
+							}
+						}
+					}else{
+						if( exch_desc[index].check_count[bit] < exch_desc[index].check_ocp_num[bit] ){
+							exch_desc[index].check_count[bit]++;
+                        				/*open ldo*/
+							if (INVALID_REG_ADDR != bit_reg ) {
+								hisi_pmic_reg_write(bit_reg, OPEN_REGULATOR_CONTROL);
+								/*clear record event*/
+								hisi_pmic_reg_write(pmic_mntn->record_regs[index], pmic_mntn->record_event_buff[index]);
+							}
+						}else if( care_bit & exch_desc[index].check_ocp_nofify ){
+							exch_desc[index].check_count[bit] = 0;
+
+							/*notify the terminal exception handling system*/
+							strncpy_s(ocp_ldo_msg.ldo_num,PMIC_OCP_LDO_NAME,bit_name,strlen(bit_name));
+							hisi_call_pmic_mntn_notifiers(HISI_PMIC_OCP_EVENT,(void *)&ocp_ldo_msg);
+
+						}else if( care_bit & exch_desc[index].check_ocp_reset ){
+							pmic_mntn->health |= BIT(PMIC_HEALTH_OCP_EXCH_HAPPENED);
+						}else{
+							pr_err("%s: %s has been opened  %d tiems,the time do nothing!\n",__func__,bit_name,exch_desc[index].check_count[bit]);
 						}
 					}
 				}
@@ -317,14 +401,12 @@ static void hisi_pmic_record_events(PMIC_MNTN_DESC *pmic_mntn)
 					&& (pmic_mntn->dsm_ocp_reset_mask[index] & BIT(i)) \
 					&& ((unsigned int)pmic_record_error_offset < pmic_mntn->ocp_error_dmd_offset_n) \
 					&& (HISI_PMIC_DSM_IGNORE_NUM != pmic_mntn->ocp_error_dmd_offset[pmic_record_error_offset])) {
-					if (dsm_client_ocuppy(pmic_dsm_dclient)) {
-						pr_err("pmic_dsm_dclient dsm_client_ocuppy failed\n");
-					} else {
+					if (!dsm_client_ocuppy(power_dsm_get_dclient(POWER_DSM_PMU_OCP))) {
 						pr_err("pmic %s happened, please pay attention!\n",
 							pmic_mntn->record_exch_desc[index].event_bit_name[i]);
-						dsm_client_record(pmic_dsm_dclient, "pmic %s happened, please pay attention!\n",
+						dsm_client_record(power_dsm_get_dclient(POWER_DSM_PMU_OCP), "pmic %s happened, please pay attention!\n",
 							pmic_mntn->record_exch_desc[index].event_bit_name[i]);
-						dsm_client_notify(pmic_dsm_dclient, DSM_PMU_OCP_ERROR_NO_BASE + pmic_mntn->ocp_error_dmd_offset[pmic_record_error_offset]);
+						dsm_client_notify(power_dsm_get_dclient(POWER_DSM_PMU_OCP), DSM_PMU_OCP_ERROR_NO_BASE + pmic_mntn->ocp_error_dmd_offset[pmic_record_error_offset]);
 					}
 				}
 				pmic_record_error_offset++;
@@ -387,6 +469,7 @@ static void hisi_pmic_ocp_wq_handler(struct work_struct *work)
 
 	for (index = 0; index < pmic_mntn->ocp_reg_n; index++){
 		pmic_mntn->ocp_event_buff[index] = hisi_pmic_reg_read(pmic_mntn->ocp_regs[index]);
+		pmic_mntn->record_event_buff[index] = hisi_pmic_reg_read(pmic_mntn->record_regs[index]);
 	}
 
 	hisi_pmic_ocp_scan(pmic_mntn);
@@ -506,7 +589,7 @@ int hisi_pmic_mntn_config_vsys_pwroff_abs_pd(bool enable)
 		return 1;
 
 	/*config abs_pd (reg:0xDB; bit 0;
-	0:自动关机(低于2.3v时间超过35us以上才能保证关机成功),1:不自动关机)
+	0:脳脭露炉鹿脴禄煤(碌脥脫脷2.3v脢卤录盲鲁卢鹿媒35us脪脭脡脧虏脜脛脺卤拢脰陇鹿脴禄煤鲁脡鹿娄),1:虏禄脳脭露炉鹿脴禄煤)
 	*/
 	if (enable) {
 		value = g_pmic_mntn->vsys_pwroff_abs_pd_en_val;
@@ -656,6 +739,7 @@ static int hisi_pmic_smpl_mntn_initial(struct spmi_device *pdev, PMIC_MNTN_DESC 
 	struct device_node *np = dev->of_node;
 	unsigned char reg_value = 0;
 	s32 ret = 0;
+	unsigned int smpl_en_val;
 
 	root = of_find_compatible_node(np, NULL, "hisilicon-pmic-mntn-smpl");
 	if (!root) {
@@ -672,10 +756,22 @@ static int hisi_pmic_smpl_mntn_initial(struct spmi_device *pdev, PMIC_MNTN_DESC 
 		return -ENODEV;
 	}
 
+	ret =  of_property_read_u32_array(root, "hisilicon,poweroff-charging-smpl-ctrl-en", &smpl_en_val, 0x1);
+	if(!ret) {
+		dev_info(dev,"hisilicon,poweroff-charging-smpl-ctrl-en: %d\n",smpl_en_val);
+		if (strstr(saved_command_line, "androidboot.mode=charger"))  {
+			pmic_mntn->smpl_en_val = smpl_en_val;
+			dev_info(dev,"pmic_mntn->smpl_en_val:%d\n",pmic_mntn->smpl_en_val);
+		}
+	}
+
 	/*Set SMPL on/off*/
 	reg_value = hisi_pmic_reg_read(pmic_mntn->smpl_en_reg.addr);
+	dev_info(dev,"read reg_value:0x%x\n",reg_value);
 	SET_REG_BIT(reg_value, pmic_mntn->smpl_en_reg.shift, pmic_mntn->smpl_en_reg.mask, pmic_mntn->smpl_en_val);
 	hisi_pmic_reg_write(pmic_mntn->smpl_en_reg.addr, reg_value);
+	reg_value = hisi_pmic_reg_read(pmic_mntn->smpl_en_reg.addr);
+	dev_info(dev,"write reg_value:0x%x\n",reg_value);
 
 	/*Set SMPL effective time*/
 	reg_value = hisi_pmic_reg_read(pmic_mntn->smpl_tm_reg.addr);
@@ -740,13 +836,42 @@ static int hisi_pmic_ocp_mntn_initial(struct spmi_device *pdev, PMIC_MNTN_DESC *
 			return -ENOMEM;
 		}
 
+		exch_reg_tmp[index].check_ocp_num = (u32 *)devm_kzalloc(dev, pmic_mntn->data_width*sizeof(u32), GFP_KERNEL);
+		if (NULL == exch_reg_tmp[index].check_ocp_num) {
+			dev_err(dev, "[%s]devm_kzalloc check_ocp_num error.\n", __func__);
+			return -ENOMEM;
+		}
+
+		exch_reg_tmp[index].check_count = (u32 *)devm_kzalloc(dev, pmic_mntn->data_width*sizeof(u32), GFP_KERNEL);
+		if (NULL == exch_reg_tmp[index].check_count) {
+			dev_err(dev, "[%s]devm_kzalloc check_count error.\n", __func__);
+			return -ENOMEM;
+		}
+
 		ret = of_property_read_u32(root, "hisilicon,inacceptable-event", (u32 *)&exch_reg_tmp[index].inacceptable_event);
 		for (bit = 0; bit < pmic_mntn->data_width; bit++) {
 			ret |= of_property_read_string_index(root, "hisilicon,event-bit-name",
 					bit, (const char **)&exch_reg_tmp[index].event_bit_name[bit]);
 		}
 
-		ret |= of_property_read_u32_array(root, "hisilicon,event-ops-reg",
+		ret = of_property_read_u32(root, "hisilicon,check_ocp_nofify", (u32 *)&exch_reg_tmp[index].check_ocp_nofify);
+		if (ret) {
+			dev_err(dev, "[%s]read attribute of %s.\n", __func__, compatible_string);
+		}
+
+		ret = of_property_read_u32(root, "hisilicon,check_ocp_reset", (u32 *)&exch_reg_tmp[index].check_ocp_reset);
+		if (ret) {
+			dev_err(dev, "[%s]read attribute of %s.\n", __func__, compatible_string);
+		}
+
+		ret = of_property_read_u32_array(root, "hisilicon,check_ocp_num",
+				(u32 *)exch_reg_tmp[index].check_ocp_num, pmic_mntn->data_width);
+
+		if (ret) {
+			dev_err(dev, "[%s]read attribute of %s.\n", __func__, compatible_string);
+		}
+
+		ret = of_property_read_u32_array(root, "hisilicon,event-ops-reg",
 				(u32 *)exch_reg_tmp[index].event_ops_reg, pmic_mntn->data_width);
 
 		if (ret) {
@@ -779,6 +904,12 @@ static int hisi_pmic_ocp_mntn_initial(struct spmi_device *pdev, PMIC_MNTN_DESC *
 		return -ENODEV;
 	}
 
+#ifdef CONFIG_HISI_PMIC_DEBUG
+	ret = hisi_pmic_mntn_register_notifier(&hisi_pmic_mntn_test_nb);
+	if(0 != ret){
+		pr_err("%s:hisi pmic mntn test nb register fail!\n",__func__);
+	}
+#endif
 	return 0;
 }
 
@@ -987,7 +1118,7 @@ static int hisi_pmic_mntn_probe(struct spmi_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 	struct device_node *np = dev->of_node;
-	PMIC_MNTN_DESC *pmic_mntn = NULL;
+	PMIC_MNTN_DESC *pmic_mntn = NULL;/*lint !e429*/
 	int ret = 0;
 
 	pmic_mntn = (PMIC_MNTN_DESC *)devm_kzalloc(dev, sizeof(*pmic_mntn), GFP_KERNEL);
@@ -996,25 +1127,24 @@ static int hisi_pmic_mntn_probe(struct spmi_device *pdev)
 		return -ENOMEM;
 	}
 
-	g_pmic_mntn = pmic_mntn;
 	pmic_mntn->health = (unsigned int)PMIC_HEALTH_STATUS_NORMAL;
 
 	pmic_mntn->init_log_show = (char *)devm_kzalloc(dev, PMIC_PRINT_BUF_SIZE, GFP_KERNEL);
 	if (NULL == pmic_mntn->init_log_show) {
 		dev_err(dev, "[%s]devm_kzalloc init_log_show err\n", __func__);
-		return -ENOMEM;
+		return -ENOMEM;/*lint !e429*/
 	}
 
 	pmic_mntn->irq_log_show = (char *)devm_kzalloc(dev, PMIC_PRINT_BUF_SIZE, GFP_KERNEL);
 	if (NULL == pmic_mntn->irq_log_show) {
 		dev_err(dev, "[%s]devm_kzalloc irq_log_show err\n", __func__);
-		return -ENOMEM;
+		return -ENOMEM;/*lint !e429*/
 	}
 
 	ret = of_property_read_u32(np, "hisilicon,data-width", &pmic_mntn->data_width);
 	if (ret) {
 		dev_err(dev, "[%s]get pmic data-width failed.\n", __func__);
-		return -ENODEV;
+		return -ENODEV;/*lint !e429*/
 	}
 
 	ret = hisi_ocp_mold_switch_initial(pdev, pmic_mntn);
@@ -1060,14 +1190,7 @@ static int hisi_pmic_mntn_probe(struct spmi_device *pdev)
 		return ret;
 	}
 
-#if defined (CONFIG_HUAWEI_DSM)
-	if (!pmic_dsm_dclient) {
-		pmic_dsm_dclient = dsm_register_client(&pmic_dsm_dev);
-		if (NULL == pmic_dsm_dclient) {
-			dev_err(dev, "[%s]dsm_register_client register fail.\n", __func__);
-		}
-	}
-#endif
+	g_pmic_mntn = pmic_mntn;
 
 	hisi_pmic_record_events(pmic_mntn);
 
@@ -1082,6 +1205,13 @@ static int hisi_pmic_mntn_probe(struct spmi_device *pdev)
 
 static int hisi_pmic_mntn_remove(struct spmi_device *pdev)
 {
+#ifdef CONFIG_HISI_PMIC_DEBUG
+	int ret = 0;
+	ret = hisi_pmic_mntn_unregister_notifier(&hisi_pmic_mntn_test_nb);
+	if( 0 != ret){
+		pr_err("%s: hisi pmic mntn test nb unregister fail!\n",__func__);
+	}
+#endif
 	return 0;
 }
 

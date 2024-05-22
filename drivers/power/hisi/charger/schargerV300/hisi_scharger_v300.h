@@ -1,7 +1,7 @@
-﻿//****************************************************************************** 
+﻿//******************************************************************************
 // Copyright     :  Copyright (C) 2015, Hisilicon Technologies Co., Ltd.
 // File name     :  hisi_scharger_v300.h
-// Version       :  1.0 
+// Version       :  1.0
 // Date          :  2015-05-06
 // Description   :  Define all registers/tables for HI6523
 
@@ -48,9 +48,16 @@ extern int fsa9685_manual_sw(int input_select);
 #define CHG_VBATT_SOFT_OVP_CNT			(3)
 #define CHG_VBATT_SOFT_OVP_MAX			(4600)
 #define CHG_VBATT_CV_103(x)				((x)*103/100)
+#define SCHARGER_V300_INFO
+#ifndef SCHARGER_V300_INFO
+#define SCHARGER_ERR(fmt,args...) do {} while (0)
+#define SCHARGER_EVT(fmt,args...) do {} while (0)
+#define SCHARGER_INF(fmt,args...) do {} while (0)
+#else
 #define SCHARGER_ERR(fmt,args...) do { printk(KERN_ERR    "[hisi_scharger]" fmt, ## args); } while (0)
 #define SCHARGER_EVT(fmt,args...) do { printk(KERN_WARNING"[hisi_scharger]" fmt, ## args); } while (0)
 #define SCHARGER_INF(fmt,args...) do { printk(KERN_INFO   "[hisi_scharger]" fmt, ## args); } while (0)
+#endif
 
 #define DPM_DISABLE                 (498)
 #define DPM_ENABLE                  (365)
@@ -71,13 +78,14 @@ extern int fsa9685_manual_sw(int input_select);
 #define HI6523_FAIL -1
 #define HI6523_RESTART_TIME 4
 #define FCP_RETRY_TIME 5
+#define FCP_RESET_RETRY_TIME 3
 #define BOOST_5V_CLOSE_FAIL -1
 #define SUCC 0
 #define FAIL -1
 
 
 #define FCP_ADAPTER_CNTL_REG			(SOC_SCHARGER_FCP_ADAP_CTRL_ADDR(0))
-#define HI6523_ACCP_CHARGER_DET			(SOC_SCHARGER_FCP_ADAP_CTRL_fcp_set_d60m_r_START)
+#define HI6523_ACCP_CHARGER_DET			(1<<SOC_SCHARGER_FCP_ADAP_CTRL_fcp_set_d60m_r_START)
 
 #define HI6523_WATER_CHECKDPDN_NUM  (5)
 #define HI6523_DPDM_CALC_MV(x)      (1U*(x)*3000U/4096U)
@@ -131,6 +139,9 @@ struct hi6523_device_info {
     int is_need_bst_ctrl;
     int bst_ctrl;
     int scp_need_extra_power;
+    unsigned int adaptor_support;
+    u8 sysfs_fcp_reg_addr;
+    u8 sysfs_fcp_reg_val;
 };
 struct charge_cv_vdpm_data {
 	int cv;
@@ -230,9 +241,9 @@ struct charge_cv_vdpm_data {
 #define VBUS_VSET_MSK                   (0x03<<VBUS_VSET_SHIFT)
 #define VBUS_VSET_5V                    (5)
 #define VBUS_VSET_9V                    (9)
-#define VBUS_VSET_12V                   (12) 
+#define VBUS_VSET_12V                   (12)
 
-/* BUCK_REG2调节寄存器。 */ 
+/* BUCK_REG2调节寄存器。 */
 #define CHG_DPM_SEL_REG                 (SOC_SCHARGER_BUCK_REG2_ADDR(0))
 /* DPM输入电压设定：000：82.5%;001：85%；010：87.5%；011：90%；100：92.5%；101：95%。 */
 #define CHG_DPM_SEL_SHIFT               (SOC_SCHARGER_BUCK_REG2_buck_dpm_sel_START)
@@ -340,7 +351,7 @@ struct charge_cv_vdpm_data {
 /* 喂狗时间控制寄存器。 */
 /* SOC每隔一定时间对V200进行一次寄存器写操作；如果没有写操作事件发生，则进入Default模式，复位chg_en和watchdog_timer寄存器；否则是正常的Host模式。系统watchdog_timer时间设置：00：系统watchdog_timer功能屏蔽；01：10s；10：20s；11：40s 。 */
 #define WATCHDOG_CTRL_REG               (SOC_SCHARGER_WATCHDOG_CTRL_ADDR(0))
-#define WATCHDOG_TIMER_SHIFT            (SOC_SCHARGER_WATCHDOG_CTRL_watchdog_timer_START) 
+#define WATCHDOG_TIMER_SHIFT            (SOC_SCHARGER_WATCHDOG_CTRL_watchdog_timer_START)
 #define WATCHDOG_TIMER_MSK              (0x03<<WATCHDOG_TIMER_SHIFT)
 #define WATCHDOG_TIMER_10_S             (10)
 #define WATCHDOG_TIMER_20_S             (20)

@@ -350,7 +350,7 @@ OAL_STATIC oal_void  hmac_cfg80211_prepare_scan_req_sta(mac_vap_stru *pst_mac_va
     pst_scan_params->uc_max_send_probe_req_count_per_channel = (oal_uint8)pst_cfg80211_scan_param->l_ssid_num;
 
     if((pst_scan_params->uc_max_send_probe_req_count_per_channel > 3)
-       && (WLAN_SCAN_TYPE_ACTIVE == pst_scan_params->en_scan_type))
+        && (WLAN_SCAN_TYPE_ACTIVE == pst_scan_params->en_scan_type))
     {
         /* 如果指定SSID个数大于3个,则调整发送超时时间为40ms,默认发送等待超时20ms */
         pst_scan_params->us_scan_time = WLAN_LONG_ACTIVE_SCAN_TIME;

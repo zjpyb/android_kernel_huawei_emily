@@ -40,7 +40,9 @@
 #ifdef CONFIG_HW_ZEROHUNG
 #include <chipset_common/hwzrhung/zrhung.h>
 #endif
-
+#ifdef CONFIG_HW_FDLEAK
+#include <chipset_common/hwfdleak/fdleak.h>
+#endif
 #include <asm/ioctls.h>
 #include <huawei_platform/log/log_switch.h>
 
@@ -63,7 +65,7 @@ struct logger_log_tag {
 
 static struct logger_log_tag *log_tag;
 
-static int calc_iovc_ki_left(struct iovec *iov, int nr_segs);
+static int calc_iovc_ki_left(const struct iovec *iov, int nr_segs);
 
 typedef enum android_LogPriority {
 	ANDROID_LOG_UNKNOWN = 0,
@@ -304,6 +306,21 @@ static size_t get_next_entry_by_uid(struct logger_log *log,
 	return off;
 }
 
+static inline int is_between_revers(size_t a, size_t b, size_t c)
+{
+	if (a < b) {
+		/* is c between a and b? */
+		if (a <= c && c < b)
+			return 1;
+	} else {
+		/* is c outside of b through a? */
+		if (c < b || a <= c)
+			return 1;
+	}
+
+	return 0;
+}
+
 /*
  * logger_read - our log's read() method
  *
@@ -321,6 +338,7 @@ static ssize_t logger_read(struct file *file, char __user *buf,
 {
 	struct logger_reader *reader = file->private_data;
 	struct logger_log *log = reader->log;
+	struct logger_reader *other_reader;
 	ssize_t ret;
 	DEFINE_WAIT(wait);
 
@@ -373,6 +391,12 @@ start:
 
 	/* get exactly one entry from the log */
 	ret = do_read_log_to_user(log, reader, buf, ret);
+	if (file->f_flags & O_HWLOGGER_RDDEL) {
+		list_for_each_entry(other_reader, &log->readers, list)
+			if (is_between_revers(log->head, reader->r_off, other_reader->r_off))
+				other_reader->r_off = reader->r_off;
+		log->head = reader->r_off;
+	}
 
 out:
 	mutex_unlock(&log->mutex);
@@ -511,7 +535,7 @@ static ssize_t hw_logger_write_iter(struct kiocb *iocb, struct iov_iter *from)
 	struct timespec now;
 	ssize_t ret = 0;
 	unsigned long nr_segs = from->nr_segs;
-	struct iovec *iov  = from->iov;
+	const struct iovec *iov  = from->iov;
 	int	invaliddata = 0;
 
 	if (unlikely(nr_segs < 1)) {
@@ -803,7 +827,12 @@ static long logger_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		return ret;
 	}
 #endif
-
+#ifdef CONFIG_HW_FDLEAK
+	ret = fdleak_ioctl(file, cmd, arg);
+	if(ret != FDLEAK_CMD_INVALID) {
+		return ret;
+	}
+#endif
 	mutex_lock(&log->mutex);
 
 	switch (cmd) {
@@ -850,6 +879,22 @@ static long logger_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		list_for_each_entry(reader, &log->readers, list)
 		    reader->r_off = log->w_off;
 		log->head = log->w_off;
+		ret = 0;
+		break;
+	case LOGGER_SET_RDDEL:
+		if (!(file->f_mode & FMODE_READ)) {
+			ret = -EBADF;
+			break;
+		}
+		file->f_flags |= O_HWLOGGER_RDDEL;
+		ret = 0;
+		break;
+	case LOGGER_RESET_RDDEL:
+		if (!(file->f_mode & FMODE_READ)) {
+			ret = -EBADF;
+			break;
+		}
+		file->f_flags &= (~O_HWLOGGER_RDDEL);
 		ret = 0;
 		break;
 	case FIONREAD:
@@ -1020,7 +1065,8 @@ static ssize_t log_tag_write(struct file *file, const char __user *buf,
 	for (t = &__start_hwlog_tag; t < &__stop_hwlog_tag; t++) {
 		if (NULL != t->name
 		    && strncmp(name, t->name, MAX_NAME_LEN) == 0) {
-			t->level = val;
+		        /*_ro_after_init do not allow modify text segment*/
+		        /*t->level = val;*/
 			pr_debug("%s set to 0X%0*X\n", name, LEVEL_LEN, val);
 			find_tag_num++;
 		}
@@ -1188,7 +1234,7 @@ static struct logger_log *get_log_from_name(const char *name)
 	return NULL;
 }
 
-static int calc_iovc_ki_left(struct iovec *iov, int nr_segs)
+static int calc_iovc_ki_left(const struct iovec *iov, int nr_segs)
 {
 	int ret = 0;
 	int seg;

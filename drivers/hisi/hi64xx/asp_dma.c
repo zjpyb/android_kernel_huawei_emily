@@ -224,7 +224,10 @@ unsigned int asp_dma_get_des(unsigned short dma_channel)
 	struct asp_dma_priv *priv = asp_dma_priv;
 	unsigned int dma_used_addr = 0;
 
-	BUG_ON(NULL == priv);
+	if (!priv) {
+		pr_err("priv is null\n");
+		return 0;
+	}
 
 	dma_used_addr = _dmac_reg_read(ASP_DMA_CX_DES_ADDR(dma_channel));
 
@@ -237,7 +240,10 @@ unsigned int asp_dma_get_src(unsigned short dma_channel)
 	struct asp_dma_priv *priv = asp_dma_priv;
 	unsigned int dma_used_addr = 0;
 
-	BUG_ON(NULL == priv);
+	if (!priv) {
+		pr_err("priv is null\n");
+		return 0;
+	}
 
 	dma_used_addr = _dmac_reg_read(ASP_DMA_CX_SRC_ADDR(dma_channel));
 
@@ -259,7 +265,10 @@ int asp_dma_config(
 	struct asp_dma_priv *priv = asp_dma_priv;
 	unsigned int channel_mask = (0x1L << dma_channel);
 
-	BUG_ON(NULL == priv);
+	if (!priv) {
+		pr_err("priv is null\n");
+		return -EINVAL;
+	}
 
 	if (dma_channel >= ASP_DMA_MAX_CHANNEL_NUM) {
 		dev_err(priv->dev, "dma channel err:%d\n", dma_channel);
@@ -320,7 +329,10 @@ int asp_dma_start(
 	struct asp_dma_priv *priv = asp_dma_priv;
 	unsigned int lli_reg;
 
-	BUG_ON(NULL == priv);
+	if (!priv) {
+		pr_err("priv is null\n");
+		return -EINVAL;
+	}
 
 	if (dma_channel >= ASP_DMA_MAX_CHANNEL_NUM) {
 		dev_err(priv->dev, "dma channel err:%d\n", dma_channel);
@@ -354,7 +366,10 @@ void asp_dma_stop(unsigned short dma_channel)
 	unsigned int channel_mask = (0x1U << dma_channel);
 	unsigned int i = 40;
 
-	BUG_ON(NULL == priv);
+	if (!priv) {
+		pr_err("priv is null\n");
+		return;
+	}
 
 	if (dma_channel >= ASP_DMA_MAX_CHANNEL_NUM) {
 		dev_err(priv->dev, "dma channel err:%d\n", dma_channel);

@@ -34,7 +34,7 @@
 
 #define INI_MIN(_A, _B) (((_A) < (_B))? (_A) : (_B))
 #define INI_DEBUG(fmt, arg...) do { \
-    if (PLAT_LOG_DEBUG <= g_plat_loglevel) \
+    if (PLAT_LOG_DEBUG <= g_plat_loglevel_etc) \
     {\
         /*lint -e515*/ \
         printk(KERN_DEBUG "INI_DRV:D]%s:%d]"fmt"\n",__FUNCTION__,__LINE__, ##arg); \
@@ -43,7 +43,7 @@
 } while(0)
 
 #define INI_INFO(fmt, arg...) do { \
-    if (PLAT_LOG_INFO <= g_plat_loglevel) \
+    if (PLAT_LOG_INFO <= g_plat_loglevel_etc) \
     {\
         /*lint -e515*/ \
         printk(KERN_DEBUG "INI_DRV:D]%s:%d]"fmt"\n",__FUNCTION__,__LINE__,##arg); \
@@ -52,7 +52,7 @@
 } while(0)
 
 #define INI_WARNING(fmt, arg...) do { \
-    if (PLAT_LOG_WARNING <= g_plat_loglevel) \
+    if (PLAT_LOG_WARNING <= g_plat_loglevel_etc) \
     {\
         /*lint -e515*/ \
         printk(KERN_WARNING "INI_DRV:W]%s:%d]"fmt"\n",__FUNCTION__,__LINE__,##arg); \
@@ -61,7 +61,7 @@
 } while(0)
 
 #define INI_ERROR(fmt, arg...) do { \
-    if (PLAT_LOG_ERR <= g_plat_loglevel) \
+    if (PLAT_LOG_ERR <= g_plat_loglevel_etc) \
     {\
         /*lint -e515*/ \
         printk(KERN_ERR "INI_DRV:E]%s:%d]"fmt"\n\n\n",__FUNCTION__,__LINE__,##arg); \
@@ -132,13 +132,10 @@
 #define INI_SUCC                (0)
 #define INI_FAILED              (-1)
 
-#define INI_VAR_PLAT_BOARD      ("g_board_version.board_version")
-#define INI_VAR_PLAT_PARAM      ("g_param_version.param_version")
-
 #define INI_FILE_TIMESPEC_UNRECONFIG (0)
 #define INI_FILE_TIMESPEC_RECONFIG   (BIT0)
 #define INI_NVRAM_RECONFIG           (BIT1)
-#define INF_FILE_GET_CTIME(file_dentry) (file_dentry->d_inode->i_ctime.tv_sec)
+#define INF_FILE_GET_CTIME(file_dentry) ((file_dentry)->d_inode->i_ctime.tv_sec)
 
 /*
  * 4 Message Header Definition
@@ -168,9 +165,9 @@ typedef struct file INI_FILE;
 /*
  * 7 Global Variable Declaring
  */
-extern char g_ini_file_name[INI_FILE_PATH_LEN];
-extern INI_BOARD_VERSION_STRU g_board_version;
-extern INI_PARAM_VERSION_STRU g_param_version;
+extern char g_ini_file_name_etc[INI_FILE_PATH_LEN];
+extern INI_BOARD_VERSION_STRU g_board_version_etc;
+extern INI_PARAM_VERSION_STRU g_param_version_etc;
 
 /*
  * 8 UNION Type Definition
@@ -185,12 +182,12 @@ extern INI_PARAM_VERSION_STRU g_param_version;
 /*
  * 10 Function Declare
  */
-extern int32 get_cust_conf_int32(int32 tag_index, int8 * puc_var, int32 *pul_value);
-extern int32 get_cust_conf_string(int32 tag_index, int8* puc_var, int8 *puc_value, uint32 size);
-extern int32 find_download_channel(uint8* buff, int8 * puc_var);
-extern int32 read_conf_from_nvram(uint8 * pc_out, uint32 size, uint32 nv_number,  const char* nv_name);
-extern int32 ini_cfg_init(void);
-extern void  ini_cfg_exit(void);
+extern int32 get_cust_conf_int32_etc(int32 tag_index, int8 * puc_var, int32 *pul_value);
+extern int32 get_cust_conf_string_etc(int32 tag_index, int8* puc_var, int8 *puc_value, uint32 size);
+extern int32 find_download_channel_etc(uint8* buff, int8 * puc_var);
+extern int32 read_conf_from_nvram_etc(uint8 * pc_out, uint32 size, uint32 nv_number,  const char* nv_name);
+extern int32 ini_cfg_init_etc(void);
+extern void  ini_cfg_exit_etc(void);
 extern int32 ini_file_check_conf_update(void);
 extern int8 *get_str_from_file(int8 *pc_file_path, const int8 *pc_mask_str, const int8 *pc_target_str);
 #endif

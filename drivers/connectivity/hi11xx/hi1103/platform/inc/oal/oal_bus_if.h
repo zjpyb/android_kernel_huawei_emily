@@ -114,9 +114,9 @@ extern oal_void oal_bus_irq_affinity_init(oal_uint8 uc_chip_id, oal_uint8 uc_dev
 #endif
 #endif
 
-extern oal_uint8  oal_bus_get_chip_num(oal_void);
-extern oal_uint32  oal_bus_inc_chip_num(oal_void);
-extern oal_void oal_bus_init_chip_num(oal_void);
+extern oal_uint8  oal_bus_get_chip_num_etc(oal_void);
+extern oal_uint32  oal_bus_inc_chip_num_etc(oal_void);
+extern oal_void oal_bus_init_chip_num_etc(oal_void);
 
 
 

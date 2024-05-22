@@ -46,8 +46,8 @@ extern "C" {
 #define OAL_GET_THRUPUT_BYPASS_ENABLE(_uc_type) (0)
 #define OAL_SET_THRUPUT_BYPASS_ENABLE(_uc_type, _uc_value)
 #else
-#define OAL_GET_THRUPUT_BYPASS_ENABLE(_uc_type) oal_get_thruput_bypass_enable(_uc_type)
-#define OAL_SET_THRUPUT_BYPASS_ENABLE(_uc_type, _uc_value) oal_set_thruput_bypass_enable(_uc_type, _uc_value)
+#define OAL_GET_THRUPUT_BYPASS_ENABLE(_uc_type) oal_get_thruput_bypass_enable_etc(_uc_type)
+#define OAL_SET_THRUPUT_BYPASS_ENABLE(_uc_type, _uc_value) oal_set_thruput_bypass_enable_etc(_uc_type, _uc_value)
 #endif
 /*****************************************************************************
   3 Ã¶¾Ù¶¨Òå
@@ -310,8 +310,8 @@ extern oal_void oal_profiling_stop_tx_save(oal_void);
 
 #endif
 
-extern oal_uint32 oal_get_thruput_bypass_enable(oal_thruput_bypass_enum_uint8 uc_bypass_type);
-extern oal_void oal_set_thruput_bypass_enable(oal_thruput_bypass_enum_uint8 uc_bypass_type, oal_uint8 uc_value);
+extern oal_uint32 oal_get_thruput_bypass_enable_etc(oal_thruput_bypass_enum_uint8 uc_bypass_type);
+extern oal_void oal_set_thruput_bypass_enable_etc(oal_thruput_bypass_enum_uint8 uc_bypass_type, oal_uint8 uc_value);
 
 #ifdef __cplusplus
     #if __cplusplus

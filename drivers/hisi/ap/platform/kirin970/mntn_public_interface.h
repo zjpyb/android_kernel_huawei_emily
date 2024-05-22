@@ -3,8 +3,10 @@
 #include "soc_acpu_baseaddr_interface.h"
 #include "pmic_interface.h"
 #include "global_ddr_map.h"
-typedef unsigned long long u64;
+typedef unsigned char u8;
+typedef unsigned short u16;
 typedef unsigned int u32;
+typedef unsigned long long u64;
 #define PMU_RESET_REG_OFFSET (PMIC_HRST_REG13_ADDR(0))
 #define RST_FLAG_MASK (0xFF)
 #define PMU_RESET_VALUE_USED 0xFFFFFF00
@@ -50,8 +52,10 @@ struct dfx_head_info {
 };
 struct every_number_info {
  u64 rtc_time;
+ u64 boot_time;
  u64 bootup_keypoint;
  u64 reboot_type;
+ u64 exce_subtype;
  u64 fastbootlog_start_addr;
  u64 fastbootlog_size;
  u64 last_kmsg_start_addr;
@@ -139,49 +143,53 @@ enum boot_stage_point
 };
 enum himntnEnum
 {
-    HIMNTN_NVE_VALID = 0,
-    HIMNTN_WDT_MIN,
-    HIMNTN_AP_WDT = HIMNTN_WDT_MIN,
-    HIMNTN_GLOBAL_WDT,
-    HIMNTN_MODEM_WDT,
-    HIMNTN_LPM3_WDT,
-    HIMNTN_IOM3_WDT,
-    HIMNTN_HIFI_WDT,
-    HIMNTN_SECOS_WDT,
-    HIMNTN_ISP_WDT,
-    HIMNTN_IVP_WDT,
-    HIMNTN_OCBC_WDT = 10,
-    HIMNTN_UCE_WDT,
-    HIMNTN_RESERVED_WDT3,
-    HIMNTN_WDT_MAX = HIMNTN_RESERVED_WDT3,
-    HIMNTN_FST_DUMP_MEM,
-    HIMNTN_MNTN_DUMP_MEM,
-    HIMNTN_SD2JTAG,
-    HIMNTN_PRESS_KEY_TO_FASTBOOT,
-    HIMNTN_PANIC_INTO_LOOP,
-    HIMNTN_GOBAL_RESETLOG,
-    HIMNTN_NOC_INT_HAPPEN,
-    HIMNTN_NOC_ERROR_REBOOT = 20,
-    HIMNTN_DFXPARTITION_TO_FILE,
-    HIMNTN_DDR_ERROR_REBOOT,
-    HIMNTN_HISEE,
-    HIMNTN_WATCHPOINT_EN,
-    HIMNTN_KMEMLEAK_SWITCH,
-    HIMNTN_FB_PANIC_REBOOT,
-    HIMNTN_MEM_TRACE = 27,
-    HIMNTN_FTRACE,
-    HIMNTN_EAGLE_EYE,
-    HIMNTN_KERNEL_DUMP_ENABLE = 30,
-    HIMNTN_SD2DJTAG,
-    HIMNTN_MMC_TRACE,
-    HIMNTN_LPM3_PANIC_INTO_LOOP,
-    HIMNTN_TRACE_CLK_REGULATOR,
-    HIMNTN_CORESIGHT,
-    HIMNTN_DMSSPT,
-    HIMNTN_HHEE,
-    HIMNTN_KASLR,
-    HIMNTN_SD2UART6,
-    HIMNTN_BOTTOM
+ HIMNTN_NVE_VALID = 0,
+ HIMNTN_WDT_MIN,
+ HIMNTN_AP_WDT = HIMNTN_WDT_MIN,
+ HIMNTN_GLOBAL_WDT,
+ HIMNTN_MODEM_WDT,
+ HIMNTN_LPM3_WDT,
+ HIMNTN_IOM3_WDT,
+ HIMNTN_HIFI_WDT,
+ HIMNTN_SECOS_WDT,
+ HIMNTN_ISP_WDT,
+ HIMNTN_IVP_WDT,
+ HIMNTN_OCBC_WDT = 10,
+ HIMNTN_UCE_WDT,
+ HIMNTN_RESERVED_WDT3,
+ HIMNTN_WDT_MAX = HIMNTN_RESERVED_WDT3,
+ HIMNTN_FST_DUMP_MEM,
+ HIMNTN_MNTN_DUMP_MEM,
+ HIMNTN_SD2JTAG,
+ HIMNTN_PRESS_KEY_TO_FASTBOOT,
+ HIMNTN_PANIC_INTO_LOOP,
+ HIMNTN_GOBAL_RESETLOG,
+ HIMNTN_NOC_INT_HAPPEN,
+ HIMNTN_NOC_ERROR_REBOOT = 20,
+ HIMNTN_DFXPARTITION_TO_FILE,
+ HIMNTN_DDR_ERROR_REBOOT,
+ HIMNTN_HISEE,
+ HIMNTN_WATCHPOINT_EN,
+ HIMNTN_KMEMLEAK_SWITCH,
+ HIMNTN_FB_PANIC_REBOOT,
+ HIMNTN_MEM_TRACE = 27,
+ HIMNTN_FTRACE,
+ HIMNTN_EAGLE_EYE,
+ HIMNTN_KERNEL_DUMP_ENABLE = 30,
+ HIMNTN_SD2DJTAG,
+ HIMNTN_MMC_TRACE,
+ HIMNTN_LPM3_PANIC_INTO_LOOP,
+ HIMNTN_TRACE_CLK_REGULATOR,
+ HIMNTN_CORESIGHT,
+ HIMNTN_DMSSPT,
+ HIMNTN_HHEE,
+ HIMNTN_KASLR,
+ HIMNTN_SD2UART6,
+ HIMNTN_L3CACHE_ECC,
+ HIMNTN_NOC_TRACE,
+ HIMNTN_STM_TRACE,
+ HIMNTN_AGING_WDT,
+ HIMNTN_BOTTOM
 };
 typedef enum
 {
@@ -202,6 +210,7 @@ typedef enum
     hungdetect = 0x0f,
     COLDBOOT = 0x10,
     updatedataimg = 0x11,
+    at2resetfactory = 0x12,
     AP_S_FASTBOOTFLASH = 0x13,
     AP_S_PRESS6S = 0x14,
     BR_UPDATE_USB = 0x15,
@@ -225,6 +234,8 @@ typedef enum
     BR_CHECK_UPDATEDATAIMG = 0x27,
     BR_REBOOT_CPU_BUCK = 0x28,
     BR_L2_CACHE_FAIL = 0x29,
+    BR_POWERON_CHARGE = 0x2a,
+    gpscoldboot = 0x2b,
     REBOOT_REASON_LABEL1 = 0x40,
     AP_S_ABNORMAL = REBOOT_REASON_LABEL1,
     AP_S_TSENSOR0 = 0x41,
@@ -287,12 +298,16 @@ typedef enum
     IOM3_S_USER_EXCEPTION = 0x89,
     HISEE_S_EXCEPTION = 0x8a,
     NPU_S_EXCEPTION = 0x8b,
+    WIFI_S_EXCEPTION = 0x8c,
+    BFGX_S_EXCEPTION = 0x8d,
     REBOOT_REASON_LABEL4 = 0x90,
     XLOADER_S_DDRINIT_FAIL = REBOOT_REASON_LABEL4,
     XLOADER_S_EMMCINIT_FAIL = 0x91,
     XLOADER_S_LOAD_FAIL = 0x92,
     XLOADER_S_VERIFY_FAIL = 0x93,
     XLOADER_S_WATCHDOG = 0x94,
+    XLOADER_INSE_S_PANIC = 0x95,
+    XLOADER_MEMORY_REPAIR = 0x96,
     FASTBOOT_EMMCINIT_FAIL = 0xa0,
     FASTBOOT_S_PANIC = 0xa1,
     FASTBOOT_S_WATCHDOG = 0xa2,
@@ -360,26 +375,30 @@ enum MODID_LIST {
     HISI_BB_MOD_MODEM_LMSP_END = 0xbfffffff,
     HISI_BB_MOD_NPU_START = 0xc0000000,
     HISI_BB_MOD_NPU_END = 0xc0000fff,
+    HISI_BB_MOD_CONN_START = 0xc0001000,
+    HISI_BB_MOD_CONN_END = 0xc0001fff,
     HISI_BB_MOD_RANDOM_ALLOCATED_START = 0xd0000000,
     HISI_BB_MOD_RANDOM_ALLOCATED_END = 0xf0ffffff
 };
 enum CORE_LIST {
-    RDR_AP = 0x1,
-    RDR_CP = 0x2,
-    RDR_TEEOS = 0x4,
-    RDR_HIFI = 0x8,
-    RDR_LPM3 = 0x10,
-    RDR_IOM3 = 0x20,
-    RDR_ISP = 0x40,
-    RDR_IVP = 0x80,
-    RDR_EMMC = 0x100,
-    RDR_MODEMAP = 0x200,
-    RDR_CLK = 0x400,
-    RDR_REGULATOR = 0x800,
-    RDR_BFM = 0x1000,
-    RDR_HISEE = 0x2000,
-    RDR_NPU = 0x4000,
-    RDR_CORE_MAX = 15
+ RDR_AP = 0x1,
+ RDR_CP = 0x2,
+ RDR_TEEOS = 0x4,
+ RDR_HIFI = 0x8,
+ RDR_LPM3 = 0x10,
+ RDR_IOM3 = 0x20,
+ RDR_ISP = 0x40,
+ RDR_IVP = 0x80,
+ RDR_EMMC = 0x100,
+ RDR_MODEMAP = 0x200,
+ RDR_CLK = 0x400,
+ RDR_REGULATOR = 0x800,
+ RDR_BFM = 0x1000,
+ RDR_HISEE = 0x2000,
+ RDR_NPU = 0x4000,
+ RDR_CONN = 0x8000,
+ RDR_EXCEPTION_TRACE = 0x10000,
+ RDR_CORE_MAX = 17
 };
 #define FTRACE_MDUMP_MAGIC 0xF748FDE2
 #define FTRACE_BUF_MAX_SIZE 0x400000
@@ -440,4 +459,67 @@ struct mdump_bc_panic {
  unsigned long panic_flag;
  unsigned long panic_num;
 };
+enum {
+ BL31_TRACE_EXCEPTION,
+ BL31_TRACE_IRQ_SMC,
+ BL31_TRACE_ENUM,
+};
+enum {
+ BL31_TRACE_EXCEPTION_SIZE = 0x100,
+ BL31_TRACE_IRQ_SMC_SIZE = 0x3F000,
+};
+typedef struct bl31_trace_irq_smc_head_s {
+ u64 cpu_num;
+ u64 offset[0];
+} bl31_trace_irq_smc_head_t;
+enum {
+ EXCEPTION_TRACE_AP,
+ EXCEPTION_TRACE_BL31,
+ EXCEPTION_TRACE_ENUM,
+};
+typedef struct rdr_exception_trace_s {
+ u64 e_32k_time;
+ u64 e_reset_core_mask;
+ u64 e_from_core;
+ u32 e_exce_type;
+ u32 e_exce_subtype;
+} rdr_exception_trace_t;
+enum {
+ BL31_MNTN_TST_PANIC,
+ BL31_MNTN_TST_ASSERT,
+};
+enum {
+ BL31_TRACE_TYPE_SMC,
+ BL31_TRACE_TYPE_INTERRUPT,
+ BL31_TRACE_TYPE_ENUM,
+};
+enum {
+ BL31_TRACE_IN,
+ BL31_TRACE_OUT
+};
+typedef struct bl31_trace_s {
+ u64 bl31_32k_time;
+ u8 type;
+ u8 dir;
+ u8 ns;
+ union {
+  struct {
+   u64 func_id;
+  } smc;
+  struct {
+   u32 id;
+  } interrupt;
+ };
+} bl31_trace_t;
+#define HISIAP_KEYS_MAX 71
+typedef struct hisiap_ringbuffer_s {
+ u32 max_num;
+ u32 field_count;
+ u32 rear;
+ u32 r_idx;
+ u32 count;
+ u32 is_full;
+ char keys[HISIAP_KEYS_MAX + 1];
+ u8 data[1];
+} hisiap_ringbuffer_t;
 #endif

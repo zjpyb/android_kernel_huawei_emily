@@ -381,6 +381,32 @@ extern "C" {
 	/* SHA of keypoint file */
 	#define E901002007_FINGERPRINT_VARCHAR 4
 
+	/* Event 901002008
+		NPU Crash */
+	/* Sub Type for This Error */
+	#define E901002008_NAME_VARCHAR 0
+	/* Process Name */
+	#define E901002008_PNAME_VARCHAR 1
+	/* 1st fuction in stack */
+	#define E901002008_F1NAME_VARCHAR 2
+	/* Interrupt Time Type */
+	#define E901002008_INTTIMETYPE_VARCHAR 3
+	/* SHA of keypoint file */
+	#define E901002008_FINGERPRINT_VARCHAR 4
+
+	/* Event 901002009
+		DSS Crash */
+	/* Sub Type for This Error */
+	#define E901002009_NAME_VARCHAR 0
+	/* Process Name */
+	#define E901002009_PNAME_VARCHAR 1
+	/* 1st fuction in stack */
+	#define E901002009_F1NAME_VARCHAR 2
+	/* Interrupt Time Type */
+	#define E901002009_INTTIMETYPE_VARCHAR 3
+	/* SHA of keypoint file */
+	#define E901002009_FINGERPRINT_VARCHAR 4
+
 	/* Event 901002010
 		Othersubsystem Crash */
 	/* Process Name */
@@ -389,6 +415,150 @@ extern "C" {
 	#define E901002010_F1NAME_VARCHAR 1
 	/* Interrupt Time Type */
 	#define E901002010_INTTIMETYPE_VARCHAR 2
+
+	/* Event 901002011
+		HBS Crash */
+	/* Sub Type for This Error */
+	#define E901002011_NAME_VARCHAR 0
+	/* Process Name */
+	#define E901002011_PNAME_VARCHAR 1
+	/* 1st fuction in stack */
+	#define E901002011_F1NAME_VARCHAR 2
+	/* Interrupt Time Type */
+	#define E901002011_INTTIMETYPE_VARCHAR 3
+	/* SHA of keypoint file */
+	#define E901002011_FINGERPRINT_VARCHAR 4
+	/* JS Framework Version */
+	#define E901002011_JS_VER_VARCHAR 5
+	/* Runtime Framework Version */
+	#define E901002011_FW_VER_VARCHAR 6
+	/* V8 VERSION */
+	#define E901002011_V8_VERSION_VARCHAR 7
+	/* Package Name */
+	#define E901002011_PKG_VARCHAR 8
+	/* Component Name */
+	#define E901002011_COMP_VARCHAR 9
+	/* API Name */
+	#define E901002011_API_VARCHAR 10
+	/* Exception reason */
+	#define E901002011_EXPT_INFO_VARCHAR 11
+	/* JS interface name */
+	#define E901002011_INTF_VARCHAR 12
+	/* APP Version */
+	#define E901002011_APPVERSION_VARCHAR 13
+	/* APP Type */
+	#define E901002011_APPTYPE_VARCHAR 14
+
+	/* Event 901002012
+		ODMF Crash */
+	/* Sub Type for This Error */
+	#define E901002012_NAME_VARCHAR 0
+	/* Process Name */
+	#define E901002012_PNAME_VARCHAR 1
+	/* 1st fuction in stack */
+	#define E901002012_F1NAME_VARCHAR 2
+	/* Interrupt Time Type */
+	#define E901002012_INTTIMETYPE_VARCHAR 3
+	/* SHA of keypoint file */
+	#define E901002012_FINGERPRINT_VARCHAR 4
+	/* ODMF version */
+	#define E901002012_VERSION_VARCHAR 5
+	/* Component Name */
+	#define E901002012_COMP_VARCHAR 6
+	/* exception type */
+	#define E901002012_TYPE_VARCHAR 7
+	/* accessor */
+	#define E901002012_ACCESSOR_VARCHAR 8
+	/* target to be accessed */
+	#define E901002012_TARGET_VARCHAR 9
+	/* access type */
+	#define E901002012_ACCESSTYPE_VARCHAR 10
+	/* business name */
+	#define E901002012_BUSINESS_VARCHAR 11
+	/* url address */
+	#define E901002012_URL_VARCHAR 12
+	/* switch state */
+	#define E901002012_STATE_VARCHAR 13
+	/* trigger of change */
+	#define E901002012_TRIGGER_VARCHAR 14
+	/* detail of exception */
+	#define E901002012_DETAIL_VARCHAR 15
+	/* APP Version */
+	#define E901002012_APPVERSION_VARCHAR 16
+	/* APP Type */
+	#define E901002012_APPTYPE_VARCHAR 17
+
+	/* Event 901002013
+		MSDP Crash */
+	/* Sub Type for This Error */
+	#define E901002013_NAME_VARCHAR 0
+	/* Process Name */
+	#define E901002013_PNAME_VARCHAR 1
+	/* 1st fuction in stack */
+	#define E901002013_F1NAME_VARCHAR 2
+	/* Interrupt Time Type */
+	#define E901002013_INTTIMETYPE_VARCHAR 3
+	/* SHA of keypoint file */
+	#define E901002013_FINGERPRINT_VARCHAR 4
+	/* Component Name */
+	#define E901002013_COMP_VARCHAR 5
+	/* exception type */
+	#define E901002013_TYPE_VARCHAR 6
+	/* url address */
+	#define E901002013_URL_VARCHAR 7
+	/* error code */
+	#define E901002013_ERRCODE_VARCHAR 8
+	/* client name */
+	#define E901002013_CLIENTNAME_VARCHAR 9
+	/* detail of exception */
+	#define E901002013_DETAIL_VARCHAR 10
+	/* APP Version */
+	#define E901002013_APPVERSION_VARCHAR 11
+	/* APP Type */
+	#define E901002013_APPTYPE_VARCHAR 12
+
+	/* Event 901002014
+		MAPLE Crash */
+	/* Sub Type for This Error */
+	#define E901002014_NAME_VARCHAR 0
+	/* Process Name */
+	#define E901002014_PNAME_VARCHAR 1
+	/* 1st fuction in stack */
+	#define E901002014_F1NAME_VARCHAR 2
+	/* Interrupt Time Type */
+	#define E901002014_INTTIMETYPE_VARCHAR 3
+	/* SHA of keypoint file */
+	#define E901002014_FINGERPRINT_VARCHAR 4
+	/* APP Version */
+	#define E901002014_APPVERSION_VARCHAR 5
+	/* APP Type */
+	#define E901002014_APPTYPE_VARCHAR 6
+
+	/* Event 901002015
+		iGraphics Crash */
+	/* Sub Type for This Error */
+	#define E901002015_NAME_VARCHAR 0
+	/* Process Name */
+	#define E901002015_PNAME_VARCHAR 1
+	/* 1st fuction in stack */
+	#define E901002015_F1NAME_VARCHAR 2
+	/* Interrupt Time Type */
+	#define E901002015_INTTIMETYPE_VARCHAR 3
+	/* SHA of keypoint file */
+	#define E901002015_FINGERPRINT_VARCHAR 4
+	/* APP Version */
+	#define E901002015_APPVERSION_VARCHAR 5
+	/* APP Type */
+	#define E901002015_APPTYPE_VARCHAR 6
+	/* Component Name */
+	#define E901002015_COMP_VARCHAR 7
+	/* Version number */
+	#define E901002015_FW_VER_VARCHAR 8
+	/* exception type */
+	#define E901002015_TYPE_VARCHAR 9
+	/* detail of exception */
+	#define E901002015_DETAIL_VARCHAR 10
+
 
 	/* Event 901002030
 		VR Hw Watchdog */
@@ -624,6 +794,12 @@ extern "C" {
 	#define E901004000_INTTIMETYPE_VARCHAR 6
 	/* 1st fuction in stack */
 	#define E901004000_F1NAME_VARCHAR 7
+	/* Error Type */
+	#define E901004000_ERRTYPE_VARCHAR 8
+	/* Recover Result */
+	#define E901004000_RESULT_VARCHAR 9
+	/* Recover Solution */
+	#define E901004000_SOLUTION_VARCHAR 10
 
 	/* Event 901004001
 		Black Screen */
@@ -680,6 +856,58 @@ extern "C" {
 	#define E901004004_FINGERPRINT_VARCHAR 5
 	/* 1st fuction in stack */
 	#define E901004004_F1NAME_VARCHAR 6
+	/* Error Type */
+	#define E901004004_ERRTYPE_VARCHAR 7
+	/* Recover Result */
+	#define E901004004_RESULT_VARCHAR 8
+	/* Recover Solution */
+	#define E901004004_SOLUTION_VARCHAR 9
+
+	/* Event 901004005
+		App Freeze */
+	/* Process Name */
+	#define E901004005_PNAME_VARCHAR 0
+	/* WatchPoint ID */
+	#define E901004005_WPID_SMALLINT 1
+	/* Context PID */
+	#define E901004005_PID_INT 2
+	/* Context TGID */
+	#define E901004005_TGID_INT 3
+	/* Log type */
+	#define E901004005_LOGTYPE_TINYINT 4
+	/* SHA of keypoint file */
+	#define E901004005_FINGERPRINT_VARCHAR 5
+	/* 1st fuction in stack */
+	#define E901004005_F1NAME_VARCHAR 6
+	/* Error Type */
+	#define E901004005_ERRTYPE_VARCHAR 7
+	/* Recover Result */
+	#define E901004005_RESULT_VARCHAR 8
+	/* Recover Solution */
+	#define E901004005_SOLUTION_VARCHAR 9
+
+	/* Event 901004006
+		App Freeze Warning */
+	/* Process Name */
+	#define E901004006_PNAME_VARCHAR 0
+	/* WatchPoint ID */
+	#define E901004006_WPID_SMALLINT 1
+	/* Context PID */
+	#define E901004006_PID_INT 2
+	/* Context TGID */
+	#define E901004006_TGID_INT 3
+	/* Log type */
+	#define E901004006_LOGTYPE_TINYINT 4
+	/* SHA of keypoint file */
+	#define E901004006_FINGERPRINT_VARCHAR 5
+	/* 1st fuction in stack */
+	#define E901004006_F1NAME_VARCHAR 6
+	/* Error Type */
+	#define E901004006_ERRTYPE_VARCHAR 7
+	/* Recover Result */
+	#define E901004006_RESULT_VARCHAR 8
+	/* Recover Solution */
+	#define E901004006_SOLUTION_VARCHAR 9
 
 	/* Event 901005000
 		Boot Fail Error */
@@ -800,6 +1028,14 @@ extern "C" {
 	#define E902000000_NRESERVE1_INT 21
 	/* Reserve Argument 2 */
 	#define E902000000_STRRESERVE2_VARCHAR 22
+	/* Error Cause Code */
+	#define E902000000_CAUSECODE_INT 23
+	/* User Operation Scene */
+	#define E902000000_OPSCENE_VARCHAR 24
+	/* 1st fuction in stack */
+	#define E902000000_TOPFUNCSTACK_VARCHAR 25
+	/* 2nd function with package name in stack */
+	#define E902000000_SECPKGFUNCSTK_VARCHAR 26
 
 	/* Event 902000001
 		Wechat launching slowly */
@@ -853,6 +1089,14 @@ extern "C" {
 	#define E902000001_NRESERVE1_INT 21
 	/* Reserve Argument 2 */
 	#define E902000001_STRRESERVE2_VARCHAR 22
+	/* Error Cause Code */
+	#define E902000001_CAUSECODE_INT 23
+	/* User Operation Scene */
+	#define E902000001_OPSCENE_VARCHAR 24
+	/* 1st fuction in stack */
+	#define E902000001_TOPFUNCSTACK_VARCHAR 25
+	/* 2nd function with package name in stack */
+	#define E902000001_SECPKGFUNCSTK_VARCHAR 26
 
 	/* Event 902000002
 		Huawei Application launching slowly */
@@ -906,6 +1150,14 @@ extern "C" {
 	#define E902000002_NRESERVE1_INT 21
 	/* Reserve Argument 2 */
 	#define E902000002_STRRESERVE2_VARCHAR 22
+	/* Error Cause Code */
+	#define E902000002_CAUSECODE_INT 23
+	/* User Operation Scene */
+	#define E902000002_OPSCENE_VARCHAR 24
+	/* 1st fuction in stack */
+	#define E902000002_TOPFUNCSTACK_VARCHAR 25
+	/* 2nd function with package name in stack */
+	#define E902000002_SECPKGFUNCSTK_VARCHAR 26
 
 	/* Event 902000003
 		Third-Party application launching slowly */
@@ -959,6 +1211,14 @@ extern "C" {
 	#define E902000003_NRESERVE1_INT 21
 	/* Reserve Argument 2 */
 	#define E902000003_STRRESERVE2_VARCHAR 22
+	/* Error Cause Code */
+	#define E902000003_CAUSECODE_INT 23
+	/* User Operation Scene */
+	#define E902000003_OPSCENE_VARCHAR 24
+	/* 1st fuction in stack */
+	#define E902000003_TOPFUNCSTACK_VARCHAR 25
+	/* 2nd function with package name in stack */
+	#define E902000003_SECPKGFUNCSTK_VARCHAR 26
 
 	/* Event 902010000
 		Key Application skip frames */
@@ -1012,6 +1272,14 @@ extern "C" {
 	#define E902010000_NRESERVE1_INT 21
 	/* Reserve Argument 2 */
 	#define E902010000_STRRESERVE2_VARCHAR 22
+	/* Error Cause Code */
+	#define E902010000_CAUSECODE_INT 23
+	/* User Operation Scene */
+	#define E902010000_OPSCENE_VARCHAR 24
+	/* 1st fuction in stack */
+	#define E902010000_TOPFUNCSTACK_VARCHAR 25
+	/* 2nd function with package name in stack */
+	#define E902010000_SECPKGFUNCSTK_VARCHAR 26
 
 	/* Event 902010001
 		Wechat skip frames */
@@ -1065,6 +1333,14 @@ extern "C" {
 	#define E902010001_NRESERVE1_INT 21
 	/* Reserve Argument 2 */
 	#define E902010001_STRRESERVE2_VARCHAR 22
+	/* Error Cause Code */
+	#define E902010001_CAUSECODE_INT 23
+	/* User Operation Scene */
+	#define E902010001_OPSCENE_VARCHAR 24
+	/* 1st fuction in stack */
+	#define E902010001_TOPFUNCSTACK_VARCHAR 25
+	/* 2nd function with package name in stack */
+	#define E902010001_SECPKGFUNCSTK_VARCHAR 26
 
 	/* Event 902010002
 		Huawei Application skip frames */
@@ -1118,6 +1394,14 @@ extern "C" {
 	#define E902010002_NRESERVE1_INT 21
 	/* Reserve Argument 2 */
 	#define E902010002_STRRESERVE2_VARCHAR 22
+	/* Error Cause Code */
+	#define E902010002_CAUSECODE_INT 23
+	/* User Operation Scene */
+	#define E902010002_OPSCENE_VARCHAR 24
+	/* 1st fuction in stack */
+	#define E902010002_TOPFUNCSTACK_VARCHAR 25
+	/* 2nd function with package name in stack */
+	#define E902010002_SECPKGFUNCSTK_VARCHAR 26
 
 	/* Event 902010003
 		Third-Party Application skip frames */
@@ -1171,6 +1455,14 @@ extern "C" {
 	#define E902010003_NRESERVE1_INT 21
 	/* Reserve Argument 2 */
 	#define E902010003_STRRESERVE2_VARCHAR 22
+	/* Error Cause Code */
+	#define E902010003_CAUSECODE_INT 23
+	/* User Operation Scene */
+	#define E902010003_OPSCENE_VARCHAR 24
+	/* 1st fuction in stack */
+	#define E902010003_TOPFUNCSTACK_VARCHAR 25
+	/* 2nd function with package name in stack */
+	#define E902010003_SECPKGFUNCSTK_VARCHAR 26
 
 	/* Event 902010004
 		Game Kpi data upload */
@@ -1316,6 +1608,483 @@ extern "C" {
 	/* Jank Sequence */
 	#define E902010005_JANKSEQ_VARCHAR 3
 
+	/* Event 902010006
+		Game KPI statistic data */
+	/* Game Package Name */
+	#define E902010006_PKG_VARCHAR 0
+	/* Version */
+	#define E902010006_VERSION_VARCHAR 1
+	/* Game Mode */
+	#define E902010006_MODE_INT 2
+	/* Game KPI */
+	#define E902010006_KPI_INT 3
+	/* Average FPS */
+	#define E902010006_FPS_INT 4
+	/* Jitter */
+	#define E902010006_JITTER_INT 5
+	/* Lag Ratio */
+	#define E902010006_LAGRATIO_INT 6
+	/* shell temperature */
+	#define E902010006_SHELL_TEMP_INT 7
+	/* system_h temperature */
+	#define E902010006_CPU_TEMP_INT 8
+	/* ambient temperature */
+	#define E902010006_AMB_TEMP_INT 9
+	/* Current */
+	#define E902010006_CURRENT_INT 10
+	/* Scence */
+	#define E902010006_SCENCE_INT 11
+	/* Duration */
+	#define E902010006_DURATION_INT 12
+	/* Net Kpi */
+	#define E902010006_NETKPI_INT 13
+	/* Freq Limit Source 1 */
+	#define E902010006_STIME1_INT 14
+	/* Freq Limit Source 2 */
+	#define E902010006_STIME2_INT 15
+	/* Freq Limit Source 3 */
+	#define E902010006_STIME3_INT 16
+	/* CPU Freq 1 */
+	#define E902010006_CLS1FREQ1_INT 17
+	/* CPU Freq 2 */
+	#define E902010006_CLS1FREQ2_INT 18
+	/* CPU Freq 3 */
+	#define E902010006_CLS1FREQ3_INT 19
+	/* CPU Freq 4 */
+	#define E902010006_CLS1FREQ4_INT 20
+	/* CPU Freq 5 */
+	#define E902010006_CLS1FREQ5_INT 21
+	/* CPU Freq 6 */
+	#define E902010006_CLS1FREQ6_INT 22
+	/* CPU Freq 7 */
+	#define E902010006_CLS1FREQ7_INT 23
+	/* CPU Freq 8 */
+	#define E902010006_CLS1FREQ8_INT 24
+	/* CPU Freq 9 */
+	#define E902010006_CLS1FREQ9_INT 25
+	/* CPU Freq 10 */
+	#define E902010006_CLS1FREQ10_INT 26
+	/* CPU Freq 11 */
+	#define E902010006_CLS1FREQ11_INT 27
+	/* CPU Freq 12 */
+	#define E902010006_CLS1FREQ12_INT 28
+	/* CPU Freq 13 */
+	#define E902010006_CLS1FREQ13_INT 29
+	/* CPU Freq 14 */
+	#define E902010006_CLS1FREQ14_INT 30
+	/* CPU Freq 15 */
+	#define E902010006_CLS1FREQ15_INT 31
+	/* CPU Freq 16 */
+	#define E902010006_CLS1FREQ16_INT 32
+	/* CPU Freq 17 */
+	#define E902010006_CLS1FREQ17_INT 33
+	/* CPU Freq 18 */
+	#define E902010006_CLS1FREQ18_INT 34
+	/* CPU Freq 19 */
+	#define E902010006_CLS1FREQ19_INT 35
+	/* CPU Freq 20 */
+	#define E902010006_CLS1FREQ20_INT 36
+	/* CPU Freq 21 */
+	#define E902010006_CLS1FREQ21_INT 37
+	/* CPU Freq 22 */
+	#define E902010006_CLS1FREQ22_INT 38
+	/* CPU Freq 23 */
+	#define E902010006_CLS1FREQ23_INT 39
+	/* CPU Freq 24 */
+	#define E902010006_CLS1FREQ24_INT 40
+	/* CPU Freq 25 */
+	#define E902010006_CLS1FREQ25_INT 41
+	/* CPU Freq 26 */
+	#define E902010006_CLS1FREQ26_INT 42
+	/* CPU Freq 27 */
+	#define E902010006_CLS1FREQ27_INT 43
+	/* CPU Freq 28 */
+	#define E902010006_CLS1FREQ28_INT 44
+	/* CPU Freq 29 */
+	#define E902010006_CLS1FREQ29_INT 45
+	/* CPU Freq 30 */
+	#define E902010006_CLS1FREQ30_INT 46
+	/* CPU Freq 31 */
+	#define E902010006_CLS1FREQ31_INT 47
+	/* CPU Freq 32 */
+	#define E902010006_CLS1FREQ32_INT 48
+	/* GPU Freq 1 */
+	#define E902010006_GFREQ1_INT 49
+	/* GPU Freq 2 */
+	#define E902010006_GFREQ2_INT 50
+	/* GPU Freq 3 */
+	#define E902010006_GFREQ3_INT 51
+	/* GPU Freq 4 */
+	#define E902010006_GFREQ4_INT 52
+	/* GPU Freq 5 */
+	#define E902010006_GFREQ5_INT 53
+	/* GPU Freq 6 */
+	#define E902010006_GFREQ6_INT 54
+	/* GPU Freq 7 */
+	#define E902010006_GFREQ7_INT 55
+	/* GPU Freq 8 */
+	#define E902010006_GFREQ8_INT 56
+	/* GPU Freq 9 */
+	#define E902010006_GFREQ9_INT 57
+	/* GPU Freq 10 */
+	#define E902010006_GFREQ10_INT 58
+	/* GPU Freq 11 */
+	#define E902010006_GFREQ11_INT 59
+	/* GPU Freq 12 */
+	#define E902010006_GFREQ12_INT 60
+	/* GPU Freq 13 */
+	#define E902010006_GFREQ13_INT 61
+	/* GPU Freq 14 */
+	#define E902010006_GFREQ14_INT 62
+	/* GPU Freq 15 */
+	#define E902010006_GFREQ15_INT 63
+	/* Net Data */
+	#define E902010006_NDATA_CLASS 64
+	/* Beta Data */
+	#define E902010006_BETADATA_CLASS 65
+
+	/* Event 902010007
+		Online battle game experience Log */
+	/* HOST_NAME */
+	#define E902010007_HOST_NAME_VARCHAR 0
+	/* SESSION_START_DATE */
+	#define E902010007_START_DATE_INT 1
+	/* SESSION_START_TIME */
+	#define E902010007_START_TIME_INT 2
+	/* SESSION_END_TIME */
+	#define E902010007_END_TIME_INT 3
+	/* MCC */
+	#define E902010007_MCC_SMALLINT 4
+	/* MNC */
+	#define E902010007_MNC_SMALLINT 5
+	/* RAT */
+	#define E902010007_RAT_TINYINT 6
+	/* CELL_ID */
+	#define E902010007_CELL_ID_VARCHAR 7
+	/* MOBILE NETWORK AVERAGE SIGNAL STRENGTH */
+	#define E902010007_DL_RSRP_TINYINT 8
+	/* DL_RSRQ */
+	#define E902010007_DL_RSRQ_TINYINT 9
+	/* DL_SINR */
+	#define E902010007_DL_SINR_INT 10
+	/* DURATION OF MOBILE NETWORK SIGNAL STRENGTH LEVEL 1 */
+	#define E902010007_RSRPL1CNT_SMALLINT 11
+	/* DURATION OF MOBILE NETWORK SIGNAL STRENGTH LEVEL 2 */
+	#define E902010007_RSRPL2CNT_SMALLINT 12
+	/* DURATION OF MOBILE NETWORK SIGNAL STRENGTH LEVEL 3 */
+	#define E902010007_RSRPL3CNT_SMALLINT 13
+	/* DURATION OF MOBILE NETWORK SIGNAL STRENGTH LEVEL 4 */
+	#define E902010007_RSRPL4CNT_SMALLINT 14
+	/* DURATION OF MOBILE NETWORK SIGNAL STRENGTH LEVEL 5 */
+	#define E902010007_RSRPL5CNT_SMALLINT 15
+	/* WLAN SIGNAL AVERAGE STRENGTH */
+	#define E902010007_WSTRENGTH_TINYINT 16
+	/* WLAN_BSSID */
+	#define E902010007_WBSSID_VARCHAR 17
+	/* WLAN_SSID */
+	#define E902010007_WSSID_VARCHAR 18
+	/* DURATION OF WLAN SIGNAL STRENGTH LEVEL 1 */
+	#define E902010007_WSTRL1CNT_SMALLINT 19
+	/* DURATION OF WLAN SIGNAL STRENGTH LEVEL 2 */
+	#define E902010007_WSTRL2CNT_SMALLINT 20
+	/* DURATION OF WLAN SIGNAL STRENGTH LEVEL 3 */
+	#define E902010007_WSTRL3CNT_SMALLINT 21
+	/* DURATION OF WLAN SIGNAL STRENGTH LEVEL 4 */
+	#define E902010007_WSTRL4CNT_SMALLINT 22
+	/* GAME APP NAME */
+	#define E902010007_APPNAME_VARCHAR 23
+	/* SESSION_TYPE */
+	#define E902010007_TYPE_TINYINT 24
+	/* GAME LOAD LATENCY */
+	#define E902010007_GLDLAT_INT 25
+	/* GAME LOAD THROUGHPUT */
+	#define E902010007_GLDTHPUT_INT 26
+	/* BATTLE DROP FLAG */
+	#define E902010007_BDROPFLG_TINYINT 27
+	/* ROLE LOAD LATENCY */
+	#define E902010007_BLDLAT_INT 28
+	/* ROLE LOAD SUCCESS/FAIL FLAG */
+	#define E902010007_BLDSUCCFLG_TINYINT 29
+	/* BATTLE DURATION */
+	#define E902010007_BDUR_INT 30
+	/* BATTLE AVERAGE LATENCY */
+	#define E902010007_BAVGLAT_SMALLINT 31
+	/* DURATION OF BATTLE LATENCY <50ms */
+	#define E902010007_BLATL1DUR_SMALLINT 32
+	/* DURATION OF BATTLE LATENCY 50~100ms */
+	#define E902010007_BLATL2DUR_SMALLINT 33
+	/* DURATION OF BATTLE LATENCY 100~150ms */
+	#define E902010007_BLATL3DUR_SMALLINT 34
+	/* DURATION OF BATTLE LATENCY 150~200ms */
+	#define E902010007_BLATL4DUR_SMALLINT 35
+	/* DURATION OF BATTLE LATENCY 200~300ms */
+	#define E902010007_BLATL5DUR_SMALLINT 36
+	/* DURATION OF BATTLE LATENCY 300~400ms */
+	#define E902010007_BLATL6DUR_SMALLINT 37
+	/* DURATION OF BATTLE LATENCY 400~459ms */
+	#define E902010007_BLATL7DUR_SMALLINT 38
+	/* DURATION OF BATTLE LATENCY 460ms */
+	#define E902010007_BLATL8DUR_SMALLINT 39
+	/* Code of protocol techlonogy */
+	#define E902010007_TECHCODE_VARCHAR 40
+
+	/* Event 902010008
+		Game squence data for beta user */
+	/* FPS Sequence */
+	#define E902010008_FPSSEQ_VARCHAR 0
+	/* Thermal Sequence */
+	#define E902010008_THERMALSEQ_VARCHAR 1
+	/* Net Latency Sequence */
+	#define E902010008_NETLATENCYSEQ_VARCHAR 2
+	/* Jank Sequence */
+	#define E902010008_JANKSEQ_VARCHAR 3
+	/* GPU Parameter */
+	#define E902010008_GRAPHIC_VARCHAR 4
+
+	/* Event 902020000
+		Key Application consecutive skip frames */
+	/* Performance Scene Name */
+	#define E902020000_CASENAME_VARCHAR 0
+	/* Error Level */
+	#define E902020000_RESULT_INT 1
+	/* Actual Test Performance Value */
+	#define E902020000_TOTALTIMESPENT_INT 2
+	/* Self Defined Argument 1 */
+	#define E902020000_ARG1_VARCHAR 3
+	/* Self Defined Argument 1 */
+	#define E902020000_ARG2_INT 4
+	/* Application Version */
+	#define E902020000_VERSION_VARCHAR 5
+	/* CPU Load */
+	#define E902020000_CPULOAD_INT 6
+	/* High CPU Load ( 1st) Process Name */
+	#define E902020000_CLTOP_PROC1_VARCHAR 7
+	/* High CPU Load (1st) Process ID */
+	#define E902020000_CLPROC1_VAL_INT 8
+	/* High CPU Load (2nd) Process Name */
+	#define E902020000_CLTOP_PROC2_VARCHAR 9
+	/* High CPU Load (2nd) Process ID */
+	#define E902020000_CLPROC2_VAL_INT 10
+	/* High CPU Load (3th) Process Name */
+	#define E902020000_CLTOP_PROC3_VARCHAR 11
+	/* High CPU Load (3th) Process ID */
+	#define E902020000_CLPROC3_VAL_INT 12
+	/* Free Available Memory */
+	#define E902020000_FREEMEM_INT 13
+	/* Free Available Disk */
+	#define E902020000_FREEDISK_INT 14
+	/* CPU Frequency Limit Flag */
+	#define E902020000_LIMIT_FREQ_INT 15
+	/* Rooted Flag */
+	#define E902020000_BROOTED_INT 16
+	/* Modem Log Enabled Flag */
+	#define E902020000_BMODEMLOGON_INT 17
+	/* Serial Port Print Flag */
+	#define E902020000_BUARTENABL_INT 18
+	/* Key Influence Item of Performance(Bitmap,0-5:Install
+		mobile security solution app from third vendor,Enable
+		Accessibility,Enable Touch Exploration,Enable
+		high text contrast,Enable Magnificationgestures,Enable
+		Color Correction) */
+	#define E902020000_NPERFBUGSETTINGS_INT 19
+	/* Used for iAware */
+	#define E902020000_IAWARE_INT 20
+	/* Reserve Argument 1 */
+	#define E902020000_NRESERVE1_INT 21
+	/* Reserve Argument 2 */
+	#define E902020000_STRRESERVE2_VARCHAR 22
+	/* Error Cause Code */
+	#define E902020000_CAUSECODE_INT 23
+	/* User Operation Scene */
+	#define E902020000_OPSCENE_VARCHAR 24
+	/* 1st fuction in stack */
+	#define E902020000_TOPFUNCSTACK_VARCHAR 25
+	/* 2nd function with package name in stack */
+	#define E902020000_SECPKGFUNCSTK_VARCHAR 26
+
+	/* Event 902020001
+		Wechat consecutive skip frames */
+	/* Performance Scene Name */
+	#define E902020001_CASENAME_VARCHAR 0
+	/* Error Level */
+	#define E902020001_RESULT_INT 1
+	/* Actual Test Performance Value */
+	#define E902020001_TOTALTIMESPENT_INT 2
+	/* Self Defined Argument 1 */
+	#define E902020001_ARG1_VARCHAR 3
+	/* Self Defined Argument 1 */
+	#define E902020001_ARG2_INT 4
+	/* Application Version */
+	#define E902020001_VERSION_VARCHAR 5
+	/* CPU Load */
+	#define E902020001_CPULOAD_INT 6
+	/* High CPU Load ( 1st) Process Name */
+	#define E902020001_CLTOP_PROC1_VARCHAR 7
+	/* High CPU Load (1st) Process ID */
+	#define E902020001_CLPROC1_VAL_INT 8
+	/* High CPU Load (2nd) Process Name */
+	#define E902020001_CLTOP_PROC2_VARCHAR 9
+	/* High CPU Load (2nd) Process ID */
+	#define E902020001_CLPROC2_VAL_INT 10
+	/* High CPU Load (3th) Process Name */
+	#define E902020001_CLTOP_PROC3_VARCHAR 11
+	/* High CPU Load (3th) Process ID */
+	#define E902020001_CLPROC3_VAL_INT 12
+	/* Free Available Memory */
+	#define E902020001_FREEMEM_INT 13
+	/* Free Available Disk */
+	#define E902020001_FREEDISK_INT 14
+	/* CPU Frequency Limit Flag */
+	#define E902020001_LIMIT_FREQ_INT 15
+	/* Rooted Flag */
+	#define E902020001_BROOTED_INT 16
+	/* Modem Log Enabled Flag */
+	#define E902020001_BMODEMLOGON_INT 17
+	/* Serial Port Print Flag */
+	#define E902020001_BUARTENABL_INT 18
+	/* Key Influence Item of Performance(Bitmap,0-5:Install
+		mobile security solution app from third vendor,Enable
+		Accessibility,Enable Touch Exploration,Enable
+		high text contrast,Enable Magnificationgestures,Enable
+		Color Correction) */
+	#define E902020001_NPERFBUGSETTINGS_INT 19
+	/* Used for iAware */
+	#define E902020001_IAWARE_INT 20
+	/* Reserve Argument 1 */
+	#define E902020001_NRESERVE1_INT 21
+	/* Reserve Argument 2 */
+	#define E902020001_STRRESERVE2_VARCHAR 22
+	/* Error Cause Code */
+	#define E902020001_CAUSECODE_INT 23
+	/* User Operation Scene */
+	#define E902020001_OPSCENE_VARCHAR 24
+	/* 1st fuction in stack */
+	#define E902020001_TOPFUNCSTACK_VARCHAR 25
+	/* 2nd function with package name in stack */
+	#define E902020001_SECPKGFUNCSTK_VARCHAR 26
+
+	/* Event 902020002
+		Huawei Application consecutive skip frames */
+	/* Performance Scene Name */
+	#define E902020002_CASENAME_VARCHAR 0
+	/* Error Level */
+	#define E902020002_RESULT_INT 1
+	/* Actual Test Performance Value */
+	#define E902020002_TOTALTIMESPENT_INT 2
+	/* Self Defined Argument 1 */
+	#define E902020002_ARG1_VARCHAR 3
+	/* Self Defined Argument 1 */
+	#define E902020002_ARG2_INT 4
+	/* Application Version */
+	#define E902020002_VERSION_VARCHAR 5
+	/* CPU Load */
+	#define E902020002_CPULOAD_INT 6
+	/* High CPU Load ( 1st) Process Name */
+	#define E902020002_CLTOP_PROC1_VARCHAR 7
+	/* High CPU Load (1st) Process ID */
+	#define E902020002_CLPROC1_VAL_INT 8
+	/* High CPU Load (2nd) Process Name */
+	#define E902020002_CLTOP_PROC2_VARCHAR 9
+	/* High CPU Load (2nd) Process ID */
+	#define E902020002_CLPROC2_VAL_INT 10
+	/* High CPU Load (3th) Process Name */
+	#define E902020002_CLTOP_PROC3_VARCHAR 11
+	/* High CPU Load (3th) Process ID */
+	#define E902020002_CLPROC3_VAL_INT 12
+	/* Free Available Memory */
+	#define E902020002_FREEMEM_INT 13
+	/* Free Available Disk */
+	#define E902020002_FREEDISK_INT 14
+	/* CPU Frequency Limit Flag */
+	#define E902020002_LIMIT_FREQ_INT 15
+	/* Rooted Flag */
+	#define E902020002_BROOTED_INT 16
+	/* Modem Log Enabled Flag */
+	#define E902020002_BMODEMLOGON_INT 17
+	/* Serial Port Print Flag */
+	#define E902020002_BUARTENABL_INT 18
+	/* Key Influence Item of Performance(Bitmap,0-5:Install
+		mobile security solution app from third vendor,Enable
+		Accessibility,Enable Touch Exploration,Enable
+		high text contrast,Enable Magnificationgestures,Enable
+		Color Correction) */
+	#define E902020002_NPERFBUGSETTINGS_INT 19
+	/* Used for iAware */
+	#define E902020002_IAWARE_INT 20
+	/* Reserve Argument 1 */
+	#define E902020002_NRESERVE1_INT 21
+	/* Reserve Argument 2 */
+	#define E902020002_STRRESERVE2_VARCHAR 22
+	/* Error Cause Code */
+	#define E902020002_CAUSECODE_INT 23
+	/* User Operation Scene */
+	#define E902020002_OPSCENE_VARCHAR 24
+	/* 1st fuction in stack */
+	#define E902020002_TOPFUNCSTACK_VARCHAR 25
+	/* 2nd function with package name in stack */
+	#define E902020002_SECPKGFUNCSTK_VARCHAR 26
+
+	/* Event 902020003
+		Third-Party Application consecutive skip frames */
+	/* Performance Scene Name */
+	#define E902020003_CASENAME_VARCHAR 0
+	/* Error Level */
+	#define E902020003_RESULT_INT 1
+	/* Actual Test Performance Value */
+	#define E902020003_TOTALTIMESPENT_INT 2
+	/* Self Defined Argument 1 */
+	#define E902020003_ARG1_VARCHAR 3
+	/* Self Defined Argument 1 */
+	#define E902020003_ARG2_INT 4
+	/* Application Version */
+	#define E902020003_VERSION_VARCHAR 5
+	/* CPU Load */
+	#define E902020003_CPULOAD_INT 6
+	/* High CPU Load ( 1st) Process Name */
+	#define E902020003_CLTOP_PROC1_VARCHAR 7
+	/* High CPU Load (1st) Process ID */
+	#define E902020003_CLPROC1_VAL_INT 8
+	/* High CPU Load (2nd) Process Name */
+	#define E902020003_CLTOP_PROC2_VARCHAR 9
+	/* High CPU Load (2nd) Process ID */
+	#define E902020003_CLPROC2_VAL_INT 10
+	/* High CPU Load (3th) Process Name */
+	#define E902020003_CLTOP_PROC3_VARCHAR 11
+	/* High CPU Load (3th) Process ID */
+	#define E902020003_CLPROC3_VAL_INT 12
+	/* Free Available Memory */
+	#define E902020003_FREEMEM_INT 13
+	/* Free Available Disk */
+	#define E902020003_FREEDISK_INT 14
+	/* CPU Frequency Limit Flag */
+	#define E902020003_LIMIT_FREQ_INT 15
+	/* Rooted Flag */
+	#define E902020003_BROOTED_INT 16
+	/* Modem Log Enabled Flag */
+	#define E902020003_BMODEMLOGON_INT 17
+	/* Serial Port Print Flag */
+	#define E902020003_BUARTENABL_INT 18
+	/* Key Influence Item of Performance(Bitmap,0-5:Install
+		mobile security solution app from third vendor,Enable
+		Accessibility,Enable Touch Exploration,Enable
+		high text contrast,Enable Magnificationgestures,Enable
+		Color Correction) */
+	#define E902020003_NPERFBUGSETTINGS_INT 19
+	/* Used for iAware */
+	#define E902020003_IAWARE_INT 20
+	/* Reserve Argument 1 */
+	#define E902020003_NRESERVE1_INT 21
+	/* Reserve Argument 2 */
+	#define E902020003_STRRESERVE2_VARCHAR 22
+	/* Error Cause Code */
+	#define E902020003_CAUSECODE_INT 23
+	/* User Operation Scene */
+	#define E902020003_OPSCENE_VARCHAR 24
+	/* 1st fuction in stack */
+	#define E902020003_TOPFUNCSTACK_VARCHAR 25
+	/* 2nd function with package name in stack */
+	#define E902020003_SECPKGFUNCSTK_VARCHAR 26
+
 	/* Event 902040000
 		Power on slowly */
 	/* Performance Scene Name */
@@ -1368,6 +2137,14 @@ extern "C" {
 	#define E902040000_NRESERVE1_INT 21
 	/* Reserve Argument 2 */
 	#define E902040000_STRRESERVE2_VARCHAR 22
+	/* Error Cause Code */
+	#define E902040000_CAUSECODE_INT 23
+	/* User Operation Scene */
+	#define E902040000_OPSCENE_VARCHAR 24
+	/* 1st fuction in stack */
+	#define E902040000_TOPFUNCSTACK_VARCHAR 25
+	/* 2nd function with package name in stack */
+	#define E902040000_SECPKGFUNCSTK_VARCHAR 26
 
 	/* Event 902040100
 		other abnormal performance during booting or shutdown */
@@ -1421,6 +2198,14 @@ extern "C" {
 	#define E902040100_NRESERVE1_INT 21
 	/* Reserve Argument 2 */
 	#define E902040100_STRRESERVE2_VARCHAR 22
+	/* Error Cause Code */
+	#define E902040100_CAUSECODE_INT 23
+	/* User Operation Scene */
+	#define E902040100_OPSCENE_VARCHAR 24
+	/* 1st fuction in stack */
+	#define E902040100_TOPFUNCSTACK_VARCHAR 25
+	/* 2nd function with package name in stack */
+	#define E902040100_SECPKGFUNCSTK_VARCHAR 26
 
 	/* Event 902050000
 		Screen on by powerkey slowly */
@@ -1474,6 +2259,14 @@ extern "C" {
 	#define E902050000_NRESERVE1_INT 21
 	/* Reserve Argument 2 */
 	#define E902050000_STRRESERVE2_VARCHAR 22
+	/* Error Cause Code */
+	#define E902050000_CAUSECODE_INT 23
+	/* User Operation Scene */
+	#define E902050000_OPSCENE_VARCHAR 24
+	/* 1st fuction in stack */
+	#define E902050000_TOPFUNCSTACK_VARCHAR 25
+	/* 2nd function with package name in stack */
+	#define E902050000_SECPKGFUNCSTK_VARCHAR 26
 
 	/* Event 902050001
 		Screen on by powerkey slowly when deeply sleep */
@@ -1527,6 +2320,14 @@ extern "C" {
 	#define E902050001_NRESERVE1_INT 21
 	/* Reserve Argument 2 */
 	#define E902050001_STRRESERVE2_VARCHAR 22
+	/* Error Cause Code */
+	#define E902050001_CAUSECODE_INT 23
+	/* User Operation Scene */
+	#define E902050001_OPSCENE_VARCHAR 24
+	/* 1st fuction in stack */
+	#define E902050001_TOPFUNCSTACK_VARCHAR 25
+	/* 2nd function with package name in stack */
+	#define E902050001_SECPKGFUNCSTK_VARCHAR 26
 
 	/* Event 902050002
 		Screen off by powerkey slowly */
@@ -1580,6 +2381,14 @@ extern "C" {
 	#define E902050002_NRESERVE1_INT 21
 	/* Reserve Argument 2 */
 	#define E902050002_STRRESERVE2_VARCHAR 22
+	/* Error Cause Code */
+	#define E902050002_CAUSECODE_INT 23
+	/* User Operation Scene */
+	#define E902050002_OPSCENE_VARCHAR 24
+	/* 1st fuction in stack */
+	#define E902050002_TOPFUNCSTACK_VARCHAR 25
+	/* 2nd function with package name in stack */
+	#define E902050002_SECPKGFUNCSTK_VARCHAR 26
 
 	/* Event 902050003
 		Screen on by incoming call slowly */
@@ -1633,6 +2442,14 @@ extern "C" {
 	#define E902050003_NRESERVE1_INT 21
 	/* Reserve Argument 2 */
 	#define E902050003_STRRESERVE2_VARCHAR 22
+	/* Error Cause Code */
+	#define E902050003_CAUSECODE_INT 23
+	/* User Operation Scene */
+	#define E902050003_OPSCENE_VARCHAR 24
+	/* 1st fuction in stack */
+	#define E902050003_TOPFUNCSTACK_VARCHAR 25
+	/* 2nd function with package name in stack */
+	#define E902050003_SECPKGFUNCSTK_VARCHAR 26
 
 	/* Event 902050004
 		Screen on by incoming call slowly when deeply sleep */
@@ -1686,6 +2503,14 @@ extern "C" {
 	#define E902050004_NRESERVE1_INT 21
 	/* Reserve Argument 2 */
 	#define E902050004_STRRESERVE2_VARCHAR 22
+	/* Error Cause Code */
+	#define E902050004_CAUSECODE_INT 23
+	/* User Operation Scene */
+	#define E902050004_OPSCENE_VARCHAR 24
+	/* 1st fuction in stack */
+	#define E902050004_TOPFUNCSTACK_VARCHAR 25
+	/* 2nd function with package name in stack */
+	#define E902050004_SECPKGFUNCSTK_VARCHAR 26
 
 	/* Event 902050005
 		Screen on by charging slowly */
@@ -1739,6 +2564,14 @@ extern "C" {
 	#define E902050005_NRESERVE1_INT 21
 	/* Reserve Argument 2 */
 	#define E902050005_STRRESERVE2_VARCHAR 22
+	/* Error Cause Code */
+	#define E902050005_CAUSECODE_INT 23
+	/* User Operation Scene */
+	#define E902050005_OPSCENE_VARCHAR 24
+	/* 1st fuction in stack */
+	#define E902050005_TOPFUNCSTACK_VARCHAR 25
+	/* 2nd function with package name in stack */
+	#define E902050005_SECPKGFUNCSTK_VARCHAR 26
 
 	/* Event 902050006
 		Screen on by charging slowly when deeply sleep */
@@ -1792,6 +2625,14 @@ extern "C" {
 	#define E902050006_NRESERVE1_INT 21
 	/* Reserve Argument 2 */
 	#define E902050006_STRRESERVE2_VARCHAR 22
+	/* Error Cause Code */
+	#define E902050006_CAUSECODE_INT 23
+	/* User Operation Scene */
+	#define E902050006_OPSCENE_VARCHAR 24
+	/* 1st fuction in stack */
+	#define E902050006_TOPFUNCSTACK_VARCHAR 25
+	/* 2nd function with package name in stack */
+	#define E902050006_SECPKGFUNCSTK_VARCHAR 26
 
 	/* Event 902050007
 		Screen on by pullout USB cable */
@@ -1845,6 +2686,14 @@ extern "C" {
 	#define E902050007_NRESERVE1_INT 21
 	/* Reserve Argument 2 */
 	#define E902050007_STRRESERVE2_VARCHAR 22
+	/* Error Cause Code */
+	#define E902050007_CAUSECODE_INT 23
+	/* User Operation Scene */
+	#define E902050007_OPSCENE_VARCHAR 24
+	/* 1st fuction in stack */
+	#define E902050007_TOPFUNCSTACK_VARCHAR 25
+	/* 2nd function with package name in stack */
+	#define E902050007_SECPKGFUNCSTK_VARCHAR 26
 
 	/* Event 902050008
 		Screen off by proximity */
@@ -1898,6 +2747,14 @@ extern "C" {
 	#define E902050008_NRESERVE1_INT 21
 	/* Reserve Argument 2 */
 	#define E902050008_STRRESERVE2_VARCHAR 22
+	/* Error Cause Code */
+	#define E902050008_CAUSECODE_INT 23
+	/* User Operation Scene */
+	#define E902050008_OPSCENE_VARCHAR 24
+	/* 1st fuction in stack */
+	#define E902050008_TOPFUNCSTACK_VARCHAR 25
+	/* 2nd function with package name in stack */
+	#define E902050008_SECPKGFUNCSTK_VARCHAR 26
 
 	/* Event 902050009
 		Screen on by proximity */
@@ -1951,6 +2808,14 @@ extern "C" {
 	#define E902050009_NRESERVE1_INT 21
 	/* Reserve Argument 2 */
 	#define E902050009_STRRESERVE2_VARCHAR 22
+	/* Error Cause Code */
+	#define E902050009_CAUSECODE_INT 23
+	/* User Operation Scene */
+	#define E902050009_OPSCENE_VARCHAR 24
+	/* 1st fuction in stack */
+	#define E902050009_TOPFUNCSTACK_VARCHAR 25
+	/* 2nd function with package name in stack */
+	#define E902050009_SECPKGFUNCSTK_VARCHAR 26
 
 	/* Event 902050010
 		Screen on by fingerprint */
@@ -2004,6 +2869,14 @@ extern "C" {
 	#define E902050010_NRESERVE1_INT 21
 	/* Reserve Argument 2 */
 	#define E902050010_STRRESERVE2_VARCHAR 22
+	/* Error Cause Code */
+	#define E902050010_CAUSECODE_INT 23
+	/* User Operation Scene */
+	#define E902050010_OPSCENE_VARCHAR 24
+	/* 1st fuction in stack */
+	#define E902050010_TOPFUNCSTACK_VARCHAR 25
+	/* 2nd function with package name in stack */
+	#define E902050010_SECPKGFUNCSTK_VARCHAR 26
 
 	/* Event 902050011
 		Screen on by SMS */
@@ -2057,6 +2930,14 @@ extern "C" {
 	#define E902050011_NRESERVE1_INT 21
 	/* Reserve Argument 2 */
 	#define E902050011_STRRESERVE2_VARCHAR 22
+	/* Error Cause Code */
+	#define E902050011_CAUSECODE_INT 23
+	/* User Operation Scene */
+	#define E902050011_OPSCENE_VARCHAR 24
+	/* 1st fuction in stack */
+	#define E902050011_TOPFUNCSTACK_VARCHAR 25
+	/* 2nd function with package name in stack */
+	#define E902050011_SECPKGFUNCSTK_VARCHAR 26
 
 	/* Event 902050012
 		Screen on by cover */
@@ -2110,6 +2991,14 @@ extern "C" {
 	#define E902050012_NRESERVE1_INT 21
 	/* Reserve Argument 2 */
 	#define E902050012_STRRESERVE2_VARCHAR 22
+	/* Error Cause Code */
+	#define E902050012_CAUSECODE_INT 23
+	/* User Operation Scene */
+	#define E902050012_OPSCENE_VARCHAR 24
+	/* 1st fuction in stack */
+	#define E902050012_TOPFUNCSTACK_VARCHAR 25
+	/* 2nd function with package name in stack */
+	#define E902050012_SECPKGFUNCSTK_VARCHAR 26
 
 	/* Event 902050100
 		Screen on by others */
@@ -2163,6 +3052,14 @@ extern "C" {
 	#define E902050100_NRESERVE1_INT 21
 	/* Reserve Argument 2 */
 	#define E902050100_STRRESERVE2_VARCHAR 22
+	/* Error Cause Code */
+	#define E902050100_CAUSECODE_INT 23
+	/* User Operation Scene */
+	#define E902050100_OPSCENE_VARCHAR 24
+	/* 1st fuction in stack */
+	#define E902050100_TOPFUNCSTACK_VARCHAR 25
+	/* 2nd function with package name in stack */
+	#define E902050100_SECPKGFUNCSTK_VARCHAR 26
 
 	/* Event 902060000
 		Sqlite processes slowly */
@@ -2216,6 +3113,14 @@ extern "C" {
 	#define E902060000_NRESERVE1_INT 21
 	/* Reserve Argument 2 */
 	#define E902060000_STRRESERVE2_VARCHAR 22
+	/* Error Cause Code */
+	#define E902060000_CAUSECODE_INT 23
+	/* User Operation Scene */
+	#define E902060000_OPSCENE_VARCHAR 24
+	/* 1st fuction in stack */
+	#define E902060000_TOPFUNCSTACK_VARCHAR 25
+	/* 2nd function with package name in stack */
+	#define E902060000_SECPKGFUNCSTK_VARCHAR 26
 
 	/* Event 902060001
 		RMS exception */
@@ -2269,6 +3174,14 @@ extern "C" {
 	#define E902060001_NRESERVE1_INT 21
 	/* Reserve Argument 2 */
 	#define E902060001_STRRESERVE2_VARCHAR 22
+	/* Error Cause Code */
+	#define E902060001_CAUSECODE_INT 23
+	/* User Operation Scene */
+	#define E902060001_OPSCENE_VARCHAR 24
+	/* 1st fuction in stack */
+	#define E902060001_TOPFUNCSTACK_VARCHAR 25
+	/* 2nd function with package name in stack */
+	#define E902060001_SECPKGFUNCSTK_VARCHAR 26
 
 	/* Event 902060002
 		iAware exception */
@@ -2322,6 +3235,14 @@ extern "C" {
 	#define E902060002_NRESERVE1_INT 21
 	/* Reserve Argument 2 */
 	#define E902060002_STRRESERVE2_VARCHAR 22
+	/* Error Cause Code */
+	#define E902060002_CAUSECODE_INT 23
+	/* User Operation Scene */
+	#define E902060002_OPSCENE_VARCHAR 24
+	/* 1st fuction in stack */
+	#define E902060002_TOPFUNCSTACK_VARCHAR 25
+	/* 2nd function with package name in stack */
+	#define E902060002_SECPKGFUNCSTK_VARCHAR 26
 
 	/* Event 902060003
 		core process or app is killed */
@@ -2375,6 +3296,14 @@ extern "C" {
 	#define E902060003_NRESERVE1_INT 21
 	/* Reserve Argument 2 */
 	#define E902060003_STRRESERVE2_VARCHAR 22
+	/* Error Cause Code */
+	#define E902060003_CAUSECODE_INT 23
+	/* User Operation Scene */
+	#define E902060003_OPSCENE_VARCHAR 24
+	/* 1st fuction in stack */
+	#define E902060003_TOPFUNCSTACK_VARCHAR 25
+	/* 2nd function with package name in stack */
+	#define E902060003_SECPKGFUNCSTK_VARCHAR 26
 
 	/* Event 902060100
 		other system resource */
@@ -2428,6 +3357,14 @@ extern "C" {
 	#define E902060100_NRESERVE1_INT 21
 	/* Reserve Argument 2 */
 	#define E902060100_STRRESERVE2_VARCHAR 22
+	/* Error Cause Code */
+	#define E902060100_CAUSECODE_INT 23
+	/* User Operation Scene */
+	#define E902060100_OPSCENE_VARCHAR 24
+	/* 1st fuction in stack */
+	#define E902060100_TOPFUNCSTACK_VARCHAR 25
+	/* 2nd function with package name in stack */
+	#define E902060100_SECPKGFUNCSTK_VARCHAR 26
 
 	/* Event 902070000
 		Orientation change slowly */
@@ -2481,6 +3418,14 @@ extern "C" {
 	#define E902070000_NRESERVE1_INT 21
 	/* Reserve Argument 2 */
 	#define E902070000_STRRESERVE2_VARCHAR 22
+	/* Error Cause Code */
+	#define E902070000_CAUSECODE_INT 23
+	/* User Operation Scene */
+	#define E902070000_OPSCENE_VARCHAR 24
+	/* 1st fuction in stack */
+	#define E902070000_TOPFUNCSTACK_VARCHAR 25
+	/* 2nd function with package name in stack */
+	#define E902070000_SECPKGFUNCSTK_VARCHAR 26
 
 	/* Event 902070001
 		Slide to click */
@@ -2534,6 +3479,14 @@ extern "C" {
 	#define E902070001_NRESERVE1_INT 21
 	/* Reserve Argument 2 */
 	#define E902070001_STRRESERVE2_VARCHAR 22
+	/* Error Cause Code */
+	#define E902070001_CAUSECODE_INT 23
+	/* User Operation Scene */
+	#define E902070001_OPSCENE_VARCHAR 24
+	/* 1st fuction in stack */
+	#define E902070001_TOPFUNCSTACK_VARCHAR 25
+	/* 2nd function with package name in stack */
+	#define E902070001_SECPKGFUNCSTK_VARCHAR 26
 
 	/* Event 902070002
 		Automatical backlight exception */
@@ -2587,6 +3540,14 @@ extern "C" {
 	#define E902070002_NRESERVE1_INT 21
 	/* Reserve Argument 2 */
 	#define E902070002_STRRESERVE2_VARCHAR 22
+	/* Error Cause Code */
+	#define E902070002_CAUSECODE_INT 23
+	/* User Operation Scene */
+	#define E902070002_OPSCENE_VARCHAR 24
+	/* 1st fuction in stack */
+	#define E902070002_TOPFUNCSTACK_VARCHAR 25
+	/* 2nd function with package name in stack */
+	#define E902070002_SECPKGFUNCSTK_VARCHAR 26
 
 	/* Event 902070003
 		TP feedback slowly */
@@ -2640,6 +3601,14 @@ extern "C" {
 	#define E902070003_NRESERVE1_INT 21
 	/* Reserve Argument 2 */
 	#define E902070003_STRRESERVE2_VARCHAR 22
+	/* Error Cause Code */
+	#define E902070003_CAUSECODE_INT 23
+	/* User Operation Scene */
+	#define E902070003_OPSCENE_VARCHAR 24
+	/* 1st fuction in stack */
+	#define E902070003_TOPFUNCSTACK_VARCHAR 25
+	/* 2nd function with package name in stack */
+	#define E902070003_SECPKGFUNCSTK_VARCHAR 26
 
 	/* Event 902070100
 		other respond */
@@ -2693,6 +3662,14 @@ extern "C" {
 	#define E902070100_NRESERVE1_INT 21
 	/* Reserve Argument 2 */
 	#define E902070100_STRRESERVE2_VARCHAR 22
+	/* Error Cause Code */
+	#define E902070100_CAUSECODE_INT 23
+	/* User Operation Scene */
+	#define E902070100_OPSCENE_VARCHAR 24
+	/* 1st fuction in stack */
+	#define E902070100_TOPFUNCSTACK_VARCHAR 25
+	/* 2nd function with package name in stack */
+	#define E902070100_SECPKGFUNCSTK_VARCHAR 26
 
 	/* Event 902080000
 		EMUI application business process slowy */
@@ -2746,6 +3723,14 @@ extern "C" {
 	#define E902080000_NRESERVE1_INT 21
 	/* Reserve Argument 2 */
 	#define E902080000_STRRESERVE2_VARCHAR 22
+	/* Error Cause Code */
+	#define E902080000_CAUSECODE_INT 23
+	/* User Operation Scene */
+	#define E902080000_OPSCENE_VARCHAR 24
+	/* 1st fuction in stack */
+	#define E902080000_TOPFUNCSTACK_VARCHAR 25
+	/* 2nd function with package name in stack */
+	#define E902080000_SECPKGFUNCSTK_VARCHAR 26
 
 	/* Event 902090000
 		Camera business process slowly */
@@ -2799,6 +3784,14 @@ extern "C" {
 	#define E902090000_NRESERVE1_INT 21
 	/* Reserve Argument 2 */
 	#define E902090000_STRRESERVE2_VARCHAR 22
+	/* Error Cause Code */
+	#define E902090000_CAUSECODE_INT 23
+	/* User Operation Scene */
+	#define E902090000_OPSCENE_VARCHAR 24
+	/* 1st fuction in stack */
+	#define E902090000_TOPFUNCSTACK_VARCHAR 25
+	/* 2nd function with package name in stack */
+	#define E902090000_SECPKGFUNCSTK_VARCHAR 26
 
 	/* Event 902500000
 		Key Application launching time */
@@ -3280,6 +4273,576 @@ extern "C" {
 	#define E902500008_DFREQ7_INT 92
 	/* total time of DDR Freq8 */
 	#define E902500008_DFREQ8_INT 93
+
+	/* Event 902600000
+		Slide on the launcher screen */
+	/* Performance Scene Name */
+	#define E902600000_CASENAME_VARCHAR 0
+	/* Error Level */
+	#define E902600000_RESULT_INT 1
+	/* Actual Test Performance Value */
+	#define E902600000_TOTALTIMESPENT_INT 2
+	/* Self Defined Argument 1 */
+	#define E902600000_ARG1_VARCHAR 3
+	/* Self Defined Argument 1 */
+	#define E902600000_ARG2_INT 4
+	/* Application Version */
+	#define E902600000_VERSION_VARCHAR 5
+	/* CPU Load */
+	#define E902600000_CPULOAD_INT 6
+	/* High CPU Load ( 1st) Process Name */
+	#define E902600000_CLTOP_PROC1_VARCHAR 7
+	/* High CPU Load (1st) Process ID */
+	#define E902600000_CLPROC1_VAL_INT 8
+	/* High CPU Load (2nd) Process Name */
+	#define E902600000_CLTOP_PROC2_VARCHAR 9
+	/* High CPU Load (2nd) Process ID */
+	#define E902600000_CLPROC2_VAL_INT 10
+	/* High CPU Load (3th) Process Name */
+	#define E902600000_CLTOP_PROC3_VARCHAR 11
+	/* High CPU Load (3th) Process ID */
+	#define E902600000_CLPROC3_VAL_INT 12
+	/* Free Available Memory */
+	#define E902600000_FREEMEM_INT 13
+	/* Free Available Disk */
+	#define E902600000_FREEDISK_INT 14
+	/* CPU Frequency Limit Flag */
+	#define E902600000_LIMIT_FREQ_INT 15
+	/* Rooted Flag */
+	#define E902600000_BROOTED_INT 16
+	/* Modem Log Enabled Flag */
+	#define E902600000_BMODEMLOGON_INT 17
+	/* Serial Port Print Flag */
+	#define E902600000_BUARTENABL_INT 18
+	/* Key Influence Item of Performance(Bitmap,0-5:Install
+		mobile security solution app from third vendor,Enable
+		Accessibility,Enable Touch Exploration,Enable
+		high text contrast,Enable Magnificationgestures,Enable
+		Color Correction) */
+	#define E902600000_NPERFBUGSETTINGS_INT 19
+	/* Used for iAware */
+	#define E902600000_IAWARE_INT 20
+	/* Error Cause Code */
+	#define E902600000_CAUSECODE_INT 21
+	/* User Operation Scene */
+	#define E902600000_OPSCENE_VARCHAR 22
+	/* 1st fuction in stack */
+	#define E902600000_TOPFUNCSTACK_VARCHAR 23
+	/* 2nd function with package name in stack */
+	#define E902600000_SECPKGFUNCSTK_VARCHAR 24
+
+	/* Event 902600001
+		Quit from the app */
+	/* Performance Scene Name */
+	#define E902600001_CASENAME_VARCHAR 0
+	/* Error Level */
+	#define E902600001_RESULT_INT 1
+	/* Actual Test Performance Value */
+	#define E902600001_TOTALTIMESPENT_INT 2
+	/* Self Defined Argument 1 */
+	#define E902600001_ARG1_VARCHAR 3
+	/* Self Defined Argument 1 */
+	#define E902600001_ARG2_INT 4
+	/* Application Version */
+	#define E902600001_VERSION_VARCHAR 5
+	/* CPU Load */
+	#define E902600001_CPULOAD_INT 6
+	/* High CPU Load ( 1st) Process Name */
+	#define E902600001_CLTOP_PROC1_VARCHAR 7
+	/* High CPU Load (1st) Process ID */
+	#define E902600001_CLPROC1_VAL_INT 8
+	/* High CPU Load (2nd) Process Name */
+	#define E902600001_CLTOP_PROC2_VARCHAR 9
+	/* High CPU Load (2nd) Process ID */
+	#define E902600001_CLPROC2_VAL_INT 10
+	/* High CPU Load (3th) Process Name */
+	#define E902600001_CLTOP_PROC3_VARCHAR 11
+	/* High CPU Load (3th) Process ID */
+	#define E902600001_CLPROC3_VAL_INT 12
+	/* Free Available Memory */
+	#define E902600001_FREEMEM_INT 13
+	/* Free Available Disk */
+	#define E902600001_FREEDISK_INT 14
+	/* CPU Frequency Limit Flag */
+	#define E902600001_LIMIT_FREQ_INT 15
+	/* Rooted Flag */
+	#define E902600001_BROOTED_INT 16
+	/* Modem Log Enabled Flag */
+	#define E902600001_BMODEMLOGON_INT 17
+	/* Serial Port Print Flag */
+	#define E902600001_BUARTENABL_INT 18
+	/* Key Influence Item of Performance(Bitmap,0-5:Install
+		mobile security solution app from third vendor,Enable
+		Accessibility,Enable Touch Exploration,Enable
+		high text contrast,Enable Magnificationgestures,Enable
+		Color Correction) */
+	#define E902600001_NPERFBUGSETTINGS_INT 19
+	/* Used for iAware */
+	#define E902600001_IAWARE_INT 20
+	/* Error Cause Code */
+	#define E902600001_CAUSECODE_INT 21
+	/* User Operation Scene */
+	#define E902600001_OPSCENE_VARCHAR 22
+	/* 1st fuction in stack */
+	#define E902600001_TOPFUNCSTACK_VARCHAR 23
+	/* 2nd function with package name in stack */
+	#define E902600001_SECPKGFUNCSTK_VARCHAR 24
+
+	/* Event 902600002
+		Return to the launcher */
+	/* Performance Scene Name */
+	#define E902600002_CASENAME_VARCHAR 0
+	/* Error Level */
+	#define E902600002_RESULT_INT 1
+	/* Actual Test Performance Value */
+	#define E902600002_TOTALTIMESPENT_INT 2
+	/* Self Defined Argument 1 */
+	#define E902600002_ARG1_VARCHAR 3
+	/* Self Defined Argument 1 */
+	#define E902600002_ARG2_INT 4
+	/* Application Version */
+	#define E902600002_VERSION_VARCHAR 5
+	/* CPU Load */
+	#define E902600002_CPULOAD_INT 6
+	/* High CPU Load ( 1st) Process Name */
+	#define E902600002_CLTOP_PROC1_VARCHAR 7
+	/* High CPU Load (1st) Process ID */
+	#define E902600002_CLPROC1_VAL_INT 8
+	/* High CPU Load (2nd) Process Name */
+	#define E902600002_CLTOP_PROC2_VARCHAR 9
+	/* High CPU Load (2nd) Process ID */
+	#define E902600002_CLPROC2_VAL_INT 10
+	/* High CPU Load (3th) Process Name */
+	#define E902600002_CLTOP_PROC3_VARCHAR 11
+	/* High CPU Load (3th) Process ID */
+	#define E902600002_CLPROC3_VAL_INT 12
+	/* Free Available Memory */
+	#define E902600002_FREEMEM_INT 13
+	/* Free Available Disk */
+	#define E902600002_FREEDISK_INT 14
+	/* CPU Frequency Limit Flag */
+	#define E902600002_LIMIT_FREQ_INT 15
+	/* Rooted Flag */
+	#define E902600002_BROOTED_INT 16
+	/* Modem Log Enabled Flag */
+	#define E902600002_BMODEMLOGON_INT 17
+	/* Serial Port Print Flag */
+	#define E902600002_BUARTENABL_INT 18
+	/* Key Influence Item of Performance(Bitmap,0-5:Install
+		mobile security solution app from third vendor,Enable
+		Accessibility,Enable Touch Exploration,Enable
+		high text contrast,Enable Magnificationgestures,Enable
+		Color Correction) */
+	#define E902600002_NPERFBUGSETTINGS_INT 19
+	/* Used for iAware */
+	#define E902600002_IAWARE_INT 20
+	/* Error Cause Code */
+	#define E902600002_CAUSECODE_INT 21
+	/* User Operation Scene */
+	#define E902600002_OPSCENE_VARCHAR 22
+	/* 1st fuction in stack */
+	#define E902600002_TOPFUNCSTACK_VARCHAR 23
+	/* 2nd function with package name in stack */
+	#define E902600002_SECPKGFUNCSTK_VARCHAR 24
+
+	/* Event 902600003
+		Open the app recent list */
+	/* Performance Scene Name */
+	#define E902600003_CASENAME_VARCHAR 0
+	/* Error Level */
+	#define E902600003_RESULT_INT 1
+	/* Actual Test Performance Value */
+	#define E902600003_TOTALTIMESPENT_INT 2
+	/* Self Defined Argument 1 */
+	#define E902600003_ARG1_VARCHAR 3
+	/* Self Defined Argument 1 */
+	#define E902600003_ARG2_INT 4
+	/* Application Version */
+	#define E902600003_VERSION_VARCHAR 5
+	/* CPU Load */
+	#define E902600003_CPULOAD_INT 6
+	/* High CPU Load ( 1st) Process Name */
+	#define E902600003_CLTOP_PROC1_VARCHAR 7
+	/* High CPU Load (1st) Process ID */
+	#define E902600003_CLPROC1_VAL_INT 8
+	/* High CPU Load (2nd) Process Name */
+	#define E902600003_CLTOP_PROC2_VARCHAR 9
+	/* High CPU Load (2nd) Process ID */
+	#define E902600003_CLPROC2_VAL_INT 10
+	/* High CPU Load (3th) Process Name */
+	#define E902600003_CLTOP_PROC3_VARCHAR 11
+	/* High CPU Load (3th) Process ID */
+	#define E902600003_CLPROC3_VAL_INT 12
+	/* Free Available Memory */
+	#define E902600003_FREEMEM_INT 13
+	/* Free Available Disk */
+	#define E902600003_FREEDISK_INT 14
+	/* CPU Frequency Limit Flag */
+	#define E902600003_LIMIT_FREQ_INT 15
+	/* Rooted Flag */
+	#define E902600003_BROOTED_INT 16
+	/* Modem Log Enabled Flag */
+	#define E902600003_BMODEMLOGON_INT 17
+	/* Serial Port Print Flag */
+	#define E902600003_BUARTENABL_INT 18
+	/* Key Influence Item of Performance(Bitmap,0-5:Install
+		mobile security solution app from third vendor,Enable
+		Accessibility,Enable Touch Exploration,Enable
+		high text contrast,Enable Magnificationgestures,Enable
+		Color Correction) */
+	#define E902600003_NPERFBUGSETTINGS_INT 19
+	/* Used for iAware */
+	#define E902600003_IAWARE_INT 20
+	/* Error Cause Code */
+	#define E902600003_CAUSECODE_INT 21
+	/* User Operation Scene */
+	#define E902600003_OPSCENE_VARCHAR 22
+	/* 1st fuction in stack */
+	#define E902600003_TOPFUNCSTACK_VARCHAR 23
+	/* 2nd function with package name in stack */
+	#define E902600003_SECPKGFUNCSTK_VARCHAR 24
+
+	/* Event 902600004
+		Input method response timeout */
+	/* Performance Scene Name */
+	#define E902600004_CASENAME_VARCHAR 0
+	/* Error Level */
+	#define E902600004_RESULT_INT 1
+	/* Actual Test Performance Value */
+	#define E902600004_TOTALTIMESPENT_INT 2
+	/* Self Defined Argument 1 */
+	#define E902600004_ARG1_VARCHAR 3
+	/* Self Defined Argument 1 */
+	#define E902600004_ARG2_INT 4
+	/* Application Version */
+	#define E902600004_VERSION_VARCHAR 5
+	/* CPU Load */
+	#define E902600004_CPULOAD_INT 6
+	/* High CPU Load ( 1st) Process Name */
+	#define E902600004_CLTOP_PROC1_VARCHAR 7
+	/* High CPU Load (1st) Process ID */
+	#define E902600004_CLPROC1_VAL_INT 8
+	/* High CPU Load (2nd) Process Name */
+	#define E902600004_CLTOP_PROC2_VARCHAR 9
+	/* High CPU Load (2nd) Process ID */
+	#define E902600004_CLPROC2_VAL_INT 10
+	/* High CPU Load (3th) Process Name */
+	#define E902600004_CLTOP_PROC3_VARCHAR 11
+	/* High CPU Load (3th) Process ID */
+	#define E902600004_CLPROC3_VAL_INT 12
+	/* Free Available Memory */
+	#define E902600004_FREEMEM_INT 13
+	/* Free Available Disk */
+	#define E902600004_FREEDISK_INT 14
+	/* CPU Frequency Limit Flag */
+	#define E902600004_LIMIT_FREQ_INT 15
+	/* Rooted Flag */
+	#define E902600004_BROOTED_INT 16
+	/* Modem Log Enabled Flag */
+	#define E902600004_BMODEMLOGON_INT 17
+	/* Serial Port Print Flag */
+	#define E902600004_BUARTENABL_INT 18
+	/* Key Influence Item of Performance(Bitmap,0-5:Install
+		mobile security solution app from third vendor,Enable
+		Accessibility,Enable Touch Exploration,Enable
+		high text contrast,Enable Magnificationgestures,Enable
+		Color Correction) */
+	#define E902600004_NPERFBUGSETTINGS_INT 19
+	/* Used for iAware */
+	#define E902600004_IAWARE_INT 20
+	/* Error Cause Code */
+	#define E902600004_CAUSECODE_INT 21
+	/* User Operation Scene */
+	#define E902600004_OPSCENE_VARCHAR 22
+	/* 1st fuction in stack */
+	#define E902600004_TOPFUNCSTACK_VARCHAR 23
+	/* 2nd function with package name in stack */
+	#define E902600004_SECPKGFUNCSTK_VARCHAR 24
+
+	/* Event 902610000
+		Performance exception due to the stability */
+	/* Performance Scene Name */
+	#define E902610000_CASENAME_VARCHAR 0
+	/* Error Level */
+	#define E902610000_RESULT_INT 1
+	/* Actual Test Performance Value */
+	#define E902610000_TOTALTIMESPENT_INT 2
+	/* Self Defined Argument 1 */
+	#define E902610000_ARG1_VARCHAR 3
+	/* Self Defined Argument 1 */
+	#define E902610000_ARG2_INT 4
+	/* Application Version */
+	#define E902610000_VERSION_VARCHAR 5
+	/* CPU Load */
+	#define E902610000_CPULOAD_INT 6
+	/* High CPU Load ( 1st) Process Name */
+	#define E902610000_CLTOP_PROC1_VARCHAR 7
+	/* High CPU Load (1st) Process ID */
+	#define E902610000_CLPROC1_VAL_INT 8
+	/* High CPU Load (2nd) Process Name */
+	#define E902610000_CLTOP_PROC2_VARCHAR 9
+	/* High CPU Load (2nd) Process ID */
+	#define E902610000_CLPROC2_VAL_INT 10
+	/* High CPU Load (3th) Process Name */
+	#define E902610000_CLTOP_PROC3_VARCHAR 11
+	/* High CPU Load (3th) Process ID */
+	#define E902610000_CLPROC3_VAL_INT 12
+	/* Free Available Memory */
+	#define E902610000_FREEMEM_INT 13
+	/* Free Available Disk */
+	#define E902610000_FREEDISK_INT 14
+	/* CPU Frequency Limit Flag */
+	#define E902610000_LIMIT_FREQ_INT 15
+	/* Rooted Flag */
+	#define E902610000_BROOTED_INT 16
+	/* Modem Log Enabled Flag */
+	#define E902610000_BMODEMLOGON_INT 17
+	/* Serial Port Print Flag */
+	#define E902610000_BUARTENABL_INT 18
+	/* Key Influence Item of Performance(Bitmap,0-5:Install
+		mobile security solution app from third vendor,Enable
+		Accessibility,Enable Touch Exploration,Enable
+		high text contrast,Enable Magnificationgestures,Enable
+		Color Correction) */
+	#define E902610000_NPERFBUGSETTINGS_INT 19
+	/* Used for iAware */
+	#define E902610000_IAWARE_INT 20
+	/* Error Cause Code */
+	#define E902610000_CAUSECODE_INT 21
+	/* User Operation Scene */
+	#define E902610000_OPSCENE_VARCHAR 22
+	/* 1st fuction in stack */
+	#define E902610000_TOPFUNCSTACK_VARCHAR 23
+	/* 2nd function with package name in stack */
+	#define E902610000_SECPKGFUNCSTK_VARCHAR 24
+
+	/* Event 902610001
+		Performance exception due to the TP */
+	/* Performance Scene Name */
+	#define E902610001_CASENAME_VARCHAR 0
+	/* Error Level */
+	#define E902610001_RESULT_INT 1
+	/* Actual Test Performance Value */
+	#define E902610001_TOTALTIMESPENT_INT 2
+	/* Self Defined Argument 1 */
+	#define E902610001_ARG1_VARCHAR 3
+	/* Self Defined Argument 1 */
+	#define E902610001_ARG2_INT 4
+	/* Application Version */
+	#define E902610001_VERSION_VARCHAR 5
+	/* CPU Load */
+	#define E902610001_CPULOAD_INT 6
+	/* High CPU Load ( 1st) Process Name */
+	#define E902610001_CLTOP_PROC1_VARCHAR 7
+	/* High CPU Load (1st) Process ID */
+	#define E902610001_CLPROC1_VAL_INT 8
+	/* High CPU Load (2nd) Process Name */
+	#define E902610001_CLTOP_PROC2_VARCHAR 9
+	/* High CPU Load (2nd) Process ID */
+	#define E902610001_CLPROC2_VAL_INT 10
+	/* High CPU Load (3th) Process Name */
+	#define E902610001_CLTOP_PROC3_VARCHAR 11
+	/* High CPU Load (3th) Process ID */
+	#define E902610001_CLPROC3_VAL_INT 12
+	/* Free Available Memory */
+	#define E902610001_FREEMEM_INT 13
+	/* Free Available Disk */
+	#define E902610001_FREEDISK_INT 14
+	/* CPU Frequency Limit Flag */
+	#define E902610001_LIMIT_FREQ_INT 15
+	/* Rooted Flag */
+	#define E902610001_BROOTED_INT 16
+	/* Modem Log Enabled Flag */
+	#define E902610001_BMODEMLOGON_INT 17
+	/* Serial Port Print Flag */
+	#define E902610001_BUARTENABL_INT 18
+	/* Key Influence Item of Performance(Bitmap,0-5:Install
+		mobile security solution app from third vendor,Enable
+		Accessibility,Enable Touch Exploration,Enable
+		high text contrast,Enable Magnificationgestures,Enable
+		Color Correction) */
+	#define E902610001_NPERFBUGSETTINGS_INT 19
+	/* Used for iAware */
+	#define E902610001_IAWARE_INT 20
+	/* Error Cause Code */
+	#define E902610001_CAUSECODE_INT 21
+	/* User Operation Scene */
+	#define E902610001_OPSCENE_VARCHAR 22
+	/* 1st fuction in stack */
+	#define E902610001_TOPFUNCSTACK_VARCHAR 23
+	/* 2nd function with package name in stack */
+	#define E902610001_SECPKGFUNCSTK_VARCHAR 24
+
+	/* Event 902620000
+		1~3s exception handler */
+	/* Performance Scene Name */
+	#define E902620000_CASENAME_VARCHAR 0
+	/* Error Level */
+	#define E902620000_RESULT_INT 1
+	/* Actual Test Performance Value */
+	#define E902620000_TOTALTIMESPENT_INT 2
+	/* Self Defined Argument 1 */
+	#define E902620000_ARG1_VARCHAR 3
+	/* Self Defined Argument 1 */
+	#define E902620000_ARG2_INT 4
+	/* Application Version */
+	#define E902620000_VERSION_VARCHAR 5
+	/* CPU Load */
+	#define E902620000_CPULOAD_INT 6
+	/* High CPU Load ( 1st) Process Name */
+	#define E902620000_CLTOP_PROC1_VARCHAR 7
+	/* High CPU Load (1st) Process ID */
+	#define E902620000_CLPROC1_VAL_INT 8
+	/* High CPU Load (2nd) Process Name */
+	#define E902620000_CLTOP_PROC2_VARCHAR 9
+	/* High CPU Load (2nd) Process ID */
+	#define E902620000_CLPROC2_VAL_INT 10
+	/* High CPU Load (3th) Process Name */
+	#define E902620000_CLTOP_PROC3_VARCHAR 11
+	/* High CPU Load (3th) Process ID */
+	#define E902620000_CLPROC3_VAL_INT 12
+	/* Free Available Memory */
+	#define E902620000_FREEMEM_INT 13
+	/* Free Available Disk */
+	#define E902620000_FREEDISK_INT 14
+	/* CPU Frequency Limit Flag */
+	#define E902620000_LIMIT_FREQ_INT 15
+	/* Rooted Flag */
+	#define E902620000_BROOTED_INT 16
+	/* Modem Log Enabled Flag */
+	#define E902620000_BMODEMLOGON_INT 17
+	/* Serial Port Print Flag */
+	#define E902620000_BUARTENABL_INT 18
+	/* Key Influence Item of Performance(Bitmap,0-5:Install
+		mobile security solution app from third vendor,Enable
+		Accessibility,Enable Touch Exploration,Enable
+		high text contrast,Enable Magnificationgestures,Enable
+		Color Correction) */
+	#define E902620000_NPERFBUGSETTINGS_INT 19
+	/* Used for iAware */
+	#define E902620000_IAWARE_INT 20
+	/* Error Cause Code */
+	#define E902620000_CAUSECODE_INT 21
+	/* User Operation Scene */
+	#define E902620000_OPSCENE_VARCHAR 22
+	/* 1st fuction in stack */
+	#define E902620000_TOPFUNCSTACK_VARCHAR 23
+	/* 2nd function with package name in stack */
+	#define E902620000_SECPKGFUNCSTK_VARCHAR 24
+
+	/* Event 902620001
+		3~6s exception handler */
+	/* Performance Scene Name */
+	#define E902620001_CASENAME_VARCHAR 0
+	/* Error Level */
+	#define E902620001_RESULT_INT 1
+	/* Actual Test Performance Value */
+	#define E902620001_TOTALTIMESPENT_INT 2
+	/* Self Defined Argument 1 */
+	#define E902620001_ARG1_VARCHAR 3
+	/* Self Defined Argument 1 */
+	#define E902620001_ARG2_INT 4
+	/* Application Version */
+	#define E902620001_VERSION_VARCHAR 5
+	/* CPU Load */
+	#define E902620001_CPULOAD_INT 6
+	/* High CPU Load ( 1st) Process Name */
+	#define E902620001_CLTOP_PROC1_VARCHAR 7
+	/* High CPU Load (1st) Process ID */
+	#define E902620001_CLPROC1_VAL_INT 8
+	/* High CPU Load (2nd) Process Name */
+	#define E902620001_CLTOP_PROC2_VARCHAR 9
+	/* High CPU Load (2nd) Process ID */
+	#define E902620001_CLPROC2_VAL_INT 10
+	/* High CPU Load (3th) Process Name */
+	#define E902620001_CLTOP_PROC3_VARCHAR 11
+	/* High CPU Load (3th) Process ID */
+	#define E902620001_CLPROC3_VAL_INT 12
+	/* Free Available Memory */
+	#define E902620001_FREEMEM_INT 13
+	/* Free Available Disk */
+	#define E902620001_FREEDISK_INT 14
+	/* CPU Frequency Limit Flag */
+	#define E902620001_LIMIT_FREQ_INT 15
+	/* Rooted Flag */
+	#define E902620001_BROOTED_INT 16
+	/* Modem Log Enabled Flag */
+	#define E902620001_BMODEMLOGON_INT 17
+	/* Serial Port Print Flag */
+	#define E902620001_BUARTENABL_INT 18
+	/* Key Influence Item of Performance(Bitmap,0-5:Install
+		mobile security solution app from third vendor,Enable
+		Accessibility,Enable Touch Exploration,Enable
+		high text contrast,Enable Magnificationgestures,Enable
+		Color Correction) */
+	#define E902620001_NPERFBUGSETTINGS_INT 19
+	/* Used for iAware */
+	#define E902620001_IAWARE_INT 20
+	/* Error Cause Code */
+	#define E902620001_CAUSECODE_INT 21
+	/* User Operation Scene */
+	#define E902620001_OPSCENE_VARCHAR 22
+	/* 1st fuction in stack */
+	#define E902620001_TOPFUNCSTACK_VARCHAR 23
+	/* 2nd function with package name in stack */
+	#define E902620001_SECPKGFUNCSTK_VARCHAR 24
+
+	/* Event 902630000
+		Time from input dispatching to draw failed */
+	/* Performance Scene Name */
+	#define E902630000_CASENAME_VARCHAR 0
+	/* Error Level */
+	#define E902630000_RESULT_INT 1
+	/* Actual Test Performance Value */
+	#define E902630000_TOTALTIMESPENT_INT 2
+	/* Self Defined Argument 1 */
+	#define E902630000_ARG1_VARCHAR 3
+	/* Self Defined Argument 1 */
+	#define E902630000_ARG2_INT 4
+	/* Application Version */
+	#define E902630000_VERSION_VARCHAR 5
+	/* CPU Load */
+	#define E902630000_CPULOAD_INT 6
+	/* High CPU Load ( 1st) Process Name */
+	#define E902630000_CLTOP_PROC1_VARCHAR 7
+	/* High CPU Load (1st) Process ID */
+	#define E902630000_CLPROC1_VAL_INT 8
+	/* High CPU Load (2nd) Process Name */
+	#define E902630000_CLTOP_PROC2_VARCHAR 9
+	/* High CPU Load (2nd) Process ID */
+	#define E902630000_CLPROC2_VAL_INT 10
+	/* High CPU Load (3th) Process Name */
+	#define E902630000_CLTOP_PROC3_VARCHAR 11
+	/* High CPU Load (3th) Process ID */
+	#define E902630000_CLPROC3_VAL_INT 12
+	/* Free Available Memory */
+	#define E902630000_FREEMEM_INT 13
+	/* Free Available Disk */
+	#define E902630000_FREEDISK_INT 14
+	/* CPU Frequency Limit Flag */
+	#define E902630000_LIMIT_FREQ_INT 15
+	/* Rooted Flag */
+	#define E902630000_BROOTED_INT 16
+	/* Modem Log Enabled Flag */
+	#define E902630000_BMODEMLOGON_INT 17
+	/* Serial Port Print Flag */
+	#define E902630000_BUARTENABL_INT 18
+	/* Key Influence Item of Performance(Bitmap,0-5:Install
+		mobile security solution app from third vendor,Enable
+		Accessibility,Enable Touch Exploration,Enable
+		high text contrast,Enable Magnificationgestures,Enable
+		Color Correction) */
+	#define E902630000_NPERFBUGSETTINGS_INT 19
+	/* Used for iAware */
+	#define E902630000_IAWARE_INT 20
+	/* Error Cause Code */
+	#define E902630000_CAUSECODE_INT 21
+	/* User Operation Scene */
+	#define E902630000_OPSCENE_VARCHAR 22
+	/* 1st fuction in stack */
+	#define E902630000_TOPFUNCSTACK_VARCHAR 23
+	/* 2nd function with package name in stack */
+	#define E902630000_SECPKGFUNCSTK_VARCHAR 24
 
 /*** PowerThermal events' keys ***/
 
@@ -5353,6 +6916,9 @@ extern "C" {
 	#define E903001050_SOCIPS_CLASS 34
 	/* Power compensation factor */
 	#define E903001050_COMPENSATION_INT 35
+	/* Different system state power consumption, such as suspend,
+		idle, etc. */
+	#define E903001050_SYSSTATE_CLASS 36
 
 	/* Event 903001051
 		Top applications power consumpution distribution (2
@@ -5611,6 +7177,10 @@ extern "C" {
 	#define E903001055_AMTEMP_2_INT 31
 	/* WiFi Junction temperature */
 	#define E903001055_WIFITEMP_INT 32
+	/* Shell temperature location 2 */
+	#define E903001055_SHELLTEMP2_INT 33
+	/* Shell temperature location 3 */
+	#define E903001055_SHELLTEMP3_INT 34
 
 	/* Event 903001056
 		Dubai database upload */
@@ -5634,6 +7204,16 @@ extern "C" {
 	#define E903001057_APPFPSDIST_CLASS 4
 	/* New game list */
 	#define E903001057_GAMELIST_CLASS 5
+
+	/* Event 903001058
+		Statistical information about key feature of applications(per
+		day) */
+	/* Start Time */
+	#define E903001058_STARTTIME_DATETIME 0
+	/* End Time */
+	#define E903001058_ENDTIME_DATETIME 1
+	/* Statistical information about key feature of applications */
+	#define E903001058_KEYFEATURE_CLASS 2
 
 	/* Event 903001060
 		Component power consumption & usage information (per
@@ -5710,6 +7290,9 @@ extern "C" {
 	#define E903001060_SOCIPS_CLASS 34
 	/* Power compensation factor */
 	#define E903001060_COMPENSATION_INT 35
+	/* Different system state power consumption, such as suspend,
+		idle, etc. */
+	#define E903001060_SYSSTATE_CLASS 36
 
 	/* Event 903001061
 		Top applications power consumpution distribution (per
@@ -5802,6 +7385,8 @@ extern "C" {
 	#define E903002050_BTUSAGE_INT 28
 	/* Charge duration */
 	#define E903002050_CHARGEDUR_INT 29
+	/* High power consumption applications */
+	#define E903002050_TOPAPP_CLASS 30
 
 	/* Event 903002051
 		Battery capacity attenuation abnormality */
@@ -5989,6 +7574,8 @@ extern "C" {
 	#define E903009021_BGRXTRFC_INT 15
 	/* Power consumption when no compensation */
 	#define E903009021_REALENERGY_INT 16
+	/* Device type */
+	#define E903009021_TYPE_INT 17
 
 	/* Event 903009022
 		Application power consumption and usage of one component */
@@ -6025,6 +7612,8 @@ extern "C" {
 	#define E903009025_TAG_VARCHAR 2
 	/* Wakelock holding duration */
 	#define E903009025_DURATION_INT 3
+	/* Power consumption */
+	#define E903009025_ENERGY_INT 4
 
 	/* Event 903009026
 		Kernel wakelock information */
@@ -6034,6 +7623,8 @@ extern "C" {
 	#define E903009026_COUNT_INT 1
 	/* Wakelock holding duration */
 	#define E903009026_DURATION_INT 2
+	/* Power consumption */
+	#define E903009026_ENERGY_INT 3
 
 	/* Event 903009027
 		Application power consumption and usage */
@@ -6065,6 +7656,8 @@ extern "C" {
 	#define E903009027_BT_CLASS 12
 	/* Appliaction type */
 	#define E903009027_TYPE_INT 13
+	/* Soc and other modulss power consumption and usage */
+	#define E903009027_SOCOTHERS_CLASS 14
 
 	/* Event 903009028
 		Light Brightness duration */
@@ -6332,6 +7925,85 @@ extern "C" {
 	#define E903009048_GAMETYPE_INT 1
 	/* Game identified by */
 	#define E903009048_FROM_INT 2
+
+	/* Event 903009049
+		Power consumption and usage in different scenes */
+	/* Different system state, such as suspend, idle, etc. */
+	#define E903009049_STATE_INT 0
+	/* Working duration */
+	#define E903009049_DURATION_INT 1
+	/* Power consumption */
+	#define E903009049_ENERGY_INT 2
+
+	/* Event 903009050
+		Statistical information about key feature of applications */
+	/* Application name */
+	#define E903009050_APP_VARCHAR 0
+	/* the time of app on foreground */
+	#define E903009050_FORETIME_INT 1
+	/* the times of app on foreground */
+	#define E903009050_FORETIMES_INT 2
+	/* app active time */
+	#define E903009050_ACTTIME_INT 3
+	/* app background active time */
+	#define E903009050_BACKACTTIME_INT 4
+	/* app call time */
+	#define E903009050_CALLTIME_INT 5
+	/* background download traffic */
+	#define E903009050_SUMDOWNDATA_INT 6
+	/* background download time */
+	#define E903009050_BACKDATATIME_INT 7
+	/* car-speed time when app is active */
+	#define E903009050_ACTCARTIME_INT 8
+	/* biking time when app is active */
+	#define E903009050_ACTBIKETIME_INT 9
+	/* run-speed time when app is active */
+	#define E903009050_ACTRUNTIME_INT 10
+	/* walk-speed time when app is active */
+	#define E903009050_ACTWALKTIME_INT 11
+	/* landscape time */
+	#define E903009050_LANDTIME_INT 12
+	/* using keyboard times */
+	#define E903009050_KEYTIMES_INT 13
+	/* keyboard time */
+	#define E903009050_KEYTIME_INT 14
+	/* click screen times */
+	#define E903009050_CLICKTIMES_INT 15
+	/* double-click screen times */
+	#define E903009050_DOUBLETIMES_INT 16
+	/* zoom times */
+	#define E903009050_ZOOMTIMES_INT 17
+	/* left right slide screen times */
+	#define E903009050_LEFTRIGHTSLITIMES_INT 18
+	/* up down slide screen times */
+	#define E903009050_UPDOWNSLITIMES_INT 19
+	/* long press screen times */
+	#define E903009050_PRESSTIMES_INT 20
+	/* click backbutton times */
+	#define E903009050_BACKBUTTONTIMES_INT 21
+	/* the times of using payment applications */
+	#define E903009050_USEPAYTIMES_INT 22
+	/* the number of receiving messages when app is on background */
+	#define E903009050_BACKNOTITIMES_INT 23
+	/* the number of receiving messages when app is on foreground */
+	#define E903009050_FORENOTITIMES_INT 24
+	/* whether know the type of the app */
+	#define E903009050_KNOWNTYPE_INT 25
+	/* the app type recognized by old method */
+	#define E903009050_RECTYPE_INT 26
+
+	/* Event 903009051
+		High power consumption applications */
+	/* Display power comsuption top 1App */
+	#define E903009051_DISPLAYTOP1_VARCHAR 0
+	/* CPU comsuption top 1 App */
+	#define E903009051_CPUTOP1_VARCHAR 1
+	/* MODEM comsuption top 1 App */
+	#define E903009051_MODEMTOP1_VARCHAR 2
+	/* WIFI comsuption top 1 App */
+	#define E903009051_WIFITOP1_VARCHAR 3
+	/* Audio comsuption top 1 APP */
+	#define E903009051_AUDIOTOP1_VARCHAR 4
 
 	/* Event 903999001
 		Dubai database upload */
@@ -36225,6 +37897,142 @@ extern "C" {
 	/* device name */
 	#define E920012040_DEVICE_NAME_VARCHAR 6
 
+	/* Event 920013000
+		FUSB3601 I2C_ERROR */
+	/* error level */
+	#define E920013000_ERROR_LEVEL_INT 0
+	/* IC name */
+	#define E920013000_IC_NAME_VARCHAR 1
+	/* module name */
+	#define E920013000_MODULE_NAME_VARCHAR 2
+	/* description */
+	#define E920013000_DESCRIPTION_VARCHAR 3
+	/* report counts */
+	#define E920013000_COUNT_INT 4
+	/* fault message */
+	#define E920013000_CONTENT_VARCHAR 5
+	/* device name */
+	#define E920013000_DEVICE_NAME_VARCHAR 6
+
+	/* Event 920013001
+		FUSB3601 int storm */
+	/* error level */
+	#define E920013001_ERROR_LEVEL_INT 0
+	/* IC name */
+	#define E920013001_IC_NAME_VARCHAR 1
+	/* module name */
+	#define E920013001_MODULE_NAME_VARCHAR 2
+	/* description */
+	#define E920013001_DESCRIPTION_VARCHAR 3
+	/* report counts */
+	#define E920013001_COUNT_INT 4
+	/* fault message */
+	#define E920013001_CONTENT_VARCHAR 5
+	/* device name */
+	#define E920013001_DEVICE_NAME_VARCHAR 6
+
+	/* Event 920013002
+		FUSB3601 I2C_ERROR */
+	/* error level */
+	#define E920013002_ERROR_LEVEL_INT 0
+	/* IC name */
+	#define E920013002_IC_NAME_VARCHAR 1
+	/* module name */
+	#define E920013002_MODULE_NAME_VARCHAR 2
+	/* description */
+	#define E920013002_DESCRIPTION_VARCHAR 3
+	/* report counts */
+	#define E920013002_COUNT_INT 4
+	/* fault message */
+	#define E920013002_CONTENT_VARCHAR 5
+	/* device name */
+	#define E920013002_DEVICE_NAME_VARCHAR 6
+
+	/* Event 920013003
+		FUSB3601 I2C_ERROR */
+	/* error level */
+	#define E920013003_ERROR_LEVEL_INT 0
+	/* IC name */
+	#define E920013003_IC_NAME_VARCHAR 1
+	/* module name */
+	#define E920013003_MODULE_NAME_VARCHAR 2
+	/* description */
+	#define E920013003_DESCRIPTION_VARCHAR 3
+	/* report counts */
+	#define E920013003_COUNT_INT 4
+	/* fault message */
+	#define E920013003_CONTENT_VARCHAR 5
+	/* device name */
+	#define E920013003_DEVICE_NAME_VARCHAR 6
+
+	/* Event 920013004
+		FUSB3601 abnormal plug */
+	/* error level */
+	#define E920013004_ERROR_LEVEL_INT 0
+	/* IC name */
+	#define E920013004_IC_NAME_VARCHAR 1
+	/* module name */
+	#define E920013004_MODULE_NAME_VARCHAR 2
+	/* description */
+	#define E920013004_DESCRIPTION_VARCHAR 3
+	/* report counts */
+	#define E920013004_COUNT_INT 4
+	/* fault message */
+	#define E920013004_CONTENT_VARCHAR 5
+	/* device name */
+	#define E920013004_DEVICE_NAME_VARCHAR 6
+
+	/* Event 920013005
+		FUSB3601 statemachine get stuck */
+	/* error level */
+	#define E920013005_ERROR_LEVEL_INT 0
+	/* IC name */
+	#define E920013005_IC_NAME_VARCHAR 1
+	/* module name */
+	#define E920013005_MODULE_NAME_VARCHAR 2
+	/* description */
+	#define E920013005_DESCRIPTION_VARCHAR 3
+	/* report counts */
+	#define E920013005_COUNT_INT 4
+	/* fault message */
+	#define E920013005_CONTENT_VARCHAR 5
+	/* device name */
+	#define E920013005_DEVICE_NAME_VARCHAR 6
+
+	/* Event 920013006
+		FUSB3601 VCONN OCP */
+	/* error level */
+	#define E920013006_ERROR_LEVEL_INT 0
+	/* IC name */
+	#define E920013006_IC_NAME_VARCHAR 1
+	/* module name */
+	#define E920013006_MODULE_NAME_VARCHAR 2
+	/* description */
+	#define E920013006_DESCRIPTION_VARCHAR 3
+	/* report counts */
+	#define E920013006_COUNT_INT 4
+	/* fault message */
+	#define E920013006_CONTENT_VARCHAR 5
+	/* device name */
+	#define E920013006_DEVICE_NAME_VARCHAR 6
+
+	/* Event 920013007
+		FUSB3601 FORCE DISCHARGE FAIL */
+	/* error level */
+	#define E920013007_ERROR_LEVEL_INT 0
+	/* IC name */
+	#define E920013007_IC_NAME_VARCHAR 1
+	/* module name */
+	#define E920013007_MODULE_NAME_VARCHAR 2
+	/* description */
+	#define E920013007_DESCRIPTION_VARCHAR 3
+	/* report counts */
+	#define E920013007_COUNT_INT 4
+	/* fault message */
+	#define E920013007_CONTENT_VARCHAR 5
+	/* device name */
+	#define E920013007_DEVICE_NAME_VARCHAR 6
+
 	/* Event 921001000
 		soc hifi reset */
 	/* error level */
@@ -37603,6 +39411,91 @@ extern "C" {
 	/* device name */
 	#define E922001036_DEVICE_NAME_VARCHAR 6
 
+	/* Event 922001044
+		set power mode recovery */
+	/* error level */
+	#define E922001044_ERROR_LEVEL_INT 0
+	/* IC name */
+	#define E922001044_IC_NAME_VARCHAR 1
+	/* module name */
+	#define E922001044_MODULE_NAME_VARCHAR 2
+	/* description */
+	#define E922001044_DESCRIPTION_VARCHAR 3
+	/* report counts */
+	#define E922001044_COUNT_INT 4
+	/* fault message */
+	#define E922001044_CONTENT_VARCHAR 5
+	/* device name */
+	#define E922001044_DEVICE_NAME_VARCHAR 6
+
+	/* Event 922001045
+		sensorhub recovery */
+	/* error level */
+	#define E922001045_ERROR_LEVEL_INT 0
+	/* IC name */
+	#define E922001045_IC_NAME_VARCHAR 1
+	/* module name */
+	#define E922001045_MODULE_NAME_VARCHAR 2
+	/* description */
+	#define E922001045_DESCRIPTION_VARCHAR 3
+	/* report counts */
+	#define E922001045_COUNT_INT 4
+	/* fault message */
+	#define E922001045_CONTENT_VARCHAR 5
+	/* device name */
+	#define E922001045_DEVICE_NAME_VARCHAR 6
+
+	/* Event 922001046
+		sensorhub dss on timeout */
+	/* error level */
+	#define E922001046_ERROR_LEVEL_INT 0
+	/* IC name */
+	#define E922001046_IC_NAME_VARCHAR 1
+	/* module name */
+	#define E922001046_MODULE_NAME_VARCHAR 2
+	/* description */
+	#define E922001046_DESCRIPTION_VARCHAR 3
+	/* report counts */
+	#define E922001046_COUNT_INT 4
+	/* fault message */
+	#define E922001046_CONTENT_VARCHAR 5
+	/* device name */
+	#define E922001046_DEVICE_NAME_VARCHAR 6
+
+	/* Event 922001047
+		sensorhub aod exit err */
+	/* error level */
+	#define E922001047_ERROR_LEVEL_INT 0
+	/* IC name */
+	#define E922001047_IC_NAME_VARCHAR 1
+	/* module name */
+	#define E922001047_MODULE_NAME_VARCHAR 2
+	/* description */
+	#define E922001047_DESCRIPTION_VARCHAR 3
+	/* report counts */
+	#define E922001047_COUNT_INT 4
+	/* fault message */
+	#define E922001047_CONTENT_VARCHAR 5
+	/* device name */
+	#define E922001047_DEVICE_NAME_VARCHAR 6
+
+	/* Event 922001048
+		sensorhub underflow */
+	/* error level */
+	#define E922001048_ERROR_LEVEL_INT 0
+	/* IC name */
+	#define E922001048_IC_NAME_VARCHAR 1
+	/* module name */
+	#define E922001048_MODULE_NAME_VARCHAR 2
+	/* description */
+	#define E922001048_DESCRIPTION_VARCHAR 3
+	/* report counts */
+	#define E922001048_COUNT_INT 4
+	/* fault message */
+	#define E922001048_CONTENT_VARCHAR 5
+	/* device name */
+	#define E922001048_DEVICE_NAME_VARCHAR 6
+
 	/* Event 922002000
 		gpu job fail */
 	/* error level */
@@ -38543,6 +40436,295 @@ extern "C" {
 	/* device name */
 	#define E925004003_DEVICE_NAME_VARCHAR 6
 
+	/* Event 925004101
+		PMU1 test fail */
+	/* error level */
+	#define E925004101_ERROR_LEVEL_INT 0
+	/* IC name */
+	#define E925004101_IC_NAME_VARCHAR 1
+	/* module name */
+	#define E925004101_MODULE_NAME_VARCHAR 2
+	/* description */
+	#define E925004101_DESCRIPTION_VARCHAR 3
+	/* report counts */
+	#define E925004101_COUNT_INT 4
+	/* fault message */
+	#define E925004101_CONTENT_VARCHAR 5
+	/* device name */
+	#define E925004101_DEVICE_NAME_VARCHAR 6
+
+	/* Event 925004102
+		PMU2 test fail */
+	/* error level */
+	#define E925004102_ERROR_LEVEL_INT 0
+	/* IC name */
+	#define E925004102_IC_NAME_VARCHAR 1
+	/* module name */
+	#define E925004102_MODULE_NAME_VARCHAR 2
+	/* description */
+	#define E925004102_DESCRIPTION_VARCHAR 3
+	/* report counts */
+	#define E925004102_COUNT_INT 4
+	/* fault message */
+	#define E925004102_CONTENT_VARCHAR 5
+	/* device name */
+	#define E925004102_DEVICE_NAME_VARCHAR 6
+
+	/* Event 925004103
+		PMU3 test fail */
+	/* error level */
+	#define E925004103_ERROR_LEVEL_INT 0
+	/* IC name */
+	#define E925004103_IC_NAME_VARCHAR 1
+	/* module name */
+	#define E925004103_MODULE_NAME_VARCHAR 2
+	/* description */
+	#define E925004103_DESCRIPTION_VARCHAR 3
+	/* report counts */
+	#define E925004103_COUNT_INT 4
+	/* fault message */
+	#define E925004103_CONTENT_VARCHAR 5
+	/* device name */
+	#define E925004103_DEVICE_NAME_VARCHAR 6
+
+	/* Event 925004104
+		PMU4 test fail */
+	/* error level */
+	#define E925004104_ERROR_LEVEL_INT 0
+	/* IC name */
+	#define E925004104_IC_NAME_VARCHAR 1
+	/* module name */
+	#define E925004104_MODULE_NAME_VARCHAR 2
+	/* description */
+	#define E925004104_DESCRIPTION_VARCHAR 3
+	/* report counts */
+	#define E925004104_COUNT_INT 4
+	/* fault message */
+	#define E925004104_CONTENT_VARCHAR 5
+	/* device name */
+	#define E925004104_DEVICE_NAME_VARCHAR 6
+
+	/* Event 925004105
+		PMU5 test fail */
+	/* error level */
+	#define E925004105_ERROR_LEVEL_INT 0
+	/* IC name */
+	#define E925004105_IC_NAME_VARCHAR 1
+	/* module name */
+	#define E925004105_MODULE_NAME_VARCHAR 2
+	/* description */
+	#define E925004105_DESCRIPTION_VARCHAR 3
+	/* report counts */
+	#define E925004105_COUNT_INT 4
+	/* fault message */
+	#define E925004105_CONTENT_VARCHAR 5
+	/* device name */
+	#define E925004105_DEVICE_NAME_VARCHAR 6
+
+	/* Event 925004121
+		Codec1 test fail */
+	/* error level */
+	#define E925004121_ERROR_LEVEL_INT 0
+	/* IC name */
+	#define E925004121_IC_NAME_VARCHAR 1
+	/* module name */
+	#define E925004121_MODULE_NAME_VARCHAR 2
+	/* description */
+	#define E925004121_DESCRIPTION_VARCHAR 3
+	/* report counts */
+	#define E925004121_COUNT_INT 4
+	/* fault message */
+	#define E925004121_CONTENT_VARCHAR 5
+	/* device name */
+	#define E925004121_DEVICE_NAME_VARCHAR 6
+
+	/* Event 925004122
+		Codec2 test fail */
+	/* error level */
+	#define E925004122_ERROR_LEVEL_INT 0
+	/* IC name */
+	#define E925004122_IC_NAME_VARCHAR 1
+	/* module name */
+	#define E925004122_MODULE_NAME_VARCHAR 2
+	/* description */
+	#define E925004122_DESCRIPTION_VARCHAR 3
+	/* report counts */
+	#define E925004122_COUNT_INT 4
+	/* fault message */
+	#define E925004122_CONTENT_VARCHAR 5
+	/* device name */
+	#define E925004122_DEVICE_NAME_VARCHAR 6
+
+	/* Event 925004141
+		Charger1 test fail */
+	/* error level */
+	#define E925004141_ERROR_LEVEL_INT 0
+	/* IC name */
+	#define E925004141_IC_NAME_VARCHAR 1
+	/* module name */
+	#define E925004141_MODULE_NAME_VARCHAR 2
+	/* description */
+	#define E925004141_DESCRIPTION_VARCHAR 3
+	/* report counts */
+	#define E925004141_COUNT_INT 4
+	/* fault message */
+	#define E925004141_CONTENT_VARCHAR 5
+	/* device name */
+	#define E925004141_DEVICE_NAME_VARCHAR 6
+
+	/* Event 925004142
+		Charger2 test fail */
+	/* error level */
+	#define E925004142_ERROR_LEVEL_INT 0
+	/* IC name */
+	#define E925004142_IC_NAME_VARCHAR 1
+	/* module name */
+	#define E925004142_MODULE_NAME_VARCHAR 2
+	/* description */
+	#define E925004142_DESCRIPTION_VARCHAR 3
+	/* report counts */
+	#define E925004142_COUNT_INT 4
+	/* fault message */
+	#define E925004142_CONTENT_VARCHAR 5
+	/* device name */
+	#define E925004142_DEVICE_NAME_VARCHAR 6
+
+	/* Event 925004161
+		Connectivity1 test fail */
+	/* error level */
+	#define E925004161_ERROR_LEVEL_INT 0
+	/* IC name */
+	#define E925004161_IC_NAME_VARCHAR 1
+	/* module name */
+	#define E925004161_MODULE_NAME_VARCHAR 2
+	/* description */
+	#define E925004161_DESCRIPTION_VARCHAR 3
+	/* report counts */
+	#define E925004161_COUNT_INT 4
+	/* fault message */
+	#define E925004161_CONTENT_VARCHAR 5
+	/* device name */
+	#define E925004161_DEVICE_NAME_VARCHAR 6
+
+	/* Event 925004181
+		RFIC1 test fail */
+	/* error level */
+	#define E925004181_ERROR_LEVEL_INT 0
+	/* IC name */
+	#define E925004181_IC_NAME_VARCHAR 1
+	/* module name */
+	#define E925004181_MODULE_NAME_VARCHAR 2
+	/* description */
+	#define E925004181_DESCRIPTION_VARCHAR 3
+	/* report counts */
+	#define E925004181_COUNT_INT 4
+	/* fault message */
+	#define E925004181_CONTENT_VARCHAR 5
+	/* device name */
+	#define E925004181_DEVICE_NAME_VARCHAR 6
+
+	/* Event 925004182
+		RFIC2 test fail */
+	/* error level */
+	#define E925004182_ERROR_LEVEL_INT 0
+	/* IC name */
+	#define E925004182_IC_NAME_VARCHAR 1
+	/* module name */
+	#define E925004182_MODULE_NAME_VARCHAR 2
+	/* description */
+	#define E925004182_DESCRIPTION_VARCHAR 3
+	/* report counts */
+	#define E925004182_COUNT_INT 4
+	/* fault message */
+	#define E925004182_CONTENT_VARCHAR 5
+	/* device name */
+	#define E925004182_DEVICE_NAME_VARCHAR 6
+
+	/* Event 925004201
+		LNA1 test fail */
+	/* error level */
+	#define E925004201_ERROR_LEVEL_INT 0
+	/* IC name */
+	#define E925004201_IC_NAME_VARCHAR 1
+	/* module name */
+	#define E925004201_MODULE_NAME_VARCHAR 2
+	/* description */
+	#define E925004201_DESCRIPTION_VARCHAR 3
+	/* report counts */
+	#define E925004201_COUNT_INT 4
+	/* fault message */
+	#define E925004201_CONTENT_VARCHAR 5
+	/* device name */
+	#define E925004201_DEVICE_NAME_VARCHAR 6
+
+	/* Event 925004202
+		LNA2 test fail */
+	/* error level */
+	#define E925004202_ERROR_LEVEL_INT 0
+	/* IC name */
+	#define E925004202_IC_NAME_VARCHAR 1
+	/* module name */
+	#define E925004202_MODULE_NAME_VARCHAR 2
+	/* description */
+	#define E925004202_DESCRIPTION_VARCHAR 3
+	/* report counts */
+	#define E925004202_COUNT_INT 4
+	/* fault message */
+	#define E925004202_CONTENT_VARCHAR 5
+	/* device name */
+	#define E925004202_DEVICE_NAME_VARCHAR 6
+
+	/* Event 925004221
+		RF PA1 test fail */
+	/* error level */
+	#define E925004221_ERROR_LEVEL_INT 0
+	/* IC name */
+	#define E925004221_IC_NAME_VARCHAR 1
+	/* module name */
+	#define E925004221_MODULE_NAME_VARCHAR 2
+	/* description */
+	#define E925004221_DESCRIPTION_VARCHAR 3
+	/* report counts */
+	#define E925004221_COUNT_INT 4
+	/* fault message */
+	#define E925004221_CONTENT_VARCHAR 5
+	/* device name */
+	#define E925004221_DEVICE_NAME_VARCHAR 6
+
+	/* Event 925004222
+		RF PA2 test fail */
+	/* error level */
+	#define E925004222_ERROR_LEVEL_INT 0
+	/* IC name */
+	#define E925004222_IC_NAME_VARCHAR 1
+	/* module name */
+	#define E925004222_MODULE_NAME_VARCHAR 2
+	/* description */
+	#define E925004222_DESCRIPTION_VARCHAR 3
+	/* report counts */
+	#define E925004222_COUNT_INT 4
+	/* fault message */
+	#define E925004222_CONTENT_VARCHAR 5
+	/* device name */
+	#define E925004222_DEVICE_NAME_VARCHAR 6
+
+	/* Event 925004223
+		RF PA3 test fail */
+	/* error level */
+	#define E925004223_ERROR_LEVEL_INT 0
+	/* IC name */
+	#define E925004223_IC_NAME_VARCHAR 1
+	/* module name */
+	#define E925004223_MODULE_NAME_VARCHAR 2
+	/* description */
+	#define E925004223_DESCRIPTION_VARCHAR 3
+	/* report counts */
+	#define E925004223_COUNT_INT 4
+	/* fault message */
+	#define E925004223_CONTENT_VARCHAR 5
+	/* device name */
+	#define E925004223_DEVICE_NAME_VARCHAR 6
+
 	/* Event 925010001
 		AI KERNEL ipu powerup fail or status invalid */
 	/* error level */
@@ -39409,6 +41591,23 @@ extern "C" {
 	#define E926004026_CONTENT_VARCHAR 5
 	/* device name */
 	#define E926004026_DEVICE_NAME_VARCHAR 6
+
+	/* Event 926004035
+		FW update overtime */
+	/* error level */
+	#define E926004035_ERROR_LEVEL_INT 0
+	/* IC name */
+	#define E926004035_IC_NAME_VARCHAR 1
+	/* module name */
+	#define E926004035_MODULE_NAME_VARCHAR 2
+	/* description */
+	#define E926004035_DESCRIPTION_VARCHAR 3
+	/* report counts */
+	#define E926004035_COUNT_INT 4
+	/* fault message */
+	#define E926004035_CONTENT_VARCHAR 5
+	/* device name */
+	#define E926004035_DEVICE_NAME_VARCHAR 6
 
 	/* Event 926005003
 		Sensor detect fail */
@@ -44776,6 +46975,108 @@ extern "C" {
 	/* device name */
 	#define E926012000_DEVICE_NAME_VARCHAR 6
 
+	/* Event 926012001
+		PMU LRA driver output ocp */
+	/* error level */
+	#define E926012001_ERROR_LEVEL_INT 0
+	/* IC name */
+	#define E926012001_IC_NAME_VARCHAR 1
+	/* module name */
+	#define E926012001_MODULE_NAME_VARCHAR 2
+	/* description */
+	#define E926012001_DESCRIPTION_VARCHAR 3
+	/* report counts */
+	#define E926012001_COUNT_INT 4
+	/* fault message */
+	#define E926012001_CONTENT_VARCHAR 5
+	/* device name */
+	#define E926012001_DEVICE_NAME_VARCHAR 6
+
+	/* Event 926012002
+		PMU LRA driver output initial state abnormal */
+	/* error level */
+	#define E926012002_ERROR_LEVEL_INT 0
+	/* IC name */
+	#define E926012002_IC_NAME_VARCHAR 1
+	/* module name */
+	#define E926012002_MODULE_NAME_VARCHAR 2
+	/* description */
+	#define E926012002_DESCRIPTION_VARCHAR 3
+	/* report counts */
+	#define E926012002_COUNT_INT 4
+	/* fault message */
+	#define E926012002_CONTENT_VARCHAR 5
+	/* device name */
+	#define E926012002_DEVICE_NAME_VARCHAR 6
+
+	/* Event 926012003
+		PMU LRA driver pvdd under voltage */
+	/* error level */
+	#define E926012003_ERROR_LEVEL_INT 0
+	/* IC name */
+	#define E926012003_IC_NAME_VARCHAR 1
+	/* module name */
+	#define E926012003_MODULE_NAME_VARCHAR 2
+	/* description */
+	#define E926012003_DESCRIPTION_VARCHAR 3
+	/* report counts */
+	#define E926012003_COUNT_INT 4
+	/* fault message */
+	#define E926012003_CONTENT_VARCHAR 5
+	/* device name */
+	#define E926012003_DEVICE_NAME_VARCHAR 6
+
+	/* Event 926012004
+		PMU LRA driver pvdd over voltage */
+	/* error level */
+	#define E926012004_ERROR_LEVEL_INT 0
+	/* IC name */
+	#define E926012004_IC_NAME_VARCHAR 1
+	/* module name */
+	#define E926012004_MODULE_NAME_VARCHAR 2
+	/* description */
+	#define E926012004_DESCRIPTION_VARCHAR 3
+	/* report counts */
+	#define E926012004_COUNT_INT 4
+	/* fault message */
+	#define E926012004_CONTENT_VARCHAR 5
+	/* device name */
+	#define E926012004_DEVICE_NAME_VARCHAR 6
+
+	/* Event 926012005
+		PMU LRA driver adc abnormal */
+	/* error level */
+	#define E926012005_ERROR_LEVEL_INT 0
+	/* IC name */
+	#define E926012005_IC_NAME_VARCHAR 1
+	/* module name */
+	#define E926012005_MODULE_NAME_VARCHAR 2
+	/* description */
+	#define E926012005_DESCRIPTION_VARCHAR 3
+	/* report counts */
+	#define E926012005_COUNT_INT 4
+	/* fault message */
+	#define E926012005_CONTENT_VARCHAR 5
+	/* device name */
+	#define E926012005_DEVICE_NAME_VARCHAR 6
+
+	/* Event 926012006
+		PMU LRA driver frequece detect abnormal */
+	/* error level */
+	#define E926012006_ERROR_LEVEL_INT 0
+	/* IC name */
+	#define E926012006_IC_NAME_VARCHAR 1
+	/* module name */
+	#define E926012006_MODULE_NAME_VARCHAR 2
+	/* description */
+	#define E926012006_DESCRIPTION_VARCHAR 3
+	/* report counts */
+	#define E926012006_COUNT_INT 4
+	/* fault message */
+	#define E926012006_CONTENT_VARCHAR 5
+	/* device name */
+	#define E926012006_DEVICE_NAME_VARCHAR 6
+
 	/* Event 925005000
 		Pmu rtc readcount error */
 	/* error level */
@@ -45100,6 +47401,12 @@ extern "C" {
 	#define E932010102_ALGOCALCDEFAULTLEVEL_SMALLINT 4
 	/* Foreground APP Package Name */
 	#define E932010102_FOREGROUNDPACKAGENAME_VARCHAR 5
+	/* Is Protect Eye Enable */
+	#define E932010102_PROTECTEYE_BIT 6
+	/* Is Power Save Mode */
+	#define E932010102_POWERSAVE_BIT 7
+	/* Is Thermal Limit */
+	#define E932010102_THERMAL_BIT 8
 
 	/* Event 932010103
 		APP Change Brightness Setting Without Recovery */
@@ -45701,6 +48008,10 @@ extern "C" {
 	#define E936006000_TP_INFO_VARCHAR 23
 	/* sensor information */
 	#define E936006000_S_INFO_VARCHAR 24
+	/* lcd vendor information */
+	#define E936006000_LCDINFO_VARCHAR 25
+	/* screen orientation, portrait or landscape */
+	#define E936006000_SCRORIENTATION_INT 26
 
 	/* Event 936006001
 		Fingersense knock event */
@@ -45908,37 +48219,97 @@ extern "C" {
 	#define E907000024_SUPPLEMENTINFO_VARCHAR 3
 
 	/* Event 907001001
-		RCS login prolbem */
-	/* error type */
-	#define E907001001_ERRORTYPE_INT 0
-	/* error code */
-	#define E907001001_ERRORCODE_INT 1
-	/* reason of login problem */
-	#define E907001001_REASON_VARCHAR 2
+		service stopped prolbem */
+	/* reason of service stopped */
+	#define E907001001_REASON_VARCHAR 0
 
 	/* Event 907001002
-		message sending and receiving error */
+		server refused prolbem */
 	/* error type */
 	#define E907001002_ERRORTYPE_INT 0
-	/* error code */
-	#define E907001002_ERRORCODE_INT 1
-	/* failed reason */
-	#define E907001002_REASON_VARCHAR 2
-	/* field information */
-	#define E907001002_FILEDINFO_VARCHAR 3
+	/* reason of refuse */
+	#define E907001002_REASON_VARCHAR 1
 
 	/* Event 907001003
-		group message sending and receiving error */
+		server not response prolbem */
 	/* error type */
 	#define E907001003_ERRORTYPE_INT 0
+	/* reason of no response */
+	#define E907001003_REASON_VARCHAR 1
+
+	/* Event 907001004
+		business restricted prolbem */
+	/* error type */
+	#define E907001004_ERRORTYPE_INT 0
+
+	/* Event 907001005
+		message send error */
+	/* error type */
+	#define E907001005_ERRORTYPE_INT 0
 	/* error code */
-	#define E907001003_ERRORCODE_INT 1
-	/* failed reason */
-	#define E907001003_REASON_VARCHAR 2
+	#define E907001005_ERRORCODE_INT 1
+	/* network type */
+	#define E907001005_NETTYPE_INT 2
+	/* reason of send error */
+	#define E907001005_REASON_VARCHAR 3
+
+	/* Event 907001006
+		message receive error */
+	/* error type */
+	#define E907001006_ERRORTYPE_INT 0
+	/* error code */
+	#define E907001006_ERRORCODE_INT 1
+	/* network type */
+	#define E907001006_NETTYPE_INT 2
+	/* reason of receive problem */
+	#define E907001006_REASON_VARCHAR 3
+
+	/* Event 907001007
+		received messager error */
+	/* error type */
+	#define E907001007_ERRORTYPE_INT 0
+	/* error code */
+	#define E907001007_ERRORCODE_INT 1
+	/* reason of message error */
+	#define E907001007_REASON_VARCHAR 2
+
+	/* Event 907001008
+		file transfer error */
+	/* error type */
+	#define E907001008_ERRORTYPE_INT 0
+	/* error code */
+	#define E907001008_ERRORCODE_INT 1
+	/* network type */
+	#define E907001008_NETTYPE_INT 2
+	/* reason of transfer error */
+	#define E907001008_REASON_VARCHAR 3
+
+	/* Event 907001009
+		group create failed error */
+	/* error type */
+	#define E907001009_ERRORTYPE_INT 0
+	/* error code */
+	#define E907001009_ERRORCODE_INT 1
 	/* group information */
-	#define E907001003_GROUPINFO_VARCHAR 3
-	/* field information */
-	#define E907001003_FILEDINFO_VARCHAR 4
+	#define E907001009_GROUPINFO_VARCHAR 2
+
+	/* Event 907001010
+		group list sync failed error */
+	/* error type */
+	#define E907001010_ERRORTYPE_INT 0
+	/* error code */
+	#define E907001010_ERRORCODE_INT 1
+	/* group information */
+	#define E907001010_GROUPINFO_VARCHAR 2
+
+	/* Event 907001011
+		server disconnected error */
+	/* error type */
+	#define E907001011_ERRORTYPE_INT 0
+	/* error code */
+	#define E907001011_ERRORCODE_INT 1
+	/* reason of server disconnected */
+	#define E907001011_REASON_VARCHAR 2
 
 	/* Event 907003001
 		Answer call timeout */
@@ -48121,6 +50492,31 @@ extern "C" {
 	/* reason of error */
 	#define E907117001_REASON_VARCHAR 1
 
+	/* Event 907117002
+		statistics of update time */
+	/* rom size */
+	#define E907117002_ROMSIZE_INT 0
+	/* data remain size */
+	#define E907117002_DATAREMAINSIZE_INT 1
+	/* Inode mumber */
+	#define E907117002_INODENUM_INT 2
+	/* estimate move time */
+	#define E907117002_ESTIMATEMOVETIME_INT 3
+	/* estimate resize time */
+	#define E907117002_ESTIMATERESIZETIME_INT 4
+	/* estimate update time */
+	#define E907117002_ESTIMATEUPDATETIME_INT 5
+	/* recovery number */
+	#define E907117002_RECOVERYNUM_INT 6
+	/* data resize size */
+	#define E907117002_DATARESIZESIZE_INT 7
+	/* move time */
+	#define E907117002_MOVETIME_INT 8
+	/* resize time */
+	#define E907117002_RESIZETIME_INT 9
+	/* update time */
+	#define E907117002_UPDATETIME_INT 10
+
 	/* Event 907103001
 		statistics of synergy */
 	/* Call message send Successful Count */
@@ -48200,6 +50596,227 @@ extern "C" {
 	/* recog result6 counter */
 	#define E907502001_RESULT6CNT_INT 12
 
+	/* Event 907047001
+		registration network information */
+	/* MCCMNC */
+	#define E907047001_MCCMNC_VARCHAR 0
+	/* Sim Operator */
+	#define E907047001_SIMOPERATOR_VARCHAR 1
+	/* MCCMNC of other slot */
+	#define E907047001_MCCMNC_OTHERSLOT_VARCHAR 2
+	/* HPLMN of other slot */
+	#define E907047001_SIMOPER_OTHERSLOT_VARCHAR 3
+
+	/* Event 907047002
+		nitz update time zone */
+	/* registration network information */
+	#define E907047002_REGINFO_VARCHAR 0
+	/* nitz information */
+	#define E907047002_NITZ_VARCHAR 1
+	/* auto update time zone key statue */
+	#define E907047002_AUTOTIMEZONE_TINYINT 2
+	/* nitz subId */
+	#define E907047002_SUBID_TINYINT 3
+	/* time zone sourece */
+	#define E907047002_TIMEZONESOURCE_VARCHAR 4
+
+	/* Event 907047003
+		mcc update time zone */
+	/* registration network information */
+	#define E907047003_REGINFO_VARCHAR 0
+	/* nitz already update time zone */
+	#define E907047003_MNITZUPDATEDTIME_VARCHAR 1
+	/* auto update time zone key statue */
+	#define E907047003_AUTOTIMEZONE_TINYINT 2
+	/* resident network mccmnc */
+	#define E907047003_RPLMN_VARCHAR 3
+	/* time zone sourece */
+	#define E907047003_TIMEZONESOURCE_VARCHAR 4
+
+	/* Event 907047004
+		dual cards update time zone */
+	/* registration network information */
+	#define E907047004_REGINFO_VARCHAR 0
+	/* sub id */
+	#define E907047004_SUBID_TINYINT 1
+	/* is Vsim Open */
+	#define E907047004_ISVSIMOPEN_TINYINT 2
+	/* time zone information */
+	#define E907047004_NITZ_VARCHAR 3
+	/* forbidden update reason */
+	#define E907047004_FORBIDDENREASON_VARCHAR 4
+
+	/* Event 907047005
+		first reg multi time region */
+	/* registration network information */
+	#define E907047005_REGINFO_VARCHAR 0
+	/* acess my location */
+	#define E907047005_ACESS_LOCATION_TINYINT 1
+	/* location mode */
+	#define E907047005_LOCATION_MODE_VARCHAR 2
+	/* auto update time zone key statue */
+	#define E907047005_AUTOTIMEZONE_TINYINT 3
+	/* ps connection status */
+	#define E907047005_PS_STATUS_VARCHAR 4
+
+	/* Event 907047006
+		no nitz in multi time region */
+	/* registration network information */
+	#define E907047006_REGINFO_VARCHAR 0
+	/* current time zone */
+	#define E907047006_CURRENTZONE_VARCHAR 1
+	/* acess my location */
+	#define E907047006_ACESS_LOCATION_TINYINT 2
+	/* location mode */
+	#define E907047006_LOCATION_MODE_VARCHAR 3
+	/* auto update time zone key statue */
+	#define E907047006_AUTOTIMEZONE_TINYINT 4
+	/* ps connection status */
+	#define E907047006_PS_STATUS_VARCHAR 5
+
+	/* Event 907047007
+		location update time zone */
+	/* registration network information */
+	#define E907047007_REGINFO_VARCHAR 0
+	/* time zone */
+	#define E907047007_ZONE_VARCHAR 1
+	/* acess my location */
+	#define E907047007_ACESS_LOCATION_TINYINT 2
+	/* location mode */
+	#define E907047007_LOCATION_MODE_VARCHAR 3
+	/* auto update time zone key statue */
+	#define E907047007_AUTOTIMEZONE_TINYINT 4
+	/* ps connection status */
+	#define E907047007_PS_STATUS_VARCHAR 5
+
+	/* Event 907503001
+		fail to connect pc services */
+	/* service name */
+	#define E907503001_SERVICENAME_VARCHAR 0
+	/* exception type */
+	#define E907503001_EXCEPTIONTYPE_INT 1
+	/* display type */
+	#define E907503001_DISPLAYTYPE_INT 2
+	/* DPI */
+	#define E907503001_DPI_INT 3
+	/* display width */
+	#define E907503001_WIDTH_INT 4
+	/* display height */
+	#define E907503001_HEIGHT_INT 5
+	/* display name */
+	#define E907503001_DISPLAYNAME_VARCHAR 6
+
+	/* Event 907503002
+		fail to switch pc mode */
+	/* failure reason */
+	#define E907503002_FAILUREREASON_INT 0
+	/* projection mode */
+	#define E907503002_PROJECTMODE_INT 1
+	/* display type */
+	#define E907503002_DISPLAYTYPE_INT 2
+	/* DPI */
+	#define E907503002_DPI_INT 3
+	/* display width */
+	#define E907503002_WIDTH_INT 4
+	/* display height */
+	#define E907503002_HEIGHT_INT 5
+	/* display name */
+	#define E907503002_DISPLAYNAME_VARCHAR 6
+	/* display ID */
+	#define E907503002_DISPLAYID_INT 7
+
+	/* Event 907503003
+		fail to enter pad pc mode */
+	/* failure reason */
+	#define E907503003_FAILUREREASON_INT 0
+	/* display type */
+	#define E907503003_DISPLAYTYPE_INT 1
+	/* DPI */
+	#define E907503003_DPI_INT 2
+	/* display width */
+	#define E907503003_WIDTH_INT 3
+	/* display height */
+	#define E907503003_HEIGHT_INT 4
+	/* display ID */
+	#define E907503003_DISPLAYID_INT 5
+
+	/* Event 907503004
+		kill process for different display */
+	/* package name */
+	#define E907503004_PACKAGENAME_VARCHAR 0
+	/* process name */
+	#define E907503004_PROCESSNAME_VARCHAR 1
+	/* source display ID */
+	#define E907503004_SOURCEDISPLAYID_INT 2
+	/* target display ID */
+	#define E907503004_TARGETDISPLAYID_INT 3
+
+	/* Event 907503005
+		fail to add launcher window */
+	/* exception type */
+	#define E907503005_EXCEPTIONTYPE_INT 0
+	/* display type */
+	#define E907503005_DISPLAYTYPE_INT 1
+	/* display name */
+	#define E907503005_DISPLAYNAME_VARCHAR 2
+	/* DPI */
+	#define E907503005_DPI_INT 3
+	/* display width */
+	#define E907503005_WIDTH_INT 4
+	/* display height */
+	#define E907503005_HEIGHT_INT 5
+	/* display ID */
+	#define E907503005_DISPLAYID_INT 6
+	/* x position */
+	#define E907503005_POSITIONX_INT 7
+	/* y position */
+	#define E907503005_POSITIONY_INT 8
+
+	/* Event 907503006
+		fail to add dock window */
+	/* exception type */
+	#define E907503006_EXCEPTIONTYPE_INT 0
+	/* display name */
+	#define E907503006_DISPLAYNAME_VARCHAR 1
+	/* display type */
+	#define E907503006_DISPLAYTYPE_INT 2
+	/* DPI */
+	#define E907503006_DPI_INT 3
+	/* display width */
+	#define E907503006_WIDTH_INT 4
+	/* display height */
+	#define E907503006_HEIGHT_INT 5
+	/* display ID */
+	#define E907503006_DISPLAYID_INT 6
+	/* x position */
+	#define E907503006_POSITIONX_INT 7
+	/* y position */
+	#define E907503006_POSITIONY_INT 8
+
+	/* Event 907503007
+		fail to light phone screen */
+	/* exception type */
+	#define E907503007_EXCEPTIONTYPE_INT 0
+	/* keycode */
+	#define E907503007_KEYCODE_INT 1
+	/* package name */
+	#define E907503007_PACKAGENAME_VARCHAR 2
+
+	/* Event 907503008
+		viewport exception in pc mode */
+	/* display type */
+	#define E907503008_DISPLAYTYPE_INT 0
+	/* DPI */
+	#define E907503008_DPI_INT 1
+	/* display width */
+	#define E907503008_WIDTH_INT 2
+	/* display height */
+	#define E907503008_HEIGHT_INT 3
+	/* display ID */
+	#define E907503008_DISPLAYID_INT 4
+	/* display name */
+	#define E907503008_DISPLAYNAME_VARCHAR 5
+
 /*** LogEngine events' keys ***/
 
 	/* Event 908000000
@@ -48243,6 +50860,14 @@ extern "C" {
 
 	/* Event 908000005
 		log track */
+
+	/* Event 908000006
+		The number of times that the event daily threshold
+		was exceeded in a single upload cycle */
+	/* module name */
+	#define E908000006_MODULENAME_VARCHAR 0
+	/* The number that exceeded */
+	#define E908000006_LASTOVERNUM_INT 1
 
 	/* Event 908001001
 		modem log status */
@@ -50544,6 +53169,8 @@ extern "C" {
 	#define E909002029_APSTREAMINFO_TINYINT 4
 	/* ap vendor information */
 	#define E909002029_APVENDORINFO_VARCHAR 5
+	/* hash value of AP MAC */
+	#define E909002029_MACHASH_VARCHAR 6
 
 	/* Event 909002030
 		wifi status changed by apk */
@@ -51176,6 +53803,25 @@ extern "C" {
 	#define E909002042_TXFAIL1BEF_INT 3
 	/* WiFi tx fail rate before switch second period */
 	#define E909002042_TXFAIL2BEF_INT 4
+
+	/* Event 909002043
+		ABS blacklist event */
+	/* AP Mac address */
+	#define E909002043_BSSID_VARCHAR 0
+	/* AP name */
+	#define E909002043_SSID_VARCHAR 1
+	/* add blacklist reason */
+	#define E909002043_REASON_INT 2
+	/* is support VOWIFI */
+	#define E909002043_ISVOWIFI_INT 3
+	/* switch total number */
+	#define E909002043_STIMES_INT 4
+	/* switch failed number */
+	#define E909002043_FTIMES_INT 5
+	/* AP support MIMO total number */
+	#define E909002043_TOTALNUM_INT 6
+	/* AP blacklist number */
+	#define E909002043_BLACKLISTNUM_INT 7
 
 	/* Event 909030001
 		DSM_WIFI_MODULE_INIT_ERROR */
@@ -52809,6 +55455,17 @@ extern "C" {
 	/*  */
 	#define E910000012_FENCEINFO_CLASS 0
 
+	/* Event 910000017
+		Navigation delay record */
+	/* data source */
+	#define E910000017_APK_TINYINT 0
+	/* the time of navigation delay event */
+	#define E910000017_TIME_INT 1
+	/* the distatnce between crossroad and broadcast point */
+	#define E910000017_DIS_INT 2
+	/* the type of navigation delay event */
+	#define E910000017_TYPE_INT 3
+
 	/* Event 910001000
 		GPS 110x device and firmware exception event */
 	/* ErrorCode */
@@ -53702,6 +56359,34 @@ extern "C" {
 	#define E912000000_CH_SC_INT 37
 	/* proximity intercept count */
 	#define E912000000_PROX_CNT_INT 38
+	/* hal anti touch count */
+	#define E912000000_HAL_ANTI_CNT_INT 39
+	/* fast unlock start time */
+	#define E912000000_FAST_UNLOCK_START_T_INT 40
+	/* LCD charge start time */
+	#define E912000000_LCD_CH_START_T_INT 41
+	/* LCD charge end time */
+	#define E912000000_LCD_CH_CMP_T_INT 42
+	/* App send light time */
+	#define E912000000_APP_SEND_LIGHT_T_INT 43
+	/* driver light on LCD time */
+	#define E912000000_DRI_LIGHT_LCD_T_INT 44
+	/* tp press strength */
+	#define E912000000_TP_PRESS_S_INT 45
+	/* spot complete time */
+	#define E912000000_SPOT_CMP_T_INT 46
+	/* preprocess time */
+	#define E912000000_PRE_PROC_T_INT 47
+	/* CPU frequency state */
+	#define E912000000_CUP_F_S_INT 48
+	/* spot start light */
+	#define E912000000_SPOT_LIGHT_S_INT 49
+	/* spot end light */
+	#define E912000000_SPOT_LIGHT_E_INT 50
+	/* fingerprint icon appearance time */
+	#define E912000000_FP_ICON_APPEAR_T_INT 51
+	/* finger and spot overlay area */
+	#define E912000000_FP_SPOT_O_INT 52
 
 	/* Event 912000001
 		FP unlock failure event */
@@ -53783,6 +56468,34 @@ extern "C" {
 	#define E912000001_CH_SC_INT 37
 	/* proximity intercept count */
 	#define E912000001_PROX_CNT_INT 38
+	/* hal anti touch count */
+	#define E912000001_HAL_ANTI_CNT_INT 39
+	/* fast unlock start time */
+	#define E912000001_FAST_UNLOCK_START_T_INT 40
+	/* LCD charge start time */
+	#define E912000001_LCD_CH_START_T_INT 41
+	/* LCD charge end time */
+	#define E912000001_LCD_CH_CMP_T_INT 42
+	/* App send light time */
+	#define E912000001_APP_SEND_LIGHT_T_INT 43
+	/* driver light on LCD time */
+	#define E912000001_DRI_LIGHT_LCD_T_INT 44
+	/* tp press strength */
+	#define E912000001_TP_PRESS_S_INT 45
+	/* spot complete time */
+	#define E912000001_SPOT_CMP_T_INT 46
+	/* preprocess time */
+	#define E912000001_PRE_PROC_T_INT 47
+	/* CPU frequency state */
+	#define E912000001_CUP_F_S_INT 48
+	/* spot start light */
+	#define E912000001_SPOT_LIGHT_S_INT 49
+	/* spot end light */
+	#define E912000001_SPOT_LIGHT_E_INT 50
+	/* fingerprint icon appearance time */
+	#define E912000001_FP_ICON_APPEAR_T_INT 51
+	/* finger and spot overlay area */
+	#define E912000001_FP_SPOT_O_INT 52
 
 	/* Event 912000002
 		FingerPrint enroll recoard */
@@ -54211,6 +56924,40 @@ extern "C" {
 	#define E912001015_CONTENT_VARCHAR 5
 	/* device name */
 	#define E912001015_DEVICE_NAME_VARCHAR 6
+
+	/* Event 912001016
+		fingerprint captouch fault */
+	/* error level */
+	#define E912001016_ERROR_LEVEL_INT 0
+	/* IC name */
+	#define E912001016_IC_NAME_VARCHAR 1
+	/* module name */
+	#define E912001016_MODULE_NAME_VARCHAR 2
+	/* description */
+	#define E912001016_DESCRIPTION_VARCHAR 3
+	/* report counts */
+	#define E912001016_COUNT_INT 4
+	/* fault message */
+	#define E912001016_CONTENT_VARCHAR 5
+	/* device name */
+	#define E912001016_DEVICE_NAME_VARCHAR 6
+
+	/* Event 912001017
+		fingerprint ESD error */
+	/* error level */
+	#define E912001017_ERROR_LEVEL_INT 0
+	/* IC name */
+	#define E912001017_IC_NAME_VARCHAR 1
+	/* module name */
+	#define E912001017_MODULE_NAME_VARCHAR 2
+	/* description */
+	#define E912001017_DESCRIPTION_VARCHAR 3
+	/* report counts */
+	#define E912001017_COUNT_INT 4
+	/* fault message */
+	#define E912001017_CONTENT_VARCHAR 5
+	/* device name */
+	#define E912001017_DEVICE_NAME_VARCHAR 6
 
 /*** BT events' keys ***/
 
@@ -57353,6 +60100,8 @@ extern "C" {
 	#define E919000000_DNSSUCCFLG_TINYINT 22
 	/* CONNECTION SUCCEED/FAIL CODE */
 	#define E919000000_CONNSUCCFLG_TINYINT 23
+	/* Code of protocol techlonogy */
+	#define E919000000_TECHCODE_VARCHAR 24
 
 	/* Event 919000001
 		Web Browser Experience Abnormal Log */
@@ -57428,9 +60177,11 @@ extern "C" {
 	#define E919000001_DNSSUCCFLG_TINYINT 34
 	/* CONNECTION SUCCEED/FAIL CODE */
 	#define E919000001_CONNSUCCFLG_TINYINT 35
+	/* Code of protocol techlonogy */
+	#define E919000001_TECHCODE_VARCHAR 36
 
 	/* Event 919000002
-		WeChat Red envelopes Experience Normal Log */
+		Grab-single-type-apps Experience Normal Log */
 	/* HOST_NAME */
 	#define E919000002_HOST_NAME_VARCHAR 0
 	/* SESSION_START_DATE */
@@ -57467,9 +60218,17 @@ extern "C" {
 	#define E919000002_WBSSID_VARCHAR 16
 	/* WLAN_SSID */
 	#define E919000002_WSSID_VARCHAR 17
+	/* Code of protocol techlonogy */
+	#define E919000002_TECHCODE_VARCHAR 18
+	/* APP NAME */
+	#define E919000002_APPNAME_VARCHAR 19
+	/* DNS LATENCY */
+	#define E919000002_DNSLAT_SMALLINT 20
+	/* CONNECTION LATENCY */
+	#define E919000002_CONNLAT_SMALLINT 21
 
 	/* Event 919000003
-		WeChat Red envelopes Experience Abnormal Log */
+		Grab-single-type-apps Experience Abnormal Log */
 	/* HOST_NAME */
 	#define E919000003_HOST_NAME_VARCHAR 0
 	/* SESSION_START_DATE */
@@ -57508,6 +60267,14 @@ extern "C" {
 	#define E919000003_WBSSID_VARCHAR 17
 	/* WLAN_SSID */
 	#define E919000003_WSSID_VARCHAR 18
+	/* Code of protocol techlonogy */
+	#define E919000003_TECHCODE_VARCHAR 19
+	/* APP NAME */
+	#define E919000003_APPNAME_VARCHAR 20
+	/* DNS LATENCY */
+	#define E919000003_DNSLAT_SMALLINT 21
+	/* CONNECTION LATENCY */
+	#define E919000003_CONNLAT_SMALLINT 22
 
 	/* Event 919000004
 		Email Experience Normal Log */
@@ -57555,6 +60322,11 @@ extern "C" {
 	#define E919000004_WBSSID_VARCHAR 20
 	/* WLAN_SSID */
 	#define E919000004_WSSID_VARCHAR 21
+	/* Code of protocol techlonogy */
+	#define E919000004_TECHCODE_VARCHAR 22
+	/* Fault Classification 0 No need LOG 1 Only need AP LOG
+		2 need AP and MODEM LOG 3 Only need MODEM LOG */
+	#define E919000004_FAULTCLASSIFICATION_TINYINT 23
 
 	/* Event 919000005
 		Email Experience Abnormal Log */
@@ -57604,6 +60376,11 @@ extern "C" {
 	#define E919000005_WBSSID_VARCHAR 21
 	/* WLAN_SSID */
 	#define E919000005_WSSID_VARCHAR 22
+	/* Code of protocol techlonogy */
+	#define E919000005_TECHCODE_VARCHAR 23
+	/* Fault Classification 0 No need LOG 1 Only need AP LOG
+		2 need AP and MODEM LOG 3 Only need MODEM LOG */
+	#define E919000005_FAULTCLASSIFICATION_TINYINT 24
 
 	/* Event 919000006
 		Video Experience Normal Log */
@@ -57653,15 +60430,15 @@ extern "C" {
 	#define E919000006_SRCSUCCFLG_TINYINT 21
 	/* LOCAL AVERAGE BUFFER SPEED */
 	#define E919000006_DLAVGTHPUT_INT 22
-	/* COUNT OF MOBILE NETWORK SIGNAL STRENGTH LEVEL 1 */
+	/* DURATION OF MOBILE NETWORK SIGNAL STRENGTH LEVEL 1 */
 	#define E919000006_RSRPL1CNT_SMALLINT 23
-	/* COUNT OF MOBILE NETWORK SIGNAL STRENGTH LEVEL 2 */
+	/* DURATION OF MOBILE NETWORK SIGNAL STRENGTH LEVEL 2 */
 	#define E919000006_RSRPL2CNT_SMALLINT 24
-	/* COUNT OF MOBILE NETWORK SIGNAL STRENGTH LEVEL 3 */
+	/* DURATION OF MOBILE NETWORK SIGNAL STRENGTH LEVEL 3 */
 	#define E919000006_RSRPL3CNT_SMALLINT 25
-	/* COUNT OF MOBILE NETWORK SIGNAL STRENGTH LEVEL 4 */
+	/* DURATION OF MOBILE NETWORK SIGNAL STRENGTH LEVEL 4 */
 	#define E919000006_RSRPL4CNT_SMALLINT 26
-	/* COUNT OF MOBILE NETWORK SIGNAL STRENGTH LEVEL 5 */
+	/* DURATION OF MOBILE NETWORK SIGNAL STRENGTH LEVEL 5 */
 	#define E919000006_RSRPL5CNT_SMALLINT 27
 	/* WLAN AVERAGE SIGNAL STRENGTH */
 	#define E919000006_WSTRENGTH_TINYINT 28
@@ -57669,14 +60446,16 @@ extern "C" {
 	#define E919000006_WBSSID_VARCHAR 29
 	/* WLAN_SSID */
 	#define E919000006_WSSID_VARCHAR 30
-	/* COUNT OF WLAN SIGNAL STRENGTH LEVEL 1 */
+	/* DURATION OF WLAN SIGNAL STRENGTH LEVEL 1 */
 	#define E919000006_WSTRL1CNT_SMALLINT 31
-	/* COUNT OF WLAN SIGNAL STRENGTH LEVEL 2 */
+	/* DURATION OF WLAN SIGNAL STRENGTH LEVEL 2 */
 	#define E919000006_WSTRL2CNT_SMALLINT 32
-	/* COUNT OF WLAN SIGNAL STRENGTH LEVEL 3 */
+	/* DURATION OF WLAN SIGNAL STRENGTH LEVEL 3 */
 	#define E919000006_WSTRL3CNT_SMALLINT 33
-	/* COUNT OF WLAN SIGNAL STRENGTH LEVEL 4 */
+	/* DURATION OF WLAN SIGNAL STRENGTH LEVEL 4 */
 	#define E919000006_WSTRL4CNT_SMALLINT 34
+	/* Code of protocol techlonogy */
+	#define E919000006_TECHCODE_VARCHAR 35
 
 	/* Event 919000007
 		Video Experience Abnormal Log */
@@ -57728,15 +60507,15 @@ extern "C" {
 	#define E919000007_SRCSUCCFLG_TINYINT 22
 	/* LOCAL AVERAGE BUFFER SPEED */
 	#define E919000007_DLAVGTHPUT_INT 23
-	/* COUNT OF MOBILE NETWORK SIGNAL STRENGTH LEVEL 1 */
+	/* DURATION OF MOBILE NETWORK SIGNAL STRENGTH LEVEL 1 */
 	#define E919000007_RSRPL1CNT_SMALLINT 24
-	/* COUNT OF MOBILE NETWORK SIGNAL STRENGTH LEVEL 2 */
+	/* DURATION OF MOBILE NETWORK SIGNAL STRENGTH LEVEL 2 */
 	#define E919000007_RSRPL2CNT_SMALLINT 25
-	/* COUNT OF MOBILE NETWORK SIGNAL STRENGTH LEVEL 3 */
+	/* DURATION OF MOBILE NETWORK SIGNAL STRENGTH LEVEL 3 */
 	#define E919000007_RSRPL3CNT_SMALLINT 26
-	/* COUNT OF MOBILE NETWORK SIGNAL STRENGTH LEVEL 4 */
+	/* DURATION OF MOBILE NETWORK SIGNAL STRENGTH LEVEL 4 */
 	#define E919000007_RSRPL4CNT_SMALLINT 27
-	/* COUNT OF MOBILE NETWORK SIGNAL STRENGTH LEVEL 5 */
+	/* DURATION OF MOBILE NETWORK SIGNAL STRENGTH LEVEL 5 */
 	#define E919000007_RSRPL5CNT_SMALLINT 28
 	/* WLAN AVERAGE SIGNAL STRENGTH */
 	#define E919000007_WSTRENGTH_TINYINT 29
@@ -57744,14 +60523,16 @@ extern "C" {
 	#define E919000007_WBSSID_VARCHAR 30
 	/* WLAN_SSID */
 	#define E919000007_WSSID_VARCHAR 31
-	/* COUNT OF WLAN SIGNAL STRENGTH LEVEL 1 */
+	/* DURATION OF WLAN SIGNAL STRENGTH LEVEL 1 */
 	#define E919000007_WSTRL1CNT_SMALLINT 32
-	/* COUNT OF WLAN SIGNAL STRENGTH LEVEL 2 */
+	/* DURATION OF WLAN SIGNAL STRENGTH LEVEL 2 */
 	#define E919000007_WSTRL2CNT_SMALLINT 33
-	/* COUNT OF WLAN SIGNAL STRENGTH LEVEL 3 */
+	/* DURATION OF WLAN SIGNAL STRENGTH LEVEL 3 */
 	#define E919000007_WSTRL3CNT_SMALLINT 34
-	/* COUNT OF WLAN SIGNAL STRENGTH LEVEL 4 */
+	/* DURATION OF WLAN SIGNAL STRENGTH LEVEL 4 */
 	#define E919000007_WSTRL4CNT_SMALLINT 35
+	/* Code of protocol techlonogy */
+	#define E919000007_TECHCODE_VARCHAR 36
 
 	/* Event 919000008
 		China Instant message Experience Normal Log */
@@ -58041,15 +60822,15 @@ extern "C" {
 	#define E919000012_DL_RSRQ_TINYINT 9
 	/* DL_SINR */
 	#define E919000012_DL_SINR_INT 10
-	/* COUNT OF MOBILE NETWORK SIGNAL STRENGTH LEVEL 1 */
+	/* DURATION OF MOBILE NETWORK SIGNAL STRENGTH LEVEL 1 */
 	#define E919000012_RSRPL1CNT_SMALLINT 11
-	/* COUNT OF MOBILE NETWORK SIGNAL STRENGTH LEVEL 2 */
+	/* DURATION OF MOBILE NETWORK SIGNAL STRENGTH LEVEL 2 */
 	#define E919000012_RSRPL2CNT_SMALLINT 12
-	/* COUNT OF MOBILE NETWORK SIGNAL STRENGTH LEVEL 3 */
+	/* DURATION OF MOBILE NETWORK SIGNAL STRENGTH LEVEL 3 */
 	#define E919000012_RSRPL3CNT_SMALLINT 13
-	/* COUNT OF MOBILE NETWORK SIGNAL STRENGTH LEVEL 4 */
+	/* DURATION OF MOBILE NETWORK SIGNAL STRENGTH LEVEL 4 */
 	#define E919000012_RSRPL4CNT_SMALLINT 14
-	/* COUNT OF MOBILE NETWORK SIGNAL STRENGTH LEVEL 5 */
+	/* DURATION OF MOBILE NETWORK SIGNAL STRENGTH LEVEL 5 */
 	#define E919000012_RSRPL5CNT_SMALLINT 15
 	/* WLAN SIGNAL AVERAGE STRENGTH */
 	#define E919000012_WSTRENGTH_TINYINT 16
@@ -58057,13 +60838,13 @@ extern "C" {
 	#define E919000012_WBSSID_VARCHAR 17
 	/* WLAN_SSID */
 	#define E919000012_WSSID_VARCHAR 18
-	/* COUNT OF WLAN SIGNAL STRENGTH LEVEL 1 */
+	/* DURATION OF WLAN SIGNAL STRENGTH LEVEL 1 */
 	#define E919000012_WSTRL1CNT_SMALLINT 19
-	/* COUNT OF WLAN SIGNAL STRENGTH LEVEL 2 */
+	/* DURATION OF WLAN SIGNAL STRENGTH LEVEL 2 */
 	#define E919000012_WSTRL2CNT_SMALLINT 20
-	/* COUNT OF WLAN SIGNAL STRENGTH LEVEL 3 */
+	/* DURATION OF WLAN SIGNAL STRENGTH LEVEL 3 */
 	#define E919000012_WSTRL3CNT_SMALLINT 21
-	/* COUNT OF WLAN SIGNAL STRENGTH LEVEL 4 */
+	/* DURATION OF WLAN SIGNAL STRENGTH LEVEL 4 */
 	#define E919000012_WSTRL4CNT_SMALLINT 22
 	/* GAME APP NAME */
 	#define E919000012_APPNAME_VARCHAR 23
@@ -58083,22 +60864,51 @@ extern "C" {
 	#define E919000012_BDUR_INT 30
 	/* BATTLE AVERAGE LATENCY */
 	#define E919000012_BAVGLAT_SMALLINT 31
-	/* COUNT OF BATTLE LATENCY <50ms */
+	/* DURATION OF BATTLE LATENCY <50ms */
 	#define E919000012_BLATL1DUR_SMALLINT 32
-	/* COUNT OF BATTLE LATENCY 50~100ms */
+	/* DURATION OF BATTLE LATENCY 50~100ms */
 	#define E919000012_BLATL2DUR_SMALLINT 33
-	/* COUNT OF BATTLE LATENCY 100~150ms */
+	/* DURATION OF BATTLE LATENCY 100~150ms */
 	#define E919000012_BLATL3DUR_SMALLINT 34
-	/* COUNT OF BATTLE LATENCY 150~200ms */
+	/* DURATION OF BATTLE LATENCY 150~200ms */
 	#define E919000012_BLATL4DUR_SMALLINT 35
-	/* COUNT OF BATTLE LATENCY 200~300ms */
+	/* DURATION OF BATTLE LATENCY 200~300ms */
 	#define E919000012_BLATL5DUR_SMALLINT 36
-	/* COUNT OF BATTLE LATENCY 300~400ms */
+	/* DURATION OF BATTLE LATENCY 300~400ms */
 	#define E919000012_BLATL6DUR_SMALLINT 37
-	/* COUNT OF BATTLE LATENCY 400~459ms */
+	/* DURATION OF BATTLE LATENCY 400~459ms */
 	#define E919000012_BLATL7DUR_SMALLINT 38
-	/* COUNT OF BATTLE LATENCY 460ms */
+	/* DURATION OF BATTLE LATENCY 460ms */
 	#define E919000012_BLATL8DUR_SMALLINT 39
+	/* Code of protocol techlonogy */
+	#define E919000012_TECHCODE_VARCHAR 40
+
+	/* Event 919000013
+		IOT Experience Log */
+	/* START_DATE */
+	#define E919000013_START_DATE_INT 0
+	/* START_TIME */
+	#define E919000013_START_TIME_INT 1
+	/* END_TIME */
+	#define E919000013_END_TIME_INT 2
+	/* RAT */
+	#define E919000013_RAT_TINYINT 3
+	/* SIGNAL STRENGTH */
+	#define E919000013_RSSI_TINYINT 4
+	/* SERVICE TYPE */
+	#define E919000013_TYPE_TINYINT 5
+	/* SERVICE SUBTYPE */
+	#define E919000013_SUBTYPE_TINYINT 6
+	/* APP NAME */
+	#define E919000013_APPNAME_VARCHAR 7
+	/* Code of protocol techlonogy */
+	#define E919000013_TECHCODE_VARCHAR 8
+	/* SUCCEED FLAG */
+	#define E919000013_SUCCFLG_TINYINT 9
+	/* LATENCY */
+	#define E919000013_LATENCY_INT 10
+	/* TRANFER THROUGHPUT */
+	#define E919000013_TRANSTHPUT_INT 11
 
 	/* Event 919000030
 		TOP5 TRAFFIC APP */
@@ -58553,6 +61363,15 @@ extern "C" {
 		13 GetToHccmRet 14 */
 	#define E940000013_ERRNUM_INT 0
 
+	/* Event 940000014
+		OEMINFO_KEY_ID_ILLEGAL_OPER */
+	/* denied key word */
+	#define E940000014_DENIEDKEY_INT 0
+	/* module name */
+	#define E940000014_MODNAME_VARCHAR 1
+	/* error description */
+	#define E940000014_ERRDESC_VARCHAR 2
+
 	/* Event 940001000
 		STP POTENTIAL THREAT INFO */
 	/* threat id */
@@ -58607,6 +61426,77 @@ extern "C" {
 	/* fix info */
 	#define E940001005_INFO_VARCHAR 2
 
+	/* Event 940100010
+		enroll time */
+	/* enroll time */
+	#define E940100010_TIME_FLOAT 0
+
+	/* Event 940100011
+		enroll failure reason */
+	/* enroll failure reason */
+	#define E940100011_REASON_INT 0
+
+	/* Event 940101018
+		failure or success information of unlock */
+	/* face unlock result */
+	#define E940101018_RESULT_INT 0
+	/* algorithm time */
+	#define E940101018_TIME_FLOAT 1
+	/* led state */
+	#define E940101018_LED_BIT 2
+	/* face brightness */
+	#define E940101018_BRIGHTNESS_FLOAT 3
+	/* face brightness uniformity */
+	#define E940101018_UNIFORMITY_FLOAT 4
+	/* face quality flag */
+	#define E940101018_QUALITYFLAG_INT 5
+	/* face quality score */
+	#define E940101018_QUALITYSCORE_FLOAT 6
+	/* face sharpness */
+	#define E940101018_SHARPNESS_FLOAT 7
+	/* face compare score */
+	#define E940101018_COMPARESCORE_FLOAT 8
+	/* VIS face number */
+	#define E940101018_VIS_FACE_INT 9
+	/* VIS face rectangle:left */
+	#define E940101018_VIS_LEFT_INT 10
+	/* VIS face rectangle:top */
+	#define E940101018_VIS_TOP_INT 11
+	/* VIS face rectangle:right */
+	#define E940101018_VIS_RIGHT_INT 12
+	/* VIS face rectangle:bottom */
+	#define E940101018_VIS_BOTTOM_INT 13
+	/* ambient light */
+	#define E940101018_LIGHT_INT 14
+	/* NIR face number */
+	#define E940101018_NIR_FACE_INT 15
+	/* NIR face rectangle:left */
+	#define E940101018_NIR_LEFT_INT 16
+	/* NIR face rectangle:top */
+	#define E940101018_NIR_TOP_INT 17
+	/* NIR face rectangle:right */
+	#define E940101018_NIR_RIGHT_INT 18
+	/* NIR face rectangle:bottom */
+	#define E940101018_NIR_BOTTOM_INT 19
+	/* head pose:roll */
+	#define E940101018_ROLL_FLOAT 20
+	/* head pose:yaw */
+	#define E940101018_YAW_FLOAT 21
+	/* head pose:pitch */
+	#define E940101018_PITCH_FLOAT 22
+	/* eye left Status */
+	#define E940101018_EYELEFT_INT 23
+	/* eye right Status */
+	#define E940101018_EYERIGHT_INT 24
+	/* face alive probability */
+	#define E940101018_ALIVEPR_FLOAT 25
+	/* face alive deep detect result */
+	#define E940101018_DEEPDETECT_INT 26
+	/* attack failure count */
+	#define E940101018_ATTACKFAILURE_INT 27
+	/* compare failure count */
+	#define E940101018_COMPAREFAILURE_INT 28
+
 /*** CrowdSourcing events' keys ***/
 
 	/* Event 941000001
@@ -58640,6 +61530,13 @@ extern "C" {
 	#define E941000001_NEIGHBORCELL_CLASS 12
 	/* source of location,including chipset,wifi,vdr,pdr,sensor. */
 	#define E941000001_SRCTYPE_TINYINT 13
+	/* timeStamp of location,ms */
+	#define E941000001_FIXTIME_VARCHAR 14
+	/* elapsed time since boot,ms */
+	#define E941000001_OPENTIME_VARCHAR 15
+	/* diff time between wifi scaned completed and lastwifi
+		scan completed,ms */
+	#define E941000001_DIFFTIME_VARCHAR 16
 
 	/* Event 941000002
 		LBS crowd sourcing SDK information collection */
@@ -58691,6 +61588,8 @@ extern "C" {
 	#define E941001001_SCANTIME_INT 3
 	/* AP Frequency */
 	#define E941001001_FREQUENCY_FLOAT 4
+	/* AP scan time,ms */
+	#define E941001001_SCANSTAMP_VARCHAR 5
 
 	/* Event 941001002
 		cell info */
@@ -58880,6 +61779,496 @@ extern "C" {
 	#define E942000301_FW_VER_VARCHAR 1
 	/* Exception reason */
 	#define E942000301_EXPT_INFO_VARCHAR 2
+
+	/* Event 942010000
+		initialization exception */
+	/* module */
+	#define E942010000_MODULE_VARCHAR 0
+	/* exception type */
+	#define E942010000_TYPE_VARCHAR 1
+	/* detail of exception */
+	#define E942010000_DETAIL_VARCHAR 2
+
+	/* Event 942010001
+		runtime exception */
+	/* module */
+	#define E942010001_MODULE_VARCHAR 0
+	/* exception type */
+	#define E942010001_TYPE_VARCHAR 1
+	/* error detail */
+	#define E942010001_DETAIL_VARCHAR 2
+
+	/* Event 942010002
+		database access exception */
+	/* accessor */
+	#define E942010002_ACCESSOR_VARCHAR 0
+	/* target to be accessed */
+	#define E942010002_TARGET_VARCHAR 1
+	/* access type */
+	#define E942010002_ACCESSTYPE_VARCHAR 2
+	/* exception type */
+	#define E942010002_TYPE_VARCHAR 3
+	/* exception detail */
+	#define E942010002_DETAIL_VARCHAR 4
+
+	/* Event 942010003
+		secret key exception */
+	/* name of secret key */
+	#define E942010003_NAME_VARCHAR 0
+	/* exception type */
+	#define E942010003_TYPE_VARCHAR 1
+	/* exception detail */
+	#define E942010003_DETAIL_VARCHAR 2
+
+	/* Event 942010004
+		authentication exception */
+	/* accessor */
+	#define E942010004_ACCESSOR_VARCHAR 0
+	/* target to be accessed */
+	#define E942010004_TARGET_VARCHAR 1
+	/* access type */
+	#define E942010004_ACCESSTYPE_VARCHAR 2
+	/* exception type */
+	#define E942010004_TYPE_VARCHAR 3
+	/* exception detail */
+	#define E942010004_DETAIL_VARCHAR 4
+
+	/* Event 942010005
+		database access statistic */
+	/* statistic interval */
+	#define E942010005_INTERVAL_INT 0
+	/* database name */
+	#define E942010005_DATABASE_VARCHAR 1
+	/* statistic detail */
+	#define E942010005_DETAIL_VARCHAR 2
+
+	/* Event 942010006
+		database size statistic */
+	/* statistic interval */
+	#define E942010006_INTERVAL_INT 0
+	/* database name */
+	#define E942010006_DABASE_VARCHAR 1
+	/* database size */
+	#define E942010006_SIZE_INT 2
+
+	/* Event 942010007
+		job running time statistic */
+	/* statistic interval */
+	#define E942010007_INTERVAL_INT 0
+	/* statistic name */
+	#define E942010007_NAME_VARCHAR 1
+	/* statistic tiems */
+	#define E942010007_TIMES_INT 2
+	/* maximum value */
+	#define E942010007_MAXVALUE_INT 3
+	/* minimum value */
+	#define E942010007_MINVALUE_INT 4
+	/* average value */
+	#define E942010007_AVGVALUE_INT 5
+
+	/* Event 942010100
+		HTTPS interaction exception */
+	/* business name */
+	#define E942010100_BUSINESS_VARCHAR 0
+	/* url address */
+	#define E942010100_URL_VARCHAR 1
+	/* ODMF version */
+	#define E942010100_VERSION_VARCHAR 2
+	/* exception type */
+	#define E942010100_TYPE_VARCHAR 3
+	/* exception detail */
+	#define E942010100_DETAIL_VARCHAR 4
+
+	/* Event 942010101
+		coordinator verification exception */
+	/* business name */
+	#define E942010101_BUSINESS_VARCHAR 0
+	/* url address */
+	#define E942010101_URL_VARCHAR 1
+	/* ODMF version */
+	#define E942010101_VERSION_VARCHAR 2
+	/* exception type */
+	#define E942010101_TYPE_VARCHAR 3
+	/* exception detail */
+	#define E942010101_DETAIL_VARCHAR 4
+
+	/* Event 942010102
+		coordinator download exception */
+	/* business name */
+	#define E942010102_BUSINESS_VARCHAR 0
+	/* url address */
+	#define E942010102_URL_VARCHAR 1
+	/* ODMF version */
+	#define E942010102_VERSION_VARCHAR 2
+	/* exception type */
+	#define E942010102_TYPE_VARCHAR 3
+	/* exception detail */
+	#define E942010102_DETAIL_VARCHAR 4
+
+	/* Event 942010103
+		coordinator interaction event */
+	/* business name */
+	#define E942010103_BUSINESS_VARCHAR 0
+	/* url address */
+	#define E942010103_URL_VARCHAR 1
+	/* ODMF version */
+	#define E942010103_VERSION_VARCHAR 2
+	/* statics information */
+	#define E942010103_STATICS_VARCHAR 3
+
+	/* Event 942010104
+		coordinator switch change */
+	/* switch state */
+	#define E942010104_STATE_VARCHAR 0
+	/* url address */
+	#define E942010104_URL_VARCHAR 1
+	/* ODMF version */
+	#define E942010104_VERSION_VARCHAR 2
+	/* trigger of change */
+	#define E942010104_TRIGGER_VARCHAR 3
+
+	/* Event 942010105
+		coordinator usage statics */
+	/* APP package name */
+	#define E942010105_NAME_VARCHAR 0
+	/* Resource address */
+	#define E942010105_URL_VARCHAR 1
+	/* Network type */
+	#define E942010105_NETWORK_VARCHAR 2
+	/* Timestamp for this record */
+	#define E942010105_DATE_DATETIME 3
+	/* Successful request times during 6:00-10:00 */
+	#define E942010105_SUCCESS0610_INT 4
+	/* Successful request times during 10:00-14:00 */
+	#define E942010105_SUCCESS1014_INT 5
+	/* Successful request times during 14:00-18:00 */
+	#define E942010105_SUCCESS1418_INT 6
+	/* Successful request times during 18:00-22:00 */
+	#define E942010105_SUCCESS1822_INT 7
+	/* Successful request times during 22:00-06:00 */
+	#define E942010105_SUCCESS2206_INT 8
+	/* Failed request times during 6:00-10:00 */
+	#define E942010105_FAILURE0610_INT 9
+	/* Failed request times during 10:00-14:00 */
+	#define E942010105_FAILURE1014_INT 10
+	/* Failed request times during 14:00-18:00 */
+	#define E942010105_FAILURE1418_INT 11
+	/* Failed request times during 18:00-22:00 */
+	#define E942010105_FAILURE1822_INT 12
+	/* Failed request times during 22:00-06:00 */
+	#define E942010105_FAILURE2206_INT 13
+	/* Successful request times after retries */
+	#define E942010105_SUCCESSRETRY_INT 14
+	/* Average duration for verification */
+	#define E942010105_VERIFYAVETIME_INT 15
+	/* Max duration for verification */
+	#define E942010105_VERIFYMAXTIME_INT 16
+	/* Average duration for bussiness data transfer */
+	#define E942010105_TANSFERAVETIME_INT 17
+	/* Max duration for bussiness data transfer */
+	#define E942010105_TANSFERMAXTIME_INT 18
+	/* Average length of bussiness body data */
+	#define E942010105_DATAAVESIZE_INT 19
+	/* Max length of bussiness body data */
+	#define E942010105_DATAMAXSIZE_INT 20
+
+	/* Event 942010200
+		dataservice interface exception */
+	/* business name */
+	#define E942010200_BUSINESS_VARCHAR 0
+	/* interface name */
+	#define E942010200_INTERFACENAME_VARCHAR 1
+	/* ODMF version */
+	#define E942010200_VERSION_VARCHAR 2
+	/* exception type */
+	#define E942010200_TYPE_VARCHAR 3
+	/* exception detail */
+	#define E942010200_DETAIL_VARCHAR 4
+
+	/* Event 942010201
+		coordinator interface misused exception */
+	/* business name */
+	#define E942010201_BUSINESS_VARCHAR 0
+	/* ODMF version */
+	#define E942010201_VERSION_VARCHAR 1
+	/* exception type */
+	#define E942010201_TYPE_VARCHAR 2
+	/* exception detail */
+	#define E942010201_DETAIL_VARCHAR 3
+
+	/* Event 942021000
+		msdp cell match but location deviated */
+	/* geofence id */
+	#define E942021000_FENCEID_VARCHAR 0
+	/* cellmatchtime */
+	#define E942021000_CELLMATCHTIME_DATETIME 1
+	/* cell info */
+	#define E942021000_CELLINFO_VARCHAR 2
+	/* location distance */
+	#define E942021000_LOCATIONDISTANCE_INT 3
+
+	/* Event 942021001
+		msdp enter fence but cell not match */
+	/* geofence id */
+	#define E942021001_FENCEID_VARCHAR 0
+	/* entertime */
+	#define E942021001_ENTERTIME_DATETIME 1
+	/* enterlocation */
+	#define E942021001_ENTERLOCATION_VARCHAR 2
+	/* currentcell */
+	#define E942021001_CURRENTCELL_VARCHAR 3
+
+	/* Event 942021002
+		msdp enter fence butleave quickly */
+	/* geofence id */
+	#define E942021002_FENCEID_VARCHAR 0
+	/* entertime */
+	#define E942021002_ENTERTIME_DATETIME 1
+	/* enterlocation */
+	#define E942021002_ENTERLOCATION_VARCHAR 2
+	/* leavetime */
+	#define E942021002_LEAVETIME_DATETIME 3
+	/* leaveocation */
+	#define E942021002_LEAVEOCATION_VARCHAR 4
+
+	/* Event 942021003
+		msdp first leave location not match the second location */
+	/* geofence id */
+	#define E942021003_FENCEID_VARCHAR 0
+	/* 1leavelocation */
+	#define E942021003_LEAVELOCATION1_VARCHAR 1
+	/* 1leaveacc */
+	#define E942021003_LEAVEACC1_INT 2
+	/* 1leavetime */
+	#define E942021003_LEAVETIME1_DATETIME 3
+	/* 1leavedistance */
+	#define E942021003_LEAVEDISTANCE1_INT 4
+	/* 2leavelocation */
+	#define E942021003_LEAVELOCATION2_VARCHAR 5
+	/* 2leaveacc */
+	#define E942021003_LEAVEACC2_INT 6
+	/* 2leavetime */
+	#define E942021003_LEAVETIME2_DATETIME 7
+	/* 2leavedistance */
+	#define E942021003_LEAVEDISTANCE2_INT 8
+
+	/* Event 942021004
+		msdp download wifi fence but wifi switch off */
+	/* geofence id */
+	#define E942021004_FENCEID_VARCHAR 0
+	/* cellmatchtime */
+	#define E942021004_WIFIOFFTIME_DATETIME 1
+
+	/* Event 942021005
+		msdp disable some geofence */
+	/* disablefenceid */
+	#define E942021005_DISABLEFENCEID_VARCHAR 0
+	/* disabletime */
+	#define E942021005_DISABLETIME_DATETIME 1
+
+	/* Event 942022000
+		msdp motion event and reportLatency */
+	/* clinetname */
+	#define E942022000_CLINETNAME_VARCHAR 0
+	/* motion */
+	#define E942022000_MOTION_VARCHAR 1
+	/* eventtype */
+	#define E942022000_EVENTTYPE_VARCHAR 2
+	/* reportLatency */
+	#define E942022000_REPORTLATENCY_INT 3
+
+	/* Event 942023000
+		msdp stay in some cell time */
+	/* cellinfo */
+	#define E942023000_CELLINFO_VARCHAR 0
+	/* entertime */
+	#define E942023000_ENTERTIME_DATETIME 1
+	/* leavetime */
+	#define E942023000_LEAVETIME_DATETIME 2
+
+	/* Event 942023001
+		msdp stay in a wifi and report the quantity of cell
+		around the wifi */
+	/* wifiinfo */
+	#define E942023001_WIFIINFO_VARCHAR 0
+	/* cellcount */
+	#define E942023001_CELLCOUNT_INT 1
+	/* time */
+	#define E942023001_TIME_DATETIME 2
+
+	/* Event 942026000
+		timeline report the enter time and leavetime of location */
+	/* location */
+	#define E942026000_LOCATION_VARCHAR 0
+	/* entertimealgo */
+	#define E942026000_ENTERTIMEALGO_DATETIME 1
+	/* entertimereport */
+	#define E942026000_ENTERTIMEREPORT_DATETIME 2
+	/* leavetimealgo */
+	#define E942026000_LEAVETIMEALGO_DATETIME 3
+	/* leavetimereport */
+	#define E942026000_LEAVETIMEREPORT_DATETIME 4
+
+	/* Event 942030001
+		maple stat */
+	/* Process name */
+	#define E942030001_PROCNAME_VARCHAR 0
+	/* Statistical duration (s) */
+	#define E942030001_STATDUR_INT 1
+	/* Circular reference recycle count */
+	#define E942030001_CYCLREFMAXCNT_INT 2
+	/* Circular reference recycle maximum duration (ms) */
+	#define E942030001_CYCLREFMAXDUR_INT 3
+	/* Memory leak average (KB) */
+	#define E942030001_MEMLEAKAVRG_INT 4
+	/* Peak memory leak (KB) */
+	#define E942030001_MEMLEAKPEAK_INT 5
+	/* Memory allocation space utilization */
+	#define E942030001_MEMALLOCSPAC_FLOAT 6
+	/* Memory allocation abnormal number */
+	#define E942030001_MEMALLOCABNMCNT_INT 7
+	/* RC abnormal number */
+	#define E942030001_RCABNMCNT_INT 8
+
+/*** IoT events' keys ***/
+
+	/* Event 943000000
+		fetching configuration file information */
+	/* download file size */
+	#define E943000000_DLFILESIZE_INT 0
+	/* download file consuming time */
+	#define E943000000_DLTIME_INT 1
+	/* decompress file size */
+	#define E943000000_DCFILESIZE_INT 2
+	/* decompress file consuming time */
+	#define E943000000_DCFILETOTALTIME_INT 3
+
+	/* Event 943000001
+		Dialog information */
+	/* detect device timestamp */
+	#define E943000001_DETECTTIME_DATETIME 0
+	/* get configfile timestamp */
+	#define E943000001_GETCONFIGTIME_DATETIME 1
+	/* show dialog timestamp */
+	#define E943000001_SHOWTIME_DATETIME 2
+	/* foreground app */
+	#define E943000001_FOREGROUNDAPP_VARCHAR 3
+	/* device name */
+	#define E943000001_DEVICENAME_VARCHAR 4
+	/* device model */
+	#define E943000001_DEVICEMODEL_VARCHAR 5
+	/* show dialog id */
+	#define E943000001_DIALOGID_INT 6
+	/* record user click history */
+	#define E943000001_CLICKRECORDER_VARCHAR 7
+	/* dialog dismiss timestamp */
+	#define E943000001_DIALOGDISMISSTIME_DATETIME 8
+	/* introduce user cnt */
+	#define E943000001_INTRODUCECNT_INT 9
+	/* orientation of phone screen */
+	#define E943000001_ORIENTATION_INT 10
+
+	/* Event 943000100
+		exceptions in the Nearby */
+	/* exception type */
+	#define E943000100_EXCEPTIONTYPE_VARCHAR 0
+	/* subErrorCode */
+	#define E943000100_SUBERRORCODE_INT 1
+	/* iConnect business common info */
+	#define E943000100_ICONNECTINFO_CLASS 2
+	/* iConnect BT common info */
+	#define E943000100_BTINFO_CLASS 3
+
+	/* Event 943000101
+		exceptions on iConnect StateMachine */
+	/* exception type */
+	#define E943000101_EXCEPTIONTYPE_VARCHAR 0
+	/* subErrorCode */
+	#define E943000101_SUBERRORCODE_INT 1
+	/* iConnect business common info */
+	#define E943000101_ICONNECTINFO_CLASS 2
+	/* iConnect BT common info */
+	#define E943000101_BTINFO_CLASS 3
+	/* iConnect WiFi common info */
+	#define E943000101_WIFIINFO_CLASS 4
+
+	/* Event 943000102
+		exceptions with get config files */
+	/* exception type */
+	#define E943000102_EXCEPTIONTYPE_VARCHAR 0
+	/* subErrorCode */
+	#define E943000102_SUBERRORCODE_INT 1
+	/* file size */
+	#define E943000102_FILE_SIZE_INT 2
+	/* iConnect business common info */
+	#define E943000102_ICONNECTINFO_CLASS 3
+	/* iConnect WiFi common info */
+	#define E943000102_WIFIINFO_CLASS 4
+
+	/* Event 943000103
+		exceptions of showing a Dialog */
+	/* exception type */
+	#define E943000103_EXCEPTIONTYPE_VARCHAR 0
+	/* subErrorCode */
+	#define E943000103_SUBERRORCODE_INT 1
+	/* iConnect business common info */
+	#define E943000103_ICONNECTINFO_CLASS 2
+	/* iConnect BT common info */
+	#define E943000103_BTINFO_CLASS 3
+
+	/* Event 943000104
+		exceptions when connect device */
+	/* exception type */
+	#define E943000104_EXCEPTIONTYPE_VARCHAR 0
+	/* subErrorCode */
+	#define E943000104_SUBERRORCODE_INT 1
+	/* iConnect business common info */
+	#define E943000104_ICONNECTINFO_CLASS 2
+	/* iConnect BT common info */
+	#define E943000104_BTINFO_CLASS 3
+	/* iConnect WiFi common info */
+	#define E943000104_WIFIINFO_CLASS 4
+
+	/* Event 943000200
+		iConnect common info */
+	/* current statemachine */
+	#define E943000200_CURRENTSTATE_VARCHAR 0
+	/* current show id */
+	#define E943000200_CURRENTSHOWID_INT 1
+	/* record sm history */
+	#define E943000200_SMRECORDER_VARCHAR 2
+	/* record dialog history in iConnect */
+	#define E943000200_DIALOGRECORDER_VARCHAR 3
+
+	/* Event 943000201
+		iConnect BT common info */
+	/* Phone Country Code */
+	#define E943000201_PHONECOUNTRYCODE_VARCHAR 0
+	/* BT companyID */
+	#define E943000201_BTCOMPANYID_VARCHAR 1
+	/* BT firmware Version */
+	#define E943000201_BTFIRMVERSION_VARCHAR 2
+	/* BT Device Version */
+	#define E943000201_BTDEVICEVERSION_VARCHAR 3
+	/* BT Device Model */
+	#define E943000201_BTMODEL_VARCHAR 4
+	/* BT Device Rssi */
+	#define E943000201_RSSI_INT 5
+	/* BtDeviceType */
+	#define E943000201_BTDEVICETYPE_TINYINT 6
+	/* BT Device Name */
+	#define E943000201_BTDEVICENAME_VARCHAR 7
+
+	/* Event 943000202
+		iConnect WiFi common info */
+	/* wifi state */
+	#define E943000202_WIFISTATE_TINYINT 0
+	/* P2P state */
+	#define E943000202_P2PSTATE_TINYINT 1
+	/* soft ap state */
+	#define E943000202_SOFTAPSTATE_TINYINT 2
+	/* airplane state */
+	#define E943000202_AIRPLANE_TINYINT 3
 
 #ifdef __cplusplus
 }

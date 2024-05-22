@@ -53,7 +53,7 @@ struct crypto_kpp {
  *
  * @set_secret:		Function invokes the protocol specific function to
  *			store the secret private key along with parameters.
- *			The implementation knows how to decode the buffer
+ *			The implementation knows how to decode thie buffer
  * @generate_public_key: Function generate the public key to be sent to the
  *			counterpart. In case of error, where output is not big
  *			enough req->dst_len will be updated to the size
@@ -89,7 +89,7 @@ struct kpp_alg {
 };
 
 /**
- * DOC: Generic Key-agreement Protocol Primitives API
+ * DOC: Generic Key-agreement Protocol Primitevs API
  *
  * The KPP API is used with the algorithm type
  * CRYPTO_ALG_TYPE_KPP (listed as type "kpp" in /proc/crypto)
@@ -102,7 +102,7 @@ struct kpp_alg {
  * @mask: specifies the mask for the algorithm
  *
  * Allocate a handle for kpp algorithm. The returned struct crypto_kpp
- * is required for any following API invocation
+ * is requeried for any following API invocation
  *
  * Return: allocated handle in case of success; IS_ERR() is true in case of
  *	   an error, PTR_ERR() returns the error code.
@@ -264,12 +264,6 @@ struct kpp_secret {
  * Function invokes the specific kpp operation for a given alg.
  *
  * @tfm:	tfm handle
- * @buffer:	Buffer holding the packet representation of the private
- *		key. The structure of the packet key depends on the particular
- *		KPP implementation. Packing and unpacking helpers are provided
- *		for ECDH and DH (see the respective header files for those
- *		implementations).
- * @len:	Length of the packet private key buffer.
  *
  * Return: zero on success; error code in case of error
  */
@@ -285,10 +279,7 @@ static inline int crypto_kpp_set_secret(struct crypto_kpp *tfm,
  * crypto_kpp_generate_public_key() - Invoke kpp operation
  *
  * Function invokes the specific kpp operation for generating the public part
- * for a given kpp algorithm.
- *
- * To generate a private key, the caller should use a random number generator.
- * The output of the requested length serves as the private key.
+ * for a given kpp algorithm
  *
  * @req:	kpp key request
  *

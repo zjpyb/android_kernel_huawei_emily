@@ -19,10 +19,13 @@
 #include <linux/hisi-spmi.h>
 #include <linux/module.h>
 #include <linux/pm_runtime.h>
+#include <linux/uaccess.h>
 #define CREATE_TRACE_POINTS
 #include <trace/events/spmi.h>
 #include <linux/of_hisi_spmi.h>
 #include "hisi-spmi-dbgfs.h"
+#include <linux/hisi/hisi_log.h>
+#define HISI_LOG_TAG HISI_SPMI_TAG
 
 struct spmii_boardinfo {
 	struct list_head	list;
@@ -316,16 +319,52 @@ void spmi_remove_device(struct spmi_device *spmi_dev)
 EXPORT_SYMBOL_GPL(spmi_remove_device);
 
 /* ------------------------------------------------------------------------- */
+static noinline int atfd_spmi_smc(u64 _function_id, u64 _arg0, u64 _arg1, u64 _arg2)
+{
+	register u64 function_id asm("x0") = _function_id;
+	register u64 arg0 asm("x1") = _arg0;
+	register u64 arg1 asm("x2") = _arg1;
+	register u64 arg2 asm("x3") = _arg2;
+
+	asm volatile(
+		__asmeq("%0", "x0")
+		__asmeq("%1", "x1")
+		__asmeq("%2", "x2")
+		__asmeq("%3", "x3")
+		"smc    #0\n"
+	: "+r" (function_id)
+	: "r" (arg0), "r" (arg1), "r" (arg2));
+
+	return (int)function_id;/*lint -e715*/
+}
 
 static inline int spmi_read_cmd(struct spmi_controller *ctrl,
 				u8 opcode, u8 sid, u16 addr, u8 bc, u8 *buf)
 {
 	int ret;
+	u8 i;
+	unsigned long flags;
+
 	if (!ctrl || !ctrl->read_cmd || ctrl->dev.type != &spmi_ctrl_type)
 		return -EINVAL;
 
 	trace_spmi_read_begin(opcode, sid, addr);
-	ret = ctrl->read_cmd(ctrl, opcode, sid, addr, bc, buf);
+	if (ctrl->always_sec) {
+		spin_lock_irqsave(&ctrl->sec_lock, flags);/*lint !e550 */
+		for (i =0;i<bc;i++) {
+			ret = atfd_spmi_smc((u64)(HISI_SPMI_FN_MAIN_ID|SPMI_READ), (u64)sid, (u64)addr, (u64)NULL);
+			if (ret < 0) {
+				spin_unlock_irqrestore(&ctrl->sec_lock, flags);
+				return ret;
+			}
+			*buf = ret;
+			ret = 0;
+			buf++;
+			addr++;
+		}
+		spin_unlock_irqrestore(&ctrl->sec_lock, flags);
+	} else
+		ret = ctrl->read_cmd(ctrl, opcode, sid, addr, bc, buf);
 	trace_spmi_read_end(opcode, sid, addr, ret, bc, buf);
 	return ret;
 }
@@ -334,12 +373,25 @@ static inline int spmi_write_cmd(struct spmi_controller *ctrl,
 				u8 opcode, u8 sid, u16 addr, u8 bc, u8 *buf)
 {
 	int ret;
+	u8 i;
+	unsigned long flags;
+
 	if (!ctrl || !ctrl->write_cmd || ctrl->dev.type != &spmi_ctrl_type)
 		return -EINVAL;
 
 	trace_spmi_write_begin(opcode, sid, addr, bc, buf);
-	ret =  ctrl->write_cmd(ctrl, opcode, sid, addr, bc, buf);
+	if (ctrl->always_sec) {
+		spin_lock_irqsave(&ctrl->sec_lock, flags);/*lint !e550 */
+		for (i =0;i<bc;i++) {
+			ret = atfd_spmi_smc((u64)(HISI_SPMI_FN_MAIN_ID|SPMI_WRITE), (u64)sid, (u64)addr, (u64)*buf);
+			buf++;
+			addr++;
+		}
+		spin_unlock_irqrestore(&ctrl->sec_lock, flags);
+	} else
+		ret =  ctrl->write_cmd(ctrl, opcode, sid, addr, bc, buf);
 	trace_spmi_write_end(opcode, sid, addr, ret);
+
 	return ret;
 }
 

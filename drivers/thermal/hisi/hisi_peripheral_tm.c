@@ -93,7 +93,9 @@ enum hisi_peripheral_temp_chanel {
 	DETECT_CHARGER1_CHANEL,
 	DETECT_RFBOARD_CHANEL,
 	DETECT_USB_CHANEL,
-	DETECT_WIRELESS_CHANEL
+	DETECT_WIRELESS_CHANEL,
+	DETECT_IR_CHANEL,
+	DETECT_DOT_CHANEL
 };
 
 char *hisi_peripheral_chanel[] = {
@@ -108,6 +110,8 @@ char *hisi_peripheral_chanel[] = {
 	[DETECT_RFBOARD_CHANEL] = "rfboard",
 	[DETECT_USB_CHANEL] = "usb",
 	[DETECT_WIRELESS_CHANEL] = "wireless",
+	[DETECT_IR_CHANEL] = "ir",
+	[DETECT_DOT_CHANEL] = "dot",
 };
 
 static struct hisi_peripheral_tm_chip *gtm_dev;

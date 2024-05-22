@@ -18,7 +18,7 @@ struct hisi_coul_test_info{
     int input_batt_cur;
     int input_batt_fcc;
     int input_event;
-    int test_start_flag;
+    unsigned int test_start_flag;
 };
 
 extern  struct hisi_coul_test_info *g_hisi_coul_test_info;

@@ -651,6 +651,7 @@ void dump_apr_get_reset_context_and_id(u32 *reboot_context, u32 *reboot_task,u32
                 return;
             }
             /*lint -save -e679 */
+            /* coverity[INTEGER_OVERFLOW]*/
             element = task_switch->data[((task_switch->rear+task_switch->maxNum)-2) % task_switch->maxNum];/* [false alarm]:fortify */
             /*lint -restore +e679 */
             if(DUMP_INT_IN_FLAG == ((element>>16)&0xFFFF))

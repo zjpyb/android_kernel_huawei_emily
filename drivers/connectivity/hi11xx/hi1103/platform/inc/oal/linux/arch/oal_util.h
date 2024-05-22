@@ -98,9 +98,13 @@ typedef struct file              oal_file_stru;
     do {                            \
             printk(KERN_DEBUG HISI_LOG_TAG ""fmt, ##arg);\
     } while(0)
-
+#if (_PRE_PRODUCT_ID == _PRE_PRODUCT_ID_HI1103_HOST)
+/*bug on not allow to use*/
+//#define OAL_BUG_ON(_con)        BUG_ON(_con)
+#define OAL_BUG_ON(_con)        OAL_BUILD_BUG_ON(1)
+#else
 #define OAL_BUG_ON(_con)        BUG_ON(_con)
-
+#endif
 #define OAL_WARN_ON(condition)  WARN_ON(condition)
 
 #define OAL_VSPRINTF            vsnprintf
@@ -171,6 +175,7 @@ typedef struct kobject              oal_kobject;
 #define OAL_STRSTR                                  strstr
 #define OAL_STRCMP                                  strcmp
 #define OAL_STRNCMP                                 strncmp
+#define OAL_STRNCASECMP                             strncasecmp
 
 
 /* #define oal_random_ether_addr(addr) random_ether_addr(addr) */
@@ -371,9 +376,11 @@ OAL_STATIC OAL_INLINE oal_int32  oal_file_size(oal_uint32   *pul_file_size)
     {
         return OAL_ERR_CODE_PTR_NULL;
     }
-
+#if (LINUX_VERSION_CODE > KERNEL_VERSION(3,1,0))
+    *pul_file_size = (file_inode(p_file))->i_size;
+#else
     *pul_file_size = ((p_file->f_path).dentry)->d_inode->i_size;
-
+#endif
     oal_file_close(p_file);
 
     return OAL_SUCC;

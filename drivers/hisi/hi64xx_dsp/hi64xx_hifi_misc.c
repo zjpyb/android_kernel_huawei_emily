@@ -100,6 +100,7 @@
 #define SYSTEM_GID   1000
 
 #define INTERVAL_TIMEOUT_MS (1000)
+#define INTERRUPTED_SIGNAL_DELAY_MS (10)
 
 #define REG_ROW_LEN         60
 #define REG_ROW_NUM         200
@@ -182,6 +183,11 @@ static const struct reg_dump s_reg_dump[] = {
 	/* XXX: 0x20007038, 0x20007039 should always read in the end */
 	{HI64xx_DUMP_CFG_SUB_ADDR3,       HI64xx_DUMP_CFG_SUB_SIZE3,      "page_cfg_subsys:"},
 };
+
+static inline long long timeval_to_ms(struct timeval tv)
+{
+	return 1000 * tv.tv_sec + tv.tv_usec / 1000;
+}
 
 static void hi64xx_stop_dspif_hook(void)
 {
@@ -479,6 +485,11 @@ static irqreturn_t hi64xx_msg_irq_handler(int irq, void *data)
 	if (cmd_status & (0x1 << HI64xx_DSP_MSG_WITH_CONTENT_BIT)){
 
 		HI64XX_DSP_INFO("codec hifi msg come\n");
+		if (!dsp_priv->msg_proc_wq) {
+			HI64XX_DSP_ERROR("message workqueue doesn't init\n");
+			hi64xx_cmd_status_clr_bit(cmd_status, HI64xx_DSP_MSG_WITH_CONTENT_BIT);
+			return IRQ_HANDLED;
+		}
 
 		if (!queue_delayed_work(dsp_priv->msg_proc_wq,
 				&dsp_priv->msg_proc_work, msecs_to_jiffies(0)))
@@ -975,32 +986,53 @@ static void hi64xx_hifi_resume(enum pll_state state)
 	return;
 }
 
-static bool hi64xx_hifi_notify_dsp_pllswitch(unsigned char state)
+static void hi64xx_hifi_notify_dsp_pllswitch(unsigned char state)
 {
 	long ret_l = 0;
+	unsigned int interrupt_count = 0;
+	unsigned long long begin, update;
+	struct timeval time_begin, time_update;
 
 	/* notify dsp stop dma and close dspif */
 	dsp_priv->dsp_pllswitch_done = 0;
 	hi64xx_hifi_write_reg(dsp_priv->dsp_config.cmd0_addr, state);
 
-	HI64XX_DSP_INFO("cmd[0x%x]reg[0x%x]pll state[0x%x]\n",state,
+	HI64XX_DSP_INFO("cmd[0x%x]reg[0x%x]pll state[0x%x]\n", state,
 			hi64xx_hifi_read_reg(dsp_priv->dsp_config.cmd0_addr),
 			hi64xx_hifi_read_reg(dsp_priv->dsp_config.cmd1_addr));
 
 	if(dsp_priv->dsp_config.dsp_ops.notify_dsp)
 		dsp_priv->dsp_config.dsp_ops.notify_dsp();
 
-	/* wait 100s(600ms in total) for dsp close dma and dsspif */
-	ret_l = wait_event_interruptible_timeout(dsp_priv->dsp_pllswitch_wq,
-			(dsp_priv->dsp_pllswitch_done == 1), HZ);/*lint !e665*/
+	do_gettimeofday(&time_begin);
+	begin = timeval_to_ms(time_begin);
 
-	if (0 == ret_l) {
-		HI64XX_DSP_ERROR("wait for dsp_pllswitch_done timeout\n");
-	} else if (ret_l < 0) {
-		HI64XX_DSP_ERROR("wait for dsp_pllswitch_done err: %ld\n", ret_l);
-	}
+	do {
+		if (dsp_priv->is_watchdog_coming) {
+			HI64XX_DSP_ERROR("watchdog have already come, can't send msg\n");
+			break;
+		}
 
-	return true;
+		ret_l = wait_event_interruptible_timeout(dsp_priv->dsp_pllswitch_wq,
+				(dsp_priv->dsp_pllswitch_done == 1), HZ);/*lint !e665*/
+
+		if (dsp_priv->dsp_pllswitch_done) {
+			HI64XX_DSP_INFO("pll switch done, interrupt count %u\n", interrupt_count);
+			break;
+		}
+
+		if (ret_l == -ERESTARTSYS) {
+			interrupt_count++;
+			msleep(INTERRUPTED_SIGNAL_DELAY_MS);
+		}
+
+		do_gettimeofday(&time_update);
+		update = timeval_to_ms(time_update);
+
+	} while (update - begin < 3 * INTERVAL_TIMEOUT_MS);
+
+	HI64XX_DSP_INFO("pll switch is interrupted %u times, return %ld\n",
+					interrupt_count, ret_l);
 }
 
 static void hi64xx_hifi_cfg_before_pll_switch(void)
@@ -1350,6 +1382,11 @@ int hi64xx_request_pll_resource(unsigned int scene_id)
 {
 	IN_FUNCTION;
 
+	if (!dsp_priv) {
+		HI64XX_DSP_ERROR("dsp_priv is null\n");
+		return -EPERM;
+	}
+
 	HI64XX_DSP_INFO("sid[0x%x]hifreq_status[0x%x]", scene_id,
 		dsp_priv->high_freq_scene_status);
 
@@ -1379,6 +1416,11 @@ int hi64xx_request_pll_resource(unsigned int scene_id)
 void hi64xx_release_pll_resource(unsigned int scene_id)
 {
 	IN_FUNCTION;
+
+	if (!dsp_priv) {
+		HI64XX_DSP_ERROR("dsp_priv is null\n");
+		return;
+	}
 
 	if (scene_id >= HI_FREQ_SCENE_BUTT) {
 		HI64XX_DSP_ERROR("unknow scene for pll: %u\n", scene_id);
@@ -1973,8 +2015,6 @@ end:
 	return ret;
 }
 
-
-
 static int hi64xx_func_fasttrans_config(struct krn_param_io_buf *param)
 {
 	int ret = OK;
@@ -2024,6 +2064,20 @@ end:
 	return ret;
 }
 
+void hi64xx_soundtrigger_close_codec_dma(void)
+{
+	FAST_TRANS_CFG_REQ_STRU FastCfg = {0};
+
+	IN_FUNCTION;
+	HI64XX_DSP_INFO("soundtrigger exception,release codec dma\n");
+	FastCfg.uhwMsgId = ID_AP_DSP_FASTTRANS_CLOSE;
+	if (dsp_priv && dsp_priv->dsp_config.dsp_ops.soundtrigger_fasttrans_ctrl)
+		dsp_priv->dsp_config.dsp_ops.soundtrigger_fasttrans_ctrl(false, 0);
+	if (hi64xx_sync_write(&FastCfg, sizeof(FastCfg)) != OK) {
+		HI64XX_DSP_ERROR("sync write failed\n");
+	}
+	OUT_FUNCTION;
+}
 
 static void release_requested_pll(void)
 {
@@ -2293,133 +2347,6 @@ int hi64xx_func_stop_hook(struct krn_param_io_buf *param)
 	return ret;
 }
 
-static int hi64xx_func_set_hook_bw(struct krn_param_io_buf *param)
-{
-	int ret = 0;
-
-	struct om_set_bandwidth_msg *set_bw = NULL;
-
-	if (HI64XX_CODEC_TYPE_6402 == dsp_priv->dsp_config.codec_type) {
-		HI64XX_DSP_ERROR("6402 codec do not support hook data\n");
-		return -EINVAL;
-	}
-
-	if (dsp_priv->high_freq_scene_status & (1 << HI_FREQ_SCENE_OM_HOOK)) {
-		HI64XX_DSP_WARNING("om hook is running, forbid set bw.\n");
-		return -EINVAL;
-	}
-
-	if (param->buf_size_in != sizeof(struct om_set_bandwidth_msg)) {
-		HI64XX_DSP_ERROR("err param size:%d!\n", param->buf_size_in);
-		return -EINVAL;
-	}
-
-	(void)hi64xx_request_pll_resource(HI_FREQ_SCENE_OM_HOOK);
-
-	set_bw = (struct om_set_bandwidth_msg*)param->buf_in;
-
-	hi64xx_hifi_om_set_bw(set_bw->bw);
-
-	ret = hi64xx_sync_write(param->buf_in, param->buf_size_in);
-
-	hi64xx_release_pll_resource(HI_FREQ_SCENE_OM_HOOK);
-
-	return ret;
-}
-
-static int hi64xx_func_set_hook_sponsor(struct krn_param_io_buf *param)
-{
-	int ret = OK;
-	struct om_set_hook_sponsor_msg *set_sponsor = NULL;
-
-	IN_FUNCTION;
-
-	if (HI64XX_CODEC_TYPE_6402 == dsp_priv->dsp_config.codec_type) {
-		HI64XX_DSP_ERROR("6402 codec do not support hook data\n");
-		return -1;
-	}
-
-	if (dsp_priv->high_freq_scene_status & (1 << HI_FREQ_SCENE_OM_HOOK)) {
-		HI64XX_DSP_WARNING("om hook is running, forbid set sponsor.\n");
-		return -1;
-	}
-
-	if (param->buf_size_in != sizeof(struct om_set_hook_sponsor_msg)) {
-		HI64XX_DSP_ERROR("err param size:%d!\n", param->buf_size_in);
-		return -1;
-	}
-
-	set_sponsor = (struct om_set_hook_sponsor_msg*)param->buf_in;
-
-	ret = hi64xx_hifi_om_set_sponsor(set_sponsor->sponsor);
-
-	OUT_FUNCTION;
-
-	return ret;
-}
-
-static int hi64xx_func_set_hook_path(struct krn_param_io_buf *param)
-{
-	int ret = OK;
-	struct om_set_hook_path_msg *set_path = NULL;
-
-	IN_FUNCTION;
-
-	if (HI64XX_CODEC_TYPE_6402 == dsp_priv->dsp_config.codec_type) {
-		HI64XX_DSP_ERROR("6402 codec do not support hook data\n");
-		return -EINVAL;
-	}
-
-	if (dsp_priv->high_freq_scene_status & (1 << HI_FREQ_SCENE_OM_HOOK)) {
-		HI64XX_DSP_WARNING("om hook is running, forbid set path.\n");
-		return -EINVAL;
-	}
-
-	if (param->buf_size_in != sizeof(struct om_set_hook_path_msg)) {
-		HI64XX_DSP_ERROR("err param size:%d!\n", param->buf_size_in);
-		return -EINVAL;
-	}
-
-	set_path = (struct om_set_hook_path_msg*)param->buf_in;
-
-	ret = hi64xx_hifi_om_set_hook_path(set_path->hook_path, set_path->size);
-
-	OUT_FUNCTION;
-
-	return ret;
-}
-
-static int hi64xx_func_set_dir_count(struct krn_param_io_buf *param)
-{
-	int ret = OK;
-	struct om_set_dir_count_msg *set_dir_count = NULL;
-
-	IN_FUNCTION;
-
-	if (HI64XX_CODEC_TYPE_6402 == dsp_priv->dsp_config.codec_type) {
-		HI64XX_DSP_ERROR("6402 codec do not support hook data\n");
-		return -EINVAL;
-	}
-
-	if (dsp_priv->high_freq_scene_status & (1 << HI_FREQ_SCENE_OM_HOOK)) {
-		HI64XX_DSP_WARNING("om hook is running, forbid set dir count.\n");
-		return -EINVAL;
-	}
-
-	if (param->buf_size_in != sizeof(struct om_set_dir_count_msg)) {
-		HI64XX_DSP_ERROR("err param size:%d!\n", param->buf_size_in);
-		return -EINVAL;
-	}
-
-	set_dir_count = (struct om_set_dir_count_msg*)param->buf_in;/*lint !e826*/
-
-	ret = hi64xx_hifi_om_set_dir_count(set_dir_count->count);
-
-	OUT_FUNCTION;
-
-	return ret;
-}
-
 
 static cmd_process_func hi64xx_select_func(const unsigned char *arg,
 					   const struct cmd_func_pair *func_map,
@@ -2460,10 +2387,6 @@ static struct cmd_func_pair sync_cmd_func_map[] = {
 	{ ID_AP_DSP_FASTTRANS_CLOSE, hi64xx_func_fasttrans_config, "ID_AP_DSP_FASTTRANS_CLOSE"},
 	{ ID_AP_DSP_HOOK_START,      hi64xx_func_start_hook,     "ID_AP_DSP_HOOK_START"},
 	{ ID_AP_DSP_HOOK_STOP,       hi64xx_func_stop_hook,      "ID_AP_DSP_HOOK_STOP"},
-	{ ID_AP_DSP_SET_OM_BW,       hi64xx_func_set_hook_bw,    "ID_AP_DSP_SET_OM_BW"},
-	{ ID_AP_AP_SET_HOOK_SPONSOR, hi64xx_func_set_hook_sponsor,"ID_AP_AP_SET_HOOK_SPONSOR"},
-	{ ID_AP_AP_SET_HOOK_PATH,    hi64xx_func_set_hook_path,  "ID_AP_AP_SET_HOOK_PATH"},
-	{ ID_AP_AP_SET_DIR_COUNT,    hi64xx_func_set_dir_count,  "ID_AP_AP_SET_DIR_COUNT"},
 };
 
 
@@ -2557,6 +2480,30 @@ end:
 	return ret;
 }
 
+
+/* dump 64xxdsp manually, debug only */
+#define DUMP_DIR_LEN  128
+#define DUMP_DIR_ROOT "/data/hisi_logs/hi64xxdump/" /* length:28 */
+
+#define OM_HI64XX_DUMP_RAM_LOG_PATH "codechifi_ram_logs/"
+#define OM_HI64XX_DUMP_OCRAM_NAME   "ocram.bin"
+#define OM_HI64XX_DUMP_IRAM_NAME    "iram.bin"
+#define OM_HI64XX_DUMP_DRAM_NAME    "dram.bin"
+
+#define OM_HI64XX_LOG_PATH          "codechifi_logs/"
+#define DUMP_OCRAM_FILE_NAME        "codec_ocram.bin"
+#define DUMP_LOG_FILE_NAME          "codec_log.bin"
+#define DUMP_REG_FILE_NAME          "codec_reg.bin"
+
+enum {
+	DUMP_TYPE_WHOLE_OCRAM,
+	DUMP_TYPE_WHOLE_IRAM,
+	DUMP_TYPE_WHOLE_DRAM,
+	DUMP_TYPE_PRINT_LOG,
+	DUMP_TYPE_PANIC_LOG,
+	DUMP_TYPE_REG,
+};
+
 /*****************************************************************************
  * misc driver
  * */
@@ -2569,6 +2516,7 @@ static int hi64xx_hifi_misc_release(struct inode *finode, struct file *fd)
 {
 	return 0;
 }
+
 
 
 static long hi64xx_hifi_misc_ioctl(struct file *fd,
@@ -2626,30 +2574,6 @@ static struct miscdevice hi64xx_hifi_misc_device = {
 	.minor	= MISC_DYNAMIC_MINOR,
 	.name	= "hi6402_hifi_misc",
 	.fops	= &hi64xx_hifi_misc_fops,
-};
-
-
-/* dump 64xxdsp manually, debug only */
-#define DUMP_DIR_LEN  128
-#define DUMP_DIR_ROOT "/data/hisi_logs/hi64xxdump/" /* length:28 */
-
-#define OM_HI64XX_DUMP_RAM_LOG_PATH "codechifi_ram_logs/"
-#define OM_HI64XX_DUMP_OCRAM_NAME   "ocram.bin"
-#define OM_HI64XX_DUMP_IRAM_NAME    "iram.bin"
-#define OM_HI64XX_DUMP_DRAM_NAME    "dram.bin"
-
-#define OM_HI64XX_LOG_PATH          "codechifi_logs/"
-#define DUMP_OCRAM_FILE_NAME        "codec_ocram.bin"
-#define DUMP_LOG_FILE_NAME          "codec_log.bin"
-#define DUMP_REG_FILE_NAME          "codec_reg.bin"
-
-enum {
-	DUMP_TYPE_WHOLE_OCRAM,
-	DUMP_TYPE_WHOLE_IRAM,
-	DUMP_TYPE_WHOLE_DRAM,
-	DUMP_TYPE_PRINT_LOG,
-	DUMP_TYPE_PANIC_LOG,
-	DUMP_TYPE_REG,
 };
 
 

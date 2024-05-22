@@ -191,6 +191,10 @@ int bfm_init(void);
 int bfm_get_log_count(char *bfmr_log_root_path);
 void bfm_delete_dir(char *log_path);
 
+//send sgnal to init, it will show init task trace.
+void bfm_send_signal_to_init(void);
+
+
 #ifdef __cplusplus
 }
 #endif

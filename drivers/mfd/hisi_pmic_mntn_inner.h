@@ -60,6 +60,7 @@
 
 #define INVALID_REG_ADDR 0xDEAD
 #define CLOSE_REGULATOR_CONTROL 0x00
+#define OPEN_REGULATOR_CONTROL 0x01
 #define PMU_REG_WIDTH (8)
 
 #define PATH_BATTERY_CAPACITY "/sys/class/power_supply/Battery/capacity"
@@ -72,8 +73,12 @@ typedef enum {
 
 typedef struct {
     unsigned int inacceptable_event;
+    unsigned int check_ocp_nofify;
+    unsigned int check_ocp_reset;
     char **event_bit_name;
     unsigned int *event_ops_reg;
+    unsigned int *check_ocp_num;
+    unsigned int  *check_count;
 } PMIC_EXCH_REG;
 
 typedef struct {

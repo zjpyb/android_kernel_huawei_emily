@@ -447,10 +447,7 @@ void ProtocolSendingMessage(void)
         ProtocolVerifyGoodCRC();
     }
 
-    if(ProtocolState == PRLIdle)
-    {
-        ProtocolIdle();
-    }
+    if(ProtocolState == PRLIdle) ProtocolIdle();
 }
 
 void ProtocolVerifyGoodCRC(void)

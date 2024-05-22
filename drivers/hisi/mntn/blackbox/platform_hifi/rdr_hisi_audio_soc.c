@@ -114,9 +114,7 @@ struct rdr_soc_des_s {
 static struct rdr_soc_des_s soc_des;
 
 #define DTS_COMP_HIFICMA_NAME    "hisilicon,hifi-cma"
-
 #define HIFI_CMA_IMAGE_SIZE    (0x600000UL)
-
 struct hisi_hifi_cma_struct {
     struct device *device;
 };
@@ -726,6 +724,24 @@ static int hisi_rdr_ipc_notify_lpm3(u32 *msg, int len)
 	return ret;
 }
 
+static bool is_config_cma_secure_by_atf(void)
+{
+	struct hisi_hifi_cma_struct *dev = &hificma_dev;
+	const char *cma_sec_config;
+
+	if (!of_property_read_string(dev->device->of_node, "cma-sec-config", &cma_sec_config)) {
+		if (!strncmp(cma_sec_config, "atf", strlen("atf"))) {
+			BB_PRINT_PN("rdr:%s(): config cma secure by atf\n", __func__);
+			return true;
+		}
+	} else {
+		BB_PRINT_ERR("read cma-sec-config err\n");
+	}
+
+	BB_PRINT_PN("rdr:%s(): config cma secure not by atf\n", __func__);
+	return false;
+}
+
 static int rdr_hifi_cma_alloc(phys_addr_t *hifi_addr)
 {
 	struct hisi_hifi_cma_struct *dev = &hificma_dev;
@@ -750,21 +766,31 @@ static int rdr_hifi_cma_alloc(phys_addr_t *hifi_addr)
 	}
 
 	__dma_unmap_area(phys_to_virt(phys), HIFI_CMA_IMAGE_SIZE, DMA_BIDIRECTIONAL);
-
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
+	change_secpage_range(phys, (unsigned long)phys_to_virt(phys),
+		HIFI_CMA_IMAGE_SIZE, __pgprot(PROT_DEVICE_nGnRE));
+#else
 	create_mapping_late(phys, (unsigned long)phys_to_virt(phys),
 		HIFI_CMA_IMAGE_SIZE, __pgprot(PROT_DEVICE_nGnRE));
+#endif
 
-	if (-1 == atfd_hisi_service_access_register_smc(ACCESS_REGISTER_FN_MAIN_ID,
-							phys, HIFI_CMA_IMAGE_SIZE,
-							ACCESS_REGISTER_FN_SUB_ID_DDR_HIFI_SEC_OPEN)) {
-		BB_PRINT_ERR("atfd_hisi_service_access_register_smc (hifi) set err!\n");
-		create_mapping_late(phys, (unsigned long)phys_to_virt(phys),
-			HIFI_CMA_IMAGE_SIZE, __pgprot(PROT_NORMAL));
-
-		(void)dma_release_from_contiguous(dev->device,
-			phys_to_page(phys),
-			(int)HIFI_CMA_IMAGE_SIZE >> PAGE_SHIFT);
-		return -EACCES;
+	if (is_config_cma_secure_by_atf()) {
+		if (-1 == atfd_hisi_service_access_register_smc(ACCESS_REGISTER_FN_MAIN_ID,
+								phys, HIFI_CMA_IMAGE_SIZE,
+								ACCESS_REGISTER_FN_SUB_ID_DDR_HIFI_SEC_OPEN)) {
+			BB_PRINT_ERR("atfd_hisi_service_access_register_smc (hifi) set err!\n");
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
+			change_secpage_range(phys, (unsigned long)phys_to_virt(phys),
+				HIFI_CMA_IMAGE_SIZE, __pgprot(PROT_NORMAL));
+#else
+			create_mapping_late(phys, (unsigned long)phys_to_virt(phys),
+				HIFI_CMA_IMAGE_SIZE, __pgprot(PROT_NORMAL));
+#endif
+			(void)dma_release_from_contiguous(dev->device,
+				phys_to_page(phys),
+				(int)HIFI_CMA_IMAGE_SIZE >> PAGE_SHIFT);
+			return -EACCES;
+		}
 	}
 
 	*hifi_addr = phys;
@@ -781,16 +807,21 @@ static int rdr_hifi_cma_free(phys_addr_t addr)
 		return -EINVAL;
 	}
 
-	if (-1 == atfd_hisi_service_access_register_smc(ACCESS_REGISTER_FN_MAIN_ID,
-							addr, HIFI_CMA_IMAGE_SIZE,
-							ACCESS_REGISTER_FN_SUB_ID_DDR_HIFI_SEC_CLOSE)) {
-		BB_PRINT_ERR("atfd_hisi_service_access_register_smc (hifi) clear err!\n");
-		return -EACCES;
+	if (is_config_cma_secure_by_atf()) {
+		if (-1 == atfd_hisi_service_access_register_smc(ACCESS_REGISTER_FN_MAIN_ID,
+								addr, HIFI_CMA_IMAGE_SIZE,
+								ACCESS_REGISTER_FN_SUB_ID_DDR_HIFI_SEC_CLOSE)) {
+			BB_PRINT_ERR("atfd_hisi_service_access_register_smc (hifi) clear err!\n");
+			return -EACCES;
+		}
 	}
-
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
+	change_secpage_range(addr, (unsigned long)phys_to_virt(addr),
+		HIFI_CMA_IMAGE_SIZE, __pgprot(PROT_NORMAL));
+#else
 	create_mapping_late(addr, (unsigned long)phys_to_virt(addr),
 		HIFI_CMA_IMAGE_SIZE, __pgprot(PROT_NORMAL));
-
+#endif
 	(void)dma_release_from_contiguous(dev->device,
 		phys_to_page(addr),
 		(int)HIFI_CMA_IMAGE_SIZE >> PAGE_SHIFT);

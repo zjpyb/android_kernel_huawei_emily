@@ -226,11 +226,10 @@ int dsm_ufs_update_uic_info(struct ufs_hba *hba, int err_code)
 
 int dsm_ufs_update_error_info(struct ufs_hba *hba, int code)
 {
-	struct ufs_reg_dump *ufs_dump;
 
 	if (!dsm_ufs_enable)
 		return -1;
-	ufs_dump = &(g_ufs_dsm_adaptor.dump);
+
 	switch (code) {
 	case DSM_UFS_VOLT_GPIO_ERR:
 		(void)test_and_set_bit_lock(UFS_VOLT_GPIO_ERR, &g_ufs_dsm_adaptor.err_type);
@@ -259,30 +258,6 @@ int dsm_ufs_update_error_info(struct ufs_hba *hba, int code)
 			if (test_and_set_bit_lock(UFS_ENTER_OR_EXIT_H8_ERR, &g_ufs_dsm_adaptor.err_type))
 				break;
 		}
-		ufs_dump->cap = ufshcd_readl(hba, REG_CONTROLLER_CAPABILITIES);
-		ufs_dump->ver = ufshcd_readl(hba, REG_UFS_VERSION);
-		ufs_dump->hcpid = ufshcd_readl(hba, REG_CONTROLLER_DEV_ID);
-		ufs_dump->hcmid = ufshcd_readl(hba, REG_CONTROLLER_PROD_ID);
-		ufs_dump->ahit = ufshcd_readl(hba, REG_CONTROLLER_AHIT);
-		ufs_dump->is = ufshcd_readl(hba, REG_INTERRUPT_STATUS);
-		ufs_dump->ie = ufshcd_readl(hba, REG_INTERRUPT_ENABLE);
-		ufs_dump->hcs = ufshcd_readl(hba, REG_CONTROLLER_STATUS);
-		ufs_dump->hce = ufshcd_readl(hba, REG_CONTROLLER_ENABLE);
-		ufs_dump->utriac = ufshcd_readl(hba, REG_UTP_TRANSFER_REQ_INT_AGG_CONTROL);
-		ufs_dump->utrlba = ufshcd_readl(hba, REG_UTP_TRANSFER_REQ_LIST_BASE_L);
-		ufs_dump->utrlbau = ufshcd_readl(hba, REG_UTP_TRANSFER_REQ_LIST_BASE_H);
-		ufs_dump->utrldbr = ufshcd_readl(hba, REG_UTP_TRANSFER_REQ_DOOR_BELL);
-		ufs_dump->utrlclr = ufshcd_readl(hba, REG_UTP_TRANSFER_REQ_LIST_CLEAR);
-		ufs_dump->utrlrsr = ufshcd_readl(hba, REG_UTP_TRANSFER_REQ_LIST_RUN_STOP);
-		ufs_dump->utmrlba = ufshcd_readl(hba, REG_UTP_TASK_REQ_LIST_BASE_L);
-		ufs_dump->utmrlbau = ufshcd_readl(hba, REG_UTP_TASK_REQ_LIST_BASE_H);
-		ufs_dump->utmrldbr = ufshcd_readl(hba, REG_UTP_TASK_REQ_DOOR_BELL);
-		ufs_dump->utmrlclr = ufshcd_readl(hba, REG_UTP_TASK_REQ_LIST_CLEAR);
-		ufs_dump->utmrlrsr = ufshcd_readl(hba, REG_UTP_TASK_REQ_LIST_RUN_STOP);
-		ufs_dump->uic_cmd = ufshcd_readl(hba, REG_UIC_COMMAND);
-		ufs_dump->uic_arg1 = ufshcd_readl(hba, REG_UIC_COMMAND_ARG_1);
-		ufs_dump->uic_arg2 = ufshcd_readl(hba, REG_UIC_COMMAND_ARG_2);
-		ufs_dump->uic_arg3 = ufshcd_readl(hba, REG_UIC_COMMAND_ARG_3);
 		break;
 	case DSM_UFS_LIFETIME_EXCCED_ERR:
 		(void)test_and_set_bit_lock(UFS_LIFETIME_EXCCED_ERR, &g_ufs_dsm_adaptor.err_type);
@@ -325,11 +300,9 @@ int dsm_ufs_get_log(struct ufs_hba *hba, unsigned long code, char *err_msg)
 	int i, ret = 0;
 	int buff_size = sizeof(g_ufs_dsm_log.dsm_log);
 	char *dsm_log_buff = g_ufs_dsm_log.dsm_log;
-	struct ufs_reg_dump *ufs_dump;
 	char product_name[32] = {0};
 	char rev[5] = {0};
 
-	ufs_dump = &(g_ufs_dsm_adaptor.dump);
 	memset((void*)product_name, 0, 32);
 
 	if (!dsm_ufs_enable)
@@ -351,7 +324,7 @@ int dsm_ufs_get_log(struct ufs_hba *hba, unsigned long code, char *err_msg)
 	dsm_log_buff += ret;
 	buff_size -= ret;
 #endif
-    if ((hba->sdev_ufs_device != NULL)
+	if ((hba->sdev_ufs_device != NULL)
 		&& (hba->sdev_ufs_device->rev != NULL))
 		snprintf(rev, 5, "%.4s", hba->sdev_ufs_device->rev);
 
@@ -441,57 +414,10 @@ int dsm_ufs_get_log(struct ufs_hba *hba, unsigned long code, char *err_msg)
 			buff_size-= ret;
 		}
 
-		/*get ufs reg dump*/
-		ret = snprintf(dsm_log_buff, buff_size, "UFSDUMP:\n");
-		dsm_log_buff += ret;
-		buff_size -= ret;
-		ret = snprintf(dsm_log_buff, buff_size, "CAP:%08x,VER:%08x\n", ufs_dump->cap, ufs_dump->ver);
-		dsm_log_buff += ret;
-		buff_size -= ret;
-		ret = snprintf(dsm_log_buff, buff_size, "HCPID:%08x,HCMID:%08x\n", ufs_dump->hcpid, ufs_dump->hcmid);
-		dsm_log_buff += ret;
-		buff_size -= ret;
-		ret = snprintf(dsm_log_buff, buff_size, "AHIT:%08x,IS:%08x\n", ufs_dump->ahit, ufs_dump->is);
-		dsm_log_buff += ret;
-		buff_size -= ret;
-		ret = snprintf(dsm_log_buff, buff_size, "IE:%08x,HCS:%08x\n", ufs_dump->ie, ufs_dump->hcs);
-		dsm_log_buff += ret;
-		buff_size -= ret;
-		ret = snprintf(dsm_log_buff, buff_size, "HCE:%08x,UECPA:%08x\n", ufs_dump->hce, g_ufs_dsm_adaptor.uic_uecpa);
-		dsm_log_buff += ret;
-		buff_size -= ret;
 		ret = snprintf(dsm_log_buff, buff_size, "UECDL:%08x,UECN:%08x\n", g_ufs_dsm_adaptor.uic_uecdl, g_ufs_dsm_adaptor.uic_uecn);
 		dsm_log_buff += ret;
 		buff_size -= ret;
 		ret = snprintf(dsm_log_buff, buff_size, "UECT:%08x,UEDME:%08x\n", g_ufs_dsm_adaptor.uic_uect, g_ufs_dsm_adaptor.uic_uedme);
-		dsm_log_buff += ret;
-		buff_size -= ret;
-		ret = snprintf(dsm_log_buff, buff_size, "UTRIAC:%08x,UTRLBA:%08x\n", ufs_dump->utriac, ufs_dump->utrlba);
-		dsm_log_buff += ret;
-		buff_size -= ret;
-		ret = snprintf(dsm_log_buff, buff_size, "UTRLBAU:%08x,UTRLDBR:%08x\n", ufs_dump->utrlbau, ufs_dump->utrldbr);
-		dsm_log_buff += ret;
-		buff_size -= ret;
-		ret = snprintf(dsm_log_buff, buff_size, "UTRLCLR:%08x,UTRLRSR:%08x\n", ufs_dump->utrlclr, ufs_dump->utrlrsr);
-		dsm_log_buff += ret;
-		buff_size -= ret;
-		ret = snprintf(dsm_log_buff, buff_size, "UTMRLBA:%08x,UTMRLBAU:%08x\n", ufs_dump->utmrlba, ufs_dump->utmrlbau);
-		dsm_log_buff += ret;
-		buff_size -= ret;
-		ret = snprintf(dsm_log_buff, buff_size, "UTMRLBR:%08x,UTMRLCLR:%08x\n", ufs_dump->utmrldbr, ufs_dump->utmrlclr);
-		dsm_log_buff += ret;
-		buff_size -= ret;
-		ret = snprintf(dsm_log_buff, buff_size, "UTMRLRSR:%08x,UICCMD:%08x\n", ufs_dump->utmrlrsr, ufs_dump->uic_cmd);
-		dsm_log_buff += ret;
-		buff_size -= ret;
-		ret = snprintf(dsm_log_buff, buff_size,
-				"UICARG1:%08x,UICARG2:%08x\n",
-				ufs_dump->uic_arg1, ufs_dump->uic_arg2);
-		dsm_log_buff += ret;
-		buff_size -= ret;
-		ret = snprintf(dsm_log_buff, buff_size,
-				"UICARG3:%08x\n",
-				ufs_dump->uic_arg3);
 		dsm_log_buff += ret;
 		buff_size -= ret;
 		break;
@@ -628,16 +554,22 @@ int dsm_ufs_enabled(void)
 }
 
 /*lint -e648 -e845*/
+#ifdef CONFIG_HISI_MMC_SECURE_RPMB
 extern int get_rpmb_key_status(void);
+#endif
 int dsm_ufs_utp_err_need_report(struct ufs_hba *hba)
 {
+	int key_status = 0;
+
 	if (unlikely(hba->host->is_emulator))
 		return 0;
+#ifdef CONFIG_HISI_MMC_SECURE_RPMB
+	key_status = get_rpmb_key_status();
+#endif
+	if ((0 == key_status) && (OCS_FATAL_ERROR == g_ufs_dsm_adaptor.ocs))
+		return 0;
 
-    if ((0 == get_rpmb_key_status()) && (OCS_FATAL_ERROR == g_ufs_dsm_adaptor.ocs)) {
-        return 0;
-    }
-    return 1;
+	return 1;
 }
 
 void dsm_ufs_enable_volt_irq(struct ufs_hba *hba)
@@ -739,6 +671,8 @@ void dsm_ufs_handle_work(struct work_struct *work)
 
 	hba = container_of(work, struct ufs_hba, dsm_work);
 
+	mutex_lock(&hba->eh_mutex);
+
 	if (g_ufs_dsm_adaptor.err_type & (1 << UFS_FASTBOOT_PWMODE_ERR)) {
 		DSM_UFS_LOG(hba, DSM_UFS_FASTBOOT_PWMODE_ERR, "Fastboot PwrMode Error");/* !e713*/
 		clear_bit_unlock((unsigned int)UFS_FASTBOOT_PWMODE_ERR, &g_ufs_dsm_adaptor.err_type);
@@ -821,7 +755,7 @@ void dsm_ufs_handle_work(struct work_struct *work)
 	}
 	if (g_ufs_dsm_adaptor.err_type & (1 << UFS_LIFETIME_EXCCED_ERR)) {
 		DSM_UFS_LOG(hba, DSM_UFS_LIFETIME_EXCCED_ERR, "UFS Life time exceed");
-		clear_bit_unlock(UFS_INLINE_CRYPTO_ERR, &g_ufs_dsm_adaptor.err_type);
+		clear_bit_unlock(UFS_LIFETIME_EXCCED_ERR, &g_ufs_dsm_adaptor.err_type);
 	}
 	if (g_ufs_dsm_adaptor.err_type & (1 << UFS_HARDWARE_ERR)) {
 		DSM_UFS_LOG(hba, DSM_UFS_HARDWARE_ERR, "UFS hardware error:Sense_key = 4");
@@ -835,6 +769,8 @@ void dsm_ufs_handle_work(struct work_struct *work)
 		DSM_UFS_LOG(hba, DSM_UFS_TEMP_LOW_ERR, "UFS temperature too low");
 		clear_bit_unlock(UFS_TEMP_LOW_ERR, &g_ufs_dsm_adaptor.err_type);
 	}
+
+	mutex_unlock(&hba->eh_mutex);
 }
 
 void schedule_ufs_dsm_work(struct ufs_hba *hba)
@@ -918,7 +854,7 @@ void dsm_ufs_init(struct ufs_hba *hba)
 	}
 
 	INIT_WORK(&hba->dsm_work, dsm_ufs_handle_work);
-	spin_lock_init(&g_ufs_dsm_log.lock);
+	mutex_init(&g_ufs_dsm_log.lock);
 	dsm_ufs_enable = 1;
 	async_schedule(dsm_ufs_fastboot_async, hba);
 }

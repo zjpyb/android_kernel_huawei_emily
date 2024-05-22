@@ -10,6 +10,8 @@
 #include <media/huawei/hisp120_cfg.h>
 #elif defined( HISP200_CAMERA  )
 #include <media/huawei/hisp200_cfg.h>
+#elif defined( HISP250_CAMERA  )
+#include <media/huawei/hisp250_cfg.h>
 #else
 #include <media/huawei/hisp_cfg.h>
 #endif
@@ -235,6 +237,62 @@ s_subdev_core_ops_hisp = {
 	.unsubscribe_event = hisp_subdev_unsubscribe_event,
 };
 
+static int hisp_subdev_open(
+        struct v4l2_subdev *sd,
+        struct v4l2_subdev_fh *fh)
+{
+	hisp_t *isp = NULL;
+	int rc = 0;
+
+	if (NULL == sd){
+		cam_err("func %s: sd is NULL",__func__);
+		return -1;
+	}
+	isp = SD2HISP(sd);
+	if (NULL == isp){
+		cam_err("func %s: isp is NULL",__func__);
+		return -1;
+	}
+
+	if (isp->hw->vtbl->open) {
+		rc = isp->hw->vtbl->open(isp->hw);
+	}
+
+	return rc;
+}
+
+static int
+hisp_subdev_close(
+        struct v4l2_subdev *sd,
+        struct v4l2_subdev_fh *fh)
+{
+	hisp_t *isp = NULL;
+	int rc = 0;
+
+	if (NULL == sd){
+		cam_err("func %s: sd is NULL",__func__);
+		return -1;
+	}
+	isp = SD2HISP(sd);
+	if (NULL == isp){
+		cam_err("func %s: isp is NULL",__func__);
+		return -1;
+	}
+
+	if (isp->hw->vtbl->close) {
+		rc = isp->hw->vtbl->close(isp->hw);
+	}
+
+	return rc;
+}
+
+static struct v4l2_subdev_internal_ops
+s_subdev_internal_ops_hisp =
+{
+	.open = hisp_subdev_open,
+	.close = hisp_subdev_close,
+};
+
 static struct v4l2_subdev_ops
 s_subdev_ops_hisp = {
 	.core = &s_subdev_core_ops_hisp,
@@ -395,17 +453,14 @@ hisp_register(
 	mutex_init(&isp->lock);
 
 	v4l2_subdev_init(subdev, &s_subdev_ops_hisp);
+	subdev->internal_ops = &s_subdev_internal_ops_hisp;
 	snprintf(subdev->name, sizeof(subdev->name), "hwcam-cfg-hisp");
 	subdev->flags |= V4L2_SUBDEV_FL_HAS_DEVNODE;
 	subdev->flags |= V4L2_SUBDEV_FL_HAS_EVENTS;
 	//v4l2_set_subdevdata(subdev, pdev);
 
-	media_entity_init(&subdev->entity, 0, NULL, 0);
-	subdev->entity.type = MEDIA_ENT_T_V4L2_SUBDEV;
-	subdev->entity.group_id = HWCAM_SUBDEV_HISP;
-	subdev->entity.name = subdev->name;
-
-	hwcam_cfgdev_register_subdev(subdev);
+	init_subdev_media_entity(subdev,HWCAM_SUBDEV_HISP);
+	hwcam_cfgdev_register_subdev(subdev,HWCAM_SUBDEV_HISP);
 	subdev->devnode->lock = &isp->lock;
 
 	isp->hw = hw;
@@ -432,5 +487,44 @@ hisp_unregister(hisp_intf_t* isp_intf)
     hwcam_cfgdev_unregister_subdev(subdev);
     mutex_destroy(&isp->lock);
     kzfree(isp);
+}
+
+int
+hisp_get_sg_table(int fd,struct device *dev,struct dma_buf **buf,struct dma_buf_attachment **attach,struct sg_table **table)
+{
+	*buf = dma_buf_get(fd);
+	if (IS_ERR(*buf)) {
+		goto err_dma_buf;
+	}
+	*attach = dma_buf_attach(*buf, dev);
+	if (IS_ERR(*attach)) {
+		goto err_dma_buf_attach;
+	}
+
+	*table = dma_buf_map_attachment(*attach, DMA_BIDIRECTIONAL);
+
+	if (IS_ERR_OR_NULL(*table)) {
+		cam_err("%s Failed : dma_buf_map_attachment.%lu\n", __func__, PTR_ERR(*table));
+		goto err_dma_buf_map_attachment;
+	}
+	cam_info("func %s: dma_buf_map_attachment ok",__func__);
+	return 0;
+err_dma_buf_map_attachment:
+	dma_buf_detach(*buf, *attach);
+err_dma_buf_attach:
+	dma_buf_put(*buf);
+err_dma_buf:
+	return -ENODEV;
+}
+
+void
+hisp_free_dma_buf(struct dma_buf **buf,struct dma_buf_attachment **attach,struct sg_table **table)
+{
+	dma_buf_unmap_attachment(*attach, *table, DMA_BIDIRECTIONAL);
+	dma_buf_detach(*buf, *attach);
+	dma_buf_put(*buf);
+	*table = NULL;
+	*attach = NULL;
+	*buf = NULL;
 }
 //lint -restore

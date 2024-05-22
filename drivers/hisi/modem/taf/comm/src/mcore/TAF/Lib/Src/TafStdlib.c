@@ -353,7 +353,6 @@ VOS_UINT32 TAF_STD_ConvertStrToDecInt(
 }
 
 
-/* Added by f62575 for V9R1 STK升级, 2013-6-26, begin */
 /* MN_UnPack7Bit从MnMsgDecode.c移到本文件，更名为TAF_STD_UnPack7Bit */
 /* MN_Pack7Bit从MnMsgEncode.c移到本文件，更名为TAF_STD_Pack7Bit */
 
@@ -457,7 +456,6 @@ VOS_UINT32  TAF_STD_Pack7Bit(
 
     return VOS_OK;
 }
-/* Added by f62575 for V9R1 STK升级, 2013-6-26, end */
 
 
 

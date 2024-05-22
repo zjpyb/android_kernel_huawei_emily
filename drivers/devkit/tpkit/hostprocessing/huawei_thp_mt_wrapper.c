@@ -23,10 +23,38 @@
 #include "huawei_thp_mt_wrapper.h"
 #include "huawei_thp.h"
 
+#if defined(CONFIG_HUAWEI_TS_KIT_3_0)
+#include "../3_0/trace-events-touch.h"
+#else
+#define trace_touch(x...)
+#endif
 
-#define DEVICE_NAME	  "input_mt_wrapper"
+#define DEVICE_NAME	"input_mt_wrapper"
 
 static struct thp_mt_wrapper_data *g_thp_mt_wrapper = 0;
+
+int thp_mt_wrapper_ioctl_get_events(int * event)
+{
+	THP_LOG_ERR("%s:call.\n", __func__);
+	int t = 0;
+	struct thp_core_data *cd = thp_get_core_data();
+	if (!cd) {
+		THP_LOG_ERR("%s: core not inited\n", __func__);
+		return -EFAULT;
+	}
+	THP_LOG_INFO("%d: cd->event_flag \n",cd->event_flag);
+	if (cd->event_flag) {
+		*event = cd->event;
+		cd->event_flag = false;
+	} else {
+		cd->thp_event_waitq_flag = WAITQ_WAIT;
+		t = wait_event_interruptible(cd->thp_event_waitq,
+				(cd->thp_event_waitq_flag == WAITQ_WAKEUP));
+		THP_LOG_INFO("%s:  set wait finish \n",__func__);
+	}
+
+	return 0;
+}
 
 static long thp_mt_wrapper_ioctl_set_coordinate(unsigned long arg)
 {
@@ -36,6 +64,7 @@ static long thp_mt_wrapper_ioctl_set_coordinate(unsigned long arg)
 	struct thp_mt_wrapper_ioctl_touch_data data;
 	u8 i;
 
+	trace_touch(TOUCH_TRACE_ALGO_SET_EVENT, TOUCH_TRACE_FUNC_IN, "thp");
 	if (arg == 0) {
 		THP_LOG_ERR("%s:arg is null.\n", __func__);
 		return -EINVAL;
@@ -46,7 +75,9 @@ static long thp_mt_wrapper_ioctl_set_coordinate(unsigned long arg)
 		THP_LOG_ERR("Failed to copy_from_user().\n");
 		return -EFAULT;
 	}
+	trace_touch(TOUCH_TRACE_ALGO_SET_EVENT, TOUCH_TRACE_FUNC_OUT, "thp");
 
+	trace_touch(TOUCH_TRACE_INPUT, TOUCH_TRACE_FUNC_IN, "thp");
 	for (i = 0; i < INPUT_MT_WRAPPER_MAX_FINGERS; i++) {
 #ifdef TYPE_B_PROTOCOL
 		input_mt_slot(input_dev, i);
@@ -71,6 +102,8 @@ static long thp_mt_wrapper_ioctl_set_coordinate(unsigned long arg)
 						data.touch[i].orientation);
 			input_report_abs(input_dev, ABS_MT_TOOL_TYPE,
 						data.touch[i].tool_type);
+			input_report_abs(input_dev, ABS_MT_BLOB_ID,
+						data.touch[i].hand_side);
 #ifndef TYPE_B_PROTOCOL
 			input_mt_sync(input_dev);
 #endif
@@ -91,6 +124,7 @@ static long thp_mt_wrapper_ioctl_set_coordinate(unsigned long arg)
 
 	input_sync(input_dev);
 
+	trace_touch(TOUCH_TRACE_INPUT, TOUCH_TRACE_FUNC_OUT, "thp");
 	return ret;
 }
 
@@ -145,6 +179,134 @@ static int thp_mt_wrapper_ioctl_read_status(unsigned long arg)
 
 	return 0;
 }
+
+static int thp_mt_ioctl_read_input_config(unsigned long arg)
+{
+	struct thp_input_dev_config __user *config = (struct thp_input_dev_config *)arg;
+	struct thp_input_dev_config *input_config = &g_thp_mt_wrapper->input_dev_config;
+	if (!config) {
+		THP_LOG_ERR("%s:input null\n", __func__);
+		return -EINVAL;
+	}
+
+	if(copy_to_user(config, input_config, sizeof(struct thp_input_dev_config))) {
+		THP_LOG_ERR("%s:copy input config failed\n", __func__);
+		return -EFAULT;
+	}
+
+	return 0;
+}
+
+static int thp_mt_wrapper_ioctl_read_scene_info(unsigned long arg)
+{
+	struct thp_scene_info __user *config = (struct thp_scene_info *)arg;
+	struct thp_core_data *cd = thp_get_core_data();
+	struct thp_scene_info* scene_info;
+
+	if (!cd) {
+		THP_LOG_ERR("%s:thp_core_data is NULL.\n", __func__);
+		return -EINVAL;
+	}
+	scene_info= &(cd->scene_info);
+
+	THP_LOG_INFO("%s:%d,%d,%d\n", __func__,
+		scene_info->type, scene_info->status, scene_info->parameter);
+
+	if(copy_to_user(config, scene_info, sizeof(struct thp_scene_info))) {
+		THP_LOG_ERR("%s:copy scene_info failed\n", __func__);
+		return -EFAULT;
+	}
+
+	return 0;
+}
+
+static int thp_mt_wrapper_ioctl_get_window_info(unsigned long arg)
+{
+	struct thp_window_info __user *window_info = (struct thp_scene_info *)arg;
+	struct thp_core_data *cd = thp_get_core_data();
+
+	if (!cd || !window_info) {
+		THP_LOG_ERR("%s:args error\n", __func__);
+		return -EINVAL;
+	}
+
+	THP_LOG_INFO("%s:x0=%d,y0=%d,x1=%d,y1=%d\n", __func__,
+		cd->window.x0, cd->window.y0, cd->window.x1, cd->window.y1);
+
+	if(copy_to_user(window_info, &cd->window, sizeof(struct thp_window_info))) {
+		THP_LOG_ERR("%s:copy window_info failed\n", __func__);
+		return -EFAULT;
+	}
+
+	return 0;
+}
+
+static int thp_mt_wrapper_ioctl_get_projectid(unsigned long arg)
+{
+	char __user *project_id = (struct thp_scene_info *)arg;
+	struct thp_core_data *cd = thp_get_core_data();
+
+	if (!cd || !project_id) {
+		THP_LOG_ERR("%s:args error\n", __func__);
+		return -EINVAL;
+	}
+
+	THP_LOG_INFO("%s:project id:%s\n", __func__, cd->project_id);
+
+	if(copy_to_user(project_id, cd->project_id, sizeof(cd->project_id))) {
+		THP_LOG_ERR("%s:copy window_info failed\n", __func__);
+		return -EFAULT;
+	}
+
+	return 0;
+}
+
+static int thp_mt_wrapper_ioctl_set_roi_data(unsigned long arg)
+{
+	short __user *roi_data = (struct thp_scene_info *)arg;
+	struct thp_core_data *cd = thp_get_core_data();
+
+	if (!cd || !roi_data) {
+		THP_LOG_ERR("%s:args error\n", __func__);
+		return -EINVAL;
+	}
+
+	if(copy_from_user(cd->roi_data, roi_data, sizeof(cd->roi_data))) {
+		THP_LOG_ERR("%s:copy roi data failed\n", __func__);
+		return -EFAULT;
+	}
+
+	return 0;
+}
+
+static long thp_mt_wrapper_ioctl_set_events(unsigned long arg)
+{
+	long ret = 0;
+	struct thp_core_data *cd = thp_get_core_data();
+	void __user *argp = (void __user *)arg;
+	int val;
+
+	if (arg == 0) {
+		THP_LOG_ERR("%s:arg is null.\n", __func__);
+		return -EINVAL;
+	}
+	if (copy_from_user(&val, argp,
+			sizeof(int))) {
+		THP_LOG_ERR("Failed to copy_from_user().\n");
+		return -EFAULT;
+	}
+	THP_LOG_INFO("thp_send, write: %d\n", val);
+	cd->event_flag = true;
+	cd->event = val;
+	if (cd->event_flag) {
+		cd->thp_event_waitq_flag = WAITQ_WAKEUP;
+		wake_up_interruptible(&cd->thp_event_waitq);
+		THP_LOG_INFO("%d: wake_up\n",cd->event);
+	}
+
+	return ret;
+}
+
 static long thp_mt_wrapper_ioctl(struct file *filp, unsigned int cmd,
 				unsigned long arg)
 {
@@ -159,6 +321,27 @@ static long thp_mt_wrapper_ioctl(struct file *filp, unsigned int cmd,
 		ret = thp_mt_wrapper_ioctl_read_status(arg);
 		break;
 
+	case INPUT_MT_WRAPPER_IOCTL_READ_INPUT_CONFIG:
+		ret = thp_mt_ioctl_read_input_config(arg);
+		break;
+	case INPUT_MT_WRAPPER_IOCTL_READ_SCENE_INFO:
+		ret = thp_mt_wrapper_ioctl_read_scene_info(arg);
+		break;
+	case INPUT_MT_WRAPPER_IOCTL_GET_WINDOW_INFO:
+		ret = thp_mt_wrapper_ioctl_get_window_info(arg);
+		break;
+	case INPUT_MT_WRAPPER_IOCTL_GET_PROJECT_ID:
+		ret = thp_mt_wrapper_ioctl_get_projectid(arg);
+		break;
+	case INPUT_MT_WRAPPER_IOCTL_CMD_SET_EVENTS:
+		ret = thp_mt_wrapper_ioctl_set_events(arg);
+		break;
+	case INPUT_MT_WRAPPER_IOCTL_CMD_GET_EVENTS:
+		ret = thp_mt_wrapper_ioctl_get_events(arg);
+		break;
+	case INPUT_MT_WRAPPER_IOCTL_SET_ROI_DATA:
+		ret = thp_mt_wrapper_ioctl_set_roi_data(arg);
+		break;
 	default:
 		THP_LOG_ERR("cmd unkown.\n");
 		ret = -EINVAL;
@@ -180,7 +363,7 @@ int thp_mt_wrapper_wakeup_poll(void)
 
 static unsigned int thp_mt_wrapper_poll(struct file *file, poll_table *wait)
 {
-	int mask = 0;
+	unsigned int mask = 0;
 	THP_LOG_DEBUG("%s:poll call in\n", __func__);
 
 	poll_wait(file, &g_thp_mt_wrapper->wait, wait);
@@ -307,7 +490,6 @@ use_defaule:
 int thp_mt_wrapper_init(void)
 {
 	struct input_dev *input_dev;
-	struct thp_input_dev_config *input_config;
 	static struct thp_mt_wrapper_data *mt_wrapper;
 	int rc;
 
@@ -364,6 +546,9 @@ int thp_mt_wrapper_init(void)
 	input_set_abs_params(input_dev, ABS_MT_ORIENTATION,
 			mt_wrapper->input_dev_config.orientation_min,
 			mt_wrapper->input_dev_config.orientation_max, 0, 0);
+	input_set_abs_params(input_dev, ABS_MT_BLOB_ID,
+			0,
+			10, 0, 0);
 #ifdef TYPE_B_PROTOCOL
 	input_mt_init_slots(input_dev, THP_MT_WRAPPER_MAX_FINGERS);
 #endif

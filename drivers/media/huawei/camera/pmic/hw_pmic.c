@@ -14,10 +14,12 @@
 #include "cam_log.h"
 #include "hw_pmic.h"
 #include "hw_pmic_i2c.h"
+
 #ifdef CONFIG_HUAWEI_HW_DEV_DCT
 #include <huawei_platform/devdetect/hw_dev_dec.h>
 #endif
-
+#define GPIO_IRQ_REGISTER_SUCCESS 1
+extern int snprintf_s(char* strDest, size_t destMax, size_t count, const char* format, ...);
 struct hisi_pmic_ctrl_t *hisi_pmic_ctrl = NULL;
 
 struct dsm_client *client_pmic = NULL;
@@ -31,6 +33,41 @@ struct dsm_dev dsm_cam_pmic = {
 	.fops = NULL,
 	.buff_size = 256,
 };
+int pmic_ctl_otg_onoff(bool on_off)
+{
+    int pmic_ctl_gpio_otg_switch = 0;
+    pmic_ctl_gpio_otg_switch = of_get_named_gpio(of_find_compatible_node(NULL, NULL, "huawei,wireless_otg"),
+    "gpio_otg_switch", 0);
+    cam_info("pmic_ctl_otg_onoff,ret = %d\n",pmic_ctl_gpio_otg_switch);
+    if (pmic_ctl_gpio_otg_switch > 0)
+    {
+        cam_info("otg_gpio is %d\n",pmic_ctl_gpio_otg_switch);
+        gpio_set_value(pmic_ctl_gpio_otg_switch,on_off);
+    }
+    return pmic_ctl_gpio_otg_switch;
+}
+int pmic_enable_boost(int value)
+{
+    struct hisi_pmic_ctrl_t *pmic_ctrl = hisi_get_pmic_ctrl();
+    int rc = -1;
+    u32 voltage = 0;
+
+    if((pmic_ctrl == NULL) || (pmic_ctrl->func_tbl == NULL) || (pmic_ctrl->func_tbl->pmic_seq_config == NULL)) {
+        cam_err("pmic_ctrl is NULL,just return");
+        return -1;
+    }
+
+    if (value == 0) {
+        rc = pmic_ctrl->func_tbl->pmic_seq_config(pmic_ctrl, (pmic_seq_index_t)VOUT_BOOST, (u32)voltage, 0);
+    } else {
+        rc = pmic_ctrl->func_tbl->pmic_seq_config(pmic_ctrl, (pmic_seq_index_t)VOUT_BOOST, (u32)voltage, 1);
+    }
+
+    cam_err("%s rc=%d\n",__func__, rc);
+    return rc;
+}
+
+EXPORT_SYMBOL(pmic_enable_boost);
 
 void hisi_set_pmic_ctrl(struct hisi_pmic_ctrl_t *pmic_ctrl)
 {
@@ -41,6 +78,109 @@ struct hisi_pmic_ctrl_t * hisi_get_pmic_ctrl(void)
 {
 	return hisi_pmic_ctrl;
 }
+
+static irqreturn_t hisi_pmic_interrupt_handler(int vec, void *info)
+{
+	struct hisi_pmic_ctrl_t *pmic_ctrl = NULL;
+	if (NULL == info) {
+		return IRQ_NONE;
+	}
+
+	pmic_ctrl = (struct hisi_pmic_ctrl_t *)info;
+	if (NULL == pmic_ctrl->func_tbl){
+	    return IRQ_NONE;
+	}
+	if (pmic_ctrl->func_tbl->pmic_check_exception != NULL) {
+		pmic_ctrl->func_tbl->pmic_check_exception(pmic_ctrl);
+	}
+	return IRQ_HANDLED;
+}
+
+int hisi_pmic_setup_intr(struct hisi_pmic_ctrl_t *pmic_ctrl)
+{
+	struct device_node *dev_node = NULL;
+	struct hisi_pmic_info *pmic_info = NULL;
+	int rc = -1;
+
+	cam_info("%s enter.\n", __func__);
+
+	if (NULL == pmic_ctrl) {
+		cam_err("%s pmic_ctrl is NULL.", __func__);
+		return rc;
+	}
+
+	dev_node = pmic_ctrl->dev->of_node;
+
+	pmic_info = &pmic_ctrl->pmic_info;
+
+	// intrrupt pin
+	rc = of_property_read_u32(dev_node, "hisi,pmic-intr", &pmic_info->intr);
+	cam_info("%s huawei,pmic-intr %u", __func__, pmic_info->intr);
+	if (rc < 0) {
+		cam_err("%s, failed %d\n", __func__, __LINE__);
+		rc = 0; //ignore if pmic chip is not support interrupt mode;
+		goto fail;
+	}
+
+	// setup intrrupt
+	rc = gpio_request(pmic_info->intr, "pmic-power-intr");
+	if (rc < 0) {
+		cam_err("%s failed to request pmic-power-ctrl pin. rc = %d.", __func__, rc);
+		goto fail;
+	}
+
+	rc = gpio_direction_input(pmic_info->intr);
+	if (rc < 0) {
+		cam_err("fail to configure intr as input %d", rc);
+		goto direction_failed;
+	}
+
+	rc = gpio_to_irq(pmic_info->intr);
+	if (rc < 0) {
+		cam_err("fail to irq");
+		goto direction_failed;
+	}
+	pmic_info->irq = rc;
+
+	rc = request_threaded_irq(pmic_info->irq, NULL,
+			hisi_pmic_interrupt_handler,
+			IRQF_TRIGGER_FALLING|IRQF_ONESHOT,
+			"hisi_pmic_interrupt",
+			(void *)pmic_ctrl);
+	if (rc < 0) {
+		cam_err("allocate rt5112 int fail ! result:%d\n",  rc);
+		goto irq_failed;
+	}
+	pmic_info->flag = GPIO_IRQ_REGISTER_SUCCESS;
+	return 0;
+
+irq_failed:
+	free_irq(pmic_info->irq,(void *)pmic_ctrl);
+direction_failed:
+	gpio_free(pmic_info->intr);
+fail:
+	return rc;
+}
+EXPORT_SYMBOL(hisi_pmic_setup_intr);
+
+void hisi_pmic_release_intr(struct hisi_pmic_ctrl_t *pmic_ctrl)
+{
+	struct hisi_pmic_info *pmic_info = NULL;
+	cam_info("%s enter.\n", __func__);
+
+	if (NULL == pmic_ctrl) {
+		cam_err("%s pmic_ctrl is NULL.", __func__);
+		return;
+	}
+	pmic_info = &pmic_ctrl->pmic_info;
+	if(pmic_info->flag != GPIO_IRQ_REGISTER_SUCCESS){
+	    cam_err("%s pmic_info->irq failed.",__func__);
+	    return;
+	}
+	free_irq(pmic_info->irq, (void*)pmic_ctrl);
+	gpio_free(pmic_info->intr);
+}
+EXPORT_SYMBOL(hisi_pmic_release_intr);
 
 int hisi_pmic_get_dt_data(struct hisi_pmic_ctrl_t *pmic_ctrl)
 {
@@ -83,9 +223,12 @@ int hisi_pmic_get_dt_data(struct hisi_pmic_ctrl_t *pmic_ctrl)
 		cam_err("%s failed %d\n", __func__, __LINE__);
 		goto fail;
 	}
+
+
 fail:
 	return rc;
 }
+
 
 static struct hisi_pmic_ctrl_t *get_sctrl(struct v4l2_subdev *sd)
 {
@@ -225,18 +368,15 @@ int32_t hisi_pmic_i2c_probe(struct i2c_client *client,
 	v4l2_subdev_init(&pmic_ctrl->subdev,
 			pmic_ctrl->pmic_v4l2_subdev_ops);
 
-	snprintf(pmic_ctrl->subdev.name,
-		sizeof(pmic_ctrl->subdev.name), "%s",
+	snprintf_s(pmic_ctrl->subdev.name,
+		sizeof(pmic_ctrl->subdev.name),sizeof(pmic_ctrl->subdev.name)-1, "%s",
 		pmic_ctrl->pmic_info.name);
 
 	v4l2_set_subdevdata(&pmic_ctrl->subdev, client);
 
 	pmic_ctrl->subdev.flags |= V4L2_SUBDEV_FL_HAS_DEVNODE;
-	media_entity_init(&pmic_ctrl->subdev.entity, 0, NULL, 0);
-	pmic_ctrl->subdev.entity.type = MEDIA_ENT_T_V4L2_SUBDEV;
-	pmic_ctrl->subdev.entity.group_id = HWCAM_SUBDEV_PMIC;
-	pmic_ctrl->subdev.entity.name = pmic_ctrl->subdev.name;
-	hwcam_cfgdev_register_subdev(&pmic_ctrl->subdev);
+	init_subdev_media_entity(&pmic_ctrl->subdev,HWCAM_SUBDEV_PMIC);
+	hwcam_cfgdev_register_subdev(&pmic_ctrl->subdev,HWCAM_SUBDEV_PMIC);
 	rc = pmic_ctrl->func_tbl->pmic_register_attribute(pmic_ctrl,
 			&pmic_ctrl->subdev.devnode->dev);
 	if (rc < 0) {

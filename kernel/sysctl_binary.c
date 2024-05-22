@@ -13,6 +13,7 @@
 #include <linux/ctype.h>
 #include <linux/netdevice.h>
 #include <linux/kernel.h>
+#include <linux/uuid.h>
 #include <linux/slab.h>
 #include <linux/compat.h>
 
@@ -21,7 +22,9 @@
 struct bin_table;
 typedef ssize_t bin_convert_t(struct file *file,
 	void __user *oldval, size_t oldlen, void __user *newval, size_t newlen);
-
+#ifdef CONFIG_HISI_SCSI_UFS_DUMP
+extern unsigned int ufs_dump;
+#endif
 static bin_convert_t bin_dir;
 static bin_convert_t bin_string;
 static bin_convert_t bin_intvec;
@@ -169,8 +172,11 @@ static const struct bin_table bin_vm_table[] = {
 	{ CTL_INT,	VM_PANIC_ON_OOM,		"panic_on_oom" },
 	{ CTL_INT,	VM_VDSO_ENABLED,		"vdso_enabled" },
 	{ CTL_INT,	VM_MIN_SLAB,			"min_slab_ratio" },
-#ifdef CONFIG_HISI_PAGECACHE_DEBUG
+#ifdef CONFIG_HISI_SCSI_UFS_DUMP
+asdfasdf
 	{ CTL_INT,	VM_UFS_DUMP,			"ufs_dump" },
+#endif
+#ifdef CONFIG_HISI_PAGECACHE_DEBUG
 	{ CTL_INT,	VM_PAGECACHE_DUMP,		"pagecache_dump" },
 #endif
 	{}
@@ -1120,9 +1126,8 @@ static ssize_t bin_uuid(struct file *file,
 
 	/* Only supports reads */
 	if (oldval && oldlen) {
-		char buf[40], *str = buf;
-		unsigned char uuid[16];
-		int i;
+		char buf[UUID_STRING_LEN + 1];
+		uuid_be uuid;
 
 		result = kernel_read(file, 0, buf, sizeof(buf) - 1);
 		if (result < 0)
@@ -1130,24 +1135,15 @@ static ssize_t bin_uuid(struct file *file,
 
 		buf[result] = '\0';
 
-		/* Convert the uuid to from a string to binary */
-		for (i = 0; i < 16; i++) {
-			result = -EIO;
-			if (!isxdigit(str[0]) || !isxdigit(str[1]))
-				goto out;
-
-			uuid[i] = (hex_to_bin(str[0]) << 4) |
-					hex_to_bin(str[1]);
-			str += 2;
-			if (*str == '-')
-				str++;
-		}
+		result = -EIO;
+		if (uuid_be_to_bin(buf, &uuid))
+			goto out;
 
 		if (oldlen > 16)
 			oldlen = 16;
 
 		result = -EFAULT;
-		if (copy_to_user(oldval, uuid, oldlen))
+		if (copy_to_user(oldval, &uuid, oldlen))
 			goto out;
 
 		copied = oldlen;

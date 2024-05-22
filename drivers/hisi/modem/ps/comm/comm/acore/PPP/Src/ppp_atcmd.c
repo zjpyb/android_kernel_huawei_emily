@@ -492,22 +492,7 @@ VOS_UINT32 Ppp_RcvConfigInfoInd
     return VOS_OK;
 }
 
-/*****************************************************************************
- Prototype      : PPP_RcvAtCtrlOperEvent
- Description    : 为AT模块"向PPP发送控制操作"提供对应的API函数。
- Input          : usPppId---要发指示的PPP链路所在的PPP ID
-                  ulCtrlOperType---AT向PPP发送的控制操作类型
- Output         : ---
- Return Value   : VOS_OK        --操作成功
-                  VOS_ERR       --操作失败
- Calls          : ---
- Called By      : ---
 
- History        : ---
-  1.Date        : 2008-04-17
-    Author      : L47619
-    Modification: Created function
-*****************************************************************************/
 VOS_UINT32 PPP_RcvAtCtrlOperEvent(VOS_UINT16 usPppId, PPP_AT_CTRL_OPER_TYPE_ENUM_UINT32 ulCtrlOperType)
 {
     PPP_AT_CTRL_OPERATION_MSG *pSndMsg;

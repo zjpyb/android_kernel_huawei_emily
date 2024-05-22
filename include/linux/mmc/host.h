@@ -20,6 +20,7 @@
 #include <linux/blkdev.h>
 #include <linux/mmc/core.h>
 #include <linux/mmc/card.h>
+#include <linux/mmc/mmc.h>
 #include <linux/mmc/pm.h>
 
 #ifdef CONFIG_HW_MMC_TEST
@@ -85,6 +86,8 @@ struct mmc_ios {
 #define MMC_SET_DRIVER_TYPE_A	1
 #define MMC_SET_DRIVER_TYPE_C	2
 #define MMC_SET_DRIVER_TYPE_D	3
+
+	bool enhanced_strobe;			/* hs400es selection */
 };
 
 struct mmc_cmdq_host_ops {
@@ -122,28 +125,39 @@ struct mmc_host_ops {
 	void	(*pre_req)(struct mmc_host *host, struct mmc_request *req,
 			   bool is_first_req);
 	void	(*request)(struct mmc_host *host, struct mmc_request *req);
+
 	/*
-	 * Avoid calling these three functions too often or in a "fast path",
-	 * since underlaying controller might implement them in an expensive
-	 * and/or slow way.
-	 *
-	 * Also note that these functions might sleep, so don't call them
-	 * in the atomic contexts!
-	 *
+	 * Avoid calling the next three functions too often or in a "fast
+	 * path", since underlaying controller might implement them in an
+	 * expensive and/or slow way. Also note that these functions might
+	 * sleep, so don't call them in the atomic contexts!
+	 */
+
+	/*
+	 * Notes to the set_ios callback:
+	 * ios->clock might be 0. For some controllers, setting 0Hz
+	 * as any other frequency works. However, some controllers
+	 * explicitly need to disable the clock. Otherwise e.g. voltage
+	 * switching might fail because the SDCLK is not really quiet.
+	 */
+	void	(*set_ios)(struct mmc_host *host, struct mmc_ios *ios);
+
+	/*
 	 * Return values for the get_ro callback should be:
 	 *   0 for a read/write card
 	 *   1 for a read-only card
 	 *   -ENOSYS when not supported (equal to NULL callback)
 	 *   or a negative errno value when something bad happened
-	 *
+	 */
+	int	(*get_ro)(struct mmc_host *host);
+
+	/*
 	 * Return values for the get_cd callback should be:
 	 *   0 for a absent card
 	 *   1 for a present card
 	 *   -ENOSYS when not supported (equal to NULL callback)
 	 *   or a negative errno value when something bad happened
 	 */
-	void	(*set_ios)(struct mmc_host *host, struct mmc_ios *ios);
-	int	(*get_ro)(struct mmc_host *host);
 	int	(*get_cd)(struct mmc_host *host);
 
 	void	(*enable_sdio_irq)(struct mmc_host *host, int enable);
@@ -168,6 +182,9 @@ struct mmc_host_ops {
 	int	(*downshift)(struct mmc_host *host);
 	/* Prepare HS400 target operating frequency depending host driver */
 	int	(*prepare_hs400_tuning)(struct mmc_host *host, struct mmc_ios *ios);
+	/* Prepare enhanced strobe depending host driver */
+	void	(*hs400_enhanced_strobe)(struct mmc_host *host,
+					 struct mmc_ios *ios);
 	int	(*select_drive_strength)(struct mmc_card *card,
 					 unsigned int max_dtr, int host_drv,
 					 int card_drv, int *drv_type);
@@ -205,6 +222,7 @@ struct mmc_cmdq_req {
 #define REL_WR	(1 << 4)
 #define DAT_TAG	(1 << 5)
 #define FORCED_PRG (1 << 6)
+#define WAIT_COMPLETE	(1 << 7)
 	unsigned int		cmdq_req_flags;
 	int			tag; /* used for command queuing */
 	u8			ctx_id;
@@ -277,6 +295,7 @@ struct mmc_cmdq_context_info {
 #define CMDQ_STATE_CQ_DISABLE		3
 #define CMDQ_STATE_REQ_TIMED_OUT	4
 #define CMDQ_STATE_QUEUE_HUNGUP		5
+#define CMDQ_STATE_SWITCH_ERR		6
 	wait_queue_head_t       queue_empty_wq;
 	wait_queue_head_t       wait;
 
@@ -285,6 +304,8 @@ struct mmc_cmdq_context_info {
 	spinlock_t	cmdq_ctx_lock;
 	/* recoving, give up dcmd transfer*/
 	bool in_recovery;
+	int reset_fail_count;
+#define CMDQ_RESET_FAIL_MAX	2
 };
 
 /* record the start and end time of request*/
@@ -310,6 +331,7 @@ struct mmc_host {
 #ifdef CONFIG_SD_SDIO_CRC_RETUNING
 	int                                   retuning_count;
 #endif
+	int			reset_count;
 	int			index;
 	const struct mmc_host_ops *ops;
 	const struct mmc_cmdq_host_ops *cmdq_ops;
@@ -322,17 +344,20 @@ struct mmc_host {
 	u32			ocr_avail_sdio;	/* SDIO-specific OCR */
 	u32			ocr_avail_sd;	/* SD-specific OCR */
 	u32			ocr_avail_mmc;	/* MMC-specific OCR */
+#ifdef CONFIG_PM_SLEEP
 	struct notifier_block	pm_notify;
+#endif
 	u32			max_current_330;
 	u32			max_current_300;
 	u32			max_current_180;
+	struct delayed_work       sd_sdio_test_work;
 
 #ifdef CONFIG_MMC_BLOCK_DEFERRED_RESUME
        unsigned int            bus_resume_flags;
 #define MMC_BUSRESUME_MANUAL_RESUME    (1 << 0)
 #define MMC_BUSRESUME_NEEDS_RESUME             (1 << 1)
 #endif
-	struct delayed_work       sd_sdio_test_work;
+
 #define MMC_VDD_165_195		0x00000080	/* VDD voltage 1.65 - 1.95 */
 #define MMC_VDD_20_21		0x00000100	/* VDD voltage 2.0 ~ 2.1 */
 #define MMC_VDD_21_22		0x00000200	/* VDD voltage 2.1 ~ 2.2 */
@@ -379,6 +404,7 @@ struct mmc_host {
 #define MMC_CAP_DRIVER_TYPE_A	(1 << 23)	/* Host supports Driver Type A */
 #define MMC_CAP_DRIVER_TYPE_C	(1 << 24)	/* Host supports Driver Type C */
 #define MMC_CAP_DRIVER_TYPE_D	(1 << 25)	/* Host supports Driver Type D */
+#define MMC_CAP_CMD_DURING_TFR	(1 << 29)	/* Commands during data transfer */
 #define MMC_CAP_CMD23		(1 << 30)	/* CMD23 supported. */
 #define MMC_CAP_HW_RESET	(1 << 31)	/* Hardware reset */
 
@@ -409,18 +435,22 @@ struct mmc_host {
 				 MMC_CAP2_HS400_1_2V)
 #define MMC_CAP2_HSX00_1_2V	(MMC_CAP2_HS200_1_2V_SDR | MMC_CAP2_HS400_1_2V)
 #define MMC_CAP2_SDIO_IRQ_NOTHREAD (1 << 17)
-
 #define MMC_CAP2_CMD_QUEUE     	(1 << 18)       /* support eMMC command queue */
-#define MMC_CAP2_ENHANCED_STROBE		(1 << 19)
-#define MMC_CAP2_CACHE_FLUSH_BARRIER	(1 << 20)
-#define MMC_CAP2_BKOPS_AUTO_CTRL		(1 << 21)	/* Allow background operations auto enable control */
-#define MMC_CAP2_BKOPS_MANUAL_CTRL		(1 << 22)	/* Allow background operations manual enable control */
+
+#define MMC_CAP2_NO_SDIO        (1 << 19)       /* Do not send SDIO commands during initialization */
+#define MMC_CAP2_HS400_ES       (1 << 20)       /* Host supports enhanced strobe */
+#define MMC_CAP2_NO_SD          (1 << 21)       /* Do not send SD commands during initialization */
+#define MMC_CAP2_NO_MMC         (1 << 22)       /* Do not send (e)MMC commands during initialization */
+
+#define MMC_CAP2_ENHANCED_STROBE		(1 << 23)
+#define MMC_CAP2_CACHE_FLUSH_BARRIER		(1 << 24)
+#define MMC_CAP2_BKOPS_AUTO_CTRL		(1 << 25)	/* Allow background operations auto enable control */
 
 #define MMC_CAP2_SUPPORT_VIA_MODEM		(1 << 26)	/* host is connected by via modem through sdio */
 #define MMC_CAP2_SUPPORT_WIFI        		(1 << 27)	/* host is connected by wifi through sdio */
 #define MMC_CAP2_SUPPORT_WIFI_CMD11		(1 << 28)	/* host is connected to 1102 wifi */
-#define MMC_CAP2_WIFI_NO_LOWPWR		(1 << 29)	/* host do not support low power for wifi*/
-#define MMC_CAP2_NO_WRITE_PROTECT (1 << 30)	/* No physical write protect pin, assume that card is always read-write */
+#define MMC_CAP2_WIFI_NO_LOWPWR			(1 << 29)	/* host do not support low power for wifi*/
+#define MMC_CAP2_NO_WRITE_PROTECT 		(1 << 30)	/* No physical write protect pin, assume that card is always read-write */
 
 	mmc_pm_flag_t		pm_caps;	/* supported pm features */
 	/* host specific block data */
@@ -447,6 +477,7 @@ struct mmc_host {
 	unsigned int		can_retune:1;	/* re-tuning can be used */
 	unsigned int		doing_retune:1;	/* re-tuning in progress */
 	unsigned int		retune_now:1;	/* do re-tuning at next req */
+	unsigned int		retune_paused:1; /* re-tuning is temporarily disabled */
 
 	int			rescan_disable;	/* disable card detection */
 	int			rescan_entered;	/* used with nonremovable devices */
@@ -495,6 +526,9 @@ struct mmc_host {
 	struct mmc_async_req	*areq;		/* active async req */
 	struct mmc_context_info	context_info;	/* async synchronization info */
 
+	/* Ongoing data transfer that allows commands during transfer */
+	struct mmc_request	*ongoing_mrq;
+
 #ifdef CONFIG_FAIL_MMC_REQUEST
 	struct fault_attr	fail_mmc_request;
 #endif
@@ -529,11 +563,17 @@ struct mmc_host {
 	*/
 	void *cmdq_private;
 	struct mmc_request      *err_mrq;
+	struct request		*switch_err_req;
 	struct mmc_cmdq_task_info	*cmdq_task_info;
+	bool			is_coldboot_on_reset_fail;
+	struct timer_list	err_handle_timer;
+	int			reset_num;
 
 #ifdef CONFIG_BLOCK
 	int			latency_hist_enabled;
-	struct io_latency_state io_lat_s;
+	struct io_latency_state io_lat_read;
+	struct io_latency_state io_lat_write;
+
 #endif
 
 	unsigned long		private[0] ____cacheline_aligned;
@@ -568,7 +608,7 @@ int mmc_power_restore_host(struct mmc_host *host);
 
 void mmc_detect_change(struct mmc_host *, unsigned long delay);
 void mmc_request_done(struct mmc_host *, struct mmc_request *);
-
+void mmc_command_done(struct mmc_host *host, struct mmc_request *mrq);
 /* SD&SDIO for HISI */
 #if defined(CONFIG_HISI_MMC) && defined(CONFIG_BCMDHD)
 int mmc_power_save_host_for_wifi(struct mmc_host *host);
@@ -608,6 +648,9 @@ int mmc_resume_host(struct mmc_host *);
 int mmc_card_awake(struct mmc_host *host);
 int mmc_card_sleep(struct mmc_host *host);
 int mmc_card_can_sleep(struct mmc_host *host);
+
+void mmc_error_handle_timeout_timer(unsigned long data);
+void mmc_set_cold_reset(struct mmc_host *host);
 
 static inline void mmc_host_clr_halt(struct mmc_host *host)
 {
@@ -678,8 +721,6 @@ static inline int mmc_regulator_set_vqmmc(struct mmc_host *mmc,
 #endif
 
 int mmc_regulator_get_supply(struct mmc_host *mmc);
-
-int mmc_pm_notify(struct notifier_block *notify_block, unsigned long, void *);
 
 static inline int mmc_card_is_removable(struct mmc_host *host)
 {
@@ -757,6 +798,11 @@ static inline bool mmc_card_hs400(struct mmc_card *card)
 	return card->host->ios.timing == MMC_TIMING_MMC_HS400;
 }
 
+static inline bool mmc_card_hs400es(struct mmc_card *card)
+{
+	return card->host->ios.enhanced_strobe;
+}
+
 void mmc_retune_timer_stop(struct mmc_host *host);
 
 static inline void mmc_retune_needed(struct mmc_host *host)
@@ -770,5 +816,8 @@ static inline void mmc_retune_recheck(struct mmc_host *host)
 	if (host->hold_retune <= 1)
 		host->retune_now = 1;
 }
+
+void mmc_retune_pause(struct mmc_host *host);
+void mmc_retune_unpause(struct mmc_host *host);
 
 #endif /* LINUX_MMC_HOST_H */

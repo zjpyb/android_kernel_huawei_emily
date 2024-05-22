@@ -76,6 +76,7 @@
 #define HEVC_DBLK_TOP_ADDR_LEN                       (64*4*HEVC_MAX_PIX_WIDTH)
 /*********************** MSG SLOT PARA DEFINE *********************/
 #define HEVC_MAX_SLOT_NUM                            (HEVC_MAX_SLICE_NUM+5)
+
 #ifdef VFMW_VP9_SUPPORT
 #define VP9_MAX_PIC_WIDTH           8192
 #define VP9_MAX_PIC_HEIGHT          8192
@@ -166,6 +167,10 @@
 #define    VREG_LUMA_HISTORGRAM                0x8100
 #define    VREG_LUMA_SUM_LOW                   0x8180
 #define    VREG_LUMA_SUM_HIGH                  0x8184
+//vclk registers
+#ifdef PLATFORM_HIVCODECV200
+#define    VREG_VDH_ROM_RFT_EMA                0xc074
+#endif
 
 typedef struct {
 	USIGN mbamt_to_dec           :20;

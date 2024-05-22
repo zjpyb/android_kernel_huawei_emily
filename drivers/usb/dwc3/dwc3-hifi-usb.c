@@ -3,14 +3,10 @@
 #include <linux/slab.h>
 #include <linux/platform_device.h>
 #include <linux/io.h>
-#include <linux/usb/xhci_pdriver.h>
-#include <linux/usb/hifi-usb-mailbox.h>
 #include <linux/hisi/usb/hisi_usb.h>
 #include <linux/hisi/h2x_interface.h>
-
-#ifdef CONFIG_HUAWEI_DSM
-#include <dsm/dsm_pub.h>
-#endif
+#include <linux/usb/hifi-usb-mailbox.h>
+#include <linux/of_device.h>
 
 #include "core.h"
 
@@ -23,10 +19,14 @@
 
 #define AP_USE_HIFIUSB_ENUM_DEVICE_TIMEOUT (5 * HZ)
 
+#define NUMBER_PROPS 4
+
 struct hifi_usb {
 	struct device		*dev;
 	struct platform_device	*xhci;
 	struct resource		xhci_resources[DWC3_XHCI_RESOURCES_NUM];
+	struct property_entry	props[NUMBER_PROPS];
+	int			num_props;
 
 	void __iomem		*regs;
 	size_t			regs_size;
@@ -165,7 +165,7 @@ static int hifi_usb_core_init(struct hifi_usb *hifi_usb)
 
 	/* set before PHY Interface SoftReset */
 	reg = hifi_usb_readl(hifi_usb->regs, DWC3_GUSB2PHYCFG(0));
-	reg |= DWC3_GUSB2PHYCFG_PHYIF;
+	reg |= DWC3_GUSB2PHYCFG_PHYIF(UTMI_PHYIF_16_BIT);
 	hifi_usb_writel(hifi_usb->regs, DWC3_GUSB2PHYCFG(0), reg);
 
 	/* do SoftReset */
@@ -246,10 +246,19 @@ int ap_start_use_hifiusb(void)
 
 	usb_register_notify(&g_hifi_usb->usb_nb);
 
+	if (g_hifi_usb->num_props) {
+		ret = platform_device_add_properties(g_hifi_usb->xhci,
+				g_hifi_usb->props);
+		if (ret) {
+			ERR_HIFI_USB("couldn't add properties to xHCI device\n");
+			goto err_core_init;
+		}
+	}
+
 	ret = platform_device_add(g_hifi_usb->xhci);
 	if (ret) {
 		ERR_HIFI_USB("failed to register xHCI device\n");
-		goto err_core_init;
+		goto err_prop_add;
 	}
 
 	mod_timer(&g_hifi_usb->enum_device_timer,
@@ -261,6 +270,9 @@ int ap_start_use_hifiusb(void)
 	DBG_HIFI_USB("-\n");
 	return 0;
 
+err_prop_add:
+	if (g_hifi_usb->num_props)
+		device_remove_properties(&g_hifi_usb->xhci->dev);
 err_core_init:
 	if (ap_use_hifi_usb_runstop_and_wait(g_hifi_usb, 0))
 		ERR_HIFI_USB("ap_use_hifi_usb_runstop_and_wait failed err %d\n",
@@ -337,7 +349,7 @@ static int usb_notifier_fn(struct notifier_block *nb,
 				len = strnlen(udev->product, DSM_USB_DEVICE_INFO_LEN_MAX);
 				strncpy(product, udev->product, len);
 				product[len] = '\0';
-				usb_dsm_report(DSM_USB_RECORD_ABNORMAL_DEVICE,
+				power_dsm_dmd_report_format(POWER_DSM_USB, DSM_USB_RECORD_ABNORMAL_DEVICE,
 						"manufacturer %s, product %s\n",
 						manufacturer, product);
 			}
@@ -366,20 +378,22 @@ static void ap_use_hifiusb_enum_timeout(unsigned long data)
 {
 	ERR_HIFI_USB("enum device timeout!\n");
 #ifdef CONFIG_HUAWEI_DSM
-	usb_dsm_report(DSM_USB_AP_USE_HIFIUSB_ENUM_TIMEOUT,
+	power_dsm_dmd_report_format(POWER_DSM_USB, DSM_USB_AP_USE_HIFIUSB_ENUM_TIMEOUT,
 			"enum device failed or mayby device has been pulled out\n");
 #endif
 }
 
 static int hifi_usb_plat_probe(struct platform_device *pdev)
 {
+	struct property_entry	props[4];
+	int			prop_idx = 0;
 	struct device		*dev = &pdev->dev;
 	struct resource		*res;
 	struct hifi_usb		*hifi_usb;
 	struct platform_device	*xhci;
-	struct usb_xhci_pdata	pdata;
 	void __iomem		*regs;
 	int			ret;
+	int			i;
 
 	DBG_HIFI_USB("+\n");
 
@@ -434,8 +448,11 @@ static int hifi_usb_plat_probe(struct platform_device *pdev)
 		goto err0;
 	}
 
+	/* config dma of xhci device */
+	of_dma_configure(&xhci->dev, dev->of_node);
+
 	xhci->dev.parent = hifi_usb->dev;
-	xhci->dev.dma_mask = &xhci->dev.coherent_dma_mask;
+	dev_set_name(&xhci->dev, "hifi-usb-xhci");
 
 	ret = platform_device_add_resources(xhci, hifi_usb->xhci_resources,
 						DWC3_XHCI_RESOURCES_NUM);
@@ -444,19 +461,24 @@ static int hifi_usb_plat_probe(struct platform_device *pdev)
 		goto err1;
 	}
 
-	memset(&pdata, 0, sizeof(pdata));
+	memset(props, 0, sizeof(struct property_entry) * ARRAY_SIZE(props));
 
-	pdata.hcd_local_mem = device_property_read_bool(dev,
-				"hcd_local_mem");
-	pdata.disable_lpm = device_property_read_bool(dev,
-				"disable_lpm");
-	pdata.not_support_sg = device_property_read_bool(dev,
-				"not_support_sg");
+	if (device_property_read_bool(dev, "hcd_local_mem"))
+		props[prop_idx++].name = "hcd-local-mem";
+	if (device_property_read_bool(dev, "disable_lpm"))
+		props[prop_idx++].name = "disable-lpm";
+	if (device_property_read_bool(dev, "not_support_sg"))
+		props[prop_idx++].name = "not-support-sg";
 
-	ret = platform_device_add_data(xhci, &pdata, sizeof(pdata));
-	if (ret) {
-		ERR_HIFI_USB("couldn't add platform data to xHCI device\n");
+	if (prop_idx >= NUMBER_PROPS) {
+		ret = -EINVAL;
 		goto err1;
+	}
+
+	if (prop_idx) {
+		for (i = 0; i < prop_idx; i++)
+			hifi_usb->props[i].name = props[i].name;
+		hifi_usb->num_props = prop_idx;
 	}
 
 	hifi_usb->xhci = xhci;

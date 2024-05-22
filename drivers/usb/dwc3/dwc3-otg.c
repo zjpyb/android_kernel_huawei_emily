@@ -11,72 +11,9 @@
 
 struct dwc3_otg *dwc_otg_handler;
 
-static void dump_otg_regs(struct dwc3 *dwc)
-{
-#define DUMP_REG(__reg) printk(KERN_INFO "%s:\t0x%x\n",	\
-		#__reg, dwc3_readl(dwc->regs, __reg))
-	DUMP_REG(DWC3_OCFG);
-	DUMP_REG(DWC3_OCTL);
-	DUMP_REG(DWC3_OEVT);
-	DUMP_REG(DWC3_OEVTEN);
-	DUMP_REG(DWC3_OSTS);
-
-	DUMP_REG(DWC3_BCFG);
-	DUMP_REG(DWC3_BCEVT);
-	DUMP_REG(DWC3_BCEVTEN);
-}
-
-#ifndef DWC3_OTG_FORCE_MODE
-static void dwc3_disable_otg_event(struct dwc3 *dwc)
-{
-	dwc3_writel(dwc->regs, DWC3_OEVT, 0x0ffffff0);
-	dwc3_writel(dwc->regs, DWC3_OEVTEN, 0);
-}
-
-static void dwc3_enable_otg_event(struct dwc3 *dwc)
-{
-	dwc3_writel(dwc, DWC3_OEVTEN, 0);
-	dwc3_writel(dwc->regs, DWC3_OEVT, 0x0ffffff0);
-	dwc3_writel(dwc->regs, DWC3_OEVTEN, DWC3_OEVT_OTGBDEVVBUSCHNGEVNT |
-				DWC3_OEVT_OTGCONIDSTSCHNGEVNT);
-}
-#endif
-
-int dwc3_otg_resume(struct dwc3 *dwc)
-{
-#ifndef DWC3_OTG_FORCE_MODE
-	u32 reg;
-	DBG("+\n");
-
-	reg = dwc3_readl(dwc->regs, DWC3_OSTS);
-	if (reg & DWC3_OSTS_CONIDSTS) {
-		DBG("%s: ID is 1, set peripheral mode\n", __func__);
-		reg = dwc3_readl(dwc->regs, DWC3_OCTL);
-		reg |= DWC3_OCTL_PERIMODE;
-		dwc3_writel(dwc->regs, DWC3_OCTL, reg);
-	} else {
-		DBG("%s: ID is 0, clear peripheral mode\n", __func__);
-		reg = dwc3_readl(dwc->regs, DWC3_OCTL);
-		reg &= ~DWC3_OCTL_PERIMODE;
-		dwc3_writel(dwc->regs, DWC3_OCTL, reg);
-	}
-#endif
-	DBG("-\n");
-
-	return 0;
-}
-
-int dwc3_otg_suspend(struct dwc3 *dwc)
-{
-	DBG("+\n");
-	DBG("-\n");
-	return 0;
-}
-
 #ifdef DWC3_OTG_FORCE_RESET_GCTL
-static void dwc3_otg_force_reset_core(struct dwc3_otg *dwc_otg)
+static void dwc3_otg_force_reset_core(struct dwc3 *dwc)
 {
-	struct dwc3 *dwc = dwc_otg->dwc;
 	u32 reg;
 
 	/* step 1: reset usb controller */
@@ -89,9 +26,8 @@ static void dwc3_otg_force_reset_core(struct dwc3_otg *dwc_otg)
 	dwc3_writel(dwc->regs, DWC3_GCTL, reg);
 }
 
-static void dwc3_otg_split_disable(struct dwc3_otg *dwc_otg)
+static void dwc3_otg_split_disable(struct dwc3 *dwc)
 {
-	struct dwc3 *dwc = dwc_otg->dwc;
 	u32 reg;
 
 	/* step 2: set SPLIT boundary disable */
@@ -105,9 +41,8 @@ static void dwc3_otg_split_disable(struct dwc3_otg *dwc_otg)
 #endif
 
 #if IS_ENABLED(CONFIG_USB_DWC3_HOST) || IS_ENABLED(CONFIG_USB_DWC3_DUAL_ROLE)
-static int dwc3_otg_start_host(struct dwc3_otg *dwc_otg)
+static int dwc3_otg_start_host(struct dwc3 *dwc)
 {
-	struct dwc3 *dwc = dwc_otg->dwc;
 	unsigned long flags;
 	int ret;
 	u32 reg;
@@ -115,61 +50,34 @@ static int dwc3_otg_start_host(struct dwc3_otg *dwc_otg)
 	DBG("+\n");
 
 	spin_lock_irqsave(&dwc->lock, flags);
-
-#ifdef DWC3_OTG_FORCE_MODE
 	reg = dwc3_readl(dwc->regs, DWC3_GCTL);
 	pr_debug("%s: GCTL value 0x%x\n", __func__, reg);
-	dwc3_set_mode(dwc, DWC3_GCTL_PRTCAP_HOST);
 
 #ifdef DWC3_OTG_FORCE_RESET_GCTL
-	dwc3_otg_force_reset_core(dwc_otg);
+	dwc3_otg_force_reset_core(dwc);
 #endif /* DWC3_OTG_FORCE_RESET_GCTL */
 
 	hisi_dwc3_cpmode_enable();
 	dwc3_lscdtimer_set();
 
-#else
-	/* check ID ststus */
-	reg = dwc3_readl(dwc->regs, DWC3_OSTS);
-	if (reg & DWC3_OSTS_CONIDSTS) {
-		pr_warning("%s: CONIDSTS wrong!\n", __func__);
-		dump_otg_regs(dwc);
-	}
-
-	reg = dwc3_readl(dwc->regs, DWC3_OCFG);
-	reg |= DWC3_OCFG_OTGSFTRSTMSK;
-	reg |= DWC3_OCFG_DISPRTPWRCUTOFF;
-	reg &= ~(DWC3_OCFG_HNPCAP | DWC3_OCFG_SRPCAP);
-	dwc3_writel(dwc->regs, DWC3_OCFG, reg);
-
-	DBG("set OCFG 0x%x\n", dwc3_readl(dwc->regs, DWC3_OCFG));
-
-	reg = dwc3_readl(dwc->regs, DWC3_OCTL);
-	reg &= ~DWC3_OCTL_PERIMODE;
-	reg |= DWC3_OCTL_PRTPWRCTL;
-	dwc3_writel(dwc->regs, DWC3_OCTL, reg);
-
-	DBG("set OCTL 0x%x\n", dwc3_readl(dwc->regs, DWC3_OCTL));
-#endif
-
 	spin_unlock_irqrestore(&dwc->lock, flags);
 
 #ifdef CONFIG_HISI_USB_DWC3_MASK_IRQ_WORKAROUND
 	if (dwc->irq_state == 0) {
-		enable_irq(dwc->irq);
+		enable_irq(dwc->irq_gadget);
 		dwc->irq_state = 1;
-		pr_info("[%s]enable irq\n", __func__);
+		DBG("enable irq\n");
 	}
 #endif
 
-	ret = platform_device_add(dwc->xhci);
+	ret = dwc3_host_init(dwc);
 	if (ret) {
 		pr_err("%s: failed to register xHCI device\n", __func__);
 		return ret;
 	}
 
 #ifdef DWC3_OTG_FORCE_RESET_GCTL
-	dwc3_otg_split_disable(dwc_otg);
+	dwc3_otg_split_disable(dwc);
 #endif /* DWC3_OTG_FORCE_RESET_GCTL */
 
 	hisi_dwc3_platform_host_quirks();
@@ -179,75 +87,120 @@ static int dwc3_otg_start_host(struct dwc3_otg *dwc_otg)
 	return ret;
 }
 
-static void dwc3_otg_stop_host(struct dwc3_otg *dwc_otg)
+static void dwc3_otg_stop_host(struct dwc3 *dwc)
 {
 	DBG("+\n");
-	platform_device_del(dwc_otg->dwc->xhci);
+	dwc3_host_exit(dwc);
 	DBG("-\n");
 }
 #else
-static inline int dwc3_otg_start_host(struct dwc3_otg *dwc_otg)
+static inline int dwc3_otg_start_host(struct dwc3 *dwc)
 { return 0; }
-static inline void dwc3_otg_stop_host(struct dwc3_otg *dwc_otg)
+static inline void dwc3_otg_stop_host(struct dwc3 *dwc)
 { }
 #endif
 
-static int dwc3_otg_start_peripheral(struct dwc3_otg *dwc_otg)
+static int dwc3_otg_start_peripheral(struct dwc3 *dwc)
 {
 	int ret;
 	unsigned long flags;
-	struct dwc3 *dwc = dwc_otg->dwc;
 	u32 reg;
 
 	DBG("+\n");
 
 	spin_lock_irqsave(&dwc->lock, flags);
+	dwc3_lscdtimer_set();
 
 	hisi_dwc3_platform_device_quirks();
 
-#ifdef DWC3_OTG_FORCE_MODE
 	reg = dwc3_readl(dwc->regs, DWC3_GCTL);
 	pr_debug("%s: GCTL value 0x%x\n", __func__, reg);
-	dwc3_set_mode(dwc, DWC3_GCTL_PRTCAP_DEVICE);
-#else
-	reg = dwc3_readl(dwc->regs, DWC3_OSTS);
-	if (!(reg & DWC3_OSTS_CONIDSTS) || !(reg & DWC3_OSTS_BSESVLD)) {
-		pr_warning("%s: CONIDSTS or BSESVLD wrong!\n", __func__);
-		dump_otg_regs(dwc);
-	}
-
-	/* set mode as peripheral */
-	reg = dwc3_readl(dwc->regs, DWC3_OCTL);
-	reg |= DWC3_OCTL_PERIMODE;
-	dwc3_writel(dwc->regs, DWC3_OCTL, reg);
-#endif
-
-
-	ret = dwc3_gadget_resume(dwc);
-	if (ret)
-		pr_err("[%s] gadget resume error!", __func__);
-
 	spin_unlock_irqrestore(&dwc->lock, flags);
+
+	ret = dwc3_gadget_init(dwc);
 	DBG("-\n");
 
 	return ret;
 }
 
-static int dwc3_otg_stop_peripheral(struct dwc3_otg *dwc_otg)
+static void dwc3_otg_stop_peripheral(struct dwc3 *dwc)
 {
-	int ret;
-	unsigned long flags;
-	struct dwc3 *dwc = dwc_otg->dwc;
-
 	DBG("+\n");
+	dwc3_gadget_exit(dwc);
+	dwc3_event_buffers_cleanup(dwc);
+	tasklet_kill(&dwc->bh);
+	DBG("-\n");
+}
+
+static int __dwc3_set_mode(struct dwc3 *dwc)
+{
+	unsigned long flags;
+	int ret;
+
+	if (dwc->desired_dr_role == dwc->current_dr_role)
+		return 0;
+
+	if (dwc->dr_mode != USB_DR_MODE_OTG)
+		return -EINVAL;
+
+	switch (dwc->current_dr_role) {
+		case USB_DR_MODE_HOST:
+			dwc3_otg_stop_host(dwc);
+			break;
+		case USB_DR_MODE_PERIPHERAL:
+			dwc3_otg_stop_peripheral(dwc);
+			break;
+		default:
+			break;
+	}
+
+	if (!dwc->desired_dr_role)
+		return 0;
+
 	spin_lock_irqsave(&dwc->lock, flags);
 
-	ret = dwc3_gadget_suspend(dwc);
-	if (ret)
-		pr_err("[%s] gadget suspend error!", __func__);
+	ret = dwc3_core_init(dwc);
+	if (ret) {
+		dev_err(dwc->dev, "failed to initialize core\n");
+		spin_unlock_irqrestore(&dwc->lock, flags);
+		return ret;
+	}
+
+	dwc3_set_prtcap(dwc, dwc->desired_dr_role);
 
 	spin_unlock_irqrestore(&dwc->lock, flags);
-	DBG("-\n");
+
+	switch (dwc->desired_dr_role) {
+		case USB_DR_MODE_HOST:
+			ret = dwc3_otg_start_host(dwc);
+			if (ret)
+				dev_err(dwc->dev, "failed to initialize host\n");
+			break;
+		case USB_DR_MODE_PERIPHERAL:
+			ret = dwc3_otg_start_peripheral(dwc);
+			if (ret)
+				dev_err(dwc->dev, "failed to initialize peripheral\n");
+			break;
+		default:
+			break;
+	}
+
+	return ret;
+}
+
+static int dwc3_set_mode(struct dwc3 *dwc, u32 mode)
+{
+	unsigned long flags;
+	int ret;
+
+	pr_info("%s: set mode %d, current mode %d\n", __func__, mode, dwc->current_dr_role);
+	spin_lock_irqsave(&dwc->lock, flags);
+	dwc->desired_dr_role = mode;
+	spin_unlock_irqrestore(&dwc->lock, flags);
+
+	ret = __dwc3_set_mode(dwc);
+	if (!ret)
+		dwc->current_dr_role = dwc->desired_dr_role;
 
 	return ret;
 }
@@ -260,65 +213,33 @@ int dwc3_otg_work(struct dwc3_otg *dwc_otg, int evt)
 
 	/* if otg is not enabled, do nothing */
 	if (!dwc_otg) {
-		pr_info("%s: dwc3 is not otg mode!\n", __func__);
+		DBG("dwc3 is not otg mode!\n");
 		return 0;
 	}
 
+	mutex_lock(&dwc_otg->lock);
+
 	switch (evt) {
 	case DWC3_OTG_EVT_ID_SET:
-		dwc3_otg_stop_host(dwc_otg);
-		dwc3_suspend_device(dwc_otg->dwc);
+		ret = dwc3_set_mode(dwc_otg->dwc, USB_DR_MODE_UNKNOWN);
 		break;
 	case DWC3_OTG_EVT_ID_CLEAR:
-		ret = dwc3_resume_device(dwc_otg->dwc);
-		if (ret) {
-			pr_err("%s: resume device failed!\n", __func__);
-			return ret;
-		}
-		ret = dwc3_otg_start_host(dwc_otg);
-		if (ret) {
-			pr_err("%s: start host failed!\n", __func__);
-			return ret;
-		}
+		ret = dwc3_set_mode(dwc_otg->dwc, USB_DR_MODE_HOST);
 		break;
 	case DWC3_OTG_EVT_VBUS_SET:
-		ret = dwc3_resume_device(dwc_otg->dwc);
-		if (ret) {
-			pr_err("%s: resume device failed!\n", __func__);
-			return ret;
-		}
-
-		dwc3_lscdtimer_set();
-
-		ret = dwc3_otg_start_peripheral(dwc_otg);
-		if (ret) {
-			pr_err("%s: start peripheral failed!\n", __func__);
-			return ret;
-		}
+		ret = dwc3_set_mode(dwc_otg->dwc, USB_DR_MODE_PERIPHERAL);
 		break;
 	case DWC3_OTG_EVT_VBUS_CLEAR:
-		ret = dwc3_otg_stop_peripheral(dwc_otg);
-		dwc3_suspend_device(dwc_otg->dwc);
+		ret = dwc3_set_mode(dwc_otg->dwc, USB_DR_MODE_UNKNOWN);
 		break;
 	default:
 		break;
 	}
+
+	mutex_unlock(&dwc_otg->lock);
 	DBG("-\n");
 
 	return ret;
-}
-
-static void dwc3_otg_work_fun(struct work_struct *w)
-{
-	struct dwc3_otg *dwc_otg = container_of(w, struct dwc3_otg, otg_work.work);
-
-	mutex_lock(&dwc_otg->lock);
-	if (dwc3_otg_work(dwc_otg, atomic_read(&dwc_otg->otg_evt_flag))) {
-		pr_err("%s: dwc3_otg_work failed\n", __func__);
-	}
-	mutex_unlock(&dwc_otg->lock);
-
-	return;
 }
 
 int dwc3_otg_init(struct dwc3 *dwc)
@@ -334,43 +255,18 @@ int dwc3_otg_init(struct dwc3 *dwc)
 		return -ENOMEM;
 	}
 
+	mutex_init(&dwc_otg->lock);
+
 	dwc_otg->dwc = dwc;
 	dwc->dwc_otg = dwc_otg;
 
-	mutex_init(&dwc_otg->lock);
-	INIT_DELAYED_WORK(&dwc_otg->otg_work, dwc3_otg_work_fun);
-
 	dwc_otg_handler = dwc_otg;
 
-
-#ifdef DWC3_OTG_FORCE_MODE
 	reg = dwc3_readl(dwc->regs, DWC3_GCTL);
 	pr_debug("%s: GCTL value 0x%x\n", __func__, reg);
 
 	/* default device mode */
-	dwc3_set_mode(dwc, DWC3_GCTL_PRTCAP_DEVICE);
-#else
-	/* disable hnp and srp */
-	reg = dwc3_readl(dwc->regs, DWC3_OCFG);
-	reg &= ~(DWC3_OCFG_HNPCAP | DWC3_OCFG_SRPCAP);
-	dwc3_writel(dwc->regs, DWC3_OCFG, reg);
-
-	reg = dwc3_readl(dwc->regs, DWC3_OSTS);
-	if (reg & DWC3_OSTS_CONIDSTS) {
-		DBG("%s: ID is 1, set peripheral mode\n", __func__);
-		reg = dwc3_readl(dwc->regs, DWC3_OCTL);
-		reg |= DWC3_OCTL_PERIMODE;
-		reg &= ~(DWC3_OCTL_HNPREQ | DWC3_OCTL_DEVSETHNPEN | DWC3_OCTL_HSTSETHNPEN);
-		dwc3_writel(dwc->regs, DWC3_OCTL, reg);
-	} else {
-		DBG("%s: ID is 0, clear peripheral mode\n", __func__);
-		reg = dwc3_readl(dwc->regs, DWC3_OCTL);
-		reg &= ~DWC3_OCTL_PERIMODE;
-		dwc3_writel(dwc->regs, DWC3_OCTL, reg);
-	}
-#endif
-
-	dump_otg_regs(dwc);
+	dwc3_set_prtcap(dwc, DWC3_GCTL_PRTCAP_DEVICE);
 
 	DBG("-\n");
 

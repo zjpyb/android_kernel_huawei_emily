@@ -26,8 +26,9 @@
 #include "zrhung_transtation.h"
 #include <chipset_common/hwzrhung/zrhung.h>
 #include "zrhung_common.h"
-#ifdef CONFIG_ARCH_MSM
+#ifdef CONFIG_ARCH_QCOM
 #define wp_get_sochalt(x)
+#define get_sr_position_from_fastboot(x, y)
 #else
 #include "watchpoint/zrhung_wp_sochalt.h"
 #endif
@@ -547,6 +548,9 @@ finish:
 	htrans_stage = HTRANS_STAGE_LASTWORD_FINISHED;
 	mutex_unlock(&htrans_mutex);	/*lint !e455 */
 
+	//get LONGPRESS event "AP_S_PRESS6S" from reboot_reason
+	zrhung_get_longpress_event();
+
 	// return 1 here to notify lastword reading finished
 	return 1;
 }
@@ -588,6 +592,7 @@ end:
 
 long zrhung_save_lastword(void)
 {
+#ifdef CONFIG_DETECT_HUAWEI_HUNG_TASK
 #ifdef CONFIG_HISILICON_PLATFORM
 	if (STAGE_BOOTUP_END == get_boot_keypoint()) {
 		return htrans_save_lastword();
@@ -596,6 +601,7 @@ long zrhung_save_lastword(void)
 	}
 #else
 	return 0;
+#endif
 #endif
 }
 EXPORT_SYMBOL(zrhung_save_lastword);

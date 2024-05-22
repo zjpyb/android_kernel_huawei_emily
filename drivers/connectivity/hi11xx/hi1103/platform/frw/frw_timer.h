@@ -61,12 +61,12 @@ extern "C" {
 /*****************************************************************************
   10 º¯ÊýÉùÃ÷
 *****************************************************************************/
-extern oal_uint32  frw_timer_timeout_proc(frw_event_mem_stru *pst_timeout_event);
-extern oal_void  frw_timer_init(oal_uint32 ul_delay, oal_timer_func p_func, oal_uint ui_arg);
-extern oal_void  frw_timer_exit(oal_void);
-extern oal_void  frw_timer_timeout_proc_event(oal_uint ui_arg);
-extern oal_void  frw_timer_restart(oal_void);
-extern oal_void  frw_timer_stop(oal_void);
+extern oal_uint32  frw_timer_timeout_proc_etc(frw_event_mem_stru *pst_timeout_event);
+extern oal_void  frw_timer_init_etc(oal_uint32 ul_delay, oal_timer_func p_func, oal_uint ui_arg);
+extern oal_void  frw_timer_exit_etc(oal_void);
+extern oal_void  frw_timer_timeout_proc_event_etc(oal_uint ui_arg);
+extern oal_void  frw_timer_restart_etc(oal_void);
+extern oal_void  frw_timer_stop_etc(oal_void);
 
 /*return true if the time a is after time b,in case of overflow and wrap around to zero*/
 OAL_STATIC OAL_INLINE oal_int32 frw_time_after(oal_uint32 a, oal_uint32 b)

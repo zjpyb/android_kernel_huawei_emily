@@ -43,6 +43,7 @@ extern bool hisi_dptx_ready(void);
 #endif
 static int dpd_enable = 1;
 static int max_output_current = SOURCE_CURRENT_1500;
+static int use_super_switch_cutoff_wired_channel = 0;
 static device_role d_role = DEVICE_ROLE_DRP;
 static int  fusb3601_mode = 1;
 void FUSB3601_core_set_drp(struct Port *port);
@@ -112,14 +113,16 @@ static void fusb3601_hard_reset(void* client)
         pr_debug("%s - Chip structure is null!\n", __func__);
         return;
     }
+    down(&chip->suspend_lock);
     if((&chip->port)->last_policy_state_ == peSinkReady) {
         pr_debug("%s - fusb3601 hard reset!\n", __func__);
         FUSB3601_set_policy_state(&chip->port, peSinkSendHardReset);
         FUSB3601_PolicySinkSendHardReset(&chip->port);
     }
+    up(&chip->suspend_lock);
 }
 
-void fusb3601_set_voltage(void)
+static void fusb3601_set_voltage(void* client, int set_voltage)
 {
     pr_debug("%s++\n", __func__);
     struct fusb3601_chip* chip = fusb3601_GetChip();
@@ -128,13 +131,15 @@ void fusb3601_set_voltage(void)
         pr_debug("%s - Chip structure is null!\n", __func__);
         return;
     }
+    down(&chip->suspend_lock);
     if((&chip->port)->last_policy_state_ == peSinkReady) {
         pr_debug("%s - fusb3601 set voltage!\n", __func__);
+        FUSB3601_SetPDLimitVoltage(set_voltage);
         FUSB3601_set_policy_state(&chip->port, peSinkGetSourceCap);
         FUSB3601_PolicySinkGetSourceCap(&chip->port);
     }
+    up(&chip->suspend_lock);
 }
-EXPORT_SYMBOL(fusb3601_set_voltage);
 
 static struct pd_dpm_ops tcpc_device_pd_dpm_ops = {
 	.pd_dpm_get_hw_dock_svid_exist = NULL,
@@ -286,19 +291,18 @@ static int fusb3601_probe_work(struct work_struct *work)
 
 }
 static int fusb3601_probe (struct i2c_client* client,
-                          const struct i2c_device_id* id)
+						const struct i2c_device_id* id)
 {
-        int ret = 0;
-        struct fusb3601_chip* chip;
-        struct i2c_adapter* adapter;
+	int ret = 0;
+	struct fusb3601_chip* chip;
+	struct i2c_adapter* adapter;
 	struct device_node* node;
 
-        if (!client)
-        {
-                pr_err("FUSB  %s - Error: Client structure is NULL!\n",
-                       __func__);
-                return -EINVAL;
-        }
+	if (!client)
+	{
+		pr_err("FUSB  %s - Error: Client structure is NULL!\n", __func__);
+		return -EINVAL;
+	}
 	node = client->dev.of_node;
 
 	ret = of_property_read_u32(node, "dpd_enable", &dpd_enable);
@@ -316,104 +320,95 @@ static int fusb3601_probe (struct i2c_client* client,
 		dev_err(&client->dev, "failed to get max_output_current\n");
 	}
 	pr_info("max_output_current = %d\n", max_output_current);
+	ret = of_property_read_u32(of_find_compatible_node(NULL, NULL, "huawei,wired_channel_switch"),
+			"use_super_switch_cutoff_wired_channel", &use_super_switch_cutoff_wired_channel);
+	if (ret) {
+		use_super_switch_cutoff_wired_channel = 0;
+		pr_info("%s get use_super_switch_cutoff_wired_channel failed\n", __func__);
+	}
+	pr_info("use_super_switch_cutoff_wired_channel = %d\n", use_super_switch_cutoff_wired_channel);
 
-        dev_info(&client->dev, "%s\n", __func__);
+	dev_info(&client->dev, "%s\n", __func__);
 
-        /* Make sure probe was called on a compatible device */
-        if (!of_match_device(fusb3601_dt_match, &client->dev))
-        {
-                dev_err(&client->dev,
-                        "FUSB  %s - Error: Device tree mismatch!\n", __func__);
-                return -EINVAL;
-        }
+	/* Make sure probe was called on a compatible device */
+	if (!of_match_device(fusb3601_dt_match, &client->dev))
+	{
+		dev_err(&client->dev, "FUSB  %s - Error: Device tree mismatch!\n", __func__);
+		return -EINVAL;
+	}
 
-        pr_debug("FUSB  %s - Device tree matched!\n", __func__);
+	pr_debug("FUSB  %s - Device tree matched!\n", __func__);
 
-        /* Alloc space for our chip struct (devm_* is managed by the device) */
-        chip = devm_kzalloc(&client->dev, sizeof(*chip), GFP_KERNEL);
-        if (!chip)
-        {
-                dev_err(&client->dev,
-                    "FUSB  %s - Error: Unable to allocate memory for g_chip!\n",
-                        __func__);
-                return -ENOMEM;
-        }
+	/* Alloc space for our chip struct (devm_* is managed by the device) */
+	chip = devm_kzalloc(&client->dev, sizeof(*chip), GFP_KERNEL);
+	if (!chip)
+	{
+		dev_err(&client->dev, "FUSB  %s - Error: Unable to allocate memory for g_chip!\n", __func__);
+		return -ENOMEM;
+	}
+	chip->use_super_switch_cutoff_wired_channel = use_super_switch_cutoff_wired_channel;
 
-        /* Assign our client handle to our chip */
-        chip->client = client;
+	/* Assign our client handle to our chip */
+	chip->client = client;
 
-        /* Set our global chip's address to the newly allocated memory */
-        fusb3601_SetChip(chip);
+	/* Set our global chip's address to the newly allocated memory */
+	fusb3601_SetChip(chip);
 
-        pr_debug("FUSB  %s - Chip structure is set! Chip: %p ... g_chip: %p\n",
-                 __func__, chip, fusb3601_GetChip());
+	pr_debug("FUSB  %s - Chip structure is set! Chip: %p ... g_chip: %p\n", __func__, chip, fusb3601_GetChip());
 
-        /* Initialize semaphore*/
-        sema_init(&chip->suspend_lock, 1);
+	/* Initialize semaphore*/
+	sema_init(&chip->suspend_lock, 1);
 
-        /* Initialize the chip lock */
-        mutex_init(&chip->lock);
+	/* Initialize the chip lock */
+	mutex_init(&chip->lock);
 
-        /* Initialize the chip's data members */
-        FUSB3601_fusb_InitChipData();
-        pr_debug("FUSB  %s - Chip struct data initialized!\n", __func__);
+	/* Initialize the chip's data members */
+	FUSB3601_fusb_InitChipData();
+	pr_debug("FUSB  %s - Chip struct data initialized!\n", __func__);
 
-        /* Verify that the system has our required I2C/SMBUS functionality
-         * (see <linux/i2c.h> for definitions)
-         */
-        adapter = to_i2c_adapter(client->dev.parent);
-        if (i2c_check_functionality(adapter,
-                                    FUSB3601_I2C_SMBUS_BLOCK_REQUIRED_FUNC))
-        {
-                chip->use_i2c_blocks = true;
-        }
-        else
-        {
-                /* If the platform doesn't support block reads, try with block
-                 * writes and single reads (works with eg. RPi)
-                 * It is likely that this may result in non-standard behavior,
-                 * but will often be 'close enough' to work for most things
-                 */
-                dev_warn(&client->dev,
-                    "FUSB %s - Warning: I2C/SMBus block rd/wr not supported,\n",
-                         __func__);
-                dev_warn(&client->dev,
-                    "FUSB %s -     checking single-read mode...\n",
-                         __func__);
+	/* Verify that the system has our required I2C/SMBUS functionality
+	* (see <linux/i2c.h> for definitions)
+	*/
+	adapter = to_i2c_adapter(client->dev.parent);
+	if (i2c_check_functionality(adapter, FUSB3601_I2C_SMBUS_BLOCK_REQUIRED_FUNC))
+	{
+		chip->use_i2c_blocks = true;
+	}
+	else
+	{
+		/* If the platform doesn't support block reads, try with block
+		* writes and single reads (works with eg. RPi)
+		* It is likely that this may result in non-standard behavior,
+		* but will often be 'close enough' to work for most things
+		*/
+		dev_warn(&client->dev, "FUSB %s - Warning: I2C/SMBus block rd/wr not supported,\n", __func__);
+		dev_warn(&client->dev, "FUSB %s -     checking single-read mode...\n", __func__);
 
-                if (!i2c_check_functionality(adapter,
-                                             FUSB3601_I2C_SMBUS_REQUIRED_FUNC))
-                {
-                        dev_err(&client->dev,
-          "FUSB  %s - Error: Required I2C/SMBus functionality not supported!\n",
-                                __func__);
-                        dev_err(&client->dev,
-                          "FUSB  %s - I2C Supported Functionality Mask: 0x%x\n",
-                                __func__, i2c_get_functionality(adapter));
-                        return -EIO;
-                }
-        }
+		if (!i2c_check_functionality(adapter, FUSB3601_I2C_SMBUS_REQUIRED_FUNC))
+		{
+			dev_err(&client->dev, "FUSB  %s - Error: Required I2C/SMBus functionality not supported!\n", __func__);
+			dev_err(&client->dev, "FUSB  %s - I2C Supported Functionality Mask: 0x%x\n", __func__, i2c_get_functionality(adapter));
+			return -EIO;
+		}
+	}
 
-        pr_err("FUSB  %s - I2C Functionality check passed! Block reads: %s\n",
-                 __func__, chip->use_i2c_blocks ? "YES" : "NO");
+	pr_err("FUSB  %s - I2C Functionality check passed! Block reads: %s\n", __func__, chip->use_i2c_blocks ? "YES" : "NO");
 
-        /* Assign our struct as the client's driverdata */
-        i2c_set_clientdata(client, chip);
-        pr_debug("FUSB  %s - I2C client data set!\n", __func__);
+	/* Assign our struct as the client's driverdata */
+	i2c_set_clientdata(client, chip);
+	pr_debug("FUSB  %s - I2C client data set!\n", __func__);
 
-        /* Verify that our device exists and that it's what we expect */
-        if (!FUSB3601_fusb_IsDeviceValid())
-        {
-                dev_err(&client->dev,
-                      "FUSB  %s - Error: Unable to communicate with device!\n",
-                        __func__);
-                return -EIO;
-        }
+	/* Verify that our device exists and that it's what we expect */
+	if (!FUSB3601_fusb_IsDeviceValid())
+	{
+		dev_err(&client->dev, "FUSB  %s - Error: Unable to communicate with device!\n", __func__);
+		return -EIO;
+	}
 #ifdef CONFIG_HUAWEI_HW_DEV_DCT
 	/* detect current device successful, set the flag as present */
 	set_hw_dev_flag(DEV_I2C_USB_SWITCH);
 #endif
-        pr_debug("FUSB  %s - Device check passed!\n", __func__);
+	pr_debug("FUSB  %s - Device check passed!\n", __func__);
 	FUSB3601_charge_register_callback();
 #ifdef CONFIG_CC_ANTI_CORROSION
 	cc_corrosion_register_ops(&fusb3601_corrosion_ops);
@@ -465,7 +460,7 @@ static void fusb3601_shutdown(struct i2c_client *client)
 /*******************************************************************************
  * Driver macros
  ******************************************************************************/
-module_init(fusb3601_init);    /* Defines the module's entrance function */
+fs_initcall_sync(fusb3601_init);    /* Defines the module's entrance function */
 module_exit(fusb3601_exit);    /* Defines the module's exit function */
 
 /* Exposed on call to modinfo */

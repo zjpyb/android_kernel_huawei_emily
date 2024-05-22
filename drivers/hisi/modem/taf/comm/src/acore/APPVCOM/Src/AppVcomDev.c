@@ -647,12 +647,10 @@ ssize_t APP_VCOM_Read(
         return APP_VCOM_ERROR;
     }
 
-    /*lint -e730 修改人:l60609;检视人:z60575;原因:两个线程会同时写该全局变量  */
     if (wait_event_interruptible(pstVcomDev->Read_Wait, (pstVcomDev->current_len != 0)))
     {
         return -ERESTARTSYS;
     }
-    /*lint +e730 修改人:l60609;检视人:z60575;原因:两个线程会同时写该全局变量  */
 
     if (0 == pstVcomDev->current_len)
     {

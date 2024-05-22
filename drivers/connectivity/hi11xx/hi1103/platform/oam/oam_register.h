@@ -53,9 +53,9 @@ extern "C" {
 
 
 #define OAM_REG_NETLINK_SEND(puc_data, ul_data_len, en_type) do{\
-g_st_oam_reg_mng.ul_rpt_count++;\
-oam_netlink_kernel_send((puc_data), (ul_data_len), en_type);\
-l_bytes = oam_netlink_kernel_send(puc_data, ul_data_len, en_type);\
+g_st_oam_reg_mng_etc.ul_rpt_count++;\
+oam_netlink_kernel_send_etc((puc_data), (ul_data_len), en_type);\
+l_bytes = oam_netlink_kernel_send_etc(puc_data, ul_data_len, en_type);\
     if (l_bytes <= 0)\
     {\
         OAL_IO_PRINT("netlink l_bytes is invalid.Try again! the bytes is %u\n", l_bytes);\
@@ -225,19 +225,19 @@ typedef struct
 /*****************************************************************************
   4 全局变量声明
 *****************************************************************************/
-extern oam_reg_manage_stru g_st_oam_reg_mng;
+extern oam_reg_manage_stru g_st_oam_reg_mng_etc;
 /*****************************************************************************
   10 函数声明
 *****************************************************************************/
-oal_void oam_reg_init(oal_void);
-oal_void oam_reg_set_flag(oam_reg_type_enum_uint8 en_type, oam_reg_subtype_enum_uint32 en_subtype, oal_uint8 uc_flag);
-oal_void oam_reg_set_evt(oam_reg_evt_enum_uint32 ul_evt, oal_uint32 ul_tick);
-oal_uint8 oam_reg_is_need_refresh(oam_reg_evt_enum_uint32 en_evt_type);
-oal_uint32 oam_reg_get_evt_name(oam_reg_evt_enum_uint32 en_evt_type, oal_uint8 *puc_evt_name);
-oal_void oam_reg_report(oal_void);
-oal_void oam_reg_exit(oal_void);
-oal_void  oam_reg_info(oal_void);
-oal_void oam_reg_set_flag_addr(oam_reg_type_enum_uint8 en_type, oal_uint32 ul_startaddr, oal_uint32 ul_endaddr, oal_uint8 uc_flag);
+oal_void oam_reg_init_etc(oal_void);
+oal_void oam_reg_set_flag_etc(oam_reg_type_enum_uint8 en_type, oam_reg_subtype_enum_uint32 en_subtype, oal_uint8 uc_flag);
+oal_void oam_reg_set_evt_etc(oam_reg_evt_enum_uint32 ul_evt, oal_uint32 ul_tick);
+oal_uint8 oam_reg_is_need_refresh_etc(oam_reg_evt_enum_uint32 en_evt_type);
+oal_uint32 oam_reg_get_evt_name_etc(oam_reg_evt_enum_uint32 en_evt_type, oal_uint8 *puc_evt_name);
+oal_void oam_reg_report_etc(oal_void);
+oal_void oam_reg_exit_etc(oal_void);
+oal_void  oam_reg_info_etc(oal_void);
+oal_void oam_reg_set_flag_addr_etc(oam_reg_type_enum_uint8 en_type, oal_uint32 ul_startaddr, oal_uint32 ul_endaddr, oal_uint8 uc_flag);
 
 #ifdef __cplusplus
     #if __cplusplus

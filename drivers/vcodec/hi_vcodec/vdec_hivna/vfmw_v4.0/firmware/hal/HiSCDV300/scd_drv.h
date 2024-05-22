@@ -57,6 +57,11 @@
 #endif
 #define SM_MAX_DOWNMSG_SIZE            (3 * MAX_STREAM_RAW_NUM * sizeof(SINT32))
 #define SM_MAX_UPMSG_SIZE              (SM_SCD_UP_INFO_NUM * MAX_STREAM_SEG_NUM * sizeof(SINT32))
+
+#define SCD_OUTPUT_BUF_CNT             (5)
+
+#define INVALID_SHAREFD                (0)
+
 typedef enum {
 	FMW_OK          = 0,
 	FMW_ERR_PARAM   = -1,
@@ -95,7 +100,7 @@ do{                                     \
 typedef enum {
 	SCD_SHAREFD_MESSAGE_POOL = 0,
 	SCD_SHAREFD_OUTPUT_BUF   = 1,
-	SCD_SHAREFD_MAX
+	SCD_SHAREFD_MAX          = (SCD_SHAREFD_OUTPUT_BUF + SCD_OUTPUT_BUF_CNT)
 }SCD_SHAREFD;
 
 typedef struct {
@@ -120,6 +125,7 @@ typedef struct
 	SINT32 ScdProtocol;
 	SINT32 ScdLowdlyEnable;
 	SINT32 scd_share_fd[SCD_SHAREFD_MAX];
+	UINT32 ScdOutputBufNum;
 	HI_BOOL IsScdAllBufRemap;
 } SCD_CONFIG_REG_S;
 

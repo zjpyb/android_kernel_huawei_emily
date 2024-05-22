@@ -13,7 +13,6 @@ $(obj)/system_certificates.o: $(obj)/x509_certificate_list
 
 # Cope with signing_key.x509 existing in $(srctree) not $(objtree)
 AFLAGS_system_certificates.o := -I$(srctree)
-
 ifneq ($(CONFIG_MODULE_SIG_KEY),"huawei_signing_key.pem")
 quiet_cmd_extract_certs  = EXTRACT_CERTS   $(patsubst "%",%,$(2))
       cmd_extract_certs  = scripts/extract-cert $(2) $@ || ( rm $@; exit 1)
@@ -24,7 +23,6 @@ $(obj)/x509_certificate_list: scripts/extract-cert $(SYSTEM_TRUSTED_KEYS_SRCPREF
 else
 quiet_cmd_extract_certs  = EXTRACT_CERTS   $(patsubst "%",%,$(2))
       cmd_extract_certs  =  $(srctree)/../../build/tools/signkernel/extract-cert $(2) $@ || ( rm $@; exit 1)
-
 targets += x509_certificate_list
 $(obj)/x509_certificate_list: $(srctree)/../../build/tools/signkernel/extract-cert $(SYSTEM_TRUSTED_KEYS_SRCPREFIX)$(SYSTEM_TRUSTED_KEYS_FILENAME) FORCE
 	$(call if_changed,extract_certs,$(SYSTEM_TRUSTED_KEYS_SRCPREFIX)$(CONFIG_SYSTEM_TRUSTED_KEYS))
@@ -45,29 +43,34 @@ ifndef CONFIG_MODULE_SIG_HASH
 $(error Could not determine digest type to use from kernel config)
 endif
 
+redirect_openssl	= 2>&1
+quiet_redirect_openssl	= 2>&1
+silent_redirect_openssl = 2>/dev/null
+
 # We do it this way rather than having a boolean option for enabling an
 # external private key, because 'make randconfig' might enable such a
 # boolean option and we unfortunately can't make it depend on !RANDCONFIG.
 ifeq ($(CONFIG_MODULE_SIG_KEY),"certs/signing_key.pem")
 $(obj)/signing_key.pem: $(obj)/x509.genkey
-	@echo "###"
-	@echo "### Now generating an X.509 key pair to be used for signing modules."
-	@echo "###"
-	@echo "### If this takes a long time, you might wish to run rngd in the"
-	@echo "### background to keep the supply of entropy topped up.  It"
-	@echo "### needs to be run as root, and uses a hardware random"
-	@echo "### number generator if one is available."
-	@echo "###"
-	openssl req -new -nodes -utf8 -$(CONFIG_MODULE_SIG_HASH) -days 36500 \
+	@$(kecho) "###"
+	@$(kecho) "### Now generating an X.509 key pair to be used for signing modules."
+	@$(kecho) "###"
+	@$(kecho) "### If this takes a long time, you might wish to run rngd in the"
+	@$(kecho) "### background to keep the supply of entropy topped up.  It"
+	@$(kecho) "### needs to be run as root, and uses a hardware random"
+	@$(kecho) "### number generator if one is available."
+	@$(kecho) "###"
+	$(Q)openssl req -new -nodes -utf8 -$(CONFIG_MODULE_SIG_HASH) -days 36500 \
 		-batch -x509 -config $(obj)/x509.genkey \
 		-outform PEM -out $(obj)/signing_key.pem \
-		-keyout $(obj)/signing_key.pem 2>&1
-	@echo "###"
-	@echo "### Key pair generated."
-	@echo "###"
+		-keyout $(obj)/signing_key.pem \
+		$($(quiet)redirect_openssl)
+	@$(kecho) "###"
+	@$(kecho) "### Key pair generated."
+	@$(kecho) "###"
 
 $(obj)/x509.genkey:
-	@echo Generating X.509 key generation config
+	@$(kecho) Generating X.509 key generation config
 	@echo  >$@ "[ req ]"
 	@echo >>$@ "default_bits = 4096"
 	@echo >>$@ "distinguished_name = req_distinguished_name"
@@ -95,8 +98,8 @@ X509_DEP := $(MODULE_SIG_KEY_SRCPREFIX)$(MODULE_SIG_KEY_FILENAME)
 endif
 
 # GCC PR#66871 again.
-
 $(obj)/system_certificates.o: $(obj)/signing_key.x509
+
 targets += signing_key.x509
 ifneq ($(CONFIG_MODULE_SIG_KEY),"huawei_signing_key.pem")
 $(obj)/signing_key.x509: scripts/extract-cert $(X509_DEP) FORCE

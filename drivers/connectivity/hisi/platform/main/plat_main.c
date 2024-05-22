@@ -351,6 +351,11 @@ oal_int32  plat_sysfs_init(oal_void)
     oal_uint32 ul_rslt;
     oal_kobject*     pst_root_boot_object = NULL;
 
+    if(false == is_hisi_chiptype(BOARD_VERSION_HI1102))
+    {
+        return OAL_SUCC;
+    }
+
     /*110X 驱动build in，内存池初始化上移到内核完成，保证大片内存申请成功*/
     ul_rslt = oal_mem_init_pool();
     if (ul_rslt != OAL_SUCC)

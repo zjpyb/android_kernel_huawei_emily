@@ -80,6 +80,10 @@ endif
 ifeq ($(strip $(CFG_CONFIG_SYSBUS)),YES)
 obj-y			+= sys_bus/
 endif
+
+
+obj-$(CONFIG_BALONG_ESPE)	+= espe/
+
 ifeq ($(strip $(CFG_CONFIG_NEW_PLATFORM)),YES)
 obj-y			+= n_ipf/
 obj-y 			+= n_psam/

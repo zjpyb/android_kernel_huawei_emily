@@ -1497,8 +1497,9 @@ struct parade_core_data {
 	/*for mmi test item 4 report rate check support*/
 	int report_rate_check_supported;
 	int self_noise_supported;
+	int lcd_panel_name_from_lcdkit;//0 : panel name from others ,1 : panel name from  lcdkit_tp.c
 	int current_distinguishability;//false :use default distinguishability,true :second distinguishability
-	int fw_only_depend_on_lcd ;;//0 : fw depend on TP and others ,1 : fw only depend on lcd.
+	int fw_only_depend_on_lcd ;//0 : fw depend on TP and others ,1 : fw only depend on lcd.
 	char lcd_panel_info[LCD_PANEL_INFO_MAX_LEN] ;
 	char * sign_of_second_distinguishability;
 	/*after resume flag, do nothing in after resume when it is 1*/
@@ -1511,6 +1512,7 @@ struct parade_core_data {
 	bool need_set_rst_after_iovcc_flag;
 	bool need_check_report_descriptor_flag;
 	bool fw_need_depend_on_lcd;
+	bool need_delay_after_power_off;
 };
 
 #endif

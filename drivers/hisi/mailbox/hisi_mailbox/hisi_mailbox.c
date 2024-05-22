@@ -22,22 +22,23 @@
 #include <linux/kthread.h>
 #include <linux/hisi/hisi_mailbox.h>
 #include <linux/timekeeping.h>
+#include <linux/hisi/rdr_hisi_ap_hook.h>
+#include <linux/hisi/rdr_hisi_platform.h>
+#include <linux/hisi/hisi_log.h>
+#define HISI_LOG_TAG	AP_MAILBOX_TAG
+
 #define MBOX_PR_ERR(fmt, args ...)	\
 	({				\
-		pr_err("%s(%d):" fmt "\n", \
-			MODULE_NAME, __LINE__, ##args); \
+		pr_err(fmt "\n", ##args); \
 	})
 #define MBOX_PR_INFO(fmt, args ...)	\
 	({				\
-		pr_info("%s(%d):" fmt "\n", \
-			MODULE_NAME, __LINE__, ##args); \
+		pr_info(fmt "\n", ##args); \
 	})
 #define MBOX_PR_DEBUG(fmt, args ...)	\
 	({				\
 		; \
 	})
-
-#define MODULE_NAME "hisi_mailbox"
 
 /*#define  HISI_MAILBOX_DBG */   /*open this only in every early phase*/
 
@@ -65,6 +66,12 @@ struct hisi_mbox_task *g_TxTaskBuffer = NULL;
 int g_ContinuousFailCnt = 0;
 /* mailbox device resource pool */
 static LIST_HEAD(mdevices);
+
+#define MAILBOX_DUMP_TIME	(10000000000UL)
+static u64 sync_send_dump_time = 0;
+static u64 async_send_dump_time = 0;
+#define IPC_MNTN_OPEN		0xE551
+u32	ipc_mntn_open = 0;
 
 
 struct hisi_mbox_task *hisi_mbox_node_alloc(void)
@@ -95,7 +102,7 @@ void hisi_mbox_task_free(struct hisi_mbox_task **tx_task)
 	unsigned long flags = 0;
 
 	if ((NULL == tx_task) || (NULL == *tx_task)) {
-		MBOX_PR_ERR("null pointer\n");
+		MBOX_PR_ERR("null pointer");
 		return;
 	}
 	spin_lock_irqsave(&g_task_buffer_lock, flags);/*lint !e550*/
@@ -115,14 +122,14 @@ struct hisi_mbox_task *hisi_mbox_task_alloc(struct hisi_mbox *mbox,
 
 	if (!mbox || !mbox->tx || !tx_buffer) {
 		if (!mbox)
-			MBOX_PR_ERR("null pointer mbox!\n");
+			MBOX_PR_ERR("null pointer mbox!");
 		else
-			MBOX_PR_ERR("mailbox-%d  no tx ability or no tx_buffer\n", mbox->mdev_index);
+			MBOX_PR_ERR("mailbox-%d  no tx ability or no tx_buffer", mbox->mdev_index);
 		goto out;
 	}
 	tx_task = hisi_mbox_node_alloc();
 	if (!tx_task) {
-		MBOX_PR_ERR("tx task no mem\n");
+		MBOX_PR_ERR("tx task no mem");
 		goto out;
 	}
 	memcpy((void *)tx_task->tx_buffer, (void *)tx_buffer, tx_buffer_len * (sizeof(mbox_msg_t)));
@@ -146,7 +153,7 @@ static inline int set_status(struct hisi_mbox_device *mdev, int status)
 	spin_lock_irqsave(&mdev->status_lock, flags);
 	if ((MDEV_DEACTIVATED & mdev->status)) {
 		spin_unlock_irqrestore(&mdev->status_lock, flags);
-		MBOX_PR_INFO("an unexpected ipc caused by %s\n", mdev->name);
+		MBOX_PR_INFO("an unexpected ipc caused by %s", mdev->name);
 		/* WARN_ON(1); */
 		ret = -ENODEV;
 		goto out;
@@ -185,7 +192,7 @@ static int hisi_mbox_task_send_async(struct hisi_mbox_device *mdev, struct hisi_
 	mdev->tx_task = tx_task;
 	ret = mdev->ops->send(mdev, tx_task->tx_buffer, tx_task->tx_buffer_len, tx_task->need_auto_ack);
 	if (ret) {
-		MBOX_PR_ERR("mdev %s can not be sent\n", mdev->name);
+		MBOX_PR_ERR("mdev %s can not be sent", mdev->name);
 	}
 	mdev->tx_task = NULL;
 	return ret;
@@ -202,7 +209,7 @@ static int hisi_mbox_task_send_sync(struct hisi_mbox_device *mdev, struct hisi_m
 	int need_irq_enable = 0;
 	int receipted = 0;
 	unsigned long flags;
-	u64 start_time,end_time;
+	u64 start_time = 0,end_time = 0;
 	unsigned int mdev_timeout = 0;
 	mdev_timeout = mdev->ops->get_timeout(mdev);
 
@@ -222,7 +229,7 @@ static int hisi_mbox_task_send_sync(struct hisi_mbox_device *mdev, struct hisi_m
 	ret = mdev->ops->send(mdev, tx_task->tx_buffer, tx_task->tx_buffer_len, tx_task->need_auto_ack);
 	if (ret) {
 		mdev->tx_task = NULL;
-		MBOX_PR_ERR("mdev %s can not be sent\n", mdev->name);
+		MBOX_PR_ERR("mdev %s can not be sent", mdev->name);
 		goto out;
 	}
 	if (AUTO_ACK == tx_task->need_auto_ack) {
@@ -230,17 +237,28 @@ static int hisi_mbox_task_send_sync(struct hisi_mbox_device *mdev, struct hisi_m
 	} else if (MANUAL_ACK == tx_task->need_auto_ack) {
 		tx_timeout = msecs_to_jiffies(mdev_timeout);
 	} else {
-		MBOX_PR_ERR("%s invalid ack mode.\n", mdev->name);
+		MBOX_PR_ERR("%s invalid ack mode", mdev->name);
 		goto refresh;
 	}
-	start_time = ktime_get_ns();
+
+	if(IPC_MNTN_OPEN == ipc_mntn_open) {
+		start_time = ktime_get_ns();
+	}
+
 	timeout = wait_for_completion_timeout(&mdev->complete, tx_timeout);
 	if (unlikely(0 == timeout)) {
 		g_ContinuousFailCnt++;
-		end_time = ktime_get_ns();
+		if(IPC_MNTN_OPEN == ipc_mntn_open) {
+			end_time = ktime_get_ns();
+		}
+
 		if (CONTINUOUS_FAIL_JUDGE) {
-			MBOX_PR_ERR("\n %s ipc timeout...\n" "<INFO> MSG[0] : 0x%08x  MSG[1] : 0x%08x\n" "start_time: %llu end_time: %llu\n",
-				mdev->name, tx_task->tx_buffer[0], tx_task->tx_buffer[1], start_time, end_time);
+			MBOX_PR_ERR(" %s ipc_timeout...", mdev->name);
+			MBOX_PR_ERR("<INFO> MSG[0] : 0x%08x  MSG[1] : 0x%08x", 
+				tx_task->tx_buffer[0], tx_task->tx_buffer[1]);
+			if(IPC_MNTN_OPEN == ipc_mntn_open) {
+				MBOX_PR_ERR("start_time: %llu end_time: %llu", start_time, end_time);
+			}
 			if (mdev->ops->status)
 				mdev->ops->status(mdev);
 		}
@@ -313,6 +331,12 @@ unlock:
 			if (CONTINUOUS_FAIL_JUDGE)
 				MBOX_PR_ERR("reason: ACK lost.");
 		}
+		if(IPC_MNTN_OPEN == ipc_mntn_open) {
+			if(MAILBOX_DUMP_TIME < ktime_get_ns() - sync_send_dump_time) {
+				rdr_system_error(MODID_AP_S_MAILBOX, 0, 0);
+				sync_send_dump_time = ktime_get_ns();
+			}
+		}
 	} else {
 		/*once success, clear the g_ContinuousFailCnt */
 		g_ContinuousFailCnt = 0;
@@ -340,9 +364,9 @@ int hisi_mbox_msg_send_sync(struct hisi_mbox *mbox,
 
 	if (!mbox || !mbox->tx || !tx_buffer) {
 		if (!mbox)
-			MBOX_PR_ERR("null pointer mbox!\n");
+			MBOX_PR_ERR("null pointer mbox!");
 		else
-			MBOX_PR_ERR("mailbox-%d  no tx ability or no tx_buffer\n", mbox->mdev_index);
+			MBOX_PR_ERR("mailbox-%d  no tx ability or no tx_buffer", mbox->mdev_index);
 		ret = -EINVAL;
 		goto out;
 	}
@@ -358,7 +382,7 @@ int hisi_mbox_msg_send_sync(struct hisi_mbox *mbox,
 	/* SYNC_SENDING start */
 	ret = set_status(mdev, MDEV_SYNC_SENDING);
 	if (ret) {
-		MBOX_PR_ERR("MSG{0x%08x, 0x%08x}\n", tx_task.tx_buffer[0], tx_task.tx_buffer[1]);
+		MBOX_PR_ERR("MSG{0x%08x, 0x%08x}", tx_task.tx_buffer[0], tx_task.tx_buffer[1]);
 		goto out;
 	}
 
@@ -390,7 +414,7 @@ int hisi_mbox_msg_send_async(struct hisi_mbox *mbox, struct hisi_mbox_task *tx_t
 	unsigned int fifo_size;
 
 	if (!tx_task || !mbox || !mbox->tx) {
-		MBOX_PR_ERR("invalid parameters\n");
+		MBOX_PR_ERR("invalid parameters");
 		ret = -EINVAL;
 		goto out;
 	}
@@ -402,7 +426,7 @@ int hisi_mbox_msg_send_async(struct hisi_mbox *mbox, struct hisi_mbox_task *tx_t
 	/* ASYNC_ENQUEUE start */
 	ret = set_status(mdev, MDEV_ASYNC_ENQUEUE);
 	if (ret) {
-		MBOX_PR_ERR("MSG{0x%08x, 0x%08x}\n", tx_task->tx_buffer[0], tx_task->tx_buffer[1]);
+		MBOX_PR_ERR("MSG{0x%08x, 0x%08x}", tx_task->tx_buffer[0], tx_task->tx_buffer[1]);
 		goto out;
 	}
 	hardware_board_type = mdev->ops->read_board_type(mdev);
@@ -411,6 +435,13 @@ int hisi_mbox_msg_send_async(struct hisi_mbox *mbox, struct hisi_mbox_task *tx_t
 	spin_lock_irqsave(&mdev->fifo_lock, flags);
 	if (kfifo_avail(&mdev->fifo) < TX_FIFO_CELL_SIZE) {/*lint !e84*/
 		spin_unlock_irqrestore(&mdev->fifo_lock, flags);
+		if(IPC_MNTN_OPEN == ipc_mntn_open) {
+			if(MAILBOX_DUMP_TIME < ktime_get_ns() - async_send_dump_time) {
+				rdr_system_error(MODID_AP_S_MAILBOX, 0, 0);
+				async_send_dump_time = ktime_get_ns();
+			}
+		}
+
 		ret = -ENOMEM;
 		goto clearstatus;
 	}
@@ -483,7 +514,7 @@ static int hisi_mbox_tx_thread(void *context)
 		ret = wait_event_interruptible(mdev->tx_wait, (kfifo_len(&mdev->fifo) >= TX_FIFO_CELL_SIZE));
 		/*lint +e666 */
 		if (unlikely(ret)) {
-			printk("hisi_mbox_tx_thread wait event failed\n");
+			MBOX_PR_ERR("%s wait event failed", __func__);
 			continue;
 		}
 
@@ -557,7 +588,7 @@ static void hisi_mbox_rx_bh(unsigned long context)
 	}
 
 	mdev->ops->enable_irq(mdev);
-	MBOX_PR_DEBUG("mdev %s rx leave\n", mdev->name);
+	MBOX_PR_DEBUG("mdev %s rx leave", mdev->name);
 
 	return;
 }
@@ -567,18 +598,18 @@ static int hisi_mbox_interrupt(int irq, void *p)
 	struct hisi_mbox_device *mdev = (struct hisi_mbox_device *)p;
 	mdev = mdev->ops->irq_to_mdev(mdev, &mdevices, irq);
 	if (!mdev) {
-		MBOX_PR_ERR("an unexpected inttrupt %d occured\n", irq);
+		MBOX_PR_ERR("an unexpected inttrupt %d occured", irq);
 		return IRQ_NONE;
 	}
 
 	if (!mdev->configured) {
-		MBOX_PR_ERR("mdev %s has not startup yet\n", mdev->name);
+		MBOX_PR_ERR("mdev %s has not startup yet", mdev->name);
 		return IRQ_NONE;
 	}
 
 	/* ipc */
 	if (mdev->ops->is_stm(mdev, DESTINATION_STATUS)) {
-		MBOX_PR_DEBUG("mdev %s ipc\n", mdev->name);
+		MBOX_PR_DEBUG("mdev %s ipc", mdev->name);
 		mdev->cur_task = RX_TASK;
 		mdev->cur_irq = irq;
 		mdev->ops->disable_irq(mdev);
@@ -595,10 +626,10 @@ static int hisi_mbox_interrupt(int irq, void *p)
 			spin_unlock(&mdev->complete_lock);
 			/*need to clear the ack if the ack is reached after 300ms' timeout, otherwise the ack will trigger all the time */
 			mdev->ops->clr_ack(mdev);
-			MBOX_PR_ERR("%s(%d) has been handled" "caused of current IPC timeout(ISR).\n", mdev->name, irq);
+			MBOX_PR_ERR("%s(%d) has been handled\n" "caused of current IPC timeout(ISR)", mdev->name, irq);
 			return IRQ_HANDLED;
 		} else {
-			MBOX_PR_DEBUG("mdev %s ack\n", mdev->name);
+			MBOX_PR_DEBUG("mdev %s ack", mdev->name);
 			mdev->completed = COMPLETING;
 			mdev->cur_task = TX_TASK;
 			mdev->cur_irq = irq;
@@ -608,7 +639,7 @@ static int hisi_mbox_interrupt(int irq, void *p)
 	}
 	spin_unlock(&mdev->complete_lock);
 
-	MBOX_PR_DEBUG("mdev %s interrupt leave, irq %d\n", mdev->name, irq);
+	MBOX_PR_DEBUG("mdev %s interrupt leave, irq %d", mdev->name, irq);
 	return IRQ_HANDLED;
 }
 
@@ -616,7 +647,7 @@ static void hisi_mbox_shutdown(struct hisi_mbox_device *mdev, mbox_mail_type_t m
 {
 	mutex_lock(&mdev->dev_lock);
 	if (!--mdev->configured) {
-		MBOX_PR_DEBUG("%s, %s shutdown.\n", MODULE_NAME, mdev->name);
+		MBOX_PR_DEBUG("%s shutdown", mdev->name);
 
 		mdev->ops->free_irq(mdev, (void *)mdev);
 		mdev->ops->shutdown(mdev);
@@ -655,13 +686,13 @@ void hisi_mbox_put(struct hisi_mbox **mbox)
 	int i;
 
 	if (!mbox) {
-		MBOX_PR_ERR("null pointer\n");
+		MBOX_PR_ERR("null pointer");
 		return;
 	}
 
 	_mbox = *mbox;
 	if (!_mbox) {
-		MBOX_PR_ERR("null pointer\n");
+		MBOX_PR_ERR("null pointer");
 		return;
 	}
 
@@ -693,9 +724,9 @@ static int hisi_mbox_startup(struct hisi_mbox_device *mdev, mbox_mail_type_t mai
 		switch (mail_type) {
 		case TX_MAIL:
 			tx_buff = mdev->ops->get_fifo_size(mdev) * TX_FIFO_CELL_SIZE;
-			MBOX_PR_DEBUG("tx mdev fifo_size is %d\n",tx_buff);
+			MBOX_PR_DEBUG("tx mdev fifo_size is %d",tx_buff);
 			if (kfifo_alloc(&mdev->fifo, tx_buff, GFP_KERNEL)) {
-				MBOX_PR_ERR("tx mdev %s alloc kfifo failed\n", mdev->name);
+				MBOX_PR_ERR("tx mdev %s alloc kfifo failed", mdev->name);
 				ret = -ENOMEM;
 				goto deconfig;
 			}
@@ -704,7 +735,7 @@ static int hisi_mbox_startup(struct hisi_mbox_device *mdev, mbox_mail_type_t mai
 			/*create the async tx thread */
 			mdev->tx_kthread = kthread_create(hisi_mbox_tx_thread, (void *)mdev, "%s", mdev->name);
 			if (unlikely(IS_ERR(mdev->tx_kthread))) {
-				MBOX_PR_ERR("create kthread tx_kthread failed!\n");
+				MBOX_PR_ERR("create kthread tx_kthread failed!");
 				ret = -EINVAL;
 				kfifo_free(&mdev->fifo);
 				goto deconfig;
@@ -716,7 +747,7 @@ static int hisi_mbox_startup(struct hisi_mbox_device *mdev, mbox_mail_type_t mai
 				struct sched_param param;
 				param.sched_priority = (MAX_RT_PRIO - mdev->ops->get_sched_priority(mdev));
 				sched_policy = mdev->ops->get_sched_policy(mdev);
-				MBOX_PR_DEBUG("tx mdev sched_priority is %d \tsched_policy is %d\n",
+				MBOX_PR_DEBUG("tx mdev sched_priority is %d \tsched_policy is %d",
 					param.sched_priority,sched_policy);
 				(void)sched_setscheduler(mdev->tx_kthread, sched_policy, &param);
 				wake_up_process(mdev->tx_kthread);
@@ -732,14 +763,14 @@ static int hisi_mbox_startup(struct hisi_mbox_device *mdev, mbox_mail_type_t mai
 
 		ret = mdev->ops->startup(mdev);
 		if (ret) {
-			MBOX_PR_ERR("mdev %s startup failed\n", mdev->name);
+			MBOX_PR_ERR("mdev %s startup failed", mdev->name);
 			ret = -ENODEV;
 			goto deinit_work;
 		}
 
 		ret = mdev->ops->request_irq(mdev, (irq_handler_t) hisi_mbox_interrupt, (void *)mdev);
 		if (ret) {
-			MBOX_PR_ERR("mdev %s request irq failed\n", mdev->name);
+			MBOX_PR_ERR("mdev %s request irq failed", mdev->name);
 			ret = -ENODEV;
 			goto shutdown;
 		}
@@ -772,7 +803,7 @@ static struct hisi_mbox *hisi_mbox_alloc(struct hisi_mbox_device *tx_mdev, struc
 	struct hisi_mbox *mbox = NULL;
 	mbox = kzalloc(sizeof(*mbox), GFP_KERNEL);
 	if (!mbox) {
-		MBOX_PR_ERR("no memory for mbox mailbox<%d>\n", mdev_index);
+		MBOX_PR_ERR("no memory for mbox mailbox<%d>", mdev_index);
 		goto out;
 	}
 
@@ -821,7 +852,7 @@ struct hisi_mbox *hisi_mbox_get(int mdev_index, struct notifier_block *nb)
 	int i;
 
 	if (list_empty(list)) {
-		MBOX_PR_ERR("mailboxes not ready\n");
+		MBOX_PR_ERR("mailboxes not ready");
 		goto out;
 	}
 
@@ -837,14 +868,14 @@ struct hisi_mbox *hisi_mbox_get(int mdev_index, struct notifier_block *nb)
 			atomic_notifier_chain_register(&mdev[i]->notifier, nb);
 
 		if (mdev[i] && hisi_mbox_startup(mdev[i], i)) {/*lint !e64 */
-			MBOX_PR_ERR("%s mdev %s startup failed\n", ((i == TX_MAIL) ? "tx" : "rx"), mdev[i]->name);
+			MBOX_PR_ERR("%s mdev %s startup failed", ((i == TX_MAIL) ? "tx" : "rx"), mdev[i]->name);
 			goto shutdown;
 		}
 	}
 
 	mbox = hisi_mbox_alloc(mdev[TX_MAIL], mdev[RX_MAIL], mdev_index);
 	if (!mbox) {
-		MBOX_PR_ERR("failed to alloc mbox\n");
+		MBOX_PR_ERR("failed to alloc mbox");
 		goto shutdown;
 	}
 	mbox->nb = nb;
@@ -919,7 +950,7 @@ int hisi_mbox_device_unregister(struct hisi_mbox_device **list)
 	int i;
 
 	if (!list) {
-		MBOX_PR_ERR("no mboxes registered\n");
+		MBOX_PR_ERR("no mboxes registered");
 		return -EINVAL;
 	}
 
@@ -950,20 +981,20 @@ int hisi_mbox_device_register(struct device *parent, struct hisi_mbox_device **l
 	int ret, i;
 
 	if (!list) {
-		MBOX_PR_ERR("null pointer\n");
+		MBOX_PR_ERR("null pointer");
 		return -EINVAL;
 	}
 
 	for (i = 0; (mdev = list[i]); i++) {
 		if (!hisi_mbox_device_is_valid(mdev)) {
-			MBOX_PR_ERR("invalid mdev\n");
+			MBOX_PR_ERR("invalid mdev");
 			ret = -EINVAL;
 			goto err_out;
 		}
 
 		mdev->dev = device_create(hisi_mbox_class, parent, (dev_t) i, mdev, "%s", mdev->name);
 		if (IS_ERR(mdev->dev)) {
-			MBOX_PR_ERR("mdev %s can not create device\n", mdev->name);
+			MBOX_PR_ERR("mdev %s can not create device", mdev->name);
 			ret = PTR_ERR(mdev->dev);
 			goto err_out;
 		}
@@ -997,7 +1028,7 @@ EXPORT_SYMBOL(hisi_mbox_device_register);
 
 static int __init hisi_mbox_init(void)
 {
-	pr_debug("%s: init\n", MODULE_NAME);
+	MBOX_PR_DEBUG("%s: init", __func__);
 
 	hisi_mbox_class = class_create(THIS_MODULE, "hisi-mailbox");
 	if (IS_ERR(hisi_mbox_class))

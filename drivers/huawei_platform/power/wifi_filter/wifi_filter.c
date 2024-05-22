@@ -31,7 +31,7 @@
 #define ITEM_COUNT_MAX_VALUE    (1<<5) //32
 #define ITEM_COUNT_MASK         (ITEM_COUNT_MAX_VALUE-1)
 #define NETBIOS_PORT            (137)
-#define SPECIAL_PORT_NUM        (1)
+#define SPECIAL_PORT_NUM        (0)
 
 #define LOG_TAG					"wifi_filter"
 
@@ -80,6 +80,7 @@ static struct task_struct *WifiFilterThread = NULL;
 static wait_queue_head_t mythread_wq;
 static int wake_up_condition = 0;
 static bool bIsSupportWifiFilter = false;
+static bool bDozeEnable = false;
 static struct hw_wlan_filter_ops gWlanFilterOps;
 static hw_wifi_filter_item g_filter_items[ITEM_COUNT_MAX_VALUE];
 static int g_filter_item_index = SPECIAL_PORT_NUM;
@@ -165,77 +166,36 @@ static bool is_in_items_array(hw_wifi_filter_item *item)
     return false;
 }
 
-void get_filter_info(
-    struct sk_buff *skb,
-    const struct nf_hook_state *state,
-    unsigned int hook,
-    const struct xt_table_info *private,
-    const struct ipt_entry *e)
+void get_wifi_filter_info(struct sk_buff *skb)
 {
     hw_wifi_filter_item items;
     hw_wifi_filter_item special_item;
     const struct iphdr *ip;
-    const char *chainname = "";
-    const char *indev = "";
-    int i;
 
-    if(!bIsSupportWifiFilter)
-    {
-        FILTER_LOGD("wifi filter is not support");
-        return;
-    }
-    if (NULL == state)
-    {
-        FILTER_LOGE("state is null");
-        return;
-    }
-    indev = state->in ? state->in->name : "";
-    if (strcmp(indev, WLAN_NAME) != 0)
-    {
-        return;
-    }
-    
-    if (NULL == skb)
-    {
-        FILTER_LOGE("skb is null");
-        return;
-    }
-    
-    get_chainname(hook,private,e,&chainname);
-
-    if (strcmp(chainname, DOZABLE_NAME) != 0)
-    {
-        FILTER_LOGE("rule is not dozable");
-        return;
-    }
     ip = ip_hdr(skb);
-    if (NULL == ip)
-    {
+    if (NULL == ip) {
         FILTER_LOGE("ip is null");
         return;
     }
 
-    if (ip->protocol == IPPROTO_TCP)
-    {
+    if (ip->protocol == IPPROTO_TCP) {
         FILTER_LOGD("tcp dest=%d, source=%d",ntohs(tcp_hdr(skb)->dest),ntohs(tcp_hdr(skb)->source));
-        items.port          = tcp_hdr(skb)->dest;
-        items.protocol      = IPPROTO_TCP;
-        items.filter_cnt    = 0;
+        items.port = tcp_hdr(skb)->dest;
+        items.protocol = IPPROTO_TCP;
+        items.filter_cnt = 0;
     } else if (ip->protocol == IPPROTO_UDP) {
         FILTER_LOGD("udp dest=%d,source=%d",ntohs(udp_hdr(skb)->dest), ntohs(udp_hdr(skb)->source));
-        return;
+        items.port = udp_hdr(skb)->dest;
+        items.protocol = IPPROTO_UDP;
+        items.filter_cnt = 0;
     } else {
         printk("other protocol");
         return;
     }
     if (is_in_items_array(&items)) {
-        FILTER_LOGD("port %d has exist",items.port);
+        FILTER_LOGD("port %d has exist",ntohs(items.port));
         return;
     }
-    special_item.filter_cnt = 1;
-    special_item.port       = htons(NETBIOS_PORT);
-    special_item.protocol   = IPPROTO_UDP;
-    memcpy(&g_filter_items[0],&special_item,sizeof(hw_wifi_filter_item));
     memcpy(&g_filter_items[g_filter_item_index],&items,sizeof(hw_wifi_filter_item));
     g_filter_item_index++;
     if (g_filter_item_count < ITEM_COUNT_MAX_VALUE)
@@ -251,6 +211,71 @@ void get_filter_info(
     wake_up_condition = 1;
     wake_up_interruptible(&mythread_wq);
 }
+
+void get_filter_info(
+    struct sk_buff *skb,
+    const struct nf_hook_state *state,
+    unsigned int hook,
+    const struct xt_table_info *private,
+    const struct ipt_entry *e)
+{
+    const char *indev = "";
+
+    if (!bIsSupportWifiFilter) {
+        FILTER_LOGD("wifi filter is not support");
+        return;
+    }
+    if (!bDozeEnable){
+        FILTER_LOGD("doze is not enable");
+        return;
+    }
+    if (NULL == state) {
+        FILTER_LOGE("state is null");
+        return;
+    }
+    indev = state->in ? state->in->name : "";
+    if (strcmp(indev, WLAN_NAME) != 0) {
+    	 FILTER_LOGD("indevl name %s", indev);
+        return;
+    }
+    
+    if (NULL == skb) {
+        FILTER_LOGE("skb is null");
+        return;
+    }
+
+    get_wifi_filter_info(skb);
+}
+
+void get_filter_infoEx(struct sk_buff *skb)
+{
+
+    if (!bIsSupportWifiFilter) {
+        FILTER_LOGD("wifi filter is not support");
+        return;
+    }
+    if (!bDozeEnable){
+        FILTER_LOGD("doze is not enable");
+        return;
+    }
+    if (NULL == skb) {
+        FILTER_LOGE("skb is null");
+        return;
+    }
+	
+    if (NULL == skb->dev) {
+        FILTER_LOGE("skb->dev is null");
+        return;
+    }
+
+    if (strcmp(skb->dev->name, WLAN_NAME) != 0) {
+    	 FILTER_LOGD("indevl name %s", skb->dev->name);
+        return;
+    }
+
+    get_wifi_filter_info(skb);
+}
+
 
 static int hw_add_filter_items(hw_wifi_filter_item *items, int count)
 {
@@ -281,6 +306,7 @@ int hw_set_net_filter_enable(int enable)
     int count = 0;
     int i;
     FILTER_LOGD("enable=%d", enable);
+    bDozeEnable = (bool)enable;
     if ( NULL == gWlanFilterOps.set_filter_enable )
     {
         return -1;

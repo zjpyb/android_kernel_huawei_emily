@@ -43,6 +43,7 @@
 #define HUMAN_READABLE
 */
 #define F54_MAX_CAP_TITLE_SIZE	50
+#define DATA_TEMP_BUFF_SIZE	8
 #define IRQ_ON 1
 #define IRQ_OFF 0
 #define Interrupt_Enable_Addr  0x0052
@@ -2890,13 +2891,13 @@ static struct kobject *tp_get_touch_screen_obj(void)
 
 static void mmi_rawimage_report(unsigned char *buffer)
 {
-	int i, j, k = 0;
-	short *DataArray;
-	short temp;
+	int i = 0, j = 0, k = 0;
+	short *DataArray = NULL;
+	short temp = 0;
 	enum mmi_results TestResult = TEST_PASS;
-	char buf[6];
+	char buf[DATA_TEMP_BUFF_SIZE] = { 0 };
 	memset(g_mmi_buf_f54raw_data, 0,
-	       (rx * tx * 6 + F54_MAX_CAP_TITLE_SIZE));
+	       (rx * tx * DATA_TEMP_BUFF_SIZE + F54_MAX_CAP_TITLE_SIZE));
 	sprintf(g_mmi_buf_f54raw_data, "RawImageData:\n");
 
 	DataArray = (short *)kmalloc(sizeof(short) * tx * rx, GFP_KERNEL);
@@ -2911,7 +2912,7 @@ static void mmi_rawimage_report(unsigned char *buffer)
 			DataArray[i * rx + j] = temp;	/*float is not allowed in kernel space*/
 			k = k + 2;
 
-			sprintf(buf, "%d ", temp);
+			snprintf(buf, sizeof(buf)-1, "%d ", temp);
 			strncat(g_mmi_buf_f54raw_data, buf, sizeof(buf));
 		}
 		strncat(g_mmi_buf_f54raw_data, "\n", 1);
@@ -2961,7 +2962,7 @@ static int RxtoRx1ShortTest(unsigned char *buffer)
 				continue;
 			}
 			k = k + 2;
-			sprintf(buf, "%5d ", ImageArray);
+			snprintf(buf, sizeof(buf),"%5d ", ImageArray);
 
 			if (i == j) {
 				strncat(g_mmi_RxtoRxshort_report, buf,
@@ -2996,7 +2997,7 @@ static int RxtoRx2ShortTest(unsigned char *buffer)
 				continue;
 			}
 			k = k + 2;
-			sprintf(buf, "%5d ", ImageArray);
+			snprintf(buf, sizeof(buf),"%5d ", ImageArray);
 
 			if ((i + tx) == j) {
 				strncat(g_mmi_RxtoRxshort_report, buf,
@@ -3141,9 +3142,9 @@ static void mmi_maxmincapacitance_report(unsigned char *buffer)
 	short mincapacitance = FullRawMinCap;
 	short max = 0;
 	short min = 0;
-	char buf[2 * 6] = { 0 };
+	char buf[2 * DATA_TEMP_BUFF_SIZE] = { 0 };
 	memset(g_mmi_maxmincapacitance_report, 0,
-	       (2 * 6 + F54_MAX_CAP_TITLE_SIZE));
+	       (2 * DATA_TEMP_BUFF_SIZE + F54_MAX_CAP_TITLE_SIZE));
 	sprintf(g_mmi_maxmincapacitance_report, "maxmincapacitance:\n");
 	max = (buffer[0]) | (buffer[1] << 8);
 	min = (buffer[2]) | (buffer[3] << 8);
@@ -3158,7 +3159,7 @@ static void mmi_maxmincapacitance_report(unsigned char *buffer)
 			TP_TEST_FAILED_REASON_LEN);
 	}
 
-	sprintf(buf, " %d %d", max, min);
+	snprintf(buf, sizeof(buf)-1, " %d %d", max, min);
 	strncat(g_mmi_maxmincapacitance_report, buf, sizeof(buf));
 	strncat(g_mmi_maxmincapacitance_report, "\n", 1);
 
@@ -3167,13 +3168,13 @@ static void mmi_maxmincapacitance_report(unsigned char *buffer)
 
 static void mmi_highresistance_report(unsigned char *buffer)
 {
-	int i, k = 0;
-	short temp;
+	int i = 0, k = 0;
+	short temp = 0;
 	enum mmi_results TestResult = TEST_PASS;
-	short HighResistanceResult[3];
-	char buf[6] = { 0 };
+	short HighResistanceResult[3] = { 0 };
+	char buf[DATA_TEMP_BUFF_SIZE] = { 0 };
 	memset(g_mmi_highresistance_report, 0,
-	       (3 * 6 + F54_MAX_CAP_TITLE_SIZE));
+	       (3 * DATA_TEMP_BUFF_SIZE + F54_MAX_CAP_TITLE_SIZE));
 	sprintf(g_mmi_highresistance_report, "highresistance:\n");
 
 	for (i = 0; i < 3; i++, k += 2) {
@@ -3205,13 +3206,13 @@ static void mmi_highresistance_report(unsigned char *buffer)
 
 static void mmi_delta_report(unsigned char *buffer)
 {
-	int i, j, k = 0;
-	short *DataArray;
-	short temp;
-	char buf[6];
+	int i = 0, j = 0, k = 0;
+	short *DataArray = NULL;
+	short temp = 0;
+	char buf[DATA_TEMP_BUFF_SIZE] = { 0 };
 	TS_LOG_INFO("mmi_delta_report\n");
-	memset(g_buf_debug_data, 1,
-	       (rx * tx * 6 + F54_MAX_CAP_TITLE_SIZE + F54_MAX_CAP_TITLE_SIZE +
+	memset(g_buf_debug_data, 0,
+	       (rx * tx * DATA_TEMP_BUFF_SIZE + F54_MAX_CAP_TITLE_SIZE + F54_MAX_CAP_TITLE_SIZE +
 		F54_MAX_CAP_TITLE_SIZE));
 	sprintf(g_buf_debug_data, "delta_data:\n");
 
@@ -3226,7 +3227,7 @@ static void mmi_delta_report(unsigned char *buffer)
 			DataArray[i * rx + j] = temp;	/*float is not allowed in kernel space*/
 			k = k + 2;
 
-			sprintf(buf, "%d ", temp);
+			snprintf(buf, sizeof(buf),"%d ", temp);
 			strncat(g_buf_debug_data, buf, sizeof(buf));
 		}
 		strcat(g_buf_debug_data, "\n");
@@ -3313,13 +3314,13 @@ static int mmi_runtest(int report_type)
 	case F54_FULL_RAW_CAP_MIN_MAX:
 		if (!g_mmi_maxmincapacitance_report)
 			g_mmi_maxmincapacitance_report =
-			    kmalloc(2 * 6 + F54_MAX_CAP_TITLE_SIZE, GFP_KERNEL);
+			    kmalloc(2 * DATA_TEMP_BUFF_SIZE + F54_MAX_CAP_TITLE_SIZE, GFP_KERNEL);
 		mmi_maxmincapacitance_report(buffer);
 		break;
 	case F54_FULL_RAW_CAP_RX_COUPLING_COMP:
 		if (!g_mmi_buf_f54raw_data)
 			g_mmi_buf_f54raw_data =
-			    kmalloc(rx * tx * 6 + F54_MAX_CAP_TITLE_SIZE,
+			    kmalloc(rx * tx * DATA_TEMP_BUFF_SIZE + F54_MAX_CAP_TITLE_SIZE,
 				    GFP_KERNEL);
 		mmi_rawimage_report(buffer);
 		break;
@@ -3329,7 +3330,7 @@ static int mmi_runtest(int report_type)
 	case F54_HIGH_RESISTANCE:
 		if (!g_mmi_highresistance_report)
 			g_mmi_highresistance_report =
-			    kmalloc(3 * 6 + F54_MAX_CAP_TITLE_SIZE, GFP_KERNEL);
+			    kmalloc(3 * DATA_TEMP_BUFF_SIZE + F54_MAX_CAP_TITLE_SIZE, GFP_KERNEL);
 		mmi_highresistance_report(buffer);
 		break;
 	case F54_TX_TO_GROUND:
@@ -3348,7 +3349,7 @@ static int mmi_runtest(int report_type)
 		break;
 	case F54_16BIT_IMAGE:
 		if (!g_buf_debug_data)
-			g_buf_debug_data = kmalloc(rx * tx * 6 + F54_MAX_CAP_TITLE_SIZE + 4 * F54_MAX_CAP_TITLE_SIZE, GFP_KERNEL);	/*buf len for test*/
+			g_buf_debug_data = kmalloc(rx * tx * DATA_TEMP_BUFF_SIZE + F54_MAX_CAP_TITLE_SIZE + 4 * F54_MAX_CAP_TITLE_SIZE, GFP_KERNEL);	/*buf len for test*/
 		mmi_delta_report(buffer);
 		break;
 	default:

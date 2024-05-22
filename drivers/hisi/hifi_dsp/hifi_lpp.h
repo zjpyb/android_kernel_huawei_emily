@@ -19,6 +19,7 @@ extern "C" {
 
 #include <linux/list.h>
 #include "global_ddr_map.h"
+#include "soc_acpu_baseaddr_interface.h"
 
 /* mailbox mail_len max */
 #define MAIL_LEN_MAX	(512)
@@ -58,7 +59,7 @@ extern "C" {
 #endif
 
 #ifdef CONFIG_HIFI_IPC_3660
-#define HIFI_UNSEC_REGION_SIZE              (0x500000)
+#define HIFI_UNSEC_REGION_SIZE              (HISI_RESERVED_HIFI_DATA_PHYMEM_SIZE)
 #define HIFI_MUSIC_DATA_SIZE                (0x132000 + 0x32000)
 #define PCM_PLAY_BUFF_SIZE                  (0x200000 - 0x32000)
 #else
@@ -81,9 +82,17 @@ extern "C" {
 #define HIFI_PCM_UPLOAD_BUFFER_SIZE         (0x2000)
 #define HIFI_AUDIO_EFFECT_PARAM_BUFF_SIZE   (0xC000)
 #define HIFI_USB_DRIVER_SHARE_MEM_SIZE      (0x20000)
-#define HISI_DP_AUDIO_DATA_BUFF_SIZE        (0x20000)
+#ifdef CONFIG_HIFI_IPC_3660
+#define HISI_DP_AUDIO_DATA_BUFF_SIZE        (0x40000)
+#else
+#define HISI_DP_AUDIO_DATA_BUFF_SIZE        (0x0)
+#endif
 #define HISI_AP_AUDIO_PA_BUFF_SIZE          (0x1800)
-#define HIFI_UNSEC_RESERVE_SIZE             (0x7BC00)
+#define HISI_AP_AUDIO_WAKEUP_RINGBUFEER_SIZE   (0xF000)
+#define HISI_AP_AUDIO_WAKEUP_CAPTURE_SIZE   (0x1000)
+#define HISI_AP_AUDIO_WAKEUP_MODEL_SIZE  (0x1000)
+#define HIFI_UNSEC_RESERVE_SIZE             (0x4AC00)
+#define HIFI_PCM_THREAD_DATA_SIZE           (0x48)
 
 #define HIFI_MUSIC_DATA_LOCATION        (HIFI_UNSEC_BASE_ADDR)
 #define PCM_PLAY_BUFF_LOCATION          (HIFI_MUSIC_DATA_LOCATION + HIFI_MUSIC_DATA_SIZE)
@@ -102,7 +111,10 @@ extern "C" {
 #define HIFI_USB_DRIVER_SHARE_MEM_ADDR  (HIFI_AUDIO_EFFECT_PARAM_ADDR + HIFI_AUDIO_EFFECT_PARAM_BUFF_SIZE)
 #define HISI_DP_AUDIO_DATA_LOCATION     (HIFI_USB_DRIVER_SHARE_MEM_ADDR + HIFI_USB_DRIVER_SHARE_MEM_SIZE)
 #define HISI_AP_AUDIO_PA_ADDR           (HISI_DP_AUDIO_DATA_LOCATION + HISI_DP_AUDIO_DATA_BUFF_SIZE)
-#define HIFI_UNSEC_RESERVE_ADDR         (HISI_AP_AUDIO_PA_ADDR + HISI_AP_AUDIO_PA_BUFF_SIZE)
+#define HISI_AP_AUDIO_WAKEUP_RINGBUFFER_ADDR           (HISI_AP_AUDIO_PA_ADDR + HISI_AP_AUDIO_PA_BUFF_SIZE)
+#define HISI_AP_AUDIO_WAKEUP_CAPTURE_ADDR (HISI_AP_AUDIO_WAKEUP_RINGBUFFER_ADDR + HISI_AP_AUDIO_WAKEUP_RINGBUFEER_SIZE)
+#define HISI_AP_AUDIO_WAKEUP_MODEL_ADDR           (HISI_AP_AUDIO_WAKEUP_CAPTURE_ADDR + HISI_AP_AUDIO_WAKEUP_CAPTURE_SIZE)
+#define HIFI_UNSEC_RESERVE_ADDR         (HISI_AP_AUDIO_WAKEUP_MODEL_ADDR + HISI_AP_AUDIO_WAKEUP_MODEL_SIZE)
 
 #define HIFI_OM_LOG_SIZE                (0xA000)
 #define HIFI_OM_LOG_ADDR                (DRV_DSP_UART_TO_MEM - HIFI_OM_LOG_SIZE)
@@ -122,7 +134,8 @@ extern "C" {
 #define DRV_DSP_SOCP_FAMA_CONFIG_ADDR   (DRV_DSP_NMI_FLAG_ADDR + 4)
 #define DRV_DSP_FLAG_ALP_NOC_CHECK      (DRV_DSP_SOCP_FAMA_CONFIG_ADDR + sizeof(struct drv_fama_config))
 #define DRV_DSP_SLT_FLAG_ADDR           (DRV_DSP_FLAG_ALP_NOC_CHECK + 4)
-#define DRV_DSP_FLAG_DATA_RESERVED      (DRV_DSP_SLT_FLAG_ADDR + 4) //TODO: add new flag data here
+#define DRV_DSP_PCM_THREAD_DATA_ADDR    (DRV_DSP_SLT_FLAG_ADDR + 4)
+#define DRV_DSP_FLAG_DATA_RESERVED      (DRV_DSP_PCM_THREAD_DATA_ADDR + HIFI_PCM_THREAD_DATA_SIZE) //TODO: add new flag data here
 
 #define DRV_DSP_POWER_ON                (0x55AA55AA)
 #define DRV_DSP_POWER_OFF               (0x55FF55FF)
@@ -137,13 +150,15 @@ extern "C" {
 #define HIFI_IMAGE_OCRAMBAK_SIZE        (0x30000)
 #define HIFI_SEC_HEAD_SIZE              (0x1000)
 #ifdef CONFIG_HIFI_IPC_3660
-#define HIFI_SEC_REGION_SIZE            (0xC00000)
+#define HIFI_SEC_REGION_SIZE            (HISI_RESERVED_HIFI_PHYMEM_SIZE)
+#ifdef CONFIG_HIFI_MEMORY_21M
+#define HIFI_RUN_SIZE                   (0xF00000)
+#else
 #define HIFI_RUN_SIZE                   (0xB00000)
+#endif
 #define HIFI_IMAGE_TCMBAK_SIZE          (0x34000)
 
-#define HIFI_RUN_ITCM_BASE              (0xe8080000)
 #define HIFI_RUN_ITCM_SIZE              (0x9000)
-#define HIFI_RUN_DTCM_BASE              (0xe8058000)
 #define HIFI_RUN_DTCM_SIZE              (0x28000)
 
 #ifdef CONFIG_HISI_FAMA
@@ -164,9 +179,7 @@ extern "C" {
 #define HIFI_IMAGE_TCMBAK_SIZE          (0x1E000)
 #define HIFI_SEC_RESERVE_SIZE           (0x31000)
 
-#define HIFI_RUN_ITCM_BASE              (0xe8070000)
 #define HIFI_RUN_ITCM_SIZE              (0x6000)
-#define HIFI_RUN_DTCM_BASE              (0xe8058000)
 #define HIFI_RUN_DTCM_SIZE              (0x18000)
 
 #define HIFI_SEC_BASE_ADDR              (HIFI_UNSEC_BASE_ADDR + HIFI_UNSEC_REGION_SIZE) /* austin dallas */
@@ -177,22 +190,9 @@ extern "C" {
 #define HIFI_RUN_LOCATION               (HIFI_SEC_RESERVE_ADDR + HIFI_SEC_RESERVE_SIZE)
 #endif
 
-#define HIFI_SECRAM_USB_AUDIO_ADDR      (0xE7F80000)
-#define HIFI_OCRAM_BASE_ADDR            (0xE8000000)
-#define HIFI_TCM_BASE_ADDR              (0xE8058000)
-#define HIFI_RUN_DDR_REMAP_BASE         (0xC0000000)
-
-#define HIFI_TCM_PHY_BEGIN_ADDR         (HIFI_TCM_BASE_ADDR)
-#define HIFI_TCM_PHY_END_ADDR           (HIFI_TCM_PHY_BEGIN_ADDR + HIFI_TCM_SIZE - 1)
-#define HIFI_TCM_SIZE                   (HIFI_RUN_ITCM_SIZE + HIFI_RUN_DTCM_SIZE)
-
-#define HIFI_OCRAM_PHY_BEGIN_ADDR       (HIFI_OCRAM_BASE_ADDR)
-#define HIFI_OCRAM_PHY_END_ADDR         (HIFI_OCRAM_PHY_BEGIN_ADDR + HIFI_OCRAM_SIZE - 1)
-#define HIFI_OCRAM_SIZE                 (HIFI_IMAGE_OCRAMBAK_SIZE)
-
 #define SIZE_PARAM_PRIV                         (206408) /*refer from function dsp_nv_init in dsp_soc_para_ctl.c  */
 #define HIFI_SYS_MEM_ADDR                       (HIFI_RUN_LOCATION)
-#define SYS_TIME_STAMP_REG                      (0xFFF0A534)
+#define SYS_TIME_STAMP_REG                      (SOC_ACPU_SCTRL_BASE_ADDR + 0x534)
 
 /* 接收HIFI消息，前部cmd_id占用的字节数 */
 #define SIZE_CMD_ID 	   (8)
@@ -356,6 +356,7 @@ enum usbaudio_ioctl_type
 {
 	USBAUDIO_QUERY_INFO = 0,
 	USBAUDIO_USB_POWER_RESUME,
+	USBAUDIO_NV_ISREADY,
 	USBAUDIO_MSG_MAX
 };
 

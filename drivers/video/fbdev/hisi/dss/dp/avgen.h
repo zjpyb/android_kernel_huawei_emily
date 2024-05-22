@@ -17,7 +17,6 @@
 #include "../hisi_dp.h"
 
 #define AUDIO_INFOFREAME_HEADER 0x441B8400
-#define VIDEO_DEFAULT_MODE_MAX 4
 
 void dptx_audio_params_reset(struct audio_params *aparams);
 void dptx_audio_config(struct dp_ctrl *dptx);

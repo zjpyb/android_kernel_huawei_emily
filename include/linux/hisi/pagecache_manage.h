@@ -20,6 +20,7 @@
 
 #include <linux/fs.h>
 #include <linux/pagemap.h>
+#include <linux/version.h>
 
 #define PCH_DEV_NAME "pagecache_helper"
 
@@ -30,7 +31,12 @@
 #define SYSTEM_IS_UMOUNTING 	(0x1 << 5)
 #define SYSTEM_IS_UMOUNTED 	(0x1 << 6)
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
 #define MAX_RA_PAGES   ((512*4096)/PAGE_CACHE_SIZE)
+#else
+#define MAX_RA_PAGES   ((512*4096)/PAGE_SIZE)
+#endif
+
 #define MAX_MMAP_LOTSAMISS  (100)
 
 #define USER_SPACE_IS_LOW 		1
@@ -45,40 +51,14 @@
 
 #define TIMER_WORK_IS_RUNING 		(1)
 
+#define PCH_IOCTL_CMD_Z 	(0)
+#define PCH_IOCTL_CMD_O 	(1)
+
 #ifdef CONFIG_HISI_PAGECACHE_HELPER
-unsigned long pch_shrink_read_pages(unsigned long nr);
-unsigned long pch_shrink_mmap_pages(unsigned long nr);
-unsigned long pch_shrink_mmap_async_pages(unsigned long nr);
-void pch_mmap_readextend(struct vm_area_struct *vma,
-				    struct file_ra_state *ra,
-				    struct file *file,
-				    pgoff_t offset);
 void mount_fs_register_pch(struct vfsmount *mnt);
 void umounting_fs_register_pch(struct super_block *sb);
 void umounted_fs_register_pch(struct super_block *sb);
 #else
-static inline unsigned long pch_shrink_read_pages(unsigned long nr)
-{
-	return nr;
-}
-
-static inline unsigned long pch_shrink_mmap_pages(unsigned long nr)
-{
-	return nr;
-}
-
-static inline unsigned long pch_shrink_mmap_async_pages(unsigned long nr)
-{
-	return nr;
-}
-
-static inline void pch_mmap_readextend(struct vm_area_struct *vma,
-				    struct file_ra_state *ra,
-				    struct file *file,
-				    pgoff_t offset)
-{
-	return;
-}
 static inline void mount_fs_register_pch(struct vfsmount *mnt) {}
 static inline void umounting_fs_register_pch(struct super_block *sb) {}
 static inline void umounted_fs_register_pch(struct super_block *sb) {}

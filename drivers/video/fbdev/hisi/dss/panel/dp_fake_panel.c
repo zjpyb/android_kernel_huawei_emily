@@ -41,7 +41,7 @@ static int dp_fake_panel_probe(struct platform_device *pdev)
 	HISI_FB_DEBUG("+.\n");
 	np = of_find_compatible_node(NULL, NULL, DTS_COMP_DP_FAKE_PANEL);
 	if (!np) {
-		HISI_FB_ERR("NOT FOUND device node %s!\n", DTS_COMP_DP_FAKE_PANEL);
+		HISI_FB_ERR("[DP] NOT FOUND device node %s!\n", DTS_COMP_DP_FAKE_PANEL);
 		ret = -1;
 		return ret;
 	}
@@ -51,7 +51,7 @@ static int dp_fake_panel_probe(struct platform_device *pdev)
 		HISI_FB_DEBUG("dts get fake_dp fail");
 		is_fake_dp = 0;
 	}
-	HISI_FB_INFO("is_fake_dp=%d.\n", is_fake_dp);
+	HISI_FB_INFO("[DP] is_fake_dp=%d.\n", is_fake_dp);
 
 	pdev->id = 1;
 	/* init lcd info */
@@ -110,7 +110,7 @@ static int dp_fake_panel_probe(struct platform_device *pdev)
 	ret = platform_device_add_data(pdev, &fake_panel_data,
 		sizeof(struct hisi_fb_panel_data));
 	if (ret) {
-		HISI_FB_ERR("platform_device_add_data failed!\n");
+		HISI_FB_ERR("[DP] platform_device_add_data failed!\n");
 		platform_device_put(pdev);
 		return ret;
 	}
@@ -151,7 +151,7 @@ static int __init dp_fake_panel_init(void)
 	ret = platform_driver_register(&this_driver);//lint !e64
 
 	if (ret) {
-		HISI_FB_ERR("platform_driver_register failed, error=%d!\n", ret);
+		HISI_FB_ERR("[DP] platform_driver_register failed, error=%d!\n", ret);
 		return ret;
 	}
 

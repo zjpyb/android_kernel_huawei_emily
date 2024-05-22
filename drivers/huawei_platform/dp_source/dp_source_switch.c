@@ -17,8 +17,17 @@
 #include <linux/device.h>
 #include <linux/kernel.h>
 #include <linux/of.h>
+#include <huawei_platform/dp_source/dp_factory.h>
 #include <huawei_platform/dp_source/dp_dsm.h>
 #include "dp_source_switch.h"
+
+#ifndef UNUSED
+#define UNUSED(x) ((void)(x))
+#endif
+
+#ifndef MIN
+#define MIN(x,y)  ((x) < (y) ? (x) : (y))
+#endif
 
 extern int hisi_dptx_switch_source(uint32_t user_mode,  uint32_t user_format);
 extern int hisi_dptx_main_panel_blank(bool bblank);
@@ -29,6 +38,29 @@ struct dev_flag_device{
     const char  *name;
     struct device  *dev;
     int  index;
+};
+
+#define DP_LINK_EVENT_BUF_MAX (64)
+
+typedef struct {
+	dp_link_state_t state;
+	char *event;
+} dp_link_state_to_event_t;
+
+static dp_link_state_to_event_t g_dp_link_event[] = {
+	{ DP_LINK_STATE_CABLE_IN,        "DP_LINK_EVENT=CABLE_IN" },
+	{ DP_LINK_STATE_CABLE_OUT,       "DP_LINK_EVENT=CABLE_OUT" },
+	{ DP_LINK_STATE_MULTI_HPD,       "DP_LINK_EVENT=MULTI_HPD" },
+	{ DP_LINK_STATE_AUX_FAILED,      "DP_LINK_EVENT=AUX_FAILED" },
+	{ DP_LINK_STATE_SAFE_MODE,       "DP_LINK_EVENT=SAFE_MODE" },
+	{ DP_LINK_STATE_EDID_FAILED,     "DP_LINK_EVENT=EDID_FAILED" },
+	{ DP_LINK_STATE_LINK_FAILED,     "DP_LINK_EVENT=LINK_FAILED" },
+	{ DP_LINK_STATE_LINK_RETRAINING, "DP_LINK_EVENT=LINK_RETRAINING" },
+	{ DP_LINK_STATE_HDCP_FAILED,     "DP_LINK_EVENT=HDCP_FAILED" },
+
+	// for MMIE test
+	{ DP_LINK_STATE_LINK_REDUCE_RATE,     "DP_LINK_EVENT=LINK_REDUCE_RATE" },
+	{ DP_LINK_STATE_INVALID_COMBINATIONS, "DP_LINK_EVENT=INVALID_COMBINATIONS" },
 };
 
 static struct dev_flag_device dp_source = {
@@ -97,22 +129,26 @@ EXPORT_SYMBOL_GPL(get_current_dp_source_mode);
 static ssize_t dp_source_mode_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
     int ret = 0;
-	if (dev == NULL) {
-		printk("%s:dev is null\n", __func__);
+
+	UNUSED(dev);
+	UNUSED(attr);
+	if (buf == NULL) {
+		printk("%s:buf is null\n", __func__);
 		ret = -EINVAL;
 		return ret;
 	}
-    ret = scnprintf(buf, PAGE_SIZE, "%d\n", g_dp_data.m_source_mode);
+
+	ret = scnprintf(buf, PAGE_SIZE, "%d\n", g_dp_data.m_source_mode);
     return ret;
 }
 
 int dp_source_mode_parse_dts(void)
 {
-	printk(KERN_INFO "%s: enter\n", __func__);
 	int value = 0;
 	int ret = 0;
-	struct device_node *np;
+	struct device_node *np = NULL;
 
+	printk(KERN_INFO "%s: enter\n", __func__);
 	if(g_dp_data.m_parse_dts_flag) {
 		printk("%s DP source mode dts config has already parsed.\n",__func__);
 		return ret;
@@ -123,6 +159,12 @@ int dp_source_mode_parse_dts(void)
 	if (!np) {
 		printk("NOT FOUND device node %s!\n", DTS_DP_SOURCE_SWITCH);
 		/*the DTS node is used to set the defalut mode,If no node find will setting the defalut mode as SAME_SOURCE */
+		g_dp_data.m_source_mode = SAME_SOURCE;
+		return ret;
+	}
+
+	if (!of_device_is_available(np)) {
+		printk(KERN_INFO "%s: dts node %s not available.\n", __func__, np->name);
 		g_dp_data.m_source_mode = SAME_SOURCE;
 		return ret;
 	}
@@ -140,6 +182,11 @@ int dp_source_mode_parse_dts(void)
 		g_dp_data.m_source_mode = SAME_SOURCE;
 	}
 
+	if (dp_factory_mode_is_enable()) {
+		g_dp_data.m_source_mode = SAME_SOURCE;
+		printk(KERN_INFO "%s: only support same source in factory version.\n", __func__);
+	}
+
 	printk("%s parse dp source mode = %d. parse DTS finished\n",__func__, g_dp_data.m_source_mode);
 	return ret;
 }
@@ -149,14 +196,16 @@ static ssize_t dp_source_mode_store(struct device *dev, struct device_attribute 
     int ret = 0;
     int last_mode =0;
 
-	if (dev == NULL) {
-		printk("%s:dev is null\n", __func__);
+	UNUSED(dev);
+	UNUSED(attr);
+	if (buf == NULL) {
+		printk("%s:buf is null\n", __func__);
 		ret = -EINVAL;
 		return ret;
 	}
 
     last_mode = g_dp_data.m_source_mode;
-    ret = sscanf(buf, "%d", &g_dp_data.m_source_mode);
+    ret = sscanf(buf, "%d", (int *)(&g_dp_data.m_source_mode));
     if (ret != 1) {
         printk("%s: store error\n", __func__);
         return RETURN_ERR;
@@ -181,11 +230,14 @@ static ssize_t dp_source_resolution_show(struct device *dev, struct device_attri
 {
     int ret = 0;
 
-	if (dev == NULL) {
-		printk("%s:dev is null\n", __func__);
+	UNUSED(dev);
+	UNUSED(attr);
+	if (buf == NULL) {
+		printk("%s:buf is null\n", __func__);
 		ret = -EINVAL;
 		return ret;
 	}
+
 	ret = scnprintf(buf, PAGE_SIZE, "%d\n", g_dp_data.m_resolution_type);
     return ret;
 }
@@ -194,13 +246,15 @@ static ssize_t dp_source_resolution_store(struct device *dev, struct device_attr
 {
     int ret = 0;
 	int resolution_type = 0;
-	printk("%s : enter, data: %s \n", __func__, buf);
 
-	if (dev == NULL) {
-		printk("%s:dev is null\n", __func__);
+	UNUSED(dev);
+	UNUSED(attr);
+	if (buf == NULL) {
+		printk("%s:buf is null\n", __func__);
 		ret = -EINVAL;
 		return ret;
 	}
+	printk("%s : enter, data: %s \n", __func__, buf);
 
 	ret = sscanf(buf, "%d", &resolution_type);
     if (ret != 1) {
@@ -426,11 +480,14 @@ static ssize_t dp_vr_mode_show(struct device *dev, struct device_attribute *attr
 {
     int ret = 0;
 
-	if (dev == NULL) {
-		printk("%s:dev is null\n", __func__);
+	UNUSED(dev);
+	UNUSED(attr);
+	if (buf == NULL) {
+		printk("%s:buf is null\n", __func__);
 		ret = -EINVAL;
 		return ret;
 	}
+
 	ret = scnprintf(buf, PAGE_SIZE, "%d\n", g_dp_data.m_external_display_type);
     return ret;
 }
@@ -439,11 +496,14 @@ static ssize_t dp_lcd_power_show(struct device *dev, struct device_attribute *at
 {
     int ret = 0;
 
-	if (dev == NULL) {
-		printk("%s:dev is null\n", __func__);
+	UNUSED(dev);
+	UNUSED(attr);
+	if (buf == NULL) {
+		printk("%s:buf is null\n", __func__);
 		ret = -EINVAL;
 		return ret;
 	}
+
 	ret = scnprintf(buf, PAGE_SIZE, "%d\n", g_dp_data.m_lcd_power_type);
     return ret;
 }
@@ -452,13 +512,15 @@ static ssize_t dp_lcd_power_store(struct device *dev, struct device_attribute *a
 {
     int ret = 0;
 
-	if (dev == NULL) {
-		printk("%s:dev is null\n", __func__);
+	UNUSED(dev);
+	UNUSED(attr);
+	if (buf == NULL) {
+		printk("%s:buf is null\n", __func__);
 		ret = -EINVAL;
 		return ret;
 	}
 
-    ret = sscanf(buf, "%d", &g_dp_data.m_lcd_power_type);
+    ret = sscanf(buf, "%d", (int *)(&g_dp_data.m_lcd_power_type));
     if (ret != 1) {
         printk("%s: store error\n", __func__);
         return RETURN_ERR;
@@ -483,11 +545,14 @@ static ssize_t dp_external_display_show(struct device *dev, struct device_attrib
 {
     int ret = 0;
 
-	if (dev == NULL) {
-		printk("%s:dev is null\n", __func__);
+	UNUSED(dev);
+	UNUSED(attr);
+	if (buf == NULL) {
+		printk("%s:buf is null\n", __func__);
 		ret = -EINVAL;
 		return ret;
 	}
+
 	if (g_dp_data.m_externel_info.m_width== 0 || g_dp_data.m_externel_info.m_high== 0){
 		ret = scnprintf(buf, PAGE_SIZE, "%s\n", "No External Display");
 	}else {
@@ -530,6 +595,44 @@ void dp_send_event(enum dp_event_type event)
 }
 EXPORT_SYMBOL_GPL(dp_send_event);
 
+void dp_link_state_event(dp_link_state_t state)
+{
+	char event_buf[DP_LINK_EVENT_BUF_MAX] = {0};
+	char *envp[] = {event_buf, NULL};
+	int count = ARRAY_SIZE(g_dp_link_event);
+	int ret = 0;
+	int i = 0;
+	bool find = false;
+
+	if (state >= DP_LINK_STATE_MAX) {
+		printk(KERN_ERR "%s: invalid link state %d!\n", __func__, state);
+		return;
+	}
+
+	for (i = 0; i < count; i++) {
+		if ((g_dp_link_event[i].state == state) && (g_dp_link_event[i].event != NULL)
+			&& (strlen(g_dp_link_event[i].event) != 0)) {
+			find = true;
+			strncpy(event_buf, g_dp_link_event[i].event,
+				MIN(DP_LINK_EVENT_BUF_MAX - 1, strlen(g_dp_link_event[i].event)));
+			break;
+		}
+	}
+
+	if (!find) {
+		printk(KERN_ERR "%s: not find link event %d!\n", __func__, state);
+		return;
+	}
+
+	ret = kobject_uevent_env(&dp_source.dev->kobj, KOBJ_CHANGE, envp);
+	if (ret < 0) {
+		printk(KERN_ERR "%s: report event %s failed %d!\n", __func__, event_buf, ret);
+	} else {
+		printk(KERN_INFO "%s: report event %s success.\n", __func__, event_buf);
+	}
+}
+EXPORT_SYMBOL_GPL(dp_link_state_event);
+
 static struct device_attribute dev_source_mode = __ATTR(source_mode, (S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH),
 	dp_source_mode_show, dp_source_mode_store);
 static struct device_attribute dev_source_resolution = __ATTR(source_resolution, (S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH),
@@ -545,10 +648,10 @@ static struct device_attribute dev_lcd_power = __ATTR(lcd_power, (S_IRUSR | S_IW
 static int __init dp_source_mode_init(void)
 {
     int ret = 0;
-	struct class *dp_class;
-	//Init the default value for g_dp_data
-	printk("%s: enter\n", __func__);
+	struct class *dp_class = NULL;
 
+	printk("%s: enter\n", __func__);
+	//Init the default value for g_dp_data
 	memset(&g_dp_data, 0, sizeof(struct dp_source_data));
 	g_dp_data.m_parse_dts_flag = false;
 	g_dp_data.m_video_format_type = VCEA;
@@ -575,7 +678,8 @@ static int __init dp_source_mode_init(void)
 	dp_source.dev = device_create(g_dp_data.class, NULL, 0, NULL, dp_source.name);
 	if (dp_source.dev == NULL) {
 		printk("%s:dp source mode device create failed!\n", __func__);
-		return RETURN_ERR;
+		ret = RETURN_ERR;
+		goto err_out;
 	}
     ret = device_create_file(dp_source.dev, &dev_source_mode);
 	if (ret){
@@ -586,7 +690,8 @@ static int __init dp_source_mode_init(void)
 	dp_resolution.dev = device_create(g_dp_data.class, NULL, 0, NULL, dp_resolution.name);
 	if (dp_resolution.dev == NULL) {
 		printk("%s:dp resolution mode device create failed!\n", __func__);
-        return RETURN_ERR;
+        ret = RETURN_ERR;
+		goto unregister_source_mode;
 	}
     ret = device_create_file(dp_resolution.dev, &dev_source_resolution);
     if (ret){
@@ -597,7 +702,8 @@ static int __init dp_source_mode_init(void)
 	dp_vr.dev = device_create(g_dp_data.class, NULL, 0, NULL, dp_vr.name);
 	if (dp_vr.dev == NULL) {
 		printk("%s:dp vr mode device create failed!\n", __func__);
-		return RETURN_ERR;
+		ret = RETURN_ERR;
+		goto unregister_dp_resolution;
 	}
     ret = device_create_file(dp_vr.dev, &dev_vr_mode);
     if (ret){
@@ -608,7 +714,8 @@ static int __init dp_source_mode_init(void)
 	dp_external_info.dev = device_create(g_dp_data.class, NULL, 0, NULL, dp_external_info.name);
 	if (dp_external_info.dev == NULL) {
 		printk("%s:dp externel display mode device create failed!\n", __func__);
-		return RETURN_ERR;
+		ret = RETURN_ERR;
+		goto unregister_dp_vr;
 	}
     ret = device_create_file(dp_external_info.dev, &dev_external_display);
     if (ret){
@@ -619,7 +726,8 @@ static int __init dp_source_mode_init(void)
 	dp_lcd_power.dev = device_create(g_dp_data.class, NULL, 0, NULL, dp_lcd_power.name);
 	if (dp_lcd_power.dev == NULL) {
 		printk("%s:dp lcd power mode device create failed!\n", __func__);
-		return RETURN_ERR;
+		ret = RETURN_ERR;
+		goto unrehister_dp_externel_info;
 	}
     ret = device_create_file(dp_lcd_power.dev, &dev_lcd_power);
     if (ret){
@@ -627,7 +735,7 @@ static int __init dp_source_mode_init(void)
 		goto unrehister_dp_externel_info;
 	}
 
-	printk(KERN_INFO "%s: sucess\n", __func__, ret);
+	printk(KERN_INFO "%s: sucess %d\n", __func__, ret);
 	return ret;
 
 unrehister_dp_externel_info:
@@ -639,7 +747,7 @@ unregister_dp_resolution:
 unregister_source_mode:
 	device_remove_file(dp_source.dev, &dev_source_mode);
 err_out:
-	printk("%s: Failed\n", __func__, ret);
+	printk("%s: Failed %d\n", __func__, ret);
     return ret;
 }
 

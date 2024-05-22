@@ -130,9 +130,10 @@ int ril_tcp_send_reset(const char * dev)
         if (hlist_nulls_empty(&tcp_hashinfo.ehash[bucket].chain))
             continue;
 
+#ifdef CONFIG_HW_WIFIPRO
         spin_lock_bh(lock);
         sk_nulls_for_each(sk, node, &tcp_hashinfo.ehash[bucket].chain) {
-            if (AF_INET == sk->sk_family && 
+            if ((AF_INET == sk->sk_family || AF_INET6 == sk->sk_family) &&
                 NULL != sk->wifipro_dev_name && 
                 !strncmp(dev, sk->wifipro_dev_name, MAX_IF_NAME)) {
                 hwlog_debug("%s: ril_sock_send_reset start dev = %s\n", __func__, dev);
@@ -142,6 +143,7 @@ int ril_tcp_send_reset(const char * dev)
             }
         }
         spin_unlock_bh(lock);
+#endif
     }
 
     return 0;

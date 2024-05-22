@@ -474,7 +474,7 @@ int mls_convert_context(struct policydb *oldp,
 
 	for (l = 0; l < 2; l++) {
 		levdatum = hashtab_search(newp->p_levels.table,
-			oldp->p_sens_val_to_name[c->range.level[l].sens - 1]);
+					  oldp->p_sens_val_to_name[c->range.level[l].sens - 1]);
 
 		if (!levdatum)
 			return -EINVAL;

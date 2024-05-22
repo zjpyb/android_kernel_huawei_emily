@@ -11,6 +11,7 @@
  */
 
 #include <linux/bitops.h>
+#include <linux/bug.h>
 #include <linux/compiler.h>
 #include <linux/types.h>
 #include <asm/barrier.h>

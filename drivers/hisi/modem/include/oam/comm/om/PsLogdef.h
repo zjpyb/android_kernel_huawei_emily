@@ -756,7 +756,6 @@ typedef enum
     PS_FILE_ID_NASTCRABMMSGPROC_C,
 
     PS_FILE_ID_NASTCMTCMSGPROC_C,
-    /* Added by s49683 for VoLTE, 2013-07-19, Begin */
     PS_FILE_ID_IMSAMAIN_C,
     PS_FILE_ID_IMSACALLMANAGEMENT_C,
     PS_FILE_ID_IMSACONNMANAGEMENT_C,
@@ -777,7 +776,6 @@ typedef enum
     PS_FILE_ID_IMSAPROCATMSG_C,
     PS_FILE_ID_IMSAPROCIMSUSSDMSG_C,
     PS_FILE_ID_IMSAPROCUSSDMSG_C,
-    /* Added by s49683 for VoLTE, 2013-07-19, end */
     PS_FILE_ID_IMSAPROCRNICMSG_C,
 
     PS_FILE_ID_IMSAPROCOMMSG_C,
@@ -2745,7 +2743,6 @@ typedef enum
                   PS_FILE_ID_CCORE_FLOW_CTRL_C,
                   PS_FILE_ID_TTF_MEM_RB_C,
                   PS_FILE_ID_TTF_MEMCTRL_C,
-                  /* Added by h0016399 for DSDA Project£¬2012-12-24,  end */
                   PS_FILE_ID_IMM_RB_C,
                   PS_FILE_ID_IMM_ZC_C,
                   PS_FILE_ID_IMM_MNTN_C,
@@ -2756,9 +2753,7 @@ typedef enum
 
 
 
-                  /*added by x59651 for balong V7R1 C50,20120221,begin*/
                   PS_FILE_ID_PSDIPC_C,
-                  /*added by x59651 for balong V7R1 C50,20120221,end*/
                   PS_FILE_ID_PSMUX_C,
                   PS_FILE_ID_SOCP_C,
 
@@ -2900,11 +2895,8 @@ typedef enum
                   PS_FILE_ID_CNAS_XSD_COM_FUNC_C,
                   PS_FILE_ID_CNAS_XSD_FSM_SYS_ACQ_C,
                   PS_FILE_ID_CNAS_XSD_FSM_SYS_ACQ_TBL_C,
-                  /* Added by k902809 for CDMA 1X Iteration 6, 2014-12-26, begin */
                   PS_FILE_ID_CNAS_XSD_FSM_REDIR_TBL_C,
                   PS_FILE_ID_CNAS_XSD_FSM_REDIR_C,
-                  /* Added by k902809 for CDMA 1X Iteration 6, 2014-12-26, end */
-
                   PS_FILE_ID_CNAS_XSD_SYS_ACQ_STRATEGY_C,
                   PS_FILE_ID_CNAS_XSD_MNTN_C,
 
@@ -2944,7 +2936,6 @@ typedef enum
                   PS_FILE_ID_CNAS_XCC_SND_APS_C,
                   PS_FILE_ID_CNAS_XCC_COM_FUNC_C,
                   PS_FILE_ID_CNAS_XCC_SND_MMA_C,
-                  /* Added by l60609 for CDMA 1X Phase0, 2014-7-3, end */
                   PS_FILE_ID_CNAS_XCC_SND_LMM_C,
                   PS_FILE_ID_CNAS_XCC_MNTN_C,
                   PS_FILE_ID_CNAS_XCC_LOG_PRIVACY_C,

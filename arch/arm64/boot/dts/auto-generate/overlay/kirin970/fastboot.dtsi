@@ -40,6 +40,7 @@
 	watchdog0 {};	/*9*/
 	rdr {};	/*10*/
 	nve_himntn:himntn {};	/*2*/
+	fastboot_pmic: fastboot_pmic {}; /*5*/
 	fastboot_pmic_mntn: fastboot_pmic_mntn {}; /*65*/
 	codec_controller: codec_controller@e82b9000 {};		/*132*/
 	sysctrl_reason {}; /*3*/

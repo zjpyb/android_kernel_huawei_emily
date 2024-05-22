@@ -62,6 +62,15 @@ struct dsm_sdcard_cmd_log dsm_sdcard_cmd_logs[] = {
 	{"FILESYSTEM_ERR : ",      0},
 	{"LOWSPEED_SPEC_ERR : ",      0},
 	{"Report Uevent : ",	0},
+	{"HARDWARE_TIMEOUT_ERR : ",	0},
+	{"MMC_BLK_ABORT : ",	0},
+	{"MMC_BLK_ECC_ERR : ",	0},
+	{"CMD13_CMDERR : ",     0},
+	{"CMD13_DATAERR : ",    0},
+	{"ACMD51_CMDERR : ",    0},
+	{"ACMD51_DATAERR : ",   0},
+
+        {/*sentinel*/}
 };
 
 char *dsm_sdcard_get_log(int cmd, int err)

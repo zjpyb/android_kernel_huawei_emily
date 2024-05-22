@@ -3,6 +3,7 @@
 		sunwodaatl_3320_39k_4384:sunwodaatl_3320_39k_4384 {
 			fcc = <3320>;
 			default_rbatt_mohm = <100>;
+			identify_type = "id_volt";
 			id_identify_min = <1235>;
 			id_identify_max = <1759>;
 			id_voltage_min = <1420>;
@@ -23,9 +24,9 @@
 						"4150","4450","2324","4384","0";
 			batt_brand = "sunwodaatl";
 			fcc_temp = <3272 3267 3275 3288 3286 3255>;
-			fcc_sf_x = <0 100 200 300 400 500>;
-			fcc_sf_y = <100 96 94 92 90 88>;
-			fcc_sf_cols = <6>;
+			fcc_sf_x = <0 100 200 300 400 500 600 700 800 1000 1500>;
+			fcc_sf_y = <100 96 94 92 90 88 87 84 81 75 50>;
+			fcc_sf_cols = <11>;
 			pc_sf_rows = <1>;
 			pc_sf_cols = <1>;
 			pc_sf_row_entries = <0>;

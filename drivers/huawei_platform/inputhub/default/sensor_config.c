@@ -38,12 +38,15 @@ u8 phone_color;
 u8 tp_manufacture = TS_PANEL_UNKNOWN;
 int als_para_table = 0;
 uint8_t ps_sensor_calibrate_data[MAX_SENSOR_CALIBRATE_DATA_LENGTH];
+uint8_t tof_sensor_calibrate_data[TOF_CALIDATA_NV_SIZE];
 struct hisi_nve_info_user user_info;
 uint8_t als_sensor_calibrate_data[MAX_SENSOR_CALIBRATE_DATA_LENGTH];
 union sar_calibrate_data sar_calibrate_datas;
 extern int is_cali_supported;
 extern int tmd2745_flag;
 extern int rohm_rpr531_flag;
+extern int tsl2591_flag;
+extern int bh1726_flag;
 s16 minThreshold_als_para;
 s16 maxThreshold_als_para;
 
@@ -51,7 +54,9 @@ int gsensor_offset[ACC_CALIBRATE_DATA_LENGTH];	/*g-sensor calibrate data*/
 int gyro_sensor_offset[GYRO_CALIBRATE_DATA_LENGTH];
 static char gyro_temperature_offset[GYRO_TEMP_CALI_NV_SIZE];
 int ps_sensor_offset[PS_CALIBRATE_DATA_LENGTH];
+static uint8_t tof_sensor_offset[TOF_CALIDATA_NV_SIZE];
 uint16_t als_offset[ALS_CALIBRATE_DATA_LENGTH];
+uint16_t als_dark_noise_offset = 0;
 static char str_charger[] = "charger_plug_in_out";
 static uint8_t gsensor_calibrate_data[MAX_SENSOR_CALIBRATE_DATA_LENGTH];
 static uint8_t msensor_calibrate_data[MAX_MAG_CALIBRATE_DATA_LENGTH];
@@ -60,6 +65,7 @@ static uint8_t gyro_sensor_calibrate_data[GYRO_CALIDATA_NV_SIZE];
 static uint8_t gyro_temperature_calibrate_data[GYRO_TEMP_CALI_NV_SIZE];
 static uint8_t handpress_calibrate_data[MAX_SENSOR_CALIBRATE_DATA_LENGTH];
 static char vib_calib[VIB_CALIDATA_NV_SIZE] = { 0 };
+struct airpress_touch_calibrate_data pressure_touch_calibrate_data;
 
 extern int first_start_flag;
 extern int ps_first_start_flag;
@@ -83,6 +89,17 @@ extern int g_iom3_state;
 extern int iom3_power_state;
 extern u8 tplcd_manufacture;
 extern int akm_cal_algo;
+extern int apds9999_rgb_flag;
+extern int apds9999_ps_flag;
+extern int  ams_tmd3702_rgb_flag;
+extern int  ams_tmd3702_ps_flag;
+extern int apds9253_rgb_flag;
+extern int  vishay_vcnl36658_als_flag;
+extern int  vishay_vcnl36658_ps_flag;
+extern int ams_tof_flag;
+extern int sharp_tof_flag;
+extern int apds9253_006_ps_flag;
+
 extern struct airpress_platform_data airpress_data;
 extern struct sar_platform_data sar_pdata;
 extern struct als_platform_data als_data;
@@ -123,16 +140,16 @@ int read_calibrate_data_from_nv(int nv_number, int nv_size, char *nv_name)
 int write_calibrate_data_to_nv(int nv_number, int nv_size, char *nv_name, char *temp)
 {
 	int ret = 0;
-
-	memset(&user_info, 0, sizeof(user_info));
-	user_info.nv_operation = NV_WRITE_TAG;
-	user_info.nv_number = nv_number;
-	user_info.valid_size = nv_size;
-	strncpy(user_info.nv_name, nv_name, sizeof(user_info.nv_name));
-	user_info.nv_name[sizeof(user_info.nv_name) - 1] = '\0';
-	/*copy to nv by pass*/
-	memcpy(user_info.nv_data, temp, sizeof(user_info.nv_data) < user_info.valid_size ? sizeof(user_info.nv_data) : user_info.valid_size);
-	if ((ret = hisi_nve_direct_access(&user_info))!=0)
+	struct hisi_nve_info_user local_user_info;
+	memset(&local_user_info, 0, sizeof(local_user_info));
+	local_user_info.nv_operation = NV_WRITE_TAG;
+	local_user_info.nv_number = nv_number;
+	local_user_info.valid_size = nv_size;
+	strncpy(local_user_info.nv_name, nv_name, sizeof(local_user_info.nv_name));
+	local_user_info.nv_name[sizeof(local_user_info.nv_name) - 1] = '\0';
+	//copy to nv by pass
+	memcpy(local_user_info.nv_data, temp, sizeof(local_user_info.nv_data) < local_user_info.valid_size ? sizeof(local_user_info.nv_data) : local_user_info.valid_size);
+	if ((ret = hisi_nve_direct_access(&local_user_info))!=0)
 	{
 		hwlog_err("hisi_nve_direct_access read nv %d error(%d)\n", nv_number, ret);
 		return -1;
@@ -415,15 +432,54 @@ int send_ps_calibrate_data_to_mcu(void)
 
 	return 0;
 }
+int send_tof_calibrate_data_to_mcu(void)
+{
+	if (read_calibrate_data_from_nv(PS_CALIDATA_NV_NUM, TOF_CALIDATA_NV_SIZE, "PSENSOR"))
+		return -1;
+
+	ps_first_start_flag = 1;
+
+	memcpy(tof_sensor_offset, user_info.nv_data, sizeof(tof_sensor_offset));
+	hwlog_info("nve_direct_access read tof sensor offset offset[0]=%d offset[9]=%d offset[19]=%d offset[27]=%d)\n",
+	     tof_sensor_offset[0], tof_sensor_offset[9], tof_sensor_offset[19], tof_sensor_offset[TOF_CALIDATA_NV_SIZE - 1]);
+
+	memcpy(&tof_sensor_calibrate_data, tof_sensor_offset,
+	       (sizeof(tof_sensor_calibrate_data) < TOF_CALIDATA_NV_SIZE) ? sizeof(tof_sensor_calibrate_data) : TOF_CALIDATA_NV_SIZE);
+
+	if (send_calibrate_data_to_mcu(TAG_TOF, SUB_CMD_SET_OFFSET_REQ, tof_sensor_offset, TOF_CALIDATA_NV_SIZE, false))
+		return -1;
+
+	return 0;
+}
+
+int send_laya_als_calibrate_data_to_mcu(void)
+{
+	if (read_calibrate_data_from_nv(ALS_CALIDATA_NV_NUM, ALS_CALIDATA_NV_SIZE_WITH_DARK_NOISE_OFFSET, "LSENSOR"))
+		return -1;
+
+	als_first_start_flag = 1;
+	memcpy(als_sensor_calibrate_data, user_info.nv_data, ALS_CALIDATA_NV_SIZE_WITH_DARK_NOISE_OFFSET);
+	memcpy(als_offset, user_info.nv_data, sizeof(als_offset));
+	memcpy(&als_dark_noise_offset, user_info.nv_data + ALS_CALIDATA_NV_SIZE, sizeof(als_dark_noise_offset));
+	hwlog_info("send_laya_als_calibrate_data_to_mcu (%d %d %d %d %d %d %d)\n",
+	     als_offset[0], als_offset[1], als_offset[2], als_offset[3], als_offset[4], als_offset[5], als_dark_noise_offset);
+
+	if (send_calibrate_data_to_mcu(TAG_ALS, SUB_CMD_SET_OFFSET_REQ, als_sensor_calibrate_data, ALS_CALIDATA_NV_SIZE_WITH_DARK_NOISE_OFFSET, false))
+		return -1;
+
+	return 0;
+}
 
 int send_als_calibrate_data_to_mcu(void)
 {
+	if (als_data.als_phone_type == LAYA)
+		return send_laya_als_calibrate_data_to_mcu();
 	if (read_calibrate_data_from_nv(ALS_CALIDATA_NV_NUM, ALS_CALIDATA_NV_SIZE, "LSENSOR"))
 		return -1;
 
 	als_first_start_flag = 1;
 	memcpy(als_offset, user_info.nv_data, sizeof(als_offset));
-	memcpy(&als_sensor_calibrate_data, als_offset, ALS_CALIDATA_NV_SIZE);
+	memcpy(als_sensor_calibrate_data, als_offset, ALS_CALIDATA_NV_SIZE);
 	hwlog_info("nve_direct_access read lsensor_offset (%d %d %d %d %d %d)\n",
 	     als_offset[0], als_offset[1], als_offset[2], als_offset[3], als_offset[4], als_offset[5]);
 
@@ -458,10 +514,10 @@ int send_airpress_calibrate_data_to_mcu(void)
 		return -1;
 
 	/*send to mcu*/
-	memcpy(&airpress_data.offset, user_info.nv_data, AIRPRESS_CALIDATA_NV_SIZE);
+	memcpy(&airpress_data.offset, user_info.nv_data, sizeof(airpress_data.offset));
 	hwlog_info("airpress offset data=%d\n",airpress_data.offset);
 
-	if (send_calibrate_data_to_mcu(TAG_PRESSURE, SUB_CMD_SET_OFFSET_REQ, &airpress_data.offset, AIRPRESS_CALIDATA_NV_SIZE, false))
+	if (send_calibrate_data_to_mcu(TAG_PRESSURE, SUB_CMD_SET_OFFSET_REQ, &airpress_data.offset, sizeof(airpress_data.offset), false))
 		return -1;
 
 	return 0;
@@ -483,8 +539,9 @@ int send_cap_prox_calibrate_data_to_mcu(void)
 		hwlog_info("idac:%d, rawdata:%d length:%ld %ld\n", sar_calibrate_datas.cypres_cali_data.sar_idac,
 				sar_calibrate_datas.cypres_cali_data.raw_data, sizeof(sar_calibrate_datas), sizeof(sar_calibrate_datas));
 	} else if(!strncmp(sensor_chip_info[CAP_PROX], "huawei,semtech-sx9323", strlen("huawei,semtech-sx9323"))){
-		hwlog_info("sx9323:offset=%d, diff=%d length:%ld %ld\n", sar_calibrate_datas.semtech_cali_data.offset,
-				sar_calibrate_datas.semtech_cali_data.diff, sizeof(sar_calibrate_datas), sizeof(sar_calibrate_datas));
+		hwlog_info("sx9323:offset1=%d offset2=%d diff1=%d diff2=%d length:%ld\n", sar_calibrate_datas.semtech_cali_data.offset[0],
+			sar_calibrate_datas.semtech_cali_data.offset[1], sar_calibrate_datas.semtech_cali_data.diff[0],
+			sar_calibrate_datas.semtech_cali_data.diff[1], sizeof(sar_calibrate_datas));
 	} else {
 		hwlog_info("CAP_PROX cal_offset[0],digi_offset[0]:%x,%x\n",
 			sar_calibrate_datas.cap_cali_data.cal_offset[0],sar_calibrate_datas.cap_cali_data.digi_offset[0]);
@@ -568,11 +625,20 @@ void reset_calibrate_data(void)
 	} else {
 		send_calibrate_data_to_mcu(TAG_MAG, SUB_CMD_SET_OFFSET_REQ, msensor_calibrate_data, MAG_CALIBRATE_DATA_NV_SIZE, true);
 	}
-	if (txc_ps_flag == 1 || ams_tmd2620_ps_flag == 1 || avago_apds9110_ps_flag == 1 || ams_tmd3725_ps_flag == 1 || liteon_ltr582_ps_flag == 1) {
+	if (txc_ps_flag == 1 || ams_tmd2620_ps_flag == 1 || avago_apds9110_ps_flag == 1 || ams_tmd3725_ps_flag == 1 
+		|| liteon_ltr582_ps_flag == 1 || apds9999_ps_flag == 1 || ams_tmd3702_ps_flag == 1 || vishay_vcnl36658_ps_flag == 1
+		|| apds9253_006_ps_flag ==1) {
 		send_calibrate_data_to_mcu(TAG_PS, SUB_CMD_SET_OFFSET_REQ, ps_sensor_calibrate_data, PS_CALIDATA_NV_SIZE, true);
 	}
-	if (rohm_rgb_flag == 1 || avago_rgb_flag == 1 || ams_tmd3725_rgb_flag == 1 || liteon_ltr582_rgb_flag == 1 || is_cali_supported == 1) {
-		send_calibrate_data_to_mcu(TAG_ALS, SUB_CMD_SET_OFFSET_REQ, als_sensor_calibrate_data, ALS_CALIDATA_NV_SIZE, true);
+	if (ams_tof_flag == 1 || sharp_tof_flag == 1) {
+		send_calibrate_data_to_mcu(TAG_TOF, SUB_CMD_SET_OFFSET_REQ, tof_sensor_calibrate_data, TOF_CALIDATA_NV_SIZE, true);
+	}
+	if (rohm_rgb_flag == 1 || avago_rgb_flag == 1 || ams_tmd3725_rgb_flag == 1 || liteon_ltr582_rgb_flag == 1 || is_cali_supported == 1
+		|| apds9999_rgb_flag == 1 || ams_tmd3702_rgb_flag == 1 || apds9253_rgb_flag == 1|| vishay_vcnl36658_als_flag ==1) {
+		if (als_data.als_phone_type == LAYA)
+			send_calibrate_data_to_mcu(TAG_ALS, SUB_CMD_SET_OFFSET_REQ, als_sensor_calibrate_data, ALS_CALIDATA_NV_SIZE_WITH_DARK_NOISE_OFFSET, true);
+		else
+			send_calibrate_data_to_mcu(TAG_ALS, SUB_CMD_SET_OFFSET_REQ, als_sensor_calibrate_data, ALS_CALIDATA_NV_SIZE, true);
 	}
 	if (strlen(sensor_chip_info[GYRO])) {
 		send_calibrate_data_to_mcu(TAG_GYRO, SUB_CMD_SET_OFFSET_REQ, gyro_sensor_calibrate_data, GYRO_CALIDATA_NV_SIZE, true);
@@ -580,7 +646,7 @@ void reset_calibrate_data(void)
 	}
 	if (strlen(sensor_chip_info[AIRPRESS])) {
 		hwlog_info("airpress offset reset data=%d\n",airpress_data.offset);
-		send_calibrate_data_to_mcu(TAG_PRESSURE, SUB_CMD_SET_OFFSET_REQ, &airpress_data.offset, AIRPRESS_CALIDATA_NV_SIZE, true);
+		send_calibrate_data_to_mcu(TAG_PRESSURE, SUB_CMD_SET_OFFSET_REQ, &airpress_data.offset, sizeof(airpress_data.offset), true);
 	}
 	if (strlen(sensor_chip_info[HANDPRESS])) {
 		send_calibrate_data_to_mcu(TAG_HANDPRESS, SUB_CMD_SET_OFFSET_REQ, handpress_calibrate_data, AIRPRESS_CALIDATA_NV_SIZE, true);
@@ -761,6 +827,70 @@ int tpmodule_notifier_call_chain(unsigned long val, void *v)
 }
 EXPORT_SYMBOL(tpmodule_notifier_call_chain);
 
+void set_tsl2591_als_extend_prameters(void)
+{
+	int tsl2591_als_para_table = 0;
+	unsigned int i = 0;
+	for(i=0; i<ARRAY_SIZE(tsl2591_als_para_diff_tp_color_table);i++)
+	{
+		if((tsl2591_als_para_diff_tp_color_table[i].phone_type == als_data.als_phone_type)
+			&& (tsl2591_als_para_diff_tp_color_table[i].phone_version == als_data.als_phone_version)
+			&&(( tsl2591_als_para_diff_tp_color_table[i].tp_manufacture == tp_manufacture)
+				||(tsl2591_als_para_diff_tp_color_table[i].tp_manufacture == TS_PANEL_UNKNOWN))
+			&& (tsl2591_als_para_diff_tp_color_table[i].tp_color == phone_color))
+		{
+			tsl2591_als_para_table = i;
+			break;
+		}
+	}
+	memcpy(als_data.als_extend_data,tsl2591_als_para_diff_tp_color_table[tsl2591_als_para_table].tsl2591_para,
+		sizeof(tsl2591_als_para_diff_tp_color_table[tsl2591_als_para_table].tsl2591_para) >
+		SENSOR_PLATFORM_EXTEND_ALS_DATA_SIZE?
+		SENSOR_PLATFORM_EXTEND_ALS_DATA_SIZE:
+		sizeof(tsl2591_als_para_diff_tp_color_table[tsl2591_als_para_table].tsl2591_para));
+
+	minThreshold_als_para = tsl2591_als_para_diff_tp_color_table[tsl2591_als_para_table].tsl2591_para[TSL2591_MIN_ThRESHOLD_NUM];
+	maxThreshold_als_para = tsl2591_als_para_diff_tp_color_table[tsl2591_als_para_table].tsl2591_para[TSL2591_MAX_ThRESHOLD_NUM];
+
+	hwlog_info("A_als_para_tabel= %d\n",tsl2591_als_para_table);
+	for( i=0; i<TSL2591_PARA_SIZE; i++){
+		hwlog_info( "the A %d als paramater is the %d", i, tsl2591_als_para_diff_tp_color_table[tsl2591_als_para_table].tsl2591_para[i] );
+	}
+	hwlog_info("\n");
+}
+
+void set_bh1726_als_extend_prameters(void)
+{
+	int bh1726_als_para_table = 0;
+	unsigned int i = 0;
+	for(i=0; i<ARRAY_SIZE(bh1726_als_para_diff_tp_color_table);i++)
+	{
+		if((bh1726_als_para_diff_tp_color_table[i].phone_type == als_data.als_phone_type)
+			&& (bh1726_als_para_diff_tp_color_table[i].phone_version == als_data.als_phone_version)
+			&&(( bh1726_als_para_diff_tp_color_table[i].tp_manufacture == tp_manufacture)
+				||(bh1726_als_para_diff_tp_color_table[i].tp_manufacture == TS_PANEL_UNKNOWN))
+			&& (bh1726_als_para_diff_tp_color_table[i].tp_color == phone_color))
+		{
+			bh1726_als_para_table = i;
+			break;
+		}
+	}
+	memcpy(als_data.als_extend_data,bh1726_als_para_diff_tp_color_table[bh1726_als_para_table].bh1726_para,
+		sizeof(bh1726_als_para_diff_tp_color_table[bh1726_als_para_table].bh1726_para) >
+		SENSOR_PLATFORM_EXTEND_ALS_DATA_SIZE?
+		SENSOR_PLATFORM_EXTEND_ALS_DATA_SIZE:
+		sizeof(bh1726_als_para_diff_tp_color_table[bh1726_als_para_table].bh1726_para));
+
+	minThreshold_als_para = bh1726_als_para_diff_tp_color_table[bh1726_als_para_table].bh1726_para[BH1726_MAX_ThRESHOLD_NUM];
+	maxThreshold_als_para = bh1726_als_para_diff_tp_color_table[bh1726_als_para_table].bh1726_para[BH1726_MIN_ThRESHOLD_NUM];
+
+	hwlog_info("B_als_para_tabel= %d\n",bh1726_als_para_table);
+	for( i=0; i<BH1726_PARA_SIZE; i++){
+		hwlog_info( "the B %d als paramater is the %d", i, bh1726_als_para_diff_tp_color_table[bh1726_als_para_table].bh1726_para[i] );
+	}
+	hwlog_info("\n");
+}
+
 void set_rpr531_als_extend_prameters(void)
 {
 	int rpr531_als_para_table = 0;
@@ -769,7 +899,8 @@ void set_rpr531_als_extend_prameters(void)
 	{
 		if((rpr531_als_para_diff_tp_color_table[i].phone_type == als_data.als_phone_type)
 			&& (rpr531_als_para_diff_tp_color_table[i].phone_version == als_data.als_phone_version)
-			&&( rpr531_als_para_diff_tp_color_table[i].tp_manufacture == tp_manufacture))
+			&&(( rpr531_als_para_diff_tp_color_table[i].tp_manufacture == tp_manufacture)
+				||(rpr531_als_para_diff_tp_color_table[i].tp_manufacture == TS_PANEL_UNKNOWN)))
 		{
 			rpr531_als_para_table = i;
 			break;
@@ -798,7 +929,8 @@ static void set_pinhole_als_extend_parameters(void)
 		if ((pinhole_als_para_diff_tp_color_table[i].phone_type == als_data.als_phone_type)
 		    && (pinhole_als_para_diff_tp_color_table[i].phone_version == als_data.als_phone_version)
 		    && (pinhole_als_para_diff_tp_color_table[i].sens_name == sens_name)
-		    && (pinhole_als_para_diff_tp_color_table[i].tp_manufacture == tp_manufacture)) {
+		    && ((pinhole_als_para_diff_tp_color_table[i].tp_manufacture == tp_manufacture)
+		    		||(pinhole_als_para_diff_tp_color_table[i].tp_manufacture == TS_PANEL_UNKNOWN))) {
 			als_para_table = i;
 			break;
 		}
@@ -920,6 +1052,31 @@ static void select_avago_als_data(void)
 		     als_para_table, phone_color, als_data.als_phone_type, als_data.als_phone_version);
 }
 
+static void select_apds9999_als_data(void)
+{
+	int i = 0;
+
+	for (i = 0; i < ARRAY_SIZE(apds9999_als_para_diff_tp_color_table); i++) {
+		if ((apds9999_als_para_diff_tp_color_table[i].phone_type == als_data.als_phone_type)
+		    && (apds9999_als_para_diff_tp_color_table[i].phone_version == als_data.als_phone_version)
+		    && (apds9999_als_para_diff_tp_color_table[i].tp_lcd_manufacture == tplcd_manufacture
+			|| apds9999_als_para_diff_tp_color_table[i].tp_lcd_manufacture == DEFAULT_TPLCD)
+		    && (apds9999_als_para_diff_tp_color_table[i].tp_color == phone_color)) {
+			als_para_table = i;
+			break;
+		}
+	}
+	memcpy(als_data.als_extend_data, apds9999_als_para_diff_tp_color_table[als_para_table].apds9999_para,
+		       sizeof(apds9999_als_para_diff_tp_color_table[als_para_table].apds9999_para) >
+		       SENSOR_PLATFORM_EXTEND_ALS_DATA_SIZE ? SENSOR_PLATFORM_EXTEND_ALS_DATA_SIZE :
+		       sizeof(apds9999_als_para_diff_tp_color_table[als_para_table].apds9999_para));
+	minThreshold_als_para = apds9999_als_para_diff_tp_color_table[als_para_table].apds9999_para[APDS9251_MIN_ThRESHOLD_NUM];
+	maxThreshold_als_para = apds9999_als_para_diff_tp_color_table[als_para_table].apds9999_para[APDS9251_MAX_ThRESHOLD_NUM];
+	hwlog_info("als_para_tabel=%d apds9251 phone_color=0x%x phone_type=%d,phone_version=%d\n",
+		     als_para_table, phone_color, als_data.als_phone_type, als_data.als_phone_version);
+}
+
+
 static void select_ams_tmd3725_als_data(void)
 {
 	int i = 0;
@@ -941,6 +1098,54 @@ static void select_ams_tmd3725_als_data(void)
 	minThreshold_als_para = tmd3725_als_para_diff_tp_color_table[als_para_table].tmd3725_para[TMD3725_MIN_ThRESHOLD_NUM];
 	maxThreshold_als_para = tmd3725_als_para_diff_tp_color_table[als_para_table].tmd3725_para[TMD3725_MAX_ThRESHOLD_NUM];
 	hwlog_info("als_para_tabel=%d tmd3725 phone_color=0x%x phone_type=%d,phone_version=%d\n",
+		     als_para_table, phone_color, als_data.als_phone_type, als_data.als_phone_version);
+}
+
+static void select_ams_tmd3702_als_data(void)
+{
+	int i = 0;
+
+	for (i = 0; i < ARRAY_SIZE(tmd3702_als_para_diff_tp_color_table); i++) {
+		if ((tmd3702_als_para_diff_tp_color_table[i].phone_type == als_data.als_phone_type)
+		    && (tmd3702_als_para_diff_tp_color_table[i].phone_version == als_data.als_phone_version)
+		    && (tmd3702_als_para_diff_tp_color_table[i].tp_lcd_manufacture == tplcd_manufacture
+			|| tmd3702_als_para_diff_tp_color_table[i].tp_lcd_manufacture == DEFAULT_TPLCD)
+		    && (tmd3702_als_para_diff_tp_color_table[i].tp_color == phone_color)) {
+			als_para_table = i;
+			break;
+		}
+	}
+	memcpy(als_data.als_extend_data, tmd3702_als_para_diff_tp_color_table[als_para_table].tmd3702_para,
+		       sizeof(tmd3702_als_para_diff_tp_color_table[als_para_table].tmd3702_para) >
+		       SENSOR_PLATFORM_EXTEND_ALS_DATA_SIZE ? SENSOR_PLATFORM_EXTEND_ALS_DATA_SIZE :
+		       sizeof(tmd3702_als_para_diff_tp_color_table[als_para_table].tmd3702_para));
+	minThreshold_als_para = tmd3702_als_para_diff_tp_color_table[als_para_table].tmd3702_para[TMD3702_MIN_ThRESHOLD_NUM];
+	maxThreshold_als_para = tmd3702_als_para_diff_tp_color_table[als_para_table].tmd3702_para[TMD3702_MAX_ThRESHOLD_NUM];
+	hwlog_info("als_para_tabel=%d tmd3702 phone_color=0x%x phone_type=%d,phone_version=%d\n",
+		     als_para_table, phone_color, als_data.als_phone_type, als_data.als_phone_version);
+}
+
+static void select_vishay_vcnl36658_als_data(void)
+{
+	int i = 0;
+
+	for (i = 0; i < ARRAY_SIZE(vcnl36658_als_para_diff_tp_color_table); i++) {
+		if ((vcnl36658_als_para_diff_tp_color_table[i].phone_type == als_data.als_phone_type)
+		    && (vcnl36658_als_para_diff_tp_color_table[i].phone_version == als_data.als_phone_version)
+		    && (vcnl36658_als_para_diff_tp_color_table[i].tp_lcd_manufacture == tplcd_manufacture
+			|| vcnl36658_als_para_diff_tp_color_table[i].tp_lcd_manufacture == DEFAULT_TPLCD)
+		    && (vcnl36658_als_para_diff_tp_color_table[i].tp_color == phone_color)) {
+			als_para_table = i;
+			break;
+		}
+	}
+	memcpy(als_data.als_extend_data, vcnl36658_als_para_diff_tp_color_table[als_para_table].vcnl36658_para,
+		       sizeof(vcnl36658_als_para_diff_tp_color_table[als_para_table].vcnl36658_para) >
+		       SENSOR_PLATFORM_EXTEND_ALS_DATA_SIZE ? SENSOR_PLATFORM_EXTEND_ALS_DATA_SIZE :
+		       sizeof(vcnl36658_als_para_diff_tp_color_table[als_para_table].vcnl36658_para));
+	minThreshold_als_para = vcnl36658_als_para_diff_tp_color_table[als_para_table].vcnl36658_para[VCNL36658_MIN_ThRESHOLD_NUM];
+	maxThreshold_als_para = vcnl36658_als_para_diff_tp_color_table[als_para_table].vcnl36658_para[VCNL36658_MAX_ThRESHOLD_NUM];
+	hwlog_info("als_para_tabel=%d vcnl36658 phone_color=0x%x phone_type=%d,phone_version=%d\n",
 		     als_para_table, phone_color, als_data.als_phone_type, als_data.als_phone_version);
 }
 
@@ -977,12 +1182,18 @@ void select_als_para(struct device_node *dn)
 
 	if (rohm_rgb_flag == 1) {
 		select_rohm_als_data();
-	} else if (avago_rgb_flag == 1) {
+	} else if (avago_rgb_flag == 1 || apds9253_rgb_flag == 1) {
 		select_avago_als_data();
+	} else if (apds9999_rgb_flag == 1) {
+		select_apds9999_als_data();
 	}else if (ams_tmd3725_rgb_flag == 1) {
 		select_ams_tmd3725_als_data();
+	}else if (ams_tmd3702_rgb_flag == 1) {
+		select_ams_tmd3702_als_data();
 	}else if (liteon_ltr582_rgb_flag == 1) {
 		select_liteon_ltr582_als_data();
+	}else if (vishay_vcnl36658_als_flag ==1){
+		select_vishay_vcnl36658_als_data();
 	}  else if((apds9922_flag == 1)||(ltr578_flag == 1)){
 		if(WAS == als_data.als_phone_type){
 			tp_manufacture = tplcd_manufacture;
@@ -1001,7 +1212,12 @@ void select_als_para(struct device_node *dn)
 		set_tmd2745_als_extend_parameters();
 		set_tmd2745_para_flag = true;
 		mutex_unlock(&mutex_set_para);
-	} else {
+	} else if (tsl2591_flag == 1) {
+		set_tsl2591_als_extend_prameters();
+	} else if (bh1726_flag == 1) {
+		set_bh1726_als_extend_prameters();
+	}
+	else {
 		ret = fill_extend_data_in_dts(dn, "als_extend_data", als_data.als_extend_data, 12, EXTEND_DATA_TYPE_IN_DTS_HALF_WORD);
 		if (ret)
 			hwlog_err("als_extend_data:fill_extend_data_in_dts failed!\n");

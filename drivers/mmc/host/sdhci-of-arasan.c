@@ -1344,7 +1344,10 @@ static int sdhci_arasan_probe(struct platform_device *pdev)
 	bool cmdq_fix_qbr = false;
 #endif
 	pr_debug("%s: start!\n", __func__);
-
+	if (get_bootdevice_type() != BOOT_DEVICE_EMMC) {
+		pr_err("not boot from emmc\n");
+		return -ENODEV;
+	}
 	ret = sdhci_get_pmctrl_resocure();
 	if (ret < 0)
 		pr_err("%s :sdhci_get_pmctrl_resocure fail\n", __func__);

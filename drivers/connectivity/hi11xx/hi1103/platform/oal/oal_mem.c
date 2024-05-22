@@ -82,9 +82,9 @@ oal_uint32 gul_dscr_fstphy_addr = 0;
     内存池统计信息全局变量，维测使用
 *******************************************************************************/
 OAL_STATIC oal_mem_stat g_st_mem_stat;
-oal_mempool_info_to_sdt_stru    g_st_mempool_info = {0};
+oal_mempool_info_to_sdt_stru    g_st_mempool_info_etc = {0};
 #ifdef _PRE_DEBUG_MODE
-OAL_STATIC oal_mempool_tx_dscr_addr    g_st_tx_dscr_addr;
+OAL_STATIC oal_mempool_tx_dscr_addr    g_st_tx_dscr_addr_etc;
 #endif
 /******************************************************************************
     共享描述符内存池配置信息全局变量
@@ -188,7 +188,7 @@ OAL_STATIC  oal_mem_subpool_cfg_stru g_ast_mib_cfg_table[] =
 #define TOTAL_WLAN_MEM_NETBUF_SIZE1 (WLAN_MEM_NETBUF_SIZE1 + OAL_NETBUF_MAINTAINS_SIZE + OAL_DOG_TAG_SIZE)
 #define TOTAL_WLAN_MEM_NETBUF_SIZE2 (WLAN_MEM_NETBUF_SIZE2 + OAL_NETBUF_MAINTAINS_SIZE + OAL_DOG_TAG_SIZE)
 #define TOTAL_WLAN_MEM_NETBUF_SIZE3 (WLAN_MEM_NETBUF_SIZE3 + OAL_NETBUF_MAINTAINS_SIZE + OAL_DOG_TAG_SIZE)
- oal_mem_subpool_cfg_stru g_ast_netbuf_cfg_table[] =
+ oal_mem_subpool_cfg_stru g_ast_netbuf_cfg_table_etc[] =
 {
     {TOTAL_WLAN_MEM_NETBUF_SIZE1, WLAN_MEM_NETBUF_CNT1},      /* 克隆用netbuf */
     {TOTAL_WLAN_MEM_NETBUF_SIZE2, WLAN_MEM_NETBUF_CNT2},
@@ -228,7 +228,7 @@ OAL_STATIC  oal_mem_pool_cfg_stru g_ast_mem_pool_cfg_table[] =
 /******************************************************************************
     用于索引netbuf内存块与内存池ID的映射关系
 *******************************************************************************/
-OAL_STATIC oal_uint32 g_ul_truesize_to_pool_id[OAL_ARRAY_SIZE(g_ast_netbuf_cfg_table)] = {0};
+OAL_STATIC oal_uint32 g_ul_truesize_to_pool_id[OAL_ARRAY_SIZE(g_ast_netbuf_cfg_table_etc)] = {0};
 
 /******************************************************************************
     用于索引sdt netbuf内存块与内存池ID的映射关系
@@ -238,12 +238,12 @@ OAL_STATIC oal_uint32 g_ul_truesize_to_pool_id_sdt[OAL_ARRAY_SIZE(g_ast_sdt_netb
 /******************************************************************************
     netbuf内存块data指针相对于head指针的偏移
 *******************************************************************************/
-//OAL_STATIC oal_uint32 g_ul_netbuf_def_data_offset[OAL_ARRAY_SIZE(g_ast_netbuf_cfg_table)] = {0};
+//OAL_STATIC oal_uint32 g_ul_netbuf_def_data_offset[OAL_ARRAY_SIZE(g_ast_netbuf_cfg_table_etc)] = {0};
 
 /******************************************************************************
     netbuf内存块data指针相对于head指针的偏移
 *******************************************************************************/
-oal_uint32 g_ul_sdt_netbuf_def_data_offset[OAL_ARRAY_SIZE(g_ast_sdt_netbuf_cfg_table)] = {0};
+oal_uint32 g_ul_sdt_netbuf_def_data_offset_etc[OAL_ARRAY_SIZE(g_ast_sdt_netbuf_cfg_table)] = {0};
 
 
 /******************************************************************************
@@ -296,7 +296,7 @@ OAL_STATIC oal_netbuf_stru **g_ppst_sdt_netbuf_stack_mem;
                                       OAL_MEM_SDT_NETBUF_BLK_TOTAL_CNT * OAL_MEM_NETBUF_CTRL_BLK_SIZE)
 
 
-OAL_STATIC oal_netbuf_stru *g_pst_sdt_netbuf_base_addr[OAL_MEM_SDT_NETBUF_BLK_TOTAL_CNT] = {OAL_PTR_NULL};
+OAL_STATIC oal_netbuf_stru *g_pst_sdt_netbuf_base_addr_etc[OAL_MEM_SDT_NETBUF_BLK_TOTAL_CNT] = {OAL_PTR_NULL};
 
 /*****************************************************************************
   结构名  : oal_mem_ctrl_blk_stru
@@ -389,7 +389,6 @@ OAL_STATIC oal_mem_stru* oal_mem_get_ctrl_node(oal_void * p_data)
         //可能是因为前一个内存块被写穿了，将本内存块前面保存的内存块信息节点的地址覆盖了
         ul_data = (*((oal_uint *)((oal_uint8 *)p_data - OAL_MEM_INFO_SIZE - OAL_DOG_TAG_SIZE)));
         OAL_IO_PRINT("oal_mem_get_ctrl_node::mem covered 0x%x \n", ul_data);
-        OAL_BUG_ON(1);
         return OAL_PTR_NULL;//lint !e527
     }
 
@@ -415,7 +414,6 @@ OAL_STATIC oal_mem_stru* oal_mem_get_ctrl_node(oal_void * p_data)
                          pst_mem->ul_trace_file_id,
                          pst_mem->ul_trace_line_num,
                          pst_mem->ul_trace_time_stamp);
-        OAL_BUG_ON(1);
         return OAL_PTR_NULL;//lint !e527
     }
     #endif
@@ -423,11 +421,11 @@ OAL_STATIC oal_mem_stru* oal_mem_get_ctrl_node(oal_void * p_data)
 }
 
 
-oal_mem_pool_stru* oal_mem_get_pool(oal_mem_pool_id_enum_uint8 en_pool_id)
+oal_mem_pool_stru* oal_mem_get_pool_etc(oal_mem_pool_id_enum_uint8 en_pool_id)
 {
     if (OAL_UNLIKELY(en_pool_id >= OAL_MEM_POOL_ID_BUTT))
     {
-        OAL_IO_PRINT("[file = %s, line = %d], oal_mem_get_pool, array overflow!\n",
+        OAL_IO_PRINT("[file = %s, line = %d], oal_mem_get_pool_etc, array overflow!\n",
                      __FILE__, __LINE__);
         return OAL_PTR_NULL;
     }
@@ -437,30 +435,30 @@ oal_mem_pool_stru* oal_mem_get_pool(oal_mem_pool_id_enum_uint8 en_pool_id)
 
 #ifdef _PRE_DEBUG_MODE
 
-oal_mempool_tx_dscr_addr* oal_mem_get_tx_dscr_addr(oal_void)
+oal_mempool_tx_dscr_addr* oal_mem_get_tx_dscr_addr_etc(oal_void)
 {
-    return &g_st_tx_dscr_addr;
+    return &g_st_tx_dscr_addr_etc;
 }
 
-oal_void oal_mem_stop_rcd_rls(oal_void)
+oal_void oal_mem_stop_rcd_rls_etc(oal_void)
 {
-    if (0 == g_st_tx_dscr_addr.us_rcd_rls_stop_flag)
+    if (0 == g_st_tx_dscr_addr_etc.us_rcd_rls_stop_flag)
     {
-        g_st_tx_dscr_addr.us_rcd_rls_stop_flag = 1;
+        g_st_tx_dscr_addr_etc.us_rcd_rls_stop_flag = 1;
     }
 }
 
-oal_uint16 oal_mem_get_stop_flag(oal_void)
+oal_uint16 oal_mem_get_stop_flag_etc(oal_void)
 {
-    return (g_st_tx_dscr_addr.us_rcd_rls_stop_flag >= OAL_TX_DSCR_RCD_TAIL_CNT);
+    return (g_st_tx_dscr_addr_etc.us_rcd_rls_stop_flag >= OAL_TX_DSCR_RCD_TAIL_CNT);
 }
 #endif
 
-oal_mem_pool_cfg_stru* oal_mem_get_pool_cfg_table(oal_mem_pool_id_enum_uint8 en_pool_id)
+oal_mem_pool_cfg_stru* oal_mem_get_pool_cfg_table_etc(oal_mem_pool_id_enum_uint8 en_pool_id)
 {
     if (OAL_UNLIKELY(en_pool_id >= OAL_MEM_POOL_ID_BUTT))
     {
-        OAL_IO_PRINT("[file = %s, line = %d], oal_mem_get_pool_cfg_table, array overflow!\n",
+        OAL_IO_PRINT("[file = %s, line = %d], oal_mem_get_pool_cfg_table_etc, array overflow!\n",
                      __FILE__, __LINE__);
         return OAL_PTR_NULL;
     }
@@ -530,7 +528,7 @@ OAL_STATIC oal_uint32  oal_mem_get_total_bytes_in_pool(
     oal_uint32                       ul_total_bytes;         /* 本内存池总字节数 */
     OAL_CONST oal_mem_pool_cfg_stru *pst_mem_pool_cfg;
 
-    pst_mem_pool_cfg = oal_mem_get_pool_cfg_table(en_pool_id);
+    pst_mem_pool_cfg = oal_mem_get_pool_cfg_table_etc(en_pool_id);
     if (OAL_UNLIKELY(OAL_PTR_NULL == pst_mem_pool_cfg))
     {
         OAL_IO_PRINT("[file = %s, line = %d], oal_mem_get_total_bytes_in_pool, pointer is NULL!\n",
@@ -626,22 +624,22 @@ OAL_STATIC oal_void  oal_mem_sdt_netbuf_release(oal_void)
 
     for (ul_loop = 0; ul_loop < OAL_MEM_SDT_NETBUF_BLK_TOTAL_CNT; ul_loop++)
     {
-        if (OAL_PTR_NULL == g_pst_sdt_netbuf_base_addr[ul_loop])
+        if (OAL_PTR_NULL == g_pst_sdt_netbuf_base_addr_etc[ul_loop])
         {
             continue;
         }
 
         /* 无论netbuf引用计数是多少，统一将其设置为1 */
-        oal_atomic_set(&g_pst_sdt_netbuf_base_addr[ul_loop]->users, 1);
+        oal_atomic_set(&g_pst_sdt_netbuf_base_addr_etc[ul_loop]->users, 1);
 
-        oal_netbuf_free(g_pst_sdt_netbuf_base_addr[ul_loop]);
+        oal_netbuf_free(g_pst_sdt_netbuf_base_addr_etc[ul_loop]);
 
-        g_pst_sdt_netbuf_base_addr[ul_loop] = OAL_PTR_NULL;
+        g_pst_sdt_netbuf_base_addr_etc[ul_loop] = OAL_PTR_NULL;
     }
 }
 
 
-oal_netbuf_stru* oal_netbuf_duplicate(oal_netbuf_stru* pst_src_netbuf,
+oal_netbuf_stru* oal_netbuf_duplicate_etc(oal_netbuf_stru* pst_src_netbuf,
 											oal_uint8 uc_out_subpool_id,
 											oal_uint32 ul_add_head_room,
 											oal_uint32 ul_add_tail_room)
@@ -649,7 +647,11 @@ oal_netbuf_stru* oal_netbuf_duplicate(oal_netbuf_stru* pst_src_netbuf,
     oal_uint32 ul_dup_len = 0;
     oal_netbuf_stru* pst_dup_netbuf;
 
-    OAL_BUG_ON(NULL == pst_src_netbuf);
+    if(OAL_WARN_ON(NULL == pst_src_netbuf))
+    {
+        OAL_IO_PRINT("%s error:pst_src_netbuf is null ",__FUNCTION__);
+        return NULL;
+    }
 
     ul_dup_len += oal_netbuf_headroom(pst_src_netbuf);
     ul_dup_len += OAL_NETBUF_LEN(pst_src_netbuf);
@@ -710,7 +712,7 @@ OAL_STATIC oal_uint32  oal_mem_create_subpool(oal_mem_pool_id_enum_uint8 en_pool
         return OAL_ERR_CODE_PTR_NULL;
     }
 
-    pst_mem_pool = oal_mem_get_pool(en_pool_id);
+    pst_mem_pool = oal_mem_get_pool_etc(en_pool_id);
     if (OAL_PTR_NULL == pst_mem_pool)
     {
         OAL_IO_PRINT("[file = %s, line = %d], oal_mem_create_subpool, pointer is NULL!\n",
@@ -768,7 +770,7 @@ OAL_STATIC oal_uint32  oal_mem_create_subpool(oal_mem_pool_id_enum_uint8 en_pool
         #ifdef _PRE_DEBUG_MODE
             if ((uc_subpool_id > 0) && (OAL_MEM_POOL_ID_SHARED_DSCR == en_pool_id))
             {
-                g_st_tx_dscr_addr.ul_tx_dscr_addr[g_st_tx_dscr_addr.us_tx_dscr_cnt++] = (oal_uint)(pst_mem->puc_data + OAL_MEM_INFO_SIZE);
+                g_st_tx_dscr_addr_etc.ul_tx_dscr_addr[g_st_tx_dscr_addr_etc.us_tx_dscr_cnt++] = (oal_uint)(pst_mem->puc_data + OAL_MEM_INFO_SIZE);
             }
 
             OAL_MEMZERO(pst_mem->ul_alloc_core_id,    OAL_SIZEOF(oal_uint32) * WLAN_MEM_MAX_USERS_NUM);
@@ -809,7 +811,7 @@ OAL_STATIC oal_uint32  oal_mem_create_netbuf_subpool(oal_mem_pool_id_enum_uint8 
     oal_uint32              ul_blk_id;
     oal_uint32              ul_mem_total_cnt;
 
-    pst_mem_pool = oal_mem_get_pool(en_pool_id);
+    pst_mem_pool = oal_mem_get_pool_etc(en_pool_id);
     if (OAL_PTR_NULL == pst_mem_pool)
     {
         OAL_IO_PRINT("[file = %s, line = %d], oal_mem_create_netbuf_subpool, pointer is NULL!\n",
@@ -905,7 +907,7 @@ OAL_STATIC oal_uint32  oal_mem_create_sdt_netbuf_subpool(oal_mem_pool_id_enum_ui
     oal_uint32              ul_blk_id;
     oal_uint32              ul_mem_total_cnt;
 
-    pst_mem_pool = oal_mem_get_pool(en_pool_id);
+    pst_mem_pool = oal_mem_get_pool_etc(en_pool_id);
     if (OAL_PTR_NULL == pst_mem_pool)
     {
         OAL_IO_PRINT("[file = %s, line = %d], oal_mem_create_sdt_netbuf_subpool, pointer is NULL!\n",
@@ -960,12 +962,12 @@ OAL_STATIC oal_uint32  oal_mem_create_sdt_netbuf_subpool(oal_mem_pool_id_enum_ui
             {
                 g_ul_truesize_to_pool_id_sdt[uc_subpool_id] = pst_netbuf->truesize;
 
-                g_ul_sdt_netbuf_def_data_offset[uc_subpool_id] =
+                g_ul_sdt_netbuf_def_data_offset_etc[uc_subpool_id] =
                                 ((oal_uint)pst_netbuf->data > (oal_uint)pst_netbuf->head) ?
                                 (oal_uint)(pst_netbuf->data - pst_netbuf->head) : 0;
             }
 
-            g_pst_sdt_netbuf_base_addr[ul_mem_total_cnt + ul_blk_id] = pst_netbuf;
+            g_pst_sdt_netbuf_base_addr_etc[ul_mem_total_cnt + ul_blk_id] = pst_netbuf;
 
             *ppst_stack_mem = pst_netbuf;
             ppst_stack_mem++;
@@ -996,7 +998,7 @@ OAL_STATIC oal_uint32  oal_mem_create_pool(oal_mem_pool_id_enum_uint8 en_pool_id
         return OAL_ERR_CODE_ARRAY_OVERFLOW;
     }
 
-    pst_mem_pool = oal_mem_get_pool(en_pool_id);
+    pst_mem_pool = oal_mem_get_pool_etc(en_pool_id);
     if (OAL_PTR_NULL == pst_mem_pool)
     {
         OAL_IO_PRINT("[file = %s, line = %d], oal_mem_create_pool, pointer is NULL!\n",
@@ -1004,7 +1006,7 @@ OAL_STATIC oal_uint32  oal_mem_create_pool(oal_mem_pool_id_enum_uint8 en_pool_id
         return OAL_ERR_CODE_OAL_MEM_GET_POOL_FAIL;
     }
 
-    pst_mem_pool_cfg = oal_mem_get_pool_cfg_table(en_pool_id);
+    pst_mem_pool_cfg = oal_mem_get_pool_cfg_table_etc(en_pool_id);
     if (OAL_PTR_NULL == pst_mem_pool_cfg)
     {
         OAL_IO_PRINT("[file = %s, line = %d], oal_mem_create_pool, pointer is NULL!\n",
@@ -1066,7 +1068,7 @@ OAL_STATIC oal_uint32  oal_mem_create_pool(oal_mem_pool_id_enum_uint8 en_pool_id
 }
 
 
-oal_uint32  oal_mem_init_pool(oal_void)
+oal_uint32  oal_mem_init_pool_etc(oal_void)
 {
     oal_uint32    ul_total_bytes  = 0;         /* 内存池总字节变量 */
     oal_uint32    ul_pool_id      = 0;         /* 内存池循环计数变量 */
@@ -1079,7 +1081,7 @@ oal_uint32  oal_mem_init_pool(oal_void)
     OAL_MEMZERO((oal_void *)g_ast_mem_pool, OAL_SIZEOF(g_ast_mem_pool));
     OAL_MEMZERO((oal_void *)g_pauc_pool_base_addr, OAL_SIZEOF(g_pauc_pool_base_addr));
 #ifdef _PRE_DEBUG_MODE
-    OAL_MEMZERO(&g_st_tx_dscr_addr, OAL_SIZEOF(g_st_tx_dscr_addr));
+    OAL_MEMZERO(&g_st_tx_dscr_addr_etc, OAL_SIZEOF(g_st_tx_dscr_addr_etc));
 #endif
 
     /* 初始化控制块内存 */
@@ -1092,7 +1094,7 @@ oal_uint32  oal_mem_init_pool(oal_void)
         ul_ret = oal_mem_get_total_bytes_in_pool((oal_uint8)ul_pool_id, &ul_total_bytes);
         if (OAL_SUCC != ul_ret)
         {
-            OAL_IO_PRINT("[file = %s, line = %d], oal_mem_init_pool, oal_mem_get_total_bytes_in_pool failed!\n",
+            OAL_IO_PRINT("[file = %s, line = %d], oal_mem_init_pool_etc, oal_mem_get_total_bytes_in_pool failed!\n",
                          __FILE__, __LINE__);
             return ul_ret;
         }
@@ -1104,7 +1106,7 @@ oal_uint32  oal_mem_init_pool(oal_void)
     if (OAL_PTR_NULL == puc_base_addr)
     {
         oal_mem_release();
-        OAL_IO_PRINT("[file = %s, line = %d], oal_mem_init_pool, memory allocation %u bytes fail!\n",
+        OAL_IO_PRINT("[file = %s, line = %d], oal_mem_init_pool_etc, memory allocation %u bytes fail!\n",
                      __FILE__, __LINE__, ul_bytes + OAL_MEM_MAX_WORD_ALIGNMENT_BUFFER);
         return OAL_ERR_CODE_ALLOC_MEM_FAIL;
     }
@@ -1116,7 +1118,7 @@ oal_uint32  oal_mem_init_pool(oal_void)
         ul_ret = oal_mem_get_total_bytes_in_pool((oal_uint8)ul_pool_id, &ul_total_bytes);
         if (OAL_SUCC != ul_ret)
         {
-            OAL_IO_PRINT("[file = %s, line = %d], oal_mem_init_pool, oal_mem_get_total_bytes_in_pool failed!\n",
+            OAL_IO_PRINT("[file = %s, line = %d], oal_mem_init_pool_etc, oal_mem_get_total_bytes_in_pool failed!\n",
                          __FILE__, __LINE__);
             return ul_ret;
         }
@@ -1140,7 +1142,7 @@ oal_uint32  oal_mem_init_pool(oal_void)
         if (OAL_PTR_NULL == puc_base_addr)
         {
             oal_mem_release();
-            OAL_IO_PRINT("[file = %s, line = %d], oal_mem_init_pool, memory allocation %u bytes fail!\n",
+            OAL_IO_PRINT("[file = %s, line = %d], oal_mem_init_pool_etc, memory allocation %u bytes fail!\n",
                          __FILE__, __LINE__, ul_total_bytes + OAL_MEM_MAX_WORD_ALIGNMENT_BUFFER);
             return OAL_ERR_CODE_ALLOC_MEM_FAIL;
         }
@@ -1154,7 +1156,7 @@ oal_uint32  oal_mem_init_pool(oal_void)
         if (OAL_SUCC != ul_ret)
         {
             oal_mem_release();
-            OAL_IO_PRINT("[file = %s, line = %d], oal_mem_init_pool, oal_mem_create_pool failed!\n",
+            OAL_IO_PRINT("[file = %s, line = %d], oal_mem_init_pool_etc, oal_mem_create_pool failed!\n",
                          __FILE__, __LINE__);
             return ul_ret;
         }
@@ -1168,7 +1170,7 @@ oal_uint32  oal_mem_init_pool(oal_void)
 }
 
 
-oal_mem_stru* oal_mem_alloc_enhanced(
+oal_mem_stru* oal_mem_alloc_enhanced_etc(
                 oal_uint32                    ul_file_id,
                 oal_uint32                    ul_line_num,
                 oal_mem_pool_id_enum_uint8    en_pool_id,
@@ -1233,8 +1235,8 @@ oal_mem_stru* oal_mem_alloc_enhanced(
 #ifdef _PRE_DEBUG_MODE
     //if (OAL_PTR_NULL == pst_mem)
     //{
-        //oal_mem_info(en_pool_id);
-        //oal_mem_leak(en_pool_id);
+        //oal_mem_info_etc(en_pool_id);
+        //oal_mem_leak_etc(en_pool_id);
         //oal_dump_stack();
     //}
 #endif
@@ -1243,7 +1245,7 @@ oal_mem_stru* oal_mem_alloc_enhanced(
 }
 
 
-oal_uint32  oal_mem_free_enhanced(
+oal_uint32  oal_mem_free_enhanced_etc(
                 oal_uint32      ul_file_id,
                 oal_uint32      ul_line_num,
                 oal_mem_stru   *pst_mem,
@@ -1266,13 +1268,13 @@ oal_uint32  oal_mem_free_enhanced(
     pst_mem_subpool = &(pst_mem_pool->ast_subpool_table[pst_mem->uc_subpool_id]);
 
 #ifdef _PRE_DEBUG_MODE
-    if ((OAL_MEM_POOL_ID_SHARED_DSCR == pst_mem->en_pool_id) && (pst_mem->uc_subpool_id > 0) && (0 == oal_mem_get_stop_flag()))
+    if ((OAL_MEM_POOL_ID_SHARED_DSCR == pst_mem->en_pool_id) && (pst_mem->uc_subpool_id > 0) && (0 == oal_mem_get_stop_flag_etc()))
     {
-       g_st_tx_dscr_addr.us_released_tx_dscr_cnt %= OAL_TX_DSCR_ITEM_NUM;
-       g_st_tx_dscr_addr.ast_tx_dscr_info[g_st_tx_dscr_addr.us_released_tx_dscr_cnt].ul_released_addr = (oal_uint)(pst_mem->puc_data);
-       g_st_tx_dscr_addr.ast_tx_dscr_info[g_st_tx_dscr_addr.us_released_tx_dscr_cnt].ul_release_file_id = ul_file_id;
-       g_st_tx_dscr_addr.ast_tx_dscr_info[g_st_tx_dscr_addr.us_released_tx_dscr_cnt].ul_release_line_num = ul_line_num;
-       g_st_tx_dscr_addr.ast_tx_dscr_info[g_st_tx_dscr_addr.us_released_tx_dscr_cnt++].ul_release_ts = (oal_uint32)OAL_TIME_GET_STAMP_MS();
+       g_st_tx_dscr_addr_etc.us_released_tx_dscr_cnt %= OAL_TX_DSCR_ITEM_NUM;
+       g_st_tx_dscr_addr_etc.ast_tx_dscr_info[g_st_tx_dscr_addr_etc.us_released_tx_dscr_cnt].ul_released_addr = (oal_uint)(pst_mem->puc_data);
+       g_st_tx_dscr_addr_etc.ast_tx_dscr_info[g_st_tx_dscr_addr_etc.us_released_tx_dscr_cnt].ul_release_file_id = ul_file_id;
+       g_st_tx_dscr_addr_etc.ast_tx_dscr_info[g_st_tx_dscr_addr_etc.us_released_tx_dscr_cnt].ul_release_line_num = ul_line_num;
+       g_st_tx_dscr_addr_etc.ast_tx_dscr_info[g_st_tx_dscr_addr_etc.us_released_tx_dscr_cnt++].ul_release_ts = (oal_uint32)OAL_TIME_GET_STAMP_MS();
     }
 #endif
 
@@ -1287,7 +1289,6 @@ oal_uint32  oal_mem_free_enhanced(
         /* *((oal_uint32 *)(pst_mem->puc_origin_data + pst_mem->us_len - OAL_DOG_TAG_SIZE)) = (oal_uint32)OAL_DOG_TAG; */
         OAL_MEM_SPIN_UNLOCK_IRQRESTORE(pst_mem_subpool->st_spinlock, ul_irq_flag)
 #if (_PRE_MULTI_CORE_MODE_OFFLOAD_DMAC == _PRE_MULTI_CORE_MODE)
-        OAL_BUG_ON(1);
 #endif
         return OAL_ERR_CODE_OAL_MEM_DOG_TAG;
     }
@@ -1453,7 +1454,7 @@ OAL_STATIC OAL_INLINE oal_uint32  oal_mem_free_enhanced_array(
 }
 
 
-oal_uint32  oal_mem_incr_user(
+oal_uint32  oal_mem_incr_user_etc(
                 oal_uint32      ul_file_id,
                 oal_uint32      ul_line_num,
                 oal_mem_stru   *pst_mem,
@@ -1507,7 +1508,7 @@ oal_uint32  oal_mem_incr_user(
 }
 
 
-oal_void* oal_mem_alloc(
+oal_void* oal_mem_alloc_etc(
                 oal_uint32                    ul_file_id,
                 oal_uint32                    ul_line_num,
                 oal_mem_pool_id_enum_uint8    en_pool_id,
@@ -1524,13 +1525,13 @@ oal_void* oal_mem_alloc(
 
     us_len += OAL_MEM_INFO_SIZE;
 
-    pst_mem = oal_mem_alloc_enhanced(ul_file_id, ul_line_num, en_pool_id, us_len, uc_lock);
+    pst_mem = oal_mem_alloc_enhanced_etc(ul_file_id, ul_line_num, en_pool_id, us_len, uc_lock);
     if (OAL_UNLIKELY(OAL_PTR_NULL == pst_mem))
     {
 #if (_PRE_MULTI_CORE_MODE_OFFLOAD_DMAC == _PRE_MULTI_CORE_MODE)
         if(OAL_MEM_POOL_ID_SHARED_DSCR > en_pool_id)
         {
-            oal_mem_print_normal_pool_info(en_pool_id);
+            oal_mem_print_normal_pool_info_etc(en_pool_id);
         }
 #endif
 
@@ -1549,7 +1550,7 @@ oal_void* oal_mem_alloc(
 }
 
 
-oal_uint32  oal_mem_free(
+oal_uint32  oal_mem_free_etc(
                 oal_uint32    ul_file_id,
                 oal_uint32    ul_line_num,
                 oal_void     *p_data,
@@ -1569,14 +1570,13 @@ oal_uint32  oal_mem_free(
         return OAL_FAIL;
     }
 
-    ul_ret = oal_mem_free_enhanced(ul_file_id, ul_line_num, pst_mem, uc_lock);
+    ul_ret = oal_mem_free_enhanced_etc(ul_file_id, ul_line_num, pst_mem, uc_lock);
     if(OAL_UNLIKELY(ul_ret != OAL_SUCC))
     {
         //由于代码中几乎所有调用OAL_MEM_FREE接口释放内存资源时都未进行异常处理，所以在此处统一处理
         //释放资源时出现异常，都值得引起重视!!!
-        OAL_IO_PRINT("oal_mem_free_enhanced failed!(%d)",ul_ret);
+        OAL_IO_PRINT("oal_mem_free_enhanced_etc failed!(%d)",ul_ret);
         //OAL_WARN_ON(1);
-        OAL_BUG_ON(1);
     }
     return ul_ret;
 }
@@ -1584,7 +1584,7 @@ oal_uint32  oal_mem_free(
 
 
 /*lint -e695*/
-OAL_INLINE oal_uint32  oal_mem_free_array(
+OAL_INLINE oal_uint32  oal_mem_free_array_etc(
                 oal_uint32    ul_file_id,
                 oal_uint32    ul_line_num,
                 oal_void     *p_data,
@@ -1671,8 +1671,8 @@ oal_netbuf_stru* oal_mem_netbuf_alloc(oal_uint32    ul_file_id,
 #ifdef _PRE_DEBUG_MODE
     if (OAL_PTR_NULL == pst_netbuf)
     {
-        oal_mem_info(OAL_MEM_POOL_ID_NETBUF);
-        oal_mem_leak(OAL_MEM_POOL_ID_NETBUF);
+        oal_mem_info_etc(OAL_MEM_POOL_ID_NETBUF);
+        oal_mem_leak_etc(OAL_MEM_POOL_ID_NETBUF);
         oal_dump_stack();
     }
 #endif
@@ -1683,7 +1683,7 @@ oal_netbuf_stru* oal_mem_netbuf_alloc(oal_uint32    ul_file_id,
 #endif
 
 
-oal_netbuf_stru* oal_mem_sdt_netbuf_alloc(oal_uint16 us_len, oal_uint8 uc_lock)
+oal_netbuf_stru* oal_mem_sdt_netbuf_alloc_etc(oal_uint16 us_len, oal_uint8 uc_lock)
 {
     oal_mem_pool_stru      *pst_mem_pool;
     oal_mem_subpool_stru   *pst_mem_subpool;
@@ -1731,7 +1731,7 @@ oal_netbuf_stru* oal_mem_sdt_netbuf_alloc(oal_uint16 us_len, oal_uint8 uc_lock)
     #if (_PRE_OS_VERSION_WIN32 == _PRE_OS_VERSION)
 		ul_headroom = OAL_NETBUF_DEFAULT_DATA_OFFSET;
     #else
-		ul_headroom = g_ul_sdt_netbuf_def_data_offset[uc_subpool_id];
+		ul_headroom = g_ul_sdt_netbuf_def_data_offset_etc[uc_subpool_id];
     #endif
         if(oal_netbuf_headroom(pst_netbuf) > ul_headroom)
         {
@@ -1742,13 +1742,20 @@ oal_netbuf_stru* oal_mem_sdt_netbuf_alloc(oal_uint16 us_len, oal_uint8 uc_lock)
             oal_netbuf_pull(pst_netbuf, ul_headroom - oal_netbuf_headroom(pst_netbuf));
         }
 
-        OAL_BUG_ON(oal_netbuf_headroom(pst_netbuf) != ul_headroom);
+        if(OAL_UNLIKELY(oal_netbuf_headroom(pst_netbuf) != ul_headroom))
+        {
+            OAL_IO_PRINT("%s error: oal_netbuf_headroom(pst_netbuf):%d not equal %u",__FUNCTION__,(oal_int32)oal_netbuf_headroom(pst_netbuf),ul_headroom);
+            OAL_MEM_SPIN_UNLOCK_IRQRESTORE(pst_mem_subpool->st_spinlock, ul_irq_flag);
+            break;
+        };
 
         oal_netbuf_trim(pst_netbuf, pst_netbuf->len);
 
-        OAL_BUG_ON(pst_netbuf->len);
-
-        OAL_MEM_SPIN_UNLOCK_IRQRESTORE(pst_mem_subpool->st_spinlock, ul_irq_flag)
+        if(OAL_UNLIKELY(pst_netbuf->len))
+        {
+            OAL_IO_PRINT("%s error: pst_netbuf->len:%d is not 0",__FUNCTION__,(oal_int32)pst_netbuf->len);
+        };
+        OAL_MEM_SPIN_UNLOCK_IRQRESTORE(pst_mem_subpool->st_spinlock, ul_irq_flag);
 
         break;
     }
@@ -1865,7 +1872,7 @@ oal_uint32  oal_mem_netbuf_free(oal_uint32         ul_file_id,
 #endif
 
 
-oal_uint32  oal_mem_sdt_netbuf_free(oal_netbuf_stru *pst_netbuf, oal_uint8 uc_lock)
+oal_uint32  oal_mem_sdt_netbuf_free_etc(oal_netbuf_stru *pst_netbuf, oal_uint8 uc_lock)
 {
     oal_uint8               uc_subpool_id;
     oal_mem_pool_stru      *pst_mem_pool;
@@ -1913,23 +1920,23 @@ oal_uint32  oal_mem_sdt_netbuf_free(oal_netbuf_stru *pst_netbuf, oal_uint8 uc_lo
 }
 
 
-oal_uint32  oal_mempool_info_to_sdt_register(oal_stats_info_up_to_sdt  p_up_mempool_info,
+oal_uint32  oal_mempool_info_to_sdt_register_etc(oal_stats_info_up_to_sdt  p_up_mempool_info,
                                                      oal_memblock_info_up_to_sdt p_up_memblock_info)
 {
-    g_st_mempool_info.p_mempool_info_func = p_up_mempool_info;
-    g_st_mempool_info.p_memblock_info_func = p_up_memblock_info;
+    g_st_mempool_info_etc.p_mempool_info_func = p_up_mempool_info;
+    g_st_mempool_info_etc.p_memblock_info_func = p_up_memblock_info;
 
     return OAL_SUCC;
 }
 
 
-oal_void  oal_mem_info(oal_mem_pool_id_enum_uint8 en_pool_id)
+oal_void  oal_mem_info_etc(oal_mem_pool_id_enum_uint8 en_pool_id)
 {
     oal_mem_pool_stru      *pst_mem_pool;
     oal_mem_subpool_stru   *pst_mem_subpool;
     oal_uint8               uc_subpool_id;
 
-    pst_mem_pool = oal_mem_get_pool(en_pool_id);
+    pst_mem_pool = oal_mem_get_pool_etc(en_pool_id);
     if (OAL_UNLIKELY(OAL_PTR_NULL == pst_mem_pool))
     {
         return;
@@ -1941,9 +1948,9 @@ oal_void  oal_mem_info(oal_mem_pool_id_enum_uint8 en_pool_id)
         pst_mem_subpool = &(pst_mem_pool->ast_subpool_table[uc_subpool_id]);
 
         /* 子池使用情况，oal_mem_leak函数中会上报每个内存块的信息 */
-        if (OAL_PTR_NULL != g_st_mempool_info.p_mempool_info_func)
+        if (OAL_PTR_NULL != g_st_mempool_info_etc.p_mempool_info_func)
         {
-            g_st_mempool_info.p_mempool_info_func(en_pool_id,
+            g_st_mempool_info_etc.p_mempool_info_func(en_pool_id,
                                               pst_mem_pool->us_mem_total_cnt,
                                               pst_mem_pool->us_mem_used_cnt,
                                               uc_subpool_id,
@@ -1968,7 +1975,7 @@ OAL_STATIC oal_void  oal_mem_netbuf_leak(oal_void)
     oal_bool_enum_uint8         en_flag = OAL_TRUE;
     oal_uint16                  us_loop;
 
-    pst_mem_pool = oal_mem_get_pool(OAL_MEM_POOL_ID_NETBUF);
+    pst_mem_pool = oal_mem_get_pool_etc(OAL_MEM_POOL_ID_NETBUF);
     if (OAL_UNLIKELY(OAL_PTR_NULL == pst_mem_pool))
     {
         return;
@@ -2023,7 +2030,7 @@ OAL_STATIC oal_void  oal_mem_netbuf_leak(oal_void)
 
 #if (_PRE_MULTI_CORE_MODE_OFFLOAD_DMAC == _PRE_MULTI_CORE_MODE)
 
-oal_uint8 oal_get_func_name(oal_uint8 *buff, oal_ulong call_func_ddr)
+oal_uint8 oal_get_func_name_etc(oal_uint8 *buff, oal_ulong call_func_ddr)
 {
     oal_uint8 buf_cnt = 0;
 
@@ -2038,22 +2045,22 @@ oal_uint8 oal_get_func_name(oal_uint8 *buff, oal_ulong call_func_ddr)
 }
 
 
-oal_void oal_mem_print_funcname(oal_ulong func_addr)
+oal_void oal_mem_print_funcname_etc(oal_ulong func_addr)
 {
     oal_uint8              ac_buff[OAL_MEM_SPRINT_SYMBOL_SIZE] = {0};
     oal_uint8              ac_buff_head[100] = {0};
     oal_uint8              uc_size;
 
-    uc_size = oal_get_func_name(ac_buff, func_addr);
+    uc_size = oal_get_func_name_etc(ac_buff, func_addr);
     /* OTA打印函数符号 */
     OAL_SPRINTF(ac_buff_head, sizeof(ac_buff_head), "Func: ");
     oal_strncat(ac_buff_head, ac_buff, uc_size);
-    oam_print(ac_buff_head);
+    oam_print_etc(ac_buff_head);
 }
-oal_module_symbol(oal_mem_print_funcname);
+oal_module_symbol(oal_mem_print_funcname_etc);
 
 
-oal_uint32 oal_mem_return_addr_count(oal_mem_subpool_stru *pst_mem_subpool, oal_mem_stru *pst_mem_base, oal_ulong call_func_addr)
+oal_uint32 oal_mem_return_addr_count_etc(oal_mem_subpool_stru *pst_mem_subpool, oal_mem_stru *pst_mem_base, oal_ulong call_func_addr)
 {
     oal_uint16             us_loop;
     oal_mem_stru          *pst_mem;
@@ -2074,7 +2081,7 @@ oal_uint32 oal_mem_return_addr_count(oal_mem_subpool_stru *pst_mem_subpool, oal_
 }
 
 
-oal_uint8 oal_mem_func_addr_is_registerd(oal_ulong* ua_func_addr, oal_uint8 uc_func_size, oal_uint8* p_func_loop, oal_ulong call_func_addr)
+oal_uint8 oal_mem_func_addr_is_registerd_etc(oal_ulong* ua_func_addr, oal_uint8 uc_func_size, oal_uint8* p_func_loop, oal_ulong call_func_addr)
 {
     oal_uint8 uc_loop = 0;
 
@@ -2107,7 +2114,7 @@ oal_uint8 oal_mem_func_addr_is_registerd(oal_ulong* ua_func_addr, oal_uint8 uc_f
 }
 
 
-oal_void oal_mem_print_normal_pool_info(oal_mem_pool_id_enum_uint8 en_pool_id)
+oal_void oal_mem_print_normal_pool_info_etc(oal_mem_pool_id_enum_uint8 en_pool_id)
 {
     oal_mem_pool_stru     *pst_mem_pool;
     oal_mem_subpool_stru  *pst_mem_subpool;
@@ -2123,7 +2130,7 @@ oal_void oal_mem_print_normal_pool_info(oal_mem_pool_id_enum_uint8 en_pool_id)
     oal_uint8              ac_buff_head[200] = {0};
     oal_uint8              uc_size;
 
-    pst_mem_pool = oal_mem_get_pool(en_pool_id);
+    pst_mem_pool = oal_mem_get_pool_etc(en_pool_id);
     if (OAL_UNLIKELY(OAL_PTR_NULL == pst_mem_pool))
     {
         return;
@@ -2134,7 +2141,6 @@ oal_void oal_mem_print_normal_pool_info(oal_mem_pool_id_enum_uint8 en_pool_id)
 
     pst_mem = pst_mem_pool->pst_mem_start_addr;
 
-    OAL_REFERENCE(pst_mem_subpool);
     /* 循环每一个子池 */
     for (uc_subpool_id = 0; uc_subpool_id < pst_mem_pool->uc_subpool_cnt; uc_subpool_id++)
     {
@@ -2152,7 +2158,7 @@ oal_void oal_mem_print_normal_pool_info(oal_mem_pool_id_enum_uint8 en_pool_id)
         {
             if ((0 == pst_mem->ul_return_addr) && (OAL_MEM_STATE_ALLOC == pst_mem->en_mem_state_flag))
             {
-                OAM_WARNING_LOG2(0, OAM_SF_CFG, "{oal_mem_print_normal_pool_info:: subpool id[%d] mem block[%d] has no call func addr.}",
+                OAM_WARNING_LOG2(0, OAM_SF_CFG, "{oal_mem_print_normal_pool_info_etc:: subpool id[%d] mem block[%d] has no call func addr.}",
                                        uc_subpool_id, us_loop);
 
                 /* 查询下一个内存块 */
@@ -2160,17 +2166,17 @@ oal_void oal_mem_print_normal_pool_info(oal_mem_pool_id_enum_uint8 en_pool_id)
             }
             else if (OAL_MEM_STATE_ALLOC == pst_mem->en_mem_state_flag)
             {
-                if(OAL_FALSE == oal_mem_func_addr_is_registerd(ua_func_addr, uc_func_size, &us_func_loop, pst_mem->ul_return_addr))
+                if(OAL_FALSE == oal_mem_func_addr_is_registerd_etc(ua_func_addr, uc_func_size, &us_func_loop, pst_mem->ul_return_addr))
                 {
                     ua_func_addr[us_func_loop] = pst_mem->ul_return_addr;
 
-                    us_ret_count = oal_mem_return_addr_count(pst_mem_subpool, pst_mem_base, pst_mem->ul_return_addr);
+                    us_ret_count = oal_mem_return_addr_count_etc(pst_mem_subpool, pst_mem_base, pst_mem->ul_return_addr);
 
-                    uc_size = oal_get_func_name(ac_buff, pst_mem->ul_return_addr);
+                    uc_size = oal_get_func_name_etc(ac_buff, pst_mem->ul_return_addr);
                     /* OTA打印函数符号 */
                     OAL_SPRINTF(ac_buff_head, sizeof(ac_buff_head), "[%d] mem blocks occupied by ", us_ret_count);
                     oal_strncat(ac_buff_head, ac_buff, uc_size);
-                    oam_print(ac_buff_head);
+                    oam_print_etc(ac_buff_head);
                 }
                 /* 已注册，则查询下一个内存块 */
                 pst_mem++;
@@ -2185,24 +2191,24 @@ oal_void oal_mem_print_normal_pool_info(oal_mem_pool_id_enum_uint8 en_pool_id)
     }
 
 }
-oal_module_symbol(oal_mem_print_normal_pool_info);
+oal_module_symbol(oal_mem_print_normal_pool_info_etc);
 
 
-oal_void oal_mem_print_pool_info(oal_void)
+oal_void oal_mem_print_pool_info_etc(oal_void)
 {
     oal_uint8 uc_loop;
 
     for(uc_loop = 0; uc_loop <= OAL_MEM_POOL_ID_SHARED_DSCR; uc_loop++)
     {
-        oal_mem_print_normal_pool_info(uc_loop);
+        oal_mem_print_normal_pool_info_etc(uc_loop);
     }
 }
-oal_module_symbol(oal_mem_print_pool_info);
+oal_module_symbol(oal_mem_print_pool_info_etc);
 
 #endif
 
 
-oal_void  oal_mem_leak(oal_mem_pool_id_enum_uint8 en_pool_id)
+oal_void  oal_mem_leak_etc(oal_mem_pool_id_enum_uint8 en_pool_id)
 {
 #ifdef _PRE_DEBUG_MODE
     oal_mem_pool_stru     *pst_mem_pool;
@@ -2211,7 +2217,7 @@ oal_void  oal_mem_leak(oal_mem_pool_id_enum_uint8 en_pool_id)
     oal_uint16             us_loop;
 
 
-    pst_mem_pool = oal_mem_get_pool(en_pool_id);
+    pst_mem_pool = oal_mem_get_pool_etc(en_pool_id);
     if (OAL_UNLIKELY(OAL_PTR_NULL == pst_mem_pool))
     {
         return;
@@ -2248,9 +2254,9 @@ oal_void  oal_mem_leak(oal_mem_pool_id_enum_uint8 en_pool_id)
         }
 
         /* 每个内存块的信息，在oal_mem_info中会上报每个子池的信息 zouhongliang SDT*/
-        if (OAL_PTR_NULL != g_st_mempool_info.p_memblock_info_func)
+        if (OAL_PTR_NULL != g_st_mempool_info_etc.p_memblock_info_func)
         {
-            g_st_mempool_info.p_memblock_info_func(pst_mem->puc_origin_data,
+            g_st_mempool_info_etc.p_memblock_info_func(pst_mem->puc_origin_data,
                                                pst_mem->uc_user_cnt,
                                                pst_mem->en_pool_id,
                                                pst_mem->uc_subpool_id,
@@ -2360,7 +2366,7 @@ OAL_STATIC oal_uint32  oal_mem_check(oal_mem_pool_stat *past_stat_start, oal_mem
 }
 
 
-oal_void  oal_mem_start_stat(oal_void)
+oal_void  oal_mem_start_stat_etc(oal_void)
 {
     OAL_MEMZERO(&g_st_mem_stat, OAL_SIZEOF(g_st_mem_stat));
 
@@ -2369,7 +2375,7 @@ oal_void  oal_mem_start_stat(oal_void)
 }
 
 
-oal_uint32  oal_mem_end_stat(oal_void)
+oal_uint32  oal_mem_end_stat_etc(oal_void)
 {
     oal_mem_statistics(g_st_mem_stat.ast_mem_end_stat);
 
@@ -2378,7 +2384,7 @@ oal_uint32  oal_mem_end_stat(oal_void)
 }
 
 
-oal_uint32  oal_mem_trace_enhanced(oal_uint32      ul_file_id,
+oal_uint32  oal_mem_trace_enhanced_etc(oal_uint32      ul_file_id,
                                    oal_uint32      ul_line_num,
                                    oal_mem_stru   *pst_mem,
                                    oal_uint8       uc_lock)
@@ -2412,7 +2418,7 @@ oal_uint32  oal_mem_trace_enhanced(oal_uint32      ul_file_id,
 }
 
 
-oal_uint32  oal_mem_trace(oal_uint32    ul_file_id,
+oal_uint32  oal_mem_trace_etc(oal_uint32    ul_file_id,
                           oal_uint32    ul_line_num,
                           oal_void     *p_data,
                           oal_uint8     uc_lock)
@@ -2426,7 +2432,7 @@ oal_uint32  oal_mem_trace(oal_uint32    ul_file_id,
 
     pst_mem = (oal_mem_stru *)(*((oal_uint *)((oal_uint8 *)p_data - OAL_MEM_INFO_SIZE)));
 
-    return oal_mem_trace_enhanced(ul_file_id, ul_line_num, pst_mem, uc_lock);
+    return oal_mem_trace_enhanced_etc(ul_file_id, ul_line_num, pst_mem, uc_lock);
 }
 
 #if 0
@@ -2472,7 +2478,7 @@ oal_uint32  oal_mem_netbuf_trace(oal_uint32       ul_file_id,
 #endif
 
 
-oal_void  oal_mem_exit(oal_void)
+oal_void  oal_mem_exit_etc(oal_void)
 {
     /* 卸载普通内存池 */
     oal_mem_release();
@@ -2486,33 +2492,33 @@ oal_void  oal_mem_exit(oal_void)
 
 
 /*lint -e19*/
-oal_module_symbol(oal_mem_free);
-oal_module_symbol(oal_mem_free_array);
+oal_module_symbol(oal_mem_free_etc);
+oal_module_symbol(oal_mem_free_array_etc);
 
-oal_module_symbol(oal_mem_alloc);
+oal_module_symbol(oal_mem_alloc_etc);
 
 /*lint -e19*/
-oal_module_symbol(oal_netbuf_duplicate);
-oal_module_symbol(oal_mem_alloc_enhanced);
-oal_module_symbol(oal_mem_free_enhanced);
-oal_module_symbol(oal_mem_incr_user);
-oal_module_symbol(oal_mem_sdt_netbuf_alloc);
-oal_module_symbol(oal_mem_sdt_netbuf_free);
-oal_module_symbol(oal_mem_leak);
-oal_module_symbol(oal_mem_info);
-oal_module_symbol(oal_mem_trace_enhanced);
-oal_module_symbol(oal_mem_trace);
-oal_module_symbol(oal_mempool_info_to_sdt_register);
-oal_module_symbol(g_pst_sdt_netbuf_base_addr);
+oal_module_symbol(oal_netbuf_duplicate_etc);
+oal_module_symbol(oal_mem_alloc_enhanced_etc);
+oal_module_symbol(oal_mem_free_enhanced_etc);
+oal_module_symbol(oal_mem_incr_user_etc);
+oal_module_symbol(oal_mem_sdt_netbuf_alloc_etc);
+oal_module_symbol(oal_mem_sdt_netbuf_free_etc);
+oal_module_symbol(oal_mem_leak_etc);
+oal_module_symbol(oal_mem_info_etc);
+oal_module_symbol(oal_mem_trace_enhanced_etc);
+oal_module_symbol(oal_mem_trace_etc);
+oal_module_symbol(oal_mempool_info_to_sdt_register_etc);
+oal_module_symbol(g_pst_sdt_netbuf_base_addr_etc);
 #ifdef _PRE_WLAN_CACHE_COHERENT_SUPPORT
 oal_module_symbol(gul_dscr_fstvirt_addr);
 oal_module_symbol(gul_dscr_fstphy_addr);
 #endif
 #ifdef _PRE_DEBUG_MODE
-oal_module_symbol(g_st_tx_dscr_addr);
-oal_module_symbol(oal_mem_get_tx_dscr_addr);
-oal_module_symbol(oal_mem_stop_rcd_rls);
-oal_module_symbol(oal_mem_get_stop_flag);
+oal_module_symbol(g_st_tx_dscr_addr_etc);
+oal_module_symbol(oal_mem_get_tx_dscr_addr_etc);
+oal_module_symbol(oal_mem_stop_rcd_rls_etc);
+oal_module_symbol(oal_mem_get_stop_flag_etc);
 #endif
 
 #ifdef __cplusplus

@@ -26,7 +26,7 @@
 #define BUSY_QUERY_TIMEOUT				100
 #define BUSY_QUERY_DELAY					150 /* unit: us */
 #define CS_HIGH_DELAY				30 /* unit: us */
-#define DELAY_AFTER_FIRST_BYTE		10
+#define DELAY_AFTER_FIRST_BYTE		20
 #define POLYNOMIAL_PARAMETER		0x8408
 
 #define CTRL_READ_WRITE_FLAG				7
@@ -37,6 +37,8 @@
 
 #define WRITE_CMD					0x00//0x60
 #define READ_CMD					0x80//0xE0
+
+#define SPI_STATUS_MASK				0x81
 
 /*****************************************************************************
 * Private enumerations, structures and unions using typedef
@@ -227,8 +229,15 @@ static int fts_wait_idle(void)
 		udelay(BUSY_QUERY_DELAY);
 
 		ret = fts_read_status(&status);
-		if ((ret >= 0) && (0 == (status & BIT(STATUS_BUSY_BIT))))
-			break;
+		if (ret >= 0) {
+			status &= SPI_STATUS_MASK;
+			if ((g_focal_pdata->fw_is_running && (0x01 == status))
+					|| (!g_focal_pdata->fw_is_running && (0x00 == status))) {
+				break;
+			} else {
+				TS_LOG_DEBUG("fw:%d,spi_st:%x", g_focal_pdata->fw_is_running, (int)status);
+			}
+		}
 	}
 
 	if (i >= BUSY_QUERY_TIMEOUT) {
@@ -283,16 +292,18 @@ static int fts_boot_write(u8 *cmd, u8 cmdlen, u8 *data, u32 datalen)
 	u32 txlen = 0;
 	u8 ctrl = WRITE_CMD;
 
-	if ((!cmd) || (0 == cmdlen)) {
+	if ((!cmd) || (0 == cmdlen) || (datalen > FTS_PACKAGE_SIZE_SPI)) {
 		TS_LOG_ERR("%s parameter is invalid\n", __func__);
 		return -EINVAL;
 	}
+
+	mutex_lock(&g_focal_pdata->spilock);
 
 	/* wait spi idle */
 	ret = fts_wait_idle();
 	if (ret < 0) {
 		TS_LOG_ERR("%s:wait spi idle fail\n", __func__);
-		return ret;
+		goto err_boot_write;
 	}
 
 	/* write cmd */
@@ -303,7 +314,7 @@ static int fts_boot_write(u8 *cmd, u8 cmdlen, u8 *data, u32 datalen)
 	ret = fts_cmd_wirte(ctrl, cmd, cmdlen);
 	if (ret < 0) {
 		TS_LOG_ERR("%s:command package wirte fail\n", __func__);
-		return ret;
+		goto err_boot_write;
 	}
 
 	if (data && datalen) {
@@ -311,7 +322,7 @@ static int fts_boot_write(u8 *cmd, u8 cmdlen, u8 *data, u32 datalen)
 		ret = fts_wait_idle();
 		if (ret < 0) {
 			TS_LOG_ERR("%s:wait spi idle from cmd packet fail\n", __func__);
-			return ret;
+			goto err_boot_write;
 		}
 
 		/* write data */
@@ -319,7 +330,8 @@ static int fts_boot_write(u8 *cmd, u8 cmdlen, u8 *data, u32 datalen)
 			txbuf = kzalloc(datalen + SPI_HEADER_LENGTH, GFP_KERNEL);
 			if (NULL == txbuf) {
 				TS_LOG_ERR("%s:txbuf kzalloc fail\n", __func__);
-				return -ENOMEM;
+				ret = -ENOMEM;
+				goto err_boot_write;
 			}
 		} else {
 			txbuf = spibuf;
@@ -343,6 +355,8 @@ static int fts_boot_write(u8 *cmd, u8 cmdlen, u8 *data, u32 datalen)
 			txbuf = NULL;
 		}
 	}
+err_boot_write:
+	mutex_unlock(&g_focal_pdata->spilock);
 	return ret;
 }
 
@@ -391,38 +405,42 @@ static int fts_boot_read(u8 *cmd, u8 cmdlen, u8 *data, u32 datalen)
 	u8 *txbuf = NULL;
 	u32 txlen = 0;
 
-	if ((!cmd) || (0 == cmdlen) || (!data) || (0 == datalen)) {
+	if ((!data) || (0 == datalen) || (datalen > FTS_PACKAGE_SIZE_SPI)) {
 		TS_LOG_ERR("%s parameter is invalid\n", __func__);
 		return -EINVAL;
 	}
 
-	/* wait spi idle */
-	ret = fts_wait_idle();
-	if (ret < 0) {
-		TS_LOG_ERR("%s:wait spi idle fail\n", __func__);
-		return ret;
-	}
+	mutex_lock(&g_focal_pdata->spilock);
 
-	/* write cmd */
-	ret = fts_cmd_wirte(ctrl, cmd, cmdlen);
-	if (ret < 0) {
-		TS_LOG_ERR("%s:command package wirte fail\n", __func__);
-		return ret;
-	}
+	if (cmd && cmdlen) {
+		/* wait spi idle */
+		ret = fts_wait_idle();
+		if (ret < 0) {
+			TS_LOG_ERR("%s:wait spi idle fail\n", __func__);
+			goto boot_read_err;
+		}
 
-	/* wait spi idle */
-	ret = fts_wait_idle();
-	if (ret < 0) {
-		TS_LOG_ERR("%s:wait spi idle from cmd packet fail\n", __func__);
-		return ret;
-	}
+		/* write cmd */
+		ret = fts_cmd_wirte(ctrl, cmd, cmdlen);
+		if (ret < 0) {
+			TS_LOG_ERR("%s:command package wirte fail\n", __func__);
+			goto boot_read_err;
+		}
 
+		/* wait spi idle */
+		ret = fts_wait_idle();
+		if (ret < 0) {
+			TS_LOG_ERR("%s:wait spi idle from cmd packet fail\n", __func__);
+			goto boot_read_err;
+		}
+	}
 	/* write data */
 	if (datalen > SPI_BUF_LENGTH - SPI_HEADER_LENGTH) {
 		txbuf = kzalloc(datalen + SPI_HEADER_LENGTH, GFP_KERNEL);
 		if (NULL == txbuf) {
 			TS_LOG_ERR("%s:txbuf kzalloc fail\n", __func__);
-			return -ENOMEM;
+			ret =  -ENOMEM;
+			goto boot_read_err;
 		}
 	} else {
 		txbuf = spibuf;
@@ -455,6 +473,7 @@ boot_read_err:
 		kfree(txbuf);
 		txbuf = NULL;
 	}
+	mutex_unlock(&g_focal_pdata->spilock);
 	return ret;
 }
 
@@ -474,18 +493,22 @@ int fts_read(u8 *writebuf, u32 writelen, u8 *readbuf, u32 readlen)
 	int ret = 0;
 	u32 cmdlen = 0;
 
-	if ((NULL == writebuf) || (NULL == readbuf)){
-		TS_LOG_ERR("%s:write/read buf is null in fts_read\n", __func__);
+	if ((NULL == readbuf) || (0 == readlen)) {
+		TS_LOG_ERR("readbuf/readlen is invalid in fts_read\n");
 		return -EINVAL;
 	}
 
-	ret = fts_check_specail_cmd(writebuf[0], &cmdlen);
-	if (0 == ret) {
-		TS_LOG_DEBUG("fw cmd");
-		ret = fts_fw_read(writebuf[0], readbuf, readlen);
+	if ((NULL == writebuf) || (0 == writelen)) {
+		ret = fts_boot_read(NULL, 0, readbuf, readlen);
 	} else {
-		TS_LOG_DEBUG("boot cmd");
-		ret = fts_boot_read(writebuf, cmdlen, readbuf, readlen);
+		ret = fts_check_specail_cmd(writebuf[0], &cmdlen);
+		if (0 == ret) {
+			TS_LOG_DEBUG("fw cmd");
+			ret = fts_fw_read(writebuf[0], readbuf, readlen);
+		} else {
+			TS_LOG_DEBUG("boot cmd");
+			ret = fts_boot_read(writebuf, cmdlen, readbuf, readlen);
+		}
 	}
 
 	return ret;

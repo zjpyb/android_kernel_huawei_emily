@@ -620,7 +620,7 @@ int ap_hall_report(int value)
 bool ap_sensor_enable(int tag, bool enable)
 {
 	bool work_on_ap = false;
-	if (tag >= TAG_SENSOR_END){
+	if (tag < TAG_SENSOR_BEGIN ||tag >= TAG_SENSOR_END){
 		return false;
 		}
 
@@ -638,6 +638,9 @@ bool ap_sensor_enable(int tag, bool enable)
 bool ap_sensor_setdelay(int tag, int ms)
 {
 	bool work_on_ap = all_ap_sensor_operations[tag].work_on_ap;
+
+	if (tag < TAG_SENSOR_BEGIN ||tag>=TAG_SENSOR_END)
+                return false;
 
 	if (work_on_ap) {
 		if (all_ap_sensor_operations[tag].ops.setdelay) {
@@ -1982,7 +1985,7 @@ int send_sensor_batch_flush_cmd(unsigned int cmd, struct ioctl_para *para,
 			batch_param.batch_count = (para->timeout_ms > para->period_ms) ? (para->timeout_ms /para->period_ms) : 1;
 		}else{
 			batch_param.batch_count = 1;
-			hwlog_info("%s para->period_ms is zero, set count to 1\n");
+			hwlog_info("para->period_ms is zero, set count to 1\n");
 		}
 		hwlog_info("%s batch period=%d, count=%d\n", __func__, para->period_ms, batch_param.batch_count);
 		return inputhub_sensor_setdelay_internal(tag, &batch_param);
@@ -2478,17 +2481,10 @@ static void step_counter_data_process(pkt_step_counter_data_req_t *head)
 		char motion_data[extend_effect_len + 1];	/*reserve 1 byte for motion type*/
 		motion_data[0] = MOTIONHUB_TYPE_HW_STEP_COUNTER;	/*add motion type*/
 		memcpy(motion_data + 1, &head->begin_time, extend_effect_len);	/*the offset rely on sizeof enum motion_type_t of mcu, now it is 1, we suggest motion_type_t use uint8_t, because sizeof(enum) may diffrernt between AP and mcu;*/
-		hwlog_info
-		    ("write extend step counter data to motion event buffer, record_count = %d!\n",
-		     (head->record_count >
-		      EXT_PEDO_VERSION_2) ? (head->record_count -
-				      EXT_PEDO_VERSION_2) : (head->record_count));
 		inputhub_route_write(ROUTE_MOTION_PORT, motion_data, extend_effect_len + 1);	/*report extend step counter date to motion HAL*/
 	}
 
-	hwlog_info
-	    ("convert to standard step counter data to sensor event buffer, step_count = %d!\n",
-	     head->step_count);
+	hwlog_info("convert to standard step counter data to sensor event buffer\n");
 	head->hd.length = standard_data_len;	/*avoid report extend data to sensor HAL, convert to standard step counter data, just report member step_count to sensor HAL*/
 }
 

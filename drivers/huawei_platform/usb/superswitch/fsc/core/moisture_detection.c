@@ -108,14 +108,14 @@ void moisture_detection_complete(void)
 		hwlog_info("%s:VBUS_VOLTAGEL is: [0x%x]\n", __func__, data);
 		vbus_val += data;
 	} else {
-		return -1;
+		return;
 	}
 	ret = FUSB3601_fusb_I2C_ReadData(FUSB3601_VBUS_VOLTAGEH,&data);
 	if (ret) {
 		hwlog_info("%s:VBUS_VOLTAGEH is: [0x%x]\n", __func__, data);
 		vbus_val += ((data & FUSB3601_VBUS_VOLTAGEH_VAL_MASK) << BITS_PER_BYTE);
 	} else {
-		return -1;
+		return;
 	}
 	/*adc value is a 9 bits integer, so there is no overflow risk for multiplication*/
 	vbus_val *= FUSB3601_VBUS_VOLTAGE_LSB_IN_ONE_TENTH_MV;

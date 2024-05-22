@@ -801,6 +801,12 @@ static ssize_t diag_debug_write(struct file *filp, const char __user *ubuf, size
     DIAG_A_DEBUG_C_REQ_STRU *pstFlag = NULL;
     VOS_UINT32              ulret = ERR_MSP_FAILURE;
 
+    if(!ubuf)
+    {
+        diag_printf("input NULL\n");
+        return 0;
+    }
+
     cnt = (cnt > 127) ? 127 : cnt;
     if(copy_from_user(buf, ubuf, cnt))
     {

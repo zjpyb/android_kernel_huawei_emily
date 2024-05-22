@@ -113,6 +113,9 @@
 
 /* #define DPTX_DEVICE_INFO(pdev) platform_get_drvdata(pdev)->panel_info->dp */
 
+#define DPTX_CHANNEL_NUM_MAX 8
+#define DPTX_DATA_WIDTH_MAX 24
+
 enum dp_tx_hpd_states {
 	HPD_OFF,
 	HPD_ON,
@@ -158,6 +161,26 @@ enum video_format_type {
 	VCEA = 0,
 	CVT = 1,
 	DMT = 2
+};
+
+enum iec_samp_freq_value {
+	IEC_SAMP_FREQ_44K = 0,
+	IEC_SAMP_FREQ_48K = 2,
+	IEC_SAMP_FREQ_32K = 3,
+	IEC_SAMP_FREQ_88K = 8,
+	IEC_SAMP_FREQ_96K = 10,
+	IEC_SAMP_FREQ_176K = 12,
+	IEC_SAMP_FREQ_192K = 14,
+};
+
+enum iec_orig_samp_freq_value {
+	IEC_ORIG_SAMP_FREQ_192K = 1,
+	IEC_ORIG_SAMP_FREQ_176K = 3,
+	IEC_ORIG_SAMP_FREQ_96K = 5,
+	IEC_ORIG_SAMP_FREQ_88K = 7,
+	IEC_ORIG_SAMP_FREQ_32K = 12,
+	IEC_ORIG_SAMP_FREQ_48K = 13,
+	IEC_ORIG_SAMP_FREQ_44K = 15,
 };
 
 /**
@@ -436,6 +459,8 @@ struct dp_ctrl {
 	bool video_transfer_enable;
 
 	uint8_t detect_times;
+	uint8_t current_link_rate;
+	uint8_t current_link_lanes;
 	uint32_t hpd_state;
 	uint32_t user_mode;
 	uint32_t combophy_pree_swing[DPTX_COMBOPHY_PARAM_NUM];

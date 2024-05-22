@@ -5,8 +5,12 @@
 #include "ivp_platform.h"
 #include "ivp_reg.h"
 
+#define REMAP_ADD                        (0xe8d00000)
+#define DEAD_FLAG                        (0xdeadbeef)
+#define SIZE_16K                         (16 * 1024)
 extern void ivp_reg_write(unsigned int off, u32 val);
 extern u32 ivp_reg_read(unsigned int off);
+static void *iram = NULL;
 
 static void ivp_fama_addr_32bit_2_64bit(struct ivp_device *ivp_devp)
 {
@@ -43,7 +47,7 @@ static void ivp_fama_addr_32bit_2_64bit(struct ivp_device *ivp_devp)
     reg_val = icfg_fama_addr_msb0 << 22 | icfg_fama_icfg_addr_dst0;
 
 
-    ivp_info("ivp:%x, %pK, 0x%x", ivp_remap_addr, (void*)ddr_addr, len);
+    ivp_dbg("ivp:%x, %pK, 0x%x", ivp_remap_addr, (void*)ddr_addr, len);
 
     ivp_reg_write(ADDR_IVP_CFG_SEC_REG_IVP_FAMA_CTRL0 , 0x1);
     ivp_reg_write(ADDR_IVP_CFG_SEC_REG_FAMA_ADDR_REMAP0_0, icfg_addr_scr0);
@@ -86,7 +90,10 @@ static int ivp_get_memory_section(struct platform_device *pdev,
     }
 
     ivp_devp->vaddr_memory = NULL;
-    if ((ivp_devp->vaddr_memory = dma_alloc_coherent(ivp_devp->device.this_device,
+    /*lint -save -e598 -e648*/
+    dma_set_mask_and_coherent(&ivp_devp->ivp_pdev->dev, DMA_BIT_MASK(64));
+    /*lint -restore */
+    if ((ivp_devp->vaddr_memory = dma_alloc_coherent(&ivp_devp->ivp_pdev->dev,
                     ivp_devp->dynamic_mem_size, &dma_addr, GFP_KERNEL)) == NULL) {
         ivp_err("[%s] ivp_get_vaddr.0x%pK\n", __func__, ivp_devp->vaddr_memory);
         return -EINVAL;
@@ -115,7 +122,7 @@ static void ivp_free_memory_section(struct ivp_device *ivp_devp)
     dma_addr = ivp_devp->sects[3].acpu_addr << 4;
 
     if (ivp_devp->vaddr_memory != NULL) {
-        dma_free_coherent(ivp_devp->device.this_device, ivp_devp->dynamic_mem_size,
+        dma_free_coherent(&ivp_devp->ivp_pdev->dev, ivp_devp->dynamic_mem_size,
                 ivp_devp->vaddr_memory, dma_addr);
         ivp_devp->vaddr_memory = NULL;
     }
@@ -400,4 +407,43 @@ int ivp_init_pri(struct platform_device *pdev, struct ivp_device *ivp_devp)
 void ivp_deinit_pri(struct ivp_device *ivp_devp)
 {
     ivp_free_memory_section(ivp_devp);
+}
+
+int ivp_init_resethandler(struct ivp_device *pdev)
+{
+    /* init code to remap address */
+    iram = ioremap(REMAP_ADD, SIZE_16K);
+    if (!iram) {
+        ivp_err("Can't map ivp base address");
+        return -1;
+    }
+
+    iowrite32(DEAD_FLAG, iram);
+
+    return 0;
+}
+
+int ivp_check_resethandler(struct ivp_device *pdev)
+{
+    /* check init code in remap address */
+    int inited = 0;
+    uint32_t flag = ioread32(iram);
+    if (flag != DEAD_FLAG)
+        inited = 1;
+
+    return inited;
+}
+
+void ivp_deinit_resethandler(struct ivp_device *pdev)
+{
+    /* deinit remap address */
+    if(iram) {
+        iounmap(iram);
+    }
+}
+
+int ivp_sec_loadimage(struct ivp_device *pdev)
+{
+    ivp_err("not support sec ivp!");
+    return -EINVAL;
 }

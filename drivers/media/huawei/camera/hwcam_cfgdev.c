@@ -19,11 +19,15 @@
 #include <media/v4l2-event.h>
 #include <media/v4l2-fh.h>
 #include <media/v4l2-ioctl.h>
+#include "securec.h"
 
 #include "hwcam_intf.h"
 #include "cam_log.h"
 #include "hwcam_compat32.h"
 #include <dsm/dsm_pub.h>
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
+#include <linux/of.h>
+#endif
 //lint -save -e455 -e429 -e454
 
 #define CREATE_TRACE_POINTS
@@ -98,6 +102,10 @@ static ssize_t hwcam_guard_thermal_show(struct device_driver *drv, char *buf);
 static ssize_t hwcam_guard_thermal_store(struct device_driver *drv, const char *buf, size_t count);
 static DRIVER_ATTR(guard_thermal, 0664, hwcam_guard_thermal_show, hwcam_guard_thermal_store);
 
+static ssize_t hwcam_dump_meminfo_show(struct device_driver *drv, char *buf);
+static ssize_t hwcam_dump_meminfo_store(struct device_driver *drv, const char *buf, size_t count);
+static DRIVER_ATTR(dump_meminfo, 0664, hwcam_dump_meminfo_show, hwcam_dump_meminfo_store);
+
 /*
  * set camera log level by device
  */
@@ -148,6 +156,35 @@ static ssize_t hwcam_guard_thermal_show(struct device_driver *drv,
 	ret = snprintf(offset, PAGE_SIZE, "guard thermal:[%s]\n", s_cfgdev.sbuf);
 	offset += ret;
 	return (offset - buf);
+}
+
+static void
+hwcam_cfgdev_dump_meminfo(void)
+{
+    struct v4l2_event ev =
+    {
+        .type = HWCAM_V4L2_EVENT_TYPE,
+        .id = HWCAM_CFGDEV_REQUEST,
+    };
+    hwcam_cfgreq2dev_t* req = (hwcam_cfgreq2dev_t*)ev.u.data;
+
+    req->req.intf = NULL;
+    req->kind = HWCAM_CFGDEV_REQ_DUMP_MEMINFO;
+    hwcam_cfgdev_send_req(NULL, &ev, &s_cfgdev.rq, 1, NULL);
+}
+
+static ssize_t hwcam_dump_meminfo_store(struct device_driver *drv,
+												  const char *buf, size_t count)
+{
+	return strnlen(buf, count);
+}
+
+static ssize_t hwcam_dump_meminfo_show(struct device_driver *drv,
+												char *buf)
+{
+	cam_info("%s enter", __func__);
+	hwcam_cfgdev_dump_meminfo();
+	return 0;
 }
 
 static ssize_t hwcam_log_level_store(struct device_driver *drv, const char *buf, size_t count)
@@ -407,8 +444,11 @@ hwcam_cfgdev_import_data_table(
     if (!s_ion_client) {
         goto exit_import_data_table;
     }
-
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
+    hdl = ion_import_dma_buf_fd(s_ion_client, bi->fd);
+#else
     hdl = ion_import_dma_buf(s_ion_client, bi->fd);
+#endif
     if (IS_ERR_OR_NULL(hdl)) { 
         HWCAM_CFG_ERR("failed to import ion buffer(%d)!", bi->fd);
         goto exit_import_data_table;
@@ -465,7 +505,11 @@ hwcam_cfgdev_import_graphic_buffer(
         goto exit_import_graphic_buffer;
     }
 
-    hdl = ion_import_dma_buf(s_ion_client, fd);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
+	hdl = ion_import_dma_buf_fd(s_ion_client, fd);
+#else
+	hdl = ion_import_dma_buf(s_ion_client, fd);
+#endif
     if (IS_ERR_OR_NULL(hdl)) {
         HWCAM_CFG_ERR("failed to import ion buffer(%d)!", fd);
     }
@@ -515,6 +559,29 @@ exit_release_graphic_buffer:
 int hw_is_binderized(void)
 {
     return is_binderized;
+}
+
+char*
+gen_media_prefix(char* media_ent,hwcam_device_id_constants_t dev_const, size_t dst_size)
+{
+	snprintf_s(media_ent, dst_size, dst_size-1, "%d",dev_const);
+	strlcat(media_ent, "-" , dst_size);
+	return media_ent;
+}
+
+int
+init_subdev_media_entity(struct v4l2_subdev* subdev,hwcam_device_id_constants_t dev_const)
+{
+	int rc = 0;
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
+	rc = media_entity_pads_init(&subdev->entity,0,NULL);
+	subdev->entity.obj_type = MEDIA_ENTITY_TYPE_V4L2_SUBDEV;
+#else
+	rc = media_entity_init(&subdev->entity,0,NULL,0);
+	subdev->entity.type = MEDIA_ENT_T_V4L2_SUBDEV;
+	subdev->entity.group_id = dev_const;
+#endif
+	return rc;
 }
 
 static int
@@ -672,19 +739,21 @@ hwcam_v4l2_subdev_fops =
 
 int
 hwcam_cfgdev_register_subdev(
-        struct v4l2_subdev* sd)
+        struct v4l2_subdev* sd,hwcam_device_id_constants_t dev_const)
 {
-	int rc = 0;
-	struct video_device* vdev = NULL;
+    int rc = 0;
+    int name_len = 0;
+    char media_prefix[10];
+    struct video_device* vdev = NULL;
     struct v4l2_device* v4l2 = &s_cfgdev.v4l2;
 
-	if (!sd || !sd->name[0]) {
-		rc = -EINVAL;
+    if (!sd || !sd->name[0]) {
+	rc = -EINVAL;
         goto out;
     }
 
-	rc = v4l2_device_register_subdev(v4l2, sd);
-	if (rc < 0) {
+    rc = v4l2_device_register_subdev(v4l2, sd);
+    if (rc < 0) {
         goto out;
     }
 
@@ -698,23 +767,33 @@ hwcam_cfgdev_register_subdev(
         goto video_alloc_fail;
     }
 
-	video_set_drvdata(vdev, sd);
-	strlcpy(vdev->name, sd->name, sizeof(vdev->name));
-	vdev->v4l2_dev = v4l2;
-	vdev->fops = &hwcam_v4l2_subdev_fops;
-	vdev->release = hwcam_cfgdev_subdev_release;
-	rc = __video_register_device(
-            vdev, VFL_TYPE_SUBDEV, -1, 1, sd->owner);
-	if (rc < 0) {
+    video_set_drvdata(vdev, sd);
+    gen_media_prefix(media_prefix, dev_const, sizeof(media_prefix));
+    snprintf_s(vdev->name, sizeof(vdev->name), sizeof(vdev->name) - 1, "%s", media_prefix);
+    strlcpy(vdev->name + strlen(vdev->name), sd->name, sizeof(vdev->name) - strlen(vdev->name));
+    name_len = strlen(vdev->name);
+    vdev->v4l2_dev = v4l2;
+    vdev->fops = &hwcam_v4l2_subdev_fops;
+    vdev->release = hwcam_cfgdev_subdev_release;
+    rc = __video_register_device(vdev, VFL_TYPE_SUBDEV, -1, 1, sd->owner);
+    if (rc < 0) {
         goto video_register_fail;
-	}
-	cam_debug("register video devices %s sucessful",sd->name);
-	cam_debug("video dev name %s %s",vdev->dev.kobj.name,vdev->name);
-	sd->entity.info.dev.major = VIDEO_MAJOR;
-	sd->entity.info.dev.minor = vdev->minor;
-	sd->entity.name = video_device_node_name(vdev);
-	sd->devnode = vdev;
-	goto out;
+    }
+    cam_debug("register video devices %s sucessful",sd->name);
+    cam_debug("video dev name %s %s",vdev->dev.kobj.name,vdev->name);
+    sd->entity.info.dev.major = VIDEO_MAJOR;
+    sd->entity.info.dev.minor = vdev->minor;
+    rc = snprintf(vdev->name + strlen(vdev->name),sizeof(vdev->name) - strlen(vdev->name),"%s",video_device_node_name(vdev));
+    if(rc > AVAIL_NAME_LENGTH - name_len){
+	HWCAM_CFG_ERR("Truncation Occurred\n");
+	snprintf(vdev->name,sizeof(vdev->name),"%s",media_prefix);
+	snprintf(vdev->name + strlen(vdev->name),sizeof(vdev->name) - strlen(vdev->name),"%s",video_device_node_name(vdev));
+	rc = 0;
+   }
+   rc = 0;
+   sd->entity.name = vdev->name;
+   sd->devnode = vdev;
+   goto out;
 
 video_register_fail:
     video_device_release(vdev);
@@ -1032,7 +1111,9 @@ static int
 hwcam_cfgdev_vo_probe(
         struct platform_device* pdev)
 {
-	int rc = 0;
+    int rc = 0;
+    int name_len = 0;
+    char media_prefix[10];
     struct video_device* vdev = NULL;
     struct media_device* mdev = NULL;
     struct v4l2_device* v4l2 = &s_cfgdev.v4l2;
@@ -1054,41 +1135,63 @@ hwcam_cfgdev_vo_probe(
         HWCAM_CFG_DEBUG("get dts failed.");
     }
 
-	strlcpy(mdev->model, HWCAM_MODEL_CFG, sizeof(mdev->model));
-	mdev->dev = &(pdev->dev);
-	rc = media_device_register(mdev);
-	if (rc < 0) {
-		goto media_register_fail;
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
+    media_device_init(mdev);
+#endif
+    strlcpy(mdev->model, HWCAM_MODEL_CFG, sizeof(mdev->model));
+    mdev->dev = &(pdev->dev);
+    rc = media_device_register(mdev);
+    if (rc < 0) {
+        goto media_register_fail;
     }
 
-    rc = media_entity_init(&vdev->entity, 0, NULL, 0);
-	if (rc < 0) {
-		goto entity_init_fail;
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
+    rc = media_entity_pads_init(&vdev->entity,0,NULL);
+#else
+    rc = media_entity_init(&vdev->entity,0,NULL,0);
+#endif
+    if (rc < 0) {
+ 	goto entity_init_fail;
     }
 
-	v4l2->mdev = mdev;
-	v4l2->notify = hwcam_cfgdev_vo_subdev_notify;
-	rc = v4l2_device_register(&(pdev->dev), v4l2);
-	if (rc < 0) {
-		goto v4l2_register_fail;
+    v4l2->mdev = mdev;
+    v4l2->notify = hwcam_cfgdev_vo_subdev_notify;
+    rc = v4l2_device_register(&(pdev->dev), v4l2);
+    if (rc < 0) {
+	goto v4l2_register_fail;
     }
 
-	vdev->v4l2_dev = v4l2;
-	strlcpy(vdev->name, "hwcam-cfgdev", sizeof(vdev->name));
-	vdev->entity.type = MEDIA_ENT_T_DEVNODE_V4L;
-	vdev->entity.group_id = HWCAM_VNODE_GROUP_ID;
-	vdev->release = video_device_release_empty;
-	vdev->fops = &s_fops_cfgdev;
-	vdev->minor = -1;
-	vdev->vfl_type = VFL_TYPE_GRABBER;
-	rc = video_register_device(vdev, VFL_TYPE_GRABBER, -1);
-	if (rc < 0) {
-		goto video_register_fail;
+    vdev->v4l2_dev = v4l2;
+    gen_media_prefix(media_prefix,HWCAM_VNODE_GROUP_ID, sizeof(media_prefix));
+    snprintf_s(vdev->name, sizeof(vdev->name), sizeof(vdev->name) - 1, "%s", media_prefix);
+    strlcpy(vdev->name + strlen(vdev->name), "hwcam-cfgdev", sizeof(vdev->name) - strlen(vdev->name));
+    name_len = strlen(vdev->name);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
+    vdev->entity.obj_type = MEDIA_ENTITY_TYPE_VIDEO_DEVICE;
+#else
+    vdev->entity.type = MEDIA_ENT_T_DEVNODE_V4L;
+    vdev->entity.group_id = HWCAM_VNODE_GROUP_ID;
+#endif
+    vdev->release = video_device_release_empty;
+    vdev->fops = &s_fops_cfgdev;
+    vdev->minor = -1;
+    vdev->vfl_type = VFL_TYPE_GRABBER;
+    rc = video_register_device(vdev, VFL_TYPE_GRABBER, -1);
+    if (rc < 0) {
+        goto video_register_fail;
     }
-	cam_debug("video dev name %s %s",vdev->dev.kobj.name,vdev->name);
-	vdev->entity.name = video_device_node_name(vdev);
+    cam_debug("video dev name %s %s",vdev->dev.kobj.name,vdev->name);
+    rc = snprintf(vdev->name + strlen(vdev->name),sizeof(vdev->name) - strlen(vdev->name),"%s",video_device_node_name(vdev));
+    if(rc > AVAIL_NAME_LENGTH - name_len){
+        HWCAM_CFG_ERR("Truncation Occurred\n");
+        snprintf(vdev->name, sizeof(vdev->name),"%s",media_prefix);
+        snprintf(vdev->name + strlen(vdev->name),sizeof(vdev->name) - strlen(vdev->name),"%s",video_device_node_name(vdev));
+        rc = 0;
+    }
+    rc = 0;
+    vdev->entity.name = vdev->name;
     vdev->lock = &s_cfgdev_lock;
-	video_set_drvdata(vdev, &s_cfgdev);
+    video_set_drvdata(vdev, &s_cfgdev);
 
     s_cfgdev.vdev = vdev;
     s_cfgdev.mdev = mdev;
@@ -1101,16 +1204,16 @@ hwcam_cfgdev_vo_probe(
         client_camera_user= dsm_register_client(&dev_camera_user);
     }
 
-	goto probe_end;
+    goto probe_end;
 
 video_register_fail:
-	v4l2_device_unregister(v4l2);
+    v4l2_device_unregister(v4l2);
 
 v4l2_register_fail:
-	media_entity_cleanup(&vdev->entity);
+    media_entity_cleanup(&vdev->entity);
 
 entity_init_fail:
-	media_device_unregister(mdev);
+    media_device_unregister(mdev);
 
 media_register_fail:
     kzfree(mdev);
@@ -1119,8 +1222,8 @@ media_alloc_fail:
     video_device_release(vdev);
 
 probe_end:
-	HWCAM_CFG_INFO("exit");
-	return rc;
+    HWCAM_CFG_INFO("exit");
+    return rc;
 }
 
 static int
@@ -1174,6 +1277,10 @@ hwcam_cfgdev_vo_init(void)
 	if(ret == 0) {
 		if (driver_create_file(&s_cfgdev_driver.driver, &driver_attr_guard_thermal)) {
 			cam_warn("%s create driver attr failed", __func__);
+		}
+
+		if (driver_create_file(&s_cfgdev_driver.driver, &driver_attr_dump_meminfo)) {
+			cam_warn("%s create driver attr dump_meminfo failed", __func__);
 		}
 
 #ifdef DEBUG_HISI_CAMERA

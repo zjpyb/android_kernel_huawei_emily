@@ -18,7 +18,7 @@
 #include <linux/err.h>
 #include <linux/platform_device.h>
 #include <asm/cacheflush.h>
-
+#include "blackbox/rdr_print.h"
 #include "pmic_interface.h"
 
 #include <linux/kmsg_dump.h>
@@ -27,6 +27,9 @@
 #include <linux/mfd/hisi_pmic.h>
 #include <soc_gpio_interface.h>
 #include <soc_sctrl_interface.h>
+#include <linux/hisi/hisi_log.h>
+#define HISI_LOG_TAG HISI_POWEROFF_TAG
+
 
 static void __iomem *powerhold_gpio_base;
 static int g_powerhold_gpio_offset = 0;
@@ -41,24 +44,27 @@ extern void (*pm_power_off)(void);
 extern void (*arm_pm_restart)(char str, const char *cmd);
 extern struct cmdword reboot_reason_map[];
 
+
 void hisi_pm_system_off(void)
 {
 	int out_dir, protect_val;
 
 	set_reboot_reason(AP_S_COLDBOOT);
-	while(1) {
 
+
+	while(1) {
 		if (powerhold_gpio_base != NULL) {
-			printk(KERN_INFO "system power off now\n");
+			pr_info("system power off now\n");
 			/* clear powerhold protect */
 			if (g_powerhold_protect_offset != 0xFFFF) {
 				/* we need clear protect bit and set mask bit */
 				protect_val = readl((void *)sysctrl_base + g_powerhold_protect_offset);
 				if ((protect_val & BIT(g_powerhold_protect_bit)) == 0) {
-					printk(KERN_ERR "protect_offset = 0x%X, protect_bit = 0x%X. powerhold protect is already cleared!\n",
+					BB_PRINT_ERR("protect_offset = 0x%X, protect_bit = 0x%X. powerhold protect is already cleared!\n",
 						g_powerhold_protect_offset, g_powerhold_protect_bit);
 				}
-				protect_val = (~BIT(g_powerhold_protect_bit)) | (BIT(g_powerhold_protect_bit+16));
+				protect_val = (protect_val & (~BIT(g_powerhold_protect_bit)))
+								| (BIT(g_powerhold_protect_bit+16));
 				writel(protect_val, (void *)sysctrl_base + g_powerhold_protect_offset);
 			}
 
@@ -88,10 +94,10 @@ void hisi_pm_system_reset(char mode, const char *cmd)
     unsigned int curr_reboot_type = UNKNOWN;
 
     if (cmd == NULL || *cmd == '\0') {
-        printk(KERN_ERR "hisi_pm_system_reset cmd is null\n");
+        BB_PRINT_PN("hisi_pm_system_reset cmd is null\n");
         cmd = "COLDBOOT";
     } else {
-        printk(KERN_ERR "hisi_pm_system_reset cmd is %s\n", cmd);
+        BB_PRINT_PN("hisi_pm_system_reset cmd is %s\n", cmd);
     }
     for (i=0; i < get_reboot_reason_map_size(); i++) {
         if (!strncmp((char *)reboot_reason_map[i].name, cmd, sizeof(reboot_reason_map[i].name))) {
@@ -106,7 +112,7 @@ void hisi_pm_system_reset(char mode, const char *cmd)
     }
 	set_reboot_reason(curr_reboot_type);
 	hisiap_nmi_notify_lpm3();
-	printk(KERN_ERR "ap send nmi to lpm3, then goto dead loop.\n");
+	BB_PRINT_PN("ap send nmi to lpm3, then goto dead loop.\n");
 	while(1);
 }
 static int hi3xxx_reset_probe(struct platform_device *pdev)
@@ -118,50 +124,50 @@ static int hi3xxx_reset_probe(struct platform_device *pdev)
 	np = of_find_compatible_node(NULL, NULL, "hisi,powerhold");
 	/* get powerhold gpio */
 	if (!np) {
-		printk(KERN_ERR "get powerhold np error !\n");
+		BB_PRINT_ERR("get powerhold np error !\n");
 	} else {
 		powerhold_gpio_base = of_iomap(np, 0);
-		printk(KERN_INFO "powerhold_gpio_base = %pK !\n", powerhold_gpio_base);
+		pr_info("powerhold_gpio_base = %pK !\n", powerhold_gpio_base);
 		if (!powerhold_gpio_base) {
-			pr_err("%s: powerhold_gpio_base is NULL\n", __func__);
+			BB_PRINT_ERR("%s: powerhold_gpio_base is NULL\n", __func__);
 		}
 		ret = of_property_read_u32(np, "offset", (u32 *)&offset);
 		if (ret) {
-			printk(KERN_ERR "get offset error !\n");
+			BB_PRINT_ERR("get offset error !\n");
 			powerhold_gpio_base = 0;
 		}
 		else {
-			printk(KERN_INFO "offset = 0x%x !\n", (unsigned int)offset);
+			pr_info("offset = 0x%x !\n", (unsigned int)offset);
 			g_powerhold_gpio_offset = offset;
 		}
 
 		ret = of_property_read_u32(np, "powerhold_protect_offset", (u32 *)&offset);
 		if (ret) {
-			printk(KERN_ERR "no powerhold_protect_offset !\n");
+			BB_PRINT_ERR("no powerhold_protect_offset !\n");
 		} else {
-			printk(KERN_INFO "powerhold_protect_offset = 0x%x !\n", (unsigned int)offset);
+			pr_info("powerhold_protect_offset = 0x%x !\n", (unsigned int)offset);
 			g_powerhold_protect_offset = offset;
 		}
 
 		ret = of_property_read_u32(np, "powerhold_protect_bit", (u32 *)&offset);
 		if (ret) {
-			printk(KERN_ERR "no powerhold_protect_bit !\n");
+			BB_PRINT_ERR("no powerhold_protect_bit !\n");
 			g_powerhold_protect_offset = 0xFFFF;
 		} else {
-			printk(KERN_INFO "powerhold_protect_bit = 0x%x !\n", (unsigned int)offset);
+			pr_info("powerhold_protect_bit = 0x%x !\n", (unsigned int)offset);
 			g_powerhold_protect_bit = offset;
 		}
 	}
 
 	np = of_find_compatible_node(NULL, NULL, "hisilicon,sysctrl");
 	if (!np) {
-		pr_err("%s: hisilicon,sysctrl No compatible node found\n", __func__);
+		BB_PRINT_ERR("%s: hisilicon,sysctrl No compatible node found\n", __func__);
 		return -ENODEV;
 	}
 
 	sysctrl_base = of_iomap(np, 0);
 	if (!sysctrl_base) {
-		pr_err("%s: hisilicon,sysctrl_base is NULL\n", __func__);
+		BB_PRINT_ERR("%s: hisilicon,sysctrl_base is NULL\n", __func__);
 		return -ENODEV;
 	}
 

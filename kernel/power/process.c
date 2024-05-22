@@ -1,5 +1,5 @@
 /*
- * drivers/power/process.c - Functions for starting/stopping processes on
+ * drivers/power/process.c - Functions for starting/stopping processes on 
  *                           suspend transitions.
  *
  * Originally from swsusp.
@@ -19,6 +19,7 @@
 #include <linux/kmod.h>
 #include <trace/events/power.h>
 #include <linux/wakeup_reason.h>
+#include <linux/cpuset.h>
 
 /*
  * Timeout for stopping processes
@@ -31,8 +32,7 @@ static int try_to_freeze_tasks(bool user_only)
 	unsigned long end_time;
 	unsigned int todo;
 	bool wq_busy = false;
-	struct timeval start, end;
-	u64 elapsed_msecs64;
+	ktime_t start, end, elapsed;
 	unsigned int elapsed_msecs;
 	bool wakeup = false;
 	int sleep_usecs = USEC_PER_MSEC;
@@ -40,7 +40,7 @@ static int try_to_freeze_tasks(bool user_only)
 	char suspend_abort[MAX_SUSPEND_ABORT_LEN];
 #endif
 
-	do_gettimeofday(&start);
+	start = ktime_get_boottime();
 
 	end_time = jiffies + msecs_to_jiffies(freeze_timeout_msecs);
 
@@ -61,7 +61,7 @@ static int try_to_freeze_tasks(bool user_only)
 
 		if (!user_only) {
 			wq_busy = freeze_workqueues_busy();
-			todo += wq_busy;
+			todo += wq_busy;/*lint !e514*/
 		}
 
 		if (!todo || time_after(jiffies, end_time))
@@ -87,10 +87,9 @@ static int try_to_freeze_tasks(bool user_only)
 			sleep_usecs *= 2;
 	}
 
-	do_gettimeofday(&end);
-	elapsed_msecs64 = timeval_to_ns(&end) - timeval_to_ns(&start);
-	do_div(elapsed_msecs64, NSEC_PER_MSEC);
-	elapsed_msecs = elapsed_msecs64;
+	end = ktime_get_boottime();
+	elapsed = ktime_sub(end, start);
+	elapsed_msecs = ktime_to_ms(elapsed);
 
 	if (wakeup) {
 		pr_cont("\n");
@@ -98,26 +97,21 @@ static int try_to_freeze_tasks(bool user_only)
 		       elapsed_msecs / 1000, elapsed_msecs % 1000);
 	} else if (todo) {
 		pr_cont("\n");
-#ifdef CONFIG_HW_PTM
-		pr_err("Freezing of tasks %s after %d.%03d seconds"
-		       " (%d tasks refusing to freeze, wq_busy=%d):\n",
-				wakeup ? "aborted" : "failed",
-				elapsed_msecs / 1000, elapsed_msecs % 1000,
-				todo - wq_busy, wq_busy);
-#else
 		pr_err("Freezing of tasks failed after %d.%03d seconds"
 		       " (%d tasks refusing to freeze, wq_busy=%d):\n",
 		       elapsed_msecs / 1000, elapsed_msecs % 1000,
-		       todo - wq_busy, wq_busy);
-#endif
+		       todo - wq_busy, wq_busy);/*lint !e514*/
 
-			read_lock(&tasklist_lock);
-			for_each_process_thread(g, p) {
-				if (p != current && !freezer_should_skip(p)
-				    && freezing(p) && !frozen(p))
-					sched_show_task(p);
-			}
-			read_unlock(&tasklist_lock);
+		if (wq_busy)
+			show_workqueue_state();
+
+		read_lock(&tasklist_lock);
+		for_each_process_thread(g, p) {
+			if (p != current && !freezer_should_skip(p)
+			    && freezing(p) && !frozen(p))
+				sched_show_task(p);
+		}
+		read_unlock(&tasklist_lock);
 	} else {
 		pr_cont("(elapsed %d.%03d seconds) ", elapsed_msecs / 1000,
 			elapsed_msecs % 1000);
@@ -161,9 +155,10 @@ int freeze_processes(void)
 	/*
 	 * Now that the whole userspace is frozen we need to disbale
 	 * the OOM killer to disallow any further interference with
-	 * killable tasks.
+	 * killable tasks. There is no guarantee oom victims will
+	 * ever reach a point they go away we have to wait with a timeout.
 	 */
-	if (!error && !oom_killer_disable())
+	if (!error && !oom_killer_disable(msecs_to_jiffies(freeze_timeout_msecs)))
 		error = -EBUSY;
 
 	if (error)
@@ -215,6 +210,8 @@ void thaw_processes(void)
 
 	__usermodehelper_set_disable_depth(UMH_FREEZING);
 	thaw_workqueues();
+
+	cpuset_wait_for_hotplug();
 
 	read_lock(&tasklist_lock);
 	for_each_process_thread(g, p) {

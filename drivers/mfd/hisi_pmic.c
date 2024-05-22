@@ -30,11 +30,11 @@
 #include <linux/of_gpio.h>
 #include <linux/of_irq.h>
 #include <linux/mfd/hisi_pmic.h>
-#if defined (CONFIG_HUAWEI_DSM)
-#include <dsm/dsm_pub.h>
+#include <huawei_platform/power/power_dsm.h>
 #include <pmic_interface.h>
-#endif
 #include <linux/irq.h>
+#include <linux/hisi/hisi_log.h>
+#define HISI_LOG_TAG HISI_PMIC_TAG
 
 #ifndef NO_IRQ
 #define NO_IRQ       0
@@ -44,15 +44,6 @@
 
 #ifndef CONFIG_HISI_HI6421V600_PMU
 #if defined (CONFIG_HUAWEI_DSM)
-static struct dsm_dev dsm_pmic_irq = {
-       .name = "dsm_pmu_irq",
-       .device_name = NULL,
-       .ic_name = NULL,
-       .module_name = NULL,
-       .fops = NULL,
-       .buff_size = 1024,
-};
-static struct dsm_client *pmic_irq_dclient;
 char *pmic_irq1_name[] = {  /*IRQ1: 0x121 bit[7:2]*/
     [7] = " ",
     [6] = "thsd_otmp140_d1mr",
@@ -512,15 +503,6 @@ static int hisi_pmic_probe(struct platform_device *pdev)
 #if defined (CONFIG_HUAWEI_DSM)
 	for (i = 0; i < PMIC_VER_LEN; i++)
 		g_pmic_ver[i] = hisi_pmic_read(pmic, (PMIC_VER_BASE_ADDR + i));
-
-	if (PMIC_IS_HI6421V500) {
-		if (!pmic_irq_dclient) {
-			pmic_irq_dclient = dsm_register_client(&dsm_pmic_irq);
-			if (NULL == pmic_irq_dclient) {
-				pr_err("%s:dsm_register_client register fail.\n", __func__);
-			}
-		}
-	}
 #endif
 #endif
 	for (i = 0 ; i < pmic->irq_addr.array; i++) {
@@ -531,13 +513,13 @@ static int hisi_pmic_probe(struct platform_device *pdev)
 		if (PMIC_IS_HI6421V500) {
 			if ((1 == i) && (pending & HISI_PMIC_IRQ1_MASK_STATE)) {
 				for (pmic_irq_error_offset = 2; pmic_irq_error_offset < 8; pmic_irq_error_offset++) {
-					if (dsm_client_ocuppy(pmic_irq_dclient)) {
+					if (dsm_client_ocuppy(power_dsm_get_dclient(POWER_DSM_PMU_IRQ))) {
 						pr_err("pmic_irq_dclient dsm_client_ocuppy failed");
 					} else if (pmic_irq_error_offset & HISI_PMIC_IRQ1_MASK_STATE) {
 						pr_err("pmic %s happened, please pay attention!\n\r", pmic_irq1_name[pmic_irq_error_offset]);
-						dsm_client_record(pmic_irq_dclient, "pmic %s happened, please pay attention!\n", \
+						dsm_client_record(power_dsm_get_dclient(POWER_DSM_PMU_IRQ), "pmic %s happened, please pay attention!\n", \
 						pmic_irq1_name[pmic_irq_error_offset]);
-						dsm_client_notify(pmic_irq_dclient, DSM_PMU_IRQ_ERROR_NO + pmic_irq_error_offset);
+						dsm_client_notify(power_dsm_get_dclient(POWER_DSM_PMU_IRQ), DSM_PMU_IRQ_ERROR_NO + pmic_irq_error_offset);
 					} else {
 					/*do nothing*/
 					}

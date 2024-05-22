@@ -577,7 +577,7 @@ enum ts_sleep_mode {
 struct ts_easy_wakeup_info {
 	enum ts_sleep_mode sleep_mode;
 	int off_motion_on;
-	int easy_wakeup_gesture;
+	unsigned int easy_wakeup_gesture;
 	int easy_wakeup_flag;
 	int palm_cover_flag;
 	int palm_cover_control;
@@ -593,7 +593,7 @@ struct ts_wakeup_gesture_enable_info {
 
 struct ts_regs_info {
 	unsigned int addr;
-	int bit;
+	unsigned int bit;
 	u8 values[TS_MAX_REG_VALUE_NUM];
 	int num;
 	u8 op_action;
@@ -802,7 +802,7 @@ struct anti_false_touch_param{
 	int sensor_y_width;
 
 	/* if x > drv_stop_width, and then the same finger x < drv_stop_width, report it */
-	int edge_status;
+	unsigned int edge_status;
 };
 
 struct aft_abs_param_major{

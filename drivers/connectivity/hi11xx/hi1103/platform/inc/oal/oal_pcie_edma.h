@@ -94,6 +94,8 @@ extern "C" {
 #define PCIE_TX_ABORT_STATUS_OFF           (0x47C)
 #define PCIE_RX_ABORT_STATUS_OFF           (0x480)
 #define PCIE_INTR_RAW_STATUS_OFF           (0x484)
+#define PCIE_STAT_CNT_LTSSM_ENTER_RCVRY_OFF     (0x498)
+#define PCIE_STAT_CNT_L1_ENTER_RCVRY_OFF        (0x49C)
 
 /*Port Logic Reg*/
 #define PCIE_ACK_F_ASPM_CTRL_OFF            (0x70c)
@@ -358,7 +360,7 @@ typedef union {
         oal_uint32 reserved7:8;/*24~31*/
     }bits;
     oal_uint32 AsDword;
-} PCIE_RX_ABORT_STATUS;
+} PCIE_TX_ABORT_STATUS;
 
 typedef union {
     struct {
@@ -369,7 +371,7 @@ typedef union {
         oal_uint32 reserved3:24;/*8~31*/
     }bits;
     oal_uint32 AsDword;
-} PCIE_TX_ABORT_STATUS;
+} PCIE_RX_ABORT_STATUS;
 
 typedef union {
     struct {

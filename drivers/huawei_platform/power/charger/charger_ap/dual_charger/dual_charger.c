@@ -7,8 +7,12 @@
 #include <huawei_platform/log/hw_log.h>
 #include <huawei_platform/power/huawei_charger.h>
 #include <dual_charger.h>
+#ifdef CONFIG_HISI_COUL
 #include <linux/power/hisi/coul/hisi_coul_drv.h>
+#endif
+#ifdef CONFIG_HISI_BCI_BATTERY
 #include <linux/power/hisi/hisi_bci_battery.h>
+#endif
 
 #define HWLOG_TAG dual_charger
 HWLOG_REGIST();
@@ -63,37 +67,24 @@ int charge_aux_ops_register(struct charge_device_ops *ops)
 }
 
 /**********************************************************
-*  Function:       dual_charger_fcp_chip_init
+*  Function:       dual_charger_chip_init
 *  Discription:    dual charger initialization
-*  Parameters:   NULL
+*  Parameters:   chip_init_crit
 *  return value:  0-sucess or others-fail
 **********************************************************/
-static int dual_charger_chip_init(void)
+static int dual_charger_chip_init(struct chip_init_crit* init_crit)
 {
 	int ret = 0;
+	if (!init_crit) {
+		hwlog_err("%s: init_crit is null\n", __func__);
+		return -ENOMEM;
+	}
 	IF_OPS(g_main_ops, chip_init)
-		ret |= g_main_ops->chip_init();
+		ret |= g_main_ops->chip_init(init_crit);
 	IF_OPS(g_aux_ops, chip_init)
-		ret |= g_aux_ops->chip_init();
+		ret |= g_aux_ops->chip_init(init_crit);
 	return ret;
 }
-
-/**********************************************************
-*  Function:       dual_charger_fcp_chip_init
-*  Discription:    dual charger initialization for high voltage adapter
-*  Parameters:   NULL
-*  return value:  0-sucess or others-fail
-**********************************************************/
-static int dual_charger_fcp_chip_init(void)
-{
-	int ret = 0;
-	IF_OPS(g_main_ops, fcp_chip_init)
-		ret |= g_main_ops->fcp_chip_init();
-	IF_OPS(g_aux_ops, fcp_chip_init)
-		ret |= g_aux_ops->fcp_chip_init();
-	return ret;
-}
-
 /**********************************************************
 *  Function:       dual_charger_device_check
 *  Discription:    check chip i2c communication
@@ -709,7 +700,6 @@ static int dual_charger_stop_charge_config(void)
 
 struct charge_device_ops dual_charger_ops = {
 	.chip_init = dual_charger_chip_init,
-	.fcp_chip_init = dual_charger_fcp_chip_init,
 	.dev_check = dual_charger_device_check,
 	.set_adc_conv_rate = dual_charger_set_adc_conv_rate,
 	.set_input_current = dual_charger_set_input_current,

@@ -78,7 +78,6 @@ extern "C" {
 #define AT_MAX_VERSION_LEN              (128)                 /* 版本信息最大长度 */
 
 
-/* Added by f62575 for AT Project, 2011-10-04,  Begin */
 #define AT_MAX_PDM_VER_LEN              (16)                                    /* PDM版本号的最大长度 */
 
 #define TAF_DLOAD_INFO_LEN              (1024)
@@ -95,13 +94,10 @@ extern "C" {
 
 #define AT_AGENT_DRV_VERSION_TIME_LEN   (32)                                    /* 底软接口DRV_GET_VERSION_TIME返回时间字符串最大长度 */
 
-/* Added by f62575 for AT Project, 2011-10-04,  End */
 
-/* Added by L60609 for AT Project，2011-10-09,  Begin*/
 #define TAF_MAX_FLAFH_INFO_LEN          (255)
 
 #define TAF_MAX_GPIO_INFO_LEN           (32)
-/* Added by L60609 for AT Project，2011-10-09,  End*/
 
 /*硬件版本号最大长度*/
 #define DRV_AGENT_MAX_MODEL_ID_LEN      (31)
@@ -128,12 +124,10 @@ extern "C" {
 
 
 
-/* Added by l60609 for B060 Project, 2012-2-20, Begin   */
 #if (FEATURE_ON == FEATURE_SECURITY_SHELL)
 /* 增强SHELL口密码保护相关定义 */
 #define AT_SHELL_PWD_LEN                (8)
 #endif
-/* Added by l60609 for B060 Project, 2012-2-20, End   */
 
 /* 设定一个门限值100（考虑到PAD 的NAND为256MB，典型block size为128kB，则共有2048块，
    坏块率一般要低于5%认为是合格的FLASH，故2048*5%=102.4，取100为坏块输出上限）。
@@ -173,10 +167,8 @@ extern "C" {
 #define DRV_AGENT_PH_PHYNUM_SN_NV_LEN           (DRV_AGENT_PH_PHYNUM_SN_LEN+4)  /* SN的NV项长度 */
 #define DRV_AGENT_PORT_PASSWORD_LEN             (16)        /* 网络通信端口锁密码长度 */
 
-/* Added by L47619 for V9R1 vSIM Project, 2013-8-27, begin */
 #define DRV_AGENT_DH_PUBLICKEY_LEN              (128)       /* DH算法使用的服务器公钥或Modem侧公钥长度 */
 #define DRV_AGENT_DH_PRIVATEKEY_LEN             (48)        /* DH算法使用的Modem侧私钥长度 */
-/* Added by L47619 for V9R1 vSIM Project, 2013-8-27, end */
 
 #define DRV_AGENT_HMAC_DATA_LEN                 (32)        /* HMAC数据的长度 */
 
@@ -192,7 +184,6 @@ extern "C" {
   3 枚举定义
 *****************************************************************************/
 
-/* Added by f62575 for SMALL IMAGE, 2012-1-16, begin */
 /*****************************************************************************
  枚举名    : DRV_AGENT_TSELRF_SET_ERROR_ENUM
  结构说明  : ^TSELRF 命令设置操作结果错误码列表
@@ -223,7 +214,6 @@ enum DRV_AGENT_HKADC_GET_ERROR_ENUM
     DRV_AGENT_HKADC_GET_BUTT
 };
 typedef VOS_UINT32 DRV_AGENT_HKADC_GET_ERROR_ENUM_UINT32;
-/* Added by f62575 for SMALL IMAGE, 2012-1-16, end   */
 
 /*****************************************************************************
  枚举名    : DRV_AGENT_USIMWRITESTUB_SET_ERROR_ENUM
@@ -256,7 +246,6 @@ enum DRV_AGENT_MSID_QRY_ERROR_ENUM
 };
 typedef VOS_UINT32  DRV_AGENT_MSID_QRY_ERROR_ENUM_UINT32;
 
-/* Added by f62575 for AT Project, 2011-10-04,  Begin */
 
 enum DRV_AGENT_APPDMVER_QRY_ERROR_ENUM
 {
@@ -327,7 +316,6 @@ enum DRV_AGENT_HWNATQRY_QRY_ERROR_ENUM
 };
 typedef VOS_UINT32 DRV_AGENT_HWNATQRY_QRY_ERROR_ENUM_UINT32;
 
-/* Added by 傅映君/f62575 for CPULOAD&MFREELOCKSIZE处理过程移至C核, 2011/11/15, begin */
 
 enum DRV_AGENT_CPULOAD_QRY_ERROR_ENUM
 {
@@ -348,7 +336,7 @@ enum DRV_AGENT_MFREELOCKSIZE_QRY_ERROR_ENUM
 };
 typedef VOS_UINT32 DRV_AGENT_MFREELOCKSIZE_QRY_ERROR_ENUM_UINT32;
 
-/* Added by 傅映君/f62575 for CPULOAD&MFREELOCKSIZE处理过程移至C核, 2011/11/15, end */
+
 
 
 enum DRV_AGENT_AUTHVER_QRY_ERROR_ENUM
@@ -397,7 +385,6 @@ enum DRV_AGENT_DLOADVER_QRY_ERROR_ENUM
 };
 typedef VOS_UINT32 DRV_AGENT_DLOADVER_QRY_ERROR_ENUM_UINT32;
 
-/* Added by f62575 for AT Project, 2011-10-04,  End */
 
 
 enum DRV_AGENT_PERSONALIZATION_ERR_ENUM
@@ -507,10 +494,8 @@ enum DRV_AGENT_MSG_TYPE_ENUM
     DRV_AGENT_AUTHORITYID_QRY_REQ        = 0x0032,                              /* _H2ASN_MsgChoice AT_APPCTRL_STRU*/
     DRV_AGENT_GODLOAD_SET_REQ            = 0x0034,                              /* _H2ASN_MsgChoice AT_APPCTRL_STRU*/
     DRV_AGENT_HWNATQRY_QRY_REQ           = 0x0036,                              /* _H2ASN_MsgChoice AT_APPCTRL_STRU*/
-    /* Added by 傅映君/f62575 for CPULOAD&MFREELOCKSIZE处理过程移至C核, 2011/11/15, begin */
     DRV_AGENT_CPULOAD_QRY_REQ            = 0x0038,                              /* _H2ASN_MsgChoice AT_APPCTRL_STRU*/
     DRV_AGENT_MFREELOCKSIZE_QRY_REQ      = 0x003A,                              /* _H2ASN_MsgChoice AT_APPCTRL_STRU*/
-    /* Added by 傅映君/f62575 for CPULOAD&MFREELOCKSIZE处理过程移至C核, 2011/11/15, end */
 
     DRV_AGENT_MEMINFO_QRY_REQ            = 0x003B,                              /* _H2ASN_MsgChoice AT_APPCTRL_STRU*/
 
@@ -540,22 +525,16 @@ enum DRV_AGENT_MSG_TYPE_ENUM
     DRV_AGENT_CPNN_QRY_REQ               = 0x007E,                              /* _H2ASN_MsgChoice AT_APPCTRL_STRU */
     DRV_AGENT_NVRESTORE_MANU_DEFAULT_REQ = 0x0080,                              /* _H2ASN_MsgChoice DRV_AGENT_NVRESTORE_RST_STRU */
     DRV_AGENT_ADC_SET_REQ                = 0x0082,                              /* _H2ASN_MsgChoice SPY_TEMP_THRESHOLD_PARA_STRU */
-    /* Added by f62575 for SMALL IMAGE, 2012-1-16, begin */
     DRV_AGENT_TSELRF_SET_REQ             = 0x0084,                              /* _H2ASN_MsgChoice DRV_AGENT_TSELRF_SET_REQ_STRU */
     DRV_AGENT_HKADC_GET_REQ              = 0x0086,                              /* _H2ASN_MsgChoice  */
-    /* Added by f62575 for SMALL IMAGE, 2012-1-16, end   */
     DRV_AGENT_TBAT_QRY_REQ               = 0x0088,
-    /* Added by f62575 for B050 Project, 2012-2-3, Begin   */
     DRV_AGENT_SECUBOOT_SET_REQ           = 0x008A,
-    /* Added by f62575 for B050 Project, 2012-2-3, end   */
 
-    /* Added by l60609 for B060 Project, 2012-2-21, Begin   */
     DRV_AGENT_SIMLOCK_NV_SET_REQ         = 0x008c,
 
     DRV_AGENT_SPWORD_SET_REQ             = 0x008e,
 
     DRV_AGENT_PSTANDBY_SET_REQ           = 0x0090,
-    /* Added by l60609 for B060 Project, 2012-2-20, End   */
 
     DRV_AGENT_NVBACKUPSTAT_QRY_REQ       = 0x0092,                              /* _H2ASN_MsgChoice AT_APPCTRL_STRU */
     DRV_AGENT_NANDBBC_QRY_REQ            = 0x0094,                              /* _H2ASN_MsgChoice AT_APPCTRL_STRU */
@@ -571,10 +550,7 @@ enum DRV_AGENT_MSG_TYPE_ENUM
     DRV_AGENT_SIMLOCKDATAREAD_QRY_REQ    = 0x00A6,                              /* _H2ASN_MsgChoice AT_APPCTRL_STRU */
     DRV_AGENT_PHONEPHYNUM_SET_REQ        = 0x00A8,                              /* _H2ASN_MsgChoice DRV_AGENT_PHONEPHYNUM_SET_REQ_STRU */
     DRV_AGENT_PHONEPHYNUM_QRY_REQ        = 0x00AA,                              /* _H2ASN_MsgChoice AT_APPCTRL_STRU */
-    /* Added by h59254 for V7R1C50_SAR Project, 2012/03/10, begin */
     DRV_AGENT_SARREDUCTION_SET_REQ       = 0x00B4,                              /* _H2ASN_MsgChoice AT_APPCTRL_STRU */
-    /* Added by h59254 for V7R1C50_SAR Project, 2012/03/10, end */
-
     DRV_AGENT_INFORRS_SET_REQ            = 0x0100,                              /* _H2ASN_MsgChoice AT_APPCTRL_STRU */
 
     DRV_AGENT_MAX_LOCK_TIMES_SET_REQ     = 0x0102,
@@ -584,9 +560,7 @@ enum DRV_AGENT_MSG_TYPE_ENUM
     DRV_AGENT_SWVER_SET_REQ              = 0x0106,                              /* _H2ASN_MsgChoice DRV_AGENT_SWVER_INFO_STRU */
     DRV_AGENT_QRY_CCPU_MEM_INFO_REQ      = 0x0108,
 
-    /* Added by L47619 for V9R1 vSIM Project, 2013-8-27, begin */
     DRV_AGENT_HVPDH_REQ                  = 0x010A,
-    /* Added by L47619 for V9R1 vSIM Project, 2013-8-27, end */
 
     DRV_AGENT_NVMANUFACTUREEXT_SET_REQ   = 0x010C,
 
@@ -614,10 +588,8 @@ enum DRV_AGENT_MSG_TYPE_ENUM
     DRV_AGENT_AUTHORITYID_QRY_CNF        = 0x0031,                              /* _H2ASN_MsgChoice DRV_AGENT_AUTHORITYID_QRY_CNF_STRU*/
     DRV_AGENT_GODLOAD_SET_CNF            = 0x0033,                              /* _H2ASN_MsgChoice DRV_AGENT_GODLOAD_SET_CNF_STRU*/
     DRV_AGENT_HWNATQRY_QRY_CNF           = 0x0035,                              /* _H2ASN_MsgChoice DRV_AGENT_HWNATQRY_QRY_CNF_STRU*/
-    /* Added by 傅映君/f62575 for CPULOAD&MFREELOCKSIZE处理过程移至C核, 2011/11/15, begin */
     DRV_AGENT_CPULOAD_QRY_CNF            = 0x0037,                              /* _H2ASN_MsgChoice AT_APPCTRL_STRU*/
     DRV_AGENT_MFREELOCKSIZE_QRY_CNF      = 0x0039,                              /* _H2ASN_MsgChoice AT_APPCTRL_STRU*/
-    /* Added by 傅映君/f62575 for CPULOAD&MFREELOCKSIZE处理过程移至C核, 2011/11/15, end */
 
     DRV_AGENT_MEMINFO_QRY_CNF            = 0x003A,                              /* _H2ASN_MsgChoice AT_APPCTRL_STRU*/
 
@@ -644,17 +616,11 @@ enum DRV_AGENT_MSG_TYPE_ENUM
     DRV_AGENT_CPNN_QRY_CNF               = 0x007D,                              /* _H2ASN_MsgChoice DRV_AGENT_CPNN_QRY_CNF_STRU */
     DRV_AGENT_NVRESTORE_MANU_DEFAULT_CNF = 0x007F,                              /* _H2ASN_MsgChoice DRV_AGENT_NVRESTORE_RST_STRU */
     DRV_AGENT_ADC_SET_CNF                = 0x0081,
-    /* Added by f62575 for SMALL IMAGE, 2012-1-16, begin */
     DRV_AGENT_TSELRF_SET_CNF             = 0x0083,                              /* _H2ASN_MsgChoice DRV_AGENT_TSELRF_SET_CNF_STRU */
     DRV_AGENT_HKADC_GET_CNF              = 0x0085,                              /* _H2ASN_MsgChoice DRV_AGENT_HKADC_GET_CNF_STRU */
-    /* Added by f62575 for SMALL IMAGE, 2012-1-16, end   */
     DRV_AGENT_TBAT_QRY_CNF               = 0x0087,
-    /* Added by f62575 for B050 Project, 2012-2-3, Begin   */
     DRV_AGENT_SECUBOOT_SET_CNF           = 0x0089,                              /* _H2ASN_MsgChoice DRV_AGENT_SECUBOOT_SET_CNF_STRU */
-    /* Added by f62575 for B050 Project, 2012-2-3, end   */
-    /* Added by l60609 for B060 Project, 2012-2-21, Begin   */
     DRV_AGENT_SPWORD_SET_CNF             = 0x008B,
-    /* Added by l60609 for B060 Project, 2012-2-20, End   */
 
     DRV_AGENT_NVBACKUPSTAT_QRY_CNF       = 0x008D,                              /* _H2ASN_MsgChoice DRV_AGENT_NVBACKUPSTAT_QRY_CNF_STRU */
     DRV_AGENT_NANDBBC_QRY_CNF            = 0x008F,                              /* _H2ASN_MsgChoice DRV_AGENT_NANDBBC_QRY_CNF_STRU */
@@ -675,9 +641,7 @@ enum DRV_AGENT_MSG_TYPE_ENUM
     DRV_AGENT_PORTATTRIBSET_SET_CNF      = 0x00A9,                              /* _H2ASN_MsgChoice DRV_AGENT_PORTATTRIBSET_SET_CNF_STRU */
     DRV_AGENT_PORTATTRIBSET_QRY_CNF      = 0x00AB,                              /* _H2ASN_MsgChoice DRV_AGENT_PORTATTRIBSET_QRY_CNF_STRU */
     DRV_AGENT_OPWORD_SET_CNF             = 0x00AD,                              /* _H2ASN_MsgChoice DRV_AGENT_OPWORD_SET_CNF_STRU */
-    /* Added by h59254 for V7R1C50_SAR Project, 2012/03/10, begin */
     DRV_AGENT_ANTSTATE_QRY_IND           = 0x00AF,                              /* _H2ASN_MsgChoice AT_APPCTRL_STRU*/
-    /* Added by h59254 for V7R1C50_SAR Project, 2012/03/10, end */
     DRV_AGENT_INFORRS_SET_CNF            = 0x0101,                              /* _H2ASN_MsgChoice DRV_AGENT_INFORRS_SET_CNF_STRU */
 
 
@@ -687,9 +651,7 @@ enum DRV_AGENT_MSG_TYPE_ENUM
 
     DRV_AGENT_SWVER_SET_CNF              = 0x0107,                              /* _H2ASN_MsgChoice DRV_AGENT_SWVER_SET_CNF_STRU */
 
-    /* Added by L47619 for V9R1 vSIM Project, 2013-8-27, begin */
     DRV_AGENT_HVPDH_CNF                  = 0x0109,
-    /* Added by L47619 for V9R1 vSIM Project, 2013-8-27, end */
 
     DRV_AGENT_NVMANUFACTUREEXT_SET_CNF   = 0x010B,
 
@@ -733,7 +695,6 @@ enum AT_MEMQUERY_PARA_ENUM
 typedef VOS_UINT32  AT_MEMQUERY_PARA_ENUM_UINT32;
 
 
-/* Added by L47619 for V9R1 vSIM Project, 2013-8-27, begin */
 
 enum DRV_AGENT_DH_KEY_TYPE_ENUM
 {
@@ -758,7 +719,6 @@ enum DRV_AGENT_HVPDH_ERR_ENUM
 };
 typedef VOS_UINT32 DRV_AGENT_HVPDH_ERR_ENUM_UINT32;
 
-/* Added by L47619 for V9R1 vSIM Project, 2013-8-27, end */
 
 
 
@@ -777,14 +737,12 @@ typedef VOS_UINT32 DRV_AGENT_HVPDH_ERR_ENUM_UINT32;
 *****************************************************************************/
 
 
-/* Modify by f62575 for V7代码同步, 2012-04-07, Begin   */
 
 typedef struct
 {
     VOS_UINT32                          ulStandbyTime;                          /* 单板进入待机状态的时间长度，(单位为ms),取值范围 0~65535,默认为5000。 */
     VOS_UINT32                          ulSwitchTime;                           /* 用于指定PC下发待机命令到单板进入待机状态的切换时间。（单位为ms），取值范围为 0~65535，默认为500。 */
 } DRV_AGENT_PSTANDBY_REQ_STRU;
-/* Modify by f62575 for V7代码同步, 2012-04-07, End   */
 
 
 
@@ -839,16 +797,13 @@ typedef struct
     VOS_UINT8                            aucImei[TAF_PH_IMEI_LEN];
 } DRV_AGENT_MSID_QRY_CNF_STRU;
 
-/* Added by f62575 for SMALL IMAGE, 2012-1-3, begin   */
 
 typedef struct
 {
     VOS_UINT8                           ucLoadDspMode;
     VOS_UINT8                           ucDeviceRatMode;
 } DRV_AGENT_TSELRF_SET_REQ_STRU;
-/* Added by f62575 for SMALL IMAGE, 2012-1-3, end   */
 
-/* Added by f62575 for AT Project，2011-10-04,  Begin*/
 
 typedef struct
 {
@@ -930,7 +885,6 @@ typedef struct
     VOS_UINT                                 ulNetMode;
 } DRV_AGENT_HWNATQRY_QRY_CNF_STRU;
 
-/* Added by 傅映君/f62575 for CPULOAD&MFREELOCKSIZE处理过程移至C核, 2011/11/15, begin */
 
 typedef struct
 {
@@ -946,7 +900,6 @@ typedef struct
     DRV_AGENT_MFREELOCKSIZE_QRY_ERROR_ENUM_UINT32   enResult;
     VOS_INT32                                       lMaxFreeLockSize;
 }DRV_AGENT_MFREELOCKSIZE_QRY_CNF_STRU;
-/* Added by 傅映君/f62575 for CPULOAD&MFREELOCKSIZE处理过程移至C核, 2011/11/15, end */
 
 
 typedef struct
@@ -978,7 +931,6 @@ typedef struct
     AT_APPCTRL_STRU                          stAtAppCtrl;
     DRV_AGENT_APPDMVER_QRY_ERROR_ENUM_UINT32 enResult;
 } DRV_AGENT_SDLOAD_QRY_CNF_STRU;
-/* Added by f62575 for AT Project，2011-10-04,  End*/
 
 
 typedef struct
@@ -1278,14 +1230,12 @@ typedef struct
 
 }DRV_AGENT_SFEATURE_QRY_CNF_STRU;
 
-/* Added by f62575 for B050 Project, 2012-2-3, begin   */
 
 typedef struct
 {
     AT_APPCTRL_STRU                     stAtAppCtrl;
     VOS_BOOL                            bFail;
 }DRV_AGENT_SECUBOOT_SET_CNF_STRU;
-/* Added by f62575 for B050 Project, 2012-2-3, end   */
 
 
 typedef struct
@@ -1349,10 +1299,8 @@ enum AT_TMODE_ENUM
     AT_TMODE_FTM ,         /*非信令模式,校准模式*/
     AT_TMODE_UPGRADE ,     /*加载模式,版本升级时使用 */
     AT_TMODE_RESET,        /* 重启单板  */
-    /* Added by f62575 for SMALL IMAGE, 2012-1-3, begin */
     AT_TMODE_POWEROFF,
     AT_TMODE_SIGNALING = 11,
-    /* Added by f62575 for SMALL IMAGE, 2012-1-3, end   */
     AT_TMODE_OFFLINE,
 #if((FEATURE_ON == FEATURE_LTE) || (FEATURE_ON == FEATURE_UE_MODE_TDS))
     AT_TMODE_F_NONESIGNAL   = 13,
@@ -1589,7 +1537,6 @@ typedef struct
     VOS_UINT8                               aucData[4];                         /* 每个PID的内存使用情况 */
 }DRV_AGENT_MEMINFO_QRY_RSP_STRU;
 
-/* Added by f62575 for SMALL IMAGE, 2012-1-3, begin */
 
 typedef struct
 {
@@ -1608,7 +1555,6 @@ typedef struct
 }DRV_AGENT_HKADC_GET_CNF_STRU;
 
 
-/* Added by f62575 for SMALL IMAGE, 2012-1-3, End */
 
 #if (FEATURE_ON == FEATURE_SECURITY_SHELL)
 
@@ -1992,7 +1938,6 @@ typedef struct
 }DRV_AGENT_OPWORD_SET_CNF_STRU;
 
 
-/* Added by L47619 for V9R1 vSIM Project, 2013-8-27, begin */
 
 typedef struct
 {
@@ -2007,7 +1952,6 @@ typedef struct
     AT_APPCTRL_STRU                                 stAtAppCtrl;                /* 消息头 */
     DRV_AGENT_HVPDH_ERR_ENUM_UINT32                 enResult;                   /* 命令执行结果 */
 }DRV_AGENT_HVPDH_CNF_STRU;
-/* Added by L47619 for V9R1 vSIM Project, 2013-8-27, end */
 
 
 typedef struct

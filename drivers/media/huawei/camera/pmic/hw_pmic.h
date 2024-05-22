@@ -27,10 +27,25 @@
 #include <media/v4l2-subdev.h>
 #include <linux/pinctrl/consumer.h>
 #include <dsm/dsm_pub.h>
+#include <linux/irq.h>
+#include <linux/kthread.h>
+#include <linux/interrupt.h>
+#include <linux/of_gpio.h>
+
 
 
 #define DEFINE_HISI_PMIC_MUTEX(name) \
 	static struct mutex pmic_mut_##name = __MUTEX_INITIALIZER(pmic_mut_##name)
+
+#define REPORT_DSM_STATUS(client_pmic, reg, value, pmureg, pmuvalue, dmd_no, dmd_detail) \
+    do { \
+        if (!dsm_client_ocuppy(client_pmic)) { \
+            dsm_client_record(client_pmic, "" dmd_detail " 0x%x=0x%x, pmu: 0x%x=0x%x.\n", reg, value, pmureg, pmuvalue); \
+            dsm_client_notify(client_pmic, dmd_no); \
+            cam_warn("[I/DSM] %s : " dmd_detail " Status 0x%x=0x%x, pmu: 0x%x=0x%x.\n", client_pmic->client_name,\
+                    reg, value, pmureg, pmuvalue); \
+       } \
+    }while(0); \
 
 /********************** v4l2 subdev ioctl case id define **********************/
 struct pmic_cfg_data;
@@ -53,6 +68,8 @@ typedef enum
 	VOUT_BUCK_1,
 	VOUT_BUCK_2,
 	VOUT_MAX,
+
+	VOUT_BOOST,
 } pmic_seq_index_t;
 
 /********************** pmic controler struct define **********************/
@@ -60,6 +77,9 @@ struct hisi_pmic_info {
 	const char *name;
 	int index;
 	unsigned int slave_address;
+	unsigned int intr;
+	unsigned int irq;
+	unsigned int flag;
 };
 
 struct hisi_pmic_ctrl_t;
@@ -124,4 +144,8 @@ int32_t hisi_pmic_i2c_probe(struct i2c_client *client,
 int hisi_pmic_config(struct hisi_pmic_ctrl_t *pmic_ctrl, void *argp);
 int hisi_pmic_get_dt_data(struct hisi_pmic_ctrl_t *pmic_ctrl);
 struct hisi_pmic_ctrl_t * hisi_get_pmic_ctrl(void);
+int pmic_enable_boost(int value);
+int pmic_ctl_otg_onoff(bool on_off);
+void hisi_pmic_release_intr(struct hisi_pmic_ctrl_t *pmic_ctrl);
+int hisi_pmic_setup_intr(struct hisi_pmic_ctrl_t *pmic_ctrl);
 #endif

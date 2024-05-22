@@ -11,6 +11,8 @@
  */
 #include <linux/module.h>
 #include <linux/kern_levels.h>
+#include <linux/sched.h>
+#include <linux/kthread.h>
 
 #include "basedef.h"
 #include "public.h"
@@ -30,12 +32,17 @@
 #ifndef IRQF_DISABLED
 #define IRQF_DISABLED               (0x00000020)
 #endif
-#define VDM_TIMEOUT               (400)//ms
+#define VDM_TIMEOUT               (800)//ms
 #define VDM_FPGA_TIMEOUT          (5000)//ms
-#define SCD_TIMEOUT               (400)//ms
+#define SCD_TIMEOUT               (800)//ms
 #define SCD_FPGA_TIMEOUT          (200000)//ms
+#ifdef SECURE_VS_NOR_SECURE
+#define SCEN_IDENT                (0x078)
+#else
 #define SCEN_IDENT                (0x828)
+#endif
 #define MAP_SIZE                  (256 * 1024)
+#define MIN_VIDEO_MSG_POOL_SIZE   (10 * 1024 * 1024)
 
 #define TIME_PERIOD(begin, end) ((end >= begin)? (end-begin):(0xffffffff - begin + end))
 
@@ -49,6 +56,20 @@ do {                                                                            
 }while(0)
 
 static DRV_MEM_S g_RegsBaseAddr;
+
+#ifdef HI_TVP_SUPPORT
+#define WAIT_TASK_EXIT_TIMEOUT (20) //ms
+#define WAIT_TASK_EXIT_INER    (1)  //ms
+
+typedef struct {
+	struct task_struct *task;
+	wait_queue_head_t waitq;
+	bool suspend;
+	bool resume;
+} vdec_tvp_info;
+
+static vdec_tvp_info vdec_tvp;
+#endif
 
 Vfmw_Osal_Func_Ptr g_vfmw_osal_fun_ptr;
 
@@ -109,10 +130,12 @@ SINT32 VCTRL_VDHMapMessagePool(MEM_BUFFER_S* pMemMap, HI_S32 share_fd, HI_BOOL i
 {
 	HI_S32 ret;
 
-	if ((pMemMap->u8IsMapped == 1) && (isVdhAllBufRemap == HI_TRUE)) {
+	VDEC_SCENE scene = pMemMap->scene;
+	if ((1 == pMemMap->u8IsMapped) && (HI_TRUE == isVdhAllBufRemap)) {
 		pMemMap->u8IsMapVirtual = 1;
 		VDEC_MEM_UnmapKernel(pMemMap);
 		memset(pMemMap, 0, sizeof(*pMemMap)); /* unsafe_function_ignore: memset */
+		pMemMap->scene = scene;
 	}
 
 	if (pMemMap->u8IsMapped == 0) {
@@ -122,7 +145,12 @@ SINT32 VCTRL_VDHMapMessagePool(MEM_BUFFER_S* pMemMap, HI_S32 share_fd, HI_BOOL i
 		pMemMap->u8IsMapped = 1;
 		pMemMap->u32ShareFd = share_fd;
 
-		ret = VDMHAL_IMP_OpenHAL(pMemMap);
+		if (SCENE_VIDEO == pMemMap->scene) {
+			ret = VDMHAL_IMP_OpenHAL(pMemMap);
+		} else if (SCENE_HEIF == pMemMap->scene) {
+			ret = VDMHAL_IMP_OpenHeifHAL(pMemMap);
+		}
+
 		if (ret) {
 			VDEC_MEM_UnmapKernel(pMemMap);
 			memset(pMemMap, 0, sizeof(*pMemMap)); /* unsafe_function_ignore: memset */
@@ -135,11 +163,29 @@ SINT32 VCTRL_VDHMapMessagePool(MEM_BUFFER_S* pMemMap, HI_S32 share_fd, HI_BOOL i
 }
 #endif
 
+#ifdef HI_TVP_SUPPORT
+#define NOTIFY_AND_WAIT_TVP_PROCESS(notify_flag) \
+do { \
+	notify_flag = true; \
+	wake_up_interruptible(&vdec_tvp.waitq); \
+	sleep_count = 0; \
+	do { \
+		VFMW_OSAL_mSleep(WAIT_TASK_EXIT_INER); \
+		sleep_count++; \
+	} while(notify_flag && (sleep_count < (WAIT_TASK_EXIT_TIMEOUT/WAIT_TASK_EXIT_INER))); \
+	\
+	if (notify_flag) { \
+		dprint(PRN_ALWS, "task don't process\n"); \
+	} \
+	dprint(PRN_ALWS, "notify flag %d, sleep count %d\n", notify_flag, sleep_count); \
+} while(0);
+#endif
+
 VOID VCTRL_Suspend(VOID)
 {
 	UINT8 isScdSleep = 0;
 	UINT8 isVdmSleep = 0;
-	UINT32 SleepCount = 0;
+	UINT32 sleep_count = 0;
 	UINT32 BeginTime, EntrTime, CurTime;
 
 	EntrTime = VFMW_OSAL_GetTimeInMs();
@@ -159,7 +205,7 @@ VOID VCTRL_Suspend(VOID)
 		if ((isScdSleep == 1) && (isVdmSleep == 1)) {
 			break;
 		} else {
-			if (SleepCount > 30) {
+			if (sleep_count > 30) {
 				if (isScdSleep != 1) {
 					dprint(PRN_FATAL, "Force scd sleep\n");
 					SCDDRV_ForceSleep();
@@ -172,13 +218,12 @@ VOID VCTRL_Suspend(VOID)
 			}
 
 			VFMW_OSAL_mSleep(10);
-			SleepCount++;
+			sleep_count++;
 		}
 	} while ((isScdSleep != 1) || (isVdmSleep != 1));
 
 #ifdef HI_TVP_SUPPORT
-	if (TVP_VDEC_Suspend() != VDEC_OK)
-		dprint(PRN_ALWS, "%s, Warning : TVP_VDEC_Suspend failed", __func__);
+	NOTIFY_AND_WAIT_TVP_PROCESS(vdec_tvp.suspend);
 #endif
 
 	CurTime = VFMW_OSAL_GetTimeInMs();
@@ -190,6 +235,9 @@ VOID VCTRL_Suspend(VOID)
 VOID VCTRL_Resume(VOID)
 {
 	UINT32 EntrTime, CurTime;
+#ifdef HI_TVP_SUPPORT
+	UINT32 sleep_count = 0;
+#endif
 
 	EntrTime = VFMW_OSAL_GetTimeInMs();
 
@@ -200,8 +248,7 @@ VOID VCTRL_Resume(VOID)
 	VDMHAL_ExitSleep();
 
 #ifdef HI_TVP_SUPPORT
-	if (TVP_VDEC_Resume() != VDEC_OK)
-		dprint(PRN_ALWS, "%s, Warning : TVP_VDEC_Resume failed", __func__);
+	NOTIFY_AND_WAIT_TVP_PROCESS(vdec_tvp.resume);
 #endif
 
 	CurTime = VFMW_OSAL_GetTimeInMs();
@@ -286,15 +333,17 @@ static VOID VCTRL_HalDeInit(VOID)
 	SCDDRV_DeInit();
 }
 
-static SINT32 VCTRL_SCDGetAddrInfo(MEM_BUFFER_S* pMemMap, SCD_CONFIG_REG_S *ctrlReg, HI_S32 maxShareFdNum)
+static SINT32 VCTRL_SCDGetAddrInfo(MEM_BUFFER_S* pMemMap, SCD_CONFIG_REG_S *ctrlReg)
 {
 	HI_S32 ret;
-	HI_S32 index;
+	HI_U32 index;
 
 	VCTRL_ASSERT_RET((HI_NULL != pMemMap), "pMemMap parameter error");
 	VCTRL_ASSERT_RET((HI_NULL != ctrlReg), "ctrlReg parameter error");
+	VCTRL_ASSERT_RET((ctrlReg->ScdOutputBufNum <= SCD_OUTPUT_BUF_CNT),
+                        "scd output buffer num is out of range");
 
-	for (index = 0; index < maxShareFdNum; index++) {
+	for (index = 0; index < (SCD_SHAREFD_OUTPUT_BUF + ctrlReg->ScdOutputBufNum); index++) {
 		if ((pMemMap[index].u8IsMapped == 0)
 				|| (ctrlReg->IsScdAllBufRemap)) {
 			pMemMap[index].u8IsMapVirtual = 0;
@@ -305,6 +354,53 @@ static SINT32 VCTRL_SCDGetAddrInfo(MEM_BUFFER_S* pMemMap, SCD_CONFIG_REG_S *ctrl
 			VDEC_MEM_UnmapKernel(&pMemMap[index]);
 		}
 	}
+	return VCTRL_OK;
+}
+
+/* New Func added for judging current scenario is Video or HEIF */
+static SINT32 VDEC_MEM_Check_Scene(MEM_BUFFER_S* pMemMap, HI_S32 share_fd)
+{
+	HI_S32 ret;
+	VDEC_SCENE scene;
+
+	pMemMap->u8IsMapVirtual = 0;
+	ret = VDEC_MEM_MapKernel(share_fd, pMemMap);
+	VCTRL_ASSERT_RET((ret == VCTRL_OK), "msg sharefd map failed");
+
+	if (pMemMap->u32Size < MIN_VIDEO_MSG_POOL_SIZE) {
+		scene = SCENE_HEIF;
+	} else {
+		scene = SCENE_VIDEO;
+	}
+
+	VDEC_MEM_UnmapKernel(pMemMap);
+	memset(pMemMap, 0, sizeof(*pMemMap)); /* unsafe_function_ignore: memset */
+	pMemMap->scene = scene;
+
+	return VCTRL_OK;
+}
+
+static SINT32 VCTRL_GetMsgPoolAddr(MEM_BUFFER_S* pMemMap,
+		MEM_BUFFER_S* pComMsgMap, HI_S32 share_fd, HI_BOOL isVdhAllBufRemap) {
+	HI_S32 ret;
+
+	if (pMemMap->u8IsMapped != 1) {
+		ret = VDEC_MEM_Check_Scene(pMemMap, share_fd);
+		if (ret) {
+			dprint(PRN_FATAL, "%s %d %s\n", __func__, __LINE__, "msg sharefd map failed");
+			return ret;
+		}
+	}
+
+	if (SCENE_VIDEO == pMemMap->scene) {
+		ret = VCTRL_VDHMapMessagePool(pComMsgMap, share_fd, isVdhAllBufRemap);
+		VCTRL_ASSERT_RET((ret == VCTRL_OK), "video scenario, msg sharefd map failed");
+		memcpy(pMemMap, pComMsgMap, sizeof(MEM_BUFFER_S)); /* unsafe_function_ignore: memcpy */
+	} else {
+		ret = VCTRL_VDHMapMessagePool(pMemMap, share_fd, isVdhAllBufRemap);
+		VCTRL_ASSERT_RET((ret == VCTRL_OK), "heif scenario, msg sharefd map failed");
+	}
+
 	return VCTRL_OK;
 }
 
@@ -319,32 +415,39 @@ static SINT32 VCTRL_VDHGetAddrInfo(MEM_BUFFER_S* pMemMap, MEM_BUFFER_S* pComMsgM
 
 	VCTRL_ASSERT_RET((HI_NULL != pMemMap), "pMemMap parameter error");
 	VCTRL_ASSERT_RET((pVdmRegCfg->vdhFrmBufNum <= MAX_FRAME_NUM), "vdhFrmBufNum error");
+	VCTRL_ASSERT_RET((pVdmRegCfg->vdhStreamBufNum <= VDH_STREAM_BUF_CNT), "vdhStreamBufNum error");
 
 	for (index = 0; index < (VDH_SHAREFD_FRM_BUF + pVdmRegCfg->vdhFrmBufNum); index++) {
+		/* do not get addr info for addtional stream buffer share fd */
+		if ((index >= (VDH_SHAREFD_STREAM_BUF + pVdmRegCfg->vdhStreamBufNum))
+			&& (index < VDH_SHAREFD_PMV_BUF)) {
+			continue;
+		}
 #ifdef MSG_POOL_ADDR_CHECK
-		if (index == VDH_SHAREFD_MESSAGE_POOL) {
-			ret = VCTRL_VDHMapMessagePool(pComMsgMap, share_fd[index], isVdhAllBufRemap);
-			VCTRL_ASSERT_RET((ret == VCTRL_OK), "msg share fd map failed");
-			memcpy(&pMemMap[index], pComMsgMap, sizeof(pMemMap[index])); /* unsafe_function_ignore: memcpy */
+		if (index == VDH_SHAREFD_MESSAGE_POOL ) {
+			ret = VCTRL_GetMsgPoolAddr(&pMemMap[index], pComMsgMap,
+					share_fd[index], isVdhAllBufRemap);
+			VCTRL_ASSERT_RET((ret == VCTRL_OK), "msg sharefd map failed");
 			continue;
 		}
 #endif
 		if ((pMemMap[index].u8IsMapped == 1) && (isVdhAllBufRemap)) {
-			memset(&pMemMap[index], 0, sizeof(pMemMap[index])); /* unsafe_function_ignore: m
-emset */
+			memset(&pMemMap[index], 0, sizeof(pMemMap[index]));  /* unsafe_function_ignore: memset */
 		}
 		/* pmv or fmv remap */
 		if ((pMemMap[index].u8IsMapped == 1)
 			&& (((index == VDH_SHAREFD_PMV_BUF) && (isVdhPmvBufRemap))
 				|| ((index >= VDH_SHAREFD_FRM_BUF) && (isVdhFrmBufRemap)))) {
-			memset(&pMemMap[index], 0, sizeof(pMemMap[index])); /* unsafe_function_ignore: m
-emset */
+			memset(&pMemMap[index], 0, sizeof(pMemMap[index])); /* unsafe_function_ignore: memset */
 		}
 
 		if (pMemMap[index].u8IsMapped == 0) {
 			pMemMap[index].u8IsMapVirtual = 0;
 			ret = VDEC_MEM_MapKernel(share_fd[index], &pMemMap[index]);
-			VCTRL_ASSERT_RET((ret == HI_SUCCESS), "share fd map failed");
+			if (ret != HI_SUCCESS) {
+				dprint(PRN_FATAL,"share fd map failed, index is %d", index);
+				return VCTRL_ERR;
+			}
 			pMemMap[index].u8IsMapped = 1;
 			pMemMap[index].u32ShareFd = share_fd[index];
 			VDEC_MEM_UnmapKernel(&pMemMap[index]);
@@ -352,6 +455,55 @@ emset */
 	}
 	return VCTRL_OK;
 }
+
+#ifdef HI_TVP_SUPPORT
+static int vdec_tvp_task(void *data)
+{
+	int ret;
+
+	dprint(PRN_ALWS, "enter vdec tvp task\n");
+
+	if (TVP_VDEC_SecureInit() != VDEC_OK) {
+		dprint(PRN_FATAL, "%s, tvp vdec init failed\n", __func__);
+	}
+
+	while (!kthread_should_stop()) {
+		dprint(PRN_ALWS, "before wait event interruptible\n");
+		ret = wait_event_interruptible(
+					vdec_tvp.waitq,
+					(vdec_tvp.resume ||
+					 vdec_tvp.suspend ||
+					 (kthread_should_stop())));/*lint !e666*/
+		if (ret) {
+			dprint(PRN_FATAL, "wait event interruptible failed\n");
+			continue;
+		}
+		dprint(PRN_ALWS, "after wait event interruptible\n");
+
+		if (vdec_tvp.resume) {
+			dprint(PRN_ALWS, "tvp vdec resume\n");
+			if (TVP_VDEC_Resume() != VDEC_OK) {
+				dprint(PRN_FATAL, "tvp vdec resume failed\n");
+			}
+			vdec_tvp.resume = false;
+		}
+
+		if (vdec_tvp.suspend) {
+			dprint(PRN_ALWS, "tvp vdec supend\n");
+			if (TVP_VDEC_Suspend() != VDEC_OK) {
+				dprint(PRN_FATAL, "tvp vdec suspend failed\n");
+			}
+			vdec_tvp.suspend = false;
+		}
+	}
+
+	TVP_VDEC_SecureExit();
+
+	dprint(PRN_ALWS, "exit vdec tvp task\n");
+
+	return HI_SUCCESS;
+}
+#endif
 
 SINT32 VCTRL_OpenDrivers(VOID)
 {
@@ -393,9 +545,7 @@ exit:
 
 SINT32 VCTRL_OpenVfmw(VOID)
 {
-	memset(&g_RegsBaseAddr, 0, sizeof(g_RegsBaseAddr)); /* unsafe_function_ignore: m
-emset */
-
+	memset(&g_RegsBaseAddr, 0, sizeof(g_RegsBaseAddr)); /* unsafe_function_ignore: memset */
 	MEM_InitMemManager();
 	if (VCTRL_OpenDrivers() != VCTRL_OK) {
 		dprint(PRN_FATAL, "OpenDrivers fail\n");
@@ -403,8 +553,16 @@ emset */
 	}
 
 #ifdef HI_TVP_SUPPORT
-	if (TVP_VDEC_SecureInit() != VDEC_OK)
-		dprint(PRN_FATAL, "%s, TVP_VDEC_SecureInit failed\n", __func__);
+	if (!vdec_tvp.task) {
+		memset(&vdec_tvp, 0, sizeof(vdec_tvp));/* unsafe_function_ignore: memset */
+		init_waitqueue_head(&vdec_tvp.waitq);
+
+		vdec_tvp.task = kthread_run(vdec_tvp_task, NULL, "vdec tvp task");
+		if (IS_ERR(vdec_tvp.task)) {
+			dprint(PRN_FATAL, "creat vdec tvp task failed\n"); // needn't return fail for normal video play
+			memset(&vdec_tvp, 0, sizeof(vdec_tvp)); /* unsafe_function_ignore: memset */
+		}
+	}
 #endif
 
 	return VCTRL_OK;
@@ -420,14 +578,16 @@ SINT32 VCTRL_CloseVfmw(VOID)
 	if (pstMem->Length != 0) {
 		MEM_UnmapRegisterAddr(pstMem->PhyAddr, pstMem->VirAddr, pstMem->Length);
 		MEM_DelMemRecord(pstMem->PhyAddr, pstMem->VirAddr, pstMem->Length);
-		memset(&g_RegsBaseAddr.stVdhReg, 0, sizeof(g_RegsBaseAddr.stVdhReg)); /* unsafe_function_ignore: m
-emset */
+		memset(&g_RegsBaseAddr.stVdhReg, 0, sizeof(g_RegsBaseAddr.stVdhReg)); /* unsafe_function_ignore: memset */
 	}
 
 	VCTRL_FreeIrq(gVdecIrqNumNorm, gVdecIrqNumProt, gVdecIrqNumSafe);
 
 #ifdef HI_TVP_SUPPORT
-	TVP_VDEC_SecureExit();
+	if (vdec_tvp.task) {
+		kthread_stop(vdec_tvp.task);
+		memset(&vdec_tvp, 0, sizeof(vdec_tvp)); /* unsafe_function_ignore: memset */
+	}
 #endif
 	return VCTRL_OK;
 }
@@ -437,7 +597,9 @@ SINT32 VCTRL_VDMHal_Process(OMXVDH_REG_CFG_S *pVdmRegCfg, VDMHAL_BACKUP_S *pVdmR
 {
 	HI_S32 ret = HI_SUCCESS;
 	VDMDRV_SLEEP_STAGE_E sleepState;
-
+#ifdef HIVDEC_SMMU_SUPPORT
+	SMMU_ConfigSMR();
+#endif
 	sleepState = VDMHAL_GetSleepStage();
 	if (VDMDRV_SLEEP_STAGE_SLEEP == sleepState) {
 		dprint(PRN_ALWS, "vdm sleep state\n");
@@ -480,7 +642,9 @@ SINT32 VCTRL_SCDHal_Process(OMXSCD_REG_CFG_S *pScdRegCfg,SCD_STATE_REG_S *pScdSt
 	HI_S32 ret = HI_SUCCESS;
 	SCDDRV_SLEEP_STAGE_E sleepState;
 	CONFIG_SCD_CMD cmd = pScdRegCfg->cmd;
-
+#ifdef HIVDEC_SMMU_SUPPORT
+	SMMU_ConfigSMR();
+#endif
 	sleepState = SCDDRV_GetSleepStage();
 	if (SCDDRV_SLEEP_STAGE_SLEEP == sleepState) {
 		dprint(PRN_ALWS, "SCD sleep state\n");
@@ -494,7 +658,7 @@ SINT32 VCTRL_SCDHal_Process(OMXSCD_REG_CFG_S *pScdRegCfg,SCD_STATE_REG_S *pScdSt
 		}
 	}
 
-	ret = VCTRL_SCDGetAddrInfo(&pScdMemMap[0], &(pScdRegCfg->SmCtrlReg), SCD_SHAREFD_MAX);
+	ret = VCTRL_SCDGetAddrInfo(&pScdMemMap[0], &(pScdRegCfg->SmCtrlReg));
 	if (ret != VCTRL_OK) {
 		dprint(PRN_FATAL, "memory map failure\n");
 		return HI_FAILURE;
@@ -538,8 +702,17 @@ SINT32 VCTRL_VDMHAL_IsRun(VOID)
 
 HI_BOOL VCTRL_Scen_Ident(HI_U32 cmd)
 {
-	if ((RD_SCDREG(SCEN_IDENT) == 1) && (cmd != VDEC_IOCTL_SET_CLK_RATE))
+	HI_U32 value = 0;
+#ifdef SECURE_VS_NOR_SECURE
+	RD_VREG(SCEN_IDENT, value, 0);
+#else
+	value = RD_SCDREG(SCEN_IDENT);
+#endif
+
+	if ((value != 0) && (value != current->tgid)
+		&& (cmd != VDEC_IOCTL_SET_CLK_RATE)) {
 		return HI_TRUE;
+	}
 
 	return HI_FALSE;
 }
@@ -559,6 +732,10 @@ HI_S32 VFMW_DRV_ModInit(HI_VOID)
 
 #ifdef MODULE
 	dprint(PRN_ALWS, "%s : Load hi_vfmw.ko (%d) success\n", __func__, VFMW_VERSION_NUM);
+#endif
+
+#ifdef HI_TVP_SUPPORT
+	memset(&vdec_tvp, 0, sizeof(vdec_tvp)); /* unsafe_function_ignore: memset */
 #endif
 
 	return 0;

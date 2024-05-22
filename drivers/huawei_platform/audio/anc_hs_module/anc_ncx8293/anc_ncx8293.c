@@ -1308,6 +1308,7 @@ static long anc_ncx8293_ioctl(struct file *file, unsigned int cmd, unsigned long
 
     return (long)ret;
 }
+#ifdef ANC_NCX8293_DEBUG
 /*lint -restore*/
 
 static ssize_t anc_ncx8293_reg_list_show(struct device *dev,
@@ -1332,9 +1333,13 @@ static ssize_t anc_ncx8293_adc_show(struct device *dev,
                                     struct device_attribute *attr,
                                     char *buf)
 {
-    char val_str[20];
+    char val_str[20] = {0};
     int ear_pwr_h = 0, ear_pwr_l = 0;
 
+    if (NULL == buf) {
+        hwlog_err("buf is null.\n");
+        return -EINVAL;
+    }
     buf[0] = '\0';
 
     ear_pwr_h = hisi_adc_get_value(g_anc_ncx8293_priv->channel_pwl_h);
@@ -1365,6 +1370,7 @@ static struct attribute *anc_ncx8293_attributes[] = {
 static const struct attribute_group anc_ncx8293_attr_group = {
     .attrs = anc_ncx8293_attributes,
 };
+#endif
 
 /*lint -save -e* */
 static const struct regmap_config anc_ncx8293_regmap = {
@@ -1506,7 +1512,7 @@ static int work_voltage_supply(struct anc_ncx8293_priv *di, struct device_node *
     if (di->ldo_supply_used == true) {
         di->anc_hs_vdd = devm_regulator_get(di->dev, anc_hs_vdd_name);
         if (IS_ERR(di->anc_hs_vdd)) {
-            hwlog_err("%s: Couldn't get anc_hs_vdd regulator ip %p\n", __func__, di->anc_hs_vdd);
+            hwlog_err("%s: Couldn't get anc_hs_vdd regulator ip %pK\n", __func__, di->anc_hs_vdd);
             di->anc_hs_vdd = NULL;
             goto err_out;
         }
@@ -1557,10 +1563,11 @@ err_out:
 static int create_irq_workqueue(struct i2c_client *client, struct anc_ncx8293_priv *di, struct device_node *np)
 {
     int ret = 0;
-
+#ifdef ANC_NCX8293_DEBUG
     ret = sysfs_create_group(&client->dev.kobj, &anc_ncx8293_attr_group);
     if (ret < 0)
         hwlog_err("failed to register sysfs\n");
+#endif
 
     di->anc_hs_plugin_delay_wq =
         create_singlethread_workqueue("anc_hs_plugin_delay_wq");
@@ -1628,8 +1635,9 @@ err_plugin_delay_wq:
     }
 
 err_out_sysfs:
+#ifdef ANC_NCX8293_DEBUG
     sysfs_remove_group(&client->dev.kobj, &anc_ncx8293_attr_group);
-
+#endif
     return ret;
 }
 
@@ -1738,7 +1746,9 @@ err_invert_ctl_delay_wq:
         destroy_workqueue(di->anc_hs_plugin_delay_wq);
     }
 
+#ifdef ANC_NCX8293_DEBUG
     sysfs_remove_group(&client->dev.kobj, &anc_ncx8293_attr_group);
+#endif
 
     return ret;
 

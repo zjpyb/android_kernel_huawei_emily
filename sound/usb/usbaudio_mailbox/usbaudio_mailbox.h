@@ -49,6 +49,17 @@ enum USBAUDIO_CHN_MSG_TYPE {
 	USBAUDIO_CHN_MSG_NV_CHECK_RCV = 0xFF10,    /* dsp->acpu */
 };
 
+enum USBAUDIO_TABLE_SAMPLERATE {
+	USBAUDIO_TABLE_SAMPLERATE_44100,
+	USBAUDIO_TABLE_SAMPLERATE_48000,
+	USBAUDIO_TABLE_SAMPLERATE_88200,
+	USBAUDIO_TABLE_SAMPLERATE_96000,
+	USBAUDIO_TABLE_SAMPLERATE_176400,
+	USBAUDIO_TABLE_SAMPLERATE_192000,
+	USBAUDIO_TABLE_SAMPLERATE_384000,
+	USBAUDIO_TABLE_MAX,
+};
+
 struct usbaudio_epdesc {
 	unsigned char bLength;
 	unsigned char bDescriptorType;
@@ -91,7 +102,7 @@ struct usbaudio_formats {
 	unsigned char protocol;		/* UAC_VERSION_1/2 */
 	unsigned int maxpacksize;	/* max. packet size */
 	unsigned int rates;
-	unsigned int rate_table[5];
+	unsigned int rate_table[USBAUDIO_TABLE_MAX];
 	unsigned char clock;		/* associated clock */
 };
 

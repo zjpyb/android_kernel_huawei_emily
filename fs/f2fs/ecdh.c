@@ -1,14 +1,19 @@
+/*
+ * Encryption policy functions for per-f2fs sdp file encryption support.
+ *
+ * Copyright (C) 2017, Huawei, Ltd..
+ *
+ * Written by Luo Peng, 2017.
+ *
+ */
 
 #include <linux/err.h>
 #include <linux/scatterlist.h>
 #include <linux/slab.h>
 #include <linux/string.h>
 #include <linux/completion.h>
-#include <linux/f2fs_fs.h>
 #include <linux/printk.h>
-
-#include "f2fs.h"
-#include "ecdh.h"
+#include "f2fs_sdp.h"
 
 #if DEFINE_F2FS_FS_SDP_ENCRYPTION
 struct tcrypt_result {

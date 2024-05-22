@@ -57,6 +57,7 @@
 #include <linux/of_fdt.h>
 #include <linux/of.h>
 #include <linux/vmalloc.h>
+#include "securec.h"
 
 /*lint -e528*/
 
@@ -66,7 +67,7 @@ struct mem_ctrl g_mem_ctrl;
 
 static int __init bsp_shared_mem_init(void)
 {
-	memset(&g_mem_ctrl, 0x0, sizeof(struct mem_ctrl));
+	(void)memset_s((void *)&g_mem_ctrl, sizeof(struct mem_ctrl), 0x0, sizeof(struct mem_ctrl));
 	g_mem_ctrl.sddr_phy_addr  = (void*)HI_SHARED_DDR_BASE_ADDR;
 	g_mem_ctrl.sddr_mem_size  = HI_SHARED_DDR_SIZE;
 	g_mem_ctrl.sddr_virt_addr = (void*)ioremap_wc((unsigned long)g_mem_ctrl.sddr_phy_addr, g_mem_ctrl.sddr_mem_size);

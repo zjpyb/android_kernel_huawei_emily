@@ -21,10 +21,21 @@
 #include "callbacks.h"
 #include <huawei_platform/log/hw_log.h>
 #define HWLOG_TAG FUSB3601_TAG
+#define PD_FIXED_POWER_VOL_STEP 50
 HWLOG_REGIST();
 #define IN_FUNCTION hwlog_info("%s ++\n", __func__);
 #define OUT_FUNCTION hwlog_info("%s --\n", __func__);
 #define LINE_FUNCTION hwlog_info("%s%d --\n", __func__,__LINE__);
+static FSC_U32 pd_limit_voltage = PD_09_V;
+
+void FUSB3601_SetPDLimitVoltage(int vol)
+{
+	if (vol < PD_ADAPTER_5V || vol > PD_ADAPTER_20V) {
+		hwlog_info("%s,Set limit voltage over range\n", __func__);
+		return;
+	}
+	pd_limit_voltage = vol / PD_FIXED_POWER_VOL_STEP;
+}
 
 void FUSB3601_USBPDPolicyEngine(struct Port *port)
 {
@@ -1736,27 +1747,10 @@ void FUSB3601_PolicySinkEvaluateCaps(struct Port *port)
   FSC_U32 obj_power = 0;
   FSC_U32 req_current = 0;
   FSC_U32 optional_max_power = 0;
-  FSC_U32 pd_reset_adaptor = 0;
 
   FUSB3601_TimerDisable(&port->policy_state_timer_);
   port->hard_reset_counter_ = 0;
 
-  /* Check for Factory Mode Caps */
-  if((port->caps_received_[0].PDO.SupplyType == pdoTypeFixed)
-		  && (port->caps_received_[0].FPDOSupply.Voltage == PD_05_V)
-		  && (port->caps_received_[0].FPDOSupply.MaxCurrent == PD_1_36_A)
-		  && (port->caps_received_[1].object == 0xC06EC5E0)) {
-	  FUSB3601_set_policy_state(port, peDisabled);
-	  port->factory_mode_ = TRUE;
-	  FUSB3601_WriteTCState(&port->log_, 499, port->tc_state_);
-	  FUSB3601_platform_delay(10 * 1000);
-	  return;
-  }
-  if (pd_dpm_get_pd_reset_adapter() == ADAPTER_5V) {
-	pd_reset_adaptor = PD_05_V;
-  } else {
-	pd_reset_adaptor = PD_09_V;
-  }
   /* Select the highest power object that we are compatible with */
   for (i = 0; i < port->caps_header_received_.NumDataObjects; i++) {
     switch (port->caps_received_[i].PDO.SupplyType) {
@@ -1792,7 +1786,7 @@ void FUSB3601_PolicySinkEvaluateCaps(struct Port *port)
     if (obj_power > optional_max_power) {
         optional_max_power = obj_power;
     }
-    if (obj_voltage > pd_reset_adaptor) {
+    if (obj_voltage > pd_limit_voltage) {
         continue;
     }
 

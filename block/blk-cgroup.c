@@ -960,7 +960,7 @@ static int blkcg_print_stat(struct seq_file *sf, void *v)
 }
 
 /*lint -save -e785*/
-struct cftype blkcg_files[] = {
+static struct cftype blkcg_files[] = {
 	{
 		.name = "stat",
 		.flags = CFTYPE_NOT_ON_ROOT,
@@ -969,7 +969,7 @@ struct cftype blkcg_files[] = {
 	{ }	/* terminate */
 };
 
-struct cftype blkcg_legacy_files[] = {
+static struct cftype blkcg_legacy_files[] = {
 	{
 		.name = "reset_stats",
 		.write_u64 = blkcg_reset_stats,
@@ -1145,7 +1145,6 @@ int blkcg_init_queue(struct request_queue *q)
 
 	if (IS_ERR(blkg)) {
 		/*lint -save -e712*/
-		blkg_free(new_blkg);
 		return PTR_ERR(blkg);
 		/*lint -restore*/
 	}
@@ -1364,27 +1363,6 @@ static void blkcg_bind(struct cgroup_subsys_state *root_css)
 	mutex_unlock(&blkcg_pol_mutex);
 }
 
-static int blkcg_allow_attach(struct cgroup_taskset *tset)
-{
-	/*lint -save -e50 -e64 -e529 -e666 -e1058*/
-	const struct cred *cred = current_cred(), *tcred;
-	struct task_struct *task;
-	struct cgroup_subsys_state *css;
-
-	cgroup_taskset_for_each(task, css, tset) {
-		tcred = __task_cred(task);
-
-		if ((current != task) && !capable(CAP_SYS_ADMIN) &&
-			!uid_eq(cred->euid, tcred->uid) &&
-			!uid_eq(cred->euid, tcred->suid))
-			return -EACCES;
-	}
-	/*lint -restore*/
-
-	return 0;
-/*lint -save -e715*/
-}
-/*lint -restore*/
 /*lint -save -e785*/
 struct cgroup_subsys io_cgrp_subsys = {
 	.css_alloc = blkcg_css_alloc,
@@ -1392,7 +1370,6 @@ struct cgroup_subsys io_cgrp_subsys = {
 	.css_free = blkcg_css_free,
 	.can_attach = blkcg_can_attach,
 #ifdef CONFIG_BLK_DEV_THROTTLING
-	.allow_attach = blkcg_allow_attach,
 	.attach = blkcg_attach,
 	.fork = blkcg_fork,
 #endif

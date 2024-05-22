@@ -25,8 +25,10 @@ rF2fs-objs := rf2fs/rasf2fs.o rasbase/rasbase.o  rasbase/rasprobe.o rasbase/rasp
 obj-m += rmissile.o
 rmissile-objs := rmissile/rasmissile.o rasbase/rasbase.o  rasbase/rasproc.o
 
+ifneq ($(findstring $(CONFIG_ARCH_HISI)$(CONFIG_ARCH_QCOM), y y),)
 obj-m += rFb.o
 rFb-objs := rfb/rasfb.o rasbase/rasbase.o  rasbase/rasproc.o rasbase/rasprobe.o
+endif
 
 obj-m += rProcess.o
 rProcess-objs := rprocess/rasprocess.o rasbase/rasbase.o  rasbase/rasproc.o

@@ -39,7 +39,7 @@
 #include "hi3630_asp_common.h"
 #include "hi3xxx_asp_dma.h"
 #include "asp_dma.h"
-#include "hi6210_pcm.h"
+#include "hisi_pcm_hifi.h"
 #include "hifi_lpp.h"
 #include "huawei_platform/log/imonitor.h"
 #include "huawei_platform/log/imonitor_keys.h"
@@ -90,17 +90,6 @@ static PCM_DMA_BUF_CONFIG  hi3xxx_pcm_dma_lli_array[PCM_STREAM_MAX] =
 enum hi3xxx_asp_dmac_status {
 	STATUS_DMAC_STOP = 0,
 	STATUS_DMAC_RUNNING,
-};
-
-enum pcm_device {
-	PCM_DEVICE = 0,
-	PCM_DEVICE_MODEM,
-	PCM_DEVICE_FM,
-	PCM_DEVICE_BT,
-	PCM_DEVICE_OFFLOAD,
-	PCM_DEVICE_DIRECT,
-	PCM_DEVICE_LOW_LATENCY,
-	PCM_DEVICE_TOTAL,
 };
 
 enum {
@@ -892,7 +881,7 @@ static int preallocate_dma_buffer(struct snd_pcm *pcm, int stream)
 	struct snd_pcm_substream 	*substream = pcm->streams[stream].substream;
 	struct snd_dma_buffer 		*buf = &substream->dma_buffer;
 
-	if ((pcm->device >= PCM_DEVICE_MAX) ||(stream >= PCM_STREAM_MAX)) {
+	if ((pcm->device >= PCM_DEVICE_TOTAL) ||(stream >= PCM_STREAM_MAX)) {
 		loge("Invalid argument  : device %d stream %d \n", pcm->device, stream);
 		return -EINVAL;
 	}

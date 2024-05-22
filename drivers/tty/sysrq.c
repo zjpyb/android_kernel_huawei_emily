@@ -51,15 +51,18 @@
 #include <asm/ptrace.h>
 #include <asm/irq_regs.h>
 
+#ifdef CONFIG_DETECT_HUAWEI_HUNG_TASK
+#include <linux/huawei_hung_task.h>
+#endif
+
 /* Whether we react on sysrq keys or just ignore them */
 static int __read_mostly sysrq_enabled = CONFIG_MAGIC_SYSRQ_DEFAULT_ENABLE;
 static bool __read_mostly sysrq_always_enabled;
 
-bool sysrq_on(void)
+static bool sysrq_on(void)
 {
 	return sysrq_enabled || sysrq_always_enabled;
 }
-EXPORT_SYMBOL(sysrq_on);
 
 /*
  * A value of 1 means 'all', other nonzero values are an op mask:
@@ -134,6 +137,12 @@ static void sysrq_handle_crash(int key)
 {
 	char *killer = NULL;
 
+	/* we need to release the RCU read lock here,
+	 * otherwise we get an annoying
+	 * 'BUG: sleeping function called from invalid context'
+	 * complaint from the kernel before the panic.
+	 */
+	rcu_read_unlock();
 	panic_on_oops = 1;	/* force panic */
 	wmb();
 	*killer = 1;
@@ -289,12 +298,10 @@ static struct sysrq_key_op sysrq_showstate_op = {
 
 static void sysrq_handle_showstate_blocked(int key)
 {
-#ifdef CONFIG_HUAWEI_PRINTK_CTRL
-	printk_level_setup(LOGLEVEL_DEBUG);
-#endif
+#ifdef CONFIG_DETECT_HUAWEI_HUNG_TASK
+	hwhungtask_show_state_filter(TASK_UNINTERRUPTIBLE);
+#else
 	show_state_filter(TASK_UNINTERRUPTIBLE);
-#ifdef CONFIG_HUAWEI_PRINTK_CTRL
-	printk_level_setup(sysctl_printk_level);
 #endif
 }
 static struct sysrq_key_op sysrq_showstate_blocked_op = {
@@ -369,6 +376,7 @@ static void moom_callback(struct work_struct *ignored)
 	struct oom_control oc = {
 		.zonelist = node_zonelist(first_memory_node, gfp_mask),
 		.nodemask = NULL,
+		.memcg = NULL,
 		.gfp_mask = gfp_mask,
 		.order = -1,
 	};

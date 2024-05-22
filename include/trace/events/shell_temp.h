@@ -51,6 +51,31 @@ TRACE_EVENT(shell_temp,		/* [false alarm]: native interface */
 
 	TP_printk("%s: shell temp=%d", __get_str(thermal_zone), __entry->temp)
 );
+
+TRACE_EVENT(handle_invalid_temp,	/* [false alarm]: native interface */
+	TP_PROTO(struct thermal_zone_device *tz, int channel, int invalid_temp, int valid_temp),
+	TP_ARGS(tz, channel, invalid_temp, valid_temp),
+
+	TP_STRUCT__entry(
+		__string(thermal_zone, tz->type)
+		__field(int, channel)
+		__field(int, invalid_temp)
+		__field(int, valid_temp)
+	),
+
+	TP_fast_assign(
+		__assign_str(thermal_zone, tz->type);
+		__entry->channel = channel;
+		__entry->invalid_temp = invalid_temp;
+		__entry->valid_temp = valid_temp;
+	),
+
+	TP_printk("%s: sensor=%d invalid_temp=%d valid_temp=%d",
+			__get_str(thermal_zone),
+			__entry->channel,
+			__entry->invalid_temp,
+			__entry->valid_temp)
+);
 #endif
 
 /* This part must be outside protection */

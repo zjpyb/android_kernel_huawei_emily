@@ -232,7 +232,7 @@ static inline void row_mark_rowq_unserved(struct row_data *rd,
 static inline void row_clear_rowq_unserved(struct row_data *rd,
 					  enum row_queue_prio qnum)
 {
-	rd->cycle_flags &= ~(1 << qnum);/*lint !e502*/
+	rd->cycle_flags &= ~(1 << qnum);
 }
 
 static inline int row_rowq_unserved(struct row_data *rd,
@@ -362,7 +362,7 @@ static void row_add_request(struct request_queue *q,
 			}
 		}
 		diff_ms = ktime_to_ms(ktime_sub(ktime_get(),
-				rqueue->idle_data.last_insert_time));/*lint !e446*/
+				rqueue->idle_data.last_insert_time));
 		if (unlikely(diff_ms < 0)) {
 			pr_err("%s(): time delta error: diff_ms < 0",
 				__func__);
@@ -403,58 +403,6 @@ static void row_add_request(struct request_queue *q,
 			"added request (total on queue=%d)", rqueue->nr_req);
 }
 
-/**
- * row_reinsert_req() - Reinsert request back to the scheduler
- * @q:	requests queue
- * @rq:	request to add
- *
- * Reinsert the given request back to the queue it was
- * dispatched from as if it was never dispatched.
- *
- * Returns 0 on success, error code otherwise
- */
-static int row_reinsert_req(struct request_queue *q,
-			    struct request *rq)
-{
-	struct row_data    *rd = q->elevator->elevator_data;
-	struct row_queue   *rqueue = RQ_ROWQ(rq);
-
-	if (!rqueue || rqueue->prio >= ROWQ_MAX_PRIO)
-		return -EIO;
-
-	list_add(&rq->queuelist, &rqueue->fifo);
-	rd->nr_reqs[rq_data_dir(rq)]++;
-	rqueue->nr_req++;
-
-	row_log_rowq(rd, rqueue->prio,
-		"%s request reinserted (total on queue=%d)",
-		(rq_data_dir(rq) == READ ? "READ" : "write"), rqueue->nr_req);
-
-	if (rq->cmd_flags & REQ_URGENT) {
-		/*
-		 * It's not compliant with the design to re-insert
-		 * urgent requests. We want to be able to track this
-		 * down.
-		 */
-		WARN_ON(1);
-		if (!rd->urgent_in_flight) {
-			pr_err("%s(): no urgent in flight", __func__);
-		} else {
-			rd->urgent_in_flight = false;
-			pr_err("%s(): reinserting URGENT %s req",
-				__func__,
-				(rq_data_dir(rq) == READ ? "READ" : "WRITE"));
-			if (rd->pending_urgent_rq) {
-				pr_err("%s(): urgent rq is pending",
-					__func__);
-				rd->pending_urgent_rq->cmd_flags &= ~REQ_URGENT;
-			}
-			rd->pending_urgent_rq = rq;
-		}
-	}
-	return 0;
-}
-
 static void row_completed_req(struct request_queue *q, struct request *rq)
 {
 	struct row_data *rd = q->elevator->elevator_data;
@@ -471,30 +419,6 @@ static void row_completed_req(struct request_queue *q, struct request *rq)
 	row_log(q, "completed %s %s req.",
 		(rq->cmd_flags & REQ_URGENT ? "URGENT" : "regular"),
 		(rq_data_dir(rq) == READ ? "READ" : "WRITE"));
-}
-
-/**
- * row_urgent_pending() - Return TRUE if there is an urgent
- *			  request on scheduler
- * @q:	requests queue
- */
-static bool row_urgent_pending(struct request_queue *q)
-{
-	struct row_data *rd = q->elevator->elevator_data;
-
-	if (rd->urgent_in_flight) {
-		row_log(rd->dispatch_queue, "%d urgent requests in flight",
-			rd->urgent_in_flight);
-		return false;
-	}
-
-	if (rd->pending_urgent_rq) {
-		row_log(rd->dispatch_queue, "Urgent request pending");
-		return true;
-	}
-
-	row_log(rd->dispatch_queue, "no urgent request pending/in flight");
-	return false;
 }
 
 /**
@@ -563,8 +487,8 @@ static int row_queue_is_expired(struct row_data *rd,int start_idx,int end_idx)
 	int i;
 	for(i=start_idx;i<end_idx;i++){
 		if (!list_empty(&rd->row_queues[i].fifo)){
-			struct request *check_req = list_entry_rq(rd->row_queues[i].fifo.next);/*lint !e826 */
-			if (check_req && time_after(jiffies,  ((unsigned long) (check_req)->fifo_time) + msecs_to_jiffies(ROW_IO_MAX_LATENCY_MS)) )/*lint !e666 !e550 !e774 */
+			struct request *check_req = list_entry_rq(rd->row_queues[i].fifo.next);
+			if (check_req && time_after(jiffies,  ((unsigned long) (check_req)->fifo_time) + msecs_to_jiffies(ROW_IO_MAX_LATENCY_MS)) )
 				return 1;
 		}
 	}
@@ -688,7 +612,7 @@ static void row_restart_cycle(struct row_data *rd,
 	row_dump_queues_stat(rd);
 	for (i = start_idx; i < end_idx; i++) {
 		if (rd->row_queues[i].nr_dispatched <
-		    rd->row_queues[i].disp_quantum)/*lint !e574*/
+		    rd->row_queues[i].disp_quantum)
 			row_mark_rowq_unserved(rd, i);
 		rd->row_queues[i].nr_dispatched = 0;
 	}
@@ -720,7 +644,7 @@ static int row_get_next_queue(struct request_queue *q, struct row_data *rd,
 	do {
 		if (list_empty(&rd->row_queues[i].fifo) ||
 		    rd->row_queues[i].nr_dispatched >=
-		    rd->row_queues[i].disp_quantum) {/*lint !e574*/
+		    rd->row_queues[i].disp_quantum) {
 			i++;
 			if (i == end_idx && restart) {
 				/* Restart cycle for this priority class */
@@ -761,7 +685,6 @@ static int row_be_expire_adjust(struct row_data *rd)
 	for (i = start_idx; i < end_idx; i++) {
 		if (list_empty(&rd->row_queues[i].fifo))
 			continue;
-		/*lint -save -e115*/
 		check_req = list_entry_rq(rd->row_queues[i].fifo.next);
 		expire_time = jiffies_to_msecs(temp_jiffies -
 			check_req->fifo_time);
@@ -769,7 +692,6 @@ static int row_be_expire_adjust(struct row_data *rd)
 			timeout = expire_time - HP_EXPIRE_TIME;
 		else if (expire_time > RP_EXPIRE_TIME)
 			timeout = expire_time - RP_EXPIRE_TIME;
-		/*lint restore*/
 		if (timeout > 0) {
 			expire_number++;
 			if (timeout > max_expire_time) {
@@ -1005,6 +927,7 @@ static enum row_queue_prio row_get_queue_prio(struct request *rq,
 	enum row_queue_prio q_type = ROWQ_MAX_PRIO;
 	int ioprio_class = IOPRIO_PRIO_CLASS(rq->elv.icq->ioc->ioprio);
 
+#if 0
 	if (unlikely(row_get_current()->flags & PF_MUTEX_GC)) {
 		if (data_dir == READ)
 			q_type = ROWQ_PRIO_HIGH_READ;
@@ -1012,6 +935,7 @@ static enum row_queue_prio row_get_queue_prio(struct request *rq,
 			q_type = ROWQ_PRIO_HIGH_SWRITE;
 		return q_type;
 	}
+#endif
 	switch (ioprio_class) {
 	case IOPRIO_CLASS_RT:
 		if (data_dir == READ)
@@ -1028,7 +952,7 @@ static enum row_queue_prio row_get_queue_prio(struct request *rq,
 		else if (is_sync)
 			q_type = ROWQ_PRIO_LOW_SWRITE;
 		else {
-			pr_err("%s:%s(): got a simple write from IDLE_CLASS. How???",/*lint !e585*/
+			pr_err("%s:%s(): got a simple write from IDLE_CLASS. How???",
 				rq->rq_disk->disk_name, __func__);
 			q_type = ROWQ_PRIO_REG_WRITE;
 		}
@@ -1184,8 +1108,6 @@ static struct elevator_type iosched_row = {
 		.elevator_merge_req_fn		= row_merged_requests,
 		.elevator_dispatch_fn		= row_dispatch_requests,
 		.elevator_add_req_fn		= row_add_request,
-		.elevator_reinsert_req_fn	= row_reinsert_req,
-		.elevator_is_urgent_fn		= row_urgent_pending,
 		.elevator_completed_req_fn	= row_completed_req,
 		.elevator_former_req_fn		= elv_rb_former_request,
 		.elevator_latter_req_fn		= elv_rb_latter_request,

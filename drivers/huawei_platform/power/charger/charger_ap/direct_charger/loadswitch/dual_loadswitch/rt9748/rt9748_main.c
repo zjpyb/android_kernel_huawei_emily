@@ -1176,6 +1176,9 @@ static void rt9748_irq_work(struct work_struct *work)
 	u8 event2;
 	u8 status;
 	struct nty_data * data = &(di->nty_data);
+	struct atomic_notifier_head *direct_charge_fault_notifier_list;
+
+	direct_charge_lvc_get_fault_notifier(&direct_charge_fault_notifier_list);
 
 	rt9748_read_byte(RT9748_EVENT_1, &event1);
 	rt9748_read_byte(RT9748_EVENT_2, &event2);
@@ -1189,27 +1192,27 @@ static void rt9748_irq_work(struct work_struct *work)
 	if (event1 & RT9748_VBUS_OVP_FLT)
 	{
 		hwlog_err("vbus ovp happened\n");
-		atomic_notifier_call_chain(&direct_charge_fault_notifier_list, DIRECT_CHARGE_FAULT_VBUS_OVP, data);
+		atomic_notifier_call_chain(direct_charge_fault_notifier_list, DIRECT_CHARGE_FAULT_VBUS_OVP, data);
 	}
 	else if (event1 & RT9748_IBUS_REVERSE_OCP_FLT)
 	{
 		hwlog_err("ibus reverse ocp happened\n");
-		atomic_notifier_call_chain(&direct_charge_fault_notifier_list, DIRECT_CHARGE_FAULT_REVERSE_OCP, data);
+		atomic_notifier_call_chain(direct_charge_fault_notifier_list, DIRECT_CHARGE_FAULT_REVERSE_OCP, data);
 	}
 	else if (event2 & RT9748_OTP_FLT)
 	{
 		hwlog_err("otp happened\n");
-		atomic_notifier_call_chain(&direct_charge_fault_notifier_list, DIRECT_CHARGE_FAULT_OTP, data);
+		atomic_notifier_call_chain(direct_charge_fault_notifier_list, DIRECT_CHARGE_FAULT_OTP, data);
 	}
 	else if (event2 & RT9748_INPUT_OCP_FLT)
 	{
 		hwlog_err("input ocp happened\n");
-		atomic_notifier_call_chain(&direct_charge_fault_notifier_list, DIRECT_CHARGE_FAULT_INPUT_OCP, data);
+		atomic_notifier_call_chain(direct_charge_fault_notifier_list, DIRECT_CHARGE_FAULT_INPUT_OCP, data);
 	}
 	else if (event2 & RT9748_VDROP_OVP_FLT)
 	{
 		hwlog_err("vdrop ovp happened\n");
-		atomic_notifier_call_chain(&direct_charge_fault_notifier_list, DIRECT_CHARGE_FAULT_VDROP_OVP, data);
+		atomic_notifier_call_chain(direct_charge_fault_notifier_list, DIRECT_CHARGE_FAULT_VDROP_OVP, data);
 	}
 	else
 	{
@@ -1327,7 +1330,7 @@ static int rt9748_probe(struct i2c_client *client, const struct i2c_device_id *i
 		hwlog_err("register loadswitch ops failed!\n");
 		goto rt9748_fail_3;
 	}
-	ret = batinfo_ops_register(&rt9748_batinfo_ops);
+	ret = batinfo_lvc_ops_register(&rt9748_batinfo_ops);
 	if (ret)
 	{
 		hwlog_err("register ina231 ops failed!\n");

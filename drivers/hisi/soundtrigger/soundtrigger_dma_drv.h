@@ -136,7 +136,7 @@ struct st_fast_status{
 #define SOUNDTRIGGER_CMD_DMA_READY  _IO('S',  0x3)
 
 int32_t hi64xx_soundtrigger_init(enum codec_hifi_type type);
-int32_t hi64xx_soundtrigger_dma_close(void);
+void hi64xx_soundtrigger_dma_close(void);
 
 #endif /* end of _AUDIO_AUTO_TEST_ASP_CFG_H */
 

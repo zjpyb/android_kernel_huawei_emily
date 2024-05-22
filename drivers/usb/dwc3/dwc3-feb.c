@@ -20,6 +20,7 @@
 #endif
 
 #include "hisi_usb3_misctrl.h"
+#include "hisi_usb3_31phy.h"
 
 /*lint -e750 -esym(750,*)*/
 
@@ -45,12 +46,20 @@
 #define PPLL3_INT_MOD                   (1 << 24)
 #define GT_CLK_PPLL3                    (1 << 26)
 
-#define PERI_CRG_CLK_EN5                0x50
-#define PERI_CRG_PERRSTEN4 0x90
-#define PERI_CRG_PERRSTDIS4 0x94
+#define PERI_CRG_CLK_EN5		0x50
+#define PERI_CRG_PERRSTEN4		0x90
+#define PERI_CRG_PERRSTDIS4		0x94
+#define PERI_CRG_PERRSTSTAT4		0x98
 
 #define SC_USB3PHY_ABB_GT_EN            (1 << 15)
 #define REF_SSP_EN                      (1 << 16)
+
+#define GT_CLK_USB3OTG_REF				(1 << 0)
+#define GT_ACLK_USB3OTG					(1 << 1)
+#define GT_HCLK_USB3OTG_MISC				(1 << 25)
+
+#define IP_RST_USB3OTG_32K		(1 << 6)
+#define IP_RST_USB3OTG_MISC		(1 << 7)
 
 /* clk freq usb default usb3.0 228M usb2.0 60M */
 static uint32_t USB3OTG_ACLK_FREQ = 229000000;
@@ -60,6 +69,46 @@ extern struct hisi_dwc3_device *hisi_dwc3_dev;
 
 #define SET_NBITS_MASK(start, end) (((2u << ((end) - (start))) - 1) << (start))
 #define SET_BIT_MASK(bit) SET_NBITS_MASK(bit, bit)
+
+static int usb3_misc_ctrl_is_unreset(void __iomem *pericfg_base)
+{
+	volatile uint32_t regval;
+	regval = (uint32_t)readl(PERI_CRG_PERRSTSTAT4 + pericfg_base);
+	return !((IP_RST_USB3OTG_MISC | IP_RST_USB3OTG_32K) & regval);
+}
+
+static int usb3_misc_ctrl_is_reset(void __iomem *pericfg_base)
+{
+	return !usb3_misc_ctrl_is_unreset(pericfg_base);
+}
+
+void usb3_reset_misc_ctrl(void)
+{
+	void __iomem *pericfg_base;
+
+	if (!hisi_dwc3_dev) {
+		usb_err("[USB3] usb driver not setup!\n");
+		return;
+	}
+
+	pericfg_base = hisi_dwc3_dev->pericfg_reg_base;/*lint !e438 */
+	writel(IP_RST_USB3OTG_MISC | IP_RST_USB3OTG_32K,
+			pericfg_base + PERI_CRG_PERRSTEN4);
+}
+
+void usb3_unreset_misc_ctrl(void)
+{
+	void __iomem *pericfg_base;
+
+	if (!hisi_dwc3_dev) {
+		usb_err("[USB3] usb driver not setup!\n");
+		return;
+	}
+
+	pericfg_base = hisi_dwc3_dev->pericfg_reg_base;/*lint !e438 */
+	writel(IP_RST_USB3OTG_MISC | IP_RST_USB3OTG_32K,
+			pericfg_base + PERI_CRG_PERRSTDIS4);
+}
 
 static int dwc3_combophy_sw_sysc(struct hisi_dwc3_device *hisi_dwc3, TCPC_MUX_CTRL_TYPE new_mode)
 {
@@ -504,40 +553,6 @@ static int dwc3_release(struct hisi_dwc3_device *hisi_dwc3)
 	return ret;
 }
 
-static int feb_clk_check(struct hisi_dwc3_device *hisi_dwc3)
-{
-	void __iomem *pericfg_base;
-
-	/*
-	 * just check if usb module probe.
-	 */
-	if (!hisi_dwc3) {
-		usb_err("usb module not probe\n");
-		return -EBUSY;
-	}
-	pericfg_base = hisi_dwc3->pericfg_reg_base;
-
-	if ((hisi_dwc3->state == USB_STATE_HIFI_USB_HIBERNATE)
-			|| (hisi_dwc3->state == USB_STATE_HIFI_USB)) {
-		return 0;
-	}
-
-	return (usb3_misc_ctrl_is_reset(pericfg_base) || usb3_hclk_is_close(pericfg_base));
-}
-
-static int feb_event_sync(struct hisi_dwc3_device *hisi_dwc3)
-{
-	/*
-	 * just check if usb module probe.
-	 */
-	if (!hisi_dwc3) {
-		usb_err("usb module not probe\n");
-		return -EBUSY;
-	}
-
-	return 1;
-}
-
 static void feb_notify_speed(struct hisi_dwc3_device *hisi_dwc3)
 {
 	int ret;
@@ -545,7 +560,7 @@ static void feb_notify_speed(struct hisi_dwc3_device *hisi_dwc3)
 	usb_dbg("+device speed is %d\n", hisi_dwc3->speed);
 
 	if ((hisi_dwc3->speed != USB_CONNECT_HOST) && (hisi_dwc3->speed != USB_CONNECT_DCP))
-		pd_dpm_set_usb_speed(hisi_dwc3->speed);
+		hw_usb_set_usb_speed(hisi_dwc3->speed);
 
 	if (((hisi_dwc3->speed < USB_SPEED_WIRELESS) && (hisi_dwc3->speed > USB_SPEED_UNKNOWN))
 		||(hisi_dwc3->speed == USB_CONNECT_DCP)) {
@@ -867,8 +882,8 @@ static int feb_usb3phy_shutdown(struct hisi_dwc3_device *hisi_dwc3)
 
 	set_hisi_dwc3_power_flag(USB_POWER_OFF);
 
-	usb_dbg(":DP_AUX_LDO_CTRL_USB disable\n");
-	dp_aux_ldo_supply_disable(DP_AUX_LDO_CTRL_USB);
+	usb_dbg(":HW_USB_LDO_CTRL_USB disable\n");
+	hw_usb_ldo_supply_disable(HW_USB_LDO_CTRL_USB);
 
 	usb_dbg("-\n");
 
@@ -913,17 +928,6 @@ static int feb_get_dts_resource(struct hisi_dwc3_device *hisi_dwc3)
 		return -EINVAL;
 	}
 
-	if (of_property_read_u32(dev->of_node, "quirk_dplus_gpio", &(hisi_dwc3->quirk_dplus_gpio))) {
-		hisi_dwc3->quirk_dplus_gpio = 0;
-		dev_info(dev, "not need quirk dplus\n");
-	} else {
-		dev_info(dev, "the board has dplus pull quirk gpio:%d\n",
-			hisi_dwc3->quirk_dplus_gpio);
-		if (gpio_request(hisi_dwc3->quirk_dplus_gpio, "quirk_dplus_gpio")) {
-			usb_err("request gpio quirk_dplus_gpio error!\n");
-			return -EINVAL;
-		}
-	}
 
 	if (of_property_read_u32(dev->of_node, "usb_aclk_freq", &USB3OTG_ACLK_FREQ)) {
 		USB3OTG_ACLK_FREQ = 229000000;
@@ -949,25 +953,9 @@ static int feb_get_dts_resource(struct hisi_dwc3_device *hisi_dwc3)
 	return 0;
 }
 
-static uint32_t feb_get_plug_orien(void)
-{
-	uint32_t plug_orien;
-	plug_orien = usb3_misc_reg_readl(0x214);
-	return (plug_orien & 0x4);
-}
-
 static int feb_tcpc_is_usb_only(void)
 {
-	volatile uint32_t temp;
-	temp = usb3_misc_reg_readl(0x214);
-	/* Mux control from TCPM controlling the behavior of the ComboPHY DPAlt_Xbar
-	 * and TCA synchronization.
-	 * 00: No connection (default)
-	 * 01: USB3.1 Connected
-	 * 10: DP Alternate Mode - 4 lanes
-	 * 11: USB3.1 + Display Port Lanes 0 & 1
-	 */
-	return (temp & COMBOPHY_MODE_MASK) == USBONLY_MODE;
+	return dwc3_is_usb_only();
 }
 
 static int feb_shared_phy_init(struct hisi_dwc3_device *hisi_dwc3,
@@ -979,15 +967,14 @@ static int feb_shared_phy_init(struct hisi_dwc3_device *hisi_dwc3,
 
 	usb_dbg("+\n");
 
-	usb_dbg(":DP_AUX_LDO_CTRL_HIFIUSB enable\n");
-	dp_aux_ldo_supply_enable(DP_AUX_LDO_CTRL_HIFIUSB);
+	usb_dbg(":HW_USB_LDO_CTRL_HIFIUSB enable\n");
+	hw_usb_ldo_supply_enable(HW_USB_LDO_CTRL_HIFIUSB);
 
 	if (!hisi_dwc3)
 		return -ENODEV;
 
 #ifdef CONFIG_CONTEXTHUB_PD
 	if (hisi_dwc3->support_dp && combophy_flag) {
-		hisi_dwc3->plug_orien = feb_get_plug_orien();
 		combophy_poweroff();
 	}
 #endif
@@ -1048,10 +1035,14 @@ err_misc_ctrl_get:
 		usb_dbg("combophy_sw_sysc -\n");
 	}
 #endif
+	usb_dbg(":HW_USB_LDO_CTRL_HIFIUSB disable\n");
+	hw_usb_ldo_supply_disable(HW_USB_LDO_CTRL_HIFIUSB);
+
 	return ret;
 }
 
-static int feb_shared_phy_shutdown(struct hisi_dwc3_device *hisi_dwc3, unsigned int combophy_flag)
+static int feb_shared_phy_shutdown(struct hisi_dwc3_device *hisi_dwc3,
+		unsigned int combophy_flag, unsigned int keep_power)
 {
 	uint32_t temp;
 	void __iomem *pericfg_base;
@@ -1061,6 +1052,8 @@ static int feb_shared_phy_shutdown(struct hisi_dwc3_device *hisi_dwc3, unsigned 
 
 	if (!hisi_dwc3)
 		return -ENODEV;
+
+	usb_dbg("combophy_flag %u, keep_power %u\n", combophy_flag, keep_power);
 
 	pericfg_base = hisi_dwc3->pericfg_reg_base;
 
@@ -1100,8 +1093,8 @@ static int feb_shared_phy_shutdown(struct hisi_dwc3_device *hisi_dwc3, unsigned 
 	}
 #endif
 
-	usb_dbg(":DP_AUX_LDO_CTRL_HIFIUSB disable\n");
-	dp_aux_ldo_supply_disable(DP_AUX_LDO_CTRL_HIFIUSB);
+	usb_dbg(":HW_USB_LDO_CTRL_HIFIUSB disable\n");
+	hw_usb_ldo_supply_disable(HW_USB_LDO_CTRL_HIFIUSB);
 	usb_dbg("-\n");
 	return ret;
 }
@@ -1140,8 +1133,6 @@ static struct usb3_phy_ops feb_phy_ops = {
 	.shared_phy_init	= feb_shared_phy_init,
 	.shared_phy_shutdown	= feb_shared_phy_shutdown,
 	.set_hi_impedance	= feb_set_hi_impedance,
-	.clk_check		= feb_clk_check,
-	.event_sync		= feb_event_sync,
 	.notify_speed	= feb_notify_speed,
 	.check_voltage = feb_check_voltage,
 	.cptest_enable		= dwc3_compliance_mode_enable,
@@ -1156,8 +1147,8 @@ static int feb_usb3phy_init(struct hisi_dwc3_device *hisi_dwc3)
 	void __iomem *pericfg_base;
 	usb_dbg("+\n");
 
-	usb_dbg(":DP_AUX_LDO_CTRL_USB enable\n");
-	dp_aux_ldo_supply_enable(DP_AUX_LDO_CTRL_USB);
+	usb_dbg(":HW_USB_LDO_CTRL_USB enable\n");
+	hw_usb_ldo_supply_enable(HW_USB_LDO_CTRL_USB);
 
 	if (!hisi_dwc3) {
 		usb_err("hisi_dwc3 is NULL, dwc3-hisi have some problem!\n");
@@ -1172,19 +1163,10 @@ static int feb_usb3phy_init(struct hisi_dwc3_device *hisi_dwc3)
 		return 0;
 	}
 
-	/* pull down d+ */
-	if (hisi_dwc3->quirk_dplus_gpio) {
-		usb_dbg("set gpio to pull downd d+!\n");
-		gpio_direction_output(hisi_dwc3->quirk_dplus_gpio, 1);
-	}
 
 	ret = usb3_clk_set_rate(hisi_dwc3);
 	if (ret)
 		goto out;
-
-	if (!hisi_dwc3->support_dp) {
-		feb_phy_ops.event_sync = NULL;
-	}
 
 	ret = dwc3_misc_ctrl_get(MICS_CTRL_USB);
 	if (ret) {
@@ -1242,6 +1224,9 @@ out_phy_reset:
 out_misc_put:
 	dwc3_misc_ctrl_put(MICS_CTRL_USB);
 out:
+	usb_dbg(":HW_USB_LDO_CTRL_HIFIUSB disable\n");
+	hw_usb_ldo_supply_disable(HW_USB_LDO_CTRL_USB);
+
 	return ret;
 }
 

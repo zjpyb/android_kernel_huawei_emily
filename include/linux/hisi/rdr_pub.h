@@ -198,6 +198,11 @@ typedef void (*pfn_reset)( u32 modid, u32 etype, u64 coreid);
 typedef int (*pfn_cleartext_ops)(char *log_dir_path, u64 log_addr, u32 log_len);
 
 
+typedef int (*pfn_exception_init_ops)(u8 *phy_addr, u8 *virt_addr, u32 log_len);
+
+typedef int (*pfn_exception_analysis_ops)(u64 etime, u8 *addr, u32 len,
+	struct rdr_exception_info_s *exception);
+
 struct rdr_module_ops_pub {
     pfn_dump    ops_dump;
     pfn_reset   ops_reset;
@@ -373,6 +378,8 @@ void save_log_to_dfx_tempbuffer(u32 reboot_type);
 void clear_dfx_tempbuffer(void);
 void systemerror_save_log2dfx(u32 reboot_type);
 u64 rdr_get_logsize(void);
+u32 rdr_get_diaginfo_size(void);
+u32 rdr_get_lognum(void);
 char *rdr_get_timestamp(void);
 void *bbox_vmap(phys_addr_t paddr, size_t size);
 int rdr_dir_size(char *path, bool recursion);
@@ -398,6 +405,8 @@ static inline void clear_dfx_tempbuffer(void){return;};
 static inline void systemerror_save_log2dfx(u32 reboot_type){return;}
 static inline void hisi_bbox_unmap(const void *vaddr){return;}
 static inline u64 rdr_get_logsize(void){return 0;}
+static inline u32 rdr_get_diaginfo_size(void){return 0};
+static inline u32 rdr_get_lognum(void){return 0;}
 static inline char *rdr_get_timestamp(void){return NULL;}
 static inline void *bbox_vmap(phys_addr_t paddr, size_t size){return NULL;}
 static inline int rdr_dir_size(char *path, bool recursion){return 0;}

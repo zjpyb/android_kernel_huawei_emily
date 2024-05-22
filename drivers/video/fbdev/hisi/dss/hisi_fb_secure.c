@@ -30,10 +30,8 @@ int configure_hdcp_service_security(unsigned int master_op_type, unsigned int va
 		HISI_FB_ERR( " invalid master_op_type=%d", master_op_type);
 		return -1;
 	}
-
 	ret = atfd_hisi_service_access_register_smc(ACCESS_REGISTER_FN_MAIN_ID_HDCP,
 			master_op_type, value, (u64)ACCESS_REGISTER_FN_SUB_ID_HDCP_CTRL);
-
 	HISI_FB_DEBUG("-.\n");
 	return ret;
 }
@@ -43,10 +41,8 @@ int configure_hdcp_reg_get_security(uint32_t addr)
 {
 	int ret = 0;
 	HISI_FB_DEBUG("+.\n");
-
 	ret = atfd_hisi_service_access_register_smc(ACCESS_REGISTER_FN_MAIN_ID_HDCP,
 			addr, 0x00, (u64)ACCESS_REGISTER_FN_SUB_ID_HDCP_INT);
-
 	HISI_FB_DEBUG("-.\n");
 	return ret;
 }
@@ -366,6 +362,14 @@ void hisi_sec_mctl_set_regs(struct hisi_fb_data_type *hisifd)
 	}
 }
 
+static void hisi_dss_invalid_smmu_ptw_cache(struct hisi_fb_data_type *hisifd)
+{
+	if (hisifd == NULL) {
+		return;
+	}
+
+}
+
 void hisi_drm_layer_online_config(struct hisi_fb_data_type *hisifd, dss_overlay_t *pov_req_prev, dss_overlay_t *pov_req)
 {
 	int i = 0, m = 0, j = 0;
@@ -380,6 +384,7 @@ void hisi_drm_layer_online_config(struct hisi_fb_data_type *hisifd, dss_overlay_
 		HISI_FB_ERR("hisifd is null!\n");
 		return;
 	}
+
 	secure_ctrl = &(hisifd->secure_ctrl);
 	compose_mode = (hisifd->index == PRIMARY_PANEL_IDX) ? ONLINE_COMPOSE_MODE : OVL1_ONLINE_COMPOSE_MODE;
 
@@ -396,7 +401,8 @@ void hisi_drm_layer_online_config(struct hisi_fb_data_type *hisifd, dss_overlay_
 		for (i = 0; i < (int)pov_h_block->layer_nums; i++) {
 			layer = &(pov_h_block->layer_infos[i]);
 			if (layer->img.secure_mode == 1) {
-				HISI_FB_DEBUG("chn_idx = %d, frame_no = %d \n", layer->chn_idx, pov_req->frame_no);
+				HISI_FB_DEBUG("chn_idx = %d, frame_no = %d, mmu_enable = %d \n",
+					layer->chn_idx, pov_req->frame_no, layer->img.mmu_enable);
 				if (secure_ctrl->secure_layer_config && secure_ctrl->set_reg) {
 					sec_chn[j++] = layer->chn_idx;
 					secure_ctrl->secure_layer_config(hisifd, layer->chn_idx);
@@ -411,7 +417,12 @@ void hisi_drm_layer_online_config(struct hisi_fb_data_type *hisifd, dss_overlay_
 					}
 				} else {
 					sec_chn[j++] = layer->chn_idx;
-					configure_dss_service_security(DSS_CH_SEC_CONFIG, (uint32_t)layer->chn_idx, compose_mode);
+					if (layer->img.mmu_enable) {
+						configure_dss_service_security(DSS_CH_MMU_SEC_CONFIG, (uint32_t)layer->chn_idx, compose_mode);
+						hisi_dss_invalid_smmu_ptw_cache(hisifd);
+					} else {
+						configure_dss_service_security(DSS_CH_SEC_CONFIG, (uint32_t)layer->chn_idx, compose_mode);
+					}
 				}
 			}
 		}
@@ -433,7 +444,7 @@ void hisi_drm_layer_online_clear(struct hisi_fb_data_type *hisifd, dss_overlay_t
 	dss_overlay_block_t *pov_h_block_infos = NULL;
 	dss_overlay_block_t *pov_h_block = NULL;
 	struct hisifb_secure *secure_ctrl = NULL;
-	int compose_mode;
+	int compose_mode, cmd_mode;
 	compose_mode = (hisifd->index == PRIMARY_PANEL_IDX) ? ONLINE_COMPOSE_MODE : OVL1_ONLINE_COMPOSE_MODE;
 
 	secure_ctrl = &(hisifd->secure_ctrl);//lint !e838
@@ -455,7 +466,8 @@ void hisi_drm_layer_online_clear(struct hisi_fb_data_type *hisifd, dss_overlay_t
 				}
 
 				if (!secure_layer) {
-					HISI_FB_DEBUG("chn_idx = %d, prev_frame_no = %d \n", layer->chn_idx, pov_req_prev->frame_no);
+					HISI_FB_DEBUG("chn_idx = %d, prev_frame_no = %d mmu_emable=%d\n",
+						layer->chn_idx, pov_req_prev->frame_no, layer->img.mmu_enable);
 					if (secure_ctrl->secure_layer_deconfig && secure_ctrl->set_reg) {
 						secure_ctrl->secure_layer_deconfig(hisifd, layer->chn_idx);
 						if ((layer->chn_idx - DSS_RCHN_G0) > 0) {
@@ -466,7 +478,9 @@ void hisi_drm_layer_online_clear(struct hisi_fb_data_type *hisifd, dss_overlay_t
 								0, 32, 0);
 						}
 					} else {
-						configure_dss_service_security(DSS_CH_SEC_DECONFIG, (uint32_t)layer->chn_idx, compose_mode);
+						cmd_mode = layer->img.mmu_enable ? DSS_CH_MMU_SEC_DECONFIG : DSS_CH_SEC_DECONFIG;
+						configure_dss_service_security(cmd_mode, (uint32_t)layer->chn_idx, compose_mode);
+						hisi_dss_invalid_smmu_ptw_cache(hisifd);
 					}
 				}
 			}
@@ -504,13 +518,18 @@ void hisi_drm_layer_offline_config(struct hisi_fb_data_type *hisifd, dss_overlay
 
 	wb_layer4block = &(pov_req->wb_layer_infos[0]);
 	if (wb_layer4block->dst.secure_mode == 1) {
-		HISI_FB_DEBUG("chn_idx = %d \n", wb_layer4block->chn_idx);
+		HISI_FB_DEBUG("wb_layer4block->chn_idx = %d, mmu_enable = %d\n", wb_layer4block->chn_idx, wb_layer4block->dst.mmu_enable);
 		if (secure_ctrl->secure_layer_config && secure_ctrl->set_reg) {
 			secure_ctrl->secure_layer_config(secure_ctrl->hisifd, wb_layer4block->chn_idx);
 			secure_ctrl->set_reg(hisifd->dss_base_phy + DSS_MCTRL_SYS_OFFSET + MCTL_CTL_SECU_GATE2,
 				(uint32_t)BIT(5), 32, 0);
 		} else {
-			configure_dss_service_security(DSS_CH_SEC_CONFIG, (uint32_t)wb_layer4block->chn_idx, compose_mode);
+			if (wb_layer4block->dst.mmu_enable) {
+				configure_dss_service_security(DSS_CH_MMU_SEC_CONFIG, (uint32_t)wb_layer4block->chn_idx, compose_mode);
+				hisi_dss_invalid_smmu_ptw_cache(hisifd);
+			} else {
+				configure_dss_service_security(DSS_CH_SEC_CONFIG, (uint32_t)wb_layer4block->chn_idx, compose_mode);
+			}
 		}
 	}
 
@@ -519,7 +538,7 @@ void hisi_drm_layer_offline_config(struct hisi_fb_data_type *hisifd, dss_overlay
 		for (i = 0; i < (int)pov_h_block->layer_nums; i++) {
 			layer = &(pov_h_block->layer_infos[i]);
 			if (layer->img.secure_mode == 1) {
-				HISI_FB_DEBUG("chn_idx = %d \n", layer->chn_idx);
+				HISI_FB_DEBUG("chn_idx = %d, mmu_enable = %d\n", layer->chn_idx, layer->img.mmu_enable);
 				if (secure_ctrl->secure_layer_config && secure_ctrl->set_reg ) {
 					secure_ctrl->secure_layer_config(secure_ctrl->hisifd, layer->chn_idx);
 					if ((layer->chn_idx - DSS_RCHN_G0) > 0) {
@@ -532,7 +551,12 @@ void hisi_drm_layer_offline_config(struct hisi_fb_data_type *hisifd, dss_overlay
 							((uint32_t)0x3B << ((uint32_t)layer->chn_idx * 8)), 32, 0);
 					}
 				} else {
-					configure_dss_service_security(DSS_CH_SEC_CONFIG, (uint32_t)layer->chn_idx, compose_mode);
+					if (layer->img.mmu_enable) {
+						configure_dss_service_security(DSS_CH_MMU_SEC_CONFIG, (uint32_t)layer->chn_idx, compose_mode);
+						hisi_dss_invalid_smmu_ptw_cache(hisifd);
+					} else {
+						configure_dss_service_security(DSS_CH_SEC_CONFIG, (uint32_t)layer->chn_idx, compose_mode);
+					}
 				}
 			}
 		}
@@ -542,7 +566,7 @@ void hisi_drm_layer_offline_config(struct hisi_fb_data_type *hisifd, dss_overlay
 void hisi_drm_layer_offline_clear(struct hisi_fb_data_type *hisifd, dss_overlay_t *pov_req)
 {
 	int m = 0, i = 0;
-	int compose_mode;
+	int compose_mode, cmd_mode;
 	dss_wb_layer_t *wb_layer4block = NULL;
 	dss_overlay_block_t *pov_h_block = NULL;
 	dss_overlay_block_t *pov_h_block_infos = NULL;
@@ -569,13 +593,14 @@ void hisi_drm_layer_offline_clear(struct hisi_fb_data_type *hisifd, dss_overlay_
 
 	wb_layer4block = &(pov_req->wb_layer_infos[0]);//lint !e838
 	if (wb_layer4block->dst.secure_mode == 1) {
-		HISI_FB_DEBUG("wb_layer4block->chn_idx = %d \n", wb_layer4block->chn_idx);
+		HISI_FB_DEBUG("wb_layer4block->chn_idx = %d, mmu_enable = %d\n", wb_layer4block->chn_idx, wb_layer4block->dst.mmu_enable);
 		if (secure_ctrl->secure_layer_deconfig && secure_ctrl->set_reg) {
 			secure_ctrl->secure_layer_deconfig(secure_ctrl->hisifd, wb_layer4block->chn_idx);
 			secure_ctrl->set_reg(hisifd->dss_base_phy + DSS_MCTRL_SYS_OFFSET + MCTL_CTL_SECU_GATE2,
 				0, 32, 0);
 		} else {
-			configure_dss_service_security(DSS_CH_SEC_DECONFIG, (uint32_t)wb_layer4block->chn_idx, compose_mode);
+			cmd_mode = wb_layer4block->dst.mmu_enable ? DSS_CH_MMU_SEC_DECONFIG : DSS_CH_SEC_DECONFIG;
+			configure_dss_service_security(cmd_mode, (uint32_t)wb_layer4block->chn_idx, compose_mode);
 		}
 	}
 
@@ -584,7 +609,7 @@ void hisi_drm_layer_offline_clear(struct hisi_fb_data_type *hisifd, dss_overlay_
 		for (i = 0; i < (int)pov_h_block->layer_nums; i++) {
 			layer = &(pov_h_block->layer_infos[i]);
 			if (layer->img.secure_mode == 1) {
-				HISI_FB_DEBUG("layer->chn_idx = %d \n", layer->chn_idx);
+				HISI_FB_DEBUG("chn_idx = %d, mmu_enable = %d\n", layer->chn_idx, layer->img.mmu_enable);
 				if (secure_ctrl->secure_layer_deconfig && secure_ctrl->set_reg) {
 					secure_ctrl->secure_layer_deconfig(secure_ctrl->hisifd, layer->chn_idx);
 					if ((layer->chn_idx - DSS_RCHN_G0) > 0) {
@@ -595,7 +620,9 @@ void hisi_drm_layer_offline_clear(struct hisi_fb_data_type *hisifd, dss_overlay_
 							0, 32, 0);
 					}
 				} else {
-					configure_dss_service_security(DSS_CH_SEC_DECONFIG, (uint32_t)layer->chn_idx, compose_mode);
+					cmd_mode = layer->img.mmu_enable ? DSS_CH_MMU_SEC_DECONFIG : DSS_CH_SEC_DECONFIG;
+					configure_dss_service_security(cmd_mode, (uint32_t)layer->chn_idx, compose_mode);
+					hisi_dss_invalid_smmu_ptw_cache(hisifd);
 				}
 			}
 		}
@@ -672,7 +699,7 @@ void hisifb_secure_register(struct platform_device *pdev)
 	}
 	hisifd = platform_get_drvdata(pdev);
 	if (NULL == hisifd) {
-		HISI_FB_ERR("hisifd is NULL");
+		dev_err(&pdev->dev, "hisifd is NULL");
 		return;
 	}
 	secure_ctrl = &(hisifd->secure_ctrl);
@@ -730,7 +757,7 @@ void hisifb_secure_unregister(struct platform_device *pdev)
 	}
 	hisifd = platform_get_drvdata(pdev);//lint !e838
 	if (NULL == hisifd) {
-		HISI_FB_ERR("hisifd is NULL");
+		dev_err(&pdev->dev, "hisifd is NULL");
 		return;
 	}
 	secure_ctrl = &(hisifd->secure_ctrl);//lint !e838

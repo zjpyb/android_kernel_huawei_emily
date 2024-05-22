@@ -1181,41 +1181,41 @@ STATIC ssize_t store_wifi_mem_dump(struct device *dev, struct kobj_attribute *at
             break;
         case 2:
             PS_PRINT_INFO("wifi mem dump cmd %d, read wifi public register\n", cmd);
-            plat_wait_last_rotate_finish();
+            //plat_wait_last_rotate_finish();
             if (EXCEPTION_SUCCESS == uart_read_wifi_mem(WIFI_PUB_REG))
             {
                 /*send cmd to oam_hisi to rotate file*/
-                plat_send_rotate_cmd_2_app(CMD_READM_WIFI_UART);
+                //plat_send_rotate_cmd_2_app(CMD_READM_WIFI_UART);
             }
             else
             {
-                plat_rotate_finish_set();
+                //plat_rotate_finish_set();
             };
             break;
         case 3:
             PS_PRINT_INFO("wifi mem dump cmd %d, read wifi priv register\n", cmd);
-            plat_wait_last_rotate_finish();
+//            plat_wait_last_rotate_finish();
             if (EXCEPTION_SUCCESS == uart_read_wifi_mem(WIFI_PRIV_REG))
             {
                 /*send cmd to oam_hisi to rotate file*/
-                plat_send_rotate_cmd_2_app(CMD_READM_WIFI_UART);
+                //plat_send_rotate_cmd_2_app(CMD_READM_WIFI_UART);
             }
             else
             {
-                plat_rotate_finish_set();
+               // plat_rotate_finish_set();
             };
             break;
         case 4:
             PS_PRINT_INFO("wifi mem dump cmd %d, read wifi mem\n", cmd);
-            plat_wait_last_rotate_finish();
+  //          plat_wait_last_rotate_finish();
             if (EXCEPTION_SUCCESS == uart_read_wifi_mem(WIFI_MEM))
             {
                 /*send cmd to oam_hisi to rotate file*/
-                plat_send_rotate_cmd_2_app(CMD_READM_WIFI_UART);
+                //plat_send_rotate_cmd_2_app(CMD_READM_WIFI_UART);
             }
             else
             {
-                plat_rotate_finish_set();
+               // plat_rotate_finish_set();
             };
             break;
         case 5:

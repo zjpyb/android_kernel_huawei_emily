@@ -8,3 +8,4 @@ ccflags-y  += -I$(srctree)/drivers/huawei_platform/inputhub/$(TARGET_BOARD_PLATF
 endif
 
 obj-y += huawei_charger_common.o
+obj-y += huawei_charger_power_interface.o

@@ -15,6 +15,7 @@
 #include <linux/mm_types.h>
 #include <linux/sched.h>
 #include <linux/fs.h>
+#include <linux/syscalls.h>
 #include <linux/kobject.h>
 
 #include "patch_mgr.h"
@@ -27,23 +28,15 @@
 
 #define FUNC_NAME_LEN_MAX 255
 #define UEVENT_INFO_LEN_MAX 128
+
+#define oases_uid_eq(a, b) ((a) == (b))
+#define OASES_INVALID_UID (long)(-1)
+
 LIST_HEAD(patchinfo_list);
 
 extern struct kobject *attack_kobj;
 extern struct kset *attack_kset;
 extern int attack_upload_init;
-
-static struct uevent_info {
-	const char *uidinfo;
-	const char *patchinfo;
-};
-
-enum {
-    UID = 0,
-	PATCHID,
-	UEVENT_NULL,
-	UEVENT_LAST,
-};
 
 int oases_check_patch_func(const char *name)
 {
@@ -105,6 +98,7 @@ int oases_op_patch(struct oases_patch_file *pfile)
 	struct oases_attack_log *plog;
 	struct oases_patch_info *info = NULL;
 	int (*code_entry)(struct oases_patch_info *info) = NULL;
+	void (*init)(void) = NULL;
 
 	info = kzalloc(sizeof(*info), GFP_KERNEL);
 	if (!info) {
@@ -123,7 +117,7 @@ int oases_op_patch(struct oases_patch_file *pfile)
 		ret = -ENOMEM;
 		goto fail_alloc_log;;
 	}
-	plog->uid = INVALID_UID;
+	plog->uid = OASES_INVALID_UID;
 	info->log_index = 1;
 	info->plog = plog;
 	spin_lock_init(&info->log_lock);
@@ -154,6 +148,11 @@ int oases_op_patch(struct oases_patch_file *pfile)
 
 	info->attached = 1;
 	list_add_tail(&info->list, &patchinfo_list);
+
+	init = info->cbs.init;
+	if (init)
+		init();
+
 	return 0;
 
 fail_sysfs:
@@ -171,6 +170,7 @@ fail_alloc_log:
 static int op_unpatch(struct oases_patch_info *info)
 {
 	int ret;
+	void (*exit)(void) = NULL;
 
 	ret = oases_remove_patch(info);
 	if (ret)
@@ -179,6 +179,11 @@ static int op_unpatch(struct oases_patch_info *info)
 		list_del(&info->list);
 		info->attached = 0;
 	}
+
+	exit = info->cbs.exit;
+	if (exit)
+		exit();
+
 	oases_sysfs_del_patch(info);
 	return 0;
 }
@@ -209,58 +214,72 @@ int oases_op_unpatch(struct oases_unpatch *p)
 	return -ENOENT;
 }
 
-static int attack_data_adapter(char **uevent_envp, kuid_t uid, char *id)
-{
-	int index = 0;
-	int i;
-	size_t attack_item_len = 0;
+struct notify_work {
+	struct work_struct work;
+	long uid;
+	char id[PATCH_ID_LEN];
+};
 
-	struct uevent_info attack_info = {
-		"uid=",
-		"patch_id=",
+static void oases_notify_uevent(struct work_struct *work)
+{
+	enum {
+		UEVENT_UID = 0,
+		UEVENT_PATCHID = 1,
+		UEVENT_NULL = 2
 	};
 
-	if ((NULL == uevent_envp) || (NULL == id)) {
-		return -EINVAL;
+	struct notify_work *notify = container_of(work, struct notify_work, work);
+	char *uevent_envp[UEVENT_NULL + 1] = {NULL};
+	int index;
+
+	oases_info("notify uevent starting\n", __func__);
+
+	if (!notify) {
+		oases_error("notify=NULL\n");
+		return;
 	}
-	if ((ATKSYS_INIT != attack_upload_init) || (NULL == attack_kobj))
-	{
-	    return -EINVAL;
+	if ((attack_upload_init != ATKSYS_INIT) || !attack_kobj) {
+		oases_error("check attack_upload_init failed\n");
+		kfree(notify);
+		return;
 	}
 
-	for (index = 0; index < UEVENT_NULL; index++) {
+	index = 0;
+	while (index < UEVENT_NULL) {
 		uevent_envp[index] = vmalloc(UEVENT_INFO_LEN_MAX);
-		if (NULL == uevent_envp[index]) {
-			for (i = index; i >= 0; i--) {
-				vfree(uevent_envp[i]);
-				uevent_envp[i] = NULL;
-			}
-			return -EINVAL;
+		if (!uevent_envp[index]) {
+			oases_error("vmalloc failed\n");
+			break;
 		}
 		memset(uevent_envp[index], 0, UEVENT_INFO_LEN_MAX);
+		++index;
 	}
 
-	snprintf(uevent_envp[UID], UEVENT_INFO_LEN_MAX,"%s%d", attack_info.uidinfo, uid);
-	strncpy(uevent_envp[PATCHID], attack_info.patchinfo, strlen(attack_info.patchinfo));
-	strncat(uevent_envp[PATCHID], id, strlen(id));
+	if (index == UEVENT_NULL) {
+		snprintf(uevent_envp[UEVENT_UID], UEVENT_INFO_LEN_MAX,
+			"uid=%ld", notify->uid);
+		snprintf(uevent_envp[UEVENT_PATCHID], UEVENT_INFO_LEN_MAX,
+			"patch_id=%s", notify->id);
+		uevent_envp[UEVENT_NULL] = NULL;
+		kobject_uevent_env(attack_kobj, KOBJ_CHANGE, uevent_envp);
+	}
 
-	uevent_envp[UEVENT_NULL] = NULL;
-	kobject_uevent_env(attack_kobj, KOBJ_CHANGE, uevent_envp);
-	for (index = 0; index < UEVENT_NULL; index++) {
+	while (index > 0) {
+		--index;
 		vfree(uevent_envp[index]);
 		uevent_envp[index] = NULL;
 	}
-	return 0;
+	kfree(notify);
 }
 
-static void increase_attack_count(struct oases_patch_info *ctx, kuid_t uid)
+static void increase_attack_count(struct oases_patch_info *ctx, long uid)
 {
-	int i, ret;
+	int i;
 	struct oases_attack_log *entry;
-	char *uevent_envp[UEVENT_LAST] = {NULL};
+	struct notify_work *notify;
 
 	/* node 0 belongs to INVALID_UID */
-	if (uid_eq(uid, INVALID_UID)) {
+	if (oases_uid_eq(uid, OASES_INVALID_UID)) {
 		entry = ctx->plog;
 		entry->count++;
 		entry->end_time = get_seconds();
@@ -271,7 +290,7 @@ static void increase_attack_count(struct oases_patch_info *ctx, kuid_t uid)
 
 	for (i = 1; i < ctx->log_index; i++) {
 		entry = ctx->plog + i;
-		if (uid_eq(entry->uid, uid)) {
+		if (oases_uid_eq(entry->uid, uid)) {
 			entry->count++;
 			entry->end_time = get_seconds();
 			return;
@@ -286,22 +305,28 @@ static void increase_attack_count(struct oases_patch_info *ctx, kuid_t uid)
 	entry->end_time = entry->start_time;
 	ctx->log_index++;
 
-	ret = attack_data_adapter(uevent_envp, uid, ctx->id);
-	if (ret != 0)
-	{
-	    oases_error("uevent of attack failed\n");
+	if (ctx->id) {
+		notify = kmalloc(sizeof(struct notify_work), GFP_ATOMIC);
+		if (notify) {
+			INIT_WORK(&notify->work, oases_notify_uevent);
+			notify->uid = uid;
+			memcpy(notify->id, ctx->id, sizeof(notify->id));
+			queue_work(system_long_wq, &notify->work);
+		} else {
+			oases_error("kmalloc failed\n");
+		}
 	}
 }
 
 void oases_attack_logger(struct oases_patch_info *ctx)
 {
-	kuid_t uid = INVALID_UID;
+	long uid = OASES_INVALID_UID;
 	unsigned long flags;
 
 	spin_lock_irqsave(&ctx->log_lock, flags);
 	if (ctx->log_index >= OASES_LOG_NODE_MAX)
 		goto index_zero;
-	uid = current_uid();
+	uid = sys_getuid();
 
 index_zero:
 	increase_attack_count(ctx, uid);

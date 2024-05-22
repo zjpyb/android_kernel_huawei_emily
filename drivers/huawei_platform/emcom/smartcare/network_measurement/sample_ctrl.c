@@ -28,6 +28,7 @@ int proc_sample_valve(struct ctl_table *ctl, int write, void __user *buffer,
 	if (write) {
 		tbl.data = &val;
 		tbl.maxlen = sizeof(int);
+		tbl.procname = "netmeasure";
 		err = proc_dointvec(&tbl, write, buffer, lenp, ppos);
 		if (!err)
 			network_measure = val ? nm_turn_on_valve(NULL) :
@@ -39,6 +40,7 @@ int proc_sample_valve(struct ctl_table *ctl, int write, void __user *buffer,
 			 (unsigned int)val >> VALVE_TS_SHIFT);
 		tbl.data = data;
 		tbl.maxlen = sizeof(data);
+		tbl.procname = "netmeasure";
 		err = proc_dostring(&tbl, write, buffer, lenp, ppos);
 	}
 

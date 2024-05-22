@@ -288,15 +288,15 @@ static int ak4376_pdn_control(struct snd_soc_codec *codec, int pdn)
 
 	return 0;
 }
-
+#ifdef AK4376_KERNEL_4_1_DEBUG
 static ssize_t ak4376_reg_data_show(struct device *dev,
 				   struct device_attribute *attr, char *buf)
 {
 	int ret = 0, i, fpt;
 	int rx[AK4376_MAX_REG_NUM + 1] = {0};
 
-	if(NULL == ak4376_codec){
-		loge("%s: ak4376_codec is NULL.\n", __FUNCTION__);
+	if ((NULL == ak4376_codec) || (NULL == buf)) {
+		loge("%s: ak4376_codec or buf is NULL.\n", __FUNCTION__);
 		return -ENOMEM;
 	}
 
@@ -381,8 +381,8 @@ static ssize_t ak4376_flag_show(struct device *dev,
 {
 	char buffer[AK4376_FLAG_MAX] = {0};
 
-	if (NULL == ak4376_codec) {
-		loge("%s: ak4376_codec is NULL.\n", __FUNCTION__);
+	if ((NULL == ak4376_codec) || (NULL == buf)) {
+		loge("%s: ak4376_codec or buf is NULL.\n", __FUNCTION__);
 		return -EIO;
 	}
 	struct ak4376_priv *ak4376 = snd_soc_codec_get_drvdata(ak4376_codec);
@@ -428,6 +428,7 @@ static struct attribute *ak4376_attributes[] = {
 static const struct attribute_group ak4376_attr_group = {
 	.attrs = ak4376_attributes,
 };
+#endif
 
 /* ak4376 register cache & default register settings */
 static const u8 ak4376_reg[AK4376_MAX_REGISTERS] = {
@@ -2826,18 +2827,28 @@ static struct snd_soc_codec_driver soc_codec_dev_ak4376 = {
 	.resume = ak4376_resume,
 	.read = ak4376_reg_read,
 	.write = ak4376_write_register,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0)
+	.component_driver = {
+		.controls = ak4376_snd_controls,
+		.num_controls = ARRAY_SIZE(ak4376_snd_controls),
+		.dapm_widgets = ak4376_dapm_widgets,
+		.num_dapm_widgets = ARRAY_SIZE(ak4376_dapm_widgets),
+		.dapm_routes = ak4376_intercon,
+		.num_dapm_routes = ARRAY_SIZE(ak4376_intercon),
+	},
+#else
 	.controls = ak4376_snd_controls,
 	.num_controls = ARRAY_SIZE(ak4376_snd_controls),
-
+	.dapm_widgets = ak4376_dapm_widgets,
+	.num_dapm_widgets = ARRAY_SIZE(ak4376_dapm_widgets),
+	.dapm_routes = ak4376_intercon,
+	.num_dapm_routes = ARRAY_SIZE(ak4376_intercon),
+#endif
 	.idle_bias_off = true,
 	.set_bias_level = ak4376_set_bias_level,
 	.reg_cache_size = ARRAY_SIZE(ak4376_reg),
 	.reg_word_size = sizeof(u8),
 	.reg_cache_default = ak4376_reg,
-	.dapm_widgets = ak4376_dapm_widgets,
-	.num_dapm_widgets = ARRAY_SIZE(ak4376_dapm_widgets),
-	.dapm_routes = ak4376_intercon,
-	.num_dapm_routes = ARRAY_SIZE(ak4376_intercon),
 };
 
 static int ak4376_populate_get_gpio_pdata(struct device *dev, struct ak4376_priv *pdata)
@@ -3337,10 +3348,11 @@ static int ak4376_i2c_probe(struct i2c_client *i2c,
 		loge("%s(%d): ak4376 priv data is NULL\n",__FUNCTION__,__LINE__);
 		return -ENOMEM;
 	}
-
+#ifdef AK4376_KERNEL_4_1_DEBUG
 	if ((ret = sysfs_create_group(&i2c->dev.kobj, &ak4376_attr_group)) < 0) {
 		loge("%s: failed to register ak4376 i2c sysfs, ret =%d\n", __func__, ret);
 	}
+#endif
 
 	i2c_set_clientdata(i2c, ak4376);
 
@@ -3464,7 +3476,10 @@ static int ak4376_i2c_remove(struct i2c_client *client)
 		return -ENOMEM;
 	}
 
+#ifdef AK4376_KERNEL_4_1_DEBUG
 	sysfs_remove_group(&client->dev.kobj, &ak4376_attr_group);
+#endif
+
 	ak4376_put_switch_regulator(ak4376);
 	ak4376_free_gpio_pdata(ak4376);
 	kfree(ak4376);

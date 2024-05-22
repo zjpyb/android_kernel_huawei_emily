@@ -13,6 +13,12 @@
 #define STAT_SUCCESS            1
 #define STAT_ERROR              2
 
+#define PD_ADAPTER_5V                    5000
+#define PD_ADAPTER_20V                  20000
+
+/* PD Voltage values in 50mV resolution */
+#define PD_09_V                 180
+
 #define PD_18_W    36000
 
 // Device FIFO Token Definitions

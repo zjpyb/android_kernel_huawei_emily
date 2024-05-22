@@ -192,7 +192,7 @@ static int sdio_card_irq_get(struct mmc_card *card)
 
 	if (!host->sdio_irqs++) {
 		if (!(host->caps2 & MMC_CAP2_SDIO_IRQ_NOTHREAD)) {
-			atomic_set(&host->sdio_irq_thread_abort, 0);/*lint !e1058*/
+			atomic_set(&host->sdio_irq_thread_abort, 0);
 			host->sdio_irq_thread =
 				kthread_run(sdio_irq_thread, host,
 					    "ksdioirqd/%s", mmc_hostname(host));
@@ -218,7 +218,7 @@ static int sdio_card_irq_put(struct mmc_card *card)
 
 	if (!--host->sdio_irqs) {
 		if (!(host->caps2 & MMC_CAP2_SDIO_IRQ_NOTHREAD)) {
-			atomic_set(&host->sdio_irq_thread_abort, 1);/*lint !e1058*/
+			atomic_set(&host->sdio_irq_thread_abort, 1);
 			kthread_stop(host->sdio_irq_thread);
 		} else if (host->caps & MMC_CAP_SDIO_IRQ) {
 			host->ops->enable_sdio_irq(host, 0);
@@ -232,12 +232,12 @@ static int sdio_card_irq_put(struct mmc_card *card)
 static void sdio_single_irq_set(struct mmc_card *card)
 {
 	struct sdio_func *func;
-	int i;
+	unsigned int i;
 
 	card->sdio_single_irq = NULL;
 	if ((card->host->caps & MMC_CAP_SDIO_IRQ) &&
 	    card->host->sdio_irqs == 1)
-		for (i = 0; i < card->sdio_funcs; i++) {/*lint !e574*/
+		for (i = 0; i < card->sdio_funcs; i++) {
 		       func = card->sdio_func[i];
 		       if (func && func->irq_handler) {
 			       card->sdio_single_irq = func;

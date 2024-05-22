@@ -9,5 +9,6 @@
 /include/ "col_auo_otm1911a_5p84_1080p_video.dtsi"
 /include/ "col_boe_otm1911a_5p84_1080p_video.dtsi"
 /include/ "col_ctc_otm1911a_5p84_1080p_video.dtsi"
+/include/ "col_jdi_otm1911a_5p84_1080p_video.dtsi"
 /include/ "col_tm_hx8399c_5p84_1080p_video.dtsi"
 /include/ "col_tm_otm1911a_5p84_1080p_video.dtsi"

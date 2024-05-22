@@ -54,6 +54,7 @@
 #include "msp_nvim.h"
 #include "AtOamInterface.h"
 #include "PsLogFilterInterface.h"
+#include "si_pih.h"
 
 
 /*****************************************************************************
@@ -61,11 +62,25 @@
 *****************************************************************************/
 #define    THIS_FILE_ID PS_FILE_ID_PAM_APP_OM_C
 
+#define ARRAYSIZE(array)                        (sizeof(array)/sizeof(array[0]))
 
 /* 记录收到消息信息的buffer及当前长度 */
 OM_RECORD_BUF_STRU                      g_astAcpuRecordInfo[VOS_EXC_DUMP_MEM_NUM_BUTT];
 
 VOS_UINT32                              g_ulAcpuOmFilterFlag;
+
+OM_PID_MAP_STRU                         g_astUsimPidList[] =
+{
+    {I0_MAPS_PIH_PID,   I0_MAPS_PIH_PID},
+    {I1_MAPS_PIH_PID,   I0_MAPS_PIH_PID},
+    {I2_MAPS_PIH_PID,   I0_MAPS_PIH_PID},
+    {I0_MAPS_STK_PID,   I0_MAPS_STK_PID},
+    {I1_MAPS_STK_PID,   I0_MAPS_STK_PID},
+    {I2_MAPS_STK_PID,   I0_MAPS_STK_PID},
+    {I0_MAPS_PB_PID,    I0_MAPS_PB_PID},
+    {I1_MAPS_PB_PID,    I0_MAPS_PB_PID},
+    {I2_MAPS_PB_PID,    I0_MAPS_PB_PID},
+};
 
 
 
@@ -223,6 +238,27 @@ VOS_VOID PAMOM_QuereyPidInfoMsgProc(MsgBlock* pMsg)
 }
 
 
+VOS_PID PAM_OM_GetI0UsimPid(
+    VOS_PID                             ulPid
+)
+{
+    VOS_UINT32                          i;
+    VOS_UINT32                          ulPidListNum;
+
+    ulPidListNum = ARRAYSIZE(g_astUsimPidList);
+
+    for (i = 0; i < ulPidListNum; i++)
+    {
+        if (g_astUsimPidList[i].ulPid == ulPid)
+        {
+            return g_astUsimPidList[i].ulI0Pid;
+        }
+    }
+
+    return ulPid;
+}
+
+
 VOS_UINT32 PAM_OM_AcpuPihToAtMsgFilter(
     const VOS_VOID                      *pMsg
 )
@@ -248,7 +284,30 @@ VOS_UINT32 PAM_OM_AcpuPihToAtMsgFilter(
         case SI_PIH_EVENT_ISDB_ACCESS_CNF:
         case SI_PIH_EVENT_PRIVATECGLA_SET_CNF:
         case SI_PIH_EVENT_URSM_CNF:
+        case SI_PIH_EVENT_PRIVATECGLA_SET_IND:
+        case SI_PIH_EVENT_UICCAUTH_CNF:
             OM_NORMAL_LOG1("PAM_OM_AcpuAtToPihMsgFilter: The filter EventType is :", pstEventCnf->stPIHAtEvent.EventType);
+
+            return VOS_TRUE;
+
+        default:
+            return VOS_FALSE;
+    }
+}
+
+
+VOS_UINT32 PAM_OM_AcpuStkToAtMsgFilter(
+    const VOS_VOID                      *pMsg
+)
+{
+    MN_APP_STK_AT_CNF_STRU             *pstEventCnf;
+
+    pstEventCnf = (MN_APP_STK_AT_CNF_STRU *)pMsg;
+
+    switch (pstEventCnf->ulMsgId)
+    {
+        case STK_AT_EVENT_CNF:
+            OM_NORMAL_LOG1("PAM_OM_AcpuStkToAtMsgFilter: The filter ulMsgId is :", pstEventCnf->ulMsgId);
 
             return VOS_TRUE;
 
@@ -268,14 +327,17 @@ VOS_UINT32 PAM_OM_AcpuAtToPihMsgFilter(
 
     switch (pstMsg->ulMsgName)
     {
-        case OM_SI_PIH_CRSM_SET_REQ:
-        case OM_SI_PIH_CRLA_SET_REQ:
-        case OM_SI_PIH_CGLA_SET_REQ:
-        case OM_SI_PIH_SILENT_PININFO_SET_REQ:
-        case OM_SI_PIH_GACCESS_REQ:
-        case OM_SI_PIH_ISDB_ACCESS_REQ:
-        case OM_SI_PIH_PRIVATECGLA_SET_REQ:
-        case OM_SI_PIH_URSM_REQ:
+        case SI_PIH_CRSM_SET_REQ:
+        case SI_PIH_CRLA_SET_REQ:
+        case SI_PIH_CGLA_SET_REQ:
+        case SI_PIH_SILENT_PININFO_SET_REQ:
+        case SI_PIH_GACCESS_REQ:
+        case SI_PIH_ISDB_ACCESS_REQ:
+        case SI_PIH_PRIVATECGLA_SET_REQ:
+        case SI_PIH_URSM_REQ:
+        case SI_PIH_UICCAUTH_REQ:
+        case SI_PIH_FDN_ENABLE_REQ:
+        case SI_PIH_FDN_DISALBE_REQ:
             OM_NORMAL_LOG1("PAM_OM_AcpuAtToPihMsgFilter: The filter ulMsgName is :", pstMsg->ulMsgName);
 
             return VOS_TRUE;
@@ -288,11 +350,27 @@ VOS_UINT32 PAM_OM_AcpuAtToPihMsgFilter(
 }
 
 
+VOS_UINT32 PAM_OM_AcpuAtToStkMsgFilter(
+    const VOS_VOID                      *pMsg
+)
+{
+    MSG_HEADER_STRU                     *pstMsg;
+
+    pstMsg = (MSG_HEADER_STRU *)pMsg;
+
+    OM_NORMAL_LOG1("PAM_OM_CcpuAtToStkMsgFilter: The Filter At To Stk Msg and Type Are: ", pstMsg->ulMsgName);
+
+    return VOS_TRUE;
+}
+
+
 VOS_UINT32 PAM_OM_AcpuLayerMsgFilterOptProc(
     const VOS_VOID                      *pMsg
 )
 {
-    OM_FILTER_MSG_HEAD_STRU             *pstMsgHead;
+    OM_FILTER_MSG_HEAD_STRU            *pstMsgHead;
+    VOS_PID                             ulSendI0Pid;
+    VOS_PID                             ulRecvI0Pid;
 
     if (VOS_FALSE == g_ulAcpuOmFilterFlag)
     {
@@ -301,29 +379,38 @@ VOS_UINT32 PAM_OM_AcpuLayerMsgFilterOptProc(
 
     pstMsgHead = (OM_FILTER_MSG_HEAD_STRU*)pMsg;
 
+    ulSendI0Pid  = PAM_OM_GetI0UsimPid(pstMsgHead->ulSenderPid);
+    ulRecvI0Pid  = PAM_OM_GetI0UsimPid(pstMsgHead->ulReceiverPid);
+
     /* PB相关的消息全部过滤 */
-    if ((I0_MAPS_PB_PID == pstMsgHead->ulSenderPid)
-     || (I1_MAPS_PB_PID == pstMsgHead->ulSenderPid)
-     || (I2_MAPS_PB_PID == pstMsgHead->ulSenderPid)
-     || (I0_MAPS_PB_PID == pstMsgHead->ulReceiverPid)
-     || (I1_MAPS_PB_PID == pstMsgHead->ulReceiverPid)
-     || (I2_MAPS_PB_PID == pstMsgHead->ulReceiverPid)
+    if ((I0_MAPS_PB_PID == ulSendI0Pid)
+     || (I0_MAPS_PB_PID == ulRecvI0Pid)
      || (ACPU_PID_PB    == pstMsgHead->ulReceiverPid))
     {
         return VOS_TRUE;
     }
 
      /* PIH 消息过滤 */
-    if ( (I0_MAPS_PIH_PID == pstMsgHead->ulSenderPid)
-      || (I1_MAPS_PIH_PID == pstMsgHead->ulSenderPid)
-      || (I2_MAPS_PIH_PID == pstMsgHead->ulSenderPid))
+    if (I0_MAPS_PIH_PID == ulSendI0Pid)
     {
         return PAM_OM_AcpuPihToAtMsgFilter(pMsg);
     }
 
-    if (WUEPS_PID_AT == pstMsgHead->ulSenderPid)
+    if ((WUEPS_PID_AT    == ulSendI0Pid)
+     && (I0_MAPS_PIH_PID == ulRecvI0Pid))
     {
         return PAM_OM_AcpuAtToPihMsgFilter(pMsg);
+    }
+
+    if ((WUEPS_PID_AT    == ulSendI0Pid)
+     && (I0_MAPS_STK_PID == ulRecvI0Pid))
+    {
+        return PAM_OM_AcpuAtToStkMsgFilter(pMsg);
+    }
+
+    if (I0_MAPS_STK_PID == ulSendI0Pid)
+    {
+        return PAM_OM_AcpuStkToAtMsgFilter(pMsg);
     }
 
     return VOS_FALSE;
@@ -349,11 +436,14 @@ VOS_VOID PAM_OM_LayerMsgReplaceCBReg(VOS_VOID)
     PS_OM_LayerMsgReplaceCBReg(WUEPS_PID_AT, PAM_OM_LayerMsgFilter);
     PS_OM_LayerMsgReplaceCBReg(I0_MAPS_PIH_PID, PAM_OM_LayerMsgFilter);
     PS_OM_LayerMsgReplaceCBReg(I0_MAPS_PB_PID, PAM_OM_LayerMsgFilter);
+    PS_OM_LayerMsgReplaceCBReg(I0_MAPS_STK_PID, PAM_OM_LayerMsgFilter);
 
     PS_OM_LayerMsgReplaceCBReg(I1_MAPS_PIH_PID, PAM_OM_LayerMsgFilter);
     PS_OM_LayerMsgReplaceCBReg(I1_MAPS_PB_PID, PAM_OM_LayerMsgFilter);
+    PS_OM_LayerMsgReplaceCBReg(I1_MAPS_STK_PID, PAM_OM_LayerMsgFilter);
     PS_OM_LayerMsgReplaceCBReg(I2_MAPS_PIH_PID, PAM_OM_LayerMsgFilter);
     PS_OM_LayerMsgReplaceCBReg(I2_MAPS_PB_PID, PAM_OM_LayerMsgFilter);
+    PS_OM_LayerMsgReplaceCBReg(I2_MAPS_STK_PID, PAM_OM_LayerMsgFilter);
 
 }
 
@@ -381,18 +471,7 @@ VOS_VOID PAM_OM_LayerMsgReplaceCBReg(VOS_VOID)
     return;
 }
 
-/*****************************************************************************
- Prototype       : CBT_AppMsgProc
- Description     : Handle all messages sent to OM.
- Input           : pMsg -- The pointer of the msg.
- Output          : None
- Return Value    : VOS_VOID
 
- History         : ---
-    Date         : 2008-03-20
-    Author       : g47350
-    Modification : Created function
- *****************************************************************************/
 VOS_VOID PAMOM_AppMsgProc(MsgBlock* pMsg)
 {
     if (VOS_PID_TIMER == pMsg->ulSenderPid)
@@ -411,21 +490,9 @@ VOS_VOID PAMOM_AppMsgProc(MsgBlock* pMsg)
     return;
 }
 
-/*****************************************************************************
- Prototype       : OM_AcpuInit
- Description     : OM' initializtion function
- Input           : None
- Output          : None
- Return Value    : VOS_UINT32
 
- History         : ---
-    Date         : 2011-07-01
-    Author       : g47350
-    Modification : Created function
- *****************************************************************************/
 VOS_UINT32 PAMOM_AcpuInit(VOS_VOID)
 {
-    NAS_NV_PRIVACY_FILTER_CFG_STRU      stPrivacyFilterCfg  = {0};
 
     PAM_OM_LayerMsgReplaceCBReg();
 
@@ -436,18 +503,7 @@ VOS_UINT32 PAMOM_AcpuInit(VOS_VOID)
     return VOS_OK;
 }
 
-/*****************************************************************************
- Prototype       : OM_AcpuPidInit
- Description     : ACPU OM PID' initializtion function
- Input           : None
- Output          : None
- Return Value    : VOS_UINT32
 
- History         : ---
-    Date         : 2011-07-01
-    Author       : g47350
-    Modification : Created function
- *****************************************************************************/
 VOS_UINT32 PAMOM_AppPidInit(enum VOS_INIT_PHASE_DEFINE ip)
 {
     switch( ip )
@@ -462,18 +518,7 @@ VOS_UINT32 PAMOM_AppPidInit(enum VOS_INIT_PHASE_DEFINE ip)
     return VOS_OK;
 }
 
-/*****************************************************************************
- Prototype       : OM_AcpuFidInit
- Description     : ACPU OM FID' initializtion function
- Input           : None
- Output          : None
- Return Value    : VOS_UINT32
 
- History         : ---
-    Date         : 2011-07-01
-    Author       : g47350
-    Modification : Created function
- *****************************************************************************/
 VOS_UINT32 PAMOM_APP_FID_Init(enum VOS_INIT_PHASE_DEFINE ip)
 {
     VOS_UINT32                          ulRslt;

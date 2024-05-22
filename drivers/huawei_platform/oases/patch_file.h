@@ -12,27 +12,42 @@
 #define OASES_SIG_STRING "~OASES signature appended~\n"
 
 #define RELOC_FUNC_NAME_SIZE	64
-#define PATCH_MAX_SIZE PAGE_SIZE * 4
+#define PATCH_MAX_SIZE (PAGE_SIZE * 4)
+#define PATCH_MAX_MEM_SIZE (PAGE_SIZE * 16)
 
 struct oases_patch_info;
 
 struct reloc_function_info {
 	unsigned int offset;
-	char   name[RELOC_FUNC_NAME_SIZE];
+	char name[RELOC_FUNC_NAME_SIZE];
 };
 
-enum oases_section_type {
+#if OASES_ENABLE_PRECISE_PATCH
+struct reloc_symbol_info {
+	char name[RELOC_FUNC_NAME_SIZE];
+	unsigned int count;
+	unsigned int offsets[]; /* array size == count */
+};
+#endif
+
+enum section_type {
 	SECTION_RX = 0,
 	SECTION_RW,
-	SECTION_RO
+	SECTION_RO,
+	SECTION_NR,
 };
 
-struct oases_section_info {
+struct section_info {
 	unsigned int type;
 	unsigned int offset;
 	unsigned int size;
 	unsigned int page;
 };
+
+#define PATCH_ATTR_ADAPTIVE 0
+#define PATCH_ATTR_PRECISE  1
+#define PATCH_ATTR_ARM32 0
+#define PATCH_ATTR_ARM64 1
 
 struct oases_patch_header {
 	char magic[PATCH_MAGIC_SIZE];
@@ -57,20 +72,54 @@ struct oases_patch_header {
 	unsigned int code_offset;
 	unsigned int code_entry_offset; /* code entry offset, base is code_body*/
 
-	/* padding */
-	unsigned int padding1[1];
-	unsigned int padding2[1];
-	unsigned int padding3[1];
-	unsigned int padding4[1];
+	/* attr, PATCH_ATTR_XXX
+	 +------------------------------+-------------------+
+	 |	  precise_patch(4 bits) 	|	arch(4 bits)	|
+	 +------------------------------+-------------------+
+	 | 0000(adaptive) 0001(precise) | 0000(32) 0001(64) |
+	 +------------------------------+-------------------+
+	 */
+	unsigned int attr;
+#if OASES_ENABLE_PRECISE_PATCH
+	unsigned int reloc_symbol_count;
+	unsigned int reloc_symbol_offset;
+#else
+	unsigned int padding2;
+	unsigned int padding3;
+#endif
+	unsigned int padding4;
 };
+
+/*
+ * Layout of patch file:
+ * +--------------------------------------------------------------+
+ * | struct oases_patch_header                                    |
+ * +--------------------------------------------------------------+
+ * | reset_data_count * sizeof(int)                               |
+ * +--------------------------------------------------------------+
+ * | reloc_func_count * sizeof(reloc_function_info)               |
+ * +--------------------------------------------------------------+
+ * | SECTION_NR * sizeof(section_info)                            |
+ * +--------------------------------------------------------------+
+ * | OPTIONAL reloc_symbol_count * sizeof(reloc_symbol_info)      |
+ * +--------------------------------------------------------------+
+ * | code RX in bytes, size indicated by section_info             |
+ * | data RW                                                      |
+ * | data RO                                                      |
+ * +--------------------------------------------------------------+
+ */
 
 struct oases_patch_file {
 	struct oases_patch_header *pheader;
 	unsigned int *redatas; /* unsinged int[reset_data_count] */
 	struct reloc_function_info *relfuncs;
-	struct oases_section_info *sections;
+	struct section_info *sections;
+#if OASES_ENABLE_PRECISE_PATCH
+	struct reloc_symbol_info *relsymbols;
+#endif
 	char *codes;
 	unsigned long len; /* patch length */
+	unsigned int code_size;
 };
 
 int oases_init_patch_file(struct oases_patch_file *pfile, void *data);

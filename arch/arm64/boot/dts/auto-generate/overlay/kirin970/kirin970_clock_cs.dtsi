@@ -955,7 +955,6 @@
 				clk_gate_spi: clk_spi3 {
 					compatible = "hisilicon,hi3xxx-clk-gate";
 					#clock-cells = <0>;
-					always_on;
 					clock-id = <84>;
 					sensitive_pll = <2>;
 					clock-fpga = "clk_fpga_20m";
@@ -967,7 +966,6 @@
 				pclk_gate_spi: pclk_spi3 {
 					compatible = "hisilicon,hi3xxx-clk-gate";
 					#clock-cells = <0>;
-					always_on;
 					clocks = <&clk_div_ioperi>;
 					hisilicon,hi3xxx-clkgate = <0x1B0 0x400>;
 					clock-output-names = "pclk_spi3";
@@ -1013,7 +1011,6 @@
 				clk_andgt_ioperi: clk_gt_ioperi {
 					compatible = "hisilicon,clk-gate";
 					#clock-cells = <0>;
-					always_on;
 					hiword;
 					clocks = <&clk_gate_ppll0>;
 					hisilicon,clkgate = <0x270 6>;

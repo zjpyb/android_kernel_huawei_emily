@@ -122,47 +122,51 @@ MAILBOX_GLOBAL unsigned int mailbox_read_msg_data(
 }
 /*lint -e838*/
 
+extern bool is_hifi_loaded(void);
+
 MAILBOX_EXTERN unsigned int mailbox_send_msg(
                 unsigned int            mailcode,
                 void                    *data,
                 unsigned int            length)
 {
-    int  ret_val = MAILBOX_OK;
-    unsigned int  try_go_on = MAILBOX_TRUE;
-    int  try_times = 0;
+	int  ret_val = MAILBOX_OK;
+	unsigned int  try_go_on = MAILBOX_TRUE;
+	int  try_times = 0;
 
-    ret_val= BSP_CPU_StateGet(mailbox_get_dst_id(mailcode));
-    if(!ret_val)
-    {
-        return MAILBOX_TARGET_NOT_READY;
-    }
+	if (!is_hifi_loaded())
+		return MAILBOX_HIFI_NOT_LOAD;
 
-    ret_val = (int)mailbox_try_send_msg(mailcode, data, length);
+	ret_val= BSP_CPU_StateGet(mailbox_get_dst_id(mailcode));
+	if (!ret_val) {
+		return MAILBOX_TARGET_NOT_READY;
+	}
 
-    if (MAILBOX_FALSE == mailbox_int_context()) {
-        /*·¢ËÍÂúµÈ´ýÂÖÑ¯³¢ÊÔ*/
-        while ((int)MAILBOX_FULL == ret_val) {
-            mailbox_delivery(mailbox_get_channel_id(mailcode));
-            try_go_on = (unsigned int)mailbox_scene_delay(MAILBOX_DELAY_SCENE_MSG_FULL, &try_times);
+	ret_val = (int)mailbox_try_send_msg(mailcode, data, length);
 
-            if (MAILBOX_TRUE == try_go_on) {
-                ret_val = (int)mailbox_try_send_msg(mailcode, data, length);
-            } else {
-                break;
-            }
-        }
-    }
+	if (MAILBOX_FALSE == mailbox_int_context()) {
+		/*·¢ËÍÂúµÈ´ýÂÖÑ¯³¢ÊÔ*/
+		while ((int)MAILBOX_FULL == ret_val) {
+			mailbox_delivery(mailbox_get_channel_id(mailcode));
+			try_go_on = (unsigned int)mailbox_scene_delay(MAILBOX_DELAY_SCENE_MSG_FULL, &try_times);
 
-    if (MAILBOX_OK != ret_val) {
-        /*mailbox_show(mailcode,0);*/
-        /*mailbox_assert(ret_val);*/
-        if ((int)MAILBOX_FULL != ret_val) {
-            ret_val = (int)MAILBOX_ERRO;
-        }
-        return (unsigned int)ret_val;
-    }
+			if (MAILBOX_TRUE == try_go_on) {
+				ret_val = (int)mailbox_try_send_msg(mailcode, data, length);
+			} else {
+				break;
+			}
+		}
+	}
 
-    return (unsigned int)ret_val;
+	if (MAILBOX_OK != ret_val) {
+		/*mailbox_show(mailcode,0);*/
+		/*mailbox_assert(ret_val);*/
+		if ((int)MAILBOX_FULL != ret_val) {
+			ret_val = (int)MAILBOX_ERRO;
+		}
+		return (unsigned int)ret_val;
+	}
+
+	return (unsigned int)ret_val;
 }
 /*lint +e838*/
 

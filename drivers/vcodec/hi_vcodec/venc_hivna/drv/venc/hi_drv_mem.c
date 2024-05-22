@@ -1,6 +1,7 @@
 #include "drv_venc_osal.h"
 #include "hi_drv_mem.h"
 #include <asm/uaccess.h>
+#include <linux/version.h>
 
 
 #define  MAX_BUFFER_SIZE (10*1024)
@@ -255,30 +256,25 @@ HI_S32 DRV_MEM_MapKernel(HI_S32 share_fd, MEM_BUFFER_S *psMBuf)
 		goto err_exit;
 	}
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0)
+	handle = ion_import_dma_buf_fd(g_ion_client, share_fd);
+#else
 	handle = ion_import_dma_buf(g_ion_client, share_fd);
+#endif
 	if (IS_ERR_OR_NULL(handle)) {
 		HI_FATAL_VENC("get ion handle failed\n");
 		goto err_exit;
 	}
 
 	/* FIXME : bypass flag must be reserved for specific scenarios */
-	/* if (mmu_bypass_flag) {
-		ret = ion_phys(g_ion_client, handle, &phys_addr, &len);
-		if (ret) {
-			HI_FATAL_VENC("get phy addr failed, ret value is %d\n", ret);
-			goto err_ion_map;
-		}
-		psMBuf->u32Size = (HI_U32)len;
-	} else */
-	{
-		ret = ion_map_iommu(g_ion_client, handle, &iommu_format);
-		if (ret) {
-			HI_FATAL_VENC("map ion iommu failed\n");
-			goto err_ion_map;
-		}
-		phys_addr = iommu_format.iova_start;
-		psMBuf->u32Size = (HI_U32) iommu_format.iova_size;
+	ret = ion_map_iommu(g_ion_client, handle, &iommu_format);
+	if (ret) {
+		HI_FATAL_VENC("map ion iommu failed\n");
+		goto err_ion_map;
 	}
+	phys_addr = iommu_format.iova_start;
+	psMBuf->u32Size = (HI_U32) iommu_format.iova_size;
+
 	psMBuf->u64StartPhyAddr = phys_addr;
 	psMBuf->u32ShareFd      = share_fd;
 

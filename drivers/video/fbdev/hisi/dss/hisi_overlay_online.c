@@ -99,7 +99,7 @@ int hisi_check_vsync_timediff(struct hisi_fb_data_type *hisifd, dss_overlay_t *p
 	if (is_mipi_video_panel(hisifd)) {
 		vsync_timediff = (uint64_t)(hisifd->panel_info.xres + hisifd->panel_info.ldi.h_back_porch +
 			hisifd->panel_info.ldi.h_front_porch + hisifd->panel_info.ldi.h_pulse_width) * (hisifd->panel_info.yres +
-			hisifd->panel_info.ldi.v_back_porch + hisifd->panel_info.ldi.v_front_porch + hisifd->panel_info.ldi.v_pulse_width)	 *
+			hisifd->panel_info.ldi.v_back_porch + hisifd->panel_info.ldi.v_front_porch + hisifd->panel_info.ldi.v_pulse_width) *
 			1000000000UL / hisifd->panel_info.pxl_clk_rate;
 
 		prepare_timestamp = ktime_get();
@@ -117,21 +117,7 @@ int hisi_check_vsync_timediff(struct hisi_fb_data_type *hisifd, dss_overlay_t *p
 				return -1;
 			}
 		}
-
-		hisifd->vsync_ctrl.vsync_timestamp_prev = hisifd->vsync_ctrl.vsync_timestamp;
 	}
-
-	if (is_mipi_cmd_panel(hisifd) && (g_dss_version_tag == FB_ACCEL_KIRIN970)) {
-		prepare_timestamp = ktime_get();
-		if ((ktime_to_ns(prepare_timestamp) > ktime_to_ns(hisifd->vsync_ctrl.vsync_timestamp))
-			&& (((ktime_to_ns(prepare_timestamp) - ktime_to_ns(hisifd->vsync_ctrl.vsync_timestamp)) > 15000000)
-			|| ((ktime_to_ns(prepare_timestamp) - ktime_to_ns(hisifd->vsync_ctrl.vsync_timestamp)) < 2000000))) {
-			mdelay(5);
-			vsync_timediff = ktime_to_ns(prepare_timestamp) - ktime_to_ns(hisifd->vsync_ctrl.vsync_timestamp);
-			HISI_FB_DEBUG("fb%d, vsync_timediff=%llu.\n", hisifd->index, vsync_timediff);
-		}
-	}
-
 	return 0;
 }
 
@@ -364,7 +350,10 @@ int hisi_overlay_pan_display(struct hisi_fb_data_type *hisifd)
 			hisi_cmdlist_dump_all_node(hisifd, NULL, cmdlist_idxs);
 		}
 
-		hisi_cmdlist_config_start(hisifd, pov_req->ovl_idx, cmdlist_idxs, 0);
+		if (hisi_cmdlist_config_start(hisifd, pov_req->ovl_idx, cmdlist_idxs, 0)) {
+			ret = -EINVAL;
+			goto err_return;
+		}
 	} else {
 		hisi_dss_mctl_mutex_unlock(hisifd, pov_req->ovl_idx);
 	}
@@ -402,48 +391,61 @@ err_return:
 	return ret;
 }
 
-static int wait_panel_mode_switch(struct hisi_fb_data_type *hisifd)
+static void wait_pdp_isr_vactive0_end_handle(struct hisi_fb_data_type *hisifd)
 {
 	uint32_t delaycount = 0;
-	int ret = 0;
+	uint32_t task_name = 0;
+	bool timeout = false;
 	struct timeval tv0;
 	struct timeval tv1;
-	bool time_dbg = true;
+	bool time_cost_dbg = false;
 
 	if ((NULL == hisifd) || (hisifd->index != PRIMARY_PANEL_IDX)) {
-		return ret;
+		return;
 	}
 
-	if (hisifd->panel_info.mode_switch_state == MODE_SWITCHING) {
-		if (time_dbg) {
+	if (PARA_UPDT_DOING == hisifd->panel_info.mode_switch_state) {
+		task_name = BIT(1);
+	}
+
+	if (task_name) {
+		if (time_cost_dbg) {
 			hisifb_get_timestamp(&tv0);
 		}
 
 		while ((delaycount++) <= 5000) {
-			if (hisifd->panel_info.mode_switch_state == MODE_SWITCHED) {
-				break;
-			} else {
-				udelay(10);
+			if (task_name & BIT(1)) {
+				if (PARA_UPDT_END == hisifd->panel_info.mode_switch_state) {
+					break;
+				}
 			}
+			udelay(10);
 		}
 
 		if (delaycount > 5000) {
-			ret = -1;
+			timeout = true;
 		}
-		if (time_dbg) {
+
+		if (time_cost_dbg) {
 			hisifb_get_timestamp(&tv1);
-			HISI_FB_DEBUG("timediff is %u us!\n", hisifb_timestamp_diff(&tv0, &tv1));
+			HISI_FB_INFO("timediff is %u us!\n", hisifb_timestamp_diff(&tv0, &tv1));
 		}
 	}
 
-	return ret;
+	if (timeout) {
+		HISI_FB_ERR("wait task[0x%x] execution end timeout.\n", task_name);
+	}
+	return;
 }
 
-static void hisi_mask_layer_backlight_config(struct hisi_fb_data_type *hisifd, dss_overlay_t *pov_req_prev, dss_overlay_t *pov_req)
+static void hisifb_mask_layer_backlight_config(struct hisi_fb_data_type *hisifd, dss_overlay_t *pov_req_prev,
+	dss_overlay_t *pov_req, bool *masklayer_maxbacklight_flag)
 {
 	struct hisi_fb_panel_data *pdata = NULL;
 	static bool need_max_bl_delay = true;
 	static bool need_min_bl_delay = true;
+	int mask_delay_time_before_fp = 0;
+	int mask_delay_time_after_fp = 0;
 
 	if (hisifd == NULL) {
 		HISI_FB_ERR("hisifd is null!\n");
@@ -471,30 +473,35 @@ static void hisi_mask_layer_backlight_config(struct hisi_fb_data_type *hisifd, d
 		return;
 	}
 
-	if ((pov_req->mask_layer_exist) && !(pov_req_prev->mask_layer_exist)) {
+	mask_delay_time_before_fp = pdata->panel_info->mask_delay_time_before_fp;
+	mask_delay_time_after_fp = pdata->panel_info->mask_delay_time_after_fp;
+	if ((pov_req->mask_layer_exist) && !(pov_req_prev->mask_layer_exist) && (pdata->lcd_set_backlight_by_type_func)) {
 		HISI_FB_INFO("max backlight %d %d, need_max_bl_delay=%d.\n", pov_req_prev->mask_layer_exist, pov_req->mask_layer_exist, need_max_bl_delay);
 		pdata->lcd_set_backlight_by_type_func(hisifd->pdev, 1);
 		if (need_max_bl_delay) {
-			usleep_range(16666, 16666);
+			usleep_range(mask_delay_time_before_fp, mask_delay_time_before_fp);
 			need_max_bl_delay = false;
 		}
 		need_min_bl_delay = true;
+		*masklayer_maxbacklight_flag = true;
 	}
 
-	if ((pov_req_prev->mask_layer_exist) && !(pov_req->mask_layer_exist)) {
+	if ((pov_req_prev->mask_layer_exist) && !(pov_req->mask_layer_exist) && (pdata->lcd_set_backlight_by_type_func)) {
 		HISI_FB_INFO("min backlight %d %d, need_min_bl_delay=%d.\n", pov_req_prev->mask_layer_exist, pov_req->mask_layer_exist, need_min_bl_delay);
 		pdata->lcd_set_backlight_by_type_func(hisifd->pdev, 2);
 		if (need_min_bl_delay) {
-			usleep_range(16666, 16666);
+			usleep_range(mask_delay_time_after_fp, mask_delay_time_after_fp);
 			need_min_bl_delay = false;
 		}
 		need_max_bl_delay = true;
+		*masklayer_maxbacklight_flag = false;
 	}
 }
 
 int hisi_ov_online_play(struct hisi_fb_data_type *hisifd, void __user *argp)
 {
 	static int dss_free_buffer_refcount = 0;
+	static bool last_frame_is_idle = 0;
 	dss_overlay_t *pov_req = NULL;
 	dss_overlay_t *pov_req_prev = NULL;
 	dss_overlay_block_t *pov_h_block_infos = NULL;
@@ -514,12 +521,14 @@ int hisi_ov_online_play(struct hisi_fb_data_type *hisifd, void __user *argp)
 	int ret = 0;
 	uint32_t timediff = 0;
 	bool vsync_time_checked = false;
+	bool masklayer_maxbacklight_flag = false;
 	struct list_head lock_list;
 	struct timeval tv0;
 	struct timeval tv1;
 	struct timeval tv2;
 	struct timeval tv3;
 	struct hisi_fb_data_type *fb1;
+	int need_wait_1vsync = 0;
 
 	if (NULL == hisifd) {
 		HISI_FB_ERR("NULL Pointer!\n");
@@ -582,13 +591,29 @@ int hisi_ov_online_play(struct hisi_fb_data_type *hisifd, void __user *argp)
 		goto err_return;
 	}
 
-	if (is_mipi_cmd_panel(hisifd) || (dss_free_buffer_refcount < 2) || hisifd->video_idle_ctrl.video_idle_wb_status) {
+	if ((is_mipi_video_panel(hisifd)) && (hisifd->online_play_count == 1)) {
+		need_wait_1vsync = 1;
+		HISI_FB_INFO("video panel wait a vsync when first frame displayed! \n");
+	}
+
+	if (is_mipi_cmd_panel(hisifd) || (dss_free_buffer_refcount < 2) || need_wait_1vsync) {
 		ret = hisi_vactive0_start_config(hisifd, pov_req);
 		if (ret != 0) {
 			HISI_FB_ERR("fb%d, hisi_vactive0_start_config failed! ret=%d\n", hisifd->index, ret);
 			need_skip = 1;
 			goto err_return;
 		}
+	} else if (is_video_idle_ctrl_mode(hisifd)) {
+		pov_req->video_idle_status = (pov_req->video_idle_status && last_frame_is_idle) ? 0 : pov_req->video_idle_status;
+		if (pov_req->video_idle_status || last_frame_is_idle) {
+			ret = hisi_vactive0_start_config(hisifd, pov_req);
+			if (ret != 0) {
+				HISI_FB_ERR("fb%d, hisi_vactive0_start_config failed! ret=%d\n", hisifd->index, ret);
+				need_skip = 1;
+				goto err_return;
+			}
+		}
+		last_frame_is_idle = pov_req->video_idle_status ? 1 : 0;
 	}
 
 	if (g_debug_ovl_online_composer_timediff & 0x4) {
@@ -597,7 +622,6 @@ int hisi_ov_online_play(struct hisi_fb_data_type *hisifd, void __user *argp)
 		if (timediff >= g_debug_ovl_online_composer_time_threshold)
 			HISI_FB_ERR("ONLINE_VACTIVE_TIMEDIFF is %u us!\n", timediff);
 	}
-
 	down(&hisifd->blank_sem0);
 
 	if (g_debug_ovl_online_composer == 1) {
@@ -644,7 +668,6 @@ int hisi_ov_online_play(struct hisi_fb_data_type *hisifd, void __user *argp)
 		hisi_dss_mctl_mutex_lock(hisifd, pov_req->ovl_idx);
 		cmdlist_pre_idxs = ~0;
 	}
-
 	hisi_dss_prev_module_set_regs(hisifd, pov_req_prev, cmdlist_pre_idxs, enable_cmdlist, NULL);
 
 	pov_h_block_infos = (dss_overlay_block_t *)(pov_req->ov_block_infos_ptr);
@@ -711,7 +734,7 @@ int hisi_ov_online_play(struct hisi_fb_data_type *hisifd, void __user *argp)
 				HISI_FB_ERR("fb%d, hisi_effect_hiace_config failed! ret = %d\n", hisifd->index, ret);
 			}
 
-			if (is_mipi_video_panel(hisifd) && (g_dss_version_tag != FB_ACCEL_HI625x)) {
+			if ((is_mipi_video_panel(hisifd) && (g_dss_version_tag != FB_ACCEL_HI625x))) {
 				vsync_time_checked = true;
 				ret = hisi_check_vsync_timediff(hisifd, pov_req);
 				if (ret < 0) {
@@ -726,7 +749,6 @@ int hisi_ov_online_play(struct hisi_fb_data_type *hisifd, void __user *argp)
 			goto err_return;
 		}
 	}
-
 	hisi_sec_mctl_set_regs(hisifd);
 
 	if (enable_cmdlist) {
@@ -762,7 +784,11 @@ int hisi_ov_online_play(struct hisi_fb_data_type *hisifd, void __user *argp)
 	spin_unlock_irqrestore(&hisifd->buf_sync_ctrl.refresh_lock, flags);
 
 	if (enable_cmdlist) {
-		hisi_cmdlist_config_start(hisifd, pov_req->ovl_idx, cmdlist_idxs, 0);
+		if (hisi_cmdlist_config_start(hisifd, pov_req->ovl_idx, cmdlist_idxs, 0)) {
+			hisifb_buf_sync_close_fence(pov_req);
+			ret = -EFAULT;
+			goto err_return;
+		}
 	} else {
 		hisi_dss_mctl_mutex_unlock(hisifd, pov_req->ovl_idx);
 	}
@@ -774,11 +800,9 @@ int hisi_ov_online_play(struct hisi_fb_data_type *hisifd, void __user *argp)
 	/* cpu config drm layer */
 	hisi_drm_layer_online_config(hisifd, pov_req_prev, pov_req);
 
-	hisi_mask_layer_backlight_config(hisifd, pov_req_prev, pov_req);
+	hisifb_mask_layer_backlight_config(hisifd, pov_req_prev, pov_req, &masklayer_maxbacklight_flag);
 
-	if (wait_panel_mode_switch(hisifd)) {
-		HISI_FB_DEBUG("wait_panel_mode_switch timeout.\n");
-	}
+	wait_pdp_isr_vactive0_end_handle(hisifd);
 
 	single_frame_update(hisifd);
 	hisifb_frame_updated(hisifd);
@@ -797,6 +821,8 @@ int hisi_ov_online_play(struct hisi_fb_data_type *hisifd, void __user *argp)
 	hisifb_deactivate_vsync(hisifd);
 
 	hisifb_layerbuf_flush(hisifd, &lock_list);
+
+	hisifb_masklayer_backlight_flag_config(hisifd, masklayer_maxbacklight_flag);
 
 	if ((hisifd->index == PRIMARY_PANEL_IDX) && (dss_free_buffer_refcount > 1)) {
 		if (!hisifd->fb_mem_free_flag) {
@@ -836,12 +862,13 @@ int hisi_ov_online_play(struct hisi_fb_data_type *hisifd, void __user *argp)
 	memcpy(&(hisifd->ov_block_infos_prev), &(hisifd->ov_block_infos),
 		pov_req->ov_block_nums * sizeof(dss_overlay_block_t));
 	hisifd->ov_req_prev.ov_block_infos_ptr = (uint64_t)(&(hisifd->ov_block_infos_prev));
+	hisifd->vsync_ctrl.vsync_timestamp_prev = hisifd->vsync_ctrl.vsync_timestamp;
 
 	if (g_debug_ovl_online_composer_timediff & 0x2) {
 		hisifb_get_timestamp(&tv1);
 		timediff = hisifb_timestamp_diff(&tv0, &tv1);
 		if (timediff >= g_debug_ovl_online_composer_time_threshold)  /*lint !e737*/
-			HISI_FB_ERR("ONLINE_TIMEDIFF is %u us!\n", timediff);
+			HISI_FB_WARNING("ONLINE_TIMEDIFF is %u us!\n", timediff);
 	}
 	up(&hisifd->blank_sem0);
 

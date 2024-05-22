@@ -627,7 +627,13 @@ oal_cfg80211_bss_stru *oal_cfg80211_inform_bss_frame(
 
 oal_void  oal_cfg80211_scan_done(oal_cfg80211_scan_request_stru *pst_cfg80211_scan_request,oal_int8 c_aborted)
 {
-    return cfg80211_scan_done(pst_cfg80211_scan_request,c_aborted);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,8,0))
+    struct cfg80211_scan_info info = {0};
+    info.aborted = c_aborted;
+    cfg80211_scan_done(pst_cfg80211_scan_request, &info);
+#else
+    cfg80211_scan_done(pst_cfg80211_scan_request,c_aborted);
+#endif
 }
 
 

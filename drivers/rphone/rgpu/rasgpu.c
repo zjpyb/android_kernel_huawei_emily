@@ -11,10 +11,12 @@
 #include <linux/slab.h>
 #include <linux/atomic.h>
 #include <linux/miscdevice.h>
-#include <drivers/staging/android/sync.h>
+
 #include <drivers/staging/android/ion/ion.h>
 #include <drivers/staging/android/ion/ion_priv.h>
 #define MSEC(time) (time*HZ/1000)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0)
+#include <drivers/staging/android/sync.h>
 /*ion fault,use func replace*/
 struct ion_device {
 	struct miscdevice dev;
@@ -30,6 +32,22 @@ struct ion_device {
 	struct dentry *heaps_debug_root;
 	struct dentry *clients_debug_root;
 };
+/*workqueue is for fence timeout fault*/
+static struct task_struct *fence_timeout_tsk;
+struct wq_head_list {
+	struct list_head stlist;
+	rwlock_t rwk;
+};
+struct wq_work_item {
+	struct list_head stlist;
+	struct sync_fence *fence;
+	long timeout;
+	unsigned long expire;
+};
+struct wq_head_list wq_list;
+/*for fence timeout worker memory*/
+static struct kmem_cache *fence_wk_cache;
+#endif
 typedef struct ion_device *(*get_iondev_fun)(void);
 static get_iondev_fun get_iondev;
 
@@ -50,20 +68,8 @@ struct ion_heaps_head ion_heaps;
 /*ion fault end*/
 
 /*workqueue is for fence timeout fault*/
-static struct task_struct *fence_timeout_tsk;
-struct wq_head_list {
-	struct list_head stlist;
-	rwlock_t rwk;
-};
-struct wq_work_item {
-	struct list_head stlist;
-	struct sync_fence *fence;
-	long timeout;
-	unsigned long expire;
-};
-struct wq_head_list wq_list;
+
 /*for fence timeout worker memory*/
-static struct kmem_cache *fence_wk_cache;
 enum fault_type {
 	FAULT_NONE = 0,
 	FAULT_FENCE_TIMEOUT,
@@ -324,7 +330,7 @@ static int rasprobe_handler(kbase_mmu_hw_do_operation)
 	rasprobe_seturn(regs, 1);
 	return 0;
 }
-
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0)
 static int rasprobe_handler_entry(fence_check_cb_func)
 	(struct rasprobe_instance *ri, struct pt_regs *regs)
 {
@@ -360,7 +366,31 @@ static int rasprobe_handler_entry(fence_check_cb_func)
 	write_unlock(&wq_list.rwk);
 	return 0;
 }
+void check_del_work(int ischeck)
+{
+	struct wq_work_item *wk_item, *next;
 
+	write_lock(&wq_list.rwk);
+	list_for_each_entry_safe(wk_item, next, &(wq_list.stlist), stlist) {
+		if (ischeck &&
+		(wk_item->timeout < 0 || time_after(wk_item->expire, jiffies)))
+			continue;
+		atomic_dec(&(wk_item->fence->status));
+		list_del_init(&wk_item->stlist);
+		kmem_cache_free(fence_wk_cache, wk_item);
+	}
+	write_unlock(&wq_list.rwk);
+}
+
+static int fit_fence_timeout_thread(void *data)
+{
+	while (!kthread_should_stop()) {
+		check_del_work(1);
+		ras_sleep(500);
+	}
+	return 0;
+}
+#endif
 #include <linux/delay.h>
 void delay_block(unsigned long long ms)
 {
@@ -376,9 +406,9 @@ void delay_block(unsigned long long ms)
 }
 
 /*kbase_pm_reset_do_normal--->gpu reset --->wait irq
-*-->kbase_gpu_irq_handler -->kbase_reg_read get gpu status
-*--->kbase_pm_reset_do_normal wait timeout,check status
-*/
+ *-->kbase_gpu_irq_handler -->kbase_reg_read get gpu status
+ *--->kbase_pm_reset_do_normal wait timeout,check status
+ */
 static int rasprobe_handler(kbase_pm_wait_for_reset)
 	(struct rasprobe_instance *ri, struct pt_regs *regs)
 {
@@ -430,14 +460,18 @@ static int rasprobe_handler_entry(hisi_powerkey_handler)
 rasprobe_define(kbase_pm_wait_for_reset);/*hard_reset*/
 rasprobe_define(kbase_mmu_hw_do_operation);/*soft_reset*/
 rasprobe_entry_define(kbase_gpu_complete_hw);/*gpu_fault*/
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0)
 rasprobe_entry_define(fence_check_cb_func);/*fence_timeout*/
+#endif
 rasprobe_entry_define(hisi_powerkey_handler);/*chipset_hang*/
 
 static struct rasprobe *probes[] = {
 	&rasprobe_name(kbase_pm_wait_for_reset),
 	&rasprobe_name(kbase_mmu_hw_do_operation),
 	&rasprobe_name(kbase_gpu_complete_hw),
+	#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0)
 	&rasprobe_name(fence_check_cb_func),
+	#endif
 	&rasprobe_name(hisi_powerkey_handler)
 };
 
@@ -478,30 +512,6 @@ static ssize_t proc_ops_write(rGPU) (struct file *filp,
 	return count;
 }
 
-void check_del_work(int ischeck)
-{
-	struct wq_work_item *wk_item, *next;
-
-	write_lock(&wq_list.rwk);
-	list_for_each_entry_safe(wk_item, next, &(wq_list.stlist), stlist) {
-		if (ischeck &&
-		(wk_item->timeout < 0 || time_after(wk_item->expire, jiffies)))
-			continue;
-		atomic_dec(&(wk_item->fence->status));
-		list_del_init(&wk_item->stlist);
-		kmem_cache_free(fence_wk_cache, wk_item);
-	}
-	write_unlock(&wq_list.rwk);
-}
-
-static int fit_fence_timeout_thread(void *data)
-{
-	while (!kthread_should_stop()) {
-		check_del_work(1);
-		ras_sleep(500);
-	}
-	return 0;
-}
 
 #define MODULE_NAME "rGPU"
 proc_ops_define(rGPU);
@@ -512,8 +522,6 @@ static int tool_init(void)
 	ras_debugset(1);
 	ras_retn_iferr(ras_check());
 	memset(&fault_injected, 0, sizeof(struct fault_list));
-	rwlock_init(&wq_list.rwk);
-	INIT_LIST_HEAD(&wq_list.stlist);
 	rwlock_init(&ion_heaps.rwk);
 	INIT_LIST_HEAD(&ion_heaps.stlist);
 	/*2.ion fault*/
@@ -524,28 +532,31 @@ static int tool_init(void)
 	ras_retn_iferr(register_rasprobes(probes, ARRAY_SIZE(probes)));
 	if (proc_init(MODULE_NAME, &proc_ops_name(rGPU), &fault_injected))
 		goto out_unreg;
-
-	fence_timeout_tsk = kthread_run(fit_fence_timeout_thread,
-		NULL, "fit_fencetimeout");
-	if (!fence_timeout_tsk)
-		goto out_proc;
-
-	fence_wk_cache = kmem_cache_create("wq_work_item",
-		sizeof(struct wq_work_item), 0,
-		SLAB_HWCACHE_ALIGN|SLAB_PANIC, NULL);
-	if (!fence_wk_cache)
-		goto out_thread;
-
 	ion_heap_cache = kmem_cache_create("ion_replace_item",
 		sizeof(struct ion_replace_item), 0,
 		SLAB_HWCACHE_ALIGN|SLAB_PANIC, NULL);
 	if (!ion_heap_cache)
-		goto out_cache;
+		goto out_proc;
+
+	#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0)
+	rwlock_init(&wq_list.rwk);
+	INIT_LIST_HEAD(&wq_list.stlist);
+	fence_timeout_tsk = kthread_run(fit_fence_timeout_thread,
+		NULL, "fit_fencetimeout");
+	if (!fence_timeout_tsk) {
+		kmem_cache_destroy(ion_heap_cache);
+		goto out_proc;
+	}
+	fence_wk_cache = kmem_cache_create("wq_work_item",
+		sizeof(struct wq_work_item), 0,
+		SLAB_HWCACHE_ALIGN|SLAB_PANIC, NULL);
+	if (!fence_wk_cache) {
+		kmem_cache_destroy(ion_heap_cache);
+		kthread_stop(fence_timeout_tsk);
+		goto out_proc;
+	}
+	#endif
 	return 0;
-out_cache:
-	kmem_cache_destroy(fence_wk_cache);
-out_thread:
-	kthread_stop(fence_timeout_tsk);
 out_proc:
 	proc_exit(MODULE_NAME);
 out_unreg:
@@ -560,11 +571,13 @@ static void tool_exit(void)
 	unregister_rasprobes(probes, ARRAY_SIZE(probes));
 	/*2.destroy the workqueue and clean memory*/
 	memset(&fault_injected, 0, sizeof(struct fault_list));
+	#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0)
 	if (fence_timeout_tsk)
 		kthread_stop(fence_timeout_tsk);
 	check_del_work(0);
-	restore_ion_allocate();
 	kmem_cache_destroy(fence_wk_cache);
+	#endif
+	restore_ion_allocate();
 	kmem_cache_destroy(ion_heap_cache);
 }
 module_init(tool_init);

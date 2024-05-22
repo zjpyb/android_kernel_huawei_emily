@@ -260,23 +260,60 @@ void requestDpConfig(void)
     DpPpRequestedConfig.DfpPa = 0;
     DpPpRequestedConfig.UfpPa = 0;
 
-    if(DpCaps.DFP_DPinAssignD) {
-        DpPpRequestedConfig.DfpPa = DP_DFPPA_D;
-    }
-    else if(DpCaps.DFP_DPinAssignC) {
-        DpPpRequestedConfig.DfpPa = DP_DFPPA_C;
-    }
-    else if(DpCaps.DFP_DPinAssignF) {
-        DpPpRequestedConfig.DfpPa = DP_DFPPA_F;
-    }
-    else if(DpCaps.DFP_DPinAssignE) {
-        DpPpRequestedConfig.DfpPa = DP_DFPPA_E;
-    }
-    else {
-        return;
+    if (DpPpStatus.MultiFunctionPreferred) {
+        if (DpCaps.ReceptacleIndication)
+        {
+            if (DpCaps.UFP_DPinAssignD) {
+                DpPpRequestedConfig.DfpPa = DP_DFPPA_D;
+            }
+            else if (DpCaps.UFP_DPinAssignC) {
+                DpPpRequestedConfig.DfpPa = DP_DFPPA_C;
+            }
+            else if (DpCaps.UFP_DPinAssignE) {
+                DpPpRequestedConfig.DfpPa = DP_DFPPA_E;
+            }
+            else {
+                return;
+            }
+        } else {
+           if(DpCaps.DFP_DPinAssignD) {
+               DpPpRequestedConfig.DfpPa = DP_DFPPA_D;
+           }
+           else if(DpCaps.DFP_DPinAssignC) {
+               DpPpRequestedConfig.DfpPa = DP_DFPPA_C;
+           }
+           else if(DpCaps.DFP_DPinAssignF) {
+               DpPpRequestedConfig.DfpPa = DP_DFPPA_F;
+           }
+           else if(DpCaps.DFP_DPinAssignE) {
+               DpPpRequestedConfig.DfpPa = DP_DFPPA_E;
+           }
+           else {
+               return;
+           }
+        }
+    } else {
+        if (DpCaps.ReceptacleIndication) {
+            if(DpCaps.UFP_DPinAssignC) {
+                DpPpRequestedConfig.DfpPa = DP_DFPPA_C;
+            } else if(DpCaps.UFP_DPinAssignE) {
+                DpPpRequestedConfig.DfpPa = DP_DFPPA_E;
+            } else {
+                return;
+            }
+        } else {
+            if(DpCaps.DFP_DPinAssignC) {
+                DpPpRequestedConfig.DfpPa = DP_DFPPA_C;
+            } else if(DpCaps.DFP_DPinAssignE) {
+                DpPpRequestedConfig.DfpPa = DP_DFPPA_E;
+            } else {
+                return;
+            }
+        }
     }
 
-    if(DpPpStatus.Connection == DP_CONN_NEITHER) {
+    if(DpPpStatus.Connection == DP_CONN_NEITHER)
+    {
         return;
     }
 

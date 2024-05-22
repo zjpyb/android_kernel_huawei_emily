@@ -595,7 +595,24 @@ typedef struct ieee80211_iface_combination  oal_ieee80211_iface_combination;
 /*****************************************************************************
   8 UNION定义
 *****************************************************************************/
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,7,0))
+/* WiFi 驱动适配linux4.9 */
+/* Linux 4.7 删除enum ieee80211_band，用enum nl80211_band 替换，
+   WiFi 驱动新增enum ieee80211_band 定义 */
+enum ieee80211_band {
+    IEEE80211_BAND_2GHZ = NL80211_BAND_2GHZ,
+    IEEE80211_BAND_5GHZ = NL80211_BAND_5GHZ,
+    IEEE80211_BAND_60GHZ = NL80211_BAND_60GHZ,
 
+    /* keep last */
+    IEEE80211_NUM_BANDS
+};
+#define HISI_IEEE80211_BAND_2GHZ    NL80211_BAND_2GHZ
+#define HISI_IEEE80211_BAND_5GHZ    NL80211_BAND_5GHZ
+#else
+#define HISI_IEEE80211_BAND_2GHZ    IEEE80211_BAND_2GHZ
+#define HISI_IEEE80211_BAND_5GHZ    IEEE80211_BAND_5GHZ
+#endif  /* (LINUX_VERSION_CODE >= KERNEL_VERSION(4,7,0)) */
 
 /*****************************************************************************
   9 OTHERS定义

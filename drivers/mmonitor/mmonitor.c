@@ -45,7 +45,7 @@ static void mmonitor_calcu_events(unsigned long *ret)
 
 static void mmonitor_clear_events(void)
 {
-	unsigned int i, cpu;
+	int i, cpu;
 #ifdef CONFIG_HISI_SLOW_PATH_COUNT
 	atomic_long_set(&pgalloc_count, 0);
 	atomic_long_set(&slowpath_pgalloc_count[0], 0);
@@ -56,15 +56,17 @@ static void mmonitor_clear_events(void)
 #endif
 	get_online_cpus();
 	for_each_online_cpu(cpu) {
+#ifdef CONFIG_VM_EVENT_COUNTERS
+		struct vm_event_state *this;
+#endif
 		struct mmonitor_event_state *s =
-				&per_cpu(mmonitor_event_states, cpu);
+			&per_cpu(mmonitor_event_states, cpu);
 
 		for (i = 0; i < NR_MMONITOR_EVENT_ITEMS; i++)
 			s->event[i] = 0;
 
 #ifdef CONFIG_VM_EVENT_COUNTERS
-		struct vm_event_state *this =
-				&per_cpu(vm_event_states, cpu);
+		this = &per_cpu(vm_event_states, cpu);
 
 		this->event[COMPACTSTALL] = 0;
 		this->event[COMPACTSUCCESS] = 0;
@@ -76,7 +78,6 @@ static void mmonitor_clear_events(void)
 
 static int mmonitor_show(struct seq_file *s, void *data)
 {
-	char str[MMONITOR_MAX_STR_LEN] = {0};
 	unsigned long *mmonitor_buf;
 	unsigned long *vm_buf;
 
@@ -114,25 +115,25 @@ static int mmonitor_show(struct seq_file *s, void *data)
 #ifdef CONFIG_VM_EVENT_COUNTERS
 		"compact_stall: %ld\n"
 		"compact_suc: %ld\n"
+		"fcache miss: %ld\n"
 #endif
 		"warn_alloc_failed: %ld\n"
-		"fcache : %ld\n"
-		"fcache miss: %ld\n",
+		"fcache : %ld\n",
 #ifdef CONFIG_HISI_SLOW_PATH_COUNT
-		pgalloc_count,
-		slowpath_pgalloc_count[0],
-		slowpath_pgalloc_count[1],
-		slowpath_pgalloc_count[2],
-		slowpath_pgalloc_count[3],
-		slowpath_pgalloc_count[4],
+		atomic64_read(&pgalloc_count),
+		atomic64_read(&slowpath_pgalloc_count[0]),
+		atomic64_read(&slowpath_pgalloc_count[1]),
+		atomic64_read(&slowpath_pgalloc_count[2]),
+		atomic64_read(&slowpath_pgalloc_count[3]),
+		atomic64_read(&slowpath_pgalloc_count[4]),
 #endif
 #ifdef CONFIG_VM_EVENT_COUNTERS
 		vm_buf[COMPACTSTALL],
 		vm_buf[COMPACTSUCCESS],
+		mmonitor_buf[FILE_CACHE_MISS_COUNT] + vm_buf[PGMAJFAULT],
 #endif
 		mmonitor_buf[ALLOC_FAILED_COUNT],
-		mmonitor_buf[FILE_CACHE_READ_COUNT] + mmonitor_buf[FILE_CACHE_MAP_COUNT],
-		mmonitor_buf[FILE_CACHE_MISS_COUNT] + vm_buf[PGMAJFAULT]
+		mmonitor_buf[FILE_CACHE_READ_COUNT] + mmonitor_buf[FILE_CACHE_MAP_COUNT]
 	);
 
 	kfree(mmonitor_buf);

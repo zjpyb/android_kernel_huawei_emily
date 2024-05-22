@@ -47,7 +47,9 @@
 #define POLL_DELAY_TIME	        35 //ms
 
 static char *stmvl53l0_name = "vl53l0";
-
+extern int memset_s(void *dest, size_t destMax, int c, size_t count);
+extern int strncpy_s(char *strDest, size_t destMax, const char *strSrc, size_t count);
+extern int memcpy_s(void *dest, size_t destMax, const void *src, size_t count);
 struct stmvl53l0_api_fn_t {
 	int8_t (*GetVersion)(VL53L0_Version_t *pVersion);
 	int8_t (*GetPalSpecVersion)(VL53L0_Version_t *pPalSpecVersion);
@@ -669,13 +671,13 @@ int stmvl53l0_poll_thread(void *data)
 	uint32_t interruptStatus = 0;
 	pr_err("%s(%d) : Starting Polling thread\n", __func__, __LINE__);
 	while (!kthread_should_stop()) {
-		wait_event(vl53l0_dev->poll_thread_wq,
-			(vl53l0_dev->enable_ps_sensor || poll_thread_exit));
 		if (poll_thread_exit) {
 			pr_err(
 		"%s(%d) : Exiting the poll thread\n", __func__, __LINE__);
 			break;
 		}
+		wait_event(vl53l0_dev->poll_thread_wq,
+			(vl53l0_dev->enable_ps_sensor));
 		mutex_lock(&vl53l0_dev->work_mutex);
 		sleep_time = vl53l0_dev->delay_ms;
 		Status = VL53L0_GetInterruptMaskStatus(vl53l0_dev,
@@ -751,7 +753,7 @@ static void stmvl53l0_work_handler(struct work_struct *work)
 
     VL53L0_Error Status = VL53L0_ERROR_NONE;
     VL53L0_RangingMeasurementData_t tmp_rangeData;
-    memset(&tmp_rangeData, 0, sizeof(VL53L0_RangingMeasurementData_t));
+    memset_s(&tmp_rangeData, sizeof(VL53L0_RangingMeasurementData_t), 0, sizeof(VL53L0_RangingMeasurementData_t));
 
     if(NULL == work) {
         vl53l0_errmsg("work queue is null\n");
@@ -794,7 +796,7 @@ static void stmvl53l0_work_handler(struct work_struct *work)
                 vl53l0_dbgmsg("laser work handler data=%d\n", tmp_rangeData.RangeMilliMeter);
             }
             mutex_lock(&data->data_mutex);
-            memcpy(&(data->rangeData), &tmp_rangeData, sizeof(VL53L0_RangingMeasurementData_t));
+            memcpy_s(&(data->rangeData), sizeof(VL53L0_RangingMeasurementData_t), &tmp_rangeData, sizeof(VL53L0_RangingMeasurementData_t));
             mutex_unlock(&data->data_mutex);
             // notify laser event;
             stmvl53l0_notify_data_event(data);
@@ -811,7 +813,7 @@ static int stmvl53l0_status(struct stmvl53l0_data* data, hwlaser_status_t *laser
         return rc;
 
     if(data->init_flag == 1){
-        strncpy(laser_status->name, stmvl53l0_name, strlen(stmvl53l0_name));
+        strncpy_s(laser_status->name, strlen(stmvl53l0_name), stmvl53l0_name, strlen(stmvl53l0_name));
         laser_status->status = 0;
     }else {
         laser_status->status = -1;
@@ -990,8 +992,8 @@ long stmvl53l0_laser_ioctl(void *hw_data, unsigned int cmd, void  *p)
     switch (cmd) {
         case HWLASER_IOCTL_GET_INFO:
             pinfo = (hwlaser_info_t *)p;
-            strncpy(pinfo->name, "vl53l0", HWLASER_NAME_SIZE-1);
-            strncpy(pinfo->product_name, "ALPS", HWLASER_NAME_SIZE-1);
+            strncpy_s(pinfo->name, HWLASER_NAME_SIZE-1 ,"vl53l0", HWLASER_NAME_SIZE-1);
+            strncpy_s(pinfo->product_name, HWLASER_NAME_SIZE-1 ,"ALPS", HWLASER_NAME_SIZE-1);
             pinfo->version = HWLASER_L0_VERSION;
             pinfo->ap_pos = HWLASER_POS_AP;
             break;
@@ -1398,7 +1400,7 @@ static int stmvl53l0_laser_get_data(struct stmvl53l0_data *data, void* p)
     mutex_lock(&data->data_mutex);
     rdata = &(data->rangeData);
     udata = (hwlaser_RangingData_t*) p;
-    memcpy(&(udata->u.dataL0), rdata, sizeof(VL53L0_RangingMeasurementData_t));
+    memcpy_s(&(udata->u.dataL0),sizeof(VL53L0_RangingMeasurementData_t) ,rdata, sizeof(VL53L0_RangingMeasurementData_t));
     if(data->print_count%LASER_PRINTCYLE == 0)
     {
         vl53l0_dbgmsg("laser distance = %d, status =%d\n", data->rangeData.RangeMilliMeter, data->rangeData.RangeStatus);

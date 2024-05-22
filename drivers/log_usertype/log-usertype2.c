@@ -34,8 +34,7 @@ static int logusertype_info_show2(struct seq_file *m, void *v)
     seq_printf(m,"%d\n", log_usertype_flag2);
     return 0;
 }
-
-ssize_t logusertype_write_proc2(struct file *file, const char *buffer, unsigned long count, void *data) {
+ssize_t logusertype_write_proc2(struct file *file, const char __user *buffer, size_t count, loff_t *data) {
     int ret = -EINVAL;
     char tmp;
 

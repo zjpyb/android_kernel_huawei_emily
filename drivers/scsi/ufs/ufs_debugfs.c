@@ -17,6 +17,8 @@
  *
  */
 
+#define pr_fmt(fmt) "ufshcd :" fmt
+
 #include <linux/random.h>
 #include "ufs_debugfs.h"
 #include "unipro.h"
@@ -40,7 +42,7 @@ static int ufshcd_tag_req_type(struct request *rq)
 
 	if (!rq || !(rq->cmd_type & REQ_TYPE_FS))
 		rq_type = TS_NOT_SUPPORTED;
-	else if (rq->cmd_flags & REQ_FLUSH)
+	else if (rq->cmd_flags & REQ_PREFLUSH)
 		rq_type = TS_FLUSH;
 	else if (rq_data_dir(rq) == READ)
 		rq_type = (rq->cmd_flags & REQ_URGENT) ?
@@ -375,7 +377,7 @@ static int ufshcd_init_statistics(struct ufs_hba *hba)
 		goto no_mem;
 
 	for (i = 1; i < hba->nutrs; i++)
-		stats->tag_stats[i] = &stats->tag_stats[0][i * TS_NUM_STATS];  /*lint !e679*/
+		stats->tag_stats[i] = &stats->tag_stats[0][i * TS_NUM_STATS];/*lint !e679*/
 
 	memset(stats->err_stats, 0, sizeof(hba->ufs_stats.err_stats));
 
@@ -403,7 +405,7 @@ static void ufsdbg_pr_buf_to_std(struct ufs_hba *hba, int offset, int num_regs,
 	}
 
 	for (i = 0; i < lines; i++) {
-		hex_dump_to_buffer(hba->mmio_base + offset + i * BUFF_LINE_SIZE,  /*lint !e679*/
+		hex_dump_to_buffer(hba->mmio_base + offset + i * BUFF_LINE_SIZE, /*lint !e679*/
 				   min(BUFF_LINE_SIZE, size), BUFF_LINE_SIZE, 4,
 				   linebuf, sizeof(linebuf), false);
 		seq_printf(file, "%s [%x]: %s\n", str, i * BUFF_LINE_SIZE,
@@ -475,9 +477,9 @@ static int ufsdbg_dump_device_desc_show(struct seq_file *file, void *data)
 	pm_runtime_put_sync(hba->dev);
 
 	if (!err) {
-		int i;
+		unsigned int i;
 		struct desc_field_offset *tmp;
-		for (i = 0; i < ARRAY_SIZE(device_desc_field_name); ++i) {   /*lint !e574*/
+		for (i = 0; i < ARRAY_SIZE(device_desc_field_name); ++i) {
 			tmp = &device_desc_field_name[i];
 
 			if (tmp->width_byte == BYTE) {
@@ -626,8 +628,8 @@ static int ufsdbg_cfg_pwr_param(struct ufs_hba *hba,
 	int ret = 0;
 	bool is_dev_sup_hs = false;
 	bool is_new_pwr_hs = false;
-	unsigned int dev_pwm_max_rx_gear;
-	unsigned int dev_pwm_max_tx_gear;
+	int dev_pwm_max_rx_gear;
+	int dev_pwm_max_tx_gear;
 
 	if (!hba->max_pwr_info.is_valid) {
 		dev_err(hba->dev,
@@ -918,7 +920,7 @@ static int ufsdbg_req_stats_show(struct seq_file *file, void *data)
 	for (i = 0; i < TS_NUM_STATS; i++)
 		seq_printf(file, "%-10llu ", hba->ufs_stats.req_stats[i].max);
 	seq_printf(file, "\n%s:\t", "Avg.");
-	for (i = 0; i < TS_NUM_STATS; i++) {
+	for (i = 0; i < TS_NUM_STATS; i++){
 		if (0 == hba->ufs_stats.req_stats[i].count)
 			continue;
 		seq_printf(file, "%-10llu ",
@@ -1022,7 +1024,7 @@ static ssize_t ufsdbg_idle_timeout_val_write(struct file *filp,
 	unsigned long flags;
 	int val;
 	int ret;
-	struct blk_lld_func *lld = &(hba->host->tag_set.lld_func);
+	struct blk_dev_lld *lld = &(hba->host->tag_set.lld_func);
 
 	ret = kstrtoint_from_user(ubuf, cnt, 0, &val);
 	if (ret) {

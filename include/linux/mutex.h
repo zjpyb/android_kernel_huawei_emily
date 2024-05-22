@@ -64,10 +64,10 @@ struct mutex {
 #ifdef CONFIG_DEBUG_LOCK_ALLOC
 	struct lockdep_map	dep_map;
 #endif
-
 #ifdef CONFIG_HW_VIP_THREAD
 	struct task_struct *vip_dep_task;
 #endif
+
 };
 
 /*
@@ -192,6 +192,5 @@ extern int atomic_dec_and_mutex_lock(atomic_t *cnt, struct mutex *lock);
 #ifdef CONFIG_HW_VIP_THREAD
 #include <chipset_common/hwcfs/hwcfs_mutex.h>
 #endif
-
 
 #endif /* __LINUX_MUTEX_H */

@@ -10,3 +10,5 @@ obj-$(CONFIG_HWLOG_KERNEL)	+= hwlog_kernel.o
 obj-$(CONFIG_HUAWEI_GOLDENEYE) += goldeneye/
 
 obj-$(CONFIG_HUAWEI_BOOT_LOG) += boot_log/
+
+obj-$(CONFIG_HIVIEW_SELINUX) += hiview_selinux.o

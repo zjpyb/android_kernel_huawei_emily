@@ -45,7 +45,7 @@
 
 #define AP_SUSPEND_FLAG		BIT(16)
 
-#define IRQ_GROUP_MAX		(10)
+#define IRQ_GROUP_MAX		(13)
 #define IRQ_NUM_PER_WORD	(32)
 
 #define NO_SEQFILE 0

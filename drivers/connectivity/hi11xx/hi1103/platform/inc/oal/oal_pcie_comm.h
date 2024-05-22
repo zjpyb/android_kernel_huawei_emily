@@ -29,7 +29,7 @@ extern "C" {
 #if (PCIE_EDMA_TRANS_MAX_FRAME_LEN%4)
 #error PCIe dma element size must align to 4 bytes
 #endif
-#define PCIE_EDMA_FIFO_ELE_CNT  (PCIE_EDMA_FIFO_DEPTH+1)
+#define PCIE_EDMA_FIFO_ELE_CNT  (PCIE_EDMA_FIFO_DEPTH+1-2)
 
 /*Ringbuf 的总大小 必须是2的N次方!*/
 #define PCIE_EDMA_WRITE_RINGBUF_ITEMS          ((PCIE_EDMA_FIFO_DEPTH)*PCIE_EDMA_READ_BUSRT_COUNT)/*4*32*16=2048B*/
@@ -37,7 +37,7 @@ extern "C" {
 /*每个队列必须单独传输，高低优先级不能混合发送(Host控制)，
   可以链式, 高优先级队列应该被优先调度，区分高低优先级是因为
   业务需求，分配置包和数据包*/
-#define PCIE_EDMA_READ_HIGH_RINGBUF_ITEMS      (32)/*高优先级不需要很高的深度, 32*16=512B*/
+#define PCIE_EDMA_READ_HIGH_RINGBUF_ITEMS      (32*2)/*高优先级不需要很高的深度, 32*16=512B*/
 
 /*1 for linked list element, 2 for two channels*/
 #ifdef _PRE_PLAT_FEATURE_PCIE_EDMA_FIFO
@@ -66,6 +66,8 @@ typedef enum _PCIE_SHARED_DEVICE_ADDR_TYPE_
     PCIE_SHARED_ADDR_SCHED_CNT = 0,/*control pcie sched mips*/
     PCIE_SHARED_TX_SCHED_CNT = 1,
     PCIE_SHARED_SOFT_FIFO_ENABLE = 2,
+    PCIE_SHARED_SOFT_DMA_CHECK = 3,
+    PCIE_SHARED_RINGBUF_BUGFIX = 4,
     PCIE_SHARED_ADDR_BUTT = 16
 }PCIE_SHARED_DEVICE_ADDR_TYPE;
 
@@ -182,6 +184,10 @@ typedef struct _pcie_h2d_stat_
     oal_uint32 fifo_ele_empty;
     oal_uint32 soft_fifo_busy;
 
+    oal_uint32 dma_work_list_stat;
+    oal_uint32 dma_free_list_stat;
+    oal_uint32 dma_pending_list_stat;
+
     oal_uint32 pm_busy_cnt;
 }pcie_h2d_stat;
 
@@ -208,6 +214,10 @@ typedef struct _pcie_d2h_stat_
     oal_uint32 fifo_dma_idle;
     oal_uint32 fifo_dma_busy;
     oal_uint32 soft_fifo_busy;
+
+    oal_uint32 dma_work_list_stat;
+    oal_uint32 dma_free_list_stat;
+    oal_uint32 dma_pending_list_stat;
 
     oal_uint32 pm_busy_cnt;
 }pcie_d2h_stat;
@@ -240,6 +250,12 @@ typedef struct _pcie_stat_
 	oal_uint32 pm_gpio_wakeup_cnt;/*gpio high cnt*/
     oal_uint32 isr_per_max_cnt;/*在中断里处理中断次数最多的计数*/
     oal_uint32 msg_fifo_busy_cnt;
+    oal_uint32 l1_wake_l1_hit;
+    oal_uint32 l1_wake_l1_miss;
+    oal_uint32 l1_wake_state_err_cnt;
+    oal_uint32 l1_wake_timeout_cnt;
+    oal_uint32 l1_wake_timeout_max_cnt;
+    oal_uint32 l1_wake_force_push_cnt;
 }pcie_stat;
 
 typedef struct _pcie_stats_

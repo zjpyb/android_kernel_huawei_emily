@@ -55,6 +55,9 @@ atomic_t proxy = ATOMIC_INIT(0);
 atomic_t buffer = ATOMIC_INIT(0);
 atomic_t channel = ATOMIC_INIT(0);
 atomic_t cp_reset = ATOMIC_INIT(0);
+#ifdef CONFIG_HUAWEI_BASTET_COMM_NEW
+atomic_t reg_ccore_reset = ATOMIC_INIT(0);
+#endif
 /* set 1 for adjusting to non-wifi-proxy situation */
 atomic_t channel_en = ATOMIC_INIT(1);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 10)
@@ -147,6 +150,53 @@ static void bastet_modem_reset_notify(void)
 	atomic_set(&cp_reset, 1);
 }
 
+#ifdef CONFIG_HUAWEI_BASTET_COMM_NEW
+static void reg_ccore_reset_notify(void)
+{
+	atomic_set(&reg_ccore_reset, 1);
+}
+
+static void unreg_ccore_reset_notify(void)
+{
+	atomic_set(&reg_ccore_reset, 0);
+}
+
+static bool is_reg_ccore_reset_notify(void)
+{
+	return atomic_read(&reg_ccore_reset) != 0;
+}
+
+void ind_modem_reset(uint8_t *value, uint32_t len)
+{
+	uint8_t reset_info;
+
+	if (len != 4) {
+		BASTET_LOGE("error msg len %u", len);
+		return;
+	}
+
+	reset_info = value[0];
+
+	switch(reset_info)
+	{
+		case 0x1:
+		{
+			BASTET_LOGI("ccore reset");
+			if (is_reg_ccore_reset_notify()) {
+				BASTET_LOGE("bastet_modem_reset_notify");
+				bastet_modem_reset_notify();
+			}
+			break;
+		}
+		default:
+		{
+			BASTET_LOGE("error reset info value %u", reset_info);
+			break;
+		}
+	}
+}
+#endif
+
 #if defined CONFIG_MSM_SUBSYSTEM_RESTART
 #include <soc/qcom/subsystem_notif.h>
 
@@ -181,6 +231,19 @@ static void unreg_mss_reset_notify(void)
 	if (subsys_h != NULL)
 		subsys_notif_unregister_notifier(subsys_h,
 			&mss_reset_notifier);
+}
+
+#elif defined CONFIG_HUAWEI_BASTET_COMM_NEW
+static void reg_mss_reset_notify(void)
+{
+	BASTET_LOGI("register ccore reset notification");
+	reg_ccore_reset_notify();
+}
+
+static void unreg_mss_reset_notify(void)
+{
+	BASTET_LOGI("unregister ccore reset notification");
+	unreg_ccore_reset_notify();
 }
 
 #elif defined CONFIG_BALONG_MODEM_RESET
@@ -442,6 +505,7 @@ int get_pid_cmdline(struct get_cmdline *cmdline)
 	if (len > MAX_PID_NAME_LEN)
 		len = MAX_PID_NAME_LEN;
 
+	memset(buffer, '\0', MAX_PID_NAME_LEN);
 	res = access_process_vm(task, mm->arg_start, buffer, len, 0);
 
 	/* If the nul at the end of args has been overwritten, then
@@ -583,6 +647,8 @@ int bind_local_ports(u16 *local_port)
 				&& extb->port == exrover)
 				goto next_exhead;
 		}
+		spin_unlock(&exhead->lock);
+		spin_unlock(&head->lock);
 		break;
 next_exhead:
 		spin_unlock(&exhead->lock);
@@ -619,6 +685,8 @@ next_nolock:
 				&& extb->port == exrover)
 				goto next_exhead;
 		}
+		spin_unlock(&exhead->lock);
+		spin_unlock(&head->lock);
 		break;
 next_exhead:
 		spin_unlock(&exhead->lock);
@@ -632,6 +700,8 @@ next_nolock:
 	if (remaining <= 1)
 		goto fail;
 
+	spin_lock(&head->lock);
+	spin_lock(&exhead->lock);
 	tb = inet_bind_bucket_create(hashinfo->bind_bucket_cachep,
 				net, head, rover);
 
@@ -743,10 +813,10 @@ int unbind_local_ports(u16 local_port)
 #endif
 		tb->num_owners--;
 		sk = hlist_entry(tb->owners.first, struct sock, sk_bind_node);
-		__sk_del_bind_node(sk);
-		if (NULL != sk)
+		if (NULL != sk){
+			__sk_del_bind_node(sk);
 			sk_free(sk);
-
+		}
 		inet_bind_bucket_destroy(hashinfo->bind_bucket_cachep, tb);
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0))
 		atomic_dec(&hashinfo->bsockets);
@@ -754,9 +824,10 @@ int unbind_local_ports(u16 local_port)
 		extb->num_owners--;
 		exsk = hlist_entry(extb->owners.first,
 			struct sock, sk_bind_node);
-		__sk_del_bind_node(exsk);
-		if (NULL != exsk)
+		if (NULL != exsk){
+			__sk_del_bind_node(exsk);
 			sk_free(exsk);
+		}
 
 		inet_bind_bucket_destroy(hashinfo->bind_bucket_cachep, extb);
 
@@ -806,6 +877,7 @@ int set_current_net_device_name(char *iface)
 		return -EINVAL;
 
 	memcpy(cur_netdev_name, iface, IFNAMSIZ);
+	cur_netdev_name[IFNAMSIZ - 1] = '\0';
 	return 0;
 }
 

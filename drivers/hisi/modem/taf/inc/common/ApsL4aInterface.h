@@ -434,7 +434,6 @@ enum APS_L4A_IMS_CN_SIG_FLAG_ENUM
 typedef VOS_UINT8 APS_L4A_IMS_CN_SIG_FLAG_ENUM_UINT8;
 
 
-/* Modified by l60609 for L-C互操作项目, 2014-01-06, Begin */
 
 enum APS_L4A_PDN_REQUEST_TYPE_ENUM
 {
@@ -456,7 +455,6 @@ enum APS_L4A_PDN_REQUEST_TYPE_ENUM
 
 typedef VOS_UINT8 APS_L4A_PDN_REQUEST_TYPE_ENUM_UINT8;
 
-/* Modified by l60609 for L-C互操作项目, 2014-01-06, End */
 
 
 /*****************************************************************************

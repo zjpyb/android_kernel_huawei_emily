@@ -103,6 +103,7 @@ bool Emcom_Xengine_Hook_Ul_Stub(struct sock *pstSock);
 #endif
 void Emcom_Xengine_SpeedCtrl_WinSize(struct sock *pstSock, uint32_t* win);
 void Emcom_Xengine_UdpEnqueue(struct sk_buff *skb);
+void Emcom_Xengine_FastSyn(struct sock *pstSock);
 
 
 void Emcom_Xengine_EvtProc(int32_t event, uint8_t *pdata, uint16_t len);
@@ -113,6 +114,12 @@ int Emcom_Xengine_GetProxyUid(struct sock *sk, char __user *optval, int __user *
 int Emcom_Xengine_SetSockFlag(struct sock *sk, char __user *optval, int optlen);
 void Emcom_Xengine_NotifySockError(struct sock *sk);
 
+#ifdef CONFIG_SMART_MP
+bool Emcom_Xengine_CheckUidAccount(const struct sk_buff *skb, uint32_t *uid, const struct sock *alternate_sk, int proto);
+bool Emcom_Xengine_CheckIfaceAccount(const struct sock *sk, int proto);
+bool Emcom_Xengine_SmartMpEnable(void);
+void Emcom_Xengine_SmartMpOnDK_Connect(void);
+#endif
 /*****************************************************************************
   9 OTHERS∂®“Â
 *****************************************************************************/

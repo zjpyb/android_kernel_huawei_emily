@@ -167,6 +167,22 @@ int usbaudio_setinterface_complete_msg(int dir,int val, int retval, unsigned int
 	return ret;
 }
 
+int usbaudio_nv_is_ready(void)
+{
+	int ret = 1;
+	if (atomic_read(&nv_check_ref) >= 1)
+		ret = 0;
+
+	return ret;
+}
+
+void usbaudio_set_nv_ready(void)
+{
+	pr_info("nv_check_set \n");
+	atomic_set(&nv_check_ref, 0);
+	atomic_inc(&nv_check_ref);
+}
+
 int usbaudio_nv_check(void)
 {
 	int ret;

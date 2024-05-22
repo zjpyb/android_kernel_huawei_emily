@@ -4,6 +4,9 @@
 #include <linux/wakelock.h>
 #include <linux/hisi/hisi_rproc.h>
 #include "hisi_hisee_fs.h"
+#ifdef CONFIG_HISI_HISEE_SUPPORT_CASDKEY
+#include "hisi_casdcert.h"
+#endif
 
 /* Hisee module general error code*/
 #define HISEE_TRUE           (1)
@@ -21,7 +24,15 @@
 #define HISEE_BULK_CLK_INIT_ERROR     (-10010)
 #define HISEE_BULK_CLK_ENABLE_ERROR   (-10011)
 #define HISEE_POWERDEBUG_NODE_CREATE_ERROR   (-10012)
+#ifdef CONFIG_HISI_HISEE_SHUTDOWN_SWIPE
+#define HISEE_PDSWIPE_RECORD_NODE_CREATE_ERROR  (-10013)
+#define HISEE_PDSWIPE_EXC_NODE_CREATE_ERROR     (-10014)
+#endif
+#define HISEE_AT_RESULT_NODE_CREATE_ERROR       (-10015)
 #define HISEE_FACTORY_STATE_ERROR     (-10021)
+
+#define HISEE_OTP1_WRITE_FAIL    (-10023)
+#define HISEE_POWER_CTRL_FAIL   (-10024)
 
 /* Hisee module specific error code*/
 #define HISEE_RPMB_KEY_WRITE_ERROR (-1000)
@@ -36,7 +47,35 @@
 #define HISEE_SET_HISEE_VALUE_ERROR    (-7001)
 #define HISEE_SET_HISEE_STATE_ERROR    (-7002)
 
+
+#ifdef CONFIG_HISI_SMX_PROCESS
+#define SMX_PROCESS_STEP1_ACTION        (0x01000101)
+#define SMX_PROCESS_STEP1_ID            (0)
+#define SMX_PROCESS_STEP1_CMD           (0x01000200)
+
+#define SMX_PROCESS_STEP2_ACTION        (0x01000100)
+#define SMX_PROCESS_STEP2_ID            (0)
+#define SMX_PROCESS_STEP2_CMD           (0x01000201)
+
+#define SMX_PROCESS_UNSUPPORT           (0x5A5A0001)
+#define SMX_PROCESS_SUPPORT_AND_OK      (0x5A5A0002)
+#define SMX_PROCESS_SUPPORT_BUT_ERROR   (0x5A5A0003)
+#define SMX_PROCESS_INVALID_PARAMS      (0x5A5A0004)
+#define SMX_PROCESS_CLK_ENABLE_ERROR    (0x5A5A0005)
+
+#define SMX_PROCESS_FN_MAIN_SERVICE_CMD (0xc5000020)
+#endif
+
 #define HISEE_WAIT_READY_TIMEOUT     (-9001)
+
+#ifdef CONFIG_HISI_HISEE_SUPPORT_CASDKEY
+#define HISI_CASD_ERROR                 (-19000)
+#define HISI_CASD_AT_MISMATCH_ERROR     (-19001)
+#define HISI_CASD_AT_HEADER_ERROR       (-19002)
+#define HISI_CASD_LENGTH_ERROR          (-19003)
+#define HISI_CASD_DATA_PARAM_ERROR      (-19004)
+#define HISI_CASD_HASH_ERROR            (-19005)
+#endif
 
 #define HISEE_DEVICE_NAME    "hisee"
 #define HISEE_DEFAULT_COSID  (0)
@@ -69,20 +108,26 @@
 #endif
 #define HISEE_ATF_APPLICATION_TIMEOUT    (60000)
 #define HISEE_ATF_GENERAL_TIMEOUT        (30000)
+#define HISEE_ATF_NVM_FORMAT_TIMEOUT        (60000)
 #define HISEE_FPGA_ATF_COS_TIMEOUT        (3000000)
 
 #define SIZE_1K              (1024)
+#define SIZE_4K              (4 * SIZE_1K)
 #define SIZE_1M              (1024 * SIZE_1K)
+
 
 #define SMC_TEST_RESULT_SIZE      (256)
 
-#define HISEE_COS_PATCH_BUFF_SIZE	(384 * SIZE_1K)
+#define HISEE_COS_PATCH_FREE_CNT		(1)
 
-#define HISEE_SHARE_BUFF_SIZE (640 * SIZE_1K)
+#define HISEE_MAX_IMG_SIZE    (640 * SIZE_1K)
+#define HISEE_SHARE_BUFF_SIZE round_up((HISEE_MAX_IMG_SIZE + HISEE_ATF_MESSAGE_HEADER_LEN), PAGE_SIZE)
 #define HISEE_CMD_NAME_LEN    (128)
 #define HISEE_BUF_SHOW_LEN    (128)
 #define HISEE_ERROR_DESCRIPTION_MAX  (64)
 #define HISEE_APDU_DATA_LEN_MAX      (261)
+
+#define HISEE_IOCTL_CMD_MAX_LEN (2048) /* max str len for AT^HISEE=CASD cmd */
 
 #define HISEE_FACTORY_TEST_VERSION	(0x12345678)
 #define HISEE_SERVICE_WORK_VERSION	(0)
@@ -96,9 +141,15 @@
 #define HISEE_CHAR_NEWLINE (10)
 #define HISEE_CHAR_SPACE (32)
 
+/* hisee NFC_IRQ mode */
+#ifdef CONFIG_HISEE_NFC_IRQ_SWITCH
+#define HISEE_NFC_IRQ_ADDR    	ioremap(SOC_SCTRL_SCBAKDATA22_ADDR(SOC_ACPU_SCTRL_BASE_ADDR), 4)
+#define HISEE_NFC_IRQ_DISABLE_BIT		(31)
+#endif
 /* hisee lcs mode */
 #define HISEE_STATE_ADDR    	ioremap(SOC_SCTRL_SCBAKDATA10_ADDR(SOC_ACPU_SCTRL_BASE_ADDR), 4)
-#define HISEE_LCS_DM_BIT		(13)
+#define HISEE_LCS_DM_BIT    	(13)
+
 
 #define check_and_print_result()  \
 do {\
@@ -124,6 +175,14 @@ do {\
 
 #define hisee_mdelay(n)  msleep(n)
 #define hisee_delay(n)   msleep((n) * 1000)
+
+#ifdef CONFIG_HISEE_NFC_IRQ_SWITCH
+#define HISEE_NFC_IRQ_SWITCH_CMD_MAX_LEN   (4)
+typedef enum _HISEE_NFC_IRQ_CFG_STATE {
+    NFC_IRQ_CFG_ON = 0x5A5AA5A5,
+    NFC_IRQ_CFG_OFF = 0xA5A55A5A
+} hisee_nfc_irq_cfg_state;
+#endif
 
 typedef enum _HISEE_NFC_CFG_MESSAGE {
 	DISABLE_NFC_IRQ = 0x02000100,
@@ -170,6 +229,9 @@ typedef enum  _HISEE_COS_PROCESS_TYPE {
 	COS_PROCESS_CHIP_TEST,	/* chip test */
 	COS_PROCESS_UNKNOWN,      /* default id */
 	COS_PROCESS_TIMEOUT,	/* timeout :must be the last valid id, restricted in function hisee_poweroff_func*/
+#ifdef CONFIG_HISEE_SUPPORT_INSE_ENCRYPT
+	COS_PROCESS_INSE_ENCRYPT = 5, /* inse encypt: pin, bio, file etc. */
+#endif
 	MAX_POWER_PROCESS_ID,
 } hisee_cos_process_type;
 /* TODO: modify the factory flow */
@@ -203,10 +265,18 @@ typedef enum {
 	CMD_FACTORY_APDU_TEST,
 	CMD_HISEE_CHANNEL_TEST,
 	CMD_HISEE_VERIFY_KEY,
-    CMD_HISEE_WRITE_CASD_KEY,
+	CMD_HISEE_WRITE_CASD_KEY,
+#ifdef CONFIG_HISEE_FACTORY_SECURITY_CHECK
+	CMD_HISEE_FACTORY_CHECK,
+#endif
 
 	CMD_HISEE_POWER_ON = 0x30,
 	CMD_HISEE_POWER_OFF,
+#ifdef CONFIG_HISI_SMX_PROCESS
+	CMD_SMX_PROCESS_STEP1,
+	CMD_SMX_PROCESS_STEP2,
+#endif
+	CMD_HISEE_GET_EFUSE_VALUE = 0x40,
 	CMD_FORMAT_RPMB = 0x51,
 	CMD_END,
 } se_smc_cmd;
@@ -256,8 +326,10 @@ typedef struct _HISEE_MODULE_DATA {
 	int power_on_count;  /*indicate the number of hisee poweron*/
 	hisee_factory_test_status factory_test_state; /*indicate the factory test status */
 	struct wake_lock wake_lock;
+#ifdef CONFIG_HISI_HISEE_SUPPORT_CASDKEY
+	hisee_casd_at_data casd_data;
+#endif
 } hisee_module_data;
-
 
 extern hisee_module_data g_hisee_data;
 extern atomic_t g_hisee_errno;
@@ -266,6 +338,10 @@ extern int g_hisee_partition_byname_find;
 extern unsigned int g_platform_id;
 extern u32 g_hisee_cos_upgrade_time;
 extern bool g_hisee_is_fpga;
+
+#ifdef CONFIG_HICOS_MISCIMG_PATCH
+extern atomic_t g_is_patch_free;
+#endif
 
 int get_hisee_lcs_mode(unsigned int *mode);
 int set_hisee_lcs_sm_efuse(void);
@@ -276,5 +352,8 @@ void set_message_header(atf_message_header *header, unsigned int cmd_type);
 int send_apdu_cmd(int type);
 int hisee_lpmcu_send(rproc_msg_t msg_0, rproc_msg_t msg_1);
 int cos_image_upgrade_by_self(void);
+#ifdef CONFIG_HISEE_NFC_IRQ_SWITCH
+void nfc_irq_cfg(hisee_nfc_irq_cfg_state flag);
+#endif
 
 #endif

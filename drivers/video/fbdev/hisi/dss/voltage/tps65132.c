@@ -211,8 +211,6 @@ static int tps65132_reg_init(struct i2c_client *client, u8 vpos_cmd, u8 vneg_cmd
 exit:
 	return nRet;
 }
-
-
 static void tps65132_get_target_voltage(int *vpos_target, int *vneg_target)
 {
 	int ret = 0;
@@ -224,6 +222,7 @@ static void tps65132_get_target_voltage(int *vpos_target, int *vneg_target)
 		*vneg_target = lcdkit_get_vsn_voltage();
 		return;
 	}
+
 
 	ret = get_lcd_type();
 	if (ret == VAL_5V8) {
@@ -314,6 +313,7 @@ static int tps65132_finish_setting(void)
 	return retval;
 }
 
+
 static int tps65132_probe(struct i2c_client *client, const struct i2c_device_id *id)
 {
 	int retval = 0;
@@ -375,6 +375,7 @@ static int tps65132_probe(struct i2c_client *client, const struct i2c_device_id 
 
 		/* detect current device successful, set the flag as present */
 		set_hw_dev_flag(DEV_I2C_DC_DC);
+
 
 failed_2:
 	if (!fastboot_display_enable) {

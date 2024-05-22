@@ -22,6 +22,9 @@
 #include <linux/io.h>
 #include <linux/of_address.h>
 #include <mntn_public_interface.h>
+#define HISI_LOG_TAG  MNTN_DUMP_TAG
+#include <linux/hisi/hisi_log.h>
+#include "blackbox/rdr_print.h"
 
 static void __iomem *g_mntn_dump_base;
 static unsigned long  g_mntn_dump_reserved_addr;
@@ -61,32 +64,32 @@ static int get_mntn_dump_reserve_addr(void)
 
 	np = of_find_node_by_path(DTS_MNTNDUMP_NAME);
 	if (!np) {
-		printk(KERN_ERR "%s: dts node(%s) not found\n", __func__, DTS_MNTNDUMP_NAME);
+		BB_PRINT_ERR("%s: dts node(%s) not found\n", __func__, DTS_MNTNDUMP_NAME);
 		return -1;
 	}
 
 	/* check if status = ok, okay or status not defined*/
 	name = of_get_property(np, "status", &len);
 	if (name && strncmp(name, "okay", sizeof("okay")) != 0 && strncmp(name, "ok", sizeof("ok")) != 0){
-		printk(KERN_ERR "%s: get status(%.7s)  error\n", __func__, name);
+		BB_PRINT_ERR("%s: get status(%.7s)  error\n", __func__, name);
 		return -1;
 	}
 
 	p = (unsigned long *)of_get_property(np, "reg", NULL);
 	if (!p) {
-		printk(KERN_ERR "%s: get reg fail, len =%d\n", __func__, len);
+		BB_PRINT_ERR("%s: get reg fail, len =%d\n", __func__, len);
 		goto err;
 	}
 
 	g_mntn_dump_reserved_addr = (u64)be64_to_cpup((const __be64 *)p);
 	g_mntn_dump_size = (unsigned int)be64_to_cpup((const __be64 *) ++p) - MNTN_DUMP_KASLR_SIZE;
 	if (!g_mntn_dump_reserved_addr || !g_mntn_dump_size) {
-		printk(KERN_ERR "get_mntn_dump_addr Error: addr: 0x%lx, size:0x%x\n",
+		BB_PRINT_ERR("get_mntn_dump_addr Error: addr: 0x%lx, size:0x%x\n",
 			g_mntn_dump_reserved_addr, g_mntn_dump_size);
 		goto err;
 	}
 
-	printk(KERN_ERR "get_mntn_dump_addr addr 0x%lx, size:0x%x\n",
+	BB_PRINT_PN("get_mntn_dump_addr addr 0x%lx, size:0x%x\n",
 		g_mntn_dump_reserved_addr, g_mntn_dump_size);
 	of_node_put(np);
 	return 0;
@@ -106,17 +109,17 @@ int mntn_dump_init(void)
 	}
 	if (!g_mntn_dump_reserved_addr || !g_mntn_dump_size) {
 		if (get_mntn_dump_reserve_addr()) {
-			printk(KERN_ERR "%s: reserve addr is NULL\n", __func__);
+			BB_PRINT_ERR("%s: reserve addr is NULL\n", __func__);
 			goto err;
 		}
 	}
 
 	g_mntn_dump_base = (void *) ioremap_wc((phys_addr_t)g_mntn_dump_reserved_addr, g_mntn_dump_size);
 	if (!g_mntn_dump_base) {
-		printk(KERN_ERR "%s: ioremap error\n", __func__);
+		BB_PRINT_ERR("%s: ioremap error\n", __func__);
 		goto err;
 	}
-	printk(KERN_ERR "%s: mntn dump base addr:%pK\n", __func__, g_mntn_dump_base);
+	BB_PRINT_PN("%s: mntn dump base addr:%pK\n", __func__, g_mntn_dump_base);
 	/* clean the memory of information struct  */
 	memset((void *)g_mdump_mem_info, 0x00, sizeof(g_mdump_mem_info));
 
@@ -133,7 +136,7 @@ int mntn_dump_init(void)
 
 		offset += g_mdump_mem_info[i].size;
 		if (offset >= MNTN_DUMP_MAXSIZE) {
-			printk(KERN_ERR "%s: mntn dump size is out of range\n", __func__);
+			BB_PRINT_ERR("%s: mntn dump size is out of range\n", __func__);
 			goto err;
 		}
 	}
@@ -172,7 +175,7 @@ int register_mntn_dump(int mod_id, unsigned int size, void **vaddr)
 	char **ptr;
 
 	if (!vaddr) {
-		printk(KERN_ERR "%s: module id[%d], vaddr is NULL\n", __func__, mod_id);
+		BB_PRINT_ERR("%s: module id[%d], vaddr is NULL\n", __func__, mod_id);
 		return -1;
 	}
 
@@ -180,25 +183,25 @@ int register_mntn_dump(int mod_id, unsigned int size, void **vaddr)
 	*ptr = 0;
 
 	if (mod_id < MNTN_DUMP_HEAD || mod_id >= MNTN_DUMP_MAX) {
-		printk(KERN_ERR "%s: module id[%d] is invalid\n", __func__, mod_id);
+		BB_PRINT_ERR("%s: module id[%d] is invalid\n", __func__, mod_id);
 		return -1;
 	}
 
 	if (!g_mntn_dump_init) {
 		if (mntn_dump_init()) {
-			printk(KERN_ERR "%s: module id[%d] fail\n", __func__, mod_id);
+			BB_PRINT_ERR("%s: module id[%d] fail\n", __func__, mod_id);
 			return -1;
 		}
 	}
 	raw_spin_lock(&g_mdump_lock);
 	if (g_mdump_mem_info[mod_id].size < size) {
-		printk(KERN_ERR "%s: module[%d] size(0x%x) is invalid\n", __func__, mod_id, size);
+		BB_PRINT_ERR("%s: module[%d] size(0x%x) is invalid\n", __func__, mod_id, size);
 		goto err;
 	}
 
 	i = g_mdump_head->nums;
 	if (i >= MNTN_DUMP_MAX) {
-		printk(KERN_ERR "%s: mntn dump data corruption(nums: %d)\n", __func__, i);
+		BB_PRINT_ERR("%s: mntn dump data corruption(nums: %d)\n", __func__, i);
 		goto err;
 	}
 	g_mdump_head->regs_info[i].mid = mod_id;

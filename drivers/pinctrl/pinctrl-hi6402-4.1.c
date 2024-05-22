@@ -22,11 +22,13 @@
 #include <linux/pinctrl/pinconf.h>
 #include <linux/pinctrl/pinconf-generic.h>
 #include <linux/hisi/hi64xx/hi64xx_compat.h>
+#include <linux/hisi/hisi_log.h>
 
 #include "core.h"
 #include "pinconf.h"
 
 #define DRIVER_NAME			"pinctrl-hi6402"
+#define HISI_LOG_TAG HISI_PINCTRL_TAG
 
 #define PIN_NAME_LENGTH		10
 #define GROUP_FLAG		"_g"

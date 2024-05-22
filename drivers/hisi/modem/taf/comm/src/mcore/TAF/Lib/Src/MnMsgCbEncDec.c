@@ -56,9 +56,7 @@
 #include  "MnMsgApi.h"
 #include  "mnmsgcbencdec.h"
 #include  "MnMsgTs.h"
-/* Added by f62575 for V9R1 STK升级, 2013-6-26, begin */
 #include  "TafStdlib.h"
-/* Added by f62575 for V9R1 STK升级, 2013-6-26, end */
 
 
 #define THIS_FILE_ID                PS_FILE_ID_MNMSG_CB_ENCDEC_C
@@ -504,12 +502,10 @@ VOS_UINT32  MN_MSG_DecodeCbmPage(
     pstGsmPage = (MN_MSG_CBGSMPAGE_STRU   *)pstCbRawInfo->aucData;
 
     /* 解析DCS */
-    /* Modified by f62575 for V9R1 STK升级, 2013-6-26, begin */
     ulRet = MN_MSG_DecodeCbsDcs(pstGsmPage->ucDCS,
                                 pstGsmPage->aucContent,
                                 TAF_CBA_MAX_CBDATA_LEN,
                                 &(pstCbmPageInfo->stDcs));
-    /* Modified by f62575 for V9R1 STK升级, 2013-6-26, end */
     if (MN_ERR_NO_ERROR != ulRet)
     {
         MN_WARN_LOG1("MN_MSG_DecodeCbmPage:DCS Invalid:ulRet",(VOS_INT32)ulRet);
@@ -554,7 +550,6 @@ VOS_UINT32  MN_MSG_DecodeCbmPage(
             pstCbmPageInfo->stContent.ulLen = TAF_CBA_MAX_RAW_CBDATA_LEN;
         }
 
-        /* Modified by f62575 for V9R1 STK升级, 2013-6-26, begin */
         ulRet = TAF_STD_UnPack7Bit(pstGsmPage->aucContent,
                            pstCbmPageInfo->stContent.ulLen,
                            0,
@@ -563,7 +558,6 @@ VOS_UINT32  MN_MSG_DecodeCbmPage(
         {
             MN_WARN_LOG("MN_MSG_DecodeCbmPage:TAF_STD_UnPack7Bit fail");
         }
-        /* Modified by f62575 for V9R1 STK升级, 2013-6-26, end */
     }
     else
     {
@@ -581,9 +575,7 @@ VOS_UINT32  MN_MSG_DecodeCbmPage(
     return MN_ERR_NO_ERROR;
 }
 
-/* Deleted by f62575 for V9R1 STK升级, 2013-6-26, begin */
 /* Deleted MN_MSG_DecodeCbsDcs */
-/* Deleted by f62575 for V9R1 STK升级, 2013-6-26, end */
 
 
 

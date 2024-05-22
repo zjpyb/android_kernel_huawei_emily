@@ -19,8 +19,15 @@
 #define COMBPHY_PD_EVENT_INVALID_VAL -1
 #endif
 #define PD_DPM_HW_DOCK_SVID 0x12d1
-#define PD_DPM_CC_CHANGE_COUNTER_THRESHOLD 50
-#define PD_DPM_CC_CHANGE_INTERVAL 500 /*ms*/
+
+#define PD_DPM_CC_CHANGE_COUNTER_THRESHOLD     (50)
+#define PD_DPM_CC_CHANGE_INTERVAL              (2000)  /*ms*/
+#define PD_DPM_CC_CHANGE_MSEC                  (1000)
+#define PD_DPM_CC_CHANGE_BUF_SIZE              (10)
+
+#define PD_DPM_CC_DMD_COUNTER_THRESHOLD        (50)
+#define PD_DPM_CC_DMD_INTERVAL                 (24*60*60) /*s*/
+#define PD_DPM_CC_DMD_BUF_SIZE                 (1024)
 
 /* type-c inserted plug orientation */
 enum pd_cc_orient{
@@ -128,6 +135,7 @@ enum {
         PD_DPM_USB_TYPEC_DEVICE_ATTACHED,
         PD_DPM_USB_TYPEC_HOST_ATTACHED,
         PD_DPM_USB_TYPEC_AUDIO_ATTACHED,
+        PD_DPM_USB_TYPEC_AUDIO_DETACHED,
 };
 
 enum pd_dpm_uevent_type {
@@ -153,7 +161,7 @@ struct pd_dpm_ops {
 	bool (*pd_dpm_get_hw_dock_svid_exist)(void*);
 	int (*pd_dpm_notify_direct_charge_status)(void*, bool mode);
 	void (*pd_dpm_set_cc_mode)(int mode);
-	bool (*pd_dpm_set_voltage)(void);
+	void (*pd_dpm_set_voltage)(void*, int vol);
 };
 struct pd_dpm_pd_state {
 	uint8_t connected;
@@ -166,11 +174,6 @@ struct pd_dpm_swap_state {
 enum pd_dpm_vbus_type {
     PD_DPM_VBUS_TYPE_TYPEC = 20,
     PD_DPM_VBUS_TYPE_PD,
-};
-
-enum PD_DPM_VBOOST_CONTROL_SOURCE_TYPE{
-    PD_DPM_VBOOST_CONTROL_PD = 0,
-    PD_DPM_VBOOST_CONTROL_DC,
 };
 
 enum pd_dpm_cc_voltage_type {
@@ -191,6 +194,22 @@ struct pd_dpm_vbus_state {
     uint8_t vbus_type;
     bool ext_power;
     int remote_rp_level;
+};
+
+enum abnomal_change_type {
+	PD_DPM_ABNORMAL_CC_CHANGE = 0,
+	PD_DPM_UNATTACHED_VBUS_ONLY,
+};
+
+struct abnomal_change_info {
+	enum abnomal_change_type event_id;
+	bool first_enter;
+	int change_counter;
+	int dmd_counter;
+	struct timespec64 ts64_last;
+	struct timespec64 ts64_dmd_last;
+	int change_data[PD_DPM_CC_CHANGE_BUF_SIZE];
+	int dmd_data[PD_DPM_CC_CHANGE_BUF_SIZE];
 };
 
 #ifdef CONFIG_CONTEXTHUB_PD
@@ -214,6 +233,7 @@ struct pd_dpm_info{
     struct notifier_block usb_nb;
     struct notifier_block chrg_wake_unlock_nb;
     struct blocking_notifier_head pd_evt_nh;
+    struct blocking_notifier_head pd_port_status_nh;
     struct atomic_notifier_head pd_wake_unlock_evt_nh;
 
     enum pd_dpm_uevent_type uevent_type;
@@ -257,12 +277,12 @@ struct class *hw_pd_get_class(void);
 
 extern struct tcpc_device *tcpc_dev_get_by_name(const char *name);
 
-extern void pd_dpm_set_usb_speed(unsigned int usb_speed);
-
 extern int register_pd_dpm_notifier(struct notifier_block *nb);
 extern int unregister_pd_dpm_notifier(struct notifier_block *nb);
 extern int register_pd_wake_unlock_notifier(struct notifier_block *nb);
 extern int unregister_pd_wake_unlock_notifier(struct notifier_block *nb);
+extern int register_pd_dpm_portstatus_notifier(struct notifier_block *nb);
+extern int unregister_pd_dpm_portstatus_notifier(struct notifier_block *nb);
 extern int pd_dpm_handle_pe_event(unsigned long event, void *data);
 extern bool pd_dpm_get_pd_finish_flag(void);
 extern bool pd_dpm_get_pd_source_vbus(void);
@@ -270,12 +290,12 @@ extern void pd_dpm_get_typec_state(int *typec_detach);
 int pd_dpm_get_analog_hs_state(void);
 extern void pd_dpm_get_charge_event(unsigned long *event, struct pd_dpm_vbus_state *state);
 extern bool pd_dpm_get_high_power_charging_status(void);
+extern bool pd_dpm_get_high_voltage_charging_status(void);
 extern bool pd_dpm_get_optional_max_power_status(void);
 extern bool pd_dpm_get_cc_orientation(void);
 #ifdef CONFIG_CONTEXTHUB_PD
 extern int pd_dpm_handle_combphy_event(struct pd_dpm_combphy_event event);
 #endif
-extern int pd_dpm_vboost_enable(bool enable, enum PD_DPM_VBOOST_CONTROL_SOURCE_TYPE type);
 void pd_dpm_set_cc_voltage(int type);
 enum pd_dpm_cc_voltage_type pd_dpm_get_cc_voltage(void);
 int pd_dpm_ops_register(struct pd_dpm_ops *ops, void*client);
@@ -292,6 +312,7 @@ static inline void pd_dpm_wakelock_ctrl(unsigned long event) {};
 static inline void pd_dpm_vbus_ctrl(unsigned long event) {};
 #endif
 
+extern void pd_dpm_ignore_vbus_only_event(bool flag);
 extern bool pd_dpm_ignore_vbus_event(void);
 extern void pd_dpm_set_ignore_vbus_event(bool);
 extern bool pd_dpm_ignore_bc12_event_when_vbusoff(void);

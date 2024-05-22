@@ -139,6 +139,9 @@ extern void dhd_dpc_kill(dhd_pub_t *dhdp);
 static int hw_calibrate_nvram_vars(struct dhd_bus *bus, char * bufp, uint len);
 #endif
 
+#ifdef HW_CE_5G_HIGH_BAND
+extern int g_ce_5g_high_band;
+#endif
 
 #define     PCI_VENDOR_ID_BROADCOM          0x14e4
 #ifdef BCM_PCIE_UPDATE
@@ -4574,6 +4577,15 @@ dhdpcie_downloadvars(dhd_bus_t *bus, void *arg, int len)
 	} else {
 			bus->dhd->devwake_enable = FALSE;
 			DHD_ERROR(("No device_wake_opt in nvram => devwake_enable set FALSE\n"));
+	}
+#endif
+#ifdef HW_CE_5G_HIGH_BAND
+	char *ce_5g_high_band = NULL;
+	/* Don't enable this for old products even though upgrade to android P */
+	ce_5g_high_band = getvar(bus->vars, "ce_5g_high_band");
+	if (ce_5g_high_band) {
+		g_ce_5g_high_band = bcm_atoi(ce_5g_high_band);
+		DHD_ERROR(("nvram 5g_high_band: %d\n", g_ce_5g_high_band));
 	}
 #endif
 }

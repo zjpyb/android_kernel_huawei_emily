@@ -27,7 +27,7 @@ extern "C" {
 /*****************************************************************************
   4 全局变量声明
 *****************************************************************************/
-extern oal_mempool_info_to_sdt_stru    g_st_mempool_info;
+extern oal_mempool_info_to_sdt_stru    g_st_mempool_info_etc;
 
 
 /*****************************************************************************
@@ -69,7 +69,7 @@ typedef oal_uint32 (* oal_memblock_info_up_to_sdt)(oal_uint8 *puc_origin_data,
 /*****************************************************************************
   10 函数声明
 *****************************************************************************/
-extern oal_uint32  oal_mempool_info_to_sdt_register(oal_stats_info_up_to_sdt  p_up_mempool_info,
+extern oal_uint32  oal_mempool_info_to_sdt_register_etc(oal_stats_info_up_to_sdt  p_up_mempool_info,
                                                     oal_memblock_info_up_to_sdt  p_up_memblock_info);
 #ifdef __cplusplus
     #if __cplusplus

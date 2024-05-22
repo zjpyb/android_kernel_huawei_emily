@@ -155,7 +155,7 @@ typedef struct object{
 
 #define time_cost_var_start(name)
 #define time_cost_var_end(name)
-#define time_cost_var_sub(name)
+#define time_cost_var_sub(name) 0
 
 #define oal_get_time_cost_start(name)
 #define oal_get_time_cost_end(name)

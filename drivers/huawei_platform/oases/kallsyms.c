@@ -22,14 +22,39 @@ extern const u8 kallsyms_token_table[] __attribute__((weak));
 extern const u16 kallsyms_token_index[] __attribute__((weak));
 extern const unsigned long kallsyms_markers[] __attribute__((weak));
 
+#if IS_ENABLED(CONFIG_KALLSYMS_BASE_RELATIVE)
+
+extern const int kallsyms_offsets[] __weak;
+extern const unsigned long kallsyms_relative_base
+__attribute__((weak, section(".rodata")));
+
+static unsigned long kallsyms_sym_address(int idx)
+{
+	if (!IS_ENABLED(CONFIG_KALLSYMS_BASE_RELATIVE))
+		return kallsyms_addresses[idx];
+
+	/* values are unsigned offsets if --absolute-percpu is not in effect */
+	if (!IS_ENABLED(CONFIG_KALLSYMS_ABSOLUTE_PERCPU))
+		return kallsyms_relative_base + (u32)kallsyms_offsets[idx];
+
+	/* ...otherwise, positive offsets are absolute values */
+	if (kallsyms_offsets[idx] >= 0)
+		return kallsyms_offsets[idx];
+
+	/* ...and negative offsets are relative to kallsyms_relative_base - 1 */
+	return kallsyms_relative_base - 1 - kallsyms_offsets[idx];
+}
+
+#endif
+
 /*
  * This is taken from kallsyms_expand_symbol mostly
  * return 0 means match
  */
 static int kallsyms_compare_symbol(unsigned int *off, const char *name, int nlen)
 {
-    int diff = -1;
-    int len, skipped_first = 0;
+	int diff = -1;
+	int len, skipped_first = 0;
 	const u8 *tptr, *data;
 
 	/* Get the compressed symbol length from the first symbol byte. */
@@ -37,7 +62,7 @@ static int kallsyms_compare_symbol(unsigned int *off, const char *name, int nlen
 	len = *data;
 	data++;
 
-    /*
+	/*
 	 * Update the offset to return the offset for the next symbol on
 	 * the compressed stream.
 	 */
@@ -55,18 +80,18 @@ static int kallsyms_compare_symbol(unsigned int *off, const char *name, int nlen
 		while (*tptr) {
 			if (skipped_first) {
 				diff = *tptr - *name;
-                if (diff)
-                    return diff;
-                name++;
+				if (diff)
+					return diff;
+				name++;
 				nlen--;
-                if (!nlen)
-                    break;
+				if (!nlen)
+					break;
 			} else
 				skipped_first = 1;
 			tptr++;
 		}
-        if (!nlen)
-            break;
+		if (!nlen)
+			break;
 	}
 
 	return diff;
@@ -119,33 +144,33 @@ tail:
 	return off;
 }
 
-
-static int oases_kallsyms_on_each_symbol(
-    int (*fn)(void *, const char *, struct module *, unsigned long),
-	struct oases_find_symbol *data)
+static int module_lookup_name_callback(void *data, const char *name,
+	struct module *mod, unsigned long addr)
 {
-    int ret, i;
-	char namebuf[KSYM_NAME_LEN];
-    int nlen;
-    unsigned int off = 0, tmp;
+	struct oases_find_symbol *s = data;
 
-    if (!data->name)
-        return 0;
-    nlen = strlen(data->name);
-    if (!nlen)
-        return 0;
-	for (i = 0; i < kallsyms_num_syms; i++) {
-        tmp = off;
-        ret = kallsyms_compare_symbol(&off, data->name, nlen);
-        /* only expand when prefix is matched */
-        if (ret == 0) {
-            kallsyms_expand_symbol(tmp, namebuf, ARRAY_SIZE(namebuf));
-    		ret = fn(data, namebuf, NULL, kallsyms_addresses[i]);
-    		if (ret != 0)
-    			return ret;
-        }
+	if (strcmp(s->name, name))
+		return 0;
+
+#if IS_ENABLED(CONFIG_MODULES)
+	if ((s->type == LOOKUP_MODULE) && strcmp(s->mod, mod->name))
+		return 0;
+#endif
+
+	if (s->callback && !(*s->callback)((void *)addr)) {
+		return 0;
 	}
-	return module_kallsyms_on_each_symbol(fn, data);
+
+	s->addr = (void *)addr;
+	s->count++;
+	s->module = mod;
+
+	if (s->count > 1) {
+		return 1;
+	}
+
+	return 0;
+
 }
 
 /*
@@ -153,7 +178,7 @@ static int oases_kallsyms_on_each_symbol(
  * Note we search until all symbols checked, trying to solve duplicate
  * symbol problem.
  */
-static int lookup_name_callback(void *data, const char *name,
+static int vmlinux_lookup_name_callback(void *data, const char *name,
 			struct module *mod, unsigned long addr)
 {
 	struct oases_find_symbol *s = data;
@@ -164,15 +189,6 @@ static int lookup_name_callback(void *data, const char *name,
 	if (s->callback && !(*s->callback)((void *)addr)) {
 		return 0;
 	}
-
-	if (s->mod && !mod)
-		return 0;
-
-#ifdef CONFIG_MODULES
-	/* call module_kallsyms_on_each_symbol when s->mod is true */
-	if (s->mod && strcmp(s->mod, mod->name))
-		return 0;
-#endif
 
 	s->addr = (void *)addr;
 	s->count++;
@@ -186,6 +202,61 @@ static int lookup_name_callback(void *data, const char *name,
 }
 
 /*
+ * search a symbol address throughout vmlinux or modules or both,
+ * return early if found duplicate symbols.
+ */
+static int oases_vmlinux_kallsyms_on_each_symbol(
+	struct oases_find_symbol *data)
+{
+	int ret = 0, i;
+	char namebuf[KSYM_NAME_LEN];
+	int nlen;
+	unsigned int off = 0, tmp;
+
+	if (!data->name)
+		return 0;
+	nlen = strlen(data->name);
+	if (!nlen)
+		return 0;
+
+	for (i = 0; i < kallsyms_num_syms; i++) {
+		tmp = off;
+		ret = kallsyms_compare_symbol(&off, data->name, nlen);
+		/* only expand when prefix is matched */
+		if (ret == 0) {
+			kallsyms_expand_symbol(tmp, namebuf, ARRAY_SIZE(namebuf));
+			ret = vmlinux_lookup_name_callback(data, namebuf, NULL,
+#if IS_ENABLED(CONFIG_KALLSYMS_BASE_RELATIVE)
+	kallsyms_sym_address(i));
+#else
+	kallsyms_addresses[i]);
+#endif
+			if (ret != 0)
+				return ret;
+		}
+	}
+
+	return ret;
+}
+
+static int oases_module_kallsyms_on_each_symbol(
+	struct oases_find_symbol *data)
+{
+	return module_kallsyms_on_each_symbol(module_lookup_name_callback, data);
+}
+
+static int get_lookup_type(const char *mod)
+{
+	if (!mod)
+		return LOOKUP_BOTH;
+
+	if (strcmp(mod, VMLINUX) == 0)
+		return LOOKUP_VMLINUX;
+
+	return LOOKUP_MODULE;
+}
+
+/*
  * Return 0 if success otherwise error code.
  *
  * further check on symbol size, attributes, T/t/W/w/D/d/A...
@@ -193,13 +264,36 @@ static int lookup_name_callback(void *data, const char *name,
  */
 int oases_lookup_name_internal(struct oases_find_symbol *args)
 {
-	if (args->mod)
-		module_kallsyms_on_each_symbol(lookup_name_callback, args);
-	else
-		oases_kallsyms_on_each_symbol(lookup_name_callback, args);
+	int ret = 0;
 
-	if (!args->addr || args->count != 1)
-		return -EINVAL;
+	args->type = get_lookup_type(args->mod);
+	if (args->type & LOOKUP_VMLINUX) {
+		oases_vmlinux_kallsyms_on_each_symbol(args);
+	}
 
-	return 0;
+	if (args->type & LOOKUP_MODULE) {
+		oases_module_lock();
+		oases_module_kallsyms_on_each_symbol(args);
+	}
+
+	if (!args->addr || args->count != 1) {
+		oases_error("invalid args->addr or args->count\n");
+		ret = -EINVAL;
+		goto bail;
+	}
+
+	/* oases_lookup_name api shouldn't increase module ref */
+	if (!args->api_use) {
+		if (args->module && !oases_ref_module_ptr(args->module)) {
+			oases_error("oases_ref_module_ptr failed\n");
+			ret = -EINVAL;
+			goto bail;
+		}
+	}
+
+bail:
+	if (args->type & LOOKUP_MODULE) {
+		oases_module_unlock();
+	}
+	return ret;
 }

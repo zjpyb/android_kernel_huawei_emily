@@ -15,9 +15,12 @@
 #include <linux/types.h>                                                        // Kernel datatypes
 #include <linux/errno.h>                                                        // EINVAL, ERANGE, etc
 #include <linux/of_device.h>                                                    // Device tree functionality
+#ifdef CONFIG_USE_CAMERA3_ARCH
 #include <media/huawei/hw_extern_pmic.h>
+#endif
 #include <linux/workqueue.h>
 #include <linux/delay.h>
+#include <linux/of.h>
 
 /* Driver-specific includes */
 #include "fusb30x_global.h"                                                     // Driver-specific structures/types
@@ -33,7 +36,9 @@
 #ifdef CONFIG_CC_ANTI_CORROSION
 #include <huawei_platform/usb/hw_cc_anti_corrosion.h>
 #endif
-
+#ifdef CONFIG_POGO_PIN
+#include <huawei_platform/usb/huawei_pogopin.h>
+#endif
 /******************************************************************************
 * Driver functions
 ******************************************************************************/
@@ -119,7 +124,6 @@ static int is_cable_for_direct_charge(void)
 	return 0;
 }
 
-#ifdef CONFIG_CC_ANTI_CORROSION
 void fusb30x_set_cc_mode(int mode)
 {
        if (!mode){
@@ -134,9 +138,21 @@ int fusb30x_get_cc_mode(void)
 {
        return 0;
 }
+#ifdef CONFIG_CC_ANTI_CORROSION
 struct cc_corrosion_ops fusb30x_corrosion_ops = {
     .set_cc_mode = fusb30x_set_cc_mode,
     .get_cc_mode = fusb30x_get_cc_mode,
+};
+#endif
+
+#ifdef CONFIG_POGO_PIN
+static int fusb30x_typec_detect_disable(FSC_BOOL disable)
+{
+	return core_cc_disable(disable);
+}
+
+struct cc_detect_ops fusb30x_cc_detect_ops = {
+	.typec_detect_disable = fusb30x_typec_detect_disable,
 };
 #endif
 
@@ -150,9 +166,17 @@ static int fusb30x_probe (struct i2c_client* client,
     int ret = 0;
     struct fusb30x_chip* chip;
     struct i2c_adapter* adapter;
-
-    hw_extern_pmic_config(FSC_PMIC_LDO_3,FUSB_VIN_3V3, 1);
-    pr_info("%s:PD PMIC ENABLE IS CALLED\n", __func__);
+    int need_not_config_extra_pmic=0;
+    if (of_property_read_u32(of_find_compatible_node(NULL,NULL, "huawei,pd_dpm"),"need_not_config_extra_pmic", &need_not_config_extra_pmic)) {
+	pr_err("get need_not_config_extra_pmic fail!\n");
+    }
+    pr_info("need_not_config_extra_pmic = %d!\n", need_not_config_extra_pmic);
+    if(!need_not_config_extra_pmic){
+#ifdef CONFIG_USE_CAMERA3_ARCH
+        hw_extern_pmic_config(FSC_PMIC_LDO_3,FUSB_VIN_3V3, 1);
+#endif
+        pr_info("%s:PD PMIC ENABLE IS CALLED\n", __func__);
+    }
 
     if (!client)
     {
@@ -236,7 +260,9 @@ static int fusb30x_probe (struct i2c_client* client,
 #ifdef CONFIG_CC_ANTI_CORROSION
     cc_corrosion_register_ops(&fusb30x_corrosion_ops);
 #endif
-
+#ifdef CONFIG_POGO_PIN
+	cc_detect_register_ops(&fusb30x_cc_detect_ops);
+#endif
 #ifdef FSC_DEBUG
     /* Initialize debug sysfs file accessors */
     fusb_Sysfs_Init();

@@ -8,7 +8,72 @@
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
  */
+#include "../../hisi/tzdriver/libhwsecurec/securec.h"
 #define TX_WORK_TIMEOUT  1600000
+#include <linux/hisi/hisi_log.h>
+#define HISI_LOG_TAG HISI_AMBA_PL011_TAG
+#define SET_CONSOLE_FIFO_SIZE_DEFAULT  262144
+#define SET_CONSOLE_FIFO_CPUON_DEFAULT  3
+
+static int console_fifo_enable_status = -1;
+static int __init console_fifo_enable_setup(char *str)
+{
+	char buf[2]; /* 2 for "1 or 0 " */
+	char *s = NULL;
+	strncpy_s(buf,sizeof(buf),str,sizeof(buf));
+
+	for (s = buf; *s; s++) {
+		if (*s == '1') {
+			console_fifo_enable_status = 1;
+			break;
+		}
+		if (*s == '0' || *s == ' ') {
+			console_fifo_enable_status = 0;
+			break;
+		}
+	}
+	*s = 0;
+
+	return 1;
+}
+__setup("console_fifo_status=", console_fifo_enable_setup);
+
+unsigned int get_fifosize_arm(struct amba_device *dev)
+{
+		return 64;
+}
+
+unsigned int pl011_reg_to_offset(const struct uart_amba_port *uap,
+	unsigned int reg)
+{
+	return uap->reg_offset[reg];
+}
+
+unsigned int pl011_read(const struct uart_amba_port *uap,
+	unsigned int reg)
+{
+	void __iomem *addr = uap->port.membase + pl011_reg_to_offset(uap, reg);
+
+	return (uap->port.iotype == UPIO_MEM32) ?
+		readl_relaxed(addr) : readw_relaxed(addr);
+}
+
+void pl011_write(unsigned int val, const struct uart_amba_port *uap,
+	unsigned int reg)
+{
+	void __iomem *addr = uap->port.membase + pl011_reg_to_offset(uap, reg);
+
+	if (uap->port.iotype == UPIO_MEM32)
+		writel_relaxed(val, addr);
+	else
+		writew_relaxed(val, addr);
+}
+
+bool pl011_split_lcrh(const struct uart_amba_port *uap)
+{
+	return pl011_reg_to_offset(uap, REG_LCRH_RX) !=
+	       pl011_reg_to_offset(uap, REG_LCRH_TX);
+}
 
 int pl011_tx_stat_show(struct seq_file *s, void *arg)
 {
@@ -55,11 +120,10 @@ static int pl011_uart_tx_work(void *arg)
 	static char local_static_buf[PL011_TX_LOCAL_BUF_SIZE] = "";
 	unsigned int out_len = 0;
 	unsigned int pos = 0;
-	unsigned int status, old_cr, new_cr;
-	int locked = 1;
-	int ret, timeout = TX_WORK_TIMEOUT;
+	unsigned int status;
+	int timeout = TX_WORK_TIMEOUT;
 	unsigned long flags = 0;
-	unsigned int fbrd = 0, ibrd = 0, lcrh_rx = 0, lcrh_tx = 0;
+
 	__set_current_state(TASK_RUNNING);
 	while (!kthread_should_stop()) {
 		/* Wait for data to actually write */
@@ -72,56 +136,10 @@ print_retry:
 		timeout = TX_WORK_TIMEOUT;
 		unit->tx_uart_tasklet_run++;
 
-		local_irq_save(flags);
-
-		/* lock uart port */
-		if (uap->port.sysrq) {
-			locked = 0;
-		}
-		else if (oops_in_progress) {
-			locked = spin_trylock(&uap->port.lock);
-		}
-		else {
-			spin_lock(&uap->port.lock);
-			locked = 1;
-		}
-
-		ret = clk_enable(uap->clk); /*lint !e456*/
-		if (ret) {
-			printk(KERN_ERR	"could not enable clock\n");
-		}
-
-		fbrd = readw(uap->port.membase + UART011_FBRD);
-		ibrd = readw(uap->port.membase + UART011_IBRD);
-		lcrh_rx = readw(uap->port.membase + uap->lcrh_rx);
-		if (uap->lcrh_tx != uap->lcrh_rx)
-			lcrh_tx = readw(uap->port.membase + uap->lcrh_tx);
-		writew(uap->console_fbrd, uap->port.membase + UART011_FBRD);
-		writew(uap->console_ibrd, uap->port.membase + UART011_IBRD);
-		writew(uap->console_lcrh_rx, uap->port.membase + uap->lcrh_rx);
-		if (uap->lcrh_tx != uap->lcrh_rx) {
-			int i;
-			/*
-			* Wait 10 PCLKs before writing LCRH_TX register,
-			* to get this delay write read only register 10 times
-			*/
-			for (i = 0; i < 10; ++i)
-				writew(0xff, uap->port.membase + UART011_MIS);
-			writew(uap->console_lcrh_tx, uap->port.membase + uap->lcrh_tx);
-		}
-
-		/*
-		 *	First save the CR then disable the interrupts
-		 */
-		old_cr = readw(uap->port.membase + UART011_CR);
-		new_cr = old_cr & ~UART011_CR_CTSEN;
-		new_cr |= UART01x_CR_UARTEN | UART011_CR_TXE;
-		writew(new_cr, uap->port.membase + UART011_CR);
-
 		/* fifo out and send */
-		spin_lock(&unit->tx_lock_in);
+		spin_lock_irqsave(&unit->tx_lock_in, flags);
 		out_len = kfifo_out(&unit->tx_fifo, local_static_buf, PL011_TX_LOCAL_BUF_SIZE);
-		spin_unlock(&unit->tx_lock_in);
+		spin_unlock_irqrestore(&unit->tx_lock_in, flags);
 		unit->tx_out += out_len;
 		for (pos = 0; pos < out_len; pos++) {
 			if (('\n' == local_static_buf[pos]) && (0 != pos) && ('\r' != local_static_buf[pos-1])) {
@@ -130,47 +148,18 @@ print_retry:
 			pl011_console_putchar(&uap->port, local_static_buf[pos]);
 			unit->tx_sent++;
 		}
-
 		/*
 		 *	Finally, wait for transmitter to become empty
 		 *	and restore the TCR
 		 */
 		do {
-			status = readw(uap->port.membase + UART01x_FR);
-		} while ((status & UART01x_FR_BUSY) && timeout--);
-		writew(old_cr, uap->port.membase + UART011_CR);
+			status = pl011_read(uap, REG_FR);
+		} while ((status & uap->vendor->fr_busy) && timeout--);
 
 		if (timeout == -1) {
-			printk(KERN_ERR "%s: PL011 tx work timeout\n", __func__);
+			pr_err("%s: PL011 tx work timeout\n", __func__);
 		}
 
-		writew(fbrd, uap->port.membase + UART011_FBRD);
-		writew(ibrd, uap->port.membase + UART011_IBRD);
-		writew(lcrh_rx, uap->port.membase + uap->lcrh_rx);
-		if (uap->lcrh_tx != uap->lcrh_rx) {
-			int i;
-			/*
-			* Wait 10 PCLKs before writing LCRH_TX register,
-			* to get this delay write read only register 10 times
-			*/
-			for (i = 0; i < 10; ++i)
-				writew(0xff, uap->port.membase + UART011_MIS);
-			writew(lcrh_tx, uap->port.membase + uap->lcrh_tx);
-		}
-
-#ifdef CONFIG_ARCH_HI6XXX
-		if (false == Chip_Verification_Check_Debug(CHIP_VERIFICATION_UART_DEBUG)) {
-			clk_disable(uap->clk);
-		}
-#else
-			clk_disable(uap->clk);
-#endif
-
-		/* unlock uart port */
-		if (locked)
-			spin_unlock(&uap->port.lock);
-
-		local_irq_restore(flags); /*lint !e456*/
 		if (kfifo_len(&unit->tx_fifo) > 0) {
 			goto print_retry;
 		}
@@ -187,7 +176,7 @@ int pl011_tx_work_init(struct uart_amba_port *uap, unsigned int aurt_tx_buf_size
 
 	ret = kfifo_alloc(&unit->tx_fifo, aurt_tx_buf_size, GFP_KERNEL | __GFP_ZERO);
 	if (ret) {
-		printk(KERN_ERR "%s: port[%d] malloc fail\n", __func__, uap->port.line);
+		pr_err("%s: port[%d] malloc fail\n", __func__, uap->port.line);
 		unit->tx_valid = 0;
 		return ret;
 	}
@@ -199,7 +188,7 @@ int pl011_tx_work_init(struct uart_amba_port *uap, unsigned int aurt_tx_buf_size
 	unit->thread = kthread_create(pl011_uart_tx_work, unit, "uart console thread");
 	if (IS_ERR(unit->thread)) {
 		ret = PTR_ERR(unit->thread);
-		printk(KERN_ERR "%s: Couldn't create kthread (%d)\n", __func__, ret);
+		pr_err("%s: Couldn't create kthread (%d)\n", __func__, ret);
 		unit->tx_valid = 0;
 		return ret;
 	}
@@ -224,7 +213,7 @@ int pl011_tx_work_init(struct uart_amba_port *uap, unsigned int aurt_tx_buf_size
 	}
 	wake_up_process(unit->thread);
 
-	snprintf(dbgfs_name, 16, "uart%d_stat", uap->port.line);
+	snprintf_s(dbgfs_name, sizeof(dbgfs_name), sizeof(dbgfs_name)-1, "uart%d_stat", uap->port.line);
 #ifdef CONFIG_HISI_DEBUG_FS
 	debugfs_create_file(dbgfs_name, S_IRUGO, NULL, unit, &pl011_tx_stat_ops);
 #endif
@@ -391,28 +380,41 @@ void hisi_pl011_probe_console_enable(struct amba_device *dev, struct uart_amba_p
 			console_uart_name_is_ttyAMA = 1;
 	}
 	if (console_uart_name_is_ttyAMA && (get_console_index() == (int)uap->port.line)) {
-		/* get console fifo enable flag */
-		if (of_property_read_u32(dev->dev.of_node, "console-fifo-enable", &uap->tx_unit.tx_valid)) {
-			uap->tx_unit.tx_valid = 0;
-			dev_info(&dev->dev, "%s:don't have console-fifo-enable property! set disable as default.\n", __func__);
+		if (0 == console_fifo_enable_status) {
+			dev_info(&dev->dev, "%s: set cmdline disable serial console fifo!\n", __func__);
+			return;
 		} else {
-			if (uap->tx_unit.tx_valid) {
-				dev_info(&dev->dev, "%s:enable serial console fifo!\n", __func__);
-				/* get console fifo size */
-				if (of_property_read_u32(dev->dev.of_node, "console-fifo-size", &console_fifo_size)) {
-					console_fifo_size = UART_TX_BUF_SIZE_DEF;
-					dev_err(&dev->dev, "%s don't have console-fifo-size property! set 0x%x as default.\n", __func__, UART_TX_BUF_SIZE_DEF);
-				}
-				/* get console fifo cpuon */
-				if (of_property_read_u32(dev->dev.of_node, "console-fifo-cpuon", (u32 *)&console_fifo_cpuon)) {
-					console_fifo_cpuon = UART_TX_CPUON_NOTSET;
-					dev_err(&dev->dev, "%s don't have console-fifo-cpuon property! set fifo on cpu disabled.\n", __func__);
-				} else {
-					dev_info(&dev->dev, "%s set fifo on cpu:%d.\n", __func__, console_fifo_cpuon);
-				}
+			if (1 == console_fifo_enable_status) {
+				uap->tx_unit.tx_valid = 1;
+				console_fifo_size = SET_CONSOLE_FIFO_SIZE_DEFAULT;
+				console_fifo_cpuon = SET_CONSOLE_FIFO_CPUON_DEFAULT;
+				dev_info(&dev->dev, "%s: set cmdline enable serial console fifo!\n", __func__);
 				pl011_tx_work_init(uap, console_fifo_size, console_fifo_cpuon);
+				return;
+			}
+			/* get console fifo enable flag */
+			if (of_property_read_u32(dev->dev.of_node, "console-fifo-enable", &uap->tx_unit.tx_valid)) {
+				uap->tx_unit.tx_valid = 0;
+				dev_info(&dev->dev, "%s:don't have console-fifo-enable property! set disable as default.\n", __func__);
 			} else {
-				dev_info(&dev->dev, "%s:disable serial console fifo!\n", __func__);
+				if (uap->tx_unit.tx_valid) {
+					dev_info(&dev->dev, "%s:enable serial console fifo!\n", __func__);
+					/* get console fifo size */
+					if (of_property_read_u32(dev->dev.of_node, "console-fifo-size", &console_fifo_size)) {
+						console_fifo_size = UART_TX_BUF_SIZE_DEF;
+						dev_err(&dev->dev, "%s don't have console-fifo-size property! set 0x%x as default.\n", __func__, UART_TX_BUF_SIZE_DEF);
+					}
+					/* get console fifo cpuon */
+					if (of_property_read_u32(dev->dev.of_node, "console-fifo-cpuon", (u32 *)&console_fifo_cpuon)) {
+						console_fifo_cpuon = UART_TX_CPUON_NOTSET;
+						dev_err(&dev->dev, "%s don't have console-fifo-cpuon property! set fifo on cpu disabled.\n", __func__);
+					} else {
+						dev_info(&dev->dev, "%s set fifo on cpu:%d.\n", __func__, console_fifo_cpuon);
+					}
+					pl011_tx_work_init(uap, console_fifo_size, console_fifo_cpuon);
+				} else {
+					dev_info(&dev->dev, "%s:disable serial console fifo!\n", __func__);
+				}
 			}
 		}
 	}

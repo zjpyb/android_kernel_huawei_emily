@@ -602,18 +602,7 @@ VOS_VOID NFExt_ResetPri(VOS_UINT32 ulHookNode, VOS_INT32 iPri)
 #endif
 
 
-/******************************************************************************
- Prototype       : NFExt_SndDataNotify
- Description     : 发送数据处理指示NFEXT_DATA_PROC_NOTIFY
- Input           :
- Output          : NONE
- Return Value    : PS_SUCC   --- 成功
-                   PS_FAIL   --- 失败
- History         :
-   1.Date        : 2008-07-16
-     Author      : l47619
-     Modification: 增加PPP数据队列处理机制
-******************************************************************************/
+
 STATIC VOS_VOID NFExt_SndDataNotify(VOS_VOID)
 {
     (VOS_VOID)VOS_EventWrite(g_ulNFExtTaskId, NFEXT_DATA_PROC_NOTIFY);

@@ -2,7 +2,6 @@
 
 #ifndef _AGENT_H_
 #define _AGENT_H__
-#include <linux/mmc/rpmb.h>
 #include <linux/fs.h>
 #include "teek_ns_client.h"
 
@@ -10,7 +9,16 @@
 #define AGENT_MISC_ID 0x4d495343	/*MISC*/
 #define TEE_RPMB_AGENT_ID 0x4abe6198	/*RPMB*/
 #define AGENT_SOCKET_ID 0x69e85664	/*socket*/
+#ifdef CONFIG_TEE_SMP
+/* if a shadow task does a agent request */
+#define SHADOW_AGENT_FLAG          (1<<31)
 
+/* ssa and rpmb agent use */
+#define SS_AGENT_MSG               11723
+#define MT_AGENT_MSG               11724
+
+#define AGENT_MSG_VAL(msg) (msg&(~SHADOW_AGENT_FLAG))
+#endif
 struct __smc_event_data *find_event_control(unsigned int agent_id);
 
 /*for secure agent*/
@@ -27,6 +35,10 @@ struct __smc_event_data {
 	TC_NS_DEV_File *owner;
 	TC_NS_Shared_MEM *buffer;
 	atomic_t usage;
+#ifdef CONFIG_TEE_SMP
+	wait_queue_head_t ca_pending_wq;
+	atomic_t ca_run;
+#endif
 };
 
 struct tee_agent_kernel_ops {
@@ -100,6 +112,8 @@ extern int mmc_blk_ioctl_rpmb_cmd(enum func_id id,
 
 extern struct mmc_card *get_mmc_card(struct block_device *bdev);
 
+extern int check_ext_agent_access(struct task_struct *ca_task);
+char *get_process_path(struct task_struct *task, char *tpath);
 #ifdef CONFIG_HISI_MMC_SECURE_RPMB
 extern int rpmb_agent_register(void);
 #endif

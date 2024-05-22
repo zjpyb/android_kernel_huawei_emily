@@ -14,6 +14,13 @@
 #include <huawei_platform/log/imonitor.h>
 #define IMONITOR_TA_CRASH_EVENT_ID      (901002003)
 #include "tlogger.h"
+#include "tui.h"
+const char g_cmd_monitor_white_table[][TASK_COMM_LEN]={
+	{"FIAgentThread"},
+	{"AIAgentThread"},
+	{"tee_test_ut"},
+};
+const uint32_t g_white_table_thread_num = sizeof(g_cmd_monitor_white_table) / TASK_COMM_LEN;
 
 extern void wakeup_tc_siq(void);
 
@@ -31,11 +38,27 @@ struct cmd_monitor {
 	unsigned int pid;
 	unsigned int tid;
 	char pname[TASK_COMM_LEN];
+	char tname[TASK_COMM_LEN];
+	unsigned int lastcmdid;
 	long timetotal;
 };
 static struct delayed_work cmd_monitor_work;
 static struct delayed_work cmd_monitor_work_archive;
+static int g_tee_detect_ta_crash = 0;
+enum {
+	TYPE_CRASH_TA 	= 1,
+	TYPE_CRASH_TEE = 2,
+};
 
+void tzdebug_archivelog(void)
+{
+	schedule_delayed_work(&cmd_monitor_work_archive, usecs_to_jiffies(0));
+}
+void cmd_monitor_ta_crash(int32_t type)
+{
+	g_tee_detect_ta_crash = ((type == TYPE_CRASH_TEE) ? TYPE_CRASH_TEE : TYPE_CRASH_TA);
+	tzdebug_archivelog();
+}
 static int get_pid_name(pid_t pid,char* comm,size_t size)
 {
 	struct task_struct *task;
@@ -50,9 +73,9 @@ static int get_pid_name(pid_t pid,char* comm,size_t size)
 	}
 	rcu_read_unlock();
 	if (task != NULL) {
-		sret = strncpy_s(comm, size - 1, task->comm,strlen(task->comm));
+		sret = strncpy_s(comm, size, task->comm, strlen(task->comm));
 		if (sret != 0) {
-			tloge("memcpy_s faild\n");
+			tloge("strncpy_s faild: errno = %d.\n", sret);
 		}
 		put_task_struct(task);
 		return sret;
@@ -60,6 +83,21 @@ static int get_pid_name(pid_t pid,char* comm,size_t size)
 	return -1;
 
 }
+
+static bool is_thread_in_white_table(char *tname)
+{
+	uint32_t i;
+	if (!tname)
+		return false;
+
+	for (i=0; i < g_white_table_thread_num; i++) {
+		if (!strcmp(tname, g_cmd_monitor_white_table[i])) { /*lint !e421 */
+			return true;
+		}
+	}
+	return false;
+}
+
 
 static void cmd_monitor_tick(void)
 {
@@ -70,7 +108,7 @@ static void cmd_monitor_tick(void)
 	mutex_lock(&cmd_monitor_lock);
 	list_for_each_entry_safe(monitor, tmp, &cmd_monitor_list, list) {
 		if (monitor->returned ==true) {
-			tloge("[cmd_monitor_tick] pid=%d,pname=%s,tid=%d,count=%d timetotal=%ld us returned\n", monitor->pid, monitor->pname, monitor->tid, monitor->count, monitor->timetotal);
+			tloge("[cmd_monitor_tick] pid=%d,pname=%s,tid=%d,tname=%s,lastcmdid=%d,count=%d timetotal=%ld us returned, remained command(s)=%d\n", monitor->pid, monitor->pname, monitor->tid,  monitor->tname    ,monitor->lastcmdid, monitor->count, monitor->timetotal, cmd_monitor_list_size);
 			list_del(&monitor->list);
 			kfree(monitor);
 			cmd_monitor_list_size--;
@@ -79,13 +117,17 @@ static void cmd_monitor_tick(void)
 		/* not return, we need to check  */
 		timedif = 1000*nowtime.tv_sec-1000*monitor->sendtime.tv_sec+nowtime.tv_nsec/1000000-monitor->sendtime.tv_nsec/1000000;
 
-		/* if cmd timeout 5 s, we log the teeos log,and report*/
-		if (timedif > 5*1000 && !monitor->isReported) {
+		/* Temporally change timeout to 25s, we log the teeos log,and report*/
+		if (timedif > 25*1000 && !monitor->isReported) {
 			monitor->isReported = true;
-			tloge("[cmd_monitor_tick] pid=%d,pname=%s,tid=%d,timedif=%ld ms and report\n", monitor->pid, monitor->pname, monitor->tid, timedif);
 			/* print tee stask*/
-			cmd_need_archivelog = 1;
-			wakeup_tc_siq();
+			tloge("[cmd_monitor_tick] pid=%d,pname=%s,tid=%d,tname=%s,lastcmdid=%d,timedif=%ld ms and report\n", monitor->pid, monitor->pname, monitor->tid, monitor->tname,monitor->lastcmdid, timedif);
+			/* threads out of white table need info dump*/
+			tloge("monitor: pid-%d", monitor->pid);
+			if((!(is_thread_in_white_table(monitor->tname))) && (!tui_pid_status(monitor->pid))){
+				cmd_need_archivelog = 1;
+				wakeup_tc_siq();
+			}
 		} else if (timedif > 1*1000) {
 			tloge("[cmd_monitor_tick] pid=%d,pname=%s,tid=%d,timedif=%ld ms\n", monitor->pid, monitor->pname, monitor->tid, timedif);
 		}
@@ -101,12 +143,24 @@ static void cmd_monitor_tickfn(struct work_struct *work)
 {
         (void)(work);
         cmd_monitor_tick();
+
+		/* check tlogcat if have new log  */
+		tz_log_write();
 }
 static void cmd_monitor_archivefn(struct work_struct *work)
 {
         (void)(work);
 	if( tlogger_store_lastmsg() < 0)
 		tloge("[cmd_monitor_tick]tlogger_store_lastmsg failed\n");
+
+	if (g_tee_detect_ta_crash == TYPE_CRASH_TA) {
+
+		if (0 > teeos_log_exception_archive(IMONITOR_TA_CRASH_EVENT_ID, "ta crash"))
+			tloge("log_exception_archive failed\n");
+
+	}
+
+	g_tee_detect_ta_crash = 0;
 }
 
 
@@ -114,6 +168,7 @@ static struct cmd_monitor* init_monitor_locked(void)
 {
         struct cmd_monitor* newitem;
         int pidnameresult;
+	int tidnameresult;
         newitem = kzalloc(sizeof(struct cmd_monitor),GFP_KERNEL);/*lint !429 !593*/
         if (newitem == NULL) {
                 tloge("[cmd_monitor_tick]kmalloc faild\n");
@@ -127,6 +182,10 @@ static struct cmd_monitor* init_monitor_locked(void)
         newitem->tid = current->pid;
         pidnameresult = get_pid_name(newitem->pid, newitem->pname, sizeof(newitem->pname));
         if (pidnameresult != 0) {
+                newitem->pname[0] = '\0';
+        }
+	tidnameresult = get_pid_name(newitem->tid, newitem->tname, sizeof(newitem->tname));
+        if (tidnameresult != 0) {
                 newitem->pname[0] = '\0';
         }
         INIT_LIST_HEAD(&newitem->list);
@@ -158,6 +217,7 @@ void cmd_monitor_log(TC_NS_SMC_CMD *cmd)
 				monitor->count++;
 				monitor->returned = false;
 				monitor->isReported = false;
+				monitor->lastcmdid = cmd->cmd_id;
 				break;
 			}
 		}
@@ -171,6 +231,7 @@ void cmd_monitor_log(TC_NS_SMC_CMD *cmd)
 				tloge("[cmd_monitor_tick]init_monitor failed\n");
 				break;
 			}
+			newitem->lastcmdid = cmd->cmd_id;
 			/* the first cmd will cause timer*/
 			if (cmd_monitor_list_size == 1) {
 				schedule_delayed_work(&cmd_monitor_work, usecs_to_jiffies(1000000));
@@ -202,31 +263,6 @@ void cmd_monitor_logend(TC_NS_SMC_CMD *cmd)
 		}
 	}
 	mutex_unlock(&cmd_monitor_lock);
-}
-bool cmd_monitor_hungcheck(struct task_struct *t)
-{
-	bool  ret = false;
-	long timedif;
-	unsigned int pid;
-	unsigned int tid;
-	struct cmd_monitor *monitor = NULL;
-	if( !t) {
-		return false;
-	}
-	pid = t->tgid;
-	tid = t->pid;;
-	mutex_lock(&cmd_monitor_lock);
-	list_for_each_entry(monitor, &cmd_monitor_list, list) {
-		if(monitor->returned !=true && monitor->pid == pid && monitor->tid == tid){
-			struct timespec nowtime = current_kernel_time();
-			timedif = 1000*nowtime.tv_sec-1000*monitor->sendtime.tv_sec+nowtime.tv_nsec/1000000-monitor->sendtime.tv_nsec/1000000;
-			tloge("[cmd_monitor_tick]cmd_monitor_hungcheck =%s time=%ld ms pid=%d tid=%d\n",t->comm, timedif, pid, tid);
-			ret= true;
-			break;
-		}
-	}
-	mutex_unlock(&cmd_monitor_lock);
-	return ret;
 }
 void do_cmd_need_archivelog(void)
 {

@@ -105,7 +105,6 @@ static struct netlink_kernel_cfg        g_stDmsNlkCfg =
 
 VOS_UINT8                               g_ucDmsPrintModemLogType = 0;
 
-VOS_UINT64                              g_ullDmsDmaMask = 0xffffffffffffffffULL;
 
 /*****************************************************************************
   3 外部函数声明
@@ -187,9 +186,6 @@ VOS_VOID DMS_Init(VOS_VOID)
     g_stDmsMainInfo.stPhyProperty[DMS_PHY_BEAR_USB_CTRL].enLogicChan  = DMS_CHANNEL_AT;
     g_stDmsMainInfo.stPhyProperty[DMS_PHY_BEAR_USB_PCUI2].enLogicChan = DMS_CHANNEL_AT;
 
-
-    TAF_MEM_SET_S(&(g_stDmsMainInfo.stDev), sizeof(g_stDmsMainInfo.stDev), 0x00, (VOS_SIZE_T)sizeof(struct device));
-    g_stDmsMainInfo.stDev.dma_mask = &g_ullDmsDmaMask;
 
     /* 初始化AT通道使用的静态内存 */
     Dms_StaticBufInit();

@@ -34,7 +34,7 @@ void dptx_combophy_set_preemphasis_swing(struct dp_ctrl *dptx,
 	u8 phylane = 0;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return;
 	}
 
@@ -54,7 +54,7 @@ void dptx_combophy_set_preemphasis_swing(struct dp_ctrl *dptx,
 				phylane = 1;
 				break;
 			default:
-				HISI_FB_ERR("Lane number error!\n");
+				HISI_FB_ERR("[DP] Lane number error!\n");
 			return;
 		}
 	} else {
@@ -73,7 +73,7 @@ void dptx_combophy_set_preemphasis_swing(struct dp_ctrl *dptx,
 				phylane = 2;
 				break;
 			default:
-				HISI_FB_ERR("Lane number error!\n");
+				HISI_FB_ERR("[DP] Lane number error!\n");
 			return;
 		}
 	}
@@ -97,7 +97,7 @@ void dptx_combophy_set_preemphasis_swing(struct dp_ctrl *dptx,
 			u161n03_addr = 0x1303;
 			break;
 		default:
-			HISI_FB_ERR("Lane number error!\n");
+			HISI_FB_ERR("[DP] Lane number error!\n");
 			return;
 	}
 
@@ -127,7 +127,7 @@ void dptx_combophy_set_preemphasis_swing(struct dp_ctrl *dptx,
 					usb31phy_cr_write(u161n03_addr, dptx->combophy_pree_swing[8]);//0x2840(1)
 					break;
 				default:
-					HISI_FB_ERR("preemphasis_ level error \n");
+					HISI_FB_ERR("[DP] preemphasis_ level error \n");
 					break;
 			}
 			break;
@@ -150,10 +150,10 @@ void dptx_combophy_set_preemphasis_swing(struct dp_ctrl *dptx,
 					usb31phy_cr_write(u161n03_addr, dptx->combophy_pree_swing[14]);//0x2a40(1)
 					break;
 				case 3:
-					HISI_FB_WARNING("Don't support sw 1 & ps level 3 \n");
+					HISI_FB_WARNING("[DP] Don't support sw 1 & ps level 3 \n");
 					break;
 				default:
-					HISI_FB_ERR("preemphasis_ level error \n");
+					HISI_FB_ERR("[DP] preemphasis_ level error \n");
 					return;
 			}
 			break;
@@ -171,13 +171,13 @@ void dptx_combophy_set_preemphasis_swing(struct dp_ctrl *dptx,
 					usb31phy_cr_write(u161n03_addr, dptx->combophy_pree_swing[18]);//0x2840(2)//0x2640(3)//0x2644(5)
 					break;
 				case 2:
-					HISI_FB_WARNING("Don't support sw 2 & ps level 2 \n");
+					HISI_FB_WARNING("[DP] Don't support sw 2 & ps level 2 \n");
 					break;
 				case 3:
-					HISI_FB_WARNING("Don't support sw 2 & ps level 3 \n");
+					HISI_FB_WARNING("[DP] Don't support sw 2 & ps level 3 \n");
 					break;
 				default:
-					HISI_FB_ERR("preemphasis_ level error \n");
+					HISI_FB_ERR("[DP] preemphasis_ level error \n");
 					return;
 			}
 			break;
@@ -190,21 +190,21 @@ void dptx_combophy_set_preemphasis_swing(struct dp_ctrl *dptx,
 					usb31phy_cr_write(u161n03_addr, dptx->combophy_pree_swing[20]);
 					break;
 				case 1:
-					HISI_FB_WARNING("Don't support sw 3 & ps level 1 \n");
+					HISI_FB_WARNING("[DP] Don't support sw 3 & ps level 1 \n");
 					break;
 				case 2:
-					HISI_FB_WARNING("Don't support sw 3 & ps level 2 \n");
+					HISI_FB_WARNING("[DP] Don't support sw 3 & ps level 2 \n");
 					break;
 				case 3:
-					HISI_FB_WARNING("Don't support sw 3 & ps level 3 \n");
+					HISI_FB_WARNING("[DP] Don't support sw 3 & ps level 3 \n");
 					break;
 				default:
-					HISI_FB_ERR("preemphasis_ level error \n");
+					HISI_FB_ERR("[DP] preemphasis_ level error \n");
 					return;
 			}
 			break;
 		default:
-			HISI_FB_ERR("vswing level error \n");
+			HISI_FB_ERR("[DP] vswing level error \n");
 			break;
 	}
 }
@@ -220,7 +220,7 @@ int dptx_link_set_ssc(struct dp_ctrl *dptx, bool bswitchphy)
 		return 0;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return -EINVAL;
 	}
 
@@ -231,18 +231,18 @@ int dptx_link_set_ssc(struct dp_ctrl *dptx, bool bswitchphy)
 		/* Wait for PHY busy */
 		retval = dptx_phy_wait_busy(dptx, dptx->link.lanes);
 		if (retval) {
-			HISI_FB_ERR("Timed out waiting for PHY BUSY\n");
+			HISI_FB_ERR("[DP] Timed out waiting for PHY BUSY\n");
 			return retval;
 		}
 	}
 
 	retval = dptx_read_dpcd(dptx, DP_MAX_DOWNSPREAD, &byte);
 	if (retval) {
-		HISI_FB_ERR("Read DPCD error\n");
+		HISI_FB_ERR("[DP] Read DPCD error\n");
 		return retval;
 	}
 
-	HISI_FB_INFO("SSC setting:  %x \n", byte);
+	HISI_FB_INFO("[DP] SSC setting:  %x \n", byte);
 
 	phyifctrl = dptx_readl(dptx, DPTX_PHYIF_CTRL);
 	phyifctrl |= DPTX_PHYIF_CTRL_SSC_DIS;
@@ -268,20 +268,20 @@ int dptx_link_set_ssc(struct dp_ctrl *dptx, bool bswitchphy)
 					usb31phy_cr_write(0x37, 0x15c);
 					break;
 				default:
-					HISI_FB_ERR("Invalid PHY rate %d\n", dptx->link.rate);
+					HISI_FB_ERR("[DP] Invalid PHY rate %d\n", dptx->link.rate);
 					break;
 			}
 
 		retval = dptx_read_dpcd(dptx, DP_DOWNSPREAD_CTRL, &byte);
 		if (retval) {
-			HISI_FB_ERR("Read DPCD error\n");
+			HISI_FB_ERR("[DP] Read DPCD error\n");
 			return retval;
 		}
 
 		byte |= DP_SPREAD_AMP_0_5;
 		retval = dptx_write_dpcd(dptx, DP_DOWNSPREAD_CTRL, byte);
 		if (retval) {
-			HISI_FB_ERR("write DPCD error\n");
+			HISI_FB_ERR("[DP] write DPCD error\n");
 			return retval;
 		}
 	} else {
@@ -294,14 +294,14 @@ int dptx_link_set_ssc(struct dp_ctrl *dptx, bool bswitchphy)
 
 		retval = dptx_read_dpcd(dptx, DP_DOWNSPREAD_CTRL, &byte);
 		if (retval) {
-			HISI_FB_ERR("Read DPCD error\n");
+			HISI_FB_ERR("[DP] Read DPCD error\n");
 			return retval;
 		}
 
 		byte &= ~DP_SPREAD_AMP_0_5;
 		retval = dptx_write_dpcd(dptx, DP_DOWNSPREAD_CTRL, byte);
 		if (retval) {
-			HISI_FB_ERR("write DPCD error\n");
+			HISI_FB_ERR("[DP] write DPCD error\n");
 			return retval;
 		}
 	}
@@ -311,7 +311,7 @@ int dptx_link_set_ssc(struct dp_ctrl *dptx, bool bswitchphy)
 		/* Wait for PHY busy */
 		retval = dptx_phy_wait_busy(dptx, dptx->link.lanes);
 		if (retval) {
-			HISI_FB_ERR("Timed out waiting for PHY BUSY\n");
+			HISI_FB_ERR("[DP] Timed out waiting for PHY BUSY\n");
 			return retval;
 		}
 
@@ -320,7 +320,7 @@ int dptx_link_set_ssc(struct dp_ctrl *dptx, bool bswitchphy)
 		/* Wait for PHY busy */
 		retval = dptx_phy_wait_busy(dptx, dptx->link.lanes);
 		if (retval) {
-			HISI_FB_ERR("Timed out waiting for PHY BUSY\n");
+			HISI_FB_ERR("[DP] Timed out waiting for PHY BUSY\n");
 			return retval;
 		}
 
@@ -333,7 +333,7 @@ int dptx_link_set_ssc(struct dp_ctrl *dptx, bool bswitchphy)
 static int dptx_link_read_status(struct dp_ctrl *dptx)
 {
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return -EINVAL;
 	}
 
@@ -349,12 +349,12 @@ static int dptx_link_check_cr_done(struct dp_ctrl *dptx, bool *out_done)
 	uint32_t reg;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return -EINVAL;
 	}
 
 	if (out_done == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return -EINVAL;
 	}
 
@@ -388,7 +388,7 @@ static int dptx_link_check_cr_done(struct dp_ctrl *dptx, bool *out_done)
 	*out_done = drm_dp_clock_recovery_ok(dptx->link.status,
 						dptx->link.lanes);
 
-	HISI_FB_INFO("CR_DONE = %d\n", *out_done);
+	HISI_FB_INFO("[DP] CR_DONE = %d\n", *out_done);
 
 	return 0;
 }
@@ -401,12 +401,12 @@ static int dptx_link_check_ch_eq_done(struct dp_ctrl *dptx,
 	bool done;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return -EINVAL;
 	}
 
 	if ((out_cr_done == NULL) || (out_ch_eq_done == NULL)){
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return -EINVAL;
 	}
 
@@ -424,7 +424,7 @@ static int dptx_link_check_ch_eq_done(struct dp_ctrl *dptx,
 	*out_ch_eq_done = drm_dp_channel_eq_ok(dptx->link.status,
 					       dptx->link.lanes);
 
-	HISI_FB_INFO("CH_EQ_DONE = %d\n", *out_ch_eq_done);
+	HISI_FB_INFO("[DP] CH_EQ_DONE = %d\n", *out_ch_eq_done);
 
 	return 0;
 }
@@ -437,7 +437,7 @@ void dptx_link_set_preemp_vswing(struct dp_ctrl *dptx)
 	int retval;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return;
 	}
 
@@ -456,7 +456,7 @@ void dptx_link_set_preemp_vswing(struct dp_ctrl *dptx)
 	/* Wait for PHY busy */
 	retval = dptx_phy_wait_busy(dptx, dptx->link.lanes);
 	if (retval) {
-		HISI_FB_ERR("Timed out 1 waiting for PHY BUSY\n");
+		HISI_FB_ERR("[DP] Timed out 1 waiting for PHY BUSY\n");
 		return;
 	}
 }
@@ -469,7 +469,7 @@ int dptx_link_training_lanes_set(struct dp_ctrl *dptx)
 	uint8_t byte = 0;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return -EINVAL;
 	}
 
@@ -509,12 +509,12 @@ int dptx_link_adjust_drive_settings(struct dp_ctrl *dptx, int *out_changed)
 	int changed = false;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return -EINVAL;
 	}
 
 	lanes = dptx->link.lanes;
-	HISI_FB_INFO("Lane: %d",lanes);
+	HISI_FB_INFO("[DP] Lane: %d",lanes);
 
 	switch (lanes) {
 	case 4:
@@ -534,7 +534,7 @@ int dptx_link_adjust_drive_settings(struct dp_ctrl *dptx, int *out_changed)
 		adj[1] = (byte & 0xf0) >> 4;
 		break;
 	default:
-		HISI_FB_ERR("Invalid number of lanes %d\n", lanes);
+		HISI_FB_ERR("[DP] Invalid number of lanes %d\n", lanes);
 		return -EINVAL;
 	}
 
@@ -570,19 +570,19 @@ static int dptx_link_training_init(struct dp_ctrl *dptx,
 	uint8_t sink_max_lanes;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return -EINVAL;
 	}
 
-	HISI_FB_INFO("lanes=%d, rate=%d\n", lanes, rate);
+	HISI_FB_INFO("[DP] lanes=%d, rate=%d\n", lanes, rate);
 
 	if (rate > DPTX_PHYIF_CTRL_RATE_HBR3) {
-		HISI_FB_ERR("Invalid rate %d\n", rate);
+		HISI_FB_ERR("[DP] Invalid rate %d\n", rate);
 		rate = DPTX_PHYIF_CTRL_RATE_RBR;
 	}
 
 	if ((!lanes) || (lanes == 3) || (lanes > 4)) {
-		HISI_FB_ERR("Invalid lanes %d\n", lanes);
+		HISI_FB_ERR("[DP] Invalid lanes %d\n", lanes);
 		lanes = 1;
 	}
 
@@ -602,7 +602,7 @@ static int dptx_link_training_init(struct dp_ctrl *dptx,
 	if (rate > sink_max_rate)
 		rate = sink_max_rate;
 
-	HISI_FB_INFO("Sink Device Capability: lanes=%d, rate=%d\n", sink_max_lanes, sink_max_rate);
+	HISI_FB_INFO("[DP] Sink Device Capability: lanes=%d, rate=%d\n", sink_max_lanes, sink_max_rate);
 	dp_imonitor_set_param(DP_PARAM_MAX_RATE,   &sink_max_rate);
 	dp_imonitor_set_param(DP_PARAM_MAX_LANES,  &sink_max_lanes);
 	dp_imonitor_set_param(DP_PARAM_LINK_RATE,  &rate);
@@ -620,7 +620,7 @@ int dptx_link_training_pattern_set(struct dp_ctrl *dptx, uint8_t pattern)
 	int retval;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return -EINVAL;
 	}
 
@@ -638,7 +638,7 @@ static int dptx_link_training_start(struct dp_ctrl *dptx)
 	uint8_t byte;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return -EINVAL;
 	}
 
@@ -647,7 +647,7 @@ static int dptx_link_training_start(struct dp_ctrl *dptx)
 	/* Wait for PHY busy */
 	retval = dptx_phy_wait_busy(dptx, dptx->link.lanes);
 	if (retval) {
-		HISI_FB_ERR("Timed out 1 waiting for PHY BUSY\n");
+		HISI_FB_ERR("[DP] Timed out 1 waiting for PHY BUSY\n");
 		return retval;
 	}
 
@@ -661,7 +661,7 @@ static int dptx_link_training_start(struct dp_ctrl *dptx)
 	/* Wait for PHY busy */
 	retval = dptx_phy_wait_busy(dptx, dptx->link.lanes);
 	if (retval) {
-		HISI_FB_ERR("Timed out 2 waiting for PHY BUSY\n");
+		HISI_FB_ERR("[DP] Timed out 2 waiting for PHY BUSY\n");
 		return retval;
 	}
 
@@ -670,7 +670,7 @@ static int dptx_link_training_start(struct dp_ctrl *dptx)
 	/* Wait for PHY busy */
 	retval = dptx_phy_wait_busy(dptx, dptx->link.lanes);
 	if (retval) {
-		HISI_FB_ERR("Timed out 3 waiting for PHY BUSY\n");
+		HISI_FB_ERR("[DP] Timed out 3 waiting for PHY BUSY\n");
 		return retval;
 	}
 
@@ -731,7 +731,7 @@ int dptx_link_wait_cr_and_adjust(struct dp_ctrl *dptx, bool ch_eq)
 	bool done = false;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return -EINVAL;
 	}
 
@@ -773,11 +773,11 @@ int dptx_link_cr(struct dp_ctrl *dptx)
 	int retval;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return -EINVAL;
 	}
 
-	HISI_FB_INFO("link training excute cr verify\n");
+	HISI_FB_INFO("[DP] link training excute cr verify\n");
 
 	dptx_phy_set_pattern(dptx, DPTX_PHYIF_CTRL_TPS_1);
 
@@ -800,11 +800,11 @@ int dptx_link_ch_eq(struct dp_ctrl *dptx)
 	uint8_t dp_pattern;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return -EINVAL;
 	}
 
-	HISI_FB_INFO("link training excute eq verify\n");
+	HISI_FB_INFO("[DP] link training excute eq verify\n");
 
 	switch (dptx->max_rate) {
 	case DPTX_PHYIF_CTRL_RATE_HBR3:
@@ -827,7 +827,7 @@ int dptx_link_ch_eq(struct dp_ctrl *dptx)
 		dp_pattern = DP_TRAINING_PATTERN_2;
 		break;
 	default:
-		HISI_FB_ERR("Invalid rate %d\n", dptx->link.rate);
+		HISI_FB_ERR("[DP] Invalid rate %d\n", dptx->link.rate);
 		return -EINVAL;
 	}
 
@@ -869,7 +869,7 @@ int dptx_link_reduce_rate(struct dp_ctrl *dptx)
 	uint32_t rate = dptx->link.rate;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return -EINVAL;
 	}
 
@@ -887,7 +887,7 @@ int dptx_link_reduce_rate(struct dp_ctrl *dptx)
 		break;
 	}
 
-	HISI_FB_INFO("Reducing rate from %d to %d\n",
+	HISI_FB_INFO("[DP] Reducing rate from %d to %d\n",
 					dptx->link.rate, rate);
 	dptx->link.rate = rate;
 	return 0;
@@ -898,7 +898,7 @@ int dptx_link_reduce_lanes(struct dp_ctrl *dptx)
 	uint32_t lanes;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return -EINVAL;
 	}
 
@@ -914,7 +914,7 @@ int dptx_link_reduce_lanes(struct dp_ctrl *dptx)
 		return -EPROTO;
 	}
 
-	HISI_FB_INFO("Reducing lanes from %d to %d\n",
+	HISI_FB_INFO("[DP] Reducing lanes from %d to %d\n",
 					dptx->link.lanes, lanes);
 	dptx->link.lanes = lanes;
 	return 0;
@@ -926,7 +926,7 @@ int dptx_link_training(struct dp_ctrl *dptx, uint8_t rate, uint8_t lanes)
 	uint8_t byte;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return -EINVAL;
 	}
 
@@ -937,7 +937,7 @@ int dptx_link_training(struct dp_ctrl *dptx, uint8_t rate, uint8_t lanes)
 		goto fail;
 
 again:
-	HISI_FB_INFO("Starting link training\n");
+	HISI_FB_INFO("[DP] Link training start!\n");
 	retval = dptx_link_training_start(dptx);
 	if (retval)
 		goto fail;
@@ -948,12 +948,12 @@ again:
 			// for factory test
 			if (dp_factory_mode_is_enable()) {
 				dp_factory_link_cr_or_ch_eq_fail(true);
-				HISI_FB_ERR("not support reduce rate by CR verify in factory mode!\n");
+				HISI_FB_ERR("[DP] not support reduce rate by CR verify in factory mode!\n");
 				retval = -ECONNREFUSED;
 				goto fail;
 			}
 
-			HISI_FB_INFO("Reduce rate by CR verify\n");
+			HISI_FB_INFO("[DP] Reduce rate by CR verify\n");
 			if (dptx_link_reduce_rate(dptx)) {
 				/* TODO If CR_DONE bits for some lanes
 				 * are set, we should reduce lanes to
@@ -980,12 +980,12 @@ again:
 			// for factory test
 			if (dp_factory_mode_is_enable()) {
 				dp_factory_link_cr_or_ch_eq_fail(false);
-				HISI_FB_ERR("not support reduce rate by EQ verify in factory mode!\n");
+				HISI_FB_ERR("[DP] not support reduce rate by EQ verify in factory mode!\n");
 				retval = -ECONNREFUSED;
 				goto fail;
 			}
 
-			HISI_FB_INFO("Reduce rate by EQ verify\n");
+			HISI_FB_INFO("[DP] Reduce rate by EQ verify\n");
 			if (dptx_link_reduce_rate(dptx)) {
 				if (dptx_link_reduce_lanes(dptx)) {
 					retval = -EPROTO;
@@ -1019,7 +1019,7 @@ again:
 		return retval;
 	HDCP_Read_TEInfo(dptx);
 	dptx_video_ts_change(dptx);
-	HISI_FB_INFO("Link training succeeded rate=%d lanes=%d\n",
+	HISI_FB_INFO("[DP] Link training succeeded rate=%d lanes=%d\n",
 		 dptx->link.rate, dptx->link.lanes);
 
 	dptx_triger_media_transfer(dptx, true);
@@ -1029,7 +1029,7 @@ again:
 	return 0;
 
 fail:
-	HISI_FB_ERR("Link training failed %d\n", retval);
+	HISI_FB_ERR("[DP] Link training failed %d\n", retval);
 	return retval;
 }
 
@@ -1040,7 +1040,7 @@ int dptx_link_check_status(struct dp_ctrl *dptx)
 	uint8_t bytes[2];
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return -EINVAL;
 	}
 
@@ -1063,12 +1063,16 @@ int dptx_link_check_status(struct dp_ctrl *dptx)
 	if (dptx->link.trained &&
 	    (!drm_dp_channel_eq_ok(dptx->link.status, dptx->link.lanes) ||
 	     !drm_dp_clock_recovery_ok(dptx->link.status, dptx->link.lanes))) {
-		HISI_FB_INFO("Retraining link\n");
+		HISI_FB_INFO("[DP] Retraining link\n");
 		dp_imonitor_set_param(DP_PARAM_LINK_RETRAINING, NULL);
 
-		return dptx_link_training(dptx,
+		retval = dptx_link_training(dptx,
 					  DPTX_MAX_LINK_RATE,
 					  DPTX_MAX_LINK_LANES);
+		if (retval < 0) {
+			dp_imonitor_set_param(DP_PARAM_LINK_TRAINING_FAILED, &retval);
+		}
+		return retval;
 	}
 
 	return 0;
@@ -1087,30 +1091,45 @@ int dptx_link_retraining(struct dp_ctrl *dptx, u8 rate, u8 lanes)
 	u32 hpdsts;
 	struct video_params *vparams;
 	struct dtd *mdtd;
-	int retval = 0;
+	int i, retval;
 
 	hpdsts = dptx_readl(dptx, DPTX_HPDSTS);
+	retval = 0;
 
 	if (!(hpdsts & g_bit_hpd_status)) {
-		HISI_FB_ERR("Not connected\n");
+		HISI_FB_ERR("[DP] Not connected\n");
 		return  -ENODEV;
 	}
 
 	if (lanes != 1 && lanes != 2 && lanes != 4) {
-		HISI_FB_ERR("Invalid number of lanes %d\n",
+		HISI_FB_ERR("[DP] Invalid number of lanes %d\n",
 			lanes);
 		return  -EINVAL;
 	}
 
 	if (rate > DPTX_PHYIF_CTRL_RATE_HBR3) {
-		HISI_FB_ERR("Invalid number of lane rate %d\n",
+		HISI_FB_ERR("[DP] Invalid number of lane rate %d\n",
 			rate);
 		return  -EINVAL;
 	}
 
-	retval = dptx_link_training(dptx, rate, lanes);
-	if (retval)
-		return retval;
+	for (i = 0; i < 3; i++) {
+		retval = dptx_link_training(dptx, rate, lanes);
+		if (retval)
+			return retval;
+
+		if ((rate == dptx->link.rate) && (lanes == dptx->link.lanes)) {
+			break;
+		} else {
+			HISI_FB_INFO("[DP] link retrain reduce rate, try again !!!\n");
+			mdelay(100);
+		}
+	}
+
+	if (i == 3) {
+		HISI_FB_ERR("[DP] Link retrain reduce rate!!!\n");
+		return -EINVAL;
+	}
 
 	vparams = &dptx->vparams;
 	mdtd = &vparams->mdtd;
@@ -1119,7 +1138,7 @@ int dptx_link_retraining(struct dp_ctrl *dptx, u8 rate, u8 lanes)
 	if (retval)
 		return retval;
 
-	HISI_FB_INFO("Retraining link rate=%d lanes=%d\n",
+	HISI_FB_INFO("[DP] Retraining link rate=%d lanes=%d\n",
 		rate, lanes);
 
 	return retval;

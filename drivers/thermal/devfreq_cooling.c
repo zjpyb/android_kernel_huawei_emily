@@ -25,6 +25,11 @@
 #include <linux/pm_opp.h>
 #include <linux/thermal.h>
 #include <trace/events/thermal.h>
+
+#ifdef CONFIG_HISI_DRG
+#include <linux/hisi/hisi_drg.h>
+#endif
+
 #ifdef CONFIG_HISI_IPA_THERMAL
 #include <trace/events/thermal_power_allocator.h>
 #ifdef CONFIG_HISI_THERMAL_SPM
@@ -201,6 +206,11 @@ static int devfreq_cooling_set_cur_state(struct thermal_cooling_device *cdev,
 		return 0;
 
 	dev_dbg(dev, "Setting cooling state %lu\n", state);
+
+#ifdef CONFIG_HISI_DRG
+	if (state < dfc->freq_table_size)
+		drg_devfreq_cooling_update(df, dfc->freq_table[state]);
+#endif
 
 #ifdef CONFIG_HISI_IPA_THERMAL
 	if (state == THERMAL_NO_LIMIT) {
@@ -537,7 +547,7 @@ static int devfreq_cooling_gen_tables(struct devfreq_cooling_device *dfc)
 free_tables:
 	kfree(freq_table);
 free_power_table:
-	kfree(power_table);
+	kfree(power_table);/*lint !e668*/
 
 	return ret;
 }

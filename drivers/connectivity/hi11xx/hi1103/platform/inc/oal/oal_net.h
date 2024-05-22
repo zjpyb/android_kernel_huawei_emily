@@ -142,6 +142,14 @@ OAL_STATIC OAL_INLINE oal_uint8 a2x(const char c)
      (_a)[4] == 0xff &&          \
      (_a)[5] == 0xff)
 
+#define ETHER_IS_ALL_ZERO(_a)    \
+    ((_a)[0] == 0x00 &&          \
+     (_a)[1] == 0x00 &&          \
+     (_a)[2] == 0x00 &&          \
+     (_a)[3] == 0x00 &&          \
+     (_a)[4] == 0x00 &&          \
+     (_a)[5] == 0x00)
+
 #define ETHER_IS_IPV4_MULTICAST(_a)  ((_a[0]) == 0x01 &&    \
                                       (_a[1]) == 0x00 &&    \
                                       (_a[2]) == 0x5e)
@@ -276,6 +284,36 @@ OAL_STATIC OAL_INLINE oal_uint8 a2x(const char c)
 
 /*Probe Rsp APP IE长度超过该值，发送帧netbuf采用大包*/
 #define OAL_MGMT_NETBUF_APP_PROBE_RSP_IE_LEN_LIMIT  450
+
+#ifdef _PRE_WLAN_FEATURE_SPECIAL_PKT_LOG
+/* dhcp */
+#define DHCP_CHADDR_LEN         16
+#define SERVERNAME_LEN          64
+#define BOOTFILE_LEN            128
+
+/* DHCP message type */
+#define DHCP_DISCOVER           1
+#define DHCP_OFFER              2
+#define DHCP_REQUEST            3
+#define DHCP_ACK                5
+#define DHCP_NAK                6
+
+#define DHO_PAD                 0
+#define DHO_IPADDRESS           50
+#define DHO_MESSAGETYPE         53
+#define DHO_SERVERID            54
+#define DHO_END                 255
+
+#define DNS_GET_QR_FROM_FLAG(flag)        ((oal_uint8)(((flag & 0x8000U) > 0)? 1 : 0))
+#define DNS_GET_OPCODE_FROM_FLAG(flag)    ((oal_uint8)((flag & 0x7400U) >> 11))
+#define DNS_GET_RCODE_FROM_FLAG(flag)     ((oal_uint8)(flag & 0x000fU))
+
+#define DNS_MAX_DOMAIN_LEN  (100)
+
+#define DHCP_SERVER_PORT    (67)
+#define DHCP_CLIENT_PORT    (68)
+#define DNS_SERVER_PORT     (53)
+#endif
 
  /*****************************************************************************
    枚举名  : oal_mem_state_enum_uint8
@@ -678,6 +716,44 @@ typedef struct
     oal_uint8           file[128];   /* boot file name */
     oal_uint8           options[4];  /* variable-length options field */
 }oal_dhcp_packet_stru;
+
+#ifdef _PRE_WLAN_FEATURE_SPECIAL_PKT_LOG
+typedef struct
+{
+    oal_uint16          id;    /* transaction id */
+    oal_uint16          flags; /* message future*/
+    oal_uint16          qdcount;   /* question record count */
+    oal_uint16          ancount;   /* answer record count */
+    oal_uint16          nscount;   /* authority record count */
+    oal_uint16          arcount;   /* additional record count*/
+}oal_dns_hdr_stru;
+
+typedef enum
+{
+    OAL_NS_Q_REQUEST = 0, /* request */
+    OAL_NS_Q_RESPONSE = 1, /* response */
+} oal_ns_qrcode;
+
+typedef enum
+{
+    OAL_NS_O_QUERY = 0,     /* Standard query. */
+    OAL_NS_O_IQUERY = 1,    /* Inverse query (deprecated/unsupported). */
+}oal_ns_opcode;
+
+/*
+ * Currently defined response codes.
+ */
+typedef enum
+{
+    OAL_NS_R_NOERROR = 0,   /* No error occurred. */
+}oal_ns_rcode;
+
+typedef enum
+{
+    OAL_NS_T_INVALID = 0,   /* Cookie. */
+    OAL_NS_T_A = 1,         /* Host address. */
+}oal_ns_type;
+#endif
 
 /* 不分平台通用结构体 */
 typedef struct
@@ -1666,26 +1742,26 @@ typedef struct oal_net_dev_ioctl_data_tag
 /*****************************************************************************
   10 函数声明
 *****************************************************************************/
-extern oal_bool_enum_uint8 oal_netbuf_is_dhcp_port(oal_udp_header_stru *pst_udp_hdr);
-extern oal_bool_enum_uint8 oal_netbuf_is_nd(oal_ipv6hdr_stru  *pst_ipv6hdr);
-extern oal_bool_enum_uint8 oal_netbuf_is_dhcp6(oal_ipv6hdr_stru  *pst_ether_hdr);
+extern oal_bool_enum_uint8 oal_netbuf_is_dhcp_port_etc(oal_udp_header_stru *pst_udp_hdr);
+extern oal_bool_enum_uint8 oal_netbuf_is_nd_etc(oal_ipv6hdr_stru  *pst_ipv6hdr);
+extern oal_bool_enum_uint8 oal_netbuf_is_dhcp6_etc(oal_ipv6hdr_stru  *pst_ether_hdr);
 
 #ifdef _PRE_WLAN_FEATURE_FLOWCTL
 extern oal_void  oal_netbuf_get_txtid(oal_netbuf_stru *pst_buf, oal_uint8 *puc_tos);
 #endif
 
 #ifdef _PRE_WLAN_FEATURE_OFFLOAD_FLOWCTL
-extern oal_bool_enum_uint8 oal_netbuf_is_tcp_ack6(oal_ipv6hdr_stru  *pst_ipv6hdr);
-extern oal_uint16 oal_netbuf_select_queue(oal_netbuf_stru *pst_buf);
+extern oal_bool_enum_uint8 oal_netbuf_is_tcp_ack6_etc(oal_ipv6hdr_stru  *pst_ipv6hdr);
+extern oal_uint16 oal_netbuf_select_queue_etc(oal_netbuf_stru *pst_buf);
 #endif
-extern oal_bool_enum_uint8 oal_netbuf_is_tcp_ack(oal_ip_header_stru  *pst_ip_hdr);
-extern oal_bool_enum_uint8 oal_netbuf_is_icmp(oal_ip_header_stru  *pst_ip_hdr);
+extern oal_bool_enum_uint8 oal_netbuf_is_tcp_ack_etc(oal_ip_header_stru  *pst_ip_hdr);
+extern oal_bool_enum_uint8 oal_netbuf_is_icmp_etc(oal_ip_header_stru  *pst_ip_hdr);
 
 //extern oal_int genKernel_init(oal_void);
 //extern oal_void genKernel_exit(oal_void);
-extern oal_int32 dev_netlink_send (oal_uint8 *data, oal_int data_len);
-extern oal_int32 init_dev_excp_handler(oal_void);
-extern oal_void deinit_dev_excp_handler(oal_void);
+extern oal_int32 dev_netlink_send_etc (oal_uint8 *data, oal_int data_len);
+extern oal_int32 init_dev_excp_handler_etc(oal_void);
+extern oal_void deinit_dev_excp_handler_etc(oal_void);
 extern oal_int genl_msg_send_to_user(oal_void *data, oal_int i_len);
 #if (_PRE_TARGET_PRODUCT_TYPE_E5 == _PRE_CONFIG_TARGET_PRODUCT || _PRE_TARGET_PRODUCT_TYPE_CPE == _PRE_CONFIG_TARGET_PRODUCT)
 extern int wlan_check_arp_spoofing(struct net_device *port_dev, struct sk_buff *pskb);

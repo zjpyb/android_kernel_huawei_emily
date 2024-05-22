@@ -138,9 +138,19 @@ void process_reclaim_result_write(struct task_struct *task,
 bool process_reclaim_need_abort(struct mm_walk *walk)
 {
 	struct mm_struct *mm;
+#if KERNEL_VERSION(4, 9, 0) <= LINUX_VERSION_CODE
+	if (!walk || !walk->private) {
+		return false;
+	} else {
+		struct reclaim_param *rp = walk->private;
 
+		if (!rp->hiber)
+			return false;
+	}
+#else
 	if (!walk || !walk->hiber)
 		return false;
+#endif
 
 	if (reclaim_sigusr_pending(current)) {
 		pr_info("Reclaim abort!case is signal.\n");

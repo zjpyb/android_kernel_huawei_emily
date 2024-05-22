@@ -1,4 +1,5 @@
 #include "core.h"
+#include "port.h"
 #include "typec.h"
 #include "bc12.h"
 #include "scp.h"
@@ -98,11 +99,7 @@ void FUSB3601_core_state_machine(struct Port *port)
 		CCSTAT = port->registers_.CCStat.byte;
 		PWRSTAT =  port->registers_.PwrStat.byte;
 		FAULTSTAT = port->registers_.FaultStat.byte;
-		if (counter < DEAD_LOOP_CNT) {
-			hwlog_info("FUSB %s - AlertL: [0x%x], AlertH: [0x%x] \n",__func__, port->registers_.AlertL.byte, port->registers_.AlertH.byte);
-		} else if(counter == DEAD_LOOP_CNT) {
-			hwlog_info("%s: dead loop happened \n",__func__);
-		}
+		hwlog_info("FUSB %s - counter:[%d], AlertL: [0x%x], AlertH: [0x%x] \n",__func__, counter, port->registers_.AlertL.byte, port->registers_.AlertH.byte);
 		/* Read Type-C/PD statuses - CCStat, PwrStat, FaultStat */
 		if(port->registers_.AlertL.I_CCSTAT || port->registers_.AlertL.I_PORT_PWR || port->registers_.AlertH.I_FAULT) {
 			FUSB3601_ReadRegisters(port, regCCSTAT, 3);
@@ -138,6 +135,11 @@ void FUSB3601_core_state_machine(struct Port *port)
 			hwlog_info("FUSB %s - Fault Interrupt, FaultStat: [0x%x]\n",__func__, port->registers_.FaultStat.byte);
 			if (port->registers_.FaultStat.VBUS_OVP) {
 				hwlog_info("FUSB %s - VBUS_OVP Interrupt, ADC Voltage: [%d]\n",__func__,FUSB3601_GetVBusVoltage(port));
+				superswitch_dsm_report(ERROR_SUPERSWITCH_VBUS_OVP);
+			}
+			if (port->registers_.FaultStat.VCONN_OCP) {
+				hwlog_info("FUSB %s - VCONN_OCP Interrupt\n",__func__);
+				superswitch_dsm_report(ERROR_SUPERSWITCH_VCONN_OCP);
 			}
 			FUSB3601_ClearInterrupt(port, regFAULTSTAT, MSK_FAULTSTAT_ALL);
 			FUSB3601_ClearInterrupt(port, regALERTH, MSK_I_FAULT);
@@ -268,6 +270,10 @@ void FUSB3601_core_redo_bc12(struct Port *port)
 		pr_err("FUSB  %s - charge stop, no need to redo bc12\n", __func__);
 		return;
 	}
+	if (charge_get_hiz_state()) {
+		pr_err("%s - hiz_enable, return!\n", __func__);
+		return;
+	}
 	pr_info("%s ++\n", __func__);
 	down(&chip->suspend_lock);
 	if((port->tc_state_ == AttachedSink) || (port->tc_state_ == DebugAccessorySink)) {
@@ -276,6 +282,7 @@ void FUSB3601_core_redo_bc12(struct Port *port)
 			pr_info("%s delay 200ms\n", __func__);
 			msleep(200);
 		}
+		FUSB3601_set_usb_switch(port, NONE);
 		port->registers_.PwrCtrl.AUTO_DISCH = 0;
 		FUSB3601_WriteRegister(port, regPWRCTRL);
 		msleep(1);

@@ -54,6 +54,7 @@
 #include <linux/slab.h>
 #include <linux/of.h>
 #include <asm/string.h>
+#include "securec.h"
 #include "osl_types.h"
 #include "osl_bio.h"
 #include "osl_io.h"
@@ -248,9 +249,9 @@ void dump_save_lphy_log(char* data,char* dst_path)
     int ret = 0;
     char file_name[128] = {0};
     /* coverity[HUAWEI DEFECT] */
-    memset(file_name, 0, sizeof(file_name));
+    memset_s(file_name, sizeof(file_name), 0, sizeof(file_name));
     /* coverity[HUAWEI DEFECT] */
-    snprintf(file_name, sizeof(file_name), "%slphy_dump.bin", dst_path);
+    snprintf_s(file_name, sizeof(file_name), (sizeof(file_name)-1), "%slphy_dump.bin", dst_path);
     file_name[127]='\0';
     ret = dump_nxp_mini_log(file_name, data, dst_path);
     if(ret)
@@ -326,7 +327,6 @@ void dump_save_lphy_tcm(char * dst_path)
         return;
     }
     dump_save_lphy_log(lphy_image_ddr_addr,dst_path);
-/* m535´ælog */
     iounmap(lphy_image_ddr_addr);
     return;
 }

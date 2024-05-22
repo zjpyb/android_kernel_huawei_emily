@@ -185,7 +185,6 @@ enum MAILBOX_GAP_FOR_SI_PARSE {MAILBOX_GAP_FOR_SI_BUTT};
  实 体 名  : MAILBOX_CPUID_E
  功能描述  : 定义邮箱涉及CPU编号
 *****************************************************************************/
-/* Modified by c64416 for hifi mailbox, 2013/09/24, begin */
 enum MAILBOX_CPUID_ENUM
 {
     MAILBOX_CPUID_RESERVED  =   -1,
@@ -196,7 +195,6 @@ enum MAILBOX_CPUID_ENUM
     MAILBOX_CPUID_HIFI      =   IPC_CORE_HiFi,
     MAILBOX_CPUID_BUTT
 };
-/* Modified by c64416 for hifi mailbox, 2013/09/24, end */
 
 /*****************************************************************************
  实体名称  : MAILBOX_MAILCODE_ENUM
@@ -389,13 +387,11 @@ enum MAILBOX_MAILCODE_ENUM
 /* 邮件序列号的初始值 */
 #define MAILBOX_SEQNUM_START            (0)
 
-/* Modified by c64416 for hifi mailbox, 2013/09/24, begin */
 /* 邮箱占用memory基地址 */
 #define MAILBOX_MEM_BASEADDR            (DDR_HIFI_MBX_ADDR)
 
 /* 邮箱占用memory预留总长度, 包括邮箱控制头和邮箱队列缓存 */
 #define MAILBOX_MEM_LENGTH              (DDR_HIFI_MBX_SIZE)
-/* Modified by c64416 for hifi mailbox, 2013/09/24, end */
 
 /*****************************************************************************
  实 体 名  : struct mb_head
@@ -425,7 +421,6 @@ typedef struct mb_head
     MAILBOX_QUEUE_SIZE_##src##2##dst##_##channel
 enum MAILBOX_QUEUE_SIZE_ENUM
 {
-/* Modified by c64416 for hifi mailbox, 2013/09/24, begin */
     /* 以下各枚举项按规则生成, 形如: MAILBOX_QUEUE_SIZE_MCU2ACPU_DEFAULT */
     MAILBOX_QUEUE_SIZE(MCU,  ACPU, MSG) = 0x00000000,
     MAILBOX_QUEUE_SIZE(ACPU, MCU,  MSG) = 0x00000000,
@@ -450,7 +445,6 @@ enum MAILBOX_QUEUE_SIZE_ENUM
 
     MAILBOX_QUEUE_SIZE(BBE16, HIFI, MSG) = 0x00001800,
     MAILBOX_QUEUE_SIZE(HIFI, BBE16, MSG) = 0x00001800
-/* Modified by c64416 for hifi mailbox, 2013/09/24, end */
 };
 
 /* 各邮箱控制头地址分配 */

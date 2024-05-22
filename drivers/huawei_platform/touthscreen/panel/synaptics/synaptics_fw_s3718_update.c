@@ -1249,6 +1249,7 @@ static int fwu_read_flash_status(void)
 
 static int fwu_wait_for_idle(int timeout_ms, bool poll)
 {
+	int retval = 0;
 	int count = 0;
 	int timeout_count = ((timeout_ms * 1000) / MAX_SLEEP_TIME_US) + 1;
 
@@ -1256,9 +1257,12 @@ static int fwu_wait_for_idle(int timeout_ms, bool poll)
 		usleep_range(MIN_SLEEP_TIME_US, MAX_SLEEP_TIME_US);
 
 		count++;
-		if (poll || (count == timeout_count))
-			fwu_read_flash_status();
-
+		if (poll || (count == timeout_count)){
+			retval = fwu_read_flash_status();
+			if (retval < 0){
+				TS_LOG_ERR("fwu_read_flash_status failed\n");
+			}
+		}
 		if ((fwu->command == CMD_IDLE) && (fwu->flash_status == 0x00))
 			return 0;
 	} while (count < timeout_count);
@@ -2468,7 +2472,9 @@ static enum flash_area fwu_go_nogo(void)
 		/* syna_wx_wy */
 		rmi4_data->new_wx_wy = true;
 		for (ii = 0; ii < 3; ii++) {
-			sscanf(rmi4_data->synaptics_chip_data->adv_width + ii, "%01x", dts_set_buf + ii);
+			retval = sscanf(rmi4_data->synaptics_chip_data->adv_width + ii, "%01x", dts_set_buf + ii);
+			if (-1 == retval)
+				TS_LOG_ERR("sscanf has failed\n");
 			TS_LOG_INFO("temp_buf[%d] = 0x%02x, last_3_num[%d] = 0x%02x\n",
 				ii, dts_set_buf[ii], ii, last_3_num[ii]);
 
@@ -2646,10 +2652,6 @@ static int fwu_enter_flash_prog(void)
 
 	if (fwu->in_bl_mode)
 		return 0;
-
-	/*retval = rmi4_data->irq_enable(rmi4_data, false, true);*/
-	if (retval < 0)
-		return retval;
 
 	msleep(INT_DISABLE_WAIT_MS);
 
@@ -3663,6 +3665,9 @@ static int fwu_start_reflash(void)
 	}
 
 	retval = fwu_do_reflash();
+	if (retval < 0) {
+		TS_LOG_ERR("fwu_do_reflash read error\n");
+	}
 	rmi4_data->reset_device(rmi4_data);
 
 	retval = fwu_read_flash_status();
@@ -3836,12 +3841,6 @@ static int fwu_start_recovery(void)
 	/*mutex_lock(&rmi4_data->rmi4_exp_init_mutex);*/
 
 	pr_notice("%s: Start of recovery process\n", __func__);
-
-	/*retval = rmi4_data->irq_enable(rmi4_data, false, false);*/
-	if (retval < 0) {
-		TS_LOG_ERR("%s: Failed to disable interrupt\n", __func__);
-		goto exit;
-	}
 
 	retval = fwu_recovery_erase_all();
 	if (retval < 0) {
@@ -4320,6 +4319,10 @@ int set_oem_data(unsigned char *oem_data, unsigned short leng)
 		retval = fwu_allocate_read_config_buf(fwu->blkcount.oem_data * fwu->block_size);
 		if (retval < 0)
 			goto exit;
+		if ((unsigned long)( fwu->blkcount.oem_data * fwu->block_size) > SYNAPTCS_SHORTMULTI_SPACE){
+			TS_LOG_INFO( "fwu->blkcount.oem_data * fwu->block_size > 0x7FFFFFFF\n",__func__);
+			goto exit;
+		}
 		memset(fwu->read_config_buf, 0x00, fwu->blkcount.oem_data * fwu->block_size);
 		memcpy(fwu->read_config_buf, oem_data, leng);
 		/* need to modify here: parsing logic */
@@ -4404,6 +4407,11 @@ int set_lockdown_data(unsigned char *lockdown_data, unsigned short leng)
 	retval = fwu_erase_lockdown_data();
 	if (retval < 0)
 		goto exit;
+	if((unsigned long)(fwu->blkcount.lockdown_data * fwu->block_size) > SYNAPTCS_SHORTMULTI_SPACE){
+		TS_LOG_INFO( "fwu->blkcount.oem_data * fwu->block_size > 0x7FFFFFFF\n",__func__);
+		retval = -EINVAL;
+		goto exit;
+	}
 	retval = fwu_allocate_read_config_buf(fwu->blkcount.lockdown_data * fwu->block_size);
 	if (retval < 0)
 		goto exit;
@@ -4447,7 +4455,10 @@ static int synaptics_read_project_id(void)
 			retval = 0;
 			goto out;
 		} else {
-			fwu_read_f34_queries();
+			retval = fwu_read_f34_queries();
+			if (retval < 0) {
+				TS_LOG_ERR("fwu_read_f34_queries failed \n");
+			}
 			retval = get_lockdown_data(project_id, SYNAPTICS_RMI4_PROJECT_ID_SIZE);
 			if (retval < 0) {
 				TS_LOG_INFO("get_lockdown_data failed \n");
@@ -4791,27 +4802,4 @@ void synaptics_fw_data_s3718_release(void)
 	TS_LOG_INFO("s3718 release fw resource\n");
 	//Do not need to release hw data during the test
 	return 0;
-
-	if (fwu && fwu->fn_ptr) {
-		kfree(fwu->fn_ptr);
-		fwu->fn_ptr = NULL;
-	}
-	if (fwu && fwu->fw_entry_sd) {
-		vfree(fwu->fw_entry_sd);
-		fwu->fw_entry_sd = NULL;
-	}
-	if (fwu && fwu->fw_entry_boot) {
-		release_firmware(fwu->fw_entry_boot);
-		fwu->fw_entry_boot = NULL;
-	}
-
-	if (fwu && fwu->image_name) {
-		kfree(fwu->image_name);
-		fwu->image_name = NULL;
-	}
-
-	if (fwu) {
-		kfree(fwu);
-		fwu = NULL;
-	}
 }

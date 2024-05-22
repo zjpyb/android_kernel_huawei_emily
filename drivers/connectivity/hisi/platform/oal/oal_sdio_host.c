@@ -1691,7 +1691,7 @@ failed_sdio_alloc:
 oal_int  oal_sdio_wake_release_lock(struct oal_sdio *pst_hi_sdio, oal_uint32 ul_locks)
 {
     oal_int ret = 0;
-#ifdef CONFIG_WAKELOCK
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 37))
     oal_uint ul_flags;
     if(!ul_locks)
     {
@@ -1712,14 +1712,13 @@ oal_int  oal_sdio_wake_release_lock(struct oal_sdio *pst_hi_sdio, oal_uint32 ul_
         if(!pst_hi_sdio->ul_wklock_cnt)
         {
             OAL_IO_PRINT("release wakelock:%s", pst_hi_sdio->st_wklock_wifi.ws.name);
-            wake_unlock(&pst_hi_sdio->st_wklock_wifi);
+            oal_wake_unlock(&pst_hi_sdio->st_wklock_wifi);
         }
     }
 
     oal_spin_lock_irq_save(&pst_hi_sdio->st_wklock_spinlock, &ul_flags);
     return pst_hi_sdio->ul_wklock_cnt;
 #endif
-
     return ret;
 }
 #endif
@@ -1732,9 +1731,9 @@ oal_void oal_sdio_wakelocks_release_detect(struct oal_sdio *pst_hi_sdio)
     OAL_BUG_ON(!pst_hi_sdio);
     if (oal_sdio_wakelock_active(pst_hi_sdio))
     {
-#ifdef CONFIG_WAKELOCK
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 37))
         OAL_IO_PRINT("[E]We still hold %s   %lu wake locks, Now release all",
-                    pst_hi_sdio->st_sdio_wakelock.st_wakelock.ws.name,
+                    pst_hi_sdio->st_sdio_wakelock.st_wakelock.name,
                     pst_hi_sdio->st_sdio_wakelock.lock_count);
 #endif
         DECLARE_DFT_TRACE_KEY_INFO("wlan_wakelock_error_hold", OAL_DFT_TRACE_EXCEP);
@@ -2226,6 +2225,10 @@ OAL_STATIC oal_int32 oal_sdio_suspend(struct device *dev)
     struct sdio_func *func;
     struct oal_sdio *hi_sdio;
 
+#ifdef _PRE_WLAN_WAKEUP_SRC_PARSE
+    struct wlan_pm_s *pst_wlan_pm;
+#endif
+
     OAL_IO_PRINT(KERN_ERR"+++++++sdio suspend+++++++++++++\n");
     if (NULL == dev)
     {
@@ -2254,6 +2257,15 @@ OAL_STATIC oal_int32 oal_sdio_suspend(struct device *dev)
         up(&sdio_wake_sema);
         return -OAL_EFAIL;
     }
+
+#ifdef _PRE_WLAN_WAKEUP_SRC_PARSE
+    pst_wlan_pm = wlan_pm_get_drv();
+    if(pst_wlan_pm && pst_wlan_pm->st_wifi_srv_handler.p_data_wkup_print_en_func)
+    {
+        pst_wlan_pm->st_wifi_srv_handler.p_data_wkup_print_en_func(OAL_TRUE);
+    }
+#endif
+
     DECLARE_DFT_TRACE_KEY_INFO("sdio_android_suspend", OAL_DFT_TRACE_SUCC);
     hi_sdio->ul_sdio_suspend++;
     return OAL_SUCC;

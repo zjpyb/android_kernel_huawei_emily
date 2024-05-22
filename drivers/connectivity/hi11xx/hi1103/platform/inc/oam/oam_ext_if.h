@@ -41,44 +41,44 @@ extern "C" {
 
 #ifdef _PRE_WLAN_DFT_LOG
 #define OAM_EXCP_RECORD(_uc_vap_id, _excp_id)   \
-        oam_exception_record(_uc_vap_id, _excp_id)
+        oam_exception_record_etc(_uc_vap_id, _excp_id)
 
 #define OAM_IO_PRINTK(fmt, ...)      \
-        oam_log_console_printk(THIS_FILE_ID, (oal_uint16)__LINE__, OAL_FUNC_NAME, fmt, ##__VA_ARGS__)
+        oam_log_console_printk_etc(THIS_FILE_ID, (oal_uint16)__LINE__, OAL_FUNC_NAME, fmt, ##__VA_ARGS__)
 
 
 #define OAM_INFO_LOG0(_uc_vap_id, _en_feature_id, fmt)   \
-        oam_log_print0(OAM_WIFI_LOG_PARA_PRESS(_uc_vap_id,_en_feature_id,THIS_FILE_ID,OAM_LOG_LEVEL_INFO), (oal_uint16)__LINE__, fmt)
+        oam_log_print0_etc(OAM_WIFI_LOG_PARA_PRESS(_uc_vap_id,_en_feature_id,THIS_FILE_ID,OAM_LOG_LEVEL_INFO), (oal_uint16)__LINE__, fmt)
 #define OAM_INFO_LOG1(_uc_vap_id, _en_feature_id, fmt, p1)   \
-        oam_log_print1(OAM_WIFI_LOG_PARA_PRESS(_uc_vap_id,_en_feature_id,THIS_FILE_ID,OAM_LOG_LEVEL_INFO), (oal_uint16)__LINE__, fmt, (oal_uint)(p1))
+        oam_log_print1_etc(OAM_WIFI_LOG_PARA_PRESS(_uc_vap_id,_en_feature_id,THIS_FILE_ID,OAM_LOG_LEVEL_INFO), (oal_uint16)__LINE__, fmt, (oal_uint)(p1))
 #define OAM_INFO_LOG2(_uc_vap_id, _en_feature_id, fmt, p1, p2)   \
-        oam_log_print2(OAM_WIFI_LOG_PARA_PRESS(_uc_vap_id,_en_feature_id,THIS_FILE_ID,OAM_LOG_LEVEL_INFO), (oal_uint16)__LINE__, fmt, (oal_uint)(p1), (oal_uint)(p2))
+        oam_log_print2_etc(OAM_WIFI_LOG_PARA_PRESS(_uc_vap_id,_en_feature_id,THIS_FILE_ID,OAM_LOG_LEVEL_INFO), (oal_uint16)__LINE__, fmt, (oal_uint)(p1), (oal_uint)(p2))
 #define OAM_INFO_LOG3(_uc_vap_id, _en_feature_id, fmt, p1, p2, p3)   \
-        oam_log_print3(OAM_WIFI_LOG_PARA_PRESS(_uc_vap_id,_en_feature_id,THIS_FILE_ID,OAM_LOG_LEVEL_INFO), (oal_uint16)__LINE__, fmt, (oal_uint)(p1), (oal_uint)(p2), (oal_uint)(p3))
+        oam_log_print3_etc(OAM_WIFI_LOG_PARA_PRESS(_uc_vap_id,_en_feature_id,THIS_FILE_ID,OAM_LOG_LEVEL_INFO), (oal_uint16)__LINE__, fmt, (oal_uint)(p1), (oal_uint)(p2), (oal_uint)(p3))
 #define OAM_INFO_LOG4(_uc_vap_id, _en_feature_id, fmt, p1, p2, p3, p4)   \
-        oam_log_print4(OAM_WIFI_LOG_PARA_PRESS(_uc_vap_id,_en_feature_id,THIS_FILE_ID,OAM_LOG_LEVEL_INFO), (oal_uint16)__LINE__, fmt, (oal_uint)(p1), (oal_uint)(p2), (oal_uint)(p3), (oal_uint)(p4))
+        oam_log_print4_etc(OAM_WIFI_LOG_PARA_PRESS(_uc_vap_id,_en_feature_id,THIS_FILE_ID,OAM_LOG_LEVEL_INFO), (oal_uint16)__LINE__, fmt, (oal_uint)(p1), (oal_uint)(p2), (oal_uint)(p3), (oal_uint)(p4))
 
 #define OAM_WARNING_LOG0(_uc_vap_id, _en_feature_id, fmt)   \
-        oam_log_print0(OAM_WIFI_LOG_PARA_PRESS(_uc_vap_id,_en_feature_id,THIS_FILE_ID,OAM_LOG_LEVEL_WARNING), (oal_uint16)__LINE__, fmt)
+        oam_log_print0_etc(OAM_WIFI_LOG_PARA_PRESS(_uc_vap_id,_en_feature_id,THIS_FILE_ID,OAM_LOG_LEVEL_WARNING), (oal_uint16)__LINE__, fmt)
 #define OAM_WARNING_LOG1(_uc_vap_id, _en_feature_id, fmt, p1)   \
-        oam_log_print1(OAM_WIFI_LOG_PARA_PRESS(_uc_vap_id,_en_feature_id,THIS_FILE_ID,OAM_LOG_LEVEL_WARNING), (oal_uint16)__LINE__, fmt, (oal_uint)(p1))
+        oam_log_print1_etc(OAM_WIFI_LOG_PARA_PRESS(_uc_vap_id,_en_feature_id,THIS_FILE_ID,OAM_LOG_LEVEL_WARNING), (oal_uint16)__LINE__, fmt, (oal_uint)(p1))
 #define OAM_WARNING_LOG2(_uc_vap_id, _en_feature_id, fmt, p1, p2)   \
-        oam_log_print2(OAM_WIFI_LOG_PARA_PRESS(_uc_vap_id,_en_feature_id,THIS_FILE_ID,OAM_LOG_LEVEL_WARNING), (oal_uint16)__LINE__, fmt, (oal_uint)(p1), (oal_uint)(p2))
+        oam_log_print2_etc(OAM_WIFI_LOG_PARA_PRESS(_uc_vap_id,_en_feature_id,THIS_FILE_ID,OAM_LOG_LEVEL_WARNING), (oal_uint16)__LINE__, fmt, (oal_uint)(p1), (oal_uint)(p2))
 #define OAM_WARNING_LOG3(_uc_vap_id, _en_feature_id, fmt, p1, p2, p3)   \
-        oam_log_print3(OAM_WIFI_LOG_PARA_PRESS(_uc_vap_id,_en_feature_id,THIS_FILE_ID,OAM_LOG_LEVEL_WARNING), (oal_uint16)__LINE__, fmt, (oal_uint)(p1), (oal_uint)(p2), (oal_uint)(p3))
+        oam_log_print3_etc(OAM_WIFI_LOG_PARA_PRESS(_uc_vap_id,_en_feature_id,THIS_FILE_ID,OAM_LOG_LEVEL_WARNING), (oal_uint16)__LINE__, fmt, (oal_uint)(p1), (oal_uint)(p2), (oal_uint)(p3))
 #define OAM_WARNING_LOG4(_uc_vap_id, _en_feature_id, fmt, p1, p2, p3, p4)   \
-        oam_log_print4(OAM_WIFI_LOG_PARA_PRESS(_uc_vap_id,_en_feature_id,THIS_FILE_ID,OAM_LOG_LEVEL_WARNING), (oal_uint16)__LINE__, fmt, (oal_uint)(p1), (oal_uint)(p2), (oal_uint)(p3), (oal_uint)(p4))
+        oam_log_print4_etc(OAM_WIFI_LOG_PARA_PRESS(_uc_vap_id,_en_feature_id,THIS_FILE_ID,OAM_LOG_LEVEL_WARNING), (oal_uint16)__LINE__, fmt, (oal_uint)(p1), (oal_uint)(p2), (oal_uint)(p3), (oal_uint)(p4))
 
 #define OAM_ERROR_LOG0(_uc_vap_id, _en_feature_id, fmt)   \
-        oam_log_print0(OAM_WIFI_LOG_PARA_PRESS(_uc_vap_id,_en_feature_id,THIS_FILE_ID,OAM_LOG_LEVEL_ERROR), (oal_uint16)__LINE__, fmt)
+        oam_log_print0_etc(OAM_WIFI_LOG_PARA_PRESS(_uc_vap_id,_en_feature_id,THIS_FILE_ID,OAM_LOG_LEVEL_ERROR), (oal_uint16)__LINE__, fmt)
 #define OAM_ERROR_LOG1(_uc_vap_id, _en_feature_id, fmt, p1)   \
-        oam_log_print1(OAM_WIFI_LOG_PARA_PRESS(_uc_vap_id,_en_feature_id,THIS_FILE_ID,OAM_LOG_LEVEL_ERROR), (oal_uint16)__LINE__, fmt, (oal_uint)(p1))
+        oam_log_print1_etc(OAM_WIFI_LOG_PARA_PRESS(_uc_vap_id,_en_feature_id,THIS_FILE_ID,OAM_LOG_LEVEL_ERROR), (oal_uint16)__LINE__, fmt, (oal_uint)(p1))
 #define OAM_ERROR_LOG2(_uc_vap_id, _en_feature_id, fmt, p1, p2)   \
-        oam_log_print2(OAM_WIFI_LOG_PARA_PRESS(_uc_vap_id,_en_feature_id,THIS_FILE_ID,OAM_LOG_LEVEL_ERROR), (oal_uint16)__LINE__, fmt, (oal_uint)(p1), (oal_uint)(p2))
+        oam_log_print2_etc(OAM_WIFI_LOG_PARA_PRESS(_uc_vap_id,_en_feature_id,THIS_FILE_ID,OAM_LOG_LEVEL_ERROR), (oal_uint16)__LINE__, fmt, (oal_uint)(p1), (oal_uint)(p2))
 #define OAM_ERROR_LOG3(_uc_vap_id, _en_feature_id, fmt, p1, p2, p3)   \
-        oam_log_print3(OAM_WIFI_LOG_PARA_PRESS(_uc_vap_id,_en_feature_id,THIS_FILE_ID,OAM_LOG_LEVEL_ERROR), (oal_uint16)__LINE__, fmt, (oal_uint)(p1), (oal_uint)(p2), (oal_uint)(p3))
+        oam_log_print3_etc(OAM_WIFI_LOG_PARA_PRESS(_uc_vap_id,_en_feature_id,THIS_FILE_ID,OAM_LOG_LEVEL_ERROR), (oal_uint16)__LINE__, fmt, (oal_uint)(p1), (oal_uint)(p2), (oal_uint)(p3))
 #define OAM_ERROR_LOG4(_uc_vap_id, _en_feature_id, fmt, p1, p2, p3, p4)   \
-        oam_log_print4(OAM_WIFI_LOG_PARA_PRESS(_uc_vap_id,_en_feature_id,THIS_FILE_ID,OAM_LOG_LEVEL_ERROR), (oal_uint16)__LINE__, fmt, (oal_uint)(p1), (oal_uint)(p2), (oal_uint)(p3), (oal_uint)(p4))
+        oam_log_print4_etc(OAM_WIFI_LOG_PARA_PRESS(_uc_vap_id,_en_feature_id,THIS_FILE_ID,OAM_LOG_LEVEL_ERROR), (oal_uint16)__LINE__, fmt, (oal_uint)(p1), (oal_uint)(p2), (oal_uint)(p3), (oal_uint)(p4))
 
 
 #else
@@ -110,37 +110,37 @@ extern "C" {
 
 
 #define OAM_INFO_LOG0(_uc_vap_id, _en_feature_id, fmt)   \
-        oam_log_print0(OAM_WIFI_LOG_PARA_PRESS(_uc_vap_id,_en_feature_id,THIS_FILE_ID,OAM_LOG_LEVEL_INFO), (oal_uint16)__LINE__, NULL)
+        oam_log_print0_etc(OAM_WIFI_LOG_PARA_PRESS(_uc_vap_id,_en_feature_id,THIS_FILE_ID,OAM_LOG_LEVEL_INFO), (oal_uint16)__LINE__, NULL)
 #define OAM_INFO_LOG1(_uc_vap_id, _en_feature_id, fmt, p1)   \
-        oam_log_print1(OAM_WIFI_LOG_PARA_PRESS(_uc_vap_id,_en_feature_id,THIS_FILE_ID,OAM_LOG_LEVEL_INFO), (oal_uint16)__LINE__, NULL, (oal_uint)(p1))
+        oam_log_print1_etc(OAM_WIFI_LOG_PARA_PRESS(_uc_vap_id,_en_feature_id,THIS_FILE_ID,OAM_LOG_LEVEL_INFO), (oal_uint16)__LINE__, NULL, (oal_uint)(p1))
 #define OAM_INFO_LOG2(_uc_vap_id, _en_feature_id, fmt, p1, p2)   \
-        oam_log_print2(OAM_WIFI_LOG_PARA_PRESS(_uc_vap_id,_en_feature_id,THIS_FILE_ID,OAM_LOG_LEVEL_INFO), (oal_uint16)__LINE__, NULL, (oal_uint)(p1), (oal_uint)(p2))
+        oam_log_print2_etc(OAM_WIFI_LOG_PARA_PRESS(_uc_vap_id,_en_feature_id,THIS_FILE_ID,OAM_LOG_LEVEL_INFO), (oal_uint16)__LINE__, NULL, (oal_uint)(p1), (oal_uint)(p2))
 #define OAM_INFO_LOG3(_uc_vap_id, _en_feature_id, fmt, p1, p2, p3)   \
-        oam_log_print3(OAM_WIFI_LOG_PARA_PRESS(_uc_vap_id,_en_feature_id,THIS_FILE_ID,OAM_LOG_LEVEL_INFO), (oal_uint16)__LINE__, NULL, (oal_uint)(p1), (oal_uint)(p2), (oal_uint)(p3))
+        oam_log_print3_etc(OAM_WIFI_LOG_PARA_PRESS(_uc_vap_id,_en_feature_id,THIS_FILE_ID,OAM_LOG_LEVEL_INFO), (oal_uint16)__LINE__, NULL, (oal_uint)(p1), (oal_uint)(p2), (oal_uint)(p3))
 #define OAM_INFO_LOG4(_uc_vap_id, _en_feature_id, fmt, p1, p2, p3, p4)   \
-        oam_log_print4(OAM_WIFI_LOG_PARA_PRESS(_uc_vap_id,_en_feature_id,THIS_FILE_ID,OAM_LOG_LEVEL_INFO), (oal_uint16)__LINE__, NULL, (oal_uint)(p1), (oal_uint)(p2), (oal_uint)(p3), (oal_uint)(p4))
+        oam_log_print4_etc(OAM_WIFI_LOG_PARA_PRESS(_uc_vap_id,_en_feature_id,THIS_FILE_ID,OAM_LOG_LEVEL_INFO), (oal_uint16)__LINE__, NULL, (oal_uint)(p1), (oal_uint)(p2), (oal_uint)(p3), (oal_uint)(p4))
 
 #define OAM_WARNING_LOG0(_uc_vap_id, _en_feature_id, fmt)   \
-        oam_log_print0(OAM_WIFI_LOG_PARA_PRESS(_uc_vap_id,_en_feature_id,THIS_FILE_ID,OAM_LOG_LEVEL_WARNING), (oal_uint16)__LINE__, NULL)
+        oam_log_print0_etc(OAM_WIFI_LOG_PARA_PRESS(_uc_vap_id,_en_feature_id,THIS_FILE_ID,OAM_LOG_LEVEL_WARNING), (oal_uint16)__LINE__, NULL)
 #define OAM_WARNING_LOG1(_uc_vap_id, _en_feature_id, fmt, p1)   \
-        oam_log_print1(OAM_WIFI_LOG_PARA_PRESS(_uc_vap_id,_en_feature_id,THIS_FILE_ID,OAM_LOG_LEVEL_WARNING), (oal_uint16)__LINE__, NULL, (oal_uint)(p1))
+        oam_log_print1_etc(OAM_WIFI_LOG_PARA_PRESS(_uc_vap_id,_en_feature_id,THIS_FILE_ID,OAM_LOG_LEVEL_WARNING), (oal_uint16)__LINE__, NULL, (oal_uint)(p1))
 #define OAM_WARNING_LOG2(_uc_vap_id, _en_feature_id, fmt, p1, p2)   \
-        oam_log_print2(OAM_WIFI_LOG_PARA_PRESS(_uc_vap_id,_en_feature_id,THIS_FILE_ID,OAM_LOG_LEVEL_WARNING), (oal_uint16)__LINE__, NULL, (oal_uint)(p1), (oal_uint)(p2))
+        oam_log_print2_etc(OAM_WIFI_LOG_PARA_PRESS(_uc_vap_id,_en_feature_id,THIS_FILE_ID,OAM_LOG_LEVEL_WARNING), (oal_uint16)__LINE__, NULL, (oal_uint)(p1), (oal_uint)(p2))
 #define OAM_WARNING_LOG3(_uc_vap_id, _en_feature_id, fmt, p1, p2, p3)   \
-        oam_log_print3(OAM_WIFI_LOG_PARA_PRESS(_uc_vap_id,_en_feature_id,THIS_FILE_ID,OAM_LOG_LEVEL_WARNING), (oal_uint16)__LINE__, NULL, (oal_uint)(p1), (oal_uint)(p2), (oal_uint)(p3))
+        oam_log_print3_etc(OAM_WIFI_LOG_PARA_PRESS(_uc_vap_id,_en_feature_id,THIS_FILE_ID,OAM_LOG_LEVEL_WARNING), (oal_uint16)__LINE__, NULL, (oal_uint)(p1), (oal_uint)(p2), (oal_uint)(p3))
 #define OAM_WARNING_LOG4(_uc_vap_id, _en_feature_id, fmt, p1, p2, p3, p4)   \
-        oam_log_print4(OAM_WIFI_LOG_PARA_PRESS(_uc_vap_id,_en_feature_id,THIS_FILE_ID,OAM_LOG_LEVEL_WARNING), (oal_uint16)__LINE__, NULL, (oal_uint)(p1), (oal_uint)(p2), (oal_uint)(p3), (oal_uint)(p4))
+        oam_log_print4_etc(OAM_WIFI_LOG_PARA_PRESS(_uc_vap_id,_en_feature_id,THIS_FILE_ID,OAM_LOG_LEVEL_WARNING), (oal_uint16)__LINE__, NULL, (oal_uint)(p1), (oal_uint)(p2), (oal_uint)(p3), (oal_uint)(p4))
 
 #define OAM_ERROR_LOG0(_uc_vap_id, _en_feature_id, fmt)   \
-        oam_log_print0(OAM_WIFI_LOG_PARA_PRESS(_uc_vap_id,_en_feature_id,THIS_FILE_ID,OAM_LOG_LEVEL_ERROR), (oal_uint16)__LINE__, NULL)
+        oam_log_print0_etc(OAM_WIFI_LOG_PARA_PRESS(_uc_vap_id,_en_feature_id,THIS_FILE_ID,OAM_LOG_LEVEL_ERROR), (oal_uint16)__LINE__, NULL)
 #define OAM_ERROR_LOG1(_uc_vap_id, _en_feature_id, fmt, p1)   \
-        oam_log_print1(OAM_WIFI_LOG_PARA_PRESS(_uc_vap_id,_en_feature_id,THIS_FILE_ID,OAM_LOG_LEVEL_ERROR), (oal_uint16)__LINE__, NULL, (oal_uint)(p1))
+        oam_log_print1_etc(OAM_WIFI_LOG_PARA_PRESS(_uc_vap_id,_en_feature_id,THIS_FILE_ID,OAM_LOG_LEVEL_ERROR), (oal_uint16)__LINE__, NULL, (oal_uint)(p1))
 #define OAM_ERROR_LOG2(_uc_vap_id, _en_feature_id, fmt, p1, p2)   \
-        oam_log_print2(OAM_WIFI_LOG_PARA_PRESS(_uc_vap_id,_en_feature_id,THIS_FILE_ID,OAM_LOG_LEVEL_ERROR), (oal_uint16)__LINE__, NULL, (oal_uint)(p1), (oal_uint)(p2))
+        oam_log_print2_etc(OAM_WIFI_LOG_PARA_PRESS(_uc_vap_id,_en_feature_id,THIS_FILE_ID,OAM_LOG_LEVEL_ERROR), (oal_uint16)__LINE__, NULL, (oal_uint)(p1), (oal_uint)(p2))
 #define OAM_ERROR_LOG3(_uc_vap_id, _en_feature_id, fmt, p1, p2, p3)   \
-        oam_log_print3(OAM_WIFI_LOG_PARA_PRESS(_uc_vap_id,_en_feature_id,THIS_FILE_ID,OAM_LOG_LEVEL_ERROR), (oal_uint16)__LINE__, NULL, (oal_uint)(p1), (oal_uint)(p2), (oal_uint)(p3))
+        oam_log_print3_etc(OAM_WIFI_LOG_PARA_PRESS(_uc_vap_id,_en_feature_id,THIS_FILE_ID,OAM_LOG_LEVEL_ERROR), (oal_uint16)__LINE__, NULL, (oal_uint)(p1), (oal_uint)(p2), (oal_uint)(p3))
 #define OAM_ERROR_LOG4(_uc_vap_id, _en_feature_id, fmt, p1, p2, p3, p4)   \
-        oam_log_print4(OAM_WIFI_LOG_PARA_PRESS(_uc_vap_id,_en_feature_id,THIS_FILE_ID,OAM_LOG_LEVEL_ERROR), (oal_uint16)__LINE__, NULL, (oal_uint)(p1), (oal_uint)(p2), (oal_uint)(p3), (oal_uint)(p4))
+        oam_log_print4_etc(OAM_WIFI_LOG_PARA_PRESS(_uc_vap_id,_en_feature_id,THIS_FILE_ID,OAM_LOG_LEVEL_ERROR), (oal_uint16)__LINE__, NULL, (oal_uint)(p1), (oal_uint)(p2), (oal_uint)(p3), (oal_uint)(p4))
 
 
 
@@ -202,7 +202,7 @@ extern "C" {
 #define OAM_STAT_DEV_INCR(_uc_dev_id, _member, _num)do{                           \
             if (_uc_dev_id < WLAN_DEVICE_MAX_NUM_PER_CHIP)                            \
             {                                                                         \
-                g_st_stat_info.ast_dev_stat_info[_uc_dev_id].ul_##_member += (_num);  \
+                g_st_stat_info_etc.ast_dev_stat_info[_uc_dev_id].ul_##_member += (_num);  \
             }                                                                         \
         }while(0)
 
@@ -210,7 +210,7 @@ extern "C" {
 #define OAM_STAT_DEV_ARRAY_INCR(_uc_dev_id, _member, _uc_array_index, _uc_array_max_size)do{            \
             if ((_uc_dev_id < WLAN_DEVICE_SUPPORT_MAX_NUM_SPEC) && (_uc_array_index < _uc_array_max_size)) \
             {                                                                                          \
-                g_st_stat_info.ast_dev_stat_info[_uc_dev_id].aul_##_member[_uc_array_index]++;         \
+                g_st_stat_info_etc.ast_dev_stat_info[_uc_dev_id].aul_##_member[_uc_array_index]++;         \
             }                                                                                          \
         }while(0)
 
@@ -218,53 +218,53 @@ extern "C" {
             if ((_uc_dev_id < WLAN_DEVICE_SUPPORT_MAX_NUM_SPEC) \
                 && (_uc_q_id < OAM_RX_DSCR_QUEUE_CNT) && (_uc_index < OAM_IRQ_FREQ_STAT_MEMORY))               \
             {                                                                                                   \
-                g_st_stat_info.ast_dev_stat_info[_uc_dev_id].aul_##_member[_uc_q_id][_uc_index] = (_ul_val); \
+                g_st_stat_info_etc.ast_dev_stat_info[_uc_dev_id].aul_##_member[_uc_q_id][_uc_index] = (_ul_val); \
             }                                                                                                   \
         }while(0)
 
 #define OAM_STAT_DEV_GET_VAL(_uc_dev_id, _member,_pul_val) do{                             \
             if (_uc_dev_id < WLAN_DEVICE_SUPPORT_MAX_NUM_SPEC)                              \
             {                                                                           \
-               *(_pul_val)= g_st_stat_info.ast_dev_stat_info[_uc_dev_id].ul_##_member;      \
+               *(_pul_val)= g_st_stat_info_etc.ast_dev_stat_info[_uc_dev_id].ul_##_member;      \
             }                                                                           \
         }while(0)
 
 #define OAM_STAT_DEV_SET_VAL(_uc_dev_id, _member, _uc_val)do { \
             if (_uc_dev_id < WLAN_DEVICE_SUPPORT_MAX_NUM_SPEC)                              \
             {                                                                           \
-                g_st_stat_info.ast_dev_stat_info[_uc_dev_id].ul_##_member = (_uc_val); \
+                g_st_stat_info_etc.ast_dev_stat_info[_uc_dev_id].ul_##_member = (_uc_val); \
             }                                                                           \
         }while(0)
 
 #define OAM_STAT_VAP_INCR(_uc_vap_id, _member, _num) do{ \
             if (_uc_vap_id < WLAN_VAP_SUPPORT_MAX_NUM_LIMIT)          \
             {                                                   \
-                g_st_stat_info.ast_vap_stat_info[_uc_vap_id].ul_##_member += (_num);   \
+                g_st_stat_info_etc.ast_vap_stat_info[_uc_vap_id].ul_##_member += (_num);   \
             }                                                                               \
         }while(0)
 
 #define OAM_STAT_MGMT_INCR(_uc_vap_id, _uc_mgmt_id, _member) do{  \
             if ((_uc_vap_id < WLAN_VAP_SUPPORT_MAX_NUM_LIMIT) && (_uc_mgmt_id < WLAN_MGMT_SUBTYPE_BUTT))   \
             {                                                                                        \
-                g_st_stat_info.ast_vap_stat_info[_uc_vap_id].aul_##_member[_uc_mgmt_id]++;           \
+                g_st_stat_info_etc.ast_vap_stat_info[_uc_vap_id].aul_##_member[_uc_mgmt_id]++;           \
             }                                                                                        \
         }while(0)
 
 #define OAM_STAT_USER_INCR(_us_user_id, _member, _num) do{                                       \
             if (_us_user_id < WLAN_USER_MAX_USER_LIMIT)                     \
             {                                                                           \
-                g_st_stat_info.ast_user_stat_info[_us_user_id].ul_##_member += (_num);              \
+                g_st_stat_info_etc.ast_user_stat_info[_us_user_id].ul_##_member += (_num);              \
             }                                                                               \
         }while(0)
 
 #define OAM_STAT_TID_INCR(_us_user_id, _uc_tid_num, _member, _num) do {\
             if ((_us_user_id < WLAN_USER_MAX_USER_LIMIT) && (_uc_tid_num < WLAN_TIDNO_BUTT))        \
             {                                                                                       \
-                g_st_stat_info.ast_user_stat_info[_us_user_id].aul_##_member[_uc_tid_num] += (_num);\
+                g_st_stat_info_etc.ast_user_stat_info[_us_user_id].aul_##_member[_uc_tid_num] += (_num);\
             }                                                                                       \
         }while(0)
 
-#define OAM_STAT_GET_STAT_ALL() (&g_st_stat_info)
+#define OAM_STAT_GET_STAT_ALL() (&g_st_stat_info_etc)
 #else
 #define OAM_STAT_DEV_INCR(_uc_dev_id, _member, _num)
 #define OAM_STAT_DEV_ARRAY_INCR(_uc_dev_id, _member, _uc_array_index, _uc_array_max_size)
@@ -275,7 +275,7 @@ extern "C" {
 #define OAM_STAT_MGMT_INCR(_uc_vap_id, _uc_mgmt_id, _member)
 #define OAM_STAT_USER_INCR(_uc_user_id, _member, _num)
 #define OAM_STAT_TID_INCR(_uc_user_id, _uc_tid_num, _member, _num)
-#define OAM_STAT_GET_STAT_ALL() (&g_st_stat_info)
+#define OAM_STAT_GET_STAT_ALL() (&g_st_stat_info_etc)
 #endif
 #elif defined(_PRE_PRODUCT_ID_HI110X_HOST)
 /* 统计信息宏定义 *//*lint -e506*/ /*lint -e774*/
@@ -293,7 +293,7 @@ extern "C" {
 #define OAM_STAT_VAP_INCR(_uc_vap_id, _member, _num) do{ \
             if (_uc_vap_id < WLAN_VAP_SUPPORT_MAX_NUM_LIMIT)          \
             {                                                   \
-                g_st_stat_info.ast_vap_stat_info[_uc_vap_id].ul_##_member += (_num);   \
+                g_st_stat_info_etc.ast_vap_stat_info[_uc_vap_id].ul_##_member += (_num);   \
             }                                                                               \
         }while(0)
 
@@ -303,7 +303,7 @@ extern "C" {
 
 #define OAM_STAT_TID_INCR(_uc_user_id, _uc_tid_num, _member, _num)
 
-#define OAM_STAT_GET_STAT_ALL() (&g_st_stat_info)
+#define OAM_STAT_GET_STAT_ALL() (&g_st_stat_info_etc)
 #else
 #ifdef _PRE_DEBUG_MODE
 /* 统计信息宏定义 *//*lint -e506*/ /*lint -e774*/
@@ -1303,7 +1303,7 @@ typedef oal_uint8   oam_excp_status_enum_uint8;
 *****************************************************************************/
 /* 维测，下发调试类型值，代码可临时根据调测值实现相应功能 */
 #ifdef _PRE_DEBUG_MODE
-extern oal_uint32   g_aul_debug_feature_switch[];
+extern oal_uint32   g_aul_debug_feature_switch_etc[];
 
 #define             MAX_DEBUG_TYPE_NUM              OAM_DEBUG_TYPE_BUTT
 typedef enum
@@ -1340,8 +1340,8 @@ typedef enum
 typedef oal_uint8 oam_stats_phy_node_idx_enum_uint8;
 #endif
 
-extern oal_uint8 g_auc_bcast_addr[WLAN_MAC_ADDR_LEN];
-#define BROADCAST_MACADDR       g_auc_bcast_addr
+extern oal_uint8 g_auc_bcast_addr_etc[WLAN_MAC_ADDR_LEN];
+#define BROADCAST_MACADDR       g_auc_bcast_addr_etc
 
 /*****************************************************************************
   5 消息头定义
@@ -1369,7 +1369,7 @@ typedef struct
 }oam_sdt_func_hook_stru;
 
 /* 外部函数声明 */
-extern oam_sdt_func_hook_stru       g_st_oam_sdt_func_hook;
+extern oam_sdt_func_hook_stru       g_st_oam_sdt_func_hook_etc;
 
 /* 其他模块调用WAL钩子函数 用结构体 */
 typedef struct
@@ -1386,7 +1386,7 @@ typedef struct
 #endif
 }oam_wal_func_hook_stru;
 
-extern oam_wal_func_hook_stru       g_st_oam_wal_func_hook;
+extern oam_wal_func_hook_stru       g_st_oam_wal_func_hook_etc;
 
 /*lint -e958*/ /*lint -e959*/
 /* 读取和设置全局变量的结构体 */
@@ -1820,7 +1820,7 @@ typedef struct
 #endif
 
 /*lint -e717*/
-#define OAM_SDT_STAT_INCR(_cnt)             do{g_st_sdt_stat_info._cnt++;} while(0)
+#define OAM_SDT_STAT_INCR(_cnt)             do{g_st_sdt_stat_info_etc._cnt++;} while(0)
 
 enum oam_filter_type_enum
 {
@@ -1839,9 +1839,9 @@ typedef struct
 	oal_uint8		uc_recv[3];
 }oam_sdt_stat_info_stru;
 #if (_PRE_PRODUCT_ID == _PRE_PRODUCT_ID_HI1151)||defined(_PRE_PRODUCT_ID_HI110X_HOST)
-extern oam_stat_info_stru g_st_stat_info;
+extern oam_stat_info_stru g_st_stat_info_etc;
 #endif
-extern oam_sdt_stat_info_stru g_st_sdt_stat_info;
+extern oam_sdt_stat_info_stru g_st_sdt_stat_info_etc;
 
 /* 保存配置文件相关信息结构 */
 typedef struct
@@ -2134,39 +2134,39 @@ typedef struct
 /*****************************************************************************
   10 函数声明    OAM模块对外提供的接口
 *****************************************************************************/
-extern oam_mng_ctx_stru             g_st_oam_mng_ctx;
+extern oam_mng_ctx_stru             g_st_oam_mng_ctx_etc;
 
-extern oal_uint32 oam_send_device_data2sdt(oal_uint8* pc_string, oal_uint16 len);
-extern oal_int32  oam_main_init(oal_void);
-extern oal_void  oam_main_exit(oal_void);
-extern oal_uint32  oam_print(oal_int8 *pc_string);
-extern oal_uint32  oam_set_file_path(oal_int8 *pc_file_path, oal_uint32 ul_length);
-extern oal_uint32  oam_set_output_type(oam_output_type_enum_uint8 en_output_type);
-extern oal_uint32  oam_get_output_type(oam_output_type_enum_uint8 *pen_output_type);
+extern oal_uint32 oam_send_device_data2sdt_etc(oal_uint8* pc_string, oal_uint16 len);
+extern oal_int32  oam_main_init_etc(oal_void);
+extern oal_void  oam_main_exit_etc(oal_void);
+extern oal_uint32  oam_print_etc(oal_int8 *pc_string);
+extern oal_uint32  oam_set_file_path_etc(oal_int8 *pc_file_path, oal_uint32 ul_length);
+extern oal_uint32  oam_set_output_type_etc(oam_output_type_enum_uint8 en_output_type);
+extern oal_uint32  oam_get_output_type_etc(oam_output_type_enum_uint8 *pen_output_type);
 
 
 /*******************************************************************************
             LOG模块对外接口
 *******************************************************************************/
-extern oal_void oam_exception_stat_handler(oam_msg_moduleid_enum_uint8 en_moduleid, oal_uint8 uc_vap_idx);
+extern oal_void oam_exception_stat_handler_etc(oam_msg_moduleid_enum_uint8 en_moduleid, oal_uint8 uc_vap_idx);
 
-extern oal_uint32 oam_log_set_global_switch(oal_switch_enum_uint8 en_log_switch);
-extern oal_uint32 oam_log_set_vap_switch(oal_uint8 uc_vap_id,
+extern oal_uint32 oam_log_set_global_switch_etc(oal_switch_enum_uint8 en_log_switch);
+extern oal_uint32 oam_log_set_vap_switch_etc(oal_uint8 uc_vap_id,
                                          oal_switch_enum_uint8    en_log_switch);
 
-extern oal_uint32 oam_log_set_ratelimit_param(
+extern oal_uint32 oam_log_set_ratelimit_param_etc(
                 oam_ratelimit_type_enum_uint8  en_ratelimit_type,
                 oam_ratelimit_stru *pst_printk_ratelimit);
 
-extern oal_uint32 oam_log_set_feature_level(oal_uint8 uc_vap_id,
+extern oal_uint32 oam_log_set_feature_level_etc(oal_uint8 uc_vap_id,
                                            oam_feature_enum_uint8   en_feature_id,
                                            oam_log_level_enum_uint8 en_log_level);
-extern oal_uint32 oam_get_feature_id(oal_uint8 *puc_feature_name,
+extern oal_uint32 oam_get_feature_id_etc(oal_uint8 *puc_feature_name,
                                               oam_feature_enum_uint8 *puc_feature_id);
-extern oal_uint32 oam_show_feature_list(oal_void);
-extern oal_uint32 oam_log_set_vap_level(oal_uint8 uc_vap_id, oam_log_level_enum_uint8 en_log_level);
+extern oal_uint32 oam_show_feature_list_etc(oal_void);
+extern oal_uint32 oam_log_set_vap_level_etc(oal_uint8 uc_vap_id, oam_log_level_enum_uint8 en_log_level);
 
-extern oal_uint32 oam_log_get_vap_level(oal_uint8 uc_vap_id, oam_log_level_enum_uint8 *pen_log_level);
+extern oal_uint32 oam_log_get_vap_level_etc(oal_uint8 uc_vap_id, oam_log_level_enum_uint8 *pen_log_level);
 
 /*extern  oal_int32 OAL_PRINT_NLOGS(
         const oal_int8* pfunc_local_name,
@@ -2179,29 +2179,29 @@ extern oal_uint32 oam_log_get_vap_level(oal_uint8 uc_vap_id, oam_log_level_enum_
         oal_int8*       fmt,
         oal_uint p1, oal_uint p2, oal_uint p3, oal_uint p4);*/
 
-extern oal_uint32  oam_log_print0( oal_uint32  ul_para,
+extern oal_uint32  oam_log_print0_etc( oal_uint32  ul_para,
                                        oal_uint16  us_line_num,
                                        oal_int8    *pc_string);
 
-extern oal_uint32  oam_log_print1( oal_uint32  ul_para,
+extern oal_uint32  oam_log_print1_etc( oal_uint32  ul_para,
                                        oal_uint16  us_line_num,
                                        oal_int8    *pc_string,
                                        oal_uint    l_param1);
 
-extern oal_uint32  oam_log_print2( oal_uint32  ul_para,
+extern oal_uint32  oam_log_print2_etc( oal_uint32  ul_para,
                                        oal_uint16  us_line_num,
                                        oal_int8    *pc_string,
                                        oal_uint    l_param1,
                                        oal_uint    l_param2);
 
-extern oal_uint32  oam_log_print3( oal_uint32  ul_para,
+extern oal_uint32  oam_log_print3_etc( oal_uint32  ul_para,
                                        oal_uint16  us_line_num,
                                        oal_int8    *pc_string,
                                        oal_uint    l_param1,
                                        oal_uint    l_param2,
                                        oal_uint    l_param3);
 
-extern oal_uint32  oam_log_print4( oal_uint32  ul_para,
+extern oal_uint32  oam_log_print4_etc( oal_uint32  ul_para,
                                        oal_uint16  us_line_num,
                                        oal_int8    *pc_string,
                                        oal_uint    l_param1,
@@ -2209,61 +2209,61 @@ extern oal_uint32  oam_log_print4( oal_uint32  ul_para,
                                        oal_uint    l_param3,
                                        oal_uint    l_param4);
 
-extern oal_uint32  oam_log_console_printk(
+extern oal_uint32  oam_log_console_printk_etc(
                 oal_uint16                       us_file_no,
                 oal_uint16                       us_line_num,
                 const oal_int8                  *pc_func_name,
                 const oal_int8                  *pc_fmt,
                 ...);
 
-extern oal_uint32 oam_exception_record(oal_uint8 uc_vap_id, oam_excp_type_enum_uint8 en_excp_id);
+extern oal_uint32 oam_exception_record_etc(oal_uint8 uc_vap_id, oam_excp_type_enum_uint8 en_excp_id);
 
 /*******************************************************************************
             EVENT模块对外接口
 *******************************************************************************/
-extern oal_uint32  oam_event_set_switch(
+extern oal_uint32  oam_event_set_switch_etc(
                        oal_uint8               uc_vap_id,
                        oal_switch_enum_uint8   en_switch_type);
-extern oal_uint32  oam_event_get_switch(
+extern oal_uint32  oam_event_get_switch_etc(
                        oal_uint8              uc_vap_id,
                        oal_switch_enum_uint8 *pen_switch_type);
-extern oal_uint32  oam_event_report(
+extern oal_uint32  oam_event_report_etc(
                                     oal_uint8                  *puc_user_macaddr,
                                     oal_uint8                   uc_vap_id,
                                     oam_module_id_enum_uint16   en_mod,
                                     oam_event_type_enum_uint16  en_event_type,
                                     oal_uint8                  *puc_string);
-extern oal_uint32  oam_ota_report(oal_uint8   *puc_param_one_addr,
+extern oal_uint32  oam_ota_report_etc(oal_uint8   *puc_param_one_addr,
                                oal_uint16   us_param_one_len,
                                oal_uint8   *puc_param_two_addr,
                                oal_uint16   us_param_two_len,
                                oam_ota_type_enum_uint8  en_ota_type);
-extern oal_uint32  oam_ota_set_beacon_switch(
+extern oal_uint32  oam_ota_set_beacon_switch_etc(
                             oal_uint8                   uc_vap_id,
                             oam_sdt_print_beacon_rxdscr_type_enum_uint8 en_switch_type);
-extern oal_switch_enum_uint8  oam_ota_get_beacon_switch(oal_void);
-extern oal_uint32  oam_ota_set_rx_dscr_switch(
+extern oal_switch_enum_uint8  oam_ota_get_beacon_switch_etc(oal_void);
+extern oal_uint32  oam_ota_set_rx_dscr_switch_etc(
                             oal_uint8                   uc_vap_id,
                             oam_sdt_print_beacon_rxdscr_type_enum_uint8 en_switch_type);
-extern oal_switch_enum_uint8  oam_ota_get_rx_dscr_switch(oal_void);
+extern oal_switch_enum_uint8  oam_ota_get_rx_dscr_switch_etc(oal_void);
 
 
-extern oal_uint32  oam_report_eth_frame(oal_uint8               *puc_user_mac_addr,
+extern oal_uint32  oam_report_eth_frame_etc(oal_uint8               *puc_user_mac_addr,
                                        oal_uint8               *puc_eth_frame_hdr_addr,
                                        oal_uint16               us_eth_frame_len,
                                        oam_ota_frame_direction_type_enum_uint8 en_eth_frame_direction);
-extern oal_uint32 oam_report_dscr(oal_uint8  *puc_user_macaddr,
+extern oal_uint32 oam_report_dscr_etc(oal_uint8  *puc_user_macaddr,
                                oal_uint8  *puc_dscr_addr,
                                oal_uint16  us_dscr_len,
                                oam_ota_type_enum_uint8  en_ota_type);
-extern oal_uint32  oam_report_beacon(
+extern oal_uint32  oam_report_beacon_etc(
                                     oal_uint8     *puc_beacon_hdr_addr,
                                     oal_uint8      uc_beacon_hdr_len,
                                     oal_uint8     *puc_beacon_body_addr,
                                     oal_uint16     us_beacon_len,
                                     oam_ota_frame_direction_type_enum_uint8 en_beacon_direction);
 extern oal_void    oam_report_backtrace(oal_void);
-extern oal_uint32  oam_report_80211_frame(
+extern oal_uint32  oam_report_80211_frame_etc(
                         oal_uint8     *puc_user_macaddr,
                         oal_uint8     *puc_mac_hdr_addr,
                         oal_uint8      uc_mac_hdr_len,
@@ -2273,34 +2273,34 @@ extern oal_uint32  oam_report_80211_frame(
 #if 0
 extern oal_switch_enum_uint8 oam_report_get_switch(oam_ota_type_enum_uint8 en_type);
 #endif
-extern oal_uint32  oam_report_80211_mcast_get_switch(
+extern oal_uint32  oam_report_80211_mcast_get_switch_etc(
                                         oam_ota_frame_direction_type_enum_uint8 en_mcast_direction,
                                         oam_user_track_frame_type_enum_uint8    en_frame_type,
                                         oal_switch_enum_uint8                  *pen_frame_switch,
                                         oal_switch_enum_uint8                  *pen_cb_switch,
                                         oal_switch_enum_uint8                  *pen_dscr_switch);
-extern oal_uint32  oam_report_80211_ucast_get_switch(
+extern oal_uint32  oam_report_80211_ucast_get_switch_etc(
                                         oam_ota_frame_direction_type_enum_uint8 en_ucast_direction,
                                         oam_user_track_frame_type_enum_uint8    en_frame_type,
                                         oal_switch_enum_uint8                  *pen_frame_switch,
                                         oal_switch_enum_uint8                  *pen_cb_switch,
                                         oal_switch_enum_uint8                  *pen_dscr_switch,
                                         oal_uint16                              us_user_idx);
-extern oal_uint32  oam_report_80211_probe_get_switch(
+extern oal_uint32  oam_report_80211_probe_get_switch_etc(
                                         oam_ota_frame_direction_type_enum_uint8 en_probereq_direction,
                                         oal_switch_enum_uint8                  *pen_frame_switch,
                                         oal_switch_enum_uint8                  *pen_cb_switch,
                                         oal_switch_enum_uint8                  *pen_dscr_switch);
-extern oal_uint32  oam_report_80211_probe_set_switch(
+extern oal_uint32  oam_report_80211_probe_set_switch_etc(
                                         oam_ota_frame_direction_type_enum_uint8 en_probe_direction,
                                         oal_switch_enum_uint8                   en_frame_switch,
                                         oal_switch_enum_uint8                   en_cb_switch,
                                         oal_switch_enum_uint8                   en_dscr_switch);
-extern oal_uint32  oam_report_eth_frame_get_switch(
+extern oal_uint32  oam_report_eth_frame_get_switch_etc(
                                  oal_uint16             us_user_idx,
                                  oam_ota_frame_direction_type_enum_uint8 en_eth_direction,
                                  oal_switch_enum_uint8  *pen_eth_switch);
-extern oal_uint32  oam_report_netbuf_cb(oal_uint8  *puc_user_mac_addr,
+extern oal_uint32  oam_report_netbuf_cb_etc(oal_uint8  *puc_user_mac_addr,
                                        oal_uint8  *puc_netbuf_cb,
                                        oam_ota_type_enum_uint8 en_ota_type);
 #if 0
@@ -2308,32 +2308,32 @@ extern oal_uint32  oam_report_timer_track(oal_uint32 ul_file_id,
                                         oal_uint32 ul_line_num,
                                         oam_timer_track_type_enum_uint8 en_type);
 #endif
-extern oal_uint32  oam_report_mpdu_num(oal_uint8  *puc_user_mac_addr,
+extern oal_uint32  oam_report_mpdu_num_etc(oal_uint8  *puc_user_mac_addr,
                                         oam_report_mpdu_num_stru *pst_mpdu_num);
-extern oal_uint32  oam_report_dft_params(oal_uint8  *puc_user_mac_addr,
+extern oal_uint32  oam_report_dft_params_etc(oal_uint8  *puc_user_mac_addr,
                                         oal_uint8  *puc_param,
                                         oal_uint16      us_param_len,
                                         oam_ota_type_enum_uint8 en_type);
-extern oal_uint32  oam_report_set_all_switch(oal_switch_enum_uint8 en_switch);
-extern oal_uint32  oam_report_80211_ucast_set_switch(
+extern oal_uint32  oam_report_set_all_switch_etc(oal_switch_enum_uint8 en_switch);
+extern oal_uint32  oam_report_80211_ucast_set_switch_etc(
                                         oam_ota_frame_direction_type_enum_uint8 en_ucast_direction,
                                         oam_user_track_frame_type_enum_uint8    en_frame_type,
                                         oal_switch_enum_uint8                   en_frame_switch,
                                         oal_switch_enum_uint8                   en_cb_switch,
                                         oal_switch_enum_uint8                   en_dscr_switch,
                                         oal_uint16                              us_user_idx);
-extern oal_uint32 oam_report_eth_frame_set_switch(oal_uint16               us_user_idx,
+extern oal_uint32 oam_report_eth_frame_set_switch_etc(oal_uint16               us_user_idx,
                                                    oal_switch_enum_uint8    en_switch,
                                        oam_ota_frame_direction_type_enum_uint8 en_eth_direction);
-extern oal_uint32  oam_report_80211_mcast_set_switch(
+extern oal_uint32  oam_report_80211_mcast_set_switch_etc(
                                         oam_ota_frame_direction_type_enum_uint8 en_mcast_direction,
                                         oam_user_track_frame_type_enum_uint8    en_frame_type,
                                         oal_switch_enum_uint8                   en_frame_switch,
                                         oal_switch_enum_uint8                   en_cb_switch,
                                         oal_switch_enum_uint8                   en_dscr_switch);
-extern oal_uint32  oam_report_dhcp_arp_set_switch(oal_switch_enum_uint8 en_switch);
-extern oal_switch_enum_uint8  oam_report_dhcp_arp_get_switch(oal_void);
-extern oal_switch_enum_uint8  oam_report_data_get_global_switch(oam_ota_frame_direction_type_enum_uint8 en_direction);
+extern oal_uint32  oam_report_dhcp_arp_set_switch_etc(oal_switch_enum_uint8 en_switch);
+extern oal_switch_enum_uint8  oam_report_dhcp_arp_get_switch_etc(oal_void);
+extern oal_switch_enum_uint8  oam_report_data_get_global_switch_etc(oam_ota_frame_direction_type_enum_uint8 en_direction);
 
 /*******************************************************************************
             ALARM模块对外接口
@@ -2354,20 +2354,20 @@ extern oal_uint32  oam_alarm_report(
 /*******************************************************************************
             SDT模块对外接口
 *******************************************************************************/
-extern oal_void    oam_sdt_func_fook_register(oam_sdt_func_hook_stru *pfun_st_oam_sdt_hook);
-extern oal_void    oam_sdt_func_fook_unregister(oal_void);
-extern oal_void    oam_wal_func_fook_register(oam_wal_func_hook_stru *pfun_st_oam_wal_hook);
-extern oal_void    oam_wal_func_fook_unregister(oal_void);
+extern oal_void    oam_sdt_func_fook_register_etc(oam_sdt_func_hook_stru *pfun_st_oam_sdt_hook);
+extern oal_void    oam_sdt_func_fook_unregister_etc(oal_void);
+extern oal_void    oam_wal_func_fook_register_etc(oam_wal_func_hook_stru *pfun_st_oam_wal_hook);
+extern oal_void    oam_wal_func_fook_unregister_etc(oal_void);
 
-extern oal_uint32  oam_event_set_specific_type_switch(
+extern oal_uint32  oam_event_set_specific_type_switch_etc(
                                 oal_uint8                   uc_vap_id,
                                 oal_switch_enum_uint8       en_switch_type,
                                 oam_event_type_enum_uint16  en_event_type);
 
-extern oal_uint32 oam_report_data2sdt(oal_netbuf_stru *pst_netbuf,
+extern oal_uint32 oam_report_data2sdt_etc(oal_netbuf_stru *pst_netbuf,
                                        oam_data_type_enum_uint8 en_type,
                                        oam_primid_type_enum_uint8 en_prim);
-extern oal_netbuf_stru *oam_alloc_data2sdt(oal_uint16  us_data_len);
+extern oal_netbuf_stru *oam_alloc_data2sdt_etc(oal_uint16  us_data_len);
 /*******************************************************************************
             TRACE模块对外接口
 *******************************************************************************/
@@ -2382,46 +2382,46 @@ extern oal_void oam_profiling_alg_save_data(oam_profiling_alg_func_enum_uint8 en
 /*******************************************************************************
             STATISTICS模块对外接口
 *******************************************************************************/
-extern oal_uint32  oam_stats_report_timer_info_to_sdt(
+extern oal_uint32  oam_stats_report_timer_info_to_sdt_etc(
                                     oal_uint8 *puc_timer_addr,
                                     oal_uint8  uc_timer_len);
-extern oal_uint32  oam_stats_report_event_queue_info_to_sdt(
+extern oal_uint32  oam_stats_report_event_queue_info_to_sdt_etc(
                                     oal_uint8   *puc_event_queue_addr,
                                     oal_uint16    us_event_queue_info_len);
 #if (_PRE_PRODUCT_ID == _PRE_PRODUCT_ID_HI1151)||defined(_PRE_PRODUCT_ID_HI110X_HOST)
 
-extern oal_uint32 oam_stats_report_info_to_sdt(oam_ota_type_enum_uint8 en_ota_type);
-extern oal_uint32  oam_report_vap_pkt_stat_to_sdt(oal_uint8 uc_vap_id);
-extern oal_void  oam_stats_clear_stat_info(oal_void);
-extern oal_uint32  oam_stats_report_usr_info(oal_uint16  us_usr_id);
-extern oal_uint32  oam_stats_clear_user_stat_info(oal_uint16   us_usr_id);
+extern oal_uint32 oam_stats_report_info_to_sdt_etc(oam_ota_type_enum_uint8 en_ota_type);
+extern oal_uint32  oam_report_vap_pkt_stat_to_sdt_etc(oal_uint8 uc_vap_id);
+extern oal_void  oam_stats_clear_stat_info_etc(oal_void);
+extern oal_uint32  oam_stats_report_usr_info_etc(oal_uint16  us_usr_id);
+extern oal_uint32  oam_stats_clear_user_stat_info_etc(oal_uint16   us_usr_id);
 
-extern oal_uint32  oam_stats_clear_vap_stat_info(oal_uint8   uc_vap_id);
+extern oal_uint32  oam_stats_clear_vap_stat_info_etc(oal_uint8   uc_vap_id);
 #endif
 
 
-extern oal_uint32  oam_stats_report_mempool_info_to_sdt(
+extern oal_uint32  oam_stats_report_mempool_info_to_sdt_etc(
                                         oal_uint8           uc_pool_id,
                                         oal_uint16          us_pool_total_cnt,
                                         oal_uint16          us_pool_used_cnt,
                                         oal_uint8           uc_subpool_id,
                                         oal_uint16          us_subpool_total_cnt,
                                         oal_uint16          us_subpool_free_cnt);
-extern oal_uint32  oam_stats_report_memblock_info_to_sdt(oal_uint8  *puc_origin_data,
+extern oal_uint32  oam_stats_report_memblock_info_to_sdt_etc(oal_uint8  *puc_origin_data,
                                              oal_uint8   uc_user_cnt,
                                              oal_uint8   uc_pool_id,
                                              oal_uint8   uc_subpool_id,
                                              oal_uint16  us_len,
                                              oal_uint32  ul_file_id,
                                              oal_uint32  ul_alloc_line_num);
-extern oal_void  oam_stats_report_irq_info_to_sdt(
+extern oal_void  oam_stats_report_irq_info_to_sdt_etc(
                                     oal_uint8 *puc_irq_info_addr,
                                     oal_uint16  us_irq_info_len);
 
 /*****************************************************************************
                                 与配置文件相关的函数声明
 *****************************************************************************/
-extern oal_int32  oam_cfg_get_item_by_id(oam_cfg_type_enum_uint16  en_cfg_type);
+extern oal_int32  oam_cfg_get_item_by_id_etc(oam_cfg_type_enum_uint16  en_cfg_type);
 
 //#ifdef _PRE_PROFILING_MODE
 /*****************************************************************************
@@ -2457,12 +2457,12 @@ extern oal_void oam_record_time(oal_uint32 ul_idx);
 //#endif
 
 #ifdef _PRE_DEBUG_MODE
-extern oam_tx_complete_stat_stru   g_ast_tx_complete_stat[WLAN_DEVICE_SUPPORT_MAX_NUM_SPEC];
+extern oam_tx_complete_stat_stru   g_ast_tx_complete_stat_etc[WLAN_DEVICE_SUPPORT_MAX_NUM_SPEC];
 #endif
-extern oal_void  oam_netlink_ops_register(oam_nl_cmd_enum_uint8 en_type, oal_uint32 (*p_func)(oal_uint8 *puc_data, oal_uint32 ul_len));
-extern oal_void  oam_netlink_ops_unregister(oam_nl_cmd_enum_uint8 en_type);
-extern oal_int32  oam_netlink_kernel_send(oal_uint8 *puc_data, oal_uint32 ul_data_len, oam_nl_cmd_enum_uint8 en_type);
-extern oal_int32  oam_netlink_kernel_send_ex(oal_uint8 *puc_data_1st, oal_uint8 *puc_data_2nd,
+extern oal_void  oam_netlink_ops_register_etc(oam_nl_cmd_enum_uint8 en_type, oal_uint32 (*p_func)(oal_uint8 *puc_data, oal_uint32 ul_len));
+extern oal_void  oam_netlink_ops_unregister_etc(oam_nl_cmd_enum_uint8 en_type);
+extern oal_int32  oam_netlink_kernel_send_etc(oal_uint8 *puc_data, oal_uint32 ul_data_len, oam_nl_cmd_enum_uint8 en_type);
+extern oal_int32  oam_netlink_kernel_send_ex_etc(oal_uint8 *puc_data_1st, oal_uint8 *puc_data_2nd,
                                              oal_uint32 ul_len_1st, oal_uint32 ul_len_2nd,
                                              oam_nl_cmd_enum_uint8 en_type);
 
@@ -2473,19 +2473,19 @@ OAL_STATIC OAL_INLINE  oal_switch_enum_uint8 oam_get_log_switch(oal_uint32  ul_p
     oam_log_level_enum_uint8    en_log_level    = (ul_para>>28)&0xf;
 
     /* 从执行性能角度考虑，提前判断特性开关，大部分info日志可以在第一层命令就直接退出 */
-    if (OAL_SWITCH_OFF == g_st_oam_mng_ctx.st_log_ctx.en_global_log_switch)
+    if (OAL_SWITCH_OFF == g_st_oam_mng_ctx_etc.st_log_ctx.en_global_log_switch)
     {
         return OAL_SWITCH_OFF;
     }
-    else if (OAL_SWITCH_OFF == g_st_oam_mng_ctx.st_log_ctx.st_vap_log_info.aen_vap_log_switch[uc_vap_id])
+    else if (OAL_SWITCH_OFF == g_st_oam_mng_ctx_etc.st_log_ctx.st_vap_log_info.aen_vap_log_switch[uc_vap_id])
     {
         return OAL_SWITCH_OFF;
     }
-	else if (en_log_level > g_st_oam_mng_ctx.st_log_ctx.st_vap_log_info.aen_vap_log_level[uc_vap_id])
+	else if (en_log_level > g_st_oam_mng_ctx_etc.st_log_ctx.st_vap_log_info.aen_vap_log_level[uc_vap_id])
     {
 	    return OAL_SWITCH_OFF;
     }
-    else if (en_log_level > g_st_oam_mng_ctx.st_log_ctx.st_vap_log_info.aen_feature_log_level[uc_vap_id][en_feature_id])
+    else if (en_log_level > g_st_oam_mng_ctx_etc.st_log_ctx.st_vap_log_info.aen_feature_log_level[uc_vap_id][en_feature_id])
     {
         return OAL_SWITCH_OFF;
     }
@@ -2501,7 +2501,7 @@ OAL_STATIC OAL_INLINE oal_uint32  oam_event_chan_report(oal_uint8 uc_channel_num
 
     auc_event[0] = uc_channel_num;
 
-    return oam_event_report(BROADCAST_MACADDR, 0, OAM_MODULE_ID_HAL, OAM_EVENT_VAP_CHANGE_CHANNEL, auc_event);
+    return oam_event_report_etc(BROADCAST_MACADDR, 0, OAM_MODULE_ID_HAL, OAM_EVENT_VAP_CHANGE_CHANNEL, auc_event);
 }
 
 

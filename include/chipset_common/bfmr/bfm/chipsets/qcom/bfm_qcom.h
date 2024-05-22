@@ -5,23 +5,6 @@
 struct boot_log_struct {
   u32 boot_magic;        /* must be initialized in slb1 */
 
-  u32 sbl_meta_info_addr;/* must be initialized in slb1 */
-  u32 last_sbl_meta_info_addr;/* must be initialized in slb1 */  
-  u32 sbl_addr;          /* must be initialized in slb1 */
-  u32 last_sbl_addr;          /* must be initialized in slb1 */  
-  u32 sbl_log_buf_size;
-
-  u32 aboot_addr;        /* must be initialized in lk */
-  u32 aboot_log_buf_size;
-
-  u32 kernel_addr;       /* must be initialized in linux kernel */
-  u32 kernel_log_buf_size;
-  u32 klog_first_idx_addr;
-  u32 klog_first_seq_addr;
-  u32 klog_next_seq_addr;  
-
-  u32 hash_code;         /*!!!THIS IS MUST BE LAST MEMBER!!! any change in this sturct must be set this code again */ 
-
   u32 boot_stage;        /* must be initialized in every stage,and set it's val via  set_boot_stage */
   u32 last_boot_stage;
 
@@ -38,14 +21,6 @@ struct boot_log_struct {
   u8 last_isSystemRooted;
 };
 
-struct bootlog_read_struct {
- u32 number_of_logs;
- u32 boot_share_addr_start;   /* used for pass file from sbl1 to lk,must be initialized in lk */
- u32 boot_share_addr_write;
- u32 boot_share_size;
- u32 read_magic;
- u32 hash_code;         /*!!!THIS IS MUST BE LAST MEMBER!!! any change in this sturct must be set this code again */ 
-};
 
 struct bootlog_inject_struct {
   u32 flag;
@@ -63,8 +38,8 @@ struct bootlog_inject_struct {
 
 
 /* IMEM ALLOCATION */
-/* SHARED_IMEM_UNUSED_SPACE_BASE (0x08600B1C) */
-#define HWBOOT_LOG_INFO_START_BASE  0x08600B1C
+/* SHARED_IMEM_UNUSED_SPACE_BASE (0x146bfe1C) */
+//#define HWBOOT_LOG_INFO_START_BASE 0x08600B1C 
 #define HWBOOT_LOG_INFO_SIZE (0x100)
 
 #define HWBOOT_MAGIC_NUMBER   *((u32 *)("BOOT"))
@@ -80,7 +55,7 @@ u32 qcom_get_boot_stage(void);
 int qcom_set_boot_fail_flag(bfmr_bootfail_errno_e bootfail_errno);
 int qcom_hwboot_fail_init(void);
 int kmsg_print_to_ddr(char *buf, int size);
-long long bfm_hctosys(unsigned long long current_secs, bool is_do_set_time);
+unsigned long long bfm_hctosys(unsigned long long current_secs);
 
 /* export interface to kernel */
 void hwboot_fail_init_struct(void);

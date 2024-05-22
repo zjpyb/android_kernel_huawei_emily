@@ -468,7 +468,6 @@ VOS_UINT32 APP_VC_GetMuteStatus(
     VOS_UINT8                           ucOpId
 );
 
-/* Added by L47619 for VOICE_LOOP, 2013/07/05, begin */
 /*****************************************************************************
  函 数 名  : APP_VC_SetModemLoop
  功能描述  : 设置进入或退出语音换回
@@ -486,7 +485,6 @@ VOS_UINT32 APP_VC_SetModemLoop(
     VOS_UINT8                           ucOpId,
     VOS_UINT8                           ucModemLoop
 );
-/* Added by L47619 for VOICE_LOOP, 2013/07/05, end */
 
 VOS_UINT32 APP_VC_SendVcHifiResetNtf(
     VOS_UINT32                          ulRcvPid

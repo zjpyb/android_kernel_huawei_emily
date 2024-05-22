@@ -182,10 +182,16 @@
 #define WAIT_WIFI_OPEN_TIME         (3000)
 #define WAIT_WIFI_CLOSE_TIME        (1000)
 
-#define RELEASE_DELAT_TIMES         (5)
+#define RELEASE_DELAT_TIMES         (50)
 
-#define BT_SLEEP_TIME               (5000)
+#define BT_SLEEP_TIME               (2000)
 #define PLATFORM_SLEEP_TIME         (50)
+
+/*检查是否bfg timer工作正常,5s内无有mod timer, 异常处理,防止始终不睡眠*/
+#define PL_CHECK_TIMER_WORK         (5000)
+
+/*检查是否gnss异常不投票睡眠的次数:5s*/
+#define PL_CHECK_GNSS_VOTE_CNT      (5000/PLATFORM_SLEEP_TIME)
 
 #define BFG_POWER_GPIO_DOWN         (0)
 #define BFG_POWER_GPIO_UP           (1)
@@ -392,8 +398,8 @@ struct ps_pm_s {
     struct ps_core_s * ps_core_data;
     int32 (*change_baud_rate)(int64 baud_rate, uint8 enable_flowctl);
     int32 (*bfg_power_set)(uint8, uint8);
-    void  (*bfg_wake_lock)(void);
-    void  (*bfg_wake_unlock)(void);
+    void  (*bfg_wake_lock_etc)(void);
+    void  (*bfg_wake_unlock_etc)(void);
     int32 (*bfgx_dev_state_get)(void);
     void  (*bfgx_dev_state_set)(uint8);
     int32 (*operate_beat_timer)(uint8);
@@ -435,6 +441,7 @@ struct st_bfgx_data
     struct bfgx_sepreted_rx_st sepreted_rx;  /* bfgx分包接收数据结构 */
     wait_queue_head_t rx_wait;               /* wait queue for rx packet */
     atomic_t subsys_state;
+    char *name;
 };
 
 /**
@@ -495,6 +502,11 @@ struct ps_core_s {
     uint8  tty_have_open;
     uint16 gnss_read_delay;
     uint16 fm_read_delay;
+
+    uint64 rx_pkt_num[BFGX_BUTT];
+    uint64 tx_pkt_num[BFGX_BUTT];
+    uint64 rx_pkt_sys;
+    uint64 rx_pkt_oml;
 };
 
 /**
@@ -566,7 +578,7 @@ typedef struct uart_loop_user_cfg {
     uint32  uart_loop_tx_random_enable;
 }uart_loop_cfg;
 
-typedef struct uart_loop_test {
+typedef struct uart_loop_test_etc {
     uart_loop_cfg *test_cfg;
     uint8 * tx_buf;
     uint8 * rx_buf;
@@ -601,43 +613,44 @@ typedef struct _ssi_file_st
     uint8 file_name[100];
     uint32 write_addr;
 }ssi_file_st;
-extern uart_loop_cfg g_st_uart_loop_test_cfg;
-extern uart_loop_test_struct *g_pst_uart_loop_test_info;
-extern int32 uart_loop_test_recv_pkt(struct ps_core_s *ps_core_d, const uint8 *buf_ptr, uint16 pkt_len);
-extern int32 (*tty_recv)(void *, const uint8 *, int32);
-extern uint32 g_bfgx_rx_queue[BFGX_BUTT];
-extern const uint8 *g_bfgx_subsys_name[BFGX_BUTT];
-extern uint32 g_bfgx_rx_max_frame[BFGX_BUTT];
+extern uart_loop_cfg g_st_uart_loop_test_cfg_etc;
+extern uart_loop_test_struct *g_pst_uart_loop_test_info_etc;
+extern int32 uart_loop_test_recv_pkt_etc(struct ps_core_s *ps_core_d, const uint8 *buf_ptr, uint16 pkt_len);
+extern int32 (*tty_recv_etc)(void *, const uint8 *, int32);
+extern uint32 g_bfgx_rx_queue_etc[BFGX_BUTT];
+extern const uint8 *g_bfgx_subsys_name_etc[BFGX_BUTT];
+extern uint32 g_bfgx_rx_max_frame_etc[BFGX_BUTT];
 
 extern uint32 g_ul_gnss_me_thread_status;
 extern uint32 g_ul_gnss_lppe_thread_status;
+extern volatile bool  g_b_ir_only_mode;
 
 /*****************************************************************************
   Function declare
 *****************************************************************************/
-extern struct platform_device *hw_ps_device;
+extern struct platform_device *hw_ps_device_etc;
 
-extern int32 ps_pm_register(struct ps_pm_s *new_pm);
+extern int32 ps_pm_register_etc(struct ps_pm_s *new_pm);
 
-extern int32 ps_pm_unregister(struct ps_pm_s *del_pm);
+extern int32 ps_pm_unregister_etc(struct ps_pm_s *del_pm);
 
-int32 ps_get_plat_reference(struct ps_plat_s **plat_data);
+int32 ps_get_plat_reference_etc(struct ps_plat_s **plat_data);
 
-extern int32 uart_wifi_open(void);
-extern int32 uart_wifi_close(void);
-extern int32 uart_bfgx_close_cmd(void);
+extern int32 uart_wifi_open_etc(void);
+extern int32 uart_wifi_close_etc(void);
+extern int32 uart_bfgx_close_cmd_etc(void);
 
 /**
- * ps_write_tty -
+ * ps_write_tty_etc -
  * point this to tty->driver->write or tty->ops->write
  * depending upon the kernel version
  */
-int32 ps_write_tty(struct ps_core_s*, const uint8*, int32);
-int32 ps_core_tx_attemper(struct ps_core_s *ps_core_d);
+int32 ps_write_tty_etc(struct ps_core_s*, const uint8*, int32);
+int32 ps_core_tx_attemper_etc(struct ps_core_s *ps_core_d);
 
 /* init, exit entry funcs called from PM */
-int32 ps_core_init(struct ps_core_s **);
-int32 ps_core_exit(struct ps_core_s *);
+int32 ps_core_init_etc(struct ps_core_s **);
+int32 ps_core_exit_etc(struct ps_core_s *);
 
 /**
  * functions called when 1 of the protocol drivers gets
@@ -645,40 +658,40 @@ int32 ps_core_exit(struct ps_core_s *);
  * ldisc installed
  */
 
-int32 ps_get_core_reference(struct ps_core_s **core_data);
-int32 ps_core_recv(void *disc_data, const uint8 *data, int32 count);
+int32 ps_get_core_reference_etc(struct ps_core_s **core_data);
+int32 ps_core_recv_etc(void *disc_data, const uint8 *data, int32 count);
 int32 ps_core_recv_uart_test(void *disc_data, const uint8 *data, int32 count);
-int32 ps_tx_sys_cmd(struct ps_core_s *ps_core_d, uint8 type, uint8 content);
+int32 ps_tx_sys_cmd_etc(struct ps_core_s *ps_core_d, uint8 type, uint8 content);
 int32 ps_tx_urgent_cmd(struct ps_core_s *ps_core_d, uint8 type, uint8 content);
-int32 ps_tx_gnssbuf(struct ps_core_s *ps_core_d, const int8 __user *buf, size_t count);
-int32 ps_tx_nfcbuf(struct ps_core_s *ps_core_d, const int8 __user *buf, size_t count);
-int32 ps_tx_irbuf(struct ps_core_s *ps_core_d, const int8 __user *buf, size_t count);
-int32 ps_tx_fmbuf(struct ps_core_s *ps_core_d, const int8 __user *buf, size_t count);
-int32 ps_skb_enqueue(struct ps_core_s *ps_core_d, struct sk_buff *skb, uint8 type);
-int32 ps_add_packet_head(uint8 *buf, uint8 type, uint16 lenth);
-void  ps_kfree_skb(struct ps_core_s *ps_core_d, uint8 type);
+int32 ps_tx_gnssbuf_etc(struct ps_core_s *ps_core_d, const int8 __user *buf, size_t count);
+int32 ps_tx_nfcbuf_etc(struct ps_core_s *ps_core_d, const int8 __user *buf, size_t count);
+int32 ps_tx_irbuf_etc(struct ps_core_s *ps_core_d, const int8 __user *buf, size_t count);
+int32 ps_tx_fmbuf_etc(struct ps_core_s *ps_core_d, const int8 __user *buf, size_t count);
+int32 ps_skb_enqueue_etc(struct ps_core_s *ps_core_d, struct sk_buff *skb, uint8 type);
+int32 ps_add_packet_head_etc(uint8 *buf, uint8 type, uint16 lenth);
+void  ps_kfree_skb_etc(struct ps_core_s *ps_core_d, uint8 type);
 int32 hw_bfgx_open(uint32 subsys);
 int32 hw_bfgx_close(uint32 subsys);
 int32 bfgx_cali_data_init(void);
 bool ps_chk_tx_queue_empty(struct ps_core_s *ps_core_d);
-struct sk_buff *ps_alloc_skb(uint16 len);
-struct sk_buff *ps_skb_dequeue(struct ps_core_s *ps_core_d, uint8 type);
+struct sk_buff *ps_alloc_skb_etc(uint16 len);
+struct sk_buff *ps_skb_dequeue_etc(struct ps_core_s *ps_core_d, uint8 type);
 int32 ps_patch_write(uint8 *data, int32 count);
-int32 ps_set_sys_packet(uint8 *buf, uint8 type, uint8 content);
-int32 ps_change_uart_baud_rate(int64 baud_rate, uint8 enable_flowctl);
+int32 ps_set_sys_packet_etc(uint8 *buf, uint8 type, uint8 content);
+int32 ps_change_uart_baud_rate_etc(int64 baud_rate, uint8 enable_flowctl);
 uint8 check_bfg_not_booting(struct ps_core_s *ps_core_d);
-void host_allow_bfg_sleep(struct work_struct *work);
+void host_allow_bfg_sleep_etc(struct work_struct *work);
 uint8  bfgx_wakeup_device(struct ps_core_s *ps_core_d, uint8 type);
-int32 ps_check_packet_head(struct ps_core_s *ps_core_d, uint8 *buf_ptr, int32 count);
-bool ps_chk_bfg_active(struct ps_core_s *ps_core_d);
-int32 bfgx_open_cmd_send(uint32 subsys);
-int32 prepare_to_visit_node(struct ps_core_s *ps_core_d);
-int32 post_to_visit_node(struct ps_core_s *ps_core_d);
-void reset_uart_rx_buf(void);
-int32 ps_push_skb_queue(struct ps_core_s *ps_core_d, uint8 *buf_ptr, uint16 pkt_len, uint8 type);
-bool ps_chk_only_gnss_and_cldslp(struct ps_core_s *ps_core_d);
+int32 ps_check_packet_head_etc(struct ps_core_s *ps_core_d, uint8 *buf_ptr, int32 count);
+bool ps_chk_bfg_active_etc(struct ps_core_s *ps_core_d);
+int32 bfgx_open_cmd_send_etc(uint32 subsys);
+int32 prepare_to_visit_node_etc(struct ps_core_s *ps_core_d);
+int32 post_to_visit_node_etc(struct ps_core_s *ps_core_d);
+void reset_uart_rx_buf_etc(void);
+int32 ps_push_skb_queue_etc(struct ps_core_s *ps_core_d, uint8 *buf_ptr, uint16 pkt_len, uint8 type);
+bool ps_chk_only_gnss_and_cldslp_etc(struct ps_core_s *ps_core_d);
 extern void test_case_01(uint32  pkt_gen, uint32 pkt_len, uint8 test_type);
-int32 wifi_choose_bfgn_channel_send_log2sdt(uint8* data, uint16 len);
+int32 wifi_choose_bfgn_channel_send_log2sdt_etc(uint8* data, uint16 len);
 
 extern struct kset	  *devices_kset;
 

@@ -16,6 +16,8 @@
 void dp_debug_init_combophy_pree_swing(uint32_t *pv, int count);
 int dp_debug_append_info(char *buf, int size, char *fmt, ...);
 int dp_debug_get_vs_pe_force(uint8_t *vs_force, uint8_t *pe_force);
+int dp_debug_get_lanes_rate_force(uint8_t *lanes_force, uint8_t *rate_force);
+int dp_debug_get_resolution_force(uint8_t *user_mode, uint8_t *user_format);
 
 #endif // __DP_DEBUG_H__
 

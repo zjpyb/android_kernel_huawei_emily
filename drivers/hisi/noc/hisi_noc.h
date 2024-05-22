@@ -20,7 +20,7 @@
 
 #define NOC_MAX_IRQ_NR        64
 #define MAX_NOC_NODES_NR      33
-#define HISI_NOC_CLOCK_MAX     3
+#define HISI_NOC_CLOCK_MAX     5
 
 #define NOC_PTYPE_UART 1
 #define NOC_PTYPE_PSTORE 0
@@ -29,6 +29,16 @@
 
 #define MAX_NOC_LIST_TARGETS 0x20
 #define MAX_NOC_TARGET_NAME_LEN 0x10
+
+#define MASK_PMCTRL_POWER_IDLE 0x000000000000FFFF
+#define MASK_PMCTRL_POWER_IDLE1 0x00000000FFFF0000
+#define MASK_PMCTRL_POWER_IDLE2 0x0000FFFF00000000
+#define PMCTRL_POWER_IDLE_POISION 0
+#define PMCTRL_POWER_IDLE_POISION1 1
+#define PMCTRL_POWER_IDLE_POISION2 2
+#define GET_PMCTRL_POWER_IDLE1 16
+#define GET_PMCTRL_POWER_IDLE2 32
+
 /* NOTE: Must the same order with DTS.*/
 enum NOC_REG_DUMP_NAME {
 	NOC_SCTRL_BASE = 0,
@@ -62,6 +72,12 @@ struct hisi_noc_reg_list {
 	unsigned int pmctrl_power_idlereq_offset;
 	unsigned int pmctrl_power_idleack_offset;
 	unsigned int pmctrl_power_idle_offset;
+	unsigned int pmctrl_power_idlereq1_offset;
+	unsigned int pmctrl_power_idleack1_offset;
+	unsigned int pmctrl_power_idle1_offset;
+	unsigned int pmctrl_power_idlereq2_offset;
+	unsigned int pmctrl_power_idleack2_offset;
+	unsigned int pmctrl_power_idle2_offset;
 };
 
 struct hisi_noc_err_probe_reg {

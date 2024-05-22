@@ -11,6 +11,8 @@
  * GNU General Public License for more details.
  */
 
+#define pr_fmt(fmt) "ufshcd :" fmt
+
 #include "ufshcd.h"
 #include "ufs_quirks.h"
 #include "dsm_ufs.h"
@@ -22,10 +24,56 @@
 
 #define SERIAL_NUM_SIZE 12
 #define BOARDID_SIZE 4
-#define SAMSUNG_512G_PRODUCT_NAME "KLUFG8R1EM-B0C1"
-#define PRODUCT_NAME_CMP_COUNT (sizeof(SAMSUNG_512G_PRODUCT_NAME) - 1)
+#define MAX_OLD_PRDCT_NAME_NR 13
 
-static struct ufs_card_fix ufs_fixups[] = {
+static char old_product_name[MAX_OLD_PRDCT_NAME_NR][MAX_MODEL_LEN] = {
+	"KLUBG4G1CE-B0B1", /* Samsung  UFS2.0 32GB */
+	"KLUCG4J1CB-B0B1", /* Samsung  UFS2.0 64GB */
+	"KLUDG8J1CB-B0B1", /* Samsung  UFS2.0 128GB */
+	"KLUCG4J1EB-B0B1", /* Samsung  UFS2.0 64GB */
+	"KLUDG8J1EB-B0B1", /* Samsung  UFS2.0 128GB */
+	"KLUEG8U1EM-B0B1", /* Samsung  UFS2.0 256GB */
+	"KLUEG8U1EM-B0B1", /* Samsung  UFS2.1 256GB */
+	"KLUCG4J1ED-B0C1", /* Samsung  UFS2.1 64GB */
+	"KLUDG8V1EE-B0C1", /* Samsung  UFS2.1 128GB */
+	"KLUEG8U1EM-B0C1", /* Samsung  UFS2.1 256GB */
+
+	"KLUCG2K1EA-B0C1", /* Samsung  UFS2.1 64GB  V4 */
+	"KLUDG4U1EA-B0C1", /* Samsung  UFS2.1 128GB V4 */
+	"KLUEG8U1EA-B0C1"  /* Samsung  UFS2.1 256GB V4 */
+};
+
+/*
+ * Distinguish between samsung old and new product.
+ * Return 0 if the product is new, 1 if the product is old.
+ * For a old product, samsung has 12 byte long of serial number ready to use;
+ * for a new product, samsung has 24 byte long of serial number in unicode,
+ * which should be transfered to 12 byte long in ascii.
+ */
+static int is_old_product_name(char *product_name, unsigned int *boardid)
+{
+	int i = 0;
+
+	for (i = 0; i < MAX_OLD_PRDCT_NAME_NR; i++) {
+		if (!strncmp(product_name, old_product_name[i], strlen(old_product_name[i]))) {
+			if (product_name[9] == 'A') { /*samsung v4 that has some specific board id should be regard as old product */
+				if ((boardid[0]==6 && boardid[1]==4 && boardid[2]==5 && boardid[3]==3)/*for board_id == 6453, keep old uid for workaround*/
+				|| (boardid[0]==6 && boardid[1]==4 && boardid[2]==5 && boardid[3]==5) /*for board_id == 6455, keep old uid for workaround*/
+				|| (boardid[0]==6 && boardid[1]==9 && boardid[2]==0 && boardid[3]==8) /*for board_id == 6908, keep old uid for workaround*/
+				|| (boardid[0]==6 && boardid[1]==9 && boardid[2]==1 && boardid[3]==3)) { /*for board_id == 6913, keep old uid for workaround*/
+					return 1;
+				} else {
+					return 0;
+				}
+			} else {
+				return 1;
+			}
+		}
+	}
+	return 0;
+}
+
+static struct ufs_dev_fix ufs_fixups[] = {
 	/* UFS cards deviations table */
 	END_FIX};
 
@@ -57,9 +105,9 @@ err_get_bid:
 static void ufs_set_sec_unique_number(struct ufs_hba *hba,
 				      uint8_t *str_desc_buf,
 				      uint8_t *desc_buf,
-                                      char *product_name)
+					  char *product_name)
 {
-	int i;
+	int i, idx;
 	unsigned int boardid[BOARDID_SIZE] = {0};
 	uint8_t snum_buf[SERIAL_NUM_SIZE + 1];
 
@@ -69,28 +117,27 @@ static void ufs_set_sec_unique_number(struct ufs_hba *hba,
 
 	switch (hba->manufacturer_id) {
 	case UFS_VENDOR_SAMSUNG:
-		if ((product_name[9] == 'A' && !((boardid[0]==6 && boardid[1]==4 && boardid[2]==5 && boardid[3]==3) /*for board_id == 6453, keep old uid for workaround*/
-			|| (boardid[0]==6 && boardid[1]==4 && boardid[2]==5 && boardid[3]==5) /*for board_id == 6455, keep old uid for workaround*/
-			|| (boardid[0]==6 && boardid[1]==9 && boardid[2]==0 && boardid[3]==8) /*for board_id == 6908, keep old uid for workaround*/
-			|| (boardid[0]==6 && boardid[1]==9 && boardid[2]==1 && boardid[3]==3))) /*for board_id == 6913, keep old uid for workaround*/
-			|| !strncmp(product_name, SAMSUNG_512G_PRODUCT_NAME, PRODUCT_NAME_CMP_COUNT)) { /*Get uid for product name "KLUFG8R1EM-B0C1" by the way below*/
+		if (is_old_product_name(product_name, boardid)) {
+			/* samsung has 12Byte long of serail number, just copy it */
+			memcpy(snum_buf, str_desc_buf + QUERY_DESC_HDR_SIZE, 12);
+		} else {
 			/* Samsung V4 UFS need 24 Bytes for serial number, transfer unicode to 12 bytes
 			 * the magic number 12 here was following original below HYNIX/TOSHIBA decoding method
 			*/
 			for (i = 0; i < 12; i++) {
-				snum_buf[i] =
-					str_desc_buf[QUERY_DESC_HDR_SIZE + i * 2 + 1];/*lint !e679*/
+				idx = QUERY_DESC_HDR_SIZE + i * 2 + 1;
+				snum_buf[i] = str_desc_buf[idx];
 			}
-		} else {
-			/* samsung has 12Byte long of serail number, just copy it */
-			memcpy(snum_buf, str_desc_buf + QUERY_DESC_HDR_SIZE, 12);
 		}
 		break;
-	case UFS_VENDOR_HYNIX:
+	case UFS_VENDOR_SKHYNIX:
 		/* hynix only have 6Byte, add a 0x00 before every byte */
 		for (i = 0; i < 6; i++) {
-			snum_buf[i * 2] = 0x0;/*lint !e679*/
-			snum_buf[i * 2 + 1] = str_desc_buf[QUERY_DESC_HDR_SIZE + i];/*lint !e679*/
+			/*lint -save  -e679 */
+			snum_buf[i * 2] = 0x0;
+			snum_buf[i * 2 + 1] =
+				str_desc_buf[QUERY_DESC_HDR_SIZE + i];
+			/*lint -restore*/
 		}
 		break;
 	case UFS_VENDOR_TOSHIBA:
@@ -114,6 +161,12 @@ static void ufs_set_sec_unique_number(struct ufs_hba *hba,
 			snum_buf[i] = 0;
 		}
 		break;
+	case UFS_VENDOR_SANDISK:
+		for (i = 0; i < 12; i++) {
+			idx = QUERY_DESC_HDR_SIZE + i * 2 + 1;
+			snum_buf[i] = str_desc_buf[idx];
+		}
+		break;
 	default:
 		dev_err(hba->dev, "unknown ufs manufacturer id\n");
 		break;
@@ -125,7 +178,7 @@ static void ufs_set_sec_unique_number(struct ufs_hba *hba,
 }
 
 static int ufs_get_device_info(struct ufs_hba *hba,
-			       struct ufs_card_info *card_data)
+			       struct ufs_device_info *card_data)
 {
 	int err;
 	uint8_t model_index;
@@ -145,6 +198,7 @@ static int ufs_get_device_info(struct ufs_hba *hba,
 	 */
 	card_data->wmanufacturerid = desc_buf[DEVICE_DESC_PARAM_MANF_ID] << 8 |
 				     desc_buf[DEVICE_DESC_PARAM_MANF_ID + 1];
+
 	card_data->spec_version = desc_buf[DEVICE_DESC_PARAM_SPEC_VER] << 8 |
 				  desc_buf[DEVICE_DESC_PARAM_SPEC_VER + 1];
 	hba->manufacturer_id = card_data->wmanufacturerid;
@@ -158,6 +212,7 @@ static int ufs_get_device_info(struct ufs_hba *hba,
 	    desc_buf[DEVICE_DESC_PARAM_MANF_DATE + 1];
 
 	hba->manufacturer_date = card_data->wmanufacturer_date;
+
 	hba->ufs_device_spec_version = card_data->spec_version;
 	/*product name*/
 	model_index = desc_buf[DEVICE_DESC_PARAM_PRDCT_NAME];
@@ -169,9 +224,9 @@ static int ufs_get_device_info(struct ufs_hba *hba,
 		goto out;
 
 	str_desc_buf[QUERY_DESC_STRING_MAX_SIZE] = '\0';
-	strlcpy(card_data->model, (char *)(str_desc_buf + QUERY_DESC_HDR_SIZE),
+	strlcpy(card_data->model, (str_desc_buf + QUERY_DESC_HDR_SIZE),
 		min_t(uint8_t, str_desc_buf[QUERY_DESC_LENGTH_OFFSET],
-		      MAX_MODEL_LEN));
+		      sizeof(card_data->model)));
 	/* Null terminate the model string */
 	card_data->model[MAX_MODEL_LEN] = '\0';
 
@@ -200,7 +255,7 @@ static int ufs_get_device_info(struct ufs_hba *hba,
 
 		cid[3] = (((cid[3]) & 0xffff) << 16) | (((cid[3]) >> 16) & 0xffff);
 		set_bootdevice_cid((u32 *)cid);
-		set_bootdevice_product_name(card_data->model, MAX_MODEL_LEN);
+		set_bootdevice_product_name(card_data->model);
 		set_bootdevice_manfid(hba->manufacturer_id);
 	}
 #endif
@@ -212,13 +267,10 @@ out:
 void ufs_advertise_fixup_device(struct ufs_hba *hba)
 {
 	int err;
-	struct ufs_card_fix *f;
-	struct ufs_card_info card_data;
+	struct ufs_dev_fix *f;
+	struct ufs_device_info card_data;
 
 	card_data.wmanufacturerid = 0;
-	card_data.model = kzalloc(MAX_MODEL_LEN + 1, GFP_KERNEL);
-	if (!card_data.model)
-		goto out;
 
 	/* get device data*/
 	err = ufs_get_device_info(hba, &card_data);
@@ -233,18 +285,19 @@ void ufs_advertise_fixup_device(struct ufs_hba *hba)
 		     (f->card.wmanufacturerid == UFS_ANY_VENDOR)) &&
 		    /* and same model */
 		    (STR_PRFX_EQUAL(f->card.model, card_data.model) ||
-		     !strncmp(f->card.model, UFS_ANY_MODEL, sizeof(UFS_ANY_MODEL))))
+		     !strcmp(f->card.model, UFS_ANY_MODEL)))
 			/* update quirks */
 			hba->dev_quirks |= f->quirk;
 	}
 out:
-	kfree(card_data.model);
+
+	printk(KERN_ALERT "GK in func=%s:%d,Failed getting device info\n",__func__,__LINE__);
 }
 
 void ufs_get_geometry_info(struct ufs_hba *hba)
 {
 	int err;
-	uint8_t desc_buf[QUERY_DESC_GEOMETRY_MAZ_SIZE];
+	uint8_t desc_buf[QUERY_DESC_GEOMETRY_MAX_SIZE];
 	u64 total_raw_device_capacity;
 #ifdef CONFIG_HISI_BOOTDEVICE
 	u8 rpmb_read_write_size = 0;
@@ -252,7 +305,7 @@ void ufs_get_geometry_info(struct ufs_hba *hba)
 	u64 rpmb_write_frame_support = 0;
 #endif
 	err =
-	    ufshcd_read_geometry_desc(hba, desc_buf, QUERY_DESC_GEOMETRY_MAZ_SIZE);
+	    ufshcd_read_geometry_desc(hba, desc_buf, QUERY_DESC_GEOMETRY_MAX_SIZE);
 	if (err) {
 		dev_err(hba->dev, "%s: Failed getting geometry info\n", __func__);
 		goto out;
@@ -304,8 +357,8 @@ void ufs_get_device_health_info(struct ufs_hba *hba)
 	life_time_est_typ_a = desc_buf[HEALTH_DEVICE_DESC_PARAM_LIFETIMEA];
 	life_time_est_typ_b = desc_buf[HEALTH_DEVICE_DESC_PARAM_LIFETIMEB];
 
-	if(strstr(saved_command_line, "androidboot.swtype=factory") &&
-		(life_time_est_typ_a > 1 || life_time_est_typ_b > 1)){
+	if (strstr(saved_command_line, "androidboot.swtype=factory") &&
+	    (life_time_est_typ_a > 1 || life_time_est_typ_b > 1)) {
 		dsm_ufs_update_error_info(hba, DSM_UFS_LIFETIME_EXCCED_ERR);
 		dev_err(hba->dev, "%s: life_time_est_typ_a = %d, life_time_est_typ_b = %d\n",
 		        __func__,
@@ -315,7 +368,6 @@ void ufs_get_device_health_info(struct ufs_hba *hba)
 		if (dsm_ufs_enabled())
 			schedule_work(&hba->dsm_work);
 	}
-
 #ifdef CONFIG_HISI_BOOTDEVICE
 	set_bootdevice_pre_eol_info(pre_eol_info);
 	set_bootdevice_life_time_est_typ_a(life_time_est_typ_a);

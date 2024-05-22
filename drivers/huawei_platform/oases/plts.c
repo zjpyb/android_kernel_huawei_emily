@@ -50,11 +50,11 @@ static DECLARE_BITMAP(oases_plts_bitmap, OASES_PLTS_COUNT);
 #if IS_ENABLED(CONFIG_MODULES)
 static void *module_core_base(void *mod)
 {
-    struct module *m = mod;
+	struct module *m = mod;
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 5, 0)
-    return m->module_core;
+	return m->module_core;
 #else
-    return m->core_layout.base;
+	return m->core_layout.base;
 #endif
 }
 #endif
@@ -87,6 +87,10 @@ int plts_empty(void *mod)
 	return bitmap_empty(info->bitmap, OASES_MODULE_PLTS_COUNT);
 }
 
+/*
+ * Note: __vmalloc_node_range has different args,
+ * msm: 3.18+, other(hisi): 4.0+ 9 args, other have 8 args
+ */
 static void *plts_find(void *mod)
 {
 #if IS_ENABLED(CONFIG_MODULES)
@@ -108,11 +112,12 @@ static void *plts_find(void *mod)
 	plts_bgn = (unsigned long) module_core_base(mod);
 	plts_end = plts_bgn + 128 * 1024 * 1024;
 	plts = __vmalloc_node_range(OASES_MODULE_PLTS_MAX_SIZE, PAGE_SIZE,
-                       plts_bgn, plts_end, GFP_KERNEL, PAGE_KERNEL_EXEC,
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 0, 0)
-					   0,
+			plts_bgn, plts_end, GFP_KERNEL, PAGE_KERNEL_EXEC,
+#if ((LINUX_VERSION_CODE >= KERNEL_VERSION(4, 0, 0)) \
+	|| ((LINUX_VERSION_CODE >= KERNEL_VERSION(3, 18, 0)) && IS_ENABLED(CONFIG_ARCH_MSM)))
+			0,
 #endif
-					   NUMA_NO_NODE, __builtin_return_address(0));
+			NUMA_NO_NODE, __builtin_return_address(0));
 	if (plts == NULL)
 		goto fail_free_info;
 	info->plts = plts;
@@ -139,8 +144,8 @@ void *plts_reserve(void *mod)
 		struct oases_plt_entry *plts =
 			(struct oases_plt_entry *) oases_plts_impl;
 
-		i = bitmap_find_next_zero_area(oases_plts_bitmap, OASES_PLTS_COUNT,
-	                                   0, 1, 0);
+		i = bitmap_find_next_zero_area(oases_plts_bitmap,
+				OASES_PLTS_COUNT, 0, 1, 0);
 		if (i >= OASES_PLTS_COUNT) {
 			oases_error("OASES_PLTS_COUNT reached\n");
 			return NULL;
@@ -151,8 +156,8 @@ void *plts_reserve(void *mod)
 	mp = plts_find(mod);
 	if (mp == NULL)
 		return NULL;
-	i = bitmap_find_next_zero_area(mp->bitmap, OASES_MODULE_PLTS_COUNT,
-								   0, 1, 0);
+	i = bitmap_find_next_zero_area(mp->bitmap,
+			OASES_MODULE_PLTS_COUNT, 0, 1, 0);
 	if (i >= OASES_MODULE_PLTS_COUNT) {
 		oases_error("OASES_MODULE_PLTS_COUNT reached\n");
 		return NULL;
@@ -216,7 +221,7 @@ int plts_purge(void *mod)
 #endif
 }
 
-int oases_plts_init(void)
+int __init oases_plts_init(void)
 {
 #if !IS_ENABLED(CONFIG_OASES_STATIC_PLTS)
 	return -1;

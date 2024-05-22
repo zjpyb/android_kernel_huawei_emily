@@ -53,6 +53,8 @@
 #include "RnicDebug.h"
 #include "RnicCtx.h"
 #include "RnicDev.h"
+#include <linux/version.h>
+#include <net/sock.h>
 
 /*****************************************************************************
     协议栈打印打点方式下的.C文件宏定义
@@ -223,7 +225,6 @@ const RNIC_NETCARD_ELEMENT_TAB_STRU           g_astRnicManageTbl[RNIC_NET_ID_MAX
       MODEM_ID_0, RNIC_RMNET_ID_EMC0, {0, 0, 0, 0, 0}},
 };
 
-
 /******************************************************************************
    5 函数实现
 ******************************************************************************/
@@ -288,6 +289,14 @@ netdev_tx_t RNIC_StartXmit(
         return NETDEV_TX_OK;
     }
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
+    /* The value is a bit-shift of 1 second,
+     * so 4 is ~64ms of queued data. Only affects local TCP
+     * sockets.
+     */
+    sk_pacing_shift_update(pstSkb->sk, 4);
+#endif
+
     RNIC_ProcessTxData(pstSkb, pstNetCntxt);
 
     return NETDEV_TX_OK;
@@ -325,11 +334,35 @@ VOS_INT RNIC_ChangeMtu(
     VOS_INT                             lNewMtu
 )
 {
-    /* new_mtu长度不在有效范围内 */
-    if (lNewMtu > RNIC_MAX_PACKET)
+    RNIC_SPEC_CTX_STRU                 *pstNetCntxt = VOS_NULL_PTR;
+    RNIC_NETCARD_DEV_INFO_STRU         *pstPriv     = VOS_NULL_PTR;
+
+    pstPriv     = (RNIC_NETCARD_DEV_INFO_STRU *)netdev_priv(pstNetDev);
+
+    pstNetCntxt = RNIC_GetNetCntxtByRmNetId(pstPriv->enRmNetId);
+
+    if (VOS_NULL_PTR == pstNetCntxt)
     {
-        RNIC_DEV_ERR_PRINTK("RNIC_ChangeMtu: Mtu out of range!");
+        RNIC_DEV_ERR_PRINTK("RNIC_ChangeMtu: enRmNetId is invalid!");
         return -EINVAL;
+    }
+
+    if (RNIC_RMNET_R_IS_VALID(pstNetCntxt->enRmNetId))
+    {
+        if (lNewMtu > RNIC_R_IMS_MAX_PACKET)
+        {
+            RNIC_DEV_ERR_PRINTK("RNIC_ChangeMtu: R_IMS Mtu out of range!");
+            return -EINVAL;
+        }
+    }
+    else
+    {
+        /* new_mtu长度不在有效范围内 */
+        if (lNewMtu > RNIC_MAX_PACKET)
+        {
+            RNIC_DEV_ERR_PRINTK("RNIC_ChangeMtu: Mtu out of range!");
+            return -EINVAL;
+        }
     }
 
     /* 网卡mtu完成赋值 */

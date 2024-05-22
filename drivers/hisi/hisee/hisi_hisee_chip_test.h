@@ -16,6 +16,15 @@
 
 #endif
 
+/**
+ * @brief  AT cmd type
+*/
+typedef enum _HISEE_AT_TYPE {
+	HISEE_AT_CASD         = 0,
+	HISEE_AT_VERIFYCASD,
+	HISEE_AT_MAX,
+} hisee_at_type;
+
 int hisee_parallel_manufacture_func(void *buf, int para);
 #ifdef CONFIG_HISI_HISEE_NVMFORMAT_TEST
 int hisee_nvmformat_func(void *buf, int para);
@@ -30,4 +39,24 @@ int hisee_total_slt_func(void *buf, int para);
 int hisee_chiptest_rt_run_func(void * buf, int para);
 int hisee_chiptest_rt_stop_func(void * buf, int para);
 #endif
+
+int hisee_factory_check_func(void *buf, int para);
+
+ssize_t hisee_at_result_show(struct device *dev, struct device_attribute *attr, char *buf);
+
+/* flag to indicate running status of flash otp1 */
+typedef enum {
+	NO_NEED = 0,
+	PREPARED,
+	RUNING,
+	FINISH,
+} E_RUN_STATUS;
+
+/* set the otp1 write work status */
+void hisee_chiptest_set_otp1_status(E_RUN_STATUS status);
+
+/* check otp1 write work is running */
+bool hisee_chiptest_otp1_is_runing(void);
+
+E_RUN_STATUS hisee_chiptest_get_otp1_status(void);
 #endif

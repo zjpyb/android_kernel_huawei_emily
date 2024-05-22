@@ -1,3 +1,9 @@
+#ifdef CONFIG_MPTCP
+#include <net/mptcp.h>
+#include <net/mptcp_v4.h>
+#include <net/mptcp_v6.h>
+#endif
+#include <linux/highmem.h>
 #include "huawei_platform/emcom/smartcare/network_measurement/nm.h"
 #include "huawei_platform/emcom/smartcare/nse/psr_pub.h"
 #include "huawei_platform/emcom/emcom_netlink.h"
@@ -7,6 +13,7 @@
 #define MAX_NLMSG_PAYLOAD       1024
 #define NL_MSG_HEADER_LEN       16
 #define SMARTCARE_NL_TYPE       NETLINK_EMCOM_KD_SMARTCARE_NM
+#define PROTOCOL_HTTPS		443
 
 struct __nvec {
 	void	*base;
@@ -160,8 +167,8 @@ void udp_measure_init(struct sock *sk, struct sk_buff *skb)
 		goto out;
 
 	getnstimeofday(&ts);
-	if ((int)(ts.tv_sec - (nm >> 1)) > network_measure_timeouts) {
-		/* Userland daemon may have been killed. */
+	if ((int)(ts.tv_sec - (nm >> 1)) > network_measure_timeouts && network_measure_timeouts != 0) {
+		/* Userland daemon may have been killed. For service competition mode, timeouts is 0. */
 		network_measure = nm_shut_off_valve(&ts);
 		goto out;
 	}
@@ -272,8 +279,99 @@ static void nm_report(int report, struct sock *sk)
 	return;
 }
 
-void nm_nse(struct sock *sk, struct sk_buff *skb, int protocol, int direction,
-	    unsigned char func)
+static int nm_nse_http_helper(struct sock *sk, struct sk_buff *skb, int offset,
+			      int len, int protocol, int direction)
+{
+	int start = skb_headlen(skb);
+	int i, parse = start - offset;
+	struct timespec ts;
+	unsigned long epoch = 0;
+	int ret = 0;
+	int rep = 0;
+	int reset_mem = 0;
+	int is_reported = 0;
+
+	getnstimeofday(&ts);
+	epoch = (unsigned long)timespec_to_ns(&ts);
+
+	if (parse > 0) {
+		if (parse > len)
+			parse = len;
+
+		if ((!virt_addr_valid(skb->data + offset)) ||
+		    (!virt_addr_valid(skb->data + offset + parse))) {
+			NM_DEBUG("Invalid data address.");
+			return 0;
+		}
+
+		ret = psr_proc(protocol, direction, epoch, parse,
+			       skb->data + offset,
+			       sk->sk_nm_http->status,
+			       sk->sk_nm_http->result);
+		reset_mem = ret == 2 ? 1 : 0;
+		/* !!ret is equal to either 0 or 1 */
+		rep = !!ret << NM_REPORT_HTTP;
+		if (rep) {
+			nm_report(rep, sk);
+			is_reported = 1;
+		}
+
+		if (reset_mem)
+			memset(sk->sk_nm_http, 0x00,
+			       sizeof(struct nm_http_entry));
+
+		if ((len -= parse) == 0)
+			return is_reported;
+		offset += parse;
+	}
+
+	/* Copy paged appendix. Hmm... why does this look so complicated? */
+	for (i = 0; i < skb_shinfo(skb)->nr_frags; i++) {
+		int end;
+		void *kaddr, *parse_addr;
+		const skb_frag_t *frag = &skb_shinfo(skb)->frags[i];
+
+		WARN_ON(start > offset + len);
+
+		end = start + skb_frag_size(frag);
+		if ((parse = end - offset) > 0) {
+			if (parse > len)
+				parse = len;
+
+			kaddr = kmap(skb_frag_page(frag));
+			parse_addr = kaddr + frag->page_offset + offset - start;
+			if ((!virt_addr_valid(parse_addr)) ||
+			    (!virt_addr_valid(parse_addr + parse))) {
+				NM_DEBUG("Invalid data address.");
+				return is_reported;
+			}
+			ret = psr_proc(protocol, direction, epoch, parse, parse_addr,
+				       sk->sk_nm_http->status,
+				       sk->sk_nm_http->result);
+			kunmap(kaddr);
+			reset_mem = ret == 2 ? 1 : 0;
+			/* !!ret is equal to either 0 or 1 */
+			rep = !!ret << NM_REPORT_HTTP;
+			if (rep) {
+				nm_report(rep, sk);
+				is_reported = 1;
+			}
+
+			if (reset_mem)
+				memset(sk->sk_nm_http, 0x00,
+				       sizeof(struct nm_http_entry));
+
+			if (!(len -= parse))
+				return is_reported;
+			offset += parse;
+		}
+		start = end;
+	}
+	return is_reported;
+}
+
+void nm_nse(struct sock *sk, struct sk_buff *skb, int offset, int len,
+	    int protocol, int direction, unsigned char func)
 {
 	unsigned char *data = NULL;
 	int pktlen = 0;
@@ -286,14 +384,11 @@ void nm_nse(struct sock *sk, struct sk_buff *skb, int protocol, int direction,
 
 	/* Fetch payload address and payload size */
 	if (protocol == NM_TCP) {
-		if (skb_transport_header(skb) == skb->data) {
-			pktlen = skb->len  - (tcp_hdr(skb)->doff << 2);
-			data   = skb->data + (tcp_hdr(skb)->doff << 2);
-		} else {
-			pktlen = skb->len;
-			data   = skb->data;
-		}
+		/* https is not supported */
+		if (htons(sk->sk_dport) == PROTOCOL_HTTPS)
+			return;
 
+		pktlen = skb->len;
 		if (direction == NM_UPLINK)
 			update_snd_pkts(sk, pktlen);
 		else if (direction == NM_DOWNLINK)
@@ -301,54 +396,75 @@ void nm_nse(struct sock *sk, struct sk_buff *skb, int protocol, int direction,
 		else
 			NM_DEBUG("Unknown direction=%u.", direction);
 
-		if (unlikely(tcp_hdr(skb)->fin || tcp_hdr(skb)->rst)) {
+		if (skb_transport_header_was_set(skb) &&
+			(unlikely(tcp_hdr(skb)->fin || tcp_hdr(skb)->rst))) {
+#ifdef CONFIT_MPTCP
+			if (!mptcp(tcp_sk(sk)))
+#endif
+			{
+				rep |= 1 << NM_REPORT_HTTP;
+				reset_uid = 1;
+				reset_mem = 1;
+			}
+			if (sk->sk_tcp_statis)
+				sk->sk_tcp_statis->end_flags = 1;
+		}
+#ifdef CONFIT_MPTCP
+		else if (mptcp(tcp_sk(sk) && mptcp_is_data_fin(skb))) {
 			rep |= 1 << NM_REPORT_HTTP;
 			reset_uid = 1;
 			reset_mem = 1;
-			if (sk->sk_tcp_statis)
-				sk->sk_tcp_statis->end_flags = 1;
+		}
+#endif
+
+		if ((NM_FUNC_HTTP & func) && sk->sk_nm_http) {
+			if (len > 0) {
+				ret = nm_nse_http_helper(sk, skb, offset,
+							 len, protocol,
+						   	 direction);
+				if (ret)
+					rep &= ~(1 << NM_REPORT_HTTP);
+			}
+
+			if (rep)
+				nm_report(rep, sk);
+
+			if (reset_mem)
+				memset(sk->sk_nm_http, 0x00,
+				       sizeof(struct nm_http_entry));
+
+			if (unlikely(reset_uid))
+				sk->sk_nm_uid = 0;
 		}
 	} else if (protocol == NM_DNS) {
 		pktlen = skb->len - sizeof(struct udphdr);
 		/* skb->len may be less than hdrlen */
 		pktlen = pktlen > 0 ? pktlen : 0;
 		data = skb->data + sizeof(struct udphdr);
+
+		if ((!virt_addr_valid(data)) ||
+		    (!virt_addr_valid(data + pktlen))) {
+			NM_DEBUG("Invalid data address.");
+			return;
+		}
+
+		if ((NM_FUNC_DNSP & func) && sk->sk_nm_dnsp && pktlen) {
+			getnstimeofday(&ts);
+			epoch = (unsigned long)timespec_to_ns(&ts);
+
+			ret = psr_proc(protocol, direction, epoch, pktlen, data,
+				       sk->sk_nm_dnsp->status,
+				       sk->sk_nm_dnsp->result);
+			sk->sk_nm_dnsp->qusing = epoch - sk->sk_nm_dnsp->qstamp;
+			/* !!ret is equal to either 0 or 1 */
+			rep |= !!ret << NM_REPORT_DNSP;
+
+			if (rep)
+				nm_report(rep, sk);
+		}
 	} else {
 		NM_DEBUG("Unknown protocol=%u.", protocol);
 	}
-
-	if ((!virt_addr_valid(data)) || (!virt_addr_valid(data + pktlen))) {
-		NM_DEBUG("Invalid data address.");
-		return;
-	}
-
-	getnstimeofday(&ts);
-	epoch = (unsigned long)timespec_to_ns(&ts);
-
-	if ((NM_FUNC_HTTP & func) && sk->sk_nm_http && pktlen) {
-		ret = psr_proc(protocol, direction, epoch, pktlen, data,
-			       sk->sk_nm_http->status, sk->sk_nm_http->result);
-		reset_mem = ret == 2 ? 1 : 0;
-		/* !!ret is equal to either 0 or 1 */
-		rep |= !!ret << NM_REPORT_HTTP;
-	}
-
-	if ((NM_FUNC_DNSP & func) && sk->sk_nm_dnsp && pktlen) {
-		ret = psr_proc(protocol, direction, epoch, pktlen, data,
-			       sk->sk_nm_dnsp->status, sk->sk_nm_dnsp->result);
-		sk->sk_nm_dnsp->qusing = epoch - sk->sk_nm_dnsp->qstamp;
-		/* !!ret is equal to either 0 or 1 */
-		rep |= !!ret << NM_REPORT_DNSP;
-	}
-
-	if (rep)
-		nm_report(rep, sk);
-
-	if (reset_mem)
-		memset(sk->sk_nm_http, 0x00, sizeof(struct nm_http_entry));
-
-	if (unlikely(reset_uid))
-		sk->sk_nm_uid = 0;
 }
 EXPORT_SYMBOL(nm_nse);
 #endif /* CONFIG_HW_NETWORK_MEASUREMENT */

@@ -27,6 +27,7 @@
 #include <linux/compiler.h>
 #include <asm/compiler.h>
 #include <linux/debugfs.h>
+#include "../blackbox/rdr_print.h"
 
 static void *sctrl_base;
 
@@ -42,14 +43,18 @@ u32 get_bl31_exception_flag(void)
 
 void bl31_panic_ipi_handle(void)
 {
-	pr_crit("bl31 panic handler in kernel.\n");
+	pr_info("bl31 panic handler in kernel.\n");
 	rdr_syserr_process_for_ap((u32)MODID_AP_S_BL31_PANIC, 0ULL, 0ULL);
 	return;
 }
 
 /*lint -e578 -e715 -e838*/
-noinline int atfd_hisi_service_bl31_dbg_smc(u64 function_id, u64 arg0, u64 arg1, u64 arg2)
+noinline u64 atfd_hisi_service_bl31_dbg_smc(u64 _function_id, u64 _arg0, u64 _arg1, u64 _arg2)
 {
+	register u64 function_id asm("x0") = _function_id;
+	register u64 arg0 asm("x1") = _arg0;
+	register u64 arg1 asm("x2") = _arg1;
+	register u64 arg2 asm("x3") = _arg2;
 	asm volatile (
 		__asmeq("%0", "x0")
 		__asmeq("%1", "x1")
@@ -59,21 +64,51 @@ noinline int atfd_hisi_service_bl31_dbg_smc(u64 function_id, u64 arg0, u64 arg1,
 		: "+r" (function_id)
 		: "r" (arg0), "r" (arg1), "r" (arg2));
 
-	return (int)function_id;
+	return function_id;
 }
+
+static int bl31_wa_counter_show(struct seq_file *s, void *unused)
+{
+	u64 ret, i;
+
+	for (i = 0; i < 11; i++) {
+		ret = atfd_hisi_service_bl31_dbg_smc((u64)BL31_WA_COUNTER_FN_VAL,
+					    0ULL,
+					    i,
+					    0ULL);
+		seq_printf(s, "bugfix_refcnt[%llu]:%llu\n", i, ret);
+	}
+
+	return 0;
+}
+
+static int bl31_wa_counter_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, bl31_wa_counter_show, &inode->i_private);
+}
+
+static const struct file_operations bl31_wa_counter_fops = {
+	.owner	    = THIS_MODULE,
+	.open	    = bl31_wa_counter_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
 
 static int bl31_panic_debug_show(struct seq_file *s, void *unused)
 {
-	int ret;
+	u64 ret;
 
 	ret = atfd_hisi_service_bl31_dbg_smc((u64)BL31_DEBUG_FN_VAL,
-					    0ULL,
-					    0ULL,
-					    0ULL);
+					     0ULL,
+					     0ULL,
+					     0ULL);
 	if (!ret)
 		return -EPERM;
+
 	return 0;
 }
+
 /*lint +e578 +e715 +e838*/
 static int bl31_panic_debug_open(struct inode *inode, struct file *file)
 {
@@ -102,20 +137,20 @@ static int __init hisi_bl31_panic_init(void)
 
 	sctrl_base = (void *)ioremap((phys_addr_t)SOC_ACPU_SCTRL_BASE_ADDR, 0x1000ULL);
 	if (!sctrl_base) {
-		pr_err("sctrl ioremap faild.\n");
+		BB_PRINT_ERR("sctrl ioremap faild.\n");
 		return -EPERM;
 	}
 
 	bl31_smem_base = HISI_SUB_RESERVED_BL31_SHARE_MEM_PHYMEM_BASE;
 	np = of_find_compatible_node(NULL, NULL, "hisilicon, bl31_mntn");
 	if (!np) {
-		pr_err("%s: no compatible node found.\n", __func__);
+		BB_PRINT_ERR("%s: no compatible node found.\n", __func__);
 		goto err1;
 	}
 
 	ret = of_property_read_u32_array(np, "hisi,bl31-share-mem", &data[0], 2UL);
 	if (ret) {
-		pr_err("%s , get val mem compatible node err.\n",
+		BB_PRINT_ERR("%s , get val mem compatible node err.\n",
 		     __func__);
 		goto err1;
 	}
@@ -123,13 +158,13 @@ static int __init hisi_bl31_panic_init(void)
 	bl31_ctrl_addr_phys = (void *)(bl31_smem_base + data[0]);
 	bl31_ctrl_addr = (void *)ioremap(bl31_smem_base + data[0], (u64)data[1]);
 	if (NULL == bl31_ctrl_addr) {
-		pr_err
+		BB_PRINT_ERR
 		    ("%s: %d: allocate memory for bl31_ctrl_addr failed.\n",
 		     __func__, __LINE__);
 		goto err1;
 	}
 
-	pr_err("bl31_ctrl_addr_phys:%pK,bl31_ctrl_addr:%pK.\n", bl31_ctrl_addr_phys, bl31_ctrl_addr);
+	pr_info("bl31_ctrl_addr_phys:%pK,bl31_ctrl_addr:%pK.\n", bl31_ctrl_addr_phys, bl31_ctrl_addr);
 
 	/*register rdr exception type*/
 	memset((void *)&einfo, 0, sizeof(struct rdr_exception_info_s));
@@ -147,7 +182,7 @@ static int __init hisi_bl31_panic_init(void)
 			sizeof("RDR BL31 PANIC"));
 	ret = (s32)rdr_register_exception(&einfo);
 	if (!ret)
-		pr_err("register bl31 exception fail.\n");
+		BB_PRINT_ERR("register bl31 exception fail.\n");
 
 
 	/*enable bl31 switch:route to kernel*/

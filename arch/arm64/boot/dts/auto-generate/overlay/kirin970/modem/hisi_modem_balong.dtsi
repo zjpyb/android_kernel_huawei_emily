@@ -38,3 +38,5 @@
 /include/ "hisi_modem_ipf_balong.dtsi"
 /include/ "hisi_modem_psam_balong.dtsi"
 
+/include/ "hisi_modem_ads.dtsi"
+

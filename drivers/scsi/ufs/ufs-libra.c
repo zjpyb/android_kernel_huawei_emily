@@ -11,6 +11,9 @@
  * GNU General Public License for more details.
  *
  */
+
+#define pr_fmt(fmt) "ufshcd :" fmt
+
 #include <linux/types.h>
 #include <soc_sctrl_interface.h>
 #include <soc_ufs_sysctrl_interface.h>
@@ -84,7 +87,7 @@ void ufs_soc_init(struct ufs_hba *hba)
 
 	ufs_sys_ctrl_set_bits(host, BIT_SYSCTRL_PSW_CLK_EN, PSW_CLK_CTRL); /* open psw clk */
 	ufs_sys_ctrl_clr_bits(host, BIT_UFS_PSW_ISO_CTRL, PSW_POWER_CTRL); /* disable ufshc iso */
-	/* phy iso is effective */
+	/*phy iso only effective on libra,double check for later plat*/
 	ufs_sys_ctrl_clr_bits(host, BIT_UFS_PHY_ISO_CTRL, PHY_ISO_EN); /* disable phy iso */
 	ufs_sys_ctrl_clr_bits(host, BIT_SYSCTRL_LP_ISOL_EN, HC_LP_CTRL); /* notice iso disable */
 
@@ -363,9 +366,6 @@ int ufs_kirin_dme_setup_snps_asic_mphy(struct ufs_hba *hba)
 			pr_err("ufs_kirin_check_hibern8 error\n");
 	}
 
-#ifdef CONFIG_SCSI_UFS_HS_ERROR_RECOVER
-	ufs_kirin_set_vol(hba, hba->v_tx, hba->v_rx);
-#endif
 	pr_info("%s --\n", __func__);
 	return err;
 }
@@ -469,13 +469,9 @@ int ufs_kirin_link_startup_post_change(struct ufs_hba *hba)
 		ufs_sys_ctrl_clr_bits(host, MASK_UFS_SYSCRTL_BYPASS, UFS_SYSCTRL);
 	}
 
-	if (host->caps & USE_AUTO_H8) {
+	if (host->hba->caps & UFSHCD_CAP_AUTO_HIBERN8)
 		/* disable power-gating in auto hibernate 8 */
 		ufshcd_rmwl(hba, LP_AH8_PGE, 0, UFS_REG_OCPTHRTL);
-
-		/* enable auto H8 */
-		ufshcd_writel(hba, UFS_AHIT_AUTOH8_TIMER, REG_CONTROLLER_AHIT);
-	}
 
 	ufshcd_dme_set(hba, UIC_ARG_MIB(0xd09a), 0x80000000); /* select received symbol cnt */
 	ufshcd_dme_set(hba, UIC_ARG_MIB(0xd09c), 0x00000005); /* reset counter0 and enable */
@@ -490,7 +486,7 @@ void ufs_kirin_pwr_change_pre_change(struct ufs_hba *hba)
 	pr_info("%s ++\n", __func__);
 
 	pr_info("device manufacturer_id is 0x%x\n", hba->manufacturer_id);
-	/*ARIES platform need to set SaveConfigTime to 0x13, and change sync length to maximum value */
+	/*Boston platform need to set SaveConfigTime to 0x13, and change sync length to maximum value */
 	ufshcd_dme_set(hba, UIC_ARG_MIB((u32)0xD0A0), 0x13); /* VS_DebugSaveConfigTime */
 	ufshcd_dme_set(hba, UIC_ARG_MIB((u32)0x1552), 0x4f); /* g1 sync length */
 	ufshcd_dme_set(hba, UIC_ARG_MIB((u32)0x1554), 0x4f); /* g2 sync length */
@@ -546,6 +542,9 @@ void ufs_kirin_full_reset(struct ufs_hba *hba)
 	dsm_ufs_disable_volt_irq(hba);
 #endif
 	disable_irq(hba->irq);
+
+	/* wait for 1s to be sure axi entered to idle state */
+	msleep(1000);
 
 	ufs_soc_init(hba);
 

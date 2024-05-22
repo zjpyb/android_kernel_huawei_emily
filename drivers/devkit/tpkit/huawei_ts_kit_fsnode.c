@@ -770,14 +770,19 @@ static ssize_t ts_loglevel_show(struct device* dev, struct device_attribute* att
         error = -EINVAL;
         goto out;
     }
-    if(g_ts_kit_log_cfg)
+    if(TS_DBG_MODE == g_ts_kit_log_cfg)
     {
-          g_ts_kit_log_cfg = 0;
-          error = snprintf(buf, MAX_STR_LEN, "%s\n", "1 -> 0");
+          g_ts_kit_log_cfg = TS_MT_MODE;
+          error = snprintf(buf, MAX_STR_LEN, "%s\n", "1 -> 2");
+    }
+    else if(TS_MT_MODE == g_ts_kit_log_cfg)
+    {
+          g_ts_kit_log_cfg = TS_INF_MODE;
+          error = snprintf(buf, MAX_STR_LEN, "%s\n", "2 -> 0");
     }
     else
     {
-          g_ts_kit_log_cfg = 1;
+          g_ts_kit_log_cfg = TS_DBG_MODE;
           error = snprintf(buf, MAX_STR_LEN, "%s\n", "0 -> 1");
     }
     if (dev_data->ops->chip_debug_switch)
@@ -1396,7 +1401,7 @@ static ssize_t ts_rawdata_debug_test_show(struct device* dev, struct device_attr
 		if(size < 0||size > TS_RAWDATA_BUFF_MAX - 1)
 		{
 			TS_LOG_ERR("buff size error :%d\n",size);
-			return -EINVAL;
+			goto out;
 		}
 		for(index = 1 ;  index < size; index++)
 		{
@@ -1418,6 +1423,10 @@ static ssize_t ts_rawdata_debug_test_show(struct device* dev, struct device_attr
 		count = count + strlen(RAWDATA_DEBUG_HEAD_TEXT);
 
 		row_size = info->buff[0];
+		if ((row_size <= 0) || (info->used_size) <= 0){
+			TS_LOG_ERR("%s data error! DO NOT surport this mode!", __func__);
+			goto out;
+		}
 		range_size = info->buff[1];
 		sprintf(buffer2, "rx: %d, tx : %d\n ", row_size, range_size);
 		strncat(buf, buffer2 , strlen(buffer2));
@@ -2305,8 +2314,12 @@ static ssize_t ts_touch_switch_store(struct device *dev,
 	if ((TS_SWITCH_TYPE_DOZE !=
 		g_ts_kit_platform_data.chip_data->touch_switch_flag & TS_SWITCH_TYPE_DOZE)&&
 		(TS_SWITCH_TYPE_GAME!=
-		(g_ts_kit_platform_data.chip_data->touch_switch_flag & TS_SWITCH_TYPE_GAME))){
-		TS_LOG_INFO("tp doze not support\n");
+		(g_ts_kit_platform_data.chip_data->touch_switch_flag & TS_SWITCH_TYPE_GAME))&&
+		(TS_SWITCH_TYPE_SCENE!=
+		(g_ts_kit_platform_data.chip_data->touch_switch_flag & TS_SWITCH_TYPE_SCENE))&&
+		(TS_SWITCH_TYPE_FM!=
+		(g_ts_kit_platform_data.chip_data->touch_switch_flag & TS_SWITCH_TYPE_FM))){
+		TS_LOG_INFO("tp doze,game,scene,fm switch not support\n");
 		goto out;
 	}
 

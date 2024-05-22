@@ -17,7 +17,6 @@
 #include <linux/of_platform.h>
 #include <linux/miscdevice.h>
 #include <linux/input.h>
-#include "soundtrigger_event.h"
 
 /*lint -e750*/
 
@@ -167,7 +166,6 @@ init_err:
 static int hw_soundtrigger_event_remove(struct platform_device *pdev)
 {
 	input_unregister_device(soundtrigger_input_dev);
-
 	return 0;
 }
 

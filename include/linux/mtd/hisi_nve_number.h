@@ -10,6 +10,7 @@
 #ifndef __NVE_NUMBER_H__
 #define __NVE_NUMBER_H__
 
+#define     NVE_CALC1C2_NUM             (259)
 #define     NVE_VERIFY_MODE_NUM         (276)
 #define     NVE_FULLHD_NUM              (292)
 #define     NVE_MANUAL_DUMP_NUM         (293)

@@ -6,9 +6,9 @@
 #include <linux/bio.h>
 #include <linux/blkdev.h>
 #include <linux/scatterlist.h>
-#include <linux/fscrypto.h>
+
 #include <trace/events/block.h>
-#include "hisi-blk-mq.h"
+
 #include "blk.h"
 
 static struct bio *blk_bio_discard_split(struct request_queue *q,
@@ -194,12 +194,18 @@ void blk_queue_split(struct request_queue *q, struct bio **bio,
 	struct bio *split, *res;
 	unsigned nsegs;
 
-	if ((*bio)->bi_rw & REQ_DISCARD)
+	switch (bio_op(*bio)) {
+	case REQ_OP_DISCARD:
+	case REQ_OP_SECURE_ERASE:
 		split = blk_bio_discard_split(q, *bio, bs, &nsegs);
-	else if ((*bio)->bi_rw & REQ_WRITE_SAME)
+		break;
+	case REQ_OP_WRITE_SAME:
 		split = blk_bio_write_same_split(q, *bio, bs, &nsegs);
-	else
+		break;
+	default:
 		split = blk_bio_segment_split(q, *bio, q->bio_split, &nsegs);
+		break;
+	}
 
 	/* physical segments can be figured out during splitting */
 	res = split ? split : *bio;
@@ -208,12 +214,13 @@ void blk_queue_split(struct request_queue *q, struct bio **bio,
 
 	if (split) {
 		/* there isn't chance to merge the splitted bio */
-		split->bi_rw |= REQ_NOMERGE;
+		split->bi_opf |= REQ_NOMERGE;
+
 		bio_chain(split, *bio);
-	#ifdef CONFIG_HISI_BLK_CORE
-		blk_bio_endio_in_count_check(*bio);
-		blk_bio_in_count_set(q,split);
+	#ifdef CONFIG_HISI_BLK
+		hisi_blk_bio_queue_split(q, bio, split);
 	#endif
+		trace_block_split(q, split, (*bio)->bi_iter.bi_sector);
 		generic_make_request(*bio);
 		*bio = split;
 	}
@@ -230,17 +237,17 @@ static unsigned int __blk_recalc_rq_segments(struct request_queue *q,
 	struct bio *fbio, *bbio;
 	struct bvec_iter iter;
 
-	if (unlikely(!bio))
+	if (!bio)
 		return 0;
 
 	/*
 	 * This should probably be returning 0, but blk_add_request_payload()
 	 * (Christoph!!!!)
 	 */
-	if (unlikely(bio->bi_rw & REQ_DISCARD))/*[false alarm]*/
+	if (bio_op(bio) == REQ_OP_DISCARD || bio_op(bio) == REQ_OP_SECURE_ERASE)
 		return 1;
 
-	if (unlikely(bio->bi_rw & REQ_WRITE_SAME))
+	if (bio_op(bio) == REQ_OP_WRITE_SAME)
 		return 1;
 
 	fbio = bio;
@@ -253,7 +260,7 @@ static unsigned int __blk_recalc_rq_segments(struct request_queue *q,
 			 * If SG merging is disabled, each bio vector is
 			 * a segment
 			 */
-			if (unlikely(no_sg_merge))
+			if (no_sg_merge)
 				goto new_segment;
 
 			if (prev && cluster) {
@@ -304,13 +311,13 @@ void blk_recount_segments(struct request_queue *q, struct bio *bio)
 	unsigned short seg_cnt;
 
 	/* estimate segment number by bi_vcnt for non-cloned bio */
-	if (unlikely(bio_flagged(bio, BIO_CLONED)))
+	if (bio_flagged(bio, BIO_CLONED))
 		seg_cnt = bio_segments(bio);
 	else
 		seg_cnt = bio->bi_vcnt;
 
-	if (unlikely(test_bit(QUEUE_FLAG_NO_SG_MERGE, &q->queue_flags) &&
-			(seg_cnt < queue_max_segments(q))))
+	if (test_bit(QUEUE_FLAG_NO_SG_MERGE, &q->queue_flags) &&
+			(seg_cnt < queue_max_segments(q)))
 		bio->bi_phys_segments = seg_cnt;
 	else {
 		struct bio *nxt = bio->bi_next;
@@ -328,7 +335,6 @@ static int blk_phys_contig_segment(struct request_queue *q, struct bio *bio,
 				   struct bio *nxt)
 {
 	struct bio_vec end_bv = { NULL }, nxt_bv;
-	struct bvec_iter iter;
 
 	if (!blk_queue_cluster(q))
 		return 0;
@@ -340,11 +346,8 @@ static int blk_phys_contig_segment(struct request_queue *q, struct bio *bio,
 	if (!bio_has_data(bio))
 		return 1;
 
-	bio_for_each_segment(end_bv, bio, iter)
-		if (end_bv.bv_len == iter.bi_size)
-			break;
-
-	nxt_bv = bio_iovec(nxt);
+	bio_get_last_bvec(bio, &end_bv);
+	bio_get_first_bvec(nxt, &nxt_bv);
 
 	if (!BIOVEC_PHYS_MERGEABLE(&end_bv, &nxt_bv))
 		return 0;
@@ -413,7 +416,9 @@ static int __blk_bios_map_sg(struct request_queue *q, struct bio *bio,
 	nsegs = 0;
 	cluster = blk_queue_cluster(q);
 
-	if (bio->bi_rw & REQ_DISCARD) {
+	switch (bio_op(bio)) {
+	case REQ_OP_DISCARD:
+	case REQ_OP_SECURE_ERASE:
 		/*
 		 * This is a hack - drivers should be neither modifying the
 		 * biovec, nor relying on bi_vcnt - but because of
@@ -421,19 +426,16 @@ static int __blk_bios_map_sg(struct request_queue *q, struct bio *bio,
 		 * a payload we need to set up here (thank you Christoph) and
 		 * bi_vcnt is really the only way of telling if we need to.
 		 */
-
-		if (bio->bi_vcnt)
-			goto single_segment;
-
-		return 0;
-	}
-
-	if (bio->bi_rw & REQ_WRITE_SAME) {
-single_segment:
+		if (!bio->bi_vcnt)
+			return 0;
+		/* Fall through */
+	case REQ_OP_WRITE_SAME:
 		*sg = sglist;
 		bvec = bio_iovec(bio);
 		sg_set_page(*sg, bvec.bv_page, bvec.bv_len, bvec.bv_offset);
 		return 1;
+	default:
+		break;
 	}
 
 	for_each_bio(bio)
@@ -467,7 +469,7 @@ int blk_rq_map_sg(struct request_queue *q, struct request *rq,
 	}
 
 	if (q->dma_drain_size && q->dma_drain_needed(rq)) {
-		if (rq->cmd_flags & REQ_WRITE)
+		if (op_is_write(req_op(rq)))
 			memset(q->dma_drain_buffer, 0, q->dma_drain_size);
 
 		sg_unmark_end(sg);
@@ -528,7 +530,7 @@ int ll_back_merge_fn(struct request_queue *q, struct request *req,
 	    integrity_req_gap_back_merge(req, bio))
 		return 0;
 	if (blk_rq_sectors(req) + bio_sectors(bio) >
-	    blk_rq_get_max_sectors(req)) {
+	    blk_rq_get_max_sectors(req, blk_rq_pos(req))) {
 		req->cmd_flags |= REQ_NOMERGE;
 		if (req == q->last_merge)
 			q->last_merge = NULL;
@@ -552,7 +554,7 @@ int ll_front_merge_fn(struct request_queue *q, struct request *req,
 	    integrity_req_gap_front_merge(req, bio))
 		return 0;
 	if (blk_rq_sectors(req) + bio_sectors(bio) >
-	    blk_rq_get_max_sectors(req)) {
+	    blk_rq_get_max_sectors(req, bio->bi_iter.bi_sector)) {
 		req->cmd_flags |= REQ_NOMERGE;
 		if (req == q->last_merge)
 			q->last_merge = NULL;
@@ -598,7 +600,7 @@ static int ll_merge_requests_fn(struct request_queue *q, struct request *req,
 	 * Will it become too large?
 	 */
 	if ((blk_rq_sectors(req) + blk_rq_sectors(next)) >
-	    blk_rq_get_max_sectors(req))
+	    blk_rq_get_max_sectors(req, blk_rq_pos(req)))
 		return 0;
 
 	total_phys_segments = req->nr_phys_segments + next->nr_phys_segments;
@@ -644,9 +646,9 @@ void blk_rq_set_mixed_merge(struct request *rq)
 	 * Distributes the attributs to each bio.
 	 */
 	for (bio = rq->bio; bio; bio = bio->bi_next) {
-		WARN_ON_ONCE((bio->bi_rw & REQ_FAILFAST_MASK) &&
-			     (bio->bi_rw & REQ_FAILFAST_MASK) != ff);
-		bio->bi_rw |= ff;
+		WARN_ON_ONCE((bio->bi_opf & REQ_FAILFAST_MASK) &&
+			     (bio->bi_opf & REQ_FAILFAST_MASK) != ff);
+		bio->bi_opf |= ff;
 	}
 	rq->cmd_flags |= REQ_MIXED_MERGE;
 }
@@ -668,60 +670,6 @@ static void blk_account_io_merge(struct request *req)
 	}
 }
 
-#ifdef CONFIG_HISI_BLK_INLINE_CRYPTO
-static int blk_bio_key_compare(struct request *rq, struct bio *bio)
-{
-	if (!is_blk_queue_support_crypto(rq->q))
-		return true;
-
-	/*
-	 * check if both the bio->key & last merged request->key
-	 * do not exist, wo shall tell block that this bio may merge to the rq.
-	 */
-	if (!bio->ci_key && !rq->ci_key)
-		return true;
-
-	/*
-	 * check if the bio->key or last merged request->key
-	 * does not exist, but the other's was existing,
-	 * wo shall tell block that the bio should not be merged to the rq.
-	 */
-	if (!bio->ci_key || !rq->ci_key)
-		return false;
-
-	if (bio->ci_key_len != rq->ci_key_len)
-		return false;
-
-	if (bio->ci_key_len != FS_AES_256_XTS_KEY_SIZE) {
-		pr_err("[%s]key len not 64\n", __func__);
-		//BUG_ON(1);
-	}
-
-	if (bio->ci_key == rq->ci_key) {
-		struct bio *prev = rq->biotail;
-		int ret;
-
-		ret = blk_try_merge(rq, bio);
-		switch (ret) {
-		case ELEVATOR_BACK_MERGE:
-			if (prev->index + prev->bi_vcnt != bio->index)
-				return false;
-			break;
-		case ELEVATOR_FRONT_MERGE:
-			if (bio->index + bio->bi_vcnt != rq->bio->index)
-				return false;
-			break;
-		default:
-			return false;
-		}
-
-		return true;
-	}
-
-	return false;
-}
-#endif
-
 /*
  * Has to be called with the request spinlock acquired
  */
@@ -731,7 +679,7 @@ static int attempt_merge(struct request_queue *q, struct request *req,
 	if (!rq_mergeable(req) || !rq_mergeable(next))
 		return 0;
 
-	if (!blk_check_merge_flags(req->cmd_flags, next->cmd_flags))
+	if (req_op(req) != req_op(next))
 		return 0;
 
 	/*
@@ -745,7 +693,7 @@ static int attempt_merge(struct request_queue *q, struct request *req,
 	    || req_no_special_merge(next))
 		return 0;
 
-	if (req->cmd_flags & REQ_WRITE_SAME &&
+	if (req_op(req) == REQ_OP_WRITE_SAME &&
 	    !blk_write_same_mergeable(req->bio, next->bio))
 		return 0;
 
@@ -757,13 +705,8 @@ static int attempt_merge(struct request_queue *q, struct request *req,
 	 */
 	if (!ll_merge_requests_fn(q, req, next))
 		return 0;
-
-#ifdef CONFIG_HISI_BLK_INLINE_CRYPTO
-	/*
-	 * check current bio->key to last-merged request key,
-	 * which is submitted only by f2fs file system now.
-	 */
-	if (!blk_bio_key_compare(req, next->bio))
+#ifdef CONFIG_HISI_BLK
+	if (!hisi_blk_bio_merge_allow(req, next->bio))
 		return 0;
 #endif
 
@@ -793,8 +736,8 @@ static int attempt_merge(struct request_queue *q, struct request *req,
 	req->biotail = next->biotail;
 
 	req->__data_len += blk_rq_bytes(next);
-#ifdef CONFIG_HISI_IO_LATENCY_TRACE
-	req_latency_for_merge(req,next);
+#ifdef CONFIG_HISI_BLK
+	hisi_blk_bio_merge_done(q, req, next);
 #endif
 	elv_merge_requests(q, req, next);
 
@@ -836,6 +779,12 @@ int attempt_front_merge(struct request_queue *q, struct request *rq)
 int blk_attempt_req_merge(struct request_queue *q, struct request *rq,
 			  struct request *next)
 {
+	struct elevator_queue *e = q->elevator;
+
+	if (e->type->ops.elevator_allow_rq_merge_fn)
+		if (!e->type->ops.elevator_allow_rq_merge_fn(q, rq, next))
+			return 0;
+
 	return attempt_merge(q, rq, next);
 }
 
@@ -844,15 +793,10 @@ bool blk_rq_merge_ok(struct request *rq, struct bio *bio)
 	if (!rq_mergeable(rq) || !bio_mergeable(bio))
 		return false;
 
-	if (!blk_check_merge_flags(rq->cmd_flags, bio->bi_rw))
+	if (req_op(rq) != bio_op(bio))
 		return false;
-
-#ifdef CONFIG_HISI_BLK_INLINE_CRYPTO
-	/*
-	 * check current bio->key to last-merged request key,
-	 * which is submitted only by f2fs file system now.
-	 */
-	if (!blk_bio_key_compare(rq, bio))
+#ifdef CONFIG_HISI_BLK
+	if (!hisi_blk_bio_merge_allow(rq, bio))
 		return false;
 #endif
 
@@ -869,7 +813,7 @@ bool blk_rq_merge_ok(struct request *rq, struct bio *bio)
 		return false;
 
 	/* must be using the same buffer */
-	if (rq->cmd_flags & REQ_WRITE_SAME &&
+	if (req_op(rq) == REQ_OP_WRITE_SAME &&
 	    !blk_write_same_mergeable(rq->bio, bio))
 		return false;
 

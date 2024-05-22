@@ -87,20 +87,20 @@ static const uint8_t tpm2_startup_cmd[] = {
     0x80, 0x01, 0x00, 0x00, 0x00, 0x0C, 0x00, 0x00, 0x01, 0x44, 0x00, 0x00
 };
 
-//#define HISI_TRUSTBOOT
-#ifdef HISI_TRUSTBOOT //trustboot code by yudong
+#define HISI_TRUSTBOOT
+#ifdef HISI_TRUSTBOOT
 //#define TRUST_BOOT_PCR_INDEX 15
 #define TRUST_BOOT_NAMELEN 36
 #define TRUST_BOOT_DIGEST_SIZE 32
 
 #define TPM_SIGNAL_CMD_GET_TRUSTBOOT_HASHS            99
 
-static struct img_info {
+struct img_info {
        char name[TRUST_BOOT_NAMELEN];
        char hash[TRUST_BOOT_DIGEST_SIZE];
 };
 #define SEC_IMG_MAX 5
-static struct trusted_hash_struct {
+struct trusted_hash_struct {
     unsigned int count;
     unsigned int size;
     struct img_info secimg[SEC_IMG_MAX];
@@ -268,7 +268,7 @@ static int tpmtee_check_tpmta_initialized(TEEC_Session *session)
         op.params[1].tmpref.buffer = &TrustBootHashsPcrIndex;
         op.params[1].tmpref.size = sizeof(TrustBootHashsPcrIndex);
         tpmtee_warning("tmptee_send: TPM_TA_GET_TRUSTBOOT_HASHS");
-        result = TEEK_InvokeCommand(session, TPM_SIGNAL_CMD_RPMB_STAT_READY, &op, &err_origin);
+        result = TEEK_InvokeCommand(session, TPM_SIGNAL_CMD_GET_TRUSTBOOT_HASHS, &op, &err_origin);
         if (result) {
             tpmtee_error("tmptee_send: TPM_TA_GET_TRUSTBOOT_HASHS failed ret=%d", result);
         }else{
@@ -382,21 +382,21 @@ static void tpmtee_async_send_do_work(struct work_struct *do_wrok)
         tpmtee_error("tpmtee send to tpmta failed,ret = %d",ret);
     }
 
-out:
     tpmtee_work_queue_IsWorking = false;
     kfree(tpmtee_work_node);
     tpmtee_debug("tpmtee  async send do work finished,ret = [%d]",ret);
     return;
 }
 
-static bool tpmtee_cmd_can_send_workqueue(u8 *buf, size_t count){
-    struct tpm_input_header *tpm_cmd_header;
+static bool tpmtee_cmd_can_send_workqueue(u8 *buf, size_t count)
+{
+    struct tpm_input_header *ptpm_cmd_header;
     if (count < sizeof(struct tpm_input_header)) {
         return false;
     }
-    tpm_cmd_header = (struct tpm_input_header *)buf;
-    if (tpm_cmd_header->ordinal == cpu_to_be32(TPM2_CC_PCR_EXTEND)) {
-        tpmtee_warning("this cmd can send workqueue , cmd = [%#x]",tpm_cmd_header->ordinal);
+    ptpm_cmd_header = (struct tpm_input_header *)buf;
+    if (ptpm_cmd_header->ordinal == cpu_to_be32(TPM2_CC_PCR_EXTEND)) {
+        tpmtee_warning("this cmd can send workqueue , cmd = [%#x]",ptpm_cmd_header->ordinal);
         return true;
     }
     return false;
@@ -435,10 +435,11 @@ static int tpmtee_send_by_workqueue(struct tpm_chip *chip, u8 *buf, size_t count
     tpmtee_debug("tpmtee work queue wait finished! i=[%d]",i);
     if (i == WAIT_TPMQUEUE_TIMES) {
         tpmtee_error("wait tpmtee work queue  finish failed,tpmtee must return!");
-        return TPMTEE_ERROR;
+        return TPMTEE_ERROR;//lint !e429
     }
+
     tpmtee_debug("tpmtee send_data_async success! pls receive");
-    return count;
+    return count;//lint !e429
 }
 
 int tpmtee_send(struct tpm_chip *chip, u8 *buf, size_t count)
@@ -568,15 +569,7 @@ void tpmtee_print_digest(struct seq_file *m, u8 *digest, u32 size)
 
 static int tpmtee_trustboot_log_dump(struct seq_file *s, void *p)
 {
-    int i;
-    u32 pcr_idx;
-    //test code
-    //TrustBootHashs.count = 2;
-    //sprintf(TrustBootHashs.secimg[0].name, "/system/test_tpm");
-    //sprintf(TrustBootHashs.secimg[0].hash, "01234567890123456789012345678901");
-
-    //sprintf(TrustBootHashs.secimg[1].name, "/system/test_tpm1");
-    //sprintf(TrustBootHashs.secimg[1].hash, "12345678901234567890123456789012");
+    unsigned int i;
 
     if ((u32)TrustBootHashs.count > SEC_IMG_MAX) {
         tpmtee_error("tpmtee trustboot log dump error, TrustBootHashs  count= 0x%x", TrustBootHashs.count);
@@ -663,7 +656,7 @@ static int __init tpmtee_init(void)
         dev_err(&chip->dev, "tmptee_init malloc outdata error\n");
         goto err_rel_reg;
     }
-    tpmtee_dir = securityfs_create_dir(chip->devname, NULL);
+    tpmtee_dir = securityfs_create_dir(dev_name(&chip->dev), NULL);
     if (is_bad(tpmtee_dir)) {
         rc = -ENODEV;
         dev_err(&chip->dev, "tmptee_init create tpm0 securityfs error\n");

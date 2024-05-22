@@ -39,7 +39,7 @@
 #include "../vendor_info.h"
 
 #define SVID_DEFAULT SVID1_SOP
-#define MODE_DEFAULT 0x0C46
+#define MODE_DEFAULT 0x3C46 // support E AND F
 #define SVID_AUTO_ENTRY 0xFF01
 #define MODE_AUTO_ENTRY 0x0001
 

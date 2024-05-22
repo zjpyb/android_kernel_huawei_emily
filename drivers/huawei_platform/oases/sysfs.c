@@ -18,15 +18,12 @@
 #include "patch_api.h"
 #include "patch_mgr.h"
 #include "sysfs.h"
-
 #ifdef CONFIG_HW_ROOT_SCAN
 #include <chipset_common/security/root_scan.h>
 #endif
 
 /*
  * Oases Sysfs Interface
- *
- * /proc/oases/state
  *
  * /sys/kernel/oases
  * /sys/kernel/oases/state
@@ -40,14 +37,13 @@
  * patch: $VENDOR-$NAME-$ID
  */
 
-#define PROC_OASES "oases"
 #define PROC_OASES_STATE "state"
 
 #define SYSFS_OASES "oases"
 #define SYSFS_OASES_VERSION "version"
 
 #define SYSFS_PATCH_ENABLED "enabled"
-#define SYSFS_PATCH_LOG 	"log"
+#define SYSFS_PATCH_LOG "log"
 
 #define ATTACK_KOBJ_NAME "oases_attack"
 #define ATTACK_KSET_NAME "oases_attack_kset"
@@ -61,7 +57,7 @@ struct kset *attack_kset;
 int attack_upload_init;
 
 static ssize_t enabled_show(struct kobject *kobj,
-			    struct kobj_attribute *attr, char *buf)
+				struct kobj_attribute *attr, char *buf)
 {
 	struct oases_patch_info *info;
 
@@ -99,21 +95,19 @@ static ssize_t enabled_store(struct kobject *kobj, struct kobj_attribute *attr,
 #ifdef CONFIG_HW_ROOT_SCAN
 	root_scan_pause(D_RSOPID_KCODE, NULL);
 #endif
-
 	if (enabled == STATUS_DISABLED)
 		ret = oases_insn_unpatch(info);
 	else /* STATUS_ENABLED */
 		ret = oases_insn_patch(info);
+#ifdef CONFIG_HW_ROOT_SCAN
+	root_scan_resume(D_RSOPID_KCODE, NULL);
+#endif
 
 	if (ret) {
 		oases_error("%s %d -> %ld failed with %d\n",
 			info->id, info->status, enabled, ret);
 		goto end;
 	}
-
-#ifdef CONFIG_HW_ROOT_SCAN
-	root_scan_resume(D_RSOPID_KCODE, NULL);
-#endif
 
 	info->status = enabled;
 	ret = count;
@@ -138,7 +132,7 @@ static ssize_t log_show(struct kobject *kobj,
 		cur = info->plog + i;
 		if (!cur->count)
 			continue;
-		ret += scnprintf(buf + ret, PAGE_SIZE - ret - 1, "%d %ld %ld %ld\n", cur->uid,
+		ret += scnprintf(buf + ret, PAGE_SIZE - ret - 1, "%ld %ld %ld %ld\n", cur->uid,
 						cur->count, cur->start_time, cur->end_time);
 	}
 	spin_unlock_irqrestore(&info->log_lock, flags);
@@ -198,7 +192,7 @@ static struct attribute_group attr_group = {
 };
 
 static struct kobj_attribute attribute_enabled =
-	__ATTR(enabled, S_IWUSR | S_IRUGO, enabled_show, enabled_store);
+	__ATTR(enabled, S_IWUSR | S_IWGRP | S_IRUGO, enabled_show, enabled_store);
 
 static struct kobj_attribute attribute_log =
 	__ATTR(log, S_IRUGO, log_show, NULL);
@@ -260,20 +254,20 @@ static void attack_uploader_deinit(void)
 static int attack_uploader_init(void)
 {
 	int error = ATKSYS_SUCC;
-
+	oases_error("attack_uploader_init start\n");
 	if (attack_upload_init == ATKSYS_INIT) {
 		return ATKSYS_SUCC;
 	}
 	do {
 		attack_kobj = kobject_create_and_add(ATTACK_KOBJ_NAME,
-									kernel_kobj);
+			kernel_kobj);
 		if (!attack_kobj) {
 			error = ATKSYS_ERR_KOBJ_ADD;
 			break;
 		}
 
 		attack_kset =  kset_create_and_add(ATTACK_KSET_NAME, NULL,
-									kernel_kobj);
+				kernel_kobj);
 		if (!attack_kset) {
 			error = ATKSYS_ERR_KSET_ADD;
 			break;
@@ -287,15 +281,17 @@ static int attack_uploader_init(void)
 		}
 
 		/* init ok */
+		oases_error("attack_uploader_init success\n");
 		attack_upload_init = ATKSYS_INIT;
 		return ATKSYS_SUCC;
 	}while (0);
 
 	attack_uploader_deinit();
+	oases_error("attack_uploader_init fail\n");
 	return error;
 }
 
-int oases_sysfs_init(void)
+int __init oases_sysfs_init(void)
 {
 	int ret;
 
@@ -303,10 +299,7 @@ int oases_sysfs_init(void)
 	if (!sysfs_oases) {
 		return -ENOMEM;
 	}
-	ret = attack_uploader_init();
-	if(ret) {
-		oases_error("attack_uploader_init fail\n");
-	}
+	attack_uploader_init();
 
 	ret = sysfs_create_group(sysfs_oases, &attr_group);
 	if (ret)
@@ -322,6 +315,5 @@ create_group_fail:
 void oases_sysfs_destroy(void)
 {
 	sysfs_remove_group(sysfs_oases, &attr_group);
-	attack_uploader_deinit();
 	kobject_put(sysfs_oases);
 }

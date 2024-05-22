@@ -1916,6 +1916,12 @@ OAL_STATIC oal_uint32  wal_config_bgscan_enable(mac_vap_stru *pst_mac_vap, oal_u
     return hmac_config_bgscan_enable(pst_mac_vap, us_len, puc_param);
 }
 
+
+OAL_STATIC oal_uint32  wal_config_mcs_set_check_enable(mac_vap_stru *pst_mac_vap, oal_uint16 us_len, oal_uint8 *puc_param)
+{
+    return hmac_config_mcs_set_check_enable(pst_mac_vap, us_len, puc_param);
+}
+
 #ifdef _PRE_WLAN_FEATURE_P2P
 #ifdef _PRE_DEBUG_MODE
 
@@ -2500,6 +2506,7 @@ OAL_CONST wal_wid_op_stru g_ast_board_wid_op_debug[] =
     {WLAN_CFGID_FBT_SCAN_CHANNEL,               OAL_FALSE,  {0},    OAL_PTR_NULL,         wal_config_fbt_scan_channel},
     {WLAN_CFGID_FBT_SCAN_REPORT_PERIOD,         OAL_FALSE,  {0},    OAL_PTR_NULL,         wal_config_fbt_scan_report_period},
 #endif
+    {WLAN_CFIGD_MCS_SET_CHECK_ENABLE,           OAL_FALSE,  {0},    OAL_PTR_NULL,         wal_config_mcs_set_check_enable},
 
     {WLAN_CFGID_BUTT,                  OAL_FALSE,  {0},    0,                       0},
 };

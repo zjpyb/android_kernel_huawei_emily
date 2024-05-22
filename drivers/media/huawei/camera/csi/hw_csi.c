@@ -99,7 +99,7 @@ struct dsm_client *client_csi;
 #define SAVE_DMD_LOG_OFF (false)
 #define SAVE_DMD_LOG_ON  (true)
 
-bool csi_dmd_log[CSI_INDEX_CNT] = {SAVE_DMD_LOG_OFF, SAVE_DMD_LOG_OFF};
+bool csi_dmd_log[CSI_INDEX_MAX] = {SAVE_DMD_LOG_OFF, SAVE_DMD_LOG_OFF};
 
 void TSTCODE_SETREG8(unsigned int reg_base, unsigned int addr, unsigned int value)
 {
@@ -472,7 +472,7 @@ int hw_csi_config(csi_index_t csi_index, int csi_lane, int csi_mipi_clk)
 int hw_csi_platform_probe(struct platform_device *pdev)
 {
 	struct device_node *of_node = pdev->dev.of_node;
-	uint32_t base_array[CSI_INDEX_CNT] = {0};
+	uint32_t base_array[CSI_INDEX_MAX] = {0};
 	uint32_t count = 0;
 	int ret;
 	int i;

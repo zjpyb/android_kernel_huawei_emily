@@ -13,6 +13,7 @@
 
 #include <linux/types.h>
 #include <linux/hisi/rdr_pub.h>
+#include "rdr_inner.h"
 
 #define RDR_TIME_LEN            16
 
@@ -24,8 +25,8 @@
 #endif
 
 #define RDR_PRODUCT "PRODUCT_NAME"	/* "hi3630_udp" */
-#define RDR_VERSION             ((RDR_SMP_FLAG << 16) | (0x201 << 0))
-						    /* v2.01 2017.9.19 */
+#define RDR_VERSION             ((RDR_SMP_FLAG << 16) | (0x203 << 0))
+						    /* v2.02 2018.4.11 */
 #define RDR_BASEINFO_SIZE  0x200
 
 enum RDR_AREA_LIST {
@@ -44,7 +45,9 @@ enum RDR_AREA_LIST {
 	RDR_AREA_BFM = 0xC,
 	RDR_AREA_HISEE = 0xD,
 	RDR_AREA_NPU   = 0xE,
-	RDR_AREA_MAXIMUM = 0xF
+	RDR_AREA_CONN  = 0xF,
+	RDR_AREA_EXCEPTION_TRACE = 0x10,
+	RDR_AREA_MAXIMUM = 0x11
 };
 
 struct rdr_base_info_s {

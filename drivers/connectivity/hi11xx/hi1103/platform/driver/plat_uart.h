@@ -34,14 +34,15 @@ extern uint32 g_default_baud_rate ;
 /*****************************************************************************
   5 EXTERN FUNCTION
 *****************************************************************************/
-extern int32 plat_uart_init(void);
-extern int32 plat_uart_exit(void);
-extern int32 open_tty_drv(void *pm_data);
-extern int32 release_tty_drv(void *pm_data);
-extern int32 ps_change_uart_baud_rate(int64 baud_rate, uint8 enable_flowctl);
-extern void ps_uart_tty_tx_add(uint32 cnt);
-extern void ps_uart_state_pre(struct tty_struct *tty);
-extern void ps_uart_state_dump(struct tty_struct *tty);
-extern uint32 ps_uart_state_cur(uint32 index);
+extern int32 plat_uart_init_etc(void);
+extern int32 plat_uart_exit_etc(void);
+extern int32 open_tty_drv_etc(void *pm_data);
+extern int32 release_tty_drv_etc(void *pm_data);
+extern int32 ps_change_uart_baud_rate_etc(int64 baud_rate, uint8 enable_flowctl);
+extern void ps_uart_tty_tx_add_etc(uint32 cnt);
+extern void ps_uart_state_pre_etc(struct tty_struct *tty);
+extern void ps_uart_state_dump_etc(struct tty_struct *tty);
+extern uint32 ps_uart_state_cur_etc(uint32 index);
+extern int32 is_tty_open(void *pm_data);
 #endif
 

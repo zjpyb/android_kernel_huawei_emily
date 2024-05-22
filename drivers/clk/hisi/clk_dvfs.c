@@ -23,6 +23,7 @@
 #include <linux/of_device.h>
 #include <linux/slab.h>
 #include <linux/clk.h>
+#include <linux/mfd/hisi_pmic.h>
 #include <soc_crgperiph_interface.h>
 #include <linux/hwspinlock.h>
 #include "hisi-clk-mailbox.h"
@@ -64,8 +65,9 @@ struct peri_dvfs_switch_up {
 
 struct peri_dvfs_clk {
 	struct clk_hw			hw;
-	void __iomem			*reg_base;	/* ctrl register */
+	void __iomem			*reg_base;	/* sctrl register */
 	u32				id;
+	int				avs_poll_id;	/*the default value of those no avs feature clk is -1*/
 	unsigned long			freq_table[MAX_FREQ_NUM];
 	u32				volt[MAX_FREQ_NUM];
 	const char 			*link;
@@ -132,6 +134,43 @@ static int clk_peri_get_temprature(struct peri_volt_poll *pvp)
 #endif
 
 #ifdef CONFIG_HISI_PERIDVFS
+static int clk_ip_avs_poll(struct peri_dvfs_clk * dfclk, bool flag)
+{
+	int ret = 0;
+	u32 val;
+	struct peri_volt_poll *pvp = NULL;
+	/*Base AVS IP No need to poll AVS*/
+	if (dfclk->avs_poll_id <= 0)
+		return ret;
+	if(dfclk->avs_poll_id >= AVS_MAX_ID){
+		pr_err("[%s]avs id illegal!\n", __func__);
+		return -EINVAL;
+	}
+	pvp = peri_volt_poll_get(dfclk->id, NULL);
+	if (!pvp) {
+		pr_err("[%s]pvp get failed, dev_id = %d!\n", __func__, dfclk->id);
+		return -EINVAL;
+	}
+	/*Because wrong volt will be set when low temp turn to normal, Low temp also need avs poll.*/
+	if (hwspin_lock_timeout((struct hwspinlock *)pvp->priv,
+					HWLOCK_TIMEOUT)) {
+		pr_err("[%s]pvp hwspinlock timout!\n", __func__);
+		return -ENOENT;//lint !e570
+	}
+	val = readl(dfclk->reg_base + SC_SCBAKDATA24_ADDR);
+	if(AVS_ENABLE_PLL == flag)
+		val = val | BIT(dfclk->avs_poll_id);
+	else
+		val = val & (~BIT(dfclk->avs_poll_id));
+
+	writel(val, dfclk->reg_base + SC_SCBAKDATA24_ADDR);
+
+	clk_log_dbg("val = 0x%x, avs id = %d, clk name = %s, SCDATA24 = 0x%x, flag = %d!\n",val, dfclk->avs_poll_id , dfclk->hw.core->name, readl(dfclk->reg_base + SC_SCBAKDATA24_ADDR), flag);
+	hwspin_unlock((struct hwspinlock *)pvp->priv);
+
+	return ret;
+}
+
 static int peri_temperature(struct peri_dvfs_clk *pclk)
 {
 	struct peri_volt_poll *pvp = NULL;
@@ -142,7 +181,7 @@ static int peri_temperature(struct peri_dvfs_clk *pclk)
 
 	pvp = peri_volt_poll_get(pclk->id, NULL);
 	if (!pvp) {
-		pr_err("[%s]pvp get failed!\n", __func__);
+		pr_err("[%s]pvp get failed, dev_id = %d!\n", __func__, pclk->id);
 		return -EINVAL;
 	}
 
@@ -152,6 +191,40 @@ static int peri_temperature(struct peri_dvfs_clk *pclk)
 
 	return ret;
 }
+
+static int wait_avs_complete(struct peri_dvfs_clk *dfclk)
+{
+	struct peri_volt_poll *pvp = NULL;
+	int loop = PERI_AVS_LOOP_MAX;
+	int val = 0, ret = 0;
+	/*Base AVS IP No need to wait AVS*/
+	if (dfclk->avs_poll_id <= 0)
+		return ret;
+	pvp = peri_volt_poll_get(dfclk->id, NULL);
+	if (!pvp) {
+		pr_err("[%s]pvp get failed, dev_id = %d!\n", __func__, dfclk->id);
+		return -EINVAL;
+	}
+
+	if(NORMAL_TEMPRATURE != peri_get_temperature(pvp))
+		return ret;
+
+	do {
+		val = readl(dfclk->reg_base + SC_SCBAKDATA24_ADDR);
+		val = (val>>AVS_BITMASK_FLAG) & 0x1;
+		if (!val) {
+			loop--;
+			usleep_range(80, 120);
+		}
+	} while (!val && loop > 0);
+
+	if (!val) {
+		pr_err("[%s]:clk prepare wait for avs bitmask timeout, loop = %d,  clk name = %s!\n", __func__, loop, dfclk->hw.core->name);
+		ret = -EINVAL;
+	}
+	return ret;
+}
+
 static int peri_dvfs_set_rate_nolock(struct clk *friend_clk, unsigned long divider_rate, unsigned long rate, unsigned int dev_id)
 {
 	int ret = 0;
@@ -198,11 +271,12 @@ static int dvfs_block_func(struct peri_volt_poll *pvp, u32 volt)
 		}
 		if (volt_get < volt) {
 			loop--;
-			usleep_range(1500, 3000);
+			usleep_range(150, 300);
 		}
 	} while (volt_get < volt && loop > 0);
 	if (volt_get < volt) {
-		pr_err("[%s]schedule up volt failed, volt_get = %d, target_volt = %d!\n", __func__, volt_get, volt);
+		pr_err("[%s]schedule up volt failed, volt_get = %d, target_volt = %d, loop = %d!\n", __func__, volt_get, volt, loop);
+		ret = -EINVAL;
 	}
 	return ret;
 }
@@ -477,11 +551,17 @@ static int peri_dvfs_set(struct peri_dvfs_clk *dfclk, unsigned long rate, unsign
 			if(0 != ret)
 				return -EINVAL;
 			else{
+				ret = wait_avs_complete(dfclk);
+				if(ret < 0){
+					pr_err("[%s]:wait avs fail, ret = %d!\n", __func__, ret);
+					return ret;
+				}
 				ret = peri_dvfs_set_rate_nolock(friend_clk, divider_rate, rate, pvp->dev_id);
 				if (ret < 0)
 					return ret;
 			}
 		}else{
+			/*Profile down case no need wait AVS and Profile voltage OK*/
 			ret = peri_dvfs_set_rate_nolock(friend_clk, divider_rate, rate, pvp->dev_id);
 			if (ret < 0)
 				return ret;
@@ -495,7 +575,9 @@ static int peri_dvfs_set(struct peri_dvfs_clk *dfclk, unsigned long rate, unsign
 			}
 		}
 	}
-	return ret;
+	if(dfclk->avs_poll_id > 0)
+		clk_log_dbg("IP %s  Old rate = %lu, Current rate= %lu!\n", dfclk->hw.core->name, freq_old, rate);
+	return ret;/*lint !e548 */
 }
 #endif
 
@@ -544,8 +626,9 @@ static int peri_dvfs_clk_set_rate(struct clk_hw *hw, unsigned long rate,
 			ret = peri_dvfs_set(dfclk, rate, dfclk->sensitive_volt[i]);
 			if(ret < 0){
 				pr_err("[%s]pvp set volt failed ret =%d!\n", __func__, ret);
+				return ret;
 			}
-			return ret;
+			goto now;
 		}
 	}
 	if( i == level){
@@ -606,7 +689,9 @@ static int hisi_peri_dvfs_prepare(struct peri_dvfs_clk *pclk)
 				if(ret < 0){
 					pr_err("[%s]pvp set volt failed ret =%d!\n", __func__, ret);
 				}
-				return ret;
+				if(pclk->avs_poll_id > 0)
+					clk_log_dbg("IP %s will be enable, current rate = %lu!\n", pclk->hw.core->name, cur_rate);
+				return ret;/*lint !e548*/
 			}
 		}
 		if( i == level){
@@ -623,13 +708,15 @@ static int hisi_peri_dvfs_prepare(struct peri_dvfs_clk *pclk)
 	}else{
 		pr_err("[%s]soft level: freq must not be less than 0,please check!\n", __func__);
 	}
-	return ret;
+	if(pclk->avs_poll_id > 0)
+		clk_log_dbg("IP %s will be enable, current rate = %lu!\n", pclk->hw.core->name, cur_rate);
+	return ret;/*lint !e548 */
 }
 
 static void hisi_peri_dvfs_unprepare(struct peri_dvfs_clk *pclk)
 {
 	int ret = 0;
-	ret = peri_volt_change(pclk->id, PERI_VOLT_0);
+	ret = peri_volt_change(pclk->id, PERI_VOLT_0);/*Clock close case no need wait AVS and Profile voltage OK*/
 	if(ret < 0){
 		pr_err("[%s]peri volt change failed ret =%d!\n", __func__, ret);
 	}
@@ -640,7 +727,7 @@ static int peri_dvfs_clk_prepare(struct clk_hw *hw)
 {
 	struct peri_dvfs_clk *dfclk = container_of(hw, struct peri_dvfs_clk, hw);
 	struct clk *friend_clk;
-	int ret = 0;
+	int ret = 0, avs_ret = 0;
 
 	friend_clk = __clk_lookup(dfclk->link);
 	if (IS_ERR_OR_NULL(friend_clk)) {
@@ -653,14 +740,30 @@ static int peri_dvfs_clk_prepare(struct clk_hw *hw)
 	ret = clk_core_prepare(friend_clk->core);
 #endif
 	if (ret) {
-		pr_err("[%s], friend clock prepare faild!", __func__);
+		pr_err("[%s], friend clock prepare faild!\n", __func__);
 		return ret;
 	}
 #ifdef CONFIG_HISI_PERIDVFS
+	/*Avs ip poll open clock*/
+	ret = clk_ip_avs_poll(dfclk, AVS_ENABLE_PLL);
+	if(ret < 0){
+		pr_err("[%s]clk avs ip poll fail,ret = %d!\n", __func__, ret);
+		clk_core_unprepare(friend_clk->core);
+		return ret;
+	}
 	ret = hisi_peri_dvfs_prepare(dfclk);
 	if(ret < 0) {
+		pr_err("[%s]:clock prepare dvfs faild, ret = %d!\n", __func__, ret);
 		clk_core_unprepare(friend_clk->core);
+		avs_ret= clk_ip_avs_poll(dfclk, AVS_DISABLE_PLL);
+		if(avs_ret < 0)
+			pr_err("[%s]clk avs ip poll unprepare fail,ret = %d!\n", __func__, avs_ret);
+		return ret;
 	}
+
+	ret = wait_avs_complete(dfclk);
+	if(ret < 0)
+		pr_err("[%s]:wait avs fail, ret = %d!\n", __func__, ret);
 #endif
 	return ret;
 }
@@ -701,6 +804,7 @@ static void peri_dvfs_clk_disable(struct clk_hw *hw)
 
 static void peri_dvfs_clk_unprepare(struct clk_hw *hw)
 {
+	int ret;
 	struct peri_dvfs_clk *dfclk = container_of(hw, struct peri_dvfs_clk, hw);
 	struct clk *friend_clk;
 
@@ -716,7 +820,14 @@ static void peri_dvfs_clk_unprepare(struct clk_hw *hw)
 #endif
 
 #ifdef CONFIG_HISI_PERIDVFS
+	/*Avs poll ip clock close*/
+	if (dfclk->avs_poll_id > 0){
+		ret = clk_ip_avs_poll(dfclk, AVS_DISABLE_PLL);
+		if(ret < 0)
+			pr_err("[%s]clk avs ip poll unprepare fail,ret = %d!\n", __func__, ret);
+	}
 	hisi_peri_dvfs_unprepare(dfclk);
+	/*Close clock no need to wait AVS OK*/
 #endif
 	return;
 }
@@ -741,6 +852,7 @@ static void __init hisi_peri_dvfs_clk_setup(struct device_node *np)
 	struct peri_dvfs_clk *devfreq_clk;
 	int i = 0;
 	u32 device_id = 0;
+	int avs_poll_id = -1;
 	u32 sensitive_freq[DVFS_MAX_FREQ_NUM] = {0};
 	u32 sensitive_volt[DVFS_MAX_VOLT_NUM] = {0};
 	u32 sensitive_level = 0;
@@ -748,8 +860,9 @@ static void __init hisi_peri_dvfs_clk_setup(struct device_node *np)
 	u32 recal_mode = 0;
 	u32 divider = 0;
 	u32 low_temperature_freq = 0;
+	u32 user_high_volt = 0;
 
-	unsigned int base_addr_type = HS_CRGCTRL;
+	unsigned int base_addr_type = HS_SYSCTRL;
 	void __iomem *reg_base;
 	u32 data[3] = {0};
 	unsigned long data_length;
@@ -771,6 +884,8 @@ static void __init hisi_peri_dvfs_clk_setup(struct device_node *np)
 			__func__, np->name);
 		goto err_prop;
 	}
+	if (of_property_read_u32(np, "hisilicon,clk-avs-id", &avs_poll_id))
+		avs_poll_id = -1;
 	if (of_property_read_u32(np, "hisilicon,clk-dvfs-level", &sensitive_level)) {
 		pr_err("[%s] node %s doesn't have clk-dvfs-level property!\n",
 			__func__, np->name);
@@ -816,7 +931,16 @@ static void __init hisi_peri_dvfs_clk_setup(struct device_node *np)
 		pr_err("[%s] node %s doesn't have sensitive-volt property!\n", __func__, np->name);
 		goto err_clk;
 	}
+	if (of_property_read_u32(np, "hisilicon,volt-user-high", &user_high_volt))
+		user_high_volt = 0;
 
+	/*USB need vote 0.8V in User version and vote dynamic volt by profile in debug version*/
+#ifndef CONFIG_HISI_DEBUG_FS
+	if(user_high_volt){
+		for (i = 0; i < DVFS_MAX_VOLT_NUM; i++)
+			sensitive_volt[i] = PERI_VOLT_3;
+	}
+#endif
 	parent_names = kzalloc(sizeof(char *) * MUX_SOURCE_NUM, GFP_KERNEL);
 	if (!parent_names) {
 		pr_err("[%s] fail to alloc parent_names!\n", __func__);
@@ -871,6 +995,7 @@ static void __init hisi_peri_dvfs_clk_setup(struct device_node *np)
 	}
 	devfreq_clk->hw.init = init;
 	devfreq_clk->id = device_id;
+	devfreq_clk->avs_poll_id= avs_poll_id;
 	devfreq_clk->sensitive_level = sensitive_level;
 	devfreq_clk->block_mode= block_mode;
 	devfreq_clk->link = clk_friend;

@@ -5,6 +5,9 @@
 #include <linux/hisi/usb/hisi_hifi_usb.h>
 #include <linux/hisi/contexthub/tca.h>
 
+#include <huawei_platform/power/power_dsm.h>
+#include <huawei_platform/usb/hw_usb.h>
+
 enum hisi_charger_type {
 	CHARGER_TYPE_SDP = 0,		/* Standard Downstreame Port */
 	CHARGER_TYPE_CDP,		/* Charging Downstreame Port */
@@ -36,23 +39,6 @@ enum otg_dev_event_type {
 	MAX_EVENT_TYPE = BITS_PER_LONG,
 };
 
-/**
- * event types notify user-space host abnormal event.
- */
-enum usb_host_abnormal_event_type {
-	USB_HOST_EVENT_NORMAL,
-	USB_HOST_EVENT_POWER_INSUFFICIENT,
-	USB_HOST_EVENT_HUB_TOO_DEEP,
-	USB_HOST_EVENT_UNKNOW_DEVICE
-};
-
-#ifdef CONFIG_TCPC_CLASS
-extern void usb_host_abnormal_event_notify(unsigned int event);
-#else
-static inline void usb_host_abnormal_event_notify(unsigned int event) {}
-#endif
-
-
 #if defined(CONFIG_USB_SUSB_HDRC) || defined(CONFIG_USB_DWC3)
 int hisi_charger_type_notifier_register(struct notifier_block *nb);
 int hisi_charger_type_notifier_unregister(struct notifier_block *nb);
@@ -67,13 +53,15 @@ enum hisi_charger_type hisi_get_charger_type(void);
  * Return: 0 means the event added sucessfully. others means event was rejected.
  */
 int hisi_usb_otg_event(enum otg_dev_event_type);
-int hisi_usb_otg_event_sync(TCPC_MUX_CTRL_TYPE mode_type, enum otg_dev_event_type);
+int hisi_usb_otg_event_sync(TCPC_MUX_CTRL_TYPE mode_type, enum otg_dev_event_type, TYPEC_PLUG_ORIEN_E typec_orien);
 
 void hisi_usb_otg_bc_again(void);
 int hisi_usb_otg_irq_notifier_register(struct notifier_block *nb);
 int hisi_usb_otg_irq_notifier_unregister(struct notifier_block *nb);
 int hisi_usb_wakeup_hifi_usb(void);
-void hisi_usb_otg_update_mode_type(TCPC_MUX_CTRL_TYPE mode_type);
+int hisi_usb_otg_use_hifi_ip_first(void);
+int hisi_usb_otg_get_typec_orien(void);
+void hisi_usb_cancel_bc_again(int sync);
 #else
 static inline int hisi_charger_type_notifier_register(
 		struct notifier_block *nb){return 0;}
@@ -87,19 +75,24 @@ static inline int hisi_usb_otg_event(enum otg_dev_event_type event_type)
 {
 	return 0;
 }
-static inline int hisi_usb_otg_event_sync(TCPC_MUX_CTRL_TYPE mode_type, enum otg_dev_event_type event_type)
+static inline int hisi_usb_otg_event_sync(TCPC_MUX_CTRL_TYPE mode_type,
+		enum otg_dev_event_type event_type, TYPEC_PLUG_ORIEN_E typec_orien)
 {
 	return 0;
 }
 static inline void hisi_usb_otg_bc_again(void)
 {
 }
-int hisi_usb_otg_irq_notifier_register(
+static inline int hisi_usb_otg_irq_notifier_register(
 	struct notifier_block *nb){return 0;}
-int hisi_usb_otg_irq_notifier_unregister(
+static inline int hisi_usb_otg_irq_notifier_unregister(
 	struct notifier_block *nb){return 0;}
-int hisi_usb_wakeup_hifi_usb(void){return 0;}
-void hisi_usb_otg_update_mode_type(TCPC_MUX_CTRL_TYPE mode_type){return;}
+static inline int hisi_usb_wakeup_hifi_usb(void){return 0;}
+static inline int hisi_usb_otg_use_hifi_ip_first(void){return 0;}
+static inline int hisi_usb_otg_get_typec_orien(void){return 0;}
+static inline void hisi_usb_cancel_bc_again(int sync)
+{
+}
 #endif /* CONFIG_USB_SUSB_HDRC || CONFIG_USB_DWC3 */
 
 static inline int hisi_usb_id_change(enum otg_dev_event_type event)
@@ -109,27 +102,5 @@ static inline int hisi_usb_id_change(enum otg_dev_event_type event)
 	else
 		return 0;
 }
-
-/* USB DMD */
-#if defined(CONFIG_HUAWEI_DSM)
-struct dsm_client;
-
-struct dsm_client *get_usb_dsm_client(void);
-
-#define usb_dsm_report(err_no, fmt, args...) \
-do { \
-	if (get_usb_dsm_client()) { \
-		if(!dsm_client_ocuppy(get_usb_dsm_client())) { \
-			dsm_client_record(get_usb_dsm_client(), fmt, ##args); \
-			dsm_client_notify(get_usb_dsm_client(), err_no); \
-			pr_info("[USB_DSM]usb dsm report err_no:%d\n", err_no); \
-		} else \
-			pr_err("[USB_DSM]usb dsm is busy! err_no:%d\n", err_no); \
-	} else \
-		pr_err("[USB_DSM]usb dsm clinet is NULL!\n"); \
-} while (0)
-#else
-#define usb_dsm_report(err_no, fmt, args...)
-#endif
 
 #endif /* _HISI_USB_H_*/

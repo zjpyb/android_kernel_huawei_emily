@@ -303,6 +303,9 @@ OAL_STATIC oal_uint32  wal_config_set_ft_ies(mac_vap_stru *pst_mac_vap, oal_uint
 OAL_STATIC oal_uint32  wal_config_get_lauch_cap(mac_vap_stru *pst_mac_vap, oal_uint16 *us_len, oal_uint8 *puc_param);
 OAL_STATIC oal_uint32  wal_config_set_linkloss_threshold(mac_vap_stru *pst_mac_vap, oal_uint16 us_len, oal_uint8 *puc_param);
 OAL_STATIC oal_uint32  wal_config_set_all_log_level(mac_vap_stru *pst_mac_vap, oal_uint16 us_len, oal_uint8 *puc_param);
+#ifdef _PRE_WLAN_FEATURE_BTCOEX
+OAL_STATIC oal_uint32  wal_config_set_btcoex_ps_switch(mac_vap_stru *pst_mac_vap, oal_uint16 us_len, oal_uint8 *puc_param);
+#endif
 OAL_STATIC oal_uint32  wal_config_set_d2h_hcc_assemble_cnt(mac_vap_stru *pst_mac_vap, oal_uint16 us_len, oal_uint8 *puc_param);
 OAL_STATIC oal_uint32  wal_config_set_chn_est_ctrl(mac_vap_stru *pst_mac_vap, oal_uint16 us_len, oal_uint8 *puc_param);
 OAL_STATIC oal_uint32  wal_config_set_power_ref(mac_vap_stru *pst_mac_vap, oal_uint16 us_len, oal_uint8 *puc_param);
@@ -591,6 +594,9 @@ OAL_STATIC OAL_CONST wal_wid_op_stru g_ast_board_wid_op[] =
 #endif
 
 #ifdef _PRE_PLAT_FEATURE_CUSTOMIZE
+#ifdef _PRE_WLAN_FEATURE_BTCOEX
+    {WLAN_CFGID_SET_BTCOEX_PS_SWITCH,      OAL_FALSE,  {0},  OAL_PTR_NULL, wal_config_set_btcoex_ps_switch},
+#endif
     {WLAN_CFGID_LAUCH_CAP,                 OAL_FALSE,  {0},  wal_config_get_lauch_cap, OAL_PTR_NULL},
     {WLAN_CFGID_SET_LINKLOSS_THRESHOLD,    OAL_FALSE,  {0},  OAL_PTR_NULL,        wal_config_set_linkloss_threshold},
     {WLAN_CFGID_SET_ALL_LOG_LEVEL,         OAL_FALSE,  {0},  OAL_PTR_NULL,        wal_config_set_all_log_level},
@@ -2846,6 +2852,13 @@ OAL_STATIC oal_uint32  wal_config_set_all_log_level(mac_vap_stru *pst_mac_vap, o
 {
     return hmac_config_set_all_log_level(pst_mac_vap, us_len, puc_param);
 }
+#ifdef _PRE_WLAN_FEATURE_BTCOEX
+
+OAL_STATIC oal_uint32  wal_config_set_btcoex_ps_switch(mac_vap_stru *pst_mac_vap, oal_uint16 us_len, oal_uint8 *puc_param)
+{
+    return hmac_config_set_btcoex_ps_switch(pst_mac_vap, us_len, puc_param);
+}
+#endif
 
 OAL_STATIC oal_uint32  wal_config_set_d2h_hcc_assemble_cnt(mac_vap_stru *pst_mac_vap, oal_uint16 us_len, oal_uint8 *puc_param)
 {

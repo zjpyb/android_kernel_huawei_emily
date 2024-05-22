@@ -33,7 +33,7 @@ static struct dsm_dev dsm_anc_hs = {
 	.buff_size = DSM_ANC_HS_BUF_SIZE,
 };
 
-static struct dsm_audio_client {
+struct dsm_audio_client {
 	struct dsm_client * dsm_client;
 	char * dsm_str_info_buffer;
 };
@@ -49,7 +49,7 @@ static int audio_dsm_register(struct dsm_audio_client *dsm_client, struct dsm_de
 
 	dsm_client->dsm_client = dsm_register_client(dsm_audio);
 	if(NULL == dsm_client->dsm_client) {
-		dsm_client->dsm_client = dsm_find_client(dsm_audio->name);
+		dsm_client->dsm_client = dsm_find_client((char *)dsm_audio->name);
 		if(NULL == dsm_client->dsm_client) {
 			dsm_loge("dsm_audio_client register failed!\n");
 			return -ENOMEM;
@@ -141,7 +141,6 @@ int audio_dsm_report_info(enum audio_device_type dev_type, int error_no, char *f
 	int ret = 0;
 #ifdef CONFIG_HUAWEI_DSM
 	int err = 0;
-	char *dsm_report_buffer = NULL;
 	va_list args;
 
     dsm_logi("begin,errorno %d,dev_type %d ",error_no, dev_type);

@@ -52,38 +52,60 @@
 #define ASP_HDMI_SIO_CH0_STATUS2_L	 (ASP_HDMI_DMA_BASE + 0x44C)
 #define ASP_HDMI_SIO_CH0_STATUS1_R	 (ASP_HDMI_DMA_BASE + 0x478)
 #define ASP_HDMI_SIO_CH0_STATUS2_R	 (ASP_HDMI_DMA_BASE + 0x47C)
-#define ASP_HDMI_SPDIF_CH0_STATUS1_L	 (ASP_HDMI_DMA_BASE + 0x820)
-#define ASP_HDMI_SPDIF_CH0_STATUS2_L	 (ASP_HDMI_DMA_BASE + 0x824)
-#define ASP_HDMI_SPDIF_CH0_STATUS1_R	 (ASP_HDMI_DMA_BASE + 0x850)
-#define ASP_HDMI_SPDIF_CH0_STATUS2_R	 (ASP_HDMI_DMA_BASE + 0x854)
 
-#define ASP_HDMI_SPDIF_CONFIG       (ASP_HDMI_DMA_BASE + 0x800)
+#define ASP_HDMI_SPDIF_CH0_STATUS1_L	(ASP_HDMI_DMA_BASE + 0x820)
+#define ASP_HDMI_SPDIF_CH0_STATUS2_L	(ASP_HDMI_DMA_BASE + 0x824)
+#define ASP_HDMI_SPDIF_CH0_STATUS1_R	(ASP_HDMI_DMA_BASE + 0x850)
+#define ASP_HDMI_SPDIF_CH0_STATUS2_R	(ASP_HDMI_DMA_BASE + 0x854)
+
+/* spdif_ch 0-3, 1 spdif_ch for 2 audio channels */
+#define ASP_HDMI_SPDIF_CH_STATUS1_L(spdif_ch)	(ASP_HDMI_SPDIF_CH0_STATUS1_L + (spdif_ch) * 0x60)
+#define ASP_HDMI_SPDIF_CH_STATUS2_L(spdif_ch)	(ASP_HDMI_SPDIF_CH0_STATUS2_L + (spdif_ch) * 0x60)
+#define ASP_HDMI_SPDIF_CH_STATUS1_R(spdif_ch)	(ASP_HDMI_SPDIF_CH0_STATUS1_R + (spdif_ch) * 0x60)
+#define ASP_HDMI_SPDIF_CH_STATUS2_R(spdif_ch)	(ASP_HDMI_SPDIF_CH0_STATUS2_R + (spdif_ch) * 0x60)
+
+#define ASP_HDMI_SPDIF_CTRL       	(ASP_HDMI_DMA_BASE + 0x800)
+#define ASP_HDMI_SPDIF_CONFIG       (ASP_HDMI_DMA_BASE + 0x804)
 
 #define HDMI_DMA_EN_MASK			0x3
-#define HDMI_DMA_DISABLE_MASK	0x0
+#define HDMI_DMA_DISABLE_MASK		0x0
 #define HDMI_INT_MASK				0x7
 #define HDMI_I2S_SET_MASK			0x901BC
 #define HDMI_I2S_CLR_MASK			0x9000C
 #define HDMI_TX3_EN_MASK			0x1
 #define HDMI_SIO_CONF_MASK		0x0
 #define HDMI_SIO_BITWIDTH_MASK	0x2
-#define HDMI_SPDIF_SET_MASK		0x3C1
+#define HDMI_SIO_BITWIDTH_24BIT	0xB
 
-#define HDMI_TX3_EN_BIT             (0)
-#define HDMI_A_INT_EN_BIT           (0)
-#define HDMI_B_INT_EN_BIT           (1)
-#define HDMI_BUS_ERR_EN_BIT         (2)
+#define HDMI_SPDIF_SAMPLE_RATE_MASK	GENMASK(27, 24)
+#define HDMI_SPDIF_SAMPLE_RATE_SHIFT	(24)
+#define HDMI_SPDIF_CHANNEL_TYPE_MASK		GENMASK(23, 20)
+#define HDMI_SPDIF_CHANNEL_TYPE_SHIFT	(20)
+
+#define HDMI_SPDIF_ORIGINAL_SAMPLE_RATE_MASK	GENMASK(7, 4)
+#define HDMI_SPDIF_ORIGINAL_SAMPLE_RATE_SHIFT	(4)
+#define HDMI_SPDIF_BITWIDTH_16BIT	0x2
+#define HDMI_SPDIF_BITWIDTH_24BIT	0xB
+#define HDMI_SPDIF_BITWIDTH_MASK	GENMASK(3, 0)
+#define HDMI_SPDIF_BITWIDTH_SHIFT	(0)
+
+#define HDMI_SPDIF_SET_MASK	0x3C1
+
+#define HDMI_TX3_EN_BIT	(0)
+#define HDMI_A_INT_EN_BIT	(0)
+#define HDMI_B_INT_EN_BIT	(1)
+#define HDMI_BUS_ERR_EN_BIT	(2)
 
 #define HDMI_PCM_SWITCH_ORDE_BIT		(13)
-#define HDMI_PCM_SWITCH_ORDE_MAST	0x1
+#define HDMI_PCM_SWITCH_ORDE_MASK	0x1
 
-#define HDMI_SIO_SAMPLE_RATE_BIT         (24)
-#define HDMI_SIO_HDCP_BIT				(2)
+#define HDMI_SIO_SAMPLE_RATE_BIT	(24)
+#define HDMI_SIO_HDCP_BIT	(2)
 #define HDMI_SIO_CHANNEL_TYPE_BIT		(20)
-#define HDMI_SIO_BITWIDTH_BIT        		(0)
+#define HDMI_SIO_BITWIDTH_BIT	(0)
 
-#define HDMI_DMA_ADD_VALID_MASK			0x3
-#define HDMI_DMA_ADDLEN_VALID_MASK         0x1F
+#define HDMI_DMA_ADD_VALID_MASK	0x3
+#define HDMI_DMA_ADDLEN_VALID_MASK	0x1F
 
 /* TX3 config */
 enum tx3_channel_num {
@@ -116,10 +138,13 @@ enum tx3_align_type {
 
 enum sio_sample_rate {
 	SAMPLE_RATE_DEFULT = 0,
-	SAMPLE_RATE_44 = SAMPLE_RATE_DEFULT,
+	SAMPLE_RATE_32 = SAMPLE_RATE_DEFULT,
+	SAMPLE_RATE_44,
 	SAMPLE_RATE_48,
-	SAMPLE_RATE_32,
+	SAMPLE_RATE_88,
 	SAMPLE_RATE_96,
+	SAMPLE_RATE_176,
+	SAMPLE_RATE_192,
 	SAMPLE_RATE_MAX,
 	SAMPLE_RATE_NO_SUPPORT = SAMPLE_RATE_MAX,
 };
@@ -133,6 +158,7 @@ typedef struct tx3_config_parameters {
 typedef struct sio_config_parameters {
 	tx3_config_parameters *tx3_conf;
 	unsigned int sample_rate;//sio_sample_rate
+	unsigned int div_clk;//sio_div_clk
 	bool is_hdcp; //is data copyright protection
 } sio_config_parameters;
 

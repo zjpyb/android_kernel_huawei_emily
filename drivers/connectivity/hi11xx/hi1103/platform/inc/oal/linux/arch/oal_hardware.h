@@ -271,8 +271,8 @@ typedef enum
 /*****************************************************************************
   4 全局变量声明
 *****************************************************************************/
-extern oal_hi_timer_reg_stru *g_pst_reg_timer;
-extern oal_uint32 g_aul_irq_save_time[][255];
+extern oal_hi_timer_reg_stru *g_pst_reg_timer_etc;
+extern oal_uint32 g_aul_irq_save_time_etc[][255];
 
 /*****************************************************************************
   9 OTHERS定义
@@ -437,12 +437,12 @@ OAL_STATIC OAL_INLINE oal_uint32  oal_5115timer_get_10ns(oal_void)
 OAL_STATIC OAL_INLINE oal_uint32  oal_5115timer_get_10ns(oal_void)
 {
 #if(_PRE_TARGET_PRODUCT_TYPE_WS835DMB == _PRE_CONFIG_TARGET_PRODUCT) //产品采用了该中断的第二个定时器
-    return g_pst_reg_timer->ast_timer[OAL_5115TIMER_ONE].ul_timerx_value;
+    return g_pst_reg_timer_etc->ast_timer[OAL_5115TIMER_ONE].ul_timerx_value;
 #elif(_PRE_TARGET_PRODUCT_TYPE_E5 == _PRE_CONFIG_TARGET_PRODUCT) || (_PRE_CONFIG_TARGET_PRODUCT == _PRE_TARGET_PRODUCT_TYPE_CPE)
     /* E5 产品暂无硬件定时器资源 */
     return 1;
 #else
-    return g_pst_reg_timer->ast_timer[OAL_5115TIMER_SEC].ul_timerx_value;
+    return g_pst_reg_timer_etc->ast_timer[OAL_5115TIMER_SEC].ul_timerx_value;
 #endif
 }
 #endif
@@ -462,15 +462,15 @@ OAL_STATIC OAL_INLINE oal_void  oal_irq_save(oal_uint *pui_flags, oal_uint32 ul_
     /* 数组最后一个用来保存save时间 */
     /* 数组最后第二个用来保存save的类型，其他用来保存各类型的最大save - restore的时间*/
     /* 每次restore的时候需要清空save时间，用来判断有无重复save */
-        if (g_aul_irq_save_time[ul_core_id][254] == 0)
+        if (g_aul_irq_save_time_etc[ul_core_id][254] == 0)
         {
-            g_aul_irq_save_time[ul_core_id][254] = oal_5115timer_get_10ns();
-            g_aul_irq_save_time[ul_core_id][253] = ul_type;
+            g_aul_irq_save_time_etc[ul_core_id][254] = oal_5115timer_get_10ns();
+            g_aul_irq_save_time_etc[ul_core_id][253] = ul_type;
         }
         else
         {
             /* 重复save */
-            OAL_IO_PRINT("\n core %d oal_irq_save[%d] failed, already saved by [%d] \n",ul_core_id, ul_type, g_aul_irq_save_time[ul_core_id][253]);
+            OAL_IO_PRINT("\n core %d oal_irq_save[%d] failed, already saved by [%d] \n",ul_core_id, ul_type, g_aul_irq_save_time_etc[ul_core_id][253]);
             oal_dump_stack();
         }
 #endif
@@ -486,27 +486,27 @@ OAL_STATIC OAL_INLINE oal_void  oal_irq_restore(oal_uint *pui_flags, oal_uint32 
     oal_uint32 ul_restore_time;
     oal_uint32 ul_core_id = OAL_GET_CORE_ID();
 
-    if (g_aul_irq_save_time[ul_core_id][254] != 0)
+    if (g_aul_irq_save_time_etc[ul_core_id][254] != 0)
     {
         /* restore时，需要判断上次save的type是否相同，不相同为非法 */
-        if ((ul_type < 253) && (g_aul_irq_save_time[ul_core_id][253] == ul_type))
+        if ((ul_type < 253) && (g_aul_irq_save_time_etc[ul_core_id][253] == ul_type))
         {
-            ul_restore_time = g_aul_irq_save_time[ul_core_id][254] - oal_5115timer_get_10ns();
+            ul_restore_time = g_aul_irq_save_time_etc[ul_core_id][254] - oal_5115timer_get_10ns();
 
             /* 记录这个类型的save - restore 最大值 */
-            if (g_aul_irq_save_time[ul_core_id][ul_type] < ul_restore_time)
+            if (g_aul_irq_save_time_etc[ul_core_id][ul_type] < ul_restore_time)
             {
-                g_aul_irq_save_time[ul_core_id][ul_type] = ul_restore_time;
+                g_aul_irq_save_time_etc[ul_core_id][ul_type] = ul_restore_time;
             }
         }
         else
         {
             /* restore出错 */
-            OAL_IO_PRINT("\n core %d oal_irq_restore[%d] failed, should be [%d] \n",ul_core_id, ul_type, g_aul_irq_save_time[ul_core_id][253]);
+            OAL_IO_PRINT("\n core %d oal_irq_restore[%d] failed, should be [%d] \n",ul_core_id, ul_type, g_aul_irq_save_time_etc[ul_core_id][253]);
             oal_dump_stack();
         }
-        g_aul_irq_save_time[ul_core_id][254] = 0;
-        g_aul_irq_save_time[ul_core_id][253] = -1;
+        g_aul_irq_save_time_etc[ul_core_id][254] = 0;
+        g_aul_irq_save_time_etc[ul_core_id][253] = -1;
     }
     else
     {
@@ -545,13 +545,13 @@ OAL_STATIC OAL_INLINE oal_void  oal_5115timer_init(oal_void)
 #if (_PRE_TARGET_PRODUCT_TYPE_E5 != _PRE_CONFIG_TARGET_PRODUCT) && (_PRE_CONFIG_TARGET_PRODUCT != _PRE_TARGET_PRODUCT_TYPE_CPE)
     oal_hi_timer_control_union u_reg_control;
 
-    g_pst_reg_timer = (oal_hi_timer_reg_stru *)ioremap(OAL_HI_TIMER_REG_BASE, sizeof(oal_hi_timer_reg_stru));
+    g_pst_reg_timer_etc = (oal_hi_timer_reg_stru *)ioremap(OAL_HI_TIMER_REG_BASE, sizeof(oal_hi_timer_reg_stru));
 
     /*读timer控制器*/
 #if(_PRE_TARGET_PRODUCT_TYPE_WS835DMB == _PRE_CONFIG_TARGET_PRODUCT) //产品采用了该中断的第二个定时器
-    u_reg_control.ul_value = g_pst_reg_timer->ast_timer[OAL_5115TIMER_ONE].ul_timerx_control;
+    u_reg_control.ul_value = g_pst_reg_timer_etc->ast_timer[OAL_5115TIMER_ONE].ul_timerx_control;
 #else
-    u_reg_control.ul_value = g_pst_reg_timer->ast_timer[OAL_5115TIMER_SEC].ul_timerx_control;
+    u_reg_control.ul_value = g_pst_reg_timer_etc->ast_timer[OAL_5115TIMER_SEC].ul_timerx_control;
 #endif
     /* 计数模式为自由模式 */
     u_reg_control.bits_stru.ul_timermode = OAL_HI_TIMER_FREE_MODE;
@@ -573,9 +573,9 @@ OAL_STATIC OAL_INLINE oal_void  oal_5115timer_init(oal_void)
 
     /*写回timer控制器*/
 #if(_PRE_TARGET_PRODUCT_TYPE_WS835DMB == _PRE_CONFIG_TARGET_PRODUCT) //产品采用了该中断的第二个定时器
-    g_pst_reg_timer->ast_timer[OAL_5115TIMER_ONE].ul_timerx_control = u_reg_control.ul_value;
+    g_pst_reg_timer_etc->ast_timer[OAL_5115TIMER_ONE].ul_timerx_control = u_reg_control.ul_value;
 #else
-    g_pst_reg_timer->ast_timer[OAL_5115TIMER_SEC].ul_timerx_control = u_reg_control.ul_value;
+    g_pst_reg_timer_etc->ast_timer[OAL_5115TIMER_SEC].ul_timerx_control = u_reg_control.ul_value;
 #endif
 #endif
 }
@@ -584,7 +584,7 @@ OAL_STATIC OAL_INLINE oal_void  oal_5115timer_init(oal_void)
 OAL_STATIC OAL_INLINE oal_void  oal_5115timer_exit(oal_void)
 {
 #if (_PRE_TARGET_PRODUCT_TYPE_E5 != _PRE_CONFIG_TARGET_PRODUCT) && (_PRE_CONFIG_TARGET_PRODUCT != _PRE_TARGET_PRODUCT_TYPE_CPE)
-    iounmap(g_pst_reg_timer);
+    iounmap(g_pst_reg_timer_etc);
 #endif
 }
 #else
@@ -691,6 +691,16 @@ OAL_STATIC OAL_INLINE oal_void oal_setl_mask(oal_void* addr,  oal_uint32 mask)
     value = oal_readl(addr);
     value |= (mask);
     oal_writel(value, (addr));
+}
+
+OAL_STATIC OAL_INLINE oal_void oal_value_mask(oal_void* addr,  oal_uint32 value, oal_uint32 mask)
+{
+    oal_uint32 reg;
+    reg = oal_readl(addr);
+    reg &= ~(mask);
+    value &= mask;	
+    reg |= value;
+    oal_writel(reg, (addr));
 }
 
 OAL_STATIC  OAL_INLINE oal_hi_timerx_reg_stru  *hi_timerx_request(oal_hi_timerx_index_enum_uint8  en_timer_idx)

@@ -453,6 +453,11 @@ int hw_sensor_power_up(sensor_t *s_ctrl)
 			rc = hw_sensor_gpio_config(PWDN, s_ctrl->board_info,
 				power_setting, POWER_ON);
 			break;
+		case SENSOR_PWDN2:
+			cam_debug("%s, seq_type:%u SENSOR_PWDN2", __func__, power_setting->seq_type);
+			rc = hw_sensor_gpio_config(PWDN2, s_ctrl->board_info,
+				power_setting, POWER_ON);
+			break;
 		case SENSOR_VCM_PWDN:
 			cam_debug("%s, seq_type:%u SENSOR_VCM_PWDN", __func__, power_setting->seq_type);
 			rc = hw_sensor_gpio_config(VCM, s_ctrl->board_info,
@@ -492,6 +497,12 @@ int hw_sensor_power_up(sensor_t *s_ctrl)
 			rc = hw_sensor_pmic_config(s_ctrl->board_info,
 				power_setting, POWER_ON);
 			break;
+		case SENSOR_MIPI_SW:
+			/* for mipi switch pipe select*/
+			cam_info("%s, seq_type:%u SENSOR_MIPI_SW", __func__, power_setting->seq_type);
+			rc = hw_sensor_gpio_config(MIPI_SW, s_ctrl->board_info,
+				power_setting, POWER_ON);
+			break;
 		case SENSOR_CS:
 			break;
 		default:
@@ -523,12 +534,21 @@ int hw_sensor_power_down(sensor_t *s_ctrl)
 	int index = 0, rc = 0;
 	struct hisi_pmic_ctrl_t *pmic_ctrl = NULL;
 	struct sensor_power_setting *power_setting = NULL;
-	struct sensor_power_setting_array *power_setting_array
-		= &s_ctrl->power_setting_array;
+	struct sensor_power_setting_array *power_setting_array;
 
 	if (hisi_is_clt_flag()) {
 		cam_debug("%s just return for CLT camera.", __func__);
 		return 0;
+	}
+
+	if(NULL != s_ctrl->power_down_setting_array.power_setting && 0 != s_ctrl->power_down_setting_array.size)
+	{
+		cam_info("%s using power down seq", __func__);
+		power_setting_array = &s_ctrl->power_down_setting_array;
+	}
+	else
+	{
+		power_setting_array = &s_ctrl->power_setting_array;
 	}
 
 	cam_debug("%s enter.", __func__);
@@ -618,6 +638,11 @@ int hw_sensor_power_down(sensor_t *s_ctrl)
 		case SENSOR_PWDN:
 			cam_debug("%s, seq_type:%u SENSOR_PWDN", __func__, power_setting->seq_type);
 			rc = hw_sensor_gpio_config(PWDN, s_ctrl->board_info,
+				power_setting, POWER_OFF);
+			break;
+		case SENSOR_PWDN2:
+			cam_debug("%s, seq_type:%u SENSOR_PWDN2", __func__, power_setting->seq_type);
+			rc = hw_sensor_gpio_config(PWDN2, s_ctrl->board_info,
 				power_setting, POWER_OFF);
 			break;
 		case SENSOR_RST:
@@ -712,6 +737,12 @@ int hw_sensor_power_down(sensor_t *s_ctrl)
 			rc = hw_sensor_ldo_config(LDO_MISP, s_ctrl->board_info,
 				power_setting, POWER_OFF);
 			break;
+		case SENSOR_MIPI_SW:
+			/* for mipi switch pipe select */
+			cam_info("%s, seq_type:%u SENSOR_MIPI_SW", __func__, power_setting->seq_type);
+			rc = hw_sensor_gpio_config(MIPI_SW, s_ctrl->board_info,
+				power_setting, POWER_OFF);
+			break;
 		default:
 			cam_err("%s invalid seq_type.", __func__);
 			break;
@@ -774,7 +805,7 @@ int hwsensor_writefile(int index, const char *sensor_name)
         return -1;
     cam_debug("%s index=%d,sensor_name=%s.\n", __func__, index, sensor_name);
 
-    snprintf(file_name, FILE_NAME_LEN, "/data/camera/hisi_sensor%d", index);
+    snprintf(file_name, FILE_NAME_LEN, "/data/vendor/camera/hisi_sensor%d", index);
 
     filp = filp_open(file_name, O_CREAT|O_WRONLY, 0666);
     if (IS_ERR_OR_NULL(filp)) {
@@ -975,6 +1006,15 @@ int hw_sensor_get_dt_data(struct platform_device *pdev,
         sensor_info->module_type = 0;
         cam_warn("%s read module_type failed, rc %d, set default value %d\n",
         __func__, rc, sensor_info->module_type);
+        rc = 0;
+    }
+
+    rc = of_property_read_u32(of_node, "huawei,flash_pos_type", (u32 *)&sensor_info->flash_pos_type);
+    cam_info("%s flash_pos_type 0x%x, rc %d\n", __func__, sensor_info->flash_pos_type, rc);
+    if (rc < 0) {
+        sensor_info->flash_pos_type = 0;//default alone
+        cam_warn("%s read flash_pos_type failed, rc %d, set default value %d\n",
+            __func__, rc, sensor_info->flash_pos_type);
         rc = 0;
     }
 

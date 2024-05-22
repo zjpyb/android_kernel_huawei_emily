@@ -34,8 +34,10 @@ pmic: pmic@0 {
             pmu_ldo12_vset_address = <0>;
             pmu_sim_ctrl_address = <0>;
             pmu_sim_deb_ctrl_address = <0>;
-            pmu_irq_mask3_address = <0>;
-            pmu_irq3_address = <0>;
+            pmu_irq_mask3_address = <0x203>;
+            pmu_irq3_address = <0x213>;
+            pmu_irq_mask_address = <0x203>;
+            pmu_irq_address = <0x213>;
             pmu_ldo11_onoff_value = <0>;
             pmu_ldo11_vset_value = <0>;
             pmu_ldo12_onoff_value = <0>;
@@ -74,8 +76,10 @@ pmic: pmic@0 {
             pmu_ldo12_vset_address = <0>;
             pmu_sim_ctrl_address = <0>;
             pmu_sim_deb_ctrl_address = <0>;
-            pmu_irq_mask3_address = <0>;
-            pmu_irq3_address = <0>;
+            pmu_irq_mask3_address = <0x203>;
+            pmu_irq3_address = <0x213>;
+            pmu_irq_mask_address = <0x203>;
+            pmu_irq_address = <0x213>;
             pmu_ldo11_onoff_value = <0>;
             pmu_ldo11_vset_value = <0>;
             pmu_ldo12_onoff_value = <0>;

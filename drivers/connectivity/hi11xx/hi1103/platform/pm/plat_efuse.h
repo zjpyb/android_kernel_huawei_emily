@@ -25,7 +25,11 @@ extern "C" {
 *****************************************************************************/
 #define GET_EFUSE_CMD          "0x50000744,64"
 #define GET_EFUSE_EC_VERSION   "0x50000770,4"
+#ifndef HISI_WIFI_MISC_TOP_DIR
 #define EFUSE_FILE_PATH        "/data/misc/wifi/efuse"
+#else
+#define EFUSE_FILE_PATH        HISI_WIFI_MISC_TOP_DIR"/wifi/efuse"
+#endif
 #define EFUSE_REG_NUM          (16)
 #define EFUSE_VALUE_WIDTH      (16)
 #define EFUSE_REG_WIDTH        (4)
@@ -38,6 +42,9 @@ extern "C" {
 #define DIEID_BIT_53           (53)
 #define DIEID_BIT_79           (79)
 #define DIEID_BIT_95           (95)
+
+/*1103,38.4M 共时钟请求控制*/
+#define STR_REG_PMU_CLK_REQ    ("0x50000350")
 
 /*ec version define*/
 #define V100                   (0x00)
@@ -83,10 +90,10 @@ extern "C" {
 /*****************************************************************************
   10 函数声明
 *****************************************************************************/
-extern int32 number_type_cmd_send(uint8 *Key, uint8 *Value);
-extern int32 read_msg(uint8 *data, int32 len);
-extern void  store_efuse_info(void);
-extern uint8 get_ec_version(void);
+extern int32 number_type_cmd_send_etc(uint8 *Key, uint8 *Value);
+extern int32 read_msg_etc(uint8 *data, int32 len);
+extern void  store_efuse_info_etc(void);
+extern uint8 get_ec_version_etc(void);
 
 #ifdef __cplusplus
     #if __cplusplus

@@ -43,10 +43,11 @@
 #define BST_TRAFFIC_LEN(len)			(len > 0XFF ? 0XFF : len)
 #define BST_MAX_PROXY_NUM               32
 #define APP_MAX_PID_NUM                 500
+#define FIXED_CTNT_MAX_LEN              (1024)
 #ifdef CONFIG_HUAWEI_BASTET_COMM
 #define BST_ACORE_CORE_MSG_TYPE_DSPP    0
 #endif
-
+#define BST_MAX_INDICATE_PACKET_LEN  (5000)
 dev_t bastet_dev;
 struct cdev bastet_cdev;
 struct class *bastet_class;
@@ -125,7 +126,10 @@ int post_indicate_packet(bst_ind_type type, void *info, unsigned int len)
 		BASTET_LOGE("bastet is not opened");
 		return -ENOENT;
 	}
-
+	if (len > BST_MAX_INDICATE_PACKET_LEN) {
+		BASTET_LOGE("len is too long");
+		return -ENOENT;
+	}
 	pkt = kmalloc(sizeof(struct data_packet) + len, GFP_ATOMIC);
 	if (NULL == pkt) {
 		BASTET_LOGE("failed to kmalloc");
@@ -226,11 +230,9 @@ static long bastet_ioctl(struct file *flip, unsigned int cmd, unsigned long arg)
 		break;
 	}
 	case BST_IOC_APPLY_LOCAL_PORT: {
-		u16 local_port;
+		u16 local_port = 0;
 
 		rc = bind_local_ports(&local_port);
-		if (rc < 0)
-			break;
 
 		if (copy_to_user(argp, &local_port, sizeof(local_port)))
 			rc = -EFAULT;
@@ -608,6 +610,11 @@ static long bastet_ioctl(struct file *flip, unsigned int cmd, unsigned long arg)
 		 * alloc memory for heartbeat send content, which length is from
 		 * struct heartbeat_content
 		 */
+		if ((send.len == 0)||(send.len > FIXED_CTNT_MAX_LEN)) {
+			BASTET_LOGE("send.len is invalid");
+			rc = -EINVAL;
+			break;
+		}
 		content = (uint8_t *) kmalloc(send.len, GFP_ATOMIC);
 		if (NULL == content) {
 			BASTET_LOGE("failed to kmalloc send data");
@@ -646,7 +653,7 @@ static long bastet_ioctl(struct file *flip, unsigned int cmd, unsigned long arg)
 		 * alloc memory for heartbeat reply content,
 		 * which length is from struct heartbeat_content
 		 */
-		if ( reply.len > BST_MAX_REPLY_LEN ) {
+		if ((reply.len > BST_MAX_REPLY_LEN)||(reply.len == 0)) {
 			break;
 		}
 

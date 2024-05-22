@@ -53,6 +53,28 @@ extern oal_int32 g_l_rf_fem_switch;
      ((_cust).st_rf.c_delta_cca_ed_high_40th_5g + HAL_CCA_OPT_ED_HIGH_40TH_DEF))
 #endif
 
+#ifdef _PRE_WLAN_FEATURE_BTCOEX
+#define GET_HAL_BTCOEX_SW_PREEMPT_MODE(_pst_handler)       (*(oal_uint8*)&((_pst_handler)->st_btcoex_sw_preempt.st_sw_preempt_mode)) /* 获取当前hal devcie的btcoex sw preempt模式 */
+#define GET_HAL_BTCOEX_SW_PREEMPT_TYPE(_pst_handler)       ((_pst_handler)->st_btcoex_sw_preempt.en_sw_preempt_type)                  /* 获取当前hal devcie的btcoex sw preempt类型 */
+#define GET_HAL_BTCOEX_SW_PREEMPT_SUBTYPE(_pst_handler)    ((_pst_handler)->st_btcoex_sw_preempt.en_sw_preempt_subtype)               /* 获取当前hal devcie的btcoex sw preempt子类型 */
+#define GET_HAL_BTCOEX_SW_PREEMPT_PS_STOP(_pst_handler)    ((_pst_handler)->st_btcoex_sw_preempt.en_ps_stop)                          /* 获取当前hal devcie的ps业务是否打开标记 */
+#define GET_HAL_BTCOEX_SW_PREEMPT_PS_PAUSE(_pst_handler)    ((_pst_handler)->st_btcoex_sw_preempt.en_ps_pause)
+
+#define HAL_BTCOEX_CHECK_SW_PREEMPT_ON(_pst_handler)   \
+    ((0 != ((*(oal_uint8*)&((_pst_handler)->st_btcoex_sw_preempt.st_sw_preempt_mode))& BIT0)) ? OAL_TRUE : OAL_FALSE)
+#define HAL_BTCOEX_CHECK_SW_PREEMPT_DELBA_ON(_pst_handler)   \
+    ((0 != ((*(oal_uint8*)&((_pst_handler)->st_btcoex_sw_preempt.st_sw_preempt_mode))& BIT1)) ? OAL_TRUE : OAL_FALSE)
+#define HAL_BTCOEX_CHECK_SW_PREEMPT_REPLY_CTS_ON(_pst_handler)   \
+    ((0 != ((*(oal_uint8*)&((_pst_handler)->st_btcoex_sw_preempt.st_sw_preempt_mode))& BIT2)) ? OAL_TRUE : OAL_FALSE)
+#define HAL_BTCOEX_CHECK_SW_PREEMPT_RSP_FRAME_PS_ON(_pst_handler)   \
+    ((0 != ((*(oal_uint8*)&((_pst_handler)->st_btcoex_sw_preempt.st_sw_preempt_mode))& BIT3)) ? OAL_TRUE : OAL_FALSE)
+
+#define GET_BTCOEX_BT_STATUS(_pst_handler)     (&((_pst_handler)->st_btcoex_btble_status.un_bt_status.st_bt_status))  /* 获取当前bt status */
+#define GET_BTCOEX_BLE_STATUS(_pst_handler)    (&((_pst_handler)->st_btcoex_btble_status.un_ble_status.st_ble_status))  /* 获取当前ble status */
+#define GET_BTCOEX_BT_LDAC_STATUS(_pst_handler)  ((&((_pst_handler)->st_btcoex_btble_status.un_ble_status.st_ble_status))->bit_bt_ldac) /* 获取当前ldac status */
+
+#endif
+
 /*****************************************************************************
   8 UNION定义
 *****************************************************************************/
@@ -2478,6 +2500,12 @@ OAL_STATIC OAL_INLINE oal_void hal_set_btcoex_soc_gpreg1(oal_uint8 uc_val, oal_u
 {
     HAL_PUBLIC_HOOK_FUNC(_set_btcoex_soc_gpreg1)( uc_val, us_mask, uc_offset);
 }
+
+OAL_STATIC OAL_INLINE oal_void hal_btcoex_get_ps_switch(hal_to_dmac_device_stru *pst_hal_device, oal_bool_enum_uint8 *pen_ps_switch)
+{
+    HAL_PUBLIC_HOOK_FUNC(_btcoex_get_ps_switch)(pst_hal_device, pen_ps_switch);
+}
+
 OAL_STATIC OAL_INLINE oal_void hal_update_btcoex_btble_status(hal_to_dmac_device_stru *pst_hal_device)
 {
     HAL_PUBLIC_HOOK_FUNC(_update_btcoex_btble_status)( pst_hal_device);
@@ -2506,6 +2534,18 @@ OAL_STATIC OAL_INLINE oal_void hal_btcoex_process_bt_status(hal_to_dmac_device_s
 {
     HAL_PUBLIC_HOOK_FUNC(_btcoex_process_bt_status)( pst_hal_device, uc_print);
 
+}
+OAL_STATIC OAL_INLINE oal_void hal_btcoex_get_ps_service_status(hal_to_dmac_device_stru *pst_hal_device, hal_btcoex_ps_status_enum_uint8 *en_ps_status)
+{
+    HAL_PUBLIC_HOOK_FUNC(_btcoex_get_ps_service_status)(pst_hal_device, en_ps_status);
+}
+OAL_STATIC OAL_INLINE oal_void hal_btcoex_get_bt_acl_status(hal_to_dmac_device_stru *pst_hal_device, oal_bool_enum_uint8 *en_acl_status)
+{
+    HAL_PUBLIC_HOOK_FUNC(_btcoex_get_bt_acl_status)(pst_hal_device, en_acl_status);
+}
+OAL_STATIC OAL_INLINE oal_void hal_btcoex_get_bt_sco_status(hal_to_dmac_device_stru *pst_hal_device, oal_bool_enum_uint8 *en_sco_status)
+{
+    HAL_PUBLIC_HOOK_FUNC(_btcoex_get_bt_sco_status)(pst_hal_device, en_sco_status);
 }
 
 #ifdef _PRE_WLAN_FEATURE_LTECOEX
@@ -2665,6 +2705,21 @@ OAL_STATIC OAL_INLINE oal_void hal_get_cw_signal_reg(hal_to_dmac_device_stru *ps
 OAL_STATIC OAL_INLINE oal_void  hal_config_always_rx(hal_to_dmac_device_stru *pst_hal_device_base, oal_uint8 uc_switch)
 {
     HAL_PUBLIC_HOOK_FUNC(_config_always_rx)( pst_hal_device_base, uc_switch);
+}
+
+OAL_STATIC  OAL_INLINE oal_void hal_rf_is_fcc_edge_band(hal_to_dmac_device_stru *pst_hal_device,
+                                                wlan_channel_band_enum_uint8 en_band,
+                                                oal_uint8 uc_channel_idx,
+                                                wlan_channel_bandwidth_enum_uint8 en_bandwidth,
+                                                oal_bool_enum_uint8 *pen_fcc_edge_band)
+{
+    HAL_PUBLIC_HOOK_FUNC(_rf_is_fcc_edge_band)( pst_hal_device, en_band, uc_channel_idx, en_bandwidth, pen_fcc_edge_band);
+}
+
+OAL_STATIC OAL_INLINE oal_void  hal_update_scaling_reg(hal_to_dmac_device_stru *pst_hal_device,
+                                                oal_void *past_nvram_params)
+{
+    HAL_PUBLIC_HOOK_FUNC(_update_scaling_reg)(pst_hal_device, past_nvram_params);
 }
 
 #ifdef __cplusplus

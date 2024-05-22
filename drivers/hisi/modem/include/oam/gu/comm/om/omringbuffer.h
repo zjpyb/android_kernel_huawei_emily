@@ -46,18 +46,7 @@
  *
  */
 
-/************************************************************************
-  Copyright   : 1999-2003, Huawei Tech. Co., Ltd.
-  File name   : OmRingBuffer.h
-  Author      : H59254
-  Version     : V100R001
-  Date        : 2008-06
-  Description : 该头文件定义了OmRingBuffer相关的结构和接口
-  History     :
-  1.Date        :2008-06
-    Author      :H59254
-    Modification:new create
-************************************************************************/
+
 
 #ifndef  _OM_RING_BUFFER_H
 #define  _OM_RING_BUFFER_H

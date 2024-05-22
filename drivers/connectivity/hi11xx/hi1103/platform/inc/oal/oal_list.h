@@ -241,8 +241,8 @@ OAL_STATIC OAL_INLINE oal_dlist_head_stru* oal_dlist_delete_head(oal_dlist_head_
 
     pst_node = pst_head->pst_next;
 
-    OAL_BUG_ON(pst_node==pst_head);
-    OAL_BUG_ON(OAL_PTR_NULL == pst_node);
+    OAL_WARN_ON(pst_node==pst_head);
+    OAL_WARN_ON(OAL_PTR_NULL == pst_node);
 
     oal_dlist_delete_entry(pst_node);
 
@@ -256,8 +256,8 @@ OAL_STATIC OAL_INLINE oal_dlist_head_stru* oal_dlist_delete_tail(oal_dlist_head_
 
     pst_node = pst_head->pst_prev;
 
-    OAL_BUG_ON(pst_node==pst_head);
-    OAL_BUG_ON(OAL_PTR_NULL == pst_node);
+    OAL_WARN_ON(pst_node==pst_head);
+    OAL_WARN_ON(OAL_PTR_NULL == pst_node);
 
     oal_dlist_delete_entry(pst_node);
 

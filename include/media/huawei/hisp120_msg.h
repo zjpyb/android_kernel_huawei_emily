@@ -67,7 +67,7 @@ typedef enum
     STREAM_RAW_OUT              = 7,
     STREAM_UT_OUT               = 8,
     STREAM_ISP_PD               = 9,
-    STREAM_POS_MAX              = 10,
+    STREAM_POS_MAX,
 } stream_pos_e;
 
 typedef enum
@@ -835,7 +835,8 @@ typedef enum
     SUBCMD_SET_AP_AWB_INIT_PARAM = 173,
     SUBCMD_SD_RESULTS = 174,
     SUBCMD_MANUAL_MAX_EXPO_TIME = 175,
-
+    SUBCMD_SET_AFSTAT_ALGO_RESULT = 176,
+    SUBCMD_SET_LCD_FLASH_MODE = 177,
     SUBCMD_MAX,
     SUBCMD_SET_HFBC_ALIGMENT, // not support in hisp120, for common code compilation
 } extendset_info_e;
@@ -859,6 +860,7 @@ typedef enum
     EVENT_AF_DIRECT_TRANS_BASE,
     EVENT_AF_OTP_CALIB_DATA,
     EVENT_AF_SELF_LEARN_DATA,
+    EVENT_AF_STAT_INFO,
 } event_info_e;
 
 typedef struct _msg_subreq_es_watchdog_t

@@ -207,21 +207,17 @@ extern VOS_UINT32 At_ParseCsmpFo(
     VOS_UINT8                           *pucFo
 );
 
-/* Modified by l60609 for DSDA Phase III, 2013-3-5, Begin */
 
 VOS_UINT32 At_ParseCsmpVp(
     VOS_UINT8                           ucIndex,
     MN_MSG_VALID_PERIOD_STRU           *pstVp
 );
-/* Modified by l60609 for DSDA Phase III, 2013-3-5, End */
 
-/* Added by f62575 for AT Project, 2011-10-04,  Begin */
 VOS_UINT32  AT_AsciiNumberToBcd(
     const VOS_CHAR                      *pcAsciiNumber,
     VOS_UINT8                           *pucBcdNumber,
     VOS_UINT8                           *pucBcdLen
 );
-/* Added by f62575 for AT Project, 2011-10-04,  End */
 
 VOS_UINT32  AT_BcdNumberToAscii(
     const VOS_UINT8                     *pucBcdNumber,

@@ -358,7 +358,6 @@ static irqreturn_t ivp_smmu_isr(int irq, void *dev_id)
         pr_err("Unexpected global fault, this could be serious\n");
         pr_err("\tGFSR 0x%08x, GFSYNR0 0x%08x, GFSYNR1 0x%08x, GFSYNR2 0x%08x\n",
                gfsr, gfsynr0, gfsynr1, gfsynr2);
-
         writel(gfsr, smmu_dev->reg_base + SMMU_NS_GFSR);
     }
 
@@ -388,8 +387,8 @@ static irqreturn_t ivp_smmu_isr(int irq, void *dev_id)
     if (fsr & SMMU_CB_FSR_SS) {
         writel(SMMU_CB_RESUME_TERMINATE, smmu_dev->reg_base + SMMU_NS_CB0_RESUME);
     }
-    
-    /* 
+
+    /*
      * Because ivp dma error or cause error may cause many smmu fault
      * continuously, there we only report once.
      * */
@@ -397,7 +396,8 @@ static irqreturn_t ivp_smmu_isr(int irq, void *dev_id)
     writel(0x25, (smmu_dev->reg_base + SMMU_NS_CB0_SCTLR));
     writel(0x200032, (smmu_dev->reg_base + SMMU_NS_CR0));
 
-    return IRQ_HANDLED;
+
+    return IRQ_HANDLED;  //lint !e527
 }
 
 int ivp_iommu_fault_handler_t(struct iommu_domain *pdomain,

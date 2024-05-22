@@ -31,7 +31,6 @@
 			hifi_ip_first = <0x0>;
 
 			/* udp-overlay super-speed-plus */
-			maximum-speed = "super-speed-plus";
 			host-maximum-speed = "super-speed";
 
 			dwc3@ff100000 {
@@ -40,8 +39,14 @@
 				interrupts = <0 159 4>, <0 161 4>;
 				interrupt-names = "irq", "otg_irq";
 				dr_mode = "otg";
-				maximum-speed = "super-speed-plus";
+				phy_type = "utmi";
+				maximum-speed = "super-speed";
 				snps,ctrl_nyet_abnormal;
+				snps,dis-del-phy-power-chg-quirk;
+				snps,dis_u2_susphy_quirk;
+				snps,dis_u3_susphy_quirk;
+				snps,tx_de_emphasis_quirk;
+				snps,tx_de_emphasis = <1>;
 			};
 		};
 

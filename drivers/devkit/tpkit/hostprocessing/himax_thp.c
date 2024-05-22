@@ -51,6 +51,7 @@
 #define HIMAX_HEADER_OK_HBYTE		0xA5
 #define HIMAX_HEADER_OK_LBYTE		0x5A
 #define HIMAX_REG_READ_EN_ADDR	0x0C
+#define HIMAX_EVENT_STACK_CMD_ADDR	0x30
 #define HIMAX_REG_READ_EN			0x00
 #define HIMAX_SYS_RST_ADDR		0x90000018
 #define HIMAX_SYS_RST_CMD			0x00000055
@@ -74,10 +75,15 @@ static u32 himax_id_match_table[] = {
 	0x83112A00, /* chip HX83112A id */
 	0x83112B00, /* chip HX83112B id */
 	0x83112C00, /* chip HX83112C id */
+	0x83112E00, /* chip HX83112E id */
 };
 
+struct himax_thp_private_data{
+	int hx_get_frame_optimized_flag;
+};
+struct himax_thp_private_data thp_private_data;
 /******* SPI-start *******/
-static struct spi_device	*hx_spi_dev;
+static struct spi_device *hx_spi_dev;
 /******* SPI-end *******/
 
 void himax_assign_data(uint32_t cmd,uint8_t *tmp_value)
@@ -106,7 +112,7 @@ static ssize_t himax_spi_sync(struct thp_device *tdev, struct spi_message *messa
 	else
 	{
 		thp_spi_cs_set(GPIO_HIGH);
-		status = spi_sync(hx_spi_dev, message);
+		status = thp_spi_sync(hx_spi_dev, message);
 	}
 
 
@@ -133,7 +139,7 @@ static int himax_spi_read(struct thp_device *tdev,uint8_t *command,uint8_t comma
 
 	for (retry = 0; retry < toRetry; retry++) {
 		thp_spi_cs_set(GPIO_HIGH);
-		error = spi_sync(hx_spi_dev, &message);
+		error = thp_spi_sync(hx_spi_dev, &message);
 		if (unlikely(error))
 			THP_LOG_ERR("SPI read error: %d\n", error);
 		else
@@ -195,7 +201,7 @@ static int himax_bus_write(struct thp_device *tdev,uint8_t command, uint8_t *dat
 	return himax_spi_write(tdev,spi_format_buf,length + 2);
 }
 
-static void himax_register_read(struct thp_device *tdev,uint8_t *read_addr, unsigned int read_length, uint8_t *read_data)
+static int himax_register_read(struct thp_device *tdev,uint8_t *read_addr, unsigned int read_length, uint8_t *read_data)
 {
 	uint8_t tmp_data[HIMAX_NORMAL_DATA_LEN];
 	/* Restore the address */
@@ -208,18 +214,20 @@ static void himax_register_read(struct thp_device *tdev,uint8_t *read_addr, unsi
 	if ( himax_bus_write(tdev,HIMAX_BEGING_ADDR,tmp_data,
 						HIMAX_NORMAL_DATA_LEN, HIMAX_BUS_RETRY_TIMES) < 0){
 			THP_LOG_ERR("%s: i2c access fail!\n", __func__);
-			return;
+			return -ENOMEM;
 	}
 	tmp_data[0] = HIMAX_REG_READ_EN;
 	if ( himax_bus_write(tdev,HIMAX_REG_READ_EN_ADDR ,tmp_data, 1, HIMAX_BUS_RETRY_TIMES) < 0) {
 			THP_LOG_ERR("%s: i2c access fail!\n", __func__);
-			return;
+			return -ENOMEM;
 	}
 
 	if ( himax_bus_read(tdev,HIMAX_WAKEUP_ADDR,read_data, read_length, HIMAX_BUS_RETRY_TIMES) < 0) {
 		THP_LOG_ERR("%s: i2c access fail!\n", __func__);
-		return;
+		return -ENOMEM;
 	}
+
+	return 0;
 }
 
 static void himax_interface_on(struct thp_device *tdev)
@@ -237,9 +245,11 @@ static void himax_interface_on(struct thp_device *tdev)
 int thp_hx83112_init(struct thp_device *tdev)
 {
 	int rc;
+	unsigned int value = 0;
 	struct thp_core_data *cd = tdev->thp_core;
 	struct device_node *hx83112_node = of_get_child_by_name(cd->thp_node,
 						THP_HX83112_DEV_NODE_NAME);
+	struct himax_thp_private_data *himax_p = tdev->private_data;
 
 	THP_LOG_INFO("Enter %s \n",__func__);
 
@@ -250,6 +260,15 @@ int thp_hx83112_init(struct thp_device *tdev)
 	if (!hx83112_node) {
 		THP_LOG_ERR("%s: hx83112 dev not config in dts\n", __func__);
 		return -ENODEV;
+	}
+
+	rc = of_property_read_u32(hx83112_node, "get_frame_optimized_method", &value);
+	if (rc) {
+		himax_p->hx_get_frame_optimized_flag= 0;
+		THP_LOG_ERR("%s:hx_get_frame_optimized_method_flag not found,use default value \n",__func__);
+	}else{
+		himax_p->hx_get_frame_optimized_flag= value;
+		THP_LOG_INFO("%s:hx_get_frame_optimized_method_flag %d \n",__func__, value);
 	}
 
 	rc = thp_parse_spi_config(hx83112_node, cd);
@@ -273,12 +292,13 @@ static int thp_hx83112_communication_check(
 	uint8_t tmp_addr[HIMAX_NORMAL_ADDR_LEN] = {0};
 	uint8_t tmp_data[HIMAX_NORMAL_DATA_LEN] = {0};
 	uint8_t ic_name[HIMAX_NORMAL_DATA_LEN] = {0};
+	int ret = 0;
 	int i = 0;
 	int j = 0;
 
 	for (i = 0; i < COMM_TEST_RW_RETRY_TIME; i++) {
 		himax_assign_data(HIMAX_ICID_ADDR,tmp_addr);
-		himax_register_read(tdev,tmp_addr, COMM_TEST_RW_LENGTH, tmp_data);
+		ret = himax_register_read(tdev,tmp_addr, COMM_TEST_RW_LENGTH, tmp_data);
 
 		THP_LOG_INFO("%s:Read driver IC ID = %X,%X,%X\n", __func__, tmp_data[3],tmp_data[2],tmp_data[1]);
 		for (j = 0; j < ARRAY_SIZE(himax_id_match_table); j++) {
@@ -328,17 +348,15 @@ static void thp_hx_timing_work(struct thp_device *tdev)
 int thp_hx83112_chip_detect(struct thp_device *tdev)
 {
 	int ret = 0;
-	struct mutex *spi_mutex_lock = tdev->spi_mutex;
 	if (!tdev) {
 		THP_LOG_ERR("%s: tdev null\n", __func__);
 		return -EINVAL;
 	}
-	mutex_lock(spi_mutex_lock);
-
 	thp_hx_timing_work(tdev);
-	ret =  thp_hx83112_communication_check(tdev);
 
-	mutex_unlock(spi_mutex_lock);
+	thp_bus_lock();
+	ret =  thp_hx83112_communication_check(tdev);
+	thp_bus_unlock();
 
 	return ret;
 
@@ -349,28 +367,35 @@ static int himax_get_DSRAM_data(struct thp_device *tdev,char *info_data, unsigne
 	unsigned char tmp_addr[HIMAX_NORMAL_ADDR_LEN];
 	unsigned int read_size = len;
 	uint8_t *temp_info_data;
-	struct mutex *spi_mutex_lock = tdev->spi_mutex;
+	int ret = 0;
+	struct himax_thp_private_data *himax_p = tdev->private_data;
 
 	temp_info_data = kzalloc(read_size,GFP_KERNEL);
 	if (!temp_info_data) {
 		THP_LOG_ERR("%s: temp_info_data malloc fail\n", __func__);
 		return -ENOMEM;
 	}
-	mutex_lock(spi_mutex_lock);
-	/*1. turn on burst mode*/
-	himax_interface_on(tdev);
+	thp_bus_lock();
 
-	/*2. get RawData from sram */
 	himax_assign_data(HIMAX_RAWDATA_ADDR, tmp_addr);
-	himax_register_read(tdev,tmp_addr,read_size,temp_info_data);
+	if(himax_p->hx_get_frame_optimized_flag){
+		if ( himax_bus_read(tdev,HIMAX_EVENT_STACK_CMD_ADDR,temp_info_data, read_size, HIMAX_BUS_RETRY_TIMES) < 0) {
+			THP_LOG_ERR("%s: spi access fail!\n", __func__);
+			ret = -ENOMEM;
+		}
+	}
+	else{
+		himax_interface_on(tdev);
+		ret = himax_register_read(tdev,tmp_addr,read_size,temp_info_data);
+	}
 
-	mutex_unlock(spi_mutex_lock);
+	thp_bus_unlock();
 
 	memcpy(info_data, temp_info_data,read_size);
 	kfree(temp_info_data);
 	temp_info_data = NULL;
 
-	return 0;
+	return ret;
 }
 
 int thp_hx83112_get_frame(struct thp_device *tdev,
@@ -393,7 +418,6 @@ int thp_hx83112_get_frame(struct thp_device *tdev,
 int thp_hx83112_resume(struct thp_device *tdev)
 {
 	uint8_t tmp_data[HIMAX_NORMAL_DATA_LEN];
-	struct mutex *spi_mutex_lock = tdev->spi_mutex;
 
 	THP_LOG_DEBUG("%s: called_\n", __func__);
 
@@ -408,7 +432,7 @@ int thp_hx83112_resume(struct thp_device *tdev)
 
 	tmp_data[0] = HIMAX_SSOFF_CMD_FIRST;
 
-	mutex_lock(spi_mutex_lock);
+	thp_bus_lock();
 	if ( himax_bus_write(tdev,HIMAX_SSOFF_ADDR_FIRST,tmp_data, 1, HIMAX_BUS_RETRY_TIMES) < 0) {
 		THP_LOG_ERR("%s: i2c first access fail!\n", __func__);
 			goto ERROR;
@@ -419,13 +443,12 @@ int thp_hx83112_resume(struct thp_device *tdev)
 		THP_LOG_ERR("%s: i2c second access fail!\n", __func__);
 			goto ERROR;
 	}
-
-	mutex_unlock(spi_mutex_lock);
+	thp_bus_unlock();
 
 	return 0;
 
 ERROR:
-	mutex_unlock(spi_mutex_lock);
+	thp_bus_unlock();
 	return -EIO;
 }
 
@@ -493,7 +516,9 @@ static int __init thp_hx83112_module_init(void)
 	}
 
 	dev->ic_name = hx83112_IC_NAME;
+	dev->dev_node_name = THP_HX83112_DEV_NODE_NAME;
 	dev->ops = &hx83112_dev_ops;
+	dev->private_data = (void *)&thp_private_data;
 
 	rc = thp_register_dev(dev);
 	if (rc) {

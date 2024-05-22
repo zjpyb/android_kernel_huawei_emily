@@ -28,7 +28,10 @@ test_finish()
 	if [ "$HAS_FW_LOADER_USER_HELPER" = "yes" ]; then
 		echo "$OLD_TIMEOUT" >/sys/class/firmware/timeout
 	fi
-	echo -n "$OLD_PATH" >/sys/module/firmware_class/parameters/path
+	if [ "$OLD_FWPATH" = "" ]; then
+		OLD_FWPATH=" "
+	fi
+	echo -n "$OLD_FWPATH" >/sys/module/firmware_class/parameters/path
 	rm -f "$FW"
 	rmdir "$FWPATH"
 }
@@ -50,6 +53,11 @@ NAME=$(basename "$FW")
 
 if printf '\000' >"$DIR"/trigger_request 2> /dev/null; then
 	echo "$0: empty filename should not succeed" >&2
+	exit 1
+fi
+
+if printf '\000' >"$DIR"/trigger_async_request 2> /dev/null; then
+	echo "$0: empty filename should not succeed (async)" >&2
 	exit 1
 fi
 
@@ -80,6 +88,20 @@ if ! diff -q "$FW" /dev/test_firmware >/dev/null ; then
 	exit 1
 else
 	echo "$0: filesystem loading works"
+fi
+
+# Try the asynchronous version too
+if ! echo -n "$NAME" >"$DIR"/trigger_async_request ; then
+	echo "$0: could not trigger async request" >&2
+	exit 1
+fi
+
+# Verify the contents are what we expect.
+if ! diff -q "$FW" /dev/test_firmware >/dev/null ; then
+	echo "$0: firmware was not loaded (async)" >&2
+	exit 1
+else
+	echo "$0: async filesystem loading works"
 fi
 
 exit 0

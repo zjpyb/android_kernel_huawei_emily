@@ -93,9 +93,12 @@ enum CheckError {
     EVecCode,
 };
 
-#define LOGGER_GET_LOG_BUF_SIZE		_IO(__LOGGERIO, 1)	/* size of log */
+#define O_HWLOGGER_RDDEL		01000000000		/* will be deleted after being read */
+#define LOGGER_GET_LOG_BUF_SIZE	_IO(__LOGGERIO, 1)	/* size of log */
 #define LOGGER_GET_LOG_LEN		_IO(__LOGGERIO, 2)	/* used log len */
 #define LOGGER_GET_NEXT_ENTRY_LEN	_IO(__LOGGERIO, 3)	/* next entry len */
 #define LOGGER_FLUSH_LOG		_IO(__LOGGERIO, 4)	/* flush log */
+#define LOGGER_SET_RDDEL		_IO(__LOGGERIO, 5)	/* set O_HWLOGGER_RDDEL to flag */
+#define LOGGER_RESET_RDDEL		_IO(__LOGGERIO, 6)	/* reset O_HWLOGGER_RDDEL to flag */
 
 #endif /* _LINUX_LOGGER_H */

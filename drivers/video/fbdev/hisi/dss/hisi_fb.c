@@ -18,9 +18,11 @@
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/workqueue.h>
+#include <linux/device.h>
 #include "tui.h"
 
 #include "lcdkit_fb_util.h"
+
 
 uint8_t color_temp_cal_buf[32] = {0};
 
@@ -61,7 +63,6 @@ static char __iomem *hisifd_mmbuf_asc0_base;
 static char __iomem *hisifd_pmctrl_base = NULL;
 
 static char __iomem *hisifd_media_crg_base = NULL;
-static char __iomem *hisifd_media_crg_es_base = NULL;
 static char __iomem *hisifd_media_common_base = NULL;
 static char __iomem *hisifd_dp_base = NULL;
 
@@ -190,7 +191,6 @@ struct platform_device *hisi_fb_add_device(struct platform_device *pdev)
 	hisifd->pmctrl_base = hisifd_pmctrl_base;
 
 	hisifd->media_crg_base = hisifd_media_crg_base;
-	hisifd->media_crg_es_base = hisifd_media_crg_es_base;
 	hisifd->media_common_base = hisifd_media_common_base;
 	hisifd->dp_base = hisifd_dp_base;
 
@@ -291,6 +291,7 @@ int hisi_fb_blank_sub(int blank_mode, struct fb_info *info)
 
 	down(&hisifd->blank_sem);
 	down(&hisifd->blank_sem0);
+	down(&hisifd->blank_sem_effect);
 	switch (blank_mode) {
 	case FB_BLANK_UNBLANK:
 		if (!hisifd->panel_power_on) {
@@ -324,9 +325,11 @@ int hisi_fb_blank_sub(int blank_mode, struct fb_info *info)
 			}
 
 			curr_pwr_state = hisifd->panel_power_on;
-			down(&hisifd->brightness_esd_sem);
+			down(&hisifd->power_esd_sem);
 			hisifd->panel_power_on = false;
-			up(&hisifd->brightness_esd_sem);
+			up(&hisifd->power_esd_sem);
+
+			hisifd->mask_layer_xcc_flag = 0;
 
 			if (hisifd->bl_cancel) {
 				hisifd->bl_cancel(hisifd);
@@ -336,14 +339,14 @@ int hisi_fb_blank_sub(int blank_mode, struct fb_info *info)
 			if (ret)
 				hisifd->panel_power_on = curr_pwr_state;
 
-			if(hisifd->buf_sync_suspend)
+			if (hisifd->buf_sync_suspend)
 				hisifd->buf_sync_suspend(hisifd);
 		}
 		break;
 	}
+	up(&hisifd->blank_sem_effect);
 	up(&hisifd->blank_sem0);
 	up(&hisifd->blank_sem);
-
 	return ret;
 }
 
@@ -387,6 +390,7 @@ static int hisi_fb_open_sub(struct fb_info *info)
 		HISI_FB_ERR("info is NULL");
 		return -EINVAL;
 	}
+
 	hisifd = (struct hisi_fb_data_type *)info->par;//lint !e838
 	if (NULL == hisifd) {
 		HISI_FB_ERR("hisifd is NULL");
@@ -407,6 +411,9 @@ static int hisi_fb_open_sub(struct fb_info *info)
 	if (!needed) {
 		ret = hisi_fb_blank_sub(FB_BLANK_UNBLANK, info);
 		if (ret != 0) {
+			if (hisifd->index == EXTERNAL_PANEL_IDX && !hisifd->panel_info.fake_external) {
+				hisi_cmdlist_deinit(hisifd);
+			}
 			HISI_FB_ERR("can't turn on display!\n");
 			return ret;
 		}
@@ -466,6 +473,19 @@ int hisi_aod_set_blank_mode(int blank_mode);
 int hisi_aod_inc_atomic(struct hisi_fb_data_type *hisifd);
 void hisi_aod_dec_atomic(struct hisi_fb_data_type *hisifd);
 
+void hisi_aod_dec_atomic(struct hisi_fb_data_type *hisifd)
+{
+	int temp = 0;
+	if (hisifd == NULL)
+		return;
+	temp = atomic_read(&(hisifd->atomic_v));
+	HISI_FB_INFO("atomic_v = %d.\n", temp);
+	if (temp <= 0) {
+		return;
+	}
+	atomic_dec(&(hisifd->atomic_v));
+}
+
 int hisi_aod_inc_atomic(struct hisi_fb_data_type *hisifd)
 {
 	int temp = 0;
@@ -482,18 +502,6 @@ int hisi_aod_inc_atomic(struct hisi_fb_data_type *hisifd)
 	return 0;
 }
 
-void hisi_aod_dec_atomic(struct hisi_fb_data_type *hisifd)
-{
-	int temp = 0;
-	if (hisifd == NULL)
-		return;
-	temp = atomic_read(&(hisifd->atomic_v));
-	HISI_FB_INFO("atomic_v = %d.\n", temp);
-	if (temp <= 0) {
-		return;
-	}
-	atomic_dec(&(hisifd->atomic_v));
-}
 static int hisi_fb_unblank_wq_handle(struct work_struct *work)
 {
 	int ret = 0;
@@ -525,6 +533,10 @@ static int hisi_fb_unblank_wq_handle(struct work_struct *work)
 		while (hisifd->panel_power_on) mdelay(1);
 	}
 
+	if ((hisifd->index != AUXILIARY_PANEL_IDX)) {
+		hisi_fb_displayeffect_update(hisifd);
+	}
+
 	if (hisifd->dp_device_srs) {
 		hisifd->dp_device_srs(hisifd, true);
 	} else {
@@ -537,7 +549,7 @@ static int hisi_fb_unblank_wq_handle(struct work_struct *work)
 		{
 			char *envp[2];
 			char buf[64];
-			snprintf(buf, sizeof(buf), "ESD_HAPPENDED=1");
+			snprintf(buf, sizeof(buf), "Refresh=1");
 			envp[0] = buf;
 			envp[1] = NULL;
 			kobject_uevent_env(&(hisifd->fbi->dev->kobj), KOBJ_CHANGE, envp);
@@ -550,13 +562,16 @@ static int hisi_fb_unblank_wq_handle(struct work_struct *work)
 			HISI_FB_ERR("fb%d, blank_mode(%d) hisifb_ce_service_blank() failed!\n", hisifd->index, FB_BLANK_UNBLANK);
 			return ret;
 		}
+
+		ret = hisifb_display_engine_blank(FB_BLANK_UNBLANK, info);
+		if (ret != 0) {
+			HISI_FB_ERR("fb%d, blank_mode(%d) hisifb_display_engine_blank() failed!\n", hisifd->index, FB_BLANK_UNBLANK);
+			return ret;
+		}
 	}
 
 	HISI_FB_INFO("fb%d -.\n", hisifd->index);
 
-	if ((hisifd->index != AUXILIARY_PANEL_IDX)) {
-		hisi_fb_displayeffect_update(hisifd);
-	}
 	hisifd->enable_fast_unblank = FALSE;
 	up(&hisifd->fast_unblank_sem);
 
@@ -572,7 +587,6 @@ void hisi_aod_schedule_wq(void)
 		return -EINVAL;
 	}
 	hisifd->enable_fast_unblank = TRUE;
-
 	queue_work(hisifd->aod_ud_fast_unblank_workqueue, &hisifd->aod_ud_fast_unblank_work);
 }
 
@@ -607,7 +621,7 @@ static int hisi_fb_blank(int blank_mode, struct fb_info *info)
 	if (hisifd->index == AUXILIARY_PANEL_IDX) {
 		HISI_FB_DEBUG("fb%d, blank_mode(%d) +.\n", hisifd->index, blank_mode);
 	} else {
-		HISI_FB_INFO("fb%d, blank_mode(%d) +.\n", hisifd->index, blank_mode);
+		HISI_FB_INFO("fb%d, blank_mode(%d) +!\n", hisifd->index, blank_mode);
 	}
 
 	if ((hisifd->index == PRIMARY_PANEL_IDX) && (FB_BLANK_UNBLANK == blank_mode)) {
@@ -628,6 +642,10 @@ static int hisi_fb_blank(int blank_mode, struct fb_info *info)
 		while (hisifd->enable_fast_unblank) mdelay(1);
 	}
 
+	if ((hisifd->index != AUXILIARY_PANEL_IDX) && (FB_BLANK_UNBLANK == blank_mode)) {
+		hisi_fb_displayeffect_update(hisifd);
+	}
+
 	if (hisifd->dp_device_srs) {
 		hisifd->dp_device_srs(hisifd, (blank_mode == FB_BLANK_UNBLANK) ? true: false);
 	} else {
@@ -642,12 +660,18 @@ static int hisi_fb_blank(int blank_mode, struct fb_info *info)
 			HISI_FB_ERR("fb%d, blank_mode(%d) hisifb_ce_service_blank() failed!\n", hisifd->index, blank_mode);
 			goto sensorhub_aod_hw_unlock;
 		}
+
+		ret = hisifb_display_engine_blank(blank_mode, info);
+		if (ret != 0) {
+			HISI_FB_ERR("fb%d, blank_mode(%d) hisifb_display_engine_blank() failed!\n", hisifd->index, blank_mode);
+			goto sensorhub_aod_hw_unlock;
+		}
 	}
 
 	if (hisifd->index == AUXILIARY_PANEL_IDX) {
 		HISI_FB_DEBUG("fb%d, blank_mode(%d) -.\n", hisifd->index, blank_mode);
 	} else {
-		HISI_FB_INFO("fb%d, blank_mode(%d) -.\n", hisifd->index, blank_mode);
+		HISI_FB_INFO("fb%d, blank_mode(%d) -!\n", hisifd->index, blank_mode);
 	}
 
 	if ((hisifd->index == PRIMARY_PANEL_IDX) &&
@@ -660,10 +684,6 @@ static int hisi_fb_blank(int blank_mode, struct fb_info *info)
 		if (!hisi_sensorhub_aod_hw_unlock(hisifd)) {
 			HISI_FB_ERR("aod_hw_unlock fail!\n");
 		}
-	}
-
-	if ((hisifd->index != AUXILIARY_PANEL_IDX) && (FB_BLANK_UNBLANK == blank_mode)) {
-		hisi_fb_displayeffect_update(hisifd);
 	}
 
 	return 0;
@@ -958,6 +978,7 @@ static int hisifb_dirty_region_updt_set(struct fb_info *info, void __user *argp)
 	}
 
 	hisifd->dirty_region_updt_enable = 0;
+
 	if (g_enable_dirty_region_updt
 		&& hisifd->panel_info.dirty_region_updt_support
 		&& !hisifd->sbl_enable
@@ -973,6 +994,38 @@ static int hisifb_dirty_region_updt_set(struct fb_info *info, void __user *argp)
 	}
 
 	if (copy_to_user(argp, &enable, sizeof(enable))) {
+		HISI_FB_ERR("copy to user fail");
+		return -EFAULT;
+	}
+
+	return 0;
+}
+
+static int hisifb_video_idle_ctrl_get(struct fb_info *info, void __user *argp)
+{
+	int is_video_idle = 0;
+	struct hisi_fb_data_type *hisifd = NULL;
+
+	if (NULL == info) {
+		return -EINVAL;
+	}
+
+	hisifd = (struct hisi_fb_data_type *)info->par;
+	if (NULL == hisifd) {
+		return -EINVAL;
+	}
+
+	if (NULL == argp) {
+		return -EINVAL;
+	}
+
+	is_video_idle = 0;
+	if (g_enable_video_idle_l3cache
+		&& is_video_idle_ctrl_mode(hisifd)) {
+		is_video_idle = 1;
+	}
+
+	if (copy_to_user(argp, &is_video_idle, sizeof(is_video_idle))) {
 		HISI_FB_ERR("copy to user fail");
 		return -EFAULT;
 	}
@@ -1015,21 +1068,47 @@ static int hisifb_idle_is_allowed(struct fb_info *info, void __user *argp)
 static int hisifb_debug_check_fence_timeline(struct fb_info *info)
 {
 	struct hisi_fb_data_type *hisifd = NULL;
+	struct hisifb_buf_sync *buf_sync_ctrl = NULL;
+	unsigned long flags;
+	int val = 0;
 
 	if (NULL == info) {
-		HISI_FB_ERR("idle is allowed info NULL Pointer!\n");
+		HISI_FB_ERR("timeline info NULL Pointer!\n");
 		return -EINVAL;
 	}
 
 	hisifd = (struct hisi_fb_data_type *)info->par;
 	if (NULL == hisifd) {
-		HISI_FB_ERR("idle is allowed hisifd NULL Pointer!\n");
+		HISI_FB_ERR("timeline hisifd NULL Pointer!\n");
+		return -EINVAL;
+	}
+	buf_sync_ctrl = &hisifd->buf_sync_ctrl;
+	if (NULL == buf_sync_ctrl->timeline) {
+		HISI_FB_ERR("timeline NULL Pointer!\n");
 		return -EINVAL;
 	}
 
-	HISI_FB_INFO("hisifb%d frame_no(%d) timeline_max(%d), timeline(%d)!\n",
-		hisifd->index, hisifd->ov_req.frame_no, hisifd->buf_sync_ctrl.timeline_max,
-		hisifd->buf_sync_ctrl.timeline->value);
+	HISI_FB_INFO("fb%d frame_no(%d) timeline_max(%d), TL(Nxt %d , Crnt %d)!\n",
+		hisifd->index, hisifd->ov_req.frame_no, buf_sync_ctrl->timeline_max,
+		buf_sync_ctrl->timeline->next_value, buf_sync_ctrl->timeline->value);
+
+	spin_lock_irqsave(&buf_sync_ctrl->refresh_lock, flags);
+
+	if ((buf_sync_ctrl->timeline->next_value - buf_sync_ctrl->timeline->value) > 0) {
+		val = buf_sync_ctrl->timeline->next_value - buf_sync_ctrl->timeline->value;
+	}
+
+	hisi_dss_resync_timeline(buf_sync_ctrl->timeline);
+	hisi_dss_resync_timeline(buf_sync_ctrl->timeline_retire);
+
+	buf_sync_ctrl->timeline_max += val;
+	buf_sync_ctrl->refresh = 0;
+
+	spin_unlock_irqrestore(&buf_sync_ctrl->refresh_lock, flags);
+
+	HISI_FB_INFO("fb%d frame_no(%d) timeline_max(%d), TL(Nxt %d , Crnt %d)!\n",
+		hisifd->index, hisifd->ov_req.frame_no, buf_sync_ctrl->timeline_max,
+		buf_sync_ctrl->timeline->next_value, buf_sync_ctrl->timeline->value);
 
 	return 0;
 }
@@ -1241,6 +1320,9 @@ static int hisi_fb_ioctl(struct fb_info *info, unsigned int cmd, unsigned long a
 	case HISIFB_DIRTY_REGION_UPDT_SET:
 		ret = hisifb_dirty_region_updt_set(info, argp);
 		break;
+	case HISIFB_VIDEO_IDLE_CTRL:
+		ret = hisifb_video_idle_ctrl_get(info, argp);
+		break;
 
 	case HISIFB_DSS_MMBUF_ALLOC:
 		ret = hisifb_dss_mmbuf_alloc(info, argp);
@@ -1312,6 +1394,9 @@ static int hisi_fb_ioctl(struct fb_info *info, unsigned int cmd, unsigned long a
 		if (hisifd->dp_get_color_bit_mode)
 			ret = hisifd->dp_get_color_bit_mode(hisifd, argp);
 		break;
+	case HISIFB_GRALLOC_GET_PHYS:
+		ret = hisi_ion_get_phys(info, argp);
+		break;
 	default:
 		if (hisifd->ov_ioctl_handler)
 			ret = hisifd->ov_ioctl_handler(hisifd, cmd, argp);
@@ -1346,7 +1431,7 @@ static int hisi_fb_mmap(struct fb_info *info, struct vm_area_struct * vma)
 	}
 
 	hisifd = (struct hisi_fb_data_type *)info->par;
-	if (NULL == hisifd) {
+	if (NULL == hisifd || !(hisifd->pdev)) {
 		HISI_FB_ERR("NULL Pointer");
 		return -EINVAL;
 	}
@@ -1363,7 +1448,7 @@ static int hisi_fb_mmap(struct fb_info *info, struct vm_area_struct * vma)
 		return -EFAULT;
 	}
 
-	table = ion_sg_table(hisifd->ion_client, hisifd->ion_handle);
+	table = hisifb_ion_sg_table(hisifd->ion_client, hisifd->ion_handle, &(hisifd->pdev->dev));
 	if ((table == NULL) || (vma == NULL)) {
 		HISI_FB_ERR("fb%d, table or vma is NULL!\n", hisifd->index);
 		return -EFAULT;
@@ -1401,8 +1486,9 @@ static int hisi_fb_mmap(struct fb_info *info, struct vm_area_struct * vma)
 		}
 
 		addr += len;
-		if (addr >= vma->vm_end)
+		if (addr >= vma->vm_end) {
 			return 0;
+        }
 	}
 
 	return 0;
@@ -1416,7 +1502,7 @@ unsigned long hisifb_alloc_fb_buffer(struct hisi_fb_data_type *hisifd)
 	size_t buf_len = 0;
 	unsigned long buf_addr = 0;
 
-	if (NULL == hisifd) {
+	if (NULL == hisifd || !(hisifd->pdev)) {
 		HISI_FB_ERR("hisifd is NULL");
 		return EINVAL;
 	}
@@ -1586,6 +1672,7 @@ static int hisifb_sysfs_create(struct platform_device *pdev)
 			hisifd->index, ret);
 	}
 
+
 	if (get_lcdkit_support()) {
 		HISI_FB_INFO("lcdkit is support!\n");
 		lcdkit_fb_create_sysfs(&hisifd->fbi->dev->kobj);
@@ -1635,7 +1722,6 @@ static struct fb_ops hisi_fb_ops = {
 	.fb_fillrect = NULL,
 	.fb_copyarea = NULL,
 	.fb_imageblit = NULL,
-	.fb_rotate = NULL,
 	.fb_sync = NULL,
 	.fb_ioctl = hisi_fb_ioctl,
 	.fb_compat_ioctl = hisi_fb_ioctl,
@@ -1973,12 +2059,18 @@ static int hisi_fb_register(struct hisi_fb_data_type *hisifd)
 	hisifd->aod_function = 0;
 	hisifd->aod_mode = 0;
 	hisifd->vr_mode = 0;
+	hisifd->mask_layer_xcc_flag = 0;
 	hisifd->enable_fast_unblank = FALSE;
 	atomic_set(&(hisifd->atomic_v), 0);
 	sema_init(&hisifd->blank_sem, 1);
 	sema_init(&hisifd->blank_sem0, 1);
+	sema_init(&hisifd->blank_sem_effect, 1);
 	sema_init(&hisifd->brightness_esd_sem, 1);
+	sema_init(&hisifd->power_esd_sem, 1);
 	sema_init(&hisifd->fast_unblank_sem, 1);
+
+	sema_init(&hisifd->hiace_hist_lock_sem, 1);
+
 
 	hisifb_sysfs_init(hisifd);
 
@@ -2044,6 +2136,9 @@ static int hisi_fb_register(struct hisi_fb_data_type *hisifd)
 		hisifd->cabc_update = updateCabcPwm;
 		hisifd->video_idle_ctrl_register = NULL;
 		hisifd->video_idle_ctrl_unregister = NULL;
+		hisifd->pipe_clk_updt_isr_handler = NULL;
+		hisifd->overlay_online_wb_register = NULL;
+		hisifd->overlay_online_wb_unregister = NULL;
 
 		if (hisifb_check_ldi_porch(panel_info)) {
 			HISI_FB_ERR("check ldi porch failed, return!\n");
@@ -2085,8 +2180,12 @@ static int hisi_fb_register(struct hisi_fb_data_type *hisifd)
 		hisifd->buf_sync_suspend = hisifb_buf_sync_suspend;
 		hisifd->secure_register = hisifb_secure_register;
 		hisifd->secure_unregister = hisifb_secure_unregister;
+
+		hisifd->overlay_online_wb_register = NULL;
+		hisifd->overlay_online_wb_unregister = NULL;
 		hisifd->video_idle_ctrl_register = NULL;
 		hisifd->video_idle_ctrl_unregister = NULL;
+		hisifd->pipe_clk_updt_isr_handler = NULL;
 		hisifd->esd_register = NULL;
 		hisifd->esd_unregister = NULL;
 		hisifd->debug_register = hisifb_debug_register;
@@ -2137,6 +2236,9 @@ static int hisi_fb_register(struct hisi_fb_data_type *hisifd)
 		hisifd->debug_unregister = NULL;
 		hisifd->video_idle_ctrl_register = NULL;
 		hisifd->video_idle_ctrl_unregister = NULL;
+		hisifd->pipe_clk_updt_isr_handler = NULL;
+		hisifd->overlay_online_wb_register = NULL;
+		hisifd->overlay_online_wb_unregister = NULL;
 	} else {
 		sema_init(&hisifd->offline_composer_sr_sem, 1);
 		hisifd->offline_composer_sr_refcount = 0;
@@ -2182,6 +2284,9 @@ static int hisi_fb_register(struct hisi_fb_data_type *hisifd)
 		hisifd->debug_unregister = NULL;
 		hisifd->video_idle_ctrl_register = NULL;
 		hisifd->video_idle_ctrl_unregister = NULL;
+		hisifd->pipe_clk_updt_isr_handler = NULL;
+		hisifd->overlay_online_wb_register = NULL;
+		hisifd->overlay_online_wb_unregister = NULL;
 	}
 
 
@@ -2228,6 +2333,8 @@ static int hisi_fb_register(struct hisi_fb_data_type *hisifd)
 	/* register video idle crtl */
 	if (hisifd->video_idle_ctrl_register)
 		hisifd->video_idle_ctrl_register(hisifd->pdev);
+	if (hisifd->overlay_online_wb_register)
+		hisifd->overlay_online_wb_register(hisifd->pdev);
 
 	HISI_FB_INFO("FrameBuffer[%d] %dx%d size=%d bytes"
 		"is registered successfully!\n",
@@ -2281,95 +2388,101 @@ static int hisi_fb_probe(struct platform_device *pdev)
 	int ret = 0;
 	struct hisi_fb_data_type *hisifd = NULL;
 	struct device_node *np = NULL;
+	struct device *dev = NULL;
+	static struct workqueue_struct *queue = NULL;
+	static struct work_struct work;
 
-	static struct workqueue_struct *queue=NULL;
-	static struct work_struct   work;
+	if (NULL == pdev) {
+		HISI_FB_ERR("NULL Pointer\n");
+		return -1;
+	}
+	dev = &pdev->dev;
 
 	if (!hisi_fb_resource_initialized) {
-		HISI_FB_DEBUG("initialized=%d, +.\n", hisi_fb_resource_initialized);
+		dev_dbg(dev, "initialized=%d, +.\n", hisi_fb_resource_initialized);
 
 		pdev->id = 0;
 
 		np = of_find_compatible_node(NULL, NULL, DTS_COMP_FB_NAME);
 		if (!np) {
-			HISI_FB_ERR("NOT FOUND device node %s!\n", DTS_COMP_FB_NAME);
+			dev_err(dev, "NOT FOUND device node %s!\n", DTS_COMP_FB_NAME);
 			return -ENXIO;
 		}
 
 		ret = of_property_read_u32(np, "fpga_flag", &g_fpga_flag);
 		if (ret) {
-			HISI_FB_ERR("failed to get fpga_flag resource.\n");
+			dev_err(dev, "failed to get fpga_flag resource.\n");
 			return -ENXIO;
 		}
-		HISI_FB_INFO("g_fpga_flag=%d.\n", g_fpga_flag);
+		dev_info(dev, "g_fpga_flag=%d.\n", g_fpga_flag);
 
 		ret = of_property_read_u32(np, "fastboot_enable_flag", &g_fastboot_enable_flag);
 		if (ret) {
-			HISI_FB_ERR("failed to get fastboot_display_flag resource.\n");
+			dev_err(dev, "failed to get fastboot_display_flag resource.\n");
 			return -ENXIO;
 		}
-		HISI_FB_INFO("g_fastboot_enable_flag=%d.\n", g_fastboot_enable_flag);
+		dev_info(dev, "g_fastboot_enable_flag=%d.\n", g_fastboot_enable_flag);
 
 		ret = of_property_read_u32(np, "fake_lcd_flag", &g_fake_lcd_flag);
 		if (ret) {
-			HISI_FB_ERR("failed to get fake_lcd_flag resource.\n");
+			dev_err(dev, "failed to get fake_lcd_flag resource.\n");
 			return -ENXIO;
 		}
-		HISI_FB_INFO("g_fake_lcd_flag=%d.\n", g_fake_lcd_flag);
+		dev_info(dev, "g_fake_lcd_flag=%d.\n", g_fake_lcd_flag);
 
 		ret = of_property_read_u32(np, "dss_base_phy", &g_dss_base_phy);
 		if (ret) {
-			HISI_FB_ERR("failed to get dss_base_phy.\n");
+			dev_err(dev, "failed to get dss_base_phy.\n");
 			return -ENXIO;
 		}
-		HISI_FB_INFO("g_dss_base_phy=0x%x.\n", g_dss_base_phy);
+		dev_info(dev, "g_dss_base_phy=0x%x.\n", g_dss_base_phy);
 
 		ret = of_property_read_u32(np, "dss_version_tag", &g_dss_version_tag);
 		if (ret) {
-			HISI_FB_ERR("failed to get g_dss_version_tag.\n");
+			dev_err(dev, "failed to get g_dss_version_tag.\n");
 		}
-		HISI_FB_INFO("g_dss_version_tag=0x%x.\n", g_dss_version_tag);
+		dev_info(dev, "g_dss_version_tag=0x%x.\n", g_dss_version_tag);
 
 		/* get irq no */
 		hisifd_irq_pdp = irq_of_parse_and_map(np, 0);
 		if (!hisifd_irq_pdp) {
-			HISI_FB_ERR("failed to get hisifd_irq_pdp resource.\n");
+			dev_err(dev, "failed to get hisifd_irq_pdp resource.\n");
 			return -ENXIO;
 		}
 
 		hisifd_irq_sdp = irq_of_parse_and_map(np, 1);
 		if (!hisifd_irq_sdp) {
-			HISI_FB_ERR("failed to get hisifd_irq_sdp resource.\n");
+			dev_err(dev, "failed to get hisifd_irq_sdp resource.\n");
 			return -ENXIO;
 		}
 
 		hisifd_irq_adp = irq_of_parse_and_map(np, 2);
 		if (!hisifd_irq_adp) {
-			HISI_FB_ERR("failed to get hisifd_irq_adp resource.\n");
+			dev_err(dev, "failed to get hisifd_irq_adp resource.\n");
 			return -ENXIO;
 		}
 
 		hisifd_irq_dsi0 = irq_of_parse_and_map(np, 3);
 		if (!hisifd_irq_dsi0) {
-			HISI_FB_ERR("failed to get hisifd_irq_dsi0 resource.\n");
+			dev_err(dev, "failed to get hisifd_irq_dsi0 resource.\n");
 			return -ENXIO;
 		}
 
 		hisifd_irq_dsi1 = irq_of_parse_and_map(np, 4);
 		if (!hisifd_irq_dsi1) {
-			HISI_FB_ERR("failed to get hisifd_irq_dsi1 resource.\n");
+			dev_err(dev, "failed to get hisifd_irq_dsi1 resource.\n");
 			return -ENXIO;
 		}
 
 		hisifd_irq_dptx = irq_of_parse_and_map(np, 5);
 		if (!hisifd_irq_dptx) {
-			HISI_FB_ERR("failed to get hisifd_irq_dptx resource.\n");
+			dev_err(dev, "failed to get hisifd_irq_dptx resource.\n");
 			return -ENXIO;
 		}
 
 		hisifd_irq_mdc = irq_of_parse_and_map(np, 6);
 		if (!hisifd_irq_mdc) {
-			HISI_FB_ERR("failed to get hisifd_irq_mdc resource.\n");
+			dev_err(dev, "failed to get hisifd_irq_mdc resource.\n");
 			return -ENXIO;
 		}
 
@@ -2377,67 +2490,60 @@ static int hisi_fb_probe(struct platform_device *pdev)
 		/* get dss reg base */
 		hisifd_dss_base = of_iomap(np, 0);
 		if (!hisifd_dss_base) {
-			HISI_FB_ERR("failed to get hisifd_dss_base resource.\n");
+			dev_err(dev, "failed to get hisifd_dss_base resource.\n");
 			return -ENXIO;
 		}
 
 		hisifd_peri_crg_base = of_iomap(np, 1);
 		if (!hisifd_peri_crg_base) {
-			HISI_FB_ERR("failed to get hisifd_peri_crg_base resource.\n");
+			dev_err(dev, "failed to get hisifd_peri_crg_base resource.\n");
 			return -ENXIO;
 		}
 
 		hisifd_sctrl_base = of_iomap(np, 2);
 		if (!hisifd_sctrl_base) {
-			HISI_FB_ERR("failed to get hisifd_sctrl_base resource.\n");
+			dev_err(dev, "failed to get hisifd_sctrl_base resource.\n");
 			return -ENXIO;
 		}
 
 		hisifd_pctrl_base = of_iomap(np, 3);
 		if (!hisifd_pctrl_base) {
-			HISI_FB_ERR("failed to get hisifd_pctrl_base resource.\n");
+			dev_err(dev, "failed to get hisifd_pctrl_base resource.\n");
 			return -ENXIO;
 		}
 
 		hisifd_noc_dss_base = of_iomap(np, 4);
 		if (!hisifd_noc_dss_base) {
-			HISI_FB_ERR("failed to get hisifd_noc_dss_base resource.\n");
+			dev_err(dev, "failed to get hisifd_noc_dss_base resource.\n");
 			return -ENXIO;
 		}
 
 		hisifd_mmbuf_crg_base = of_iomap(np, 5);
 		if (!hisifd_mmbuf_crg_base) {
-			HISI_FB_ERR("failed to get hisifd_mmbuf_crg_base resource.\n");
+			dev_err(dev, "failed to get hisifd_mmbuf_crg_base resource.\n");
 			return -ENXIO;
 		}
 
 		hisifd_pmctrl_base = of_iomap(np, 6);
 		if (!hisifd_pmctrl_base) {
-			HISI_FB_ERR("failed to get hisifd_pmctrl_base resource.\n");
+			dev_err(dev, "failed to get hisifd_pmctrl_base resource.\n");
 			return -ENXIO;
 		}
 
 		hisifd_media_crg_base = of_iomap(np, 7);
 		if (!hisifd_media_crg_base) {
-			HISI_FB_ERR("failed to get hisifd_media_crg_base resource.\n");
+			dev_err(dev, "failed to get hisifd_media_crg_base resource.\n");
 			return -ENXIO;
 		}
-
-		hisifd_media_crg_es_base = of_iomap(np, 8);
-		if (!hisifd_media_crg_es_base) {
-			HISI_FB_ERR("failed to get hisifd_media_crg_es_base resource.\n");
-			return -ENXIO;
-		}
-
 		hisifd_dp_base = of_iomap(np, 9);
 		if (!hisifd_dp_base) {
-			HISI_FB_ERR("failed to get hisifd_dp_base resource.\n");
+			dev_err(dev, "failed to get hisifd_dp_base resource.\n");
 			return -ENXIO;
 		}
 
 		hisifd_media_common_base = of_iomap(np, 10);
 		if (!hisifd_media_common_base) {
-			HISI_FB_ERR("failed to get hisifd_media_common_base resource.\n");
+			dev_err(dev, "failed to get hisifd_media_common_base resource.\n");
 			return -ENXIO;
 		}
 
@@ -2449,153 +2555,152 @@ static int hisi_fb_probe(struct platform_device *pdev)
 		ret = devm_regulator_bulk_get(&(pdev->dev),
 			ARRAY_SIZE(g_dpe_regulator), g_dpe_regulator);
 		if (ret) {
-			HISI_FB_ERR("failed to get regulator resource! ret=%d.\n", ret);
+			dev_err(dev, "failed to get regulator resource! ret=%d.\n", ret);
 			return -ENXIO;
 		}
-
 		/* get dss clk resource */
 		ret = of_property_read_string_index(np, "clock-names", 0, &g_dss_axi_clk_name);
 		if (ret != 0) {
-			HISI_FB_ERR("failed to get axi_clk resource! ret=%d.\n", ret);
+			dev_err(dev, "failed to get axi_clk resource! ret=%d.\n", ret);
 			return -ENXIO;
 		}
 		ret = of_property_read_string_index(np, "clock-names", 1, &g_dss_pclk_dss_name);
 		if (ret != 0) {
-			HISI_FB_ERR("failed to get pclk_clk resource! ret=%d.\n", ret);
+			dev_err(dev, "failed to get pclk_clk resource! ret=%d.\n", ret);
 			return -ENXIO;
 		}
 		ret = of_property_read_string_index(np, "clock-names", 2, &g_dss_pri_clk_name);
 		if (ret != 0) {
-			HISI_FB_ERR("failed to get pri_clk resource! ret=%d.\n", ret);
+			dev_err(dev, "failed to get pri_clk resource! ret=%d.\n", ret);
 			return -ENXIO;
 		}
 		ret = of_property_read_string_index(np, "clock-names", 3, &g_dss_pxl0_clk_name);
 		if (ret != 0) {
-			HISI_FB_ERR("failed to get pxl0_clk resource! ret=%d.\n", ret);
+			dev_err(dev, "failed to get pxl0_clk resource! ret=%d.\n", ret);
 			return -ENXIO;
 		}
 		ret = of_property_read_string_index(np, "clock-names", 4, &g_dss_pxl1_clk_name);
 		if (ret != 0) {
-			HISI_FB_ERR("failed to get pxl1_clk resource! ret=%d.\n", ret);
+			dev_err(dev, "failed to get pxl1_clk resource! ret=%d.\n", ret);
 			return -ENXIO;
 		}
 
 		ret = of_property_read_string_index(np, "clock-names", 5, &g_dss_mmbuf_clk_name);
 		if (ret != 0) {
-			HISI_FB_ERR("failed to get mmbuf_clk resource! ret=%d.\n", ret);
+			dev_err(dev, "failed to get mmbuf_clk resource! ret=%d.\n", ret);
 			return -ENXIO;
 		}
 		ret = of_property_read_string_index(np, "clock-names", 6, &g_dss_pclk_mmbuf_clk_name);
 		if (ret != 0) {
-			HISI_FB_ERR("failed to get pclk_mmbuf_clk resource! ret=%d.\n", ret);
+			dev_err(dev, "failed to get pclk_mmbuf_clk resource! ret=%d.\n", ret);
 			return -ENXIO;
 		}
 
 		ret = of_property_read_string_index(np, "clock-names", 7, &g_dss_dphy0_ref_clk_name);
 		if (ret != 0) {
-			HISI_FB_ERR("failed to get dphy0_ref_clk resource! ret=%d.\n", ret);
+			dev_err(dev, "failed to get dphy0_ref_clk resource! ret=%d.\n", ret);
 			return -ENXIO;
 		}
 		ret = of_property_read_string_index(np, "clock-names", 8, &g_dss_dphy1_ref_clk_name);
 		if (ret != 0) {
-			HISI_FB_ERR("failed to get dphy1_ref_clk resource! ret=%d.\n", ret);
+			dev_err(dev, "failed to get dphy1_ref_clk resource! ret=%d.\n", ret);
 			return -ENXIO;
 		}
 		ret = of_property_read_string_index(np, "clock-names", 9, &g_dss_dphy0_cfg_clk_name);
 		if (ret != 0) {
-			HISI_FB_ERR("failed to get dphy0_cfg_clk resource! ret=%d.\n", ret);
+			dev_err(dev, "failed to get dphy0_cfg_clk resource! ret=%d.\n", ret);
 			return -ENXIO;
 		}
 		ret = of_property_read_string_index(np, "clock-names", 10, &g_dss_dphy1_cfg_clk_name);
 		if (ret != 0) {
-			HISI_FB_ERR("failed to get dphy1_cfg_clk resource! ret=%d.\n", ret);
+			dev_err(dev, "failed to get dphy1_cfg_clk resource! ret=%d.\n", ret);
 			return -ENXIO;
 		}
 		ret = of_property_read_string_index(np, "clock-names", 11, &g_dss_pclk_dsi0_name);
 		if (ret != 0) {
-			HISI_FB_ERR("failed to get dss_pclk_dsi0 resource! ret=%d.\n", ret);
+			dev_err(dev, "failed to get dss_pclk_dsi0 resource! ret=%d.\n", ret);
 			return -ENXIO;
 		}
 		ret = of_property_read_string_index(np, "clock-names", 12, &g_dss_pclk_dsi1_name);
 		if (ret != 0) {
-			HISI_FB_ERR("failed to get dss_pclk_dsi1 resource! ret=%d.\n", ret);
+			dev_err(dev, "failed to get dss_pclk_dsi1 resource! ret=%d.\n", ret);
 			return -ENXIO;
 		}
 		ret = of_property_read_string_index(np, "clock-names", 13, &g_dss_pclk_pctrl_name);
 		if (ret != 0) {
-			HISI_FB_ERR("failed to get dss_pclk_pctrl resource! ret=%d.\n", ret);
+			dev_err(dev, "failed to get dss_pclk_pctrl resource! ret=%d.\n", ret);
 			return -ENXIO;
 		}
 		ret = of_property_read_string_index(np, "clock-names", 14, &g_dss_clk_gate_dpctrl_16m_name); //aux
 		if (ret != 0) {
-			HISI_FB_ERR("failed to get dss_clk_gate_dpctrl_16m resource! ret=%d.\n", ret);
+			dev_err(dev, "failed to get dss_clk_gate_dpctrl_16m resource! ret=%d.\n", ret);
 			return -ENXIO;
 		}
 		ret = of_property_read_string_index(np, "clock-names", 15, &g_dss_pclk_gate_dpctrl_name); //pclk
 		if (ret != 0) {
-			HISI_FB_ERR("failed to get dss_pclk_gate_dpctrl resource! ret=%d.\n", ret);
+			dev_err(dev, "failed to get dss_pclk_gate_dpctrl resource! ret=%d.\n", ret);
 			return -ENXIO;
 		}
 		ret = of_property_read_string_index(np, "clock-names", 16, &g_dss_aclk_dpctrl_name); //ack
 		if (ret != 0) {
-			HISI_FB_ERR("failed to get dss_aclk_gate_dpctrl resource! ret=%d.\n", ret);
+			dev_err(dev, "failed to get dss_aclk_gate_dpctrl resource! ret=%d.\n", ret);
 			return -ENXIO;
 		}
 
 		ret = hisi_fb_enable_iommu(pdev);
 		if (ret != 0) {
-			HISI_FB_ERR("failed to hisi_fb_enable_iommu! ret=%d.\n", ret);
+			dev_err(dev, "failed to hisi_fb_enable_iommu! ret=%d.\n", ret);
 			return -ENXIO;
 		}
 
 		/* find and get logo-buffer base */
 		np = of_find_node_by_path(DTS_PATH_LOGO_BUFFER);
 		if (!np) {
-			HISI_FB_ERR("NOT FOUND dts path: %s!\n", DTS_PATH_LOGO_BUFFER);
+			dev_err(dev, "NOT FOUND dts path: %s!\n", DTS_PATH_LOGO_BUFFER);
 			//return -ENXIO;
 		}
 
 		if (g_fastboot_enable_flag == 1) {
 			ret = of_property_read_u32_index(np, "reg", 1, &g_logo_buffer_base);
 			if (ret != 0) {
-				HISI_FB_ERR("failed to get g_logo_buffer_base resource! ret=%d.\n", ret);
+				dev_err(dev, "failed to get g_logo_buffer_base resource! ret=%d.\n", ret);
 				g_logo_buffer_base = 0;
 			}
 			ret = of_property_read_u32_index(np, "reg", 3, &g_logo_buffer_size);
 			if (ret != 0) {
-				HISI_FB_ERR("failed to get g_logo_buffer_size resource! ret=%d.\n", ret);
+				dev_err(dev, "failed to get g_logo_buffer_size resource! ret=%d.\n", ret);
 				g_logo_buffer_size = 0;
 			}
 
-			HISI_FB_INFO("g_logo_buffer_base = 0x%x, g_logo_buffer_size = 0x%x. \n", g_logo_buffer_base, g_logo_buffer_size);
+			dev_info(dev, "g_logo_buffer_base = 0x%x, g_logo_buffer_size = 0x%x. \n", g_logo_buffer_base, g_logo_buffer_size);
 		}
 
 		hisi_fb_resource_initialized = 1;
 
 		hisi_fb_device_set_status0(DTS_FB_RESOURCE_INIT_READY);
 
-		HISI_FB_DEBUG("initialized=%d, -.\n", hisi_fb_resource_initialized);
+		dev_dbg(dev, "initialized=%d, -.\n", hisi_fb_resource_initialized);
 		return 0;
 	}
 
 	if (pdev->id < 0) {
-		HISI_FB_ERR("WARNING: id=%d, name=%s!\n", pdev->id, pdev->name);
+		dev_err(dev, "WARNING: id=%d, name=%s!\n", pdev->id, pdev->name);
 		return 0;
 	}
 
 	if (!hisi_fb_resource_initialized) {
-		HISI_FB_ERR("fb resource not initialized!\n");
+		dev_err(dev, "fb resource not initialized!\n");
 		return -EPERM;
 	}
 
 	if (pdev_list_cnt >= HISI_FB_MAX_DEV_LIST) {
-		HISI_FB_ERR("too many fb devices, num=%d!\n", pdev_list_cnt);
+		dev_err(dev, "too many fb devices, num=%d!\n", pdev_list_cnt);
 		return -ENOMEM;
 	}
 
 	hisifd = platform_get_drvdata(pdev);
 	if (NULL == hisifd) {
-		HISI_FB_ERR("hisifd is NULL");
+		dev_err(dev, "hisifd is NULL");
 		return -EINVAL;
 	}
 
@@ -2603,7 +2708,7 @@ static int hisi_fb_probe(struct platform_device *pdev)
 
 	ret = hisi_fb_register(hisifd);
 	if (ret) {
-		HISI_FB_ERR("fb%d hisi_fb_register failed, error=%d!\n", hisifd->index, ret);
+		dev_err(dev, "fb%d hisi_fb_register failed, error=%d!\n", hisifd->index, ret);
 		return ret;
 	}
 
@@ -2615,6 +2720,9 @@ static int hisi_fb_probe(struct platform_device *pdev)
 	hisi_fb_device_set_status1(hisifd);
 
 	hisi_create_aod_wq(hisifd);
+
+	/* clear SCBAKDATA0 status */
+	outp32(hisifd->sctrl_base + SCBAKDATA0, 0x0);
 
 	HISI_FB_DEBUG("fb%d, -.\n", hisifd->index);
 
@@ -2680,6 +2788,9 @@ static int hisi_fb_remove(struct platform_device *pdev)
 	/* remove video idle ctrl */
 	if (hisifd->video_idle_ctrl_unregister)
 		hisifd->video_idle_ctrl_unregister(hisifd->pdev);
+	/*remove overlay online wirteback*/
+	if (hisifd->overlay_online_wb_unregister)
+		hisifd->overlay_online_wb_unregister(hisifd->pdev);
 
 	HISI_FB_DEBUG("fb%d, -.\n", hisifd->index);
 
@@ -2804,7 +2915,7 @@ static int hisi_fb_pm_suspend(struct device *dev)
 	if (!hisifd)
 		return 0;
 
-	if (hisifd->index != PRIMARY_PANEL_IDX)
+	if (hisifd->index == EXTERNAL_PANEL_IDX || hisifd->index == AUXILIARY_PANEL_IDX)
 		return 0;
 
 	HISI_FB_INFO("fb%d, +.\n", hisifd->index);

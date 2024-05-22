@@ -813,6 +813,11 @@ OAL_STATIC OAL_INLINE oal_uint64 oal_pci_bus_address(oal_pci_dev_stru *pst_dev, 
     return 0;
 }
 
+OAL_STATIC OAL_INLINE oal_ulong oal_pci_resource_flags(oal_pci_dev_stru *pst_dev, oal_int32 l_bar)
+{
+    return 0x0;
+}
+
 
 
 OAL_STATIC OAL_INLINE oal_int oal_pci_save_state(oal_pci_dev_stru *pst_dev)

@@ -103,7 +103,6 @@ static void ecc_free_point(struct ecc_point *p)
 	kzfree(p);
 }
 
-/*lint -save -e574*/
 static void vli_clear(u64 *vli, unsigned int ndigits)
 {
 	int i;
@@ -111,10 +110,8 @@ static void vli_clear(u64 *vli, unsigned int ndigits)
 	for (i = 0; i < ndigits; i++)
 		vli[i] = 0;
 }
-/*lint -restore*/
 
 /* Returns true if vli == 0, false otherwise. */
-/*lint -save -e574*/
 static bool vli_is_zero(const u64 *vli, unsigned int ndigits)
 {
 	int i;
@@ -126,7 +123,6 @@ static bool vli_is_zero(const u64 *vli, unsigned int ndigits)
 
 	return true;
 }
-/*lint -restore*/
 
 /* Returns nonzero if bit bit of vli is set. */
 static u64 vli_test_bit(const u64 *vli, unsigned int bit)
@@ -149,7 +145,6 @@ static unsigned int vli_num_digits(const u64 *vli, unsigned int ndigits)
 }
 
 /* Counts the number of bits required for vli. */
-/*lint -save -e440*/
 static unsigned int vli_num_bits(const u64 *vli, unsigned int ndigits)
 {
 	unsigned int i, num_digits;
@@ -165,10 +160,8 @@ static unsigned int vli_num_bits(const u64 *vli, unsigned int ndigits)
 
 	return ((num_digits - 1) * 64 + i);
 }
-/*lint -restore*/
 
 /* Sets dest = src. */
-/*lint -save -e574*/
 static void vli_set(u64 *dest, const u64 *src, unsigned int ndigits)
 {
 	int i;
@@ -176,7 +169,6 @@ static void vli_set(u64 *dest, const u64 *src, unsigned int ndigits)
 	for (i = 0; i < ndigits; i++)
 		dest[i] = src[i];
 }
-/*lint -restore*/
 
 /* Returns sign of left - right. */
 static int vli_cmp(const u64 *left, const u64 *right, unsigned int ndigits)
@@ -196,7 +188,6 @@ static int vli_cmp(const u64 *left, const u64 *right, unsigned int ndigits)
 /* Computes result = in << c, returning carry. Can modify in place
  * (if result == in). 0 < shift < 64.
  */
-/*lint -save -e574*/
 static u64 vli_lshift(u64 *result, const u64 *in, unsigned int shift,
 		      unsigned int ndigits)
 {
@@ -212,7 +203,6 @@ static u64 vli_lshift(u64 *result, const u64 *in, unsigned int shift,
 
 	return carry;
 }
-/*lint -restore*/
 
 /* Computes vli = vli >> 1. */
 static void vli_rshift1(u64 *vli, unsigned int ndigits)
@@ -230,7 +220,6 @@ static void vli_rshift1(u64 *vli, unsigned int ndigits)
 }
 
 /* Computes result = left + right, returning carry. Can modify in place. */
-/*lint -save -e574*/
 static u64 vli_add(u64 *result, const u64 *left, const u64 *right,
 		   unsigned int ndigits)
 {
@@ -249,10 +238,8 @@ static u64 vli_add(u64 *result, const u64 *left, const u64 *right,
 
 	return carry;
 }
-/*lint -restore*/
 
 /* Computes result = left - right, returning borrow. Can modify in place. */
-/*lint -save -e574*/
 static u64 vli_sub(u64 *result, const u64 *left, const u64 *right,
 		   unsigned int ndigits)
 {
@@ -271,7 +258,6 @@ static u64 vli_sub(u64 *result, const u64 *left, const u64 *right,
 
 	return borrow;
 }
-/*lint -restore*/
 
 static uint128_t mul_64_64(u64 left, u64 right)
 {
@@ -298,7 +284,6 @@ static uint128_t mul_64_64(u64 left, u64 right)
 	return result;
 }
 
-/*lint -save -e514*/
 static uint128_t add_128_128(uint128_t a, uint128_t b)
 {
 	uint128_t result;
@@ -308,9 +293,7 @@ static uint128_t add_128_128(uint128_t a, uint128_t b)
 
 	return result;
 }
-/*lint -restore*/
 
-/*lint -save -e514 -e679*/
 static void vli_mult(u64 *result, const u64 *left, const u64 *right,
 		     unsigned int ndigits)
 {
@@ -346,9 +329,7 @@ static void vli_mult(u64 *result, const u64 *left, const u64 *right,
 
 	result[ndigits * 2 - 1] = r01.m_low;
 }
-/*lint -restore*/
 
-/*lint -save -e514 -e574 -e679*/
 static void vli_square(u64 *result, const u64 *left, unsigned int ndigits)
 {
 	uint128_t r01 = { 0, 0 };
@@ -387,7 +368,6 @@ static void vli_square(u64 *result, const u64 *left, unsigned int ndigits)
 
 	result[ndigits * 2 - 1] = r01.m_low;
 }
-/*lint -restore*/
 
 /* Computes result = (left + right) % mod.
  * Assumes that left < mod and right < mod, result != mod.
@@ -860,7 +840,6 @@ static void xycz_add_c(u64 *x1, u64 *y1, u64 *x2, u64 *y2, u64 *curve_prime,
 	vli_set(x1, t7, ndigits);
 }
 
-/*lint -save -e679*/
 static void ecc_point_mult(struct ecc_point *result,
 			   const struct ecc_point *point, const u64 *scalar,
 			   u64 *initial_z, u64 *curve_prime,
@@ -915,9 +894,7 @@ static void ecc_point_mult(struct ecc_point *result,
 	vli_set(result->x, rx[0], ndigits);
 	vli_set(result->y, ry[0], ndigits);
 }
-/*lint -restore*/
 
-/*lint -save -e574*/
 static inline void ecc_swap_digits(const u64 *in, u64 *out,
 				   unsigned int ndigits)
 {
@@ -926,7 +903,6 @@ static inline void ecc_swap_digits(const u64 *in, u64 *out,
 	for (i = 0; i < ndigits; i++)
 		out[i] = __swab64(in[ndigits - 1 - i]);
 }
-/*lint -restore*/
 
 int ecc_is_key_valid(unsigned int curve_id, unsigned int ndigits,
 		     const u64 *private_key, unsigned int private_key_len)
@@ -956,7 +932,7 @@ int ecc_is_key_valid(unsigned int curve_id, unsigned int ndigits,
  * ECC private keys are generated using the method of extra random bits,
  * equivalent to that described in FIPS 186-4, Appendix B.4.1.
  *
- * d = (c mod(nâ€“1)) + 1    where c is a string of random bits, 64 bits longer
+ * d = (c mod(n¨C1)) + 1    where c is a string of random bits, 64 bits longer
  *                         than requested
  * 0 <= c mod(n-1) <= n-2  and implies that
  * 1 <= d <= n-1
@@ -1013,6 +989,7 @@ int ecc_make_pub_key(unsigned int curve_id, unsigned int ndigits,
 	int ret = 0;
 	struct ecc_point *pk;
 	u64 priv[ndigits];
+	
 	const struct ecc_curve *curve = ecc_get_curve(curve_id);
 
 	if (!private_key || !curve) {

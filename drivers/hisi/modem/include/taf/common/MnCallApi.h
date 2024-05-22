@@ -108,12 +108,10 @@ extern "C" {
 #define  TAF_CALL_T9_MAX_TIMER_LENGTH                   (12)                    /* T9最大时长为12消息 */
 #endif
 
-/* Added by l60609 for CDMA 1X Iteration 2, 2014-9-3, begin */
 #define TAF_CALL_MAX_NUM_DIGIT_LEN                          (64)
 #define TAF_CALL_MAX_FLASH_DIGIT_LEN                        (32)
 #define TAF_CALL_MAX_BURST_DTMF_NUM                         (255)
 
-/* Added by l60609 for CDMA 1X Iteration 2, 2014-9-3, end */
 
 #define TAF_CALL_MAX_ECONF_CALLED_NUM        (5)
 #define TAF_IMSA_ALPHA_STRING_SZ            (129)
@@ -165,7 +163,6 @@ extern "C" {
 /*****************************************************************************
   3类型定义
 *****************************************************************************/
-/* Added by f62575 for AT Project, 2011-11-1, begin */
 
 
 /*****************************************************************************
@@ -240,7 +237,6 @@ enum NAS_CC_CALL_TYPE
 };
 typedef VOS_UINT8  NAS_CC_CALL_TYPE_ENUM_U8;
 
-/* Added by f62575 for AT Project, 2011-11-1, end */
 
 
 enum TAF_CALL_VOICE_DOMAIN_ENUM
@@ -974,7 +970,6 @@ enum MN_CALL_EVENT_ENUM
     MN_CALL_EVT_CALL_ANSWER_REMOTE_MODIFY_CNF   = 0x26,
     MN_CALL_EVT_CALL_MODIFY_STATUS_IND          = 0x27,
 
-    /* Added by l60609 for CDMA 1X Iteration 2, 2014-9-3, begin */
     TAF_CALL_EVT_SEND_FLASH_RSLT,                           /* _H2ASN_MsgChoice TAF_CALL_EVT_SEND_FLASH_RSLT_STRU */
     TAF_CALL_EVT_CALLED_NUM_INFO_IND,                       /* _H2ASN_MsgChoice TAF_CALL_EVT_CALLED_NUM_INFO_IND_STRU */
     TAF_CALL_EVT_CALLING_NUM_INFO_IND,                      /* _H2ASN_MsgChoice TAF_CALL_EVT_CALLING_NUM_INFO_IND_STRU */
@@ -985,16 +980,12 @@ enum MN_CALL_EVENT_ENUM
     TAF_CALL_EVT_SIGNAL_INFO_IND,                           /* _H2ASN_MsgChoice TAF_CALL_EVT_SIGNAL_INFO_IND_STRU */
     TAF_CALL_EVT_LINE_CTRL_INFO_IND,                        /* _H2ASN_MsgChoice TAF_CALL_EVT_LINE_CTRL_INFO_IND_STRU */
     TAF_CALL_EVT_CALL_WAITING_IND,                          /* _H2ASN_MsgChoice TAF_CALL_EVT_CALL_WAITING_IND_STRU */
-    /* Added by l60609 for CDMA 1X Iteration 2, 2014-9-3, end */
-
     TAF_CALL_EVT_ECONF_DIAL_CNF,
     TAF_CALL_EVT_ECONF_NOTIFY_IND,                               /* imsa通知SPM模块增强型多方通话参与者的状态发送变化  */
     TAF_CALL_EVT_CLCCECONF_INFO,
 
-    /* Added by f279542 for CDMA 1X Iteration 4, 2014-11-10, begin */
     TAF_CALL_EVT_SEND_BURST_DTMF_CNF,                            /* _H2ASN_MsgChoice TAF_CALL_EVT_SEND_BURST_DTMF_CNF_STRU */
     TAF_CALL_EVT_SEND_BURST_DTMF_RSLT,                           /* _H2ASN_MsgChoice TAF_CALL_EVT_SEND_BURST_DTMF_RSLT_STRU */
-    /* Added by f279542 for CDMA 1X Iteration 4, 2014-11-10, end */
 
     TAF_CALL_EVT_CCWAC_INFO_IND,                            /* _H2ASN_MsgChoice TAF_CALL_EVT_CCWAC_INFO_IND_STRU */
 
@@ -1030,9 +1021,7 @@ typedef  VOS_UINT32  MN_CALL_EVENT_ENUM_U32;
 #define TAF_CS_CAUSE_VC_BEGIN               (0x0D00)
 #define TAF_CS_CAUSE_IMS_BEGIN              (0x4800)
 #define TAF_CS_CAUSE_IMSA_BEGIN             (0x4C00)
-/* Added by l60609 for CDMA 1X Iteration 2, 2014-9-3, begin */
 #define TAF_CS_CAUSE_XCALL_BEGIN            (0x9000)
-/* Added by l60609 for CDMA 1X Iteration 2, 2014-9-3, end */
 
 
 
@@ -1422,7 +1411,7 @@ enum TAF_CS_CAUSE_ENUM
     TAF_CS_CAUSE_IMSA_STRM_RTP_BREAK_WIFI_SIGNAL_BAD                = (TAF_CS_CAUSE_IMSA_BEGIN + 27),           /* WIFI信号差引发的RTP break导致VOWIFI电话掉话 */
     TAF_CS_CAUSE_IMSA_STRM_RTP_BREAK_WIFI_CONGEST                   = (TAF_CS_CAUSE_IMSA_BEGIN + 28),           /* WIFI信号差拥塞引发的RTP break导致VOWIFI电话掉话 */
     TAF_CS_CAUSE_IMSA_IMS_IGNORE_ERROR                              = (TAF_CS_CAUSE_IMSA_BEGIN + 29),           /* 仅用作IMSA上报给TAF的可忽略错误原因值 */
-
+    TAF_CS_CAUSE_IMSA_SERVICE_WIFI_SIGNAL_BAD                        = (TAF_CS_CAUSE_IMSA_BEGIN + 30),           /* LTE信号质量差 */
     /* XCALL 错误原因值 */
     TAF_CS_CAUSE_XCALL_NO_SERVICE                                   = (TAF_CS_CAUSE_XCALL_BEGIN + 1),           /* No Service\x{ff0c}Call Redial */
     TAF_CS_CAUSE_XCALL_MAX_ACCESS_PROBES,                                                                       /* Max Access Probes, Call Redial */
@@ -1542,7 +1531,6 @@ enum TAF_CALL_PRESENTATION_IND_ENUM                                             
 
 typedef VOS_UINT8   TAF_CALL_PRESENTATION_IND_ENUM_UINT8;
 
-/* Added by l60609 for CDMA 1X Iteration 2, 2014-9-3, begin */
 
 /* 移枚举定义到tafAppCall.h文件中 */
 
@@ -1580,7 +1568,6 @@ enum TAF_CALL_NUMBER_TYPE_ENUM
     TAF_CALL_NUMBER_TYPE_BUTT                               = 0x08
 };
 typedef VOS_UINT8 TAF_CALL_NUMBER_TYPE_ENUM_UINT8;
-/* Added by l60609 for CDMA 1X Iteration 2, 2014-9-3, end */
 
 
 enum MN_CALL_MODIFY_STATUS_ENUM
@@ -1616,7 +1603,6 @@ enum TAF_CALL_REJ_CAUSE_ENUM
 };
 typedef VOS_UINT8 TAF_CALL_REJ_CAUSE_ENUM_UINT8;
 
-/* Added by f62575 for STK&DCM Project, 2012/09/18, begin */
 
 
 enum MN_CALL_CF_CAUSE_ENUM
@@ -1726,7 +1712,6 @@ typedef struct
     VOS_UINT8                           SubAddrInfo[MN_CALL_MAX_SUBADDR_INFO_LEN];
     VOS_UINT8                           ucReserved;
 }MN_CALL_SUBADDR_STRU;
-/* Added by f62575 for STK&DCM Project, 2012/09/18, end */
 
 #define MN_CALL_MAX_CALLED_BCD_NUM_LEN      (40)                                /* 3GPP TS 24.008 10.5.4.7 */
 #define MN_CALL_MAX_CALLED_ASCII_NUM_LEN    (MN_CALL_MAX_CALLED_BCD_NUM_LEN * 2)
@@ -1912,7 +1897,6 @@ typedef struct
     VOS_UINT32                          ulReserved;
 } MN_CALL_ANS_PARAM_STRU;
 
-/* Modified by f62575 for V9R1 STK升级, 2013-6-26, begin */
 
 typedef struct
 {
@@ -1924,7 +1908,6 @@ typedef struct
                                                                                  大于70ms小于600ms */
     VOS_UINT8                           aucReserved[2];
 } TAF_CALL_DTMF_PARAM_STRU;
-/* Modified by f62575 for V9R1 STK升级, 2013-6-26, end */
 
 typedef struct
 {
@@ -2216,11 +2199,14 @@ enum MN_CALL_CODEC_TYPE_ENUM
     MN_CALL_CODEC_TYPE_FR,                  /* full rate */
     MN_CALL_CODEC_TYPE_HR,                  /* half rate */
     MN_CALL_CODEC_TYPE_AMR2,
-    /* Added by z40661 for AMR-WB , 2012-02-09, begin */
     MN_CALL_CODEC_TYPE_AMRWB,
-    /* Added by z40661 for AMR-WB , 2012-02-09, end */
     MN_CALL_CODEC_TYPE_G711,
     MN_CALL_CODEC_TYPE_EVS,
+
+    MN_CALL_CODEC_TYPE_EVS_NB,
+    MN_CALL_CODEC_TYPE_EVS_WB,
+    MN_CALL_CODEC_TYPE_EVS_SWB,
+
     MN_CALL_CODEC_TYPE_BUTT                 /* invalid value */
 };
 typedef VOS_UINT8  MN_CALL_CODEC_TYPE_ENUM_U8;
@@ -2519,7 +2505,6 @@ typedef struct
 }MN_CALL_EVT_QRY_ECALL_INFO_CNF_STRU;
 
 
-/* Added by l60609 for CDMA 1X Iteration 2, 2014-9-3, begin */
 
 typedef struct
 {
@@ -2550,7 +2535,6 @@ typedef struct
     VOS_UINT8                           ucResult;                               /* VOS_OK:成功; VOS_ERR:失败 */
 }TAF_CALL_EVT_SEND_FLASH_RSLT_STRU;
 
-/* Added by f279542 for CDMA 1X Iteration 4, 2014-11-10, begin */
 
 typedef struct
 {
@@ -2573,7 +2557,6 @@ typedef struct
     VOS_UINT8                           aucReserved2[1];                           /*_H2ASN_Skip*/
     TAF_CALL_BURST_DTMF_PARA_STRU       stBurstDTMFPara;
 } TAF_CALL_BURST_DTMF_REQ_MSG_STRU;
-/* Added by f279542 for CDMA 1X Iteration 4, 2014-11-10, end */
 
 
 typedef struct
@@ -2720,7 +2703,7 @@ typedef struct
     VOS_UINT8                           aucRsved[3];
 }TAF_CALL_EVT_CALL_WAITING_IND_STRU;
 
-/* Added by l60609 for CDMA 1X Iteration 2, 2014-9-3, end */
+
 
 
 typedef struct
@@ -2862,9 +2845,13 @@ typedef struct
 
 enum TAF_CALL_CHANNEL_TYPE_ENUM
 {
-    TAF_CALL_CHANNEL_TYPE_NONE   = 0x00,                 /* 无带内音信息 */
-    TAF_CALL_CHANNEL_TYPE_NARROW = 0x01,                 /* 带内音可用，窄带语音 */
-    TAF_CALL_CHANEEL_TYPE_WIDE   = 0x02,                 /* 带内音可用，宽带语音 */
+    TAF_CALL_CHANNEL_TYPE_NONE      = 0x00,                 /* 无带内音信息 */
+    TAF_CALL_CHANNEL_TYPE_NARROW    = 0x01,                 /* 带内音可用，窄带语音 */
+    TAF_CALL_CHANNEL_TYPE_WIDE      = 0x02,                 /* 带内音可用，宽带语音 */
+
+    TAF_CALL_CHANNEL_TYPE_EVS_NB    = 0x03,                 /* 带内音可用，EVS NB */
+    TAF_CALL_CHANNEL_TYPE_EVS_WB    = 0x04,                 /* 带内音可用，EVS WB */
+    TAF_CALL_CHANNEL_TYPE_EVS_SWB   = 0x05,                 /* 带内音可用，EVS SWB */
 
     TAF_CALL_CHANNEL_TYPE_BUTT
 };
@@ -3013,7 +3000,6 @@ VOS_VOID MN_CALL_RcvAtClprGetReq(MN_CALL_APP_REQ_MSG_STRU            *pstCallMsg
 *****************************************************************************/
 VOS_UINT8 GMM_GetCurNetwork(VOS_VOID);
 
-/* Added by f279542 for CDMA 1X Iteration 4, 2014-11-12, begin */
 #if (FEATURE_ON == FEATURE_UE_MODE_CDMA)
 extern VOS_UINT32  TAF_XCALL_SendBurstDtmf(
     MN_CLIENT_ID_T                      clientId,
@@ -3026,7 +3012,6 @@ extern VOS_UINT32  TAF_XCALL_SendFlashReq(
     MN_OPERATION_ID_T                   opId,
     TAF_CALL_FLASH_PARA_STRU           *pstFlashPara
 );
-/* Added by f279542 for CDMA 1X Iteration 4, 2014-11-12, end */
 
 VOS_UINT32  TAF_XCALL_SendCustomDialReq(
     MN_CLIENT_ID_T                      clientId,

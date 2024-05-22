@@ -1,5 +1,6 @@
 config ARM64_DSU_PCTRL_DEVFREQ
 		tristate "ARM DSU Cache Portion Control DEVFREQ Driver"
+		depends on ARCH_HISI && PM_DEVFREQ
 		depends on ARM64
 		select PM_OPP
 	    help

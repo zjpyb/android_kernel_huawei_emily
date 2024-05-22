@@ -71,6 +71,13 @@
 
 struct tag_TC_NS_Shared_MEM;
 
+struct TC_NS_DEV_List {
+	unsigned int dev_file_cnt;
+	struct mutex dev_lock;
+	struct list_head dev_file_list;
+};
+extern struct TC_NS_DEV_List g_tc_ns_dev_list;
+
 typedef struct tag_TC_NS_DEV_File {
 	unsigned int dev_file_id;
 	unsigned int service_cnt;
@@ -140,12 +147,16 @@ typedef struct  tag_TC_NS_SMC_CMD {
 	unsigned int event_nr;
 	unsigned int remap;
 	unsigned int uid;
+#ifdef CONFIG_TEE_SMP
+	unsigned int ca_pid;
+#endif
 #ifdef SECURITY_AUTH_ENHANCE
 	unsigned int token_phys;
 	unsigned int token_h_phys;
 	unsigned int pid;
 	unsigned int params_phys;
 	unsigned int params_h_phys;
+	unsigned int eventindex;	//tee audit event index for upload
 #endif
 #ifdef CONFIG_TEE_CFC_ABI
 	unsigned int real_pid;
@@ -163,6 +174,7 @@ typedef struct tag_TC_NS_Shared_MEM {
 	bool from_mailbox;
 	struct list_head head;
 	atomic_t usage;
+        atomic_t offset;
 } TC_NS_Shared_MEM;
 
 typedef struct tag_TC_NS_Service {

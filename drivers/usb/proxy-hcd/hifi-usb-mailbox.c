@@ -11,6 +11,9 @@ static irq_rt_t usb_notify_recv_isr(void *usr_para, void *mail_handle, unsigned 
 	unsigned int ret = MAILBOX_OK;
 	unsigned int mail_size = mail_len;
 
+	if ((mail_len == 0) || (mail_len > sizeof(struct hifi_usb_op_msg)))
+		return IRQ_NH_TYPE;
+
 	memset(&mail_buf, 0, sizeof(struct hifi_usb_op_msg));
 
 	ret = DRV_MAILBOX_READMAILDATA(mail_handle, (unsigned char*)&mail_buf, &mail_size);

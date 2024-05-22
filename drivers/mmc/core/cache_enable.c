@@ -16,23 +16,28 @@
 
 #define CID_MANFID_SAMSUNG             0x15
 extern int is_hisi_battery_exist(void);
+#ifdef CONFIG_HISI_CMDLINE_PARSE
 extern unsigned int runmode_is_factory(void);
+#endif
 int mmc_screen_test_cache_enable(struct mmc_card *card)
 {
 	int need_cache_on = 1;
-	int runmode_normal = 0;
+	int runmode_normal = 1;
 	int batterystate_exist = 0;
-    if(card == NULL)
-    {
+	if(card == NULL) {
 	   printk(KERN_INFO "card is null and then return\n");
 	   return need_cache_on;
 	}
+
+#ifdef CONFIG_HISI_CMDLINE_PARSE
 	runmode_normal = !runmode_is_factory();
+#endif
+
 #ifdef CONFIG_HISI_COUL
 	batterystate_exist = is_hisi_battery_exist();
 #ifdef CONFIG_HLTHERM_RUNTEST
-	printk(KERN_INFO "CONFIG_HLTHERM_RUNTEST is enable, set the batterystate_exist to 1\n");
 	batterystate_exist = 1;
+	printk(KERN_INFO "CONFIG_HLTHERM_RUNTEST is enable, set the batterystate_exist to 1\n");
 #endif
 #else
 	batterystate_exist = 0;

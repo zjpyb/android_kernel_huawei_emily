@@ -66,6 +66,10 @@ extern "C" {
 #include "hmac_auto_adjust_freq.h"
 #endif
 
+#ifdef _PRE_WLAN_TCP_OPT
+#include "hmac_tcp_opt.h"
+#endif
+
 #ifdef _PRE_WLAN_FEATURE_ROAM
 #include "hmac_roam_main.h"
 #endif //_PRE_WLAN_FEATURE_ROAM
@@ -83,7 +87,9 @@ extern "C" {
 #define THIS_FILE_ID OAM_FILE_ID_WAL_LINUX_IOCTL_C
 #define MAX_PRIV_CMD_SIZE          4096
 #define WAL_MAX_SPE_PORT_NUM       8       /* SPE最大端口号为8 */
-#define WAL_MAX_SPE_PKT_NUM       512     /* SPE定义的发送和接收描述符以及对应的包的个数 */
+#define WAL_MAX_SPE_PKT_NUM        512     /* SPE定义的发送和接收描述符以及对应的包的个数 */
+
+#define WAL_MAX_REGDOMAIN_NUM       7      /* 管制域最大数量 */
 
 /*****************************************************************************
   2 结构体定义
@@ -359,6 +365,7 @@ OAL_STATIC oal_uint32  wal_hipriv_dfs_radartool(oal_net_device_stru *pst_net_dev
 #endif
 
 OAL_STATIC oal_uint32  wal_hipriv_bgscan_enable(oal_net_device_stru *pst_cfg_net_dev, oal_int8 *pc_param);
+
 #ifdef _PRE_WLAN_FEATURE_STA_PM
 OAL_STATIC oal_uint32  wal_hipriv_sta_ps_mode(oal_net_device_stru *pst_cfg_net_dev, oal_int8 *pc_param);
 #ifdef _PRE_PSM_DEBUG_MODE
@@ -453,6 +460,7 @@ OAL_STATIC oal_uint32  wal_hipriv_voe_enable(oal_net_device_stru *pst_net_dev, o
 OAL_STATIC oal_uint32  wal_hipriv_auto_cali(oal_net_device_stru *pst_net_dev, oal_int8 *pc_param);
 OAL_STATIC oal_uint32  wal_hipriv_set_cali_vref(oal_net_device_stru *pst_net_dev, oal_int8 *pc_param);
 #endif
+OAL_STATIC oal_uint32  wal_hipriv_mcs_set_check_enable(oal_net_device_stru *pst_cfg_net_dev, oal_int8 *pc_param);
 
 /*****************************************************************************
   私有命令函数表. 私有命令格式:
@@ -592,6 +600,7 @@ OAL_STATIC OAL_CONST wal_hipriv_cmd_entry_stru  g_ast_hipriv_cmd[] =
     {"auto_cali",        wal_hipriv_auto_cali},      /* 启动校准自动化:hipriv "Hisilicon0 auto_cali" */
     {"cali_vref",        wal_hipriv_set_cali_vref},  /* 校准参数修改:hipriv "wlan0 cali_vref value" */
 #endif
+    {"mcs_check_enable",         wal_hipriv_mcs_set_check_enable},
 };
 
 /*****************************************************************************
@@ -1959,6 +1968,41 @@ OAL_STATIC oal_int32 hwifi_force_refresh_rf_params(oal_net_device_stru* pst_net_
     return hwifi_config_init_nvram_main(pst_net_dev);
 }
 
+OAL_STATIC oal_void hwifi_config_init_ini_tcp_ack_opt_params(hmac_tcp_ack_opt_th_params *pst_tcp_ack_opt_th_params)
+{
+    hmac_device_stru *pst_hmac_dev;
+
+    pst_hmac_dev = hmac_res_get_mac_dev(0);
+    if (OAL_PTR_NULL == pst_hmac_dev)
+    {
+        pst_tcp_ack_opt_th_params->l_on_threshold  = 0;
+        pst_tcp_ack_opt_th_params->l_off_threshold = 0;
+
+        OAM_ERROR_LOG0(0, OAM_SF_ANY, "hwifi_config_init_ini_tcp_ack_opt_params:: get hmac_device fail. set tcp ack opt threshold to zero");
+        return;
+    }
+
+    pst_tcp_ack_opt_th_params->l_on_threshold  = hwifi_get_init_value(CUS_TAG_INI, WLAN_CFG_INIT_TCP_ACK_OPT_ON_TH);
+    pst_tcp_ack_opt_th_params->l_off_threshold = hwifi_get_init_value(CUS_TAG_INI, WLAN_CFG_INIT_TCP_ACK_OPT_OFF_TH);
+
+    if ((pst_tcp_ack_opt_th_params->l_on_threshold > 0)
+        && (pst_tcp_ack_opt_th_params->l_on_threshold <= pst_tcp_ack_opt_th_params->l_off_threshold))
+    {
+        /* 定制化参数设置为大于零，需要启动门限 > 关闭门限 */
+        pst_tcp_ack_opt_th_params->l_on_threshold  = 0;
+        pst_tcp_ack_opt_th_params->l_off_threshold = 0;
+    }
+    else if (pst_tcp_ack_opt_th_params->l_on_threshold < 0)
+    {
+        pst_hmac_dev->sys_tcp_tx_ack_opt_enable = OAL_FALSE;
+    }
+
+    /* 输出门限参数 */
+    OAM_WARNING_LOG3(0, OAM_SF_ANY, "tcp ack opt threshold:ON [%d], OFF [%d] ",
+                        pst_tcp_ack_opt_th_params->l_on_threshold, pst_tcp_ack_opt_th_params->l_off_threshold, pst_hmac_dev->sys_tcp_tx_ack_opt_enable);
+    return;
+}
+
 
 OAL_STATIC oal_int32 hwifi_config_host_global_ini_param(oal_void)
 {
@@ -2102,6 +2146,11 @@ OAL_STATIC oal_int32 hwifi_config_host_global_ini_param(oal_void)
     g_st_wlan_customize.ul_lte_rx_act = (oal_uint32)l_val;
     l_val = hwifi_get_init_value(CUS_TAG_INI, WLAN_ATCMDSRV_LTE_TX_ACT);
     g_st_wlan_customize.ul_lte_tx_act = (oal_uint32)l_val;
+
+#ifdef _PRE_WLAN_TCP_OPT
+    hwifi_config_init_ini_tcp_ack_opt_params(&g_st_tcp_ack_opt_th_params);
+#endif /* _PRE_WLAN_TCP_OPT */
+
     return OAL_SUCC;
 }
 
@@ -2295,6 +2344,38 @@ OAL_STATIC oal_void hwifi_config_init_ini_log(oal_net_device_stru *pst_cfg_net_d
     }
 }
 
+#ifdef _PRE_WLAN_FEATURE_BTCOEX
+
+OAL_STATIC oal_void hwifi_config_init_btcoex_ps_switch(oal_net_device_stru *pst_cfg_net_dev)
+{
+    wal_msg_write_stru          st_write_msg;
+    oal_int32                   l_ret;
+    oal_int32                   l_btcoex_ps_switch;
+
+    /* log_level */
+    l_btcoex_ps_switch = hwifi_get_init_value(CUS_TAG_INI, WLAN_CFG_INIT_BTCOEX_PS_SWITCH);
+    if (l_btcoex_ps_switch != 0 && l_btcoex_ps_switch != 1)
+    {
+        OAM_ERROR_LOG1(0, OAM_SF_ANY, "{hwifi_config_init_btcoex_ps_mode::btcoex_ps_mode[%d] is error",l_btcoex_ps_switch);
+        return;
+    }
+
+    WAL_WRITE_MSG_HDR_INIT(&st_write_msg, WLAN_CFGID_SET_BTCOEX_PS_SWITCH, OAL_SIZEOF(oal_int32));
+    *((oal_int32 *)(st_write_msg.auc_value)) = l_btcoex_ps_switch;
+    l_ret = wal_send_cfg_event(pst_cfg_net_dev,
+                               WAL_MSG_TYPE_WRITE,
+                               WAL_MSG_WRITE_MSG_HDR_LENGTH + OAL_SIZEOF(oal_int32),
+                               (oal_uint8 *)&st_write_msg,
+                               OAL_FALSE,
+                               OAL_PTR_NULL);
+
+    if (OAL_UNLIKELY(OAL_SUCC != l_ret))
+    {
+        OAM_ERROR_LOG1(0, OAM_SF_ANY, "{hwifi_config_init_btcoex_ps_mode::return err code[%d]!}\r\n", l_ret);
+    }
+}
+#endif
+
 OAL_STATIC oal_void hwifi_config_init_ini_phy(oal_net_device_stru *pst_cfg_net_dev)
 {
     wal_msg_write_stru          st_write_msg;
@@ -2388,6 +2469,32 @@ OAL_STATIC oal_void hwifi_config_init_ini_clock(oal_net_device_stru *pst_cfg_net
     }
 }
 
+OAL_STATIC oal_void hwifi_config_init_ini_ce_5g_high_band_params(mac_cfg_ce_5g_hi_band_params *pst_ce_5g_hi_band_params)
+{
+    pst_ce_5g_hi_band_params->uc_max_txpower              = hwifi_get_init_value(CUS_TAG_INI, WLAN_CFG_INIT_CE_5G_HIGH_BAND_TXPWR);
+    pst_ce_5g_hi_band_params->uc_dbb_scale_11a_ht20_vht20 = hwifi_get_init_value(CUS_TAG_INI, WLAN_CFG_INIT_CE_5G_HIGH_BAND_11A_HT20_VHT20_DBB_SCALING);
+    pst_ce_5g_hi_band_params->uc_dbb_scale_ht40_vht40     = hwifi_get_init_value(CUS_TAG_INI, WLAN_CFG_INIT_CE_5G_HIGH_BAND_HT40_VHT40_DBB_SCALING);
+    pst_ce_5g_hi_band_params->uc_dbb_scale_vht80          = hwifi_get_init_value(CUS_TAG_INI, WLAN_CFG_INIT_CE_5G_HIGH_BAND_VHT80_DBB_SCALING);
+
+    /* 判断异常值 */
+    if (pst_ce_5g_hi_band_params->uc_max_txpower == 0xFF
+        || pst_ce_5g_hi_band_params->uc_dbb_scale_11a_ht20_vht20 > MAX_DBB_SCALE
+        || pst_ce_5g_hi_band_params->uc_dbb_scale_ht40_vht40 > MAX_DBB_SCALE
+        || pst_ce_5g_hi_band_params->uc_dbb_scale_vht80 > MAX_DBB_SCALE)
+    {
+        /* CE 高band 定制化参数取值异常，关闭149~165 信道 */
+        pst_ce_5g_hi_band_params->uc_max_txpower = 0xFF;
+    }
+
+    /*  */
+    OAM_WARNING_LOG4(0, OAM_SF_ANY, "ce 5g high band prams:txpower %d, dbb scale 20MHz[%d] 40MHz[%d] 80MHz[%d]",
+                        pst_ce_5g_hi_band_params->uc_max_txpower,
+                        pst_ce_5g_hi_band_params->uc_dbb_scale_11a_ht20_vht20,
+                        pst_ce_5g_hi_band_params->uc_dbb_scale_ht40_vht40,
+                        pst_ce_5g_hi_band_params->uc_dbb_scale_vht80);
+}
+
+
 OAL_STATIC oal_void hwifi_config_init_ini_rf(oal_net_device_stru *pst_cfg_net_dev)
 {
     wal_msg_write_stru          st_write_msg;
@@ -2397,10 +2504,12 @@ OAL_STATIC oal_void hwifi_config_init_ini_rf(oal_net_device_stru *pst_cfg_net_de
     oal_uint8                   uc_tx_pwr_comp_base = WLAN_CFG_INIT_TX_RATIO_LEVEL_0;   /* 功率补偿的起始ID值 */
     oal_uint8                   uc_idx;                 /*结构体数组下标*/
     oal_uint8                   uc_error_param = OAL_FALSE;    /* 参数有效性标志，任意参数值不合法则置为1，所有参数不下发 */
-    mac_cfg_customize_rf*               pst_customize_rf;
-    mac_cfg_customize_tx_pwr_comp_stru* pst_tx_pwr_comp;
+    mac_cfg_customize_rf       *pst_customize_rf;
+    mac_cfg_customize_tx_pwr_comp_stru *pst_tx_pwr_comp;
+    mac_cfg_ce_5g_hi_band_params       *pst_ce_5g_hi_band;
 
-    WAL_WRITE_MSG_HDR_INIT(&st_write_msg, WLAN_CFGID_SET_CUS_RF, OAL_SIZEOF(mac_cfg_customize_rf) + OAL_SIZEOF(mac_cfg_customize_tx_pwr_comp_stru));
+    WAL_WRITE_MSG_HDR_INIT(&st_write_msg, WLAN_CFGID_SET_CUS_RF,
+                        OAL_SIZEOF(mac_cfg_customize_rf) + OAL_SIZEOF(mac_cfg_customize_tx_pwr_comp_stru) + OAL_SIZEOF(mac_cfg_ce_5g_hi_band_params));
 
     pst_customize_rf = (mac_cfg_customize_rf *)(st_write_msg.auc_value);
     ul_offset += OAL_SIZEOF(mac_cfg_customize_rf);
@@ -2543,10 +2652,16 @@ OAL_STATIC oal_void hwifi_config_init_ini_rf(oal_net_device_stru *pst_cfg_net_de
         OAM_ERROR_LOG0(0, OAM_SF_ANY, "{hwifi_config_init_ini_rf::one or more params have wrong value, do not send cfg event!}\r\n");
         return;
     }
+
+    /* 配置: CE 5G 高频段定制化 */
+    ul_offset += OAL_SIZEOF(mac_cfg_customize_tx_pwr_comp_stru);
+    pst_ce_5g_hi_band = (mac_cfg_ce_5g_hi_band_params *)(st_write_msg.auc_value + ul_offset);
+    hwifi_config_init_ini_ce_5g_high_band_params(pst_ce_5g_hi_band);
+
     /* 如果所有参数都在有效范围内，则下发配置值 */
     l_ret = wal_send_cfg_event(pst_cfg_net_dev,
                                WAL_MSG_TYPE_WRITE,
-                               WAL_MSG_WRITE_MSG_HDR_LENGTH + OAL_SIZEOF(mac_cfg_customize_rf) + OAL_SIZEOF(mac_cfg_customize_tx_pwr_comp_stru),
+                               WAL_MSG_WRITE_MSG_HDR_LENGTH + OAL_SIZEOF(mac_cfg_customize_rf) + OAL_SIZEOF(mac_cfg_customize_tx_pwr_comp_stru) + OAL_SIZEOF(mac_cfg_ce_5g_hi_band_params),
                                (oal_uint8 *)&st_write_msg,
                                OAL_FALSE,
                                OAL_PTR_NULL);
@@ -2643,6 +2758,8 @@ OAL_STATIC oal_uint32 hwifi_config_init_dts_cali(oal_net_device_stru *pst_cfg_ne
     st_cus_cali.uc_bt_tone_amp_grade = (oal_uint8)hwifi_get_init_value(CUS_TAG_DTS, WLAN_CFG_DTS_BT_CALI_TONE_AMP_GRADE);
 
     /** 配置: FCC认证 **/
+    st_cus_cali.uc_enable_band_edge_txpwr_fix = (oal_uint8)hwifi_get_init_value(CUS_TAG_DTS, WLAN_CFG_DTS_BAND_EDGE_LIMIT_TXPWR_FIX);
+
     /* 申请内存存放边带功率信息,本函数结束后释放,申请内存大小: 6                      *            4 = 24字节 */
     pst_band_edge_limit = OAL_MEM_ALLOC(OAL_MEM_POOL_ID_LOCAL, NUM_OF_BAND_EDGE_LIMIT * OAL_SIZEOF(mac_cus_band_edge_limit_stru), OAL_TRUE);
     if (OAL_PTR_NULL == pst_band_edge_limit)
@@ -2789,6 +2906,9 @@ OAL_STATIC oal_void hwifi_config_init_ini_main(oal_net_device_stru *pst_cfg_net_
 #endif
 #ifdef _PRE_WLAN_DOWNLOAD_PM
     hwifi_config_init_ini_download_pm(pst_cfg_net_dev);
+#endif
+#ifdef _PRE_WLAN_FEATURE_BTCOEX
+    hwifi_config_init_btcoex_ps_switch(pst_cfg_net_dev);
 #endif
 }
 
@@ -3650,6 +3770,12 @@ OAL_STATIC oal_int32  _wal_netdev_stop(oal_net_device_stru *pst_net_dev)
 
     if (OAL_UNLIKELY(OAL_SUCC != l_ret))
     {
+        if (OAL_PTR_NULL == OAL_NET_DEV_PRIV(pst_net_dev))
+        {
+            /* 关闭net_device，发现其对应vap 是null，清除flags running标志 */
+            OAL_NETDEVICE_FLAGS(pst_net_dev) &= (~OAL_IFF_RUNNING);
+            OAM_WARNING_LOG1(0, OAM_SF_ANY, "{wal_netdev_stop::net_device's vap is null, set flag not running, if_idx:%d}", pst_net_dev->ifindex);
+        }
         OAM_WARNING_LOG1(0, OAM_SF_ANY, "{wal_netdev_stop::wal_alloc_cfg_event return err code %d!}\r\n", l_ret);
         return l_ret;
     }
@@ -5943,6 +6069,89 @@ OAL_STATIC oal_void  wal_regdomain_fill_info(OAL_CONST oal_ieee80211_regdomain_s
     }
 }
 
+#if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
+oal_ieee80211_regdomain_stru            g_st_using_regdom = {
+    .n_reg_rules = WAL_MAX_REGDOMAIN_NUM,
+    .alpha2 =  "xx",
+    .reg_rules = {
+        REG_RULE(2402, 2482, 40, 0, 27, 0), /* 2G chanel  1 ~ 13 */
+        REG_RULE(5170, 5250, 80, 0, 23, 0), /* 5G chanel 36 ~ 48 */
+        REG_RULE(5250, 5330, 80, 0, 23,     /* 5G chanel 52 ~ 64 */
+            NL80211_RRF_DFS | 0),
+        REG_RULE(5490, 5570, 80, 0, 23,     /* 5G chanel 100 ~ 112 */
+            NL80211_RRF_DFS | 0),
+        REG_RULE(5570, 5650, 80, 0, 23,     /* 5G chanel 116 ~ 128 */
+            NL80211_RRF_DFS | 0),
+        REG_RULE(5650, 5730, 80, 0, 23,     /* 5G chanel 132 ~ 144 */
+            NL80211_RRF_DFS | 0),
+        REG_RULE(5735, 5835, 80, 0, 27, 0), /* 5G chanel 149 ~ 165 */
+    }
+};
+#else
+oal_ieee80211_regdomain_stru            g_st_using_regdom = {
+    WAL_MAX_REGDOMAIN_NUM,
+    {'x', 'x'},
+    0, 0,
+    {
+        REG_RULE(2402, 2482, 40, 0, 27, 0), /* 2G chanel  1 ~ 13 */
+        REG_RULE(5170, 5250, 80, 0, 23, 0), /* 5G chanel 36 ~ 48 */
+        REG_RULE(5250, 5330, 80, 0, 23,     /* 5G chanel 52 ~ 64 */
+            NL80211_RRF_DFS | 0),
+        REG_RULE(5490, 5570, 80, 0, 23,     /* 5G chanel 100 ~ 112 */
+            NL80211_RRF_DFS | 0),
+        REG_RULE(5570, 5650, 80, 0, 23,     /* 5G chanel 116 ~ 128 */
+            NL80211_RRF_DFS | 0),
+        REG_RULE(5650, 5730, 80, 0, 23,     /* 5G chanel 132 ~ 144 */
+            NL80211_RRF_DFS | 0),
+        REG_RULE(5735, 5835, 80, 0, 27, 0), /* 5G chanel 149 ~ 165 */
+    }
+};
+#endif
+
+
+OAL_STATIC oal_void wal_regdomain_update_for_ce(oal_int8 *pc_country,
+                                                OAL_CONST oal_ieee80211_regdomain_stru *pst_src_regdom,
+                                                oal_ieee80211_regdomain_stru *pst_dst_regdom)
+{
+    oal_uint32  ul_loop;
+
+    /* 拷贝原始管制域信息到临时变量，便于后续编辑管制域信息 */
+    pst_dst_regdom->dfs_region  = pst_src_regdom->dfs_region;
+    pst_dst_regdom->n_reg_rules = OAL_MIN(pst_src_regdom->n_reg_rules, WAL_MAX_REGDOMAIN_NUM);
+    oal_memcopy(pst_dst_regdom->alpha2, pst_src_regdom->alpha2, OAL_SIZEOF(pst_src_regdom->alpha2));
+
+    for (ul_loop = 0; ul_loop < pst_dst_regdom->n_reg_rules; ul_loop++)
+    {
+        pst_dst_regdom->reg_rules[ul_loop] = pst_src_regdom->reg_rules[ul_loop];
+    }
+
+#ifdef _PRE_PLAT_FEATURE_CUSTOMIZE
+    if (hwifi_get_init_value(CUS_TAG_INI, WLAN_CFG_INIT_CE_5G_HIGH_BAND_TXPWR) != 0xFF)
+    {
+        /* 支持CE 5G 高band 信道，不用删除5G 高band 区域信道 */
+        return;
+    }
+
+    if (hwifi_get_regdomain_from_country_code_1102(pc_country) != REGDOMAIN_ETSI)
+    {
+        /* 非新支持149~165 信道的CE 区域不用删除5G 高band 信道 */
+        return;
+    }
+
+    for (ul_loop = 0; ul_loop < pst_dst_regdom->n_reg_rules; ul_loop++)
+    {
+        /* 遍历CE 国家区域，如果支持149~165 信道，则从管制域中删除对应信道 */
+        if (KHZ_TO_MHZ(pst_dst_regdom->reg_rules[ul_loop].freq_range.start_freq_khz) >= 5735
+            && KHZ_TO_MHZ(pst_dst_regdom->reg_rules[ul_loop].freq_range.end_freq_khz) <= 5835)
+        {
+            /* 设置该频段不使能，修改start_ferq 和end_freq 为相同值 */
+            pst_dst_regdom->reg_rules[ul_loop].freq_range.end_freq_khz = pst_dst_regdom->reg_rules[ul_loop].freq_range.start_freq_khz;
+            OAM_WARNING_LOG0(0, OAM_SF_ANY, "{wal_regdomain_update_for_ce:: CE_NEW, delete channel 149~165 }");
+        }
+    }
+#endif
+}
+
 
 oal_int32  wal_regdomain_update(oal_net_device_stru *pst_net_dev, oal_int8 *pc_country)
 {
@@ -6013,7 +6222,9 @@ oal_int32  wal_regdomain_update(oal_net_device_stru *pst_net_dev, oal_int8 *pc_c
         return -OAL_EINVAL;
     }
 
-    us_size = (oal_uint16)(OAL_SIZEOF(mac_regclass_info_stru) * pst_regdom->n_reg_rules + MAC_RD_INFO_LEN);
+    wal_regdomain_update_for_ce(pc_country, pst_regdom, &g_st_using_regdom);
+
+    us_size = (oal_uint16)(OAL_SIZEOF(mac_regclass_info_stru) * g_st_using_regdom.n_reg_rules + MAC_RD_INFO_LEN);
 
     /* 申请内存存放管制域信息，将内存指针作为事件payload抛下去 */
     /* 此处申请的内存在事件处理函数释放(hmac_config_set_country) */
@@ -6024,7 +6235,7 @@ oal_int32  wal_regdomain_update(oal_net_device_stru *pst_net_dev, oal_int8 *pc_c
         return -OAL_ENOMEM;
     }
 
-    wal_regdomain_fill_info(pst_regdom, pst_mac_regdom);
+    wal_regdomain_fill_info(&g_st_using_regdom, pst_mac_regdom);
 
     /***************************************************************************
         抛事件到wal层处理
@@ -6070,7 +6281,7 @@ oal_int32  wal_regdomain_update(oal_net_device_stru *pst_net_dev, oal_int8 *pc_c
         OAM_WARNING_LOG2(0, OAM_SF_ANY, "{wal_regdomain_update::update regdom to kernel.%c,%c}\r\n",
             pc_country[0], pc_country[1]);
         wal_cfg80211_reset_bands();
-        oal_wiphy_apply_custom_regulatory(pst_device->pst_wiphy, pst_regdom);
+        oal_wiphy_apply_custom_regulatory(pst_device->pst_wiphy, &g_st_using_regdom);
         
         wal_cfg80211_save_bands();
     }
@@ -11544,10 +11755,6 @@ OAL_STATIC oal_int32  wal_ioctl_get_assoc_list(oal_net_device_stru *pst_net_dev,
     {
         OAM_ERROR_LOG1(0, OAM_SF_ANY, "{wal_ioctl_get_assoc_list::process failed,ret=%d}", l_ret);
     }
-    else
-    {
-        OAL_IO_PRINT("wal_ioctl_get_assoc_list,pc_sta_list is:%s,len:%d\n", pc_extra, pst_wrqu->data.length);
-    }
 
     oal_free(pst_rsp_msg);
     return l_ret;
@@ -12668,6 +12875,11 @@ oal_int32 wal_init_wlan_netdev(oal_wiphy_stru *pst_wiphy, char *dev_name)
 
     oal_memset(pst_wdev, 0, OAL_SIZEOF(oal_wireless_dev_stru));
 
+#if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
+    pst_net_dev->features    |= NETIF_F_SG;
+    pst_net_dev->hw_features |= NETIF_F_SG;
+#endif /* _PRE_OS_VERSION_LINUX == _PRE_OS_VERSION */
+
     /* 对netdevice进行赋值 */
     pst_net_dev->wireless_handlers             = &g_st_iw_handler_def;
     pst_net_dev->netdev_ops                    = &g_st_wal_net_dev_ops;
@@ -13773,3 +13985,47 @@ OAL_STATIC oal_uint32  wal_hipriv_set_cali_vref(oal_net_device_stru *pst_net_dev
     return OAL_SUCC;
 }
 #endif
+
+
+OAL_STATIC oal_uint32  wal_hipriv_mcs_set_check_enable(oal_net_device_stru *pst_net_dev, oal_int8 *pc_param)
+{
+    oal_uint32                           ul_off_set;
+    oal_int8                             ac_arg[WAL_HIPRIV_CMD_NAME_MAX_LEN];
+    oal_uint32                           ul_ret;
+    oal_int32                            l_ret;
+    wal_msg_write_stru                   st_write_msg;
+    oal_bool_enum_uint8                 *pen_mcs_set_check_enable;
+
+    ul_ret = wal_get_cmd_one_arg(pc_param, ac_arg, &ul_off_set);
+    if (OAL_SUCC != ul_ret)
+    {
+        OAM_WARNING_LOG0(0, OAM_SF_ANY, "wal_hipriv_ht_check_stop: get first arg fail.");
+        return OAL_FAIL;
+    }
+
+    /***************************************************************************
+                            抛事件到wal层处理
+    ***************************************************************************/
+    WAL_WRITE_MSG_HDR_INIT(&st_write_msg, WLAN_CFIGD_MCS_SET_CHECK_ENABLE, OAL_SIZEOF(oal_bool_enum_uint8));
+
+    /* 设置配置命令参数 */
+    pen_mcs_set_check_enable  = (oal_bool_enum_uint8 *)(st_write_msg.auc_value);
+    *pen_mcs_set_check_enable = (oal_bool_enum_uint8)oal_atoi(ac_arg);
+
+    OAM_WARNING_LOG1(0, OAM_SF_SCAN, "wal_hipriv_mcs_set_check_enable_flag= %d.", *pen_mcs_set_check_enable);
+
+    l_ret = wal_send_cfg_event(pst_net_dev,
+                       WAL_MSG_TYPE_WRITE,
+                       WAL_MSG_WRITE_MSG_HDR_LENGTH + OAL_SIZEOF(oal_bool_enum_uint8),
+                       (oal_uint8 *)&st_write_msg,
+                       OAL_FALSE,
+                       OAL_PTR_NULL);
+    if (OAL_SUCC != l_ret)
+    {
+        OAM_WARNING_LOG1(0, OAM_SF_ANY, "wal_hipriv_mcs_set_check_enable::wal_send_cfg_event fail.return err code [%d]!\r\n", l_ret);
+        return (oal_uint32)l_ret;
+    }
+
+    return OAL_SUCC;
+}
+

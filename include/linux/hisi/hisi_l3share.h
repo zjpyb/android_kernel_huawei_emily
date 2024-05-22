@@ -1,6 +1,9 @@
 #ifndef __HISI_L3SHARE_H__
 #define __HISI_L3SHARE_H__
 
+
+
+
 typedef enum _MODULE_ID {
 	DSS_IDLE = 0,
 	VDEC,
@@ -23,8 +26,8 @@ struct l3_cache_release_params {
 	module_id id;
 };
 
-#define	L3C_ACP_ENABLE	0x1
-#define	L3C_ACP_DISABLE	0x2
+#define	L3C_ACP_PENDING	0x1
+#define	L3C_ACP_RELEASE	0x2
 
 /*
 L3 Cache request and release.
@@ -46,12 +49,6 @@ Default configuration: 0x1 & 0xe, private 3MB for acp.
 #ifdef CONFIG_HISI_L3CACHE_SHARE
 int register_l3c_acp_notifier(struct notifier_block *nb);
 int unregister_l3c_acp_notifier(struct notifier_block *nb);
-//int l3c_notifier_call_chain(unsigned long val);
-#else
-static inline int register_l3c_acp_notifier(struct notifier_block *nb) {return 0;}
-static inline int unregister_l3c_acp_notifier(struct notifier_block *nb) {return 0;}
 #endif
-
-
 
 #endif

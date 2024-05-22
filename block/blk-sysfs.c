@@ -14,7 +14,6 @@
 
 #include "blk.h"
 #include "blk-mq.h"
-#include "hisi-blk-mq.h"
 
 struct queue_sysfs_entry {
 	struct attribute attr;
@@ -30,7 +29,7 @@ queue_var_show(unsigned long var, char *page)
 	/*lint -restore*/
 }
 
-static ssize_t
+ssize_t
 queue_var_store(unsigned long *var, const char *page, size_t count)
 {
 	int err;
@@ -95,7 +94,7 @@ queue_requests_store(struct request_queue *q, const char *page, size_t count)
 static ssize_t queue_ra_show(struct request_queue *q, char *page)
 {
 	unsigned long ra_kb = q->backing_dev_info->ra_pages <<
-					(PAGE_CACHE_SHIFT - 10);
+					(PAGE_SHIFT - 10);
 
 	return queue_var_show(ra_kb, (page));
 }
@@ -109,7 +108,7 @@ queue_ra_store(struct request_queue *q, const char *page, size_t count)
 	if (ret < 0)
 		return ret;
 
-	q->backing_dev_info->ra_pages = ra_kb >> (PAGE_CACHE_SHIFT - 10);
+	q->backing_dev_info->ra_pages = ra_kb >> (PAGE_SHIFT - 10);
 
 	return ret;
 }
@@ -136,7 +135,7 @@ static ssize_t queue_max_segment_size_show(struct request_queue *q, char *page)
 	if (blk_queue_cluster(q))
 		return queue_var_show(queue_max_segment_size(q), (page));
 
-	return queue_var_show(PAGE_CACHE_SIZE, (page));
+	return queue_var_show(PAGE_SIZE, (page));
 }
 
 static ssize_t queue_logical_block_size_show(struct request_queue *q, char *page)
@@ -166,11 +165,10 @@ static ssize_t queue_discard_granularity_show(struct request_queue *q, char *pag
 
 static ssize_t queue_discard_max_hw_show(struct request_queue *q, char *page)
 {
-	unsigned long long val;
 
-	val = q->limits.max_hw_discard_sectors << 9;
 	/*lint -save -e421*/
-	return sprintf(page, "%llu\n", val);
+	return sprintf(page, "%llu\n",
+		(unsigned long long)q->limits.max_hw_discard_sectors << 9);
 	/*lint -restore*/
 }
 
@@ -224,7 +222,7 @@ queue_max_sectors_store(struct request_queue *q, const char *page, size_t count)
 {
 	unsigned long max_sectors_kb,
 		max_hw_sectors_kb = queue_max_hw_sectors(q) >> 1,
-			page_kb = 1 << (PAGE_CACHE_SHIFT - 10);
+			page_kb = 1 << (PAGE_SHIFT - 10);
 	ssize_t ret = queue_var_store(&max_sectors_kb, page, count);
 
 	if (ret < 0)
@@ -373,6 +371,47 @@ static ssize_t queue_poll_store(struct request_queue *q, const char *page,
 	return ret;
 }
 
+static ssize_t queue_wc_show(struct request_queue *q, char *page)
+{
+	/*lint -save -e421*/
+	if (test_bit(QUEUE_FLAG_WC, &q->queue_flags))
+		return sprintf(page, "write back\n");
+
+	return sprintf(page, "write through\n");
+	/*lint -restore*/
+}
+
+static ssize_t queue_wc_store(struct request_queue *q, const char *page,
+			      size_t count)
+{
+	int set = -1;
+
+	/*lint -save -e421*/
+	if (!strncmp(page, "write back", 10))
+		set = 1;
+	else if (!strncmp(page, "write through", 13) ||
+		 !strncmp(page, "none", 4))
+		set = 0;
+	/*lint -restore*/
+
+	if (set == -1)
+		return -EINVAL;
+
+	spin_lock_irq(q->queue_lock);
+	if (set)
+		queue_flag_set(QUEUE_FLAG_WC, q);
+	else
+		queue_flag_clear(QUEUE_FLAG_WC, q);
+	spin_unlock_irq(q->queue_lock);
+
+	return count;
+}
+
+static ssize_t queue_dax_show(struct request_queue *q, char *page)
+{
+	return queue_var_show(blk_queue_dax(q), page);
+}
+
 #ifdef CONFIG_WBT
 static ssize_t queue_wb_win_show(struct request_queue *q, char *page)
 {
@@ -425,42 +464,6 @@ static ssize_t queue_wb_lat_store(struct request_queue *q, const char *page,
 
 	q->rq_wb->min_lat_nsec = val * 1000ULL;
 	wbt_update_limits(q->rq_wb);
-	return (ssize_t)count;
-}
-
-static ssize_t queue_wc_show(struct request_queue *q, char *page)
-{
-	/*lint -save -e421*/
-	if (test_bit(QUEUE_FLAG_WC, &q->queue_flags))
-		return sprintf(page, "write back\n");
-
-	return sprintf(page, "write through\n");
-	/*lint -restore*/
-}
-
-static ssize_t queue_wc_store(struct request_queue *q, const char *page,
-			      size_t count)
-{
-	int set = -1;
-
-	/*lint -save -e747*/
-	if (!strncmp(page, "write back", 10))
-		set = 1;
-	else if (!strncmp(page, "write through", 13) ||
-		 !strncmp(page, "none", 4))
-		set = 0;
-	/*lint -restore*/
-
-	if (set == -1)
-		return -EINVAL;
-
-	spin_lock_irq(q->queue_lock);
-	if (set)
-		queue_flag_set(QUEUE_FLAG_WC, q);
-	else
-		queue_flag_clear(QUEUE_FLAG_WC, q);
-	spin_unlock_irq(q->queue_lock);
-
 	return (ssize_t)count;
 }
 
@@ -740,12 +743,142 @@ static struct queue_sysfs_entry queue_poll_entry = {
 	.store = queue_poll_store,
 };
 
-#ifdef CONFIG_WBT
 static struct queue_sysfs_entry queue_wc_entry = {
 	.attr = {.name = "write_cache", .mode = S_IRUGO | S_IWUSR },
 	.show = queue_wc_show,
 	.store = queue_wc_store,
 };
+
+static struct queue_sysfs_entry queue_dax_entry = {
+	.attr = {.name = "dax", .mode = S_IRUGO },
+	.show = queue_dax_show,
+};
+#ifdef CONFIG_HISI_BLK
+#if defined(CONFIG_HISI_DEBUG_FS) || defined(CONFIG_HISI_BLK_DEBUG)
+static struct queue_sysfs_entry queue_hisi_feature_status_entry = {
+	.attr = {.name = "hisi_queue_feature_status", .mode = S_IRUGO },
+	.show = hisi_queue_status_show,
+	.store = NULL,
+};
+
+static struct queue_sysfs_entry queue_hisi_io_latency_warning_threshold_entry = {
+	.attr = {.name = "io_latency_warning_threshold", .mode = S_IWUSR },
+	.show = NULL,
+	.store = hisi_queue_io_latency_warning_threshold_store,
+};
+
+static struct queue_sysfs_entry queue_hisi_io_latency_statistic_enable_entry = {
+	.attr = {.name = "io_latency_statistic_enable", .mode = S_IWUSR },
+	.show = NULL,
+	.store = hisi_queue_io_latency_statistic_enable_store,
+};
+
+static struct queue_sysfs_entry queue_hisi_io_latency_statistic_entry = {
+	.attr = {.name = "io_latency_statistic", .mode = S_IRUGO },
+	.show = hisi_queue_io_latency_statistic_show,
+	.store = NULL,
+};
+
+static struct queue_sysfs_entry queue_hisi_io_hw_latency_statistic_entry = {
+	.attr = {.name = "io_hw_latency_statistic", .mode = S_IRUGO },
+	.show = hisi_queue_io_hw_latency_statistic_show,
+	.store = NULL,
+};
+
+static struct queue_sysfs_entry queue_hisi_io_sw_latency_statistic_entry = {
+	.attr = {.name = "io_sw_latency_statistic", .mode = S_IRUGO },
+	.show = hisi_queue_io_sw_latency_statistic_show,
+	.store = NULL,
+};
+
+static struct queue_sysfs_entry queue_hisi_busy_idle_enable_entry = {
+	.attr = {.name = "busy_idle_enable", .mode = S_IWUSR },
+	.show = NULL,
+	.store = hisi_queue_busy_idle_enable_store,
+};
+
+static struct queue_sysfs_entry queue_hisi_busy_idle_statistic_entry = {
+	.attr = {.name = "busy_idle_statistic_reset", .mode = S_IWUSR },
+	.show = NULL,
+	.store = hisi_queue_busy_idle_statistic_reset_store,
+};
+
+static struct queue_sysfs_entry queue_hisi_busy_idle_entry = {
+	.attr = {.name = "busy_idle_statistic", .mode = S_IRUGO },
+	.show = hisi_queue_busy_idle_statistic_show,
+	.store = NULL,
+};
+
+
+static struct queue_sysfs_entry queue_hisi_io_timeout_tst_entry = {
+	.attr = {.name = "hisi_queue_tst_io_timeout", .mode = S_IWUSR },
+	.show = NULL,
+	.store = hisi_queue_timeout_tst_enable_store,
+};
+
+static struct queue_sysfs_entry queue_hisi_io_latency_tst_entry = {
+	.attr = {.name = "hisi_queue_tst_io_latency", .mode = S_IWUSR },
+	.show = NULL,
+	.store = hisi_queue_io_latency_tst_enable_store,
+};
+
+static struct queue_sysfs_entry queue_hisi_busy_idle_tst_entry = {
+	.attr = {.name = "hisi_queue_tst_busy_idle_enable", .mode = S_IWUSR },
+	.show = NULL,
+	.store = hisi_queue_busy_idle_tst_enable_store,
+};
+
+static struct queue_sysfs_entry queue_hisi_busy_idle_multi_nb_tst_entry = {
+	.attr = {.name = "hisi_queue_tst_busy_idle_multi_nb_enable", .mode = S_IWUSR },
+	.show = NULL,
+	.store = hisi_queue_busy_idle_multi_nb_tst_enable_store,
+};
+
+static struct queue_sysfs_entry queue_hisi_busy_idle_tst_proc_result_simulate_entry = {
+	.attr = {.name = "hisi_queue_tst_busy_idle_proc_result_simulate", .mode = S_IWUSR },
+	.show = NULL,
+	.store = hisi_queue_busy_idle_tst_proc_result_simulate_store,
+};
+
+static struct queue_sysfs_entry queue_hisi_busy_idle_tst_proc_latency_simulate_entry = {
+	.attr = {.name = "hisi_queue_tst_busy_idle_proc_latency_simulate", .mode = S_IWUSR },
+	.show = NULL,
+	.store = hisi_queue_busy_idle_tst_proc_latency_simulate_store,
+};
+
+static struct queue_sysfs_entry queue_hisi_apd_tst_entry = {
+	.attr = {.name = "hisi_queue_tst_apd", .mode = S_IWUSR },
+	.show = NULL,
+	.store = hisi_queue_apd_tst_enable_store,
+};
+#endif /* CONFIG_HISI_DEBUG_FS */
+
+static ssize_t queue_usr_ctrl_store(struct request_queue *q, const char *page, size_t count)
+{
+	int ret;
+
+	ret = queue_var_store(&q->hisi_queue.usr_ctrl_n, page, count);
+	if (ret < 0)
+		q->hisi_queue.usr_ctrl_n = 0;
+	hisi_blk_queue_usr_ctrl_set(q);
+	return ret;
+}
+
+static struct queue_sysfs_entry queue_usr_ctrl_entry = {
+	.attr = {.name = "usr_ctrl", .mode =  S_IWUSR | S_IWGRP },
+	.show = NULL,
+	.store = queue_usr_ctrl_store,
+};
+#endif /* CONFIG_HISI_BLK */
+
+/*lint -save -e785*/
+static struct queue_sysfs_entry queue_avg_perf_entry = {
+	.attr = {.name = "average_perf", .mode = S_IRUGO },
+	.show = queue_avg_perf_show,
+};
+/*lint restore*/
+
+#ifdef CONFIG_WBT
 
 /*lint -save -e785*/
 static struct queue_sysfs_entry queue_stats_entry = {
@@ -779,169 +912,6 @@ static struct queue_sysfs_entry queue_wb_mode_entry = {
 };
 #endif
 
-#ifdef CONFIG_HISI_BLK_CORE
-#ifdef CONFIG_HISI_DEBUG_FS
-extern ssize_t hisi_queue_busy_idle_enable_show(struct request_queue *q, char *page);
-extern ssize_t hisi_queue_busy_idle_enable_store(struct request_queue *q, const char *page, size_t count);
-extern ssize_t hisi_queue_busy_idle_statistic_show(struct request_queue *q, char *page);
-extern ssize_t hisi_queue_busy_idle_statistic_store(struct request_queue *q, const char *page, size_t count);
-extern ssize_t hisi_queue_idle_dur_store(struct request_queue *q, const char *page, size_t count);
-extern ssize_t hisi_queue_idle_dur_show(struct request_queue *q, char *page);
-extern ssize_t hisi_queue_busy_idle_test_enable_store(struct request_queue *q, const char *page, size_t count);
-extern ssize_t hisi_queue_busy_idle_multi_nb_test_enable_store(struct request_queue *q, const char *page, size_t count);
-extern ssize_t hisi_queue_hw_idle_enable_show(struct request_queue *q, char *page);
-extern ssize_t hisi_queue_hw_idle_enable_store(struct request_queue *q, const char *page, size_t count);
-extern ssize_t hisi_queue_idle_state_show(struct request_queue *q, char *page);
-#ifdef CONFIG_HISI_IO_LATENCY_TRACE
-extern ssize_t hisi_queue_io_latency_warning_threshold_show(struct request_queue *q, char *page);
-extern ssize_t hisi_queue_io_latency_warning_threshold_store(struct request_queue *q, const char *page, size_t count);
-extern ssize_t hisi_queue_io_latency_statistic_enable_show(struct request_queue *q, char *page);
-extern ssize_t hisi_queue_io_latency_statistic_enable_store(struct request_queue *q, const char *page, size_t count);
-extern ssize_t queue_io_latency_statistic_show(struct request_queue *q, char *page);
-extern ssize_t queue_io_latency_statistic_store(struct request_queue *q, const char *page, size_t count);
-extern ssize_t queue_io_hw_latency_statistic_show(struct request_queue *q, char *page);
-extern ssize_t queue_io_sw_latency_statistic_show(struct request_queue *q, char *page);
-#endif
-#ifdef CONFIG_HISI_MQ_DISPATCH_DECISION
-extern ssize_t hisi_queue_sync_io_limit_show(struct request_queue *q, char *page);
-extern ssize_t hisi_queue_sync_io_limit_store(struct request_queue *q, const char *page, size_t count);
-extern ssize_t hisi_queue_async_io_limit_show(struct request_queue *q, char *page);
-extern ssize_t hisi_queue_async_io_limit_store(struct request_queue *q, const char *page, size_t count);
-extern ssize_t hisi_queue_sync_long_burst_duration_show(struct request_queue *q, char *page);
-extern ssize_t hisi_queue_sync_long_burst_duration_store(struct request_queue *q, const char *page, size_t count);
-#endif
-extern ssize_t hisi_queue_write_len_show(struct request_queue *q, char *page);
-extern ssize_t hisi_queue_discard_len_show(struct request_queue *q, char *page);
-extern ssize_t hisi_queue_feature_status_show(struct request_queue *q, char *page);
-static struct queue_sysfs_entry queue_hisi_feature_status_entry = {
-	.attr = {.name = "hisi_queue_feature_status", .mode = S_IRUGO },
-	.show = hisi_queue_feature_status_show,
-	.store = NULL,
-};
-#ifdef CONFIG_HISI_MQ_DISPATCH_DECISION
-static struct queue_sysfs_entry queue_sync_io_limit_entry = {
-	.attr = {.name = "sync_io_limit", .mode = S_IRUGO | S_IWUSR },
-	.show = hisi_queue_sync_io_limit_show,
-	.store = hisi_queue_sync_io_limit_store,
-};
-static struct queue_sysfs_entry queue_async_io_limit_entry = {
-	.attr = {.name = "async_io_limit", .mode = S_IRUGO | S_IWUSR },
-	.show = hisi_queue_async_io_limit_show,
-	.store = hisi_queue_async_io_limit_store,
-};
-static struct queue_sysfs_entry queue_sync_long_burst_duration_entry = {
-	.attr = {.name = "sync_long_burst_duration", .mode = S_IRUGO | S_IWUSR },
-	.show = hisi_queue_sync_long_burst_duration_show,
-	.store = hisi_queue_sync_long_burst_duration_store,
-};
-#endif
-static struct queue_sysfs_entry queue_busy_idle_enable_entry = {
-	.attr = {.name = "busy_idle_enable", .mode = S_IRUGO | S_IWUSR },
-	.show = hisi_queue_busy_idle_enable_show,
-	.store = hisi_queue_busy_idle_enable_store,
-};
-static struct queue_sysfs_entry queue_busy_idle_statistic_entry = {
-	.attr = {.name = "busy_idle_statistic", .mode = S_IRUGO | S_IWUSR },
-	.show = hisi_queue_busy_idle_statistic_show,
-	.store = hisi_queue_busy_idle_statistic_store,
-};
-static struct queue_sysfs_entry queue_idle_dur_statistic_entry = {
-	.attr = {.name = "idle_dur_statistic", .mode = S_IRUGO | S_IWUSR },
-	.show = hisi_queue_idle_dur_show,
-	.store = hisi_queue_idle_dur_store,
-};
-static struct queue_sysfs_entry queue_busy_idle_test_enable_entry = {
-	.attr = {.name = "busy_idle_test_enable", .mode = S_IWUSR },
-	.show = NULL,
-	.store = hisi_queue_busy_idle_test_enable_store,
-};
-static struct queue_sysfs_entry queue_busy_idle_multi_nb_test_enable_entry = {
-	.attr = {.name = "busy_idle_multi_nb_test_enable", .mode = S_IWUSR },
-	.show = NULL,
-	.store = hisi_queue_busy_idle_multi_nb_test_enable_store,
-};
-static struct queue_sysfs_entry queue_hw_idle_enable_entry = {
-	.attr = {.name = "hw_idle_enable", .mode = S_IRUGO },
-	.show = hisi_queue_hw_idle_enable_show,
-};
-static struct queue_sysfs_entry queue_idle_state_entry = {
-	.attr = {.name = "idle_state", .mode = S_IRUGO },
-	.show = hisi_queue_idle_state_show,
-};
-
-#ifdef CONFIG_HISI_IO_LATENCY_TRACE
-static struct queue_sysfs_entry queue_io_latency_warning_threshold_entry = {
-	.attr = {.name = "io_latency_warning_threshold", .mode = S_IRUGO | S_IWUSR },
-	.show = hisi_queue_io_latency_warning_threshold_show,
-	.store = hisi_queue_io_latency_warning_threshold_store,
-};
-
-static struct queue_sysfs_entry queue_io_latency_statistic_enable_entry = {
-	.attr = {.name = "io_latency_statistic_enable", .mode = S_IRUGO | S_IWUSR },
-	.show = hisi_queue_io_latency_statistic_enable_show,
-	.store = hisi_queue_io_latency_statistic_enable_store,
-};
-
-static struct queue_sysfs_entry queue_io_latency_statistic_entry = {
-	.attr = {.name = "io_latency_statistic", .mode = S_IRUGO | S_IWUSR },
-	.show = queue_io_latency_statistic_show,
-	.store = queue_io_latency_statistic_store,
-};
-
-static struct queue_sysfs_entry queue_io_hw_latency_statistic_entry = {
-	.attr = {.name = "io_hw_latency_statistic", .mode = S_IRUGO | S_IWUSR },
-	.show = queue_io_hw_latency_statistic_show,
-	.store = queue_io_latency_statistic_store,
-};
-
-static struct queue_sysfs_entry queue_io_sw_latency_statistic_entry = {
-	.attr = {.name = "io_sw_latency_statistic", .mode = S_IRUGO | S_IWUSR },
-	.show = queue_io_sw_latency_statistic_show,
-	.store = queue_io_latency_statistic_store,
-};
-#endif /* CONFIG_HISI_IO_LATENCY_TRACE */
-
-static struct queue_sysfs_entry queue_write_len_entry = {
-	.attr = {.name = "total_write_len", .mode = S_IRUGO },
-	.show = hisi_queue_write_len_show,
-};
-
-static struct queue_sysfs_entry queue_discard_len_entry = {
-	.attr = {.name = "total_discard_len", .mode = S_IRUGO },
-	.show = hisi_queue_discard_len_show,
-};
-#endif /* CONFIG_HISI_DEBUG_FS */
-#endif /* CONFIG_HISI_BLK_CORE */
-
-#ifdef CONFIG_BLK_QUEUE_USR_CTRL
-static ssize_t
-queue_usr_ctrl_store(struct request_queue *q, const char *page, size_t count)
-{
-	int ret;
-
-	ret = queue_var_store(&q->usr_ctrl_n, page, count);
-	if (ret < 0)
-		q->usr_ctrl_n = 0;
-#ifdef CONFIG_HISI_BLK_CORE
-	blk_queue_usr_ctrl_set(q);
-#endif
-	return ret;
-}
-
-static struct queue_sysfs_entry queue_usr_ctrl_entry = {
-	.attr = {.name = "usr_ctrl", .mode =  S_IWUSR | S_IWGRP },
-	.show = NULL,
-	.store = queue_usr_ctrl_store,
-};
-#endif
-
-/*lint -save -e785*/
-static struct queue_sysfs_entry queue_avg_perf_entry = {
-	.attr = {.name = "average_perf", .mode = S_IRUGO },
-	.show = queue_avg_perf_show,
-};
-/*lint restore*/
-
 static struct queue_sysfs_entry queue_hw_inflight_entry = {
 	.attr = {.name = "hw_inflight", .mode = S_IRUGO },
 	.show = queue_hw_inflight_show,
@@ -952,6 +922,20 @@ static struct queue_sysfs_entry queue_max_bg_depth_entry = {
 	.show = queue_max_bg_depth_show,
 	.store = queue_max_bg_depth_store,
 };
+
+extern ssize_t hisi_queue_hw_idle_enable_show(struct request_queue *q, char *page);
+extern ssize_t hisi_queue_hw_idle_enable_store(struct request_queue *q, const char *page, size_t count);
+extern ssize_t hisi_queue_idle_state_show(struct request_queue *q, char *page);
+static struct queue_sysfs_entry queue_hw_idle_enable_entry = {
+	.attr = {.name = "hw_idle_enable", .mode = S_IRUGO },
+	.show = hisi_queue_hw_idle_enable_show,
+};
+
+static struct queue_sysfs_entry queue_idle_state_entry = {
+	.attr = {.name = "idle_state", .mode = S_IRUGO },
+	.show = hisi_queue_idle_state_show,
+};
+
 
 static struct attribute *default_attrs[] = {
 	&queue_requests_entry.attr,
@@ -978,37 +962,32 @@ static struct attribute *default_attrs[] = {
 	&queue_iostats_entry.attr,
 	&queue_random_entry.attr,
 	&queue_poll_entry.attr,
-#ifdef CONFIG_BLK_QUEUE_USR_CTRL
-	&queue_usr_ctrl_entry.attr,
-#endif
-#ifdef CONFIG_HISI_BLK_CORE
-#ifdef CONFIG_HISI_DEBUG_FS
+#ifdef CONFIG_HISI_BLK
+#if defined(CONFIG_HISI_DEBUG_FS) || defined(CONFIG_HISI_BLK_DEBUG)
 	&queue_hisi_feature_status_entry.attr,
-#ifdef CONFIG_HISI_MQ_DISPATCH_DECISION
-	&queue_sync_io_limit_entry.attr,
-	&queue_async_io_limit_entry.attr,
-	&queue_sync_long_burst_duration_entry.attr,
-#endif
-	&queue_busy_idle_enable_entry.attr,
-	&queue_busy_idle_statistic_entry.attr,
-	&queue_idle_dur_statistic_entry.attr,
-	&queue_busy_idle_test_enable_entry.attr,
-	&queue_busy_idle_multi_nb_test_enable_entry.attr,
+	&queue_hisi_io_latency_warning_threshold_entry.attr,
+	&queue_hisi_io_latency_statistic_enable_entry.attr,
+	&queue_hisi_io_latency_statistic_entry.attr,
+	&queue_hisi_io_hw_latency_statistic_entry.attr,
+	&queue_hisi_io_sw_latency_statistic_entry.attr,
+	&queue_hisi_busy_idle_enable_entry.attr,
+	&queue_hisi_busy_idle_statistic_entry.attr,
+	&queue_hisi_busy_idle_entry.attr,
+	&queue_hisi_io_timeout_tst_entry.attr,
+	&queue_hisi_io_latency_tst_entry.attr,
 	&queue_hw_idle_enable_entry.attr,
 	&queue_idle_state_entry.attr,
-#ifdef CONFIG_HISI_IO_LATENCY_TRACE
-	&queue_io_latency_warning_threshold_entry.attr,
-	&queue_io_latency_statistic_enable_entry.attr,
-	&queue_io_latency_statistic_entry.attr,
-	&queue_io_hw_latency_statistic_entry.attr,
-	&queue_io_sw_latency_statistic_entry.attr,
-#endif
-	&queue_write_len_entry.attr,
-	&queue_discard_len_entry.attr,
+	&queue_hisi_busy_idle_tst_entry.attr,
+	&queue_hisi_busy_idle_multi_nb_tst_entry.attr,
+	&queue_hisi_busy_idle_tst_proc_result_simulate_entry.attr,
+	&queue_hisi_busy_idle_tst_proc_latency_simulate_entry.attr,
+	&queue_hisi_apd_tst_entry.attr,
 #endif /* CONFIG_HISI_DEBUG_FS */
-#endif /* CONFIG_HISI_BLK_CORE */
-#ifdef CONFIG_WBT
+	&queue_usr_ctrl_entry.attr,
+#endif /* CONFIG_HISI_BLK */
 	&queue_wc_entry.attr,
+	&queue_dax_entry.attr,
+#ifdef CONFIG_WBT
 	&queue_stats_entry.attr,
 	&queue_wb_lat_entry.attr,
 	&queue_wb_win_entry.attr,
@@ -1178,7 +1157,7 @@ int blk_register_queue(struct gendisk *disk)
 
 	if (WARN_ON(!q))
 		return -ENXIO;
-#ifdef CONFIG_HISI_BLK_CORE
+#ifdef CONFIG_HISI_BLK
 	hisi_blk_queue_register(q,disk);
 #endif
 	/*
@@ -1192,13 +1171,8 @@ int blk_register_queue(struct gendisk *disk)
 	 */
 	if (!blk_queue_init_done(q)) {
 		queue_flag_set_unlocked(QUEUE_FLAG_INIT_DONE, q);
-
-#ifndef CONFIG_BLK_MQ_REFCOUNT
-#if 0 /* RCU mode is slow and will result in longer CPU hotplug latency */
+#ifndef CONFIG_HISI_BLK /* RCU mode is slow and will result in longer CPU hotplug latency */
 		percpu_ref_switch_to_percpu(&q->q_usage_counter);
-#endif
-#else
-		blk_ref_finish_init(&q->q_usage_counter);
 #endif
 		blk_queue_bypass_end(q);
 	}
@@ -1216,7 +1190,7 @@ int blk_register_queue(struct gendisk *disk)
 	kobject_uevent(&q->kobj, KOBJ_ADD);
 
 	if (q->mq_ops)
-		blk_mq_register_disk(disk);
+		blk_mq_register_dev(dev, q);
 
 #ifdef CONFIG_WBT
 	blk_wb_init(q);
@@ -1245,7 +1219,7 @@ void blk_unregister_queue(struct gendisk *disk)
 		return;
 
 	if (q->mq_ops)
-		blk_mq_unregister_disk(disk);
+		blk_mq_unregister_dev(disk_to_dev(disk), q);
 
 	if (q->request_fn)
 		elv_unregister_queue(q);

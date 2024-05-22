@@ -13,13 +13,13 @@
 
 #include <linux/types.h>
 
-#define BB_PRINT_PN(args...)    printk(KERN_ERR args);
-#define BB_PRINT_ERR(args...)   printk(KERN_ERR args);
-#define BB_PRINT_DBG(args...)   printk(KERN_DEBUG args);
+#define BB_PRINT_PN(args...)    pr_info(args);
+#define BB_PRINT_ERR(args...)   pr_err("<bbox fail>"args);
+#define BB_PRINT_DBG(args...)   pr_debug(args);
 #define BB_PRINT_START(args...) \
-	printk(KERN_INFO ">>>>>enter blackbox %s: %.4d.\n", __func__, __LINE__);
+	pr_info(">>>>>enter blackbox %s: %.4d.\n", __func__, __LINE__);
 #define BB_PRINT_END(args...)   \
-	printk(KERN_INFO "<<<<<exit  blackbox %s: %.4d.\n", __func__, __LINE__);
+	pr_info("<<<<<exit  blackbox %s: %.4d.\n", __func__, __LINE__);
 
 void rdr_print_all_ops(void);
 void rdr_print_all_exc(void);

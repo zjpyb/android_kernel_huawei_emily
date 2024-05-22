@@ -71,7 +71,6 @@ extern "C" {
 /*****************************************************************************
   2 常量定义
 *****************************************************************************/
-/* Added by f62575 for SS FDN&Call Control, 2013-05-06, begin */
 /* 因为新增的TafMmiEncode.c也要使用下面宏，从Taf_MmiStrParse.c移动到Taf_MmiStrParse.c */
 /*****************************************************************************
   3 宏定义
@@ -96,7 +95,6 @@ extern "C" {
 
 #define MN_MMI_MAX_BUF_SIZE             64
 #define MN_MMI_MAX_PARA_NUM             4
-/* Added by f62575 for SS FDN&Call Control, 2013-05-06, end */
 
 #define     TAF_MMI_SS_MAX_OP_STRING_LEN                               3
 #define     TAF_MMI_CHLD_MAX_STRING_LEN                                3
@@ -124,9 +122,7 @@ enum TAF_MMI_OPERATION_TYPE_ENUM
     TAF_MMI_DEACTIVATE_SS,                                                      /*Deactivate Operation*/
     TAF_MMI_INTERROGATE_SS,                                                     /*Interrogate Operation*/
     TAF_MMI_REGISTER_PASSWD,                                                    /*Register the password*/
-    /* Delete by f62575 for SS FDN&Call Control, 2013-05-06, begin */
     /* Delete TAF_MMI_GET_PASSWD */
-    /* Delete by f62575 for SS FDN&Call Control, 2013-05-06, end */
     TAF_MMI_FWD_CHECK_SS_IND,                                                   /*Forward Check Operation*/
     TAF_MMI_PROCESS_USSD_REQ,                                                   /*Process USSD Request*/
     TAF_MMI_SUPPRESS_CLIR,
@@ -144,7 +140,6 @@ enum TAF_MMI_OPERATION_TYPE_ENUM
 };
 typedef TAF_UINT8 MN_MMI_OPERATION_TYPE_ENUM_U8;
 
-/* Added by f62575 for SS FDN&Call Control, 2013-05-06, begin */
 /* 因为新增的TafMmiEncode.c也要使用下面结构，从Taf_MmiStrParse.c移动到Taf_MmiStrParse.c */
 typedef struct
 {
@@ -190,7 +185,7 @@ typedef struct
     MN_MMI_OPERATION_TYPE_ENUM_U8       enSsOpType;
     VOS_UINT8                           aucRsv[7];
 }MN_MMI_SS_OP_Tbl_STRU;
-/* Added by f62575 for SS FDN&Call Control, 2013-05-06, end */
+
 
 
 typedef struct
@@ -234,7 +229,6 @@ TAF_UINT32 MN_MmiStringParse(
 
 extern MN_CALL_CLIR_CFG_ENUM_U8  f_enClirOperate;
 
-/* Added by f62575 for SS FDN&Call Control, 2013-05-06, begin */
 
 VOS_UINT32 MMI_GetOporationTypeTblSize(VOS_VOID);
 
@@ -252,7 +246,6 @@ VOS_UINT32 MMI_GetSCTblSize(VOS_VOID);
 
 
 MN_MMI_SC_TABLE_STRU *MMI_GetSCTblAddr(VOS_VOID);
-/* Added by f62575 for SS FDN&Call Control, 2013-05-06, end */
 
 
 extern VOS_BOOL MMI_DecodeScAndSi(

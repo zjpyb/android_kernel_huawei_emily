@@ -45,7 +45,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  *
  */
-
+#include <linux/of_platform.h>
 #include <linux/module.h>
 #include <linux/clk.h>
 #include <linux/fs.h>
@@ -78,7 +78,7 @@ u32 g_printlog_transId = 0;
 u32 g_translog_transId = 0;
 print_report_hook g_bsp_print_hook = NULL;
 hds_lock_ctrl_info g_hds_lock_ctrl;
-
+u64 g_dma_hds_mask = (u64)(-1);
 
 static inline void * bsp_MemPhyToVirt(u8 *pucCurPhyAddr, u8 *pucPhyStart, u8 *pucVirtStart, u32 ulBufLen)
 {
@@ -362,6 +362,8 @@ s32 bsp_socp_log_chan_cfg(void)
 
     /* coverity[secure_coding] */
     memset_s(&dev, sizeof(dev), 0, sizeof(dev));
+    dma_set_mask_and_coherent(&dev, g_dma_hds_mask);
+    of_dma_configure(&dev, NULL);
     p =(u8 *) dma_alloc_coherent(&dev, (unsigned long)LOG_SRC_BUF_LEN, &ulAddress, GFP_KERNEL);
 
     if(HDS_NULL == p)

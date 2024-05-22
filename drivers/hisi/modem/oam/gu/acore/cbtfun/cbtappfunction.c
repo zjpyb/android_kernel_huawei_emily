@@ -62,18 +62,7 @@
 #define    THIS_FILE_ID        PS_FILE_ID_APP_CBT_FUNC_C
 
 
-/*****************************************************************************
- Prototype       : CBTAppFidInit
- Description     : OM' initializtion function
- Input           : None
- Output          : None
- Return Value    : VOS_UINT32
 
- History         : ---
-    Date         : 2008-03-20
-    Author       : g47350
-    Modification : Created function
- *****************************************************************************/
 VOS_UINT32 CBTAppFidInit(enum VOS_INIT_PHASE_DEFINE ip)
 {
     VOS_UINT32 ulRslt;

@@ -26,10 +26,12 @@
 #include <linux/remoteproc.h>
 #include <linux/atomic.h>
 #include <linux/io.h>
+#include <linux/dma-buf.h>
 #include <linux/platform_data/remoteproc-hisi.h>
 #include "isprdr.h"
 #include <linux/ion.h>
 #include <linux/hisi/hisi_ion.h>
+#include <linux/version.h>
 
 #define MEM_MAP_MAX_SIZE    (0x40000)
 #define MEM_SHARED_SIZE     (0x1000)
@@ -63,6 +65,7 @@ struct coredump_user_para
 
 
 struct isplog_device_s {
+    struct device *ispdev;
     void __iomem *share_mem;
     struct rproc_shared_para *share_para;
     wait_queue_head_t wait_ctl;
@@ -361,7 +364,7 @@ static int isplog_mmap(struct file *filp, struct vm_area_struct *vma)
     }
 
     if ((isprdr_addr = get_isprdr_addr()) == 0) {
-        pr_err("[%s] Failed : isprdr_addr.0x%llx\n", __func__, isprdr_addr);
+        pr_err("[%s] Failed : isprdr_addr.0\n", __func__);
         return -ENOMEM;
     }
 
@@ -375,10 +378,6 @@ static int isplog_mmap(struct file *filp, struct vm_area_struct *vma)
         pr_err("%s: size.0x%lx.\n", __func__, size);
         return -EINVAL;
     }
-
-    pr_info("[%s] enter, paddr = 0x%llx, vaddr.0x%lx, size.0x%lx.(0x%lx - 0x%lx), _prot0x%lx\n",
-         __func__, isprdr_addr, vma->vm_start, size, vma->vm_end,
-         vma->vm_start, (unsigned long)vma->vm_page_prot);
     vma->vm_page_prot = pgprot_writecombine(vma->vm_page_prot);
     ret = remap_pfn_range(vma, vma->vm_start,
                         (isprdr_addr >> PAGE_SHIFT),
@@ -597,6 +596,7 @@ static int __init isplog_init(void)
 	atomic_set(&dev->timer_cnt, 0);
 	setup_timer(&dev->sync_timer, sync_timer_fn, 0);
     dev->use_cacheable_rdr = 1;
+    dev->ispdev = isplog_miscdev.this_device;
     dev->initialized = 1;
     pr_info("[%s] -\n", __func__);
 

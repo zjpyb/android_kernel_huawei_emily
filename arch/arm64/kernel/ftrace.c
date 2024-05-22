@@ -19,6 +19,7 @@
 #include <asm/sections.h>
 
 #ifdef CONFIG_DYNAMIC_FTRACE
+
 #ifdef CONFIG_DEBUG_RODATA
 #include "../mm/mm.h"
 #endif
@@ -137,7 +138,6 @@ int __init ftrace_dyn_arch_init(void)
  *
  * Note that @frame_pointer is used only for sanity check later.
  */
-/*lint -save -e578*/
 void prepare_ftrace_return(unsigned long *parent, unsigned long self_addr,
 			   unsigned long frame_pointer)
 {
@@ -146,7 +146,7 @@ void prepare_ftrace_return(unsigned long *parent, unsigned long self_addr,
 	struct ftrace_graph_ent trace;
 	int err;
 
-	if (unlikely(atomic_read(&current->tracing_graph_pause))) /*lint !e666*/
+	if (unlikely(atomic_read(&current->tracing_graph_pause)))
 		return;
 
 	/*
@@ -164,13 +164,12 @@ void prepare_ftrace_return(unsigned long *parent, unsigned long self_addr,
 		return;
 
 	err = ftrace_push_return_trace(old, self_addr, &trace.depth,
-				       frame_pointer);
+				       frame_pointer, NULL);
 	if (err == -EBUSY)
 		return;
 	else
 		*parent = return_hooker;
 }
-/*lint -restore*/
 
 #ifdef CONFIG_DYNAMIC_FTRACE
 /*

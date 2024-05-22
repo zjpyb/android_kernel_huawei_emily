@@ -57,7 +57,7 @@ static ssize_t addresses_show(struct device *dev,
 		return sprintf(buf, "%pM\n", wiphy->perm_addr);
 
 	for (i = 0; i < wiphy->n_addresses; i++)
-		buf += sprintf(buf, "%pM\n", &wiphy->addresses[i].addr);
+		buf += sprintf(buf, "%pM\n", wiphy->addresses[i].addr);
 
 	return buf - start;
 }
@@ -91,7 +91,7 @@ static void cfg80211_leave_all(struct cfg80211_registered_device *rdev)
 {
 	struct wireless_dev *wdev;
 
-	list_for_each_entry(wdev, &rdev->wdev_list, list)
+	list_for_each_entry(wdev, &rdev->wiphy.wdev_list, list)
 		cfg80211_leave(rdev, wdev);
 }
 
@@ -105,8 +105,10 @@ static int wiphy_suspend(struct device *dev)
 	rtnl_lock();
 	if (rdev->wiphy.registered) {
 #ifndef CONFIG_HW_WIFI
-		if (!rdev->wiphy.wowlan_config)
+		if (!rdev->wiphy.wowlan_config) {
 			cfg80211_leave_all(rdev);
+			cfg80211_process_rdev_events(rdev);
+		}
 #endif
 		if (rdev->ops->suspend)
 			ret = rdev_suspend(rdev, rdev->wiphy.wowlan_config);
@@ -114,6 +116,7 @@ static int wiphy_suspend(struct device *dev)
 			/* Driver refuse to configure wowlan */
 #ifndef CONFIG_HW_WIFI
 			cfg80211_leave_all(rdev);
+			cfg80211_process_rdev_events(rdev);
 #endif
 			ret = rdev_suspend(rdev, NULL);
 		}
@@ -131,12 +134,10 @@ static int wiphy_resume(struct device *dev)
 	/* Age scan results with time spent in suspend */
 	cfg80211_bss_age(rdev, get_seconds() - rdev->suspend_at);
 
-	if (rdev->ops->resume) {
-		rtnl_lock();
-		if (rdev->wiphy.registered)
-			ret = rdev_resume(rdev);
-		rtnl_unlock();
-	}
+	rtnl_lock();
+	if (rdev->wiphy.registered && rdev->ops->resume)
+		ret = rdev_resume(rdev);
+	rtnl_unlock();
 
 	return ret;
 }

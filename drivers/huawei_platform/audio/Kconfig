@@ -17,5 +17,6 @@ source "drivers/huawei_platform/audio/ak4376-kernel-4-1/Kconfig"
 source "drivers/huawei_platform/audio/hifi_vir_dai/Kconfig"
 source "drivers/huawei_platform/audio/usb_analog_hs_module/Kconfig"
 source "drivers/huawei_platform/audio/usb_audio_power/Kconfig"
+source "drivers/huawei_platform/audio/usb_audio_common/Kconfig"
 endif # if HUAWEI_AUDIO
 endmenu

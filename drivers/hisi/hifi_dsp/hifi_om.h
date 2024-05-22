@@ -140,12 +140,17 @@ enum EFFECT_ALGO_ENUM                          /*À„∑®¡–±Ì*/
 enum EFFECT_STREAM_ID{
 	AUDIO_STREAM_PCM_OUTPUT         = 0,
 	AUDIO_STREAM_PLAYER_OUTPUT,
+	AUDIO_STREAM_DIRECT_OUTPUT,
+	AUDIO_STREAM_LOWLATENCY_OUTPUT,
+	AUDIO_STREAM_MMAP_OUTPUT,
 	AUDIO_STREAM_MIXER_OUTPUT,
 	AUDIO_STREAM_VOICE_OUTPUT,
 	AUDIO_STREAM_VOICEPP_OUTPUT,
 	AUDIO_STREAM_OUTPUT_CNT,
 
 	AUDIO_STREAM_PCM_INPUT          = 0x10,
+	AUDIO_STREAM_LOWLATENCY_INPUT,
+	AUDIO_STREAM_MMAP_INPUT,
 	AUDIO_STREAM_VOICE_INPUT,
 	AUDIO_STREAM_VOICEPP_INPUT,
 	AUDIO_STREAM_INPUT_CNT,
@@ -327,12 +332,6 @@ struct hifi_effect_info_stru {
 	char		effect_name[64];
 };
 
-/* voice bsd param hsm struct */
-struct voice_bsd_param_hsm {
-	unsigned int    data_len;
-	unsigned char   *pdata;
-};
-
 enum hifi_om_work_id {
 	HIFI_OM_WORK_VOICE_BSD = 0,
 	HIFI_OM_WORK_AUDIO_OM_DETECTION,
@@ -415,7 +414,7 @@ void hifi_om_deinit(struct platform_device *dev);
 int hifi_dsp_dump_hifi(void __user *arg);
 void hifi_dump_panic_log(void);
 
-bool hifi_is_loaded(void);
+bool is_hifi_loaded(void);
 
 void hifi_om_effect_mcps_info_show(struct hifi_om_effect_mcps_stru *hifi_mcps_info);
 void hifi_om_cpu_load_info_show(struct hifi_om_load_info_stru *hifi_om_info);

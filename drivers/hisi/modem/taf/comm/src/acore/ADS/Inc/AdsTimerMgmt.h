@@ -68,9 +68,7 @@ extern "C" {
   2 宏定义
 *****************************************************************************/
 /* ADS中同时运行的定时器的最大数目,目前只有一个 */
-/* Modified by l60609 for DSDA Phase II, 2012-11-22, Begin */
 #define ADS_MAX_TIMER_NUM               (TI_ADS_TIMER_BUTT)
-/* Modified by l60609 for DSDA Phase II, 2012-11-22, End */
 
 /* 定时器TI_ADS_UL_SEND的时长 */
 #define TI_ADS_UL_SEND_LEN              (10)
@@ -81,10 +79,8 @@ extern "C" {
 /* 定时器TI_ADS_DL_PROTECT的时长, 100ms */
 #define TI_ADS_DL_PROTECT_LEN           (100)
 
-/* Added by l60609 for DSDA Phase II, 2012-12-20, Begin */
 /* 定时器TI_ADS_DL_ADQ_EMPTY的时长, 10ms */
 #define TI_ADS_DL_ADQ_EMPTY_LEN         (10)
-/* Added by l60609 for DSDA Phase II, 2012-12-20, Begin */
 
 /* 定时器TI_ADS_RPT_STATS的时长，2秒上报一次统计信息 */
 #define TI_ADS_RPT_STATS_LEN         (2000)

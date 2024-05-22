@@ -46,13 +46,13 @@ static int write_to_daemon(const struct buffered_log_entry *entry)
 		return -EINVAL;
 	}
 
-	vec[0].iov_base = (unsigned char *) &(entry->length);
+	vec[0].iov_base = (void *) &(entry->length);
 	vec[0].iov_len = sizeof(entry->length);
 	payload_size += vec[0].iov_len;
-	vec[1].iov_base = (unsigned char *) &(entry->magic);
+	vec[1].iov_base = (void *) &(entry->magic);
 	vec[1].iov_len = sizeof(entry->magic);
 	payload_size += vec[1].iov_len;
-	vec[2].iov_base = (unsigned char *) entry->data;
+	vec[2].iov_base = (void *) entry->data;
 	vec[2].iov_len = (size_t) entry->length;
 	payload_size += vec[2].iov_len;
 
@@ -223,22 +223,17 @@ static int do_send_buffered_log(const struct buffered_log_entry *entry)
 // warnning: Using vmalloc to allocate memory, so this fuction might sleep
 struct buffered_log_entry *create_buffered_log_entry(long long size, int magic)
 {
-	long long entry_size = 0;
+	unsigned long entry_size = 0;
 	struct buffered_log_entry *entry = NULL;
 
 	might_sleep();
 
-	if (size < 0) {
+	if (size < 0 || size > INT_MAX) {
 		DUBAI_LOGE("Invalid parameter");
 		return NULL;
 	}
 
-	entry_size = sizeof(struct buffered_log_entry) + size;
-	if (entry_size > ULONG_MAX) {
-		DUBAI_LOGE("Invalid allocation size");
-		return NULL;
-	}
-
+	entry_size = size + sizeof(struct buffered_log_entry);
 	entry = vmalloc(entry_size);
 	if (entry == NULL) {
 		DUBAI_LOGE("Failed to allocate memory");

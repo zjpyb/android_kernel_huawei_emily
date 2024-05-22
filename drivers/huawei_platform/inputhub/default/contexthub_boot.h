@@ -164,6 +164,12 @@ typedef struct {
 	uint8_t tplcd;
 }lcd_model;
 
+typedef struct coul_core_info {
+	int c_offset_a;
+	int c_offset_b;
+	int r_coul_mohm;
+}coul_core_info_t;
+
 struct CONFIG_ON_DDR
 {
 	dump_config_t dump_config;
@@ -175,6 +181,7 @@ struct CONFIG_ON_DDR
 	u64 reserved;
 	timestamp_kernel_t timestamp_base;
 	timestamp_iomcu_base_t timestamp_base_iomcu;
+	coul_core_info_t coul_info;
 };
 
 /*receive data from mcu,you should copy the buf each time.*/

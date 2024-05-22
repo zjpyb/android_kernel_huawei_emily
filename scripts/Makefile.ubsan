@@ -19,8 +19,11 @@ ifdef CONFIG_UBSAN_ALIGNMENT
 endif
 
 ifdef CONFIG_UBSAN_NULL
-      CFLAGS_UBSAN += $(call cc-option, -fsanitize=null)
+     # CFLAGS_UBSAN += $(call cc-option, -fsanitize=null)
 endif
+
+      # -fsanitize=* options makes GCC less smart than usual and
+      # increase number of 'maybe-uninitialized false-positives
       CFLAGS_UBSAN += $(call cc-option, -Wno-maybe-uninitialized)
 
      export KBUILD_MODPOST_WARN

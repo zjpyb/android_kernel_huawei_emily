@@ -15,6 +15,8 @@
 #include <linux/string.h>
 
 #include <hisi_noc_info.h>
+#include <linux/hisi/hisi_log.h>
+#define HISI_LOG_TAG HISI_NOC_TAG
 
 #define ERR_CODE_NR  8
 #define OPC_NR      10

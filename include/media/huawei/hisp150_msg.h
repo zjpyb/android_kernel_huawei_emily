@@ -1321,6 +1321,7 @@ typedef enum
     SUBCMD_SET_AE_SENSOR_VERIFY_MODE = 172,
     SUBCMD_SHARPNESS_ENHANCE_ENABLE = 173,
     SUBCMD_BAS_BYPASS_ENABLE = 174,
+    SUBCMD_SET_AFSTAT_ALGO_RESULT = 175,
     SUBCMD_MAX,
 } extendset_info_e;
 
@@ -1394,6 +1395,7 @@ typedef enum
     EVENT_AF_DIRECT_TRANS_BASE,
     EVENT_AF_OTP_CALIB_DATA,
     EVENT_AF_SELF_LEARN_DATA,
+    EVENT_AF_STAT_INFO,
 } event_info_e;
 
 typedef struct _msg_subreq_es_watchdog_t

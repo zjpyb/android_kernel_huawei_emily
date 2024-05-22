@@ -398,7 +398,7 @@ OAL_STATIC oal_int32 oal_pci_witp_init(oal_pci_dev_stru *pst_pci_dev, oal_uint32
     oal_uint32                   ul_ret;
 
     /* 获取当前总线上chip的索引 */
-    uc_chip_idx = oal_bus_get_chip_num();
+    uc_chip_idx = oal_bus_get_chip_num_etc();
 
     oal_bus_get_chip_instance(&pst_bus_chip, uc_chip_idx);
     if(OAL_UNLIKELY(OAL_PTR_NULL == pst_bus_chip))
@@ -486,10 +486,10 @@ OAL_STATIC oal_int32 oal_pci_witp_init(oal_pci_dev_stru *pst_pci_dev, oal_uint32
     oal_memcopy(pst_bus_chip->aul_mem_start, aul_mem, OAL_WITP_MAX_BARS * OAL_SIZEOF(oal_uint32));
 
     /* 总线上的chip数量增加1 */
-    ul_ret = oal_bus_inc_chip_num();
+    ul_ret = oal_bus_inc_chip_num_etc();
     if(OAL_SUCC != ul_ret)
     {
-         OAL_IO_PRINT("oal_pci_probe: oal_bus_inc_chip_num failed!\n");
+         OAL_IO_PRINT("oal_pci_probe: oal_bus_inc_chip_num_etc failed!\n");
          return -OAL_EIO;
     }
 
@@ -643,7 +643,7 @@ oal_uint32  oal_pci_init(oal_void)
 #if (_PRE_OS_VERSION_WIN32 == _PRE_OS_VERSION) && (_PRE_TEST_MODE == _PRE_TEST_MODE_UT)
     for (uc_chip_id = 0; uc_chip_id < WLAN_CHIP_MAX_NUM_PER_BOARD; uc_chip_id++)
     {
-        oal_bus_inc_chip_num();
+        oal_bus_inc_chip_num_etc();
     }
 #endif
 
@@ -1229,7 +1229,7 @@ OAL_STATIC oal_void oal_drv_pcie_pm_sys_resume(oal_void)
     OAL_IO_PRINT("{oal_drv_pcie_pm_sys_resume:: enter!}\n");
 
     /* 遍历chip,获取对应的pci device */
-    for (uc_chip_idx = 0; uc_chip_idx < oal_bus_get_chip_num(); uc_chip_idx ++)
+    for (uc_chip_idx = 0; uc_chip_idx < oal_bus_get_chip_num_etc(); uc_chip_idx ++)
     {
         oal_bus_get_chip_instance(&pst_bus_chip, uc_chip_idx);
         if(OAL_UNLIKELY(OAL_PTR_NULL == pst_bus_chip))

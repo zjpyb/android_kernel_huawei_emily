@@ -20,6 +20,9 @@
 #include <linux/scatterlist.h>
 #include <linux/string.h>
 #include <linux/types.h>
+#include <linux/version.h>
+#include <crypto/hash.h>
+#include <crypto/hash_info.h>
 #include "./include/hw_rscan_utils.h"
 
 int kcode_scan(uint8_t *hash);

@@ -1818,6 +1818,68 @@ static ssize_t mipi_sharp_NT36870_lcd_model_show(struct platform_device *pdev,
 	return ret;
 }
 
+static ssize_t mipi_sharp_panel_lcd_check_reg_show(struct platform_device *pdev, char *buf)
+{
+	ssize_t ret = 0;
+	struct hisi_fb_data_type *hisifd = NULL;
+	char __iomem *mipi_dsi0_base = NULL;
+	uint32_t read_value[5] = {0};
+	uint32_t expected_value[5] = {0x9c, 0x00, 0x7, 0x00, 0x00};
+	uint32_t read_mask[5] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+	char* reg_name[5] = {"power mode", "MADCTR", "pixel format", "image mode", "mipi error"};
+	char lcd_reg_0a[] = {0x0a};
+	char lcd_reg_0b[] = {0x0b};
+	char lcd_reg_0c[] = {0x0c};
+	char lcd_reg_0d[] = {0x0d};
+	char lcd_reg_ab[] = {0xab};
+
+	struct dsi_cmd_desc lcd_check_reg[] = {
+		{DTYPE_DCS_READ, 0, 10, WAIT_TYPE_US,
+			sizeof(lcd_reg_0a), lcd_reg_0a},
+		{DTYPE_DCS_READ, 0, 10, WAIT_TYPE_US,
+			sizeof(lcd_reg_0b), lcd_reg_0b},
+		{DTYPE_DCS_READ, 0, 10, WAIT_TYPE_US,
+			sizeof(lcd_reg_0c), lcd_reg_0c},
+		{DTYPE_DCS_READ, 0, 10, WAIT_TYPE_US,
+			sizeof(lcd_reg_0d), lcd_reg_0d},
+		{DTYPE_DCS_READ, 0, 10, WAIT_TYPE_US,
+			sizeof(lcd_reg_ab), lcd_reg_ab},
+	};
+
+	struct mipi_dsi_read_compare_data data = {
+		.read_value = read_value,
+		.expected_value = expected_value,
+		.read_mask = read_mask,
+		.reg_name = reg_name,
+		.log_on = 1,
+		.cmds = lcd_check_reg,
+		.cnt = ARRAY_SIZE(lcd_check_reg),
+	};
+
+	if (NULL == pdev) {
+		HISI_FB_ERR("pdev is NULL");
+		return -EINVAL;
+	}
+	hisifd = platform_get_drvdata(pdev);
+	if (NULL == hisifd) {
+		HISI_FB_ERR("hisifd is NULL");
+		return -EINVAL;
+	}
+
+	mipi_dsi0_base = hisifd->mipi_dsi0_base;
+
+	HISI_FB_DEBUG("fb%d, +.\n", hisifd->index);
+	if (!mipi_dsi_read_compare(&data, mipi_dsi0_base)) {
+		ret = snprintf(buf, PAGE_SIZE, "OK\n");
+	} else {
+		ret = snprintf(buf, PAGE_SIZE, "ERROR\n");
+	}
+	HISI_FB_DEBUG("fb%d, -.\n", hisifd->index);
+
+	return ret;
+}
+
+
 /*******************************************************************************
 **
 */
@@ -1832,7 +1894,7 @@ static struct hisi_fb_panel_data g_panel_data = {
 	.set_display_region = mipi_sharp_NT36870_panel_set_display_region,
 
 	.lcd_model_show = mipi_sharp_NT36870_lcd_model_show,
-	//.lcd_check_reg  = mipi_sharp_panel_lcd_check_reg_show,
+	.lcd_check_reg  = mipi_sharp_panel_lcd_check_reg_show,
 };
 
 /*******************************************************************************
@@ -1977,7 +2039,7 @@ static int mipi_sharp_NT36870_probe(struct platform_device *pdev)
 	/*for 10bit_video - 8bit_cmd mode switch*/
 	pinfo->panel_mode_swtich_support = 1;
 
-	pinfo->current_mode = MODE_8BIT;
+	pinfo->current_mode = MODE_10BIT_VIDEO_3X;
 	pinfo->mode_switch_to = pinfo->current_mode;
 
 	if (pinfo->current_mode == MODE_10BIT_VIDEO_3X) {
@@ -2060,6 +2122,7 @@ static int mipi_sharp_NT36870_probe(struct platform_device *pdev)
 			pinfo->mipi.dsi_bit_clk = 750;
 			pinfo->dsi_bit_clk_upt_support = 0;
 			pinfo->mipi.dsi_bit_clk_upt = pinfo->mipi.dsi_bit_clk;
+
 		}
 	}
 

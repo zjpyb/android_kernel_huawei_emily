@@ -79,7 +79,7 @@ static void clear_unlock_password(struct mmc_card* card)
         memset(card->unlock_pwd,0,MAX_UNLOCK_PASSWORD_WITH_BUF);
 }
 
-static int extract(const char *data, char *command, u8 *buffer, int *plen)
+static int extract(const char *data, u8 *command, u8 *buffer, int *plen)
 {
         int i=0;
         if (!data || !command || !buffer || !plen) {
@@ -280,7 +280,7 @@ static int sd_reinit_full(struct mmc_card* card , struct device* dev)
         if (ret) {
                 printk("%s: reinit error (%d) \n", __func__,ret);
                 mmc_release_host(card->host);
-                (void)sd_reset_device(dev);
+                ret = sd_reset_device(dev);
                 return -EINVAL;
         }
 
@@ -307,7 +307,7 @@ static int sd_reinit(struct mmc_card* card , struct device* dev)
         if (ret) {
                 printk("%s: reinit error (%d) \n", __func__,ret);
                 mmc_release_host(card->host);
-                (void)sd_reset_device(dev);
+                ret = sd_reset_device(dev);
                 return -EINVAL;
         }
 
@@ -637,7 +637,7 @@ mmc_lockable_store(struct device *dev, struct device_attribute *att,
         struct mmc_card *card = dev_to_mmc_card(dev);
         int ret = -EINVAL;
         u8 key_buffer[MAX_KEY_SIZE] = {0};
-        char command[MAX_COMMAND_SIZE] = {0};
+        u8 command[MAX_COMMAND_SIZE] = {0};
         int key_len = 0;
 
 

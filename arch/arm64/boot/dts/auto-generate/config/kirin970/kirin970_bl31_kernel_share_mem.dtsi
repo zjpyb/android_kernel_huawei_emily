@@ -33,6 +33,10 @@
 			compatible = "hisilicon, bl31_mntn";
 			hisi,bl31-share-mem = <0x1c00 0x100>;
 		};
+		ddr-perdata {
+			compatible = "hisi,hisi-ddr-perfdata";
+			hisi,ddr-perdata = <0x1d00 0x100>;
+		};
 		rpmd-mem {
 			compatible = "hisilicon,hisi-rpmb";
 			hisi,bl31-share-mem = <0x8000 0x8000>;

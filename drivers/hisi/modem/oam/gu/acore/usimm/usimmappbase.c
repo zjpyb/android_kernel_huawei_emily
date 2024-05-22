@@ -60,18 +60,7 @@ extern VOS_VOID   I0_SI_PB_PidMsgProc(struct MsgCB *pstPBMsg);
 extern VOS_VOID   PCSC_AcpuMsgProc(MsgBlock *pMsg);
 extern VOS_VOID   SI_PIH_AcpuInit(VOS_VOID);
 
-/*****************************************************************************
- Prototype       : OM_AcpuFidInit
- Description     : ACPU OM FID' initializtion function
- Input           : None
- Output          : None
- Return Value    : VOS_UINT32
 
- History         : ---
-    Date         : 2011-07-01
-    Author       : g47350
-    Modification : Created function
- *****************************************************************************/
 VOS_UINT32 USIMM_APP_FID_Init(enum VOS_INIT_PHASE_DEFINE ip)
 {
     VOS_UINT32                          ulRslt;

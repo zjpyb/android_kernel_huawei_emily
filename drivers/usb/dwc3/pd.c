@@ -23,13 +23,15 @@
 #include <huawei_platform/dp_source/dp_dsm.h>
 #include "common.h"
 #include "hisi_usb3_misctrl.h"
+#include "hisi_usb3_31phy.h"
+#include "dwc3-hisi.h"
 #ifdef COMBOPHY_FW_UPDATE
 #include "firmware.h"
 #endif
 extern int hisi_dptx_triger(bool benable);
 extern int hisi_dptx_hpd_trigger(TCA_IRQ_TYPE_E irq_type, TCPC_MUX_CTRL_TYPE mode, TYPEC_PLUG_ORIEN_E typec_orien);
 extern int hisi_dptx_notify_switch(void);
-extern int hisi_usb_otg_event_sync(TCPC_MUX_CTRL_TYPE mode_type, enum otg_dev_event_type event);
+extern int hisi_usb_otg_event_sync(TCPC_MUX_CTRL_TYPE mode_type, enum otg_dev_event_type event, TYPEC_PLUG_ORIEN_E typec_orien);
 extern int usb31phy_cr_write(u32 addr, u16 value);
 extern u16 usb31phy_cr_read(u32 addr);
 void usb3_misc_reg_setbit(u32 bit, unsigned long int offset);
@@ -75,11 +77,14 @@ struct tca_device_s {
 	void __iomem *pctrl_reg_base;
 	void __iomem *usb_misc_base;
 	void __iomem *tca_base;
+#ifdef COMBOPHY_FW_UPDATE
+	unsigned int update_combophy_firmware;
+	unsigned int combophy_resistor;
+#endif
 };
 
 static DEFINE_MUTEX(tca_mutex);
 static struct tca_device_s tca_dev;
-
 static int pd_get_resource(struct tca_device_s *res, struct device *dev)
 {
 	struct device_node *np;
@@ -147,6 +152,16 @@ static int pd_get_resource(struct tca_device_s *res, struct device *dev)
 		goto USB_MISC_REL;
 	}
 
+#ifdef COMBOPHY_FW_UPDATE
+	if (of_property_read_u32(dev->of_node, "update_combophy_firmware",
+				&(res->update_combophy_firmware))) {
+		res->update_combophy_firmware = 0;
+	}
+
+	if (of_property_read_u32(dev->of_node, "combophy_resistor", &(res->combophy_resistor))){
+		res->combophy_resistor = 0;
+	}
+#endif
 	return 0;
 
 USB_MISC_REL:
@@ -163,7 +178,7 @@ CRGCTRL_MAP_REL:
 static int combophy_reboot(void)
 {
 	int ret = 0;
-	printk(HISI_TCA_DEBUG"[%s]\n", __func__);
+	pr_info("[%s]\n", __func__);
 
 	if (tca_dev.tca_cur_mode&TCPC_DP) {
 		ret = hisi_dptx_triger((bool)0);
@@ -174,7 +189,7 @@ static int combophy_reboot(void)
 	}
 
 	if (TCA_CHARGER_CONNECT_EVENT == tca_dev.usbctrl_status) {
-		ret = hisi_usb_otg_event_sync(TCPC_USB31_CONNECTED, (enum otg_dev_event_type)TCA_CHARGER_DISCONNECT_EVENT);
+		ret = hisi_usb_otg_event_sync(TCPC_USB31_CONNECTED, (enum otg_dev_event_type)TCA_CHARGER_DISCONNECT_EVENT, tca_dev.typec_orien);
 		if (ret) {
 			pr_err("[%s][%d]hisi_usb_otg_event_sync  err\n", __func__, tca_dev.usbctrl_status);
 			return ret;
@@ -184,7 +199,7 @@ static int combophy_reboot(void)
 	}
 
 	if (TCA_ID_FALL_EVENT == tca_dev.usbctrl_status) {
-		ret = hisi_usb_otg_event_sync(TCPC_USB31_CONNECTED, (enum otg_dev_event_type)TCA_ID_RISE_EVENT);
+		ret = hisi_usb_otg_event_sync(TCPC_USB31_CONNECTED, (enum otg_dev_event_type)TCA_ID_RISE_EVENT, tca_dev.typec_orien);
 		if (ret) {
 			pr_err("[%s][%d]hisi_usb_otg_event_sync  err\n", __func__, tca_dev.usbctrl_status);
 			return ret;
@@ -201,7 +216,8 @@ static int combophy_reboot(void)
 		SOC_CRGPERIPH_PERRSTDIS4_ADDR(tca_dev.crgperi_reg_base));
 
 	tca_dev.tca_poweron = TCA_POWEROFF;
-	return combophy_poweron(TCPC_USB31_CONNECTED, TCA_POWER_REBOOT);
+	/* arg2: is usb firmware update. 1: update fw */
+	return combophy_poweron(TCA_POWER_REBOOT, 1);
 }
 #endif
 
@@ -358,10 +374,7 @@ static int tca_mode_sw(TCPC_MUX_CTRL_TYPE new_mode, TYPEC_PLUG_ORIEN_E typec_ori
 {
 	int ret = 0;
 	int old_mode = tca_dev.tca_cur_mode;
-#ifdef COMBOPHY_FW_UPDATE
-	volatile unsigned int reg;
-	volatile unsigned int val;
-#endif
+
 	if(old_mode == TCPC_NC && TCPC_DP == new_mode) {
 		ret = __tca_mode_sw(TCPC_NC, TCPC_USB31_CONNECTED,typec_orien);
 		if (ret) {
@@ -383,20 +396,6 @@ static int tca_mode_sw(TCPC_MUX_CTRL_TYPE new_mode, TYPEC_PLUG_ORIEN_E typec_ori
 		clr_bits(BIT(SOC_USB31_TCA_TCA_CTRLSYNCMODE_CFG0_block_ss_op_START),
 			SOC_USB31_TCA_TCA_CTRLSYNCMODE_CFG0_ADDR(tca_dev.tca_base));
 	}
-
-#ifdef COMBOPHY_FW_UPDATE
-	if(TCPC_NC == new_mode) {
-		if(typec_orien) {
-			reg = 0x422d;
-		} else {
-			reg = 0x412d;
-		}
-
-		val = usb31phy_cr_read(reg);
-		val |= (1u << 2);
-		usb31phy_cr_write(reg, val);
-	}
-#endif
 
 	return ret;
 }
@@ -458,7 +457,7 @@ static int tca_mode_switch(TCPC_MUX_CTRL_TYPE new_mode, TYPEC_PLUG_ORIEN_E typec
 
 
 	reg = readl(SOC_USB31_TCA_TCA_PSTATE_ADDR(tca_dev.tca_base));
-	printk(HISI_TCA_DEBUG"[%s]TCA_PSTATE[%x]cnt[%d]\n", __func__, reg,cnt);
+	pr_info("[%s]TCA_PSTATE[%x]cnt[%d]\n", __func__, reg,cnt);
 	if (0 == reg) {
 		misc_dump();
 		ret = -ESRCH;
@@ -486,26 +485,19 @@ USB_CHANGE_FIN:
 }
 
 #ifdef COMBOPHY_FW_UPDATE
-static void toggle_clock(void)
-{
-	int i;
-	for(i=0;i<32;i++) {
-		usb31phy_cr_clk();
-	}
-}
 
 static void combophy_firmware_write(void)
 {
 	int i,cnt;
 	int fw_size = sizeof(firmware)/sizeof(firmware[0]);
 	unsigned short int reg;
-	printk(HISI_TCA_DEBUG"[%s]fw_size[%d]\n", __func__, fw_size);
+	pr_info("[%s]fw_size[%d]\n", __func__, fw_size);
 
 	/*选择CR 接口： MISC54[4] =  1*/
 	set_bits(BIT(SOC_USB31_MISC_CTRL_USB_MISC_CFG54_usb3_phy0_cr_para_sel_START),
 		SOC_USB31_MISC_CTRL_USB_MISC_CFG54_ADDR(tca_dev.usb_misc_base));
 	/*toggle clock * 32次： MISC54[2] =  1； MISC54[2] =  0；循环32次*/
-	toggle_clock();
+	usb31phy_cr_32clk();
 
 	/*
 	3、等待PHY准备好
@@ -529,22 +521,27 @@ static void combophy_firmware_write(void)
 	}
 
 	/*toggle clock * 32次： MISC54[2] =  1； MISC54[2] =  0；循环32次*/
-	toggle_clock();
+	usb31phy_cr_32clk();
 
-	reg = usb31phy_cr_read(0x42);
-	reg &= ~(0x1f);
-	reg |= ((1 << 1) | (1 << 3) | (1 << 5));
-	usb31phy_cr_write(0x42, reg);
+	if (hisi_dwc3_is_es()) {
+		pr_notice("[USB.DBG] in es platform!\n");
 
-	reg = usb31phy_cr_read(0x11f4);
-	reg &= ~(0x3 << 3);
-	reg |= (1 << 3);
-	usb31phy_cr_write(0x11f4, reg);
+		reg = usb31phy_cr_read(0x411e);
+		reg |= 1;
+		usb31phy_cr_write(0x411e, reg);
 
-	reg = usb31phy_cr_read(0x12f4);
-	reg &= ~(0x3 << 3);
-	reg |= (1 << 3);
-	usb31phy_cr_write(0x12f4, reg);
+		reg = usb31phy_cr_read(0x421e);
+		reg |= 1;
+		usb31phy_cr_write(0x421e, reg);
+
+		reg = usb31phy_cr_read(0x411f);
+		reg |= 1;
+		usb31phy_cr_write(0x411f, reg);
+
+		reg = usb31phy_cr_read(0x421f);
+		reg |= 1;
+		usb31phy_cr_write(0x421f, reg);
+	}
 
 	set_bits(BIT(SOC_USB31_MISC_CTRL_USB_MISC_CFG54_usb3_phy0_cr_para_ack_START),
 		SOC_USB31_MISC_CTRL_USB_MISC_CFGB4_ADDR(tca_dev.usb_misc_base));
@@ -555,108 +552,46 @@ static void combophy_firmware_write(void)
 		SOC_USB31_MISC_CTRL_USB_MISC_CFG5C_ADDR(tca_dev.usb_misc_base));
 
 	/*toggle clock * 32次： MISC54[2] =  1； MISC54[2] =  0；循环32次*/
-	toggle_clock();
+	usb31phy_cr_32clk();
 
 	/*6、延迟1mS，等PHY OK*/
 	msleep(1);
+
+	if (tca_dev.combophy_resistor) {
+		usb31phy_cr_write(0x301a, tca_dev.combophy_resistor);
+		usb31phy_cr_write(0x311a, tca_dev.combophy_resistor);
+		usb31phy_cr_write(0x321a, tca_dev.combophy_resistor);
+		usb31phy_cr_write(0x331a, tca_dev.combophy_resistor);
+	}
+
 }
 
-static void combophy_firmware_set(void)
+static void combophy_firmware_update_prepare(void)
 {
-	int i = 0;
-	int cnt = 0;
-	unsigned short int reg;
-	udelay(10);
-
-	set_bits(BIT(SOC_USB31_MISC_CTRL_USB_MISC_CFG54_usb3_phy0_cr_para_sel_START),
-		SOC_USB31_MISC_CTRL_USB_MISC_CFG54_ADDR(tca_dev.usb_misc_base));
-
-	for(i=0; i<10; i++) {
-		set_bits(BIT(SOC_USB31_MISC_CTRL_USB_MISC_CFG54_usb3_phy0_cr_para_clk_START),
-			SOC_USB31_MISC_CTRL_USB_MISC_CFG54_ADDR(tca_dev.usb_misc_base));
-		clr_bits(BIT(SOC_USB31_MISC_CTRL_USB_MISC_CFG54_usb3_phy0_cr_para_clk_START),
-			SOC_USB31_MISC_CTRL_USB_MISC_CFG54_ADDR(tca_dev.usb_misc_base));
-	}
-
-	cnt = 10;
-	while(cnt--) {
-		if(is_bits_set(BIT(SOC_USB31_MISC_CTRL_USB_MISC_CFG5C_phy0_sram_init_done_START),
-				SOC_USB31_MISC_CTRL_USB_MISC_CFG5C_ADDR(tca_dev.usb_misc_base)))
-				break;
-		for(i=0; i<10; i++) {
-			set_bits(BIT(SOC_USB31_MISC_CTRL_USB_MISC_CFG54_usb3_phy0_cr_para_clk_START),
-				SOC_USB31_MISC_CTRL_USB_MISC_CFG54_ADDR(tca_dev.usb_misc_base));
-			clr_bits(BIT(SOC_USB31_MISC_CTRL_USB_MISC_CFG54_usb3_phy0_cr_para_clk_START),
-				SOC_USB31_MISC_CTRL_USB_MISC_CFG54_ADDR(tca_dev.usb_misc_base));
-		}
-	}
-
-	reg = usb31phy_cr_read(0x42);
-	reg &= ~(0x1f);
-	reg |= ((1 << 1) | (1 << 3) | (1 << 5));
-	usb31phy_cr_write(0x42, reg);
-
-	reg = usb31phy_cr_read(0x11f4);
-	reg &= ~(0x3 << 3);
-	reg |= (1 << 3);
-	usb31phy_cr_write(0x11f4, reg);
-
-	reg = usb31phy_cr_read(0x12f4);
-	reg &= ~(0x3 << 3);
-	reg |= (1 << 3);
-	usb31phy_cr_write(0x12f4, reg);
-
-	usb3_misc_reg_setbit(7u, 0xb4ul);
-
-	clr_bits(BIT(SOC_USB31_MISC_CTRL_USB_MISC_CFG54_usb3_phy0_cr_para_rd_en_START),
-		SOC_USB31_MISC_CTRL_USB_MISC_CFG5C_ADDR(tca_dev.usb_misc_base));
-
-	for(i=0; i<10; i++) {
-		set_bits(BIT(SOC_USB31_MISC_CTRL_USB_MISC_CFG54_usb3_phy0_cr_para_clk_START),
-				SOC_USB31_MISC_CTRL_USB_MISC_CFG54_ADDR(tca_dev.usb_misc_base));
-		clr_bits(BIT(SOC_USB31_MISC_CTRL_USB_MISC_CFG54_usb3_phy0_cr_para_clk_START),
-				SOC_USB31_MISC_CTRL_USB_MISC_CFG54_ADDR(tca_dev.usb_misc_base));
-	}
+	pr_info("[USB.DBG] mode is TCPC_USB31_CONNECTED,need update fully!\n");
+	clr_bits(BIT(SOC_USB31_MISC_CTRL_USB_MISC_CFG5C_usb3_phy0_sram_bypass_START),
+	SOC_USB31_MISC_CTRL_USB_MISC_CFG5C_ADDR(tca_dev.usb_misc_base));
 }
 
-void combophy_firmware_update_prepare(TCPC_MUX_CTRL_TYPE mode)
+static void combophy_firmware_update(void)
 {
-	if (TCPC_USB31_CONNECTED == mode) {
-		pr_info("[USB.DBG] mode is TCPC_USB31_CONNECTED,need update fully!\n");
-		clr_bits(BIT(SOC_USB31_MISC_CTRL_USB_MISC_CFG5C_usb3_phy0_sram_bypass_START),
-		SOC_USB31_MISC_CTRL_USB_MISC_CFG5C_ADDR(tca_dev.usb_misc_base));
-	} else {
-		pr_info("[USB.DBG] mode is not TCPC_USB31_CONNECTED,don't need update fully!\n");
-		set_bits(BIT(SOC_USB31_MISC_CTRL_USB_MISC_CFG5C_usb3_phy0_sram_bypass_START)
-			| BIT(SOC_USB31_MISC_CTRL_USB_MISC_CFG5C_usb3_phy0_sram_ext_ld_done_START),
-			SOC_USB31_MISC_CTRL_USB_MISC_CFG5C_ADDR(tca_dev.usb_misc_base));
-	}
-}
-
-void combophy_firmware_update(TCPC_MUX_CTRL_TYPE mode)
-{
-	printk(HISI_TCA_DEBUG"[%s] start\n", __func__);
-
-	if (TCPC_USB31_CONNECTED == mode)
-		combophy_firmware_write();
-	else
-		combophy_firmware_set();
-
-	printk(HISI_TCA_DEBUG"[%s] end\n", __func__);
+	pr_info("[%s] start\n", __func__);
+	combophy_firmware_write();
+	pr_info("[%s] end\n", __func__);
 }
 #endif
 
 /*lint  -e838 -e747*/
-static int combophy_poweron(TCPC_MUX_CTRL_TYPE mode, TYPEC_PLUG_ORIEN_E typec_orien)
+static int combophy_poweron(TYPEC_PLUG_ORIEN_E typec_orien, bool is_fw_update)
 {
 	int ret = 0;
 	int wait_cnt = 50;
 
-	printk(HISI_TCA_DEBUG"[%s]tca_poweron[%d]\n", __func__, tca_dev.tca_poweron);
+	pr_info("[%s]tca_poweron[%d]\n", __func__, tca_dev.tca_poweron);
 	if (TCA_POWERON == tca_dev.tca_poweron)
 		return 0;
 
-	printk(HISI_TCA_DEBUG"[%s]dwc3_misc_ctrl_get\n", __func__);
+	pr_info("[%s]dwc3_misc_ctrl_get\n", __func__);
 	ret = dwc3_misc_ctrl_get(MICS_CTRL_COMBOPHY);
 	if (ret) {
 		pr_err("[%s] misc ctrl get err\n", __func__);
@@ -665,7 +600,7 @@ static int combophy_poweron(TCPC_MUX_CTRL_TYPE mode, TYPEC_PLUG_ORIEN_E typec_or
 
 	writel((0x0927C/3), SOC_USB31_TCA_TCA_CTRLSYNCMODE_CFG1_ADDR(tca_dev.tca_base));
 
-	printk(HISI_TCA_DEBUG"PERCLKEN0[%x]PERSTAT0[%x]PERRSTSTAT4[%x]\n",
+	pr_info("PERCLKEN0[%x]PERSTAT0[%x]PERRSTSTAT4[%x]\n",
 		readl(SOC_CRGPERIPH_PERCLKEN0_ADDR(tca_dev.crgperi_reg_base)),
 		readl(SOC_CRGPERIPH_PERSTAT0_ADDR(tca_dev.crgperi_reg_base)),
 		readl(SOC_CRGPERIPH_PERRSTSTAT4_ADDR(tca_dev.crgperi_reg_base)));
@@ -681,7 +616,7 @@ static int combophy_poweron(TCPC_MUX_CTRL_TYPE mode, TYPEC_PLUG_ORIEN_E typec_or
 		pr_err("[%s]clk_prepare_enable  clk_usb3_tcxo_en err\n", __func__);
 		return -EIO;
 	}
-	printk(HISI_TCA_DEBUG"[%s]gt_clk_usb3_tcxo_en enable+\n", __func__);
+	pr_info("[%s]gt_clk_usb3_tcxo_en enable+\n", __func__);
 	if (__clk_is_enabled(tca_dev.gt_clk_usb3_tcxo_en) == false) {
 		pr_err("[%s]gt_clk_usb3_tcxo_en  check err\n", __func__);
 		return -ESPIPE;
@@ -708,7 +643,8 @@ static int combophy_poweron(TCPC_MUX_CTRL_TYPE mode, TYPEC_PLUG_ORIEN_E typec_or
 	SOC_USB31_MISC_CTRL_USB_MISC_CFG54_ADDR(tca_dev.usb_misc_base));
 
 #ifdef COMBOPHY_FW_UPDATE
-	combophy_firmware_update_prepare(mode);
+	if (is_fw_update && (tca_dev.update_combophy_firmware != 0))
+		combophy_firmware_update_prepare();
 #endif
 
 	/*6	unreset combo phy*/
@@ -716,38 +652,48 @@ static int combophy_poweron(TCPC_MUX_CTRL_TYPE mode, TYPEC_PLUG_ORIEN_E typec_or
 	SOC_USB31_MISC_CTRL_USB_MISC_CFGA0_ADDR(tca_dev.usb_misc_base));
 
 #ifdef COMBOPHY_FW_UPDATE
-	combophy_firmware_update(mode);
+	if (is_fw_update && (tca_dev.update_combophy_firmware != 0))
+		combophy_firmware_update();
 #endif
 
-	while(is_bits_clr(BIT(SOC_USB31_TCA_TCA_INTR_STS_xa_ack_evt_START)|
-		BIT(SOC_USB31_TCA_TCA_INTR_STS_xa_timeout_evt_START),
-		SOC_USB31_TCA_TCA_INTR_STS_ADDR(tca_dev.tca_base))) {
-		msleep(20);
-		if(wait_cnt-- <= 0)
-			break;
+	if (is_fw_update) {
+		while(is_bits_clr(BIT(SOC_USB31_TCA_TCA_INTR_STS_xa_ack_evt_START)|
+					BIT(SOC_USB31_TCA_TCA_INTR_STS_xa_timeout_evt_START),
+					SOC_USB31_TCA_TCA_INTR_STS_ADDR(tca_dev.tca_base))) {
+			msleep(20);
+			if(wait_cnt-- <= 0)
+				break;
+		}
+
+		if (wait_cnt <= 0)
+			pr_err("[%s]wait_cnt[%d]\n", __func__, wait_cnt);
+
+		writel(0xFFFF, SOC_USB31_TCA_TCA_INTR_STS_ADDR(tca_dev.tca_base));
 	}
 
-	if (wait_cnt <= 0)
-		pr_err("[%s]wait_cnt[%d]\n", __func__, wait_cnt);
-
-	writel(0xFFFF, SOC_USB31_TCA_TCA_INTR_STS_ADDR(tca_dev.tca_base));
 	clr_bits(BIT(SOC_USB31_TCA_TCA_TCPC_tcpc_low_power_en_START),SOC_USB31_TCA_TCA_TCPC_ADDR(tca_dev.tca_base));
-	udelay(1);
-	printk(HISI_TCA_DEBUG"[%s]TCA_TCPC[%x]\n", __func__, readl(SOC_USB31_TCA_TCA_TCPC_ADDR(tca_dev.tca_base)));
-	writel((2* 0x0927C), SOC_USB31_TCA_TCA_CTRLSYNCMODE_CFG1_ADDR(tca_dev.tca_base));
-	ret = tca_mode_switch(TCPC_NC, typec_orien);
-	writel(BIT(SOC_USB31_TCA_TCA_INTR_STS_xa_ack_evt_START)|
-		BIT(SOC_USB31_TCA_TCA_INTR_STS_xa_timeout_evt_START),
-		SOC_USB31_TCA_TCA_INTR_STS_ADDR(tca_dev.tca_base));
+	udelay(2);
+	pr_info("[%s]TCA_TCPC[%x]\n", __func__, readl(SOC_USB31_TCA_TCA_TCPC_ADDR(tca_dev.tca_base)));
+
+	if (is_fw_update) {
+		writel((2* 0x0927C), SOC_USB31_TCA_TCA_CTRLSYNCMODE_CFG1_ADDR(tca_dev.tca_base));
+		ret = tca_mode_switch(TCPC_NC, typec_orien);
+
+		writel(BIT(SOC_USB31_TCA_TCA_INTR_STS_xa_ack_evt_START)|
+				BIT(SOC_USB31_TCA_TCA_INTR_STS_xa_timeout_evt_START),
+				SOC_USB31_TCA_TCA_INTR_STS_ADDR(tca_dev.tca_base));
+	}
+
 	tca_dev.tca_poweron = TCA_POWERON;
-	printk(HISI_TCA_DEBUG"[%s]poweron ok[%d]\n", __func__, tca_dev.tca_poweron);
+
+	pr_info("[%s]poweron ok[%d]\n", __func__, tca_dev.tca_poweron);
 	return ret;
 }
 
 
-static int combophy_init(TCPC_MUX_CTRL_TYPE new_mode, TYPEC_PLUG_ORIEN_E typec_orien)
+static int combophy_init(TCPC_MUX_CTRL_TYPE new_mode, TYPEC_PLUG_ORIEN_E typec_orien, bool is_fw_update)
 {
-	int ret = combophy_poweron(new_mode, typec_orien);
+	int ret = combophy_poweron(typec_orien, is_fw_update);
 	if (ret)
 		goto COM_FIN;
 
@@ -758,7 +704,9 @@ static int combophy_init(TCPC_MUX_CTRL_TYPE new_mode, TYPEC_PLUG_ORIEN_E typec_o
 		goto COM_FIN;
 	}
 
-	ret = tca_mode_switch(new_mode, typec_orien);
+	if (is_fw_update) {
+		ret = tca_mode_switch(new_mode, typec_orien);
+	}
 COM_FIN:
 	return ret;
 }
@@ -777,14 +725,10 @@ int combophy_sw_sysc(TCPC_MUX_CTRL_TYPE new_mode, TYPEC_PLUG_ORIEN_E typec_orien
 			return 0;
 		}
 
-	printk(HISI_TCA_DEBUG"[%s]\n", __func__);
+	pr_info("[%s]\n", __func__);
 
-	if (typec_orien != tca_dev.typec_orien) {
-		typec_orien = tca_dev.typec_orien;
-		pr_info("%s: Correct typec_orien as %d\n", __func__, typec_orien);
-	}
-
-	ret = combophy_init(new_mode, typec_orien);
+	/* arg3: is usb firmware update. 1: update fw */
+	ret = combophy_init(new_mode, typec_orien, (bool)1);
 	(void)hisi_dptx_triger((bool)0);
 
 	if (lock_flag)
@@ -795,12 +739,12 @@ int combophy_sw_sysc(TCPC_MUX_CTRL_TYPE new_mode, TYPEC_PLUG_ORIEN_E typec_orien
 
 /*lint  +e838*/
 /*lint -e124 */
-static int usbctrl_status_update(TCPC_MUX_CTRL_TYPE mode_type, TCA_DEV_TYPE_E dev_type)
+static int usbctrl_status_update(TCPC_MUX_CTRL_TYPE mode_type, TCA_DEV_TYPE_E dev_type, TYPEC_PLUG_ORIEN_E typec_orien)
 {
 	int ret = 0;
 	if (dev_type <= TCA_ID_RISE_EVENT) {
-		printk(HISI_TCA_DEBUG"[%s]hisi_usb_otg_event_sync[%d]\n", __func__, dev_type);
-		ret = hisi_usb_otg_event_sync(mode_type, (enum otg_dev_event_type)dev_type);
+		pr_info("[%s]hisi_usb_otg_event_sync[%d]\n", __func__, dev_type);
+		ret = hisi_usb_otg_event_sync(mode_type, (enum otg_dev_event_type)dev_type, typec_orien);
 		if (ret) {
 			pr_err("hisi_usb_otg_event_sync err[%d]\n", ret);
 			return ret;
@@ -815,7 +759,7 @@ static int usbctrl_status_update(TCPC_MUX_CTRL_TYPE mode_type, TCA_DEV_TYPE_E de
 static int combophy_shutdown(void)
 {
 	volatile unsigned int reg;
-	printk(HISI_TCA_DEBUG"[%s][%d]\n", __func__,tca_dev.tca_poweron);
+	pr_info("[%s][%d]\n", __func__,tca_dev.tca_poweron);
 	if(TCA_POWEROFF == tca_dev.tca_poweron)
 		return 0;
 
@@ -849,7 +793,7 @@ USB_MISC_CTRL_FIN:
 		/*writel(HM_DIS(SOC_PCTRL_PERI_CTRL3_usb_tcxo_en_START),
 			SOC_PCTRL_PERI_CTRL3_ADDR(tca_dev.pctrl_reg_base));*/
 			clk_disable_unprepare(tca_dev.gt_clk_usb3_tcxo_en);
-			printk(HISI_TCA_DEBUG"[%s]gt_clk_usb3_tcxo_en disable-\n", __func__);
+			pr_info("[%s]gt_clk_usb3_tcxo_en disable-\n", __func__);
 
 	}else {
 		/*writel(BIT(SOC_CRGPERIPH_PERDIS6_gt_clk_usb2phy_ref_START),
@@ -866,10 +810,10 @@ USB_MISC_CTRL_FIN:
 	/*gt_clk_usb3otg_ref、Gt_aclk_usb3otg  这两个时钟由USB模块负责 前进2017/3/17 */
 	/*writel(BIT(SOC_CRGPERIPH_PERDIS0_gt_hclk_usb3otg_misc_START),
 		SOC_CRGPERIPH_PERDIS0_ADDR(tca_dev.crgperi_reg_base));*/
-	printk(HISI_TCA_DEBUG"[%s]dwc3_misc_ctrl_put \n", __func__);
+	pr_info("[%s]dwc3_misc_ctrl_put \n", __func__);
 	dwc3_misc_ctrl_put(MICS_CTRL_COMBOPHY);
 	/*clk_disable_unprepare(tca_dev.gt_hclk_usb3otg);*/
-	printk(HISI_TCA_DEBUG"PERCLKEN0[%x]PERSTAT0[%x]PERRSTSTAT4[%x]\n",
+	pr_info("PERCLKEN0[%x]PERSTAT0[%x]PERRSTSTAT4[%x]\n",
 		readl(SOC_CRGPERIPH_PERCLKEN0_ADDR(tca_dev.crgperi_reg_base)),
 		readl(SOC_CRGPERIPH_PERSTAT0_ADDR(tca_dev.crgperi_reg_base)),
 		readl(SOC_CRGPERIPH_PERRSTSTAT4_ADDR(tca_dev.crgperi_reg_base)));
@@ -938,7 +882,7 @@ int pd_event_notify(TCA_IRQ_TYPE_E irq_type, TCPC_MUX_CTRL_TYPE mode_type, TCA_D
 	int ret;
 	pd_event_t pd_event;
 
-	printk(HISI_TCA_DEBUG"[%s]IRQ[%s]MODEcur[%s]new[%s]DEV[%s]ORIEN[%d]\n",
+	pr_info("[%s]IRQ[%s]MODEcur[%s]new[%s]DEV[%s]ORIEN[%d]\n",
 		__func__, irq_type_string(irq_type), mode_type_string(tca_dev.tca_cur_mode),
 		mode_type_string(mode_type), dev_type_string(dev_type), typec_orien);
 	dp_imonitor_set_pd_event(irq_type, tca_dev.tca_cur_mode, mode_type, dev_type, typec_orien);
@@ -953,13 +897,13 @@ int pd_event_notify(TCA_IRQ_TYPE_E irq_type, TCPC_MUX_CTRL_TYPE mode_type, TCA_D
 
 	if (!wake_lock_active(&tca_dev.wlock))
 		wake_lock(&tca_dev.wlock);
-	printk(HISI_TCA_DEBUG"\n[%s]wake lock\n", __func__);
+	pr_info("\n[%s]wake lock\n", __func__);
 	pd_event.irq_type = irq_type;
 	pd_event.mode_type = mode_type;
 	pd_event.dev_type = dev_type;
 	pd_event.typec_orien = typec_orien;
 	ret = kfifo_in(&tca_dev.kfifo, &pd_event, (unsigned int)sizeof(pd_event_t));
-	printk(HISI_TCA_DEBUG"kfifo_in[%d]\n", ret);
+	pr_info("kfifo_in[%d]\n", ret);
 	if(!queue_work(tca_dev.wq, &tca_dev.work))
 		pr_err("[%s]tca wq is doing\n", __func__);
 	return 0;
@@ -973,7 +917,7 @@ static int pd_notify_nc(pd_event_t *event)
 		hisi_dptx_hpd_trigger(event->irq_type, tca_dev.tca_cur_mode, event->typec_orien);
 	}
 
-	ret = usbctrl_status_update(event->mode_type, event->dev_type);
+	ret = usbctrl_status_update(event->mode_type, event->dev_type, event->typec_orien);
 	if (ret && -EINVAL != ret)
 		goto PD_NOTIFY_NC;
 
@@ -987,7 +931,7 @@ static int pd_event_handle_update(pd_event_t *event)
 {
 	int ret;
 
-	ret = usbctrl_status_update(event->mode_type, event->dev_type);
+	ret = usbctrl_status_update(event->mode_type, event->dev_type, event->typec_orien);
 	if (ret)
 		goto TCA_SW_FIN;
 
@@ -1025,68 +969,100 @@ TCA_SW_FIN:
 	return ret;
 }
 
-/*lint  -e655 +e747 +e454 +e456*/
-void pd_event_hander(pd_event_t *event)
+static int pd_event_processing(pd_event_t *event)
 {
-	int ret =0;
-	printk(HISI_TCA_DEBUG"[%s]IRQ[%d]MODEcur[%d]new[%d]DEV[%d]ORIEN[%d]\n",
-		__func__, event->irq_type, tca_dev.tca_cur_mode,event->mode_type, event->dev_type, event->typec_orien);
-	if(TCPC_NC == event->mode_type) {
-		ret = pd_notify_nc(event);
+	int ret = 0;
+
+	if(TCPC_NC == tca_dev.tca_cur_mode) {
+		/* arg2: is usb firmware update. 1: update fw */
+		ret = combophy_poweron(event->typec_orien, 1);
+		if(ret) {
+			goto TCA_SW_FIN;
+		}
+	}
+
+	if(TCA_IRQ_SHORT == event->irq_type)
+		hisi_dptx_hpd_trigger(event->irq_type, tca_dev.tca_cur_mode, event->typec_orien);
+	else if (tca_dev.tca_cur_mode == event->mode_type) {
+		ret = pd_event_handle_update(event);
 	}else {
-		if(TCPC_NC == tca_dev.tca_cur_mode) {
-			ret = combophy_poweron(event->mode_type, event->typec_orien);
-			if(ret) {
-				goto TCA_SW_FIN;
-			}
+		ret = hisi_dptx_notify_switch();
+		if (ret) {
+			pr_err("[%s] hisi_dptx_notify_switch err\n", __func__);
+			ret = -EIO;
+			goto TCA_SW_FIN;
 		}
 
-		if(TCA_IRQ_SHORT == event->irq_type)
+		ret = tca_mode_switch(event->mode_type, event->typec_orien);
+		if (ret) {
+			pr_err("[%s] tca_mode_switch err\n", __func__);
+			goto TCA_SW_FIN;
+		}
+
+		/*
+		2）USB在位状态，考虑到USB可能存在数传，
+		PD不能直接做PHY的模式切换，必须先做一下拔出，再到新的状态。
+		USB->DP4:  USB->NC->DP4
+		USB->USB+DP4:USB->NC->USB+DP4
+		*/
+		ret = usbctrl_status_update(event->mode_type, event->dev_type, event->typec_orien);
+		if (ret)
+			goto TCA_SW_FIN;
+
+		if (event->dev_type >= TCA_DP_OUT)
 			hisi_dptx_hpd_trigger(event->irq_type, tca_dev.tca_cur_mode, event->typec_orien);
-		else if (tca_dev.tca_cur_mode == event->mode_type) {
-			ret = pd_event_handle_update(event);
-		}else {
-			ret = hisi_dptx_notify_switch();
+		else {
+			ret = hisi_dptx_triger((bool)0);
 			if (ret) {
-				pr_err("[%s] hisi_dptx_notify_switch err\n", __func__);
-				ret = -EIO;
+				pr_err("[%s]hisi_dptx_triger err[%d][%d]\n",__func__, __LINE__,ret);
+				ret = -ERANGE;
 				goto TCA_SW_FIN;
-			}
-
-			ret = tca_mode_switch(event->mode_type, event->typec_orien);
-			if (ret) {
-				pr_err("[%s] tca_mode_switch err\n", __func__);
-				goto TCA_SW_FIN;
-			}
-/*
-2）USB在位状态，考虑到USB可能存在数传，
-PD不能直接做PHY的模式切换，必须先做一下拔出，再到新的状态。
-USB->DP4:  USB->NC->DP4
-USB->USB+DP4:USB->NC->USB+DP4
-*/
-
-			ret = usbctrl_status_update(event->mode_type, event->dev_type);
-			if (ret)
-				goto TCA_SW_FIN;
-
-			if (event->dev_type >= TCA_DP_OUT)
-				hisi_dptx_hpd_trigger(event->irq_type, tca_dev.tca_cur_mode, event->typec_orien);
-			else {
-				ret = hisi_dptx_triger((bool)0);
-				if (ret) {
-					pr_err("[%s]hisi_dptx_triger err[%d][%d]\n",__func__, __LINE__,ret);
-					ret = -ERANGE;
-					goto TCA_SW_FIN;
-				}
 			}
 		}
 	}
 
 TCA_SW_FIN:
+	return ret;
+}
+
+/*lint  -e655 +e747 +e454 +e456*/
+void pd_event_hander(pd_event_t *event)
+{
+	int ret =0;
+	unsigned int hifi_first_flag = 0;
+
+	if ((event->dev_type == TCA_ID_FALL_EVENT)
+		&& (event->mode_type == TCPC_USB31_CONNECTED)
+		&& (hisi_usb_otg_use_hifi_ip_first()))
+		hifi_first_flag = 1;
+
+	pr_info("[%s]IRQ[%d]MODEcur[%d]new[%d]DEV[%d]ORIEN[%d]hifi_first_flag[%d]\n",
+		__func__, event->irq_type, tca_dev.tca_cur_mode,event->mode_type, event->dev_type, event->typec_orien, hifi_first_flag);
+	if(TCPC_NC == event->mode_type) {
+		ret = pd_notify_nc(event);
+	}else {
+		if (hifi_first_flag) {
+			/* Must set the tca_cur_mode before calling
+			 * usbctrl_status_update, because usbctrl_status_update
+			 * may use it! */
+			tca_dev.tca_cur_mode = event->mode_type;
+
+			ret = usbctrl_status_update(event->mode_type, event->dev_type, event->typec_orien);
+			if (ret) {
+				pr_info("[%s]usbctrl_status_update failed[%d]n", __func__, ret);
+			}
+		} else {
+			ret = pd_event_processing(event);
+			if (ret) {
+				pr_err("[%s] hisi_dptx_notify_switch err\n", __func__);
+			}
+		}
+	}
+
 	if (ret)
 		(void)hisi_dptx_triger((bool)0);
 
-	printk(HISI_TCA_DEBUG"\n[%s]:CurMode[%d]RET[%d]\n", __func__, tca_dev.tca_cur_mode, ret);
+	pr_info("\n[%s]:CurMode[%d]RET[%d]\n", __func__, tca_dev.tca_cur_mode, ret);
 #ifdef CONFIG_TCPC_CLASS
 	dp_dfp_u_notify_dp_configuration_done(tca_dev.tca_cur_mode, ret);
 #endif
@@ -1108,7 +1084,7 @@ void  tca_wq(struct work_struct *data)
 
 	if(wake_lock_active(&tca_dev.wlock))
 		wake_unlock(&tca_dev.wlock);
-	printk(HISI_TCA_DEBUG"\n[%s]wake unlock\n", __func__);
+	pr_info("\n[%s]wake unlock\n", __func__);
 }
 /*lint +e715 +e747 +e455*/
 static int __init pd_probe(struct platform_device *pdev)
@@ -1183,8 +1159,11 @@ static void hisi_pd_complete(struct device *dev)
 static int combophy_suspend(struct device *dev)
 {
 	pr_info("\n[%s]:+\n", __func__);
-	if (tca_dev.tca_cur_mode > TCPC_NC && tca_dev.tca_cur_mode < TCPC_MUX_MODE_MAX)
+	if (tca_dev.tca_cur_mode > TCPC_NC && tca_dev.tca_cur_mode < TCPC_MUX_MODE_MAX) {
+		(void)hisi_dptx_triger((bool)0);
 		(void)combophy_shutdown();
+	}
+
 	pr_info("\n[%s]:-\n", __func__);
 	return 0;
 }
@@ -1192,8 +1171,10 @@ static int combophy_suspend(struct device *dev)
 static int combophy_resume(struct device *dev)
 {
 	pr_info("\n[%s]:+\n", __func__);
-	if (tca_dev.tca_cur_mode > TCPC_NC && tca_dev.tca_cur_mode < TCPC_MUX_MODE_MAX)
-		combophy_init(tca_dev.tca_cur_mode, tca_dev.typec_orien);
+	if (tca_dev.tca_cur_mode > TCPC_NC && tca_dev.tca_cur_mode < TCPC_MUX_MODE_MAX) {
+		/* arg3: is usb firmware update. 1: update fw */
+		combophy_init(tca_dev.tca_cur_mode, tca_dev.typec_orien, (bool)0);
+	}
 	pr_info("\n[%s]:-\n", __func__);
 	return 0;
 }

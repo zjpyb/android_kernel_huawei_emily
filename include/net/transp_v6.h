@@ -41,8 +41,8 @@ void ip6_datagram_recv_specific_ctl(struct sock *sk, struct msghdr *msg,
 				    struct sk_buff *skb);
 
 int ip6_datagram_send_ctl(struct net *net, struct sock *sk, struct msghdr *msg,
-			  struct flowi6 *fl6, struct ipv6_txoptions *opt,
-			  int *hlimit, int *tclass, int *dontfrag);
+			  struct flowi6 *fl6, struct ipcm6_cookie *ipc6,
+			  struct sockcm_cookie *sockc);
 
 void ip6_dgram_sock_seq_show(struct seq_file *seq, struct sock *sp,
 			     __u16 srcp, __u16 destp, int bucket);
@@ -51,10 +51,7 @@ void ip6_dgram_sock_seq_show(struct seq_file *seq, struct sock *sp,
 
 /* address family specific functions */
 extern const struct inet_connection_sock_af_ops ipv4_specific;
-#ifdef CONFIG_MPTCP
-extern const struct inet_connection_sock_af_ops ipv6_mapped;
-extern const struct inet_connection_sock_af_ops ipv6_specific;
-#endif
+
 void inet6_destroy_sock(struct sock *sk);
 
 #define IPV6_SEQ_DGRAM_HEADER					       \

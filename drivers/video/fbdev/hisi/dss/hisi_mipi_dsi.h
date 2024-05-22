@@ -163,6 +163,7 @@ int mipi_dsi_read_compare(struct mipi_dsi_read_compare_data *data,
 	char __iomem *dsi_base);
 int mipi_dsi_lread_reg(uint32_t *out, struct dsi_cmd_desc *cm,
 	uint32_t len, char *dsi_base);
+int mipi_dsi_cmd_is_read(struct dsi_cmd_desc *cm);
 
 struct hisi_fb_data_type;
 int mipi_dsi_clk_enable(struct hisi_fb_data_type *hisifd);

@@ -94,11 +94,9 @@
 		scsi_opcode_name(WRITE_16),			\
 		scsi_opcode_name(VERIFY_16),			\
 		scsi_opcode_name(WRITE_SAME_16),		\
+		scsi_opcode_name(ZBC_OUT),			\
+		scsi_opcode_name(ZBC_IN),			\
 		scsi_opcode_name(SERVICE_ACTION_IN_16),		\
-		scsi_opcode_name(SAI_READ_CAPACITY_16),		\
-		scsi_opcode_name(SAI_GET_LBA_STATUS),		\
-		scsi_opcode_name(MI_REPORT_TARGET_PGS),		\
-		scsi_opcode_name(MO_SET_TARGET_PGS),		\
 		scsi_opcode_name(READ_32),			\
 		scsi_opcode_name(WRITE_32),			\
 		scsi_opcode_name(WRITE_SAME_32),		\
@@ -357,27 +355,6 @@ TRACE_EVENT(scsi_eh_wakeup,
 	),
 
 	TP_printk("host_no=%u", __entry->host_no)
-);
-
-TRACE_EVENT(scsi_mq_debug,
-
-	TP_PROTO(const char* func, char* str_info),
-
-	TP_ARGS(func,str_info),
-
-	TP_STRUCT__entry(
-		__dynamic_array( char,	info_func,	strlen(func)+1	);
-		__dynamic_array( char,	info_string,	strlen(str_info)+1	);
-	),
-
-	TP_fast_assign(
-		memset(__get_str(info_func),0x00, strlen(func)+1);
-		memcpy(__get_str(info_func),func, strlen(func) );
-		memset(__get_str(info_string),0x00, strlen(str_info)+1);
-		memcpy(__get_str(info_string),str_info, strlen(str_info) );
-	),
-
-	TP_printk("[%s]:%s", __get_str(info_func),__get_str(info_string))
 );
 
 #endif /*  _TRACE_SCSI_H */

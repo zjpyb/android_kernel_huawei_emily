@@ -56,20 +56,6 @@ typedef enum {
 	OFFSETCALIB_MODE = 1,
 	XTALKCALIB_MODE = 2,
 } init_mode_e;
-#if 0
-typedef enum {
-	OFFSET_PAR = 0,
-	XTALKRATE_PAR = 1,
-	XTALKENABLE_PAR = 2,
-	GPIOFUNC_PAR = 3,
-	LOWTHRESH_PAR = 4,
-	HIGHTHRESH_PAR = 5,
-	DEVICEMODE_PAR = 6,
-	INTERMEASUREMENT_PAR = 7,
-	REFERENCESPADS_PAR = 8,
-	REFCALIBRATION_PAR = 9,
-} parameter_name_e;
-#endif
 enum {
 	CCI_BUS = 0,
 	I2C_BUS = 1,

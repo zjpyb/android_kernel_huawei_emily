@@ -18,7 +18,7 @@
 #include <linux/jiffies.h>
 #include <linux/timer.h>
 #include <linux/workqueue.h>
-#include <../../../drivers/staging/android/timed_output.h>
+#include <linux/leds.h>
 #include <linux/hrtimer.h>
 #include <linux/err.h>
 #include <linux/mutex.h>
@@ -125,17 +125,18 @@ static struct i2c_client *client_temp;
 static struct wake_lock vib_wakelock;
 
 struct drv2605_data {
+	struct led_classdev cclassdev;
+	int value;
 	int gpio_enable;
 	int gpio_pwm;
 	int max_timeout_ms;
 	int reduce_timeout_ms;
 	volatile int should_stop;
 	struct i2c_client *client;
-	struct timed_output_dev dev;
-	struct hrtimer timer;
 	struct mutex lock;
 	struct work_struct work;
 	struct work_struct work_play_eff;
+	struct work_struct work_enable;
 	unsigned char sequence[8];
 	struct class* class;
 	struct device* device;
@@ -642,20 +643,6 @@ static int save_vibrator_calib_value_to_reg(void)
 	return 0;
 }
 
-static int vibrator_get_time(struct timed_output_dev *dev)
-{
-	struct drv2605_data *data;
-
-	data = container_of(dev, struct drv2605_data, dev);
-
-	if (hrtimer_active(&(data->timer))) {
-		ktime_t r = hrtimer_get_remaining(&data->timer);
-		return ktime_to_ms(r);
-	}
-
-	return 0;
-}
-
 #ifdef CONFIG_HUAWEI_DSM
 static void check_power_state(void)
 {
@@ -702,19 +689,13 @@ static void vibrator_off(struct drv2605_data *data)
 	dev_info(&(data->client->dev), "drv2605 off!");
 }
 
-static void vibrator_enable(struct timed_output_dev *dev, int value)
+static void vibrator_on(struct drv2605_data *data)
 {
-	int ret = 0, wake_time = 0;
-	struct drv2605_data *data;
+	int ret = 0;
+	if(data == NULL)
+		return;
 
-	data = container_of(dev, struct drv2605_data, dev);
-	dev_info(&(data->client->dev), "drv2605 enable value: %d.\n", value);
-
-	mutex_lock(&data->lock);
-	hrtimer_cancel(&data->timer);
-	cancel_work_sync(&data->work);
-
-	if (value) {
+	if(data->value){
 		drv2605_change_mode(data->client, MODE_DEVICE_READY);
 		udelay(1000);
 		if (vib_init_calibdata == 0) {
@@ -722,52 +703,40 @@ static void vibrator_enable(struct timed_output_dev *dev, int value)
 			vib_init_calibdata = 1;
 			if (ret) {
 				dev_err(&(data->client->dev),
-					"save vibrator calib value fail:%d.\n",
-					ret);
+					"save vibrator calib value fail:%d.\n",ret);
 				vib_init_calibdata = 0;
 			}
 		}
-		/* Only change the mode if not already in RTP mode; RTP input already set at init */
 		if ((drv2605_read_reg(data->client, MODE_REG) &
-		     DRV260X_MODE_MASK)
-		    != MODE_REAL_TIME_PLAYBACK) {
+			DRV260X_MODE_MASK)
+			!= MODE_REAL_TIME_PLAYBACK) {
+
 			vibrator_shake = 1;
 			drv2605_set_rtp_val(data->client, rtp_strength);
-			drv2605_change_mode(data->client,
-					    MODE_REAL_TIME_PLAYBACK);
+			drv2605_change_mode(data->client,MODE_REAL_TIME_PLAYBACK);
 			vibrator_is_playing = YES;
 		}
-
-		if (value > 0) {
-			if (data->reduce_timeout_ms) {
-				if ((value > MIN_REDUCE_TIMEOUT) && (value <= MAX_REDUCE_TIMEOUT)) {
-					value = data->reduce_timeout_ms;
-				}
-			}
-			if (value > data->max_timeout_ms) {
-				value = data->max_timeout_ms;
-			}
-			wake_time = value + 50;
-			wake_lock_timeout(&vib_wakelock,
-					  msecs_to_jiffies(wake_time));
-			hrtimer_start(&data->timer,
-				      ns_to_ktime((u64) value * NSEC_PER_MSEC),
-				      HRTIMER_MODE_REL);
-		}
-	} else {
-		vibrator_off(data);
+		dev_info(&(data->client->dev), "drv2605 on!");
+	}else{
+		schedule_work(&data->work);
 	}
-
-	mutex_unlock(&data->lock);
 }
-
-static enum hrtimer_restart vibrator_timer_func(struct hrtimer *timer)
+static void vibrator_enable(struct led_classdev *dev, int value)
 {
-	struct drv2605_data *data;
+	struct drv2605_data *data = NULL;
 
-	data = container_of(timer, struct drv2605_data, timer);
-	schedule_work(&data->work);
-	return HRTIMER_NORESTART;
+	if(dev == NULL)
+		return;
+
+	data = container_of(dev, struct drv2605_data, cclassdev);
+	if(data == NULL){
+		pr_err("%s: vibrator data is NULL", __FUNCTION__);
+		return;
+	}
+	data->value = value;
+	dev_info(&(data->client->dev), "drv2605 enable value: %d.\n", data->value);
+	schedule_work(&data->work_enable);
+
 }
 
 static void vibrator_work(struct work_struct *work)
@@ -776,6 +745,19 @@ static void vibrator_work(struct work_struct *work)
 
 	data = container_of(work, struct drv2605_data, work);
 	vibrator_off(data);
+}
+
+static void vibrator_work_enable(struct work_struct *work)
+{
+	struct drv2605_data *data = NULL;
+	data = container_of(work, struct drv2605_data, work_enable);
+	if(data == NULL){
+		pr_err("%s: vibrator data is NULL", __FUNCTION__);
+		return;
+	}
+
+	cancel_work_sync(&data->work);
+	vibrator_on(data);
 }
 
 static void play_effect(struct work_struct *work)
@@ -1002,7 +984,7 @@ static ssize_t vibrator_calib_store(struct device *dev,
 	int status = 0;
 	unsigned char lra_mode = 0;
 	int ret = 0;
-	char calib_value[3] = { 0 }, lra_select[2] = {0};
+	char calib_value[3] = { 0 }, lra_select[2] = {0}, lra_overdriver_voltage[2] = {0};//buf size
 	char	vib_autocalib[2] = {0};
 	dev_info(&client_temp->dev, "start vibrator auto calibrate!\n");
 
@@ -1016,7 +998,11 @@ static ssize_t vibrator_calib_store(struct device *dev,
 	lra_select[1] = lra_mode;
 	vib_autocalib[0] = MODE_REG;
 	vib_autocalib[1] = 0x07;
+	lra_overdriver_voltage[0] = OVERDRIVE_CLAMP_VOLTAGE_REG;
+	lra_overdriver_voltage[1] = LRA_OVERDRIVE_CLAMP_VOLTAGE;
 
+	drv2605_write_reg_val(client_temp, lra_overdriver_voltage,
+			      sizeof(lra_overdriver_voltage));
 	drv2605_write_reg_val(client_temp, lra_select, sizeof(lra_select));
 	drv2605_write_reg_val(client_temp, vib_autocalib,
 			      sizeof(vib_autocalib));
@@ -1070,6 +1056,11 @@ static ssize_t vibrator_calib_store(struct device *dev,
 		dev_info(&client_temp->dev,
 			 "vibrator calibration result write to nv fail!\n");
 	}
+
+	lra_overdriver_voltage[0] = OVERDRIVE_CLAMP_VOLTAGE_REG;
+	lra_overdriver_voltage[1] = pdata->lra_overdriver_voltage;
+	drv2605_write_reg_val(client_temp, lra_overdriver_voltage,
+			      sizeof(lra_overdriver_voltage));
 
 	drv2605_change_mode(client_temp, MODE_STANDBY);
 
@@ -1195,7 +1186,6 @@ static ssize_t haptic_test_store(struct device *dev, struct device_attribute *at
 	}
 
 	/*vibrator work*/
-	hrtimer_cancel(&data->timer);
 	cancel_work_sync(&data->work);
 	vibrator_off(data);
 	memcpy(&data->sequence, &haptic_value,8);
@@ -1374,7 +1364,6 @@ static ssize_t haptics_write(struct file* filp, const char* buff, size_t len, lo
 
 	if (type == HAPTIC_STOP) {
 		data->should_stop = YES;
-		hrtimer_cancel(&data->timer);
 		cancel_work_sync(&data->work);
 		vibrator_off(data);
 		goto out;
@@ -1393,7 +1382,6 @@ static ssize_t haptics_write(struct file* filp, const char* buff, size_t len, lo
 		goto out;
 	} else {
 		data->should_stop = YES;
-		hrtimer_cancel(&data->timer);
 		cancel_work_sync(&data->work);
 		vibrator_off(data);
 		memcpy(&data->sequence, &haptics_table[table_num].haptics_value,HAPTICS_NUM);
@@ -1478,6 +1466,7 @@ static int drv2605_probe(struct i2c_client *client,
 	unsigned char lra_mode = 0, lra_select[2] = { 0 };
 	unsigned char lra_rated_voltage[2]={0}, lra_overdriver_voltage[2]={0};
 	vib_init_calibdata = 0;
+	struct led_classdev *cclassdev = NULL;
 
 
 	if (!i2c_check_functionality(client->adapter, I2C_FUNC_I2C)) {
@@ -1527,33 +1516,34 @@ static int drv2605_probe(struct i2c_client *client,
 	i2c_set_clientdata(client, data);
 
 	data->client = client;
+	data->device = &(client->dev);
 	if (gpio_request(data->gpio_enable, "vibrator-en") < 0) {
 		dev_err(&client->dev,
 			"drv2605: error requesting enable gpio!\n");
 		goto destroy_mutex;
 	}
 
-	hrtimer_init(&data->timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
-	data->timer.function = vibrator_timer_func;
 	INIT_WORK(&data->work, vibrator_work);
 	INIT_WORK(&data->work_play_eff, play_effect);
+	INIT_WORK(&data->work_enable, vibrator_work_enable);
 
-	data->dev.name = pdata->name;
-	data->dev.get_time = vibrator_get_time;
-	data->dev.enable = vibrator_enable;
-
+	data->cclassdev.name = pdata->name;
+	cclassdev = &(data->cclassdev);
+	cclassdev->name = "vibrator";
+	cclassdev->flags = LED_CORE_SUSPENDRESUME;
+	cclassdev->brightness_set = vibrator_enable;
+	cclassdev->default_trigger = "transient";
 	mutex_unlock(&data->lock);
 
-	rc = timed_output_dev_register(&data->dev);
-	if (rc) {
-		dev_err(&client->dev, "unable to register with timed_output\n");
-		goto unregister_timed_output_dev;
+	rc = devm_led_classdev_register(data->device,  cclassdev);
+	if(rc){
+		dev_err(&client->dev, "unable to register with led_classdev\n");
+		goto unregister_led_classdev;
 	}
 
-	ret = sysfs_create_group(&data->dev.dev->kobj, &vb_attr_group);
-	if (ret) {
-		dev_err(&client->dev,
-			"unable create vibrator's sysfs,DBC check IC fail\n");
+	ret = sysfs_create_group(&data->cclassdev.dev->kobj, &vb_attr_group);
+	if(ret){
+		dev_err(&client->dev,"unable create vibrator's sysfs\n");
 	}
 
 	/* enable the drv2605 chip */
@@ -1621,9 +1611,7 @@ static int drv2605_probe(struct i2c_client *client,
 
 	return 0;
 
-unregister_timed_output_dev:
-	timed_output_dev_unregister(&data->dev);
-	hrtimer_cancel(&data->timer);
+unregister_led_classdev:
 	gpio_free(data->gpio_enable);
 destroy_mutex:
 	mutex_destroy(&data->lock);
@@ -1640,12 +1628,11 @@ static int drv2605_remove(struct i2c_client *client)
 
 	wake_lock_destroy(&vib_wakelock);
 	mutex_destroy(&data->lock);
-	sysfs_remove_group(&data->dev.dev->kobj, &vb_attr_group);
-	timed_output_dev_unregister(&data->dev);
-	hrtimer_cancel(&data->timer);
+	sysfs_remove_group(&data->cclassdev.dev->kobj, &vb_attr_group);
+	led_classdev_unregister(&data->cclassdev);
 	cancel_work_sync(&data->work);
 	cancel_work_sync(&data->work_play_eff);
-
+	cancel_work_sync(&data->work_enable);
 	return 0;
 }
 

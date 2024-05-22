@@ -56,15 +56,6 @@ static struct sensor_power_setting hw_imx298_power_setting[] = {
         .sensor_index = SENSOR_INDEX_INVALID,
         .delay = 0,
     },
-#if 0
-    //disable sub camera reset
-    {
-        .seq_type = SENSOR_SUSPEND2,
-        .config_val = SENSOR_GPIO_LOW,
-        .sensor_index = SENSOR_INDEX_INVALID,
-        .delay = 0,
-    },
-#endif
     //MCAM IOVDD 1.80V
     {
         .seq_type = SENSOR_IOVDD,
@@ -334,12 +325,6 @@ imx298_match_id(
         strncpy_s(cdata->cfg.name, DEVICE_NAME_SIZE-1, sensor->board_info->name, DEVICE_NAME_SIZE-1);
         cdata->data = sensor->board_info->sensor_index;
     }
-#if 0 //delete no use line
-    if (cdata->data != SENSOR_INDEX_INVALID) {
-        hwsensor_writefile(sensor->board_info->sensor_index, cdata->cfg.name);
-        cam_info("%s, cdata->cfg.name = %s", __func__,cdata->cfg.name );
-    }
-#endif
     cam_info("%s cdata->data=%d", __func__, cdata->data);
 
     return 0;

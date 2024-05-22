@@ -46,13 +46,13 @@ sdcardfs_sysfs_sb_blocked_users_store(struct kobject *kobj,
 
 	/* print some debug messages for the privacyspace feature */
 	if (sbi->blocked_userid < 0)
-		warnln("all users have access to %s now", kobj->name);
+		pr_warn("all users have access to %s now", kobj->name);
 	else {
-		warnln("user/%d has been blocked from accessing %s",
+		pr_warn("user/%d has been blocked from accessing %s",
 			sbi->blocked_userid, kobj->name);
 
 		if (sbi->appid_excluded >= 0)
-			warnln("but appid/%d will be excluded",
+			pr_warn("but appid/%d will be excluded",
 				sbi->appid_excluded);
 	}
 	return len;
@@ -66,7 +66,7 @@ sdcardfs_sysfs_sb_device_show(struct kobject *kobj,
 	struct sdcardfs_sb_info *sbi = container_of(kobj,
 		struct sdcardfs_sb_info, kobj);
 
-	return snprintf(buf, PAGE_SIZE, "%s\n", sbi->devpath_s);
+	return snprintf(buf, PAGE_SIZE, "%s\n", sbi->obbpath_s);
 }
 
 static void __sdcardfs_sysfs_sb_release(struct kobject *kobj)
@@ -159,7 +159,8 @@ int sdcardfs_sysfs_register_sb(struct super_block *sb)
 	err = kobject_init_and_add(&sbi->kobj, &sb_ktype, NULL,
 		"%u:%u", MAJOR(sb->s_dev), MINOR(sb->s_dev));
 	if (err) {
-		errln("failed to kobject_init_and_add, err=%d", err);
+		//errln("failed to kobject_init_and_add, err=%d", err);
+		pr_err("failed to kobject_init_and_add, err=%d", err);
 		return err;
 	}
 

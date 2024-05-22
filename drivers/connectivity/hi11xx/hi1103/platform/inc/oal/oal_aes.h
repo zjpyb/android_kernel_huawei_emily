@@ -122,20 +122,20 @@ typedef struct oal_mmie_stru oal_mmie_stru;
 /*****************************************************************************
   10 º¯ÊýÉùÃ÷
 *****************************************************************************/
-extern oal_uint32  oal_aes_expand_key(oal_aes_key_stru *pst_aes_key,
+extern oal_uint32  oal_aes_expand_key_etc(oal_aes_key_stru *pst_aes_key,
                                             OAL_CONST oal_uint8 *in_key,
 		                                    unsigned int key_len);
-extern oal_uint32  oal_aes_encrypt(oal_aes_key_stru *pst_aes_key,
+extern oal_uint32  oal_aes_encrypt_etc(oal_aes_key_stru *pst_aes_key,
                                        oal_uint8  *puc_ciphertext,
                                        OAL_CONST oal_uint8  *puc_plaintext);
-extern oal_uint32  oal_aes_decrypt(oal_aes_key_stru *pst_aes_key,
+extern oal_uint32  oal_aes_decrypt_etc(oal_aes_key_stru *pst_aes_key,
                                        oal_uint8  *puc_plaintext,
                                        OAL_CONST oal_uint8  *puc_ciphertext);
 
 #if (!defined(_PRE_PRODUCT_ID_HI110X_HOST))
 extern oal_void oal_crypto_bip_enmic(oal_uint8 uc_igtk_keyid, oal_uint8 *pst_igtk_key, oal_uint8 *pst_igtk_seq, oal_netbuf_stru *pst_netbuf, oal_uint16 *pst_frame_len);
 #endif
-extern oal_uint32 oal_crypto_bip_demic(oal_uint8 uc_igtk_keyid, oal_uint8 *pst_igtk_key, oal_uint8 *pst_igtk_seq, oal_netbuf_stru *pst_netbuf);
+extern oal_uint32 oal_crypto_bip_demic_etc(oal_uint8 uc_igtk_keyid, oal_uint8 *pst_igtk_key, oal_uint8 *pst_igtk_seq, oal_netbuf_stru *pst_netbuf);
 
 
 

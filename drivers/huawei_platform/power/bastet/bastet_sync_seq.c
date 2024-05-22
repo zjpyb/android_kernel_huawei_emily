@@ -39,6 +39,8 @@ enum {
 	BST_USER_START,
 };
 
+static DEFINE_SPINLOCK(create_bastet_lock);
+
 extern int adjust_traffic_flow_by_sock(struct sock *sk,
 	unsigned long tx, unsigned long rx);
 
@@ -219,8 +221,11 @@ bool bastet_sock_recv_prepare(struct sock *sk, struct sk_buff *skb)
 		/* Ps: do not break */
 	case BST_SOCK_UPDATING:
 		if (unlikely(add_rcvqueues_queue(sk, skb))) {
-			NET_INC_STATS_BH(sock_net(sk),
-				LINUX_MIB_TCPBACKLOGDROP);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
+			__NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPBACKLOGDROP);
+#else
+			NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_TCPBACKLOGDROP);
+#endif
 			kfree_skb(skb);
 		}
 		return true;
@@ -706,13 +711,17 @@ static int do_start_bastet_sock(struct sock *sk,
 	int err = 0;
 	struct bastet_sock *bsk = sk->bastet;
 
+	spin_lock(&create_bastet_lock);
 	if (NULL == bsk) {
 		err = create_bastet_sock(sk, init_prop);
-		if (err < 0)
+		if (err < 0) {
+			spin_unlock(&create_bastet_lock);
 			return err;
+		}
 
 		bsk = sk->bastet;
 	}
+	spin_unlock(&create_bastet_lock);
 	bsk->last_sock_active_time_point = jiffies;
 
 	spin_lock_bh(&sk->sk_lock.slock);
@@ -850,15 +859,17 @@ int prepare_bastet_sock(struct bst_set_sock_sync_delay *sync_prop)
 	BASTET_LOGI("sk: %p", sk);
 
 	bsk = sk->bastet;
+	spin_lock(&create_bastet_lock);
 	if (NULL == bsk) {
 		err = create_bastet_sock(sk, sync_prop);
 		if (err < 0) {
 			sock_put(sk);
+			spin_unlock(&create_bastet_lock);
 			return err;
 		}
 		bsk = sk->bastet;
 	}
-
+	spin_unlock(&create_bastet_lock);
 	sock_put(sk);
 
 	return err;

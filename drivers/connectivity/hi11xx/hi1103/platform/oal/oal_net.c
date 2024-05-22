@@ -59,7 +59,7 @@ oal_sock_stru g_st_sock;
 *****************************************************************************/
 
 /*lint -e695*/
-OAL_INLINE oal_bool_enum_uint8 oal_netbuf_is_dhcp_port(oal_udp_header_stru *pst_udp_hdr)
+OAL_INLINE oal_bool_enum_uint8 oal_netbuf_is_dhcp_port_etc(oal_udp_header_stru *pst_udp_hdr)
 {
     if (((OAL_HOST2NET_SHORT(pst_udp_hdr->source) == 68)
         && (OAL_HOST2NET_SHORT(pst_udp_hdr->dest) == 67))
@@ -74,7 +74,7 @@ OAL_INLINE oal_bool_enum_uint8 oal_netbuf_is_dhcp_port(oal_udp_header_stru *pst_
 /*lint +e695*/
 
 
-oal_bool_enum_uint8 oal_netbuf_is_nd(oal_ipv6hdr_stru  *pst_ipv6hdr)
+oal_bool_enum_uint8 oal_netbuf_is_nd_etc(oal_ipv6hdr_stru  *pst_ipv6hdr)
 {
     //oal_ipv6hdr_stru       *pst_ipv6hdr          = OAL_PTR_NULL;
     oal_icmp6hdr_stru      *pst_icmp6hdr;
@@ -98,7 +98,7 @@ oal_bool_enum_uint8 oal_netbuf_is_nd(oal_ipv6hdr_stru  *pst_ipv6hdr)
 }
 
 
-oal_bool_enum_uint8 oal_netbuf_is_dhcp6(oal_ipv6hdr_stru  *pst_ipv6hdr)
+oal_bool_enum_uint8 oal_netbuf_is_dhcp6_etc(oal_ipv6hdr_stru  *pst_ipv6hdr)
 {
     //oal_ipv6hdr_stru       *pst_ipv6hdr          = OAL_PTR_NULL;
     oal_udp_header_stru           *pst_udp_hdr;
@@ -224,7 +224,7 @@ oal_void  oal_netbuf_get_txtid(oal_netbuf_stru *pst_buf, oal_uint8 *puc_tos)
 #endif
 
 
-oal_bool_enum_uint8 oal_netbuf_is_tcp_ack(oal_ip_header_stru  *pst_ip_hdr)
+oal_bool_enum_uint8 oal_netbuf_is_tcp_ack_etc(oal_ip_header_stru  *pst_ip_hdr)
 {
     oal_tcp_header_stru    *pst_tcp_hdr;
     oal_uint32              ul_ip_pkt_len;
@@ -246,7 +246,7 @@ oal_bool_enum_uint8 oal_netbuf_is_tcp_ack(oal_ip_header_stru  *pst_ip_hdr)
 }
 
 
-oal_bool_enum_uint8 oal_netbuf_is_icmp(oal_ip_header_stru  *pst_ip_hdr)
+oal_bool_enum_uint8 oal_netbuf_is_icmp_etc(oal_ip_header_stru  *pst_ip_hdr)
 {
     oal_uint8  uc_protocol;
     uc_protocol = pst_ip_hdr->uc_protocol;
@@ -263,7 +263,7 @@ oal_bool_enum_uint8 oal_netbuf_is_icmp(oal_ip_header_stru  *pst_ip_hdr)
 #ifdef _PRE_WLAN_FEATURE_OFFLOAD_FLOWCTL
 
 
-oal_bool_enum_uint8 oal_netbuf_is_tcp_ack6(oal_ipv6hdr_stru  *pst_ipv6hdr)
+oal_bool_enum_uint8 oal_netbuf_is_tcp_ack6_etc(oal_ipv6hdr_stru  *pst_ipv6hdr)
 {
     oal_tcp_header_stru    *pst_tcp_hdr;
     oal_uint32              ul_ip_pkt_len;
@@ -282,7 +282,7 @@ oal_bool_enum_uint8 oal_netbuf_is_tcp_ack6(oal_ipv6hdr_stru  *pst_ipv6hdr)
 }
 
 
-oal_uint16 oal_netbuf_select_queue(oal_netbuf_stru *pst_buf)
+oal_uint16 oal_netbuf_select_queue_etc(oal_netbuf_stru *pst_buf)
 {
     oal_ether_header_stru  *pst_ether_header;
     oal_ip_header_stru     *pst_ip;
@@ -323,14 +323,14 @@ oal_uint16 oal_netbuf_select_queue(oal_netbuf_stru *pst_buf)
 
                 /* 如果是DHCP帧，则进入DATA_HIGH_QUEUE */
                 pst_udp_hdr = (oal_udp_header_stru *)(pst_ip + 1);
-                if ((0 == (pst_ip->us_frag_off & 0xFF1F)) && (OAL_TRUE == oal_netbuf_is_dhcp_port(pst_udp_hdr)))
+                if ((0 == (pst_ip->us_frag_off & 0xFF1F)) && (OAL_TRUE == oal_netbuf_is_dhcp_port_etc(pst_udp_hdr)))
                 {
                     us_queue = WLAN_DATA_VIP_QUEUE;
                 }
             }
             else if (MAC_TCP_PROTOCAL == pst_ip->uc_protocol) /* 区分TCP ack与TCP data报文 */
             {
-                if (OAL_TRUE == oal_netbuf_is_tcp_ack(pst_ip))
+                if (OAL_TRUE == oal_netbuf_is_tcp_ack_etc(pst_ip))
                 {
                     us_queue = WLAN_TCP_ACK_QUEUE;
                 }
@@ -361,7 +361,7 @@ oal_uint16 oal_netbuf_select_queue(oal_netbuf_stru *pst_buf)
             }
             else if (MAC_TCP_PROTOCAL == pst_ipv6->nexthdr) /* TCP报文 */
             {
-                if (OAL_TRUE == oal_netbuf_is_tcp_ack6(pst_ipv6))
+                if (OAL_TRUE == oal_netbuf_is_tcp_ack6_etc(pst_ipv6))
                 {
                     us_queue = WLAN_TCP_ACK_QUEUE;
                 }
@@ -372,7 +372,7 @@ oal_uint16 oal_netbuf_select_queue(oal_netbuf_stru *pst_buf)
             }
 
             /* 如果是DHCPV6帧，则进入WLAN_DATA_VIP_QUEUE队列缓存 */
-            else if (OAL_TRUE == oal_netbuf_is_dhcp6((oal_ipv6hdr_stru *)(pst_ether_header + 1)))
+            else if (OAL_TRUE == oal_netbuf_is_dhcp6_etc((oal_ipv6hdr_stru *)(pst_ether_header + 1)))
             {
                 us_queue = WLAN_DATA_VIP_QUEUE;
             }
@@ -428,8 +428,8 @@ oal_uint16 oal_netbuf_select_queue(oal_netbuf_stru *pst_buf)
 }
 
 /*lint -e19*/
-oal_module_symbol(oal_netbuf_is_tcp_ack6);
-oal_module_symbol(oal_netbuf_select_queue);
+oal_module_symbol(oal_netbuf_is_tcp_ack6_etc);
+oal_module_symbol(oal_netbuf_select_queue_etc);
 /*lint +e19*/
 
 #endif
@@ -687,10 +687,10 @@ struct dev_netlink_msg_hdr_stru
 };
 
 
-struct dev_excp_globals dev_excp_handler_data;
+struct dev_excp_globals dev_excp_handler_data_etc;
 
 /*
- * Prototype    : dev_netlink_rev
+ * Prototype    : dev_netlink_rev_etc
  * Description  : receive netlink date from app
  * Input        : void
  * Return Value : void
@@ -706,7 +706,7 @@ struct dev_excp_globals dev_excp_handler_data;
 
 #define OAL_EXCP_DATA_BUF_LEN (64)
 
-void dev_netlink_rev(oal_netbuf_stru *skb)
+void dev_netlink_rev_etc(oal_netbuf_stru *skb)
 {
     oal_netbuf_stru                *pst_skb;
     oal_nlmsghdr_stru              *pst_nlh;
@@ -724,7 +724,7 @@ void dev_netlink_rev(oal_netbuf_stru *skb)
     pst_skb = OAL_PTR_NULL;
     pst_nlh = OAL_PTR_NULL;
 
-    OAL_MEMZERO(dev_excp_handler_data.data, OAL_EXCP_DATA_BUF_LEN);
+    OAL_MEMZERO(dev_excp_handler_data_etc.data, OAL_EXCP_DATA_BUF_LEN);
     pst_skb = oal_netbuf_get(skb);
     if (pst_skb->len >= OAL_NLMSG_SPACE(0))
     {
@@ -741,7 +741,7 @@ void dev_netlink_rev(oal_netbuf_stru *skb)
         /* 后续需要拷贝sizeof(st_msg_hdr),故判断之 */
         if (ul_len <= OAL_EXCP_DATA_BUF_LEN && ul_len >= sizeof(st_msg_hdr))
         {
-            oal_memcopy(dev_excp_handler_data.data, OAL_NLMSG_DATA(pst_nlh), ul_len);
+            oal_memcopy(dev_excp_handler_data_etc.data, OAL_NLMSG_DATA(pst_nlh), ul_len);
         }
         else
         {
@@ -749,12 +749,12 @@ void dev_netlink_rev(oal_netbuf_stru *skb)
             kfree_skb(pst_skb);
             return;
         }
-        oal_memcopy((void *)&st_msg_hdr, dev_excp_handler_data.data, sizeof(st_msg_hdr));
+        oal_memcopy((void *)&st_msg_hdr, dev_excp_handler_data_etc.data, sizeof(st_msg_hdr));
 
         if (0 == st_msg_hdr.cmd)
         {
-            dev_excp_handler_data.usepid = pst_nlh->nlmsg_pid;   /*pid of sending process */
-            OAL_IO_PRINT("WIFI DFR:pid is [%d], msg is [%s]\n", dev_excp_handler_data.usepid , &dev_excp_handler_data.data[sizeof(st_msg_hdr)]);
+            dev_excp_handler_data_etc.usepid = pst_nlh->nlmsg_pid;   /*pid of sending process */
+            OAL_IO_PRINT("WIFI DFR:pid is [%d], msg is [%s]\n", dev_excp_handler_data_etc.usepid , &dev_excp_handler_data_etc.data[sizeof(st_msg_hdr)]);
         }
     }
     kfree_skb(pst_skb);
@@ -763,7 +763,7 @@ void dev_netlink_rev(oal_netbuf_stru *skb)
 }
 
 /*
- * Prototype    : dev_netlink_create
+ * Prototype    : dev_netlink_create_etc
  * Description  : create netlink for device exception
  * Input        : void
  * Return Value : int
@@ -777,22 +777,22 @@ void dev_netlink_rev(oal_netbuf_stru *skb)
  *
  */
 
-oal_int32 dev_netlink_create(void)
+oal_int32 dev_netlink_create_etc(void)
 {
-    dev_excp_handler_data.nlsk = oal_netlink_kernel_create(&OAL_INIT_NET, NETLINK_DEV_ERROR, 0, dev_netlink_rev, OAL_PTR_NULL, OAL_THIS_MODULE);
-    if (OAL_PTR_NULL == dev_excp_handler_data.nlsk)
+    dev_excp_handler_data_etc.nlsk = oal_netlink_kernel_create(&OAL_INIT_NET, NETLINK_DEV_ERROR, 0, dev_netlink_rev_etc, OAL_PTR_NULL, OAL_THIS_MODULE);
+    if (OAL_PTR_NULL == dev_excp_handler_data_etc.nlsk)
     {
         OAL_IO_PRINT("WIFI DFR:fail to create netlink socket \n");
         return -OAL_EFAIL;
     }
 
-    OAL_IO_PRINT("WIFI DFR:suceed to create netlink socket，%p \n", dev_excp_handler_data.nlsk);
+    OAL_IO_PRINT("WIFI DFR:suceed to create netlink socket，%p \n", dev_excp_handler_data_etc.nlsk);
     return OAL_SUCC;
 }
 
 
 /*
- * Prototype    : dev_netlink_send
+ * Prototype    : dev_netlink_send_etc
  * Description  : send netlink data
  * Input        : void
  * Return Value : int
@@ -805,7 +805,7 @@ oal_int32 dev_netlink_create(void)
  *     Modification : Created function
  *
  */
-oal_int32 dev_netlink_send (oal_uint8 *data, oal_int data_len)
+oal_int32 dev_netlink_send_etc (oal_uint8 *data, oal_int data_len)
 {
     oal_netbuf_stru        *skb;
     oal_nlmsghdr_stru      *nlh;
@@ -827,14 +827,14 @@ oal_int32 dev_netlink_send (oal_uint8 *data, oal_int data_len)
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,34))
     OAL_NETLINK_CB(skb).portid = 0;                 /* from kernel */
 #endif
-    if (OAL_PTR_NULL == dev_excp_handler_data.nlsk)
+    if (OAL_PTR_NULL == dev_excp_handler_data_etc.nlsk)
     {
         OAL_IO_PRINT("WIFI DFR: NULL Pointer_sock.\n");
         kfree_skb(skb);
         return -OAL_EFAIL;
     }
 
-    ret = oal_netlink_unicast(dev_excp_handler_data.nlsk, skb, dev_excp_handler_data.usepid, MSG_DONTWAIT);
+    ret = oal_netlink_unicast(dev_excp_handler_data_etc.nlsk, skb, dev_excp_handler_data_etc.usepid, MSG_DONTWAIT);
     if (0 >= ret)
     {
         OAL_IO_PRINT("WIFI DFR:send dev error netlink msg, ret = %d \n", ret);
@@ -845,7 +845,7 @@ oal_int32 dev_netlink_send (oal_uint8 *data, oal_int data_len)
 
 
 /*
- * Prototype    : init_dev_excp_handler
+ * Prototype    : init_dev_excp_handler_etc
  * Description  : init dev exception handler
  * Input        : void
  * Return Value : int
@@ -858,29 +858,29 @@ oal_int32 dev_netlink_send (oal_uint8 *data, oal_int data_len)
  *     Modification : Created function
  *
  */
-oal_int32 init_dev_excp_handler(oal_void)
+oal_int32 init_dev_excp_handler_etc(oal_void)
 {
     oal_int32   ret;
 
     OAL_IO_PRINT("DFR: into init_exception_enable_handler\n");
 
-    OAL_MEMZERO((oal_uint8 *)&dev_excp_handler_data, OAL_SIZEOF(dev_excp_handler_data));
+    OAL_MEMZERO((oal_uint8 *)&dev_excp_handler_data_etc, OAL_SIZEOF(dev_excp_handler_data_etc));
 
-    dev_excp_handler_data.data = (oal_uint8 *)kzalloc(OAL_EXCP_DATA_BUF_LEN, GFP_KERNEL);
-    if (OAL_PTR_NULL == dev_excp_handler_data.data)
+    dev_excp_handler_data_etc.data = (oal_uint8 *)kzalloc(OAL_EXCP_DATA_BUF_LEN, GFP_KERNEL);
+    if (OAL_PTR_NULL == dev_excp_handler_data_etc.data)
     {
-        OAL_IO_PRINT("DFR: alloc dev_excp_handler_data.puc_data fail, len = %d.\n", OAL_EXCP_DATA_BUF_LEN);
-        dev_excp_handler_data.data = OAL_PTR_NULL;
+        OAL_IO_PRINT("DFR: alloc dev_excp_handler_data_etc.puc_data fail, len = %d.\n", OAL_EXCP_DATA_BUF_LEN);
+        dev_excp_handler_data_etc.data = OAL_PTR_NULL;
         return -OAL_EFAIL;
     }
 
 
-    OAL_MEMZERO(dev_excp_handler_data.data, OAL_EXCP_DATA_BUF_LEN);
+    OAL_MEMZERO(dev_excp_handler_data_etc.data, OAL_EXCP_DATA_BUF_LEN);
 
-    ret = dev_netlink_create();
+    ret = dev_netlink_create_etc();
     if (0 > ret)
     {
-        kfree(dev_excp_handler_data.data);
+        kfree(dev_excp_handler_data_etc.data);
         OAL_IO_PRINT("init_dev_err_kernel init is ERR!\n");
         return -OAL_EFAIL;
     }
@@ -891,7 +891,7 @@ oal_int32 init_dev_excp_handler(oal_void)
 }
 
 /*
- * Prototype    : deinit_dev_excp_handler
+ * Prototype    : deinit_dev_excp_handler_etc
  * Description  : deinit dev exception handler
  * Input        : void
  * Return Value : void
@@ -904,18 +904,18 @@ oal_int32 init_dev_excp_handler(oal_void)
  *     Modification : Created function
  *
  */
-oal_void deinit_dev_excp_handler(oal_void)
+oal_void deinit_dev_excp_handler_etc(oal_void)
 {
 
-    if (OAL_PTR_NULL != dev_excp_handler_data.nlsk)
+    if (OAL_PTR_NULL != dev_excp_handler_data_etc.nlsk)
     {
-        oal_netlink_kernel_release(dev_excp_handler_data.nlsk);
-        dev_excp_handler_data.usepid = 0;
+        oal_netlink_kernel_release(dev_excp_handler_data_etc.nlsk);
+        dev_excp_handler_data_etc.usepid = 0;
     }
 
-    if (OAL_PTR_NULL != dev_excp_handler_data.data)
+    if (OAL_PTR_NULL != dev_excp_handler_data_etc.data)
     {
-        kfree(dev_excp_handler_data.data);
+        kfree(dev_excp_handler_data_etc.data);
     }
 
     OAL_IO_PRINT("DFR: deinit ok.\n");
@@ -923,20 +923,20 @@ oal_void deinit_dev_excp_handler(oal_void)
     return;
 }
 #else
-oal_int32 dev_netlink_create(void)
+oal_int32 dev_netlink_create_etc(void)
 {
     return OAL_SUCC;
 }
 
-oal_int32 dev_netlink_send (oal_uint8 *data, oal_int data_len)
+oal_int32 dev_netlink_send_etc (oal_uint8 *data, oal_int data_len)
 {
     return OAL_SUCC;
 }
-oal_int32 init_dev_excp_handler(oal_void)
+oal_int32 init_dev_excp_handler_etc(oal_void)
 {
     return OAL_SUCC;
 }
-oal_void deinit_dev_excp_handler(oal_void)
+oal_void deinit_dev_excp_handler_etc(oal_void)
 {
     return;
 }
@@ -945,11 +945,11 @@ oal_void deinit_dev_excp_handler(oal_void)
 
 
 /*lint -e19*/
-oal_module_symbol(oal_netbuf_is_dhcp_port);
-oal_module_symbol(oal_netbuf_is_dhcp6);
-oal_module_symbol(oal_netbuf_is_nd);
-oal_module_symbol(oal_netbuf_is_tcp_ack);
-oal_module_symbol(oal_netbuf_is_icmp);
+oal_module_symbol(oal_netbuf_is_dhcp_port_etc);
+oal_module_symbol(oal_netbuf_is_dhcp6_etc);
+oal_module_symbol(oal_netbuf_is_nd_etc);
+oal_module_symbol(oal_netbuf_is_tcp_ack_etc);
+oal_module_symbol(oal_netbuf_is_icmp_etc);
 
 #ifdef _PRE_WLAN_FEATURE_FLOWCTL
 oal_module_symbol(oal_netbuf_get_txtid);
@@ -957,8 +957,8 @@ oal_module_symbol(oal_netbuf_get_txtid);
 
 
 
-oal_module_symbol(init_dev_excp_handler);
-oal_module_symbol(deinit_dev_excp_handler);
+oal_module_symbol(init_dev_excp_handler_etc);
+oal_module_symbol(deinit_dev_excp_handler_etc);
 
 
 /*lint +e19*/

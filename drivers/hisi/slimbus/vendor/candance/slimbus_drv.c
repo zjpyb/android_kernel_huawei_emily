@@ -31,7 +31,6 @@
 #include <linux/version.h>
 
 #include "slimbus_drv.h"
-#include <linux/hisi/hilog.h>
 #include "slimbus.h"
 #include <dsm_audio/dsm_audio.h>
 
@@ -41,6 +40,7 @@
 #define SOC_DEVICE_NUM							 3
 #define HI6402_DEVICE_NUM						 3
 #define ENUMERATION_TIMES						 400
+#define DUMP_SLIMBUS_REGS_SIZE                   0x2FC
 
 extern bool track_state[SLIMBUS_TRACK_MAX];
 
@@ -814,7 +814,6 @@ int slimbus_drv_init(platform_type_t platform_type, void *slimbus_reg, void *asp
 
 	if (ret < 0) {
 		pr_err("could not claim irq %d\n", ret);
-		HiLOGE("audio", "Slimbus_drv", "could not claim irq %d\n", ret);
 		ret = -ENODEV;
 		goto request_irq_failed;
 	}
@@ -897,7 +896,6 @@ int slimbus_drv_bus_configure(slimbus_bus_config_t *bus_config)
 	ret += csmiDrv->msgReconfigureNow(devm_slimbus_priv);
 	if (ret) {
 		pr_err("Bus reconfiguration failed with error: %d\n", ret);
-		HiLOGE("audio", "Slimbus_drv", "Bus reconfiguration failed with error: %d\n", ret);
 		goto exit;
 	}
 
@@ -981,6 +979,7 @@ void slimbus_dump_state(slimbus_dump_state_t type)
 {
 	uint64_t gic_base_addr;
 	uint32_t state[9] = {0};
+	uint32_t i = 0;
 	uint8_t  framersoc = 0;
 	uint8_t  framercodec = 0;
 
@@ -1033,6 +1032,19 @@ void slimbus_dump_state(slimbus_dump_state_t type)
 		SLIMBUS_DRV_LIMIT_ERR("0xe008:%#x, 0xe014:%#x, 0xe018:%#x, 0xe020:%#x, 0xe038:%#x;\n",
 			state[4], state[5], state[6], state[7], state[8]);
 		break;
+
+	case SLIMBUS_DUMP_ALL:
+		SLIMBUS_DRV_LIMIT_ERR("dump all slimbus regs\n");
+		for (i = 0; i < DUMP_SLIMBUS_REGS_SIZE; i += 0x10) {
+			state[0] = readl((void __iomem *)(general_cfg.regBase + i));
+			state[1] = readl((void __iomem *)(general_cfg.regBase + i + 4));
+			state[2] = readl((void __iomem *)(general_cfg.regBase + i + 8));
+			state[3] = readl((void __iomem *)(general_cfg.regBase + i + 0xc));
+			SLIMBUS_DRV_LIMIT_ERR("0x%x - 0x%x: %#x, %#x, %#x, %#x\n",
+				i, i + 0xC, state[0], state[1], state[2], state[3]);
+		}
+		break;
+
 	default:
 		pr_err("[%s:%d] default! \n", __func__, __LINE__);
 		break;
@@ -1207,7 +1219,6 @@ int slimbus_drv_track_activate(slimbus_channel_property_t *channel, uint32_t ch_
 	}
 	if (ret) {
 		pr_err("Configuring and Activating Data Channels failed. ");
-		HiLOGE("audio", "Slimbus_drv", "Configuring and Activating Data Channels failed. ");
 		goto exit;
 	}
 
@@ -1224,7 +1235,6 @@ int slimbus_drv_track_activate(slimbus_channel_property_t *channel, uint32_t ch_
 
 	if (RFC_CheckEvent()) {
 		pr_err("Channel configuration failed!\n");
-		HiLOGE("audio", "Slimbus_drv", "Channel configuration failed!\n");
 	}
 
 exit:
@@ -1313,7 +1323,6 @@ int slimbus_drv_switch_framer(uint8_t  laif, uint16_t NCo, uint16_t NCi, slimbus
 		ret += csmiDrv->msgReconfigureNow(devm_slimbus_priv);
 		if (ret) {
 			pr_err("Bus switch framer failed with error: %d\n", ret);
-			HiLOGE("audio", "Slimbus_drv", "Bus switch framer failed with error: %d\n", ret);
 			goto exit;
 		}
 
@@ -1402,7 +1411,6 @@ int slimbus_drv_reset_bus(void)
 	ret += csmiDrv->msgReconfigureNow(devm_slimbus_priv);
 	if (ret) {
 		pr_err("Reset bus failed with error: %d\n", ret);
-		HiLOGE("audio", "Slimbus_drv", "Reset bus failed with error: %d\n", ret);
 	}
 
 	if (!csmiDrv->getStatusSlimbus(devm_slimbus_priv, &cur_sm, &cur_cg, &cur_rf))
@@ -1479,6 +1487,7 @@ int slimbus_drv_track_update(int cg, int sm, int track, uint32_t ch_num, slimbus
 	pr_info("[%s:%d] track %d, cg %d, sd %x\n", __FUNCTION__, __LINE__, track, cg, (channel) ? (channel[0].sd) : 0);
 	ret = slimbus_drv_connect_track(channel, ch_num);
 	if (ret) {
+		slimbus_dump_state(SLIMBUS_DUMP_ALL);
 		pr_err("Connecting source or sink(s) failed.");
 		goto exit;
 	}

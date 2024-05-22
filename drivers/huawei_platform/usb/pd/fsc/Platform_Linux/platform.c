@@ -308,6 +308,7 @@ void platform_notify_cc_orientation(CC_ORIENTATION orientation)
     struct pd_dpm_typec_state tc_state;
     struct fusb30x_chip* chip;
 
+    memset(&tc_state, 0, sizeof(tc_state));
     chip = fusb30x_GetChip();
     if (!chip)
     {
@@ -375,11 +376,41 @@ void platform_notify_cc_orientation(CC_ORIENTATION orientation)
     FSC_PRINT("FUSB %s - Exiting Orientation Function\n", __func__);
 }
 
+void platform_notify_debug_accessory_snk(CC_ORIENTATION orientation)
+{
+    struct pd_dpm_typec_state tc_state;
+    struct fusb30x_chip* chip;
+
+    memset(&tc_state, 0, sizeof(tc_state));
+    chip = fusb30x_GetChip();
+    if (!chip)
+    {
+        pr_err("FUSB  %s - Error: Chip structure is NULL!\n", __func__);
+        return;
+    }
+
+   chip->orientation = orientation;
+
+    tc_state.polarity = (orientation == CC2) ? TCPC_CTRL_PLUG_ORIENTATION : 0;
+    FSC_PRINT("FUSB  %s - orientation = %d, sourceOrSink = %s\n", __func__, orientation, (sourceOrSink == SOURCE) ? "SOURCE" : "SINK");
+
+    tc_state.new_state = PD_DPM_TYPEC_ATTACHED_DBGACC_SNK;
+
+    if (chip->dual_role) {
+        dual_role_instance_changed(chip->dual_role);
+    }
+
+    pd_dpm_handle_pe_event(PD_DPM_PE_EVT_TYPEC_STATE, (void*)&tc_state);
+    FSC_PRINT("FUSB %s - \n", __func__);
+}
+
 void platform_notify_audio_accessory(CC_ORIENTATION orientation)
 {
 	// Optional: Notify platform of CC orientation
     struct pd_dpm_typec_state tc_state;
     struct fusb30x_chip* chip;
+
+    memset(&tc_state, 0, sizeof(tc_state));
     chip = fusb30x_GetChip();
     if (!chip)
     {
@@ -453,6 +484,25 @@ void platform_notify_pd_contract(FSC_BOOL contract, FSC_U32 PDvoltage, FSC_U32 P
     FSC_PRINT("FUSB  %s - PD Contract: %dmV/%dmA; g_vbus=%d,sourceOrSink: %s\n", __func__, PDvoltage * 50, PDcurrent *10, g_vbus, (sourceOrSink == SOURCE) ? "SOURCE" : "SINK");
 }
 
+void platform_notify_attached_vbus_only(void)
+{
+	struct pd_dpm_typec_state tc_state;
+	memset(&tc_state, 0, sizeof(tc_state));
+	tc_state.new_state = PD_DPM_TYPEC_ATTACHED_VBUS_ONLY;
+
+	pd_dpm_handle_pe_event(PD_DPM_PE_EVT_TYPEC_STATE, (void*)&tc_state);
+	FSC_PRINT("FUSB %s - platform_notify_attached_vbus_only\n", __func__);
+}
+
+void platform_notify_unattached_vbus_only(void)
+{
+	struct pd_dpm_typec_state tc_state;
+	memset(&tc_state, 0, sizeof(tc_state));
+	tc_state.new_state = PD_DPM_TYPEC_UNATTACHED_VBUS_ONLY;
+
+	pd_dpm_handle_pe_event(PD_DPM_PE_EVT_TYPEC_STATE, (void*)&tc_state);
+	FSC_PRINT("FUSB %s - platform_notify_unattached_vbus_only\n", __func__);
+}
 /*******************************************************************************
 * Function:        platform_notify_pd_state
 * Input:           state - SOURCE or SINK
@@ -723,9 +773,49 @@ FSC_BOOL platform_get_modal_operation_supported(void)
     return chip->modal_operation_supported;
 }
 
+FSC_BOOL platform_discover_mode_supported(void)
+{
+    struct fusb30x_chip* chip = NULL;
+
+    chip = fusb30x_GetChip();
+    if(!chip)
+    {
+        pr_err("FUSB %s - Error: Chip structure is NULL!\n", __func__);
+        return 0;
+    }
+
+    return chip->discover_mode_supported;
+}
+FSC_BOOL platform_enter_mode_supported(void)
+{
+    struct fusb30x_chip* chip = NULL;
+
+    chip = fusb30x_GetChip();
+    if(!chip)
+    {
+        pr_err("FUSB %s - Error: Chip structure is NULL!\n", __func__);
+        return 0;
+    }
+
+    return chip->enter_mode_supported;
+}
+FSC_BOOL platform_discover_svid_supported(void)
+{
+    struct fusb30x_chip* chip = NULL;
+
+    chip = fusb30x_GetChip();
+    if(!chip)
+    {
+        pr_err("FUSB %s - Error: Chip structure is NULL!\n", __func__);
+        return 0;
+    }
+
+    return chip->discover_svid_supported;
+}
 void platform_double_56k_cable(void)
 {
     struct pd_dpm_typec_state typec_state;
+    memset(&typec_state, 0, sizeof(typec_state));
     typec_state.new_state = PD_DPM_TYPEC_ATTACHED_CUSTOM_SRC;
     FSC_PRINT("FUSB %s Enter\n", __func__);
     pd_dpm_handle_pe_event(PD_DPM_PE_EVT_TYPEC_STATE, &typec_state);

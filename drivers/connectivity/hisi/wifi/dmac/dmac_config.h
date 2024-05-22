@@ -159,7 +159,7 @@ extern oal_uint32 dmac_pkt_mem_opt_stat_event_process(frw_event_mem_stru *pst_ev
 #endif /* */
 #ifdef _PRE_PLAT_FEATURE_CUSTOMIZE
 extern oal_void dmac_config_update_rate_pow_table(oal_void);
-extern oal_void dmac_config_update_scaling_reg(oal_void);
+extern oal_void dmac_config_update_scaling_reg(oal_uint8 uc_device_id);
 extern oal_void dmac_config_update_dsss_scaling_reg(dmac_alg_tpc_user_distance_enum_uint8 en_dmac_device_distance_enum);
 #endif  /* _PRE_PLAT_FEATURE_CUSTOMIZE */
 extern oal_uint32  dmac_send_sys_event(mac_vap_stru *pst_mac_vap,

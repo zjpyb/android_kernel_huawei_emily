@@ -59,6 +59,7 @@ __mutex_init(struct mutex *lock, const char *name, struct lock_class_key *key)
 #ifdef CONFIG_HW_VIP_THREAD
 	lock->vip_dep_task = NULL;
 #endif
+
 	debug_mutex_init(lock, name, key);
 }
 
@@ -545,7 +546,7 @@ __mutex_lock_common(struct mutex *lock, long state, unsigned int subclass,
 #ifdef CONFIG_HW_VIP_THREAD
 	mutex_list_add(task, &waiter.list, &lock->wait_list, lock);
 #else
-	list_add_tail(&waiter.list, &lock->wait_list);
+ 	list_add_tail(&waiter.list, &lock->wait_list);
 #endif
 	waiter.task = task;
 
@@ -728,6 +729,7 @@ static inline void
 __mutex_unlock_common_slowpath(struct mutex *lock, int nested)
 {
 	unsigned long flags;
+	WAKE_Q(wake_q);
 
 	/*
 	 * As a performance measurement, release the lock before doing other
@@ -759,11 +761,11 @@ __mutex_unlock_common_slowpath(struct mutex *lock, int nested)
 					   struct mutex_waiter, list);
 
 		debug_mutex_wake_waiter(lock, waiter);
-
-		wake_up_process(waiter->task);
+		wake_q_add(&wake_q, waiter->task);
 	}
 
 	spin_unlock_mutex(&lock->wait_lock, flags);
+	wake_up_q(&wake_q);
 }
 
 /*

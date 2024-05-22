@@ -41,6 +41,10 @@ struct proc_dir_entry *balong_create_log_proc_entry(const char *name, mode_t mod
 	const struct file_operations *proc_fops, void *data);
 void balong_remove_log_proc_entry(const char *name);
 
+struct proc_dir_entry *balong_create_pstore_proc_entry(const char *name, mode_t mode,
+	const struct file_operations *proc_fops, void *data);
+void balong_remove_pstore_proc_entry(const char *name);
+
 #ifdef CONFIG_FACTORY_MODE
 struct proc_dir_entry *balong_create_ddrtest_proc_entry(const char *name, mode_t mode,
 	const struct file_operations *proc_fops, void *data);

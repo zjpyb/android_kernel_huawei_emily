@@ -56,13 +56,14 @@
 #include <chipset_common/hwzrhung/zrhung.h>
 #endif
 
-static uint32_t lowmem_debug_level = 1;
+static u32 lowmem_debug_level = 1;
 static short lowmem_adj[6] = {
 	0,
 	1,
 	6,
 	12,
 };
+
 static int lowmem_adj_size = 4;
 static int lowmem_minfree[6] = {
 	3 * 512,	/* 6MB */
@@ -70,6 +71,7 @@ static int lowmem_minfree[6] = {
 	4 * 1024,	/* 16MB */
 	16 * 1024,	/* 64MB */
 };
+
 static int lowmem_minfree_size = 4;
 #if defined CONFIG_LOG_JANK
 static ulong lowmem_kill_count;
@@ -106,10 +108,10 @@ static unsigned long lowmem_deathpending_timeout;
 static unsigned long lowmem_count(struct shrinker *s,
 				  struct shrink_control *sc)
 {
-	return global_page_state(NR_ACTIVE_ANON) +
-		global_page_state(NR_ACTIVE_FILE) +
-		global_page_state(NR_INACTIVE_ANON) +
-		global_page_state(NR_INACTIVE_FILE);
+	return global_node_page_state(NR_ACTIVE_ANON) +
+		global_node_page_state(NR_ACTIVE_FILE) +
+		global_node_page_state(NR_INACTIVE_ANON) +
+		global_node_page_state(NR_INACTIVE_FILE);
 }
 
 static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
@@ -125,10 +127,10 @@ static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
 	short selected_oom_score_adj;
 	int array_size = ARRAY_SIZE(lowmem_adj);
 	int other_free = global_page_state(NR_FREE_PAGES) - totalreserve_pages;
-	int other_file = global_page_state(NR_FILE_PAGES) -
-						global_page_state(NR_SHMEM) -
-						global_page_state(NR_UNEVICTABLE) -
-						total_swapcache_pages();
+	int other_file = global_node_page_state(NR_FILE_PAGES) -
+				global_node_page_state(NR_SHMEM) -
+				global_node_page_state(NR_UNEVICTABLE) -
+				total_swapcache_pages();
 	int ret_tune;
 
 #ifdef CONFIG_HISI_MULTI_KILL
@@ -151,8 +153,8 @@ static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
 	}
 
 	lowmem_print(3, "lowmem_scan %lu, %x, ofree %d %d, ma %hd\n",
-			sc->nr_to_scan, sc->gfp_mask, other_free,
-			other_file, min_score_adj);
+		     sc->nr_to_scan, sc->gfp_mask, other_free,
+		     other_file, min_score_adj);
 
 	if (min_score_adj == OOM_SCORE_ADJ_MAX + 1) {
 		lowmem_print(5, "lowmem_scan %lu, %x, return 0\n",
@@ -182,7 +184,7 @@ kill_selected:
 		if (!p)
 			continue;
 
-		if (test_tsk_thread_flag(p, TIF_MEMDIE)) {
+		if (task_lmk_waiting(p)) {
 			if (time_before_eq(jiffies,
 					lowmem_deathpending_timeout)) {
 				task_unlock(p);
@@ -199,6 +201,7 @@ kill_selected:
 #endif
 			}
 		}
+
 		oom_score_adj = p->signal->oom_score_adj;
 		if (oom_score_adj < min_score_adj) {
 			task_unlock(p);
@@ -226,21 +229,20 @@ kill_selected:
 		long cache_limit = minfree * (long)(PAGE_SIZE / 1024);
 		long free = other_free * (long)(PAGE_SIZE / 1024);
 
+#ifdef CONFIG_HUAWEI_KSTATE
+		/*0 stand for low memory kill*/
+		hwkillinfo(selected->tgid, 0);
+#endif
 		task_lock(selected);
 		send_sig(SIGKILL, selected, 0);
-		/*
-		 * FIXME: lowmemorykiller shouldn't abuse global OOM killer
-		 * infrastructure. There is no real reason why the selected
-		 * task should have access to the memory reserves.
-		 */
 		if (selected->mm)
-			mark_oom_victim(selected);
+			task_set_lmk_waiting(selected);
 		task_unlock(selected);
 		trace_lowmemory_kill(selected, cache_size, cache_limit, free);
-		lowmem_print(1, "Killing '%s' (%d), tgid=%d, adj %hd\n" \
-				"   to free %ldkB on behalf of '%s' (%d) because\n" \
-				"   cache %ldkB is below limit %ldkB for oom_score_adj %hd\n" \
-				"   Free memory is %ldkB above reserved (%d 0x%x)\n",
+		lowmem_print(1, "Killing '%s' (%d) (tgid %d), adj %hd,\n"
+				 "   to free %ldkB on behalf of '%s' (%d) because\n"
+				 "   cache %ldkB is below limit %ldkB for oom_score_adj %hd\n"
+				 "   Free memory is %ldkB above reserved (%d 0x%x)\n",
 			     selected->comm, selected->pid, selected->tgid,
 			     selected_oom_score_adj,
 			     selected_tasksize * (long)(PAGE_SIZE / 1024),
@@ -262,10 +264,6 @@ kill_selected:
 		lowmem_deathpending_timeout = jiffies + lmk_timeout_inter * HZ;/*lint !e647*/
 #else
 		lowmem_deathpending_timeout = jiffies + HZ;
-#endif
-#ifdef CONFIG_HUAWEI_KSTATE
-		/*0 stand for low memory kill*/
-		hwkillinfo(selected->tgid, 0);
 #endif
 
 #if defined CONFIG_LOG_JANK
@@ -384,7 +382,7 @@ static struct kernel_param_ops lowmem_adj_array_ops = {
 
 static const struct kparam_array __param_arr_adj = {
 	.max = ARRAY_SIZE(lowmem_adj),
-	.num = &lowmem_adj_size,/*lint !e64*/
+	.num = &lowmem_adj_size,
 	.ops = &param_ops_short,
 	.elemsize = sizeof(lowmem_adj[0]),
 	.elem = lowmem_adj,
@@ -395,23 +393,18 @@ static const struct kparam_array __param_arr_adj = {
  * not really modular, but the easiest way to keep compat with existing
  * bootargs behaviour is to continue using module_param here.
  */
-module_param_named(cost, lowmem_shrinker.seeks, int, S_IRUGO | S_IWUSR);
+module_param_named(cost, lowmem_shrinker.seeks, int, 0644);
 #ifdef CONFIG_ANDROID_LOW_MEMORY_KILLER_AUTODETECT_OOM_ADJ_VALUES
-/*lint -e665 -esym(665,__module_param_call) */
 module_param_cb(adj, &lowmem_adj_array_ops,
 		.arr = &__param_arr_adj,
-		S_IRUGO | S_IWUSR);
+		0644);
 __MODULE_PARM_TYPE(adj, "array of short");
-/*lint -e665 +esym(665,__module_param_call) */
 #else
-module_param_array_named(adj, lowmem_adj, short, &lowmem_adj_size,
-			 S_IRUGO | S_IWUSR);
+module_param_array_named(adj, lowmem_adj, short, &lowmem_adj_size, 0644);
 #endif
-/*lint -e665 -esym(665,__module_param_call) */
 module_param_array_named(minfree, lowmem_minfree, uint, &lowmem_minfree_size,
-			 S_IRUGO | S_IWUSR);
-/*lint -e665 +esym(665,__module_param_call) */
-module_param_named(debug_level, lowmem_debug_level, uint, S_IRUGO | S_IWUSR);
+			 0644);
+module_param_named(debug_level, lowmem_debug_level, uint, 0644);
 #if defined CONFIG_LOG_JANK
 module_param_named(kill_count, lowmem_kill_count, ulong, S_IRUGO | S_IWUSR);
 module_param_named(free_mem, lowmem_free_mem, ulong, S_IRUGO | S_IWUSR);

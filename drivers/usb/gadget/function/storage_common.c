@@ -83,9 +83,7 @@ EXPORT_SYMBOL_GPL(fsg_fs_function);
  * USB 2.0 devices need to expose both high speed and full speed
  * descriptors, unless they only run at full speed.
  *
- * That means alternate endpoint descriptors (bigger packets)
- * and a "device qualifier" ... plus more construction options
- * for the configuration descriptor.
+ * That means alternate endpoint descriptors (bigger packets).
  */
 struct usb_endpoint_descriptor fsg_hs_bulk_in_desc = {
 	.bLength =		USB_DT_ENDPOINT_SIZE,
@@ -207,7 +205,7 @@ int fsg_lun_open(struct fsg_lun *curlun, const char *filename)
 		return PTR_ERR(filp);
 	}
 
-	if (!(filp->f_mode & FMODE_WRITE))
+	if (!(filp->f_mode & FMODE_WRITE)) /*[false alarm]:it is a false alarm*/
 		ro = 1;
 
 	inode = file_inode(filp);
@@ -361,15 +359,21 @@ EXPORT_SYMBOL_GPL(fsg_show_file);
 
 ssize_t fsg_show_cdrom(struct fsg_lun *curlun, char *buf)
 {
-	return snprintf(buf, PAGE_SIZE, "%u\n", curlun->cdrom);
+	return sprintf(buf, "%u\n", curlun->cdrom);
 }
 EXPORT_SYMBOL_GPL(fsg_show_cdrom);
 
 ssize_t fsg_show_removable(struct fsg_lun *curlun, char *buf)
 {
-	return snprintf(buf, PAGE_SIZE, "%u\n", curlun->removable);
+	return sprintf(buf, "%u\n", curlun->removable);
 }
 EXPORT_SYMBOL_GPL(fsg_show_removable);
+
+ssize_t fsg_show_inquiry_string(struct fsg_lun *curlun, char *buf)
+{
+	return sprintf(buf, "%s\n", curlun->inquiry_string);
+}
+EXPORT_SYMBOL_GPL(fsg_show_inquiry_string);
 
 /*
  * The caller must hold fsg->filesem for reading when calling this function.
@@ -456,7 +460,7 @@ ssize_t fsg_store_file(struct fsg_lun *curlun, struct rw_semaphore *filesem,
 					SS_NOT_READY_TO_READY_TRANSITION;
 
 		pr_info("fsg_store_file: count=%zu, buf=%pK, curlun=%pK\n", count, buf, curlun);
-		if ( count > 3 && 0 == memcmp(&buf[count-4], ".iso",4) ) {
+		if (count > 3 && 0 == memcmp(&buf[count-4], ".iso", 4)) {
 			pr_info("buf=%s, buf[count-4]=%s\n", buf, &buf[count-4]);
 			curlun->cdrom = 1;
 			curlun->ro = 1;
@@ -471,7 +475,7 @@ ssize_t fsg_store_file(struct fsg_lun *curlun, struct rw_semaphore *filesem,
 			incdrom = 0;
 			if (fsg_lun_is_open(curlun)) {
 				fsg_lun_close(curlun);
-				curlun->unit_attention_data =SS_MEDIUM_NOT_PRESENT;
+				curlun->unit_attention_data = SS_MEDIUM_NOT_PRESENT;
 			}
 		} else {
 			curlun->cdrom = 0;
@@ -482,8 +486,9 @@ ssize_t fsg_store_file(struct fsg_lun *curlun, struct rw_semaphore *filesem,
 		}
 	} else if (fsg_lun_is_open(curlun)) {
 		int needclose = 1;
+
 		if (incdrom) {
-			if ( count==4 && buf && 0==memcmp(buf, "none", 4))
+			if (count == 4 && buf && 0 == memcmp(buf, "none", 4))
 				needclose = 1;
 			else
 				needclose = 0;
@@ -536,5 +541,23 @@ ssize_t fsg_store_removable(struct fsg_lun *curlun, const char *buf,
 	return count;
 }
 EXPORT_SYMBOL_GPL(fsg_store_removable);
+
+ssize_t fsg_store_inquiry_string(struct fsg_lun *curlun, const char *buf,
+				 size_t count)
+{
+	const size_t len = min(count, sizeof(curlun->inquiry_string));
+
+	if (len == 0 || buf[0] == '\n') {
+		curlun->inquiry_string[0] = 0;
+	} else {
+		snprintf(curlun->inquiry_string,
+			 sizeof(curlun->inquiry_string), "%-28s", buf);
+		if (curlun->inquiry_string[len-1] == '\n')
+			curlun->inquiry_string[len-1] = ' ';
+	}
+
+	return count;
+}
+EXPORT_SYMBOL_GPL(fsg_store_inquiry_string);
 
 MODULE_LICENSE("GPL");

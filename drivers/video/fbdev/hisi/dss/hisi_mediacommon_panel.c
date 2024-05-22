@@ -13,6 +13,7 @@
 
 #include "hisi_fb.h"
 #include "hisi_overlay_utils.h"
+#include <linux/device.h>
 
 
 #define DTS_COMP_HISI_MEDIACOMMON_PANEL	"hisilicon,mediacommon_panel"
@@ -128,13 +129,13 @@ static int hisi_mediacommon_probe(struct platform_device *pdev)
 	ret = platform_device_add_data(pdev, &hisi_mediacommon_panel_data,
 		sizeof(struct hisi_fb_panel_data));
 	if (ret) {
-		HISI_FB_ERR("platform_device_add_data failed!\n");
+		dev_err(&pdev->dev, "platform_device_add_data failed!\n");
 		goto err_device_put;
 	}
 
 	hisi_fb_add_device(pdev);
 
-	HISI_FB_DEBUG("-.\n");
+	dev_dbg(&pdev->dev, "-.\n");
 
 	return 0;
 

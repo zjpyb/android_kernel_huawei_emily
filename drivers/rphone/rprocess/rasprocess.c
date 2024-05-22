@@ -11,7 +11,6 @@
 #include <linux/mount.h>
 #include <linux/path.h>
 #include <linux/dirent.h>
-#include <linux/lglock.h>
 #include <linux/mnt_namespace.h>
 #include <linux/sched.h>
 #include <linux/signal.h>

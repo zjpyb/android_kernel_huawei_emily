@@ -62,6 +62,7 @@
 #include <linux/cdev.h>
 #include <linux/proc_fs.h>
 #include <product_config.h>
+#include <securec.h>
 #include <mdrv_rfile_common.h>
 #include <osl_thread.h>
 #include <bsp_nvim.h>
@@ -91,7 +92,7 @@ u32 g_ausNvResumeSecureIdList[] =
     8269//en_NV_Item_CustomizeSimLockMaxTimes
 };
 
-
+struct nv_path_info_stru g_nv_path = {0};
 u32 g_ausNvAuthIdList[] =
 {
     en_NV_Item_IMEI,
@@ -680,7 +681,7 @@ u32 bsp_nvm_revert_default(void)
     }
 
     /*机要nv项不恢复,重新恢复成img分区里的数据，需要重新生成CRC校验码*/
-    ret = nv_revert_data(NV_IMG_PATH, g_ausNvResumeSecureIdList, 3, NV_FLAG_NEED_CRC);
+    ret = nv_revert_data(g_nv_path.file_path[NV_IMG], g_ausNvResumeSecureIdList, 3, NV_FLAG_NEED_CRC);
     if(ret)
     {
         nv_record("revert keeping secure list failed, ret=0x%x\n!", ret);
@@ -849,14 +850,14 @@ u32 bsp_nvm_reload(void)
     u32 ret = NV_ERROR;
 
     /*工作分区数据存在，且无未写入完成的标志文件*/
-    if( true == nv_check_file_validity((s8 *)NV_IMG_PATH, (s8 *)NV_IMG_FLAG_PATH))
+    if( true == nv_check_file_validity((s8 *)g_nv_path.file_path[NV_IMG], (s8 *)NV_IMG_FLAG_PATH))
     {
-        nv_record("load from %s current slice:0x%x\n",NV_IMG_PATH, bsp_get_slice_value());
+        nv_record("load from %s current slice:0x%x\n",g_nv_path.file_path[NV_IMG], bsp_get_slice_value());
 
-        ret = nv_read_ctrl_from_file((s8*)NV_IMG_PATH);
+        ret = nv_read_ctrl_from_file((s8*)g_nv_path.file_path[NV_IMG]);
         if(ret)
         {
-            nv_record("[%s] read %s fail, ret = 0x%x\n", __FUNCTION__, NV_IMG_PATH, ret);
+            nv_record("[%s] read %s fail, ret = 0x%x\n", __FUNCTION__, g_nv_path.file_path[NV_IMG], ret);
             goto load_bak;
         }
 
@@ -878,7 +879,7 @@ u32 bsp_nvm_reload(void)
             nv_record("nv image check crc failed %d...current slice:0x%x\n", ret, bsp_get_slice_value());
 
             /* 保存错误镜像，然后从bakup分区恢复 */
-            (void)nv_debug_store_file(NV_IMG_PATH);
+            (void)nv_debug_store_file(g_nv_path.file_path[NV_IMG]);
             if(nv_debug_is_resume_bakup())
             {
                 ret = bsp_nvm_resume_bakup();
@@ -922,6 +923,91 @@ u32 bsp_nvm_buf_init(void)
     return NV_OK;
 }
 
+
+/*****************************************************************************
+ 函 数 名  : bsp_nvm_kernel_dir_init
+ 功能描述  : NV模块初始化目录
+ 输入参数  :
+ 输出参数  : 无
+ 返 回 值  : 无
+*****************************************************************************/
+u32 bsp_nvm_kernel_dir_init(void)
+{
+    if(!bsp_access((s8*)NV_DATA_ROOT_PATH,0))
+    {
+        g_nv_path.root_dir = NV_DATA_ROOT_PATH;
+    }
+    else if (!bsp_access((s8*)NV_ROOT_PATH,0))
+    {
+        g_nv_path.root_dir = NV_ROOT_PATH;
+    }
+    else
+    {
+        nv_record("can not find nv dir!\n");
+        return NV_ERROR;
+    }
+    strncat_s(g_nv_path.file_path[NV_IMG], DRV_NAME_MAX, g_nv_path.root_dir, strlen(g_nv_path.root_dir));
+    strncat_s(g_nv_path.file_path[NV_IMG], DRV_NAME_MAX, NV_IMG_PATH, strlen(NV_IMG_PATH));
+    
+    return NV_OK;
+}
+
+/*****************************************************************************
+ 函 数 名  : bsp_nvm_core_init
+ 功能描述  : NV升级或者加载
+ 输入参数  :
+ 输出参数  : 无
+ 返 回 值  : 无
+*****************************************************************************/
+u32 bsp_nvm_core_init(u32 modem)
+{
+    u32 ret;
+    if((modem == NV_MEM_DLOAD)  && (true == nv_upgrade_get_flag()))
+    {
+        ret = bsp_nvm_upgrade();
+        if(ret)
+        {
+            nv_record("upgrade faided! 0x%x\n", ret);
+            return ret;
+        }
+        else
+        {
+            nv_record("upgrade success!\n");
+        }
+
+        /*读取NV自管理配置*/
+        ret = bsp_nvm_read(NV_ID_DRV_SELF_CTRL,(u8*)(&(g_nv_ctrl.nv_self_ctrl)),(u32)sizeof(NV_SELF_CTRL_STRU));
+        if(ret)
+        {
+            g_nv_ctrl.nv_self_ctrl.ulResumeMode = NV_MODE_USER;
+            nv_printf("read 0x%x fail,use default value! ret :0x%x\n",NV_ID_DRV_SELF_CTRL,ret);
+        }
+    }
+    else
+    {
+        /*读取NV自管理配置*/
+        ret = bsp_nvm_read(NV_ID_DRV_SELF_CTRL,(u8*)(&(g_nv_ctrl.nv_self_ctrl)), (u32)sizeof(NV_SELF_CTRL_STRU));
+        if(ret)
+        {
+            g_nv_ctrl.nv_self_ctrl.ulResumeMode = NV_MODE_USER;
+            nv_printf("read 0x%x fail,use default value! ret :0x%x\n",NV_ID_DRV_SELF_CTRL,ret);
+        }
+
+        /*重新加载最新数据*/
+        ret = bsp_nvm_reload();
+        if(ret)
+        {
+            nv_record("reload fail!ret=0x%x.\n",ret);
+            return ret;
+        }
+
+        nv_printf("reload success!\n");
+    }
+
+    return NV_OK;
+}
+
+
 s32 bsp_nvm_kernel_init(void)
 {
     u32 ret;
@@ -941,8 +1027,16 @@ s32 bsp_nvm_kernel_init(void)
 
     (void)nv_debug_init();
 
+    /* nv root dir init */
+    ret = (u32)bsp_nvm_kernel_dir_init();
+    if(ret)
+    {
+        nv_record("nv root dir init faided!\n");
+        nv_debug(NV_FUN_KERNEL_INIT,11,ret,0,0);
+        goto out;
+    }
     /* check nv file */
-    ret = (u32)nv_img_boot_check("/mnvm2:0");
+    ret = (u32)nv_img_boot_check(g_nv_path.root_dir);
     if(ret)
     {
         nv_debug(NV_FUN_KERNEL_INIT,1,ret,0,0);
@@ -975,49 +1069,10 @@ s32 bsp_nvm_kernel_init(void)
         goto out;
     }
 
-    if((ddr_info->mem_file_type == NV_MEM_DLOAD) && (true == nv_upgrade_get_flag()))
+    ret = bsp_nvm_core_init(ddr_info->mem_file_type);
+    if(ret)
     {
-        ret = bsp_nvm_upgrade();
-        if(ret)
-        {
-            nv_record("upgrade faided! 0x%x\n", ret);
-            nv_debug(NV_FUN_KERNEL_INIT,4,ret,0,0);
-            goto out;
-        }
-        else
-        {
-            nv_record("upgrade success!\n");
-        }
-
-        /*读取NV自管理配置*/
-        ret = bsp_nvm_read(NV_ID_DRV_SELF_CTRL,(u8*)(&(g_nv_ctrl.nv_self_ctrl)),(u32)sizeof(NV_SELF_CTRL_STRU));
-        if(ret)
-        {
-            g_nv_ctrl.nv_self_ctrl.ulResumeMode = NV_MODE_USER;
-            nv_printf("read 0x%x fail,use default value! ret :0x%x\n",NV_ID_DRV_SELF_CTRL,ret);
-        }
-    }
-    else
-    {
-        /*读取NV自管理配置*/
-        ret = bsp_nvm_read(NV_ID_DRV_SELF_CTRL,(u8*)(&(g_nv_ctrl.nv_self_ctrl)), (u32)sizeof(NV_SELF_CTRL_STRU));
-        if(ret)
-        {
-            g_nv_ctrl.nv_self_ctrl.ulResumeMode = NV_MODE_USER;
-            nv_printf("read 0x%x fail,use default value! ret :0x%x\n",NV_ID_DRV_SELF_CTRL,ret);
-        }
-
-        /*重新加载最新数据*/
-        ret = bsp_nvm_reload();
-        if(ret)
-        {
-            nv_debug(NV_FUN_KERNEL_INIT,5,ret,0,0);
-            goto out;
-        }
-        else
-        {
-            nv_printf("reload success!\n");
-        }
+        goto out;
     }
 
     /*初始化双核使用的链表*/

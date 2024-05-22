@@ -37,7 +37,7 @@ struct blk_queue_tags;
  *	 used in one scatter-gather request.
  */
 #define SG_NONE 0
-#define SG_ALL	SCSI_MAX_SG_SEGMENTS
+#define SG_ALL	SG_CHUNK_SIZE
 
 #define MODE_UNKNOWN 0x00
 #define MODE_INITIATOR 0x01
@@ -338,8 +338,9 @@ struct scsi_host_template {
 	int (*host_reset)(struct Scsi_Host *shost, int reset_type);
 #define SCSI_ADAPTER_RESET	1
 #define SCSI_FIRMWARE_RESET	2
-	int (*direct_flush)(struct scsi_device *, int);
-	void (*dump_status)(struct Scsi_Host *shost, enum BLK_DUMP_TYPE dump_type);
+
+	int (*direct_flush)(struct scsi_device *);
+	void (*dump_status)(struct Scsi_Host *shost, int dump_scene);
 	/*
 	 * Name of proc directory
 	 */
@@ -366,7 +367,7 @@ struct scsi_host_template {
 	 * ID.
 	 */
 	int this_id;
-
+	short is_emulator;
 	/*
 	 * This determines the degree to which the host adapter is capable
 	 * of scatter-gather.
@@ -503,9 +504,6 @@ struct scsi_host_template {
 	 */
 	unsigned int cmd_size;
 	struct scsi_host_cmd_pool *cmd_pool;
-
-	/* temporary flag to disable blk-mq I/O path */
-	bool disable_blk_mq;
 };
 
 /*
@@ -542,20 +540,19 @@ enum scsi_host_state {
 	SHOST_DEL_RECOVERY,
 };
 
-#ifdef CONFIG_SCSI_HISI_MQ
 enum scsi_host_queue_quirk{
-	SHOST_QUIRK_FORCE_SAME_CPU = 0,
-	SHOST_QUIRK_BUSY_IDLE_ENABLE,
+	SHOST_QUIRK_BUSY_IDLE_ENABLE = 0,
 	SHOST_QUIRK_FLUSH_REDUCING,
+	SHOST_QUIRK_UNMAP_IN_SOFTIRQ,
+	SHOST_QUIRK_DRIVER_TAG_ALLOC,
+	SHOST_QUIRK_SCSI_QUIESCE_IN_LLD,
+	SHOST_QUIRK_HISI_UFS_MQ,
 	SHOST_QUIRK_BKOPS,
 	SHOST_QUIRK_IO_LATENCY_WARNING,
-	SHOST_QUIRK_MQ_DISPATCH_STRATEGY,
-	SHOST_QUIRK_MQ_DUMP,
 	SHOST_QUIRK_BUSY_IDLE_INTR_ENABLE,
 };
 
-#define SHOST_MQ_QUIRK(x)	(1 << x)
-#endif
+#define SHOST_QUIRK(x)	(1 << x)
 
 enum hisi_dev_quirk{
 	SHOST_QUIRK_BKOPS_ENABLE = 0,
@@ -664,15 +661,12 @@ struct Scsi_Host {
 	 * is nr_hw_queues * can_queue.
 	 */
 	unsigned nr_hw_queues;
-#ifdef CONFIG_SCSI_HISI_MQ
 	int mq_queue_depth;
 	int mq_reserved_queue_depth;
 	int mq_high_prio_queue_depth;
 	unsigned long queue_quirk_flag;
-#endif
-#ifdef CONFIG_HISI_UFS_MANUAL_BKOPS
 	unsigned long hisi_dev_quirk_flag;
-#endif
+
 	/*
 	 * Used to assign serial numbers to the cmds.
 	 * Protected by the host lock.
@@ -787,9 +781,7 @@ struct Scsi_Host {
 	 */
 	struct device *dma_dev;
 
-#ifdef CONFIG_SCSI_UFS_INLINE_CRYPTO
 	int crypto_enabled;
-#endif
 
 	/*
 	 * We should ensure that this is aligned, both for better performance
@@ -830,8 +822,6 @@ static inline int scsi_host_in_recovery(struct Scsi_Host *shost)
 		shost->shost_state == SHOST_DEL_RECOVERY ||
 		shost->tmf_in_progress;
 }
-
-extern bool scsi_use_blk_mq;
 
 static inline bool shost_use_blk_mq(struct Scsi_Host *shost)
 {

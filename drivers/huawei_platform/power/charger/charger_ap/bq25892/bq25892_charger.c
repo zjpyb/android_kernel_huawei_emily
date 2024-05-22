@@ -39,7 +39,9 @@
 #endif
 #include <linux/raid/pq.h>
 #include <huawei_platform/power/huawei_charger.h>
+#ifdef CONFIG_HISI_BCI_BATTERY
 #include <linux/power/hisi/hisi_bci_battery.h>
+#endif
 #include <bq25892_charger.h>
 #include <linux/hisi/hisi_adc.h>
 
@@ -611,10 +613,9 @@ static int bq25892_set_covn_start(int enable)
 	return 0;
 }
 
-static int bq25892_chip_init(void)
+static int bq25892_5v_chip_init(struct bq25892_device_info *di)
 {
 	int ret = 0;
-	struct bq25892_device_info *di = g_bq25892_dev;
 
 	/*reg init */
 	/*bq25892_write_mask(REG0x14,BQ25892_REG_RST_MASK,BQ25892_REG_RST_SHIFT,0x01);*/
@@ -632,8 +633,8 @@ static int bq25892_chip_init(void)
 	/*07 EN_TERM 0,Watchdog Timer 80s,EN_TIMER 1,Charge Timer 20h,JEITA Low Temperature Current Setting 1 */
 	ret |= bq25892_write_byte(BQ25892_REG_07, 0x2f);
 	/*08 IR compensation voatge clamp = 224mV ,IR compensation resistor setting = 80mohm */
-	ret |= bq25892_set_bat_comp(g_bq25892_dev->param_dts.bat_comp);
-	ret |= bq25892_set_vclamp(g_bq25892_dev->param_dts.vclamp);
+	ret |= bq25892_set_bat_comp(di->param_dts.bat_comp);
+	ret |= bq25892_set_vclamp(di->param_dts.vclamp);
 	/*boost mode current limit = 500mA,boostv 4.998v */
 	ret |= bq25892_write_byte(BQ25892_REG_0A, 0x70);
 	/*VINDPM Threshold Setting Method 1,Absolute VINDPM Threshold 4.4v */
@@ -643,7 +644,6 @@ static int bq25892_chip_init(void)
 
 	return ret;
 }
-
 /**********************************************************
 *  Function:       bq25892_set_adc_conv_rate
 *  Discription:    set adc conversion rate
@@ -1344,15 +1344,14 @@ static int bq25892_turn_on_ico(struct ico_input *input, struct ico_output *outpu
 }
 
 /**********************************************************
-*  Function:       bq25892_fcp_chip_init
+*  Function:       bq25892_9v_chip_init
 *  Discription:    bq25892 chipIC initialization for high voltage adapter
-*  Parameters:   NULL
+*  Parameters:   struct bq25892_device_info *di
 *  return value:  0-sucess or others-fail
 **********************************************************/
-static int bq25892_fcp_chip_init(void)
+static int bq25892_9v_chip_init(struct bq25892_device_info *di)
 {
 	int ret = 0;
-	struct bq25892_device_info *di = g_bq25892_dev;
 
 	/*reg init */
 	/*bq25892_write_mask(REG0x14,BQ25892_REG_RST_MASK,BQ25892_REG_RST_SHIFT,0x01);*/
@@ -1370,8 +1369,8 @@ static int bq25892_fcp_chip_init(void)
 	/*07 EN_TERM 1,Watchdog Timer 80s,EN_TIMER 1,Charge Timer 20h,JEITA Low Temperature Current Setting 1 */
 	ret |= bq25892_write_byte(BQ25892_REG_07, 0x2f);
 	/*08 IR compensation voatge clamp = 224mV ,IR compensation resistor setting = 80mohm */
-	ret |= bq25892_set_bat_comp(g_bq25892_dev->param_dts.bat_comp);
-	ret |= bq25892_set_vclamp(g_bq25892_dev->param_dts.vclamp);
+	ret |= bq25892_set_bat_comp(di->param_dts.bat_comp);
+	ret |= bq25892_set_vclamp(di->param_dts.vclamp);
 	/*09 FORCE_ICO 0,TMR2X_EN 1,BATFET_DIS 0,JEITA_VSET 0,BATFET_RST_EN 1 */
 	ret |= bq25892_write_byte(BQ25892_REG_09, 0x44);
 	/*boost mode current limit = 500mA,boostv 4.998v */
@@ -1383,6 +1382,79 @@ static int bq25892_fcp_chip_init(void)
 
 	gpio_set_value(di->gpio_cd, 0);	/*enable charging*/
 	return ret;
+}
+static int bq25892_chip_init(struct chip_init_crit* init_crit)
+{
+	int ret = -1;
+	struct bq25892_device_info *di = g_bq25892_dev;
+	if (!di || !init_crit) {
+		hwlog_err("%s: di or init_crit is null\n", __func__);
+		return -ENOMEM;
+	}
+	switch(init_crit->vbus) {
+		case ADAPTER_5V:
+			ret = bq25892_5v_chip_init(di);
+			break;
+		case ADAPTER_9V:
+			ret = bq25892_9v_chip_init(di);
+			break;
+		default:
+			hwlog_err("%s: init mode err\n", __func__);
+			break;
+	}
+	return ret;
+}
+
+/**********************************************************
+*  Function:       bq25892_check_input_vdpm_state
+*  Discription:    check whether VINDPM
+*  Parameters:     NULL
+*  return value:   TRUE means VINDPM
+*                  FALSE means NoT DPM
+**********************************************************/
+static int bq25892_check_input_vdpm_state(void)
+{
+	u8 reg = 0;
+	int ret = -1;
+
+	ret = bq25892_read_byte(BQ25892_REG_13, &reg);
+	if (ret < 0) {
+		hwlog_err("bq25892_check_input_vdpm_state err\n");
+		return ret;
+	}
+
+	if (reg & BQ25892_REG_13_VDPM_STAT_MASK) {
+		hwlog_info("BQ25892_REG_13: 0x%2x,in vdpm state!\n",reg);
+		return TRUE;
+	} else {
+		return FALSE;
+	}
+}
+
+/**********************************************************
+*  Function:       bq25892_check_input_idpm_state
+*  Discription:    check whether IINDPM
+*  Parameters:     NULL
+*  return value:   TRUE means IINDPM
+*                  FALSE means NoT DPM
+**********************************************************/
+static int bq25892_check_input_idpm_state(void)
+{
+	u8 reg = 0;
+	int ret = -1;
+
+	ret = bq25892_read_byte(BQ25892_REG_13, &reg);
+	if (ret < 0) {
+		hwlog_err("bq25892_check_input_idpm_state err\n");
+		return ret;
+	}
+
+	if (reg & BQ25892_REG_13_IDPM_STAT_MASK) {
+		hwlog_info("BQ25892_REG_13: 0x%2x,in vdpm state!\n",reg);
+		return TRUE;
+	} else {
+		return FALSE;
+	}
 }
 
 /**********************************************************
@@ -1437,7 +1509,6 @@ static int bq25892_get_charger_state(void)
 
 static struct charge_device_ops bq25892_ops = {
 	.chip_init = bq25892_chip_init,
-	.fcp_chip_init = bq25892_fcp_chip_init,
 	.dev_check = bq25892_device_check,
 	.set_adc_conv_rate = bq25892_set_adc_conv_rate,
 	.set_input_current = bq25892_set_input_current,
@@ -1460,6 +1531,8 @@ static struct charge_device_ops bq25892_ops = {
 	.set_covn_start = bq25892_set_covn_start,
 	.set_charger_hiz = bq25892_set_charger_hiz,
 	.check_input_dpm_state = bq25892_check_input_dpm_state,
+	.check_input_vdpm_state = bq25892_check_input_vdpm_state,
+	.check_input_idpm_state = bq25892_check_input_idpm_state,
 	.set_otg_current = bq25892_set_otg_current,
 	.stop_charge_config = bq25892_stop_charge_config,
 	.turn_on_ico = bq25892_turn_on_ico,

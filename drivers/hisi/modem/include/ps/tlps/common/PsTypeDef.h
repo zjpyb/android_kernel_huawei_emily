@@ -165,6 +165,13 @@ typedef struct
     VOS_UINT8                           aucRsv[2];
 }CAS_MSG_HEADER_STRU;
 /* add for Balong CL end */
+
+typedef struct
+{
+    VOS_MSG_HEADER
+    VOS_UINT16                          usMsgId;
+    VOS_UINT8                           aucRsv[2];
+}IMS2HIFI_MSG_HEADER_STRU;
 /*****************************************************************************
   6 UNION
 *****************************************************************************/

@@ -70,6 +70,10 @@ HWLOG_REGIST();
 #define DP_DSM_TIME_SECOND_OF_HOUR   (60 * DP_DSM_TIME_SECOND_OF_MINUTE)
 #define DP_DSM_TIME_SECOND_OF_DAY    (24 * DP_DSM_TIME_SECOND_OF_HOUR)
 
+// for datetime type
+#define DP_DSM_TIMEVAL_WITH_TZ(t)    t.tv_sec += (sys_tz.tz_minuteswest * DP_DSM_TIME_SECOND_OF_MINUTE)
+#define DP_DSM_TIME_MS_PERCENT(t)    ((t) / 100) // unit: ms -> 100ms
+
 // EDID 1.3 data format
 // 18 EDID version, usually 1 (for 1.3)
 // 19 EDID revision, usually 3 (for 1.3)
@@ -132,6 +136,10 @@ HWLOG_REGIST();
 #define DP_DSM_IRQ_VECTOR_NUM            (32)
 #define DP_DSM_SOURCE_SWITCH_NUM         (8)
 #define DP_DSM_EARLIEST_TIME_POINT(a, b) (((a) >= (b)) ? ((a) % (b)) : 0)
+
+//  error number
+#define DP_DSM_ERRNO_DSS_PWRON_FAILED    (0xFFFF)
+#define DP_DSM_ERRNO_DEVICE_SRS_FAILED   (0xFFFF)
 
 // from tca.h (vendor\hisi\ap\kernel\include\linux\hisi\contexthub)
 typedef enum _tca_irq_type_e {
@@ -265,6 +273,15 @@ typedef struct {
 } dp_hotplug_info_t;
 
 typedef struct {
+	struct list_head list;
+
+	uint16_t h_active;
+	uint16_t v_active;
+	uint32_t pixel_clock;
+	uint8_t  vesa_id;
+} dp_timing_info_t;
+
+typedef struct {
 	struct timeval time;
 
 	bool rw;
@@ -306,12 +323,21 @@ typedef struct {
 	int link_retraining_num;
 
 	// dp hotplug
+	bool need_add_hotplug_to_list;
 	dp_hotplug_info_t *cur_hotplug_info;
-	dp_hotplug_info_t *last_hotplug_info;
 	struct list_head hotplug_list_head;
+	struct list_head timing_list_head;
+
+	bool is_hotplug_running;
+	uint32_t hotplug_state;
+	uint32_t last_hotplug_state;
+	uint16_t hotplug_width;
+	uint16_t hotplug_high;
 
 	bool cur_source_mode;
+	bool dss_pwron_failed;
 	int link_training_retval;
+	int link_retraining_retval;
 	int hotplug_retval;
 	dp_aux_rw_t aux_rw;
 
@@ -330,18 +356,57 @@ typedef struct {
 	bool rcf_basic_info_of_diff_mode;
 	bool rcf_extend_info;
 	bool rcf_link_training_info;
+	bool rcf_link_retraining_info;
 	bool rcf_hotplug_info;
 	bool rcf_hdcp_info;
+
+	// for repeated event recognition
+	int hpd_repeated_num;
+
+	// err_count: from dpcd regs in sink devices
+	uint16_t lane0_err;
+	uint16_t lane1_err;
+	uint16_t lane2_err;
+	uint16_t lane3_err;
+
+#ifdef DP_DEBUG_ENABLE
+	bool need_lanes_force;
+	bool need_rate_force;
+	bool need_resolution_force;
+	uint8_t lanes_force;
+	uint8_t rate_force;
+	uint8_t user_mode;
+	uint8_t user_format;
+#endif
 } dp_dsm_priv_t;
 
+#ifndef DP_DSM_DEBUG
 #ifndef DP_DEBUG_ENABLE
 #define DP_DSM_REPORT_NUM_IN_ONE_DAY (5)   // for user version
 #else
 #define DP_DSM_REPORT_NUM_IN_ONE_DAY (1000) // for eng version
-#endif
+#endif // DP_DEBUG_ENABLE
 #define DP_DSM_REPORT_TIME_INTERVAL  (DP_DSM_TIME_SECOND_OF_DAY * DP_DSM_TIME_MS_OF_SEC)
+#else
+#define DP_DSM_REPORT_NUM_IN_ONE_DAY (5)
+#define DP_DSM_REPORT_TIME_INTERVAL  (300 * 1000) // 5 minutes
+#endif // DP_DSM_DEBUG
 #define DP_DSM_IMONITOR_DELAYED_TIME (0)
 #define DP_DSM_IMONITOR_PREPARE_PRIV ((NULL == data) ? g_dp_dsm_priv : data)
+
+#define DP_DSM_GET_LINK_MIN_TIME(m,t) \
+	do { \
+		if (0 == m.tv_usec) { \
+			m.tv_usec = t.tv_usec; \
+		} else { \
+			m.tv_usec = MIN(m.tv_usec, t.tv_usec); \
+		} \
+	} while(0)
+
+#define DP_DSM_GET_LINK_MAX_TIME(m,t) \
+	do { \
+		m.tv_usec = MAX(m.tv_usec, t.tv_usec); \
+	} while(0)
 
 typedef struct {
 	struct list_head list_head;
@@ -349,8 +414,17 @@ typedef struct {
 	struct mutex lock;
 	struct delayed_work work;
 
-	uint8_t report_num[DP_IMONITOR_TYPE_NUM];
+	uint32_t report_num[DP_IMONITOR_TYPE_NUM];
 	unsigned long report_jiffies;
+
+	// report-skip data of the last day
+	bool report_skip_existed;
+	uint32_t last_report_num[DP_IMONITOR_TYPE_NUM];
+	struct timeval last_link_min_time;
+	struct timeval last_link_max_time;
+	struct timeval last_same_mode_time;
+	struct timeval last_diff_mode_time;
+	int last_source_switch_num;
 } dp_imonitor_report_info_t;
 
 typedef int (*imonitor_prepare_param_cb_t)(struct imonitor_eventobj *, void *);
@@ -430,6 +504,42 @@ static const unsigned char data_bin2ascii[17] = "0123456789ABCDEF";
 
 static const uint8_t g_edid_v1_header[DP_DSM_EDID_HEADER_SIZE] = {0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00};
 
+// with params
+#define DP_DSM_CHECK_HOTPLUG_PTR_P(p, m) \
+	do { \
+		if ((NULL == p) || (NULL == p->cur_hotplug_info) || (NULL == m)) { \
+			hwlog_err("%s: priv, hotplug or param is NULL!\n", __func__); \
+			return; \
+		} \
+		hotplug = p->cur_hotplug_info; \
+	} while(0)
+
+// with result
+#define DP_DSM_CHECK_HOTPLUG_PTR_R(p, m) \
+	do { \
+		if ((NULL == p) || (NULL == p->cur_hotplug_info) || (NULL == m)) { \
+			hwlog_err("%s: priv, hotplug or param is NULL!\n", __func__); \
+			return -EINVAL; \
+		} \
+		hotplug = p->cur_hotplug_info; \
+	} while(0)
+
+#define DP_DSM_FREE_HOTPLUG_PTR(p) \
+	do { \
+		if (p->cur_hotplug_info != NULL) { \
+			kfree(p->cur_hotplug_info); \
+			p->cur_hotplug_info = NULL; \
+		} \
+	} while(0)
+
+#define DP_DSM_ADD_TO_IMONITOR_LIST(p, f, t) \
+	do { \
+		if (p->f) { \
+			p->f = false; \
+			dp_add_info_to_imonitor_list(t, p); \
+		} \
+	} while(0)
+
 // param time:
 // true:  only time
 // false: date and time
@@ -466,16 +576,19 @@ static int dp_timeval_to_str(struct timeval time, const char *comment, char *str
 	return 0;
 }
 
+#ifdef DP_DEBUG_ENABLE
 static int dp_timeval_to_time_str(struct timeval time, const char *comment, char *str, int size)
 {
 	return dp_timeval_to_str(time, comment, str, size, true);
 }
+#endif
 
 static int dp_timeval_to_datetime_str(struct timeval time, const char *comment, char *str, int size)
 {
 	return dp_timeval_to_str(time, comment, str, size, false);
 }
 
+#ifdef DP_LINK_TIMEVAL_FORMAT
 static int dp_timeval_sec_to_str(unsigned long time, const char *comment, char *str, int size)
 {
 	struct rtc_time tm;
@@ -507,6 +620,7 @@ static int dp_timeval_sec_to_str(unsigned long time, const char *comment, char *
 
 	return 0;
 }
+#endif // DP_LINK_TIMEVAL_FORMAT
 
 static int dp_data_bin_to_str(char *dst, int dst_len, uint8_t *src, int src_len, int shift)
 {
@@ -547,6 +661,60 @@ static int dp_data_bin_to_str(char *dst, int dst_len, uint8_t *src, int src_len,
 	return 0;
 }
 
+static void dp_set_hotplug_state(dp_dsm_priv_t *priv, dp_link_state_t state)
+{
+	int old_state = 0;
+
+	if (NULL == priv) {
+		hwlog_err("%s: priv is NULL!!!\n", __func__);
+		return;
+	}
+
+	if (priv->last_hotplug_state & (1 << state)) {
+		hwlog_info("%s: last_hotplug_state=0x%x, state=%d, skip.\n", __func__, priv->last_hotplug_state, state);
+		return;
+	}
+
+	old_state = priv->hotplug_state;
+	priv->hotplug_state |= (1 << state);
+	hwlog_info("%s: last_hotplug_state=0x%x, hotplug_state old=0x%x, new=0x%x.\n", __func__,
+		priv->last_hotplug_state, old_state, priv->hotplug_state);
+}
+
+static void dp_report_hotplug_state(dp_dsm_priv_t *priv)
+{
+	if (NULL == priv) {
+		hwlog_err("%s: priv is NULL!!!\n", __func__);
+		return;
+	}
+
+	hwlog_info("%s: hotplug_state=0x%x.\n", __func__, priv->hotplug_state);
+	if (priv->hotplug_retval < 0) { // hotplug failed
+		if (priv->hotplug_state & (1 << DP_LINK_STATE_LINK_FAILED)) {
+			dp_link_state_event(DP_LINK_STATE_LINK_FAILED);
+			priv->last_hotplug_state |= (1 << DP_LINK_STATE_LINK_FAILED);
+		} else if (priv->hotplug_state & (1 << DP_LINK_STATE_AUX_FAILED)) {
+			dp_link_state_event(DP_LINK_STATE_AUX_FAILED);
+			priv->last_hotplug_state |= (1 << DP_LINK_STATE_AUX_FAILED);
+		} else {
+			hwlog_info("%s: hotplug failed, hotplug_state=0x%x, skip!\n", __func__, priv->hotplug_state);
+		}
+	} else { // hotplug success
+		if (priv->hotplug_state & (1 << DP_LINK_STATE_EDID_FAILED)) { // 1024*768
+			dp_link_state_event(DP_LINK_STATE_EDID_FAILED);
+			priv->last_hotplug_state |= (1 << DP_LINK_STATE_EDID_FAILED);
+		} else if ((priv->hotplug_state & (1 << DP_LINK_STATE_SAFE_MODE))
+			&& (priv->hotplug_width == DP_SAFE_MODE_DISPLAY_WIDTH)
+			&& (priv->hotplug_high == DP_SAFE_MODE_DISPLAY_HIGH)) { // safe mode, 640*480
+			dp_link_state_event(DP_LINK_STATE_SAFE_MODE);
+			priv->last_hotplug_state |= (1 << DP_LINK_STATE_SAFE_MODE);
+		} else {
+			hwlog_info("%s: hotplug success, hotplug_state=0x%x, skip!\n", __func__, priv->hotplug_state);
+		}
+	}
+	priv->hotplug_state = 0;
+}
+
 static int dp_add_info_to_imonitor_list(dp_imonitor_type_t type, dp_dsm_priv_t *data)
 {
 	dp_dsm_priv_t *priv = NULL;
@@ -575,20 +743,12 @@ static int dp_add_info_to_imonitor_list(dp_imonitor_type_t type, dp_dsm_priv_t *
 	memcpy(priv, data, sizeof(dp_dsm_priv_t));
 	switch (type) {
 	case DP_IMONITOR_BASIC_INFO:
+	case DP_IMONITOR_EXTEND_INFO:
+	case DP_IMONITOR_LINK_TRAINING:
 		if (data->cur_hotplug_info != NULL) {
 			memcpy(hotplug, data->cur_hotplug_info, sizeof(dp_hotplug_info_t));
 		} else {
 			hwlog_err("%s: cur_hotplug_info is NULL!!!\n", __func__);
-			ret = -EFAULT;
-			goto err_out;
-		}
-		break;
-	case DP_IMONITOR_EXTEND_INFO:
-	case DP_IMONITOR_LINK_TRAINING:
-		if (data->last_hotplug_info != NULL) {
-			memcpy(hotplug, data->last_hotplug_info, sizeof(dp_hotplug_info_t));
-		} else {
-			hwlog_err("%s: last_hotplug_info is NULL!!!\n", __func__);
 			ret = -EFAULT;
 			goto err_out;
 		}
@@ -604,8 +764,7 @@ static int dp_add_info_to_imonitor_list(dp_imonitor_type_t type, dp_dsm_priv_t *
 	}
 
 	priv->type = type;
-	priv->cur_hotplug_info  = hotplug;
-	priv->last_hotplug_info = hotplug;
+	priv->cur_hotplug_info = hotplug;
 	list_add_tail(&(priv->list), &(g_imonitor_report.list_head));
 
 err_out:
@@ -636,14 +795,10 @@ static void dp_imonitor_report_info_work(struct work_struct *work)
 	}
 
 	report = container_of(work, dp_imonitor_report_info_t, work.work);
-	if (NULL == report) {
-		hwlog_err("%s: report is NULL!!!\n", __func__);
-		return;
-	}
 
 	mutex_lock(&(g_imonitor_report.lock));
 	if (!time_is_after_jiffies(g_imonitor_report.report_jiffies)) {
-		memset(g_imonitor_report.report_num, 0, DP_IMONITOR_TYPE_NUM);
+		memset(g_imonitor_report.report_num, 0, sizeof(uint32_t) * DP_IMONITOR_TYPE_NUM);
 		g_imonitor_report.report_jiffies = jiffies + msecs_to_jiffies(DP_DSM_REPORT_TIME_INTERVAL);
 	}
 
@@ -659,16 +814,45 @@ static void dp_imonitor_report_info_work(struct work_struct *work)
 		} else {
 			hwlog_info("%s: imonitor report %d(%d/%d), skip!\n", __func__, priv->type,
 				g_imonitor_report.report_num[priv->type] + 1, DP_DSM_REPORT_NUM_IN_ONE_DAY);
+
+			// record the key information of the last day
+			g_imonitor_report.report_skip_existed = true;
+			g_imonitor_report.last_report_num[priv->type]++;
+
+			if (DP_IMONITOR_TIME_INFO == priv->type) {
+				DP_DSM_GET_LINK_MIN_TIME(g_imonitor_report.last_link_min_time, priv->link_min_time);
+				DP_DSM_GET_LINK_MAX_TIME(g_imonitor_report.last_link_max_time, priv->link_max_time);
+
+				g_imonitor_report.last_same_mode_time.tv_sec += priv->same_mode_time.tv_sec;
+				g_imonitor_report.last_diff_mode_time.tv_sec += priv->diff_mode_time.tv_sec;
+
+				g_imonitor_report.last_source_switch_num += priv->source_switch_num;
+			}
 		}
 		g_imonitor_report.report_num[priv->type]++;
 
-		if (priv->cur_hotplug_info != NULL) {
-			kfree(priv->cur_hotplug_info);
-		}
+		DP_DSM_FREE_HOTPLUG_PTR(priv);
 		kfree(priv);
 	}
 	hwlog_info("%s: imonitor report success(%d).\n", __func__, list_count);
 	mutex_unlock(&(g_imonitor_report.lock));
+}
+
+static void dp_clear_timing_info(dp_dsm_priv_t *priv)
+{
+	struct list_head *pos = NULL, *q = NULL;
+	dp_timing_info_t *timing = NULL;
+
+	if (NULL == priv) {
+		hwlog_err("%s: priv is NULL!!!\n", __func__);
+		return;
+	}
+
+	list_for_each_safe(pos, q, &(priv->timing_list_head)) {
+		timing = list_entry(pos, dp_timing_info_t, list);
+		list_del(pos);
+		kfree(timing);
+	}
 }
 
 static void dp_clear_priv_data(dp_dsm_priv_t *priv)
@@ -693,12 +877,10 @@ static void dp_clear_priv_data(dp_dsm_priv_t *priv)
 		list_del(pos);
 		kfree(hotplug);
 	}
+	dp_clear_timing_info(priv);
 
 #ifndef DP_DEBUG_ENABLE
-	if (priv->last_hotplug_info != NULL) {
-		kfree(priv->last_hotplug_info);
-		priv->last_hotplug_info = NULL;
-	}
+	DP_DSM_FREE_HOTPLUG_PTR(priv);
 #endif
 }
 
@@ -714,22 +896,25 @@ static void dp_reinit_priv_data(dp_dsm_priv_t *priv)
 	priv->rcf_basic_info_of_diff_mode = true;
 	priv->rcf_extend_info = true;
 	priv->rcf_link_training_info = true;
+	priv->rcf_link_retraining_info = true;
 	priv->rcf_hotplug_info = true;
 	priv->rcf_hdcp_info = true;
 
 	INIT_LIST_HEAD(&(priv->event_list_head));
 	INIT_LIST_HEAD(&(priv->hotplug_list_head));
+	INIT_LIST_HEAD(&(priv->timing_list_head));
 }
 
 static void dp_add_hotplug_info_to_list(dp_dsm_priv_t *priv, bool stop)
 {
 	dp_hotplug_info_t *hotplug = NULL;
 
-	if ((NULL == priv) || (NULL == priv->cur_hotplug_info)) {
+	if ((NULL == priv) || (NULL == priv->cur_hotplug_info) || !priv->need_add_hotplug_to_list) {
 		//hwlog_err("%s: priv or hotplug is NULL!!!\n", __func__);
 		return;
 	}
 	hotplug = priv->cur_hotplug_info;
+	priv->need_add_hotplug_to_list = false;
 
 	// stop time
 	if (!stop) {
@@ -741,9 +926,7 @@ static void dp_add_hotplug_info_to_list(dp_dsm_priv_t *priv, bool stop)
 	hotplug->hotplug_retval = priv->hotplug_retval;
 #ifdef DP_DEBUG_ENABLE
 	list_add_tail(&(hotplug->list), &(priv->hotplug_list_head));
-	priv->last_hotplug_info = hotplug;
 #endif
-	priv->cur_hotplug_info = NULL;
 
 	if (0 == priv->hotplug_retval) {
 		if (stop) {
@@ -765,12 +948,8 @@ static void dp_add_hotplug_info_to_list(dp_dsm_priv_t *priv, bool stop)
 				- hotplug->time[DP_PARAM_TIME_START - DP_PARAM_TIME].tv_usec;
 			sec.tv_usec = (sec.tv_sec * DP_DSM_TIME_MS_OF_SEC) + (sec.tv_usec / DP_DSM_TIME_US_OF_MS);
 
-			if (0 == priv->link_min_time.tv_usec) {
-				priv->link_min_time.tv_usec = sec.tv_usec;
-			} else {
-				priv->link_min_time.tv_usec = MIN(priv->link_min_time.tv_usec, sec.tv_usec);
-			}
-			priv->link_max_time.tv_usec = MAX(priv->link_max_time.tv_usec, sec.tv_usec);
+			DP_DSM_GET_LINK_MIN_TIME(priv->link_min_time, sec);
+			DP_DSM_GET_LINK_MAX_TIME(priv->link_max_time, sec);
 		}
 
 		if (0 == hotplug->read_edid_retval) {
@@ -782,10 +961,7 @@ static void dp_add_hotplug_info_to_list(dp_dsm_priv_t *priv, bool stop)
 				dp_add_info_to_imonitor_list(DP_IMONITOR_EXTEND_INFO, priv);
 			} else { // valid edid
 #endif
-				if (priv->rcf_extend_info) {
-					priv->rcf_extend_info = false;
-					dp_add_info_to_imonitor_list(DP_IMONITOR_EXTEND_INFO, priv);
-				}
+				DP_DSM_ADD_TO_IMONITOR_LIST(priv, rcf_extend_info, DP_IMONITOR_EXTEND_INFO);
 #ifdef DP_DEBUG_ENABLE
 			}
 #endif
@@ -832,7 +1008,8 @@ static void dp_typec_cable_in(dp_dsm_priv_t *priv, uint8_t mode_type)
 		return;
 	}
 
-	hwlog_info("%s: typec cable in.\n", __func__);
+	hwlog_info("typec cable in.\n");
+	dp_link_state_event(DP_LINK_STATE_CABLE_IN);
 	dp_clear_priv_data(priv);
 	dp_reinit_priv_data(priv);
 
@@ -853,7 +1030,8 @@ static void dp_typec_cable_out(dp_dsm_priv_t *priv)
 		return;
 	}
 
-	hwlog_info("%s: typec cable out.\n", __func__);
+	hwlog_info("typec cable out.\n");
+	dp_link_state_event(DP_LINK_STATE_CABLE_OUT);
 #ifdef DP_DSM_DEBUG
 	hwlog_info("%s: first_dev_type=%u\n",  __func__, priv->tca_dev_type[0]);
 	hwlog_info("%s: second_dev_type=%u\n", __func__, priv->tca_dev_type[1]);
@@ -929,9 +1107,22 @@ static void dp_set_irq_info(dp_dsm_priv_t *priv, uint8_t irq_type, uint8_t dev_t
 	if (dp_is_irq_hpd(irq_type)) {
 		if (TCA_DP_IN == dev_type) { // hotplug
 			priv->dp_in_num++;
+			// report hpd repeatedly from PD module
+			// 1. only IN event: reached six times, and then report
+			// 2. IN/OUT event: the total number reached six times
+			priv->hpd_repeated_num++;
+			if (priv->hpd_repeated_num >= DP_HPD_REPEATED_THRESHOLD) {
+				dp_link_state_event(DP_LINK_STATE_MULTI_HPD);
+				priv->hpd_repeated_num = 0;
+			}
+
 			dp_set_first_or_second_dev_type(priv, dev_type);
 		} else if (TCA_DP_OUT == dev_type) { // hotunplug
 			priv->dp_out_num++;
+			// If the first time is pulled out, not counting
+			if (priv->hpd_repeated_num > 0) {
+				priv->hpd_repeated_num++;
+			}
 			dp_set_first_or_second_dev_type(priv, dev_type);
 		}
 	} else {
@@ -942,7 +1133,9 @@ static void dp_set_irq_info(dp_dsm_priv_t *priv, uint8_t irq_type, uint8_t dev_t
 void dp_imonitor_set_pd_event(uint8_t irq_type, uint8_t cur_mode, uint8_t mode_type, uint8_t dev_type, uint8_t typec_orien)
 {
 	dp_dsm_priv_t *priv = g_dp_dsm_priv;
+#ifdef DP_DEBUG_ENABLE
 	dp_connected_event_t *event = NULL;
+#endif
 
 	// not dp cable in
 	if (!dp_connected_by_typec(cur_mode) && !dp_connected_by_typec(mode_type)) {
@@ -1025,6 +1218,7 @@ static void dp_set_manufacturer_id(dp_hotplug_info_t *hotplug, uint8_t *edid)
 		return;
 	}
 
+	// If index = 0, the letter is '@'('A' + (-1)).
 	for (i = 0; i < DP_DSM_MID_LETTER_NUM; i++) {
 		index  = id >> ((DP_DSM_MID_LETTER_NUM - i - 1) * DP_DSM_MID_LETTER_OFFSET);
 		index &= DP_DSM_MID_LETTER_MASK;
@@ -1033,7 +1227,9 @@ static void dp_set_manufacturer_id(dp_hotplug_info_t *hotplug, uint8_t *edid)
 		hotplug->mid[i] = 'A' + index;
 	}
 	hotplug->mid[i] = '\0';
-	hwlog_info("%s: manufacturer id is %s\n", __func__, hotplug->mid);
+#ifdef DP_DEBUG_ENABLE
+	hwlog_info("manufacturer id is %s\n", hotplug->mid);
+#endif
 }
 
 static void dp_set_monitor_info(dp_hotplug_info_t *hotplug, uint8_t *edid)
@@ -1063,7 +1259,9 @@ static void dp_set_monitor_info(dp_hotplug_info_t *hotplug, uint8_t *edid)
 		}
 	}
 
-	hwlog_info("%s: monitor is %s\n", __func__, hotplug->monitor);
+#ifdef DP_DEBUG_ENABLE
+	hwlog_info("monitor name is %s\n", hotplug->monitor);
+#endif
 }
 
 static int dp_check_edid(dp_hotplug_info_t *hotplug, uint8_t *edid, int index)
@@ -1130,14 +1328,11 @@ static void dp_set_edid_block(dp_dsm_priv_t *priv, dp_imonitor_param_t param, ui
 	dp_hotplug_info_t *hotplug = NULL;
 	uint8_t *edid = NULL;
 	int index = (int)(param - DP_PARAM_EDID);
+#ifdef DP_DSM_DEBUG
 	int i = 0;
+#endif
 
-	if ((NULL == priv) || (NULL == priv->cur_hotplug_info) || (NULL == data)) {
-		hwlog_err("%s: priv, hotplug or data is NULL!!!\n", __func__);
-		return;
-	}
-	hotplug = priv->cur_hotplug_info;
-
+	DP_DSM_CHECK_HOTPLUG_PTR_P(priv, data);
 	if ((index < 0) || (index >= (int)DP_PARAM_EDID_NUM)) {
 		hwlog_err("%s: invalid index %d!!!\n", __func__, index);
 		return;
@@ -1149,6 +1344,17 @@ static void dp_set_edid_block(dp_dsm_priv_t *priv, dp_imonitor_param_t param, ui
 	// edid block0
 	if (0 == index) {
 		hotplug->current_edid_num = 0;
+		dp_clear_timing_info(priv);
+#ifdef DP_DEBUG_ENABLE
+		if (0 == dp_debug_get_lanes_rate_force(&priv->lanes_force, &priv->rate_force)) {
+			priv->need_lanes_force = true;
+			priv->need_rate_force  = true;
+		}
+
+		if (0 == dp_debug_get_resolution_force(&priv->user_mode, &priv->user_format)) {
+			priv->need_resolution_force = true;
+		}
+#endif
 
 		// parse edid: version, mid, monitor
 		dp_set_edid_version(hotplug, data);
@@ -1158,6 +1364,11 @@ static void dp_set_edid_block(dp_dsm_priv_t *priv, dp_imonitor_param_t param, ui
 
 	memcpy(edid, data, DP_DSM_EDID_BLOCK_SIZE);
 	hotplug->current_edid_num++;
+#ifdef DP_DEBUG_ENABLE
+	if (priv->need_resolution_force) {
+		data[DP_DSM_EDID_BLOCK_SIZE - 1] = ~data[DP_DSM_EDID_BLOCK_SIZE - 1];
+	}
+#endif
 
 #ifdef DP_DSM_DEBUG
 	for (i = 0; i < DP_DSM_EDID_BLOCK_SIZE; i += 16) {
@@ -1174,15 +1385,13 @@ static void dp_set_edid_block(dp_dsm_priv_t *priv, dp_imonitor_param_t param, ui
 static void dp_set_dpcd_rx_caps(dp_dsm_priv_t *priv, uint8_t *rx_caps)
 {
 	dp_hotplug_info_t *hotplug = NULL;
+#ifdef DP_DSM_DEBUG
 	int i = 0;
+#endif
 
-	if ((NULL == priv) || (NULL == priv->cur_hotplug_info) || (NULL == rx_caps)) {
-		hwlog_err("%s: priv, hotplug or rx_caps is NULL!!!\n", __func__);
-		return;
-	}
-	hotplug = priv->cur_hotplug_info;
-
+	DP_DSM_CHECK_HOTPLUG_PTR_P(priv, rx_caps);
 	hotplug->dpcd_revision = rx_caps[0];
+
 #ifdef DP_DSM_DEBUG
 	hwlog_info("%s: dpcd_revision is %x.%x\n", __func__,
 		(hotplug->dpcd_revision >> DP_DSM_DPCD_REVISION_OFFSET) & DP_DSM_DPCD_REVISION_MASK,
@@ -1240,6 +1449,7 @@ static void dp_set_source_switch(dp_dsm_priv_t *priv, int *source)
 	priv->source_switch[index] = (uint8_t)(*source);
 
 	priv->source_switch_num++;
+	priv->hpd_repeated_num = 0;
 }
 
 static void dp_set_param_time_info(dp_dsm_priv_t *priv, dp_imonitor_param_t param)
@@ -1266,11 +1476,10 @@ static void dp_set_param_time_info(dp_dsm_priv_t *priv, dp_imonitor_param_t para
 #ifdef DP_DEBUG_ENABLE
 		hotplug = (dp_hotplug_info_t *)kzalloc(sizeof(dp_hotplug_info_t), GFP_KERNEL);
 #else
-		if (NULL == priv->last_hotplug_info) {
+		if (NULL == priv->cur_hotplug_info) {
 			hotplug = (dp_hotplug_info_t *)kzalloc(sizeof(dp_hotplug_info_t), GFP_KERNEL);
-			priv->last_hotplug_info = hotplug;
 		} else {
-			hotplug = priv->last_hotplug_info;
+			hotplug = priv->cur_hotplug_info;
 			memset(hotplug, 0, sizeof(dp_hotplug_info_t));
 		}
 #endif
@@ -1281,19 +1490,31 @@ static void dp_set_param_time_info(dp_dsm_priv_t *priv, dp_imonitor_param_t para
 
 		// init data
 		priv->cur_source_mode = false; // true: same source, false: diff source
+		priv->dss_pwron_failed =  false;
 		priv->link_training_retval = 0;
 		priv->hotplug_retval = 0;
+#ifdef DP_DEBUG_ENABLE
+		priv->need_lanes_force = false;
+		priv->need_rate_force = false;
+		priv->need_resolution_force = false;
+#endif
 		memset(&(priv->aux_rw), 0, sizeof(dp_aux_rw_t));
 
 		hotplug->vs_force = DP_DSM_VS_PE_MASK;
 		hotplug->pe_force = DP_DSM_VS_PE_MASK;
 
 		priv->cur_hotplug_info = hotplug;
+		priv->need_add_hotplug_to_list = true;
+
+		priv->is_hotplug_running = true;
+		priv->hotplug_state = 0;
+		priv->hotplug_width = 0;
+		priv->hotplug_high = 0;
 	}
 
 	if (priv->cur_hotplug_info != NULL) {
 		do_gettimeofday(&(priv->cur_hotplug_info->time[index]));
-#ifdef DP_DEBUG_ENABLE
+#ifdef DP_DSM_DEBUG
 		hwlog_info("%s: time[%d]=%ld,%ld\n", __func__, index,
 			priv->cur_hotplug_info->time[index].tv_sec, priv->cur_hotplug_info->time[index].tv_usec);
 #endif
@@ -1305,22 +1526,41 @@ static void dp_set_param_time_info(dp_dsm_priv_t *priv, dp_imonitor_param_t para
 	}
 }
 
+#ifdef DP_DEBUG_ENABLE
+static void dp_reset_lanes_rate_force(dp_dsm_priv_t *priv, uint8_t *lanes_force, uint8_t *rate_force)
+{
+	if (NULL == priv) {
+		hwlog_err("%s: priv is NULL!!!\n", __func__);
+		return;
+	}
+
+	if (priv->need_lanes_force && (lanes_force != NULL)) {
+		priv->need_lanes_force = false;
+		*lanes_force = priv->lanes_force;
+		hwlog_info("%s: set lanes_force %d force!!!\n", __func__, priv->lanes_force);
+	}
+
+	if (priv->need_rate_force && (rate_force != NULL)) {
+		priv->need_rate_force = false;
+		*rate_force = priv->rate_force;
+		hwlog_info("%s: set rate_force %d force!!!\n", __func__, priv->rate_force);
+	}
+}
+#endif
+
 static void dp_set_param_basic_info(dp_dsm_priv_t *priv, dp_imonitor_param_t param, void *data)
 {
 	dp_hotplug_info_t *hotplug = NULL;
 
-	if ((NULL == priv) || (NULL == priv->cur_hotplug_info) || (NULL == data)) {
-		hwlog_err("%s: priv, hotplug or data is NULL!!!\n", __func__);
-		return;
-	}
-	hotplug = priv->cur_hotplug_info;
-
+	DP_DSM_CHECK_HOTPLUG_PTR_P(priv, data);
 	switch (param) {
 	case DP_PARAM_WIDTH:
 		hotplug->width = *(uint16_t *)data;
+		priv->hotplug_width = hotplug->width;
 		break;
 	case DP_PARAM_HIGH:
 		hotplug->high = *(uint16_t *)data;
+		priv->hotplug_high = hotplug->high;
 		break;
 	case DP_PARAM_MAX_WIDTH:
 		hotplug->max_width = *(uint16_t *)data;
@@ -1341,9 +1581,15 @@ static void dp_set_param_basic_info(dp_dsm_priv_t *priv, dp_imonitor_param_t par
 		hotplug->max_lanes = *(uint8_t *)data;
 		break;
 	case DP_PARAM_LINK_RATE:
+#ifdef DP_DEBUG_ENABLE
+		dp_reset_lanes_rate_force(priv, NULL, data);
+#endif
 		hotplug->rate = *(uint8_t *)data;
 		break;
 	case DP_PARAM_LINK_LANES:
+#ifdef DP_DEBUG_ENABLE
+		dp_reset_lanes_rate_force(priv, data, NULL);
+#endif
 		hotplug->lanes = *(uint8_t *)data;
 		break;
 	case DP_PARAM_TU:
@@ -1364,13 +1610,22 @@ static void dp_set_param_basic_info(dp_dsm_priv_t *priv, dp_imonitor_param_t par
 		break;
 	case DP_PARAM_SAFE_MODE:
 		hotplug->safe_mode = *(bool *)data;
+		dp_set_hotplug_state(priv, DP_LINK_STATE_SAFE_MODE);
 		break;
 	case DP_PARAM_READ_EDID_FAILED:
 		hotplug->read_edid_retval = *(int *)data;
+		dp_set_hotplug_state(priv, DP_LINK_STATE_EDID_FAILED);
 		break;
 	case DP_PARAM_LINK_TRAINING_FAILED:
 		priv->link_training_retval = *(int *)data;
 		hotplug->link_training_retval = priv->link_training_retval;
+		if (priv->is_hotplug_running) {
+			dp_set_hotplug_state(priv, DP_LINK_STATE_LINK_FAILED);
+		} else {
+			// 1. link retraining failed
+			// 2. aux rw failed
+			dp_link_state_event(DP_LINK_STATE_LINK_FAILED);
+		}
 		break;
 	default:
 		break;
@@ -1414,13 +1669,11 @@ static void dp_set_param_hdcp(dp_dsm_priv_t *priv, dp_imonitor_param_t param, vo
 	case DP_PARAM_HDCP_KEY_F:
 		do_gettimeofday(&(priv->hdcp_time));
 		priv->hdcp_key = HDCP_KEY_FAILED;
+		dp_link_state_event(DP_LINK_STATE_HDCP_FAILED);
 
 		// hdcp authentication failed
 #ifndef DP_DEBUG_ENABLE
-		if (priv->rcf_hdcp_info) {
-			priv->rcf_hdcp_info = false;
-			dp_add_info_to_imonitor_list(DP_IMONITOR_HDCP, priv);
-		}
+		DP_DSM_ADD_TO_IMONITOR_LIST(priv, rcf_hdcp_info, DP_IMONITOR_HDCP);
 #else
 		dp_add_info_to_imonitor_list(DP_IMONITOR_HDCP, priv);
 #endif
@@ -1437,7 +1690,12 @@ static void dp_set_hotplug(dp_dsm_priv_t *priv, int *retval)
 		return;
 	}
 
+	priv->is_hotplug_running = false;
 	priv->hotplug_retval = (*retval);
+	if (priv->dss_pwron_failed) {
+		priv->hotplug_retval = -DP_DSM_ERRNO_DSS_PWRON_FAILED;
+	}
+
 	if (priv->hotplug_retval < 0) {
 		// if hotplug failed, not process hotunplug
 		dp_add_hotplug_info_to_list(priv, false);
@@ -1445,20 +1703,14 @@ static void dp_set_hotplug(dp_dsm_priv_t *priv, int *retval)
 		if (priv->link_training_retval < 0) {
 			// link training failed
 #ifndef DP_DEBUG_ENABLE
-			if (priv->rcf_link_training_info) {
-				priv->rcf_link_training_info = false;
-				dp_add_info_to_imonitor_list(DP_IMONITOR_LINK_TRAINING, priv);
-			}
+			DP_DSM_ADD_TO_IMONITOR_LIST(priv, rcf_link_training_info, DP_IMONITOR_LINK_TRAINING);
 #else
 			dp_add_info_to_imonitor_list(DP_IMONITOR_LINK_TRAINING, priv);
 #endif
 		} else {
 			// hotplug failed
 #ifndef DP_DEBUG_ENABLE
-			if (priv->rcf_hotplug_info) {
-				priv->rcf_hotplug_info = false;
-				dp_add_info_to_imonitor_list(DP_IMONITOR_HOTPLUG, priv);
-			}
+			DP_DSM_ADD_TO_IMONITOR_LIST(priv, rcf_hotplug_info, DP_IMONITOR_HOTPLUG);
 #else
 			dp_add_info_to_imonitor_list(DP_IMONITOR_HOTPLUG, priv);
 #endif
@@ -1469,16 +1721,35 @@ static void dp_set_hotplug(dp_dsm_priv_t *priv, int *retval)
 
 		// hotplug success
 		if (priv->cur_source_mode) { // same mode
-			if (priv->rcf_basic_info_of_same_mode) {
-				priv->rcf_basic_info_of_same_mode = false;
-				dp_add_info_to_imonitor_list(DP_IMONITOR_BASIC_INFO, priv);
-			}
+			DP_DSM_ADD_TO_IMONITOR_LIST(priv, rcf_basic_info_of_same_mode, DP_IMONITOR_BASIC_INFO);
 		} else { // diff mode
-			if (priv->rcf_basic_info_of_diff_mode) {
-				priv->rcf_basic_info_of_diff_mode = false;
-				dp_add_info_to_imonitor_list(DP_IMONITOR_BASIC_INFO, priv);
-			}
+			DP_DSM_ADD_TO_IMONITOR_LIST(priv, rcf_basic_info_of_diff_mode, DP_IMONITOR_BASIC_INFO);
 		}
+	}
+
+	// report link failed event
+	dp_report_hotplug_state(priv);
+}
+
+static void dp_set_link_retraining(dp_dsm_priv_t *priv, int *retval)
+{
+	if ((NULL == priv) || (NULL == retval)) {
+		hwlog_err("%s: priv or retval is NULL!!!\n", __func__);
+		return;
+	}
+
+	priv->link_retraining_retval = (*retval);
+	hwlog_info("%s: link retraining failed %d in dp_device_srs()!\n", __func__, priv->link_retraining_retval);
+
+	// dp link failed in func dp_device_srs()
+	if (priv->link_retraining_retval < 0) {
+		dp_link_state_event(DP_LINK_STATE_LINK_FAILED);
+
+#ifndef DP_DEBUG_ENABLE
+		DP_DSM_ADD_TO_IMONITOR_LIST(priv, rcf_link_retraining_info, DP_IMONITOR_LINK_TRAINING);
+#else
+		dp_add_info_to_imonitor_list(DP_IMONITOR_LINK_TRAINING, priv);
+#endif
 	}
 }
 
@@ -1492,11 +1763,17 @@ static void dp_set_param_diag(dp_dsm_priv_t *priv, dp_imonitor_param_t param, vo
 	switch (param) {
 	case DP_PARAM_LINK_RETRAINING:
 		priv->link_retraining_num++;
+		priv->link_training_retval = 0;
+		// maybe cause user's doubts by occasional interruptions
+		//dp_link_state_event(DP_LINK_STATE_LINK_RETRAINING);
 		break;
 	case DP_PARAM_SAFE_MODE:
 	case DP_PARAM_READ_EDID_FAILED:
 	case DP_PARAM_LINK_TRAINING_FAILED:
 		dp_set_param_basic_info(priv, param, data);
+		break;
+	case DP_PARAM_LINK_RETRAINING_FAILED:
+		dp_set_link_retraining(priv, data);
 		break;
 	case DP_PARAM_HOTPLUG_RETVAL:
 		dp_set_hotplug(priv, data);
@@ -1506,6 +1783,9 @@ static void dp_set_param_diag(dp_dsm_priv_t *priv, dp_imonitor_param_t param, vo
 		break;
 	case DP_PARAM_SOURCE_SWITCH:
 		dp_set_source_switch(priv, data);
+		break;
+	case DP_PARAM_DSS_PWRON_FAILED:
+		priv->dss_pwron_failed = true;
 		break;
 	default:
 		break;
@@ -1520,7 +1800,7 @@ void dp_imonitor_set_param(dp_imonitor_param_t param, void *data)
 	hwlog_info("%s + param=%d\n", __func__, param);
 #endif
 
-	if ((param >= DP_PARAM_TIME) && (param <= DP_PARAM_TIME_MAX)) {
+	if (param <= DP_PARAM_TIME_MAX) {
 		dp_set_param_time_info(priv, param);
 	} else if ((param >= DP_PARAM_BASIC) && (param <= DP_PARAM_BASIC_MAX)) {
 		dp_set_param_basic_info(priv, param, data);
@@ -1556,8 +1836,55 @@ void dp_imonitor_set_param_aux_rw(bool rw, bool i2c, uint32_t addr, uint32_t len
 	priv->aux_rw.addr   = addr;
 	priv->aux_rw.len    = len;
 	priv->aux_rw.retval = retval;
+
+	if (priv->is_hotplug_running) {
+		dp_set_hotplug_state(priv, DP_LINK_STATE_AUX_FAILED);
+	}
 }
 EXPORT_SYMBOL_GPL(dp_imonitor_set_param_aux_rw);
+
+void dp_imonitor_set_param_timing(uint16_t h_active, uint16_t v_active, uint32_t pixel_clock, uint8_t vesa_id)
+{
+	dp_dsm_priv_t *priv = g_dp_dsm_priv;
+	dp_timing_info_t *timing = NULL;
+
+	if (NULL == priv) {
+		hwlog_err("%s: priv is NULL!!!\n", __func__);
+		return;
+	}
+
+	timing = (dp_timing_info_t *)kzalloc(sizeof(dp_timing_info_t), GFP_KERNEL);
+	if (NULL == timing) {
+		hwlog_err("%s: kzalloc timing failed!!!\n", __func__);
+		return;
+	}
+
+	timing->h_active    = h_active;
+	timing->v_active    = v_active;
+	timing->pixel_clock = pixel_clock;
+	timing->vesa_id     = vesa_id;
+	list_add_tail(&(timing->list), &(priv->timing_list_head));
+}
+EXPORT_SYMBOL_GPL(dp_imonitor_set_param_timing);
+
+void dp_imonitor_set_param_err_count(uint16_t lane0_err, uint16_t lane1_err, uint16_t lane2_err, uint16_t lane3_err)
+{
+	dp_dsm_priv_t *priv = g_dp_dsm_priv;
+
+	if (NULL == priv) {
+		hwlog_err("%s: priv is NULL!!!\n", __func__);
+		return;
+	}
+
+	// 15-bit value storing the symbol error count of Lane 0~3
+	priv->lane0_err += lane0_err;
+	priv->lane1_err += lane1_err;
+	priv->lane2_err += lane2_err;
+	priv->lane3_err += lane3_err;
+	hwlog_info("%s: err_count(0x%x,0x%x,0x%x,0x%x) happened!!!\n", __func__,
+		priv->lane0_err, priv->lane1_err, priv->lane2_err, priv->lane3_err);
+}
+EXPORT_SYMBOL_GPL(dp_imonitor_set_param_err_count);
 
 // NOTE:
 // 1. record vs and pe for imonitor
@@ -1566,8 +1893,10 @@ void dp_imonitor_set_param_vs_pe(int index, uint8_t *vs, uint8_t *pe)
 {
 	dp_dsm_priv_t *priv = g_dp_dsm_priv;
 	dp_hotplug_info_t *hotplug = NULL;
+#ifdef DP_DEBUG_ENABLE
 	uint8_t vs_force = 0;
 	uint8_t pe_force = 0;
+#endif
 
 	if ((NULL == priv) || (NULL == priv->cur_hotplug_info) || (NULL == vs) || (NULL == pe)) {
 		hwlog_err("%s: priv, hotplug, vs or pe is NULL!!!\n", __func__);
@@ -1601,6 +1930,29 @@ void dp_imonitor_set_param_vs_pe(int index, uint8_t *vs, uint8_t *pe)
 #endif // DP_DEBUG_ENABLE
 }
 EXPORT_SYMBOL_GPL(dp_imonitor_set_param_vs_pe);
+
+// for debug: reset resolution force
+void dp_imonitor_set_param_resolution(uint8_t *user_mode, uint8_t *user_format)
+{
+#ifndef DP_DEBUG_ENABLE
+	UNUSED(user_mode);
+	UNUSED(user_format);
+#else
+	dp_dsm_priv_t *priv = g_dp_dsm_priv;
+
+	if (NULL == priv) {
+		hwlog_err("%s: priv is NULL!!!\n", __func__);
+		return;
+	}
+
+	if (priv->need_resolution_force) {
+		*user_mode   = priv->user_mode;
+		*user_format = priv->user_format;
+		hwlog_info("%s: set user_mode %d and user_format %d force!!!\n", __func__, priv->user_mode, priv->user_format);
+	}
+#endif // DP_DEBUG_ENABLE
+}
+EXPORT_SYMBOL_GPL(dp_imonitor_set_param_resolution);
 
 #ifdef DP_DEBUG_ENABLE
 static bool dp_check_typec_cable_in_out_existed(dp_dsm_priv_t *priv)
@@ -1745,8 +2097,8 @@ int dp_get_hotplug_result(char *buffer, int size)
 		ret += dp_debug_append_info(buffer, size, "cable max lanes: 2\n");
 	}
 
-	if (priv->last_hotplug_info != NULL) {
-		hotplug = priv->last_hotplug_info;
+	if (priv->cur_hotplug_info != NULL) {
+		hotplug = priv->cur_hotplug_info;
 
 		if (hotplug->max_rate > 0) {
 			ret += dp_debug_append_info(buffer, size, "sink max rate: %u\n", hotplug->max_rate);
@@ -1782,6 +2134,9 @@ int dp_get_hotplug_result(char *buffer, int size)
 			} else if (priv->link_training_retval < 0) {
 				ret += dp_debug_append_info(buffer, size, "[%02d] %-8s %-10s(link training failed %d)\n",
 					i, "failed", datetime, priv->link_training_retval);
+			} else if (priv->dss_pwron_failed) {
+				ret += dp_debug_append_info(buffer, size, "[%02d] %-8s %-10s(dss pwron failed)\n",
+					i, "failed", datetime);
 			} else {
 				ret += dp_debug_append_info(buffer, size, "[%02d] %-8s %-10s(hotplug failed %d)\n",
 					i, "failed", datetime, priv->hotplug_retval);
@@ -1824,6 +2179,11 @@ int dp_get_hotplug_result(char *buffer, int size)
 		ret += dp_debug_append_info(buffer, size, "\n");
 	}
 
+	// dp link failed in func dp_device_srs()
+	if (priv->link_retraining_retval < 0) {
+		ret += dp_debug_append_info(buffer, size, "dp resume failed by press powerkey.\n");
+	}
+
 err_out:
 	if (ret < 0) {
 		return -EFAULT;
@@ -1832,6 +2192,39 @@ err_out:
 	return strlen(buffer);
 }
 EXPORT_SYMBOL_GPL(dp_get_hotplug_result);
+
+int dp_get_timing_info_result(char *buffer, int size)
+{
+	dp_dsm_priv_t *priv = g_dp_dsm_priv;
+	struct list_head *pos = NULL;
+	dp_timing_info_t *timing = NULL;
+	int ret = 0;
+	int i = 0;
+
+	if (NULL == priv) {
+		hwlog_err("%s: priv is NULL!!!\n", __func__);
+		return -EINVAL;
+	}
+
+	// timing info
+	ret += dp_debug_append_info(buffer, size, "[**] %-8s %-8s %-11s %-7s\n",
+		"h_active", "v_active", "pixel_clock", "vesa_id");
+
+	list_for_each(pos, &(priv->timing_list_head)) {
+		timing = list_entry(pos, dp_timing_info_t, list);
+
+		ret += dp_debug_append_info(buffer, size, "[%02d] %-8u %-8u %-11u %-7u\n",
+			i, timing->h_active, timing->v_active, timing->pixel_clock, timing->vesa_id);
+		i++;
+	}
+
+	if (ret < 0) {
+		return -EFAULT;
+	}
+
+	return strlen(buffer);
+}
+EXPORT_SYMBOL_GPL(dp_get_timing_info_result);
 
 static bool dp_is_vs_pe_force(dp_hotplug_info_t *hotplug)
 {
@@ -1854,11 +2247,11 @@ int dp_get_vs_pe_result(char *buffer, int size)
 		return -EINVAL;
 	}
 
-	if (NULL == priv->last_hotplug_info) {
+	if (NULL == priv->cur_hotplug_info) {
 		ret += dp_debug_append_info(buffer, size, "hotplug not found!\n");
 		goto err_out;
 	}
-	hotplug = priv->last_hotplug_info;
+	hotplug = priv->cur_hotplug_info;
 
 	if (priv->hotplug_retval < 0) {
 		ret += dp_debug_append_info(buffer, size, "hotplug failed!\n");
@@ -1905,12 +2298,7 @@ static int dp_imonitor_prepare_basic_info(struct imonitor_eventobj *obj, void *d
 	dp_hotplug_info_t *hotplug = NULL;
 	int ret = 0;
 
-	if ((NULL == priv) || (NULL == priv->cur_hotplug_info) || (NULL == obj)) {
-		hwlog_err("%s: priv, hotplug or obj is NULL!!!\n", __func__);
-		return -EINVAL;
-	}
-	hotplug = priv->cur_hotplug_info;
-
+	DP_DSM_CHECK_HOTPLUG_PTR_R(priv, obj);
 #ifdef DP_DSM_DEBUG
 	// dock or dongle
 	hwlog_info("%s: tpyec_cable_type=%u\n", __func__, priv->tpyec_cable_type);
@@ -2029,9 +2417,13 @@ static int dp_imonitor_prepare_time_info(struct imonitor_eventobj *obj, void *da
 	// typec in & out time
 	dp_timeval_to_datetime_str(priv->tpyec_in_time, "tpyec_in", in_time, DP_DSM_DATETIME_SIZE);
 	dp_timeval_to_datetime_str(priv->tpyec_out_time, "tpyec_out", out_time, DP_DSM_DATETIME_SIZE);
-	dp_timeval_sec_to_str(priv->same_mode_time.tv_sec, "same_mode_time", same_time, DP_DSM_DATETIME_SIZE);
-	dp_timeval_sec_to_str(priv->diff_mode_time.tv_sec, "diff_mode_time", diff_time, DP_DSM_DATETIME_SIZE);
-	(void)snprintf(link_time, DP_DSM_DATETIME_SIZE, "%ld~%ld", priv->link_min_time.tv_usec, priv->link_max_time.tv_usec);
+	DP_DSM_TIMEVAL_WITH_TZ(priv->same_mode_time);
+	DP_DSM_TIMEVAL_WITH_TZ(priv->diff_mode_time);
+	dp_timeval_to_datetime_str(priv->same_mode_time, "same_mode_time", same_time, DP_DSM_DATETIME_SIZE);
+	dp_timeval_to_datetime_str(priv->diff_mode_time, "diff_mode_time", diff_time, DP_DSM_DATETIME_SIZE);
+	priv->link_max_time.tv_sec = DP_DSM_TIME_MS_PERCENT(priv->link_max_time.tv_usec);
+	DP_DSM_TIMEVAL_WITH_TZ(priv->link_max_time);
+	dp_timeval_to_datetime_str(priv->link_max_time,  "link_max_time",  link_time, DP_DSM_DATETIME_SIZE);
 
 	count = MIN(priv->source_switch_num, DP_DSM_SOURCE_SWITCH_NUM);
 	dp_data_bin_to_str(source_switch, DP_DSM_SOURCE_SWITCH_NUM + 1,
@@ -2062,6 +2454,23 @@ static int dp_imonitor_prepare_time_info(struct imonitor_eventobj *obj, void *da
 	ret += imonitor_set_param(obj, E936000103_SRCSW_VARCHAR, (long)source_switch);
 #endif
 
+	// the key information of the last day
+	if (g_imonitor_report.report_skip_existed) {
+		int i = 0;
+
+		for (i = 0; i < DP_IMONITOR_TYPE_NUM; i++) {
+			hwlog_info("%s: last_report_num[%d]=%u\n", __func__, i, g_imonitor_report.last_report_num[i]);
+		}
+		hwlog_info("%s: last_link_min_time=%ld\n",    __func__, g_imonitor_report.last_link_min_time.tv_usec);
+		hwlog_info("%s: last_link_max_time=%ld\n",    __func__, g_imonitor_report.last_link_max_time.tv_usec);
+		hwlog_info("%s: last_same_mode_time=%ld\n",   __func__, g_imonitor_report.last_same_mode_time.tv_sec);
+		hwlog_info("%s: last_diff_mode_time=%ld\n",   __func__, g_imonitor_report.last_diff_mode_time.tv_sec);
+		hwlog_info("%s: last_source_switch_num=%d\n", __func__, g_imonitor_report.last_source_switch_num);
+
+		g_imonitor_report.report_skip_existed = false;
+		memset(g_imonitor_report.last_report_num, 0, sizeof(uint32_t) * DP_IMONITOR_TYPE_NUM);
+	}
+
 	return ret;
 }
 
@@ -2075,12 +2484,7 @@ static int dp_imonitor_prepare_extend_info(struct imonitor_eventobj *obj, void *
 	int i = 0;
 #endif
 
-	if ((NULL == priv) || (NULL == priv->last_hotplug_info) || (NULL == obj)) {
-		hwlog_err("%s: priv, hotplug or obj is NULL!!!\n", __func__);
-		return -EINVAL;
-	}
-	hotplug = priv->last_hotplug_info;
-
+	DP_DSM_CHECK_HOTPLUG_PTR_R(priv, obj);
 #ifdef DP_DSM_DEBUG
 	hwlog_info("%s: current_edid_num=%d\n",       __func__, hotplug->current_edid_num);
 	hwlog_info("%s: edid_header_flag=0x%08x\n",   __func__, hotplug->edid_check.u32.header_flag);
@@ -2196,11 +2600,10 @@ static int dp_imonitor_prepare_link_training_info(struct imonitor_eventobj *obj,
 	dp_hotplug_info_t *hotplug = NULL;
 	int ret = 0;
 
-	if ((NULL == priv) || (NULL == priv->last_hotplug_info) || (NULL == obj)) {
-		hwlog_err("%s: priv, hotplug or obj is NULL!!!\n", __func__);
-		return -EINVAL;
+	DP_DSM_CHECK_HOTPLUG_PTR_R(priv, obj);
+	if ((0 == hotplug->link_training_retval) && (priv->link_retraining_retval < 0)) {
+		hotplug->link_training_retval = priv->link_retraining_retval + (-DP_DSM_ERRNO_DEVICE_SRS_FAILED);
 	}
-	hotplug = priv->last_hotplug_info;
 
 #ifdef DP_DSM_DEBUG
 	hwlog_info("%s: tpyec_cable_type=%u\n", __func__, priv->tpyec_cable_type);
@@ -2363,7 +2766,7 @@ void dp_imonitor_report(dp_imonitor_type_t type, void *data)
 #endif
 	event_id = dp_imonitor_get_event_id(type, &prepare);
 	if ((0 == event_id) || (NULL == prepare)) {
-		hwlog_err("%s: invalid type %d, event_id %u or prepare %p!!!\n", __func__, type, event_id, prepare);
+		hwlog_err("%s: invalid type %d, event_id %u or prepare %pK!!!\n", __func__, type, event_id, prepare);
 		return;
 	}
 #ifdef DP_DSM_USE_DMD_DEBUG
@@ -2450,9 +2853,9 @@ void dp_dmd_report(dp_dmd_type_t type, const char *fmt, ...)
 	if (!ret) {
 		ret = dsm_client_record(client, report_buf);
 		dsm_client_notify(client, error_no);
-		hwlog_info("%s: report %d success(%d), %s(%d)\n", __func__, error_no, ret, report_buf, (int)strlen(report_buf));
+		hwlog_info("%s: report %d success(%d)\n", __func__, error_no, ret);
 	} else {
-		hwlog_info("%s: report %d skip(%d), %s(%d)\n", __func__, error_no, ret, report_buf, (int)strlen(report_buf));
+		hwlog_info("%s: report %d skip(%d)\n", __func__, error_no, ret);
 	}
 }
 EXPORT_SYMBOL_GPL(dp_dmd_report);
@@ -2486,7 +2889,7 @@ static int __init dp_dsm_init(void)
 			ret = -EFAULT;
 			goto err_out;
 		} else {
-			hwlog_info("%s: dsm_find_client %p!!!\n", __func__, client);
+			hwlog_info("%s: dsm_find_client %pK!!!\n", __func__, client);
 		}
 	}
 

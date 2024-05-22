@@ -10,7 +10,7 @@ config LIVEPATCH
 	bool "Kernel Live Patching"
 	depends on MODULES
 	depends on SYSFS
-	depends on PROC_FS
+
 	depends on KALLSYMS_ALL
 	depends on HAVE_LIVEPATCH
 	help

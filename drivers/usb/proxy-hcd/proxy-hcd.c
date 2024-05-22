@@ -88,7 +88,7 @@ static int phcd_get_frame_number(struct usb_hcd *hcd)
 	return 123;
 }
 
-unsigned int phcd_get_ep_index(u32 pipe)
+static unsigned int phcd_get_ep_index(u32 pipe)
 {
 	unsigned int index;
 	if (usb_pipecontrol(pipe)) /*lint !e650 */
@@ -184,7 +184,7 @@ static bool non_usbaudio_monitor(struct usb_hcd *hcd, struct urb *urb)
 	if ((ctrl->bRequest == USB_REQ_SET_CONFIGURATION)
 				&& (ctrl->bRequestType == 0)) {
 		INFO("to check_non_usbaudio_device, configuration %d\n", configuration);
-		if (check_non_usbaudio_device(udev, configuration)) {
+		if (stop_hifi_usb_when_non_usbaudio(udev, configuration)) {
 			DBG("non-usbaudio device using hifiusb\n");
 			return true;
 		}
@@ -248,7 +248,7 @@ int phcd_urb_complete(struct proxy_hcd *phcd, struct urb_msg *urb_msg)
 	}
 
 	/* copy the data */
-	if (usb_urb_dir_in(urb) && (urb->actual_length != 0))
+	if (usb_urb_dir_in(urb) && (urb->actual_length != 0) && urb_msg->buf)
 		memcpy(urb->transfer_buffer, urb_msg->buf, urb->actual_length);
 
 	list_del_init(&phcd_urb->urb_list);
@@ -906,6 +906,18 @@ void phcd_mark_all_endpoint_dropped(struct proxy_hcd *phcd)
 	DBG("-\n");
 
 	return;
+}
+
+__u32 phcd_current_port_status(struct proxy_hcd *phcd)
+{
+	unsigned long flags;
+	__u32 status;
+
+	spin_lock_irqsave(&phcd->lock, flags);
+	status = phcd->port_status[0] & PHCD_PORT_STATUS_MASK;
+	spin_unlock_irqrestore(&phcd->lock, flags);
+
+	return status;
 }
 
 static int phcd_drop_endpoint(struct usb_hcd *hcd, struct usb_device *udev,
@@ -1630,7 +1642,7 @@ enum hibernation_policy phcd_get_hibernation_policy(struct proxy_hcd_client *cli
 	const char *hibernation_policy;
 	int err;
 
-	err = device_property_read_string(&pdev->dev, "maximum-speed", &hibernation_policy);
+	err = device_property_read_string(&pdev->dev, "hibernation-policy", &hibernation_policy);
 	if (err < 0)
 		return HIFI_USB_HIBERNATION_ALLOW;
 
@@ -1768,7 +1780,7 @@ static int phcd_plat_resume(struct device *dev)
 	struct usb_hcd *hcd = dev_get_drvdata(dev);
 	struct proxy_hcd *phcd = hcd_to_phcd(hcd);
 
-	DBG("+\n");
+	INFO("+\n");
 
 	/* barrier from alloc_dev and free_dev */
 	mutex_lock(&phcd->mutex);
@@ -1776,7 +1788,7 @@ static int phcd_plat_resume(struct device *dev)
 		phcd->client->client_resume(phcd->client);
 	mutex_unlock(&phcd->mutex);
 
-	DBG("-\n");
+	INFO("-\n");
 	return 0;
 }
 

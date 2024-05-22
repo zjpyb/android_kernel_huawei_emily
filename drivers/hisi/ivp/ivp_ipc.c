@@ -1,4 +1,5 @@
 #include <linux/init.h>
+#include <linux/version.h>
 #include <linux/module.h>
 #include <linux/device.h>
 #include <linux/fs.h>
@@ -14,13 +15,34 @@
 #include <linux/hisi/hisi_rproc.h>
 #include <linux/list.h>
 #include <linux/atomic.h>
+#include <linux/ion.h>
+#include <linux/hisi/hisi_ion.h>
+#include <linux/hisi/hisi-iommu.h>
+#include <linux/hisi/ion-iommu.h>
 #include "ivp.h"
 #include "ivp_log.h"
+#include "ivp_core.h"
+#include "ivp_platform.h"
+#include "libhwsecurec/securec.h"
 //lint -save -e785 -e64 -e715 -e838 -e747 -e712 -e737 -e64 -e30 -e438 -e713 -e713
 //lint -save -e529 -e838 -e438 -e774 -e826 -e775 -e730 -e730 -e528 -specific(-e528)
 //lint -save -e753 -specific(-e753) -e1058
 
 #define DEFAULT_MSG_SIZE    (32)
+#define MAX_FD_NUM          (DEFAULT_MSG_SIZE/sizeof(unsigned int) - 3)   //head + fdnum + sharefd= 3, now 5
+
+#define     CMD_SELECTALGO          (0x10)
+#define     CMD_ALOGPARAM           (0x11)
+#define     CMD_ALGOINIT            (0x12)
+#define     CMD_ALGORUN             (0x13)
+#define     CMD_ALGOEXIT            (0x14)
+#define     CMD_MEMORYALLOC         (0x40)
+#define     CMD_MEMORYFREE          (0x41)
+#define     CMD_SHARE_MEM_ALLOC     (0x42)
+#define     CMD_DUMPIMAGE           (0x60)
+#define     CMD_LOADIMAGE           (0x61)
+#define     CMD_RPC_INVOKE          (0x68)
+#define     CMD_LOOPBACK            (0x7F)
 
 struct ivp_ipc_packet {
     char *buff;
@@ -50,7 +72,9 @@ struct ivp_ipc_device {
 };
 
 extern struct ivp_ipc_device ivp_ipc_dev;
-
+extern struct ivp_device ivp_dev;
+static struct mutex ivp_ipc_ion_mutex;
+static struct mutex ivp_ipc_read_mutex;
 static const struct of_device_id ivp_ipc_of_descriptor[] = {
         {.compatible = "hisilicon,hisi-ivp-ipc",},
         {},
@@ -130,7 +154,7 @@ static int ivp_ipc_add_packet(struct ivp_ipc_queue *queue, void *data, size_t le
         goto ipc_exit;
     }
 
-    memcpy(new_packet->buff, data, len); // unsafe_function_ignore: memcpy
+    memcpy_s(new_packet->buff, DEFAULT_MSG_SIZE, data, len);
 
     spin_lock_irq(&queue->rw_lock);
     list_add_tail(&new_packet->list, &queue->head);
@@ -141,25 +165,32 @@ static int ivp_ipc_add_packet(struct ivp_ipc_queue *queue, void *data, size_t le
 ipc_exit:
     return ret;
 }
+/*only remove one packet, the caller guarantees mutual exclusion*/
+static void ivp_ipc_remove_one_packet(struct ivp_ipc_queue *queue, struct ivp_ipc_packet *packet)
+{
+    if (packet) {
+        list_del(&packet->list);
+    }
+    ivp_ipc_free_packet(packet);
+}
 
 static void ivp_ipc_remove_packet(struct ivp_ipc_queue *queue, struct ivp_ipc_packet *packet)
 {
     spin_lock_irq(&queue->rw_lock);
-    if (packet) {
-        list_del(&packet->list);
-    }
+    ivp_ipc_remove_one_packet(queue, packet);
     spin_unlock_irq(&queue->rw_lock);
-    ivp_ipc_free_packet(packet);
 }
 
 static void ivp_ipc_remove_all_packet(struct ivp_ipc_queue *queue)
 {
     struct list_head *p = NULL, *n = NULL;
 
+    spin_lock_irq(&queue->rw_lock);
     list_for_each_safe(p, n, &queue->head) {
         struct ivp_ipc_packet *packet = list_entry(p, struct ivp_ipc_packet, list);
-        ivp_ipc_remove_packet(queue, packet);
+        ivp_ipc_remove_one_packet(queue, packet);
     }
+    spin_unlock_irq(&queue->rw_lock);
 }
 
 static int ivp_ipc_open(struct inode *inode, struct file *file)
@@ -167,12 +198,11 @@ static int ivp_ipc_open(struct inode *inode, struct file *file)
     struct ivp_ipc_device *pdev = &ivp_ipc_dev;
     int ret = 0;
 
-    if (atomic_read(&pdev->accessible) == 0) {
+    if (!atomic_dec_and_test(&pdev->accessible)) {
         ivp_err("maybe ivp ipc dev has been opened!");
+        atomic_inc(&pdev->accessible);
         return -EBUSY;
     }
-
-    atomic_dec(&pdev->accessible);
 
     ivp_dbg("enter");
     ret = nonseekable_open(inode, file);
@@ -196,6 +226,92 @@ static int ivp_ipc_open(struct inode *inode, struct file *file)
     sema_init(&(ivp_ipc_dev.recv_queue.r_lock), 0);
 
     return ret;
+}
+static int ivp_trans_sharefd_to_phyaddr(unsigned int* buff)
+{
+    int ret;
+    unsigned int i;
+    unsigned int share_fd = 0;
+    unsigned int fd_num = 0;
+    unsigned int sec_fd_num = 0;
+    unsigned int nosec_fd_num = 0;
+    struct ion_client *ivp_ipc_fd_client;
+    struct ion_handle *ivp_ion_fd_handle;
+    ion_phys_addr_t ion_phy_addr = 0x0 ;
+    mutex_lock(&ivp_ipc_ion_mutex);
+    ivp_ipc_fd_client = hisi_ion_client_create("ivp_ipc_fd_client");
+    if (IS_ERR(ivp_ipc_fd_client)) {
+        ivp_err("ivp_ipc_fd_client create failed!\n");
+        goto err_create_client;
+    }
+    //the second field is sharefd number according to the algo arg struct
+    buff++;
+    fd_num = *buff++;
+    sec_fd_num = fd_num&0xFFFF;
+    nosec_fd_num = (fd_num >> 16)&0xFFFF;
+    /*fd_num indicate the followed shared_fd number, it should not exceed the
+    buffer size(32), buff size = one cmd + one fdnum + fdnum*shard_fd + ..*/
+    if (((sec_fd_num+nosec_fd_num) > MAX_FD_NUM)||(0 == sec_fd_num))
+    {
+        ivp_err("ion buff number maybe wrong, num=%d\n", fd_num);
+        goto err_ion_buff_num;
+    }
+    //trans sec buff phyaddr, phyaddr = phyaddr_begin+offset
+    share_fd = *buff++;
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4,9,0))
+    ivp_ion_fd_handle = ion_import_dma_buf(ivp_ipc_fd_client, share_fd);
+#else
+    ivp_ion_fd_handle = ion_import_dma_buf_fd(ivp_ipc_fd_client, share_fd);
+#endif
+    if (IS_ERR(ivp_ion_fd_handle)){
+        ivp_err("%d, ion_import_dma_buf failed!\n", __LINE__);
+        goto err_import_handle;
+    }
+    ret = ivp_ion_phys(ivp_ipc_fd_client, ivp_ion_fd_handle, (dma_addr_t *)&ion_phy_addr);
+    if (ret < 0){
+        ivp_err("%d, ion_phys failed, result=%d\n", __LINE__, ret);
+        goto err_ion_phys;
+    }
+    for (i = 0; i < sec_fd_num; i++)
+    {
+        *buff++ += ion_phy_addr;
+    }
+    ion_free(ivp_ipc_fd_client, ivp_ion_fd_handle);
+
+    //trans nosec buff phyaddr
+    for (i = 0; i < nosec_fd_num; i++)
+    {
+        share_fd = *buff;
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4,9,0))
+        ivp_ion_fd_handle = ion_import_dma_buf(ivp_ipc_fd_client, share_fd);
+#else
+        ivp_ion_fd_handle = ion_import_dma_buf_fd(ivp_ipc_fd_client, share_fd);
+#endif
+        if (IS_ERR(ivp_ion_fd_handle)){
+            ivp_err("%d, ion_import_dma_buf failed!\n", __LINE__);
+            goto err_import_handle;
+        }
+        ret = ivp_ion_phys(ivp_ipc_fd_client, ivp_ion_fd_handle, (dma_addr_t *)&ion_phy_addr);
+        if (ret < 0){
+            ivp_err("%d, ion_phys failed, result=%d\n", __LINE__, ret);
+            goto err_ion_phys;
+        }
+        *buff++ = ion_phy_addr;
+        ion_free(ivp_ipc_fd_client, ivp_ion_fd_handle);
+    }
+    ion_client_destroy(ivp_ipc_fd_client);
+    mutex_unlock(&ivp_ipc_ion_mutex);
+    return ret;
+
+err_ion_phys:
+    ion_free(ivp_ipc_fd_client, ivp_ion_fd_handle);
+err_ion_buff_num:
+err_import_handle:
+    ion_client_destroy(ivp_ipc_fd_client);
+err_create_client:
+    mutex_unlock(&ivp_ipc_ion_mutex);
+
+    return -EFAULT;
 }
 /******************************************************************************************
  *  len:   msg len. data len is (len * sizeof(msg))
@@ -263,7 +379,7 @@ static ssize_t ivp_ipc_read(struct file *file,
         ivp_err("flushed.");
         return -ECANCELED;
     }
-
+    mutex_lock(&ivp_ipc_read_mutex);
     packet = ivp_ipc_get_packet(queue);
     if (packet != NULL) {
         if (copy_to_user(buff, packet->buff, size)) {
@@ -274,6 +390,7 @@ static ssize_t ivp_ipc_read(struct file *file,
 
     } else {
         ivp_err("get packet NULL");
+        mutex_unlock(&ivp_ipc_read_mutex);
         return -EINVAL;
     }
 
@@ -282,6 +399,7 @@ static ssize_t ivp_ipc_read(struct file *file,
 
 OUT:
     ivp_ipc_remove_packet(queue, packet);
+    mutex_unlock(&ivp_ipc_read_mutex);
     return ret;
 }
 
@@ -315,7 +433,17 @@ static ssize_t ivp_ipc_write(struct file *file,
         ret = -EFAULT;
         goto OUT;
     }
-
+    //trans ion fd to phyaddr
+    if (is_ivp_in_secmode()) {
+        //the third char is ipc cmd,the first char is msg index
+        if ((CMD_ALGORUN == (tmp_buff[3] & 0x7F)) && (0 == tmp_buff[0])) {
+            ret = ivp_trans_sharefd_to_phyaddr((unsigned int *)tmp_buff);
+            if (ret < 0) {
+                ivp_err("ivp trans fd fail! ret=%ld\n", ret);
+                goto OUT;
+            }
+        }
+    }
     ret = RPROC_ASYNC_SEND(pdev->send_ipc, (rproc_msg_t *) tmp_buff, size/sizeof(rproc_msg_len_t));
     if (ret) {
         ivp_err("ipc send fail [%ld].", ret);
@@ -341,7 +469,9 @@ static int ivp_ipc_release(struct inode *inode, struct file *file)
 
     ivp_info("enter");
     //drop all packet
+    mutex_lock(&ivp_ipc_read_mutex);
     ivp_ipc_remove_all_packet(&pdev->recv_queue);
+    mutex_unlock(&ivp_ipc_read_mutex);
 
     atomic_inc(&pdev->accessible);
 
@@ -357,7 +487,9 @@ static int ivp_ipc_flush(struct ivp_ipc_device *pdev)
     ivp_info("enter");
     atomic_set(&queue->flush, 1);
     up(&queue->r_lock);
+    mutex_lock(&ivp_ipc_read_mutex);
     ivp_ipc_remove_all_packet(queue);
+    mutex_unlock(&ivp_ipc_read_mutex);
 
     return ret;
 }
@@ -426,7 +558,8 @@ static int ivp_ipc_probe(struct platform_device *platform_pdev)
         ivp_err("Failed to register misc device.");
         return ret;
     }
-
+    mutex_init(&ivp_ipc_ion_mutex);
+    mutex_init(&ivp_ipc_read_mutex);
     ret = RPROC_MONITOR_REGISTER((unsigned char)ivp_ipc_dev.recv_ipc, &ivp_ipc_dev.recv_nb);
     if (ret < 0) {
         ivp_err("Failed to create receiving notifier block");
@@ -442,6 +575,8 @@ static int ivp_ipc_probe(struct platform_device *platform_pdev)
     return ret;
 
 err_out:
+    mutex_destroy(&ivp_ipc_ion_mutex);
+    mutex_destroy(&ivp_ipc_read_mutex);
     misc_deregister(&pdev->device);
     return ret;
 }
@@ -449,6 +584,8 @@ err_out:
 static int ivp_ipc_remove(struct platform_device *plat_devp)
 {
     RPROC_MONITOR_UNREGISTER((unsigned char)ivp_ipc_dev.recv_ipc, &ivp_ipc_dev.recv_nb);
+    mutex_destroy(&ivp_ipc_ion_mutex);
+    mutex_destroy(&ivp_ipc_read_mutex);
     misc_deregister(&ivp_ipc_dev.device);
     return 0;
 }

@@ -779,7 +779,7 @@ int num_of_par)
 
     for (cnt = 0; cnt < num_of_par; cnt++) {
         if (token != NULL) {
-            if ((token[1] == 'x') || (token[1] == 'X')) {
+            if ((strlen(token) > 1)&& ((token[1] == 'x') || (token[1] == 'X'))) {
                 base = 16;
             } else {
                 base = 10;

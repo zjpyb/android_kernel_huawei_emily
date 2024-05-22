@@ -14,6 +14,11 @@
 #define VOLT_PARA_LEVEL            (4)
 #define SEGMENT_PARA_LEVEL      (3)
 
+#define BATT_IDENTIFY_BY_VOLT   "id_volt"
+#define BATT_IDENTIFY_BY_SN     "id_sn"
+#define ID_SN_SIZE              6
+#define DEFAULT_IFULL_SET       (300)
+
 struct single_row_lut {
 	int x[MAX_SINGLE_LUT_COLS];
 	int y[MAX_SINGLE_LUT_COLS];
@@ -111,6 +116,8 @@ struct chrg_para_lut{
  */
 
 struct hisi_coul_battery_data {
+    char            *identify_type;
+    char            *id_sn;
     unsigned int    id_voltage_min;
     unsigned int    id_voltage_max;
     unsigned int    id_identify_min;
@@ -131,6 +138,7 @@ struct hisi_coul_battery_data {
     int default_rbatt_mohm;
     int delta_rbatt_mohm;
     unsigned int vbatt_max;
+    int ifull;
     struct chrg_para_lut *chrg_para;
     char *batt_brand;
 };

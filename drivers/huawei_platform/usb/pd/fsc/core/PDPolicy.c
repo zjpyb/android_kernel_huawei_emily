@@ -149,7 +149,17 @@ extern FSC_S32                  AutoModeEntryObjPos;
 
 extern FSC_BOOL                 ProtocolCheckRxBeforeTx;
 extern FSC_U8                   loopCounter;        // Used to count the number of Unattach<->AttachWait loops
+#define PD_FIXED_POWER_VOL_STEP 50
+static FSC_U32 	pd_limit_voltage = PD_09_V;
 
+void SetPDLimitVoltage(int vol)
+{
+	if (vol < PD_ADAPTER_5V || vol > PD_ADAPTER_20V) {
+		FSC_PRINT("FUSB %s - Set limit voltage over range\n", __func__);
+		return;
+	}
+	pd_limit_voltage = vol / PD_FIXED_POWER_VOL_STEP;
+}
 /////////////////////////////////////////////////////////////////////////////
 //                  Timer Interrupt service routine
 /////////////////////////////////////////////////////////////////////////////
@@ -836,7 +846,7 @@ void PolicySourceStartup(void)
             // Set masks for PD
             Registers.Mask.M_COLLISION = 0;
             Registers.Mask.M_VBUSOK = 0;
-            Registers.Mask.M_BC_LVL = 1;
+            //Registers.Mask.M_BC_LVL = 1;
             DeviceWrite(regMask, 1, &Registers.Mask.byte);
             Registers.MaskAdv.M_RETRYFAIL = 0;
             Registers.MaskAdv.M_HARDSENT = 0;
@@ -1419,13 +1429,7 @@ void PolicySourceReady(void)
         }
         USBPDTxFlag = FALSE;
     }
-    else if(PartnerCaps.object == 0)
-    {
-        PolicyState = peSourceGetSinkCaps;                                      // Go to the get sink caps state
-        PolicySubIndex = 0;                                                     // Clear the sub index
-        PDTxStatus = txIdle;                                                    // Clear the transmitter status
-    }
-    else if((UUT_Device_Type != 3) && (Requests_PR_Swap_As_Src) && (PartnerCaps.FPDOSink.DualRolePower == 1))
+    else if((UUT_Device_Type != 3) && (Requests_PR_Swap_As_Src))
     {
         PolicyState = peSourceSendPRSwap;                       // Issue a PR_Swap message
         PolicySubIndex = 0;                                     // Clear the sub index
@@ -1861,10 +1865,7 @@ void PolicySourceEvaluatePRSwap(void)
     switch(PolicySubIndex)
     {
         case 0: // Send either the Accept or Reject command
-            if (!Accepts_PR_Swap_As_Src || (UUT_Device_Type == 3) ||
-                    ((CapsSource[0].FPDOSupply.DualRolePower == FALSE) || (PartnerCaps.FPDOSink.DualRolePower == FALSE) || // Determine Accept/Reject based on DualRolePower bit in current PDO
-                    ((CapsSource[0].FPDOSupply.ExternallyPowered == TRUE) && // Must also reject if we are externally powered and partner is not
-                    (PartnerCaps.FPDOSink.SupplyType == pdoTypeFixed) && (PartnerCaps.FPDOSink.ExternallyPowered == FALSE))))
+            if (!Accepts_PR_Swap_As_Src || (UUT_Device_Type == 3) )
             {
                 PolicySendCommand(CMTReject, peSourceReady, 0);                 // Send the reject if we are not a DRP
             }
@@ -2056,8 +2057,8 @@ void PolicySourceEvaluateVCONNSwap(void)
                         case CMTPS_RDY:                                         // If we get the PS_RDY message...
                             Registers.Switches.VCONN_CC1 = 0;                   // Disable the VCONN source
                             Registers.Switches.VCONN_CC2 = 0;                   // Disable the VCONN source
-                            Registers.Switches.PDWN1 = 1;                       // Ensure the pull-down on CC1 is enabled
-                            Registers.Switches.PDWN2 = 1;                       // Ensure the pull-down on CC2 is enabled
+                            //Registers.Switches.PDWN1 = 1;                       // Ensure the pull-down on CC1 is enabled
+                           // Registers.Switches.PDWN2 = 1;                       // Ensure the pull-down on CC2 is enabled
                             platform_set_vconn(FALSE);
                             DeviceWrite(regSwitches0, 1, &Registers.Switches.byte[0]); // Commit the register setting to the device
                             IsVCONNSource = FALSE;
@@ -2201,6 +2202,11 @@ void PolicySinkTransitionDefault(void)
             {
                 PolicySubIndex++;
             }
+            else if (Registers.Status.BC_LVL == 0)
+            {
+                PolicyState = peSinkStartup;//
+                PolicySubIndex = 0;
+            }
             else if (platform_check_timer(&PolicyStateTimer))                                      // Break out if we never see 0V
             {
                 if(PolicyHasContract)
@@ -2223,9 +2229,6 @@ void PolicySinkTransitionDefault(void)
             PDTxStatus = txIdle;                                                        // Reset the transmitter status
             break;
     }
-
-
-
 }
 
 void PolicySinkStartup(void)
@@ -2269,7 +2272,7 @@ void PolicySinkStartup(void)
     Registers.Switches.POWERROLE = PolicyIsSource;
     DeviceWrite(regSwitches1, 1, &Registers.Switches.byte[1]);
     ResetProtocolLayer(FALSE);
-	Registers.Switches.AUTO_CRC = 1;                                            // turn on Auto CRC
+    Registers.Switches.AUTO_CRC = 1;                                            // turn on Auto CRC
     DeviceWrite(regSwitches1, 1, &Registers.Switches.byte[1]);	// Reset the protocol layer
     Registers.Power.PWR = 0xF;                                         // Enable the internal oscillator for USB PD
     Registers.Power.PD_RCVR_DIS = 0; /* Enable receiver */
@@ -2419,6 +2422,9 @@ void PolicySinkEvaluateCaps(void)
             optional_max_power = objPower;
         }
 
+        if (objVoltage > pd_limit_voltage)
+                continue;
+
         if (objPower >= MaxPower)                                               // If the current object has power greater than or equal the previous objects
         {
             MaxPower = objPower;                                                // Store the objects power
@@ -2444,7 +2450,7 @@ void PolicySinkEvaluateCaps(void)
             if (objCurrent < ReqCurrent)                                        // If the max power available is less than the max power requested...
             {
                 SinkRequest.FVRDO.CapabilityMismatch = TRUE;                    // flag the source that we need more power
-                SinkRequest.FVRDO.MinMaxCurrent = CapsSink[0].FPDOSink.OperationalCurrent;
+                SinkRequest.FVRDO.MinMaxCurrent = objCurrent;
                 SinkRequest.FVRDO.OpCurrent =  objCurrent;
             }
             else                                                                // Otherwise...
@@ -3698,8 +3704,7 @@ void autoVdmDiscovery (void)
 			AutoVdmState = AUTO_VDM_DISCOVER_MODES_PP;
 			requestDiscoverSvids(SOP_TYPE_SOP);
 			FSC_PRINT("FUSB %s - AUTO_VDM_DISCOVER_SVIDS_PP\n",__func__);
-		}
-		else {
+                } else {
 			AutoVdmState = AUTO_VDM_DONE;
 			FSC_PRINT("FUSB %s - Modal Operation Not Supported - AutoVDM Done\n",__func__);
 		}
@@ -4032,4 +4037,11 @@ void EnableUSBPD(void)
 
 void SetVbusTransitionTime(FSC_U32 time_ms) {
     VbusTransitionTime = time_ms * TICK_SCALE_TO_MS;
+}
+
+void SetPolicyState(PolicyState_t state)
+{
+	PolicyState = state;
+	PolicySubIndex = 0;
+	PDTxStatus = txIdle;
 }

@@ -255,6 +255,13 @@ static enum pin_config_param pcs_bias[] = {
 };
 
 /*
+ * This lock class tells lockdep that irqchip core that this single
+ * pinctrl can be in a different category than its parents, so it won't
+ * report false recursion.
+ */
+static struct lock_class_key pcs_lock_class;
+
+/*
  * REVISIT: Reads and writes could eventually use regmap or something
  * generic. But at least on omaps, some mux registers are performance
  * critical as they may need to be remuxed every time before and after
@@ -359,7 +366,7 @@ static void pcs_pin_dbg_show(struct pinctrl_dev *pctldev,
 			|| pin < frange->offset)
 			continue;
 		mux_bytes = pcs->width / BITS_PER_BYTE;
-		val = (unsigned)pcs->read(pcs->base + pin * mux_bytes); /*lint !e124 !e679 */
+		val = (unsigned)pcs->read(pcs->base + pin * mux_bytes); /*lint !e124 */
 		seq_printf(s, "%08x %s " , val, DRIVER_NAME);
 		break;
 	}
@@ -1499,10 +1506,7 @@ static void pcs_irq_free(struct pcs_device *pcs)
 static void pcs_free_resources(struct pcs_device *pcs)
 {
 	pcs_irq_free(pcs);
-
-	if (pcs->pctl)
-		pinctrl_unregister(pcs->pctl);
-
+	pinctrl_unregister(pcs->pctl);
 	pcs_free_funcs(pcs);
 	pcs_free_pingroups(pcs);
 }
@@ -1686,7 +1690,7 @@ static irqreturn_t pcs_irq_handler(int irq, void *d)
 {
 	struct pcs_soc_data *pcs_soc = d;
 
-	return pcs_irq_handle(pcs_soc) ? IRQ_HANDLED : IRQ_NONE;/*[false alarm]:return */
+	return pcs_irq_handle(pcs_soc) ? IRQ_HANDLED : IRQ_NONE;
 }
 
 /**
@@ -1734,6 +1738,7 @@ static int pcs_irqdomain_map(struct irq_domain *d, unsigned int irq,
 	irq_set_chip_data(irq, pcs_soc);
 	irq_set_chip_and_handler(irq, &pcs->chip,
 				 handle_level_irq);
+	irq_set_lockdep_class(irq, &pcs_lock_class);
 	irq_set_noprobe(irq);
 
 	return 0;

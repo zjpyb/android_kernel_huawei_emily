@@ -810,6 +810,7 @@ int hisi_ov_offline_play(struct hisi_fb_data_type *hisifd, void __user *argp)
 	struct list_head lock_list;
 	uint32_t timeout_interval = 0;
 	bool parallel_compose_flag = false;
+	static uint32_t s_dmd_offline_compose_timeout_count = 0;
 
 	if (NULL == hisifd) {
 		HISI_FB_ERR("NULL Pointer!\n");
@@ -858,6 +859,12 @@ int hisi_ov_offline_play(struct hisi_fb_data_type *hisifd, void __user *argp)
 	if (g_debug_ovl_offline_composer == 1) {
 		HISI_FB_INFO("fb%d, get ov_req from user.\n", hisifd->index);
 		dumpDssOverlay(hisifd, pov_req);
+	}
+
+	ret = hisifb_offline_layerbuf_lock(hisifd, pov_req, &lock_list);
+	if (ret != 0) {
+		HISI_FB_ERR("fb%d, hisifb_offline_layerbuf_lock failed! ret=%d\n", hisifd->index, ret);
+		goto err_return_sem0;
 	}
 
 	hisifd->mmbuf_info = hisi_dss_mmbuf_info_get(hisifd, 0);
@@ -992,11 +999,23 @@ int hisi_ov_offline_play(struct hisi_fb_data_type *hisifd, void __user *argp)
 				"ret=%d, ret_rch_state=%d, diff =%d usecs!\n",
 				use_comm_mmbuf, wb_compose_type, inp32(hisifd->dss_base + GLB_CPU_OFF_INTS), ret, ret_cmdlist_state,
 				hisifb_timestamp_diff(&tv4, &tv5));
+			s_dmd_offline_compose_timeout_count++;
+			if (s_dmd_offline_compose_timeout_count >= OFFLINE_COMPOSE_TIMEOUT_EXPECT_COUNT) {
+				if (lcd_dclient && !dsm_client_ocuppy(lcd_dclient)) {
+					dsm_client_record(lcd_dclient, "compose timeout, use_comm_mmbuf = %d, wb_compose_type = %d, GLB_CPU_OFF_INTS = 0x%x,"
+						"ret = %d, ret_rch_state = %d, diff = %d usecs!\n",
+						use_comm_mmbuf, wb_compose_type, inp32(hisifd->dss_base + GLB_CPU_OFF_INTS), ret, ret_cmdlist_state,
+						hisifb_timestamp_diff(&tv4, &tv5));
+					dsm_client_notify(lcd_dclient, DSM_LCD_OFFLINE_COMPOSE_TIMEOUT_NO);
+				}
+				s_dmd_offline_compose_timeout_count = 0;
+			}
 			ret = -ETIMEDOUT;
 			reset = true;
 
 			debug = hisi_get_debug_flag();
 		} else {
+			s_dmd_offline_compose_timeout_count = 0;
 			/* remove mctl ch & ov */
 			hisi_remove_mctl_mutex(hisifd, mctl_idx, cmdlist_idxs);
 			ret = 0;
@@ -1004,6 +1023,7 @@ int hisi_ov_offline_play(struct hisi_fb_data_type *hisifd, void __user *argp)
 	}
 
 err_return_sem1:
+	hisifb_offline_layerbuf_unlock(hisifd, &lock_list);
 	if (parallel_compose_flag) {
 		hisi_offline_clear(hisifd, pov_req, enable_cmdlist, hisifd->wb_info.cmdlist_idxs | cmdlist_idxs, reset, debug);
 		memset(&hisifd->wb_info, 0, sizeof(dss_wb_info_t));
@@ -1032,6 +1052,7 @@ err_return_sem1:
 
 err_return_sem0:
 	debug = hisi_get_debug_flag();
+	hisifb_offline_layerbuf_unlock(hisifd, &lock_list);
 
 	reset = true;
 	if (pov_req) {
@@ -1049,6 +1070,7 @@ err_return_sem0:
 	return ret;
 
 return_parallel_compose:
+	hisifb_offline_layerbuf_unlock(hisifd, &lock_list);
 	if (pov_req) {
 		if (pov_h_block_infos) {
 			kfree(pov_h_block_infos);

@@ -31,6 +31,9 @@
 #define HISI_PLL6_RATE_44			361267200
 
 #define HISI_DIV_CLK_48			0xffff000f
+#define HISI_DIV_CLK_96			0xffff0007
+#define HISI_DIV_CLK_192			0xffff0003
+#define HISI_DIV_CLK_NO_SUPPORT			0x0
 
 #define HISI_WORK_DELAY_1MS   ( 33 )    /* 33 equals 1ms */
 

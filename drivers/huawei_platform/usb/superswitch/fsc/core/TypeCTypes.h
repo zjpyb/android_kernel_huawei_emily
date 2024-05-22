@@ -23,6 +23,11 @@ typedef enum {
 } SourceOrSink;
 
 typedef enum {
+  VBUS_DETACH_ENABLE = 0,
+  VBUS_DETACH_DISABLE
+} VbusDetach_t;
+
+typedef enum {
   USBTypeC_Sink = 0,
   USBTypeC_Source,
   USBTypeC_DRP,

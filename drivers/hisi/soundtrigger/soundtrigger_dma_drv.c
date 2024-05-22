@@ -51,6 +51,9 @@
 #include "slimbus.h"
 #include "hifi_lpp.h"
 #include "asp_dma.h"
+#include "soundtrigger_event.h"
+#include "soundtrigger_socdsp_mailbox.h"
+#include "soundtrigger_socdsp_pcm.h"
 
 /*lint -e846 -e516 -e514 -e866 -e30 -e84*/
 
@@ -73,6 +76,10 @@
 #define HI6402_NORMAL_FRAME_LENGTH 	(160)										/* time: 10ms */
 
 #define HI6402_NORMAL_TRAN_RATE		(16000)
+
+#define HI6402_4SMARTPA_NORMAL_FRAME_LENGTH 	(480)										/* time: 10ms */
+
+#define HI6402_4SMARTPA_NORMAL_TRAN_RATE		(48000)
 
 #define HI6403_NORMAL_FRAME_LENGTH 	(480)										/* time: 10ms */
 
@@ -101,6 +108,8 @@
 #define RINGBUF_HEAD_SIZE		(20)
 
 #define NORMAL_BUFFER_SIZE		(RINGBUF_FRAME_LEN * VALID_BYTE_COUNT * RINGBUF_FRAME_COUNT + RINGBUF_HEAD_SIZE)								/* according to mlib_ringbuffer.c */
+
+#define TIMEOUT_CLOSE_DMA_MS		(60000)
 
 //#define STEREO_TYPE
 	#define DMA_PORT_NUM		(1)
@@ -192,9 +201,15 @@ struct soundtrigger_dma_drv_info {
 	struct delayed_work 			soundtrigger_delay_dma_normal_left_work;	/* delay work of interrupt response for normal transmit left channel */
 	struct delayed_work 			soundtrigger_delay_dma_normal_right_work;	/* delay work of interrupt response for normal transmit right channel */
 
+	struct workqueue_struct 		*soundtrigger_delay_close_dma_wq;
+	struct delayed_work 			soundtrigger_delay_close_dma_timeout_work;	/* delay work of close dma when timeout */
+
 	struct wake_lock st_wake_lock;
 	struct mutex ioctl_mutex;
 };
+
+static uint32_t hi6402_normal_frame_length = HI6402_NORMAL_FRAME_LENGTH;
+static uint32_t hi6402_normal_tran_rate = HI6402_NORMAL_TRAN_RATE;
 
 DRV_DMA_CONFIG_STRU hi6403_soundtrigger_dma_fast_cfg[2] = {
 	{.port = 0xe8051280, .config = 0x433220a7, .channel = DMA_FAST_LEFT_CH_NUM},	/*hi6403 fast data left channel*/
@@ -216,10 +231,30 @@ DRV_DMA_CONFIG_STRU hi6402_soundtrigger_dma_normal_cfg[2] = {
 	{.port = 0xe80512c0, .config = 0x433220b7, .channel = DMA_NORMAL_RIGHT_CH_NUM},	/*hi6402 normal data right channel*/
 };
 
-DRV_DMA_CONFIG_STRU *hi640X_soundtrigger_dma_cfg[CODEC_HI640X_MAX][SOUNDTRIGGER_PCM_CHAN_NUM] = {
+DRV_DMA_CONFIG_STRU hi6402_soundtrigger_dma_fast_cfg_4smartpa[2] = {
+	{.port = 0xe8051280, .config = 0x433220a7, .channel = DMA_FAST_LEFT_CH_NUM}, /*hi6402 fast data left channel*/
+	{.port = 0xe80512c0, .config = 0x433220b7, .channel = DMA_FAST_RIGHT_CH_NUM}, /*hi6402 fast data right channel*/
+};
+
+DRV_DMA_CONFIG_STRU hi6402_soundtrigger_dma_normal_cfg_4smartpa[2] = {
+	{.port = 0xe8051080, .config = 0x43322027, .channel = DMA_NORMAL_LEFT_CH_NUM}, /*hi6402 normal data left channel*/
+	{.port = 0xe80510c0, .config = 0x43322037, .channel = DMA_NORMAL_RIGHT_CH_NUM}, /*hi6402 normal data right channel*/
+};
+
+DRV_DMA_CONFIG_STRU *hi640X_soundtrigger_dma_cfg_4smartpa[CODEC_HI640X_MAX][SOUNDTRIGGER_PCM_CHAN_NUM] = {
+	{hi6402_soundtrigger_dma_fast_cfg_4smartpa,hi6402_soundtrigger_dma_normal_cfg_4smartpa,},
+	{hi6403_soundtrigger_dma_fast_cfg,hi6403_soundtrigger_dma_normal_cfg,},
+};
+
+DRV_DMA_CONFIG_STRU *hi640X_soundtrigger_dma_cfg_default[CODEC_HI640X_MAX][SOUNDTRIGGER_PCM_CHAN_NUM] = {
 	{hi6402_soundtrigger_dma_fast_cfg,hi6402_soundtrigger_dma_normal_cfg,},
 	{hi6403_soundtrigger_dma_fast_cfg,hi6403_soundtrigger_dma_normal_cfg,},
 };
+
+DRV_DMA_CONFIG_STRU * (*hi640X_soundtrigger_dma_cfg)[SOUNDTRIGGER_PCM_CHAN_NUM] = hi640X_soundtrigger_dma_cfg_default;
+
+
+
 struct soundtrigger_pcm_config hi640X_pcm_cfg[CODEC_HI640X_MAX][SOUNDTRIGGER_PCM_CHAN_NUM] = {
 	{
 		/*hi6402_pcm_fast_cfg*/
@@ -666,13 +701,21 @@ static int32_t dma_start(struct st_fast_status * fast_status)
 		goto err_exit;
 	}
 
+	if (dma_drv_info->is_dma_enable) {
+		err = -EAGAIN;
+		goto err_exit;
+	}
+
 	memset(&slimbus_params, 0x0, sizeof(slimbus_params));
 	/* slimbus config */
 	slimbus_params.rate = FAST_TRAN_RATE;
 	logi("fast slimbus_params.rate[%d]\n",slimbus_params.rate);
 
 	if (CODEC_HI6402 == dma_drv_info->type) {
-		slimbus_params.channels = 2;
+		if (hi6402_normal_tran_rate == HI6402_4SMARTPA_NORMAL_TRAN_RATE)
+			slimbus_params.channels = 1;
+		else
+			slimbus_params.channels = 2;
 		device_type = SLIMBUS_DEVICE_HI6402;
 	} else {
 		slimbus_params.channels = 1;
@@ -690,6 +733,11 @@ static int32_t dma_start(struct st_fast_status * fast_status)
 	dma_drv_info->is_slimbus_enable = 1;
 
 	wake_lock(&dma_drv_info->st_wake_lock);
+
+	if (!queue_delayed_work(dma_drv_info->soundtrigger_delay_close_dma_wq,
+				&dma_drv_info->soundtrigger_delay_close_dma_timeout_work, msecs_to_jiffies(TIMEOUT_CLOSE_DMA_MS))) {
+		loge("close dma timeout lost msg\n");
+	}
 
 	for (pcm_channel = 0; pcm_channel < ARRAY_SIZE(dma_drv_info->st_pcm_info); pcm_channel++) {
 		pcm_info = &(dma_drv_info->st_pcm_info[pcm_channel]);
@@ -749,12 +797,12 @@ static int32_t dma_open(struct st_fast_status * fast_status)
 	fast_info->read_count_right = 0;
 
 	/*get normal buffer*/
-	Static_RingBuffer_Init(normal_info->normal_buffer);
+	Static_RingBuffer_Init(normal_info->normal_buffer, (RINGBUF_FRAME_LEN * VALID_BYTE_COUNT), RINGBUF_FRAME_COUNT);
 
 	normal_info->normal_buffer_size = NORMAL_BUFFER_SIZE;
 	normal_info->normal_head_frame_word = HEAD_FRAME_WORD;
 	if (CODEC_HI6402 == dma_drv_info->type) {
-		normal_info->normal_head_frame_size = HI6402_NORMAL_FRAME_LENGTH * VALID_BYTE_COUNT;
+		normal_info->normal_head_frame_size = hi6402_normal_frame_length * VALID_BYTE_COUNT;
 	} else {
 		normal_info->normal_head_frame_size = HI6403_NORMAL_FRAME_LENGTH * VALID_BYTE_COUNT;
 	}
@@ -782,7 +830,7 @@ static int32_t dma_open(struct st_fast_status * fast_status)
 	logi("soundtrigger_dma open aspclk:%d, --\n", clk_get_enable_count(dma_drv_info->asp_subsys_clk));
 
 	err = clk_prepare_enable(dma_drv_info->asp_subsys_clk);
-	if (IS_ERR_VALUE(err)) {
+	if (err) {
 		loge( "clk prepare enable failed, err:[%d].\n", err);
 		goto err_exit;
 	}
@@ -797,7 +845,7 @@ err_exit:
 	return err;
 }
 
-int32_t hi64xx_soundtrigger_dma_close(void)
+static int32_t dma_close(void)
 {
 	struct soundtrigger_dma_drv_info *dma_drv_info = g_dma_drv_info;
 	struct fast_tran_info *fast_info = NULL;
@@ -931,8 +979,8 @@ static ssize_t dma_fops_read(struct file *file, char __user *buffer, size_t coun
 	}
 
 	if (CODEC_HI6402 == dma_drv_info->type) {
-	max_read_len = (RINGBUFFER_SIZE > (HI6402_NORMAL_FRAME_LENGTH * VALID_BYTE_COUNT)) ?
-		RINGBUFFER_SIZE : (HI6402_NORMAL_FRAME_LENGTH * VALID_BYTE_COUNT);
+	max_read_len = (size_t)((RINGBUFFER_SIZE > (hi6402_normal_frame_length * VALID_BYTE_COUNT)) ?
+		RINGBUFFER_SIZE : (hi6402_normal_frame_length * VALID_BYTE_COUNT));/*lint !e647*/
 	} else {
 	max_read_len = (RINGBUFFER_SIZE > (HI6403_NORMAL_FRAME_LENGTH * VALID_BYTE_COUNT)) ?
 		RINGBUFFER_SIZE : (HI6403_NORMAL_FRAME_LENGTH * VALID_BYTE_COUNT);
@@ -1009,6 +1057,45 @@ static ssize_t dma_fops_read(struct file *file, char __user *buffer, size_t coun
 	return -EINVAL;
 }/*lint !e715*/
 
+static int32_t soundtrigger_dma_fops(uint32_t cmd, struct st_fast_status *fast_status)
+{
+	int32_t err = 0;
+
+	if (!fast_status) {
+		loge("pointer is NULL.\n");
+		return -EINVAL;
+	}
+	if (!g_dma_drv_info) {
+		loge("g_dma_drv_info get error\n");
+		return -EINVAL;
+	}
+	if (cmd == SOUNDTRIGGER_CMD_DMA_CLOSE) {
+		if (cancel_delayed_work_sync(&g_dma_drv_info->soundtrigger_delay_close_dma_timeout_work))
+			logi("cancel timeout dma_close work success\n");
+	}
+	mutex_lock(&g_dma_drv_info->ioctl_mutex);
+	switch(cmd) {
+	case SOUNDTRIGGER_CMD_DMA_READY:
+		err = dma_open(fast_status);
+		logi("dma open, ret[%d]\n", err);
+		break;
+	case SOUNDTRIGGER_CMD_DMA_OPEN:
+		err = dma_start(fast_status);
+		logi("dma start, ret[%d]\n", err);
+		break;
+	case SOUNDTRIGGER_CMD_DMA_CLOSE:
+		err = dma_close();
+		logi("dma close, ret[%d]\n", err);
+		break;
+	default:
+		loge("invalid value, ret[%d]\n", err);
+		err = -ENOTTY;
+		break;
+	}
+	mutex_unlock(&g_dma_drv_info->ioctl_mutex);
+	return err;
+}
+
 static long dma_fops_ioctl(struct file *fd, uint32_t cmd, unsigned long arg)
 {
 	int32_t err = 0;
@@ -1040,28 +1127,9 @@ static long dma_fops_ioctl(struct file *fd, uint32_t cmd, unsigned long arg)
 
 	fast_status = (struct st_fast_status * )krn_param.buf_in;
 
-	mutex_lock(&g_dma_drv_info->ioctl_mutex);
-	switch(cmd) {
-		case SOUNDTRIGGER_CMD_DMA_READY:
-			err = dma_open(fast_status);
-			logi("dma open, ret[%d].\n", err);
-			break;
-		case SOUNDTRIGGER_CMD_DMA_OPEN:
-			err = dma_start(fast_status);
-			break;
-		case SOUNDTRIGGER_CMD_DMA_CLOSE:
-			err = hi64xx_soundtrigger_dma_close();
-			logi("dma close, ret[%d].\n", err);
-			break;
-		default:
-			loge("invalid value, ret[%d].\n", err);
-			err = -ENOTTY;
-			break;
-	}
+	err = soundtrigger_dma_fops(cmd, fast_status);
 
 	param_free((void **)&(krn_param.buf_in));
-
-	mutex_unlock(&g_dma_drv_info->ioctl_mutex);
 
 	return (long)err;
 }/*lint !e715*/
@@ -1071,6 +1139,21 @@ static long dma_fops_ioctl32(struct file *fd, uint32_t cmd, unsigned long arg)
 	void __user *user_arg = (void __user*)compat_ptr(arg);
 
 	return dma_fops_ioctl(fd, cmd, (unsigned long)user_arg);
+}
+
+void hi64xx_soundtrigger_dma_close(void)
+{
+	struct st_fast_status fast_status = {0};
+	(void)soundtrigger_dma_fops(SOUNDTRIGGER_CMD_DMA_CLOSE, &fast_status);
+}
+
+static void hi64xx_soundtrigger_close_soc_dma(void)
+{
+	if (!g_dma_drv_info)
+		return;
+	mutex_lock(&g_dma_drv_info->ioctl_mutex);
+	(void)dma_close();
+	mutex_unlock(&g_dma_drv_info->ioctl_mutex);
 }
 
 void dma_fast_left_workfunc(struct work_struct *work)
@@ -1231,7 +1314,7 @@ void dma_normal_left_workfunc(struct work_struct *work)
 	}
 
 	if (CODEC_HI6402 == dma_drv_info->type) {
-		temp_buf = (uint16_t *)kzalloc(HI6402_NORMAL_FRAME_LENGTH * VALID_BYTE_COUNT, GFP_KERNEL);
+		temp_buf = (uint16_t *)kzalloc((size_t)(hi6402_normal_frame_length * VALID_BYTE_COUNT), GFP_KERNEL);/*lint !e647*/
 	} else {
 		temp_buf = (uint16_t *)kzalloc(HI6403_NORMAL_FRAME_LENGTH * VALID_BYTE_COUNT, GFP_KERNEL);
 	}
@@ -1256,7 +1339,10 @@ void dma_normal_left_workfunc(struct work_struct *work)
 		dma_drv_info->st_normal_tran_info.read_count_left++;
 		pcm_valid_data_get(left_buffer, temp_buf, pcm_info->buffer_size / BYTE_COUNT);
 		if (CODEC_HI6402 == dma_drv_info->type) {
-			memcpy(ring_buf, temp_buf, RINGBUF_FRAME_LEN * VALID_BYTE_COUNT);
+			if (hi6402_normal_tran_rate == HI6402_4SMARTPA_NORMAL_TRAN_RATE)
+				pcm_48K_mono_to_16K_mono(temp_buf, ring_buf, RINGBUF_FRAME_LEN);
+			else
+				memcpy(ring_buf, temp_buf, RINGBUF_FRAME_LEN * VALID_BYTE_COUNT);
 		} else {
 			pcm_48K_mono_to_16K_mono(temp_buf, ring_buf, RINGBUF_FRAME_LEN);
 		}
@@ -1377,6 +1463,15 @@ static int32_t soundtrigger_dmac_irq_handler(unsigned short int_type, unsigned l
 	}
 }/*lint !e715*/
 
+static void close_dma_timeout_workfunc(struct work_struct *work)
+{
+	UNUSED_PARAMETER(work);
+
+	logi("timeout close dma\n");
+	hi64xx_soundtrigger_close_soc_dma();
+	hi64xx_soundtrigger_close_codec_dma();
+}
+
 static const struct file_operations soundtrigger_dma_drv_fops = {
 	.owner			= THIS_MODULE,
 	.open			= dma_fops_open,
@@ -1416,6 +1511,15 @@ static int32_t soundtrigger_dma_drv_probe (struct platform_device *pdev)
 	if (!dev) {
 		loge("dev is null\n");
 		return -EINVAL;
+	}
+
+	if (of_property_read_bool(dev->of_node, "hi6402-dma-cfg-4smartpa")) {
+		logi("cust soundtrigger dma config for 4smartpa\n");
+		hi6402_normal_frame_length = HI6402_4SMARTPA_NORMAL_FRAME_LENGTH;
+		hi6402_normal_tran_rate = HI6402_4SMARTPA_NORMAL_TRAN_RATE;
+		hi640X_soundtrigger_dma_cfg = hi640X_soundtrigger_dma_cfg_4smartpa;
+		hi640X_pcm_cfg[CODEC_HI6402][SOUNDTRIGGER_PCM_NORMAL].rate = HI6402_4SMARTPA_NORMAL_TRAN_RATE;
+		hi640X_pcm_cfg[CODEC_HI6402][SOUNDTRIGGER_PCM_NORMAL].frame_len = HI6402_4SMARTPA_NORMAL_FRAME_LENGTH;
 	}
 
 	err = misc_register(&soundtrigger_dma_drv_device);
@@ -1483,10 +1587,19 @@ static int32_t soundtrigger_dma_drv_probe (struct platform_device *pdev)
 		goto err_out2;
 	}
 
+	dma_drv_info->soundtrigger_delay_close_dma_wq =
+			create_singlethread_workqueue("soundtrigger_delay_close_dma_wq");
+	if (!dma_drv_info->soundtrigger_delay_close_dma_wq) {
+		err = -ENOMEM;
+		loge("create workqueue failed.\n");
+		goto err_out3;
+	}
+
 	INIT_DELAYED_WORK(&dma_drv_info->soundtrigger_delay_dma_fast_left_work, dma_fast_left_workfunc);
 	INIT_DELAYED_WORK(&dma_drv_info->soundtrigger_delay_dma_fast_right_work, dma_fast_right_workfunc);
 	INIT_DELAYED_WORK(&dma_drv_info->soundtrigger_delay_dma_normal_left_work, dma_normal_left_workfunc);
 	INIT_DELAYED_WORK(&dma_drv_info->soundtrigger_delay_dma_normal_right_work, dma_normal_right_workfunc);
+	INIT_DELAYED_WORK(&dma_drv_info->soundtrigger_delay_close_dma_timeout_work, close_dma_timeout_workfunc);
 
 	dma_drv_info->dev = dev;
 	dma_drv_info->soundtrigger_dma_drv_state = DMA_DRV_NO_INIT;
@@ -1502,8 +1615,17 @@ static int32_t soundtrigger_dma_drv_probe (struct platform_device *pdev)
 
 	logi("dma probe end.\n");
 
+	/*if socdsp pcm init fail,codecdsp function is ok, so don't release codecdsp resource */
+	soundtrigger_socdsp_pcm_init();
+	soundtrigger_mailbox_init();
+
 	return 0;
 
+err_out3:
+	if(g_dma_drv_info->soundtrigger_delay_wq) {
+		flush_workqueue(g_dma_drv_info->soundtrigger_delay_wq);
+		destroy_workqueue(g_dma_drv_info->soundtrigger_delay_wq);
+	}
 err_out2:
 	if (hwspin_lock_free(dma_drv_info->hwlock))
 		loge("free dma_drv_info->hwlock fail\n");
@@ -1545,6 +1667,15 @@ static int32_t soundtrigger_dma_drv_remove(struct platform_device *pdev)
 		flush_workqueue(g_dma_drv_info->soundtrigger_delay_wq);
 		destroy_workqueue(g_dma_drv_info->soundtrigger_delay_wq);
 	}
+
+	if(g_dma_drv_info->soundtrigger_delay_close_dma_wq) {
+		cancel_delayed_work(&g_dma_drv_info->soundtrigger_delay_close_dma_timeout_work);
+		flush_workqueue(g_dma_drv_info->soundtrigger_delay_close_dma_wq);
+		destroy_workqueue(g_dma_drv_info->soundtrigger_delay_close_dma_wq);
+	}
+
+	soundtrigger_socdsp_pcm_deinit();
+	soundtrigger_mailbox_deinit();
 
 	logi( "dma remove.\n");
 	return 0;

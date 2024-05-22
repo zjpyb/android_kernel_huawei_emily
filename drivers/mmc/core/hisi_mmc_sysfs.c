@@ -5,7 +5,6 @@
 #ifdef CONFIG_HISI_MMC_MANUAL_BKOPS
 #include <linux/blkdev.h>
 #endif
-/*lint -e421 -e715 -e747*/
 
 
 int hisi_mmc_add_card_debugfs(struct mmc_card *card, struct dentry *root)
@@ -17,5 +16,4 @@ int hisi_mmc_add_card_debugfs(struct mmc_card *card, struct dentry *root)
 
 	return 0;
 }
-/*lint +e421 +e715 +e747*/
 

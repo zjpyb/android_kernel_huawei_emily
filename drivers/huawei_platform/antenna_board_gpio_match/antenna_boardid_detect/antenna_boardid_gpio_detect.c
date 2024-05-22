@@ -102,7 +102,8 @@ static ssize_t antenna_detect_show(struct device *dev,
     info = antenna_detect_lookup(attr->attr.name);
     if (!info)
         return -EINVAL;
-    int ret = pinctrl_select_state(pinctrl, pinctrl_def);
+    int ret = 0;
+    ret = pinctrl_select_state(pinctrl, pinctrl_def);
     if (ret)
         dev_err(dev,"could not set pins to default state\n");
 
@@ -196,16 +197,16 @@ static int antenna_boardid_detect_probe(struct platform_device *pdev)
     pinctrl = pinctrl_get(di->dev);
     if (IS_ERR(pinctrl))
     {
-        dev_err(&di->dev, "could not get pinctrl\n");
+        dev_err(di->dev, "could not get pinctrl\n");
     }
 
     pinctrl_def = pinctrl_lookup_state(pinctrl,"default");
     if (IS_ERR(pinctrl_def)) {
-        dev_err(&di->dev,"could not get defstate (%li)\n", PTR_ERR(pinctrl_def));
+        dev_err(di->dev,"could not get defstate (%li)\n", PTR_ERR(pinctrl_def));
     }
     pinctrl_idle = pinctrl_lookup_state(pinctrl,"idle");
     if (IS_ERR(pinctrl_idle)) {
-        dev_err(&di->dev,"could not get idlestate (%li)\n", PTR_ERR(pinctrl_idle));
+        dev_err(di->dev,"could not get idlestate (%li)\n", PTR_ERR(pinctrl_idle));
     }
 
     array_len = of_property_count_strings(antenna_node,"temp_gpio");

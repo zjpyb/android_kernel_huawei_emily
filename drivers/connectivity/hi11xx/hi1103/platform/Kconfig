@@ -57,33 +57,10 @@ config HI1102_PLAT_MAIN
   ---help---
 	Hisilicon 1102 platform main module
 
-config HI110X_GPS_REFCLK
-  bool "Hisilicon 110X gps refclk feature"
-  default y
-  ---help---
-    Hisilicon 110X gps refclk feature
-
-config HI110X_GPS_REFCLK_INTERFACE
-  bool "Hisilicon 110X gps refclk interface with hwgps"
+config HI110X_PLAT_BB
+  bool "Hisilicon 110x platform bbox  module"
   default n
   ---help---
-    Hisilicon 110X gps refclk interface with hwgps
-
-choice
-  prompt "GPS RefClk Type"
-  default HI110X_GPS_REFCLK_SRC_3
-  config HI110X_GPS_REFCLK_SRC_1
-    bool "modem provide gps one ref clk source, like plat A"
-  config HI110X_GPS_REFCLK_SRC_2
-    bool "modem provide gps two ref clk source, like plat D"
-  config HI110X_GPS_REFCLK_SRC_3
-    bool "modem provide gps three ref clk source, other plat"
-endchoice
-
-config HI110X_GPS_SYNC
-  bool "Hisilicon 110X gps sync feature"
-  default n
-  ---help---
-    Hisilicon 110X gps sync feature temp default n till sync feature of other module complete
+	Hisilicon 110x platform bbox  module
 
 endif

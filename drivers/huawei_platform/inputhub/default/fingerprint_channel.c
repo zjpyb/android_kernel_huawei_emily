@@ -75,12 +75,13 @@ static void update_fingerprint_info(obj_cmd_t cmd, fingerprint_type_t type)
 
 static void fingerprint_report(void)
 {
+    char* fingerprint_data = NULL;
     fingerprint_upload_pkt_t fingerprint_upload;
     memset(&fingerprint_upload, 0, sizeof(fingerprint_upload_pkt_t));
     fingerprint_upload.fhd.hd.tag = TAG_FP;
     fingerprint_upload.fhd.hd.cmd = CMD_DATA_REQ;
     fingerprint_upload.data = 0; //0: cancel wait sensorhub msg
-    char* fingerprint_data = (char*)(&fingerprint_upload) + sizeof(pkt_common_data_t);
+    fingerprint_data = (char*)(&fingerprint_upload) + sizeof(pkt_common_data_t);
     fingerprint_ipc_cgbe_abort_handle();
     inputhub_route_write(ROUTE_FHB_PORT, fingerprint_data, sizeof(fingerprint_upload.data));
 }

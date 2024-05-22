@@ -145,6 +145,7 @@ void usb_pd_pal_notify_connect_state(unsigned int port, tcpc_state_t state, bool
 {
 	struct pd_dpm_typec_state tc_state;
 
+	memset(&tc_state, 0, sizeof(tc_state));
 	tc_state.polarity = polarity;
 
 	switch (state)

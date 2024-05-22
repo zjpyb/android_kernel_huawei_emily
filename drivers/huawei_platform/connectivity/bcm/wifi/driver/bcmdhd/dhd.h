@@ -1157,6 +1157,7 @@ extern int dhd_keep_alive_onoff(dhd_pub_t *dhd);
 #define DHD_APF_LOCK(ndev)		dhd_apf_lock(ndev)
 #define DHD_APF_UNLOCK(ndev)	dhd_apf_unlock(ndev)
 
+extern void dhd_dev_get_drop_pkt(dhd_pub_t *dhd, uint32 on);
 extern void dhd_apf_lock(struct net_device *dev);
 extern void dhd_apf_unlock(struct net_device *dev);
 extern int dhd_dev_apf_get_version(struct net_device *ndev, uint32 *version);

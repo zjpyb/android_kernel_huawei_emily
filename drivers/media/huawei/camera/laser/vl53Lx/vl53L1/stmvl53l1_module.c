@@ -54,7 +54,7 @@
 #include <linux/jhash.h>
 #include <linux/ctype.h>
 
-//lint -save -e420 -e421 -e429 -e454 -e455 -e456 -e647 -e666
+//lint -save -e420 -e421 -e429 -e454 -e455 -e456 -e647 -e666 -e574
 
 /*
  * API includes
@@ -152,6 +152,11 @@ int stmvl53l1_enable_debug = 0;
 
 #define VL53L1_INPUT_DEVICE_NAME	"STM VL53L1 proximity sensor"
 
+extern int snprintf_s(char* strDest, size_t destMax, size_t count, const char* format, ...);
+extern int memcpy_s(void *dest, size_t destMax, const void *src, size_t count);
+extern int strncpy_s(char *strDest, size_t destMax, const char *strSrc, size_t count);
+extern int memset_s(void *dest, size_t destMax, int c, size_t count);
+extern int sscanf_s(const char *buffer, const char *format, ...);
 static long stmvl53l1_ioctl(struct file *file,
 		unsigned int cmd, unsigned long arg);
 static int stmvl53l1_open(struct inode *inode, struct file *file);
@@ -522,7 +527,7 @@ static void kill_mz_data(VL53L1_MultiRangingData_t *pdata)
 {
 	int i;
 
-	memset(pdata, 0, sizeof(*pdata));
+	memset_s(pdata, sizeof(*pdata), 0, sizeof(*pdata));
 	for (i = 0; i < VL53L1_MAX_RANGE_RESULTS; i++)
 		pdata->RangeData[i].RangeStatus = VL53L1_RANGESTATUS_NONE;
 	pdata->RoiStatus = VL53L1_ROISTATUS_NOT_VALID;
@@ -704,7 +709,7 @@ static int stmvl53l1_start(struct stmvl53l1_data *data)
 	/* init the ranging data => kill the previous ranging mz data */
 	kill_mz_data(&data->meas.multi_range_data);
 	/* kill the single ranging data */
-	memset(&data->meas.single_range_data, 0,
+	memset_s(&data->meas.single_range_data, sizeof(VL53L1_RangingMeasurementData_t), 0,
 			sizeof(VL53L1_RangingMeasurementData_t));
 
 	/* set autonomous mode configuration */
@@ -796,7 +801,7 @@ static ssize_t stmvl53l1_show_enable_ps_sensor(struct device *dev,
 {
 	struct stmvl53l1_data *data = dev_get_drvdata(dev);
 
-	return snprintf(buf, 5, "%d\n", data->enable_sensor);
+	return snprintf_s(buf, 5,4, "%d\n", data->enable_sensor);
 }
 
 static ssize_t stmvl53l1_store_enable_ps_sensor(struct device *dev,
@@ -955,7 +960,7 @@ static ssize_t stmvl53l1_store_roi(struct device *dev,
 
 		while (n_roi < VL53L1_MAX_USER_ZONES && pc != NULL
 				&& *pc != 0 && *pc != '\n') {
-			n = sscanf(pc, "%d %d %d %d", &tlx, &tly, &brx, &bry);
+			n = sscanf_s(pc, "%d %d %d %d", &tlx, &tly, &brx, &bry);
 			if (n == 4) {
 				rois[n_roi].TopLeftX = tlx;
 				rois[n_roi].TopLeftY = tly;
@@ -976,7 +981,7 @@ static ssize_t stmvl53l1_store_roi(struct device *dev,
 		/*if any set them */
 		if (n_roi >= 0) {
 			if (n_roi)
-				memcpy(data->roi_cfg.UserRois, rois,
+				memcpy_s(data->roi_cfg.UserRois, n_roi*sizeof(rois[0]), rois,
 						n_roi*sizeof(rois[0]));
 			data->roi_cfg.NumberOfRoi = n_roi;
 			dump_roi(data->roi_cfg.UserRois,
@@ -1378,7 +1383,7 @@ static const char *parse_integer(const char *buf, int *res)
 
 	while (*buf == ' ')
 		buf++;
-	rc = sscanf(buf, "%d ", res);
+	rc = sscanf_s(buf, "%d ", res);
 	if (!rc)
 		return NULL;
 
@@ -1435,7 +1440,7 @@ static const char *parse_FixPoint16x16(const char *buf, FixPoint1616_t *res,
 	is_float = is_float_format(buf, is_last);
 
 	/* scan msb */
-	rc = sscanf(buf, "%d ", &msb);
+	rc = sscanf_s(buf, "%d ", &msb);
 	if (!rc)
 		return NULL;
 	/* then lsb if present */
@@ -1621,7 +1626,7 @@ static ssize_t stmvl53l1_store_dmax_reflectance(struct device *dev,
 					const char *buf, size_t count)
 {
 	struct stmvl53l1_data *data = dev_get_drvdata(dev);
-	FixPoint1616_t dmax_reflectance;
+	FixPoint1616_t dmax_reflectance = 0;
 	const char *buf_ori = buf;
 	int rc;
 
@@ -1734,7 +1739,7 @@ static ssize_t stmvl53l1_store_tuning(struct device *dev,
 
 	mutex_lock(&data->work_mutex);
 
-	n = sscanf(buf, "%d %d", &key, &value);
+	n = sscanf_s(buf, "%d %d", &key, &value);
 	if (n != 2) {
 		rc = -EINVAL;
 		goto error;
@@ -1779,7 +1784,7 @@ static int stmvl53l1_display_tuning_key(struct stmvl53l1_data *data, char *buf,
 	if (rc)
 		return 0;
 
-	sz = snprintf(&buf[*pos], PAGE_SIZE - *pos, "%d %d\n", key, value);
+	sz = snprintf_s(&buf[*pos], PAGE_SIZE - *pos, PAGE_SIZE - *pos -1, "%d %d\n", key, value);
 	if (sz >= PAGE_SIZE - *pos)
 		return -ENOSPC; /* FIXME : another better error ? */
 
@@ -2156,6 +2161,9 @@ static int ctrl_reg_access(struct stmvl53l1_data *data, void *p)
 
 	total_byte = offsetof(struct stmvl53l1_register, data.bytes[reg.cnt]);/*[false alarm]:Null Dereference*/
 	/* for write get the effective data part of the structure */
+    if (total_byte > sizeof(reg)){
+        return -EFAULT;
+    }
 	if (!reg.is_read) {
 		if (copy_from_user(&reg, p, total_byte)) {
 			vl53l1_errmsg(" data cpy fail\n");
@@ -2710,6 +2718,7 @@ static int ctrl_roi(struct stmvl53l1_data *data, void __user *p)
 {
 	int rc;
 	int roi_cnt;
+	unsigned int cpy_size;
 	struct stmvl53l1_roi_full_t rois;
 
 	mutex_lock(&data->work_mutex);
@@ -2736,11 +2745,15 @@ static int ctrl_roi(struct stmvl53l1_data *data, void __user *p)
 	}
 
 	if (rois.is_read) {
-		int cpy_size;
+
 
 		roi_cnt = MIN(rois.roi_cfg.NumberOfRoi,
 				data->roi_cfg.NumberOfRoi);
 		cpy_size = offsetof(VL53L1_RoiConfig_t, UserRois[roi_cnt]);/*[false alarm]:Null Dereference*/
+        if(cpy_size > sizeof(rois.roi_cfg)){
+            rc = -EFAULT;
+            goto done;
+        }
 		/* copy from local to user only effective part requested */
 		rc = copy_to_user(&((struct stmvl53l1_roi_full_t *)p)->roi_cfg,
 			&data->roi_cfg, cpy_size);
@@ -2754,9 +2767,15 @@ static int ctrl_roi(struct stmvl53l1_data *data, void __user *p)
 			goto done;
 		}
 		/* get full data that  required from user */
-		rc = copy_from_user(&rois, p,
-					offsetof(struct stmvl53l1_roi_full_t, /*[false alarm]:Null Dereference*/
-						roi_cfg.UserRois[roi_cnt]));
+
+        cpy_size = offsetof(struct stmvl53l1_roi_full_t, roi_cfg.UserRois[roi_cnt]);
+/*[false alarm]:Null Dereference*/
+        if (cpy_size > sizeof(rois)){
+            rc = -EFAULT;
+            goto done;
+        }
+
+		rc = copy_from_user(&rois, p,cpy_size);
 		if (rc) {
 			vl53l1_errmsg("get %d roi fm user fail", roi_cnt);
 			rc = -EFAULT;
@@ -2766,7 +2785,7 @@ static int ctrl_roi(struct stmvl53l1_data *data, void __user *p)
 		/* we may ask ll driver to check but check is mode dependent
 		 * and so we could get erroneous error back
 		 */
-		memcpy(&data->roi_cfg, &rois.roi_cfg, sizeof(data->roi_cfg));
+		memcpy_s(&data->roi_cfg, sizeof(data->roi_cfg), &rois.roi_cfg, sizeof(data->roi_cfg));
 	}
 done:
 	mutex_unlock(&data->work_mutex);
@@ -2825,6 +2844,10 @@ static int ctrl_calibration_data(struct stmvl53l1_data *data, void __user *p)
 		rc = -ENODEV;
 		goto done;
 	}
+    if(data_offset > sizeof(calib)){
+        rc = -EFAULT;
+        goto done;
+    }
 	rc = copy_from_user(&calib, p, data_offset);
 	if (rc) {
 		vl53l1_errmsg("fail to detect read or write %d", rc);
@@ -2833,7 +2856,7 @@ static int ctrl_calibration_data(struct stmvl53l1_data *data, void __user *p)
 	}
 
 	if (calib.is_read) {
-		memset(&calib.data, 0, sizeof(calib.data));
+		memset_s(&calib.data, sizeof(calib.data), 0, sizeof(calib.data));
 		rc = VL53L1_GetCalibrationData(&data->stdev, &calib.data);
 		if (rc) {
 			vl53l1_errmsg("VL53L1_GetCalibrationData fail %d", rc);
@@ -2883,6 +2906,10 @@ static int ctrl_zone_calibration_data(struct stmvl53l1_data *data,
 		rc = -ENODEV;
 		goto done;
 	}
+    if (data_offset > sizeof(data->calib)){
+        rc = -EFAULT;
+        goto done;
+    }
 	rc = copy_from_user(calib, p, data_offset);
 	if (rc) {
 		vl53l1_errmsg("fail to detect read or write %d", rc);
@@ -2891,7 +2918,7 @@ static int ctrl_zone_calibration_data(struct stmvl53l1_data *data,
 	}
 
 	if (calib->is_read) {
-		memset(&calib->data, 0, sizeof(calib->data));
+		memset_s(&calib->data, sizeof(calib->data),0, sizeof(calib->data));
 		rc = VL53L1_GetZoneCalibrationData(&data->stdev,
 			&calib->data.data);
 		if (rc) {
@@ -3329,10 +3356,10 @@ static void stmvl53l1_on_newdata_event(struct stmvl53l1_data *data)
 	tmprange = &data->meas.tmp_range_data;
 	pmsinglerange = &data->meas.single_range_data;
 
-	memcpy(&singledata, pmsinglerange,
+	memcpy_s(&singledata, sizeof(VL53L1_RangingMeasurementData_t), pmsinglerange,
 			sizeof(VL53L1_RangingMeasurementData_t));
 	for (i = 0; i < VL53L1_MAX_RANGE_RESULTS; i++)
-		memcpy(&RangeData[i], &pmrange->RangeData[i],
+		memcpy_s(&RangeData[i], sizeof(VL53L1_TargetRangeData_t), &pmrange->RangeData[i],
 				sizeof(VL53L1_TargetRangeData_t));
 
 	data->meas.intr++;
@@ -3348,7 +3375,7 @@ static void stmvl53l1_on_newdata_event(struct stmvl53l1_data *data)
 		 * the previous ranging values along that error status
 		 */
 		if (pmsinglerange->RangeStatus == VL53L1_RANGESTATUS_NONE)  {
-			memcpy(pmsinglerange, &singledata,
+			memcpy_s(pmsinglerange, sizeof(VL53L1_RangingMeasurementData_t),&singledata,
 				sizeof(VL53L1_RangingMeasurementData_t));
 			pmsinglerange->RangeStatus =VL53L1_RANGESTATUS_NONE;
 		}
@@ -3435,17 +3462,6 @@ static void stmvl53l1_on_newdata_event(struct stmvl53l1_data *data)
 		pmrange->TimeStamp,
 		pmrange->RangeData[0].RangeStatus,
 		pmrange->NumberOfObjectsFound);
-#if 0
-	vl53l1_dbgmsg(
-"meas m#%04d i#%04d  p#%04d in %d ms data range status %d range %d\n",
-			(int)data->meas.cnt,
-			(int)data->meas.intr,
-			(int)data->meas.poll_cnt,
-			(int)stmvl53l1_tv_dif(&data->meas.start_tv,
-					&data->meas.comp_tv)/1000,
-			(int)data->meas.range_data.RangeStatus,
-			(int)data->meas.range_data.RangeMilliMeter);
-#endif
 	/* ready that is not always on each new data event */
 
 	/* mark data as valid from now */
@@ -3938,9 +3954,9 @@ int stmvl53l1_setup(struct stmvl53l1_data *data)
 	data->miscdev.minor = MISC_DYNAMIC_MINOR;
 	/* multiple dev name use id in name but 1st */
 	if (data->id == 0)
-		strcpy(data->name, VL53L1_MISC_DEV_NAME);
+		strncpy_s(data->name, strlen(VL53L1_MISC_DEV_NAME)+1,VL53L1_MISC_DEV_NAME,strlen(VL53L1_MISC_DEV_NAME)+1);
 	else
-		sprintf(data->name, "%s%d", VL53L1_MISC_DEV_NAME, data->id);
+		snprintf_s(data->name, sizeof(data->name),sizeof(data->name)-1,"%s%d", VL53L1_MISC_DEV_NAME, data->id);
 
 	data->miscdev.name = data->name;
 	data->miscdev.fops = &stmvl53l1_ranging_fops;
@@ -4063,16 +4079,18 @@ static int stmvl53l1_laser_get_data(struct stmvl53l1_data *data, void * p)
     udata->u.data.HasXtalkValueChanged = rdata->HasXtalkValueChanged;
     udata->u.data.EffectiveSpadRtnCount = rdata->EffectiveSpadRtnCount;
     udata->u.data.DmaxMilliMeter = rdata->DmaxMilliMeter;
-    memcpy(&udata->u.data.RangeData,
+    memcpy_s(&udata->u.data.RangeData,
+            sizeof(udata->u.data.RangeData),
             &rdata->RangeData,
             sizeof(udata->u.data.RangeData));
-    memcpy(&udata->u.data.RecommendedDistanceMode,
+    memcpy_s(&udata->u.data.RecommendedDistanceMode,
+            sizeof(udata->u.data.RecommendedDistanceMode),
             &rdata->RecommendedDistanceMode,
             sizeof(udata->u.data.RecommendedDistanceMode));
 
     mutex_unlock(&data->work_mutex);
 
-    if (data->print_counter % data->print_interval == 0 \
+    if (((data->print_interval >0) && (data->print_counter % data->print_interval == 0)) \
             || data->print_detail == 0)
     {
         vl53l1_info("RangeMilliMeter(%u) RangeStatus(%u) SignalRateRtnMegaCps(%u) " \
@@ -4174,7 +4192,7 @@ static int stmvl53l1_set_params(struct stmvl53l1_data *data, void *p)
 		rc = -ENODEV;
 		goto done;
 	}
-	memcpy(&param, p, sizeof(param));
+	memcpy_s(&param, sizeof(param), p, sizeof(param));
 	param.status = 0;
 
 	switch (param.name) {
@@ -4256,8 +4274,8 @@ long stmvl53l1_laser_ioctl(void *hw_data, unsigned int cmd, void  *p)
             pinfo = (hwlaser_info_t *)p;
             if (strlen(STMVL53L1_NAME) < HWLASER_NAME_SIZE \
                     && strlen(L1_PRODUCT_NAME) < HWLASER_NAME_SIZE) {
-                strncpy(pinfo->name, STMVL53L1_NAME, strlen(STMVL53L1_NAME));
-                strncpy(pinfo->product_name, L1_PRODUCT_NAME, strlen(L1_PRODUCT_NAME));
+                strncpy_s(pinfo->name, strlen(STMVL53L1_NAME),STMVL53L1_NAME, strlen(STMVL53L1_NAME));
+                strncpy_s(pinfo->product_name, strlen(L1_PRODUCT_NAME), L1_PRODUCT_NAME, strlen(L1_PRODUCT_NAME));
             }
             pinfo->version = HWLASER_L1_VERSION;
             pinfo->ap_pos = HWLASER_POS_AP;

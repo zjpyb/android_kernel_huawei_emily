@@ -110,7 +110,7 @@ static int syna_tcm_spi_read(struct spi_device *client, unsigned char *data,
 	xfer[0].rx_buf = data;
 	spi_message_add_tail(&xfer[0], &msg);
 	//thp_spi_cs_set(GPIO_HIGH);
-	retval = spi_sync(client, &msg);
+	retval = thp_spi_sync(client, &msg);
 	if (retval == 0) {
 		retval = length;
 	} else {
@@ -144,7 +144,7 @@ static int syna_tcm_spi_write(struct spi_device *client, unsigned char *data,
 	xfer[0].tx_buf = data;
 	spi_message_add_tail(&xfer[0], &msg);
 	//thp_spi_cs_set(GPIO_HIGH);
-	retval = spi_sync(client, &msg);
+	retval = thp_spi_sync(client, &msg);
 	if (retval == 0) {
 		retval = length;
 	} else {
@@ -189,13 +189,14 @@ static int thp_synaptics_init(struct thp_device *tdev)
 
 static int thp_synaptics_chip_detect(struct thp_device *tdev)
 {
-	THP_LOG_INFO("%s: called\n", __func__);
 	unsigned char rmiaddr[2] = {0x80, 0xEE};
 	unsigned char fnnum = 0;
-	mutex_lock(tdev->spi_mutex);
+
+	THP_LOG_INFO("%s: called\n", __func__);
+	thp_bus_lock();
 	syna_tcm_spi_write(tdev->thp_core->sdev, rmiaddr, sizeof(rmiaddr));
 	syna_tcm_spi_read(tdev->thp_core->sdev, &fnnum, sizeof(fnnum));
-	mutex_unlock(tdev->spi_mutex);
+	thp_bus_unlock();
 	if (fnnum != 0x35) {
 		THP_LOG_ERR("%s: fnnum error: 0x%02x\n", __func__, fnnum);
 		return -ENODEV;
@@ -211,7 +212,7 @@ static int thp_synaptics_get_frame(struct thp_device *tdev,
 	unsigned int length = 0;
 	int retval;
 
-	mutex_lock(tdev->spi_mutex);
+	thp_bus_lock();
 	retval = syna_tcm_spi_read(tdev->thp_core->sdev, data, sizeof(data));  // read length
 	if (retval < 0) {
 		THP_LOG_ERR("%s: Failed to read length\n", __func__);
@@ -245,12 +246,12 @@ static int thp_synaptics_get_frame(struct thp_device *tdev,
 			goto ERROR;
 		}
 	}
-	mutex_unlock(tdev->spi_mutex);
+	thp_bus_unlock();
 	memcpy(frame_buf, data, sizeof(data));
 	return 0;
 
 ERROR:
-	mutex_unlock(tdev->spi_mutex);
+	thp_bus_unlock();
 	return retval;
 }
 
@@ -309,9 +310,9 @@ struct thp_device_ops syna_dev_ops = {
 static int __init thp_synaptics_module_init(void)
 {
 	int rc;
+	struct thp_device *dev = kzalloc(sizeof(struct thp_device), GFP_KERNEL);
 
 	THP_LOG_INFO("%s: called \n", __func__);
-	struct thp_device *dev = kzalloc(sizeof(struct thp_device), GFP_KERNEL);
 	if (!dev) {
 		THP_LOG_ERR("%s: thp device malloc fail\n", __func__);
 		return -ENOMEM;
@@ -327,6 +328,7 @@ static int __init thp_synaptics_module_init(void)
 	buf = NULL;
 	xfer = NULL;
 	dev->ic_name = SYNAPTICS_IC_NAME;
+	dev->dev_node_name = THP_SYNA_DEV_NODE_NAME;
 	dev->ops = &syna_dev_ops;
 
 	rc = thp_register_dev(dev);

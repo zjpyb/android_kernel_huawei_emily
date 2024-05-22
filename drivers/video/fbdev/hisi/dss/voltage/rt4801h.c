@@ -127,6 +127,8 @@ exit:
 	return nRet;
 }
 
+
+
 static bool rt4801h_device_verify(void)
 {
 	int nRet = 0;
@@ -158,6 +160,8 @@ static void rt4801h_get_target_voltage(int *vpos_target, int *vneg_target)
 		pr_err("%s: NULL point\n", __func__);
 		return;
 	}
+
+
 
 
 	ret = get_lcd_type();
@@ -248,6 +252,7 @@ static int rt4801h_finish_setting(void)
 	return retval;
 }
 
+
 static int rt4801h_probe(struct i2c_client *client, const struct i2c_device_id *id)
 {
 	int retval = 0;
@@ -313,6 +318,7 @@ static int rt4801h_probe(struct i2c_client *client, const struct i2c_device_id *
 		goto failed;
 	}
 	pr_info("rt4801h inited succeed\n");
+
 
 	/* detect current device successful, set the flag as present */
 	set_hw_dev_flag(DEV_I2C_DC_DC);

@@ -55,6 +55,8 @@ void reset_hifi_usb(void);
 
 int get_never_hifi_usb_value(void);
 
+int get_always_hifi_usb_value(void);
+
 int get_hifi_usb_retry_count(void);
 
 int hifi_usb_hibernate(void);
@@ -76,6 +78,7 @@ static inline int start_hifi_usb(void){return -1;}
 static inline void stop_hifi_usb(void){}
 static inline void reset_hifi_usb(void){}
 static inline int get_never_hifi_usb_value(void){return 0;}
+static inline int get_always_hifi_usb_value(void){return 0;}
 static inline int get_hifi_usb_retry_count(void){return 0;}
 static inline int hifi_usb_hibernate(void){return -1;}
 static inline int hifi_usb_revive(void){return -1;}

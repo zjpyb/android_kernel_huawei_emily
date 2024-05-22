@@ -3,7 +3,6 @@
 #include "vfmw_dts.h"
 #include "linux_kernel_osal.h"
 #include "tvp_adapter.h"
-
 #include <teek_client_api.h>
 
 static UINT32 g_SecPrintEnable = 0x3;
@@ -104,27 +103,23 @@ SINT32 TVP_VDEC_SecureInit(VOID)
 		{0xb5, 0x7e, 0x62, 0x09, 0x3d, 0x60, 0x34, 0xa7}
 	};
 
-	//const UINT8 *package_name_0 = "/system/bin/mediadrmserver";
-	//UINT32 uid_0 = 1013;
 	const UINT8 *package_name_0 = "/vendor/bin/hw/android.hardware.media.omx@1.0-service";
-	UINT32 uid_0 = 1046;
-
 	const UINT8 *package_name_1 = "sample_omxvdec";
-	UINT32 uid_1 = 0;
 	UINT8 package_name[70] = { 0 };
-	UINT32 uid;
-
-	if (g_PacketID == 0) {
-		strncpy(package_name, package_name_0, strlen(package_name_0));
-		uid = uid_0;
-	} else {
-		strncpy(package_name, package_name_1, strlen(package_name_1));
-		uid = uid_1;
-	}
+	UINT32 uid = 0;
 
 	if (g_SecInit != 0) {
 		SecPrint(PRN_FATAL, "%s, TVP_VDEC_SecureInit init already\n", __func__);
 		return VDEC_OK;
+	}
+
+	BUG_ON(strlen(package_name_0) >= sizeof(package_name));
+	BUG_ON(strlen(package_name_1) >= sizeof(package_name));
+
+	if (g_PacketID == 0) {
+		strncpy(package_name, package_name_0, (sizeof(package_name) - 1));
+	} else {
+		strncpy(package_name, package_name_1, (sizeof(package_name) - 1));
 	}
 
 	result = TEEK_InitializeContext(NULL, &g_TeeContext);

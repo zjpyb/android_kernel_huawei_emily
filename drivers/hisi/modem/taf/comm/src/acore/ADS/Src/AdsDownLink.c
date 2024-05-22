@@ -253,8 +253,13 @@ VOS_UINT32 ADS_DL_ConfigAdq(
 
         /* 填写AD描述符: OUTPUT0 ---> 目的地址; OUTPUT1 ---> SKBUFF */
         pstAdDesc = ADS_DL_GET_IPF_AD_DESC_PTR(enAdType, ulCnt);
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
         pstAdDesc->OutPtr0 = (modem_phy_addr)virt_to_phys((VOS_VOID *)pstImmZc->data);
         pstAdDesc->OutPtr1 = (modem_phy_addr)virt_to_phys((VOS_VOID *)pstImmZc);
+#else
+        pstAdDesc->OutPtr0 = (modem_phy_addr)ADS_IPF_GetMemDma(pstImmZc);
+        pstAdDesc->OutPtr1 = (modem_phy_addr)virt_to_phys((VOS_VOID *)pstImmZc);
+#endif/* (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0) */
     }
 
     if (0 == ulCnt)
@@ -873,7 +878,11 @@ IMM_ZC_STRU* ADS_DL_RdDescTransImmMem(const IPF_RD_DESC_S *pstRdDesc)
     pstRdRecord->ulPos++;
 
     /* 统一刷CACHE */
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
     ulCacheLen = pstRdDesc->u16PktLen + IMM_MAC_HEADER_RES_LEN;
+#else
+    ulCacheLen = pstRdDesc->u16PktLen;
+#endif
     ADS_IPF_DL_MEM_UNMAP(pstImmZc, ulCacheLen);
 
     /* 设置数据真实长度 */

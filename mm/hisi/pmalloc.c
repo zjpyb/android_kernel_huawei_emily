@@ -60,7 +60,7 @@ static ssize_t pmalloc_pool_show_protected(struct kobject *dev,
 	if (data->protected)
 		return sprintf(buf, "protected\n");/* unsafe_function_ignore: sprintf *//*lint !e421*/
 	else
-		return sprintf(buf, "unprotected\n");/* unsafe_function_ignore: sprintf *//*lint !e421*/
+		return sprintf(buf, "protected\n");/* unsafe_function_ignore: sprintf *//*lint !e421*/
 }
 
 static ssize_t pmalloc_pool_show_avail(struct kobject *dev,

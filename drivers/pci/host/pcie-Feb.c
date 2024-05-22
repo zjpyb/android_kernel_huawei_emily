@@ -71,96 +71,6 @@ enum cspll {
 
 static u32 g_phy_apb_init = 0;
 
-/*phy eye param*/
-#define EYEPARAM_NOCFG 0xFFFFFFFF
-#define RAWLANEN_DIG_PCS_XF_TX_OVRD_IN_1 0x3001
-#define SUP_DIG_LVL_OVRD_IN 0xf
-#define LANEN_DIG_ASIC_TX_OVRD_IN_1 0x1002
-#define LANEN_DIG_ASIC_TX_OVRD_IN_2 0x1003
-
-void kirin_pcie_get_eyeparam(struct kirin_pcie *pcie, struct platform_device *pdev)
-{
-	int ret;
-	u32 eye_param = 0;
-	struct device_node *np;
-	struct kirin_pcie_dtsinfo *dtsinfo;
-
-	np = pdev->dev.of_node;
-	dtsinfo = &pcie->dtsinfo;
-
-	dtsinfo->eye_param_vboost = EYEPARAM_NOCFG;
-	dtsinfo->eye_param_iboost = EYEPARAM_NOCFG;
-	dtsinfo->eye_param_pre = EYEPARAM_NOCFG;
-	dtsinfo->eye_param_post = EYEPARAM_NOCFG;
-	dtsinfo->eye_param_main = EYEPARAM_NOCFG;
-
-	ret = of_property_read_u32(np, "eye_param_vboost", &eye_param);
-	if (!ret)
-		dtsinfo->eye_param_vboost = eye_param;
-
-	ret = of_property_read_u32(np, "eye_param_iboost", &eye_param);
-	if (!ret)
-		dtsinfo->eye_param_iboost = eye_param;
-
-	ret = of_property_read_u32(np, "eye_param_pre", &eye_param);
-	if (!ret)
-		dtsinfo->eye_param_pre = eye_param;
-
-	ret = of_property_read_u32(np, "eye_param_post", &eye_param);
-	if (!ret)
-		dtsinfo->eye_param_post = eye_param;
-
-	ret = of_property_read_u32(np, "eye_param_main", &eye_param);
-	if (!ret)
-		dtsinfo->eye_param_main = eye_param;
-
-	PCIE_PR_INFO("eye_param_vboost = [0x%x] ", dtsinfo->eye_param_vboost);
-	PCIE_PR_INFO("eye_param_iboost = [0x%x] ", dtsinfo->eye_param_iboost);
-	PCIE_PR_INFO("eye_param_pre = [0x%x] ", dtsinfo->eye_param_pre);
-	PCIE_PR_INFO("eye_param_post = [0x%x] ", dtsinfo->eye_param_post);
-	PCIE_PR_INFO("eye_param_main = [0x%x] ", dtsinfo->eye_param_main);
-}
-
-void set_phy_eye_param(struct kirin_pcie *pcie)
-{
-	u32 val;
-	struct kirin_pcie_dtsinfo *dtsinfo;
-
-	dtsinfo = &(pcie->dtsinfo);
-
-	val = kirin_natural_phy_readl(pcie, RAWLANEN_DIG_PCS_XF_TX_OVRD_IN_1);
-
-	if (dtsinfo->eye_param_iboost != EYEPARAM_NOCFG) {
-		val &= (~0xf00);
-		val |= (dtsinfo->eye_param_iboost << 8) | (0x1 << 12);
-	}
-	kirin_natural_phy_writel(pcie, val, RAWLANEN_DIG_PCS_XF_TX_OVRD_IN_1);
-
-	val = kirin_natural_phy_readl(pcie, LANEN_DIG_ASIC_TX_OVRD_IN_2);
-	val &= (~0x1FBF);
-	if (dtsinfo->eye_param_pre!= EYEPARAM_NOCFG)
-		val |= (dtsinfo->eye_param_pre<< 0) | (0x1 << 6);
-
-	if (dtsinfo->eye_param_post!= EYEPARAM_NOCFG)
-		val |= (dtsinfo->eye_param_post << 7) | (0x1 << 13);
-
-	kirin_natural_phy_writel(pcie, val, LANEN_DIG_ASIC_TX_OVRD_IN_2);
-
-	val = kirin_natural_phy_readl(pcie, SUP_DIG_LVL_OVRD_IN);
-	if (dtsinfo->eye_param_vboost != EYEPARAM_NOCFG) {
-		val &= (~0x1C0);
-		val |= (dtsinfo->eye_param_vboost << 6) | (0x1 << 9);
-	}
-	kirin_natural_phy_writel(pcie, val, SUP_DIG_LVL_OVRD_IN);
-
-	val = kirin_natural_phy_readl(pcie, LANEN_DIG_ASIC_TX_OVRD_IN_1);
-	if (dtsinfo->eye_param_main != EYEPARAM_NOCFG) {
-		val &= (~0x7E00);
-		val |= (dtsinfo->eye_param_main << 9) | (0x1 << 15);
-	}
-	kirin_natural_phy_writel(pcie, val, LANEN_DIG_ASIC_TX_OVRD_IN_1);
-}
-
 static int kirin_pcie_clk_ctrl(struct clk *clk, int clk_on)
 {
 	int ret = 0;
@@ -607,7 +517,6 @@ static void kirin_pcie_ioref_gt(struct kirin_pcie *pcie, int open)
        }
 
        if (open) {
-               kirin_elb_writel(pcie, 0x20000070, SOC_PCIECTRL_CTRL21_ADDR);
                kirin_pcie_oe_ctrl(pcie, ENABLE);
 
                /*en hard gt mode*/
@@ -751,6 +660,8 @@ static int kirin_pcie_turn_on(struct pcie_port *pp, enum rc_power_status on_flag
 	kirin_pcie_reset_ctrl(pcie, RST_DISABLE);
 	PCIE_PR_DEBUG("module unreset Done ");
 
+	pcie_io_adjust(pcie);
+
 	/*change 2p mem_ctrl*/
 	kirin_elb_writel(pcie, 0x02605550, SOC_PCIECTRL_CTRL20_ADDR);
 
@@ -854,6 +765,7 @@ MUTEX_UNLOCK:
 
 struct pcie_platform_ops plat_ops = {
 	.sram_ext_load = NULL,
+	.cal_alg_adjust = NULL,
 	.plat_on = kirin_pcie_turn_on,
 	.plat_off = kirin_pcie_turn_off,
 };
@@ -861,8 +773,6 @@ struct pcie_platform_ops plat_ops = {
 int pcie_plat_init(struct platform_device *pdev, struct kirin_pcie *pcie)
 {
 	struct device_node *np;
-
-	kirin_pcie_get_eyeparam(pcie, pdev);
 
 	np = of_find_compatible_node(NULL, NULL, "hisilicon,crgctrl");
 	if (!np) {

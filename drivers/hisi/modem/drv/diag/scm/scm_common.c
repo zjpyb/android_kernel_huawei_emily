@@ -53,6 +53,7 @@
 /*****************************************************************************
   1 头文件包含
 **************************************************************************** */
+#include <linux/of_platform.h>
 #include "scm_debug.h"
 #include "scm_ind_src.h"
 #include "scm_ind_dst.h"
@@ -62,6 +63,7 @@
 #include <securec.h>
 
 
+u64 g_dma_mask = (u64)(-1);
 /*****************************************************************************
  Function   : VOS_UnCacheMemAlloc
  Description: allocate uncached memory.
@@ -92,6 +94,8 @@ void *scm_UnCacheMemAlloc(u32 ulSize, unsigned long *pulRealAddr)
     pVirtAdd     = 0;
 
     memset_s(&dev, sizeof(dev), 0, sizeof(dev));
+    dma_set_mask_and_coherent(&dev, g_dma_mask);	
+    of_dma_configure(&dev, NULL);
     pVirtAdd = dma_alloc_coherent(&dev, ulSize, &ulAddress, GFP_KERNEL);
 
     *pulRealAddr = (unsigned long)ulAddress;

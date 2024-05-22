@@ -39,7 +39,9 @@
 #endif
 #include <linux/raid/pq.h>
 #include <huawei_platform/power/huawei_charger_sh.h>
+#ifdef CONFIG_HISI_BCI_BATTERY
 #include <linux/power/hisi/hisi_bci_battery.h>
+#endif
 #include <huawei_platform/power/charger/charger_ap/bq25892/bq25892_charger.h>
 #include <linux/hisi/hisi_adc.h>
 #include <inputhub_route.h>

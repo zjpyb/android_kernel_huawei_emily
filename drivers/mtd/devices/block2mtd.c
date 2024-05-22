@@ -75,7 +75,7 @@ static int _block2mtd_erase(struct block2mtd_dev *dev, loff_t to, size_t len)
 				break;
 			}
 
-		page_cache_release(page);
+		put_page(page);
 		pages--;
 		index++;
 	}
@@ -124,7 +124,7 @@ static int block2mtd_read(struct mtd_info *mtd, loff_t from, size_t len,
 			return PTR_ERR(page);
 
 		memcpy(buf, page_address(page) + offset, cpylen);
-		page_cache_release(page);
+		put_page(page);
 
 		if (retlen)
 			*retlen += cpylen;
@@ -164,7 +164,7 @@ static int _block2mtd_write(struct block2mtd_dev *dev, const u_char *buf,
 			unlock_page(page);
 			balance_dirty_pages_ratelimited(mapping);
 		}
-		page_cache_release(page);
+		put_page(page);
 
 		if (retlen)
 			*retlen += cpylen;
@@ -299,7 +299,6 @@ static struct block2mtd_dev *add_device(char *devname, int erase_size,
 	dev->mtd._write = block2mtd_write;
 	dev->mtd._sync = block2mtd_sync;
 	dev->mtd._read = block2mtd_read;
-
 	dev->mtd.priv = dev;
 	dev->mtd.owner = THIS_MODULE;
 
@@ -380,7 +379,7 @@ static int block2mtd_init_called = 0;
 static char block2mtd_paramline[80 + 12];
 #endif
 
-int block2mtd_setup2(const char *val)
+static int block2mtd_setup2(const char *val)
 {
 	/* 80 for device, 12 for erase size, 80 for name, 8 for timeout */
 	char buf[80 + 12 + 80 + 8];
@@ -432,7 +431,7 @@ int block2mtd_setup2(const char *val)
 }
 
 
-static int block2mtd_setup(const char *val, struct kernel_param *kp)
+static int block2mtd_setup(const char *val, const struct kernel_param *kp)
 {
 #ifdef MODULE
 	return block2mtd_setup2(val);

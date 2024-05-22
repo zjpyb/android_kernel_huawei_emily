@@ -66,6 +66,11 @@ static int __init vsyscall_setup(char *str)
 }
 early_param("vsyscall", vsyscall_setup);
 
+bool vsyscall_enabled(void)
+{
+	return vsyscall_mode != NONE;
+}
+
 static void warn_bad_vsyscall(const char *level, struct pt_regs *regs,
 			      const char *message)
 {
@@ -96,7 +101,7 @@ static bool write_ok_or_segv(unsigned long ptr, size_t size)
 {
 	/*
 	 * XXX: if access_ok, get_user, and put_user handled
-	 * sig_on_uaccess_error, this could go away.
+	 * sig_on_uaccess_err, this could go away.
 	 */
 
 	if (!access_ok(VERIFY_WRITE, (void __user *)ptr, size)) {
@@ -125,7 +130,7 @@ bool emulate_vsyscall(struct pt_regs *regs, unsigned long address)
 	struct task_struct *tsk;
 	unsigned long caller;
 	int vsyscall_nr, syscall_nr, tmp;
-	int prev_sig_on_uaccess_error;
+	int prev_sig_on_uaccess_err;
 	long ret;
 
 	/*
@@ -207,7 +212,7 @@ bool emulate_vsyscall(struct pt_regs *regs, unsigned long address)
 	 */
 	regs->orig_ax = syscall_nr;
 	regs->ax = -ENOSYS;
-	tmp = secure_computing();
+	tmp = secure_computing(NULL);
 	if ((!tmp && regs->orig_ax != syscall_nr) || regs->ip != address) {
 		warn_bad_vsyscall(KERN_DEBUG, regs,
 				  "seccomp tried to change syscall nr or ip");
@@ -221,8 +226,8 @@ bool emulate_vsyscall(struct pt_regs *regs, unsigned long address)
 	 * With a real vsyscall, page faults cause SIGSEGV.  We want to
 	 * preserve that behavior to make writing exploits harder.
 	 */
-	prev_sig_on_uaccess_error = current_thread_info()->sig_on_uaccess_error;
-	current_thread_info()->sig_on_uaccess_error = 1;
+	prev_sig_on_uaccess_err = current->thread.sig_on_uaccess_err;
+	current->thread.sig_on_uaccess_err = 1;
 
 	ret = -EFAULT;
 	switch (vsyscall_nr) {
@@ -243,7 +248,7 @@ bool emulate_vsyscall(struct pt_regs *regs, unsigned long address)
 		break;
 	}
 
-	current_thread_info()->sig_on_uaccess_error = prev_sig_on_uaccess_error;
+	current->thread.sig_on_uaccess_err = prev_sig_on_uaccess_err;
 
 check_fault:
 	if (ret == -EFAULT) {

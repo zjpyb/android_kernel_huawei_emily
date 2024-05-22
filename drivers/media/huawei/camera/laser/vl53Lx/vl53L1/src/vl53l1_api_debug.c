@@ -120,6 +120,7 @@
 #define trace_print(level, ...) \
 	_LOG_TRACE_PRINT(trace_flags, \
 	level, VL53L1_TRACE_FUNCTION_NONE, ##__VA_ARGS__)
+extern int memcpy_s(void *dest, size_t destMax, const void *src, size_t count);
 
 
 VL53L1_Error VL53L1_decode_calibration_data_buffer(
@@ -134,7 +135,7 @@ VL53L1_Error VL53L1_decode_calibration_data_buffer(
 	if (sizeof(VL53L1_calibration_data_t) > buf_size)
 		return VL53L1_ERROR_COMMS_BUFFER_TOO_SMALL;
 
-	memcpy(pdata, pbuffer, sizeof(VL53L1_calibration_data_t));
+	memcpy_s(pdata, sizeof(VL53L1_calibration_data_t), pbuffer, sizeof(VL53L1_calibration_data_t));
 
 	LOG_FUNCTION_END(status);
 
@@ -188,8 +189,8 @@ VL53L1_Error VL53L1_get_histogram_debug_data(
 
 
 
-	memcpy(
-		pdata,
+	memcpy_s(
+		pdata,sizeof(VL53L1_histogram_bin_data_t),
 		&(pdev->hist_data),
 		sizeof(VL53L1_histogram_bin_data_t));
 
@@ -268,28 +269,33 @@ VL53L1_Error VL53L1_get_xtalk_debug_data(
 
 
 
-	memcpy(
+	memcpy_s(
 		&(pdata->customer),
+		sizeof(VL53L1_customer_nvm_managed_t),
 		&(pdev->customer),
 		sizeof(VL53L1_customer_nvm_managed_t));
 
-	memcpy(
+	memcpy_s(
 		&(pdata->xtalk_cfg),
+		sizeof(VL53L1_xtalk_config_t),
 		&(pdev->xtalk_cfg),
 		sizeof(VL53L1_xtalk_config_t));
 
-	memcpy(
+	memcpy_s(
 		&(pdata->hist_data),
+		sizeof(VL53L1_histogram_bin_data_t),
 		&(pdev->hist_data),
 		sizeof(VL53L1_histogram_bin_data_t));
 
-	memcpy(
+	memcpy_s(
 		&(pdata->xtalk_shapes),
+		sizeof(VL53L1_xtalk_histogram_data_t),
 		&(pdev->xtalk_shapes),
 		sizeof(VL53L1_xtalk_histogram_data_t));
 
-	memcpy(
+	memcpy_s(
 		&(pdata->xtalk_results),
+		sizeof(VL53L1_xtalk_range_results_t),
 		&(pdev->xtalk_results),
 		sizeof(VL53L1_xtalk_range_results_t));
 
@@ -316,28 +322,33 @@ VL53L1_Error VL53L1_get_offset_debug_data(
 
 
 
-	memcpy(
+	memcpy_s(
 		&(pdata->customer),
+		sizeof(VL53L1_customer_nvm_managed_t),
 		&(pdev->customer),
 		sizeof(VL53L1_customer_nvm_managed_t));
 
-	memcpy(
+	memcpy_s(
 		&(pdata->fmt_dmax_cal),
+		sizeof(VL53L1_dmax_calibration_data_t),
 		&(pdev->fmt_dmax_cal),
 		sizeof(VL53L1_dmax_calibration_data_t));
 
-	memcpy(
+	memcpy_s(
 		&(pdata->cust_dmax_cal),
+		sizeof(VL53L1_dmax_calibration_data_t),
 		&(pdev->cust_dmax_cal),
 		sizeof(VL53L1_dmax_calibration_data_t));
 
-	memcpy(
+	memcpy_s(
 		&(pdata->add_off_cal_data),
+		sizeof(VL53L1_additional_offset_cal_data_t),
 		&(pdev->add_off_cal_data),
 		sizeof(VL53L1_additional_offset_cal_data_t));
 
-	memcpy(
+	memcpy_s(
 		&(pdata->offset_results),
+		sizeof(VL53L1_offset_range_results_t),
 		&(pdev->offset_results),
 		sizeof(VL53L1_offset_range_results_t));
 

@@ -36,11 +36,10 @@
 #include "asp_cfg.h"
 #include "hifi_lpp.h"
 
-
-#define HIFI_DP_RAMPLERATE_NUM	13
+#define HIFI_DP_SAMPLE_RATE_NUM	13
 
 /*lint -e429 -e647 -e574 -e570*/
-static const unsigned int freq[HIFI_DP_RAMPLERATE_NUM][2] = {
+static const unsigned int freq[HIFI_DP_SAMPLE_RATE_NUM][2] = {
 	{8000,   SAMPLE_RATE_NO_SUPPORT},
 	{11025, SAMPLE_RATE_NO_SUPPORT},
 	{12000, SAMPLE_RATE_NO_SUPPORT},
@@ -51,11 +50,20 @@ static const unsigned int freq[HIFI_DP_RAMPLERATE_NUM][2] = {
 	{44100, SAMPLE_RATE_NO_SUPPORT},
 	{48000, SAMPLE_RATE_48},
 	{88200, SAMPLE_RATE_NO_SUPPORT},
-	{96000, SAMPLE_RATE_NO_SUPPORT},
+	{96000, SAMPLE_RATE_96},
 	{176400, SAMPLE_RATE_NO_SUPPORT},
-	{192000, SAMPLE_RATE_NO_SUPPORT}
+	{192000, SAMPLE_RATE_192}
 };
 
+static const unsigned int div_clk[SAMPLE_RATE_MAX][2] = {
+	{SAMPLE_RATE_32, HISI_DIV_CLK_NO_SUPPORT},
+	{SAMPLE_RATE_44, HISI_DIV_CLK_NO_SUPPORT},
+	{SAMPLE_RATE_48, HISI_DIV_CLK_48},
+	{SAMPLE_RATE_88, HISI_DIV_CLK_NO_SUPPORT},
+	{SAMPLE_RATE_96, HISI_DIV_CLK_96},
+	{SAMPLE_RATE_176, HISI_DIV_CLK_NO_SUPPORT},
+	{SAMPLE_RATE_192, HISI_DIV_CLK_192}
+};
 
 static const struct snd_pcm_hardware hisi_pcm_dp_hardware = {
 	.info			= SNDRV_PCM_INFO_MMAP |
@@ -64,12 +72,14 @@ static const struct snd_pcm_hardware hisi_pcm_dp_hardware = {
 	.formats		= SNDRV_PCM_FMTBIT_S16_LE |
 				  SNDRV_PCM_FMTBIT_S16_BE |
 				  SNDRV_PCM_FMTBIT_S24_LE |
-				  SNDRV_PCM_FMTBIT_S24_BE,
+				  SNDRV_PCM_FMTBIT_S24_BE |
+				  SNDRV_PCM_FMTBIT_S32_LE |
+				  SNDRV_PCM_FMTBIT_S32_BE,
 	.period_bytes_min	= 32,
-	.period_bytes_max	= 16 * 1024,
+	.period_bytes_max	= 256 * 1024,
 	.periods_min		= 2,
 	.periods_max		= 32,
-	.buffer_bytes_max	= 128 * 1024,
+	.buffer_bytes_max	= 256 * 1024,
 };
 
 static const struct of_device_id hisi_pcm_dp_match[] = {
@@ -78,12 +88,99 @@ static const struct of_device_id hisi_pcm_dp_match[] = {
 	},
 	{},
 };
+
 MODULE_DEVICE_TABLE(of, hisi_pcm_dp_match);
 
 /*****************************************************************************
   function declare
  *****************************************************************************/
 extern int mailbox_get_timestamp(void);
+
+static int set_tx3_parameters(struct snd_pcm_hw_params *params,
+			struct tx3_config_parameters *tx3_parameters)
+{
+	unsigned int params_value = 0;
+
+	/* CHECK SUPPORT CHANNELS : mono or stereo or 8ch */
+	params_value = params_channels(params);
+	logi("set channel_num = %d \n", params_value);
+	switch (params_value) {
+	case 1:
+		tx3_parameters->channel_num = CHANNEL_NUM_1;
+		break;
+	case 2:
+		tx3_parameters->channel_num = CHANNEL_NUM_2;
+		break;
+	case 8:
+		tx3_parameters->channel_num = CHANNEL_NUM_8;
+		break;
+	default:
+		pr_err("[%s:%d]DAC not support %d channels\n", __func__, __LINE__, params_value);
+		return -EINVAL;
+	}
+
+	params_value = params_format(params);
+	logi("set format = %d \n", params_value);
+	switch (params_value) {
+	case SNDRV_PCM_FORMAT_S16_LE:
+		tx3_parameters->bit_width  = BIT_WIDTH_16;
+		tx3_parameters->align_type = ALIGN_16;
+		break;
+	case SNDRV_PCM_FORMAT_S24_LE:
+		tx3_parameters->bit_width  = BIT_WIDTH_24;
+		tx3_parameters->align_type = ALIGN_32;
+		break;
+	/* use align_32 to avoid Channel interchange problem*/
+	case SNDRV_PCM_FORMAT_S32_LE:
+		tx3_parameters->bit_width  = BIT_WIDTH_16;
+		tx3_parameters->align_type = ALIGN_32;
+		break;
+	default:
+		pr_err("[%s:%d]format err : %d\n", __func__, __LINE__, params_value);
+		return -EINVAL;
+	}
+
+	return 0;
+
+}
+
+static int set_sio_parameters(struct snd_pcm_hw_params *params,
+			struct sio_config_parameters *sio_parameters)
+{
+	unsigned int params_value = 0;
+	unsigned int infreq_index = 0;
+	unsigned int clk_index = 0;
+
+	params_value = params_rate(params);
+	logi("set rate = %d \n", params_value);
+
+	for (infreq_index = 0; infreq_index < HIFI_DP_SAMPLE_RATE_NUM; infreq_index++) {
+		if (params_value == freq[infreq_index][0])
+			break;
+	}
+	if (infreq_index >= HIFI_DP_SAMPLE_RATE_NUM) {
+		pr_err("set rate = %d error\n", params_value);
+		return -EINVAL;
+	}
+
+	sio_parameters->sample_rate = freq[infreq_index][1];
+	logi("sample_rate[%d]  = %d \n", sio_parameters->sample_rate, freq[infreq_index][0]);
+
+	for (clk_index = 0; clk_index < SAMPLE_RATE_MAX; clk_index++) {
+		if (sio_parameters->sample_rate == div_clk[clk_index][0])
+			break;
+	}
+	if (clk_index >= SAMPLE_RATE_MAX) {
+		pr_err("set clk = %d error\n", sio_parameters->sample_rate);
+		return -EINVAL;
+	}
+
+	sio_parameters->div_clk = div_clk[clk_index][1];
+	logi("div_clk : 0x%x \n", sio_parameters->div_clk);
+
+	return 0;
+
+}
 
 static int dp_clk_enable(struct hisi_dp_data *prtd)
 {
@@ -109,15 +206,17 @@ static int dp_clk_enable(struct hisi_dp_data *prtd)
 
 	dp_audio_pll_clk = prtd->dp_audio_pll_clk;
 	if (dp_audio_pll_clk) {
+		// TODO:Fixed support 48k series, if support 44.1k series, need to be modified
 		ret = clk_set_rate(dp_audio_pll_clk, HISI_PLL6_RATE_48);
-		if (ret < 0) {
-			pr_err("ppll6 clk :failed to set rate!\n");
+		logi("set pll6 rate = %d\n", HISI_PLL6_RATE_48);
+		if (ret) {
+			pr_err("set pll6 rate failed. ret : %d\n", ret);
 			clk_disable_unprepare(asp_subsys_clk);
 			return ret;
 		}
 
 		ret = clk_prepare_enable(dp_audio_pll_clk);
-		if (0 != ret) {
+		if (ret) {
 			pr_err("clk_dp_audio_pll enable fail, error=%d\n", ret);
 			clk_disable_unprepare(asp_subsys_clk);
 			return -EINVAL;
@@ -221,12 +320,14 @@ static irqreturn_t dp_dma_irq_handler(int irq, void *data)
 	avail = snd_pcm_playback_hw_avail(runtime);
 
 	if (avail < rt_period_size) {
-		pr_info("[%s:%d] There is no avail data  avail(%d)< rt_period_size(%d)\n", __func__, __LINE__, (int)avail, rt_period_size);
+		pr_info("[%s:%d] There is no avail data  avail(%d)< rt_period_size(%d)\n",
+			__func__, __LINE__, (int)avail, rt_period_size);
 	}
 
 	asp_hdmi_dma_enable();
 
 	spin_unlock(&prtd->lock);
+
 	return IRQ_HANDLED;
 }
 
@@ -272,7 +373,7 @@ static int hisi_pcm_dp_open(struct snd_pcm_substream *substream)
 	substream->runtime->private_data = prtd;
 
 	ret = request_irq(pdata->irq, dp_dma_irq_handler,
-			  IRQF_TRIGGER_HIGH | IRQF_SHARED | IRQF_NO_SUSPEND, "asp_hdmi_dma", pcm);
+		IRQF_TRIGGER_HIGH | IRQF_SHARED | IRQF_NO_SUSPEND, "asp_hdmi_dma", pcm);
 	if (ret) {
 		pr_err("[%s:%d] request asp dma irq failed.\n", __func__, __LINE__);
 		goto err_irq;
@@ -366,11 +467,9 @@ static int hisi_pcm_dp_hw_params(struct snd_pcm_substream *substream,
 {
 	struct hisi_dp_runtime_data *prtd = substream->runtime->private_data;
 	unsigned long bytes = params_buffer_bytes(params);
-	unsigned int params_value = 0;
-	unsigned int infreq_index = 0;
 	int ret = 0;
 	struct tx3_config_parameters tx3_parameters = {CHANNEL_NUM_2, BIT_WIDTH_16, ALIGN_16};
-	struct sio_config_parameters sio_parameters = {&tx3_parameters,  SAMPLE_RATE_48, false};
+	struct sio_config_parameters sio_parameters = {&tx3_parameters,  SAMPLE_RATE_48, HISI_DIV_CLK_48, false};
 
 	if (NULL == prtd) {
 		loge("[%s:%d] prtd is null\n",  __FUNCTION__, __LINE__);
@@ -382,60 +481,27 @@ static int hisi_pcm_dp_hw_params(struct snd_pcm_substream *substream,
 	if (SNDRV_PCM_STREAM_PLAYBACK == substream->stream) {
 		ret = snd_pcm_lib_malloc_pages(substream, bytes);
 		if (0 > ret) {
-			pr_err("[%s:%d]snd_pcm_lib_malloc_pages ret is %d\n", __func__, __LINE__, ret);
+			pr_err("[%s:%d]malloc pages failed. ret : %d\n", __func__, __LINE__, ret);
 			return ret;
 		}
 
-		/* CHECK SUPPORT CHANNELS : mono or stereo or 8ch */
-		params_value = params_channels(params);
-		switch (params_value) {
-		case 1:
-			tx3_parameters.channel_num = CHANNEL_NUM_1;
-			break;
-		case 2:
-			tx3_parameters.channel_num = CHANNEL_NUM_2;
-			break;
-		case 8:
-			tx3_parameters.channel_num = CHANNEL_NUM_8;
-			break;
-		default:
-			pr_err("[%s:%d]DAC not support %d channels\n", __func__, __LINE__, params_value);
-			ret = -EINVAL;
+		ret = set_tx3_parameters(params, &tx3_parameters);
+		if (ret) {
+			pr_err("[%s:%d]set tx3 parameters failed. ret : %d\n", __func__, __LINE__, ret);
 			goto err_out;
 		}
 
-		params_value = params_rate(params);
-		logd("set rate = %d \n", params_value);
-
-		for (infreq_index = 0; infreq_index < HIFI_DP_RAMPLERATE_NUM; infreq_index++) {
-			if (params_value == freq[infreq_index][0])
-				break;
-		}
-		if (HIFI_DP_RAMPLERATE_NUM <= infreq_index) {
-			pr_err("set rate = %d error\n", params_value);
-			ret = -EINVAL;
+		ret = set_sio_parameters(params, &sio_parameters);
+		if (ret) {
+			pr_err("[%s:%d]set sio parameters failed. ret : %d\n", __func__, __LINE__, ret);
 			goto err_out;
 		}
 
-		sio_parameters.sample_rate = freq[infreq_index][1];
-		logd("sio_parameters.sample_rate[%d]  = %d \n", sio_parameters.sample_rate, freq[infreq_index][0] );
-		/*clk set to 48000*/
-		asp_cfg_div_clk(HISI_DIV_CLK_48);
-
-		params_value = params_format(params);
-		switch (params_value) {
-		case SNDRV_PCM_FORMAT_S16_LE:
-			tx3_parameters.bit_width  = BIT_WIDTH_16;
-			tx3_parameters.align_type = ALIGN_16;
-			break;
-		case SNDRV_PCM_FORMAT_S24_LE:
-			tx3_parameters.bit_width  = BIT_WIDTH_24;
-			tx3_parameters.align_type = ALIGN_32;
-			break;
-		default:
-			pr_err("format err : %d, not support\n", params_value);
-			ret = -EINVAL;
-			goto err_out;
+		if (sio_parameters.div_clk != HISI_DIV_CLK_NO_SUPPORT) {
+			asp_cfg_div_clk(sio_parameters.div_clk);
+		} else {
+			pr_err("[%s:%d],div_clk(%d) is no support,and will use defaulte div_clk config\n",
+				__func__, __LINE__, sio_parameters.div_clk);
 		}
 
 		mutex_lock(&prtd->mutex);
@@ -443,8 +509,8 @@ static int hisi_pcm_dp_hw_params(struct snd_pcm_substream *substream,
 		mutex_unlock(&prtd->mutex);
 
 		ret = asp_hdmi_tx3_config(tx3_parameters);
-		if (0 > ret) {
-			pr_err("[%s:%d]asp_hdmi_tx3_config ret is %d\n", __func__, __LINE__, ret);
+		if (ret) {
+			pr_err("[%s:%d]tx3 config failed. ret : %d\n", __func__, __LINE__, ret);
 			goto err_out;
 		}
 
@@ -701,7 +767,7 @@ static int hisi_pcm_dp_new(struct snd_soc_pcm_runtime *rtd)
 		ret = hisi_pcm_preallocate_dma_buffer(pcm,
 			SNDRV_PCM_STREAM_PLAYBACK);
 		if (ret) {
-			pr_err("[%s:%d] preallocate dma buffer error, error No. = %d\n", __func__, __LINE__, ret);
+			pr_err("[%s:%d] preallocate dma buffer error, error No. : %d\n", __func__, __LINE__, ret);
 			return ret;
 		}
 	}

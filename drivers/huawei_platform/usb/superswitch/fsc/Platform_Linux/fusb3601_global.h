@@ -55,6 +55,9 @@ struct fusb3601_chip
 	FSC_S32 gpio_Vconn;                    /* Vconn GPIO pin */
     FSC_BOOL gpio_Vconn_value;             /* True if ON, False otherwise */
 
+    /* dts */
+    int use_super_switch_cutoff_wired_channel;
+
     /* Timers */
     struct hrtimer sm_timer;                /* High-res timer for the SM */
     struct hrtimer timer_force_timeout;

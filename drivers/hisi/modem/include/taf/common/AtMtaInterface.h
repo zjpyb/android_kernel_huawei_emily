@@ -1600,7 +1600,6 @@ typedef struct
 typedef struct
 {
     MTA_AT_RESULT_ENUM_UINT32           ucResult;
-    VOS_UINT8                           aucRsv[3];
 } MTA_AT_GAME_MODE_SET_CFN_STRU;
 
 

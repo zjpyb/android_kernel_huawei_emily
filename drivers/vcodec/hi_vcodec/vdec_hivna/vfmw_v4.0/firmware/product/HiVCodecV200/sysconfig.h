@@ -11,7 +11,7 @@ ZguGQVqcOAJQbE96v6175DqhuprKgQB8R+2fu7VD3qtX+ZJh/t0512oqv+e8YA==*/
 #include "vfmw.h"
 
 /* valid vdh num */
-#define MAX_VDH_NUM              (1)
+#define MAX_VDH_NUM              (2)
 
 #ifdef ENV_SOS_KERNEL
 #ifndef CONFIG_HISI_FAMA

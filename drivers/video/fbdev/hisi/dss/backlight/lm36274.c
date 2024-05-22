@@ -119,7 +119,7 @@ static int lm36274_parse_dts(struct device_node *np)
 static int lm36274_config_write(struct lm36274_chip_data *pchip,
 			unsigned int reg[],unsigned int val[],unsigned int size)
 {
-	unsigned int ret = 0;
+	int ret = 0;
 	unsigned int i = 0;
 
 	for(i = 0;i < size;i++) {
@@ -139,7 +139,7 @@ exit:
 static int lm36274_config_read(struct lm36274_chip_data *pchip,
 			unsigned int reg[],unsigned int val[],unsigned int size)
 {
-	unsigned int ret = 0;
+	int ret = 0;
 	unsigned int i = 0;
 
 	for(i = 0;i < size;i++) {
@@ -1004,6 +1004,7 @@ static struct attribute *lm36274_attributes[] = {
 static const struct attribute_group lm36274_group = {
 	.attrs = lm36274_attributes,
 };
+
 
 static int lm36274_probe(struct i2c_client *client,
 				const struct i2c_device_id *id)

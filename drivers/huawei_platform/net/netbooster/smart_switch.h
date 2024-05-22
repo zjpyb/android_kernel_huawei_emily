@@ -23,6 +23,22 @@
 /*Amplitude threshold*/
 #define KSI_THRED (70*128)
 
+/*haidata app qoe threshold*/
+#define APP_QOE_KSI_SLOW_THRED (100)
+#define APP_QOE_KSI_NORMAL_THRED (92)
+/*Minimum report period*/
+#define APP_QOE_REPORT_TIMER (5)
+#define APP_QOE_SLOW_NUM_THRESHOLD (3)
+#define APP_QOE_MIN_STAT_SEC (1)
+
+#define NETWORK_STATUS_INVALID (-1)
+#define NETWORK_STATUS_NORMAL  0
+#define NETWORK_STATUS_GENERAL_SLOW 1
+#define NETWORK_STATUS_SERIOUS_SLOW 2
+#define NETWORK_STATUS_FOR_CHR      3
+#define NETWORK_STATUS_APP_QOE_NORMAL  4
+#define NETWORK_STATUS_APP_QOE_GENERAL_SLOW 5
+
 /*RTT threshold*/
 #define RTT_THRED (255)
 
@@ -37,7 +53,9 @@
 #define MIN_PKT_LEN (0)
 
 /*Data service string and length*/
-#define DS_NET	("rmnet0")
+#define DS_NET        ("rmnet0")
+#define DS_NET_SLAVE  ("rmnet3")
+
 #define DS_NET_LEN (6)
 
 /*Maximum KSI legal value*/
@@ -75,6 +93,9 @@ struct pkt_cnt_swth {
 	unsigned int rts;
 	unsigned int syn;
 	unsigned int rtt;
+	unsigned int rtt_max;
+	unsigned int rtt_all;
+	unsigned int rtt_cnt;
 };
 
 struct norm_idx {
@@ -132,4 +153,8 @@ extern unsigned int chr_smart_switch(struct chr_para *report);
 extern int set_ksi_enable(uint8_t nf_hook_enable, uint8_t nl_event_enable);
 extern int smart_switch_init(void);
 extern void smart_switch_exit(void);
-#endif 
+#ifdef CONFIG_APP_QOE_AI_PREDICT
+extern int set_app_qoe_uid(int uid, int period);
+extern int set_app_qoe_rsrp(int uid, int period);
+#endif
+#endif

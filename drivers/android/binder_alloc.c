@@ -47,7 +47,7 @@ enum {
 static uint32_t binder_alloc_debug_mask;
 
 module_param_named(debug_mask, binder_alloc_debug_mask,
-		   uint, S_IWUSR | S_IRUGO);
+		   uint, 0644);
 
 #define binder_alloc_debug(mask, x...) \
 	do { \
@@ -219,12 +219,11 @@ static int binder_update_page_range(struct binder_alloc *alloc, int allocate,
 		}
 	}
 
-	/* Same as mmget_not_zero() in later kernel versions */
-	if (need_mm && atomic_inc_not_zero(&alloc->vma_vm_mm->mm_users))
+	if (need_mm && mmget_not_zero(alloc->vma_vm_mm))
 		mm = alloc->vma_vm_mm;
 
 	if (mm) {
-		down_write(&mm->mmap_sem);
+		down_read(&mm->mmap_sem);
 		vma = alloc->vma;
 	}
 
@@ -293,7 +292,7 @@ static int binder_update_page_range(struct binder_alloc *alloc, int allocate,
 		/* vm_insert_page does not seem to increment the refcount */
 	}
 	if (mm) {
-		up_write(&mm->mmap_sem);
+		up_read(&mm->mmap_sem);
 		mmput(mm);
 	}
 	return 0;
@@ -326,7 +325,7 @@ err_page_ptr_cleared:
 	}
 err_no_vma:
 	if (mm) {
-		up_write(&mm->mmap_sem);
+		up_read(&mm->mmap_sem);
 		mmput(mm);
 	}
 	return vma ? -ENOMEM : -ESRCH;
@@ -483,6 +482,7 @@ struct binder_buffer *binder_alloc_new_buf_locked(struct binder_alloc *alloc,
 	rb_erase(best_fit, &alloc->free_buffers);
 	buffer->free = 0;
 	buffer->free_in_progress = 0;
+	buffer->allow_user_free = 0;
 	binder_insert_allocated_buffer_locked(alloc, buffer);
 	binder_alloc_debug(BINDER_DEBUG_BUFFER_ALLOC,
 		     "%d: binder_alloc_buf size %zd got %pK\n",
@@ -714,9 +714,9 @@ int binder_alloc_mmap_handler(struct binder_alloc *alloc,
 	if (cache_is_vipt_aliasing()) {
 		while (CACHE_COLOUR(
 				(vma->vm_start ^ (uint32_t)alloc->buffer))) {
-			pr_info("binder_mmap: %d %lx-%lx maps %pK bad alignment\n",
-				alloc->pid, vma->vm_start, vma->vm_end,
-				alloc->buffer);
+			pr_info("%s: %d %lx-%lx maps %pK bad alignment\n",
+				__func__, alloc->pid, vma->vm_start,
+				vma->vm_end, alloc->buffer);
 			vma->vm_start += PAGE_SIZE;
 		}
 	}
@@ -960,8 +960,7 @@ enum lru_status binder_alloc_free_page(struct list_head *item,
 	page_addr = (uintptr_t)alloc->buffer + index * PAGE_SIZE;
 	vma = alloc->vma;
 	if (vma) {
-		/* Same as mmget_not_zero() in later kernel versions */
-		if (!atomic_inc_not_zero(&alloc->vma_vm_mm->mm_users))
+		if (!mmget_not_zero(alloc->vma_vm_mm))
 			goto err_mmget;
 		mm = alloc->vma_vm_mm;
 		if (!down_write_trylock(&mm->mmap_sem))

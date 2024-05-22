@@ -121,6 +121,17 @@ struct wlan_perform_tcp_list
     oal_dlist_head_stru     tcp_list;
 };
 
+/* TCP ACK 优化门限 参数 */
+typedef struct
+{
+    oal_int32                  l_on_threshold;  /* 0:不修改tcp ack 优化标识(默认开启tcp ack 优化)；
+                                                    <0 关闭tcp ack 优化；
+                                                    >0 开启tcp ack 优化门限 */
+    oal_int32                  l_off_threshold; /* 关闭tcp ack 优化门限 */
+    oal_uint32                 ul_pre_time;     /* 记录前一次时间 */
+    oal_uint32                 ul_total_count;  /* 记录总的数据包数量 */
+
+}hmac_tcp_ack_opt_th_params;
 
 /*****************************************************************************
   8 UNION定义

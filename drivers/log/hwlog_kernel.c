@@ -33,14 +33,13 @@
 #define HWLOG_JANK_FS    "hwlog_jank"
 #define HWLOG_DUBAI_FS "hwlog_dubai"
 HWLOG_REGIST();
-static int log_fds[HW_LOG_ID_MAX] = { -1, -1, -1};
 static struct file* filp[HW_LOG_ID_MAX] = { NULL, NULL, NULL};
 static const char *log_name[HW_LOG_ID_MAX] = {
 	[HW_LOG_ID_EXCEPTION]   = "/dev/" HWLOG_EXCEPTION_FS,
 	[HW_LOG_ID_JANK]   = "/dev/" HWLOG_JANK_FS,
 	[HW_LOG_ID_DUBAI]   = "/dev/" HWLOG_DUBAI_FS,
 };
-static const int CHECK_CODE = 0x7BCDABCD;
+static int CHECK_CODE = 0x7BCDABCD;
 /**
 *  tag: the tag of this command
 *  msg: concrete command string to write to /dev/hwlog_jank
@@ -122,10 +121,9 @@ static int __write_hwlog_to_kernel_init(struct my_work_struct  *phwlog)
 {
 	int i = 0;
 	int err_count = 0;
-
+	mm_segment_t oldfs;
 	if (phwlog->nbufid >= HW_LOG_ID_MAX)
 		return 0;
-	mm_segment_t oldfs;
 
 	mutex_lock(&hwlogfile_mutex);
 	if (__write_hwlog_to_kernel_init == write_hwlog_to_kernel) {
@@ -155,12 +153,12 @@ static int __write_to_kernel_null(char* tag, char* msg)
 */
 static int __write_to_kernel_kernel(struct my_work_struct  *phwlog)
 {
-	if (phwlog->nbufid >= HW_LOG_ID_MAX)
-		return 0;
 	struct iovec vec[6];
 	unsigned long vcount = 0;
 	mm_segment_t oldfs;
 	int ret;
+	if (phwlog->nbufid >= HW_LOG_ID_MAX)
+		return 0;
 
 	if (unlikely(!phwlog)) {
 		hwlog_err("invalid arguments\n");
@@ -196,7 +194,13 @@ static int __write_to_kernel_kernel(struct my_work_struct  *phwlog)
 	}
 	oldfs = get_fs();
 	set_fs(get_ds());
-	ret = vfs_writev(filp[phwlog->nbufid], vec, vcount, &(filp[phwlog->nbufid])->f_pos);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
+	ret = vfs_writev(filp[phwlog->nbufid], vec, vcount,
+	        &(filp[phwlog->nbufid])->f_pos, 0);
+#else
+	ret = vfs_writev(filp[phwlog->nbufid], vec, vcount,
+	        &(filp[phwlog->nbufid])->f_pos);
+#endif
 	set_fs(oldfs);
 	if (unlikely(ret < 0))
 		hwlog_err("failed to write %s\n", log_name[phwlog->nbufid]);
@@ -205,12 +209,12 @@ static int __write_to_kernel_kernel(struct my_work_struct  *phwlog)
 
 int hwlog_to_write(int prio, int bufid, const char *tag, const char *fmt, ...)
 {
-	if (strlen(tag) >= MAX_MSG_SIZE)
-		return 0;
 	unsigned long           flags;
 	va_list                 args;
 	struct my_work_struct  *pWork = NULL;
 	int                     len;
+	if (strlen(tag) >= MAX_MSG_SIZE)
+		return 0;
 	raw_spin_lock_irqsave(&hwlog_spinlock, flags);
 	if (!bInited) {
 		hwlog_err("hwlog_workqueue is null.\n");

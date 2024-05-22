@@ -4,6 +4,7 @@
 #include <linux/mutex.h>
 #include <linux/list.h>
 #include <linux/dma-buf.h>
+#include <linux/version.h>
 #include "ipu_smmu_drv.h"
 #include "ipu_mntn.h"
 
@@ -95,6 +96,10 @@ struct ion_client *ipu_ion_client = NULL;
 
 static struct iommu_domain *ipu_smmu_domain = NULL;
 static struct gen_pool *ipu_iova_pool = NULL;
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
+static struct device *ipu_dev = NULL;
+#endif
 
 struct smmu_manager {
 	void __iomem *master_io_addr;
@@ -305,6 +310,7 @@ static int ipu_enable_iommu(struct device *dev)
 		return -EIO;
 	}
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4,9,0))
 	if (!ipu_ion_client) {
 		ipu_ion_client = hisi_ion_client_create("ipu-client");
 		if (!ipu_ion_client) {
@@ -312,6 +318,9 @@ static int ipu_enable_iommu(struct device *dev)
 			return -ENODEV;
 		}
 	}
+#else
+	ipu_dev = dev;
+#endif
 
 	if (ipu_smmu_domain) {
 		printk(KERN_ERR"[%s] ipu_smmu_domain is not NULL\n", __func__);
@@ -467,11 +476,12 @@ static void ipu_smmu_mstr_init(bool port_sel, bool hardware_start)
 	return;
 }
 
-static void ipu_smmu_comm_init(unsigned long ttbr0, unsigned long smmu_rw_err_phy_addr)
+static void ipu_smmu_comm_init(unsigned long ttbr0, unsigned long smmu_rw_err_virtual_addr)
 {
 	unsigned int low;
 	unsigned int high;
 	unsigned long io_comm_base = (unsigned long)smmu_manager.common_io_addr;
+	unsigned long smmu_rw_err_phy_addr;
 
 	/* set SMMU mode as normal */
 	ipu_reg_bit_write_dword(io_comm_base + smmu_common_reg_offset.smmu_scr, 0, 0, 0);
@@ -494,10 +504,11 @@ static void ipu_smmu_comm_init(unsigned long ttbr0, unsigned long smmu_rw_err_ph
 	/* set Descriptor select of the SMMU_CB_TTBR0 addressed region of Non-Secure Context Bank
 	for 64bit system, select Long Descriptor -> 1(SMMU_CB_TTBCR.cb_ttbcr_des) */
 	ipu_reg_bit_write_dword(io_comm_base + smmu_common_reg_offset.smmu_cb_ttbcr, 0, 0, 0x1);
-
 	/* set SMMU read/write phy addr in TLB miss case */
-	low = (unsigned int)(smmu_rw_err_phy_addr & 0xffffffff);
+	smmu_rw_err_phy_addr = virt_to_phys((void *)smmu_rw_err_virtual_addr);
+	low = (unsigned int)((smmu_rw_err_phy_addr + 0x80) & 0xffffffffffffff80);
 	high = (unsigned int)((smmu_rw_err_phy_addr >> 32) & 0x7f);
+
 	iowrite32(low, (void *)(io_comm_base + smmu_common_reg_offset.smmu_err_rdaddr));
 	ipu_reg_bit_write_dword(io_comm_base + smmu_common_reg_offset.smmu_addr_msb, 0, 6, high);
 
@@ -555,13 +566,25 @@ long ipu_smmu_map(struct map_data *map)
 	unsigned long iova_start;
 	struct scatterlist *sg;
 	struct sg_table *table;
-	struct ion_handle *hdl;
 	struct scatterlist *sgl;
 	struct map_format *format = &(map->format);
 
-	if (0 == ipu_smmu_domain || 0 == ipu_ion_client || 0 == ipu_iova_pool) {
-		printk(KERN_ERR"[%s]: IPU_ERROR:ipu_smmu_domain or ipu_ion_client or ipu_iova_pool is NULL, ipu_smmu_domain=0x%pK, ipu_ion_client=0x%pK, ipu_iova_pool=0x%pK\n",
-			__func__, ipu_smmu_domain, ipu_ion_client, ipu_iova_pool);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
+	struct dma_buf_attachment *attach;
+	struct dma_buf *dma_buf;
+#else
+	struct ion_handle *hdl;
+#endif
+
+	if (0 == ipu_smmu_domain || 0 == ipu_iova_pool) {
+		printk(KERN_ERR"[%s]: IPU_ERROR:ipu_smmu_domain or ipu_iova_pool is NULL, ipu_smmu_domain=0x%pK, ipu_iova_pool=0x%pK\n",
+			__func__, ipu_smmu_domain, ipu_iova_pool);
+		return -EFAULT;
+	}
+
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4,9,0))
+	if (0 == ipu_ion_client ) {
+		printk(KERN_ERR"[%s]: IPU_ERROR:ipu_ion_client is NULL\n", __func__);
 		return -EFAULT;
 	}
 
@@ -576,6 +599,34 @@ long ipu_smmu_map(struct map_data *map)
 		printk(KERN_ERR"[%s]: IPU_ERROR:SETCONFIG_MAP table is error, which is: %pK\n", __func__, table);
 		return -EFAULT;
 	}
+
+#else
+	if (0 == ipu_dev) {
+		printk(KERN_ERR"[%s]: IPU_ERROR:ipu_dev is NULL\n", __func__);
+		return -EFAULT;
+	}
+
+	dma_buf = dma_buf_get(map->share_fd);
+	if (IS_ERR_OR_NULL(dma_buf)) {
+		printk(KERN_ERR"[%s]: IPU_ERROR:dma_buf_get fail, share_fd=%d, dma_buf=%pK\n", __func__, map->share_fd, dma_buf);
+		return -EFAULT;
+	}
+
+    attach = dma_buf_attach(dma_buf, ipu_dev);
+	if (IS_ERR_OR_NULL(attach)) {
+		printk(KERN_ERR"[%s]: IPU_ERROR:dma_buf_attach error, attach=%pK\n", __func__, attach);
+		dma_buf_put(dma_buf);
+		return -EFAULT;
+	}
+
+	table = dma_buf_map_attachment(attach, DMA_BIDIRECTIONAL);
+	if (IS_ERR_OR_NULL(table)) {
+		printk(KERN_ERR"[%s]: IPU_ERROR:dma_buf_map_attachment error, table=%pK\n", __func__, table);
+		dma_buf_detach(dma_buf, attach);
+		dma_buf_put(dma_buf);
+		return -EFAULT;
+	}
+#endif
 
 	sgl = table->sgl;
 
@@ -602,7 +653,15 @@ long ipu_smmu_map(struct map_data *map)
 		ret = 0;
 	}
 
+/* clear environment */
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4,9,0))
 	ion_free(ipu_ion_client, hdl);
+#else
+    dma_buf_unmap_attachment(attach, table, DMA_BIDIRECTIONAL);
+	dma_buf_detach(dma_buf, attach);
+	dma_buf_put(dma_buf);
+#endif
+
 	return ret;
 }
 

@@ -51,12 +51,13 @@
 #define DOS_PAR_DIR_NAME        "..         "
 
 #ifdef __LITTLE_ENDIAN
-#define UNI_CUR_DIR_NAME        ".\0"
-#define UNI_PAR_DIR_NAME        ".\0.\0"
+#define UNI_CUR_DIR_NAME        ".\0\0"
+#define UNI_PAR_DIR_NAME        ".\0.\0\0"
 #else
-#define UNI_CUR_DIR_NAME        "\0."
-#define UNI_PAR_DIR_NAME        "\0.\0."
+#define UNI_CUR_DIR_NAME        "\0.\0"
+#define UNI_PAR_DIR_NAME        "\0.\0.\0"
 #endif
+
 
 /*----------------------------------------------------------------------*/
 /*  Type Definitions                                                    */

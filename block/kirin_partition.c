@@ -25,7 +25,6 @@
 #ifdef CONFIG_HISI_AB_PARTITION
 #define BOOT_XLOADER_A                 (0x1)
 #define BOOT_XLOADER_B                 (0x2)
-#define MAX_PARTITION_NAME_LENGTH      (36)
 
 extern int ufs_set_boot_partition_type(int boot_partition_type);
 extern int mmc_set_boot_partition_type(int boot_partition_type);
@@ -83,7 +82,7 @@ EXPORT_SYMBOL(flash_find_hisee_ptn);
 int flash_find_ptn(const char* str, char* pblkname)
 {
 	int n;
-	char device_path[] = "/dev/block/bootdevice/by-name/";
+	char device_path[] = "/dev/block/by-name/";
 	int current_ptn_num = 0;
 	struct partition *current_partition_table = NULL;
 	enum bootdevice_type boot_device_type = BOOT_DEVICE_EMMC;
@@ -100,7 +99,7 @@ int flash_find_ptn(const char* str, char* pblkname)
 	boot_device_type = get_bootdevice_type();
 
 	if (BOOT_DEVICE_EMMC == boot_device_type) {
-		current_partition_table  = (struct partition *)partition_table_emmc;/*lint !e1773*/
+		current_partition_table  = (struct partition *)partition_table_emmc;
 	}
 #ifdef CONFIG_HISI_STORAGE_UFS_PARTITION
 	else if (BOOT_DEVICE_UFS  == boot_device_type){
@@ -143,7 +142,7 @@ int flash_find_ptn(const char* str, char* pblkname)
 	for(n = 0; n < current_ptn_num; n++) {
 		if(!strcmp((current_partition_table + n)->name, partition_name_tmp)) {/*[false alarm]:current_partition_table!=NULL*/
 			strncpy(pblkname, device_path, strlen(device_path));/* unsafe_function_ignore: strncpy */
-			strncpy(pblkname + strlen(device_path), str, strlen(str)+1);/* unsafe_function_ignore: strncpy */
+			strncpy(pblkname + strlen(device_path), partition_name_tmp, strlen(partition_name_tmp)+1);/* unsafe_function_ignore: strncpy */
 			return 0;
 		}
 	}
@@ -173,7 +172,7 @@ int flash_get_ptn_index(const char* pblkname)
 
 	boot_device_type = get_bootdevice_type();
 	if (BOOT_DEVICE_EMMC == boot_device_type) {
-		current_partition_table  = (struct partition *)partition_table_emmc;/*lint !e1773*/
+		current_partition_table  = (struct partition *)partition_table_emmc;
 	}
 #ifdef CONFIG_HISI_STORAGE_UFS_PARTITION
 	else if (BOOT_DEVICE_UFS  == boot_device_type) {

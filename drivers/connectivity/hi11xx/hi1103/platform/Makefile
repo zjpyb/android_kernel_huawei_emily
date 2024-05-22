@@ -29,7 +29,7 @@ oal-objs := $(addprefix oal/,$(oal-objs))
 frw-objs := frw_event_deploy.o frw_event_main.o frw_event_sched.o frw_ipc_msgqueue.o frw_main.o frw_task.o frw_timer.o
 frw-objs := $(addprefix frw/,$(frw-objs))
 
-oam-objs := oam_main.o oam_alarm.o oam_event.o oam_log.o oam_trace.o oam_statistics.o oam_config.o oam_register.o oam_linux_netlink.o
+oam-objs := oam_main.o oam_alarm.o oam_event.o oam_log.o oam_trace.o oam_statistics.o oam_config.o oam_register.o oam_linux_netlink.o oam_rdr.o
 oam-objs := $(addprefix oam/,$(oam-objs))
 
 sdt-objs := sdt_drv.o
@@ -134,13 +134,13 @@ HI110X_INCLUDES += -I$(DRIVER_PATH)/../common/chr_log
 
 #This is not good
 HI110X_INCLUDES += -I$(KERNEL_DIR)
-HI110X_INCLUDES += -I$(HI110X_DRIVER_SRC_PATH)/wifi/inc
-HI110X_INCLUDES += -I$(HI110X_DRIVER_SRC_PATH)/wifi/inc/hal
-HI110X_INCLUDES += -I$(HI110X_DRIVER_SRC_PATH)/wifi/inc/dmac
-HI110X_INCLUDES += -I$(HI110X_DRIVER_SRC_PATH)/wifi/inc/wal
-HI110X_INCLUDES += -I$(HI110X_DRIVER_SRC_PATH)/wifi/hal/hal_verify/
-HI110X_INCLUDES += -I$(HI110X_DRIVER_SRC_PATH)/wifi/hmac/hmac_verify/
-HI110X_INCLUDES += -I$(HI110X_DRIVER_SRC_PATH)/wifi/dmac/dmac_verify/
+HI110X_INCLUDES += -I$(HI110X_DRIVER_SRC_PATH)/wifi/1103/inc
+HI110X_INCLUDES += -I$(HI110X_DRIVER_SRC_PATH)/wifi/1103/inc/hal
+HI110X_INCLUDES += -I$(HI110X_DRIVER_SRC_PATH)/wifi/1103/inc/dmac
+HI110X_INCLUDES += -I$(HI110X_DRIVER_SRC_PATH)/wifi/1103/inc/wal
+HI110X_INCLUDES += -I$(HI110X_DRIVER_SRC_PATH)/wifi/1103/hal/hal_verify/
+HI110X_INCLUDES += -I$(HI110X_DRIVER_SRC_PATH)/wifi/1103/hmac/hmac_verify/
+HI110X_INCLUDES += -I$(HI110X_DRIVER_SRC_PATH)/wifi/1103/dmac/dmac_verify/
 
 KBUILD_CFLAGS += -DPLATFORM_TYPE_FOR_HI110X=0
 KBUILD_CFLAGS += -DPLATFORM_HI110X_k3v2oem1=1
@@ -148,6 +148,15 @@ KBUILD_CFLAGS += -DPLATFORM_HI110X_UEDGE=2
 
 ifneq ($(TARGET_BUILD_VARIANT),user)
 KBUILD_CFLAGS += -DPLATFORM_DEBUG_ENABLE
+KBUILD_CFLAGS += -DPLATFORM_SSI_FULL_LOG
+endif
+
+KBUILD_CFLAGS += -DHI1XX_ANDROID_BUILD_VARIANT_ROOT=1
+KBUILD_CFLAGS += -DHI1XX_ANDROID_BUILD_VARIANT_USER=2
+ifneq ($(TARGET_BUILD_VARIANT),user)
+KBUILD_CFLAGS += -DANDROID_HI1XX_BUILD_VERSION=HI1XX_ANDROID_BUILD_VARIANT_ROOT
+else
+KBUILD_CFLAGS += -DANDROID_HI1XX_BUILD_VERSION=HI1XX_ANDROID_BUILD_VARIANT_USER
 endif
 
 ifneq ($(HAVE_HISI_FEATURE_BT),false)
@@ -176,7 +185,9 @@ HI110X_VER_COMMIT_TIME = $(shell cd $(HI110X_DRIVER_SRC_PATH);git log -1 --prett
 
 HI110X_VERSION="\"commitId:$(HI110X_VER_COMMIT_ID), commitTime:$(HI110X_VER_COMMIT_TIME)\""
 
+#ifeq ($(HI110X_KERNEL_MODULES_BUILD_VERSION), y)
 KBUILD_CFLAGS += -DHI110X_DRV_VERSION=$(HI110X_VERSION)
+#endif
 endif
 $(warning HI110X_VER_COMMIT_ID: $(HI110X_VER_COMMIT_ID))
 $(warning HI110X_VER_COMMIT_TIME: $(HI110X_VER_COMMIT_TIME))

@@ -32,6 +32,7 @@
 #endif
 
 #define MMC_OPS_TIMEOUT_MS	(10 * 60 * 1000) /* 10 minute timeout */
+#define MMC_REMOVABLE_OPS_TIMEOUT_MS	(5 * 1000) /* 5 second timeout */
 #define SD_OPS_TIMEOUT_MS	(30 * 1000) /* 30 second timeout */
 
 static const u8 tuning_blk_pattern_4bit[] = {
@@ -119,14 +120,15 @@ static int _mmc_select_card(struct mmc_host *host, struct mmc_card *card)
 	12s,so we just retry once instead of four for damaged sd cards*/
 	err = mmc_wait_for_cmd(host, &cmd, 1);
 #ifdef CONFIG_HUAWEI_SDCARD_DSM
-	if (!strncmp(mmc_hostname(host), "mmc1",sizeof("mmc1")))
+	if (!strcmp(mmc_hostname(host), "mmc1"))
 		 dsm_sdcard_cmd_logs[DSM_SDCARD_CMD7].value = cmd.resp[0];
 
 	if (err) {
 		if (-ENOMEDIUM != err && -ETIMEDOUT != err
-				&& !strncmp(mmc_hostname(host), "mmc1",sizeof("mmc1")))
+				&& !strcmp(mmc_hostname(host), "mmc1")) {
 			dsm_sdcard_report(DSM_SDCARD_CMD7, DSM_SDCARD_CMD7_RESP_ERR);
-
+			printk(KERN_ERR "%s:send cmd7 fail ,err=%d !!!!\n",mmc_hostname(host),err);
+		}
 		return err;
 	}
 #else
@@ -243,6 +245,10 @@ int mmc_send_op_cond(struct mmc_host *host, u32 ocr, u32 *rocr)
 	if (rocr && !mmc_host_is_spi(host))
 		*rocr = cmd.resp[0];
 
+#ifdef CONFIG_MMC_DW_MUX_SDSIM
+	printk("%s: return err=%d and cmd.resp[0]=0x%x\n", __func__, err, cmd.resp[0]);
+#endif
+
 	return err;
 }
 
@@ -261,7 +267,7 @@ int mmc_all_send_cid(struct mmc_host *host, u32 *cid)
 	err = mmc_wait_for_cmd(host, &cmd, MMC_CMD_RETRIES);
 
 #ifdef CONFIG_HUAWEI_SDCARD_DSM
-	if (!strncmp(mmc_hostname(host), "mmc1",sizeof("mmc1"))) {
+	if (!strcmp(mmc_hostname(host), "mmc1")) {
 		 dsm_sdcard_cmd_logs[DSM_SDCARD_CMD2_R0].value = cmd.resp[0];
 		 dsm_sdcard_cmd_logs[DSM_SDCARD_CMD2_R1].value = cmd.resp[1];
 		 dsm_sdcard_cmd_logs[DSM_SDCARD_CMD2_R2].value = cmd.resp[2];
@@ -270,17 +276,17 @@ int mmc_all_send_cid(struct mmc_host *host, u32 *cid)
 
 	if (err) {
 		if (-ENOMEDIUM != err && -ETIMEDOUT != err
-			&& !strncmp(mmc_hostname(host), "mmc1",sizeof("mmc1")))
+			&& !strcmp(mmc_hostname(host), "mmc1"))
 			dsm_sdcard_report(DSM_SDCARD_CMD2_R3, DSM_SDCARD_CMD2_RESP_ERR);
 
-		if (!strncmp(mmc_hostname(host),"mmc1",sizeof("mmc1")))
+		if (!strcmp(mmc_hostname(host),"mmc1"))
 			printk(KERN_ERR "%s:send cmd2 fail,err=%d\n",mmc_hostname(host),err);
 
 		return err;
 	}
 #else
 	if (err) {
-	    if (!strncmp(mmc_hostname(host),"mmc1", sizeof("mmc1")))
+	    if (!strcmp(mmc_hostname(host),"mmc1"))
 		   printk(KERN_ERR "%s:send cmd2 fail,err=%d\n", mmc_hostname(host), err);
 
 		return err;
@@ -294,7 +300,6 @@ int mmc_all_send_cid(struct mmc_host *host, u32 *cid)
 
 int mmc_set_relative_addr(struct mmc_card *card)
 {
-	int err;
 	struct mmc_command cmd = {0};
 
 	BUG_ON(!card);
@@ -304,11 +309,7 @@ int mmc_set_relative_addr(struct mmc_card *card)
 	cmd.arg = card->rca << 16;
 	cmd.flags = MMC_RSP_R1 | MMC_CMD_AC;
 
-	err = mmc_wait_for_cmd(card->host, &cmd, MMC_CMD_RETRIES);
-	if (err)
-		return err;
-
-	return 0;
+	return mmc_wait_for_cmd(card->host, &cmd, MMC_CMD_RETRIES);
 }
 
 static int
@@ -381,7 +382,7 @@ mmc_send_cxd_data(struct mmc_card *card, struct mmc_host *host,
 
 #ifdef CONFIG_HUAWEI_EMMC_DSM
 	if (cmd.error || data.error)
-		if (!strcmp(mmc_hostname(host), "mmc0")) {/*lint !e421 */
+		if (!strcmp(mmc_hostname(host), "mmc0")) {
 			DSM_EMMC_LOG(card, DSM_EMMC_SEND_CXD_ERR,
 				"opcode:%d failed, cmd.error:%d, data.error:%d\n",
 				opcode, cmd.error, data.error);
@@ -523,6 +524,13 @@ int mmc_switch_status_error(struct mmc_host *host, u32 status)
 	return 0;
 }
 
+unsigned long timeout_select(struct mmc_card *card)
+{
+	if(mmc_card_removable_mmc(card))
+		return (jiffies + msecs_to_jiffies(MMC_REMOVABLE_OPS_TIMEOUT_MS) + 1);
+	else
+		return (jiffies + msecs_to_jiffies(MMC_OPS_TIMEOUT_MS) + 1);
+}
 /**
  *	__mmc_switch - modify EXT_CSD register
  *	@card: the MMC card associated with the data transfer
@@ -547,6 +555,8 @@ int __mmc_switch(struct mmc_card *card, u8 set, u8 index, u8 value,
 	unsigned long timeout;
 	u32 status = 0;
 	bool use_r1b_resp = use_busy_signal;
+	bool expired = false;
+	bool busy = false;
 
 	mmc_retune_hold(host);
 
@@ -595,13 +605,20 @@ int __mmc_switch(struct mmc_card *card, u8 set, u8 index, u8 value,
 	if ((host->caps & MMC_CAP_WAIT_WHILE_BUSY) && use_r1b_resp)
 		ignore_crc = false;
 
+
 	/* We have an unspecified cmd timeout, use the fallback value. */
 	if (!timeout_ms)
 		timeout_ms = MMC_OPS_TIMEOUT_MS;
 
-	/* Must check status to be sure of no errors. */
-	timeout = jiffies + msecs_to_jiffies(MMC_OPS_TIMEOUT_MS);
+	timeout = timeout_select(card);
+
 	do {
+		/*
+		 * Due to the possibility of being preempted after
+		 * sending the status command, check the expiration
+		 * time first.
+		 */
+		expired = time_after(jiffies, timeout);
 		if (send_status) {
 			err = __mmc_send_status(card, &status, ignore_crc);
 			if (err)
@@ -609,6 +626,11 @@ int __mmc_switch(struct mmc_card *card, u8 set, u8 index, u8 value,
 		}
 		if ((host->caps & MMC_CAP_WAIT_WHILE_BUSY) && use_r1b_resp)
 			break;
+		if (host->ops->card_busy) {
+			if (!host->ops->card_busy(host))
+				break;
+			busy = true;
+		}
 		if (mmc_host_is_spi(host))
 			break;
 
@@ -617,19 +639,20 @@ int __mmc_switch(struct mmc_card *card, u8 set, u8 index, u8 value,
 		 * does'nt support MMC_CAP_WAIT_WHILE_BUSY, then we can only
 		 * rely on waiting for the stated timeout to be sufficient.
 		 */
-		if (!send_status) {
+		if (!send_status && !host->ops->card_busy) {
 			mmc_delay(timeout_ms);
 			goto out;
 		}
 
 		/* Timeout if the device never leaves the program state. */
-		if (time_after(jiffies, timeout)) {
+		if (expired &&
+		    (R1_CURRENT_STATE(status) == R1_STATE_PRG || busy)) {
 			pr_err("%s: Card stuck in programming state! %s\n",
 				mmc_hostname(host), __func__);
 			err = -ETIMEDOUT;
 			goto out;
 		}
-	} while (R1_CURRENT_STATE(status) == R1_STATE_PRG);
+	} while (R1_CURRENT_STATE(status) == R1_STATE_PRG || busy);
 
 	err = mmc_switch_status_error(host, status);
 out:
@@ -732,7 +755,7 @@ mmc_send_bus_test(struct mmc_card *card, struct mmc_host *host, u8 opcode,
 	/* dma onto stack is unsafe/nonportable, but callers to this
 	 * routine normally provide temporary on-stack buffers ...
 	 */
-	data_buf = kzalloc(len, GFP_KERNEL);
+	data_buf = kmalloc(len, GFP_KERNEL);
 	if (!data_buf)
 		return -ENOMEM;
 
@@ -794,7 +817,7 @@ mmc_send_bus_test(struct mmc_card *card, struct mmc_host *host, u8 opcode,
 
 int mmc_bus_test(struct mmc_card *card, u8 bus_width)
 {
-	int err, width;
+	int width;
 
 	if (bus_width == MMC_BUS_WIDTH_8)
 		width = 8;
@@ -810,8 +833,7 @@ int mmc_bus_test(struct mmc_card *card, u8 bus_width)
 	 * is a problem.  This improves chances that the test will work.
 	 */
 	mmc_send_bus_test(card, card->host, MMC_BUS_TEST_W, width);
-	err = mmc_send_bus_test(card, card->host, MMC_BUS_TEST_R, width);
-	return err;
+	return mmc_send_bus_test(card, card->host, MMC_BUS_TEST_R, width);
 }
 
 int mmc_send_hpi_cmd(struct mmc_card *card, u32 *status)
@@ -858,7 +880,7 @@ int mmc_can_ext_csd(struct mmc_card *card)
 int sd_send_status(struct mmc_card *card)
 {
 	int err;
-	u32 status;
+	u32 status = 0;
 	unsigned long wait_prg_timeout;
 	wait_prg_timeout = jiffies + msecs_to_jiffies(SD_OPS_TIMEOUT_MS);
 	do {

@@ -244,7 +244,16 @@ SINT32 HEVCHAL_StartDec(OMXVDH_REG_CFG_S *pVdhRegCfg)
 #ifdef MSG_POOL_ADDR_CHECK
 	UINT32 PicHeight;
 	UINT32 PicWidth;
-	VDMHAL_HWMEM_S *pHwMem = &g_HwMem[0];
+	VDMHAL_HWMEM_S *pHwMem = NULL;
+	if (SCENE_VIDEO == pVdhMemMap->scene) {
+		pHwMem = &g_HwMem[SCENE_VIDEO];
+	} else if (SCENE_HEIF == pVdhMemMap->scene) {
+		pHwMem = &g_HwMem[SCENE_HEIF];
+	} else {
+		dprint(PRN_FATAL, "scene(%d) is not supported ", pVdhMemMap->scene);
+		return VDMHAL_ERR;
+	}
+
 	if (((HEVC_BASIC_CFG1 *)(&pVdhRegCfg->VdhBasicCfg1))->frm_cmp_en) {
 		Ret = HEVCHAL_CheckHeadMsg(pVdhMemMap,pHwMem->MsgSlotAddr[DN_MSG_HEAD_SLOT_INDEX]);
 		VDMHAL_ASSERT_RET(Ret == VDMHAL_OK, "HEVC head msg check failed");

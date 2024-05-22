@@ -26,7 +26,7 @@ HI_VOID VeduHal_CfgReg_LambdaSet(VENC_REG_INFO_S * channelcfg);
 HI_VOID VeduHal_CfgReg_QpgmapSet(VENC_REG_INFO_S * channelcfg);
 HI_VOID VeduHal_CfgReg_AddrSet(VENC_REG_INFO_S * channelcfg);
 HI_VOID VeduHal_CfgReg_SlcHeadSet(VENC_REG_INFO_S * channelcfg);
-HI_VOID VeduHal_CfgReg_SMMUSet(VENC_REG_INFO_S * channelcfg);
+HI_VOID VeduHal_CfgReg_SMMUSet(HI_VOID);
 HI_VOID VeduHal_CfgReg_PREMMUSet(VENC_REG_INFO_S * channelcfg);
 HI_VOID VeduHal_CfgRegSimple(VENC_REG_INFO_S * channelcfg);
 HI_VOID VeduHal_CfgReg(VENC_REG_INFO_S * regcfginfo);

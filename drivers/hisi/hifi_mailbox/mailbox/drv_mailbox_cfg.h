@@ -278,6 +278,7 @@ enum MAILBOX_MAILCODE_ENUM
     MAILBOX_MAILCODE_ACPU_TO_HIFI_VOS_MSG_URGENT,
     MAILBOX_MAILCODE_ACPU_TO_HIFI_AUDIO,
     MAILBOX_MAILCODE_ACPU_TO_HIFI_MISC,
+    MAILBOX_MAILCODE_ACPU_TO_HIFI_WAKEUP,
     MAILBOX_MAILCODE_ACPU_TO_HIFI_VOICE,
     MAILBOX_MAILCODE_ACPU_TO_HIFI_VOICE_RT,
     MAILBOX_MAILCODE_ACPU_TO_HIFI_USBAUDIO,
@@ -325,6 +326,7 @@ enum MAILBOX_MAILCODE_ENUM
     MAILBOX_MAILCODE_HIFI_TO_ACPU_VOS_MSG_URGENT,
     MAILBOX_MAILCODE_HIFI_TO_ACPU_AUDIO,
     MAILBOX_MAILCODE_HIFI_TO_ACPU_MISC,
+    MAILBOX_MAILCODE_HIFI_TO_ACPU_WAKEUP,
     MAILBOX_MAILCODE_HIFI_TO_ACPU_VOICE,
     MAILBOX_MAILCODE_HIFI_TO_ACPU_CCORE_RESET_ID,
     MAILBOX_MAILCODE_HIFI_TO_ACPU_USBAUDIO,
@@ -384,12 +386,13 @@ enum MAILBOX_MAILCODE_ENUM
  实 体 名  : MAILBOX_RET_ENUM
  功能描述  : 邮箱接口返回值
 *****************************************************************************/
-#define    MAILBOX_OK                       0
-#define    MAILBOX_ERRO                     0xF7654321
-#define    MAILBOX_FULL                     0xF7654322
-#define    MAILBOX_NOT_READY                0xF7654323   /*目标CPU邮箱未初始化*/
-#define    MAILBOX_TARGET_NOT_READY         MAILBOX_NOT_READY   /*目标CPU邮箱未初始化*/
-#define    MAILBOX_TIME_OUT                 0xF7654324     /*发送等待返回超时*/
+#define MAILBOX_OK                       0
+#define MAILBOX_ERRO                     0xF7654321
+#define MAILBOX_FULL                     0xF7654322
+#define MAILBOX_NOT_READY                0xF7654323   /*目标CPU邮箱未初始化*/
+#define MAILBOX_TARGET_NOT_READY         MAILBOX_NOT_READY   /*目标CPU邮箱未初始化*/
+#define MAILBOX_TIME_OUT                 0xF7654324     /*发送等待返回超时*/
+#define MAILBOX_HIFI_NOT_LOAD            0xF7654325
 
 /* 邮件序列号的初始值 */
 #define MAILBOX_SEQNUM_START            (0)

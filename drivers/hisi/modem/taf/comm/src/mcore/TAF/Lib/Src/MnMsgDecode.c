@@ -54,10 +54,7 @@
 #include  "MnErrorCode.h"
 #include  "MnMsgApi.h"
 #include  "MnMsgTs.h"
-/* Added by f62575 for V9R1 STK升级, 2013-6-26, begin */
 #include "TafStdlib.h"
-/* Added by f62575 for V9R1 STK升级, 2013-6-26, end */
-
 
 
 
@@ -88,7 +85,6 @@ typedef struct
 /*****************************************************************************
   5 函数实现
 *****************************************************************************/
-/* Added by f62575 for AT Project, 2011-10-24, begin */
 
 
 /* MN_BcdToAsciiCode、MN_BcdNumberToAscii、MN_MSG_BcdAddrToAscii调整到TafStdlib.c中 */
@@ -375,7 +371,6 @@ VOS_UINT32 MN_MSG_DecodeAddress(
     if ((VOS_TRUE != bRpAddr)
      && (MN_MSG_TON_ALPHANUMERIC == pstAsciiAddr->enNumType))
     {
-        /* Modified by f62575 for V9R1 STK升级, 2013-6-26, begin */
         ulRet = TAF_STD_UnPack7Bit(&(pucAddr[ulPos]),
                                    pstAsciiAddr->ulLen,
                                    0,
@@ -389,7 +384,6 @@ VOS_UINT32 MN_MSG_DecodeAddress(
             ulRet = MN_ERR_NO_ERROR;
         }
 
-        /* Modified by f62575 for V9R1 STK升级, 2013-6-26, end */
         pstAsciiAddr->ulLen = (pstAsciiAddr->ulLen * 4)/7;
     }
     else
@@ -748,7 +742,6 @@ LOCAL VOS_UINT32 MN_MSG_UnpackSmWithOutUdh(
     if ((MN_MSG_MSG_CODING_7_BIT == pstDcsInfo->enMsgCoding)
      && (VOS_TRUE != pstDcsInfo->bCompressed))
     {
-        /* Modified by f62575 for V9R1 STK升级, 2013-6-26, begin */
         ulRet = TAF_STD_UnPack7Bit(&pucUserData[ulPos],
                                    ucUdl,
                                    0,
@@ -762,7 +755,6 @@ LOCAL VOS_UINT32 MN_MSG_UnpackSmWithOutUdh(
         {
             ulRet = MN_ERR_NO_ERROR;
         }
-        /* Modified by f62575 for V9R1 STK升级, 2013-6-26, end */
     }
     else
     {
@@ -837,7 +829,6 @@ LOCAL VOS_UINT32 MN_MSG_UpackSmWithUdh(
             return MN_ERR_CLASS_SMS_MSGLEN_OVERFLOW;
         }
         *pulLen = ucUdl - ((((ucUdhl + 1) * 8) + 6)/7);
-        /* Modified by f62575 for V9R1 STK升级, 2013-6-26, begin */
         ulRet = TAF_STD_UnPack7Bit(&(pucUserData[ulPos]),
                                    *pulLen,
                                    ucFillBit,
@@ -850,7 +841,6 @@ LOCAL VOS_UINT32 MN_MSG_UpackSmWithUdh(
         {
             ulRet = MN_ERR_NO_ERROR;
         }
-        /* Modified by f62575 for V9R1 STK升级, 2013-6-26, end */
     }
     else
     {

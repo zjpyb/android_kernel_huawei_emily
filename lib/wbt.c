@@ -278,8 +278,9 @@ static int __latency_exceeded(struct rq_wb *rwb, struct blk_rq_stat *stat)
 		return LAT_EXCEEDED;
 	}
 
-	if (rwb->scale_step)
+	if (rwb->scale_step) {
 		trace_wbt_stat(rwb->bdi, stat);
+	}
 
 	return LAT_OK;
 }
@@ -493,11 +494,17 @@ static void __wbt_wait(struct rq_wb *rwb, unsigned long rw, spinlock_t *lock)
 /*lint -save -e715*/
 static inline bool wbt_should_throttle(struct rq_wb *rwb, unsigned int rw)
 {
+	const int op = rw >> BIO_OP_SHIFT;
 	/*
 	 * If not a WRITE (or a discard), do nothing
 	 */
-	if (!(rw & REQ_WRITE) || (rw & REQ_DISCARD) || (rw & REQ_META) || (rw & REQ_SYNC))
+	if ((op == REQ_OP_DISCARD) || (op != REQ_OP_WRITE)) {
 		return false;
+	}
+
+	if ((rw & REQ_META) || (rw & REQ_SYNC)){
+		return false;
+	}
 
 	/*
 	 * Don't throttle WRITE_ODIRECT
@@ -517,7 +524,7 @@ static inline bool wbt_should_throttle(struct rq_wb *rwb, unsigned int rw)
 bool wbt_need_kick_bio(struct bio *bio)
 {
 	return (bio->bi_vcnt == bio->bi_max_vecs)
-		&& (bio->bi_rw & REQ_NOMERGE);
+		&& (bio->bi_opf & REQ_NOMERGE);
 }
 
 static void wbt_add_inflight(struct rq_wb *rwb)

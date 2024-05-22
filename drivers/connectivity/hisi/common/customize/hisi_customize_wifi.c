@@ -70,143 +70,145 @@ wlan_customize_stru g_st_wlan_customize = {
 OAL_STATIC countryinfo_stru g_ast_country_info_table[] =
 {
     {REGDOMAIN_COMMON, {'0', '0'}}, // WORLD DOMAIN
-    {REGDOMAIN_FCC, {'A', 'D'}}, // ANDORRA
-    {REGDOMAIN_ETSI, {'A', 'E'}}, //UAE
-    {REGDOMAIN_ETSI, {'A', 'L'}}, //ALBANIA
-    {REGDOMAIN_ETSI, {'A', 'M'}}, //ARMENIA
-    {REGDOMAIN_ETSI, {'A', 'N'}}, //NETHERLANDS ANTILLES
-    {REGDOMAIN_FCC, {'A', 'R'}}, //ARGENTINA
-    {REGDOMAIN_FCC, {'A', 'S'}}, //AMERICAN SOMOA
-    {REGDOMAIN_ETSI, {'A', 'T'}}, //AUSTRIA
-    {REGDOMAIN_FCC, {'A', 'U'}}, //AUSTRALIA
-    {REGDOMAIN_ETSI , {'A', 'W'}}, //ARUBA
-    {REGDOMAIN_ETSI,  {'A', 'Z'}}, //AZERBAIJAN
-    {REGDOMAIN_ETSI, {'B', 'A'}}, //BOSNIA AND HERZEGOVINA
-    {REGDOMAIN_FCC, {'B', 'B'}}, //BARBADOS
-    {REGDOMAIN_ETSI, {'B', 'D'}}, //BANGLADESH
-    {REGDOMAIN_ETSI, { 'B', 'E'}}, //BELGIUM
-    {REGDOMAIN_ETSI, {'B', 'G'}}, //BULGARIA
-    {REGDOMAIN_ETSI, {'B', 'H'}}, //BAHRAIN
-    {REGDOMAIN_ETSI, {'B', 'L'}}, //
-    {REGDOMAIN_FCC, {'B', 'M'}}, //BERMUDA
-    {REGDOMAIN_ETSI, {'B', 'N'}}, //BRUNEI DARUSSALAM
-    {REGDOMAIN_ETSI, {'B', 'O'}}, //BOLIVIA
-    {REGDOMAIN_ETSI, {'B', 'R'}}, //BRAZIL
-    {REGDOMAIN_FCC, {'B', 'S'}}, //BAHAMAS
-    {REGDOMAIN_ETSI, {'B', 'Y'}}, //BELARUS
-    {REGDOMAIN_ETSI, {'B', 'Z'}}, //BELIZE
-    {REGDOMAIN_FCC, {'C', 'A'}}, //CANADA
-    {REGDOMAIN_ETSI, {'C', 'H'}}, //SWITZERLAND
-    {REGDOMAIN_ETSI, {'C', 'L'}}, //CHILE
+    {REGDOMAIN_FCC,    {'A', 'D'}}, // ANDORRA
+    {REGDOMAIN_COMMON, {'A', 'E'}}, //UAE
+    {REGDOMAIN_ETSI,   {'A', 'L'}}, //ALBANIA
+    {REGDOMAIN_COMMON, {'A', 'M'}}, //ARMENIA
+    {REGDOMAIN_COMMON, {'A', 'N'}}, //NETHERLANDS ANTILLES
+    {REGDOMAIN_FCC,    {'A', 'R'}}, //ARGENTINA
+    {REGDOMAIN_FCC,    {'A', 'S'}}, //AMERICAN SOMOA
+    {REGDOMAIN_ETSI,   {'A', 'T'}}, //AUSTRIA
+    {REGDOMAIN_FCC,    {'A', 'U'}}, //AUSTRALIA
+    {REGDOMAIN_COMMON ,{'A', 'W'}}, //ARUBA
+    {REGDOMAIN_COMMON, {'A', 'Z'}}, //AZERBAIJAN
+    {REGDOMAIN_ETSI,   {'B', 'A'}}, //BOSNIA AND HERZEGOVINA
+    {REGDOMAIN_FCC,    {'B', 'B'}}, //BARBADOS
+    {REGDOMAIN_COMMON, {'B', 'D'}}, //BANGLADESH
+    {REGDOMAIN_ETSI,   {'B', 'E'}}, //BELGIUM
+    {REGDOMAIN_ETSI,   {'B', 'G'}}, //BULGARIA
+    {REGDOMAIN_COMMON, {'B', 'H'}}, //BAHRAIN
+    {REGDOMAIN_COMMON, {'B', 'L'}}, //
+    {REGDOMAIN_FCC,    {'B', 'M'}}, //BERMUDA
+    {REGDOMAIN_COMMON, {'B', 'N'}}, //BRUNEI DARUSSALAM
+    {REGDOMAIN_COMMON, {'B', 'O'}}, //BOLIVIA
+    {REGDOMAIN_COMMON, {'B', 'R'}}, //BRAZIL
+    {REGDOMAIN_FCC,    {'B', 'S'}}, //BAHAMAS
+    {REGDOMAIN_COMMON, {'B', 'Y'}}, //BELARUS
+    {REGDOMAIN_COMMON, {'B', 'Z'}}, //BELIZE
+    {REGDOMAIN_FCC,    {'C', 'A'}}, //CANADA
+    {REGDOMAIN_ETSI,   {'C', 'H'}}, //SWITZERLAND
+    {REGDOMAIN_COMMON, {'C', 'L'}}, //CHILE
     {REGDOMAIN_COMMON, {'C', 'N'}}, //CHINA
-    {REGDOMAIN_FCC, {'C', 'O'}}, //COLOMBIA
-    {REGDOMAIN_ETSI, {'C', 'R'}}, //COSTA RICA
-    {REGDOMAIN_ETSI, {'C', 'S'}},
-    {REGDOMAIN_ETSI, {'C', 'Y'}}, //CYPRUS
-    {REGDOMAIN_ETSI, {'C', 'Z'}}, //CZECH REPUBLIC
-    {REGDOMAIN_ETSI, {'D', 'E'}}, //GERMANY
-    {REGDOMAIN_ETSI, {'D', 'K'}}, //DENMARK
-    {REGDOMAIN_FCC, {'D', 'O'}}, //DOMINICAN REPUBLIC
-    {REGDOMAIN_ETSI, {'D', 'Z'}}, //ALGERIA
-    {REGDOMAIN_ETSI, {'E', 'C'}}, //ECUADOR
-    {REGDOMAIN_ETSI, {'E', 'E'}}, //ESTONIA
-    {REGDOMAIN_ETSI, {'E', 'G'}}, //EGYPT
-    {REGDOMAIN_ETSI, {'E', 'S'}}, //SPAIN
-    {REGDOMAIN_ETSI, {'F', 'I'}}, //FINLAND
-    {REGDOMAIN_ETSI, {'F', 'R'}}, //FRANCE
-    {REGDOMAIN_ETSI, {'G', 'B'}}, //UNITED KINGDOM
-    {REGDOMAIN_FCC, {'G', 'D'}},  //GRENADA
-    {REGDOMAIN_ETSI, {'G', 'E'}}, //GEORGIA
-    {REGDOMAIN_ETSI, {'G', 'F'}}, //FRENCH GUIANA
-    {REGDOMAIN_ETSI, {'G', 'L'}}, //GREENLAND
-    {REGDOMAIN_ETSI, {'G', 'P'}}, //GUADELOUPE
-    {REGDOMAIN_ETSI, {'G', 'R'}}, //GREECE
-    {REGDOMAIN_FCC, {'G', 'T'}},  //GUATEMALA
-    {REGDOMAIN_FCC, {'G', 'U'}},  //GUAM
-    {REGDOMAIN_ETSI, {'H', 'U'}}, //HUNGARY
-    {REGDOMAIN_FCC, {'I', 'D'}},  //INDONESIA
-    {REGDOMAIN_ETSI, {'I', 'E'}}, //IRELAND
-    {REGDOMAIN_ETSI, {'I', 'L'}}, //ISRAEL
-    {REGDOMAIN_ETSI, {'I', 'N'}}, //INDIA
-    {REGDOMAIN_ETSI, {'I', 'R'}}, //IRAN, ISLAMIC REPUBLIC OF
-    {REGDOMAIN_ETSI, {'I', 'S'}}, //ICELNAD
-    {REGDOMAIN_ETSI, {'I', 'T'}}, //ITALY
-    {REGDOMAIN_FCC, {'J', 'M'}},  //JAMAICA
-    {REGDOMAIN_JAPAN, {'J', 'P'}}, //JAPAN
-    {REGDOMAIN_ETSI, {'J', 'O'}}, //JORDAN
-    {REGDOMAIN_ETSI, {'K', 'E'}}, //KENYA
-    {REGDOMAIN_ETSI, {'K', 'H'}}, //CAMBODIA
-    {REGDOMAIN_ETSI, {'K', 'P'}}, //KOREA, DEMOCRATIC PEOPLE's REPUBLIC OF
-    {REGDOMAIN_ETSI, {'K', 'R'}}, //KOREA, REPUBLIC OF
-    {REGDOMAIN_ETSI, {'K', 'W'}}, //KUWAIT
-    {REGDOMAIN_ETSI, {'K', 'Z'}}, //KAZAKHSTAN
-    {REGDOMAIN_ETSI, {'L', 'B'}}, //LEBANON
-    {REGDOMAIN_ETSI, {'L', 'I'}}, //LIECHTENSTEIN
-    {REGDOMAIN_ETSI, {'L', 'K'}}, //SRI-LANKA
-    {REGDOMAIN_ETSI, {'L', 'T'}}, //LITHUANIA
-    {REGDOMAIN_ETSI, {'L', 'U'}}, //LUXEMBOURG
-    {REGDOMAIN_ETSI, {'L','V'}},  //LATVIA
-    {REGDOMAIN_ETSI, {'M', 'A'}}, //MOROCCO
-    {REGDOMAIN_ETSI, {'M', 'C'}}, //MONACO
-    {REGDOMAIN_ETSI, {'M', 'K'}}, //MACEDONIA, THE FORMER YUGOSLAV REPUBLIC OF
-    {REGDOMAIN_FCC, {'M','N'}}, //MONGOLIA
-    {REGDOMAIN_FCC, {'M', 'O'}}, //MACAO
-    {REGDOMAIN_FCC, {'M', 'P'}}, //NORTHERN MARIANA ISLANDS
-    {REGDOMAIN_ETSI, {'M', 'Q'}}, //MARTINIQUE
-    {REGDOMAIN_FCC, {'M', 'T'}}, //MALTA
-    {REGDOMAIN_ETSI, {'M', 'U'}}, //MAURITIUS
-    {REGDOMAIN_ETSI, {'M', 'W'}}, //MALAWI
-    {REGDOMAIN_FCC, {'M', 'X'}}, //MEXICO
-    {REGDOMAIN_ETSI, {'M', 'Y'}}, //MALAYSIA
-    {REGDOMAIN_ETSI, {'N', 'G'}}, //NIGERIA
-    {REGDOMAIN_FCC, {'N', 'I'}}, //NICARAGUA
-    {REGDOMAIN_ETSI, {'N', 'L'}}, //NETHERLANDS
-    {REGDOMAIN_ETSI, {'N', 'O'}}, //NORWAY
-    {REGDOMAIN_ETSI, {'N', 'P'}}, //NEPAL
-    {REGDOMAIN_FCC, {'N', 'Z'}}, //NEW-ZEALAND
-    {REGDOMAIN_FCC, {'O', 'M'}}, //OMAN
-    {REGDOMAIN_FCC, {'P', 'A'}}, //PANAMA
-    {REGDOMAIN_ETSI, {'P', 'E'}}, //PERU
-    {REGDOMAIN_ETSI, {'P', 'F'}}, //FRENCH POLYNESIA
-    {REGDOMAIN_ETSI, {'P', 'G'}}, //PAPUA NEW GUINEA
-    {REGDOMAIN_FCC, {'P', 'H'}}, //PHILIPPINES
-    {REGDOMAIN_ETSI, {'P', 'K'}}, //PAKISTAN
-    {REGDOMAIN_ETSI, {'P', 'L'}}, //POLAND
-    {REGDOMAIN_FCC, {'P', 'R'}}, //PUERTO RICO
-    {REGDOMAIN_FCC, {'P', 'S'}}, //PALESTINIAN TERRITORY, OCCUPIED
-    {REGDOMAIN_ETSI, {'P', 'T'}}, //PORTUGAL
-    {REGDOMAIN_FCC, {'P', 'Y'}}, //PARAGUAY
-    {REGDOMAIN_ETSI, {'Q', 'A'}}, //QATAR
-    {REGDOMAIN_ETSI, {'R', 'E'}}, //REUNION
-    {REGDOMAIN_ETSI, {'R', 'O'}}, //ROMAINIA
-    {REGDOMAIN_ETSI, {'R', 'S'}}, //SERBIA
-    {REGDOMAIN_ETSI, {'R', 'U'}}, //RUSSIA
-    {REGDOMAIN_FCC, {'R', 'W'}}, //RWANDA
-    {REGDOMAIN_ETSI, {'S', 'A'}}, //SAUDI ARABIA
-    {REGDOMAIN_ETSI, {'S', 'E'}}, //SWEDEN
-    {REGDOMAIN_ETSI, {'S', 'G'}}, //SINGAPORE
-    {REGDOMAIN_ETSI, {'S', 'I'}}, //SLOVENNIA
-    {REGDOMAIN_ETSI, {'S', 'K'}}, //SLOVAKIA
-    {REGDOMAIN_ETSI, {'S', 'V'}}, //EL SALVADOR
-    {REGDOMAIN_ETSI, {'S', 'Y'}}, //SYRIAN ARAB REPUBLIC
-    {REGDOMAIN_ETSI, {'T', 'H'}}, //THAILAND
-    {REGDOMAIN_ETSI, {'T', 'N'}}, //TUNISIA
-    {REGDOMAIN_ETSI, {'T', 'R'}}, //TURKEY
-    {REGDOMAIN_ETSI, {'T', 'T'}}, //TRINIDAD AND TOBAGO
-    {REGDOMAIN_FCC, {'T', 'W'}}, //TAIWAN, PRIVINCE OF CHINA
-    {REGDOMAIN_FCC, {'T', 'Z'}}, //TANZANIA, UNITED REPUBLIC OF
-    {REGDOMAIN_ETSI, {'U', 'A'}}, //UKRAINE
-    {REGDOMAIN_ETSI, {'U', 'G'}}, //UGANDA
-    {REGDOMAIN_FCC, {'U', 'S'}}, //USA
-    {REGDOMAIN_ETSI, {'U', 'Y'}}, //URUGUAY
-    {REGDOMAIN_FCC, {'U', 'Z'}}, //UZBEKISTAN
-    {REGDOMAIN_ETSI, {'V', 'E'}}, //VENEZUELA
-    {REGDOMAIN_FCC, {'V', 'I'}}, //VIRGIN ISLANDS, US
-    {REGDOMAIN_ETSI, {'V', 'N'}}, //VIETNAM
-    {REGDOMAIN_ETSI, {'Y', 'E'}}, //YEMEN
-    {REGDOMAIN_ETSI, {'Y', 'T'}}, //MAYOTTE
-    {REGDOMAIN_ETSI, {'Z', 'A'}}, //SOUTH AFRICA
-    {REGDOMAIN_ETSI, {'Z', 'W'}}, //ZIMBABWE
+    {REGDOMAIN_FCC,    {'C', 'O'}}, //COLOMBIA
+    {REGDOMAIN_COMMON, {'C', 'R'}}, //COSTA RICA
+    {REGDOMAIN_COMMON, {'C', 'S'}},
+    {REGDOMAIN_ETSI,   {'C', 'Y'}}, //CYPRUS
+    {REGDOMAIN_ETSI,   {'C', 'Z'}}, //CZECH REPUBLIC
+    {REGDOMAIN_ETSI,   {'D', 'E'}}, //GERMANY
+    {REGDOMAIN_ETSI,   {'D', 'K'}}, //DENMARK
+    {REGDOMAIN_FCC,    {'D', 'O'}}, //DOMINICAN REPUBLIC
+    {REGDOMAIN_COMMON, {'D', 'Z'}}, //ALGERIA
+    {REGDOMAIN_COMMON, {'E', 'C'}}, //ECUADOR
+    {REGDOMAIN_ETSI,   {'E', 'E'}}, //ESTONIA
+    {REGDOMAIN_COMMON, {'E', 'G'}}, //EGYPT
+    {REGDOMAIN_ETSI,   {'E', 'S'}}, //SPAIN
+    {REGDOMAIN_ETSI,   {'F', 'I'}}, //FINLAND
+    {REGDOMAIN_ETSI,   {'F', 'R'}}, //FRANCE
+    {REGDOMAIN_ETSI,   {'G', 'B'}}, //UNITED KINGDOM
+    {REGDOMAIN_FCC,    {'G', 'D'}},  //GRENADA
+    {REGDOMAIN_COMMON, {'G', 'E'}}, //GEORGIA
+    {REGDOMAIN_COMMON, {'G', 'F'}}, //FRENCH GUIANA
+    {REGDOMAIN_COMMON, {'G', 'L'}}, //GREENLAND
+    {REGDOMAIN_COMMON, {'G', 'P'}}, //GUADELOUPE
+    {REGDOMAIN_ETSI,   {'G', 'R'}}, //GREECE
+    {REGDOMAIN_FCC,    {'G', 'T'}},  //GUATEMALA
+    {REGDOMAIN_FCC,    {'G', 'U'}},  //GUAM
+    {REGDOMAIN_ETSI,   {'H', 'R'}}, //Croatia
+    {REGDOMAIN_ETSI,   {'H', 'U'}}, //HUNGARY
+    {REGDOMAIN_FCC,    {'I', 'D'}},  //INDONESIA
+    {REGDOMAIN_ETSI,   {'I', 'E'}}, //IRELAND
+    {REGDOMAIN_COMMON, {'I', 'L'}}, //ISRAEL
+    {REGDOMAIN_COMMON, {'I', 'N'}}, //INDIA
+    {REGDOMAIN_COMMON, {'I', 'R'}}, //IRAN, ISLAMIC REPUBLIC OF
+    {REGDOMAIN_ETSI,   {'I', 'S'}}, //ICELNAD
+    {REGDOMAIN_ETSI,   {'I', 'T'}}, //ITALY
+    {REGDOMAIN_FCC,    {'J', 'M'}},  //JAMAICA
+    {REGDOMAIN_JAPAN,  {'J', 'P'}}, //JAPAN
+    {REGDOMAIN_COMMON, {'J', 'O'}}, //JORDAN
+    {REGDOMAIN_COMMON, {'K', 'E'}}, //KENYA
+    {REGDOMAIN_COMMON, {'K', 'H'}}, //CAMBODIA
+    {REGDOMAIN_COMMON, {'K', 'P'}}, //KOREA, DEMOCRATIC PEOPLE's REPUBLIC OF
+    {REGDOMAIN_COMMON, {'K', 'R'}}, //KOREA, REPUBLIC OF
+    {REGDOMAIN_COMMON, {'K', 'W'}}, //KUWAIT
+    {REGDOMAIN_COMMON, {'K', 'Z'}}, //KAZAKHSTAN
+    {REGDOMAIN_COMMON, {'L', 'B'}}, //LEBANON
+    {REGDOMAIN_COMMON, {'L', 'I'}}, //LIECHTENSTEIN
+    {REGDOMAIN_COMMON, {'L', 'K'}}, //SRI-LANKA
+    {REGDOMAIN_ETSI,   {'L', 'T'}}, //LITHUANIA
+    {REGDOMAIN_ETSI,   {'L', 'U'}}, //LUXEMBOURG
+    {REGDOMAIN_ETSI,   {'L', 'V'}}, //LATVIA
+    {REGDOMAIN_COMMON, {'M', 'A'}}, //MOROCCO
+    {REGDOMAIN_COMMON, {'M', 'C'}}, //MONACO
+    {REGDOMAIN_ETSI,   {'M', 'E'}}, //Montenegro
+    {REGDOMAIN_ETSI,   {'M', 'K'}}, //MACEDONIA, THE FORMER YUGOSLAV REPUBLIC OF
+    {REGDOMAIN_FCC,    {'M','N'}}, //MONGOLIA
+    {REGDOMAIN_FCC,    {'M', 'O'}}, //MACAO
+    {REGDOMAIN_FCC,    {'M', 'P'}}, //NORTHERN MARIANA ISLANDS
+    {REGDOMAIN_COMMON, {'M', 'Q'}}, //MARTINIQUE
+    {REGDOMAIN_ETSI,   {'M', 'T'}}, //MALTA
+    {REGDOMAIN_COMMON, {'M', 'U'}}, //MAURITIUS
+    {REGDOMAIN_COMMON, {'M', 'W'}}, //MALAWI
+    {REGDOMAIN_FCC,    {'M', 'X'}}, //MEXICO
+    {REGDOMAIN_COMMON, {'M', 'Y'}}, //MALAYSIA
+    {REGDOMAIN_COMMON, {'N', 'G'}}, //NIGERIA
+    {REGDOMAIN_FCC,    {'N', 'I'}}, //NICARAGUA
+    {REGDOMAIN_ETSI,   {'N', 'L'}}, //NETHERLANDS
+    {REGDOMAIN_ETSI,   {'N', 'O'}}, //NORWAY
+    {REGDOMAIN_COMMON, {'N', 'P'}}, //NEPAL
+    {REGDOMAIN_FCC,    {'N', 'Z'}}, //NEW-ZEALAND
+    {REGDOMAIN_FCC,    {'O', 'M'}}, //OMAN
+    {REGDOMAIN_FCC,    {'P', 'A'}}, //PANAMA
+    {REGDOMAIN_COMMON, {'P', 'E'}}, //PERU
+    {REGDOMAIN_COMMON, {'P', 'F'}}, //FRENCH POLYNESIA
+    {REGDOMAIN_COMMON, {'P', 'G'}}, //PAPUA NEW GUINEA
+    {REGDOMAIN_FCC,    {'P', 'H'}}, //PHILIPPINES
+    {REGDOMAIN_COMMON, {'P', 'K'}}, //PAKISTAN
+    {REGDOMAIN_ETSI,   {'P', 'L'}}, //POLAND
+    {REGDOMAIN_FCC,    {'P', 'R'}}, //PUERTO RICO
+    {REGDOMAIN_FCC,    {'P', 'S'}}, //PALESTINIAN TERRITORY, OCCUPIED
+    {REGDOMAIN_ETSI,   {'P', 'T'}}, //PORTUGAL
+    {REGDOMAIN_FCC,    {'P', 'Y'}}, //PARAGUAY
+    {REGDOMAIN_COMMON, {'Q', 'A'}}, //QATAR
+    {REGDOMAIN_COMMON, {'R', 'E'}}, //REUNION
+    {REGDOMAIN_ETSI,   {'R', 'O'}}, //ROMAINIA
+    {REGDOMAIN_COMMON, {'R', 'S'}}, //SERBIA
+    {REGDOMAIN_COMMON, {'R', 'U'}}, //RUSSIA
+    {REGDOMAIN_FCC,    {'R', 'W'}}, //RWANDA
+    {REGDOMAIN_COMMON, {'S', 'A'}}, //SAUDI ARABIA
+    {REGDOMAIN_ETSI,   {'S', 'E'}}, //SWEDEN
+    {REGDOMAIN_COMMON, {'S', 'G'}}, //SINGAPORE
+    {REGDOMAIN_ETSI,   {'S', 'I'}}, //SLOVENNIA
+    {REGDOMAIN_ETSI,   {'S', 'K'}}, //SLOVAKIA
+    {REGDOMAIN_COMMON, {'S', 'V'}}, //EL SALVADOR
+    {REGDOMAIN_COMMON, {'S', 'Y'}}, //SYRIAN ARAB REPUBLIC
+    {REGDOMAIN_COMMON, {'T', 'H'}}, //THAILAND
+    {REGDOMAIN_COMMON, {'T', 'N'}}, //TUNISIA
+    {REGDOMAIN_ETSI,   {'T', 'R'}}, //TURKEY
+    {REGDOMAIN_COMMON, {'T', 'T'}}, //TRINIDAD AND TOBAGO
+    {REGDOMAIN_FCC,    {'T', 'W'}}, //TAIWAN, PRIVINCE OF CHINA
+    {REGDOMAIN_FCC,    {'T', 'Z'}}, //TANZANIA, UNITED REPUBLIC OF
+    {REGDOMAIN_COMMON, {'U', 'A'}}, //UKRAINE
+    {REGDOMAIN_COMMON, {'U', 'G'}}, //UGANDA
+    {REGDOMAIN_FCC,    {'U', 'S'}}, //USA
+    {REGDOMAIN_COMMON, {'U', 'Y'}}, //URUGUAY
+    {REGDOMAIN_FCC,    {'U', 'Z'}}, //UZBEKISTAN
+    {REGDOMAIN_COMMON, {'V', 'E'}}, //VENEZUELA
+    {REGDOMAIN_FCC,    {'V', 'I'}}, //VIRGIN ISLANDS, US
+    {REGDOMAIN_COMMON, {'V', 'N'}}, //VIETNAM
+    {REGDOMAIN_COMMON, {'Y', 'E'}}, //YEMEN
+    {REGDOMAIN_COMMON, {'Y', 'T'}}, //MAYOTTE
+    {REGDOMAIN_COMMON, {'Z', 'A'}}, //SOUTH AFRICA
+    {REGDOMAIN_COMMON, {'Z', 'W'}}, //ZIMBABWE
 
     {REGDOMAIN_COUNT,{'9','9'}},
 };
@@ -218,8 +220,8 @@ OAL_STATIC countryinfo_stru g_ast_country_info_table[] =
 OAL_STATIC regdomain_plat_tag_map_stru g_ast_plat_tag_mapping_table[] =
 {
         {REGDOMAIN_FCC,     INI_MODU_POWER_FCC},        //FCC
-        {REGDOMAIN_ETSI,    INI_MODU_POWER_ETSI},       //ETSI
-        {REGDOMAIN_JAPAN,   INI_MODU_POWER_JP},         //JP
+        {REGDOMAIN_ETSI,    INI_MODU_WIFI},             //ETSI
+        {REGDOMAIN_JAPAN,   INI_MODU_WIFI},             //JP
         {REGDOMAIN_COMMON,  INI_MODU_WIFI},             //COMMON
 
         {REGDOMAIN_COUNT,   INI_MODU_INVALID}
@@ -289,6 +291,9 @@ OAL_STATIC wlan_cfg_cmd g_ast_wifi_config_dts[] =
     {"cali_txpwr_pa_fre7",                                   WLAN_CFG_DTS_BT_CALI_TXPWR_PA_FRE7},
     {"cali_txpwr_pa_fre8",                                   WLAN_CFG_DTS_BT_CALI_TXPWR_PA_FRE8},
     {"cali_bt_tone_amp_grade",                               WLAN_CFG_DTS_BT_CALI_TONE_AMP_GRADE},
+
+    /* 修复边带发送功率定制化参数 */
+    {"band_edge_limit_txpwr_fix",                            WLAN_CFG_DTS_BAND_EDGE_LIMIT_TXPWR_FIX},
 
     {OAL_PTR_NULL, 0}
 };
@@ -398,6 +403,17 @@ OAL_STATIC wlan_cfg_cmd g_ast_wifi_config_cmds[] =
 #ifdef _PRE_WLAN_DOWNLOAD_PM
     {"download_rate_limit_pps",         WLAN_CFG_INIT_DOWNLOAD_RATE_LIMIT_PPS},
 #endif
+    /* TCP ACK 优化 启动、关闭门限 */
+    {"tcp_ack_opt_on_th",                           WLAN_CFG_INIT_TCP_ACK_OPT_ON_TH},
+    {"tcp_ack_opt_off_th",                          WLAN_CFG_INIT_TCP_ACK_OPT_OFF_TH},
+    {"btcoex_ps_switch",                  WLAN_CFG_INIT_BTCOEX_PS_SWITCH},
+
+    /* CE 高band(ch149~ch165) 发送功率限制 */
+    {"ce_5g_high_band_txpwr",                       WLAN_CFG_INIT_CE_5G_HIGH_BAND_TXPWR},
+    {"ce_5g_high_band_11a_ht20_vht20_dbb_scaling",  WLAN_CFG_INIT_CE_5G_HIGH_BAND_11A_HT20_VHT20_DBB_SCALING},
+    {"ce_5g_high_band_ht40_vht40_dbb_scaling",      WLAN_CFG_INIT_CE_5G_HIGH_BAND_HT40_VHT40_DBB_SCALING},
+    {"ce_5g_high_band_vht80_dbb_scaling",           WLAN_CFG_INIT_CE_5G_HIGH_BAND_VHT80_DBB_SCALING},
+
     {OAL_PTR_NULL, 0}
 };
 
@@ -458,6 +474,7 @@ OAL_STATIC oal_void original_value_for_dts_params(oal_void)
     g_al_dts_params[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_5G_VAL_BAND7]     = 3800;
     g_al_dts_params[WLAN_CFG_DTS_CALI_TONE_AMP_GRADE]                   = 2;
     /* FCC认证 */
+    g_al_dts_params[WLAN_CFG_DTS_BAND_EDGE_LIMIT_TXPWR_FIX]                         = 0;
     g_al_dts_params[WLAN_CFG_DTS_BAND_EDGE_LIMIT_2G_11G_TXPWR]                      = 150;
     g_al_dts_params[WLAN_CFG_DTS_BAND_EDGE_LIMIT_2G_11N_HT20_TXPWR]                 = 150;
     g_al_dts_params[WLAN_CFG_DTS_BAND_EDGE_LIMIT_2G_11N_HT40_TXPWR]                 = 150;
@@ -603,10 +620,21 @@ OAL_STATIC oal_void host_params_init_first(oal_void)
 #ifdef _PRE_WLAN_DOWNLOAD_PM
     g_al_host_init_params[WLAN_CFG_INIT_DOWNLOAD_RATE_LIMIT_PPS]           = 0;
 #endif
+    /* TCP ACK 优化启动、停止 定制化参数 */
+    g_al_host_init_params[WLAN_CFG_INIT_TCP_ACK_OPT_ON_TH]              = 0;
+    g_al_host_init_params[WLAN_CFG_INIT_TCP_ACK_OPT_OFF_TH]             = 0;
+    g_al_host_init_params[WLAN_CFG_INIT_BTCOEX_PS_SWITCH]                  = 1;
+
+    /* CE 5G 高band 定制化参数 */
+    g_al_host_init_params[WLAN_CFG_INIT_CE_5G_HIGH_BAND_TXPWR]                        = 0xFF;
+    g_al_host_init_params[WLAN_CFG_INIT_CE_5G_HIGH_BAND_11A_HT20_VHT20_DBB_SCALING]   = 0x4c;/* 待定 */
+    g_al_host_init_params[WLAN_CFG_INIT_CE_5G_HIGH_BAND_HT40_VHT40_DBB_SCALING]       = 0x4c;/* 待定 */
+    g_al_host_init_params[WLAN_CFG_INIT_CE_5G_HIGH_BAND_VHT80_DBB_SCALING]            = 0x4c;/* 待定 */
+
 }
 
 
-OAL_STATIC regdomain_enum hwifi_get_regdomain_from_country_code(const countrycode_t country_code)
+regdomain_enum hwifi_get_regdomain_from_country_code_1102(const countrycode_t country_code)
 {
     regdomain_enum  en_regdomain = REGDOMAIN_COMMON;
     int32           table_idx = 0;
@@ -615,10 +643,11 @@ OAL_STATIC regdomain_enum hwifi_get_regdomain_from_country_code(const countrycod
     {
         if (0 == oal_memcmp(country_code, g_ast_country_info_table[table_idx].auc_country_code, COUNTRY_CODE_LEN))
         {
-            // en_regdomain = g_ast_country_info_table[table_idx].en_regdomain;
+            /* 识别CE/FCC/NORMAL 区域 */
+            en_regdomain = g_ast_country_info_table[table_idx].en_regdomain;
 
             /* 目前只区分FCC和非FCC */
-            en_regdomain = (g_ast_country_info_table[table_idx].en_regdomain == REGDOMAIN_FCC) ? REGDOMAIN_FCC : REGDOMAIN_COMMON;
+            //en_regdomain = (g_ast_country_info_table[table_idx].en_regdomain == REGDOMAIN_FCC) ? REGDOMAIN_FCC : REGDOMAIN_COMMON;
             break;
         }
         ++table_idx;
@@ -630,7 +659,7 @@ OAL_STATIC regdomain_enum hwifi_get_regdomain_from_country_code(const countrycod
 
 int32 hwifi_is_regdomain_changed(const countrycode_t country_code_old, const countrycode_t country_code_new)
 {
-    return hwifi_get_regdomain_from_country_code(country_code_old) != hwifi_get_regdomain_from_country_code(country_code_new);
+    return hwifi_get_regdomain_from_country_code_1102(country_code_old) != hwifi_get_regdomain_from_country_code_1102(country_code_new);
 }
 
 
@@ -639,7 +668,7 @@ OAL_STATIC int32 hwifi_get_plat_tag_from_country_code(const countrycode_t countr
     regdomain_enum  en_regdomain;
     int32           table_idx = 0;
 
-    en_regdomain = hwifi_get_regdomain_from_country_code(country_code);
+    en_regdomain = hwifi_get_regdomain_from_country_code_1102(country_code);
 
     while(g_ast_plat_tag_mapping_table[table_idx].en_regdomain != REGDOMAIN_COUNT
         && g_ast_plat_tag_mapping_table[table_idx].plat_tag != INI_MODU_INVALID)
@@ -701,7 +730,7 @@ OAL_STATIC int32 hwifi_config_init_nvram(void)
 
     if (OAL_FALSE == en_nvm_initialed)
     {
-        if (hwifi_get_regdomain_from_country_code(hwifi_get_country_code()) != REGDOMAIN_FCC)
+        if (hwifi_get_regdomain_from_country_code_1102(hwifi_get_country_code()) != REGDOMAIN_FCC)
         {
             l_ret = get_cust_conf_string(CUST_MODU_NVRAM, OAL_PTR_NULL, g_auc_nv_params, sizeof(g_auc_nv_params));
 
@@ -723,7 +752,7 @@ OAL_STATIC int32 hwifi_config_init_nvram(void)
     /* read nvm failed or data not exist or country_code updated, read ini:cust_spec > cust_common > default */
     /* find plat tag */
     l_plat_tag = hwifi_get_plat_tag_from_country_code(hwifi_get_country_code());
-    OAM_WARNING_LOG1(0, OAM_SF_ANY, "hwifi_config_init_nvram plat_tag:0x%2x!", l_plat_tag);
+    OAM_WARNING_LOG1(0, OAM_SF_ANY, "hwifi_config_init_nvram plat_tag:0x%x!", l_plat_tag);
 
     for (l_cfg_id = NVRAM_PARAMS_INDEX_0; l_cfg_id < NVRAM_PARAMS_INDEX_BUTT; l_cfg_id++)
     {
@@ -789,7 +818,7 @@ int32 hwifi_config_init(int32 cus_tag)
 
         l_ori_val = pgal_params[l_cfg_id];
         pgal_params[l_cfg_id] = l_cfg_value;
-        OAM_WARNING_LOG3(0, OAM_SF_ANY, "hisi_customize_wifi [cfg_id:%d]value changed from [init:%d] to [config:%d]. \n", l_cfg_id, l_ori_val, pgal_params[l_cfg_id]);
+        OAM_INFO_LOG3(0, OAM_SF_ANY, "hisi_customize_wifi [cfg_id:%d]value changed from [init:%d] to [config:%d]. \n", l_cfg_id, l_ori_val, pgal_params[l_cfg_id]);
     }
 
     return INI_SUCC;
@@ -984,6 +1013,7 @@ EXPORT_SYMBOL_GPL(hwifi_get_country_code);
 EXPORT_SYMBOL_GPL(hwifi_get_nvram_params);
 EXPORT_SYMBOL_GPL(hwifi_fetch_ori_caldata);
 EXPORT_SYMBOL_GPL(hwifi_set_country_code);
+EXPORT_SYMBOL_GPL(hwifi_get_regdomain_from_country_code_1102);
 EXPORT_SYMBOL_GPL(hwifi_is_regdomain_changed);
 EXPORT_SYMBOL_GPL(hwifi_atcmd_update_host_nv_params);
 

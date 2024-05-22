@@ -57,7 +57,6 @@ extern "C" {
 #endif
 
 #pragma pack(4)
-/* Added by f62575 for AT Project, 2011-10-24, begin */
 
 /* LOCAL */
 #ifdef  LOCAL
@@ -69,7 +68,6 @@ extern "C" {
 #else
 #define LOCAL static
 #endif
-/* Added by f62575 for AT Project, 2011-10-24, end */
 
 
 /* ---------------LogSaver可维可测功能相关定义----------------------- */
@@ -367,9 +365,7 @@ typedef TAF_UINT8 TAF_PARA_TYPE;
 #define TAF_PH_OPL_RANGE_PARA            127
 
 
-/* Added by f62575 for B050 Project, 2012-2-3, Begin   */
 #define TAF_PH_SIMLOCK_VALUE_PARA        (137)                                  /*^SIMLOCK=2获取数据卡的锁卡状态 */
-/* Added by f62575 for B050 Project, 2012-2-3, end   */
 
 
 #define TAF_TELE_PARA_BUTT               (142)
@@ -379,7 +375,6 @@ typedef TAF_UINT8 TAF_PARA_TYPE;
 /*内部使用的参数查询宏定义*/
 #define TAF_MMA_AT_QUERY_PARA_BEGIN (TAF_TELE_PARA_BUTT + 1)/*137*/
 
-/* Modified by l60609 for 64bit , 2014-04-10, begin */
 
 /*获取手机漫游状态*/
 #define  TAF_PH_ROAM_STATUS_PARA    (TAF_MMA_AT_QUERY_PARA_BEGIN + 1)/*138*/
@@ -393,7 +388,6 @@ typedef TAF_UINT8 TAF_PARA_TYPE;
 /*产品名称，GMM，CGMM使用*/
 #define  TAF_PH_PRODUCT_NAME_PARA   (TAF_PH_GMR_PARA + 1)/*141*/
 
-/* Modified by l60609 for 64bit , 2014-04-10, end */
 
 /*参数设置结果*/
 typedef TAF_UINT8 TAF_PARA_SET_RESULT;

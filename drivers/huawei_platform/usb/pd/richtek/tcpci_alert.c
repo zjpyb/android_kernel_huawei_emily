@@ -393,10 +393,10 @@ int tcpci_set_wake_lock(
 
 	if (new_lock != ori_lock) {
 		if (new_lock) {
-			TCPC_DBG("wake_lock=1\r\n");
+			TCPC_INFO("wake_lock=1\r\n");
 			wake_lock(&tcpc->attach_wake_lock);
 		} else {
-			TCPC_DBG("wake_lock=0\r\n");
+			TCPC_INFO("wake_lock=0\r\n");
 			wake_unlock(&tcpc->attach_wake_lock);
 		}
 	}
@@ -434,7 +434,13 @@ static inline int tcpci_report_usb_port_attached(struct tcpc_device *tcpc)
 {
 	TCPC_INFO("usb_port_attached\r\n");
 
-	tcpci_set_wake_lock_pd(tcpc, true);
+	switch (tcpc->typec_attach_new) {
+	case TYPEC_ATTACHED_AUDIO:
+		break;
+	default:
+		tcpci_set_wake_lock_pd(tcpc, true);
+		break;
+	}
 
 #ifdef CONFIG_USB_POWER_DELIVERY
 	pd_put_cc_attached_event(tcpc, tcpc->typec_attach_new);
@@ -469,6 +475,8 @@ int tcpci_report_usb_port_changed(struct tcpc_device *tcpc)
 		tcpc->dual_role_vconn = DUAL_ROLE_PROP_VCONN_SUPPLY_NO;
 		break;
 	case TYPEC_ATTACHED_SNK:
+	case TYPEC_ATTACHED_CUSTOM_SRC:
+	case TYPEC_ATTACHED_DBGACC_SNK:
 		tcpc->dual_role_pr = DUAL_ROLE_PROP_PR_SNK;
 		tcpc->dual_role_dr = DUAL_ROLE_PROP_DR_DEVICE;
 		tcpc->dual_role_mode = DUAL_ROLE_PROP_MODE_UFP;

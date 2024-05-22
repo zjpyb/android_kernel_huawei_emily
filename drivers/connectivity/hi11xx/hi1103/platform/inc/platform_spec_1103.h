@@ -259,6 +259,10 @@ extern "C" {
 #ifdef _PRE_WLAN_FEATURE_HILINK
 #define WLAN_OKC_IE_MAX_SIZE                WLAN_MEM_EVENT_SIZE2 - 32   /* 32表示事件自身占用的空间 */
 #endif
+#ifdef _PRE_WLAN_FEATURE_M2S
+#define WLAN_M2S_IE_MAX_SIZE                WLAN_WPS_IE_MAX_SIZE
+#endif
+
 /*****************************************************************************
   2.4.7 用户内存池
 *****************************************************************************/
@@ -381,8 +385,8 @@ extern "C" {
 /*****************************************************************************
   2.4.11 TCP ACK优化
 *****************************************************************************/
-
-#define DEFAULT_TX_TCP_ACK_OPT_ENABLE (OAL_TRUE)
+/* tcp ack过滤功能不再默认打开，根据流量调整 */
+#define DEFAULT_TX_TCP_ACK_OPT_ENABLE (OAL_FALSE)
 #define DEFAULT_RX_TCP_ACK_OPT_ENABLE (OAL_FALSE)
 #define DEFAULT_TX_TCP_ACK_THRESHOLD (1) /*丢弃发送ack 的门限*/
 #define DEFAULT_RX_TCP_ACK_THRESHOLD (1) /*丢弃接收ack 的门限*/

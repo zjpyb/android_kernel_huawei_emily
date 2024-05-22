@@ -47,6 +47,7 @@ typedef void                    oal_void;
 #define LINUX_VERSION_CODE    0x30000 /* TBD  Hi1102 需要修改 */
 #define KERNEL_VERSION(a,b,c) (((a) << 16) + ((b) << 8) + (c))
 
+#define HZ 1000
 
 /*****************************************************************************
   4 枚举定义

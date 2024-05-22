@@ -24,8 +24,10 @@
 #include <linux/syscalls.h>
 #include <linux/rtc.h>
 #include <linux/statfs.h>
+#include <linux/delay.h>
 #include <chipset_common/bfmr/public/bfmr_public.h>
 #include <chipset_common/bfmr/common/bfmr_common.h>
+#include <log/log_usertype/log-usertype.h>
 
 
 /*----local macroes------------------------------------------------------------------*/
@@ -34,6 +36,7 @@
 #define BFMR_CRC32_MULTINOMIAL_VALUE (0xedb88320)
 #define BFM_PROC_MOUNTS_PATH "/proc/mounts"
 #define BFM_RW_FLAGS "rw,"
+#define BFM_HISI_WAIT_FOR_VERSION_PART_TIMEOUT (40)
 
 
 /*----local prototypes----------------------------------------------------------------*/
@@ -1099,6 +1102,78 @@ int bfmr_read_rrecord_misc_msg(bfmr_rrecord_misc_msg_param_t *pparam)
 int bfmr_write_rrecord_misc_msg(bfmr_rrecord_misc_msg_param_t *pparam)
 {
     return bfmr_rw_rrecord_misc_msg(pparam, false);
+}
+
+
+char* bfm_get_boot_stage_name(unsigned int boot_stage)
+{
+    char *boot_stage_name = NULL;
+
+    if (bfmr_is_bl1_stage(boot_stage))/*lint !e648 */
+    {
+        boot_stage_name = "BL1";
+    }
+    else if (bfmr_is_bl2_stage(boot_stage))/*lint !e648 */
+    {
+        boot_stage_name = "BL2";
+    }
+    else if (bfmr_is_kernel_stage(boot_stage))/*lint !e648 */
+    {
+        boot_stage_name = "kernel";
+    }
+    else if (bfmr_is_native_stage(boot_stage))/*lint !e648 */
+    {
+            boot_stage_name = "native";
+    }
+    else if (bfmr_is_android_framework_stage(boot_stage))/*lint !e648 */
+    {
+        boot_stage_name = "framework";
+    }
+    else if (bfmr_is_boot_success(boot_stage))/*lint !e648 */
+    {
+        boot_stage_name = "boot-success";
+    }
+    else
+    {
+        boot_stage_name = "unknown";
+    }
+
+    return boot_stage_name;
+}
+
+
+static unsigned int bfm_get_version_type(void)
+{
+    int i;
+    unsigned int user_flag = 0;
+
+    for (i = 0; i < BFM_HISI_WAIT_FOR_VERSION_PART_TIMEOUT; i++)
+    {
+        user_flag = get_logusertype_flag();
+        if (0 != user_flag)
+        {
+            break;
+        }
+        msleep(1000);
+    }
+
+    return user_flag;
+}
+
+
+bool bfm_is_beta_version(void)
+{
+    unsigned int usertype = bfm_get_version_type();
+
+    return ((BETA_USER == usertype) || (OVERSEA_USER == usertype));
+}
+
+
+bool bfmr_is_oversea_commercail_version(void)
+{
+    unsigned int usertype = bfm_get_version_type();
+
+    return ((BETA_USER != usertype) && (OVERSEA_USER != usertype) && (COMMERCIAL_USER != usertype));
 }
 
 

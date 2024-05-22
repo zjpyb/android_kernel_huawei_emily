@@ -21,34 +21,35 @@
 #include "oal_hcc_host_if.h"
 #include "oal_ext_if.h"
 #include <linux/ktime.h>
-
+#include "chr_errno.h"
+#include "oam_rdr.h"
 
 /*****************************************************************************
   3 全局变量定义
 *****************************************************************************/
-struct st_exception_info *g_pst_exception_info = NULL;
-struct sdio_dump_bcpu_buff st_bcpu_dump_buff = {NULL, 0, 0};
-oal_netbuf_stru*       st_bcpu_dump_netbuf = NULL;
+struct st_exception_info *g_pst_exception_info_etc = NULL;
+struct sdio_dump_bcpu_buff st_bcpu_dump_buff_etc = {NULL, 0, 0};
+oal_netbuf_stru*       st_bcpu_dump_netbuf_etc = NULL;
 
 #if (_PRE_PRODUCT_ID != _PRE_PRODUCT_ID_HI1103_HOST)
-uint8 *g_bfgx_mem_file_name[BFGX_MEM_DUMP_BLOCK_COUNT] =
+uint8 *g_bfgx_mem_file_name_etc[BFGX_MEM_DUMP_BLOCK_COUNT] =
                             {
                                 "plat_nfc_stack",
                                 "fgb_stack",
                                 "bt_extra_mem",
                             };
 
-struct st_exception_mem_info g_pst_bfgx_mem_dump[BFGX_MEM_DUMP_BLOCK_COUNT] = {{0},{0},{0}};
+struct st_exception_mem_info g_pst_bfgx_mem_dump_etc[BFGX_MEM_DUMP_BLOCK_COUNT] = {{0},{0},{0}};
 #else
-uint8 *g_bfgx_mem_file_name[BFGX_MEM_DUMP_BLOCK_COUNT] =
+uint8 *g_bfgx_mem_file_name_etc[BFGX_MEM_DUMP_BLOCK_COUNT] =
                             {
                                 "bcpu_itcm_mem",
                                 "bcpu_dtcm_mem",
                             };
 
-struct st_exception_mem_info g_pst_bfgx_mem_dump[BFGX_MEM_DUMP_BLOCK_COUNT] = {{0},{0}};
+struct st_exception_mem_info g_pst_bfgx_mem_dump_etc[BFGX_MEM_DUMP_BLOCK_COUNT] = {{0},{0}};
 #endif
-uint32 g_recvd_block_count = 0;
+uint32 g_recvd_block_count_etc = 0;
 
 #define WIFI_PUB_REG_BLOCKS      (12)
 #define WIFI_PRIV_REG_BLOCKS     (9)
@@ -156,7 +157,7 @@ uint32 g_recvd_block_count = 0;
 #define BT_FM_SUB_FILE_NAME                             "bt_fm_sub"
 #define NFC_APB_FILE_NAME                               "nfc_apb"
 
-struct st_uart_dump_wifi_mem_info g_ast_wifi_pub_reg_info[WIFI_PUB_REG_BLOCKS] =
+struct st_uart_dump_wifi_mem_info g_ast_wifi_pub_reg_info_etc[WIFI_PUB_REG_BLOCKS] =
 {
     {"glb_ctl",       WIFI_PUB_GLB_CTL_LEN},
     {"pmu_cmu_ctl",   WIFI_PUB_PMU_CMU_CTL_LEN},
@@ -172,7 +173,7 @@ struct st_uart_dump_wifi_mem_info g_ast_wifi_pub_reg_info[WIFI_PUB_REG_BLOCKS] =
     {"aon_gpio_rtc",  WIFI_PUB_AON_GPIO_RTC_LEN},
 };
 
-struct st_uart_dump_wifi_mem_info g_ast_wifi_priv_reg_info[WIFI_PRIV_REG_BLOCKS] =
+struct st_uart_dump_wifi_mem_info g_ast_wifi_priv_reg_info_etc[WIFI_PRIV_REG_BLOCKS] =
 {
     {"w_ctl",         WIFI_PRIV_W_CTL_LEN},
     {"w_wdt",         WIFI_PRIV_W_WDT_LEN},
@@ -186,33 +187,33 @@ struct st_uart_dump_wifi_mem_info g_ast_wifi_priv_reg_info[WIFI_PRIV_REG_BLOCKS]
     /*{"w_dma",         WIFI_PRIV_W_DMA_LEN},*/
 };
 
-struct st_uart_dump_wifi_mem_info g_ast_wifi_mem_info[WIFI_MEM_BLOCKS] =
+struct st_uart_dump_wifi_mem_info g_ast_wifi_mem_info_etc[WIFI_MEM_BLOCKS] =
 {
     {"w_tcm_wram",      WIFI_MEM_W_TCM_WRAM_LEN},
     {"w_pkt_share_ram", WIFI_MEM_W_PKT_SHARE_RAM_LEN},
     {"b_share_ram",     WIFI_MEM_B_SHARE_RAM_LEN},
 };
 
-struct st_uart_dump_wifi_info g_uart_read_wifi_mem_info[UART_WIFI_MEM_DUMP_BOTTOM] =
+struct st_uart_dump_wifi_info g_uart_read_wifi_mem_info_etc[UART_WIFI_MEM_DUMP_BOTTOM] =
 {
-    {SYS_CFG_READ_WLAN_PUB_REG,  WIFI_PUB_REG_TOTAL_LEN,  WIFI_PUB_REG_BLOCKS,  g_ast_wifi_pub_reg_info},
-    {SYS_CFG_READ_WLAN_PRIV_REG, WIFI_PRIV_REG_TOTAL_LEN, WIFI_PRIV_REG_BLOCKS, g_ast_wifi_priv_reg_info},
-    {SYS_CFG_READ_WLAN_MEM,      WIFI_MEM_TOTAL_LEN,      WIFI_MEM_BLOCKS,      g_ast_wifi_mem_info},
+    {SYS_CFG_READ_WLAN_PUB_REG,  WIFI_PUB_REG_TOTAL_LEN,  WIFI_PUB_REG_BLOCKS,  g_ast_wifi_pub_reg_info_etc},
+    {SYS_CFG_READ_WLAN_PRIV_REG, WIFI_PRIV_REG_TOTAL_LEN, WIFI_PRIV_REG_BLOCKS, g_ast_wifi_priv_reg_info_etc},
+    {SYS_CFG_READ_WLAN_MEM,      WIFI_MEM_TOTAL_LEN,      WIFI_MEM_BLOCKS,      g_ast_wifi_mem_info_etc},
 };
 
-struct st_exception_mem_info g_pst_uart_wifi_mem_dump[UART_WIFI_MEM_DUMP_BOTTOM] = {{0},{0},{0}};
-uint32 g_recvd_wifi_block_index = UART_WIFI_MEM_DUMP_BOTTOM;
+struct st_exception_mem_info g_pst_uart_wifi_mem_dump_etc[UART_WIFI_MEM_DUMP_BOTTOM] = {{0},{0},{0}};
+uint32 g_recvd_wifi_block_index_etc = UART_WIFI_MEM_DUMP_BOTTOM;
 
-struct st_bfgx_reset_cmd g_ast_bfgx_reset_msg[BFGX_BUTT] =
+struct st_bfgx_reset_cmd g_ast_bfgx_reset_msg_etc[BFGX_BUTT] =
 {
     {BT_RESET_CMD_LEN,   {0x04,0xff,0x01,0xc7}},
     {FM_RESET_CMD_LEN,   {0xfb}},
-    {GNSS_RESET_CMD_LEN, {0xa1, 0xb4, 0xc7, 0x51, GNSS_SEPER_TAG_LAST}},
+    {GNSS_RESET_CMD_LEN, {0x8, 0x0 ,0x0, 0x0, 0xa1, 0xb4, 0xc7, 0x51, GNSS_SEPER_TAG_LAST}},
     {IR_RESET_CMD_LEN,   {0}},
     {NFC_RESET_CMD_LEN,  {0}},
 };
 
-exception_bcpu_dump_msg g_sdio_read_bcpu_pub_reg_info[BFGX_PUB_REG_NUM] =
+exception_bcpu_dump_msg g_sdio_read_bcpu_pub_reg_info_etc[BFGX_PUB_REG_NUM] =
 {
     {GLB_PMU_CMU_CTL_FILE_NAME,  BFGX_GLB_PMU_CMU_CTL_ADDR,   ALIGN_2_BYTE, BFGX_GLB_PMU_CMU_CTL_LEN},
     {RF_WB_CTL_FILE_NAME,        BFGX_RF_WB_CTL_ADDR,         ALIGN_2_BYTE, BFGX_RF_WB_CTL_LEN},
@@ -220,13 +221,13 @@ exception_bcpu_dump_msg g_sdio_read_bcpu_pub_reg_info[BFGX_PUB_REG_NUM] =
     {COEX_DIAG_COM_CTL_FILE_NAME,BFGX_COEX_DIAG_COM_CTL_ADDR, ALIGN_2_BYTE, BFGX_COEX_DIAG_COM_CTL_LEN},
     {AON_WB_GPIO_RTC_FILE_NAME  ,BFGX_AON_WB_GPIO_RTC_ADDR,   ALIGN_2_BYTE, BFGX_AON_WB_GPIO_RTC_LEN},
 };
-exception_bcpu_dump_msg g_sdio_read_bcpu_mem_info[BFGX_SHARE_RAM_NUM] =
+exception_bcpu_dump_msg g_sdio_read_bcpu_mem_info_etc[BFGX_SHARE_RAM_NUM] =
 {
     {PATCH_PLAT_NFC_BFGNI_SHARE_RAM_FILE_NAME, BFGX_PATCH_PLAT_NFC_BFGNI_SHARE_RAM_ADDR,
                                                                         ALIGN_1_BYTE, BFGX_PATCH_PLAT_NFC_BFGNI_SHARE_RAM_LEN},
     {W_SHARE_RAM_FILE_NAME,                    BFGX_W_SHARE_RAM_ADDR,   ALIGN_1_BYTE, BFGX_W_SHARE_RAM_LEN},
 };
-exception_bcpu_dump_msg g_sdio_read_bcpu_priv_reg_info[BFGX_PRIV_REG_NUM] =
+exception_bcpu_dump_msg g_sdio_read_bcpu_priv_reg_info_etc[BFGX_PRIV_REG_NUM] =
 {
 	/*私有寄存器只能拷贝2个*/
     //{GNSS_SUB_FILE_NAME,             BFGX_GNSS_SUB_ADDR,             ALIGN_2_BYTE, BFGX_GNSS_SUB_LEN},
@@ -237,7 +238,7 @@ exception_bcpu_dump_msg g_sdio_read_bcpu_priv_reg_info[BFGX_PRIV_REG_NUM] =
     //{NFC_APB_FILE_NAME,              BFGX_NFC_APB_ADDR,              ALIGN_2_BYTE, BFGX_NFC_APB_LEN},
 };
 
-exception_bcpu_dump_msg g_sdio_read_all[BFGX_PUB_REG_NUM + BFGX_SHARE_RAM_NUM + BFGX_PRIV_REG_NUM] =
+exception_bcpu_dump_msg g_sdio_read_all_etc[BFGX_PUB_REG_NUM + BFGX_SHARE_RAM_NUM + BFGX_PRIV_REG_NUM] =
 {
     {GLB_PMU_CMU_CTL_FILE_NAME,  BFGX_GLB_PMU_CMU_CTL_ADDR,   ALIGN_2_BYTE, BFGX_GLB_PMU_CMU_CTL_LEN},
     {RF_WB_CTL_FILE_NAME,        BFGX_RF_WB_CTL_ADDR,         ALIGN_2_BYTE, BFGX_RF_WB_CTL_LEN},
@@ -255,39 +256,44 @@ exception_bcpu_dump_msg g_sdio_read_all[BFGX_PUB_REG_NUM + BFGX_SHARE_RAM_NUM + 
     //{B_DMA_CFG_FILE_NAME,            BFGX_B_DMA_CFG_ADDR,            ALIGN_2_BYTE, BFGX_B_DMA_CFG_LEN},
 };
 
-uint8  g_plat_beatTimer_timeOut_reset_cfg = 0;
-extern struct oal_sdio* oal_alloc_sdio_stru(oal_void);
-
+uint8  g_plat_beatTimer_timeOut_reset_cfg_etc = 0;
+extern struct oal_sdio* oal_alloc_sdio_stru_etc(oal_void);
+extern int32 ssi_write16_etc(uint16 addr, uint16 value);
+uint8 gst_excp_test_cfg[EXCP_TEST_CFG_BOTT]={DFR_TEST_DISABLE,DFR_TEST_DISABLE,DFR_TEST_DISABLE,DFR_TEST_DISABLE};
+#ifdef HI110X_HAL_MEMDUMP_ENABLE
+memdump_info_t bcpu_memdump_cfg_etc;
+memdump_info_t wcpu_memdump_cfg_etc;
+#endif
 /*****************************************************************************
   2 函数实现
 *****************************************************************************/
-void  bfgx_beat_timer_expire(uint64 data);
-int32 get_exception_info_reference(struct st_exception_info **exception_data);
-int32 plat_exception_handler(uint32 subsys_type, uint32 thread_type, uint32 exception_type);
-void  plat_exception_reset_work(struct work_struct *work);
-int32 wifi_exception_handler(void);
-int32 wifi_subsystem_reset(void);
-int32 wifi_system_reset(void);
-int32 wifi_status_recovery(void);
-int32 wifi_exception_mem_dump(struct st_wifi_dump_mem_info *pst_mem_dump_info, uint32 count, oal_int32 excep_type);
-int32 bfgx_exception_handler(void);
-int32 bfgx_subthread_reset(void);
-int32 bfgx_subsystem_reset(void);
-int32 bfgx_system_reset(void);
-int32 bfgx_recv_dev_mem(uint8 *buf_ptr, uint16 count);
-int32 bfgx_store_stack_mem_to_file(void);
-void  bfgx_dump_stack(void);
-int32 bfgx_status_recovery(void);
-int32 plat_bfgx_exception_rst_register(struct ps_plat_s *data);
-int32 plat_exception_reset_init(void);
-int32 plat_exception_reset_exit(void);
+void  bfgx_beat_timer_expire_etc(uint64 data);
+int32 get_exception_info_reference_etc(struct st_exception_info **exception_data);
+int32 plat_exception_handler_etc(uint32 subsys_type, uint32 thread_type, uint32 exception_type);
+void  plat_exception_reset_work_etc(struct work_struct *work);
+int32 wifi_exception_handler_etc(void);
+int32 wifi_subsystem_reset_etc(void);
+int32 wifi_system_reset_etc(void);
+int32 wifi_status_recovery_etc(void);
+int32 wifi_exception_mem_dump_etc(struct st_wifi_dump_mem_info *pst_mem_dump_info, uint32 count, oal_int32 excep_type);
+int32 bfgx_exception_handler_etc(void);
+int32 bfgx_subthread_reset_etc(void);
+int32 bfgx_subsystem_reset_etc(void);
+int32 bfgx_system_reset_etc(void);
+int32 bfgx_recv_dev_mem_etc(uint8 *buf_ptr, uint16 count);
+int32 bfgx_store_stack_mem_to_file_etc(void);
+void  bfgx_dump_stack_etc(void);
+int32 bfgx_status_recovery_etc(void);
+int32 plat_bfgx_exception_rst_register_etc(struct ps_plat_s *data);
+int32 plat_exception_reset_init_etc(void);
+int32 plat_exception_reset_exit_etc(void);
 
 
-void plat_dfr_cfg_set(uint64 arg)
+void plat_dfr_cfg_set_etc(uint64 arg)
 {
     struct st_exception_info *pst_exception_data = NULL;
 
-    get_exception_info_reference(&pst_exception_data);
+    get_exception_info_reference_etc(&pst_exception_data);
     if (NULL == pst_exception_data)
     {
         PS_PRINT_ERR("get exception info reference is error\n");
@@ -300,14 +306,14 @@ void plat_dfr_cfg_set(uint64 arg)
 }
 
 
-void plat_beatTimer_timeOut_reset_cfg_set(uint64 arg)
+void plat_beatTimer_timeOut_reset_cfg_set_etc(uint64 arg)
 {
-    g_plat_beatTimer_timeOut_reset_cfg = arg ? (PLAT_EXCEPTION_ENABLE) : (PLAT_EXCEPTION_DISABLE);
+    g_plat_beatTimer_timeOut_reset_cfg_etc = arg ? (PLAT_EXCEPTION_ENABLE) : (PLAT_EXCEPTION_DISABLE);
     PS_PRINT_INFO("plat beat timer timeOut reset cfg set value = %ld\n", arg);
 }
 
 /*****************************************************************************
- * Prototype    : mod_beat_timer
+ * Prototype    : mod_beat_timer_etc
  * Description  :
  * input        : uint8
  * output       : no
@@ -319,11 +325,11 @@ void plat_beatTimer_timeOut_reset_cfg_set(uint64 arg)
  *     Author       : wx145522
  *     Modification : Created function
 *****************************************************************************/
-int32 mod_beat_timer(uint8 on)
+int32 mod_beat_timer_etc(uint8 on)
 {
     struct st_exception_info *pst_exception_data = NULL;
 
-    get_exception_info_reference(&pst_exception_data);
+    get_exception_info_reference_etc(&pst_exception_data);
     if (NULL == pst_exception_data)
     {
         PS_PRINT_ERR("get exception info reference is error\n");
@@ -346,7 +352,7 @@ int32 mod_beat_timer(uint8 on)
 }
 
 
-void bfgx_beat_timer_expire(uint64 data)
+void bfgx_beat_timer_expire_etc(uint64 data)
 {
     struct ps_core_s *ps_core_d = NULL;
     struct st_exception_info *pst_exception_data = NULL;
@@ -356,7 +362,7 @@ void bfgx_beat_timer_expire(uint64 data)
     struct tty_bufhead *buf = NULL;
 #endif
 
-    get_exception_info_reference(&pst_exception_data);
+    get_exception_info_reference_etc(&pst_exception_data);
     if (NULL == pst_exception_data)
     {
         PS_PRINT_ERR("get exception info reference is error\n");
@@ -387,8 +393,8 @@ void bfgx_beat_timer_expire(uint64 data)
         }
 
         PS_PRINT_ERR("###########host can not recvive bfgx beat info@@@@@@@@@@@@@@!\n");
-        ps_uart_state_pre(ps_core_d->tty);
-        ps_uart_state_dump(ps_core_d->tty);
+        ps_uart_state_pre_etc(ps_core_d->tty);
+        ps_uart_state_dump_etc(ps_core_d->tty);
 
         if(NULL == ps_core_d->tty->port)
         {
@@ -409,17 +415,18 @@ void bfgx_beat_timer_expire(uint64 data)
 
         DECLARE_DFT_TRACE_KEY_INFO("bfgx beat timeout", OAL_DFT_TRACE_EXCEP);
 
-        ssi_save_device_regs();
+        if(g_ssi_dump_en)
+        {
+            ssi_dump_device_regs(SSI_MODULE_MASK_COMM | SSI_MODULE_MASK_BCTRL |SSI_MODULE_MASK_WCTRL);
+        }
 
-        if (PLAT_EXCEPTION_ENABLE == g_plat_beatTimer_timeOut_reset_cfg)
+        if (PLAT_EXCEPTION_ENABLE == g_plat_beatTimer_timeOut_reset_cfg_etc)
         {
             PS_PRINT_ERR("bfgx beat timer bring to reset work!\n");
-            //del_timer_sync(&ps_core_d->ps_pm->pm_priv_data->bfg_timer);
-            plat_exception_handler(SUBSYS_BFGX, BFGX_THREAD_BOTTOM, BEAT_HEART_TIMEOUT);
-            CHR_EXCEPTION(CHR_GNSS_DRV(CHR_GNSS_DRV_EVENT_PLAT, CHR_PLAT_DRV_ERROR_BEAT_TIMEOUT));
+            plat_exception_handler_etc(SUBSYS_BFGX, THREAD_IDLE, BFGX_BEATHEART_TIMEOUT);
+            CHR_EXCEPTION_REPORT(CHR_PLATFORM_EXCEPTION_EVENTID, CHR_SYSTEM_GNSS, CHR_LAYER_DRV, CHR_GNSS_DRV_EVENT_PLAT, CHR_PLAT_DRV_ERROR_BEAT_TIMEOUT);
             return;
         }
-        CHR_EXCEPTION(CHR_GNSS_DRV(CHR_GNSS_DRV_EVENT_PLAT, CHR_PLAT_DRV_ERROR_BEAT_TIMEOUT));
     }
 
     atomic_set(&pst_exception_data->bfgx_beat_flag, BFGX_NOT_RECV_BEAT_INFO);
@@ -427,11 +434,13 @@ void bfgx_beat_timer_expire(uint64 data)
     PS_PRINT_INFO("reset beat timer\n");
     mod_timer(&pst_exception_data->bfgx_beat_timer, jiffies + BFGX_BEAT_TIME * HZ);
 
+    bfg_check_timer_work();
+
     return;
 }
 
 
-int32 get_exception_info_reference(struct st_exception_info **exception_data)
+int32 get_exception_info_reference_etc(struct st_exception_info **exception_data)
 {
     if (NULL == exception_data)
     {
@@ -439,32 +448,32 @@ int32 get_exception_info_reference(struct st_exception_info **exception_data)
         return -EXCEPTION_FAIL;
     }
 
-    if (NULL == g_pst_exception_info)
+    if (NULL == g_pst_exception_info_etc)
     {
         *exception_data = NULL;
-        PS_PRINT_ERR("%s g_pst_exception_info is NULL\n", __func__);
+        PS_PRINT_ERR("%s g_pst_exception_info_etc is NULL\n", __func__);
         return -EXCEPTION_FAIL;
     }
 
-    *exception_data = g_pst_exception_info;
+    *exception_data = g_pst_exception_info_etc;
 
     return EXCEPTION_SUCCESS;
 }
 
-int32 uart_reset_wcpu(void)
+int32 uart_reset_wcpu_etc(void)
 {
     uint64 timeleft;
     struct ps_core_s *ps_core_d = NULL;
     struct st_exception_info *pst_exception_data = NULL;
 
-    get_exception_info_reference(&pst_exception_data);
+    get_exception_info_reference_etc(&pst_exception_data);
     if (NULL == pst_exception_data)
     {
         PS_PRINT_ERR("get exception info reference is error\n");
         return -EXCEPTION_FAIL;
     }
 
-    ps_get_core_reference(&ps_core_d);
+    ps_get_core_reference_etc(&ps_core_d);
     if (unlikely(NULL == ps_core_d))
     {
         PS_PRINT_ERR("ps_core_d is err\n");
@@ -477,96 +486,158 @@ int32 uart_reset_wcpu(void)
         return -EXCEPTION_FAIL;
     }
 
-    if (EXCEPTION_SUCCESS != prepare_to_visit_node(ps_core_d))
+    if (EXCEPTION_SUCCESS != prepare_to_visit_node_etc(ps_core_d))
     {
         PS_PRINT_ERR("prepare work FAIL\n");
         return -EXCEPTION_FAIL;
     }
 
     INIT_COMPLETION(ps_core_d->wait_wifi_opened);
-    ps_uart_state_pre(ps_core_d->tty);
+    ps_uart_state_pre_etc(ps_core_d->tty);
 
     if (SUBSYS_WIFI == pst_exception_data->subsys_type)
     {
         PS_PRINT_INFO("uart reset WCPU\n");
-        ps_tx_sys_cmd(ps_core_d, SYS_MSG, SYS_CFG_EXCEP_RESET_WCPU);
+        ps_tx_sys_cmd_etc(ps_core_d, SYS_MSG, SYS_CFG_EXCEP_RESET_WCPU);
     }
     else
     {
         PS_PRINT_INFO("uart open WCPU\n");
-        ps_tx_sys_cmd(ps_core_d, SYS_MSG, SYS_CFG_OPEN_WIFI);
+        ps_tx_sys_cmd_etc(ps_core_d, SYS_MSG, SYS_CFG_OPEN_WIFI);
     }
 
     timeleft = wait_for_completion_timeout(&ps_core_d->wait_wifi_opened, msecs_to_jiffies(WAIT_WIFI_OPEN_TIME));
     if (!timeleft)
     {
-        ps_uart_state_dump(ps_core_d->tty);
+        ps_uart_state_dump_etc(ps_core_d->tty);
         PS_PRINT_ERR("wait wifi open ack timeout\n");
-        post_to_visit_node(ps_core_d);
-        CHR_EXCEPTION(CHR_WIFI_DRV(CHR_WIFI_DRV_EVENT_PLAT, CHR_PLAT_DRV_ERROR_OPEN_WCPU));
+        post_to_visit_node_etc(ps_core_d);
+        CHR_EXCEPTION_REPORT(CHR_PLATFORM_EXCEPTION_EVENTID, CHR_SYSTEM_WIFI, CHR_LAYER_DRV, CHR_WIFI_DRV_EVENT_PLAT, CHR_PLAT_DRV_ERROR_OPEN_WCPU);
         return -EXCEPTION_FAIL;
     }
 
-    post_to_visit_node(ps_core_d);
+    post_to_visit_node_etc(ps_core_d);
 
     return EXCEPTION_SUCCESS;
 }
-
+void plat_dfr_sysrst_type_cnt_inc(enum DFR_RST_SYSTEM_TYPE_E rst_type,enum SUBSYSTEM_ENUM subs)
+{
+    struct st_exception_info *pst_exception_data = NULL;
+    if ((rst_type >= DFR_SYSTEM_RST_TYPE_BOTT) || (subs >= SUBSYS_BOTTOM))
+    {
+        goto exit;
+    }
+    get_exception_info_reference_etc(&pst_exception_data);
+    if (NULL == pst_exception_data)
+    {
+        PS_PRINT_ERR("get exception info reference is error\n");
+        goto exit;
+    }
+    if (pst_exception_data->subsys_type == subs)
+    {
+        pst_exception_data->etype_info[pst_exception_data->excetion_type].rst_type_cnt[rst_type]++;
+    }
+    return;
+exit:
+    PS_PRINT_ERR("dfr rst type cnt inc fail\n");
+}
+excp_info_str_t  excp_info_str_tab[]= {
+    {.id=BFGX_BEATHEART_TIMEOUT, .name="bfgx_beatheart_timeout" },
+    {.id=BFGX_LASTWORD_PANIC         , .name="bfgx_lastword_panic" },
+    {.id=BFGX_TIMER_TIMEOUT     , .name="bfgx_timer_timeout" },
+    {.id=BFGX_ARP_TIMEOUT       , .name="bfgx_arp_timeout" },
+    {.id=BFGX_POWERON_FAIL     , .name="bfgx_poweron_fail" },
+    {.id=BFGX_WAKEUP_FAIL       , .name="bfgx_wakeup_fail" },
+    {.id=WIFI_WATCHDOG_TIMEOUT  , .name="wifi_watchdog_timeout" },
+    {.id=WIFI_POWERON_FAIL     , .name="wifi_poweron_fail" },
+    {.id=WIFI_WAKEUP_FAIL       , .name="wifi_wakeup_fail" },
+    {.id=WIFI_DEVICE_PANIC      , .name="wifi_device_panic" },
+    {.id=WIFI_TRANS_FAIL        , .name="wifi_trans_fail" },
+    {.id=SDIO_DUMPBCPU_FAIL , .name="sdio_dumpbcpu_fail" },
+};
+char* excp_info_str_get(int32 id)
+{
+    int32 i = 0;
+    for(i = 0; i < sizeof(excp_info_str_tab)/sizeof(excp_info_str_t); i++) {
+        if (id == excp_info_str_tab[i].id) {
+            return excp_info_str_tab[i].name;
+        }
+    }
+    return NULL;
+}
 int32 plat_get_dfr_sinfo(char* buf,int32 index)
 {
     struct st_exception_info *pst_exception_data = NULL;
     int i = index;
-    int subs,etype;
-    get_exception_info_reference(&pst_exception_data);
+    int etype;
+    int ret;
+    get_exception_info_reference_etc(&pst_exception_data);
     if (NULL == pst_exception_data)
     {
         PS_PRINT_ERR("get exception info reference is error\n");
         return -EXCEPTION_FAIL;
     }
-    i += snprintf( buf + i, PAGE_SIZE - i,"==========curr dfr info:\n");
-    for (subs = SUBSYS_WIFI; subs < SUBSYS_BOTTOM; subs++)
+    ret = snprintf(buf + i, PAGE_SIZE - i, "==========dfr info:=========\n");
+    if (0 >= ret)
     {
-        i += snprintf( buf + i, PAGE_SIZE - i," subs:%-10d  total cnt:%-10d\n",subs ,plat_get_excp_total_cnt(subs));
-        for(etype = 0;etype < EXCEPTION_TYPE_BOTTOM ;etype++)
+        return i;
+    }
+    i += ret;
+
+    ret = snprintf(buf + i, PAGE_SIZE - i, "total cnt:%-10d\n", plat_get_excp_total_cnt());
+    if (0 >= ret)
+    {
+        return i;
+    }
+    i += ret;
+
+    for(etype = 0;etype < EXCEPTION_TYPE_BOTTOM ;etype++)
+    {
+        ret = snprintf(buf + i, PAGE_SIZE - i, "id:%-30scnt:%-10dfail:%-10dsingle_sysrst:%-10dall_sysrst:%-10dmaxtime:%lldms\n", excp_info_str_get(etype),
+                                                                                            pst_exception_data->etype_info[etype].excp_cnt,
+                                                                                            pst_exception_data->etype_info[etype].fail_cnt,
+                                                                                            pst_exception_data->etype_info[etype].rst_type_cnt[DFR_SINGLE_SYS_RST],
+                                                                                            pst_exception_data->etype_info[etype].rst_type_cnt[DFR_ALL_SYS_RST],
+                                                                                            pst_exception_data->etype_info[etype].maxtime);
+        if (0 >= ret)
         {
-            i += snprintf( buf + i, PAGE_SIZE - i,"   id:%-10d cnt:%-10d fail:%-10d max time:%lldus\n",etype,
-                                                                                                pst_exception_data->excp_stat[subs].etype_info[etype].excp_cnt,
-                                                                                                pst_exception_data->excp_stat[subs].etype_info[etype].fail_cnt,
-                                                                                                pst_exception_data->excp_stat[subs].etype_info[etype].maxtime);
+            return i;
         }
+        i += ret;
     }
     return i;
 }
 void plat_print_dfr_info(void)
 {
     struct st_exception_info *pst_exception_data = NULL;
-    int subs,etype;
-    get_exception_info_reference(&pst_exception_data);
+    int etype;
+    get_exception_info_reference_etc(&pst_exception_data);
     if (NULL == pst_exception_data)
     {
         PS_PRINT_ERR("get exception info reference is error\n");
         return;
     }
-    PS_PRINT_INFO("==========curr dfr info:\n");
-    for (subs = SUBSYS_WIFI; subs < SUBSYS_BOTTOM; subs++)
+    PS_PRINT_INFO("========== dfr info:+++++++++++++++++++++++++++++++\n");
+    PS_PRINT_INFO("total cnt:%-10d\n" ,plat_get_excp_total_cnt());
+    for(etype = 0;etype < EXCEPTION_TYPE_BOTTOM ;etype++)
     {
-        PS_PRINT_INFO(" subs:%-10d  total cnt:%-10d\n",subs ,plat_get_excp_total_cnt(subs));
-        for(etype = 0;etype < EXCEPTION_TYPE_BOTTOM ;etype++)
-        {
-            PS_PRINT_INFO("   id:%-10d cnt:%-10d fail:%-10d max time:%lldus\n",etype,
-                                                                              pst_exception_data->excp_stat[subs].etype_info[etype].excp_cnt,
-                                                                              pst_exception_data->excp_stat[subs].etype_info[etype].fail_cnt,
-                                                                              pst_exception_data->excp_stat[subs].etype_info[etype].maxtime);
-        }
+        PS_PRINT_INFO("type:%-30scnt:%-10dfail:%-10dsingle_sysrst:%-10dall_sysrst:%-10dmaxtime:%lldms\n", excp_info_str_get(etype),
+                                                                                                            pst_exception_data->etype_info[etype].excp_cnt,
+                                                                                                            pst_exception_data->etype_info[etype].fail_cnt,
+                                                                                                            pst_exception_data->etype_info[etype].rst_type_cnt[DFR_SINGLE_SYS_RST],
+                                                                                                            pst_exception_data->etype_info[etype].rst_type_cnt[DFR_ALL_SYS_RST],
+                                                                                                            pst_exception_data->etype_info[etype].maxtime);
     }
+    PS_PRINT_INFO("========== dfr info:-----------------------------------\n");
+
 }
 
-int32 plat_get_excp_total_cnt(enum SUBSYSTEM_ENUM subs)
+int32 plat_get_excp_total_cnt()
 {
     struct st_exception_info *pst_exception_data = NULL;
     int i;
     int total_cnt = 0;
-    get_exception_info_reference(&pst_exception_data);
+    get_exception_info_reference_etc(&pst_exception_data);
     if (NULL == pst_exception_data)
     {
         PS_PRINT_ERR("get exception info reference is error\n");
@@ -574,12 +645,12 @@ int32 plat_get_excp_total_cnt(enum SUBSYSTEM_ENUM subs)
     }
     for(i = 0;i < EXCEPTION_TYPE_BOTTOM ;i++)
     {
-        total_cnt += pst_exception_data->excp_stat[subs].etype_info[i].excp_cnt;
+        total_cnt += pst_exception_data->etype_info[i].excp_cnt;
     }
     return total_cnt;
 }
 
-int32 plat_power_fail_exception_info_set(uint32 subsys_type, uint32 thread_type, uint32 exception_type)
+int32 plat_power_fail_exception_info_set_etc(uint32 subsys_type, uint32 thread_type, uint32 exception_type)
 {
     struct st_exception_info *pst_exception_data = NULL;
     uint64 flag;
@@ -590,8 +661,8 @@ int32 plat_power_fail_exception_info_set(uint32 subsys_type, uint32 thread_type,
         return -EXCEPTION_FAIL;
     }
 
-    if (((subsys_type == SUBSYS_WIFI) && (thread_type > WIFI_THREAD_BOTTOM))
-     || ((subsys_type == SUBSYS_BFGX) && (thread_type > BFGX_THREAD_BOTTOM)))
+    if (((subsys_type == SUBSYS_WIFI) && (thread_type >= WIFI_THREAD_BOTTOM))
+     || ((subsys_type == SUBSYS_BFGX) && (thread_type >= BFGX_THREAD_BOTTOM)))
     {
         PS_PRINT_ERR("para thread_type %u is error! subsys_type is %u\n", thread_type, subsys_type);
         return -EXCEPTION_FAIL;
@@ -603,7 +674,7 @@ int32 plat_power_fail_exception_info_set(uint32 subsys_type, uint32 thread_type,
         return -EXCEPTION_FAIL;
     }
 
-    get_exception_info_reference(&pst_exception_data);
+    get_exception_info_reference_etc(&pst_exception_data);
     if (NULL == pst_exception_data)
     {
         PS_PRINT_ERR("get exception info reference is error\n");
@@ -636,7 +707,7 @@ int32 plat_power_fail_exception_info_set(uint32 subsys_type, uint32 thread_type,
     }
 
     /*增加统计信息*/
-    pst_exception_data->excp_stat[subsys_type].etype_info[exception_type].excp_cnt += 1;
+    pst_exception_data->etype_info[exception_type].excp_cnt += 1;
 
     spin_unlock_irqrestore(&pst_exception_data->exception_spin_lock, flag);
 
@@ -644,11 +715,11 @@ int32 plat_power_fail_exception_info_set(uint32 subsys_type, uint32 thread_type,
 }
 
 
-void plat_power_fail_process_done(void)
+void plat_power_fail_process_done_etc(void)
 {
     struct st_exception_info *pst_exception_data = NULL;
 
-    get_exception_info_reference(&pst_exception_data);
+    get_exception_info_reference_etc(&pst_exception_data);
     if (NULL == pst_exception_data)
     {
         PS_PRINT_ERR("get exception info reference is error\n");
@@ -663,10 +734,18 @@ void plat_power_fail_process_done(void)
 }
 
 
-int32 plat_exception_handler(uint32 subsys_type, uint32 thread_type, uint32 exception_type)
+int32 plat_exception_handler_etc(uint32 subsys_type, uint32 thread_type, uint32 exception_type)
 {
     struct st_exception_info *pst_exception_data = NULL;
     uint64 flag;
+    int32 timeout;
+    struct pm_drv_data *pm_data = pm_get_drvdata_etc();
+
+    if (NULL == pm_data)
+    {
+        PS_PRINT_ERR("pm_data is NULL!\n");
+        return -EXCEPTION_FAIL;
+    }
 
     if (subsys_type >= SUBSYS_BOTTOM)
     {
@@ -674,8 +753,8 @@ int32 plat_exception_handler(uint32 subsys_type, uint32 thread_type, uint32 exce
         return -EXCEPTION_FAIL;
     }
 
-    if (((subsys_type == SUBSYS_WIFI) && (thread_type > WIFI_THREAD_BOTTOM))
-     || ((subsys_type == SUBSYS_BFGX) && (thread_type > BFGX_THREAD_BOTTOM)))
+    if (((subsys_type == SUBSYS_WIFI) && (thread_type >= WIFI_THREAD_BOTTOM))
+     || ((subsys_type == SUBSYS_BFGX) && (thread_type >= BFGX_THREAD_BOTTOM)))
     {
         PS_PRINT_ERR("para thread_type %u is error! subsys_type is %u\n", thread_type, subsys_type);
         return -EXCEPTION_FAIL;
@@ -687,7 +766,7 @@ int32 plat_exception_handler(uint32 subsys_type, uint32 thread_type, uint32 exce
         return -EXCEPTION_FAIL;
     }
 
-    get_exception_info_reference(&pst_exception_data);
+    get_exception_info_reference_etc(&pst_exception_data);
     if (NULL == pst_exception_data)
     {
         PS_PRINT_ERR("get exception info reference is error\n");
@@ -720,108 +799,139 @@ int32 plat_exception_handler(uint32 subsys_type, uint32 thread_type, uint32 exce
     }
     spin_unlock_irqrestore(&pst_exception_data->exception_spin_lock, flag);
 
-    pst_exception_data->excp_stat[subsys_type].etype_info[pst_exception_data->excetion_type].stime=ktime_get();
+#ifdef _PRE_CONFIG_GPIO_TO_SSI_DEBUG
+    /*等待SSI操作完成，防止NOC*/
+    timeout = wait_for_ssi_idle_timeout(HI110X_DFR_WAIT_SSI_IDLE_MS);
+    if(timeout <= 0) {
+        PS_PRINT_ERR("[HI110X_DFR]wait for ssi idle failed\n");
+        atomic_set(&pst_exception_data->is_reseting_device, PLAT_EXCEPTION_RESET_IDLE);
+        return EXCEPTION_FAIL;
+    }
+    PS_PRINT_INFO("[HI110X_DFR]wait for ssi idle cost time:%dms\n",HI110X_DFR_WAIT_SSI_IDLE_MS - timeout);
+#endif
 
+    if (subsys_type == SUBSYS_BFGX)    {
+         cancel_work_sync(&pm_data->send_allow_sleep_work);
+         del_timer_sync(&pm_data->bfg_timer);
+         pm_data->bfg_timer_mod_cnt = 0;
+         pm_data->bfg_timer_mod_cnt_pre = 0;
+
+        /*timer time out 中断调用时，不能再这里删除，死锁*/
+        if (exception_type != BFGX_BEATHEART_TIMEOUT)
+        {
+                pm_data->ps_pm_interface->operate_beat_timer(BEAT_TIMER_DELETE);
+        }
+    }
+
+    pst_exception_data->etype_info[pst_exception_data->excetion_type].stime=ktime_get();
+    PS_PRINT_WARNING("[HI110X_DFR]plat start doing exception! subsys=%d, exception type=%d\n",
+                               pst_exception_data->subsys_type, pst_exception_data->excetion_type);
+    plat_bbox_msg_hander(subsys_type, exception_type);
+
+    oal_wake_lock_timeout(&pst_exception_data->plat_exception_rst_wlock, 10*1000);/*处理异常，持锁10秒*/
     /*触发异常处理worker*/
     queue_work(pst_exception_data->plat_exception_rst_workqueue, &pst_exception_data->plat_exception_rst_work);
 
     return EXCEPTION_SUCCESS;
 }
 
-EXPORT_SYMBOL(plat_exception_handler);
+EXPORT_SYMBOL(plat_exception_handler_etc);
 
 
-void plat_exception_reset_work(struct work_struct *work)
+void plat_exception_reset_work_etc(struct work_struct *work)
 {
     int32  ret = -EXCEPTION_FAIL;
     struct st_exception_info *pst_exception_data = NULL;
-    struct pm_drv_data *pm_data = pm_get_drvdata();
+    struct pm_drv_data *pm_data = pm_get_drvdata_etc();
     ktime_t trans_time;
     unsigned long long total_time;
 
     if (NULL == pm_data)
     {
-        PS_PRINT_ERR("pm_data is NULL!\n");
+        PS_PRINT_ERR("[HI110X_DFR]pm_data is NULL!\n");
         return;
     }
 
-    get_exception_info_reference(&pst_exception_data);
+    get_exception_info_reference_etc(&pst_exception_data);
     if (NULL == pst_exception_data)
     {
-        PS_PRINT_ERR("get exception info reference is error\n");
+        PS_PRINT_ERR("[HI110X_DFR]get exception info reference is error\n");
         return;
     }
+
+    PS_PRINT_WARNING("[HI110X_DFR] enter plat_exception_reset_work_etc\n");
 
     mutex_lock(&pm_data->host_mutex);
 
     if (SUBSYS_WIFI == pst_exception_data->subsys_type)
     {
-        if (wlan_is_shutdown())
+        if (wlan_is_shutdown_etc())
         {
-            PS_PRINT_WARNING("wifi is closed,stop wifi dfr\n");
+            PS_PRINT_WARNING("[HI110X_DFR]wifi is closed,stop wifi dfr\n");
             goto exit_exception;
         }
-        ret = wifi_exception_handler();
+        ret = wifi_exception_handler_etc();
     }
     else
     {
-        if (bfgx_is_shutdown())
+        if (bfgx_is_shutdown_etc())
         {
-            PS_PRINT_WARNING("bfgx is closed,stop bfgx dfr\n");
+            PS_PRINT_WARNING("[HI110X_DFR]bfgx is closed,stop bfgx dfr\n");
             goto exit_exception;
         }
-        ret = bfgx_exception_handler();
+        ret = bfgx_exception_handler_etc();
     }
 
-    pst_exception_data->excp_stat[pst_exception_data->subsys_type].etype_info[pst_exception_data->excetion_type].excp_cnt +=1;
+    pst_exception_data->etype_info[pst_exception_data->excetion_type].excp_cnt +=1;
 
     if (ret != EXCEPTION_SUCCESS)
     {
-        PS_PRINT_ERR("plat execption recovery fail! subsys_type = [%u], exception_type = [%u]\n",
+        PS_PRINT_ERR("[HI110X_DFR]plat execption recovery fail! subsys_type = [%u], exception_type = [%u]\n",
                                        pst_exception_data->subsys_type, pst_exception_data->excetion_type);
-        pst_exception_data->excp_stat[pst_exception_data->subsys_type].etype_info[pst_exception_data->excetion_type].fail_cnt++;
+        pst_exception_data->etype_info[pst_exception_data->excetion_type].fail_cnt++;
     }
     else
     {
-        trans_time = ktime_sub(ktime_get(), pst_exception_data->excp_stat[pst_exception_data->subsys_type].etype_info[pst_exception_data->excetion_type].stime);
-        total_time = (unsigned long long)ktime_to_us(trans_time);
-        if (pst_exception_data->excp_stat[pst_exception_data->subsys_type].etype_info[pst_exception_data->excetion_type].maxtime < total_time) {
-            pst_exception_data->excp_stat[pst_exception_data->subsys_type].etype_info[pst_exception_data->excetion_type].maxtime  = total_time;
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 35))
+        trans_time = ktime_sub(ktime_get(), pst_exception_data->etype_info[pst_exception_data->excetion_type].stime);
+        total_time = (unsigned long long)ktime_to_ms(trans_time);
+        if (pst_exception_data->etype_info[pst_exception_data->excetion_type].maxtime < total_time) {
+            pst_exception_data->etype_info[pst_exception_data->excetion_type].maxtime  = total_time;
+            PS_PRINT_WARNING("[HI110X_DFR]time update:%llu,exception_type:%d \n",total_time,pst_exception_data->excetion_type);
         }
-        PS_PRINT_INFO("plat execption recovery success, current time [%llu]us, max time [%llu]us\n",total_time, pst_exception_data->excp_stat[pst_exception_data->subsys_type].etype_info[pst_exception_data->excetion_type].maxtime );
+#endif
+        PS_PRINT_WARNING("[HI110X_DFR]plat execption recovery success, current time [%llu]ms, max time [%llu]ms\n",total_time, pst_exception_data->etype_info[pst_exception_data->excetion_type].maxtime );
     }
     /*每次dfr完成，显示历史dfr处理结果*/
     plat_print_dfr_info();
 
 exit_exception:
     atomic_set(&pst_exception_data->is_reseting_device, PLAT_EXCEPTION_RESET_IDLE);
-
     mutex_unlock(&pm_data->host_mutex);
-
     return;
 }
 
 int32 is_subsystem_rst_enable(void)
 {
     struct st_exception_info *pst_exception_data = NULL;
-    get_exception_info_reference(&pst_exception_data);
+    get_exception_info_reference_etc(&pst_exception_data);
     if (NULL == pst_exception_data)
     {
         PS_PRINT_ERR("get exception info reference is error\n");
-        return DFR_SUSUBS_DISABLE;
+        return DFR_TEST_DISABLE;
     }
-    PS_PRINT_ERR("#########is_subsystem_rst_enable:%d\n",pst_exception_data->subsystem_rst_en);
+    PS_PRINT_INFO("#########is_subsystem_rst_enable:%d\n",pst_exception_data->subsystem_rst_en);
     return pst_exception_data->subsystem_rst_en;
 }
 
 
-int32 wifi_exception_handler(void)
+int32 wifi_exception_handler_etc(void)
 {
     int32 ret = -EXCEPTION_FAIL;
     uint32 exception_type;
     struct st_exception_info *pst_exception_data = NULL;
 
-    get_exception_info_reference(&pst_exception_data);
+    get_exception_info_reference_etc(&pst_exception_data);
     if (NULL == pst_exception_data)
     {
         PS_PRINT_ERR("get exception info reference is error\n");
@@ -831,28 +941,29 @@ int32 wifi_exception_handler(void)
     exception_type = pst_exception_data->excetion_type;
 
     /*如果bfgx已经打开，执行wifi子系统复位流程，否则执行wifi全系统复位流程*/
-    if (!bfgx_is_shutdown())
+    if (!bfgx_is_shutdown_etc())
     {
         PS_PRINT_INFO("bfgx is opened, start wifi subsystem reset!\n");
+        bfgx_print_subsys_state();
         if (!is_subsystem_rst_enable())
         {
-            ret = wifi_subsystem_reset();
+            ret = wifi_subsystem_reset_etc();
             if (EXCEPTION_SUCCESS != ret)
             {
                 PS_PRINT_ERR("wifi subsystem reset failed, start wifi system reset!\n");
-                ret = wifi_system_reset();
+                ret = wifi_system_reset_etc();
             }
         }
         else
         {
             PS_PRINT_ERR("in debug mode,skip subsystem rst,do wifi system reset!\n");
-            ret = wifi_system_reset();
+            ret = wifi_system_reset_etc();
         }
     }
     else
     {
         PS_PRINT_INFO("bfgx is not opened, start wifi system reset!\n");
-        ret = wifi_system_reset();
+        ret = wifi_system_reset_etc();
     }
 
     if (ret != EXCEPTION_SUCCESS)
@@ -874,10 +985,10 @@ int32 wifi_exception_handler(void)
     return EXCEPTION_SUCCESS;
 }
 
-int32 wifi_subsystem_reset(void)
+int32 wifi_subsystem_reset_etc(void)
 {
     oal_int32 ret;
-    struct pm_drv_data *pm_data = pm_get_drvdata();
+    struct pm_drv_data *pm_data = pm_get_drvdata_etc();
     int32 l_subchip_type = get_hi110x_subchip_type();
 
     if (NULL == pm_data)
@@ -889,14 +1000,18 @@ int32 wifi_subsystem_reset(void)
     switch (l_subchip_type)
     {
         case BOARD_VERSION_HI1102:
-            if (EXCEPTION_SUCCESS != uart_reset_wcpu())
+            if (EXCEPTION_SUCCESS != uart_reset_wcpu_etc())
             {
                 PS_PRINT_ERR("uart reset wcpu failed\n");
                 return -EXCEPTION_FAIL;
             }
             break;
         case BOARD_VERSION_HI1103:
-            hi1103_wifi_subsys_reset();
+            if (EXCEPTION_SUCCESS != hi1103_wifi_subsys_reset())
+            {
+                PS_PRINT_ERR("wifi reset failed\n");
+                return -EXCEPTION_FAIL;
+            }
             break;
         default:
             PS_PRINT_ERR("wifi subsys reset error! subchip=%d\n", l_subchip_type);
@@ -905,7 +1020,7 @@ int32 wifi_subsystem_reset(void)
 
     hcc_bus_power_action(hcc_get_current_110x_bus(), HCC_BUS_POWER_PATCH_LOAD_PREPARE);
 
-    if (EXCEPTION_SUCCESS != firmware_download_function(WIFI_CFG))
+    if (EXCEPTION_SUCCESS != firmware_download_function_etc(WIFI_CFG))
     {
         PS_PRINT_ERR("wifi firmware download failed\n");
         return -EXCEPTION_FAIL;
@@ -915,7 +1030,8 @@ int32 wifi_subsystem_reset(void)
     if (0 != ret)
     {
         PS_PRINT_ERR("HCC_BUS_POWER_PATCH_LAUCH failed, ret=%d", ret);
-        CHR_EXCEPTION(CHR_WIFI_DRV(CHR_WIFI_DRV_EVENT_PLAT, CHR_PLAT_DRV_ERROR_WCPU_BOOTUP));
+        CHR_EXCEPTION_REPORT(CHR_PLATFORM_EXCEPTION_EVENTID, CHR_SYSTEM_WIFI, CHR_LAYER_DRV, CHR_WIFI_DRV_EVENT_PLAT, CHR_PLAT_DRV_ERROR_WCPU_BOOTUP);
+
         return -EXCEPTION_FAIL;
     }
 
@@ -924,18 +1040,20 @@ int32 wifi_subsystem_reset(void)
         hwifi_hcc_customize_h2d_data_cfg();
 #endif
 
+    plat_dfr_sysrst_type_cnt_inc(DFR_SINGLE_SYS_RST, SUBSYS_WIFI);
+
     return EXCEPTION_SUCCESS;
 }
 
 
-int32 wifi_system_reset(void)
+int32 wifi_system_reset_etc(void)
 {
     int32 ret;
     uint64 timeleft;
     struct ps_core_s *ps_core_d = NULL;
-    struct pm_drv_data *pm_data = pm_get_drvdata();
+    struct pm_drv_data *pm_data = pm_get_drvdata_etc();
 
-    ps_get_core_reference(&ps_core_d);
+    ps_get_core_reference_etc(&ps_core_d);
     if (unlikely(NULL == ps_core_d))
     {
         PS_PRINT_ERR("ps_core_d is NULL\n");
@@ -951,20 +1069,29 @@ int32 wifi_system_reset(void)
     /*重新上电，firmware重新加载*/
     hcc_bus_power_action(hcc_get_current_110x_bus(), HCC_BUS_POWER_PATCH_LOAD_PREPARE);
 
-    if (!bfgx_is_shutdown())
+    if (!bfgx_is_shutdown_etc())
     {
+        bfgx_print_subsys_state();
         del_timer_sync(&ps_core_d->ps_pm->pm_priv_data->bfg_timer);
+        pm_data->bfg_timer_mod_cnt = 0;
+        pm_data->bfg_timer_mod_cnt_pre = 0;
+
         ps_core_d->ps_pm->operate_beat_timer(BEAT_TIMER_DELETE);
-        if (0 != release_tty_drv(ps_core_d->pm_data))
+        if (0 != release_tty_drv_etc(ps_core_d->pm_data))
         {
-            PS_PRINT_WARNING("wifi_system_reset, release_tty_drv fail, line = %d\n",__LINE__);
+            PS_PRINT_WARNING("wifi_system_reset_etc, release_tty_drv_etc fail, line = %d\n",__LINE__);
         }
     }
 
     PS_PRINT_INFO("wifi system reset, board power on\n");
-    board_power_reset(WLAN_POWER);
+    ret = board_power_reset(WLAN_POWER);
+    if(ret)
+    {
+        PS_PRINT_ERR("board_power_reset wlan failed=%d\n", ret);
+        return -EXCEPTION_FAIL;
+    }
 
-    if (EXCEPTION_SUCCESS != firmware_download_function(BFGX_AND_WIFI_CFG))
+    if (EXCEPTION_SUCCESS != firmware_download_function_etc(BFGX_AND_WIFI_CFG))
     {
         PS_PRINT_ERR("hi110x system power reset failed!\n");
         return -EXCEPTION_FAIL;
@@ -974,7 +1101,8 @@ int32 wifi_system_reset(void)
     if (0 != ret)
     {
         PS_PRINT_ERR("HCC_BUS_POWER_PATCH_LAUCH failed ret=%d !!!!!!", ret);
-        CHR_EXCEPTION(CHR_WIFI_DRV(CHR_WIFI_DRV_EVENT_PLAT, CHR_PLAT_DRV_ERROR_WCPU_BOOTUP));
+        CHR_EXCEPTION_REPORT(CHR_PLATFORM_EXCEPTION_EVENTID, CHR_SYSTEM_WIFI, CHR_LAYER_DRV, CHR_WIFI_DRV_EVENT_PLAT, CHR_PLAT_DRV_ERROR_WCPU_BOOTUP);
+
         return -EXCEPTION_FAIL;
     }
 
@@ -982,26 +1110,27 @@ int32 wifi_system_reset(void)
         //下发定制化参数到device去
     hwifi_hcc_customize_h2d_data_cfg();
 #endif
-    if (!bfgx_is_shutdown())
+    if (!bfgx_is_shutdown_etc())
     {
         INIT_COMPLETION(pm_data->dev_bootok_ack_comp);
         atomic_set(&pm_data->bfg_needwait_devboot_flag, NEED_SET_FLAG);
 
-        if (0 !=open_tty_drv(ps_core_d->pm_data))
+        if (0 !=open_tty_drv_etc(ps_core_d->pm_data))
         {
-            PS_PRINT_ERR("open_tty_drv failed\n");
+            PS_PRINT_ERR("open_tty_drv_etc failed\n");
             return -EXCEPTION_FAIL;
         }
 
-        if (EXCEPTION_SUCCESS != wlan_pm_open_bcpu())
+        if (EXCEPTION_SUCCESS != wlan_pm_open_bcpu_etc())
         {
             PS_PRINT_ERR("wifi reset bcpu fail\n");
-            if (0 != release_tty_drv(ps_core_d->pm_data))
+            if (0 != release_tty_drv_etc(ps_core_d->pm_data))
             {
-                PS_PRINT_WARNING("wifi_system_reset, release_tty_drv fail, line = %d\n", __LINE__);
+                PS_PRINT_WARNING("wifi_system_reset_etc, release_tty_drv_etc fail, line = %d\n", __LINE__);
             }
             atomic_set(&pm_data->bfg_needwait_devboot_flag, NONEED_SET_FLAG);
-            CHR_EXCEPTION(CHR_WIFI_DRV(CHR_WIFI_DRV_EVENT_PLAT, CHR_PLAT_DRV_ERROR_OPEN_BCPU));
+            CHR_EXCEPTION_REPORT(CHR_PLATFORM_EXCEPTION_EVENTID, CHR_SYSTEM_WIFI, CHR_LAYER_DRV, CHR_WIFI_DRV_EVENT_PLAT, CHR_PLAT_DRV_ERROR_OPEN_BCPU);
+
             return -EXCEPTION_FAIL;
         }
 
@@ -1010,38 +1139,47 @@ int32 wifi_system_reset(void)
         {
             PS_PRINT_ERR("wait bfgx boot ok timeout\n");
             atomic_set(&pm_data->bfg_needwait_devboot_flag, NONEED_SET_FLAG);
-            CHR_EXCEPTION(CHR_WIFI_DRV(CHR_WIFI_DRV_EVENT_PLAT, CHR_PLAT_DRV_ERROR_BCPU_BOOTUP));
+            CHR_EXCEPTION_REPORT(CHR_PLATFORM_EXCEPTION_EVENTID, CHR_SYSTEM_WIFI, CHR_LAYER_DRV, CHR_WIFI_DRV_EVENT_PLAT, CHR_PLAT_DRV_ERROR_BCPU_BOOTUP);
+
             return  -FAILURE;
         }
 
         atomic_set(&pm_data->bfg_needwait_devboot_flag, NONEED_SET_FLAG);
 
-        bfgx_pm_feature_set();
+        bfgx_pm_feature_set_etc();
 
         /*恢复bfgx业务状态*/
-        if (EXCEPTION_SUCCESS != bfgx_status_recovery())
+        if (EXCEPTION_SUCCESS != bfgx_status_recovery_etc())
         {
             PS_PRINT_ERR("bfgx status revocery failed!\n");
+            CHR_EXCEPTION_REPORT(CHR_PLATFORM_EXCEPTION_EVENTID, CHR_SYSTEM_GNSS, CHR_LAYER_DRV, CHR_GNSS_DRV_EVENT_PLAT, CHR_PLAT_DRV_ERROR_BFGX_RECOVERY);
+
             return -EXCEPTION_FAIL;
         }
+
+        plat_dfr_sysrst_type_cnt_inc(DFR_ALL_SYS_RST, SUBSYS_WIFI);
+    }
+    else
+    {
+        plat_dfr_sysrst_type_cnt_inc(DFR_SINGLE_SYS_RST, SUBSYS_WIFI);
     }
 
     return EXCEPTION_SUCCESS;
 }
 
 
-int32 wifi_status_recovery(void)
+int32 wifi_status_recovery_etc(void)
 {
     struct st_exception_info *pst_exception_data = NULL;
 
-    get_exception_info_reference(&pst_exception_data);
+    get_exception_info_reference_etc(&pst_exception_data);
     if (NULL == pst_exception_data)
     {
         PS_PRINT_ERR("get exception info reference is error\n");
         return -EXCEPTION_FAIL;
     }
 
-	if (EXCEPTION_SUCCESS != wifi_subsystem_reset())
+	if (EXCEPTION_SUCCESS != wifi_subsystem_reset_etc())
 	{
         PS_PRINT_ERR("wifi subsystem reset failed\n");
         return -EXCEPTION_FAIL;
@@ -1061,12 +1199,12 @@ int32 wifi_status_recovery(void)
 }
 
 
-int32 wifi_open_bcpu_set(uint8 enable)
+int32 wifi_open_bcpu_set_etc(uint8 enable)
 {
     struct st_exception_info *pst_exception_data = NULL;
     uint64 timeleft;
     struct ps_core_s *ps_core_d = NULL;
-    struct pm_drv_data *pm_data = pm_get_drvdata();
+    struct pm_drv_data *pm_data = pm_get_drvdata_etc();
 
     if (NULL == pm_data)
     {
@@ -1074,14 +1212,14 @@ int32 wifi_open_bcpu_set(uint8 enable)
         return -EXCEPTION_FAIL;
     }
 
-    ps_get_core_reference(&ps_core_d);
+    ps_get_core_reference_etc(&ps_core_d);
     if (unlikely(NULL == ps_core_d))
     {
         PS_PRINT_ERR("ps_core_d is err\n");
         return -EXCEPTION_FAIL;
     }
 
-    get_exception_info_reference(&pst_exception_data);
+    get_exception_info_reference_etc(&pst_exception_data);
     if (NULL == pst_exception_data)
     {
         PS_PRINT_ERR("get exception info reference is error\n");
@@ -1100,23 +1238,26 @@ int32 wifi_open_bcpu_set(uint8 enable)
 
     mutex_lock(&pm_data->host_mutex);
 
-    if (SUCCESS != release_tty_drv(ps_core_d->pm_data))
+    if (SUCCESS != release_tty_drv_etc(ps_core_d->pm_data))
     {
         PS_PRINT_ERR("close tty is err!");
         mutex_unlock(&pm_data->host_mutex);
         return -EXCEPTION_FAIL;
     }
 
-    if (SUCCESS != open_tty_drv(ps_core_d->pm_data))
+    if (SUCCESS != open_tty_drv_etc(ps_core_d->pm_data))
     {
         PS_PRINT_ERR("open tty is err!\n");
         mutex_unlock(&pm_data->host_mutex);
         return -EXCEPTION_FAIL;
     }
 
-    if(OAL_SUCC != wlan_pm_open_bcpu())
+    if(OAL_SUCC != wlan_pm_open_bcpu_etc())
     {
         mutex_unlock(&pm_data->host_mutex);
+
+        CHR_EXCEPTION_REPORT(CHR_PLATFORM_EXCEPTION_EVENTID, CHR_SYSTEM_GNSS, CHR_LAYER_DRV, CHR_GNSS_DRV_EVENT_PLAT, CHR_PLAT_DRV_ERROR_OPEN_BCPU);
+
         return  -EXCEPTION_FAIL;
     }
 
@@ -1133,7 +1274,7 @@ int32 wifi_open_bcpu_set(uint8 enable)
     return EXCEPTION_SUCCESS;
 }
 
-EXPORT_SYMBOL(wifi_open_bcpu_set);
+EXPORT_SYMBOL(wifi_open_bcpu_set_etc);
 
 int32 wifi_device_reset(void)
 {
@@ -1141,7 +1282,7 @@ int32 wifi_device_reset(void)
     struct ps_core_s *ps_core_d = NULL;
     int32  l_subchip_type = get_hi110x_subchip_type();
 
-    ps_get_core_reference(&ps_core_d);
+    ps_get_core_reference_etc(&ps_core_d);
     if (NULL == ps_core_d)
     {
         PS_PRINT_ERR("ps_core_d is NULL\n");
@@ -1153,9 +1294,9 @@ int32 wifi_device_reset(void)
     {
         PS_PRINT_INFO("reset wifi device by BCPU\n");
         /*If sdio transfer failed, reset wcpu first*/
-        if (!bfgx_is_shutdown())
+        if (!bfgx_is_shutdown_etc())
         {
-            if (prepare_to_visit_node(ps_core_d) < 0)
+            if (prepare_to_visit_node_etc(ps_core_d) < 0)
             {
                 PS_PRINT_ERR("prepare work FAIL\n");
                 return -EXCEPTION_FAIL;
@@ -1163,20 +1304,20 @@ int32 wifi_device_reset(void)
 
             /*bcpu is power on, reset wcpu by bcpu*/
             INIT_COMPLETION(ps_core_d->wait_wifi_opened);
-            ps_uart_state_pre(ps_core_d->tty);
-            ps_tx_sys_cmd(ps_core_d, SYS_MSG, SYS_CFG_DUMP_RESET_WCPU);
+            ps_uart_state_pre_etc(ps_core_d->tty);
+            ps_tx_sys_cmd_etc(ps_core_d, SYS_MSG, SYS_CFG_DUMP_RESET_WCPU);
             timeleft = wait_for_completion_timeout(&ps_core_d->wait_wifi_opened, msecs_to_jiffies(WAIT_WIFI_OPEN_TIME));
             if (!timeleft)
             {
-                ps_uart_state_dump(ps_core_d->tty);
+                ps_uart_state_dump_etc(ps_core_d->tty);
                 PS_PRINT_ERR("wait wifi open ack timeout\n");
-                post_to_visit_node(ps_core_d);
+                post_to_visit_node_etc(ps_core_d);
                 return -EXCEPTION_FAIL;
             }
             else
             {
                 PS_PRINT_INFO("reset wifi by uart sucuess\n");
-                post_to_visit_node(ps_core_d);
+                post_to_visit_node_etc(ps_core_d);
                 return EXCEPTION_SUCCESS;
             }
         }
@@ -1190,21 +1331,22 @@ int32 wifi_device_reset(void)
     {
         PS_PRINT_INFO("reset wifi device by w_en gpio\n");
         hi1103_wifi_disable();
-        hi1103_wifi_enable();
+        if(hi1103_wifi_enable())
+        {
+            PS_PRINT_ERR("hi1103 wifi enable failed\n");
+            return -EXCEPTION_FAIL;
+        }
         return EXCEPTION_SUCCESS;
     }
 }
 
-#if defined(PLATFORM_DEBUG_ENABLE) && defined(_PRE_CONFIG_GPIO_TO_SSI_DEBUG)
-int ssi_save_device_regs(void);
-#endif
 
-
-int32 wifi_exception_mem_dump(struct st_wifi_dump_mem_info *pst_mem_dump_info, uint32 count, oal_int32 excep_type)
+int32 wifi_exception_mem_dump_etc(struct st_wifi_dump_mem_info *pst_mem_dump_info, uint32 count, oal_int32 excep_type)
 {
     int32 ret;
+    int32 reset_flag = 0;
     hcc_bus_dev* pst_bus_dev;
-    struct pm_drv_data *pm_data = pm_get_drvdata();
+    struct pm_drv_data *pm_data = pm_get_drvdata_etc();
 
     if (NULL == pm_data)
     {
@@ -1220,6 +1362,14 @@ int32 wifi_exception_mem_dump(struct st_wifi_dump_mem_info *pst_mem_dump_info, u
 
     mutex_lock(&pm_data->host_mutex);
 
+    if(wlan_is_shutdown_etc())
+    {
+        PS_PRINT_ERR("[E]dfr ignored, wifi shutdown before memdump\n");
+        mutex_unlock(&pm_data->host_mutex);
+        return -EXCEPTION_FAIL;
+    }
+
+retry:
     if(WIFI_DEVICE_PANIC != excep_type)
     {
         if (EXCEPTION_SUCCESS != wifi_device_reset())
@@ -1228,9 +1378,12 @@ int32 wifi_exception_mem_dump(struct st_wifi_dump_mem_info *pst_mem_dump_info, u
             mutex_unlock(&pm_data->host_mutex);
             return -EXCEPTION_FAIL;
         }
+        reset_flag = 1;
+        hcc_change_state_exception_etc();
     }
 
     pst_bus_dev = hcc_get_bus_dev(HCC_CHIP_110X_DEV);
+
     if(NULL != pst_bus_dev)
     {
         ret = hcc_bus_reinit(pst_bus_dev->cur_bus);
@@ -1243,6 +1396,12 @@ int32 wifi_exception_mem_dump(struct st_wifi_dump_mem_info *pst_mem_dump_info, u
     if (OAL_SUCC != ret)
     {
         PS_PRINT_ERR("wifi mem dump:current bus reinit failed, ret=[%d]\n", ret);
+        if(!reset_flag)
+        {
+            PS_PRINT_ERR("reinit failed, try to reset wifi\n");
+            excep_type = WIFI_TRANS_FAIL;
+            goto retry;
+        }
         mutex_unlock(&pm_data->host_mutex);
         return -EXCEPTION_FAIL;
     }
@@ -1252,6 +1411,12 @@ int32 wifi_exception_mem_dump(struct st_wifi_dump_mem_info *pst_mem_dump_info, u
     if (ret < 0)
     {
         PS_PRINT_ERR("wifi_device_mem_dump failed, ret=[%d]\n", ret);
+        if(!reset_flag)
+        {
+            PS_PRINT_ERR("memdump failed, try to reset wifi\n");
+            excep_type = WIFI_TRANS_FAIL;
+            goto retry;
+        }
         mutex_unlock(&pm_data->host_mutex);
         return -EXCEPTION_FAIL;
     }
@@ -1261,14 +1426,15 @@ int32 wifi_exception_mem_dump(struct st_wifi_dump_mem_info *pst_mem_dump_info, u
     return EXCEPTION_SUCCESS;
 }
 
-EXPORT_SYMBOL(wifi_exception_mem_dump);
+EXPORT_SYMBOL(wifi_exception_mem_dump_etc);
 
 
-int32 wifi_exception_work_submit(uint32 wifi_excp_type)
+int32 wifi_exception_work_submit_etc(uint32 wifi_excp_type)
 {
     struct st_exception_info *pst_exception_data = NULL;
+    hcc_bus* hi_bus = hcc_get_current_110x_bus();
 
-    get_exception_info_reference(&pst_exception_data);
+    get_exception_info_reference_etc(&pst_exception_data);
     if (NULL == pst_exception_data)
     {
         PS_PRINT_ERR("get exception info reference is error\n");
@@ -1282,21 +1448,26 @@ int32 wifi_exception_work_submit(uint32 wifi_excp_type)
     }
 
 #ifdef _PRE_WLAN_FEATURE_DFR
-    if(oal_work_is_busy(&g_pst_exception_info->wifi_excp_worker))
+    if(oal_work_is_busy(&g_pst_exception_info_etc->wifi_excp_worker))
     {
-        PS_PRINT_WARNING("WIFI DFR %pF Worker is Processing...need't submit\n",(void*)g_pst_exception_info->wifi_excp_worker.func);
+        PS_PRINT_WARNING("WIFI DFR %pF Worker is Processing:doing wifi excp_work...need't submit\n",(void*)g_pst_exception_info_etc->wifi_excp_worker.func);
         return -OAL_EBUSY;
     }
-    else if (oal_work_is_busy(&g_pst_exception_info->wifi_excp_recovery_worker))
+    else if (oal_work_is_busy(&g_pst_exception_info_etc->wifi_excp_recovery_worker))
     {
-        PS_PRINT_WARNING("WIFI DFR %pF Recovery_Worker is Processing...need't submit\n",(void*)g_pst_exception_info->wifi_excp_worker.func);
+        PS_PRINT_WARNING("WIFI DFR %pF Recovery_Worker is Processing:doing wifi wifi_excp_recovery_worker ...need't submit\n",(void*)g_pst_exception_info_etc->wifi_excp_worker.func);
+        return -OAL_EBUSY;
+    }else if ( (PLAT_EXCEPTION_RESET_IDLE != atomic_read(&pst_exception_data->is_reseting_device))&&(SUBSYS_WIFI == pst_exception_data->subsys_type))
+    {
+        PS_PRINT_WARNING("WIFI DFR %pF Recovery_Worker is Processing:doing  plat wifi recovery ...need't submit\n",(void*)g_pst_exception_info_etc->wifi_excp_worker.func);
         return -OAL_EBUSY;
     }
     else
     {
-        PS_PRINT_ERR("WiFi DFR %pF Worker Submit, excp_type[%d]\n",(void*)g_pst_exception_info->wifi_excp_worker.func, wifi_excp_type);
-        g_pst_exception_info->wifi_excp_type = wifi_excp_type;
-        queue_work(g_pst_exception_info->wifi_exception_workqueue, &g_pst_exception_info->wifi_excp_worker);
+        PS_PRINT_ERR("WiFi DFR %pF Worker Submit, excp_type[%d]\n",(void*)g_pst_exception_info_etc->wifi_excp_worker.func, wifi_excp_type);
+        g_pst_exception_info_etc->wifi_excp_type = wifi_excp_type;
+        hcc_bus_disable_state(hi_bus, OAL_BUS_STATE_ALL);
+        queue_work(g_pst_exception_info_etc->wifi_exception_workqueue, &g_pst_exception_info_etc->wifi_excp_worker);
     }
 #else
     PS_PRINT_WARNING("Geting WIFI DFR, but _PRE_WLAN_FEATURE_DFR not open!");
@@ -1304,41 +1475,41 @@ int32 wifi_exception_work_submit(uint32 wifi_excp_type)
     return OAL_SUCC;
 
 }
-EXPORT_SYMBOL(g_pst_exception_info);
-EXPORT_SYMBOL(wifi_exception_work_submit);
+EXPORT_SYMBOL(g_pst_exception_info_etc);
+EXPORT_SYMBOL(wifi_exception_work_submit_etc);
 
-oal_workqueue_stru* wifi_get_exception_workqueue(oal_void)
+oal_workqueue_stru* wifi_get_exception_workqueue_etc(oal_void)
 {
-    if(NULL == g_pst_exception_info)
+    if(NULL == g_pst_exception_info_etc)
     {
         return NULL;
     }
-    return g_pst_exception_info->wifi_exception_workqueue;
+    return g_pst_exception_info_etc->wifi_exception_workqueue;
 }
-EXPORT_SYMBOL(wifi_get_exception_workqueue);
+EXPORT_SYMBOL(wifi_get_exception_workqueue_etc);
 
 
-int32 prepare_to_recv_bfgx_stack(uint32 len)
+int32 prepare_to_recv_bfgx_stack_etc(uint32 len)
 {
-    if (g_recvd_block_count > BFGX_MEM_DUMP_BLOCK_COUNT - 1)
+    if (g_recvd_block_count_etc > BFGX_MEM_DUMP_BLOCK_COUNT - 1)
     {
-        PS_PRINT_ERR("bfgx mem dump have recvd [%d] blocks\n", g_recvd_block_count);
+        PS_PRINT_ERR("bfgx mem dump have recvd [%d] blocks\n", g_recvd_block_count_etc);
         return -EXCEPTION_FAIL;
     }
 
-    if (NULL == g_pst_bfgx_mem_dump[g_recvd_block_count].exception_mem_addr)
+    if (NULL == g_pst_bfgx_mem_dump_etc[g_recvd_block_count_etc].exception_mem_addr)
     {
-        g_pst_bfgx_mem_dump[g_recvd_block_count].exception_mem_addr = (uint8 *)OS_VMALLOC_GFP(len);
-        if (NULL == g_pst_bfgx_mem_dump[g_recvd_block_count].exception_mem_addr)
+        g_pst_bfgx_mem_dump_etc[g_recvd_block_count_etc].exception_mem_addr = (uint8 *)OS_VMALLOC_GFP(len);
+        if (NULL == g_pst_bfgx_mem_dump_etc[g_recvd_block_count_etc].exception_mem_addr)
         {
             PS_PRINT_ERR("prepare mem to recv bfgx stack failed\n");
             return -EXCEPTION_FAIL;
         }
         else
         {
-            g_pst_bfgx_mem_dump[g_recvd_block_count].recved_size = 0;
-            g_pst_bfgx_mem_dump[g_recvd_block_count].total_size  = len;
-            g_pst_bfgx_mem_dump[g_recvd_block_count].file_name   = g_bfgx_mem_file_name[g_recvd_block_count];
+            g_pst_bfgx_mem_dump_etc[g_recvd_block_count_etc].recved_size = 0;
+            g_pst_bfgx_mem_dump_etc[g_recvd_block_count_etc].total_size  = len;
+            g_pst_bfgx_mem_dump_etc[g_recvd_block_count_etc].file_name   = g_bfgx_mem_file_name_etc[g_recvd_block_count_etc];
             PS_PRINT_INFO("prepare mem [%d] to recv bfgx stack\n", len);
         }
     }
@@ -1346,34 +1517,41 @@ int32 prepare_to_recv_bfgx_stack(uint32 len)
     return EXCEPTION_SUCCESS;
 }
 
-int32 free_bfgx_stack_dump_mem(void)
+int32 free_bfgx_stack_dump_mem_etc(void)
 {
     uint32 i = 0;
 
     for (i = 0; i < BFGX_MEM_DUMP_BLOCK_COUNT; i++)
     {
-        if (NULL != g_pst_bfgx_mem_dump[i].exception_mem_addr)
+        if (NULL != g_pst_bfgx_mem_dump_etc[i].exception_mem_addr)
         {
-            OS_MEM_VFREE(g_pst_bfgx_mem_dump[i].exception_mem_addr);
-            g_pst_bfgx_mem_dump[i].recved_size = 0;
-            g_pst_bfgx_mem_dump[i].total_size  = 0;
-            g_pst_bfgx_mem_dump[i].file_name   = NULL;
-            g_pst_bfgx_mem_dump[i].exception_mem_addr = NULL;
+            OS_MEM_VFREE(g_pst_bfgx_mem_dump_etc[i].exception_mem_addr);
+            g_pst_bfgx_mem_dump_etc[i].recved_size = 0;
+            g_pst_bfgx_mem_dump_etc[i].total_size  = 0;
+            g_pst_bfgx_mem_dump_etc[i].file_name   = NULL;
+            g_pst_bfgx_mem_dump_etc[i].exception_mem_addr = NULL;
         }
     }
 
-    g_recvd_block_count = 0;
+    g_recvd_block_count_etc = 0;
 
     return EXCEPTION_SUCCESS;
 }
 
 
-int32 bfgx_exception_handler(void)
+int32 bfgx_exception_handler_etc(void)
 {
-	int32  ret = -EXCEPTION_FAIL;
-	uint32 exception_type;
+    int32  ret = -EXCEPTION_FAIL;
+    uint32 exception_type;
     struct st_exception_info *pst_exception_data = NULL;
-    struct pm_drv_data *pm_data = pm_get_drvdata();
+    struct pm_drv_data *pm_data = pm_get_drvdata_etc();
+
+    get_exception_info_reference_etc(&pst_exception_data);
+    if (NULL == pst_exception_data)
+    {
+        PS_PRINT_ERR("pst_exception_data is NULL!\n");
+        return -EXCEPTION_FAIL;
+    }
 
     if (NULL == pm_data)
     {
@@ -1381,86 +1559,52 @@ int32 bfgx_exception_handler(void)
         return -EXCEPTION_FAIL;
     }
 
-    get_exception_info_reference(&pst_exception_data);
-    if (NULL == pst_exception_data)
+    if (pst_exception_data->excetion_type == BFGX_BEATHEART_TIMEOUT)
     {
-        PS_PRINT_ERR("get exception info reference is error\n");
-        return -EXCEPTION_FAIL;
+        /*bfgx异常，先删除bfg timer和心跳timer，防止重复触发bfgx异常*/
+        pm_data->ps_pm_interface->operate_beat_timer(BEAT_TIMER_DELETE);
     }
 
-	exception_type = pst_exception_data->excetion_type;
+    exception_type = pst_exception_data->excetion_type;
 
-    /* we do NOT need bfg timer anymore */
-    del_timer_sync(&pm_data->bfg_timer);
-
-	/*ioctl下来的异常执行线程复位流程*/
-	if (exception_type == TIMER_TIMEOUT || exception_type == ARP_TIMEOUT)
-	{
-		ret = bfgx_subthread_reset();
-	}
-	else
-	{
+    /*ioctl下来的异常执行线程复位流程,当前执行系统全复位*/
+    if (exception_type == BFGX_TIMER_TIMEOUT || exception_type == BFGX_ARP_TIMEOUT)
+    {
+        ret = bfgx_subthread_reset_etc();
+    }
+    else
+    {
         /*异常恢复之前，尝试用平台命令读栈，不能保证一定成功，因为此时uart可能不通*/
-        bfgx_dump_stack();
+        bfgx_dump_stack_etc();
 
-        if (LAST_WORD == exception_type)
-        {
-            CHR_EXCEPTION(CHR_GNSS_DRV(CHR_GNSS_DRV_EVENT_PLAT, CHR_PLAT_DRV_ERROR_RECV_LASTWORD));
-        }
-
-		ret = bfgx_subsystem_reset();
-	}
-
-	if (EXCEPTION_SUCCESS != ret)
-	{
-		PS_PRINT_ERR("bfgx exception recovery fail!, exception_type = [%u]\n", exception_type);
-		del_timer_sync(&pm_data->bfg_timer);
-		return ret;
-	}
-
-	return EXCEPTION_SUCCESS;
-}
-
-
-int32 bfgx_subthread_reset(void)
-{
-	int32  ret = -EXCEPTION_FAIL;
-	uint32 subsys, subthread;
-    struct st_exception_info *pst_exception_data = NULL;
-
-    get_exception_info_reference(&pst_exception_data);
-    if (NULL == pst_exception_data)
-    {
-        PS_PRINT_ERR("get exception info reference is error\n");
-        return -EXCEPTION_FAIL;
+        ret = bfgx_subsystem_reset_etc();
     }
 
-    subsys    = pst_exception_data->subsys_type;
-    subthread = pst_exception_data->thread_type;
+    if (EXCEPTION_SUCCESS != ret)
+    {
+        PS_PRINT_ERR("bfgx exception recovery fail!, exception_type = [%u]\n", exception_type);
+        del_timer_sync(&pm_data->bfg_timer);
+        pm_data->bfg_timer_mod_cnt = 0;
+        pm_data->bfg_timer_mod_cnt_pre = 0;
 
-	/*uart 发送复位子业务命令*/
+        pm_data->ps_pm_interface->operate_beat_timer(BEAT_TIMER_DELETE);
+        return ret;
+    }
 
-	/*等待子业务复位成功ACK*/
-
-	if (EXCEPTION_SUCCESS != ret)
-	{
-		PS_PRINT_INFO("bfgx subthread reset fail! start subsystem reset!\n");
-		ret = bfgx_subsystem_reset();
-
-		if (EXCEPTION_SUCCESS != ret)
-		{
-			PS_PRINT_ERR("bfgx subsystem reset fail!\n");
-			return -EXCEPTION_FAIL;
-		}
-	}
-
-	return EXCEPTION_SUCCESS;
+    return EXCEPTION_SUCCESS;
 }
 
-int32 wifi_reset_bfgx(void)
+
+int32 bfgx_subthread_reset_etc(void)
+{
+    /*这里执行芯片全系统复位，保证芯片下电*/
+    return bfgx_system_reset_etc();
+}
+
+int32 wifi_reset_bfgx_etc(void)
 {
     uint64 timeleft;
-    struct pm_drv_data *pm_data = pm_get_drvdata();
+    struct pm_drv_data *pm_data = pm_get_drvdata_etc();
 
     if (NULL == pm_data)
     {
@@ -1468,19 +1612,21 @@ int32 wifi_reset_bfgx(void)
         return -FAILURE;
     }
 
-    if (EXCEPTION_SUCCESS != wlan_pm_shutdown_bcpu_cmd())
+    if (EXCEPTION_SUCCESS != wlan_pm_shutdown_bcpu_cmd_etc())
     {
         PS_PRINT_ERR("wifi shutdown bcpu fail\n");
-        CHR_EXCEPTION(CHR_GNSS_DRV(CHR_GNSS_DRV_EVENT_PLAT, CHR_PLAT_DRV_ERROR_CLOSE_BCPU));
+        CHR_EXCEPTION_REPORT(CHR_PLATFORM_EXCEPTION_EVENTID, CHR_SYSTEM_GNSS, CHR_LAYER_DRV, CHR_GNSS_DRV_EVENT_PLAT, CHR_PLAT_DRV_ERROR_CLOSE_BCPU);
+
         return -EXCEPTION_FAIL;
     }
 
     INIT_COMPLETION(pm_data->dev_bootok_ack_comp);
 
-    if (EXCEPTION_SUCCESS != wlan_pm_open_bcpu())
+    if (EXCEPTION_SUCCESS != wlan_pm_open_bcpu_etc())
     {
         PS_PRINT_ERR("wifi reset bcpu fail\n");
-        CHR_EXCEPTION(CHR_GNSS_DRV(CHR_GNSS_DRV_EVENT_PLAT, CHR_PLAT_DRV_ERROR_OPEN_BCPU));
+        CHR_EXCEPTION_REPORT(CHR_PLATFORM_EXCEPTION_EVENTID, CHR_SYSTEM_GNSS, CHR_LAYER_DRV, CHR_GNSS_DRV_EVENT_PLAT, CHR_PLAT_DRV_ERROR_OPEN_BCPU);
+
         return -EXCEPTION_FAIL;
     }
 
@@ -1488,7 +1634,8 @@ int32 wifi_reset_bfgx(void)
     if (!timeleft)
     {
         PS_PRINT_ERR("wait bfgx boot ok timeout\n");
-        CHR_EXCEPTION(CHR_GNSS_DRV(CHR_GNSS_DRV_EVENT_PLAT, CHR_PLAT_DRV_ERROR_BCPU_BOOTUP));
+        CHR_EXCEPTION_REPORT(CHR_PLATFORM_EXCEPTION_EVENTID, CHR_SYSTEM_GNSS, CHR_LAYER_DRV, CHR_GNSS_DRV_EVENT_PLAT, CHR_PLAT_DRV_ERROR_BCPU_BOOTUP);
+
         return  -EXCEPTION_FAIL;
     }
 
@@ -1496,11 +1643,11 @@ int32 wifi_reset_bfgx(void)
 }
 
 
-int32 __bfgx_subsystem_reset(void)
+int32 __bfgx_subsystem_reset_etc(void)
 {
     uint64 timeleft;
     struct ps_core_s *ps_core_d = NULL;
-    struct pm_drv_data *pm_data = pm_get_drvdata();
+    struct pm_drv_data *pm_data = pm_get_drvdata_etc();
     int32 l_subchip_type = get_hi110x_subchip_type();
 
     if (NULL == pm_data)
@@ -1509,27 +1656,29 @@ int32 __bfgx_subsystem_reset(void)
         return -FAILURE;
     }
 
-
-    ps_get_core_reference(&ps_core_d);
+    ps_get_core_reference_etc(&ps_core_d);
     if (unlikely(NULL == ps_core_d))
     {
         PS_PRINT_ERR("ps_core_d is err\n");
         return -EXCEPTION_FAIL;
     }
 
-    if (false == ps_chk_bfg_active(ps_core_d))
+    if (false == ps_chk_bfg_active_etc(ps_core_d))
     {
         PS_PRINT_ERR("bfgx no subsys is opened\n");
         return EXCEPTION_SUCCESS;
     }
 
-    if (EXCEPTION_SUCCESS != release_tty_drv(ps_core_d->pm_data))
+    if (EXCEPTION_SUCCESS != release_tty_drv_etc(ps_core_d->pm_data))
     {
         PS_PRINT_ERR("close tty is err!\n");
-        return -EXCEPTION_FAIL;
+        if (!is_tty_open(ps_core_d->pm_data))
+        {
+            return -EXCEPTION_FAIL;
+        }
     }
 
-    if (EXCEPTION_SUCCESS != open_tty_drv(ps_core_d->pm_data))
+    if (EXCEPTION_SUCCESS != open_tty_drv_etc(ps_core_d->pm_data))
     {
         PS_PRINT_ERR("open tty is err!\n");
         return -EXCEPTION_FAIL;
@@ -1540,7 +1689,7 @@ int32 __bfgx_subsystem_reset(void)
     switch (l_subchip_type)
     {
         case BOARD_VERSION_HI1102:
-            if (EXCEPTION_SUCCESS != wifi_reset_bfgx())
+            if (EXCEPTION_SUCCESS != wifi_reset_bfgx_etc())
             {
                 PS_PRINT_ERR("wifi reset bfgx fail\n");
                 atomic_set(&pm_data->bfg_needwait_devboot_flag, NONEED_SET_FLAG);
@@ -1555,7 +1704,8 @@ int32 __bfgx_subsystem_reset(void)
             {
                 PS_PRINT_ERR("wait bfgx boot ok timeout\n");
                 atomic_set(&pm_data->bfg_needwait_devboot_flag, NONEED_SET_FLAG);
-                CHR_EXCEPTION(CHR_GNSS_DRV(CHR_GNSS_DRV_EVENT_PLAT, CHR_PLAT_DRV_ERROR_BCPU_BOOTUP));
+                CHR_EXCEPTION_REPORT(CHR_PLATFORM_EXCEPTION_EVENTID, CHR_SYSTEM_GNSS, CHR_LAYER_DRV, CHR_GNSS_DRV_EVENT_PLAT, CHR_PLAT_DRV_ERROR_BCPU_BOOTUP);
+
                 return  -EXCEPTION_FAIL;
             }
             break;
@@ -1567,36 +1717,40 @@ int32 __bfgx_subsystem_reset(void)
 
     atomic_set(&pm_data->bfg_needwait_devboot_flag, NONEED_SET_FLAG);
 
-    bfgx_pm_feature_set();
+    bfgx_pm_feature_set_etc();
 
-    if (EXCEPTION_SUCCESS != bfgx_status_recovery())
+    if (EXCEPTION_SUCCESS != bfgx_status_recovery_etc())
     {
         PS_PRINT_ERR("bfgx recovery status failed\n");
+
+        CHR_EXCEPTION_REPORT(CHR_PLATFORM_EXCEPTION_EVENTID, CHR_SYSTEM_GNSS, CHR_LAYER_DRV, CHR_GNSS_DRV_EVENT_PLAT, CHR_PLAT_DRV_ERROR_BFGX_RECOVERY);
         return -EXCEPTION_FAIL;
     }
+
+    plat_dfr_sysrst_type_cnt_inc(DFR_SINGLE_SYS_RST, SUBSYS_BFGX);
 
     return EXCEPTION_SUCCESS;
 }
 
 
-int32 bfgx_subsystem_reset(void)
+int32 bfgx_subsystem_reset_etc(void)
 {
-    if (!wlan_is_shutdown())
+    if (!wlan_is_shutdown_etc())
     {
         PS_PRINT_INFO("wifi is opened, start bfgx subsystem reset!\n");
 
         if (!is_subsystem_rst_enable())
         {
-            if (EXCEPTION_SUCCESS != __bfgx_subsystem_reset())
+            if (EXCEPTION_SUCCESS != __bfgx_subsystem_reset_etc())
             {
                 PS_PRINT_ERR("bfgx subsystem reset failed, start bfgx system reset!\n");
-                return bfgx_system_reset();
+                return bfgx_system_reset_etc();
             }
         }
         else
         {
             PS_PRINT_INFO("in debug mode,skip subsystem rst,do bfgx system reset!\n");
-            return bfgx_system_reset();
+            return bfgx_system_reset_etc();
         }
 
         return EXCEPTION_SUCCESS;
@@ -1604,17 +1758,18 @@ int32 bfgx_subsystem_reset(void)
     else
     {
         PS_PRINT_INFO("wifi is not opened, start bfgx system reset!\n");
-        return bfgx_system_reset();
+        return bfgx_system_reset_etc();
     }
 }
 
-int32 bfgx_power_reset(void)
+int32 bfgx_power_reset_etc(void)
 {
+    int32 ret = -FAILURE;
     uint64 timeleft;
     struct ps_core_s *ps_core_d = NULL;
-    struct pm_drv_data *pm_data = pm_get_drvdata();
+    struct pm_drv_data *pm_data = pm_get_drvdata_etc();
 
-    ps_get_core_reference(&ps_core_d);
+    ps_get_core_reference_etc(&ps_core_d);
     if (unlikely(NULL == ps_core_d))
     {
         PS_PRINT_ERR("ps_core_d is err\n");
@@ -1627,23 +1782,28 @@ int32 bfgx_power_reset(void)
         return -FAILURE;
     }
 
-    if (0 != release_tty_drv(ps_core_d->pm_data))
+    if (0 != release_tty_drv_etc(ps_core_d->pm_data))
     {
-        PS_PRINT_WARNING("bfgx_power_reset, release_tty_drv fail\n");
+        PS_PRINT_WARNING("bfgx_power_reset_etc, release_tty_drv_etc fail\n");
     }
 
     PS_PRINT_INFO("bfgx system reset, board power on\n");
-    board_power_reset(BFGX_POWER);
-
-    if (0 != open_tty_drv(ps_core_d->pm_data))
+    ret = board_power_reset(BFGX_POWER);
+    if(ret)
     {
-        PS_PRINT_WARNING("bfgx_power_reset, open_tty_drv fail\n");
+        PS_PRINT_ERR("board_power_reset bfgx failed=%d\n", ret);
+        return -EXCEPTION_FAIL;
+    }
+
+    if (0 != open_tty_drv_etc(ps_core_d->pm_data))
+    {
+        PS_PRINT_WARNING("bfgx_power_reset_etc, open_tty_drv_etc fail\n");
     }
 
     INIT_COMPLETION(pm_data->dev_bootok_ack_comp);
     atomic_set(&pm_data->bfg_needwait_devboot_flag, NEED_SET_FLAG);
 
-    if (EXCEPTION_SUCCESS != firmware_download_function(BFGX_CFG))
+    if (EXCEPTION_SUCCESS != firmware_download_function_etc(BFGX_CFG))
     {
         hcc_bus_disable_state(pm_data->pst_wlan_pm_info->pst_bus, OAL_BUS_STATE_ALL);
         PS_PRINT_ERR("bfgx power reset failed!\n");
@@ -1657,30 +1817,31 @@ int32 bfgx_power_reset(void)
     {
         PS_PRINT_ERR("wait bfgx boot ok timeout\n");
         atomic_set(&pm_data->bfg_needwait_devboot_flag, NONEED_SET_FLAG);
-        CHR_EXCEPTION(CHR_GNSS_DRV(CHR_GNSS_DRV_EVENT_PLAT, CHR_PLAT_DRV_ERROR_BCPU_BOOTUP));
+        CHR_EXCEPTION_REPORT(CHR_PLATFORM_EXCEPTION_EVENTID, CHR_SYSTEM_GNSS, CHR_LAYER_DRV, CHR_GNSS_DRV_EVENT_PLAT, CHR_PLAT_DRV_ERROR_BCPU_BOOTUP);
+
         return  -EXCEPTION_FAIL;
     }
 
     atomic_set(&pm_data->bfg_needwait_devboot_flag, NONEED_SET_FLAG);
 
-    bfgx_pm_feature_set();
+    bfgx_pm_feature_set_etc();
 
     return EXCEPTION_SUCCESS;
 }
 
 
-int32 bfgx_system_reset(void)
+int32 bfgx_system_reset_etc(void)
 {
-	struct st_exception_info *pst_exception_data = NULL;
+    struct st_exception_info *pst_exception_data = NULL;
 
-    get_exception_info_reference(&pst_exception_data);
+    get_exception_info_reference_etc(&pst_exception_data);
     if (NULL == pst_exception_data)
     {
         PS_PRINT_ERR("get exception info reference is error\n");
         return -EXCEPTION_FAIL;
     }
 
-    if (!wlan_is_shutdown())
+    if (!wlan_is_shutdown_etc())
     {
         if (NULL != pst_exception_data->wifi_callback->notify_wifi_to_recovery)
         {
@@ -1690,32 +1851,42 @@ int32 bfgx_system_reset(void)
     }
 
     /*重新上电，firmware重新加载*/
-    if (EXCEPTION_SUCCESS != bfgx_power_reset())
+    if (EXCEPTION_SUCCESS != bfgx_power_reset_etc())
     {
         PS_PRINT_ERR("bfgx power reset failed!\n");
         return -EXCEPTION_FAIL;
     }
 
-    if (EXCEPTION_SUCCESS != bfgx_status_recovery())
+    if (EXCEPTION_SUCCESS != bfgx_status_recovery_etc())
     {
         PS_PRINT_ERR("bfgx status revocery failed!\n");
+
+        CHR_EXCEPTION_REPORT(CHR_PLATFORM_EXCEPTION_EVENTID, CHR_SYSTEM_GNSS, CHR_LAYER_DRV, CHR_GNSS_DRV_EVENT_PLAT, CHR_PLAT_DRV_ERROR_BFGX_RECOVERY);
         return -EXCEPTION_FAIL;
     }
 
-    if (!wlan_is_shutdown())
+    if (!wlan_is_shutdown_etc())
     {
-        if (EXCEPTION_SUCCESS != wifi_status_recovery())
+        if (EXCEPTION_SUCCESS != wifi_status_recovery_etc())
         {
             PS_PRINT_ERR("wifi status revocery failed!\n");
+
+            CHR_EXCEPTION_REPORT(CHR_PLATFORM_EXCEPTION_EVENTID, CHR_SYSTEM_WIFI, CHR_LAYER_DRV, CHR_WIFI_DRV_EVENT_PLAT, CHR_PLAT_DRV_ERROR_WIFI_RECOVERY);
+
             return -EXCEPTION_FAIL;
         }
+        plat_dfr_sysrst_type_cnt_inc(DFR_ALL_SYS_RST, SUBSYS_BFGX);
+    }
+    else
+    {
+        plat_dfr_sysrst_type_cnt_inc(DFR_SINGLE_SYS_RST, SUBSYS_BFGX);
     }
 
     return EXCEPTION_SUCCESS;
 }
 
 
-int32 bfgx_recv_dev_mem(uint8 *buf_ptr, uint16 count)
+int32 bfgx_recv_dev_mem_etc(uint8 *buf_ptr, uint16 count)
 {
     struct st_exception_mem_info *pst_mem_info = NULL;
     uint32 offset = 0;
@@ -1726,11 +1897,17 @@ int32 bfgx_recv_dev_mem(uint8 *buf_ptr, uint16 count)
         return -EFAIL;
     }
 
-    pst_mem_info = &(g_pst_bfgx_mem_dump[g_recvd_block_count]);
+    if(g_recvd_block_count_etc >= BFGX_MEM_DUMP_BLOCK_COUNT)
+    {
+        PS_PRINT_ERR("g_recvd_block_count_etc=[%d]\n", g_recvd_block_count_etc);
+        return -EFAIL;
+    }
+
+    pst_mem_info = &(g_pst_bfgx_mem_dump_etc[g_recvd_block_count_etc]);
 
     if (NULL == pst_mem_info->exception_mem_addr)
     {
-        PS_PRINT_ERR("mem addr is null, g_recvd_block_count=[%d]\n", g_recvd_block_count);
+        PS_PRINT_ERR("mem addr is null, g_recvd_block_count_etc=[%d]\n", g_recvd_block_count_etc);
         return -EXCEPTION_FAIL;
     }
 
@@ -1749,15 +1926,15 @@ int32 bfgx_recv_dev_mem(uint8 *buf_ptr, uint16 count)
 
     if (pst_mem_info->recved_size == pst_mem_info->total_size)
     {
-        g_recvd_block_count++;
-        PS_PRINT_INFO("mem block [%d] recvd done\n", g_recvd_block_count);
+        g_recvd_block_count_etc++;
+        PS_PRINT_INFO("mem block [%d] recvd done\n", g_recvd_block_count_etc);
     }
 
     return EXCEPTION_SUCCESS;
 }
+#ifndef HI110X_HAL_MEMDUMP_ENABLE
 
-
-int32 bfgx_store_stack_mem_to_file(void)
+int32 bfgx_store_stack_mem_to_file_etc(void)
 {
     OS_KERNEL_FILE_STRU *fp;
     char filename[100] = {0};
@@ -1767,23 +1944,19 @@ int32 bfgx_store_stack_mem_to_file(void)
 
     for (i = 0; i < BFGX_MEM_DUMP_BLOCK_COUNT; i++)
     {
-        pst_mem_info = &(g_pst_bfgx_mem_dump[i]);
+        pst_mem_info = &(g_pst_bfgx_mem_dump_etc[i]);
         if (NULL == pst_mem_info->exception_mem_addr)
         {
             PS_PRINT_ERR("mem addr is null, i=[%d]\n", i);
             continue;
         }
         OS_MEM_SET(filename, 0, sizeof(filename));
-#if (_PRE_HI110X_LOG_VERSION == _PRE_HI110X_LOG_V2)
-        snprintf(filename, sizeof(filename),"/data/log/hi110x/memdump/%s_%s.bin", UART_STORE_BFGX_STACK, pst_mem_info->file_name);
-#else
-        snprintf(filename, sizeof(filename),"/data/memdump/%s_%s.bin", UART_STORE_BFGX_STACK, pst_mem_info->file_name);
-#endif
+        snprintf(filename, sizeof(filename),BFGX_DUMP_PATH"/%s_%s.bin", UART_STORE_BFGX_STACK, pst_mem_info->file_name);
         /*打开文件，准备保存接收到的内存*/
         fp = filp_open(filename, O_RDWR | O_CREAT, 0664);
         if (OAL_IS_ERR_OR_NULL(fp))
         {
-            PS_PRINT_ERR("create file error,fp = 0x%p\n", fp);
+            PS_PRINT_ERR("create file error,fp = 0x%p,filename:%s\n", fp, filename);
             continue;
         }
 
@@ -1799,22 +1972,22 @@ int32 bfgx_store_stack_mem_to_file(void)
     }
 
     /*send cmd to oam_hisi to rotate file*/
-    plat_send_rotate_cmd_2_app(CMD_READM_BFGX_UART);
+    plat_send_rotate_cmd_2_app_etc(CMD_READM_BFGX_UART);
 
-    free_bfgx_stack_dump_mem();
+    free_bfgx_stack_dump_mem_etc();
 
     return EXCEPTION_SUCCESS;
 }
+#endif
 
-
-void bfgx_dump_stack(void)
+void bfgx_dump_stack_etc(void)
 {
     uint64 timeleft;
     uint32 exception_type;
     struct ps_core_s *ps_core_d = NULL;
     struct st_exception_info *pst_exception_data = NULL;
 
-    get_exception_info_reference(&pst_exception_data);
+    get_exception_info_reference_etc(&pst_exception_data);
     if (NULL == pst_exception_data)
     {
         PS_PRINT_ERR("get exception info reference is error\n");
@@ -1823,10 +1996,10 @@ void bfgx_dump_stack(void)
 
     exception_type = pst_exception_data->excetion_type;
 
-    if ((exception_type != BEAT_HEART_TIMEOUT) && (exception_type != LAST_WORD))
-	{
-	    return;
-	}
+    if (exception_type != BFGX_LASTWORD_PANIC)
+    {
+        return;
+    }
 
     if (unlikely(NULL == pst_exception_data->ps_plat_d))
     {
@@ -1837,60 +2010,54 @@ void bfgx_dump_stack(void)
 
     INIT_COMPLETION(pst_exception_data->wait_read_bfgx_stack);
 
-    /*心跳超时需要host主动发命令去读内存，临终遗言只需要等待device将内存上报上来*/
-    if (exception_type == BEAT_HEART_TIMEOUT)
-    {
-        ps_uart_state_pre(ps_core_d->tty);
-        ps_tx_sys_cmd(ps_core_d, SYS_MSG, SYS_CFG_READ_STACK);
-    }
-
     /*等待读栈操作完成*/
     timeleft = wait_for_completion_timeout(&pst_exception_data->wait_read_bfgx_stack, msecs_to_jiffies(WAIT_BFGX_READ_STACK_TIME));
     if (!timeleft)
     {
-        ps_uart_state_dump(ps_core_d->tty);
+        ps_uart_state_dump_etc(ps_core_d->tty);
+        atomic_set(&pst_exception_data->is_memdump_runing, 0);
         PS_PRINT_ERR("read bfgx stack failed!\n");
     }
     else
     {
         PS_PRINT_INFO("read bfgx stack success!\n");
     }
+#ifndef HI110X_HAL_MEMDUMP_ENABLE
+    plat_wait_last_rotate_finish_etc();
 
-    plat_wait_last_rotate_finish();
-
-    bfgx_store_stack_mem_to_file();
-
+    bfgx_store_stack_mem_to_file_etc();
+#endif
     return;
 }
 
-int32 prepare_to_recv_wifi_mem(void)
+int32 prepare_to_recv_wifi_mem_etc(void)
 {
     uint32 malloc_mem_len;
     uint32 index;
 
     PS_PRINT_INFO("%s\n", __func__);
 
-    index = g_recvd_wifi_block_index;
+    index = g_recvd_wifi_block_index_etc;
     if (index >= UART_WIFI_MEM_DUMP_BOTTOM)
     {
-        PS_PRINT_ERR("g_recvd_wifi_block_index is error [%d]\n", index);
+        PS_PRINT_ERR("g_recvd_wifi_block_index_etc is error [%d]\n", index);
         return -EXCEPTION_FAIL;
     }
 
-    if (NULL == g_pst_uart_wifi_mem_dump[index].exception_mem_addr)
+    if (NULL == g_pst_uart_wifi_mem_dump_etc[index].exception_mem_addr)
     {
-        malloc_mem_len = g_uart_read_wifi_mem_info[index].total_size;
-        g_pst_uart_wifi_mem_dump[index].exception_mem_addr = (uint8 *)OS_VMALLOC_GFP(malloc_mem_len);
-        if (NULL == g_pst_uart_wifi_mem_dump[index].exception_mem_addr)
+        malloc_mem_len = g_uart_read_wifi_mem_info_etc[index].total_size;
+        g_pst_uart_wifi_mem_dump_etc[index].exception_mem_addr = (uint8 *)OS_VMALLOC_GFP(malloc_mem_len);
+        if (NULL == g_pst_uart_wifi_mem_dump_etc[index].exception_mem_addr)
         {
             PS_PRINT_ERR("prepare mem to recv wifi mem failed\n");
             return -EXCEPTION_FAIL;
         }
         else
         {
-            g_pst_uart_wifi_mem_dump[index].recved_size = 0;
-            g_pst_uart_wifi_mem_dump[index].total_size  = malloc_mem_len;
-            g_pst_uart_wifi_mem_dump[index].file_name   = NULL;
+            g_pst_uart_wifi_mem_dump_etc[index].recved_size = 0;
+            g_pst_uart_wifi_mem_dump_etc[index].total_size  = malloc_mem_len;
+            g_pst_uart_wifi_mem_dump_etc[index].file_name   = NULL;
             PS_PRINT_INFO("prepare mem [%d] to recv wifi mem, index = [%d]\n", malloc_mem_len, index);
         }
     }
@@ -1898,34 +2065,34 @@ int32 prepare_to_recv_wifi_mem(void)
     return EXCEPTION_SUCCESS;
 }
 
-int32 free_uart_read_wifi_mem(void)
+int32 free_uart_read_wifi_mem_etc(void)
 {
     uint32 index;
 
     PS_PRINT_INFO("%s\n", __func__);
 
-    index = g_recvd_wifi_block_index;
+    index = g_recvd_wifi_block_index_etc;
     if (index >= UART_WIFI_MEM_DUMP_BOTTOM)
     {
-        PS_PRINT_ERR("g_recvd_wifi_block_index is error [%d]\n", index);
+        PS_PRINT_ERR("g_recvd_wifi_block_index_etc is error [%d]\n", index);
         return -EXCEPTION_FAIL;
     }
 
-    if (NULL != g_pst_uart_wifi_mem_dump[index].exception_mem_addr)
+    if (NULL != g_pst_uart_wifi_mem_dump_etc[index].exception_mem_addr)
     {
-        OS_MEM_VFREE(g_pst_uart_wifi_mem_dump[index].exception_mem_addr);
-        g_pst_uart_wifi_mem_dump[index].recved_size        = 0;
-        g_pst_uart_wifi_mem_dump[index].total_size         = 0;
-        g_pst_uart_wifi_mem_dump[index].exception_mem_addr = NULL;
+        OS_MEM_VFREE(g_pst_uart_wifi_mem_dump_etc[index].exception_mem_addr);
+        g_pst_uart_wifi_mem_dump_etc[index].recved_size        = 0;
+        g_pst_uart_wifi_mem_dump_etc[index].total_size         = 0;
+        g_pst_uart_wifi_mem_dump_etc[index].exception_mem_addr = NULL;
         PS_PRINT_INFO("vfree uart read wifi mem [%d] success\n", index);
     }
 
-    g_recvd_wifi_block_index = UART_WIFI_MEM_DUMP_BOTTOM;
+    g_recvd_wifi_block_index_etc = UART_WIFI_MEM_DUMP_BOTTOM;
 
     return EXCEPTION_SUCCESS;
 }
 
-int32 uart_recv_wifi_mem(uint8 *buf_ptr, uint16 count)
+int32 uart_recv_wifi_mem_etc(uint8 *buf_ptr, uint16 count)
 {
     struct st_exception_mem_info *pst_mem_info = NULL;
     uint32 offset = 0;
@@ -1937,18 +2104,18 @@ int32 uart_recv_wifi_mem(uint8 *buf_ptr, uint16 count)
         return -EFAIL;
     }
 
-    index = g_recvd_wifi_block_index;
+    index = g_recvd_wifi_block_index_etc;
     if (index >= UART_WIFI_MEM_DUMP_BOTTOM)
     {
-        PS_PRINT_ERR("g_recvd_wifi_block_index [%d] is error\n", index);
+        PS_PRINT_ERR("g_recvd_wifi_block_index_etc [%d] is error\n", index);
         return -EXCEPTION_FAIL;
     }
 
-    pst_mem_info = &(g_pst_uart_wifi_mem_dump[index]);
+    pst_mem_info = &(g_pst_uart_wifi_mem_dump_etc[index]);
 
     if (NULL == pst_mem_info->exception_mem_addr)
     {
-        PS_PRINT_ERR("mem addr is null, g_recvd_block_count=[%d]\n", index);
+        PS_PRINT_ERR("mem addr is null, g_recvd_block_count_etc=[%d]\n", index);
         return -EXCEPTION_FAIL;
     }
 
@@ -1969,7 +2136,7 @@ int32 uart_recv_wifi_mem(uint8 *buf_ptr, uint16 count)
     return EXCEPTION_SUCCESS;
 }
 
-int32 __store_wifi_mem_to_file(void)
+int32 __store_wifi_mem_to_file_etc(void)
 {
     OS_KERNEL_FILE_STRU *fp;
     char filename[100] = {0};
@@ -1993,36 +2160,32 @@ int32 __store_wifi_mem_to_file(void)
 #endif
     PS_PRINT_INFO("%s\n", __func__);
 
-    index = g_recvd_wifi_block_index;
+    index = g_recvd_wifi_block_index_etc;
     if (index >= UART_WIFI_MEM_DUMP_BOTTOM)
     {
-        PS_PRINT_ERR("g_recvd_wifi_block_index [%d] is error\n", index);
+        PS_PRINT_ERR("g_recvd_wifi_block_index_etc [%d] is error\n", index);
         return -EXCEPTION_FAIL;
     }
 
-    pst_mem_info = &(g_pst_uart_wifi_mem_dump[index]);
+    pst_mem_info = &(g_pst_uart_wifi_mem_dump_etc[index]);
     if (NULL == pst_mem_info->exception_mem_addr)
     {
-        PS_PRINT_ERR("mem addr is null, g_recvd_wifi_block_index=[%d]", index);
+        PS_PRINT_ERR("mem addr is null, g_recvd_wifi_block_index_etc=[%d]", index);
         return -EXCEPTION_FAIL;
     }
 
-    block_count = g_uart_read_wifi_mem_info[index].block_count;
+    block_count = g_uart_read_wifi_mem_info_etc[index].block_count;
 
     for (i = 0; i < block_count; i++)
     {
-        block_size      = g_uart_read_wifi_mem_info[index].block_info[i].size;
-        block_file_name = g_uart_read_wifi_mem_info[index].block_info[i].file_name;
-#if (_PRE_HI110X_LOG_VERSION == _PRE_HI110X_LOG_V2)
-        snprintf(filename, sizeof(filename),"/data/log/hi110x/memdump/%s_%s.bin", UART_STORE_WIFI_MEM, block_file_name);
-#else
-        snprintf(filename, sizeof(filename),"/data/memdump/%s_%s.bin", UART_STORE_WIFI_MEM, block_file_name);
-#endif
+        block_size      = g_uart_read_wifi_mem_info_etc[index].block_info[i].size;
+        block_file_name = g_uart_read_wifi_mem_info_etc[index].block_info[i].file_name;
+        snprintf(filename, sizeof(filename),BFGX_DUMP_PATH"/%s_%s.bin", UART_STORE_WIFI_MEM, block_file_name);
         /*打开文件，准备保存接收到的内存*/
         fp = filp_open(filename, O_RDWR | O_CREAT, 0664);
         if (OAL_IS_ERR_OR_NULL(fp))
         {
-            PS_PRINT_ERR("create file error,fp = 0x%p\n", fp);
+            PS_PRINT_ERR("create file error,fp = 0x%p,filename:%s\n", fp, filename);
             return -EXCEPTION_FAIL;
         }
 
@@ -2042,35 +2205,35 @@ int32 __store_wifi_mem_to_file(void)
     return EXCEPTION_SUCCESS;
 }
 
-void store_wifi_mem_to_file_work(struct work_struct *work)
+void store_wifi_mem_to_file_work_etc(struct work_struct *work)
 {
     struct st_exception_info *pst_exception_data = NULL;
 
     PS_PRINT_INFO("%s\n", __func__);
 
-    get_exception_info_reference(&pst_exception_data);
+    get_exception_info_reference_etc(&pst_exception_data);
     if (NULL == pst_exception_data)
     {
         PS_PRINT_ERR("get exception info reference is error\n");
         return;
     }
 
-    __store_wifi_mem_to_file();
+    __store_wifi_mem_to_file_etc();
 
-    free_uart_read_wifi_mem();
+    free_uart_read_wifi_mem_etc();
 
     complete(&pst_exception_data->wait_uart_read_wifi_mem);
 
     return;
 }
 
-void store_wifi_mem_to_file(void)
+void store_wifi_mem_to_file_etc(void)
 {
     struct st_exception_info *pst_exception_data = NULL;
 
     PS_PRINT_INFO("%s\n", __func__);
 
-    get_exception_info_reference(&pst_exception_data);
+    get_exception_info_reference_etc(&pst_exception_data);
     if (NULL == pst_exception_data)
     {
         PS_PRINT_ERR("get exception info reference is error\n");
@@ -2081,7 +2244,7 @@ void store_wifi_mem_to_file(void)
     return;
 }
 
-int32 uart_halt_wcpu(void)
+int32 uart_halt_wcpu_etc(void)
 {
     uint64 timeleft;
     hcc_bus*     pst_bus;
@@ -2091,14 +2254,14 @@ int32 uart_halt_wcpu(void)
 
     PS_PRINT_INFO("%s\n", __func__);
 
-    get_exception_info_reference(&pst_exception_data);
+    get_exception_info_reference_etc(&pst_exception_data);
     if (NULL == pst_exception_data)
     {
         PS_PRINT_ERR("get exception info reference is error\n");
         return -EXCEPTION_FAIL;
     }
 
-    ps_get_core_reference(&ps_core_d);
+    ps_get_core_reference_etc(&ps_core_d);
     if (unlikely(NULL == ps_core_d))
     {
         PS_PRINT_ERR("ps_core_d is err\n");
@@ -2106,12 +2269,12 @@ int32 uart_halt_wcpu(void)
     }
 
     INIT_COMPLETION(pst_exception_data->wait_uart_halt_wcpu);
-    ps_uart_state_pre(ps_core_d->tty);
-    ps_tx_sys_cmd(ps_core_d, SYS_MSG, SYS_CFG_HALT_WCPU);
+    ps_uart_state_pre_etc(ps_core_d->tty);
+    ps_tx_sys_cmd_etc(ps_core_d, SYS_MSG, SYS_CFG_HALT_WCPU);
     timeleft = wait_for_completion_timeout(&pst_exception_data->wait_uart_halt_wcpu, msecs_to_jiffies(UART_HALT_WCPU_TIMEOUT));
     if (!timeleft)
     {
-        ps_uart_state_dump(ps_core_d->tty);
+        ps_uart_state_dump_etc(ps_core_d->tty);
         PS_PRINT_ERR("wait uart halt wcpu ack timeout\n");
         return -ETIMEDOUT;
     }
@@ -2136,28 +2299,28 @@ int32 uart_halt_wcpu(void)
 }
 
 
-int32 exception_bcpu_dump_recv(uint8* str, oal_netbuf_stru* netbuf)
+int32 exception_bcpu_dump_recv_etc(uint8* str, oal_netbuf_stru* netbuf)
 {
     exception_bcpu_dump_header*      cmd_header={0};
     struct st_exception_info *pst_exception_data = NULL;
 
-    get_exception_info_reference(&pst_exception_data);
+    get_exception_info_reference_etc(&pst_exception_data);
     if (NULL == pst_exception_data)
     {
         PS_PRINT_ERR("get exception info reference is error\n");
         return -EXCEPTION_FAIL;
     }
 
-    if (NULL == st_bcpu_dump_buff.mem_addr)
+    if (NULL == st_bcpu_dump_buff_etc.mem_addr)
     {
-        PS_PRINT_ERR("st_bcpu_dump_buff addr is null\n");
+        PS_PRINT_ERR("st_bcpu_dump_buff_etc addr is null\n");
         return -EXCEPTION_FAIL;
     }
 
     cmd_header = (exception_bcpu_dump_header*)(str);
-    oal_memcopy(st_bcpu_dump_buff.mem_addr+st_bcpu_dump_buff.data_len,
+    oal_memcopy(st_bcpu_dump_buff_etc.mem_addr+st_bcpu_dump_buff_etc.data_len,
                 str+sizeof(exception_bcpu_dump_header),cmd_header->men_len);
-    st_bcpu_dump_buff.data_len += cmd_header->men_len;
+    st_bcpu_dump_buff_etc.data_len += cmd_header->men_len;
 
     complete(&pst_exception_data->wait_sdio_d2h_dump_ack);
 
@@ -2165,37 +2328,37 @@ int32 exception_bcpu_dump_recv(uint8* str, oal_netbuf_stru* netbuf)
 }
 
 
-int32  free_buffer_and_netbuf(void)
+int32  free_buffer_and_netbuf_etc(void)
 {
-    if (NULL != st_bcpu_dump_buff.mem_addr)
+    if (NULL != st_bcpu_dump_buff_etc.mem_addr)
     {
-        OS_MEM_VFREE(st_bcpu_dump_buff.mem_addr);
-        st_bcpu_dump_buff.data_limit = 0;
-        st_bcpu_dump_buff.data_len = 0;
-        st_bcpu_dump_buff.mem_addr = NULL;
+        OS_MEM_VFREE(st_bcpu_dump_buff_etc.mem_addr);
+        st_bcpu_dump_buff_etc.data_limit = 0;
+        st_bcpu_dump_buff_etc.data_len = 0;
+        st_bcpu_dump_buff_etc.mem_addr = NULL;
     }
 
-    if (NULL != st_bcpu_dump_netbuf)
+    if (NULL != st_bcpu_dump_netbuf_etc)
     {
-        st_bcpu_dump_netbuf = NULL;
+        st_bcpu_dump_netbuf_etc = NULL;
     }
     return EXCEPTION_SUCCESS;
 }
 
 
-int32 sdio_halt_bcpu(void)
+int32 sdio_halt_bcpu_etc(void)
 {
     int32  ret;
     uint64 timeleft;
     int i;
-    struct wlan_pm_s    *pst_wlan_pm = wlan_pm_get_drv();
+    struct wlan_pm_s    *pst_wlan_pm = wlan_pm_get_drv_etc();
 
     hcc_tx_transfer_lock(hcc_get_110x_handler());
 
     //wake up wifi
     for (i = 0; i < WAKEUP_RETRY_TIMES; i++)
     {
-        ret = wlan_pm_wakeup_dev();
+        ret = wlan_pm_wakeup_dev_etc();
         if (OAL_SUCC == ret)
         {
             break;
@@ -2227,27 +2390,27 @@ int32 sdio_halt_bcpu(void)
 }
 
 
-int32 allocate_data_save_buffer(uint32 len)
+int32 allocate_data_save_buffer_etc(uint32 len)
 {
     //临时buff配置,用于传送数据
-    st_bcpu_dump_buff.mem_addr = OS_VMALLOC_GFP(len);
-    if (NULL == st_bcpu_dump_buff.mem_addr)
+    st_bcpu_dump_buff_etc.mem_addr = OS_VMALLOC_GFP(len);
+    if (NULL == st_bcpu_dump_buff_etc.mem_addr)
     {
-        PS_PRINT_ERR("st_bcpu_dump_buff allocate fail!\n");
+        PS_PRINT_ERR("st_bcpu_dump_buff_etc allocate fail!\n");
         return -EXCEPTION_FAIL;
     }
-    st_bcpu_dump_buff.data_limit = len;
-    st_bcpu_dump_buff.data_len  = 0;
+    st_bcpu_dump_buff_etc.data_limit = len;
+    st_bcpu_dump_buff_etc.data_len  = 0;
     return EXCEPTION_SUCCESS;
 }
 
 
-int32 allocate_send_netbuf(uint32 len)
+int32 allocate_send_netbuf_etc(uint32 len)
 {
-    st_bcpu_dump_netbuf  = hcc_netbuf_alloc(len);
-    if (NULL == st_bcpu_dump_netbuf)
+    st_bcpu_dump_netbuf_etc  = hcc_netbuf_alloc(len);
+    if (NULL == st_bcpu_dump_netbuf_etc)
     {
-        PS_PRINT_ERR("st_bcpu_dump_netbuf allocate fail !\n");
+        PS_PRINT_ERR("st_bcpu_dump_netbuf_etc allocate fail !\n");
         return -EXCEPTION_FAIL;
     }
 
@@ -2255,7 +2418,7 @@ int32 allocate_send_netbuf(uint32 len)
 }
 
 
-int32 dump_header_init(exception_bcpu_dump_header* header, uint32 align_type, uint32 addr, uint32 send_len)
+int32 dump_header_init_etc(exception_bcpu_dump_header* header, uint32 align_type, uint32 addr, uint32 send_len)
 {
     /*cmd 初始化*/
     header->align_type = align_type;
@@ -2265,19 +2428,19 @@ int32 dump_header_init(exception_bcpu_dump_header* header, uint32 align_type, ui
 }
 
 
-int32 init_hcc_head_and_send(struct hcc_transfer_param st_hcc_transfer_param,
+int32 init_hcc_head_and_send_etc(struct hcc_transfer_param st_hcc_transfer_param,
                                          struct st_exception_info* pst_exception_data, uint32 wait_time)
 {
     uint64 timeleft;
     int32 l_ret;
     //发送
     INIT_COMPLETION(pst_exception_data->wait_sdio_d2h_dump_ack);
-    l_ret = hcc_tx(hcc_get_110x_handler(), st_bcpu_dump_netbuf, &st_hcc_transfer_param);
+    l_ret = hcc_tx_etc(hcc_get_110x_handler(), st_bcpu_dump_netbuf_etc, &st_hcc_transfer_param);
     if (OAL_SUCC != l_ret)
     {
         PS_PRINT_ERR("send tx  failed!\n");
-        oal_netbuf_free(st_bcpu_dump_netbuf);
-        st_bcpu_dump_netbuf = NULL;
+        oal_netbuf_free(st_bcpu_dump_netbuf_etc);
+        st_bcpu_dump_netbuf_etc = NULL;
         return -EXCEPTION_FAIL;
     }
     /*等待SDIO读数据完成*/
@@ -2286,15 +2449,15 @@ int32 init_hcc_head_and_send(struct hcc_transfer_param st_hcc_transfer_param,
     {
         PS_PRINT_ERR("sdio read  failed!\n");
 
-        //oal_netbuf_free(st_bcpu_dump_netbuf);
-        st_bcpu_dump_netbuf = NULL;
+        //oal_netbuf_free(st_bcpu_dump_netbuf_etc);
+        st_bcpu_dump_netbuf_etc = NULL;
         return -EXCEPTION_FAIL;
     }
      return EXCEPTION_SUCCESS;
 }
 
 
-int32 sdio_get_and_save_data(exception_bcpu_dump_msg* sdio_read_info, uint32 count)
+int32 sdio_get_and_save_data_etc(exception_bcpu_dump_msg* sdio_read_info, uint32 count)
 {
     uint32 header_len;
     uint32 netbuf_len;
@@ -2316,14 +2479,14 @@ int32 sdio_get_and_save_data(exception_bcpu_dump_msg* sdio_read_info, uint32 cou
 
     PS_PRINT_INFO("%s\n", __func__);
 
-    get_exception_info_reference(&pst_exception_data);
+    get_exception_info_reference_etc(&pst_exception_data);
     if (NULL == pst_exception_data)
     {
         PS_PRINT_ERR("get exception info reference is error\n");
         return -EXCEPTION_FAIL;
     }
 
-    if (OAL_SUCC != sdio_halt_bcpu())
+    if (OAL_SUCC != sdio_halt_bcpu_etc())
     {
         PS_PRINT_ERR("halt bcpu error!\n");
         return -EXCEPTION_FAIL;
@@ -2333,11 +2496,7 @@ int32 sdio_get_and_save_data(exception_bcpu_dump_msg* sdio_read_info, uint32 cou
     for (i = 0; i < count; i++)
     {
         index = 0;
-#if (_PRE_HI110X_LOG_VERSION == _PRE_HI110X_LOG_V2)
-        snprintf(filename, sizeof(filename),"/data/log/hi110x/memdump/%s_%s.bin", SDIO_STORE_BFGX_REGMEM, sdio_read_info[i].file_name);
-#else
-        snprintf(filename, sizeof(filename),"/data/memdump/%s_%s.bin", SDIO_STORE_BFGX_REGMEM, sdio_read_info[i].file_name);
-#endif
+        snprintf(filename, sizeof(filename),BFGX_DUMP_PATH"/%s_%s.bin", SDIO_STORE_BFGX_REGMEM, sdio_read_info[i].file_name);
         /*准备文件空间*/
         fp = filp_open(filename, O_RDWR | O_CREAT, 0664);
         if (OAL_IS_ERR_OR_NULL(fp))
@@ -2362,7 +2521,7 @@ int32 sdio_get_and_save_data(exception_bcpu_dump_msg* sdio_read_info, uint32 cou
             buffer_len = (send_total_len > DUMP_BCPU_REG_BUFF_LEN) ? DUMP_BCPU_REG_BUFF_LEN : sdio_read_info[i].men_len;
         }
 
-        if(EXCEPTION_SUCCESS != allocate_data_save_buffer(buffer_len))
+        if(EXCEPTION_SUCCESS != allocate_data_save_buffer_etc(buffer_len))
         {
             error = -EXCEPTION_FAIL;
             goto exit;
@@ -2392,57 +2551,57 @@ int32 sdio_get_and_save_data(exception_bcpu_dump_msg* sdio_read_info, uint32 cou
             }
 
             netbuf_len = header_len + send_len;
-            if(EXCEPTION_SUCCESS != allocate_send_netbuf(netbuf_len))
+            if(EXCEPTION_SUCCESS != allocate_send_netbuf_etc(netbuf_len))
             {
                 error = -EXCEPTION_FAIL;
                 goto exit;
             }
 
-            dump_header_init(&dump_header, sdio_read_info[i].align_type,
+            dump_header_init_etc(&dump_header, sdio_read_info[i].align_type,
                                             sdio_read_info[i].start_addr+index, send_len);
-            if (NULL == st_bcpu_dump_netbuf)
+            if (NULL == st_bcpu_dump_netbuf_etc)
             {
                 goto exit;
             }
 
-            oal_memcopy(oal_netbuf_put(st_bcpu_dump_netbuf, netbuf_len), &dump_header, sizeof(exception_bcpu_dump_header));
+            oal_memcopy(oal_netbuf_put(st_bcpu_dump_netbuf_etc, netbuf_len), &dump_header, sizeof(exception_bcpu_dump_header));
 
             //发送
-            if (EXCEPTION_SUCCESS != init_hcc_head_and_send(st_hcc_transfer_param, pst_exception_data, WIFI_DUMP_BCPU_TIMEOUT))
+            if (EXCEPTION_SUCCESS != init_hcc_head_and_send_etc(st_hcc_transfer_param, pst_exception_data, WIFI_DUMP_BCPU_TIMEOUT))
             {
                 error = -EXCEPTION_FAIL;
                 goto exit;
             }
 
-            vfs_write(fp, st_bcpu_dump_buff.mem_addr, st_bcpu_dump_buff.data_len, &fp->f_pos);
+            vfs_write(fp, st_bcpu_dump_buff_etc.mem_addr, st_bcpu_dump_buff_etc.data_len, &fp->f_pos);
 
             index += send_len;
 
             //prepare for next data
-            st_bcpu_dump_buff.data_len  = 0;
-            st_bcpu_dump_netbuf = NULL;
+            st_bcpu_dump_buff_etc.data_len  = 0;
+            st_bcpu_dump_netbuf_etc = NULL;
         }
         set_fs(fs);
         filp_close(fp, NULL);
-        free_buffer_and_netbuf();
+        free_buffer_and_netbuf_etc();
     }
     return EXCEPTION_SUCCESS;
 exit:
     set_fs(fs);
     filp_close(fp, NULL);
-    free_buffer_and_netbuf();
+    free_buffer_and_netbuf_etc();
     complete(&pst_exception_data->wait_sdio_d2h_dump_ack);
 
     return error;
 }
 
 
-int32 debug_sdio_read_bfgx_reg_and_mem(uint32 which_mem)
+int32 debug_sdio_read_bfgx_reg_and_mem_etc(uint32 which_mem)
 {
     struct ps_core_s *ps_core_d = NULL;
     struct st_exception_info *pst_exception_data = NULL;
 
-    get_exception_info_reference(&pst_exception_data);
+    get_exception_info_reference_etc(&pst_exception_data);
 
     if (NULL == pst_exception_data)
     {
@@ -2456,13 +2615,13 @@ int32 debug_sdio_read_bfgx_reg_and_mem(uint32 which_mem)
         return -EXCEPTION_FAIL;
     }
 
-    if (bfgx_is_shutdown())
+    if (bfgx_is_shutdown_etc())
     {
         PS_PRINT_WARNING("bfgx is off can not dump bfgx msg !\n");
         return -EXCEPTION_FAIL;
     }
 
-    ps_get_core_reference(&ps_core_d);
+    ps_get_core_reference_etc(&ps_core_d);
     if (unlikely(NULL == ps_core_d))
     {
         PS_PRINT_ERR("ps_core_d is err\n");
@@ -2472,7 +2631,7 @@ int32 debug_sdio_read_bfgx_reg_and_mem(uint32 which_mem)
     PS_PRINT_INFO("sdio dump bfgx msg begin\n");
 
     //prepare the wlan state
-    if (wlan_is_shutdown())
+    if (wlan_is_shutdown_etc())
     {
         PS_PRINT_WARNING("wifi is closed, can not dump bcpu info!");
         return -EXCEPTION_FAIL;
@@ -2485,22 +2644,22 @@ int32 debug_sdio_read_bfgx_reg_and_mem(uint32 which_mem)
     //去能exception设置,halt bcpu不引发DFR
     pst_exception_data->exception_reset_enable = PLAT_EXCEPTION_DISABLE;
 
-    plat_wait_last_rotate_finish();
+    //plat_wait_last_rotate_finish_etc();
 
     //dump data
     switch (which_mem)
     {
         case BFGX_PUB_REG:
-            sdio_get_and_save_data(g_sdio_read_bcpu_pub_reg_info, BFGX_PUB_REG_NUM);
+            sdio_get_and_save_data_etc(g_sdio_read_bcpu_pub_reg_info_etc, BFGX_PUB_REG_NUM);
             break;
         case BFGX_PRIV_REG:
-            sdio_get_and_save_data(g_sdio_read_bcpu_priv_reg_info, BFGX_PRIV_REG_NUM);
+            sdio_get_and_save_data_etc(g_sdio_read_bcpu_priv_reg_info_etc, BFGX_PRIV_REG_NUM);
             break;
         case BFGX_MEM:
-            sdio_get_and_save_data(g_sdio_read_bcpu_mem_info, BFGX_SHARE_RAM_NUM);
+            sdio_get_and_save_data_etc(g_sdio_read_bcpu_mem_info_etc, BFGX_SHARE_RAM_NUM);
             break;
         case SDIO_BFGX_MEM_DUMP_BOTTOM:
-            sdio_get_and_save_data(g_sdio_read_all, sizeof(g_sdio_read_all)/sizeof(exception_bcpu_dump_msg));
+            sdio_get_and_save_data_etc(g_sdio_read_all_etc, sizeof(g_sdio_read_all_etc)/sizeof(exception_bcpu_dump_msg));
             break;
         default:
             PS_PRINT_WARNING("input param error , which_mem is %d\n", which_mem);
@@ -2509,19 +2668,19 @@ int32 debug_sdio_read_bfgx_reg_and_mem(uint32 which_mem)
     }
 
     /*send cmd to oam_hisi to rotate file*/
-    plat_send_rotate_cmd_2_app(CMD_READM_BFGX_SDIO);
+    //plat_send_rotate_cmd_2_app_etc(CMD_READM_BFGX_SDIO);
 
     PS_PRINT_INFO("dump complete, recovery begin\n");
 
     //使能DFR, recovery
     pst_exception_data->exception_reset_enable = PLAT_EXCEPTION_ENABLE;
-    plat_exception_handler(SUBSYS_BFGX, BFGX_THREAD_BOTTOM, SDIO_DUMP_BCPU);
+    plat_exception_handler_etc(SUBSYS_BFGX, THREAD_IDLE, SDIO_DUMPBCPU_FAIL);
 
     return EXCEPTION_SUCCESS;
 }
 
 
-int32 uart_read_wifi_mem(uint32 which_mem)
+int32 uart_read_wifi_mem_etc(uint32 which_mem)
 {
     uint64 timeleft;
     struct ps_core_s *ps_core_d = NULL;
@@ -2529,14 +2688,14 @@ int32 uart_read_wifi_mem(uint32 which_mem)
 
     PS_PRINT_INFO("%s\n", __func__);
 
-    get_exception_info_reference(&pst_exception_data);
+    get_exception_info_reference_etc(&pst_exception_data);
     if (NULL == pst_exception_data)
     {
         PS_PRINT_ERR("get exception info reference is error\n");
         return -EXCEPTION_FAIL;
     }
 
-    ps_get_core_reference(&ps_core_d);
+    ps_get_core_reference_etc(&ps_core_d);
     if (unlikely(NULL == ps_core_d))
     {
         PS_PRINT_ERR("ps_core_d is err\n");
@@ -2549,37 +2708,37 @@ int32 uart_read_wifi_mem(uint32 which_mem)
         return -EINVAL;
     }
 
-    g_recvd_wifi_block_index = which_mem;
+    g_recvd_wifi_block_index_etc = which_mem;
 
-    if (0 > prepare_to_recv_wifi_mem())
+    if (0 > prepare_to_recv_wifi_mem_etc())
     {
         PS_PRINT_ERR("prepare mem to recv wifi mem fail, which_mem = [%d]\n", which_mem);
-        g_recvd_wifi_block_index = UART_WIFI_MEM_DUMP_BOTTOM;
+        g_recvd_wifi_block_index_etc = UART_WIFI_MEM_DUMP_BOTTOM;
         return -EINVAL;
     }
 
     INIT_COMPLETION(pst_exception_data->wait_uart_read_wifi_mem);
-    ps_uart_state_pre(ps_core_d->tty);
-    ps_tx_sys_cmd(ps_core_d, SYS_MSG, g_uart_read_wifi_mem_info[which_mem].cmd);
+    ps_uart_state_pre_etc(ps_core_d->tty);
+    ps_tx_sys_cmd_etc(ps_core_d, SYS_MSG, g_uart_read_wifi_mem_info_etc[which_mem].cmd);
     timeleft = wait_for_completion_timeout(&pst_exception_data->wait_uart_read_wifi_mem, msecs_to_jiffies(UART_READ_WIFI_MEM_TIMEOUT));
     if (!timeleft)
     {
-        ps_uart_state_dump(ps_core_d->tty);
+        ps_uart_state_dump_etc(ps_core_d->tty);
         PS_PRINT_ERR("wait uart read wifi mem [%d] timeout\n", which_mem);
-        free_uart_read_wifi_mem();
+        free_uart_read_wifi_mem_etc();
         return -ETIMEDOUT;
     }
 
     return EXCEPTION_SUCCESS;
 }
 
-int32 debug_uart_read_wifi_mem(uint32 ul_lock)
+int32 debug_uart_read_wifi_mem_etc(uint32 ul_lock)
 {
     uint32 i;
     uint32 read_mem_succ_count = 0;
     struct ps_core_s *ps_core_d = NULL;
     int32  l_subchip_type = get_hi110x_subchip_type();
-    struct pm_drv_data *pm_data = pm_get_drvdata();
+    struct pm_drv_data *pm_data = pm_get_drvdata_etc();
 
     PS_PRINT_INFO("%s\n", __func__);
 
@@ -2589,7 +2748,7 @@ int32 debug_uart_read_wifi_mem(uint32 ul_lock)
         return -EINVAL;
     }
 
-    ps_get_core_reference(&ps_core_d);
+    ps_get_core_reference_etc(&ps_core_d);
     if (unlikely(NULL == ps_core_d))
     {
         PS_PRINT_ERR("ps_core_d is err\n");
@@ -2603,24 +2762,24 @@ int32 debug_uart_read_wifi_mem(uint32 ul_lock)
             mutex_lock(&pm_data->host_mutex);
         }
 
-        if (EXCEPTION_SUCCESS != prepare_to_visit_node(ps_core_d))
+        if (EXCEPTION_SUCCESS != prepare_to_visit_node_etc(ps_core_d))
         {
             PS_PRINT_ERR("prepare work FAIL\n");
             goto fail_return;
         }
 
-        if (EXCEPTION_SUCCESS != uart_halt_wcpu())
+        if (EXCEPTION_SUCCESS != uart_halt_wcpu_etc())
         {
             PS_PRINT_ERR("uart halt wcpu fail!\n");
-            post_to_visit_node(ps_core_d);
+            post_to_visit_node_etc(ps_core_d);
             goto fail_return;
         }
 
-        plat_wait_last_rotate_finish();
+    //plat_wait_last_rotate_finish_etc();
 
         for (i = 0; i < UART_WIFI_MEM_DUMP_BOTTOM; i++)
         {
-            if (EXCEPTION_SUCCESS != uart_read_wifi_mem(i))
+            if (EXCEPTION_SUCCESS != uart_read_wifi_mem_etc(i))
             {
                 PS_PRINT_ERR("uart read wifi mem [%d] fail!", i);
                 break;
@@ -2631,14 +2790,14 @@ int32 debug_uart_read_wifi_mem(uint32 ul_lock)
         if (read_mem_succ_count > 0)
         {
             /*send cmd to oam_hisi to rotate file*/
-            plat_send_rotate_cmd_2_app(CMD_READM_WIFI_UART);
+            //plat_send_rotate_cmd_2_app_etc(CMD_READM_WIFI_UART);
         }
         else
         {
-            plat_rotate_finish_set();
+           // plat_rotate_finish_set_etc();
         }
 
-        post_to_visit_node(ps_core_d);
+        post_to_visit_node_etc(ps_core_d);
 
         if(ul_lock)
         {
@@ -2663,13 +2822,13 @@ int32 debug_uart_read_wifi_mem(uint32 ul_lock)
 
 }
 
-int32 bfgx_reset_cmd_send(uint32 subsys)
+int32 bfgx_reset_cmd_send_etc(uint32 subsys)
 {
     int32 ret;
     struct ps_core_s *ps_core_d = NULL;
     struct st_bfgx_data *pst_bfgx_data = NULL;
 
-    ps_get_core_reference(&ps_core_d);
+    ps_get_core_reference_etc(&ps_core_d);
     if (unlikely(NULL == ps_core_d))
     {
         PS_PRINT_ERR("ps_core_d is null\n");
@@ -2679,10 +2838,10 @@ int32 bfgx_reset_cmd_send(uint32 subsys)
 
     pst_bfgx_data = &ps_core_d->bfgx_info[subsys];
 
-    ret = ps_push_skb_queue(ps_core_d, g_ast_bfgx_reset_msg[subsys].cmd, g_ast_bfgx_reset_msg[subsys].len, g_bfgx_rx_queue[subsys]);
+    ret = ps_push_skb_queue_etc(ps_core_d, g_ast_bfgx_reset_msg_etc[subsys].cmd, g_ast_bfgx_reset_msg_etc[subsys].len, g_bfgx_rx_queue_etc[subsys]);
     if (EXCEPTION_SUCCESS != ret)
     {
-        PS_PRINT_ERR("push %s reset cmd to skb fail\n", g_bfgx_subsys_name[subsys]);
+        PS_PRINT_ERR("push %s reset cmd to skb fail\n", g_bfgx_subsys_name_etc[subsys]);
         return -EXCEPTION_FAIL;
     }
 
@@ -2692,28 +2851,28 @@ int32 bfgx_reset_cmd_send(uint32 subsys)
 }
 
 
-int32 bfgx_status_recovery(void)
+int32 bfgx_status_recovery_etc(void)
 {
     uint32 i;
     struct st_exception_info *pst_exception_data = NULL;
     struct ps_core_s *ps_core_d = NULL;
     struct st_bfgx_data *pst_bfgx_data = NULL;
 
-    get_exception_info_reference(&pst_exception_data);
+    get_exception_info_reference_etc(&pst_exception_data);
     if (NULL == pst_exception_data)
     {
         PS_PRINT_ERR("get exception info reference is error\n");
         return -EXCEPTION_FAIL;
     }
 
-    ps_get_core_reference(&ps_core_d);
+    ps_get_core_reference_etc(&ps_core_d);
     if (unlikely(NULL == ps_core_d))
     {
         PS_PRINT_ERR("ps_core_d is null\n");
         return -EXCEPTION_FAIL;
     }
 
-    if (EXCEPTION_SUCCESS != prepare_to_visit_node(ps_core_d))
+    if (EXCEPTION_SUCCESS != prepare_to_visit_node_etc(ps_core_d))
     {
         PS_PRINT_ERR("prepare work FAIL\n");
         return -EXCEPTION_FAIL;
@@ -2727,24 +2886,24 @@ int32 bfgx_status_recovery(void)
             continue;
         }
 
-        ps_kfree_skb(ps_core_d, g_bfgx_rx_queue[i]);
+        ps_kfree_skb_etc(ps_core_d, g_bfgx_rx_queue_etc[i]);
 
-        if (EXCEPTION_SUCCESS != bfgx_open_cmd_send(i))
+        if (EXCEPTION_SUCCESS != bfgx_open_cmd_send_etc(i))
         {
             PS_PRINT_ERR("bfgx open cmd fail\n");
-            post_to_visit_node(ps_core_d);
+            post_to_visit_node_etc(ps_core_d);
             return -EXCEPTION_FAIL;
         }
 
-        if (EXCEPTION_SUCCESS != bfgx_reset_cmd_send(i))
+        if (EXCEPTION_SUCCESS != bfgx_reset_cmd_send_etc(i))
         {
             PS_PRINT_ERR("bfgx reset cmd send fail\n");
-            post_to_visit_node(ps_core_d);
+            post_to_visit_node_etc(ps_core_d);
             return -EXCEPTION_FAIL;
         }
     }
 
-    post_to_visit_node(ps_core_d);
+    post_to_visit_node_etc(ps_core_d);
 
     /*仅调试使用*/
     PS_PRINT_INFO("exception: set debug beat flag to 1\n");
@@ -2754,13 +2913,13 @@ int32 bfgx_status_recovery(void)
 }
 
 
-int32 is_bfgx_exception(void)
+int32 is_bfgx_exception_etc(void)
 {
     struct st_exception_info *pst_exception_data = NULL;
     int32 is_exception;
     uint64 flag;
 
-    get_exception_info_reference(&pst_exception_data);
+    get_exception_info_reference_etc(&pst_exception_data);
     if (NULL == pst_exception_data)
     {
         PS_PRINT_ERR("get exception info reference is error\n");
@@ -2782,11 +2941,11 @@ int32 is_bfgx_exception(void)
 }
 
 
-int32 plat_bfgx_exception_rst_register(struct ps_plat_s *data)
+int32 plat_bfgx_exception_rst_register_etc(struct ps_plat_s *data)
 {
 	struct st_exception_info *pst_exception_data = NULL;
 
-    get_exception_info_reference(&pst_exception_data);
+    get_exception_info_reference_etc(&pst_exception_data);
     if (NULL == pst_exception_data)
     {
         PS_PRINT_ERR("get exception info reference is error\n");
@@ -2804,15 +2963,15 @@ int32 plat_bfgx_exception_rst_register(struct ps_plat_s *data)
 	return EXCEPTION_SUCCESS;
 }
 
-EXPORT_SYMBOL_GPL(plat_bfgx_exception_rst_register);
+EXPORT_SYMBOL_GPL(plat_bfgx_exception_rst_register_etc);
 
 
-int32 plat_wifi_exception_rst_register(void *data)
+int32 plat_wifi_exception_rst_register_etc(void *data)
 {
 	struct st_exception_info *pst_exception_data = NULL;
 	struct st_wifi_dfr_callback *pst_wifi_callback = NULL;
 
-    get_exception_info_reference(&pst_exception_data);
+    get_exception_info_reference_etc(&pst_exception_data);
     if (NULL == pst_exception_data)
     {
         PS_PRINT_ERR("get exception info reference is error\n");
@@ -2832,10 +2991,10 @@ int32 plat_wifi_exception_rst_register(void *data)
 	return EXCEPTION_SUCCESS;
 }
 
-EXPORT_SYMBOL_GPL(plat_wifi_exception_rst_register);
+EXPORT_SYMBOL_GPL(plat_wifi_exception_rst_register_etc);
 
 
-int32 plat_exception_reset_init(void)
+int32 plat_exception_reset_init_etc(void)
 {
     struct st_exception_info *p_exception_data = NULL;
 
@@ -2853,7 +3012,7 @@ int32 plat_exception_reset_init(void)
     p_exception_data->excetion_type = EXCEPTION_TYPE_BOTTOM;
 
     p_exception_data->exception_reset_enable   = PLAT_EXCEPTION_DISABLE;
-    p_exception_data->subsystem_rst_en          = DFR_SUSUBS_ENABLE;
+    p_exception_data->subsystem_rst_en          = DFR_TEST_ENABLE;
 
     p_exception_data->ps_plat_d                = NULL;
 
@@ -2862,12 +3021,13 @@ int32 plat_exception_reset_init(void)
 
     /*初始化异常处理workqueue和work*/
     p_exception_data->plat_exception_rst_workqueue = create_singlethread_workqueue("plat_exception_reset_queue");
-    INIT_WORK(&p_exception_data->plat_exception_rst_work, plat_exception_reset_work);
-    INIT_WORK(&p_exception_data->uart_store_wifi_mem_to_file_work, store_wifi_mem_to_file_work);
+    INIT_WORK(&p_exception_data->plat_exception_rst_work, plat_exception_reset_work_etc);
+    oal_wake_lock_init(&p_exception_data->plat_exception_rst_wlock, "hi11xx_excep_rst_wlock");
+    INIT_WORK(&p_exception_data->uart_store_wifi_mem_to_file_work, store_wifi_mem_to_file_work_etc);
 
     /*初始化心跳timer*/
     init_timer(&p_exception_data->bfgx_beat_timer);
-    p_exception_data->bfgx_beat_timer.function = bfgx_beat_timer_expire;
+    p_exception_data->bfgx_beat_timer.function = bfgx_beat_timer_expire_etc;
     p_exception_data->bfgx_beat_timer.expires  = jiffies + BFGX_BEAT_TIME*HZ;
     p_exception_data->bfgx_beat_timer.data     = 0;
 
@@ -2881,46 +3041,212 @@ int32 plat_exception_reset_init(void)
 
     /*调试使用的变量初始化*/
     p_exception_data->debug_beat_flag          = 1;
+    atomic_set(&p_exception_data->is_memdump_runing, 0);
     p_exception_data->wifi_open_bcpu_enable    = false;
 
     init_completion(&p_exception_data->wait_uart_read_wifi_mem);
     init_completion(&p_exception_data->wait_uart_halt_wcpu);
 
-    g_pst_exception_info = p_exception_data;
+    g_pst_exception_info_etc = p_exception_data;
 
     /*初始化dump文件轮替模块*/
-    plat_exception_dump_file_rotate_init();
+    plat_exception_dump_file_rotate_init_etc();
+
+    hisi_conn_rdr_init();
 
     PS_PRINT_SUC("plat exception reset init success\n");
 
 	return EXCEPTION_SUCCESS;
 }
 
-EXPORT_SYMBOL_GPL(plat_exception_reset_init);
+EXPORT_SYMBOL_GPL(plat_exception_reset_init_etc);
 
 
-int32 plat_exception_reset_exit(void)
+int32 plat_exception_reset_exit_etc(void)
 {
     struct st_exception_info *p_exception_data = NULL;
 
-    p_exception_data = g_pst_exception_info;
+    p_exception_data = g_pst_exception_info_etc;
     if (p_exception_data == NULL)
     {
-        PS_PRINT_ERR("g_pst_exception_info is NULL!\n");
+        PS_PRINT_ERR("g_pst_exception_info_etc is NULL!\n");
         return -EXCEPTION_FAIL;
     }
 
     destroy_workqueue(p_exception_data->plat_exception_rst_workqueue);
     del_timer_sync(&p_exception_data->bfgx_beat_timer);
 
+    oal_wake_lock_exit(&p_exception_data->plat_exception_rst_wlock);
+
     kfree(p_exception_data);
-    g_pst_exception_info = NULL;
+    g_pst_exception_info_etc = NULL;
 
     PS_PRINT_SUC("plat exception reset exit success\n");
+
+    hisi_conn_rdr_exit();
 
     return EXCEPTION_SUCCESS;
 }
 
-EXPORT_SYMBOL_GPL(plat_exception_reset_exit);
+EXPORT_SYMBOL_GPL(plat_exception_reset_exit_etc);
 
+#ifdef PLATFORM_DEBUG_ENABLE
+int32 is_dfr_test_en(enum excp_test_cfg_em excp_cfg)
+{
+    if (excp_cfg >= EXCP_TEST_CFG_BOTT) {
+        return -1;
+    }
 
+    if (DFR_TEST_ENABLE == gst_excp_test_cfg[excp_cfg])
+    {
+        gst_excp_test_cfg[excp_cfg] = DFR_TEST_DISABLE;
+        return 0;
+    }
+    return  -1;
+}
+EXPORT_SYMBOL_GPL(is_dfr_test_en);
+void set_excp_test_en(enum excp_test_cfg_em excp_cfg)
+{
+    if (excp_cfg >= EXCP_TEST_CFG_BOTT) {
+        return;
+    }
+
+    gst_excp_test_cfg[excp_cfg] = DFR_TEST_ENABLE;
+}
+#endif
+
+#ifdef HI110X_HAL_MEMDUMP_ENABLE
+
+void plat_exception_dump_file_rotate_init_etc(void)
+{
+    init_waitqueue_head(&bcpu_memdump_cfg_etc.dump_type_wait);
+    skb_queue_head_init(&bcpu_memdump_cfg_etc.dump_type_queue);
+    skb_queue_head_init(&bcpu_memdump_cfg_etc.quenue);
+    init_waitqueue_head(&wcpu_memdump_cfg_etc.dump_type_wait);
+    skb_queue_head_init(&wcpu_memdump_cfg_etc.dump_type_queue);
+    skb_queue_head_init(&wcpu_memdump_cfg_etc.quenue);
+    PS_PRINT_INFO("plat exception dump file rotate init success\n");
+}
+
+void excp_memdump_quenue_clear_etc(memdump_info_t* memdump_t)
+{
+    struct sk_buff *skb = NULL;
+    while(NULL != (skb = skb_dequeue(&memdump_t->quenue)))
+    {
+        kfree_skb(skb);
+    }
+}
+int32 bfgx_memdump_quenue_clear_etc(void)
+{
+    PS_PRINT_DBG("bfgx_memdump_quenue_clear_etc\n");
+    excp_memdump_quenue_clear_etc(&bcpu_memdump_cfg_etc);
+    return 0;
+}
+void wifi_memdump_quenue_clear_etc(void)
+{
+    PS_PRINT_DBG("wifi_memdump_quenue_clear_etc\n");
+    excp_memdump_quenue_clear_etc(&wcpu_memdump_cfg_etc);
+}
+void bfgx_memdump_finish_etc(void)
+{
+    bcpu_memdump_cfg_etc.is_working =0;
+}
+void wifi_memdump_finish_etc(void)
+{
+    wcpu_memdump_cfg_etc.is_working =0;
+}
+
+int32 plat_excp_send_rotate_cmd_2_app_etc(uint32 which_dump, memdump_info_t* memdump_info )
+{
+    struct sk_buff  *skb =NULL;
+
+    if (CMD_DUMP_BUFF <= which_dump)
+    {
+        PS_PRINT_WARNING("which dump:%d error\n", which_dump);
+        return -EINVAL;
+    }
+    if (skb_queue_len(&memdump_info->dump_type_queue) > MEMDUMP_ROTATE_QUEUE_MAX_LEN)
+    {
+        PS_PRINT_WARNING("too many dump type in queue,dispose type:%d", which_dump);
+        return -EINVAL;
+    }
+
+    skb = alloc_skb(sizeof(which_dump), GFP_KERNEL);
+    if( NULL == skb)
+    {
+        PS_PRINT_ERR("alloc errno skbuff failed! len=%d, errno=%x\n", (int32)sizeof(which_dump), which_dump);
+        return -EINVAL;
+    }
+    skb_put(skb, sizeof(which_dump));
+    *(uint32*)skb->data = which_dump;
+    skb_queue_tail(&memdump_info->dump_type_queue, skb);
+    PS_PRINT_INFO("save rotate cmd [%d] in queue\n", which_dump);
+
+    wake_up_interruptible(&memdump_info->dump_type_wait);
+
+    return 0;
+}
+
+int32 notice_hal_memdump_etc(memdump_info_t* memdump_t, uint32 which_dump)
+{
+    PS_PRINT_FUNCTION_NAME;
+    if (memdump_t->is_working) {
+        PS_PRINT_ERR("is doing memdump\n");
+        return -1;
+    }
+    excp_memdump_quenue_clear_etc(memdump_t);
+    plat_excp_send_rotate_cmd_2_app_etc(which_dump, memdump_t);
+    memdump_t->is_working =1;
+    return 0;
+}
+int32 bfgx_notice_hal_memdump_etc(void)
+{
+    return notice_hal_memdump_etc(&bcpu_memdump_cfg_etc, CMD_READM_BFGX_UART);
+}
+int32 wifi_notice_hal_memdump_etc(void)
+{
+    return notice_hal_memdump_etc(&wcpu_memdump_cfg_etc, CMD_READM_WIFI_SDIO);
+}
+int32 excp_memdump_queue_etc(uint8 *buf_ptr, uint16 count, memdump_info_t* memdump_t)
+{
+    struct sk_buff *skb = NULL;
+
+    PS_PRINT_DBG("[send] len:%d\n",count);
+    if (!memdump_t->is_working) {
+        PS_PRINT_ERR("excp_memdump_queue_etc not allow\n");
+        return -EINVAL;;
+    }
+    if (NULL == buf_ptr)
+    {
+        PS_PRINT_ERR("buf_ptr is NULL\n");
+        return -EINVAL;
+    }
+    if (in_atomic() || in_softirq() || in_interrupt() || irqs_disabled())
+    {
+        skb = alloc_skb(count, GFP_ATOMIC);
+    }
+    else
+    {
+        skb = alloc_skb(count, GFP_KERNEL);
+    }
+
+    if (NULL == skb) {
+        PS_PRINT_ERR("can't allocate mem for new debug skb, len=%d\n", count);
+        return -EINVAL;
+    }
+
+    memcpy(skb_tail_pointer(skb), buf_ptr, count);
+    skb_put(skb, count);
+    skb_queue_tail(&memdump_t->quenue, skb);
+    PS_PRINT_DBG("[excp_memdump_queue_etc]qlen:%d,count:%d\n",memdump_t->quenue.qlen,count);
+    return 0;
+}
+int32 bfgx_memdump_enquenue_etc(uint8 *buf_ptr, uint16 count)
+{
+    return excp_memdump_queue_etc(buf_ptr, count, &bcpu_memdump_cfg_etc);
+}
+int32 wifi_memdump_enquenue_etc(uint8 *buf_ptr, uint16 count)
+{
+    return excp_memdump_queue_etc(buf_ptr, count, &wcpu_memdump_cfg_etc);
+}
+#endif

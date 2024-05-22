@@ -4,9 +4,10 @@
 #include <../hisi_coul_core.h>
 #include <linux/hisi-spmi.h>
 #include <linux/of_hisi_spmi.h>
-
+#include "securec.h"
 
 extern struct atomic_notifier_head coul_fault_notifier_list;
+struct hi6421v700_coul_device_info *g_hi6421v700_dev = NULL;
 
 
 static u64 last_eco_in  = 0;
@@ -241,7 +242,7 @@ static  unsigned short  hi6421v700_coul_convert_ocv_uv2regval(int uv_val)
                         if Rsense in uohm, Current in uA
                      high bit = 1 is in, 0 is out
 ********************************************************/
-static  int hi6421v700_coul_convert_ocv_regval2ua(short reg_val)
+static int hi6421v700_coul_convert_ocv_regval2ua(short reg_val)
 {
     int ret;
     s64 temp;
@@ -268,7 +269,7 @@ static  int hi6421v700_coul_convert_ocv_regval2ua(short reg_val)
                   (a = 1000000, b = 0)
                   1bit = 0.77486 uV (Total 24bit)
 ********************************************************/
-static  int hi6421v700_coul_convert_regval2uv(unsigned int reg_val)
+static int hi6421v700_coul_convert_regval2uv(unsigned int reg_val)
 {
     s64 temp;
     int val = 0;
@@ -305,18 +306,31 @@ static  int hi6421v700_coul_convert_regval2uv(unsigned int reg_val)
 static  int hi6421v700_coul_convert_regval2temp(unsigned int reg_val)
 {
     s64 temp;
+    int val = 0;
 
-    if(reg_val & 0x800000) {
-        HI6421V700_COUL_ERR("reg_val is 0x%x, voltage reg value naver be negative! \n", reg_val);
-        return -1;
+    struct hi6421v700_coul_device_info *di = g_hi6421v700_dev;
+    if(NULL == di) {
+        HI6421V700_COUL_ERR("[%s]di is null\n",__FUNCTION__);
+        return -ENODEV;
     }
 
+    if(reg_val & 0x800000) {
+        reg_val |= ((unsigned int)0xff << 24);
+        val = ((~reg_val)+1) & (~0x800000);
+        val = -val;
+    } else
+        val = reg_val;
+
     /* reg2uv*/
-    temp = (s64)reg_val * 1300000;
+    temp = (s64)val * 1300000;
     temp = div_s64(temp, 8388608);
 
+    if(COUL_HI6421V700 != di->chip_version) {
+        temp += 650000;
+    }
+
     /* uv2temp */
-    temp = (temp - 358680);
+    temp = (temp - 358680) * 1000;
     temp = div_s64(temp, 1342700);
 
     return (int)temp;
@@ -873,19 +887,22 @@ static void hi6421v700_coul_set_low_vol_val(int vol_mv)
   Output:          NA
   Return:          0:success -1:fail.
 ********************************************************/
-static int hi6421v700_coul_check_version(void)
+static int hi6421v700_coul_check_version(struct hi6421v700_coul_device_info *di)
 {
     int tryloop = 0;
-    short version_reg = 0;
+    u16 version_reg = 0;
     do {
-        HI6421V700_REGS_READ(HI6421V700_COUL_VERSION_ADDR, &version_reg, 1);
+        HI6421V700_REGS_READ(HI6421V700_COUL_VERSION_ADDR, (char*)&version_reg, 2);
         HI6421V700_COUL_INF("do a dummy read, version is 0x%x\n", version_reg);
         usleep_range(500,510);
         if ((tryloop++) > 5){
             HI6421V700_COUL_ERR("version is not correct!\n");
             return -1;
         }
-    } while(COUL_HI6421V7XX != version_reg);
+    } while(COUL_HI6421V7XX != (version_reg & 0xff));
+
+    di->chip_version = ((version_reg & 0xff) << 8) | (version_reg >> 8);
+
     return 0;
 }
 
@@ -1011,8 +1028,8 @@ static void hi6421v700_coul_chip_init(void)
     udelay(110);
     HI6421V700_REG_WRITE(HI6421V700_COUL_CTRL_REG,DEFAULT_COUL_CTRL_VAL);
     /* open coul cali auto*/
-    udelay(110);
-    HI6421V700_REG_WRITE(HI6421V700_CLJ_CTRL,CALI_CLJ_DEFAULT_VALUE);
+    //udelay(110);
+    //HI6421V700_REG_WRITE(HI6421V700_CLJ_CTRL,CALI_CLJ_DEFAULT_VALUE);
 }
 
 /*******************************************************
@@ -1318,66 +1335,83 @@ static void hi6421v700_coul_get_ocv_level(u8 *level)
     *level = val >> OCV_LEVEL_SHIFT;
 }
 
-static void hi6421v700_coul_enable_pd_ocv(int enable)
+static int hi6421v700_coul_get_drained_battery_flag(void)
 {
-    unsigned char reg_val = 0;
+    u8 val = 0;
+    val = HI6421V700_REG_READ(DRAINED_BATTERY_FLAG_ADDR);
+    HI6421V700_COUL_ERR("%s get reg value %d!!!\n", __FUNCTION__,val);
+    val &= DRAINED_BATTERY_FLAG_BIT;
+    return val;
+}
 
-    reg_val =  HI6421V700_REG_READ(HI6421V700_PD_OCV_ONOFF);
+static void hi6421v700_coul_clear_drained_battery_flag(void)
+{
+    u8 val = 0;
+    val = HI6421V700_REG_READ(DRAINED_BATTERY_FLAG_ADDR);
+    HI6421V700_REG_WRITE(DRAINED_BATTERY_FLAG_ADDR,val & (~DRAINED_BATTERY_FLAG_BIT));
+    val = HI6421V700_REG_READ(DRAINED_BATTERY_FLAG_ADDR);
+    HI6421V700_COUL_ERR("%s after clear reg value %d!!!\n", __FUNCTION__,val);
+}
 
-    if(enable)
-        reg_val = reg_val |PD_OCV_ONOFF_BITMASK;
+static void hi6421v700_coul_set_eco_sample(u8 set_val)
+{
+    u8 val;
+    val = HI6421V700_REG_READ(HI6421V700_ECO_OCV_ADDR);
+    if (set_val)
+        val |= EN_ECO_SAMPLE;
     else
-        reg_val = reg_val & (~PD_OCV_ONOFF_BITMASK);
-
-    HI6421V700_REG_WRITE(HI6421V700_DEBUG_WRITE_PRO, COUL_WRITE_UNLOCK);
-    HI6421V700_REG_WRITE(HI6421V700_PD_OCV_ONOFF, reg_val);
-    HI6421V700_REG_WRITE(HI6421V700_DEBUG_WRITE_PRO, COUL_WRITE_LOCK);
+        val &= (~EN_ECO_SAMPLE);
+    HI6421V700_REG_WRITE(HI6421V700_OCV_LEVEL_ADDR, val);
+    val = HI6421V700_REG_READ(HI6421V700_ECO_OCV_ADDR);
 }
 
-static void hi6421v700_coul_get_pd_ocv_info(struct pd_ocvinfo *pd_ocv, int index)
+static void hi6421v700_coul_get_eco_sample(u8 *get_val)
 {
-    struct pd_ocvinfo *ocv = pd_ocv;
-    unsigned int reg_val = 0;
-    signed int reg_offset_val = 0;
-    signed int reg = 0;
-
-    if(index > 7)
-        index = 0;
-
-    HI6421V700_REGS_READ(HI6421V700_V_OCV_BASE + index*3, &reg_val, 3); /*lint !e647 */
-    HI6421V700_REGS_READ(HI6421V700_OFTV_OCV_BASE + index*3, &reg_offset_val, 3); /*lint !e647 */
-
-    reg  = ((signed int)reg_val << 8) - (reg_offset_val << 8);
-    ocv->ocv_vol_uv= hi6421v700_coul_convert_regval2uv(((unsigned int)reg)  >> 8);
-    HI6421V700_COUL_INF("%s reg_val:0x%x, reg_offset_val: 0x%x, reg:0x%x, ocv_vol_uv:%d \n",
-                        __func__, reg_val ,reg_offset_val, reg, ocv->ocv_vol_uv);
-
-    HI6421V700_REGS_READ(HI6421V700_I_OCV_BASE + index*3, &reg_val, 3); /*lint !e647 */
-    ocv->ocv_curr_ua = hi6421v700_coul_convert_regval2ua(reg_val);
-    HI6421V700_COUL_INF("%s reg_val:0x%x,  ocv_curr_ua:%d \n", __func__, reg_val , ocv->ocv_vol_uv);
-
-    HI6421V700_REGS_READ(HI6421V700_T_OCV_BASE + index*3, &reg_val, 3);  /*lint !e647 */
-    ocv->ocv_temp = hi6421v700_coul_convert_regval2temp(reg_val);
-    HI6421V700_COUL_INF("%s reg_val:0x%x,  ocv_temp:%d \n", __func__, reg_val , ocv->ocv_temp);
-
-    HI6421V700_REGS_READ(HI6421V700_T_OCV_BASE + index*4, &reg_val, 4);  /*lint !e647 */
-    ocv->ocv_rtc  = reg_val;
+    u8 val = 0;
+    val = HI6421V700_REG_READ(HI6421V700_ECO_OCV_ADDR);
+    val &= EN_ECO_SAMPLE;
+    if (val)
+        *get_val = 1;
+    else
+        *get_val = 0;
 }
 
-static int hi6421v700_coul_get_pu_ocv_chip_temp(void)
+static void hi6421v700_coul_clr_eco_sample(u8 set_val)
 {
-    unsigned int temp_reg = 0;
-    int reg_addr = 0;
-    int ret = 0;
-
-    reg_addr = HI6421V700_COUL_OCV_TEMP_DATA;
-         /* read temp data*/
-    HI6421V700_REGS_READ(reg_addr, &temp_reg, 3);
-    ret = hi6421v700_coul_convert_regval2temp(temp_reg);
-
-    HI6421V700_COUL_ERR("%s , temp_reg is 0x%x, temp is %d \n", __func__, temp_reg, ret);
-    return ret;
+    u8 val;
+    val = HI6421V700_REG_READ(HI6421V700_ECO_OCV_ADDR);
+    if (set_val)
+        val |= CLR_ECO_SAMPLE;
+    else
+        val &= (~CLR_ECO_SAMPLE);
+    HI6421V700_REG_WRITE(HI6421V700_ECO_OCV_ADDR, val);
+    val = HI6421V700_REG_READ(HI6421V700_ECO_OCV_ADDR);
 }
+
+static void hi6421v700_coul_set_bootocv_sample(u8 set_val)
+{
+    u8 val;
+    val = HI6421V700_REG_READ(HI6421V700_BOOT_OCV_ADDR);
+    if (set_val)
+        val |= EN_BOOT_OCV_SAMPLE;
+    else
+        val &= (~EN_BOOT_OCV_SAMPLE);
+    HI6421V700_REG_WRITE(HI6421V700_BOOT_OCV_ADDR, val);
+    val = HI6421V700_REG_READ(HI6421V700_BOOT_OCV_ADDR);
+    HI6421V700_COUL_ERR("%s set_bootocv:%d!!!\n", __FUNCTION__, val);
+}
+
+static int  hi6421v700_get_coul_calibration_status(void)
+{
+    u8 val = 0;
+    val = HI6421V700_REG_READ(HI6421V700_COUL_STATE_REG);
+    val &= COUL_MSTATE_MASK;
+    if(COUL_CALI_ING == val)
+        return val;
+    else
+        return 0;
+}
+
 static int hi6421v700_coul_get_eco_out_chip_temp(void)
 {
     unsigned int temp_reg = 0;
@@ -1395,21 +1429,10 @@ static int hi6421v700_coul_get_eco_out_chip_temp(void)
 
 static int hi6421v700_coul_get_normal_mode_chip_temp(void)
 {
-    unsigned char ctr_val=0;
     unsigned char val = 0;
     unsigned int temp_reg = 0;
     int retry;
     int ret = 0;
-
-    /* type == NORMAL */
-    /* cancel auto cali */
-    ctr_val = HI6421V700_REG_READ(HI6421V700_CLJ_CTRL);
-
-    if(ctr_val & CALI_AUTO_ONOFF_CTRL) {
-        val = ctr_val & MASK_CALI_AUTO_OFF;
-        udelay(110);
-        HI6421V700_REG_WRITE(HI6421V700_CLJ_CTRL,val);
-    }
 
     /* read mstat is normal */
     retry = 30;  /* From cali mode to normal mode takes up to 2.75s  */
@@ -1469,7 +1492,7 @@ reset_vol_sel:
 
     /* auto cali on  */
 reset_auto_cali:
-    HI6421V700_REG_WRITE(HI6421V700_CLJ_CTRL, ctr_val);
+    //HI6421V700_REG_WRITE(HI6421V700_CLJ_CTRL, ctr_val);
 
     return ret;
 
@@ -1487,9 +1510,7 @@ static int hi6421v700_coul_get_chip_temp(enum CHIP_TEMP_TYPE type)
 {
     int ret = 0;
 
-    if(PU_OCV == type) {
-        ret = hi6421v700_coul_get_pu_ocv_chip_temp();
-    } else if (ECO_OUT == type) {
+   if (ECO_OUT == type) {
         ret = hi6421v700_coul_get_eco_out_chip_temp();
     }else if (NORMAL == type) {
         ret = hi6421v700_coul_get_normal_mode_chip_temp();
@@ -1501,59 +1522,7 @@ static int hi6421v700_coul_get_chip_temp(enum CHIP_TEMP_TYPE type)
     return ret;
 }
 
-static void hi6421v700_coul_dcr_enable(int enable)
-{
-    unsigned char reg_val = DCR_DISABLE;
 
-    if(enable)
-        reg_val = DCR_ENABLE;
-
-    HI6421V700_REG_WRITE(HI6421V700_DEBUG_WRITE_PRO,COUL_WRITE_UNLOCK);
-    HI6421V700_REG_WRITE(HI6421V700_DCR_EN, reg_val);
-    HI6421V700_REG_WRITE(HI6421V700_DEBUG_WRITE_PRO,COUL_WRITE_LOCK);
-}
-
-/*******************************************************
-  Function:        hi6421v700_coul_get_dcr_info
-  Description:    Get the DCR info
-  Input:            DCR info pointer
-  Output:          DCR info
-  Return:          0: success; others fail
-  Remark:         DCR irq flag only as an indication of data collection, will always be masked
-                      Suggest coul core get dcr info every 256 seconds
-*******************************************************/
-static int hi6421v700_coul_get_dcr_info(struct dcr_info *dcr)
-{
-    int i, retry = 10;
-    unsigned int v_reg = 0;
-    unsigned int i_reg = 0;
-    unsigned int reg_val = 0;
-
-    while(retry--) {
-        reg_val = HI6421V700_REG_READ(HI6421V700_DCR_IRQ_FLAG);
-
-        if(reg_val & DCR_FLAG_MASK)
-            break;
-
-        mdelay(50);
-    }
-    if(0 == retry) {
-        HI6421V700_COUL_ERR("%s  reg_val is 0x%x, wait dcr flag fail !\n", __FUNCTION__, reg_val);
-        return -1;
-    }
-
-    for(i = 0; i < DCR_FIFO_LEN; i++) {
-        HI6421V700_REGS_READ(HI6421V700_DCR_V_BASE, &v_reg, 3);
-        HI6421V700_REGS_READ(HI6421V700_DCR_I_BASE, &i_reg, 3);
-        dcr->vol_uv[i] = hi6421v700_coul_convert_regval2uv(v_reg);
-        dcr->curr_ua[i] = hi6421v700_coul_convert_regval2ua(i_reg);
-    }
-
-    /*clear dcr irq*/
-    HI6421V700_REG_WRITE(HI6421V700_DCR_IRQ_FLAG, DCR_FLAG_MASK);
-
-    return 0;
-}
 
 #ifdef CONFIG_SYSFS
 
@@ -1592,7 +1561,7 @@ ssize_t hi6421v700_coul_show_reg_info(struct device *dev,
     #ifdef CONFIG_HISI_DEBUG_FS
     val = HI6421V700_REG_READ(g_reg_addr);
     #endif
-    return snprintf(buf, PAGE_SIZE, "reg[0x%x]=0x%x\n", (u32)g_reg_addr, val); /* unsafe_function_ignore: snprintf  */
+    return snprintf_s(buf, PAGE_SIZE, PAGE_SIZE, "reg[0x%x]=0x%x\n", (u32)g_reg_addr, val);
 }
 
 static DEVICE_ATTR(sel_reg, (S_IWUSR | S_IRUGO),
@@ -1617,8 +1586,8 @@ struct coul_device_ops hi6421v700_coul_ops =
 {
     .calculate_cc_uah             = hi6421v700_coul_calculate_cc_uah,
     .save_cc_uah                  = hi6421v700_coul_save_cc_uah,
-    .convert_ocv_regval2ua            = hi6421v700_coul_convert_ocv_regval2ua,
-    .convert_ocv_regval2uv            = hi6421v700_coul_convert_ocv_regval2uv,
+    .convert_ocv_regval2ua        = hi6421v700_coul_convert_ocv_regval2ua,
+    .convert_ocv_regval2uv        = hi6421v700_coul_convert_ocv_regval2uv,
     .is_battery_moved             = hi6421v700_coul_is_battery_moved,
     .set_battery_moved_magic_num  = hi6421v700_coul_set_battery_move_magic,
     .get_fifo_depth               = hi6421v700_coul_get_fifo_depth,
@@ -1660,17 +1629,26 @@ struct coul_device_ops hi6421v700_coul_ops =
     .get_last_soc                 = hi6421v700_coul_get_last_soc,
     .save_last_soc                = hi6421v700_coul_save_last_soc,
     .get_last_soc_flag            = hi6421v700_coul_get_last_soc_flag,
-    .clear_last_soc_flag           = hi6421v700_coul_clear_last_soc_flag,
-    .cali_auto_off                  = hi6421v700_coul_cancle_auto_cali,
-    .save_ocv_level                  = hi6421v700_coul_save_ocv_level,
-    .get_ocv_level                  = hi6421v700_coul_get_ocv_level,
-    .set_i_in_event_gate       = hi6421v700_coul_set_i_in_event_gate,
-    .set_i_out_event_gate     = hi6421v700_coul_set_i_out_event_gate,
-    .enable_pd_ocv               = hi6421v700_coul_enable_pd_ocv,
-    .get_pd_ocv_info             = hi6421v700_coul_get_pd_ocv_info,
-    .get_chip_temp               = hi6421v700_coul_get_chip_temp,
-    .enable_dcr                     = hi6421v700_coul_dcr_enable,
-    .get_dcr_info                  = hi6421v700_coul_get_dcr_info,
+    .clear_last_soc_flag          = hi6421v700_coul_clear_last_soc_flag,
+    .cali_auto_off                = hi6421v700_coul_cancle_auto_cali,
+    .save_ocv_level               = hi6421v700_coul_save_ocv_level,
+    .get_ocv_level                = hi6421v700_coul_get_ocv_level,
+    .set_i_in_event_gate          = hi6421v700_coul_set_i_in_event_gate,
+    .set_i_out_event_gate         = hi6421v700_coul_set_i_out_event_gate,
+    .get_chip_temp                = hi6421v700_coul_get_chip_temp,
+    .convert_regval2uv            = hi6421v700_coul_convert_regval2uv,
+    .convert_regval2ua            = hi6421v700_coul_convert_regval2ua,
+    .convert_regval2temp          = hi6421v700_coul_convert_regval2temp,
+    .convert_uv2regval            = hi6421v700_coul_convert_uv2regval,
+    .convert_regval2uah           = hi6421v700_coul_convert_regval2uah,
+    .set_eco_sample_flag          = hi6421v700_coul_set_eco_sample,
+    .get_eco_sample_flag          = hi6421v700_coul_get_eco_sample,
+    .clr_eco_data                 = hi6421v700_coul_clr_eco_sample,
+    .get_coul_calibration_status     = hi6421v700_get_coul_calibration_status,
+    .set_bootocv_sample           = hi6421v700_coul_set_bootocv_sample,
+    .get_drained_battery_flag     = hi6421v700_coul_get_drained_battery_flag,
+    .clear_drained_battery_flag   = hi6421v700_coul_clear_drained_battery_flag,
+
 };
 
 /*******************************************************
@@ -1707,7 +1685,7 @@ static int  hi6421v700_coul_probe(struct spmi_device *pdev)
 
     spmi_set_devicedata(pdev, di);
 
-    if (hi6421v700_coul_check_version()){
+    if (hi6421v700_coul_check_version(di)){
         retval = -EINVAL;
         goto hi6521v700_failed_0;
     }
@@ -1764,7 +1742,9 @@ static int  hi6421v700_coul_probe(struct spmi_device *pdev)
             HI6421V700_COUL_ERR("%s failed to create new_dev!!!\n", __FUNCTION__);
         }
     }
-    HI6421V700_COUL_INF("hi6421v700 coul probe ok!\n");
+    g_hi6421v700_dev = di;
+
+    HI6421V700_COUL_INF("hi6421v700 coul probe ok, version :%x\n", di->chip_version);
     return 0;/*lint !e429 */
 
 hi6421v700_failed_3:

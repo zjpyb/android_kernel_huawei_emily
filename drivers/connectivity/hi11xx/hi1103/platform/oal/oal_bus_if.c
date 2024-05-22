@@ -135,13 +135,13 @@ oal_void  oal_bus_get_chip_instance(oal_bus_chip_stru **ppst_bus_chip, oal_uint8
 #endif
 
 
-oal_uint8  oal_bus_get_chip_num(oal_void)
+oal_uint8  oal_bus_get_chip_num_etc(oal_void)
 {
     return g_uc_bus_chip_num;
 }
 
 
-oal_uint32  oal_bus_inc_chip_num(oal_void)
+oal_uint32  oal_bus_inc_chip_num_etc(oal_void)
 {
     if(g_uc_bus_chip_num < WLAN_CHIP_MAX_NUM_PER_BOARD)
     {
@@ -149,7 +149,7 @@ oal_uint32  oal_bus_inc_chip_num(oal_void)
     }
     else
     {
-        OAL_IO_PRINT("oal_bus_inc_chip_num FAIL: g_uc_bus_chip_num = %d\n", g_uc_bus_chip_num);
+        OAL_IO_PRINT("oal_bus_inc_chip_num_etc FAIL: g_uc_bus_chip_num = %d\n", g_uc_bus_chip_num);
         return OAL_FAIL;
     }
 
@@ -161,7 +161,7 @@ oal_uint32  oal_bus_inc_chip_num(oal_void)
     return OAL_SUCC;
 }
 
-oal_void oal_bus_init_chip_num(oal_void)
+oal_void oal_bus_init_chip_num_etc(oal_void)
 {
     g_uc_bus_chip_num = 0;
 
@@ -190,7 +190,7 @@ oal_void oal_bus_irq_affinity_init(oal_uint8 uc_chip_id, oal_uint8 uc_device_id,
 #endif
 
 /*lint -e19*/			
-oal_module_symbol(oal_bus_get_chip_num);
+oal_module_symbol(oal_bus_get_chip_num_etc);
 #if (_PRE_PRODUCT_ID == _PRE_PRODUCT_ID_HI1151) 		
 oal_module_symbol(oal_bus_get_chip_instance);
 oal_module_symbol(oal_bus_register_irq);

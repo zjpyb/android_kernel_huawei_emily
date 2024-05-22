@@ -282,11 +282,15 @@ static void sdhci_cmdq_set_data_timeout(struct mmc_host *mmc, u32 val)
 	sdhci_writeb(host, val, SDHCI_TIMEOUT_CONTROL);
 }
 
-static void sdhci_cmdq_dump_vendor_regs(struct mmc_host *mmc)
+static int sdhci_cmdq_dump_vendor_regs(struct mmc_host *mmc)
 {
 	struct sdhci_host *host = mmc_priv(mmc);
 
+	if (host->runtime_suspended)
+		return -1;
+
 	sdhci_dumpregs(host);
+	return 0;
 }
 
 void sdhci_cmdq_enter(struct mmc_host *mmc)
@@ -363,9 +367,9 @@ static void sdhci_cmdq_set_data_timeout(struct mmc_host *mmc, u32 val)
 
 }
 
-static void sdhci_cmdq_dump_vendor_regs(struct mmc_host *mmc)
+static int sdhci_cmdq_dump_vendor_regs(struct mmc_host *mmc)
 {
-
+	return 0;
 }
 
 void sdhci_cmdq_enter(struct mmc_host *mmc)

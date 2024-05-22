@@ -29,6 +29,7 @@ extern struct dsm_client *ts_dclient;
 void ts_proc_bottom_half(struct ts_cmd_node* in_cmd, struct ts_cmd_node* out_cmd);
 void ts_algo_calibrate(struct ts_cmd_node* in_cmd, struct ts_cmd_node* out_cmd);
 void ts_report_input(struct ts_cmd_node* in_cmd, struct ts_cmd_node* out_cmd);
+void ts_palm_report(struct ts_cmd_node* in_cmd, struct ts_cmd_node* out_cmd);
 void ts_report_pen(struct ts_cmd_node* in_cmd, struct ts_cmd_node* out_cmd);
 int ts_power_control(int irq_id, struct ts_cmd_node* in_cmd, struct ts_cmd_node* out_cmd);
 int ts_fw_update_boot(struct ts_cmd_node* in_cmd, struct ts_cmd_node* out_cmd);

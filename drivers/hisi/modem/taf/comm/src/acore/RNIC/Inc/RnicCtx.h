@@ -83,6 +83,7 @@ extern "C" {
 #define RNIC_MAC_HDR_LEN                (14)
 
 #define RNIC_MAX_PACKET                 (1536)                                  /* RNIC允许传输的最大包长为1500字节 */
+#define RNIC_R_IMS_MAX_PACKET           (2048)                                  /* R_IMS RNIC允许传输的最大包长为2000字节 */
 
 #define RNIC_IPV4_VERSION               (4)                                     /* IP头部中IP V4版本号 */
 #define RNIC_IPV6_VERSION               (6)                                     /* IP头部中IP V6版本号 */

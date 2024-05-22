@@ -104,19 +104,7 @@ extern      VOS_SPINLOCK            g_stPppASpinLock;
 /******************************************************************************
    5 函数实现
 ******************************************************************************/
-/*****************************************************************************
- Prototype      : PPP_UpdateWinsConfig()
- Description    : 更新PPP模块的WINS设置
- Input          :
- Output         :
- Return Value   : VOID
- Calls          :
- Called By      :
- History        :
-  1.Date        : 2009-07-13
-    Author      : L47619
-    Modification: Created function
-*****************************************************************************/
+
 VOS_VOID PPP_UpdateWinsConfig(VOS_UINT8 ucWins)
 {
     if ((WINS_CONFIG_DISABLE != ucWins) && (WINS_CONFIG_ENABLE != ucWins))
@@ -131,19 +119,7 @@ VOS_VOID PPP_UpdateWinsConfig(VOS_UINT8 ucWins)
     return;
 }
 
-/*****************************************************************************
- Prototype      : PPP_DataQInit()
- Description    : PPP数据队列的初始化
- Input          : VOS_VOID
- Output         :
- Return Value   : VOID
- Calls          :
- Called By      :
- History        :
-  1.Date        : 2008-07-16
-    Author      : L47619
-    Modification: Created function
-*****************************************************************************/
+
 VOS_VOID PPP_DataQInit(VOS_VOID)
 {
     PPP_ZC_QUEUE_STRU                    *pstDataQ;
@@ -159,19 +135,7 @@ VOS_VOID PPP_DataQInit(VOS_VOID)
 }
 
 
-/*****************************************************************************
- Prototype      : PPP_DataQClear()
- Description    : 清除PPP数据队列内容
- Input          : VOS_VOID
- Output         :
- Return Value   : VOID
- Calls          :
- Called By      :
- History        :
-  1.Date        : 2008-07-16
-    Author      : L47619
-    Modification: Created function
-*****************************************************************************/
+
 VOS_VOID PPP_ClearDataQ(VOS_VOID)
 {
     PPP_ZC_STRU    *pstMem;
@@ -481,29 +445,7 @@ VOS_VOID PPP_BindToCpu(VOS_VOID)
     return;
 }
 
-/*****************************************************************************
- Prototype      : PppMsgTimerProc
- Description    : PPP模块中的定时器消息处理函数
- Input          : ---
- Output         : ---
- Return Value   : ---VOS_VOID
- Calls          : ---
- Called By      : ---
 
- History        : ---
-  1.Date        : 2005-11-18
-    Author      : fanzhibin
-    Modification: Created function
-  2.Date        : 2006-05-22
-    Author      : L47619
-    Modification: Modify for PN:A32D04462
-  3.Date        : 2007-01-05
-    Author      : L47619
-    Modification: Modify for PN:A32D08013
-  4.Date        : 2008-10-28
-    Author      : liukai
-    Modification: support CHAP authentication timer
-*****************************************************************************/
 VOS_VOID PppMsgTimerProc( struct MsgCB * pMsg )
 {
     REL_TIMER_MSG  *pPsMsg  = (REL_TIMER_MSG *)pMsg;
@@ -648,24 +590,7 @@ VOS_UINT32    APP_PPP_PidInit(enum VOS_INIT_PHASE_DEFINE InitPhase )
     return VOS_OK;
 }
 
-/*****************************************************************************
- Prototype      : APP_PPP_EventProc
- Description    : PPP模块中的事件处理函数，他处理定时器消息以及从AT模块接
-                  收到数据帧的消息。如果成功将返回VOS_OK，否则为VOS_ERR。
- Input          : ---
- Output         : ---
- Return Value   : ---VOS_VOID
- Calls          : ---
- Called By      : ---
 
- History        : ---
-  1.Date        : 2005-11-18
-    Author      : ---
-    Modification: Created function
-  2.Date        : 2006-05-17
-    Author      : L47619
-    Modification: Modified for PN:A32D04462
-*****************************************************************************/
 VOS_VOID APP_PPP_EventProc(VOS_UINT32 ulEvent)
 {
 
@@ -679,24 +604,7 @@ VOS_VOID APP_PPP_EventProc(VOS_UINT32 ulEvent)
 }
 
 
-/*****************************************************************************
- Prototype      : APP_PPP_MsgProc
- Description    : PPP模块中的消息处理函数，他处理定时器消息以及从AT模块接
-                  收到数据帧的消息。如果成功将返回VOS_OK，否则为VOS_ERR。
- Input          : ---
- Output         : ---
- Return Value   : ---VOS_VOID
- Calls          : ---
- Called By      : ---
 
- History        : ---
-  1.Date        : 2005-11-18
-    Author      : ---
-    Modification: Created function
-  2.Date        : 2006-05-17
-    Author      : L47619
-    Modification: Modified for PN:A32D04462
-*****************************************************************************/
 VOS_VOID APP_PPP_MsgProc( struct MsgCB * pMsg )
 {
     PPP_MSG    *pPsMsg  = (PPP_MSG *)pMsg;

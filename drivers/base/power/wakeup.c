@@ -26,10 +26,6 @@
 #include <linux/proc_fs.h>
 #endif
 
-#ifdef CONFIG_HW_PTM
-#include <huawei_platform/power/hw_power_monitor.h>
-#endif
-
 #include "power.h"
 
 /*
@@ -72,6 +68,8 @@ static void pm_wakeup_timer_fn(unsigned long data);
 static LIST_HEAD(wakeup_sources);
 
 static DECLARE_WAIT_QUEUE_HEAD(wakeup_count_wait_queue);
+
+DEFINE_STATIC_SRCU(wakeup_srcu);
 
 static struct wakeup_source deleted_ws = {
 	.name = "deleted",
@@ -192,10 +190,102 @@ void wakeup_source_add(struct wakeup_source *ws)
 	ws->last_time = ktime_get();
 
 	spin_lock_irqsave(&events_lock, flags);
+#ifdef CONFIG_PM_FAIL_DEBUG
+	if (ws->name != NULL && !strncmp(ws->name, "[timerfd]", 9)) {
+		strncpy(ws->app_name, current->comm, TASK_COMM_LEN);
+	}
+#endif
 	list_add_rcu(&ws->entry, &wakeup_sources);
 	spin_unlock_irqrestore(&events_lock, flags);
 }
 EXPORT_SYMBOL_GPL(wakeup_source_add);
+
+
+int wakeup_source_set(char *name, u8 lock_timeout)
+{
+	struct wakeup_source *ws = NULL;
+
+	rcu_read_lock();
+	list_for_each_entry_rcu(ws, &wakeup_sources, entry) {
+		if (strcmp(ws->name, name) == 0) {
+			ws->lock_timeout = lock_timeout;
+			pr_info("set wakeup source: %s %d\n", ws->name, lock_timeout);
+			break;
+		}
+	}
+	rcu_read_unlock();
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(wakeup_source_set);
+
+int wakeup_source_set_all(u8 lock_timeout)
+{
+	struct wakeup_source *ws = NULL;
+
+	rcu_read_lock();
+	list_for_each_entry_rcu(ws, &wakeup_sources, entry) {
+		ws->lock_timeout = lock_timeout;
+		pr_info("set wakeup source: %s %d\n", ws->name, lock_timeout);
+		break;
+	}
+	rcu_read_unlock();
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(wakeup_source_set_all);
+
+int wake_unlockByName(char *name)
+{
+	struct wakeup_source *ws = NULL;
+	int flag = 0;
+
+	rcu_read_lock();
+	list_for_each_entry_rcu(ws, &wakeup_sources, entry) {
+		if (strcmp(ws->name, name) == 0) {
+			flag = 1;
+			pr_info("[wake_unlockByName]wakeup source: %s.\n", name);
+			break;
+		}
+	}
+	rcu_read_unlock();
+
+	if (flag) __pm_relax(ws);
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(wake_unlockByName);
+
+int wake_unlockAll(unsigned int msec)
+{
+    ktime_t active_time;
+    struct wakeup_source *ws = NULL;
+    const char *whitename = "PowerManagerService.WakeLocks";
+
+    rcu_read_lock();
+    list_for_each_entry_rcu(ws, &wakeup_sources, entry) {
+        if (strcmp(ws->name, whitename) == 0) {
+            continue;
+        }
+
+        if (!ws->active) continue;
+        if (msec > 0){
+            ktime_t now = ktime_get();
+
+            active_time = ktime_sub(now, ws->last_time);
+
+            pr_info("[wake_unlockAll]wakeup source: %s %d msec.\n", ws->name, ktime_to_ms(active_time));
+            if (ktime_to_ms(active_time) <= msec) continue;
+
+        }
+        pr_info("[wake_unlockAll]wakeup source: %s.\n", ws->name);
+        __pm_relax(ws);
+    }
+    rcu_read_unlock();
+
+    return 0;
+}
+EXPORT_SYMBOL_GPL(wake_unlockAll);
 
 /**
  * wakeup_source_remove - Remove given object from the wakeup sources list.
@@ -209,9 +299,14 @@ void wakeup_source_remove(struct wakeup_source *ws)
 		return;
 
 	spin_lock_irqsave(&events_lock, flags);
+#ifdef CONFIG_PM_FAIL_DEBUG
+	if (ws->name != NULL && !strncmp(ws->name, "[timerfd]", 9)) {
+		memset(ws->app_name, 0x0, APP_NAME_LEN_MAX);
+	}
+#endif
 	list_del_rcu(&ws->entry);
 	spin_unlock_irqrestore(&events_lock, flags);
-	synchronize_rcu();
+	synchronize_srcu(&wakeup_srcu);
 }
 EXPORT_SYMBOL_GPL(wakeup_source_remove);
 
@@ -259,6 +354,8 @@ static int device_wakeup_attach(struct device *dev, struct wakeup_source *ws)
 		return -EEXIST;
 	}
 	dev->power.wakeup = ws;
+	if (dev->power.wakeirq)
+		device_wakeup_attach_irq(dev, dev->power.wakeirq);
 	spin_unlock_irq(&dev->power.lock);
 	return 0;
 }
@@ -343,13 +440,12 @@ void device_wakeup_detach_irq(struct device *dev)
 void device_wakeup_arm_wake_irqs(void)
 {
 	struct wakeup_source *ws;
+	int srcuidx;
 
-	rcu_read_lock();
-	list_for_each_entry_rcu(ws, &wakeup_sources, entry) {
-		if (ws->wakeirq)
-			dev_pm_arm_wake_irq(ws->wakeirq);
-	}
-	rcu_read_unlock();
+	srcuidx = srcu_read_lock(&wakeup_srcu);
+	list_for_each_entry_rcu(ws, &wakeup_sources, entry)
+		dev_pm_arm_wake_irq(ws->wakeirq);
+	srcu_read_unlock(&wakeup_srcu, srcuidx);
 }
 
 /**
@@ -360,13 +456,12 @@ void device_wakeup_arm_wake_irqs(void)
 void device_wakeup_disarm_wake_irqs(void)
 {
 	struct wakeup_source *ws;
+	int srcuidx;
 
-	rcu_read_lock();
-	list_for_each_entry_rcu(ws, &wakeup_sources, entry) {
-		if (ws->wakeirq)
-			dev_pm_disarm_wake_irq(ws->wakeirq);
-	}
-	rcu_read_unlock();
+	srcuidx = srcu_read_lock(&wakeup_srcu);
+	list_for_each_entry_rcu(ws, &wakeup_sources, entry)
+		dev_pm_disarm_wake_irq(ws->wakeirq);
+	srcu_read_unlock(&wakeup_srcu, srcuidx);
 }
 
 /**
@@ -401,9 +496,7 @@ int device_wakeup_disable(struct device *dev)
 		return -EINVAL;
 
 	ws = device_wakeup_detach(dev);
-	if (ws)
-		wakeup_source_unregister(ws);
-
+	wakeup_source_unregister(ws);
 	return 0;
 }
 EXPORT_SYMBOL_GPL(device_wakeup_disable);
@@ -547,6 +640,11 @@ static void wakeup_source_activate(struct wakeup_source *ws)
 	freeze_wake();
 
 	ws->active = true;
+#ifdef CONFIG_PM_FAIL_DEBUG
+	if (ws->name != NULL && !strncmp(ws->name, "[timerfd]", 9)) {
+		strncpy(ws->app_name, current->comm, TASK_COMM_LEN);
+	}
+#endif
 	ws->active_count++;
 	ws->last_time = ktime_get();
 	if (ws->autosleep_enabled)
@@ -585,6 +683,11 @@ void __pm_stay_awake(struct wakeup_source *ws)
 
 	if (!ws)
 		return;
+
+	if (ws->lock_timeout > 0){
+		__pm_wakeup_event(ws, ((ws->lock_timeout)*60*1000));
+		return;
+	}
 
 	spin_lock_irqsave(&ws->lock, flags);
 
@@ -656,11 +759,24 @@ static void wakeup_source_deactivate(struct wakeup_source *ws)
 	 * case ws->relax_count will be different from ws->active_count.
 	 */
 	if (ws->relax_count != ws->active_count) {
+#ifdef CONFIG_HISI_RTC_LOG
+		if (ws->name != NULL && !strcmp(ws->name, "alarmtimer")) {
+			printk(KERN_ERR "%s : fail to deactivate : %s %lu %lu-%lu %lu %lu\r\n",
+				__FUNCTION__, ws->name, ws->active_count,
+				ws->relax_count, jiffies, ws->timer_expires,
+				ws->timer.expires);
+		}
+#endif
 		ws->relax_count--;
 		return;
 	}
 
 	ws->active = false;
+#ifdef CONFIG_PM_FAIL_DEBUG
+	if (ws->name != NULL && !strncmp(ws->name, "[timerfd]", 9)) {
+		memset(ws->app_name, 0x0, APP_NAME_LEN_MAX);
+	}
+#endif
 
 	now = ktime_get();
 	duration = ktime_sub(now, ws->last_time);
@@ -742,10 +858,20 @@ static void pm_wakeup_timer_fn(unsigned long data)
 	struct wakeup_source *ws = (struct wakeup_source *)data;
 	unsigned long flags;
 
+#ifdef CONFIG_HISI_RTC_LOG
+	if (ws->name != NULL && !strcmp(ws->name, "alarmtimer")) {
+		pr_info("PM: Wake timer function : %s %d [%lu %lu %lu]\n", ws->name,
+			ws->active, ws->timer.expires, ws->timer_expires, jiffies);
+
+		if(time_before(jiffies, ws->timer_expires))
+			pr_err("PM: Wake timer function too early : %s\n", ws->name);
+	}
+#endif
+
+
 	spin_lock_irqsave(&ws->lock, flags);
 
-	if (ws->active && ws->timer_expires
-	    && time_after_eq(jiffies, ws->timer_expires)) {
+	if (ws->active) {
 		wakeup_source_deactivate(ws);
 		ws->expire_count++;
 	}
@@ -851,13 +977,17 @@ EXPORT_SYMBOL_GPL(pm_get_active_wakeup_sources);
 void pm_print_active_wakeup_sources(void)
 {
 	struct wakeup_source *ws;
-	int active = 0;
+	int srcuidx, active = 0;
 	struct wakeup_source *last_activity_ws = NULL;
 
-	rcu_read_lock();
+	srcuidx = srcu_read_lock(&wakeup_srcu);
 	list_for_each_entry_rcu(ws, &wakeup_sources, entry) {
 		if (ws->active) {
+#ifdef CONFIG_PM_FAIL_DEBUG
+			pr_info("active wakeup source: %s app_name: %s\n", ws->name, ws->app_name);
+#else
 			pr_info("active wakeup source: %s\n", ws->name);
+#endif
 			active = 1;
 		} else if (!active &&
 			   (!last_activity_ws ||
@@ -867,18 +997,14 @@ void pm_print_active_wakeup_sources(void)
 		}
 	}
 
-	if (!active && last_activity_ws){
+	if (!active && last_activity_ws) {
 		pr_info("last active wakeup source: %s\n",
 			last_activity_ws->name);
 #ifdef CONFIG_HUAWEI_DUBAI
 		HWDUBAI_LOGE("DUBAI_TAG_FREEZING_FAILED", "name=%s", last_activity_ws->name);
 #endif
-#ifdef CONFIG_HW_PTM
-        power_monitor_report(FREEZING_FAILED,"%s",
-            last_activity_ws->name);
-#endif
-    }
-	rcu_read_unlock();
+	}
+	srcu_read_unlock(&wakeup_srcu, srcuidx);
 }
 EXPORT_SYMBOL_GPL(pm_print_active_wakeup_sources);
 
@@ -959,9 +1085,6 @@ bool pm_get_wakeup_count(unsigned int *count, bool block)
 			split_counters(&cnt, &inpr);
 			if (inpr == 0 || signal_pending(current))
 				break;
-#ifdef CONFIG_HW_PTM
-			pm_print_active_wakeup_sources();
-#endif
 
 			schedule();
 		}
@@ -1008,8 +1131,9 @@ void pm_wakep_autosleep_enabled(bool set)
 {
 	struct wakeup_source *ws;
 	ktime_t now = ktime_get();
+	int srcuidx;
 
-	rcu_read_lock();
+	srcuidx = srcu_read_lock(&wakeup_srcu);
 	list_for_each_entry_rcu(ws, &wakeup_sources, entry) {
 		spin_lock_irq(&ws->lock);
 		if (ws->autosleep_enabled != set) {
@@ -1023,7 +1147,7 @@ void pm_wakep_autosleep_enabled(bool set)
 		}
 		spin_unlock_irq(&ws->lock);
 	}
-	rcu_read_unlock();
+	srcu_read_unlock(&wakeup_srcu, srcuidx);
 }
 #endif /* CONFIG_PM_AUTOSLEEP */
 
@@ -1133,19 +1257,20 @@ static int print_active_wakeup_source(struct seq_file *m,
 static int wakeup_sources_stats_show(struct seq_file *m, void *unused)
 {
 	struct wakeup_source *ws;
+	int srcuidx;
 
 	seq_puts(m, "name\t\t\t\t\tactive_count\tevent_count\twakeup_count\t"
 		"expire_count\tactive_since\ttotal_time\tmax_time\t"
 		"last_change\tprevent_suspend_time\n");
 
-	rcu_read_lock();
+	srcuidx = srcu_read_lock(&wakeup_srcu);
 	list_for_each_entry_rcu(ws, &wakeup_sources, entry)
 		print_wakeup_source_stats(m, ws);
 #ifdef CONFIG_HISI_SR
 	list_for_each_entry_rcu(ws, &wakeup_sources, entry)
 		print_active_wakeup_source(m, ws);
 #endif
-	rcu_read_unlock();
+	srcu_read_unlock(&wakeup_srcu, srcuidx);
 
 	print_wakeup_source_stats(m, &deleted_ws);
 

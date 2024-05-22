@@ -121,8 +121,8 @@ typedef struct
 /*****************************************************************************
   10 º¯ÊýÉùÃ÷
 *****************************************************************************/
-extern oal_int32  sdt_drv_main_init(oal_void);
-extern oal_void  sdt_drv_main_exit(oal_void);
+extern oal_int32  sdt_drv_main_init_etc(oal_void);
+extern oal_void  sdt_drv_main_exit_etc(oal_void);
 
 #ifdef __cplusplus
     #if __cplusplus

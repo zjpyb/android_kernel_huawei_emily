@@ -9,6 +9,7 @@
 			     <1 11 0xff08>,
 			     <1 10 0xff08>;
 		clock-frequency = <1920000>;
+		arm,no-tick-in-suspend;
 	};
 
 	hisi_prktimer: prktimer@fff0a000 {

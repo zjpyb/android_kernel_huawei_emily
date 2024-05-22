@@ -793,18 +793,7 @@ VOS_VOID OM_PcvTransmitTaskEntry( VOS_VOID )
     }
 }
 
-/*****************************************************************************
- Prototype       : OM_PcvIpcIsr
- Description     : PC VOICE IPC Interrupt Process.
- Input           : None
- Output          : None
- Return Value    : None
 
- History         : ---
-    Date         : 2011-10-11
-    Author       : g47350
-    Modification : Created function
- *****************************************************************************/
 VOS_VOID OM_PcvIpcIsr(VOS_VOID)
 {
     /* HIFI 上移后不再需要 IPC 中断 */
@@ -821,18 +810,7 @@ VOS_VOID OM_PcvIpcIsr(VOS_VOID)
     (VOS_VOID)mdrv_ipc_int_enable((IPC_INT_LEV_E)IPC_ACPU_INT_SRC_HIFI_PC_VOICE_RX_DATA);
 }
 
-/*****************************************************************************
-Prototype       : OM_PcvMsgProc
-Description     : PCVOICE消息处理函数.
-Input           : pMsg - 指向消息体的指针.
-Output          : None
-Return Value    : None
 
-History         : ---
-   Date         : 2011-09-29
-   Author       : g47350
-   Modification : Created function
-*****************************************************************************/
 VOS_VOID OM_PcvMsgProc(MsgBlock *pMsg)
 {
     OM_PCV_COM_CFG_REQ      *pstComCfg;
@@ -863,18 +841,7 @@ VOS_VOID OM_PcvMsgProc(MsgBlock *pMsg)
     return;
 }
 
-/*****************************************************************************
-Prototype       : OM_PcvPidInit
-Description     : PCVOICE PID初始化函数
-Input           :  ip - 初始化步骤.
-Output          :  None
-Return Value    : VOS_OK:成功、其他为失败
 
-History         : ---
-   Date         : 2011-09-29
-   Author       : g47350
-   Modification : Created function
-*****************************************************************************/
 VOS_UINT32 OM_PcvPidInit(enum VOS_INIT_PHASE_DEFINE ip)
 {
     /* HIFI 上移到A核代码修改 */
@@ -971,18 +938,7 @@ VOS_UINT32 COMM_VOICE_TransferPcVoiceRxData(VOS_VOID)
     return VOS_OK;
 }
 
-/*****************************************************************************
- Prototype       : OM_AcpuFidInit
- Description     : ACPU OM FID' initializtion function
- Input           : None
- Output          : None
- Return Value    : VOS_UINT32
 
- History         : ---
-    Date         : 2011-07-01
-    Author       : g47350
-    Modification : Created function
- *****************************************************************************/
 VOS_UINT32 PCV_AcpuFidInit(enum VOS_INIT_PHASE_DEFINE ip)
 {
     VOS_UINT32                                              ulRslt;

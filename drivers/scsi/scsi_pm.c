@@ -55,32 +55,20 @@ static int scsi_dev_type_suspend(struct device *dev,
 {
 	const struct dev_pm_ops *pm = dev->driver ? dev->driver->pm : NULL;
 	int err;
-#ifdef CONFIG_SCSI_HISI_MQ
-	struct scsi_device *sdp = to_scsi_device(dev);
+	struct scsi_device *sdev = to_scsi_device(dev);
+	struct Scsi_Host *shost = sdev->host;
 
-	err = cb(dev, pm);
-	if(err)
-		return err;
 	/* flush pending in-flight resume operations, suspend is synchronous */
 	async_synchronize_full_domain(&scsi_sd_pm_domain);
 
-	if(sdp->request_queue && sdp->request_queue->mq_ops){
-		blk_mq_freeze_queue(sdp->request_queue);
-	}
-
-	err = scsi_device_quiesce(to_scsi_device(dev));
-#else
-	/* flush pending in-flight resume operations, suspend is synchronous */
-	async_synchronize_full_domain(&scsi_sd_pm_domain);
-
-	err = scsi_device_quiesce(to_scsi_device(dev));
+	err = (shost && (shost->queue_quirk_flag & SHOST_QUIRK(SHOST_QUIRK_SCSI_QUIESCE_IN_LLD))) ?
+		0 : scsi_device_quiesce(to_scsi_device(dev));
 	if (err == 0) {
 		err = cb(dev, pm);
 		if (err)
-			scsi_device_resume(to_scsi_device(dev));
+                        scsi_device_resume(to_scsi_device(dev));
 	}
 	dev_dbg(dev, "scsi suspend: %d\n", err);
-#endif
 	return err;
 }
 
@@ -89,18 +77,12 @@ static int scsi_dev_type_resume(struct device *dev,
 {
 	const struct dev_pm_ops *pm = dev->driver ? dev->driver->pm : NULL;
 	int err = 0;
-#ifdef CONFIG_SCSI_HISI_MQ
-	struct scsi_device *sdp = to_scsi_device(dev);
-	scsi_device_resume(to_scsi_device(dev));
-	if(sdp->request_queue && sdp->request_queue->mq_ops){
-		blk_mq_unfreeze_queue(sdp->request_queue);
-	}
-#endif
+	struct scsi_device *sdev = to_scsi_device(dev);
+	struct Scsi_Host *shost = sdev->host;
 
 	err = cb(dev, pm);
-#ifndef CONFIG_SCSI_HISI_MQ
-	scsi_device_resume(to_scsi_device(dev));
-#endif
+	if (!shost || (!(shost->queue_quirk_flag & SHOST_QUIRK(SHOST_QUIRK_SCSI_QUIESCE_IN_LLD))))
+		scsi_device_resume(to_scsi_device(dev));
 	dev_dbg(dev, "scsi resume: %d\n", err);
 	if (err == 0) {
 		pm_runtime_disable(dev);
@@ -163,6 +145,16 @@ static int scsi_bus_resume_common(struct device *dev,
 		fn = async_sdev_restore;
 	else
 		fn = NULL;
+
+	/*
+	 * Forcibly set runtime PM status of request queue to "active" to
+	 * make sure we can again get requests from the queue (see also
+	 * blk_pm_peek_request()).
+	 *
+	 * The resume hook will correct runtime PM status of the disk.
+	 */
+	if (scsi_is_sdev_device(dev) && pm_runtime_suspended(dev))
+		blk_set_runtime_active(to_scsi_device(dev)->request_queue);
 
 	if (fn) {
 		async_schedule_domain(fn, dev, &scsi_sd_pm_domain);

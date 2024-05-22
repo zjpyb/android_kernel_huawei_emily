@@ -35,6 +35,7 @@
 config SCSI_UFSHCD
 	tristate "Universal Flash Storage Controller Driver Core"
 	depends on SCSI && SCSI_DMA
+	select NLS
 	---help---
 	This selects the support for UFS devices in Linux, say Y and make
 	  sure that you know the name of your UFS host adapter (the card
@@ -58,6 +59,14 @@ config SCSI_UFSHCD_PCI
 
 	  If unsure, say N.
 
+config SCSI_UFS_DWC_TC_PCI
+	tristate "DesignWare pci support using a G210 Test Chip"
+	depends on SCSI_UFSHCD_PCI
+	---help---
+	  Synopsys Test Chip is a PHY for prototyping purposes.
+
+	  If unsure, say N.
+
 config SCSI_UFSHCD_PLATFORM
 	tristate "Platform bus based UFS Controller support"
 	depends on SCSI_UFSHCD
@@ -66,6 +75,14 @@ config SCSI_UFSHCD_PLATFORM
 	you have an UFS controller on Platform bus.
 
 	If you have a controller with this interface, say Y or M here.
+
+	  If unsure, say N.
+
+config SCSI_UFS_DWC_TC_PLATFORM
+	tristate "DesignWare platform support using a G210 Test Chip"
+	depends on SCSI_UFSHCD_PLATFORM
+	---help---
+	  Synopsys Test Chip is a PHY for prototyping purposes.
 
 	  If unsure, say N.
 
@@ -122,11 +139,32 @@ config SCSI_UFS_CANCER
 
 	  If unsure, say N.
 
+config SCSI_UFS_TAURUS
+	  tristate "UFS Host TAURUS Controller Driver"
+	  depends on SCSI_UFSHCD && SCSI_UFSHCD_PLATFORM && SCSI_UFS_KIRIN
+	  ---help---
+	  This selects the UFS TAURUS host controller driver.
+
+	  If you have a controller with this interface, say Y or M here.
+
+	  If unsure, say N.
+
 config SCSI_UFS_LIBRA
 	  tristate "UFS Host LIBRA Controller Driver"
 	  depends on SCSI_UFSHCD && SCSI_UFSHCD_PLATFORM && SCSI_UFS_KIRIN
 	  ---help---
 	  This selects the UFS LIBRA host controller driver.
+
+	  If you have a controller with this interface, say Y or M here.
+
+	  If unsure, say N.
+
+
+config SCSI_UFS_CAPRICORN
+	  tristate "UFS Host CAPRICORN Controller Driver"
+	  depends on SCSI_UFSHCD && SCSI_UFSHCD_PLATFORM && SCSI_UFS_KIRIN
+	   ---help---
+	  This selects the UFS CAPRICORN host controller driver.
 
 	  If you have a controller with this interface, say Y or M here.
 
@@ -164,7 +202,7 @@ config SCSI_UFS_TEST
 
 config SCSI_UFS_INLINE_CRYPTO
 	tristate "UFS inline crytpo driver based on Kirin UFS Host Controller"
-	depends on HISI_BLK_INLINE_CRYPTO && SCSI_UFSHCD && SCSI_UFS_KIRIN
+	depends on SCSI_UFSHCD && SCSI_UFS_KIRIN
 
 	---help---
 	This selects the Kirin UFS inline crypto driver.
@@ -176,11 +214,24 @@ config SCSI_UFS_INLINE_CRYPTO
 	If unsure, say N.
 
 config SCSI_UFS_ENHANCED_INLINE_CRYPTO
-	tristate "UFS inline crytpo driver based on Kirin UFS Host Controller"
+	tristate "UFS inline crytpo driver based on Kirin UFS Host Controller (enhanced)"
 	depends on SCSI_UFS_INLINE_CRYPTO
 
 	---help---
 	This selects the Kirin UFS inline enhanced crypto driver.
+
+	Select this if you want to use Hardware Crypto Engine
+	and using its interface for some special cryto func.
+	Otherwise, if you love my driver code, say Y or M here.
+
+	If unsure, say N.
+
+config SCSI_UFS_ENHANCED_INLINE_CRYPTO_V2
+	tristate "UFS inline crytpo driver based on Kirin UFS Host Controller (enhanced v2)"
+	depends on SCSI_UFS_ENHANCED_INLINE_CRYPTO
+
+	---help---
+	This selects the Kirin UFS inline enhanced crypto driver V2.
 
 	Select this if you want to use Hardware Crypto Engine
 	and using its interface for some special cryto func.
@@ -221,9 +272,28 @@ config SCSI_UFS_HI1861_VCMD
 
 config HISI_UFS_MANUAL_BKOPS
        bool "hisi manual BKOPS support for UFS"
-       depends on HISI_MANUAL_BKOPS && SCSI_UFSHCD
+       depends on HISI_BK_OPS && SCSI_UFSHCD
        default n
 
 config HUAWEI_UFS_VENDOR_MODE
        bool "Enter UFS vendor mode"
        depends on SCSI_UFSHCD
+
+config SCSI_UFS_HISI_UFS_MQ_DEFAULT
+        bool "Active HISI UFS MQ as default IO Scheduler"
+        depends on SCSI_UFS_KIRIN
+        default n
+        help
+                Active HISI UFS MQ as default IO Scheduler
+
+config SCSI_UFS_CUST_MAX_SECTORS
+        bool "enable custom max sectors in UFS"
+        depends on SCSI_UFSHCD
+        default n
+        help
+                enable custom max sectors in UFS
+
+config HISI_SCSI_UFS_DUMP
+	bool "hisi ufs_dump support"
+	depends on  SCSI_UFSHCD
+	default n

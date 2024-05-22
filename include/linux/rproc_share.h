@@ -13,6 +13,7 @@
 #define _INCLUDE_LINUX_RPROC_SHARE_H
 
 #include <linux/platform_device.h>
+#include <linux/platform_data/remoteproc-hisi.h>
 
 enum rdr_enable_mask
 {
@@ -184,11 +185,14 @@ struct rproc_shared_para {
     unsigned int monitor_ctrl;
     unsigned int monitor_pa_va;
     unsigned int monitor_hit_flag;
+    unsigned int clk_value[ISP_CLK_MAX];
+    unsigned char isp_efuse;
 };
 
 extern struct rproc_shared_para *isp_share_para;
 extern struct rproc_shared_para *rproc_get_share_para(void);
 extern int rproc_set_shared_para(void);
+extern void rproc_set_shared_clk_value(int type,unsigned int value);
 extern void hisp_lock_sharedbuf(void);
 extern void hisp_unlock_sharedbuf(void);
 

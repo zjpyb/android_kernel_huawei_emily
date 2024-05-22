@@ -26,6 +26,11 @@
 static int fp_ref_cnt;
 static bool fingerprint_status[FINGERPRINT_TYPE_END];
 
+#define MIN(x,y) (((x)<(y)) ? (x) : (y))
+#define FHB_CONFIG_UD_OPTICAL_BRIGHTNESS 14
+static uint8_t g_optical_brightness[5] = {0};
+static uint8_t g_optical_brightness_len = 0;
+
 extern  struct wake_lock wlock;
 extern int flag_for_sensor_test;
 
@@ -67,12 +72,13 @@ static void update_fingerprint_info(obj_cmd_t cmd, fingerprint_type_t type)
 
 static void fingerprint_report(void)
 {
+    char* fingerprint_data = NULL;
     fingerprint_upload_pkt_t fingerprint_upload;
     memset(&fingerprint_upload, 0, sizeof(fingerprint_upload_pkt_t));
     fingerprint_upload.fhd.hd.tag = TAG_FP_UD;
     fingerprint_upload.fhd.hd.cmd = CMD_DATA_REQ;
     fingerprint_upload.data = 0; //0: cancel wait sensorhub msg
-    char* fingerprint_data = (char*)(&fingerprint_upload) + sizeof(pkt_common_data_t);
+    fingerprint_data = (char*)(&fingerprint_upload) + sizeof(pkt_common_data_t);
     inputhub_route_write(ROUTE_FHB_UD_PORT, fingerprint_data, sizeof(fingerprint_upload.data));
 }
 
@@ -169,11 +175,47 @@ static int send_fingerprint_cmd(unsigned int cmd, unsigned long arg)
     return send_fingerprint_cmd_internal(fingerprint_cmd_map_tab[i].tag, fingerprint_cmd_map_tab[i].cmd, argvalue, true);//true
 }
 
+static int fingerprint_recovery_config_para(void* data, int len)
+{
+    fingerprint_req_t fp_pkt;
+    int ret = 0;
+    write_info_t pkg_ap;
+    int i = 0;
+
+    memset(&fp_pkt, 0, sizeof(fp_pkt));
+    memset(&pkg_ap, 0, sizeof(pkg_ap));
+
+    if (len > sizeof(fp_pkt.buf))
+    {
+        hwlog_warn("fingerprint: fingerprint_recovery_config_para len is out of size, len=%d\n", len);
+        return -1;
+    }
+
+    memcpy(&fp_pkt.buf[0], data, len);
+
+    fp_pkt.len = len;
+    fp_pkt.sub_cmd = SUB_CMD_FINGERPRINT_CONFIG_SENSOR_DATA_REQ;
+
+    hwlog_info("fingerprint: fingerprint_recovery_config_para data=%d, len=%d\n", fp_pkt.buf[0], len);
+
+    pkg_ap.tag = TAG_FP_UD;
+    pkg_ap.cmd = CMD_CMN_CONFIG_REQ;
+    pkg_ap.wr_buf = &fp_pkt;
+    pkg_ap.wr_len = sizeof(fp_pkt);
+    ret = write_customize_cmd(&pkg_ap, NULL, false);
+    if (ret) {
+        hwlog_err("fhb_ud_write fail,ret=%d\n", ret);
+    }
+
+    return ret;
+}
+
 static void enable_fingerprint_when_recovery_iom3(void)
 {
     fingerprint_type_t type;
 
     fp_ref_cnt = 0;
+    fingerprint_recovery_config_para(g_optical_brightness, g_optical_brightness_len);
     for (type = FINGERPRINT_TYPE_START; type < FINGERPRINT_TYPE_END; ++type)
     {
         if (fingerprint_status[type])
@@ -223,38 +265,46 @@ Return:         length of write data
 
 static ssize_t fhb_ud_write(struct file *file, const char __user *data, size_t len, loff_t *ppos)
 {
-	fingerprint_req_t fp_pkt;
-	int ret = 0;
-	write_info_t pkg_ap;
+    fingerprint_req_t fp_pkt;
+    int ret = 0;
+    write_info_t pkg_ap;
 
-	memset(&fp_pkt, 0, sizeof(fp_pkt));
-	memset(&pkg_ap, 0, sizeof(pkg_ap));
+    memset(&fp_pkt, 0, sizeof(fp_pkt));
+    memset(&pkg_ap, 0, sizeof(pkg_ap));
 
-	if (len > sizeof(fp_pkt.buf))
-	{
-		hwlog_warn("fingerprint: fhb_ud_write len is out of size, len=%d\n", len);
-		return -1;
-	}
-	if (copy_from_user(fp_pkt.buf, data, len))
-	{
-		hwlog_warn("fingerprint: %s copy_from_user failed!\n", __func__);
-		return -EFAULT;
-	}
-	fp_pkt.len = len;
-	fp_pkt.sub_cmd = SUB_CMD_FINGERPRINT_CONFIG_SENSOR_DATA_REQ;
+    if (len > sizeof(fp_pkt.buf))
+    {
+        hwlog_warn("fingerprint: fhb_ud_write len is out of size, len=%d\n", len);
+        return -1;
+    }
+    if (copy_from_user(fp_pkt.buf, data, len))
+    {
+        hwlog_warn("fingerprint: %s copy_from_user failed!\n", __func__);
+        return -EFAULT;
+    }
 
-	hwlog_info("fingerprint: fhb_ud_write data=%d, len=%d\n", fp_pkt.buf[0], len);
+    if (FHB_CONFIG_UD_OPTICAL_BRIGHTNESS == fp_pkt.buf[0])
+    {
+        g_optical_brightness_len = MIN(len, sizeof(g_optical_brightness));
+        memcpy(g_optical_brightness, fp_pkt.buf, g_optical_brightness_len);
 
-	pkg_ap.tag = TAG_FP_UD;
-	pkg_ap.cmd = CMD_CMN_CONFIG_REQ;
-	pkg_ap.wr_buf = &fp_pkt;
-	pkg_ap.wr_len = sizeof(fp_pkt);
-	ret = write_customize_cmd(&pkg_ap, NULL, true);
-	if (ret) {
-		hwlog_err("fhb_ud_write fail,ret=%d\n", ret);
-	}
+    }
 
-	return len;
+    fp_pkt.len = len;
+    fp_pkt.sub_cmd = SUB_CMD_FINGERPRINT_CONFIG_SENSOR_DATA_REQ;
+
+    hwlog_info("fingerprint: fhb_ud_write data=%d, len=%d\n", fp_pkt.buf[0], len);
+
+    pkg_ap.tag = TAG_FP_UD;
+    pkg_ap.cmd = CMD_CMN_CONFIG_REQ;
+    pkg_ap.wr_buf = &fp_pkt;
+    pkg_ap.wr_len = sizeof(fp_pkt);
+    ret = write_customize_cmd(&pkg_ap, NULL, true);
+    if (ret) {
+        hwlog_err("fhb_ud_write fail,ret=%d\n", ret);
+    }
+
+    return len;
 }
 
 /*******************************************************************************************

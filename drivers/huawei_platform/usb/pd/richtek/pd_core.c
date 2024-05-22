@@ -24,9 +24,6 @@
 #include <huawei_platform/usb/pd/richtek/tcpci_event.h>
 #include <huawei_platform/usb/pd/richtek/pd_policy_engine.h>
 #include <huawei_platform/usb/pd/richtek/rt1711h.h>
-#ifdef CONFIG_HUAWEI_DSM
-#include <dsm/dsm_pub.h>
-#endif
 
 #ifdef CONFIG_DUAL_ROLE_USB_INTF
 #include <linux/usb/class-dual-role.h>
@@ -213,36 +210,21 @@ static int dpm_alt_mode_parse_svid_data(
 	/* 2nd connection must not be BOTH */
 	if(pd_port->dp_second_connected == DPSTS_BOTH_CONNECTED) {
 		snprintf(buf, sizeof(buf), "the connect mode is %s.\n", pd_port->dp_second_connected);
-#ifdef CONFIG_HUAWEI_DSM
-		rt_dsm_report(ERROR_RT_DPSTS_BOTH_CONNECTED, buf);
-#endif
 	}
 	/* UFP or DFP can't both be invalid */
 	if(ufp_d_pin_cap == 0) {
 		snprintf(buf, sizeof(buf), "the ufp is inbalid.\n");
-#ifdef CONFIG_HUAWEI_DSM
-		rt_dsm_report(ERROR_RT_UFP_INVALID, buf);
-#endif
 	}
 	if(dfp_d_pin_cap == 0 ){
 		snprintf(buf, sizeof(buf), "the dfp is inbalid.\n");
-#ifdef CONFIG_HUAWEI_DSM
-                rt_dsm_report(ERROR_RT_DFP_INVALID, buf);
-#endif
-        }
+	}
 
 	if (pd_port->dp_first_connected == DPSTS_BOTH_CONNECTED) {
 		if(ufp_d_pin_cap == 0) {
 			snprintf(buf, sizeof(buf), "the ufp is inbalid.\n");
-#ifdef CONFIG_HUAWEI_DSM
-			rt_dsm_report(ERROR_RT_UFP_INVALID, buf);
-#endif
 		}
 		if(dfp_d_pin_cap == 0) {
 			snprintf(buf, sizeof(buf), "the dfp is inbalid.\n");
-#ifdef CONFIG_HUAWEI_DSM
-			rt_dsm_report(ERROR_RT_DFP_INVALID, buf);
-#endif
 		}
 	}
 
@@ -857,9 +839,6 @@ int pd_send_svdm_request(pd_port_t *pd_port,
 
 	if(cnt >= (VDO_MAX_SIZE-1)) {
 		snprintf(buf, sizeof(buf), "%d over the vdo max size\n", cnt);
-#ifdef CONFIG_HUAWEI_DSM
-		rt_dsm_report(ERROR_RT_OVER_VDO_MAX_SIZE, buf);
-#endif
 	}
 
 	payload[0] = VDO_S(svid, CMDT_INIT, vdm_cmd, obj_pos);
@@ -904,17 +883,11 @@ int pd_reply_svdm_request(pd_port_t *pd_port, pd_event_t *pd_event,
 
 	if(cnt >= (VDO_MAX_SIZE-1)) {
 		snprintf(buf, sizeof(buf), "%d over the vdo max size\n", cnt);
-#ifdef CONFIG_HUAWEI_DSM
-		rt_dsm_report(ERROR_RT_OVER_VDO_MAX_SIZE, buf);
-#endif
 		return 0;
 	}
 
 	if(pd_event->pd_msg == NULL) {
 		snprintf(buf, sizeof(buf), "the pd_msg is NULL\n");
-#ifdef CONFIG_HUAWEI_DSM
-		rt_dsm_report(ERROR_RT_PD_MSG_NULL, buf);
-#endif
 		return 0;
 	}
 
@@ -925,9 +898,6 @@ int pd_reply_svdm_request(pd_port_t *pd_port, pd_event_t *pd_event,
 	if (cnt > 0) {
 		if(data_obj == NULL) {
 			snprintf(buf, sizeof(buf), "the data_obj is NULL\n");
-#ifdef CONFIG_HUAWEI_DSM
-			rt_dsm_report(ERROR_RT_DATA_OBJ_NULL, buf);
-#endif
 			return 0;
 		}
 

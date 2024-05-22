@@ -138,6 +138,7 @@ static struct class *device_class = NULL;
 static int esm_en = 0;
 static int esm_opened = 0;
 static struct mutex g_esm_lock;
+static uint32_t hdcp_state = 0;
 
 
 //
@@ -840,7 +841,7 @@ static long cmd_esm_start(esm_device *esm, esm_hld_ioctl_esm_start *request)
 			break;
 		case 1:
 			HISI_FB_INFO("%s set HDCP1.3 (%d)\n", MY_TAG, krequest.value);
-			if(krequest.value == 0)
+			if(krequest.value == 2)
 			{
 			    link_error_count=0;
 			    HDCP_Stop_Polling_task(0);
@@ -936,6 +937,41 @@ Exit:
 
 	return 0;
 }
+
+static long cmd_set_hdcp_state(esm_device *esm, esm_hld_ioctl_state_set *request)
+{
+	long ret = 0;
+	esm_hld_ioctl_state_set krequest;
+
+	memset(&krequest, 0, sizeof(esm_hld_ioctl_state_set));
+	ret = copy_from_user(&krequest, request, sizeof(esm_hld_ioctl_state_set));
+	if (ret) {
+		HISI_FB_ERR( "copy_from_user failed!ret = %ld\n", ret);
+		krequest.returned_status = ret;
+		goto Exit;
+	}
+	hdcp_state = krequest.hdcp_state;
+	HISI_FB_INFO("the hdcp state is %d\n", hdcp_state);
+	krequest.returned_status = 0;
+
+Exit:
+	ret = copy_to_user(request, &krequest, sizeof(esm_hld_ioctl_state_set));
+	if (ret) {
+		HISI_FB_ERR( "copy_to_user failed!ret = %ld\n", ret);
+		return ret;
+	}
+
+	return 0;
+}
+
+int get_hdcp_state(uint32_t *state)
+{
+	if(state == NULL)
+		return -1;
+	*state = hdcp_state;
+	return 0;
+}
+
 
 
 //---------------------------------------------------------------------------
@@ -1040,7 +1076,7 @@ static long device_ioctl(struct file *f, unsigned int cmd, unsigned long arg)
 		case ESM_HLD_IOCTL_HPI_WRITE:
 			ret = cmd_hpi_write((esm_device *)f->private_data,
 		                  (esm_hld_ioctl_hpi_write *)arg);
- 			break;
+			break;
 		case ESM_HLD_IOCTL_DATA_READ:
 			ret = cmd_data_read((esm_device *)f->private_data,
 		                  (esm_hld_ioctl_data_read *)arg);
@@ -1061,6 +1097,9 @@ static long device_ioctl(struct file *f, unsigned int cmd, unsigned long arg)
 			break;
 		case ESM_HLD_IOCTL_GET_TE_INFO:
 			ret = cmd_get_te_info((esm_device *)f->private_data, (esm_hld_ioctl_get_te_info*)arg);
+			break;
+		case ESM_HLD_IOCTL_STATE_SET:
+			ret = cmd_set_hdcp_state((esm_device *)f->private_data, (esm_hld_ioctl_state_set*)arg);
 			break;
 		default:
 			ret = useless_ioctl(f, cmd, arg);

@@ -379,43 +379,8 @@ imx179_match_id(
 
     if (!strncmp(sensor->board_info->name, "IMX179_VENDOR", strlen("IMX179_VENDOR"))) {
     // Fixme
-    #if 0
-        rc = gpio_request(sensor->board_info->gpios[FSIN].gpio, NULL);
-        if(rc < 0) {
-            cam_err("%s failed to request gpio[%d]", __func__, sensor->board_info->gpios[FSIN].gpio);
-            return rc;
-        }
-
-        cam_info("%s gpio[%d].", __func__, sensor->board_info->gpios[FSIN].gpio);
-
-        rc = gpio_direction_input(sensor->board_info->gpios[FSIN].gpio);
-        if (rc < 0) {
-            cam_err("%s failed to config gpio(%d) input.\n",
-                __func__, sensor->board_info->gpios[FSIN].gpio);
-        }
-
-        module_id = gpio_get_value_cansleep(sensor->board_info->gpios[FSIN].gpio);
-        if (module_id < 0) {
-            cam_err("%s failed to get gpio(%d) value(%d).\n",
-                    __func__, sensor->board_info->gpios[FSIN].gpio, module_id);
-        }
-
-        cam_info("%s module_id = %d", __func__,module_id);
-
-        gpio_free(sensor->board_info->gpios[FSIN].gpio);
-        if (0 == module_id) {
-            cam_info("%s module_id == 0",__func__);
-            strncpy(cdata->cfg.name, sensor_name[0], DEVICE_NAME_SIZE-1);
-            cdata->data = sensor->board_info->sensor_index;
-        } else {
-            cam_info("%s module_id == 1", __func__);
-            strncpy(cdata->cfg.name, sensor_name[1], DEVICE_NAME_SIZE-1);
-            cdata->data = sensor->board_info->sensor_index;
-        }
-    #else
         strncpy(cdata->cfg.name, sensor_name[0], DEVICE_NAME_SIZE-1);
         cdata->data = sensor->board_info->sensor_index;
-    #endif
     } else {
         strncpy(cdata->cfg.name, sensor->board_info->name, DEVICE_NAME_SIZE-1);
         cdata->data = sensor->board_info->sensor_index;

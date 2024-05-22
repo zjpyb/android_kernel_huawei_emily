@@ -88,7 +88,7 @@
 #define IPC_MBXDATA_MIN			0
 #define IPC_MBXDATA_MAX			8
 #define IPC_MBXDATA_TAG			2
-#define MATCH_TAG_SHAREMEM(m)			(((m) & 0xFF) == 0x8F)
+#define MATCH_TAG_SHAREMEM(m)			(((m) & 0xFF) == 0x8E)
 #define DUBAI_UPDATE_TAG(m, value)		(((m) & 0xFF00) | ((value) & 0xFF))
 #define IPC_MBX_SOURCE_OFFSET(m)		((m) << 6)
 #define IPC_MBX_DSTATUS_OFFSET(m)		(0x0C + ((m) << 6))
@@ -716,8 +716,10 @@ void pm_status_show(struct seq_file *s)
 	if (!sysreg_base.reserved_base) {
 		if (M3_RDR_SYS_CONTEXT_BASE_ADDR)
 			sysreg_base.reserved_base = M3_RDR_SYS_CONTEXT_RUNTIME_VAR_ADDR;
-		else
+		else{
+			pr_err("%s: M3_RDR_SYS_CONTEXT_BASE_ADDR is NULL\n", __func__);
 			return;
+		}
 	}
 
 	wake_status = readb(sysreg_base.reserved_base + WAKE_STATUS_OFFSET); //lint !e578

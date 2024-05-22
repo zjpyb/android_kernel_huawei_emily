@@ -335,8 +335,8 @@ static bool setfreq_available(unsigned int idx , u32 freq) {
 #else
 	if (idx == 0 || idx == 1){
 #endif
-		cpufreq_for_each_valid_entry(pos, table) {
-			if(freq == pos->frequency)
+		cpufreq_for_each_valid_entry(pos, table) {/*lint !e613*//* [false alarm]:调用此函数时pos初始值指向了table，table在前面已经判空，因此pos不用判空 */
+			if(freq == pos->frequency)/*lint !e613*/
 				ret = true;
 		}
 		if (ret!=true)
@@ -1264,7 +1264,11 @@ static int ipa_thermal_probe(struct platform_device *pdev)
 	}
 
 	update_debugfs(&thermal_data->ipa_sensor);
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
 	thermal_zone_device_update(thermal_data->tzd);
+#else
+	thermal_zone_device_update(thermal_data->tzd, THERMAL_EVENT_UNSPECIFIED);
+#endif
 
 	platform_set_drvdata(pdev, thermal_data);
 	thermal_data->init_flag = IPA_INIT_OK;

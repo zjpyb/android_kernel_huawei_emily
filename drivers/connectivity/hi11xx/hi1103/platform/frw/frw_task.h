@@ -65,7 +65,7 @@ typedef struct
 /*****************************************************************************
   5 全局变量声明
 *****************************************************************************/
-extern frw_task_stru g_ast_event_task[];
+extern frw_task_stru g_ast_event_task_etc[];
 
 /*****************************************************************************
   6 消息头定义
@@ -91,12 +91,12 @@ extern frw_task_stru g_ast_event_task[];
   10 函数声明
 *****************************************************************************/
 
-extern oal_uint32  frw_task_init(oal_void);
-extern oal_void frw_task_exit(oal_void);
-extern oal_void  frw_task_event_handler_register(oal_void (*p_func)(oal_uint));
-extern oal_void frw_task_set_state(oal_uint32 ul_core_id, oal_uint8 uc_task_state);
-extern oal_uint8 frw_task_get_state(oal_uint32 ul_core_id);
-extern oal_void  frw_task_sched(oal_uint32 ul_core_id);
+extern oal_uint32  frw_task_init_etc(oal_void);
+extern oal_void frw_task_exit_etc(oal_void);
+extern oal_void  frw_task_event_handler_register_etc(oal_void (*p_func)(oal_uint));
+extern oal_void frw_task_set_state_etc(oal_uint32 ul_core_id, oal_uint8 uc_task_state);
+extern oal_uint8 frw_task_get_state_etc(oal_uint32 ul_core_id);
+extern oal_void  frw_task_sched_etc(oal_uint32 ul_core_id);
 
 
 #ifdef __cplusplus

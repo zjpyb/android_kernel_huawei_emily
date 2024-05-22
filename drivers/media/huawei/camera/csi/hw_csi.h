@@ -18,16 +18,16 @@ typedef irqreturn_t (*csi_irq_handle)(int irq, void *dev_id);
 
 struct csi_hw_info
 {
-	u32 csi_base_offset[CSI_INDEX_CNT];
-	u32 csi_irq[CSI_INDEX_CNT];
-	csi_irq_handle irq_pfn[CSI_INDEX_CNT];
-	struct clk* phyclk[CSI_INDEX_CNT];
+	u32 csi_base_offset[CSI_INDEX_MAX];
+	u32 csi_irq[CSI_INDEX_MAX];
+	csi_irq_handle irq_pfn[CSI_INDEX_MAX];
+	struct clk* phyclk[CSI_INDEX_MAX];
 	u32 dsi_csi_used;
 };
 
 struct hw_csi_pad
 {
-	bool csi_inited[CSI_INDEX_CNT];
+	bool csi_inited[CSI_INDEX_MAX];
 	struct csi_hw_info info;
 	int (*hw_csi_enable)(csi_index_t csi_index, int csi_lane, int csi_mipi_clk);
 	int (*hw_csi_disable)(csi_index_t csi_index);

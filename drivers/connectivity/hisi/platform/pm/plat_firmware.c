@@ -16,6 +16,7 @@
 
 #include "hw_bfg_ps.h"
 #include "plat_efuse.h"
+#include "bfgx_exception_rst.h"
 /*****************************************************************************
   2 宏定义
 *****************************************************************************/
@@ -41,14 +42,6 @@ uint8 *g_auc_cfg_in_system_path[CFG_FILE_TOTAL] =
                         WIFI_CFG_PATH,
                         BFGX_CFG_PATH,
                         RAM_CHECK_CFG_PATH,
-                    };
-
-uint8 *g_auc_cfg_in_boot_path[CFG_FILE_TOTAL] =
-                    {
-                        BFGX_AND_WIFI_CFG_BUILDIN_PATH,
-                        WIFI_CFG_BUILDIN_PATH,
-                        BFGX_CFG_BUILDIN_PATH,
-                        RAM_CHECK_CFG_BUILDIN_PATH,
                     };
 
 uint8 **g_auc_cfg_path = g_auc_cfg_in_system_path;
@@ -360,11 +353,7 @@ OS_KERNEL_FILE_STRU * open_file_to_readm(uint8 *name)
 
     if (WARN_ON(NULL == name))
     {
-#if (_PRE_HI110X_LOG_VERSION == _PRE_HI110X_LOG_V2)
-        file_name = "/data/log/wifi/memdump/readm_wifi";
-#else
-        file_name = "/data/memdump/readm_wifi";
-#endif
+        file_name = WIFI_DUMP_PATH"/readm_wifi";
     }
     else
     {
@@ -737,6 +726,140 @@ int32 parse_file_cmd(uint8 *string, ulong *addr, int8 **file_path)
 #ifdef CONFIG_MMC
 extern void oal_sdio_sdt_print_wcpu_reg(oal_uint32* pst_buf, oal_uint32 ul_size);
 #endif
+#ifdef HI110X_HAL_MEMDUMP_ENABLE
+int32 recv_device_memdump(uint8 *pucDataBuf, int32 len)
+{
+    int32 l_ret = -EFAIL;
+    uint8 retry = 3;
+    int32 lenbuf = 0;
+    if (NULL == pucDataBuf)
+    {
+        PS_PRINT_ERR("pucDataBuf is NULL\n");
+        return -EFAIL;
+    }
+    PS_PRINT_DBG("expect recv len is [%d]\n", len);
+    while (len > lenbuf)
+    {
+        l_ret = read_msg(pucDataBuf + lenbuf, len - lenbuf);
+        if (l_ret > 0)
+        {
+            lenbuf += l_ret;
+        }
+        else
+        {
+            retry--;
+            lenbuf = 0;
+            if (0 == retry)
+            {
+                l_ret = -EFAIL;
+                PS_PRINT_ERR("time out\n");
+                break;
+            }
+        }
+    }
+    if (len <= lenbuf)
+    {
+        wifi_memdump_enquenue(pucDataBuf,len);
+    }
+    return l_ret;
+}
+int32 sdio_read_device_mem(struct st_wifi_dump_mem_info *pst_mem_dump_info,
+                                  uint8 *pucDataBuf,
+                                  uint32 ulDataBufLen)
+{
+    uint8 buf_tx[SEND_BUF_LEN];
+    int32 ret = 0;
+    uint32 size = 0;
+    uint32 offset;
+    uint32 remainder = pst_mem_dump_info->size;
+    offset=0;
+    while(remainder > 0)
+    {
+        OS_MEM_SET(buf_tx, 0, SEND_BUF_LEN);
+        size = min(remainder, ulDataBufLen);
+        snprintf(buf_tx,sizeof(buf_tx),"%s%c0x%lx%c%d%c",
+                                                RMEM_CMD_KEYWORD,
+                                                COMPART_KEYWORD,
+                                                pst_mem_dump_info->mem_addr + offset,
+                                                COMPART_KEYWORD,
+                                                size,
+                                                COMPART_KEYWORD);
+        PS_PRINT_DBG("read mem cmd:[%s]\n", buf_tx);
+        send_msg(buf_tx, OS_STR_LEN(buf_tx));
+        ret = recv_device_memdump(pucDataBuf, size);
+        if(ret < 0)
+        {
+            PS_PRINT_ERR("wifi mem dump fail, filename is [%s],ret=%d\n", pst_mem_dump_info->file_name,ret);
+            break;
+        }
+#ifdef CONFIG_PRINTK
+        if( 0 == offset)
+        {
+            oal_int8* pst_file_name = (pst_mem_dump_info->file_name ? ((oal_int8*)pst_mem_dump_info->file_name):(oal_int8*)"default: ");
+            if(!oal_strcmp("wifi_device_panic_mem", pst_file_name))
+            {
+                if(size > (24 + 24*4))
+                {
+                    oal_print_hex_dump(pucDataBuf + 24, 24*4, 32, pst_file_name);
+#ifdef CONFIG_MMC
+                    oal_sdio_sdt_print_wcpu_reg((oal_uint32*)(pucDataBuf + 24), 24);
+#endif
+                }
+            }
+        }
+#endif
+        offset += size;
+        remainder -= size;
+    }
+    return ret;
+}
+int32 sdio_device_mem_dump(struct st_wifi_dump_mem_info *pst_mem_dump_info, uint32 count)
+{
+    int32 ret = -EFAIL;
+    uint32 i;
+    uint8 *pucDataBuf = NULL;
+    uint8 buff[100];
+    uint32* pcount = (uint32*)&buff[0];
+    uint32 sdio_transfer_limit = oal_sdio_func_max_req_size(oal_get_sdio_default_handler());
+    sdio_transfer_limit = OAL_MIN(PAGE_SIZE, sdio_transfer_limit);
+    if (NULL == pst_mem_dump_info)
+    {
+        PS_PRINT_ERR("pst_wifi_dump_info is NULL\n");
+        return -EFAIL;
+    }
+    do
+    {
+        PS_PRINT_INFO("try to malloc mem dump buf len is [%d]\n", sdio_transfer_limit);
+        pucDataBuf = (uint8 *)OS_KMALLOC_GFP(sdio_transfer_limit);
+        if (NULL == pucDataBuf)
+        {
+            PS_PRINT_WARNING("malloc mem  len [%d] fail, continue to try in a smaller size\n", sdio_transfer_limit);
+            sdio_transfer_limit = sdio_transfer_limit >> 1;
+        }
+    }while((NULL == pucDataBuf) && (sdio_transfer_limit >= MIN_FIRMWARE_FILE_TX_BUF_LEN));
+    if (NULL == pucDataBuf)
+    {
+        PS_PRINT_ERR("pucDataBuf KMALLOC failed\n");
+        return -EFAIL;
+    }
+    PS_PRINT_INFO("mem dump data buf len is [%d]\n", sdio_transfer_limit);
+    wifi_notice_hal_memdump();
+    for (i = 0; i < count; i++)
+    {
+        *pcount = pst_mem_dump_info[i].size;
+        PS_PRINT_INFO("mem dump data size [%d]==> [%d]\n", *pcount, pst_mem_dump_info[i].size);
+        wifi_memdump_enquenue(buff,4);
+        ret = sdio_read_device_mem(&pst_mem_dump_info[i], pucDataBuf, sdio_transfer_limit);
+        if (ret < 0)
+        {
+            break;
+        }
+    }
+    wifi_memdump_finish();
+    OS_MEM_KFREE(pucDataBuf);
+    return ret;
+}
+#else
 
 
 int32 sdio_read_device_mem(struct st_wifi_dump_mem_info *pst_mem_dump_info,
@@ -850,11 +973,7 @@ int32 sdio_device_mem_dump(struct st_wifi_dump_mem_info *pst_mem_dump_info, uint
         time_start = ktime_get();
         /*打开文件，准备接受wifi mem dump*/
         OS_MEM_SET(filename, 0, sizeof(filename));
-#if (_PRE_HI110X_LOG_VERSION == _PRE_HI110X_LOG_V2)
-        snprintf(filename, sizeof(filename), "/data/log/wifi/memdump/%s_%s.bin", SDIO_STORE_WIFI_MEM, pst_mem_dump_info[i].file_name);
-#else
-        snprintf(filename, sizeof(filename),"/data/memdump/%s_%s.bin", SDIO_STORE_WIFI_MEM, pst_mem_dump_info[i].file_name);
-#endif
+        snprintf(filename, sizeof(filename), WIFI_DUMP_PATH"/%s_%s.bin", SDIO_STORE_WIFI_MEM, pst_mem_dump_info[i].file_name);
         PS_PRINT_INFO("readm %s\n",filename);
 
         fp = open_file_to_readm(filename);
@@ -884,6 +1003,7 @@ int32 sdio_device_mem_dump(struct st_wifi_dump_mem_info *pst_mem_dump_info, uint
     return ret;
 }
 
+#endif
 int32 sdio_read_mem(uint8 *Key, uint8 *Value)
 {
     int32 l_ret = -EFAIL;
@@ -1170,6 +1290,12 @@ int32 exec_file_type_cmd(uint8 *Key, uint8 *Value)
 
     /* 获取file文件大小 */
     file_len = vfs_llseek(fp, 0, SEEK_END);
+    if (0 == file_len)
+    {
+        PS_PRINT_ERR("file size of %s is 0!!\n", path);
+        filp_close(fp, NULL);
+        return -EFAIL;
+    }
     /* 恢复fp->f_pos到文件开头 */
     vfs_llseek(fp, 0, SEEK_SET);
 
@@ -1878,28 +2004,6 @@ int32 firmware_cfg_init(void)
 {
     int32  l_ret;
     uint32 i;
-
-#ifndef _PRE_HI110X_FIRMWARE_NOT_BUILDIN
-    int32  firmware_in_boot = 1;
-
-    l_ret = get_cust_conf_int32(INI_MODU_PLAT, "firmware_buildin", &firmware_in_boot);
-    if (l_ret < 0)
-    {
-        PS_PRINT_INFO("not found firmware_buildin in ini file\n");
-        firmware_in_boot = 1;
-    }
-
-    if (firmware_in_boot)
-    {
-        PS_PRINT_INFO("Hi110x firmware is buildin\n");
-        g_auc_cfg_path = g_auc_cfg_in_boot_path;
-    }
-    else
-    {
-        PS_PRINT_INFO("Hi110x firmware is not buildin\n");
-        g_auc_cfg_path = g_auc_cfg_in_system_path;
-    }
-#endif
 
     /*解析cfg文件*/
     for (i = 0; i < CFG_FILE_TOTAL; i++)

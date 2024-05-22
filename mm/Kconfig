@@ -69,14 +69,6 @@ config SHRINK_MEMORY
 	It ebable support for system-wide memory reclaim in one shot using
 	echo 1 > /proc/sys/vm/shrink_memory
 
-config SHRINK_MEMORY_CANCEL
-	bool "Allow cancel shrink_memory triggered by sysctl"
-	depends on SHRINK_MEMORY
-	default n
-	help
-	  echo 0 > /proc/sys/vm/shrink_memory.
-	  You can cancel by this.
-
 config DISCONTIGMEM
 	def_bool y
 	depends on (!SELECT_MEMORY_MODEL && ARCH_DISCONTIGMEM_ENABLE) || DISCONTIGMEM_MANUAL
@@ -203,11 +195,27 @@ config MEMORY_HOTPLUG
 	bool "Allow for memory hot-add"
 	depends on SPARSEMEM || X86_64_ACPI_NUMA
 	depends on ARCH_ENABLE_MEMORY_HOTPLUG
-	depends on (IA64 || X86 || PPC_BOOK3S_64 || SUPERH || S390)
+	depends on COMPILE_TEST || !KASAN
 
 config MEMORY_HOTPLUG_SPARSE
 	def_bool y
 	depends on SPARSEMEM && MEMORY_HOTPLUG
+
+config MEMORY_HOTPLUG_DEFAULT_ONLINE
+        bool "Online the newly added memory blocks by default"
+        default n
+        depends on MEMORY_HOTPLUG
+        help
+	  This option sets the default policy setting for memory hotplug
+	  onlining policy (/sys/devices/system/memory/auto_online_blocks) which
+	  determines what happens to newly added memory regions. Policy setting
+	  can always be changed at runtime.
+	  See Documentation/memory-hotplug.txt for more information.
+
+	  Say Y here if you want all hot-plugged memory blocks to appear in
+	  'online' state by default.
+	  Say N here if you want the default policy to keep all hot-plugged
+	  memory blocks in 'offline' state.
 
 config MEMORY_HOTREMOVE
 	bool "Allow for memory hot remove"
@@ -262,7 +270,14 @@ config COMPACTION
 	select MIGRATION
 	depends on MMU
 	help
-	  Allows the compaction of memory for the allocation of huge pages.
+          Compaction is the only memory management component to form
+          high order (larger physically contiguous) memory blocks
+          reliably. The page allocator relies on compaction heavily and
+          the lack of the feature can lead to unexpected OOM killer
+          invocations for high order memory requests. You shouldn't
+          disable this option unless there really is a strong reason for
+          it and then we would be really interested to hear about that at
+          linux-mm@kvack.org.
 
 #
 # support for page migration
@@ -284,11 +299,6 @@ config ARCH_ENABLE_HUGEPAGE_MIGRATION
 
 config PHYS_ADDR_T_64BIT
 	def_bool 64BIT || ARCH_PHYS_ADDR_T_64BIT
-
-config ZONE_DMA_FLAG
-	int
-	default "0" if !ZONE_DMA
-	default "1"
 
 config BOUNCE
 	bool "Enable bounce buffers"
@@ -410,6 +420,7 @@ config TRANSPARENT_HUGEPAGE
 	bool "Transparent Hugepage Support"
 	depends on HAVE_ARCH_TRANSPARENT_HUGEPAGE
 	select COMPACTION
+	select RADIX_TREE_MULTIORDER
 	help
 	  Transparent Hugepages allows the kernel to use huge pages and
 	  huge tlb transparently to the applications whenever possible.
@@ -443,6 +454,14 @@ choice
 	  memory footprint of applications without a guaranteed
 	  benefit.
 endchoice
+
+#
+# We don't deposit page tables on file THP mapping,
+# but Power makes use of them to address MMU quirk.
+#
+config	TRANSPARENT_HUGE_PAGECACHE
+	def_bool y
+	depends on TRANSPARENT_HUGEPAGE && !PPC
 
 #
 # UP and nommu archs use km based percpu allocator
@@ -579,7 +598,7 @@ config ZPOOL
 	  zsmalloc.
 
 config ZBUD
-	tristate "Low density storage for compressed pages"
+	tristate "Low (Up to 2x) density storage for compressed pages"
 	default n
 	help
 	  A special purpose allocator for storing compressed pages.
@@ -587,6 +606,16 @@ config ZBUD
 	  page.  While this design limits storage density, it has simple and
 	  deterministic reclaim properties that make it preferable to a higher
 	  density approach when reclaim will be used.
+
+config Z3FOLD
+	tristate "Up to 3x density storage for compressed pages"
+	depends on ZPOOL
+	default n
+	help
+	  A special purpose allocator for storing compressed pages.
+	  It is designed to store up to three compressed pages per physical
+	  page. It is a ZBUD derivative so the simplicity and determinism are
+	  still there.
 
 config ZSMALLOC
 	tristate "Memory allocator for compressed pages"
@@ -623,6 +652,13 @@ config ZSMALLOC_STAT
 	  information to userspace via debugfs.
 	  If unsure, say N.
 
+config ZS_COMPACTION
+	bool "Is support zsmemory migrate"
+	depends on ZSMALLOC && COMPACTION
+	help
+	  This option enables the memory which alloc by zsmalloc is migrated.
+	  If unsure, say N.
+
 config GENERIC_EARLY_IOREMAP
 	bool
 
@@ -646,18 +682,20 @@ config ARCH_SUPPORTS_DEFERRED_STRUCT_PAGE_INIT
 	bool
 
 config DEFERRED_STRUCT_PAGE_INIT
-	bool "Defer initialisation of struct pages to kswapd"
+	bool "Defer initialisation of struct pages to kthreads"
 	default n
 	depends on ARCH_SUPPORTS_DEFERRED_STRUCT_PAGE_INIT
-	depends on MEMORY_HOTPLUG
+	depends on NO_BOOTMEM && MEMORY_HOTPLUG
+	depends on !FLATMEM
 	help
 	  Ordinarily all struct pages are initialised during early boot in a
 	  single thread. On very large machines this can take a considerable
 	  amount of time. If this option is set, large machines will bring up
 	  a subset of memmap at boot and then initialise the rest in parallel
-	  when kswapd starts. This has a potential performance impact on
-	  processes running early in the lifetime of the systemm until kswapd
-	  finishes the initialisation.
+	  by starting one-off "pgdatinitX" kernel thread for each node X. This
+	  has a potential performance impact on processes running early in the
+	  lifetime of the system until these kthreads finish the
+	  initialisation.
 
 config IDLE_PAGE_TRACKING
 	bool "Enable idle page tracking"
@@ -672,11 +710,10 @@ config IDLE_PAGE_TRACKING
 	  See Documentation/vm/idle_page_tracking.txt for more details.
 
 config ZONE_DEVICE
-	bool "Device memory (pmem, etc...) hotplug support" if EXPERT
-	default !ZONE_DMA
-	depends on !ZONE_DMA
+	bool "Device memory (pmem, etc...) hotplug support"
 	depends on MEMORY_HOTPLUG
 	depends on MEMORY_HOTREMOVE
+	depends on SPARSEMEM_VMEMMAP
 	depends on X86_64 #arch_add_memory() comprehends device memory
 
 	help
@@ -691,6 +728,10 @@ config ZONE_DEVICE
 config FRAME_VECTOR
 	bool
 
+config ARCH_USES_HIGH_VMA_FLAGS
+	bool
+config ARCH_HAS_PKEYS
+	bool
 config PROCESS_RECLAIM
 	bool "Enable process reclaim"
 	depends on PROC_FS
@@ -701,7 +742,6 @@ config PROCESS_RECLAIM
 	 (echo file > /proc/PID/reclaim) reclaims file-backed pages only.
 	 (echo anon > /proc/PID/reclaim) reclaims anonymous pages only.
 	 (echo all > /proc/PID/reclaim) reclaims all pages.
-	 (echo swapin > /proc/PID/reclaim) swapin all swaped pages.
 
 	 (echo addr size-byte > /proc/PID/reclaim) reclaims pages in
 	 (addr, addr + size-bytes) of the process.
@@ -718,14 +758,13 @@ config HISI_SWAP_ZDATA
 
 	  If unsure, say Y to enable swap_zdata.
 
-config HISI_DIRECT_SWAPPINESS
-	bool "Allow to adjust direct reclaim swappiness"
-	depends on SWAP && PROC_FS
+config HISI_RESORT_ZONE_FREELIST
+	bool "for memory performance opt resort the zone freelist"
 	default n
 	help
-	  Used to adjust direct reclaim cmpress priority by /proc/sys/vm/direct_swappiness.
-
-	  only 0 to 60 is valid. If unsure, say N to use it's original value(60).
+	  If this option is enabled, we resort the zone freelist in mem init.
+	  This may have a performance improvement in memory test.
+	  If in doubt, say N
 
 config HISI_PAGECACHE_HELPER
 	tristate "KIRIN page cache helper module"
@@ -748,50 +787,22 @@ config HISI_PAGECACHE_DEBUG
 	Select this if you want to optimize your Android system.
 	If unsure, say N.
 
-config DEBUG_VMALLOC
-	bool "Enable VMALLOC debugging support"
+config HISI_DIRECT_SWAPPINESS
+	bool "Allow to adjust direct reclaim swappiness"
+	depends on SWAP && PROC_FS
 	default n
 	help
-	  This enables the inclusion of a few debugging parameters, which
-	  are the PID and the name of the task requesting vmalloc.
+	  Used to adjust direct reclaim cmpress priority by /proc/sys/vm/direct_swappiness.
 
-	  Disabling these can result in savings in code size.
+	  only 0 to 60 is valid. If unsure, say N to use it's original value(60).
 
-config HISI_FALLBACK_MOVEABLE
-	bool "Steal memory from moveable's fallbacks"
-	help
-	  If this option is enabled,when migratetype is movable,
-	  we can steal memory form  fallbacks[movable].
-	  This may have a performance impact on alloc stall.
-
-	  If in doubt, say N
-
-config HISI_STRONG_BALANCE
-	bool "Strong pgdat balance"
-	help
-	  If this option is enabled, the total of balanced pages must be at least 50%
-	  of the zones allowed by classzone_idx for the node to be considered balanced.
-	  It can cause excessive reclaim when there are imbalanced zones.
-	  This may have a performance impact.
-
-	  If in doubt, say N
-config HISI_THREADINFO_NORMAL_ZONE
-	bool "Alloc threadinfo in  normal zone"
-	help
-	  If this option is enabled,  we can use the normal zone for threadinfo,
-	  otherwise,we can only use the dma zone.
-	  This may have a performance impact and reduce fragmentation.
-
-	  If in doubt, say N
-
-config HISI_RESORT_ZONE_FREELIST
-	bool "for memory performance opt resort the zone freelist"
+config HUAWEI_SLAB_UNRECLAIMABLE_THRESHOLD
+	bool "Test slab_unreclaimable when lowmem occurs"
+	depends on ARM64
 	default n
 	help
-	  If this option is enabled, we resort the zone freelist in mem init.
-	  This may have a performance improvement in memory test.
-
-	  If in doubt, say N
+	  If this config is set "y", we will make system panic when
+	  slab_unreclaimable is tested larger than threshold.
 
 config HUAWEI_UNMOVABLE_ISOLATE
 	bool "Isolate the unmovable memory."
@@ -821,4 +832,11 @@ config HUAWEI_UNMOVABLE_ISOLATE2_SIZE_MBYTES
 	  MIGRATE_UNMOVABLE_ISOLATE2 Memory Allocator. However,
 	  we should parse the size from /proc/cmdline firstly.
 
+config DEBUG_VMALLOC
+	bool "Enable VMALLOC debugging support"
+	help
+	  This enables the inclusion of a few debugging parameters, which
+	  are the PID and the name of the task requesting vmalloc.
+
+	  Disabling these can result in savings in code size.
 source "mm/hisi/Kconfig"

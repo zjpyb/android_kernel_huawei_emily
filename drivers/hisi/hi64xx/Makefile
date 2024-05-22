@@ -15,12 +15,16 @@ EXTRA_CFLAGS += -DINVERT_HEADSET
 endif
 
 ifneq ($(TARGET_BUILD_VARIANT),user)
+	EXTRA_CFLAGS += -DCONFIG_HUAWEI_HEADSET_DEBUG
+	EXTRA_CFLAGS += -Idrivers/devkit/audiokit/headset_debug/
+ifeq ($(kcov),true)
+EXTRA_CFLAGS += -DKCOV_AUDIO
+else
 EXTRA_CFLAGS += -DENABLE_HI64XX_CODEC_DEBUG
-
+endif
 #ifeq ($(CONFIG_SND_SOC_CODEC_STUB),y)
 #EXTRA_CFLAGS += -DHI6XXX_FPGA_CODEC_STUB
 #endif
-
 endif
 
 ccflags-y += -Idrivers/devkit/audiokit/

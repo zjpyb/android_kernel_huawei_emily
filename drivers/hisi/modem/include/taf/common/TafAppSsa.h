@@ -61,11 +61,9 @@ extern "C"{
 
 #pragma pack(4)
 
-/* Modified by l60609 for DSDA Phase III, 2013-3-4, Begin */
 /* USSD */
 #define AT_USSD_NON_TRAN_MODE               0    /* 非透传:单板支持编解码 */
 #define AT_USSD_TRAN_MODE                   1    /* 透传:  单板不编解码，只是透传，由后台来编解码 */
-/* Modified by l60609 for DSDA Phase III, 2013-3-4, End */
 
 /*************************Operation Code************************/
 /* 参考24080协议4.5 allocation of local values to operations */
@@ -143,9 +141,7 @@ typedef      TAF_UINT16         TAF_SS_ERROR;
 
 /*******************SS-Code的定义**************************/
 typedef     TAF_UINT8           TAF_SS_CODE;
-/* Added by f62575 for SS FDN&Call Control, 2013-05-06, begin */
 #define     TAF_SS_CODE_MASK                                (0xf0)              /* 用于识别补充业务类别，如呼叫闭锁业务高4bit为9， */
-/* Added by f62575 for SS FDN&Call Control, 2013-05-06, end */
 
 #define     TAF_ALL_SS_CODE                                 0x00    /*所有的补充业务*/
 
@@ -351,9 +347,7 @@ typedef     TAF_UINT8           TAF_SS_FORWARDINGOPTIONS;
 #define     TAF_SS_MAX_MSISDN_LEN                                  20
 #define     TAF_SS_MAX_PASSWORD_LEN                                4
 #define     TAF_SS_MAX_UNPARSE_PARA_LEN                            255
-/* Added by f62575 for SS FDN&Call Control, 2013-05-06, begin */
 #define     TAF_SS_MAX_USSD_CHAR_HEX_FORMAT                        (TAF_SS_MAX_USS_CHAR * 2)
-/* Added by f62575 for SS FDN&Call Control, 2013-05-06, end */
 
 
 /********************SS错误原因值*************************************/
@@ -377,9 +371,7 @@ typedef     TAF_UINT8           TAF_SS_FORWARDINGOPTIONS;
 #define TAF_ERR_SS_NUMBER_OF_PW_ATTEMPTS_VIOLATION  (TAF_ERR_SS_BASE + 43)  /*密码尝试次数超过上限*/
 #define TAF_ERR_SS_UNKNOWN_ALPHABET                 (TAF_ERR_SS_BASE + 71)  /*USSD字符编码不支持*/
 #define TAF_ERR_SS_USSD_BUSY                        (TAF_ERR_SS_BASE + 72)  /*当前无法进行USSD操作*/
-/* Added by f62575 for SS FDN&Call Control, 2013-05-06, begin */
 #define TAF_ERR_SS_NO_PASSWORD                      (TAF_ERR_SS_BASE + 73)      /* 无操作要求的密码 */
-/* Added by f62575 for SS FDN&Call Control, 2013-05-06, end */
 
 #define TAF_ERR_IMSA_USSD_BUSY                      (TAF_ERR_SS_IMSA_BASE + 1)  /*当前无法进行USSD操作*/
 #define TAF_ERR_IMSA_SRVCCING_BUFF_MSG              (TAF_ERR_SS_IMSA_BASE + 2)  /*SRVCC过程中的USSD缓存,在SRVCC成功后通过此原因通知*/
@@ -418,14 +410,12 @@ enum TAF_SSA_SIGNALLING_TYPE_ENUM
 };
 typedef VOS_UINT8 TAF_SSA_SIGNALLING_TYPE_ENUM_UINT8;
 
-/* Modified by l60609 for DSDA Phase III, 2013-3-4, Begin */
 typedef struct
 {
     TAF_UINT8   ucStatus;        /* 1: NV有效标志位，0：无效 */
     TAF_UINT8   ucUssdTransMode;
     TAF_UINT8   aucRsv[2];
 }USSD_TRANS_MODE_STRU;
-/* Modified by l60609 for DSDA Phase III, 2013-3-4, End */
 
 typedef struct
 {
@@ -697,20 +687,14 @@ typedef  struct
 {
     TAF_UINT32                              OP_BsService:1;
     TAF_UINT32                              OP_LongFTN_Supported:1;
-/* Added by f62575 for SS FDN&Call Control, 2013-05-06, begin */
     TAF_UINT32                              OP_Password:1;
     TAF_UINT32                              OP_Spare:29;
-/* Added by f62575 for SS FDN&Call Control, 2013-05-06, end */
 
     /**选择bearerService(SS_BEARER_SERVICE:0)还是teleService(SS_TELE_SERVICE1)**/
     TAF_SS_CODE                             SsCode;
-/* Added by f62575 for SS FDN&Call Control, 2013-05-06, begin */
     VOS_UINT8                               aucReserved1[3];
-/* Added by f62575 for SS FDN&Call Control, 2013-05-06, end */
     TAF_SS_BASIC_SERVICE_STRU               BsService;
-/* Added by f62575 for SS FDN&Call Control, 2013-05-06, begin */
     TAF_UINT8                               aucPassword[TAF_SS_MAX_PASSWORD_LEN];                 /* 指示Clck密码 */
-/* Added by f62575 for SS FDN&Call Control, 2013-05-06, end */
 }TAF_SS_ERASESS_REQ_STRU;
 
 
@@ -968,9 +952,7 @@ TAF_UINT32 TAF_RegisterPasswordReq(MN_CLIENT_ID_T                        ClientI
                                    MN_OPERATION_ID_T                               OpId,
                                    TAF_SS_REGPWD_REQ_STRU              *pPara);
 
-/* Delete by f62575 for SS FDN&Call Control, 2013-05-06, begin */
 /* 删除GetPassword操作函数TAF_GetPasswordRsp外部引用 */
-/* Delete by f62575 for SS FDN&Call Control, 2013-05-06, end */
 
 
 /*ProcessUnstructuredSS-Request操作*/

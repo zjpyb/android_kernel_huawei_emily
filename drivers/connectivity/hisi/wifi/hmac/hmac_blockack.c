@@ -622,6 +622,12 @@ oal_uint32  hmac_ba_timeout_fn(oal_void *p_arg)
         return OAL_ERR_CODE_PTR_NULL;
     }
 
+    if ((MAC_USER_ALLOCED != pst_hmac_user->st_user_base_info.uc_is_user_alloced))
+    {
+        OAM_ERROR_LOG1(0, OAM_SF_BA, "{hmac_ba_timeout_fn::hmac_user have been freed. user idx %d.}", pst_alarm_data->us_mac_user_idx);
+        return OAL_ERR_CODE_USER_RES_CNT_ZERO;
+    }
+
     pst_mac_device = mac_res_get_dev(pst_vap->st_vap_base_info.uc_device_id);
     if (OAL_PTR_NULL == pst_mac_device)
     {
@@ -702,9 +708,15 @@ oal_uint32  hmac_ba_reset_rx_handle(mac_device_stru *pst_mac_device, hmac_ba_rx_
     hmac_user_stru   *pst_hmac_user;
     oal_bool_enum     en_need_del_lut = OAL_TRUE;
 
-    if (OAL_UNLIKELY((OAL_PTR_NULL == *ppst_rx_ba) || (OAL_TRUE != (*ppst_rx_ba)->en_is_ba)))
+    if (OAL_UNLIKELY((OAL_PTR_NULL == *ppst_rx_ba)))
     {
-        OAM_WARNING_LOG0(0, OAM_SF_BA, "{hmac_ba_reset_rx_handle::rx ba not set yet.}");
+        OAM_WARNING_LOG1(0, OAM_SF_BA, "{hmac_ba_reset_rx_handle::rx ba not set yet. uc_tid %d}", uc_tid);
+        return OAL_ERR_CODE_PTR_NULL;
+    }
+
+    if (OAL_TRUE != (*ppst_rx_ba)->en_is_ba)
+    {
+        OAM_WARNING_LOG2(0, OAM_SF_BA, "{hmac_ba_reset_rx_handle::tid %d, rx ba en_is_ba %d.}", uc_tid, (*ppst_rx_ba)->en_is_ba);
         return OAL_ERR_CODE_PTR_NULL;
     }
 
@@ -748,6 +760,9 @@ oal_uint32  hmac_ba_reset_rx_handle(mac_device_stru *pst_mac_device, hmac_ba_rx_
     pst_hmac_user = (hmac_user_stru *)mac_res_get_hmac_user((*ppst_rx_ba)->st_alarm_data.us_mac_user_idx);
     if (OAL_UNLIKELY(OAL_PTR_NULL == pst_hmac_user))
     {
+        OAM_ERROR_LOG2(0, OAM_SF_BA, "{hmac_ba_reset_rx_handle::hmac_user is null.user_id %d, tid %d}",
+                        (*ppst_rx_ba)->st_alarm_data.us_mac_user_idx,
+                        uc_tid);
         return OAL_ERR_CODE_PTR_NULL;
     }
 

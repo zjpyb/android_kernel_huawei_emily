@@ -386,6 +386,8 @@ VL53L0_Error VL53L0_DataInit(VL53L0_DEV Dev)
 	VL53L0_DeviceParameters_t CurrentParameters;
 	int i;
 	uint8_t StopVariable;
+    CurrentParameters.InterMeasurementPeriodMilliSeconds = 0;
+
 
 	LOG_FUNCTION_START("");
 
@@ -604,8 +606,8 @@ VL53L0_Error VL53L0_StaticInit(VL53L0_DEV Dev)
 	uint8_t isApertureSpads = 0;
 	uint32_t refSpadCount = 0;
 	uint8_t ApertureSpads = 0;
-	uint8_t vcselPulsePeriodPCLK;
-	uint32_t seqTimeoutMicroSecs;
+	uint8_t vcselPulsePeriodPCLK = 0;
+	uint32_t seqTimeoutMicroSecs = 0;
 
 	LOG_FUNCTION_START("");
 
@@ -1441,8 +1443,8 @@ VL53L0_Error VL53L0_GetInterMeasurementPeriodMilliSeconds(VL53L0_DEV Dev,
 	uint32_t *pInterMeasurementPeriodMilliSeconds)
 {
 	VL53L0_Error Status = VL53L0_ERROR_NONE;
-	uint16_t osc_calibrate_val;
-	uint32_t IMPeriodMilliSeconds;
+	uint16_t osc_calibrate_val = 0;
+	uint32_t IMPeriodMilliSeconds = 0;
 
 	LOG_FUNCTION_START("");
 
@@ -2283,14 +2285,17 @@ VL53L0_Error VL53L0_StartMeasurement(VL53L0_DEV Dev)
 {
 	VL53L0_Error Status = VL53L0_ERROR_NONE;
 	VL53L0_DeviceModes DeviceMode;
-	uint8_t Byte;
+	uint8_t Byte = 0;
 	uint8_t StartStopByte = VL53L0_REG_SYSRANGE_MODE_START_STOP;
-	uint32_t LoopNb;
+	uint32_t LoopNb = 0;
 
 	LOG_FUNCTION_START("");
 
 	/* Get Current DeviceMode */
-	VL53L0_GetDeviceMode(Dev, &DeviceMode);
+	Status = VL53L0_GetDeviceMode(Dev, &DeviceMode);
+    if (Status != VL53L0_ERROR_NONE){
+         LOG_FUNCTION_END(Status);
+    }
 
 	Status = VL53L0_WrByte(Dev, 0x80, 0x01);
 	Status = VL53L0_WrByte(Dev, 0xFF, 0x01);
@@ -2397,7 +2402,7 @@ VL53L0_Error VL53L0_GetMeasurementDataReady(VL53L0_DEV Dev,
 	VL53L0_Error Status = VL53L0_ERROR_NONE;
 	uint8_t SysRangeStatusRegister;
 	uint8_t InterruptConfig;
-	uint32_t InterruptMask;
+	uint32_t InterruptMask = 0;
 
 	LOG_FUNCTION_START("");
 
@@ -2802,8 +2807,8 @@ VL53L0_Error VL53L0_GetGpioConfig(VL53L0_DEV Dev, uint8_t Pin,
 	VL53L0_InterruptPolarity *pPolarity)
 {
 	VL53L0_Error Status = VL53L0_ERROR_NONE;
-	VL53L0_GpioFunctionality GpioFunctionality;
-	uint8_t data;
+	VL53L0_GpioFunctionality GpioFunctionality = 0;
+	uint8_t data = 0;
 
 	LOG_FUNCTION_START("");
 

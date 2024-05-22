@@ -37,7 +37,7 @@
 #include "stmvl53l1-i2c.h"
 #include <linux/i2c.h>
 
-
+extern int memcpy_s(void *dest, size_t destMax, const void *src, size_t count);
 
 #if STMVL53L1_LOG_POLL_TIMING
 /**
@@ -93,7 +93,8 @@ static uint32_t tv_elapsed_us(struct timeval *tv)
 VL53L1_Error VL53L1_GetTickCount(uint32_t *ptime_ms)
 {
 	(void)ptime_ms;
-	BUG_ON(1);
+	WARN_ON(1);
+       return VL53L1_ERROR_NONE;
 }
 /**
  * compute elapsed time in in milli sec based on do_gettimeofday
@@ -105,8 +106,8 @@ static uint32_t tv_elapsed_ms(struct timeval *tv)
 	struct timeval now;
 
 	do_gettimeofday(&now);
-	return (now.tv_sec - tv->tv_sec) * 1000 +
-		(now.tv_usec - tv->tv_usec) / 1000; /*[false alarm]: Type Mismatch: Signed to Unsigned*/
+	return (unsigned int)(now.tv_sec - tv->tv_sec) * 1000 +
+		(unsigned int)(now.tv_usec - tv->tv_usec) / 1000; /*[false alarm]: Type Mismatch: Signed to Unsigned*/
 }
 
 static int cci_write(struct stmvl53l1_data *dev, int index,
@@ -129,7 +130,7 @@ static int cci_write(struct stmvl53l1_data *dev, int index,
 	buffer[0] = (index >> 8) & 0xFF;
 	buffer[1] = (index >> 0) & 0xFF;
 	/* copy write data to buffer after index  */
-	memcpy(buffer+2, data, len);
+	memcpy_s(buffer+2, len, data, len);
 	/* set i2c msg */
 	msg.addr = client->addr;
 	msg.flags = client->flags;

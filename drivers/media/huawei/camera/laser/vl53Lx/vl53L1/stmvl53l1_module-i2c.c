@@ -177,6 +177,7 @@ MODULE_PARM_DESC(intr_gpio_nb, "select gpio numer to use for vl53l1 interrupt");
 #else
 #	define modi2c_dbg(...)	(void)0
 #endif
+extern int memset_s(void *dest, size_t destMax, int c, size_t count);
 
 static int insert_device(void)
 {
@@ -187,7 +188,7 @@ static int insert_device(void)
 		.addr = STMVL53L1_SLAVE_ADDR,
 	};
 
-	memset(&info, 0, sizeof(info));
+	memset_s(&info, sizeof(info), 0, sizeof(info));
 	strcpy(info.type, "stmvl53l1");
 	info.addr = STMVL53L1_SLAVE_ADDR;
 	adapter = i2c_get_adapter(adapter_nb);
@@ -412,21 +413,6 @@ static int stmvl53l1_parse_tree(struct device *dev, struct i2c_data *i2c_data)
 			vl53l1_dbgmsg("gpio ctrl types: %s gpio = %d\n", gpio_tag, gpio[index]);
 		}
 
-#if 0
-		i2c_data->pinctrl = devm_pinctrl_get(dev);
-		if (IS_ERR(i2c_data->pinctrl)) {
-			vl53l1_dbgmsg("could not get pinctrl\n");
-			goto fail;
-		}
-
-		i2c_data->pins_default = pinctrl_lookup_state(i2c_data->pinctrl, PINCTRL_STATE_DEFAULT);
-		if (IS_ERR(i2c_data->pins_default))
-			vl53l1_dbgmsg("could not get default pinstate\n");
-
-		i2c_data->pins_idle = pinctrl_lookup_state(i2c_data->pinctrl, PINCTRL_STATE_IDLE);
-		if (IS_ERR(i2c_data->pins_idle))
-			vl53l1_dbgmsg("could not get idle pinstate\n");
-#endif
 
 		i2c_data->xsdn_gpio = gpio[XSDN];
 		i2c_data->intr_gpio = gpio[INTR];
@@ -538,11 +524,11 @@ int stmvl53l1_probe(struct i2c_client *client,
 	if (vl53l1_data) {
 		vl53l1_data->client_object =
 				kzalloc(sizeof(struct i2c_data), GFP_KERNEL);
-		if (!vl53l1_data)
+		if (!vl53l1_data->client_object)
 			goto done_freemem;
 		i2c_data = (struct i2c_data *)vl53l1_data->client_object;
 	}
-	i2c_data->client = client;
+	i2c_data->client = client;/*[false alarm]:no necessary */
 	i2c_data->vl53l1_data = vl53l1_data;
 	i2c_data->irq = -1 ; /* init to no irq */
 
@@ -576,7 +562,6 @@ int stmvl53l1_probe(struct i2c_client *client,
 
 	ctrl->data = (void *)vl53l1_data;
 
-	rc = laser_probe(client, id);
 #endif
 
 	vl53l1_dbgmsg("End\n");
@@ -590,8 +575,14 @@ release_gpios:
 
 done_freemem:
 	/* kfree safe against NULL */
-	kfree(vl53l1_data);
-	kfree(i2c_data);
+	if(vl53l1_data)
+	{
+		kfree(vl53l1_data);
+	}
+	if(i2c_data)
+	{
+		kfree(i2c_data);
+	}
 #ifdef HIM_ADAPTER
 	stmvl53l1_ipp_exit();
 #endif

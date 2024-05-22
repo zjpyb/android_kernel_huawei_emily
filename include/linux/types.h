@@ -9,6 +9,9 @@
 #define DECLARE_BITMAP(name,bits) \
 	unsigned long name[BITS_TO_LONGS(bits)]
 
+#define DECLARE_BITMAP_ARRAY(name,nr,bits) \
+	unsigned long name[nr][BITS_TO_LONGS(bits)]
+
 typedef __u32 __kernel_dev_t;
 
 typedef __kernel_fd_set		fd_set;
@@ -156,7 +159,6 @@ typedef u32 dma_addr_t;
 
 typedef unsigned __bitwise__ gfp_t;
 typedef unsigned __bitwise__ fmode_t;
-typedef unsigned __bitwise__ oom_flags_t;
 
 #ifdef CONFIG_PHYS_ADDR_T_64BIT
 typedef u64 phys_addr_t;

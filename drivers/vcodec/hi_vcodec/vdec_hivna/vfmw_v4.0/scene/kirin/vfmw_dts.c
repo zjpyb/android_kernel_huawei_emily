@@ -11,6 +11,7 @@ UINT32  gSOFTRST_REQ_Addr    = 0;
 UINT32  gSOFTRST_OK_ADDR     = 0;
 UINT64  gSmmuPageBase        = 0;
 UINT32  gPERICRG_RegBaseAddr = 0;
+UINT32  gVdecQosMode         = 0;
 
 /* irq num */
 UINT32  gVdecIrqNumNorm           = 0;
@@ -41,6 +42,7 @@ SINT32 VFMW_SetDtsConfig(VFMW_DTS_CONFIG_S *pDtsConfig)
 	gVdhRegRange         = pDtsConfig->VdhRegRange;
 	gSmmuPageBase        = pDtsConfig->SmmuPageBaseAddr;
 	gPERICRG_RegBaseAddr = pDtsConfig->PERICRG_RegBaseAddr;
+	gVdecQosMode         = pDtsConfig->VdecQosMode;
 
 	gScdRegBaseAddr      = gVdhRegBaseAddr + SCD_REG_OFFSET;
 	gBpdRegBaseAddr      = gVdhRegBaseAddr + BPD_REG_OFFSET;

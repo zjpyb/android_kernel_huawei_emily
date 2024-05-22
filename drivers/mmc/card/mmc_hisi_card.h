@@ -10,6 +10,7 @@
  */
 struct mmc_blk_data {
 	spinlock_t	lock;
+	struct device *parent;
 	struct gendisk	*disk;
 	struct mmc_queue queue;
 	struct list_head part;
@@ -40,9 +41,11 @@ struct mmc_blk_data {
 	struct device_attribute power_ro_lock;
 	int	area_type;
 };
+
 #ifndef mmc_req_rel_wr
-#define mmc_req_rel_wr(req)/*lint -save -e547*/	((req->cmd_flags & REQ_FUA) && \
-				  (rq_data_dir(req) == WRITE))/*lint -restore*/
+#define mmc_req_rel_wr(req)	(((req->cmd_flags & REQ_FUA) || \
+				  (req->cmd_flags & REQ_META)) && \
+				  (rq_data_dir(req) == WRITE))
 #endif
 
 #endif

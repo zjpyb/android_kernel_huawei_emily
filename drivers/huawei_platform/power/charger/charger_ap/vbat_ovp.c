@@ -146,16 +146,26 @@ static void vbat_ovp_test_print_flag(void)
 int get_vbat_ovp_status(void)
 {
 	struct vbat_ovp_device_info *di = g_di;
-	if (NULL == di)
+
+	if (NULL == di) {
+		hwlog_err("%s:di is null!\n", __func__);
 		return 0;
+	}
+
 	return di->vbat_ovp_status;
 }
 static int vbat_ovp_cut_off_battery(void)
 {
 	int i;
+	struct vbat_ovp_device_info *di = g_di;
 
 	hwlog_info("%s\n",__func__);
-	struct vbat_ovp_device_info *di = g_di;
+
+	if (NULL == di) {
+		hwlog_err("%s:di is null!\n", __func__);
+		return -1;
+	}
+
 	di->vbat_ovp_status = 1;
 	vbat_ovp_send_uevent();
 	hwlog_info("%s:send uevent\n",__func__);

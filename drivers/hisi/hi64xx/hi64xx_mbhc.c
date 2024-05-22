@@ -37,8 +37,9 @@
 #include "huawei_platform/audio/usb_analog_hs_interface.h"
 
 #include "hs_auto_calib.h"
+
 /*lint -e750 -e838 -e732 -e655 -e64*/
-#define HI64xx_BTN_MASK	(SND_JACK_BTN_0 | SND_JACK_BTN_1 | SND_JACK_BTN_2)
+#define HI64xx_BTN_MASK	(SND_JACK_BTN_0 | SND_JACK_BTN_1 | SND_JACK_BTN_2 | SND_JACK_BTN_3)
 
 #define HI64xx_HANDLE_DELAY_800_MS	(800)
 #define HI64xx_HANDLE_DELAY_30_MS	(30)
@@ -89,6 +90,7 @@ struct hi64xx_mbhc_priv {
 #define MBHC_TYPE_REPORT_MAX_TIMES           (20)
 static unsigned int mbhc_type_fail_times = 0;
 static unsigned int mbhc_type_report_times = MBHC_TYPE_REPORT_MAX_TIMES;
+
 
 
 static void hi64xx_mbhc_dmd_fail_report(int adc)
@@ -525,6 +527,12 @@ void hi64xx_btn_down(struct hi64xx_mbhc_priv *priv)
 			mutex_lock(&priv->status_mutex);
 			priv->btn_report = SND_JACK_BTN_2;
 			mutex_unlock(&priv->status_mutex);
+		} else if ((saradc_value > priv->mbhc_config.btn_voice_assistant_min_voltage) && (saradc_value < priv->mbhc_config.btn_voice_assistant_max_voltage)) {
+			mutex_lock(&priv->status_mutex);
+			priv->btn_report = SND_JACK_BTN_3;
+			mutex_unlock(&priv->status_mutex);
+			pr_info("key voice_assistant , saradc value is %d\n", saradc_value);
+			goto VOICE_ASSISTANT_KEY;
 		} else {
 			msleep(30);
 			hi64xx_plug_in_detect(priv);
@@ -536,6 +544,8 @@ void hi64xx_btn_down(struct hi64xx_mbhc_priv *priv)
 			goto end;
 		}
 		startup_FSM(REC_JUDGE, saradc_value, &(priv->btn_report));
+VOICE_ASSISTANT_KEY:
+
 		/*btn_report key event*/
 		pr_info("%s(%u): btn_report type = 0x%x, status=0x%x\n",
 				__FUNCTION__, __LINE__, priv->btn_report, priv->hs_status);
@@ -960,6 +970,16 @@ void hi64xx_mbhc_btn_voltage_config(struct device_node *node,
 		mbhc_config->btn_volume_down_max_voltage = temp;
 	else
 		mbhc_config->btn_volume_down_max_voltage = 0;
+
+	if (!of_property_read_u32(node, "hisilicon,btn_voice_assistant_min_voltage", &temp))
+		mbhc_config->btn_voice_assistant_min_voltage = temp;
+	else
+		mbhc_config->btn_voice_assistant_min_voltage = -1;
+
+	if (!of_property_read_u32(node, "hisilicon,btn_voice_assistant_max_voltage", &temp))
+		mbhc_config->btn_voice_assistant_max_voltage = temp;
+	else
+		mbhc_config->btn_voice_assistant_max_voltage = -1;
 }
 
 void hi64xx_mbhc_hs_extern_cable_config(struct device_node *node,
@@ -1057,6 +1077,13 @@ int hi64xx_register_hs_jack_btn(struct snd_soc_codec *codec)
 		pr_err("%s %d: jack error, errornum = %d\n", __FUNCTION__,  __LINE__, ret);
 		return ret;
 	}
+
+	ret = snd_jack_set_key(hs_jack.jack, SND_JACK_BTN_3, KEY_VOICECOMMAND);
+	if (ret) {
+		pr_err("%s %d: jack error, errornum = %d\n", __FUNCTION__,  __LINE__, ret);
+		return ret;
+	}
+
 	/* for sound triger */
 	ret = snd_jack_set_key(hs_jack.jack, SND_JACK_BTN_5, KEY_F14);
 	if (ret) {
@@ -1078,6 +1105,7 @@ void hi64xx_enable_hsdet(struct snd_soc_codec *codec, struct hi64xx_mbhc_priv *p
 	}
 
 }
+
 
 int hi64xx_mbhc_init(struct snd_soc_codec *codec,
 		struct device_node *node,
@@ -1209,6 +1237,7 @@ int hi64xx_mbhc_init(struct snd_soc_codec *codec,
 	}
 
 
+
 	return ret;
 
 irq_btnupcomp2_exit:
@@ -1273,6 +1302,7 @@ void hi64xx_mbhc_deinit(struct hi64xx_mbhc *mbhc)
 		destroy_workqueue(priv->micbias_delay_wq);
 		priv->micbias_delay_wq = NULL;
 	}
+
 
 
 	kfree(priv);

@@ -599,15 +599,21 @@ typedef struct ieee80211_mgmt {
 enum nl80211_band {
     NL80211_BAND_2GHZ,
     NL80211_BAND_5GHZ,
+    NL80211_BAND_60GHZ,
+    NUM_NL80211_BANDS,
 };
 
 enum ieee80211_band {
     IEEE80211_BAND_2GHZ = NL80211_BAND_2GHZ,
     IEEE80211_BAND_5GHZ = NL80211_BAND_5GHZ,
+    IEEE80211_BAND_60GHZ = NL80211_BAND_60GHZ,
 
     /* keep last */
     IEEE80211_NUM_BANDS
 };
+
+#define HISI_IEEE80211_BAND_2GHZ    IEEE80211_BAND_2GHZ
+#define HISI_IEEE80211_BAND_5GHZ    IEEE80211_BAND_5GHZ
 
 enum nl80211_channel_type {
     NL80211_CHAN_NO_HT,
@@ -909,7 +915,8 @@ struct ieee80211_reg_rule {
 typedef struct{
     oal_uint32      n_reg_rules;
     oal_int8        alpha2[2];
-    oal_uint8       auc_rsv[2];
+    oal_uint8       dfs_region;
+    oal_uint8       auc_rsv;
     struct ieee80211_reg_rule reg_rules[10];
 }oal_ieee80211_regdomain_stru;
 
@@ -1186,6 +1193,7 @@ typedef struct oal_net_device
     oal_int8                    dev_addr[6];
     oal_uint8                   auc_resv[2];
     oal_int32                   tx_queue_len;
+    oal_int32                   ifindex;
     oal_int16                   hard_header_len;
     oal_int16                   type;
     oal_int16		            needed_headroom;

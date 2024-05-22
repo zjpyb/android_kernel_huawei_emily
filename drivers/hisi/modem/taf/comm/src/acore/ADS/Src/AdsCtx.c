@@ -75,8 +75,11 @@ VOS_UINT32                              g_ulAdsDLTaskReadyFlag = 0;  /* ADSÏÂÐÐÈ
 /* ADSÄ£¿éµÄÉÏÏÂÎÄ */
 ADS_CTX_STRU                            g_stAdsCtx;
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
 VOS_UINT64                              g_ullAdsDmaMask = 0xffffffffffffffffULL;
-
+#else
+struct device                          *g_pstDmaDev;
+#endif
 /*****************************************************************************
   3 º¯ÊýÊµÏÖ
 *****************************************************************************/
@@ -424,10 +427,8 @@ VOS_VOID ADS_UL_DestroyQueue(
     VOS_SpinLockIntLock(ADS_UL_GET_QUEUE_LINK_SPINLOCK(ulInstanceIndex, ulRabId), ulLockLevel);
     /*lint +e571*/
 
-    /* Modified by l60609 for APÊÊÅäÏîÄ¿ £¬2012-09-10 Begin */
     /* Ïú»Ù¶ÓÁÐÖÐµÄÊý¾Ý */
     ADS_UL_ClearQueue(ADS_UL_GET_QUEUE_LINK_PTR(ulInstanceIndex, ulRabId));
-    /* Modified by l60609 for APÊÊÅäÏîÄ¿ £¬2012-09-10 End */
 
     /* Ïú»Ù¶ÓÁÐÍ·½áµã*/
     PS_MEM_FREE(ACPU_PID_ADS_DL, ADS_UL_GET_QUEUE_LINK_PTR(ulInstanceIndex, ulRabId));
@@ -917,9 +918,16 @@ IMM_ZC_STRU* ADS_IPF_AllocMem(VOS_UINT32 ulPoolId, VOS_UINT32 ulLen, VOS_UINT32 
 
     ADS_DBG_DL_ADQ_ALLOC_SYS_MEM_SUCC_NUM(1);
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
     /* ²Ù×÷Ë³Ðò: Ë¢CACHE, Ô¤ÁôÍ·²¿¿Õ¼ä */
     ADS_IPF_DL_MEM_MAP(pstImmZc, ulLen);
     IMM_ZcReserve(pstImmZc, ulReserveLen);
+#else
+    /* ²Ù×÷Ë³Ðò: Ô¤ÁôÍ·²¿¿Õ¼ä£¬Ë¢CACHE  */
+    IMM_ZcReserve(pstImmZc, ulReserveLen);
+    ADS_IPF_DL_MEM_MAP(pstImmZc, ulLen);
+#endif
+
     return pstImmZc;
 }
 
@@ -1041,10 +1049,8 @@ VOS_VOID ADS_InitUlCtx(VOS_UINT32 ulInstanceIndex)
         pstAdsSpecCtx->stAdsUlCtx.astAdsUlQueue[i].usRecordNum     = 0;
         pstAdsSpecCtx->stAdsUlCtx.astAdsUlQueue[i].enPktType       = ADS_CDS_IPF_PKT_TYPE_IP;
 
-        /* Added by l60609 for APÊÊÅäÏîÄ¿ £¬2012-09-10 Begin */
         /* Ëø³õÊ¼»¯ */
         VOS_SpinLockInit(&(pstAdsSpecCtx->stAdsUlCtx.astAdsUlQueue[i].stSpinLock));
-        /* Added by l60609 for APÊÊÅäÏîÄ¿ £¬2012-09-10 End */
     }
 
     TAF_MEM_SET_S(pstAdsSpecCtx->stAdsUlCtx.aulPrioIndex, sizeof(pstAdsSpecCtx->stAdsUlCtx.aulPrioIndex),
@@ -1076,9 +1082,7 @@ VOS_VOID ADS_InitUlCtx(VOS_UINT32 ulInstanceIndex)
         }
     }
 
-    /* Added by l60609 for APÊÊÅäÏîÄ¿ £¬2012-08-31 Begin */
     pstAdsSpecCtx->stAdsUlCtx.ulUlMaxQueueLength     = ADS_UL_MAX_QUEUE_LENGTH;
-    /* Added by l60609 for APÊÊÅäÏîÄ¿ £¬2012-08-31 End */
 
     return;
 }
@@ -1373,8 +1377,10 @@ VOS_VOID ADS_InitIpfCtx(VOS_VOID)
     /* Ä¬ÈÏÊý¾Ý²»ÔÚ·¢ËÍ */
     g_stAdsCtx.stAdsIpfCtx.ucSendingFlg = VOS_FALSE;
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
     TAF_MEM_SET_S(&(g_stAdsCtx.stAdsIpfCtx.stDev), sizeof(g_stAdsCtx.stAdsIpfCtx.stDev), 0x00, (VOS_SIZE_T)sizeof(struct device));
     g_stAdsCtx.stAdsIpfCtx.stDev.dma_mask = &g_ullAdsDmaMask;
+#endif
 
     wake_lock_init(&g_stAdsCtx.stAdsIpfCtx.stUlBdWakeLock, WAKE_LOCK_SUSPEND, "ipf_bd_wake");
     wake_lock_init(&g_stAdsCtx.stAdsIpfCtx.stDlRdWakeLock, WAKE_LOCK_SUSPEND, "ipf_rd_wake");
@@ -1531,6 +1537,55 @@ VOS_VOID ADS_InitCtx(VOS_VOID)
     return;
 }
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
 
+VOS_INT32 ADS_PlatDevProbe(struct platform_device *pstDev)
+{
+    g_pstDmaDev = &(pstDev->dev);
+    dma_set_mask_and_coherent(g_pstDmaDev, DMA_BIT_MASK(64));
+
+    printk(KERN_ERR"ADS_PlatDevProbe: dma mask = 0x%llx, coherent_dma_mask = 0x%llx, archdata.dma_coherent = %d.\r\n",
+           *(g_pstDmaDev->dma_mask), g_pstDmaDev->coherent_dma_mask, g_pstDmaDev->archdata.dma_coherent);
+
+    return 0;
+}
+
+
+VOS_INT32 ADS_PlatDevRemove(struct platform_device *pstDev)
+{
+    return 0;
+}
+
+static const struct of_device_id g_stAdsPlatDevOfMatch[] = {
+	{
+		.compatible = "hisilicon,hisi-ads",
+	},
+	{ },
+};
+
+static struct platform_driver g_stAdsPlatDevDriver = {
+	.probe	= ADS_PlatDevProbe,
+	.remove	= ADS_PlatDevRemove,
+	.driver	= {
+		.name = "hisi-ads",
+		.of_match_table = of_match_ptr(g_stAdsPlatDevOfMatch),
+	},
+};
+
+
+VOS_INT32 __init ADS_PlatDevInit(void)
+{
+	return platform_driver_register(&g_stAdsPlatDevDriver);
+}
+
+
+VOS_VOID __exit ADS_PlatDevExit(void)
+{
+	platform_driver_unregister(&g_stAdsPlatDevDriver);
+}
+
+module_init(ADS_PlatDevInit);
+module_exit(ADS_PlatDevExit);
+#endif
 
 

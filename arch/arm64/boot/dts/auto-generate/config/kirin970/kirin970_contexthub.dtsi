@@ -41,7 +41,7 @@
     hisi_ar:ar {
         compatible = "hisilicon,hismart-ar";
         status = "ok";
-        hisi,environment_switch = "on";    /* on/off */
+        hisi,environment_switch = "off";    /* on/off */
     };
 
     hisi_softtimer:softtimer {

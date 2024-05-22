@@ -37,25 +37,23 @@
 /*
  * 2 Global Variable Definition
  */
-#define CUST_PATH_SPEC             "/cust_spec"     /*某运营商在不同产品的差异配置*/
-#define CUST_PATH_COMM             "/data/cust"     /*某运营商在所有产品的相同配置*/
+#define CUST_PATH_INI_CONN             "/data/vendor/cust_conn/ini_cfg"     /*某运营商在不同产品的差异配置*/
 /* mutex for open ini file */
-struct mutex        file_mutex;
+struct mutex        file_mutex_etc;
 #if (_PRE_TARGET_PRODUCT_TYPE_E5 == _PRE_CONFIG_TARGET_PRODUCT)
-int8 g_ini_file_name[INI_FILE_PATH_LEN] = "/system/bin/wifi_hisi/cfg_e5_hisi.ini";
+int8 g_ini_file_name_etc[INI_FILE_PATH_LEN] = "/system/bin/wifi_hisi/cfg_e5_hisi.ini";
 #elif (_PRE_TARGET_PRODUCT_TYPE_ONT == _PRE_CONFIG_TARGET_PRODUCT)
-int8 g_ini_file_name[INI_FILE_PATH_LEN] = "/var/cfg_ont_hisi.ini";
+int8 g_ini_file_name_etc[INI_FILE_PATH_LEN] = "/var/cfg_ont_hisi.ini";
 #elif (_PRE_TARGET_PRODUCT_TYPE_5630HERA == _PRE_CONFIG_TARGET_PRODUCT)
-int8 g_ini_file_name[INI_FILE_PATH_LEN] = "/etc/cfg_hera_hisi.ini";
+int8 g_ini_file_name_etc[INI_FILE_PATH_LEN] = "/etc/cfg_hera_hisi.ini";
 #else
-int8 g_ini_file_name[INI_FILE_PATH_LEN] = "/system/bin/wifi_hisi/cfg_e5_hisi.ini";
+int8 g_ini_file_name_etc[INI_FILE_PATH_LEN] = "/system/bin/wifi_hisi/cfg_e5_hisi.ini";
 #endif
-int8 g_ini_spec_file_name[INI_FILE_PATH_LEN] = {0};
-int8 g_ini_comm_file_name[INI_FILE_PATH_LEN] = {0};
-#define INI_FILE_PATH           (g_ini_file_name)
+int8 g_ini_conn_file_name_etc[INI_FILE_PATH_LEN] = {0};
+#define INI_FILE_PATH           (g_ini_file_name_etc)
 
-INI_BOARD_VERSION_STRU g_board_version = {{0}};
-INI_PARAM_VERSION_STRU g_param_version = {{0}};
+INI_BOARD_VERSION_STRU g_board_version_etc = {{0}};
+INI_PARAM_VERSION_STRU g_param_version_etc = {{0}};
 
 #if (_PRE_PRODUCT_ID_HI1151==_PRE_PRODUCT_ID)
 enum PLAT_LOGLEVLE{
@@ -66,7 +64,7 @@ enum PLAT_LOGLEVLE{
 	PLAT_LOG_DEBUG = 4,
 };
 #define DOWNLOAD_CHANNEL_LEN                (64)
-int32 g_plat_loglevel = PLAT_LOG_INFO;
+int32 g_plat_loglevel_etc = PLAT_LOG_INFO;
 #endif
 
 int64 g_ini_file_time_sec = 0;
@@ -93,7 +91,7 @@ static int32 ko_read_line(INI_FILE *fp, char *addr)
     }
 
     cnt = 0;
-    while (('\n' != auc_tmp[cnt]) && (cnt < MAX_READ_LINE_NUM - 1))
+    while ((cnt < MAX_READ_LINE_NUM - 1) && ('\n' != auc_tmp[cnt]))
     {
         *addr++ = auc_tmp[cnt++];
     }
@@ -196,7 +194,7 @@ static int32 ini_readline_func(INI_FILE *fp, int8 * rd_buf)
 }
 
 
-int32 ini_check_str(INI_FILE *fp, int8 * auc_tmp, int8 * puc_var)
+int32 ini_check_str_etc(INI_FILE *fp, int8 * auc_tmp, int8 * puc_var)
 {
     uint16 auc_len;
     uint16 curr_var_len;
@@ -225,7 +223,7 @@ int32 ini_check_str(INI_FILE *fp, int8 * auc_tmp, int8 * puc_var)
         search_var_len = (uint16)strlen(puc_var);
         if (search_var_len > curr_var_len)
         {
-            search_var_len = curr_var_len;
+            break;
         }
         if (0 == strncmp(auc_tmp, puc_var, search_var_len))
         {
@@ -374,7 +372,7 @@ static int32 ini_find_modu(INI_FILE *fp, int32 tag_index, int8 * puc_var, int8 *
             return INI_FAILED;
         }
 
-        ret = ini_check_str(fp, auc_tmp, auc_modu);
+        ret = ini_check_str_etc(fp, auc_tmp, auc_modu);
         if (INI_SUCC == ret)
         {
             INI_DEBUG("have found %s", auc_modu);
@@ -393,7 +391,7 @@ static int32 ini_find_modu(INI_FILE *fp, int32 tag_index, int8 * puc_var, int8 *
 static int32 ini_find_var(INI_FILE *fp, int32 tag_index, int8 * puc_var, int8 *puc_value, uint32 size)
 {
     int32 ret;
-    int8 auc_tmp[MAX_READ_LINE_NUM] = {0};
+    int8 auc_tmp[MAX_READ_LINE_NUM + 1] = {0};
     size_t search_var_len;
 
     /* find the modu of var, such as [HOST_WIFI_NORMAL] of wifi moduler*/
@@ -423,8 +421,8 @@ static int32 ini_find_var(INI_FILE *fp, int32 tag_index, int8 * puc_var, int8 *p
         }
 
         search_var_len = strlen(puc_var);
-        ret = ini_check_str(fp, auc_tmp, puc_var);
-        if (INI_SUCC == ret)
+        ret = ini_check_str_etc(fp, auc_tmp, puc_var);
+        if ((INI_SUCC == ret) && ('=' == auc_tmp[search_var_len]))
         {
             strncpy(puc_value, &auc_tmp[search_var_len+1], size);
             break;
@@ -438,74 +436,13 @@ static int32 ini_find_var(INI_FILE *fp, int32 tag_index, int8 * puc_var, int8 *p
     return INI_SUCC;
 }
 
-
-void print_device_version(void)
-{
-    INI_FILE *fp = NULL;
-    int8  version_buff[INI_VERSION_STR_LEN] = {0};
-    int32 l_ret;
-
-    INI_MUTEX_LOCK(&file_mutex);
-
-    fp = ini_file_open(INI_FILE_PATH, "rt");
-    if (0 == fp)
-    {
-        INI_ERROR("open %s failed!!!", INI_FILE_PATH);
-        goto open_ini_file_fail;
-    }
-
-    l_ret = ini_find_var(fp, INI_MODU_PLAT, INI_VAR_PLAT_BOARD, version_buff, sizeof(version_buff));
-    if (INI_FAILED == l_ret)
-    {
-        version_buff[0] = '\0';
-        goto read_ini_var_fail;
-    }
-
-    if (INI_FAILED == ini_check_value(version_buff))
-    {
-        goto read_ini_var_fail;
-    }
-    strncpy((int8*)(g_board_version.board_version), version_buff, INI_VERSION_STR_LEN);
-    g_board_version.board_version[INI_VERSION_STR_LEN - 1] = '\0';
-    INI_INFO("::g_board_version.board_version = %s::", g_board_version.board_version);
-    fp->f_pos = 0;
-
-    l_ret = ini_find_var(fp, INI_MODU_PLAT, INI_VAR_PLAT_PARAM, version_buff, sizeof(version_buff));
-    if (INI_FAILED == l_ret)
-    {
-        version_buff[0] = '\0';
-        goto read_ini_var_fail;
-    }
-
-    if (INI_FAILED == ini_check_value(version_buff))
-    {
-        goto read_ini_var_fail;
-    }
-
-    strncpy((int8*)(g_param_version.param_version), version_buff, INI_VERSION_STR_LEN);
-    g_param_version.param_version[INI_VERSION_STR_LEN - 1] = '\0';
-    INI_INFO("::g_param_version.param_version = %s::", g_param_version.param_version);
-    fp->f_pos = 0;
-    ini_file_close(fp);
-    INI_MUTEX_UNLOCK(&file_mutex);
-
-    return;
-
-read_ini_var_fail:
-    fp->f_pos = 0;
-    ini_file_close(fp);
-open_ini_file_fail:
-    INI_MUTEX_UNLOCK(&file_mutex);
-    return;
-}
-
-int32 find_download_channel(uint8* buff,int8 * puc_var)
+int32 find_download_channel_etc(uint8* buff,int8 * puc_var)
 {
     INI_FILE *fp = NULL;
     int8  version_buff[DOWNLOAD_CHANNEL_LEN] = {0};
     int32 l_ret;
 
-    INI_MUTEX_LOCK(&file_mutex);
+    INI_MUTEX_LOCK(&file_mutex_etc);
     INI_INFO("ini file_name is %s", INI_FILE_PATH);
     fp = ini_file_open(INI_FILE_PATH, "rt");
     if (0 == fp)
@@ -527,22 +464,23 @@ int32 find_download_channel(uint8* buff,int8 * puc_var)
         goto read_ini_var_fail;
     }
     strncpy((int8*)buff, version_buff, DOWNLOAD_CHANNEL_LEN);
+    buff[DOWNLOAD_CHANNEL_LEN - 1] = '\0';
 
     fp->f_pos = 0;
     ini_file_close(fp);
-    INI_MUTEX_UNLOCK(&file_mutex);
+    INI_MUTEX_UNLOCK(&file_mutex_etc);
     return INI_SUCC;
 
 read_ini_var_fail:
     fp->f_pos = 0;
     ini_file_close(fp);
 open_ini_file_fail:
-    INI_MUTEX_UNLOCK(&file_mutex);
+    INI_MUTEX_UNLOCK(&file_mutex_etc);
     return INI_FAILED;
 
 }
 
-int32 ini_find_var_value_by_path(int8* path, int32 tag_index, int8 * puc_var, int8* puc_value, uint32 size)
+int32 ini_find_var_value_by_path_etc(int8* path, int32 tag_index, int8 * puc_var, int8* puc_value, uint32 size)
 {
     INI_FILE *fp = NULL;
 
@@ -562,13 +500,13 @@ int32 ini_find_var_value_by_path(int8* path, int32 tag_index, int8 * puc_var, in
     do_gettimeofday(&tv[0]);
 #endif
 
-    INI_MUTEX_LOCK(&file_mutex);
+    INI_MUTEX_LOCK(&file_mutex_etc);
 
     fp = ini_file_open(path, "rt");
     if (0 == fp)
     {
         INI_ERROR("open %s failed!!!", path);
-        INI_MUTEX_UNLOCK(&file_mutex);
+        INI_MUTEX_UNLOCK(&file_mutex_etc);
         return INI_FAILED;
     }
 
@@ -578,7 +516,7 @@ int32 ini_find_var_value_by_path(int8* path, int32 tag_index, int8 * puc_var, in
     {
         puc_value[0] = '\0';
         ini_file_close(fp);
-        INI_MUTEX_UNLOCK(&file_mutex);
+        INI_MUTEX_UNLOCK(&file_mutex_etc);
         return INI_FAILED;
     }
 
@@ -588,7 +526,7 @@ int32 ini_find_var_value_by_path(int8* path, int32 tag_index, int8 * puc_var, in
 #endif
 
     ini_file_close(fp);
-    INI_MUTEX_UNLOCK(&file_mutex);
+    INI_MUTEX_UNLOCK(&file_mutex_etc);
 
     /* check blank space of puc_value */
     if (INI_SUCC == ini_check_value(puc_value))
@@ -601,21 +539,12 @@ int32 ini_find_var_value_by_path(int8* path, int32 tag_index, int8 * puc_var, in
 }
 
 
-int32 ini_find_var_value(int32 tag_index, int8 * puc_var, int8* puc_value, uint32 size)
+int32 ini_find_var_value_etc(int32 tag_index, int8 * puc_var, int8* puc_value, uint32 size)
 {
     /* read spec if exist */
-    if (ini_file_exist(g_ini_spec_file_name))
+    if (ini_file_exist(g_ini_conn_file_name_etc))
     {
-        if (INI_SUCC == ini_find_var_value_by_path(g_ini_spec_file_name, tag_index, puc_var, puc_value, size))
-        {
-            return INI_SUCC;
-        }
-    }
-
-    /* read comm if exist */
-    if (ini_file_exist(g_ini_comm_file_name))
-    {
-        if (INI_SUCC == ini_find_var_value_by_path(g_ini_comm_file_name, tag_index, puc_var, puc_value, size))
+        if (INI_SUCC == ini_find_var_value_by_path_etc(g_ini_conn_file_name_etc, tag_index, puc_var, puc_value, size))
         {
             return INI_SUCC;
         }
@@ -627,26 +556,27 @@ int32 ini_find_var_value(int32 tag_index, int8 * puc_var, int8* puc_value, uint3
         return INI_FAILED;
     }
 
-    return ini_find_var_value_by_path(INI_FILE_PATH, tag_index, puc_var, puc_value, size);
+    return ini_find_var_value_by_path_etc(INI_FILE_PATH, tag_index, puc_var, puc_value, size);
 }
 
 
 #ifdef HISI_NVRAM_SUPPORT
 
-int32 read_conf_from_nvram(uint8 *pc_out, uint32 size, uint32 nv_number,  const char* nv_name)
+int32 read_conf_from_nvram_etc(uint8 *pc_out, uint32 size, uint32 nv_number,  const char* nv_name)
 {
     struct hisi_nve_info_user  info;
-    int32 ret = -1;
+    int32 ret = INI_FAILED;
 
     OAL_MEMZERO(&info, sizeof(info));
     OAL_MEMZERO(pc_out, size);
+    oal_strncpy(info.nv_name, nv_name, strlen(HISI_CUST_NVRAM_NAME));
+    info.nv_name[strlen(HISI_CUST_NVRAM_NAME)] = '\0';
+    info.nv_number = nv_number;
     info.valid_size = HISI_CUST_NVRAM_LEN;
     info.nv_operation = HISI_CUST_NVRAM_READ;
-    oal_strncpy(info.nv_name, nv_name, strlen(nv_name));
-    info.nv_number = nv_number;
 
     ret = hisi_nve_direct_access(&info);
-    if (OAL_STRLEN(info.nv_data) >= size)
+    if (size > sizeof(info.nv_data) || OAL_STRLEN(info.nv_data) >= size)
     {
         INI_ERROR("read nvm{%s}lenth[%d] longer than input[%d]", info.nv_data, (uint32)OAL_STRLEN(info.nv_data), size);
         return INI_FAILED;
@@ -654,7 +584,7 @@ int32 read_conf_from_nvram(uint8 *pc_out, uint32 size, uint32 nv_number,  const 
     if (INI_SUCC == ret)
     {
         memcpy(pc_out, info.nv_data, size);
-        OAL_IO_PRINT("read_conf_from_nvram::nvram id[%d] nv name[%s] get data{%s}, size[%d]\r\n!", nv_number, nv_name, info.nv_data, size);
+        OAL_IO_PRINT("read_conf_from_nvram_etc::nvram id[%d] nv name[%s] get data{%s}, size[%d]\r\n!", nv_number, nv_name, info.nv_data, size);
     }
     else
     {
@@ -666,7 +596,7 @@ int32 read_conf_from_nvram(uint8 *pc_out, uint32 size, uint32 nv_number,  const 
 }
 
 
-int32 write_conf_to_nvram(int8 * name, int8 * pc_arr)
+int32 write_conf_to_nvram_etc(int8 * name, int8 * pc_arr)
 {
     struct hisi_nve_info_user  info;
     int32 ret = -1;
@@ -674,8 +604,8 @@ int32 write_conf_to_nvram(int8 * name, int8 * pc_arr)
     UNREF_PARAM(name);
 
     memset(&info, 0, sizeof(info));
-    strncpy(info.nv_name, HISI_CUST_NVRAM_NAME, strlen(HISI_CUST_NVRAM_NAME) - 1);
-    info.nv_name[strlen(HISI_CUST_NVRAM_NAME) - 1] = '\0';
+    strncpy(info.nv_name, HISI_CUST_NVRAM_NAME, sizeof(info.nv_name));
+    info.nv_name[sizeof(info.nv_name) - 1] = '\0';
     info.nv_number = HISI_CUST_NVRAM_NUM;
     info.valid_size = HISI_CUST_NVRAM_LEN;
     info.nv_operation = HISI_CUST_NVRAM_WRITE;
@@ -691,14 +621,14 @@ int32 write_conf_to_nvram(int8 * name, int8 * pc_arr)
 }
 #endif
 
-int32 get_cust_conf_string(int32 tag_index, int8 * puc_var, int8* puc_value, uint32 size)
+int32 get_cust_conf_string_etc(int32 tag_index, int8 * puc_var, int8* puc_value, uint32 size)
 {
     OAL_MEMZERO(puc_value, size);
-    return ini_find_var_value(tag_index, puc_var, puc_value, size);
+    return ini_find_var_value_etc(tag_index, puc_var, puc_value, size);
 }
 
 
-int32 set_cust_conf_string(int32 tag_index, int8 * name, int8 * var)
+int32 set_cust_conf_string_etc(int32 tag_index, int8 * name, int8 * var)
 {
     int32 ret = INI_FAILED;
 
@@ -708,23 +638,23 @@ int32 set_cust_conf_string(int32 tag_index, int8 * name, int8 * var)
         return INI_FAILED;
     }
 #ifdef HISI_NVRAM_SUPPORT
-    ret = write_conf_to_nvram(name, var);
+    ret = write_conf_to_nvram_etc(name, var);
 #endif
     return ret;
 }
 
 
 
-int32 get_cust_conf_int32(int32 tag_index, int8 * puc_var, int32* puc_value)
+int32 get_cust_conf_int32_etc(int32 tag_index, int8 * puc_var, int32* puc_value)
 {
     int32 ret = 0;
     int8  out_str[INI_READ_VALUE_LEN] = {0};
 
-    ret = ini_find_var_value(tag_index, puc_var, out_str, sizeof(out_str));
+    ret = ini_find_var_value_etc(tag_index, puc_var, out_str, sizeof(out_str));
 
     if (ret < 0)
     {
-        /* ini_find_var_value has error log, delete this log */
+        /* ini_find_var_value_etc has error log, delete this log */
         INI_DEBUG("cust modu didn't get var of %s.", puc_var);
         return INI_FAILED;
     }
@@ -805,15 +735,9 @@ int32 ini_file_check_conf_update(void)
     int32 ret;
 
     /* read spec if exist */
-    if ((INI_SUCC == get_ini_file(g_ini_spec_file_name, &fp)) && (INI_FILE_TIMESPEC_RECONFIG == ini_file_check_timespec(fp)))
+    if ((INI_SUCC == get_ini_file(g_ini_conn_file_name_etc, &fp)) && (INI_FILE_TIMESPEC_RECONFIG == ini_file_check_timespec(fp)))
     {
-        INI_INFO("%s ini file is updated\n", g_ini_spec_file_name);
-        ret = INI_FILE_TIMESPEC_RECONFIG;
-    }
-    /* read comm if exist */
-    else if ((INI_SUCC == get_ini_file(g_ini_comm_file_name, &fp)) && (INI_FILE_TIMESPEC_RECONFIG == ini_file_check_timespec(fp)))
-    {
-        INI_INFO("%s ini file is updated\n", g_ini_comm_file_name);
+        INI_INFO("%s ini file is updated\n", g_ini_conn_file_name_etc);
         ret = INI_FILE_TIMESPEC_RECONFIG;
     }
     else if ((INI_SUCC == get_ini_file(INI_FILE_PATH, &fp)) && (INI_FILE_TIMESPEC_RECONFIG == ini_file_check_timespec(fp)))
@@ -836,10 +760,10 @@ int32 ini_file_check_conf_update(void)
 }
 
 #ifdef HISI_DTS_SUPPORT
-int32 get_ini_file_name_from_dts(int8 *dts_prop, int8 *prop_value, uint32 size)
+int32 get_ini_file_name_from_dts_etc(int8 *dts_prop, int8 *prop_value, uint32 size)
 {
 #ifdef _PRE_CONFIG_USE_DTS
-    return g_board_info.bd_ops.get_ini_file_name_from_dts(dts_prop,prop_value,size);
+    return g_board_info_etc.bd_ops.get_ini_file_name_from_dts_etc(dts_prop,prop_value,size);
 #endif
     return INI_SUCC;
 }
@@ -936,60 +860,59 @@ int8 *get_str_from_file(int8 *pc_file_path, const int8 *pc_mask_str, const int8 
     return NULL;
 }
 
-int ini_cfg_init(void)
+int ini_cfg_init_etc(void)
 {
 #ifdef HISI_DTS_SUPPORT
     int32 ret;
-#endif
     int8 auc_dts_ini_path[INI_FILE_PATH_LEN]  = {0};
+#endif
+
 
 #ifndef _PRE_WLAN_FEATURE_EQUIPMENT_TEST
     INI_INFO("hi110x ini config search init!\n");
 #endif
 
 #ifdef HISI_DTS_SUPPORT
-    ret = get_ini_file_name_from_dts(PROC_NAME_INI_FILE_NAME, auc_dts_ini_path, sizeof(auc_dts_ini_path));
+    ret = get_ini_file_name_from_dts_etc(PROC_NAME_INI_FILE_NAME, auc_dts_ini_path, sizeof(auc_dts_ini_path));
     if ( 0 > ret )
     {
         INI_ERROR("can't find dts proc %s\n", PROC_NAME_INI_FILE_NAME);
         return INI_FAILED;
     }
 #endif
-    INI_INIT_MUTEX(&file_mutex);
+    INI_INIT_MUTEX(&file_mutex_etc);
 
 #ifdef HISI_DTS_SUPPORT
-    snprintf(g_ini_file_name, sizeof(g_ini_file_name)-1, "%s", auc_dts_ini_path);
-    g_board_info.ini_file_name=g_ini_file_name;
+    snprintf(g_ini_file_name_etc, sizeof(g_ini_file_name_etc)-1, "%s", auc_dts_ini_path);
+    g_board_info_etc.ini_file_name=g_ini_file_name_etc;
     /*Note:"symbol snprintf()"has arg.count conflict(5 vs 4)*/
     /*lint -e515*/
 #endif
-    snprintf(g_ini_spec_file_name, sizeof(g_ini_spec_file_name)-1, "%s%s", CUST_PATH_SPEC, auc_dts_ini_path);
-    snprintf(g_ini_comm_file_name, sizeof(g_ini_comm_file_name)-1, "%s%s", CUST_PATH_COMM, auc_dts_ini_path);
-    OAL_IO_PRINT("ini_file_name@%s\n",g_ini_file_name);
+    snprintf(g_ini_conn_file_name_etc, sizeof(g_ini_conn_file_name_etc)-1, "%s", CUST_PATH_INI_CONN);
+    OAL_IO_PRINT("ini_file_name@%s\n",g_ini_file_name_etc);
 
 #ifdef HISI_DTS_SUPPORT
     /*lint +e515*/
-    INI_INFO("%s@%s\n", PROC_NAME_INI_FILE_NAME, g_ini_file_name);
-    print_device_version();
+    INI_INFO("%s@%s\n", PROC_NAME_INI_FILE_NAME, g_ini_file_name_etc);
 #else
-    INI_INFO("ini_file_name@%s\n",g_ini_file_name);
+    INI_INFO("ini_file_name@%s\n",g_ini_file_name_etc);
 #endif
     return INI_SUCC;
 }
 
-void ini_cfg_exit(void)
+void ini_cfg_exit_etc(void)
 {
     INI_INFO("hi110x ini config search exit!\n");
 }
 
 #if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
 /*lint -e578*//*lint -e132*//*lint -e745*//*lint -e101*//*lint -e49*//*lint -e601*/
-oal_module_param_string(g_ini_file_name, g_ini_file_name, INI_FILE_PATH_LEN, OAL_S_IRUGO);
+oal_module_param_string(g_ini_file_name_etc, g_ini_file_name_etc, INI_FILE_PATH_LEN, OAL_S_IRUGO);
 /*lint +e578*//*lint +e132*//*lint +e745*//*lint +e101*//*lint +e49*//*lint +e601*/
 #endif
 
-//module_init(ini_cfg_init);
-//module_exit(ini_cfg_exit);
+//module_init(ini_cfg_init_etc);
+//module_exit(ini_cfg_exit_etc);
 //MODULE_AUTHOR("Hisilicon Connectivity ini config search Driver Group");
 //MODULE_DESCRIPTION("Hi110x ini config search platform driver");
 //MODULE_LICENSE("GPL");

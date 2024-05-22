@@ -78,12 +78,7 @@ extern uint32_t _trace_level;
 int32_t VL53L0_trace_config(char *filename, uint32_t modules,
 			uint32_t level, uint32_t functions);
 
-#if 0
-void trace_print_module_function(uint32_t module, uint32_t level,
-			uint32_t function, const char *format, ...);
-#else
 #define trace_print_module_function(...)
-#endif
 
 #define LOG_GET_TIME() (int)0
 /*

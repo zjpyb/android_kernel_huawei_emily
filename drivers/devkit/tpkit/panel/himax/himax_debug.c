@@ -19,8 +19,16 @@ extern struct himax_ts_data *g_himax_ts_data;
 extern int himax_input_config(struct input_dev * input_dev);
 
 int self_test_inter_flag = 0;
+void (*himax_ts_flash_work_func)(struct work_struct *work);
 
 #if defined(CONFIG_TOUCHSCREEN_HIMAX_DEBUG)
+#define FW_SHOW 1
+#define FW_DUMP 2
+#define FL_SHOW 3
+#define FL_DUMP 4
+
+#define FW_COL 32
+#define FW_ROW 8
 
 #ifdef HX_TP_SYS_DIAG
 	static int 	touch_monitor_stop_limit = 5;
@@ -378,7 +386,7 @@ static ssize_t himax_register_show(struct device *dev, struct device_attribute *
 		else
 			retval += sprintf(buf, "command: %x\n", register_command);
 
-		for (loop_i = 0; loop_i < 128; loop_i++) {
+		for (loop_i = 0; loop_i < HX_RECEIVE_BUF_MAX_SIZE; loop_i++) {
 			retval+=snprintf(buf+retval, HX_MAX_PRBUF_SIZE-retval,  "0x%2.2X ", inData[loop_i]);
 			if ((loop_i % 16) == 15)
 				retval+=snprintf(buf+retval, HX_MAX_PRBUF_SIZE-retval,  "\n");
@@ -394,7 +402,7 @@ static ssize_t himax_register_store(struct device *dev,struct device_attribute *
 	unsigned long result    = 0;
 	uint8_t loop_i          = 0;
 	uint16_t base           = 5;
-	uint8_t write_da[128]={0};
+	uint8_t write_da[HX_RECEIVE_BUF_MAX_SIZE]={0};
 	uint8_t outData[5]={0};
 	int retval = 0;
 	if (count >= 80)
@@ -464,7 +472,7 @@ static ssize_t himax_register_store(struct device *dev,struct device_attribute *
 				base = 5;
 				TS_LOG_INFO("CMD: %x\n", register_command);
 			}
-			for (loop_i = 0; loop_i < 128; loop_i++) {
+			for (loop_i = 0; loop_i < HX_RECEIVE_BUF_MAX_SIZE; loop_i++) {
 				if (buf[base] == '\n') {
 					if (buf[0] == 'w') {
 						if (config_bank_reg) {
@@ -666,7 +674,7 @@ static ssize_t himax_debug_show(struct device *dev,struct device_attribute *attr
 static ssize_t himax_debug_dump(struct device *dev,struct device_attribute *attr, const char *buf, size_t count)
 {
 	int result = 0;
-	char fileName[128]= {0};
+	char fileName[HX_RECEIVE_BUF_MAX_SIZE]= {0};
 	mm_segment_t oldfs;
 	struct file* hx_filp = NULL;
 	TS_LOG_INFO("%s: enter\n", __func__);
@@ -1004,13 +1012,13 @@ void himax_ts_flash_work_func_print_buffer(int buffer_ptr)
 	}
 	TS_LOG_INFO("%s End\n",__func__);
 }
-void himax_ts_flash_work_func(struct work_struct *work)
+void hx852xf_ts_flash_work_func(struct work_struct *work)
 {
 	int buffer_ptr = 0;
 	int i=0, j=0;
 	uint8_t sector = 0;
 	uint8_t page = 0;
-	uint8_t page_tmp[128]  = {0};
+	uint8_t page_tmp[HX_RECEIVE_BUF_MAX_SIZE]  = {0};
 	uint8_t local_flash_command = 0;
 
 	uint8_t x81_command[2] = {HX_CMD_TSSLPOUT,0x00};
@@ -1056,7 +1064,7 @@ void himax_ts_flash_work_func(struct work_struct *work)
 
 	TS_LOG_INFO("%s: local_flash_command = %d enter.\n", __func__,local_flash_command);
 
-	if ((local_flash_command == 1 || local_flash_command == 2)|| (local_flash_command==0x0F))
+	if ((local_flash_command == FW_SHOW || local_flash_command == FW_DUMP)|| (local_flash_command==0x0F))
 	{
 		/*set flash dump enable:D0 bit*/
 		x43_command[1] = 0x01;
@@ -1074,13 +1082,13 @@ void himax_ts_flash_work_func(struct work_struct *work)
 				himax_ts_flash_work_func_case1(i,j,page_tmp);
 
 				TS_LOG_INFO("%s: Run new method\n",__func__);
-				memcpy(&flash_buffer[buffer_ptr],page_tmp,128);
-				buffer_ptr+=128;
+				memcpy(&flash_buffer[buffer_ptr],page_tmp,HX_RECEIVE_BUF_MAX_SIZE);
+				buffer_ptr+=HX_RECEIVE_BUF_MAX_SIZE;
 				setFlashDumpProgress(i*32 + j);
 			}
 		}
 	}
-	else if (local_flash_command == 3)
+	else if (local_flash_command == FL_SHOW)
 	{
 		/*set flash dump enable*/
 		x43_command[1] = 0x01;
@@ -1096,10 +1104,10 @@ void himax_ts_flash_work_func(struct work_struct *work)
 		himax_ts_flash_work_func_case2(page,sector,page_tmp);
 
 		TS_LOG_INFO("%s: Run new method\n",__func__);
-		memcpy(&flash_buffer[buffer_ptr],page_tmp,128);
-		buffer_ptr+=128;
+		memcpy(&flash_buffer[buffer_ptr],page_tmp,HX_RECEIVE_BUF_MAX_SIZE);
+		buffer_ptr += HX_RECEIVE_BUF_MAX_SIZE;
 	}
-	else if (local_flash_command == 4)
+	else if (local_flash_command == FL_DUMP)
 	{
 		himax_lock_flash(0);
 
@@ -1377,12 +1385,12 @@ void himax_ts_flash_work_func(struct work_struct *work)
 		himax_lock_flash(1);
 		msleep(HX_SLEEP_50MS);
 
-		buffer_ptr = 128;
+		buffer_ptr = HX_RECEIVE_BUF_MAX_SIZE;
 		TS_LOG_INFO("Himax: Flash page write Complete\n");
 	}
 
 	TS_LOG_INFO("Complete\n");
-	if(local_flash_command==0x01)
+	if(local_flash_command==FW_SHOW)
 		{
 		himax_ts_flash_work_func_print_buffer(buffer_ptr);
 
@@ -1391,7 +1399,7 @@ void himax_ts_flash_work_func(struct work_struct *work)
 	i2c_himax_master_write( x43_command, 1, sizeof(x43_command), DEFAULT_RETRY_CNT);
 	msleep(HX_SLEEP_50MS);
 
-	if (local_flash_command == 2)
+	if (local_flash_command == FW_DUMP)
 	{
 		struct file *fn;
 
@@ -1404,6 +1412,374 @@ void himax_ts_flash_work_func(struct work_struct *work)
 	}
 
 	if(local_flash_command<0x0F)
+		himax_HW_reset(HX_LOADCONFIG_EN,HX_INT_DISABLE);
+
+	himax_int_enable(g_himax_ts_data->tskit_himax_data->ts_platform_data->irq_id,1);
+#ifdef HX_CHIP_STATUS_MONITOR
+	HX_CHIP_POLLING_COUNT = 0;
+	queue_delayed_work(g_himax_ts_data->himax_chip_monitor_wq, &g_himax_ts_data->himax_chip_monitor, HX_POLLING_TIMES*HZ);
+#endif
+	setFlashDumpGoing(false);
+
+	setFlashDumpComplete(1);
+	setSysOperation(0);
+	TS_LOG_INFO("%s: End\n",__func__);
+	return;
+
+Flash_Dump_i2c_transfer_error:
+
+	himax_HW_reset(HX_LOADCONFIG_EN,HX_INT_DISABLE);
+
+	himax_int_enable(g_himax_ts_data->tskit_himax_data->ts_platform_data->irq_id,1);
+#ifdef HX_CHIP_STATUS_MONITOR
+	HX_CHIP_POLLING_COUNT = 0;
+	queue_delayed_work(g_himax_ts_data->himax_chip_monitor_wq, &g_himax_ts_data->himax_chip_monitor, HX_POLLING_TIMES*HZ);
+#endif
+	setFlashDumpGoing(false);
+	setFlashDumpComplete(0);
+	setFlashDumpFail(1);
+	setSysOperation(0);
+	return;
+}
+#define HX_REG_FLASH_DUMP_CMD 0x45
+#define HX_REG_FLASH_DUMP_TRANS_CMD 0x4D
+#define HX_FLASH_MAX_VAL 0x0F
+#define HX_DATA_INIT_VAL 0x00
+#define X43_COMMAND_PAGE_ERASE 0x00020001
+#define HX_FLASH_MANUAL_MODE_EN 0x01
+#define HX_FLASH_MANUAL_MODE_DIS 0x01
+#define HX_FLASH_CTRL_CMD_5 0x05
+#define HX_FLASH_CTRL_CMD_9 0x09
+#define HX_FLASH_CTRL_CMD_D 0x0D
+void hx852xes_ts_flash_work_func(struct work_struct *work)
+{
+	int buffer_ptr = 0;
+	int i=0, j=0;
+	uint8_t sector = 0;
+	uint8_t page = 0;
+	uint8_t page_tmp[HX_RECEIVE_BUF_MAX_SIZE]  = {0};
+	uint8_t local_flash_command = 0;
+
+	uint8_t x81_command[2] = {HX_CMD_TSSLPOUT,0x00};
+	uint8_t x82_command[2] = {HX_CMD_TSSOFF,0x00};
+	uint8_t x35_command[2] = {HX852XES_REG_FLASH_MANUAL_MODE,HX_REG_FLASH_MANUAL_OFF};
+	uint8_t x43_command[4] = {HX_REG_SET_FLASH_EN,0x00,0x00,0x00};
+	uint8_t x44_command[4] = {HX_REG_SET_FLASH_ADDR,0x00,0x00,0x00};
+	uint8_t x45_command[5] = {HX_REG_FLASH_DUMP_CMD,0x00,0x00,0x00,0x00};
+	uint8_t x4D_command[2] = {HX_REG_FLASH_DUMP_TRANS_CMD,0x00};
+	int m = 0;
+	TS_LOG_INFO("%s: Entring\n",__func__);
+	himax_int_enable(g_himax_ts_data->tskit_himax_data->ts_platform_data->irq_id,0);
+#ifdef HX_CHIP_STATUS_MONITOR
+	HX_CHIP_POLLING_COUNT = 0;
+	cancel_delayed_work_sync(&g_himax_ts_data->himax_chip_monitor);
+#endif
+
+	setFlashDumpGoing(true);
+
+	sector = getFlashDumpSector();
+	page = getFlashDumpPage();
+
+	local_flash_command = getFlashCommand();
+
+	if(local_flash_command < HX_FLASH_MAX_VAL) {
+		himax_HW_reset(HX_LOADCONFIG_DISABLE,HX_INT_DISABLE);
+	}
+	if ( i2c_himax_master_write(x81_command, 1, sizeof(x81_command), DEFAULT_RETRY_CNT) < 0 )//sleep out
+	{
+		TS_LOG_ERR("%s i2c write x81_command fail.\n",__func__);
+		goto Flash_Dump_i2c_transfer_error;
+	}
+	msleep(HX_SLEEP_120MS);
+
+	if ( i2c_himax_master_write(x82_command, 1, sizeof(x82_command), DEFAULT_RETRY_CNT) < 0 )
+	{
+		TS_LOG_ERR("%s i2c write x81_command fail.\n",__func__);
+		goto Flash_Dump_i2c_transfer_error;
+	}
+	msleep(HX_SLEEP_100MS);
+
+	TS_LOG_INFO("%s: local_flash_command = %d enter.\n", __func__,local_flash_command);
+
+	if ((local_flash_command == FW_SHOW|| local_flash_command == FW_DUMP)|| (local_flash_command==0x0F))
+	{
+		/*set flash dump enable:D0 bit*/
+		x43_command[1] = FW_SHOW;
+		if ( i2c_himax_write( x43_command[0],&x43_command[1], 1, sizeof(x43_command), DEFAULT_RETRY_CNT) < 0)
+		{
+			goto Flash_Dump_i2c_transfer_error;
+		}
+		msleep(HX_SLEEP_100MS);
+
+		for( i=0 ; i<FW_ROW ;i++)
+		{
+			for(j=0 ; j < FW_COL ; j++)
+			{
+				memset(page_tmp,0x00,sizeof(page_tmp));
+				himax_ts_flash_work_func_case1(i,j,page_tmp);
+
+				TS_LOG_INFO("%s: Run new method\n",__func__);
+				memcpy(&flash_buffer[buffer_ptr],page_tmp,HX_RECEIVE_BUF_MAX_SIZE);
+				buffer_ptr += HX_RECEIVE_BUF_MAX_SIZE;
+				setFlashDumpProgress(i*FW_COL + j);
+			}
+		}
+	}
+	else if (local_flash_command == FL_SHOW)
+	{
+		/*set flash dump enable*/
+		x43_command[1] = FW_SHOW;
+		if ( i2c_himax_write(x43_command[0],&x43_command[1], 1, sizeof(x43_command), DEFAULT_RETRY_CNT) < 0 )
+		{
+			TS_LOG_ERR("%s i2c write 43 fail.\n",__func__);
+			goto Flash_Dump_i2c_transfer_error;
+		}
+		msleep(HX_SLEEP_100MS);
+
+		memset(page_tmp,0x00,sizeof(page_tmp));
+
+		himax_ts_flash_work_func_case2(page,sector,page_tmp);
+
+		TS_LOG_INFO("%s: Run new method\n",__func__);
+		memcpy(&flash_buffer[buffer_ptr],page_tmp,HX_RECEIVE_BUF_MAX_SIZE);
+		buffer_ptr += HX_RECEIVE_BUF_MAX_SIZE;
+	}
+	else if (local_flash_command == FL_DUMP)
+	{
+		himax_lock_flash(0);
+
+		msleep(HX_SLEEP_50MS);
+
+		/*page erase*/
+		x43_command[1] = (uint8_t)(X43_COMMAND_PAGE_ERASE & HX_MASK_VALUE);
+		/*set flash manual_0*/
+		x43_command[2] = (uint8_t)((X43_COMMAND_PAGE_ERASE >> SHIFT_ONE_BYTE) & HX_MASK_VALUE);
+		/*set flash manual_1*/
+		x43_command[3] = (uint8_t)((X43_COMMAND_PAGE_ERASE >> SHIFT_TWO_BYTE) & HX_MASK_VALUE);;
+		if ( i2c_himax_write(x43_command[0],&x43_command[1], 3, sizeof(x43_command), DEFAULT_RETRY_CNT) < 0 )
+		{
+			TS_LOG_ERR("%s i2c write 43 fail.\n",__func__);
+			goto Flash_Dump_i2c_transfer_error;
+		}
+		msleep(HX_SLEEP_10MS);
+		/*set flash addr*/
+		x44_command[1] = HX_DATA_INIT_VAL;
+		x44_command[2] = page;
+		x44_command[3] = sector;
+		if ( i2c_himax_write(x44_command[0],&x44_command[1], 3, sizeof(x44_command), DEFAULT_RETRY_CNT) < 0 )
+		{
+			TS_LOG_ERR("%s i2c write 44 fail.\n",__func__);
+			goto Flash_Dump_i2c_transfer_error;
+		}
+		msleep(HX_SLEEP_10MS);
+
+		if ( i2c_himax_write_command(x4D_command[0], DEFAULT_RETRY_CNT) < 0 )
+		{
+			TS_LOG_ERR("%s i2c write 4D fail.\n",__func__);
+			goto Flash_Dump_i2c_transfer_error;
+		}
+		msleep(HX_SLEEP_100MS);
+
+		/*enter manual mode*/
+		x35_command[1] = HX_FLASH_MANUAL_MODE_EN;
+		if( i2c_himax_write(x35_command[0],&x35_command[1], 1, sizeof(x35_command), DEFAULT_RETRY_CNT) < 0 )
+		{
+			TS_LOG_ERR("%s i2c write 35 fail.\n",__func__);
+			goto Flash_Dump_i2c_transfer_error;
+		}
+		msleep(HX_SLEEP_100MS);
+
+		/*set flash enable*/
+		x43_command[1] = (uint8_t)(X43_COMMAND_PAGE_ERASE & HX_MASK_VALUE);
+		/*set flash manual*/
+		x43_command[2] = (uint8_t)((X43_COMMAND_PAGE_ERASE >> SHIFT_ONE_BYTE) & HX_MASK_VALUE);
+		if ( i2c_himax_write( x43_command[0],&x43_command[1], 2, sizeof(x43_command), DEFAULT_RETRY_CNT) < 0 )
+		{
+			TS_LOG_ERR("%s i2c write 43 fail.\n",__func__);
+			goto Flash_Dump_i2c_transfer_error;
+		}
+		msleep(HX_SLEEP_10MS);
+
+		/*set flash address*/
+		x44_command[1] = 0x00;
+		x44_command[2] = page;
+		x44_command[3] = sector;
+		if ( i2c_himax_write(x44_command[0],&x44_command[1], sizeof(x44_command), 3, DEFAULT_RETRY_CNT) < 0 )
+		{
+			TS_LOG_ERR("%s i2c write 44 fail.\n",__func__);
+			goto Flash_Dump_i2c_transfer_error;
+		}
+		msleep(HX_SLEEP_10MS);
+
+		/*manual mode command : 47 to latch the flash address when page address change*/
+		x43_command[1] = (uint8_t)(X43_COMMAND_PAGE_ERASE & HX_MASK_VALUE);
+		/*set ctrl flash register*/
+		x43_command[2] = HX_FLASH_CTRL_CMD_9;
+		if ( i2c_himax_write(x43_command[0],&x43_command[1], 2, sizeof(x43_command), DEFAULT_RETRY_CNT) < 0 )
+		{
+			TS_LOG_ERR("%s i2c write 43 fail.\n",__func__);
+			goto Flash_Dump_i2c_transfer_error;
+		}
+		msleep(HX_SLEEP_10MS);
+		/*set flash enable*/
+		x43_command[1] = (uint8_t)(X43_COMMAND_PAGE_ERASE & HX_MASK_VALUE);
+		/*set ctrl flash register*/
+		x43_command[2] = HX_FLASH_CTRL_CMD_D;
+		if ( i2c_himax_write( x43_command[0],&x43_command[1], 2, sizeof(x43_command), DEFAULT_RETRY_CNT) < 0 )
+		{
+			TS_LOG_ERR("%s i2c write 43 fail.\n",__func__);
+			goto Flash_Dump_i2c_transfer_error;
+		}
+		msleep(HX_SLEEP_10MS);
+		/*set flash enable*/
+		x43_command[1] = (uint8_t)(X43_COMMAND_PAGE_ERASE & HX_MASK_VALUE);
+		/*set ctrl flash register*/
+		x43_command[2] = HX_FLASH_CTRL_CMD_9;
+		if ( i2c_himax_write( x43_command[0],&x43_command[1], 2, sizeof(x43_command), DEFAULT_RETRY_CNT) < 0 )
+		{
+			TS_LOG_ERR("%s i2c write 43 fail.\n",__func__);
+			goto Flash_Dump_i2c_transfer_error;
+		}
+
+		msleep(HX_SLEEP_10MS);
+
+		for(i = 0; i < FW_COL; i++)
+		{
+			TS_LOG_INFO("himax :i=%d \n",i);
+			x44_command[1] = i;
+			x44_command[2] = page;
+			x44_command[3] = sector;
+			if ( i2c_himax_write( x44_command[0],&x44_command[1], 3, sizeof(x44_command), DEFAULT_RETRY_CNT) < 0 )
+			{
+				TS_LOG_ERR("%s i2c write 44 fail.\n",__func__);
+				goto Flash_Dump_i2c_transfer_error;
+			}
+			msleep(HX_SLEEP_10MS);
+			m = i*4;
+			x45_command[1] = flash_buffer[m];
+			m+=1;
+			x45_command[2] = flash_buffer[m];
+			m+=1;
+			x45_command[3] = flash_buffer[m];
+			m+=1;
+			x45_command[4] = flash_buffer[m];
+			if ( i2c_himax_write( x45_command[0],&x45_command[1], 4, sizeof(x45_command), DEFAULT_RETRY_CNT) < 0 )
+			{
+				TS_LOG_ERR("%s i2c write 45 fail.\n",__func__);
+				goto Flash_Dump_i2c_transfer_error;
+			}
+			msleep(HX_SLEEP_10MS);
+
+			// manual mode command : 48 ,data will be written into flash buffer
+			x43_command[1] = (uint8_t)(X43_COMMAND_PAGE_ERASE & HX_MASK_VALUE);
+			x43_command[2] = HX_FLASH_CTRL_CMD_D;
+			if ( i2c_himax_write( x43_command[0],&x43_command[1], 2, sizeof(x43_command), DEFAULT_RETRY_CNT) < 0 )
+			{
+				TS_LOG_ERR("%s i2c write 43 fail.\n",__func__);
+				goto Flash_Dump_i2c_transfer_error;
+			}
+			msleep(HX_SLEEP_10MS);
+			/*set flash enable*/
+			x43_command[1] = (uint8_t)(X43_COMMAND_PAGE_ERASE & HX_MASK_VALUE);
+			x43_command[2] = HX_FLASH_CTRL_CMD_D;
+			if ( i2c_himax_write(x43_command[0],&x43_command[1], 2, sizeof(x43_command), DEFAULT_RETRY_CNT) < 0 )
+			{
+				TS_LOG_ERR("%s i2c write 43 fail.\n",__func__);
+				goto Flash_Dump_i2c_transfer_error;
+			}
+
+			msleep(HX_SLEEP_10MS);
+		}
+
+		// manual mode command : 49 ,program data from flash buffer to this page
+		x43_command[1] = (uint8_t)(X43_COMMAND_PAGE_ERASE & HX_MASK_VALUE);
+		x43_command[2] = (uint8_t)(X43_COMMAND_PAGE_ERASE & HX_MASK_VALUE);
+		if ( i2c_himax_write(x43_command[0],&x43_command[1], 2, sizeof(x43_command), DEFAULT_RETRY_CNT) < 0 )
+		{
+			TS_LOG_ERR("%s i2c write 43 fail.\n",__func__);
+			goto Flash_Dump_i2c_transfer_error;
+		}
+		msleep(HX_SLEEP_10MS);
+		/*set flash enable*/
+		x43_command[1] = (uint8_t)(X43_COMMAND_PAGE_ERASE & HX_MASK_VALUE);
+		x43_command[2] = HX_FLASH_CTRL_CMD_5;
+		if ( i2c_himax_write(x43_command[0],&x43_command[1], 2, sizeof(x43_command), DEFAULT_RETRY_CNT) < 0 )
+		{
+			TS_LOG_ERR("%s i2c write 43 fail.\n",__func__);
+			goto Flash_Dump_i2c_transfer_error;
+		}
+		msleep(HX_SLEEP_10MS);
+		/*set flash enable*/
+		x43_command[1] = (uint8_t)(X43_COMMAND_PAGE_ERASE & HX_MASK_VALUE);
+		/*set flash manual*/
+		x43_command[2] = (uint8_t)(X43_COMMAND_PAGE_ERASE & HX_MASK_VALUE);
+		if ( i2c_himax_write( x43_command[0],&x43_command[1], 2, sizeof(x43_command), DEFAULT_RETRY_CNT) < 0 )
+		{
+			TS_LOG_ERR("%s i2c write 43 fail.\n",__func__);
+			goto Flash_Dump_i2c_transfer_error;
+		}
+		msleep(HX_SLEEP_10MS);
+		/*set flash enable*/
+		x43_command[1] = (uint8_t)(X43_COMMAND_PAGE_ERASE & HX_MASK_VALUE);
+		x43_command[2] = HX_DATA_INIT_VAL;
+		if ( i2c_himax_write(x43_command[0],&x43_command[1], 2, sizeof(x43_command), DEFAULT_RETRY_CNT) < 0 )
+		{
+			TS_LOG_ERR("%s i2c write 43 fail.\n",__func__);
+			goto Flash_Dump_i2c_transfer_error;
+		}
+
+		msleep(HX_SLEEP_10MS);
+
+		// flash disable
+		x43_command[1] = HX_DATA_INIT_VAL;
+		if ( i2c_himax_write( x43_command[0],&x43_command[1], 1, sizeof(x43_command), DEFAULT_RETRY_CNT) < 0 )
+		{
+			TS_LOG_ERR("%s i2c write 43 fail.\n",__func__);
+			goto Flash_Dump_i2c_transfer_error;
+		}
+		msleep(HX_SLEEP_10MS);
+
+		// leave manual mode
+		x35_command[1] = HX_FLASH_MANUAL_MODE_DIS;
+		if( i2c_himax_write( x35_command[0],&x35_command[1], 1, sizeof(x35_command), DEFAULT_RETRY_CNT) < 0 )
+		{
+			TS_LOG_ERR("%s i2c write 35 fail.\n",__func__);
+			goto Flash_Dump_i2c_transfer_error;
+		}
+
+		msleep(HX_SLEEP_10MS);
+
+		// lock flash
+		himax_lock_flash(1);
+		msleep(HX_SLEEP_50MS);
+
+		buffer_ptr = HX_RECEIVE_BUF_MAX_SIZE;
+		TS_LOG_INFO("Himax: Flash page write Complete\n");
+	}
+
+	TS_LOG_INFO("Complete\n");
+	if(local_flash_command==FW_SHOW)
+		{
+		himax_ts_flash_work_func_print_buffer(buffer_ptr);
+
+		}
+
+	i2c_himax_master_write( x43_command, 1, sizeof(x43_command), DEFAULT_RETRY_CNT);
+	msleep(HX_SLEEP_50MS);
+
+	if (local_flash_command == FW_DUMP)
+	{
+		struct file *fn;
+
+		fn = filp_open(FLASH_DUMP_FILE,O_CREAT | O_WRONLY ,0);
+		if (!IS_ERR(fn))
+		{
+			fn->f_op->write(fn,flash_buffer,buffer_ptr*sizeof(uint8_t),&fn->f_pos);
+			filp_close(fn,NULL);
+		}
+	}
+
+	if(local_flash_command < HX_FLASH_MAX_VAL)
 		himax_HW_reset(HX_LOADCONFIG_EN,HX_INT_DISABLE);
 
 	himax_int_enable(g_himax_ts_data->tskit_himax_data->ts_platform_data->irq_id,1);
@@ -1465,7 +1841,7 @@ static ssize_t himax_flash_show(struct device *dev,struct device_attribute *attr
 		return retval;
 	}
 
-	if (local_flash_command == 1 && local_flash_complete)
+	if (local_flash_command == FW_SHOW&& local_flash_complete)
 	{
 		retval+=snprintf(buf+retval, HX_MAX_PRBUF_SIZE-retval,  "FlashStart:Complete \n");
 		retval+=snprintf(buf+retval, HX_MAX_PRBUF_SIZE-retval,  "FlashEnd");
@@ -1473,10 +1849,10 @@ static ssize_t himax_flash_show(struct device *dev,struct device_attribute *attr
 		return retval;
 	}
 
-	if (local_flash_command == 3 && local_flash_complete)
+	if (local_flash_command == FL_SHOW&& local_flash_complete)
 	{
 		retval+=snprintf(buf+retval, HX_MAX_PRBUF_SIZE-retval,  "FlashStart: \n");
-		for(loop_i = 0; loop_i < 128; loop_i++)
+		for(loop_i = 0; loop_i < HX_RECEIVE_BUF_MAX_SIZE; loop_i++)
 		{
 			retval+=snprintf(buf+retval, HX_MAX_PRBUF_SIZE-retval,  "x%2.2x", flash_buffer[loop_i]);
 			if ((loop_i % 16) == 15)
@@ -1618,7 +1994,7 @@ static ssize_t himax_flash_store(struct device *dev,struct device_attribute *att
 		base = 11;
 
 		TS_LOG_INFO("=========Himax flash page buffer start=========\n");
-		for(loop_i=0;loop_i<128;loop_i++)
+		for(loop_i=0;loop_i<HX_RECEIVE_BUF_MAX_SIZE;loop_i++)
 		{
 			memcpy(buf_tmp, buf + base, 2);
 			if (!strict_strtoul(buf_tmp, 16, &result))
@@ -2167,4 +2543,19 @@ int himax_touch_sysfs_init(void)
 	#endif
 
 	kobject_del(android_touch_kobj);
+}
+
+int hx852xes_dbg_func_init(void)
+{
+	TS_LOG_INFO("%s: Entering!\n", __func__);
+	himax_ts_flash_work_func = hx852xes_ts_flash_work_func;
+	TS_LOG_INFO("%s: End!\n", __func__);
+	return NO_ERR;
+}
+int hx852xf_dbg_func_init(void)
+{
+	TS_LOG_INFO("%s: Entering!\n", __func__);
+	himax_ts_flash_work_func = hx852xf_ts_flash_work_func;
+	TS_LOG_INFO("%s: End!\n", __func__);
+	return NO_ERR;
 }

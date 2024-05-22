@@ -27,7 +27,7 @@ extern "C" {
 /*****************************************************************************
   2 全局变量定义
 *****************************************************************************/
-oam_reg_manage_stru g_st_oam_reg_mng;
+oam_reg_manage_stru g_st_oam_reg_mng_etc;
 
 
 OAL_STATIC   oam_reg_cfg_stru  g_ast_mac_reg[] =
@@ -1599,7 +1599,7 @@ OAL_STATIC  oam_reg_cfg_stru  g_ast_soc_reg[] =
 
 
 
-oam_reg_cfg_stru  *oam_reg_get_cfg(oam_reg_type_enum_uint8 en_type)
+oam_reg_cfg_stru  *oam_reg_get_cfg_etc(oam_reg_type_enum_uint8 en_type)
 {
     oam_reg_cfg_stru  *pst_reg_cfg = OAL_PTR_NULL;
 
@@ -1630,7 +1630,7 @@ oam_reg_cfg_stru  *oam_reg_get_cfg(oam_reg_type_enum_uint8 en_type)
 }
 
 
-oal_uint32 oam_reg_get_num(oam_reg_type_enum_uint8 en_type)
+oal_uint32 oam_reg_get_num_etc(oam_reg_type_enum_uint8 en_type)
 {
     oal_uint32 ul_reg_num = 0;
 
@@ -1661,7 +1661,7 @@ oal_uint32 oam_reg_get_num(oam_reg_type_enum_uint8 en_type)
 }
 
 
-oal_uint32 oam_reg_malloc(oam_reg_type_enum_uint8 en_type)
+oal_uint32 oam_reg_malloc_etc(oam_reg_type_enum_uint8 en_type)
 {
     oal_uint32                   ul_loop = 0;
     oam_reg_stru                *pst_reg = OAL_PTR_NULL;
@@ -1674,22 +1674,22 @@ oal_uint32 oam_reg_malloc(oam_reg_type_enum_uint8 en_type)
         return OAL_ERR_CODE_ARRAY_OVERFLOW;
     }
 
-    if (OAL_PTR_NULL != g_st_oam_reg_mng.past_reg[en_type])
+    if (OAL_PTR_NULL != g_st_oam_reg_mng_etc.past_reg[en_type])
     {
         OAL_IO_PRINT("Err! register %u already exist!\n", en_type);
         return OAL_SUCC;
     }
 
-    ul_reg_num = oam_reg_get_num(en_type);
+    ul_reg_num = oam_reg_get_num_etc(en_type);
     pst_reg = (oam_reg_stru *)OAL_MEM_ALLOC(OAL_MEM_POOL_ID_LOCAL, (oal_uint16)(ul_reg_num * sizeof(oam_reg_stru)), OAL_TRUE);
-    g_st_oam_reg_mng.past_reg[en_type] = pst_reg;
+    g_st_oam_reg_mng_etc.past_reg[en_type] = pst_reg;
     if (OAL_PTR_NULL == pst_reg)
     {
         return OAL_ERR_CODE_ALLOC_MEM_FAIL;
     }
     OAL_MEMZERO(pst_reg, ul_reg_num * sizeof(oam_reg_stru));
 
-    pst_reg_cfg = oam_reg_get_cfg(en_type);
+    pst_reg_cfg = oam_reg_get_cfg_etc(en_type);
     if (OAL_PTR_NULL == pst_reg_cfg)
     {
         OAL_MEM_FREE(pst_reg, OAL_TRUE);
@@ -1705,13 +1705,13 @@ oal_uint32 oam_reg_malloc(oam_reg_type_enum_uint8 en_type)
         pst_reg++;
     }
 
-    g_st_oam_reg_mng.aul_reg_num[en_type] = ul_reg_num;
+    g_st_oam_reg_mng_etc.aul_reg_num[en_type] = ul_reg_num;
     return OAL_SUCC;
 
 }
 
 
-oal_uint32 oam_reg_free(oam_reg_type_enum_uint8 en_type)
+oal_uint32 oam_reg_free_etc(oam_reg_type_enum_uint8 en_type)
 {
     oam_reg_stru                *pst_reg = OAL_PTR_NULL;
 
@@ -1720,21 +1720,21 @@ oal_uint32 oam_reg_free(oam_reg_type_enum_uint8 en_type)
         return OAL_FAIL;
     }
     /* 不存在，返回成功 */
-    pst_reg = g_st_oam_reg_mng.past_reg[en_type];
+    pst_reg = g_st_oam_reg_mng_etc.past_reg[en_type];
     if (OAL_PTR_NULL == pst_reg)
     {
         return OAL_SUCC;
     }
 
     OAL_MEM_FREE(pst_reg, OAL_TRUE);
-    g_st_oam_reg_mng.past_reg[en_type] = OAL_PTR_NULL;
-    g_st_oam_reg_mng.aul_reg_num[en_type] = 0;
+    g_st_oam_reg_mng_etc.past_reg[en_type] = OAL_PTR_NULL;
+    g_st_oam_reg_mng_etc.aul_reg_num[en_type] = 0;
 
     return OAL_SUCC;
 }
 
 
-oal_void oam_reg_set_flag(oam_reg_type_enum_uint8 en_type, oam_reg_subtype_enum_uint32 en_subtype, oal_bool_enum_uint8 en_flag)
+oal_void oam_reg_set_flag_etc(oam_reg_type_enum_uint8 en_type, oam_reg_subtype_enum_uint32 en_subtype, oal_bool_enum_uint8 en_flag)
 {
     oal_uint32          ul_loop = 0;
     oam_reg_stru       *pst_reg = OAL_PTR_NULL;
@@ -1745,18 +1745,18 @@ oal_void oam_reg_set_flag(oam_reg_type_enum_uint8 en_type, oam_reg_subtype_enum_
         return;
     }
 
-    pst_reg = g_st_oam_reg_mng.past_reg[en_type];
+    pst_reg = g_st_oam_reg_mng_etc.past_reg[en_type];
     if (OAL_PTR_NULL == pst_reg)
     {
-        oam_reg_malloc(en_type);
-        pst_reg = g_st_oam_reg_mng.past_reg[en_type];
+        oam_reg_malloc_etc(en_type);
+        pst_reg = g_st_oam_reg_mng_etc.past_reg[en_type];
         if (OAL_PTR_NULL == pst_reg)
         {
             return;
         }
     }
 
-    ul_subreg_num = g_st_oam_reg_mng.aul_reg_num[en_type];
+    ul_subreg_num = g_st_oam_reg_mng_etc.aul_reg_num[en_type];
     for (ul_loop = 0; ul_loop < ul_subreg_num; ul_loop++)
     {
         if (en_subtype & pst_reg->pst_reg_cfg->ul_sub_type)
@@ -1767,21 +1767,21 @@ oal_void oam_reg_set_flag(oam_reg_type_enum_uint8 en_type, oam_reg_subtype_enum_
     }
 
     /* 根据寄存器对象的上报标志设置bitmap，上报时使用 */
-	pst_reg = g_st_oam_reg_mng.past_reg[en_type];
+	pst_reg = g_st_oam_reg_mng_etc.past_reg[en_type];
     for (ul_loop = 0; ul_loop < ul_subreg_num; ul_loop++)
     {
         if (pst_reg->en_rpt_flag)
         {
-            g_st_oam_reg_mng.ul_reg_flag_bitmap |= (1 << en_type);
+            g_st_oam_reg_mng_etc.ul_reg_flag_bitmap |= (1 << en_type);
             return;
         }
 		pst_reg++;
     }
-    g_st_oam_reg_mng.ul_reg_flag_bitmap &= (~(oal_uint32)(1 << en_type));
+    g_st_oam_reg_mng_etc.ul_reg_flag_bitmap &= (~(oal_uint32)(1 << en_type));
 }
 
 
-oal_void oam_reg_set_flag_addr(oam_reg_type_enum_uint8 en_type, oal_uint32 ul_startaddr, oal_uint32 ul_endaddr, oal_bool_enum_uint8 en_flag)
+oal_void oam_reg_set_flag_addr_etc(oam_reg_type_enum_uint8 en_type, oal_uint32 ul_startaddr, oal_uint32 ul_endaddr, oal_bool_enum_uint8 en_flag)
 {
     oal_uint32          ul_loop = 0;
     oam_reg_stru       *pst_reg = OAL_PTR_NULL;
@@ -1793,18 +1793,18 @@ oal_void oam_reg_set_flag_addr(oam_reg_type_enum_uint8 en_type, oal_uint32 ul_st
         return;
     }
 
-    pst_reg = g_st_oam_reg_mng.past_reg[en_type];
+    pst_reg = g_st_oam_reg_mng_etc.past_reg[en_type];
     if (OAL_PTR_NULL == pst_reg)
     {
-        oam_reg_malloc(en_type);
-        pst_reg = g_st_oam_reg_mng.past_reg[en_type];
+        oam_reg_malloc_etc(en_type);
+        pst_reg = g_st_oam_reg_mng_etc.past_reg[en_type];
         if (OAL_PTR_NULL == pst_reg)
         {
             return;
         }
     }
 
-    ul_subreg_num = g_st_oam_reg_mng.aul_reg_num[en_type];
+    ul_subreg_num = g_st_oam_reg_mng_etc.aul_reg_num[en_type];
 
     for (ul_addr = ul_startaddr; ul_addr <= ul_endaddr; ul_addr += 4)
     {
@@ -1817,91 +1817,91 @@ oal_void oam_reg_set_flag_addr(oam_reg_type_enum_uint8 en_type, oal_uint32 ul_st
             }
             pst_reg++;
         }
-        pst_reg = g_st_oam_reg_mng.past_reg[en_type];
+        pst_reg = g_st_oam_reg_mng_etc.past_reg[en_type];
     }
 
 
     /* 根据寄存器对象的上报标志设置bitmap，上报时使用 */
-	pst_reg = g_st_oam_reg_mng.past_reg[en_type];
+	pst_reg = g_st_oam_reg_mng_etc.past_reg[en_type];
     for (ul_loop = 0; ul_loop < ul_subreg_num; ul_loop++)
     {
         if (pst_reg->en_rpt_flag)
         {
-            g_st_oam_reg_mng.ul_reg_flag_bitmap |= (1 << en_type);
+            g_st_oam_reg_mng_etc.ul_reg_flag_bitmap |= (1 << en_type);
             return;
         }
 		pst_reg++;
     }
-    g_st_oam_reg_mng.ul_reg_flag_bitmap &= (~(oal_uint32)(1 << en_type));
+    g_st_oam_reg_mng_etc.ul_reg_flag_bitmap &= (~(oal_uint32)(1 << en_type));
 }
 
 
 
-oal_void oam_reg_allow_netbuf_add(oal_bool_enum_uint8 en_flag)
+oal_void oam_reg_allow_netbuf_add_etc(oal_bool_enum_uint8 en_flag)
 {
-    g_st_oam_reg_mng.en_netbuf_flag = en_flag;
+    g_st_oam_reg_mng_etc.en_netbuf_flag = en_flag;
 }
 
 
-oal_uint8 oam_reg_is_allow_netbuf_add(oal_void)
+oal_uint8 oam_reg_is_allow_netbuf_add_etc(oal_void)
 {
-    return g_st_oam_reg_mng.en_netbuf_flag;
+    return g_st_oam_reg_mng_etc.en_netbuf_flag;
 }
 
 
-oal_void oam_reg_allow_refresh(oal_bool_enum_uint8 en_flag)
+oal_void oam_reg_allow_refresh_etc(oal_bool_enum_uint8 en_flag)
 {
-    g_st_oam_reg_mng.en_refresh_flag = en_flag;
+    g_st_oam_reg_mng_etc.en_refresh_flag = en_flag;
 }
 
 
-oal_uint8 oam_reg_is_allow_refresh(oal_void)
+oal_uint8 oam_reg_is_allow_refresh_etc(oal_void)
 {
-    return g_st_oam_reg_mng.en_refresh_flag;
+    return g_st_oam_reg_mng_etc.en_refresh_flag;
 }
 
 
-oal_uint8 oam_reg_is_need_refresh(oam_reg_evt_enum_uint32 en_evt_type)
+oal_uint8 oam_reg_is_need_refresh_etc(oam_reg_evt_enum_uint32 en_evt_type)
 {
     if (OAM_REG_EVT_BUTT <= en_evt_type)
     {
         return OAL_FALSE;
     }
-    if (!oam_reg_is_allow_refresh())
+    if (!oam_reg_is_allow_refresh_etc())
     {
         return OAL_FALSE;
     }
-    if (0 == g_st_oam_reg_mng.ul_reg_flag_bitmap)
+    if (0 == g_st_oam_reg_mng_etc.ul_reg_flag_bitmap)
     {
         return OAL_FALSE;
     }
 
     /* 判断该事件上报开关是否打开  */
     /* 用户没有设置该事件，不需要上报 */
-    if (OAL_TRUE != g_st_oam_reg_mng.aul_refresh_evt[en_evt_type])
+    if (OAL_TRUE != g_st_oam_reg_mng_etc.aul_refresh_evt[en_evt_type])
     {
         return OAL_FALSE;
     }
 
     /* 事件需要判断evt tick有没有计到0，如果计到0，则刷新上报数据，并更新evt_tick  */
-    if (0 == g_st_oam_reg_mng.aul_evt_tick[en_evt_type])
+    if (0 == g_st_oam_reg_mng_etc.aul_evt_tick[en_evt_type])
     {
         return OAL_FALSE;
     }
 
-    g_st_oam_reg_mng.aul_evt_tick[en_evt_type]--;
-    if (0 != g_st_oam_reg_mng.aul_evt_tick[en_evt_type])
+    g_st_oam_reg_mng_etc.aul_evt_tick[en_evt_type]--;
+    if (0 != g_st_oam_reg_mng_etc.aul_evt_tick[en_evt_type])
     {
         return OAL_FALSE;
     }
 
-    g_st_oam_reg_mng.aul_evt_tick[en_evt_type] = g_st_oam_reg_mng.aul_evt_tick_cfg[en_evt_type];
+    g_st_oam_reg_mng_etc.aul_evt_tick[en_evt_type] = g_st_oam_reg_mng_etc.aul_evt_tick_cfg[en_evt_type];
     return OAL_TRUE;
 
 }
 
 
-oal_uint32 oam_reg_get_evt_name(oam_reg_evt_enum_uint32 en_evt_type, oal_uint8 *puc_evt_name)
+oal_uint32 oam_reg_get_evt_name_etc(oam_reg_evt_enum_uint32 en_evt_type, oal_uint8 *puc_evt_name)
 {
     switch(en_evt_type)
     {
@@ -1940,7 +1940,7 @@ oal_uint32 oam_reg_get_evt_name(oam_reg_evt_enum_uint32 en_evt_type, oal_uint8 *
 }
 
 
-oal_void oam_reg_set_evt(oam_reg_evt_enum_uint32 en_evt_type, oal_uint32 ul_tick)
+oal_void oam_reg_set_evt_etc(oam_reg_evt_enum_uint32 en_evt_type, oal_uint32 ul_tick)
 {
     oal_uint32      ul_evt_type = 0;
     /* 处理所有事件 */
@@ -1948,35 +1948,35 @@ oal_void oam_reg_set_evt(oam_reg_evt_enum_uint32 en_evt_type, oal_uint32 ul_tick
     {
         for (ul_evt_type = 0; ul_evt_type < OAM_REG_EVT_BUTT; ul_evt_type++)
         {
-            g_st_oam_reg_mng.aul_refresh_evt[ul_evt_type] = ((0 == ul_tick)?OAL_FALSE:OAL_TRUE);
-            g_st_oam_reg_mng.aul_evt_tick_cfg[ul_evt_type] = ul_tick;
-            g_st_oam_reg_mng.aul_evt_tick[ul_evt_type] = ul_tick;
+            g_st_oam_reg_mng_etc.aul_refresh_evt[ul_evt_type] = ((0 == ul_tick)?OAL_FALSE:OAL_TRUE);
+            g_st_oam_reg_mng_etc.aul_evt_tick_cfg[ul_evt_type] = ul_tick;
+            g_st_oam_reg_mng_etc.aul_evt_tick[ul_evt_type] = ul_tick;
         }
         return;
     }
 
-    g_st_oam_reg_mng.aul_refresh_evt[en_evt_type] = ((0 == ul_tick)?OAL_FALSE:OAL_TRUE);
-    g_st_oam_reg_mng.aul_evt_tick_cfg[en_evt_type] = ul_tick;
-    g_st_oam_reg_mng.aul_evt_tick[en_evt_type] = ul_tick;
+    g_st_oam_reg_mng_etc.aul_refresh_evt[en_evt_type] = ((0 == ul_tick)?OAL_FALSE:OAL_TRUE);
+    g_st_oam_reg_mng_etc.aul_evt_tick_cfg[en_evt_type] = ul_tick;
+    g_st_oam_reg_mng_etc.aul_evt_tick[en_evt_type] = ul_tick;
 }
 
 
-oal_uint32  oam_reg_recv_msg(oal_uint8 *puc_data, oal_uint32 ul_len)
+oal_uint32  oam_reg_recv_msg_etc(oal_uint8 *puc_data, oal_uint32 ul_len)
 {
-    g_st_oam_reg_mng.uc_ack_flag = OAL_TRUE;
+    g_st_oam_reg_mng_etc.uc_ack_flag = OAL_TRUE;
 
     return OAL_SUCC;
 
 }
 
 
-oal_uint32 oam_reg_rpt_buff(oal_void)
+oal_uint32 oam_reg_rpt_buff_etc(oal_void)
 {
     oal_int32               l_bytes = 0;
     oal_uint32              ul_pkt_num = 0;
     oam_reg_send_head_stru *pst_send_head;
 
-    pst_send_head = (oam_reg_send_head_stru *)g_st_oam_reg_mng.puc_send_buff;
+    pst_send_head = (oam_reg_send_head_stru *)g_st_oam_reg_mng_etc.puc_send_buff;
     if(OAL_PTR_NULL == pst_send_head)
     {
         return OAL_PTR_NULL;
@@ -2000,11 +2000,11 @@ oal_uint32 oam_reg_rpt_buff(oal_void)
 }
 
 
-oal_uint32 oam_reg_nb2buf(oal_netbuf_stru *pst_netbuf)
+oal_uint32 oam_reg_nb2buf_etc(oal_netbuf_stru *pst_netbuf)
 {
     oal_uint32              ul_pkt_num = 0;
     oam_reg_send_head_stru *pst_send_buff;
-    pst_send_buff = (oam_reg_send_head_stru *)g_st_oam_reg_mng.puc_send_buff;
+    pst_send_buff = (oam_reg_send_head_stru *)g_st_oam_reg_mng_etc.puc_send_buff;
     if (OAL_PTR_NULL == pst_send_buff)
     {
          OAL_IO_PRINT("pst_send_buff NULL! \n");
@@ -2021,7 +2021,7 @@ oal_uint32 oam_reg_nb2buf(oal_netbuf_stru *pst_netbuf)
                     sizeof(oam_reg_rpt));
     pst_send_buff->ul_pkt_num++;
 
-    return oam_event_report(BROADCAST_MACADDR,
+    return oam_event_report_etc(BROADCAST_MACADDR,
                             0,
                             OAM_MODULE_ID_OAM,
                             OAM_EVENT_REGISTER,
@@ -2031,35 +2031,35 @@ oal_uint32 oam_reg_nb2buf(oal_netbuf_stru *pst_netbuf)
 }
 
 
-oal_void oam_reg_wq(oal_work_stru *pst_work)
+oal_void oam_reg_wq_etc(oal_work_stru *pst_work)
 {
     oal_netbuf_stru                *pst_netbuf;
     oal_uint32                      ul_nb_num = 0;
     oal_uint32                      ul_loop = 0;
 
     /* 禁止netbuf入队 */
-    oam_reg_allow_netbuf_add(0);
+    oam_reg_allow_netbuf_add_etc(0);
 
     /* 将netbuff数据入缓冲，最多入OAM_REG_MAX_PKT_ONE_BUFF个 */
-    ul_nb_num = g_st_oam_reg_mng.ul_nb;
-    OAL_IO_PRINT("oam_reg_wq: nb num %u\n", ul_nb_num);
+    ul_nb_num = g_st_oam_reg_mng_etc.ul_nb;
+    OAL_IO_PRINT("oam_reg_wq_etc: nb num %u\n", ul_nb_num);
     while (ul_nb_num >= OAM_REG_MAX_PKT_ONE_BUFF)
     {
         /* 查阅2.6.34内核代码，如果没有元素，oal_netbuf_delist返回NULL */
         for (ul_loop = 0; ul_loop < OAM_REG_MAX_PKT_ONE_BUFF; ul_loop++)
         {
-            pst_netbuf = oal_netbuf_delist(&g_st_oam_reg_mng.st_wq.st_netbuf_head);
+            pst_netbuf = oal_netbuf_delist(&g_st_oam_reg_mng_etc.st_wq.st_netbuf_head);
             /* 没有元素，break掉 */
             if (OAL_PTR_NULL == pst_netbuf)
             {
                 break;
             }
 
-            oam_reg_nb2buf(pst_netbuf);
+            oam_reg_nb2buf_etc(pst_netbuf);
             oal_netbuf_free(pst_netbuf);
         }
 
-        oam_reg_rpt_buff();
+        oam_reg_rpt_buff_etc();
 
         ul_nb_num -= OAM_REG_MAX_PKT_ONE_BUFF;
     }
@@ -2069,52 +2069,52 @@ oal_void oam_reg_wq(oal_work_stru *pst_work)
     {
         for (ul_loop = 0; ul_loop < ul_nb_num; ul_loop++)
         {
-            pst_netbuf = oal_netbuf_delist(&g_st_oam_reg_mng.st_wq.st_netbuf_head);
+            pst_netbuf = oal_netbuf_delist(&g_st_oam_reg_mng_etc.st_wq.st_netbuf_head);
             /* 没有元素，break掉 */
             if (OAL_PTR_NULL == pst_netbuf)
             {
                 break;
             }
 
-            oam_reg_nb2buf(pst_netbuf);
+            oam_reg_nb2buf_etc(pst_netbuf);
             oal_netbuf_free(pst_netbuf);
         }
 
-        oam_reg_rpt_buff();
+        oam_reg_rpt_buff_etc();
     }
     /* 全发完之后置0 */
-    g_st_oam_reg_mng.ul_nb = 0;
-    oam_reg_allow_netbuf_add(1);
+    g_st_oam_reg_mng_etc.ul_nb = 0;
+    oam_reg_allow_netbuf_add_etc(1);
     OAL_IO_PRINT("dmac_data_acq_workqueue end!\n");
 }
 
 
 
-oal_void oam_reg_init(oal_void)
+oal_void oam_reg_init_etc(oal_void)
 {
-    OAL_MEMZERO(&g_st_oam_reg_mng, sizeof(oam_reg_manage_stru));
+    OAL_MEMZERO(&g_st_oam_reg_mng_etc, sizeof(oam_reg_manage_stru));
 
-    g_st_oam_reg_mng.puc_send_buff = (oal_uint8 *)OAL_MEM_ALLOC(OAL_MEM_POOL_ID_LOCAL, OAM_REG_MAX_SEND_BUF_SIZE, OAL_TRUE);
-    if (OAL_PTR_NULL == g_st_oam_reg_mng.puc_send_buff )
+    g_st_oam_reg_mng_etc.puc_send_buff = (oal_uint8 *)OAL_MEM_ALLOC(OAL_MEM_POOL_ID_LOCAL, OAM_REG_MAX_SEND_BUF_SIZE, OAL_TRUE);
+    if (OAL_PTR_NULL == g_st_oam_reg_mng_etc.puc_send_buff )
     {
-        OAL_IO_PRINT("oam_reg_init: puc_send_buff is NULL!\n");
+        OAL_IO_PRINT("oam_reg_init_etc: puc_send_buff is NULL!\n");
         return;
     }
-    OAL_MEMZERO(g_st_oam_reg_mng.puc_send_buff, OAM_REG_MAX_SEND_BUF_SIZE);
+    OAL_MEMZERO(g_st_oam_reg_mng_etc.puc_send_buff, OAM_REG_MAX_SEND_BUF_SIZE);
 
     /* 注册netlink接收函数 */
-    oam_netlink_ops_register(OAM_NL_CMD_REG, oam_reg_recv_msg);
+    oam_netlink_ops_register_etc(OAM_NL_CMD_REG, oam_reg_recv_msg_etc);
 
     /* 刷新标志设置为1，初始化允许中断刷新 */
-    oam_reg_allow_refresh(1);
+    oam_reg_allow_refresh_etc(1);
 
     /* 允许增加netbuf */
-    oam_reg_allow_netbuf_add(1);
+    oam_reg_allow_netbuf_add_etc(1);
 
     /* 初始化工作队列 */
-    OAL_MEMZERO((void *)&g_st_oam_reg_mng.st_wq, OAL_SIZEOF(oam_reg_workqueue_stru));
-    OAL_INIT_WORK(&g_st_oam_reg_mng.st_wq.st_wk, oam_reg_wq);
-    oal_netbuf_list_head_init(&g_st_oam_reg_mng.st_wq.st_netbuf_head);
+    OAL_MEMZERO((void *)&g_st_oam_reg_mng_etc.st_wq, OAL_SIZEOF(oam_reg_workqueue_stru));
+    OAL_INIT_WORK(&g_st_oam_reg_mng_etc.st_wq.st_wk, oam_reg_wq_etc);
+    oal_netbuf_list_head_init(&g_st_oam_reg_mng_etc.st_wq.st_netbuf_head);
 
 
 
@@ -2122,32 +2122,32 @@ oal_void oam_reg_init(oal_void)
 
 
 
-oal_void oam_reg_exit(oal_void)
+oal_void oam_reg_exit_etc(oal_void)
 {
     oal_uint32          ul_reg = 0;
     /* 将动态申请的内存释放掉 */
     for (ul_reg = 0; ul_reg < OAM_REG_BUTT; ul_reg++)
     {
-       oam_reg_free(ul_reg);
+       oam_reg_free_etc(ul_reg);
     }
 
-    if (OAL_PTR_NULL != g_st_oam_reg_mng.puc_send_buff)
+    if (OAL_PTR_NULL != g_st_oam_reg_mng_etc.puc_send_buff)
     {
-        OAL_MEM_FREE(g_st_oam_reg_mng.puc_send_buff, OAL_TRUE);
-        g_st_oam_reg_mng.puc_send_buff = OAL_PTR_NULL;
+        OAL_MEM_FREE(g_st_oam_reg_mng_etc.puc_send_buff, OAL_TRUE);
+        g_st_oam_reg_mng_etc.puc_send_buff = OAL_PTR_NULL;
     }
 
     /* 去注册netlink接收函数 */
-    oam_netlink_ops_unregister(OAM_NL_CMD_REG);
+    oam_netlink_ops_unregister_etc(OAM_NL_CMD_REG);
 
-    oal_cancel_work_sync(&g_st_oam_reg_mng.st_wq.st_wk);
-    oal_netbuf_queue_purge(&g_st_oam_reg_mng.st_wq.st_netbuf_head);
+    oal_cancel_work_sync(&g_st_oam_reg_mng_etc.st_wq.st_wk);
+    oal_netbuf_queue_purge(&g_st_oam_reg_mng_etc.st_wq.st_netbuf_head);
 
 
 }
 
 
-oal_uint32 oam_reg_add_netbuf(oam_reg_rpt *pst_reg_rpt)
+oal_uint32 oam_reg_add_netbuf_etc(oam_reg_rpt *pst_reg_rpt)
 {
     oal_netbuf_stru                *pst_queue_netbuf;
     oam_reg_rpt                    *pst_reg_rpt_nb;
@@ -2166,15 +2166,15 @@ oal_uint32 oam_reg_add_netbuf(oam_reg_rpt *pst_reg_rpt)
 
     pst_reg_rpt_nb = (oam_reg_rpt *)oal_netbuf_data(pst_queue_netbuf);
     *pst_reg_rpt_nb = *pst_reg_rpt;
-    oal_netbuf_add_to_list_tail(pst_queue_netbuf, &g_st_oam_reg_mng.st_wq.st_netbuf_head);
-    g_st_oam_reg_mng.ul_nb++;
+    oal_netbuf_add_to_list_tail(pst_queue_netbuf, &g_st_oam_reg_mng_etc.st_wq.st_netbuf_head);
+    g_st_oam_reg_mng_etc.ul_nb++;
 
     return OAL_SUCC;
 }
 
 
 
-oal_void oam_reg_report(oal_void)
+oal_void oam_reg_report_etc(oal_void)
 {
     oal_uint32           ul_reg_type = 0;
     oal_uint32           ul_reg_num = 0;
@@ -2182,39 +2182,39 @@ oal_void oam_reg_report(oal_void)
     oam_reg_rpt          st_rpt;
 
     /* 刷新标志设置为0，当中断到来时，判断此标志不再重复刷新寄存器 */
-    oam_reg_allow_refresh(0);
+    oam_reg_allow_refresh_etc(0);
 
     /* 没有需要刷新的寄存器，返回 */
-    if (0 == g_st_oam_reg_mng.ul_reg_flag_bitmap)
+    if (0 == g_st_oam_reg_mng_etc.ul_reg_flag_bitmap)
     {
-        oam_reg_allow_refresh(1);
+        oam_reg_allow_refresh_etc(1);
         return;
     }
 
     /* 不能操作netbuf，返回 */
-    if (!oam_reg_is_allow_netbuf_add())
+    if (!oam_reg_is_allow_netbuf_add_etc())
     {
-        oam_reg_allow_refresh(1);
-        OAL_IO_PRINT("oam_reg_is_allow_netbuf_add not allow! \n");
+        oam_reg_allow_refresh_etc(1);
+        OAL_IO_PRINT("oam_reg_is_allow_netbuf_add_etc not allow! \n");
         return;
     }
 
     st_rpt.us_flag= OAM_REG_RPT_START;
     st_rpt.us_sn = 0;
-    st_rpt.un_rpt.st_rpt_head.en_evt = g_st_oam_reg_mng.en_evt_type;
-    st_rpt.un_rpt.st_rpt_head.ul_timestamp = g_st_oam_reg_mng.ul_time_stamp_start;
-    oam_reg_add_netbuf(&st_rpt);
-    g_st_oam_reg_mng.ul_rpt_count++;
+    st_rpt.un_rpt.st_rpt_head.en_evt = g_st_oam_reg_mng_etc.en_evt_type;
+    st_rpt.un_rpt.st_rpt_head.ul_timestamp = g_st_oam_reg_mng_etc.ul_time_stamp_start;
+    oam_reg_add_netbuf_etc(&st_rpt);
+    g_st_oam_reg_mng_etc.ul_rpt_count++;
 
     for (ul_reg_type = 0; ul_reg_type < OAM_REG_BUTT; ul_reg_type++)
     {
-        pst_reg =  g_st_oam_reg_mng.past_reg[ul_reg_type];
+        pst_reg =  g_st_oam_reg_mng_etc.past_reg[ul_reg_type];
         if (OAL_PTR_NULL == pst_reg)
         {
             continue;
         }
-        OAL_IO_PRINT("oam_reg_report regtype %u, regnum %u \n", ul_reg_type, g_st_oam_reg_mng.aul_reg_num[ul_reg_type]);
-        for (ul_reg_num = 0; ul_reg_num < g_st_oam_reg_mng.aul_reg_num[ul_reg_type]; ul_reg_num++)
+        OAL_IO_PRINT("oam_reg_report_etc regtype %u, regnum %u \n", ul_reg_type, g_st_oam_reg_mng_etc.aul_reg_num[ul_reg_type]);
+        for (ul_reg_num = 0; ul_reg_num < g_st_oam_reg_mng_etc.aul_reg_num[ul_reg_type]; ul_reg_num++)
         {
             if (OAL_TRUE != pst_reg[ul_reg_num].en_rpt_flag)
             {
@@ -2224,43 +2224,43 @@ oal_void oam_reg_report(oal_void)
             st_rpt.us_sn++;
             st_rpt.un_rpt.st_rpt_data.ul_addr = pst_reg[ul_reg_num].pst_reg_cfg->ul_addr;
             st_rpt.un_rpt.st_rpt_data.ul_value = pst_reg[ul_reg_num].ul_value;
-            oam_reg_add_netbuf(&st_rpt);
+            oam_reg_add_netbuf_etc(&st_rpt);
         }
     }
 
     st_rpt.us_flag = OAM_REG_RPT_END;
     st_rpt.us_sn++;
-    st_rpt.un_rpt.st_rpt_head.en_evt = g_st_oam_reg_mng.en_evt_type;
-    st_rpt.un_rpt.st_rpt_head.ul_timestamp = g_st_oam_reg_mng.ul_time_stamp_end;
-    oam_reg_add_netbuf(&st_rpt);
+    st_rpt.un_rpt.st_rpt_head.en_evt = g_st_oam_reg_mng_etc.en_evt_type;
+    st_rpt.un_rpt.st_rpt_head.ul_timestamp = g_st_oam_reg_mng_etc.ul_time_stamp_end;
+    oam_reg_add_netbuf_etc(&st_rpt);
 
     /* 启动workqueue */
-    oal_workqueue_schedule(&g_st_oam_reg_mng.st_wq.st_wk);
+    oal_workqueue_schedule(&g_st_oam_reg_mng_etc.st_wq.st_wk);
 
     /* 允许刷新 */
-    oam_reg_allow_refresh(1);
+    oam_reg_allow_refresh_etc(1);
 
 }
 
 
-oal_void  oam_reg_info(oal_void)
+oal_void  oam_reg_info_etc(oal_void)
 {
     oal_int8              ac_tmp_buff[64]       = {0};
 
-    OAL_SPRINTF(ac_tmp_buff, OAL_SIZEOF(ac_tmp_buff), "rpt cnt %u \n", g_st_oam_reg_mng.ul_rpt_count);
+    OAL_SPRINTF(ac_tmp_buff, OAL_SIZEOF(ac_tmp_buff), "rpt cnt %u \n", g_st_oam_reg_mng_etc.ul_rpt_count);
     ac_tmp_buff[63] = '\0';
-    oam_print(ac_tmp_buff);
+    oam_print_etc(ac_tmp_buff);
 }
 
 /*lint -e19*/
-oal_module_symbol(g_st_oam_reg_mng);
-oal_module_symbol(oam_reg_is_need_refresh);
-oal_module_symbol(oam_reg_get_evt_name);
-oal_module_symbol(oam_reg_report);
-oal_module_symbol(oam_reg_info);
-oal_module_symbol(oam_reg_set_evt);
-oal_module_symbol(oam_reg_set_flag);
-oal_module_symbol(oam_reg_set_flag_addr);
+oal_module_symbol(g_st_oam_reg_mng_etc);
+oal_module_symbol(oam_reg_is_need_refresh_etc);
+oal_module_symbol(oam_reg_get_evt_name_etc);
+oal_module_symbol(oam_reg_report_etc);
+oal_module_symbol(oam_reg_info_etc);
+oal_module_symbol(oam_reg_set_evt_etc);
+oal_module_symbol(oam_reg_set_flag_etc);
+oal_module_symbol(oam_reg_set_flag_addr_etc);
 /*lint +e19*/
 
 

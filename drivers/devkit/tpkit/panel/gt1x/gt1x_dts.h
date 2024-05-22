@@ -52,6 +52,7 @@
 #define GTP_ROI_FW_SUPPORTED	"gt1x_roi_fw_supported"
 #define GTP_PANEL_ID	"panel_id"
 #define GTP_TOUCH_SWITH_FLAG	"touch_switch_flag"
+#define GTP_HIDE_PLAIN_LCD_LOG 	"hide_plain_lcd_log"
 
 #define GTP_POWER_SELF_CTRL		"power_self_ctrl"
 #define GTP_VCI_LDO_VALUE		"vci_ldo_value"

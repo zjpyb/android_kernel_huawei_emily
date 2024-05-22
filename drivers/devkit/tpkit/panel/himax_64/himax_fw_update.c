@@ -57,6 +57,7 @@ bool HX_INT_IS_EDGE = false;
 int fw_update_boot_sd_flag = 0;
 
 static int himax_check_update_firmware_flag(void);
+extern void himax_nc_reload_disable(int on);
 
 static int check_firmware_version(const struct firmware *fw)
 {
@@ -81,7 +82,7 @@ static int check_firmware_version(const struct firmware *fw)
 			TS_LOG_INFO("firmware is lower, must upgrade.\n");
 			return FW_NEED_TO_UPDATE;
 		}
-		else 
+		else
 		{
 			TS_LOG_INFO("firmware not lower.\n");
 			return FW_NO_NEED_TO_UPDATE;
@@ -95,7 +96,7 @@ static int check_firmware_version(const struct firmware *fw)
 			TS_LOG_INFO("firmware is different, must upgrade.\n");
 			return FW_NEED_TO_UPDATE;
 		}
-		else 
+		else
 		{
 			TS_LOG_INFO("firmware not different.\n");
 			return FW_NO_NEED_TO_UPDATE;
@@ -145,6 +146,11 @@ static void  firmware_update(const struct firmware *fw)
 	TS_LOG_INFO("himax fw size =%u \n",(unsigned int )fw->size);
 
 	fullFileLength=(unsigned int) fw->size;
+	if (fullFileLength != FW_SIZE_64k)   //64k
+	{
+	    	TS_LOG_ERR("%s: The file size is not 64K bytes\n", __func__);
+	    	return ;
+	}
 	if (check_need_firmware_upgrade(fw))
 	{
 			wake_lock(&g_himax_nc_ts_data->tskit_himax_data->ts_platform_data->ts_wake_lock);
@@ -157,7 +163,7 @@ static void  firmware_update(const struct firmware *fw)
 			else
 			{
 				TS_LOG_INFO("%s: himax TP upgrade OK\n", __func__);
-
+				himax_nc_reload_disable(0);
 				g_himax_nc_ts_data->vendor_fw_ver = (fw->data[NC_FW_VER_MAJ_FLASH_ADDR]<<8 | fw->data[NC_FW_VER_MIN_FLASH_ADDR]);
 				g_himax_nc_ts_data->vendor_config_ver = (fw->data[NC_CFG_VER_MAJ_FLASH_ADDR]<<8 | fw->data[NC_CFG_VER_MIN_FLASH_ADDR]);
 
@@ -294,10 +300,9 @@ exit:
 static void himax_get_fw_name(char *file_name)
 {
 	char *firmware_form = ".bin";
-	//char *ic_name = "himax";
 	char   joint_chr = '_';
-	//strncat(file_name,ic_name,strlen(ic_name)+1);
-	strncat(file_name,himax_nc_project_id,strlen(himax_nc_project_id)+1);	
+
+	strncat(file_name,himax_nc_project_id,strlen(himax_nc_project_id)+1);
 	strncat(file_name,&joint_chr,1);
 	strncat(file_name,g_himax_nc_ts_data->tskit_himax_data->ts_platform_data->chip_data->module_name,
 		strlen(g_himax_nc_ts_data->tskit_himax_data->ts_platform_data->chip_data->module_name)+1);
@@ -309,18 +314,18 @@ int himax_nc_fw_update_boot(char *file_name)
 	int err = NO_ERR;
 	const  struct firmware *fw_entry = NULL;
 	char firmware_name[64] = "";
-	
+
 	TS_LOG_INFO("%s: enter!\n", __func__);
-	
+
 	TS_LOG_INFO("himax start to request firmware  %s", file_name);
-	
-	himax_get_fw_name(file_name);	
+
+	himax_get_fw_name(file_name);
     snprintf(firmware_name, sizeof(firmware_name), "ts/%s", file_name);
-	
+
 	TS_LOG_INFO("%s, request_firmware name: %s\n",__func__,firmware_name);
 	err = request_firmware(&fw_entry, firmware_name, &g_himax_nc_ts_data->tskit_himax_data->ts_platform_data->ts_dev->dev);
-	
-	if (err < 0) 
+
+	if (err < 0)
 	{
 		TS_LOG_ERR("himax %s %d: Fail request firmware %s, retval = %d\n",
 					__func__, __LINE__, firmware_name, err);

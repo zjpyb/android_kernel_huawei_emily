@@ -110,9 +110,9 @@ void hisi_softtimer_add(struct softtimer_list *timer)
         return ;
     }
 
-	spin_lock_bh(&timer_control.soft_timer_lock);
-	elapsed_time = hard_timer_elapsed_time();
-	pr_info("softtimer:%s ENTER [%d][0x%x]\n", __func__, timer->timeout, elapsed_time);
+    spin_lock_bh(&timer_control.soft_timer_lock);
+    elapsed_time = hard_timer_elapsed_time();
+    pr_info("softtimer:%s ENTER [%d][0x%x]\n", __func__, timer->timeout, elapsed_time);
     /*if timer is added previous*/
     if (!list_empty(&timer->entry))    {
         spin_unlock_bh(&timer_control.soft_timer_lock);
@@ -161,16 +161,16 @@ void hisi_softtimer_add(struct softtimer_list *timer)
     spin_unlock_bh(&timer_control.soft_timer_lock);
 }
 
-int hisi_softtimer_delete(struct softtimer_list *timer)
+int hisi_softtimer_try_to_del_sync(struct softtimer_list *timer)
 {
     struct softtimer_list *p = NULL;
-    if (NULL == timer)    {
-        return  -EIO;
-    }
-    while (timer_control.is_in_interrupt) {
-        cpu_relax();
-    }
+
     spin_lock_bh(&timer_control.soft_timer_lock);
+    if (timer_control.is_in_interrupt) {
+        spin_unlock_bh(&timer_control.soft_timer_lock);
+        return -EACCES;
+    }
+
     if (list_empty(&timer->entry))    {
         spin_unlock_bh(&timer_control.soft_timer_lock);
         return 0;
@@ -204,14 +204,27 @@ int hisi_softtimer_delete(struct softtimer_list *timer)
     spin_unlock_bh(&timer_control.soft_timer_lock);
     return 0;
 }
+
+int hisi_softtimer_delete(struct softtimer_list *timer)
+{
+    if (NULL == timer)    {
+        return  -EIO;
+    }
+    for (;;) {
+        int ret = hisi_softtimer_try_to_del_sync(timer);
+        if (!ret)
+            return ret;
+        cpu_relax();
+    }
+}
 /*lint  +e826 +e64*/
 int hisi_softtimer_create(struct softtimer_list *sft_info, softtimer_func func,
        unsigned long para, unsigned int timeout)
 {
-	unsigned long delaytime;
-	if (NULL == sft_info || NULL == func) {
-	        return -EPERM;
-	}
+    unsigned long delaytime;
+    if (NULL == sft_info || NULL == func) {
+        return -EPERM;
+    }
 
     INIT_LIST_HEAD(&(sft_info->entry));
     sft_info->is_running = TIMER_FALSE;
@@ -272,23 +285,23 @@ static void thread_softtimer_fun(unsigned long arg)
             func = p->func;
             para = p->para;
             spin_unlock(&timer_control.soft_timer_lock);
-	if (func) {
-		func(para);
-	}
+            if (func) {
+                func(para);
+            }
             spin_lock(&timer_control.soft_timer_lock);
 
             while (!list_empty(&(timer_control.timer_list_head)))     {
                 p = list_first_entry(&(timer_control.timer_list_head), struct softtimer_list, entry);
                 if (0 == p->timeout)     {
-		list_del_init(&p->entry);
-		p->is_running = TIMER_FALSE;
-		func = p->func;
-		para = p->para;
-		spin_unlock(&timer_control.soft_timer_lock);
-		if (func) {
-			func(para);
-		}
-		spin_lock(&timer_control.soft_timer_lock);
+                    list_del_init(&p->entry);
+                    p->is_running = TIMER_FALSE;
+                    func = p->func;
+                    para = p->para;
+                    spin_unlock(&timer_control.soft_timer_lock);
+                    if (func) {
+                        func(para);
+                    }
+                    spin_lock(&timer_control.soft_timer_lock);
                 }   else  {
                     break;
                 }
@@ -309,8 +322,9 @@ static void thread_softtimer_fun(unsigned long arg)
     }  else {
         stop_hard_timer();
     }
-    spin_unlock(&timer_control.soft_timer_lock) ;
     timer_control.is_in_interrupt = TIMER_FALSE;
+
+    spin_unlock(&timer_control.soft_timer_lock) ;
 }
 /*lint +e715 +e826*/
 /*lint -e715 -e732 -e838*/
@@ -331,14 +345,14 @@ static irqreturn_t IntTimerHandler (int irq, void *dev_id)
 /*lint +e715 +e732 +e838*/
 void hisi_softtimer_uninit(void)
 {
-	free_irq(timer_control.irqnum, NULL);
-	if (timer_control.clk_is_enable) {
-		clk_disable_unprepare(timer_control.clk);
-		timer_control.clk_is_enable = TIMER_FALSE;
-	}
-	if (timer_control.hard_timer_addr) {
-		iounmap(timer_control.hard_timer_addr);
-	}
+    free_irq(timer_control.irqnum, NULL);
+    if (timer_control.clk_is_enable) {
+        clk_disable_unprepare(timer_control.clk);
+        timer_control.clk_is_enable = TIMER_FALSE;
+    }
+    if (timer_control.hard_timer_addr) {
+        iounmap(timer_control.hard_timer_addr);
+    }
 }
 
 int hisi_softtimer_init (struct platform_device *pdev)
@@ -359,8 +373,8 @@ int hisi_softtimer_init (struct platform_device *pdev)
     timer_control.clk_is_enable = TIMER_TRUE;
     timer_control.hard_timer_addr = of_iomap(node, 0);
     if (!timer_control.hard_timer_addr) {
-	pr_err("softtimer:hisi_softtimer_init ERROR\n");
-	goto IOMAP_FIN;
+        pr_err("softtimer:hisi_softtimer_init ERROR\n");
+        goto IOMAP_FIN;
     }
     INIT_LIST_HEAD(&(timer_control.timer_list_head));
     timer_control.rate                    = HISI_SOFTTIME_FREQ;
@@ -377,15 +391,16 @@ int hisi_softtimer_init (struct platform_device *pdev)
     /*clear timer interrupt*/
     writel(0x1, timer_control.hard_timer_addr + TIMERINTCLR(0));
     timer_control.init_flag = TIMER_TRUE;
+    timer_control.is_in_interrupt = TIMER_FALSE;
     printk(KERN_ERR "softtimer:hisi_softtimer_init enter,%d\n", timer_control.rate);
     return 0;
 error:
-	iounmap(timer_control.hard_timer_addr);
-	timer_control.hard_timer_addr = NULL;
+    iounmap(timer_control.hard_timer_addr);
+    timer_control.hard_timer_addr = NULL;
 IOMAP_FIN:
-	clk_disable_unprepare(timer_control.clk);
-	timer_control.clk_is_enable = TIMER_FALSE;
-	return ret;
+    clk_disable_unprepare(timer_control.clk);
+    timer_control.clk_is_enable = TIMER_FALSE;
+    return ret;
 }
 
 /*lint -e715*/
@@ -400,42 +415,42 @@ static void hisi_softtimer_timeout(unsigned long data)
 struct softtimer_list timer = {0};
 void hisi_softtimer_test(int timeout)
 {
-	int ret;
-	static int  flag;
-	if (0 == flag)    {
-		hisi_softtimer_create(&timer , hisi_softtimer_timeout , (unsigned long)0, 0);
-		flag = 1;
-	}
-	printk(KERN_INFO "hisi_softtimer_test enter\n");
-	hisi_softtimer_delete(&timer);
-	ret = hisi_softtimer_modify(&timer, (unsigned int)timeout);
-	if (ret)
-		pr_err("[%s] %d:\n", __func__, __LINE__);
-	hisi_softtimer_add(&timer);
+    int ret;
+    static int  flag;
+    if (0 == flag)    {
+        hisi_softtimer_create(&timer , hisi_softtimer_timeout , (unsigned long)0, 0);
+        flag = 1;
+    }
+    printk(KERN_INFO "hisi_softtimer_test enter\n");
+    hisi_softtimer_delete(&timer);
+    ret = hisi_softtimer_modify(&timer, (unsigned int)timeout);
+    if (ret)
+        pr_err("[%s] %d:\n", __func__, __LINE__);
+    hisi_softtimer_add(&timer);
 }
 #endif
 /*lint +e727*/
 /*lint -e715*/
 static int generic_softtimer_probe(struct platform_device *pdev)
 {
-	int ret;
-	struct device *dev = &pdev->dev;
-	struct device_node *dev_node = dev->of_node;
+    int ret;
+    struct device *dev = &pdev->dev;
+    struct device_node *dev_node = dev->of_node;
 
-	ret = get_contexthub_dts_status();
-	if(ret)
-		return ret;
+    ret = get_contexthub_dts_status();
+    if(ret)
+        return ret;
 
-	if (!of_device_is_available(dev_node))
-		return -ENODEV;
+    if (!of_device_is_available(dev_node))
+        return -ENODEV;
 
-	return hisi_softtimer_init(pdev);
+    return hisi_softtimer_init(pdev);
 }
 
 static int generic_softtimer_remove(struct platform_device *pdev)
 {
-	hisi_softtimer_uninit();
-	return 0;
+    hisi_softtimer_uninit();
+    return 0;
 }
 
 static const struct of_device_id generic_softtimer[] = {
@@ -445,25 +460,25 @@ static const struct of_device_id generic_softtimer[] = {
 MODULE_DEVICE_TABLE(of, generic_softtimer);
 /*lint -e64*/
 static struct platform_driver generic_softtimer_platdrv = {
-	.driver = {
-		.name	= "hisi-softtimer",
-		.owner	= THIS_MODULE,
-		.of_match_table = of_match_ptr(generic_softtimer),
-	},
-	.probe = generic_softtimer_probe,
-	.remove  = generic_softtimer_remove,
+    .driver = {
+        .name	= "hisi-softtimer",
+        .owner	= THIS_MODULE,
+        .of_match_table = of_match_ptr(generic_softtimer),
+    },
+    .probe = generic_softtimer_probe,
+    .remove  = generic_softtimer_remove,
 };
 /*lint +e64*/
 /*lint +e785*/
 /*lint -e64*/
 static int __init hisi_timer_init(void)
 {
-	return platform_driver_register(&generic_softtimer_platdrv);
+    return platform_driver_register(&generic_softtimer_platdrv);
 }
 /*lint +e64*/
 static void __exit hisi_timer_exit(void)
 {
-	platform_driver_unregister(&generic_softtimer_platdrv);
+    platform_driver_unregister(&generic_softtimer_platdrv);
 }
 /*lint -e528 -esym(528,*) */
 late_initcall(hisi_timer_init);

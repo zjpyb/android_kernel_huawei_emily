@@ -23,6 +23,7 @@ struct bq2560x_device_info {
 	int gpio_int;
 	int irq_int;
 	int irq_active;
+	int hiz_iin_limit;
 };
 
 
@@ -83,6 +84,7 @@ struct bq2560x_device_info {
 #define	BQ2560X_REG_CCC_BOOST_LIM_SHIFT		7
 #define	REG02_BOOST_LIM_0P5A		0
 #define	REG02_BOOST_LIM_1P2A		1
+#define BOOST_LIM_0P5A                  500
 
 #define	BQ2560X_REG_CCC_Q1_FULLON_MASK		0x40
 #define	BQ2560X_REG_CCC_Q1_FULLON_SHIFT		6
@@ -136,12 +138,13 @@ struct bq2560x_device_info {
 
 #define BQ2560X_REG_CTTC_WDT_MASK            	0x30
 #define BQ2560X_REG_CTTC_WDT_SHIFT           	4
-#define REG05_WDT_DISABLE         	0
-#define REG05_WDT_40S             	1
-#define REG05_WDT_80S             	2
-#define REG05_WDT_160S            	3
-#define REG05_WDT_BASE            	0
-#define REG05_WDT_LSB             	40
+#define REG05_WDT_DISABLE               0
+#define REG05_WDT_40S                   1
+#define REG05_WDT_80S                   2
+#define REG05_WDT_160S                  3
+#define WDT_BASE                        0
+#define WDT_40S                         40
+#define WDT_80S                         80
 
 #define BQ2560X_REG_CTTC_EN_TIMER_MASK       	0x08
 #define BQ2560X_REG_CTTC_EN_TIMER_SHIFT      	3
@@ -180,10 +183,15 @@ struct bq2560x_device_info {
 #define	REG06_BOOSTV_5P15V			2
 #define	REG06_BOOSTV_5P3V			3
 
+#define BOOSTV_4850					4850
+#define BOOSTV_5150					5150
+#define BOOSTV_5300					5300
+
 #define	BQ2560X_REG_REG_BVTRC_VINDPM_MASK			0x0F
 #define	BQ2560X_REG_REG_BVTRC_VINDPM_SHIFT			0
 #define	REG06_VINDPM_BASE			3900
 #define	REG06_VINDPM_LSB			100
+#define	REG06_VINDPM_4P2V			3
 
 /* Register 0x07*/
 #define BQ2560X_REG_MOC              0x07
@@ -327,11 +335,14 @@ struct bq2560x_device_info {
 #define BQ2560X_REG_VPRS_DEV_REV_MASK        	0x03
 #define BQ2560X_REG_VPRS_DEV_REV_SHIFT       	0
 
-
-#define CHARGE_IC_BAD 0
-#define CHARGE_IC_GOOD 1
-#define VENDOR_ID      0x3
+#define VENDOR_ID      0x2
 
 #define BQ2560x_REG_SS_VBUS_PLUGGED   1
 
+#define HIZ_IIN_FLAG_TRUE                1
+#define HIZ_IIN_FLAG_FALSE               0
+#define IINLIM_100                       100
+
+#define AC_IIN_MAX_CURRENT          2000
+#define EX_AC_IIN_MAX_CURRENT       2100
 #endif

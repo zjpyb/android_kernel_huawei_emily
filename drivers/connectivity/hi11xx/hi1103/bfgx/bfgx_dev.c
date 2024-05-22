@@ -25,6 +25,8 @@
 #include "plat_pm.h"
 #include "bfgx_user_ctrl.h"
 #include "bfgx_exception_rst.h"
+#include "plat_firmware.h"
+#include "plat_cali.h"
 
 #include "oal_ext_if.h"
 #ifdef BFGX_UART_DOWNLOAD_SUPPORT
@@ -37,12 +39,11 @@
  * This references is the per-PS platform device in the arch/arm/
  * board-xx.c file.
  */
-struct platform_device *hw_ps_device = NULL;
+struct platform_device *hw_ps_device_etc = NULL;
 STATIC int g_debug_cnt = 0;
-DUMP_CMD_QUEUE dump_cmd_queue;
+DUMP_CMD_QUEUE dump_cmd_queue_etc;
 
-
-uint32 g_bfgx_open_cmd[BFGX_BUTT] =
+uint32 g_bfgx_open_cmd_etc[BFGX_BUTT] =
 {
     SYS_CFG_OPEN_BT,
     SYS_CFG_OPEN_FM,
@@ -51,7 +52,7 @@ uint32 g_bfgx_open_cmd[BFGX_BUTT] =
     SYS_CFG_OPEN_NFC,
 };
 
-uint32 g_bfgx_close_cmd[BFGX_BUTT] =
+uint32 g_bfgx_close_cmd_etc[BFGX_BUTT] =
 {
     SYS_CFG_CLOSE_BT,
     SYS_CFG_CLOSE_FM,
@@ -60,7 +61,7 @@ uint32 g_bfgx_close_cmd[BFGX_BUTT] =
     SYS_CFG_CLOSE_NFC,
 };
 
-uint32 g_bfgx_open_cmd_timeout[BFGX_BUTT] =
+uint32 g_bfgx_open_cmd_timeout_etc[BFGX_BUTT] =
 {
     WAIT_BT_OPEN_TIME,
     WAIT_FM_OPEN_TIME,
@@ -69,7 +70,7 @@ uint32 g_bfgx_open_cmd_timeout[BFGX_BUTT] =
     WAIT_NFC_OPEN_TIME,
 };
 
-uint32 g_bfgx_close_cmd_timeout[BFGX_BUTT] =
+uint32 g_bfgx_close_cmd_timeout_etc[BFGX_BUTT] =
 {
     WAIT_BT_CLOSE_TIME,
     WAIT_FM_CLOSE_TIME,
@@ -78,7 +79,7 @@ uint32 g_bfgx_close_cmd_timeout[BFGX_BUTT] =
     WAIT_NFC_CLOSE_TIME,
 };
 
-const uint8 *g_bfgx_subsys_name[BFGX_BUTT] =
+const uint8 *g_bfgx_subsys_name_etc[BFGX_BUTT] =
 {
     "BT",
     "FM",
@@ -87,11 +88,16 @@ const uint8 *g_bfgx_subsys_name[BFGX_BUTT] =
     "NFC",
 };
 
-struct bt_data_combination g_st_bt_data_combination = {0};
+struct bt_data_combination g_st_bt_data_combination_etc = {0};
+
+oal_int32 bfgx_open_ssi_dump = 0;
+#if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
+module_param(bfgx_open_ssi_dump, int, S_IRUGO | S_IWUSR);
+#endif
 
 uint32 g_ul_gnss_me_thread_status   = DEV_THREAD_EXIT;
 uint32 g_ul_gnss_lppe_thread_status = DEV_THREAD_EXIT;
-
+volatile  bool   g_b_ir_only_mode   = false;
 /*****************************************************************************
   Function implement
 *****************************************************************************/
@@ -99,10 +105,10 @@ uint32 g_ul_gnss_lppe_thread_status = DEV_THREAD_EXIT;
 /**********************************************************************/
 /* internal functions */
 /**
- * Prototype    : ps_get_plat_reference
+ * Prototype    : ps_get_plat_reference_etc
  * Description  : reference the plat's dat,This references the per-PS
  *                  platform device in the arch/arm/board-xx.c file.
- * input        : use *hw_ps_device
+ * input        : use *hw_ps_device_etc
  * output       : the have registered platform device struct
  * Calls        :
  * Called By    :
@@ -113,12 +119,12 @@ uint32 g_ul_gnss_lppe_thread_status = DEV_THREAD_EXIT;
  *     Modification : Created function
  *
  */
-int32 ps_get_plat_reference(struct ps_plat_s **plat_data)
+int32 ps_get_plat_reference_etc(struct ps_plat_s **plat_data)
 {
     struct platform_device   *pdev = NULL;
     struct ps_plat_s    *ps_plat_d = NULL;
 
-    pdev = hw_ps_device;
+    pdev = hw_ps_device_etc;
     if (!pdev)
     {
         *plat_data = NULL;
@@ -133,10 +139,10 @@ int32 ps_get_plat_reference(struct ps_plat_s **plat_data)
 }
 
 /**
- * Prototype    : ps_get_core_reference
+ * Prototype    : ps_get_core_reference_etc
  * Description  : reference the core's data,This references the per-PS
  *                  platform device in the arch/xx/board-xx.c file..
- * input        : use *hw_ps_device
+ * input        : use *hw_ps_device_etc
  * output       : the have registered ps_core_d struct
  * Calls        :
  * Called By    :
@@ -147,12 +153,12 @@ int32 ps_get_plat_reference(struct ps_plat_s **plat_data)
  *     Modification : Created function
  *
  */
-int32 ps_get_core_reference(struct ps_core_s **core_data)
+int32 ps_get_core_reference_etc(struct ps_core_s **core_data)
 {
     struct platform_device *pdev = NULL;
     struct ps_plat_s  *ps_plat_d = NULL;
 
-    pdev = hw_ps_device;
+    pdev = hw_ps_device_etc;
     if (!pdev)
     {
         *core_data = NULL;
@@ -173,7 +179,7 @@ int32 ps_get_core_reference(struct ps_core_s **core_data)
 }
 
 /**
- * Prototype    : ps_chk_bfg_active
+ * Prototype    : ps_chk_bfg_active_etc
  * Description  : to chk wether or not bfg active
  *
  * input        : ps_plat_d
@@ -187,7 +193,7 @@ int32 ps_get_core_reference(struct ps_core_s **core_data)
  *     Modification : Created function
  *
  */
-bool ps_chk_bfg_active(struct ps_core_s *ps_core_d)
+bool ps_chk_bfg_active_etc(struct ps_core_s *ps_core_d)
 {
     int32 i = 0;
     for (i = 0; i < BFGX_BUTT; i++)
@@ -202,9 +208,9 @@ bool ps_chk_bfg_active(struct ps_core_s *ps_core_d)
 }
 
 /* only gnss is open and it agree to sleep */
-bool ps_chk_only_gnss_and_cldslp(struct ps_core_s *ps_core_d)
+bool ps_chk_only_gnss_and_cldslp_etc(struct ps_core_s *ps_core_d)
 {
-    struct pm_drv_data  *pm_data = pm_get_drvdata();
+    struct pm_drv_data  *pm_data = pm_get_drvdata_etc();
     if ((POWER_STATE_SHUTDOWN == atomic_read(&ps_core_d->bfgx_info[BFGX_BT].subsys_state)) &&
         (POWER_STATE_SHUTDOWN == atomic_read(&ps_core_d->bfgx_info[BFGX_FM].subsys_state)) &&
         (POWER_STATE_SHUTDOWN == atomic_read(&ps_core_d->bfgx_info[BFGX_IR].subsys_state)) &&
@@ -237,7 +243,7 @@ bool ps_chk_tx_queue_empty(struct ps_core_s *ps_core_d)
 }
 
 /**
- * Prototype    : ps_alloc_skb
+ * Prototype    : ps_alloc_skb_etc
  * Description  : allocate mem for new skb
  *
  * input        : ps_plat_d
@@ -251,7 +257,7 @@ bool ps_chk_tx_queue_empty(struct ps_core_s *ps_core_d)
  *     Modification : Created function
  *
  */
-struct sk_buff *ps_alloc_skb(uint16 len)
+struct sk_buff *ps_alloc_skb_etc(uint16 len)
 {
     struct sk_buff *skb = NULL;
 
@@ -270,7 +276,7 @@ struct sk_buff *ps_alloc_skb(uint16 len)
 }
 
 /**
- * Prototype    : ps_kfree_skb
+ * Prototype    : ps_kfree_skb_etc
  * Description  : when close a function, kfree skb
  * input        : ps_core_d, skb type
  * output       : no
@@ -284,7 +290,7 @@ struct sk_buff *ps_alloc_skb(uint16 len)
  *     Modification : Created function
  *
  */
-void ps_kfree_skb(struct ps_core_s *ps_core_d, uint8 type)
+void ps_kfree_skb_etc(struct ps_core_s *ps_core_d, uint8 type)
 {
     struct sk_buff *skb = NULL;
 
@@ -295,7 +301,7 @@ void ps_kfree_skb(struct ps_core_s *ps_core_d, uint8 type)
         return;
     }
 
-    while ((skb = ps_skb_dequeue(ps_core_d, type)))
+    while ((skb = ps_skb_dequeue_etc(ps_core_d, type)))
     {
         kfree_skb(skb);
     }
@@ -337,7 +343,7 @@ void ps_kfree_skb(struct ps_core_s *ps_core_d, uint8 type)
 }
 
 /**
- * Prototype    : ps_restore_skbqueue
+ * Prototype    : ps_restore_skbqueue_etc
  * Description  : when err and restore skb to seq function.
  * input        : ps_core_d, skb
  * output       : not
@@ -350,7 +356,7 @@ void ps_kfree_skb(struct ps_core_s *ps_core_d, uint8 type)
  *     Modification : Created function
  *
  */
-int32 ps_restore_skbqueue(struct ps_core_s *ps_core_d, struct sk_buff *skb, uint8 type)
+int32 ps_restore_skbqueue_etc(struct ps_core_s *ps_core_d, struct sk_buff *skb, uint8 type)
 {
     PS_PRINT_FUNCTION_NAME;
 
@@ -391,14 +397,13 @@ int32 ps_restore_skbqueue(struct ps_core_s *ps_core_d, struct sk_buff *skb, uint
 
 /* prepare to visit dev_node
 */
-int32 prepare_to_visit_node(struct ps_core_s *ps_core_d)
+int32 prepare_to_visit_node_etc(struct ps_core_s *ps_core_d)
 {
     struct pm_drv_data *pm_data = NULL;
     uint8 uart_ready = UART_NOT_READY;
-    int32  ret = 0;
     uint64 flags;
 
-    pm_data = pm_get_drvdata();
+    pm_data = pm_get_drvdata_etc();
     if (unlikely(NULL == pm_data))
     {
         PS_PRINT_ERR("pm_data is NULL!\n");
@@ -406,15 +411,7 @@ int32 prepare_to_visit_node(struct ps_core_s *ps_core_d)
     }
 
     /* lock wake_lock */
-    ps_core_d->ps_pm->bfg_wake_lock();
-
-    /* open tty if tty has not been opened */
-    ret = open_tty_drv(ps_core_d->pm_data);
-    if (ret != 0)
-    {
-        PS_PRINT_ERR("open tty is err! ret = %d\n",ret);
-        return -EIO;
-    }
+    bfg_wake_lock_etc();
 
     /* try to wake up device */
     spin_lock_irqsave(&pm_data->uart_state_spinlock,flags);
@@ -424,7 +421,7 @@ int32 prepare_to_visit_node(struct ps_core_s *ps_core_d)
 
     if (UART_NOT_READY == uart_ready)
     {
-        if (0 != host_wkup_dev())
+        if (0 != host_wkup_dev_etc())
         {
             PS_PRINT_ERR("wkup device FAILED!\n");
             atomic_dec(&ps_core_d->node_visit_flag);
@@ -435,14 +432,14 @@ int32 prepare_to_visit_node(struct ps_core_s *ps_core_d)
 }
 
 /* we should do something before exit from visiting dev_node */
-int32 post_to_visit_node(struct ps_core_s *ps_core_d)
+int32 post_to_visit_node_etc(struct ps_core_s *ps_core_d)
 {
     atomic_dec(&ps_core_d->node_visit_flag);
 
     return 0;
 }
 
-int32 alloc_seperted_rx_buf(uint8 subsys, uint32 len,uint8 alloctype)
+int32 alloc_seperted_rx_buf_etc(uint8 subsys, uint32 len,uint8 alloctype)
 {
     struct ps_core_s *ps_core_d = NULL;
     struct bfgx_sepreted_rx_st *pst_sepreted_data = NULL;
@@ -456,7 +453,7 @@ int32 alloc_seperted_rx_buf(uint8 subsys, uint32 len,uint8 alloctype)
 
     if (BFGX_BT == subsys)
     {
-        PS_PRINT_DBG("%s no sepreted buf\n", g_bfgx_subsys_name[subsys]);
+        PS_PRINT_DBG("%s no sepreted buf\n", g_bfgx_subsys_name_etc[subsys]);
         return 0;
     }
 
@@ -466,7 +463,7 @@ int32 alloc_seperted_rx_buf(uint8 subsys, uint32 len,uint8 alloctype)
         return -EINVAL;
     }
 
-    ps_get_core_reference(&ps_core_d);
+    ps_get_core_reference_etc(&ps_core_d);
     if (unlikely(NULL == ps_core_d))
     {
         PS_PRINT_ERR("ps_core_d is err\n");
@@ -499,7 +496,7 @@ int32 alloc_seperted_rx_buf(uint8 subsys, uint32 len,uint8 alloctype)
     return 0;
 }
 
-int32 free_seperted_rx_buf(uint8 subsys,uint8 alloctype)
+int32 free_seperted_rx_buf_etc(uint8 subsys,uint8 alloctype)
 {
     struct ps_core_s *ps_core_d = NULL;
     struct bfgx_sepreted_rx_st *pst_sepreted_data = NULL;
@@ -512,7 +509,7 @@ int32 free_seperted_rx_buf(uint8 subsys,uint8 alloctype)
 
     if (BFGX_BT == subsys)
     {
-        PS_PRINT_DBG("%s no sepreted buf\n", g_bfgx_subsys_name[subsys]);
+        PS_PRINT_DBG("%s no sepreted buf\n", g_bfgx_subsys_name_etc[subsys]);
         return 0;
     }
 
@@ -522,7 +519,7 @@ int32 free_seperted_rx_buf(uint8 subsys,uint8 alloctype)
         return -EINVAL;
     }
 
-    ps_get_core_reference(&ps_core_d);
+    ps_get_core_reference_etc(&ps_core_d);
     if (unlikely(NULL == ps_core_d))
     {
         PS_PRINT_ERR("ps_core_d is NULL\n");
@@ -551,7 +548,7 @@ int32 free_seperted_rx_buf(uint8 subsys,uint8 alloctype)
     return 0;
 }
 
-int32 bfgx_open_fail_process(uint8 subsys, int32 error)
+int32 bfgx_open_fail_process_etc(uint8 subsys, int32 error)
 {
     struct ps_core_s *ps_core_d = NULL;
 
@@ -567,7 +564,7 @@ int32 bfgx_open_fail_process(uint8 subsys, int32 error)
          return BFGX_POWER_FAILED;
     }
 
-    ps_get_core_reference(&ps_core_d);
+    ps_get_core_reference_etc(&ps_core_d);
     if (unlikely(NULL == ps_core_d))
     {
         PS_PRINT_ERR("ps_core_d is NULL\n");
@@ -576,7 +573,10 @@ int32 bfgx_open_fail_process(uint8 subsys, int32 error)
 
     PS_PRINT_INFO("bfgx open fail, type=[%d]\n", error);
 
-    ssi_save_device_regs();
+    if(bfgx_open_ssi_dump)
+    {
+        ssi_dump_device_regs(SSI_MODULE_MASK_COMM | SSI_MODULE_MASK_BCTRL);
+    }
 
     switch (error)
     {
@@ -587,10 +587,10 @@ int32 bfgx_open_fail_process(uint8 subsys, int32 error)
 
     case BFGX_POWER_WIFI_DERESET_BCPU_FAIL:
     case BFGX_POWER_WIFI_ON_BOOT_UP_FAIL:
-        if (BFGX_POWER_SUCCESS == plat_power_fail_exception_info_set(SUBSYS_BFGX, subsys, BFGX_POWER_ON_FAIL))
+        if (BFGX_POWER_SUCCESS == plat_power_fail_exception_info_set_etc(SUBSYS_BFGX, subsys, BFGX_POWERON_FAIL))
         {
-            bfgx_system_reset();
-            plat_power_fail_process_done();
+            bfgx_system_reset_etc();
+            plat_power_fail_process_done_etc();
         }
         else
         {
@@ -607,13 +607,13 @@ int32 bfgx_open_fail_process(uint8 subsys, int32 error)
 
     case BFGX_POWER_WAKEUP_FAIL:
     case BFGX_POWER_OPEN_CMD_FAIL:
-        if (BFGX_POWER_SUCCESS == plat_power_fail_exception_info_set(SUBSYS_BFGX, subsys, BFGX_POWER_ON_FAIL))
+        if (BFGX_POWER_SUCCESS == plat_power_fail_exception_info_set_etc(SUBSYS_BFGX, subsys, BFGX_POWERON_FAIL))
         {
-            if (EXCEPTION_SUCCESS != bfgx_subsystem_reset())
+            if (EXCEPTION_SUCCESS != bfgx_subsystem_reset_etc())
             {
-                PS_PRINT_ERR("bfgx_subsystem_reset failed \n");
+                PS_PRINT_ERR("bfgx_subsystem_reset_etc failed \n");
             }
-            plat_power_fail_process_done();
+            plat_power_fail_process_done_etc();
         }
         else
         {
@@ -633,7 +633,7 @@ int32 bfgx_open_fail_process(uint8 subsys, int32 error)
 
 /**********************************************************************/
 
-int32 uart_wifi_open(void)
+int32 uart_wifi_open_etc(void)
 {
     struct ps_core_s *ps_core_d = NULL;
     uint64 timeleft;
@@ -641,7 +641,7 @@ int32 uart_wifi_open(void)
 
     PS_PRINT_INFO("%s\n", __func__);
 
-    ps_get_core_reference(&ps_core_d);
+    ps_get_core_reference_etc(&ps_core_d);
     if (unlikely(NULL == ps_core_d))
     {
         PS_PRINT_ERR("ps_core_d is err\n");
@@ -649,7 +649,7 @@ int32 uart_wifi_open(void)
     }
 
     /*如果BFGIN睡眠，则唤醒之*/
-    ret = prepare_to_visit_node(ps_core_d);
+    ret = prepare_to_visit_node_etc(ps_core_d);
     if (ret < 0)
     {
         PS_PRINT_ERR("prepare work FAIL\n");
@@ -659,19 +659,19 @@ int32 uart_wifi_open(void)
     PS_PRINT_INFO("uart open WCPU\n");
     INIT_COMPLETION(ps_core_d->wait_wifi_opened);
     /* tx sys bt open info */
-    ps_uart_state_pre(ps_core_d->tty);
-    ps_tx_sys_cmd(ps_core_d, SYS_MSG, SYS_CFG_OPEN_WIFI);
+    ps_uart_state_pre_etc(ps_core_d->tty);
+    ps_tx_sys_cmd_etc(ps_core_d, SYS_MSG, SYS_CFG_OPEN_WIFI);
 
     timeleft = wait_for_completion_timeout(&ps_core_d->wait_wifi_opened, msecs_to_jiffies(WAIT_WIFI_OPEN_TIME));
     if (!timeleft)
     {
-        ps_uart_state_dump(ps_core_d->tty);
+        ps_uart_state_dump_etc(ps_core_d->tty);
         PS_PRINT_ERR("wait wifi open ack timeout\n");
-        post_to_visit_node(ps_core_d);
+        post_to_visit_node_etc(ps_core_d);
         return -ETIMEDOUT;
     }
 
-    post_to_visit_node(ps_core_d);
+    post_to_visit_node_etc(ps_core_d);
 
     msleep(20);
 
@@ -680,7 +680,7 @@ int32 uart_wifi_open(void)
 
 /**********************************************************************/
 
-int32 uart_wifi_close(void)
+int32 uart_wifi_close_etc(void)
 {
     struct ps_core_s *ps_core_d = NULL;
     uint64 timeleft;
@@ -688,7 +688,7 @@ int32 uart_wifi_close(void)
 
     PS_PRINT_INFO("%s\n", __func__);
 
-    ps_get_core_reference(&ps_core_d);
+    ps_get_core_reference_etc(&ps_core_d);
     if (unlikely(NULL == ps_core_d))
     {
         PS_PRINT_ERR("ps_core_d is err\n");
@@ -696,7 +696,7 @@ int32 uart_wifi_close(void)
     }
 
     /*如果BFGIN睡眠，则唤醒之*/
-    ret = prepare_to_visit_node(ps_core_d);
+    ret = prepare_to_visit_node_etc(ps_core_d);
     if (ret < 0)
     {
         PS_PRINT_ERR("prepare work FAIL\n");
@@ -706,28 +706,28 @@ int32 uart_wifi_close(void)
     PS_PRINT_INFO("uart close WCPU\n");
 
     INIT_COMPLETION(ps_core_d->wait_wifi_closed);
-    ps_uart_state_pre(ps_core_d->tty);
-    ps_tx_sys_cmd(ps_core_d, SYS_MSG, SYS_CFG_CLOSE_WIFI);
+    ps_uart_state_pre_etc(ps_core_d->tty);
+    ps_tx_sys_cmd_etc(ps_core_d, SYS_MSG, SYS_CFG_CLOSE_WIFI);
 
     timeleft = wait_for_completion_timeout(&ps_core_d->wait_wifi_closed, msecs_to_jiffies(WAIT_WIFI_CLOSE_TIME));
     if (!timeleft)
     {
-        ps_uart_state_dump(ps_core_d->tty);
+        ps_uart_state_dump_etc(ps_core_d->tty);
         PS_PRINT_ERR("wait wifi close ack timeout\n");
-        post_to_visit_node(ps_core_d);
+        post_to_visit_node_etc(ps_core_d);
         return -ETIMEDOUT;
     }
 
-    PS_PRINT_WARNING("uart close WCPU done,gpio level[%d]\n",board_get_wlan_wkup_gpio_val());
+    PS_PRINT_WARNING("uart close WCPU done,gpio level[%d]\n",board_get_wlan_wkup_gpio_val_etc());
 
-    post_to_visit_node(ps_core_d);
+    post_to_visit_node_etc(ps_core_d);
 
     return SUCCESS;
 }
 
 /**********************************************************************/
 
-int32 uart_bfgx_close_cmd(void)
+int32 uart_bfgx_close_cmd_etc(void)
 {
 #define wait_close_times  (100)
     struct ps_core_s *ps_core_d = NULL;
@@ -737,15 +737,21 @@ int32 uart_bfgx_close_cmd(void)
 
     PS_PRINT_INFO("%s\n", __func__);
 
-    ps_get_core_reference(&ps_core_d);
+    ps_get_core_reference_etc(&ps_core_d);
     if (unlikely(NULL == ps_core_d))
     {
         PS_PRINT_ERR("ps_core_d is err\n");
         return -EINVAL;
     }
 
+    /* 单红外dev不处理系统消息 */
+    if (g_b_ir_only_mode)
+    {
+        return SUCCESS;
+    }
+
     /*如果BFGIN睡眠，则唤醒之*/
-    ret = prepare_to_visit_node(ps_core_d);
+    ret = prepare_to_visit_node_etc(ps_core_d);
     if (ret < 0)
     {
         PS_PRINT_ERR("prepare work FAIL\n");
@@ -755,13 +761,13 @@ int32 uart_bfgx_close_cmd(void)
     /*下发BFGIN shutdown命令*/
     PS_PRINT_INFO("uart shutdown BCPU\n");
 
-    ps_uart_state_pre(ps_core_d->tty);
-    ps_tx_sys_cmd(ps_core_d, SYS_MSG, SYS_CFG_SHUTDOWN_SLP);
+    ps_uart_state_pre_etc(ps_core_d->tty);
+    ps_tx_sys_cmd_etc(ps_core_d, SYS_MSG, SYS_CFG_SHUTDOWN_SLP);
 
     ret = FAILURE;
     for(i=0;i<wait_close_times;i++)
     {
-        bwkup_gpio_val = board_get_bwkup_gpio_val();
+        bwkup_gpio_val = board_get_bwkup_gpio_val_etc();
         if(0 == bwkup_gpio_val)
         {
             ret = SUCCESS;
@@ -773,25 +779,31 @@ int32 uart_bfgx_close_cmd(void)
 
     if (FAILURE == ret)
     {
-        ps_uart_state_dump(ps_core_d->tty);
+        ps_uart_state_dump_etc(ps_core_d->tty);
     }
 
-    post_to_visit_node(ps_core_d);
+    post_to_visit_node_etc(ps_core_d);
 
     return ret;
 }
 
-int32 bfgx_open_cmd_send(uint32 subsys)
+int32 bfgx_open_cmd_send_etc(uint32 subsys)
 {
     uint64 timeleft;
     struct ps_core_s *ps_core_d = NULL;
     struct st_bfgx_data *pst_bfgx_data = NULL;
 
-    ps_get_core_reference(&ps_core_d);
+    ps_get_core_reference_etc(&ps_core_d);
     if (unlikely(NULL == ps_core_d))
     {
         PS_PRINT_ERR("ps_core_d is null\n");
         return -EINVAL;
+    }
+
+    /* 单红外dev不处理系统消息 */
+    if (g_b_ir_only_mode)
+    {
+        return SUCCESS;
     }
 
     if (subsys >= BFGX_BUTT)
@@ -802,10 +814,18 @@ int32 bfgx_open_cmd_send(uint32 subsys)
 
     if (BFGX_IR == subsys)
     {
-        ps_tx_sys_cmd(ps_core_d, SYS_MSG, g_bfgx_open_cmd[subsys]);
-        msleep(100);
+        ps_tx_sys_cmd_etc(ps_core_d, SYS_MSG, g_bfgx_open_cmd_etc[subsys]);
+        msleep(20);
         return 0;
     }
+
+#ifdef PLATFORM_DEBUG_ENABLE
+    if (!is_dfr_test_en(BFGX_POWEON_FAULT))
+    {
+        PS_PRINT_WARNING("[dfr test]:trigger powon fail\n");
+        return -EINVAL;
+    }
+#endif
 
     if (BFGX_GNSS == subsys)
     {
@@ -816,16 +836,20 @@ int32 bfgx_open_cmd_send(uint32 subsys)
     pst_bfgx_data = &ps_core_d->bfgx_info[subsys];
 
     INIT_COMPLETION(pst_bfgx_data->wait_opened);
-    ps_uart_state_pre(ps_core_d->tty);
-    ps_tx_sys_cmd(ps_core_d, SYS_MSG, g_bfgx_open_cmd[subsys]);
-    timeleft = wait_for_completion_timeout(&pst_bfgx_data->wait_opened, msecs_to_jiffies(g_bfgx_open_cmd_timeout[subsys]));
+    ps_uart_state_pre_etc(ps_core_d->tty);
+    ps_tx_sys_cmd_etc(ps_core_d, SYS_MSG, g_bfgx_open_cmd_etc[subsys]);
+    timeleft = wait_for_completion_timeout(&pst_bfgx_data->wait_opened, msecs_to_jiffies(g_bfgx_open_cmd_timeout_etc[subsys]));
     if (!timeleft)
     {
-        ps_uart_state_dump(ps_core_d->tty);
-        PS_PRINT_ERR("wait %s open ack timeout\n", g_bfgx_subsys_name[subsys]);
+        ps_uart_state_dump_etc(ps_core_d->tty);
+        PS_PRINT_ERR("wait %s open ack timeout\n", g_bfgx_subsys_name_etc[subsys]);
         if (BFGX_GNSS == subsys)
         {
-            CHR_EXCEPTION(CHR_GNSS_DRV(CHR_GNSS_DRV_EVENT_PLAT, CHR_PLAT_DRV_ERROR_OPEN_THREAD));
+            CHR_EXCEPTION_REPORT(CHR_PLATFORM_EXCEPTION_EVENTID, CHR_SYSTEM_GNSS, CHR_LAYER_DRV, CHR_GNSS_DRV_EVENT_PLAT, CHR_PLAT_DRV_ERROR_OPEN_THREAD);
+        }
+        else if (BFGX_BT == subsys)
+        {
+            CHR_EXCEPTION_REPORT(CHR_PLATFORM_EXCEPTION_EVENTID, CHR_SYSTEM_BT, CHR_LAYER_DRV, 0, CHR_PLAT_DRV_ERROR_OPEN_THREAD);
         }
         return -ETIMEDOUT;
     }
@@ -833,13 +857,13 @@ int32 bfgx_open_cmd_send(uint32 subsys)
     return 0;
 }
 
-int32 bfgx_close_cmd_send(uint32 subsys)
+int32 bfgx_close_cmd_send_etc(uint32 subsys)
 {
     uint64 timeleft;
     struct ps_core_s *ps_core_d = NULL;
     struct st_bfgx_data *pst_bfgx_data = NULL;
 
-    ps_get_core_reference(&ps_core_d);
+    ps_get_core_reference_etc(&ps_core_d);
     if (unlikely(NULL == ps_core_d))
     {
         PS_PRINT_ERR("ps_core_d is null\n");
@@ -852,31 +876,59 @@ int32 bfgx_close_cmd_send(uint32 subsys)
         return -EINVAL;
     }
 
+    /* 单红外dev不处理系统消息 */
+    if (g_b_ir_only_mode)
+    {
+        return SUCCESS;
+    }
+
+#ifdef PLATFORM_DEBUG_ENABLE
+    if (!is_dfr_test_en(BFGX_POWEOFF_FAULT))
+    {
+        PS_PRINT_WARNING("[dfr test]:trigger power off fail\n");
+        return -EINVAL;
+    }
+#endif
+
     if (BFGX_IR == subsys)
     {
-        ps_tx_sys_cmd(ps_core_d, SYS_MSG, g_bfgx_close_cmd[subsys]);
-        msleep(100);
+        ps_tx_sys_cmd_etc(ps_core_d, SYS_MSG, g_bfgx_close_cmd_etc[subsys]);
+        msleep(20);
         return 0;
     }
 
     pst_bfgx_data = &ps_core_d->bfgx_info[subsys];
 
     INIT_COMPLETION(pst_bfgx_data->wait_closed);
-    ps_uart_state_pre(ps_core_d->tty);
-    ps_tx_sys_cmd(ps_core_d, SYS_MSG, g_bfgx_close_cmd[subsys]);
-    timeleft = wait_for_completion_timeout(&pst_bfgx_data->wait_closed, msecs_to_jiffies(g_bfgx_close_cmd_timeout[subsys]));
+    ps_uart_state_pre_etc(ps_core_d->tty);
+    ps_tx_sys_cmd_etc(ps_core_d, SYS_MSG, g_bfgx_close_cmd_etc[subsys]);
+    timeleft = wait_for_completion_timeout(&pst_bfgx_data->wait_closed, msecs_to_jiffies(g_bfgx_close_cmd_timeout_etc[subsys]));
     if (!timeleft)
     {
-        ps_uart_state_dump(ps_core_d->tty);
-        PS_PRINT_ERR("wait %s close ack timeout\n", g_bfgx_subsys_name[subsys]);
+        ps_uart_state_dump_etc(ps_core_d->tty);
+        PS_PRINT_ERR("wait %s close ack timeout\n", g_bfgx_subsys_name_etc[subsys]);
         if (BFGX_GNSS == subsys)
         {
-            CHR_EXCEPTION(CHR_GNSS_DRV(CHR_GNSS_DRV_EVENT_PLAT, CHR_PLAT_DRV_ERROR_CLOSE_THREAD));
+            CHR_EXCEPTION_REPORT(CHR_PLATFORM_EXCEPTION_EVENTID, CHR_SYSTEM_GNSS, CHR_LAYER_DRV, CHR_GNSS_DRV_EVENT_PLAT, CHR_PLAT_DRV_ERROR_CLOSE_THREAD);
+        }
+        else if (BFGX_BT == subsys)
+        {
+            CHR_EXCEPTION_REPORT(CHR_PLATFORM_EXCEPTION_EVENTID, CHR_SYSTEM_BT, CHR_LAYER_DRV, 0, CHR_PLAT_DRV_ERROR_CLOSE_THREAD);
         }
         return -ETIMEDOUT;
     }
 
     return 0;
+}
+
+/*单红外模式打开其他子系统时调用,关闭红外*/
+int32 hw_ir_only_open_other_subsys(void)
+{
+    int32 ret = 0;
+
+    ret = hw_bfgx_close(BFGX_IR);
+    g_b_ir_only_mode = false;
+    return ret;
 }
 
 int32 hw_bfgx_open(uint32 subsys)
@@ -891,9 +943,9 @@ int32 hw_bfgx_open(uint32 subsys)
         return -EINVAL;
     }
 
-    PS_PRINT_INFO("open %s\n", g_bfgx_subsys_name[subsys]);
+    PS_PRINT_INFO("open %s\n", g_bfgx_subsys_name_etc[subsys]);
 
-    ps_get_core_reference(&ps_core_d);
+    ps_get_core_reference_etc(&ps_core_d);
     if (unlikely((NULL == ps_core_d)||(NULL == ps_core_d->ps_pm)
                  ||(NULL == ps_core_d->ps_pm->bfg_power_set)
                  ||(NULL == ps_core_d->ps_pm->pm_priv_data)))
@@ -906,49 +958,66 @@ int32 hw_bfgx_open(uint32 subsys)
 
     if (POWER_STATE_OPEN == atomic_read(&pst_bfgx_data->subsys_state))
     {
-        PS_PRINT_WARNING("%s has opened! It's Not necessary to send msg to device\n", g_bfgx_subsys_name[subsys]);
+        PS_PRINT_WARNING("%s has opened! It's Not necessary to send msg to device\n", g_bfgx_subsys_name_etc[subsys]);
         return BFGX_POWER_SUCCESS;
     }
 
-    if (BFGX_POWER_SUCCESS != alloc_seperted_rx_buf(subsys, g_bfgx_rx_max_frame[subsys], VMALLOC))
+    if (BFGX_POWER_SUCCESS != alloc_seperted_rx_buf_etc(subsys, g_bfgx_rx_max_frame_etc[subsys], VMALLOC))
     {
         PS_PRINT_ERR("no mem allocate to read!\n");
         return -ENOMEM;
     }
 
+    /*当单红外模式打开其他子系统时，需要关闭单红外才能其他子系统正常上电*/
+    if (g_b_ir_only_mode && BFGX_IR != subsys)
+    {
+        if (hw_ir_only_open_other_subsys() != BFGX_POWER_SUCCESS)
+        {
+            PS_PRINT_ERR("ir only mode,but close ir only mode fail!\n");
+            free_seperted_rx_buf_etc(subsys, VMALLOC);
+            return -ENOMEM;
+        }
+    }
+
     error = ps_core_d->ps_pm->bfg_power_set(subsys, BFG_POWER_GPIO_UP);
     if (BFGX_POWER_SUCCESS != error)
     {
-        PS_PRINT_ERR("set %s power on err! error = %d\n", g_bfgx_subsys_name[subsys], error);
+        PS_PRINT_ERR("set %s power on err! error = %d\n", g_bfgx_subsys_name_etc[subsys], error);
         goto bfgx_power_on_fail;
     }
 
-    if (BFGX_POWER_SUCCESS != prepare_to_visit_node(ps_core_d))
+    if (BFGX_POWER_SUCCESS != prepare_to_visit_node_etc(ps_core_d))
     {
         PS_PRINT_ERR("prepare work FAIL\n");
         error = BFGX_POWER_WAKEUP_FAIL;
         goto bfgx_wakeup_fail;
     }
 
-    if (BFGX_POWER_SUCCESS != bfgx_open_cmd_send(subsys))
+    if (BFGX_POWER_SUCCESS != bfgx_open_cmd_send_etc(subsys))
     {
         PS_PRINT_ERR("bfgx open cmd fail\n");
         error = BFGX_POWER_OPEN_CMD_FAIL;
         goto bfgx_open_cmd_fail;
     }
 
-    mod_timer(&ps_core_d->ps_pm->pm_priv_data->bfg_timer, jiffies + (BT_SLEEP_TIME * HZ/1000));
+    /* 单红外没有低功耗 */
+    if (!g_b_ir_only_mode)
+    {
+        mod_timer(&ps_core_d->ps_pm->pm_priv_data->bfg_timer, jiffies + (BT_SLEEP_TIME * HZ/1000));
+        ps_core_d->ps_pm->pm_priv_data->bfg_timer_mod_cnt++;
+    }
+
     atomic_set(&pst_bfgx_data->subsys_state, POWER_STATE_OPEN);
-    post_to_visit_node(ps_core_d);
+    post_to_visit_node_etc(ps_core_d);
 
     return BFGX_POWER_SUCCESS;
 
 bfgx_open_cmd_fail:
-    post_to_visit_node(ps_core_d);
+    post_to_visit_node_etc(ps_core_d);
 bfgx_wakeup_fail:
 bfgx_power_on_fail:
-    free_seperted_rx_buf(subsys, VMALLOC);
-    bfgx_open_fail_process(subsys, error);
+    free_seperted_rx_buf_etc(subsys, VMALLOC);
+    bfgx_open_fail_process_etc(subsys, error);
     return BFGX_POWER_FAILED;
 }
 
@@ -957,7 +1026,7 @@ int32 hw_bfgx_close(uint32 subsys)
     struct ps_core_s *ps_core_d = NULL;
     struct st_bfgx_data *pst_bfgx_data = NULL;
     int32  ret = 0;
-    struct pm_drv_data  *pm_data = pm_get_drvdata();
+    struct pm_drv_data  *pm_data = pm_get_drvdata_etc();
 
     if (subsys >= BFGX_BUTT)
     {
@@ -965,9 +1034,9 @@ int32 hw_bfgx_close(uint32 subsys)
         return -EINVAL;
     }
 
-    PS_PRINT_INFO("close %s\n", g_bfgx_subsys_name[subsys]);
+    PS_PRINT_INFO("close %s\n", g_bfgx_subsys_name_etc[subsys]);
 
-    ps_get_core_reference(&ps_core_d);
+    ps_get_core_reference_etc(&ps_core_d);
     if (unlikely((NULL == ps_core_d)||(NULL == ps_core_d->ps_pm)))
     {
         PS_PRINT_ERR("ps_core_d is NULL\n");
@@ -975,16 +1044,22 @@ int32 hw_bfgx_close(uint32 subsys)
     }
 
     pst_bfgx_data = &ps_core_d->bfgx_info[subsys];
+
+    if (POWER_STATE_SHUTDOWN== atomic_read(&pst_bfgx_data->subsys_state))
+    {
+        PS_PRINT_WARNING("%s has closed! It's Not necessary to send msg to device\n", g_bfgx_subsys_name_etc[subsys]);
+        return BFGX_POWER_SUCCESS;
+    }
     wake_up_interruptible(&pst_bfgx_data->rx_wait);
 
-    ret = prepare_to_visit_node(ps_core_d);
+    ret = prepare_to_visit_node_etc(ps_core_d);
     if (ret < 0)
     {
         /*唤醒失败，bfgx close时的唤醒失败不进行DFR恢复*/
         PS_PRINT_ERR("prepare work FAIL\n");
     }
 
-    ret = bfgx_close_cmd_send(subsys);
+    ret = bfgx_close_cmd_send_etc(subsys);
     if (ret < 0)
     {
         /*发送close命令失败，不进行DFR，继续进行下电流程，DFR恢复延迟到下次open时或者其他业务运行时进行*/
@@ -992,22 +1067,27 @@ int32 hw_bfgx_close(uint32 subsys)
     }
 
     atomic_set(&pst_bfgx_data->subsys_state, POWER_STATE_SHUTDOWN);
-    free_seperted_rx_buf(subsys, VMALLOC);
-    ps_kfree_skb(ps_core_d, g_bfgx_rx_queue[subsys]);
+    free_seperted_rx_buf_etc(subsys, VMALLOC);
+    ps_kfree_skb_etc(ps_core_d, g_bfgx_rx_queue_etc[subsys]);
 
-    if(bfgx_other_subsys_all_shutdown(BFGX_GNSS))
+    ps_core_d->rx_pkt_num[subsys] = 0;
+    ps_core_d->tx_pkt_num[subsys] = 0;
+
+    if(bfgx_other_subsys_all_shutdown_etc(BFGX_GNSS))
     {
         del_timer_sync(&pm_data->bfg_timer);
+        pm_data->bfg_timer_mod_cnt = 0;
+        pm_data->bfg_timer_mod_cnt_pre = 0;
     }
 
     ret = ps_core_d->ps_pm->bfg_power_set(subsys, BFG_POWER_GPIO_DOWN);
     if (ret)
     {
         /*下电失败，不进行DFR，DFR恢复延迟到下次open时或者其他业务运行时进行*/
-        PS_PRINT_ERR("set %s power off err!ret = %d", g_bfgx_subsys_name[subsys], ret);
+        PS_PRINT_ERR("set %s power off err!ret = %d", g_bfgx_subsys_name_etc[subsys], ret);
     }
 
-    post_to_visit_node(ps_core_d);
+    post_to_visit_node_etc(ps_core_d);
 
     return 0;
 }
@@ -1032,7 +1112,7 @@ int32 hw_bfgx_close(uint32 subsys)
 STATIC int32 hw_bt_open(struct inode *inode, struct file *filp)
 {
     int32  ret = BFGX_POWER_SUCCESS;
-    struct pm_drv_data *pm_data = pm_get_drvdata();
+    struct pm_drv_data *pm_data = pm_get_drvdata_etc();
 
     if (NULL == pm_data)
     {
@@ -1079,14 +1159,14 @@ STATIC ssize_t hw_bt_read(struct file *filp, int8 __user *buf,
 
     PS_PRINT_FUNCTION_NAME;
 
-    ps_get_core_reference(&ps_core_d);
+    ps_get_core_reference_etc(&ps_core_d);
     if (unlikely((NULL == ps_core_d)||(NULL == buf)||(NULL == filp)))
     {
         PS_PRINT_ERR("ps_core_d is NULL\n");
         return -EINVAL;
     }
 
-    if (NULL == (skb = ps_skb_dequeue(ps_core_d, RX_BT_QUEUE)))
+    if (NULL == (skb = ps_skb_dequeue_etc(ps_core_d, RX_BT_QUEUE)))
     {
         PS_PRINT_WARNING("bt read skb queue is null!\n");
         return 0;
@@ -1097,7 +1177,7 @@ STATIC ssize_t hw_bt_read(struct file *filp, int8 __user *buf,
     if (copy_to_user(buf, skb->data, count1))
     {
         PS_PRINT_ERR("copy_to_user is err!\n");
-        ps_restore_skbqueue(ps_core_d, skb, RX_BT_QUEUE);
+        ps_restore_skbqueue_etc(ps_core_d, skb, RX_BT_QUEUE);
         return -EFAULT;
     }
 
@@ -1111,7 +1191,7 @@ STATIC ssize_t hw_bt_read(struct file *filp, int8 __user *buf,
     }
     else
     {   /* if don,t read over; restore to skb queue */
-        ps_restore_skbqueue(ps_core_d, skb, RX_BT_QUEUE);
+        ps_restore_skbqueue_etc(ps_core_d, skb, RX_BT_QUEUE);
     }
 
     return count1;
@@ -1143,18 +1223,18 @@ STATIC ssize_t hw_bt_write(struct file *filp, const int8 __user *buf, size_t cou
 
     PS_PRINT_FUNCTION_NAME;
 
-    ps_get_core_reference(&ps_core_d);
+    ps_get_core_reference_etc(&ps_core_d);
     if (unlikely((NULL == ps_core_d)||(NULL == buf)||(NULL == filp)||(NULL == ps_core_d->ps_pm)))
     {
         PS_PRINT_ERR("ps_core_d is NULL\n");
-        g_st_bt_data_combination.len = 0;
+        g_st_bt_data_combination_etc.len = 0;
         return -EINVAL;
     }
 
     if (count > BT_TX_MAX_FRAME)
     {
         PS_PRINT_ERR("bt skb len is too large!\n");
-        g_st_bt_data_combination.len = 0;
+        g_st_bt_data_combination_etc.len = 0;
         return -EINVAL;
     }
 
@@ -1162,8 +1242,8 @@ STATIC ssize_t hw_bt_write(struct file *filp, const int8 __user *buf, size_t cou
     if (BT_TYPE_DATA_LEN == count)
     {
         get_user(type, puser);
-        g_st_bt_data_combination.type = type;
-        g_st_bt_data_combination.len  = count;
+        g_st_bt_data_combination_etc.type = type;
+        g_st_bt_data_combination_etc.len  = count;
 
         return count;
     }
@@ -1172,54 +1252,57 @@ STATIC ssize_t hw_bt_write(struct file *filp, const int8 __user *buf, size_t cou
     if (ps_core_d->tx_high_seq.qlen > TX_HIGH_QUE_MAX_NUM)
     {
         PS_PRINT_ERR("bt tx high seqlen large than MAXNUM\n");
-        g_st_bt_data_combination.len = 0;
+        g_st_bt_data_combination_etc.len = 0;
         return 0;
     }
 
-    ret = prepare_to_visit_node(ps_core_d);
+    ret = prepare_to_visit_node_etc(ps_core_d);
     if (ret < 0)
     {
         PS_PRINT_ERR("prepare work fail, bring to reset work\n");
-        g_st_bt_data_combination.len = 0;
-        plat_exception_handler(SUBSYS_BFGX, THREAD_BT, BFGX_WAKEUP_FAIL);
+        g_st_bt_data_combination_etc.len = 0;
+        plat_exception_handler_etc(SUBSYS_BFGX, THREAD_BT, BFGX_WAKEUP_FAIL);
         return ret;
     }
 
     /* modify expire time of uart idle timer */
     mod_timer(&ps_core_d->ps_pm->pm_priv_data->bfg_timer, jiffies + (BT_SLEEP_TIME * HZ/1000));
+    ps_core_d->ps_pm->pm_priv_data->bfg_timer_mod_cnt++;
 
-    total_len = count + g_st_bt_data_combination.len + sizeof(struct ps_packet_head) + sizeof(struct ps_packet_end);
+    total_len = count + g_st_bt_data_combination_etc.len + sizeof(struct ps_packet_head) + sizeof(struct ps_packet_end);
 
-    skb  = ps_alloc_skb(total_len);
+    skb  = ps_alloc_skb_etc(total_len);
     if (NULL == skb)
     {
         PS_PRINT_ERR("ps alloc skb mem fail\n");
-        post_to_visit_node(ps_core_d);
-        g_st_bt_data_combination.len = 0;
+        post_to_visit_node_etc(ps_core_d);
+        g_st_bt_data_combination_etc.len = 0;
         return -EFAULT;
     }
 
-    if (copy_from_user(&skb->data[sizeof(struct ps_packet_head) + g_st_bt_data_combination.len], buf, count))
+    if (copy_from_user(&skb->data[sizeof(struct ps_packet_head) + g_st_bt_data_combination_etc.len], buf, count))
     {
         PS_PRINT_ERR("copy_from_user from bt is err\n");
         kfree_skb(skb);
-        post_to_visit_node(ps_core_d);
-        g_st_bt_data_combination.len = 0;
+        post_to_visit_node_etc(ps_core_d);
+        g_st_bt_data_combination_etc.len = 0;
         return -EFAULT;
     }
 
-    if (BT_TYPE_DATA_LEN == g_st_bt_data_combination.len)
+    if (BT_TYPE_DATA_LEN == g_st_bt_data_combination_etc.len)
     {
-        skb->data[sizeof(struct ps_packet_head)] = g_st_bt_data_combination.type;
+        skb->data[sizeof(struct ps_packet_head)] = g_st_bt_data_combination_etc.type;
     }
 
-    g_st_bt_data_combination.len = 0;
+    g_st_bt_data_combination_etc.len = 0;
 
-    ps_add_packet_head(skb->data, BT_MSG, total_len);
-    ps_skb_enqueue(ps_core_d, skb, TX_HIGH_QUEUE);
+    ps_add_packet_head_etc(skb->data, BT_MSG, total_len);
+    ps_skb_enqueue_etc(ps_core_d, skb, TX_HIGH_QUEUE);
     queue_work(ps_core_d->ps_tx_workqueue, &ps_core_d->tx_skb_work);
 
-    post_to_visit_node(ps_core_d);
+    ps_core_d->tx_pkt_num[BFGX_BT]++;
+
+    post_to_visit_node_etc(ps_core_d);
 
     return count;
 }
@@ -1247,7 +1330,7 @@ STATIC uint32 hw_bt_poll(struct file *filp, poll_table *wait)
 
     PS_PRINT_FUNCTION_NAME;
 
-    ps_get_core_reference(&ps_core_d);
+    ps_get_core_reference_etc(&ps_core_d);
     if (unlikely((NULL == ps_core_d)||(NULL == filp)))
     {
         PS_PRINT_ERR("ps_core_d is NULL\n");
@@ -1305,7 +1388,7 @@ STATIC int64 hw_bt_ioctl(struct file *file, uint32 cmd, uint64 arg)
 STATIC int32 hw_bt_release(struct inode *inode, struct file *filp)
 {
     int32  ret = 0;
-    struct pm_drv_data *pm_data = pm_get_drvdata();
+    struct pm_drv_data *pm_data = pm_get_drvdata_etc();
 
     if (NULL == pm_data)
     {
@@ -1331,7 +1414,7 @@ STATIC int32 hw_bt_release(struct inode *inode, struct file *filp)
 STATIC int32 hw_nfc_open(struct inode *inode, struct file *filp)
 {
     int32  ret = BFGX_POWER_SUCCESS;
-    struct pm_drv_data *pm_data = pm_get_drvdata();
+    struct pm_drv_data *pm_data = pm_get_drvdata_etc();
 
     if (NULL == pm_data)
     {
@@ -1363,14 +1446,14 @@ STATIC ssize_t hw_nfc_read(struct file *filp, int8 __user *buf,
 
     PS_PRINT_FUNCTION_NAME;
 
-    ps_get_core_reference(&ps_core_d);
+    ps_get_core_reference_etc(&ps_core_d);
     if (unlikely((NULL == ps_core_d)||(NULL == buf)||(NULL == filp)))
     {
         PS_PRINT_ERR("ps_core_d is NULL\n");
         return -EINVAL;
     }
 
-    if (NULL == (skb = ps_skb_dequeue(ps_core_d, RX_NFC_QUEUE)))
+    if (NULL == (skb = ps_skb_dequeue_etc(ps_core_d, RX_NFC_QUEUE)))
     {
         PS_PRINT_WARNING("nfc read skb queue is null!");
         return 0;
@@ -1380,7 +1463,7 @@ STATIC ssize_t hw_nfc_read(struct file *filp, int8 __user *buf,
     if (copy_to_user(buf, skb->data, count1))
     {
         PS_PRINT_ERR("copy_to_user is err!\n");
-        ps_restore_skbqueue(ps_core_d, skb, RX_NFC_QUEUE);
+        ps_restore_skbqueue_etc(ps_core_d, skb, RX_NFC_QUEUE);
         return -EFAULT;
     }
 
@@ -1391,7 +1474,7 @@ STATIC ssize_t hw_nfc_read(struct file *filp, int8 __user *buf,
     }
     else
     {
-        ps_restore_skbqueue(ps_core_d, skb, RX_NFC_QUEUE);
+        ps_restore_skbqueue_etc(ps_core_d, skb, RX_NFC_QUEUE);
     }
 
     return count1;
@@ -1405,7 +1488,7 @@ STATIC ssize_t hw_nfc_write(struct file *filp, const int8 __user *buf,
 
     PS_PRINT_FUNCTION_NAME;
 
-    ps_get_core_reference(&ps_core_d);
+    ps_get_core_reference_etc(&ps_core_d);
 
     if (unlikely((NULL == ps_core_d)||(NULL == buf)||(NULL == filp)||(NULL == ps_core_d->ps_pm)))
     {
@@ -1424,25 +1507,28 @@ STATIC ssize_t hw_nfc_write(struct file *filp, const int8 __user *buf,
         return 0;
     }
 
-    ret = prepare_to_visit_node(ps_core_d);
+    ret = prepare_to_visit_node_etc(ps_core_d);
     if (ret < 0)
     {
         PS_PRINT_ERR("prepare work fail, bring to reset work\n");
-        plat_exception_handler(SUBSYS_BFGX, THREAD_NFC, BFGX_WAKEUP_FAIL);
+        plat_exception_handler_etc(SUBSYS_BFGX, THREAD_NFC, BFGX_WAKEUP_FAIL);
         return ret;
     }
     /* modify expire time of uart idle timer */
     mod_timer(&ps_core_d->ps_pm->pm_priv_data->bfg_timer, jiffies + (BT_SLEEP_TIME * HZ/1000));
+    ps_core_d->ps_pm->pm_priv_data->bfg_timer_mod_cnt++;
 
     /* to divide up packet function and tx to tty work */
-    if (ps_tx_nfcbuf(ps_core_d, buf, count) < 0)
+    if (ps_tx_nfcbuf_etc(ps_core_d, buf, count) < 0)
     {
         PS_PRINT_ERR("hw_nfc_write is err\n");
-        post_to_visit_node(ps_core_d);
+        post_to_visit_node_etc(ps_core_d);
         return -EFAULT;
     }
 
-    post_to_visit_node(ps_core_d);
+    ps_core_d->tx_pkt_num[BFGX_NFC]++;
+
+    post_to_visit_node_etc(ps_core_d);
 
     PS_PRINT_DBG("NFC data write end\n");
 
@@ -1457,7 +1543,7 @@ STATIC uint32 hw_nfc_poll(struct file *filp, poll_table *wait)
 
     PS_PRINT_FUNCTION_NAME;
 
-    ps_get_core_reference(&ps_core_d);
+    ps_get_core_reference_etc(&ps_core_d);
     if (unlikely((NULL == ps_core_d)||(NULL == filp)))
     {
         PS_PRINT_ERR("ps_core_d is NULL\n");
@@ -1478,7 +1564,7 @@ STATIC uint32 hw_nfc_poll(struct file *filp, poll_table *wait)
 STATIC int32 hw_nfc_release(struct inode *inode, struct file *filp)
 {
     int32  ret = 0;
-    struct pm_drv_data *pm_data = pm_get_drvdata();
+    struct pm_drv_data *pm_data = pm_get_drvdata_etc();
 
     if (NULL == pm_data)
     {
@@ -1519,7 +1605,7 @@ STATIC int32 hw_nfc_release(struct inode *inode, struct file *filp)
 STATIC int32 hw_ir_open(struct inode *inode, struct file *filp)
 {
     int32  ret = BFGX_POWER_SUCCESS;
-    struct pm_drv_data *pm_data = pm_get_drvdata();
+    struct pm_drv_data *pm_data = pm_get_drvdata_etc();
 
     if (NULL == pm_data)
     {
@@ -1534,6 +1620,13 @@ STATIC int32 hw_ir_open(struct inode *inode, struct file *filp)
     }
 
     mutex_lock(&pm_data->host_mutex);
+
+    /* judge ir only mode*/
+    if ((true == wlan_is_shutdown_etc()) && (true == bfgx_is_shutdown_etc())
+        && (HI1103_ASIC_PILOT == get_hi1103_asic_type()))
+    {
+        g_b_ir_only_mode = true;
+    }
 
     ret = hw_bfgx_open(BFGX_IR);
 
@@ -1566,14 +1659,14 @@ STATIC ssize_t hw_ir_read(struct file *filp, int8 __user *buf,
 
     PS_PRINT_FUNCTION_NAME;
 
-    ps_get_core_reference(&ps_core_d);
+    ps_get_core_reference_etc(&ps_core_d);
     if (unlikely((NULL == ps_core_d)||(NULL == buf)||(NULL == filp)))
     {
         PS_PRINT_ERR("ps_core_d is NULL\n");
         return -EINVAL;
     }
 
-    if (NULL == (skb = ps_skb_dequeue(ps_core_d, RX_IR_QUEUE)))
+    if (NULL == (skb = ps_skb_dequeue_etc(ps_core_d, RX_IR_QUEUE)))
     {
         PS_PRINT_DBG("ir read skb queue is null!\n");
         return 0;
@@ -1583,7 +1676,7 @@ STATIC ssize_t hw_ir_read(struct file *filp, int8 __user *buf,
     if (copy_to_user(buf, skb->data, ret_count))
     {
         PS_PRINT_ERR("copy_to_user is err!\n");
-        ps_restore_skbqueue(ps_core_d, skb, RX_IR_QUEUE);
+        ps_restore_skbqueue_etc(ps_core_d, skb, RX_IR_QUEUE);
         return -EFAULT;
     }
 
@@ -1595,7 +1688,7 @@ STATIC ssize_t hw_ir_read(struct file *filp, int8 __user *buf,
     }
     else
     {
-        ps_restore_skbqueue(ps_core_d, skb, RX_IR_QUEUE);
+        ps_restore_skbqueue_etc(ps_core_d, skb, RX_IR_QUEUE);
     }
 
     return ret_count;
@@ -1620,16 +1713,24 @@ STATIC ssize_t hw_ir_write(struct file *filp, const int8 __user *buf,
                                 size_t count, loff_t *f_pos)
 {
     struct ps_core_s *ps_core_d = NULL;
+    struct st_bfgx_data *pst_bfgx_data = NULL;
     int32 ret = 0;
 
     PS_PRINT_FUNCTION_NAME;
 
-    ps_get_core_reference(&ps_core_d);
+    ps_get_core_reference_etc(&ps_core_d);
 
     if (unlikely((NULL == ps_core_d)||(NULL == buf)||(NULL == filp)||(NULL == ps_core_d->ps_pm)))
     {
         PS_PRINT_ERR("ps_core_d is NULL\n");
         return -EINVAL;
+    }
+
+    pst_bfgx_data = &ps_core_d->bfgx_info[BFGX_IR];
+    if (POWER_STATE_SHUTDOWN == atomic_read(&pst_bfgx_data->subsys_state))
+    {
+        PS_PRINT_WARNING("IR has closed! It's Not necessary to send msg to device\n");
+        return 0;
     }
 
     if (count > IR_TX_MAX_FRAME)
@@ -1643,25 +1744,33 @@ STATIC ssize_t hw_ir_write(struct file *filp, const int8 __user *buf,
         return 0;
     }
 
-    ret = prepare_to_visit_node(ps_core_d);
+    ret = prepare_to_visit_node_etc(ps_core_d);
     if (ret < 0)
     {
         PS_PRINT_ERR("prepare work fail, bring to reset work\n");
-        plat_exception_handler(SUBSYS_BFGX, THREAD_IR, BFGX_WAKEUP_FAIL);
+        plat_exception_handler_etc(SUBSYS_BFGX, THREAD_IR, BFGX_WAKEUP_FAIL);
         return ret;
     }
-    /* modify expire time of uart idle timer */
-    mod_timer(&ps_core_d->ps_pm->pm_priv_data->bfg_timer, jiffies + (BT_SLEEP_TIME * HZ/1000));
+
+    if (!g_b_ir_only_mode)
+    {
+        /* modify expire time of uart idle timer */
+        mod_timer(&ps_core_d->ps_pm->pm_priv_data->bfg_timer, jiffies + (BT_SLEEP_TIME * HZ/1000));
+        ps_core_d->ps_pm->pm_priv_data->bfg_timer_mod_cnt++;
+    }
 
     /* to divide up packet function and tx to tty work */
-    if (ps_tx_irbuf(ps_core_d, buf, count) < 0)
+    if (ps_tx_irbuf_etc(ps_core_d, buf, count) < 0)
     {
         PS_PRINT_ERR("hw_ir_write is err\n");
-        post_to_visit_node(ps_core_d);
+        post_to_visit_node_etc(ps_core_d);
         return -EFAULT;
     }
 
-    post_to_visit_node(ps_core_d);
+    ps_core_d->tx_pkt_num[BFGX_IR]++;
+
+    post_to_visit_node_etc(ps_core_d);
+
     PS_PRINT_DBG("IR data write end\n");
 
     return count;
@@ -1685,7 +1794,7 @@ STATIC ssize_t hw_ir_write(struct file *filp, const int8 __user *buf,
 STATIC int32 hw_ir_release(struct inode *inode, struct file *filp)
 {
     int32  ret = 0;
-    struct pm_drv_data *pm_data = pm_get_drvdata();
+    struct pm_drv_data *pm_data = pm_get_drvdata_etc();
 
     if (NULL == pm_data)
     {
@@ -1702,6 +1811,7 @@ STATIC int32 hw_ir_release(struct inode *inode, struct file *filp)
     mutex_lock(&pm_data->host_mutex);
 
     ret = hw_bfgx_close(BFGX_IR);
+    g_b_ir_only_mode = false;
 
     mutex_unlock(&pm_data->host_mutex);
 
@@ -1729,7 +1839,7 @@ STATIC int32 hw_fm_open(struct inode *inode, struct file *filp)
 {
     int32  ret = BFGX_POWER_SUCCESS;
     struct ps_core_s *ps_core_d = NULL;
-    struct pm_drv_data *pm_data = pm_get_drvdata();
+    struct pm_drv_data *pm_data = pm_get_drvdata_etc();
 
     if (NULL == pm_data)
     {
@@ -1737,7 +1847,7 @@ STATIC int32 hw_fm_open(struct inode *inode, struct file *filp)
         return -EINVAL;
     }
 
-    ps_get_core_reference(&ps_core_d);
+    ps_get_core_reference_etc(&ps_core_d);
     if (unlikely((NULL == ps_core_d)||(NULL == inode)||(NULL == filp)))
     {
         PS_PRINT_ERR("%s param is error", __func__);
@@ -1780,7 +1890,7 @@ STATIC ssize_t hw_fm_read(struct file *filp, int8 __user *buf,
 
     PS_PRINT_FUNCTION_NAME;
 
-    ps_get_core_reference(&ps_core_d);
+    ps_get_core_reference_etc(&ps_core_d);
     if (unlikely((NULL == ps_core_d)||(NULL == buf)||(NULL == filp)))
     {
         PS_PRINT_ERR("ps_core_d is NULL\n");
@@ -1803,7 +1913,7 @@ STATIC ssize_t hw_fm_read(struct file *filp, int8 __user *buf,
         }
     }
 
-    if (NULL == (skb = ps_skb_dequeue(ps_core_d, RX_FM_QUEUE)))
+    if (NULL == (skb = ps_skb_dequeue_etc(ps_core_d, RX_FM_QUEUE)))
     {
         PS_PRINT_WARNING("fm read no data!\n");
         return -ETIMEDOUT;
@@ -1813,7 +1923,7 @@ STATIC ssize_t hw_fm_read(struct file *filp, int8 __user *buf,
     if (copy_to_user(buf, skb->data, count1))
     {
         PS_PRINT_ERR("copy_to_user is err!\n");
-        ps_restore_skbqueue(ps_core_d, skb, RX_FM_QUEUE);
+        ps_restore_skbqueue_etc(ps_core_d, skb, RX_FM_QUEUE);
         return -EFAULT;
     }
 
@@ -1826,7 +1936,7 @@ STATIC ssize_t hw_fm_read(struct file *filp, int8 __user *buf,
     }
     else
     {   /* if don,t read over; restore to skb queue */
-        ps_restore_skbqueue(ps_core_d, skb, RX_FM_QUEUE);
+        ps_restore_skbqueue_etc(ps_core_d, skb, RX_FM_QUEUE);
     }
 
     return count1;
@@ -1855,7 +1965,7 @@ STATIC ssize_t hw_fm_write(struct file *filp, const int8 __user *buf,
 
     PS_PRINT_FUNCTION_NAME;
 
-    ps_get_core_reference(&ps_core_d);
+    ps_get_core_reference_etc(&ps_core_d);
     if (unlikely((NULL == ps_core_d)||(NULL == buf)||(NULL == filp)||(NULL == ps_core_d->ps_pm)))
     {
         PS_PRINT_ERR("ps_core_d is NULL\n");
@@ -1875,26 +1985,28 @@ STATIC ssize_t hw_fm_write(struct file *filp, const int8 __user *buf,
         return 0;
     }
 
-    ret = prepare_to_visit_node(ps_core_d);
+    ret = prepare_to_visit_node_etc(ps_core_d);
     if (ret < 0)
     {
         PS_PRINT_ERR("prepare work fail, bring to reset work\n");
-        plat_exception_handler(SUBSYS_BFGX, THREAD_FM, BFGX_WAKEUP_FAIL);
+        plat_exception_handler_etc(SUBSYS_BFGX, THREAD_FM, BFGX_WAKEUP_FAIL);
         return ret;
     }
 
     /* modify expire time of uart idle timer */
     mod_timer(&ps_core_d->ps_pm->pm_priv_data->bfg_timer, jiffies + (BT_SLEEP_TIME * HZ/1000));
+    ps_core_d->ps_pm->pm_priv_data->bfg_timer_mod_cnt++;
 
     /* to divide up packet function and tx to tty work */
-    if (ps_tx_fmbuf(ps_core_d, buf, count) < 0)
+    if (ps_tx_fmbuf_etc(ps_core_d, buf, count) < 0)
     {
         PS_PRINT_ERR("hw_fm_write is err\n");
-        post_to_visit_node(ps_core_d);
+        post_to_visit_node_etc(ps_core_d);
         return -EFAULT;
     }
+    ps_core_d->tx_pkt_num[BFGX_FM]++;
 
-    post_to_visit_node(ps_core_d);
+    post_to_visit_node_etc(ps_core_d);
 
     PS_PRINT_DBG("FM data write end\n");
 
@@ -1922,7 +2034,7 @@ STATIC int64 hw_fm_ioctl(struct file *file, uint32 cmd, uint64 arg)
 
     PS_PRINT_FUNCTION_NAME;
 
-    ps_get_core_reference(&ps_core_d);
+    ps_get_core_reference_etc(&ps_core_d);
     if (unlikely((NULL == ps_core_d)||(NULL == file)))
     {
         PS_PRINT_ERR("ps_core_d is NULL\n");
@@ -1963,7 +2075,7 @@ STATIC int64 hw_fm_ioctl(struct file *file, uint32 cmd, uint64 arg)
 STATIC int32 hw_fm_release(struct inode *inode, struct file *filp)
 {
     int32  ret = 0;
-    struct pm_drv_data *pm_data = pm_get_drvdata();
+    struct pm_drv_data *pm_data = pm_get_drvdata_etc();
 
     if (NULL == pm_data)
     {
@@ -1989,7 +2101,7 @@ STATIC int32 hw_fm_release(struct inode *inode, struct file *filp)
 /*device bfgx pm debug switch on/off*/
 void plat_pm_debug_switch(void)
 {
-    struct pm_drv_data *pm_data = pm_get_drvdata();
+    struct pm_drv_data *pm_data = pm_get_drvdata_etc();
     struct ps_core_s *ps_core_d = NULL;
     int32 ret;
 
@@ -2001,18 +2113,18 @@ void plat_pm_debug_switch(void)
 
     PS_PRINT_INFO("%s", __func__);
 
-    ps_get_core_reference(&ps_core_d);
+    ps_get_core_reference_etc(&ps_core_d);
 
-    ret = prepare_to_visit_node(ps_core_d);
+    ret = prepare_to_visit_node_etc(ps_core_d);
     if (ret < 0)
     {
         PS_PRINT_ERR("prepare work FAIL\n");
         return ;
     }
 
-    ps_tx_sys_cmd(ps_core_d, SYS_MSG, PL_PM_DEBUG);
+    ps_tx_sys_cmd_etc(ps_core_d, SYS_MSG, PL_PM_DEBUG);
 
-    post_to_visit_node(ps_core_d);
+    post_to_visit_node_etc(ps_core_d);
 
     return;
 
@@ -2037,7 +2149,7 @@ STATIC int32 hw_gnss_open(struct inode *inode, struct file *filp)
 {
     int32  ret = BFGX_POWER_SUCCESS;
     struct ps_core_s *ps_core_d = NULL;
-    struct pm_drv_data *pm_data = pm_get_drvdata();
+    struct pm_drv_data *pm_data = pm_get_drvdata_etc();
 
     if (NULL == pm_data)
     {
@@ -2045,7 +2157,7 @@ STATIC int32 hw_gnss_open(struct inode *inode, struct file *filp)
         return -EINVAL;
     }
 
-    ps_get_core_reference(&ps_core_d);
+    ps_get_core_reference_etc(&ps_core_d);
     if (unlikely((NULL == ps_core_d)||(NULL == inode)||(NULL == filp)))
     {
         PS_PRINT_ERR("%s param is error", __func__);
@@ -2078,7 +2190,7 @@ STATIC uint32 hw_gnss_poll(struct file *filp, poll_table *wait)
 
     PS_PRINT_DBG("%s\n", __func__);
 
-    ps_get_core_reference(&ps_core_d);
+    ps_get_core_reference_etc(&ps_core_d);
     if (unlikely((NULL == ps_core_d)||(NULL == filp)))
     {
         PS_PRINT_ERR("ps_core_d is NULL\n");
@@ -2125,7 +2237,7 @@ STATIC ssize_t hw_gnss_read(struct file *filp, int8 __user *buf, size_t count, l
 
     PS_PRINT_FUNCTION_NAME;
 
-    ps_get_core_reference(&ps_core_d);
+    ps_get_core_reference_etc(&ps_core_d);
     if (unlikely((NULL == ps_core_d)||(NULL == buf)||(NULL == filp)))
     {
         PS_PRINT_ERR("ps_core_d is NULL\n");
@@ -2137,7 +2249,7 @@ STATIC ssize_t hw_gnss_read(struct file *filp, int8 __user *buf, size_t count, l
     spin_lock(&ps_core_d->gnss_rx_lock);
     do
     {
-        if (NULL == (skb = ps_skb_dequeue(ps_core_d, RX_GNSS_QUEUE)))
+        if (NULL == (skb = ps_skb_dequeue_etc(ps_core_d, RX_GNSS_QUEUE)))
         {
             spin_unlock(&ps_core_d->gnss_rx_lock);
             if (0 != read_queue.qlen)
@@ -2239,10 +2351,10 @@ STATIC ssize_t hw_gnss_write(struct file *filp, const int8 __user *buf,
 {
     struct ps_core_s *ps_core_d = NULL;
     int32 ret = 0;
-    struct pm_drv_data *pm_data = pm_get_drvdata();
+    struct pm_drv_data *pm_data = pm_get_drvdata_etc();
     PS_PRINT_FUNCTION_NAME;
 
-    ps_get_core_reference(&ps_core_d);
+    ps_get_core_reference_etc(&ps_core_d);
     if (unlikely((NULL == ps_core_d)||(NULL == buf)||(NULL == filp)||(NULL == ps_core_d->ps_pm) ||(NULL ==  pm_data)))
     {
         PS_PRINT_ERR("ps_core_d is NULL\n");
@@ -2262,24 +2374,26 @@ STATIC ssize_t hw_gnss_write(struct file *filp, const int8 __user *buf,
     }
 
     atomic_set(&pm_data->gnss_sleep_flag, GNSS_NOT_AGREE_SLEEP);
-    ret = prepare_to_visit_node(ps_core_d);
+    ret = prepare_to_visit_node_etc(ps_core_d);
     if (ret < 0)
     {
         atomic_set(&pm_data->gnss_sleep_flag, GNSS_AGREE_SLEEP);
         PS_PRINT_ERR("prepare work fail, bring to reset work\n");
-        plat_exception_handler(SUBSYS_BFGX, THREAD_GNSS, BFGX_WAKEUP_FAIL);
+        plat_exception_handler_etc(SUBSYS_BFGX, THREAD_GNSS, BFGX_WAKEUP_FAIL);
         return ret;
     }
 
     /* to divide up packet function and tx to tty work */
-    if (ps_tx_gnssbuf(ps_core_d, buf, count) < 0)
+    if (ps_tx_gnssbuf_etc(ps_core_d, buf, count) < 0)
     {
         PS_PRINT_ERR("hw_gnss_write is err\n");
         atomic_set(&pm_data->gnss_sleep_flag, GNSS_AGREE_SLEEP);
         count = -EFAULT;
     }
 
-    post_to_visit_node(ps_core_d);
+    ps_core_d->tx_pkt_num[BFGX_GNSS]++;
+
+    post_to_visit_node_etc(ps_core_d);
 
     return count;
 }
@@ -2305,7 +2419,7 @@ STATIC int64 hw_gnss_ioctl(struct file *file, uint32 cmd, uint64 arg)
 
     PS_PRINT_FUNCTION_NAME;
 
-    ps_get_core_reference(&ps_core_d);
+    ps_get_core_reference_etc(&ps_core_d);
     if (unlikely((NULL == ps_core_d)||(NULL == file)))
     {
         PS_PRINT_ERR("ps_core_d is NULL\n");
@@ -2346,7 +2460,7 @@ STATIC int64 hw_gnss_ioctl(struct file *file, uint32 cmd, uint64 arg)
 STATIC int32 hw_gnss_release(struct inode *inode, struct file *filp)
 {
     int32  ret = 0;
-    struct pm_drv_data *pm_data = pm_get_drvdata();
+    struct pm_drv_data *pm_data = pm_get_drvdata_etc();
 
     if (NULL == pm_data)
     {
@@ -2370,30 +2484,30 @@ STATIC int32 hw_gnss_release(struct inode *inode, struct file *filp)
 
     return ret;
 }
+#ifndef HI110X_HAL_MEMDUMP_ENABLE
 
-
-void plat_exception_dump_file_rotate_init(void)
+void plat_exception_dump_file_rotate_init_etc(void)
 {
-    init_waitqueue_head(&dump_cmd_queue.dump_type_wait);
-    skb_queue_head_init(&dump_cmd_queue.dump_type_queue);
-    atomic_set(&dump_cmd_queue.rotate_finish_state, ROTATE_FINISH);
+    init_waitqueue_head(&dump_cmd_queue_etc.dump_type_wait);
+    skb_queue_head_init(&dump_cmd_queue_etc.dump_type_queue);
+    atomic_set(&dump_cmd_queue_etc.rotate_finish_state, ROTATE_FINISH);
     PS_PRINT_INFO("plat exception dump file rotate init success\n");
 }
 
 
-void plat_rotate_finish_set(void)
+void plat_rotate_finish_set_etc(void)
 {
-    atomic_set(&dump_cmd_queue.rotate_finish_state, ROTATE_FINISH);
+    atomic_set(&dump_cmd_queue_etc.rotate_finish_state, ROTATE_FINISH);
 }
 
 
-void plat_wait_last_rotate_finish(void)
+void plat_wait_last_rotate_finish_etc(void)
 {
     uint8 retry = 0;
 
 #define RETRY_TIME 3
 
-    while (ROTATE_FINISH != atomic_read(&dump_cmd_queue.rotate_finish_state))
+    while (ROTATE_FINISH != atomic_read(&dump_cmd_queue_etc.rotate_finish_state))
     {
         /*maximum app rotate time is 0.1s*/
         oal_udelay(100);
@@ -2404,10 +2518,10 @@ void plat_wait_last_rotate_finish(void)
         }
     }
 
-    atomic_set(&dump_cmd_queue.rotate_finish_state, ROTATE_NOT_FINISH);
+    atomic_set(&dump_cmd_queue_etc.rotate_finish_state, ROTATE_NOT_FINISH);
 }
 
-int32 plat_send_rotate_cmd_2_app(uint32 which_dump)
+int32 plat_send_rotate_cmd_2_app_etc(uint32 which_dump)
 {
     struct sk_buff  *skb =NULL;
 
@@ -2416,7 +2530,7 @@ int32 plat_send_rotate_cmd_2_app(uint32 which_dump)
         PS_PRINT_WARNING("which dump:%d error\n", which_dump);
         return -EINVAL;
     }
-    if (skb_queue_len(&dump_cmd_queue.dump_type_queue) > MEMDUMP_ROTATE_QUEUE_MAX_LEN)
+    if (skb_queue_len(&dump_cmd_queue_etc.dump_type_queue) > MEMDUMP_ROTATE_QUEUE_MAX_LEN)
     {
         PS_PRINT_WARNING("too many dump type in queue,dispose type:%d", which_dump);
         return -EINVAL;
@@ -2430,16 +2544,16 @@ int32 plat_send_rotate_cmd_2_app(uint32 which_dump)
     }
     skb_put(skb, sizeof(which_dump));
     *(uint32*)skb->data = which_dump;
-    skb_queue_tail(&dump_cmd_queue.dump_type_queue, skb);
+    skb_queue_tail(&dump_cmd_queue_etc.dump_type_queue, skb);
     PS_PRINT_INFO("save rotate cmd [%d] in queue\n", which_dump);
 
-    wake_up_interruptible(&dump_cmd_queue.dump_type_wait);
+    wake_up_interruptible(&dump_cmd_queue_etc.dump_type_wait);
 
     return 0;
 }
 
 
-int32 plat_dump_rotate_cmd_read(uint64 arg)
+int32 plat_dump_rotate_cmd_read_etc(uint64 arg)
 {
     uint32 __user  *puser = (uint32 __user *)arg;
 
@@ -2451,13 +2565,12 @@ int32 plat_dump_rotate_cmd_read(uint64 arg)
         return -EINVAL;
     }
 
-    if (wait_event_interruptible(dump_cmd_queue.dump_type_wait,  (skb_queue_len(&dump_cmd_queue.dump_type_queue)) > 0))
+    if (wait_event_interruptible(dump_cmd_queue_etc.dump_type_wait,  (skb_queue_len(&dump_cmd_queue_etc.dump_type_queue)) > 0))
     {
-        PS_PRINT_WARNING("wake up by interrupt\n");
         return -EINVAL;
     }
 
-    skb = skb_dequeue(&dump_cmd_queue.dump_type_queue);
+    skb = skb_dequeue(&dump_cmd_queue_etc.dump_type_queue);
     if (NULL == skb)
     {
         PS_PRINT_WARNING("skb is NULL\n");
@@ -2467,7 +2580,7 @@ int32 plat_dump_rotate_cmd_read(uint64 arg)
     if (copy_to_user(puser, skb->data, sizeof(uint32)))
     {
         PS_PRINT_WARNING("copy_to_user err!restore it, len=%d\n", (int32)sizeof(uint32));
-        skb_queue_head(&dump_cmd_queue.dump_type_queue, skb);
+        skb_queue_head(&dump_cmd_queue_etc.dump_type_queue, skb);
         return -EINVAL;
     }
 
@@ -2493,19 +2606,19 @@ STATIC int64 hw_debug_ioctl(struct file *file, uint32 cmd, uint64 arg)
     switch (cmd)
     {
         case PLAT_DFR_CFG_CMD:
-            plat_dfr_cfg_set(arg);
+            plat_dfr_cfg_set_etc(arg);
             break;
         case PLAT_BEATTIMER_TIMEOUT_RESET_CFG_CMD:
-            plat_beatTimer_timeOut_reset_cfg_set(arg);
+            plat_beatTimer_timeOut_reset_cfg_set_etc(arg);
             break;
         case PLAT_BFGX_CALI_CMD:
             bfgx_cali_data_init();
             break;
         case PLAT_DUMP_FILE_READ_CMD:
-            plat_dump_rotate_cmd_read(arg);
+            plat_dump_rotate_cmd_read_etc(arg);
             break;
         case PLAT_DUMP_ROTATE_FINISH_CMD:
-            plat_rotate_finish_set();
+            plat_rotate_finish_set_etc();
             break;
         default:
             PS_PRINT_WARNING("hw_debug_ioctl cmd = %d not find\n", cmd);
@@ -2514,7 +2627,220 @@ STATIC int64 hw_debug_ioctl(struct file *file, uint32 cmd, uint64 arg)
 
     return 0;
 }
+#else
+int32 plat_excp_dump_rotate_cmd_read_etc(uint64 arg, memdump_info_t* memdump_info)
+{
+    uint32 __user  *puser = (uint32 __user *)arg;
 
+    struct sk_buff  *skb =NULL;
+
+    if (!access_ok(VERIFY_WRITE, puser, (int32)sizeof(uint32)))
+    {
+        PS_PRINT_ERR("address can not write\n");
+        return -EINVAL;
+    }
+
+    if (wait_event_interruptible(memdump_info->dump_type_wait,  (skb_queue_len(&memdump_info->dump_type_queue)) > 0))
+    {
+        return -EINVAL;
+    }
+
+    skb = skb_dequeue(&memdump_info->dump_type_queue);
+    if (NULL == skb)
+    {
+        PS_PRINT_WARNING("skb is NULL\n");
+        return -EINVAL;
+    }
+
+    if (copy_to_user(puser, skb->data, sizeof(uint32)))
+    {
+        PS_PRINT_WARNING("copy_to_user err!restore it, len=%d,arg=%ld\n", (int32)sizeof(uint32),arg);
+        skb_queue_head(&memdump_info->dump_type_queue, skb);
+        return -EINVAL;
+    }
+
+    PS_PRINT_INFO("read rotate cmd [%d] from queue\n", *(uint32*)skb->data);
+
+    skb_pull(skb, skb->len);
+    kfree_skb(skb);
+
+    return 0;
+}
+int32 plat_bfgx_dump_rotate_cmd_read_etc(uint64 arg)
+{
+    return plat_excp_dump_rotate_cmd_read_etc(arg, &bcpu_memdump_cfg_etc);
+}
+int32 plat_wifi_dump_rotate_cmd_read_etc(uint64 arg)
+{
+    return plat_excp_dump_rotate_cmd_read_etc(arg, &wcpu_memdump_cfg_etc);
+}
+
+
+
+STATIC int64 hw_debug_ioctl(struct file *file, uint32 cmd, uint64 arg)
+{
+
+    if (NULL == file)
+    {
+        PS_PRINT_ERR("file is null\n");
+        return -EINVAL;
+    }
+
+    switch (cmd)
+    {
+        case PLAT_DFR_CFG_CMD:
+            plat_dfr_cfg_set_etc(arg);
+            break;
+        case PLAT_BEATTIMER_TIMEOUT_RESET_CFG_CMD:
+            plat_beatTimer_timeOut_reset_cfg_set_etc(arg);
+            break;
+        case PLAT_BFGX_CALI_CMD:
+            bfgx_cali_data_init();
+            break;
+        default:
+            PS_PRINT_WARNING("hw_debug_ioctl cmd = %d not find\n", cmd);
+            return -EINVAL;
+    }
+
+    return 0;
+}
+#endif
+int32 arm_timeout_submit(enum BFGX_THREAD_ENUM subs)
+{
+#define DFR_SUBMIT_LIMIT_TIME      (300) /*second*/
+    static unsigned long long dfr_submit_last_time = 0;
+    unsigned long long dfr_submit_current_time = 0;
+    unsigned long long dfr_submit_interval_time = 0;
+    struct timespec dfr_submit_time;
+
+    if (subs >= BFGX_THREAD_BOTTOM)
+    {
+        return -EINVAL;
+    }
+
+    PS_PRINT_INFO("[subs id:%d]arm timeout trigger", subs);
+
+    dfr_submit_time          = current_kernel_time();
+    dfr_submit_current_time  = dfr_submit_time.tv_sec;
+    dfr_submit_interval_time = dfr_submit_current_time - dfr_submit_last_time;
+
+    /*5分钟内最多触发一次*/
+    if((dfr_submit_interval_time > DFR_SUBMIT_LIMIT_TIME) || (0 == dfr_submit_last_time))
+    {
+        dfr_submit_last_time = dfr_submit_current_time;
+        plat_exception_handler_etc(SUBSYS_BFGX, subs, BFGX_ARP_TIMEOUT);
+        return 0;
+    }
+    else
+    {
+        PS_PRINT_ERR("[subs id:%d]arm timeout cnt max than limit", subs);
+        return -EAGAIN;
+    }
+}
+#ifdef HI110X_HAL_MEMDUMP_ENABLE
+STATIC int32 hw_excp_read(struct file *filp, int8 __user *buf,
+                                size_t count,loff_t *f_pos, memdump_info_t *memdump_t)
+{
+    struct sk_buff *skb = NULL;
+    uint16 count1;
+
+   // PS_PRINT_WARNING("hw_excp_read\n");
+
+    if (unlikely((NULL == buf)||(NULL == filp)))
+    {
+        PS_PRINT_ERR("ps_core_d is NULL\n");
+        return -EINVAL;
+    }
+    if (NULL == (skb = skb_dequeue(&memdump_t->quenue)))
+    {
+        //PS_PRINT_WARNING("hw_excp_read read skb queue is null!\n");
+        return 0;
+    }
+
+    /* read min value from skb->len or count */
+    count1 = min_t(size_t, skb->len, count);
+    if (copy_to_user(buf, skb->data, count1))
+    {
+        PS_PRINT_ERR("copy_to_user is err!\n");
+        skb_queue_head(&memdump_t->quenue, skb);
+        return -EFAULT;
+    }
+
+    /* have read count1 byte */
+    skb_pull(skb, count1);
+
+    /* if skb->len = 0: read is over */
+    if (0 == skb->len)
+    {   /* curr skb data have read to user */
+        kfree_skb(skb);
+    }
+    else
+    {   /* if don,t read over; restore to skb queue */
+        skb_queue_head(&memdump_t->quenue, skb);
+    }
+    return count1;
+
+}
+
+STATIC ssize_t hw_bfgexcp_read(struct file *filp, int8 __user *buf,
+                                size_t count,loff_t *f_pos)
+{
+    return hw_excp_read(filp, buf, count, f_pos, &bcpu_memdump_cfg_etc);
+}
+STATIC int64 hw_bfgexcp_ioctl(struct file *file, uint32 cmd, uint64 arg)
+{
+    int32 ret = 0;
+    if (NULL == file)
+    {
+        PS_PRINT_ERR("file is null\n");
+        return -EINVAL;
+    }
+    switch (cmd)
+    {
+        case PLAT_BFGX_DUMP_FILE_READ_CMD:
+            ret =  plat_bfgx_dump_rotate_cmd_read_etc(arg);
+            break;
+        case DFR_HAL_GNSS_CFG_CMD:
+            return arm_timeout_submit(THREAD_GNSS);
+        case DFR_HAL_BT_CFG_CMD:
+            return arm_timeout_submit(THREAD_BT);
+        case DFR_HAL_FM_CFG_CMD:
+            return arm_timeout_submit(THREAD_FM);
+        default:
+            PS_PRINT_WARNING("hw_debug_ioctl cmd = %d not find\n", cmd);
+            return -EINVAL;
+    }
+
+    return ret;
+}
+STATIC int64 hw_wifiexcp_ioctl(struct file *file, uint32 cmd, uint64 arg)
+{
+    int32 ret = 0;
+
+    if (NULL == file)
+    {
+        PS_PRINT_ERR("file is null\n");
+        return -EINVAL;
+    }
+    switch (cmd)
+    {
+        case PLAT_WIFI_DUMP_FILE_READ_CMD:
+            ret =  plat_wifi_dump_rotate_cmd_read_etc(arg);
+            break;
+        default:
+            PS_PRINT_WARNING("hw_debug_ioctl cmd = %d not find\n", cmd);
+            return -EINVAL;
+    }
+
+    return ret;
+}
+
+STATIC ssize_t hw_wifiexcp_read(struct file *filp, int8 __user *buf,
+                                size_t count,loff_t *f_pos)
+{
+    return hw_excp_read(filp, buf, count, f_pos, &wcpu_memdump_cfg_etc);
+}
+#endif
 /**********************************************************************/
 /**
  * Prototype    : hw_debug_open
@@ -2538,7 +2864,7 @@ STATIC int32 hw_debug_open(struct inode *inode, struct file *filp)
 
     PS_PRINT_INFO("%s", __func__);
 
-    ps_get_core_reference(&ps_core_d);
+    ps_get_core_reference_etc(&ps_core_d);
     if (unlikely((NULL == ps_core_d)||(NULL == inode)||(NULL == filp)))
     {
         PS_PRINT_ERR("ps_core_d is NULL\n");
@@ -2579,7 +2905,7 @@ STATIC ssize_t hw_debug_read(struct file *filp, int8 __user *buf,
 
     PS_PRINT_FUNCTION_NAME;
 
-    ps_get_core_reference(&ps_core_d);
+    ps_get_core_reference_etc(&ps_core_d);
     if (unlikely((NULL == ps_core_d)||(NULL == buf)||(NULL == filp)))
     {
         PS_PRINT_ERR("ps_core_d is NULL\n");
@@ -2604,7 +2930,7 @@ STATIC ssize_t hw_debug_read(struct file *filp, int8 __user *buf,
     }
 
     /* pull skb data from skb queue */
-    if (NULL == (skb = ps_skb_dequeue(ps_core_d, RX_DBG_QUEUE)))
+    if (NULL == (skb = ps_skb_dequeue_etc(ps_core_d, RX_DBG_QUEUE)))
     {
         PS_PRINT_DBG("dbg read no data!\n");
         return -ETIMEDOUT;
@@ -2614,7 +2940,7 @@ STATIC ssize_t hw_debug_read(struct file *filp, int8 __user *buf,
     if (copy_to_user(buf, skb->data, count1))
     {
         PS_PRINT_ERR("debug copy_to_user is err!\n");
-        ps_restore_skbqueue(ps_core_d, skb, RX_DBG_QUEUE);
+        ps_restore_skbqueue_etc(ps_core_d, skb, RX_DBG_QUEUE);
         return -EFAULT;
     }
 
@@ -2627,7 +2953,7 @@ STATIC ssize_t hw_debug_read(struct file *filp, int8 __user *buf,
     }
     else
     {   /* if don,t read over; restore to skb queue */
-        ps_restore_skbqueue(ps_core_d, skb, RX_DBG_QUEUE);
+        ps_restore_skbqueue_etc(ps_core_d, skb, RX_DBG_QUEUE);
     }
 
     return count1;
@@ -2659,7 +2985,7 @@ STATIC ssize_t hw_debug_write(struct file *filp, const int8 __user *buf,
 
     PS_PRINT_FUNCTION_NAME;
 
-    ps_get_core_reference(&ps_core_d);
+    ps_get_core_reference_etc(&ps_core_d);
     if (unlikely((NULL == ps_core_d)||(NULL == buf)||(NULL == filp)))
     {
         PS_PRINT_ERR("ps_core_d is NULL\n");
@@ -2684,13 +3010,13 @@ STATIC ssize_t hw_debug_write(struct file *filp, const int8 __user *buf,
         return 0;
     }
 
-    if (false == ps_chk_bfg_active(ps_core_d))
+    if (false == ps_chk_bfg_active_etc(ps_core_d))
     {
         PS_PRINT_ERR("bfg is closed, /dev/hwdebug cant't write!!!\n");
         return -EINVAL;
     }
 
-    ret = prepare_to_visit_node(ps_core_d);
+    ret = prepare_to_visit_node_etc(ps_core_d);
     if (ret < 0)
     {
         PS_PRINT_ERR("prepare work FAIL\n");
@@ -2698,14 +3024,15 @@ STATIC ssize_t hw_debug_write(struct file *filp, const int8 __user *buf,
     }
     /* modify expire time of uart idle timer */
     mod_timer(&ps_core_d->ps_pm->pm_priv_data->bfg_timer, jiffies + (BT_SLEEP_TIME * HZ/1000));
+    ps_core_d->ps_pm->pm_priv_data->bfg_timer_mod_cnt++;
 
     total_len = count + sizeof(struct ps_packet_head) + sizeof(struct ps_packet_end);
 
-    skb  = ps_alloc_skb(total_len);
+    skb  = ps_alloc_skb_etc(total_len);
     if (NULL == skb)
     {
         PS_PRINT_ERR("ps alloc skb mem fail\n");
-        post_to_visit_node(ps_core_d);
+        post_to_visit_node_etc(ps_core_d);
         return -EFAULT;
     }
 
@@ -2713,15 +3040,15 @@ STATIC ssize_t hw_debug_write(struct file *filp, const int8 __user *buf,
     {
         PS_PRINT_ERR("copy_from_user from dbg is err\n");
         kfree_skb(skb);
-        post_to_visit_node(ps_core_d);
+        post_to_visit_node_etc(ps_core_d);
         return -EFAULT;
     }
 
-    ps_add_packet_head(skb->data, OML_MSG, total_len);
-    ps_skb_enqueue(ps_core_d, skb, TX_LOW_QUEUE);
+    ps_add_packet_head_etc(skb->data, OML_MSG, total_len);
+    ps_skb_enqueue_etc(ps_core_d, skb, TX_LOW_QUEUE);
     queue_work(ps_core_d->ps_tx_workqueue, &ps_core_d->tx_skb_work);
 
-    post_to_visit_node(ps_core_d);
+    post_to_visit_node_etc(ps_core_d);
 
     return count;
 }
@@ -2747,7 +3074,7 @@ STATIC int32 hw_debug_release(struct inode *inode, struct file *filp)
 
     PS_PRINT_INFO("%s", __func__);
 
-    ps_get_core_reference(&ps_core_d);
+    ps_get_core_reference_etc(&ps_core_d);
     if (unlikely((NULL == ps_core_d)||(NULL == inode)||(NULL == filp)))
     {
         PS_PRINT_ERR("ps_core_d is NULL\n");
@@ -2763,15 +3090,61 @@ STATIC int32 hw_debug_release(struct inode *inode, struct file *filp)
 		atomic_set(&ps_core_d->dbg_func_has_open, 0);
 
 		/* kfree have rx dbg skb */
-		ps_kfree_skb(ps_core_d, RX_DBG_QUEUE);
+		ps_kfree_skb_etc(ps_core_d, RX_DBG_QUEUE);
 	}
 
     return 0;
 }
+#ifndef HI110X_HAL_MEMDUMP_ENABLE
+STATIC int32 hw_excp_open(struct inode *inode, struct file *filp)
+{
+    PS_PRINT_INFO("%s", __func__);
+    return 0;
+}
+STATIC int32 hw_excp_release(struct inode *inode, struct file *filp)
+{
+    PS_PRINT_INFO("%s", __func__);
+    return 0;
+}
+STATIC int64 hw_excp_ioctl(struct file *file, uint32 cmd, uint64 arg)
+{
+    struct st_exception_info *pst_exception_data = NULL;
+    if (NULL == file)
+    {
+        PS_PRINT_ERR("file is null\n");
+        return -EINVAL;
+    }
+    PS_PRINT_INFO("%s", __func__);
 
-//uart_loop_cfg g_st_uart_loop_test_cfg = {256, 100, 0, 0};
-uart_loop_cfg g_st_uart_loop_test_cfg = {256, 60000, 0, 0, 0};
-uart_loop_test_struct *g_pst_uart_loop_test_info = NULL;
+    get_exception_info_reference_etc(&pst_exception_data);
+    if (NULL == pst_exception_data)
+    {
+        PS_PRINT_ERR("get exception info reference is error\n");
+        return -EINVAL;
+    }
+
+    switch (cmd)
+    {
+        case DFR_HAL_GNSS_CFG_CMD:
+            return arm_timeout_submit(THREAD_GNSS);
+            break;
+        case DFR_HAL_BT_CFG_CMD:
+            return arm_timeout_submit(THREAD_BT);
+            break;
+        case DFR_HAL_FM_CFG_CMD:
+            return arm_timeout_submit(THREAD_FM);
+            break;
+        default:
+            PS_PRINT_WARNING("hw_excp_ioctl cmd = %d not find\n", cmd);
+            return -EINVAL;
+    }
+
+    return 0;
+}
+#endif
+//uart_loop_cfg g_st_uart_loop_test_cfg_etc = {256, 100, 0, 0};
+uart_loop_cfg g_st_uart_loop_test_cfg_etc = {256, 60000, 0, 0, 0};
+uart_loop_test_struct *g_pst_uart_loop_test_info_etc = NULL;
 #ifdef BFGX_UART_DOWNLOAD_SUPPORT
 uart_download_test_st g_st_uart_download_test;
 extern RINGBUF_STRU                    g_stringbuf;
@@ -2918,7 +3291,7 @@ int32 uart_download_test(uint8* baud, uint32 file_len)
         return -1;
     }
 
-    ps_get_core_reference(&ps_core_d);
+    ps_get_core_reference_etc(&ps_core_d);
     if (unlikely(NULL == ps_core_d))
     {
         PS_PRINT_ERR("ps_core_d is err\n");
@@ -2934,15 +3307,20 @@ int32 uart_download_test(uint8* baud, uint32 file_len)
     g_st_uart_download_test.send_status = -1;
 
     //open power
-    hi1103_board_power_on(BFGX_POWER);
+    l_ret = hi1103_board_power_on(BFGX_POWER);
+    if(l_ret)
+    {
+        PS_PRINT_ERR("hi1103_board_power_on bfgx failed=%d\n", l_ret);
+        return -1;
+    }
 
      //open tty
-    if (BFGX_POWER_SUCCESS != open_tty_drv(ps_core_d->pm_data))
+    if (BFGX_POWER_SUCCESS != open_tty_drv_etc(ps_core_d->pm_data))
     {
         PS_PRINT_ERR("open tty fail!\n");
         return -1;
     }
-    tty_recv = ps_recv_patch;
+    tty_recv_etc = ps_recv_patch;
     PS_PRINT_INFO("#@open uart succ");
 
     /*初始化回调函数变量*/
@@ -2983,42 +3361,42 @@ void uart_loop_test_tx_buf_init(uint8* puc_data, uint16 us_data_len)
     get_random_bytes(puc_data, us_data_len);
 }
 
-int32 uart_loop_set_pkt_count(uint32 count)
+int32 uart_loop_set_pkt_count_etc(uint32 count)
 {
     PS_PRINT_INFO("uart loop test, set pkt count to [%d]\n", count);
-    g_st_uart_loop_test_cfg.loop_count = count;
+    g_st_uart_loop_test_cfg_etc.loop_count = count;
 
     return 0;
 }
 
-int32 uart_loop_set_pkt_len(uint32 pkt_len)
+int32 uart_loop_set_pkt_len_etc(uint32 pkt_len)
 {
     PS_PRINT_INFO("uart loop test, set pkt len to [%d]\n", pkt_len);
-    g_st_uart_loop_test_cfg.pkt_len = pkt_len;
+    g_st_uart_loop_test_cfg_etc.pkt_len = pkt_len;
 
     return 0;
 }
 
-int32 alloc_uart_loop_test(void)
+int32 alloc_uart_loop_test_etc(void)
 {
     uint8 *uart_loop_tx_buf = NULL;
     uint8 *uart_loop_rx_buf = NULL;
     uint16 pkt_len = 0;
 
-    if (NULL == g_pst_uart_loop_test_info)
+    if (NULL == g_pst_uart_loop_test_info_etc)
     {
-        g_pst_uart_loop_test_info = (uart_loop_test_struct *)kzalloc(sizeof(uart_loop_test_struct), GFP_KERNEL);
-        if (NULL == g_pst_uart_loop_test_info)
+        g_pst_uart_loop_test_info_etc = (uart_loop_test_struct *)kzalloc(sizeof(uart_loop_test_struct), GFP_KERNEL);
+        if (NULL == g_pst_uart_loop_test_info_etc)
         {
-            PS_PRINT_ERR("malloc g_pst_uart_loop_test_info fail\n");
+            PS_PRINT_ERR("malloc g_pst_uart_loop_test_info_etc fail\n");
             goto malloc_test_info_fail;
         }
 
-        pkt_len = g_st_uart_loop_test_cfg.pkt_len;
+        pkt_len = g_st_uart_loop_test_cfg_etc.pkt_len;
         if (0 == pkt_len || pkt_len > UART_LOOP_MAX_PKT_LEN)
         {
             pkt_len = UART_LOOP_MAX_PKT_LEN;
-            g_st_uart_loop_test_cfg.pkt_len = UART_LOOP_MAX_PKT_LEN;
+            g_st_uart_loop_test_cfg_etc.pkt_len = UART_LOOP_MAX_PKT_LEN;
         }
 
         uart_loop_tx_buf = (uint8 *)kzalloc(pkt_len, GFP_KERNEL);
@@ -3037,19 +3415,19 @@ int32 alloc_uart_loop_test(void)
             goto malloc_rx_buf_fail;
         }
 
-        g_st_uart_loop_test_cfg.uart_loop_enable = 1;
-        g_st_uart_loop_test_cfg.uart_loop_tx_random_enable = 1;
+        g_st_uart_loop_test_cfg_etc.uart_loop_enable = 1;
+        g_st_uart_loop_test_cfg_etc.uart_loop_tx_random_enable = 1;
 
-        init_completion(&g_pst_uart_loop_test_info->set_done);
-        init_completion(&g_pst_uart_loop_test_info->loop_test_done);
+        init_completion(&g_pst_uart_loop_test_info_etc->set_done);
+        init_completion(&g_pst_uart_loop_test_info_etc->loop_test_done);
 
-        g_pst_uart_loop_test_info->test_cfg   = &g_st_uart_loop_test_cfg;
-        g_pst_uart_loop_test_info->tx_buf     = uart_loop_tx_buf;
-        g_pst_uart_loop_test_info->rx_buf     = uart_loop_rx_buf;
-        g_pst_uart_loop_test_info->rx_pkt_len = 0;
+        g_pst_uart_loop_test_info_etc->test_cfg   = &g_st_uart_loop_test_cfg_etc;
+        g_pst_uart_loop_test_info_etc->tx_buf     = uart_loop_tx_buf;
+        g_pst_uart_loop_test_info_etc->rx_buf     = uart_loop_rx_buf;
+        g_pst_uart_loop_test_info_etc->rx_pkt_len = 0;
 
         PS_PRINT_INFO("uart loop test, pkt len is [%d]\n", pkt_len);
-        PS_PRINT_INFO("uart loop test, loop count is [%d]\n", g_st_uart_loop_test_cfg.loop_count);
+        PS_PRINT_INFO("uart loop test, loop count is [%d]\n", g_st_uart_loop_test_cfg_etc.loop_count);
     }
 
     return 0;
@@ -3057,49 +3435,49 @@ int32 alloc_uart_loop_test(void)
 malloc_rx_buf_fail:
     kfree(uart_loop_tx_buf);
 malloc_tx_buf_fail:
-    kfree(g_pst_uart_loop_test_info);
-    g_pst_uart_loop_test_info = NULL;
+    kfree(g_pst_uart_loop_test_info_etc);
+    g_pst_uart_loop_test_info_etc = NULL;
 malloc_test_info_fail:
     return -ENOMEM;
 }
 
-void free_uart_loop_test(void)
+void free_uart_loop_test_etc(void)
 {
-    if (NULL == g_pst_uart_loop_test_info)
+    if (NULL == g_pst_uart_loop_test_info_etc)
     {
         return;
     }
     PS_PRINT_ERR("free uart loop test buf\n");
-    g_st_uart_loop_test_cfg.uart_loop_enable = 0;
-    kfree(g_pst_uart_loop_test_info->rx_buf);
-    kfree(g_pst_uart_loop_test_info->tx_buf);
-    kfree(g_pst_uart_loop_test_info);
-    g_pst_uart_loop_test_info = NULL;
+    g_st_uart_loop_test_cfg_etc.uart_loop_enable = 0;
+    kfree(g_pst_uart_loop_test_info_etc->rx_buf);
+    kfree(g_pst_uart_loop_test_info_etc->tx_buf);
+    kfree(g_pst_uart_loop_test_info_etc);
+    g_pst_uart_loop_test_info_etc = NULL;
 
     return;
 }
 
-int32 uart_loop_test_open(void)
+int32 uart_loop_test_open_etc(void)
 {
     struct ps_core_s *ps_core_d = NULL;
     int32  error = BFGX_POWER_SUCCESS;
 
     PS_PRINT_INFO("%s\n", __func__);
 
-    ps_get_core_reference(&ps_core_d);
+    ps_get_core_reference_etc(&ps_core_d);
     if (unlikely((NULL == ps_core_d)||(NULL == ps_core_d->ps_pm)||(NULL == ps_core_d->ps_pm->bfg_power_set)))
     {
         PS_PRINT_ERR("ps_core_d is err\n");
         return -EINVAL;
     }
 
-    if (ps_chk_bfg_active(ps_core_d))
+    if (ps_chk_bfg_active_etc(ps_core_d))
     {
         PS_PRINT_ERR("bfgx subsys must all close\n");
         return -EINVAL;
     }
 
-    if (BFGX_POWER_SUCCESS != alloc_uart_loop_test())
+    if (BFGX_POWER_SUCCESS != alloc_uart_loop_test_etc())
     {
         PS_PRINT_ERR("alloc mem for uart loop test fail!\n");
         goto alloc_mem_fail;
@@ -3112,39 +3490,39 @@ int32 uart_loop_test_open(void)
         goto power_on_fail;
     }
 
-    if (BFGX_POWER_SUCCESS != prepare_to_visit_node(ps_core_d))
+    if (BFGX_POWER_SUCCESS != prepare_to_visit_node_etc(ps_core_d))
     {
         PS_PRINT_ERR("uart loop test, prepare work fail\n");
         error = BFGX_POWER_WAKEUP_FAIL;
         goto wakeup_fail;
     }
 
-    post_to_visit_node(ps_core_d);
+    post_to_visit_node_etc(ps_core_d);
 
     return BFGX_POWER_SUCCESS;
 
 wakeup_fail:
     ps_core_d->ps_pm->bfg_power_set(BFGX_GNSS, BFG_POWER_GPIO_DOWN);
 power_on_fail:
-    free_uart_loop_test();
+    free_uart_loop_test_etc();
 alloc_mem_fail:
     return BFGX_POWER_FAILED;
 }
 
-int32 uart_loop_test_close(void)
+int32 uart_loop_test_close_etc(void)
 {
     struct ps_core_s *ps_core_d = NULL;
 
     PS_PRINT_INFO("%s", __func__);
 
-    ps_get_core_reference(&ps_core_d);
+    ps_get_core_reference_etc(&ps_core_d);
     if (unlikely((NULL == ps_core_d)||(NULL == ps_core_d->ps_pm)))
     {
         PS_PRINT_ERR("ps_core_d is NULL\n");
         return -EINVAL;
     }
 
-    if (0 != prepare_to_visit_node(ps_core_d))
+    if (0 != prepare_to_visit_node_etc(ps_core_d))
     {
         PS_PRINT_ERR("uart loop test, prepare work fail\n");
     }
@@ -3154,20 +3532,20 @@ int32 uart_loop_test_close(void)
         PS_PRINT_ERR("uart loop test, power off err!");
     }
 
-    free_uart_loop_test();
+    free_uart_loop_test_etc();
 
-    post_to_visit_node(ps_core_d);
+    post_to_visit_node_etc(ps_core_d);
 
     return 0;
 }
 
-int32 uart_loop_test_set(uint8 flag)
+int32 uart_loop_test_set_etc(uint8 flag)
 {
     uint64 timeleft;
     struct ps_core_s *ps_core_d = NULL;
     uint8 cmd;
 
-    ps_get_core_reference(&ps_core_d);
+    ps_get_core_reference_etc(&ps_core_d);
     if (unlikely(NULL == ps_core_d))
     {
         PS_PRINT_ERR("ps_core_d is null\n");
@@ -3183,13 +3561,13 @@ int32 uart_loop_test_set(uint8 flag)
         cmd = SYS_CFG_SET_UART_LOOP_FINISH;
     }
 
-    INIT_COMPLETION(g_pst_uart_loop_test_info->set_done);
-    ps_uart_state_pre(ps_core_d->tty);
-    ps_tx_sys_cmd(ps_core_d, SYS_MSG, cmd);
-    timeleft = wait_for_completion_timeout(&g_pst_uart_loop_test_info->set_done, msecs_to_jiffies(5000));
+    INIT_COMPLETION(g_pst_uart_loop_test_info_etc->set_done);
+    ps_uart_state_pre_etc(ps_core_d->tty);
+    ps_tx_sys_cmd_etc(ps_core_d, SYS_MSG, cmd);
+    timeleft = wait_for_completion_timeout(&g_pst_uart_loop_test_info_etc->set_done, msecs_to_jiffies(5000));
     if (!timeleft)
     {
-        ps_uart_state_dump(ps_core_d->tty);
+        ps_uart_state_dump_etc(ps_core_d->tty);
         PS_PRINT_ERR("wait set uart loop ack timeout\n");
         return -ETIMEDOUT;
     }
@@ -3197,7 +3575,7 @@ int32 uart_loop_test_set(uint8 flag)
     return 0;
 }
 
-int32 uart_loop_test_send_data(struct ps_core_s *ps_core_d, uint8 *buf, size_t count)
+int32 uart_loop_test_send_data_etc(struct ps_core_s *ps_core_d, uint8 *buf, size_t count)
 {
     struct sk_buff *skb;
     uint16 tx_skb_len;
@@ -3226,7 +3604,7 @@ int32 uart_loop_test_send_data(struct ps_core_s *ps_core_d, uint8 *buf, size_t c
         tx_skb_len = tx_gnss_len + sizeof(struct ps_packet_head);
         tx_skb_len = tx_skb_len + sizeof(struct ps_packet_end);
 
-        skb  = ps_alloc_skb(tx_skb_len);
+        skb  = ps_alloc_skb_etc(tx_skb_len);
         if (NULL == skb)
         {
             PS_PRINT_ERR("ps alloc skb mem fail\n");
@@ -3237,23 +3615,23 @@ int32 uart_loop_test_send_data(struct ps_core_s *ps_core_d, uint8 *buf, size_t c
         {
             if (false == start)
             {   /* this is a start gnss packet */
-                ps_add_packet_head(skb->data, GNSS_First_MSG, tx_skb_len);
+                ps_add_packet_head_etc(skb->data, GNSS_First_MSG, tx_skb_len);
                 start = true;
             }
             else
             {   /* this is a int gnss packet */
-                ps_add_packet_head(skb->data, GNSS_Common_MSG, tx_skb_len);
+                ps_add_packet_head_etc(skb->data, GNSS_Common_MSG, tx_skb_len);
             }
         }
         else
         {   /* this is the last gnss packet */
-            ps_add_packet_head(skb->data, GNSS_Last_MSG, tx_skb_len);
+            ps_add_packet_head_etc(skb->data, GNSS_Last_MSG, tx_skb_len);
         }
 
         memcpy(&skb->data[sizeof(struct ps_packet_head)], buf, tx_gnss_len);
 
         /* push the skb to skb queue */
-        ps_skb_enqueue(ps_core_d, skb, TX_LOW_QUEUE);
+        ps_skb_enqueue_etc(ps_core_d, skb, TX_LOW_QUEUE);
         queue_work(ps_core_d->ps_tx_workqueue, &ps_core_d->tx_skb_work);
 
         buf   = buf + tx_gnss_len;
@@ -3263,13 +3641,13 @@ int32 uart_loop_test_send_data(struct ps_core_s *ps_core_d, uint8 *buf, size_t c
     return 0;
 }
 
-int32 uart_loop_test_send_pkt(void)
+int32 uart_loop_test_send_pkt_etc(void)
 {
     uint64 timeleft;
     struct ps_core_s *ps_core_d = NULL;
 
-    ps_get_core_reference(&ps_core_d);
-    if (unlikely((NULL == ps_core_d)||(NULL == g_pst_uart_loop_test_info)||(NULL == g_pst_uart_loop_test_info->tx_buf)))
+    ps_get_core_reference_etc(&ps_core_d);
+    if (unlikely((NULL == ps_core_d)||(NULL == g_pst_uart_loop_test_info_etc)||(NULL == g_pst_uart_loop_test_info_etc->tx_buf)))
     {
         PS_PRINT_ERR("para is invalided\n");
         return -EFAULT;
@@ -3282,32 +3660,32 @@ int32 uart_loop_test_send_pkt(void)
         return 0;
     }
 
-    if (prepare_to_visit_node(ps_core_d) < 0)
+    if (prepare_to_visit_node_etc(ps_core_d) < 0)
     {
         PS_PRINT_ERR("prepare work fail\n");
         return -EFAULT;
     }
 
-    INIT_COMPLETION(g_pst_uart_loop_test_info->loop_test_done);
+    INIT_COMPLETION(g_pst_uart_loop_test_info_etc->loop_test_done);
 
     /* to divide up packet function and tx to tty work */
-    if (uart_loop_test_send_data(ps_core_d, g_pst_uart_loop_test_info->tx_buf, g_st_uart_loop_test_cfg.pkt_len) < 0)
+    if (uart_loop_test_send_data_etc(ps_core_d, g_pst_uart_loop_test_info_etc->tx_buf, g_st_uart_loop_test_cfg_etc.pkt_len) < 0)
     {
         PS_PRINT_ERR("uart loop test pkt send is err\n");
-        post_to_visit_node(ps_core_d);
+        post_to_visit_node_etc(ps_core_d);
         return -EFAULT;
     }
 
-    timeleft = wait_for_completion_timeout(&g_pst_uart_loop_test_info->loop_test_done, msecs_to_jiffies(5000));
+    timeleft = wait_for_completion_timeout(&g_pst_uart_loop_test_info_etc->loop_test_done, msecs_to_jiffies(5000));
     if (!timeleft)
     {
-        ps_uart_state_dump(ps_core_d->tty);
+        ps_uart_state_dump_etc(ps_core_d->tty);
         PS_PRINT_ERR("wait uart loop done timeout\n");
-        post_to_visit_node(ps_core_d);
+        post_to_visit_node_etc(ps_core_d);
         return -ETIMEDOUT;
     }
 
-    post_to_visit_node(ps_core_d);
+    post_to_visit_node_etc(ps_core_d);
 
     return 0;
 }
@@ -3327,46 +3705,46 @@ int32 uart_loop_test_data_check(uint8* puc_src, uint8* puc_dest, uint16 us_data_
     return true;
 }
 
-int32 uart_loop_test_recv_pkt(struct ps_core_s *ps_core_d, const uint8 *buf_ptr, uint16 pkt_len)
+int32 uart_loop_test_recv_pkt_etc(struct ps_core_s *ps_core_d, const uint8 *buf_ptr, uint16 pkt_len)
 {
     uint16  expect_pkt_len;
     uint8 * rx_buf;
     uint16  recvd_len;
 
-    if (unlikely((NULL == ps_core_d)||(NULL == g_pst_uart_loop_test_info)))
+    if (unlikely((NULL == ps_core_d)||(NULL == g_pst_uart_loop_test_info_etc)))
     {
         PS_PRINT_ERR("ps_core_d is NULL\n");
         return -EINVAL;
     }
 
-    expect_pkt_len = g_pst_uart_loop_test_info->test_cfg->pkt_len;
-    rx_buf         = g_pst_uart_loop_test_info->rx_buf;
-    recvd_len      = g_pst_uart_loop_test_info->rx_pkt_len;
+    expect_pkt_len = g_pst_uart_loop_test_info_etc->test_cfg->pkt_len;
+    rx_buf         = g_pst_uart_loop_test_info_etc->rx_buf;
+    recvd_len      = g_pst_uart_loop_test_info_etc->rx_pkt_len;
 
     if (recvd_len + pkt_len <= expect_pkt_len)
     {
         memcpy(&rx_buf[recvd_len], buf_ptr, pkt_len);
-        g_pst_uart_loop_test_info->rx_pkt_len += pkt_len;
+        g_pst_uart_loop_test_info_etc->rx_pkt_len += pkt_len;
     }
     else
     {
         PS_PRINT_ERR("pkt len err! pkt_len=[%d], recvd_len=[%d], max len=[%d]\n", pkt_len, recvd_len, expect_pkt_len);
     }
 
-    if (expect_pkt_len == g_pst_uart_loop_test_info->rx_pkt_len)
+    if (expect_pkt_len == g_pst_uart_loop_test_info_etc->rx_pkt_len)
     {
-        if (uart_loop_test_data_check(rx_buf, g_pst_uart_loop_test_info->tx_buf, expect_pkt_len))
+        if (uart_loop_test_data_check(rx_buf, g_pst_uart_loop_test_info_etc->tx_buf, expect_pkt_len))
         {
             PS_PRINT_INFO("uart loop recv pkt SUCC\n");
         }
-        g_pst_uart_loop_test_info->rx_pkt_len = 0;
-        complete(&g_pst_uart_loop_test_info->loop_test_done);
+        g_pst_uart_loop_test_info_etc->rx_pkt_len = 0;
+        complete(&g_pst_uart_loop_test_info_etc->loop_test_done);
     }
 
     return 0;
 }
 
-int32 uart_loop_test(void)
+int32 uart_loop_test_etc(void)
 {
     uint32 i, count;
     uint16 pkt_len;
@@ -3374,31 +3752,31 @@ int32 uart_loop_test(void)
     ktime_t start_time, end_time, trans_time;
     uint8* puc_buf;
 
-    if (uart_loop_test_open() < 0)
+    if (uart_loop_test_open_etc() < 0)
     {
         goto open_fail;
     }
 
-    if (uart_loop_test_set(UART_LOOP_SET_DEVICE_DATA_HANDLER) < 0)
+    if (uart_loop_test_set_etc(UART_LOOP_SET_DEVICE_DATA_HANDLER) < 0)
     {
         goto test_set_fail;
     }
 
-    count   = g_pst_uart_loop_test_info->test_cfg->loop_count;
-    pkt_len = g_pst_uart_loop_test_info->test_cfg->pkt_len;
+    count   = g_pst_uart_loop_test_info_etc->test_cfg->loop_count;
+    pkt_len = g_pst_uart_loop_test_info_etc->test_cfg->pkt_len;
     tx_total_len = ((unsigned long long)count) * ((unsigned long long)pkt_len);
-    puc_buf = g_pst_uart_loop_test_info->tx_buf;
+    puc_buf = g_pst_uart_loop_test_info_etc->tx_buf;
 
     for (i = 0; i < count; i++)
     {
-        if (g_pst_uart_loop_test_info->test_cfg->uart_loop_tx_random_enable)
+        if (g_pst_uart_loop_test_info_etc->test_cfg->uart_loop_tx_random_enable)
         {
             uart_loop_test_tx_buf_init(puc_buf, pkt_len); // 初始化tx_buf为随机数
         }
 
         start_time = ktime_get();
 
-        if (SUCCESS != uart_loop_test_send_pkt())
+        if (SUCCESS != uart_loop_test_send_pkt_etc())
         {
             PS_PRINT_ERR("uart loop test fail, i=[%d]\n", i);
             goto send_pkt_fail;
@@ -3409,12 +3787,12 @@ int32 uart_loop_test(void)
         total_time += (unsigned long long)ktime_to_us(trans_time);
     }
 
-    if (uart_loop_test_set(UART_LOOP_RESUME_DEVICE_DATA_HANDLER) < 0)
+    if (uart_loop_test_set_etc(UART_LOOP_RESUME_DEVICE_DATA_HANDLER) < 0)
     {
         PS_PRINT_ERR("uart loop test, resume device data handler failer\n");
     }
 
-    uart_loop_test_close();
+    uart_loop_test_close_etc();
 
     throughout = tx_total_len*1000000*10*2;
     do_div(throughout, total_time);
@@ -3433,16 +3811,16 @@ int32 uart_loop_test(void)
 
 send_pkt_fail:
 test_set_fail:
-    uart_loop_test_close();
+    uart_loop_test_close_etc();
 open_fail:
     return -FAILURE;
 }
 
-int conn_test_uart_loop(char *param)
+int conn_test_uart_loop_etc(char *param)
 {
-    return uart_loop_test();
+    return uart_loop_test_etc();
 }
-EXPORT_SYMBOL(conn_test_uart_loop);
+EXPORT_SYMBOL(conn_test_uart_loop_etc);
 
 /**********************************************************************/
 STATIC const struct file_operations hw_bt_fops = {
@@ -3502,7 +3880,26 @@ STATIC const struct file_operations hw_debug_fops = {
         .unlocked_ioctl = hw_debug_ioctl,
         .release        = hw_debug_release,
 };
+#ifdef HI110X_HAL_MEMDUMP_ENABLE
+STATIC const struct file_operations hw_bfgexcp_fops = {
+        .owner          = THIS_MODULE,
+        .read           = hw_bfgexcp_read,
+        .unlocked_ioctl = hw_bfgexcp_ioctl,
+};
 
+STATIC const struct file_operations hw_wifiexcp_fops = {
+        .owner          = THIS_MODULE,
+        .read           = hw_wifiexcp_read,
+        .unlocked_ioctl = hw_wifiexcp_ioctl,
+};
+#else
+STATIC const struct file_operations hw_excp_fops = {
+        .owner          = THIS_MODULE,
+        .open           = hw_excp_open,
+        .unlocked_ioctl = hw_excp_ioctl,
+        .release        = hw_excp_release,
+};
+#endif
 #ifdef HAVE_HISI_BT
 STATIC struct miscdevice hw_bt_device = {
         .minor  = MISC_DYNAMIC_MINOR,
@@ -3548,7 +3945,24 @@ STATIC struct miscdevice hw_debug_device = {
         .name   = "hwbfgdbg",
         .fops   = &hw_debug_fops,
 };
-
+#ifdef HI110X_HAL_MEMDUMP_ENABLE
+STATIC struct miscdevice hw_bfgexcp_device = {
+        .minor  = MISC_DYNAMIC_MINOR,
+        .name   = "hwbfgexcp",
+        .fops   = &hw_bfgexcp_fops,
+};
+STATIC struct miscdevice hw_wifiexcp_device = {
+        .minor  = MISC_DYNAMIC_MINOR,
+        .name   = "hwwifiexcp",
+        .fops   = &hw_wifiexcp_fops,
+};
+#else
+STATIC struct miscdevice hw_excp_device = {
+        .minor  = MISC_DYNAMIC_MINOR,
+        .name   = "hwexcp",
+        .fops   = &hw_excp_fops,
+};
+#endif
 static struct  hw_ps_plat_data   hisi_platform_data = {
     .dev_name           = "/dev/ttyAMA4",
     .flow_cntrl         = FLOW_CTRL_ENABLE,
@@ -3572,7 +3986,7 @@ static int plat_poweroff_notify_sys(struct notifier_block *this, unsigned long c
     int32  err;
 
 
-    ps_get_core_reference(&ps_core_d);
+    ps_get_core_reference_etc(&ps_core_d);
     if (unlikely(NULL == ps_core_d))
     {
         PS_PRINT_ERR("plat_poweroff_notify_sys get ps_core_d is NULL\n");
@@ -3604,17 +4018,18 @@ STATIC int32 ps_probe(struct platform_device *pdev)
     int32  err;
     BOARD_INFO * bd_info = NULL;
 
-    bd_info = get_hi110x_board_info();
+    bd_info = get_hi110x_board_info_etc();
     if (unlikely(NULL == bd_info))
     {
         PS_PRINT_ERR("board info is err\n");
         return -FAILURE;
     }
 
-    strncpy(hisi_platform_data.dev_name, bd_info->uart_port, strlen(bd_info->uart_port));
+    strncpy(hisi_platform_data.dev_name, bd_info->uart_port, sizeof(hisi_platform_data.dev_name) - 1);
+    hisi_platform_data.dev_name[sizeof(hisi_platform_data.dev_name) - 1] = '\0';
 
     /*FPGA版本支持2M，动态修改*/
-    if(!isAsic())
+    if(!isAsic_etc())
     {
         hisi_platform_data.baud_rate = LOW_FREQ_BAUD_RATE;
         g_default_baud_rate = LOW_FREQ_BAUD_RATE;
@@ -3623,7 +4038,7 @@ STATIC int32 ps_probe(struct platform_device *pdev)
     pdev->dev.platform_data = &hisi_platform_data;
     pdata = &hisi_platform_data;
 
-    hw_ps_device = pdev;
+    hw_ps_device_etc = pdev;
 
     ps_plat_d = kzalloc(sizeof(struct ps_plat_s), GFP_KERNEL);
     if (NULL == ps_plat_d)
@@ -3633,7 +4048,7 @@ STATIC int32 ps_probe(struct platform_device *pdev)
     }
     dev_set_drvdata(&pdev->dev, ps_plat_d);
 
-    err = ps_core_init(&ps_plat_d->core_data);
+    err = ps_core_init_etc(&ps_plat_d->core_data);
     if (0 != err)
     {
         PS_PRINT_ERR(" PS core init failed\n");
@@ -3649,18 +4064,25 @@ STATIC int32 ps_probe(struct platform_device *pdev)
     init_completion(&ps_plat_d->ldisc_installed);
     init_completion(&ps_plat_d->ldisc_reconfiged);
 
-    err = plat_bfgx_exception_rst_register(ps_plat_d);
+    err = plat_bfgx_exception_rst_register_etc(ps_plat_d);
     if (0 > err)
     {
         PS_PRINT_ERR("bfgx_exception_rst_register failed\n");
         goto err_exception_rst_reg;
     }
 
-    err = bfgx_user_ctrl_init();
+    err = bfgx_user_ctrl_init_etc();
     if (0 > err)
     {
-        PS_PRINT_ERR("bfgx_user_ctrl_init failed\n");
+        PS_PRINT_ERR("bfgx_user_ctrl_init_etc failed\n");
         goto err_user_ctrl_init;
+    }
+
+    err = bfgx_customize_init();
+    if (0 > err)
+    {
+        PS_PRINT_ERR("bfgx_customize_init failed\n");
+        goto err_bfgx_custmoize_exit;
     }
 
     /* copying platform data */
@@ -3669,7 +4091,7 @@ STATIC int32 ps_probe(struct platform_device *pdev)
     ps_plat_d->baud_rate  = pdata->baud_rate;
     PS_PRINT_INFO("sysfs entries created\n");
 
-    tty_recv = ps_core_recv;
+    tty_recv_etc = ps_core_recv_etc;
 
 #ifdef HAVE_HISI_BT
     err = misc_register(&hw_bt_device);
@@ -3728,11 +4150,40 @@ STATIC int32 ps_probe(struct platform_device *pdev)
         PS_PRINT_ERR("Failed to register debug inode\n");
         goto err_register_debug;
     }
+#ifdef HI110X_HAL_MEMDUMP_ENABLE
+    err = misc_register(&hw_bfgexcp_device);
+    if (0 != err)
+    {
+        PS_PRINT_ERR("Failed to register hw_bfgexcp_device inode\n");
+        goto err_register_bfgexcp;
+    }
+
+    err = misc_register(&hw_wifiexcp_device);
+    if (0 != err)
+    {
+        PS_PRINT_ERR("Failed to register hw_wifiexcp_device inode\n");
+        goto err_register_wifiexcp;
+    }
+#else
+    err = misc_register(&hw_excp_device);
+    if (0 != err)
+    {
+        PS_PRINT_ERR("Failed to register hw excp inode\n");
+        goto err_register_excp;
+    }
+#endif
 
     PS_PRINT_SUC("%s is success!\n", __func__);
 
     return 0;
-
+#ifdef HI110X_HAL_MEMDUMP_ENABLE
+err_register_wifiexcp:
+    misc_deregister(&hw_bfgexcp_device);
+err_register_bfgexcp:
+#else
+err_register_excp:
+#endif
+    misc_deregister(&hw_debug_device);
 err_register_debug:
 #ifdef HAVE_HISI_NFC
     misc_deregister(&hw_nfc_device);
@@ -3754,10 +4205,11 @@ err_register_fm:
     misc_deregister(&hw_bt_device);
 err_register_bt:
 #endif
-    bfgx_user_ctrl_exit();
+err_bfgx_custmoize_exit:
+    bfgx_user_ctrl_exit_etc();
 err_user_ctrl_init:
 err_exception_rst_reg:
-    ps_core_exit(ps_plat_d->core_data);
+    ps_core_exit_etc(ps_plat_d->core_data);
 err_core_init:
 	kfree(ps_plat_d);
 
@@ -3765,11 +4217,11 @@ err_core_init:
 }
 
 /**
- * Prototype    : ps_suspend
+ * Prototype    : ps_suspend_etc
  * Description  : called by kernel when kernel goto suspend
  * input        : pdev, state
- * output       : return 0 --> ps_suspend is ok
- *                return !0--> ps_suspend is false
+ * output       : return 0 --> ps_suspend_etc is ok
+ *                return !0--> ps_suspend_etc is false
  * Calls        :
  * Called By    :
  *
@@ -3779,7 +4231,7 @@ err_core_init:
  *     Modification : Created function
  *
  */
-int32 ps_suspend(struct platform_device *pdev, pm_message_t state)
+int32 ps_suspend_etc(struct platform_device *pdev, pm_message_t state)
 {
 #if 0
     struct hw_ps_plat_data  *pdata = pdev->dev.platform_data;
@@ -3795,11 +4247,11 @@ int32 ps_suspend(struct platform_device *pdev, pm_message_t state)
 }
 
 /**
- * Prototype    : ps_resume
+ * Prototype    : ps_resume_etc
  * Description  : called by kernel when kernel resume from suspend
  * input        : pdev
- * output       : return 0 --> ps_suspend is ok
- *                return !0--> ps_suspend is false
+ * output       : return 0 --> ps_suspend_etc is ok
+ *                return !0--> ps_suspend_etc is false
  * Calls        :
  * Called By    :
  *
@@ -3809,7 +4261,7 @@ int32 ps_suspend(struct platform_device *pdev, pm_message_t state)
  *     Modification : Created function
  *
  */
-int32 ps_resume(struct platform_device *pdev)
+int32 ps_resume_etc(struct platform_device *pdev)
 {
 #if 0
     struct hw_ps_plat_data  *pdata = pdev->dev.platform_data;
@@ -3827,8 +4279,8 @@ int32 ps_resume(struct platform_device *pdev)
  * Prototype    : ps_remove
  * Description  : called when user applation rmmod driver
  * input        : pdev
- * output       : return 0 --> ps_suspend is ok
- *                return !0--> ps_suspend is false
+ * output       : return 0 --> ps_suspend_etc is ok
+ *                return !0--> ps_suspend_etc is false
  * Calls        :
  * Called By    :
  *
@@ -3852,13 +4304,13 @@ STATIC int32 ps_remove(struct platform_device *pdev)
         PS_PRINT_ERR("ps_plat_d is null\n");
     }
 
-    bfgx_user_ctrl_exit();
+    bfgx_user_ctrl_exit_etc();
     PS_PRINT_INFO("sysfs user ctrl removed\n");
 
     if (NULL != ps_plat_d)
     {
         ps_plat_d->pm_pdev = NULL;
-        ps_core_exit(ps_plat_d->core_data);
+        ps_core_exit_etc(ps_plat_d->core_data);
     }
 
 #ifdef HAVE_HISI_BT
@@ -3908,8 +4360,8 @@ STATIC struct platform_driver ps_platform_driver = {
 #ifdef _PRE_CONFIG_USE_DTS
         .probe      = ps_probe,
         .remove     = ps_remove,
-        .suspend    = ps_suspend,
-        .resume     = ps_resume,
+        .suspend    = ps_suspend_etc,
+        .resume     = ps_resume_etc,
 #endif
         .driver     = {
             .name   = "hisi_bfgx",
@@ -3920,7 +4372,7 @@ STATIC struct platform_driver ps_platform_driver = {
         },
 };
 
-int32 hw_ps_init(void)
+int32 hw_ps_init_etc(void)
 {
     int32 ret;
 
@@ -3934,7 +4386,7 @@ int32 hw_ps_init(void)
     return ret;
 }
 
-void hw_ps_exit(void)
+void hw_ps_exit_etc(void)
 {
     platform_driver_unregister(&ps_platform_driver);
 }

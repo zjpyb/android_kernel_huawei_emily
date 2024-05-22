@@ -130,27 +130,27 @@ typedef struct tag_frw_event_queue_stru
 /*****************************************************************************
   10 函数声明
 *****************************************************************************/
-extern oal_uint32  frw_event_sched_init(frw_event_sched_queue_stru *pst_sched_queue);
-extern oal_uint32  frw_event_queue_init(
+extern oal_uint32  frw_event_sched_init_etc(frw_event_sched_queue_stru *pst_sched_queue);
+extern oal_uint32  frw_event_queue_init_etc(
                 frw_event_queue_stru               *pst_event_queue,
                 oal_uint8                           uc_weight,
                 frw_sched_policy_enum_uint8         en_policy,
                 frw_event_queue_state_enum_uint8    en_state,
                 oal_uint8                           uc_max_events);
-extern oal_void  frw_event_queue_destroy(frw_event_queue_stru *pst_event_queue);
-extern oal_void* frw_event_sched_pick_next_event_queue_wrr(frw_event_sched_queue_stru *pst_sched_queue);
-extern oal_uint32  frw_event_sched_deactivate_queue(
+extern oal_void  frw_event_queue_destroy_etc(frw_event_queue_stru *pst_event_queue);
+extern oal_void* frw_event_sched_pick_next_event_queue_wrr_etc(frw_event_sched_queue_stru *pst_sched_queue);
+extern oal_uint32  frw_event_sched_deactivate_queue_etc(
                 frw_event_sched_queue_stru         *pst_sched_queue,
                 frw_event_queue_stru               *pst_event_queue);
 
-extern oal_uint32  frw_event_sched_activate_queue(
+extern oal_uint32  frw_event_sched_activate_queue_etc(
                 frw_event_sched_queue_stru   *pst_sched_queue,
                 frw_event_queue_stru         *pst_event_queue);
 
-extern oal_void  frw_event_sched_pause_queue(
+extern oal_void  frw_event_sched_pause_queue_etc(
                 frw_event_sched_queue_stru   *pst_sched_queue,
                 frw_event_queue_stru         *pst_event_queue);
-extern oal_void  frw_event_sched_resume_queue(
+extern oal_void  frw_event_sched_resume_queue_etc(
                 frw_event_sched_queue_stru   *pst_sched_queue,
                 frw_event_queue_stru         *pst_event_queue);
 
@@ -195,7 +195,7 @@ OAL_STATIC OAL_INLINE oal_void* frw_event_schedule(frw_event_sched_queue_stru *p
     if (!oal_dlist_is_empty(&pst_queue->st_head))
     {
     	/* 从调度类中挑选下一个待处理的事件 */
-    	p_event = frw_event_sched_pick_next_event_queue_wrr(pst_queue);
+    	p_event = frw_event_sched_pick_next_event_queue_wrr_etc(pst_queue);
 
     	if (p_event)
     	{
@@ -209,7 +209,7 @@ OAL_STATIC OAL_INLINE oal_void* frw_event_schedule(frw_event_sched_queue_stru *p
     if (!oal_dlist_is_empty(&pst_queue->st_head))
     {
     	/* 从调度类中挑选下一个待处理的事件 */
-    	p_event = frw_event_sched_pick_next_event_queue_wrr(pst_queue);
+    	p_event = frw_event_sched_pick_next_event_queue_wrr_etc(pst_queue);
 
     	if (p_event)
     	{

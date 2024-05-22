@@ -122,17 +122,17 @@
 #endif
 
 #ifdef CONFIG_HW_VOWIFI
-#define CMD_GET_MODE	"GET MODE"
-#define CMD_SET_MODE	"SET MODE"
-#define CMD_GET_PERIOD	"GET PERIOD"
-#define CMD_SET_PERIOD	"SET PERIOD"
-#define CMD_GET_LOW_THRESHOLD	"GET LOW_THRESHOLD"
-#define CMD_SET_LOW_THRESHOLD	"SET LOW_THRESHOLD"
-#define CMD_GET_HIGH_THRESHOLD	"GET HIGH_THRESHOLD"
-#define CMD_SET_HIGH_THRESHOLD	"SET HIGH_THRESHOLD"
-#define CMD_GET_TRIGGER_COUNT 	"GET TRIGGER_COUNT"
-#define CMD_SET_TRIGGER_COUNT 	"SET TRIGGER_COUNT"
-#define VOWIFI_IS_SUPPORT   "VOWIFI_IS_SUPPORT"
+#define CMD_GET_MODE	"VOWIFI_DETECT GET MODE"
+#define CMD_SET_MODE	"VOWIFI_DETECT SET MODE"
+#define CMD_GET_PERIOD	"VOWIFI_DETECT GET PERIOD"
+#define CMD_SET_PERIOD	"VOWIFI_DETECT SET PERIOD"
+#define CMD_GET_LOW_THRESHOLD	"VOWIFI_DETECT GET LOW_THRESHOLD"
+#define CMD_SET_LOW_THRESHOLD	"VOWIFI_DETECT SET LOW_THRESHOLD"
+#define CMD_GET_HIGH_THRESHOLD	"VOWIFI_DETECT GET HIGH_THRESHOLD"
+#define CMD_SET_HIGH_THRESHOLD	"VOWIFI_DETECT SET HIGH_THRESHOLD"
+#define CMD_GET_TRIGGER_COUNT 	"VOWIFI_DETECT GET TRIGGER_COUNT"
+#define CMD_SET_TRIGGER_COUNT 	"VOWIFI_DETECT SET TRIGGER_COUNT"
+#define VOWIFI_IS_SUPPORT   "VOWIFI_DETECT VOWIFI_IS_SUPPORT"
 
 #define CMD_VOWIFI_MODE		"vowifi_mode"
 #define CMD_VOWIFI_PERIOD   "vowifi_rssi_period"
@@ -1571,7 +1571,7 @@ dev_wlc_ioctl(
 	ioc.buf = arg;
 	ioc.len = len;
 
-	strcpy(ifr.ifr_name, dev->name);
+	strncpy(ifr.ifr_name, dev->name, sizeof(ifr.ifr_name) - 1);
 	ifr.ifr_data = (caddr_t) &ioc;
 
 	fs = get_fs();
@@ -1743,7 +1743,11 @@ get_parameter_from_string(
                         break;
                         default:
                                 memcpy(dst, param_str_begin, parm_str_len);
-                                *((char *)dst + parm_str_len) = 0;
+                                if (parm_str_len == param_max_len) {
+                                         *((char *)dst + parm_str_len - 1) = 0;
+                                } else {
+                                         *((char *)dst + parm_str_len) = 0;
+                                }
                                 WL_ERROR((" written as a string:%s\n", (char *)dst));
                         break;
                 }
@@ -2182,7 +2186,7 @@ wl_iw_set_sar_enable(
        struct net_device *dev,
        int sar_enable)
 {
-       int error;
+       int error = -EINVAL;
 
        if (sar_enable == SAR_DISABLE) {
 		error = dev_wlc_intvar_set(dev, "sar_enable", 0);
@@ -2283,7 +2287,9 @@ wl_android_set_disassoc_roaming_bssid(struct net_device *dev, char *command, int
 }
 
 #endif
-
+#ifdef HW_SHARE_WIFI_FILTER_MANAGE
+bool g_force_stop_filter = false;
+#endif
 int wl_android_priv_cmd(struct net_device *net, struct ifreq *ifr, int cmd)
 {
 #define PRIVATE_COMMAND_MAX_LEN	8192
@@ -2294,9 +2300,7 @@ int wl_android_priv_cmd(struct net_device *net, struct ifreq *ifr, int cmd)
 	char *command = NULL;
 	int bytes_written = 0;
 	android_wifi_priv_cmd priv_cmd;
-#ifdef BRCM_RSDB
-	dhd_pub_t * dhd_pub = NULL;
-#endif
+	dhd_pub_t * dhd_pub = hw_get_dhd_pub(net);
 
 	net_os_wake_lock(net);
 #ifdef BCM_PATCH_CVE_2016_2475
@@ -2389,9 +2393,19 @@ int wl_android_priv_cmd(struct net_device *net, struct ifreq *ifr, int cmd)
 	}
 #ifdef PKT_FILTER_SUPPORT
 	else if (strnicmp(command, CMD_RXFILTER_START, strlen(CMD_RXFILTER_START)) == 0) {
+#ifdef HW_SHARE_WIFI_FILTER_MANAGE
+		g_force_stop_filter = false;
+		if (dhd_pub && dhd_pub->in_suspend)
+			dhd_dev_apf_enable_filter(net);
+#endif /* HW_SHARE_WIFI_FILTER_MANAGE */
 		bytes_written = net_os_enable_packet_filter(net, 1);
 	}
 	else if (strnicmp(command, CMD_RXFILTER_STOP, strlen(CMD_RXFILTER_STOP)) == 0) {
+#ifdef HW_SHARE_WIFI_FILTER_MANAGE
+		g_force_stop_filter = true;
+		if (dhd_pub && !dhd_pub->in_suspend)
+			dhd_dev_apf_enable_filter(net);
+#endif
 		bytes_written = net_os_enable_packet_filter(net, 0);
 	}
 	else if (strnicmp(command, CMD_RXFILTER_ADD, strlen(CMD_RXFILTER_ADD)) == 0) {
@@ -2412,7 +2426,9 @@ int wl_android_priv_cmd(struct net_device *net, struct ifreq *ifr, int cmd)
 	else if (strnicmp(command, CMD_BTCOEXMODE, strlen(CMD_BTCOEXMODE)) == 0) {
 #ifdef WL_CFG80211
 		void *dhdp = wl_cfg80211_get_dhdp();
-		bytes_written = wl_cfg80211_set_btcoex_dhcp(net, dhdp, command);
+		if (NULL != dhdp) {
+			bytes_written = wl_cfg80211_set_btcoex_dhcp(net, dhdp, command);
+		}
 #else
 #ifdef PKT_FILTER_SUPPORT
 		uint mode = *(command + strlen(CMD_BTCOEXMODE) + 1) - '0';

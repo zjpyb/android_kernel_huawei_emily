@@ -280,10 +280,10 @@ static void sim_pmu_hpd_write(struct hisi_sim_hotplug_info *info)
     hisi_pmic_reg_write(info->pmu_sim_deb_ctrl_address,     info->hpd_debounce_wait_time);
 
     // enable PMU, set 1.8v by default
-    hisi_pmic_reg_write(info->pmu_ldo11_onoff_eco_address,  info->pmu_ldo11_onoff_value);
-    hisi_pmic_reg_write(info->pmu_ldo11_vset_address,       info->pmu_ldo11_vset_value);
-    hisi_pmic_reg_write(info->pmu_ldo12_onoff_eco_address,  info->pmu_ldo12_onoff_value);
-    hisi_pmic_reg_write(info->pmu_ldo12_vset_address,       info->pmu_ldo12_vset_value);
+    //hisi_pmic_reg_write(info->pmu_ldo11_onoff_eco_address,  info->pmu_ldo11_onoff_value);
+    //hisi_pmic_reg_write(info->pmu_ldo11_vset_address,       info->pmu_ldo11_vset_value);
+    //hisi_pmic_reg_write(info->pmu_ldo12_onoff_eco_address,  info->pmu_ldo12_onoff_value);
+    //hisi_pmic_reg_write(info->pmu_ldo12_vset_address,       info->pmu_ldo12_vset_value);
 }
 
 static int sim_read_pmu_dts(struct hisi_sim_hotplug_info *info, struct device_node *np)

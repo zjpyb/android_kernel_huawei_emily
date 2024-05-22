@@ -134,7 +134,6 @@ const TAF_UINT16 gusAtSmsCmdNum = sizeof(gastAtSmsCmdTab)/sizeof(AT_SMS_CMD_TAB_
 
 AT_PAR_CMD_ELEMENT_STRU g_astAtExtendCmdTbl[] =
 {
-    /* Added by f62575 for AT Project, 2011-10-24, begin */
     /* PHONEBOOK */
     {AT_CMD_CPBS,
     At_SetCpbsPara,     AT_SET_PARA_TIME,   At_QryCpbsPara,  AT_QRY_PARA_TIME,  AT_TestCpbsPara, AT_SET_PARA_TIME,
@@ -160,13 +159,11 @@ AT_PAR_CMD_ELEMENT_STRU g_astAtExtendCmdTbl[] =
     AT_CME_INCORRECT_PARAMETERS, CMD_TBL_LIMITED_NULL,
     (TAF_UINT8*)"+CNUM",    TAF_NULL_PTR},
 
-     /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
     {AT_CMD_CPBF,
     At_SetCpbfPara,     AT_SET_PARA_TIME,   TAF_NULL_PTR,    AT_NOT_SET_TIME,   AT_TestCpbrPara, AT_SET_PARA_TIME,
     VOS_NULL_PTR,        AT_NOT_SET_TIME,
     AT_CME_INCORRECT_PARAMETERS, CMD_TBL_LIMITED_NULL,
     (TAF_UINT8*)"+CPBF",    (TAF_UINT8*)"(number),(text)"},
-     /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, end */
 
     /* USIM */
     {AT_CMD_CSIM,
@@ -212,14 +209,12 @@ AT_PAR_CMD_ELEMENT_STRU g_astAtExtendCmdTbl[] =
     (TAF_UINT8*)"+CRSM",  (TAF_UINT8*)"(0-255),(1-65535),(0-255),(0-255),(0-255),(cmd),(pathid)"},
 
     /* SMS CONFIG */
-    /* Added by 傅映君/f62575 for AT Project, SIM卡保护标志确认, 2011/11/15, begin */
     {AT_CMD_CSCS,
     At_SetCscsPara,     AT_NOT_SET_TIME, At_QryCscsPara,    AT_NOT_SET_TIME,    VOS_NULL_PTR, AT_NOT_SET_TIME,
     VOS_NULL_PTR,        AT_NOT_SET_TIME,
     AT_CME_INCORRECT_PARAMETERS,       CMD_TBL_LIMITED_NULL,
     (TAF_UINT8*)"+CSCS",    (TAF_UINT8*)"(\"IRA\",\"UCS2\",\"GSM\")"},
 
-    /* Added by 傅映君/f62575 for AT Project, SIM卡保护标志确认, 2011/11/15, end */
     {AT_CMD_CMEE,
     At_SetCmeePara,     AT_NOT_SET_TIME, At_QryCmeePara,    AT_NOT_SET_TIME,    VOS_NULL_PTR, AT_NOT_SET_TIME,
     VOS_NULL_PTR,        AT_NOT_SET_TIME,
@@ -297,7 +292,6 @@ AT_PAR_CMD_ELEMENT_STRU g_astAtExtendCmdTbl[] =
     VOS_NULL_PTR,        AT_NOT_SET_TIME,
     AT_CMS_OPERATION_NOT_ALLOWED, CMD_TBL_LIMITED_NULL,
     (TAF_UINT8*)"+CSCB",    (VOS_UINT8*)"(0,1),(MIDS),(DCSS)"},
-    /* Added by f62575 for AT Project, 2011-10-24, end */
 
     /* 语音新增AT命令 */
     {AT_CMD_CLVL,
@@ -427,14 +421,12 @@ AT_PAR_CMD_ELEMENT_STRU g_astAtExtendCmdTbl[] =
     AT_CME_INCORRECT_PARAMETERS, CMD_TBL_PIN_IS_LOCKED,
     (VOS_UINT8*)"+GMI", VOS_NULL_PTR},
 
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
     /* OTHER */
     {AT_CMD_CTFR,
     At_SetCtfrPara,     AT_SET_PARA_TIME, VOS_NULL_PTR,     AT_NOT_SET_TIME,    VOS_NULL_PTR, AT_NOT_SET_TIME,
     VOS_NULL_PTR,        AT_NOT_SET_TIME,
     AT_CME_INCORRECT_PARAMETERS, CMD_TBL_CLAC_IS_INVISIBLE,
     (VOS_UINT8*)"+CTFR", (VOS_UINT8*)"(number),(0-255),(subaddr),(0-255)"},
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, end */
 
     {AT_CMD_CPWD,
     At_SetCpwdPara,     AT_SET_SS_PARA_TIME, VOS_NULL_PTR,     AT_NOT_SET_TIME,    At_TestCpwdPara, AT_NOT_SET_TIME,
@@ -454,14 +446,11 @@ AT_PAR_CMD_ELEMENT_STRU g_astAtExtendCmdTbl[] =
     AT_CME_INCORRECT_PARAMETERS, CMD_TBL_LIMITED_NULL,
     (VOS_UINT8*)"+CGATT",      (VOS_UINT8*)"(0,1)"},
 
-    /* Modified by s46746 for V7R1 phase II , 2011-10-18, begin */
     {AT_CMD_COPS,
     At_SetCopsPara,     AT_COPS_SPEC_SRCH_TIME, At_QryCopsPara,   AT_QRY_PARA_TIME,   At_TestCopsPara, AT_COPS_LIST_SRCH_TIME,
     At_AbortCopsPara,   AT_COPS_LIST_ABORT_TIME,
     AT_CME_INCORRECT_PARAMETERS, CMD_TBL_LIMITED_NULL,
     (VOS_UINT8*)"+COPS",       (VOS_UINT8*)"(0,1,2,3,4),(0-2),(@oper),(0,2,7)"},
-    /* Modified by s46746 for V7R1 phase II , 2011-10-18, end */
-
     {AT_CMD_CSGIDSEARCH,
     AT_SetCsgIdSearchPara,     AT_CSG_SPEC_SRCH_TIME, At_QryCampCsgIdInfo,   AT_QRY_PARA_TIME,   AT_TestCsgIdSearchPara, AT_CSG_LIST_SRCH_TIME,
     AT_AbortCsgIdSearchPara,   AT_CSG_LIST_ABORT_TIME,
@@ -557,7 +546,6 @@ AT_PAR_CMD_ELEMENT_STRU g_astAtExtendCmdTbl[] =
     AT_CME_INCORRECT_PARAMETERS, CMD_TBL_LIMITED_NULL,
     (VOS_UINT8*)"+CPOL",       (VOS_UINT8*)"(1-100),(0-2),(oper),(0,1),(0,1),(0,1),(0,1)"},
 
-    /* Modified by s46746 for SS FDN&Call Control, 2013-05-31, begin */
     {AT_CMD_CREG,
     At_SetCregPara,     AT_SET_PARA_TIME,  At_QryCregPara,   AT_QRY_PARA_TIME,   VOS_NULL_PTR, AT_NOT_SET_TIME,
     VOS_NULL_PTR,        AT_NOT_SET_TIME,
@@ -575,7 +563,6 @@ AT_PAR_CMD_ELEMENT_STRU g_astAtExtendCmdTbl[] =
     VOS_NULL_PTR,        AT_NOT_SET_TIME,
     AT_CME_INCORRECT_PARAMETERS, CMD_TBL_NO_LIMITED,
     (VOS_UINT8*)"+CEREG",   (VOS_UINT8*)"(0-2)"},
-    /* Modified by s46746 for SS FDN&Call Control, 2013-05-31, end */
 
     {AT_CMD_CGDCONT,
     AT_SetCgdcontPara, AT_SET_PARA_TIME, AT_QryCgdcontPara, AT_QRY_PARA_TIME, At_TestCgdcont, AT_NOT_SET_TIME,
@@ -742,13 +729,11 @@ AT_PAR_CMD_ELEMENT_STRU g_astAtExtendCmdTbl[] =
     VOS_NULL_PTR,        AT_NOT_SET_TIME,
     AT_CME_INCORRECT_PARAMETERS,    CMD_TBL_PIN_IS_LOCKED,
     (VOS_UINT8 *)"+CMUT",   (VOS_UINT8 *)"(0,1)"},
-    /* Added by f62575 for SS FDN&Call Control, 2013-05-06, begin */
     {AT_CMD_COPN,
     AT_SetCopnPara,     AT_SET_PARA_TIME,   VOS_NULL_PTR,       AT_NOT_SET_TIME,   At_CmdTestProcOK,   AT_NOT_SET_TIME,
     VOS_NULL_PTR,        AT_NOT_SET_TIME,
     AT_CME_INCORRECT_PARAMETERS,    CMD_TBL_LIMITED_NULL,
     (VOS_UINT8 *)"+COPN",   VOS_NULL_PTR},
-    /* Added by f62575 for SS FDN&Call Control, 2013-05-06, end */
 
     {AT_CMD_RELEASERRC,
     At_SetReleaseRrc,          AT_SET_PARA_TIME, VOS_NULL_PTR,  AT_NOT_SET_TIME,  VOS_NULL_PTR,        AT_NOT_SET_TIME,

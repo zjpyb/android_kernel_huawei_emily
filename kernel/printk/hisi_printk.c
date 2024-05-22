@@ -68,14 +68,14 @@ size_t print_time(u64 ts, char *buf)
 	if (!buf) {
 		return (unsigned int)snprintf(NULL, 0, "[%5lu.000000s]",
 				(unsigned long)ts
-				);
+				);/* [false alarm]:buffer will not overflow  */
 	}
 
 	// cppcheck-suppress *
 	/*lint -save -e421 */
 	temp = sprintf(buf, "[%5lu.%06lus]",
 			(unsigned long)ts, rem_nsec/1000
-			);
+			);/* [false alarm]:buffer will not overflow  */
 	/*lint -restore */
 	if (temp >= 0) {
 		return (unsigned int)temp;

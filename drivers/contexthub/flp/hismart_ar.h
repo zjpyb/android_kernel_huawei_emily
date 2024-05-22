@@ -4,6 +4,7 @@
 #include <linux/of.h>
 #include <linux/pm.h>
 #include <linux/platform_device.h>
+#include <linux/completion.h>
 #include "hisi_softtimer.h"
 
 #define FLP_TAG_AR          2
@@ -75,6 +76,12 @@ enum {
     AR_VE_RAIL                  = 0x16, /* 铁路交通 */
     AR_CLIMBING_MOUNT           = 0x17, /* 爬山*/
     AR_FAST_WALK                = 0x18, /* 快走*/
+    AR_STOP_VEHICLE             = 0x19, /* STOP VEHICLE */
+    AR_VEHICLE_UNKNOWN          = 0x1B, /* on vehicle, but not known which type */
+    AR_ON_FOOT                  = 0x1C, /* ON FOOT */
+    AR_OUTDOOR                  = 0x1F, /* outdoor:1, indoor:0 */
+    AR_ELEVATOR                 = 0x20, /* elevator */
+    AR_RELATIVE_STILL           = 0x21, /* relative still */
     AR_UNKNOWN                  = 0x3F,
     AR_STATE_BUTT               = 0x40,
 };
@@ -176,11 +183,12 @@ typedef struct context_dev_info {
 }context_dev_info_t;
 
 /*HUB-->KERNEL*/
-#define GET_STATE_NUM_MAX (5)
+#define GET_STATE_NUM_MAX (64)
 typedef struct context_event {
 	unsigned int event_type;
 	unsigned int context;
 	unsigned long long msec;/*long long :keep some with iomcu*/
+	int confident;
 	unsigned int buf_len;
 	char buf[0];
 } __packed context_event_t;
@@ -195,6 +203,12 @@ typedef struct {
 	unsigned int context_num;
 	context_event_t context_event[0];
 } __packed ar_state_t;
+
+typedef struct {
+	unsigned int user_len;
+	context_event_t context_event[CONTEXT_TYPE_MAX];
+} __packed ar_state_shmen_t;
+
 /********************************************
             define flp netlink
 ********************************************/
@@ -237,8 +251,6 @@ typedef struct ar_data_buf{
 	unsigned int read_index;
 	unsigned int write_index;
 	unsigned int data_count;
-	struct sk_buff *skb;
-	void *msg_header;
 	unsigned int  data_len;
 } ar_data_buf_t;
 
@@ -261,7 +273,6 @@ extern int inputhub_mcu_write_cmd_adapter(const void *buf, unsigned int length,
 /*ENV -S*/
 typedef struct env_init {
 	environment_type_t context;
-	unsigned int buf_len;
 	char buf[CONTEXT_PRIVATE_DATA_MAX];
 } __packed env_init_t;
 
@@ -309,7 +320,10 @@ typedef struct ar_device {
 	struct list_head list;
 	unsigned int service_type ;
 	struct mutex lock;
+	struct mutex state_lock;
 	unsigned int denial_sevice;
+	struct completion get_complete;
+	ar_state_shmen_t activity_shemem;
 	context_dev_info_t	 ar_devinfo;
 	context_dev_info_t env_devinfo;
 	envdev_priv_t envdev_priv;

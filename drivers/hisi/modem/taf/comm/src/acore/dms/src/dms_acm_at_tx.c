@@ -261,9 +261,7 @@ VOS_UINT32 DMS_VcomWriteAsync(
     VOS_INT32                           lRet = ERR_MSP_SUCCESS;
 
     stAcmInfo.pVirAddr = (VOS_CHAR *)pucDataBuf;
-
-    stAcmInfo.pPhyAddr = (VOS_CHAR *)DMS_CACHE_FLUSH_WITH_DEV(&(g_stDmsMainInfo.stDev), (VOS_CHAR *)pucDataBuf, ulLen);
-
+    stAcmInfo.pPhyAddr = NULL;
     stAcmInfo.u32Size  = ulLen;
 
     pstPhyBearProp = DMS_GetPhyBearProperty(enPhyBear);

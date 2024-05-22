@@ -18,6 +18,14 @@
 #include <huawei_platform/usb/pd/richtek/tcpci.h>
 #include <huawei_platform/usb/pd/richtek/pd_core.h>
 
+struct dpm_pdo_info_t {
+	uint8_t type;
+	int vmin;
+	int vmax;
+	int uw;
+	int ma;
+};
+
 /* ---- MISC ---- */
 int pd_dpm_core_init(pd_port_t *pd_port);
 int pd_dpm_enable_vconn(pd_port_t *pd_port, bool en);
@@ -32,7 +40,7 @@ void pd_dpm_snk_evaluate_caps(pd_port_t *pd_port, pd_event_t *pd_event);
 void pd_dpm_snk_standby_power(pd_port_t *pd_port, pd_event_t *pd_event);
 void pd_dpm_snk_transition_power(pd_port_t *pd_port, pd_event_t *pd_event);
 void pd_dpm_snk_hard_reset(pd_port_t *pd_port, pd_event_t *pd_event);
-
+void dpm_extract_pdo_info(uint32_t pdo, struct dpm_pdo_info_t *info);
 /* ---- SRC ---- */
 
 void pd_dpm_src_evaluate_request(pd_port_t *pd_port, pd_event_t *pd_event);

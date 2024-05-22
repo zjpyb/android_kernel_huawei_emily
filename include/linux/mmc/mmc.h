@@ -326,7 +326,7 @@ struct _mmc_csd {
 #define EXT_CSD_REV			192	/* RO */
 #define EXT_CSD_STRUCTURE		194	/* RO */
 #define EXT_CSD_CARD_TYPE		196	/* RO */
-#define EXT_CSD_DRIVER_STRENGTH			197	/* RO */
+#define EXT_CSD_DRIVER_STRENGTH		197	/* RO */
 #define EXT_CSD_OUT_OF_INTERRUPT_TIME	198	/* RO */
 #define EXT_CSD_PART_SWITCH_TIME        199     /* RO */
 #define EXT_CSD_PWR_CL_52_195		200	/* RO */
@@ -418,12 +418,14 @@ struct _mmc_csd {
 #define EXT_CSD_CARD_TYPE_HS400_1_2V	(1<<7)	/* Card can run at 200MHz DDR, 1.2V */
 #define EXT_CSD_CARD_TYPE_HS400		(EXT_CSD_CARD_TYPE_HS400_1_8V | \
 					 EXT_CSD_CARD_TYPE_HS400_1_2V)
+#define EXT_CSD_CARD_TYPE_HS400ES	(1<<8)	/* Card can run at HS400ES */
 
 #define EXT_CSD_BUS_WIDTH_1	0	/* Card is in 1 bit mode */
 #define EXT_CSD_BUS_WIDTH_4	1	/* Card is in 4 bit mode */
 #define EXT_CSD_BUS_WIDTH_8	2	/* Card is in 8 bit mode */
 #define EXT_CSD_DDR_BUS_WIDTH_4	5	/* Card is in 4 bit DDR mode */
 #define EXT_CSD_DDR_BUS_WIDTH_8	6	/* Card is in 8 bit DDR mode */
+#define EXT_CSD_BUS_WIDTH_STROBE BIT(7)	/* Enhanced strobe mode */
 
 #define EXT_CSD_TIMING_BC	0	/* Backwards compatility */
 #define EXT_CSD_TIMING_HS	1	/* High speed */
@@ -523,5 +525,22 @@ extern u64 cmdlog_enable_flag;   /* 0 : Disable , X: Enable */
 #define EMMC_EN   		(1<<0)
 #define BLK_EN   		(1<<1)
 #define EXT4_EN   		(1<<2)
+
+/*
+ * MMC_LOCK_UNLOCK modes
+ */
+#ifdef CONFIG_MMC_PASSWORDS
+#define MMC_LOCK_MODE_ERASE		(1<<3)
+#define MMC_LOCK_MODE_LOCK		(1<<2)
+#define MMC_LOCK_MODE_CLR_PWD	(1<<1)
+#define MMC_LOCK_MODE_SET_PWD	(1<<0)
+#define MMC_LOCK_MODE_UNLOCK    (1<<4)
+#endif /* CONFIG_MMC_PASSWORDS */
+
+extern u64 cmdlog_enable_flag;   /* 0 : Disable , X: Enable */
+#define EMMC_EN   		(1<<0)
+#define BLK_EN   		(1<<1)
+#define EXT4_EN   		(1<<2)
+
 
 #endif /* LINUX_MMC_MMC_H */

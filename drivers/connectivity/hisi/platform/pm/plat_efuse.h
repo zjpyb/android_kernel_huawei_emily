@@ -25,7 +25,11 @@ extern "C" {
 *****************************************************************************/
 #define GET_EFUSE_CMD          "0x50000744,64"
 #define GET_EFUSE_EC_VERSION   "0x50000770,4"
+#ifndef HISI_WIFI_MISC_TOP_DIR
 #define EFUSE_FILE_PATH        "/data/misc/wifi/efuse"
+#else
+#define EFUSE_FILE_PATH        HISI_WIFI_MISC_TOP_DIR"/wifi/efuse"
+#endif
 #define EFUSE_REG_NUM          (16)
 #define EFUSE_VALUE_WIDTH      (16)
 #define EFUSE_REG_WIDTH        (4)

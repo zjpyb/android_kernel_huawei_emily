@@ -54,7 +54,7 @@ bool mmc_is_reset(void);
 #else
 static inline bool mmcdbg_error_inject_dispatcher(struct mmc_host *mmc,
 			enum mmcdbg_err_inject_scenario err_scenario,
-			u32 success_value, u32 *ret_value, bool not_inj)
+			int success_value, int *ret_value, bool not_inj)
 {
 	return false;
 }

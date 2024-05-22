@@ -20,9 +20,6 @@
 #include <huawei_platform/usb/pd/richtek/pd_process_evt.h>
 #include <huawei_platform/usb/pd/richtek/pd_policy_engine.h>
 #include <huawei_platform/usb/pd/richtek/rt1711h.h>
-#ifdef CONFIG_HUAWEI_DSM
-#include <dsm/dsm_pub.h>
-#endif
 
 /* ---- Policy Engine State ---- */
 
@@ -433,6 +430,7 @@ static void pe_idle1_entry(pd_port_t *pd_port, pd_event_t *pd_event)
 
 static void pe_idle2_entry(pd_port_t *pd_port, pd_event_t *pd_event)
 {
+	pd_port->pd_connected = false;
 	pd_set_rx_enable(pd_port, PD_RX_CAP_PE_IDLE);
 	pd_disable_timer(pd_port, PD_TIMER_PE_IDLE_TOUT);
 	pd_notify_pe_idle(pd_port);
@@ -811,9 +809,6 @@ static void pd_pe_state_change(
 
 	if((old_state >= PD_NR_PE_STATES) || (new_state >= PD_NR_PE_STATES)) {
 		snprintf(buf, sizeof(buf), "the pd nr pe states\n");
-#ifdef CONFIG_HUAWEI_DSM
-		rt_dsm_report(ERROR_RT_PD_NR_PE_STATES, buf);
-#endif
 	}
 	if ((new_state == PE_IDLE1) || (new_state == PE_IDLE2))
 		prev_exit_action = NULL;

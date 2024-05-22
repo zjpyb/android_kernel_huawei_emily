@@ -105,6 +105,8 @@
 #define ENTER_FLASH_PROG_WAIT_MS 20
 #define WAIT_FW_REFLASH_MS 25
 
+#define PAYLOAD_LENGTH_MAX 256
+
 #define SYNA_UPP
 
 static int fwu_do_reflash(void);
@@ -1294,6 +1296,8 @@ static int fwu_read_flash_status(void)
 		return retval;
 	}
 
+	TS_LOG_DEBUG("dbg : flash status = 0x%x\n", status);
+
 	fwu->in_bl_mode = status >> 7;
 
 	if (fwu->bl_version == BL_V5)
@@ -1315,7 +1319,6 @@ static int fwu_read_flash_status(void)
 		if (fwu->flash_status == FLASH_STATUS_08)
 			fwu->flash_status = FLASH_STATUS_00;
 	}
-
 
 	retval = fwu->fn_ptr->read(rmi4_data,
 				   fwu->f34_fd.data_base_addr +
@@ -2121,7 +2124,7 @@ static int fwu_write_f34_v7_blocks(unsigned char *block_ptr,
 {
 	int retval;
 	unsigned char base;
-	unsigned char length[2];
+	unsigned char length[2] = {0};
 	unsigned short transfer;
 	unsigned short max_transfer;
 	unsigned short remaining = block_cnt;
@@ -2143,8 +2146,8 @@ static int fwu_write_f34_v7_blocks(unsigned char *block_ptr,
 		return retval;
 	}
 
-	if (fwu->payload_length > (PAGE_SIZE / fwu->block_size))
-		max_transfer = PAGE_SIZE / fwu->block_size;
+	if (fwu->payload_length > PAYLOAD_LENGTH_MAX)
+		max_transfer = PAYLOAD_LENGTH_MAX;
 	else
 		max_transfer = fwu->payload_length;
 
@@ -3001,7 +3004,8 @@ static int fwu_erase_all(void)
 			return retval;
 	}
 
-	if (fwu->new_partition_table && fwu->has_guest_code) {
+	if ((fwu->new_partition_table && fwu->has_guest_code)||
+		(rmi4_data->synaptics_chip_data->synaptics3718_fw_updata_flag && fwu->has_guest_code)) {
 		retval = fwu_erase_guest_code();
 		if (retval < 0)
 			return retval;
@@ -3454,6 +3458,15 @@ static int fwu_do_reflash(void)
 		TS_LOG_INFO("%s: Display configuration programmed\n", __func__);
 	}
 
+	if (rmi4_data->synaptics_chip_data->synaptics3718_fw_updata_flag
+		&& (fwu->has_guest_code && fwu->img.contains_guest_code)) {
+
+		retval = fwu_write_guest_code();
+		if (retval < 0)
+			return retval;
+		TS_LOG_INFO("%s: Guest code programmed\n", __func__);
+	}
+
 	fwu->config_area = UI_CONFIG_AREA;
 	retval = fwu_write_ui_configuration();
 	if (retval < 0)
@@ -3465,7 +3478,7 @@ static int fwu_do_reflash(void)
 		return retval;
 	TS_LOG_INFO("%s: Firmware programmed\n", __func__);
 
-	if (fwu->new_partition_table) {
+	if (fwu->new_partition_table){
 		if (fwu->has_guest_code && fwu->img.contains_guest_code) {
 			retval = fwu_write_guest_code();
 			if (retval < 0)
@@ -3549,6 +3562,48 @@ if (fwu->bl_version == BL_V5 || fwu->bl_version == BL_V6) {
 	retval = fwu_scan_pdt();
 
 }
+	return retval;
+}
+
+static int fwu_do_read_config_workaround(void)
+{
+	int retval;
+	int retry = 0;
+	int retry_total = 5;
+
+	TS_LOG_INFO("%s: do workaround here + \n", __func__);
+
+	for (retry = 0; retry < retry_total; retry++) {
+		retval = fwu_write_f34_v7_command_single_transaction(CMD_ENABLE_FLASH_PROG);
+		if (retval < 0) {
+			TS_LOG_ERR("%s: fail to send entering bl mode, retry = %d\n", __func__, retry + 1);
+			msleep(5);
+		}
+		else {
+			break;
+		}
+	}
+	if ((retry == retry_total) && (retval < 0)) {
+		TS_LOG_ERR("%s error: timeout to send a command for entering bl mode\n", __func__);
+		goto exit;
+	}
+
+	fwu->config_area = UI_CONFIG_AREA;
+	fwu_erase_configuration();
+
+	if (fwu->has_guest_code) {
+		fwu_erase_guest_code();
+	}
+
+	fwu_read_f34_queries();
+
+	retval = fwu_do_read_config();
+	if (retval < 0) {
+		TS_LOG_ERR("%s: fail to read config again\n", __func__);
+	}
+
+
+exit:
 	return retval;
 }
 
@@ -4339,8 +4394,13 @@ static int synaptics_read_project_id(void)
 
 	retval = fwu_do_read_config();
 	if (retval < 0) {
-		TS_LOG_ERR("%s: Failed to read config\n", __func__);
-		goto out;
+		TS_LOG_ERR("%s: Try to read config again\n", __func__);
+
+		retval = fwu_do_read_config_workaround();
+		if (retval < 0) {
+			TS_LOG_ERR("%s: Failed to read config\n", __func__);
+			goto out;
+		}
 	}
 
 	for (index = 0;
@@ -4426,6 +4486,7 @@ int synap_fw_data_s3718_init(struct synaptics_rmi4_data *rmi4_data)
 			if (retval < 0)
 				goto exit_free_mem;
 		}
+
 	retval = synaptics_read_project_id();
 	if (retval < 0) {
 		TS_LOG_ERR("Failed to read project id\n");

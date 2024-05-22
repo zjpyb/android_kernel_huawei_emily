@@ -431,7 +431,7 @@ static int usb_unbind_interface(struct device *dev)
 			if (!eps)
 				break;
 		}
-		eps[j++] = ep; /* [false alarm]:this is original code */
+		eps[j++] = ep;
 	}
 	if (j) {
 		usb_free_streams(intf, eps, j, GFP_KERNEL);
@@ -837,9 +837,9 @@ static int usb_device_match(struct device *dev, struct device_driver *drv)
 	int ret = do_usb_device_match(dev, drv);
 
 	if (ret) {
-		usb_host_abnormal_event_notify(USB_HOST_EVENT_NORMAL);
+		hw_usb_host_abnormal_event_notify(USB_HOST_EVENT_NORMAL);
 	} else {
-		usb_host_abnormal_event_notify(USB_HOST_EVENT_UNKNOW_DEVICE);
+		hw_usb_host_abnormal_event_notify(USB_HOST_EVENT_UNKNOW_DEVICE);
 	}
 
 	return ret;
@@ -1475,12 +1475,11 @@ int usb_suspend(struct device *dev, pm_message_t msg)
 
 #ifdef CONFIG_HISI_USB_SKIP_RESUME
 	if (udev->bus->skip_resume) {
-		if (udev->state == USB_STATE_SUSPENDED)
-			return 0;
-		else {
+		if (udev->state != USB_STATE_SUSPENDED) {
 			dev_err(dev, "abort suspend\n");
 			return -EBUSY;
 		}
+		return 0;
 	}
 #endif
 
@@ -1520,9 +1519,8 @@ int usb_resume(struct device *dev, pm_message_t msg)
 	 * a remote wakeup is detected or interface driver start
 	 * I/O.
 	 */
-	if (udev->bus->skip_resume) {
+	if (udev->bus->skip_resume)
 		return 0;
-	}
 #endif
 
 	/* For all calls, take the device back to full power and

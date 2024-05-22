@@ -6,3 +6,8 @@ menuconfig HW_RL_TOUCH_KEY
 	default n
 	help
 	Say yes here to support for touch key.
+menuconfig HW_PLAY_KEY
+	bool "huawei play key driver"
+	default n
+	help
+	Say yes here to support for touch key.

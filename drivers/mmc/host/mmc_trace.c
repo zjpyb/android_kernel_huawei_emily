@@ -42,6 +42,7 @@ extern "C" {
 #include <linux/hisi/util.h>
 #include <linux/hisi/mmc_trace.h>
 #include <linux/pm_runtime.h>
+#include <mntn_subtype_exception.h>
 
 #ifdef CONFIG_HISILICON_PLATFORM_MAINTAIN
 #include "../../hisi/mntn/blackbox/rdr_print.h"
@@ -592,6 +593,7 @@ static int mmc_trace_rdr_register_exception(void)
 	einfo.e_reentrant = (u32)RDR_REENTRANT_DISALLOW;
 	/* 异常类型初始化失败 */
 	einfo.e_exce_type = MMC_S_EXCEPTION;
+	einfo.e_exce_subtype = MMC_EXCEPT_INIT_FAIL;
 	/* 异常发生在EMMC. */
 	einfo.e_from_core = RDR_EMMC;
 	einfo.e_upload_flag = (u32)RDR_UPLOAD_NO;
@@ -614,6 +616,7 @@ static int mmc_trace_rdr_register_exception(void)
 	einfo.e_reset_core_mask = RDR_AP;
 	einfo.e_reentrant = (u32)RDR_REENTRANT_DISALLOW;
 	einfo.e_exce_type = MMC_S_EXCEPTION;
+	einfo.e_exce_subtype = MMC_EXCEPT_CMD_TIMEOUT;
 	einfo.e_from_core = RDR_EMMC;
 	einfo.e_upload_flag = (u32)RDR_UPLOAD_NO;
 	memcpy(einfo.e_from_module, "RDR_MMC_TIME_OUT", sizeof("RDR_MMC_TIME_OUT"));
@@ -1012,15 +1015,6 @@ void mmc_trace_perf_tofile(void)
 	mdelay(100);
 
 	/*调测使用 */
-#if 0
-	retval = mmc_trace_tofile(TRACE_PERF);
-	if (0 == retval) {
-	} else {
-		MMCTRACE_DEBUGPL(0x3, "mmc trace perf record raw fail\n");
-		mmc_trace_fd->mmc_trace_tofile_perf = false;
-		return;
-	}
-#endif
 
 	/*完整一条性能日志数据结构，下面进行内容填充并写入内存 */
 	record_exp = (struct mmc_trace_perf_record_exp *)(((struct mmc_trace_perf *)(mmc_trace_fd->mmc_trace_perf))->perf_buff + sizeof(struct queue) - 8);
@@ -1102,31 +1096,6 @@ void mmc_trace_byself(int index)
 }
 
 /*后续调测使用接口*/
-#if 0
-void mmc_trace_raw_data(void)
-{
-	int retval = -1;
-
-	if (dump_vir_addr == NULL)
-		return;
-
-	/*删除hisi_logs目录下的旧文件 */
-	retval = mntn_filesys_rm_file(MMC_TRACE_RAW_DATA_PATH);
-	if (0 != retval) {
-		printk(KERN_ERR "%s: mntn_filesys_rm_file fail \n", __func__);
-		return;
-	}
-
-	/*生成新的bin文件接口 */
-	retval = mntn_filesys_write_log(MMC_TRACE_RAW_DATA_PATH, dump_vir_addr, MMC_TRACE_TOTAL_SIZE, 0660);
-	if (!retval) {
-		printk(KERN_ERR "%s: mntn_filesys_write_log fail \n", __func__);
-		return;
-	}
-
-	return;
-}
-#endif
 
 /*****************************************************************************
  函	  数   名  : mmc_trace_init_begin
@@ -1273,25 +1242,6 @@ void mmc_trace_emmc_init_fail_reset(void)
 void mmc_trace_emmc_cmd_timeout_reset(void)
 {
 	return;
-#if 0
-	if (NULL == mmc_trace_fd) {
-		pr_err("%s: mmc_trace_fd is NULL \n", __func__);
-		return;
-	}
-
-	/*防止继续记录log */
-	mmc_trace_fd->mmc_trace_reset_cmdtimeout = true;
-
-	mdelay(15000);
-
-	mmc_trace_dumpregs(EMMC);
-
-#ifdef CONFIG_HISI_BB
-	rdr_syserr_process_for_ap(RDR_MODID_MMC_CMD_TIMEOUT, 0, 0);
-#endif
-
-	return;
-#endif
 }
 
 void mmc_trace_fd_init(void)

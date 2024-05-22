@@ -681,6 +681,10 @@ oal_void  hi1151_main_exit(oal_void)
 #if (defined(_PRE_PRODUCT_ID_HI110X_HOST))
 #ifndef CONFIG_HI110X_KERNEL_MODULES_BUILD_SUPPORT
 #ifdef _PRE_CONFIG_CONN_HISI_SYSFS_SUPPORT
+
+#include "board.h"
+#include "oneimage.h"
+
 oal_int32 g_wifi_init_flag = 0;
 oal_int32 g_wifi_init_ret;
 /*built-in*/
@@ -757,6 +761,12 @@ oal_int32  wifi_sysfs_init(oal_void)
 {
     oal_int32 ret = 0;
     oal_kobject*     pst_root_boot_object = NULL;
+
+    if(false == is_hisi_chiptype(BOARD_VERSION_HI1102))
+    {
+        return OAL_SUCC;
+    }
+
     pst_root_boot_object = oal_get_sysfs_root_boot_object();
     if(NULL == pst_root_boot_object)
     {

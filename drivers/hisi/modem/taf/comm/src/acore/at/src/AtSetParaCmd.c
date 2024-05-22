@@ -164,8 +164,6 @@ TAF_UINT8                               gucAtOmIndex        = AT_MAX_CLIENT_NUM;
 /*纪录查询错误码的类型*/
 TAF_UINT32                              gulErrType          = 1;
 
-/* Added by 傅映君/f62575 for E5宏开关打开后编译问题, 2011/11/15, begin */
-/* Added by 傅映君/f62575 for E5宏开关打开后编译问题, 2011/11/15, end */
 
 /*NAS收到APP下发NDIS拨号命令的slice*/
 VOS_UINT32                              g_ulRcvAppNdisdupSlice;
@@ -222,23 +220,7 @@ extern void       TTF_SetGcfTestFlag(VOS_UINT32 ulGctTestFlag);
    4 函数实现
 *****************************************************************************/
 
-/******************************************************************************
- Function:      AT_CtrlGetPDPAuthType
- Description:    获取PC设置的PDP上下文中对应类型的数据
- Calls:
- Data Accessed:
- Data Updated:
- Input:
-                 usTotalLen     PDP上下文内存长度
- Output:
- Return:        0   no auth
-                1   pap
-                2   chap
- Others:
-   1.Date        : 2009-08-03
-    Author      : S62952
-    Modification: Created function
-******************************************************************************/
+
 PPP_AUTH_TYPE_ENUM_UINT8 AT_CtrlGetPDPAuthType(
     VOS_UINT32                          Value,
     VOS_UINT16                          usTotalLen
@@ -730,21 +712,7 @@ TAF_UINT32 At_CheckDialString(TAF_UINT8 *pData, TAF_UINT16 usLen)
     return AT_SUCCESS;
 }
 
-/*****************************************************************************
- Prototype      : At_CheckPBString
- Description    : 比较、匹配拨号字符
- Input          :
- Output         :
- Return Value   : AT_SUCCESS --- 成功
-                  AT_FAILURE --- 失败
- Calls          : ---
- Called By      : ---
 
- History        : ---
-  1.Date        : 2007-05-30
-    Author      : H59254
-    Modification: Created function
-*****************************************************************************/
 TAF_UINT32 At_CheckPBString(TAF_UINT8 *pData, TAF_UINT16 *pusLen)
 {
     TAF_UINT16 usCount = 0;
@@ -821,7 +789,6 @@ TAF_UINT32  At_CheckUssdNumLen(
     TAF_UINT16                          usLen
 )
 {
-    /* Modified by l60609 for DSDA Phase III, 2013-2-25, Begin */
     AT_MODEM_SS_CTX_STRU               *pstSsCtx = VOS_NULL_PTR;
 
     pstSsCtx = AT_GetModemSsCtxAddrFromClientId(ucIndex);
@@ -844,7 +811,6 @@ TAF_UINT32  At_CheckUssdNumLen(
         }
 
     }
-    /* Modified by l60609 for DSDA Phase III, 2013-2-25, End */
 
     return AT_SUCCESS;
 }
@@ -1446,7 +1412,6 @@ TAF_UINT32 At_UpdateMsgRcvAct(
                                                                                MN_MSG_RCVMSG_ACT_TRANSFER_AND_ACK,
                                                                                MN_MSG_RCVMSG_ACT_STORE};
 
-    /* Modified by l60609 for DSDA Phase III, 2013-2-25, Begin */
     AT_MODEM_SMS_CTX_STRU              *pstSmsCtx = VOS_NULL_PTR;
 
     pstSmsCtx = AT_GetModemSmsCtxAddrFromClientId(ucIndex);
@@ -1465,7 +1430,6 @@ TAF_UINT32 At_UpdateMsgRcvAct(
         enRcvSmAct[2] = MN_MSG_RCVMSG_ACT_TRANSFER_ONLY;
         enRcvStaRptAct[1] = MN_MSG_RCVMSG_ACT_TRANSFER_ONLY;
     }
-    /* Modified by l60609 for DSDA Phase III, 2013-2-25, End */
 
     stRcvPath.enRcvSmAct        = enRcvSmAct[CnmiMtType];
     stRcvPath.enRcvStaRptAct    = enRcvStaRptAct[CnmiDsType];
@@ -1505,12 +1469,10 @@ VOS_UINT32 AT_ReadActiveMessage(
         return MN_ERR_NOMEM;
     }
 
-    /* Modified by l60609 for DSDA Phase III, 2013-3-4, Begin */
     ulRet = TAF_ACORE_NV_READ(enModemId,
                       en_NV_Item_SMS_ActiveMessage_Para,
                       pucActiveMessageInfo,
                       MN_MSG_ACTIVE_MESSAGE_PARA_LEN);
-    /* Modified by l60609 for DSDA Phase III, 2013-3-4, End */
     if (NV_OK != ulRet)
     {
         AT_WARN_LOG("AT_ReadActiveMessage : fail to read NVIM . ");
@@ -1685,7 +1647,6 @@ TAF_UINT32 AT_SetRstriggerPara(
     MN_MSG_ACTIVE_MESSAGE_STRU          stActiveMessage;
     MN_MSG_ACTIVE_MESSAGE_STRU          stOrgActiveMessage;
     TAF_UINT32                          ulRet;
-    /* Modified by l60609 for DSDA Phase III, 2013-3-4, Begin */
     MODEM_ID_ENUM_UINT16                enModemId;
     VOS_UINT32                          ulRslt;
 
@@ -1714,7 +1675,6 @@ TAF_UINT32 AT_SetRstriggerPara(
     }
 
     ulRet = AT_ReadActiveMessage(enModemId, &stOrgActiveMessage);
-    /* Modified by l60609 for DSDA Phase III, 2013-3-4, End */
     if (MN_ERR_NO_ERROR != ulRet)
     {
         AT_LOG1("AT_SetRstriggerPara: fail to get active message information , cause is %d",
@@ -1750,9 +1710,7 @@ TAF_UINT32 AT_SetRstriggerPara(
     stActiveMessage.enActiveStatus = (MN_MSG_ACTIVE_MESSAGE_STATUS_ENUM_UINT8)gastAtParaList[0].ulParaValue;
 
     /*调用AT_WriteActiveMessage写激活短信的激活状态和URL信息到NVIM；*/
-    /* Modified by l60609 for DSDA Phase III, 2013-3-4, Begin */
     ulRet = AT_WriteActiveMessage(enModemId, &stOrgActiveMessage, &stActiveMessage);
-    /* Modified by l60609 for DSDA Phase III, 2013-3-4, End */
     if (MN_ERR_NO_ERROR != ulRet)
     {
         return AT_ERROR;
@@ -1766,7 +1724,6 @@ TAF_UINT32 AT_SetRstriggerPara(
 TAF_UINT32 At_SetCsmsPara(TAF_UINT8 ucIndex)
 {
     VOS_UINT32                          ulRet;
-    /* Modified by l60609 for DSDA Phase III, 2013-2-22, Begin */
     AT_MODEM_SMS_CTX_STRU              *pstSmsCtx = VOS_NULL_PTR;
 
     pstSmsCtx = AT_GetModemSmsCtxAddrFromClientId(ucIndex);
@@ -1783,7 +1740,6 @@ TAF_UINT32 At_SetCsmsPara(TAF_UINT8 ucIndex)
                                 (AT_CSMS_MSG_VERSION_ENUM_U8)gastAtParaList[0].ulParaValue,
                                 pstSmsCtx->stCnmiType.CnmiMtType,
                                 pstSmsCtx->stCnmiType.CnmiDsType);
-    /* Modified by l60609 for DSDA Phase III, 2013-2-22, End */
 
     if (AT_OK != ulRet)
     {
@@ -1799,7 +1755,6 @@ TAF_UINT32 At_SetCsmsPara(TAF_UINT8 ucIndex)
 TAF_UINT32 At_SetCgsmsPara(TAF_UINT8 ucIndex)
 {
     AT_NVIM_SEND_DOMAIN_STRU            stSendDomain;
-    /* Modified by l60609 for DSDA Phase III, 2013-2-22, Begin */
     MODEM_ID_ENUM_UINT16                enModemId;
     VOS_UINT32                          ulRslt;
     AT_MODEM_SMS_CTX_STRU              *pstSmsCtx = VOS_NULL_PTR;
@@ -1821,11 +1776,8 @@ TAF_UINT32 At_SetCgsmsPara(TAF_UINT8 ucIndex)
     /* 参数为空 */
     if(0 == gastAtParaList[0].usParaLen)
     {
-        /*->f62575*/
         gastAtParaList[0].ulParaValue = MN_MSG_SEND_DOMAIN_CS;
-        /*<-f62575*/
     }
-/*->f62575*/
 
     ulRslt = AT_GetModemIdFromClient(ucIndex, &enModemId);
 
@@ -1862,9 +1814,7 @@ TAF_UINT32 At_SetCgsmsPara(TAF_UINT8 ucIndex)
             return AT_ERROR;
         }
     }
-    /* Modified by l60609 for DSDA Phase III, 2013-2-22, End */
     return AT_OK;
-/*<-f62575*/
 }
 
 
@@ -1919,7 +1869,6 @@ VOS_UINT32 At_GetSmsStorage(
 TAF_UINT32 At_SetCpmsPara(TAF_UINT8 ucIndex)
 {
     MN_MSG_SET_RCVMSG_PATH_PARM_STRU    stRcvPath;
-    /* Modified by l60609 for DSDA Phase III, 2013-2-22, Begin */
     AT_MODEM_SMS_CTX_STRU              *pstSmsCtx = VOS_NULL_PTR;
 
     pstSmsCtx = AT_GetModemSmsCtxAddrFromClientId(ucIndex);
@@ -1984,7 +1933,6 @@ TAF_UINT32 At_SetCpmsPara(TAF_UINT8 ucIndex)
     {
         return AT_ERROR;
     }
-    /* Modified by l60609 for DSDA Phase III, 2013-2-22, End */
 
     gastAtClientTab[ucIndex].CmdCurrentOpt = AT_CMD_CPMS_SET;
     return AT_WAIT_ASYNC_RETURN;    /* 返回命令处理挂起状态 */
@@ -1994,11 +1942,9 @@ TAF_UINT32 At_SetCpmsPara(TAF_UINT8 ucIndex)
 
 TAF_UINT32 At_SetCmgfPara(TAF_UINT8 ucIndex)
 {
-    /* Added by l60609 for DSDA Phase III, 2013-2-20, Begin */
     AT_MODEM_SMS_CTX_STRU              *pstSmsCtx = VOS_NULL_PTR;
 
     pstSmsCtx = AT_GetModemSmsCtxAddrFromClientId(ucIndex);
-    /* Added by l60609 for DSDA Phase III, 2013-2-20, End */
 
     /* 参数检查 */
     if ((AT_CMD_OPT_SET_PARA_CMD != g_stATParseCmd.ucCmdOptType)
@@ -2013,12 +1959,9 @@ TAF_UINT32 At_SetCmgfPara(TAF_UINT8 ucIndex)
         gastAtParaList[0].ulParaValue = AT_CMGF_MSG_FORMAT_PDU;
     }
 
-    /* Modified by l60609 for DSDA Phase III, 2013-2-20, Begin */
     pstSmsCtx->enCmgfMsgFormat = (AT_CMGF_MSG_FORMAT_ENUM_U8)gastAtParaList[0].ulParaValue;
-    /* Modified by l60609 for DSDA Phase III, 2013-2-20, End */
     return AT_OK;
 }
-/*end add by zhoujun40661 2006-10-24 for CNMA*/
 
 
 TAF_UINT32 At_SetCscaPara(TAF_UINT8 ucIndex)
@@ -2030,11 +1973,9 @@ TAF_UINT32 At_SetCscaPara(TAF_UINT8 ucIndex)
     TAF_UINT8                          *pucNum;                                /*指向实际号码（不包括+号）的指针*/
     MN_MSG_SRV_PARAM_STRU               stParmInUsim;
     MN_OPERATION_ID_T                   opId                = At_GetOpId();
-    /* Modified by l60609 for DSDA Phase III, 2013-2-25, Begin */
     AT_MODEM_SMS_CTX_STRU              *pstSmsCtx = VOS_NULL_PTR;
 
     pstSmsCtx = AT_GetModemSmsCtxAddrFromClientId(ucIndex);
-    /* Modified by l60609 for DSDA Phase III, 2013-2-25, End */
 
     TAF_MEM_SET_S(&stServParm,   sizeof(stServParm), 0x00, sizeof(MN_MSG_WRITE_SRV_PARAM_STRU));
     TAF_MEM_SET_S(&stParmInUsim, sizeof(stParmInUsim), 0x00, sizeof(MN_MSG_SRV_PARAM_STRU));
@@ -2088,9 +2029,7 @@ TAF_UINT32 At_SetCscaPara(TAF_UINT8 ucIndex)
     }
 
     /* 执行命令操作 */
-    /* Modified by l60609 for DSDA Phase III, 2013-2-25, Begin */
     TAF_MEM_CPY_S(&stParmInUsim, sizeof(stParmInUsim), &(pstSmsCtx->stCscaCsmpInfo.stParmInUsim), sizeof(stParmInUsim));
-    /* Modified by l60609 for DSDA Phase III, 2013-2-25, End */
 
     stParmInUsim.ucParmInd &= ~MN_MSG_SRV_PARM_MASK_SC_ADDR;
     stParmInUsim.stScAddr.addrType = ucScaType;
@@ -2125,7 +2064,6 @@ TAF_UINT32 At_SetCsmpPara(TAF_UINT8 ucIndex)
     MN_MSG_WRITE_SRV_PARAM_STRU         stServParm;
     MN_MSG_SRV_PARAM_STRU               stParmInUsim;
     TAF_UINT32                          ulRet;
-    /* Modified by l60609 for DSDA Phase III, 2013-2-25, Begin */
     AT_MODEM_SMS_CTX_STRU              *pstSmsCtx = VOS_NULL_PTR;
 
     pstSmsCtx = AT_GetModemSmsCtxAddrFromClientId(ucIndex);
@@ -2162,7 +2100,6 @@ TAF_UINT32 At_SetCsmpPara(TAF_UINT8 ucIndex)
     {
         return ulRet;
     }
-    /* Modified by l60609 for DSDA Phase III, 2013-2-25, End */
 
     /* 设置<pid> */
     if(0 != gastAtParaList[2].usParaLen)
@@ -2227,7 +2164,6 @@ TAF_UINT32 At_SetCsmpPara(TAF_UINT8 ucIndex)
 
 TAF_UINT32 At_SetCsdhPara(TAF_UINT8 ucIndex)
 {
-    /* Modified by l60609 for DSDA Phase III, 2013-2-22, Begin */
     AT_MODEM_SMS_CTX_STRU              *pstSmsCtx = VOS_NULL_PTR;
 
     pstSmsCtx = AT_GetModemSmsCtxAddrFromClientId(ucIndex);
@@ -2253,14 +2189,12 @@ TAF_UINT32 At_SetCsdhPara(TAF_UINT8 ucIndex)
     {
         pstSmsCtx->ucCsdhType = AT_CSDH_NOT_SHOW_TYPE;
     }
-    /* Modified by l60609 for DSDA Phase III, 2013-2-22, End */
     return AT_OK;
 }
 
 TAF_UINT32 At_SetCnmiPara(TAF_UINT8 ucIndex)
 {
     TAF_UINT32                          ulRet;
-    /* Modified by l60609 for DSDA Phase III, 2013-2-22, Begin */
     AT_MODEM_SMS_CTX_STRU              *pstSmsCtx = VOS_NULL_PTR;
 
     pstSmsCtx = AT_GetModemSmsCtxAddrFromClientId(ucIndex);
@@ -2344,7 +2278,6 @@ TAF_UINT32 At_SetCnmiPara(TAF_UINT8 ucIndex)
                                pstSmsCtx->enCsmsMsgVersion,
                                pstSmsCtx->stCnmiType.CnmiTmpMtType,
                                pstSmsCtx->stCnmiType.CnmiTmpDsType);
-    /* Modified by l60609 for DSDA Phase III, 2013-2-22, End */
     if (AT_OK != ulRet)
     {
         return AT_ERROR;
@@ -2358,7 +2291,6 @@ TAF_UINT32 At_SetCnmiPara(TAF_UINT8 ucIndex)
 TAF_UINT32 At_SetCmglPara(TAF_UINT8 ucIndex)
 {
     MN_MSG_LIST_PARM_STRU               stListParm;
-    /* Modified by l60609 for DSDA Phase III, 2013-2-22, Begin */
     AT_MODEM_SMS_CTX_STRU              *pstSmsCtx = VOS_NULL_PTR;
 
     pstSmsCtx = AT_GetModemSmsCtxAddrFromClientId(ucIndex);
@@ -2399,7 +2331,6 @@ TAF_UINT32 At_SetCmglPara(TAF_UINT8 ucIndex)
             return AT_CMS_OPERATION_NOT_ALLOWED;
         }
     }
-    /* Modified by l60609 for DSDA Phase III, 2013-2-22, End */
 
     /* 执行命令操作 */
     gastAtClientTab[ucIndex].opId = At_GetOpId();
@@ -2419,7 +2350,6 @@ TAF_UINT32 At_SetCmglPara(TAF_UINT8 ucIndex)
 TAF_UINT32 At_SetCmgrPara(TAF_UINT8 ucIndex)
 {
     MN_MSG_READ_PARM_STRU               stReadParm;
-    /* Modified by l60609 for DSDA Phase III, 2013-2-22, Begin */
     AT_MODEM_SMS_CTX_STRU              *pstSmsCtx = VOS_NULL_PTR;
 
     pstSmsCtx = AT_GetModemSmsCtxAddrFromClientId(ucIndex);
@@ -2451,7 +2381,6 @@ TAF_UINT32 At_SetCmgrPara(TAF_UINT8 ucIndex)
             return AT_CMS_OPERATION_NOT_ALLOWED;
         }
     }
-    /* Modified by l60609 for DSDA Phase III, 2013-2-22, End */
 
     /* 执行命令操作 */
     gastAtClientTab[ucIndex].opId = At_GetOpId();
@@ -2466,18 +2395,15 @@ TAF_UINT32 At_SetCmgrPara(TAF_UINT8 ucIndex)
         return AT_ERROR;
     }
 }
-/*begin add by zhoujun40661 2006-10-10 for cnma*/
 
 TAF_UINT32 At_SetCnmaPara(TAF_UINT8 ucIndex)
 {
     TAF_UINT32                          ulRet;
     TAF_BOOL                            bRpAck              = TAF_TRUE;
     MN_MSG_SEND_ACK_PARM_STRU           *pstAckParm;
-    /* Added by l60609 for DSDA Phase III, 2013-2-20, Begin */
     AT_MODEM_SMS_CTX_STRU              *pstSmsCtx = VOS_NULL_PTR;
 
     pstSmsCtx = AT_GetModemSmsCtxAddrFromClientId(ucIndex);
-    /* Added by l60609 for DSDA Phase III, 2013-2-20, End */
 
     if (gucAtParaIndex > 2)
     {
@@ -2486,9 +2412,7 @@ TAF_UINT32 At_SetCnmaPara(TAF_UINT8 ucIndex)
 
     /* 初始化 */
     TAF_MEM_SET_S(&gastAtClientTab[ucIndex].AtSmsData, sizeof(gastAtClientTab[ucIndex].AtSmsData), 0x00, sizeof(gastAtClientTab[ucIndex].AtSmsData));
-    /* Modified by l60609 for DSDA Phase III, 2013-2-20, Begin */
     if (AT_CMGF_MSG_FORMAT_TEXT == pstSmsCtx->enCmgfMsgFormat)    /* TEXT方式 */
-    /* Modified by l60609 for DSDA Phase III, 2013-2-20, End */
     {
         if (AT_CMD_OPT_SET_CMD_NO_PARA != g_stATParseCmd.ucCmdOptType)
         {
@@ -2576,11 +2500,9 @@ TAF_UINT32 At_SetCnmaPara(TAF_UINT8 ucIndex)
     return ulRet;
 }
 
-/*end add by zhoujun40661 2006-10-10 for cnma*/
 
 TAF_UINT32 At_SetCmgsPara(TAF_UINT8 ucIndex)
 {
-    /* Modified by l60609 for DSDA Phase III, 2013-2-20, Begin */
     TAF_UINT8                           ucSmSFormat;
     TAF_UINT32                          ulRet;
 
@@ -2646,7 +2568,6 @@ TAF_UINT32 At_SetCmgsPara(TAF_UINT8 ucIndex)
     {
         gastAtClientTab[ucIndex].CmdCurrentOpt = AT_CMD_CMGS_PDU_SET;
     }
-    /* Modified by l60609 for DSDA Phase III, 2013-2-20, End */
     return AT_WAIT_SMS_INPUT;   /* 返回提示短信内容输入状态 */
 }
 
@@ -2655,7 +2576,6 @@ TAF_UINT32 At_SetCmssPara(TAF_UINT8 ucIndex)
 {
     MN_MSG_SEND_FROMMEM_PARM_STRU       stSendFromMemParm;
     TAF_UINT32                          ulRet;
-    /* Modified by l60609 for DSDA Phase III, 2013-2-22, Begin */
     AT_MODEM_SMS_CTX_STRU              *pstSmsCtx = VOS_NULL_PTR;
 
     pstSmsCtx = AT_GetModemSmsCtxAddrFromClientId(ucIndex);
@@ -2683,7 +2603,6 @@ TAF_UINT32 At_SetCmssPara(TAF_UINT8 ucIndex)
     /* 设置发送存储器 */
     stSendFromMemParm.enMemStore = pstSmsCtx->stCpmsInfo.enMemSendorWrite;
     stSendFromMemParm.ulIndex = gastAtParaList[0].ulParaValue;
-    /* Modified by l60609 for DSDA Phase III, 2013-2-22, End */
 
     /* 执行命令操作 */
     gastAtClientTab[ucIndex].opId = At_GetOpId();
@@ -2702,7 +2621,6 @@ TAF_UINT32 At_SetCmssPara(TAF_UINT8 ucIndex)
 
 TAF_UINT32 At_SetCmgwPara(TAF_UINT8 ucIndex)
 {
-    /* Modified by l60609 for DSDA Phase III, 2013-2-25, Begin */
     TAF_UINT8                           ucSmSFormat;
     TAF_UINT32                          ulRet;
     AT_MODEM_SMS_CTX_STRU              *pstSmsCtx = VOS_NULL_PTR;
@@ -2714,7 +2632,6 @@ TAF_UINT32 At_SetCmgwPara(TAF_UINT8 ucIndex)
     /* 初始化 */
     TAF_MEM_SET_S(&gastAtClientTab[ucIndex].AtSmsData, sizeof(gastAtClientTab[ucIndex].AtSmsData), 0x00, sizeof(gastAtClientTab[ucIndex].AtSmsData));
     if (AT_CMGF_MSG_FORMAT_TEXT == ucSmSFormat)    /* TEXT方式参数检查 */
-    /* Modified by l60609 for DSDA Phase III, 2013-2-25, End */
     {
         /* 参数检查 */
         if ((AT_CMD_OPT_SET_PARA_CMD == g_stATParseCmd.ucCmdOptType)
@@ -2814,7 +2731,6 @@ TAF_UINT32 At_SetCmgdPara(TAF_UINT8 ucIndex)
                                                                (AT_MSG_DELETE_READ + AT_MSG_DELETE_SENT + AT_MSG_DELETE_UNSENT),
                                                                AT_MSG_DELETE_ALL};
     TAF_UINT32                          ulRet;
-    /* Modified by l60609 for DSDA Phase III, 2013-2-25, Begin */
     AT_MODEM_SMS_CTX_STRU              *pstSmsCtx = VOS_NULL_PTR;
 
     pstSmsCtx = AT_GetModemSmsCtxAddrFromClientId(ucIndex);
@@ -2834,7 +2750,6 @@ TAF_UINT32 At_SetCmgdPara(TAF_UINT8 ucIndex)
 
     /* 设置删除存储器 */
     stDelete.enMemStore = pstSmsCtx->stCpmsInfo.enMemReadorDelete;
-    /* Modified by l60609 for DSDA Phase III, 2013-2-25, End */
 
     /* 设置<delflag> */
     if (0 != gastAtParaList[1].usParaLen)
@@ -2870,7 +2785,6 @@ TAF_UINT32 At_SetCmgdPara(TAF_UINT8 ucIndex)
 
 TAF_UINT32 At_SetCmgcPara(TAF_UINT8 ucIndex)
 {
-    /* Modified by l60609 for DSDA Phase III, 2013-2-22, Begin */
     TAF_UINT8                           ucSmSFormat;
     TAF_UINT32                          ulRet;
     AT_MODEM_SMS_CTX_STRU              *pstSmsCtx = VOS_NULL_PTR;
@@ -2883,7 +2797,6 @@ TAF_UINT32 At_SetCmgcPara(TAF_UINT8 ucIndex)
     TAF_MEM_SET_S(&gastAtClientTab[ucIndex].AtSmsData, sizeof(gastAtClientTab[ucIndex].AtSmsData), 0x00, sizeof(gastAtClientTab[ucIndex].AtSmsData));
 
     if (AT_CMGF_MSG_FORMAT_TEXT == ucSmSFormat)    /* TEXT方式*/
-    /* Modified by l60609 for DSDA Phase III, 2013-2-22, End */
     {
         /* 如果<ct>或<fo>不存在，直接返回错误 */
         if ((0 == gastAtParaList[1].usParaLen)
@@ -2973,7 +2886,6 @@ TAF_UINT32 At_SetCmstPara(TAF_UINT8 ucIndex)
     TAF_UINT32                          ulRet;
     TAF_UINT32                          ulLoop;
     MN_OPERATION_ID_T                   opId                = At_GetOpId();
-    /* Modified by l60609 for DSDA Phase III, 2013-2-22, Begin */
     AT_MODEM_SMS_CTX_STRU              *pstSmsCtx = VOS_NULL_PTR;
 
     pstSmsCtx = AT_GetModemSmsCtxAddrFromClientId(ucIndex);
@@ -3003,7 +2915,6 @@ TAF_UINT32 At_SetCmstPara(TAF_UINT8 ucIndex)
     /* 设置发送存储器 */
     stSendFromMemParm.enMemStore = pstSmsCtx->stCpmsInfo.enMemSendorWrite;
     stSendFromMemParm.ulIndex = gastAtParaList[0].ulParaValue;
-    /* Modified by l60609 for DSDA Phase III, 2013-2-22, End */
 
     /* 执行命令操作 */
     gastAtClientTab[ucIndex].AtSmsData.ucMsgSentSmNum = (TAF_UINT8)gastAtParaList[3].ulParaValue;
@@ -3020,7 +2931,6 @@ TAF_UINT32 At_SetCmstPara(TAF_UINT8 ucIndex)
     return AT_WAIT_ASYNC_RETURN;    /* 返回命令处理挂起状态 */
 }
 
-/* Modified by f62575 for AT Project，2011-10-03,  Begin */
 
 VOS_UINT32 At_SetCmStubPara(VOS_UINT8 ucIndex)
 {
@@ -3040,9 +2950,7 @@ VOS_UINT32 At_SetCmStubPara(VOS_UINT8 ucIndex)
     /* A核能处理的桩直接处理并退出: 自动回复功能不需要通知C核 */
     if (MN_MSG_STUB_TYPE_SMS_AUTO_REPLY == gastAtParaList[0].ulParaValue)
     {
-        /* Modified by l60609 for DSDA Phase III, 2013-3-5, Begin */
         AT_StubTriggerAutoReply(ucIndex, (VOS_UINT8)gastAtParaList[1].ulParaValue);
-        /* Modified by l60609 for DSDA Phase III, 2013-3-5, End */
         return AT_OK;
     }
 
@@ -3064,7 +2972,6 @@ VOS_UINT32 At_SetCmStubPara(VOS_UINT8 ucIndex)
     gastAtClientTab[ucIndex].CmdCurrentOpt = AT_CMD_CMSTUB_SET;
     return AT_WAIT_ASYNC_RETURN;
 }
-/* Modified by f62575 for AT Project，2011-10-03,  End */
 
 
 TAF_UINT32 At_SetCmmsPara(
@@ -3217,7 +3124,6 @@ VOS_UINT32 AT_ProcCscbWithParm(
     VOS_UINT32                          ulRet;
     TAF_CBA_CBMI_RANGE_LIST_STRU       *pstDcssInfo;
     VOS_UINT32                          ulAppRet;
-    /* Modified by l60609 for DSDA Phase III, 2013-2-22, Begin */
     AT_MODEM_SMS_CTX_STRU              *pstSmsCtx = VOS_NULL_PTR;
 
     pstSmsCtx = AT_GetModemSmsCtxAddrFromClientId(ucIndex);
@@ -3268,7 +3174,6 @@ VOS_UINT32 AT_ProcCscbWithParm(
         PS_MEM_FREE(WUEPS_PID_AT, pstDcssInfo);
         /*lint -restore */
     }
-    /* Modified by l60609 for DSDA Phase III, 2013-2-22, End */
 
     if( MN_MSG_CBMODE_ACCEPT  ==  gastAtParaList[0].ulParaValue)
     {
@@ -3383,7 +3288,6 @@ TAF_UINT32 At_SetCscbPara(
 
 TAF_UINT32 At_SetClipPara(TAF_UINT8 ucIndex)
 {
-    /* Modified by l60609 for DSDA Phase III, 2013-2-20, Begin */
     AT_MODEM_SS_CTX_STRU               *pstSsCtx = VOS_NULL_PTR;
 
     pstSsCtx = AT_GetModemSsCtxAddrFromClientId(ucIndex);
@@ -3409,7 +3313,6 @@ TAF_UINT32 At_SetClipPara(TAF_UINT8 ucIndex)
     {
         pstSsCtx->ucClipType = AT_CLIP_DISABLE_TYPE;
     }
-    /* Modified by l60609 for DSDA Phase III, 2013-2-20, End */
 
     return AT_OK;
 }
@@ -3417,11 +3320,9 @@ TAF_UINT32 At_SetClipPara(TAF_UINT8 ucIndex)
 
 TAF_UINT32 At_SetClirPara(TAF_UINT8 ucIndex)
 {
-    /* Modified by l60609 for DSDA Phase III, 2013-2-20, Begin */
     AT_MODEM_SS_CTX_STRU               *pstSsCtx = VOS_NULL_PTR;
 
     pstSsCtx = AT_GetModemSsCtxAddrFromClientId(ucIndex);
-    /* Modified by l60609 for DSDA Phase III, 2013-2-20, End */
 
     /* 参数检查 */
     if(AT_CMD_OPT_SET_PARA_CMD != g_stATParseCmd.ucCmdOptType)
@@ -3435,7 +3336,6 @@ TAF_UINT32 At_SetClirPara(TAF_UINT8 ucIndex)
         return AT_CME_INCORRECT_PARAMETERS;
     }
 
-    /* Modified by l60609 for DSDA Phase III, 2013-2-20, Begin */
     /* 参数不为空 */
     if(0 != gastAtParaList[0].usParaLen)
     {
@@ -3461,14 +3361,12 @@ TAF_UINT32 At_SetClirPara(TAF_UINT8 ucIndex)
     {
         pstSsCtx->ucClirType = AT_CLIR_AS_SUBSCRIPT;
     }
-    /* Modified by l60609 for DSDA Phase III, 2013-2-20, End */
     return AT_OK;
 }
 
 
 VOS_UINT32 At_SetColpPara(VOS_UINT8 ucIndex)
 {
-    /* Modified by l60609 for DSDA Phase III, 2013-2-20, Begin */
     AT_MODEM_SS_CTX_STRU               *pstSsCtx = VOS_NULL_PTR;
 
     pstSsCtx = AT_GetModemSsCtxAddrFromClientId(ucIndex);
@@ -3494,7 +3392,6 @@ VOS_UINT32 At_SetColpPara(VOS_UINT8 ucIndex)
     {
         pstSsCtx->ucColpType = AT_COLP_DISABLE_TYPE;
     }
-    /* Modified by l60609 for DSDA Phase III, 2013-2-20, End */
 
     return AT_OK;
 }
@@ -3602,7 +3499,6 @@ TAF_UINT32 At_SetCeerPara(TAF_UINT8 ucIndex)
 
 TAF_UINT32 At_SetCregPara(TAF_UINT8 ucIndex)
 {
-    /* Modified by l60609 for DSDA Phase III, 2013-2-22, Begin */
     AT_MODEM_NET_CTX_STRU                  *pstNetCtx = VOS_NULL_PTR;
 
     AT_MTA_UNSOLICITED_RPT_SET_REQ_STRU     stAtCmd;
@@ -3638,7 +3534,6 @@ TAF_UINT32 At_SetCregPara(TAF_UINT8 ucIndex)
         pstNetCtx->ucCregType   = AT_CREG_RESULT_CODE_NOT_REPORT_TYPE;
         stAtCmd.u.ucCregRptFlg  = AT_CREG_RESULT_CODE_NOT_REPORT_TYPE;
     }
-    /* Modified by l60609 for DSDA Phase III, 2013-2-22, End */
 
     stAtCmd.enReqType = AT_MTA_SET_CREG_RPT_TYPE;
 
@@ -3662,7 +3557,6 @@ TAF_UINT32 At_SetCregPara(TAF_UINT8 ucIndex)
 
 TAF_UINT32 At_SetCgregPara(TAF_UINT8 ucIndex)
 {
-    /* Modified by l60609 for DSDA Phase III, 2013-2-22, Begin */
     AT_MODEM_NET_CTX_STRU                  *pstNetCtx = VOS_NULL_PTR;
 
     AT_MTA_UNSOLICITED_RPT_SET_REQ_STRU     stAtCmd;
@@ -3698,7 +3592,6 @@ TAF_UINT32 At_SetCgregPara(TAF_UINT8 ucIndex)
         pstNetCtx->ucCgregType  = AT_CGREG_RESULT_CODE_NOT_REPORT_TYPE;
         stAtCmd.u.ucCgregRptFlg = AT_CGREG_RESULT_CODE_NOT_REPORT_TYPE;
     }
-    /* Modified by l60609 for DSDA Phase III, 2013-2-22, End */
 
     stAtCmd.enReqType       = AT_MTA_SET_CGREG_RPT_TYPE;
 
@@ -3758,7 +3651,6 @@ VOS_UINT32 AT_SetCsdfPara(VOS_UINT8 ucIndex)
 
 VOS_UINT32 AT_SetCeregPara(VOS_UINT8 ucIndex)
 {
-    /* Modified by l60609 for DSDA Phase III, 2013-2-22, Begin */
     AT_MODEM_NET_CTX_STRU                  *pstNetCtx = VOS_NULL_PTR;
 
     AT_MTA_UNSOLICITED_RPT_SET_REQ_STRU     stAtCmd;
@@ -3793,7 +3685,6 @@ VOS_UINT32 AT_SetCeregPara(VOS_UINT8 ucIndex)
         pstNetCtx->ucCeregType  = AT_CEREG_RESULT_CODE_NOT_REPORT_TYPE;
         stAtCmd.u.ucCeregRptFlg = AT_CEREG_RESULT_CODE_NOT_REPORT_TYPE;
     }
-    /* Modified by l60609 for DSDA Phase III, 2013-2-22, End */
 
     stAtCmd.enReqType       = AT_MTA_SET_CEREG_RPT_TYPE;
 
@@ -3952,7 +3843,6 @@ TAF_UINT32 At_SetCstaPara(TAF_UINT8 ucIndex)
 
 TAF_UINT32 At_SetCcugPara(TAF_UINT8 ucIndex)
 {
-    /* Modified by l60609 for DSDA Phase III, 2013-2-21, Begin */
     AT_MODEM_SS_CTX_STRU               *pstSsCtx = VOS_NULL_PTR;
 
     pstSsCtx = AT_GetModemSsCtxAddrFromClientId(ucIndex);
@@ -4011,7 +3901,6 @@ TAF_UINT32 At_SetCcugPara(TAF_UINT8 ucIndex)
         pstSsCtx->stCcugCfg.bSuppressPrefer = 0;
         pstSsCtx->stCcugCfg.bSuppressOA     = 0;
     }
-    /* Modified by l60609 for DSDA Phase III, 2013-2-21, End */
     return AT_OK;
 }
 
@@ -4089,11 +3978,9 @@ TAF_BOOL At_ParseSingleChldPara(
         pstCallSupsCmd->enCallSupsCmd = MN_CALL_SUPS_CMD_ECT;
         break;
 
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
     case 5:
        pstCallSupsCmd->enCallSupsCmd = MN_CALL_SUPS_CMD_ACT_CCBS;
        return AT_OK;
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, end */
 
     case 6:
        pstCallSupsCmd->enCallSupsCmd = MN_CALL_SUPS_CMD_ECONF_REL_USER;
@@ -4468,7 +4355,6 @@ VOS_UINT32 At_SetDtmfPara(VOS_UINT8 ucIndex)
 
 TAF_UINT32 At_SetCrcPara(TAF_UINT8 ucIndex)
 {
-    /* Modified by l60609 for DSDA Phase III, 2013-2-25, Begin */
     AT_MODEM_SS_CTX_STRU               *pstSsCtx = VOS_NULL_PTR;
 
     pstSsCtx = AT_GetModemSsCtxAddrFromClientId(ucIndex);
@@ -4494,14 +4380,12 @@ TAF_UINT32 At_SetCrcPara(TAF_UINT8 ucIndex)
     {
         pstSsCtx->ucCrcType = AT_CRC_DISABLE_TYPE;
     }
-    /* Modified by l60609 for DSDA Phase III, 2013-2-25, End */
 
     return AT_OK;
 }
 
 TAF_UINT32 At_SetCbstPara(TAF_UINT8 ucIndex)
 {
-    /* Modified by l60609 for DSDA Phase III, 2013-2-21, Begin */
     AT_MODEM_SS_CTX_STRU               *pstSsCtx = VOS_NULL_PTR;
 
     pstSsCtx = AT_GetModemSsCtxAddrFromClientId(ucIndex);
@@ -4543,14 +4427,12 @@ TAF_UINT32 At_SetCbstPara(TAF_UINT8 ucIndex)
     {
         pstSsCtx->stCbstDataCfg.enConnElem = MN_CALL_CSD_CE_T;
     }
-    /* Modified by l60609 for DSDA Phase III, 2013-2-21, End */
 
     return AT_OK;
 }
 
 TAF_UINT32 At_SetCmodPara(TAF_UINT8 ucIndex)
 {
-    /* Modified by l60609 for DSDA Phase III, 2013-2-21, Begin */
     AT_MODEM_SS_CTX_STRU               *pstSsCtx = VOS_NULL_PTR;
 
     pstSsCtx = AT_GetModemSsCtxAddrFromClientId(ucIndex);
@@ -4569,7 +4451,6 @@ TAF_UINT32 At_SetCmodPara(TAF_UINT8 ucIndex)
 
     /* 执行命令操作 */
     pstSsCtx->enCModType = (TAF_UINT8)gastAtParaList[0].ulParaValue;
-    /* Modified by l60609 for DSDA Phase III, 2013-2-21, End */
 
     return AT_OK;
 
@@ -4644,7 +4525,6 @@ VOS_UINT32 At_SetCmmiPara(VOS_UINT8 ucIndex)
     VOS_CHAR                           *pcOutRestMmiStr;
     VOS_UINT32                          ulResult;
     AT_CMD_CURRENT_OPT_ENUM             enCmdCurrentOpt;
-    /* Modified by l60609 for DSDA Phase III, 2013-2-20, Begin */
     AT_MODEM_SS_CTX_STRU               *pstSsCtx = VOS_NULL_PTR;
     AT_MODEM_CC_CTX_STRU               *pstCcCtx = VOS_NULL_PTR;
 
@@ -4661,7 +4541,6 @@ VOS_UINT32 At_SetCmmiPara(VOS_UINT8 ucIndex)
     {
         inCall = VOS_TRUE;
     }
-    /* Modified by l60609 for DSDA Phase III, 2013-2-20, End */
     /*lint -save -e516 */
     pMmiOpParam = (MN_MMI_OPERATION_PARAM_STRU *)PS_MEM_ALLOC(WUEPS_PID_AT, sizeof(MN_MMI_OPERATION_PARAM_STRU));
     /*lint -restore */
@@ -4685,7 +4564,6 @@ VOS_UINT32 At_SetCmmiPara(VOS_UINT8 ucIndex)
         case TAF_MMI_SUPPRESS_CLIR:
         case TAF_MMI_INVOKE_CLIR:
 
-            /* Added by f62575 for SS FDN&Call Control, 2013-05-06, begin */
             if(TAF_MMI_SUPPRESS_CLIR == pMmiOpParam->MmiOperationType)
             {
                 f_enClirOperate = MN_CALL_CLIR_SUPPRESS;
@@ -4694,7 +4572,6 @@ VOS_UINT32 At_SetCmmiPara(VOS_UINT8 ucIndex)
             {
                 f_enClirOperate = MN_CALL_CLIR_INVOKE;
             }
-            /* Added by f62575 for SS FDN&Call Control, 2013-05-06, end */
 
             if((VOS_UINT16)(pcOutRestMmiStr - (VOS_CHAR *)(gastAtParaList[0].aucPara)) < gastAtParaList[0].usParaLen)
             {
@@ -4720,8 +4597,6 @@ VOS_UINT32 At_SetCmmiPara(VOS_UINT8 ucIndex)
         }
 
         /* 保存密码 */
-        /* Delete by f62575 for SS FDN&Call Control, 2013-05-06, begin */
-        /* Delete by f62575 for SS FDN&Call Control, 2013-05-06, end */
 
         /* 调用TAF提供的接口，处理SS命令 */
         enCmdCurrentOpt = At_GetMnOptType(pMmiOpParam->MmiOperationType);
@@ -4799,14 +4674,12 @@ VOS_UINT32 At_SetCmmiPara(VOS_UINT8 ucIndex)
                 }
                 break;
 
-             /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
              case AT_CMD_SS_DEACTIVE_CCBS:
                 if (TAF_SUCCESS != TAF_EraseCCEntryReq(gastAtClientTab[ucIndex].usClientId,0, &pMmiOpParam->stCcbsEraseReq))
                 {
                     AT_WARN_LOG("At_SetCmmiPara: TAF_EraseCCEntryReq failed.");
                 }
                 break;
-            /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, end */
 
             case AT_CMD_SS_INTERROGATE:
             case AT_CMD_SS_INTERROGATE_CCBS:
@@ -4821,9 +4694,7 @@ VOS_UINT32 At_SetCmmiPara(VOS_UINT8 ucIndex)
                     AT_WARN_LOG("At_SetCmmiPara: TAF_InterrogateSSReq failed.");
                 }
                 break;
-            /* Delete by f62575 for SS FDN&Call Control, 2013-05-06, begin */
             /* 删除AT_CMD_SS_GET_PSWD 分支 */
-            /* Delete by f62575 for SS FDN&Call Control, 2013-05-06, end */
             case AT_CMD_CUSD_REQ:
                 if (TAF_SUCCESS != AT_CmmiProcUssd(ucIndex, &pMmiOpParam->ProcessUssdReq))
                 {
@@ -4831,9 +4702,7 @@ VOS_UINT32 At_SetCmmiPara(VOS_UINT8 ucIndex)
                 }
                 break;
             case AT_CMD_CLIP_READ:
-                /* Modified by l60609 for DSDA Phase III, 2013-2-20, Begin */
                 pstSsCtx->ucClipType = (AT_CLIP_TYPE)gastAtParaList[0].ulParaValue;
-                /* Modified by l60609 for DSDA Phase III, 2013-2-20, End */
                 /*lint -save -e516 */
                 PS_MEM_FREE(WUEPS_PID_AT, pMmiOpParam);
                 /*lint -restore */
@@ -5628,7 +5497,6 @@ TAF_UINT32 AT_SetCgansPara(TAF_UINT8 ucIndex)
         stAnsInfo.ucCid = (VOS_UINT8)gastAtParaList[2].ulParaValue;
     }
 
-    /* Added by l60609 for V3R3 PPP RPOJECT 2013-06-07, Begin */
     /* 填充ans扩展标志 */
     if (AT_CMD_CGANS_EXT == g_stParseContext[ucIndex].pstCmdElement->ulCmdIndex)
     {
@@ -5638,7 +5506,6 @@ TAF_UINT32 AT_SetCgansPara(TAF_UINT8 ucIndex)
     {
         stAnsInfo.ucAnsExtFlg = VOS_FALSE;
     }
-    /* Added by l60609 for V3R3 PPP RPOJECT 2013-06-07, End */
 
     /* 执行命令操作 */
     if ( 1 == ucRspType )
@@ -6900,7 +6767,6 @@ TAF_UINT32 At_SetCgcattPara(TAF_UINT8 ucIndex)
         }
     }
 }
-/* Added by s46746 for V7R1 phase II , 2011-10-18, begin */
 
 VOS_VOID At_SetCopsActPara(
     TAF_MMA_RAT_TYPE_ENUM_UINT8        *penPhRat,
@@ -6936,7 +6802,6 @@ VOS_VOID At_SetCopsActPara(
 
     return;
 }
-/* Added by s46746 for V7R1 phase II , 2011-10-18, end */
 
 
 VOS_UINT32 AT_DigitString2Hex(
@@ -7400,7 +7265,6 @@ TAF_UINT32 At_SetCgclassPara(TAF_UINT8 ucIndex)
         break;
     }
 
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
     if (TAF_PH_MS_CLASS_A == MsClass)
     {
         return AT_OK;
@@ -7409,7 +7273,6 @@ TAF_UINT32 At_SetCgclassPara(TAF_UINT8 ucIndex)
     {
         return AT_ERROR;
     }
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, end */
 
 }
 
@@ -7684,7 +7547,6 @@ TAF_UINT32 At_SetCsqPara(TAF_UINT8 ucIndex)
 
 VOS_UINT32 At_SetCbcPara(VOS_UINT8 ucIndex)
 {
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
     if (BSP_MODULE_SUPPORT == mdrv_misc_support_check(BSP_MODULE_TYPE_CHARGE) )
     {
 
@@ -7735,7 +7597,6 @@ VOS_UINT32 At_SetCbcPara(VOS_UINT8 ucIndex)
         }
 
     }
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, end */
 
 }
 
@@ -9481,20 +9342,7 @@ TAF_UINT32 At_SetScpbwPara(
 }
 
 
-/*****************************************************************************
- Prototype      : At_SetScpbrPara
- Description    : ^SCPBR
- Input          : ucIndex --- 用户索引
- Output         :
- Return Value   : AT_XXX  --- ATC返回码
- Calls          : ---
- Called By      : ---
 
- History        : ---
-  1.Date        : 2009-05-23
-    Author      : h59254
-    Modification: Created
-*****************************************************************************/
 TAF_UINT32 At_SetScpbrPara(TAF_UINT8 ucIndex)
 {
     /* 参数检查 */
@@ -9533,20 +9381,7 @@ TAF_UINT32 At_SetScpbrPara(TAF_UINT8 ucIndex)
 }
 
 
-/*****************************************************************************
- Prototype      : At_SetCnumPara
- Description    : +CNUM
- Input          : ucIndex --- 用户索引
- Output         :
- Return Value   : AT_XXX  --- ATC返回码
- Calls          : ---
- Called By      : ---
 
- History        : ---
-  1.Date        : 2007-06-11
-    Author      : h44270
-    Modification: Created function
-*****************************************************************************/
 TAF_UINT32 At_SetCnumPara(TAF_UINT8 ucIndex)
 {
     /* 参数检查 */
@@ -9631,20 +9466,7 @@ TAF_UINT32 At_SetCsimPara(TAF_UINT8 ucIndex)
     }
 }
 
-/*****************************************************************************
- Prototype      : At_SetCchoPara
- Description    : +CCHO=<dfname>
- Input          : ucIndex --- 用户索引
- Output         :
- Return Value   : AT_XXX  --- ATC返回码
- Calls          : ---
- Called By      : ---
 
- History        : ---
-  1.Date        : 2013-05-15
-    Author      : g47350
-    Modification: Created function
-*****************************************************************************/
 TAF_UINT32 At_SetCchoPara(TAF_UINT8 ucIndex)
 {
     SI_PIH_CCHO_COMMAND_STRU    stCchoCmd;
@@ -9737,20 +9559,7 @@ TAF_UINT32 At_SetCchpPara(TAF_UINT8 ucIndex)
     return AT_ERROR;
 }
 
-/*****************************************************************************
- Prototype      : At_SetCchcPara
- Description    : +CCHC=<sessionid>
- Input          : ucIndex --- 用户索引
- Output         :
- Return Value   : AT_XXX  --- ATC返回码
- Calls          : ---
- Called By      : ---
 
- History        : ---
-  1.Date        : 2013-05-15
-    Author      : g47350
-    Modification: Created function
-*****************************************************************************/
 TAF_UINT32 At_SetCchcPara(TAF_UINT8 ucIndex)
 {
     /* 参数检查 */
@@ -9778,20 +9587,7 @@ TAF_UINT32 At_SetCchcPara(TAF_UINT8 ucIndex)
     return AT_ERROR;
 }
 
-/*****************************************************************************
- Prototype      : At_SetCglaPara
- Description    : +CGLA=<sessionid>,<length>,<command>
- Input          : ucIndex --- 用户索引
- Output         :
- Return Value   : AT_XXX  --- ATC返回码
- Calls          : ---
- Called By      : ---
 
- History        : ---
-  1.Date        : 2013-05-15
-    Author      : g47350
-    Modification: Created function
-*****************************************************************************/
 TAF_UINT32 At_SetCglaPara(TAF_UINT8 ucIndex)
 {
     SI_PIH_CGLA_COMMAND_STRU    stCglaCmd;
@@ -9849,20 +9645,7 @@ TAF_UINT32 At_SetCglaPara(TAF_UINT8 ucIndex)
     return AT_ERROR;
 }
 
-/*****************************************************************************
- Prototype      : At_SetCardATRPara
- Description    :
- Input          : ucIndex --- 用户索引
- Output         :
- Return Value   : AT_XXX  --- ATC返回码
- Calls          : ---
- Called By      : ---
 
- History        : ---
-  1.Date        : 2013-08-22
-    Author      : g47350
-    Modification: Created function by g47350
-*****************************************************************************/
 TAF_UINT32 At_SetCardATRPara(TAF_UINT8 ucIndex)
 {
     if (AT_SUCCESS == SI_PIH_GetCardATRReq(gastAtClientTab[ucIndex].usClientId, 0))
@@ -10112,18 +9895,7 @@ TAF_UINT32  At_CrsmFilePathCheck(TAF_UINT32 ulEfId, TAF_UINT8 *pucFilePath, TAF_
     return AT_SUCCESS;
 }
 
-/********************************************************************
-  Function:       At_CrsmApduParaCheck
-  Description:    执行CRSM命令输入的参数的匹配检查
-  Input:          无
-  Output:         无
-  Return:         AT_SUCCESS：成功，其他为失败
-  Others:
-  History        : ---
-  1.Date         : 2012-05-04
-    Author       : h59254
-    Modification : Created function
-********************************************************************/
+
 TAF_UINT32  At_CrsmApduParaCheck(VOS_VOID)
 {
     TAF_UINT16                          usFileTag;
@@ -10179,18 +9951,7 @@ TAF_UINT32  At_CrsmApduParaCheck(VOS_VOID)
 
 }
 
-/********************************************************************
-  Function:       At_CrsmFilePathParse
-  Description:    执行CRSM命令输入的路径进行解析
-  Input:          无
-  Output:         *pstCommand：CRSM命令的数据结构
-  Return:          AT_SUCCESS：成功，其他为失败
-  Others:
-  History        : ---
-  1.Date         : 2012-05-04
-    Author       : h59254
-    Modification : Created function
-********************************************************************/
+
 TAF_UINT32 At_CrsmFilePathParse(SI_PIH_CRSM_STRU *pstCommand)
 {
     TAF_UINT32                          ulResult;
@@ -10239,18 +10000,7 @@ TAF_UINT32 At_CrsmFilePathParse(SI_PIH_CRSM_STRU *pstCommand)
     return AT_SUCCESS;
 }
 
-/********************************************************************
-  Function:       At_CrsmParaStatusCheck
-  Description:    执行CRSM命令对STATUS命令的参数检查
-  Input:          无
-  Output:         *pstCommand：CRSM命令的数据结构
-  Return:          AT_SUCCESS：成功，其他为失败
-  Others:
-  History        : ---
-  1.Date         : 2012-05-04
-    Author       : h59254
-    Modification : Created function
-********************************************************************/
+
 TAF_UINT32 At_CrsmParaStatusCheck (SI_PIH_CRSM_STRU *pstCommand)
 {
     /* STATUS命令如果没有输入文件ID，就不需要做选文件操作，直接发STATUS命令 */
@@ -10272,18 +10022,7 @@ TAF_UINT32 At_CrsmParaStatusCheck (SI_PIH_CRSM_STRU *pstCommand)
     return At_CrsmFilePathParse(pstCommand);
 }
 
-/********************************************************************
-  Function:       At_CrsmParaReadBinaryCheck
-  Description:    执行CRSM命令对Read Binary命令的参数检查
-  Input:          无
-  Output:         *pstCommand：CRSM命令的数据结构
-  Return:          AT_SUCCESS：成功，其他为失败
-  Others:
-  History        : ---
-  1.Date         : 2012-05-04
-    Author       : h59254
-    Modification : Created function
-********************************************************************/
+
 TAF_UINT32 At_CrsmParaReadBinaryCheck (SI_PIH_CRSM_STRU *pstCommand)
 {
 
@@ -10299,18 +10038,7 @@ TAF_UINT32 At_CrsmParaReadBinaryCheck (SI_PIH_CRSM_STRU *pstCommand)
 }
 
 
-/********************************************************************
-  Function:       At_CrsmParaReadBinaryCheck
-  Description:    执行CRSM命令对Read Record的参数检查
-  Input:          无
-  Output:         *pstCommand：CRSM命令的数据结构
-  Return:         AT_SUCCESS：成功，其他为失败
-  Others:
-  History        : ---
-  1.Date         : 2012-05-04
-    Author       : h59254
-    Modification : Created function
-********************************************************************/
+
 TAF_UINT32 At_CrsmParaReadRecordCheck(SI_PIH_CRSM_STRU *pstCommand)
 {
 
@@ -10325,18 +10053,7 @@ TAF_UINT32 At_CrsmParaReadRecordCheck(SI_PIH_CRSM_STRU *pstCommand)
     return At_CrsmFilePathParse(pstCommand);
 }
 
-/********************************************************************
-  Function:       At_CrsmParaGetRspCheck
-  Description:    执行CRSM命令的Get Response命令参数检查
-  Input:
-  Output:         *pstCommand：CRSM命令的数据结构?
-  Return:         AT_SUCCESS：成功，其他为失败
-  Others:
-  History        : ---
-  1.Date         : 2012-05-04
-    Author       : h59254
-    Modification : Created function
-********************************************************************/
+
 VOS_UINT32 At_CrsmParaGetRspCheck(SI_PIH_CRSM_STRU *pstCommand)
 {
 
@@ -10359,18 +10076,7 @@ VOS_UINT32 At_CrsmParaGetRspCheck(SI_PIH_CRSM_STRU *pstCommand)
     return At_CrsmFilePathParse(pstCommand);
 }
 
-/********************************************************************
-  Function:       At_CrsmParaUpdateBinaryCheck
-  Description:    执行CRSM命令的Update Binary参数检查
-  Input:          无
-  Output:         *pstCommand：CRSM命令的数据结构
-  Return:         AT_SUCCESS：成功，其他为失败
-  Others:
-  History        : ---
-  1.Date         : 2012-05-04
-    Author       : h59254
-    Modification : Created function
-********************************************************************/
+
 VOS_UINT32 At_CrsmParaUpdateBinaryCheck (SI_PIH_CRSM_STRU *pstCommand)
 {
 
@@ -10422,18 +10128,7 @@ VOS_UINT32 At_CrsmParaUpdateBinaryCheck (SI_PIH_CRSM_STRU *pstCommand)
     return At_CrsmFilePathParse(pstCommand);
 }
 
-/********************************************************************
-  Function:       At_CrsmParaUpdateRecordCheck
-  Description:    执行CRSM命令的参数检查
-  Input:          无
-  Output:         *pstCommand：CRSM命令的数据结构
-  Return:         AT_SUCCESS：成功，其他为失败
-  Others:
-  History        : ---
-  1.Date         : 2012-05-04
-    Author       : h59254
-    Modification : Created function
-********************************************************************/
+
 VOS_UINT32 At_CrsmParaUpdateRecordCheck (SI_PIH_CRSM_STRU *pstCommand)
 {
 
@@ -10485,23 +10180,7 @@ VOS_UINT32 At_CrsmParaUpdateRecordCheck (SI_PIH_CRSM_STRU *pstCommand)
     return At_CrsmFilePathParse(pstCommand);
 }
 
-/*****************************************************************************
- Prototype      : At_SetCrsmPara
- Description    : +CRSM=<command>[,<fileid>[,<P1>,<P2>,<P3>[,<data>,<pathid>]]]
- Input          : ucIndex --- 用户索引
- Output         :
- Return Value   : AT_XXX  --- ATC返回码
- Calls          : ---
- Called By      : ---
 
- History        : ---
-  1.Date        : 2008-03-02
-    Author      : h59254
-    Modification: Created function
-  2.Date        : 2012-05-05
-    Author      : h59254
-    Modification: 增加对第七个参数的处理
-*****************************************************************************/
 TAF_UINT32 At_SetCrsmPara(TAF_UINT8 ucIndex)
 {
     SI_PIH_CRSM_STRU                    stCommand;
@@ -10852,20 +10531,7 @@ TAF_UINT32 At_SetCPNNPara(TAF_UINT8 ucIndex)
     }
 }
 
-/*******************************************************************************
-*Function   : At_SetOPLPara
-*Description: 该函数主要负责检查输出的AT命令的参数，通过调用Taf_ParaQuery的接口执
-              行AT命令的操作，调用Taf_ParaQuery时OpId参数为0xFF，标识查询OPL文件内
-              容操作。
-*Input      :
-*Output     :
-*Return     : TAF_UINT32
-*Others     :
-*History    :
-  1.Date        : 2008-03-06
-    Author      : h59254
-    Modification: Created function
-********************************************************************************/
+
 TAF_UINT32 At_SetOPLPara (TAF_UINT8 ucIndex)
 {
     TAF_PH_QRY_USIM_INFO_STRU           stUsimInfo;
@@ -11042,11 +10708,9 @@ VOS_UINT32 AT_FillSsNoRepCondTime(
 TAF_UINT32 At_SetCcwaPara(TAF_UINT8 ucIndex)
 {
     TAF_SS_ERASESS_REQ_STRU             para;
-    /* Modified by l60609 for DSDA Phase III, 2013-2-21, Begin */
     AT_MODEM_SS_CTX_STRU               *pstSsCtx = VOS_NULL_PTR;
 
     pstSsCtx = AT_GetModemSsCtxAddrFromClientId(ucIndex);
-    /* Modified by l60609 for DSDA Phase III, 2013-2-21, End */
 
     /* 参数检查 */
     if(AT_CMD_OPT_SET_PARA_CMD != g_stATParseCmd.ucCmdOptType )
@@ -11066,7 +10730,6 @@ TAF_UINT32 At_SetCcwaPara(TAF_UINT8 ucIndex)
     /* 设置SsCode */
     para.SsCode = TAF_CW_SS_CODE;
 
-    /* Modified by l60609 for DSDA Phase III, 2013-2-21, Begin */
     /* 设置<n> */
     if(0 != gastAtParaList[0].usParaLen)
     {
@@ -11076,7 +10739,6 @@ TAF_UINT32 At_SetCcwaPara(TAF_UINT8 ucIndex)
     {
         pstSsCtx->ucCcwaType = AT_CCWA_DISABLE_TYPE;
     }
-    /* Modified by l60609 for DSDA Phase III, 2013-2-21, End */
 
     if(0 == gastAtParaList[1].usParaLen)
     {
@@ -11226,7 +10888,6 @@ VOS_VOID AT_SetNumAttribute(
     TAF_UINT8                           *pucFwdToNum
     )
 {
-    /* Modified by s46746 for SS FDN&Call Control, 2013-05-28, begin */
     /* +表示国际号码，在号码类型中已经指示，不需要拷贝到消息中 */
     if ('+' == gastAtParaList[2].aucPara[0])
     {
@@ -11242,7 +10903,6 @@ VOS_VOID AT_SetNumAttribute(
             (TAF_CHAR*)gastAtParaList[2].aucPara,
             gastAtParaList[2].usParaLen);
     }
-    /* Modified by s46746 for SS FDN&Call Control, 2013-05-28, end */
 
     if( gastAtParaList[3].usParaLen )
     {
@@ -11917,7 +11577,6 @@ TAF_UINT32 At_SetClckPara(TAF_UINT8 ucIndex)
             TAF_MEM_SET_S(&para, sizeof(para), 0x00, sizeof(para));
 
             /* 设置<password> */
-            /* Modified by f62575 for SS FDN&Call Control, 2013-05-06, begin */
             if (gastAtParaList[2].usParaLen > 0)
             {
                 if (TAF_SS_MAX_PASSWORD_LEN != gastAtParaList[2].usParaLen)
@@ -11932,7 +11591,6 @@ TAF_UINT32 At_SetClckPara(TAF_UINT8 ucIndex)
                            gastAtParaList[2].usParaLen);
             }
 
-            /* Modified by f62575 for SS FDN&Call Control, 2013-05-06, end */
 
             /* 设置SsCode */
             At_SsPrint2Code(&para.SsCode,(TAF_UINT8)gastAtParaList[0].ulParaValue);
@@ -12052,7 +11710,6 @@ VOS_UINT32 At_SetCusdPara(VOS_UINT8 ucIndex)
     TAF_SS_DATA_CODING_SCHEME           DatacodingScheme;
     VOS_UINT32                          ulProcRet;
 
-    /* Modified by l60609 for DSDA Phase III, 2013-2-21, Begin */
 
     ulRet =  AT_ERROR;
 
@@ -12166,7 +11823,6 @@ VOS_UINT32 At_SetCusdPara(VOS_UINT8 ucIndex)
         }
 
     }
-    /* Modified by l60609 for DSDA Phase III, 2013-2-21, End */
     /*lint -save -e516 */
     PS_MEM_FREE(WUEPS_PID_AT, pPara);
     /*lint -restore */
@@ -12337,7 +11993,6 @@ TAF_UINT32 At_SetCpwdPara(TAF_UINT8 ucIndex)
 
 TAF_VOID At_SetDialIGPara(TAF_UINT8 ucIndex,TAF_UINT8 ucParaIndex,TAF_UINT8 *pClir, MN_CALL_CUG_CFG_STRU *pstCcug)
 {
-    /* Modified by l60609 for DSDA Phase III, 2013-2-21, Begin */
     AT_MODEM_SS_CTX_STRU               *pstSsCtx = VOS_NULL_PTR;
 
     pstSsCtx = AT_GetModemSsCtxAddrFromClientId(ucIndex);
@@ -12348,7 +12003,6 @@ TAF_VOID At_SetDialIGPara(TAF_UINT8 ucIndex,TAF_UINT8 ucParaIndex,TAF_UINT8 *pCl
     *pClir   = pstSsCtx->ucClirType;
     *pstCcug = pstSsCtx->stCcugCfg;
     /*<-A32D08138*/
-    /* Modified by l60609 for DSDA Phase III, 2013-2-21, End */
 
     switch(gastAtParaList[ucParaIndex].aucPara[0])
     {
@@ -12694,7 +12348,6 @@ VOS_UINT32 AT_FillCalledNumPara(
 TAF_UINT32 At_SetDialNumPara(TAF_UINT8 ucIndex,MN_CALL_TYPE_ENUM_U8 CallType)
 {
     MN_CALL_ORIG_PARAM_STRU             stOrigParam;
-    /* Modified by l60609 for DSDA Phase III, 2013-2-21, Begin */
     AT_MODEM_SS_CTX_STRU               *pstSsCtx = VOS_NULL_PTR;
 
     pstSsCtx = AT_GetModemSsCtxAddrFromClientId(ucIndex);
@@ -12753,7 +12406,6 @@ TAF_UINT32 At_SetDialNumPara(TAF_UINT8 ucIndex,MN_CALL_TYPE_ENUM_U8 CallType)
 
         return AT_ERROR;
     }
-    /* Modified by l60609 for DSDA Phase III, 2013-2-21, End */
 }
 
 VOS_UINT32 At_DialNumByIndexFromPb(VOS_UINT8              ucIndex,
@@ -12910,11 +12562,9 @@ TAF_UINT32 At_SetDMmiNumWithClirPara(
 )
 {
     MN_CALL_ORIG_PARAM_STRU             stOrigParam;
-    /* Modified by l60609 for DSDA Phase III, 2013-2-21, Begin */
     AT_MODEM_SS_CTX_STRU               *pstSsCtx = VOS_NULL_PTR;
 
     pstSsCtx = AT_GetModemSsCtxAddrFromClientId(ucIndex);
-    /* Modified by l60609 for DSDA Phase III, 2013-2-21, End */
 
     /* 长度检查 */
     if( (MN_CALL_MAX_BCD_NUM_LEN*2) < ulStrLen)
@@ -12954,9 +12604,7 @@ TAF_UINT32 At_SetDMmiNumWithClirPara(
 
     stOrigParam.enVoiceDomain = TAF_CALL_VOICE_DOMAIN_AUTO;
 
-    /* Modified by l60609 for DSDA Phase III, 2013-2-21, Begin */
     stOrigParam.enCallMode = pstSsCtx->enCModType;
-    /* Modified by l60609 for DSDA Phase III, 2013-2-21, End */
 
     if(AT_SUCCESS == MN_CALL_Orig(gastAtClientTab[ucIndex].usClientId,
                                   0,
@@ -13023,10 +12671,8 @@ TAF_UINT32 At_SetDMmiPara(TAF_UINT8 ucIndex)
 TAF_UINT32  At_CheckAtDPin(VOS_UINT8 ucIndex)
 {
     TAF_UINT32                          ulRst;
-    /* Modified by l60609 for DSDA Phase II, 2012-12-24, Begin */
     MODEM_ID_ENUM_UINT16                enModemId;
     VOS_UINT32                          ulGetModemIdRslt;
-    /* Modified by l60609 for DSDA Phase III, 2013-2-22, Begin */
     AT_USIM_INFO_CTX_STRU              *pstUsimInfoCtx = VOS_NULL_PTR;
 
     enModemId = MODEM_ID_0;
@@ -13041,11 +12687,9 @@ TAF_UINT32  At_CheckAtDPin(VOS_UINT8 ucIndex)
 
     pstUsimInfoCtx = AT_GetUsimInfoCtxFromModemId(enModemId);
 
-    /* Modified by l60609 for DSDA Phase II, 2012-12-24, End */
 
     /*SIM卡状态判断*/
     switch (pstUsimInfoCtx->enCardStatus)
-    /* Modified by l60609 for DSDA Phase III, 2013-2-22, End */
     {
         /* 仅替换消息类型 */
         case USIMM_CARDAPP_SERVIC_AVAILABLE:
@@ -13093,7 +12737,6 @@ TAF_UINT32  At_PsDPara(TAF_UINT8 ucIndex)
     }
     else if('#' == gastAtParaList[0].aucPara[gastAtParaList[0].usParaLen - 1])
     {
-        /* Modified by L60609 for AT Project，2011-10-28,  Begin*/
         if(0 == VOS_StrNiCmp((TAF_CHAR*)gastAtParaList[2].aucPara,"98", gastAtParaList[2].usParaLen))
         {
             /* D*<GPRS_SC_IP>[*<cid>[,<cid>]]# */
@@ -13112,7 +12755,6 @@ TAF_UINT32  At_PsDPara(TAF_UINT8 ucIndex)
         {
 
         }
-        /* Modified by L60609 for AT Project，2011-10-28,  End*/
     }
     else
     {
@@ -13208,12 +12850,10 @@ TAF_UINT32 At_SetDPara(TAF_UINT8 ucIndex)
             return At_SetDialNumPara(ucIndex,CallType);
         }
     }
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
     else
     {
         return At_PsDPara(ucIndex);
     }
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, end */
 
 }
 
@@ -13227,7 +12867,6 @@ TAF_UINT32 At_SetAPara(TAF_UINT8 ucIndex)
     VOS_UINT8                           ucTmp;
     VOS_UINT32                          ulRlst;
     TAFAGERNT_MN_CALL_INFO_STRU         astCallInfos[MN_CALL_MAX_NUM];
-    /* Modified by l60609 for DSDA Phase III, 2013-2-21, Begin */
     AT_MODEM_CC_CTX_STRU               *pstCcCtx = VOS_NULL_PTR;
 
     pstCcCtx = AT_GetModemCcCtxAddrFromClientId(ucIndex);
@@ -13243,11 +12882,9 @@ TAF_UINT32 At_SetAPara(TAF_UINT8 ucIndex)
 
 
     /*从同步API获取通话信息*/
-    /* Modified by l60609 for DSDA PhaseIII, 2013-3-13, begin */
     ulRlst = TAF_AGENT_GetCallInfoReq(gastAtClientTab[ucIndex].usClientId,
                                       &ucNumOfCalls,
                                       astCallInfos);
-    /* Modified by l60609 for DSDA PhaseIII, 2013-3-13, end */
 
     if (VOS_OK != ulRlst)
     {
@@ -13306,7 +12943,6 @@ TAF_UINT32 At_SetAPara(TAF_UINT8 ucIndex)
         return AT_NO_CARRIER;
     }
 
-    /* Modified by l60609 for DSDA Phase III, 2013-2-21, End */
 
 }
 
@@ -13439,39 +13075,13 @@ TAF_UINT32 At_SetVPara(TAF_UINT8 ucIndex)
     }
     return AT_OK;
 }
-/*****************************************************************************
- Prototype      : At_SetTPara
- Description    : T
- Input          : ucIndex --- 用户索引
- Output         :
- Return Value   : AT_XXX  --- ATC返回码
- Calls          : ---
- Called By      : ---
 
- History        : ---
-  1.Date        : 2009-05-27
-    Author      : L47619
-    Modification: Created function
-*****************************************************************************/
 TAF_UINT32 At_SetTPara(TAF_UINT8 ucIndex)
 {
     /* 参考Q的实现:This commands will have no effect in our code*/
     return AT_OK;
 }
-/*****************************************************************************
- Prototype      : At_SetPPara
- Description    : P
- Input          : ucIndex --- 用户索引
- Output         :
- Return Value   : AT_XXX  --- ATC返回码
- Calls          : ---
- Called By      : ---
 
- History        : ---
-  1.Date        : 2009-05-27
-    Author      : L47619
-    Modification: Created function
-*****************************************************************************/
 TAF_UINT32 At_SetPPara(TAF_UINT8 ucIndex)
 {
     /* 参考Q的实现:This commands will have no effect in our code*/
@@ -13493,7 +13103,6 @@ TAF_UINT32 At_SetXPara(TAF_UINT8 ucIndex)
 
 TAF_UINT32 At_SetZPara(TAF_UINT8 ucIndex)
 {
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
     TAF_AT_TZ_STRU                      stTz;
     VOS_CHAR                            acTzStr[AT_SETZ_LEN+1];
 
@@ -13533,24 +13142,10 @@ TAF_UINT32 At_SetZPara(TAF_UINT8 ucIndex)
             }
         }
     }
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, end */
 
     return AT_OK;
 }
-/*****************************************************************************
- Prototype      : At_SetQPara
- Description    : Q[value]
- Input          : ucIndex --- 用户索引
- Output         :
- Return Value   : AT_XXX  --- ATC返回码
- Calls          : ---
- Called By      : ---
 
- History        : ---
-  1.Date        : 2009-08-06
-    Author      : L47619
-    Modification: Created function
-*****************************************************************************/
 TAF_UINT32 At_SetQPara(TAF_UINT8 ucIndex)
 {
     if(0 != gastAtParaList[0].usParaLen)
@@ -13664,9 +13259,7 @@ VOS_UINT32 AT_SetMPara(VOS_UINT8 ucIndex)
 TAF_UINT32 At_SetFPara(TAF_UINT8 ucIndex)
 {
     VOS_UINT32                          ulRet;
-    /* Added by L60609 for AT Project，2011-10-24,  Begin*/
     /* 被if 0的代码为日本运营商的定制需求，恢复8229和8265两个NV项。但后来要求需求回退，考虑到后面又有可能需要该需求，就用#if 0关闭了。*/
-    /* Added by L60609 for AT Project，2011-10-24,  End*/
 
     /*因为MODEN拨号会下发该命令，所以在moden口不进行NV恢复，直接返回OK*/
     if ( (AT_MODEM_USER == gastAtClientTab[ucIndex].UserType)
@@ -13706,7 +13299,6 @@ TAF_UINT32 At_SetFPara(TAF_UINT8 ucIndex)
 TAF_UINT32 At_SetS0Para(TAF_UINT8 ucIndex)
 {
     TAF_CCA_TELE_PARA_STRU              stTimeInfo;
-    /* Modified by l60609 for DSDA Phase III, 2013-2-21, Begin */
     AT_MODEM_CC_CTX_STRU               *pstCcCtx = VOS_NULL_PTR;
     MODEM_ID_ENUM_UINT16                enModemId;
     VOS_UINT32                          ulRslt;
@@ -13748,7 +13340,6 @@ TAF_UINT32 At_SetS0Para(TAF_UINT8 ucIndex)
     {
         return AT_ERROR;
     }
-    /* Modified by l60609 for DSDA Phase III, 2013-2-21, End */
 
     return AT_OK;
 }
@@ -13847,20 +13438,7 @@ TAF_UINT32 At_SetS5Para(TAF_UINT8 ucIndex)
     }
     return AT_OK;
 }
-/*****************************************************************************
- Prototype      : At_SetS6Para
- Description    : S6=[<value>]
- Input          : ucIndex --- 用户索引
- Output         :
- Return Value   : AT_XXX  --- ATC返回码
- Calls          : ---
- Called By      : ---
 
- History        : ---
-  1.Date        : 2009-05-27
-    Author      : L47619
-    Modification: Created function
-*****************************************************************************/
 TAF_UINT32 At_SetS6Para(TAF_UINT8 ucIndex)
 {
     if(AT_CMD_OPT_SET_PARA_CMD != g_stATParseCmd.ucCmdOptType)
@@ -13882,20 +13460,7 @@ TAF_UINT32 At_SetS6Para(TAF_UINT8 ucIndex)
     }
     return AT_OK;
 }
-/*****************************************************************************
- Prototype      : At_SetS7Para
- Description    : S7=[<value>]
- Input          : ucIndex --- 用户索引
- Output         :
- Return Value   : AT_XXX  --- ATC返回码
- Calls          : ---
- Called By      : ---
 
- History        : ---
-  1.Date        : 2009-05-27
-    Author      : L47619
-    Modification: Created function
-*****************************************************************************/
 TAF_UINT32 At_SetS7Para(TAF_UINT8 ucIndex)
 {
     if(AT_CMD_OPT_SET_PARA_CMD != g_stATParseCmd.ucCmdOptType)
@@ -13975,7 +13540,6 @@ VOS_VOID AT_GetGuAccessPrioNvim (
 
     TAF_MEM_SET_S(&stAccessMode, sizeof(stAccessMode), 0x00, sizeof(NAS_MMA_NVIM_ACCESS_MODE_STRU));
 
-    /* Modified by l60609 for DSDA Phase III, 2013-3-4, Begin */
     if (NV_OK != TAF_ACORE_NV_READ(enModemId,
                             en_NV_Item_MMA_AccessMode ,
                             &stAccessMode,
@@ -13984,7 +13548,6 @@ VOS_VOID AT_GetGuAccessPrioNvim (
         *penAcqorder = AT_SYSCFG_RAT_PRIO_AUTO;
         return ;
     }
-    /* Modified by l60609 for DSDA Phase III, 2013-3-4, End */
 
     *penAcqorder = stAccessMode.aucAccessMode[1];
 }
@@ -14136,9 +13699,7 @@ VOS_UINT32 AT_ConvertCpamRatOrderPara(
     /* 由于NVIM中的接入优先级和CPAM的设置的不一样需要转化一下 */
     if ( MN_MMA_CPAM_RAT_PRIO_NO_CHANGE == enAcqorder )
     {
-        /* Modified by l60609 for DSDA Phase III, 2013-3-4, Begin */
         AT_GetGuAccessPrioNvim(enModemId, &enNvimRatPrio);
-        /* Modified by l60609 for DSDA Phase III, 2013-3-4, End */
         *penSyscfgRatPrio = enNvimRatPrio;
     }
     else if ( MN_MMA_CPAM_RAT_PRIO_GSM == enAcqorder )
@@ -14211,13 +13772,11 @@ VOS_UINT32 At_SetCpamPara(VOS_UINT8 ucIndex)
     TAF_MMA_SYS_CFG_PARA_STRU           stSysCfgSetPara;
 
     VOS_UINT32                          ulRst;
-    /* Modified by l60609 for DSDA Phase III, 2013-2-22, Begin */
     AT_MODEM_NET_CTX_STRU              *pstNetCtx = VOS_NULL_PTR;
 
     TAF_MEM_SET_S(&stSysCfgSetPara, sizeof(stSysCfgSetPara), 0x00, sizeof(TAF_MMA_SYS_CFG_PARA_STRU));
 
     pstNetCtx = AT_GetModemNetCtxAddrFromClientId(ucIndex);
-    /* Modified by l60609 for DSDA Phase III, 2013-2-22, End */
 
     ulRst = AT_OK;
 
@@ -14260,9 +13819,7 @@ VOS_UINT32 At_SetCpamPara(VOS_UINT8 ucIndex)
     }
 
     /* stSysCfgSetPara其他参数赋值 */
-    /* Modified by l60609 for DSDA Phase III, 2013-2-22, Begin */
     if (AT_ROAM_FEATURE_ON == pstNetCtx->ucRoamFeature)
-    /* Modified by l60609 for DSDA Phase III, 2013-2-22, End */
     {
         stSysCfgSetPara.enRoam = TAF_MMA_ROAM_UNCHANGE;
     }
@@ -14716,7 +14273,6 @@ TAF_UINT32 At_SetCGasPara(TAF_UINT8 ucIndex)
 VOS_UINT32 At_SetAppDialModePara(VOS_UINT8 ucIndex)
 {
      VOS_UINT32                         ulStatus;
-     /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
      VOS_UINT8                         *pucSystemAppConfig;
 
      pucSystemAppConfig                  = AT_GetSystemAppConfigAddr();
@@ -14732,8 +14288,6 @@ VOS_UINT32 At_SetAppDialModePara(VOS_UINT8 ucIndex)
     {
         return AT_ERROR;
     }
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, end */
-
 
      /* 参数过多 */
     if (gucAtParaIndex > 1)
@@ -14903,7 +14457,6 @@ VOS_UINT32  AT_SetCccPara( TAF_UINT8 ucIndex )
 TAF_UINT32   At_SetSPNPara(TAF_UINT8 ucIndex)
 {
     VOS_UINT8                           ucSpnType;
-    /* Modified by l60609 for DSDA Phase III, 2013-2-25, Begin */
     AT_MODEM_NET_CTX_STRU              *pstNetCtx = VOS_NULL_PTR;
 
     pstNetCtx = AT_GetModemNetCtxAddrFromClientId(ucIndex);
@@ -14923,10 +14476,8 @@ TAF_UINT32   At_SetSPNPara(TAF_UINT8 ucIndex)
 
     /* 记录AT^SPN查询的SPN类型 */
     pstNetCtx->ucSpnType = ucSpnType;
-    /* Modified by l60609 for DSDA Phase III, 2013-2-25, End */
 
     /* 给MMA发送消息，查询新参数类型TAF_PH_SPN_VALUE_PARA */
-    /* Modified by k902809 for Iteration 11, 2015-3-30, begin */
     if(VOS_TRUE == TAF_MMA_QrySpnReq(WUEPS_PID_AT,
                                      gastAtClientTab[ucIndex].usClientId,
                                      0))
@@ -14938,7 +14489,6 @@ TAF_UINT32   At_SetSPNPara(TAF_UINT8 ucIndex)
     {
         return AT_ERROR;
     }
-    /* Modified by k902809 for Iteration 11, Iteration 11 2015-3-30, end */
 }
 
 
@@ -14946,7 +14496,6 @@ TAF_UINT32   At_SetCardModePara(TAF_UINT8 ucIndex)
 {
     TAF_UINT8               ucCardMode = 0;   /* 0: card not exists, 1: SIM card, 2: USIM card */
     TAF_UINT16              usLength = 0;
-    /* Modified by l60609 for DSDA Phase II, 2012-12-24, Begin */
     MODEM_ID_ENUM_UINT16                enModemId;
     VOS_UINT32                          ulGetModemIdRslt;
     AT_USIM_INFO_CTX_STRU              *pstUsimInfoCtx = VOS_NULL_PTR;
@@ -14968,7 +14517,6 @@ TAF_UINT32   At_SetCardModePara(TAF_UINT8 ucIndex)
     }
 
     pstUsimInfoCtx = AT_GetUsimInfoCtxFromModemId(enModemId);
-    /* Modified by l60609 for DSDA Phase II, 2012-12-24, End */
 
     if (USIMM_CARDAPP_SERVIC_BUTT == pstUsimInfoCtx->enCardStatus)
     {
@@ -16032,7 +15580,6 @@ TAF_UINT32 At_SetCstrPara(TAF_UINT8 ucIndex)
 {
     VOS_UINT8   aucData[256];
     VOS_UINT8   ucDataLen;
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
     VOS_UINT8                          *pucSystemAppConfig;
 
     pucSystemAppConfig                  = AT_GetSystemAppConfigAddr();
@@ -16043,8 +15590,6 @@ TAF_UINT32 At_SetCstrPara(TAF_UINT8 ucIndex)
     {
         return AT_ERROR;
     }
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, end */
-
     if (gucAtParaIndex != 2)          /* the para munber is too many or too few */
     {
         return AT_CME_INCORRECT_PARAMETERS;
@@ -16138,7 +15683,6 @@ TAF_UINT32 At_SetCsenPara(TAF_UINT8 ucIndex)
 {
     VOS_UINT8   aucData[256];
     VOS_UINT8   ucDataLen;
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
     VOS_UINT8                          *pucSystemAppConfig;
 
     pucSystemAppConfig                  = AT_GetSystemAppConfigAddr();
@@ -16149,7 +15693,6 @@ TAF_UINT32 At_SetCsenPara(TAF_UINT8 ucIndex)
     {
         return AT_ERROR;
     }
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, end */
 
     if (gucAtParaIndex != 2)          /* the para munber is too many or too few */
     {
@@ -16196,7 +15739,6 @@ TAF_UINT32 At_SetCsenPara(TAF_UINT8 ucIndex)
 *****************************************************************************/
 TAF_UINT32 At_SetCsmnPara(TAF_UINT8 ucIndex)
 {
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
     VOS_UINT8                          *pucSystemAppConfig;
 
     pucSystemAppConfig                  = AT_GetSystemAppConfigAddr();
@@ -16207,7 +15749,6 @@ TAF_UINT32 At_SetCsmnPara(TAF_UINT8 ucIndex)
     {
         return AT_ERROR;
     }
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, end */
 
     if (gucAtParaIndex != 0)          /* the para munber is too many or too few */
     {
@@ -16229,7 +15770,6 @@ TAF_UINT32 At_SetCsmnPara(TAF_UINT8 ucIndex)
 
 TAF_UINT32 At_SetCstcPara(TAF_UINT8 ucIndex)
 {
-    /* Modified by h59254 for STK&DCM Project, 2012/09/18, begin */
     if (gucAtParaIndex != 1)          /* the para munber is too many or too few */
     {
         return AT_CME_INCORRECT_PARAMETERS;
@@ -16241,7 +15781,6 @@ TAF_UINT32 At_SetCstcPara(TAF_UINT8 ucIndex)
     }
 
     return AT_ERROR;
-    /* Modified by h59254 for STK&DCM Project, 2012/09/18, end */
 }
 
 
@@ -16301,9 +15840,7 @@ VOS_UINT32  AT_PhyNumIsNull(
     IMEI_STRU                           stImei;
     TAF_SVN_DATA_STRU                   stSvnData;
     VOS_UINT8                           *pucCheckNum;
-    /* Added by f62575 for SMALL IMAGE, 2012-1-3, begin */
     VOS_UINT8                           aucMac[AT_PHYNUM_MAC_LEN + 1]; /* MAC地址*/
-    /* Added by f62575 for SMALL IMAGE, 2012-1-3, end */
 
 
     TAF_MEM_SET_S(&stSvnData, sizeof(stSvnData), 0x00, sizeof(stSvnData));
@@ -16312,7 +15849,6 @@ VOS_UINT32  AT_PhyNumIsNull(
     /* 从获取NV中IMEI或SVN物理号，获取操作失败，则返回AT_ERROR */
     if (AT_PHYNUM_TYPE_IMEI == enSetType)
     {
-        /* Modified by l60609 for DSDA Phase III, 2013-3-4, Begin */
         ulRet = TAF_ACORE_NV_READ(enModemId, en_NV_Item_IMEI, &stImei, NV_ITEM_IMEI_SIZE);
         /* Modified by l60609 for DSDA Phase III, 2013-3-4, End */
         if (NV_OK != ulRet)
@@ -16327,9 +15863,7 @@ VOS_UINT32  AT_PhyNumIsNull(
     }
     else if (AT_PHYNUM_TYPE_SVN == enSetType)
     {
-        /* Modified by l60609 for DSDA Phase III, 2013-3-4, Begin */
         ulRet = TAF_ACORE_NV_READ(enModemId, en_NV_Item_Imei_Svn, &stSvnData, sizeof(stSvnData));
-        /* Modified by l60609 for DSDA Phase III, 2013-3-4, End */
         if (NV_OK != ulRet)
         {
             AT_WARN_LOG("AT_PhyNumIsNull: Fail to read en_Nv_Item_Imei_Svn");
@@ -16346,7 +15880,6 @@ VOS_UINT32  AT_PhyNumIsNull(
         ulTotalNum  = TAF_SVN_DATA_LENGTH;
         pucCheckNum = stSvnData.aucSvn;
     }
-    /* Added by f62575 for SMALL IMAGE, 2012-1-3, begin */
     else if (AT_PHYNUM_TYPE_MAC == enSetType)
     {
         /* 输出当前MAC地址是否为空状态 */
@@ -16354,7 +15887,6 @@ VOS_UINT32  AT_PhyNumIsNull(
         ulTotalNum  = AT_PHYNUM_MAC_LEN;
         pucCheckNum = aucMac;
     }
-    /* Added by f62575 for SMALL IMAGE, 2012-1-3, end   */
     else
     {
         AT_WARN_LOG("AT_PhyNumIsNull: the type of physical is error.");
@@ -16421,13 +15953,11 @@ VOS_UINT32 AT_UpdateImei(
         return AT_PHYNUM_NUMBER_ERR;
     }
 
-    /* Modified by l60609 for DSDA Phase III, 2013-3-4, Begin */
     if (NV_OK != TAF_ACORE_NV_WRITE(enModemId, en_NV_Item_IMEI, aucBcdNum, TAF_PH_IMEI_LEN))
     {
          AT_WARN_LOG("AT_UpdateImei: Fail to write NV.");
          return AT_ERROR;
     }
-    /* Modified by l60609 for DSDA Phase III, 2013-3-4, End */
 
     return AT_OK;
 }
@@ -16438,11 +15968,9 @@ TAF_UINT32 At_SetImeiPara(TAF_UINT8 ucIndex)
 {
     VOS_BOOL                            bPhyNumIsNull;
     VOS_UINT32                          ulRet;
-    /* Modified by l60609 for DSDA Phase III, 2013-3-4, Begin */
     MODEM_ID_ENUM_UINT16                enModemId;
 
     enModemId = MODEM_ID_0;
-    /* Modified by l60609 for DSDA Phase III, 2013-3-4, End */
 
     /* 参数过多 */
     if (gucAtParaIndex > 1)
@@ -16452,7 +15980,6 @@ TAF_UINT32 At_SetImeiPara(TAF_UINT8 ucIndex)
         return AT_CME_INCORRECT_PARAMETERS;
     }
 
-    /* Modified by l60609 for DSDA Phase III, 2013-3-4, Begin */
     ulRet = AT_GetModemIdFromClient(ucIndex, &enModemId);
 
     if (VOS_OK != ulRet)
@@ -16475,7 +16002,6 @@ TAF_UINT32 At_SetImeiPara(TAF_UINT8 ucIndex)
 
     /* 更新数据到NV项en_NV_Item_IMEI并返回更新结果 */
     ulRet = AT_UpdateImei(enModemId, gastAtParaList[0].aucPara, gastAtParaList[0].usParaLen);
-    /* Modified by l60609 for DSDA Phase III, 2013-3-4, End */
 
     return ulRet;
 }
@@ -16834,7 +16360,6 @@ VOS_VOID AT_ReadRoamCfgInfoNvim(
 )
 {
     NAS_NVIM_ROAM_CFG_INFO_STRU          stRoamFeature;
-    /* Modified by l60609 for DSDA Phase III, 2013-2-22, Begin */
     MODEM_ID_ENUM_UINT16                enModemId;
     VOS_UINT32                          ulRst;
     AT_MODEM_NET_CTX_STRU              *pstNetCtx = VOS_NULL_PTR;
@@ -16869,7 +16394,6 @@ VOS_VOID AT_ReadRoamCfgInfoNvim(
 
     pstNetCtx                = AT_GetModemNetCtxAddrFromModemId(enModemId);
     pstNetCtx->ucRoamFeature = stRoamFeature.ucRoamFeatureFlg;
-    /* Modified by l60609 for DSDA Phase III, 2013-2-22, End */
     return;
 }
 
@@ -17149,11 +16673,9 @@ VOS_UINT32 AT_CheckSysCfgExPara(
 )
 {
     VOS_UINT32                          ulRst;
-    /* Modified by l60609 for DSDA Phase III, 2013-2-22, Begin */
     AT_MODEM_NET_CTX_STRU              *pstNetCtx = VOS_NULL_PTR;
 
     pstNetCtx = AT_GetModemNetCtxAddrFromClientId(ucClientId);
-    /* Modified by l60609 for DSDA Phase III, 2013-2-22, End */
 
     /* 检查参数个数,如果不为7个，返回AT_CME_INCORRECT_PARAMETERS*/
     if ( AT_SYSCFGEX_PARA_NUM != gucAtParaIndex )
@@ -17194,14 +16716,12 @@ VOS_UINT32 AT_CheckSysCfgExPara(
     }
 
     /* 漫游特性未激活,漫游能力取值范围0-2; 漫游特性激活,漫游能力取值范围0-3 */
-    /* Modified by l60609 for DSDA Phase III, 2013-2-22, Begin */
     AT_ReadRoamCfgInfoNvim(ucClientId);
     if (((AT_ROAM_FEATURE_OFF == pstNetCtx->ucRoamFeature) && (gastAtParaList[2].ulParaValue > AT_ROAM_FEATURE_OFF_NOCHANGE))
      || ((AT_ROAM_FEATURE_ON == pstNetCtx->ucRoamFeature) && (gastAtParaList[2].ulParaValue > TAF_MMA_ROAM_NATIONAL_OFF_INTERNATIONAL_OFF)))
     {
         return AT_CME_INCORRECT_PARAMETERS;
     }
-    /* Modified by l60609 for DSDA Phase III, 2013-2-22, End */
 
     pstSysCfgExSetPara->enRoam = (VOS_UINT8)gastAtParaList[2].ulParaValue;
 
@@ -17421,7 +16941,6 @@ VOS_UINT32 AT_SetNetScan(
 )
 {
     VOS_UINT32                          ulRst;
-    /* Modified by k902809 for Iteration 11, 2015-3-25, begin */
     TAF_MMA_NET_SCAN_REQ_STRU           stNetScanSetPara;
 
     TAF_MEM_SET_S(&stNetScanSetPara, sizeof(stNetScanSetPara), 0x00, sizeof(stNetScanSetPara));
@@ -17443,7 +16962,6 @@ VOS_UINT32 AT_SetNetScan(
         gastAtClientTab[ucIndex].CmdCurrentOpt = AT_CMD_NETSCAN_SET;
         return AT_WAIT_ASYNC_RETURN;
     }
-    /* Modified by k902809 for Iteration 11, Iteration 11 2015-3-25, end */
     else
     {
         return AT_ERROR;
@@ -17459,7 +16977,6 @@ VOS_UINT32 AT_AbortNetScan(
     if ( AT_CMD_NETSCAN_SET == gastAtClientTab[ucIndex].CmdCurrentOpt )
     {
         /* AT向MMA发送打断NETSCAN的请求 */
-        /* Modified by k902809 for Iteration 11, 2015-3-25, begin */
         if ( VOS_TRUE == TAF_MMA_NetScanAbortReq(WUEPS_PID_AT,
                                                  gastAtClientTab[ucIndex].usClientId,
                                                  0))
@@ -17472,7 +16989,6 @@ VOS_UINT32 AT_AbortNetScan(
 
             return AT_WAIT_ASYNC_RETURN;
         }
-        /* Modified by k902809 for Iteration 11, Iteration 11 2015-3-25, end */
 
         /* AT向MMA发送打断NETSCAN的请求失败，返回失败 */
         return AT_FAILURE;
@@ -17547,9 +17063,7 @@ VOS_UINT32 AT_ConvertSysCfgRatOrderPara(
             /* 如果接入优先级不改变则默认从NVIM中获取 */
             if ( AT_SYSCFG_RAT_PRIO_NO_CHANGE == enAcqorder )
             {
-                /* Modified by l60609 for DSDA Phase III, 2013-3-4, Begin */
                 AT_GetGuAccessPrioNvim(enModemId, &enAcqorder);
-                /* Modified by l60609 for DSDA Phase III, 2013-3-4, End */
             }
 
 
@@ -17649,7 +17163,6 @@ VOS_UINT32 At_SetSysCfgPara(VOS_UINT8 ucIndex)
     TAF_MMA_SYS_CFG_PARA_STRU           stSysCfgPara;
 
     VOS_UINT32                          ulRst;
-    /* Modified by l60609 for DSDA Phase III, 2013-2-22, Begin */
     AT_MODEM_NET_CTX_STRU              *pstNetCtx = VOS_NULL_PTR;
 
     TAF_MEM_SET_S(&stSysCfgPara, sizeof(stSysCfgPara), 0x00, sizeof(TAF_MMA_SYS_CFG_PARA_STRU));
@@ -17707,7 +17220,6 @@ VOS_UINT32 At_SetSysCfgPara(VOS_UINT8 ucIndex)
     {
         return AT_CME_INCORRECT_PARAMETERS;
     }
-    /* Modified by l60609 for DSDA Phase III, 2013-2-22, End */
     stSysCfgPara.enRoam       = (VOS_UINT8) gastAtParaList[3].ulParaValue;
     stSysCfgPara.enSrvDomain  = (VOS_UINT8) gastAtParaList[4].ulParaValue;
 
@@ -18178,7 +17690,6 @@ TAF_UINT32 At_SetRssiPara(TAF_UINT8 ucIndex)
 VOS_UINT32 At_SetCerssiPara(VOS_UINT8 ucIndex)
 {
     TAF_START_INFO_IND_STRU             stStartInfoInd;
-    /* Modified by l60609 for DSDA Phase III, 2013-2-22, Begin */
     AT_MODEM_NET_CTX_STRU              *pstNetCtx = VOS_NULL_PTR;
 
 
@@ -18232,7 +17743,6 @@ VOS_UINT32 At_SetCerssiPara(VOS_UINT8 ucIndex)
         pstNetCtx->ucCerssiMinTimerInterval  = 0;
         stStartInfoInd.ucMinRptTimerInterval = 0;
     }
-    /* Modified by l60609 for DSDA Phase III, 2013-2-22, End */
 
     if (VOS_TRUE == TAF_MMA_SetCerssiReq(WUEPS_PID_AT, gastAtClientTab[ucIndex].usClientId, 0, &stStartInfoInd))
     {
@@ -18247,7 +17757,6 @@ VOS_UINT32 At_SetCerssiPara(VOS_UINT8 ucIndex)
 
     /* AT不需要发给L4A，由MMC发给LMM,再由LMM通知LRRC */
 
-    /* Modified by l60609 for DSDA Phase III, 2013-2-22, End */
 }
 
 
@@ -18591,13 +18100,11 @@ VOS_UINT32 AT_UpdateSvn(
     /* 清空无效的末位字节 */
     stSvn.aucReserve[0] = 0;
 
-    /* Modified by l60609 for DSDA Phase III, 2013-3-4, Begin */
     if (NV_OK != TAF_ACORE_NV_WRITE(enModemId, en_NV_Item_Imei_Svn, &stSvn, sizeof(stSvn)))
     {
          AT_WARN_LOG("AT_UpdateSvn: Fail to write NV.");
          return AT_ERROR;
     }
-    /* Modified by l60609 for DSDA Phase III, 2013-3-4, End */
 
     return AT_OK;
 }
@@ -18611,12 +18118,10 @@ VOS_UINT32 AT_CheckPhyNumPara(AT_PHYNUM_TYPE_ENUM_UINT32 *penSetType)
     /* <type>参数检查: BALONG仅支持输入物理号为IMEI或SVN，
        否则，直接返回错误，< err_code > 错误码为1物理号不合法 */
     /* 全部格式化为大写字符 */
-    /* Added by f62575 for SMALL IMAGE, 2012-1-3, begin   */
     if(AT_FAILURE == At_UpString(gastAtParaList[0].aucPara, gastAtParaList[0].usParaLen))
     {
         return AT_ERROR;
     }
-    /* Added by f62575 for SMALL IMAGE, 2012-1-3, end   */
 
     if (0 == VOS_StrCmp((VOS_CHAR *)gastAtParaList[0].aucPara, "IMEI"))
     {
@@ -18626,12 +18131,10 @@ VOS_UINT32 AT_CheckPhyNumPara(AT_PHYNUM_TYPE_ENUM_UINT32 *penSetType)
     {
         *penSetType = AT_PHYNUM_TYPE_SVN;
     }
-    /* Added by f62575 for SMALL IMAGE, 2012-1-3, begin */
     else if (0 == VOS_StrCmp((VOS_CHAR *)gastAtParaList[0].aucPara, "MACWLAN"))
     {
         *penSetType = AT_PHYNUM_TYPE_MAC;
     }
-    /* Added by f62575 for SMALL IMAGE, 2012-1-3, end   */
     else
     {
         AT_NORM_LOG("AT_CheckPhyNumPara: the type of physical is error.");
@@ -18661,11 +18164,9 @@ VOS_UINT32  AT_SetPhyNumPara(VOS_UINT8 ucIndex)
     VOS_UINT32                          ulRet;
     AT_PHYNUM_TYPE_ENUM_UINT32          enSetType;
     VOS_BOOL                            bPhyNumIsNull;
-    /* Modified by l60609 for DSDA Phase III, 2013-3-4, Begin */
     MODEM_ID_ENUM_UINT16                enModemId;
 
     enModemId = MODEM_ID_0;
-    /* Modified by l60609 for DSDA Phase III, 2013-3-4, End */
 
     /* 参数个数有效性检查: 参数至少包括<type>,<number>两部分，
        最多可以再包含< times > ，参数个数错误，返回AT_ERROR */
@@ -18675,7 +18176,6 @@ VOS_UINT32  AT_SetPhyNumPara(VOS_UINT8 ucIndex)
         return AT_ERROR;
     }
 
-    /* Modified by l60609 for DSDA Phase III, 2013-3-4, Begin */
     ulRet = AT_GetModemIdFromClient(ucIndex, &enModemId);
 
     if (VOS_OK != ulRet)
@@ -18707,9 +18207,8 @@ VOS_UINT32  AT_SetPhyNumPara(VOS_UINT8 ucIndex)
     /* 若当前用户设置的物理号为MAC，则修改MAC地址对应的NV项(新增数据卡MAC地址的NV项)中的数据 */
     if (AT_PHYNUM_TYPE_IMEI == enSetType)
     {
-        ulRet = AT_UpdateImei(enModemId, gastAtParaList[1].aucPara, gastAtParaList[1].usParaLen);
+        ulRet = AT_OK;
     }
-    /* Added by f62575 for SMALL IMAGE, 2012-1-3, begin */
     else if (AT_PHYNUM_TYPE_SVN == enSetType)
     {
         ulRet = AT_UpdateSvn(enModemId, gastAtParaList[1].aucPara, gastAtParaList[1].usParaLen);
@@ -18719,8 +18218,6 @@ VOS_UINT32  AT_SetPhyNumPara(VOS_UINT8 ucIndex)
         /*更新MAC地址到NV*/
         ulRet = AT_UpdateMacPara(gastAtParaList[1].aucPara, gastAtParaList[1].usParaLen);
     }
-    /* Added by f62575 for SMALL IMAGE, 2012-1-3, end   */
-    /* Modified by l60609 for DSDA Phase III, 2013-3-4, End */
 
     return ulRet;
 }
@@ -18785,7 +18282,6 @@ TAF_UINT32 At_SetQcdmgPara(TAF_UINT8 ucIndex)
     /*记录AT/DIAG通道所对应的索引号*/
     gucOmDiagIndex = ucIndex;
 
-    /* Added by L60609 for AT Project，2011-10-06,  Begin*/
     /* 通知OAM切换至DIAG模式，OAM已经没有 */
     if (AT_USB_COM_PORT_NO == gastAtClientTab[ucIndex].ucPortNo)
     {
@@ -18798,7 +18294,6 @@ TAF_UINT32 At_SetQcdmgPara(TAF_UINT8 ucIndex)
 
     /*将通道模式设置为DIAG模式*/
     At_SetMode(gucOmDiagIndex, AT_DATA_MODE, AT_DIAG_DATA_MODE);
-    /* Added by L60609 for AT Project，2011-10-06,  End*/
 
     return AT_OK;
 }
@@ -19188,7 +18683,6 @@ VOS_BOOL At_SaveSetPortSecPara(
     return VOS_TRUE;
 }
 
-/* Add by f62575 for V7代码同步, 2012-04-07, Begin   */
 
 VOS_UINT32 AT_CheckPortTypePara(
     VOS_UINT8                           ucFirstParaCount,
@@ -19243,7 +18737,6 @@ VOS_UINT32 AT_CheckPortTypePara(
 
     return VOS_TRUE;
 }
-/* Add by f62575 for V7代码同步, 2012-04-07, End   */
 
 
 VOS_BOOL At_IsAvailableSetPortPara(
@@ -19259,9 +18752,7 @@ VOS_BOOL At_IsAvailableSetPortPara(
     VOS_UINT8                           ucSecParaCount;
     VOS_UINT8                           aucSecPara[AT_SETPORT_PARA_MAX_LEN][3];
     VOS_BOOL                            bScanResult;
-    /* Modify by f62575 for V7代码同步, 2012-04-07, Begin   */
     VOS_UINT32                          ulRet;
-    /* Modify by f62575 for V7代码同步, 2012-04-07, End   */
 
     usSemiIndex         = 0;
     ucFirstParaCount    = 0;
@@ -19322,11 +18813,9 @@ VOS_BOOL At_IsAvailableSetPortPara(
         return VOS_FALSE;
     }
 
-    /* Modify by f62575 for V7代码同步, 2012-04-07, Begin   */
     ulRet = AT_CheckPortTypePara(ucFirstParaCount, pucFirstPort, ucSecParaCount, pucSecPort);
 
     return  ulRet;
-    /* Modify by f62575 for V7代码同步, 2012-04-07, End   */
 }
 
 
@@ -19337,9 +18826,7 @@ VOS_UINT32 At_SetPort(VOS_UINT8 ucIndex)
     VOS_UINT8                           aucFirstPort[AT_SETPORT_PARA_MAX_LEN];
     VOS_UINT8                           aucSecPort[AT_SETPORT_PARA_MAX_LEN];
     AT_DYNAMIC_PID_TYPE_STRU            stDynamicPidType;
-    /* Modified by f62575 for B050 Project, 2012-2-3, Begin   */
     nv_pid_enable_type                  stPidEnableType;
-    /* Modified by f62575 for B050 Project, 2012-2-3, end   */
 
 
     stPidEnableType.ulPidEnabled = VOS_FALSE;
@@ -19361,7 +18848,6 @@ VOS_UINT32 At_SetPort(VOS_UINT8 ucIndex)
     TAF_MEM_SET_S(aucSecPort, sizeof(aucSecPort), 0x00, AT_SETPORT_PARA_MAX_LEN);
     TAF_MEM_SET_S(&stDynamicPidType, sizeof(stDynamicPidType), 0x00, sizeof(AT_DYNAMIC_PID_TYPE_STRU));
 
-    /* Modified by f62575 for B050 Project, 2012-2-3, Begin   */
     /* 读取PID使能NV项 */
     if (NV_OK != TAF_ACORE_NV_READ(MODEM_ID_0, en_NV_Item_PID_Enable_Type,
                          &stPidEnableType,
@@ -19377,7 +18863,6 @@ VOS_UINT32 At_SetPort(VOS_UINT8 ucIndex)
         AT_WARN_LOG("At_SetPort:PID is not enabled");
         return AT_ERROR;
     }
-    /* Modified by f62575 for B050 Project, 2012-2-3, End   */
 
     /* 1.参数为空
        2.参数超过最大长度
@@ -19429,14 +18914,12 @@ VOS_UINT32 At_SetPort(VOS_UINT8 ucIndex)
         return AT_ERROR;
     }
 
-    /* Added by f62575 for B050 Project, 2012-2-3, Begin   */
     /* 此处增加DIAG口密码保护    */
     if (AT_OK != AT_CheckSetPortRight(stDynamicPidType.aucRewindPortStyle,
                                       aucSecPort))
     {
         return AT_ERROR;
     }
-    /* Added by f62575 for B050 Project, 2012-2-3, end   */
 
     TAF_MEM_CPY_S(stDynamicPidType.aucFirstPortStyle, sizeof(stDynamicPidType.aucFirstPortStyle), aucFirstPort, AT_SETPORT_PARA_MAX_LEN);
     TAF_MEM_CPY_S(stDynamicPidType.aucRewindPortStyle, sizeof(stDynamicPidType.aucRewindPortStyle), aucSecPort, AT_SETPORT_PARA_MAX_LEN);
@@ -19455,7 +18938,6 @@ VOS_UINT32 At_SetPort(VOS_UINT8 ucIndex)
     }
 }
 
-/* Added by l60609 for B070 Project, 2012/03/20, begin */
 
 VOS_UINT32 AT_OpenSpecificPort(VOS_UINT8 ucPort)
 {
@@ -19597,7 +19079,6 @@ VOS_UINT32 AT_CloseSpecificPort(VOS_UINT8 ucPort)
         return AT_OK;
     }
 }
-/* Added by l60609 for B070 Project, 2012/03/20, end */
 
 
 TAF_UINT32 At_SetPcscInfo(TAF_UINT8 ucIndex)
@@ -19837,11 +19318,9 @@ VOS_UINT32 At_SetDdsetexPara (VOS_UINT8 ucIndex)
 
 TAF_UINT32 At_SetCmsrPara (TAF_UINT8 ucIndex)
 {
-    /* Added by l60609 for DSDA Phase III, 2013-2-22, Begin */
     AT_MODEM_SMS_CTX_STRU              *pstSmsCtx = VOS_NULL_PTR;
 
     pstSmsCtx = AT_GetModemSmsCtxAddrFromClientId(ucIndex);
-    /* Added by l60609 for DSDA Phase III, 2013-2-22, End */
 
     /* 参数检查 */
     if (0 == gastAtParaList[0].usParaLen)
@@ -19861,9 +19340,7 @@ TAF_UINT32 At_SetCmsrPara (TAF_UINT8 ucIndex)
     }
 
     /* 参数设置 */
-    /* Modified by l60609 for DSDA Phase III, 2013-2-22, Begin */
     pstSmsCtx->ucParaCmsr = (VOS_UINT8)gastAtParaList[0].ulParaValue;
-    /* Modified by l60609 for DSDA Phase III, 2013-2-22, End */
 
     return AT_OK;
 }
@@ -19873,11 +19350,9 @@ TAF_UINT32 At_SetCmgiPara (TAF_UINT8 ucIndex)
 {
     MN_MSG_STATUS_TYPE_ENUM_U8          enMsgStatus;
     MN_MSG_LIST_PARM_STRU               stListPara;
-    /* Added by l60609 for DSDA Phase III, 2013-2-22, Begin */
     AT_MODEM_SMS_CTX_STRU              *pstSmsCtx = VOS_NULL_PTR;
 
     pstSmsCtx = AT_GetModemSmsCtxAddrFromClientId(ucIndex);
-    /* Added by l60609 for DSDA Phase III, 2013-2-22, End */
 
     TAF_MEM_SET_S(&stListPara, sizeof(MN_MSG_LIST_PARM_STRU), 0x00, sizeof(MN_MSG_LIST_PARM_STRU));
 
@@ -19898,9 +19373,7 @@ TAF_UINT32 At_SetCmgiPara (TAF_UINT8 ucIndex)
     }
 
     stListPara.bChangeFlag = VOS_FALSE;
-    /* Modified by l60609 for DSDA Phase III, 2013-2-25, Begin */
     stListPara.enMemStore  = pstSmsCtx->stCpmsInfo.enMemReadorDelete;
-    /* Modified by l60609 for DSDA Phase III, 2013-2-25, End */
     stListPara.enStatus    = enMsgStatus;
     TAF_MEM_SET_S(stListPara.aucReserve1, sizeof(stListPara.aucReserve1), 0x00, sizeof(stListPara.aucReserve1));
 
@@ -19923,11 +19396,9 @@ TAF_UINT32 At_SetCmgiPara (TAF_UINT8 ucIndex)
 TAF_UINT32 At_SetCmmtPara (TAF_UINT8 ucIndex)
 {
     MN_MSG_MODIFY_STATUS_PARM_STRU               stModifyParm;
-    /* Added by l60609 for DSDA Phase III, 2013-2-22, Begin */
     AT_MODEM_SMS_CTX_STRU              *pstSmsCtx = VOS_NULL_PTR;
 
     pstSmsCtx = AT_GetModemSmsCtxAddrFromClientId(ucIndex);
-    /* Added by l60609 for DSDA Phase III, 2013-2-22, End */
 
     /* 参数过多 */
     if(gucAtParaIndex > 2)
@@ -19957,9 +19428,7 @@ TAF_UINT32 At_SetCmmtPara (TAF_UINT8 ucIndex)
     }
 
     /* 设置读取存储器 */
-    /* Modified by l60609 for DSDA Phase III, 2013-2-25, Begin */
     stModifyParm.enMemStore = pstSmsCtx->stCpmsInfo.enMemReadorDelete;
-    /* Modified by l60609 for DSDA Phase III, 2013-2-25, End */
 
      /* 执行命令操作 */
     gastAtClientTab[ucIndex].opId = At_GetOpId();
@@ -19981,9 +19450,7 @@ TAF_UINT32 At_SetCmmtPara (TAF_UINT8 ucIndex)
 TAF_UINT32 At_SetUssdModePara(TAF_UINT8 ucIndex)
 {
     USSD_TRANS_MODE_STRU                stUssdTranMode;
-    /* Added by l60609 for DSDA Phase III, 2013-2-25, Begin */
     AT_MODEM_SS_CTX_STRU               *pstSsCtx = VOS_NULL_PTR;
-    /* Added by l60609 for DSDA Phase III, 2013-2-25, End */
 
     if(AT_CMD_OPT_SET_PARA_CMD != g_stATParseCmd.ucCmdOptType)
     {
@@ -20009,13 +19476,11 @@ TAF_UINT32 At_SetUssdModePara(TAF_UINT8 ucIndex)
     }
 
     /* 更新全局变量 */
-    /* Modified by l60609 for DSDA Phase III, 2013-2-25, Begin */
     pstSsCtx                        = AT_GetModemSsCtxAddrFromClientId(ucIndex);
     pstSsCtx->usUssdTransMode       = (VOS_UINT16)gastAtParaList[0].ulParaValue;
 
     stUssdTranMode.ucStatus         = VOS_TRUE;
     stUssdTranMode.ucUssdTransMode  = (VOS_UINT8)pstSsCtx->usUssdTransMode;
-    /* Modified by l60609 for DSDA Phase III, 2013-2-25, End */
 
     /* 设置完拨号模式后，给C核发送消息 */
     if (TAF_SUCCESS != AT_FillAndSndAppReqMsg(gastAtClientTab[ucIndex].usClientId,
@@ -20036,9 +19501,7 @@ TAF_UINT32 At_SetAdcTempPara(TAF_UINT8 ucIndex)
 {
     SPY_TEMP_THRESHOLD_PARA_STRU stTempPara;
     VOS_UINT32                   ulChangeFlag = AT_SPY_TEMP_THRESHOLD_PARA_UNCHANGE;
-    /* Added by 傅映君/f62575 for ADCTEMP处理过程移动到C核, 2011/11/15, begin */
     VOS_UINT32                   ulRet;
-    /* Added by 傅映君/f62575 for ADCTEMP处理过程移动到C核, 2011/11/15, end */
 
     if(AT_CMD_OPT_SET_PARA_CMD != g_stATParseCmd.ucCmdOptType)
     {
@@ -20082,7 +19545,6 @@ TAF_UINT32 At_SetAdcTempPara(TAF_UINT8 ucIndex)
     if(AT_SPY_TEMP_THRESHOLD_PARA_CHANGE == ulChangeFlag)
     {
         /*调用接口设置门限值*/
-        /* Added by 傅映君/f62575 for ADCTEMP处理过程移动到C核, 2011/11/15, begin */
         /* 发消息到C核设置 热保护温度状态  */
         ulRet = AT_FillAndSndAppReqMsg(gastAtClientTab[ucIndex].usClientId,
                                        gastAtClientTab[ucIndex].opId,
@@ -20099,7 +19561,6 @@ TAF_UINT32 At_SetAdcTempPara(TAF_UINT8 ucIndex)
         /* 设置AT模块实体的状态为等待异步返回 */
         gastAtClientTab[ucIndex].CmdCurrentOpt = AT_CMD_ADC_SET;
         return AT_WAIT_ASYNC_RETURN;
-        /* Added by 傅映君/f62575 for ADCTEMP处理过程移动到C核, 2011/11/15, end */
 
     }
 
@@ -20386,7 +19847,6 @@ TAF_UINT32 At_SetAt2OmPara(TAF_UINT8 ucIndex)
     /*记录AT/OM通道所对应的索引号*/
     gucAtOmIndex = ucIndex;
 
-    /* Modified by L60609 for AT Project，2011-10-05,  Begin*/
     /* 通知OAM切换至OM模式 */
     if (AT_USB_COM_PORT_NO == gastAtClientTab[ucIndex].ucPortNo)
     {
@@ -20407,26 +19867,11 @@ TAF_UINT32 At_SetAt2OmPara(TAF_UINT8 ucIndex)
 
     /*将通道模式设置为OM模式*/
     At_SetMode(gucAtOmIndex, AT_DATA_MODE, AT_OM_DATA_MODE);
-    /* Modified by L60609 for AT Project，2011-10-05,  End*/
 
     return AT_OK;
 }
 
-/*****************************************************************************
- Prototype      : AT_ResumeOm2AtMode
- Description    : 将OM态恢复为AT态
- Input          : ucPortNo    - 端口号
- Output         : ---
- Return Value   : AT_SUCCESS --- 成功
-                  AT_FAILURE --- 失败
- Calls          : ---
- Called By      : ---
 
- History        : ---
-  1.Date        : 2009-08-14
-    Author      :S62952
-    Modification: Created function
-*****************************************************************************/
 TAF_UINT32 AT_ResumeOm2AtMode(TAF_VOID)
 {
     /*检查是否已有处于OM模式的通道*/
@@ -20486,7 +19931,6 @@ VOS_UINT32 At_SetCpolPara(VOS_UINT8 ucIndex)
 {
     TAF_PH_SET_PREFPLMN_STRU            stPrefPlmn;
     VOS_UINT32                          ulRst;
-    /* Modified by l60609 for DSDA Phase III, 2013-2-22, Begin */
     AT_MODEM_NET_CTX_STRU              *pstNetCtx = VOS_NULL_PTR;
 
     pstNetCtx = AT_GetModemNetCtxAddrFromClientId(ucIndex);
@@ -20545,7 +19989,6 @@ VOS_UINT32 At_SetCpolPara(VOS_UINT8 ucIndex)
             return ulRst;
         }
     }
-    /* Modified by l60609 for DSDA Phase III, 2013-2-22, End */
 
     if (VOS_TRUE == TAF_MMA_SetCpolReq(WUEPS_PID_AT,
                                        gastAtClientTab[ucIndex].usClientId,
@@ -20741,10 +20184,8 @@ VOS_UINT32 AT_SetCpwordPara ( VOS_UINT8  ucIndex )
 
 VOS_UINT32 AT_SetDislogPara ( VOS_UINT8 ucIndex )
 {
-    /* Added by f62575 for B050 Project, 2012-2-3, Begin   */
     VOS_UINT32                          ulRet;
     nv_pid_enable_type                  stPidEnableType;
-    /* Added by f62575 for B050 Project, 2012-2-3, end   */
 
     VOS_UINT32                          ulRetDiag;
     VOS_UINT32                          ulRet3GDiag;
@@ -20796,7 +20237,6 @@ VOS_UINT32 AT_SetDislogPara ( VOS_UINT8 ucIndex )
         return AT_OK;
     }
 
-    /* Added by f62575 for B050 Project, 2012-2-3, Begin   */
     /* 读取PID使能NV项 */
     if (NV_OK != TAF_ACORE_NV_READ(MODEM_ID_0, en_NV_Item_PID_Enable_Type,
                         &stPidEnableType,
@@ -20812,10 +20252,8 @@ VOS_UINT32 AT_SetDislogPara ( VOS_UINT8 ucIndex )
         AT_WARN_LOG("AT_SetDislogPara:PID is not enabled");
         return AT_OK;
     }
-    /* Added by f62575 for B050 Project, 2012-2-3, End   */
 
 
-    /* Modified by f62575 for B050 Project, 2012-2-3, Begin   */
     /*  打开DIAG口*/
     if ( AT_DISLOG_DIAG_OPEN == gastAtParaList[0].ulParaValue )
     {
@@ -20852,7 +20290,6 @@ VOS_UINT32 AT_SetDislogPara ( VOS_UINT8 ucIndex )
 
         return ulRet;
     }
-    /* Modified by f62575 for B050 Project, 2012-2-3, End   */
 
 
     return AT_ERROR;
@@ -21358,12 +20795,10 @@ VOS_UINT32 At_SetPhyInitPara(VOS_UINT8 ucIndex)
 
 
 
-/* Added by f62575 for SMALL IMAGE, 2012-1-3, begin   */
 
 VOS_UINT32 AT_SetWifiGlobalMacPara(VOS_UINT8 ucIndex)
 {
     VOS_UINT32                          ulRet;
-    /* Added by 傅映君/f62575 for E5宏开关打开后编译问题, 2011/11/15, begin */
     VOS_UINT8                           aucE5GwMacAddr[AT_MAC_ADDR_LEN+1]; /* MAC地址*/
 
     if (gucAtParaIndex != 1)
@@ -21385,7 +20820,6 @@ VOS_UINT32 AT_SetWifiGlobalMacPara(VOS_UINT8 ucIndex)
 
 
     ulRet = TAF_ACORE_NV_WRITE(MODEM_ID_0, en_NV_Item_WIFI_MAC_ADDR, aucE5GwMacAddr, AT_MAC_ADDR_LEN);
-    /* Added by 傅映君/f62575 for E5宏开关打开后编译问题, 2011/11/15, end */
 
     if (NV_OK != ulRet)
     {
@@ -21395,9 +20829,7 @@ VOS_UINT32 AT_SetWifiGlobalMacPara(VOS_UINT8 ucIndex)
 
     return AT_OK;
 }
-/* Added by f62575 for SMALL IMAGE, 2012-1-3, end   */
 
-/* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
 
 VOS_UINT32 AT_SetDockPara (VOS_UINT8 ucIndex)
 {
@@ -21452,7 +20884,6 @@ VOS_UINT32 AT_SetDockPara (VOS_UINT8 ucIndex)
 
     return AT_SUCCESS;
 }
-/* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, end */
 
 
 VOS_UINT32 AT_SetCsqlvlPara( VOS_UINT8 ucIndex )
@@ -21516,12 +20947,10 @@ VOS_UINT32 AT_SetApbatlvlPara( VOS_UINT8 ucIndex )
     VOS_UINT32                          ucChargeState;
 
 
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
     if (BSP_MODULE_UNSUPPORT == mdrv_misc_support_check(BSP_MODULE_TYPE_CHARGE) )
     {
         return AT_ERROR;
     }
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, end */
 
     /*Arguments found, return error.*/
     if(AT_CMD_OPT_SET_CMD_NO_PARA != g_stATParseCmd.ucCmdOptType)
@@ -22029,9 +21458,7 @@ VOS_UINT32 AT_GetNdisDialParam(
 
     pstDialParaInfo->ucCid      = (VOS_UINT8)gastAtParaList[0].ulParaValue;
 
-    /* Modified by l60609 for DSDA PhaseII, 2012-12-21, begin */
     ulRet = TAF_AGENT_GetPdpCidPara(&stPdpCidInfo, ucIndex, pstDialParaInfo->ucCid);
-    /* Modified by l60609 for DSDA PhaseII, 2012-12-21, end */
     if (VOS_OK != ulRet)
     {
         return AT_FAILURE;
@@ -22379,9 +21806,7 @@ VOS_UINT32 At_NdisDupProc(VOS_UINT8 ucIndex)
         AT_NORM_LOG1("At_NdisDupProc:g_stATParseCmd.ucCmdOptType=%d\n",g_stATParseCmd.ucCmdOptType);
 
         /* 记录PS域呼叫错误码 */
-        /* Modified by l60609 for DSDA Phase III, 2013-2-22, Begin */
         AT_PS_SetPsCallErrCause(ucIndex, TAF_PS_CAUSE_INVALID_PARAMETER);
-        /* Modified by l60609 for DSDA Phase III, 2013-2-22, End */
 
         return AT_CME_INCORRECT_PARAMETERS;
     }
@@ -22393,9 +21818,7 @@ VOS_UINT32 At_NdisDupProc(VOS_UINT8 ucIndex)
         AT_NORM_LOG1("At_NdisDupProc:ulRet=%d\n",ulRet);
 
         /* 记录PS域呼叫错误码 */
-        /* Modified by l60609 for DSDA Phase III, 2013-2-22, Begin */
         AT_PS_SetPsCallErrCause(ucIndex, TAF_PS_CAUSE_INVALID_PARAMETER);
-        /* Modified by l60609 for DSDA Phase III, 2013-2-22, End */
 
         return ulRet;
     }
@@ -22417,7 +21840,6 @@ VOS_UINT32 At_NdisDupProc(VOS_UINT8 ucIndex)
     }
 
 }
-/* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, end */
 
 
 VOS_UINT32 AT_AppCheckDialParam(VOS_VOID)
@@ -22720,9 +22142,7 @@ VOS_UINT32 AT_GetAppDialParam(
     /* 获取CID */
     pstDialParaInfo->ucCid            = (VOS_UINT8)gastAtParaList[0].ulParaValue;
 
-    /* Modified by l60609 for DSDA PhaseII, 2012-12-21, begin */
     ulRet = TAF_AGENT_GetPdpCidPara(&stPdpCidInfo, ucIndex, pstDialParaInfo->ucCid);
-    /* Modified by l60609 for DSDA PhaseII, 2012-12-21, end */
     if (VOS_OK != ulRet)
     {
         return AT_FAILURE;
@@ -23075,9 +22495,7 @@ VOS_UINT32 AT_DialProc(
         AT_NORM_LOG1("AT_DialProc:g_stATParseCmd.ucCmdOptType=%d\n",g_stATParseCmd.ucCmdOptType);
 
         /* 记录PS域呼叫错误码 */
-        /* Modified by l60609 for DSDA Phase III, 2013-2-22, Begin */
         AT_PS_SetPsCallErrCause(ucIndex, TAF_PS_CAUSE_INVALID_PARAMETER);
-        /* Modified by l60609 for DSDA Phase III, 2013-2-22, End */
 
         return AT_CME_INCORRECT_PARAMETERS;
     }
@@ -23089,9 +22507,7 @@ VOS_UINT32 AT_DialProc(
         AT_WARN_LOG("AT_DialProc:WARNING: Wrong parameter!");
 
         /* 记录PS域呼叫错误码 */
-        /* Modified by l60609 for DSDA Phase III, 2013-2-22, Begin */
         AT_PS_SetPsCallErrCause(ucIndex, TAF_PS_CAUSE_INVALID_PARAMETER);
-        /* Modified by l60609 for DSDA Phase III, 2013-2-22, End */
 
         return ulResult;
     }
@@ -23109,9 +22525,7 @@ VOS_UINT32 AT_DialProc(
         if (AT_HILINK_GATEWAY_MODE == g_enHiLinkMode)
         {
             /* 记录PS域呼叫错误码 */
-            /* Modified by l60609 for DSDA Phase III, 2013-2-22, Begin */
             AT_PS_SetPsCallErrCause(ucIndex, TAF_PS_CAUSE_UNKNOWN);
-            /* Modified by l60609 for DSDA Phase III, 2013-2-22, End */
 
             return AT_ERROR;
         }
@@ -23139,7 +22553,6 @@ VOS_UINT32 AT_SetNdisdupPara (VOS_UINT8 ucIndex)
         return At_NdisDupProc(ucIndex);
     }
 
-    /* Modified by l60609 for V9R1 IPv6&TAF/SM Project, 2013-4-24, begin */
     if (AT_APP_USER == gastAtClientTab[ucIndex].UserType)
     {
         /* 处理E5、闪电卡、E355等形态的拨号 */
@@ -23167,9 +22580,7 @@ VOS_UINT32 AT_SetNdisdupPara (VOS_UINT8 ucIndex)
             return AT_PS_ProcDialCmd(ucIndex);
         }
 
-        /* Modified by l60609 for AP适配项目 ，2012-09-03 Begin */
         if (SYSTEM_APP_WEBUI == *pucSystemAppConfig)
-        /* Modified by l60609 for AP适配项目 ，2012-09-03 End */
         {
             return AT_DialProc(ucIndex);
         }
@@ -23179,7 +22590,6 @@ VOS_UINT32 AT_SetNdisdupPara (VOS_UINT8 ucIndex)
         }
     }
 
-    /* Modified by l60609 for V9R1 IPv6&TAF/SM Project, 2013-4-24, end */
 
     if (AT_CTR_USER == gastAtClientTab[ucIndex].UserType)
     {
@@ -23212,20 +22622,7 @@ VOS_UINT32 AT_SetNdisdupPara (VOS_UINT8 ucIndex)
 }
 
 
-/*****************************************************************************
- Prototype      : At_SetAuthdataPara
- Description    : ^AUTHDATA=<cid>[,<Auth_type>[<PLMN>[,<passwd>[,<username>]]]
- Input          : ucIndex --- 用户索引
- Output         :
- Return Value   : AT_XXX  --- ATC返回码
- Calls          : ---
- Called By      : ---
 
- History        : ---
-  1.Date        : 2009-08-27
-    Author      : L47619
-    Modification: Created function
-*****************************************************************************/
 TAF_UINT32 At_SetAuthdataPara (TAF_UINT8 ucIndex)
 {
     TAF_AUTHDATA_EXT_STRU               stAuthDataInfo;
@@ -23415,7 +22812,6 @@ TAF_UINT32 At_SetCrpnPara (TAF_UINT8 ucIndex)
 VOS_UINT32  AT_SetAlsPara( TAF_UINT8 ucIndex )
 {
     VOS_UINT32                          ulRet;
-    /* Modified by l60609 for DSDA Phase III, 2013-2-20, Begin */
     AT_MODEM_SS_CTX_STRU               *pstSsCtx = VOS_NULL_PTR;
 
     pstSsCtx = AT_GetModemSsCtxAddrFromClientId(ucIndex);
@@ -23449,7 +22845,6 @@ VOS_UINT32  AT_SetAlsPara( TAF_UINT8 ucIndex )
     }
 
     pstSsCtx->ucSalsType = (TAF_UINT8)gastAtParaList[0].ulParaValue;
-    /* Modified by l60609 for DSDA Phase III, 2013-2-20, End */
 
     return AT_OK;
 }
@@ -23745,10 +23140,8 @@ TAF_UINT32  At_SetTModePara(TAF_UINT8 ucIndex )
             }
 
             return AT_OK;
-           /* Added by f62575 for SMALL IMAGE, 2012-1-3, begin */
         case AT_TMODE_POWEROFF:
                 return AT_SetTmodeAutoPowerOff(ucIndex);
-           /* Added by f62575 for SMALL IMAGE, 2012-1-3, end   */
 
            /* 按北京要求模式4->11和模式1做相同的处理 */
         case AT_TMODE_SIGNALING :
@@ -23875,7 +23268,6 @@ VOS_UINT32  At_SendTxOnOffToGHPA(
 
     /* 填写消息体 */
     pstTxMsg->usMsgID = ID_AT_GHPA_RF_TX_CFG_REQ;
-    /* Added by 傅映君/f62575 for AT Project,适配物理层接口变更, 2011/11/15, begin */
     usMask            = G_RF_MASK_TX_AFC;
 
     /*AT^FDAC设置的FDAC值和AT^FWAVE设置的power值表示的含义相同，取后设置的值*/
@@ -23894,7 +23286,6 @@ VOS_UINT32  At_SendTxOnOffToGHPA(
         pstTxMsg->enCtrlMode = AT_GHPA_RF_CTRLMODE_TYPE_TXPOWER;
         pstTxMsg->usTxPower = g_stAtDevCmdCtrl.usPower;
     }
-    /* Added by 傅映君/f62575 for AT Project,适配物理层接口变更, 2011/11/15, end */
 
     /* Tx Cfg */
     pstTxMsg->usMask = usMask;              /* 按位标识配置类型 */
@@ -24256,10 +23647,8 @@ VOS_UINT32 At_SendRxOnOffToHPA(
     /* 填写消息体 */
     pstMsg->usMsgID = ID_AT_HPA_RF_CFG_REQ;
 
-    /* Added by 傅映君/f62575 for AT Project,适配物理层接口变更, 2011/11/15, begin */
     usMask = W_RF_MASK_RX_ARFCN | W_RF_MASK_RX_ANTSEL \
              | W_RF_MASK_RX_RXONOFF;
-    /* Added by 傅映君/f62575 for AT Project,适配物理层接口变更, 2011/11/15, end */
 
     /* 按位标识配置类型 */
     pstMsg->stRfCfgPara.usMask      = usMask;
@@ -24875,13 +24264,11 @@ TAF_UINT32   At_SetBsn(TAF_UINT8 ucIndex)
 VOS_UINT32   At_SetQosPara(VOS_UINT8 ucIndex)
 {
     AT_TRAFFIC_CLASS_CUSTOMIZE_STRU                         stATTrafficClass;
-    /* Modified by l60609 for DSDA Phase III, 2013-3-4, Begin */
     MODEM_ID_ENUM_UINT16                                    enModemId;
     VOS_UINT32                                              ulRet;
     VOS_UINT8                                               ucQosPara;
 
     enModemId = MODEM_ID_0;
-    /* Modified by l60609 for DSDA Phase III, 2013-3-4, End */
 
     /* 命令状态类型检查 */
     if (AT_CMD_OPT_SET_PARA_CMD != g_stATParseCmd.ucCmdOptType)
@@ -24925,7 +24312,6 @@ VOS_UINT32   At_SetQosPara(VOS_UINT8 ucIndex)
     /* 将数字参数值写入NV项的ucTrafficClass单元 */
     stATTrafficClass.ucTrafficClass = ucQosPara;
 
-    /* Modified by l60609 for DSDA Phase III, 2013-3-4, Begin */
     ulRet = AT_GetModemIdFromClient(ucIndex, &enModemId);
 
     if (VOS_OK != ulRet)
@@ -24942,7 +24328,6 @@ VOS_UINT32   At_SetQosPara(VOS_UINT8 ucIndex)
         AT_WARN_LOG("At_SetQosPara:WARNING:NVIM Write en_NV_Item_TRAFFIC_CLASS_Type failed!");
         return AT_DEVICE_OTHER_ERROR;
     }
-    /* Modified by l60609 for DSDA Phase III, 2013-3-4, End */
 
     return  AT_OK;
 }
@@ -24952,13 +24337,11 @@ VOS_UINT32   At_SetSDomainPara(VOS_UINT8 ucIndex)
 {
     TAF_MMA_SERVICE_DOMAIN_ENUM_UINT8   enSrvDomain;
     NAS_NVIM_MS_CLASS_STRU              stMsClass;
-    /* Modified by l60609 for DSDA Phase III, 2013-3-4, Begin */
     MODEM_ID_ENUM_UINT16                enModemId;
     VOS_UINT32                          ulRet;
 
     enModemId = MODEM_ID_0;
     TAF_MEM_SET_S(&stMsClass, sizeof(stMsClass), 0x00, sizeof(NAS_NVIM_MS_CLASS_STRU));
-    /* Modified by l60609 for DSDA Phase III, 2013-3-4, End */
 
     /* 命令状态类型检查 */
     if (AT_CMD_OPT_SET_PARA_CMD != g_stATParseCmd.ucCmdOptType)
@@ -25005,7 +24388,6 @@ VOS_UINT32   At_SetSDomainPara(VOS_UINT8 ucIndex)
 
     stMsClass.ucMsClass = enSrvDomain;
     /* 将转换后的参数值写入NV项en_NV_Item_MMA_MsClass的MsClass单元 */
-    /* Modified by l60609 for DSDA Phase III, 2013-3-4, Begin */
     ulRet = AT_GetModemIdFromClient(ucIndex, &enModemId);
 
     if (VOS_OK != ulRet)
@@ -25017,7 +24399,6 @@ VOS_UINT32   At_SetSDomainPara(VOS_UINT8 ucIndex)
                             en_NV_Item_MMA_MsClass,
                             &stMsClass,
                             sizeof(NAS_NVIM_MS_CLASS_STRU)))
-    /* Modified by l60609 for DSDA Phase III, 2013-3-4, End */
     {
        AT_WARN_LOG("At_SetSDomainPara:WARNING:NVIM Write en_NV_Item_MMA_MsClass failed!");
        return AT_DEVICE_OTHER_ERROR;
@@ -25354,7 +24735,6 @@ VOS_UINT32  At_SetInfoRBU(VOS_UINT8 ucIndex )
     {
         return AT_ERROR;
     }
-    /*Modified by l60609 for At Project, 2011-11-3, Begin */
     ulRst = AT_FillAndSndAppReqMsg(gastAtClientTab[ucIndex].usClientId,
                                    0,
                                    DRV_AGENT_INFORBU_SET_REQ,
@@ -25371,7 +24751,6 @@ VOS_UINT32  At_SetInfoRBU(VOS_UINT8 ucIndex )
     {
         return AT_ERROR;
     }
-    /*Modified by l60609 for At Project, 2011-11-3, End */
 
 }
 
@@ -25891,7 +25270,6 @@ VOS_UINT32 At_SetCuus1Para(
 
     TAF_MEM_SET_S(&stAppReq, sizeof(stAppReq), 0x00, sizeof(stAppReq));
 
-    /* Modified by l60609 for DSDA Phase III, 2013-2-20, Begin */
     /* 设置<n> */
     if(0 != gastAtParaList[0].usParaLen)
     {
@@ -25952,9 +25330,7 @@ VOS_UINT32  At_SetGlastErrPara(VOS_UINT8 ucIndex)
     gulErrType = gastAtParaList[0].ulParaValue;
 
     /* 获取错误码*/
-    /* Modified by l60609 for DSDA Phase III, 2013-2-22, Begin */
     enPsCause = AT_PS_GetPsCallErrCause(ucIndex);
-    /* Modified by l60609 for DSDA Phase III, 2013-2-22, End */
     if (TAF_PS_CAUSE_SUCCESS == enPsCause)
     {
         return AT_ERROR;
@@ -26163,7 +25539,6 @@ VOS_UINT32 At_SetCallSrvPara(VOS_UINT8 ucIndex)
 
 }
 
-/* Modify by z60575 for multi_ssid, 2012-9-5 begin */
 
 VOS_UINT32 At_WriteWifiNVToDefault(
     AT_CUSTOMIZE_ITEM_DFLT_ENUM_UINT8   enCustomizeItem
@@ -26221,7 +25596,6 @@ VOS_UINT32 At_WriteWifiNVToDefault(
 
     return VOS_OK;
 }
-/* Modify by z60575 for multi_ssid, 2012-9-5 end */
 
 
 VOS_UINT32 At_WriteSimLockNVToDefault(
@@ -26280,7 +25654,6 @@ VOS_UINT32 At_WriteSimLockNVToDefault(
         return VOS_ERR;
     }
 
-    /* Added by l60609 for B060 Project, 2012-2-20, Begin   */
 
     /*向C核发送消息备份simlockNV*/
     if (TAF_SUCCESS != AT_FillAndSndAppReqMsg(0,
@@ -26295,7 +25668,6 @@ VOS_UINT32 At_WriteSimLockNVToDefault(
         return VOS_ERR;
     }
 
-    /* Added by l60609 for B060 Project, 2012-2-20, End   */
 
     /* 该定制项在可配置需求文档中默认值和单板自定义的默认值相同,
        en_NV_Item_CustomizeSimLockMaxTimes的ulStatus:默认为未激活；
@@ -26624,7 +25996,6 @@ VOS_UINT32 At_SetSimLockPlmnInfo(
         return AT_ERROR;
     }
 
-    /* Added by l60609 for B060 Project, 2012-2-20, Begin   */
 
     /*向C核发送消息备份simlockNV*/
     if (TAF_SUCCESS != AT_FillAndSndAppReqMsg(0,
@@ -26640,7 +26011,6 @@ VOS_UINT32 At_SetSimLockPlmnInfo(
         return VOS_ERR;
     }
 
-    /* Added by l60609 for B060 Project, 2012-2-20, End   */
 
     /* 将PLMN信息写入到NV项en_NV_Item_CustomizeSimLockPlmnInfo */
 
@@ -26764,7 +26134,6 @@ VOS_UINT32 At_SetSystemInfoEx(TAF_UINT8 ucIndex)
 
 VOS_UINT32 AT_SetGodloadPara( VOS_UINT8 ucIndex )
 {
-    /* Modified  by f62575 for AT Project, 2011-10-17, begin */
     VOS_UINT32                          ulRet;
 
     /* 参数检查 */
@@ -26790,8 +26159,6 @@ VOS_UINT32 AT_SetGodloadPara( VOS_UINT8 ucIndex )
     /* 设置AT模块实体的状态为等待异步返回 */
     gastAtClientTab[ucIndex].CmdCurrentOpt = AT_CMD_GODLOAD_SET;
     return AT_WAIT_ASYNC_RETURN;
-    /* Modified  by f62575 for AT Project, 2011-10-17, end */
-
 }
 
 
@@ -26800,7 +26167,6 @@ VOS_UINT32 At_SetResetPara( VOS_UINT8 ucIndex  )
     VOS_UINT8                           ucUpdateFlag;
     VOS_UINT32                          ulRslt;
 
-    /* Modified  by f62575 for AT Project, 2011-10-17, begin */
     if (0 != gucAtParaIndex)
     {
         AT_WARN_LOG("At_SetResetPara: too many parameters.");
@@ -26828,7 +26194,6 @@ VOS_UINT32 At_SetResetPara( VOS_UINT8 ucIndex  )
     }
 
     return VOS_OK;
-    /* Modified  by f62575 for AT Project, 2011-10-17, end */
 }
 
 
@@ -26836,7 +26201,6 @@ VOS_UINT32 AT_SetNvBackUpPara( VOS_UINT8 ucIndex )
 {
     VOS_UINT32                          ulRst;
 
-    /*Modified by l60609 for At Project, 2011-11-4, Begin */
     if (0 != gucAtParaIndex)
     {
         AT_WARN_LOG("AT_SetNvBackUpPara: too many parameters.");
@@ -26859,7 +26223,6 @@ VOS_UINT32 AT_SetNvBackUpPara( VOS_UINT8 ucIndex )
     {
         return AT_ERROR;
     }
-    /*Modified by l60609 for At Project, 2011-11-4, End */
 }
 
 
@@ -27007,12 +26370,10 @@ VOS_UINT32 AT_SetWiFiModePara(VOS_UINT8 ucIndex)
         return  AT_TOO_MANY_PARA;
     }
 
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
     if (BSP_MODULE_UNSUPPORT == mdrv_misc_support_check(BSP_MODULE_TYPE_WIFI) )
     {
         return AT_ERROR;
     }
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
 
     WIFI_TEST_CMD("wl down");
 
@@ -27050,12 +26411,10 @@ VOS_UINT32 AT_SetWiFiBandPara(VOS_UINT8 ucIndex)
         return  AT_TOO_MANY_PARA;
     }
 
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
     if (BSP_MODULE_UNSUPPORT == mdrv_misc_support_check(BSP_MODULE_TYPE_WIFI) )
     {
         return AT_ERROR;
     }
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
 
 
     /*目前Wifi只支持20M，40M返回ERROR*/
@@ -27082,12 +26441,10 @@ VOS_UINT32 AT_SetWiFiFreqPara(VOS_UINT8 ucIndex)
         return  AT_TOO_MANY_PARA;
     }
 
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
     if (BSP_MODULE_UNSUPPORT == mdrv_misc_support_check(BSP_MODULE_TYPE_WIFI) )
     {
         return AT_ERROR;
     }
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
 
 
     /* 计算信道  */
@@ -27160,12 +26517,10 @@ VOS_UINT32 AT_SetWiFiRatePara(VOS_UINT8 ucIndex)
         return  AT_TOO_MANY_PARA;
     }
 
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
     if (BSP_MODULE_UNSUPPORT == mdrv_misc_support_check(BSP_MODULE_TYPE_WIFI) )
     {
         return AT_ERROR;
     }
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
 
 
     ulWifiRate = gastAtParaList[0].ulParaValue/100;
@@ -27209,12 +26564,10 @@ VOS_UINT32 AT_SetWiFiPowerPara(VOS_UINT8 ucIndex)
         return  AT_TOO_MANY_PARA;
     }
 
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
     if (BSP_MODULE_UNSUPPORT == mdrv_misc_support_check(BSP_MODULE_TYPE_WIFI) )
     {
         return AT_ERROR;
     }
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
 
     g_lWifiPower = (VOS_INT32)gastAtParaList[0].ulParaValue;
 
@@ -27245,12 +26598,10 @@ VOS_UINT32 AT_SetWiFiTxPara(VOS_UINT8 ucIndex)
 {
     VOS_CHAR                            acCmd[200]={0};
 
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
     if (BSP_MODULE_UNSUPPORT == mdrv_misc_support_check(BSP_MODULE_TYPE_WIFI) )
     {
         return AT_ERROR;
     }
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
 
 
     /* 参数过多*/
@@ -27325,12 +26676,10 @@ VOS_UINT32 AT_SetWiFiRxPara(VOS_UINT8 ucIndex)
 {
     VOS_CHAR                            acCmd[200]={0};
 
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
     if (BSP_MODULE_UNSUPPORT == mdrv_misc_support_check(BSP_MODULE_TYPE_WIFI) )
     {
         return AT_ERROR;
     }
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
 
 
     /* 参数过多*/
@@ -27380,12 +26729,10 @@ VOS_UINT32 AT_SetWiFiRxPara(VOS_UINT8 ucIndex)
 
 VOS_UINT32 AT_SetWiFiPacketPara(VOS_UINT8 ucIndex)
 {
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
     if (BSP_MODULE_UNSUPPORT == mdrv_misc_support_check(BSP_MODULE_TYPE_WIFI) )
     {
         return AT_ERROR;
     }
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
     /* 参数过多*/
     if (gucAtParaIndex > 1)
     {
@@ -27407,20 +26754,16 @@ VOS_UINT32 AT_SetWiFiPacketPara(VOS_UINT8 ucIndex)
     return AT_OK;
 }
 
-/* Modify by z60575 for multi_ssid, 2012-9-5 begin */
-/* Modified by f62575 for AT Project, 2011-10-28, begin */
 
 VOS_UINT32 AT_SetWiFiLogPara(VOS_UINT8 ucIndex)
 {
     TAF_AT_MULTI_WIFI_SSID_STRU               stWifiSsid;
     TAF_AT_MULTI_WIFI_SEC_STRU                stWifiKey;
 
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
     if (BSP_MODULE_UNSUPPORT == mdrv_misc_support_check(BSP_MODULE_TYPE_WIFI) )
     {
         return AT_ERROR;
     }
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
 
 
     /* 参数过多*/
@@ -27524,12 +26867,10 @@ VOS_UINT32 AT_SetWiFiSsidPara(VOS_UINT8 ucIndex)
     TAF_AT_MULTI_WIFI_SSID_STRU         stWifiSsid;
     VOS_UINT8                           ucGroup;
 
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
     if (BSP_MODULE_UNSUPPORT == mdrv_misc_support_check(BSP_MODULE_TYPE_WIFI) )
     {
         return AT_ERROR;
     }
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
 
 
     /* 参数过多*/
@@ -27586,12 +26927,10 @@ VOS_UINT32 AT_SetWiFiKeyPara(VOS_UINT8 ucIndex)
     TAF_AT_MULTI_WIFI_SEC_STRU          stWifiKey;
     VOS_UINT8                           ucGroup;
 
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
     if (BSP_MODULE_UNSUPPORT == mdrv_misc_support_check(BSP_MODULE_TYPE_WIFI) )
     {
         return AT_ERROR;
     }
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
 
     /* 参数过多 */
     if (gucAtParaIndex > 2)
@@ -27643,7 +26982,6 @@ VOS_UINT32 AT_SetWiFiKeyPara(VOS_UINT8 ucIndex)
 
     return AT_OK;
 }
-/* Modified by f62575 for AT Project, 2011-10-28, end */
 
 
 VOS_VOID AT_PrintWifiChannelInfo(
@@ -27953,12 +27291,10 @@ VOS_UINT32 AT_SetWifiPaRangePara (VOS_UINT8 ucIndex)
     /* 初始化 */
     ucWifiMode                          = (VOS_UINT8)WIFI_GET_PA_MODE();
 
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
     if (BSP_MODULE_UNSUPPORT == mdrv_misc_support_check(BSP_MODULE_TYPE_WIFI) )
     {
         return AT_ERROR;
     }
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
 
 
     /*参数长度过长*/
@@ -28061,7 +27397,6 @@ VOS_UINT32 AT_SetTmmiPara(VOS_UINT8 ucIndex)
 
 VOS_UINT32 AT_SetChrgEnablePara(VOS_UINT8 ucIndex)
 {
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
     VOS_UINT32                          ulRet;
 
     ulRet                               = mdrv_misc_support_check(BSP_MODULE_TYPE_CHARGE);
@@ -28070,7 +27405,6 @@ VOS_UINT32 AT_SetChrgEnablePara(VOS_UINT8 ucIndex)
     {
         return AT_ERROR;
     }
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, end */
 
 
     /* 参数过多 */
@@ -28471,7 +27805,6 @@ VOS_UINT32 AT_SetFwavePara(VOS_UINT8 ucIndex)
 
 }
 
-/* Added by l60609 for XML, 2011-08-11 Begin */
 
 VOS_UINT32 AT_SetApRptSrvUrlPara(VOS_UINT8 ucIndex)
 {
@@ -28594,9 +27927,7 @@ VOS_UINT32 AT_SetApXmlRptFlagPara(VOS_UINT8 ucIndex)
     }
 }
 
-/* Added by l60609 for XML, 2011-08-11 End */
 
-/* Added by h44270 for V7R1 phase III, 2011-10-18, begin */
 
 VOS_UINT32 AT_SetFastDormPara(VOS_UINT8 ucIndex)
 {
@@ -28645,7 +27976,6 @@ VOS_UINT32 AT_SetFastDormPara(VOS_UINT8 ucIndex)
 
     return AT_ERROR;
 }
-/* Added by h44270 for V7R1 phase III, 2011-10-18, end */
 
 
 VOS_UINT32 AT_SetMemInfoPara(VOS_UINT8 ucIndex)
@@ -28903,9 +28233,7 @@ VOS_UINT32 AT_SetApRptPortSelectThreePara(void)
 VOS_UINT32 AT_SetApRptPortSelectPara(VOS_UINT8 ucIndex)
 {
     /* 通道检查 */
-    /* Modified by L60609 for MUX，2012-08-13,  Begin */
     if (VOS_FALSE == AT_IsApPort(ucIndex))
-    /* Modified by L60609 for MUX，2012-08-13,  End */
     {
         return AT_ERROR;
     }
@@ -28985,9 +28313,7 @@ VOS_UINT32 At_SetUsbSwitchPara (VOS_UINT8 ucIndex)
     VOS_UINT8                        ucUsbStatus;
 
     /* 通道检查 */
-    /* Modified by L60609 for MUX，2012-08-13,  Begin */
     if (VOS_FALSE == AT_IsApPort(ucIndex))
-    /* Modified by L60609 for MUX，2012-08-13,  End */
     {
         return AT_ERROR;
     }
@@ -29797,9 +29123,7 @@ VOS_UINT32 AT_SetHukPara(VOS_UINT8 ucIndex)
     TAF_MEM_SET_S(&stHukSetReq, sizeof(stHukSetReq), 0x00, sizeof(DRV_AGENT_HUK_SET_REQ_STRU));
 
     /* 通道检查 */
-    /* Modified by L60609 for MUX，2012-08-13,  Begin */
     if (VOS_FALSE == AT_IsApPort(ucIndex))
-    /* Modified by L60609 for MUX，2012-08-13,  End */
     {
         return AT_ERROR;
     }
@@ -30098,9 +29422,7 @@ VOS_UINT32 AT_SetIdentifyStartPara(VOS_UINT8 ucIndex)
     printk(KERN_ERR "\n AT_SetIdentifyStartPara enter \n");
 
     /* 通道检查 */
-    /* Modified by L60609 for MUX，2012-08-13,  Begin */
     if (VOS_FALSE == AT_IsApPort(ucIndex))
-    /* Modified by L60609 for MUX，2012-08-13,  End */
     {
         return AT_ERROR;
     }
@@ -30146,9 +29468,7 @@ VOS_UINT32 AT_SetIdentifyEndPara(VOS_UINT8 ucIndex)
     TAF_MEM_SET_S(&stIdentifyEndSetReq, sizeof(stIdentifyEndSetReq), 0x00, sizeof(DRV_AGENT_IDENTIFYEND_SET_REQ_STRU));
 
     /* 通道检查 */
-    /* Modified by L60609 for MUX，2012-08-13,  Begin */
     if (VOS_FALSE == AT_IsApPort(ucIndex))
-    /* Modified by L60609 for MUX，2012-08-13,  End */
     {
         return AT_ERROR;
     }
@@ -30266,9 +29586,7 @@ VOS_UINT32 AT_SetPhonePhynumPara(VOS_UINT8 ucIndex)
     TAF_MEM_SET_S(&stPhonePhynumSetReq, sizeof(stPhonePhynumSetReq), 0x00, sizeof(DRV_AGENT_PHONEPHYNUM_SET_REQ_STRU));
 
     /* 通道检查 */
-    /* Modified by L60609 for MUX，2012-08-13,  Begin */
     if (VOS_FALSE == AT_IsApPort(ucIndex))
-    /* Modified by L60609 for MUX，2012-08-13,  End */
     {
         return AT_ERROR;
     }
@@ -30362,9 +29680,7 @@ VOS_UINT32 AT_SetApSimStPara(VOS_UINT8 ucIndex)
     TAF_MEM_SET_S(&stApSimStSetReq, sizeof(stApSimStSetReq), 0x00, sizeof(DRV_AGENT_AP_SIMST_SET_REQ_STRU));
 
     /* 通道检查 */
-    /* Modified by L60609 for MUX，2012-08-13,  Begin */
     if (VOS_FALSE == AT_IsApPort(ucIndex))
-    /* Modified by L60609 for MUX，2012-08-13,  End */
     {
         return AT_ERROR;
     }
@@ -30552,11 +29868,9 @@ VOS_UINT32 AT_SetNvmEccNumPara(
 
 VOS_UINT32 AT_SetCposPara(VOS_UINT8 ucIndex)
 {
-    /* Modified by l60609 for DSDA Phase III, 2013-2-20, Begin */
     AT_MODEM_AGPS_CTX_STRU             *pstAgpsCtx = VOS_NULL_PTR;
 
     pstAgpsCtx = AT_GetModemAgpsCtxAddrFromClientId(ucIndex);
-    /* Modified by l60609 for DSDA Phase III, 2013-2-20, End */
 
     /* 参数检查 */
     if (AT_CMD_OPT_SET_CMD_NO_PARA != g_stATParseCmd.ucCmdOptType)
@@ -30564,7 +29878,6 @@ VOS_UINT32 AT_SetCposPara(VOS_UINT8 ucIndex)
         return AT_CME_INCORRECT_PARAMETERS;
     }
 
-    /* Modified by l60609 for DSDA Phase III, 2013-2-20, Begin */
     /* 为准备输入的XML码流申请内存 */
     pstAgpsCtx->stXml.pcXmlTextHead = (VOS_CHAR *)PS_MEM_ALLOC(WUEPS_PID_AT, AT_XML_MAX_LEN);
     if (VOS_NULL_PTR == pstAgpsCtx->stXml.pcXmlTextHead)
@@ -30573,7 +29886,6 @@ VOS_UINT32 AT_SetCposPara(VOS_UINT8 ucIndex)
         return AT_ERROR;
     }
     pstAgpsCtx->stXml.pcXmlTextCur  = pstAgpsCtx->stXml.pcXmlTextHead;
-    /* Modified by l60609 for DSDA Phase III, 2013-2-20, End */
 
     /* 切换为AGPS XML码流输入模式 */
     At_SetMode(ucIndex, AT_CMD_MODE, AT_XML_MODE);
@@ -30585,7 +29897,6 @@ VOS_UINT32 AT_SetCposPara(VOS_UINT8 ucIndex)
 
 VOS_UINT32 AT_SetCposrPara(VOS_UINT8 ucIndex)
 {
-    /* Modified by l60609 for DSDA Phase III, 2013-2-20, Begin */
     AT_MODEM_AGPS_CTX_STRU             *pstAgpsCtx = VOS_NULL_PTR;
 
     TAF_NVIM_XCPOSRRPT_CFG_STRU         stXcposrRptCfg;
@@ -30606,7 +29917,6 @@ VOS_UINT32 AT_SetCposrPara(VOS_UINT8 ucIndex)
     }
 
     pstAgpsCtx->enCposrReport = (AT_CPOSR_FLG_ENUM_UNIT8)gastAtParaList[0].ulParaValue;
-    /* Modified by l60609 for DSDA Phase III, 2013-2-20, End */
 
     /* 读取NV项 */
     if ( NV_OK == TAF_ACORE_NV_READ(MODEM_ID_0, en_NV_Item_XCPOSRRPT_CFG, &stXcposrRptCfg, (VOS_SIZE_T)sizeof(stXcposrRptCfg)))
@@ -30629,7 +29939,6 @@ VOS_UINT32 AT_SetCposrPara(VOS_UINT8 ucIndex)
 
 VOS_UINT32 AT_SetXcposrPara(VOS_UINT8 ucIndex)
 {
-    /* Modified by l60609 for DSDA Phase III, 2013-2-20, Begin */
     VOS_UINT32                          ulResult;
     AT_MTA_SET_XCPOSR_REQ_STRU          stSetXcposr;
 
@@ -30668,7 +29977,6 @@ VOS_UINT32 AT_SetXcposrPara(VOS_UINT8 ucIndex)
     gastAtClientTab[ucIndex].CmdCurrentOpt = AT_CMD_XCPOSR_SET;
 
     return AT_WAIT_ASYNC_RETURN;
-    /* Modified by l60609 for DSDA Phase III, 2013-2-20, End */
 }
 
 
@@ -31002,8 +30310,6 @@ VOS_UINT32 AT_SetCgpsClockPara(VOS_UINT8 ucIndex)
 
 }
 
-/* Added by h59254 for V7R1C50 Log2.0 Begin */
-
 VOS_UINT32 AT_SetGpsInfoPara(VOS_UINT8 ucIndex)
 {
     return AT_OK;
@@ -31129,9 +30435,7 @@ VOS_UINT32 AT_SetLogSavePara(VOS_UINT8 ucIndex)
 
     return AT_OK;
 }
-/* Added by h59254 for V7R1C50 Log2.0 End */
 
-/* Added by h59254 for V7R1C50 ISDB Project,  2012-8-27 begin */
 
 VOS_UINT32 AT_SetCISAPara(
     VOS_UINT8                           ucIndex,
@@ -31181,7 +30485,6 @@ VOS_UINT32 AT_SetCISAPara(
         return AT_ERROR;
     }
 }
-/* Added by h59254 for V7R1C50 ISDB Project,  2012-8-27 end */
 
 
 VOS_UINT32 AT_SetCmutPara(VOS_UINT8 ucIndex)
@@ -31288,7 +30591,6 @@ VOS_UINT32 AT_FillApdsPara(
     MN_CALL_ORIG_PARAM_STRU            *pstOrigParam
 )
 {
-    /* Modified by l60609 for DSDA Phase III, 2013-2-21, Begin */
     AT_MODEM_SS_CTX_STRU               *pstSsCtx = VOS_NULL_PTR;
 
     pstSsCtx = AT_GetModemSsCtxAddrFromClientId(ucIndex);
@@ -31298,7 +30600,6 @@ VOS_UINT32 AT_FillApdsPara(
     pstOrigParam->stDataCfg   = pstSsCtx->stCbstDataCfg;
     pstOrigParam->enClirCfg   = pstSsCtx->ucClirType;
     pstOrigParam->stCugCfg    = pstSsCtx->stCcugCfg;
-    /* Modified by l60609 for DSDA Phase III, 2013-2-21, End */
 
     /* 设置<dial_string> */
     if (0 == gastAtParaList[0].usParaLen)
@@ -31384,7 +30685,6 @@ VOS_UINT32 AT_SetApdsPara(VOS_UINT8 ucIndex)
     /* 初始化 */
     TAF_MEM_SET_S(&stOrigParam, sizeof(stOrigParam), 0x00, sizeof(MN_CALL_ORIG_PARAM_STRU));
 
-    /* Modified by l60609 for DSDA Phase III, 2013-2-21, Begin */
     /* 参数检查 */
     if (AT_CMD_OPT_SET_PARA_CMD != g_stATParseCmd.ucCmdOptType)
     {
@@ -31420,7 +30720,6 @@ VOS_UINT32 AT_SetApdsPara(VOS_UINT8 ucIndex)
         AT_UpdateCallErrInfo(ucIndex, TAF_CS_CAUSE_UNKNOWN, VOS_NULL_PTR);
         return AT_ERROR;
     }
-    /* Modified by l60609 for DSDA Phase III, 2013-2-21, End */
 }
 
 
@@ -32118,14 +31417,12 @@ VOS_UINT32 AT_SetBodySarGsmPara(VOS_UINT8 ucIndex)
     return AT_OK;
 }
 
-/* Added by f62575 for SS FDN&Call Control, 2013-05-06, begin */
 
 VOS_UINT32 AT_SetCopnPara(VOS_UINT8 ucIndex)
 {
     VOS_UINT32                          ulRet;
     VOS_UINT16                          usFromIndex = 0;
 
-    /* Modified by k902809 for Iteration 11, 2015-3-24, begin */
     /* 参数检查 */
     if (AT_CMD_OPT_SET_CMD_NO_PARA != g_stATParseCmd.ucCmdOptType)
     {
@@ -32139,7 +31436,6 @@ VOS_UINT32 AT_SetCopnPara(VOS_UINT8 ucIndex)
     {
         return AT_ERROR;
     }
-    /* Modified by k902809 for Iteration 11, Iteration 11 2015-3-24, end */
 
     /* 设置AT模块实体的状态为等待异步返回 */
     gastAtClientTab[ucIndex].CmdCurrentOpt = AT_CMD_COPN_QRY;
@@ -32147,7 +31443,6 @@ VOS_UINT32 AT_SetCopnPara(VOS_UINT8 ucIndex)
     return AT_WAIT_ASYNC_RETURN;
 
 }
-/* Added by f62575 for SS FDN&Call Control, 2013-05-06, end */
 
 VOS_UINT32 AT_SetHistoryFreqPara(VOS_UINT8 ucIndex)
 {
@@ -32397,7 +31692,6 @@ VOS_UINT32 At_SetSimInsertPara(VOS_UINT8 ucIndex)
 
     enSimInsertState = (TAF_SIM_INSERT_STATE_ENUM_UINT32)gastAtParaList[0].ulParaValue;
 
-    /* Modified by k902809 for Iteration 11, 2015-3-24, begin */
 
     ulResult = TAF_MMA_SimInsertReq(WUEPS_PID_AT,
                                     gastAtClientTab[ucIndex].usClientId,
@@ -32412,7 +31706,6 @@ VOS_UINT32 At_SetSimInsertPara(VOS_UINT8 ucIndex)
     {
         return AT_ERROR;
     }
-    /* Modified by k902809 for Iteration 11, Iteration 11 2015-3-24, end */
 
 }
 
@@ -32529,7 +31822,6 @@ VOS_UINT32 AT_SetRefclkfreqPara(VOS_UINT8 ucIndex)
 }
 
 
-/* Added by d0212987 for OM output log , 2013-6-4, begin */
 
 VOS_UINT32 At_SetPullomlogrrcPara(VOS_UINT8 ucIndex)
 {
@@ -32537,9 +31829,7 @@ VOS_UINT32 At_SetPullomlogrrcPara(VOS_UINT8 ucIndex)
 
     return AT_OK;
 }
-/* Added by d0212987 for OM output log, 2013-6-4, end */
 
-/* Added by d0212987 for read die id and chip id, 2013-6-4, begin */
 
 VOS_UINT32 At_SetDieSNPara(VOS_UINT8 ucIndex)
 {
@@ -32585,7 +31875,6 @@ VOS_UINT32 At_SetDieSNPara(VOS_UINT8 ucIndex)
     return AT_OK;
 }
 
-/* Added by d0212987 for read die id and chip id, 2013-6-4, end */
 
 VOS_UINT32 At_SetHandleDect(VOS_UINT8 ucIndex)
 {
@@ -33428,7 +32717,6 @@ VOS_UINT32 AT_SetUserCfgOPlmnPara(VOS_UINT8 ucIndex)
     stEOPlmnSetPara.ucOPlmnCount = (VOS_UINT8)(gastAtParaList[2].ulParaValue / TAF_AT_PLMN_WITH_RAT_LEN);
 
     /* 与MMA进行交互不成功返回失败，交互成功返回命令处理挂起状态 */
-    /* Modified by k902809 for Iteration 11, 2015-3-24, begin */
     ulRst = TAF_MMA_SetEOPlmnReq(WUEPS_PID_AT,
                                  gastAtClientTab[ucIndex].usClientId,
                                  0,
@@ -33444,7 +32732,6 @@ VOS_UINT32 AT_SetUserCfgOPlmnPara(VOS_UINT8 ucIndex)
     {
         return AT_ERROR;
     }
-    /* Modified by k902809 for Iteration 11, Iteration 11 2015-3-24, end */
 }
 
 

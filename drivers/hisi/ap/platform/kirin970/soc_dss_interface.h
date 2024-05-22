@@ -1,5 +1,8 @@
 #ifndef SOC_DSS_INTERFACE_H
 #define SOC_DSS_INTERFACE_H 
+#ifdef PLAT_ID
+#include <stdint.h>
+#endif
 #define DSS_WIDTH(width) ((width) - 1)
 #define DSS_HEIGHT(height) ((height) - 1)
 #define BITS_PER_BYTE 8
@@ -282,6 +285,7 @@ enum dss_rdma_idx {
 #define SCPERRSTDIS1 (0x210)
 #define SCCLKDIV2 (0x258)
 #define SCCLKDIV4 (0x260)
+#define SCBAKDATA0 (0x40C)
 #define SCBAKDATA11 (0x438)
 #define PERI_CTRL23 (0x060)
 #define PERI_CTRL29 (0x078)
@@ -518,6 +522,7 @@ enum dss_rdma_idx {
 #define DSS_RCH_VG2_DEBUG_OFFSET (0x30600)
 #define DSS_RCH_VG2_VPP_OFFSET (0x30700)
 #define DSS_RCH_VG2_DMA_BUF_OFFSET (0x30800)
+#define DSS_RCH_VG2_AFBCD_OFFSET (0x30900)
 #define DSS_RCH_VG2_REG_DEFAULT_OFFSET (0x30A00)
 #define DSS_RCH_VG2_SCL_LUT_OFFSET (0x31000)
 #define DSS_RCH_G0_DMA_OFFSET (0x38000)
@@ -611,6 +616,7 @@ enum dss_rdma_idx {
 #define DSS_DPP_DEGAMMA_OFFSET (0x70950)
 #define DSS_DPP_GMP_OFFSET (0x709A0)
 #define DSS_DPP_ARSR_POST_OFFSET (0x70A00)
+#define DSS_DPP_BITEXT0_OFFSET (0x70B00)
 #define DSS_DPP_GAMA_LUT_OFFSET (0x71000)
 #define DSS_DPP_ACM_LUT_OFFSET (0x72000)
 #define DSS_DPP_GMP_LUT_OFFSET (0x73000)
@@ -2765,6 +2771,7 @@ typedef struct dss_arsr1p {
 #define ARSR_POST_DEBUG_RO_0 (0x0A8)
 #define ARSR_POST_DEBUG_RO_1 (0x0AC)
 #define ARSR_POST_DEBUG_RO_2 (0x0B0)
+#define BIT_EXT0_CTL (0x000)
 #define U_GAMA_R_COEF (0x000)
 #define U_GAMA_G_COEF (0x400)
 #define U_GAMA_B_COEF (0x800)
@@ -3053,6 +3060,7 @@ typedef struct dss_arsr1p {
 #define LDI_CMD_EVENT_SEL (0x0060)
 #define LDI_SRAM_LP_CTRL (0x0064)
 #define LDI_ITF_RD_SHADOW (0x006C)
+#define LDI_DPI_SET (0x0070)
 #define LDI_DP_DSI_SEL (0x0080)
 #define LDI_DPI1_HRZ_CTRL0 (0x00F0)
 #define LDI_DPI1_HRZ_CTRL1 (0x00F4)

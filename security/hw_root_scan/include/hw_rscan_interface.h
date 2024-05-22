@@ -32,6 +32,7 @@ struct rscan_skip_flags {
 	int skip_se_hooks;
 	int skip_se_status;
 	int skip_rprocs;
+	int skip_setid;
 };
 
 struct rscan_result_dynamic {
@@ -40,6 +41,7 @@ struct rscan_result_dynamic {
 	uint8_t sehooks[HASH_DIGEST_SIZE]; /* struct security_operations hash */
 	int seenforcing;	/* SE-Linux state */
 	char rprocs[MAX_RPROC_SIZE];	/* root processes */
+	int setid;                      /* get setids */
 };
 
 struct rscan_status {
@@ -91,6 +93,19 @@ int get_ro_secure(void);
  *          original statu. For example, rproc contains whitelist.
  */
 int rscan_dynamic_raw(uint op_mask, struct rscan_result_dynamic *result);
+
+/*
+ * rscan_dynamic_raw_and_upload - for TEE calling
+ * Description: root scan by dynamic features, with raw result, upload to the
+ *              stp and return the status
+ * @ops_mask, bit masks for caller to set different items
+ *         for scanner. The lowest bit is for kernel code check, then the
+ *         30th bit for system call verify, and so on.
+ * @result, used for return results for each scanner item
+ *          that correspond to ops_mask. In this function, result keep its
+ *          original statu. For example, rproc contains whitelist.
+ */
+int rscan_dynamic_raw_and_upload(uint op_mask, struct rscan_result_dynamic *result);
 
 /*
  * rscan_get_status - get the device current status, such as battery, charging

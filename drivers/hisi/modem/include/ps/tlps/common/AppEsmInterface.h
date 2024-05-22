@@ -6,11 +6,6 @@
   File Name       : AppEsmInterface.h
   Description     : AppEsmInterface.h header file
   History         :
-      1.sunbing       2008-12-16   Draft Enact
-      2.yangqianhui   2008-12-22   Modify
-      3.sunbing       2009-01-06   Modify  BA8D00870
-      4.yangqianhui   2009-02-05   Modify  BA8D00933
-      5.yangqianhui   2009-03-06   Modify  BA8D01127
 
 ******************************************************************************/
 

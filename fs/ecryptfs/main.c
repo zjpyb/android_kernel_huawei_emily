@@ -29,7 +29,6 @@
 #include <linux/module.h>
 #include <linux/namei.h>
 #include <linux/skbuff.h>
-#include <linux/crypto.h>
 #include <linux/mount.h>
 #include <linux/pagemap.h>
 #include <linux/key.h>
@@ -125,9 +124,7 @@ void __ecryptfs_printk(const char *fmt, ...)
 static int ecryptfs_init_lower_file(struct dentry *dentry,
 				    struct file **lower_file)
 {
-/*lint -e666 -esym(666,*)*/
 	const struct cred *cred = current_cred();
-/*lint -e666 +esym(666,*)*/
 	struct path *path = ecryptfs_dentry_to_lower_path(dentry);
 	int rc;
 
@@ -176,19 +173,18 @@ void ecryptfs_put_lower_file(struct inode *inode)
 	}
 }
 
-enum {
-	ecryptfs_opt_sig, ecryptfs_opt_ecryptfs_sig,
-	ecryptfs_opt_cipher, ecryptfs_opt_ecryptfs_cipher,
-	ecryptfs_opt_ecryptfs_key_bytes,
-	ecryptfs_opt_passthrough, ecryptfs_opt_xattr_metadata,
-	ecryptfs_opt_encrypted_view, ecryptfs_opt_fnek_sig,
-	ecryptfs_opt_fn_cipher, ecryptfs_opt_fn_cipher_key_bytes,
-	ecryptfs_opt_unlink_sigs, ecryptfs_opt_mount_auth_tok_only,
-	ecryptfs_opt_check_dev_ruid,
+enum { ecryptfs_opt_sig, ecryptfs_opt_ecryptfs_sig,
+       ecryptfs_opt_cipher, ecryptfs_opt_ecryptfs_cipher,
+       ecryptfs_opt_ecryptfs_key_bytes,
+       ecryptfs_opt_passthrough, ecryptfs_opt_xattr_metadata,
+       ecryptfs_opt_encrypted_view, ecryptfs_opt_fnek_sig,
+       ecryptfs_opt_fn_cipher, ecryptfs_opt_fn_cipher_key_bytes,
+       ecryptfs_opt_unlink_sigs, ecryptfs_opt_mount_auth_tok_only,
+       ecryptfs_opt_check_dev_ruid,
 #ifdef CONFIG_ECRYPT_FS_FILTER
-	ecryptfs_opt_enable_filtering,
+        ecryptfs_opt_enable_filtering,
 #endif
-	ecryptfs_opt_err };
+       ecryptfs_opt_err };
 
 static const match_table_t tokens = {
 	{ecryptfs_opt_sig, "sig=%s"},
@@ -206,7 +202,7 @@ static const match_table_t tokens = {
 	{ecryptfs_opt_mount_auth_tok_only, "ecryptfs_mount_auth_tok_only"},
 	{ecryptfs_opt_check_dev_ruid, "ecryptfs_check_dev_ruid"},
 #ifdef CONFIG_ECRYPT_FS_FILTER
-	{ecryptfs_opt_enable_filtering, "ecryptfs_enable_filtering=%s"},
+        {ecryptfs_opt_enable_filtering, "ecryptfs_enable_filtering=%s"},
 #endif
 	{ecryptfs_opt_err, NULL}
 };
@@ -252,41 +248,41 @@ static void ecryptfs_init_mount_crypt_stat(
 #ifdef CONFIG_ECRYPT_FS_FILTER
 static int parse_enc_folder_filter_parms(struct ecryptfs_mount_crypt_stat *mcs, char *str)
 {
-	char *token = NULL;
-	int count = 0;
-	if(NULL == mcs || NULL == str){
-		ecryptfs_printk(KERN_ERR,"ENCRYPTSD_FILTER bad param in parse_enc_file_filter_parms\n");
-		return -1;
-	}
-	if(strlen(str) == 0){
-		ecryptfs_printk(KERN_ERR,"ENCRYPTSD_FILTER parse_enc_file_filter_parms str length is 0\n");
-		return 0;
-	}
-	memset(mcs->enc_filter_folder_name,0,sizeof(mcs->enc_filter_folder_name));
-	while ((token = strsep(&str, "|")) != NULL) {
-		if (count >= ENC_FOLDER_FILTER_MAX_INSTANCE){
-			ecryptfs_printk(KERN_ERR,"ENCRYPTSD_FILTER too many filter instances in parse_enc_file_filter_parms\n");
-			memset(mcs->enc_filter_folder_name,0,sizeof(mcs->enc_filter_folder_name));
-			return -1;
-		}
-		if(strlen(token) >= ENC_FOLDER_FILTER_MAX_LEN){
-			ecryptfs_printk(KERN_ERR,"ENCRYPTSD_FILTER in parse_enc_file_filter_parms,token [%s] is over length\n",token);
-			memset(mcs->enc_filter_folder_name,0,sizeof(mcs->enc_filter_folder_name));
-			return -1;
-		}
-		else if(strlen(token) == 0){
-			ecryptfs_printk(KERN_WARNING,"ENCRYPTSD_FILTER parse_enc_file_filter_parms || happened\n");
-			continue;
-		}
+        char *token = NULL;
+        int count = 0;
+        if(NULL == mcs || NULL == str){
+                ecryptfs_printk(KERN_ERR,"ENCRYPTSD_FILTER bad param in parse_enc_file_filter_parms\n");
+                return -1;
+        }
+        if(strlen(str) == 0){
+                ecryptfs_printk(KERN_ERR,"ENCRYPTSD_FILTER parse_enc_file_filter_parms str length is 0\n");
+                return 0;
+        }
+        memset(mcs->enc_filter_folder_name,0,sizeof(mcs->enc_filter_folder_name));
+        while ((token = strsep(&str, "|")) != NULL) {
+                if (count >= ENC_FOLDER_FILTER_MAX_INSTANCE){
+                        ecryptfs_printk(KERN_ERR,"ENCRYPTSD_FILTER too many filter instances in parse_enc_file_filter_parms\n");
+                        memset(mcs->enc_filter_folder_name,0,sizeof(mcs->enc_filter_folder_name));
+                        return -1;
+                }
+                if(strlen(token) >= ENC_FOLDER_FILTER_MAX_LEN){
+                        ecryptfs_printk(KERN_ERR,"ENCRYPTSD_FILTER in parse_enc_file_filter_parms,token [%s] is over length\n",token);
+                        memset(mcs->enc_filter_folder_name,0,sizeof(mcs->enc_filter_folder_name));
+                        return -1;
+                }
+                else if(strlen(token) == 0){
+                        ecryptfs_printk(KERN_WARNING,"ENCRYPTSD_FILTER parse_enc_file_filter_parms || happened\n");
+                        continue;
+                }
               else if(' ' == token[0] || ' ' == token[strlen(token -1)]){
                     ecryptfs_printk(KERN_WARNING,"ENCRYPTSD_FILTER parse_enc_file_filter_parms space happened\n");
-			continue;
+                        continue;
               }
-		else{
-			strncpy(mcs->enc_filter_folder_name[count++],token, strlen(token));
-		}
-	}
-	return 0;
+                else{
+                        strncpy(mcs->enc_filter_folder_name[count++],token, strlen(token));
+                }
+        }
+        return 0;
 }
 
 
@@ -301,21 +297,20 @@ static int parse_enc_folder_filter_parms(struct ecryptfs_mount_crypt_stat *mcs, 
  */
 static int parse_enc_filter_parms(struct ecryptfs_mount_crypt_stat *mcs, char *str)
 {
-	char *token = NULL;
-	int rc = -1;
-	if(NULL == mcs || NULL == str ){
-		ecryptfs_printk(KERN_ERR,"ENCRYPTSD_FILTER invalid param in parse_enc_filter_parms \n");
-		return -1;
-	}
-	if(strlen(str) == 0){
-		ecryptfs_printk(KERN_ERR,"ENCRYPTSD_FILTER str length is 0 \n");
-		return 0;
-	}
-	rc = parse_enc_folder_filter_parms(mcs, str);
-	if(rc){
-		ecryptfs_printk(KERN_ERR,"ENCRYPTSD_FILTER parse_enc_file_filter_parms err returned %d \n",rc);
-	}
-	return rc;
+        int rc = -1;
+        if(NULL == mcs || NULL == str ){
+                ecryptfs_printk(KERN_ERR,"ENCRYPTSD_FILTER invalid param in parse_enc_filter_parms \n");
+                return -1;
+        }
+        if(strlen(str) == 0){
+                ecryptfs_printk(KERN_ERR,"ENCRYPTSD_FILTER str length is 0 \n");
+                return 0;
+        }
+        rc = parse_enc_folder_filter_parms(mcs, str);
+        if(rc){
+                ecryptfs_printk(KERN_ERR,"ENCRYPTSD_FILTER parse_enc_file_filter_parms err returned %d \n",rc);
+        }
+        return rc;
 }
 #endif
 /**
@@ -475,17 +470,17 @@ static int ecryptfs_parse_options(struct ecryptfs_sb_info *sbi, char *options,
 			*check_ruid = 1;
 			break;
 #ifdef CONFIG_ECRYPT_FS_FILTER
-		case ecryptfs_opt_enable_filtering:
-			rc = parse_enc_filter_parms(mount_crypt_stat,
-							 args[0].from);
-			if (rc) {
-				printk(KERN_ERR "ENCRYPTSD_FILTER Error attempting to parse encryption "
-							"filtering parameters.\n");
-				rc = -EINVAL;
-				goto out;
-			}
-			mount_crypt_stat->flags |= ECRYPTFS_ENABLE_FILTERING;
-			break;
+                case ecryptfs_opt_enable_filtering:
+                        rc = parse_enc_filter_parms(mount_crypt_stat,
+                                                         args[0].from);
+                        if (rc) {
+                                printk(KERN_ERR "ENCRYPTSD_FILTER Error attempting to parse encryption "
+                                                        "filtering parameters.\n");
+                                rc = -EINVAL;
+                                goto out;
+                        }
+                        mount_crypt_stat->flags |= ECRYPTFS_ENABLE_FILTERING;
+                        break;
 #endif
 		case ecryptfs_opt_err:
 		default:
@@ -627,6 +622,7 @@ static struct dentry *ecryptfs_mount(struct file_system_type *fs_type, int flags
 	/* ->kill_sb() will take care of sbi after that point */
 	sbi = NULL;
 	s->s_op = &ecryptfs_sops;
+	s->s_xattr = ecryptfs_xattr_handlers;
 	s->s_d_op = &ecryptfs_dops;
 
 	err = "Reading sb failed";
@@ -643,16 +639,12 @@ static struct dentry *ecryptfs_mount(struct file_system_type *fs_type, int flags
 		goto out_free;
 	}
 
-/*lint -e666 -esym(666,*)*/
 	if (check_ruid && !uid_eq(d_inode(path.dentry)->i_uid, current_uid())) {
-/*lint -e666 +esym(666,*)*/
 		rc = -EPERM;
 		printk(KERN_ERR "Mount of device (uid: %d) not owned by "
 		       "requested user (uid: %d)\n",
 			i_uid_read(d_inode(path.dentry)),
-/*lint -e666 -esym(666,*)*/
 			from_kuid(&init_user_ns, current_uid()));
-/*lint -e666 +esym(666,*)*/
 		goto out_free;
 	}
 
@@ -764,6 +756,7 @@ static struct ecryptfs_cache_info {
 	struct kmem_cache **cache;
 	const char *name;
 	size_t size;
+	unsigned long flags;
 	void (*ctor)(void *obj);
 } ecryptfs_cache_infos[] = {
 	{
@@ -785,6 +778,7 @@ static struct ecryptfs_cache_info {
 		.cache = &ecryptfs_inode_info_cache,
 		.name = "ecryptfs_inode_cache",
 		.size = sizeof(struct ecryptfs_inode_info),
+		.flags = SLAB_ACCOUNT,
 		.ctor = inode_info_init_once,
 	},
 	{
@@ -795,12 +789,12 @@ static struct ecryptfs_cache_info {
 	{
 		.cache = &ecryptfs_header_cache,
 		.name = "ecryptfs_headers",
-		.size = PAGE_CACHE_SIZE,
+		.size = PAGE_SIZE,
 	},
 	{
 		.cache = &ecryptfs_xattr_cache,
 		.name = "ecryptfs_xattr_cache",
-		.size = PAGE_CACHE_SIZE,
+		.size = PAGE_SIZE,
 	},
 	{
 		.cache = &ecryptfs_key_record_cache,
@@ -838,8 +832,7 @@ static void ecryptfs_free_kmem_caches(void)
 		struct ecryptfs_cache_info *info;
 
 		info = &ecryptfs_cache_infos[i];
-		if (*(info->cache))
-			kmem_cache_destroy(*(info->cache));
+		kmem_cache_destroy(*(info->cache));
 	}
 }
 
@@ -856,8 +849,8 @@ static int ecryptfs_init_kmem_caches(void)
 		struct ecryptfs_cache_info *info;
 
 		info = &ecryptfs_cache_infos[i];
-		*(info->cache) = kmem_cache_create(info->name, info->size,
-				0, SLAB_HWCACHE_ALIGN, info->ctor);
+		*(info->cache) = kmem_cache_create(info->name, info->size, 0,
+				SLAB_HWCACHE_ALIGN | info->flags, info->ctor);
 		if (!*(info->cache)) {
 			ecryptfs_free_kmem_caches();
 			ecryptfs_printk(KERN_WARNING, "%s: "
@@ -918,7 +911,7 @@ static int __init ecryptfs_init(void)
 {
 	int rc;
 
-	if (ECRYPTFS_DEFAULT_EXTENT_SIZE > PAGE_CACHE_SIZE) {
+	if (ECRYPTFS_DEFAULT_EXTENT_SIZE > PAGE_SIZE) {
 		rc = -EINVAL;
 		ecryptfs_printk(KERN_ERR, "The eCryptfs extent size is "
 				"larger than the host's page size, and so "
@@ -926,7 +919,7 @@ static int __init ecryptfs_init(void)
 				"default eCryptfs extent size is [%u] bytes; "
 				"the page size is [%lu] bytes.\n",
 				ECRYPTFS_DEFAULT_EXTENT_SIZE,
-				(unsigned long)PAGE_CACHE_SIZE);
+				(unsigned long)PAGE_SIZE);
 		goto out;
 	}
 	rc = ecryptfs_init_kmem_caches();

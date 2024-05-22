@@ -66,19 +66,35 @@ function_descriptors(struct usb_function *f,
 {
 	struct usb_descriptor_header **descriptors;
 
+	/*
+	 * NOTE: we try to help gadget drivers which might not be setting
+	 * max_speed appropriately.
+	 */
+
 	switch (speed) {
 	case USB_SPEED_SUPER_PLUS:
 		descriptors = f->ssp_descriptors;
-		break;
+		if (descriptors)
+			break;
+		/* FALLTHROUGH */
 	case USB_SPEED_SUPER:
 		descriptors = f->ss_descriptors;
-		break;
+		if (descriptors)
+			break;
+		/* FALLTHROUGH */
 	case USB_SPEED_HIGH:
 		descriptors = f->hs_descriptors;
-		break;
+		if (descriptors)
+			break;
+		/* FALLTHROUGH */
 	default:
 		descriptors = f->fs_descriptors;
 	}
+
+	/*
+	 * if we can't find any descriptors at all, then this gadget deserves to
+	 * Oops with a NULL pointer dereference
+	 */
 
 	return descriptors;
 }
@@ -134,7 +150,8 @@ int config_ep_by_speed(struct usb_gadget *g,
 			struct usb_function *f,
 			struct usb_ep *_ep)
 {
-	struct usb_composite_dev	*cdev;
+
+	
 	struct usb_endpoint_descriptor *chosen_desc = NULL;
 	struct usb_descriptor_header **speed_desc = NULL;
 
@@ -146,7 +163,6 @@ int config_ep_by_speed(struct usb_gadget *g,
 	if (!g || !f || !_ep)
 		return -EIO;
 
-	cdev = get_gadget_data(g);
 
 	/* select desired speed */
 	switch (g->speed) {
@@ -215,8 +231,12 @@ ep_found:
 			_ep->maxburst = comp_desc->bMaxBurst + 1;
 			break;
 		default:
-			if (comp_desc->bMaxBurst != 0)
+			if (comp_desc->bMaxBurst != 0) {
+				struct usb_composite_dev *cdev;
+
+				cdev = get_gadget_data(g);
 				ERROR(cdev, "ep0 bMaxBurst must be 0\n");
+			}
 			_ep->maxburst = 1;
 			break;
 		}
@@ -666,7 +686,8 @@ static int bos_desc(struct usb_composite_dev *cdev)
 		ssp_cap->bmAttributes = cpu_to_le32(1);
 
 		/* Min RX/TX Lane Count = 1 */
-		ssp_cap->wFunctionalitySupport = (1 << 8) | (1 << 12);
+		ssp_cap->wFunctionalitySupport =
+			cpu_to_le16((1 << 8) | (1 << 12));
 
 		/*
 		 * bmSublinkSpeedAttr[0]:
@@ -676,7 +697,7 @@ static int bos_desc(struct usb_composite_dev *cdev)
 		 *   LSM = 10 (10 Gbps)
 		 */
 		ssp_cap->bmSublinkSpeedAttr[0] =
-			(3 << 4) | (1 << 14) | (0xa << 16);
+			cpu_to_le32((3 << 4) | (1 << 14) | (0xa << 16));
 		/*
 		 * bmSublinkSpeedAttr[1] =
 		 *   ST  = Symmetric, TX
@@ -684,8 +705,9 @@ static int bos_desc(struct usb_composite_dev *cdev)
 		 *   LP  =  1 (SuperSpeedPlus)
 		 *   LSM = 10 (10 Gbps)
 		 */
-		ssp_cap->bmSublinkSpeedAttr[1] =/* [false alarm]:this is original code */
-			(3 << 4) | (1 << 14) | (0xa << 16) | (1 << 7);
+		ssp_cap->bmSublinkSpeedAttr[1] = /*[false alarm]:it is a false alarm*/
+			cpu_to_le32((3 << 4) | (1 << 14) |
+				    (0xa << 16) | (1 << 7));
 	}
 
 	return le16_to_cpu(bos->wTotalLength);
@@ -1681,9 +1703,7 @@ composite_setup(struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 		value = min(w_length, (u16) 1);
 		break;
 
-	/* function drivers must handle get/set altsetting; if there's
-	 * no get() method, we know only altsetting zero works.
-	 */
+	/* function drivers must handle get/set altsetting */
 	case USB_REQ_SET_INTERFACE:
 		if (ctrl->bRequestType != USB_RECIP_INTERFACE)
 			goto unknown;
@@ -1692,7 +1712,13 @@ composite_setup(struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 		f = cdev->config->interface[intf];
 		if (!f)
 			break;
-		if (w_value && !f->set_alt)
+
+		/*
+		 * If there's no get_alt() method, we know only altsetting zero
+		 * works. There is no need to check if set_alt() is not NULL
+		 * as we check this in usb_add_function().
+		 */
+		if (w_value && !f->get_alt)
 			break;
 		value = f->set_alt(f, w_index, w_value);
 		if (value == USB_GADGET_DELAYED_STATUS) {
@@ -1719,15 +1745,24 @@ composite_setup(struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 		*((u8 *)req->buf) = value;
 		value = min(w_length, (u16) 1);
 		break;
-
-	/*
-	 * USB 3.0 additions:
-	 * Function driver should handle get_status request. If such cb
-	 * wasn't supplied we respond with default value = 0
-	 * Note: function driver should supply such cb only for the first
-	 * interface of the function
-	 */
 	case USB_REQ_GET_STATUS:
+		if (gadget_is_otg(gadget) && gadget->hnp_polling_support &&
+						(w_index == OTG_STS_SELECTOR)) {
+			if (ctrl->bRequestType != (USB_DIR_IN |
+							USB_RECIP_DEVICE))
+				goto unknown;
+			*((u8 *)req->buf) = gadget->host_request_flag;
+			value = 1;
+			break;
+		}
+
+		/*
+		 * USB 3.0 additions:
+		 * Function driver should handle get_status request. If such cb
+		 * wasn't supplied we respond with default value = 0
+		 * Note: function driver should supply such cb only for the
+		 * first interface of the function
+		 */
 		if (!gadget_is_superspeed(gadget))
 			goto unknown;
 		if (ctrl->bRequestType != (USB_DIR_IN | USB_RECIP_INTERFACE))
@@ -1852,21 +1887,18 @@ unknown:
 				break;
 			}
 
-			if (value < 0) {
-				pr_err("non-support control req%02x.%02x v%04x i%04x l%d\n",
-					ctrl->bRequestType, ctrl->bRequest,
-					w_value, w_index, w_length);
-				return value;
-			}
-
-			req->length = value;
-			req->context = cdev;
-			req->zero = value < w_length;
-			value = composite_ep0_queue(cdev, req, GFP_ATOMIC);
-			if (value < 0) {
-				DBG(cdev, "ep_queue --> %d\n", value);
-				req->status = 0;
-				composite_setup_complete(gadget->ep0, req);
+			if (value >= 0) {
+				req->length = value;
+				req->context = cdev;
+				req->zero = value < w_length;
+				value = composite_ep0_queue(cdev, req,
+							    GFP_ATOMIC);
+				if (value < 0) {
+					DBG(cdev, "ep_queue --> %d\n", value);
+					req->status = 0;
+					composite_setup_complete(gadget->ep0,
+								 req);
+				}
 			}
 			return value;
 		}
@@ -1879,17 +1911,21 @@ unknown:
 		/* functions always handle their interfaces and endpoints...
 		 * punt other recipients (other, WUSB, ...) to the current
 		 * configuration code.
-		 *
-		 * REVISIT it could make sense to let the composite device
-		 * take such requests too, if that's ever needed:  to work
-		 * in config 0, etc.
 		 */
 		if (cdev->config) {
 			list_for_each_entry(f, &cdev->config->functions, list)
-				if (f->req_match && f->req_match(f, ctrl))
+				if (f->req_match &&
+				    f->req_match(f, ctrl, false))
 					goto try_fun_setup;
-			f = NULL;
+		} else {
+			struct usb_configuration *c;
+			list_for_each_entry(c, &cdev->configs, list)
+				list_for_each_entry(f, &c->functions, list)
+					if (f->req_match &&
+					    f->req_match(f, ctrl, true))
+						goto try_fun_setup;
 		}
+		f = NULL;
 
 		switch (ctrl->bRequestType & USB_RECIP_MASK) {
 		case USB_RECIP_INTERFACE:
@@ -1965,7 +2001,7 @@ void composite_disconnect(struct usb_gadget *gadget)
 	struct usb_composite_dev	*cdev = get_gadget_data(gadget);
 	unsigned long			flags;
 
-	if (cdev == NULL) {
+	if (!cdev) {
 		WARN(1, "%s: Calling disconnect on a Gadget that is \
 			 not connected\n", __func__);
 		return;
@@ -2124,15 +2160,15 @@ int composite_os_desc_req_prepare(struct usb_composite_dev *cdev,
 
 	cdev->os_desc_req = usb_ep_alloc_request(ep0, GFP_KERNEL);
 	if (!cdev->os_desc_req) {
-		ret = PTR_ERR(cdev->os_desc_req);
+		ret = -ENOMEM;
 		goto end;
 	}
 
 	/* OS feature descriptor length <= 4kB */
 	cdev->os_desc_req->buf = kmalloc(4096, GFP_KERNEL);
 	if (!cdev->os_desc_req->buf) {
-		ret = PTR_ERR(cdev->os_desc_req->buf);
-		kfree(cdev->os_desc_req);
+		ret = -ENOMEM;
+		usb_ep_free_request(ep0, cdev->os_desc_req);
 		goto end;
 	}
 	cdev->os_desc_req->context = cdev;

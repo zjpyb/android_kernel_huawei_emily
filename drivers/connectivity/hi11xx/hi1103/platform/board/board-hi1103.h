@@ -48,17 +48,20 @@
   5 EXTERN FUNCTION
 *****************************************************************************/
 extern int32 hi1103_get_board_power_gpio(void);
-extern void  hi1103_free_board_power_gpio(void);
-extern int32 hi1103_board_wakeup_gpio_init(void);
-extern void  hi1103_free_board_wakeup_gpio(void);
+extern void  hi1103_free_board_power_gpio_etc(void);
+extern int32 hi1103_board_wakeup_gpio_init_etc(void);
+extern void  hi1103_free_board_wakeup_gpio_etc(void);
+extern int32 hi1103_board_wifi_tas_gpio_init_etc(void);
+extern void  hi1103_free_board_wifi_tas_gpio_etc(void);
+extern int32 hi1103_check_pmu_clk_share(void);
 extern int32 hi1103_bfgx_dev_power_on(void);
 extern int32 hi1103_bfgx_dev_power_off(void);
 extern int32 hi1103_wlan_power_off(void);
 extern int32 hi1103_wlan_power_on(void);
-extern void  hi1103_board_power_on(uint32 ul_subsystem);
-extern void  hi1103_board_power_off(uint32 ul_subsystem);
-extern void  hi1103_board_power_reset(uint32 ul_subsystem);
-extern void  hi1103_wifi_subsys_reset(void);
+extern int32  hi1103_board_power_on(uint32 ul_subsystem);
+extern int32  hi1103_board_power_off(uint32 ul_subsystem);
+extern int32  hi1103_board_power_reset(uint32 ul_subsystem);
+extern int32  hi1103_wifi_subsys_reset(void);
 extern void  hi1103_bfgx_subsys_reset(void);
 extern int32 hi1103_get_board_pmu_clk32k(void);
 extern int32 hi1103_get_board_uart_port(void);
@@ -68,10 +71,10 @@ extern int32 hi1103_board_get_power_pinctrl(struct platform_device *pdev);
 extern int32 hi1103_get_ini_file_name_from_dts(int8 *dts_prop, int8 *prop_value, uint32 size);
 extern void  hi1103_chip_power_on(void);
 extern void  hi1103_bfgx_enable(void);
-extern void  hi1103_wifi_enable(void);
+extern int32  hi1103_wifi_enable(void);
 extern void  hi1103_chip_power_off(void);
 extern void  hi1103_bfgx_disable(void);
-extern void  hi1103_wifi_disable(void);
+extern int32  hi1103_wifi_disable(void);
 #endif
 
 #ifdef __cplusplus

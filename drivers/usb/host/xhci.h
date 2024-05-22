@@ -233,7 +233,9 @@ struct xhci_op_regs {
  * disabled, or powered-off state.
  */
 #define CMD_PM_INDEX	(1 << 11)
-/* bits 12:31 are reserved (and should be preserved on writes). */
+/* bit 14 Extended TBC Enable, changes Isoc TRB fields to support larger TBC */
+#define CMD_ETE		(1 << 14)
+/* bits 15:31 are reserved (and should be preserved on writes). */
 
 /* IMAN - Interrupt Management Register */
 #define IMAN_IE		(1 << 1)
@@ -313,6 +315,8 @@ struct xhci_op_regs {
 #define XDEV_U2		(0x2 << 5)
 #define XDEV_U3		(0x3 << 5)
 #define XDEV_INACTIVE	(0x6 << 5)
+#define XDEV_POLLING	(0x7 << 5)
+#define XDEV_COMP_MODE  (0xa << 5)
 #define XDEV_RESUME	(0xf << 5)
 /* true: port has power (see HCC_PPC) */
 #define PORT_POWER	(1 << 9)
@@ -944,6 +948,8 @@ struct xhci_virt_ep {
 	struct list_head	bw_endpoint_list;
 	/* Isoch Frame ID checking storage */
 	int			next_frame_id;
+	/* Use new Isoch TRB layout needed for extended TBC support */
+	bool			use_extended_tbc;
 };
 
 enum xhci_overhead_type {
@@ -1185,9 +1191,12 @@ enum xhci_setup_dev {
 #define	TRB_LEN(p)		((p) & 0x1ffff)
 /* TD Size, packets remaining in this TD, bits 21:17 (5 bits, so max 31) */
 #define TRB_TD_SIZE(p)          (min((p), (u32)31) << 17)
+/* xhci 1.1 uses the TD_SIZE field for TBC if Extended TBC is enabled (ETE) */
+#define TRB_TD_SIZE_TBC(p)      (min((p), (u32)31) << 17)
 /* Interrupter Target - which MSI-X vector to target the completion event at */
 #define TRB_INTR_TARGET(p)	(((p) & 0x3ff) << 22)
 #define GET_INTR_TARGET(p)	(((p) >> 22) & 0x3ff)
+/* Total burst count field, Rsvdz on xhci 1.1 with Extended TBC enabled (ETE) */
 #define TRB_TBC(p)		(((p) & 0x3) << 7)
 #define TRB_TLBPC(p)		(((p) & 0xf) << 16)
 
@@ -1332,12 +1341,20 @@ union xhci_trb {
 /* TRB buffer pointers can't cross 64KB boundaries */
 #define TRB_MAX_BUFF_SHIFT		16
 #define TRB_MAX_BUFF_SIZE	(1 << TRB_MAX_BUFF_SHIFT)
+/* How much data is left before the 64KB boundary? */
+#define TRB_BUFF_LEN_UP_TO_BOUNDARY(addr)	(TRB_MAX_BUFF_SIZE - \
+					(addr & (TRB_MAX_BUFF_SIZE - 1)))
 
 struct xhci_segment {
 	union xhci_trb		*trbs;
 	/* private to HCD */
 	struct xhci_segment	*next;
 	dma_addr_t		dma;
+	/* Max packet sized bounce buffer for td-fragmant alignment */
+	dma_addr_t		bounce_dma;
+	void			*bounce_buf;
+	unsigned int		bounce_offs;
+	unsigned int		bounce_len;
 };
 
 struct xhci_td {
@@ -1347,6 +1364,7 @@ struct xhci_td {
 	struct xhci_segment	*start_seg;
 	union xhci_trb		*first_trb;
 	union xhci_trb		*last_trb;
+	struct xhci_segment	*bounce_seg;
 	/* actual_length of the URB has already been set */
 	bool			urb_length_set;
 };
@@ -1396,6 +1414,7 @@ struct xhci_ring {
 	unsigned int		num_segs;
 	unsigned int		num_trbs_free;
 	unsigned int		num_trbs_free_temp;
+	unsigned int		bounce_buf_len;
 	enum xhci_ring_type	type;
 	bool			last_td_was_short;
 	struct radix_tree_root	*trb_address_map;
@@ -1554,6 +1573,7 @@ struct xhci_hcd {
 	struct list_head        cmd_list;
 	unsigned int		cmd_ring_reserved_trbs;
 	struct delayed_work	cmd_timer;
+	struct completion	cmd_ring_stop_completion;
 	struct xhci_command	*current_cmd;
 	struct xhci_ring	*event_ring;
 	struct xhci_erst	erst;
@@ -1602,7 +1622,7 @@ struct xhci_hcd {
 #define XHCI_STATE_REMOVING	(1 << 2)
 	/* Statistics */
 	int			error_bitmask;
-	unsigned int		quirks;
+	u64		quirks;
 #define	XHCI_LINK_TRB_QUIRK	(1 << 0)
 #define XHCI_RESET_EP_QUIRK	(1 << 1)
 #define XHCI_NEC_HOST		(1 << 2)
@@ -1634,13 +1654,23 @@ struct xhci_hcd {
 /* For controllers with a broken beyond repair streams implementation */
 #define XHCI_BROKEN_STREAMS	(1 << 19)
 #define XHCI_PME_STUCK_QUIRK	(1 << 20)
-#define XHCI_CTRL_NYET_ABNORMAL	(1 << 21)
+#define XHCI_MTK_HOST		(1 << 21)
+#define XHCI_SSIC_PORT_UNUSED	(1 << 22)
+#define XHCI_NO_64BIT_SUPPORT	(1 << 23)
+#define XHCI_MISSING_CAS	(1 << 24)
+/* For controller with a broken Port Disable implementation */
+#define XHCI_BROKEN_PORT_PED	(1 << 25)
+#define XHCI_LIMIT_ENDPOINT_INTERVAL_7	(1 << 26)
+/* Reserved. It was XHCI_U2_DISABLE_WAKE */
+#define XHCI_ASMEDIA_MODIFY_FLOWCONTROL	(1 << 28)
 
+#define XHCI_CTRL_NYET_ABNORMAL	(1 << 29)
 #ifdef CONFIG_USB_DWC3_NYET_ABNORMAL
-#define XHCI_DISABLE_LPM	(1 << 22)
-#define XHCI_NOT_SUP_SG		(1 << 23)
-#define XHCI_HCD_LOCAL_MEM	(1 << 24)
+#define XHCI_DISABLE_LPM	(1 << 30)
+#define XHCI_NOT_SUP_SG		(1ULL << 31)
+#define XHCI_HCD_LOCAL_MEM	(1ULL << 32)
 #endif
+#define XHCI_WARM_RESET_AFTER_INIT	(1ULL << 33)
 
 	unsigned int		num_active_eps;
 	unsigned int		limit_active_eps;
@@ -1678,6 +1708,9 @@ struct xhci_hcd {
 	struct dma_pool		*pool[XHCI_DMA_POOL_NUM];
 	struct xhci_local_dma_manager dma_manager;
 #endif
+
+	/* platform-specific data -- must come last */
+	unsigned long		priv[0] __aligned(sizeof(s64));
 };
 
 /* Platform specific overrides to generic XHCI hc_driver ops */
@@ -1810,7 +1843,8 @@ void xhci_free_or_cache_endpoint_ring(struct xhci_hcd *xhci,
 		unsigned int ep_index);
 struct xhci_stream_info *xhci_alloc_stream_info(struct xhci_hcd *xhci,
 		unsigned int num_stream_ctxs,
-		unsigned int num_streams, gfp_t flags);
+		unsigned int num_streams,
+		unsigned int max_packet, gfp_t flags);
 void xhci_free_stream_info(struct xhci_hcd *xhci,
 		struct xhci_stream_info *stream_info);
 void xhci_setup_streams_ep_input_ctx(struct xhci_hcd *xhci,
@@ -1970,5 +2004,16 @@ void xhci_ring_device(struct xhci_hcd *xhci, int slot_id);
 struct xhci_input_control_ctx *xhci_get_input_control_ctx(struct xhci_container_ctx *ctx);
 struct xhci_slot_ctx *xhci_get_slot_ctx(struct xhci_hcd *xhci, struct xhci_container_ctx *ctx);
 struct xhci_ep_ctx *xhci_get_ep_ctx(struct xhci_hcd *xhci, struct xhci_container_ctx *ctx, unsigned int ep_index);
+
+struct xhci_ring *xhci_triad_to_transfer_ring(struct xhci_hcd *xhci,
+		unsigned int slot_id, unsigned int ep_index,
+		unsigned int stream_id);
+static inline struct xhci_ring *xhci_urb_to_transfer_ring(struct xhci_hcd *xhci,
+								struct urb *urb)
+{
+	return xhci_triad_to_transfer_ring(xhci, urb->dev->slot_id,
+					xhci_get_endpoint_index(&urb->ep->desc),
+					urb->stream_id);
+}
 
 #endif /* __LINUX_XHCI_HCD_H */

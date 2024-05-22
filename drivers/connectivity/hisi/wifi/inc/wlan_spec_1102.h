@@ -739,6 +739,7 @@ extern oal_uint32   g_ul_wlan_vap_max_num_per_device;
 #define BT_PREEMPT_MAX_TIMES                (1)
 #define BT_POSTPREEMPT_TIMEOUT_US           (150)
 #define BT_ABORT_RETRY_TIMES_MAX            (10)
+#define BT_TX_PRE_N_SLOT_NUM                (1)
 
 #define BT_PREEMPT_TIMEOUT_US               (50)
 #define BLE_PREEMPT_TIMEOUT_US              (10)

@@ -24,111 +24,115 @@
 #include <sound/core.h>
 #include <sound/pcm.h>
 #include <sound/soc.h>
-#include <linux/hisi/hilog.h>
 
 #define  EXTERN_HIFI_CODEC_AK4376_NAME  "ak4376"
 
 /*lint -e785*/
 
 static struct snd_soc_dai_link hi3660_hi6403_dai_link[] = {
-    {
-        /* dai link name*/
-        .name       = "hi3660_hi6403_pb_normal",
-        /* stream name same as name */
-        .stream_name    = "hi3660_hi6403_pb_normal",
-        /* codec(hi6403) device name ,see in hi6403.c */
-        .codec_name = "hi6403-codec",
-        /* cpu(k3v3:asp) dai name(device name), see in hi3660-pcm.c */
-        .cpu_dai_name   = "slimbus-dai",
-        /* codec dai name, see in struct snd_soc_dai_driver in hi6403.c */
-        .codec_dai_name = "hi6403-audio-dai",
-        /* platform(k3v3:asp) device name, see in hi3660-pcm.c */
-        .platform_name  = "hi6210-hifi",
-    },
-    {
-        /* dai link name*/
-        .name       = "hi3660_voice",
-        /* stream name same as name */
-        .stream_name    = "hi3660_voice",
-        /* codec(hi6403) device name ,see in hi6403.c */
-        .codec_name = "hi6403-codec",
-        /* cpu(k3v3:asp) dai name(device name), see in hi3660-pcm.c */
-        .cpu_dai_name   = "slimbus-dai",
-        /* codec dai name, see in struct snd_soc_dai_driver in hi6403.c */
-        .codec_dai_name = "hi6403-voice-dai",
-        /* platform(k3v3:asp) device name, see in hi3660-pcm.c */
-        .platform_name  = "snd-soc-dummy",
-    },
-    {
-        /* dai link name*/
-        .name       = "hi3660_fm1",
-        /* stream name same as name */
-        .stream_name    = "hi3660_fm1",
-        /* codec(hi6403) device name ,see in hi6403.c */
-        .codec_name = "hi6403-codec",
-        /* cpu(k3v3:asp) dai name(device name), see in hi3660-pcm.c */
-        .cpu_dai_name   = "slimbus-dai",
-        /* codec dai name, see in struct snd_soc_dai_driver in hi6403.c */
-        .codec_dai_name = "hi6403-fm-dai",
-        /* platform(k3v3:asp) device name, see in hi3660-pcm.c */
-        .platform_name  = "snd-soc-dummy",
-    },
-    {
-        /* dai link name*/
-        .name       = "hi3660_fm2",
-        /* stream name same as name */
-        .stream_name    = "hi3660_fm2",
-        /* codec(hi6401) device name ,see in hi6403.c */
-        .codec_name = "hi6403-codec",
-        /* cpu(k3v3:asp) dai name(device name), see in hi3660-pcm.c */
-        .cpu_dai_name   = "slimbus-dai",
-        /* codec dai name, see in struct snd_soc_dai_driver in hi6403.c */
-        .codec_dai_name = "hi6403-fm-dai",
-        /* platform(k3v3:asp) device name, see in hi3660-pcm.c */
-        .platform_name  = "snd-soc-dummy",
-    },
-    {
-        /* dai link name*/
-        .name       = "hi3660_hi6403_pb_dsp",
-        /* stream name same as name */
-        .stream_name    = "hi3660_hi6403_pb_dsp",
-        /* codec(hi6403) device name ,see in hi6403.c */
-        .codec_name = "hi6403-codec",
-        /* cpu(k3v3:asp) dai name(device name), see in hi3660-pcm.c */
-        .cpu_dai_name   = "slimbus-dai",
-        /* codec dai name, see in struct snd_soc_dai_driver in hi6403.c */
-        .codec_dai_name = "hi6403-audio-dai",
-        /* platform(k3v3:asp) device name, see in hi3660-pcm.c */
-        .platform_name  = "hi6210-hifi",
-    },
-    {
-        /* dai link name*/
-        .name       = "hi3660_hi6403_pb_direct",
-        /* stream name same as name */
-        .stream_name    = "hi3660_hi6403_pb_direct",
-        /* codec(hi6403) device name ,see in hi6403.c */
-        .codec_name = "hi6403-codec",
-        /* cpu(k3v3:asp) dai name(device name), see in hi3660-pcm.c */
-        .cpu_dai_name   = "slimbus-dai",
-        /* codec dai name, see in struct snd_soc_dai_driver in hi6403.c */
-        .codec_dai_name = "hi6403-audio-dai",
-        /* platform(k3v3:asp) device name, see in hi3660-pcm.c */
-        .platform_name  = "hi6210-hifi",
-    },
-    {
-        /* dai link name*/
-        .name       = "hi3660_hi6403_lowlatency",
-        /* stream name same as name */
-        .stream_name    = "hi3660_hi6403_lowlatency",
-        /* codec(hi6403) device name ,see in hi6403.c */
-        .codec_name = "hi6403-codec",
-        /* cpu(k3v3:asp) dai name(device name), see in slimbus_dai.c */
-        .cpu_dai_name   = "slimbus-dai",
-        /* codec dai name, see in struct snd_soc_dai_driver in hi6403.c */
-        .codec_dai_name = "hi6403-audio-dai",
-        /* platform(k3v3:asp) device name, see in hi3xxx_asp_dma.c */
-        .platform_name  = "hi3xxx-pcm-asp-dma",
-    },
+	{
+		/* dai link name*/
+		.name       = "hi3660_hi6403_pb_normal",
+		/* stream name same as name */
+		.stream_name    = "hi3660_hi6403_pb_normal",
+		/* codec(hi6403) device name ,see in hi6403.c */
+		.codec_name = "hi6403-codec",
+		/* cpu(k3v3:asp) dai name(device name), see in hi3660-pcm.c */
+		.cpu_dai_name   = "slimbus-dai",
+		/* codec dai name, see in struct snd_soc_dai_driver in hi6403.c */
+		.codec_dai_name = "hi6403-audio-dai",
+		/* platform(k3v3:asp) device name, see in hi3660-pcm.c */
+		.platform_name  = "hi6210-hifi",
+	},
+	{
+		/* dai link name*/
+		.name       = "hi3660_voice",
+		/* stream name same as name */
+		.stream_name    = "hi3660_voice",
+		/* codec(hi6403) device name ,see in hi6403.c */
+		.codec_name = "hi6403-codec",
+		/* cpu(k3v3:asp) dai name(device name), see in hi3660-pcm.c */
+		.cpu_dai_name   = "slimbus-dai",
+		/* codec dai name, see in struct snd_soc_dai_driver in hi6403.c */
+		.codec_dai_name = "hi6403-voice-dai",
+		/* platform(k3v3:asp) device name, see in hi3660-pcm.c */
+		.platform_name  = "snd-soc-dummy",
+	},
+	{
+		/* dai link name*/
+		.name       = "hi3660_fm1",
+		/* stream name same as name */
+		.stream_name    = "hi3660_fm1",
+		/* codec(hi6403) device name ,see in hi6403.c */
+		.codec_name = "hi6403-codec",
+		/* cpu(k3v3:asp) dai name(device name), see in hi3660-pcm.c */
+		.cpu_dai_name   = "slimbus-dai",
+		/* codec dai name, see in struct snd_soc_dai_driver in hi6403.c */
+		.codec_dai_name = "hi6403-fm-dai",
+		/* platform(k3v3:asp) device name, see in hi3660-pcm.c */
+		.platform_name  = "snd-soc-dummy",
+	},
+	{
+		/* dai link name*/
+		.name       = "hi3660_hi6403_pb_dsp",
+		/* stream name same as name */
+		.stream_name    = "hi3660_hi6403_pb_dsp",
+		/* codec(hi6403) device name ,see in hi6403.c */
+		.codec_name = "hi6403-codec",
+		/* cpu(k3v3:asp) dai name(device name), see in hi3660-pcm.c */
+		.cpu_dai_name   = "slimbus-dai",
+		/* codec dai name, see in struct snd_soc_dai_driver in hi6403.c */
+		.codec_dai_name = "hi6403-audio-dai",
+		/* platform(k3v3:asp) device name, see in hi3660-pcm.c */
+		.platform_name  = "hi6210-hifi",
+	},
+	{
+		/* dai link name*/
+		.name       = "hi3660_hi6403_pb_direct",
+		/* stream name same as name */
+		.stream_name    = "hi3660_hi6403_pb_direct",
+		/* codec(hi6403) device name ,see in hi6403.c */
+		.codec_name = "hi6403-codec",
+		/* cpu(k3v3:asp) dai name(device name), see in hi3660-pcm.c */
+		.cpu_dai_name   = "slimbus-dai",
+		/* codec dai name, see in struct snd_soc_dai_driver in hi6403.c */
+		.codec_dai_name = "hi6403-audio-dai",
+		/* platform(k3v3:asp) device name, see in hi3660-pcm.c */
+		.platform_name  = "hi6210-hifi",
+	},
+	{
+		/* dai link name*/
+		.name       = "hi3660_hi6403_lowlatency",
+		/* stream name same as name */
+		.stream_name    = "hi3660_hi6403_lowlatency",
+		/* codec(hi6403) device name ,see in hi6403.c */
+		.codec_name = "hi6403-codec",
+		/* cpu(k3v3:asp) dai name(device name), see in slimbus_dai.c */
+		.cpu_dai_name   = "slimbus-dai",
+		/* codec dai name, see in struct snd_soc_dai_driver in hi6403.c */
+		.codec_dai_name = "hi6403-audio-dai",
+#ifdef AUDIO_LOW_LATENCY_LEGACY
+		/* platform(k3v3:asp) device name, see in hi3xxx_asp_dma.c */
+		.platform_name  = "hi3xxx-pcm-asp-dma",
+#else
+		/* platform device name, see in hi6210_pcm.c */
+		.platform_name  = "hi6210-hifi",
+#endif
+	},
+	{
+		/* dai link name*/
+		.name = "hi3660_hi6403_mmap",
+		/* stream name same as name */
+		.stream_name = "hi3660_hi6403_mmap",
+		/* codec(hi6403) device name ,see in hi6403.c */
+		.codec_name = "hi6403-codec",
+		/* cpu(k3v3:asp) dai name(device name), see in slimbus_dai.c */
+		.cpu_dai_name = "slimbus-dai",
+		/* codec dai name, see in struct snd_soc_dai_driver in hi6403.c */
+		.codec_dai_name = "hi6403-audio-dai",
+		/* platform device name, see in hisi_pcm_hifi.c */
+		.platform_name = "hi6210-hifi",
+	},
 };
 
 static struct snd_soc_dai_link ak4376_dai_link[] = {
@@ -206,7 +210,6 @@ static int hi3660_hi6403_probe(struct platform_device *pdev)
 	ret = snd_soc_register_card(card);
 	if (ret) {
 		pr_err("%s : register failed %d\n", __FUNCTION__, ret);
-		HiLOGE("audio", "hi3660_hi6403", "%s : register failed %d\n", __FUNCTION__, ret);
 	}
 
 	return ret;

@@ -237,7 +237,7 @@ oal_void __mem_trace_delete_node(oal_ulong   ul_addr,
         }
         else
         {
-            OAL_BUG_ON(1);
+             OAL_IO_PRINT("%s error:pst_owner is null\n", __FUNCTION__);
         }
     }
     else if (!pst_mgr->ul_node_shortage)
@@ -313,7 +313,6 @@ oal_void __mem_trace_probe(oal_ulong  ul_addr,
             mem_trace_info_show(2,0,0);
             mem_trace_info_show(1,0,0);
             OAL_WARN_ON(1);
-            //OAL_BUG_ON(1);
         }
     }
 
@@ -363,8 +362,8 @@ oal_void mem_trace_info_show(oal_uint32 ul_mode, oal_uint32  ul_fileid, oal_uint
         }
         else
         {
-            OAL_BUG_ON(1);
-        }
+            OAL_IO_PRINT("%s error:pst_owner is null\n", __FUNCTION__);
+        }      
     }
     else if (1 == ul_mode)
     {

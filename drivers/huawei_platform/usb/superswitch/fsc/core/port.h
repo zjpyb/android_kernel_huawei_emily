@@ -362,5 +362,7 @@ void FUSB3601_set_force_discharge(struct Port *port);
 void FUSB3601_disable_vbus_adc(struct Port *port);
 void FUSB3601_enable_vbus_adc(struct Port *port);
 void reset_adc(struct Port *port);
+void FUSB3601_set_vbus_detach(struct Port *port, VbusDetach_t enable);
+void superswitch_dsm_report(int num);
 
 #endif /* FSCPM_PORT_H_ */

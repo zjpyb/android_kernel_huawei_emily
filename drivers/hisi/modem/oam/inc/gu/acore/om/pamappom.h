@@ -77,18 +77,6 @@ extern "C"{
 
 #define OM_DRV_MAX_IO_COUNT             (8)        /*一次提交给底软接口的最大数目*/
 
-/* 与si_pih.h中的枚举定义SI_PIH_REQ_ENUM_UINT32保持一致 */
-#define OM_SI_PIH_GACCESS_REQ             (3)
-#define OM_SI_PIH_ISDB_ACCESS_REQ         (7)
-#define OM_SI_PIH_CGLA_SET_REQ            (16)
-#define OM_SI_PIH_URSM_REQ                (19)
-#define OM_SI_PIH_CRSM_SET_REQ            (21)
-#define OM_SI_PIH_CRLA_SET_REQ            (22)
-#define OM_SI_PIH_PRIVATECGLA_SET_REQ     (32)
-#if (FEATURE_ON == FEATURE_PHONE_SC)
-#define OM_SI_PIH_SILENT_PININFO_SET_REQ  (35)
-#endif
-
 #define OM_LOG1(Mod, SubMod, Level, String, Para1) \
            (VOS_VOID)DIAG_LogReport( DIAG_GEN_LOG_MODULE(VOS_GetModemIDFromPid(Mod), DIAG_MODE_UMTS, (Level)), \
                            (Mod), __FILE__, __LINE__, "%s, %d \r\n", (String), (VOS_INT32)(Para1) )
@@ -135,6 +123,12 @@ typedef struct
 {
     VOS_MSG_HEADER
 }OM_FILTER_MSG_HEAD_STRU;
+
+typedef struct
+{
+    VOS_PID                             ulPid;
+    VOS_PID                             ulI0Pid;
+}OM_PID_MAP_STRU;
 
 /*****************************************************************************
   4 STRUCT定义

@@ -14,11 +14,10 @@
 #define _CHARGING_CORE
 
 #include <linux/device.h>	/*for struct charge_core_info */
+#ifdef CONFIG_HISI_BATTERY_DATA
 #include <linux/power/hisi/hisi_battery_data.h>	/*for struct charge_core_info */
-#include <huawei_platform/power/huawei_charger.h>	/*for struct charge_core_info */
-#ifdef CONFIG_WIRELESS_CHARGER
-#include <huawei_platform/power/wireless_charger.h> /*for struct wireless_charge_data*/
 #endif
+#include <huawei_platform/power/huawei_charger.h>	/*for struct charge_core_info */
 
 /*************************marco define area***************************/
 #define VDPM_BY_CAPACITY            (0)
@@ -41,6 +40,7 @@
 #define SEGMENT_TYPE_BY_VBAT_ICHG (0)
 #define SEGMENT_TYPE_BY_VBAT (1)
 
+#define YCABLE_CURR_DEFAULT			(1000)
 #define INVALID_CURRENT_SET (0)
 #define DEFAULT_BASP_POLICY_TYPE (0)
 #define SEGMENT_BASP_POLICY_TYPE (1)
@@ -122,17 +122,11 @@ struct charge_core_info {
 	struct charge_vdpm_data vdpm_para[VDPM_PARA_LEVEL];
 	struct charge_segment_data segment_para[SEGMENT_PARA_LEVEL];
 	struct charge_inductance_data inductance_para[VDPM_PARA_LEVEL];
-#ifdef CONFIG_WIRELESS_CHARGER
-	struct wireless_core_data wireless_data;
-#endif
 	struct charge_core_data data;
 };
 
 /****************variable and function declarationn area******************/
 struct charge_core_data *charge_core_get_params(void);
-#ifdef CONFIG_WIRELESS_CHARGER
-struct wireless_core_data *charge_core_get_wireless_params(void);
-#endif
 void stop_charging_core_config(void);
 
 #endif

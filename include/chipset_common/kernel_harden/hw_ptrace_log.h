@@ -19,4 +19,4 @@
  *
  */
 
-int record_ptrace_info_before_return_EIO(long request, struct task_struct *child);
+void record_ptrace_info_before_return(long request, struct task_struct *child);

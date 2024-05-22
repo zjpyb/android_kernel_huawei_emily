@@ -64,6 +64,7 @@ struct gether {
 	struct usb_ep			*out_ep;
 
 	bool				is_zlp_ok;
+	bool				no_skb_reserve;
 
 	u16				cdc_filter;
 
@@ -73,8 +74,8 @@ struct gether {
 	bool				is_fixed;
 	u32				fixed_out_len;
 	u32				fixed_in_len;
-	unsigned		ul_max_pkts_per_xfer;
-	unsigned		dl_max_pkts_per_xfer;
+	unsigned			ul_max_pkts_per_xfer;
+	unsigned			dl_max_pkts_per_xfer;
 	bool				multi_pkt_xfer;
 	bool				supports_multi_frame;
 	struct sk_buff			*(*wrap)(struct gether *port,
@@ -285,5 +286,9 @@ static inline bool can_support_ecm(struct usb_gadget *gadget)
 	 */
 	return true;
 }
+
+/* This function add for f_rndis&f_ncm on Hisilicon Kirin Platform */
+void gether_set_gadget_without_set_netdev(struct net_device *net,
+		struct usb_gadget *g);
 
 #endif /* __U_ETHER_H */

@@ -126,19 +126,7 @@ VOS_VOID PPP_SetRawDataByPassMode(VOS_UINT32 ulRawDataByPassMode)
     return;
 }
 
-/*****************************************************************************
- Prototype      : PPP_ResetDataQStatInfo()
- Description    : 复位PPP统计信息
- Input          : VOS_VOID
- Output         :
- Return Value   : VOID
- Calls          :
- Called By      :
- History        :
-  1.Date        : 2008-07-16
-    Author      : L47619
-    Modification: Created function
-*****************************************************************************/
+
 VOS_VOID PPP_INPUT_ResetStatInfo(VOS_VOID)
 {
     PSACORE_MEM_SET(&(g_PppDataQCtrl.stStat), sizeof(PPP_DATA_Q_STAT_ST), 0, sizeof(PPP_DATA_Q_STAT_ST));
@@ -167,17 +155,7 @@ VOS_UINT32 PPP_INPUT_GetDataCnt(VOS_VOID)
     return ulUlDataQCnt;
 }
 
-/******************************************************************************
- Prototype       : PPP_PrintQCtrlInfo
- Description     : 打印g_PppDataQCtrl信息
- Input           : VOID
- Output          : VOID
- Return Value    : VOID
- History         :
-   1.Date        : 2008-07-16
-     Author      : l47619
-     Modification: 增加PPP数据队列处理机制
-******************************************************************************/
+
 VOS_VOID    PPP_INPUT_ShowStatInfo(VOS_VOID)
 {
     PS_PRINTF("\n================PPP STAT INFO Begin==========================\n");
@@ -212,18 +190,7 @@ VOS_VOID    PPP_INPUT_ShowStatInfo(VOS_VOID)
     return;
 }
 
-/******************************************************************************
- Prototype       : PPP_Snd1stDataNotify
- Description     : PPP数据队列内结点个数为0时，向PPP发送数据处理指示PPP_DATA_PROC_NOTIFY
- Input           :
- Output          : NONE
- Return Value    : PS_SUCC   --- 成功
-                   PS_FAIL   --- 失败
- History         :
-   1.Date        : 2008-07-16
-     Author      : l47619
-     Modification: 增加PPP数据队列处理机制
-******************************************************************************/
+
 VOS_UINT32  PPP_Snd1stDataNotify(VOS_VOID)
 {
     if (1 == g_stPppEntInfo.ulPppInitFlag)
@@ -235,18 +202,7 @@ VOS_UINT32  PPP_Snd1stDataNotify(VOS_VOID)
 } /* PPP_Snd1stDataNotify */
 
 
-/******************************************************************************
- Prototype       : PPP_EnqueueData
- Description     : 将上下行数据放入PPP数据队列，如果队列从空到非空，并发送消息通知PPP模块
- Input           :
- Output          : NONE
- Return Value    : PS_SUCC   --- 成功
-                   PS_FAIL   --- 失败
- History         :
-   1.Date        : 2008-07-16
-     Author      : l47619
-     Modification: Created function
-******************************************************************************/
+
 VOS_UINT32  PPP_EnqueueData(PPP_ZC_STRU *pstImmZc, PPP_DATA_TYPE_ENUM_UINT8 enDataType, PPP_ID usPppId)
 {
     VOS_ULONG                           ulFlags     = 0UL;
@@ -302,22 +258,7 @@ VOS_UINT32  PPP_EnqueueData(PPP_ZC_STRU *pstImmZc, PPP_DATA_TYPE_ENUM_UINT8 enDa
 } /* PPP_EnqueueData */
 
 
-/*****************************************************************************
- Prototype      : PPP_PullPacketEvent
- Description    : IP类型拨号，从R接口接收数据，发送到PPP处理
- Input          : usPppId    --  PPP ID
-                  pstImmZc   --  上行PPP帧
- Output         : ---
- Return Value   : PS_SUCC   --- 成功
-                  PS_FAIL   --- 失败
- Calls          : ---
- Called By      : ---
 
- History        : ---
-  1.Date        : 2008-07-17
-    Author      : L47619
-    Modification: Created function
-*****************************************************************************/
 VOS_UINT32 PPP_PullPacketEvent(VOS_UINT16 usPppId, PPP_ZC_STRU *pstImmZc)
 {
     if(VOS_NULL_PTR == pstImmZc)
@@ -424,21 +365,7 @@ VOS_UINT32 PPP_PushPacketEvent(VOS_UINT8 ucRabId, PPP_ZC_STRU *pstImmZc, ADS_PKT
     return PS_SUCC;
 }
 
-/*****************************************************************************
- Prototype      : PPP_PullRawEvent
- Description    : PPP类型拨号，从R接口接收数据，发送到PPP处理
- Input          : ---
- Output         : ---
- Return Value   : PS_SUCC   --- 成功
-                  PS_FAIL   --- 失败
- Calls          : ---
- Called By      : ---
 
- History        : ---
-  1.Date        : 2008-07-17
-    Author      : L47619
-    Modification: Created function
-*****************************************************************************/
 VOS_UINT32 PPP_PullRawDataEvent(VOS_UINT16 usPppId, PPP_ZC_STRU *pstImmZc)
 {
     VOS_UINT32                          ulResult;
@@ -504,22 +431,7 @@ VOS_UINT32 PPP_PullRawDataEvent(VOS_UINT16 usPppId, PPP_ZC_STRU *pstImmZc)
     return PS_SUCC;
 } /* PPP_PullRawEvent */
 
-/*****************************************************************************
- Prototype      : PPP_PushRawDataEvent
- Description    : PPP类型拨号，接收到Um/Uu口的数据
- Input          : ---
- Input          : ---
- Output         : ---
- Return Value   : PS_SUCC   --- 成功
-                  PS_FAIL   --- 失败
- Calls          : ---
- Called By      : ---
 
- History        : ---
-  1.Date        : 2008-07-17
-    Author      : L47619
-    Modification: Created function
-*****************************************************************************/
 VOS_UINT32 PPP_PushRawDataEvent(VOS_UINT8 ucRabId, PPP_ZC_STRU *pstImmZc, ADS_PKT_TYPE_ENUM_UINT8 enPktType, VOS_UINT32 ulExParam)
 {
     PPP_ID                              usPppId = PPP_INVLAID_PPP_ID;
@@ -585,21 +497,7 @@ PS_BOOL_ENUM_UINT8 PPP_IsContinueProcData
     return PS_FALSE;
 }
 
-/*****************************************************************************
- Prototype      : PPP_ProcDataNotify
- Description    : 硬化方案下，处理PPP_DATA_PROC_NOTIFY数据指示
- Input          : VOS_VOID
- Output         : ---
- Return Value   : PS_SUCC   --- 成功
-                  PS_FAIL   --- 失败
- Calls          : ---
- Called By      : ---
 
- History        : ---
-  1.Date        : 2008-07-17
-    Author      : L47619
-    Modification: Created function
-*****************************************************************************/
 VOS_VOID  PPP_ProcDataNotify(VOS_VOID)
 {
     PPP_ZC_STRU                        *pstMem;
@@ -737,21 +635,7 @@ VOS_VOID PPP_ProcHdlcDisable ( PPP_ID usPppId)
     return;
 }
 
-/*****************************************************************************
- Prototype      : PPP_ProcAtCtrlOper
- Description    : PPP接收AT发送的控制操作消息
- Input          : pMsg
- Output         : ---
- Return Value   : PS_SUCC --- 成功
-                  PS_FAIL --- 失败
- Calls          : ---
- Called By      : ---
 
- History        : ---
-  1.Date        : 2008-04-17
-    Author      : L47619
-    Modification: Created function
-*****************************************************************************/
 VOS_UINT32 PPP_ProcAtCtrlOper(struct MsgCB * pMsg)
 {
     PPP_AT_CTRL_OPERATION_MSG *pCtrlOperMsg;

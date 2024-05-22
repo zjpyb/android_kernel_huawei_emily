@@ -29,6 +29,7 @@ struct cfc_coresight_drvdata {
 	struct cfc_coresight_ops *ops;
 	struct cfc_coresight_drvdata *next_dev;
 	int used_in_tee;
+	atomic_t clk_prepared;
 	void __iomem *base;
 };
 static struct cfc_coresight_drvdata *etmoncore[NR_CPUS];
@@ -428,6 +429,7 @@ cfc_coresight_probe(struct amba_device *adev)
 		drvdata->used_in_tee = 1;
 	}
 
+	atomic_set(&drvdata->clk_prepared, 0);
 	drvdata->pdata = pdata;
 	drvdata->base = base;
 	drvdata->dev = dev;
@@ -513,21 +515,26 @@ static int cfc_tmc_probe(struct amba_device *adev, const struct amba_id *id)
 
 void cfc_prepare_clk_pm(void)
 {
-	int i;
+	unsigned int i;
 
 	for (i = 0; i < nr_cfc_coresight_drvdata; i++) {
-		if (!IS_ERR_OR_NULL(all_drvdata[i].atclk))
-			clk_prepare_enable(all_drvdata[i].atclk);
+		if (!IS_ERR_OR_NULL(all_drvdata[i].atclk)) {
+			if (clk_prepare_enable(all_drvdata[i].atclk) == 0)
+				atomic_inc(&all_drvdata[i].clk_prepared);
+		}
 	}
 }
 
 void cfc_unprepare_pm_clk(void)
 {
-	int i;
+	unsigned int i;
 
 	for (i = 0; i < nr_cfc_coresight_drvdata; i++) {
-		if (!IS_ERR_OR_NULL(all_drvdata[i].atclk))
+		if (!IS_ERR_OR_NULL(all_drvdata[i].atclk) &&
+				atomic_read(&all_drvdata[i].clk_prepared) > 0) {
 			clk_disable_unprepare(all_drvdata[i].atclk);
+			atomic_dec(&all_drvdata[i].clk_prepared);
+		}
 	}
 }
 
@@ -552,6 +559,16 @@ static struct amba_id cfc_etm4_ids[] = {
 	 .mask = 0x000fffff,
 	 .data = "ETM 4.0",
 	 },
+	{			/* ETM 4.0 - Ananke */
+		.id	= 0x000bbd05,
+		.mask	= 0x000fffff,
+		.data	= "Cortex-A55 ETM 4.0",
+	},
+	{			/* ETM 4.0 - Enyo */
+		.id	= 0x000bbd0b,
+		.mask	= 0x000fffff,
+		.data	= "Cortex-Enyo ETM 4.0",
+	},
 	{0, 0},
 };
 static struct amba_driver cfc_etm4x_driver = {

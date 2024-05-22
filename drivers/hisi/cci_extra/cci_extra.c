@@ -371,7 +371,7 @@ err_crg:
 err_cci_ctrl:
 	kfree(dev);
 err_alloc_dev:
-	kfree(port_configs);
+	kfree(port_configs);/*lint !e668*/
 
 	return ret;
 }

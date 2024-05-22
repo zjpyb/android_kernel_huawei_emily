@@ -33,10 +33,15 @@
 #include "rdr_inner.h"
 #include "rdr_field.h"
 
-#include <soc_acpu_baseaddr_interface.h>
-#include <soc_isp_watchdog_interface.h>
-#include <soc_sctrl_interface.h>
-#include <soc_pctrl_interface.h>
+/* Watchdog Regs Offset */
+#define ISP_WatchDog_WDG_LOCK_ADDR      (0x0C00)
+#define ISP_WatchDog_WDG_CONTROL_ADDR   (0x0008)
+
+/* SCtrl Regs Offset */
+#define SCTRL_SCBAKDATA10_ADDR      (0x434)
+
+/* PCtrl Regs Offset */
+#define PCTRL_PERI_CTRL27_ADDR      (0x070)
 
 enum RDR_ISP_SYSTEM_ERROR_TYPE {
     ISP_MODID_START = HISI_BB_MOD_ISP_START,
@@ -126,8 +131,6 @@ int hisp_get_wdt_irq(void)
 u64 get_isprdr_addr(void)
 {
     struct rdr_isp_device *dev = &rdr_isp_dev;
-    pr_info("%s: isprdr_addr.0x%llx, isprdr_addr.0x%x",
-            __func__, dev->isprdr_addr, (unsigned int)dev->isprdr_addr);
 
     return dev->isprdr_addr;
 }
@@ -204,17 +207,27 @@ void ap_send_fiq2ispcpu(void)
         return;
     }
     pr_info("%s: exc_flag.0x%x\n", __func__, exc_flag);
-    if((exc_flag & 0xFF) == 0x0){
-        value = readl(SOC_SCTRL_SCBAKDATA10_ADDR(dev->sctrl_addr));
+    if (wait_share_excflag_timeout(ISP_CPU_POWER_DOWN,10) == 0x0) {
+        if (dev->sctrl_addr == NULL){
+            pr_err("%s: sctrl_addr NULL\n", __func__);
+            return;
+        }
+        value = readl((volatile void __iomem *)(dev->sctrl_addr + SCTRL_SCBAKDATA10_ADDR));
         if (value & (1 << SC_ISP_WDT_BIT))
             wdt_flag = true;
+
         if ((wdt_flag) && (dev->sctrl_addr != NULL)) {
             /* send fiq to isp_a7 */
             pr_info("%s: send fiq to ispcpu!\n", __func__);
-            writel(0, SOC_PCTRL_PERI_CTRL27_ADDR(dev->pctrl_addr));
-            writel(1, SOC_PCTRL_PERI_CTRL27_ADDR(dev->pctrl_addr));
-            writel(0, SOC_PCTRL_PERI_CTRL27_ADDR(dev->pctrl_addr));
+            if (dev->pctrl_addr == NULL){
+                pr_err("%s: pctrl_addr NULL\n", __func__);
+                return;
+            }
+            writel(0, (volatile void __iomem *)(dev->pctrl_addr + PCTRL_PERI_CTRL27_ADDR));
+            writel(1, (volatile void __iomem *)(dev->pctrl_addr + PCTRL_PERI_CTRL27_ADDR));
+            writel(0, (volatile void __iomem *)(dev->pctrl_addr + PCTRL_PERI_CTRL27_ADDR));
         }
+        mdelay(50);
     }
 }
 
@@ -226,9 +239,13 @@ static irqreturn_t isp_wdt_irq_handler(int irq, void *data)
     pr_info("%s:enter.\n", __func__);
 
     /* disable wdt */
-    writel(WDT_UNLOCK, SOC_ISP_WatchDog_WDG_LOCK_ADDR(dev->wdt_addr));
-    writel(0, SOC_ISP_WatchDog_WDG_CONTROL_ADDR(dev->wdt_addr));
-    writel(WDT_LOCK, SOC_ISP_WatchDog_WDG_LOCK_ADDR(dev->wdt_addr));
+    if (dev->wdt_addr == NULL){
+        pr_err("%s: wdt_addr NULL\n", __func__);
+        return IRQ_NONE;
+    }
+    writel(WDT_UNLOCK, (volatile void __iomem *)(dev->wdt_addr + ISP_WatchDog_WDG_LOCK_ADDR));
+    writel(0, (volatile void __iomem *)(dev->wdt_addr + ISP_WatchDog_WDG_CONTROL_ADDR));
+    writel(WDT_LOCK, (volatile void __iomem *)(dev->wdt_addr + ISP_WatchDog_WDG_LOCK_ADDR));
 
     /* init sync work */
     writel(0, dev->rdr_addr + RDR_SYNC_WORD_OFF);
@@ -329,10 +346,6 @@ static int rdr_isp_module_register(void)
     dev->current_info.nve = ret_info.nve;
     dev->isprdr_addr = ret_info.log_addr;
 
-    pr_info("%s: log_addr = 0x%llx, log_len = 0x%x, nve = 0x%llx, isprdr_addr = 0x%llx\n",
-         __func__, ret_info.log_addr, ret_info.log_len, ret_info.nve,
-         dev->isprdr_addr);
-
     dev->rdr_addr = hisi_bbox_map((phys_addr_t)dev->isprdr_addr,
                                     dev->current_info.log_len);
     if (!dev->rdr_addr) {
@@ -377,30 +390,35 @@ static int rdr_isp_dev_map(struct rdr_isp_device *dev)
     bool wdt_flag = false;
 
     pr_info("%s: enter.\n", __func__);
+
+    if (dev == NULL){
+        pr_err("%s: rdr_isp_device is NULL.\n", __func__);
+        return -EINVAL;
+    }
     dev->wdt_enable_flag = wdt_flag;
 
-    dev->sctrl_addr = ioremap((phys_addr_t) SOC_ACPU_SCTRL_BASE_ADDR, SZ_4K);
+    dev->sctrl_addr = get_regaddr_by_pa(SCTRL);
     if (!dev->sctrl_addr) {
         pr_err("%s: ioremp sctrl failed.\n", __func__);
         return -ENOMEM;
     }
 
-    value = readl(SOC_SCTRL_SCBAKDATA10_ADDR(dev->sctrl_addr));
+    value = readl((volatile void __iomem *)(dev->sctrl_addr + SCTRL_SCBAKDATA10_ADDR));
 
     if (value & (1 << SC_ISP_WDT_BIT))
         wdt_flag = true;
 
     if (wdt_flag) {
-        dev->wdt_addr = ioremap((phys_addr_t) SOC_ACPU_ISP_WDT_BASE_ADDR, SZ_4K);
+        dev->wdt_addr = get_regaddr_by_pa(WDT);
         if (!dev->wdt_addr) {
             pr_err("%s: ioremp wdt failed.\n", __func__);
-            goto wdt_err;
+            goto err;
         }
 
-        dev->pctrl_addr = ioremap((phys_addr_t) SOC_ACPU_PCTRL_BASE_ADDR, SZ_4K);
+        dev->pctrl_addr = get_regaddr_by_pa(PCTRL);
         if (!dev->pctrl_addr) {
             pr_err("%s: ioremp pctrl failed.\n", __func__);
-            goto pctrl_err;
+            goto err;
         }
     }
 
@@ -408,28 +426,13 @@ static int rdr_isp_dev_map(struct rdr_isp_device *dev)
     pr_info("%s: exit.\n", __func__);
     return 0;
 
-pctrl_err:
-    iounmap(dev->wdt_addr);
-wdt_err:
-    iounmap(dev->sctrl_addr);
-
+err:
     pr_info("%s: error, exit.\n", __func__);
     return -ENOMEM;
 }
 
-static void rdr_isp_dev_unmap(struct rdr_isp_device *dev)
-{
-    iounmap(dev->sctrl_addr);
 
-    if (dev->wdt_enable_flag) {
-        iounmap(dev->wdt_addr);
-        iounmap(dev->pctrl_addr);
-    }
-
-    return;
-}
-
-int __init rdr_isp_init(void)
+int rdr_isp_init(void)
 {
     struct rdr_isp_device *dev = &rdr_isp_dev;
     int ret = 0;
@@ -482,15 +485,12 @@ int __init rdr_isp_init(void)
     return ret;
 }
 
-static void __exit rdr_isp_exit(void)
+void rdr_isp_exit(void)
 {
     struct rdr_isp_device *dev = &rdr_isp_dev;
 
-    rdr_isp_dev_unmap(dev);
     destroy_workqueue(dev->wq);
     return;
 }
 
-subsys_initcall(rdr_isp_init);
-module_exit(rdr_isp_exit);
 MODULE_LICENSE("GPL v2");

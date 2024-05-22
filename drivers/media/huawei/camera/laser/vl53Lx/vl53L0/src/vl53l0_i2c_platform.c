@@ -100,6 +100,7 @@ char  debug_string[VL53L0_MAX_STRING_LENGTH_PLT];
 
 #define STATUS_OK              0x00
 #define STATUS_FAIL            0x01
+extern int memcpy_s(void *dest, size_t destMax, const void *src, size_t count);
 
 bool_t _check_min_version(void)
 {
@@ -165,7 +166,7 @@ int32_t VL53L0_write_multi(VL53L0_DEV dev, uint8_t index, uint8_t *pdata,
 		return STATUS_FAIL;
 	buffer =  VL53L0_GetLocalBuffer(dev, (count+1));
 	buffer[0] = index;
-	memcpy(&buffer[1], pdata, count);
+	memcpy_s(&buffer[1], count, pdata, count);
 	status = VL53L0_I2CWrite(dev, buffer, (count+1));
 
 	return status;

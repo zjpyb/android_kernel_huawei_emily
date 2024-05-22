@@ -747,6 +747,27 @@ static uint32_t psr_proc_http_tran_encoding(struct psr_msg *msg,
 	return 0;
 }
 
+static uint32_t  psr_set_http_pkt_len(struct psr_ctx_data *ctx_data, struct psr_result *result)
+{
+	uint32_t ret;
+	struct psr_http_tlv *block;
+
+	ret = psr_get_block(PSR_TYPE_PKT_LEN, &result, &block);
+	if (ret){
+		return ret;
+	}
+
+	if (result->base.valid_len + sizeof(ctx_data->pkt_len) > result->base.total_len) {
+		return PSR_RET_MEM_INVALID;
+	}
+
+	memcpy(block->val + block->len, (uint8_t*)&ctx_data->pkt_len, sizeof(ctx_data->pkt_len));
+
+	block->len += sizeof(ctx_data->pkt_len);
+	result->base.valid_len += sizeof(ctx_data->pkt_len);
+	return 0;
+}
+
 static uint32_t  psr_proc_http_header_val(struct psr_msg *msg,
 					  struct psr_pkt *pkt,
 					  struct psr_ctx_data *ctx_data,
@@ -1390,6 +1411,13 @@ uint8_t psr_proc(uint32_t proto, uint32_t direction, uint64_t ts,
 				} else {
 					ctx_data->continued = 1;
 				}
+			}
+		}
+
+		if (PSR_DOWN == direction){
+			ctx_data->pkt_len += pkt_len;
+			if (result->un.http.rsp_finish){
+				ret |= psr_set_http_pkt_len(ctx_data, result);
 			}
 		}
 

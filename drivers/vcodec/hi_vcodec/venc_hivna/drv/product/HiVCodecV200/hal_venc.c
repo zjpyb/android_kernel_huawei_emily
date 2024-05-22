@@ -905,7 +905,7 @@ HI_VOID VeduHal_CfgReg_SlcHeadSet(VENC_REG_INFO_S *channelcfg)
     }
 }
 
-HI_VOID VeduHal_CfgReg_SMMUSet(VENC_REG_INFO_S *channelcfg)
+HI_VOID VeduHal_CfgReg_SMMUSet(HI_VOID)
 {
     S_HEVC_AVC_REGS_TYPE *pAllReg = NULL;
     HI_U64 phy_pgd_base;
@@ -918,21 +918,27 @@ HI_VOID VeduHal_CfgReg_SMMUSet(VENC_REG_INFO_S *channelcfg)
     HI_DBG_VENC("(phy_pgd_base >> 32):%pK\n", (void *)(uintptr_t)(phy_pgd_base >> 32));
     //SMRX_0
 
+    pAllReg->MMU_PRE_GLB_SCR.bits.glb_scr = 1;
+    pAllReg->SMMU_MSTR_GLB_BYPASS.bits.glb_bypass = 0;
+    pAllReg->SMMU_SCR.bits.glb_bypass = 0;
+
     //QOS
     pAllReg->SMMU_SCR.bits.rqos_en = 1;
     pAllReg->SMMU_SCR.bits.wqos_en = 1;
     pAllReg->SMMU_SCR.bits.rqos = 0;
     pAllReg->SMMU_SCR.bits.wqos = 0;
 
-    pAllReg->SMMU_CB_SCTRL.bits.cb_bypass = channelcfg->all_reg.SMMU_CB_SCTRL.bits.cb_bypass;
+    pAllReg->SMMU_CB_SCTRL.bits.cb_bypass = 0;
     pAllReg->SMMU_CB_TTBCR.bits.cb_ttbcr_des = 1;//channelcfg->all_reg.SMMU_CB_TTBCR.bits.cb_ttbcr_des;
     pAllReg->SMMU_CB_TTBR0 = phy_pgd_base;/*lint !e712 */
     pAllReg->SMMU_CB_TTBR1 = phy_pgd_base;/*lint !e712 */
 
-    pAllReg->SMMU_FAMA_CTRL1_NS[0].bits.fama_ptw_msb_ns = (phy_pgd_base >> 32);
+    pAllReg->SMMU_FAMA_CTRL1_NS[0].bits.fama_ptw_msb_ns = (phy_pgd_base >> 32) & 0x7F;
+
+    VENC_HAL_SetSmmuAddr(pAllReg);
 
 #if 1
-    if(channelcfg->bSecureFlag == 1)
+    if(0)
     {   //sec
         {
             U_SMMU_MSTR_SMRX_0  D32;
@@ -1612,6 +1618,25 @@ HI_VOID VeduHal_CfgReg_PREMMUSet(VENC_REG_INFO_S *channelcfg)
 }
 
 //----------------------------------------
+HI_VOID VeduHal_CfgReg_RCSet(VENC_REG_INFO_S *channelcfg)
+{
+    S_HEVC_AVC_REGS_TYPE *pAllReg = NULL;
+
+    pAllReg = (S_HEVC_AVC_REGS_TYPE*)VeduIpCtx.pRegBase;
+
+    pAllReg->VEDU_QPG_CU_QP_DELTA_THRESH_REG0.u32 = channelcfg->all_reg.VEDU_QPG_CU_QP_DELTA_THRESH_REG0.u32;
+    pAllReg->VEDU_QPG_CU_QP_DELTA_THRESH_REG1.u32 = channelcfg->all_reg.VEDU_QPG_CU_QP_DELTA_THRESH_REG1.u32;
+    pAllReg->VEDU_QPG_CU_QP_DELTA_THRESH_REG2.u32 = channelcfg->all_reg.VEDU_QPG_CU_QP_DELTA_THRESH_REG2.u32;
+    pAllReg->VEDU_QPG_CU_QP_DELTA_THRESH_REG3.u32 = channelcfg->all_reg.VEDU_QPG_CU_QP_DELTA_THRESH_REG3.u32;
+
+    {
+        U_VEDU_QPG_MADI_SWITCH_THR  D32;
+        D32.bits.qpg_qp_madi_switch_thr = channelcfg->all_reg.VEDU_QPG_MADI_SWITCH_THR.bits.qpg_qp_madi_switch_thr;
+        pAllReg->VEDU_QPG_MADI_SWITCH_THR.u32 = D32.u32;
+    }
+    HI_DBG_VENC("----qpg_qp_madi_switch_thr:%d----\n", channelcfg->all_reg.VEDU_QPG_MADI_SWITCH_THR.bits.qpg_qp_madi_switch_thr);
+    HI_DBG_VENC("VeduHal_CfgReg_RCSet\n");
+}
 
 HI_VOID VeduHal_CfgRegSimple(VENC_REG_INFO_S *channelcfg)
 {
@@ -1637,6 +1662,15 @@ HI_VOID VeduHal_CfgRegSimple(VENC_REG_INFO_S *channelcfg)
     pAllReg->VEDU_VCPI_MODE.bits.vcpi_sao_chroma = channelcfg->all_reg.VEDU_VCPI_MODE.bits.vcpi_sao_chroma;
     pAllReg->VEDU_VCPI_MODE.bits.vcpi_sao_luma = channelcfg->all_reg.VEDU_VCPI_MODE.bits.vcpi_sao_luma;
 
+    {
+        U_VEDU_VCPI_MEM_CTRL_T16  D32;
+        D32.bits.mem_ctrl_s = 0x5550;
+        D32.bits.mem_ctrl_d1w2r = 0x0260;
+        pAllReg->VEDU_VCPI_MEM_CTRL_T16.u32 = D32.u32;
+    }
+
+    VeduHal_CfgReg_RCSet(channelcfg);
+
     VeduHal_CfgReg_IntraSet(channelcfg);
 
     VeduHal_CfgReg_LambdaSet(channelcfg);
@@ -1647,19 +1681,13 @@ HI_VOID VeduHal_CfgRegSimple(VENC_REG_INFO_S *channelcfg)
 
     VeduHal_CfgReg_SlcHeadSet(channelcfg);
 
-    VeduHal_CfgReg_PREMMUSet(channelcfg);
-
     if (HI_TRUE != g_vencSmmuSetFlag)
     {
-        pAllReg->MMU_PRE_GLB_SCR.bits.glb_scr = 1;
-        pAllReg->SMMU_MSTR_GLB_BYPASS.bits.glb_bypass = 0;
-        pAllReg->SMMU_SCR.bits.glb_bypass = 0;
-        channelcfg->all_reg.SMMU_CB_SCTRL.bits.cb_bypass = 0;
-        channelcfg->bSecureFlag = 0;
-
-        VeduHal_CfgReg_SMMUSet(channelcfg);
+        VeduHal_CfgReg_SMMUSet();
         g_vencSmmuSetFlag = HI_TRUE;
     }
+
+    VeduHal_CfgReg_PREMMUSet(channelcfg);
 
 }
 
@@ -1790,8 +1818,8 @@ HI_VOID VeduHal_CfgReg(VENC_REG_INFO_S *channelcfg)
     {
         U_VEDU_VCPI_LOW_POWER  D32;
         D32.bits.vcpi_intra_lowpow_en = 0;
-        D32.bits.vcpi_fme_lowpow_en = 1;
-        D32.bits.vcpi_ime_lowpow_en = 1;
+        D32.bits.vcpi_fme_lowpow_en = channelcfg->all_reg.VEDU_VCPI_LOW_POWER.bits.vcpi_fme_lowpow_en;
+        D32.bits.vcpi_ime_lowpow_en = channelcfg->all_reg.VEDU_VCPI_LOW_POWER.bits.vcpi_ime_lowpow_en;
         D32.bits.vcpi_ddr_cross_idx = 0;
         D32.bits.vcpi_tqitq_gtck_en = 1;
         D32.bits.vcpi_mrg_gtck_en = 1;
@@ -1839,11 +1867,11 @@ HI_VOID VeduHal_CfgReg(VENC_REG_INFO_S *channelcfg)
 
     {
         U_VEDU_VCPI_PRE_JUDGE_EXT_EN  D32;
-        D32.bits.vcpi_iblk_pre_en = 0;
-        D32.bits.vcpi_pblk_pre_en = channelcfg->all_reg.VEDU_VCPI_PRE_JUDGE_EXT_EN.bits.vcpi_pblk_pre_en;//0;
-        D32.bits.vcpi_force_inter = 0;
-        D32.bits.vcpi_pintra_inter_flag_disable = 0;
-        D32.bits.vcpi_ext_edge_en = 1;
+        D32.bits.vcpi_iblk_pre_en = channelcfg->all_reg.VEDU_VCPI_PRE_JUDGE_EXT_EN.bits.vcpi_iblk_pre_en;
+        D32.bits.vcpi_pblk_pre_en = channelcfg->all_reg.VEDU_VCPI_PRE_JUDGE_EXT_EN.bits.vcpi_pblk_pre_en;
+        D32.bits.vcpi_force_inter = channelcfg->all_reg.VEDU_VCPI_PRE_JUDGE_EXT_EN.bits.vcpi_force_inter;
+        D32.bits.vcpi_pintra_inter_flag_disable = channelcfg->all_reg.VEDU_VCPI_PRE_JUDGE_EXT_EN.bits.vcpi_pintra_inter_flag_disable;
+        D32.bits.vcpi_ext_edge_en = channelcfg->all_reg.VEDU_VCPI_PRE_JUDGE_EXT_EN.bits.vcpi_ext_edge_en;
         pAllReg->VEDU_VCPI_PRE_JUDGE_EXT_EN.u32 = D32.u32;
     }
 
@@ -1927,13 +1955,6 @@ HI_VOID VeduHal_CfgReg(VENC_REG_INFO_S *channelcfg)
 
     {
         pAllReg->VEDU_VCPI_ORI_PICSIZE.u32 = channelcfg->all_reg.VEDU_VCPI_ORI_PICSIZE.u32;
-    }
-
-    {
-        U_VEDU_VCPI_MEM_CTRL_T16  D32;
-        D32.bits.mem_ctrl_s = 0x00A8;
-        D32.bits.mem_ctrl_d1w2r = 0x01A8;
-        pAllReg->VEDU_VCPI_MEM_CTRL_T16.u32 = D32.u32;
     }
 
     {
@@ -2657,11 +2678,11 @@ HI_VOID VeduHal_CfgReg(VENC_REG_INFO_S *channelcfg)
     }
 
     {
-        pAllReg->VEDU_PME_NEW_COST.bits.pme_cost_lamda0 = channelcfg->all_reg.VEDU_PME_NEW_COST.bits.pme_cost_lamda0;;
-        pAllReg->VEDU_PME_NEW_COST.bits.pme_cost_lamda1 = 0x2;
-        pAllReg->VEDU_PME_NEW_COST.bits.pme_cost_lamda2 = 0xF;
-        pAllReg->VEDU_PME_NEW_COST.bits.pme_cost_lamda_en = 0;
-        pAllReg->VEDU_PME_NEW_COST.bits.pme_mvp3median_en = 0;
+        pAllReg->VEDU_PME_NEW_COST.bits.pme_cost_lamda0 = channelcfg->all_reg.VEDU_PME_NEW_COST.bits.pme_cost_lamda0;
+        pAllReg->VEDU_PME_NEW_COST.bits.pme_cost_lamda1 = channelcfg->all_reg.VEDU_PME_NEW_COST.bits.pme_cost_lamda1;
+        pAllReg->VEDU_PME_NEW_COST.bits.pme_cost_lamda2 = channelcfg->all_reg.VEDU_PME_NEW_COST.bits.pme_cost_lamda2;
+        pAllReg->VEDU_PME_NEW_COST.bits.pme_cost_lamda_en = channelcfg->all_reg.VEDU_PME_NEW_COST.bits.pme_cost_lamda_en;
+        pAllReg->VEDU_PME_NEW_COST.bits.pme_mvp3median_en = channelcfg->all_reg.VEDU_PME_NEW_COST.bits.pme_mvp3median_en;
     }
 
     {
@@ -2861,42 +2882,6 @@ HI_VOID VeduHal_CfgReg(VENC_REG_INFO_S *channelcfg)
     }
 
     {
-        U_VEDU_QPG_CU_QP_DELTA_THRESH_REG0  D32;
-        D32.bits.qpg_cu_qp_delta_thresh0 = DIST_PROTOCOL(vcpi_protocol, 0, 1);
-        D32.bits.qpg_cu_qp_delta_thresh1 = DIST_PROTOCOL(vcpi_protocol, 0, 1);
-        D32.bits.qpg_cu_qp_delta_thresh2 = channelcfg->all_reg.VEDU_QPG_CU_QP_DELTA_THRESH_REG0.bits.qpg_cu_qp_delta_thresh2;//DIST_PROTOCOL(vcpi_protocol, 1, 2);
-        D32.bits.qpg_cu_qp_delta_thresh3 = channelcfg->all_reg.VEDU_QPG_CU_QP_DELTA_THRESH_REG0.bits.qpg_cu_qp_delta_thresh3;//DIST_PROTOCOL(vcpi_protocol, 1, 2);
-        pAllReg->VEDU_QPG_CU_QP_DELTA_THRESH_REG0.u32 = D32.u32;
-    }
-
-    {
-        U_VEDU_QPG_CU_QP_DELTA_THRESH_REG1  D32;
-        D32.bits.qpg_cu_qp_delta_thresh4 = DIST_PROTOCOL(vcpi_protocol, 3, 3);
-        D32.bits.qpg_cu_qp_delta_thresh5 = DIST_PROTOCOL(vcpi_protocol, 3, 3);
-        D32.bits.qpg_cu_qp_delta_thresh6 = DIST_PROTOCOL(vcpi_protocol, 5, 5);
-        D32.bits.qpg_cu_qp_delta_thresh7 = DIST_PROTOCOL(vcpi_protocol, 5, 5);
-        pAllReg->VEDU_QPG_CU_QP_DELTA_THRESH_REG1.u32 = D32.u32;
-    }
-
-    {
-        U_VEDU_QPG_CU_QP_DELTA_THRESH_REG2  D32;
-        D32.bits.qpg_cu_qp_delta_thresh8 = DIST_PROTOCOL(vcpi_protocol, 0xA, 0x8);
-        D32.bits.qpg_cu_qp_delta_thresh9 = channelcfg->all_reg.VEDU_QPG_CU_QP_DELTA_THRESH_REG2.bits.qpg_cu_qp_delta_thresh9;//DIST_PROTOCOL(vcpi_protocol, 0xA, 0x8);
-        D32.bits.qpg_cu_qp_delta_thresh10 = DIST_PROTOCOL(vcpi_protocol, 0x14, 0x8);
-        D32.bits.qpg_cu_qp_delta_thresh11 = channelcfg->all_reg.VEDU_QPG_CU_QP_DELTA_THRESH_REG2.bits.qpg_cu_qp_delta_thresh11;//DIST_PROTOCOL(vcpi_protocol, 0x14, 0xF);
-        pAllReg->VEDU_QPG_CU_QP_DELTA_THRESH_REG2.u32 = D32.u32;
-    }
-
-    {
-        U_VEDU_QPG_CU_QP_DELTA_THRESH_REG3  D32;
-        D32.bits.qpg_cu_qp_delta_thresh12 = DIST_PROTOCOL(vcpi_protocol, 0xFF, 0x14);
-        D32.bits.qpg_cu_qp_delta_thresh13 = DIST_PROTOCOL(vcpi_protocol, 0xFF, 0x14);
-        D32.bits.qpg_cu_qp_delta_thresh14 = DIST_PROTOCOL(vcpi_protocol, 0xFF, 0x19);
-        D32.bits.qpg_cu_qp_delta_thresh15 = DIST_PROTOCOL(vcpi_protocol, 0xFF, 0x19);
-        pAllReg->VEDU_QPG_CU_QP_DELTA_THRESH_REG3.u32 = D32.u32;
-    }
-
-    {
         U_VEDU_QPG_DELTA_LEVEL  D32;
         D32.bits.qpg_qp_delta_level_0 = 1;
         D32.bits.qpg_qp_delta_level_1 = 1;
@@ -2915,12 +2900,6 @@ HI_VOID VeduHal_CfgReg(VENC_REG_INFO_S *channelcfg)
         D32.bits.qpg_qp_delta_level_14 = 1;
         D32.bits.qpg_qp_delta_level_15 = 1;
         pAllReg->VEDU_QPG_DELTA_LEVEL.u32 = D32.u32;
-    }
-
-    {
-        U_VEDU_QPG_MADI_SWITCH_THR  D32;
-        D32.bits.qpg_qp_madi_switch_thr = 0x8;
-        pAllReg->VEDU_QPG_MADI_SWITCH_THR.u32 = D32.u32;
     }
 
     {
@@ -3039,15 +3018,15 @@ HI_VOID VeduHal_CfgReg(VENC_REG_INFO_S *channelcfg)
 
     {
         U_VEDU_MRG_FORCE_ZERO_EN  D32;
-        D32.bits.mrg_force_zero_en = channelcfg->all_reg.VEDU_MRG_FORCE_ZERO_EN.bits.mrg_force_zero_en;//DIST_PROTOCOL(vcpi_protocol, 0x1, 0x0);
-        D32.bits.mrg_force_y_zero_en = DIST_PROTOCOL(vcpi_protocol, 0x1, 0x0);
-        D32.bits.mrg_force_u_zero_en = channelcfg->all_reg.VEDU_MRG_FORCE_ZERO_EN.bits.mrg_force_u_zero_en;//DIST_PROTOCOL(vcpi_protocol, 0x1, 0x0);
-        D32.bits.mrg_force_v_zero_en = channelcfg->all_reg.VEDU_MRG_FORCE_ZERO_EN.bits.mrg_force_v_zero_en;//DIST_PROTOCOL(vcpi_protocol, 0x1, 0x0);
-        D32.bits.fme_lpw_en = 0;
-        D32.bits.dct4_en = DIST_PROTOCOL(vcpi_protocol, 1, 0);
-        D32.bits.force_adapt_en = 0;
-        D32.bits.rqt_bias_weight = 0;
-        D32.bits.fme_lpw_th = 0x40;
+        D32.bits.mrg_force_zero_en = channelcfg->all_reg.VEDU_MRG_FORCE_ZERO_EN.bits.mrg_force_zero_en;
+        D32.bits.mrg_force_y_zero_en = channelcfg->all_reg.VEDU_MRG_FORCE_ZERO_EN.bits.mrg_force_y_zero_en;
+        D32.bits.mrg_force_u_zero_en = channelcfg->all_reg.VEDU_MRG_FORCE_ZERO_EN.bits.mrg_force_u_zero_en;
+        D32.bits.mrg_force_v_zero_en = channelcfg->all_reg.VEDU_MRG_FORCE_ZERO_EN.bits.mrg_force_v_zero_en;
+        D32.bits.fme_lpw_en = channelcfg->all_reg.VEDU_MRG_FORCE_ZERO_EN.bits.fme_lpw_en;
+        D32.bits.dct4_en = channelcfg->all_reg.VEDU_MRG_FORCE_ZERO_EN.bits.dct4_en;
+        D32.bits.force_adapt_en = channelcfg->all_reg.VEDU_MRG_FORCE_ZERO_EN.bits.force_adapt_en;
+        D32.bits.rqt_bias_weight = channelcfg->all_reg.VEDU_MRG_FORCE_ZERO_EN.bits.rqt_bias_weight;
+        D32.bits.fme_lpw_th = channelcfg->all_reg.VEDU_MRG_FORCE_ZERO_EN.bits.fme_lpw_th;
         pAllReg->VEDU_MRG_FORCE_ZERO_EN.u32 = D32.u32;
     }
 
@@ -3280,6 +3259,8 @@ HI_VOID VeduHal_CfgReg(VENC_REG_INFO_S *channelcfg)
         pAllReg->VEDU_VLCST_PTBITS = 0;
     }
 
+    VeduHal_CfgReg_RCSet(channelcfg);
+
     VeduHal_CfgReg_IntraSet(channelcfg);
 
     VeduHal_CfgReg_LambdaSet(channelcfg);
@@ -3294,13 +3275,11 @@ HI_VOID VeduHal_CfgReg(VENC_REG_INFO_S *channelcfg)
     //MMU ABOUT SETTING
     ////MST INT_NS
 
-    pAllReg->MMU_PRE_GLB_SCR.bits.glb_scr = channelcfg->all_reg.MMU_PRE_GLB_SCR.bits.glb_scr;//(~pEncPara_channel->bSecureFlag);
-
-    pAllReg->SMMU_MSTR_GLB_BYPASS.bits.glb_bypass = channelcfg->all_reg.SMMU_MSTR_GLB_BYPASS.bits.glb_bypass;//pEncPara_channel->bMMUByPass;
-    pAllReg->SMMU_SCR.bits.glb_bypass = channelcfg->all_reg.SMMU_SCR.bits.glb_bypass;//pEncPara_channel->bMMUByPass;
-
-    VeduHal_CfgReg_SMMUSet(channelcfg);
-    g_vencSmmuSetFlag = HI_TRUE;
+    if (HI_TRUE != g_vencSmmuSetFlag)
+    {
+        VeduHal_CfgReg_SMMUSet();
+        g_vencSmmuSetFlag = HI_TRUE;
+    }
 
     VeduHal_CfgReg_PREMMUSet(channelcfg);
 

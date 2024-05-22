@@ -3,4 +3,3 @@ obj-y += default/
 else
 obj-y += $(TARGET_BOARD_PLATFORM)/
 endif
-

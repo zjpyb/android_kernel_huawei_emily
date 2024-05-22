@@ -96,7 +96,7 @@ static ssize_t write_irq_affinity(int type, struct file *file,
 	cpumask_var_t new_value;
 	int err;
 
-	if (!irq_can_set_affinity(irq) || no_irq_affinity)
+	if (!irq_can_set_affinity_usr(irq) || no_irq_affinity)
 		return -EIO;
 
 	if (!alloc_cpumask_var(&new_value, GFP_KERNEL))
@@ -113,6 +113,13 @@ static ssize_t write_irq_affinity(int type, struct file *file,
 		err = -EINVAL;
 		goto free_cpumask;
 	}
+
+#ifdef CONFIG_HISI_CPU_ISOLATION
+	if (cpumask_subset(new_value, cpu_isolated_mask)) {
+		err = -EINVAL;
+		goto free_cpumask;
+	}
+#endif
 
 	/*
 	 * Do not allow disabling IRQs completely - it's a too easy
@@ -291,7 +298,7 @@ static int name_unique(unsigned int irq, struct irqaction *new_action)
 	int ret = 1;
 
 	raw_spin_lock_irqsave(&desc->lock, flags);
-	for (action = desc->action ; action; action = action->next) {
+	for_each_action_of_desc(desc, action) {
 		if ((action != new_action) && action->name &&
 				!strcmp(new_action->name, action->name)) {
 			ret = 0;
@@ -311,7 +318,6 @@ void register_handler_proc(unsigned int irq, struct irqaction *action)
 					!name_unique(irq, action))
 		return;
 
-	memset(name, 0, MAX_NAMELEN);
 	snprintf(name, MAX_NAMELEN, "%s", action->name);
 
 	/* create /proc/irq/1234/handler/ */
@@ -340,7 +346,6 @@ void register_irq_proc(unsigned int irq, struct irq_desc *desc)
 	if (desc->dir)
 		goto out_unlock;
 
-	memset(name, 0, MAX_NAMELEN);
 	sprintf(name, "%d", irq);
 
 	/* create /proc/irq/1234 */
@@ -386,7 +391,6 @@ void unregister_irq_proc(unsigned int irq, struct irq_desc *desc)
 #endif
 	remove_proc_entry("spurious", desc->dir);
 
-	memset(name, 0, MAX_NAMELEN);
 	sprintf(name, "%u", irq);
 	remove_proc_entry(name, root_irq_dir);
 }
@@ -421,12 +425,8 @@ void init_irq_proc(void)
 	/*
 	 * Create entries for all existing IRQs.
 	 */
-	for_each_irq_desc(irq, desc) {
-		if (!desc)
-			continue;
-
+	for_each_irq_desc(irq, desc)
 		register_irq_proc(irq, desc);
-	}
 }
 
 #ifdef CONFIG_GENERIC_IRQ_SHOW

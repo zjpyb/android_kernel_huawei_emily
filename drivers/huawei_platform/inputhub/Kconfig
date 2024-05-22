@@ -29,3 +29,10 @@ config IOM3_RECOVERY
 	default n
 	help
 	Say yes here to support the cmdline parse
+
+config INPUTHUB_VIBRATOR_CHANNEL
+	bool "inputhub vibrator channel support"
+	depends on INPUTHUB || INPUTHUB_20
+	default n
+	help
+	Say yes here to support the cmdline parse

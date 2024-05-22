@@ -13,6 +13,11 @@ typedef enum {
 	DEVICE_ROLE_DFP_ONLY,
 	DEVICE_ROLE_DRP,
 } device_role;
+#define FUSB3601_PORT_TYPE_DRP 0x96
+#define FUSB3601_PORT_TYPE_TRY_SNK 0xD6
+#define FUSB3601_PORT_TYPE_TRY_SRC 0x9E
+#define FUSB3601_PORT_TYPE_SET_SRC 0x95
+#define FUSB3601_PORT_TYPE_SET_SNK 0x90
 device_role fusb3601_get_device_role(void);
 void FUSB3601_core_initialize(struct Port *port);
 void FUSB3601_core_state_machine(struct Port *port);

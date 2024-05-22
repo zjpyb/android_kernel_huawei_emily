@@ -76,3 +76,4 @@ config HISI_DEVFREQ_DEVBW
           shared across SoCs.
 
 source "drivers/devfreq/hisi/dsu_pctrl/Kconfig"
+source "drivers/devfreq/hisi/l3c_devfreq/Kconfig"

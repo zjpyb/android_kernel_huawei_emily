@@ -146,7 +146,6 @@ TAF_VOID AT_StubClearSpecificAutoRelyMsg(
     TAF_UINT32                          ulBufferIndex
 )
 {
-    /* Modified by l60609 for DSDA Phase III, 2013-2-25, Begin */
     AT_MODEM_SMS_CTX_STRU              *pstSmsCtx = VOS_NULL_PTR;
 
     pstSmsCtx = AT_GetModemSmsCtxAddrFromClientId(ucClientIndex);
@@ -162,7 +161,6 @@ TAF_VOID AT_StubClearSpecificAutoRelyMsg(
     {
         PS_MEM_FREE(WUEPS_PID_AT, pstSmsCtx->astSmsMtBuffer[ulBufferIndex].pstTsDataInfo);
     }
-    /* Modified by l60609 for DSDA Phase III, 2013-2-25, End */
 
     return;
 }
@@ -174,7 +172,6 @@ TAF_VOID AT_StubTriggerAutoReply(
 )
 {
     TAF_UINT8                           ucLoop;
-    /* Modified by l60609 for DSDA Phase III, 2013-2-25, Begin */
     AT_MODEM_SMS_CTX_STRU              *pstSmsCtx = VOS_NULL_PTR;
 
     pstSmsCtx = AT_GetModemSmsCtxAddrFromClientId(ucIndex);
@@ -218,7 +215,6 @@ TAF_VOID AT_StubTriggerAutoReply(
         pstSmsCtx->astSmsMtBuffer[ucLoop].bUsed = TAF_FALSE;
         break;
     }
-    /* Modified by l60609 for DSDA Phase III, 2013-2-25, End */
 
     return;
 
@@ -232,7 +228,6 @@ TAF_VOID AT_StubSaveAutoReplyData(
 )
 {
     TAF_UINT8                           ucLoop;
-    /* Modified by l60609 for DSDA Phase III, 2013-2-25, Begin */
     AT_MODEM_SMS_CTX_STRU              *pstSmsCtx = VOS_NULL_PTR;
 
     pstSmsCtx = AT_GetModemSmsCtxAddrFromClientId(ucIndex);
@@ -290,7 +285,6 @@ TAF_VOID AT_StubSaveAutoReplyData(
 
         break;
     }
-    /* Modified by l60609 for DSDA Phase III, 2013-2-25, End */
 
     return;
 }
@@ -489,7 +483,6 @@ VOS_UINT32  AT_SetAbsoluteValidPeriod(
 {
     TAF_UINT32                          ulRet;
     TAF_UINT8                           ucDateInvalidType;
-    /* Modified by l60609 for DSDA Phase III, 2013-2-25, Begin */
     AT_MODEM_SMS_CTX_STRU              *pstSmsCtx = VOS_NULL_PTR;
 
     pstSmsCtx = AT_GetModemSmsCtxAddrFromClientId(ucIndex);
@@ -524,7 +517,6 @@ VOS_UINT32  AT_SetAbsoluteValidPeriod(
 
         return AT_SUCCESS;
     }
-    /* Modified by l60609 for DSDA Phase III, 2013-2-25, End */
 }
 
 
@@ -537,7 +529,6 @@ VOS_UINT32  AT_SetRelativeValidPeriod(
 {
     TAF_UINT32                          ulRet;
     TAF_UINT32                          ulRelativeValidPeriod;
-    /* Modified by l60609 for DSDA Phase III, 2013-2-25, Begin */
     AT_MODEM_SMS_CTX_STRU              *pstSmsCtx = VOS_NULL_PTR;
 
     pstSmsCtx = AT_GetModemSmsCtxAddrFromClientId(ucIndex);
@@ -583,7 +574,6 @@ VOS_UINT32  AT_SetRelativeValidPeriod(
         pstValidPeriod->u.ucOtherTime = (TAF_UINT8)ulRelativeValidPeriod;
         return AT_SUCCESS;
     }
-    /* Modified by l60609 for DSDA Phase III, 2013-2-25, End */
 }
 
 
@@ -593,7 +583,6 @@ VOS_UINT32 At_ParseCsmpVp(
 )
 {
     TAF_UINT32                          ulRet;
-    /* Modified by l60609 for DSDA Phase III, 2013-2-25, Begin */
     AT_MODEM_SMS_CTX_STRU              *pstSmsCtx = VOS_NULL_PTR;
 
     pstSmsCtx = AT_GetModemSmsCtxAddrFromClientId(ucIndex);
@@ -645,7 +634,6 @@ VOS_UINT32 At_ParseCsmpVp(
         return AT_CMS_OPERATION_NOT_ALLOWED;
     }
 
-    /* Modified by l60609 for DSDA Phase III, 2013-2-25, End */
 }
 
 
@@ -743,7 +731,6 @@ VOS_VOID At_SendMsgFoAttr(
 )
 {
     TAF_UINT8                           ucFo = 0;
-    /* Modified by l60609 for DSDA Phase III, 2013-2-25, Begin */
     AT_MODEM_SMS_CTX_STRU              *pstSmsCtx = VOS_NULL_PTR;
 
     pstSmsCtx = AT_GetModemSmsCtxAddrFromClientId(ucIndex);
@@ -779,7 +766,6 @@ VOS_VOID At_SendMsgFoAttr(
         }
 
     }
-    /* Modified by l60609 for DSDA Phase III, 2013-2-25, End */
 
     switch (pstTsDataInfo->enTpduType)
     {
@@ -999,7 +985,6 @@ TAF_UINT16  At_PrintMsgFo(
     return usLength;
 }
 
-/* Added by f62575 for AT Project, 2011-10-04,  Begin */
 
 VOS_UINT32 AT_ChkSmsNumType(
     MN_MSG_TON_ENUM_U8                  enNumType
@@ -1240,7 +1225,6 @@ VOS_UINT32  AT_BcdNumberToAscii(
     return MN_ERR_NO_ERROR;
 }
 
-/* Added by f62575 for AT Project, 2011-10-04,  End */
 
 
 TAF_UINT32  At_GetAsciiOrBcdAddr(
@@ -1390,7 +1374,6 @@ TAF_UINT32  At_PrintListMsg(
 )
 {
     TAF_UINT16                          usLength = 0;
-    /* Modified by l60609 for DSDA Phase III, 2013-2-22, Begin */
     AT_MODEM_SMS_CTX_STRU              *pstSmsCtx = VOS_NULL_PTR;
 
     pstSmsCtx = AT_GetModemSmsCtxAddrFromClientId(ucIndex);
@@ -1561,7 +1544,6 @@ TAF_UINT32  At_PrintListMsg(
         default:
             break;
     }
-    /* Modified by l60609 for DSDA Phase III, 2013-2-22, End */
 
     return usLength;
 }
@@ -1575,7 +1557,6 @@ TAF_VOID At_GetCpmsMemStatus(
 )
 {
     MN_MSG_STORAGE_LIST_EVT_INFO_STRU   *pstStorageList;
-    /* Modified by l60609 for DSDA Phase III, 2013-2-25, Begin */
     AT_MODEM_SMS_CTX_STRU              *pstSmsCtx = VOS_NULL_PTR;
 
     pstSmsCtx = AT_GetModemSmsCtxAddrFromClientId(ucIndex);
@@ -1594,7 +1575,6 @@ TAF_VOID At_GetCpmsMemStatus(
         *pulTotalRec = 0;
         return;
     }
-    /* Modified by l60609 for DSDA Phase III, 2013-2-25, End */
 
     *pulTotalRec = pstStorageList->ulTotalRec;
     *pulUsedRec = pstStorageList->ulUsedRec;
@@ -1610,7 +1590,6 @@ TAF_VOID At_PrintSetCpmsRsp(
     TAF_UINT16                          usLength            = 0;
     TAF_UINT32                          ulTotalRec;                             /*sms capacity of NVIM or USIM*/
     TAF_UINT32                          ulUsedRec;                              /*used records including all status*/
-    /* Modified by l60609 for DSDA Phase III, 2013-2-25, Begin */
     AT_MODEM_SMS_CTX_STRU              *pstSmsCtx = VOS_NULL_PTR;
 
     pstSmsCtx = AT_GetModemSmsCtxAddrFromClientId(ucIndex);
@@ -1645,7 +1624,6 @@ TAF_VOID At_PrintSetCpmsRsp(
                                        "%d,%d",
                                        ulUsedRec,
                                        ulTotalRec);
-    /* Modified by l60609 for DSDA Phase III, 2013-2-25, End */
 
     gstAtSendData.usBufLen = usLength;
     At_FormatResultData(ucIndex, AT_OK);
@@ -1683,7 +1661,6 @@ VOS_VOID At_PrintGetCpmsRsp(
     VOS_UINT32                          ulTotalRec;                             /*sms capacity of NVIM or USIM*/
     VOS_UINT32                          ulUsedRec;                              /*used records including all status*/
     VOS_UINT8                          *pucMemTypeStr       = VOS_NULL_PTR;
-    /* Modified by l60609 for DSDA Phase III, 2013-2-25, Begin */
     AT_MODEM_SMS_CTX_STRU              *pstSmsCtx           = VOS_NULL_PTR;
 
     ulTotalRec = 0;
@@ -1726,7 +1703,6 @@ VOS_VOID At_PrintGetCpmsRsp(
                                        pucMemTypeStr,
                                        ulUsedRec,
                                        ulTotalRec);
-    /* Modified by l60609 for DSDA Phase III, 2013-2-25, End */
 
     gstAtSendData.usBufLen = usLength;
     At_FormatResultData(ucIndex, AT_OK);

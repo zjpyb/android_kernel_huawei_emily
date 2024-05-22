@@ -287,6 +287,8 @@
 #define CSMI_RX_FIFO_FLAG_RX_MSG_MASK						   0x3F
 #define CSMI_RX_FIFO_FLAG_OFFSET							   15
 
+#define CSMI_FIFO_DELAY_TIMEOUT								   5000
+#define CSMI_FIFO_WAIT_TIMEOUT								   5500
 
 /* Get/Set Message fields Macros */
 
@@ -903,6 +905,60 @@ static uint32_t CSMI_EncodeMessage(CSMI_Instance *instance, uint8_t *memoryToFil
 
 }
 
+static uint32_t CSMI_fifo_wait_reception(CSMI_Instance *instance, _Bool wait)
+{
+	uint32_t timeout = 0;
+	uint32_t reg;
+
+	/* If wait == 1 then function waits for confirmation of message reception */
+	if (wait) {
+		for (;;) {
+			/* If message was transmitted in an interrupt (e.g. from callback),
+			sending* variables won't be set by another interrupt. In that case polling is used. */
+			reg = CSMI_ReadReg(INTERRUPTS.INT);
+			if (INTERRUPTS__INT__TX_ERR__READ(reg)) {
+				if (slimbus_int_need_clear_get()) {
+					reg = 0;
+					INTERRUPTS__INT__TX_ERR__SET(reg);
+					CSMI_WriteReg(INTERRUPTS.INT, reg);
+				}
+				SLIMBUS_CORE_LIMIT_ERR("SLIMbus send message TX_ERR happened!\n");
+				return EIO;
+			}
+
+			if (INTERRUPTS__INT__TX_INT__READ(reg)) {
+				if (slimbus_int_need_clear_get()) {
+					reg = 0;
+					INTERRUPTS__INT__TX_INT__SET(reg);
+					CSMI_WriteReg(INTERRUPTS.INT, reg);
+				}
+				return 0;
+			}
+
+			/* CSMI_Irq will read and clear interrupt flag before it will be accessed here by polling.
+			These variables are set by interrupt handling function. */
+			if (instance->sendingFailed) {
+				SLIMBUS_CORE_LIMIT_ERR("SLIMbus send message failed!\n");
+				return EIO;
+			}
+
+			if (instance->sendingFinished)
+				return 0;
+
+			timeout++;
+			if (timeout > CSMI_FIFO_DELAY_TIMEOUT) {
+				udelay(200);
+				if (timeout == CSMI_FIFO_WAIT_TIMEOUT) {
+					SLIMBUS_CORE_LIMIT_ERR("SLIMbus send message timeout!\n");
+					return EIO;
+				}
+			}
+		}
+	}
+
+	return 0;
+}
+
 /**
  * Transmit data to TX_FIFO
  * @param[in] instance driver instance
@@ -922,9 +978,13 @@ static uint32_t CSMI_FifoTransmit(CSMI_Instance *instance, uint8_t *txFifoData, 
 
 	do { //If TX_FIFO is full, wait until it's not
 		reg = CSMI_ReadReg(COMMAND_STATUS.STATE);
-		if (++timeout == 0) {
-			SLIMBUS_CORE_LIMIT_ERR("SLIMbus send message wait TX_FULL timeout!\n");
-			return EIO;
+		timeout++;
+		if (timeout > CSMI_FIFO_DELAY_TIMEOUT) {
+			udelay(200);
+			if (timeout == CSMI_FIFO_WAIT_TIMEOUT) {
+				SLIMBUS_CORE_LIMIT_ERR("SLIMbus send message wait TX_FULL timeout!\n");
+				return EIO;
+			}
 		}
 	} while ((COMMAND_STATUS__STATE__TX_FULL__READ(reg)) == 1);
 
@@ -948,53 +1008,18 @@ static uint32_t CSMI_FifoTransmit(CSMI_Instance *instance, uint8_t *txFifoData, 
 
 	do { //If TX_PUSH command is still in progress, wait until it's finished
 		reg = CSMI_ReadReg(COMMAND_STATUS.STATE);
-		if (++timeout == 0) {
-			SLIMBUS_CORE_LIMIT_ERR("SLIMbus send message wait TX_PUSH timeout!\n");
-			ret = EIO;
-			goto exit;
+		timeout++;
+		if (timeout > CSMI_FIFO_DELAY_TIMEOUT) {
+			udelay(200);
+			if (timeout == CSMI_FIFO_WAIT_TIMEOUT) {
+				SLIMBUS_CORE_LIMIT_ERR("SLIMbus send message wait TX_PUSH timeout!\n");
+				ret = EIO;
+				goto exit;
+			}
 		}
 	} while (COMMAND_STATUS__STATE__TX_PUSH__READ(reg));
 
-	if (wait) { //If wait == 1 then function waits for confirmation of message reception
-		timeout = 0;
-		for (;;) {
-			reg = CSMI_ReadReg(INTERRUPTS.INT);    //If message was transmitted in an interrupt (e.g. from callback), sending* variables won't be set by another interrupt. In that case polling is used.
-			if (INTERRUPTS__INT__TX_ERR__READ(reg)) {
-				if (slimbus_int_need_clear_get()) {
-					reg = 0;
-					INTERRUPTS__INT__TX_ERR__SET(reg);
-					CSMI_WriteReg(INTERRUPTS.INT, reg);
-				}
-				SLIMBUS_CORE_LIMIT_ERR("SLIMbus send message TX_ERR happened!\n");
-				ret = EIO;
-				goto exit;
-			}
-
-			if (INTERRUPTS__INT__TX_INT__READ(reg)) {
-				if (slimbus_int_need_clear_get()) {
-					reg = 0;
-					INTERRUPTS__INT__TX_INT__SET(reg);
-					CSMI_WriteReg(INTERRUPTS.INT, reg);
-				}
-				goto exit;
-			}
-
-			if (instance->sendingFailed) {	  //CSMI_Irq will read and clear interrupt flag before it will be accessed here by polling. These variables are set by interrupt handling function.
-				SLIMBUS_CORE_LIMIT_ERR("SLIMbus send message failed!\n");
-				ret = EIO;
-				goto exit;
-			}
-
-			if (instance->sendingFinished)
-				goto exit;
-
-			if (++timeout == 0) {
-				SLIMBUS_CORE_LIMIT_ERR("SLIMbus send message timeout!\n");
-				ret = EIO;
-				goto exit;
-			}
-		}
-	}
+	ret = CSMI_fifo_wait_reception(instance, wait);
 
 exit:
 	if (slimbus_int_need_clear_get()) {

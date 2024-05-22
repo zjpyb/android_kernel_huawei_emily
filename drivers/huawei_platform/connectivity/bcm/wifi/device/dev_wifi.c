@@ -39,6 +39,7 @@
 #include <linux/ctype.h>
 #include <linux/export.h>
 #include <linux/mmc/dw_mmc.h>
+#include <linux/module.h>
 #ifdef CONFIG_HWCONNECTIVITY
 #include <huawei_platform/connectivity/hw_connectivity.h>
 #endif
@@ -46,6 +47,8 @@
 
 #include "dev_wifi.h"
 #include "hw_driver_register.h"
+#include <linux/mtd/hisi_nve_interface.h>
+
 
 #define HW_FAC_GPIO_VAL_LOW     20700
 #define HW_FAC_GPIO_VAL_HIG     20701
@@ -483,34 +486,99 @@ static int read_from_mac_file(unsigned char * buf)
 	return 0;
 }
 
+int char2byte( char* strori, char* outbuf )
+{
+    int i = 0;
+    int temp = 0;
+    int sum = 0;
+
+    for( i = 0; i < 12; i++ )
+    {
+        switch (strori[i]) {
+            case '0' ... '9':
+                temp = strori[i] - '0';
+                break;
+
+            case 'a' ... 'f':
+                temp = strori[i] - 'a' + 10;
+                break;
+
+            case 'A' ... 'F':
+                temp = strori[i] - 'A' + 10;
+                break;
+        }
+
+        sum += temp;
+        if( i % 2 == 0 ){
+            outbuf[i/2] |= temp << 4;
+        }
+        else{
+            outbuf[i/2] |= temp;
+        }
+    }
+
+    return sum;
+}
+
+
+/*****************************************************************************
+ 函 数 名  : bcm_wifi_get_mac_addr
+ 功能描述  : 从nvram中获取mac地址
+             如果获取失败，则随机一个mac地址
+ 返 回 值  : 0成功，-1失败
+
+*****************************************************************************/
 int bcm_wifi_get_mac_addr(unsigned char *buf)
 {
-	int ret = -1;
+    struct bcm_nve_info_user st_info;
+    int l_ret = -1;
+    int l_sum = 0;
 
-	if (NULL == buf) {
-		hwlog_err("%s: k3v2_wifi_get_mac_addr failed\n", __func__);
-		return -1;
-	}
+    if (NULL == buf) {
+        hwlog_err("%s: k3v2_wifi_get_mac_addr failed\n", __func__);
+        return -1;
+    }
+    memset(buf, 0, WLAN_MAC_LEN);
 
-	memset(buf, 0, WLAN_MAC_LEN);
-	if (0 != g_wifimac[0] || 0 != g_wifimac[1] || 0 != g_wifimac[2] || 0 != g_wifimac[3]|| 0 != g_wifimac[4] || 0 != g_wifimac[5]){
-		read_from_global_buf(buf);
-		return 0;
-	}
 
-	ret = read_from_mac_file(buf);
-	if(0 == ret){
-		hwlog_err("%s:read from mac addr file success \n",__func__);
-		memcpy(g_wifimac,buf,WLAN_MAC_LEN);
-		return 0;
-	}else{
-		get_random_bytes(buf,WLAN_MAC_LEN);
-		buf[0] = 0x0;
-		hwlog_err("get MAC from Random: mac=%02x:%02x:%02x:%02x:%02x:%02x\n",buf[0],buf[1],buf[2],buf[3],buf[4],buf[5]);
-		memcpy(g_wifimac,buf,WLAN_MAC_LEN);
-	}
+    memset(&st_info, 0, sizeof(st_info));
+    st_info.nv_number  = NV_WLAN_NUM;   //nve item
 
-	return 0;
+    strncpy(st_info.nv_name, "MACWLAN", sizeof("MACWLAN"));
+
+    st_info.valid_size = NV_WLAN_VALID_SIZE;
+    st_info.nv_operation = NV_READ;
+
+    if (0 != g_wifimac[0] || 0 != g_wifimac[1] || 0 != g_wifimac[2] || 0 != g_wifimac[3]|| 0 != g_wifimac[4] || 0 != g_wifimac[5]){
+        read_from_global_buf(buf);
+        return 0;
+    }
+
+    l_ret = hisi_nve_direct_access(&st_info);
+
+    if (!l_ret)
+    {
+        l_sum = char2byte(st_info.nv_data, buf);
+        if (0 != l_sum)
+        {
+            hwlog_info("get MAC from NV: mac=%02x:%02x:%02x:%02x:%02x:%02x\n",buf[0],buf[1],buf[2],buf[3],buf[4],buf[5]);
+            memcpy(g_wifimac, buf, WLAN_MAC_LEN);
+        }else{
+            get_random_bytes(buf,WLAN_MAC_LEN);
+            buf[0] = 0x0;
+            hwlog_info("get MAC from Random: mac=%02x:%02x:%02x:%02x:%02x:%02x\n",buf[0],buf[1],buf[2],buf[3],buf[4],buf[5]);
+            memcpy(g_wifimac,buf,WLAN_MAC_LEN);
+
+        }
+    }else{
+        get_random_bytes(buf,WLAN_MAC_LEN);
+        buf[0] = 0x0;
+        hwlog_info("get MAC from Random: mac=%02x:%02x:%02x:%02x:%02x:%02x\n",buf[0],buf[1],buf[2],buf[3],buf[4],buf[5]);
+        memcpy(g_wifimac,buf,WLAN_MAC_LEN);
+
+    }
+
+    return 0;
 }
 
 
@@ -632,6 +700,14 @@ static int bcm_wifi_get_chip_type(char *val, int len)
     return 0;
 }
 #endif /* HW_WIFI_DRIVER_NORMALIZE */
+
+#ifdef HW_CUSTOM_BCN_TIMEOUT
+static int bcm_wifi_get_bcn_timeout(void)
+{
+    // hwlog_info("%s, bcn_timeout: %d\n", __func__, wifi_host->bcn_timeout);
+    return wifi_host ? wifi_host->bcn_timeout : -1;
+}
+#endif /* HW_CUSTOM_BCN_TIMEOUT */
 
 #ifdef CONFIG_MMC_DW_HI3XXX
 extern void dw_mci_sdio_card_detect_change(void);
@@ -821,6 +897,9 @@ struct wifi_platform_data bcm_wifi_control = {
 	.get_fw_path = bcm_wifi_get_fw_path,
 	.get_chip_type = bcm_wifi_get_chip_type,
 #endif /* HW_WIFI_DRIVER_NORMALIZE */
+#ifdef HW_CUSTOM_BCN_TIMEOUT
+	.get_bcn_timeout = bcm_wifi_get_bcn_timeout,
+#endif /* HW_CUSTOM_BCN_TIMEOUT */
 };
 
 static struct resource bcm_wifi_resources[] = {
@@ -1055,6 +1134,9 @@ int  wifi_power_probe(struct platform_device *pdev)
 	const char *ictype = NULL;
 	const char *fw = NULL;
 #endif /* HW_WIFI_DRIVER_NORMALIZE */
+#ifdef HW_CUSTOM_BCN_TIMEOUT
+	u32 bcn_timeout = 0;
+#endif /* HW_CUSTOM_BCN_TIMEOUT */
 
 	memset(&dev_handle, 0, sizeof(struct dev_wifi_handle));
 
@@ -1229,6 +1311,17 @@ int  wifi_power_probe(struct platform_device *pdev)
 	}
 #endif /* HW_WIFI_DRIVER_NORMALIZE */
 
+#ifdef HW_CUSTOM_BCN_TIMEOUT
+	ret = of_property_read_u32(pdev->dev.of_node, "bcn_timeout", &bcn_timeout);
+	if (ret < 0) {
+		hwlog_err("%s: get bcn_timeout failed, ret:%d.\n", __func__, ret);
+		wifi_host->bcn_timeout = -1;
+	} else {
+		wifi_host->bcn_timeout = (int)bcn_timeout;
+		hwlog_info("%s: get bcn_timeout, value:%d.\n", __func__, wifi_host->bcn_timeout);
+	}
+#endif /* HW_CUSTOM_BCN_TIMEOUT */
+
 	ret = platform_device_register(&bcm_wifi_device);
 	if (ret) {
 		hwlog_err("%s: platform_device_register failed, ret:%d.\n",
@@ -1378,6 +1471,9 @@ struct UT_TEST UT_dev_wifi = {
 	.bcm_wifi_get_fw_path = bcm_wifi_get_fw_path,
 	.bcm_wifi_get_chip_type = bcm_wifi_get_chip_type,
 #endif /* HW_WIFI_DRIVER_NORMALIZE */
+#ifdef HW_CUSTOM_BCN_TIMEOUT
+	.bcm_wifi_get_bcn_timeout = bcm_wifi_get_bcn_timeout,
+#endif /* HW_CUSTOM_BCN_TIMEOUT */
 	.bcm_wifi_reset = bcm_wifi_reset,
 
 };

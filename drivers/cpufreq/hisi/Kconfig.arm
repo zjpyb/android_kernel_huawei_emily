@@ -55,9 +55,25 @@ config HISI_CPUDDR_FREQ_LINK
 config CPU_FREQ_POWER_STAT
 	bool "Estimation of task power consumption"
 	depends on CPU_FREQ_STAT
+	select CPU_FREQ_TIMES
 	default n
 	help
 	  Keep track of amount of power each task consumes and report power per uid
+
+config HISI_CPU_FREQ_GOV_SCHEDUTIL
+	bool "Hisilicon 'schedutil' cpufreq governor optimize"
+	depends on CPU_FREQ_GOV_SCHEDUTIL
+	default n
+	help
+	  This extends the functionality of existing schedutil governor.
+
+config HISI_CPU_FREQ_LOCK_DETECT
+	bool "Hisilicon schedutil detect freq lock&unlock"
+	depends on HISI_CPU_FREQ_GOV_SCHEDUTIL
+	default n
+	help
+	  This extends min_sample_time when boost scene finish
+
 
 config HISI_CPUFREQ_LOWTEMP
 	bool "Hisilicon low temperature cpu frequency set enable"

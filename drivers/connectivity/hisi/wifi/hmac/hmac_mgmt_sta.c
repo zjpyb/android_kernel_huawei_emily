@@ -93,6 +93,7 @@ oal_uint32 hmac_btcoex_check_exception_in_list(hmac_vap_stru *pst_hmac_vap, oal_
 /*****************************************************************************
   3 全局变量定义
 *****************************************************************************/
+oal_bool_enum_uint8 g_ht_mcs_set_check = OAL_TRUE;
 
 /*****************************************************************************
   4 函数实现
@@ -1870,15 +1871,53 @@ oal_uint8 * hmac_sta_find_ie_in_probe_rsp(mac_vap_stru *pst_mac_vap, oal_uint8 u
 }
 
 
-oal_void hmac_sta_check_ht_cap_ie(mac_vap_stru    *pst_mac_sta,
+oal_bool_enum_uint8 hmac_is_ht_mcs_set_valid(oal_uint8 *puc_ht_capability_info)
+{
+    if (g_ht_mcs_set_check == OAL_FALSE)
+    {
+        return OAL_TRUE;
+    }
+
+    /***************************************************************************
+    -------------------------------------------------------------------------
+    |EID |Length |HT Capa. Info |A-MPDU Parameters |Supported MCS Set|
+    -------------------------------------------------------------------------
+    |1   |1      |2             |1                 |16               |
+    -------------------------------------------------------------------------
+    |HT Extended Cap. |Transmit Beamforming Cap. |ASEL Cap.          |
+    -------------------------------------------------------------------------
+    |2                |4                         |1                  |
+    -------------------------------------------------------------------------
+    ***************************************************************************/
+    if (puc_ht_capability_info == OAL_PTR_NULL)
+    {
+        return OAL_FALSE;
+    }
+
+    if (puc_ht_capability_info[1] < MAC_HT_CAP_LEN)
+    {
+        return OAL_FALSE;
+    }
+
+    /* 单流MCS 速率集不支持，则认为MCS 速率集异常 */
+    if (puc_ht_capability_info[5] != 0xFF)
+    {
+        return OAL_FALSE;
+    }
+
+    return OAL_TRUE;
+}
+
+
+oal_void hmac_sta_update_ht_cap(mac_vap_stru    *pst_mac_sta,
                                             oal_uint8       *puc_payload,
                                             mac_user_stru   *pst_mac_user_ap,
                                             oal_uint16      *pus_amsdu_maxsize,
                                             oal_uint16      us_payload_len)
 {
     oal_uint8                          *puc_ie;
-    oal_uint8                          *puc_payload_for_ht_cap_chk = OAL_PTR_NULL;
-    oal_uint16                          us_ht_cap_index;
+    oal_uint8                          *puc_payload_for_ht_cap_chk = OAL_PTR_NULL;  /* 管理帧的第一个IE 地址 */
+    oal_uint16                          us_ht_cap_index;                            /* HT CAP IE 与第一个IE 的偏移 */
     oal_uint16                          us_ht_cap_info = 0;
 
     if ((OAL_PTR_NULL == pst_mac_sta) || (OAL_PTR_NULL == puc_payload) || (OAL_PTR_NULL == pst_mac_user_ap))
@@ -1892,17 +1931,19 @@ oal_void hmac_sta_check_ht_cap_ie(mac_vap_stru    *pst_mac_sta,
         puc_payload_for_ht_cap_chk = hmac_sta_find_ie_in_probe_rsp(pst_mac_sta, MAC_EID_HT_CAP, &us_ht_cap_index);
         if (OAL_PTR_NULL == puc_payload_for_ht_cap_chk)
         {
-            OAM_WARNING_LOG0(0, OAM_SF_ANY, "{hmac_sta_check_ht_cap_ie::puc_payload_for_ht_cap_chk is null.}");
+            OAM_WARNING_LOG0(0, OAM_SF_ANY, "{hmac_sta_update_ht_cap::puc_payload_for_ht_cap_chk is null.}");
             return;
         }
 
         /*lint -e413*/
         if (puc_payload_for_ht_cap_chk[us_ht_cap_index + 1] < MAC_HT_CAP_LEN)
         {
-            OAM_WARNING_LOG1(0, OAM_SF_ANY, "{hmac_sta_check_ht_cap_ie::invalid ht cap len[%d].}", puc_payload_for_ht_cap_chk[us_ht_cap_index + 1]);
+            OAM_WARNING_LOG1(0, OAM_SF_ANY, "{hmac_sta_update_ht_cap::invalid ht cap len[%d].}", puc_payload_for_ht_cap_chk[us_ht_cap_index + 1]);
             return;
         }
         /*lint +e413*/
+
+        puc_ie = puc_payload_for_ht_cap_chk + us_ht_cap_index;      /* 赋值HT CAP IE */
     }
     else
     {
@@ -1914,6 +1955,16 @@ oal_void hmac_sta_check_ht_cap_ie(mac_vap_stru    *pst_mac_sta,
         puc_payload_for_ht_cap_chk = puc_payload;
     }
 
+    if (OAL_FALSE == hmac_is_ht_mcs_set_valid(puc_ie))
+    {
+        OAM_WARNING_LOG0(pst_mac_sta->uc_vap_id, OAM_SF_ASSOC, "hmac_sta_update_ht_cap:: invalid mcs set, disable HT");
+
+        /* MCS 速率集异常，设置对端HT 能力置为不支持 */
+        mac_user_set_ht_capable(pst_mac_user_ap, OAL_FALSE);
+
+        return;
+    }
+
     mac_user_set_ht_capable(pst_mac_user_ap, OAL_TRUE);
 
     /* 支持HT, 默认初始化 */
@@ -1921,19 +1972,10 @@ oal_void hmac_sta_check_ht_cap_ie(mac_vap_stru    *pst_mac_sta,
 
     /* 根据协议值设置特性，必须在hmac_amsdu_init_user后面调用 */
     mac_ie_proc_ht_sta(pst_mac_sta, puc_payload_for_ht_cap_chk, &us_ht_cap_index, pst_mac_user_ap, &us_ht_cap_info, pus_amsdu_maxsize);
-
-    if ((pst_mac_user_ap->st_ht_hdl.uc_rx_mcs_bitmask[3] == 0) && (pst_mac_user_ap->st_ht_hdl.uc_rx_mcs_bitmask[2] == 0)
-        &&(pst_mac_user_ap->st_ht_hdl.uc_rx_mcs_bitmask[1] == 0)&&(pst_mac_user_ap->st_ht_hdl.uc_rx_mcs_bitmask[0]) == 0)
-    {
-        OAM_WARNING_LOG0(0, OAM_SF_ANY, "{hmac_sta_check_ht_cap_ie::AP support ht capability but support none space_stream.}");
-        /* 对端ht能力置为不支持 */
-        mac_user_set_ht_capable(pst_mac_user_ap, OAL_FALSE);
-    }
-
 }
 
 
-oal_void hmac_sta_check_ext_cap_ie(mac_vap_stru    *pst_mac_sta,
+oal_void hmac_sta_update_ext_cap(mac_vap_stru    *pst_mac_sta,
                                     mac_user_stru   *pst_mac_user_ap,
                                     oal_uint8       *puc_payload,
                                     oal_uint16       us_rx_len)
@@ -1954,7 +1996,7 @@ oal_void hmac_sta_check_ext_cap_ie(mac_vap_stru    *pst_mac_sta,
         /*lint -e413*/
         if (puc_payload_proc[us_index + 1] < MAC_MIN_XCAPS_LEN)
         {
-            OAM_WARNING_LOG1(0, OAM_SF_ANY, "{hmac_sta_check_ext_cap_ie::invalid ext cap len[%d].}", puc_payload_proc[us_index + 1]);
+            OAM_WARNING_LOG1(0, OAM_SF_ANY, "{hmac_sta_update_ext_cap::invalid ext cap len[%d].}", puc_payload_proc[us_index + 1]);
             return;
         }
         /*lint +e413*/
@@ -1977,7 +2019,7 @@ oal_void hmac_sta_check_ext_cap_ie(mac_vap_stru    *pst_mac_sta,
 }
 
 
-oal_uint32 hmac_sta_check_ht_opern_ie(mac_vap_stru    *pst_mac_sta,
+oal_uint32 hmac_sta_update_ht_opern(mac_vap_stru    *pst_mac_sta,
                                     mac_user_stru   *pst_mac_user_ap,
                                     oal_uint8       *puc_payload,
                                     oal_uint16       us_rx_len)
@@ -1999,7 +2041,7 @@ oal_uint32 hmac_sta_check_ht_opern_ie(mac_vap_stru    *pst_mac_sta,
         /*lint -e413*/
         if (puc_payload_proc[us_index + 1] < MAC_HT_OPERN_LEN)
         {
-            OAM_WARNING_LOG1(0, OAM_SF_ANY, "{hmac_sta_check_ht_opern_ie::invalid ht cap len[%d].}", puc_payload_proc[us_index + 1]);
+            OAM_WARNING_LOG1(0, OAM_SF_ANY, "{hmac_sta_update_ht_opern_ie::invalid ht cap len[%d].}", puc_payload_proc[us_index + 1]);
             return ul_change;
         }
         /*lint +e413*/
@@ -2023,7 +2065,7 @@ oal_uint32 hmac_sta_check_ht_opern_ie(mac_vap_stru    *pst_mac_sta,
 }
 
 
-oal_uint32 hmac_ie_check_ht_sta(mac_vap_stru    *pst_mac_sta,
+oal_uint32 hmac_update_ht_sta(mac_vap_stru    *pst_mac_sta,
                                oal_uint8       *puc_payload,
                                oal_uint16       us_offset,
                                oal_uint16       us_rx_len,
@@ -2051,11 +2093,11 @@ oal_uint32 hmac_ie_check_ht_sta(mac_vap_stru    *pst_mac_sta,
     puc_ie_payload_start = puc_payload + us_offset;
     us_ie_payload_len    = us_rx_len - us_offset;
 
-    hmac_sta_check_ht_cap_ie(pst_mac_sta, puc_ie_payload_start, pst_mac_user_ap, pus_amsdu_maxsize, us_ie_payload_len);
+    hmac_sta_update_ht_cap(pst_mac_sta, puc_ie_payload_start, pst_mac_user_ap, pus_amsdu_maxsize, us_ie_payload_len);
 
-    hmac_sta_check_ext_cap_ie(pst_mac_sta, pst_mac_user_ap, puc_ie_payload_start, us_ie_payload_len);
+    hmac_sta_update_ext_cap(pst_mac_sta, pst_mac_user_ap, puc_ie_payload_start, us_ie_payload_len);
 
-    ul_change = hmac_sta_check_ht_opern_ie(pst_mac_sta, pst_mac_user_ap, puc_ie_payload_start, us_ie_payload_len);
+    ul_change = hmac_sta_update_ht_opern(pst_mac_sta, pst_mac_user_ap, puc_ie_payload_start, us_ie_payload_len);
 
     return ul_change;
 }
@@ -2167,43 +2209,52 @@ oal_uint32 hmac_process_assoc_rsp(hmac_vap_stru *pst_hmac_sta, hmac_user_stru *p
     hmac_user_init_rates(pst_hmac_user, &pst_hmac_sta->st_vap_base_info);
     hmac_ie_proc_assoc_user_legacy_rate(puc_payload, us_offset, us_msg_len, pst_hmac_user);
 
-    /* 更新 HT 参数  */
-    ul_change |= hmac_ie_check_ht_sta(&pst_hmac_sta->st_vap_base_info, puc_payload, us_offset, us_msg_len, &pst_hmac_user->st_user_base_info, &pst_hmac_user->us_amsdu_maxsize);
+    /* 初始化设置对端 HT 能力不使能 */
+    mac_user_set_ht_capable(&(pst_hmac_user->st_user_base_info), OAL_FALSE);
+    /* 初始化设置对端VHT 能力不使能 */
+    mac_user_set_vht_capable(&(pst_hmac_user->st_user_base_info), OAL_FALSE);
 
+    /* 更新 HT 参数  */
+    ul_change |= hmac_update_ht_sta(&pst_hmac_sta->st_vap_base_info, puc_payload, us_offset, us_msg_len, &pst_hmac_user->st_user_base_info, &pst_hmac_user->us_amsdu_maxsize);
+
+    if (OAL_TRUE == hmac_user_ht_support(pst_hmac_user))
+    {
 #ifdef _PRE_WLAN_FEATURE_TXBF
-    /* 更新11n txbf能力 */
-    puc_tmp_ie = mac_find_vendor_ie(MAC_HUAWEI_VENDER_IE, MAC_EID_11NTXBF, puc_payload + us_offset, us_msg_len - us_offset);
-    hmac_mgmt_update_11ntxbf_cap(puc_tmp_ie, pst_hmac_user);
+        /* 更新11n txbf能力 */
+        puc_tmp_ie = mac_find_vendor_ie(MAC_HUAWEI_VENDER_IE, MAC_EID_11NTXBF, puc_payload + us_offset, us_msg_len - us_offset);
+        hmac_mgmt_update_11ntxbf_cap(puc_tmp_ie, pst_hmac_user);
 #endif
 
-    /* 更新11ac VHT capabilities ie */
-    oal_memset(&(pst_hmac_user->st_user_base_info.st_vht_hdl), 0, OAL_SIZEOF(mac_vht_hdl_stru));
-    puc_tmp_ie = mac_find_ie(MAC_EID_VHT_CAP, puc_payload + us_offset, us_msg_len - us_offset);
-    if (OAL_PTR_NULL != puc_tmp_ie)
-    {
-        hmac_proc_vht_cap_ie(pst_mac_vap, pst_hmac_user, puc_tmp_ie);
-    }
+        /* 更新11ac VHT capabilities ie */
+        oal_memset(&(pst_hmac_user->st_user_base_info.st_vht_hdl), 0, OAL_SIZEOF(mac_vht_hdl_stru));
+        puc_tmp_ie = mac_find_ie(MAC_EID_VHT_CAP, puc_payload + us_offset, us_msg_len - us_offset);
+        if (OAL_PTR_NULL != puc_tmp_ie)
+        {
+            hmac_proc_vht_cap_ie(pst_mac_vap, pst_hmac_user, puc_tmp_ie);
+        }
 
-    /* 更新11ac VHT operation ie */
-    puc_tmp_ie = mac_find_ie(MAC_EID_VHT_OPERN, puc_payload + us_offset, us_msg_len - us_offset);
-    if (OAL_PTR_NULL != puc_tmp_ie)
-    {
-        ul_change |= hmac_update_vht_opern_ie_sta(pst_mac_vap, pst_hmac_user, puc_tmp_ie, us_offset);
-    }
+        /* 更新11ac VHT operation ie */
+        puc_tmp_ie = mac_find_ie(MAC_EID_VHT_OPERN, puc_payload + us_offset, us_msg_len - us_offset);
+        if (OAL_PTR_NULL != puc_tmp_ie)
+        {
+            ul_change |= hmac_update_vht_opern_ie_sta(pst_mac_vap, pst_hmac_user, puc_tmp_ie, us_offset);
+        }
 
-    /* 评估是否需要进行带宽切换 */
-    //hmac_chan_reval_bandwidth_sta(pst_mac_vap, ul_change);
-    if (MAC_BW_CHANGE & ul_change)
-    {
-        OAM_WARNING_LOG3(pst_hmac_sta->st_vap_base_info.uc_vap_id, OAM_SF_ASSOC,
-                       "{hmac_process_assoc_rsp::change BW. ul_change[0x%x], uc_channel[%d], en_bandwidth[%d].}",
-                       ul_change,
-                       pst_mac_vap->st_channel.uc_chan_number,
-                       pst_mac_vap->st_channel.en_bandwidth);
-        hmac_chan_sync(pst_mac_vap,
-                        pst_mac_vap->st_channel.uc_chan_number,
-                        pst_mac_vap->st_channel.en_bandwidth,
-                        OAL_TRUE);
+        /* 评估是否需要进行带宽切换 */
+        //hmac_chan_reval_bandwidth_sta(pst_mac_vap, ul_change);
+        if (MAC_BW_CHANGE & ul_change)
+        {
+            OAM_WARNING_LOG3(pst_hmac_sta->st_vap_base_info.uc_vap_id, OAM_SF_ASSOC,
+                           "{hmac_process_assoc_rsp::change BW. ul_change[0x%x], uc_channel[%d], en_bandwidth[%d].}",
+                           ul_change,
+                           pst_mac_vap->st_channel.uc_chan_number,
+                           pst_mac_vap->st_channel.en_bandwidth);
+            hmac_chan_sync(pst_mac_vap,
+                            pst_mac_vap->st_channel.uc_chan_number,
+                            pst_mac_vap->st_channel.en_bandwidth,
+                            OAL_TRUE);
+        }
+
     }
 
 #ifdef _PRE_WLAN_FEATURE_HISTREAM
@@ -2589,6 +2640,26 @@ wlan_channel_bandwidth_enum_uint8 hmac_sta_get_band(wlan_bw_cap_enum_uint8 en_de
 }
 
 
+OAL_STATIC oal_void hmac_sta_update_join_bss_info(mac_bss_dscr_stru *pst_bss_dscr)
+{
+    /* 165 信道只允许20MHz 带宽 */
+    if ((pst_bss_dscr->st_channel.uc_chan_number == 165) && (pst_bss_dscr->en_channel_bandwidth != WLAN_BAND_WIDTH_20M))
+    {
+        OAM_WARNING_LOG4(0, OAM_SF_ASSOC, "{hmac_sta_update_join_bss_info::BSS [XX:XX:XX:XX:%02X:%02X] set wrong bandwidth [%d] at channel [%d]}",
+                        pst_bss_dscr->auc_bssid[4],
+                        pst_bss_dscr->auc_bssid[5],
+                        pst_bss_dscr->en_channel_bandwidth,
+                        pst_bss_dscr->st_channel.uc_chan_number);
+
+        pst_bss_dscr->st_channel.en_bandwidth = WLAN_BAND_WIDTH_20M;
+        pst_bss_dscr->en_channel_bandwidth    = WLAN_BAND_WIDTH_20M;
+        pst_bss_dscr->en_bw_cap               = WLAN_BW_CAP_20M;
+    }
+
+    return;
+}
+
+
 
 oal_uint32 hmac_sta_update_join_req_params(hmac_vap_stru *pst_hmac_vap,hmac_join_req_stru *pst_join_req)
 {
@@ -2620,7 +2691,6 @@ oal_uint32 hmac_sta_update_join_req_params(hmac_vap_stru *pst_hmac_vap,hmac_join
     /* 更新mib库对应的dot11BeaconPeriod值 */
     pst_mib_info->st_wlan_mib_sta_config.ul_dot11BeaconPeriod = (oal_uint32)(pst_join_req->st_bss_dscr.us_beacon_period);
 
-
     /* 更新mib库对应的ul_dot11CurrentChannel值*/
     mac_vap_set_current_channel(pst_mac_vap, pst_join_req->st_bss_dscr.st_channel.en_band, pst_join_req->st_bss_dscr.st_channel.uc_chan_number);
 
@@ -2634,6 +2704,8 @@ oal_uint32 hmac_sta_update_join_req_params(hmac_vap_stru *pst_hmac_vap,hmac_join
     /* 更新mib库对应的ssid */
     oal_memcopy(pst_mib_info->st_wlan_mib_sta_config.auc_dot11DesiredSSID, pst_join_req->st_bss_dscr.ac_ssid, WLAN_SSID_MAX_LEN);
     pst_mib_info->st_wlan_mib_sta_config.auc_dot11DesiredSSID[WLAN_SSID_MAX_LEN - 1] = '\0';
+
+    hmac_sta_update_join_bss_info(&(pst_join_req->st_bss_dscr));
 
     /* 更新频带、主20MHz信道号，与AP通信 DMAC切换信道时直接调用 */
     pst_mac_vap->st_channel.en_bandwidth   = hmac_sta_get_band(pst_mac_device->en_bandwidth_cap, pst_join_req->st_bss_dscr.en_channel_bandwidth);
@@ -2673,7 +2745,7 @@ oal_uint32 hmac_sta_update_join_req_params(hmac_vap_stru *pst_hmac_vap,hmac_join
         }
 
         st_cfg_mode.en_band         = pst_join_req->st_bss_dscr.st_channel.en_band;
-        st_cfg_mode.en_bandwidth    =  hmac_sta_get_band(pst_mac_device->en_bandwidth_cap, pst_join_req->st_bss_dscr.en_channel_bandwidth);
+        st_cfg_mode.en_bandwidth    = hmac_sta_get_band(pst_mac_device->en_bandwidth_cap, pst_join_req->st_bss_dscr.en_channel_bandwidth);
         st_cfg_mode.en_channel_idx  = pst_join_req->st_bss_dscr.st_channel.uc_chan_number;
         ul_ret = hmac_config_sta_update_rates(pst_mac_vap, &st_cfg_mode, (oal_void *)&pst_join_req->st_bss_dscr);
         if (OAL_SUCC != ul_ret)
@@ -3283,11 +3355,13 @@ oal_uint32  hmac_sta_up_rx_mgmt(hmac_vap_stru *pst_hmac_vap_sta, oal_void *p_par
     uc_mgmt_frm_type = mac_get_frame_sub_type(puc_mac_hdr);
 
 #if (_PRE_MULTI_CORE_MODE_OFFLOAD_DMAC == _PRE_MULTI_CORE_MODE)
+#ifdef _PRE_WLAN_WAKEUP_SRC_PARSE
     if(OAL_TRUE == g_ul_print_wakeup_mgmt)
     {
         g_ul_print_wakeup_mgmt = OAL_FALSE;
         OAM_WARNING_LOG1(pst_hmac_vap_sta->st_vap_base_info.uc_vap_id, OAM_SF_RX, "{hmac_sta_up_rx_mgmt::wakeup mgmt type[0x%x]}",uc_mgmt_frm_type);
     }
+#endif
 #endif
 
     switch (uc_mgmt_frm_type)

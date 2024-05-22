@@ -15,6 +15,7 @@
 #include <linux/vmstat.h>
 #include <linux/kernel_stat.h>
 #include <linux/tick.h>
+#include <linux/version.h>
 
 #include "rcc.h"
 
@@ -56,8 +57,15 @@ static bool is_memory_free_enough(int free_pages_min)
 static bool is_anon_page_enough(int anon_pages_min)
 {
 	unsigned long nr_pages;
+
+#if(LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
+	nr_pages = global_node_page_state(NR_INACTIVE_ANON);
+	nr_pages += global_node_page_state(NR_ACTIVE_ANON);
+#else
 	nr_pages = global_page_state(NR_INACTIVE_ANON);
 	nr_pages += global_page_state(NR_ACTIVE_ANON);
+#endif
+
 	if (nr_pages > anon_pages_min)
 		return true;
 	return false;
@@ -277,6 +285,9 @@ static int rcc_thread_wait(struct rcc_module *rcc, long timeout)
 		if (ret & WF_CPU_BUSY) { \
 			nr_pages = 0; \
 			busy_count++; \
+		}else if (ret & WF_NO_ANON_PAGE) { \
+			nr_pages = 0; \
+			anon_count++; \
 		} else { \
 			nr_pages = rcc_swap_out(RCC_NR_SWAP_UNIT_SIZE, mode); \
 			time_jiffies = elapsed_jiffies(time_jiffies); \
@@ -301,7 +312,7 @@ static int rcc_thread_wait(struct rcc_module *rcc, long timeout)
  */
 static int rcc_thread(void *unused)
 {
-	int ret, nr_pages, nr_total_pages, busy_count;
+	int ret, nr_pages, nr_total_pages, busy_count = 0, anon_count = 0;
 	unsigned long time_jiffies;
 	struct task_struct *tsk = current;
 	struct rcc_module *rcc = &rcc_module;
@@ -324,29 +335,26 @@ static int rcc_thread(void *unused)
 		nr_total_pages = 0;
 		ret = get_system_stat(rcc, false);
 		if (rcc->full_clean_flag) {
+			ssleep(RCC_SLEEP_TIME);
 			rcc->wakeup_count++;
 			pr_info("rcc wakeup: full.\n");
 
-			/* clean some file cache first */
-			while (nr_total_pages < rcc->full_clean_file_pages) {
-				DO_SWAP_OUT(RCC_MODE_FILE);
-				_UPDATE_STATE();
-			};
-
 			/* full fill swap area. */
+			busy_count = 0;
+			anon_count = 0;
 			do {
 				DO_SWAP_OUT(RCC_MODE_ANON);
 				_UPDATE_STATE();
 			} while (!(ret & WF_SWAP_FULL)
-				 && !(ret & WF_NO_ANON_PAGE)
+				 && !(anon_count > RCC_MAX_WAIT_COUNT)
 				 && nr_total_pages < rcc->full_clean_anon_pages);
 
 			rcc_set_full_clean(rcc, 0);
 			rcc->nr_full_clean_pages += nr_total_pages;
 			rcc->total_spent_times += time_jiffies;
-			pr_info("full cc: pages=%d, time=%d ms, out stat=%d\n",
+			pr_info("full cc: pages=%d, time=%d ms, out stat=%d, anon_count = %d\n",
 				nr_total_pages, jiffies_to_msecs(time_jiffies),
-				ret);
+				ret, anon_count);
 
 		} else if (ret == WS_NEED_WAKEUP) {
 			rcc->wakeup_count++;

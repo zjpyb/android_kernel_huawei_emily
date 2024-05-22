@@ -106,7 +106,7 @@ void tcp_rate_skb_delivered(struct sock *sk, struct sk_buff *skb,
 
 /* Update the connection delivery information and generate a rate sample. */
 void tcp_rate_gen(struct sock *sk, u32 delivered, u32 lost,
-		  struct skb_mstamp *now, struct rate_sample *rs)
+		  bool is_sack_reneg, struct skb_mstamp *now, struct rate_sample *rs)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	u32 snd_us, ack_us;
@@ -124,8 +124,12 @@ void tcp_rate_gen(struct sock *sk, u32 delivered, u32 lost,
 
 	rs->acked_sacked = delivered;	/* freshly ACKed or SACKed */
 	rs->losses = lost;		/* freshly marked lost */
-	/* Return an invalid sample if no timing information is available. */
-	if (!rs->prior_mstamp.v64) {
+	/* Return an invalid sample if no timing information is available or
+	 * in recovery from loss with SACK reneging. Rate samples taken during
+	 * a SACK reneging event may overestimate bw by including packets that
+	 * were SACKed before the reneg.
+	 */
+	if (!rs->prior_mstamp.v64 || is_sack_reneg) {
 		rs->delivered = -1;
 		rs->interval_us = -1;
 		return;
@@ -148,9 +152,7 @@ void tcp_rate_gen(struct sock *sk, u32 delivered, u32 lost,
 	 * measuring the delivery rate during loss recovery is crucial
 	 * for connections suffer heavy or prolonged losses.
 	 */
-	if (rs->interval_us == 0) {
-		rs->interval_us = jiffies_to_usecs(1);
-	} else if (unlikely(rs->interval_us < tcp_min_rtt(tp))) {
+	if (unlikely(rs->interval_us < tcp_min_rtt(tp))) {
 		if (!rs->is_retrans)
 			pr_debug("tcp rate: %ld %d %u %u %u\n",
 				 rs->interval_us, rs->delivered,

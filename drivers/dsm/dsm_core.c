@@ -40,9 +40,6 @@ static struct dsm_msgq g_dsm_msgq;
 
 static struct dsm_server g_dsm_server;
 static struct work_struct dsm_work;
-static struct dsm_client *ext_dsm_client[EXTERN_DSM_CLIENT_MAX];
-static struct dsm_dev ext_dev[EXTERN_DSM_CLIENT_MAX];
-static DEFINE_MUTEX(ext_client_lock);
 
 /*
 *FUNCTION: dsm_update_client_vendor_info
@@ -189,7 +186,7 @@ void dsm_unregister_client (struct dsm_client *dsm_client,struct dsm_dev *dev)
 		pr_info("pointer is NULL, please check the parameters!\n");
 		return;
 	}
-
+	mutex_lock(&g_dsm_server.mtx_lock);
 	for(i=0; i<CLIENT_SIZE; i++){
 		/* find the client and free it */
 		conflict = strncmp(g_dsm_server.client_list[i]->client_name, dev->name, CLIENT_NAME_LEN);
@@ -202,6 +199,7 @@ void dsm_unregister_client (struct dsm_client *dsm_client,struct dsm_dev *dev)
 			break;
 		}
 	}
+	mutex_unlock(&g_dsm_server.mtx_lock);
 }
 
 inline int dsm_client_ocuppy(struct dsm_client *client)
@@ -451,51 +449,6 @@ out:
 	return client;
 }
 
-static int dsm_register_extern_client(struct dsm_extern_client *ext_client)
-{
-	static int ext_client_cnt = 0;
-
-	if (NULL == ext_client) {
-		DSM_LOG_ERR("%s:the ext_client is null, invalid.\n", __func__);
-		return -ENOENT;
-	}
-
-
-	if(ext_client->buf_size < 0 ) {
-		DSM_LOG_ERR("%s:the ext_client buffer size is negative,invalid.\n", __func__);
-		return -ENOENT;
-	}
-
-	mutex_lock(&ext_client_lock);
-	if(ext_client_cnt >= EXTERN_DSM_CLIENT_MAX) {
-		DSM_LOG_ERR("%s:the count of external client registed exceeds the upper limit.\n", __func__);
-		mutex_unlock(&ext_client_lock);
-		return -ENOENT;
-	}
-
-	ext_dev[ext_client_cnt].buff_size = ext_client->buf_size;
-	ext_dev[ext_client_cnt].name = ext_client->client_name;
-
-	if (NULL != dsm_find_client((char *)ext_dev[ext_client_cnt].name)) {
-		DSM_LOG_ERR("[dsm_register_extern_client]register %s has exist, dont register again!\n",
-				ext_dev[ext_client_cnt].name);
-		mutex_unlock(&ext_client_lock);
-		return -EEXIST;
-	}
-
-	ext_dsm_client[ext_client_cnt] = dsm_register_client(&ext_dev[ext_client_cnt]);
-	if (!ext_dsm_client[ext_client_cnt]) {
-		DSM_LOG_ERR("[dsm_register_extern_client]register %s failed!\n",
-				ext_dev[ext_client_cnt].name);
-		mutex_unlock(&ext_client_lock);
-		return -ENOMEM;
-	}
-
-	ext_client_cnt++;
-	mutex_unlock(&ext_client_lock);
-	return 0;
-}
-
 static inline void dsm_client_set_idle(struct dsm_client *client)
 {
 	client->used_size = 0;
@@ -738,7 +691,6 @@ static long dsm_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	long ret = 0;
 	int error = 0;
 	char buff[CLIENT_NAME_LEN] = {0};
-	struct dsm_extern_client tmp_ext_client;
 
 	DSM_LOG_DEBUG("%s enter,\n", __func__);
 
@@ -823,14 +775,6 @@ static long dsm_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 				ret = copy_to_user(argp, client->module_name, DSM_MAX_MODULE_NAME_LEN);
 			} else {
 				ret = -ENXIO;
-			}
-			break;
-	case DSM_IOCTL_REGISTER_EXTERN_CLIENT:
-			if (copy_from_user(&tmp_ext_client, (struct dsm_extern_client *)arg,
-				sizeof(struct dsm_extern_client))) {
-				ret = -EFAULT;
-			} else {
-				dsm_register_extern_client(&tmp_ext_client);
 			}
 			break;
 	default:
@@ -951,6 +895,7 @@ out:
 
 EXPORT_SYMBOL(dsm_client_ocuppy);
 EXPORT_SYMBOL(dsm_register_client);
+EXPORT_SYMBOL(dsm_unregister_client);
 EXPORT_SYMBOL(dsm_client_record);
 EXPORT_SYMBOL(dsm_client_notify);
 EXPORT_SYMBOL(dsm_find_client);

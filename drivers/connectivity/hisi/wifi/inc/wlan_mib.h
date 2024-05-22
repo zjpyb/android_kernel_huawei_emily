@@ -1274,6 +1274,9 @@ typedef enum
 
 #ifdef _PRE_PLAT_FEATURE_CUSTOMIZE
     /* HISI-CUSTOMIZE */
+#ifdef _PRE_WLAN_FEATURE_BTCOEX
+    WLAN_CFGID_SET_BTCOEX_PS_SWITCH       = 599,      /* 配置BTCOEX模式下是否开启PS机制 */
+#endif
     WLAN_CFGID_SET_LINKLOSS_THRESHOLD   = 600,      /* 配置linkloss门限 */
     WLAN_CFGID_SET_ALL_LOG_LEVEL,                   /* 配置所有vap log level */
     WLAN_CFGID_SET_D2H_HCC_ASSEMBLE_CNT,            /* 配置D2H SDIO聚合参数 */
@@ -1367,6 +1370,7 @@ typedef enum
 #ifdef _PRE_WLAN_DOWNLOAD_PM
     WLAN_CFGID_SET_CUS_DOWNLOAD_RATE_LIMIT,           /* 限流参数定制化 */
 #endif
+    WLAN_CFIGD_MCS_SET_CHECK_ENABLE,                  /* 是否检查mcs 速率集 */
 
     /************************************************************************
         第三段 非MIB的内部数据同步，需要严格受控

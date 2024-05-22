@@ -11,7 +11,7 @@
 #include <linux/gpio.h>
 #include <linux/interrupt.h>
 #include <linux/of_irq.h>
-
+#include <linux/version.h>
 #include "fusb3601_global.h"      /* Chip structure access */
 #include "../core/core.h"         /* Core access */
 #include "../core/platform.h"
@@ -87,7 +87,11 @@ enum hrtimer_restart FUSB3601_force_state_timeout(struct hrtimer* timer)
 	}
 
 	hwlog_info("FUSB %s - Force State Timeout\n", __func__);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
+	kthread_queue_work(&chip->set_drp_worker, &chip->set_drp_work);
+#else
 	queue_kthread_work(&chip->set_drp_worker, &chip->set_drp_work);
+#endif
 	return HRTIMER_NORESTART;
 }
 static void FUSB3601_force_source(struct dual_role_phy_instance *dual_role)
@@ -101,9 +105,11 @@ static void FUSB3601_force_source(struct dual_role_phy_instance *dual_role)
 	FUSB3601_ConfigurePortType(0x95,&chip->port);
 	FUSB3601_fusb_StartTimer(&chip->timer_force_timeout, 1500*1000);
 
+#ifdef CONFIG_DUAL_ROLE_USB_INTF
 	if(dual_role){
 		dual_role_instance_changed(dual_role);
 	}
+#endif
 }
 
 static void FUSB3601_force_sink(struct dual_role_phy_instance *dual_role)
@@ -117,9 +123,11 @@ static void FUSB3601_force_sink(struct dual_role_phy_instance *dual_role)
 	hwlog_info("FUSB  %s - Force State Sink\n",__func__);
 	FUSB3601_ConfigurePortType(0x90,&chip->port);
 	FUSB3601_fusb_StartTimer(&chip->timer_force_timeout, 1500*1000);
+#ifdef CONFIG_DUAL_ROLE_USB_INTF
 	if(dual_role){
 		dual_role_instance_changed(dual_role);
 	}
+#endif
 }
 
 #ifdef CONFIG_DUAL_ROLE_USB_INTF
@@ -1488,11 +1496,19 @@ FSC_S32 FUSB3601_fusb_EnableInterrupts(void)
     /* Run the state machines to initialize everything. */
     wake_lock(&chip->fusb3601_wakelock);
     queue_work(chip->highpri_wq, &chip->sm_worker);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
+    kthread_init_worker(&chip->set_drp_worker);
+#else
     init_kthread_worker(&chip->set_drp_worker);
+#endif
     chip->set_drp_worker_task = kthread_run(kthread_worker_fn,
         &chip->set_drp_worker, "fusb3601 set drp worker");
     sched_setscheduler(chip->set_drp_worker_task, SCHED_FIFO, &param);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
+    kthread_init_work(&chip->set_drp_work, FUSB3601_set_drp_work_handler);
+#else
     init_kthread_work(&chip->set_drp_work, FUSB3601_set_drp_work_handler);
+#endif
 
     return 0;
 }

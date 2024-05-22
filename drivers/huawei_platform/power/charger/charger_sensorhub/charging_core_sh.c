@@ -19,7 +19,9 @@
 #include <linux/of.h>
 #include <huawei_platform/log/hw_log.h>
 #include <linux/raid/pq.h>
+#ifdef CONFIG_HISI_COUL
 #include <linux/power/hisi/coul/hisi_coul_drv.h>
+#endif
 #include <huawei_platform/power/charging_core_sh.h>
 
 #define HWLOG_TAG sensorhub
@@ -45,6 +47,7 @@ static int charge_core_battery_data(struct charge_core_info_sh *di)
 		return -EINVAL;
 	}
 
+	di->data.temp_level = (unsigned int)((p_batt_data->temp_len) / TEMP_PARA_TOTAL);
 	for (i = 0; i < (p_batt_data->temp_len) / TEMP_PARA_TOTAL; i++) {
 		di->temp_para[i].temp_min =
 		    p_batt_data->temp_data[i][TEMP_PARA_TEMP_MIN];
@@ -164,6 +167,22 @@ static int charge_core_battery_data(struct charge_core_info_sh *di)
 
 	return 0;
 }
+
+static void charge_core_parse_high_temp_limit(struct device_node *np,
+				 struct charge_core_info_sh *di)
+{
+	int ret = 0;
+	unsigned int high_temp_limit = 0;
+
+	ret = of_property_read_u32(np, "high_temp_limit", &high_temp_limit);
+	if(ret){
+		hwlog_err("get high_temp_limit failed,use default config.\n");
+	}
+	di->data.high_temp_limit = high_temp_limit;
+
+	hwlog_info("high_temp_limit = %d\n",di->data.high_temp_limit);
+}
+
 /**********************************************************
 *  Function:       charge_core_parse_dts
 *  Discription:    parse the module dts config value
@@ -312,6 +331,9 @@ static int charge_core_parse_dts(struct device_node *np,
 		return -EINVAL;
 	}
 	hwlog_info("typec high mode ibat curr = %d\n", di->data.ichg_typech);
+
+	charge_core_parse_high_temp_limit(np, di);
+
 	/*vdpm_para*/
 	/*vdpm control type : 0 vdpm controlled by cbat; 1 vdpm controlled by vbat*/
 	ret = of_property_read_u32(np, "vdpm_control_type", &(vdpm_control_type));

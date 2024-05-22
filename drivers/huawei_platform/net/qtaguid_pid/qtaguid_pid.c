@@ -269,8 +269,8 @@ void iface_pid_stat_create(struct net_device *net_dev,
 			IF_DEBUG("qtup: iface_pid_stat: create(%s): "
 				 "ifa=%p ifa_label=%s\n",
 				 ifname, ifa,
-				 ifa->ifa_label ? ifa->ifa_label : "(null)");
-			if (ifa->ifa_label && !strcmp(ifname, ifa->ifa_label))
+				 ifa->ifa_label);
+			if ( !strcmp(ifname, ifa->ifa_label))
 				break;
 		}
 	}
@@ -400,7 +400,7 @@ static struct pid_stat *create_if_pid_stat(struct iface_pid_stat *iface_entry,
 	if (!new_pid_stat_entry)
 		goto done;
 
-	strncpy(new_pid_stat_entry->pn.comm, comm, TASK_COMM_LEN);
+	strlcpy(new_pid_stat_entry->pn.comm, comm, TASK_COMM_LEN);
 	new_pid_stat_entry->pn.uid = real_uid;
 	new_pid_stat_entry->pn.tag = tag;
 	pid_stat_tree_insert(new_pid_stat_entry, &iface_entry->pid_stat_tree);
@@ -513,7 +513,7 @@ void qtaguid_pid_put(const struct sock *sk)
 	}
 
 	sock_pid_entry->sk = sk;
-	strncpy(sock_pid_entry->comm, task_comm, TASK_COMM_LEN);
+	strlcpy(sock_pid_entry->comm, task_comm, TASK_COMM_LEN);
 	sock_pid_entry->comm_hash = jhash(sock_pid_entry->comm,
 			strnlen(sock_pid_entry->comm, TASK_COMM_LEN), 0);
 	sock_pid_entry->uid = get_current_uid();
@@ -612,7 +612,7 @@ static void create_hash_pid_entry(struct sock_pid *sock_pid_entry,
 		return;
 
 	hash_pid_entry->skb_hash = skb_hash;
-	strncpy(hash_pid_entry->comm, sock_pid_entry->comm, TASK_COMM_LEN);
+	strlcpy(hash_pid_entry->comm, sock_pid_entry->comm, TASK_COMM_LEN);
 	hash_pid_entry->comm_hash = sock_pid_entry->comm_hash;
 	hash_pid_entry->uid = sock_pid_entry->uid;
 	setup_timer(&hash_pid_entry->timer, hash_pid_timer_expire,
@@ -677,15 +677,15 @@ void if_pid_stat_update(const char *ifname, uid_t uid,
 	}
 
 	/* correct pid "UID_0" and "swapper/0" by hash */
-	if (search_hash_pid) {
-		if (family == NFPROTO_IPV4)
-			skb_hash = skb_v4_hash(skb, direction);
-			if (skb_hash)
-				hash_pid_entry = get_hash_pid_nl(skb_hash);
+	if (search_hash_pid && (family == NFPROTO_IPV4)) {
+		skb_hash = skb_v4_hash(skb, direction);
+		if (skb_hash){
+			hash_pid_entry = get_hash_pid_nl(skb_hash);
+		}
 	}
 
 	if (hash_pid_entry) {
-		strncpy(task_comm, hash_pid_entry->comm, TASK_COMM_LEN);
+		strlcpy(task_comm, hash_pid_entry->comm, TASK_COMM_LEN);
 		task_comm_hash = hash_pid_entry->comm_hash;
 		real_uid = hash_pid_entry->uid;
 		MT_DEBUG("qtup: if_pid_stat_update: hash_pid hash %x pid %s\n",
@@ -701,14 +701,33 @@ void if_pid_stat_update(const char *ifname, uid_t uid,
 		 ifname, task_comm, sk, direction, proto, bytes);
 
 #ifdef CONFIG_HUAWEI_DUBAI
-        if (BETA_USER == get_logusertype_flag()) {
-                 unsigned long last_wakeup_time=0;
-                 last_wakeup_time = get_wakeuptime();
-                 if (last_wakeup_time > 0 && last_wakeup_time != g_latt_wakeuptime_tmp && ((hisi_getcurtime() / 1000000 - last_wakeup_time) < 500)){
-                          g_latt_wakeuptime_tmp = last_wakeup_time;
-                          HWDUBAI_LOGE("DUBAI_TAG_APP_WAKEUP", "procname=%s source=%s gpio=%d", task_comm, get_sourcename(), get_gpio());
-                 }
+    if (BETA_USER == get_logusertype_flag()) {
+        unsigned long last_wakeup_time = 0;
+
+        last_wakeup_time = get_wakeuptime();
+        if (last_wakeup_time > 0
+            && last_wakeup_time != g_latt_wakeuptime_tmp
+            && ((hisi_getcurtime() / 1000000 - last_wakeup_time) < 500)) {
+            int32_t protocol = -1, port = -1;
+
+            if (skb) {
+                const struct iphdr *iph = ip_hdr(skb);
+                if (iph) {
+                    protocol = iph->protocol;
+                    if (iph->protocol == IPPROTO_TCP || iph->protocol == IPPROTO_UDP) {
+                        struct udphdr hdr, *hp = 0;
+                        hp = skb_header_pointer(skb, ip_hdrlen(skb), sizeof(hdr), &hdr);
+                        if (hp) {
+                            port = (int32_t)ntohs(hp->dest);
+                        }
+                    }
+                }
+            }
+            HWDUBAI_LOGE("DUBAI_TAG_APP_WAKEUP", "uid=%d protocol=%d port=%d procname=%s source=%s gpio=%d",
+                real_uid, protocol, port, task_comm, get_sourcename(), get_gpio());
+            g_latt_wakeuptime_tmp = last_wakeup_time;
         }
+    }
 #endif
 	spin_lock_bh(&iface_entry->pid_stat_list_lock);
 
@@ -773,15 +792,14 @@ static int pp_stats_line(struct seq_file *m, struct pid_stat *ps_entry,
 	struct data_counters *cnts;
 	uid_t real_uid;
 	uid_t tag_uid;
-	char comm[TASK_COMM_LEN];
+	char comm[TASK_COMM_LEN]={};
 	int i;
 
 	if (NULL == m || NULL == m->private)
 		return 0;
 
 	ppi = m->private;
-
-	strncpy(comm, ps_entry->pn.comm, TASK_COMM_LEN);
+	strlcpy(comm, ps_entry->pn.comm, TASK_COMM_LEN);
 	tag_uid = get_uid_from_tag(ps_entry->pn.tag);
 	real_uid = ps_entry->pn.uid;
 
@@ -917,7 +935,7 @@ static void *qtaguid_pid_stats_proc_next(struct seq_file *m, void *v,
 	}
 
 	ps_entry = rb_entry(node, struct pid_stat, pn.node);
-	strncpy(ppi->comm, ps_entry->pn.comm, TASK_COMM_LEN);
+	strlcpy(ppi->comm, ps_entry->pn.comm, TASK_COMM_LEN);
 	ppi->tag = ps_entry->pn.tag;
 	ppi->pid_pos = *pos;
 	ppi->pid_item_index = ppi->item_index;

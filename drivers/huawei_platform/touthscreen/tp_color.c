@@ -59,7 +59,7 @@ static void tp_nv_write_work_fn(struct work_struct *work)
 	user_info.nv_operation = 0;
 	user_info.nv_number = 16;
 	user_info.valid_size = 15;
-	strncpy(user_info.nv_data, g_nv_data, sizeof(user_info.nv_data));
+	strncpy(user_info.nv_data, g_nv_data,  sizeof(user_info.nv_data));
 	strncpy(user_info.nv_name, "TPCOLOR", sizeof(user_info.nv_name));
 	user_info.nv_name[sizeof(user_info.nv_name) - 1] = '\0';
 	ret = hisi_nve_direct_access(&user_info);

@@ -1,10 +1,8 @@
 # define_trace.h needs to know how to find our header
 CFLAGS_trace.o				:= -I$(src)
 
-ccflags-$(CONFIG_USB_DWC3_HISI)		+= -DDWC3_ENABLE_CSP
-ccflags-$(CONFIG_USB_DWC3_OTG)		+= -DDWC3_OTG_FORCE_MODE
 ccflags-$(CONFIG_USB_DWC3_FEB)	+= -DDWC3_OTG_FORCE_RESET_GCTL
-ccflags-$(CONFIG_USB_DWC3_MAR)	+= -DDWC3_USB_HOST_IN_IMMRETRY_EN -DDWC3_DEV_P4_PG_EN -DDWC3_RX_TRES_CFG_DIS
+ccflags-$(CONFIG_USB_DWC3_MAR)	+= -DDWC3_USB_HOST_IN_IMMRETRY_EN -DDWC3_DEV_P4_PG_EN -DDWC3_RX_TRES_CFG_DIS -DDWC3_OTG_FORCE_RESET_GCTL
 
 ifneq ($(TARGET_BUILD_VARIANT),user)
 EXTRA_CFLAGS += -DHISI_PLUGUSB_TEST
@@ -48,12 +46,13 @@ dwc3-$(CONFIG_USB_DWC3_OTG)		+= dwc3-otg.o
 # and allyesconfig builds.
 ##
 
-# obj-$(CONFIG_USB_DWC3_OMAP)		+= dwc3-omap.o
-# obj-$(CONFIG_USB_DWC3_EXYNOS)		+= dwc3-exynos.o
-# obj-$(CONFIG_USB_DWC3_PCI)		+= dwc3-pci.o
-# obj-$(CONFIG_USB_DWC3_KEYSTONE)		+= dwc3-keystone.o
-# obj-$(CONFIG_USB_DWC3_QCOM)		+= dwc3-qcom.o
-# obj-$(CONFIG_USB_DWC3_ST)		+= dwc3-st.o
+#obj-$(CONFIG_USB_DWC3_OMAP)		+= dwc3-omap.o
+#obj-$(CONFIG_USB_DWC3_EXYNOS)		+= dwc3-exynos.o
+#obj-$(CONFIG_USB_DWC3_PCI)		+= dwc3-pci.o
+#obj-$(CONFIG_USB_DWC3_KEYSTONE)		+= dwc3-keystone.o
+#obj-$(CONFIG_USB_DWC3_OF_SIMPLE)	+= dwc3-of-simple.o
+#obj-$(CONFIG_USB_DWC3_ST)		+= dwc3-st.o
+
 
 usb-vbus-y  := hisi_usb_vbus.o
 ifeq ($(CONFIG_USB_DWC3_VBUS_PLT),y)
@@ -65,10 +64,11 @@ ifeq ($(CONFIG_USB_DWC3_VBUS_SPMI),y)
 endif
 
 obj-$(CONFIG_USB_DWC3_NOV)		+= dwc3-nov.o hisi_usb2_bc.o
-obj-$(CONFIG_USB_DWC3_MAR)		+= dwc3-mar.o hisi_usb3_bc.o hisi_usb3_misctrl.o
-obj-$(CONFIG_USB_DWC3_FEB)		+= dwc3-feb.o hisi_usb3_bc.o hisi_usb3_misctrl.o
+obj-$(CONFIG_USB_DWC3_OCT)		+= dwc3-oct.o hisi_usb2_bc.o hisi_usb3_misctrl.o
+obj-$(CONFIG_USB_DWC3_APR)		+= dwc3-apr.o hisi_usb3_bc.o hisi_usb3_misctrl.o  hisi_usb3_31phy.o
+obj-$(CONFIG_USB_DWC3_MAR)		+= dwc3-mar.o hisi_usb3_bc.o hisi_usb3_misctrl.o  hisi_usb3_31phy.o
+obj-$(CONFIG_USB_DWC3_FEB)		+= dwc3-feb.o hisi_usb3_bc.o hisi_usb3_misctrl.o  hisi_usb3_31phy.o
 obj-$(CONFIG_USB_DWC3_JAN)		+= dwc3-jan.o hisi_usb3_bc.o
-
 obj-$(CONFIG_USB_DWC3_HISI)		+= dwc3-hisi.o usb-vbus.o
 
 ifneq ($(CFG_CONFIG_HISI_FAMA),true)
@@ -83,9 +83,7 @@ endif
 
 ifeq ($(CONFIG_USB_DWC3_MAR), y)
 EXTRA_CFLAGS += -DCOMBOPHY_VERSION_1_1
-ifeq ($(chip_type), es)
 EXTRA_CFLAGS += -DCOMBOPHY_FW_UPDATE
-endif
 endif
 
 obj-$(CONFIG_CONTEXTHUB_PD) += pd.o

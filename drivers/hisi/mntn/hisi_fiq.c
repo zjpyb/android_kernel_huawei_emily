@@ -17,14 +17,17 @@
 #include <linux/hisi/eeye_ftrace_pub.h>
 #include <linux/hisi/hisi_fiq.h>
 #include <mntn_subtype_exception.h>
-
+#include <linux/hisi/mntn_l3cache_ecc.h>
 #include "bl31/hisi_bl31_exception.h"
 #include "blackbox/rdr_inner.h"
 #include "blackbox/rdr_field.h"
 #include <linux/hisi/hisi_sp805_wdt.h>
 #include <libhwsecurec/securec.h>
 #include <linux/hisi/rdr_pub.h>
-
+#include <linux/version.h>
+#include <linux/hisi/hisi_bbox_diaginfo.h>
+#include <linux/hisi/hisi_log.h>
+#define HISI_LOG_TAG HISI_FIQ_TAG
 static u32 fiq_dump_flag;
 
 static void sp805_wdt_reset(void)
@@ -51,26 +54,44 @@ void hisi_mntn_inform(void)
 	}
 }
 
+#define ABNORMAL_RST_FLAG (0xFF)
+
 asmlinkage void fiq_dump(struct pt_regs *regs, unsigned int esr)
 {
 	struct rdr_exception_info_s *p_exce_info;
 	char date[DATATIME_MAXLEN];
 	int ret = 0;
+	u64 err1_status, err1_misc0;
+	unsigned int reset_reason;
 
 	fiq_dump_flag = 0xdeaddead;
 
 	bust_spinlocks(1);
 	flush_ftrace_buffer_cache();
-	set_subtype_exception(HI_APWDT_AP, true);
+
+	/* 系统异常触发复位动作，存在复位不成功的可能，这时只能靠狗复位，这样就会覆盖之前的异常记录 */
+	reset_reason = get_reboot_reason();
+	if ((ABNORMAL_RST_FLAG == reset_reason) || (AP_S_AWDT == reset_reason))
+		set_subtype_exception(HI_APWDT_AP, true);
+
 
 	pr_crit("fiq_dump begin!\n");
+	pr_emerg("%s", linux_banner);
 
 	dmss_fiq_handler();
 	console_verbose();
 	show_regs(regs);
-	blk_power_off_flush(BLK_FLUSH_NORMAL);/*Flush the storage device cache*/
+
+	blk_power_off_flush(0);/*Flush the storage device cache*/
+
 	dump_stack();
 	smp_send_stop();
+
+	if (!rdr_init_done()) {
+		pr_crit("rdr init faild!\n");
+		return;
+	}
+
 	last_task_stack_dump();
 	regs_dump(); /*"sctrl", "pctrl", "peri_crg", "gic"*/
 
@@ -89,11 +110,17 @@ asmlinkage void fiq_dump(struct pt_regs *regs, unsigned int esr)
 			pr_crit("snprintf_s ret %d!\n", ret);
 		}
 		rdr_fill_edata(p_exce_info, date);
-	}
-	rdr_hisiap_dump_root_head(MODID_AP_S_WDT, AP_S_AWDT, RDR_AP);
 
+		(void)rdr_exception_trace_record(p_exce_info->e_reset_core_mask,
+			p_exce_info->e_from_core, p_exce_info->e_exce_type, p_exce_info->e_exce_subtype);
+	}
+
+	rdr_hisiap_dump_root_head(MODID_AP_S_WDT, AP_S_AWDT, RDR_AP);
+	bbox_diaginfo_dump_lastmsg();
 	pr_crit("fiq_dump end\n");
+	l3cache_ecc_get_status(&err1_status, &err1_misc0, 1);
 	mntn_show_stack_cpustall();
+
 	kmsg_dump(KMSG_DUMP_PANIC);
 	flush_cache_all();
 	sp805_wdt_reset();

@@ -49,33 +49,33 @@
 前置条件：无
 后置条件： 无
 *************************************************************/
-void parse_timestamp(const char *timestamp_str, timestamp_info *timestamp_value)
+void parse_timestamp(const char timestamp_str[HISEE_IMG_TIME_STAMP_LEN], timestamp_info *timestamp_value)
 {
 	unsigned short value_short;
 	unsigned char  value_char;
 
-	timestamp_value->value = 0x0;
+	if (NULL != timestamp_value) {
+		timestamp_value->value = 0x0;
 
-	value_short = (timestamp_str[0] - 0x30) * 1000 + (timestamp_str[1] - 0x30) * 100
-			+ (timestamp_str[2] - 0x30) * 10 + (timestamp_str[3] - 0x30); /*lint !e734*/
-	timestamp_value->timestamp.year = value_short;
+		value_short = (timestamp_str[0] - 0x30) * 1000 + (timestamp_str[1] - 0x30) * 100
+				+ (timestamp_str[2] - 0x30) * 10 + (timestamp_str[3] - 0x30); /*lint !e734*/
+		timestamp_value->timestamp.year = value_short;
 
-	value_char = (timestamp_str[5] - 0x30) * 10 + (timestamp_str[6] - 0x30); /*lint !e734*/
-	timestamp_value->timestamp.month = value_char;
+		value_char = (timestamp_str[5] - 0x30) * 10 + (timestamp_str[6] - 0x30); /*lint !e734*/
+		timestamp_value->timestamp.month = value_char;
 
-	value_char = (timestamp_str[8] - 0x30) * 10 + (timestamp_str[9] - 0x30); /*lint !e734*/
-	timestamp_value->timestamp.day = value_char;
+		value_char = (timestamp_str[8] - 0x30) * 10 + (timestamp_str[9] - 0x30); /*lint !e734*/
+		timestamp_value->timestamp.day = value_char;
 
-	value_char = (timestamp_str[11] - 0x30) * 10 + (timestamp_str[12] - 0x30); /*lint !e734*/
-	timestamp_value->timestamp.hour = value_char;
+		value_char = (timestamp_str[11] - 0x30) * 10 + (timestamp_str[12] - 0x30); /*lint !e734*/
+		timestamp_value->timestamp.hour = value_char;
 
-	value_char = (timestamp_str[14] - 0x30) * 10 + (timestamp_str[15] - 0x30); /*lint !e734*/
-	timestamp_value->timestamp.minute = value_char;
+		value_char = (timestamp_str[14] - 0x30) * 10 + (timestamp_str[15] - 0x30); /*lint !e734*/
+		timestamp_value->timestamp.minute = value_char;
 
-	value_char = (timestamp_str[17] - 0x30) * 10 + (timestamp_str[18] - 0x30); /*lint !e734*/
-	timestamp_value->timestamp.second = value_char;
-
-	return;
+		value_char = (timestamp_str[17] - 0x30) * 10 + (timestamp_str[18] - 0x30); /*lint !e734*/
+		timestamp_value->timestamp.second = value_char;
+	}
 }
 
 
@@ -149,7 +149,8 @@ int hisee_read_file(const char *fullname, char *buffer, size_t offset, size_t si
 		pr_err("%s(): passed ptr is NULL\n", __func__);
 		set_errno_and_return(HISEE_INVALID_PARAMS);
 	}
-	if (/*offset >= HISEE_SHARE_BUFF_SIZE || */size > HISEE_SHARE_BUFF_SIZE) {
+
+	if (0 == size || size > HISEE_MAX_IMG_SIZE) {
 		pr_err("%s(): passed size is invalid\n", __func__);
 		set_errno_and_return(HISEE_INVALID_PARAMS);
 	}
@@ -180,10 +181,10 @@ int hisee_read_file(const char *fullname, char *buffer, size_t offset, size_t si
 		ret = HISEE_LSEEK_FILE_ERROR;
 		goto close;
 	}
-	read_bytes = (ssize_t)(pos - fp->f_pos);/*lint !e613*/
+
 	pos = fp->f_pos;/*lint !e613*/
-	if (0 != size)
-		read_bytes = size;
+	read_bytes = size;
+
 	cnt = vfs_read(fp, (char __user *)buffer, read_bytes, &pos);
 	if (cnt < read_bytes) {
 		pr_err("%s():read %s failed, return [%ld]\n", __func__, fullname, cnt);
@@ -203,6 +204,51 @@ out:
 	}
 	return ret;
 }
+
+
+/****************************************************************************//**
+ * @brief      : hisee_write_file
+ * @param[in]  : fullname , file name in full path
+ * @param[in]  : buffer , data to write
+ * @param[in]  : size , data size
+ * @return     : ::int
+ * @note       :
+********************************************************************************/
+int hisee_write_file(const char *fullname, char *buffer, size_t size)
+{
+	struct file *fp;
+	int ret = HISEE_OK;
+	ssize_t cnt;
+	loff_t pos = 0;
+	mm_segment_t old_fs;
+
+	if (NULL == fullname || NULL == buffer) {
+		pr_err("%s(): passed ptr is NULL\n", __func__);
+		set_errno_and_return(HISEE_INVALID_PARAMS);
+	}
+
+	old_fs = get_fs();/*lint !e501*/
+	set_fs(KERNEL_DS);/*lint !e501*/
+	fp = filp_open(fullname, O_WRONLY|O_CREAT|O_TRUNC, 0600);
+	if (IS_ERR(fp)) {
+		pr_err("%s():open %s failed\n", __func__, fullname);
+		ret = HISEE_OPEN_FILE_ERROR;
+		goto out;
+	}
+
+	cnt = vfs_write(fp, (char __user *)buffer, (unsigned long)size, &pos);
+	if (cnt != (ssize_t)size) {
+		pr_err("%s():write failed, return [%ld]\n", __func__, cnt);
+		ret = HISEE_WRITE_FILE_ERROR;
+	}
+
+	filp_close(fp, NULL);
+
+out:
+	set_fs(old_fs);
+	return ret;
+}
+
 
 /*************************************************************
 函数原型：int hisee_atoi(const char *str)
@@ -290,6 +336,9 @@ static int check_img_header_is_valid(hisee_img_header *p_img_header)
 	int ret = HISEE_OK;
 	unsigned int emmc_cos_cnt = 0;
 	unsigned int rpmb_cos_cnt = 0;
+	unsigned int total_size;
+
+	total_size = HISEE_IMG_HEADER_LEN + HISEE_IMG_SUB_FILES_LEN * p_img_header->file_cnt;
 
 	for (i = 0; i < p_img_header->file_cnt; i++) {
 		if (!strncmp(p_img_header->file[i].name, HISEE_IMG_MISC_NAME, strlen(HISEE_IMG_MISC_NAME))) {
@@ -305,18 +354,15 @@ static int check_img_header_is_valid(hisee_img_header *p_img_header)
 			else
 				emmc_cos_cnt++;
 		}
-		if (p_img_header->file[i].size >= HISEE_SHARE_BUFF_SIZE) {
+		if (0 == p_img_header->file[i].size || p_img_header->file[i].size > HISEE_MAX_IMG_SIZE) {
 			pr_err("%s():size check %s failed\n", __func__, p_img_header->file[i].name);
 			return HISEE_SUB_FILE_SIZE_CHECK_ERROR;
 		}
-		if (0 == i && (p_img_header->file[i].offset != (HISEE_IMG_HEADER_LEN + HISEE_IMG_SUB_FILES_LEN * p_img_header->file_cnt))) {
+		if (p_img_header->file[i].offset < total_size) {
 			pr_err("%s():offset check %s failed\n", __func__, p_img_header->file[i].name);
 			return HISEE_SUB_FILE_OFFSET_CHECK_ERROR;
 		}
-		if (i > 0 && (p_img_header->file[i].offset < p_img_header->file[i - 1].offset)) {
-			pr_err("%s():offset check %s failed\n", __func__, p_img_header->file[i].name);
-			return HISEE_SUB_FILE_OFFSET_CHECK_ERROR;
-		}
+		total_size += p_img_header->file[i].size;
 	}
 	if ((rpmb_cos_cnt > HISEE_MAX_RPMB_COS_NUMBER) ||
 		(emmc_cos_cnt > HISEE_MAX_EMMC_COS_NUMBER) ||
@@ -438,7 +484,11 @@ int hisee_parse_img_header(char *buffer)
 	}
 	/*there is a assumption: the first file in hisee.img is always the cos image 0 , then flowed by cos[,1,2,3,...],
 	 *then flowed by MISC image*/
-	for (i = 0; i < (p_img_header->rpmb_cos_cnt + p_img_header->emmc_cos_cnt); i++) {
+	for (i = 0; i < p_img_header->file_cnt; i++) {
+		/*if it is not cos image type, we just continue with next image.*/
+		if (strncmp(p_img_header->file[i].name, HISEE_IMG_COS_NAME, strlen(HISEE_IMG_COS_NAME))) {
+			continue;
+		}
 		fp->f_pos = p_img_header->file[i].offset;/*lint !e613*/
 		pos = fp->f_pos;/*lint !e613*/
 		cnt = vfs_read(fp, (char __user *)cos_img_rawdata, (unsigned long)HISEE_IMG_HEADER_LEN, &pos);
@@ -457,8 +507,11 @@ error:
 	set_errno_and_return(ret);
 }
 
-int get_sub_file_name(hisee_img_file_type type, char *sub_file_name)
+static int get_sub_file_name(hisee_img_file_type type, char *sub_file_name)
 {
+	if (NULL == sub_file_name) {
+		return HISEE_INVALID_PARAMS;
+	}
 	switch (type) {
 	case SLOADER_IMG_TYPE:
 		strncat(sub_file_name, HISEE_IMG_SLOADER_NAME, HISEE_IMG_SUB_FILE_NAME_LEN);
@@ -587,6 +640,57 @@ int filesys_hisee_read_image(hisee_img_file_type type, char *buffer)
 }
 
 
+/*************************************************************
+函数原型：int filesys_read_img_from_file(const char *filename, char *buffer, size_t *file_size, size_t max_read_size)
+函数功能：读取指定的cos镜像文件(ext4文件系统格式)到指定的buffer中
+参数：
+输入：filename:指定的cos镜像文件。
+输出：buffer:指向保存读取镜像数据的buffer，file_size:读取cos镜像数据的大小，以字节为单位
+返回值：HISEE_OK:读取指定文件的镜像数据成功；非HISEE_OK:失败
+前置条件：当前encos分区已经保存了cos_flash镜像数据，cos_flash镜像数据不超过max_read_size字节
+后置条件： 无
+*************************************************************/
+int filesys_read_img_from_file(const char *filename, char *buffer, size_t *file_size, size_t max_read_size)
+{
+	int ret = HISEE_OK;
+	mm_segment_t old_fs;
+	struct kstat m_stat;
+
+	if (NULL == buffer || NULL == filename || NULL == file_size) {
+		return HISEE_INVALID_PARAMS;
+	}
+	old_fs = get_fs();/*lint !e501*/
+	set_fs(KERNEL_DS);/*lint !e501*/
+	if(0 != sys_access(filename, 0)) {
+		pr_err("hisee:%s(): %s is not exist.\n", __func__, filename);
+		set_fs(old_fs);
+		return HISEE_MULTICOS_COS_FLASH_FILE_ERROR;
+	}
+
+	ret = vfs_stat(filename, &m_stat);
+	if (ret) {
+		set_fs(old_fs);
+		return HISEE_INVALID_PARAMS;
+	}
+	set_fs(old_fs);
+
+	if (0 == (size_t)(m_stat.size) || (size_t)(m_stat.size) > max_read_size) {
+		pr_err("hisee:%s(): file size is more than %u bytes.\n",
+				__func__, (unsigned int)max_read_size);
+		return HISEE_SUB_FILE_SIZE_CHECK_ERROR;
+	}
+	*file_size = (size_t)(m_stat.size);
+
+	ret = hisee_read_file((const char *)filename, buffer, 0, (*file_size));
+	if (ret < HISEE_OK) {
+		pr_err("hisee:%s():hisee_read_file failed, ret=%d\n", __func__, ret);
+		return ret;
+	}
+	return HISEE_OK;
+}
+
+
+
 
 
 static void access_hisee_file_prepare(hisee_image_a_access_type access_type, int *flags, long *file_offset, unsigned long *size)
@@ -622,26 +726,45 @@ static void access_hisee_file_prepare(hisee_image_a_access_type access_type, int
 	return;
 }
 
+
+int hisee_get_partition_path(char full_path[MAX_PATH_NAME_LEN])
+{
+	int ret;
+
+	if (1 == g_hisee_partition_byname_find) {
+		ret = flash_find_ptn(HISEE_IMAGE_PARTITION_NAME, full_path);
+		if (0 != ret) {
+			pr_err("%s():flash_find_ptn fail\n", __func__);
+			ret = HISEE_OPEN_FILE_ERROR;
+		} else {
+			ret = HISEE_OK;
+		}
+	} else {
+		flash_find_hisee_ptn(HISEE_IMAGE_A_PARTION_NAME, full_path);
+		ret = HISEE_OK;
+	}
+	return ret;
+}
+
+
 int access_hisee_image_partition(char *data_buf, hisee_image_a_access_type access_type)
 {
 	int fd;
 	ssize_t cnt;
 	mm_segment_t old_fs;
-	char fullpath[128] = {0};
+	char fullpath[MAX_PATH_NAME_LEN] = {0};
 	long file_offset;
 	unsigned long size;
 	int ret;
 	int flags;
 
-	if (1 == g_hisee_partition_byname_find) {
-		ret = flash_find_ptn(HISEE_IMAGE_PARTITION_NAME, fullpath);
-		if (0 != ret) {
-			pr_err("%s():flash_find_ptn fail\n", __func__);
-			ret = HISEE_OPEN_FILE_ERROR;
-			set_errno_and_return(ret);
-		}
-	} else {
-		flash_find_hisee_ptn(HISEE_IMAGE_A_PARTION_NAME, fullpath);
+	if (NULL == data_buf) {
+		set_errno_and_return(HISEE_INVALID_PARAMS);
+	}
+
+	ret = hisee_get_partition_path(fullpath);
+	if (HISEE_OK != ret) {
+		set_errno_and_return(HISEE_INVALID_PARAMS);
 	}
 
 	old_fs = get_fs();/*lint !e501*/
@@ -666,18 +789,16 @@ int access_hisee_image_partition(char *data_buf, hisee_image_a_access_type acces
 		set_errno_and_return(ret);
 	}
 	ret = HISEE_OK;
-	if ((SW_VERSION_WRITE_TYPE == access_type)
-		|| (COS_UPGRADE_RUN_WRITE_TYPE == access_type)
-		|| (MISC_VERSION_WRITE_TYPE == access_type)
-		|| (COS_UPGRADE_INFO_WRITE_TYPE == access_type)) {
+	if (HISEE_IS_WRITE_ACCESS(access_type)) {
 		cnt = sys_write((unsigned int)fd, (char __user *)data_buf, size);
 		ret = sys_fsync((unsigned int)fd);
 		if (ret < 0) {
 			pr_err("%s():fail to sync %s.\n", __func__, fullpath);
 			ret = HISEE_ENCOS_SYNC_FILE_ERROR;
 		}
-	} else
+	} else {
 		cnt = sys_read((unsigned int)fd, (char __user *)data_buf, size);
+	}
 
 	if (cnt < (ssize_t)(size)) {
 		pr_err("%s(): access %s failed, return [%ld]\n", __func__, fullpath, cnt);

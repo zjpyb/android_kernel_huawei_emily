@@ -19,12 +19,13 @@ enum charge_status_event{
     BATTERY_MOVE,
     SWITCH_INTB_WORK_EVENT,
     VCHRG_THERMAL_POWER_OFF,
+    WIRELESS_TX_STATUS_CHANGED,
+    VCHRG_CURRENT_FULL_EVENT,
 };
 
 #define CURRENT_OFFSET    (10)
 
 #define DSM_BATTERY_MAX_SIZE 2048
-#define DSM_CHARGE_MONITOR_BUF_SIZE 1024
 
 #define IMPOSSIBLE_IAVG            (9999)
 
@@ -58,7 +59,7 @@ enum charge_status_event{
 #define WORK_INTERVAL_NOARMAL 10000 /*10s*/
 #define WORK_INTERVAL_REACH_FULL 30000 /*30s*/
 
-#define CHARGE_CURRENT_OVERHIGH_TH 7000
+#define CHARGE_CURRENT_OVERHIGH_TH 10000
 #define DISCHARGE_CURRENT_OVERHIGH_TH (-7000)
 
 #define BATT_VOLT_OVERLOW_TH 2800
@@ -85,7 +86,9 @@ enum charge_status_event{
 #define BASE_DECIMAL (10)
 #define CAPACITY_DEC_SAMPLE_NUMS       (12)
 #define CAPATICY_DEC_TIMER_INTERVAL  (800) /* time out setting, 0.8 seconds */
+#define CAPATICY_DEC_PARA_LEVEL       (2)
 
+#define CAP_LOCK_PARA_LEVEL    (2)
 enum plugin_status {
     /* no charger plugin */
     PLUGIN_DEVICE_NONE,
@@ -107,6 +110,21 @@ struct work_interval_para {
 	int cap_max;
 	int work_interval;
 };
+enum capacity_dec_para_info {
+	CAP_DEC_BASE_DECIMAL = 0,
+	CAP_DEC_SAMPLE_NUMS,
+	CAP_DEC_TIMER_INTERVAL,
+	CAP_DEC_PARA_TOTAL,
+};
+struct capacity_dec_para {
+	u32 cap_dec_base_decimal;
+	u32 cap_dec_sample_nums;
+	u32 cap_dec_timer_interval;
+};
+struct cap_lock_para {
+	int cap;
+	int level_vol;
+};
 
 typedef enum{
     BAT_BOARD_SFT  = 0,
@@ -120,7 +138,8 @@ int hisi_unregister_notifier(struct notifier_block *nb,
                 unsigned int events);
 int hisi_bci_show_capacity(void);
 struct class *hw_power_get_class(void);
-struct dsm_client *get_battery_dclient(void);
-struct dsm_client *get_chargemonitor_dclient(void);
 extern enum fcp_check_stage_type  fcp_get_stage_status(void);
+extern unsigned int get_bci_soc(void);
+extern void batt_info_dump(char* pstr);
+
 #endif

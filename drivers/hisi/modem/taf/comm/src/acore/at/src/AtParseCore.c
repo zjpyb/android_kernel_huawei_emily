@@ -437,14 +437,12 @@ VOS_UINT32 AT_ParseCmdIsPend(VOS_UINT8 ucIndex, VOS_UINT8 *pData, VOS_UINT16 usL
         else if ((AT_FW_CLIENT_STATUS_PEND == pstClientContext->ucClientStatus)
               || (AT_SMS_MODE == pstClientContext->ucMode))
         {
-            /* Added by L60609 for MUX，2012-08-03,  Begin */
             /* 判断本通道以及遍历到的通道是否可以并发 */
             if (VOS_TRUE == AT_IsConcurrentPorts(ucIndex, (VOS_UINT8)i))
             {
                 /* 如果是，则继续遍历通道 */
                 continue;
             }
-            /* Added by L60609 for MUX，2012-08-03,  End */
             else
             {
                 /* 如果不是，则缓存该命令 */
@@ -617,11 +615,9 @@ VOS_UINT32 AT_ParseCmdType( VOS_UINT8 * pData, VOS_UINT16 usLen)
 VOS_UINT32 At_MatchSmsCmdName(VOS_UINT8 ucIndex, VOS_CHAR *pszCmdName)
 {
     VOS_UINT32                          i = 0;
-    /* Added by l60609 for DSDA Phase III, 2013-3-5, Begin */
     AT_MODEM_SMS_CTX_STRU              *pstSmsCtx = VOS_NULL_PTR;
 
     pstSmsCtx = AT_GetModemSmsCtxAddrFromClientId(ucIndex);
-    /* Added by l60609 for DSDA Phase III, 2013-3-5, End */
 
     for (i = 0; i < gusAtSmsCmdNum; i++)
     {
@@ -629,9 +625,7 @@ VOS_UINT32 At_MatchSmsCmdName(VOS_UINT8 ucIndex, VOS_CHAR *pszCmdName)
         {
             if (ERR_MSP_SUCCESS == AT_STRCMP(pszCmdName, (TAF_CHAR*)gastAtSmsCmdTab[i].pszCmdName))
             {
-                /* Modified by l60609 for DSDA Phase III, 2013-3-5, Begin */
                 if ( AT_CMGF_MSG_FORMAT_TEXT == pstSmsCtx->enCmgfMsgFormat)
-                /* Modified by l60609 for DSDA Phase III, 2013-3-5, End */
                 {
                     g_stCmdElement[ucIndex].pszParam = gastAtSmsCmdTab[i].ParaText;
                 }
@@ -848,7 +842,6 @@ VOS_UINT32 LimitedCmdProc(VOS_UINT8 ucClientId, VOS_UINT8 *pData, VOS_UINT16 usL
     }
 
 
-     /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
 
     /* 如果E5密码保护受限，则调用查询E5受限条件接口，受限的话返回AT_ERROR，否则返回AT_OK */
     if(0 == (pstCmdElement->ulChkFlag & CMD_TBL_E5_IS_LOCKED))
@@ -873,7 +866,6 @@ VOS_UINT32 LimitedCmdProc(VOS_UINT8 ucClientId, VOS_UINT8 *pData, VOS_UINT16 usL
             }
         }
     }
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, end */
 
     /* 如果是E5 DOCK命令，则直接调用DOCK命令转发接口，返回AT_SUCCESS */
     if(pstCmdElement->ulChkFlag & CMD_TBL_IS_E5_DOCK)
@@ -1612,21 +1604,17 @@ VOS_VOID At_ReadyClientCmdProc(VOS_UINT8 ucIndex, VOS_UINT8 *pData, VOS_UINT16 u
     }
 
     /* ^DOCK命令后面还有"^"和"="，特殊处理 */
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
     if (AT_SUCCESS == AT_HandleDockSetCmd(ucIndex, pData, usLen))
     {
         return;
     }
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, end */
 
-    /* Modified by L47619 for AP-Modem Personalisation Project, 2012/04/18, begin */
     /* AP-Modem形态下，产线命令AT^FACAUTHPUBKEY和AT^SIMLOCKDATAWRITE的设置命令，参数已经超过了解析器中
        参数长度上限512，需要特殊处理*/
     if (AT_SUCCESS == At_HandleApModemSpecialCmd(ucIndex, pData, usLen))
     {
         return;
     }
-    /* Modified by L47619 for AP-Modem Personalisation Project, 2012/04/18, end */
 
     ulResult = (AT_RRETURN_CODE_ENUM_UINT32)At_CombineCmdChkProc(ucIndex, pData, usLen);
 
@@ -1651,7 +1639,6 @@ VOS_VOID atCmdMsgProc(VOS_UINT8 ucIndex, VOS_UINT8 *pData, VOS_UINT16 usLen)
     VOS_UINT32                          ulRet = ERR_MSP_FAILURE;
     AT_RRETURN_CODE_ENUM_UINT32         ulResult = AT_WAIT_ASYNC_RETURN;
     AT_PARSE_CONTEXT_STRU              *pClientContext = NULL;
-    /* Modified by l60609 for DSDA Phase III, 2013-2-20, Begin */
     AT_MODEM_AGPS_CTX_STRU             *pstAgpsCtx = VOS_NULL_PTR;
 
     pstAgpsCtx = AT_GetModemAgpsCtxAddrFromClientId(ucIndex);
@@ -1734,7 +1721,6 @@ VOS_VOID atCmdMsgProc(VOS_UINT8 ucIndex, VOS_UINT8 *pData, VOS_UINT16 usLen)
     else
     {
     }
-    /* Modified by l60609 for DSDA Phase III, 2013-2-20, End */
 
     /* 避免组合命令处理过程中其他通道有命令输入 */
     ulRet = AT_ParseCmdIsComb(ucIndex, pData, usLen);

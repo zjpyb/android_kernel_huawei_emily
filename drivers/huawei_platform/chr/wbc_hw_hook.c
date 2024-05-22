@@ -23,6 +23,8 @@
 #include <linux/skbuff.h>
 #include <huawei_platform/log/hw_log.h>
 #include <linux/version.h>
+#include <linux/ktime.h>
+#include <linux/timekeeping.h>
 
 #include "wbc_hw_hook.h"
 #include "chr_netlink.h"
@@ -65,6 +67,7 @@ static bool web_deley_flag[RNT_STAT_SIZE];
 static struct semaphore g_web_stat_sync_sema;
 static struct timer_list g_web_stat_timer;
 static struct task_struct *g_web_stat_task;
+static struct chr_key_val g_chr_key_val;
 
 /*This parameters lock are used to lock the common parameters*/
 static spinlock_t g_web_stat_lock;
@@ -101,6 +104,9 @@ static void save_app_web_delay(u32 uid, int web_delay, u8 interface_type);
 static void save_app_web_fail(u32 uid, u8 interface_type);
 static void save_app_tcp_rtt(u32 uid, u32 tcp_rtt, u8 interface_type);
 static u32 s_report_app_uid_lst[CHR_MAX_REPORT_APP_COUNT] = {0};
+static int data_reg_tech = 0;
+static int RIL_RADIO_TECHNOLOGY_LTE = 13;
+static int RIL_RADIO_TECHNOLOGY_LTE_CA = 19;
 
 static uid_t get_uid_from_sock(struct sock *sk);
 static uid_t get_des_addr_from_sock(struct sock *sk);
@@ -120,6 +126,9 @@ u32 us_cvt_to_ms(u32 seq_rtt_us)
 /*To notify thread to update rtt*/
 void notify_chr_thread_to_update_rtt(u32 seq_rtt_us, struct sock *sk, u8 data_net_flag)
 {
+	if (seq_rtt_us <= 0)
+		return;
+
 	if (!spin_trylock_bh(&g_web_stat_lock))
 		return;
 	u8 interface_type;
@@ -140,6 +149,97 @@ void notify_chr_thread_to_update_rtt(u32 seq_rtt_us, struct sock *sk, u8 data_ne
     spin_unlock_bh(&g_web_stat_lock);
     up(&g_web_stat_sync_sema);
 
+}
+
+/*Update protocol stack buffer information*/
+void chr_update_buf_time(s64 time, u32 protocal)
+{
+	ktime_t kt;
+	s64 buff;
+	s64 curBuf;
+	unsigned long jif;
+	long difJif;
+
+	if (time == 0)
+		return;
+
+	jif = jiffies;
+	switch (protocal)
+	{
+	case SOL_TCP:
+		kt = ktime_get_real();
+		difJif = (long)(jif - g_chr_key_val.tcp_last);
+		curBuf = kt.tv64 - time;
+		if (curBuf < 0)
+			curBuf = 0;
+
+		if (difJif > FILTER_TIME_LIMIT) {
+			atomic_set(&g_chr_key_val.tcp_buf_time, curBuf);
+		} else {
+			buff = atomic_read(&g_chr_key_val.tcp_buf_time);
+			buff = buff - buff / ALPHA_FILTER_PARA + curBuf / ALPHA_FILTER_PARA;
+			atomic_set(&g_chr_key_val.tcp_buf_time, buff);
+		}
+
+		g_chr_key_val.tcp_last = jif;
+		break;
+	case SOL_UDP:
+		kt = ktime_get_real();
+		difJif = (long)(jif - g_chr_key_val.udp_last);
+		curBuf = kt.tv64 - time;
+		if (curBuf < 0)
+			curBuf = 0;
+
+		if (difJif > FILTER_TIME_LIMIT) {
+			 atomic_set(&g_chr_key_val.udp_buf_time, curBuf);
+		} else {
+			buff = atomic_read(&g_chr_key_val.udp_buf_time);
+			buff = buff - buff / ALPHA_FILTER_PARA + curBuf / ALPHA_FILTER_PARA;
+			atomic_set(&g_chr_key_val.udp_buf_time, buff);
+		}
+
+		g_chr_key_val.udp_last = jif;
+		break;
+	default:
+		break;
+	}
+}
+
+/*This is the buffer time update function of the TCP/IP protocol stack,
+* which is passively obtained from the upper layer.*/
+static u32 reportBuf(void)
+{
+	u16 tmpBuf;
+	u32 bufRtn = 0;
+	s64 buf64;
+	unsigned long jif;
+	long difJif;
+
+	jif = jiffies;
+
+	buf64 = atomic_read(&g_chr_key_val.udp_buf_time);
+	tmpBuf = (u16)(buf64 / NS_CONVERT_TO_MS);
+	if (buf64 > MAX_VALID_U16 * NS_CONVERT_TO_MS)
+		tmpBuf = MAX_VALID_U16;
+
+	difJif = (long)(jif - g_chr_key_val.udp_last);
+	if (difJif > 2*HZ || difJif < -2*HZ)
+		tmpBuf = 0;
+
+	bufRtn = tmpBuf;
+
+	buf64 = atomic_read(&g_chr_key_val.tcp_buf_time);
+	tmpBuf = (u16)(buf64 / NS_CONVERT_TO_MS);
+	if (buf64 > MAX_VALID_U16 * NS_CONVERT_TO_MS)
+		tmpBuf = MAX_VALID_U16;
+
+	difJif = (long)(jif - g_chr_key_val.tcp_last);
+	if (difJif > 2*HZ || difJif < -2*HZ)
+		tmpBuf = 0;
+
+	bufRtn = tmpBuf + (bufRtn << 16);
+
+	return bufRtn;
 }
 
 /*timer's expired process function.
@@ -696,6 +796,7 @@ static unsigned int hook_local_out(const struct nf_hook_ops *ops,
 	bool up_req = false;
 	int dlen;
 
+
 	if (skb == NULL)
 		return NF_ACCEPT;
 
@@ -726,6 +827,9 @@ static unsigned int hook_local_out(const struct nf_hook_ops *ops,
 			http_para_out.interface = WLAN_INTERFACE;
 		}
 		else {
+			if ((data_reg_tech != RIL_RADIO_TECHNOLOGY_LTE)&&
+				(data_reg_tech != RIL_RADIO_TECHNOLOGY_LTE_CA))
+				return NF_ACCEPT;
 			http_para_out.interface = RMNET_INTERFACE;
 			if (skb->sk->sk_state == TCP_ESTABLISHED) {
 				sock = tcp_sk(skb->sk);
@@ -755,8 +859,8 @@ static unsigned int hook_local_out(const struct nf_hook_ops *ops,
 				up_req = true;
 
 			} else if (dlen > 5 &&
-			(strncmp(pHttpStr, g_get_str, STR_GET_LEN) ||
-			strncmp(pHttpStr, g_post_str, STR_POST_LEN))) {
+			(strncmp(pHttpStr, g_get_str, STR_GET_LEN) == 0 ||
+			strncmp(pHttpStr, g_post_str, STR_POST_LEN) == 0)) {
 
 				http_para_out.tcp_port = tcph->source;
 				http_para_out.src_addr = iph->saddr;
@@ -789,6 +893,7 @@ static unsigned int hook_local_in(const struct nf_hook_ops *ops,
 	bool up_req = false;
 	u32 dlen;
 
+
 	if (skb == NULL)
 		return NF_ACCEPT;
 
@@ -813,6 +918,9 @@ static unsigned int hook_local_in(const struct nf_hook_ops *ops,
 			http_para_in.interface = WLAN_INTERFACE;
 		}
 		else {
+			if ((data_reg_tech != RIL_RADIO_TECHNOLOGY_LTE)&&
+				(data_reg_tech != RIL_RADIO_TECHNOLOGY_LTE_CA))
+				return NF_ACCEPT;
 			http_para_in.interface = RMNET_INTERFACE;
 		}
 
@@ -918,6 +1026,10 @@ int web_chr_init(void)
 	abn_stamp_web_fail = jiffies;
 	abn_stamp_web_delay = jiffies;
 	abn_stamp_syn_no_ack = jiffies;
+	g_chr_key_val.tcp_last = jiffies;
+	g_chr_key_val.udp_last = jiffies;
+	atomic_set(&g_chr_key_val.tcp_buf_time, 0);
+	atomic_set(&g_chr_key_val.udp_buf_time, 0);
 
 	rpt_stamp = jiffies;
 
@@ -1087,15 +1199,25 @@ unsigned long abnomal_stamp_list_tcp_rtt_large_update(
 	return abn_stamp_list_tcp_rtt_large[abn_stamp_list_tcp_rtt_large_idx];
 }
 
-int set_report_app_uid(int index, u32 uid)
+int set_report_app_uid(int tag, u32 paras)
 {
-	if (index < 0 || index >= CHR_MAX_REPORT_APP_COUNT) {
-		pr_info("chr:appuid set 'index' invaild. index=%d\n", index);
-		return -1;
+	if (tag >= 0 && tag < CHR_MAX_REPORT_APP_COUNT) {
+		s_report_app_uid_lst[tag] = paras;
+		return 0;
+	}
+	if (tag == DATA_REG_TECH_TAG) {
+		data_reg_tech = paras;
+		return 0;
+	}
+	if (tag == GET_AP_REPORT_TAG) {
+		if (paras& 0x01)
+			chr_notify_event(CHR_SPEED_SLOW_EVENT, g_user_space_pid,
+				reportBuf(), NULL);
+		return 0;
 	}
 
-	s_report_app_uid_lst[index] = uid;
-	return 0;
+	pr_info("chr:set_report_app_uid set 'tag' invaild. tag=%d\n", tag);
+	return -1;
 }
 
 void save_app_syn_succ(u32 uid, u8 interface_type)

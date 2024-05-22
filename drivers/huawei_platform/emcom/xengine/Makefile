@@ -1,7 +1,6 @@
 EXTRA_CFLAGS += -Inet/netfilter
 
 obj-$(CONFIG_HUAWEI_XENGINE) += emcom_xengine.o
-obj-$(CONFIG_HUAWEI_EMCOM_CHANNEL) += emcom_xengine.o
 
 ifdef CONFIG_HUAWEI_EMCOM_CHANNEL
 ifneq ($(OBB_SEPARATE),true)

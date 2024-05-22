@@ -1,17 +1,28 @@
 KCOV_INSTRUMENT := n
+CONFIG_TEE_SMP := y
 
 ifneq ($(TARGET_BUILD_VARIANT),user)
 ccflags-y += -DDEBUG_TUI
 ccflags-y += -DDEF_ENG
 endif
 
+ccflags-y +=-DDYNAMIC_ION
+ifeq ($(CONFIG_TEE_SMP), y)
+ccflags-y += -DCONFIG_TEE_SMP
+obj-$(CONFIG_TZDRIVER) += smc_smp.o
+else
+obj-$(CONFIG_TZDRIVER) += smc.o
+endif
+
 obj-$(CONFIG_TZDRIVER) += tc_client_driver.o teek_client_api.o mailbox_mempool.o
-obj-$(CONFIG_TZDRIVER) += security_auth_enhance.o smc.o agent.o gp_ops.o mem.o cmdmonitor.o
+obj-$(CONFIG_TZDRIVER) += security_auth_enhance.o agent.o gp_ops.o mem.o cmdmonitor.o tzdebug.o tz_spi_notify.o  dynamic_mem.o
 obj-$(CONFIG_TEELOG) += tlogger.o tee_rdr_register.o
 ifeq ($(CONFIG_TZDRIVER), y)
 obj-$(CONFIG_HISI_MMC_SECURE_RPMB) += agent_rpmb.o
 endif
+
 obj-$(CONFIG_TEE_TUI) += tui.o
+
 obj-$(CONFIG_TEE_LIBHWSECUREC) += libhwsecurec/
 
 obj-$(CONFIG_TEE_CFC) += cfc_data.o cfc_coresight.o

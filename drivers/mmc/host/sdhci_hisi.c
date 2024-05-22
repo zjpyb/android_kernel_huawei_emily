@@ -4,6 +4,7 @@
 #include <linux/mmc/host.h>
 #include <linux/mmc/card.h>
 #include "sdhci.h"
+#include <linux/version.h>
 
 
 extern int sdhci_card_busy_data0(struct mmc_host *mmc);
@@ -43,8 +44,12 @@ int sdhci_send_command_direct(struct mmc_host *mmc, struct mmc_request *mrq)
 	unsigned long flags;
 
 	host = mmc_priv(mmc);
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 76))
 	WARN_ON(host->mrq != NULL);/*lint !e730*/
 	host->mrq = mrq;
+#else
+	WARN_ON(host->cmd != NULL);/*lint !e730*/
+#endif
 	opcode = mrq->cmd->opcode;
 
 	/*Get hostlock timeout, the abnormal context may have the locker*/
@@ -118,7 +123,9 @@ reg_recovery:
 unlock:
 	spin_unlock_irqrestore(&host->lock, flags);
 out:
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 76))
 	host->mrq = NULL;
+#endif
 	host->cmd = NULL;
 
 	return ret;
@@ -161,9 +168,26 @@ void sdhci_retry_req(struct sdhci_host *host,struct mmc_request *mrq)
 	return;
 }
 
+/* In Libra, do not do vcc power up an off operation in first exception */
+int need_vcc_off(struct mmc_host *mmc)
+{
+	int vcc_off = 1;
+
+	if (mmc->is_coldboot_on_reset_fail) {
+		if (mmc->reset_num == 1)
+			vcc_off = 0;
+	}
+
+	return vcc_off;
+}
+
+
 void sdhci_set_vmmc_power(struct sdhci_host *host, unsigned short vdd)
 {
 	struct mmc_host *mmc = host->mmc;
+
+	if (!need_vcc_off(mmc))
+		return;
 
 	if (host->quirks2 & SDHCI_QUIRK2_USE_1_8_V_VMMC) {
 		if (vdd == 0) {

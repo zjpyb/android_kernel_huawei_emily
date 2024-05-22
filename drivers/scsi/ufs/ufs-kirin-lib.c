@@ -30,6 +30,8 @@
  * license terms, and distributes only under these terms.
  */
 
+#define pr_fmt(fmt) "ufshcd :" fmt
+
 #include "ufshcd.h"
 #include <linux/hisi/kirin_partition.h>
 
@@ -50,7 +52,7 @@ void ufs_get_boot_partition_type(struct ufs_hba *hba)
 		return;
 	}
 
-	ufs_boot_partition_type = (enum AB_PARTITION_TYPE)boot_partition_type;
+	ufs_boot_partition_type = boot_partition_type;
 
 	dev_info(hba->dev, "%s: ufs boot partition type is %s\n",
 		__func__, (ufs_boot_partition_type == 0x1) ? "XLOADER_A" : "xloader_B");
@@ -63,7 +65,7 @@ int ufs_set_boot_partition_type(int boot_partition_type)
 	int ret;
 
 	ret = ufshcd_query_attr(ufs_hba_tmp, UPIU_QUERY_OPCODE_WRITE_ATTR,
-			QUERY_ATTR_IDN_BOOT_LU_EN, 0, 0, &boot_partition_type);/*lint !e64*/
+			QUERY_ATTR_IDN_BOOT_LU_EN, 0, 0, &boot_partition_type);
 
 	if (ret)
 		dev_err(ufs_hba_tmp->dev, "%s: Failed setting boot partition type\n", __func__);

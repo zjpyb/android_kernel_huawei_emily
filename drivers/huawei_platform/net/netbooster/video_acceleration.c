@@ -331,8 +331,7 @@ static int u_stream_info(unsigned short port,
 
 	for (cnt = 0; cnt < PKT_VECTOR_LEN; cnt++) {
 
-		if (before(g_stream.u_time_stamp + STREAM_END_TIMER*HZ, jiffies)) {
-
+		if (before(g_stream.u_time_stamp[cnt] + STREAM_END_TIMER, jiffies)) {
 			g_stream.u_port[cnt] = 0;
 			g_stream.u_ip[cnt] = 0;
 			g_stream.u_cnt[cnt] = 0;

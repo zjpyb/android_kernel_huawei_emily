@@ -73,23 +73,24 @@ static bool ams_tcs3430_deviceInit(ams_tcs3430_deviceCtx_t * ctx, AMS_PORT_portH
 static bool ams_tcs3430_deviceEventHandler(ams_tcs3430_deviceCtx_t * ctx, bool inCalMode);
 static ams_tcs3430_deviceIdentifier_e ams_tcs3430_testForDevice(AMS_PORT_portHndl * portHndl);
 static bool ams_tcs3430_getDeviceInfo(ams_tcs3430_deviceInfo_t * info);
-int report_value[AMS_REPORT_DATA_LEN] = {0};
-struct amsDriver_chip *p_chip = NULL;
+static int report_value[AMS_REPORT_DATA_LEN] = {0};
+static struct colorDriver_chip *p_chip = NULL;
 static bool color_calibrate_result = true;
 static bool report_calibrate_result = false;
 static color_sensor_cali_para_nv color_nv_para;
-int read_nv_first_in = 0;
-int enable_status_before_calibrate = 0;
+static int read_nv_first_in = 0;
+static int enable_status_before_calibrate = 0;
 #ifdef CONFIG_HUAWEI_DSM
 static bool color_devcheck_dmd_result = true;
 extern struct dsm_client* shb_dclient;
 #endif
 extern int ap_color_report(int value[], int length);
-extern int color_register(struct amsDriver_chip *chip);
+extern int color_register(struct colorDriver_chip *chip);
 extern int read_color_calibrate_data_from_nv(int nv_number, int nv_size, char * nv_name, char * temp);
 extern int write_color_calibrate_data_to_nv(int nv_number, int nv_size, char * nv_name, char * temp);
-struct delayed_work als_dmd_work;
-uint8_t report_logcount = 0;
+extern int (*color_default_enable)(bool enable);
+struct delayed_work ams_dmd_work;
+static uint8_t report_logcount = 0;
 
 #if defined(CONFIG_AMS_OPTICAL_SENSOR_ALS)
 
@@ -158,7 +159,13 @@ static UINT8 const ams_tcs3430_als_gains[] = {
 	64,
 	128
 };
-
+const ams_tcs3430_gainCaliThreshold_t  ams_tcs3430_setGainThreshold[CAL_STATE_GAIN_LAST] = {
+	{0, (100*AMS_TCS3430_FLOAT_TO_FIX)},//set threshold 1x to 0~100
+	{(AMS_TCS3430_FLOAT_TO_FIX/AMS_TCS3430_CAL_THR), (AMS_TCS3430_FLOAT_TO_FIX*AMS_TCS3430_CAL_THR)},
+	{(AMS_TCS3430_FLOAT_TO_FIX/AMS_TCS3430_CAL_THR), (AMS_TCS3430_FLOAT_TO_FIX*AMS_TCS3430_CAL_THR)},
+	{(AMS_TCS3430_FLOAT_TO_FIX/AMS_TCS3430_CAL_THR), (AMS_TCS3430_FLOAT_TO_FIX*AMS_TCS3430_CAL_THR)},
+	{(AMS_TCS3430_FLOAT_TO_FIX/AMS_TCS3430_CAL_THR), (AMS_TCS3430_FLOAT_TO_FIX*AMS_TCS3430_CAL_THR)},
+};
 const ams_tcs3430_deviceRegisterTable_t ams_tcs3430_deviceRegisterDefinition[AMS_TCS3430_DEVREG_REG_MAX] = {
 	{ 0x80, 0x01 },          /* DEVREG_ENABLE */
 	{ 0x81, 0x23 },          /* DEVREG_ATIME */
@@ -187,10 +194,11 @@ const ams_tcs3430_deviceRegisterTable_t ams_tcs3430_deviceRegisterDefinition[AMS
 	{ 0xDD, 0x00 },          /* DEVREG_INTENAB */
 };
 
-uint8_t AMS_PORT_TCS3430_getByte(AMS_PORT_portHndl * handle, uint8_t reg, uint8_t * data, uint8_t len){
+int AMS_PORT_TCS3430_getByte(AMS_PORT_portHndl * handle, uint8_t reg, uint8_t * data, uint8_t len){
     int ret;
     if ((handle == NULL) || (data == NULL )){
 	    hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
+	    return -EPERM;
     }
 
     ret = i2c_smbus_read_i2c_block_data(handle, reg, len, data);
@@ -201,10 +209,11 @@ uint8_t AMS_PORT_TCS3430_getByte(AMS_PORT_portHndl * handle, uint8_t reg, uint8_
     return ret;
 }
 
-uint8_t AMS_PORT_TCS3430_setByte(AMS_PORT_portHndl * handle, uint8_t reg, uint8_t* data, uint8_t len){
+int AMS_PORT_TCS3430_setByte(AMS_PORT_portHndl * handle, uint8_t reg, uint8_t* data, uint8_t len){
 	int ret;
 	if ((handle == NULL) || (data == NULL) ){
 		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
+	    return -EPERM;
 	}
 
 	ret = i2c_smbus_write_i2c_block_data(handle, reg, len, data);
@@ -215,9 +224,9 @@ uint8_t AMS_PORT_TCS3430_setByte(AMS_PORT_portHndl * handle, uint8_t reg, uint8_
 	return ret;
 }
 
-static UINT8 ams_tcs3430_getByte(AMS_PORT_portHndl * portHndl, ams_tcs3430_deviceRegister_t reg, UINT8 * readData)
+static int ams_tcs3430_getByte(AMS_PORT_portHndl * portHndl, ams_tcs3430_deviceRegister_t reg, UINT8 * readData)
 {
-	UINT8 read_count = 0;
+	int read_count = 0;
 	UINT8 length = 1;
 
 	if (portHndl == NULL || readData == NULL){
@@ -235,9 +244,9 @@ static UINT8 ams_tcs3430_getByte(AMS_PORT_portHndl * portHndl, ams_tcs3430_devic
 	return read_count;
 }
 
-static UINT8 ams_tcs3430_setByte(AMS_PORT_portHndl * portHndl, ams_tcs3430_deviceRegister_t reg, UINT8 data)
+static int ams_tcs3430_setByte(AMS_PORT_portHndl * portHndl, ams_tcs3430_deviceRegister_t reg, UINT8 data)
 {
-	UINT8 write_count = 0;
+	int write_count = 0;
 	UINT8 length = 1;
 
 	if (portHndl == NULL ){
@@ -253,9 +262,9 @@ static UINT8 ams_tcs3430_setByte(AMS_PORT_portHndl * portHndl, ams_tcs3430_devic
 	return write_count;
 }
 
-static UINT8 ams_tcs3430_getBuf(AMS_PORT_portHndl * portHndl, ams_tcs3430_deviceRegister_t reg, UINT8 * readData, UINT8 length)
+static int ams_tcs3430_getBuf(AMS_PORT_portHndl * portHndl, ams_tcs3430_deviceRegister_t reg, UINT8 * readData, UINT8 length)
 {
-	UINT8 read_count = 0;
+	int read_count = 0;
 
 	if ((portHndl == NULL) || (readData == NULL) ){
 		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
@@ -277,9 +286,9 @@ static int ams_tcs3430_report_data(int value[])
 	AMS_PORT_log("ams_tcs3430_report_data\n");
 	return ap_color_report(value, AMS_REPORT_DATA_LEN*sizeof(int));
 }
-static UINT8 ams_tcs3430_setWord(AMS_PORT_portHndl * portHndl, ams_tcs3430_deviceRegister_t reg, UINT16 data)
+static int ams_tcs3430_setWord(AMS_PORT_portHndl * portHndl, ams_tcs3430_deviceRegister_t reg, UINT16 data)
 {
-	UINT8 write_count = 0;
+	int write_count = 0;
 	UINT8 length = sizeof(UINT16);
 	UINT8 buffer[sizeof(UINT16)] = {0};
 
@@ -298,9 +307,9 @@ static UINT8 ams_tcs3430_setWord(AMS_PORT_portHndl * portHndl, ams_tcs3430_devic
 	return write_count;
 }
 
-static UINT8 ams_tcs3430_getField(AMS_PORT_portHndl * portHndl, ams_tcs3430_deviceRegister_t reg, UINT8 * readData, ams_tcs3430_regMask_t mask)
+static int ams_tcs3430_getField(AMS_PORT_portHndl * portHndl, ams_tcs3430_deviceRegister_t reg, UINT8 * readData, ams_tcs3430_regMask_t mask)
 {
-	UINT8 read_count = 0;
+	int read_count = 0;
 	UINT8 length = 1;
 
 	if ((portHndl == NULL) || (readData == NULL) ){
@@ -318,9 +327,9 @@ static UINT8 ams_tcs3430_getField(AMS_PORT_portHndl * portHndl, ams_tcs3430_devi
 	return read_count;
 }
 
-static UINT8 ams_tcs3430_setField(AMS_PORT_portHndl * portHndl, ams_tcs3430_deviceRegister_t reg, UINT8 data, ams_tcs3430_regMask_t mask)
+static int ams_tcs3430_setField(AMS_PORT_portHndl * portHndl, ams_tcs3430_deviceRegister_t reg, UINT8 data, ams_tcs3430_regMask_t mask)
 {
-	UINT8 write_count = 1;
+	int write_count = 1;
 	UINT8 length = 1;
 	UINT8 original_data = 0;
 	UINT8 new_data = 0;
@@ -395,7 +404,7 @@ static void ams_tcs3430_resetAllRegisters(AMS_PORT_portHndl * portHndl){
 }
 
 static UINT8 ams_tcs3430_gainToReg(UINT32 x){
-	int i;
+	UINT8 i;
 
 	for (i = sizeof(ams_tcs3430_alsGain_conversion)/sizeof(UINT32)-1; i != 0; i--) {
 	    	if (x >= ams_tcs3430_alsGain_conversion[i]) break;
@@ -908,7 +917,7 @@ static bool ams_tcs3430_getDeviceInfo(ams_tcs3430_deviceInfo_t * info)
 
 void osal_als_timerHndl(unsigned long data)
 {
-	struct amsDriver_chip *chip = (struct amsDriver_chip*) data;
+	struct colorDriver_chip *chip = (struct colorDriver_chip*) data;
 
 	if (chip == NULL){
 		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
@@ -917,7 +926,7 @@ void osal_als_timerHndl(unsigned long data)
 	schedule_work(&chip->als_work);
 }
 
-ssize_t osal_als_enable_set(struct amsDriver_chip *chip, uint8_t valueToSet)
+static ssize_t osal_als_enable_set(struct colorDriver_chip *chip, uint8_t valueToSet)
 {
 	ssize_t rc = 0;
 	ams_tcs3430_ams_mode_t mode = 0;
@@ -972,6 +981,7 @@ static int get_cal_para_from_nv(void)
 		}
 		return 0;
 	}
+
 	for (i = 0; i < CAL_STATE_GAIN_LAST; i++){
 		hwlog_info("\nAMS_Driver: get_cal_para_from_nv: gain[%d]: [%d, %d, %d, %d]\n", i,
 		color_nv_para.calXratio[i], color_nv_para.calYratio[i], color_nv_para.calZratio[i], color_nv_para.calIratio[i]);
@@ -1010,7 +1020,7 @@ static int get_cal_para_from_nv(void)
 	}
 	return 1;
 }
-static int save_cal_para_to_nv(struct amsDriver_chip *chip)
+static int save_cal_para_to_nv(struct colorDriver_chip *chip)
 {
 	int i = 0, ret;
 	if (chip == NULL){
@@ -1040,7 +1050,7 @@ static int save_cal_para_to_nv(struct amsDriver_chip *chip)
 	return 1;
 }
 
-static void osal_calHandl_als(struct amsDriver_chip *chip){
+static void osal_calHandl_als(struct colorDriver_chip *chip){
 	export_alsData_t outData;
 	ams_tcs3430_deviceCtx_t * ctx = NULL;
 	uint32_t currentGain = 0;
@@ -1063,23 +1073,23 @@ static void osal_calHandl_als(struct amsDriver_chip *chip){
 	dev_info(&chip->client->dev, "osal_calHandl_als: state %d\n", chip->calibrationCtx.calState);
 	dev_info(&chip->client->dev, "osal_calHandl_als: count %d\n", chip->calibrationCtx.calSampleCounter);
 
-	if (chip->calibrationCtx.calState != CAL_STATE_GAIN_LAST){
+	if (chip->calibrationCtx.calState < CAL_STATE_GAIN_LAST && chip->calibrationCtx.calState >= 0){
 		chip->calibrationCtx.calSampleCounter++;
 		chip->calibrationCtx.calXsample += outData.rawX;
 		chip->calibrationCtx.calYsample += outData.rawY;
 		chip->calibrationCtx.calZsample += outData.rawZ;
 		chip->calibrationCtx.calIRsample += outData.rawIR;
 
-		if(chip->calibrationCtx.calSampleCounter >= AMS_TCS3430_CAL_AVERAGE){
+		if((chip->calibrationCtx.calState < CAL_STATE_GAIN_LAST) && (chip->calibrationCtx.calState >= 0)){
 			result = (chip->calibrationCtx.calXsample / AMS_TCS3430_CAL_AVERAGE);
 			if (result){
 				result = (chip->calibrationCtx.calXtarget * (currentGain *
 					AMS_TCS3430_FLOAT_TO_FIX / AMS_TCS3430_GAIN_OF_GOLDEN)) / result;
-				if(result > AMS_TCS3430_FLOAT_TO_FIX * AMS_TCS3430_CAL_THR ||
-					result < AMS_TCS3430_FLOAT_TO_FIX / AMS_TCS3430_CAL_THR ){
+				if(result > ams_tcs3430_setGainThreshold[chip->calibrationCtx.calState].high_thr||
+					result < ams_tcs3430_setGainThreshold[chip->calibrationCtx.calState].low_thr){
 					hwlog_err("\n %s: ratio is out bound[%d, %d]! calXresult[%d] = %d\n" , __func__,
-						AMS_TCS3430_FLOAT_TO_FIX*AMS_TCS3430_CAL_THR,
-						AMS_TCS3430_FLOAT_TO_FIX/AMS_TCS3430_CAL_THR, chip->calibrationCtx.calState, result);
+						ams_tcs3430_setGainThreshold[chip->calibrationCtx.calState].high_thr,
+						ams_tcs3430_setGainThreshold[chip->calibrationCtx.calState].low_thr, chip->calibrationCtx.calState, result);
 					color_calibrate_result = false;
 				}
 			} else {
@@ -1092,11 +1102,11 @@ static void osal_calHandl_als(struct amsDriver_chip *chip){
 			if (result){
 				result = (chip->calibrationCtx.calYtarget * (currentGain *
 					AMS_TCS3430_FLOAT_TO_FIX / AMS_TCS3430_GAIN_OF_GOLDEN)) / result;
-				if(result > AMS_TCS3430_FLOAT_TO_FIX * AMS_TCS3430_CAL_THR
-					|| result < AMS_TCS3430_FLOAT_TO_FIX / AMS_TCS3430_CAL_THR ){
+				if(result > ams_tcs3430_setGainThreshold[chip->calibrationCtx.calState].high_thr
+					|| result < ams_tcs3430_setGainThreshold[chip->calibrationCtx.calState].low_thr ){
 					hwlog_err("\n %s: ratio is out bound[%d, %d]! calYresult[%d] = %d\n" , __func__,
-						AMS_TCS3430_FLOAT_TO_FIX*AMS_TCS3430_CAL_THR,
-						AMS_TCS3430_FLOAT_TO_FIX/AMS_TCS3430_CAL_THR, chip->calibrationCtx.calState, result);
+						ams_tcs3430_setGainThreshold[chip->calibrationCtx.calState].high_thr,
+						ams_tcs3430_setGainThreshold[chip->calibrationCtx.calState].low_thr, chip->calibrationCtx.calState, result);
 					color_calibrate_result = false;
 				}
 			} else {
@@ -1109,12 +1119,12 @@ static void osal_calHandl_als(struct amsDriver_chip *chip){
 			if (result){
 				result = (chip->calibrationCtx.calZtarget * (currentGain *
 					AMS_TCS3430_FLOAT_TO_FIX / AMS_TCS3430_GAIN_OF_GOLDEN)) / result;
-				if(result > AMS_TCS3430_FLOAT_TO_FIX * AMS_TCS3430_CAL_THR
-					|| result < AMS_TCS3430_FLOAT_TO_FIX / AMS_TCS3430_CAL_THR ){
+				if(result > ams_tcs3430_setGainThreshold[chip->calibrationCtx.calState].high_thr
+					|| result < ams_tcs3430_setGainThreshold[chip->calibrationCtx.calState].low_thr ){
 
 					hwlog_err("\n %s: ratio is out bound[%d, %d]! calZresult[%d] = %d\n" , __func__,
-						AMS_TCS3430_FLOAT_TO_FIX*AMS_TCS3430_CAL_THR,
-						AMS_TCS3430_FLOAT_TO_FIX/AMS_TCS3430_CAL_THR, chip->calibrationCtx.calState, result);
+						ams_tcs3430_setGainThreshold[chip->calibrationCtx.calState].high_thr,
+						ams_tcs3430_setGainThreshold[chip->calibrationCtx.calState].low_thr, chip->calibrationCtx.calState, result);
 					color_calibrate_result = false;
 				}
 			} else {
@@ -1127,12 +1137,12 @@ static void osal_calHandl_als(struct amsDriver_chip *chip){
 			if (result){
 				result = (chip->calibrationCtx.calIRtarget * (currentGain *
 					AMS_TCS3430_FLOAT_TO_FIX / AMS_TCS3430_GAIN_OF_GOLDEN)) / result;
-				if(result > AMS_TCS3430_FLOAT_TO_FIX * AMS_TCS3430_CAL_THR||
-					result < AMS_TCS3430_FLOAT_TO_FIX / AMS_TCS3430_CAL_THR ){
+				if(result > ams_tcs3430_setGainThreshold[chip->calibrationCtx.calState].high_thr||
+					result < ams_tcs3430_setGainThreshold[chip->calibrationCtx.calState].low_thr ){
 
 					hwlog_err("\n %s: ratio is out bound[%d, %d]! calIRresult[%d] = %d\n" , __func__,	
-						AMS_TCS3430_FLOAT_TO_FIX * AMS_TCS3430_CAL_THR,
-						AMS_TCS3430_FLOAT_TO_FIX/AMS_TCS3430_CAL_THR, chip->calibrationCtx.calState, result);
+						ams_tcs3430_setGainThreshold[chip->calibrationCtx.calState].high_thr,
+						ams_tcs3430_setGainThreshold[chip->calibrationCtx.calState].low_thr, chip->calibrationCtx.calState, result);
 					color_calibrate_result = false;
 				}
 			} else {
@@ -1182,7 +1192,7 @@ static void osal_calHandl_als(struct amsDriver_chip *chip){
 	return;
 }
 
-static void  osal_report_als(struct amsDriver_chip *chip)
+static void  osal_report_als(struct colorDriver_chip *chip)
 {
 	export_alsData_t outData = {0};
 	uint8_t currentGainIndex = 0;
@@ -1251,11 +1261,11 @@ static ssize_t osal_als_x_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
 	export_alsData_t outData;
-	if(NULL == dev || NULL == dev || NULL == buf){
+	if(NULL == dev || NULL == attr || NULL == buf){
 		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
 		return 0;
 		}
-	struct amsDriver_chip *chip = dev_get_drvdata(dev);
+	struct colorDriver_chip *chip = dev_get_drvdata(dev);
 	ams_tcs3430_deviceGetAls(chip->deviceCtx, &outData);
 	return snprintf(buf, PAGE_SIZE, "%d\n", outData.rawX);
 }
@@ -1268,7 +1278,7 @@ static ssize_t osal_als_y_show(struct device *dev,
 		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
 		return 0;
 		}
-	struct amsDriver_chip *chip = dev_get_drvdata(dev);
+	struct colorDriver_chip *chip = dev_get_drvdata(dev);
 	ams_tcs3430_deviceGetAls(chip->deviceCtx, &outData);
 	return snprintf(buf, PAGE_SIZE, "%d\n", outData.rawY);
 }
@@ -1280,7 +1290,7 @@ static ssize_t osal_als_z_show(struct device *dev,
 		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
 		return 0;
 		}
-	struct amsDriver_chip *chip = dev_get_drvdata(dev);
+	struct colorDriver_chip *chip = dev_get_drvdata(dev);
 	ams_tcs3430_deviceGetAls(chip->deviceCtx, &outData);
 	return snprintf(buf, PAGE_SIZE, "%d\n", outData.rawZ);
 }
@@ -1293,7 +1303,7 @@ static ssize_t osal_als_ir1_show(struct device *dev,
 		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
 		return 0;
 		}
-	struct amsDriver_chip *chip = dev_get_drvdata(dev);
+	struct colorDriver_chip *chip = dev_get_drvdata(dev);
 	ams_tcs3430_deviceGetAls(chip->deviceCtx, &outData);
 	return snprintf(buf, PAGE_SIZE, "%d\n", outData.rawIR);
 }
@@ -1306,7 +1316,7 @@ static ssize_t osal_als_ir2_show(struct device *dev,
 		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
 		return 0;
 		}
-	struct amsDriver_chip *chip = dev_get_drvdata(dev);
+	struct colorDriver_chip *chip = dev_get_drvdata(dev);
 	ams_tcs3430_deviceGetAls(chip->deviceCtx, &outData);
 	return snprintf(buf, PAGE_SIZE, "%d\n", outData.rawIR2);
 }
@@ -1314,7 +1324,7 @@ static ssize_t osal_als_ir2_show(struct device *dev,
 
 int ams_tcs3430_setenable(bool enable)
 {
-	struct amsDriver_chip *chip = p_chip;
+	struct colorDriver_chip *chip = p_chip;
 
 	if (enable)
 		osal_als_enable_set(chip, AMSDRIVER_ALS_ENABLE);
@@ -1333,8 +1343,8 @@ static ssize_t osal_als_enable_show(struct device *dev,
 		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
 		return 0;
 		}
-	struct amsDriver_chip *chip = dev_get_drvdata(dev);
-	ams_tcs3430_ams_mode_t mode;
+	struct colorDriver_chip *chip = dev_get_drvdata(dev);
+	ams_tcs3430_ams_mode_t mode = AMS_TCS3430_MODE_OFF;
 
 	ams_tcs3430_deviceGetMode(chip->deviceCtx, &mode);
 
@@ -1354,7 +1364,7 @@ static ssize_t osal_als_enable_store(struct device *dev,
 		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
 		return 0;
 		}
-	struct amsDriver_chip *chip = dev_get_drvdata(dev);
+	struct colorDriver_chip *chip = dev_get_drvdata(dev);
 	bool value;
 
 	if (strtobool(buf, &value))
@@ -1369,7 +1379,7 @@ static ssize_t osal_als_enable_store(struct device *dev,
 }
 
 
-void ams_show_calibrate(struct amsDriver_chip *chip, color_sensor_output_para * out_para)
+void ams_show_calibrate(struct colorDriver_chip *chip, color_sensor_output_para * out_para)
 {
 	int i;
 	if (NULL == out_para || NULL == chip){
@@ -1400,12 +1410,12 @@ void ams_show_calibrate(struct amsDriver_chip *chip, color_sensor_output_para * 
 	}
 	return;
 }
-void ams_store_calibrate(struct amsDriver_chip *chip, color_sensor_input_para *in_para)
+void ams_store_calibrate(struct colorDriver_chip *chip, color_sensor_input_para *in_para)
 {
-	ams_tcs3430_deviceCtx_t * ctx;
+	ams_tcs3430_deviceCtx_t * ctx = NULL;
 	ams_tcs3430_ams_mode_t mode = 0;
 
-	if(NULL == chip){
+	if((NULL == chip) || (NULL == in_para)){
 		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
 		return;
 	}
@@ -1450,7 +1460,7 @@ void ams_store_calibrate(struct amsDriver_chip *chip, color_sensor_input_para *i
 		}
 	return;
 }
-void ams_show_enable(struct amsDriver_chip *chip, int *state)
+void ams_show_enable(struct colorDriver_chip *chip, int *state)
 {
 	ams_tcs3430_ams_mode_t mode = 0;
 
@@ -1468,7 +1478,7 @@ void ams_show_enable(struct amsDriver_chip *chip, int *state)
 	
 }
 
-void ams_store_enable(struct amsDriver_chip *chip, int state)
+void ams_store_enable(struct colorDriver_chip *chip, int state)
 {
 	ams_tcs3430_ams_mode_t mode = 0;
 
@@ -1490,7 +1500,7 @@ void ams_store_enable(struct amsDriver_chip *chip, int state)
  *                     OSAL Linux Input Driver
  ****************************************************************************/
 
-static int amsdriver_pltf_power_on(struct amsDriver_chip *chip)
+static int amsdriver_pltf_power_on(struct colorDriver_chip *chip)
 {
 	int rc = 0;
 	if(NULL == chip){
@@ -1500,7 +1510,7 @@ static int amsdriver_pltf_power_on(struct amsDriver_chip *chip)
 	return rc;
 }
 
-static int amsdriver_pltf_power_off(struct amsDriver_chip *chip)
+static int amsdriver_pltf_power_off(struct colorDriver_chip *chip)
 {
 	int rc = 0;
 	if(NULL == chip){
@@ -1510,7 +1520,7 @@ static int amsdriver_pltf_power_off(struct amsDriver_chip *chip)
 	return rc;
 }
 
-static int amsdriver_power_on(struct amsDriver_chip *chip)
+static int amsdriver_power_on(struct colorDriver_chip *chip)
 {
 	int rc = 0;
 	if(NULL == chip){
@@ -1533,7 +1543,7 @@ static int osal_als_idev_open(struct input_dev *idev)
 		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
 		return 0;
 	}
-	struct amsDriver_chip *chip = dev_get_drvdata(&idev->dev);
+	struct colorDriver_chip *chip = dev_get_drvdata(&idev->dev);
 	int rc = 0;
 
 	dev_info(&idev->dev, "%s\n", __func__);
@@ -1559,7 +1569,7 @@ static void osal_als_idev_close(struct input_dev *idev)
 		return;
 	}
 	int rc = 0;
-	struct amsDriver_chip *chip = dev_get_drvdata(&idev->dev);
+	struct colorDriver_chip *chip = dev_get_drvdata(&idev->dev);
 	dev_info(&idev->dev, "%s\n", __func__);
 
 	AMS_MUTEX_LOCK(&chip->lock);
@@ -1581,8 +1591,8 @@ static void amsdriver_work(struct work_struct *work)
 		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
 		return;
 	}
-    	struct amsDriver_chip *chip = \
-        	container_of(work, struct amsDriver_chip, als_work);
+	struct colorDriver_chip *chip = \
+		container_of(work, struct colorDriver_chip, als_work);
 	if(NULL == chip){
 		hwlog_err("\nAMS_Driver: %s: Pointer chip is NULL\n", __func__);
 		return;
@@ -1642,6 +1652,8 @@ bypass:
 
 	AMS_MUTEX_UNLOCK(&chip->lock);
 }
+
+#ifdef CONFIG_HUAWEI_DSM
 static void amsdriver_dmd_work(void)
 {
 	if (!dsm_client_ocuppy(shb_dclient)) {
@@ -1652,6 +1664,8 @@ static void amsdriver_dmd_work(void)
 		}
 	}
 }
+#endif
+
 int amsdriver_probe(struct i2c_client *client,
 	const struct i2c_device_id *idp)
 {
@@ -1662,8 +1676,8 @@ int amsdriver_probe(struct i2c_client *client,
 		return -1;
 	}
 	struct device *dev = &client->dev;
-	static struct amsDriver_chip *chip;
-	struct amsdriver_i2c_platform_data *pdata = dev->platform_data;
+	static struct colorDriver_chip *chip = NULL;
+	struct driver_i2c_platform_data *pdata = dev->platform_data;
 	ams_tcs3430_deviceInfo_t amsDeviceInfo;
 	ams_tcs3430_deviceIdentifier_e deviceId;
 
@@ -1680,7 +1694,7 @@ int amsdriver_probe(struct i2c_client *client,
 		goto init_failed;
 	}
 
-	chip = kzalloc(sizeof(struct amsDriver_chip), GFP_KERNEL);
+	chip = kzalloc(sizeof(struct colorDriver_chip), GFP_KERNEL);
 	if (!chip) {
 		ret = -ENOMEM;
 		goto malloc_failed;
@@ -1707,7 +1721,7 @@ int amsdriver_probe(struct i2c_client *client,
 	}
 
 #ifdef CONFIG_HUAWEI_DSM
-	INIT_DELAYED_WORK(&als_dmd_work, amsdriver_dmd_work);
+	INIT_DELAYED_WORK(&ams_dmd_work, amsdriver_dmd_work);
 #endif
 	/********************************************************************/
 	/* Validate the appropriate ams device is available for this driver */
@@ -1720,7 +1734,7 @@ int amsdriver_probe(struct i2c_client *client,
 		dev_info(dev, "ams_tcs3430_testForDevice failed: AMS_UNKNOWN_DEVICE\n");
 #ifdef CONFIG_HUAWEI_DSM
 		color_devcheck_dmd_result = false;
-		schedule_delayed_work(&als_dmd_work, msecs_to_jiffies(AP_COLOR_DMD_DELAY_TIME_MS));
+		schedule_delayed_work(&ams_dmd_work, msecs_to_jiffies(AP_COLOR_DMD_DELAY_TIME_MS));
 #endif
 		goto id_failed;
 	}
@@ -1773,6 +1787,7 @@ int amsdriver_probe(struct i2c_client *client,
 	if(ret < 0){
 		hwlog_err("\ams_tcs3430: color_register fail \n");
 	}
+	color_default_enable = ams_tcs3430_setenable;
 
 	dev_info(dev, "Probe ok.\n");
 	return 0;
@@ -1807,7 +1822,11 @@ int amsdriver_suspend(struct device *dev)
 		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
 		return -1;
 	}
-	struct amsDriver_chip  *chip = dev_get_drvdata(dev);
+	struct colorDriver_chip  *chip = dev_get_drvdata(dev);
+	if(NULL == chip){
+		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
+		return -1;
+	}
 
 	dev_info(dev, "%s\n", __func__);
 	AMS_MUTEX_LOCK(&chip->lock);
@@ -1831,7 +1850,11 @@ int amsdriver_resume(struct device *dev)
 		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
 		return -1;
 	}
-	struct amsDriver_chip *chip = dev_get_drvdata(dev);
+	struct colorDriver_chip *chip = dev_get_drvdata(dev);
+	if(NULL == chip){
+		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
+		return -1;
+	}
 
 	return 0;
 	AMS_MUTEX_LOCK(&chip->lock);
@@ -1855,7 +1878,11 @@ int amsdriver_remove(struct i2c_client *client)
 		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
 		return -1;
 	}
-	struct amsDriver_chip *chip = i2c_get_clientdata(client);
+	struct colorDriver_chip *chip = i2c_get_clientdata(client);
+	if(NULL == chip){
+		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
+		return -1;
+	}
 
 	free_irq(client->irq, chip);
 

@@ -216,18 +216,7 @@ void PPM_HsicPortInit(void)
     return;
 }
 
-/*****************************************************************************
- Prototype       : PPM_HsicConnectProc
- Description     : OM口和HSIC关联
- Input           : None
- Output          : None
- Return Value    : u32
 
- History         : ---
-    Date         : 2012-04-09
-    Author       : h59254
-    Modification : AP-Modem锁网锁卡项目新增函数
- *****************************************************************************/
 void PPM_HsicConnectProc(void)
 {
     osl_sem_down(&g_ulOmAcpuHsicSem);
@@ -256,18 +245,7 @@ void PPM_HsicConnectProc(void)
     return;
 }
 
-/*****************************************************************************
- Prototype       : PPM_HsicDisconnectProc
- Description     : OM口和HSIC解除关联
- Input           : None
- Output          : None
- Return Value    : u32
 
- History         : ---
-    Date         : 2012-04-09
-    Author       : h59254
-    Modification : AP-Modem锁网锁卡项目新增函数
- *****************************************************************************/
 void PPM_HsicDisconnectProc(void)
 {
     /* 产品不支持HSIC特性，直接初始化成功 */

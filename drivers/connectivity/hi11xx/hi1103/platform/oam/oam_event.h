@@ -60,7 +60,7 @@ extern "C" {
 /*****************************************************************************
   10 º¯ÊıÉùÃ÷
 *****************************************************************************/
-extern oal_uint32  oam_event_init(oal_void);
+extern oal_uint32  oam_event_init_etc(oal_void);
 
 #ifdef __cplusplus
     #if __cplusplus

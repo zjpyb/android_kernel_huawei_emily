@@ -134,6 +134,8 @@
 	_LOG_TRACE_PRINT(VL53L1_TRACE_MODULE_CORE, \
 	level, VL53L1_TRACE_FUNCTION_NONE, ##__VA_ARGS__)
 
+extern int memcpy_s(void *dest, size_t destMax, const void *src, size_t count);
+
 
 VL53L1_Error VL53L1_run_ref_spad_char(
 	VL53L1_DEV        Dev,
@@ -975,7 +977,8 @@ VL53L1_Error VL53L1_run_xtalk_extraction_dual_reflectance(
 
 
 
-	memcpy(&(pdev->xtalk_results.central_histogram_avg),
+	memcpy_s(&(pdev->xtalk_results.central_histogram_avg),
+		   sizeof(VL53L1_histogram_bin_data_t),
 		   &(pxtalk_avg_samples[4]),
 		   sizeof(VL53L1_histogram_bin_data_t));
 
@@ -1389,7 +1392,7 @@ VL53L1_Error VL53L1_get_and_avg_xtalk_samples(
 
 
 
-	memcpy(pavg_histo, &(pdev->hist_data), sizeof(VL53L1_histogram_bin_data_t));
+	memcpy_s(pavg_histo, sizeof(VL53L1_histogram_bin_data_t), &(pdev->hist_data), sizeof(VL53L1_histogram_bin_data_t));
 
 
 
@@ -1640,11 +1643,11 @@ VL53L1_Error VL53L1_get_and_avg_all_xtalk_samples(
 
 
 
-	memcpy(pavg_histo_z0, &(pdev->hist_data), sizeof(VL53L1_histogram_bin_data_t));
-	memcpy(pavg_histo_z1, &(pdev->hist_data), sizeof(VL53L1_histogram_bin_data_t));
-	memcpy(pavg_histo_z2, &(pdev->hist_data), sizeof(VL53L1_histogram_bin_data_t));
-	memcpy(pavg_histo_z3, &(pdev->hist_data), sizeof(VL53L1_histogram_bin_data_t));
-	memcpy(pavg_histo_z4, &(pdev->hist_data), sizeof(VL53L1_histogram_bin_data_t));
+	memcpy_s(pavg_histo_z0, sizeof(VL53L1_histogram_bin_data_t), &(pdev->hist_data), sizeof(VL53L1_histogram_bin_data_t));
+	memcpy_s(pavg_histo_z1, sizeof(VL53L1_histogram_bin_data_t), &(pdev->hist_data), sizeof(VL53L1_histogram_bin_data_t));
+	memcpy_s(pavg_histo_z2, sizeof(VL53L1_histogram_bin_data_t), &(pdev->hist_data), sizeof(VL53L1_histogram_bin_data_t));
+	memcpy_s(pavg_histo_z3, sizeof(VL53L1_histogram_bin_data_t), &(pdev->hist_data), sizeof(VL53L1_histogram_bin_data_t));
+	memcpy_s(pavg_histo_z4, sizeof(VL53L1_histogram_bin_data_t), &(pdev->hist_data), sizeof(VL53L1_histogram_bin_data_t));
 
 
 

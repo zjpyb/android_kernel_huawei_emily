@@ -164,7 +164,6 @@ typedef TAF_UINT8 AT_CMEE_TYPE;
 #define AT_CMEE_ERROR_CODE                1
 #define AT_CMEE_ERROR_CONTENT             2
 
-/* Added by L60609 for MUX，2012-08-03,  Begin */
 /* AP-Modem 中，目前规格支持最大8个MUX AT通道 */
 #define AT_MUX_AT_CHANNEL_MAX           (8)
 
@@ -176,8 +175,6 @@ typedef TAF_UINT8 AT_CMEE_TYPE;
 #define AT_MUX_AT_CHANNEL_INDEX_6       (5)
 #define AT_MUX_AT_CHANNEL_INDEX_7       (6)
 #define AT_MUX_AT_CHANNEL_INDEX_8       (7)
-/* Added by L60609 for MUX，2012-08-03,  End */
-
 #define AT_OCTET_MOVE_FOUR_BITS    (0x04)  /* 将一个字节移动4位 */
 #define AT_OCTET_MOVE_EIGHT_BITS   (0x08)  /* 将一个字节移动8位 */
 #define AT_OCTET_LOW_FOUR_BITS     (0x0f)  /* 获取一个字节中的低4位 */
@@ -935,7 +932,6 @@ typedef struct
 
 typedef MN_CALL_CS_DATA_CFG_STRU AT_CBST_DATA_CFG_STRU;
 
-/* Modified by l60609 for DSDA Phase III, 2013-2-21, Begin */
 typedef struct
 {
     HTIMER                              s0Timer;
@@ -946,7 +942,6 @@ typedef struct
     VOS_UINT32                          ulTimerName;
     VOS_UINT8                           aucReserved[4];
 }AT_S0_TIMER_INFO_STRU;
-/* Modified by l60609 for DSDA Phase III, 2013-2-21, End */
 
 typedef MN_CALL_CUG_CFG_STRU     AT_CCUG_CFG_STRU;
 
@@ -1142,10 +1137,7 @@ typedef struct
     VOS_UINT8                           ucSmsAutoReply;                         /* 自动回复标志 */
     MN_MSG_CSMS_MSG_VERSION_ENUM_U8     enCsmsMsgVersion;                       /* 短信服务类型 */
     MN_MSG_ME_STORAGE_STATUS_ENUM_UINT8 enMsgMeStorageStatus;                   /* ME存储状态标志 */
-    /* modified by l65478 for 2013-05-23 begin */
     VOS_UINT8                           ucLocalStoreFlg;
-    /* modified by l65478 for 2013-05-23 begin */
-
     VOS_UINT8                           ucReserve2;
 
     AT_CNMI_TYPE_STRU                   stCnmiType;                             /* CNMI类型 */
@@ -1233,7 +1225,6 @@ typedef struct
 /*********************************Client CTX End*****************************/
 
 /*********************************COMM CTX Begin*****************************/
-/* Added by L60609 for MUX，2012-08-03,  Begin */
 
 typedef struct
 {
@@ -1261,8 +1252,6 @@ typedef struct
     VOS_UINT8                           ucMuxSupportFlg;                        /* 是否支持MUX特性 */
     VOS_UINT8                           aucRsv[7];
 }AT_MUX_CTX_STRU;
-/* Added by L60609 for MUX，2012-08-03,  End */
-
 /*********************************COMM CTX End*****************************/
 
 
@@ -1986,7 +1975,6 @@ AT_MODEM_CDMAMODEMSWITCH_CTX_STRU* AT_GetModemCdmaModemSwitchCtxAddrFromModemId(
     MODEM_ID_ENUM_UINT16                enModemId
 );
 
-/* Added by z60575 for DSDA_SAR, 2013-5-30 begin */
 extern AT_MODEM_MT_INFO_CTX_STRU* AT_GetModemMtInfoCtxAddrFromModemId(
     MODEM_ID_ENUM_UINT16                enModemId
 );

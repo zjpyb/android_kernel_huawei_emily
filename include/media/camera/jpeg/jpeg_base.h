@@ -32,4 +32,8 @@ extern int jpeg_dec_set_rate(struct clk *clk, unsigned long rate);
 extern int jpeg_dec_clk_prepare_enable(struct clk *clk);
 extern void jpeg_dec_clk_disable_unprepare(struct clk *clk);
 
+extern int jpeg_ipp_set_rate(struct clk *clk, unsigned long rate);	
+extern int jpeg_ipp_clk_prepare_enable(struct clk *clk);	
+extern void jpeg_ipp_clk_disable_unprepare(struct clk *clk);
+
 #endif /* __HW_JPEG_BASE_H__ */

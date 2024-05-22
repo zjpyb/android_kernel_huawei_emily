@@ -61,7 +61,10 @@ static irqreturn_t hi64xx_sound_trigger_handler(int irq, void *data)
 
 int hi64xx_fast_mode_set(unsigned short enable)
 {
-	BUG_ON(NULL == vad_data);
+	if (!vad_data) {
+		pr_err("vad data is null\n");
+		return -EINVAL;
+	}
 
 	vad_data->fast_mode_enable = enable;
 

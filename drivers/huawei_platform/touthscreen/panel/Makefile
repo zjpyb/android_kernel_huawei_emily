@@ -4,5 +4,4 @@ obj-$(CONFIG_CYPRESS_TS)  += cyttsp5/
 obj-$(CONFIG_ATMEL_TS) += atmel/
 obj-$(CONFIG_HIDEEP_TS)  += hideep/
 obj-$(CONFIG_ST_TS)  += st/
-obj-$(CONFIG_GOODIX_TS) += goodix/
 obj-$(CONFIG_HW_NOVATEK_TS) +=novatek/

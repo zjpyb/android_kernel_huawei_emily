@@ -19,6 +19,11 @@
 #include "hwcam_intf.h"
 #include "../../clt/hisi_clt_flag.h"
 
+extern int memcpy_s(void *dest, size_t destMax, const void *src, size_t count);
+extern int memset_s(void *dest, size_t destMax, int c, size_t count);
+extern int strncpy_s(char *strDest, size_t destMax, const char *strSrc, size_t count);
+extern int snprintf_s(char* strDest, size_t destMax, size_t count, const char* format, ...);
+
 /*lint -save -e64*/
 struct dsm_client_ops ops3={
     .poll_state = NULL,
@@ -346,8 +351,8 @@ int hw_flash_config(struct hw_flash_ctrl_t *flash_ctrl, void *arg)
         break;
     case CFG_FLASH_GET_FLASH_NAME:
         mutex_lock(flash_ctrl->hw_flash_mutex);
-        memset(cdata->cfg.name, 0, sizeof(cdata->cfg.name));
-        strncpy(cdata->cfg.name, flash_ctrl->flash_info.name,
+        memset_s(cdata->cfg.name, sizeof(cdata->cfg.name), 0, sizeof(cdata->cfg.name));
+        strncpy_s(cdata->cfg.name, sizeof(cdata->cfg.name) - 1, flash_ctrl->flash_info.name,
             sizeof(cdata->cfg.name) - 1);
         mutex_unlock(flash_ctrl->hw_flash_mutex);
         break;
@@ -527,8 +532,8 @@ int32_t hw_flash_platform_probe(struct platform_device *pdev,
     v4l2_subdev_init(&flash_ctrl->hw_sd.sd,
             flash_ctrl->flash_v4l2_subdev_ops);
 
-    snprintf(flash_ctrl->hw_sd.sd.name,
-        sizeof(flash_ctrl->hw_sd.sd.name), "%s",
+    snprintf_s(flash_ctrl->hw_sd.sd.name,
+        sizeof(flash_ctrl->hw_sd.sd.name),sizeof(flash_ctrl->hw_sd.sd.name) - 1 ,"%s",
         flash_ctrl->flash_info.name);
 
     v4l2_set_subdevdata(&flash_ctrl->hw_sd.sd, pdev);
@@ -542,11 +547,8 @@ int32_t hw_flash_platform_probe(struct platform_device *pdev,
 	}
 
     flash_ctrl->hw_sd.sd.flags |= V4L2_SUBDEV_FL_HAS_DEVNODE;
-    media_entity_init(&flash_ctrl->hw_sd.sd.entity, 0, NULL, 0);
-    flash_ctrl->hw_sd.sd.entity.type = MEDIA_ENT_T_V4L2_SUBDEV;
-    flash_ctrl->hw_sd.sd.entity.group_id = group_id;
-    flash_ctrl->hw_sd.sd.entity.name = flash_ctrl->hw_sd.sd.name;
-    hwcam_cfgdev_register_subdev(&flash_ctrl->hw_sd.sd);
+    init_subdev_media_entity(&flash_ctrl->hw_sd.sd,group_id);
+    hwcam_cfgdev_register_subdev(&flash_ctrl->hw_sd.sd,group_id);
 
     rc = flash_ctrl->func_tbl->flash_register_attribute(flash_ctrl,
             &flash_ctrl->hw_sd.sd.devnode->dev);
@@ -629,8 +631,8 @@ int32_t hw_flash_i2c_probe(struct i2c_client *client,
     v4l2_subdev_init(&flash_ctrl->hw_sd.sd,
             flash_ctrl->flash_v4l2_subdev_ops);
 
-    snprintf(flash_ctrl->hw_sd.sd.name,
-        sizeof(flash_ctrl->hw_sd.sd.name), "%s",
+    snprintf_s(flash_ctrl->hw_sd.sd.name,
+        sizeof(flash_ctrl->hw_sd.sd.name),sizeof(flash_ctrl->hw_sd.sd.name)-1, "%s",
         flash_ctrl->flash_info.name);
 
     v4l2_set_subdevdata(&flash_ctrl->hw_sd.sd, client);
@@ -644,11 +646,8 @@ int32_t hw_flash_i2c_probe(struct i2c_client *client,
 	}
 
     flash_ctrl->hw_sd.sd.flags |= V4L2_SUBDEV_FL_HAS_DEVNODE;
-    media_entity_init(&flash_ctrl->hw_sd.sd.entity, 0, NULL, 0);
-    flash_ctrl->hw_sd.sd.entity.type = MEDIA_ENT_T_V4L2_SUBDEV;
-    flash_ctrl->hw_sd.sd.entity.group_id = group_id;
-    flash_ctrl->hw_sd.sd.entity.name = flash_ctrl->hw_sd.sd.name;
-    hwcam_cfgdev_register_subdev(&flash_ctrl->hw_sd.sd);
+    init_subdev_media_entity(&flash_ctrl->hw_sd.sd,group_id);
+    hwcam_cfgdev_register_subdev(&flash_ctrl->hw_sd.sd,group_id);
     rc = flash_ctrl->func_tbl->flash_register_attribute(flash_ctrl,
             &flash_ctrl->hw_sd.sd.devnode->dev);
     if (rc < 0) {

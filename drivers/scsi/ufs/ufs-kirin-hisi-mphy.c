@@ -12,6 +12,8 @@
  *
  */
 
+#define pr_fmt(fmt) "ufshcd :" fmt
+
 #include <linux/gpio.h>
 #include <linux/i2c.h>
 #include <linux/of_gpio.h>

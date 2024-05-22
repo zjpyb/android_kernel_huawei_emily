@@ -1,3 +1,12 @@
+/*
+ * drivers/power/water_check/water_check.c
+ * Copyright (C) 2012-2018 HUAWEI, Inc.
+ * Author: HUAWEI, Inc.
+ *
+ * This package is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ */
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/slab.h>
@@ -7,344 +16,416 @@
 #include <linux/platform_device.h>
 #include <linux/interrupt.h>
 #include <linux/pinctrl/consumer.h>
-#include <linux/fs.h>
-#include <asm/uaccess.h>
-#include <dsm/dsm_pub.h>
 #include <huawei_platform/power/huawei_charger.h>
+#include <huawei_platform/log/hw_log.h>
 
-#define VALID_IRQ_INTERVAL 3
-#define LOG_LEN 100
-#define MAX_LOG_COUNT 4
-#define WATER_CHECK_KOBJ_NAME "water_check"
-#define WATERCHECK_DMDLOG_SIZE 50
-#define INIT_STATE          "no content"
-#define WATER_IN             1
-#define WATER_NULL           0
-enum {
-	POSITION_EAR = 0,  // ear: top side of the phone
-	POSITION_USB,      // usb: bottom side of the phone
-};
+#define WATER_IN          (1)
+#define WATER_NULL        (0)
+#define WATER_CHECK_PARA_LEVEL    (8)
+#define SINGLE_POSITION        (1)
+#define WATERCHECK_DMDLOG_SIZE    (60)
+#define WATER_CHECK_DSM_IGNORE_NUM    (99)
+#define DEBOUNCE_TIME        (3000)
+#define DSM_NEED_REPORT    (1)
+#define DSM_REPORTED       (0)
+#define GPIO_NAME_SIZE     (16)
+#define BATFET_DISABLED_ACTION  (1)
 
-struct water_check_info {
-	int gpio_ear;
-	int gpio_usb;
-	int irq_ear;
-	int irq_usb;
-	int last_gpio_ear_value;
-	int last_gpio_usb_value;
-	struct pinctrl *pinctrl;
-	struct mutex log_save_mutex;
-	struct platform_device *pdev;
-	u8 log_buf_bitmap;
-	char log_buf[LOG_LEN * MAX_LOG_COUNT];
-};
+#define HWLOG_TAG water_check
+HWLOG_REGIST();
 
-const char log_head[] = "water check is triggered, position:";
-const char water_in[] = "  water in";
-const char water_out[] = "  water disappear";
-static int is_water_in = 0;
 static struct water_check_info *g_info = NULL;
-static int save_water_check_log(struct water_check_info *info, int position, int gpio_value)
-{
-	char *tmp_buf;
-	int tmp_len = 0;
-	int i;
-
-	mutex_lock(&info->log_save_mutex);
-
-	for (i = 0; i < MAX_LOG_COUNT; i++) {
-		if (!(info->log_buf_bitmap & (1 << i)))
-			break;
-	}
-	if (i == MAX_LOG_COUNT) {
-		pr_err("log buf is full, no space to store new log\n");
-		mutex_unlock(&info->log_save_mutex);
-		return 0;
-	}
-	tmp_buf = &info->log_buf[0] + i * LOG_LEN;
-	memset(tmp_buf, 0, LOG_LEN);
-
-	tmp_len += snprintf(tmp_buf, sizeof(log_head), log_head);
-	switch (position) {
-		case POSITION_EAR:
-			tmp_len += snprintf(tmp_buf + tmp_len, 4, "ear");
-			break;
-		case POSITION_USB:
-			tmp_len += snprintf(tmp_buf + tmp_len, 4, "usb");
-			break;
-		default:
-			pr_err("unknown water check record postion\n");
-	}
-
-	if (gpio_value)
-		tmp_len += snprintf(tmp_buf + tmp_len,
-					LOG_LEN - tmp_len, water_out);
-	else
-		tmp_len += snprintf(tmp_buf + tmp_len,
-					LOG_LEN - tmp_len, water_in);
-
-	tmp_len += snprintf(tmp_buf + tmp_len, LOG_LEN - tmp_len,
-					"  gpio value:%d", gpio_value);
-
-	info->log_buf_bitmap |= 1 << i;
-	/* notify the userspace that new log is ready */
-	sysfs_notify(&info->pdev->dev.kobj, NULL, "poll_water_check");
-	mutex_unlock(&info->log_save_mutex);
-
-	return 0;
-
-}
+static struct wake_lock g_wc_wakelock;
+enum water_check_core_para_info{
+	WATER_CHECK_TYPE = 0,
+	WATER_CHECK_GPIO_NAME,
+	WATER_CHECK_IRQ_NO,
+	WATER_MULTIPLE_HANDLE,
+	WATER_DMD_NO_OFFSET,
+	WATER_IS_PROMPT,
+	WATER_CHECK_ACTION,
+	WATER_CHECK_PARA_TOTAL,
+};
+struct water_check_core_para{
+	int check_type;
+	char gpio_name[GPIO_NAME_SIZE];
+	int irq_no;
+	int dmd_no_offset;
+	int gpio_no;
+	u8 multiple_handle;
+	u8 prompt;
+	u8 action;
+};
+struct water_check_core_data{
+	int total_type;
+	struct water_check_core_para detect_para[WATER_CHECK_PARA_LEVEL];
+};
+struct water_check_info {
+	struct device *dev;
+	u32 need_pinctrl_config;
+	struct pinctrl *pinctrl;
+	struct delayed_work water_detect_work;
+	u8 last_check_status[WATER_CHECK_PARA_LEVEL];
+	u8 dsm_report_status[WATER_CHECK_PARA_LEVEL];
+	char dsm_buff[WATERCHECK_DMDLOG_SIZE];
+	struct water_check_core_data water_check_data;
+};
 
 int is_water_intrused(void)
 {
-	struct water_check_info *info = g_info;
+	int i = 0;
 	int gpio_value = 1;
+	struct water_check_info *info = g_info;
 
 	if(NULL == info)
 		return WATER_NULL;
-
-	gpio_value = gpio_get_value(info->gpio_usb);
-	if(WATER_IN == is_water_in && 0 == gpio_value){
-		pr_info("water is detected in usb!\n");
-		return WATER_IN;
+	for(i = 0;i < info->water_check_data.total_type;i++)
+	{
+		if(!strncmp( info->water_check_data.detect_para[i].gpio_name,"usb",strlen("usb")) ){
+			gpio_value = gpio_get_value(info->water_check_data.detect_para[i].gpio_no);
+			if(!gpio_value){
+				hwlog_info("water is detected in usb!\n");
+				return WATER_IN;
+			}
+		}
 	}
-
 	return WATER_NULL;
 }
-static ssize_t log_copy_to_userspace(struct device *dev, struct device_attribute *attr, char *buf)
+
+static void water_intruded_handle(int index,struct water_check_info *info)
+{
+	char single_position_dsm_buff[WATERCHECK_DMDLOG_SIZE];
+	if(NULL == info) {
+		hwlog_err("%s:info null\n",__func__);
+		return;
+	}
+	if(index < 0 || index > info->water_check_data.total_type) {
+		hwlog_err("%s:index is invalid\n",__func__);
+		return;
+	}
+
+	/*dsm report*/
+	if(WATER_CHECK_DSM_IGNORE_NUM != info->water_check_data.detect_para[index].dmd_no_offset) {
+		if(SINGLE_POSITION  == info->water_check_data.detect_para[index].check_type) {
+			memset(single_position_dsm_buff,0,WATERCHECK_DMDLOG_SIZE);
+			snprintf(single_position_dsm_buff, WATERCHECK_DMDLOG_SIZE,
+						"water check is triggered in: %s",info->water_check_data.detect_para[index].gpio_name);
+			hwlog_info("[%s]:single_position_dsm_buff:%s\n",__func__, single_position_dsm_buff);
+
+			  //single position dsm report one time
+			power_dsm_dmd_report(POWER_DSM_BATTERY, \
+			ERROR_NO_WATER_CHECK_BASE+info->water_check_data.detect_para[index].dmd_no_offset, \
+			single_position_dsm_buff);
+			msleep(150);
+			info->dsm_report_status[index] = DSM_REPORTED;
+		}
+		else {
+			hwlog_info("[%s]:multiple_intruded_dsm_buff:%s\n",__func__,info->dsm_buff);
+			power_dsm_dmd_report(POWER_DSM_BATTERY, \
+				ERROR_NO_WATER_CHECK_BASE+info->water_check_data.detect_para[index].dmd_no_offset, \
+				info->dsm_buff);
+		}
+	}
+	/*other functions*/
+	switch (info->water_check_data.detect_para[index].action) {
+		case BATFET_DISABLED_ACTION:
+			hwlog_info("%s: do charge_set_batfet_disable!\n",__func__);
+			msleep(50);
+			charge_set_batfet_disable(true);
+			break;
+		default:
+			break;
+	}
+
+}
+
+static void water_detect_work(struct work_struct *work)
 {
 	int i;
-	struct water_check_info *info = dev_get_drvdata(dev);
+	u8 gpio_val = 0;
+	int water_intruded_num = 0;
+	struct water_check_info *info = NULL;
 
-	int len = 0;
+	info = container_of(work, struct water_check_info,water_detect_work.work);
+	if(NULL == info) {
+		hwlog_err("%s:info null\n",__func__);
 
-	mutex_lock(&info->log_save_mutex);
-	for (i = 0; i < MAX_LOG_COUNT; i++) {
-		if (info->log_buf_bitmap >> i) {
-			len += scnprintf(buf + len, LOG_LEN, &info->log_buf[0] + (long)i * LOG_LEN);
-			info->log_buf_bitmap &= ~(1 << i);
-			memset(&info->log_buf[0] + i * LOG_LEN, 0, LOG_LEN);
+		/*enable irq*/
+		for(i = 0;i < info->water_check_data.total_type;i++) {
+			if(SINGLE_POSITION == info->water_check_data.detect_para[i].check_type)
+				enable_irq(info->water_check_data.detect_para[i].irq_no);
+		}
+		wake_unlock(&g_wc_wakelock);
+		return;
+	}
+
+	memset(&info->dsm_buff,0,WATERCHECK_DMDLOG_SIZE);
+	snprintf(info->dsm_buff,WATERCHECK_DMDLOG_SIZE,"water check is triggered in: ");
+	hwlog_info("%s:start\n",__func__);
+
+	for(i = 0;i < info->water_check_data.total_type;i++) {
+		if(SINGLE_POSITION == info->water_check_data.detect_para[i].check_type) {
+			gpio_val = gpio_get_value_cansleep(info->water_check_data.detect_para[i].gpio_no);
+			if(!gpio_val) {
+				if(info->water_check_data.detect_para[i].multiple_handle) {
+					water_intruded_num++;
+					snprintf(info->dsm_buff+strlen(info->dsm_buff),WATERCHECK_DMDLOG_SIZE,"%s ",
+						info->water_check_data.detect_para[i].gpio_name);
+				}
+				if((gpio_val ^ (info->last_check_status[i]))
+					|| ((info->dsm_report_status[i])))
+					water_intruded_handle(i,info);
+			}
+			if(gpio_val) {
+				info->dsm_report_status[i] = DSM_NEED_REPORT;
+			}
+			info->last_check_status[i] = gpio_val;
 		}
 	}
-	if(0 == len){
-		len += scnprintf(buf, LOG_LEN, "no content");
+	/*multiple intruded*/
+	if(water_intruded_num > SINGLE_POSITION) {
+		for(i = 0;i < info->water_check_data.total_type;i++) {
+			if(water_intruded_num == info->water_check_data.detect_para[i].check_type) {
+				water_intruded_handle(i,info);
+			}
+		}
 	}
-	mutex_unlock(&info->log_save_mutex);
-	return len;
+
+	/*enable irq*/
+	for(i = 0;i < info->water_check_data.total_type;i++) {
+		if(SINGLE_POSITION == info->water_check_data.detect_para[i].check_type)
+			enable_irq(info->water_check_data.detect_para[i].irq_no);
+	}
+	wake_unlock(&g_wc_wakelock);
+	hwlog_info("%s:end\n",__func__);
+
 }
 
-static DEVICE_ATTR(poll_water_check, (S_IRUSR | S_IRUGO), log_copy_to_userspace, NULL);
-
-static irqreturn_t irq_ear_handler(int irq, void *p)
+static irqreturn_t water_check_irq_handler(int irq, void *p)
 {
-	int gpio_value;
-	static u64 pre_jiffies = 0;
-	u64 cur_jiffies;
-	char dsm_buff[WATERCHECK_DMDLOG_SIZE] = "water check is triggered in top position";
+	int i;
 	struct water_check_info *info = (struct water_check_info *)p;
-
-	cur_jiffies = get_jiffies_64();
-	if (pre_jiffies) {
-		if (cur_jiffies - pre_jiffies < HZ * VALID_IRQ_INTERVAL) {
-			pr_info("ear irq is triggered too frequently, ignore this one\n");
-			pre_jiffies = cur_jiffies;
-			return IRQ_HANDLED;
-		}
+	if(!info) {
+		hwlog_err("info null\n");
+		return IRQ_NONE;
 	}
 
-	pre_jiffies = cur_jiffies;
-
-	gpio_value = gpio_get_value_cansleep(info->gpio_ear);
-	pr_info("receive gpio_ear irq, gpio_value:%d\n", gpio_value);
-
-	if (info->last_gpio_ear_value ^ gpio_value) {
-		if (!gpio_value) {
-			dsm_report(ERROR_NO_WATER_CHECK_IN_EAR,dsm_buff);
-		}
-		save_water_check_log(info, POSITION_EAR, gpio_value);
-	} else {
-		pr_info("not a valid ear rasing or falling irq, ignore\n");
+	wake_lock(&g_wc_wakelock);
+	hwlog_info("%s  irq_no:%d++ \n",__func__,irq );
+	for(i = 0;i < info->water_check_data.total_type;i++)
+	{
+		if(SINGLE_POSITION == info->water_check_data.detect_para[i].check_type)
+			disable_irq_nosync(info->water_check_data.detect_para[i].irq_no);
 	}
-	info->last_gpio_ear_value = gpio_value;
 
+	schedule_delayed_work(&info->water_detect_work, msecs_to_jiffies(DEBOUNCE_TIME));
+
+	hwlog_info("%s  irq_no:%d-- \n",__func__,irq );
 	return IRQ_HANDLED;
+
 }
 
-static irqreturn_t irq_usb_handler(int irq, void *p)
+static int water_check_gpio_config(struct  water_check_info *info)
 {
-	int gpio_value = -1;
-	static u64 pre_jiffies = 0;
-	u64 cur_jiffies;
-	char dsm_buff[WATERCHECK_DMDLOG_SIZE] = "water check is triggered in bottom position";
-	struct water_check_info *info = (struct water_check_info *)p;
+	int i = 0;
+	int ret = -1;
+	if(NULL == info || NULL == info->dev) {
+		hwlog_err("info null\n");
+		return -ENOMEM;
+	}
 
-	cur_jiffies = get_jiffies_64();
-	if (pre_jiffies) {
-		if (cur_jiffies - pre_jiffies < HZ * VALID_IRQ_INTERVAL) {
-			pr_info("usb irq is triggered too frequently, ignore this one\n");
-			pre_jiffies = cur_jiffies;
-			return IRQ_HANDLED;
+	/*request gpio & register interrupt handler function*/
+	for(i = 0;i  < info->water_check_data.total_type;i++) {
+		if(SINGLE_POSITION == info->water_check_data.detect_para[i].check_type) {
+			ret = devm_gpio_request_one(info->dev,(unsigned int)info->water_check_data.detect_para[i].gpio_no,
+									(unsigned long)GPIOF_DIR_IN,info->water_check_data.detect_para[i].gpio_name);
+			if (ret < 0) {
+				hwlog_err("failled to request gpio:%d\n",info->water_check_data.detect_para[i].gpio_no);
+				goto err_gpio_config;
+			}
+			info->water_check_data.detect_para[i].irq_no = (unsigned int)gpio_to_irq(info->water_check_data.detect_para[i].gpio_no);
+			if(info->water_check_data.detect_para[i].irq_no < 0) {
+				hwlog_err("gpio_to_irq:%d  failed\n",info->water_check_data.detect_para[i].gpio_no);
+				ret = -EAGAIN;
+				goto err_gpio_config;
+			}
+			info->last_check_status[i] = gpio_get_value_cansleep(info->water_check_data.detect_para[i].gpio_no);
+			info->dsm_report_status[i] = DSM_NEED_REPORT;
+
+			ret = devm_request_irq(info->dev,(unsigned int)info->water_check_data.detect_para[i].irq_no,
+						water_check_irq_handler,IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING
+						| IRQF_NO_SUSPEND | IRQF_ONESHOT, info->water_check_data.detect_para[i].gpio_name, info);
+			if (ret < 0) {
+				hwlog_err("failed to register gpio_%d irq\n",info->water_check_data.detect_para[i].gpio_no);
+				goto err_gpio_config;
+			}
+			disable_irq_nosync(info->water_check_data.detect_para[i].irq_no);
 		}
 	}
 
-	pre_jiffies = cur_jiffies;
+	for(i = 0;i < info->water_check_data.total_type;i++) {
+		if(SINGLE_POSITION == info->water_check_data.detect_para[i].check_type)
+			hwlog_info("position:%s update irq_no:%d gpio_status:%d dsm_status:%d\n",info->water_check_data.detect_para[i].gpio_name,
+					info->water_check_data.detect_para[i].irq_no,info->last_check_status[i],info->dsm_report_status[i]);
+	}
 
-	gpio_value = gpio_get_value_cansleep(info->gpio_usb);
-	pr_info("receive gpio_usb irq, gpio_value:%d\n", gpio_value);
+err_gpio_config:
+	return ret;
 
-	if (info->last_gpio_usb_value ^ gpio_value) {
-		if (gpio_value) {
-			is_water_in = WATER_NULL;
-		} else {
-			is_water_in = WATER_IN;
-			dsm_report(ERROR_NO_WATER_CHECK_IN_USB,dsm_buff);
-		}
-		save_water_check_log(info, POSITION_USB, gpio_value);
+}
+
+static int water_check_parse_extra_dts(struct device_node *np,struct water_check_info *info)
+{
+	int i,j;
+	int ret = -1;
+	int array_len = 0;
+	char * tmp_string = NULL;
+	char tmp_gpio_name[GPIO_NAME_SIZE];
+
+	/*water_check para*/
+	array_len = of_property_count_strings(np,"water_check_para");
+	if ((array_len <= 0) ||(array_len % WATER_CHECK_PARA_TOTAL!= 0)) {
+		info-> water_check_data.total_type = 0;
+		hwlog_err("water_check_para error, please check it!!\n");
+	} else if (array_len > WATER_CHECK_PARA_TOTAL*WATER_CHECK_PARA_LEVEL) {
+		info-> water_check_data.total_type = 0;
+		hwlog_err("water_check_para is too long(%d)!!\n" , array_len);
 	} else {
-		pr_info("not a valid usb rasing or falling irq, ignore\n");
-	}
-	info->last_gpio_usb_value = gpio_value;
+			info->water_check_data.total_type = (int)(array_len/WATER_CHECK_PARA_TOTAL);
+			hwlog_info("water_check_total_type = %d\n",info->water_check_data.total_type);
+			for(i = 0;i < info->water_check_data.total_type;i++) {
+				for(j = 0;j < WATER_CHECK_PARA_TOTAL;j++) {
+					ret = of_property_read_string_index(np,"water_check_para",i * WATER_CHECK_PARA_TOTAL + j,&tmp_string);
+					if(ret) {
+						hwlog_err("get water_check_para failed\n");
+						return -EINVAL;
+					}
+					switch (j) {
+					case WATER_CHECK_TYPE:
+						info->water_check_data.detect_para[i].check_type =
+								simple_strtol(tmp_string, NULL, 10);
+						break;
+					case WATER_CHECK_GPIO_NAME:
+						strncpy(info->water_check_data.detect_para[i].gpio_name,tmp_string,sizeof(info->water_check_data.detect_para[i].gpio_name));
 
-	return IRQ_HANDLED;
+						if(SINGLE_POSITION== info->water_check_data.detect_para[i].check_type) {
+							memset(tmp_gpio_name,0,GPIO_NAME_SIZE);
+							snprintf(tmp_gpio_name,sizeof(tmp_gpio_name),"gpio_%s",info->water_check_data.detect_para[i].gpio_name);
+							info->water_check_data.detect_para[i].gpio_no = of_get_named_gpio(np,tmp_gpio_name,0);
+							if(!gpio_is_valid(info->water_check_data.detect_para[i].gpio_no)) {
+								hwlog_err("get gpio_%s no failed\n",info->water_check_data.detect_para[i].gpio_name);
+								return -EINVAL;
+							}
+						}
+						break;
+					case WATER_CHECK_IRQ_NO:
+						info->water_check_data.detect_para[i].irq_no =
+								simple_strtol(tmp_string, NULL, 10);
+						break;
+					case WATER_MULTIPLE_HANDLE:
+						info->water_check_data.detect_para[i].multiple_handle =
+								simple_strtol(tmp_string, NULL, 10);
+						break;
+					case WATER_DMD_NO_OFFSET:
+						info->water_check_data.detect_para[i].dmd_no_offset =
+								simple_strtol(tmp_string, NULL, 10);
+						break;
+					case WATER_IS_PROMPT:
+						info->water_check_data.detect_para[i].prompt =
+								simple_strtol(tmp_string, NULL, 10);
+						break;
+					case WATER_CHECK_ACTION:
+						info->water_check_data.detect_para[i].action =
+								simple_strtol(tmp_string, NULL, 10);
+						break;
+					}
+				}
+			}
+			for(i = 0;i < info->water_check_data.total_type;i++) {
+				hwlog_info("water_check_para[%d]  check_type:%d  gpio_no:%-3d  gpio_name:%s  irq_no:%d multiple_handle:%d dmd_no_offset:%d  prompt:%d  action:%d \n",
+							i,info->water_check_data.detect_para[i].check_type,info->water_check_data.detect_para[i].gpio_no,
+							info->water_check_data.detect_para[i].gpio_name,info->water_check_data.detect_para[i].irq_no,
+							info->water_check_data.detect_para[i].multiple_handle,info->water_check_data.detect_para[i].dmd_no_offset,
+							info->water_check_data.detect_para[i].prompt,info->water_check_data.detect_para[i].action);
+			}
+	}
+	return ret;
 }
 
 static int water_check_probe(struct platform_device *pdev)
 {
 	int ret = -1;
 	struct water_check_info *info = NULL;
-	struct device_node *node = pdev->dev.of_node;
+	struct device_node *np = NULL;
 	struct pinctrl_state *pinctrl_def;
 
-	info = devm_kzalloc(&pdev->dev, sizeof(*info), GFP_KERNEL);
+	info = devm_kzalloc(&pdev->dev,sizeof(*info), GFP_KERNEL);
 	if (!info)
 		return -ENOMEM;
 	g_info = info;
-
-	info->pinctrl = devm_pinctrl_get(&pdev->dev);
-	if (IS_ERR(info->pinctrl)) {
-		pr_err("failed to get pinctrl\n");
-		goto err_pinctrl_get;
+	info->dev = &pdev->dev;
+	np = pdev->dev.of_node;
+	if(NULL == np || NULL == info->dev) {
+		hwlog_err("device_node is NULL!\n");
+		return -ENOMEM;
 	}
 
-	pinctrl_def = pinctrl_lookup_state(info->pinctrl, "default");
-	if (IS_ERR(pinctrl_def)) {
-		pr_err("failed to get pinctrl_def\n");
-		goto err_pinctrl_look_state;
-	}
-
-	/* configure the gpios as no-pull state */
-	ret = pinctrl_select_state(info->pinctrl, pinctrl_def);
+	ret = of_property_read_u32(np,"need_pinctrl_config",&info->need_pinctrl_config);
 	if (ret) {
-		pr_err("failed to set pins to default state\n");
-		goto err_pinctrl_set;
+		hwlog_err("get need_pinctrl_config failed\n");
+		return -EINVAL;
+	}
+	if(info->need_pinctrl_config) {
+		info->pinctrl = devm_pinctrl_get(&pdev->dev);
+		if (IS_ERR(info->pinctrl)) {
+			hwlog_err("failed to get pinctrl\n");
+			goto err_pinctrl_get;
+		}
+
+		pinctrl_def = pinctrl_lookup_state(info->pinctrl, "default");
+		if (IS_ERR(pinctrl_def)) {
+			hwlog_err("failed to get pinctrl_def\n");
+			goto err_pinctrl_look_state;
+		}
+
+		/* configure the gpios as no-pull state */
+		ret = pinctrl_select_state(info->pinctrl, pinctrl_def);
+		if (ret) {
+			hwlog_err("failed to set pins to default state\n");
+			goto err_pinctrl_set;
+		}
 	}
 
-	mutex_init(&info->log_save_mutex);
-
-	info->gpio_ear = of_get_named_gpio(node, "gpio_ear", 0);
-	if (info->gpio_ear < 0) {
-		pr_err("failed to get gpio_ear\n");
-		goto err_gpio_of_get;
-	}
-	info->gpio_usb = of_get_named_gpio(node, "gpio_usb", 0);
-	if (info->gpio_usb < 0) {
-		pr_err("failed to get gpio_usb\n");
-		goto err_gpio_of_get;
+	ret = water_check_parse_extra_dts(np,info);
+	if(ret < 0) {
+		hwlog_err("get water_check_para from dts failed!\n");
+		goto err_parse_dts;
 	}
 
-	ret = gpio_request(info->gpio_ear, "water_check_ear");
-	if (ret < 0) {
-		pr_err("failled to request gpio_ear:%d\n", info->gpio_ear);
-		goto err_gpio_request_ear;
-	}
-	ret = gpio_request(info->gpio_usb, "water_check_usb");
-	if (ret < 0) {
-		pr_err("failled to request gpio_usb:%d\n", info->gpio_usb);
-		goto err_gpio_request_usb;
+	ret = water_check_gpio_config(info);
+	if(ret < 0){
+		hwlog_err("water_check_gpio_config failed!\n");
+		goto err_gpio_config;
 	}
 
-	/* set the gpio as input, for water check interrupt source */
-	ret = gpio_direction_input(info->gpio_ear);
-	if (ret) {
-		pr_err("failed to set gpio_ear output high\n");
-		goto err_gpio_direction_set;
-	}
-	ret = gpio_direction_input(info->gpio_usb);
-	if (ret) {
-		pr_err("failed to set gpio_usb output high\n");
-		goto err_gpio_direction_set;
-	}
-
-	info->irq_ear = gpio_to_irq(info->gpio_ear);
-	if (info->irq_ear < 0) {
-		pr_err("failed to get irq_ear\n");
-		goto err_gpio_to_irq;
-	}
-	info->irq_usb = gpio_to_irq(info->gpio_usb);
-	if (info->irq_usb < 0) {
-		pr_err("failed to get irq_usb\n");
-		goto err_gpio_to_irq;
-	}
-
-	info->last_gpio_ear_value = gpio_get_value_cansleep(info->gpio_ear);
-	info->last_gpio_usb_value = gpio_get_value_cansleep(info->gpio_usb);
-
-	if(0 == info->last_gpio_usb_value){
-		is_water_in = WATER_IN;
-	}else{
-		is_water_in = WATER_NULL;
-	}
-
-	ret = request_threaded_irq(info->irq_ear, NULL, irq_ear_handler,
-				IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING
-				| IRQF_NO_SUSPEND | IRQF_ONESHOT, "irq_ear", info);
-	if (ret < 0) {
-		pr_err("failed to register irq_ear\n");
-		goto err_request_irq_ear;
-	}
-	ret = request_threaded_irq(info->irq_usb, NULL, irq_usb_handler,
-				IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING
-				| IRQF_NO_SUSPEND | IRQF_ONESHOT, "irq_usb", info);
-	if (ret < 0) {
-		pr_err("failed to register irq_usb\n");
-		goto err_request_irq_usb;
-	}
-
+	wake_lock_init(&g_wc_wakelock,WAKE_LOCK_SUSPEND, "watercheck_wakelock");
+	INIT_DELAYED_WORK(&info->water_detect_work, water_detect_work);
+	schedule_delayed_work(&info->water_detect_work, msecs_to_jiffies(8000));//used only here
 	dev_set_drvdata(&pdev->dev, info);
-	ret = sysfs_create_file(&pdev->dev.kobj, &dev_attr_poll_water_check.attr);
-	if (ret) {
-		pr_err("failed to create the poll node\n");
-		goto err_poll_create;
-	}
-	/* The device name created by system is its dts name and a number postfix,
-	 * the number is determined by the position in dts, so the device name and
-	 * the sys path are random, change it, then userspace can access the node
-	 * with a uniform path.
-	 */
-	device_rename(&pdev->dev, "water_check");
-	info->pdev = pdev;
-	pr_info("water check driver probes successfully\n");
+
+	hwlog_info("water check driver probes successfully\n");
 	return ret;
 
-err_poll_create:
-	free_irq(info->irq_usb, info);
-err_request_irq_usb:
-	free_irq(info->irq_ear, info);
-err_request_irq_ear:
-err_gpio_to_irq:
-err_gpio_direction_set:
-	gpio_free(info->gpio_usb);
-err_gpio_request_usb:
-	gpio_free(info->gpio_ear);
-err_gpio_request_ear:
-err_gpio_of_get:
-	mutex_destroy(&info->log_save_mutex);
+err_gpio_config:
+err_parse_dts:
 err_pinctrl_set:
 err_pinctrl_look_state:
-	devm_pinctrl_put(info->pinctrl);
+	if(info->need_pinctrl_config)
+		devm_pinctrl_put(info->pinctrl);
 err_pinctrl_get:
 	devm_kfree(&pdev->dev, info);
 	g_info = NULL;
+	hwlog_err("water check driver probes failed\n");
 	return ret;
 }
 
@@ -352,13 +433,10 @@ static int water_check_remove(struct platform_device *pdev)
 {
 	struct water_check_info *info = dev_get_drvdata(&pdev->dev);
 
-	sysfs_remove_file(&pdev->dev.kobj, &dev_attr_poll_water_check.attr);
-	free_irq(info->irq_usb, info);
-	free_irq(info->irq_ear, info);
-	gpio_free(info->gpio_usb);
-	gpio_free(info->gpio_ear);
-	mutex_destroy(&info->log_save_mutex);
-	devm_pinctrl_put(info->pinctrl);
+	wake_lock_destroy(&g_wc_wakelock);
+	cancel_delayed_work(&info->water_detect_work);
+	if(info->need_pinctrl_config)
+		devm_pinctrl_put(info->pinctrl);
 	devm_kfree(&pdev->dev, info);
 	dev_set_drvdata(&pdev->dev, NULL);
 	g_info = NULL;
@@ -399,5 +477,5 @@ static void __exit water_check_exit(void)
 late_initcall_sync(water_check_init);
 module_exit(water_check_exit);
 
-MODULE_DESCRIPTION("This module uses for water check at phone positon of ear and usb port");
+MODULE_DESCRIPTION("This module uses for water check at phone positon of ear sim key or usb port");
 MODULE_LICENSE("GPL v2");

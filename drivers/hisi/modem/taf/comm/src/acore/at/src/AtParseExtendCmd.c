@@ -355,7 +355,6 @@ VOS_UINT32 atParseExtendCmd( VOS_UINT8 * pData, VOS_UINT16 usLen)
     return AT_SUCCESS;                              /*  返回正确*/
 }
 
-/* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
 
 VOS_UINT32 AT_ParseSetDockCmd(
     VOS_UINT8                          *pucData,
@@ -366,11 +365,9 @@ VOS_UINT32 AT_ParseSetDockCmd(
     VOS_UINT16                          usCmdlen;
     VOS_UINT32                          ulPos;
     VOS_UINT8                          *pucDataPara = VOS_NULL_PTR;
-    /* Modified by l60609 for DSDA Phase III, 2013-2-25, Begin */
     AT_PARSE_CMD_NAME_TYPE_STRU         stAtCmdName;
 
     TAF_MEM_SET_S(&stAtCmdName, sizeof(stAtCmdName), 0x00, sizeof(stAtCmdName));
-    /* Modified by l60609 for DSDA Phase III, 2013-2-25, End */
 
     if (0 == usLen)
     {
@@ -415,7 +412,6 @@ VOS_UINT32 AT_ParseSetDockCmd(
 
     /* 获取命令(不包含命令前缀AT)名称及长度 */
     ulPos = VOS_StrLen("AT");
-    /* Modified by l60609 for DSDA Phase III, 2013-2-25, Begin */
     stAtCmdName.usCmdNameLen = (VOS_UINT16)VOS_StrLen("^DOCK");
     TAF_MEM_CPY_S(stAtCmdName.aucCmdName,
                sizeof(stAtCmdName.aucCmdName),
@@ -423,7 +419,6 @@ VOS_UINT32 AT_ParseSetDockCmd(
                stAtCmdName.usCmdNameLen);
     stAtCmdName.aucCmdName[stAtCmdName.usCmdNameLen] = '\0';
     ulPos += stAtCmdName.usCmdNameLen;
-    /* Modified by l60609 for DSDA Phase III, 2013-2-25, End */
 
     ulPos += VOS_StrLen("=");
 
@@ -442,6 +437,5 @@ VOS_UINT32 AT_ParseSetDockCmd(
     PS_MEM_FREE(WUEPS_PID_AT, pucDataPara);
     return AT_SUCCESS;
 }
-/* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, end */
 
 

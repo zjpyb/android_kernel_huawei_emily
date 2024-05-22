@@ -39,5 +39,7 @@ void get_filter_info(
     const struct xt_table_info *private,
     const struct ipt_entry *e);
 
+void get_filter_infoEx(struct sk_buff *skb);
+
 #endif
 

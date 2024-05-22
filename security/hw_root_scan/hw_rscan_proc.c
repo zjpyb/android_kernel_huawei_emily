@@ -36,9 +36,7 @@ static int rscan_proc_show(struct seq_file *m, void *v)
 	}
 #endif
 
-	ret = rscan_trigger();
 	seq_printf(m, "%d", ret);
-
 	return 0;
 }
 

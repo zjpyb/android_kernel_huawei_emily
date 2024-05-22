@@ -32,6 +32,7 @@ void * __oases_api oases_lookup_name(const char *mod,
 			const char *name, int (*cb)(void *addr))
 {
 	struct oases_find_symbol args;
+	int ret;
 
 	if (!name)
 		return NULL;
@@ -40,7 +41,9 @@ void * __oases_api oases_lookup_name(const char *mod,
 	args.mod = mod;
 	args.name = name;
 	args.callback = cb;
-	if (oases_lookup_name_internal(&args) < 0) {
+	args.api_use = 1;
+	ret = oases_lookup_name_internal(&args);
+	if (ret < 0) {
 		oases_error("could not find %s, %lu\n", args.name, args.count);
 		return NULL;
 	}
@@ -81,6 +84,7 @@ static int oases_init_patches(struct oases_patch_info *ctx, struct patch_entry *
 			if (node == NULL) {
 				return -ENOMEM;
 			}
+			node->type = impl->type;
 			node->data = kzalloc(impl->size, GFP_KERNEL);
 			if (node->data == NULL) {
 				kfree(node);
@@ -112,38 +116,62 @@ static int oases_init_patches(struct oases_patch_info *ctx, struct patch_entry *
 static int patch_insn_setup(struct oases_patch_entry *patch,
 	struct oases_insn *insn, void *data)
 {
-    int ret;
-    u32 jump;
-    struct oases_patch_addr *addr = data;
+	int ret;
+	u32 jump;
+	struct oases_patch_addr *addr = data;
 
-    jump = kp_vtab(patch)->setup_jump(patch, insn);
-    if (!jump) {
-        oases_debug("oases_make_jump_insn() failed: %pK => %pK\n",
-            insn->address, insn->plt);
-        return -EINVAL;
-    }
-    oases_patch_addr_add_key(addr, insn->address, jump);
+	jump = kp_vtab(patch)->setup_jump(patch, insn);
+	if (!jump) {
+		oases_debug("oases_make_jump_insn() failed: %pK => %pK\n",
+			insn->address, insn->plt);
+		return -EINVAL;
+	}
+	oases_patch_addr_add_key(addr, insn->address, jump);
+	switch (patch->type) {
+		case OASES_FUNC_PRE:
+		case OASES_FUNC_POST:
+		case OASES_SUBFUNC_PRE:
+		case OASES_SUBFUNC_POST:
+			oases_patch_addr_add_plt(addr, insn->plt, insn->trampoline);
+			ret = kp_vtab(patch)->setup_trampoline(patch, insn);
+			if (ret) {
+				oases_debug("setup_trampoline() failed\n");
+				return ret;
+			}
+			break;
+#if OASES_ENABLE_REPLACEMENT_HANDLER
+		case OASES_FUNC_REP:
+		case OASES_SUBFUNC_REP:
+			oases_patch_addr_add_plt(addr, insn->plt, insn->handler);
+			break;
+#endif
+		case OASES_FUNC_PRE_POST:
+		case OASES_SUBFUNC_PRE_POST:
+			oases_patch_addr_add_plt(addr, insn->plt, insn->handler);
+			ret = kp_vtab(patch)->setup_trampoline(patch, insn);
+			if (ret) {
+				oases_debug("setup_trampoline() failed\n");
+				return ret;
+			}
+			break;
+		default:
+			oases_debug("unknown type %d\n", patch->type);
+			return -EINVAL;
+	}
 	if (insn->trampoline) {
-		oases_patch_addr_add_plt(addr, insn->plt, insn->trampoline);
-		ret = kp_vtab(patch)->setup_trampoline(patch, insn);
-	    if (ret) {
-	        return ret;
-	    }
-	    oases_set_vmarea_ro((unsigned long) insn->trampoline,
+		oases_set_vmarea_ro((unsigned long) insn->trampoline,
 			PAGE_ALIGN(TRAMPOLINE_BUF_SIZE) >> PAGE_SHIFT);
 #ifdef CONFIG_HISI_HHEE
-	    if (is_hkip_enabled()) {
-		oases_debug("disable pxn for trampoline, trampoline=%pK, size=%d, aligned size=%d\n",
-				    insn->trampoline, TRAMPOLINE_BUF_SIZE, PAGE_ALIGN(TRAMPOLINE_BUF_SIZE));
+		if (is_hkip_enabled()) {
+			oases_debug("disable pxn for trampoline, trampoline=%pK, size=%d, aligned size=%d\n",
+				insn->trampoline, TRAMPOLINE_BUF_SIZE, PAGE_ALIGN(TRAMPOLINE_BUF_SIZE));
 			aarch64_insn_disable_pxn_hkip(insn->trampoline, PAGE_ALIGN(TRAMPOLINE_BUF_SIZE));
 	    }
 #endif
-	    flush_icache_range((unsigned long) insn->trampoline,
-	        (unsigned long) insn->trampoline + TRAMPOLINE_BUF_SIZE);
-	} else {
-		oases_patch_addr_add_plt(addr, insn->plt, insn->handler);
+		flush_icache_range((unsigned long) insn->trampoline,
+			(unsigned long) insn->trampoline + TRAMPOLINE_BUF_SIZE);
 	}
-    return 0;
+	return 0;
 }
 
 static int oases_setup_patches(struct oases_patch_info *ctx)
@@ -237,7 +265,11 @@ int __oases_api oases_printk(const char *fmt, ...)
 	int r;
 
 	va_start(args, fmt);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0)
 	r = vprintk_emit(0, -1, NULL, 0, fmt, args);
+#else
+	r = vprintk(fmt, args);
+#endif
 	va_end(args);
 	return r;
 }
@@ -313,14 +345,15 @@ int __oases_api oases_put_user_u32(u32 value, u32 *ptr)
 {
 	return put_user(value, ptr);
 }
+
 int __oases_api oases_get_user_u64(u64 *value, u64 *ptr)
 {
-	return get_user(*value, ptr);
+	return copy_from_user(value, ptr, sizeof(*value));
 }
 
 int __oases_api oases_put_user_u64(u64 value, u64 *ptr)
 {
-	return put_user(value, ptr);
+	return copy_to_user(ptr, &value, sizeof(value));
 }
 
 /* For CONFIG_CC_STACKPROTECTOR which makes current(task_struct) randomized(kti_offset)  */
@@ -332,4 +365,82 @@ void * __oases_api oases_get_current(void)
 unsigned long __oases_api oases_linux_version_code(void)
 {
 	return LINUX_VERSION_CODE;
+}
+
+unsigned long __oases_api oases_version(void)
+{
+	return OASES_VERSION;
+}
+
+struct query_patch_info_args {
+	struct patch_info *out;
+	int ret;
+	int index;
+	int nth;
+};
+
+static int query_patch_info(struct oases_patch_entry *patch,
+	struct oases_insn *insn, void *data)
+{
+	struct query_patch_info_args *args = data;
+	struct patch_info *out = args->out;
+
+	if (args->nth == args->index) {
+		args->ret = 0;
+		out->address = insn->address;
+		out->subfunc = insn->origin_to;
+		out->plt = insn->plt;
+		out->trampoline = insn->trampoline;
+		out->handler = insn->handler;
+		return 1;
+	}
+	args->index++;
+	return 0;
+}
+
+int __oases_api oases_query_patch_info( struct oases_patch_info *ctx,
+	const char *name, int nth, struct patch_info *info)
+{
+	struct oases_patch_entry *node, *p;
+	struct query_patch_info_args args;
+
+	if (!info || !ctx || !name || nth < 0)
+		return -EINVAL;
+	list_for_each_entry_safe(node, p, &ctx->patches, list) {
+		/* for subfunc we use parent name */
+		if (!strcmp(kp_vtab(node)->get_name(node), name)) {
+			args.out = info;
+			args.ret = -EINVAL;
+			args.index = 0;
+			args.nth = nth;
+			kp_vtab(node)->with_each_insn(node, query_patch_info, &args);
+			return args.ret;
+		}
+	}
+	return -ENOENT;
+}
+
+int __oases_api oases_setup_callbacks(struct oases_patch_info *ctx,
+		struct patch_callbacks *ucbs)
+{
+	struct patch_callbacks *kcbs = &ctx->cbs;
+
+	if (ucbs->init && !valid_patch_pointer(ctx, ucbs->init))
+		return -EINVAL;
+
+	if (ucbs->exit && !valid_patch_pointer(ctx, ucbs->exit))
+		return -EINVAL;
+
+	if (ucbs->enable && !valid_patch_pointer(ctx, ucbs->enable))
+		return -EINVAL;
+
+	if (ucbs->disable && !valid_patch_pointer(ctx, ucbs->disable))
+		return -EINVAL;
+
+	kcbs->init= ucbs->init;
+	kcbs->exit= ucbs->exit;
+	kcbs->enable = ucbs->enable;
+	kcbs->disable = ucbs->disable;
+
+	return 0;
 }

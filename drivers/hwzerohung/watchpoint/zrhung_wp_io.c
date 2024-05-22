@@ -129,7 +129,7 @@ static void iowp_event_ctor(iowp_event_t* this, pid_t pid, pid_t tgid, char* dev
 	/* copy IO latency timeout info */
 	this->cur_pid = pid;
 	this->tgid = tgid;
-	memcpy(this->name, device_name, BDEVNAME_SIZE);
+	memcpy(this->name, device_name, strlen(device_name)+1);
 	IOWP_INFO("cur_pid:[%d], tgid[%d], device_name[%s]\n", this->cur_pid, this->tgid,this->name);
 }
 

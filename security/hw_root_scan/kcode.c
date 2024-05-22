@@ -75,8 +75,6 @@ static int kcode_verify_ranges(void)
 
 int kcode_scan(uint8_t *hash)
 {
-	struct scatterlist sg[memrange_num];
-	struct hash_desc desc;
 	int i;
 	int err;
 
@@ -84,25 +82,34 @@ int kcode_scan(uint8_t *hash)
 		if (kcode_verify_ranges())
 			return -ENOMEM;
 
-	sg_init_table(sg, memrange_num);
-	for (i = 0; ranges[i].start != NULL; i++)
-		sg_set_buf(&sg[i], ranges[i].start,
-			(unsigned int)(ranges[i].end - ranges[i].start));
+	struct crypto_shash *tfm = crypto_alloc_shash("sha256", 0, 0);
 
-	desc.flags = 0;
+	SHASH_DESC_ON_STACK(shash, tfm);
 
-	desc.tfm = crypto_alloc_hash("sha256", 0, (u32)CRYPTO_ALG_ASYNC);
-	if (IS_ERR(desc.tfm)) {
+	if (IS_ERR(tfm)) {
 		RSLogError(TAG, "crypto_alloc_hash(sha256) error %ld",
-							PTR_ERR(desc.tfm));
+							PTR_ERR(tfm));
 		return -ENOMEM;
 	}
-	crypto_hash_init(&desc);
-	crypto_hash_update(&desc, sg, memrange_size);
-	err = crypto_hash_final(&desc, (u8 *)hash);
-	RSLogDebug(TAG, "kscan result %d", err);
 
-	crypto_free_hash(desc.tfm);
+	shash->tfm = tfm;
+	shash->flags = 0;
+
+	err = crypto_shash_init(shash);
+	if (err < 0) {
+		RSLogError(TAG, "crypto_shash_init() error %d", err);
+		crypto_free_shash(tfm);
+		return err;
+	}
+
+	for (i = 0; NULL != ranges[i].start; i++)
+	{
+		crypto_shash_update(shash, (char *)ranges[i].start, (unsigned int)(ranges[i].end - ranges[i].start));
+	}
+
+	err = crypto_shash_final(shash, (u8 *)hash);
+	RSLogDebug(TAG, "kscan result %d", err);
+	crypto_free_shash(tfm);
 	return err;
 }
 
@@ -118,26 +125,35 @@ void kcode_copy(char *buffer)
 
 int kcode_syscall_scan(uint8_t *hash)
 {
-	struct scatterlist sg;
-	struct hash_desc desc;
 	void *ptr = (void *)sys_call_table;
 	int err;
+	struct crypto_shash *tfm = crypto_alloc_shash("sha256", 0, 0);
+
+	SHASH_DESC_ON_STACK(shash, tfm);
+
+	if (IS_ERR(tfm)) {
+		RSLogError(TAG, "crypto_alloc_hash(sha256) error %ld",
+							PTR_ERR(tfm));
+		return -ENOMEM;
+	}
+
+	shash->tfm = tfm;
+	shash->flags = 0;
+
+	err = crypto_shash_init(shash);
+	if (err < 0) {
+		RSLogError(TAG, "crypto_shash_init error %d", err);
+		crypto_free_shash(tfm);
+		return err;
+	}
 
 	/* define NR_syscalls as 326 */
 	size_t size = NR_syscalls * sizeof(void *);
 
-	sg_init_one(&sg, ptr, size);
-	desc.flags = 0;
-	desc.tfm = crypto_alloc_hash("sha256", 0, CRYPTO_ALG_ASYNC);
-	if (desc.tfm == NULL) {
-		RSLogError(TAG, "crypto_alloc_hash(sha256) error");
-		return -ENOMEM;
-	}
-	crypto_hash_init(&desc);
-	crypto_hash_update(&desc, &sg, size);
-	err = crypto_hash_final(&desc, (u8 *)hash);
+	crypto_shash_update(shash, (char *)ptr, (unsigned int)size);
+	err = crypto_shash_final(shash, (u8 *)hash);
 	RSLogDebug(TAG, "syscallscan result %d", err);
 
-	crypto_free_hash(desc.tfm);
+	crypto_free_shash(tfm);
 	return err;
 }

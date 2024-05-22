@@ -4,9 +4,9 @@
  * Authors: Salvator Benedetto <salvatore.benedetto@intel.com>
  *
  * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
+ * modify it under the terms of the GNU General Public Licence
  * as published by the Free Software Foundation; either version
- * 2 of the License, or (at your option) any later version.
+ * 2 of the Licence, or (at your option) any later version.
  */
 
 #include <linux/module.h>
@@ -68,7 +68,6 @@ static int ecdh_set_secret(struct crypto_kpp *tfm, const void *buf,
 	return 0;
 }
 
-/*lint -save -e647*/
 static int ecdh_compute_value(struct kpp_request *req)
 {
 	int ret = 0;

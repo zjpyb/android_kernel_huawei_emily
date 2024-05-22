@@ -10,16 +10,19 @@ extern "C" {
 #endif
 
 #ifdef  CONFIG_HI110X_SDIO_STD_CARD_SUPPORT
-#define HISDIO_VENDOR_ID_HI1102                    0x0296      /* VENDOR 1102 */
-#define HISDIO_VENDOR_ID_HI1103                    0x12D1      /* VENDOR 1103 */
+#define HISDIO_VENDOR_ID_HI1102                     0x0296      /* VENDOR 1102 */
+#define HISDIO_VENDOR_ID_HI1103                     0x12D1      /* VENDOR 1103 */
+#define HISDIO_VENDOR_ID_HI1102A                    0x12D1      /* VENDOR 1102A */
 
-#define HISDIO_PRODUCT_ID_HISI                     0x5347      /* Product 110x */
+#define HISDIO_PRODUCT_ID_HISI                      0x5347      /* Product 110x */
+#define HISDIO_PRODUCT_ID_1102A_HISI                0x5348      /* Product 1102a */
 
 #else
-#define HISDIO_VENDOR_ID_HI1102                    0x22D1      /* VENDOR 1102 */
-#define HISDIO_VENDOR_ID_HI1103                    0x22D1      /* VENDOR 1103 */
+#define HISDIO_VENDOR_ID_HI1102                     0x22D1      /* VENDOR 1102 */
+#define HISDIO_VENDOR_ID_HI1103                     0x22D1      /* VENDOR 1103 */
+#define HISDIO_VENDOR_ID_HI1102A                    0x22D1      /* VENDOR 1103 */
 
-#define HISDIO_PRODUCT_ID_HISI                     0x1101      /* Product 110x */
+#define HISDIO_PRODUCT_ID_HISI                      0x1101      /* Product 110x */
 #endif
 
 

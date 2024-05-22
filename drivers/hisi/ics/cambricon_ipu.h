@@ -11,6 +11,7 @@
 #include <linux/fs.h>
 #include <linux/cdev.h>
 #include <linux/io.h>
+#include <linux/wakelock.h>
 #include <linux/timer.h>
 #include <linux/kthread.h>
 
@@ -166,6 +167,7 @@ struct cambricon_ipu_private
 	unsigned int irq;
 	bool ipu_device_opened;
 	bool ipu_power_up;
+	struct wake_lock wakelock;
 	struct mutex power_mutex;
 	struct mutex open_mutex;
 	struct mutex bandwidth_lmt_mutex;
@@ -211,7 +213,7 @@ struct cambricon_ipu_private
 	struct mutex reset_mutex;
 	unsigned long reset_va;
 	unsigned long smmu_ttbr0;
-	void *smmu_rw_err_phy_addr;
+	void *smmu_rw_err_virtual_addr;
 
 	struct irq_reg_offset irq_reg_offset;
 	struct ics_noc_bus_reg_offset ics_noc_bus_reg_offset;

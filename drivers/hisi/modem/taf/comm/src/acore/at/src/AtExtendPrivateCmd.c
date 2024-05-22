@@ -58,14 +58,8 @@
 
 #include "siappstk.h"
 
-/* Added by L47619 for V9R1 vSIM Project, 2013-8-27, begin */
 #include "AtCmdSimProc.h"
-/* Added by L47619 for V9R1 vSIM Project, 2013-8-27, end */
-
-/* ADD by c64416 for V9R1/V7R1 AT, 2013/09/18 begin */
 #include "at_lte_common.h"
-/* ADD by c64416 for V9R1/V7R1 AT, 2013/09/18 end */
-
 #include "AtCmdCallProc.h"
 
 #include "AtTestParaCmd.h"
@@ -101,7 +95,6 @@ AT_PAR_CMD_ELEMENT_STRU g_astAtPrivateCmdTbl[] = {
     (VOS_UINT8*)"^CMDX", (VOS_UINT8*)"(@param1),(param2),(0-255)"},
 */
 
-/* Added by f62575 for AT Project,2011-10-17,  Begin*/
     {AT_CMD_AT2OM,
      At_SetAt2OmPara,AT_NOT_SET_TIME, TAF_NULL_PTR,  AT_NOT_SET_TIME,  VOS_NULL_PTR, AT_NOT_SET_TIME,
       VOS_NULL_PTR,   AT_NOT_SET_TIME,
@@ -237,7 +230,6 @@ AT_PAR_CMD_ELEMENT_STRU g_astAtPrivateCmdTbl[] = {
 
 
 /* AUTO TEST */
-    /* Added by 傅映君/f62575 for CPULOAD&MFREELOCKSIZE处理过程移至C核, 2011/11/15, begin */
     {AT_CMD_CPULOAD,
     TAF_NULL_PTR,           AT_NOT_SET_TIME,  At_QryCpuLoadPara, AT_QRY_PARA_TIME, VOS_NULL_PTR, AT_NOT_SET_TIME,
     VOS_NULL_PTR,   AT_NOT_SET_TIME,
@@ -249,7 +241,6 @@ AT_PAR_CMD_ELEMENT_STRU g_astAtPrivateCmdTbl[] = {
     VOS_NULL_PTR,   AT_NOT_SET_TIME,
     AT_CME_INCORRECT_PARAMETERS, CMD_TBL_PIN_IS_LOCKED | CMD_TBL_CLAC_IS_INVISIBLE,
     (TAF_UINT8*)"^MFREELOCKSIZE", TAF_NULL_PTR},
-    /* Added by 傅映君/f62575 for CPULOAD&MFREELOCKSIZE处理过程移至C核, 2011/11/15, end */
 
     {AT_CMD_MEMQUERY,
     AT_SetMemInfoPara,      AT_SET_PARA_TIME,  TAF_NULL_PTR, AT_NOT_SET_TIME, VOS_NULL_PTR, AT_NOT_SET_TIME,
@@ -379,7 +370,6 @@ AT_PAR_CMD_ELEMENT_STRU g_astAtPrivateCmdTbl[] = {
     VOS_NULL_PTR,   AT_NOT_SET_TIME,
     AT_CME_INCORRECT_PARAMETERS,       CMD_TBL_LIMITED_NULL,
     (VOS_UINT8*)"^CSQLVLEXT",   (VOS_UINT8*)"(0,20,40,60,80,99),(99)"},
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
 
     {AT_CMD_DISSD,
     AT_SetDissdCmd,         AT_NOT_SET_TIME,  VOS_NULL_PTR,             AT_NOT_SET_TIME,   VOS_NULL_PTR, AT_NOT_SET_TIME,
@@ -392,7 +382,6 @@ AT_PAR_CMD_ELEMENT_STRU g_astAtPrivateCmdTbl[] = {
     VOS_NULL_PTR,   AT_NOT_SET_TIME,
     AT_ERROR,       CMD_TBL_E5_IS_LOCKED,
     (VOS_UINT8*)"^SDREBOOT",       (VOS_UINT8*)"(pwd)"},
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, end */
 
     {AT_CMD_DOCK,
     AT_SetDockPara,         AT_SET_PARA_TIME, VOS_NULL_PTR,             AT_NOT_SET_TIME,   VOS_NULL_PTR, AT_NOT_SET_TIME,
@@ -465,13 +454,11 @@ AT_PAR_CMD_ELEMENT_STRU g_astAtPrivateCmdTbl[] = {
     VOS_NULL_PTR,   AT_NOT_SET_TIME,
     AT_CME_INCORRECT_PARAMETERS,       CMD_TBL_PIN_IS_LOCKED,
     (VOS_UINT8*)"^APBATLVL",    VOS_NULL_PTR},
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
     {AT_CMD_OPENPORT,
     AT_SetOpenportPara,     AT_NOT_SET_TIME,  VOS_NULL_PTR,              AT_NOT_SET_TIME,   VOS_NULL_PTR, AT_NOT_SET_TIME,
     VOS_NULL_PTR,   AT_NOT_SET_TIME,
     AT_CME_INCORRECT_PARAMETERS,       CMD_TBL_PIN_IS_LOCKED,
     (VOS_UINT8*)"^OPENPORT",    VOS_NULL_PTR},
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, end */
 
     {AT_CMD_USBTETHERINFO,
     At_SetUsbTetherInfo, AT_SET_PARA_TIME,  VOS_NULL_PTR,   AT_NOT_SET_TIME,   At_TestUsbTetherInfo, AT_NOT_SET_TIME,
@@ -555,13 +542,11 @@ AT_PAR_CMD_ELEMENT_STRU g_astAtPrivateCmdTbl[] = {
     AT_CME_INCORRECT_PARAMETERS,       CMD_TBL_PIN_IS_LOCKED | CMD_TBL_E5_IS_LOCKED,
     (VOS_UINT8*)"^FLASHINFO",   VOS_NULL_PTR},
 
-    /* Added by f62575 for SMALL IMAGE, 2012-1-3, Begin   */
     {AT_CMD_WIFIGLOBALMAC,
     AT_SetWifiGlobalMacPara,AT_NOT_SET_TIME,  AT_QryWifiGlobalMacPara,   AT_NOT_SET_TIME,   At_CmdTestProcOK, AT_NOT_SET_TIME,
     VOS_NULL_PTR,   AT_NOT_SET_TIME,
     AT_CME_INCORRECT_PARAMETERS,       CMD_TBL_PIN_IS_LOCKED,
     (VOS_UINT8*)"^WIFIGLOBALMAC", VOS_NULL_PTR},
-    /* Added by f62575 for SMALL IMAGE, 2012-1-3, End   */
 
     {AT_CMD_SDLOAD,
     AT_SetSdloadPara,       AT_SET_PARA_TIME,  VOS_NULL_PTR,              AT_NOT_SET_TIME,   VOS_NULL_PTR, AT_NOT_SET_TIME,
@@ -648,7 +633,6 @@ AT_PAR_CMD_ELEMENT_STRU g_astAtPrivateCmdTbl[] = {
     VOS_NULL_PTR,   AT_NOT_SET_TIME,
     AT_CMS_OPERATION_NOT_ALLOWED,       CMD_TBL_CLAC_IS_INVISIBLE,
     (VOS_UINT8*)"^CMSTUB",      (VOS_UINT8*)"(0-11),(0-6)"},
-/* Added by f62575 for AT Project,2011-10-17,  End*/
 
     /* 支持5中形态的语音类型 */
     {AT_CMD_VMSET,
@@ -730,9 +714,7 @@ AT_PAR_CMD_ELEMENT_STRU g_astAtPrivateCmdTbl[] = {
 
     /*OAM应终端要求新增AT命令*/
     {AT_CMD_ADCTEMP,
-    /* Added by 傅映君/f62575 for ADCTEMP处理过程移动到C核, 2011/11/15, begin */
     At_SetAdcTempPara,      AT_SET_PARA_TIME,  At_QryAdcTempPara,        AT_NOT_SET_TIME,    VOS_NULL_PTR, AT_NOT_SET_TIME,
-    /* Added by 傅映君/f62575 for ADCTEMP处理过程移动到C核, 2011/11/15, end */
     VOS_NULL_PTR,   AT_NOT_SET_TIME,
     AT_CME_INCORRECT_PARAMETERS, CMD_TBL_PIN_IS_LOCKED | CMD_TBL_CLAC_IS_INVISIBLE,
     (VOS_UINT8*)"^ADCTEMP", (VOS_UINT8*)"(0,1),(0-150),(0-150),(0-150)"},
@@ -750,13 +732,11 @@ AT_PAR_CMD_ELEMENT_STRU g_astAtPrivateCmdTbl[] = {
     AT_CME_INCORRECT_PARAMETERS, CMD_TBL_PIN_IS_LOCKED | CMD_TBL_CLAC_IS_INVISIBLE,
     (VOS_UINT8*)"^YJCX", (VOS_UINT8*)"(0,1)"},
 
-    /* Added by 傅映君/f62575 for AT Project, SIM卡保护标志确认, 2011/11/15, begin */
     {AT_CMD_USSDMODE,
     At_SetUssdModePara,     AT_NOT_SET_TIME,  At_QryUssdModePara,       AT_NOT_SET_TIME,    VOS_NULL_PTR, AT_NOT_SET_TIME,
     VOS_NULL_PTR,   AT_NOT_SET_TIME,
     AT_CME_INCORRECT_PARAMETERS, CMD_TBL_PIN_IS_LOCKED | CMD_TBL_CLAC_IS_INVISIBLE,
     (VOS_UINT8*)"^USSDMODE", (VOS_UINT8*)"(0-1)"},
-    /* Added by 傅映君/f62575 for AT Project, SIM卡保护标志确认, 2011/11/15, end */
 
     {AT_CMD_GETPORTMODE,
     At_SetGetportmodePara,  AT_NOT_SET_TIME,  At_QryGetportmodePara,    AT_NOT_SET_TIME,    VOS_NULL_PTR, AT_NOT_SET_TIME,
@@ -955,12 +935,6 @@ AT_PAR_CMD_ELEMENT_STRU g_astAtPrivateCmdTbl[] = {
     AT_CME_INCORRECT_PARAMETERS, CMD_TBL_PIN_IS_LOCKED,
     (VOS_UINT8*)"^HS",         (VOS_UINT8*)"(0-99999999),(0,1)"},
 
-    {AT_CMD_CIMEI,
-    At_SetImeiPara,         AT_SET_PARA_TIME,   VOS_NULL_PTR,           AT_NOT_SET_TIME,    VOS_NULL_PTR, AT_NOT_SET_TIME,
-    VOS_NULL_PTR,   AT_NOT_SET_TIME,
-    AT_CME_INCORRECT_PARAMETERS, CMD_TBL_CLAC_IS_INVISIBLE,
-    (VOS_UINT8*)"^CIMEI",       (VOS_UINT8*)"(imei)"},
-
     {AT_CMD_CFPLMN,
     At_SetFPlmnPara,        AT_SET_PARA_TIME,   At_QryFPlmnPara,        AT_QRY_PARA_TIME,   VOS_NULL_PTR, AT_NOT_SET_TIME,
     VOS_NULL_PTR,   AT_NOT_SET_TIME,
@@ -1048,14 +1022,11 @@ AT_PAR_CMD_ELEMENT_STRU g_astAtPrivateCmdTbl[] = {
     AT_CME_INCORRECT_PARAMETERS, CMD_TBL_PIN_IS_LOCKED,
     (VOS_UINT8*)"^CPAM",        (VOS_UINT8*)"(0-3),(0-2)"},
 
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
-/* Added by c64416 for AT Project 2011-10-24  Begin */
     {AT_CMD_NDISSTATQRY,
     VOS_NULL_PTR, AT_NOT_SET_TIME, AT_QryNdisStatPara, AT_QRY_PARA_TIME, At_CmdTestProcOK, AT_NOT_SET_TIME,
     VOS_NULL_PTR,   AT_NOT_SET_TIME,
     AT_CME_INCORRECT_PARAMETERS, CMD_TBL_PIN_IS_LOCKED,
     (VOS_UINT8*)"^NDISSTATQRY", VOS_NULL_PTR},
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, end */
 
     {AT_CMD_AUTHDATA,
     At_SetAuthdataPara, AT_SET_PARA_TIME, AT_QryAuthdataPara, AT_QRY_PARA_TIME, At_TestAuhtdata, AT_NOT_SET_TIME,
@@ -1094,14 +1065,11 @@ AT_PAR_CMD_ELEMENT_STRU g_astAtPrivateCmdTbl[] = {
     AT_CME_INCORRECT_PARAMETERS, CMD_TBL_LIMITED_NULL,
     (VOS_UINT8*)"^NDISCONN", (VOS_UINT8*)NDISCONN_TEST_CMD_PARA_STRING},
 
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
     {AT_CMD_NDISADD,
     At_SetNdisAddPara, AT_SET_PARA_TIME, At_QryNdisAddPara, AT_QRY_PARA_TIME, VOS_NULL_PTR, AT_NOT_SET_TIME,
     VOS_NULL_PTR,   AT_NOT_SET_TIME,
     AT_CME_INCORRECT_PARAMETERS, CMD_TBL_LIMITED_NULL,
     (VOS_UINT8*)"^NDISADD", (VOS_UINT8*)"(0,1),(ipAddr),(primaryDNS),(secondaryDNS),(primaryNBNS),(secondaryNBNS)"},
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, end */
-/* Added by c64416 for AT Project 2011-10-24  End*/
 
     {AT_CMD_CGDNS,
     AT_SetCgdnsPara,        AT_SET_PARA_TIME,   AT_QryCgdnsPara,        AT_QRY_PARA_TIME,   At_TestCgdnsPara,   AT_TEST_PARA_TIME,
@@ -1116,13 +1084,11 @@ AT_PAR_CMD_ELEMENT_STRU g_astAtPrivateCmdTbl[] = {
     AT_CME_INCORRECT_PARAMETERS, CMD_TBL_LIMITED_NULL,
     (VOS_UINT8*)"^TRIG",    (VOS_UINT8*)"(0,1),(5-15),(1-65535),(1-40),(1-10000)"},
 
-    /* Added by 傅映君/f62575 for AT Project, SIM卡保护标志确认, 2011/11/15, begin */
     {AT_CMD_DSFLOWRPT,
     AT_SetDsFlowRptPara,    AT_SET_PARA_TIME,   VOS_NULL_PTR,           AT_NOT_SET_TIME,    VOS_NULL_PTR, AT_NOT_SET_TIME,
     VOS_NULL_PTR,   AT_NOT_SET_TIME,
     AT_CME_INCORRECT_PARAMETERS, CMD_TBL_PIN_IS_LOCKED,
     (VOS_UINT8*)"^DSFLOWRPT",   (VOS_UINT8*)"(0,1)"},
-    /* Added by 傅映君/f62575 for AT Project, SIM卡保护标志确认, 2011/11/15, end */
 
     {AT_CMD_VTFLOWRPT,
     AT_SetVTFlowRptPara,    AT_SET_PARA_TIME,   VOS_NULL_PTR,           AT_NOT_SET_TIME,    VOS_NULL_PTR, AT_NOT_SET_TIME,
@@ -1219,14 +1185,12 @@ AT_PAR_CMD_ELEMENT_STRU g_astAtPrivateCmdTbl[] = {
     VOS_NULL_PTR,   AT_NOT_SET_TIME,
     AT_CME_INCORRECT_PARAMETERS, CMD_TBL_LIMITED_NULL,
     (VOS_UINT8*)"^LOCINFO",    VOS_NULL_PTR},
-/* Added by l60609 for B070 Project, 2012/03/09, begin */
     {AT_CMD_QRYNVRESUME,
     VOS_NULL_PTR,   AT_NOT_SET_TIME,    AT_QryNvResumePara,  AT_NOT_SET_TIME,   VOS_NULL_PTR, AT_NOT_SET_TIME,
     VOS_NULL_PTR,   AT_NOT_SET_TIME,
     AT_CME_INCORRECT_PARAMETERS, CMD_TBL_PIN_IS_LOCKED,
     (VOS_UINT8*)"^QRYNVRESUME",    (VOS_UINT8*)"(0,1)"},
 
-/* Added by l60609 for B070 Project, 2012/03/09, end */
 
     {AT_CMD_NVBACKUPSTAT,
     VOS_NULL_PTR,     AT_NOT_SET_TIME,   AT_QryNvBackupStatusPara,  AT_QRY_PARA_TIME,   At_CmdTestProcOK, AT_NOT_SET_TIME,
@@ -1347,7 +1311,6 @@ AT_PAR_CMD_ELEMENT_STRU g_astAtPrivateCmdTbl[] = {
     AT_CME_INCORRECT_PARAMETERS, CMD_TBL_PIN_IS_LOCKED,
     (VOS_UINT8*)"^XCPOSRRPT",    (VOS_UINT8 *)"(0,1)"},
 
-    /* Added by h59254 for V7R1C50 Log2.0 Begin */
     {AT_CMD_CGPSINFO,
     AT_SetGpsInfoPara, AT_SET_PARA_TIME, VOS_NULL_PTR, AT_NOT_SET_TIME, At_CmdTestProcOK,   AT_NOT_SET_TIME,
     VOS_NULL_PTR,   AT_NOT_SET_TIME,
@@ -1371,7 +1334,6 @@ AT_PAR_CMD_ELEMENT_STRU g_astAtPrivateCmdTbl[] = {
     VOS_NULL_PTR,   AT_NOT_SET_TIME,
     AT_CME_INCORRECT_PARAMETERS, CMD_TBL_PIN_IS_LOCKED,
     (VOS_UINT8*)"^LOGSAVE",    VOS_NULL_PTR},
-    /* Added by h59254 for V7R1C50 Log2.0 End */
     {AT_CMD_CCMGS,
     VOS_NULL_PTR, AT_SET_PARA_TIME, VOS_NULL_PTR, AT_NOT_SET_TIME, At_CmdTestProcOK,   AT_NOT_SET_TIME,
     VOS_NULL_PTR, AT_NOT_SET_TIME,
@@ -1405,13 +1367,11 @@ AT_PAR_CMD_ELEMENT_STRU g_astAtPrivateCmdTbl[] = {
     AT_CME_INCORRECT_PARAMETERS, CMD_TBL_PIN_IS_LOCKED,
     (VOS_UINT8 *)"^CPSERR", VOS_NULL_PTR},
 
-    /* Added by h59254 for V7R1C50 ISDB Project,  2012-8-27 begin */
     {AT_CMD_CISA,
     VOS_NULL_PTR, AT_SET_PARA_TIME, VOS_NULL_PTR, AT_NOT_SET_TIME, VOS_NULL_PTR,   AT_NOT_SET_TIME,
     VOS_NULL_PTR, AT_NOT_SET_TIME,
     AT_CME_INCORRECT_PARAMETERS, CMD_TBL_LIMITED_NULL,
     (VOS_UINT8*)"^CISA",    (TAF_UINT8*)"(1-520),(cmd)"},
-    /* Added by h59254 for V7R1C50 ISDB Project,  2012-8-27 end */
 
     {AT_CMD_APDS,
     AT_SetApdsPara,    AT_SET_PARA_TIME,   VOS_NULL_PTR,   AT_NOT_SET_TIME,    At_CmdTestProcOK,       AT_NOT_SET_TIME,
@@ -1509,13 +1469,11 @@ AT_PAR_CMD_ELEMENT_STRU g_astAtPrivateCmdTbl[] = {
     AT_CME_INCORRECT_PARAMETERS,    CMD_TBL_PIN_IS_LOCKED,
     (VOS_UINT8*)"^IMEIVERIFY",  VOS_NULL_PTR},
 
-    /* Modified by L60609 for add app vcom，2013-06-17,  Begin */
     {AT_CMD_LOGPORT,
     At_SetLogPortPara,       AT_NOT_SET_TIME,  At_QryLogPortPara,   AT_NOT_SET_TIME,    At_CmdTestProcOK,    AT_NOT_SET_TIME,
     VOS_NULL_PTR,        AT_NOT_SET_TIME,
     AT_CME_INCORRECT_PARAMETERS,    CMD_TBL_PIN_IS_LOCKED,
     (VOS_UINT8*)"^LOGPORT",  (VOS_UINT8*)"(0,1),(0,1)"},
-    /* Modified by L60609 for add app vcom，2013-06-17,  End */
 
     {AT_CMD_CHISFREQ,
     AT_SetHistoryFreqPara, AT_SET_PARA_TIME,  VOS_NULL_PTR,   AT_QRY_PARA_TIME,    VOS_NULL_PTR,    AT_NOT_SET_TIME,
@@ -1676,7 +1634,6 @@ AT_PAR_CMD_ELEMENT_STRU g_astAtPrivateCmdTbl[] = {
     AT_CME_INCORRECT_PARAMETERS,       CMD_TBL_PIN_IS_LOCKED | CMD_TBL_E5_IS_LOCKED,
     (VOS_UINT8*)"^RATCOMBINEPRIO",    (VOS_UINT8*)"(0,1)"},
 
-    /* Added by c64416 for VoLTE_PhaseIII, 2014-01-07, begin */
     {AT_CMD_VOLTEIMPU,
     AT_SetVolteimpuPara,     AT_SET_PARA_TIME,   At_CmdTestProcOK,       AT_NOT_SET_TIME,   At_CmdTestProcOK,   AT_NOT_SET_TIME,
     VOS_NULL_PTR,        AT_NOT_SET_TIME,
@@ -1749,7 +1706,6 @@ AT_PAR_CMD_ELEMENT_STRU g_astAtPrivateCmdTbl[] = {
     VOS_NULL_PTR,       AT_NOT_SET_TIME,
     AT_CME_INCORRECT_PARAMETERS,    CMD_TBL_NO_LIMITED,
     (VOS_UINT8 *)"^IMSEMCRDP",   VOS_NULL_PTR},
-    /* Added by c64416 for VoLTE_PhaseIII, 2014-01-07, end */
 
     {AT_CMD_MIPICLK,
     VOS_NULL_PTR,     AT_NOT_SET_TIME,   AT_QryMipiClkValue,       AT_QRY_PARA_TIME,   At_CmdTestProcOK,   AT_NOT_SET_TIME,
@@ -1920,13 +1876,11 @@ AT_PAR_CMD_ELEMENT_STRU g_astAtPrivateCmdTbl[] = {
     AT_CME_INCORRECT_PARAMETERS, CMD_TBL_NO_LIMITED,
     (VOS_UINT8 *)"^CQOSPRI",    (VOS_UINT8 *)"(0,13,15)"},
 
-    /* Added by f279542 for CDMA 1X Iteration 4, 2014-11-10, begin */
     {AT_CMD_CBURSTDTMF,
     AT_SetCBurstDTMFPara,    AT_SET_PARA_TIME,    VOS_NULL_PTR,    AT_NOT_SET_TIME,    At_TestCBurstDTMFPara,    AT_NOT_SET_TIME,
     VOS_NULL_PTR,    AT_NOT_SET_TIME,
     AT_CME_INCORRECT_PARAMETERS, CMD_TBL_PIN_IS_LOCKED,
     (VOS_UINT8*)"^CBURSTDTMF", (VOS_UINT8*)"(1,2),(@key),(95,150,200,250,300,350),(60,100,150,200)"},
-    /* Added by f279542 for CDMA 1X Iteration 4, 2014-11-10, end */
 
     {AT_CMD_CCONTDTMF,
     AT_SetCContinuousDTMFPara,    AT_SET_PARA_TIME,    VOS_NULL_PTR,    AT_NOT_SET_TIME,    At_TestCContinuousDTMFPara,    AT_NOT_SET_TIME,
@@ -2755,7 +2709,6 @@ AT_PAR_CMD_ELEMENT_STRU g_astAtPrivateCmdTbl[] = {
   3 函数实现
 *****************************************************************************/
 
-/* Added by f62575 for AT Project, 2011-10-28, begin */
 
 VOS_UINT32  AT_SetDissdCmd(VOS_UINT8 ucIndex)
 {
@@ -2872,7 +2825,6 @@ VOS_UINT32 AT_TestStsfPara(VOS_UINT8 ucIndex)
 
 VOS_UINT32 AT_TestCpnnPara(VOS_UINT8 ucIndex)
 {
-    /*Modified by l60609 for At Project, 2011-11-3, Begin */
     VOS_UINT32                          ulRst;
 
     ulRst = AT_FillAndSndAppReqMsg(gastAtClientTab[ucIndex].usClientId,
@@ -2891,7 +2843,6 @@ VOS_UINT32 AT_TestCpnnPara(VOS_UINT8 ucIndex)
     {
         return AT_ERROR;
     }
-    /*Modified by l60609 for At Project, 2011-11-3, End */
 }
 
 
@@ -2991,7 +2942,6 @@ VOS_UINT32 AT_TestImsichgPara(VOS_UINT8 ucIndex)
     return AT_OK;
 }
 
-/* Add by f62575 for V7代码同步, 2012-04-07, Begin   */
 
 VOS_UINT32 AT_GetPortInfoIndex(VOS_UINT8   ucPortType, VOS_UINT8 *pucIndex)
 {
@@ -3008,7 +2958,6 @@ VOS_UINT32 AT_GetPortInfoIndex(VOS_UINT8   ucPortType, VOS_UINT8 *pucIndex)
 
     return VOS_ERR;
 }
-/* Add by f62575 for V7代码同步, 2012-04-07, End   */
 
 
 VOS_UINT32 AT_TestSetPort(VOS_UINT8 ucIndex)
@@ -3085,13 +3034,11 @@ VOS_UINT32 AT_TestIpv6capPara(VOS_UINT8 ucIndex)
     return AT_OK;
 }
 
-/* Added by f62575 for AT Project, 2011-10-28, end */
 
 
 
 VOS_UINT32 AT_QryDloadVerPara( VOS_UINT8 ucIndex )
 {
-    /* Modified  by f62575 for AT Project, 2011-10-17, begin */
     VOS_UINT32                          ulRet;
 
     /* 发消息到C核获取鉴权标识 */
@@ -3110,7 +3057,6 @@ VOS_UINT32 AT_QryDloadVerPara( VOS_UINT8 ucIndex )
     /* 设置AT模块实体的状态为等待异步返回 */
     gastAtClientTab[ucIndex].CmdCurrentOpt = AT_CMD_DLOADVER_READ;
     return AT_WAIT_ASYNC_RETURN;
-    /* Modified  by f62575 for AT Project, 2011-10-17, end */
 
 }
 
@@ -3179,20 +3125,16 @@ VOS_UINT32 At_RegisterExPrivateCmdTable(VOS_VOID)
 VOS_UINT32 AT_TestApRptPortSelectPara(VOS_UINT8 ucIndex)
 {
     /* 通道检查 */
-    /* Modified by L60609 for MUX，2012-08-13,  Begin */
     if (VOS_FALSE == AT_IsApPort(ucIndex))
-    /* Modified by L60609 for MUX，2012-08-13,  End */
     {
         return AT_ERROR;
     }
 
-    /* Modified by l60609 for Optimize RIL, 2013-7-11, Begin */
     gstAtSendData.usBufLen = (VOS_UINT16)At_sprintf(AT_CMD_MAX_LEN,
                                        (VOS_CHAR *)pgucAtSndCodeAddr,
                                        (VOS_CHAR *)pgucAtSndCodeAddr,
                                        "%s: (0-FFFFFFFF), (0-FFFFFFFF), (0-FFFFFFFF)",
                                        g_stParseContext[ucIndex].pstCmdElement->pszCmdName);
-    /* Modified by l60609 for Optimize RIL, 2013-7-11, End */
 
     return AT_OK;
 }
@@ -3201,9 +3143,7 @@ VOS_UINT32 AT_TestApRptPortSelectPara(VOS_UINT8 ucIndex)
 VOS_UINT32 AT_TestUsbSwitchPara(VOS_UINT8 ucIndex)
 {
     /* 通道检查 */
-    /* Modified by L60609 for MUX，2012-08-13,  Begin */
     if (VOS_FALSE == AT_IsApPort(ucIndex))
-    /* Modified by L60609 for MUX，2012-08-13,  End */
     {
         return AT_ERROR;
     }
@@ -3260,9 +3200,7 @@ VOS_UINT32 AT_TestRsfwPara(VOS_UINT8 ucIndex)
 VOS_UINT32 AT_TestApSimStPara(VOS_UINT8 ucIndex)
 {
     /* 通道检查 */
-    /* Modified by L60609 for MUX，2012-08-13,  Begin */
     if (VOS_FALSE == AT_IsApPort(ucIndex))
-    /* Modified by L60609 for MUX，2012-08-13,  End */
     {
         return AT_ERROR;
     }
@@ -3279,9 +3217,7 @@ VOS_UINT32 AT_TestApSimStPara(VOS_UINT8 ucIndex)
 VOS_UINT32 AT_TestXcposrPara(VOS_UINT8 ucIndex)
 {
     /* 通道检查 */
-    /* Modified by L60609 for MUX，2012-08-13,  Begin */
     if (VOS_FALSE == AT_IsApPort(ucIndex))
-    /* Modified by L60609 for MUX，2012-08-13,  End */
     {
         return AT_ERROR;
     }

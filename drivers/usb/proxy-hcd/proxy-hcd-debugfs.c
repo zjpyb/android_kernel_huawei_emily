@@ -66,7 +66,7 @@ int phcd_seq_print_stat(struct proxy_hcd *phcd, struct seq_file *s)
 }
 
 static int phcd_print_stat_show(struct seq_file *s, void *unused)
-{
+{/*lint !e578 */
 	struct proxy_hcd *phcd = s->private;
 	return phcd_seq_print_stat(phcd, s);
 }

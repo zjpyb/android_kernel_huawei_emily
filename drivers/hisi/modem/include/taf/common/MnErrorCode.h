@@ -141,23 +141,15 @@ extern "C" {
 #define    MN_ERR_CLASS_SMS_FLASH_MEM_NOTEXIST_FILE         (MN_ERR_CLASS_MSG + 47)
 #define    MN_ERR_CLASS_SMS_MO_CTRL_USIM_PARA_ERROR         (MN_ERR_CLASS_MSG + 48)
 #define    MN_ERR_CLASS_SMS_MO_CTRL_ACTION_NOT_ALLOWED      (MN_ERR_CLASS_MSG + 49)
-/* Added by f62575 for 2012082906141, 2012/10/10, begin */
 #define    MN_ERR_CLASS_SMS_MOSTATE                         (MN_ERR_CLASS_MSG + 50)
-/* Added by f62575 for 2012082906141, 2012/10/10, end */
 
 #define    MN_ERR_CLASS_CBS_CROSS_MID_ERROR                 (MN_ERR_CLASS_MSG + 101)
 #define    MN_ERR_CLASS_CBS_NOW_INITING                     (MN_ERR_CLASS_MSG + 102)
 #define    MN_ERR_CLASS_CBS_TOO_CBMIDS                      (MN_ERR_CLASS_MSG + 103)
-/* Modified by s46746 for SS FDN&Call Control, 2013-05-17, begin */
-/* Added by f62575 for C50_IPC Project, 2012/02/23, begin */
 #define    MN_ERR_CLASS_FDN_CHECK_DN_FAILURE                (MN_ERR_CLASS_MSG + 104)
 #define    MN_ERR_CLASS_FDN_CHECK_SC_FAILURE                (MN_ERR_CLASS_MSG + 105)
-/* Added by f62575 for C50_IPC Project, 2012/02/23, end   */
-/* Modified by s46746 for SS FDN&Call Control, 2013-05-17, end */
-/* Added by f62575 for V9R1 STK升级, 2013-6-26, begin */
 #define    MN_ERR_CLASS_INVALID_TP_ADDRESS                  (MN_ERR_CLASS_MSG + 106)
 #define    MN_ERR_CLASS_INVALID_TP_UD                       (MN_ERR_CLASS_MSG + 107)
-/* Added by f62575 for V9R1 STK升级, 2013-6-26, end */
 
 #define    MN_ERR_CLASS_SMS_DOMAIN_SELECTION_FAILURE        (MN_ERR_CLASS_MSG + 108)  /* 业务域选择失败 */
 #define    MN_ERR_CLASS_SMS_DOMAIN_SELECTION_TIMER_EXPIRED  (MN_ERR_CLASS_MSG + 109)  /* 业务域选择缓存定时器超时 */

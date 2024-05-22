@@ -2,6 +2,7 @@
 #define _PCIE_KIRIN_COMMON_H
 
 #include "pcie-kirin.h"
+#include <hw_cmdline_parse.h>
 
 #define INBOUNT_OFFSET 0x100
 
@@ -31,12 +32,49 @@ void kirin_pcie_inbound_atu(u32 rc_id, int index,
 void kirin_pcie_select_eco(struct kirin_pcie *pcie);
 int kirin_pcie_cfg_eco(struct kirin_pcie *pcie);
 int wlan_on(u32 rc_id, int on);
+void pcie_io_adjust(struct kirin_pcie *pcie);
+void kirin_pcie_generate_msg(u32 rc_id, int index, u32 iatu_offset, int msg_type, u32 msg_code);
+
+int pcie_memcpy(ulong dts, ulong src, uint32_t size);
+
+
+u32 show_link_state(u32 rc_id);
+
+
+static inline void pcie_wr_8(uint8_t val, char *addr)
+{
+	(*(volatile uint8_t *)(addr)) = (val);
+}
+
+static inline void pcie_wr_32(uint32_t val, char *addr)
+{
+	(*(volatile uint32_t *)(addr)) = (val);
+}
+
+static inline void pcie_wr_64(uint64_t val, char *addr)
+{
+	(*(volatile uint64_t *)(addr)) = (val);
+}
+
+static inline uint8_t pcie_rd_8(char *addr)
+{
+	return (*(volatile uint8_t *)(addr));
+}
+
+static inline uint32_t pcie_rd_32(char *addr)
+{
+	return (*(volatile uint32_t *)(addr));
+}
+
+static inline uint64_t pcie_rd_64(char *addr)
+{
+	return (*(volatile uint64_t *)(addr));
+}
 
 #ifdef CONFIG_KIRIN_PCIE_TEST
 int retrain_link(u32 rc_id);
 int set_link_speed(u32 rc_id, enum link_speed gen);
 int show_link_speed(u32 rc_id);
-u32 show_link_state(u32 rc_id);
 u32 kirin_pcie_find_capability(struct pcie_port *pp, int cap);
 #endif
 

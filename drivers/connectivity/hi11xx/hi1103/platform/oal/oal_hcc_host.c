@@ -13,6 +13,7 @@ extern "C" {
 #include "oal_util.h"
 #include "oal_sdio_host_if.h"
 #include "oal_pcie_host.h"
+#include "oal_pcie_linux.h"
 #include "oal_hcc_host_if.h"
 #include "oal_profiling.h"
 #include "oam_ext_if.h"
@@ -44,12 +45,12 @@ OAL_STATIC struct hcc_handler* hcc_tc = NULL;
 
 OAL_STATIC oal_uint32 g_hcc_tx_max_buf_len = 4096;
 
-oal_uint32 g_ul_tcp_ack_wait_sche_cnt = 1;
+oal_uint32 g_ul_tcp_ack_wait_sche_cnt_etc = 1;
 
 
 #ifdef _PRE_PLAT_FEATURE_CUSTOMIZE
-struct custom_process_func_handler g_pst_custom_process_func;
-EXPORT_SYMBOL_GPL(g_pst_custom_process_func);//lint !e132 !e745 !e578
+struct custom_process_func_handler g_pst_custom_process_func_etc;
+EXPORT_SYMBOL_GPL(g_pst_custom_process_func_etc);//lint !e132 !e745 !e578
 #endif
 
 /*use lint -e16 to mask the error19! */
@@ -58,32 +59,53 @@ oal_uint32 g_pm_wifi_rxtx_count = 0; //pm收发包统计变量
 oal_module_symbol(g_pm_wifi_rxtx_count);
 /*lint +e19 */
 
-//oal_uint32 hcc_assemble_count = HISDIO_HOST2DEV_SCATT_MAX;
-oal_uint32 hcc_assemble_count = 8;
+//oal_uint32 hcc_assemble_count_etc = HISDIO_HOST2DEV_SCATT_MAX;
+oal_uint32 hcc_assemble_count_etc = 8;
 /*lint -e19 */
-oal_module_symbol(hcc_assemble_count);
+oal_module_symbol(hcc_assemble_count_etc);
 /*lint +e19 */
 /*1 means hcc rx data process in hcc thread,
   0 means process in sdio thread*/
-oal_uint32 hcc_rx_thread_enable = 1;
-oal_uint32 hcc_credit_bottom_value=2;
-oal_uint32 hcc_flowctrl_detect_panic=0;
+oal_uint32 hcc_rx_thread_enable_etc = 1;
+oal_uint32 hcc_credit_bottom_value_etc=2;
+oal_uint32 hcc_flowctrl_detect_panic_etc=0;
 #if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
 module_param(g_hcc_tx_max_buf_len, uint, S_IRUGO|S_IWUSR);
-module_param(hcc_assemble_count, uint, S_IRUGO|S_IWUSR);
-module_param(hcc_rx_thread_enable, uint, S_IRUGO|S_IWUSR);
-module_param(hcc_credit_bottom_value, uint, S_IRUGO|S_IWUSR);
-module_param(hcc_flowctrl_detect_panic, uint, S_IRUGO|S_IWUSR);
+module_param(hcc_assemble_count_etc, uint, S_IRUGO|S_IWUSR);
+module_param(hcc_rx_thread_enable_etc, uint, S_IRUGO|S_IWUSR);
+module_param(hcc_credit_bottom_value_etc, uint, S_IRUGO|S_IWUSR);
+module_param(hcc_flowctrl_detect_panic_etc, uint, S_IRUGO|S_IWUSR);
 #endif
-oal_int32 hcc_send_rx_queue(struct hcc_handler *hcc, hcc_queue_type type);
-oal_uint32 hcc_queues_flow_ctrl_len(struct hcc_handler* hcc, hcc_chan_type dir);
+oal_int32 hcc_send_rx_queue_etc(struct hcc_handler *hcc, hcc_queue_type type);
+oal_uint32 hcc_queues_flow_ctrl_len_etc(struct hcc_handler* hcc, hcc_chan_type dir);
 OAL_STATIC  oal_void hcc_dev_flowctr_timer_del(struct hcc_handler *hcc);
 
 #ifdef _PRE_WLAN_FEATURE_OFFLOAD_FLOWCTL
-oal_bool_enum_uint8 hcc_flowctl_get_device_mode(struct hcc_handler * hcc);
-oal_void hcc_tx_network_start_subq(struct hcc_handler *hcc, oal_uint16 us_queue_idx);
-oal_void hcc_tx_network_stop_subq(struct hcc_handler *hcc, oal_uint16 us_queue_idx);
+oal_bool_enum_uint8 hcc_flowctl_get_device_mode_etc(struct hcc_handler * hcc);
+oal_void hcc_tx_network_start_subq_etc(struct hcc_handler *hcc, oal_uint16 us_queue_idx);
+oal_void hcc_tx_network_stop_subq_etc(struct hcc_handler *hcc, oal_uint16 us_queue_idx);
 #endif
+
+oal_int32 hcc_set_hi11xx_loglevel(oal_int32 loglevel)
+{
+#if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
+    oal_int32 ret = HI11XX_LOG_MODULE_NAME_VAR;
+    HI11XX_LOG_MODULE_NAME_VAR = loglevel;
+    return ret;
+#else
+    return 0;
+#endif
+}
+
+oal_int32 hcc_set_all_loglevel(oal_int32 loglevel)
+{
+    oal_int32 ret = hcc_set_hi11xx_loglevel(loglevel);
+#ifdef _PRE_PLAT_FEATURE_HI110X_PCIE
+    oal_pcie_set_loglevel(loglevel);
+    oal_pcie_set_hi11xx_loglevel(loglevel);
+#endif
+    return ret;
+}
 
 oal_uint32 hcc_get_max_buf_len(oal_void)
 {
@@ -107,18 +129,23 @@ oal_module_symbol(hcc_get_110x_handler);
 
 OAL_STATIC oal_void hcc_tx_netbuf_destory(struct hcc_handler* hcc)
 {
-    OAL_BUG_ON(NULL == hcc);
+    if(OAL_WARN_ON(NULL == hcc))
+    {
+         oal_print_hi11xx_log(HI11XX_LOG_ERR,"%s error: hcc is null",__FUNCTION__);
+         return;
+    };
+
     oal_wake_unlock(&hcc->tx_wake_lock);
 }
 
 
 #ifdef _PRE_PLAT_FEATURE_CUSTOMIZE
-struct custom_process_func_handler* oal_get_custom_process_func(oal_void)
+struct custom_process_func_handler* oal_get_custom_process_func_etc(oal_void)
 {
-    return &g_pst_custom_process_func;
+    return &g_pst_custom_process_func_etc;
 }
 /*lint -e19 */
-oal_module_symbol(oal_get_custom_process_func);
+oal_module_symbol(oal_get_custom_process_func_etc);
 /*lint +e19 */
 #endif
 
@@ -132,7 +159,7 @@ OAL_STATIC  oal_void hcc_tx_assem_descr_put(struct hcc_handler *hcc, oal_netbuf_
     oal_netbuf_list_tail(&hcc->tx_descr_info.tx_assem_descr_hdr, netbuf);
 }
 
-oal_void hcc_clear_next_assem_descr(struct hcc_handler *hcc,
+oal_void hcc_clear_next_assem_descr_etc(struct hcc_handler *hcc,
                                                                  oal_netbuf_stru* descr_netbuf)
 {
     OAL_REFERENCE(hcc);
@@ -141,9 +168,9 @@ oal_void hcc_clear_next_assem_descr(struct hcc_handler *hcc,
 }
 
 #ifdef CONFIG_MMC
-oal_uint32 hcc_get_large_pkt_free_cnt(struct hcc_handler* hcc)
+oal_uint32 hcc_get_large_pkt_free_cnt_etc(struct hcc_handler* hcc)
 {
-    return oal_sdio_get_large_pkt_free_cnt(oal_get_sdio_default_handler());
+    return oal_sdio_get_large_pkt_free_cnt_etc(oal_get_sdio_default_handler());
 }
 #endif
 
@@ -161,7 +188,11 @@ OAL_STATIC  oal_netbuf_stru*  hcc_netbuf_len_align(oal_netbuf_stru* netbuf,
     /*align the netbuf*/
     len_algin = OAL_ROUND_UP(len,align_size);
 
-    OAL_BUG_ON(len_algin < len);
+    if(OAL_UNLIKELY(len_algin < len))
+    {
+        oal_print_hi11xx_log(HI11XX_LOG_ERR, "%s error: len_algin:%d < len:%d",__FUNCTION__,len_algin,len);
+        return NULL;
+    };
 
     tail_room_len = len_algin - len;
 
@@ -179,7 +210,11 @@ OAL_STATIC  oal_netbuf_stru*  hcc_netbuf_len_align(oal_netbuf_stru* netbuf,
 
     oal_netbuf_put(netbuf, tail_room_len);
 
-    OAL_BUG_ON(!OAL_IS_ALIGNED(OAL_NETBUF_LEN(netbuf),align_size));
+    if(OAL_UNLIKELY(!OAL_IS_ALIGNED(OAL_NETBUF_LEN(netbuf),align_size)))
+    {
+        oal_print_hi11xx_log(HI11XX_LOG_ERR, "%s error: netbuf len :%d not align %d",__FUNCTION__,OAL_NETBUF_LEN(netbuf),align_size);
+        return NULL;
+    };
 
     return netbuf;
 
@@ -202,9 +237,13 @@ OAL_STATIC  oal_void hcc_build_next_assem_descr(struct hcc_handler *hcc,
     buf = (oal_uint8*)OAL_NETBUF_DATA(descr_netbuf);
     len = (oal_int32)OAL_NETBUF_LEN(descr_netbuf);
 
-    OAL_BUG_ON(!oal_netbuf_list_empty(next_assembled_head));
+    if(OAL_UNLIKELY(!oal_netbuf_list_empty(next_assembled_head)))
+    {
+        oal_print_hi11xx_log(HI11XX_LOG_ERR, "%s error: next_assembled_head is empty",__FUNCTION__);
+        return ;
+    };
 
-    assemble_max_count = OAL_MAX(1,hcc_assemble_count);
+    assemble_max_count = OAL_MAX(1,hcc_assemble_count_etc);
     queue_len = oal_netbuf_list_len(head);
     current_trans_len = OAL_MIN(queue_len, assemble_max_count);
     current_trans_len = OAL_MIN(current_trans_len, remain_len);
@@ -246,8 +285,8 @@ OAL_STATIC  oal_void hcc_build_next_assem_descr(struct hcc_handler *hcc,
         oal_netbuf_list_tail(next_assembled_head, netbuf_t);
         if(OAL_UNLIKELY(i >= len))
         {
-            oal_print_hi11xx_log(HI11XX_LOG_ERR, "hcc tx scatt num :%d over buff len:%d,assem count:%u",i,len, hcc_assemble_count);
-            OAL_BUG_ON(1);
+            oal_print_hi11xx_log(HI11XX_LOG_ERR, "hcc tx scatt num :%d over buff len:%d,assem count:%u",i,len, hcc_assemble_count_etc);
+            break;
         }
 
         buf[i++] = (oal_uint8)(OAL_NETBUF_LEN(netbuf) >> HISDIO_H2D_SCATT_BUFFLEN_ALIGN_BITS);
@@ -271,7 +310,7 @@ OAL_STATIC  oal_void hcc_build_next_assem_descr(struct hcc_handler *hcc,
 }
 
 
-oal_int32 hcc_tx_param_check(struct hcc_handler* hcc,
+oal_int32 hcc_tx_param_check_etc(struct hcc_handler* hcc,
                                    struct hcc_transfer_param* param)
 {
     if(OAL_UNLIKELY(param->extend_len > hcc->hdr_rever_max_len))
@@ -304,36 +343,45 @@ oal_int32 hcc_tx_param_check(struct hcc_handler* hcc,
     return OAL_SUCC;
 }
 
-oal_void hcc_tx_network_stopall_queues(struct hcc_handler *hcc)
+oal_void hcc_tx_network_stopall_queues_etc(struct hcc_handler *hcc)
 {
-    OAL_BUG_ON(NULL == hcc);
+    if(OAL_WARN_ON(NULL == hcc))
+    {
+         oal_print_hi11xx_log(HI11XX_LOG_ERR,"%s error: hcc is null",__FUNCTION__);
+         return;
+    };
     if(OAL_LIKELY(hcc->hcc_transer_info.tx_flow_ctrl.net_stopall))
     {
         //oal_spin_lock_bh(&hcc->hcc_transer_info.tx_flow_ctrl.lock);
         hcc->hcc_transer_info.tx_flow_ctrl.net_stopall();
-        //OAL_IO_PRINT("stop hcc_tx_network_stopall_queues\n");
+        //OAL_IO_PRINT("stop hcc_tx_network_stopall_queues_etc\n");
         //oal_spin_unlock_bh(&hcc->hcc_transer_info.tx_flow_ctrl.lock);
     }
 }
 
-oal_void hcc_tx_network_startall_queues(struct hcc_handler *hcc)
+oal_void hcc_tx_network_startall_queues_etc(struct hcc_handler *hcc)
 {
-    OAL_BUG_ON(NULL == hcc);
+    if(OAL_WARN_ON(NULL == hcc))
+    {
+         oal_print_hi11xx_log(HI11XX_LOG_ERR,"%s error: hcc is null",__FUNCTION__);
+         return;
+    };
+
     if(OAL_LIKELY(hcc->hcc_transer_info.tx_flow_ctrl.net_startall))
     {
         //oal_spin_lock_bh(&hcc->hcc_transer_info.tx_flow_ctrl.lock);
         hcc->hcc_transer_info.tx_flow_ctrl.net_startall();
-        //OAL_IO_PRINT("start hcc_tx_network_startall_queues\n");
+        //OAL_IO_PRINT("start hcc_tx_network_startall_queues_etc\n");
         //oal_spin_unlock_bh(&hcc->hcc_transer_info.tx_flow_ctrl.lock);
     }
 }
 
 
-oal_void hcc_tx_flow_ctrl_cb_register(flowctrl_cb stopall, flowctrl_cb startall)
+oal_void hcc_tx_flow_ctrl_cb_register_etc(flowctrl_cb stopall, flowctrl_cb startall)
 {
     if(NULL == hcc_tc)
     {
-        oal_print_hi11xx_log(HI11XX_LOG_ERR, "[ERROR]hcc_tx_flow_ctrl_cb_register failed! hcc_tc is NULL");
+        oal_print_hi11xx_log(HI11XX_LOG_ERR, "[ERROR]hcc_tx_flow_ctrl_cb_register_etc failed! hcc_tc is NULL");
         return;
     }
     hcc_tc->hcc_transer_info.tx_flow_ctrl.net_stopall = stopall;
@@ -341,11 +389,11 @@ oal_void hcc_tx_flow_ctrl_cb_register(flowctrl_cb stopall, flowctrl_cb startall)
 }
 
 /*lint -e19 */
-oal_module_symbol(hcc_tx_flow_ctrl_cb_register);
+oal_module_symbol(hcc_tx_flow_ctrl_cb_register_etc);
 /*lint +e19 */
 
 
-oal_void hcc_tx_wlan_queue_map_set(struct hcc_handler* hcc,hcc_queue_type hcc_queue_id,wlan_net_queue_type wlan_queue_id)
+oal_void hcc_tx_wlan_queue_map_set_etc(struct hcc_handler* hcc,hcc_queue_type hcc_queue_id,wlan_net_queue_type wlan_queue_id)
 {
     hcc_trans_queue *pst_hcc_queue;
     if(OAL_WARN_ON(NULL == hcc))
@@ -363,18 +411,18 @@ oal_void hcc_tx_wlan_queue_map_set(struct hcc_handler* hcc,hcc_queue_type hcc_qu
 }
 
 /*lint -e19 */
-oal_module_symbol(hcc_tx_wlan_queue_map_set);
+oal_module_symbol(hcc_tx_wlan_queue_map_set_etc);
 /*lint +e19 */
 
-oal_void hcc_msg_slave_thruput_bypass(oal_void)
+oal_void hcc_msg_slave_thruput_bypass_etc(oal_void)
 {
     struct hcc_handler* hcc = hcc_get_110x_handler();
-    oal_print_hi11xx_log(HI11XX_LOG_INFO, "hcc_msg_slave_thruput_bypass.");
+    oal_print_hi11xx_log(HI11XX_LOG_INFO, "hcc_msg_slave_thruput_bypass_etc.");
 
     hcc_bus_send_message(HCC_TO_BUS(hcc), H2D_MSG_HCC_SLAVE_THRUPUT_BYPASS);
 }
 #ifndef _PRE_PC_LINT
-oal_module_symbol(hcc_msg_slave_thruput_bypass);
+oal_module_symbol(hcc_msg_slave_thruput_bypass_etc);
 #endif
 
 OAL_STATIC oal_uint32 hcc_check_header_vaild(struct hcc_header * hdr)
@@ -389,7 +437,7 @@ OAL_STATIC oal_uint32 hcc_check_header_vaild(struct hcc_header * hdr)
 }
 
 
-oal_int32 hcc_tx(struct hcc_handler* hcc, oal_netbuf_stru* netbuf,
+oal_int32 hcc_tx_etc(struct hcc_handler* hcc, oal_netbuf_stru* netbuf,
                    struct hcc_transfer_param* param)
 {
     oal_uint32 queue_id = DATA_LO_QUEUE;
@@ -405,6 +453,7 @@ oal_int32 hcc_tx(struct hcc_handler* hcc, oal_netbuf_stru* netbuf,
 
     if(OAL_WARN_ON(NULL == hcc))
     {
+        oal_print_hi11xx_log(HI11XX_LOG_ERR, "HCC IS null !%s\n",__FUNCTION__);
         return -OAL_EINVAL;
     }
 
@@ -437,7 +486,7 @@ oal_int32 hcc_tx(struct hcc_handler* hcc, oal_netbuf_stru* netbuf,
     }
 #endif
 
-    if(OAL_UNLIKELY(OAL_SUCC != hcc_tx_param_check(hcc, param)))
+    if(OAL_UNLIKELY(OAL_SUCC != hcc_tx_param_check_etc(hcc, param)))
     {
         return -OAL_EINVAL;
     }
@@ -471,13 +520,16 @@ oal_int32 hcc_tx(struct hcc_handler* hcc, oal_netbuf_stru* netbuf,
 #else
             /*lint -e730*/
             ret = OAL_WAIT_EVENT_INTERRUPTIBLE_TIMEOUT(hcc->hcc_transer_info.tx_flow_ctrl.wait_queue,
-                                            hcc_queues_flow_ctrl_len(hcc, HCC_TX) < HCC_TX_FLOW_LO_LEVEL,
+                                            hcc_queues_flow_ctrl_len_etc(hcc, HCC_TX) < HCC_TX_FLOW_LO_LEVEL,
                                             60*OAL_TIME_HZ);
 #endif
             if(0 == ret)
             {
                 oal_print_hi11xx_log(HI11XX_LOG_ERR, "[WARN]hcc flow control wait event timeout! too much time locked");
                 DECLARE_DFT_TRACE_KEY_INFO("hcc flow control wait timeout", OAL_DFT_TRACE_FAIL);
+#if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
+                hcc_print_current_trans_info(0);
+#endif
             } else if(-ERESTARTSYS == ret)
             {
                 oal_print_hi11xx_log(HI11XX_LOG_WARN, "wifi task was interrupted by a signal");
@@ -495,16 +547,16 @@ oal_int32 hcc_tx(struct hcc_handler* hcc, oal_netbuf_stru* netbuf,
                 && (OAL_FALSE == pst_hcc_queue->flow_ctrl.is_stopped))
             {
                 //OAL_WAIT_QUEUE_WAKE_UP_INTERRUPT(&hcc->hcc_transer_info.tx_flow_ctrl.wait_queue);
-                //OAM_INFO_LOG3(0, OAM_SF_TX, "{hcc_tx: stop_netdev_queue, queue_len[%d] = %d}, thread = %d", queue_id,
+                //OAM_INFO_LOG3(0, OAM_SF_TX, "{hcc_tx_etc: stop_netdev_queue, queue_len[%d] = %d}, thread = %d", queue_id,
                 //                    oal_netbuf_list_len(&pst_hcc_queue->data_queue), pst_hcc_queue->flow_ctrl.high_waterline);
-                hcc_tx_network_stop_subq(hcc, (oal_uint16)pst_hcc_queue->wlan_queue_id);
+                hcc_tx_network_stop_subq_etc(hcc, (oal_uint16)pst_hcc_queue->wlan_queue_id);
                 pst_hcc_queue->flow_ctrl.is_stopped = OAL_TRUE;
             }
 
 #else
-            if(hcc_queues_flow_ctrl_len(hcc, HCC_TX) > HCC_TX_FLOW_HI_LEVEL)
+            if(hcc_queues_flow_ctrl_len_etc(hcc, HCC_TX) > HCC_TX_FLOW_HI_LEVEL)
             {
-                hcc_tx_network_stopall_queues(hcc);
+                hcc_tx_network_stopall_queues_etc(hcc);
             }
 #endif
             oal_spin_unlock_bh(&hcc->hcc_transer_info.tx_flow_ctrl.lock);
@@ -573,7 +625,11 @@ oal_int32 hcc_tx(struct hcc_handler* hcc, oal_netbuf_stru* netbuf,
 
     hdr = (struct hcc_header *)oal_netbuf_push(netbuf, headroom);
 
-    OAL_BUG_ON(!OAL_IS_ALIGNED((oal_uint)hdr, 4));
+    if(OAL_UNLIKELY(!OAL_IS_ALIGNED((oal_uint)hdr, 4)))
+    {
+        oal_print_hi11xx_log(HI11XX_LOG_ERR, "%s error: hdr:%ld not aligned len:%d",__FUNCTION__,(oal_uint)hdr,4);
+        return  -OAL_EFAIL;
+    };
 
     if(pad_payload > 0)
     {
@@ -591,7 +647,11 @@ oal_int32 hcc_tx(struct hcc_handler* hcc, oal_netbuf_stru* netbuf,
     hdr->more = 0;
     hdr->option = 0;
 
-    OAL_BUG_ON(hdr->pad_hdr + HCC_HDR_LEN  > HCC_HDR_TOTAL_LEN);
+    if(OAL_UNLIKELY(hdr->pad_hdr + HCC_HDR_LEN  > HCC_HDR_TOTAL_LEN))
+    {
+        oal_print_hi11xx_log(HI11XX_LOG_ERR, "%s error: hdr->pad_hdr + HCC_HDR_LEN:%ld > len:%d",__FUNCTION__,hdr->pad_hdr + HCC_HDR_LEN ,HCC_HDR_TOTAL_LEN);
+        return  -OAL_EFAIL;
+    };
 
     if(OAL_WARN_ON(hdr->pay_len > g_hcc_tx_max_buf_len))
     {
@@ -632,7 +692,7 @@ oal_int32 hcc_tx(struct hcc_handler* hcc, oal_netbuf_stru* netbuf,
     }
 
 #ifdef CONFIG_HCC_DEBUG
-    oal_print_hi11xx_log(HI11XX_LOG_VERBOSE, "hcc_tx into queue:%d, main:%d, sub:%d",
+    oal_print_hi11xx_log(HI11XX_LOG_VERBOSE, "hcc_tx_etc into queue:%d, main:%d, sub:%d",
                   queue_id, param->main_type, param->sub_type);
     oal_print_hi11xx_log(HI11XX_LOG_VERBOSE, "hcc tx pkt seq:%d", hdr->seq);
     oal_print_hex_dump(OAL_NETBUF_DATA(netbuf), HCC_HDR_TOTAL_LEN, 8, "hcc hdr");
@@ -655,7 +715,7 @@ oal_int32 hcc_tx(struct hcc_handler* hcc, oal_netbuf_stru* netbuf,
     return OAL_SUCC;
 }
 /*lint -e19 */
-oal_module_symbol(hcc_tx);
+oal_module_symbol(hcc_tx_etc);
 /*lint +e19 */
 
 
@@ -665,8 +725,8 @@ OAL_STATIC  oal_void hcc_transfer_rx_handler(struct hcc_handler* hcc,oal_netbuf_
 
     oal_netbuf_list_tail(&hcc->hcc_transer_info.hcc_queues[HCC_RX].queues[DATA_LO_QUEUE].data_queue,
                     netbuf);
-    if(0 == hcc_rx_thread_enable)
-        hcc_send_rx_queue(hcc,DATA_LO_QUEUE);
+    if(0 == hcc_rx_thread_enable_etc)
+        hcc_send_rx_queue_etc(hcc,DATA_LO_QUEUE);
 }
 
 
@@ -688,8 +748,8 @@ OAL_STATIC  oal_void hcc_transfer_rx_handler_replace(struct hcc_handler* hcc,oal
     oal_netbuf_list_tail(&pst_hcc_queue->data_queue,
                     pst_netbuf_new);
 
-    if(0 == hcc_rx_thread_enable)
-        hcc_send_rx_queue(hcc,DATA_LO_QUEUE);
+    if(0 == hcc_rx_thread_enable_etc)
+        hcc_send_rx_queue_etc(hcc,DATA_LO_QUEUE);
 }
 
 
@@ -703,7 +763,11 @@ oal_int32 hcc_bus_rx_handler(oal_void* data)
     struct hcc_header * pst_hcc_head;
 
 
-    OAL_BUG_ON(!hcc);
+    if(OAL_WARN_ON(!hcc))
+    {
+        oal_print_hi11xx_log(HI11XX_LOG_ERR, "hcc is null:%s\n",__FUNCTION__);
+        return -OAL_EINVAL;
+    };
 
     oal_netbuf_head_init(&head);
 
@@ -758,7 +822,7 @@ oal_int32 hcc_bus_rx_handler(oal_void* data)
     }
 
     /*sched hcc thread*/
-    if(1 == hcc_rx_thread_enable)
+    if(1 == hcc_rx_thread_enable_etc)
         hcc_sched_transfer(hcc);
 #ifdef CONFIG_HCC_DEBUG
     //oal_msleep(500);
@@ -772,11 +836,11 @@ oal_void hcc_rx_submit(struct hcc_handler* hcc, oal_netbuf_stru* pst_netbuf)
                 pst_netbuf);
 }
 
-oal_int32 sdio_credit_info_update_handler(oal_void* data)
+oal_int32 sdio_credit_info_update_handler_etc(oal_void* data)
 {
 #if 0
     struct hcc_handler* hcc = (struct hcc_handler*)data;
-    if(hcc_get_large_pkt_free_cnt(hcc) > CONFIG_CREDIT_MSG_FLOW_WATER_LINE)
+    if(hcc_get_large_pkt_free_cnt_etc(hcc) > CONFIG_CREDIT_MSG_FLOW_WATER_LINE)
         hcc_sched_transfer(hcc);
 #endif
     return OAL_SUCC;
@@ -882,7 +946,7 @@ OAL_STATIC oal_int32 _queues_flow_ctrl_len_check(struct hcc_handler* hcc, hcc_ch
             {
                 /*credit flowctrl*/
                 if (oal_netbuf_list_len(&hcc->hcc_transer_info.hcc_queues[dir].queues[i].data_queue)
-                    && (hcc->hcc_transer_info.tx_flow_ctrl.uc_hipriority_cnt > hcc_credit_bottom_value))
+                    && (hcc->hcc_transer_info.tx_flow_ctrl.uc_hipriority_cnt > hcc_credit_bottom_value_etc))
                 {
                         oal_print_hi11xx_log(HI11XX_LOG_VERBOSE, "sdio fcr true");
                         return 1;
@@ -894,7 +958,7 @@ OAL_STATIC oal_int32 _queues_flow_ctrl_len_check(struct hcc_handler* hcc, hcc_ch
     return 0;
 }
 
-oal_uint32 hcc_queues_flow_ctrl_len(struct hcc_handler* hcc, hcc_chan_type dir)
+oal_uint32 hcc_queues_flow_ctrl_len_etc(struct hcc_handler* hcc, hcc_chan_type dir)
 {
     oal_int32 i ;
     oal_uint32 total = 0;
@@ -927,13 +991,17 @@ OAL_STATIC oal_int32 _queues_len_check(struct hcc_handler* hcc, hcc_chan_type di
 OAL_STATIC  oal_int32  hcc_thread_wait_event_cond_check(struct hcc_handler* hcc)
 {
     oal_int32 ret;
-    OAL_BUG_ON(!hcc);
+    if(OAL_WARN_ON(NULL == hcc))
+    {
+         oal_print_hi11xx_log(HI11XX_LOG_ERR,"%s error: hcc is null",__FUNCTION__);
+         return OAL_FALSE;
+    };
     /*please first check the condition
       which may be ok likely to reduce the cpu mips*/
     if(HCC_BUS_PCIE == hcc->bus_dev->cur_bus->bus_type)
     {
         ret = ((_queues_len_check(hcc, HCC_RX))
-                   ||(_queues_pcie_len_check(hcc, HCC_TX))
+                   ||(_queues_pcie_len_check(hcc, HCC_TX)) || (hcc_bus_pending_signal_check(hcc->bus_dev->cur_bus))
                    ||(hcc->p_hmac_tcp_ack_need_schedule_func && OAL_TRUE == hcc->p_hmac_tcp_ack_need_schedule_func()));
     }
     else if(HCC_BUS_SDIO == hcc->bus_dev->cur_bus->bus_type)
@@ -962,14 +1030,20 @@ OAL_STATIC oal_int32 hcc_send_single_descr(struct hcc_handler *hcc, oal_netbuf_s
 {
     oal_netbuf_head_stru head_send;
     OAL_REFERENCE(hcc);
-    OAL_BUG_ON(NULL == netbuf);
+
+    if(OAL_WARN_ON(NULL == netbuf))
+    {
+        oal_print_hi11xx_log(HI11XX_LOG_ERR, "netbuf is null!%s\n",__FUNCTION__);
+        return -OAL_EINVAL;
+    }
+
     oal_netbuf_list_head_init(&head_send);
     oal_netbuf_list_tail(&head_send, netbuf);
 
     return hcc_bus_tx_netbuf_list(HCC_TO_BUS(hcc), &head_send, HCC_NETBUF_NORMAL_QUEUE);
 }
 
-oal_int32 hcc_send_descr_control_data(struct hcc_handler *hcc, hcc_descr_type descr_type, oal_void* data, oal_uint32 ul_size)
+oal_int32 hcc_send_descr_control_data_etc(struct hcc_handler *hcc, hcc_descr_type descr_type, oal_void* data, oal_uint32 ul_size)
 {
     oal_int32 ret = OAL_SUCC;
     oal_netbuf_stru* netbuf = NULL;
@@ -1012,27 +1086,27 @@ oal_int32 hcc_send_descr_control_data(struct hcc_handler *hcc, hcc_descr_type de
 }
 
 
-oal_int32 hcc_tx_netbuf_queue_switch(struct hcc_handler *hcc, hcc_netbuf_queue_type queue_type)
+oal_int32 hcc_tx_netbuf_queue_switch_etc(struct hcc_handler *hcc, hcc_netbuf_queue_type queue_type)
 {
-    return hcc_send_descr_control_data(hcc, HCC_NETBUF_QUEUE_SWITCH,&queue_type,OAL_SIZEOF(queue_type));
+    return hcc_send_descr_control_data_etc(hcc, HCC_NETBUF_QUEUE_SWITCH,&queue_type,OAL_SIZEOF(queue_type));
 }
 
-oal_int32 hcc_tx_netbuf_test_and_switch_high_pri_queue(struct hcc_handler *hcc, hcc_netbuf_queue_type pool_type)
+oal_int32 hcc_tx_netbuf_test_and_switch_high_pri_queue_etc(struct hcc_handler *hcc, hcc_netbuf_queue_type pool_type)
 {
     oal_int32 ret = OAL_EFAIL;
     if(HCC_NETBUF_HIGH_QUEUE == pool_type)
     {
-        ret = hcc_tx_netbuf_queue_switch(hcc, HCC_NETBUF_HIGH_QUEUE);
+        ret = hcc_tx_netbuf_queue_switch_etc(hcc, HCC_NETBUF_HIGH_QUEUE);
     }
     return ret;
 }
 
-oal_int32 hcc_tx_netbuf_restore_normal_pri_queue(struct hcc_handler *hcc, hcc_netbuf_queue_type pool_type)
+oal_int32 hcc_tx_netbuf_restore_normal_pri_queue_etc(struct hcc_handler *hcc, hcc_netbuf_queue_type pool_type)
 {
     oal_int32 ret = OAL_EFAIL;
     if(HCC_NETBUF_HIGH_QUEUE == pool_type)
     {
-        ret = hcc_tx_netbuf_queue_switch(hcc, HCC_NETBUF_NORMAL_QUEUE);
+        ret = hcc_tx_netbuf_queue_switch_etc(hcc, HCC_NETBUF_NORMAL_QUEUE);
     }
     return ret;
 }
@@ -1058,9 +1132,9 @@ oal_void hcc_restore_tx_netbuf(struct hcc_handler *hcc, oal_netbuf_stru *pst_net
         DECLARE_DFT_TRACE_KEY_INFO("tx_restore_wakelock_crash", OAL_DFT_TRACE_EXCEP);
         return;
     }
-    
+
     pst_hcc_queue = &hcc->hcc_transer_info.hcc_queues[HCC_TX].queues[pst_cb_stru->qtype];
-    
+
     oal_netbuf_addlist(&pst_hcc_queue->data_queue, pst_netbuf);
 }
 
@@ -1089,7 +1163,7 @@ OAL_STATIC  oal_int32 hcc_send_assemble_reset(struct hcc_handler *hcc)
     hcc->hcc_transer_info.tx_flow_ctrl.flowctrl_reset_count++;
 
     /*当只发送一个聚合描述符包，并且聚合个数为0描述通知Device 重置聚合信息*/
-    ret = hcc_send_descr_control_data(hcc, HCC_DESCR_ASSEM_RESET,NULL,0);
+    ret = hcc_send_descr_control_data_etc(hcc, HCC_DESCR_ASSEM_RESET,NULL,0);
 
     hcc_restore_assemble_netbuf_list(hcc);
 
@@ -1129,7 +1203,7 @@ OAL_STATIC oal_int32 hcc_send_data_packet(struct hcc_handler* hcc,
         uc_credit    = hcc->hcc_transer_info.tx_flow_ctrl.uc_hipriority_cnt;
 
         /* 高优先级流控: credit值为0时不发送 */
-        if (!(uc_credit > hcc_credit_bottom_value))
+        if (!(uc_credit > hcc_credit_bottom_value_etc))
         {
             return OAL_SUCC;
         }
@@ -1174,10 +1248,16 @@ OAL_STATIC oal_int32 hcc_send_data_packet(struct hcc_handler* hcc,
     else
     {
         oal_uint32 assemble_len = oal_netbuf_list_len(next_assembled_head);
-        OAL_BUG_ON(assemble_len > HISDIO_HOST2DEV_SCATT_SIZE);
+        if(OAL_UNLIKELY(assemble_len > HISDIO_HOST2DEV_SCATT_SIZE))
+        {
+            oal_print_hi11xx_log(HI11XX_LOG_ERR, "%s error: assemble_len:%d > HISDIO_HOST2DEV_SCATT_SIZE:%d",__FUNCTION__,assemble_len,HISDIO_HOST2DEV_SCATT_SIZE);
+        }
+        else
+        {
+            info[assemble_len]++;
+        }
         /*move the assem list to send queue*/
         oal_netbuf_splice_init(next_assembled_head,&head_send);
-        info[assemble_len]++;
     }
 
     total_send = oal_netbuf_list_len(&head_send);
@@ -1187,7 +1267,10 @@ OAL_STATIC oal_int32 hcc_send_data_packet(struct hcc_handler* hcc,
     else
         *remain_len = 0;
 
-    OAL_BUG_ON(!oal_netbuf_list_empty(next_assembled_head));
+    if(OAL_WARN_ON(!oal_netbuf_list_empty(next_assembled_head)))
+    {
+         oal_print_hi11xx_log(HI11XX_LOG_ERR,"%s error: next_assembled_head is empty",__FUNCTION__);
+    };
 
     if(hcc_assem_send == mode)
         hcc_build_next_assem_descr(hcc, type, head,next_assembled_head,descr_netbuf, *remain_len);
@@ -1242,7 +1325,7 @@ failed_get_assem_descr:
     return ret;
 }
 
-oal_void hcc_clear_all_queues(struct hcc_handler * hcc, oal_int32 is_need_lock)
+oal_void hcc_clear_all_queues_etc(struct hcc_handler * hcc, oal_int32 is_need_lock)
 {
     oal_int32 i;
     oal_netbuf_head_stru* pst_head;
@@ -1303,7 +1386,7 @@ oal_void hcc_clear_all_queues(struct hcc_handler * hcc, oal_int32 is_need_lock)
     }
 }
 
-oal_void hcc_change_state(struct hcc_handler * hcc, oal_int32 state)
+oal_void hcc_change_state_etc(struct hcc_handler * hcc, oal_int32 state)
 {
     oal_int32  old_state, new_state;
     if(OAL_WARN_ON(NULL == hcc))
@@ -1327,13 +1410,13 @@ oal_void hcc_change_state(struct hcc_handler * hcc, oal_int32 state)
     }
 }
 
-oal_void hcc_change_state_exception(oal_void)
+oal_void hcc_change_state_exception_etc(oal_void)
 {
-    hcc_change_state(hcc_get_110x_handler(), HCC_EXCEPTION);
+    hcc_change_state_etc(hcc_get_110x_handler(), HCC_EXCEPTION);
 }
 
 
-oal_void hcc_enable(struct hcc_handler * hcc, oal_int32 is_need_lock)
+oal_void hcc_enable_etc(struct hcc_handler * hcc, oal_int32 is_need_lock)
 {
     oal_int32 i;
     if(OAL_WARN_ON(NULL == hcc))
@@ -1346,7 +1429,7 @@ oal_void hcc_enable(struct hcc_handler * hcc, oal_int32 is_need_lock)
         hcc_transfer_lock(hcc);
     }
 
-    hcc_clear_all_queues(hcc, OAL_FALSE);
+    hcc_clear_all_queues_etc(hcc, OAL_FALSE);
 
     for(i = 0; i < HCC_QUEUE_COUNT; i++)
     {
@@ -1355,7 +1438,7 @@ oal_void hcc_enable(struct hcc_handler * hcc, oal_int32 is_need_lock)
         oal_spin_unlock_bh(&hcc->hcc_transer_info.tx_flow_ctrl.lock);
     }
 
-    hcc_change_state(hcc, HCC_ON);
+    hcc_change_state_etc(hcc, HCC_ON);
 
     if(OAL_TRUE == is_need_lock)
     {
@@ -1365,7 +1448,7 @@ oal_void hcc_enable(struct hcc_handler * hcc, oal_int32 is_need_lock)
 }
 
 
-oal_void hcc_disable(struct hcc_handler * hcc, oal_int32 is_need_lock)
+oal_void hcc_disable_etc(struct hcc_handler * hcc, oal_int32 is_need_lock)
 {
     if(OAL_UNLIKELY(NULL == hcc))
     {
@@ -1373,7 +1456,7 @@ oal_void hcc_disable(struct hcc_handler * hcc, oal_int32 is_need_lock)
         return;
     }
 
-    hcc_change_state(hcc, HCC_OFF);
+    hcc_change_state_etc(hcc, HCC_OFF);
 
     /*disable flow ctrl detect timer*/
     hcc_dev_flowctr_timer_del(hcc);
@@ -1384,8 +1467,10 @@ oal_void hcc_disable(struct hcc_handler * hcc, oal_int32 is_need_lock)
         hcc_transfer_lock(hcc);
     }
 
-    hcc_clear_all_queues(hcc, OAL_FALSE);
-
+    hcc_clear_all_queues_etc(hcc, OAL_FALSE);
+#if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
+    atomic_set(&hcc->tx_seq, 0);
+#endif
     if(OAL_TRUE == is_need_lock)
     {
         hcc_transfer_unlock(hcc);
@@ -1396,14 +1481,18 @@ oal_void hcc_disable(struct hcc_handler * hcc, oal_int32 is_need_lock)
 }
 
 
-int hcc_send_tx_queue(struct hcc_handler *hcc, hcc_queue_type type)
+int hcc_send_tx_queue_etc(struct hcc_handler *hcc, hcc_queue_type type)
 {
     oal_int32       count = 0;
     oal_netbuf_head_stru *head;
     hcc_trans_queue *pst_hcc_queue;
     hcc_netbuf_queue_type qtype = HCC_NETBUF_NORMAL_QUEUE;
 
-    OAL_BUG_ON(!hcc);
+    if(OAL_UNLIKELY(NULL == hcc))
+    {
+         OAL_IO_PRINT("%s error: hcc is null",__FUNCTION__);
+         return 0;
+    };
 
     if(OAL_UNLIKELY(type >= HCC_QUEUE_COUNT))
     {
@@ -1447,18 +1536,18 @@ int hcc_send_tx_queue(struct hcc_handler *hcc, hcc_queue_type type)
                 {
                     pst_hcc_queue->flow_ctrl.is_stopped = OAL_FALSE;
 
-                    //OAM_INFO_LOG3(0, OAM_SF_TX, "{hcc_tx: start_netdev_queue, queue_len[%d] = %d}, threshold = %d", type,
+                    //OAM_INFO_LOG3(0, OAM_SF_TX, "{hcc_tx_etc: start_netdev_queue, queue_len[%d] = %d}, threshold = %d", type,
                     //        oal_netbuf_list_len(&pst_hcc_queue->data_queue), pst_hcc_queue->flow_ctrl.low_waterline);
-                    hcc_tx_network_start_subq(hcc, (oal_uint16)pst_hcc_queue->wlan_queue_id);
+                    hcc_tx_network_start_subq_etc(hcc, (oal_uint16)pst_hcc_queue->wlan_queue_id);
                 }
                 OAL_WAIT_QUEUE_WAKE_UP_INTERRUPT(&hcc->hcc_transer_info.tx_flow_ctrl.wait_queue);
             }
 
 #else
-            if(hcc_queues_flow_ctrl_len(hcc, HCC_TX) < HCC_TX_FLOW_LO_LEVEL)
+            if(hcc_queues_flow_ctrl_len_etc(hcc, HCC_TX) < HCC_TX_FLOW_LO_LEVEL)
             {
                 OAL_WAIT_QUEUE_WAKE_UP_INTERRUPT(&hcc->hcc_transer_info.tx_flow_ctrl.wait_queue);
-                hcc_tx_network_startall_queues(hcc);
+                hcc_tx_network_startall_queues_etc(hcc);
             }
 #endif
         oal_spin_unlock_bh(&hcc->hcc_transer_info.tx_flow_ctrl.lock);
@@ -1486,7 +1575,7 @@ int hcc_send_tx_queue(struct hcc_handler *hcc, hcc_queue_type type)
         remain_len = queue_len;
 
 #ifdef _PRE_WLAN_FEATURE_OFFLOAD_FLOWCTL
-        oal_print_hi11xx_log(HI11XX_LOG_DBG, "before_update: hcc_send_tx_queue: queue_type = %d, burst_limit = %d, remain_len = %d",
+        oal_print_hi11xx_log(HI11XX_LOG_DBG, "before_update: hcc_send_tx_queue_etc: queue_type = %d, burst_limit = %d, remain_len = %d",
             type, pst_hcc_queue->burst_limit, remain_len);
         remain_len = OAL_MIN(pst_hcc_queue->burst_limit, remain_len);
 #endif
@@ -1546,12 +1635,12 @@ int hcc_send_tx_queue(struct hcc_handler *hcc, hcc_queue_type type)
                 uc_credit    = hcc->hcc_transer_info.tx_flow_ctrl.uc_hipriority_cnt;
 
                 /*高优先级如果没有内存，直接返回规避死循环问题。*/
-                if (!(uc_credit > hcc_credit_bottom_value))
+                if (!(uc_credit > hcc_credit_bottom_value_etc))
                 {
                     if(ul_pool_type_flag == OAL_TRUE)
                     {
                         /*恢复成普通优先级*/
-                        hcc_tx_netbuf_restore_normal_pri_queue(hcc,pool_type);
+                        hcc_tx_netbuf_restore_normal_pri_queue_etc(hcc,pool_type);
                     }
                     hcc_tx_transfer_unlock(hcc);
                     return OAL_SUCC;
@@ -1559,7 +1648,7 @@ int hcc_send_tx_queue(struct hcc_handler *hcc, hcc_queue_type type)
 
                 if(ul_pool_type_flag == OAL_FALSE)
                 {
-                    if(OAL_SUCC == hcc_tx_netbuf_test_and_switch_high_pri_queue(hcc,pool_type))
+                    if(OAL_SUCC == hcc_tx_netbuf_test_and_switch_high_pri_queue_etc(hcc,pool_type))
                     {
                         ul_pool_type_flag = OAL_TRUE;
                     }
@@ -1568,7 +1657,13 @@ int hcc_send_tx_queue(struct hcc_handler *hcc, hcc_queue_type type)
 
             ret = hcc_send_data_packet(hcc, head, type, next_assembled_head, send_mode, &remain_len);
 
-            OAL_BUG_ON(remain_len > remain_len_t);
+            if(OAL_UNLIKELY(remain_len > remain_len_t))
+            {
+                oal_print_hi11xx_log(HI11XX_LOG_ERR, "%s error: remain_len:%d > remain_len_t:%d",__FUNCTION__,remain_len,remain_len_t);
+                hcc_tx_transfer_unlock(hcc);
+                return OAL_FAIL;
+            };
+
             if(OAL_LIKELY(OAL_SUCC == ret))
             {
                 count += (oal_int32)(remain_len_t - remain_len);
@@ -1585,18 +1680,18 @@ int hcc_send_tx_queue(struct hcc_handler *hcc, hcc_queue_type type)
                 {
                     pst_hcc_queue->flow_ctrl.is_stopped = OAL_FALSE;
 
-                    //OAM_INFO_LOG3(0, OAM_SF_TX, "{hcc_tx: start_netdev_queue, queue_len[%d] = %d}, threshold = %d", type,
+                    //OAM_INFO_LOG3(0, OAM_SF_TX, "{hcc_tx_etc: start_netdev_queue, queue_len[%d] = %d}, threshold = %d", type,
                     //        oal_netbuf_list_len(&pst_hcc_queue->data_queue), pst_hcc_queue->flow_ctrl.low_waterline);
-                    hcc_tx_network_start_subq(hcc, (oal_uint16)pst_hcc_queue->wlan_queue_id);
+                    hcc_tx_network_start_subq_etc(hcc, (oal_uint16)pst_hcc_queue->wlan_queue_id);
                 }
                 OAL_WAIT_QUEUE_WAKE_UP_INTERRUPT(&hcc->hcc_transer_info.tx_flow_ctrl.wait_queue);
             }
 
 #else
-            if(hcc_queues_flow_ctrl_len(hcc, HCC_TX) < HCC_TX_FLOW_LO_LEVEL)
+            if(hcc_queues_flow_ctrl_len_etc(hcc, HCC_TX) < HCC_TX_FLOW_LO_LEVEL)
             {
                 OAL_WAIT_QUEUE_WAKE_UP_INTERRUPT(&hcc->hcc_transer_info.tx_flow_ctrl.wait_queue);
-                hcc_tx_network_startall_queues(hcc);
+                hcc_tx_network_startall_queues_etc(hcc);
             }
 #endif
             oal_spin_unlock_bh(&hcc->hcc_transer_info.tx_flow_ctrl.lock);
@@ -1607,7 +1702,7 @@ int hcc_send_tx_queue(struct hcc_handler *hcc, hcc_queue_type type)
         {
             if(ul_pool_type_flag == OAL_TRUE)
             {
-                hcc_tx_netbuf_restore_normal_pri_queue(hcc,pool_type);
+                hcc_tx_netbuf_restore_normal_pri_queue_etc(hcc,pool_type);
             }
         }
 
@@ -1615,11 +1710,10 @@ int hcc_send_tx_queue(struct hcc_handler *hcc, hcc_queue_type type)
         return count;
     }
 
-    hcc_tx_transfer_lock(hcc);
 }
 
 
-oal_int32 hcc_rx_register(struct hcc_handler *hcc, oal_uint8 mtype, hcc_rx_post_do post_do, hcc_rx_pre_do pre_do)
+oal_int32 hcc_rx_register_etc(struct hcc_handler *hcc, oal_uint8 mtype, hcc_rx_post_do post_do, hcc_rx_pre_do pre_do)
 {
     hcc_rx_action    *rx_action;
 
@@ -1646,10 +1740,10 @@ oal_int32 hcc_rx_register(struct hcc_handler *hcc, oal_uint8 mtype, hcc_rx_post_
     return OAL_SUCC;
 }
 /*lint -e19*/
-oal_module_symbol(hcc_rx_register);
+oal_module_symbol(hcc_rx_register_etc);
 /*lint +e19*/
 
-oal_int32 hcc_rx_unregister(struct hcc_handler *hcc, oal_uint8 mtype)
+oal_int32 hcc_rx_unregister_etc(struct hcc_handler *hcc, oal_uint8 mtype)
 {
     hcc_rx_action    *rx_action;
 
@@ -1666,7 +1760,7 @@ oal_int32 hcc_rx_unregister(struct hcc_handler *hcc, oal_uint8 mtype)
     return OAL_SUCC;
 }
 /*lint -e19*/
-oal_module_symbol(hcc_rx_unregister);
+oal_module_symbol(hcc_rx_unregister_etc);
 /*lint +e19*/
 
 OAL_STATIC oal_uint32 hcc_check_rx_netbuf_vaild(struct hcc_header *hdr, oal_int32 netbuf_len)
@@ -1687,7 +1781,11 @@ OAL_STATIC  oal_int32 hcc_rx(struct hcc_handler *hcc, oal_netbuf_stru* netbuf)
     oal_int32               netbuf_len;
     oal_int32               extend_len;
 
-    OAL_BUG_ON(!hcc);
+    if(OAL_UNLIKELY(!hcc))
+    {
+        OAL_IO_PRINT("hcc is null r failed!%s\n",__FUNCTION__);
+        return -OAL_EINVAL;
+    }
 
     hdr = (struct hcc_header *)OAL_NETBUF_DATA(netbuf);
     netbuf_len = (oal_int32) OAL_NETBUF_LEN(netbuf);
@@ -1737,7 +1835,7 @@ OAL_STATIC  oal_int32 hcc_rx(struct hcc_handler *hcc, oal_netbuf_stru* netbuf)
     return OAL_SUCC;
 }
 
-oal_int32 hcc_send_rx_queue(struct hcc_handler *hcc, hcc_queue_type type)
+oal_int32 hcc_send_rx_queue_etc(struct hcc_handler *hcc, hcc_queue_type type)
 {
     oal_int32 count = 0;
     oal_int32 pre_ret = OAL_SUCC;
@@ -1748,7 +1846,8 @@ oal_int32 hcc_send_rx_queue(struct hcc_handler *hcc, hcc_queue_type type)
     hcc_netbuf_stru  st_hcc_netbuf;
     struct hcc_header * pst_hcc_head;
 
-    OAL_BUG_ON(type >= HCC_QUEUE_COUNT);
+    if(OAL_WARN_ON(type >= HCC_QUEUE_COUNT))
+        return -OAL_EINVAL ;
 
     netbuf_hdr = &hcc->hcc_transer_info.hcc_queues[HCC_RX].queues[type].data_queue;
 
@@ -1831,11 +1930,14 @@ oal_int32 hcc_send_rx_queue(struct hcc_handler *hcc, hcc_queue_type type)
 }
 
 #ifdef _PRE_WLAN_FEATURE_OFFLOAD_FLOWCTL
-oal_void hcc_tx_network_start_subq(struct hcc_handler *hcc, oal_uint16 us_queue_idx)
+oal_void hcc_tx_network_start_subq_etc(struct hcc_handler *hcc, oal_uint16 us_queue_idx)
 {
 
-    OAL_BUG_ON(NULL == hcc);
-
+    if(OAL_WARN_ON(!hcc))
+    {
+        OAL_IO_PRINT("buf is null r failed!%s\n",__FUNCTION__);
+        return;
+    }
 
     if(OAL_LIKELY(hcc->hcc_transer_info.tx_flow_ctrl.start_subq))
     {
@@ -1844,9 +1946,13 @@ oal_void hcc_tx_network_start_subq(struct hcc_handler *hcc, oal_uint16 us_queue_
     }
 }
 
-oal_void hcc_tx_network_stop_subq(struct hcc_handler *hcc, oal_uint16 us_queue_idx)
+oal_void hcc_tx_network_stop_subq_etc(struct hcc_handler *hcc, oal_uint16 us_queue_idx)
 {
-    OAL_BUG_ON(NULL == hcc);
+    if(OAL_WARN_ON(!hcc))
+    {
+        OAL_IO_PRINT("buf is null r failed!%s\n",__FUNCTION__);
+        return;
+    }
 
     if(OAL_LIKELY(hcc->hcc_transer_info.tx_flow_ctrl.stop_subq))
     {
@@ -1855,11 +1961,11 @@ oal_void hcc_tx_network_stop_subq(struct hcc_handler *hcc, oal_uint16 us_queue_i
 }
 
 
-oal_void hcc_flowctl_operate_subq_register(hcc_flowctl_start_subq start_subq, hcc_flowctl_stop_subq stop_subq)
+oal_void hcc_flowctl_operate_subq_register_etc(hcc_flowctl_start_subq start_subq, hcc_flowctl_stop_subq stop_subq)
 {
     if(NULL == hcc_tc)
     {
-        OAL_IO_PRINT("[ERROR]hcc_flowctl_operate_subq_register failed! hcc_tc is NULL\n");
+        OAL_IO_PRINT("[ERROR]hcc_flowctl_operate_subq_register_etc failed! hcc_tc is NULL\n");
         return;
     }
     hcc_tc->hcc_transer_info.tx_flow_ctrl.start_subq = start_subq;
@@ -1868,27 +1974,27 @@ oal_void hcc_flowctl_operate_subq_register(hcc_flowctl_start_subq start_subq, hc
 }
 
 
-oal_void   hcc_host_set_flowctl_param(oal_uint8 uc_queue_type, oal_uint16 us_burst_limit, oal_uint16 us_low_waterline, oal_uint16 us_high_waterline)
+oal_void   hcc_host_set_flowctl_param_etc(oal_uint8 uc_queue_type, oal_uint16 us_burst_limit, oal_uint16 us_low_waterline, oal_uint16 us_high_waterline)
 {
     if (uc_queue_type >= HCC_QUEUE_COUNT)
     {
-        OAL_IO_PRINT("CONFIG_ERROR: hcc_host_set_flowctl_param: uc_queue_type = %d\r\n", uc_queue_type);
+        OAL_IO_PRINT("CONFIG_ERROR: hcc_host_set_flowctl_param_etc: uc_queue_type = %d\r\n", uc_queue_type);
         return;
     }
     hcc_tc->hcc_transer_info.hcc_queues[HCC_TX].queues[uc_queue_type].burst_limit = us_burst_limit;
     hcc_tc->hcc_transer_info.hcc_queues[HCC_TX].queues[uc_queue_type].flow_ctrl.low_waterline = us_low_waterline;
     hcc_tc->hcc_transer_info.hcc_queues[HCC_TX].queues[uc_queue_type].flow_ctrl.high_waterline = us_high_waterline;
 
-    OAL_IO_PRINT("hcc_host_set_flowctl_param, queue[%d]: burst limit = %d, low_waterline = %d, high_waterline =%d\r\n",
+    OAL_IO_PRINT("hcc_host_set_flowctl_param_etc, queue[%d]: burst limit = %d, low_waterline = %d, high_waterline =%d\r\n",
                     uc_queue_type, us_burst_limit, us_low_waterline, us_high_waterline);
     return;
 }
 
-oal_void    hcc_host_get_flowctl_param(oal_uint8 uc_queue_type, oal_uint16 *pus_burst_limit, oal_uint16 *pus_low_waterline, oal_uint16 *pus_high_waterline)
+oal_void    hcc_host_get_flowctl_param_etc(oal_uint8 uc_queue_type, oal_uint16 *pus_burst_limit, oal_uint16 *pus_low_waterline, oal_uint16 *pus_high_waterline)
 {
     if (uc_queue_type >= HCC_QUEUE_COUNT)
     {
-        OAL_IO_PRINT("CONFIG_ERROR: hcc_host_get_flowctl_param: uc_queue_type = %d\r\n", uc_queue_type);
+        OAL_IO_PRINT("CONFIG_ERROR: hcc_host_get_flowctl_param_etc: uc_queue_type = %d\r\n", uc_queue_type);
         return;
     }
 
@@ -1898,7 +2004,7 @@ oal_void    hcc_host_get_flowctl_param(oal_uint8 uc_queue_type, oal_uint16 *pus_
     return;
 }
 
-oal_void   hcc_host_get_flowctl_stat(oal_void)
+oal_void   hcc_host_get_flowctl_stat_etc(oal_void)
 {
     oal_uint16 us_queue_idx;
 
@@ -1923,9 +2029,14 @@ oal_void   hcc_host_get_flowctl_stat(oal_void)
 
 }
 
-oal_bool_enum_uint8 hcc_flowctl_get_device_mode(struct hcc_handler *hcc)
+oal_bool_enum_uint8 hcc_flowctl_get_device_mode_etc(struct hcc_handler *hcc)
 {
-    OAL_BUG_ON(NULL == hcc);
+    if(OAL_WARN_ON(!hcc))
+    {
+        OAL_IO_PRINT("buf is null r failed!%s\n",__FUNCTION__);
+        return OAL_FALSE;
+    }
+
     if(OAL_LIKELY(hcc->hcc_transer_info.tx_flow_ctrl.get_mode))
     {
         return hcc->hcc_transer_info.tx_flow_ctrl.get_mode();
@@ -1934,17 +2045,17 @@ oal_bool_enum_uint8 hcc_flowctl_get_device_mode(struct hcc_handler *hcc)
     return OAL_FALSE;
 }
 
-oal_void hcc_flowctl_get_device_mode_register(hcc_flowctl_get_mode get_mode)
+oal_void hcc_flowctl_get_device_mode_register_etc(hcc_flowctl_get_mode get_mode)
 {
     if (OAL_PTR_NULL == hcc_tc)
     {
-        OAL_IO_PRINT("[ERROR]hcc_flowctl_get_device_mode_register failed! hcc_tc is NULL\n");
+        OAL_IO_PRINT("[ERROR]hcc_flowctl_get_device_mode_register_etc failed! hcc_tc is NULL\n");
         return;
     }
     hcc_tc->hcc_transer_info.tx_flow_ctrl.get_mode = get_mode;
 }
 
-oal_void    hcc_host_update_vi_flowctl_param(oal_uint32 be_cwmin, oal_uint32 vi_cwmin)
+oal_void    hcc_host_update_vi_flowctl_param_etc(oal_uint32 be_cwmin, oal_uint32 vi_cwmin)
 {
     oal_uint16  us_burst_limit;
     oal_uint16  us_low_waterline;
@@ -1953,19 +2064,19 @@ oal_void    hcc_host_update_vi_flowctl_param(oal_uint32 be_cwmin, oal_uint32 vi_
     /* 如果vi与be的edca参数设置为一致，则更新VI的拥塞控制参数 */
     if (be_cwmin == vi_cwmin)
     {
-        hcc_host_get_flowctl_param(DATA_UDP_BE_QUEUE, &us_burst_limit, &us_low_waterline, &us_high_waterline);
-        hcc_host_set_flowctl_param(DATA_UDP_VI_QUEUE, us_burst_limit, us_low_waterline, us_high_waterline);
+        hcc_host_get_flowctl_param_etc(DATA_UDP_BE_QUEUE, &us_burst_limit, &us_low_waterline, &us_high_waterline);
+        hcc_host_set_flowctl_param_etc(DATA_UDP_VI_QUEUE, us_burst_limit, us_low_waterline, us_high_waterline);
     }
     else //否则设置vi的拥塞控制参数为默认值
     {
-        hcc_host_set_flowctl_param(DATA_UDP_VI_QUEUE, 40, 40, 80);
+        hcc_host_set_flowctl_param_etc(DATA_UDP_VI_QUEUE, 40, 40, 80);
     }
 }
 
 /*lint -e19 */
-oal_module_symbol(hcc_flowctl_get_device_mode_register);
-oal_module_symbol(hcc_flowctl_operate_subq_register);
-oal_module_symbol(hcc_host_update_vi_flowctl_param);
+oal_module_symbol(hcc_flowctl_get_device_mode_register_etc);
+oal_module_symbol(hcc_flowctl_operate_subq_register_etc);
+oal_module_symbol(hcc_host_update_vi_flowctl_param_etc);
 
 /*lint +e19 */
 
@@ -1981,7 +2092,7 @@ OAL_STATIC  oal_int32 hcc_process_tx_queues(struct hcc_handler *hcc)
     {
         //head = &hcc->hcc_transer_info.hcc_queues[HCC_TX].queues[i].data_queue;
         /*send tx queue*/
-        ret += hcc_send_tx_queue(hcc, (hcc_queue_type)i);
+        ret += hcc_send_tx_queue_etc(hcc, (hcc_queue_type)i);
     }
     return ret;
 }
@@ -1993,7 +2104,7 @@ OAL_STATIC  oal_int32 hcc_process_rx_queues(struct hcc_handler *hcc)
 
     for(i = 0; i < HCC_QUEUE_COUNT; i++)
     {
-        hcc_send_rx_queue(hcc,(hcc_queue_type)i);
+        hcc_send_rx_queue_etc(hcc,(hcc_queue_type)i);
     }
     return OAL_SUCC;
 }
@@ -2001,80 +2112,80 @@ OAL_STATIC  oal_int32 hcc_process_rx_queues(struct hcc_handler *hcc)
 #endif
 
 
-oal_int32 hcc_thread_process(struct hcc_handler *hcc)
+oal_int32 hcc_thread_process_etc(struct hcc_handler *hcc)
 {
     oal_int32 ret = 0;
 #ifdef _PRE_WLAN_FEATURE_OFFLOAD_FLOWCTL
     oal_bool_enum_uint8      en_device_is_sta = OAL_FALSE;
 
-    en_device_is_sta = hcc_flowctl_get_device_mode(hcc);
+    en_device_is_sta = hcc_flowctl_get_device_mode_etc(hcc);
     if (OAL_TRUE == en_device_is_sta)
     {
         /*Tx Tcp Data queue > Rx Tcp Ack
           Rx Tcp Data > Tx Tcp Ack
           Tx Tcp Data queue > Rx Tcp Data queue*/
-        ret += hcc_send_rx_queue(hcc, CTRL_QUEUE);
-        ret += hcc_send_tx_queue(hcc, CTRL_QUEUE);
+        ret += hcc_send_rx_queue_etc(hcc, CTRL_QUEUE);
+        ret += hcc_send_tx_queue_etc(hcc, CTRL_QUEUE);
 
-        ret += hcc_send_rx_queue(hcc, DATA_HI_QUEUE);
-        ret += hcc_send_tx_queue(hcc, DATA_HI_QUEUE);
+        ret += hcc_send_rx_queue_etc(hcc, DATA_HI_QUEUE);
+        ret += hcc_send_tx_queue_etc(hcc, DATA_HI_QUEUE);
 
         /* 下行TCP优先 */
-        ret += hcc_send_rx_queue(hcc, DATA_TCP_DATA_QUEUE);
-        ret += hcc_send_tx_queue(hcc, DATA_TCP_ACK_QUEUE);
+        ret += hcc_send_rx_queue_etc(hcc, DATA_TCP_DATA_QUEUE);
+        ret += hcc_send_tx_queue_etc(hcc, DATA_TCP_ACK_QUEUE);
 
-        ret += hcc_send_tx_queue(hcc, DATA_TCP_DATA_QUEUE);
-        ret += hcc_send_rx_queue(hcc, DATA_TCP_ACK_QUEUE);
+        ret += hcc_send_tx_queue_etc(hcc, DATA_TCP_DATA_QUEUE);
+        ret += hcc_send_rx_queue_etc(hcc, DATA_TCP_ACK_QUEUE);
 
         /*Tx Lo < Rx Lo*/
-        ret += hcc_send_rx_queue(hcc, DATA_LO_QUEUE);
-        ret += hcc_send_tx_queue(hcc, DATA_LO_QUEUE);
+        ret += hcc_send_rx_queue_etc(hcc, DATA_LO_QUEUE);
+        ret += hcc_send_tx_queue_etc(hcc, DATA_LO_QUEUE);
 
-        ret += hcc_send_rx_queue(hcc, DATA_UDP_VO_QUEUE);
-        ret += hcc_send_tx_queue(hcc, DATA_UDP_VO_QUEUE);
+        ret += hcc_send_rx_queue_etc(hcc, DATA_UDP_VO_QUEUE);
+        ret += hcc_send_tx_queue_etc(hcc, DATA_UDP_VO_QUEUE);
 
-        ret += hcc_send_rx_queue(hcc, DATA_UDP_VI_QUEUE);
-        ret += hcc_send_tx_queue(hcc, DATA_UDP_VI_QUEUE);
+        ret += hcc_send_rx_queue_etc(hcc, DATA_UDP_VI_QUEUE);
+        ret += hcc_send_tx_queue_etc(hcc, DATA_UDP_VI_QUEUE);
 
-        ret += hcc_send_rx_queue(hcc, DATA_UDP_BE_QUEUE);
-        ret += hcc_send_tx_queue(hcc, DATA_UDP_BE_QUEUE);
+        ret += hcc_send_rx_queue_etc(hcc, DATA_UDP_BE_QUEUE);
+        ret += hcc_send_tx_queue_etc(hcc, DATA_UDP_BE_QUEUE);
 
-        ret += hcc_send_rx_queue(hcc, DATA_UDP_BK_QUEUE);
-        ret += hcc_send_tx_queue(hcc, DATA_UDP_BK_QUEUE);
+        ret += hcc_send_rx_queue_etc(hcc, DATA_UDP_BK_QUEUE);
+        ret += hcc_send_tx_queue_etc(hcc, DATA_UDP_BK_QUEUE);
     }
     else
     {
         /*Tx Tcp Data queue > Rx Tcp Ack
           Rx Tcp Data > Tx Tcp Ack
           Tx Tcp Data queue < Rx Tcp Data queue*/
-        ret += hcc_send_tx_queue(hcc, CTRL_QUEUE);
-        ret += hcc_send_rx_queue(hcc, CTRL_QUEUE);
+        ret += hcc_send_tx_queue_etc(hcc, CTRL_QUEUE);
+        ret += hcc_send_rx_queue_etc(hcc, CTRL_QUEUE);
 
-        ret += hcc_send_tx_queue(hcc, DATA_HI_QUEUE);
-        ret += hcc_send_rx_queue(hcc, DATA_HI_QUEUE);
+        ret += hcc_send_tx_queue_etc(hcc, DATA_HI_QUEUE);
+        ret += hcc_send_rx_queue_etc(hcc, DATA_HI_QUEUE);
 
-        ret += hcc_send_tx_queue(hcc, DATA_TCP_DATA_QUEUE);
-        ret += hcc_send_rx_queue(hcc, DATA_TCP_ACK_QUEUE);
+        ret += hcc_send_tx_queue_etc(hcc, DATA_TCP_DATA_QUEUE);
+        ret += hcc_send_rx_queue_etc(hcc, DATA_TCP_ACK_QUEUE);
 
-        ret += hcc_send_rx_queue(hcc, DATA_TCP_DATA_QUEUE);
-        ret += hcc_send_tx_queue(hcc, DATA_TCP_ACK_QUEUE);
+        ret += hcc_send_rx_queue_etc(hcc, DATA_TCP_DATA_QUEUE);
+        ret += hcc_send_tx_queue_etc(hcc, DATA_TCP_ACK_QUEUE);
 
         /*Tx Lo < Rx Lo*/
-        ret += hcc_send_tx_queue(hcc, DATA_LO_QUEUE);
-        ret += hcc_send_rx_queue(hcc, DATA_LO_QUEUE);
+        ret += hcc_send_tx_queue_etc(hcc, DATA_LO_QUEUE);
+        ret += hcc_send_rx_queue_etc(hcc, DATA_LO_QUEUE);
 
         /* udp业务 */
-        ret += hcc_send_tx_queue(hcc, DATA_UDP_VO_QUEUE);
-        ret += hcc_send_rx_queue(hcc, DATA_UDP_VO_QUEUE);
+        ret += hcc_send_tx_queue_etc(hcc, DATA_UDP_VO_QUEUE);
+        ret += hcc_send_rx_queue_etc(hcc, DATA_UDP_VO_QUEUE);
 
-        ret += hcc_send_tx_queue(hcc, DATA_UDP_VI_QUEUE);
-        ret += hcc_send_rx_queue(hcc, DATA_UDP_VI_QUEUE);
+        ret += hcc_send_tx_queue_etc(hcc, DATA_UDP_VI_QUEUE);
+        ret += hcc_send_rx_queue_etc(hcc, DATA_UDP_VI_QUEUE);
 
-        ret += hcc_send_tx_queue(hcc, DATA_UDP_BE_QUEUE);
-        ret += hcc_send_rx_queue(hcc, DATA_UDP_BE_QUEUE);
+        ret += hcc_send_tx_queue_etc(hcc, DATA_UDP_BE_QUEUE);
+        ret += hcc_send_rx_queue_etc(hcc, DATA_UDP_BE_QUEUE);
 
-        ret += hcc_send_tx_queue(hcc, DATA_UDP_BK_QUEUE);
-        ret += hcc_send_rx_queue(hcc, DATA_UDP_BK_QUEUE);
+        ret += hcc_send_tx_queue_etc(hcc, DATA_UDP_BK_QUEUE);
+        ret += hcc_send_rx_queue_etc(hcc, DATA_UDP_BK_QUEUE);
     }
 #else
     hcc_process_rx_queues(hcc);
@@ -2084,13 +2195,13 @@ oal_int32 hcc_thread_process(struct hcc_handler *hcc)
     return ret;
 }
 
-oal_void hcc_set_tcpack_cnt(oal_uint32 ul_val)
+oal_void hcc_set_tcpack_cnt_etc(oal_uint32 ul_val)
 {
-    g_ul_tcp_ack_wait_sche_cnt = ul_val;
+    g_ul_tcp_ack_wait_sche_cnt_etc = ul_val;
     return;
 }
 
-oal_int32 hcc_transfer_thread(oal_void *data)
+oal_int32 hcc_transfer_thread_etc(oal_void *data)
 {
 #if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
     oal_int32 count;
@@ -2103,11 +2214,15 @@ oal_int32 hcc_transfer_thread(oal_void *data)
 
     hcc = (struct hcc_handler *)data;
 
-    OAL_BUG_ON(!hcc);
+    if(OAL_WARN_ON(NULL == hcc))
+    {
+         OAL_IO_PRINT("%s error: hcc is null",__FUNCTION__);
+         return OAL_FAIL;
+    };
 
     OAL_IO_PRINT("hisi wifi hcc transfer thread enter\n");
     param.sched_priority = 1;
-    oal_set_thread_property(current,
+    oal_set_thread_property_etc(current,
                             SCHED_FIFO,
                             &param,
                             HCC_TRANS_THERAD_NICE);
@@ -2124,6 +2239,13 @@ oal_int32 hcc_transfer_thread(oal_void *data)
             break;
         }
 
+        if(OAL_UNLIKELY((NULL == hcc->bus_dev) || (NULL == hcc->bus_dev->cur_bus)))
+        {
+            OAL_IO_PRINT("bus_dev or cur_bus is null\n");
+            msleep(1000);
+            continue;
+        }
+
         ret = OAL_WAIT_EVENT_INTERRUPTIBLE(hcc->hcc_transer_info.hcc_transfer_wq,
                                         (OAL_TRUE == hcc_thread_wait_event_cond_check(hcc)));
         if(OAL_UNLIKELY(-ERESTARTSYS == ret))
@@ -2135,16 +2257,16 @@ oal_int32 hcc_transfer_thread(oal_void *data)
         if(OAL_PTR_NULL != hcc->p_hmac_tcp_ack_process_func)
         {
             ack_loop_count++;
-            if(ack_loop_count >= g_ul_tcp_ack_wait_sche_cnt)
+            if(ack_loop_count >= g_ul_tcp_ack_wait_sche_cnt_etc)
             {
                 ack_loop_count = 0;
                 hcc->p_hmac_tcp_ack_process_func();
             }
         }
 #endif
+        count |= hcc_bus_pending_signal_process(hcc->bus_dev->cur_bus);
 
-        count |= hcc_thread_process(hcc);
-
+        count |= hcc_thread_process_etc(hcc);
 
 #ifdef _PRE_CONFIG_WLAN_THRANS_THREAD_DEBUG
         if(count)
@@ -2173,9 +2295,9 @@ oal_int32 hcc_transfer_thread(oal_void *data)
     return OAL_SUCC;
 }
 /*lint -e19*/
-oal_module_symbol(hcc_thread_process);
-oal_module_symbol(hcc_transfer_thread);
-oal_module_symbol(g_ul_tcp_ack_wait_sche_cnt);
+oal_module_symbol(hcc_thread_process_etc);
+oal_module_symbol(hcc_transfer_thread_etc);
+oal_module_symbol(g_ul_tcp_ack_wait_sche_cnt_etc);
 /*lint +e19*/
 
 OAL_STATIC  oal_void hcc_dev_flowctr_timer_del(struct hcc_handler *hcc)
@@ -2190,7 +2312,7 @@ OAL_STATIC  oal_void hcc_dev_flowctr_timer_del(struct hcc_handler *hcc)
     }
 }
 
-oal_void hcc_dev_flowctrl_on(struct hcc_handler *hcc, oal_uint8 need_notify_dev)
+oal_void hcc_dev_flowctrl_on_etc(struct hcc_handler *hcc, oal_uint8 need_notify_dev)
 {
     hcc->hcc_transer_info.tx_flow_ctrl.flowctrl_on_count++;
     oal_print_hi11xx_log(HI11XX_LOG_DBG, "start tranferring to device");
@@ -2210,7 +2332,7 @@ oal_void hcc_dev_flowctrl_on(struct hcc_handler *hcc, oal_uint8 need_notify_dev)
 
 }
 
-oal_void hcc_dev_flowctrl_off(struct hcc_handler *hcc)
+oal_void hcc_dev_flowctrl_off_etc(struct hcc_handler *hcc)
 {
     if(D2H_MSG_FLOWCTRL_ON == hcc->hcc_transer_info.tx_flow_ctrl.flowctrl_flag)
     {
@@ -2223,7 +2345,7 @@ oal_void hcc_dev_flowctrl_off(struct hcc_handler *hcc)
     oal_print_hi11xx_log(HI11XX_LOG_DBG, "stop tranferring to device");
 }
 
-oal_void hcc_transfer_queues_init(struct hcc_handler *hcc)
+oal_void hcc_transfer_queues_init_etc(struct hcc_handler *hcc)
 {
     oal_int32 i,j;
     for(i = 0; i < HCC_DIR_COUNT; i++)
@@ -2235,7 +2357,7 @@ oal_void hcc_transfer_queues_init(struct hcc_handler *hcc)
     }
 }
 
-oal_int32 hcc_tx_assem_descr_init(struct hcc_handler *hcc)
+oal_int32 hcc_tx_assem_descr_init_etc(struct hcc_handler *hcc)
 {
     oal_int32 i;
     oal_int32 ret = OAL_SUCC;
@@ -2258,10 +2380,13 @@ oal_int32 hcc_tx_assem_descr_init(struct hcc_handler *hcc)
         oal_netbuf_put(netbuf, HISDIO_HOST2DEV_SCATT_SIZE);
         oal_memset(OAL_NETBUF_DATA(netbuf),0,OAL_NETBUF_LEN(netbuf));
         oal_netbuf_list_tail(&hcc->tx_descr_info.tx_assem_descr_hdr, netbuf);
-        OAL_BUG_ON(!OAL_IS_ALIGNED(((oal_uint)OAL_NETBUF_DATA(netbuf)),4));
+        if (OAL_WARN_ON(!OAL_IS_ALIGNED(((oal_uint)OAL_NETBUF_DATA(netbuf)),4)))
+        {
+                OAM_WARNING_LOG1(0, OAM_SF_ANY, "{(oal_uint)OAL_NETBUF_DATA(netbuf):%d not align 4}",(oal_uint)OAL_NETBUF_DATA(netbuf));
+        }
     }
 
-    OAL_BUG_ON(HISDIO_HOST2DEV_SCATT_SIZE < 4);
+    OAL_BUILD_BUG_ON(HISDIO_HOST2DEV_SCATT_SIZE < 4);
 
     return ret;
 failed_netbuf_alloc:
@@ -2270,12 +2395,12 @@ failed_netbuf_alloc:
 
 }
 
-oal_void hcc_tx_assem_descr_exit(struct hcc_handler *hcc)
+oal_void hcc_tx_assem_descr_exit_etc(struct hcc_handler *hcc)
 {
     oal_netbuf_list_purge(&hcc->tx_descr_info.tx_assem_descr_hdr);
 }
 
-oal_void hcc_tx_assem_info_reset(struct hcc_handler *hcc)
+oal_void hcc_tx_assem_info_reset_etc(struct hcc_handler *hcc)
 {
     oal_memset(hcc->hcc_transer_info.tx_assem_info.info, 0, OAL_SIZEOF(hcc->hcc_transer_info.tx_assem_info.info));
 }
@@ -2285,15 +2410,15 @@ oal_void oal_sdio_rx_assem_info_reset(struct hcc_handler *hcc)
     oal_memset(hcc->hcc_transer_info.rx_assem_info.info, 0, OAL_SIZEOF(hcc->hcc_transer_info.rx_assem_info.info));
 }
 
-oal_void hcc_assem_info_init(struct hcc_handler *hcc)
+oal_void hcc_assem_info_init_etc(struct hcc_handler *hcc)
 {
-    hcc->hcc_transer_info.tx_assem_info.assemble_max_count = hcc_assemble_count;
-    hcc_tx_assem_info_reset(hcc);
+    hcc->hcc_transer_info.tx_assem_info.assemble_max_count = hcc_assemble_count_etc;
+    hcc_tx_assem_info_reset_etc(hcc);
     oal_sdio_rx_assem_info_reset(hcc);
     oal_netbuf_list_head_init(&hcc->hcc_transer_info.tx_assem_info.assembled_head);
 }
 
-oal_void hcc_trans_limit_parm_init(struct hcc_handler  *hcc)
+oal_void hcc_trans_limit_parm_init_etc(struct hcc_handler  *hcc)
 {
 #ifdef _PRE_WLAN_FEATURE_OFFLOAD_FLOWCTL
     oal_int32 i;
@@ -2318,7 +2443,7 @@ oal_void hcc_trans_limit_parm_init(struct hcc_handler  *hcc)
 
 }
 
-oal_void hcc_trans_send_mode_init(struct hcc_handler  *hcc)
+oal_void hcc_trans_send_mode_init_etc(struct hcc_handler  *hcc)
 {
     oal_int32 i;
 
@@ -2351,37 +2476,37 @@ OAL_STATIC oal_void hcc_dev_flow_ctrl_timeout_isr(oal_uint arg)
     }
 }
 
-oal_void hcc_flowctrl_deadlock_detect_worker(oal_work_stru *pst_flow_work)
+oal_void hcc_flowctrl_deadlock_detect_worker_etc(oal_work_stru *pst_flow_work)
 {
     struct hcc_handler  *hcc = hcc_get_110x_handler();
     if(NULL == hcc)
     {
-        OAL_IO_PRINT("hcc_flowctrl_deadlock_detect_worker hcc is null\n");
+        OAL_IO_PRINT("hcc_flowctrl_deadlock_detect_worker_etc hcc is null\n");
         return;
     }
-    OAM_WARNING_LOG1(0, OAM_SF_ANY, "{hcc_flowctrl_deadlock_detect_worker action,%d}",
+    OAM_WARNING_LOG1(0, OAM_SF_ANY, "{hcc_flowctrl_deadlock_detect_worker_etc action,%d}",
                     g_flowctrl_info_flag);
     if( 0 == g_flowctrl_info_flag)
     {
         g_flowctrl_info_flag = 1 ;
         OAL_SMP_MB();
-        //oal_sdio_send_msg(hcc->hi_sdio, H2D_MSG_DEVICE_INFO_DUMP);
+        //oal_sdio_send_msg_etc(hcc->hi_sdio, H2D_MSG_DEVICE_INFO_DUMP);
         /*queue system_wq delay work,and send other message 20ms later.*/
         /* print device mem */
-        hcc_print_device_mem_info();
+        hcc_print_device_mem_info_etc();
         oal_queue_delayed_system_work(&hcc->hcc_transer_info.tx_flow_ctrl.worker,OAL_MSECS_TO_JIFFIES(20));
     }
     else if( 1 == g_flowctrl_info_flag)
     {
-        //oal_sdio_send_msg(hcc->hi_sdio, H2D_MSG_DEVICE_MEM_DUMP);
+        //oal_sdio_send_msg_etc(hcc->hi_sdio, H2D_MSG_DEVICE_MEM_DUMP);
         /* print device mem */
-        if(hcc_flowctrl_detect_panic)
+        if(hcc_flowctrl_detect_panic_etc)
         {
-            hcc_trigger_device_panic();
+            hcc_trigger_device_panic_etc();
         }
         else
         {
-            hcc_print_device_mem_info();
+            hcc_print_device_mem_info_etc();
         }
     }
 
@@ -2398,7 +2523,7 @@ oal_void hcc_trans_flow_ctrl_info_reset(struct hcc_handler  *hcc)
     hcc->hcc_transer_info.tx_flow_ctrl.uc_hipriority_cnt = 0;/*默认不允许发送等待wcpu更新credit*/
 }
 
-oal_void hcc_trans_flow_ctrl_info_init(struct hcc_handler  *hcc)
+oal_void hcc_trans_flow_ctrl_info_init_etc(struct hcc_handler  *hcc)
 {
     oal_int32 i;
     hcc->hcc_transer_info.tx_flow_ctrl.flowctrl_flag = D2H_MSG_FLOWCTRL_ON;
@@ -2406,7 +2531,7 @@ oal_void hcc_trans_flow_ctrl_info_init(struct hcc_handler  *hcc)
     hcc->hcc_transer_info.tx_flow_ctrl.flowctrl_on_count = 0;
     oal_spin_lock_init(&hcc->hcc_transer_info.tx_flow_ctrl.lock);
     hcc->hcc_transer_info.tx_flow_ctrl.timeout = 20*1000;
-    OAL_INIT_DELAYED_WORK(&hcc->hcc_transer_info.tx_flow_ctrl.worker,hcc_flowctrl_deadlock_detect_worker);
+    OAL_INIT_DELAYED_WORK(&hcc->hcc_transer_info.tx_flow_ctrl.worker,hcc_flowctrl_deadlock_detect_worker_etc);
     oal_timer_init(&hcc->hcc_transer_info.tx_flow_ctrl.flow_timer,
                     hcc->hcc_transer_info.tx_flow_ctrl.timeout,
                     hcc_dev_flow_ctrl_timeout_isr,
@@ -2470,26 +2595,30 @@ oal_void hcc_trans_flow_ctrl_info_init(struct hcc_handler  *hcc)
 #endif
 
 }
-oal_int32 hcc_flow_on_callback(oal_void* data)
+oal_int32 hcc_flow_on_callback_etc(oal_void* data)
 {
-    hcc_dev_flowctrl_on((struct hcc_handler *)data, 0);
+    hcc_dev_flowctrl_on_etc((struct hcc_handler *)data, 0);
     return OAL_SUCC;
 }
 
-oal_int32 hcc_flow_off_callback(oal_void* data)
+oal_int32 hcc_flow_off_callback_etc(oal_void* data)
 {
-    hcc_dev_flowctrl_off((struct hcc_handler *)data);
+    hcc_dev_flowctrl_off_etc((struct hcc_handler *)data);
     return OAL_SUCC;
 }
 
 
-oal_int32  hcc_credit_update_callback(oal_void* data)
+oal_int32  hcc_credit_update_callback_etc(oal_void* data)
 {
     oal_uint8           uc_large_cnt;
     struct hcc_handler *hcc     = (struct hcc_handler *)data;
     struct oal_sdio    *hi_sdio = oal_get_sdio_default_handler();
 
-    OAL_BUG_ON(!hi_sdio);
+    if(OAL_WARN_ON(!hi_sdio))
+    {
+        OAL_IO_PRINT("hcc_credit_update_callback_etc set fail: hi_sdio is null!\n");
+        return OAL_FAIL;
+    }
 
     uc_large_cnt = HISDIO_LARGE_PKT_GET(hi_sdio->sdio_extend->credit_info);
 
@@ -2506,7 +2635,7 @@ oal_int32  hcc_credit_update_callback(oal_void* data)
     return OAL_SUCC;
 }
 
-oal_int32  hcc_high_pkts_loss_callback(oal_void* data)
+oal_int32  hcc_high_pkts_loss_callback_etc(oal_void* data)
 {
     OAL_REFERENCE(data);
     DECLARE_DFT_TRACE_KEY_INFO("sdio_high_pkts_loss", OAL_DFT_TRACE_EXCEP);
@@ -2514,15 +2643,21 @@ oal_int32  hcc_high_pkts_loss_callback(oal_void* data)
 }
 
 
-struct hcc_handler* hcc_module_init(hcc_bus_dev* pst_bus_dev)
+struct hcc_handler* hcc_module_init_etc(hcc_bus_dev* pst_bus_dev)
 {
     oal_uint32 ul_tx_max_len;
     struct hcc_handler* hcc = NULL;
 
-    OAL_BUG_ON(HCC_HDR_LEN > HCC_HDR_TOTAL_LEN);
+    OAL_BUILD_BUG_ON(HCC_HDR_LEN > HCC_HDR_TOTAL_LEN);
 
     /*main_type:4 只能表示16种类型*/
-    OAL_BUG_ON(HCC_ACTION_TYPE_BUTT > 15);
+    OAL_BUILD_BUG_ON(HCC_ACTION_TYPE_BUTT > 15);
+
+    if(OAL_WARN_ON(NULL == pst_bus_dev))
+    {
+         oal_print_hi11xx_log(HI11XX_LOG_ERR,"%s error: pst_bus_dev is null",__FUNCTION__);
+         return NULL;
+    }
 
     /*1544-the max netbuf len of device*/
     /*lint -e778*/
@@ -2539,8 +2674,6 @@ struct hcc_handler* hcc_module_init(hcc_bus_dev* pst_bus_dev)
         return NULL;
     }
 
-    OAL_BUG_ON(NULL == pst_bus_dev);
-
     oal_memset((oal_void*)hcc, 0, OAL_SIZEOF(struct hcc_handler));
 
     hcc->bus_dev = pst_bus_dev;
@@ -2551,9 +2684,9 @@ struct hcc_handler* hcc_module_init(hcc_bus_dev* pst_bus_dev)
     oal_atomic_set(&hcc->state, HCC_OFF);
 
     OAL_WAIT_QUEUE_INIT_HEAD(&hcc->hcc_transer_info.hcc_transfer_wq);    /*queues init*/
-    hcc_transfer_queues_init(hcc);
+    hcc_transfer_queues_init_etc(hcc);
 
-    hcc_trans_flow_ctrl_info_init(hcc);
+    hcc_trans_flow_ctrl_info_init_etc(hcc);
 
 #if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
     mutex_init(&hcc->tx_transfer_lock);
@@ -2562,14 +2695,14 @@ struct hcc_handler* hcc_module_init(hcc_bus_dev* pst_bus_dev)
     OAL_WAIT_QUEUE_INIT_HEAD(&hcc->hcc_transer_info.tx_flow_ctrl.wait_queue);
 
 #if !(defined(_PRE_WLAN_TCP_OPT) || defined(WIN32))
-    hcc->hcc_transer_info.hcc_transfer_thread = oal_thread_create(hcc_transfer_thread,
+    hcc->hcc_transer_info.hcc_transfer_thread_etc = oal_thread_create_etc(hcc_transfer_thread_etc,
                                         hcc,
                                         NULL,
                                         "hisi_hcc",
                                         HCC_TRANS_THREAD_POLICY,
                                         HCC_TRANS_THERAD_PRIORITY,
                                         -1);
-    if(!hcc->hcc_transer_info.hcc_transfer_thread)
+    if(!hcc->hcc_transer_info.hcc_transfer_thread_etc)
     {
 		OAL_IO_PRINT("hcc thread create failed!\n");
         goto failed_create_hcc_thread;
@@ -2584,64 +2717,64 @@ struct hcc_handler* hcc_module_init(hcc_bus_dev* pst_bus_dev)
     }
 #endif
 
-    hcc_assem_info_init(hcc);
-    hcc_trans_limit_parm_init(hcc);
-    hcc_trans_send_mode_init(hcc);
+    hcc_assem_info_init_etc(hcc);
+    hcc_trans_limit_parm_init_etc(hcc);
+    hcc_trans_send_mode_init_etc(hcc);
 
-    OAL_BUG_ON(!OAL_IS_ALIGNED(HISDIO_HOST2DEV_SCATT_SIZE, HISDIO_H2D_SCATT_BUFFLEN_ALIGN));
+    OAL_BUILD_BUG_ON(!OAL_IS_ALIGNED(HISDIO_HOST2DEV_SCATT_SIZE, HISDIO_H2D_SCATT_BUFFLEN_ALIGN));
 
-    if(OAL_SUCC != hcc_tx_assem_descr_init(hcc))
+    if(OAL_SUCC != hcc_tx_assem_descr_init_etc(hcc))
     {
         OAL_IO_PRINT("hcc tx assem descrt alloc failed!\n");
         goto failed_tx_assem_descr_alloc;
     }
 #if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
-    if(OAL_SUCC != hcc_message_register(hcc, D2H_MSG_FLOWCTRL_ON,hcc_flow_on_callback,hcc))
+    if(OAL_SUCC != hcc_message_register_etc(hcc, D2H_MSG_FLOWCTRL_ON,hcc_flow_on_callback_etc,hcc))
     {
         OAL_IO_PRINT("register flow ctrl on failed!\n");
         goto failed_reg_flowon_msg;
     }
 
-    if(OAL_SUCC != hcc_message_register(hcc, D2H_MSG_FLOWCTRL_OFF,hcc_flow_off_callback,hcc))
+    if(OAL_SUCC != hcc_message_register_etc(hcc, D2H_MSG_FLOWCTRL_OFF,hcc_flow_off_callback_etc,hcc))
     {
         OAL_IO_PRINT("register flow ctrl off failed!\n");
         goto failed_reg_flowoff_msg;
     }
 
-    hcc_message_register(hcc, D2H_MSG_CREDIT_UPDATE, hcc_credit_update_callback, hcc);
+    hcc_message_register_etc(hcc, D2H_MSG_CREDIT_UPDATE, hcc_credit_update_callback_etc, hcc);
 
-    hcc_message_register(hcc, D2H_MSG_HIGH_PKT_LOSS, hcc_high_pkts_loss_callback, hcc);
+    hcc_message_register_etc(hcc, D2H_MSG_HIGH_PKT_LOSS, hcc_high_pkts_loss_callback_etc, hcc);
 #endif
-    if(OAL_SUCC != hcc_test_init_module(hcc))
+    if(OAL_SUCC != hcc_test_init_module_etc(hcc))
     {
         OAL_IO_PRINT("register flow ctrl off failed!\n");
         goto failed_hcc_test_init;
     }
 
-    oal_wake_lock_init(&hcc->tx_wake_lock,"hcc_tx");
+    oal_wake_lock_init(&hcc->tx_wake_lock,"hcc_tx_etc");
 
-    OAL_IO_PRINT("hcc_module_init dev id:%d succ\n", pst_bus_dev->dev_id);
+    OAL_IO_PRINT("hcc_module_init_etc dev id:%d succ\n", pst_bus_dev->dev_id);
 
     /*hcc_tc is used to test!*/
     hcc_tc = hcc;
 
     return hcc;
 failed_hcc_test_init:
-    hcc_message_unregister(hcc,D2H_MSG_FLOWCTRL_OFF);
+    hcc_message_unregister_etc(hcc,D2H_MSG_FLOWCTRL_OFF);
 #if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
 failed_reg_flowoff_msg:
-    hcc_message_unregister(hcc,D2H_MSG_FLOWCTRL_ON);
+    hcc_message_unregister_etc(hcc,D2H_MSG_FLOWCTRL_ON);
 failed_reg_flowon_msg:
 #endif
-    hcc_tx_assem_descr_exit(hcc);
+    hcc_tx_assem_descr_exit_etc(hcc);
 failed_tx_assem_descr_alloc:
 #if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
     hcc_bus_transfer_rx_unregister(HCC_TO_BUS(hcc));
 failed_rx_cb_reg:
 #endif
 #if !defined(_PRE_WLAN_TCP_OPT) || defined(WIN32)
-    oal_thread_stop(hcc->hcc_transer_info.hcc_transfer_thread, NULL);
-    hcc->hcc_transer_info.hcc_transfer_thread = NULL;
+    oal_thread_stop_etc(hcc->hcc_transer_info.hcc_transfer_thread_etc, NULL);
+    hcc->hcc_transer_info.hcc_transfer_thread_etc = NULL;
 #endif
 #if !(defined(_PRE_WLAN_TCP_OPT) || defined(WIN32))
 failed_create_hcc_thread:
@@ -2656,18 +2789,18 @@ failed_create_hcc_thread:
 }
 
 
-oal_void hcc_module_exit(struct hcc_handler* hcc)
+oal_void hcc_module_exit_etc(struct hcc_handler* hcc)
 {
     oal_wake_lock_exit(&hcc->tx_wake_lock);
-    hcc_test_exit_module(hcc);
-    hcc_message_unregister(hcc,D2H_MSG_FLOWCTRL_OFF);
-    hcc_message_unregister(hcc,D2H_MSG_FLOWCTRL_ON);
-    hcc_tx_assem_descr_exit(hcc);
-    //hcc_rx_unregister(hcc);
+    hcc_test_exit_module_etc(hcc);
+    hcc_message_unregister_etc(hcc,D2H_MSG_FLOWCTRL_OFF);
+    hcc_message_unregister_etc(hcc,D2H_MSG_FLOWCTRL_ON);
+    hcc_tx_assem_descr_exit_etc(hcc);
+    //hcc_rx_unregister_etc(hcc);
     hcc_bus_transfer_rx_unregister(HCC_TO_BUS(hcc));
 #if !defined(_PRE_WLAN_TCP_OPT) || defined(WIN32)
-    oal_thread_stop(hcc->hcc_transer_info.hcc_transfer_thread, NULL);
-    hcc->hcc_transer_info.hcc_transfer_thread = NULL;
+    oal_thread_stop_etc(hcc->hcc_transer_info.hcc_transfer_thread_etc, NULL);
+    hcc->hcc_transer_info.hcc_transfer_thread_etc = NULL;
 #endif
 #if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
     mutex_destroy(&hcc->tx_transfer_lock);
@@ -2681,61 +2814,61 @@ oal_void hcc_module_exit(struct hcc_handler* hcc)
 }
 
 #ifdef CONFIG_PRINTK
-oal_void hcc_sched_transfer_test(oal_void)
+oal_void hcc_sched_transfer_test_etc(oal_void)
 {
     hcc_sched_transfer(hcc_tc);
 }
 
-oal_void hcc_dev_flowctrl_on_test(oal_void)
+oal_void hcc_dev_flowctrl_on_test_etc(oal_void)
 {
     if(NULL != hcc_tc)
-        hcc_dev_flowctrl_on(hcc_tc,1);
+        hcc_dev_flowctrl_on_etc(hcc_tc,1);
 }
 #endif
 #ifdef CONFIG_MMC
-oal_void hcc_device_info_dump(oal_void)
+oal_void hcc_device_info_dump_etc(oal_void)
 {
     struct hcc_handler* hcc = hcc_get_110x_handler();
-    OAL_IO_PRINT("hcc_device_info_dump\n");
+    OAL_IO_PRINT("hcc_device_info_dump_etc\n");
     hcc_bus_send_message(HCC_TO_BUS(hcc), H2D_MSG_DEVICE_INFO_DUMP);
 }
 
-oal_void hcc_device_mem_dump(oal_void)
+oal_void hcc_device_mem_dump_etc(oal_void)
 {
     struct hcc_handler* hcc = hcc_get_110x_handler();
-    OAL_IO_PRINT("hcc_device_mem_dump\n");
+    OAL_IO_PRINT("hcc_device_mem_dump_etc\n");
     hcc_bus_send_message(HCC_TO_BUS(hcc), H2D_MSG_DEVICE_MEM_DUMP);
 }
 #endif
 /*lint -e19 */
 
-oal_void hcc_trigger_device_panic(oal_void)
+oal_void hcc_trigger_device_panic_etc(oal_void)
 {
 #ifdef CONFIG_MMC
     struct hcc_handler* hcc = hcc_get_110x_handler();
-    wlan_pm_disable();
+    wlan_pm_disable_etc();
     hcc_bus_send_message(HCC_TO_BUS(hcc), H2D_MSG_TEST);
-    wlan_pm_enable();
+    wlan_pm_enable_etc();
 #endif
 }
-oal_module_symbol(hcc_trigger_device_panic);
+oal_module_symbol(hcc_trigger_device_panic_etc);
 
-oal_void hcc_print_device_mem_info(oal_void)
+oal_void hcc_print_device_mem_info_etc(oal_void)
 {
 #ifdef CONFIG_MMC
     struct hcc_handler* hcc = hcc_get_110x_handler();
 
-    wlan_pm_disable();
+    wlan_pm_disable_etc();
     hcc_bus_send_message(HCC_TO_BUS(hcc), H2D_MSG_DEVICE_MEM_INFO);
-    wlan_pm_enable();
+    wlan_pm_enable_etc();
 #endif
 }
-oal_module_symbol(hcc_print_device_mem_info);
+oal_module_symbol(hcc_print_device_mem_info_etc);
 
 #ifdef _PRE_WLAN_FEATURE_OFFLOAD_FLOWCTL
-oal_module_symbol(hcc_host_set_flowctl_param);
-oal_module_symbol(hcc_host_get_flowctl_param);
-oal_module_symbol(hcc_host_get_flowctl_stat);
+oal_module_symbol(hcc_host_set_flowctl_param_etc);
+oal_module_symbol(hcc_host_get_flowctl_param_etc);
+oal_module_symbol(hcc_host_get_flowctl_stat_etc);
 #endif
 
 

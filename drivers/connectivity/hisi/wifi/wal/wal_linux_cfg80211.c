@@ -1706,10 +1706,12 @@ OAL_STATIC oal_int32  wal_cfg80211_connect(
     {
         st_mac_cfg80211_connect_param.puc_bssid = (oal_uint8 *)pst_sme->bssid;
     }
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,16,0))
     else if (pst_sme->bssid_hint)
     {
         st_mac_cfg80211_connect_param.puc_bssid = (oal_uint8 *)pst_sme->bssid_hint;
     }
+#endif
     else
     {
         OAM_WARNING_LOG0(0, OAM_SF_ASSOC, "{wal_cfg80211_connect::bssid and bssid_hint is NULL.}");
@@ -4090,6 +4092,7 @@ OAL_STATIC oal_int32 wal_cfg80211_del_station(oal_wiphy_stru        *pst_wiphy,
     oal_int32                     int_user_count_fail = 0;
     oal_int32                     uint_ret            = OAL_FAIL;
     oal_uint8                     auc_mac_boardcast[OAL_MAC_ADDR_LEN];
+    oal_uint16                    us_reason_code = MAC_INACTIVITY;
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 0))
     oal_uint8                    *puc_mac;
     if (params == OAL_PTR_NULL)
@@ -4097,6 +4100,8 @@ OAL_STATIC oal_int32 wal_cfg80211_del_station(oal_wiphy_stru        *pst_wiphy,
         return -OAL_EFAUL;
     }
     puc_mac = (oal_uint8 *)params->mac;
+
+    us_reason_code = params->reason_code;
 #endif
 
     if (OAL_PTR_NULL == pst_wiphy || OAL_PTR_NULL == pst_dev)
@@ -4139,7 +4144,7 @@ OAL_STATIC oal_int32 wal_cfg80211_del_station(oal_wiphy_stru        *pst_wiphy,
                     puc_mac[0], puc_mac[3], puc_mac[4], puc_mac[5]);
     }
 
-    st_kick_user_param.us_reason_code = MAC_INACTIVITY;
+    st_kick_user_param.us_reason_code = us_reason_code;
     oal_memcopy(st_kick_user_param.auc_mac_addr, puc_mac, OAL_MAC_ADDR_LEN);
     uint_ret = wal_cfg80211_start_disconnect(pst_dev, &st_kick_user_param);
     if (OAL_SUCC != uint_ret)
@@ -4257,6 +4262,12 @@ oal_uint8 wal_cfg80211_get_station_filter(mac_vap_stru *pst_mac_vap, oal_uint8 *
     hmac_user_stru *pst_hmac_user;
     oal_uint32      ul_current_time = (oal_uint32)OAL_TIME_GET_STAMP_MS();
     oal_uint32      ul_runtime;
+    oal_uint32      ul_get_station_threshold;
+
+#ifdef _PRE_WLAN_FEATURE_VOWIFI
+    mac_device_stru *pst_mac_dev;
+#endif
+
 
     pst_hmac_user = mac_vap_get_hmac_user_by_addr(pst_mac_vap, puc_mac);
     if(OAL_PTR_NULL == pst_hmac_user)
@@ -4265,9 +4276,29 @@ oal_uint8 wal_cfg80211_get_station_filter(mac_vap_stru *pst_mac_vap, oal_uint8 *
         return OAL_FALSE;
     }
 
+#ifdef _PRE_WLAN_FEATURE_VOWIFI
+    pst_mac_dev = mac_res_get_dev(pst_mac_vap->uc_device_id);
+    if(OAL_PTR_NULL == pst_mac_dev)
+    {
+        OAM_WARNING_LOG0(pst_mac_vap->uc_vap_id, OAM_SF_CFG, "{wal_cfg80211_get_station_filter::dev is null.}");
+        return OAL_FALSE;
+    }
+    if (IS_LEGACY_STA(pst_mac_vap) &&
+        (OAL_PTR_NULL != pst_mac_vap->pst_vowifi_cfg_param && VOWIFI_DISABLE_REPORT == pst_mac_vap->pst_vowifi_cfg_param->en_vowifi_mode))
+    {
+        /*亮屏且vowifi正在使用时*/
+        ul_get_station_threshold = WAL_VOWIFI_GET_STATION_THRESHOLD;
+    }
+    else
+#endif
+    {
+        ul_get_station_threshold = WAL_GET_STATION_THRESHOLD;
+    }
+
+
     ul_runtime = (oal_uint32)OAL_TIME_GET_RUNTIME(pst_hmac_user->ul_rssi_last_timestamp, ul_current_time);
 
-    if(WAL_GET_STATION_THRESHOLD > ul_runtime)
+    if(ul_get_station_threshold > ul_runtime)
     {
         return OAL_FALSE;
     }
@@ -5188,11 +5219,11 @@ OAL_STATIC oal_int32 wal_cfg80211_remain_on_channel(oal_wiphy_stru           *ps
     st_remain_on_channel.st_listen_channel  = *pst_chan;
     st_remain_on_channel.en_listen_channel_type =  WLAN_BAND_WIDTH_20M;
 
-    if (pst_chan->band == IEEE80211_BAND_2GHZ)
+    if (pst_chan->band == HISI_IEEE80211_BAND_2GHZ)
     {
         st_remain_on_channel.en_band = WLAN_BAND_2G;
     }
-    else if (pst_chan->band == IEEE80211_BAND_5GHZ)
+    else if (pst_chan->band == HISI_IEEE80211_BAND_5GHZ)
     {
         st_remain_on_channel.en_band = WLAN_BAND_5G;
     }
@@ -5231,7 +5262,7 @@ OAL_STATIC oal_int32 wal_cfg80211_remain_on_channel(oal_wiphy_stru           *ps
 
     if (OAL_SUCC != l_ret)
     {
-        OAM_ERROR_LOG1(0, OAM_SF_P2P, "{wal_cfg80211_remain_on_channel::wal_send_cfg_event return err code:[%d]!}\r\n",l_ret);
+        OAM_WARNING_LOG1(0, OAM_SF_P2P, "{wal_cfg80211_remain_on_channel::wal_send_cfg_event return err code:[%d]!}\r\n",l_ret);
         return -OAL_EFAIL;
     }
 
@@ -5239,7 +5270,7 @@ OAL_STATIC oal_int32 wal_cfg80211_remain_on_channel(oal_wiphy_stru           *ps
     ul_err_code = wal_check_and_release_msg_resp(pst_rsp_msg);
     if(OAL_SUCC != ul_err_code)
     {
-        OAM_ERROR_LOG1(0, OAM_SF_CFG, "{wal_cfg80211_remain_on_channel::wal_send_cfg_event return err code:[%u]!}\r\n",
+        OAM_WARNING_LOG1(0, OAM_SF_CFG, "{wal_cfg80211_remain_on_channel::wal_send_cfg_event return err code:[%u]!}\r\n",
                          ul_err_code);
         return -OAL_EFAIL;
     }

@@ -31,20 +31,20 @@ int parse_edid(struct dp_ctrl *dptx, uint16_t len)
 	uint8_t* edid_t;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("dptx is NULL pointer\n");
+		HISI_FB_ERR("[DP] dptx is NULL pointer\n");
 		return -EINVAL;
 	}
 
 	edid_t = dptx->edid;
-	HISI_FB_INFO("parse_edid +\n");
+	HISI_FB_DEBUG("parse_edid +\n");
 	/*Check if data has any error*/
 	if (edid_t == NULL) {
-		HISI_FB_ERR("Raw Data is invalid!(NULL error)\n");
+		HISI_FB_ERR("[DP] Raw Data is invalid!(NULL error)\n");
 		return -EINVAL;
 	}
 
 	if (((len/EDID_LENGTH) > 5) || ((len%EDID_LENGTH) != 0) || (len < EDID_LENGTH)) {
-		HISI_FB_ERR("Raw Data length is invalid(not the size of (128 x N , N = [1-5]) uint8_t!");
+		HISI_FB_ERR("[DP] Raw Data length is invalid(not the size of (128 x N , N = [1-5]) uint8_t!");
 		return -EINVAL;
 	}
 
@@ -60,15 +60,31 @@ int parse_edid(struct dp_ctrl *dptx, uint16_t len)
 		for (i = 0; i < ext_block_num; i++) {
 			ret = parse_extension(dptx, edid_t + (EDID_LENGTH * (i + 1)));
 			if ( ret != 0 ) {
-				HISI_FB_ERR("Extension Parsing failed!Only returning the Main Part of this EDID!\n");
+				HISI_FB_ERR("[DP] Extension Parsing failed!Only returning the Main Part of this EDID!\n");
 				break;
 			}
 		}
 	} else if (ext_block_num < 0) {
-		HISI_FB_ERR("Error occured while parsing, returning with NULL!");
+		HISI_FB_ERR("[DP] Error occured while parsing, returning with NULL!");
 		return -EINVAL;
 	}
-	HISI_FB_INFO("parse_edid -\n");
+	HISI_FB_DEBUG("[DP] parse_edid -\n");
+
+	for (i = 0; i < len;) {
+		if (!(i % 16)) {
+			printk(KERN_INFO "EDID [%04x]:  %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x \n",
+				i, dptx->edid[i], dptx->edid[i + 1], dptx->edid[i + 2], dptx->edid[i + 3],
+				dptx->edid[i + 4], dptx->edid[i + 5], dptx->edid[i + 6], dptx->edid[i + 7],
+				dptx->edid[i + 8], dptx->edid[i + 9], dptx->edid[i + 10], dptx->edid[i + 11],
+				dptx->edid[i + 12], dptx->edid[i + 13], dptx->edid[i + 14], dptx->edid[i + 15]);
+		}
+
+		i += 16;
+
+		if (i == 128) {
+			printk(KERN_INFO "<<<-------------------------------------------------------------->>> \n");
+		}
+	}
 	return 0;
 }
 
@@ -77,14 +93,14 @@ int check_main_edid(uint8_t* edid)
 	uint32_t checksum = 0;
 	int32_t i;
 	if(edid == NULL) {
-		HISI_FB_ERR("The pointer is NULL.\n");
+		HISI_FB_ERR("[DP] The pointer is NULL.\n");
 		return -EINVAL;
 	}
 	/*Verify 0 checksum*/
 	for (i = 0; i < EDID_LENGTH; i++)
 		checksum += edid[i];
 	if (checksum & 0xFF) {
-		HISI_FB_ERR("EDID checksum failed - data is corrupt. Continuing anyway.\n");
+		HISI_FB_ERR("[DP] EDID checksum failed - data is corrupt. Continuing anyway.\n");
 		return -EINVAL;
 	}
 
@@ -92,10 +108,32 @@ int check_main_edid(uint8_t* edid)
 	for(i = 0; i < EDID_HEADER_END + 1; i++)
 	{
 		if(edid[i] != edid_v1_header[i]) {
-			HISI_FB_INFO("first uint8_ts don't match EDID version 1 header\n");
+			HISI_FB_INFO("[DP] first uint8_ts don't match EDID version 1 header\n");
 			return -EINVAL;
 		}
 	}
+
+	return 0;
+}
+
+static int check_factory_info(uint8_t* edid)
+{
+	uint8_t i;
+	uint8_t data_tmp;
+
+	data_tmp = 0;
+
+	if(edid == NULL) {
+		HISI_FB_ERR("[DP] The pointer is NULL.\n");
+		return -EINVAL;
+	}
+
+	/*For hiding custom device info*/
+	for (i = EDID_FACTORY_START; i <= EDID_FACTORY_END; i++) {
+		data_tmp += edid[i];
+	}
+	memset(&edid[EDID_FACTORY_START], 0x0, (EDID_FACTORY_END - EDID_FACTORY_START + 1));
+	edid[EDID_FACTORY_START] = data_tmp; //For EDID checksum, we need reserve the sum for blocks.
 
 	return 0;
 }
@@ -109,11 +147,11 @@ int parse_main(struct dp_ctrl *dptx)
 	struct edid_video *vid_info;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("The pointer is NULL.\n");
+		HISI_FB_ERR("[DP] The pointer is NULL.\n");
 		return -EINVAL;
 	}
 	if (dptx->edid == NULL) {
-		HISI_FB_ERR("The edid pointer is NULL.\n");
+		HISI_FB_ERR("[DP] The edid pointer is NULL.\n");
 		return -EINVAL;
 	}
 
@@ -128,11 +166,14 @@ int parse_main(struct dp_ctrl *dptx)
 	vid_info->maxPixelClock = 0;
 
 	if (check_main_edid(edid_t)) {
-		HISI_FB_ERR("The main edid block is wrong.\n");
+		HISI_FB_ERR("[DP] The main edid block is wrong.\n");
 		return -EINVAL;
 	}
+
+	check_factory_info(edid_t);
+
 	/*Check EDID version (usually 1.3)*/
-	HISI_FB_DEBUG("EDID version %d revision %d\n", (int)edid_t[EDID_STRUCT_VERSION],
+	HISI_FB_DEBUG("[DP] EDID version %d revision %d\n", (int)edid_t[EDID_STRUCT_VERSION],
 										(int)edid_t[EDID_STRUCT_REVISION]);
 
 	/*Check Display Image Size(Physical)*/
@@ -141,7 +182,7 @@ int parse_main(struct dp_ctrl *dptx)
 	/*Alloc the name memory*/
 	vid_info->dp_monitor_descriptor = (char *)kzalloc((MONTIOR_NAME_DESCRIPTION_SIZE + 1) * sizeof(char), GFP_KERNEL);
 	if (vid_info->dp_monitor_descriptor == NULL) {
-		HISI_FB_ERR("dp_monitor_descriptor memory alloc fail\n");
+		HISI_FB_ERR("[DP] dp_monitor_descriptor memory alloc fail\n");
 		return -EINVAL;
 	}
 	memset(vid_info->dp_monitor_descriptor, 0, MONTIOR_NAME_DESCRIPTION_SIZE + 1);
@@ -156,21 +197,21 @@ int parse_main(struct dp_ctrl *dptx)
 			case DETAILED_TIMING_BLOCK :
 				ret = parse_timing_description(dptx, block);
 				if (ret != 0) {
-					HISI_FB_INFO("Timing Description Parsing failed!\n");
+					HISI_FB_INFO("[DP] Timing Description Parsing failed!\n");
 					return ret;
 				}
 				break;
 			case MONITOR_LIMITS :
 				ret = parse_monitor_limits(dptx, block);
 				if (ret != 0) {
-					HISI_FB_INFO("Parsing the monitor limit is failed!\n");
+					HISI_FB_INFO("[DP] Parsing the monitor limit is failed!\n");
 					return ret;
 				}
 				break;
 			case MONITOR_NAME :
 				ret = parse_monitor_name(dptx, block, DETAILED_TIMING_DESCRIPTION_SIZE);
 				if (ret != 0) {
-					HISI_FB_ERR("The monitor name parsing failed.\n");
+					HISI_FB_ERR("[DP] The monitor name parsing failed.\n");
 					return ret;
 				}
 				break;
@@ -179,7 +220,7 @@ int parse_main(struct dp_ctrl *dptx)
 		}
 	}
 
-	HISI_FB_DEBUG( "Extensions to follow:\t%d\n", (int)edid_t[EXTENSION_FLAG]);
+	HISI_FB_DEBUG("[DP] Extensions to follow:\t%d\n", (int)edid_t[EXTENSION_FLAG]);
 	/*Return the number of following extension blocks*/
 	return (int)edid_t[EXTENSION_FLAG];
 }
@@ -189,20 +230,20 @@ int check_exten_edid(uint8_t* exten)
 	uint32_t i, checksum;
 	checksum = 0;
 	if (exten == NULL) {
-		HISI_FB_ERR("The pointer is null.\n");
+		HISI_FB_ERR("[DP] The pointer is null.\n");
 		return -EINVAL;
 	}
 
 	for (i = 0; i < EDID_LENGTH; i++)
 		checksum += exten[i];
 	if (checksum & 0xFF) {
-		HISI_FB_ERR("Extension Data checksum failed - data is corrupt. Continuing anyway.\n");
+		HISI_FB_ERR("[DP] Extension Data checksum failed - data is corrupt. Continuing anyway.\n");
 		return -EINVAL;
 	}
 	/*Check Extension Tag*/
 	/*( Header Tag stored in the first uint8_t )*/
 	if (exten[0] != EXTENSION_HEADER) {
-		HISI_FB_ERR("Not CEA-EDID Timing Extension, Extension-Parsing will not continue!\n");
+		HISI_FB_ERR("[DP] Not CEA-EDID Timing Extension, Extension-Parsing will not continue!\n");
 		return -EINVAL;
 	}
 	return 0;
@@ -214,12 +255,12 @@ int parse_extension_timing_description(struct dp_ctrl * dptx, uint8_t* dtdBlock,
 	int ret;
 
 	if ((dptx == NULL) || (dtdBlock == NULL)) {
-		HISI_FB_ERR("The pointer is NULL.\n");
+		HISI_FB_ERR("[DP] The pointer is NULL.\n");
 		return -EINVAL;
 	}
 
 	if ((dtdBegin + 1 + DTDtotal * DETAILED_TIMING_DESCRIPTION_SIZE) > EDID_LENGTH) {
-		HISI_FB_ERR("The dtd total number 0x%x is out of the limit\n", DTDtotal);
+		HISI_FB_ERR("[DP] The dtd total number 0x%x is out of the limit\n", DTDtotal);
 		return -EINVAL;
 	}
 
@@ -230,7 +271,7 @@ int parse_extension_timing_description(struct dp_ctrl * dptx, uint8_t* dtdBlock,
 			case DETAILED_TIMING_BLOCK:
 				ret = parse_timing_description(dptx, dtdBlock);
 				if (ret != 0) {
-					HISI_FB_ERR("Timing Description Parsing failed!");
+					HISI_FB_ERR("[DP] Timing Description Parsing failed!");
 					return ret;
 				}
 				break;
@@ -256,7 +297,7 @@ int parse_extension(struct dp_ctrl * dptx, uint8_t* exten)
 	struct edid_audio *aud_info;
 
 	if ((dptx == NULL) || (exten == NULL)) {
-		HISI_FB_ERR("The pointer is NULL.\n");
+		HISI_FB_ERR("[DP] The pointer is NULL.\n");
 		return -EINVAL;
 	}
 
@@ -265,7 +306,7 @@ int parse_extension(struct dp_ctrl * dptx, uint8_t* exten)
 
 	ret = check_exten_edid(exten);
 	if (ret) {
-		HISI_FB_ERR("The check_exten_edid failed.\n");
+		HISI_FB_ERR("[DP] The check_exten_edid failed.\n");
 		return ret;
 	}
 	/*
@@ -274,7 +315,7 @@ int parse_extension(struct dp_ctrl * dptx, uint8_t* exten)
 	*/
 
 	if (exten[2] == 0x00) {
-		HISI_FB_INFO("There are no DTDs present in this extension block and no non-DTD data.\n");
+		HISI_FB_INFO("[DP] There are no DTDs present in this extension block and no non-DTD data.\n");
 		return -EINVAL;
 	} else if (exten[2] == 0x04) {
 		dtd_start_byte = 0x04;
@@ -295,13 +336,13 @@ int parse_extension(struct dp_ctrl * dptx, uint8_t* exten)
 	//Parse DTD in Extension
 	dtdBlock = exten + dtd_start_byte;
 	if (DTDtotal != (EDID_LENGTH - dtd_start_byte - 1)/DETAILED_TIMING_DESCRIPTION_SIZE) {
-		HISI_FB_INFO("The number of native DTDs is not equal the size\n");
+		HISI_FB_INFO("[DP] The number of native DTDs is not equal the size\n");
 		DTDtotal = (EDID_LENGTH - dtd_start_byte - 1)/DETAILED_TIMING_DESCRIPTION_SIZE;
 	}
 
 	ret = parse_extension_timing_description(dptx, dtdBlock, dtd_start_byte, DTDtotal);
 	if (ret) {
-		HISI_FB_ERR("Parse the extension block timing information fail.\n");
+		HISI_FB_ERR("[DP] Parse the extension block timing information fail.\n");
 		return ret;
 	}
 	/*Parse CEA Data Block Collection*/
@@ -309,7 +350,7 @@ int parse_extension(struct dp_ctrl * dptx, uint8_t* exten)
 		ceaBlock = exten + cea_data_block_collection;
 		ret = parse_cea_data_block(dptx, ceaBlock, dtd_start_byte);
 		if (ret != 0) {
-			HISI_FB_ERR("CEA data block Parsing failed!\n");
+			HISI_FB_ERR("[DP] CEA data block Parsing failed!\n");
 			return ret;
 		}
 	}
@@ -323,7 +364,7 @@ int parse_timing_description(struct dp_ctrl *dptx, uint8_t *dtd)
 	struct timing_info *node = NULL;
 
 	if ((dptx == NULL) || (dtd == NULL)) {
-		HISI_FB_ERR("The pointer is NULL.\n");
+		HISI_FB_ERR("[DP] The pointer is NULL.\n");
 		return -EINVAL;
 	}
 
@@ -332,7 +373,7 @@ int parse_timing_description(struct dp_ctrl *dptx, uint8_t *dtd)
 	if (vid_info->dptx_timing_list == NULL) {
 		vid_info->dptx_timing_list = kzalloc(sizeof(struct list_head), GFP_KERNEL);
 		if (NULL == vid_info->dptx_timing_list) {
-			HISI_FB_ERR("vid_info->dptx_timing_list is NULL");
+			HISI_FB_ERR("[DP] vid_info->dptx_timing_list is NULL");
 			return -EINVAL;
 		}
 		INIT_LIST_HEAD(vid_info->dptx_timing_list);
@@ -377,12 +418,13 @@ int parse_timing_description(struct dp_ctrl *dptx, uint8_t *dtd)
 		vid_info->mainVCount += 1;
 		list_add_tail(&node->list_node, vid_info->dptx_timing_list);
 	} else {
-		HISI_FB_ERR("kzalloc struct dptx_hdmi_vic fail!\n");
+		HISI_FB_ERR("[DP] kzalloc struct dptx_hdmi_vic fail!\n");
 		return -EINVAL;
 	}
 
-	HISI_FB_INFO("The timinginfo (%d): hActivePixels is %d, vActivePixels is %d, pixel clock = %llu\n",
+	HISI_FB_INFO("[DP] The timinginfo (%d): hActivePixels is %d, vActivePixels is %d, pixel clock = %llu\n",
 		vid_info->mainVCount, node->hActivePixels, node->vActivePixels, node->pixelClock);
+	dp_imonitor_set_param_timing(node->hActivePixels, node->vActivePixels, node->pixelClock, 0);
 
 	return 0;
 }
@@ -393,12 +435,12 @@ int parse_timing_description_by_vesaid(struct edid_video *vid_info, uint8_t vesa
 	struct timing_info *node = NULL;
 
 	if (vid_info == NULL) {
-		HISI_FB_ERR("The pointer is NULL.\n");
+		HISI_FB_ERR("[DP] The pointer is NULL.\n");
 		return -EINVAL;
 	}
 
 	if (!dptx_dtd_fill(&mdtd, vesa_id, 60000, VCEA)) {
-		HISI_FB_ERR("Invalid video mode value %d\n",
+		HISI_FB_ERR("[DP] Invalid video mode value %d\n",
 						vesa_id);
 		return -EINVAL;
 	}
@@ -406,7 +448,7 @@ int parse_timing_description_by_vesaid(struct edid_video *vid_info, uint8_t vesa
 	if (vid_info->dptx_timing_list == NULL) {
 		vid_info->dptx_timing_list = kzalloc(sizeof(struct list_head), GFP_KERNEL);
 		if (NULL == vid_info->dptx_timing_list) {
-			HISI_FB_ERR("vid_info->dptx_timing_list is NULL");
+			HISI_FB_ERR("[DP] vid_info->dptx_timing_list is NULL");
 			return -EINVAL;
 		}
 		INIT_LIST_HEAD(vid_info->dptx_timing_list);
@@ -446,12 +488,13 @@ int parse_timing_description_by_vesaid(struct edid_video *vid_info, uint8_t vesa
 		vid_info->mainVCount += 1;
 		list_add_tail(&node->list_node, vid_info->dptx_timing_list);
 	} else {
-		HISI_FB_ERR("kzalloc struct dptx_hdmi_vic fail!\n");
+		HISI_FB_ERR("[DP] kzalloc struct dptx_hdmi_vic fail!\n");
 		return -EINVAL;
 	}
 
-	HISI_FB_INFO("The timinginfo (%d): hActivePixels is %d, vActivePixels is %d, pixel clock = %llu\n",
+	HISI_FB_INFO("[DP] The timinginfo (%d): hActivePixels is %d, vActivePixels is %d, pixel clock = %llu\n",
 		vid_info->mainVCount, node->hActivePixels, node->vActivePixels, node->pixelClock);
+	dp_imonitor_set_param_timing(node->hActivePixels, node->vActivePixels, node->pixelClock, vesa_id);
 
 	return 0;
 }
@@ -461,14 +504,14 @@ int parse_hdmi_vic_id(uint8_t vic_id)
 	struct dptx_hdmi_vic *node = NULL;
 
 	if (g_hdmi_vic_real_len >= g_hdmi_vic_len) {
-		HISI_FB_ERR("The g_hdmi_vic_real_len is more than g_hdmi_vic_len.\n");
+		HISI_FB_ERR("[DP] The g_hdmi_vic_real_len is more than g_hdmi_vic_len.\n");
 		return -EINVAL;
 	}
 
 	if (NULL == dptx_hdmi_list) {
 		dptx_hdmi_list = kzalloc(sizeof(struct list_head), GFP_KERNEL);
 		if (NULL == dptx_hdmi_list) {
-			HISI_FB_ERR("dptx_hdmi_list is NULL");
+			HISI_FB_ERR("[DP] dptx_hdmi_list is NULL");
 			return -EINVAL;
 		}
 		INIT_LIST_HEAD(dptx_hdmi_list);
@@ -478,11 +521,11 @@ int parse_hdmi_vic_id(uint8_t vic_id)
 	node = kzalloc(sizeof(struct dptx_hdmi_vic), GFP_KERNEL);
 	if (node) {
 		node->vic_id = vic_id;
-		HISI_FB_INFO("vic_id = %d!\n", vic_id);
+		HISI_FB_INFO("[DP] vic_id = %d!\n", vic_id);
 		list_add_tail(&node->list_node, dptx_hdmi_list);
 		g_hdmi_vic_real_len ++;
 	} else {
-		HISI_FB_ERR("kzalloc struct dptx_hdmi_vic fail!\n");
+		HISI_FB_ERR("[DP] kzalloc struct dptx_hdmi_vic fail!\n");
 	}
 
 	return 0;
@@ -491,7 +534,7 @@ int parse_hdmi_vic_id(uint8_t vic_id)
 int parse_audio_spec_info(struct edid_audio *aud_info, struct edid_audio_info *spec_info, uint8_t* cDblock)
 {
 	if ((cDblock == NULL) || (spec_info == NULL)) {
-		HISI_FB_ERR("The pointer is NULL.\n");
+		HISI_FB_ERR("[DP] The pointer is NULL.\n");
 		return -EINVAL;
 	}
 	if ((EXTEN_AUDIO_FORMAT <= 8) && (EXTEN_AUDIO_FORMAT >= 1)) {
@@ -504,7 +547,11 @@ int parse_audio_spec_info(struct edid_audio *aud_info, struct edid_audio_info *s
 		else
 			spec_info->bitrate = EXTEN_AUDIO_BITRATE;
 		aud_info->extACount += 1;
+
+		HISI_FB_INFO("[DP] parse audio spec success. format(0x%x), channels(0x%x), sampling(0x%x), bitrate(0x%x)\n",
+			spec_info->format, spec_info->channels, spec_info->sampling, spec_info->bitrate);
 	}
+
 	return 0;
 }
 
@@ -513,12 +560,12 @@ int parse_extension_audio_tag(struct edid_audio *aud_info, uint8_t* cDblock, uin
 	uint8_t i, xa;
 	void *temp_ptr;
 	if ((aud_info == NULL) ||(cDblock == NULL)) {
-		HISI_FB_ERR("The pointer is NULL.\n");
+		HISI_FB_ERR("[DP] The pointer is NULL.\n");
 		return -EINVAL;
 	}
 
 	if(tempL < 1) {
-		HISI_FB_ERR("The input param tempL is wrong! \n");
+		HISI_FB_ERR("[DP] The input param tempL is wrong! \n");
 		return -EINVAL;
 	}
 
@@ -528,23 +575,23 @@ int parse_extension_audio_tag(struct edid_audio *aud_info, uint8_t* cDblock, uin
 		if (xa == 0) {
 			/*Initial audio part*/
 			if (aud_info->spec != NULL) {
-				HISI_FB_ERR("The spec of audio is error.\n");
+				HISI_FB_ERR("[DP] The spec of audio is error.\n");
 				return -EINVAL;
 			}
 			aud_info->spec = kzalloc(sizeof(struct edid_audio_info), GFP_KERNEL);
 			if (aud_info->spec == NULL) {
-				HISI_FB_ERR( "malloc Audio Spec part failed!\n");
+				HISI_FB_ERR("[DP] malloc Audio Spec part failed!\n");
 				return -EINVAL;
 			}
 		} else {
 			/*Add memory as needed with error handling*/
 			temp_ptr = kzalloc((xa + 1) * sizeof(struct edid_audio_info), GFP_KERNEL);
 			if (temp_ptr == NULL) {
-				HISI_FB_ERR( "Realloc Audio Spec part failed!\n");
+				HISI_FB_ERR("[DP] Realloc Audio Spec part failed!\n");
 				return -EINVAL;
 			} else {
 				if(aud_info->spec == NULL) {
-					HISI_FB_ERR("The spec is NULL.\n");
+					HISI_FB_ERR("[DP] The spec is NULL.\n");
 					kfree(temp_ptr);
 					return -EINVAL;
 				}
@@ -555,7 +602,7 @@ int parse_extension_audio_tag(struct edid_audio *aud_info, uint8_t* cDblock, uin
 			}
 		}
 		if (parse_audio_spec_info(aud_info, &(aud_info->spec[xa]), cDblock)) {
-			HISI_FB_ERR("parse the audio spec info fail.\n");
+			HISI_FB_ERR("[DP] parse the audio spec info fail.\n");
 			return -EINVAL;
 		}
 
@@ -568,12 +615,12 @@ int parse_extension_video_tag(struct edid_video *vid_info, uint8_t* cDblock, uin
 {
 	uint8_t i;
 	if ((vid_info == NULL) || (cDblock == NULL)) {
-		HISI_FB_ERR("The pointer is NULL.\n");
+		HISI_FB_ERR("[DP] The pointer is NULL.\n");
 		return -EINVAL;
 	}
 
 	if(length < 1) {
-		HISI_FB_ERR("The input param tempL is wrong! \n");
+		HISI_FB_ERR("[DP] The input param tempL is wrong! \n");
 		return -EINVAL;
 	}
 
@@ -604,18 +651,18 @@ int parse_extension_vsdb_tag(struct edid_video *vid_info, uint8_t* cDblock, uint
 	uint8_t VESA_ID;
 	bool support_ai;
 	bool b3dpresent;
-	struct dptx_hdmi_vic *hdmi_vic_node, *_node_;
+	//struct dptx_hdmi_vic *hdmi_vic_node, *_node_;
 
 	VESA_ID = 0;
 	g_hdmi_vic_real_len = g_hdmi_vic_len = 0;
 	Latency_Fields_Present = I_Latency_Fields_Present = 0;
 	if ((vid_info == NULL) || (cDblock == NULL)) {
-		HISI_FB_ERR("The pointer is NULL.\n");
+		HISI_FB_ERR("[DP] The pointer is NULL.\n");
 		return -EINVAL;
 	}
 
 	if (length < 5) {
-		HISI_FB_ERR("VSDB length isn't correct.\n");
+		HISI_FB_ERR("[DP] VSDB length isn't correct.\n");
 		return -EINVAL;
 	}
 
@@ -623,8 +670,8 @@ int parse_extension_vsdb_tag(struct edid_video *vid_info, uint8_t* cDblock, uint
 	IEEE_FLAG = (cDblock[0]) | (cDblock[1] << 8) | (cDblock[2] << 16);
 
 	if (IEEE_FLAG != 0x000c03) {
-		HISI_FB_ERR("IEEE Registration Identifier is error: %x.\n", IEEE_FLAG);
-		return -EINVAL;
+		HISI_FB_INFO("[DP] This block isn't belong to HDMI block: %x.\n", IEEE_FLAG);
+		return 0;
 	}
 
 	HDMI_CEC_PORT = ((cDblock[3] << 8) | (cDblock[4]));
@@ -642,7 +689,7 @@ int parse_extension_vsdb_tag(struct edid_video *vid_info, uint8_t* cDblock, uint
 			I_Latency_Fields_Present = (cDblock[i] & 0x40) >> 6;
 			HDMI_VIDEO_Present = (cDblock[i] & 0x20) >> 5;
 			if (0 == HDMI_VIDEO_Present) {
-				HISI_FB_INFO("This EDID don't include HDMI additional video format (1).\n");
+				HISI_FB_INFO("[DP] This EDID don't include HDMI additional video format (1).\n");
 				return 0;
 			}
 			break;
@@ -655,7 +702,7 @@ int parse_extension_vsdb_tag(struct edid_video *vid_info, uint8_t* cDblock, uint
 			if (Latency_Present == Present_None) {
 				g_hdmi_vic_len = (cDblock[i] & 0xE0) >> 5;
 				if (g_hdmi_vic_len == 0) {
-					HISI_FB_INFO("This EDID don't include HDMI additional video format (2).\n");
+					HISI_FB_INFO("[DP] This EDID don't include HDMI additional video format (2).\n");
 					return 0;
 				}
 				g_hdmi_vic_real_len = 0;
@@ -672,7 +719,7 @@ int parse_extension_vsdb_tag(struct edid_video *vid_info, uint8_t* cDblock, uint
 			if (Latency_Present == Present_One) {
 				g_hdmi_vic_len = (cDblock[i] & 0xE0) >> 5;
 				if (g_hdmi_vic_len == 0) {
-					HISI_FB_INFO("This EDID don't include HDMI additional video format (2).\n");
+					HISI_FB_INFO("[DP] This EDID don't include HDMI additional video format (2).\n");
 					return 0;
 				}
 				g_hdmi_vic_real_len = 0;
@@ -691,7 +738,7 @@ int parse_extension_vsdb_tag(struct edid_video *vid_info, uint8_t* cDblock, uint
 			if (Latency_Present == Present_Both) {
 				g_hdmi_vic_len = (cDblock[i] & 0xE0) >> 5;
 				if (g_hdmi_vic_len == 0) {
-					HISI_FB_INFO("This EDID don't include HDMI additional video format (2).\n");
+					HISI_FB_INFO("[DP] This EDID don't include HDMI additional video format (2).\n");
 					return 0;
 				}
 				g_hdmi_vic_real_len = 0;
@@ -710,35 +757,7 @@ int parse_extension_vsdb_tag(struct edid_video *vid_info, uint8_t* cDblock, uint
 		}
 	}
 
-	HISI_FB_INFO("vic_id real length  = %d , vic length = %d !\n", g_hdmi_vic_real_len, g_hdmi_vic_len);
-
-	if (NULL == dptx_hdmi_list) {
-		HISI_FB_ERR("dptx_hdmi_list is NULL!\n");
-		return 0;
-	} else {
-		list_for_each_entry_safe(hdmi_vic_node, _node_, dptx_hdmi_list, list_node) {
-			switch (hdmi_vic_node->vic_id) {
-				case 1:
-					parse_timing_description_by_vesaid(vid_info, 100);
-					break;
-				case 2:
-					parse_timing_description_by_vesaid(vid_info, 99);
-					break;
-				case 3:
-				case 4:
-					parse_timing_description_by_vesaid(vid_info, 98);
-					break;
-				default:
-					HISI_FB_ERR("hdmi_vic_node is illegal!\n");
-					break;
-			}
-			list_del(&hdmi_vic_node->list_node);
-			kfree(hdmi_vic_node);
-		}
-
-		kfree(dptx_hdmi_list);
-		dptx_hdmi_list = NULL;
-	}
+	HISI_FB_INFO("[DP] vic_id real length  = %d , vic length = %d !\n", g_hdmi_vic_real_len, g_hdmi_vic_len);
 
 	return 0;
 }
@@ -752,11 +771,11 @@ int parse_cea_data_block(struct dp_ctrl *dptx, uint8_t* ceaData, uint8_t dtdStar
 	/* exTlist *extlist; */
 	/*Initialize some fields*/
 	if ((dptx == NULL) || (ceaData == NULL)) {
-		HISI_FB_ERR("The pointer is NULL.\n");
+		HISI_FB_ERR("[DP] The pointer is NULL.\n");
 		return -EINVAL;
 	}
 	if (dtdStart > (EDID_LENGTH - 1)) {
-		HISI_FB_ERR("The start of dtd is out of limit.\n");
+		HISI_FB_ERR("[DP] The start of dtd is out of limit.\n");
 		return -EINVAL;
 	}
 
@@ -776,7 +795,7 @@ int parse_cea_data_block(struct dp_ctrl *dptx, uint8_t* ceaData, uint8_t dtdStar
 				cDblock += 1;
 				/* Each Short Audio Descriptor(SAD) takes 3 uint8_ts*/
 				if (parse_extension_audio_tag(aud_info, cDblock, blockLength)) {
-					HISI_FB_ERR("parse_extension_audio_tag fail.\n");
+					HISI_FB_ERR("[DP] parse_extension_audio_tag fail.\n");
 					return -EINVAL;
 				}
 				cDblock += blockLength;
@@ -786,7 +805,7 @@ int parse_cea_data_block(struct dp_ctrl *dptx, uint8_t* ceaData, uint8_t dtdStar
 				cDblock += 1;
 				/* Each Short Video Descriptor(SVD) takes 1 uint8_t*/
 				if (parse_extension_video_tag(vid_info, cDblock, blockLength)) {
-					HISI_FB_ERR("parse_extension_video_tag fail.\n");
+					HISI_FB_ERR("[DP] parse_extension_video_tag fail.\n");
 					return -EINVAL;
 				}
 				cDblock += blockLength;
@@ -794,7 +813,7 @@ int parse_cea_data_block(struct dp_ctrl *dptx, uint8_t* ceaData, uint8_t dtdStar
 			case EXTENSION_VENDOR_TAG:
 				cDblock += 1;
 				if (parse_extension_vsdb_tag(vid_info, cDblock, blockLength)) {
-					HISI_FB_ERR("parse_extension_vsdb_tag fail.\n");
+					HISI_FB_ERR("[DP] parse_extension_vsdb_tag fail.\n");
 					return -EINVAL;
 				}
 				cDblock += blockLength;
@@ -822,7 +841,7 @@ int parse_cea_data_block(struct dp_ctrl *dptx, uint8_t* ceaData, uint8_t dtdStar
 int block_type(uint8_t* block)
 {
 	if (block == NULL) {
-		HISI_FB_ERR("The pointer is NULL.\n");
+		HISI_FB_ERR("[DP] The pointer is NULL.\n");
 		return -EINVAL;
 	}
 	if ((block[0] == 0) && (block[1] == 0)) {
@@ -840,7 +859,7 @@ int parse_monitor_limits(struct dp_ctrl* dptx, uint8_t* block)
 {
 	struct edid_video *vid_info;
 	if ((dptx == NULL) || (block == NULL)) {
-		HISI_FB_ERR("The pointer is NULL.\n");
+		HISI_FB_ERR("[DP] The pointer is NULL.\n");
 		return -EINVAL;
 	}
 
@@ -859,15 +878,17 @@ int parse_monitor_name(struct dp_ctrl* dptx, uint8_t* blockname, uint32_t size)
 {
 	uint32_t i, data0, data1, data2;
 	uint32_t str_start, str_end;
+	uint8_t data_tmp;
 
 	str_start = 5;
 	str_end = 0;
+	data_tmp = 0;
 	if ((dptx == NULL) || (blockname == NULL)) {
-		HISI_FB_ERR("The pointer is NULL.\n");
+		HISI_FB_ERR("[DP] The pointer is NULL.\n");
 		return -EINVAL;
 	}
 	if (size != DETAILED_TIMING_DESCRIPTION_SIZE) {
-		HISI_FB_ERR("The length of monitor name is wrong.\n");
+		HISI_FB_ERR("[DP] The length of monitor name is wrong.\n");
 		return -EINVAL;
 	}
 	if (size >= 7) {
@@ -894,6 +915,13 @@ int parse_monitor_name(struct dp_ctrl* dptx, uint8_t* blockname, uint32_t size)
 	if (((str_end - str_start) > 0) && (dptx->edid_info.Video.dp_monitor_descriptor != NULL)) {
 		memcpy(dptx->edid_info.Video.dp_monitor_descriptor, blockname + 5, (str_end - str_start));
 		dptx->edid_info.Video.dp_monitor_descriptor[str_end - str_start] = '\0';
+
+		/*For hiding custom device info*/
+		for (i = str_start; i < str_end; i++) {
+			data_tmp += blockname[i];
+		}
+		memset(&blockname[5], 0x0, (str_end - str_start));
+		blockname[5] = data_tmp; //For EDID checksum, we need reserve the sum for blocks.
 	}
 
 	return 0;
@@ -904,7 +932,7 @@ int release_edid_info(struct dp_ctrl *dptx)
 	struct timing_info *dptx_timing_node, *_node_;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("The pointer is NULL.\n");
+		HISI_FB_ERR("[DP] The pointer is NULL.\n");
 		return -EINVAL;
 	}
 

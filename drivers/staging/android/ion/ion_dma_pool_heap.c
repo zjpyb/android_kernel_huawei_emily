@@ -33,6 +33,8 @@
 #include <linux/cma.h>
 #include <linux/atomic.h>
 #include <linux/hisi/hisi_ion.h>
+#include <linux/version.h>
+#include <linux/platform_device.h>
 
 #include "ion.h"
 #include "ion_priv.h"
@@ -46,6 +48,7 @@
 /* align must be modify with count */
 #define PREALLOC_ALIGN   (14U)
 #define PREALLOC_CNT     (64UL * SZ_1M / PAGE_SIZE)
+#define PREALLOC_NWK     (PREALLOC_CNT * 4U)
 
 #define DMA_CAMERA_WATER_MARK (100 * SZ_1M)
 
@@ -58,6 +61,7 @@ struct ion_dma_pool_heap {
 	ion_phys_addr_t base;
 	size_t size;
 	atomic64_t alloc_size;
+	atomic64_t prealloc_cnt;
 };
 struct cma *ion_dma_camera_cma;
 static struct ion_dma_pool_heap *ion_dma_camera_heap;
@@ -117,14 +121,16 @@ void ion_clean_dma_camera_cma(void)
 		return;
 
 	while (!!(addr = gen_pool_alloc(ion_dma_camera_heap->pool, PAGE_SIZE))) {/*lint !e820*/
-		if (ion_dma_camera_cma
-		    && !cma_release(ion_dma_camera_cma,  phys_to_page(addr), 1))
-			pr_err("cma release failed\n");
-
+		if (ion_dma_camera_cma) {
+			if (cma_release(ion_dma_camera_cma,  phys_to_page(addr), 1)) {
+				atomic64_sub(1, &ion_dma_camera_heap->prealloc_cnt);
 #ifdef ION_DMA_POOL_DEBUG
-		else
-			free_count++;
+				free_count++;
 #endif
+			}
+			else
+				pr_err("cma release failed\n");
+		}
 
 		/* here is mean the camera is start again */
 		if (!atomic64_sub_and_test(0L, &ion_dma_camera_heap->alloc_size)) {
@@ -137,6 +143,9 @@ void ion_clean_dma_camera_cma(void)
 	size_remain = gen_pool_avail(ion_dma_camera_heap->pool);
 	if (!!size_remain)
 		pr_err("out %s, size_remain = 0x%lx\n", __func__, size_remain);
+
+	pr_info("quit %s,prealloc_cnt now:%ld\n",
+		__func__, atomic64_read(&ion_dma_camera_heap->prealloc_cnt));
 
 #ifdef ION_DMA_POOL_DEBUG
 	t_ns = ktime_to_ns(ktime_sub(ktime_get(), t1));
@@ -155,7 +164,11 @@ static void pre_alloc_wk_func(struct work_struct *work)
 	unsigned long t_ns = 0;
 	ktime_t t1 = ktime_get();
 #endif
+
 	if (!ion_dma_camera_heap)
+		return;
+
+	if ((unsigned long)atomic64_read(&ion_dma_camera_heap->prealloc_cnt) > PREALLOC_NWK)
 		return;
 
 	page = cma_alloc(ion_dma_camera_cma, PREALLOC_CNT, PREALLOC_ALIGN);/*lint !e838*/
@@ -169,6 +182,7 @@ static void pre_alloc_wk_func(struct work_struct *work)
 			t_page++;
 		}
 #endif
+		atomic64_add(PREALLOC_CNT, &ion_dma_camera_heap->prealloc_cnt);
 		gen_pool_free(ion_dma_camera_heap->pool,
 			      page_to_phys(page),
 			      PREALLOC_CNT * PAGE_SIZE);
@@ -178,6 +192,9 @@ static void pre_alloc_wk_func(struct work_struct *work)
 		pr_err("cma alloc size %lu B time is %lu us\n",
 			PREALLOC_CNT * PAGE_SIZE, t_ns / 1000);
 #endif
+		pr_info("enter %s,prealloc_cnt now:%ld\n",
+			__func__, atomic64_read(&ion_dma_camera_heap->prealloc_cnt));
+
 		return;
 	}
 }/*lint !e715*/
@@ -210,7 +227,7 @@ static ion_phys_addr_t ion_dma_pool_allocate(struct ion_heap *heap,
 			schedule_work(&ion_pre_alloc_wk);
 		return (ion_phys_addr_t)-1L;
 	}
-	atomic64_add(size, &dma_pool_heap->alloc_size);/*lint !e713*/
+	atomic64_add(size, &dma_pool_heap->alloc_size);
 	return offset;
 }/*lint !e715*/
 
@@ -234,6 +251,7 @@ static void ion_dma_pool_free(struct ion_heap *heap, ion_phys_addr_t addr,
 	}
 }
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
 static int ion_dma_pool_heap_phys(struct ion_heap *heap,
 				  struct ion_buffer *buffer,
 				  ion_phys_addr_t *addr, size_t *len)
@@ -246,6 +264,7 @@ static int ion_dma_pool_heap_phys(struct ion_heap *heap,
 	*len = buffer->size;
 	return 0;
 }/*lint !e715*/
+#endif
 
 static int ion_dma_pool_heap_allocate(struct ion_heap *heap,
 				      struct ion_buffer *buffer,
@@ -273,7 +292,11 @@ static int ion_dma_pool_heap_allocate(struct ion_heap *heap,
 	}
 
 	sg_set_page(table->sgl, pfn_to_page(PFN_DOWN(paddr)), (unsigned int)size, (unsigned int)0);
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
 	buffer->priv_virt = table;
+#else
+	buffer->sg_table = table;
+#endif
 
 	return 0;
 
@@ -287,7 +310,12 @@ err_free:
 static void ion_dma_pool_heap_free(struct ion_buffer *buffer)
 {
 	struct ion_heap *heap = buffer->heap;
+	struct platform_device *hisi_ion_dev = get_hisi_ion_platform_device();
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
 	struct sg_table *table = buffer->priv_virt;
+#else
+	struct sg_table *table = buffer->sg_table;
+#endif
 	struct page *page = sg_page(table->sgl);
 	ion_phys_addr_t paddr = PFN_PHYS(page_to_pfn(page));
 
@@ -295,7 +323,7 @@ static void ion_dma_pool_heap_free(struct ion_buffer *buffer)
 	ion_heap_buffer_zero(buffer);
 
 	if (ion_buffer_cached(buffer))
-		dma_sync_sg_for_device(NULL, table->sgl, (int)table->nents,
+		dma_sync_sg_for_device(&hisi_ion_dev->dev, table->sgl, (int)table->nents,
 				       DMA_BIDIRECTIONAL);
 
 	ion_dma_pool_free(heap, paddr, buffer->size);
@@ -303,6 +331,7 @@ static void ion_dma_pool_heap_free(struct ion_buffer *buffer)
 	kfree(table);
 }
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
 static struct sg_table *ion_dma_pool_heap_map_dma(struct ion_heap *heap,
 						  struct ion_buffer *buffer)
 {
@@ -313,6 +342,7 @@ static void ion_dma_pool_heap_unmap_dma(struct ion_heap *heap,
 					struct ion_buffer *buffer)
 {
 }/*lint !e715*/
+#endif
 
 static void ion_dma_pool_heap_buffer_zero(struct ion_buffer *buffer)
 {
@@ -322,9 +352,11 @@ static void ion_dma_pool_heap_buffer_zero(struct ion_buffer *buffer)
 static struct ion_heap_ops dma_pool_heap_ops = {
 	.allocate = ion_dma_pool_heap_allocate,
 	.free = ion_dma_pool_heap_free,
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
 	.phys = ion_dma_pool_heap_phys,
 	.map_dma = ion_dma_pool_heap_map_dma,
 	.unmap_dma = ion_dma_pool_heap_unmap_dma,
+#endif
 	.map_user = ion_heap_map_user,
 	.map_kernel = ion_heap_map_kernel,
 	.unmap_kernel = ion_heap_unmap_kernel,
@@ -358,7 +390,8 @@ static struct ion_heap *ion_dynamic_dma_pool_heap_create(struct ion_platform_hea
 	if (!gen_pool_alloc(dma_pool_heap->pool, dma_pool_heap->size))
 		goto pool_create_err;
 
-	atomic64_set(&dma_pool_heap->alloc_size, 0);/*lint !e1058*/
+	atomic64_set(&dma_pool_heap->alloc_size, 0);
+	atomic64_set(&dma_pool_heap->prealloc_cnt, 0);
 
 	ion_dma_camera_heap = dma_pool_heap;
 
@@ -421,7 +454,8 @@ struct ion_heap *ion_static_dma_pool_heap_create(struct ion_platform_heap *heap_
 	dma_pool_heap->heap.ops = &dma_pool_heap_ops;
 	dma_pool_heap->heap.type = ION_HEAP_TYPE_DMA_POOL;
 	dma_pool_heap->heap.flags = ION_HEAP_FLAG_DEFER_FREE;
-	atomic64_set(&dma_pool_heap->alloc_size, 0);/*lint !e1058*/
+	atomic64_set(&dma_pool_heap->alloc_size, 0);
+	atomic64_set(&dma_pool_heap->prealloc_cnt, 0);
 
 	heap_data->size = size;
 	heap_data->base = page_to_phys(page);

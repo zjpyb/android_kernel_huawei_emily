@@ -10,9 +10,10 @@
 #include <linux/f2fs_fs.h>
 #include "f2fs.h"
 #include "xattr.h"
+#include "f2fs_sdp.h"
 
 #if DEFINE_F2FS_FS_SDP_ENCRYPTION
-int f2fs_get_sdp_context(struct inode *inode, void *ctx,
+static int f2fs_get_sdp_context(struct inode *inode, void *ctx,
 		size_t len, void *fs_data)
 {
 	return f2fs_getxattr(inode, F2FS_XATTR_INDEX_ECE_ENCRYPTION,
@@ -20,7 +21,7 @@ int f2fs_get_sdp_context(struct inode *inode, void *ctx,
 				ctx, len, fs_data, 0);
 }
 
-int f2fs_set_sdp_context(struct inode *inode, const void *ctx,
+static int f2fs_set_sdp_context(struct inode *inode, const void *ctx,
 		size_t len, void *fs_data)
 {
 	pr_sdp_info("f2fs_sdp %s :inode(%lu) set sdp context\n",
@@ -30,7 +31,7 @@ int f2fs_set_sdp_context(struct inode *inode, const void *ctx,
 			ctx, len, fs_data, XATTR_CREATE);
 }
 
-int f2fs_update_sdp_context(struct inode *inode, const void *ctx,
+static int f2fs_update_sdp_context(struct inode *inode, const void *ctx,
 		size_t len, void *fs_data)
 {
 	pr_sdp_info("f2fs_sdp %s :inode(%lu) update sdp context\n",
@@ -40,7 +41,7 @@ int f2fs_update_sdp_context(struct inode *inode, const void *ctx,
 			ctx, len, fs_data, XATTR_REPLACE);
 }
 
-int f2fs_update_context(struct inode *inode, const void *ctx,
+static int f2fs_update_context(struct inode *inode, const void *ctx,
 		size_t len, void *fs_data)
 {
 	pr_sdp_info("f2fs_sdp %s :inode(%lu) set ce key info to all 0\n",
@@ -50,9 +51,9 @@ int f2fs_update_context(struct inode *inode, const void *ctx,
 			ctx, len, fs_data, XATTR_REPLACE);
 }
 
-int f2fs_get_sdp_encrypt_flags(struct inode *inode, void *fs_data, u32 *flags)
+static int f2fs_get_sdp_encrypt_flags(struct inode *inode, void *fs_data,
+		u32 *flags)
 {
-	struct f2fs_sb_info *sbi = F2FS_I_SB(inode);
 	struct f2fs_xattr_header *hdr;
 	struct page *xpage;
 	int err = -EINVAL;
@@ -76,7 +77,8 @@ out_unlock:
 	return err;
 }
 
-int f2fs_set_sdp_encrypt_flags(struct inode *inode, void *fs_data, u32 *flags)
+static int f2fs_set_sdp_encrypt_flags(struct inode *inode, void *fs_data,
+		u32 *flags)
 {
 	struct f2fs_sb_info *sbi = F2FS_I_SB(inode);
 	struct f2fs_xattr_header *hdr;
@@ -95,11 +97,10 @@ int f2fs_set_sdp_encrypt_flags(struct inode *inode, void *fs_data, u32 *flags)
 	}
 
 	hdr->h_xattr_flags = *flags;
-	if (fs_data) {
+	if (fs_data)
 		set_page_dirty(fs_data);
-	} else if (xpage) {
+	else if (xpage)
 		set_page_dirty(xpage);
-	}
 
 	f2fs_put_page(xpage, 1);
 

@@ -21,9 +21,9 @@ extern "C" {
 /*****************************************************************************
   2 全局变量定义
 *****************************************************************************/
-oam_netlink_stru        g_st_netlink;
+oam_netlink_stru        g_st_netlink_etc;
 
-oam_netlink_proto_ops   g_st_netlink_ops;
+oam_netlink_proto_ops   g_st_netlink_ops_etc;
 
 /* 数采上报app的结构体 */
 typedef struct
@@ -46,98 +46,98 @@ typedef struct
   3 函数实现
 *****************************************************************************/
 
-oal_void  oam_netlink_ops_register(oam_nl_cmd_enum_uint8 en_type, oal_uint32 (*p_func)(oal_uint8 *puc_data, oal_uint32 ul_len))
+oal_void  oam_netlink_ops_register_etc(oam_nl_cmd_enum_uint8 en_type, oal_uint32 (*p_func)(oal_uint8 *puc_data, oal_uint32 ul_len))
 {
     if (OAL_UNLIKELY(OAL_PTR_NULL == p_func))
     {
-        OAL_IO_PRINT("oam_netlink_ops_register, p_func is null ptr.");
+        OAL_IO_PRINT("oam_netlink_ops_register_etc, p_func is null ptr.");
         return;
     }
 
     switch (en_type)
     {
         case OAM_NL_CMD_SDT:
-            g_st_netlink_ops.p_oam_sdt_func = p_func;
+            g_st_netlink_ops_etc.p_oam_sdt_func = p_func;
             break;
 
         case OAM_NL_CMD_HUT:
-            g_st_netlink_ops.p_oam_hut_func = p_func;
+            g_st_netlink_ops_etc.p_oam_hut_func = p_func;
             break;
 
         case OAM_NL_CMD_ALG:
-            g_st_netlink_ops.p_oam_alg_func = p_func;
+            g_st_netlink_ops_etc.p_oam_alg_func = p_func;
             break;
 
         case OAM_NL_CMD_DAQ:
-            g_st_netlink_ops.p_oam_daq_func = p_func;
+            g_st_netlink_ops_etc.p_oam_daq_func = p_func;
             break;
 
         case OAM_NL_CMD_REG:
-            g_st_netlink_ops.p_oam_reg_func = p_func;
+            g_st_netlink_ops_etc.p_oam_reg_func = p_func;
             break;
 
         case OAM_NL_CMD_ACS:
-            g_st_netlink_ops.p_oam_acs_func = p_func;
+            g_st_netlink_ops_etc.p_oam_acs_func = p_func;
             break;
 
         case OAM_NL_CMD_PSTA:
-            g_st_netlink_ops.p_oam_psta_func = p_func;
+            g_st_netlink_ops_etc.p_oam_psta_func = p_func;
             break;
 
         default:
-            OAL_IO_PRINT("oam_netlink_ops_register, err type = %d.", en_type);
+            OAL_IO_PRINT("oam_netlink_ops_register_etc, err type = %d.", en_type);
             break;
     }
 }
 
 
-oal_void  oam_netlink_ops_unregister(oam_nl_cmd_enum_uint8 en_type)
+oal_void  oam_netlink_ops_unregister_etc(oam_nl_cmd_enum_uint8 en_type)
 {
     switch (en_type)
     {
         case OAM_NL_CMD_SDT:
-            g_st_netlink_ops.p_oam_sdt_func = OAL_PTR_NULL;
+            g_st_netlink_ops_etc.p_oam_sdt_func = OAL_PTR_NULL;
             break;
 
         case OAM_NL_CMD_HUT:
-            g_st_netlink_ops.p_oam_hut_func = OAL_PTR_NULL;
+            g_st_netlink_ops_etc.p_oam_hut_func = OAL_PTR_NULL;
             break;
 
         case OAM_NL_CMD_ALG:
-            g_st_netlink_ops.p_oam_alg_func = OAL_PTR_NULL;
+            g_st_netlink_ops_etc.p_oam_alg_func = OAL_PTR_NULL;
             break;
 
         case OAM_NL_CMD_DAQ:
-            g_st_netlink_ops.p_oam_daq_func = OAL_PTR_NULL;
+            g_st_netlink_ops_etc.p_oam_daq_func = OAL_PTR_NULL;
             break;
 
         case OAM_NL_CMD_REG:
-            g_st_netlink_ops.p_oam_reg_func = OAL_PTR_NULL;
+            g_st_netlink_ops_etc.p_oam_reg_func = OAL_PTR_NULL;
             break;
 
         case OAM_NL_CMD_ACS:
-            g_st_netlink_ops.p_oam_acs_func = OAL_PTR_NULL;
+            g_st_netlink_ops_etc.p_oam_acs_func = OAL_PTR_NULL;
             break;
 
         case OAM_NL_CMD_PSTA:
-            g_st_netlink_ops.p_oam_psta_func = OAL_PTR_NULL;
+            g_st_netlink_ops_etc.p_oam_psta_func = OAL_PTR_NULL;
             break;
 
         default:
-            OAL_IO_PRINT("oam_netlink_ops_unregister::err type = %d.", en_type);
+            OAL_IO_PRINT("oam_netlink_ops_unregister_etc::err type = %d.", en_type);
             break;
     }
 }
 
 
-oal_void  oam_netlink_kernel_recv(oal_netbuf_stru *pst_buf)
+oal_void  oam_netlink_kernel_recv_etc(oal_netbuf_stru *pst_buf)
 {
     oal_netbuf_stru     *pst_netbuf;
     oal_nlmsghdr_stru   *pst_nlmsghdr;
 
     if (OAL_PTR_NULL == pst_buf)
     {
-        OAL_IO_PRINT("oam_netlink_kernel_recv, pst_buf is null.");
+        OAL_IO_PRINT("oam_netlink_kernel_recv_etc, pst_buf is null.");
         return;
     }
 
@@ -147,56 +147,56 @@ oal_void  oam_netlink_kernel_recv(oal_netbuf_stru *pst_buf)
     {
         pst_nlmsghdr = oal_nlmsg_hdr(pst_netbuf);
 
-        g_st_netlink.ul_pid = pst_nlmsghdr->nlmsg_pid;
+        g_st_netlink_etc.ul_pid = pst_nlmsghdr->nlmsg_pid;
 
         switch (pst_nlmsghdr->nlmsg_type)
         {
             case OAM_NL_CMD_SDT:
-                if (OAL_PTR_NULL != g_st_netlink_ops.p_oam_sdt_func)
+                if (OAL_PTR_NULL != g_st_netlink_ops_etc.p_oam_sdt_func)
                 {
-                    g_st_netlink_ops.p_oam_sdt_func(OAL_NLMSG_DATA(pst_nlmsghdr), OAL_NLMSG_PAYLOAD(pst_nlmsghdr, 0));
+                    g_st_netlink_ops_etc.p_oam_sdt_func(OAL_NLMSG_DATA(pst_nlmsghdr), OAL_NLMSG_PAYLOAD(pst_nlmsghdr, 0));
                 }
                 break;
 
             case OAM_NL_CMD_HUT:
-                if (OAL_PTR_NULL != g_st_netlink_ops.p_oam_hut_func)
+                if (OAL_PTR_NULL != g_st_netlink_ops_etc.p_oam_hut_func)
                 {
-                    g_st_netlink_ops.p_oam_hut_func(OAL_NLMSG_DATA(pst_nlmsghdr), OAL_NLMSG_PAYLOAD(pst_nlmsghdr, 0));
+                    g_st_netlink_ops_etc.p_oam_hut_func(OAL_NLMSG_DATA(pst_nlmsghdr), OAL_NLMSG_PAYLOAD(pst_nlmsghdr, 0));
                 }
                 break;
 
             case OAM_NL_CMD_ALG:
-                if (OAL_PTR_NULL != g_st_netlink_ops.p_oam_alg_func)
+                if (OAL_PTR_NULL != g_st_netlink_ops_etc.p_oam_alg_func)
                 {
-                    g_st_netlink_ops.p_oam_alg_func(OAL_NLMSG_DATA(pst_nlmsghdr), OAL_NLMSG_PAYLOAD(pst_nlmsghdr, 0));
+                    g_st_netlink_ops_etc.p_oam_alg_func(OAL_NLMSG_DATA(pst_nlmsghdr), OAL_NLMSG_PAYLOAD(pst_nlmsghdr, 0));
                 }
                 break;
             case OAM_NL_CMD_DAQ:
-                if (OAL_PTR_NULL != g_st_netlink_ops.p_oam_daq_func)
+                if (OAL_PTR_NULL != g_st_netlink_ops_etc.p_oam_daq_func)
                 {
-                    g_st_netlink_ops.p_oam_daq_func(OAL_NLMSG_DATA(pst_nlmsghdr), OAL_NLMSG_PAYLOAD(pst_nlmsghdr, 0));
+                    g_st_netlink_ops_etc.p_oam_daq_func(OAL_NLMSG_DATA(pst_nlmsghdr), OAL_NLMSG_PAYLOAD(pst_nlmsghdr, 0));
                 }
                 break;
             case OAM_NL_CMD_REG:
-                if (OAL_PTR_NULL != g_st_netlink_ops.p_oam_reg_func)
+                if (OAL_PTR_NULL != g_st_netlink_ops_etc.p_oam_reg_func)
                 {
-                    g_st_netlink_ops.p_oam_reg_func(OAL_NLMSG_DATA(pst_nlmsghdr), OAL_NLMSG_PAYLOAD(pst_nlmsghdr, 0));
+                    g_st_netlink_ops_etc.p_oam_reg_func(OAL_NLMSG_DATA(pst_nlmsghdr), OAL_NLMSG_PAYLOAD(pst_nlmsghdr, 0));
                 }
                 break;
             case OAM_NL_CMD_ACS:
-                if (OAL_PTR_NULL != g_st_netlink_ops.p_oam_acs_func)
+                if (OAL_PTR_NULL != g_st_netlink_ops_etc.p_oam_acs_func)
                 {
-                    g_st_netlink_ops.p_oam_acs_func(OAL_NLMSG_DATA(pst_nlmsghdr), OAL_NLMSG_PAYLOAD(pst_nlmsghdr, 0));
+                    g_st_netlink_ops_etc.p_oam_acs_func(OAL_NLMSG_DATA(pst_nlmsghdr), OAL_NLMSG_PAYLOAD(pst_nlmsghdr, 0));
                 }
                 break;
             case OAM_NL_CMD_PSTA:
-                if (OAL_PTR_NULL != g_st_netlink_ops.p_oam_psta_func)
+                if (OAL_PTR_NULL != g_st_netlink_ops_etc.p_oam_psta_func)
                 {
-                    g_st_netlink_ops.p_oam_psta_func(OAL_NLMSG_DATA(pst_nlmsghdr), OAL_NLMSG_PAYLOAD(pst_nlmsghdr, 0));
+                    g_st_netlink_ops_etc.p_oam_psta_func(OAL_NLMSG_DATA(pst_nlmsghdr), OAL_NLMSG_PAYLOAD(pst_nlmsghdr, 0));
                 }
                 break;
             default:
-                // OAL_IO_PRINT("oam_netlink_kernel_recv, error nlmsg_type = %d.\n", pst_nlmsghdr->nlmsg_type);
+                // OAL_IO_PRINT("oam_netlink_kernel_recv_etc, error nlmsg_type = %d.\n", pst_nlmsghdr->nlmsg_type);
                 break;
         }
 
@@ -206,7 +206,7 @@ oal_void  oam_netlink_kernel_recv(oal_netbuf_stru *pst_buf)
 }
 
 
-oal_int32  oam_netlink_kernel_send(oal_uint8 *puc_data, oal_uint32 ul_data_len, oam_nl_cmd_enum_uint8 en_type)
+oal_int32  oam_netlink_kernel_send_etc(oal_uint8 *puc_data, oal_uint32 ul_data_len, oam_nl_cmd_enum_uint8 en_type)
 {
 #if (_PRE_OS_VERSION_RAW == _PRE_OS_VERSION)
 
@@ -223,7 +223,7 @@ oal_int32  oam_netlink_kernel_send(oal_uint8 *puc_data, oal_uint32 ul_data_len, 
     oal_int32            l_ret;
 
     // 若APP未注册，该值为0，会回发到驱动
-    if (!g_st_netlink.ul_pid)
+    if (!g_st_netlink_etc.ul_pid)
     {
         return -1;
     }
@@ -250,7 +250,7 @@ oal_int32  oam_netlink_kernel_send(oal_uint8 *puc_data, oal_uint32 ul_data_len, 
     oal_memcopy(OAL_NLMSG_DATA(pst_nlmsghdr), puc_data, ul_data_len);
 
     /* 发送数据 */
-    l_ret = oal_netlink_unicast(g_st_netlink.pst_nlsk, pst_netbuf, g_st_netlink.ul_pid, OAL_MSG_DONTWAIT);
+    l_ret = oal_netlink_unicast(g_st_netlink_etc.pst_nlsk, pst_netbuf, g_st_netlink_etc.ul_pid, OAL_MSG_DONTWAIT);
 
     return l_ret;
 
@@ -259,7 +259,7 @@ oal_int32  oam_netlink_kernel_send(oal_uint8 *puc_data, oal_uint32 ul_data_len, 
 }
 
 
-oal_int32  oam_netlink_kernel_send_ex(oal_uint8 *puc_data_1st, oal_uint8 *puc_data_2nd,
+oal_int32  oam_netlink_kernel_send_ex_etc(oal_uint8 *puc_data_1st, oal_uint8 *puc_data_2nd,
                                       oal_uint32 ul_len_1st, oal_uint32 ul_len_2nd,
                                       oam_nl_cmd_enum_uint8 en_type)
 {
@@ -292,19 +292,19 @@ oal_int32  oam_netlink_kernel_send_ex(oal_uint8 *puc_data_1st, oal_uint8 *puc_da
     oal_memcopy((oal_uint8 *)OAL_NLMSG_DATA(pst_nlmsghdr) + ul_len_1st, puc_data_2nd, ul_len_2nd);
 
     /* 发送数据 */
-    l_ret = oal_netlink_unicast(g_st_netlink.pst_nlsk, pst_netbuf, g_st_netlink.ul_pid, OAL_MSG_DONTWAIT);
+    l_ret = oal_netlink_unicast(g_st_netlink_etc.pst_nlsk, pst_netbuf, g_st_netlink_etc.ul_pid, OAL_MSG_DONTWAIT);
 
     return l_ret;
 #endif
 }
 
 
-oal_uint32  oam_netlink_kernel_create(oal_void)
+oal_uint32  oam_netlink_kernel_create_etc(oal_void)
 {
-    g_st_netlink.pst_nlsk = oal_netlink_kernel_create(&OAL_INIT_NET, OAM_NETLINK_ID, 0, oam_netlink_kernel_recv, OAL_PTR_NULL, OAL_THIS_MODULE);
-    if (OAL_PTR_NULL == g_st_netlink.pst_nlsk)
+    g_st_netlink_etc.pst_nlsk = oal_netlink_kernel_create(&OAL_INIT_NET, OAM_NETLINK_ID, 0, oam_netlink_kernel_recv_etc, OAL_PTR_NULL, OAL_THIS_MODULE);
+    if (OAL_PTR_NULL == g_st_netlink_etc.pst_nlsk)
     {
-        OAL_IO_PRINT("oam_netlink_kernel_create, can not create netlink.");
+        OAL_IO_PRINT("oam_netlink_kernel_create_etc, can not create netlink.");
 
         return OAL_ERR_CODE_PTR_NULL;
     }
@@ -315,22 +315,22 @@ oal_uint32  oam_netlink_kernel_create(oal_void)
 }
 
 
-oal_void  oam_netlink_kernel_release(oal_void)
+oal_void  oam_netlink_kernel_release_etc(oal_void)
 {
-    oal_netlink_kernel_release(g_st_netlink.pst_nlsk);
+    oal_netlink_kernel_release(g_st_netlink_etc.pst_nlsk);
 
-    g_st_netlink.ul_pid = 0;
+    g_st_netlink_etc.ul_pid = 0;
 
     OAL_IO_PRINT("netlink release succ.");
 }
 
 
 /*lint -e578*//*lint -e19*/
-oal_module_symbol(g_st_netlink_ops);
-oal_module_symbol(oam_netlink_ops_register);
-oal_module_symbol(oam_netlink_ops_unregister);
-oal_module_symbol(oam_netlink_kernel_send);
-oal_module_symbol(oam_netlink_kernel_send_ex);
+oal_module_symbol(g_st_netlink_ops_etc);
+oal_module_symbol(oam_netlink_ops_register_etc);
+oal_module_symbol(oam_netlink_ops_unregister_etc);
+oal_module_symbol(oam_netlink_kernel_send_etc);
+oal_module_symbol(oam_netlink_kernel_send_ex_etc);
 
 
 

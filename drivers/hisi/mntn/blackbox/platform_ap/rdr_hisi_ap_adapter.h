@@ -1,24 +1,28 @@
 
+#ifndef __RDR_HISI_AP_ADAPTER_H__
+#define __RDR_HISI_AP_ADAPTER_H__
+
 #include <linux/thread_info.h>
 #include <linux/hisi/rdr_hisi_platform.h>
-
 #include <linux/hisi/rdr_hisi_ap_hook.h>
+#include <soc_acpu_baseaddr_interface.h>
+#include <soc_sctrl_interface.h>
 
 #define REG_NAME_LEN 12
 #define PRODUCT_VERSION_LEN 32
 #define PRODUCT_DEVICE_LEN 32
 #define REGS_DUMP_MAX_NUM   10
 #define AP_DUMP_MAGIC   0x19283746
-#define BBOX_VERSION    0x1000A	/*v1.0.10 */
+#define BBOX_VERSION    0x1000B	/*v1.0.11 */
 #define AP_DUMP_END_MAGIC   0x1F2E3D4C
 #define SIZE_1K         0x400
 #define SYSTEM_BUILD_POP    "/system/build.prop"
 #define AMNTN_MODULE_NAME_LEN 12
-#define NMI_NOTIFY_LPM3_ADDR 0xFFF0A510
+#define NMI_NOTIFY_LPM3_ADDR SOC_SCTRL_SCLPMCUCTRL_ADDR(SOC_ACPU_SCTRL_BASE_ADDR)
 #define WDT_KICK_SLICE_TIMES    (3)
 #define FPGA 1
 
-#define PSTORE_PATH            "/sys/fs/pstore/"
+#define PSTORE_PATH            "/proc/balong/pstore/"
 #define FASTBOOT_LOG_FILE      "/proc/balong/log/fastboot_log"
 #define LAST_FASTBOOT_LOG_FILE "/proc/balong/log/last_fastboot_log"
 
@@ -93,4 +97,4 @@ void bbox_test_enable(int enable);
 void bbox_test_print_exc(void);
 int bbox_test_unregiste_exception(void);
 int rdr_hisiap_cleartext_print(char *dir_path, u64 log_addr, u32 log_len);
-
+#endif

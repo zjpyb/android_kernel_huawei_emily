@@ -22,8 +22,12 @@
 #include <asm/unaligned.h>
 #include <linux/of.h>
 #include <huawei_platform/log/hw_log.h>
+#ifdef CONFIG_HISI_COUL
 #include <linux/power/hisi/coul/hisi_coul_drv.h>
+#endif
+#ifdef CONFIG_HISI_BCI_BATTERY
 #include <linux/power/hisi/hisi_bci_battery.h>
+#endif
 
 #include <bq28z610_coul.h>
 

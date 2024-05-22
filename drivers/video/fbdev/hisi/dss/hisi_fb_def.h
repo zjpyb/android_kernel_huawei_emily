@@ -19,7 +19,7 @@
 #include <linux/device.h>
 #include <linux/kernel.h>
 #include <asm/bug.h>
-
+#include <linux/printk.h>
 
 #ifndef MAX
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
@@ -77,34 +77,34 @@ extern uint32_t hisi_fb_msg_level;
  */
 #define HISI_FB_EMERG(msg, ...)    \
 	do { if (hisi_fb_msg_level > 0)  \
-		printk(KERN_EMERG "[hisifb E]%s: "msg, __func__, ## __VA_ARGS__); } while (0)
+		pr_emerg("[hisifb E]:%s: "msg, __func__, ## __VA_ARGS__); } while (0)
 #define HISI_FB_ALERT(msg, ...)    \
 	do { if (hisi_fb_msg_level > 1)  \
-		printk(KERN_ALERT "[hisifb A]%s: "msg, __func__, ## __VA_ARGS__); } while (0)
+		pr_alert("[hisifb A]:%s: "msg, __func__, ## __VA_ARGS__); } while (0)
 #define HISI_FB_CRIT(msg, ...)    \
 	do { if (hisi_fb_msg_level > 2)  \
-		printk(KERN_CRIT "[hisifb C]%s: "msg, __func__, ## __VA_ARGS__); } while (0)
+		pr_crit("[hisifb C]:%s: "msg, __func__, ## __VA_ARGS__); } while (0)
 #define HISI_FB_ERR(msg, ...)    \
 	do { if (hisi_fb_msg_level > 3)  \
-		printk(KERN_ERR "[hisifb E]%s: "msg, __func__, ## __VA_ARGS__); } while (0)
+		pr_err("[hisifb E]:%s: "msg, __func__, ## __VA_ARGS__); } while (0)
 #define HISI_FB_WARNING(msg, ...)    \
 	do { if (hisi_fb_msg_level > 4)  \
-		printk(KERN_WARNING "[hisifb W]%s: "msg, __func__, ## __VA_ARGS__); } while (0)
+		pr_warning("[hisifb W]:%s: "msg, __func__, ## __VA_ARGS__); } while (0)
 #define HISI_FB_NOTICE(msg, ...)    \
 	do { if (hisi_fb_msg_level > 5)  \
-		printk(KERN_NOTICE "[hisifb N]%s: "msg, __func__, ## __VA_ARGS__); } while (0)
+		pr_info("[hisifb N]:%s: "msg, __func__, ## __VA_ARGS__); } while (0)
 #define HISI_FB_INFO(msg, ...)    \
 	do { if (hisi_fb_msg_level > 6)  \
-		printk(KERN_INFO "[hisifb I]%s: "msg, __func__, ## __VA_ARGS__); } while (0)
+		pr_info("[hisifb I]:%s: "msg, __func__, ## __VA_ARGS__); } while (0)
 #define HISI_FB_DEBUG(msg, ...)    \
 	do { if (hisi_fb_msg_level > 7)  \
-		printk(KERN_INFO "[hisifb D]%s: "msg, __func__, ## __VA_ARGS__); } while (0)
+		pr_info("[hisifb D]:%s: "msg, __func__, ## __VA_ARGS__); } while (0)
 
-//printk(KERN_DEBUG "[hisifb]%s: "msg, __func__, ## __VA_ARGS__);
+//pr_debug("[hisifb]:%s: "msg, __func__, ## __VA_ARGS__);
 
 #define assert(expr) \
 	if(!(expr)) { \
-		printk(KERN_ERR "[hisifb]: assertion failed! %s,%s,%s,line=%d\n",\
+		pr_err("[hisifb]: assertion failed! %s,%s,%s,line=%d\n",\
 			#expr, __FILE__, __func__, __LINE__); \
 	}
 
@@ -118,7 +118,7 @@ extern uint32_t hisi_fb_msg_level;
 #define outp32(addr, val) \
 	do {\
 		writel(val, addr);\
-		printk("writel(0x%x, 0x%x);\n", val, addr);\
+		pr_info("writel(0x%x, 0x%x);\n", val, addr);\
 	} while (0)
 #else
 #define outp32(addr, val) writel(val, addr)

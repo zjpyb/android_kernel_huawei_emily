@@ -994,7 +994,8 @@ OAL_STATIC void dmac_vap_update_vowifi_status(dmac_vap_stru *pst_dmac_vap)
         return ;
     }
 
-    if (VOWIFI_DISABLE_REPORT == pst_vowifi_cfg_param->en_vowifi_mode)
+    if (VOWIFI_LOW_THRES_REPORT != pst_vowifi_cfg_param->en_vowifi_mode &&
+        VOWIFI_HIGH_THRES_REPORT != pst_vowifi_cfg_param->en_vowifi_mode)
     {
         /* 不使能vowifi情况，直接退出 */
         return ;

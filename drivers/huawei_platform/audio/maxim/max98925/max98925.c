@@ -202,12 +202,16 @@ error_reg_opt_i2c:
 }
 #endif
 
+#ifdef MAX98925_DEBUG
 static ssize_t max98925_register_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	int i,value = 0;
-	char valStr[20];
+	char valStr[20] = {0};
 	struct maxim_priv *p = NULL;
 
+	if (NULL == buf) {
+		return -EINVAL;
+	}
 	p = find_maxim_by_dev(dev);
 	if (NULL == p) {
 		return 0;
@@ -232,7 +236,7 @@ static ssize_t max98925_register_write(struct device *dev, struct device_attribu
 {
 	int reg = 0;
 	int val = 0;
-	char *pEnd = buf;
+	char *pEnd = (char *)buf;
 	struct maxim_priv *p = NULL;
 
 	p = find_maxim_by_dev(dev);
@@ -262,6 +266,10 @@ static ssize_t max98925_num_show(struct device *dev, struct device_attribute *at
 {
 	struct maxim_priv *p = NULL;
 
+	if (NULL == buf) {
+		return -EINVAL;
+	}
+
 	p = find_maxim_by_dev(dev);
 	if (NULL == p) {
 		return 0;
@@ -283,7 +291,7 @@ static struct attribute *max98925_attributes[] = {
 static const struct attribute_group max98925_attr_group = {
 	.attrs = max98925_attributes,
 };
-
+#endif
 
 /* codec sample rate and n/m dividers parameter table */
 static const struct {
@@ -1100,10 +1108,11 @@ static int max98925_i2c_probe(struct i2c_client *i2c, const struct i2c_device_id
 	mutex_init(&max98925->lock);
 	maxim_list_add(max98925);
 
+#ifdef MAX98925_DEBUG
 	if ((ret = sysfs_create_group(&i2c->dev.kobj, &max98925_attr_group)) < 0) {
 		hwlog_err("%s: failed to register smartPA type[%d]'s i2c sysfs, ret =%d\n", __func__, max98925->type, ret);
 	}
-
+#endif
 
 	if (maxim_ioctl_isregist()) {
 		maxim_ioctl_regist(&max98925_ioctl_ops);

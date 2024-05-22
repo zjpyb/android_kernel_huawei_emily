@@ -113,7 +113,7 @@ static s32 ixgbe_read_i2c_combined_generic_int(struct ixgbe_hw *hw, u8 addr,
 					       u16 reg, u16 *val, bool lock)
 {
 	u32 swfw_mask = hw->phy.phy_semaphore_mask;
-	int max_retry = 10;
+	int max_retry = 3;
 	int retry = 0;
 	u8 csum_byte;
 	u8 high_bits;
@@ -346,8 +346,8 @@ s32 ixgbe_identify_phy_generic(struct ixgbe_hw *hw)
 				return 0;
 			}
 		}
-		/* clear value if nothing found */
-		hw->phy.mdio.prtad = 0;
+		/* indicate no PHY found */
+		hw->phy.mdio.prtad = MDIO_PRTAD_NONE;
 		return IXGBE_ERR_PHY_ADDR_INVALID;
 	}
 	return 0;
@@ -1764,6 +1764,8 @@ static s32 ixgbe_read_i2c_byte_generic_int(struct ixgbe_hw *hw, u8 byte_offset,
 	u32 swfw_mask = hw->phy.phy_semaphore_mask;
 	bool nack = true;
 
+	if (hw->mac.type >= ixgbe_mac_X550)
+		max_retry = 3;
 	if (ixgbe_is_sfp_probe(hw, byte_offset, dev_addr))
 		max_retry = IXGBE_SFP_DETECT_RETRIES;
 
@@ -2391,6 +2393,9 @@ s32 ixgbe_set_copper_phy_power(struct ixgbe_hw *hw, bool on)
 
 	/* Bail if we don't have copper phy */
 	if (hw->mac.ops.get_media_type(hw) != ixgbe_media_type_copper)
+		return 0;
+
+	if (!on && ixgbe_mng_present(hw))
 		return 0;
 
 	status = hw->phy.ops.read_reg(hw, IXGBE_MDIO_VENDOR_SPECIFIC_1_CONTROL,

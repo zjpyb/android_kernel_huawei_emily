@@ -10,7 +10,11 @@ EXTRA_CFLAGS += -Idrivers/hisi/soundtrigger/
 EXTRA_CFLAGS += -Isound/soc/codecs/hisi/hi6xxx_fpga_test/
 
 ifneq ($(TARGET_BUILD_VARIANT),user)
-	EXTRA_CFLAGS += -DENABLE_HI64XX_HIFI_DEBUG
+ifeq ($(kcov),true)
+EXTRA_CFLAGS += -DENABLE_AUDIO_KCOV
+else
+EXTRA_CFLAGS += -DENABLE_HI64XX_HIFI_DEBUG
+endif
 #ifeq ($(CONFIG_SND_SOC_CODEC_STUB),y)
 #	EXTRA_CFLAGS += -DHI6XXX_FPGA_CODEC_STUB
 #endif
@@ -24,10 +28,12 @@ ifeq ($(CFG_CONFIG_HISI_FAMA),true)
 	EXTRA_CFLAGS += -DCONFIG_HISI_FAMA
 endif
 
-obj-$(CONFIG_HI6402_HIFI_MISC) += hi64xx_hifi_misc.o
+ifeq ($(CONFIG_SND_SOC_HI6402),y)
 obj-$(CONFIG_HI6402_HIFI_MISC) += hi6402_hifi_config.o
+endif
+
+obj-$(CONFIG_HI6402_HIFI_MISC) += hi64xx_hifi_misc.o
 obj-$(CONFIG_HI6402_HIFI_MISC) += hi6403_hifi_config.o
-obj-$(CONFIG_HI6402_HIFI_MISC) += hi6403es_hifi_config.o
 
 #ifneq ($(TARGET_BUILD_VARIANT),user)
 #ifeq ($(CONFIG_SND_SOC_CODEC_STUB),y)

@@ -30,6 +30,7 @@
 #include <linux/module.h>
 #include <linux/of_platform.h>
 #include <linux/platform_device.h>
+#include <linux/pm.h>
 #include <linux/regulator/consumer.h>
 #include <linux/sched.h>
 #include <linux/spinlock.h>
@@ -44,11 +45,13 @@
 #define SECS_CPU0        (0)
 #define SECS_ONLY_CPU0_ONLINE (0xE5A5)
 #define SECS_OTHER_CPU_ONLINE (0xA5E5)
+#define SECS_SUSPEND_STATUS   (0xA5A5)
 #define SECS_TRIGGER_TIMER (jiffies + HZ) /*trigger time 1s*/
 /*defined for freq control*/
 enum {
     SECS_HIGH_FREQ_INDEX = 0,
-    SECS_LOW_FREQ_INDEX,
+    SECS_LOW_TEMP_FREQ_INDEX,
+    SECS_LOW_VOLT_FREQ_INDEX,
     SECS_FREQ_MAX,
 };
 
@@ -56,9 +59,12 @@ static void hisi_secs_timer_func(unsigned long unused_value);
 
 static DEFINE_MUTEX(secs_timer_lock);
 static DEFINE_MUTEX(secs_count_lock);
+static DEFINE_MUTEX(secs_freq_lock);
+static DEFINE_MUTEX(secs_mutex_lock);
 static DEFINE_TIMER(secs_timer, hisi_secs_timer_func, 0, 0);/*lint -e785 */
 
 static unsigned long g_secs_power_ctrl_count = 0;
+static unsigned long g_secs_suspend_status = 0;
 static struct regulator_bulk_data regu_burning;
 static struct clk *secs_clk = NULL;
 static struct device_node *secs_np = NULL;
@@ -76,7 +82,7 @@ static void hisi_secs_timer_init(void)
 				flag = SECS_ONLY_CPU0_ONLINE;
 				continue;
 			} else {
-				secs_timer.expires = jiffies;
+				secs_timer.expires = SECS_TRIGGER_TIMER;
 				add_timer_on(&secs_timer, cpu);
 				flag = SECS_OTHER_CPU_ONLINE;
 				break;
@@ -121,27 +127,62 @@ static int hisi_secs_adjust_freq(void)
 		return -1;
 	}
 
+	mutex_lock(&secs_freq_lock);
 	if (clk_set_rate(secs_clk, secs_freq_info[SECS_HIGH_FREQ_INDEX])) {
 		pr_err("clk_set_rate high freq failed!\n");
-		if (clk_set_rate(secs_clk, secs_freq_info[SECS_LOW_FREQ_INDEX])) {
-			pr_err("clk_set_rate low freq failed!\n");
-			return -1;
+		if (clk_set_rate(secs_clk, secs_freq_info[SECS_LOW_TEMP_FREQ_INDEX])) {
+			pr_err("clk_set_rate low temp freq failed!\n");
+			if (clk_set_rate(secs_clk, secs_freq_info[SECS_LOW_VOLT_FREQ_INDEX])) {
+				pr_err("clk_set_rate low volt freq failed!\n");
+				mutex_unlock(&secs_freq_lock);
+				return -1;
+			} else {
+				pr_err("clk_set_rate to low volt freq!\n");
+			}
 		} else {
-			pr_err("clk_set_rate to low freq!\n");
+			pr_err("clk_set_rate to low temp freq!\n");
 		}
 	}
 
 	if (clk_prepare_enable(secs_clk)) {
-		pr_err("clk_prepare_enable failed!\n");
-		return -1;
+		pr_err("%s: clk_prepare_enable failed, try low temp freq\n", __func__);
+		if (clk_set_rate(secs_clk, secs_freq_info[SECS_LOW_TEMP_FREQ_INDEX])) {
+			pr_err("clk_set_rate low temp freq failed!\n");
+			if (clk_set_rate(secs_clk, secs_freq_info[SECS_LOW_VOLT_FREQ_INDEX])) {
+				pr_err("clk_set_rate low volt freq failed!\n");
+				mutex_unlock(&secs_freq_lock);
+				return -1;
+			}
+		}
+
+		if (clk_prepare_enable(secs_clk)) {
+			pr_err("%s: clk_prepare_enable low temp freq failed!\n", __func__);
+			if (clk_set_rate(secs_clk, secs_freq_info[SECS_LOW_VOLT_FREQ_INDEX])) {
+				pr_err("clk_set_rate low volt freq failed!\n");
+				mutex_unlock(&secs_freq_lock);
+				return -1;
+			}
+			if (clk_prepare_enable(secs_clk)) {
+				pr_err("clk_prepare low volt freq failed!\n");
+				mutex_unlock(&secs_freq_lock);
+				return -1;
+			}
+		}
 	}
 
+	mutex_unlock(&secs_freq_lock);
 	return 0;
 }
 
 int hisi_secs_power_on(void)
 {
 	int ret = 0;
+
+	mutex_lock(&secs_count_lock);
+	if (SECS_SUSPEND_STATUS == g_secs_suspend_status) {
+		pr_err("system is suspend, faild to power on secs\n");
+	}
+	mutex_unlock(&secs_count_lock);
 
 	if (of_get_property(secs_np, "sec-s-regulator-enable", NULL)) { /*lint !e456*/
 		if (of_get_property(secs_np, "secs-clk-freq-adapt", NULL)) {
@@ -152,36 +193,49 @@ int hisi_secs_power_on(void)
 			}
 		}
 
+		mutex_lock(&secs_mutex_lock);
 		ret = devm_regulator_bulk_get(secs_dev, 1, &regu_burning);
 		if (ret) {
 			dev_err(secs_dev,"fail get sec_burning regulator %d\n", ret);
+			mutex_unlock(&secs_mutex_lock);
 			return ret;
 		}
 
 		ret = regulator_bulk_enable(1, &regu_burning);
 		if (ret)
 			pr_err("failed to enable secs regulators %d\n", ret);
+		mutex_unlock(&secs_mutex_lock);
 	} else if (of_get_property(secs_np, "secs-atfd-power-ctrl", NULL)) {
 		ret = hisi_secs_adjust_freq();
 		if (ret) {
 			return ret;
 		}
 		mutex_lock(&secs_count_lock);
-		if (0 == g_secs_power_ctrl_count) {
+		if (g_secs_power_ctrl_count) {
 			g_secs_power_ctrl_count++;
 			mutex_unlock(&secs_count_lock);
-			hisi_secs_timer_init();
-		} else {
-			g_secs_power_ctrl_count++;
-			mutex_unlock(&secs_count_lock);
+			return ret;
 		}
+		g_secs_power_ctrl_count++;
+		hisi_secs_timer_init();
 		ret = atfd_hisi_service_access_register_smc(ACCESS_REGISTER_FN_MAIN_ID,
                                                     (u64)SECS_POWER_UP,
                                                     (u64)0,
                                                     ACCESS_REGISTER_FN_SUB_ID_SECS_POWER_CTRL);
 		if (ret) {
 			pr_err("failed to powerup secs %d\n", ret);
+			mutex_unlock(&secs_count_lock);
+			return ret;
 		}
+
+		ret = atfd_hisi_service_access_register_smc(ACCESS_REGISTER_FN_MAIN_ID,
+                                                (u64)SECS_SECCLK_EN,
+                                                (u64)0,
+                                                ACCESS_REGISTER_FN_SUB_ID_SECS_POWER_CTRL);
+		if (ret) {
+			pr_err("failed to enable secs secclk %d\n", ret);
+		}
+		mutex_unlock(&secs_count_lock);
 	}
 
 	return ret; /*lint !e454*/
@@ -192,35 +246,45 @@ int hisi_secs_power_down(void)
 {
 	int ret = 0;
 
+	mutex_lock(&secs_count_lock);
+	if (SECS_SUSPEND_STATUS == g_secs_suspend_status) {
+		pr_err("system is suspend, faild to power down secs\n");
+	}
+	mutex_unlock(&secs_count_lock);
+
 	if (of_get_property(secs_np, "secs-clk-freq-adapt", NULL)) {
 		clk_disable_unprepare(secs_clk);
 	}
 
 	if (of_get_property(secs_np, "sec-s-regulator-enable", NULL)) {
+		mutex_lock(&secs_mutex_lock);
 		ret = devm_regulator_bulk_get(secs_dev, 1, &regu_burning);
 		if (ret) {
 			dev_err(secs_dev,"fail get sec_burning regulator %d\n", ret);
+			mutex_unlock(&secs_mutex_lock);
 			return ret;
 		}
 
 		ret = regulator_bulk_disable(1, &regu_burning);
 		if (ret)
 			pr_err("failed to disable secs regulators %d\n", ret);
+		mutex_unlock(&secs_mutex_lock);
 	} else if (of_get_property(secs_np, "secs-atfd-power-ctrl", NULL)) {
 		mutex_lock(&secs_count_lock);
 		g_secs_power_ctrl_count--;
-		if (0 == g_secs_power_ctrl_count) {
+		if (g_secs_power_ctrl_count) {
 			mutex_unlock(&secs_count_lock);
-			del_timer_sync(&secs_timer);
-		} else {
-			mutex_unlock(&secs_count_lock);
+			return ret;
 		}
+		del_timer_sync(&secs_timer);
+
 		ret = atfd_hisi_service_access_register_smc(ACCESS_REGISTER_FN_MAIN_ID,
                                                     (u64)SECS_SECCLK_DIS,
                                                     (u64)0,
                                                     ACCESS_REGISTER_FN_SUB_ID_SECS_POWER_CTRL);
 		if (ret) {
 			pr_err("failed to disable secs secclk %d\n", ret);
+			mutex_unlock(&secs_count_lock);
 			return ret;
 		}
 
@@ -230,6 +294,7 @@ int hisi_secs_power_down(void)
                                                     ACCESS_REGISTER_FN_SUB_ID_SECS_POWER_CTRL);
 		if (ret)
 			pr_err("failed to powerdown secs %d\n", ret);
+		mutex_unlock(&secs_count_lock);
 	}
 	return ret;
 }
@@ -270,11 +335,36 @@ static const struct of_device_id secs_ctrl_of_match[] = {
 	{},
 };
 
+static int secs_power_ctrl_suspend(struct device *dev)
+{
+	pr_info("%s: suspend +\n", __func__);
+	mutex_lock(&secs_count_lock);
+	g_secs_suspend_status = SECS_SUSPEND_STATUS;
+	mutex_unlock(&secs_count_lock);
+	pr_info("%s: secs_power_ctrl_count=%lx\n", __func__, g_secs_power_ctrl_count);
+	pr_info("%s: suspend -\n", __func__);
+	return 0;
+}
+
+static int secs_power_ctrl_resume(struct device *dev)
+{
+	pr_info("%s: resume +\n", __func__);
+	mutex_lock(&secs_count_lock);
+	g_secs_suspend_status = 0;
+	mutex_unlock(&secs_count_lock);
+	pr_info("%s: secs_power_ctrl_count=%lx\n", __func__, g_secs_power_ctrl_count);
+	pr_info("%s: resume -\n", __func__);
+	return 0;
+}
+static SIMPLE_DEV_PM_OPS(secs_power_ctrl_pm_ops, secs_power_ctrl_suspend, secs_power_ctrl_resume);
+
+
 static struct platform_driver hisi_secs_ctrl_driver = {
 	.driver = {
 		.owner = THIS_MODULE, /*lint !e64*/
 		.name = "hisi-secs-power-ctrl",
 		.of_match_table = of_match_ptr(secs_ctrl_of_match),
+		.pm     = &secs_power_ctrl_pm_ops,
 	},
 	.probe = hisi_secs_power_ctrl_probe,
 	.remove = hisi_secs_power_ctrl_remove,

@@ -10,15 +10,6 @@ enum misc_ctrl_type {
 	MICS_CTRL_COMBOPHY = 1,
 };
 
-/* defined USB31_TCA data sheet */
-enum combophy_mode {
-	NOT_CONNECT = 0,
-	USBONLY_MODE = 1,
-	DPONLY_MODE = 2,
-	USB_DP_MODE = 3,
-	BAD_MODE
-};
-
 int hisi_usb_combophy_notify(enum phy_change_type type);
 int dwc3_misc_ctrl_get(enum misc_ctrl_type type);
 void dwc3_misc_ctrl_put(enum misc_ctrl_type type);

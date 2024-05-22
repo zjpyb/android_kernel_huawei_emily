@@ -1,13 +1,22 @@
 
+#ifndef __RDR_HISI_AP_HOOK_H__
+#define __RDR_HISI_AP_HOOK_H__
+
 #include <linux/thread_info.h>
 #include <linux/hisi/rdr_types.h>
 #include <linux/hisi/rdr_pub.h>
 #include <linux/hisi/hisi_ion.h>
+#include <linux/version.h>
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 76))
+#include <linux/sched.h>
+#endif
 
 #define MEM_ALLOC 1
 #define MEM_FREE  0
 
 typedef u64 (*arch_timer_func_ptr)(void);
+
+extern arch_timer_func_ptr g_arch_timer_func_ptr;
 
 typedef enum{
     HK_IRQ = 0,
@@ -22,6 +31,7 @@ typedef enum{
     HK_SYSCALL,
     HK_HUNGTASK,
     HK_TASKLET,
+    HK_DIAGINFO,
     HK_MAX
 }
 hook_type;
@@ -145,6 +155,7 @@ int syscall_buffer_init(unsigned char **addr, unsigned int size);
 int hung_task_buffer_init(unsigned char **addr, unsigned int size);
 int worker_buffer_init(percpu_buffer_info* buffer_info, unsigned char* addr, unsigned int size);
 int tasklet_buffer_init(unsigned char **addr, unsigned int size);
+int diaginfo_buffer_init(unsigned char **addr, unsigned int size);
 int mem_alloc_buffer_init(percpu_buffer_info *buffer_info, unsigned char* addr, unsigned int size);
 int ion_alloc_buffer_init(percpu_buffer_info *buffer_info, unsigned char *addr, unsigned int size);
 int percpu_buffer_init(percpu_buffer_info *buffer_info, u32 ratio[][8],
@@ -197,6 +208,8 @@ void time_hook(u64 address, u32 dir);
 static inline void time_hook(u64 address, u32 dir){}
 #endif
 
+void hisi_ap_defopen_hook_install(void);
 int hisi_ap_hook_install(hook_type hk);
 int hisi_ap_hook_uninstall(hook_type hk);
-
+ 
+#endif

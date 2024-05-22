@@ -45,33 +45,33 @@ extern "C" {
 /*Local Mem 所有接口的 _uc_lock 参数不再生效 2016/8/18*/
 /* 除netbuf内存池外的其他内存池的对外提供接口 host和device共用接口 */
 #define OAL_MEM_ALLOC(_en_pool_id, _us_len, _uc_lock) \
-    oal_mem_alloc(THIS_FILE_ID, __LINE__, _en_pool_id, _us_len, _uc_lock)
+    oal_mem_alloc_etc(THIS_FILE_ID, __LINE__, _en_pool_id, _us_len, _uc_lock)
 #define OAL_MEM_FREE(_p_data, _uc_lock) \
-    oal_mem_free(THIS_FILE_ID, __LINE__, _p_data, _uc_lock)
+    oal_mem_free_etc(THIS_FILE_ID, __LINE__, _p_data, _uc_lock)
 
 #define OAL_GET_MEM_FLAG(_p_data, _puc_state)
 
 #define OAL_MEM_FREE_ARRAY(_p_data, _num) \
-    oal_mem_free_array(THIS_FILE_ID, __LINE__, _p_data, _num)
+    oal_mem_free_array_etc(THIS_FILE_ID, __LINE__, _p_data, _num)
 
 #define OAL_MEM_INCR_USER(_pst_mem, _uc_lock) \
-    oal_mem_incr_user(THIS_FILE_ID, __LINE__, _pst_mem, _uc_lock)
+    oal_mem_incr_user_etc(THIS_FILE_ID, __LINE__, _pst_mem, _uc_lock)
 
 #define OAL_MEM_ALLOC_ENHANCED(_en_pool_id, _us_len, _uc_lock) \
-    oal_mem_alloc_enhanced(THIS_FILE_ID, __LINE__, _en_pool_id, _us_len, _uc_lock)
+    oal_mem_alloc_enhanced_etc(THIS_FILE_ID, __LINE__, _en_pool_id, _us_len, _uc_lock)
 
 #define OAL_MEM_FREE_ENHANCED(_pst_mem, _uc_lock) \
-    oal_mem_free_enhanced(THIS_FILE_ID, __LINE__, _pst_mem, _uc_lock)
+    oal_mem_free_enhanced_etc(THIS_FILE_ID, __LINE__, _pst_mem, _uc_lock)
 
 /* host输出内存信息接口 */
 #define OAL_MEM_INFO_PRINT(_pool_id)
 
 #ifdef _PRE_DEBUG_MODE
 #define OAL_MEM_TRACE(_p_data, _uc_lock) \
-    oal_mem_trace(THIS_FILE_ID, __LINE__, _p_data, _uc_lock)
+    oal_mem_trace_etc(THIS_FILE_ID, __LINE__, _p_data, _uc_lock)
 
 #define OAL_MEM_TRACE_ENHANCED(_pst_mem, _uc_lock) \
-    oal_mem_trace_enhanced(THIS_FILE_ID, __LINE__, _pst_mem, _uc_lock)
+    oal_mem_trace_enhanced_etc(THIS_FILE_ID, __LINE__, _pst_mem, _uc_lock)
 #else
 #define OAL_MEM_TRACE(_p_data, _uc_lock)
 #define OAL_MEM_TRACE_ENHANCED(_pst_mem, _uc_lock)
@@ -365,73 +365,73 @@ typedef struct
 /*****************************************************************************
   10 函数声明
 *****************************************************************************/
-extern oal_void* oal_mem_alloc(
+extern oal_void* oal_mem_alloc_etc(
                        oal_uint32                    ul_file_id,
                        oal_uint32                    ul_line_num,
                        oal_mem_pool_id_enum_uint8    en_pool_id,
                        oal_uint16                    us_len,
                        oal_uint8                     uc_lock);
-extern oal_uint32  oal_mem_free(oal_uint32 ul_file_id, oal_uint32 ul_line_num, oal_void *pst_mem, oal_uint8 uc_lock);
+extern oal_uint32  oal_mem_free_etc(oal_uint32 ul_file_id, oal_uint32 ul_line_num, oal_void *pst_mem, oal_uint8 uc_lock);
 
-extern oal_uint32  oal_mem_free_array(
+extern oal_uint32  oal_mem_free_array_etc(
                 oal_uint32    ul_file_id,
                 oal_uint32    ul_line_num,
                 oal_void     *p_data,
                 oal_uint8     uc_mem_num);
 
-extern oal_mem_stru* oal_mem_alloc_enhanced(
+extern oal_mem_stru* oal_mem_alloc_enhanced_etc(
                 oal_uint32                    ul_file_id,
                 oal_uint32                    ul_line_num,
                 oal_mem_pool_id_enum_uint8    en_pool_id,
                 oal_uint16                    us_len,
                 oal_uint8                     uc_lock);
-extern oal_uint32  oal_mem_free_enhanced(oal_uint32 ul_file_id, oal_uint32 ul_line_num, oal_mem_stru *p_data, oal_uint8 uc_lock);
-extern oal_uint32  oal_mem_init_pool(oal_void);
-extern oal_void  oal_mem_exit(oal_void);
-extern oal_uint32  oal_mem_incr_user(
+extern oal_uint32  oal_mem_free_enhanced_etc(oal_uint32 ul_file_id, oal_uint32 ul_line_num, oal_mem_stru *p_data, oal_uint8 uc_lock);
+extern oal_uint32  oal_mem_init_pool_etc(oal_void);
+extern oal_void  oal_mem_exit_etc(oal_void);
+extern oal_uint32  oal_mem_incr_user_etc(
                        oal_uint32      ul_file_id,
                        oal_uint32      ul_line_num,
                        oal_mem_stru   *pst_mem,
                        oal_uint8       uc_lock);
-extern oal_void  oal_mem_info(oal_mem_pool_id_enum_uint8 en_pool_id);
-extern oal_void  oal_mem_leak(oal_mem_pool_id_enum_uint8 en_pool_id);
+extern oal_void  oal_mem_info_etc(oal_mem_pool_id_enum_uint8 en_pool_id);
+extern oal_void  oal_mem_leak_etc(oal_mem_pool_id_enum_uint8 en_pool_id);
 
-extern oal_void  oal_mem_start_stat(oal_void);
-extern oal_uint32  oal_mem_end_stat(oal_void);
+extern oal_void  oal_mem_start_stat_etc(oal_void);
+extern oal_uint32  oal_mem_end_stat_etc(oal_void);
 
-extern oal_uint32  oal_mem_trace_enhanced(oal_uint32      ul_file_id,
+extern oal_uint32  oal_mem_trace_enhanced_etc(oal_uint32      ul_file_id,
                                           oal_uint32      ul_line_num,
                                           oal_mem_stru   *pst_mem,
                                           oal_uint8       uc_lock);
-extern oal_uint32  oal_mem_trace(oal_uint32    ul_file_id,
+extern oal_uint32  oal_mem_trace_etc(oal_uint32    ul_file_id,
                                  oal_uint32    ul_line_num,
                                  oal_void     *p_data,
                                  oal_uint8     uc_lock);
 
 #ifdef _PRE_DEBUG_MODE
-extern oal_mempool_tx_dscr_addr* oal_mem_get_tx_dscr_addr(oal_void);
-extern oal_void oal_mem_stop_rcd_rls(oal_void);
-extern oal_uint16 oal_mem_get_stop_flag(oal_void);
+extern oal_mempool_tx_dscr_addr* oal_mem_get_tx_dscr_addr_etc(oal_void);
+extern oal_void oal_mem_stop_rcd_rls_etc(oal_void);
+extern oal_uint16 oal_mem_get_stop_flag_etc(oal_void);
 #endif
 /* device 侧裸系统和 host侧的函数输出 */
-extern oal_mem_pool_stru* oal_mem_get_pool(oal_mem_pool_id_enum_uint8 en_pool_id);
+extern oal_mem_pool_stru* oal_mem_get_pool_etc(oal_mem_pool_id_enum_uint8 en_pool_id);
 
-extern oal_mem_pool_cfg_stru* oal_mem_get_pool_cfg_table(oal_mem_pool_id_enum_uint8 en_pool_id);
-extern oal_netbuf_stru* oal_mem_sdt_netbuf_alloc(oal_uint16 us_len, oal_uint8 uc_lock);
-extern oal_uint32  oal_mem_sdt_netbuf_free(oal_netbuf_stru *pst_netbuf, oal_uint8 uc_lock);
-extern oal_netbuf_stru* oal_netbuf_duplicate(oal_netbuf_stru* pst_src_netbuf,
+extern oal_mem_pool_cfg_stru* oal_mem_get_pool_cfg_table_etc(oal_mem_pool_id_enum_uint8 en_pool_id);
+extern oal_netbuf_stru* oal_mem_sdt_netbuf_alloc_etc(oal_uint16 us_len, oal_uint8 uc_lock);
+extern oal_uint32  oal_mem_sdt_netbuf_free_etc(oal_netbuf_stru *pst_netbuf, oal_uint8 uc_lock);
+extern oal_netbuf_stru* oal_netbuf_duplicate_etc(oal_netbuf_stru* pst_src_netbuf,
 											oal_uint8 uc_out_subpool_id,
 											oal_uint32 ul_add_head_room,
 											oal_uint32 ul_add_tail_room);
 
 #if (_PRE_MULTI_CORE_MODE_OFFLOAD_DMAC == _PRE_MULTI_CORE_MODE)
-extern oal_void oal_mem_print_normal_pool_info(oal_mem_pool_id_enum_uint8 en_pool_id);
-extern oal_void oal_mem_print_pool_info(oal_void);
-extern oal_void oal_mem_print_funcname(oal_ulong func_addr);
+extern oal_void oal_mem_print_normal_pool_info_etc(oal_mem_pool_id_enum_uint8 en_pool_id);
+extern oal_void oal_mem_print_pool_info_etc(oal_void);
+extern oal_void oal_mem_print_funcname_etc(oal_ulong func_addr);
 #endif
 
 #define oal_netbuf_duplicate_normal(pst_src_netbuf,ul_add_head_room,ul_add_tail_room) \
-                    oal_netbuf_duplicate(pst_src_netbuf,OAL_NORMAL_NETBUF,ul_add_head_room,ul_add_tail_room)
+                    oal_netbuf_duplicate_etc(pst_src_netbuf,OAL_NORMAL_NETBUF,ul_add_head_room,ul_add_tail_room)
 
 #ifdef __cplusplus
     #if __cplusplus

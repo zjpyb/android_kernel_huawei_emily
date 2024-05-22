@@ -16,6 +16,9 @@ typedef struct {
 	struct mutex omxvdec_mutex;
 	struct mutex vdec_mutex_scd;
 	struct mutex vdec_mutex_vdh;
+	struct mutex vdec_mutex_sec_scd;
+	struct mutex vdec_mutex_sec_vdh;
+	HI_BOOL device_locked;
 	struct cdev cdev;
 	struct device *device;
 } OMXVDEC_ENTRY;

@@ -30,10 +30,11 @@
 #include "hisi_oneimage.h"
 #include "board.h"
 #include "plat_debug.h"
+
 #ifdef CONFIG_HWCONNECTIVITY
 /* global variables */
 static char g_chip_type[HW_PROC_BUTT][BUFF_LEN];
-struct hisi_proc_info g_proc_info[] = {
+struct hisi_proc_info g_proc_info_etc[] = {
     {.proc_type = HW_PROC_CHIPTYPE, .proc_node_name = DTS_COMP_HW_CONNECTIVITY_NAME, .proc_pro_name = HW_CONN_PROC_CHIPTYPE_FILE},
     {.proc_type = HW_PROC_SUPP, .proc_node_name = DTS_COMP_HW_HISI_SUPP_CONFIG_NAME, .proc_pro_name = HW_CONN_PROC_SUPP_FILE},
     {.proc_type = HW_PROC_P2P, .proc_node_name = DTS_COMP_HW_HISI_P2P_CONFIG_NAME, .proc_pro_name = HW_CONN_PROC_P2P_FILE},
@@ -46,26 +47,56 @@ struct hisi_proc_info g_proc_info[] = {
   2 Global Variable Definition
 *****************************************************************************/
 #if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
-bool is_my_chip(void)
+bool is_my_chip_etc(void)
 {
-#ifdef CONFIG_HWCONNECTIVITY
     if (!isMyConnectivityChip(CHIP_TYPE_HI110X)) {
-        PS_PRINT_ERR("cfg dev board chip type is not match, skip driver init\n");
+        PS_PRINT_ERR("cfg dev board chip type is not match hisi, skip driver init\n");
         return false;
     } else {
         PS_PRINT_INFO("cfg dev board type is matched with hisi, continue\n");
     }
     return true;
-#else
-    return true;
-#endif
 }
-#endif
 
-#if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
-bool is_my_nfc_chip(void)
+bool is_hisi_chiptype_etc(int32 chip)
 {
-#ifdef CONFIG_HWCONNECTIVITY
+    int32 ret= BOARD_FAIL;
+    BOARD_INFO * bd_info = NULL;
+
+    if(false == is_my_chip_etc())
+    {
+        return false;
+    }
+
+    ret = board_chiptype_init();
+    if (BOARD_FAIL == ret)
+    {
+        PS_PRINT_ERR("sub chip type init fail\n");
+         return false;
+    }
+
+    bd_info = get_hi110x_board_info_etc();
+    if (unlikely(NULL == bd_info))
+    {
+        PS_PRINT_ERR("board info is null\n");
+        return false;
+    }
+
+    if (chip != bd_info->chip_nr)
+    {
+        PS_PRINT_ERR("hi11xx sub chip type is not match, skip driver init\n");
+        return false;
+    }
+    else
+    {
+        return true;
+    }
+}
+
+EXPORT_SYMBOL(is_hisi_chiptype_etc);
+
+bool is_my_nfc_chip_etc(void)
+{
     if (!isMyNfcChip(NFC_CHIP_TYPE_HI110X)) {
         PS_PRINT_ERR("cfg dev board nfc chip type is not match, skip driver init\n");
         return false;
@@ -73,9 +104,6 @@ bool is_my_nfc_chip(void)
         PS_PRINT_INFO("cfg dev board nfc type is matched with hisi_nfc, continue\n");
     }
     return true;
-#else
-    return true;
-#endif
 }
 #endif
 /*****************************************************************************
@@ -84,7 +112,7 @@ bool is_my_nfc_chip(void)
 /*Note:symbol printk() has arg.count conflict*/
 /*lint -e515*/
 
-int read_from_dts(char *buf, int buf_len, char *node_name, char *property_name)
+int read_from_dts_etc(char *buf, int buf_len, char *node_name, char *property_name)
 {
     struct device_node *np;
     char *dts_pro_name = NULL;
@@ -121,7 +149,7 @@ int read_from_dts(char *buf, int buf_len, char *node_name, char *property_name)
 static ssize_t hwconn_read_proc_chiptype(struct file *filp, char __user *buffer, size_t len, loff_t *off)
 {
     printk(KERN_DEBUG "[HW_CONN] hwconn_read_proc_chiptype\n");
-    if (NULL == g_chip_type[HW_PROC_CHIPTYPE] || len < strlen(g_chip_type[HW_PROC_CHIPTYPE])) {
+    if (len < strlen(g_chip_type[HW_PROC_CHIPTYPE])) {
         printk(KERN_ERR "[HW_CONN] hwconn_read_proc_chiptype g_chip_type is NULL or read length = %lu.\n",(unsigned long)len);
         return -EINVAL;
     }
@@ -150,7 +178,7 @@ static ssize_t hwconn_read_proc_chiptype(struct file *filp, char __user *buffer,
 static ssize_t hwconn_read_proc_supp(struct file *filp, char __user *buffer, size_t len, loff_t *off)
 {
     printk(KERN_INFO "[HW_CONN] hwconn_read_proc_chiptype\n");
-    if (NULL == g_chip_type[HW_PROC_SUPP] || len < strlen(g_chip_type[HW_PROC_SUPP])) {
+    if (len < strlen(g_chip_type[HW_PROC_SUPP])) {
         printk(KERN_ERR "[HW_CONN] hwconn_read_proc_chiptype g_chip_type is NULL or read length = %lu.\n", (unsigned long)len);
         return -EINVAL;
     }
@@ -178,7 +206,7 @@ static ssize_t hwconn_read_proc_supp(struct file *filp, char __user *buffer, siz
 static ssize_t hwconn_read_proc_p2p(struct file *filp, char __user *buffer, size_t len, loff_t *off)
 {
     printk(KERN_DEBUG "[HW_CONN] hwconn_read_proc_chiptype\n");
-    if (NULL == g_chip_type[HW_PROC_P2P] || len < strlen(g_chip_type[HW_PROC_P2P])) {
+    if (len < strlen(g_chip_type[HW_PROC_P2P])) {
         printk(KERN_ERR "[HW_CONN] hwconn_read_proc_chiptype g_chip_type is NULL or read length = %lu.\n", (unsigned long)len);
         return -EINVAL;
     }
@@ -210,7 +238,7 @@ static ssize_t hwconn_read_proc_p2p(struct file *filp, char __user *buffer, size
 static ssize_t hwconn_read_proc_apd(struct file *filp, char __user *buffer, size_t len, loff_t *off)
 {
     printk(KERN_DEBUG "[HW_CONN] hwconn_read_proc_chiptype\n");
-    if (NULL == g_chip_type[HW_PROC_HOSTAPD] || len < strlen(g_chip_type[HW_PROC_HOSTAPD])) {
+    if (len < strlen(g_chip_type[HW_PROC_HOSTAPD])) {
         printk(KERN_ERR "[HW_CONN] hwconn_read_proc_chiptype g_chip_type is NULL or read length = %lu.\n", (unsigned long)len);
         return -EINVAL;
     }
@@ -238,7 +266,7 @@ static ssize_t hwconn_read_proc_apd(struct file *filp, char __user *buffer, size
 static ssize_t hwconn_read_proc_firmware(struct file *filp, char __user *buffer, size_t len, loff_t *off)
 {
     printk(KERN_DEBUG "[HW_CONN] hwconn_read_proc_chiptype\n");
-    if (NULL == g_chip_type[HW_PROC_FIRMWARE] || len < strlen(g_chip_type[HW_PROC_FIRMWARE])) {
+    if (len < strlen(g_chip_type[HW_PROC_FIRMWARE])) {
         printk(KERN_ERR "[HW_CONN] hwconn_read_proc_chiptype g_chip_type is NULL or read length = %lu.\n", (unsigned long)len);
         return -EINVAL;
     }
@@ -317,7 +345,7 @@ int create_hwconn_proc_file(void)
     for (; index < HW_PROC_BUTT; index++)
     {
         memset((void*)g_chip_type[index], 0, sizeof(g_chip_type[index]));
-        ret = read_from_dts(g_chip_type[index], sizeof(g_chip_type[index]), g_proc_info[index].proc_node_name, g_proc_info[index].proc_pro_name);
+        ret = read_from_dts_etc(g_chip_type[index], sizeof(g_chip_type[index]), g_proc_info_etc[index].proc_node_name, g_proc_info_etc[index].proc_pro_name);
         if (ret < 0)
         {
             printk(KERN_INFO "[HW_CONN read info from dts fail\n");
@@ -326,12 +354,12 @@ int create_hwconn_proc_file(void)
 
         if (NULL != hwconn_dir)
         {
-            hwconn_chiptype_file = proc_create(g_proc_info[index].proc_pro_name, S_IRUGO, hwconn_dir, &hwconn_proc_fops[index]);
+            hwconn_chiptype_file = proc_create(g_proc_info_etc[index].proc_pro_name, S_IRUGO, hwconn_dir, &hwconn_proc_fops[index]);
         }
         else
         {
             memset(node_path, 0, NODE_PATH_LEN);
-            snprintf(node_path, NODE_PATH_LEN, "%s/%s", HW_CONN_PROC_DIR, g_proc_info[index].proc_pro_name);
+            snprintf(node_path, NODE_PATH_LEN, "%s/%s", HW_CONN_PROC_DIR, g_proc_info_etc[index].proc_pro_name);
             printk(KERN_DEBUG "[HW_CONN node_path[%s]\n", node_path);
             hwconn_chiptype_file = proc_create(node_path, S_IRUGO, NULL, &hwconn_proc_fops[index]);
         }
@@ -391,38 +419,42 @@ static struct platform_driver hw_connectivity_driver = {
     },
 };
 
-int hw_misc_connectivity_init(void)
+int hw_misc_connectivity_init_etc(void)
 {
     printk(KERN_ERR "[HW_CONN] hw_connectivity_init enter\n");
     return platform_driver_register(&hw_connectivity_driver);
 }
 
-void hw_misc_connectivity_exit(void)
+void hw_misc_connectivity_exit_etc(void)
 {
     platform_driver_unregister(&hw_connectivity_driver);
 }
 
-int read_nfc_conf_name_from_dts(char *buf, int buf_len, char *node_name, char *property_name)
+int read_nfc_conf_name_from_dts_etc(char *buf, int buf_len, char *node_name, char *property_name)
 {
-    return read_from_dts(buf, buf_len, node_name, property_name);
+    return read_from_dts_etc(buf, buf_len, node_name, property_name);
 }
 /*lint +e515*/
-//module_init(hw_misc_connectivity_init);
-//module_exit(hw_misc_connectivity_exit);
+//module_init(hw_misc_connectivity_init_etc);
+//module_exit(hw_misc_connectivity_exit_etc);
 #else
 #if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
-bool is_my_chip(void)
+bool is_my_chip_etc(void)
+{
+    return true;
+}
+
+bool is_hisi_chiptype_etc(int32 chip)
+{
+    return true;
+}
+
+bool is_my_nfc_chip_etc(void)
 {
     return true;
 }
 #endif
 
-#if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
-bool is_my_nfc_chip(void)
-{
-    return true;
-}
-#endif
 #endif
 
 MODULE_AUTHOR("DRIVER_AUTHOR");

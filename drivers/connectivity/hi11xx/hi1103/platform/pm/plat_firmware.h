@@ -37,7 +37,7 @@
 #define OS_VMALLOC_GFP(size)                vmalloc(size)
 #define OS_MEM_VFREE(p)                     vfree(p)
 
-#define READ_MEG_TIMEOUT            (200)      /* 200ms */
+#define READ_MEG_TIMEOUT            (2000)      /* 200ms */
 #define READ_MEG_JUMP_TIMEOUT       (15000)   /* 15s */
 
 #define FILE_CMD_WAIT_TIME_MIN      (5000)     /* 5000us */
@@ -85,7 +85,8 @@
 #define WMEM_CMD_KEYWORD            "WRITEM"
 #define QUIT_CMD_KEYWORD            "QUIT"
 
-/*以下命令字不会发往device，用于控制校准流程，但是会体现在cfg文件中*/
+/*以下命令字不会发往device，用于控制加载流程，但是会体现在cfg文件中*/
+#define SLEEP_CMD_KEYWORD           "SLEEP"
 #define CALI_COUNT_CMD_KEYWORD      "CALI_COUNT"
 #define CALI_BFGX_DATA_CMD_KEYWORD  "CALI_BFGX_DATA"
 #define SHUTDOWN_WIFI_CMD_KEYWORD   "SHUTDOWN_WIFI"
@@ -111,6 +112,30 @@
 
 #define HI1103_ASIC_MPW2               (0)
 #define HI1103_ASIC_PILOT              (1)
+
+#define BFGX_AND_WIFI_CFG_PATH                    "/vendor/firmware/bfgx_and_wifi_cfg"
+#define WIFI_CFG_PATH                             "/vendor/firmware/wifi_cfg"
+#define BFGX_CFG_PATH                             "/vendor/firmware/bfgx_cfg"
+#define RAM_CHECK_CFG_PATH                        "/vendor/firmware/ram_reg_test_cfg"
+
+#define BFGX_AND_WIFI_CFG_HI1103_MPW2_PATH        "/vendor/firmware/hi1103/mpw2/bfgx_and_wifi_cfg"
+#define WIFI_CFG_HI1103_MPW2_PATH                 "/vendor/firmware/hi1103/mpw2/wifi_cfg"
+#define BFGX_CFG_HI1103_MPW2_PATH                 "/vendor/firmware/hi1103/mpw2/bfgx_cfg"
+#define RAM_CHECK_CFG_HI1103_MPW2_PATH            "/vendor/firmware/hi1103/mpw2/ram_reg_test_cfg"
+
+#define BFGX_AND_WIFI_CFG_HI1103_PILOT_PATH       "/vendor/firmware/hi1103/pilot/bfgx_and_wifi_cfg"
+#define WIFI_CFG_HI1103_PILOT_PATH                "/vendor/firmware/hi1103/pilot/wifi_cfg"
+#define BFGX_CFG_HI1103_PILOT_PATH                "/vendor/firmware/hi1103/pilot/bfgx_cfg"
+#define RAM_CHECK_CFG_HI1103_PILOT_PATH           "/vendor/firmware/hi1103/pilot/ram_reg_test_cfg"
+#define RAM_BCPU_CHECK_CFG_HI1103_PILOT_PATH      "/vendor/firmware/hi1103/pilot/reg_bcpu_mem_test_cfg"
+
+#define HI1103_MPW2_BOOTLOADER_VERSION            "Hi1103V100R001C01B060 Feb 10 2017"
+#define HI1103_PILOT_BOOTLOADER_VERSION           "Hi1103V100R001C01B083 Dec 16 2017"
+
+#define FILE_COUNT_PER_SEND           (1)
+#define MIN_FIRMWARE_FILE_TX_BUF_LEN  (4096)
+#define MAX_FIRMWARE_FILE_TX_BUF_LEN  (512*1024)
+
 /*****************************************************************************
   3 枚举定义
 *****************************************************************************/
@@ -203,15 +228,18 @@ typedef struct file OS_KERNEL_FILE_STRU;
 *****************************************************************************/
 extern void set_hi1103_asic_type(uint32 ul_asic_type);
 extern uint32 get_hi1103_asic_type(void);
-extern int32 firmware_download(uint32 ul_index);
-extern int32 firmware_cfg_init(void);
-extern int32 firmware_cfg_clear(void);
+extern int32 firmware_download_etc(uint32 ul_index);
+extern int32 firmware_cfg_init_etc(void);
+extern int32 firmware_get_cfg_etc(uint8 *puc_CfgPatch, uint32 ul_index);
+extern int32 firmware_cfg_clear_etc(void);
 extern int32 wifi_device_mem_dump(struct st_wifi_dump_mem_info *pst_mem_dump_info, uint32 count);
-extern void save_nfc_lowpower_log_2_sdt(void);
+extern void save_nfc_lowpower_log_2_sdt_etc(void);
 extern int32 read_device_reg16(uint32 address, int16* value);
 extern int32 write_device_reg16(uint32 address, int16 value);
 extern int32 is_device_mem_test_succ(void);
 extern int32 get_device_test_mem(void);
+extern uint8 **g_auc_cfg_path_etc;
+extern uint8 *g_auc_pilot_cfg_patch_in_vendor[CFG_FILE_TOTAL];
 #ifdef __cplusplus
     #if __cplusplus
         }

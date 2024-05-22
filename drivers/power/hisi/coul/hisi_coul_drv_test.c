@@ -21,16 +21,19 @@
 /* #include "hi6xxx_smartstar_v300.h" */
 #include "hisi_coul_core.h"
 
-#ifdef CONFIG_HUAWEI_PLATFORM
-#include <huawei_platform/log/hw_log.h>
-#define HWLOG_TAG coul_test
-HWLOG_REGIST();
+#define COUL_TEST_LOG_INFO
+#ifndef COUL_TEST_LOG_INFO
+#define coul_test_debug(fmt, args...)do {} while (0)
+#define coul_test_info(fmt, args...) do {} while (0)
+#define coul_test_warn(fmt, args...) do {} while (0)
+#define coul_test_err(fmt, args...)  do {} while (0)
 #else
-#define hwlog_debug(fmt, args...)do { printk(KERN_DEBUG   "[coul_test]" fmt, ## args); } while (0)
-#define hwlog_info(fmt, args...) do { printk(KERN_INFO    "[coul_test]" fmt, ## args); } while (0)
-#define hwlog_warn(fmt, args...) do { printk(KERN_WARNING"[coul_test]" fmt, ## args); } while (0)
-#define hwlog_err(fmt, args...)  do { printk(KERN_ERR   "[coul_test]" fmt, ## args); } while (0)
+#define coul_test_debug(fmt, args...)do { printk(KERN_DEBUG   "[coul_test]" fmt, ## args); } while (0)
+#define coul_test_info(fmt, args...) do { printk(KERN_INFO    "[coul_test]" fmt, ## args); } while (0)
+#define coul_test_warn(fmt, args...) do { printk(KERN_WARNING"[coul_test]" fmt, ## args); } while (0)
+#define coul_test_err(fmt, args...)  do { printk(KERN_ERR   "[coul_test]" fmt, ## args); } while (0)
 #endif
+
 struct hisi_coul_test_info *g_hisi_coul_test_info = NULL;
 static ssize_t hisi_coul_set_test_start_flag(struct device *dev,
 					     struct device_attribute *attr,
@@ -42,8 +45,10 @@ static ssize_t hisi_coul_set_test_start_flag(struct device *dev,
 
 	if ((strict_strtol(buf, 16, &val) < 0) || (val < 0))
 		return -EINVAL;
-	di->test_start_flag = val;
-	hwlog_info("set %s is %d\n", __func__, di->test_start_flag);
+#ifdef CONFIG_HISI_DEBUG_FS
+	di->test_start_flag = (unsigned int)val;
+	coul_test_info("set %s is %d\n", __func__, di->test_start_flag);
+#endif
 	return status;
 }
 
@@ -69,7 +74,7 @@ static ssize_t hisi_coul_set_input_batt_exist(struct device *dev,
 	if ((strict_strtol(buf, 10, &val) < 0) || (val < 0) || (val > 1))
 		return -EINVAL;
 	di->input_batt_exist = val;
-	hwlog_info("set %s is %d\n", __func__, di->input_batt_exist);
+	coul_test_info("set %s is %d\n", __func__, di->input_batt_exist);
 	return status;
 }
 
@@ -95,7 +100,7 @@ static ssize_t hisi_coul_set_input_batt_capacity(struct device *dev,
 	if ((strict_strtol(buf, 10, &val) < 0) || (val < 0) || (val > 100))
 		return -EINVAL;
 	di->input_batt_capacity = val;
-	hwlog_info("set %s is %d\n", __func__, di->input_batt_capacity);
+	coul_test_info("set %s is %d\n", __func__, di->input_batt_capacity);
 	return status;
 }
 
@@ -121,7 +126,7 @@ static ssize_t hisi_coul_set_input_batt_temp(struct device *dev,
 	if ((strict_strtol(buf, 10, &val) < 0) || (val < -40) || (val > 80))
 		return -EINVAL;
 	di->input_batt_temp = val;
-	hwlog_info("set %s is %d\n", __func__, di->input_batt_temp);
+	coul_test_info("set %s is %d\n", __func__, di->input_batt_temp);
 	return status;
 }
 
@@ -147,7 +152,7 @@ static ssize_t hisi_coul_set_input_batt_full(struct device *dev,
 	if ((strict_strtol(buf, 10, &val) < 0) || (val < 0) || (val > 1))
 		return -EINVAL;
 	di->input_batt_full = val;
-	hwlog_info("set %s is %d\n", __func__, di->input_batt_full);
+	coul_test_info("set %s is %d\n", __func__, di->input_batt_full);
 	return status;
 }
 
@@ -173,7 +178,7 @@ static ssize_t hisi_coul_set_input_batt_volt(struct device *dev,
 	if ((strict_strtol(buf, 10, &val) < 0) || (val < 2000) || (val > 5000))
 		return -EINVAL;
 	di->input_batt_volt = val;
-	hwlog_info("set %s is %d\n", __func__, di->input_batt_volt);
+	coul_test_info("set %s is %d\n", __func__, di->input_batt_volt);
 	return status;
 }
 
@@ -199,7 +204,7 @@ static ssize_t hisi_coul_set_input_batt_cur(struct device *dev,
 	if ((strict_strtol(buf, 10, &val) < 0) || (val < -10000) || (val > 10000))
 		return -EINVAL;
 	di->input_batt_cur = val;
-	hwlog_info("set %s is %d\n", __func__, di->input_batt_cur);
+	coul_test_info("set %s is %d\n", __func__, di->input_batt_cur);
 	return status;
 }
 
@@ -225,7 +230,7 @@ static ssize_t hisi_coul_set_input_batt_fcc(struct device *dev,
 	if ((strict_strtol(buf, 10, &val) < 0) || (val < 0) || (val > 10000))
 		return -EINVAL;
 	di->input_batt_fcc = val;
-	hwlog_info("set %s is %d\n", __func__, di->input_batt_fcc);
+	coul_test_info("set %s is %d\n", __func__, di->input_batt_fcc);
 	return status;
 }
 
@@ -251,7 +256,7 @@ static ssize_t hisi_coul_set_input_event(struct device *dev,
 	if ((strict_strtol(buf, 16, &val) < 0) || (val < 0) || (val > 10000))
 		return -EINVAL;
 	di->input_event = val;
-	hwlog_info("set %s is %d\n", __func__, di->input_event);
+	coul_test_info("set %s is %d\n", __func__, di->input_event);
 	return status;
 }
 
@@ -286,13 +291,13 @@ static DEVICE_ATTR(input_batt_volt, S_IWUSR | S_IRUGO,
 		   hisi_coul_show_input_batt_volt,
 		   hisi_coul_set_input_batt_volt);
 static DEVICE_ATTR(input_batt_cur, S_IWUSR | S_IRUGO,
-		   hisi_coul_show_input_batt_cur, 
+		   hisi_coul_show_input_batt_cur,
 		   hisi_coul_set_input_batt_cur);
 static DEVICE_ATTR(input_batt_fcc, S_IWUSR | S_IRUGO,
-		   hisi_coul_show_input_batt_fcc, 
+		   hisi_coul_show_input_batt_fcc,
 		   hisi_coul_set_input_batt_fcc);
 static DEVICE_ATTR(input_event, S_IWUSR | S_IRUGO,
-		   hisi_coul_show_input_event, 
+		   hisi_coul_show_input_event,
 		   hisi_coul_set_input_event);
 /*lint +e665*/
 
@@ -336,26 +341,26 @@ static int hisi_coul_drv_test_probe(struct platform_device *pdev)
 
 	ret = sysfs_create_group(&pdev->dev.kobj, &hisi_coul_attr_group);
 	if (ret) {
-		hwlog_info("could not create sysfs files\n");
+		coul_test_info("could not create sysfs files\n");
 		goto err_sysfs;
 	}
 
 	hisi_coul_class = class_create(THIS_MODULE, "hisi_coul_drv_test");
 	if (IS_ERR(hisi_coul_class)) {
-		hwlog_info("could not create sysfs class\n");
+		coul_test_info("could not create sysfs class\n");
 		goto err_sysfs1;
 	}
 
 	new_dev = device_create(hisi_coul_class, NULL, 0, "%s", "hisi_coul");
 	if (IS_ERR(new_dev)) {
-		hwlog_info("could not create sysfs device\n");
+		coul_test_info("could not create sysfs device\n");
 		goto err_sysfs2;
 	}
 
 	ret = sysfs_create_link(&new_dev->kobj, &pdev->dev.kobj, "hisi_coul_test_info");
 	if (ret < 0)
-		hwlog_info("create link to charge data fail.\n");
-	hwlog_info("hisi_coul_drv_test_probe ok!");
+		coul_test_info("create link to charge data fail.\n");
+	coul_test_info("hisi_coul_drv_test_probe ok!");
 	return 0;
 err_sysfs2:
 	class_destroy(hisi_coul_class);
@@ -413,7 +418,7 @@ static struct platform_driver hisi_coul_drv_test_driver = {
 
 int __init hisi_coul_test_init(void)
 {
-	hwlog_info("hisi_coul_test_init\n");
+	coul_test_info("hisi_coul_test_init\n");
 	return platform_driver_register(&hisi_coul_drv_test_driver);
 }
 

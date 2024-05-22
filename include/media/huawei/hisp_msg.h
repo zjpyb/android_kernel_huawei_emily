@@ -688,6 +688,8 @@ typedef enum
     SUBCMD_SET_SWPD_KEY                   = 152,
     SUBCMD_GET_SWPD_KEY                   = 153,
     SUBCMD_GET_SENSOR_COORD               = 154,
+    SUBCMD_SET_AE_SENSOR_VERIFY_MODE      = 155,
+    SUBCMD_SET_AFSTAT_ALGO_RESULT         = 156,
 
 } extendset_info_e;
 
@@ -710,6 +712,7 @@ typedef enum
     EVENT_AF_DIRECT_TRANS_BASE,
     EVENT_AF_OTP_CALIB_DATA,
     EVENT_AF_SELF_LEARN_DATA,
+    EVENT_AF_STAT_INFO,
 } event_info_e;
 
 typedef struct _msg_subreq_es_watchdog_t

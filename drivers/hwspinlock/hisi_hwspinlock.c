@@ -20,10 +20,12 @@
 #include <linux/of.h>
 #include <linux/of_address.h>
 #include <linux/of_device.h>
+#include <linux/hisi/hisi_log.h>
 
 #include "hwspinlock_internal.h"
 
 #define	MODULE_NAME			"hisi_hwspinlock"
+#define HISI_LOG_TAG HISI_HWSPINLOCK_TAG
 
 /*
  * CPU ID for master running hisi kernel.

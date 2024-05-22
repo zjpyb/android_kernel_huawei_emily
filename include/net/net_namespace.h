@@ -16,9 +16,6 @@
 #include <net/netns/packet.h>
 #include <net/netns/ipv4.h>
 #include <net/netns/ipv6.h>
-#ifdef CONFIG_MPTCP
-#include <net/netns/mptcp.h>
-#endif
 #include <net/netns/ieee802154_6lowpan.h>
 #include <net/netns/sctp.h>
 #include <net/netns/dccp.h>
@@ -63,6 +60,7 @@ struct net {
 	struct list_head	exit_list;	/* Use only net_mutex */
 
 	struct user_namespace   *user_ns;	/* Owning user namespace */
+	struct ucounts		*ucounts;
 	spinlock_t		nsid_lock;
 	struct idr		netns_ids;
 
@@ -98,9 +96,6 @@ struct net {
 #if IS_ENABLED(CONFIG_IPV6)
 	struct netns_ipv6	ipv6;
 #endif
-#if IS_ENABLED(CONFIG_MPTCP)
-	struct netns_mptcp	mptcp;
-#endif
 #if IS_ENABLED(CONFIG_IEEE802154_6LOWPAN)
 	struct netns_ieee802154_lowpan	ieee802154_lowpan;
 #endif
@@ -127,6 +122,9 @@ struct net {
 #if IS_ENABLED(CONFIG_NETFILTER_NETLINK_ACCT)
 	struct list_head        nfnl_acct_list;
 #endif
+#if IS_ENABLED(CONFIG_NF_CT_NETLINK_TIMEOUT)
+	struct list_head	nfct_timeout_list;
+#endif
 #endif
 #ifdef CONFIG_WEXT_CORE
 	struct sk_buff_head	wext_nlevents;
@@ -145,7 +143,7 @@ struct net {
 #endif
 	struct sock		*diag_nlsk;
 	atomic_t		fnhe_genid;
-};
+} __randomize_layout;
 
 #include <linux/seq_file_net.h>
 
@@ -172,7 +170,7 @@ static inline struct net *copy_net_ns(unsigned long flags,
 extern struct list_head net_namespace_list;
 
 struct net *get_net_ns_by_pid(pid_t pid);
-struct net *get_net_ns_by_fd(int pid);
+struct net *get_net_ns_by_fd(int fd);
 
 #ifdef CONFIG_SYSCTL
 void ipx_register_sysctl(void);
@@ -215,6 +213,11 @@ int net_eq(const struct net *net1, const struct net *net2)
 	return net1 == net2;
 }
 
+static inline int check_net(const struct net *net)
+{
+	return atomic_read(&net->count) != 0;
+}
+
 void net_drop_ns(void *);
 
 #else
@@ -235,6 +238,11 @@ static inline struct net *maybe_get_net(struct net *net)
 
 static inline
 int net_eq(const struct net *net1, const struct net *net2)
+{
+	return 1;
+}
+
+static inline int check_net(const struct net *net)
 {
 	return 1;
 }
@@ -278,7 +286,7 @@ static inline struct net *read_pnet(const possible_net_t *pnet)
 #define __net_initconst
 #else
 #define __net_init	__init
-#define __net_exit	__exit_refok
+#define __net_exit	__ref
 #define __net_initdata	__initdata
 #define __net_initconst	__initconst
 #endif

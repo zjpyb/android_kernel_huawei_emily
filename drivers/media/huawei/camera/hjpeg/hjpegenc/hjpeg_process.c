@@ -42,6 +42,7 @@
 #include <linux/hisi/hisi-iommu.h>
 #include <linux/platform_data/remoteproc-hisi.h>
 #include <linux/wakelock.h>
+#include <linux/version.h>
 
 #include "smmu_cfg.h"
 #include "cvdr_cfg.h"
@@ -207,7 +208,11 @@ static int __check_buffer_vaild(int share_fd, unsigned int vaild_addr, unsigned 
         return -1;
     }
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
+    ionhnd = ion_import_dma_buf_fd(s_hjpeg.ion_client, share_fd);/*lint !e838*/
+#else
     ionhnd = ion_import_dma_buf(s_hjpeg.ion_client, share_fd);/*lint !e838*/
+#endif
     if (IS_ERR(ionhnd)) {
         cam_err("%s:invalid ion handle", __func__);
         return -1;//lint !e438
@@ -1257,7 +1262,6 @@ static int get_dts_power_prop(struct device *pdev)
                 cam_err("[%s] Failed: of_property_read_u32.%d\n", __func__, ret);
                 goto error;
             }
-
 
         }
 

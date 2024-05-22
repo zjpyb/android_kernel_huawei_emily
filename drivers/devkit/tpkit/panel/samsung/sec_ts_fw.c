@@ -190,6 +190,11 @@ static int sec_ts_save_version_of_ic(struct sec_ts_data *ts)
 	pdata->img_version_of_ic[2] = img_ver[2];
 	pdata->img_version_of_ic[3] = img_ver[3];
 
+	if(S6SY761X == ts->ic_name) {
+		snprintf(ts->chip_data->version_name, MAX_STR_LEN - 1, "%02X.%02X.%02X.%02x",
+				img_ver[0], img_ver[1], img_ver[2], img_ver[3]);
+	}
+
 	/* Core ver */
 	ret = ts->sec_ts_i2c_read(ts, SEC_TS_READ_FW_VERSION, core_ver, 4);
 	if (ret < 0) {
@@ -613,34 +618,60 @@ int sec_ts_read_pid(struct sec_ts_data *ts)
 	int ret = NO_ERR;
 	u8 data[SEC_TS_PROJECTID_MAX];
 	u8 retry;
+	u32 addr = SEC_TS_PID_ADDR;
 
-	ret = sec_ts_memoryread(ts, SEC_TS_PID_ADDR, data, SEC_TS_PROJECTID_MAX);
+	if(ts->ic_name == S6SY761X){
+		addr = SEC_TS_Y761_PID_ADDR;
+	}
+
+	ret = sec_ts_memoryread(ts, addr, data, SEC_TS_PROJECTID_MAX);
 	if (ret < 0) {
 		TS_LOG_ERR("%s: read pid fail\n", __func__);
 		return -EIO;
 	}
 	TS_LOG_INFO("%s: data = %02X %02X %02X %02X\n", __func__,
 				data[0], data[1], data[2], data[3]);
-	data[SEC_TS_PROJECTID_MAX-1] = 0;
-	/* 0xff, 0x00 -> read project id error : */
-	if ((data[0] == 0xff) || (data[0] == 0x00)) {
-		TS_LOG_INFO("%s: pid read: data[0] = %d \n", __func__, data[0]);
-		snprintf(ts->project_id, sizeof(SEC_TS_HW_PROJECTID), "%s", SEC_TS_HW_PROJECTID);
 
-		for (retry = 0; retry < SEC_TS_I2C_RETRY_CNT; retry++) {
-			set_pid_data(ts, ts->project_id);
-			get_pid_data(ts, data);
-			data[SEC_TS_PROJECTID_MAX-1] = "\0";
-			if (memcmp(ts->project_id, data, SEC_TS_PROJECTID_MAX) == 0) {
-				TS_LOG_ERR("%s: pid write and read: data[0] = %s \n", __func__, data);
-				break;
-			} else
-				TS_LOG_ERR("%s: pid write error: data[0] = %d \n", __func__, data[0]);
+	if(ts->is_need_set_reseved_bit){
+		data[SEC_TS_PROJECTID_MAX-2] = 0x30;//set the reserved bit 9(11-2) to 0x30.
+	}
+
+	data[SEC_TS_PROJECTID_MAX-1] = 0;
+
+	/*********************************************
+	because Rxx program cannot effectively identify the project id programming error,
+	the project id directly uses the default value configured by dts.
+	when the project ID is incorrect, an error message is printed.
+	**********************************************/
+	if(ts->ic_name == S6SY761X) {
+		snprintf(ts->project_id, sizeof(SEC_TS_HW_PROJECTID), "%s", ts->default_projectid);
+		if(memcmp(ts->project_id, data, SEC_TS_PROJECTID_MAX) == 0) {
+			TS_LOG_INFO("%s: project id check ok: data[0] = %s \n", __func__, data);
+		} else {
+			TS_LOG_ERR("%s, project id check failed\n", __func__);
 		}
 	} else {
-		snprintf(ts->project_id, SEC_TS_PROJECTID_MAX, "%s", data);
+		/* 0xff, 0x00 -> read project id error : */
+		if ((data[0] == 0xff) || (data[0] == 0x00)) {
+			TS_LOG_INFO("%s: pid read: data[0] = %d \n", __func__, data[0]);
+			snprintf(ts->project_id, sizeof(SEC_TS_HW_PROJECTID), "%s", SEC_TS_HW_PROJECTID);
+
+			for (retry = 0; retry < SEC_TS_I2C_RETRY_CNT; retry++) {
+				set_pid_data(ts, ts->project_id);
+				get_pid_data(ts, data);
+				data[SEC_TS_PROJECTID_MAX-1] = "\0";
+				if (memcmp(ts->project_id, data, SEC_TS_PROJECTID_MAX) == 0) {
+					TS_LOG_ERR("%s: pid write and read: data[0] = %s \n", __func__, data);
+					break;
+				} else
+					TS_LOG_ERR("%s: pid write error: data[0] = %d \n", __func__, data[0]);
+			}
+		} else {
+			snprintf(ts->project_id, SEC_TS_PROJECTID_MAX, "%s", data);
+		}
 	}
-	TS_LOG_ERR("%s: %s\n", __func__, ts->project_id);
+
+	TS_LOG_INFO("%s: %s\n", __func__, ts->project_id);
 	return ret;
 }
 
@@ -784,11 +815,10 @@ static int sec_ts_firmware_update(struct sec_ts_data *ts, const u8 *data, size_t
 
 
 	TS_LOG_ERR("%s: num_chunk : %d\n", __func__, fw_hd->num_chunk);
-
 	for (i = 0; i < fw_hd->num_chunk; i++) {
 		fw_ch = (fw_chunk *)fd;
 
-		TS_LOG_ERR("%s: [%d] 0x%08X, 0x%08X, 0x%08X, 0x%08X\n", __func__, i,
+		TS_LOG_INFO("%s: [%d] 0x%08X, 0x%08X, 0x%08X, 0x%08X\n", __func__, i,
 				fw_ch->signature, fw_ch->addr, fw_ch->size, fw_ch->reserved);
 
 		if (fw_ch->signature != SEC_TS_FW_CHUNK_SIGN) {
@@ -859,7 +889,7 @@ int sec_ts_firmware_update_on_probe(struct sec_ts_data *ts, bool force_update)
 	disable_irq(ts->client->irq);
 	ts->cal_status = sec_ts_read_calibration_report(ts);
 
-	TS_LOG_ERR("%s: initial firmware update %s, cal:%X\n",
+	TS_LOG_INFO("%s: initial firmware update %s, cal:%X\n",
 					__func__, fw_path, ts->cal_status);
 
 	/* If firmware not found, should return NO_ERR */
@@ -867,7 +897,7 @@ int sec_ts_firmware_update_on_probe(struct sec_ts_data *ts, bool force_update)
 		TS_LOG_ERR("%s: firmware is not available\n", __func__);
 		goto err_request_fw;
 	}
-	TS_LOG_ERR("%s: request firmware done! size = %d\n", __func__, (int)fw_entry->size);
+	TS_LOG_INFO("%s: request firmware done! size = %d\n", __func__, (int)fw_entry->size);
 
 	result = sec_ts_check_firmware_version(ts, fw_entry->data);
 
@@ -875,7 +905,9 @@ int sec_ts_firmware_update_on_probe(struct sec_ts_data *ts, bool force_update)
 		TS_LOG_ERR("%s: skip fw update\n", __func__);
 		goto err_request_fw;
 	}
-
+	if(ts->ic_name == S6SY761X) {
+		wake_lock(&ts->wakelock);//add wakelock,avoid i2c suspend
+	}
 	for (ii = 0; ii < 3; ii++) {
 		ret = sec_ts_firmware_update(ts, fw_entry->data, fw_entry->size, 0, restore_cal, ii);
 		if (ret >= 0)
@@ -889,6 +921,14 @@ int sec_ts_firmware_update_on_probe(struct sec_ts_data *ts, bool force_update)
 	}
 
 	sec_ts_save_version_of_ic(ts);
+
+	if(ts->is_need_calibrate_after_update_fw && result == NO_ERR) {
+		TS_LOG_INFO("%s, do calibrate after update firmware\n", __func__);
+		sec_ts_do_once_calibrate();
+	}
+	if(ts->ic_name == S6SY761X) {
+		wake_unlock(&ts->wakelock);//add wakelock,avoid i2c suspend
+	}
 
 err_request_fw:
 	release_firmware(fw_entry);

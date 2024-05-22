@@ -47,7 +47,9 @@ extern "C" {
 #define OBJ_MCA             		18
 #define OBJ_INSE				19
 #define OBJ_TEST		              20
-#define MAX_CMD_OBJ		21
+#define OBJ_L3				23
+#define OBJ_MNTN_BBOX		24 /*24*/
+#define MAX_CMD_OBJ		25
 
 #define TYPE_POWER			1
 #define TYPE_CLK				2
@@ -68,6 +70,7 @@ extern "C" {
 #define TYPE_DDR_TIME 			21
 #define TYPE_DDR_FLUX 			22
 
+#define TYPE_BAT                        27
 /* mail size */
 #define MAX_MAIL_SIZE		8
 #define IPC_CMD(src, obj, cmd, type)	(((src) << 24) | ((obj) << 16) | ((cmd) << 8) | (type))

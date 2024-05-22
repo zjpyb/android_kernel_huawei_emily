@@ -11,6 +11,8 @@
 #include <media/huawei/hisp120_cfg.h>
 #elif defined( HISP200_CAMERA  )
 #include <media/huawei/hisp200_cfg.h>
+#elif defined( HISP250_CAMERA  )
+#include <media/huawei/hisp250_cfg.h>
 #else
 #include <media/huawei/hisp_cfg.h>
 #endif
@@ -20,6 +22,7 @@
 #include <linux/videodev2.h>
 #include <media/videobuf2-core.h>
 #include <linux/clk.h>
+#include <linux/dma-buf.h>
 
 #include "hwcam_intf.h"
 #include "cam_log.h"
@@ -66,6 +69,8 @@ typedef struct _tag_hisp_vtbl {
 	int (*power_off) (hisp_intf_t *i);
 	int (*send_rpmsg) (hisp_intf_t *i, hisp_msg_t *m, size_t len);
 	int (*recv_rpmsg) (hisp_intf_t *i, hisp_msg_t *m, size_t len);
+	int (*open) (hisp_intf_t *i);
+	int (*close) (hisp_intf_t *i);
 } hisp_vtbl_t;
 
 typedef struct _tag_hisp_intf {
@@ -79,6 +84,17 @@ typedef struct _tag_hisp_notify_vtbl {
 typedef struct _tag_hisp_notify_intf {
 	hisp_notify_vtbl_t *vtbl;
 } hisp_notify_intf_t;
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
+struct rpmsg_hdr {
+    u32 src;
+    u32 dst;
+    u32 reserved;
+    u16 len;
+    u16 flags;
+    u8 data[0];
+} __packed;
+#endif
 
 static inline void
 hisp_notify_intf_rpmsg_cb(hisp_notify_intf_t *i, hisp_event_t *isp_ev)
@@ -106,6 +122,7 @@ static inline char  *hisp_intf_get_name(hisp_intf_t *i)
 	hisp_assert(NULL != i->vtbl->get_name);
 	return (char *)i->vtbl->get_name(i);
 }
+
 extern int32_t
 hisp_register(
 	      hisp_intf_t *hw, hisp_notify_intf_t **notify);
@@ -113,5 +130,11 @@ hisp_register(
 extern void
 hisp_unregister(hisp_intf_t* isp_intf);
 int hisp_get_dt_data(struct platform_device *pdev, hisp_dt_data_t *dt);
+
+extern int
+hisp_get_sg_table(int fd,struct device *dev,struct dma_buf **buf,struct dma_buf_attachment **attach,struct sg_table **table);
+
+extern void
+hisp_free_dma_buf(struct dma_buf **buf,struct dma_buf_attachment **attach,struct sg_table **table);
 
 #endif /*__HW_JACKY_KERNEL_HISP_INTERFACE_H__ */

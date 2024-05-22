@@ -33,8 +33,16 @@
 #include "hisi_overlay_utils_dssv501.h"
 #endif
 
+#ifdef CONFIG_HISI_FB_V510
+#include "hisi_overlay_utils_dssv510.h"
+#endif
+
 #ifdef CONFIG_HISI_FB_V320
 #include "hisi_overlay_utils_dssv320.h"
+#endif
+
+#ifdef CONFIG_HISI_FB_V330
+#include "hisi_overlay_utils_dssv330.h"
 #endif
 
 #define CONFIG_HISI_DSS_CMDLIST_LAST_USED

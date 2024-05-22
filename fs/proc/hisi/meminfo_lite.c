@@ -22,11 +22,23 @@
 #include <linux/seq_file.h>
 #include <linux/vmstat.h>
 #include <linux/vmalloc.h>
+#include <linux/version.h>
 #include <asm/page.h>
 #include <asm/pgtable.h>
 
+#define K(x) (((x) << (PAGE_SHIFT - 10)))
 static int meminfo_lite_proc_show(struct seq_file *m, void *v)
 {
+#if(LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
+	struct sysinfo i;
+	long available;
+
+	/*
+	 * display in kilobytes.
+	 */
+	si_meminfo(&i);
+	available = si_mem_available();
+#else
 	struct sysinfo i;
 	long available;
 	unsigned long pagecache;
@@ -34,14 +46,13 @@ static int meminfo_lite_proc_show(struct seq_file *m, void *v)
 	unsigned long pages[NR_LRU_LISTS];
 	struct zone *zone;
 	int lru;
+
 	/*
 	 * display in kilobytes.
 	 */
-#define K(x) (((x) << (PAGE_SHIFT - 10)))
 	si_meminfo(&i);
-
 	for (lru = LRU_BASE; lru < NR_LRU_LISTS; lru++)
-		pages[lru] = global_page_state(NR_LRU_BASE + lru);/*lint !e64 */
+		pages[lru] = global_page_state(NR_LRU_BASE + lru);
 
 	for_each_zone(zone)
 		wmark_low += zone->watermark[WMARK_LOW];
@@ -54,7 +65,6 @@ static int meminfo_lite_proc_show(struct seq_file *m, void *v)
 	 * system starts swapping.
 	 */
 	available = i.freeram - wmark_low;
-
 	/*
 	 * Not all the page cache can be freed, otherwise the system will
 	 * start swapping. Assume at least half of the page cache, or the
@@ -69,7 +79,7 @@ static int meminfo_lite_proc_show(struct seq_file *m, void *v)
 	 * and cannot be freed. Cap this estimate at the low watermark.
 	 */
 	available += global_page_state(NR_SLAB_RECLAIMABLE) -
-		min(global_page_state(NR_SLAB_RECLAIMABLE) / 2, wmark_low);/*lint !e666 */
+		min(global_page_state(NR_SLAB_RECLAIMABLE) / 2, wmark_low);/*lint !e666*/
 
 	/*
 	 * Add the ioncache pool pages
@@ -81,7 +91,7 @@ static int meminfo_lite_proc_show(struct seq_file *m, void *v)
 #ifdef CONFIG_TASK_PROTECT_LRU
 	available -= (long)global_page_state(NR_PROTECT_ACTIVE_FILE);
 #endif
-
+#endif
 	if (available < 0)
 		available = 0;
 

@@ -30,6 +30,8 @@ struct hi64xx_mbhc_config {
 	int btn_volume_up_max_voltage;
 	int btn_volume_down_min_voltage;
 	int btn_volume_down_max_voltage;
+	int btn_voice_assistant_min_voltage;
+	int btn_voice_assistant_max_voltage;
 	int hs_extern_cable_min_voltage;
 	int hs_extern_cable_max_voltage;
 	int hs_mbhc_vref_reg_value;

@@ -30,8 +30,8 @@ static const struct partition partition_table_emmc[] =
   {PART_BOOTFAIL_INFO,    512*1024,  2*1024,        EMMC_USER_PART},/* bootfail info   2MB    p19*/
   {PART_MISC,             514*1024,  2*1024,        EMMC_USER_PART},/* misc            2M     p20*/
   {PART_RESERVED2,        516*1024,  32*1024,       EMMC_USER_PART},/* reserved2       32M    p21*/
-  {PART_RESERVED10,        548*1024,  4*1024,       EMMC_USER_PART},/* PART_RESERVED10 4M     p22*/
-  {PART_HISEE_FS,         552*1024,  8*1024,        EMMC_USER_PART},/* hisee_fs        8M     p23*/
+  {PART_HHEE_A,        548*1024,  4*1024,       EMMC_USER_PART},/* PART_HHEE_A 4M     p22*/
+  {PART_HISEE_FS_A,         552*1024,  8*1024,        EMMC_USER_PART},/* hisee_fs        8M     p23*/
   {PART_DFX,              560*1024,  16*1024,       EMMC_USER_PART},/* dfx             16M    p24*/
   {PART_RRECORD,          576*1024,  16*1024,       EMMC_USER_PART},/* rrecord         16M    p25*/
   {PART_FW_LPM3_A,        592*1024,  256,           EMMC_USER_PART},/* mcuimage        256K   p26*/
@@ -56,31 +56,33 @@ static const struct partition partition_table_emmc[] =
   {PART_SENSORHUB_A,      724*1024,  16*1024,       EMMC_USER_PART},/* sensorhub       16M    p38*/
   {PART_KERNEL_A,         740*1024,  24*1024,       EMMC_USER_PART},/* kernel          24M    p39*/
 #endif
-  {PART_RAMDISK_A,        764*1024,  16*1024,       EMMC_USER_PART},/* ramdisk         16M    p40*/
-  {PART_RECOVERY_RAMDISK_A, 780*1024,  32*1024,     EMMC_USER_PART},/* recovery_ramdisk 32M   p41*/
-  {PART_RECOVERY_VENDOR_A, 812*1024,  16*1024,      EMMC_USER_PART},/* recovery_vendor 16M    p42*/
-  {PART_DTS_A,            828*1024,  14*1024,       EMMC_USER_PART},/* dtimage         14M    p43*/
-  {PART_DTO_A,            842*1024,   2*1024,       EMMC_USER_PART},/* dtoimage        2M     p44*/
-  {PART_TRUSTFIRMWARE_A,  844*1024,  2*1024,        EMMC_USER_PART},/* trustfirmware   2M     p45*/
-  {PART_MODEM_FW_A,       846*1024,  56*1024,       EMMC_USER_PART},/* modem_fw        56M    p46*/
-  {PART_RESERVED4_A,      902*1024,  42*1024,       EMMC_USER_PART},/* reserved4A      42M    p47*/
-  {PART_RECOVERY_VBMETA_A,  944*1024, 2*1024,       EMMC_USER_PART},/* recovery_vbmeta_a   2M    p48*/
-  {PART_ERECOVERY_VBMETA_A, 946*1024, 2*1024,       EMMC_USER_PART},/* erecovery_vbmeta_a  2M    p49*/
-  {PART_VBMETA_A,         948*1024,  4*1024,        EMMC_USER_PART},/* PART_VBMETA_A   4M     p50*/
-  {PART_MODEMNVM_UPDATE_A,952*1024,  80*1024,       EMMC_USER_PART},/* modemnvm update 80M    p51*/
-  {PART_PATCH_A,          1032 *1024,  32*1024,       EMMC_USER_PART},/* patch         32M    p52*/
-  {PART_VERSION_A,        1064*1024,  32*1024,        EMMC_USER_PART},/* version       32M    p53*/
-  {PART_VENDOR_A,         1096*1024,  784*1024,      EMMC_USER_PART},/* vendor         784M   p54*/
-  {PART_PRODUCT_A,        1880*1024, 192*1024,      EMMC_USER_PART},/* product         192M   p55*/
-  {PART_CUST_A,           2072*1024, 192*1024,      EMMC_USER_PART},/* cust            192M   p56*/
+  {PART_ENG_SYSTEM_A,        764*1024,  12*1024,       EMMC_USER_PART},/* eng_system   12M    p40*/
+  {PART_RECOVERY_RAMDISK_A, 776*1024,  32*1024,     EMMC_USER_PART},/* recovery_ramdisk 32M   p41*/
+  {PART_RECOVERY_VENDOR_A, 808*1024,  16*1024,      EMMC_USER_PART},/* recovery_vendor 16M    p42*/
+  {PART_DTS_A,            824*1024,  14*1024,       EMMC_USER_PART},/* dtimage         14M    p43*/
+  {PART_DTO_A,            838*1024,   2*1024,       EMMC_USER_PART},/* dtoimage        2M     p44*/
+  {PART_TRUSTFIRMWARE_A,  840*1024,  2*1024,        EMMC_USER_PART},/* trustfirmware   2M     p45*/
+  {PART_MODEM_FW_A,       842*1024,  56*1024,       EMMC_USER_PART},/* modem_fw        56M    p46*/
+  {PART_ENG_VENDOR_A,     898*1024,  12*1024,       EMMC_USER_PART},/* eng_vendor      12M    p47*/
+  {PART_RESERVED4_A,      910*1024,  26*1024,       EMMC_USER_PART},/* reserved4A      26M    p48*/
+  {PART_PRELOAD_A,        936*1024,   8*1024,       EMMC_USER_PART},/* preload_a         8M    p49*/
+  {PART_RECOVERY_VBMETA_A,  944*1024, 2*1024,       EMMC_USER_PART},/* recovery_vbmeta_a   2M    p50*/
+  {PART_ERECOVERY_VBMETA_A, 946*1024, 2*1024,       EMMC_USER_PART},/* erecovery_vbmeta_a  2M    p51*/
+  {PART_VBMETA_A,         948*1024,  4*1024,        EMMC_USER_PART},/* PART_VBMETA_A   4M     p52*/
+  {PART_MODEMNVM_UPDATE_A,952*1024,  80*1024,       EMMC_USER_PART},/* modemnvm update 80M    p53*/
+  {PART_PATCH_A,          1032 *1024,  32*1024,       EMMC_USER_PART},/* patch         32M    p54*/
+  {PART_VERSION_A,        1064*1024,  32*1024,        EMMC_USER_PART},/* version       32M    p55*/
+  {PART_VENDOR_A,         1096*1024,  784*1024,      EMMC_USER_PART},/* vendor         784M   p56*/
+  {PART_PRODUCT_A,        1880*1024, 192*1024,      EMMC_USER_PART},/* product         192M   p57*/
+  {PART_CUST_A,           2072*1024, 192*1024,      EMMC_USER_PART},/* cust            192M   p58*/
   #ifdef CONFIG_MARKET_INTERNAL
-  {PART_SYSTEM_A,         2264*1024, 3552*1024,     EMMC_USER_PART},/* system          3552M  p57*/
-  {PART_RESERVED5,        5816*1024, 128*1024,       EMMC_USER_PART},/* reserved5      128M   p58*/
-  {PART_USERDATA,         5944*1024, (4UL)*1024*1024,EMMC_USER_PART},/* userdata       4G     p59*/
+  {PART_SYSTEM_A,         2264*1024, 3552*1024,     EMMC_USER_PART},/* system          3552M  p59*/
+  {PART_RESERVED5,        5816*1024, 128*1024,       EMMC_USER_PART},/* reserved5      128M   p60*/
+  {PART_USERDATA,         5944*1024, (4UL)*1024*1024,EMMC_USER_PART},/* userdata       4G     p61*/
   #else
-  {PART_SYSTEM_A,         2264*1024, 4688*1024,     EMMC_USER_PART},/* system          4688M  p57*/
-  {PART_RESERVED5,        6952*1024, 128*1024,       EMMC_USER_PART},/* reserved5      128M   p58*/
-  {PART_USERDATA,         7080*1024, (4UL)*1024*1024,EMMC_USER_PART},/* userdata       4G     p59*/
+  {PART_SYSTEM_A,         2264*1024, 4688*1024,     EMMC_USER_PART},/* system          4688M  p59*/
+  {PART_RESERVED5,        6952*1024, 128*1024,       EMMC_USER_PART},/* reserved5      128M   p60*/
+  {PART_USERDATA,         7080*1024, (4UL)*1024*1024,EMMC_USER_PART},/* userdata       4G     p61*/
   #endif
   {"0", 0, 0, 0},                                        /* total 11848M*/
 };
@@ -111,8 +113,8 @@ static const struct partition partition_table_ufs[] =
   {PART_BOOTFAIL_INFO,    504*1024,  2*1024,        UFS_PART_3},/* bootfail info   2MB    p15*/
   {PART_MISC,             506*1024,  2*1024,        UFS_PART_3},/* misc            2M     p16*/
   {PART_RESERVED2,        508*1024,  32*1024,       UFS_PART_3},/* reserved2       32M    p17*/
-  {PART_RESERVED10,        540*1024,  4*1024,        UFS_PART_3},/* PART_RESERVED10       4M     p18*/
-  {PART_HISEE_FS,         544*1024,  8*1024,        UFS_PART_3},/* hisee_fs        8M     p19*/
+  {PART_HHEE_A,        540*1024,  4*1024,        UFS_PART_3},/* PART_HHEE_A       4M     p18*/
+  {PART_HISEE_FS_A,         544*1024,  8*1024,        UFS_PART_3},/* hisee_fs        8M     p19*/
   {PART_DFX,              552*1024,  16*1024,       UFS_PART_3},/* dfx             16M    p20*/
   {PART_RRECORD,          568*1024,  16*1024,       UFS_PART_3},/* rrecord         16M    p21*/
   {PART_FW_LPM3_A,        584*1024,  256,           UFS_PART_3},/* mcuimage        256K   p22*/
@@ -137,31 +139,33 @@ static const struct partition partition_table_ufs[] =
   {PART_SENSORHUB_A,      716*1024,  16*1024,       UFS_PART_3},/* sensorhub       16M    p34*/
   {PART_KERNEL_A,           732*1024,  24*1024,     UFS_PART_3},/* kernel            24M    p35*/
 #endif
-  {PART_RAMDISK_A,        756*1024,  16*1024,       UFS_PART_3},/* ramdisk         16M    p36*/
-  {PART_RECOVERY_RAMDISK_A, 772*1024,  32*1024,     UFS_PART_3},/* recovery_ramdisk 32M p37*/
-  {PART_RECOVERY_VENDOR_A, 804*1024,  16*1024,      UFS_PART_3},/* recovery_vendor 16M   p38*/
-  {PART_DTS_A,            820*1024,  14*1024,       UFS_PART_3},/* dtimage         14M    p39*/
-  {PART_DTO_A,            834*1024,   2*1024,       UFS_PART_3},/* dtoimage         2M    p40*/
-  {PART_TRUSTFIRMWARE_A,  836*1024,  2*1024,        UFS_PART_3},/* trustfirmware   2M     p41*/
-  {PART_MODEM_FW_A,       838*1024,  56*1024,       UFS_PART_3},/* modem_fw        56M    p42*/
-  {PART_RESERVED4_A,      894*1024,  42*1024,       UFS_PART_3},/* reserved4_A      42M    p43*/
-  {PART_RECOVERY_VBMETA_A,  936*1024, 2*1024,       UFS_PART_3},/* recovery_vbmeta_a  2M    p44*/
-  {PART_ERECOVERY_VBMETA_A, 938*1024, 2*1024,       UFS_PART_3},/* erecovery_vbmeta_a  2M    p45*/
-  {PART_VBMETA_A,         940*1024,  4*1024,        UFS_PART_3},/* PART_VBMETA_A    4M    p46*/
-  {PART_MODEMNVM_UPDATE_A,944*1024,  80*1024,       UFS_PART_3},/* modemnvm update 80M    p47*/
-  {PART_PATCH_A,          1024*1024,  32*1024,      UFS_PART_3},/* patch           32M    p48*/
-  {PART_VERSION_A,        1056*1024,  32*1024,      UFS_PART_3},/* version         24M    p49*/
-  {PART_VENDOR_A,         1088*1024,  784*1024,     UFS_PART_3},/* vendor          784M   p50*/
-  {PART_PRODUCT_A,        1872*1024, 192*1024,      UFS_PART_3},/* product         192M   p51*/
-  {PART_CUST_A,           2064*1024, 192*1024,      UFS_PART_3},/* cust            192M   p52*/
+  {PART_ENG_SYSTEM_A,        756*1024,  12*1024,       UFS_PART_3},/* eng_system    12M    p36*/
+  {PART_RECOVERY_RAMDISK_A, 768*1024,  32*1024,     UFS_PART_3},/* recovery_ramdisk 32M p37*/
+  {PART_RECOVERY_VENDOR_A, 800*1024,  16*1024,      UFS_PART_3},/* recovery_vendor 16M   p38*/
+  {PART_DTS_A,            816*1024,  14*1024,       UFS_PART_3},/* dtimage         14M    p39*/
+  {PART_DTO_A,            830*1024,   2*1024,       UFS_PART_3},/* dtoimage         2M    p40*/
+  {PART_TRUSTFIRMWARE_A,  832*1024,  2*1024,        UFS_PART_3},/* trustfirmware   2M     p41*/
+  {PART_MODEM_FW_A,       834*1024,  56*1024,       UFS_PART_3},/* modem_fw        56M    p42*/
+  {PART_ENG_VENDOR_A,     890*1024,  12*1024,       UFS_PART_3},/* eng_vendor       12M    p43*/
+  {PART_RESERVED4_A,      902*1024,  26*1024,       UFS_PART_3},/* reserved4_A      26M    p44*/
+  {PART_PRELOAD_A,        928*1024,   8*1024,       UFS_PART_3},/* preload_a         8M    p45*/
+  {PART_RECOVERY_VBMETA_A,  936*1024, 2*1024,       UFS_PART_3},/* recovery_vbmeta_a  2M    p46*/
+  {PART_ERECOVERY_VBMETA_A, 938*1024, 2*1024,       UFS_PART_3},/* erecovery_vbmeta_a  2M    p47*/
+  {PART_VBMETA_A,         940*1024,  4*1024,        UFS_PART_3},/* PART_VBMETA_A    4M    p48*/
+  {PART_MODEMNVM_UPDATE_A,944*1024,  80*1024,       UFS_PART_3},/* modemnvm update 80M    p49*/
+  {PART_PATCH_A,          1024*1024,  32*1024,      UFS_PART_3},/* patch           32M    p50*/
+  {PART_VERSION_A,        1056*1024,  32*1024,      UFS_PART_3},/* version         24M    p51*/
+  {PART_VENDOR_A,         1088*1024,  784*1024,     UFS_PART_3},/* vendor          784M   p52*/
+  {PART_PRODUCT_A,        1872*1024, 192*1024,      UFS_PART_3},/* product         192M   p53*/
+  {PART_CUST_A,           2064*1024, 192*1024,      UFS_PART_3},/* cust            192M   p54*/
   #ifdef CONFIG_MARKET_INTERNAL
-  {PART_SYSTEM_A,         2256*1024, 3552*1024,     UFS_PART_3},/* system          3552M  p53*/
-  {PART_RESERVED5,        5808*1024, 128*1024,      UFS_PART_3},/* reserved5       64M    p54*/
-  {PART_USERDATA,         5936*1024, (4UL)*1024*1024,UFS_PART_3},/* userdata       4G     p55*/
+  {PART_SYSTEM_A,         2256*1024, 3552*1024,     UFS_PART_3},/* system          3552M  p55*/
+  {PART_RESERVED5,        5808*1024, 128*1024,      UFS_PART_3},/* reserved5       64M    p56*/
+  {PART_USERDATA,         5936*1024, (4UL)*1024*1024,UFS_PART_3},/* userdata       4G     p57*/
   #else
-  {PART_SYSTEM_A,         2256*1024, 4688*1024,     UFS_PART_3},/* system          4688M  p53*/
-  {PART_RESERVED5,        6944*1024, 128*1024,      UFS_PART_3},/* reserved5       64M    p54*/
-  {PART_USERDATA,         7072*1024, (4UL)*1024*1024,UFS_PART_3},/* userdata       4G     p55*/
+  {PART_SYSTEM_A,         2256*1024, 4688*1024,     UFS_PART_3},/* system          4688M  p55*/
+  {PART_RESERVED5,        6944*1024, 128*1024,      UFS_PART_3},/* reserved5       64M    p56*/
+  {PART_USERDATA,         7072*1024, (4UL)*1024*1024,UFS_PART_3},/* userdata       4G     p57*/
   #endif
   {"0", 0, 0, 0},
 };

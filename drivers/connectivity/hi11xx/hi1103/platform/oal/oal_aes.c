@@ -1232,7 +1232,7 @@ OAL_STATIC OAL_CONST oal_uint32 crypto_il_tab[4][256] = {
 *****************************************************************************/
 
 
-oal_uint32  oal_aes_expand_key(oal_aes_key_stru    *pst_aes_key,
+oal_uint32  oal_aes_expand_key_etc(oal_aes_key_stru    *pst_aes_key,
                                     OAL_CONST oal_uint8 *puc_key,
 		                            oal_uint32           ul_key_len)
 {
@@ -1307,7 +1307,7 @@ oal_uint32  oal_aes_expand_key(oal_aes_key_stru    *pst_aes_key,
 }
 
 
-oal_uint32  oal_aes_encrypt(oal_aes_key_stru    *pst_aes_key,
+oal_uint32  oal_aes_encrypt_etc(oal_aes_key_stru    *pst_aes_key,
                                oal_uint8            *puc_ciphertext,
                                OAL_CONST oal_uint8  *puc_plaintext)
 {
@@ -1365,7 +1365,7 @@ oal_uint32  oal_aes_encrypt(oal_aes_key_stru    *pst_aes_key,
 }
 
 
-oal_uint32  oal_aes_decrypt(oal_aes_key_stru    *pst_aes_key,
+oal_uint32  oal_aes_decrypt_etc(oal_aes_key_stru    *pst_aes_key,
                                 oal_uint8            *puc_plaintext,
                                 OAL_CONST oal_uint8  *puc_ciphertext)
 {
@@ -1543,13 +1543,13 @@ OAL_STATIC OAL_INLINE oal_uint32 oal_crypto_cipher_encrypt_one(oal_aes_key_stru 
 {
     oal_uint alignmask = 3;
 
-    if ((((oal_uint)dst) | (oal_uint)src) & alignmask)
+    if ((((oal_uint)dst) | ((oal_uint)src)) & alignmask)
     {
         /* TBD 如果地址没有4字节对齐，需要修正后进行加密，这里简化处理，直接返回，并报告错误 */
         return OAL_ERR_CODE_PMF_ALIGN_ERR;
     }
 
-    return oal_aes_encrypt(aes_key, dst, src);
+    return oal_aes_encrypt_etc(aes_key, dst, src);
 }
 
 
@@ -1658,7 +1658,7 @@ OAL_STATIC oal_void oal_aes_cmac(oal_aes_key_stru *aes_key, oal_uint8 *scratch, 
 }
 
 
-oal_uint32 oal_crypto_aes_cmac_encrypt(oal_aes_ctx_stru *aes_ctx, oal_netbuf_stru *pst_netbuf)
+oal_uint32 oal_crypto_aes_cmac_encrypt_etc(oal_aes_ctx_stru *aes_ctx, oal_netbuf_stru *pst_netbuf)
 {
     oal_mmie_stru      *mmie = OAL_PTR_NULL;
     oal_uint8          *pn;
@@ -1777,7 +1777,7 @@ oal_void oal_crypto_bip_enmic(oal_uint8 uc_igtk_keyid,
     st_aes_ctx.key_idx = uc_igtk_keyid;
 
     /* 对帧体进行AES-CMAC加密 */
-    ul_ret = oal_crypto_aes_cmac_encrypt(&st_aes_ctx, pst_netbuf);
+    ul_ret = oal_crypto_aes_cmac_encrypt_etc(&st_aes_ctx, pst_netbuf);
     if (OAL_SUCC != ul_ret)
     {
         return ;
@@ -1788,7 +1788,7 @@ oal_void oal_crypto_bip_enmic(oal_uint8 uc_igtk_keyid,
 #endif
 
 
-oal_uint32 oal_crypto_bip_demic(oal_uint8 uc_igtk_keyid,
+oal_uint32 oal_crypto_bip_demic_etc(oal_uint8 uc_igtk_keyid,
                                 oal_uint8 *pst_igtk_key,
                                 oal_uint8 *pst_igtk_seq,
                                 oal_netbuf_stru *pst_netbuf)
@@ -1815,13 +1815,13 @@ oal_uint32 oal_crypto_bip_demic(oal_uint8 uc_igtk_keyid,
 
 
 /*lint -e19*/
-oal_module_symbol(oal_aes_expand_key);
-oal_module_symbol(oal_aes_encrypt);
-oal_module_symbol(oal_aes_decrypt);
+oal_module_symbol(oal_aes_expand_key_etc);
+oal_module_symbol(oal_aes_encrypt_etc);
+oal_module_symbol(oal_aes_decrypt_etc);
 #if (!defined(_PRE_PRODUCT_ID_HI110X_HOST))
 oal_module_symbol(oal_crypto_bip_enmic);
 #endif
-oal_module_symbol(oal_crypto_bip_demic);
+oal_module_symbol(oal_crypto_bip_demic_etc);
 
 
 

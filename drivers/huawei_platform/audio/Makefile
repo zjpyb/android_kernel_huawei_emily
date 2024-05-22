@@ -11,4 +11,4 @@ obj-$(CONFIG_AK4376_KERNEL_4_1)	+= ak4376-kernel-4-1/
 obj-$(CONFIG_HIFI_VIR_DAI)	+= hifi_vir_dai/
 obj-$(CONFIG_USB_ANALOG_HS_MODULE)	+= usb_analog_hs_module/
 obj-$(CONFIG_USB_AUDIO_POWER)	+= usb_audio_power/
-
+obj-$(CONFIG_USB_AUDIO_COMMON)	+= usb_audio_common/

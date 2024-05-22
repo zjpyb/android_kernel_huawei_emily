@@ -19,6 +19,10 @@
 #include <huawei_platform/emcom/emcom_xengine.h>
 #endif
 
+#ifdef CONFIG_HUAWEI_NWEVAL
+#include <huawei_platform/emcom/network_evaluation.h>
+#endif
+
 #undef HWLOG_TAG
 #define HWLOG_TAG emcom_netlink
 HWLOG_REGIST();
@@ -54,14 +58,14 @@ void emcom_send_msg2daemon(int cmd, const void*data, int len)
 
 	if (g_emcom_module_state != EMCOM_NETLINK_INIT ||
 	    skb_queue_len(&emcom_skb_queue) > NL_SKB_QUEUE_MAXLEN){
-		EMCOM_LOGE("emcom_send_msg2daemon: state wrong.\n");
+		EMCOM_LOGE(" emcom_send_msg2daemon: state wrong.\n");
 		return;
 	}
 
 	/* May be called in any context. */
 	skb_out = nlmsg_new(len, GFP_ATOMIC);
 	if (!skb_out){
-		EMCOM_LOGE("emcom_send_msg2daemon: Out of memry.\n");
+		EMCOM_LOGE(" emcom_send_msg2daemon: Out of memry.\n");
 		return; /* Out of memory */
 	}
 
@@ -98,6 +102,12 @@ static void emcom_common_evt_proc(struct nlmsghdr *nlh, uint8_t *pdata, uint16_t
             /*save user space progress pid when register netlink socket.*/
             g_user_space_pid = nlh->nlmsg_pid;
             EMCOM_LOGD("emcom netlink receive reg packet: g_user_space_pid = %d\n",nlh->nlmsg_pid);
+            #ifdef CONFIG_HUAWEI_NWEVAL
+            nweval_on_dk_connected();
+            #endif
+#ifdef CONFIG_SMART_MP
+            Emcom_Xengine_SmartMpOnDK_Connect();
+#endif
             break;
         case NETLINK_EMCOM_DK_UNREG:
             EMCOM_LOGD("emcom netlink receive unreg packet\n");
@@ -149,6 +159,11 @@ static void kernel_emcom_receive(struct sk_buff *__skb)
                 #endif
                 case EMCOM_SUB_MOD_SMARTCARE:
                     break;
+                #ifdef CONFIG_HUAWEI_NWEVAL
+                case EMCOM_SUB_MOD_NWEVAL:
+                    nweval_event_process(nlh->nlmsg_type, packet, data_len);
+                    break;
+                #endif
                 default:
                     EMCOM_LOGI("emcom netlink unsupport subMod, the subMod is %d.\n", subMod);
                     break;
@@ -210,7 +225,7 @@ static void emcom_netlink_init(void)
                                     NETLINK_EMCOM,
                                     &emcom_nl_cfg);
     if(!g_emcom_nlfd)
-    EMCOM_LOGE("%s: emcom_netlink_init failed\n",__func__);
+    EMCOM_LOGE(" %s: emcom_netlink_init failed\n",__func__);
     else
     EMCOM_LOGI("%s: emcom_netlink_init success\n",__func__);
 
@@ -243,6 +258,9 @@ static int __init emcom_netlink_module_init(void)
     emcom_netlink_init();
     #ifdef CONFIG_HUAWEI_XENGINE
     Emcom_Xengine_Init();
+    #endif
+    #ifdef CONFIG_HUAWEI_NWEVAL
+    nweval_init();
     #endif
     g_emcom_module_state = EMCOM_NETLINK_INIT;
     return 0;

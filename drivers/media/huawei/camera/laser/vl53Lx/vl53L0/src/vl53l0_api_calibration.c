@@ -49,6 +49,8 @@
 uint32_t refArrayQuadrants[4] = {REF_ARRAY_SPAD_10, REF_ARRAY_SPAD_5,
 		REF_ARRAY_SPAD_0, REF_ARRAY_SPAD_5 };
 
+extern int memcpy_s(void *dest, size_t destMax, const void *src, size_t count);
+
 VL53L0_Error VL53L0_perform_xtalk_calibration(VL53L0_DEV Dev,
 			FixPoint1616_t XTalkCalDistance,
 			FixPoint1616_t *pXTalkCompensationRateMegaCps)
@@ -204,7 +206,7 @@ VL53L0_Error VL53L0_perform_offset_calibration(VL53L0_DEV Dev,
 	FixPoint1616_t StoredMeanRange;
 	uint32_t StoredMeanRangeAsInt;
 	uint32_t CalDistanceAsInt_mm;
-	uint8_t SequenceStepEnabled;
+	uint8_t SequenceStepEnabled = 0;
 	int meas = 0;
 
 	if (CalDistanceMilliMeter <= 0)
@@ -366,8 +368,8 @@ VL53L0_Error VL53L0_get_offset_calibration_data_micro_meter(VL53L0_DEV Dev,
 VL53L0_Error VL53L0_apply_offset_adjustment(VL53L0_DEV Dev)
 {
 	VL53L0_Error Status = VL53L0_ERROR_NONE;
-	int32_t CorrectedOffsetMicroMeters;
-	int32_t CurrentOffsetMicroMeters;
+	int32_t CorrectedOffsetMicroMeters = 0;
+	int32_t CurrentOffsetMicroMeters = 0;
 
 	/* if we run on this function we can read all the NVM info
 	 * used by the API
@@ -697,7 +699,7 @@ VL53L0_Error VL53L0_perform_ref_spad_management(VL53L0_DEV Dev,
 	uint32_t lastSpadIndex = 0;
 	int32_t nextGoodSpad = 0;
 	uint16_t targetRefRate = 0x0A00; /* 20 MCPS in 9:7 format */
-	uint16_t peakSignalRateRef;
+	uint16_t peakSignalRateRef = 0;
 	uint32_t needAptSpads = 0;
 	uint32_t index = 0;
 	uint32_t spadArraySize = 6;
@@ -855,7 +857,7 @@ VL53L0_Error VL53L0_perform_ref_spad_management(VL53L0_DEV Dev,
 		isApertureSpads_int = needAptSpads;
 		refSpadCount_int	= minimumSpadCount;
 
-		memcpy(lastSpadArray, Dev->Data.SpadData.RefSpadEnables,
+		memcpy_s(lastSpadArray, spadArraySize, Dev->Data.SpadData.RefSpadEnables,
 				spadArraySize);
 		lastSignalRateDiff = abs(peakSignalRateRef -
 			targetRefRate);

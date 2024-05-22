@@ -13,7 +13,6 @@
 
 #include "hisi_overlay_utils.h"
 
-
 uint32_t g_dss_module_base[DSS_CHN_MAX_DEFINE][MODULE_CHN_MAX] = {
 	// D0
 	{
@@ -998,6 +997,7 @@ void hisi_dss_smmu_on(struct hisi_fb_data_type *hisifd)
 		set_reg(smmu_base + SMMU_FAMA_CTRL0, 0x80, 14, 0);
 		set_reg(smmu_base + SMMU_FAMA_CTRL1, fama_ptw_msb, 7, 0);
 	}
+	configure_dss_service_security(DSS_SMMU_INIT, 0/*not used*/, 0/*not used*/);
 }
 /*lint -e613 -e838 -e679*/
 void hisi_mdc_smmu_on(struct hisi_fb_data_type *hisifd)
@@ -2695,7 +2695,7 @@ static int hisi_dss_arsr2p_config_check_width(dss_rect_t *dest_rect, int source_
 		(source_width > ARSR2P_MAX_WIDTH) || (dest_rect->w > ARSR2P_MAX_WIDTH)) {
 		if ((!hscl_en) && (!vscl_en)) {
 			//sharpen_en = false;
-			HISI_FB_INFO("fb%d, src_rect.w(%d) or dst_rect.w(%d) is smaller than 16 or larger than 2560, arsr2p bypass!\n",
+			HISI_FB_DEBUG("fb%d, src_rect.w(%d) or dst_rect.w(%d) is smaller than 16 or larger than 2560, arsr2p bypass!\n",
 				index, source_width, dest_rect->w);
 			return 0;
 		} else {
@@ -3283,13 +3283,22 @@ static int hisi_dss_check_wblayer_buff(struct hisi_fb_data_type *hisifd, dss_wb_
 	unsigned long buf_addr = 0;
 	bool succ = true;
 
+	if (!hisifd || !(hisifd->pdev)) {
+		HISI_FB_ERR("hisifd is NULL!\n");
+		return -EINVAL;
+	}
+
 	if (NULL == hisifd->ion_client) {
 		HISI_FB_ERR("fb%d, ion_client is NULL!\n", hisifd->index);
 		return -EINVAL;
 	}
 
 	if (wb_layer && (wb_layer->dst.shared_fd >= 0)) {
+	#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0)
+		ionhnd = ion_import_dma_buf_fd(hisifd->ion_client, wb_layer->dst.shared_fd);
+	#else
 		ionhnd = ion_import_dma_buf(hisifd->ion_client, wb_layer->dst.shared_fd);
+	#endif
 		if (IS_ERR(ionhnd)) {
 			ionhnd = NULL;
 			HISI_FB_INFO("fb%d, failed to ion_import_dma_buf, shared_fd=%d!\n",
@@ -3310,9 +3319,8 @@ static int hisi_dss_check_wblayer_buff(struct hisi_fb_data_type *hisifd, dss_wb_
 					ion_unmap_iommu(hisifd->ion_client, ionhnd);
 				}
 			} else {
-				if (ion_phys(hisifd->ion_client, ionhnd, &buf_addr, &buf_len)) {
-					HISI_FB_ERR("fb%d, failed to ion_phys, shared_fd=%d!\n",
-						hisifd->index, wb_layer->dst.shared_fd);
+				if (hisifb_ion_phys(hisifd->ion_client, ionhnd, &(hisifd->pdev->dev), &buf_addr, &buf_len)) {
+					HISI_FB_ERR("fb%d, failed to ion_phys, shared_fd=%d!\n",hisifd->index, wb_layer->dst.shared_fd);
 					succ = false;
 				} else {
 					if (buf_addr != wb_layer->dst.phy_addr) {
@@ -3577,13 +3585,22 @@ static int hisi_dss_check_layer_buff(struct hisi_fb_data_type *hisifd, dss_layer
 	unsigned long buf_addr = 0;
 	bool succ = true;
 
+	if (!hisifd || !(hisifd->pdev)) {
+		HISI_FB_ERR("hisifd is NULL!\n");
+		return -EINVAL;
+	}
+
 	if (NULL == hisifd->ion_client) {
 		HISI_FB_ERR("fb%d, ion_client is NULL!\n", hisifd->index);
 		return -EINVAL;
 	}
 
 	if (layer && layer->img.shared_fd >= 0) {
+	#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0)
+		ionhnd = ion_import_dma_buf_fd(hisifd->ion_client, layer->img.shared_fd);
+	#else
 		ionhnd = ion_import_dma_buf(hisifd->ion_client, layer->img.shared_fd);
+	#endif
 		if (IS_ERR(ionhnd)) {
 			ionhnd = NULL;
 			HISI_FB_ERR("fb%d, layer_idx%d, failed to ion_import_dma_buf, shared_fd=%d!\n",
@@ -3605,9 +3622,8 @@ static int hisi_dss_check_layer_buff(struct hisi_fb_data_type *hisifd, dss_layer
 					ion_unmap_iommu(hisifd->ion_client, ionhnd);
 				}
 			} else {
-				if (ion_phys(hisifd->ion_client, ionhnd, &buf_addr, &buf_len)) {
-					HISI_FB_ERR("fb%d, layer_idx%d, failed to ion_phys, shared_fd=%d!\n",
-						hisifd->index, layer->layer_idx, layer->img.shared_fd);
+				if (hisifb_ion_phys(hisifd->ion_client, ionhnd, &(hisifd->pdev->dev), &buf_addr, &buf_len)) {
+					HISI_FB_ERR("fb%d, layer_idx%d, failed to ion_phys, shared_fd=%d!\n",hisifd->index, layer->layer_idx, layer->img.shared_fd);
 					succ = false;
 				} else {
 					if (buf_addr != layer->img.phy_addr) {

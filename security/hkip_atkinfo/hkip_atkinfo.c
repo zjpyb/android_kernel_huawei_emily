@@ -24,10 +24,10 @@
 #include <linux/arm-smccc.h>
 #include <linux/compiler.h>
 #include <linux/hisi/hisi_hhee.h>
-#include <huawei_platform/log/imonitor.h>
 #include <asm/compiler.h>
 #include <asm/io.h>
 #include "hkip_atkinfo.h"
+#include <chipset_common/security/hw_kernel_stp_interface.h>
 
 static struct hkip_atkinfo *g_atkinfo;
 unsigned int disable_upload = 0;
@@ -65,8 +65,11 @@ static int upload_events_kill_atkprocess(struct hkip_atkinfo *atkinfo)
 	uint64_t start = ftr->read_offset;
 	uint64_t end = hdr->write_offset;
 	uint64_t i;
-	int ret;
+	int ret = 0;
+	struct stp_item item;
+	char att_info[MAX_UPLOAD_INFO_LEN + 1] = {0};
 
+	(void)memset(&item, 0, sizeof(item));
 	if (start >= end) {
 		pr_err("%s: Stop to upload, Wrong offset(%llu,%llu)!!!\n", MODULE_NAME, start, end);
 		/*if write_offset overflow, will reset read_offset*/
@@ -85,11 +88,11 @@ static int upload_events_kill_atkprocess(struct hkip_atkinfo *atkinfo)
 
 	pr_info("%s: uploading the attack events(%llu,%llu)\n", MODULE_NAME, start, end);
 
-	obj_id = imonitor_create_eventobj(HKIP_ATKINFO_IMONITOR_ID);
-	if (!obj_id) {
-		pr_err("%s: fail to create imonitor obj\n", MODULE_NAME);
-		return -ENOMEM;
-	}
+	item.id = item_info[HKIP].id;
+	item.status = STP_RISK;
+	item.credible = STP_CREDIBLE;
+	item.version = 0;
+	(void)strncpy(item.name, item_info[HKIP].name, STP_ITEM_NAME_LEN - 1);
 
 	for (i = start; i < end; i++) {
 		uint32_t j;
@@ -102,17 +105,13 @@ static int upload_events_kill_atkprocess(struct hkip_atkinfo *atkinfo)
 
 		if ((HHEE_EV_MW_START < ets[j].type && ets[j].type < HHEE_EV_MW_END) ||
 			(HHEE_EV_SR_START < ets[j].type && ets[j].type < HHEE_EV_SR_END)) {
-
-			ret = imonitor_set_param(obj_id, E940000000_ATKTYPE_INT, ets[j].type);
-			if (ret) {
-				pr_err("%s: imonitor_set_param failed, ret = %d\n", MODULE_NAME, ret);
-				goto error_obj;
+			(void)memcpy(att_info, (char *) &ets[j].type, sizeof(ets[0].type));
+			ret = kernel_stp_upload(item, att_info);
+			if (ret != 0) {
+				pr_err("stp %s mod_sign upload fail", att_info);
 			}
-
-			ret = imonitor_send_event(obj_id);
-			if (ret < 0) {
-				pr_err("%s: imonitor_send_event failed, ret = %d\n", MODULE_NAME, ret);
-				goto error_obj;
+			else {
+				pr_err("stp %s mod_sign upload suc", att_info);
 			}
 
 			/*modify read_offset once finished to upload events */
@@ -128,10 +127,7 @@ static int upload_events_kill_atkprocess(struct hkip_atkinfo *atkinfo)
 		}
 	}
 
-	ret = 0;
-
 error_obj:
-	imonitor_destroy_eventobj(obj_id);
 	return ret;
 }
 
@@ -344,7 +340,7 @@ static int hkip_atkinfo_remove(struct platform_device *pdev)
 
 	cancel_delayed_work_sync(&atkinfo->atkinfo_work);
 
-	del_timer(&atkinfo->timer);
+	(void)del_timer(&atkinfo->timer);
 
 	iounmap((void __iomem *)atkinfo->header);
 

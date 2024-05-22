@@ -8,6 +8,9 @@
 #include <linux/pid_namespace.h>	/* For task_active_pid_ns.  */
 #include <uapi/linux/ptrace.h>
 
+extern int ptrace_access_vm(struct task_struct *tsk, unsigned long addr,
+			    void *buf, int len, unsigned int gup_flags);
+
 /*
  * Ptrace flags
  *
@@ -59,6 +62,7 @@ extern void exit_ptrace(struct task_struct *tracer, struct list_head *dead);
 #define PTRACE_MODE_NOAUDIT	0x04
 #define PTRACE_MODE_FSCREDS 0x08
 #define PTRACE_MODE_REALCREDS 0x10
+#define PTRACE_MODE_PERF_EVENT 0x20
 
 /* shorthands for READ/ATTACH and FSCREDS/REALCREDS combinations */
 #define PTRACE_MODE_READ_FSCREDS (PTRACE_MODE_READ | PTRACE_MODE_FSCREDS)

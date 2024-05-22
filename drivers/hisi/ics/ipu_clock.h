@@ -24,6 +24,8 @@
 struct ics_clock {
 	struct clk *ipu_clk_ptr;
 	struct clk *vcodecbus_clk_ptr;
+	struct clk *vote_high_volt;
+	struct clk *vote_normal_volt;
 	unsigned int ipu_low;
 	unsigned int ipu_middle;
 	unsigned int ipu_high;
@@ -33,9 +35,11 @@ struct ics_clock {
 	unsigned int vcodecbus_high;
 	unsigned int vcodecbus_default;
 	unsigned int vcodecbus_high2default;
+	unsigned int default_rate;
 	unsigned int start_rate;
 	unsigned int curr_rate;
 	unsigned int stop_rate;
+	unsigned int voted_peri_volt;
 	struct mutex clk_mutex;
 	bool lpm3_set_vcodecbus;
 };
@@ -44,5 +48,8 @@ extern int ipu_clock_init(struct device *dev, struct ics_clock *clk, bool lpm3_s
 extern int ipu_clock_start(struct ics_clock *clk);
 extern void ipu_clock_stop(struct ics_clock *clk);
 extern int ipu_clock_set_rate(struct ics_clock *clk, unsigned int new_rate);
+extern int ipu_vote_peri(struct ics_clock *clk);
+extern void ipu_vote_peri_withdraw(struct ics_clock *clk);
+extern void ipu_clock_set_start_default(struct ics_clock *clk);
 extern int ipu_clock_set_start_rate(struct ics_clock *clk, unsigned int new_rate);
 #endif

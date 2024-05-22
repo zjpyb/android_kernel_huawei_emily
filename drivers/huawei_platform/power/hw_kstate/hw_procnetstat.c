@@ -33,6 +33,7 @@
 #define MAX_CTRL_CMD_LENGTH 512
 #define MAX_SHARED_UID_NUM 80
 #define CTRL_SET_SHARED_UID 1
+#define DEFAULT_SHARED_UID_NUMBER 4
 
 #define PROC_NET_INFO_NODE "proc_netstat"
 #define STATS "stats"
@@ -41,8 +42,7 @@
 
 /* max store 80 shared uids */
 static int shared_uids[MAX_SHARED_UID_NUM] = {0};
-/* default shared uid is 1000 */
-static int shared_uid_num = 2;
+static int shared_uid_num = 0;
 
 /* stat_splock used to stat data */
 static DEFINE_RWLOCK(stat_splock);
@@ -482,7 +482,9 @@ static int process_exit_callback(struct notifier_block *self, ulong cmd, void *v
 static void set_default_shared_uid(void) {
 	shared_uids[0] = 0;
 	shared_uids[1] = 1000;
-	shared_uid_num = 2;
+	shared_uids[2] = 1001;
+	shared_uids[3] = 1010;
+	shared_uid_num = DEFAULT_SHARED_UID_NUMBER;
 }
 
 /* write ctrl node will call this func. */
@@ -491,10 +493,12 @@ static ssize_t ctrl_stat_write(struct file *file, const char __user *buffer, siz
 	char input_buf[MAX_CTRL_CMD_LENGTH] = {0};
 	int cmd;
 	int val;
-	int index = 1;
+	int index = DEFAULT_SHARED_UID_NUMBER;
 	char *curr_pointer;
 	char *blank;
 	int ret;
+	int i;
+	bool valid;
 
 	if (count >= MAX_CTRL_CMD_LENGTH) {
 		pr_err("%s, exceed max count %ld\n", __func__, count);
@@ -532,8 +536,18 @@ static ssize_t ctrl_stat_write(struct file *file, const char __user *buffer, siz
 					write_unlock_bh(&stat_splock);
 					return -EINVAL;
 				}
-				shared_uids[index] = val;
-				if (++index >= MAX_SHARED_UID_NUM) {
+				valid = false;
+				for (i = 0; i < DEFAULT_SHARED_UID_NUMBER; i++) {
+					if (shared_uids[i] == val) {
+						valid = true;
+						break;
+					}
+				}
+				if (!valid && index >= DEFAULT_SHARED_UID_NUMBER && index < MAX_SHARED_UID_NUM) {
+					shared_uids[index] = val;
+					index++;
+				}
+				if (index >= MAX_SHARED_UID_NUM) {
 					break;
 				}
 				curr_pointer = ++blank;

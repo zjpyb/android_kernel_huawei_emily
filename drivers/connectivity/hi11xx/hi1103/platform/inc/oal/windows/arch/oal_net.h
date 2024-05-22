@@ -617,15 +617,21 @@ typedef struct ieee80211_mgmt {
 enum nl80211_band {
     NL80211_BAND_2GHZ,
     NL80211_BAND_5GHZ,
+    NL80211_BAND_60GHZ,
+    NUM_NL80211_BANDS,
 };
 
 enum ieee80211_band {
     IEEE80211_BAND_2GHZ = NL80211_BAND_2GHZ,
     IEEE80211_BAND_5GHZ = NL80211_BAND_5GHZ,
+    IEEE80211_BAND_60GHZ = NL80211_BAND_60GHZ,
 
     /* keep last */
     IEEE80211_NUM_BANDS
 };
+
+#define HISI_IEEE80211_BAND_2GHZ    IEEE80211_BAND_2GHZ
+#define HISI_IEEE80211_BAND_5GHZ    IEEE80211_BAND_5GHZ
 
 enum nl80211_channel_type {
     NL80211_CHAN_NO_HT,
@@ -703,7 +709,9 @@ enum station_info_flags {
 	STATION_INFO_NONPEER_PM		= 1<<23,
 	STATION_INFO_RX_BYTES64		= 1<<24,
 	STATION_INFO_TX_BYTES64		= 1<<25,
-
+	STATION_INFO_NOISE		    = 1<<26,
+	STATION_INFO_SNR		    = 1<<27,
+	STATION_INFO_CNAHLOAD		= 1<<28,
 };
 typedef struct ieee80211_channel {
     enum ieee80211_band band;
@@ -1332,6 +1340,9 @@ typedef struct oal_station_info_tag
     oal_uint32 tx_packets;
 
     oal_int32 generation;
+    oal_int32    snr;
+    oal_int32    noise;        /* 底噪 */
+    oal_int32    chload;          /* 信道繁忙程度*/ 
 }oal_station_info_stru;
 #else
 struct sta_bss_parameters {
@@ -1387,6 +1398,9 @@ typedef struct oal_station_info_tag
 	enum nl80211_mesh_power_mode local_pm;
 	enum nl80211_mesh_power_mode peer_pm;
 	enum nl80211_mesh_power_mode nonpeer_pm;
+	oal_int32    snr;
+	oal_int32    noise;        /* 底噪 */
+    oal_int32    chload;          /* 信道繁忙程度*/ 
 }oal_station_info_stru;
 #endif
 
@@ -3142,6 +3156,12 @@ OAL_STATIC OAL_INLINE oal_void *oal_nla_data(OAL_CONST oal_nlattr_stru *pst_nla)
 OAL_STATIC OAL_INLINE oal_uint32 oal_nla_get_u32(OAL_CONST oal_nlattr_stru *pst_nla)
 {
     return *(oal_uint32 *)oal_nla_data(pst_nla);
+}
+
+
+OAL_STATIC OAL_INLINE oal_uint32 oal_nla_total_size(OAL_CONST oal_nlattr_stru *pst_nla)
+{
+    return pst_nla->nla_len;
 }
 
 

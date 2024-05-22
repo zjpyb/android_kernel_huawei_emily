@@ -18,8 +18,9 @@ extern "C" {
 #define LOGGER_GET_HLASTWORD		_IO(__HTRANSIO, 5)
 #define LOGGER_SET_HCFG_FLAG		_IO(__HTRANSIO, 6)
 #define LOGGER_GET_HCFG_FLAG		_IO(__HTRANSIO, 7)
+#define LOGGER_SET_FEATURE              _IO(__HTRANSIO, 8)
 
-#define LOGGER_CMD_MAX			_IO(__HTRANSIO, 8)
+#define LOGGER_CMD_MAX			_IO(__HTRANSIO, 9)
 
 #ifdef __cplusplus
 }

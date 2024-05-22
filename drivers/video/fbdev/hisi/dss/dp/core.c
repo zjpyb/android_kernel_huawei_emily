@@ -37,11 +37,11 @@ static void dptx_intr_en(struct dp_ctrl *dptx, uint32_t bits)
 	uint32_t ien;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return;
 	}
 
-	HISI_FB_INFO("Enable DPTX Intr: %x \n", bits);
+	HISI_FB_INFO("[DP] Enable DPTX Intr: %x \n", bits);
 	ien = dptx_readl(dptx, DPTX_IEN);
 	ien |= bits;
 	dptx_writel(dptx, DPTX_IEN, ien);
@@ -60,11 +60,11 @@ static void dptx_intr_dis(struct dp_ctrl *dptx, uint32_t bits)
 	uint32_t ien;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return;
 	}
 
-	HISI_FB_INFO("Disable DPTX Intr: %x \n", bits);
+	HISI_FB_INFO("[DP] Disable DPTX Intr: %x \n", bits);
 	ien = dptx_readl(dptx, DPTX_IEN);
 	ien &= ~bits;
 	dptx_writel(dptx, DPTX_IEN, ien);
@@ -82,7 +82,7 @@ void dptx_global_intr_en(struct dp_ctrl *dptx)
 	uint32_t reg = 0;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return;
 	}
 
@@ -121,7 +121,7 @@ void dptx_global_intr_dis(struct dp_ctrl *dptx)
 	uint32_t reg = 0;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return;
 	}
 
@@ -156,7 +156,7 @@ void dptx_global_intr_dis(struct dp_ctrl *dptx)
 void dptx_global_intr_clear(struct dp_ctrl *dptx)
 {
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return;
 	}
 
@@ -171,7 +171,7 @@ void dptx_aux_disreset(struct dp_ctrl *dptx, bool enable)
 	uint32_t reg;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return;
 	}
 
@@ -203,7 +203,7 @@ void dptx_soft_reset(struct dp_ctrl *dptx, uint32_t bits)
 	uint32_t rst;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return;
 	}
 
@@ -229,7 +229,7 @@ void dptx_soft_reset(struct dp_ctrl *dptx, uint32_t bits)
 void dptx_soft_reset_all(struct dp_ctrl *dptx)
 {
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return;
 	}
 
@@ -239,7 +239,7 @@ void dptx_soft_reset_all(struct dp_ctrl *dptx)
 void dptx_phy_soft_reset(struct dp_ctrl *dptx)
 {
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return;
 	}
 
@@ -252,7 +252,7 @@ void dptx_typec_reset_ack(struct dp_ctrl *dptx)
 	uint32_t reg;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return;
 	}
 
@@ -275,7 +275,7 @@ void dptx_core_init_phy(struct dp_ctrl *dptx)
 	uint32_t phyifctrl;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return;
 	}
 
@@ -302,7 +302,7 @@ bool dptx_check_dptx_id(struct dp_ctrl *dptx)
 	uint32_t dptx_id;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return false;
 	}
 
@@ -326,7 +326,7 @@ int dptx_core_init(struct dp_ctrl *dptx)
 	uint32_t version;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return -EINVAL;
 	}
 
@@ -371,7 +371,7 @@ int dptx_core_init(struct dp_ctrl *dptx)
 int dptx_core_deinit(struct dp_ctrl *dptx)
 {
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return -EINVAL;
 	}
 
@@ -388,7 +388,7 @@ void dptx_phy_set_lanes_status(struct dp_ctrl *dptx, bool bopen)
 	uint32_t phyifctrl;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return;
 	}
 
@@ -412,7 +412,7 @@ int dptx_phy_get_lanes(struct dp_ctrl *dptx)
 	uint32_t val;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return  -EINVAL;
 	}
 
@@ -429,11 +429,11 @@ void dptx_phy_set_lanes(struct dp_ctrl *dptx, uint32_t lanes)
 	uint32_t val;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return;
 	}
 
-	HISI_FB_INFO("DPTX set lanes =%d\n", lanes);
+	HISI_FB_INFO("[DP] DPTX set lanes =%d\n", lanes);
 
 	switch (lanes) {
 	case 1:
@@ -446,7 +446,7 @@ void dptx_phy_set_lanes(struct dp_ctrl *dptx, uint32_t lanes)
 		val = 2;
 		break;
 	default:
-		HISI_FB_ERR("Invalid number of lanes %d\n", lanes);
+		HISI_FB_ERR("[DP] Invalid number of lanes %d\n", lanes);
 		return;
 	}
 
@@ -462,11 +462,11 @@ void dptx_phy_set_rate(struct dp_ctrl *dptx, uint32_t rate)
 	uint32_t phyifctrl;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return;
 	}
 
-	HISI_FB_INFO("DPTX set rate=%d\n", rate);
+	HISI_FB_INFO("[DP] DPTX set rate=%d\n", rate);
 
 	phyifctrl = dptx_readl(dptx, DPTX_PHYIF_CTRL);
 
@@ -477,7 +477,7 @@ void dptx_phy_set_rate(struct dp_ctrl *dptx, uint32_t rate)
 	case DPTX_PHYIF_CTRL_RATE_HBR3:
 		break;
 	default:
-		HISI_FB_ERR("Invalid PHY rate %d\n", rate);
+		HISI_FB_ERR("[DP] Invalid PHY rate %d\n", rate);
 		break;
 	}
 
@@ -493,7 +493,7 @@ int dwc_phy_get_rate(struct dp_ctrl *dptx)
 	uint32_t rate;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return  -EINVAL;
 	}
 
@@ -509,10 +509,10 @@ int dptx_phy_wait_busy(struct dp_ctrl *dptx, uint32_t lanes)
 	unsigned long dw_jiffies = 0;
 	uint32_t phyifctrl;
 	uint32_t mask = 0;
-	HISI_FB_INFO("lanes=%d\n", lanes);
+	HISI_FB_INFO("[DP] lanes=%d\n", lanes);
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return  -EINVAL;
 	}
 
@@ -530,7 +530,7 @@ int dptx_phy_wait_busy(struct dp_ctrl *dptx, uint32_t lanes)
 		mask |= DPTX_PHYIF_CTRL_BUSY(0);
 		break;
 	default:
-		HISI_FB_ERR("Invalid number of lanes %d\n", lanes);
+		HISI_FB_ERR("[DP] Invalid number of lanes %d\n", lanes);
 		break;
 	}
 
@@ -554,20 +554,20 @@ void dptx_phy_set_pre_emphasis(struct dp_ctrl *dptx,
 			       uint32_t level)
 {
 	uint32_t phytxeq;
-	HISI_FB_INFO("lane=%d, level=0x%x\n", lane, level);
+	HISI_FB_INFO("[DP] lane=%d, level=0x%x\n", lane, level);
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return;
 	}
 
 	if (lane > 3){
-		HISI_FB_ERR("Invalid lane %d \n", lane);
+		HISI_FB_ERR("[DP] Invalid lane %d \n", lane);
 		return;
 	}
 
 	if (level > 3) {
-		HISI_FB_ERR("Invalid pre-emphasis level %d, using 3", level);
+		HISI_FB_ERR("[DP] Invalid pre-emphasis level %d, using 3", level);
 		level = 3;
 	}
 
@@ -583,20 +583,20 @@ void dptx_phy_set_vswing(struct dp_ctrl *dptx,
 			 uint32_t level)
 {
 	uint32_t phytxeq;
-	HISI_FB_INFO("lane=%d, level=0x%x\n", lane, level);
+	HISI_FB_INFO("[DP] lane=%d, level=0x%x\n", lane, level);
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return;
 	}
 
 	if (lane > 3){
-		HISI_FB_ERR("Invalid lane %d \n", lane);
+		HISI_FB_ERR("[DP] Invalid lane %d \n", lane);
 		return;
 	}
 
 	if (level > 3) {
-		HISI_FB_ERR("Invalid vswing level %d, using 3", level);
+		HISI_FB_ERR("[DP] Invalid vswing level %d, using 3", level);
 		level = 3;
 	}
 
@@ -614,11 +614,11 @@ void dptx_phy_set_pattern(struct dp_ctrl *dptx,
 	uint32_t phyifctrl = 0;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return;
 	}
 
-	HISI_FB_INFO("Setting PHY pattern=0x%x\n", pattern);
+	HISI_FB_INFO("[DP] Setting PHY pattern=0x%x\n", pattern);
 
 	phyifctrl = dptx_readl(dptx, DPTX_PHYIF_CTRL);
 	phyifctrl &= ~DPTX_PHYIF_CTRL_TPS_SEL_MASK;
@@ -633,11 +633,11 @@ void dptx_phy_enable_xmit(struct dp_ctrl *dptx, uint32_t lanes, bool enable)
 	uint32_t mask = 0;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return;
 	}
 
-	HISI_FB_INFO("lanes=%d, enable=%d\n", lanes, enable);
+	HISI_FB_INFO("[DP] lanes=%d, enable=%d\n", lanes, enable);
 
 	phyifctrl = dptx_readl(dptx, DPTX_PHYIF_CTRL);
 
@@ -651,7 +651,7 @@ void dptx_phy_enable_xmit(struct dp_ctrl *dptx, uint32_t lanes, bool enable)
 		mask |= DPTX_PHYIF_CTRL_XMIT_EN(0);
 		break;
 	default:
-		HISI_FB_ERR("Invalid number of lanes %d\n", lanes);
+		HISI_FB_ERR("[DP] Invalid number of lanes %d\n", lanes);
 		break;
 	}
 
@@ -675,7 +675,7 @@ int dptx_phy_rate_to_bw(uint8_t rate)
 	case DPTX_PHYIF_CTRL_RATE_HBR3:
 		return DP_LINK_BW_8_1;
 	default:
-		HISI_FB_ERR("Invalid rate 0x%x\n", rate);
+		HISI_FB_ERR("[DP] Invalid rate 0x%x\n", rate);
 		return -EINVAL;
 	}
 }
@@ -692,7 +692,7 @@ int dptx_bw_to_phy_rate(uint8_t bw)
 	case DP_LINK_BW_8_1:
 		return DPTX_PHYIF_CTRL_RATE_HBR3;
 	default:
-		HISI_FB_ERR("Invalid bw 0x%x\n", bw);
+		HISI_FB_ERR("[DP] Invalid bw 0x%x\n", bw);
 		return -EINVAL;
 	}
 }

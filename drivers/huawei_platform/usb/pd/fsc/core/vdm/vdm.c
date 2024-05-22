@@ -29,6 +29,7 @@
  *****************************************************************************/
 #ifdef FSC_HAVE_VDM
 
+#include <linux/string.h>
 #include "vdm.h"
 #include "../platform.h"
 #include "../PDPolicy.h"
@@ -218,16 +219,13 @@ FSC_S32 requestSendAttention(SopType sop, FSC_U16 svid, FSC_U8 mode) {
 
 FSC_S32 processDiscoverIdentity(SopType sop, FSC_U32* arr_in, FSC_U32 length_in) {
     doDataObject_t  __vdmh_in = {0};
-	doDataObject_t	__vdmh_out = {0};
-
-	IdHeader		__idh;
-	CertStatVdo		__csvdo;
+    doDataObject_t	__vdmh_out = {0};
+    IdHeader		__idh;
+    CertStatVdo		__csvdo;
     Identity        __id;
     ProductVdo      __pvdo;
-
-	FSC_U32				__arr[7] = {0};
-	FSC_U32          __length;
-
+    FSC_U32				__arr[7] = {0};
+    FSC_U32          __length;
     FSC_BOOL            __result;
 
 
@@ -237,6 +235,7 @@ FSC_S32 processDiscoverIdentity(SopType sop, FSC_U32* arr_in, FSC_U32 length_in)
     if (__vdmh_in.SVDM.SVID != PD_SID) return -1;
 
     if (__vdmh_in.SVDM.CommandType == INITIATOR) {
+        if(PolicyIsDFP == TRUE) return -1;
 
         //if(!Responds_To_Discov_SOP) return 0;
 
@@ -309,34 +308,32 @@ FSC_S32 processDiscoverIdentity(SopType sop, FSC_U32* arr_in, FSC_U32 length_in)
 		}
         }
 
-        //sendVdmMessage(sop, __arr, __length, originalPolicyState);
-        PolicyState = originalPolicyState;
-        PolicySendDataNoReset(DMTVenderDefined, __length, __arr, originalPolicyState, 0);
+        sendVdmMessage(sop, __arr, __length, originalPolicyState);
+        //PolicyState = originalPolicyState;
+        //PolicySendDataNoReset(DMTVenderDefined,__length,__arr,originalPolicyState,0);
         return 0;
     } else { /* Incoming responses, ACKs, NAKs, BUSYs */
 
 		// Discover Identity responses should have at least VDM Header, ID Header, and Cert Stat VDO
-		if (length_in < MIN_DISC_ID_RESP_SIZE) {
-			PolicyState = originalPolicyState;
-			return 1;
-		}
 		if ((PolicyState == peDfpUfpVdmIdentityRequest) && (sop == SOP_TYPE_SOP)) {
 			if (__vdmh_in.SVDM.CommandType == RESPONDER_ACK) {
 				PolicyState = peDfpUfpVdmIdentityAcked;
 			} else {
 				PolicyState = peDfpUfpVdmIdentityNaked;
-                AutoVdmState = AUTO_VDM_DONE;
+				AutoVdmState = AUTO_VDM_DONE;
 			}
 		} else if ((PolicyState == peDfpCblVdmIdentityRequest) && (sop == SOP_TYPE_SOP1)) {
 			if (__vdmh_in.SVDM.CommandType == RESPONDER_ACK) {
 				PolicyState = peDfpCblVdmIdentityAcked;
 			} else {
+				AutoVdmState = AUTO_VDM_DONE;
 				PolicyState = peDfpCblVdmIdentityNaked;
 			}
 		} else if ((PolicyState == peSrcVdmIdentityRequest) && (sop == SOP_TYPE_SOP1)) {
 			if (__vdmh_in.SVDM.CommandType == RESPONDER_ACK) {
 				PolicyState = peSrcVdmIdentityAcked;
 			} else {
+				AutoVdmState = AUTO_VDM_DONE;
 				PolicyState = peSrcVdmIdentityNaked;
             }
 		} else {
@@ -370,10 +367,10 @@ FSC_S32 processDiscoverIdentity(SopType sop, FSC_U32* arr_in, FSC_U32 length_in)
 						(PolicyState == peDfpCblVdmIdentityAcked) ||
 						(PolicyState == peSrcVdmIdentityAcked);
 		vdmm.inform_id(__result, sop, __id);
-        ExpectingVdmResponse = FALSE;
+		ExpectingVdmResponse = FALSE;
 		PolicyState = originalPolicyState;
-        platform_set_timer(&VdmTimer, 0);
-        VdmTimerStarted = FALSE;
+		platform_set_timer(&VdmTimer, 0);
+		VdmTimerStarted = FALSE;
 		return 0;
     }
 }
@@ -382,22 +379,21 @@ FSC_S32 processDiscoverSvids(SopType sop, FSC_U32* arr_in, FSC_U32 length_in) {
     doDataObject_t  __vdmh_in = {0};
 	doDataObject_t	__vdmh_out = {0};
 
-	SvidInfo        __svid_info;
-
+    SvidInfo        __svid_info;
     FSC_U32          __i;
     FSC_U16          __top16;
     FSC_U16          __bottom16;
+    FSC_U32				__arr[7] = {0};
+    FSC_U32          __length;
 
-	FSC_U32				__arr[7] = {0};
-	FSC_U32          __length;
-
-	memset(&__svid_info, 0, sizeof(__svid_info));
+    memset(&__svid_info, 0, sizeof(__svid_info));
 
     __vdmh_in.object = arr_in[0];
     /* Must NAK or not respond to Discover SVIDs with wrong SVID */
     if (__vdmh_in.SVDM.SVID != PD_SID) return -1;
 
     if (__vdmh_in.SVDM.CommandType == INITIATOR) {
+	    if(PolicyIsDFP == TRUE) return -1;
         if ((sop == SOP_TYPE_SOP) && ((PolicyState == peSourceReady) || (PolicyState == peSinkReady))) {
 			originalPolicyState = PolicyState;
 			// assuming that the splitting of SVID info is done outside this block
@@ -460,9 +456,9 @@ FSC_S32 processDiscoverSvids(SopType sop, FSC_U32* arr_in, FSC_U32 length_in) {
 			}
 		}
 
-		//sendVdmMessage(sop, __arr, __length, originalPolicyState);
-		PolicyState = originalPolicyState;
-		PolicySendDataNoReset(DMTVenderDefined, __length, __arr, originalPolicyState, 0);
+		sendVdmMessage(sop, __arr, __length, originalPolicyState);
+		//PolicyState = originalPolicyState;
+		//PolicySendDataNoReset(DMTVenderDefined, __length, __arr, originalPolicyState, 0);
 		return 0;
     } else { /* Incoming responses, ACKs, NAKs, BUSYs */
         __svid_info.num_svids = 0;
@@ -515,16 +511,18 @@ FSC_S32 processDiscoverSvids(SopType sop, FSC_U32* arr_in, FSC_U32 length_in) {
 
 FSC_S32 processDiscoverModes(SopType sop, FSC_U32* arr_in, FSC_U32 length_in) {
     doDataObject_t  __vdmh_in = {0};
-	doDataObject_t	__vdmh_out = {0};
+    doDataObject_t	__vdmh_out = {0};
 
     ModesInfo       __modes_info = {0};
 
     FSC_U32          __i;
-	FSC_U32				__arr[7] = {0};
-	FSC_U32          __length;
+    FSC_U32				__arr[7] = {0};
+    FSC_U32          __length;
 
     __vdmh_in.object = arr_in[0];
     if (__vdmh_in.SVDM.CommandType == INITIATOR) {
+	    if(PolicyIsDFP == TRUE) return -1;
+ 
         if ((sop == SOP_TYPE_SOP) && ((PolicyState == peSourceReady) || (PolicyState == peSinkReady))) {
             originalPolicyState = PolicyState;
             __modes_info = vdmm.req_modes_info(__vdmh_in.SVDM.SVID);
@@ -570,9 +568,9 @@ FSC_S32 processDiscoverModes(SopType sop, FSC_U32* arr_in, FSC_U32 length_in) {
 			}
 		}
 
-		//sendVdmMessage(sop, __arr, __length, originalPolicyState);
-		PolicyState = originalPolicyState;
-		PolicySendDataNoReset(DMTVenderDefined, __length, __arr, originalPolicyState, 0);
+		sendVdmMessage(sop, __arr, __length, originalPolicyState);
+		//PolicyState = originalPolicyState;
+		//PolicySendDataNoReset(DMTVenderDefined,__length,__arr,originalPolicyState,0);
 		return 0;
     } else { /* Incoming responses, ACKs, NAKs, BUSYs */
         if (__vdmh_in.SVDM.CommandType == RESPONDER_ACK) {
@@ -607,6 +605,7 @@ FSC_S32 processEnterMode(SopType sop, FSC_U32* arr_in, FSC_U32 length_in) {
 
     __svdmh_in.object = arr_in[0];
     if (__svdmh_in.SVDM.CommandType == INITIATOR) {
+	    if(PolicyIsDFP == TRUE) return -1;
         if ((sop == SOP_TYPE_SOP) && ((PolicyState == peSourceReady) || (PolicyState == peSinkReady))) {
 			originalPolicyState = PolicyState;
 			PolicyState = peUfpVdmEvaluateModeEntry;
@@ -646,9 +645,9 @@ FSC_S32 processEnterMode(SopType sop, FSC_U32* arr_in, FSC_U32 length_in) {
 		__arr_out[0] = __svdmh_out.object;
 		__length_out = 1;
 
-		//sendVdmMessage(sop, __arr_out, __length_out, originalPolicyState);
-		PolicyState = originalPolicyState;
-		PolicySendDataNoReset(DMTVenderDefined, __length_out, __arr_out, originalPolicyState, 0);
+		sendVdmMessage(sop, __arr_out, __length_out, originalPolicyState);
+		//PolicyState = originalPolicyState;
+		//PolicySendDataNoReset(DMTVenderDefined,__length_out,__arr_out,originalPolicyState,0);
 		return 0;
     } else { /* Incoming responses, ACKs, NAKs, BUSYs */
 		if(!ExpectingVdmResponse){
@@ -679,6 +678,7 @@ FSC_S32 processExitMode(SopType sop, FSC_U32* arr_in, FSC_U32 length_in) {
 
     __vdmh_in.object = arr_in[0];
     if (__vdmh_in.SVDM.CommandType == INITIATOR) {
+	    if(PolicyIsDFP == TRUE) return -1;
         if ((sop == SOP_TYPE_SOP) && ((PolicyState == peSourceReady) || (PolicyState == peSinkReady))) {
 			originalPolicyState = PolicyState;
 			PolicyState = peUfpVdmModeExit;
@@ -719,9 +719,9 @@ FSC_S32 processExitMode(SopType sop, FSC_U32* arr_in, FSC_U32 length_in) {
 		__arr[0] = __vdmh_out.object;
 		__length = 1;
 
-        //sendVdmMessage(sop, __arr, __length, originalPolicyState);
-		PolicyState = originalPolicyState;
-		PolicySendDataNoReset(DMTVenderDefined, __length, __arr, originalPolicyState, 0);
+        sendVdmMessage(sop, __arr, __length, originalPolicyState);
+		//PolicyState = originalPolicyState;
+		//PolicySendDataNoReset(DMTVenderDefined,__length,__arr,originalPolicyState,0);
 		return 0;
     } else {
 		if (__vdmh_in.SVDM.CommandType != RESPONDER_ACK) {

@@ -1,6 +1,10 @@
 #include "hisi_gpio.h"
 #include <linux/device.h>
 #include <linux/gpio.h>
+#include <linux/version.h>
+#include <linux/hisi/hisi_log.h>
+
+#define HISI_LOG_TAG HISI_GPIO_TAG
 
 #ifdef CONFIG_HISI_TUI_PL061
 #define GPIODIR 0x400
@@ -25,7 +29,11 @@ int pl061_parse_gpio_base(struct device *dev)
 
 int pl061_check_security_status(struct pl061_gpio *chip)
 {
+#if(LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
+	WARN(chip->sec_status, "%s controller is busy", dev_name(chip->gc.parent));
+#else
 	WARN(chip->sec_status, "%s controller is busy", dev_name(chip->gc.dev));
+#endif
 	return chip->sec_status;
 }
 

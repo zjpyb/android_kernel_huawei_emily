@@ -19,10 +19,16 @@
 #define D_RSOPID_SE_HOOKS  (1 << 2)	/* check seLinux hooks */
 #define D_RSOPID_SE_STATUS (1 << 3)	/* check seLinux enforce status */
 #define D_RSOPID_RRPOCS    (1 << 4)	/* check root processes */
+#define D_RSOPID_SETID     (1 << 5) /* check setid */
 
+#ifdef CONFIG_HW_ROOT_SCAN
 int rscan_trigger(void);
-
-
+#else
+static inline int rscan_trigger(void)
+{
+	return 0;
+}
+#endif
 
 /*
 
@@ -46,9 +52,14 @@ int rscan_trigger(void);
 
 */
 
+#ifdef CONFIG_HW_ROOT_SCAN
 int root_scan_pause(unsigned int op_mask, void *reserved);
-
-
+#else
+static inline int root_scan_pause(unsigned int op_mask, void *reserved)
+{
+	return 0;
+}
+#endif
 
 /*
 
@@ -70,8 +81,13 @@ int root_scan_pause(unsigned int op_mask, void *reserved);
 
 */
 
+#ifdef CONFIG_HW_ROOT_SCAN
 int root_scan_resume(unsigned int op_mask, void *reserved);
-
-
+#else
+static inline int root_scan_resume(unsigned int op_mask, void *reserved)
+{
+	return 0;
+}
+#endif
 
 #endif

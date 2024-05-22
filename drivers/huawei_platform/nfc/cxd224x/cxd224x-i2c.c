@@ -457,7 +457,7 @@ static long cxd224x_dev_unlocked_ioctl(struct file *filp,
 }
 
 
-static int cxd224x_pon_low_beforepwd(struct notifier_block *this, unsigned int code, void *unused)
+static int cxd224x_pon_low_beforepwd(struct notifier_block *this, unsigned long code, void *unused)
 {
 	int retval = 0;
 

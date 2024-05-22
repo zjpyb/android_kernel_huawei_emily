@@ -20,6 +20,9 @@
 #include <linux/scatterlist.h>
 #include <linux/security.h>
 #include <linux/string.h>
+#include <linux/version.h>
+#include <crypto/hash.h>
+#include <crypto/hash_info.h>
 #include "./include/hw_rscan_utils.h"
 
 #ifdef CONFIG_SECURITY_SELINUX_DEVELOP

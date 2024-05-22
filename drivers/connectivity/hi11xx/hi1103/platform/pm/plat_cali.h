@@ -16,18 +16,23 @@
 #include "oal_types.h"
 #include "oal_util.h"
 
+#ifdef WIN32
+#include "plat_type.h"
+#endif
+
 /*****************************************************************************
   2 宏定义
 *****************************************************************************/
 
-#define OAL_2G_CHANNEL_NUM         (13)
+#define OAL_2G_CHANNEL_NUM         (3)
 #define OAL_5G_20M_CHANNEL_NUM     (7)
 #define OAL_5G_80M_CHANNEL_NUM     (7)
-#define OAL_5G_CHANNEL_NUM         (OAL_5G_20M_CHANNEL_NUM + OAL_5G_80M_CHANNEL_NUM)
+#define OAL_5G_160M_CHANNEL_NUM    (2)
+#define OAL_5G_CHANNEL_NUM         (OAL_5G_20M_CHANNEL_NUM + OAL_5G_80M_CHANNEL_NUM + OAL_5G_160M_CHANNEL_NUM)
 #define OAL_5G_DEVICE_CHANNEL_NUM  (7)
 #define OAL_CALI_HCC_BUF_NUM       (3)
 #define OAL_CALI_HCC_BUF_SIZE      (1500)
-#define OAL_CALI_IQ_TONE_NUM       (8)
+#define OAL_CALI_IQ_TONE_NUM       (16)
 #define OAL_CALI_TXDC_GAIN_LVL_NUM (16)           /* tx dc补偿值档位数目 */
 #define OAL_BT_RF_FEQ_NUM          (79)           /* total Rf frequency number */
 #define OAL_BT_CHANNEL_NUM         (8)            /* total Rf frequency number */
@@ -46,7 +51,7 @@
 
 #if (_PRE_PRODUCT_ID == _PRE_PRODUCT_ID_HI1103_DEV) || (_PRE_PRODUCT_ID == _PRE_PRODUCT_ID_HI1103_HOST)
 /* wifi校准buf长度 */
-#define RF_CALI_DATA_BUF_LEN              (0x4a10)
+#define RF_CALI_DATA_BUF_LEN              (0x7258)
 #define RF_SINGLE_CHAN_CALI_DATA_BUF_LEN  (RF_CALI_DATA_BUF_LEN>>1)
 /* 校准结构体大小 */
 #define OAL_SINGLE_CALI_DATA_STRU_LEN     (RF_CALI_DATA_BUF_LEN+4)
@@ -74,7 +79,7 @@ extern  oal_uint32 g_ul_cali_update_channel_info;
 /*****************************************************************************
   6 消息定义
 *****************************************************************************/
-extern oal_uint8 g_uc_netdev_is_open;
+extern oal_uint8 g_uc_netdev_is_open_etc;
 
 
 /*****************************************************************************
@@ -237,11 +242,11 @@ typedef struct
 /*****************************************************************************
   10 函数声明
 *****************************************************************************/
-extern oal_int32 get_cali_count(oal_uint32 *count);
-extern oal_int32 get_bfgx_cali_data(oal_uint8 *buf, oal_uint32 *len, oal_uint32 buf_len);
-extern void *get_cali_data_buf_addr(void);
-extern oal_int32 cali_data_buf_malloc(void);
-extern void  cali_data_buf_free(void);
+extern oal_int32 get_cali_count_etc(oal_uint32 *count);
+extern oal_int32 get_bfgx_cali_data_etc(oal_uint8 *buf, oal_uint32 *len, oal_uint32 buf_len);
+extern void *get_cali_data_buf_addr_etc(void);
+extern oal_int32 cali_data_buf_malloc_etc(void);
+extern void  cali_data_buf_free_etc(void);
 
 
 /*****************************************************************************
@@ -331,9 +336,12 @@ typedef struct
 
 extern struct completion g_st_cali_recv_done;
 
+extern int32 bfgx_customize_init(void);
 extern void *bfgx_get_cali_data_buf(uint32 *pul_len);
 extern void *bfgx_get_nv_data_buf(uint32 *pul_len);
 extern void *bfgx_get_cust_ini_data_buf(uint32 *pul_len);
+extern void *wifi_get_bfgx_rc_data_buf_addr(uint32 *pul_len);
+extern void *wifi_get_bt_cali_data_buf(uint32 *pul_len);
 
 #ifdef __cplusplus
     #if __cplusplus

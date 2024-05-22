@@ -34,6 +34,9 @@
 #include <net/mptcp_v6.h>
 
 #include <linux/kconfig.h>
+#ifdef CONFIG_HW_NETWORK_MEASUREMENT
+#include <huawei_platform/emcom/smartcare/network_measurement/nm.h>
+#endif /* CONFIG_HW_NETWORK_MEASUREMENT */
 
 /* is seq1 < seq2 ? */
 static inline bool before64(const u64 seq1, const u64 seq2)
@@ -433,6 +436,10 @@ static inline int mptcp_direct_copy(const struct sk_buff *skb,
 
 	local_bh_enable();
 	if (!skb_copy_datagram_msg(skb, 0, meta_tp->ucopy.msg, chunk)) {
+#ifdef CONFIG_HW_NETWORK_MEASUREMENT
+		if (unlikely(nm_sample_on(meta_sk)))
+			nm_nse(meta_sk, skb, 0, chunk, NM_TCP, NM_DOWNLINK, NM_FUNC_HTTP);
+#endif /* CONFIG_HW_NETWORK_MEASUREMENT */
 		meta_tp->ucopy.len -= chunk;
 		meta_tp->copied_seq += chunk;
 		eaten = (chunk == skb->len);

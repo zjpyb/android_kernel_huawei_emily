@@ -66,8 +66,6 @@ OAL_STATIC oal_uint32  dmac_scan_register_scan_req_to_dbac(mac_device_stru *pst_
 #endif
 OAL_STATIC oal_uint32  dmac_scan_report_channel_statistics_result(mac_device_stru *pst_mac_device, oal_uint8 uc_scan_idx);
 
-OAL_STATIC oal_void    dmac_scan_switch_home_channel_work(mac_device_stru *pst_mac_device);
-
 OAL_STATIC oal_uint32  dmac_scan_switch_home_channel_work_timeout(void *p_arg);
 
 OAL_STATIC oal_uint32  dmac_scan_start_pno_sched_scan_timer(void *p_arg);
@@ -1012,6 +1010,9 @@ oal_uint32  dmac_scan_handle_scan_req_entry(mac_device_stru    *pst_mac_device,
                                             dmac_vap_stru      *pst_dmac_vap,
                                             mac_scan_req_stru  *pst_scan_req_params)
 {
+#ifdef _PRE_WLAN_FEATURE_BTCOEX
+    hal_to_dmac_device_stru *pst_hal_device = OAL_PTR_NULL;
+#endif
     /* 如果处于扫描状态，则直接返回 */
     /* 如果处于常发常收状态，则直接返回 */
     if((MAC_SCAN_STATE_RUNNING == pst_mac_device->en_curr_scan_state)
@@ -1081,7 +1082,7 @@ oal_uint32  dmac_scan_handle_scan_req_entry(mac_device_stru    *pst_mac_device,
         /* 入网开始，通知BT */
 #ifdef _PRE_WLAN_FEATURE_BTCOEX
         hal_set_btcoex_soc_gpreg1(OAL_TRUE, BIT1, 1);   // 入网流程开始
-        hal_coex_sw_irq_set(BIT5);
+        hal_coex_sw_irq_set(HAL_COEX_SW_IRQ_BT);
 #endif
 
 #ifdef _PRE_WLAN_FEATURE_STA_PM
@@ -1132,9 +1133,23 @@ oal_uint32  dmac_scan_handle_scan_req_entry(mac_device_stru    *pst_mac_device,
 
     /* 清空信道测量结果 */
     OAL_MEMZERO(&(pst_mac_device->st_chan_result), OAL_SIZEOF(mac_scan_chan_stats_stru));
-
-    dmac_scan_begin(pst_mac_device);
-
+#ifdef _PRE_WLAN_FEATURE_BTCOEX
+    pst_hal_device = pst_mac_device->pst_device_stru;
+    if (OAL_PTR_NULL == pst_hal_device)
+    {
+        OAM_ERROR_LOG0(0, OAM_SF_SCAN, "dmac_btcoex_scan_begin:pst_hal_device is null");
+        return OAL_ERR_CODE_PTR_NULL;
+    }
+    if(HAL_BTCOEX_SW_POWSAVE_WORK == GET_HAL_BTCOEX_SW_PREEMPT_TYPE(pst_hal_device))
+    {
+        GET_HAL_BTCOEX_SW_PREEMPT_TYPE(pst_hal_device) = HAL_BTCOEX_SW_POWSAVE_SCAN_BEGIN;
+        OAM_WARNING_LOG0(0, OAM_SF_COEX, "{dmac_scan_handle_scan_req_entry:: normal scan begin delay by btcoex!}");
+    }
+    else
+#endif
+    {
+        dmac_scan_begin(pst_mac_device);
+    }
     return OAL_SUCC;
 }
 
@@ -2347,6 +2362,16 @@ OAL_STATIC oal_void dmac_scan_do_next_channel_scan(mac_device_stru  *pst_mac_dev
                                                    dmac_vap_stru    *pst_dmac_vap,
                                                    mac_channel_stru *pst_next_scan_channel)
 {
+#ifdef _PRE_WLAN_FEATURE_BTCOEX
+    hal_to_dmac_device_stru *pst_hal_device = OAL_PTR_NULL;
+
+    pst_hal_device = pst_mac_device->pst_device_stru;
+    if (OAL_PTR_NULL == pst_hal_device)
+    {
+        OAM_ERROR_LOG0(0, OAM_SF_SCAN, "dmac_btcoex_scan_begin:pst_hal_device is null");
+        return;
+    }
+#endif
 #if defined(_PRE_PRODUCT_ID_HI110X_DEV)
     dmac_scan_check_2g_scan_results(pst_mac_device, &(pst_dmac_vap->st_vap_base_info), pst_next_scan_channel->en_band);
     pst_mac_device->st_scan_params.uc_last_channel_band = pst_next_scan_channel->en_band;
@@ -2360,18 +2385,36 @@ OAL_STATIC oal_void dmac_scan_do_next_channel_scan(mac_device_stru  *pst_mac_dev
 
     /* 切信道进行扫描 */ /* 切到下一个信道扫描，当前信道帧需要清除FIFO */
     dmac_mgmt_switch_channel(pst_mac_device, pst_next_scan_channel, OAL_TRUE);
-    dmac_scan_begin(pst_mac_device);
+#ifdef _PRE_WLAN_FEATURE_BTCOEX
+    if(HAL_BTCOEX_SW_POWSAVE_WORK == GET_HAL_BTCOEX_SW_PREEMPT_TYPE(pst_hal_device))
+    {
+        GET_HAL_BTCOEX_SW_PREEMPT_TYPE(pst_hal_device) = HAL_BTCOEX_SW_POWSAVE_SCAN_BEGIN;
+        OAM_WARNING_LOG0(0, OAM_SF_COEX, "{dmac_scan_do_next_channel_scan:: normal scan begin delay by btcoex!}");
+    }
+    else
+#endif
+    {
+        dmac_scan_begin(pst_mac_device);
+    }
 }
 
 
 OAL_STATIC oal_uint32  dmac_scan_curr_channel_scan_time_out(void *p_arg)
 {
-    mac_device_stru        *pst_mac_device = (mac_device_stru *)p_arg;
-    mac_scan_req_stru      *pst_scan_params;
-    mac_channel_stru       *pst_next_scan_channel = OAL_PTR_NULL;
-    dmac_vap_stru          *pst_dmac_vap;
-    oal_uint8               uc_do_meas;
-
+    mac_device_stru         *pst_mac_device = (mac_device_stru *)p_arg;
+    mac_scan_req_stru       *pst_scan_params;
+    mac_channel_stru        *pst_next_scan_channel = OAL_PTR_NULL;
+    dmac_vap_stru           *pst_dmac_vap;
+    hal_to_dmac_device_stru *pst_hal_device = OAL_PTR_NULL;
+    oal_uint8                uc_do_meas;
+#ifdef _PRE_WLAN_FEATURE_BTCOEX
+    pst_hal_device = pst_mac_device->pst_device_stru;
+    if (OAL_PTR_NULL == pst_hal_device)
+    {
+        OAM_ERROR_LOG0(0, OAM_SF_SCAN, "dmac_btcoex_scan_begin:pst_hal_device is null");
+        return OAL_ERR_CODE_PTR_NULL;
+    }
+#endif
     /* 获取扫描参数 */
     pst_scan_params = &(pst_mac_device->st_scan_params);
 
@@ -2401,8 +2444,18 @@ OAL_STATIC oal_uint32  dmac_scan_curr_channel_scan_time_out(void *p_arg)
     }
     else
     {
-        /* 本信道扫描次数未完成，无需切换信道，直接发起扫描 */
-        dmac_scan_begin(pst_mac_device);
+#ifdef _PRE_WLAN_FEATURE_BTCOEX
+        if(HAL_BTCOEX_SW_POWSAVE_WORK == GET_HAL_BTCOEX_SW_PREEMPT_TYPE(pst_hal_device))
+        {
+            GET_HAL_BTCOEX_SW_PREEMPT_TYPE(pst_hal_device) = HAL_BTCOEX_SW_POWSAVE_SCAN_BEGIN;
+            OAM_WARNING_LOG0(0, OAM_SF_COEX, "{dmac_btcoex_scan_begin:: normal scan begin delay by btcoex!}");
+        }
+        else
+#endif
+        {
+            /* 本信道扫描次数未完成，无需切换信道，直接发起扫描 */
+            dmac_scan_begin(pst_mac_device);
+        }
         return OAL_SUCC;
     }
 
@@ -2420,7 +2473,16 @@ OAL_STATIC oal_uint32  dmac_scan_curr_channel_scan_time_out(void *p_arg)
 #if defined(_PRE_PRODUCT_ID_HI110X_DEV)
         dmac_scan_check_2g_scan_results(pst_mac_device, &(pst_dmac_vap->st_vap_base_info), pst_mac_device->st_scan_params.uc_last_channel_band);
 #endif
-        dmac_scan_end(pst_mac_device);
+#ifdef _PRE_WLAN_FEATURE_BTCOEX
+        if (HAL_BTCOEX_SW_POWSAVE_WORK == GET_HAL_BTCOEX_SW_PREEMPT_TYPE(pst_hal_device))
+        {
+            GET_HAL_BTCOEX_SW_PREEMPT_TYPE(pst_hal_device) = HAL_BTCOEX_SW_POWSAVE_SCAN_END;
+        }
+        else
+#endif
+        {
+            dmac_scan_end(pst_mac_device);
+        }
         return OAL_SUCC;
     }
 
@@ -2436,7 +2498,16 @@ OAL_STATIC oal_uint32  dmac_scan_curr_channel_scan_time_out(void *p_arg)
         /* 背景扫描，判断是否需要返回工作信道工作一段时间，如果是，则切回工作信道工作 */
         if (OAL_TRUE == dmac_scan_need_switch_home_channel(pst_mac_device))
         {
-            dmac_scan_switch_home_channel_work(pst_mac_device);
+#ifdef _PRE_WLAN_FEATURE_BTCOEX
+            if (HAL_BTCOEX_SW_POWSAVE_WORK == GET_HAL_BTCOEX_SW_PREEMPT_TYPE(pst_hal_device))
+            {
+                GET_HAL_BTCOEX_SW_PREEMPT_TYPE(pst_hal_device) = HAL_BTCOEX_SW_POWSAVE_SCAN_WAIT;
+            }
+            else
+#endif
+            {
+                dmac_scan_switch_home_channel_work(pst_mac_device);
+            }
             pst_mac_device->st_scan_params.en_working_in_home_chan = OAL_TRUE;
         }
         else
@@ -2619,7 +2690,7 @@ oal_void dmac_scan_begin(mac_device_stru *pst_mac_device)
     {
         /* Notify Bt the P2P Scan Start state */
         hal_set_btcoex_soc_gpreg0(OAL_TRUE, BIT14, 14);
-        hal_coex_sw_irq_set(BIT5);
+        hal_coex_sw_irq_set(HAL_COEX_SW_IRQ_BT);
     }
 #endif
     return;
@@ -2669,7 +2740,7 @@ oal_void dmac_scan_end(mac_device_stru *pst_mac_device)
 #endif
     {
         dmac_scan_switch_channel_back(pst_mac_device);
-        dmac_scan_switch_channel_notify_alg(pst_dmac_vap, &pst_dmac_vap->st_vap_base_info.st_channel);
+        dmac_scan_switch_channel_notify_alg(pst_dmac_vap, &(pst_mac_device->st_home_channel));
     }
     else
     {
@@ -2764,7 +2835,7 @@ oal_void dmac_scan_end(mac_device_stru *pst_mac_device)
     {
         hal_set_btcoex_soc_gpreg1(OAL_FALSE, BIT1, 1);   // 入网流程结束
         hal_set_btcoex_soc_gpreg1(OAL_FALSE, BIT0, 0);   // Wifi扫描结束，清除第一次上电扫描的状态
-        hal_coex_sw_irq_set(BIT5);
+        hal_coex_sw_irq_set(HAL_COEX_SW_IRQ_BT);
     }
 #endif
 
@@ -2784,10 +2855,142 @@ oal_void dmac_scan_end(mac_device_stru *pst_mac_device)
     {
         /* Notify Bt the P2P Scan End state */
         hal_set_btcoex_soc_gpreg0(OAL_FALSE, BIT14, 14);
-        hal_coex_sw_irq_set(BIT5);
+        hal_coex_sw_irq_set(HAL_COEX_SW_IRQ_BT);
     }
 #endif
     return;
+}
+
+
+oal_uint32  dmac_switch_same_channel_off(
+                mac_device_stru     *pst_mac_device,
+                mac_vap_stru        *pst_mac_vap,
+                oal_uint16           us_protect_time)
+{
+    mac_fcs_mgr_stru         *pst_fcs_mgr;
+    mac_fcs_cfg_stru         *pst_fcs_cfg;
+#ifdef _PRE_WLAN_FEATURE_STA_PM
+    mac_sta_pm_handler_stru  *pst_mac_sta_pm_handle;
+#endif
+    dmac_vap_stru            *pst_dmac_vap;
+
+    if ((OAL_PTR_NULL == pst_mac_device) || (OAL_PTR_NULL == pst_mac_vap))
+    {
+        OAM_ERROR_LOG2(0, OAM_SF_SCAN, "dmac_switch_same_channel_off:pst_mac_device=%x,pst_mac_vap=%x",pst_mac_device,pst_mac_vap);
+        return OAL_ERR_CODE_PTR_NULL;
+    }
+    /* 暂停vap业务 */
+    dmac_vap_pause_tx(pst_mac_vap);
+
+    if (WLAN_VAP_MODE_BSS_STA == pst_mac_vap->en_vap_mode)
+    {
+        pst_dmac_vap = (dmac_vap_stru *)pst_mac_vap;
+#ifdef _PRE_WLAN_FEATURE_STA_PM
+        pst_mac_sta_pm_handle = (mac_sta_pm_handler_stru *)(pst_dmac_vap->pst_pm_handler);
+        if (STA_PWR_SAVE_STATE_ACTIVE != STA_GET_PM_STATE(pst_mac_sta_pm_handle))
+        {
+            OAM_WARNING_LOG1(0,0,"dmac_switch_same_channel_off:pm state=%d",STA_GET_PM_STATE(pst_mac_sta_pm_handle));
+            return OAL_SUCC;
+        }
+#endif
+    }
+
+    /* 记录切离的信道，供扫描完后切回 */
+    pst_mac_device->st_home_channel = pst_mac_vap->st_channel;
+
+    pst_fcs_mgr = dmac_fcs_get_mgr_stru(pst_mac_device);
+    pst_fcs_cfg = &(pst_mac_device->st_fcs_cfg);
+
+    OAL_MEMZERO(pst_fcs_cfg, OAL_SIZEOF(mac_fcs_cfg_stru));
+
+    pst_fcs_cfg->st_src_chl = pst_mac_vap->st_channel;
+    pst_fcs_cfg->st_dst_chl = pst_mac_vap->st_channel;
+
+    mac_fcs_prepare_one_packet_cfg(pst_mac_vap, &(pst_fcs_cfg->st_one_packet_cfg), us_protect_time);
+
+    /* 调用FCS切信道接口 保存当前硬件队列的帧到扫描虚假队列 */
+    mac_fcs_start_same_channel(pst_fcs_mgr, pst_fcs_cfg, 0, HAL_TX_FAKE_QUEUE_BGSCAN_ID);
+    mac_fcs_release(pst_fcs_mgr);
+    return OAL_SUCC;
+}
+
+
+oal_uint32  dmac_switch_channel_off_enhanced_self_channel(
+                mac_device_stru     *pst_mac_device,
+                mac_vap_stru        *pst_mac_vap1,
+                mac_vap_stru        *pst_mac_vap2,
+                oal_uint16           us_protect_time)
+{
+    mac_fcs_mgr_stru               *pst_fcs_mgr;
+    mac_fcs_cfg_stru               *pst_fcs_cfg;
+    mac_vap_stru                   *pst_vap_sta;
+
+    if ((OAL_PTR_NULL == pst_mac_device) || (OAL_PTR_NULL == pst_mac_vap1) || (OAL_PTR_NULL == pst_mac_vap2))
+    {
+        OAM_ERROR_LOG3(0, OAM_SF_SCAN, "dmac_switch_channel_off_enhanced_self_channel:pst_mac_device=%x,pst_mac_vap1=%x,pst_mac_vap2=%x"
+                       ,pst_mac_device,pst_mac_vap1,pst_mac_vap2);
+        return OAL_ERR_CODE_PTR_NULL;
+    }
+    /* 记录切离时最大带宽的信道，供同频共存扫描完后切回 */
+    if (pst_mac_vap1->st_channel.en_bandwidth >= pst_mac_vap2->st_channel.en_bandwidth)
+    {
+        pst_mac_device->st_home_channel = pst_mac_vap1->st_channel;
+    }
+    else
+    {
+        pst_mac_device->st_home_channel = pst_mac_vap2->st_channel;
+    }
+
+    /* 暂停两个VAP的发送 */
+    dmac_vap_pause_tx(pst_mac_vap1);
+    dmac_vap_pause_tx(pst_mac_vap2);
+
+    pst_fcs_mgr = dmac_fcs_get_mgr_stru(pst_mac_device);
+    pst_fcs_cfg = &(pst_mac_device->st_fcs_cfg);
+    OAL_MEMZERO(pst_fcs_cfg, OAL_SIZEOF(mac_fcs_cfg_stru));
+
+    OAM_WARNING_LOG2(0, OAM_SF_SCAN, "{dmac_switch_channel_off_enhanced::curr hal chan[%d], dst channel[%d].}",
+                  pst_mac_device->pst_device_stru->uc_current_chan_number,
+                  pst_fcs_cfg->st_dst_chl.uc_chan_number);
+
+    /* 同频双STA模式，需要起两次one packet */
+    if (WLAN_VAP_MODE_BSS_STA == pst_mac_vap1->en_vap_mode && WLAN_VAP_MODE_BSS_STA == pst_mac_vap2->en_vap_mode)
+    {
+        /* 准备VAP1的fcs参数 */
+        pst_fcs_cfg->st_src_chl = pst_mac_vap1->st_channel;
+        pst_fcs_cfg->st_dst_chl = pst_mac_vap1->st_channel;
+        mac_fcs_prepare_one_packet_cfg(pst_mac_vap1, &(pst_fcs_cfg->st_one_packet_cfg), us_protect_time);
+
+        /* 准备VAP2的fcs参数 */
+        pst_fcs_cfg->st_src_chl2 = pst_mac_vap2->st_channel;
+        mac_fcs_prepare_one_packet_cfg(pst_mac_vap2, &(pst_fcs_cfg->st_one_packet_cfg2), us_protect_time);
+        pst_fcs_cfg->st_one_packet_cfg2.us_timeout = MAC_FCS_DEFAULT_PROTECT_TIME_OUT2;     /* 减小第二次one packet的保护时长，从而减少总时长 */
+
+        mac_fcs_start_enhanced_same_channel(pst_fcs_mgr, pst_fcs_cfg);
+        mac_fcs_release(pst_fcs_mgr);
+    }
+    /* 同频STA+GO模式，只需要STA起一次one packet */
+    else
+    {
+        if (WLAN_VAP_MODE_BSS_STA == pst_mac_vap1->en_vap_mode)
+        {
+            pst_vap_sta = pst_mac_vap1;
+        }
+        else
+        {
+            pst_vap_sta = pst_mac_vap2;
+        }
+
+        pst_fcs_cfg->st_src_chl = pst_vap_sta->st_channel;
+        pst_fcs_cfg->st_dst_chl = pst_vap_sta->st_channel;
+        mac_fcs_prepare_one_packet_cfg(pst_vap_sta, &(pst_fcs_cfg->st_one_packet_cfg), us_protect_time);
+
+        /* 调用FCS切信道接口 保存当前硬件队列的帧到扫描虚假队列 */
+        mac_fcs_start_same_channel(pst_fcs_mgr, pst_fcs_cfg, 0, HAL_TX_FAKE_QUEUE_BGSCAN_ID);
+        mac_fcs_release(pst_fcs_mgr);
+    }
+
+    return OAL_SUCC;
 }
 
 
@@ -2892,7 +3095,7 @@ OAL_STATIC oal_uint32 dmac_scan_send_bcast_probe(mac_device_stru *pst_mac_device
 }
 
 
-OAL_STATIC oal_void  dmac_scan_switch_home_channel_work(mac_device_stru *pst_mac_device)
+oal_void  dmac_scan_switch_home_channel_work(mac_device_stru *pst_mac_device)
 {
     mac_scan_req_stru       *pst_scan_params;
 
@@ -2929,14 +3132,23 @@ OAL_STATIC oal_void  dmac_scan_switch_home_channel_work(mac_device_stru *pst_mac
 OAL_STATIC oal_uint32  dmac_scan_switch_home_channel_work_timeout(void *p_arg)
 {
     mac_device_stru         *pst_mac_device;
-
+#ifdef _PRE_WLAN_FEATURE_BTCOEX
+    hal_to_dmac_device_stru *pst_hal_device = OAL_PTR_NULL;
+#endif
     pst_mac_device = (mac_device_stru *)p_arg;
     if (OAL_PTR_NULL == pst_mac_device)
     {
         OAM_ERROR_LOG0(0, OAM_SF_SCAN, "{dmac_scan_switch_home_channel_work_timeout::pst_mac_device null.}");
         return OAL_ERR_CODE_PTR_NULL;
     }
-
+#ifdef _PRE_WLAN_FEATURE_BTCOEX
+    pst_hal_device = pst_mac_device->pst_device_stru;
+    if (OAL_PTR_NULL == pst_hal_device)
+    {
+        OAM_ERROR_LOG0(0, OAM_SF_SCAN, "dmac_btcoex_scan_begin:pst_hal_device is null");
+        return OAL_ERR_CODE_PTR_NULL;
+    }
+#endif
     /* 判断是否还需要继续进行扫描，如果此时扫描状态为非运行状态，说明扫描已经停止，无需再继续扫描 */
     if (MAC_SCAN_STATE_RUNNING != pst_mac_device->en_curr_scan_state)
     {
@@ -2954,9 +3166,17 @@ OAL_STATIC oal_uint32  dmac_scan_switch_home_channel_work_timeout(void *p_arg)
 
     /* 清空信道测量结果 */
     OAL_MEMZERO(&(pst_mac_device->st_chan_result), OAL_SIZEOF(mac_scan_chan_stats_stru));
-
-    dmac_scan_begin(pst_mac_device);
-
+#ifdef _PRE_WLAN_FEATURE_BTCOEX
+    if(HAL_BTCOEX_SW_POWSAVE_WORK == GET_HAL_BTCOEX_SW_PREEMPT_TYPE(pst_hal_device))
+    {
+        GET_HAL_BTCOEX_SW_PREEMPT_TYPE(pst_hal_device) = HAL_BTCOEX_SW_POWSAVE_SCAN_BEGIN;
+        OAM_WARNING_LOG0(0, OAM_SF_COEX, "{dmac_btcoex_scan_begin:: normal scan begin delay by btcoex!}");
+    }
+    else
+#endif
+    {
+        dmac_scan_begin(pst_mac_device);
+    }
     return OAL_SUCC;
 }
 

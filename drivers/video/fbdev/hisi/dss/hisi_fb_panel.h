@@ -229,9 +229,10 @@ enum PANEL_MODE {
 	MODE_10BIT_VIDEO_3X,
 };
 
-enum PANEL_MODE_SWITCH_STATE {
-	MODE_SWITCHED = 0,
-	MODE_SWITCHING,
+enum PARA_UPDT_STATE {
+	PARA_UPDT_END = 0,
+	PARA_UPDT_DOING,
+	PARA_UPDT_NEED,
 };
 
 /* pxl0_dsi_gt_en */
@@ -432,6 +433,8 @@ struct mipi_dsi_phy_ctrl {
 
 	uint32_t phy_stop_wait_time;
 
+	uint32_t rg_lptx_sri;
+	uint32_t rg_vrefsel_lptx;
 	uint32_t rg_vrefsel_vcm;
 	uint32_t rg_hstx_ckg_sel;
 	uint32_t rg_pll_fbd_div5f;
@@ -509,6 +512,8 @@ struct mipi_panel_info {
 	uint32_t data_t_hs_zero_adjust;
 	uint32_t data_t_hs_trial_adjust;
 	uint32_t rg_vrefsel_vcm_adjust;
+	uint32_t rg_vrefsel_lptx_adjust;
+	uint32_t rg_lptx_sri_adjust;
 
 	/* only for 3660 use */
 	uint32_t rg_vrefsel_vcm_clk_adjust;
@@ -714,6 +719,7 @@ struct hisi_panel_info {
 	uint32_t bl_otm;
 	uint32_t bl_default;
 	uint32_t blpwm_precision_type;
+	uint32_t blpwm_preci_no_convert;
 	uint32_t blpwm_out_div_value;
 	uint32_t blpwm_input_ena;
 	uint32_t blpwm_input_disable;
@@ -726,6 +732,12 @@ struct hisi_panel_info {
 	uint32_t vsync_ctrl_type;
 	uint32_t fake_external;
 	uint8_t  reserved[3];
+	char* panel_name;
+	char lcd_panel_version[LCD_PANEL_VERSION_SIZE];
+	uint32_t board_version;
+	uint8_t dbv_curve_mapped_support;
+	uint8_t is_dbv_need_mapped;
+	uint8_t dbv_map_index;
 
 	uint32_t ifbc_type;
 	uint32_t ifbc_cmp_dat_rev0;
@@ -757,6 +769,7 @@ struct hisi_panel_info {
 	uint8_t dirty_region_updt_support;
 	uint8_t snd_cmd_before_frame_support;
 	uint8_t dsi_bit_clk_upt_support;
+	uint8_t mipiclk_updt_support_new;
 	uint8_t fps_updt_support;
 	uint8_t fps_updt_panel_only;
 	uint8_t fps_updt_force_update;
@@ -1040,9 +1053,9 @@ struct hisi_panel_info {
 	uint32_t vcoeffuv_len;
 
 	uint8_t non_check_ldi_porch;
-	bool en_hisync_mode;
-	bool vsync_delay_en;
-	bool en_video_idle_ctrl_mode;
+	uint8_t hisync_mode;
+	uint8_t vsync_delay_time;
+	uint8_t video_idle_mode;
 
 	//dpi_set
 	uint8_t dpi01_exchange_flag;
@@ -1051,6 +1064,11 @@ struct hisi_panel_info {
 	uint8_t current_mode;
 	uint8_t mode_switch_to;
 	uint8_t mode_switch_state;
+
+	uint32_t mask_delay_time_before_fp;
+	uint32_t mask_delay_time_after_fp;
+	uint32_t bl_delay_frame;
+	int need_skip_delta;
 
 	struct spi_device *spi_dev;
 	struct ldi_panel_info ldi;
@@ -1094,6 +1112,7 @@ struct hisi_fb_panel_data {
 	int (*get_lcd_id) (struct platform_device *pdev);
 	int (*panel_bypass_powerdown_ulps_support) (struct platform_device *pdev);
 
+	ssize_t (*snd_mipi_clk_cmd_store) (struct platform_device *pdev, uint32_t clk_val);
 	ssize_t (*lcd_model_show) (struct platform_device *pdev, char *buf);
 	ssize_t (*lcd_cabc_mode_show) (struct platform_device *pdev, char *buf);
 	ssize_t (*lcd_cabc_mode_store) (struct platform_device *pdev, const char *buf, size_t count);
@@ -1202,6 +1221,7 @@ int panel_next_get_lcd_id(struct platform_device *pdev);
 int panel_next_bypass_powerdown_ulps_support(struct platform_device *pdev);
 
 
+ssize_t panel_next_snd_mipi_clk_cmd_store(struct platform_device *pdev, uint32_t clk_val);
 ssize_t panel_next_lcd_model_show(struct platform_device *pdev, char *buf);
 ssize_t panel_next_lcd_cabc_mode_show(struct platform_device *pdev, char *buf);
 ssize_t panel_next_lcd_cabc_mode_store(struct platform_device *pdev, const char *buf, size_t count);
@@ -1242,6 +1262,7 @@ ssize_t panel_next_lcd_amoled_vr_mode_store(struct platform_device *pdev, const 
 ssize_t panel_next_lcd_amoled_vr_mode_show(struct platform_device *pdev, char *buf);
 ssize_t panel_next_alpm_setting_store(struct platform_device *pdev,	const char *buf, size_t count);
 
+void hisi_blpwm_fill_light(uint32_t backlight);
 int hisi_pwm_set_backlight(struct hisi_fb_data_type *hisifd, uint32_t bl_level);
 int hisi_pwm_off(struct platform_device *pdev);
 int hisi_pwm_on(struct platform_device *pdev);
@@ -1265,7 +1286,6 @@ bool is_mipi_cmd_panel(struct hisi_fb_data_type *hisifd);
 bool is_mipi_cmd_panel_ext(struct hisi_panel_info *pinfo);
 bool is_mipi_video_panel(struct hisi_fb_data_type *hisifd);
 bool is_dp_panel(struct hisi_fb_data_type *hisifd);
-bool is_vsync_delay_en(struct hisi_fb_data_type *hisifd);
 bool is_hisync_mode(struct hisi_fb_data_type *hisifd);
 bool is_video_idle_ctrl_mode(struct hisi_fb_data_type *hisifd);
 bool is_mipi_panel(struct hisi_fb_data_type *hisifd);
@@ -1288,5 +1308,7 @@ bool hisi_fb_device_probe_defer(uint32_t panel_type, uint32_t bl_type);
 void panel_check_status_and_report_by_dsm(struct lcd_reg_read_t *lcd_status_reg, int cnt, char __iomem *mipi_dsi0_base);
 void panel_status_report_by_dsm(struct lcd_reg_read_t *lcd_status_reg, int cnt, char __iomem *mipi_dsi0_base, int report_cnt);
 #endif
-
+#ifdef CONFIG_LCD_KIT_DRIVER
+int hisi_blpwm_set_bl(struct hisi_fb_data_type *hisifd, uint32_t bl_level);
+#endif
 #endif /* HISI_FB_PANEL_H */

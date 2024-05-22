@@ -26,6 +26,7 @@
 #endif
 #include "usb_pd_policy_engine.h"
 
+#include <linux/version.h>
 #include <linux/atomic.h>
 #include <linux/cpu.h>
 #include <linux/gpio/consumer.h>
@@ -54,7 +55,10 @@
 	#include <linux/usb/class-dual-role.h>
 #endif
 
+#ifdef CONFIG_USE_CAMERA3_ARCH
 #include <media/huawei/hw_extern_pmic.h>
+#endif
+
 #include <huawei_platform/usb/hw_pd_dev.h>
 #include "huawei_platform/power/charger/charger_ap/direct_charger/loadswitch/rt9748/rt9748.h"
 #ifdef CONFIG_CONTEXTHUB_PD
@@ -334,8 +338,8 @@ static ssize_t tusb422_registers_store(struct device *dev,
 	return -1;
 }
 
-static DEVICE_ATTR(registers, S_IWUSR | S_IRUGO,
-				   tusb422_registers_show, tusb422_registers_store);
+static DEVICE_ATTR(registers, S_IRUGO,
+				   tusb422_registers_show, NULL);
 
 static struct attribute *tusb422_attrs[] = {
 	&dev_attr_registers.attr,
@@ -629,7 +633,11 @@ static irqreturn_t tusb422_irq_handler(int irq, void *data)
 #endif
 	tusb422_pwr->alert_status = 1;
 #ifdef TUSB422_KTHREAD
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
+	kthread_queue_work(&tusb422_pwr->kworker, &tusb422_pwr->work);
+#else
 	queue_kthread_work(&tusb422_pwr->kworker, &tusb422_pwr->work);
+#endif
 #else
 		tusb422_schedule_work(&tusb422_pwr->work);
 #endif
@@ -998,7 +1006,11 @@ static enum hrtimer_restart tusb422_timer_tasklet(struct hrtimer *hrtimer)
 
 	tusb422_pwr->timer_expired = true;
 #ifdef TUSB422_KTHREAD
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
+	kthread_queue_work(&tusb422_pwr->kworker, &tusb422_pwr->work);
+#else
 	queue_kthread_work(&tusb422_pwr->kworker, &tusb422_pwr->work);
+#endif
 #else
 	tusb422_schedule_work(&tusb422_pwr->work);
 #endif
@@ -1031,7 +1043,11 @@ static void tusb422_start_work(struct work_struct *work)
 	tusb422_pwr->start_done = 1;
 	tusb422_pwr->alert_status = 1;
 #ifdef TUSB422_KTHREAD
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
+	kthread_queue_work(&tusb422_pwr->kworker, &tusb422_pwr->work);
+#else
 	queue_kthread_work(&tusb422_pwr->kworker, &tusb422_pwr->work);
+#endif
 #else
 	tusb422_schedule_work(&tusb422_pwr->work);
 #endif
@@ -1185,11 +1201,15 @@ static int pd_dpm_wake_lock_call(struct notifier_block *tusb_nb, unsigned long e
 	{
 		case PD_WAKE_LOCK:
 			PRINT("%s - wake lock node called\n", __func__);
+#ifdef CONFIG_WAKELOCK
 			tusb422_wake_lock_control(true);
+#endif
 			break;
 		case PD_WAKE_UNLOCK:
 			PRINT("%s - wake unlock node called\n", __func__);
+#ifdef CONFIG_WAKELOCK
 			tusb422_wake_lock_control(false);
+#endif
 			break;
 		default:
 			PRINT("%s - unknown event: %d\n", __func__, event);
@@ -1213,9 +1233,17 @@ static int tusb422_probe(struct i2c_client *client, const struct i2c_device_id *
 #endif
 	struct device *dev = &client->dev;
 	int ret;
-
-	hw_extern_pmic_config(TI_PMIC_LDO_3,TUSB_VIN_3V3, 1);
-	pr_info("%s:PD PMIC ENABLE IS CALLED\n", __func__);
+	int need_not_config_extra_pmic=0;
+	if (of_property_read_u32(of_find_compatible_node(NULL,NULL, "huawei,pd_dpm"),"need_not_config_extra_pmic", &need_not_config_extra_pmic)) {
+		pr_err("get need_not_config_extra_pmic fail!\n");
+	}
+	pr_info("need_not_config_extra_pmic = %d!\n", need_not_config_extra_pmic);
+	if(!need_not_config_extra_pmic){
+#ifdef CONFIG_USE_CAMERA3_ARCH
+		hw_extern_pmic_config(TI_PMIC_LDO_3,TUSB_VIN_3V3, 1);
+#endif
+	        pr_info("%s:PD PMIC ENABLE IS CALLED\n", __func__);
+	}
 	tusb422_pd = devm_kzalloc(dev, sizeof(*tusb422_pd), GFP_KERNEL);
 	if (!tusb422_pd)
 		return -ENOMEM;
@@ -1252,13 +1280,21 @@ static int tusb422_probe(struct i2c_client *client, const struct i2c_device_id *
 
 	hrtimer_init(&tusb422_pd->timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
 #ifdef TUSB422_KTHREAD
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
+	kthread_init_worker(&tusb422_pd->kworker);
+#else
 	init_kthread_worker(&tusb422_pd->kworker);
+#endif
 	tusb422_pd->kworker_task = kthread_run(kthread_worker_fn, &tusb422_pd->kworker, "tusb422_pd");
 	if (IS_ERR(tusb422_pd->kworker_task)) {
 		dev_err(dev, "failed to create kworker task\n");
 		goto err_kthread;
 	}
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
+	kthread_init_work(&tusb422_pd->work, tusb422_kwork);
+#else
 	init_kthread_work(&tusb422_pd->work, tusb422_kwork);
+#endif
 	sched_setscheduler(tusb422_pd->kworker_task, SCHED_FIFO, &param);
 #else
 	INIT_WORK(&tusb422_pd->work, tusb422_work);
@@ -1339,7 +1375,11 @@ static int tusb422_probe(struct i2c_client *client, const struct i2c_device_id *
 	tusb422_pd->alert_status = 1;
 #endif 
 #ifdef TUSB422_KTHREAD
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
+	kthread_queue_work(&tusb422_pd->kworker, &tusb422_pd->work);
+#else
 	queue_kthread_work(&tusb422_pd->kworker, &tusb422_pd->work);
+#endif
 #else
 	tusb422_schedule_work(&tusb422_pd->work);
 #endif

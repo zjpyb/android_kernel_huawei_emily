@@ -17,12 +17,10 @@
 #include <linux/sysctl.h>
 #include <linux/utsname.h>
 #include <trace/events/sched.h>
-#include <linux/sched.h>
 
 #ifdef CONFIG_DETECT_HUAWEI_HUNG_TASK
 #include "huawei_hung_task.h"
 #endif
-
 /*
  * The number of tasks checked:
  */
@@ -85,17 +83,17 @@ static void check_hung_task(struct task_struct *t, unsigned long timeout)
 	unsigned long switch_count = t->nvcsw + t->nivcsw;
 
 	/*
-	* Ensure the task is not frozen.
-	* Also, skip vfork and any other user process that freezer should skip.
-	*/
+	 * Ensure the task is not frozen.
+	 * Also, skip vfork and any other user process that freezer should skip.
+	 */
 	if (unlikely(t->flags & (PF_FROZEN | PF_FREEZER_SKIP)))
 	    return;
 
 	/*
-	* When a freshly created task is scheduled once, changes its state to
-	* TASK_UNINTERRUPTIBLE without having ever been switched out once, it
-	* musn't be checked.
-	*/
+	 * When a freshly created task is scheduled once, changes its state to
+	 * TASK_UNINTERRUPTIBLE without having ever been switched out once, it
+	 * musn't be checked.
+	 */
 	if (unlikely(!switch_count))
 		return;
 
@@ -106,26 +104,26 @@ static void check_hung_task(struct task_struct *t, unsigned long timeout)
 
 	trace_sched_process_hang(t);
 
-	if (!sysctl_hung_task_warnings)
+	if (!sysctl_hung_task_warnings && !sysctl_hung_task_panic)
 		return;
 
-	if (sysctl_hung_task_warnings > 0)
-		sysctl_hung_task_warnings--;
-
 	/*
-	* Ok, the task did not get scheduled for more than 2 minutes,
-	* complain:
-	*/
-	pr_err("INFO: task %s:%d blocked for more than %ld seconds.\n",
-		t->comm, t->pid, timeout);
-	pr_err("      %s %s %.*s\n",
-		print_tainted(), init_utsname()->release,
-		(int)strcspn(init_utsname()->version, " "),
-		init_utsname()->version);
-	pr_err("\"echo 0 > /proc/sys/kernel/hung_task_timeout_secs\""
-		" disables this message.\n");
-	sched_show_task(t);
-	debug_show_held_locks(t);
+	 * Ok, the task did not get scheduled for more than 2 minutes,
+	 * complain:
+	 */
+	if (sysctl_hung_task_warnings) {
+		sysctl_hung_task_warnings--;
+		pr_err("INFO: task %s:%d blocked for more than %ld seconds.\n",
+			t->comm, t->pid, timeout);
+		pr_err("      %s %s %.*s\n",
+			print_tainted(), init_utsname()->release,
+			(int)strcspn(init_utsname()->version, " "),
+			init_utsname()->version);
+		pr_err("\"echo 0 > /proc/sys/kernel/hung_task_timeout_secs\""
+			" disables this message.\n");
+		sched_show_task(t);
+		debug_show_all_locks();
+	}
 
 	touch_nmi_watchdog();
 
@@ -170,9 +168,9 @@ static void check_hung_uninterruptible_tasks(unsigned long timeout)
 	struct task_struct *g, *t;
 
 	/*
-	* If the system crashed already then all bets are off,
-	* do not report extra hung tasks:
-	*/
+	 * If the system crashed already then all bets are off,
+	 * do not report extra hung tasks:
+	 */
 	if (test_taint(TAINT_DIE) || did_panic)
 		return;
 
@@ -194,10 +192,12 @@ static void check_hung_uninterruptible_tasks(unsigned long timeout)
 }
 #endif
 
-static unsigned long timeout_jiffies(unsigned long timeout)
+static long hung_timeout_jiffies(unsigned long last_checked,
+				 unsigned long timeout)
 {
 	/* timeout of 0 will disable the watchdog */
-	return timeout ? timeout * HZ : MAX_SCHEDULE_TIMEOUT;
+	return timeout ? last_checked - jiffies + timeout * HZ :
+		MAX_SCHEDULE_TIMEOUT;
 }
 
 /*
@@ -218,6 +218,7 @@ int proc_dohung_task_timeout_secs(struct ctl_table *table, int write,
 #ifdef CONFIG_DETECT_HUAWEI_HUNG_TASK
 	fetch_task_timeout_secs(sysctl_hung_task_timeout_secs);
 #endif
+
  out:
 	return ret;
 }
@@ -235,27 +236,29 @@ EXPORT_SYMBOL_GPL(reset_hung_task_detector);
  */
 static int watchdog(void *dummy)
 {
+	unsigned long hung_last_checked = jiffies;
+
 	set_user_nice(current, 0);
 
 	for ( ; ; ) {
 #ifdef CONFIG_DETECT_HUAWEI_HUNG_TASK
 		unsigned long timeout = HEARTBEAT_TIME;
-
-		while (schedule_timeout_interruptible(timeout_jiffies(timeout)))
-			timeout = HEARTBEAT_TIME;
 #else
 		unsigned long timeout = sysctl_hung_task_timeout_secs;
+#endif
+		long t = hung_timeout_jiffies(hung_last_checked, timeout);
 
-		while (schedule_timeout_interruptible(timeout_jiffies(timeout)))
-			timeout = sysctl_hung_task_timeout_secs;
-#endif
-		if (atomic_xchg(&reset_hung_task, 0))
-			continue;
+		if (t <= 0) {
+			if (!atomic_xchg(&reset_hung_task, 0))
 #ifdef CONFIG_DETECT_HUAWEI_HUNG_TASK
-		check_hung_tasks_proposal(timeout);
+				check_hung_tasks_proposal(timeout);
 #else
-		check_hung_uninterruptible_tasks(timeout);
+				check_hung_uninterruptible_tasks(timeout);
 #endif
+			hung_last_checked = jiffies;
+			continue;
+		}
+		schedule_timeout_interruptible(t);
 	}
 
 	return 0;

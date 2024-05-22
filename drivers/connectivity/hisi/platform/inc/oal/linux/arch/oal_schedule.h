@@ -27,10 +27,7 @@ extern "C" {
 #include <linux/module.h>
 #include <asm/uaccess.h>
 #include <linux/ktime.h>
-
-#ifdef CONFIG_WAKELOCK
-#include <linux/wakelock.h>
-#endif
+#include <linux/pm_wakeup.h>
 
 /*lint +e322*/
 

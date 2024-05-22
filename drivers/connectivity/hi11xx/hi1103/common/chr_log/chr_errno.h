@@ -93,6 +93,12 @@ typedef enum
     /* CHR_WIFI_DRV platform event */
     CHR_WIFI_DRV_EVENT_PLAT               = 0x08,
 
+    /* CHR_WIIF_DRV_SOFTAP event */
+    CHR_WIFI_DRV_EVENT_SOFTAP_CONNECT     = 0x09,
+    CHR_WIFI_DRV_EVENT_SOFTAP_DISCONNECT  = 0x0A,
+    CHR_WIFI_DRV_EVENT_SOFTAP_PASSIVE_DISCONNECT  = 0x0B,
+    CHR_WIFI_DRV_EVENT_MIMO_TO_SISO_FAIL  = 0x0C,
+
     /* CHR_WIFI_DEV */
     CHR_WIFI_DEV_EVENT_CHIP               = 0x01,
     CHR_WIFI_DEV_ANTS_MSW_FAILED          = 0x02,
@@ -133,10 +139,16 @@ typedef enum
     CHR_WIFI_HAL_ERROR_MODE_CHANGE_FAIL        = 0x05,
 
     /* CHR_WIFI_DRV_EVENT_OPEN */
-    CHR_WIFI_DRV_ERROR_INSMOD_KO               = 0x01,
-    CHR_WIFI_DRV_ERROR_SYS_VERSION             = 0x02,
-    CHR_WIFI_DRV_ERROR_POWER_ON                = 0x03,
-    CHR_WIFI_DRV_ERROR_CUSTOM_CALL             = 0x04,
+    CHR_WIFI_DRV_ERROR_INSMOD_KO                  = 0x01,   /*KO*/
+    CHR_WIFI_DRV_ERROR_SYS_VERSION                = 0x02,
+    CHR_WIFI_DRV_ERROR_POWER_ON                   = 0x03,   /*cover*/
+    CHR_WIFI_DRV_ERROR_CUSTOM_CALL                = 0x04,
+    CHR_WIFI_DRV_ERROR_POWER_ON_SET_MAC_ADDR      = 0x05,   /*新增*/
+    CHR_WIFI_DRV_ERROR_POWER_ON_NON_BUS           = 0x06,   /*新增*/
+    CHR_WIFI_DRV_ERROR_POWER_ON_SDIO_NO_READY     = 0x07,   /*新增*/
+    CHR_WIFI_DRV_ERROR_POWER_ON_NO_CUSTOM_CALL    = 0x08,   /*新增*/
+    CHR_WIFI_DRV_ERROR_POWER_ON_CALL_TIMEOUT      = 0x08,   /*新增*/
+    CHR_WIFI_DRV_ERROR_POWER_ON_DEVICE_MEM_CHECK  = 0x09,   /*新增*/
 
     /* CHR_WIFI_DRV_EVENT_SCAN */
     CHR_WIFI_DRV_ERROR_SCAN_REFUSED            = 0x01,
@@ -164,6 +176,14 @@ typedef enum
     CHR_WIFI_DRV_ERROR_WAKEUP_FAIL             = 0x03,
     CHR_WIFI_DRV_ERROR_DEVICE_PANIC            = 0x04,
     CHR_WIFI_DRV_ERROR_SDIO_TRANS_FAIL         = 0x05,
+    CHR_WIFI_DRV_ERROR_EXCEPTION_HANDLE        = 0x06,
+    CHR_WIFI_DRV_ERROR_EXCEPTION_WIFI_HANDLE   = 0x07,    /*新增，Exception的DFR处理*/
+    CHR_WIFI_DRV_ERROR_EXCEPTION_BFGX_HANDLE   = 0x08,    /*新增，Exception的DFR处理*/
+    CHR_WIFI_DRV_ERROR_EXCEPTION_RESET         = 0x09,    /*新增，Reset 的DFR处理*/
+    CHR_WIFI_DRV_ERROR_BFGX_SYSTEM_RESET       = 0x0A,    /*新增，BFGX_SYSTEM Reset 的DFR处理*/
+    CHR_WIFI_DRV_ERROR_BFGX_SUB_SYSTEM_RESET   = 0x0B,    /*新增，Reset 的DFR处理*/
+    CHR_WIFI_DRV_ERROR_WIFI_SYSTEM_RESET       = 0x0C,    /*新增，WIFI_SYSTEM Reset 的DFR处理*/
+    CHR_WIFI_DRV_ERROR_WIFI_SUB_SYSTEM_RESET   = 0x0D,    /*新增，Reset 的DFR处理*/
 
     /* CHR_WIFI_DRV_EVENT_FAKELINK */
     CHR_WIFI_DRV_ERROR_RX_NO_BUFFER            = 0x01,
@@ -182,6 +202,9 @@ typedef enum
     CHR_WIFI_DEV_ERROR_SDIO_ENUM               = 0x04,
     CHR_WIFI_DEV_ERROR_IOMUX                   = 0x05,
     CHR_WIFI_DEV_ERROR_UART                    = 0x06,
+    CHR_WIFI_DEV_ERROR_HW_RESET                = 0x07,   /*新增*/
+    CHR_WIFI_DEV_ERROR_WAKEUP_GPIO             = 0x08,   /*新增*/
+    CHR_WIFI_DEV_ERROR_POWER_GPIO              = 0x09,   /*新增*/
 
     /* CHR_WIFI_DEV_ANTS_MSW_FAILED */
     CHR_WIFI_DEV_ERROR_MSW_MODEM_PREEMPTIVE    = 0x01,
@@ -319,6 +342,29 @@ typedef enum
     CHR_PLAT_DRV_ERROR_WAKEUP_DEV         = 0x0D,
     CHR_PLAT_DRV_ERROR_RECV_LASTWORD      = 0x0E,
     CHR_PLAT_DRV_ERROR_BEAT_TIMEOUT       = 0x0F,
+    CHR_PLAT_DRV_ERROR_PCIE_INIT          = 0x10,
+    CHR_PLAT_DRV_ERROR_ALLOC_MEM          = 0x11,
+    CHR_PLAT_DRV_ERROR_WIFI_RECOVERY      = 0x12,   /* wifi-bfgx_status_recovery_etc */
+    CHR_PLAT_DRV_ERROR_BFGX_RECOVERY      = 0x13,   /* wifi-bfgx_status_recovery_etc */
+    CHR_PLAT_DRV_ERROR_DEVICE_PANIC       = 0x14,   /*add  */
+
+    CHR_PLAT_DRV_ERROR_SDIO_FAIL_FIRMWARE_DOWN     = 0x15,  /*新增*/
+    CHR_PLAT_DRV_ERROR_CFG_FAIL_FIRMWARE_DOWN      = 0x16,  /*新增*/
+    CHR_PLAT_DRV_ERROR_RESUME_FIRMWARE_DOWN        = 0x17,  /*新增*/
+
+    CHR_PLAT_DRV_ERROR_PCIE_LINK_DOWN              = 0x18,
+    CHR_PLAT_DRV_ERROR_WKUP_GPIO_PCIE_LINK_DOWN    = 0x19,  /*新增*/
+    CHR_PLAT_DRV_ERROR_INTX_ISR_PCIE_LINK_DOWN     = 0x1A,  /*新增*/
+    CHR_PLAT_DRV_ERROR_D2H_EDMA_PCIE_LINK_DOWN     = 0x1B,  /*新增*/
+    CHR_PLAT_DRV_ERROR_D2H_TRANSFER_PCIE_LINK_DOWN = 0x1C,  /*新增*/
+
+    CHR_PLAT_DRV_ERROR_SDIO_WR_FAIL                = 0x1D,  /*新增*/
+    CHR_PLAT_DRV_ERROR_SDIO_INIT_PROB_FAIL         = 0x1F,  /*新增*/
+    CHR_PLAT_DRV_ERROR_SDIO_INIT_RX_DATA_PROC      = 0x20,  /*新增*/
+    CHR_PLAT_DRV_ERROR_SDIO_INIT_ISR               = 0x21,  /*新增*/
+
+    CHR_PLAT_DRV_ERROR_SLEEP_FORBID                = 0x22,  /*新增*/
+
 
 }CHR_PLAT_ERROR_ENUM;
 

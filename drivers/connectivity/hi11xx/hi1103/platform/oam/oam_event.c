@@ -26,14 +26,14 @@ extern "C" {
   3 函数实现
 *****************************************************************************/
 
-oal_switch_enum_uint8  oam_report_data_get_global_switch(oam_ota_frame_direction_type_enum_uint8 en_direction)
+oal_switch_enum_uint8  oam_report_data_get_global_switch_etc(oam_ota_frame_direction_type_enum_uint8 en_direction)
 {
     if (OAL_UNLIKELY(OAM_OTA_FRAME_DIRECTION_TYPE_BUTT <= en_direction))
     {
         return OAL_ERR_CODE_ARRAY_OVERFLOW;
     }
 
-    return g_st_oam_mng_ctx.st_user_track_ctx.aen_data_global_switch[en_direction];
+    return g_st_oam_mng_ctx_etc.st_user_track_ctx.aen_data_global_switch[en_direction];
 }
 
 
@@ -52,9 +52,9 @@ OAL_STATIC oal_uint32  oam_report_data_set_global_switch(
     /* 先检查单播数据帧是否有用户已经打开了 */
     for (us_usr_idx = 0; us_usr_idx < WLAN_USER_MAX_USER_LIMIT; us_usr_idx++)
     {
-        if ((OAL_SWITCH_ON == g_st_oam_mng_ctx.st_user_track_ctx.ast_80211_ucast_data_ctx[us_usr_idx][en_direction].en_frame_cb_switch)
-            || (OAL_SWITCH_ON == g_st_oam_mng_ctx.st_user_track_ctx.ast_80211_ucast_data_ctx[us_usr_idx][en_direction].en_frame_content_switch)
-            || (OAL_SWITCH_ON == g_st_oam_mng_ctx.st_user_track_ctx.ast_80211_ucast_data_ctx[us_usr_idx][en_direction].en_frame_dscr_switch))
+        if ((OAL_SWITCH_ON == g_st_oam_mng_ctx_etc.st_user_track_ctx.ast_80211_ucast_data_ctx[us_usr_idx][en_direction].en_frame_cb_switch)
+            || (OAL_SWITCH_ON == g_st_oam_mng_ctx_etc.st_user_track_ctx.ast_80211_ucast_data_ctx[us_usr_idx][en_direction].en_frame_content_switch)
+            || (OAL_SWITCH_ON == g_st_oam_mng_ctx_etc.st_user_track_ctx.ast_80211_ucast_data_ctx[us_usr_idx][en_direction].en_frame_dscr_switch))
         {
             en_ucast_switch = OAL_SWITCH_ON;
             break;
@@ -62,42 +62,42 @@ OAL_STATIC oal_uint32  oam_report_data_set_global_switch(
     }
 
     /* 再检查组播数据帧是否开关打开了 */
-    if ((OAL_SWITCH_ON == g_st_oam_mng_ctx.st_user_track_ctx.ast_80211_mcast_data_ctx[en_direction].en_frame_cb_switch)
-        || (OAL_SWITCH_ON == g_st_oam_mng_ctx.st_user_track_ctx.ast_80211_mcast_data_ctx[en_direction].en_frame_content_switch)
-        || (OAL_SWITCH_ON == g_st_oam_mng_ctx.st_user_track_ctx.ast_80211_mcast_data_ctx[en_direction].en_frame_dscr_switch))
+    if ((OAL_SWITCH_ON == g_st_oam_mng_ctx_etc.st_user_track_ctx.ast_80211_mcast_data_ctx[en_direction].en_frame_cb_switch)
+        || (OAL_SWITCH_ON == g_st_oam_mng_ctx_etc.st_user_track_ctx.ast_80211_mcast_data_ctx[en_direction].en_frame_content_switch)
+        || (OAL_SWITCH_ON == g_st_oam_mng_ctx_etc.st_user_track_ctx.ast_80211_mcast_data_ctx[en_direction].en_frame_dscr_switch))
     {
         en_mcast_switch = OAL_SWITCH_ON;
     }
 
-    g_st_oam_mng_ctx.st_user_track_ctx.aen_data_global_switch[en_direction] = (en_ucast_switch | en_mcast_switch);
+    g_st_oam_mng_ctx_etc.st_user_track_ctx.aen_data_global_switch[en_direction] = (en_ucast_switch | en_mcast_switch);
 
     return OAL_SUCC;
 }
 
 
-oal_uint32 oam_report_eth_frame_set_switch(oal_uint16               us_user_idx,
+oal_uint32 oam_report_eth_frame_set_switch_etc(oal_uint16               us_user_idx,
                                                    oal_switch_enum_uint8    en_switch,
                                        oam_ota_frame_direction_type_enum_uint8 en_eth_direction)
 {
     if (us_user_idx >= WLAN_USER_MAX_USER_LIMIT)
     {
-        OAL_IO_PRINT("oam_report_eth_frame_set_switch::user_idx exceeds!\n");
+        OAL_IO_PRINT("oam_report_eth_frame_set_switch_etc::user_idx exceeds!\n");
         return OAL_ERR_CODE_OAM_EVT_USER_IDX_EXCEED;
     }
 
     if (en_eth_direction >= OAM_OTA_FRAME_DIRECTION_TYPE_BUTT)
     {
-        OAL_IO_PRINT("oam_report_eth_frame_set_switch::eth_direction exceeds!\n");
+        OAL_IO_PRINT("oam_report_eth_frame_set_switch_etc::eth_direction exceeds!\n");
         return OAL_ERR_CODE_OAM_EVT_FRAME_DIR_INVALID;
     }
 
-    g_st_oam_mng_ctx.st_user_track_ctx.aen_eth_data_ctx[us_user_idx][en_eth_direction] = en_switch;
+    g_st_oam_mng_ctx_etc.st_user_track_ctx.aen_eth_data_ctx[us_user_idx][en_eth_direction] = en_switch;
 
     return OAL_SUCC;
 }
 
 
-oal_uint32  oam_report_eth_frame_get_switch(
+oal_uint32  oam_report_eth_frame_get_switch_etc(
                                  oal_uint16             us_user_idx,
                                  oam_ota_frame_direction_type_enum_uint8 en_eth_direction,
                                  oal_switch_enum_uint8  *pen_eth_switch)
@@ -117,13 +117,13 @@ oal_uint32  oam_report_eth_frame_get_switch(
         return OAL_ERR_CODE_PTR_NULL;
     }
 
-    *pen_eth_switch = g_st_oam_mng_ctx.st_user_track_ctx.aen_eth_data_ctx[us_user_idx][en_eth_direction];
+    *pen_eth_switch = g_st_oam_mng_ctx_etc.st_user_track_ctx.aen_eth_data_ctx[us_user_idx][en_eth_direction];
 
     return OAL_SUCC;
 }
 
 
-oal_uint32  oam_report_80211_mcast_set_switch(
+oal_uint32  oam_report_80211_mcast_set_switch_etc(
                                         oam_ota_frame_direction_type_enum_uint8 en_mcast_direction,
                                         oam_user_track_frame_type_enum_uint8    en_frame_type,
                                         oal_switch_enum_uint8                   en_frame_switch,
@@ -150,15 +150,15 @@ oal_uint32  oam_report_80211_mcast_set_switch(
     /* 为组播管理帧设置开关 */
     if (OAM_USER_TRACK_FRAME_TYPE_MGMT == en_frame_type)
     {
-        g_st_oam_mng_ctx.st_user_track_ctx.ast_80211_mcast_mgmt_ctx[en_mcast_direction].en_frame_content_switch = en_frame_switch;
-        g_st_oam_mng_ctx.st_user_track_ctx.ast_80211_mcast_mgmt_ctx[en_mcast_direction].en_frame_cb_switch = en_cb_switch;
-        g_st_oam_mng_ctx.st_user_track_ctx.ast_80211_mcast_mgmt_ctx[en_mcast_direction].en_frame_dscr_switch = en_dscr_switch;
+        g_st_oam_mng_ctx_etc.st_user_track_ctx.ast_80211_mcast_mgmt_ctx[en_mcast_direction].en_frame_content_switch = en_frame_switch;
+        g_st_oam_mng_ctx_etc.st_user_track_ctx.ast_80211_mcast_mgmt_ctx[en_mcast_direction].en_frame_cb_switch = en_cb_switch;
+        g_st_oam_mng_ctx_etc.st_user_track_ctx.ast_80211_mcast_mgmt_ctx[en_mcast_direction].en_frame_dscr_switch = en_dscr_switch;
     }
     else
     {
-        g_st_oam_mng_ctx.st_user_track_ctx.ast_80211_mcast_data_ctx[en_mcast_direction].en_frame_content_switch = en_frame_switch;
-        g_st_oam_mng_ctx.st_user_track_ctx.ast_80211_mcast_data_ctx[en_mcast_direction].en_frame_cb_switch = en_cb_switch;
-        g_st_oam_mng_ctx.st_user_track_ctx.ast_80211_mcast_data_ctx[en_mcast_direction].en_frame_dscr_switch = en_dscr_switch;
+        g_st_oam_mng_ctx_etc.st_user_track_ctx.ast_80211_mcast_data_ctx[en_mcast_direction].en_frame_content_switch = en_frame_switch;
+        g_st_oam_mng_ctx_etc.st_user_track_ctx.ast_80211_mcast_data_ctx[en_mcast_direction].en_frame_cb_switch = en_cb_switch;
+        g_st_oam_mng_ctx_etc.st_user_track_ctx.ast_80211_mcast_data_ctx[en_mcast_direction].en_frame_dscr_switch = en_dscr_switch;
 
         /* 设置总开关 */
         oam_report_data_set_global_switch(en_mcast_direction);
@@ -168,7 +168,7 @@ oal_uint32  oam_report_80211_mcast_set_switch(
 }
 
 
-oal_uint32  oam_report_80211_mcast_get_switch(
+oal_uint32  oam_report_80211_mcast_get_switch_etc(
                                         oam_ota_frame_direction_type_enum_uint8 en_mcast_direction,
                                         oam_user_track_frame_type_enum_uint8    en_frame_type,
                                         oal_switch_enum_uint8                  *pen_frame_switch,
@@ -194,22 +194,22 @@ oal_uint32  oam_report_80211_mcast_get_switch(
 
     if (OAM_USER_TRACK_FRAME_TYPE_MGMT == en_frame_type)
     {
-        *pen_frame_switch = g_st_oam_mng_ctx.st_user_track_ctx.ast_80211_mcast_mgmt_ctx[en_mcast_direction].en_frame_content_switch;
-        *pen_cb_switch    = g_st_oam_mng_ctx.st_user_track_ctx.ast_80211_mcast_mgmt_ctx[en_mcast_direction].en_frame_cb_switch;
-        *pen_dscr_switch  = g_st_oam_mng_ctx.st_user_track_ctx.ast_80211_mcast_mgmt_ctx[en_mcast_direction].en_frame_dscr_switch;
+        *pen_frame_switch = g_st_oam_mng_ctx_etc.st_user_track_ctx.ast_80211_mcast_mgmt_ctx[en_mcast_direction].en_frame_content_switch;
+        *pen_cb_switch    = g_st_oam_mng_ctx_etc.st_user_track_ctx.ast_80211_mcast_mgmt_ctx[en_mcast_direction].en_frame_cb_switch;
+        *pen_dscr_switch  = g_st_oam_mng_ctx_etc.st_user_track_ctx.ast_80211_mcast_mgmt_ctx[en_mcast_direction].en_frame_dscr_switch;
     }
     else
     {
-        *pen_frame_switch = g_st_oam_mng_ctx.st_user_track_ctx.ast_80211_mcast_data_ctx[en_mcast_direction].en_frame_content_switch;
-        *pen_cb_switch    = g_st_oam_mng_ctx.st_user_track_ctx.ast_80211_mcast_data_ctx[en_mcast_direction].en_frame_cb_switch;
-        *pen_dscr_switch  = g_st_oam_mng_ctx.st_user_track_ctx.ast_80211_mcast_data_ctx[en_mcast_direction].en_frame_dscr_switch;
+        *pen_frame_switch = g_st_oam_mng_ctx_etc.st_user_track_ctx.ast_80211_mcast_data_ctx[en_mcast_direction].en_frame_content_switch;
+        *pen_cb_switch    = g_st_oam_mng_ctx_etc.st_user_track_ctx.ast_80211_mcast_data_ctx[en_mcast_direction].en_frame_cb_switch;
+        *pen_dscr_switch  = g_st_oam_mng_ctx_etc.st_user_track_ctx.ast_80211_mcast_data_ctx[en_mcast_direction].en_frame_dscr_switch;
     }
 
     return OAL_SUCC;
 }
 
 
-oal_uint32  oam_report_80211_ucast_set_switch(
+oal_uint32  oam_report_80211_ucast_set_switch_etc(
                                         oam_ota_frame_direction_type_enum_uint8 en_ucast_direction,
                                         oam_user_track_frame_type_enum_uint8    en_frame_type,
                                         oal_switch_enum_uint8                   en_frame_switch,
@@ -241,15 +241,15 @@ oal_uint32  oam_report_80211_ucast_set_switch(
 
     if (OAM_USER_TRACK_FRAME_TYPE_MGMT == en_frame_type)
     {
-        g_st_oam_mng_ctx.st_user_track_ctx.ast_80211_ucast_mgmt_ctx[us_user_idx][en_ucast_direction].en_frame_content_switch = en_frame_switch;/* [false alarm]:已做界限判断，不会越界*/
-        g_st_oam_mng_ctx.st_user_track_ctx.ast_80211_ucast_mgmt_ctx[us_user_idx][en_ucast_direction].en_frame_cb_switch = en_cb_switch;/* [false alarm]:已做界限判断，不会越界*/
-        g_st_oam_mng_ctx.st_user_track_ctx.ast_80211_ucast_mgmt_ctx[us_user_idx][en_ucast_direction].en_frame_dscr_switch = en_dscr_switch;/* [false alarm]:已做界限判断，不会越界*/
+        g_st_oam_mng_ctx_etc.st_user_track_ctx.ast_80211_ucast_mgmt_ctx[us_user_idx][en_ucast_direction].en_frame_content_switch = en_frame_switch;/* [false alarm]:已做界限判断，不会越界*/
+        g_st_oam_mng_ctx_etc.st_user_track_ctx.ast_80211_ucast_mgmt_ctx[us_user_idx][en_ucast_direction].en_frame_cb_switch = en_cb_switch;/* [false alarm]:已做界限判断，不会越界*/
+        g_st_oam_mng_ctx_etc.st_user_track_ctx.ast_80211_ucast_mgmt_ctx[us_user_idx][en_ucast_direction].en_frame_dscr_switch = en_dscr_switch;/* [false alarm]:已做界限判断，不会越界*/
     }
     else
     {
-        g_st_oam_mng_ctx.st_user_track_ctx.ast_80211_ucast_data_ctx[us_user_idx][en_ucast_direction].en_frame_content_switch = en_frame_switch;/* [false alarm]:已做界限判断，不会越界*/
-        g_st_oam_mng_ctx.st_user_track_ctx.ast_80211_ucast_data_ctx[us_user_idx][en_ucast_direction].en_frame_cb_switch = en_cb_switch;/* [false alarm]:已做界限判断，不会越界*/
-        g_st_oam_mng_ctx.st_user_track_ctx.ast_80211_ucast_data_ctx[us_user_idx][en_ucast_direction].en_frame_dscr_switch = en_dscr_switch;/* [false alarm]:已做界限判断，不会越界*/
+        g_st_oam_mng_ctx_etc.st_user_track_ctx.ast_80211_ucast_data_ctx[us_user_idx][en_ucast_direction].en_frame_content_switch = en_frame_switch;/* [false alarm]:已做界限判断，不会越界*/
+        g_st_oam_mng_ctx_etc.st_user_track_ctx.ast_80211_ucast_data_ctx[us_user_idx][en_ucast_direction].en_frame_cb_switch = en_cb_switch;/* [false alarm]:已做界限判断，不会越界*/
+        g_st_oam_mng_ctx_etc.st_user_track_ctx.ast_80211_ucast_data_ctx[us_user_idx][en_ucast_direction].en_frame_dscr_switch = en_dscr_switch;/* [false alarm]:已做界限判断，不会越界*/
 
         /* 设置总开关 */
         oam_report_data_set_global_switch(en_ucast_direction);
@@ -258,7 +258,7 @@ oal_uint32  oam_report_80211_ucast_set_switch(
 }
 
 
-oal_uint32  oam_report_80211_ucast_get_switch(
+oal_uint32  oam_report_80211_ucast_get_switch_etc(
                                         oam_ota_frame_direction_type_enum_uint8 en_ucast_direction,
                                         oam_user_track_frame_type_enum_uint8    en_frame_type,
                                         oal_switch_enum_uint8                  *pen_frame_switch,
@@ -290,22 +290,22 @@ oal_uint32  oam_report_80211_ucast_get_switch(
 
     if (OAM_USER_TRACK_FRAME_TYPE_MGMT == en_frame_type)
     {
-        *pen_frame_switch = g_st_oam_mng_ctx.st_user_track_ctx.ast_80211_ucast_mgmt_ctx[us_user_idx][en_ucast_direction].en_frame_content_switch;/* [false alarm]:已做界限判断，不会越界*/
-        *pen_cb_switch    = g_st_oam_mng_ctx.st_user_track_ctx.ast_80211_ucast_mgmt_ctx[us_user_idx][en_ucast_direction].en_frame_cb_switch;/* [false alarm]:已做界限判断，不会越界*/
-        *pen_dscr_switch  = g_st_oam_mng_ctx.st_user_track_ctx.ast_80211_ucast_mgmt_ctx[us_user_idx][en_ucast_direction].en_frame_dscr_switch;/* [false alarm]:已做界限判断，不会越界*/
+        *pen_frame_switch = g_st_oam_mng_ctx_etc.st_user_track_ctx.ast_80211_ucast_mgmt_ctx[us_user_idx][en_ucast_direction].en_frame_content_switch;/* [false alarm]:已做界限判断，不会越界*/
+        *pen_cb_switch    = g_st_oam_mng_ctx_etc.st_user_track_ctx.ast_80211_ucast_mgmt_ctx[us_user_idx][en_ucast_direction].en_frame_cb_switch;/* [false alarm]:已做界限判断，不会越界*/
+        *pen_dscr_switch  = g_st_oam_mng_ctx_etc.st_user_track_ctx.ast_80211_ucast_mgmt_ctx[us_user_idx][en_ucast_direction].en_frame_dscr_switch;/* [false alarm]:已做界限判断，不会越界*/
     }
     else
     {
-        *pen_frame_switch = g_st_oam_mng_ctx.st_user_track_ctx.ast_80211_ucast_data_ctx[us_user_idx][en_ucast_direction].en_frame_content_switch;/* [false alarm]:已做界限判断，不会越界*/
-        *pen_cb_switch    = g_st_oam_mng_ctx.st_user_track_ctx.ast_80211_ucast_data_ctx[us_user_idx][en_ucast_direction].en_frame_cb_switch;/* [false alarm]:已做界限判断，不会越界*/
-        *pen_dscr_switch  = g_st_oam_mng_ctx.st_user_track_ctx.ast_80211_ucast_data_ctx[us_user_idx][en_ucast_direction].en_frame_dscr_switch;/* [false alarm]:已做界限判断，不会越界*/
+        *pen_frame_switch = g_st_oam_mng_ctx_etc.st_user_track_ctx.ast_80211_ucast_data_ctx[us_user_idx][en_ucast_direction].en_frame_content_switch;/* [false alarm]:已做界限判断，不会越界*/
+        *pen_cb_switch    = g_st_oam_mng_ctx_etc.st_user_track_ctx.ast_80211_ucast_data_ctx[us_user_idx][en_ucast_direction].en_frame_cb_switch;/* [false alarm]:已做界限判断，不会越界*/
+        *pen_dscr_switch  = g_st_oam_mng_ctx_etc.st_user_track_ctx.ast_80211_ucast_data_ctx[us_user_idx][en_ucast_direction].en_frame_dscr_switch;/* [false alarm]:已做界限判断，不会越界*/
     }
 
     return OAL_SUCC;
 }
 
 
-oal_uint32  oam_report_80211_probe_set_switch(
+oal_uint32  oam_report_80211_probe_set_switch_etc(
                                         oam_ota_frame_direction_type_enum_uint8 en_probe_direction,
                                         oal_switch_enum_uint8                   en_frame_switch,
                                         oal_switch_enum_uint8                   en_cb_switch,
@@ -323,15 +323,15 @@ oal_uint32  oam_report_80211_probe_set_switch(
         return OAL_ERR_CODE_INVALID_CONFIG;
     }
 
-    g_st_oam_mng_ctx.st_user_track_ctx.aen_80211_probe_switch[en_probe_direction].en_frame_content_switch = en_frame_switch;
-    g_st_oam_mng_ctx.st_user_track_ctx.aen_80211_probe_switch[en_probe_direction].en_frame_cb_switch = en_cb_switch;
-    g_st_oam_mng_ctx.st_user_track_ctx.aen_80211_probe_switch[en_probe_direction].en_frame_dscr_switch = en_dscr_switch;
+    g_st_oam_mng_ctx_etc.st_user_track_ctx.aen_80211_probe_switch[en_probe_direction].en_frame_content_switch = en_frame_switch;
+    g_st_oam_mng_ctx_etc.st_user_track_ctx.aen_80211_probe_switch[en_probe_direction].en_frame_cb_switch = en_cb_switch;
+    g_st_oam_mng_ctx_etc.st_user_track_ctx.aen_80211_probe_switch[en_probe_direction].en_frame_dscr_switch = en_dscr_switch;
 
     return OAL_SUCC;
 }
 
 
-oal_uint32  oam_report_80211_probe_get_switch(
+oal_uint32  oam_report_80211_probe_get_switch_etc(
                                         oam_ota_frame_direction_type_enum_uint8 en_probe_direction,
                                         oal_switch_enum_uint8                  *pen_frame_switch,
                                         oal_switch_enum_uint8                  *pen_cb_switch,
@@ -349,25 +349,25 @@ oal_uint32  oam_report_80211_probe_get_switch(
         return OAL_ERR_CODE_PTR_NULL;
     }
 
-    *pen_frame_switch = g_st_oam_mng_ctx.st_user_track_ctx.aen_80211_probe_switch[en_probe_direction].en_frame_content_switch;
-    *pen_cb_switch    = g_st_oam_mng_ctx.st_user_track_ctx.aen_80211_probe_switch[en_probe_direction].en_frame_cb_switch;
-    *pen_dscr_switch  = g_st_oam_mng_ctx.st_user_track_ctx.aen_80211_probe_switch[en_probe_direction].en_frame_dscr_switch;
+    *pen_frame_switch = g_st_oam_mng_ctx_etc.st_user_track_ctx.aen_80211_probe_switch[en_probe_direction].en_frame_content_switch;
+    *pen_cb_switch    = g_st_oam_mng_ctx_etc.st_user_track_ctx.aen_80211_probe_switch[en_probe_direction].en_frame_cb_switch;
+    *pen_dscr_switch  = g_st_oam_mng_ctx_etc.st_user_track_ctx.aen_80211_probe_switch[en_probe_direction].en_frame_dscr_switch;
 
     return OAL_SUCC;
 }
 
 
-oal_uint32  oam_report_dhcp_arp_set_switch(oal_switch_enum_uint8 en_switch)
+oal_uint32  oam_report_dhcp_arp_set_switch_etc(oal_switch_enum_uint8 en_switch)
 {
-    g_st_oam_mng_ctx.st_user_track_ctx.en_tx_mcast_dhcp_arp_switch = en_switch;
+    g_st_oam_mng_ctx_etc.st_user_track_ctx.en_tx_mcast_dhcp_arp_switch = en_switch;
 
     return OAL_SUCC;
 }
 
 
-oal_switch_enum_uint8  oam_report_dhcp_arp_get_switch(oal_void)
+oal_switch_enum_uint8  oam_report_dhcp_arp_get_switch_etc(oal_void)
 {
-    return g_st_oam_mng_ctx.st_user_track_ctx.en_tx_mcast_dhcp_arp_switch;
+    return g_st_oam_mng_ctx_etc.st_user_track_ctx.en_tx_mcast_dhcp_arp_switch;
 }
 #if 0
 
@@ -378,11 +378,11 @@ oal_switch_enum_uint8 oam_report_get_switch(oam_ota_type_enum_uint8 en_type)
         return OAL_SWITCH_OFF;
     }
 
-    return g_st_oam_mng_ctx.ast_ota_ctx[0].aen_ota_switch[en_type];
+    return g_st_oam_mng_ctx_etc.ast_ota_ctx[0].aen_ota_switch[en_type];
 }
 #endif
 
-oal_uint32  oam_event_get_switch(
+oal_uint32  oam_event_get_switch_etc(
                 oal_uint8              uc_vap_id,
                 oal_switch_enum_uint8 *pen_switch_type)
 {
@@ -396,109 +396,109 @@ oal_uint32  oam_event_get_switch(
         return OAL_ERR_CODE_ARRAY_OVERFLOW;
     }
 
-    *pen_switch_type = g_st_oam_mng_ctx.ast_event_ctx[uc_vap_id].en_event_switch;
+    *pen_switch_type = g_st_oam_mng_ctx_etc.ast_event_ctx[uc_vap_id].en_event_switch;
 
     return OAL_SUCC;
 }
 
 
-oal_uint32  oam_event_set_switch(
+oal_uint32  oam_event_set_switch_etc(
                 oal_uint8               uc_vap_id,
                 oal_switch_enum_uint8   en_switch_type)
 {
     if (en_switch_type >= OAL_SWITCH_BUTT)
     {
-        OAL_IO_PRINT("oam_event_set_switch::event_type[%d] invalid. \n", en_switch_type);
+        OAL_IO_PRINT("oam_event_set_switch_etc::event_type[%d] invalid. \n", en_switch_type);
         return OAL_ERR_CODE_INVALID_CONFIG;
     }
 
     if (uc_vap_id >= WLAN_VAP_SUPPORT_MAX_NUM_LIMIT)
     {
-        OAL_IO_PRINT("oam_event_set_switch::vap_id[%d] >= WLAN_VAP_SUPPORT_MAX_NUM_LIMIT.\n", uc_vap_id);
+        OAL_IO_PRINT("oam_event_set_switch_etc::vap_id[%d] >= WLAN_VAP_SUPPORT_MAX_NUM_LIMIT.\n", uc_vap_id);
         return OAL_ERR_CODE_ARRAY_OVERFLOW;
     }
 
-    g_st_oam_mng_ctx.ast_event_ctx[uc_vap_id].en_event_switch = en_switch_type;
+    g_st_oam_mng_ctx_etc.ast_event_ctx[uc_vap_id].en_event_switch = en_switch_type;
 
     return OAL_SUCC;
 }
 
 
-oal_uint32  oam_event_set_specific_type_switch(
+oal_uint32  oam_event_set_specific_type_switch_etc(
                             oal_uint8                   uc_vap_id,
                             oal_switch_enum_uint8       en_switch_type,
                             oam_event_type_enum_uint16  en_event_type)
 {
     if (en_switch_type >= OAL_SWITCH_BUTT)
     {
-        OAL_IO_PRINT("oam_event_set_specific_type_switch::en_switch_type[%d] invalid. \n", en_switch_type);
+        OAL_IO_PRINT("oam_event_set_specific_type_switch_etc::en_switch_type[%d] invalid. \n", en_switch_type);
         return OAL_ERR_CODE_INVALID_CONFIG;
     }
 
     if (uc_vap_id >= WLAN_VAP_SUPPORT_MAX_NUM_LIMIT)
     {
-        OAL_IO_PRINT("oam_event_set_specific_type_switch::vap_id[%d] >= WLAN_VAP_SUPPORT_MAX_NUM_LIMIT. \n", uc_vap_id);
+        OAL_IO_PRINT("oam_event_set_specific_type_switch_etc::vap_id[%d] >= WLAN_VAP_SUPPORT_MAX_NUM_LIMIT. \n", uc_vap_id);
         return OAL_ERR_CODE_ARRAY_OVERFLOW;
     }
 
-    g_st_oam_mng_ctx.ast_specific_event_ctx[uc_vap_id].aen_specific_event_switch[en_event_type] = en_switch_type;
+    g_st_oam_mng_ctx_etc.ast_specific_event_ctx[uc_vap_id].aen_specific_event_switch[en_event_type] = en_switch_type;
 
     return OAL_SUCC;
 }
 
 
-oal_uint32  oam_ota_set_beacon_switch(
+oal_uint32  oam_ota_set_beacon_switch_etc(
                   oal_uint8                                   uc_vap_id,
                   oam_sdt_print_beacon_rxdscr_type_enum_uint8 en_switch_type)
 {
     if (en_switch_type >= OAM_SDT_PRINT_BEACON_RXDSCR_TYPE_BUTT)
     {
-        OAL_IO_PRINT("oam_ota_set_beacon_switch::event_type[%d] exceeds! \n", en_switch_type);
+        OAL_IO_PRINT("oam_ota_set_beacon_switch_etc::event_type[%d] exceeds! \n", en_switch_type);
         return OAL_ERR_CODE_INVALID_CONFIG;
     }
 
     if (uc_vap_id >= WLAN_VAP_SUPPORT_MAX_NUM_LIMIT)
     {
-        OAL_IO_PRINT("oam_ota_set_beacon_switch::vap_id[%d] exceeds! \n", uc_vap_id);
+        OAL_IO_PRINT("oam_ota_set_beacon_switch_etc::vap_id[%d] exceeds! \n", uc_vap_id);
         return OAL_ERR_CODE_ARRAY_OVERFLOW;
     }
 
-    g_st_oam_mng_ctx.ast_ota_ctx[uc_vap_id].en_beacon_switch = en_switch_type;
+    g_st_oam_mng_ctx_etc.ast_ota_ctx[uc_vap_id].en_beacon_switch = en_switch_type;
 
     return OAL_SUCC;
 }
 
 
-oam_sdt_print_beacon_rxdscr_type_enum_uint8  oam_ota_get_beacon_switch(oal_void)
+oam_sdt_print_beacon_rxdscr_type_enum_uint8  oam_ota_get_beacon_switch_etc(oal_void)
 {
-    return g_st_oam_mng_ctx.ast_ota_ctx[0].en_beacon_switch;
+    return g_st_oam_mng_ctx_etc.ast_ota_ctx[0].en_beacon_switch;
 }
 
 
-oal_uint32  oam_ota_set_rx_dscr_switch(
+oal_uint32  oam_ota_set_rx_dscr_switch_etc(
                                                   oal_uint8             uc_vap_id,
                                                   oal_switch_enum_uint8 en_switch_type)
 {
     if (en_switch_type >= OAM_PROFILING_SWITCH_BUTT)
     {
-        OAL_IO_PRINT("oam_ota_set_rx_dscr_switch::event_type[%d] exceeds! \n", en_switch_type);
+        OAL_IO_PRINT("oam_ota_set_rx_dscr_switch_etc::event_type[%d] exceeds! \n", en_switch_type);
         return OAL_ERR_CODE_INVALID_CONFIG;
     }
 
     if (uc_vap_id >= WLAN_VAP_SUPPORT_MAX_NUM_LIMIT)
     {
-        OAL_IO_PRINT("oam_ota_set_rx_dscr_switch::vap_id[%d] exceeds! \n", uc_vap_id);
+        OAL_IO_PRINT("oam_ota_set_rx_dscr_switch_etc::vap_id[%d] exceeds! \n", uc_vap_id);
         return OAL_ERR_CODE_ARRAY_OVERFLOW;
     }
 
-    g_st_oam_mng_ctx.ast_ota_ctx[uc_vap_id].en_rx_dscr_switch = en_switch_type;
+    g_st_oam_mng_ctx_etc.ast_ota_ctx[uc_vap_id].en_rx_dscr_switch = en_switch_type;
 
     return OAL_SUCC;
 }
 
-oal_switch_enum_uint8  oam_ota_get_rx_dscr_switch(oal_void)
+oal_switch_enum_uint8  oam_ota_get_rx_dscr_switch_etc(oal_void)
 {
-    return g_st_oam_mng_ctx.ast_ota_ctx[0].en_rx_dscr_switch;
+    return g_st_oam_mng_ctx_etc.ast_ota_ctx[0].en_rx_dscr_switch;
 }
 
 
@@ -551,7 +551,7 @@ OAL_STATIC oal_uint32  oam_event_print_to_std(
         return ul_rslt;
     }
 
-    ul_rslt = oam_print_to_console(ac_output_data);
+    ul_rslt = oam_print_to_console_etc(ac_output_data);
 
     if (OAL_SUCC != ul_rslt)
     {
@@ -582,7 +582,7 @@ OAL_STATIC oal_uint32  oam_event_print_to_file(
         return ul_rslt;
     }
 
-    ul_rslt = oam_print_to_file(ac_output_data);
+    ul_rslt = oam_print_to_file_etc(ac_output_data);
 
     if (OAL_SUCC != ul_rslt)
     {
@@ -605,7 +605,7 @@ OAL_STATIC oal_uint32  oam_event_print_to_sdt(
     oal_netbuf_stru    *pst_netbuf;
     oal_uint32          ul_ret          = OAL_SUCC;
 
-    if (OAL_UNLIKELY(OAL_PTR_NULL == g_st_oam_sdt_func_hook.p_sdt_report_data_func))
+    if (OAL_UNLIKELY(OAL_PTR_NULL == g_st_oam_sdt_func_hook_etc.p_sdt_report_data_func))
     {
         return OAL_ERR_CODE_PTR_NULL;
     }
@@ -627,7 +627,7 @@ OAL_STATIC oal_uint32  oam_event_print_to_sdt(
                  OAM_EVENT_INFO_MAX_LEN);
 
     /* 将event信息复制到netbuf上报给SDT,头部预留8字节，尾部预留1字节，给sdt_drv用 */
-    pst_netbuf = oam_alloc_data2sdt(OAM_EVENT_STRU_SIZE);
+    pst_netbuf = oam_alloc_data2sdt_etc(OAM_EVENT_STRU_SIZE);
     if (OAL_PTR_NULL == pst_netbuf)
     {
         return OAL_ERR_CODE_PTR_NULL;
@@ -638,13 +638,13 @@ OAL_STATIC oal_uint32  oam_event_print_to_sdt(
                 OAM_EVENT_STRU_SIZE);
 
     /* 判断sdt发送消息队列是否已满，若满输出至串口 */
-    ul_ret = oam_report_data2sdt(pst_netbuf, OAM_DATA_TYPE_EVENT, OAM_PRIMID_TYPE_OUTPUT_CONTENT);
+    ul_ret = oam_report_data2sdt_etc(pst_netbuf, OAM_DATA_TYPE_EVENT, OAM_PRIMID_TYPE_OUTPUT_CONTENT);
 
     return ul_ret;
 }
 
 
-oal_uint32  oam_event_report(
+oal_uint32  oam_event_report_etc(
                         oal_uint8                  *puc_mac_hdr_addr,
                         oal_uint8                   uc_vap_id,
                         oam_module_id_enum_uint16   en_mod,
@@ -669,18 +669,18 @@ oal_uint32  oam_event_report(
     }
 
     /* 检查event上报总开关是否打开 */
-    if (OAL_SWITCH_OFF == g_st_oam_mng_ctx.ast_event_ctx[uc_vap_id].en_event_switch)
+    if (OAL_SWITCH_OFF == g_st_oam_mng_ctx_etc.ast_event_ctx[uc_vap_id].en_event_switch)
     {
         return OAL_SUCC;
     }
 
     /* 检查具体某一种event上报开关是否打开 */
-    if (OAL_SWITCH_OFF == g_st_oam_mng_ctx.ast_specific_event_ctx[uc_vap_id].aen_specific_event_switch[en_event_type])
+    if (OAL_SWITCH_OFF == g_st_oam_mng_ctx_etc.ast_specific_event_ctx[uc_vap_id].aen_specific_event_switch[en_event_type])
     {
         return OAL_SUCC;
     }
 
-    switch (g_st_oam_mng_ctx.en_output_type)
+    switch (g_st_oam_mng_ctx_etc.en_output_type)
     {
         /* 输出至控制台 */
         case OAM_OUTPUT_TYPE_CONSOLE:
@@ -718,7 +718,7 @@ oal_uint32  oam_event_report(
 }
 
 
-oal_uint32  oam_event_init(oal_void)
+oal_uint32  oam_event_init_etc(oal_void)
 {
     oal_uint32 ul_rslt;
     oal_uint32 ul_vapid_loop;
@@ -731,9 +731,9 @@ oal_uint32  oam_event_init(oal_void)
     {
         /* 设置EVENT总开关 */
 #if (_PRE_PRODUCT_ID == _PRE_PRODUCT_ID_HI1151)
-        ul_rslt = oam_event_set_switch((oal_uint8)ul_vapid_loop, OAL_SWITCH_OFF);
+        ul_rslt = oam_event_set_switch_etc((oal_uint8)ul_vapid_loop, OAL_SWITCH_OFF);
 #else
-        ul_rslt = oam_event_set_switch((oal_uint8)ul_vapid_loop, OAL_SWITCH_ON);
+        ul_rslt = oam_event_set_switch_etc((oal_uint8)ul_vapid_loop, OAL_SWITCH_ON);
 #endif
 
         if (OAL_SUCC != ul_rslt)
@@ -744,29 +744,29 @@ oal_uint32  oam_event_init(oal_void)
         /* 设置具体某一种EVENT的开关 */
         for (ul_eventtype_loop = 0; ul_eventtype_loop < OAM_EVENT_TYPE_BUTT; ul_eventtype_loop++)
         {
-            oam_event_set_specific_type_switch((oal_uint8)ul_vapid_loop, OAL_SWITCH_ON, (oal_uint16)ul_eventtype_loop);
+            oam_event_set_specific_type_switch_etc((oal_uint8)ul_vapid_loop, OAL_SWITCH_ON, (oal_uint16)ul_eventtype_loop);
         }
 
         /* 内部抛事件event需要关闭 */
-        oam_event_set_specific_type_switch((oal_uint8)ul_vapid_loop, OAL_SWITCH_OFF, OAM_EVENT_INTERNAL);
-        oam_event_set_specific_type_switch((oal_uint8)ul_vapid_loop, OAL_SWITCH_OFF, OAM_EVENT_USER_INFO_CHANGE);
+        oam_event_set_specific_type_switch_etc((oal_uint8)ul_vapid_loop, OAL_SWITCH_OFF, OAM_EVENT_INTERNAL);
+        oam_event_set_specific_type_switch_etc((oal_uint8)ul_vapid_loop, OAL_SWITCH_OFF, OAM_EVENT_USER_INFO_CHANGE);
 
         /* 设置beacon打印开关为关闭 */
-        oam_ota_set_beacon_switch((oal_uint8)ul_vapid_loop, OAL_SWITCH_OFF);
+        oam_ota_set_beacon_switch_etc((oal_uint8)ul_vapid_loop, OAL_SWITCH_OFF);
         /* 设置rx描述符打印开关为关闭 */
-        oam_ota_set_rx_dscr_switch((oal_uint8)ul_vapid_loop, OAL_SWITCH_OFF);
+        oam_ota_set_rx_dscr_switch_etc((oal_uint8)ul_vapid_loop, OAL_SWITCH_OFF);
     }
 
     /* 设置单用户跟踪相关的所有开关 */
-    oam_report_set_all_switch(OAL_SWITCH_OFF);
+    oam_report_set_all_switch_etc(OAL_SWITCH_OFF);
 
-    oam_report_dhcp_arp_set_switch(OAL_SWITCH_OFF);
+    oam_report_dhcp_arp_set_switch_etc(OAL_SWITCH_OFF);
 
     return OAL_SUCC;
 }
 
 
-OAL_STATIC oal_uint32  oam_ota_report_to_std(oal_uint8     *puc_param_one_addr,
+OAL_STATIC oal_uint32  oam_ota_report_to_std_etc(oal_uint8     *puc_param_one_addr,
                                        oal_uint16      us_param_one_len,
                                        oal_uint8      *puc_param_two_addr,
                                        oal_uint16      us_param_two_len,
@@ -775,13 +775,13 @@ OAL_STATIC oal_uint32  oam_ota_report_to_std(oal_uint8     *puc_param_one_addr,
     if (0 == us_param_two_len)
     {
         OAL_IO_PRINT("\n\nOTA TYPE is--> %d and OTA DATA is:\n", en_ota_type);
-        oam_dump_buff_by_hex(puc_param_one_addr, us_param_one_len, 4);
+        oam_dump_buff_by_hex_etc(puc_param_one_addr, us_param_one_len, 4);
     }
     else
     {
         /* 打印第一段内容 */
         OAL_IO_PRINT("\n\nOTA TYPE is--> %d and OTA DATA the first part is:\n", en_ota_type);
-        oam_dump_buff_by_hex(puc_param_one_addr, us_param_one_len, OAM_PRINT_CRLF_NUM);
+        oam_dump_buff_by_hex_etc(puc_param_one_addr, us_param_one_len, OAM_PRINT_CRLF_NUM);
 
         /* 打印第二段内容 */
         OAL_IO_PRINT("\nOTA DATA tht second part is:\n");
@@ -791,7 +791,7 @@ OAL_STATIC oal_uint32  oam_ota_report_to_std(oal_uint8     *puc_param_one_addr,
             us_param_two_len = OAL_MIN(us_param_two_len, OAM_OTA_DATA_TO_STD_MAX_LEN);
         }
 
-        oam_dump_buff_by_hex(puc_param_two_addr, us_param_two_len, OAM_PRINT_CRLF_NUM);
+        oam_dump_buff_by_hex_etc(puc_param_two_addr, us_param_two_len, OAM_PRINT_CRLF_NUM);
     }
 
     return OAL_SUCC;
@@ -799,7 +799,7 @@ OAL_STATIC oal_uint32  oam_ota_report_to_std(oal_uint8     *puc_param_one_addr,
 
 
 /*lint -e662*/
-oal_uint32  oam_ota_report_to_sdt(oal_uint8    *puc_param_one_addr,
+oal_uint32  oam_ota_report_to_sdt_etc(oal_uint8    *puc_param_one_addr,
                                        oal_uint16     us_param_one_len,
                                        oal_uint8     *puc_param_two_addr,
                                        oal_uint16     us_param_two_len,
@@ -813,7 +813,7 @@ oal_uint32  oam_ota_report_to_sdt(oal_uint8    *puc_param_one_addr,
     oam_ota_stru        *pst_ota_data;
 
 
-    if (OAL_UNLIKELY(OAL_PTR_NULL == g_st_oam_sdt_func_hook.p_sdt_report_data_func))
+    if (OAL_UNLIKELY(OAL_PTR_NULL == g_st_oam_sdt_func_hook_etc.p_sdt_report_data_func))
     {
         return OAL_ERR_CODE_PTR_NULL;
     }
@@ -834,7 +834,7 @@ oal_uint32  oam_ota_report_to_sdt(oal_uint8    *puc_param_one_addr,
         }
     }
 
-    pst_netbuf = oam_alloc_data2sdt(us_skb_len);
+    pst_netbuf = oam_alloc_data2sdt_etc(us_skb_len);
     if (OAL_PTR_NULL == pst_netbuf)
     {
         return OAL_ERR_CODE_PTR_NULL;
@@ -901,20 +901,20 @@ oal_uint32  oam_ota_report_to_sdt(oal_uint8    *puc_param_one_addr,
 
         /* 无效值 */
         default:
-            oal_mem_sdt_netbuf_free(pst_netbuf, OAL_TRUE);
+            oal_mem_sdt_netbuf_free_etc(pst_netbuf, OAL_TRUE);
             //oal_netbuf_free(pst_netbuf);
             return OAL_ERR_CODE_INVALID_CONFIG;
     }
 
     /* 判断sdt发送消息队列是否已满，若满输出至串口 */
-    ul_ret = oam_report_data2sdt(pst_netbuf, OAM_DATA_TYPE_OTA, OAM_PRIMID_TYPE_OUTPUT_CONTENT);
+    ul_ret = oam_report_data2sdt_etc(pst_netbuf, OAM_DATA_TYPE_OTA, OAM_PRIMID_TYPE_OUTPUT_CONTENT);
 #endif
     return ul_ret;
 }
 
 
 
-oal_uint32  oam_ota_report(
+oal_uint32  oam_ota_report_etc(
                            oal_uint8     *puc_param_one_addr,
                            oal_uint16     us_param_one_len,
                            oal_uint8     *puc_param_two_addr,
@@ -924,16 +924,16 @@ oal_uint32  oam_ota_report(
     oal_uint32          ul_rslt = OAL_ERR_CODE_BUTT;
 #if 0
     /* 检查要打印的ota类型开关是否打开 */
-    if (OAL_SWITCH_OFF == g_st_oam_mng_ctx.ast_ota_ctx[0].aen_ota_switch[en_ota_type])
+    if (OAL_SWITCH_OFF == g_st_oam_mng_ctx_etc.ast_ota_ctx[0].aen_ota_switch[en_ota_type])
     {
         return OAL_SUCC;
     }
 #endif
-    switch (g_st_oam_mng_ctx.en_output_type)
+    switch (g_st_oam_mng_ctx_etc.en_output_type)
     {
         /* 输出至控制台 */
         case OAM_OUTPUT_TYPE_CONSOLE:
-        ul_rslt = oam_ota_report_to_std(puc_param_one_addr,
+        ul_rslt = oam_ota_report_to_std_etc(puc_param_one_addr,
                                         us_param_one_len,
                                         puc_param_two_addr,
                                         us_param_two_len,
@@ -943,7 +943,7 @@ oal_uint32  oam_ota_report(
 
         /* 输出至SDT工具 */
         case OAM_OUTPUT_TYPE_SDT:
-        ul_rslt = oam_ota_report_to_sdt(puc_param_one_addr,
+        ul_rslt = oam_ota_report_to_sdt_etc(puc_param_one_addr,
                                         us_param_one_len,
                                         puc_param_two_addr,
                                         us_param_two_len,
@@ -984,7 +984,7 @@ OAL_STATIC oal_uint32  oam_report_80211_frame_to_console(
         OAL_IO_PRINT("oam_report_80211_frame_to_console::rx_80211_frame header:\n");
     }
 
-    oam_dump_buff_by_hex(puc_mac_hdr_addr, uc_mac_hdr_len, OAM_PRINT_CRLF_NUM);
+    oam_dump_buff_by_hex_etc(puc_mac_hdr_addr, uc_mac_hdr_len, OAM_PRINT_CRLF_NUM);
 
     if (uc_mac_hdr_len > us_mac_frame_len)
     {
@@ -995,7 +995,7 @@ OAL_STATIC oal_uint32  oam_report_80211_frame_to_console(
     us_80211_frame_body_len   = us_mac_frame_len - uc_mac_hdr_len;
 
     OAL_IO_PRINT("oam_report_80211_frame_to_console::80211_frame body:\n");
-    oam_dump_buff_by_hex(puc_mac_body_addr, us_80211_frame_body_len, OAM_PRINT_CRLF_NUM);
+    oam_dump_buff_by_hex_etc(puc_mac_body_addr, us_80211_frame_body_len, OAM_PRINT_CRLF_NUM);
 
     return OAL_SUCC;
 }
@@ -1038,7 +1038,7 @@ OAL_STATIC oal_uint32  oam_report_80211_frame_to_sdt(
     oam_ota_stru        *pst_ota_data;
     oal_uint32           ul_ret             = OAL_SUCC;
 
-    if (OAL_UNLIKELY(OAL_PTR_NULL == g_st_oam_sdt_func_hook.p_sdt_report_data_func))
+    if (OAL_UNLIKELY(OAL_PTR_NULL == g_st_oam_sdt_func_hook_etc.p_sdt_report_data_func))
     {
         return OAL_ERR_CODE_PTR_NULL;
     }
@@ -1051,7 +1051,7 @@ OAL_STATIC oal_uint32  oam_report_80211_frame_to_sdt(
         us_mac_frame_len = WLAN_SDT_NETBUF_MAX_PAYLOAD - OAL_SIZEOF(oam_ota_hdr_stru);
     }
 
-    pst_netbuf = oam_alloc_data2sdt(us_skb_len);
+    pst_netbuf = oam_alloc_data2sdt_etc(us_skb_len);
     if (OAL_PTR_NULL == pst_netbuf)
     {
         return OAL_ERR_CODE_PTR_NULL;
@@ -1089,14 +1089,14 @@ OAL_STATIC oal_uint32  oam_report_80211_frame_to_sdt(
     oam_hide_mac_addr(pst_ota_data->auc_ota_data, uc_mac_hdr_len);
 
     /* 判断sdt发送消息队列是否已满，若满输出至串口 */
-    ul_ret = oam_report_data2sdt(pst_netbuf, OAM_DATA_TYPE_OTA, OAM_PRIMID_TYPE_OUTPUT_CONTENT);
+    ul_ret = oam_report_data2sdt_etc(pst_netbuf, OAM_DATA_TYPE_OTA, OAM_PRIMID_TYPE_OUTPUT_CONTENT);
 
     return ul_ret;
 }
 
 
 
-oal_uint32  oam_report_80211_frame(
+oal_uint32  oam_report_80211_frame_etc(
                         oal_uint8     *puc_user_macaddr,
                         oal_uint8     *puc_mac_hdr_addr,
                         oal_uint8      uc_mac_hdr_len,
@@ -1119,7 +1119,7 @@ oal_uint32  oam_report_80211_frame(
         || OAL_PTR_NULL == puc_mac_body_addr
         || OAL_PTR_NULL == puc_user_macaddr))
     {
-        OAM_ERROR_LOG4(0, OAM_SF_ANY, "{oam_report_80211_frame:[device] puc_mac_hdr_addr = 0x%X, puc_mac_body_addr = 0x%X, puc_user_macaddr = 0x%X, __return_address = 0x%X}",
+        OAM_ERROR_LOG4(0, OAM_SF_ANY, "{oam_report_80211_frame_etc:[device] puc_mac_hdr_addr = 0x%X, puc_mac_body_addr = 0x%X, puc_user_macaddr = 0x%X, __return_address = 0x%X}",
                         puc_mac_hdr_addr,puc_mac_body_addr,puc_user_macaddr, ul_return_addr);
         return OAL_ERR_CODE_PTR_NULL;
     }
@@ -1128,8 +1128,8 @@ oal_uint32  oam_report_80211_frame(
     if ((WLAN_MAX_FRAME_HEADER_LEN < uc_mac_hdr_len)
         || (WLAN_MIN_FRAME_HEADER_LEN > uc_mac_hdr_len))
     {
-        oam_report_dft_params(BROADCAST_MACADDR,puc_mac_hdr_addr,OAM_OTA_FRAME_TO_SDT_MAX_LEN,OAM_OTA_TYPE_80211_FRAME);
-        OAM_WARNING_LOG4(0, OAM_SF_ANY, "{oam_report_80211_frame:HEAD CHECK! hearder_len = %d, frame_len = %d, en_frame_direction = %d, return_addres = 0x%X}",
+        oam_report_dft_params_etc(BROADCAST_MACADDR,puc_mac_hdr_addr,OAM_OTA_FRAME_TO_SDT_MAX_LEN,OAM_OTA_TYPE_80211_FRAME);
+        OAM_WARNING_LOG4(0, OAM_SF_ANY, "{oam_report_80211_frame_etc:HEAD CHECK! hearder_len = %d, frame_len = %d, en_frame_direction = %d, return_addres = 0x%X}",
                         uc_mac_hdr_len,us_mac_frame_len,en_frame_direction,ul_return_addr);
         return OAL_ERR_CODE_OAM_EVT_FR_HDR_LEN_INVALID;
     }
@@ -1137,8 +1137,8 @@ oal_uint32  oam_report_80211_frame(
     /* 检查mac帧总长度合法性 */
     if (uc_mac_hdr_len > us_mac_frame_len)
     {
-        oam_report_dft_params(BROADCAST_MACADDR,puc_mac_hdr_addr,OAM_OTA_FRAME_TO_SDT_MAX_LEN,OAM_OTA_TYPE_80211_FRAME);
-        OAM_WARNING_LOG4(0, OAM_SF_ANY, "{oam_report_80211_frame:HEAD/FRAME CHECK! hearder_len = %d, frame_len = %d, en_frame_direction = %d, return_addres = 0x%X}",
+        oam_report_dft_params_etc(BROADCAST_MACADDR,puc_mac_hdr_addr,OAM_OTA_FRAME_TO_SDT_MAX_LEN,OAM_OTA_TYPE_80211_FRAME);
+        OAM_WARNING_LOG4(0, OAM_SF_ANY, "{oam_report_80211_frame_etc:HEAD/FRAME CHECK! hearder_len = %d, frame_len = %d, en_frame_direction = %d, return_addres = 0x%X}",
                         uc_mac_hdr_len,us_mac_frame_len,en_frame_direction,ul_return_addr);
         return OAL_ERR_CODE_OAM_EVT_FR_LEN_INVALID;
     }
@@ -1150,7 +1150,7 @@ oal_uint32  oam_report_80211_frame(
         return OAL_ERR_CODE_OAM_EVT_FRAME_DIR_INVALID;
     }
 
-    switch (g_st_oam_mng_ctx.en_output_type)
+    switch (g_st_oam_mng_ctx_etc.en_output_type)
     {
         /* 输出至控制台 */
         case OAM_OUTPUT_TYPE_CONSOLE:
@@ -1164,7 +1164,7 @@ oal_uint32  oam_report_80211_frame(
         /* 输出至SDT工具 */
         case OAM_OUTPUT_TYPE_SDT:
             /* 流控判断 */
-            if (OAM_RATELIMIT_NOT_OUTPUT == oam_log_ratelimit(OAM_RATELIMIT_TYPE_FRAME_WLAN))
+            if (OAM_RATELIMIT_NOT_OUTPUT == oam_log_ratelimit_etc(OAM_RATELIMIT_TYPE_FRAME_WLAN))
             {
                 ul_oam_ret = OAL_SUCC;
             }
@@ -1187,7 +1187,7 @@ oal_uint32  oam_report_80211_frame(
     if ((OAL_SUCC != ul_oam_ret) ||
         (OAL_SUCC != ul_ret) )
     {
-        OAM_WARNING_LOG4(0, OAM_SF_ANY, "{oam_report_80211_frame:[device] en_frame_direction = %d, ul_ret = %d, ul_oam_ret = %d, return_addres = 0x%X}",
+        OAM_WARNING_LOG4(0, OAM_SF_ANY, "{oam_report_80211_frame_etc:[device] en_frame_direction = %d, ul_ret = %d, ul_oam_ret = %d, return_addres = 0x%X}",
                         en_frame_direction, ul_ret, ul_oam_ret, ul_return_addr);
     }
 
@@ -1210,7 +1210,7 @@ OAL_STATIC oal_uint32  oam_report_dscr_to_console(
         OAL_IO_PRINT("oam_report_dscr_to_console::tx_dscr info:\n\n");
     }
 
-    oam_dump_buff_by_hex(puc_dscr_addr, us_dscr_len, 4);
+    oam_dump_buff_by_hex_etc(puc_dscr_addr, us_dscr_len, 4);
 
     return OAL_SUCC;
 }
@@ -1228,7 +1228,7 @@ OAL_STATIC oal_uint32  oam_report_dscr_to_sdt(
     oam_ota_stru        *pst_ota_data;
     oal_uint32           ul_ret         = OAL_SUCC;
 
-    if (OAL_UNLIKELY(OAL_PTR_NULL == g_st_oam_sdt_func_hook.p_sdt_report_data_func))
+    if (OAL_UNLIKELY(OAL_PTR_NULL == g_st_oam_sdt_func_hook_etc.p_sdt_report_data_func))
     {
         return OAL_ERR_CODE_PTR_NULL;
     }
@@ -1241,7 +1241,7 @@ OAL_STATIC oal_uint32  oam_report_dscr_to_sdt(
         us_dscr_len = WLAN_SDT_NETBUF_MAX_PAYLOAD - OAL_SIZEOF(oam_ota_hdr_stru);
     }
 
-    pst_netbuf = oam_alloc_data2sdt(us_skb_len);
+    pst_netbuf = oam_alloc_data2sdt_etc(us_skb_len);
     if (OAL_UNLIKELY(OAL_PTR_NULL == pst_netbuf))
     {
         return OAL_ERR_CODE_PTR_NULL;
@@ -1272,14 +1272,14 @@ OAL_STATIC oal_uint32  oam_report_dscr_to_sdt(
                 (oal_uint32)us_dscr_len);
 
     /* 判断sdt发送消息队列是否已满，若满输出至串口 */
-    ul_ret = oam_report_data2sdt(pst_netbuf, OAM_DATA_TYPE_OTA, OAM_PRIMID_TYPE_OUTPUT_CONTENT);
+    ul_ret = oam_report_data2sdt_etc(pst_netbuf, OAM_DATA_TYPE_OTA, OAM_PRIMID_TYPE_OUTPUT_CONTENT);
 
     return ul_ret;
 }
 
 
 
-oal_uint32 oam_report_dscr(oal_uint8  *puc_user_macaddr,
+oal_uint32 oam_report_dscr_etc(oal_uint8  *puc_user_macaddr,
                                oal_uint8  *puc_dscr_addr,
                                oal_uint16  us_dscr_len,
                                oam_ota_type_enum_uint8  en_ota_type)
@@ -1294,7 +1294,7 @@ oal_uint32 oam_report_dscr(oal_uint8  *puc_user_macaddr,
     if ((WLAN_MEM_SHARED_TX_DSCR_SIZE2 < us_dscr_len)
         || (us_dscr_len == 0))
     {
-        oam_dump_buff_by_hex(puc_dscr_addr, us_dscr_len, OAM_PRINT_CRLF_NUM);
+        oam_dump_buff_by_hex_etc(puc_dscr_addr, us_dscr_len, OAM_PRINT_CRLF_NUM);
         return OAL_ERR_CODE_OAM_EVT_DSCR_LEN_INVALID;
     }
 
@@ -1310,7 +1310,7 @@ oal_uint32 oam_report_dscr(oal_uint8  *puc_user_macaddr,
     }
 #endif
 
-    switch (g_st_oam_mng_ctx.en_output_type)
+    switch (g_st_oam_mng_ctx_etc.en_output_type)
     {
         /* 输出至控制台 */
         case OAM_OUTPUT_TYPE_CONSOLE:
@@ -1321,7 +1321,7 @@ oal_uint32 oam_report_dscr(oal_uint8  *puc_user_macaddr,
         /* 输出至SDT工具 */
         case OAM_OUTPUT_TYPE_SDT:
             /* 流控判断 */
-            if (OAM_RATELIMIT_NOT_OUTPUT == oam_log_ratelimit(OAM_RATELIMIT_TYPE_DSCR))
+            if (OAM_RATELIMIT_NOT_OUTPUT == oam_log_ratelimit_etc(OAM_RATELIMIT_TYPE_DSCR))
             {
                 return OAL_SUCC;
             }
@@ -1357,13 +1357,13 @@ OAL_STATIC oal_uint32  oam_report_beacon_to_console(
     }
     OAL_IO_PRINT("oam_report_beacon_to_console::beacon_header:\n");
 
-    oam_dump_buff_by_hex(puc_beacon_hdr_addr, OAM_BEACON_HDR_LEN, OAM_PRINT_CRLF_NUM);
+    oam_dump_buff_by_hex_etc(puc_beacon_hdr_addr, OAM_BEACON_HDR_LEN, OAM_PRINT_CRLF_NUM);
 
     puc_beacon_body_addr = puc_beacon_hdr_addr + OAM_BEACON_HDR_LEN;
     us_beacon_body_len   = us_beacon_len - OAM_BEACON_HDR_LEN;
 
     OAL_IO_PRINT("oam_report_beacon_to_console::beacon_body:\n");
-    oam_dump_buff_by_hex(puc_beacon_body_addr, us_beacon_body_len, OAM_PRINT_CRLF_NUM);
+    oam_dump_buff_by_hex_etc(puc_beacon_body_addr, us_beacon_body_len, OAM_PRINT_CRLF_NUM);
 
     return OAL_SUCC;
 }
@@ -1382,7 +1382,7 @@ OAL_STATIC oal_uint32  oam_report_beacon_to_sdt(
     oam_ota_stru        *pst_ota_data;
     oal_uint32           ul_ret         = OAL_SUCC;
 
-    if (OAL_UNLIKELY(OAL_PTR_NULL == g_st_oam_sdt_func_hook.p_sdt_report_data_func))
+    if (OAL_UNLIKELY(OAL_PTR_NULL == g_st_oam_sdt_func_hook_etc.p_sdt_report_data_func))
     {
         return OAL_ERR_CODE_PTR_NULL;
     }
@@ -1395,7 +1395,7 @@ OAL_STATIC oal_uint32  oam_report_beacon_to_sdt(
         us_beacon_len = WLAN_SDT_NETBUF_MAX_PAYLOAD - OAL_SIZEOF(oam_ota_hdr_stru);
     }
 
-    pst_netbuf = oam_alloc_data2sdt(us_skb_len);
+    pst_netbuf = oam_alloc_data2sdt_etc(us_skb_len);
     if (OAL_PTR_NULL == pst_netbuf)
     {
         return OAL_ERR_CODE_PTR_NULL;
@@ -1431,13 +1431,13 @@ OAL_STATIC oal_uint32  oam_report_beacon_to_sdt(
     oam_hide_mac_addr(pst_ota_data->auc_ota_data, uc_beacon_hdr_len);
 
     /* 下发至sdt接收队列，若队列满则串口输出 */
-    ul_ret = oam_report_data2sdt(pst_netbuf, OAM_DATA_TYPE_OTA, OAM_PRIMID_TYPE_OUTPUT_CONTENT);
+    ul_ret = oam_report_data2sdt_etc(pst_netbuf, OAM_DATA_TYPE_OTA, OAM_PRIMID_TYPE_OUTPUT_CONTENT);
 
     return ul_ret;
 }
 
 
-oal_uint32  oam_report_beacon(
+oal_uint32  oam_report_beacon_etc(
                                     oal_uint8     *puc_beacon_hdr_addr,
                                     oal_uint8      uc_beacon_hdr_len,
                                     oal_uint8     *puc_beacon_body_addr,
@@ -1451,8 +1451,8 @@ oal_uint32  oam_report_beacon(
         return OAL_ERR_CODE_OAM_EVT_FRAME_DIR_INVALID;
     }
 
-    if ((OAM_SDT_PRINT_BEACON_RXDSCR_TYPE_BEACON != g_st_oam_mng_ctx.ast_ota_ctx[0].en_beacon_switch)
-        && (OAM_SDT_PRINT_BEACON_RXDSCR_TYPE_BOTH != g_st_oam_mng_ctx.ast_ota_ctx[0].en_beacon_switch))
+    if ((OAM_SDT_PRINT_BEACON_RXDSCR_TYPE_BEACON != g_st_oam_mng_ctx_etc.ast_ota_ctx[0].en_beacon_switch)
+        && (OAM_SDT_PRINT_BEACON_RXDSCR_TYPE_BOTH != g_st_oam_mng_ctx_etc.ast_ota_ctx[0].en_beacon_switch))
     {
         return OAL_SUCC;
     }
@@ -1465,12 +1465,12 @@ oal_uint32  oam_report_beacon(
     if ((WLAN_MAX_FRAME_LEN < us_beacon_len)
         || (us_beacon_len <= WLAN_MGMT_FRAME_HEADER_LEN))
     {
-        oam_dump_buff_by_hex(puc_beacon_hdr_addr, us_beacon_len, OAM_PRINT_CRLF_NUM);
+        oam_dump_buff_by_hex_etc(puc_beacon_hdr_addr, us_beacon_len, OAM_PRINT_CRLF_NUM);
         return OAL_ERR_CODE_OAM_EVT_FR_LEN_INVALID;
     }
 
 
-    switch (g_st_oam_mng_ctx.en_output_type)
+    switch (g_st_oam_mng_ctx_etc.en_output_type)
     {
         /* 输出至控制台 */
         case OAM_OUTPUT_TYPE_CONSOLE:
@@ -1518,13 +1518,13 @@ OAL_STATIC oal_uint32  oam_report_eth_frame_to_console(
     }
 
     OAL_IO_PRINT("oam_report_eth_frame_to_console::eth_frame header:\n");
-    oam_dump_buff_by_hex(puc_eth_frame_hdr_addr, ETHER_HDR_LEN, OAM_PRINT_CRLF_NUM);
+    oam_dump_buff_by_hex_etc(puc_eth_frame_hdr_addr, ETHER_HDR_LEN, OAM_PRINT_CRLF_NUM);
 
     puc_eth_frame_body_addr = puc_eth_frame_hdr_addr + ETHER_HDR_LEN;
     us_eth_frame_body_len   = us_eth_frame_len - ETHER_HDR_LEN;
 
     OAL_IO_PRINT("oam_report_eth_frame_to_console::eth_frame body:\n");
-    oam_dump_buff_by_hex(puc_eth_frame_body_addr, us_eth_frame_body_len, OAM_PRINT_CRLF_NUM);
+    oam_dump_buff_by_hex_etc(puc_eth_frame_body_addr, us_eth_frame_body_len, OAM_PRINT_CRLF_NUM);
 
     return OAL_SUCC;
 }
@@ -1542,7 +1542,7 @@ OAL_STATIC oal_uint32  oam_report_eth_frame_to_sdt(
     oam_ota_stru        *pst_ota_data;
     oal_uint32           ul_ret     = OAL_SUCC;
 
-    if (OAL_UNLIKELY(OAL_PTR_NULL == g_st_oam_sdt_func_hook.p_sdt_report_data_func))
+    if (OAL_UNLIKELY(OAL_PTR_NULL == g_st_oam_sdt_func_hook_etc.p_sdt_report_data_func))
     {
         return OAL_ERR_CODE_PTR_NULL;
     }
@@ -1555,7 +1555,7 @@ OAL_STATIC oal_uint32  oam_report_eth_frame_to_sdt(
         us_eth_frame_len = WLAN_SDT_NETBUF_MAX_PAYLOAD - OAL_SIZEOF(oam_ota_hdr_stru);
     }
 
-    pst_netbuf = oam_alloc_data2sdt(us_skb_len);
+    pst_netbuf = oam_alloc_data2sdt_etc(us_skb_len);
     if (OAL_UNLIKELY(OAL_PTR_NULL == pst_netbuf))
     {
         return OAL_ERR_CODE_PTR_NULL;
@@ -1587,13 +1587,13 @@ OAL_STATIC oal_uint32  oam_report_eth_frame_to_sdt(
                 (oal_uint32)us_eth_frame_len);
 
     /* 下发至sdt接收队列，若队列满则串口输出 */
-    ul_ret = oam_report_data2sdt(pst_netbuf, OAM_DATA_TYPE_OTA, OAM_PRIMID_TYPE_OUTPUT_CONTENT);
+    ul_ret = oam_report_data2sdt_etc(pst_netbuf, OAM_DATA_TYPE_OTA, OAM_PRIMID_TYPE_OUTPUT_CONTENT);
 
     return ul_ret;
 }
 
 
-oal_uint32  oam_report_eth_frame(oal_uint8               *puc_user_mac_addr,
+oal_uint32  oam_report_eth_frame_etc(oal_uint8               *puc_user_mac_addr,
                                        oal_uint8               *puc_eth_frame_hdr_addr,
                                        oal_uint16               us_eth_frame_len,
                                        oam_ota_frame_direction_type_enum_uint8 en_eth_frame_direction)
@@ -1608,7 +1608,7 @@ oal_uint32  oam_report_eth_frame(oal_uint8               *puc_user_mac_addr,
     if ((ETHER_MAX_LEN < us_eth_frame_len)
         || (us_eth_frame_len < ETHER_HDR_LEN))
     {
-        oam_dump_buff_by_hex(puc_eth_frame_hdr_addr, us_eth_frame_len, OAM_PRINT_CRLF_NUM);
+        oam_dump_buff_by_hex_etc(puc_eth_frame_hdr_addr, us_eth_frame_len, OAM_PRINT_CRLF_NUM);
 
         return OAL_ERR_CODE_OAM_EVT_FR_LEN_INVALID;
     }
@@ -1618,7 +1618,7 @@ oal_uint32  oam_report_eth_frame(oal_uint8               *puc_user_mac_addr,
         return OAL_ERR_CODE_OAM_EVT_FRAME_DIR_INVALID;
     }
 
-    switch (g_st_oam_mng_ctx.en_output_type)
+    switch (g_st_oam_mng_ctx_etc.en_output_type)
     {
         /* 输出至控制台 */
         case OAM_OUTPUT_TYPE_CONSOLE:
@@ -1631,7 +1631,7 @@ oal_uint32  oam_report_eth_frame(oal_uint8               *puc_user_mac_addr,
         /* 输出至SDT工具 */
         case OAM_OUTPUT_TYPE_SDT:
             /* 流控判断 */
-            if (OAM_RATELIMIT_NOT_OUTPUT == oam_log_ratelimit(OAM_RATELIMIT_TYPE_FRAME_ETH))
+            if (OAM_RATELIMIT_NOT_OUTPUT == oam_log_ratelimit_etc(OAM_RATELIMIT_TYPE_FRAME_ETH))
             {
                 return OAL_SUCC;
             }
@@ -1664,7 +1664,7 @@ OAL_STATIC oal_uint32  oam_report_netbuf_cb_to_sdt(
     oal_netbuf_stru     *pst_netbuf;
     oam_ota_stru        *pst_ota_data;
 
-    if (OAL_UNLIKELY(OAL_PTR_NULL == g_st_oam_sdt_func_hook.p_sdt_report_data_func))
+    if (OAL_UNLIKELY(OAL_PTR_NULL == g_st_oam_sdt_func_hook_etc.p_sdt_report_data_func))
     {
         return OAL_ERR_CODE_PTR_NULL;
     }
@@ -1672,7 +1672,7 @@ OAL_STATIC oal_uint32  oam_report_netbuf_cb_to_sdt(
     us_skb_len = OAM_SKB_CB_LEN + OAL_SIZEOF(oam_ota_hdr_stru) + OAM_RESERVE_SKB_LEN;
     us_ota_data_len = OAM_SKB_CB_LEN + OAL_SIZEOF(oam_ota_hdr_stru);
 
-    pst_netbuf = oal_mem_sdt_netbuf_alloc(us_skb_len, OAL_TRUE);
+    pst_netbuf = oal_mem_sdt_netbuf_alloc_etc(us_skb_len, OAL_TRUE);
     if (OAL_PTR_NULL == pst_netbuf)
     {
         return OAL_ERR_CODE_PTR_NULL;
@@ -1705,14 +1705,14 @@ OAL_STATIC oal_uint32  oam_report_netbuf_cb_to_sdt(
                 OAM_SKB_CB_LEN);
 
     /* 上报SDT */
-    ul_ret = oam_report_data2sdt(pst_netbuf, OAM_DATA_TYPE_OTA, OAM_PRIMID_TYPE_OUTPUT_CONTENT);
+    ul_ret = oam_report_data2sdt_etc(pst_netbuf, OAM_DATA_TYPE_OTA, OAM_PRIMID_TYPE_OUTPUT_CONTENT);
 #endif
     return ul_ret;
 }
 
 
 
-oal_uint32  oam_report_netbuf_cb(oal_uint8  *puc_user_mac_addr,
+oal_uint32  oam_report_netbuf_cb_etc(oal_uint8  *puc_user_mac_addr,
                                        oal_uint8  *puc_netbuf_cb,
                                        oam_ota_type_enum_uint8 en_ota_type)
 {
@@ -1729,7 +1729,7 @@ oal_uint32  oam_report_netbuf_cb(oal_uint8  *puc_user_mac_addr,
     }
 
     /* 流控判断 */
-    if (OAM_RATELIMIT_NOT_OUTPUT == oam_log_ratelimit(OAM_RATELIMIT_TYPE_CB))
+    if (OAM_RATELIMIT_NOT_OUTPUT == oam_log_ratelimit_etc(OAM_RATELIMIT_TYPE_CB))
     {
         return OAL_SUCC;
     }
@@ -1753,7 +1753,7 @@ OAL_STATIC oal_uint32  oam_report_timer_track_to_sdt(
     oam_timer_track_info_stru   st_timer_track_info;
     oal_uint8                   auc_macaddr[WLAN_MAC_ADDR_LEN] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 
-    if (OAL_UNLIKELY(OAL_PTR_NULL == g_st_oam_sdt_func_hook.p_sdt_report_data_func))
+    if (OAL_UNLIKELY(OAL_PTR_NULL == g_st_oam_sdt_func_hook_etc.p_sdt_report_data_func))
     {
         return OAL_ERR_CODE_PTR_NULL;
     }
@@ -1762,7 +1762,7 @@ OAL_STATIC oal_uint32  oam_report_timer_track_to_sdt(
                + OAL_SIZEOF(oam_ota_hdr_stru) + OAM_RESERVE_SKB_LEN;
     us_ota_data_len = OAL_SIZEOF(st_timer_track_info) + OAL_SIZEOF(oam_ota_hdr_stru);
 
-    pst_netbuf = oal_mem_sdt_netbuf_alloc(us_skb_len, OAL_TRUE);
+    pst_netbuf = oal_mem_sdt_netbuf_alloc_etc(us_skb_len, OAL_TRUE);
     if (OAL_PTR_NULL == pst_netbuf)
     {
         return OAL_ERR_CODE_PTR_NULL;
@@ -1797,7 +1797,7 @@ OAL_STATIC oal_uint32  oam_report_timer_track_to_sdt(
                 OAL_SIZEOF(st_timer_track_info));
 
     /* 上报SDT */
-    ul_ret = oam_report_data2sdt(pst_netbuf, OAM_DATA_TYPE_OTA, OAM_PRIMID_TYPE_OUTPUT_CONTENT);
+    ul_ret = oam_report_data2sdt_etc(pst_netbuf, OAM_DATA_TYPE_OTA, OAM_PRIMID_TYPE_OUTPUT_CONTENT);
 
     return ul_ret;
 }
@@ -1833,7 +1833,7 @@ OAL_STATIC oal_uint32  oam_report_mpdu_num_to_sdt(
     oam_ota_stru               *pst_ota_data;
     oal_uint32                  ul_ret     = OAL_SUCC;
 
-    if (OAL_UNLIKELY(OAL_PTR_NULL == g_st_oam_sdt_func_hook.p_sdt_report_data_func))
+    if (OAL_UNLIKELY(OAL_PTR_NULL == g_st_oam_sdt_func_hook_etc.p_sdt_report_data_func))
     {
         return OAL_ERR_CODE_PTR_NULL;
     }
@@ -1842,7 +1842,7 @@ OAL_STATIC oal_uint32  oam_report_mpdu_num_to_sdt(
                + OAL_SIZEOF(oam_ota_hdr_stru) + OAM_RESERVE_SKB_LEN;
     us_ota_data_len = OAL_SIZEOF(oam_report_mpdu_num_stru) + OAL_SIZEOF(oam_ota_hdr_stru);
 
-    pst_netbuf = oal_mem_sdt_netbuf_alloc(us_skb_len, OAL_TRUE);
+    pst_netbuf = oal_mem_sdt_netbuf_alloc_etc(us_skb_len, OAL_TRUE);
     if (OAL_PTR_NULL == pst_netbuf)
     {
         return OAL_ERR_CODE_PTR_NULL;
@@ -1875,14 +1875,14 @@ OAL_STATIC oal_uint32  oam_report_mpdu_num_to_sdt(
                 OAL_SIZEOF(oam_report_mpdu_num_stru));
 
     /* 上报SDT */
-    ul_ret = oam_report_data2sdt(pst_netbuf, OAM_DATA_TYPE_OTA, OAM_PRIMID_TYPE_OUTPUT_CONTENT);
+    ul_ret = oam_report_data2sdt_etc(pst_netbuf, OAM_DATA_TYPE_OTA, OAM_PRIMID_TYPE_OUTPUT_CONTENT);
 
     return ul_ret;
 }
 
 
 
-oal_uint32  oam_report_mpdu_num(oal_uint8  *puc_user_mac_addr,
+oal_uint32  oam_report_mpdu_num_etc(oal_uint8  *puc_user_mac_addr,
                                         oam_report_mpdu_num_stru *pst_mpdu_num)
 {
     if (OAL_UNLIKELY(OAL_PTR_NULL == puc_user_mac_addr || OAL_PTR_NULL == pst_mpdu_num))
@@ -1894,7 +1894,7 @@ oal_uint32  oam_report_mpdu_num(oal_uint8  *puc_user_mac_addr,
 }
 
 
-oal_uint32  oam_report_dft_params_to_sdt(
+oal_uint32  oam_report_dft_params_to_sdt_etc(
                                         oal_uint8  *puc_user_mac_addr,
                                         oal_uint8  *puc_param,
                                         oal_uint16  us_param_len,
@@ -1907,7 +1907,7 @@ oal_uint32  oam_report_dft_params_to_sdt(
     oam_ota_stru               *pst_ota_data;
     oal_uint32                  ul_ret     = OAL_SUCC;
 
-    if (OAL_UNLIKELY(OAL_PTR_NULL == g_st_oam_sdt_func_hook.p_sdt_report_data_func))
+    if (OAL_UNLIKELY(OAL_PTR_NULL == g_st_oam_sdt_func_hook_etc.p_sdt_report_data_func))
     {
         return OAL_ERR_CODE_PTR_NULL;
     }
@@ -1920,7 +1920,7 @@ oal_uint32  oam_report_dft_params_to_sdt(
         return OAL_FAIL;
     }
 
-    pst_netbuf = oal_mem_sdt_netbuf_alloc(us_skb_len, OAL_TRUE);
+    pst_netbuf = oal_mem_sdt_netbuf_alloc_etc(us_skb_len, OAL_TRUE);
     if (OAL_PTR_NULL == pst_netbuf)
     {
         return OAL_ERR_CODE_PTR_NULL;
@@ -1953,14 +1953,14 @@ oal_uint32  oam_report_dft_params_to_sdt(
                 us_param_len);
 
     /* 上报SDT */
-    ul_ret = oam_report_data2sdt(pst_netbuf, OAM_DATA_TYPE_OTA, OAM_PRIMID_TYPE_OUTPUT_CONTENT);
+    ul_ret = oam_report_data2sdt_etc(pst_netbuf, OAM_DATA_TYPE_OTA, OAM_PRIMID_TYPE_OUTPUT_CONTENT);
 
     return ul_ret;
 }
 
 
 
-oal_uint32  oam_report_dft_params(oal_uint8  *puc_user_mac_addr,
+oal_uint32  oam_report_dft_params_etc(oal_uint8  *puc_user_mac_addr,
                                         oal_uint8  *puc_param,
                                         oal_uint16  us_param_len,
                                         oam_ota_type_enum_uint8 en_type)
@@ -1977,7 +1977,7 @@ oal_uint32  oam_report_dft_params(oal_uint8  *puc_user_mac_addr,
 
     if (0 != us_param_len)
     {
-        return oam_report_dft_params_to_sdt(puc_user_mac_addr, puc_param, us_param_len, en_type);
+        return oam_report_dft_params_to_sdt_etc(puc_user_mac_addr, puc_param, us_param_len, en_type);
     }
 
     return OAL_ERR_CODE_INVALID_CONFIG;
@@ -1986,32 +1986,32 @@ oal_uint32  oam_report_dft_params(oal_uint8  *puc_user_mac_addr,
 
 
 
-oal_uint32  oam_report_set_all_switch(oal_switch_enum_uint8 en_switch)
+oal_uint32  oam_report_set_all_switch_etc(oal_switch_enum_uint8 en_switch)
 {
     oal_uint8   uc_vapid_loop;
 
     if (OAL_SWITCH_OFF == en_switch)
     {
-        OAL_MEMZERO(&g_st_oam_mng_ctx.st_user_track_ctx, OAL_SIZEOF(oam_user_track_ctx_stru));
+        OAL_MEMZERO(&g_st_oam_mng_ctx_etc.st_user_track_ctx, OAL_SIZEOF(oam_user_track_ctx_stru));
 
         for (uc_vapid_loop = 0; uc_vapid_loop < WLAN_VAP_SUPPORT_MAX_NUM_LIMIT; uc_vapid_loop++)
         {
             /*beacon帧开关*/
-            oam_ota_set_beacon_switch(uc_vapid_loop, OAL_SWITCH_OFF);
+            oam_ota_set_beacon_switch_etc(uc_vapid_loop, OAL_SWITCH_OFF);
             /* rx描述符开关 */
-            oam_ota_set_rx_dscr_switch(uc_vapid_loop, OAL_SWITCH_OFF);
+            oam_ota_set_rx_dscr_switch_etc(uc_vapid_loop, OAL_SWITCH_OFF);
         }
     }
     else
     {
-        oal_memset(&g_st_oam_mng_ctx.st_user_track_ctx, OAL_SWITCH_ON, OAL_SIZEOF(oam_user_track_ctx_stru));
+        oal_memset(&g_st_oam_mng_ctx_etc.st_user_track_ctx, OAL_SWITCH_ON, OAL_SIZEOF(oam_user_track_ctx_stru));
 
         for (uc_vapid_loop = 0; uc_vapid_loop < WLAN_VAP_SUPPORT_MAX_NUM_LIMIT; uc_vapid_loop++)
         {
             /*beacon帧开关*/
-            oam_ota_set_beacon_switch(uc_vapid_loop, OAL_SWITCH_ON);
+            oam_ota_set_beacon_switch_etc(uc_vapid_loop, OAL_SWITCH_ON);
             /* rx描述符开关 */
-            oam_ota_set_rx_dscr_switch(uc_vapid_loop, OAL_SWITCH_ON);
+            oam_ota_set_rx_dscr_switch_etc(uc_vapid_loop, OAL_SWITCH_ON);
         }
     }
 
@@ -2031,7 +2031,7 @@ oal_void oam_report_backtrace(oal_void)
 
     if (oal_dump_stack_str(puc_buff, OAM_REPORT_MAX_STRING_LEN) > 0)
     {
-        oam_print((oal_int8*)puc_buff);
+        oam_print_etc((oal_int8*)puc_buff);
     }
     else
     {
@@ -2043,41 +2043,41 @@ oal_void oam_report_backtrace(oal_void)
 
 /*lint -e19*/
 oal_module_symbol(oam_report_backtrace);
-oal_module_symbol(oam_event_set_switch);
-oal_module_symbol(oam_event_get_switch);
-oal_module_symbol(oam_event_report);
-oal_module_symbol(oam_ota_report);
-oal_module_symbol(oam_event_set_specific_type_switch);
-oal_module_symbol(oam_ota_set_beacon_switch);
-oal_module_symbol(oam_ota_set_rx_dscr_switch);
-oal_module_symbol(oam_ota_report_to_std);
-oal_module_symbol(oam_report_dscr);
-oal_module_symbol(oam_report_beacon);
-oal_module_symbol(oam_report_eth_frame);
-oal_module_symbol(oam_report_80211_frame);
-oal_module_symbol(oam_ota_get_beacon_switch);
-oal_module_symbol(oam_ota_get_rx_dscr_switch);
-oal_module_symbol(oam_report_eth_frame_set_switch);
-oal_module_symbol(oam_report_eth_frame_get_switch);
-oal_module_symbol(oam_report_80211_mcast_set_switch);
-oal_module_symbol(oam_report_80211_mcast_get_switch);
-oal_module_symbol(oam_report_80211_ucast_set_switch);
-oal_module_symbol(oam_report_80211_ucast_get_switch);
-oal_module_symbol(oam_report_80211_probe_set_switch);
-oal_module_symbol(oam_report_80211_probe_get_switch);
-oal_module_symbol(oam_report_netbuf_cb);
+oal_module_symbol(oam_event_set_switch_etc);
+oal_module_symbol(oam_event_get_switch_etc);
+oal_module_symbol(oam_event_report_etc);
+oal_module_symbol(oam_ota_report_etc);
+oal_module_symbol(oam_event_set_specific_type_switch_etc);
+oal_module_symbol(oam_ota_set_beacon_switch_etc);
+oal_module_symbol(oam_ota_set_rx_dscr_switch_etc);
+oal_module_symbol(oam_ota_report_to_std_etc);
+oal_module_symbol(oam_report_dscr_etc);
+oal_module_symbol(oam_report_beacon_etc);
+oal_module_symbol(oam_report_eth_frame_etc);
+oal_module_symbol(oam_report_80211_frame_etc);
+oal_module_symbol(oam_ota_get_beacon_switch_etc);
+oal_module_symbol(oam_ota_get_rx_dscr_switch_etc);
+oal_module_symbol(oam_report_eth_frame_set_switch_etc);
+oal_module_symbol(oam_report_eth_frame_get_switch_etc);
+oal_module_symbol(oam_report_80211_mcast_set_switch_etc);
+oal_module_symbol(oam_report_80211_mcast_get_switch_etc);
+oal_module_symbol(oam_report_80211_ucast_set_switch_etc);
+oal_module_symbol(oam_report_80211_ucast_get_switch_etc);
+oal_module_symbol(oam_report_80211_probe_set_switch_etc);
+oal_module_symbol(oam_report_80211_probe_get_switch_etc);
+oal_module_symbol(oam_report_netbuf_cb_etc);
 #if 0
 oal_module_symbol(oam_report_get_switch);
 #endif
 #if 0
 oal_module_symbol(oam_report_timer_track);
 #endif
-oal_module_symbol(oam_report_mpdu_num);
-oal_module_symbol(oam_report_set_all_switch);
-oal_module_symbol(oam_report_dhcp_arp_get_switch);
-oal_module_symbol(oam_report_dhcp_arp_set_switch);
-oal_module_symbol(oam_report_dft_params);
-oal_module_symbol(oam_report_data_get_global_switch);
+oal_module_symbol(oam_report_mpdu_num_etc);
+oal_module_symbol(oam_report_set_all_switch_etc);
+oal_module_symbol(oam_report_dhcp_arp_get_switch_etc);
+oal_module_symbol(oam_report_dhcp_arp_set_switch_etc);
+oal_module_symbol(oam_report_dft_params_etc);
+oal_module_symbol(oam_report_data_get_global_switch_etc);
 
 
 

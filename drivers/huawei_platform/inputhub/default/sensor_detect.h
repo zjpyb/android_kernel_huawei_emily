@@ -22,7 +22,7 @@
 #define MAX_PHONE_COLOR_NUM  15
 #define CYPRESS_CHIPS		2
 #define SENSOR_PLATFORM_EXTEND_DATA_SIZE    50
-#define SENSOR_PLATFORM_EXTEND_ALS_DATA_SIZE    60
+#define SENSOR_PLATFORM_EXTEND_ALS_DATA_SIZE    66
 #define BH1745_MAX_ThRESHOLD_NUM    23
 #define BH1745_MIN_ThRESHOLD_NUM    24
 
@@ -44,7 +44,22 @@
 #define TMD2745_MAX_ThRESHOLD_NUM    8
 #define TMD2745_MIN_ThRESHOLD_NUM    9
 
+#define APDS9999_MAX_ThRESHOLD_NUM    22
+#define APDS9999_MIN_ThRESHOLD_NUM    23
 
+#define TMD3702_MAX_ThRESHOLD_NUM    27
+#define TMD3702_MIN_ThRESHOLD_NUM    28
+
+#define VCNL36658_MAX_ThRESHOLD_NUM    28
+#define VCNL36658_MIN_ThRESHOLD_NUM    29
+
+#define TP_COORDINATE_THRESHOLD      (4)
+
+#define TSL2591_MAX_ThRESHOLD_NUM    12
+#define TSL2591_MIN_ThRESHOLD_NUM    13
+
+#define BH1726_MAX_ThRESHOLD_NUM    14
+#define BH1726_MIN_ThRESHOLD_NUM    15
 
 typedef uint16_t GPIO_NUM_TYPE;
 
@@ -57,13 +72,16 @@ typedef enum {
 	AIRPRESS,
 	HANDPRESS,
 	CAP_PROX,
-	GPS_4774_I2C,
+	CONNECTIVITY,
 	FINGERPRINT,
 	KEY,
 	MAGN_BRACKET,
 	RPC,
 	VIBRATOR,
 	FINGERPRINT_UD,
+	TOF,
+	TP_UD,
+	SH_AOD,
 	SENSOR_MAX
 }SENSOR_DETECT_LIST;
 
@@ -180,6 +198,7 @@ struct als_platform_data {
 	uint8_t als_phone_version;
 	uint8_t als_phone_tp_colour;
 	uint8_t als_extend_data[SENSOR_PLATFORM_EXTEND_ALS_DATA_SIZE];
+	uint8_t is_close;
 };
 
 struct ps_platform_data {
@@ -212,14 +231,28 @@ struct ps_platform_data {
 	uint16_t max_oily_add_pdata;
 	uint8_t max_near_pdata_loop;
 	uint8_t oily_count_size;
+	uint16_t ps_tp_threshold;
 	uint8_t ps_extend_data[SENSOR_PLATFORM_EXTEND_DATA_SIZE];
 };
 
 struct airpress_platform_data {
 	struct sensor_combo_cfg cfg;
 	int offset;
+	int IsSupportTouch;
 	uint16_t poll_interval;
+	uint16_t touch_fac_order;
+	uint16_t touch_fac_wait_time;
+	uint16_t tp_touch_coordinate_threshold[TP_COORDINATE_THRESHOLD];
 	uint8_t airpress_extend_data[SENSOR_PLATFORM_EXTEND_DATA_SIZE];
+};
+
+struct tof_platform_data {
+	struct sensor_combo_cfg cfg;
+	int tof_calib_zero_threshold;
+	int tof_calib_6cm_threshold;
+	int tof_calib_10cm_threshold;
+	int tof_calib_60cm_threshold;
+	//int offset;
 };
 
 struct handpress_platform_data {
@@ -242,6 +275,7 @@ struct handpress_platform_data {
 #define	DEFAULT_THRESHOLD	(0xC8)
 #define	ADUX_REGS_NEED_INITIATED_NUM	(16)
 #define	SEMTECH_REGS_NEED_INITIATED_NUM	(12)
+#define	CALIBRATE_THRED_NUM  (4)
 
 
 
@@ -259,6 +293,9 @@ struct adux_sar_data {
 struct adux_sar_add_data_t{
 	uint16_t threshold_to_ap_stg[STG_SUPPORTED_NUM];
 	uint16_t threshold_to_modem_stg[STG_SUPPORTED_NUM*TO_MODEM_SUPPORTED_LEVEL_NUM];
+	uint16_t calibrate_thred[CALIBRATE_THRED_NUM];
+	uint8_t updata_offset;
+	uint8_t cdc_calue_threshold;
 };
 
 struct cypress_sar_data {
@@ -316,7 +353,7 @@ struct cap_prox_platform_data {
 	uint16_t cap_prox_extend_data[2];//3 //3mm and 8mm threshold
 };
 
-struct gps_4774_platform_data {
+struct connectivity_platform_data {
 	struct sensor_combo_cfg cfg;
 	uint16_t poll_interval;
 	GPIO_NUM_TYPE gpio1_gps_cmd_ap;
@@ -339,6 +376,31 @@ struct fingerprint_platform_data {
 	GPIO_NUM_TYPE gpio_reset_sh;
 	uint16_t poll_interval;
 	uint16_t tp_hover_support;
+};
+struct tp_ud_algo_config {
+	uint16_t move_area_x_min;
+	uint16_t move_area_x_max;
+	uint16_t move_area_y_min;
+	uint16_t move_area_y_max;
+	uint16_t finger_area_x_min;
+	uint16_t finger_area_x_max;
+	uint16_t finger_area_y_min;
+	uint16_t finger_area_y_max;
+	uint16_t coor_scale;
+};
+struct tp_ud_platform_data {
+	struct sensor_combo_cfg cfg;
+	uint16_t reg;
+	GPIO_NUM_TYPE gpio_irq;
+	GPIO_NUM_TYPE gpio_irq_sh;
+	GPIO_NUM_TYPE gpio_cs;
+	uint16_t pressure_support;
+	uint32_t ic_type;
+	uint32_t hover_enable;
+	uint32_t i2c_max_speed_hz;
+	uint32_t spi_max_speed_hz;
+	uint8_t spi_mode;
+	struct tp_ud_algo_config algo_conf;
 };
 
 struct key_platform_data {
@@ -377,10 +439,15 @@ struct magn_bracket_platform_data {
 	int mag_z_change_lower;
 	int mag_z_change_upper;
 };
+struct aod_platform_data {
+	struct sensor_combo_cfg cfg;
+	uint32_t phone_type;
+};
 struct rpc_platform_data {
 	uint16_t table[32];
 	uint16_t mask[32];
 	uint16_t default_value;
+	uint16_t mask_enable;
 };
 #define max_tx_rx_len 32
 struct detect_word {

@@ -64,12 +64,13 @@ extern "C" {
 #define MAC_MAX_SUP_MCS9_11AC_EACH_NSS   2   /* 11AC各空间流支持的最大MCS序号，支持0-9*/
 #define MAC_MAX_UNSUP_MCS_11AC_EACH_NSS  3   /* 11AC各空间流支持的最大MCS序号，不支持n个空间流*/
 
-#define MAC_MAX_RATE_SINGLE_NSS_20M_11AC 86  /* 1个空间流20MHz的最大速率*/
-#define MAC_MAX_RATE_SINGLE_NSS_40M_11AC 200 /* 1个空间流40MHz的最大速率*/
-#define MAC_MAX_RATE_SINGLE_NSS_80M_11AC 433 /* 1个空间流80MHz的最大速率*/
-#define MAC_MAX_RATE_DOUBLE_NSS_20M_11AC 173 /* 2个空间流20MHz的最大速率*/
-#define MAC_MAX_RATE_DOUBLE_NSS_40M_11AC 400 /* 2个空间流40MHz的最大速率*/
-#define MAC_MAX_RATE_DOUBLE_NSS_80M_11AC 866 /* 2个空间流80MHz的最大速率*/
+/* 按照协议要求(9.4.2.158.3章节)，修改为long gi速率 */
+#define MAC_MAX_RATE_SINGLE_NSS_20M_11AC 78  /* 1个空间流20MHz的最大速率*/
+#define MAC_MAX_RATE_SINGLE_NSS_40M_11AC 180 /* 1个空间流40MHz的最大速率*/
+#define MAC_MAX_RATE_SINGLE_NSS_80M_11AC 390 /* 1个空间流80MHz的最大速率*/
+#define MAC_MAX_RATE_DOUBLE_NSS_20M_11AC 156 /* 2个空间流20MHz的最大速率*/
+#define MAC_MAX_RATE_DOUBLE_NSS_40M_11AC 360 /* 2个空间流40MHz的最大速率*/
+#define MAC_MAX_RATE_DOUBLE_NSS_80M_11AC 780 /* 2个空间流80MHz的最大速率*/
 
 
 #define MAC_VAP_USER_HASH_INVALID_VALUE      0xFFFFFFFF                         /* HSAH非法值 */
@@ -100,6 +101,8 @@ extern "C" {
 #define IS_P2P_GO(_pst_mac_vap)     (WLAN_P2P_GO_MODE     == (_pst_mac_vap)->en_p2p_mode)
 #define IS_P2P_CL(_pst_mac_vap)     (WLAN_P2P_CL_MODE     == (_pst_mac_vap)->en_p2p_mode)
 #define IS_LEGACY_VAP(_pst_mac_vap) (WLAN_LEGACY_VAP_MODE == (_pst_mac_vap)->en_p2p_mode)
+#define IS_LEGACY_STA(_pst_mac_vap) (IS_STA(_pst_mac_vap) && IS_LEGACY_VAP(_pst_mac_vap))
+#define IS_LEGACY_AP(_pst_mac_vap)  (IS_AP(_pst_mac_vap) && IS_LEGACY_VAP(_pst_mac_vap))
 
 #define CIPHER_IS_WEP(cipher) ((WLAN_CIPHER_SUITE_WEP40 == cipher)||(WLAN_CIPHER_SUITE_WEP104 == cipher))
 
@@ -145,7 +148,7 @@ extern "C" {
 #define MAC_VOWIFI_HIGH_THRESHOLD_MIN   -100
 #define MAC_VOWIFI_HIGH_THRESHOLD_MAX   -1
 
-#define MAC_VAP_VOWIFI_MODE_DEFAULT    VOWIFI_DISABLE_REPORT
+#define MAC_VAP_VOWIFI_MODE_DEFAULT    VOWIFI_CLOSE_REPORT
 #define MAC_VAP_VOWIFI_TRIGGER_COUNT_DEFAULT   5
 #define MAC_VAP_VOWIFI_PERIOD_DEFAULT_MS       1000  /* 单位ms */
 #define MAC_VAP_VOWIFI_HIGH_THRES_DEFAULT      -65
@@ -1138,6 +1141,7 @@ typedef enum
     VOWIFI_DISABLE_REPORT   = 0,
     VOWIFI_LOW_THRES_REPORT,
     VOWIFI_HIGH_THRES_REPORT,
+    VOWIFI_CLOSE_REPORT,  /*关闭vowifi*/
 
     VOWIFI_MODE_BUTT
 } mac_vowifi_mode;
@@ -2709,6 +2713,16 @@ typedef struct
     oal_int8                    c_rf_gain_db_mult4;      /*外部PA/LNA bypass时的增益(精度0.25dB)*/
     oal_int8                    c_rf_gain_db_mult10;     /*外部PA/LNA bypass时的增益(精度0.1dB)*/
 }mac_cfg_gain_db_per_band;
+
+/* CE 高band 参数 */
+typedef struct
+{
+    oal_uint8                   uc_max_txpower;                 /* 最大发送功率 */
+    oal_uint8                   uc_dbb_scale_11a_ht20_vht20;    /* 20MHz dbb scale */
+    oal_uint8                   uc_dbb_scale_ht40_vht40;        /* 40MHz dbb scale */
+    oal_uint8                   uc_dbb_scale_vht80;             /* 80MHz dbb scale */
+}mac_cfg_ce_5g_hi_band_params;
+
 typedef struct
 {
     /* 2g */
@@ -2733,6 +2747,7 @@ typedef struct
     oal_int8                    c_delta_cca_ed_high_40th_2g;
     oal_int8                    c_delta_cca_ed_high_20th_5g;
     oal_int8                    c_delta_cca_ed_high_40th_5g;
+
 }mac_cfg_customize_rf;
 typedef struct
 {
@@ -2785,7 +2800,8 @@ typedef struct
     oal_int16                  us_cali_txpwr_pa_dc_ref_5g_val_band7;
     oal_int8                   uc_band_5g_enable;
     oal_uint8                  uc_tone_amp_grade;
-    oal_int8                   auc_resv_wifi_cali[2];
+    oal_uint8                  uc_enable_band_edge_txpwr_fix;              /* 是否使用FCC 边带发射最大功率值.0:不使用， 1:使用 */
+    oal_uint8                  uc_resv_wifi_cali;
     /* bt tmp */
     oal_uint16                  us_cali_bt_txpwr_pa_ref_band1;
     oal_uint16                  us_cali_bt_txpwr_pa_ref_band2;

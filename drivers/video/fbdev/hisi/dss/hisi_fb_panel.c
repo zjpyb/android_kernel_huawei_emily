@@ -825,6 +825,34 @@ int panel_next_bypass_powerdown_ulps_support(struct platform_device *pdev)
 	return ret;
 }
 
+ssize_t panel_next_snd_mipi_clk_cmd_store(struct platform_device *pdev, uint32_t clk_val)
+{
+	ssize_t ret = 0;
+	struct hisi_fb_panel_data *pdata = NULL;
+	struct hisi_fb_panel_data *next_pdata = NULL;
+	struct platform_device *next_pdev = NULL;
+
+	if (NULL == pdev) {
+		HISI_FB_ERR("pdev is NULL");
+		return -EINVAL;
+	}
+	pdata = dev_get_platdata(&pdev->dev);
+	if (NULL == pdata) {
+		HISI_FB_ERR("pdata is NULL");
+		return -EINVAL;
+	}
+
+	next_pdev = pdata->next;
+	if (next_pdev) {
+		next_pdata = dev_get_platdata(&next_pdev->dev);
+		if ((next_pdata) && (next_pdata->snd_mipi_clk_cmd_store))
+			ret = next_pdata->snd_mipi_clk_cmd_store(next_pdev, clk_val);
+	}
+
+	return ret;
+}
+
+
 ssize_t panel_next_lcd_model_show(struct platform_device *pdev, char *buf)
 {
 	ssize_t ret = 0;
@@ -1988,7 +2016,6 @@ bool is_dp_panel(struct hisi_fb_data_type *hisifd)
 	return false;
 }
 
-
 bool is_mipi_panel(struct hisi_fb_data_type *hisifd)
 {
 	if (NULL == hisifd) {
@@ -2010,21 +2037,7 @@ bool is_hisync_mode(struct hisi_fb_data_type *hisifd)
 		return false;
 	}
 
-	if (is_mipi_video_panel(hisifd) && hisifd->panel_info.en_hisync_mode) {
-		return true;
-	}
-
-	return false;
-}
-
-bool is_vsync_delay_en(struct hisi_fb_data_type *hisifd)
-{
-	if (NULL == hisifd) {
-		HISI_FB_ERR("hisifd is NULL");
-		return false;
-	}
-
-	if (is_hisync_mode(hisifd) && hisifd->panel_info.vsync_delay_en) {
+	if (is_mipi_video_panel(hisifd) && hisifd->panel_info.hisync_mode) {
 		return true;
 	}
 
@@ -2038,8 +2051,7 @@ bool is_video_idle_ctrl_mode(struct hisi_fb_data_type *hisifd)
 		return false;
 	}
 
-	//if (is_mipi_video_panel(hisifd) && hisifd->panel_info.en_idle_disp_mode) {
-	if (hisifd->panel_info.en_video_idle_ctrl_mode) {
+	if (is_mipi_video_panel(hisifd) && hisifd->panel_info.video_idle_mode) {
 		return true;
 	}
 

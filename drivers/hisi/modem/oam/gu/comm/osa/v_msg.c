@@ -551,6 +551,14 @@ MsgBlock * V_AllocMsg(VOS_PID Pid, VOS_UINT32 ulLength,
         return((MsgBlock*)VOS_NULL_PTR);
     }
 
+    /* 如果申请的空间大小超过0x7FFFFFFF个Byte，直接返回空指针 */
+    if (0x7FFFFFFF < (ulLength + VOS_MSG_BLOCK_HEAD_AND_RESERVED_LENGTH))
+    {
+        LogPrint2("# V_AllocMsg size over 0x7FFFFFFF,FileID: %d LineNo: %d.\r\n", ulFileID, usLineNo);
+
+        return VOS_NULL_PTR;
+    }
+
     ulTotalLength =
         (VOS_INT)(VOS_MSG_BLOCK_HEAD_AND_RESERVED_LENGTH + ulLength);
 

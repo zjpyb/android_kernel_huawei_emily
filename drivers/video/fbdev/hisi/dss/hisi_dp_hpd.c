@@ -13,6 +13,7 @@
 
 #include "hisi_fb.h"
 #include "hisi_dp.h"
+#include <linux/device.h>
 
 
 int hisi_dp_hpd_register(struct hisi_fb_data_type *hisifd)
@@ -21,13 +22,16 @@ int hisi_dp_hpd_register(struct hisi_fb_data_type *hisifd)
 	struct dp_ctrl *dptx = NULL;
 
 	if (!hisifd) {
-		HISI_FB_ERR("hisifd is NULL!\n");
+		HISI_FB_ERR("[DP] hisifd is NULL!\n");
 		return -EINVAL;
 	}
 
 	dptx = &(hisifd->dp);
+	if (!hisifd->pdev) {
+		return -EINVAL;
+	}
 	if (!dptx) {
-		HISI_FB_ERR("invalid dptx!\n");
+		dev_err(&hisifd->pdev->dev, "invalid dptx!\n");
 		return -EINVAL;
 	}
 
@@ -45,13 +49,16 @@ void hisi_dp_hpd_unregister(struct hisi_fb_data_type *hisifd)
 	struct dp_ctrl *dptx = NULL;
 
 	if (!hisifd) {
-		HISI_FB_ERR("hisifd is NULL!\n");
+		HISI_FB_ERR("[DP] hisifd is NULL!\n");
 		return;
 	}
 
+	if (!hisifd->pdev) {
+		return;
+	}
 	dptx = &(hisifd->dp);
 	if (!dptx) {
-		HISI_FB_ERR("invalid dptx!\n");
+		dev_err(&hisifd->pdev->dev, "invalid dptx!\n");
 		return;
 	}
 

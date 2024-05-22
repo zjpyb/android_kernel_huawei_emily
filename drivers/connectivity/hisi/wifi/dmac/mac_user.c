@@ -468,6 +468,12 @@ oal_void mac_user_get_vht_hdl(mac_user_stru *pst_mac_user, mac_vht_hdl_stru *pst
     oal_memcopy((oal_uint8 *)pst_vht_hdl, (oal_uint8 *)(&pst_mac_user->st_vht_hdl), OAL_SIZEOF(mac_vht_hdl_stru));
 }
 
+oal_void mac_user_set_vht_capable(mac_user_stru *pst_mac_user, oal_bool_enum_uint8 en_vht_capable)
+{
+    pst_mac_user->st_vht_hdl.en_vht_capable = en_vht_capable;
+}
+
+
 
 oal_void mac_user_set_ht_hdl(mac_user_stru *pst_mac_user, mac_user_ht_hdl_stru *pst_ht_hdl)
 {

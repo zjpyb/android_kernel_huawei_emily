@@ -29,6 +29,8 @@
 #define FB_ACCEL_KIRIN970 0x40
 #define FB_ACCEL_DSSV320 0x80
 #define FB_ACCEL_DSSV501 0x100
+#define FB_ACCEL_DSSV510 0x200
+#define FB_ACCEL_DSSV330 0x400
 #define FB_ACCEL_PLATFORM_TYPE_FPGA 0x10000000   //FPGA
 #define FB_ACCEL_PLATFORM_TYPE_ASIC 0x20000000   //ASIC
 
@@ -37,10 +39,12 @@
 #define HISIFB_MDC_CHANNEL_INFO_REQUEST _IOW(HISIFB_IOCTL_MAGIC, 803, struct mdc_ch_info)
 #define HISIFB_MDC_CHANNEL_INFO_RELEASE _IOW(HISIFB_IOCTL_MAGIC, 804, struct mdc_ch_info)
 #define HISIFB_MDC_POWER_DOWNUP_CTRL _IOW(HISIFB_IOCTL_MAGIC, 805, int)
+#define HISIFB_GRALLOC_GET_PHYS _IOW(HISIFB_IOCTL_MAGIC, 806, struct ion_phys_data)
 
 #define HISIFB_VSYNC_CTRL _IOW(HISIFB_IOCTL_MAGIC, 0x02, unsigned int)
 #define HISIFB_DSS_VOTE_CMD_SET _IOW(HISIFB_IOCTL_MAGIC, 0x04, struct dss_vote_cmd)
 #define HISIFB_DIRTY_REGION_UPDT_SET _IOW(HISIFB_IOCTL_MAGIC, 0x06, int)
+#define HISIFB_VIDEO_IDLE_CTRL _IOW(HISIFB_IOCTL_MAGIC, 0x07, int)
 #define HISIFB_DSS_MMBUF_ALLOC _IOW(HISIFB_IOCTL_MAGIC, 0x08, struct dss_mmbuf)
 #define HISIFB_DSS_MMBUF_FREE _IOW(HISIFB_IOCTL_MAGIC, 0x09, struct dss_mmbuf)
 #define HISIFB_DSS_VOLTAGE_GET _IOW(HISIFB_IOCTL_MAGIC, 0x10, struct dss_vote_cmd)
@@ -598,6 +602,7 @@ typedef struct ce_parameter {
 } ce_parameter_t;
 
 #define META_DATA_SIZE 1024
+#define LCD_PANEL_VERSION_SIZE 32
 
 //HIACE struct
 typedef struct hiace_alg_parameter {
@@ -661,6 +666,7 @@ enum display_engine_module_id {
 	DISPLAY_ENGINE_HBM = BIT(5),
 	DISPLAY_ENGINE_COLOR_RECTIFY = BIT(6),
 	DISPLAY_ENGINE_AMOLED_ALGO = BIT(7),
+	DISPLAY_ENGINE_FLICKER_DETECTOR = BIT(8),
 };
 
 typedef struct display_engine_hbm_param {
@@ -669,8 +675,8 @@ typedef struct display_engine_hbm_param {
 } display_engine_hbm_param_t;
 
 typedef struct display_engine_amoled_param {
-	bool HBMEnable;
-	bool AmoledDimingEnable;
+	int HBMEnable;
+	int AmoledDimingEnable;
 	int HBM_Threshold_BackLight;
 	int HBM_Threshold_Dimming;
 	int HBM_Dimming_Frames;
@@ -681,6 +687,10 @@ typedef struct display_engine_amoled_param {
 	int Hiac_DBVThres;
 	int Hiac_DBV_XCCThres;
 	int Hiac_DBV_XCC_MinThres;
+	int Lowac_DBVThres;
+	int Lowac_DBV_XCCThres;
+	int Lowac_DBV_XCC_MinThres;
+	int Lowac_Fixed_DBVThres;
 } display_engine_amoled_param_t;
 
 typedef struct display_engine_blc_param {
@@ -718,6 +728,18 @@ typedef struct display_engine_panel_info_param {
 	int minbacklight;
 	int factory_gamma_enable;
 	uint16_t factory_gamma[800];//800 > 257 * 3
+	char lcd_panel_version[LCD_PANEL_VERSION_SIZE];
+	int factory_runmode;
+	int reserve0;
+	int reserve1;
+	int reserve2;
+	int reserve3;
+	int reserve4;
+	int reserve5;
+	int reserve6;
+	int reserve7;
+	int reserve8;
+	int reserve9;
 } display_engine_panel_info_param_t;
 
 struct disp_panelid
@@ -763,6 +785,15 @@ typedef struct display_engine {
 	uint8_t ddic_color_rectify_support;
 } display_engine_t;
 
+typedef struct display_engine_flicker_detector_config {
+	uint8_t detect_enable;
+	uint8_t dump_enable;
+	int32_t time_window_length_ms;
+	int32_t weber_threshold;
+	int32_t low_level_upper_bl_value_threshold;
+	int32_t low_level_device_bl_delta_threshold;
+} display_engine_flicker_detector_config_t;
+
 typedef struct display_engine_param {
 	uint32_t modules;
 	display_engine_blc_param_t blc;
@@ -773,6 +804,7 @@ typedef struct display_engine_param {
 	display_engine_hbm_param_t hbm;
 	display_engine_color_rectify_param_t color_param;
 	display_engine_amoled_param_t amoled_param;
+	display_engine_flicker_detector_config_t flicker_detector_config;
 } display_engine_param_t;
 
 typedef enum dss_module_id {

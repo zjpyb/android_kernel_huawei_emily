@@ -40,6 +40,7 @@
 #define CMDQ_TASK_TIMEOUT_MS 29000
 
 #define DRV_NAME "cmdq-host"
+#define INT2BOOL(x)  ((x)? 1:0)
 
 extern int sdhci_get_cmd_err(u32 intmask);
 extern int sdhci_get_data_err(u32 intmask);
@@ -66,11 +67,25 @@ void cmdq_dump_task_history(struct cmdq_host *cq_host)
 			ktime_to_ns(cmdq_task_info[tag].start_dbr_time),
 			ktime_to_ns(cmdq_task_info[tag].end_dbr_time));
 	}
+	pr_err(DRV_NAME ": claimed:%d, claimer:%s, claim_cnt:%d\n",
+		mmc->claimed,
+		mmc->claimer ? mmc->claimer->comm : "NULL",
+		mmc->claim_cnt);
 }
 
 void cmdq_dumpregs(struct cmdq_host *cq_host)
 {
 	struct mmc_host *mmc = cq_host->mmc;
+	int ret = 0;
+
+	if (cq_host->ops->dump_vendor_regs)
+		ret = cq_host->ops->dump_vendor_regs(mmc);
+
+	if (ret) {
+		pr_info(DRV_NAME ": Maybe it is not a right time to dump(%s)\n",
+			mmc_hostname(mmc));
+		return;
+	}
 
 	pr_info(DRV_NAME ": ========== REGISTER DUMP (%s)==========\n", mmc_hostname(mmc));
 
@@ -108,9 +123,6 @@ void cmdq_dumpregs(struct cmdq_host *cq_host)
 			cmdq_readl(cq_host, CQCRI),
 			cmdq_readl(cq_host, CQCRA));
 	pr_info(DRV_NAME ": ===========================================\n");
-
-	if (cq_host->ops->dump_vendor_regs)
-		cq_host->ops->dump_vendor_regs(mmc);
 
 }
 
@@ -162,7 +174,7 @@ static inline u8 *get_link_desc(struct cmdq_host *cq_host, u8 tag)
 	return desc + cq_host->task_desc_len;
 }
 
-/*lint -save -e647*/
+
 static inline dma_addr_t get_trans_desc_dma(struct cmdq_host *cq_host, u8 tag)
 {
 #ifdef CONFIG_MMC_SDHCI_DWC_MSHC
@@ -184,7 +196,6 @@ static inline u8 *get_trans_desc(struct cmdq_host *cq_host, u8 tag)
 		(u32)(cq_host->trans_desc_len * cq_host->mmc->max_segs * tag);
 #endif
 }
-/*lint -restore*/
 
 static void setup_trans_desc(struct cmdq_host *cq_host, u8 tag)
 {
@@ -297,14 +308,14 @@ static int cmdq_host_alloc_tdl(struct cmdq_host *cq_host, int noalloc)
 	/* total size of a slot: 1 task & 1 transfer (link) */
 	cq_host->slot_sz = cq_host->task_desc_len + cq_host->link_desc_len;
 
-	desc_size = (size_t)(cq_host->slot_sz * cq_host->num_slots);//lint !e647
+	desc_size = (long)(unsigned)((cq_host->slot_sz) * cq_host->num_slots);
 
 	/* FIXME: consider allocating smaller chunks iteratively */
 #ifdef CONFIG_MMC_SDHCI_DWC_MSHC
 	/* synopsys controller has dma 128M limit, may result the descriptors > max_segs(128)*/
-	data_size = (size_t)(cq_host->trans_desc_len * (cq_host->mmc->max_segs * 2) * (cq_host->num_slots - 1));//lint !e647
+	data_size = (long)(unsigned)(cq_host->trans_desc_len * (cq_host->mmc->max_segs * 2) * (cq_host->num_slots - 1));
 #else
-	data_size = (size_t)(cq_host->trans_desc_len * cq_host->mmc->max_segs * (cq_host->num_slots - 1));//lint !e647
+	data_size = (long)(unsigned)(cq_host->trans_desc_len * cq_host->mmc->max_segs * (cq_host->num_slots - 1));
 #endif
 	/*
 	 * allocate a dma-mapped chunk of memory for the descriptors
@@ -317,10 +328,6 @@ static int cmdq_host_alloc_tdl(struct cmdq_host *cq_host, int noalloc)
 		cq_host->trans_desc_base = dmam_alloc_coherent(mmc_dev(cq_host->mmc), data_size, &cq_host->trans_desc_dma_base, GFP_KERNEL);
 		cq_host->mmc->cmdq_task_info= devm_kzalloc(mmc_dev(cq_host->mmc),
 			sizeof(*cq_host->mmc->cmdq_task_info) *cq_host->num_slots, GFP_KERNEL);
-#if 0
-		memset(cq_host->desc_base, 0x5a, desc_size);
-		memset(cq_host->trans_desc_base, 0x5a, data_size);
-#endif
 	}
 	if (!cq_host->desc_base || !cq_host->trans_desc_base)
 		return -ENOMEM;
@@ -577,10 +584,10 @@ static int cmdq_trylock_hostlock(struct cmdq_host *cq_host,unsigned long* flags)
 	int locked = 0;
 	unsigned int trycount = 100000;
 	do{
-		locked = spin_trylock_irqsave(&cq_host->cmdq_lock, *flags);/*lint !e730 !e550 !e1072 !e666*/
+		locked = spin_trylock_irqsave(&cq_host->cmdq_lock, *flags);/*lint !e666*/
 		if(locked)
 			break;
-		udelay(10);/*lint !e778 !e774 !e747*/
+		udelay(10);
 	}while(--trycount>0);
 	return locked;
 }
@@ -605,7 +612,7 @@ static int cmdq_halt_irq_safe(struct cmdq_host *cq_host)
 			cmdq_writel(cq_host, CQIS_HAC, CQIS);
 			break;
 		}
-		mdelay(1);/*lint !e778 !e774 !e747*/
+		mdelay(1);
 	} while(--timeout > 0);
 	cq_host->irq_safe_flag = 0;
 	if (timeout)
@@ -648,7 +655,7 @@ int cmdq_dbr_clear_and_halt(struct mmc_host *mmc)
 			return -ETIMEDOUT;
 		}
 		timeout--;
-		mdelay(1);/*lint !e778 !e774 !e747*/
+		mdelay(1);
 	} while (reg);
 	/*halt cqe*/
 	ret = cmdq_halt_irq_safe(cq_host);
@@ -681,12 +688,10 @@ static void cmdq_prep_task_desc(struct mmc_request *mrq, u64 *data, bool intr, b
 #ifdef CMDQ_FIX_CLEAR_QBRTASK
 	qbr = false;
 #endif
-	/*lint -save -e514*/
-	*data = VALID(1) | END(1) | INT(intr) | ACT(0x5) | FORCED_PROG(!!(req_flags & FORCED_PRG))
-		| CONTEXT(mrq->cmdq_req->ctx_id) | DATA_TAG(!!(req_flags & DAT_TAG))
-		| DATA_DIR(!!(req_flags & DIR)) | PRIORITY(!!(req_flags & PRIO)) | QBAR(qbr) | REL_WRITE(!!(req_flags & REL_WR))
+	*data = VALID(1) | END(1) | INT(INT2BOOL(intr)) | ACT(0x5) | FORCED_PROG(INT2BOOL((req_flags & FORCED_PRG)))
+		| CONTEXT(mrq->cmdq_req->ctx_id) | DATA_TAG(INT2BOOL((req_flags & DAT_TAG)))
+		| DATA_DIR(INT2BOOL((req_flags & DIR))) | PRIORITY(INT2BOOL((req_flags & PRIO))) | QBAR(INT2BOOL(qbr)) | REL_WRITE(INT2BOOL((req_flags & REL_WR)))
 		| BLK_COUNT(mrq->cmdq_req->data.blocks) | BLK_ADDR((u64)mrq->cmdq_req->blk_addr);
-	/*lint -restore*/
 }
 
 static int cmdq_dma_map(struct mmc_host *host, struct mmc_request *mrq)
@@ -743,12 +748,12 @@ static void cmdq_set_tran_desc(struct cmdq_host *cq_host, u8 **desc,
 		first_desc_len = (SYNOPSYS_DMA_LIMIT - tran_addr % SYNOPSYS_DMA_LIMIT);
 		_cmdq_set_tran_desc(tran_desc, tran_addr,first_desc_len, false, cq_host->dma64);
 
-		pr_err("%s: 1th, tran_desc:0x%pK, tran_addr:0x%pK, tran_len:%d\n", __func__, *desc, (void*)tran_addr, first_desc_len);//lint !e626
+		pr_err("%s: 1th, tran_desc:0x%pK, tran_addr:0x%pK, tran_len:%d\n", __func__, *desc, (void*)tran_addr, first_desc_len);
 		*desc = *desc + cq_host->trans_desc_len;
 		tran_desc = *desc;
 		tran_len -= first_desc_len;
 		tran_addr += first_desc_len;
-		pr_err("%s: 2th, tran_desc:0x%pK, tran_addr:0x%pK, tran_len:%d\n", __func__, *desc, (void*)tran_addr, tran_len);//lint !e626
+		pr_err("%s: 2th, tran_desc:0x%pK, tran_addr:0x%pK, tran_len:%d\n", __func__, *desc, (void*)tran_addr, tran_len);
 	}
 #endif
 	_cmdq_set_tran_desc(tran_desc, tran_addr, tran_len, end, cq_host->dma64);
@@ -1050,20 +1055,160 @@ static void cmdq_ring_dbl_in_irq(struct mmc_host *mmc)
 	}
 	return;
 }
+
+struct mmc_request* get_first_req(struct cmdq_host *cq_host, u32 *tag)
+{
+	int i;
+	struct mmc_request *mrq;
+
+	for (i = 0; i < cq_host->num_slots; i++) {
+	      if(cq_host->mrq_slot[i]) {
+			*tag = i;
+		      return cq_host->mrq_slot[i];
+	      }
+	}
+
+	return NULL;
+}
+
+struct mmc_request* get_mrq_by_tag(struct cmdq_host *cq_host, u32 *tag)
+{
+	struct mmc_request *mrq = NULL;
+
+	if (*tag < cq_host->num_slots)
+		mrq = get_req_by_tag(cq_host, *tag);
+	if (!mrq) {
+		mrq = get_first_req(cq_host, tag);
+		if (!mrq) {
+			pr_err("%s: cannot get avalible mrq\n", __func__);
+			BUG_ON(1);
+		}
+	}
+
+	return mrq;
+}
+
+
+#ifdef CONFIG_EMMC_FAULT_INJECT
+int cmdq_interrupt_errors_handle(struct mmc_host *mmc, u32 intmask,
+					u32 status, int err, bool do_inj)
+#else
+int cmdq_interrupt_errors_handle(struct mmc_host *mmc, u32 intmask,
+					u32 status, int err)
+#endif
+{
+	struct cmdq_host *cq_host = (struct cmdq_host *)mmc_cmdq_private(mmc);
+	struct mmc_request *mrq;
+	u32 dbr_set = 0;
+	unsigned long tag = 0xFFFF;
+	u32 err_info = 0;
+	int poll_ret = 0;
+
+	spin_lock(&cq_host->cmdq_lock);
+
+	pr_err("%s: cmd queue err, intmask = 0x%x\n", __func__, intmask);
+	cmdq_dumpregs(cq_host);
+
+	/* prase error information */
+	err_info = cmdq_readl(cq_host, CQTERRI);
+	dbr_set = cmdq_readl(cq_host, CQTDBR);
+
+	/*
+	 * Need to halt CQE in case of error in interrupt context itself
+	 * otherwise CQE may proceed with sending CMD to device even if
+	 * CQE/card is in error state.
+	 * CMDQ error handling will make sure that it is unhalted after
+	 * handling all the errors.
+	 */
+	poll_ret = cmdq_halt_poll(mmc, true);
+	if (poll_ret)
+		pr_err("%s: %s: halt failed ret=%d\n",
+				mmc_hostname(mmc), __func__, poll_ret);
+
+#ifdef CONFIG_EMMC_FAULT_INJECT
+	if (do_inj) {
+		mmcdbg_cmdq_inj_fill_errinfo(cq_host, &err_info);
+		pr_err("err_info is 0x%x\n", err_info);
+	}
+#endif
+
+	if (err_info & CQTERRI_RES_ERR) {
+		tag = CQTERRI_RES_TASK(err_info);
+		pr_err("%s: CMD err tag: %lu\n", __func__, tag);
+
+		mrq = get_mrq_by_tag(cq_host, &tag);
+		/* CMD44/45/46/47 will not have a valid cmd */
+		if (mrq->cmd)
+			mrq->cmd->error = err;
+		else
+			mrq->data->error = err;
+	} else if (err_info & CQTERRI_DAT_ERR) {
+		tag = CQTERRI_DAT_TASK(err_info);
+		pr_err("%s: Dat err  tag: %lu\n", __func__, tag);
+		mrq = get_mrq_by_tag(cq_host, &tag);
+		mrq->data->error = err;
+	} else {
+#ifdef CONFIG_EMMC_FAULT_INJECT
+		if (do_inj) {
+			mmcdbg_cmdq_inj_fake_dbl(cq_host, &dbr_set);
+			pr_err("fake dbl is 0x%x\n", dbr_set);
+		}
+#endif
+		if (!dbr_set) {
+			pr_err("%s: spurious/force error interrupt, err_info = 0x%x!!!\n",
+					mmc_hostname(mmc), err_info);
+			cmdq_halt_poll(mmc, false);
+			mmc_host_clr_halt(mmc);
+			spin_unlock(&cq_host->cmdq_lock);
+			return IRQ_HANDLED;
+		}
+		tag = ffs(dbr_set) - 1;
+		mrq = get_mrq_by_tag(cq_host, &tag);
+		if (mrq->data)
+			mrq->data->error = err;
+		else
+			mrq->cmd->error = err;
+		/*
+		 * Get ADMA descriptor memory in case of ADMA
+		 * error for debug.
+		 */
+		if (err == -EIO)
+			cmdq_dump_adma_mem(cq_host);
+	}
+
+	/*
+	 * If CQE halt fails then, disable CQE
+	 * from processing any further requests
+	 */
+	if (poll_ret)
+		cmdq_disable_immediatly(mmc);
+
+	if (status & CQIS_RED) {
+		if(mrq->cmdq_req)
+			mrq->cmdq_req->resp_err = true;
+		pr_err("%s: RED error %d !!!\n", mmc_hostname(mmc), status);
+	}
+
+#ifdef CONFIG_HUAWEI_EMMC_DSM
+	sdhci_cmdq_dsm_set_host_status(mmc_priv(mmc), (intmask & SDHCI_INT_ERROR_MASK));
+#endif
+	cmdq_finish_data(mmc, tag);
+	spin_unlock(&cq_host->cmdq_lock);
+
+	return 0;
+}
+
 irqreturn_t cmdq_irq(struct mmc_host *mmc, u32 intmask)
 {
 	u32 status;
 	unsigned long tag = 0;
 	unsigned long comp_status = 0;
 	struct cmdq_host *cq_host = (struct cmdq_host *)mmc_cmdq_private(mmc);
-	struct mmc_request *mrq;
 	u32 reg_val = 0;
-	u32 dbr_set = 0;
 	int err = 0;
-	u32 err_info = 0;
 	int ret = 0;
 #ifdef CONFIG_EMMC_FAULT_INJECT
-	bool will_inj = false;
+	bool do_inj = false;
 #endif
 
 	if (intmask & SDHCI_INT_CMD_MASK)
@@ -1078,16 +1223,19 @@ irqreturn_t cmdq_irq(struct mmc_host *mmc, u32 intmask)
 	status = cmdq_readl(cq_host, CQIS);
 
 #ifdef CONFIG_EMMC_FAULT_INJECT
-	 will_inj = mmcdbg_error_inject_dispatcher(mmc,
-			ERR_INJECT_CMDQ_INTR,
-			0, &err, false);/*lint !e64 */
-	if (will_inj) {
+	do_inj = mmcdbg_error_inject_dispatcher(mmc,
+			ERR_INJECT_CMDQ_INTR, 0, (u32*)&err, false);
+	if (do_inj) {
 		mmcdbg_cmdq_inj_fill_status(cq_host, &status);
 	}
 #endif
 
+	if (!status && !err) {
+		pr_err("%s: no irq\n", __func__);
+		return IRQ_NONE;
+	}
 
-	/*for sys controller, need to clear tcn first, so move it from below*/
+/*for sys controller, need to clear tcn first, so move it from below*/
 #ifdef CONFIG_MMC_SDHCI_DWC_MSHC
 	if (status & CQIS_TCC) {
 		/* read QCTCN and complete the request */
@@ -1100,118 +1248,36 @@ irqreturn_t cmdq_irq(struct mmc_host *mmc, u32 intmask)
 
 	cmdq_writel(cq_host, status, CQIS);
 
-	if (!status && !err) {
-		pr_err("%s: no irq\n", __func__);
-		return IRQ_NONE;
-	}
-
 	if ((status & CQIS_RED) || err) {
-		spin_lock(&cq_host->cmdq_lock);
-
-		/* prase error information */
-		err_info = cmdq_readl(cq_host, CQTERRI);
-
+		pr_err("%s: interrupt of errors detected. status = 0x%x, err = 0x%x\n", __func__, status, err);
 #ifdef CONFIG_EMMC_FAULT_INJECT
-		if (will_inj) {
-			mmcdbg_cmdq_inj_fill_errinfo(cq_host, &err_info);
-			pr_err("err_info is 0x%x\n", err_info);
-		}
+		ret = cmdq_interrupt_errors_handle(mmc, intmask, status, err, do_inj);
+#else
+		ret = cmdq_interrupt_errors_handle(mmc, intmask, status, err);
 #endif
-		/*
-		 * Need to halt CQE in case of error in interrupt context itself
-		 * otherwise CQE may proceed with sending CMD to device even if
-		 * CQE/card is in error state.
-		 * CMDQ error handling will make sure that it is unhalted after
-		 * handling all the errors.
-		 */
-		ret = cmdq_halt_poll(mmc, true);
-		if (ret)
-			pr_err("%s: %s: halt failed ret=%d\n",
-					mmc_hostname(mmc), __func__, ret);
-
-		pr_err("%s: cmd queue err, intmask = 0x%x\n", __func__, intmask);
-		cmdq_dumpregs(cq_host);
-
-		if (err_info & CQTERRI_RES_ERR) {
-			tag = CQTERRI_RES_TASK(err_info);
-			pr_err("%s: CMD err tag: %lu\n", __func__, tag);
-
-			mrq = get_req_by_tag(cq_host, tag);
-			/* CMD44/45/46/47 will not have a valid cmd */
-			if (mrq->cmd)
-				mrq->cmd->error = err;
-			else
-				mrq->data->error = err;
-		} else if (err_info & CQTERRI_DAT_ERR) {
-			tag = CQTERRI_DAT_TASK(err_info);
-			pr_err("%s: Dat err  tag: %lu\n", __func__, tag);
-			mrq = get_req_by_tag(cq_host, tag);
-			mrq->data->error = err;
-		} else if (!err_info) {
-			dbr_set = cmdq_readl(cq_host, CQTDBR);
-#ifdef CONFIG_EMMC_FAULT_INJECT
-			if (will_inj) {
-				mmcdbg_cmdq_inj_fake_dbl(cq_host, &dbr_set);
-				pr_err("fake dbl is 0x%x\n", dbr_set);
-			}
-#endif
-			if (!dbr_set) {
-				pr_err("%s: spurious/force error interrupt, err_info = 0x%x!!!\n",
-						mmc_hostname(mmc), err_info);
-				cmdq_halt_poll(mmc, false);
-				mmc_host_clr_halt(mmc);
-				spin_unlock(&cq_host->cmdq_lock);
-				return IRQ_HANDLED;
-			}
-			tag = ffs(dbr_set) - 1;
-			mrq = get_req_by_tag(cq_host, tag);
-			if (mrq->data)
-				mrq->data->error = err;
-			else
-				mrq->cmd->error = err;
-			/*
-			 * Get ADMA descriptor memory in case of ADMA
-			 * error for debug.
-			 */
-			if (err == -EIO)
-				cmdq_dump_adma_mem(cq_host);
-		}
-
-		/*
-		 * If CQE halt fails then, disable CQE
-		 * from processing any further requests
-		 */
-		if (ret)
-			cmdq_disable_immediatly(mmc);
-
-		if (status & CQIS_RED) {
-			mrq->cmdq_req->resp_err = true;/*lint !e644 *//* [false alarm]:if RED, errinfo will get mrq */
-			pr_err("%s: RED error %d !!!\n", mmc_hostname(mmc), status);
-			cmdq_dumpregs(cq_host);
-		}
-
-#ifdef CONFIG_HUAWEI_EMMC_DSM
-		sdhci_cmdq_dsm_set_host_status(mmc_priv(mmc), (intmask & SDHCI_INT_ERROR_MASK));
-#endif
-		cmdq_finish_data(mmc, tag);
-		spin_unlock(&cq_host->cmdq_lock);
+		if(ret)
+			return IRQ_HANDLED;
 	}
+
 	if (status & CQIS_HAC) {
 		/* halt is completed, wakeup waiting thread */
 		pr_err("%s: cmd queue halt completed. status = 0x%x\n", __func__, status);
 		if (!cq_host->irq_safe_flag)
 			complete(&cq_host->halt_comp);
 	}
+
 	if (status & CQIS_TCL) {
 		/* task is cleared, wakeup waiting thread */
 		pr_err("%s: cmd queue task clear. status = 0x%x\n", __func__, status);
 		complete(&cq_host->clear_comp);
 	}
+
 	if (status & CQIS_TERR) {
 		pr_err("%s: cmd queue task error (invalid task descriptor) %d !!!\n", mmc_hostname(mmc), status);
 		cmdq_dumpregs(cq_host);
 		BUG_ON(1);
 	}
+
 	if (status & CQIS_TCC) {
 #ifndef CONFIG_MMC_SDHCI_DWC_MSHC
 		/* read QCTCN and complete the request */
@@ -1241,7 +1307,7 @@ static int cmdq_halt(struct mmc_host *mmc, bool halt)
 	unsigned long flags;
 
 	if (halt) {
-		spin_lock_irqsave(&cq_host->cmdq_lock, flags);/*lint !e730 !e550*/
+		spin_lock_irqsave(&cq_host->cmdq_lock, flags);
 		if (cmdq_readl(cq_host, CQCTL) & HALT) {
 			spin_unlock_irqrestore(&cq_host->cmdq_lock, flags);
 			pr_warn("%s: CQE already HALT\n", mmc_hostname(mmc));
@@ -1250,7 +1316,7 @@ static int cmdq_halt(struct mmc_host *mmc, bool halt)
 		cmdq_writel(cq_host, cmdq_readl(cq_host, CQCTL) | HALT, CQCTL);
 		spin_unlock_irqrestore(&cq_host->cmdq_lock, flags);
 		val = wait_for_completion_timeout(&cq_host->halt_comp, msecs_to_jiffies(HALT_TIMEOUT_MS));
-		if (val) 
+		if (val)
 			cq_host->ops->clear_set_irqs(mmc,	false);
 		return val ? 0 : -ETIMEDOUT;
 	} else {
@@ -1320,253 +1386,14 @@ int cmdq_is_reset(struct mmc_host *host)
 	return cq_host->reset_flag;
 }
 
-#if 0
-extern void mmc_blk_cmdq_reset(struct mmc_host *host);
-void cmdq_reset(struct cmdq_host *cq_host)
-{
-	struct mmc_request *mrq;
-
-	cmdq_dumpregs(cq_host);
-	cq_host->reset_flag = 1;
-#ifdef CMDQ_DEBUG
-	cmdq_clear_dcmd_debug_flag();
-#endif
-	mmc_blk_cmdq_reset(cq_host->mmc);
-
-	/*When DISCARD request is handled, reset happens. Discard return,
-	 *response error may occur. So don't resend discard cmd.
-	 */
-	mrq = cq_host->mrq_slot[31];
-	if (mrq && (mrq->cmdq_req->cmd_flags & REQ_DISCARD)) {
-		pr_err("%s: do not resend discard cmd after reset\n", __func__);
-		cq_host->mrq_slot[31] = NULL;
-	}
-
-	cq_host->reset_flag = 0;
-
-}
-#endif
 
 
 static void cmdq_work_resend(struct work_struct *work)
 {
-#if 0
-	struct cmdq_host *cq_host = container_of(work, struct cmdq_host, work_resend);
-	struct mmc_host *mmc = cq_host->mmc;
-	int ret = 0;
-	int move_type = 0;
-	bool need_tuning_move;
-	u32 tag, val, timeout, i;
-	unsigned long comp_status;
-	struct mmc_request *mrq;
-	unsigned long flags;
-	u32 db_reg = 0;
-	u32 req_count = 0;
-	bool timeout_fail = false;
-
-#ifdef CONFIG_HUAWEI_EMMC_DSM
-	bool dsm = true;
-#endif
-	pr_err("%s:%s++\n", mmc_hostname(cq_host->mmc), __func__);
-	/* count error retry */
-	val = cmdq_readl(cq_host, CQTERRI);
-#ifdef CMDQ_DEBUG
-	val = cmdq_trigger_resend(val, (u32)CQTERRI_DAT_ERR);
-#endif
-	if (val & CQTERRI_DAT_ERR) {
-		tag = CQTERRI_DAT_TASK(val);
-		if ((cq_host->mmc->ios.timing == MMC_TIMING_MMC_HS400)
-			|| cq_host->mmc->card->ext_csd.strobe_enhanced_en)
-			move_type = TUNING_STROBE;
-		else
-			move_type = TUNING_CLK;
-		need_tuning_move = true;
-	} else if (val & CQTERRI_RES_ERR) {
-		tag = CQTERRI_RES_TASK(val);
-		if (cq_host->mmc->card->ext_csd.strobe_enhanced_en)
-			move_type = TUNING_STROBE;
-		else
-			move_type = TUNING_CLK;
-		need_tuning_move = true;
-	} else {
-		timeout_fail = true;
-		need_tuning_move = false;
-		pr_err("%s:%s: timeout or other error\n", mmc_hostname(cq_host->mmc), __func__);
-	}
-
-	/* halt */
-	ret = cmdq_halt(cq_host->mmc, true);
-	if (ret) {
-		pr_err("cmdq_halt timeout\n");
-		cmdq_reset(cq_host);
-		goto dishalt;
-	}
-#ifdef CMDQ_DEBUG
-	if (cmdq_halt_trigger_reset(cq_host))
-		goto dishalt;
-#endif
-
-	/* tuning move */
-	if (need_tuning_move) {
-		ret = cq_host->ops->tuning_move(cq_host->mmc,
-							move_type, TUNING_FLAG_NOUSE);
-		if (ret) {
-				pr_err("cmdq tuning move fail\n");
-		}
-	}
-
-	if (timeout_fail) {
-		val = cmdq_readl(cq_host, CQTCN);
-		/*if TCN has val,we should finish all the finish tasks */
-		if (val) {
-			comp_status = val;
-			req_count = 0;
-			pr_err("%s:%s timeout but reg notify is 0x%x\n", mmc_hostname(cq_host->mmc), __func__, val);
-			cmdq_writel(cq_host, val, CQTCN);
-			for_each_set_bit(i, &comp_status, cq_host->num_slots) {
-				/* complete the corresponding mrq */
-				ret = cmdq_finish_data(mmc, i);
-				/* complete DCMD on tag 31 */
-				if (!ret)
-					req_count++;
-			}
-		}
-
-		val = cmdq_readl(cq_host, CQTDBR);
-		if (!val) {
-			/*doorbell is 0,means all task finished,but we need to
-			 *solve the stored tasks that did not set dbr because
-			 *of this error handle,we need update all the timers
-			 *of the stored tasks;
-			 */
-			pr_err("%s:%s timeout but dbr is 0\n", mmc_hostname(cq_host->mmc), __func__);
-			goto dishalt;
-		} else {
-			comp_status = val;
-			tag = find_first_bit(&comp_status, cq_host->num_slots);
-			pr_err("%s:%s: no need tuning move\n", mmc_hostname(cq_host->mmc), __func__);
-		}
-	}
-
-	if (tag < cq_host->num_slots) {/*lint !e644*/ /* [false alarm]: tag can be set*/
-		mrq = cq_host->mrq_slot[tag];
-		pr_err("%s:%s check retries\n", mmc_hostname(cq_host->mmc), __func__);
-		if (mrq) {
-			if (--mrq->cmd->retries == 0) {
-				pr_err("%s: mrq->cmd->retries == 0\n", __func__);
-				cmdq_reset(cq_host);
-				goto dishalt;
-			}
-#ifdef CMDQ_DEBUG
-			if (cmdq_retry_trigger_reset(cq_host))
-				goto dishalt;
-#endif
-		}
-	} else {
-		pr_err("%s:err tag num %d\n", __func__, tag);
-		BUG_ON(1);
-	}
-
-	/* clear pending task */
-	val = cmdq_readl(cq_host, CQDPT);
-
-	ret = cmdq_clear_task(cq_host->mmc, val, false);
-	if (ret) {
-		pr_err("cmdq_clear timeout\n");
-		cmdq_reset(cq_host);
-		goto dishalt;
-	}
-#ifdef CMDQ_DEBUG
-	if (cmdq_clear_task_trigger_reset(cq_host))
-		goto dishalt;
-#endif
-
-	db_reg = cmdq_readl(cq_host, CQTDBR);
-	pr_err("%s:%s: doorbell is 0x%x after clear task\n", mmc_hostname(cq_host->mmc), __func__, db_reg);
-
-	/* send cmd48 */
-	ret = cq_host->ops->discard_task(cq_host->mmc, 0, true);
-	if (ret) {
-		pr_err("cmdq discard task fail\n");
-	}
-
-	/* wait busy */
-	timeout = CLEAR_TIMEOUT_MS;
-	while (cq_host->ops->card_busy(cq_host->mmc)) {
-		if (timeout == 0) {
-			pr_err("%s: wait discard task busy timeout\n", __func__);
-			cmdq_dumpregs(cq_host);
-			break;
-		}
-		timeout--;
-		mdelay(1);
-	}
-
-	/* enable error interupt */
-	cq_host->ops->clear_set_irqs(cq_host->mmc, true);
-	cmdq_clear_set_irqs(cq_host, 0x0, CQ_INT_ALL);
-
-dishalt:
-	/* dis-halt */
-	cmdq_halt(cq_host->mmc, false);
-	pr_err("%s dishalt complete\n", __func__);
-
-	spin_lock_irqsave(&cq_host->cmdq_lock, flags);
-	cq_host->err_handle = false;
-	/* re-write doorbell,because err_handle is true,tasks can't set dbr
-	 * we need set dbr and retry the stored tasks
-	 */
-	if (db_reg == cmdq_readl(cq_host, CQTDBR)) {
-		val = db_reg;
-		for (tag = 0; tag < cq_host->num_slots; tag++) {
-			/*TODO: need check DCMD*/
-			if (cq_host->mrq_slot[tag])
-				val |= (1 << tag);
-		}
-		cmdq_writel(cq_host, val, CQTDBR);
-	} else {
-		pr_err("%s:%s: There are tasks written to doorbell after clear task!!!\n", mmc_hostname(cq_host->mmc), __func__);
-	}
-
-	spin_unlock_irqrestore(&cq_host->cmdq_lock, flags);
-
-	/*pm put for the finished tasks */
-	while (req_count) {
-		cmdq_runtime_pm_put(mmc);
-		req_count--;
-	}
-
-	pr_err("%s:%s--\n", mmc_hostname(cq_host->mmc), __func__);
-
-#ifdef CONFIG_HUAWEI_EMMC_DSM
-	sdhci_cmdq_dsm_work(cq_host, dsm);
-#endif
-#endif
 }
 
 static void cmdq_timeout_timer(unsigned long param)
 {
-#if 0
-	struct cmdq_host *cq_host = (struct cmdq_host *)param;
-	unsigned long flags;
-
-	spin_lock_irqsave(&cq_host->cmdq_lock, flags);
-	pr_err("%s: Timeout waiting for hardware interrupt.\n", __func__);
-
-	if (false == cq_host->err_handle) {
-		cmdq_dumpregs(cq_host);
-		cq_host->err_handle = true;
-		/* mask & disable error interupt */
-		cq_host->ops->clear_set_irqs(cq_host->mmc, 0xFFFFFFFF, SDHCI_INT_CMDQ_EN);
-		cmdq_clear_set_irqs(cq_host, CQIS_RED, 0x0);
-#ifdef CONFIG_HUAWEI_EMMC_DSM
-		/* timeout*/
-		sdhci_cmdq_dsm_set_host_status(mmc_priv(cq_host->mmc), -1U); /*lint !e501*/
-#endif
-		queue_work(cq_host->wq_resend, &cq_host->work_resend);
-	}
-	spin_unlock_irqrestore(&cq_host->cmdq_lock, flags);
-#endif
 	return;
 }
 

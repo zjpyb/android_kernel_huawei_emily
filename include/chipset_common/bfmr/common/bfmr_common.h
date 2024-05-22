@@ -22,6 +22,7 @@
 
 #include <linux/vmalloc.h>
 #include <linux/types.h>
+#include <linux/semaphore.h>
 
 
 /*----c++ support-------------------------------------------------------------------*/
@@ -97,12 +98,26 @@ typedef   struct stat bfm_stat_t;
 #define   bfm_sys_lstat sys_newlstat
 #endif
 
+typedef enum
+{
+    HW_FAULT_OCP = 0,
+    HW_FAULT_MAX_COUNT,
+} bfmr_hardware_fault_type_e;
+
+typedef enum
+{
+    HW_FAULT_STAGE_DURING_BOOTUP = 0,
+    HW_FAULT_STAGE_AFTER_BOOT_SUCCESS,
+    HW_FAULT_STAGE_MAX_COUNT,
+} bfmr_hardware_fault_stage_e;
+
 /* bootfail additional info */
 typedef struct bfmr_bootfail_addl_info
 {
     char log_path[1024];
     char detail_info[512];
-    char reserved[2560];
+    bfmr_hardware_fault_type_e hardware_fault_type;
+    char reserved[2556];
 } bfmr_bootfail_addl_info_t;
 
 typedef struct bfmr_rrecord_misc_msg_param
@@ -131,9 +146,37 @@ typedef struct bfmr_rrecord_misc_msg_param
     /* abnormal shutdown flag */
     unsigned int abns_flag;
 
+    /* format data flag */
+    unsigned int format_data_flag;
+
+    /* original recovery method */
+    unsigned int original_recovery_method;
+
     /* reserved for future usage */
-    char reserved[964];
+    char reserved[956];
 } bfmr_rrecord_misc_msg_param_t;
+
+typedef struct
+{
+    char ldo_num[16];
+    char reserved[240];
+} ocp_excp_info_t;
+
+typedef struct
+{
+    ocp_excp_info_t excp_info;
+    bfmr_hardware_fault_type_e fault_type;
+    struct semaphore sem;
+} bfm_ocp_excp_info_t;
+
+typedef struct
+{
+    bfmr_hardware_fault_stage_e fault_stage;
+    union
+    {
+        ocp_excp_info_t ocp_excp_info;
+    } hw_excp_info;
+} bfmr_get_hw_fault_info_param_t;
 
 
 /*----export macroes-----------------------------------------------------------------*/
@@ -160,9 +203,10 @@ typedef struct bfmr_rrecord_misc_msg_param
 #define BFMR_SIZE_1K ((unsigned int)1024)
 #define BFMR_SIZE_2K ((unsigned int)2048)
 #define BFMR_SIZE_4K ((unsigned int)4096)
+#define BFMR_SIZE_32K ((unsigned int)32768)
 
 #define BFMR_DEV_FULL_PATH_MAX_LEN BFMR_SIZE_256
-#define BFMR_TEMP_BUF_LEN BFMR_SIZE_4K
+#define BFMR_TEMP_BUF_LEN BFMR_SIZE_32K
 #define BFMR_MAX_PATH BFMR_SIZE_4K
 
 #define ENTER_ERECOVERY_BY_PRESS_KEY (2001)
@@ -278,6 +322,9 @@ int bfmr_get_uid_gid(uid_t *puid, gid_t *pgid);
 int bfmr_read_rrecord_misc_msg(bfmr_rrecord_misc_msg_param_t *pparam);
 int bfmr_write_rrecord_misc_msg(bfmr_rrecord_misc_msg_param_t *pparam);
 unsigned int bfmr_get_bootup_time(void);
+char* bfm_get_boot_stage_name(unsigned int boot_stage);
+bool bfm_is_beta_version(void);
+bool bfmr_is_oversea_commercail_version(void);
 int bfmr_common_init(void);
 
 #ifdef __cplusplus

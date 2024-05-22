@@ -2,9 +2,9 @@
 
 static RingBuffer *rb;
 
-RingBuffer *Static_RingBuffer_Init(void * ringbufferAddr)
+RingBuffer *Static_RingBuffer_Init(void * ringbufferAddr, int element_size, int element_cnt)
 {
-	rb = RingBuffer_Init(ringbufferAddr);
+	rb = RingBuffer_Init(ringbufferAddr, element_size, element_cnt);
 
 	return rb;
 }

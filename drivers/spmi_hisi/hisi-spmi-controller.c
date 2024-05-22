@@ -12,6 +12,8 @@
 #include <linux/seq_file.h>
 #include <linux/of_hisi_spmi.h>
 #include "hisi-spmi-dbgfs.h"
+#include <linux/hisi/hisi_log.h>
+#define HISI_LOG_TAG HISI_SPMI_TAG
 
 #define SPMI_CONTROLLER_NAME		"spmi_controller"
 
@@ -323,10 +325,16 @@ static int spmi_controller_probe(struct platform_device *pdev)
 		return -ENODEV; /*lint !e429*/
 	}
 
+	if (of_property_read_bool(pdev->dev.of_node, "spmi-always-sec")) {
+		dev_err(&pdev->dev, "spmi-always-sec enable! \n");
+		spmi_controller->controller.always_sec = true;
+	}
+
 	platform_set_drvdata(pdev, spmi_controller);
 	dev_set_drvdata(&spmi_controller->controller.dev, spmi_controller);
 
 	spin_lock_init(&spmi_controller->lock);
+	spin_lock_init(&spmi_controller->controller.sec_lock);
 
 	spmi_controller->controller.nr = spmi_controller->channel;
 	spmi_controller->controller.dev.parent = pdev->dev.parent;

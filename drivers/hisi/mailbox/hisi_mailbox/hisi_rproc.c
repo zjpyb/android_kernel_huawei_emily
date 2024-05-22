@@ -17,20 +17,20 @@
 #include <linux/hisi/hisi_mailbox.h>
 #include <linux/hisi/hisi_rproc.h>
 
-#define MODULE_NAME "hisi_rproc"
+#include <linux/hisi/hisi_log.h>
+#define HISI_LOG_TAG	AP_MAILBOX_TAG
 
 #define READY()				do { is_ready = 1; } while (0)
 #define NOT_READY()			do { is_ready = 0; } while (0)
 #define IS_READY()			({ is_ready; })
 #define RPROC_PR_ERR(fmt, args ...)	\
 	({				\
-		pr_err("%s(%d):" fmt "\n", \
-			MODULE_NAME, __LINE__, ##args); \
+		pr_err(fmt "\n", ##args); \
 	})
 /*#define RPROC_PR_INFO(fmt, args ...)	\
 	({				\
-		pr_info("%s(%d):" fmt "\n", \
-			MODULE_NAME, __LINE__, ##args); \
+		pr_info("(%d):" fmt "\n", \
+			__LINE__, ##args); \
 	})*/
 
 typedef enum {
@@ -208,7 +208,7 @@ int hisi_rproc_xfer_async(rproc_id_t rproc_id, rproc_msg_t *msg, rproc_msg_len_t
 
 	rproc = find_rproc(rproc_id);
 	if (!rproc) {
-		RPROC_PR_ERR("invalid rproc xfer\n");
+		RPROC_PR_ERR("invalid rproc xfer");
 		ret = -EINVAL;
 		goto out;
 	}
@@ -217,14 +217,15 @@ int hisi_rproc_xfer_async(rproc_id_t rproc_id, rproc_msg_t *msg, rproc_msg_len_t
 
 	tx_task = hisi_mbox_task_alloc(mbox, msg, len, ack_type);
 	if (!tx_task) {
-		RPROC_PR_ERR("no mem\n");
+		RPROC_PR_ERR("no mem");
 		ret = -ENOMEM;
 		goto out;
 	}
 
 	ret = hisi_mbox_msg_send_async(mbox, tx_task);
 	if (ret) {
-		RPROC_PR_ERR("%s async send failed, errno: %d (-12:tx_fifo full;)\n", mbox->tx->name, ret);
+		/* -12:tx_fifo full */
+		RPROC_PR_ERR("%s async send failed, errno: %d", mbox->tx->name, ret);
 		hisi_mbox_task_free(&tx_task);
 	}
 
@@ -250,7 +251,7 @@ int hisi_rproc_xfer_sync(rproc_id_t rproc_id, rproc_msg_t *msg, rproc_msg_len_t 
 
 	rproc = find_rproc(rproc_id);
 	if (!rproc) {
-		RPROC_PR_ERR("invalid rproc xfer\n");
+		RPROC_PR_ERR("invalid rproc xfer");
 		ret = -EINVAL;
 		goto out;
 	}
@@ -259,7 +260,7 @@ int hisi_rproc_xfer_sync(rproc_id_t rproc_id, rproc_msg_t *msg, rproc_msg_len_t 
 
 	ret = hisi_mbox_msg_send_sync(mbox, msg, len, ack_type, ack_buffer, ack_buffer_len);
 	if (ret) {
-		RPROC_PR_ERR("fail to sync send\n");
+		RPROC_PR_ERR("fail to sync send");
 	}
 
 out:
@@ -286,7 +287,7 @@ int hisi_rproc_rx_register(rproc_id_t rproc_id, struct notifier_block *nb)
 
 	rproc = find_rproc(rproc_id);
 	if (!rproc) {
-		RPROC_PR_ERR("invalid rproc xfer\n");
+		RPROC_PR_ERR("invalid rproc xfer");
 		ret = -EINVAL;
 		goto out;
 	}
@@ -307,7 +308,7 @@ int hisi_rproc_rx_unregister(rproc_id_t rproc_id, struct notifier_block *nb)
 
 	rproc = find_rproc(rproc_id);
 	if (!rproc) {
-		RPROC_PR_ERR("invalid rproc xfer\n");
+		RPROC_PR_ERR("invalid rproc xfer");
 		ret = -EINVAL;
 		goto out;
 	}
@@ -394,7 +395,7 @@ int hisi_rproc_is_suspend(rproc_id_t rproc_id)
 
 	rproc = find_rproc(rproc_id);
 	if (!rproc || !rproc->mbox || !rproc->mbox->tx) {
-		RPROC_PR_ERR("invalid rproc xfer\n");
+		RPROC_PR_ERR("invalid rproc xfer");
 		ret = -EINVAL;
 		goto out;
 	}

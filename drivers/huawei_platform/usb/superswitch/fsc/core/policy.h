@@ -85,5 +85,5 @@ void FUSB3601_PolicyGiveVdm(struct Port *port);
 void FUSB3601_PolicySourceStartupHelper(struct Port *port);
 
 #endif /* FSCPM_POLICY_H_ */
-extern int pd_dpm_get_pd_reset_adapter(void);
+void FUSB3601_SetPDLimitVoltage(int vol);
 extern void pd_dpm_set_optional_max_power_status(bool status);

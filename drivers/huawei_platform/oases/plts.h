@@ -4,15 +4,22 @@
 #include <linux/types.h>
 
 /*
+ * arm64 plt:
  * LDR X16, <lable>
  * BR  X16
  * <label>
  * u64 target
+ *
+ * arm plt:
+ * LDR PC, [PC, #-4]
+ * DCD target
  */
 struct oases_plt_entry {
-	u32 ldr;
-	u32 br;
-	u64 addr;
+	unsigned int ldr;
+#ifdef __aarch64__
+	unsigned int br;
+#endif
+	unsigned long addr;
 };
 
 void plts_lock(void *mod);

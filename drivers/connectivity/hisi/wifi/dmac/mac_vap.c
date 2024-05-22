@@ -2877,6 +2877,10 @@ oal_uint32 mac_vap_init(
         if (WLAN_LEGACY_VAP_MODE == pst_param->en_p2p_mode)
         {
             mac_vap_vowifi_init(pst_vap);
+            if (OAL_PTR_NULL != pst_vap->pst_vowifi_cfg_param)
+            {
+                pst_vap->pst_vowifi_cfg_param->en_vowifi_mode = VOWIFI_CLOSE_REPORT;
+            }
         }
 #endif /* _PRE_WLAN_FEATURE_VOWIFI */
 #ifdef _PRE_WLAN_FEATURE_TXBF
@@ -4107,9 +4111,12 @@ oal_uint32 mac_vap_set_vowifi_param(mac_vap_stru *pst_mac_vap, mac_vowifi_cmd_en
                 0: disable report of rssi change
                 1: enable report when rssi lower than threshold(vowifi_low_thres)
                 2: enable report when rssi higher than threshold(vowifi_high_thres)
+                3: close vowifi
             */
             pst_mac_vap->pst_vowifi_cfg_param->en_vowifi_mode  = uc_value;
             pst_mac_vap->pst_vowifi_cfg_param->uc_cfg_cmd_cnt |= BIT0;
+
+            OAM_WARNING_LOG1(0, OAM_SF_VOWIFI, "{mac_vap_set_vowifi_param::Set vowifi_mode=[%d]!}", pst_mac_vap->pst_vowifi_cfg_param->en_vowifi_mode);
             break;
         }
         case VOWIFI_SET_PERIOD:

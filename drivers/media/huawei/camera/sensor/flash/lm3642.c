@@ -31,6 +31,8 @@
 #define FLASH_RAMP_TIME             0x08   //512us
 #define MODE_TORCH			0x02
 #define MODE_FLASH			0x03
+#define STROBE_PIN 0x20  // 0 = disable, 1=enable
+
 #define IVFM_EN                       0x80
 #define UVLO_EN                       0x80
 #define TX_PIN				0x40
@@ -81,21 +83,7 @@ DEFINE_HISI_FLASH_MUTEX(lm3642);
 extern int register_camerafs_attr(struct device_attribute *attr);
 #endif
 /* Function define */
-#if 0
-static int lm3642_set_strobe(struct hw_flash_ctrl_t *flash_ctrl,
-	unsigned int state)
-{
-	if (NULL == flash_ctrl) {
-		cam_err("%s flash_ctrl is NULL.", __func__);
-		return -1;
-	}
-
-	cam_debug("%s strobe0=%d, state=%d.", __func__,
-		flash_ctrl->flash_info.strobe0, state);
-	gpio_direction_output(flash_ctrl->flash_info.strobe0, state);
-	return 0;
-}
-#endif
+extern int snprintf_s(char* strDest, size_t destMax, size_t count, const char* format, ...);
 
 static int hw_lm3642_clear_error_and_notify_dmd(struct hw_flash_ctrl_t *flash_ctrl)
 {
@@ -231,35 +219,17 @@ static int hw_lm3642_find_match_torch_current(int cur_torch)
 
 static int hw_lm3642_init(struct hw_flash_ctrl_t *flash_ctrl)
 {
-#if 0
-	struct hw_lm3642_private_data_t *pdata;
-#endif
 
 	cam_debug("%s ernter.\n", __func__);
 	if (NULL == flash_ctrl) {
 		cam_err("%s flash_ctrl is NULL.", __func__);
 		return -1;
 	}
-#if 0
-	pdata = (struct hw_lm3642_private_data_t *)flash_ctrl->pdata;
-
-	flash_ctrl->pctrl = devm_pinctrl_get_select(flash_ctrl->dev,
-						PINCTRL_STATE_DEFAULT);
-
-	rc = gpio_request(pdata->strobe, "flash-strobe");
-	if (rc < 0) {
-		cam_err("%s failed to request strobe pin.", __func__);
-		return -EIO;
-	}
-#endif
 	return 0;
 }
 
 static int hw_lm3642_exit(struct hw_flash_ctrl_t *flash_ctrl)
 {
-#if 0
-	struct hw_lm3642_private_data_t *pdata;
-#endif
 
 	cam_debug("%s ernter.\n", __func__);
 	if (NULL == flash_ctrl) {
@@ -268,69 +238,76 @@ static int hw_lm3642_exit(struct hw_flash_ctrl_t *flash_ctrl)
 	}
 
 	flash_ctrl->func_tbl->flash_off(flash_ctrl);
-#if 0
-	pdata = (struct hw_lm3642_private_data_t *)flash_ctrl->pdata;
-
-	gpio_free(pdata->strobe);
-	flash_ctrl->pctrl = devm_pinctrl_get_select(flash_ctrl->dev,
-						PINCTRL_STATE_IDLE);
-#endif
 	return 0;
 }
 
 static int hw_lm3642_flash_mode(struct hw_flash_ctrl_t *flash_ctrl,
-	int data)
+    struct hw_flash_cfg_data * cdata)
 {
-	struct hw_flash_i2c_client *i2c_client;
-	struct hw_flash_i2c_fn_t *i2c_func;
-	struct hw_lm3642_private_data_t *pdata;
-	unsigned char val;
-	int current_level = 0;
-	int rc = 0;
+        struct hw_flash_i2c_client *i2c_client;
+        struct hw_flash_i2c_fn_t *i2c_func;
+        struct hw_lm3642_private_data_t *pdata;
+        unsigned char val;
+        int current_level = 0;
+        int rc = 0;
+        unsigned char regval = 0;
 
-	cam_info("%s data=%d.\n", __func__, data);
-	if ((NULL == flash_ctrl) || (NULL == flash_ctrl->pdata) || (NULL == flash_ctrl->flash_i2c_client)) {
-		cam_err("%s flash_ctrl is NULL.", __func__);
-		return -1;
-	}
+        if ((NULL == flash_ctrl) || (NULL == flash_ctrl->pdata) || (NULL == flash_ctrl->flash_i2c_client) || (NULL ==cdata)) {
+            cam_err("%s flash_ctrl is NULL.", __func__);
+            return -1;
+        }
+        cam_info("%s data=%d.\n", __func__, cdata->data);
 
-	i2c_client = flash_ctrl->flash_i2c_client;
-	i2c_func = flash_ctrl->flash_i2c_client->i2c_func_tbl;
-	pdata = flash_ctrl->pdata;
-	if (FLASH_LED_LEVEL_INVALID == pdata->flash_current)
-	{
-		current_level = LM3642_FLASH_DEFAULT_CUR_LEV;
-	}
-	else
-	{
-		current_level = hw_lm3642_find_match_flash_current(data);
-		if(current_level < 0){
-		     current_level = LM3642_FLASH_DEFAULT_CUR_LEV;
-		}
-	}
+        i2c_client = flash_ctrl->flash_i2c_client;
+        i2c_func = flash_ctrl->flash_i2c_client->i2c_func_tbl;
+        pdata = flash_ctrl->pdata;
+        if (FLASH_LED_LEVEL_INVALID == pdata->flash_current)
+        {
+            current_level = LM3642_FLASH_DEFAULT_CUR_LEV;
+        }
+        else
+        {
+            current_level = hw_lm3642_find_match_flash_current(cdata->data);
+             if(current_level < 0){
+                    current_level = LM3642_FLASH_DEFAULT_CUR_LEV;
+              }
+       }
 
-	rc = hw_lm3642_clear_error_and_notify_dmd(flash_ctrl);
-	if(rc < 0)
-	{
+       rc = hw_lm3642_clear_error_and_notify_dmd(flash_ctrl);
+       if(rc < 0)
+       {
               cam_err("%s flashlight clear errorl", __func__);
               return -1;
-	}
+        }
 
-	loge_if_ret(i2c_func->i2c_read(i2c_client, REG_CURRENT_CONTROL, &val) < 0);
+       loge_if_ret(i2c_func->i2c_read(i2c_client, REG_CURRENT_CONTROL, &val) < 0);
 
-	/* set LED Flash current value */
-	val = (val & 0xf0) | (current_level & 0x0f);
-	cam_info("%s led flash current val=0x%x, current level=%d.\n", __func__, val, current_level);
+       /* set LED Flash current value */
+       val = (val & 0xf0) | (current_level & 0x0f);
+       cam_info("%s led flash current val=0x%x, current level=%d.\n", __func__, val, current_level);
 
-	loge_if_ret(i2c_func->i2c_write(i2c_client, REG_CURRENT_CONTROL, val) < 0);
-	loge_if_ret(i2c_func->i2c_write(i2c_client, REG_FLASH_FEATURES, FLASH_RAMP_TIME|FLASH_TIMEOUT) < 0);  //set timout and ramp time
-	if (flash_ctrl->flash_mask_enable) {
-		loge_if_ret(i2c_func->i2c_write(i2c_client, REG_ENABLE, MODE_FLASH|TX_PIN) < 0);
-	} else {
-	        loge_if_ret(i2c_func->i2c_write(i2c_client, REG_ENABLE, MODE_FLASH|IVFM_EN) < 0);
-	}
+       loge_if_ret(i2c_func->i2c_write(i2c_client, REG_CURRENT_CONTROL, val) < 0);
+       loge_if_ret(i2c_func->i2c_write(i2c_client, REG_FLASH_FEATURES, FLASH_RAMP_TIME|FLASH_TIMEOUT) < 0);  //set timout and ramp time
+       if (flash_ctrl->flash_mask_enable)
+       {
+           regval = MODE_FLASH|TX_PIN;
+           if(FLASH_STROBE_MODE == cdata->mode)
+           {
+               regval = MODE_FLASH|TX_PIN|STROBE_PIN;
+           }
+       }
+       else
+       {
+            regval = MODE_FLASH|IVFM_EN;
+            if(FLASH_STROBE_MODE == cdata->mode)
+            {
+                regval = MODE_FLASH|IVFM_EN|STROBE_PIN;
+            }
+       }
 
-	return 0;
+       loge_if_ret(i2c_func->i2c_write(i2c_client, REG_ENABLE, regval) < 0);
+
+       return 0;
 }
 
 static int hw_lm3642_torch_mode(struct hw_flash_ctrl_t *flash_ctrl,
@@ -396,8 +373,9 @@ static int hw_lm3642_on(struct hw_flash_ctrl_t *flash_ctrl, void *data)
 
 	cam_info("%s mode=%d, level=%d.\n", __func__, cdata->mode, cdata->data);
 	mutex_lock(flash_ctrl->hw_flash_mutex);
-	if (FLASH_MODE == cdata->mode) {
-		rc = hw_lm3642_flash_mode(flash_ctrl, cdata->data);
+	if ((FLASH_MODE == cdata->mode) || (FLASH_STROBE_MODE == cdata->mode))// strobe is a trigger method of FLASH mode
+       {
+		rc = hw_lm3642_flash_mode(flash_ctrl, cdata);
 	} else {
 		rc = hw_lm3642_torch_mode(flash_ctrl, cdata->data);
 	}
@@ -451,16 +429,6 @@ static int hw_lm3642_get_dt_data(struct hw_flash_ctrl_t *flash_ctrl)
 
 	pdata = (struct hw_lm3642_private_data_t *)flash_ctrl->pdata;
 	of_node = flash_ctrl->dev->of_node;
-#if 0
-	rc = of_property_read_u32(of_node, "huawei,flash-pin",
-		&pdata->strobe);
-	cam_info("%s hisi,flash-pin %d, rc %d\n", __func__,
-		pdata->strobe, rc);
-	if (rc < 0) {
-		cam_err("%s failed %d\n", __func__, __LINE__);
-		/* return rc; */
-	}
-#endif
 
 	rc = of_property_read_u32(of_node, "huawei,flash_current",
 		&pdata->flash_current);
@@ -482,51 +450,6 @@ static int hw_lm3642_get_dt_data(struct hw_flash_ctrl_t *flash_ctrl)
 		//TO FIX
 		//return rc;
 	}
-#if 0
-	rc = of_property_read_u32(of_node, "huawei,flash_led_num",
-		&pdata->flash_led_num);
-	cam_info("%s hisi,flash_led_num %d, rc %d\n", __func__,
-		pdata->flash_led_num, rc);
-	if (rc < 0) {
-		cam_err("%s failed %d\n", __func__, __LINE__);
-		return rc;
-	}
-
-	rc = of_property_read_u32(of_node, "huawei,torch_led_num",
-		&pdata->torch_led_num);
-	cam_info("%s hisi,torch_led_num %d, rc %d\n", __func__,
-		pdata->torch_led_num, rc);
-	if (rc < 0) {
-		cam_err("%s failed %d\n", __func__, __LINE__);
-		return rc;
-	}
-
-	rc = of_property_read_u8_array(of_node, "huawei,flash_led",
-		pdata->flash_led, pdata->flash_led_num);
-	if (rc < 0) {
-		cam_err("%s failed line %d\n", __func__, __LINE__);
-		//TO FIX
-		/* return rc; */
-	} else {
-		for (i=0; i< pdata->flash_led_num; i++) {
-			cam_debug("%s flash_led[%d]=%d.\n", __func__, i,
-				pdata->flash_led[i]);
-		}
-	}
-
-	rc = of_property_read_u8_array(of_node, "huawei,torch_led",
-		pdata->torch_led, pdata->torch_led_num);
-	if (rc < 0) {
-		cam_err("%s failed line %d\n", __func__, __LINE__);
-		//TO FIX
-		/* return rc; */
-	} else {
-		for (i=0; i< pdata->torch_led_num; i++) {
-			cam_debug("%s torch_led[%d]=%d.\n", __func__, i,
-				pdata->torch_led[i]);
-		}
-	}
-#endif
 	rc = of_property_read_u32(of_node, "huawei,flash-chipid",
 		&pdata->chipid);
 	cam_info("%s hisi,chipid 0x%x, rc %d\n", __func__,
@@ -562,7 +485,7 @@ static int hw_lm3642_param_check(char *buf, unsigned long *param,
 	{
 		if (token != NULL)
 		{
-			if ((token[1] == 'x') || (token[1] == 'X')) {
+			if ((strlen(token) > 1)&& ((token[1] == 'x') || (token[1] == 'X'))) {
 				base = 16;
 			} else {
 				base = 10;
@@ -632,7 +555,7 @@ static ssize_t hw_lm3642_flash_mask_show(struct device *dev,
 {
         int rc=0;
 
-        snprintf(buf, MAX_ATTRIBUTE_BUFFER_SIZE, "flash_mask_disabled=%d.\n",
+        snprintf_s(buf, MAX_ATTRIBUTE_BUFFER_SIZE, MAX_ATTRIBUTE_BUFFER_SIZE-1, "flash_mask_disabled=%d.\n",
 		hw_lm3642_ctrl.flash_mask_enable);
         rc = strlen(buf)+1;
         return rc;

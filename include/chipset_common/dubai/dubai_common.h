@@ -43,11 +43,6 @@ enum {
 	BUFFERED_LOG_MAGIC_BINDER_STATS,
 };
 
-struct polling_event {
-	long long timestamp;
-	int event;
-} __packed;
-
 struct process_name {
 	pid_t pid;
 	char comm[TASK_COMM_LEN];
@@ -68,7 +63,8 @@ struct buffered_log_entry {
 void dubai_proc_cputime_init(void);
 void dubai_proc_cputime_exit(void);
 void dubai_proc_cputime_enable(bool enable);
-int dubai_get_proc_cputime(struct polling_event *polling);
+bool dubai_get_task_cpupower_enable(void);
+int dubai_get_proc_cputime(long long timestamp);
 int dubai_get_proc_name(struct process_name *process);
 
 void dubai_gpu_init(void);
@@ -88,9 +84,11 @@ int dubai_get_kworker_info(long long timestamp);
 int dubai_get_uevent_info(long long timestamp);
 void dubai_set_brightness_enable(bool enable);
 int dubai_get_brightness_info(uint32_t *brightness);
-int dubai_get_binder_stats(struct polling_event *request);
+int dubai_get_binder_stats(long long timestamp);
 void dubai_binder_stats_enable(bool enable);
 void dubai_set_binder_stats_list(char *name);
 void dubai_init_binder_stats_list(void);
+uint64_t dubai_get_aod_duration(void);
+int dubai_get_battery_rm(void);
 
 #endif

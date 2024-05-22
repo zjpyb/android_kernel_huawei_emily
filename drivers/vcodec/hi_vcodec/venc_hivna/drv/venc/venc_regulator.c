@@ -20,7 +20,6 @@ static  struct regulator *g_MediaRegulator  = HI_NULL;
 static  VeduEfl_DTS_CONFIG_S g_VencDtsConfig;
 static  VENC_CLK_TYPE g_currClk = VENC_CLK_RATE_LOW;
 
-static HI_U32 g_vencQosMode  = 0x2;
 static HI_BOOL g_VencPowerOn = HI_FALSE;
 
 #ifdef VENC_QOS_CFG
@@ -165,9 +164,8 @@ static HI_S32 Venc_GetDtsConfigInfo(struct platform_device *pdev, VeduEfl_DTS_CO
 		HI_INFO_VENC("read failed, but not important\n");
 
 	/* 5 get venc qos mode */
-	ret = of_property_read_u32(np, "venc_qos_mode", &g_vencQosMode);
+	ret = of_property_read_u32(np, "venc_qos_mode", &pDtsConfig->VencQosMode);
 	if (ret) {
-		g_vencQosMode = 0x2;
 		HI_ERR_VENC("get venc qos mode failed set default\n");
 	}
 

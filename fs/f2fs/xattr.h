@@ -27,7 +27,7 @@
 #define F2FS_XATTR_REFCOUNT_MAX         1024
 
 /* Name indexes */
-#define F2FS_SYSTEM_ADVISE_PREFIX		"system.advise"
+#define F2FS_SYSTEM_ADVISE_NAME			"system.advise"
 #define F2FS_XATTR_INDEX_USER			1
 #define F2FS_XATTR_INDEX_POSIX_ACL_ACCESS	2
 #define F2FS_XATTR_INDEX_POSIX_ACL_DEFAULT	3
@@ -40,17 +40,7 @@
 
 #define F2FS_XATTR_INDEX_ECE_ENCRYPTION	10
 
-
 #define F2FS_XATTR_NAME_ENCRYPTION_CONTEXT		"c"
-
-/*means xattr sdp ece crypt is enabled*/
-#define F2FS_XATTR_SDP_ECE_ENABLE_FLAG           1
-/*means xattr sdp ece crypt is be config, but may not be enabled*/
-#define F2FS_XATTR_SDP_ECE_CONFIG_FLAG           2
-/*means xattr sdp sece crypt is enabled*/
-#define F2FS_XATTR_SDP_SECE_ENABLE_FLAG          4
-/*means xattr sdp sece crypt is be config, but may not be enabled*/
-#define F2FS_XATTR_SDP_SECE_CONFIG_FLAG          8
 
 struct f2fs_xattr_header {
 	__le32  h_magic;        /* magic number for identification */
@@ -59,20 +49,6 @@ struct f2fs_xattr_header {
 	__le32	h_xattr_flags;	/* flags to  check the xattr entry*/
 	__u32   h_reserved[2];  /* zero right now */
 };
-#define F2FS_INODE_IS_CONFIG_SDP_ECE_ENCRYPTION(flag)    \
-	((flag) & (F2FS_XATTR_SDP_ECE_CONFIG_FLAG))
-#define F2FS_INODE_IS_CONFIG_SDP_SECE_ENCRYPTION(flag)   \
-	((flag) & (F2FS_XATTR_SDP_SECE_CONFIG_FLAG))
-#define F2FS_INODE_IS_CONFIG_SDP_ENCRYPTION(flag)        \
-	(((flag) & (F2FS_XATTR_SDP_SECE_CONFIG_FLAG))    \
-	 || ((flag) & (F2FS_XATTR_SDP_ECE_CONFIG_FLAG)))
-#define F2FS_INODE_IS_ENABLED_SDP_ECE_ENCRYPTION(flag)   \
-	((flag) & (F2FS_XATTR_SDP_ECE_ENABLE_FLAG))
-#define F2FS_INODE_IS_ENABLED_SDP_SECE_ENCRYPTION(flag)  \
-	((flag) & (F2FS_XATTR_SDP_SECE_ENABLE_FLAG))
-#define F2FS_INODE_IS_ENABLED_SDP_ENCRYPTION(flag)       \
-	(((flag) & (F2FS_XATTR_SDP_ECE_ENABLE_FLAG))     \
-	 || ((flag) & (F2FS_XATTR_SDP_SECE_ENABLE_FLAG)))
 
 struct f2fs_xattr_entry {
 	__u8    e_name_index;
@@ -86,10 +62,10 @@ struct f2fs_xattr_entry {
 #define XATTR_FIRST_ENTRY(ptr)	(XATTR_ENTRY(XATTR_HDR(ptr) + 1))
 #define XATTR_ROUND		(3)
 
-#define XATTR_ALIGN(size)	((size + XATTR_ROUND) & ~XATTR_ROUND)
+#define XATTR_ALIGN(size)	(((size) + XATTR_ROUND) & ~XATTR_ROUND)
 
 #define ENTRY_SIZE(entry) (XATTR_ALIGN(sizeof(struct f2fs_xattr_entry) + \
-			entry->e_name_len + le16_to_cpu(entry->e_value_size)))
+			(entry)->e_name_len + le16_to_cpu((entry)->e_value_size)))
 
 #define XATTR_NEXT_ENTRY(entry)	((struct f2fs_xattr_entry *)((char *)(entry) +\
 			ENTRY_SIZE(entry)))
@@ -100,8 +76,8 @@ struct f2fs_xattr_entry {
 		for (entry = XATTR_FIRST_ENTRY(addr);\
 				!IS_XATTR_LAST_ENTRY(entry);\
 				entry = XATTR_NEXT_ENTRY(entry))
-#define MAX_XATTR_BLOCK_SIZE	(PAGE_SIZE - sizeof(struct node_footer))
-#define VALID_XATTR_BLOCK_SIZE	(MAX_XATTR_BLOCK_SIZE - sizeof(__u32))
+#define VALID_XATTR_BLOCK_SIZE	(PAGE_SIZE - sizeof(struct node_footer))
+#define XATTR_PADDING_SIZE	(sizeof(__u32))
 #define MIN_OFFSET(i)		XATTR_ALIGN(inline_xattr_size(i) +	\
 						VALID_XATTR_BLOCK_SIZE)
 

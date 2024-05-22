@@ -49,6 +49,8 @@
 #define CSVFILE_USE_PRODUCT_SYSTEM_TYPE "huawei,csvfile_use_product_system"
 #define GTP_OPEN_ONCE_THRESHOLD		"only_open_once_captest_threshold"
 
+#define GTP_LOAD_CFG_VIA_PROJECT_ID "load_cfg_via_project_id"
+
 #define GTP_BOOT_PROJ_CODE_ADDR2	 0x20
 
 int goodix_parse_dts(struct goodix_ts_data *ts);

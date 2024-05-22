@@ -45,6 +45,10 @@ extern "C" {
 #include <net/ipv6.h>
 #include <net/arp.h>
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
+#include <net/sock.h>
+#endif
+
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,34))
 #include <net/cfg80211.h>
 #if defined(_PRE_BOARD_SD5610)
@@ -646,7 +650,24 @@ extern oal_uint32 (*g_wifi_80211_mirror_pkt)(hw_ker_wifi_sniffer_packet_s *pst_p
 /*****************************************************************************
   8 UNION定义
 *****************************************************************************/
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,7,0))
+/* WiFi 驱动适配linux4.9 */
+/* Linux 4.7 删除enum ieee80211_band，用enum nl80211_band 替换，
+   WiFi 驱动新增enum ieee80211_band 定义 */
+enum ieee80211_band {
+    IEEE80211_BAND_2GHZ = NL80211_BAND_2GHZ,
+    IEEE80211_BAND_5GHZ = NL80211_BAND_5GHZ,
+    IEEE80211_BAND_60GHZ = NL80211_BAND_60GHZ,
 
+    /* keep last */
+    IEEE80211_NUM_BANDS
+};
+#define HISI_IEEE80211_BAND_2GHZ    NL80211_BAND_2GHZ
+#define HISI_IEEE80211_BAND_5GHZ    NL80211_BAND_5GHZ
+#else
+#define HISI_IEEE80211_BAND_2GHZ    IEEE80211_BAND_2GHZ
+#define HISI_IEEE80211_BAND_5GHZ    IEEE80211_BAND_5GHZ
+#endif  /* (LINUX_VERSION_CODE >= KERNEL_VERSION(4,7,0)) */
 
 /*****************************************************************************
   9 OTHERS定义
@@ -735,7 +756,11 @@ OAL_STATIC OAL_INLINE oal_int32  oal_ieee80211_frequency_to_channel(oal_int32 l_
     oal_int32 l_channel;
 
     /* see 802.11 17.3.8.3.2 and Annex J */
-    if (2484 == l_center_freq)
+    if (0 == l_center_freq)
+    {
+        l_channel = 0;
+    }
+    else if(2484 == l_center_freq)
     {
         l_channel = 14;
     }
@@ -1043,8 +1068,8 @@ OAL_STATIC OAL_INLINE oal_int32 oal_net_register_netdev(oal_net_device_stru *p_n
 #if (_PRE_MULTI_CORE_MODE_OFFLOAD_DMAC == _PRE_MULTI_CORE_MODE)
     /*TBD,Just For HCC*/
 #ifdef _PRE_WLAN_FEATURE_MULTI_NETBUF_AMSDU
-    /* 扩展ETHER HEAD并且4bytes对齐 */
-    OAL_NETDEVICE_HEADROOM(p_net_device) = 74;
+    /* 扩展ETHER HEAD并且4bytes对齐 多预留4字节空间 */
+    OAL_NETDEVICE_HEADROOM(p_net_device) = 76;
 #else
     OAL_NETDEVICE_HEADROOM(p_net_device) = 64;
 #endif
@@ -2030,9 +2055,28 @@ OAL_STATIC OAL_INLINE oal_void *oal_nla_data(OAL_CONST oal_nlattr_stru *pst_nla)
 }
 
 
+OAL_STATIC OAL_INLINE oal_uint32 oal_nla_get_u8(OAL_CONST oal_nlattr_stru *pst_nla)
+{
+    return nla_get_u8(pst_nla);
+}
+
+
+OAL_STATIC OAL_INLINE oal_uint32 oal_nla_get_u16(OAL_CONST oal_nlattr_stru *pst_nla)
+{
+    return nla_get_u16(pst_nla);
+}
+
+
 OAL_STATIC OAL_INLINE oal_uint32 oal_nla_get_u32(OAL_CONST oal_nlattr_stru *pst_nla)
 {
     return nla_get_u32(pst_nla);
+}
+
+
+OAL_STATIC OAL_INLINE oal_uint32 oal_nla_total_size(OAL_CONST oal_nlattr_stru *pst_nla)
+{
+    oal_int32 payload = nla_len(pst_nla);
+    return nla_total_size(payload);
 }
 
 

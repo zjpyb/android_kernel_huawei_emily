@@ -302,13 +302,11 @@ typedef VOS_VOID (*AT_PS_RPT_CONN_RSLT_FUNC)(\
     TAF_PDP_TYPE_ENUM_UINT8             enPdpType);
 
 
-/*lint -e958 -e959 修改人:l60609;原因:64bit*/
 typedef struct
 {
     AT_USER_TYPE                        ucUsrType;
     AT_PS_RPT_CONN_RSLT_FUNC            pRptConnRsltFunc;
 }AT_PS_REPORT_CONN_RESULT_STRU;
-/*lint +e958 +e959 修改人:l60609;原因:64bit*/
 
 /*消息处理函数指针*/
 typedef VOS_VOID (*AT_PS_RPT_END_RSLT_FUNC)(\
@@ -318,13 +316,11 @@ typedef VOS_VOID (*AT_PS_RPT_END_RSLT_FUNC)(\
     TAF_PS_CAUSE_ENUM_UINT32            enCause);
 
 
-/*lint -e958 -e959 修改人:l60609;原因:64bit*/
 typedef struct
 {
     AT_USER_TYPE                        ucUsrType;
     AT_PS_RPT_END_RSLT_FUNC             pRptEndRsltFunc;
 }AT_PS_REPORT_END_RESULT_STRU;
-/*lint +e958 +e959 修改人:l60609;原因:64bit*/
 
 /*消息处理函数指针*/
 typedef VOS_VOID (*AT_PS_REG_FC_POINT_FUNC)(\
@@ -332,13 +328,11 @@ typedef VOS_VOID (*AT_PS_REG_FC_POINT_FUNC)(\
     TAF_PS_CALL_PDP_ACTIVATE_CNF_STRU  *pstEvent);
 
 
-/*lint -e958 -e959 修改人:l60609;原因:64bit*/
 typedef struct
 {
     AT_USER_TYPE                        ucUsrType;
     AT_PS_REG_FC_POINT_FUNC             pRegFcPoint;
 }AT_PS_REG_FC_POINT_STRU;
-/*lint +e958 +e959 修改人:l60609;原因:64bit*/
 
 /*消息处理函数指针*/
 typedef VOS_VOID (*AT_PS_DEREG_FC_POINT_FUNC)(\
@@ -346,13 +340,11 @@ typedef VOS_VOID (*AT_PS_DEREG_FC_POINT_FUNC)(\
     TAF_PS_CALL_PDP_DEACTIVATE_CNF_STRU *pstEvent);
 
 
-/*lint -e958 -e959 修改人:l60609;原因:64bit*/
 typedef struct
 {
     AT_USER_TYPE                        ucUsrType;
     AT_PS_DEREG_FC_POINT_FUNC           pDeRegFcPoint;
 }AT_PS_DEREG_FC_POINT_STRU;
-/*lint +e958 +e959 修改人:l60609;原因:64bit*/
 
 /*消息处理函数指针*/
 typedef VOS_VOID (*AT_PS_SND_PDP_ACT_IND_FUNC)(\
@@ -361,13 +353,11 @@ typedef VOS_VOID (*AT_PS_SND_PDP_ACT_IND_FUNC)(\
     TAF_PDP_TYPE_ENUM_UINT8             enPdpType);
 
 
-/*lint -e958 -e959 修改人:l60609;原因:64bit*/
 typedef struct
 {
     AT_USER_TYPE                        ucUsrType;
     AT_PS_SND_PDP_ACT_IND_FUNC          pSndPdpActInd;
 }AT_PS_SND_PDP_ACT_IND_STRU;
-/*lint +e958 +e959 修改人:l60609;原因:64bit*/
 
 /*消息处理函数指针*/
 typedef VOS_VOID (*AT_PS_SND_PDP_DEACT_IND_FUNC)(\
@@ -376,13 +366,11 @@ typedef VOS_VOID (*AT_PS_SND_PDP_DEACT_IND_FUNC)(\
     TAF_PDP_TYPE_ENUM_UINT8             enPdpType);
 
 
-/*lint -e958 -e959 修改人:l60609;原因:64bit*/
 typedef struct
 {
     AT_USER_TYPE                        ucUsrType;
     AT_PS_SND_PDP_DEACT_IND_FUNC        pSndPdpDeActInd;
 }AT_PS_SND_PDP_DEACT_IND_STRU;
-/*lint +e958 +e959 修改人:l60609;原因:64bit*/
 
 
 typedef struct

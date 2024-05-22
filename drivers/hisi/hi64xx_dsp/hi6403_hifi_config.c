@@ -81,32 +81,22 @@ static void hi6403_dsp_power_ctrl(bool enable)
 	IN_FUNCTION;
 
 	if (enable) {
-		/* power on dsp_top_mtcmos_ctrl*/
-		hi64xx_hifi_reg_clr_bit(HI6403_DSP_LP_CTRL0, HI6403_DSP_TOP_MTCMOS_CTRL_BIT);
-		/* enable dsp_top_iso_ctrl */
-		hi64xx_hifi_reg_clr_bit(HI6403_DSP_LP_CTRL0, HI6403_DSP_TOP_ISO_CTRL_BIT);
-
-		hi64xx_hifi_write_reg(HI6403_EC_REG_DSP1, 0xFF);
-
 		hi64xx_hifi_reg_set_bit(HI6403_SC_DSP_CTRL0, HI6403_SC_HIFI_CLK_EN_BIT);
-		hi64xx_hifi_reg_set_bit(HI6403_SC_DSP_CTRL0, HI6403_SC_HIFI_ACLK_EN_BIT);
+		/*bit6:hifi_div_clk_en 0:disable 1:enable*/
 		hi64xx_hifi_reg_set_bit(HI6403_DSP_CLK_CFG, HI6403_HIFI_DIV_CLK_EN_BIT);
+
 		hi64xx_hifi_reg_set_bit(HI6403_DSP_CTRL6_DMAC, HI6403_HIFI_PREI_CLK_EN);
+
+		hi6403_hifi_runstall_cfg(true);
 	} else {
 		hi64xx_hifi_reg_clr_bit(HI6403_DSP_CMD_STAT_VLD, 0);
 
-		hi64xx_hifi_write_reg(HI6403_EC_REG_DSP1, 0x0);
-
-		/* power off dsp_top_mtcmos_ctrl*/
-		hi64xx_hifi_reg_set_bit(HI6403_DSP_LP_CTRL0, HI6403_DSP_TOP_MTCMOS_CTRL_BIT);
-		/* disable dsp_top_iso_ctrl */
-		hi64xx_hifi_reg_set_bit(HI6403_DSP_LP_CTRL0, HI6403_DSP_TOP_ISO_CTRL_BIT);
+		hi6403_hifi_runstall_cfg(false);
 
 		hi64xx_hifi_reg_clr_bit(HI6403_SC_DSP_CTRL0, HI6403_SC_HIFI_CLK_EN_BIT);
-
-		hi64xx_hifi_reg_clr_bit(HI6403_SC_DSP_CTRL0, HI6403_SC_HIFI_ACLK_EN_BIT);
 		/*bit6:hifi_div_clk_en 0:disable 1:enable*/
 		hi64xx_hifi_reg_clr_bit(HI6403_DSP_CLK_CFG, HI6403_HIFI_DIV_CLK_EN_BIT);
+
 		hi64xx_hifi_reg_clr_bit(HI6403_DSP_CTRL6_DMAC, HI6403_HIFI_PREI_CLK_EN);
 	}
 

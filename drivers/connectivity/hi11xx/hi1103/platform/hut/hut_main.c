@@ -200,7 +200,7 @@ OAL_STATIC oal_int32  hut_read_reg(oal_uint8 *puc_data)
     st_frag_hdr.us_len   = 4;
 
 
-    return oam_netlink_kernel_send_ex((oal_uint8 *)&st_frag_hdr, (oal_uint8 *)&ul_val,
+    return oam_netlink_kernel_send_ex_etc((oal_uint8 *)&st_frag_hdr, (oal_uint8 *)&ul_val,
                     OAL_SIZEOF(st_frag_hdr), OAL_SIZEOF(ul_val), OAM_NL_CMD_HUT);
 }
 
@@ -298,7 +298,7 @@ OAL_STATIC oal_int32  hut_read_start_mem_addr(oal_uint8 *puc_data)
     st_cmd_fmt.ul_addr = OAL_VIRT_TO_PHY_ADDR((oal_void *)g_st_base_addr.puc_base_addr_align);
     st_cmd_fmt.ul_val  = HUT_MEM_MAX_LEN;
 
-    return oam_netlink_kernel_send_ex((oal_uint8 *)&st_frag_hdr, (oal_uint8 *)&st_cmd_fmt,
+    return oam_netlink_kernel_send_ex_etc((oal_uint8 *)&st_frag_hdr, (oal_uint8 *)&st_cmd_fmt,
                     OAL_SIZEOF(st_frag_hdr), OAL_SIZEOF(st_cmd_fmt), OAM_NL_CMD_HUT);
 }
 
@@ -524,7 +524,7 @@ oal_void  hut_report_in(hut_rx_node *pst_rx_node)
 
     oal_irq_restore(&ul_irq_flag, OAL_5115IRQ_HRI);
 
-    oam_netlink_kernel_send_ex((oal_uint8 *)&st_frag_hdr, (oal_uint8 *)auc_buf,
+    oam_netlink_kernel_send_ex_etc((oal_uint8 *)&st_frag_hdr, (oal_uint8 *)auc_buf,
                     OAL_SIZEOF(st_frag_hdr), OAL_SIZEOF(auc_buf), OAM_NL_CMD_HUT);
 }
 
@@ -824,7 +824,7 @@ oal_void  hut_report_mem(oal_uint8 *puc_data)
     /* debug */
 
 
-    l_ret = oam_netlink_kernel_send_ex((oal_uint8 *)&st_frag_hdr_ex, (oal_uint8 *)ul_virt_addr,
+    l_ret = oam_netlink_kernel_send_ex_etc((oal_uint8 *)&st_frag_hdr_ex, (oal_uint8 *)ul_virt_addr,
                     OAL_SIZEOF(st_frag_hdr_ex), ul_send_len, OAM_NL_CMD_HUT);
 
     ul_virt_addr += ul_send_len;
@@ -863,7 +863,7 @@ oal_void  hut_report_mem(oal_uint8 *puc_data)
         /*lint -e716*/
         while (1)
         {
-            l_ret = oam_netlink_kernel_send_ex((oal_uint8 *)&st_frag_hdr, (oal_uint8 *)ul_virt_addr,
+            l_ret = oam_netlink_kernel_send_ex_etc((oal_uint8 *)&st_frag_hdr, (oal_uint8 *)ul_virt_addr,
                         OAL_SIZEOF(st_frag_hdr), ul_send_len, OAM_NL_CMD_HUT);
 
             if (l_ret < 0)
@@ -1020,7 +1020,7 @@ oal_int32 hut_main_init(oal_void)
     oal_spin_lock_init(&g_st_intr_queue.st_spin_lock);
 
     /* 向WAL模块注册HUT netlink接收函数 */
-    oam_netlink_ops_register(OAM_NL_CMD_HUT, hut_receive_msg);
+    oam_netlink_ops_register_etc(OAM_NL_CMD_HUT, hut_receive_msg);
 
     /* 初始化HUT模块tasklet */
     oal_task_init(&g_st_hut_tasklet, hut_tasklet_handler ,0);
@@ -1048,7 +1048,7 @@ oal_void  hut_main_exit(oal_void)
     oal_cancel_work_sync(&g_st_hut_workqueue.rx_work);
 
     /* 卸载HUT模块netlink接收函数 */
-    oam_netlink_ops_unregister(OAM_NL_CMD_HUT);
+    oam_netlink_ops_unregister_etc(OAM_NL_CMD_HUT);
 
     hut_set_rx_dscr_queue_uncircle();
 }

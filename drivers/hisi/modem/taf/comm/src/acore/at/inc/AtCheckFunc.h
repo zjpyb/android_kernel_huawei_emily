@@ -56,11 +56,9 @@
 #include "PsCommonDef.h"
 #include "AtMntn.h"
 
-/* Moved from AtGnainterface.h by 傅映君/f62575 for AT Project, 2011/11/13, begin */
 #define AT_GNA_E5_MAC_ADDR_LEN_BETWEEN_COLONS   (2)                             /* MAC地址中冒号之间的字符个数*/
 #define AT_GNA_E5_MAC_ADDR_COLON_NUM            (5)                             /* MAC地址中冒号的个数*/
 #define AT_MAC_ADDR_LEN                         (32)                            /* MAC地址长度 AT_GNA_E5_MAC_ADDR_LEN ->AT_MAC_ADDR_LEN */
-/* Moved from AtGnainterface.h by 傅映君/f62575 for AT Project, 2011/11/13, end */
 #define AT_CDATA_DIAL_777_LEN                   (4)
 #define AT_DATA_DIAL_LEN                        (3)
 
@@ -194,7 +192,6 @@ VOS_UINT32 atCheckColon( VOS_UINT8 Char );
 
 VOS_UINT32 atCheckChar0x2f( VOS_UINT8 Char );
 
-/* Added by l60609 for At Prj, 2011-10-12, Begin */
 /* 比较、匹配字符+ */
 VOS_UINT32 atCheckCharPlus( VOS_UINT8 Char );
 
@@ -209,7 +206,6 @@ VOS_UINT32 atCheckQuot( VOS_UINT8 Char );
 VOS_UINT32 atCheckNoQuot( VOS_UINT8 Char );
 
 
-/* Added by l60609 for At Prj, 2011-10-12, End */
 
 /* 比较、匹配字符串类型 */
 VOS_UINT32 At_CheckStringPara( AT_PARSE_PARA_TYPE_STRU *pPara);

@@ -56,6 +56,9 @@
 #ifdef CONFIG_TCPC_CLASS
 #include <huawei_platform/usb/hw_pd_dev.h>
 #endif
+#ifdef CONFIG_BOOST_5V
+#include <huawei_platform/power/boost_5v.h>
+#endif
 #include <linux/wakelock.h>
 #include <huawei_platform/log/hw_log.h>
 #include <chipset_common/hwusb/hw_usb_rwswitch.h>
@@ -64,6 +67,7 @@
 #ifdef CONFIG_DIRECT_CHARGER
 #include <huawei_platform/power/direct_charger.h>
 #endif
+#include <huawei_platform/power/direct_charger_power_supply.h>
 
 static struct mutex accp_detect_lock;
 static struct mutex accp_adaptor_reg_lock;
@@ -89,44 +93,12 @@ static u32 fsa9685_scp_support = 0;
 static u32 fsa9685_mhl_detect_disable = 0;
 static u32 two_switch_flag = 0;/*disable for two switch*/
 static u32 scp_error_flag = 0;/*scp error flag*/
-static int boost_5v_use_common_gpio = 0;
-static int scp_power_en = 0;
-static int is_need_bst_ctrl = 0;
-static int bst_ctrl = 0;
-static int scp_need_extra_power = 0;
 static int rt8979_osc_lower_bound = 0; /* lower bound for OSC setting */
 static int rt8979_osc_upper_bound = 0; /* upper bound for OSC setting */
 static int rt8979_osc_trim_code = 0; /* osc trimming setting (read from IC) */
 static int rt8979_osc_trim_adjust = 0;	/* OSC adjustment */
 static int rt8979_osc_trim_default = 0;	/* While attaching, reset OSC adjustment*/
 static int is_pd_support = 0;
-
-static int set_5v_boost_enable(int enable)
-{
-	int ret = SUCC;
-	hwlog_info("%s++\n",__func__);
-	if (scp_need_extra_power)
-	{
-		if (boost_5v_use_common_gpio)
-		{
-#ifdef CONFIG_TCPC_CLASS
-			ret = pd_dpm_vboost_enable(enable,PD_DPM_VBOOST_CONTROL_DC);
-#endif
-		}else
-		{
-			ret = gpio_direction_output(scp_power_en, enable);
-		}
-		if (is_need_bst_ctrl)
-		{
-			ret |= gpio_direction_output(bst_ctrl, enable);
-		}
-		if (ret)
-			ret = FAIL;
-		else
-			ret = SUCC;
-	}
-	return ret;
-}
 
 static bool rt8979_dcd_timeout_enabled = false;
 
@@ -1319,13 +1291,16 @@ static int fcp_stop_charge_config(void)
     if (!direct_charge_get_cutoff_normal_flag())
     {
 #endif
-        ret = set_5v_boost_enable(DISABLE);
+#ifdef CONFIG_BOOST_5V
+        ret = boost_5v_enable(DISABLE, BOOST_CTRL_FCP);
+	ret |= direct_charge_set_bst_ctrl(DISABLE);
         if (ret)
         {
             hwlog_err("[%s]:5v boost close fail!\n", __func__);
             return BOOST_5V_CLOSE_FAIL;
         }
         hwlog_info("%s:5v boost close!\n", __func__);
+#endif
 #ifdef CONFIG_DIRECT_CHARGER
     }
 #endif
@@ -1806,14 +1781,16 @@ static int check_accp_ic_status(void)
 	int check_times = 0;
 	int reg_dev_type1 = 0;
 	int ret = 0;
-
-	ret = set_5v_boost_enable(ENABLE);
+#ifdef CONFIG_BOOST_5V
+	ret = boost_5v_enable(ENABLE, BOOST_CTRL_FCP);
+	ret |= direct_charge_set_bst_ctrl(ENABLE);
 	if (ret)
 	{
 		hwlog_err("[%s]:5v boost open fail!\n", __func__);
 		return ACCP_NOT_PREPARE_OK;
 	}
 	hwlog_info("[%s]:5v boost open!\n", __func__);
+#endif
 	for (check_times = 0; check_times < ADAPTOR_BC12_TYPE_MAX_CHECK_TIME; check_times++)
 	{
 		reg_dev_type1 = fsa9685_read_reg(FSA9685_REG_DEVICE_TYPE_1);
@@ -1824,11 +1801,6 @@ static int check_accp_ic_status(void)
 		}
 		hwlog_info("[%s]reg_dev_type1 = 0x%x,check_times = %d!\n", __func__,reg_dev_type1,check_times);
 		usleep_range(WAIT_FOR_BC12_DELAY*1000, (WAIT_FOR_BC12_DELAY+1)*1000);
-	}
-	if (ADAPTOR_BC12_TYPE_MAX_CHECK_TIME == check_times)
-	{
-		hwlog_info("[%s],check_times = %d!\n", __func__,check_times);
-		return ACCP_NOT_PREPARE_OK;
 	}
 	hwlog_info("[%s]:accp is ok,check_times = %d!\n", __func__,check_times);
 	return ACCP_PREPARE_OK;
@@ -2631,7 +2603,10 @@ static int fsa9685_scp_exit(struct direct_charge_device* di)
 	}
 	usleep_range(50*1000, 51*1000);
 	hwlog_err("%s\n",__func__);
-	set_5v_boost_enable(DISABLE);
+#ifdef CONFIG_BOOST_5V
+	boost_5v_enable(DISABLE, BOOST_CTRL_FCP);
+	direct_charge_set_bst_ctrl(DISABLE);
+#endif
 	hwlog_info("%s:5v boost close!\n", __func__);
 	scp_error_flag = 0;
 	return ret;
@@ -2879,6 +2854,16 @@ static int fsa9685_scp_get_chip_status(void)
 {
     return 0;
 }
+static void fsa9685_scp_set_direct_charge_mode(int mode)
+{
+	hwlog_info("[%s]mode is 0x%x \n", __func__, mode);
+	return;
+}
+
+static int fsa9685_scp_get_adaptor_type(void)
+{
+	return LVC_MODE;
+}
 struct smart_charge_ops scp_fsa9685_ops = {
     .is_support_scp = fsa9685_is_support_scp,
     .scp_init = fsa9685_scp_init,
@@ -2902,7 +2887,8 @@ struct smart_charge_ops scp_fsa9685_ops = {
     .scp_get_adaptor_temp = fsa9685_scp_get_adaptor_temp,
     .scp_get_adapter_vendor_id = fsa9685_get_adapter_vendor_id,
     .scp_get_usb_port_leakage_current_info = fsa9685_get_usb_port_leakage_current_info,
-    .scp_power_enable = set_5v_boost_enable,
+    .scp_set_direct_charge_mode = fsa9685_scp_set_direct_charge_mode,
+    .scp_get_adaptor_type = fsa9685_scp_get_adaptor_type,
 };
 #endif
 struct fcp_adapter_device_ops fcp_fsa9688_ops = {
@@ -2991,50 +2977,7 @@ static int fsa9685_parse_dts(struct device_node* np)
 		is_pd_support = false;
 	}
 	hwlog_info("switch_get_pd_support = %d\n", is_pd_support);
-	ret = of_property_read_u32(np, "scp_need_extra_power", &(scp_need_extra_power));
-	if (ret)
-	{
-		hwlog_err("scp_need_extra_power failed\n");
-		return -EINVAL;
-	}
-	hwlog_info("scp_need_extra_power = %d\n", scp_need_extra_power);
-	if (scp_need_extra_power)
-	{
-		ret = of_property_read_u32(np, "boost_5v_use_common_gpio", &(boost_5v_use_common_gpio));
-		if (ret)
-		{
-			hwlog_err("boost_5v_use_common_gpio failed\n");
-			return -EINVAL;
-		}
-		hwlog_info("boost_5v_use_common_gpio = %d\n", boost_5v_use_common_gpio);
-		ret = of_property_read_u32(np, "is_need_bst_ctrl", &(is_need_bst_ctrl));
-		if (ret)
-		{
-			hwlog_err("is_need_bst_ctrl failed\n");
-			return -EINVAL;
-		}
-		hwlog_info("is_need_bst_ctrl = %d\n", is_need_bst_ctrl);
-		if (!boost_5v_use_common_gpio)
-		{
-			scp_power_en = of_get_named_gpio(np, "scp_power_en", 0);
-			hwlog_info("scp_power_en = %d\n", scp_power_en);
-			if (!gpio_is_valid(scp_power_en))
-			{
-				hwlog_err("%s: get scp_power_en fail\n", __func__);
-				return -EINVAL;
-			}
-		}
-		if (is_need_bst_ctrl)
-		{
-			bst_ctrl = of_get_named_gpio(np, "bst_ctrl", 0);
-			hwlog_info("bst_ctrl = %d\n", bst_ctrl);
-			if (!gpio_is_valid(bst_ctrl))
-			{
-				hwlog_err("%s: get bst_ctrl fail\n", __func__);
-				return -EINVAL;
-			}
-		}
-	}
+
 	return 0;
 }
 
@@ -3278,7 +3221,7 @@ static int fsa9685_probe(
     if (ret < 0) {
         hwlog_err("%s: gpio_direction_input error!!! ret=%d. gpio=%d.\n", __func__, ret, gpio);
         ret = -ERR_GPIO_DIRECTION_INPUT;
-        goto err_gpio_direction_input;
+        goto err_create_link_failed;
     }
 
     wake_lock_init(&usb_switch_lock, WAKE_LOCK_SUSPEND, "usb_switch_wakelock");
@@ -3332,13 +3275,13 @@ static int fsa9685_probe(
     if (ret < 0) {
         hwlog_err("%s: request_irq error!!! ret=%d.\n", __func__, ret);
         ret = -ERR_REQUEST_THREADED_IRQ;
-        goto err_gpio_direction_input;
+        goto err_create_link_failed;
     }
     /* clear INT MASK */
     reg_ctl = fsa9685_read_reg(FSA9685_REG_CONTROL);
     if ( reg_ctl < 0 ) {
         hwlog_err("%s: read FSA9685_REG_CONTROL error!!! reg_ctl=%d.\n", __func__, reg_ctl);
-        goto err_gpio_direction_input;
+        goto err_create_link_failed;
     }
     hwlog_info("%s: read FSA9685_REG_CONTROL. reg_ctl=0x%x.\n", __func__, reg_ctl);
 
@@ -3346,14 +3289,14 @@ static int fsa9685_probe(
     ret = fsa9685_write_reg(FSA9685_REG_CONTROL, reg_ctl);
     if ( ret < 0 ) {
         hwlog_err("%s: write FSA9685_REG_CONTROL error!!! reg_ctl=%d.\n", __func__, reg_ctl);
-        goto err_gpio_direction_input;
+        goto err_create_link_failed;
     }
     hwlog_info("%s: write FSA9685_REG_CONTROL. reg_ctl=0x%x.\n", __func__, reg_ctl);
 
     ret = fsa9685_write_reg(FSA9685_REG_DCD, 0x0c);
     if ( ret < 0 ) {
         hwlog_err("%s: write FSA9685_REG_DCD error!!! reg_DCD=0x%x.\n", __func__, 0x08);
-        goto err_gpio_direction_input;
+        goto err_create_link_failed;
     }
     hwlog_info("%s: write FSA9685_REG_DCD. reg_DCD=0x%x.\n", __func__, 0x0c);
 
@@ -3380,27 +3323,7 @@ static int fsa9685_probe(
         hwlog_info(" charge switch ops register success!\n");
     }
 #endif
-    if(scp_need_extra_power)
-    {
-        if (!boost_5v_use_common_gpio)
-        {
-            ret = gpio_request(scp_power_en, "scp_power_en");
-            if (ret)
-            {
-                hwlog_err("can not request scp_power_en\n");
-                goto err_gpio_direction_input;
-            }
-        }
-        if (is_need_bst_ctrl)
-        {
-            ret = gpio_request(bst_ctrl,"bst_ctrl");
-            if (ret)
-            {
-                hwlog_err("could not request bst_ctrl\n");
-                goto err_free_scp_power_en;
-            }
-        }
-    }
+
 #ifdef CONFIG_DIRECT_CHARGER
     /* if chip support scp ,register scp adapter ops */
     if( 0 == fsa9685_is_support_scp() && 0 ==scp_ops_register(&scp_fsa9685_ops))
@@ -3425,16 +3348,6 @@ static int fsa9685_probe(
     }
     hwlog_info("%s: ------end. ret = %d.\n", __func__, ret);
     return ret;
-err_free_scp_power_en:
-    if(scp_need_extra_power)
-    {
-        if(!boost_5v_use_common_gpio)
-        {
-            gpio_free(scp_power_en);
-        }
-    }
-err_gpio_direction_input:
-    gpio_free(gpio);
 err_create_link_failed:
     device_remove_file(&client->dev, &dev_attr_fcp_mmi);
 err_create_fcp_mmi_failed:
@@ -3464,7 +3377,10 @@ static void fsa9685_shutdown(struct i2c_client *client)
 {
 
     int ret = 0;
-    set_5v_boost_enable(ENABLE);
+#ifdef CONFIG_BOOST_5V
+    boost_5v_enable(ENABLE, BOOST_CTRL_FCP);
+    direct_charge_set_bst_ctrl(ENABLE);
+#endif
     if (is_rt8979()) {
         ret = fsa9685_read_reg(RT8979_REG_MUIC_CTRL_4);
         ret = fsa9685_write_reg(RT8979_REG_MUIC_CTRL_4, ret&RT8979_REG_MUIC_CTRL_4_ENABLEID2_FUNCTION);

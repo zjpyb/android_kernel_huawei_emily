@@ -12,13 +12,9 @@ static size_t ion_client_total(struct ion_client *client)
 	for (n = rb_first(&client->handles); n; n = rb_next(n)) {
 		struct ion_handle *handle = rb_entry(n,
 				struct ion_handle, node);
-		if (!(handle->import) && (handle->buffer->heap->type !=
-					ION_HEAP_TYPE_CARVEOUT)) {
-			if (handle->buffer->cpudraw_sg_table)
-				size += handle->buffer->cpu_buffer_size;
-			else
-				size += handle->buffer->size;
-		}
+		if (!handle->import &&
+		    (handle->buffer->heap->type != ION_HEAP_TYPE_CARVEOUT))
+			size += handle->buffer->size;
 	}
 	mutex_unlock(&client->lock);
 	return size;
@@ -27,7 +23,7 @@ static size_t ion_client_total(struct ion_client *client)
 unsigned long hisi_ion_total(void)
 {
 #ifdef CONFIG_HISI_SPECIAL_SCENE_POOL
-	return (unsigned long)atomic_long_read(&ion_total_size) +
+	return (unsigned long)atomic_long_read(&ion_total_size) + /* [false alarm] */
 		ion_scene_pool_total_size();
 #else
 	return (unsigned long)atomic_long_read(&ion_total_size);

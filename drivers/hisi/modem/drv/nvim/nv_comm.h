@@ -89,6 +89,7 @@ extern "C" {
 #include "acore_nv_id_msp.h"
 #include "nv_debug.h"
 #include "nv_partition_upgrade.h"
+#include "mdrv_rfile_common.h"
 
 extern struct nv_global_ctrl_info_stru  g_nv_ctrl;
 extern struct nv_global_ctrl_stru * g_flash_emmc_info_ptr;
@@ -176,6 +177,19 @@ enum
     NV_PRODUCT_BUTT
 };
 
+enum
+{
+    NV_IMG,
+#ifdef FEATURE_NV_CARRIER_CUST
+    NV_MBN,
+#endif
+    NV_MAX
+};
+typedef struct nv_path_info_stru
+{
+    s8* root_dir;
+    s8  file_path[NV_MAX][DRV_NAME_MAX];
+}nv_path_info;
 
 typedef struct nv_flush_list_node_stru
 {

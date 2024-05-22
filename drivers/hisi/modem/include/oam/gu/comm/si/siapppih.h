@@ -163,9 +163,7 @@ enum SI_PIH_EVENT_ENUM
     SI_PIH_EVENT_FDN_CNF            = 7,      /* FDN回复                  */
     SI_PIH_EVENT_BDN_CNF            = 8,      /* BDN回复                  */
     SI_PIH_EVENT_PERO_LOCK_CNF      = 9,      /* 锁卡回复                 */
-/* Added by h59254 for V7R1C50 ISDB Project,  2012-8-27 begin */
     SI_PIH_EVENT_ISDB_ACCESS_CNF    = 10,     /* ISDB透传回复             */
-/* Added by h59254 for V7R1C50 ISDB Project,  2012-8-27 end */
     SI_PIH_EVENT_HVSST_QUERY_CNF    = 11,       /* ^HVSST查询命令返回       */
     SI_PIH_EVENT_HVSST_SET_CNF      = 12,       /* ^HVSST设置命令返回       */
     SI_PIH_EVENT_HVSDH_SET_CNF      = 13,       /* ^HVSDH设置命令返回       */

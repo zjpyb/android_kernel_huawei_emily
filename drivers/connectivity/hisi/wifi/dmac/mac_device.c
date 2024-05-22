@@ -279,11 +279,8 @@ oal_uint32  mac_device_init(mac_device_stru *pst_mac_device, oal_uint32 ul_chip_
     pst_mac_device->bit_su_bfmee     = OAL_TRUE;
     pst_mac_device->bit_rx_stbc      = 1;                       /* 支持2个空间流 */
 
-#if defined(_PRE_PRODUCT_ID_HI110X_DEV) || defined(_PRE_PRODUCT_ID_HI110X_HOST)
-    pst_mac_device->bit_mu_bfmee     = OAL_TRUE;
-#else
+    /* 关闭MU-BFMEE */
     pst_mac_device->bit_mu_bfmee     = OAL_FALSE;
-#endif
 
 #else
     pst_mac_device->bit_tx_stbc      = OAL_FALSE;

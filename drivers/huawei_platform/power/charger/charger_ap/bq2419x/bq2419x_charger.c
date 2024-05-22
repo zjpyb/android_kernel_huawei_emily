@@ -40,7 +40,9 @@
 #endif
 #include <linux/raid/pq.h>
 #include <huawei_platform/power/huawei_charger.h>
+#ifdef CONFIG_HISI_BCI_BATTERY
 #include <linux/power/hisi/hisi_bci_battery.h>
+#endif
 #include <bq2419x_charger.h>
 
 #define HWLOG_TAG bq2419x_charger
@@ -463,16 +465,14 @@ static int bq2419x_device_check(void)
 }
 
 /**********************************************************
-*  Function:       bq2419x_chip_init
+*  Function:       bq2419x_5v_chip_init
 *  Discription:    bq2419x chipIC initialization
-*  Parameters:   NULL
+*  Parameters:   struct bq2419x_device_info *di
 *  return value:  0-sucess or others-fail
 **********************************************************/
-static int bq2419x_chip_init(void)
+static int bq2419x_5v_chip_init(struct bq2419x_device_info *di)
 {
 	int ret = 0;
-	struct bq2419x_device_info *di = g_bq2419x_dev;
-
 	/*boost mode current limit = 500mA */
 	ret = bq2419x_write_byte(BQ2419X_REG_POC, 0x1a);
 	/*I2C watchdog timer setting = 80s */
@@ -485,6 +485,24 @@ static int bq2419x_chip_init(void)
 	ret |= bq2419x_write_byte(BQ2419X_REG_ICTRC, 0x8f);
 	gpio_set_value(di->gpio_cd, 0);	/*enable charging*/
 
+	return ret;
+}
+static int bq2419x_chip_init(struct chip_init_crit* init_crit)
+{
+	int ret = -1;
+	struct bq2419x_device_info *di = g_bq2419x_dev;
+	if (!di || !init_crit) {
+		hwlog_err("%s: di or init_crit is null\n", __func__);
+		return -ENOMEM;
+	}
+	switch(init_crit->vbus) {
+		case ADAPTER_5V:
+			ret = bq2419x_5v_chip_init(di);
+			break;
+		default:
+			hwlog_err("%s: init mode err\n", __func__);
+			break;
+	}
 	return ret;
 }
 

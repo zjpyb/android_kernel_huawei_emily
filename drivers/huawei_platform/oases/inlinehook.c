@@ -20,6 +20,8 @@
 #include "hook_insn.h"
 #include "util.h"
 
+#if defined(__aarch64__)
+
 /* any insn with bit[28:27] = 00 kprobes use 0x07F001F8U */
 #define OASES_ARM_UNDEF_INSN 0x07F02016U
 
@@ -53,7 +55,6 @@ int oases_make_jump_insn(u32 *addr, u32 *dst, u32 *insn)
 	return 0;
 }
 
-
 /* location dependent instructions */
 
 /* ADR  <Xd>, <label> */
@@ -82,6 +83,8 @@ int oases_make_jump_insn(u32 *addr, u32 *dst, u32 *insn)
 #define ARM64_TBZ       13
 /* PRFM (prfop|#<imm5>), <label> */
 #define ARM64_PRFM		14
+/* BR <Xn> */
+#define ARM64_BR        15
 /* TODO: */
 #define ARM64_UNDEF     99
 
@@ -95,6 +98,9 @@ static int get_insn_type(u32 instruction)
 
 	if ((instruction & (u32) 0xFF000010UL) == (u32) 0x54000000UL)
 		return ARM64_BCOND;
+
+	if ((instruction & (u32) 0xFC000000UL) == (u32) 0x14000000UL)
+		return ARM64_B;
 
 	if ((instruction & (u32) 0xFC000000UL) == (u32) 0x94000000UL)
 		return ARM64_BL;
@@ -125,6 +131,9 @@ static int get_insn_type(u32 instruction)
 
 	if ((instruction & (u32) 0xFF000000UL) == (u32) 0xD8000000UL)
 		return ARM64_PRFM;
+
+	if ((instruction & (u32) 0xFFFFFC1FUL) == (u32) 0xD61F0000UL)
+		return ARM64_BR;
 
 	return ARM64_UNDEF;
 }
@@ -160,11 +169,11 @@ static void trampoline_setup_thunk(u32 *from, u64 *label, u64 target)
 /*
  * oases_relocate_insn() - relocate instruction to trampoline
  *
- * Return: 0 if relocate operation succeed, otherwise -1. inlinehook will fail if
- * relocate_arm_instuctions failed.
+ * Return: 0 if relocate operation succeed, otherwise -1 and cause inlinehook fail
  */
 int oases_relocate_insn(struct oases_insn *info, int off)
 {
+	int ret = 0;
 	u32 insn;
 	u32 ldr_off;
 	u64 offset;
@@ -265,7 +274,23 @@ int oases_relocate_insn(struct oases_insn *info, int off)
 			}
 			trampoline_setup_thunk_lr(tramp_insn, tramp_label, offset + (u64)info->address);
 			break;
+		case ARM64_BR:
 		case ARM64_BLR:
+			/*
+			 * B(L)R <Xn>
+			 *
+			 * for kernel with CFI enabled, we can't hook funcs with BLR as the first insn
+			 */
+#if OASES_ENABLE_CFI
+			ret = -1;
+#else
+			rd = (insn >> INSN_REGN_BITS) & 0x1FUL;
+			if (rd < ARG_REGS_MAX) {
+				*tramp_insn++ = insn;
+			} else {
+				ret = -1;
+			}
+#endif
 			break;
 		case ARM64_CBNZ:
 		case ARM64_CBZ:
@@ -349,5 +374,9 @@ int oases_relocate_insn(struct oases_insn *info, int off)
 			break;
 	}
 
-	return 0;
+	return ret;
 }
+
+#else
+#error "__arm__ platform not supported"
+#endif

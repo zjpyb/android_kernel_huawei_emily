@@ -86,7 +86,7 @@ OAL_STATIC oal_void  frw_ipc_recv(frw_ipc_msg_mem_stru *pst_ipc_mem_msg)
 
     #ifdef _PRE_DEBUG_MODE
         /* 日志，告警 */
-        frw_ipc_log_recv_alarm(&g_st_ipc_node[en_type].st_log,
+        frw_ipc_log_recv_alarm_etc(&g_st_ipc_node[en_type].st_log,
                                (pst_header->us_seq_number - g_st_ipc_node[en_type].us_seq_num_rx_expect));
     #endif
     }
@@ -97,14 +97,14 @@ OAL_STATIC oal_void  frw_ipc_recv(frw_ipc_msg_mem_stru *pst_ipc_mem_msg)
         g_st_ipc_node[en_type].us_seq_num_rx_expect = pst_header->us_seq_number + 1;
     #ifdef _PRE_DEBUG_MODE
         /* 日志，告警，丢包计算公式: 当前序列号+序列号最大值-序列号期望值+1 */
-        frw_ipc_log_recv_alarm(&g_st_ipc_node[en_type].st_log,
+        frw_ipc_log_recv_alarm_etc(&g_st_ipc_node[en_type].st_log,
                                (pst_header->us_seq_number + FRW_IPC_MAX_SEQ_NUMBER - g_st_ipc_node[en_type].us_seq_num_rx_expect + 1));
     #endif
     }
 
 #ifdef _PRE_DEBUG_MODE
     /* 接收日志 */
-    frw_ipc_log_recv(&g_st_ipc_node[en_type].st_log,
+    frw_ipc_log_recv_etc(&g_st_ipc_node[en_type].st_log,
                      pst_header->us_seq_number,
                      pst_header->uc_target_cpuid,
                      pst_header->uc_msg_type);
@@ -118,7 +118,7 @@ OAL_STATIC oal_void  frw_ipc_recv(frw_ipc_msg_mem_stru *pst_ipc_mem_msg)
             pst_ipc_mem_msg->puc_data += FRW_IPC_MSG_HEADER_LENGTH;
 
             /* 事件直接入队操作 */
-            frw_event_post_event(pst_ipc_mem_msg,OAL_GET_CORE_ID());
+            frw_event_post_event_etc(pst_ipc_mem_msg,OAL_GET_CORE_ID());
 
             break;
 
@@ -194,7 +194,7 @@ OAL_STATIC oal_uint32  frw_ipc_send(frw_ipc_msg_mem_stru *pst_ipc_mem_msg)
     pst_header->uc_msg_type     = FRW_IPC_MSG_TYPE_EVENT;
 
     /* 发送核间消息 */
-    ul_ret = frw_ipc_msg_queue_send(pst_msg_queue,
+    ul_ret = frw_ipc_msg_queue_send_etc(pst_msg_queue,
                                     pst_ipc_mem_msg,
                                     g_st_ipc_node[en_type].en_tx_int_ctl,
                                     g_st_ipc_node[en_type].en_target_cpuid);
@@ -202,15 +202,15 @@ OAL_STATIC oal_uint32  frw_ipc_send(frw_ipc_msg_mem_stru *pst_ipc_mem_msg)
     if (OAL_UNLIKELY(OAL_ERR_CODE_IPC_QUEUE_FULL == ul_ret))
     {
     #ifdef _PRE_DEBUG_MODE
-        frw_ipc_log_send_alarm(&g_st_ipc_node[en_type].st_log);
+        frw_ipc_log_send_alarm_etc(&g_st_ipc_node[en_type].st_log);
     #endif
-        OAM_WARNING_LOG1(0, OAM_SF_FRW, "{frw_ipc_send::frw_ipc_msg_queue_send return err code: %d}", OAL_ERR_CODE_IPC_QUEUE_FULL);
+        OAM_WARNING_LOG1(0, OAM_SF_FRW, "{frw_ipc_send::frw_ipc_msg_queue_send_etc return err code: %d}", OAL_ERR_CODE_IPC_QUEUE_FULL);
         return ul_ret;
     }
 
     if (OAL_UNLIKELY(OAL_SUCC != ul_ret))
     {
-        OAM_WARNING_LOG1(0, OAM_SF_FRW, "{frw_ipc_send::frw_ipc_msg_queue_send return err code:%d}", ul_ret);
+        OAM_WARNING_LOG1(0, OAM_SF_FRW, "{frw_ipc_send::frw_ipc_msg_queue_send_etc return err code:%d}", ul_ret);
         return ul_ret;
     }
 
@@ -222,7 +222,7 @@ OAL_STATIC oal_uint32  frw_ipc_send(frw_ipc_msg_mem_stru *pst_ipc_mem_msg)
 
 #ifdef _PRE_DEBUG_MODE
     /* 发送日志 */
-    frw_ipc_log_send(&g_st_ipc_node[en_type].st_log,
+    frw_ipc_log_send_etc(&g_st_ipc_node[en_type].st_log,
                      pst_header->us_seq_number,
                      pst_header->uc_target_cpuid,
                      pst_header->uc_msg_type);
@@ -266,8 +266,8 @@ OAL_STATIC oal_uint32  frw_ipc_init(oal_void)
     }
 
     /* 将以下函数注册到事件管理模块中 */
-    frw_event_ipc_event_queue_full_register(frw_ipc_event_queue_full);
-    frw_event_ipc_event_queue_empty_register(frw_ipc_event_queue_empty);
+    frw_event_ipc_event_queue_full_register_etc(frw_ipc_event_queue_full);
+    frw_event_ipc_event_queue_empty_register_etc(frw_ipc_event_queue_empty);
 
     return OAL_SUCC;
 }
@@ -288,25 +288,25 @@ OAL_STATIC oal_uint32  frw_ipc_init_master(frw_ipc_node_stru *pst_ipc_node)
 
     /* 主核完成消息队列初始化 */
     /* 发送队列初始化 */
-    ul_ret = frw_ipc_msg_queue_init(&g_st_queue_master_to_slave,
+    ul_ret = frw_ipc_msg_queue_init_etc(&g_st_queue_master_to_slave,
                                     FRW_IPC_MASTER_TO_SLAVE_QUEUE_MAX_NUM);
     if (OAL_UNLIKELY(OAL_SUCC != ul_ret))
     {
-        OAM_WARNING_LOG1(0, OAM_SF_FRW, "{frw_ipc_init_master: frw_ipc_msg_queue_init g_st_queue_master_to_slave return err code:%d}", ul_ret);
+        OAM_WARNING_LOG1(0, OAM_SF_FRW, "{frw_ipc_init_master: frw_ipc_msg_queue_init_etc g_st_queue_master_to_slave return err code:%d}", ul_ret);
         return ul_ret;
     }
 
     /* 接收队列初始化 */
-    ul_ret = frw_ipc_msg_queue_init(&g_st_queue_slave_to_master,
+    ul_ret = frw_ipc_msg_queue_init_etc(&g_st_queue_slave_to_master,
                                     FRW_IPC_SLAVE_TO_MASTER_QUEUE_MAX_NUM);
     if (OAL_UNLIKELY(OAL_SUCC != ul_ret))
     {
-        OAM_WARNING_LOG1(0, OAM_SF_FRW,  "{frw_ipc_init_master:: frw_ipc_msg_queue_init g_st_queue_slave_to_master return err code:%d}", ul_ret);
+        OAM_WARNING_LOG1(0, OAM_SF_FRW,  "{frw_ipc_init_master:: frw_ipc_msg_queue_init_etc g_st_queue_slave_to_master return err code:%d}", ul_ret);
         return ul_ret;
     }
 
     /* 中断注册 */
-    pst_ipc_node->st_irq_dev.p_irq_intr_func    = frw_ipc_msg_queue_recv;
+    pst_ipc_node->st_irq_dev.p_irq_intr_func    = frw_ipc_msg_queue_recv_etc;
     pst_ipc_node->st_irq_dev.ul_irq             = OAL_IRQ_NUM;
     pst_ipc_node->st_irq_dev.l_irq_type         = OAL_SA_SHIRQ;
     pst_ipc_node->st_irq_dev.pc_name            = "ipc";
@@ -321,19 +321,19 @@ OAL_STATIC oal_uint32  frw_ipc_init_master(frw_ipc_node_stru *pst_ipc_node)
     /* 回调函数注册 */
     pst_ipc_node->st_ipc_msg_callback.p_rx_complete_func = frw_ipc_recv;
     pst_ipc_node->st_ipc_msg_callback.p_tx_complete_func = frw_ipc_tx_complete;
-    ul_ret = frw_ipc_msg_queue_register_callback(&pst_ipc_node->st_ipc_msg_callback);
+    ul_ret = frw_ipc_msg_queue_register_callback_etc(&pst_ipc_node->st_ipc_msg_callback);
     if (OAL_UNLIKELY(OAL_SUCC != ul_ret))
     {
-        OAM_WARNING_LOG1(0, OAM_SF_FRW, "{frw_ipc_init_master: frw_ipc_msg_queue_register_callback return err code:%d}", ul_ret);
+        OAM_WARNING_LOG1(0, OAM_SF_FRW, "{frw_ipc_init_master: frw_ipc_msg_queue_register_callback_etc return err code:%d}", ul_ret);
         return ul_ret;
     }
 
 #ifdef _PRE_DEBUG_MODE
     /* 日志初始化 */
-    ul_ret = frw_ipc_log_init(&pst_ipc_node->st_log);
+    ul_ret = frw_ipc_log_init_etc(&pst_ipc_node->st_log);
     if (OAL_UNLIKELY(OAL_SUCC != ul_ret))
     {
-        OAM_WARNING_LOG1(0, OAM_SF_FRW, "{frw_ipc_init_master: frw_ipc_log_init return err code:%d}", ul_ret);
+        OAM_WARNING_LOG1(0, OAM_SF_FRW, "{frw_ipc_init_master: frw_ipc_log_init_etc return err code:%d}", ul_ret);
         return ul_ret;
     }
 #endif
@@ -358,7 +358,7 @@ OAL_STATIC oal_uint32  frw_ipc_init_slave(frw_ipc_node_stru *pst_ipc_node)
     pst_ipc_node->en_tx_int_ctl        = FRW_IPC_TX_CTRL_ENABLED;
 
     /* 中断注册 */
-    pst_ipc_node->st_irq_dev.p_irq_intr_func    = frw_ipc_msg_queue_recv;
+    pst_ipc_node->st_irq_dev.p_irq_intr_func    = frw_ipc_msg_queue_recv_etc;
     pst_ipc_node->st_irq_dev.ul_irq             = OAL_IRQ_NUM;
     pst_ipc_node->st_irq_dev.l_irq_type         = OAL_SA_SHIRQ;
     pst_ipc_node->st_irq_dev.pc_name            = "ipc";
@@ -373,19 +373,19 @@ OAL_STATIC oal_uint32  frw_ipc_init_slave(frw_ipc_node_stru *pst_ipc_node)
     /* 回调函数注册 */
     pst_ipc_node->st_ipc_msg_callback.p_rx_complete_func = frw_ipc_recv;
     pst_ipc_node->st_ipc_msg_callback.p_tx_complete_func = frw_ipc_tx_complete;
-    ul_ret = frw_ipc_msg_queue_register_callback(&pst_ipc_node->st_ipc_msg_callback);
+    ul_ret = frw_ipc_msg_queue_register_callback_etc(&pst_ipc_node->st_ipc_msg_callback);
     if (OAL_UNLIKELY(OAL_SUCC != ul_ret))
     {
-        OAM_WARNING_LOG1(0, OAM_SF_FRW, "{frw_ipc_init_slave:: frw_ipc_msg_queue_register_callback return err code:%d}", ul_ret);
+        OAM_WARNING_LOG1(0, OAM_SF_FRW, "{frw_ipc_init_slave:: frw_ipc_msg_queue_register_callback_etc return err code:%d}", ul_ret);
         return ul_ret;
     }
 
 #ifdef _PRE_DEBUG_MODE
     /* 日志初始化 */
-    ul_ret = frw_ipc_log_init(&pst_ipc_node->st_log);
+    ul_ret = frw_ipc_log_init_etc(&pst_ipc_node->st_log);
     if (OAL_UNLIKELY(OAL_SUCC != ul_ret))
     {
-        OAM_WARNING_LOG1(0, OAM_SF_FRW, "{frw_ipc_init_slave: frw_ipc_log_init return err code:%d}", ul_ret);
+        OAM_WARNING_LOG1(0, OAM_SF_FRW, "{frw_ipc_init_slave: frw_ipc_log_init_etc return err code:%d}", ul_ret);
         return ul_ret;
     }
 #endif
@@ -413,29 +413,29 @@ OAL_STATIC oal_uint32  frw_ipc_exit(oal_void)
     if (FRW_IPC_CORE_ID_MASTER == en_type) /* 主核 */
     {
         /* 发送队列注销 */
-        ul_ret = frw_ipc_msg_queue_destroy(&g_st_queue_master_to_slave);
+        ul_ret = frw_ipc_msg_queue_destroy_etc(&g_st_queue_master_to_slave);
         if (OAL_UNLIKELY(OAL_SUCC != ul_ret))
         {
-            OAM_WARNING_LOG1(0, OAM_SF_FRW, "{frw_ipc_exit: frw_ipc_msg_queue_destroy g_st_queue_master_to_slave return err code:%d}", ul_ret);
+            OAM_WARNING_LOG1(0, OAM_SF_FRW, "{frw_ipc_exit: frw_ipc_msg_queue_destroy_etc g_st_queue_master_to_slave return err code:%d}", ul_ret);
             return ul_ret;
         }
 
         /* 接收队列注销 */
-        ul_ret = frw_ipc_msg_queue_destroy(&g_st_queue_slave_to_master);
+        ul_ret = frw_ipc_msg_queue_destroy_etc(&g_st_queue_slave_to_master);
         if (OAL_UNLIKELY(OAL_SUCC != ul_ret))
         {
-            OAM_WARNING_LOG1(0, OAM_SF_FRW, "frw_ipc_exit:: frw_ipc_msg_queue_destroy g_st_queue_slave_to_master return err code:%d", ul_ret);
+            OAM_WARNING_LOG1(0, OAM_SF_FRW, "frw_ipc_exit:: frw_ipc_msg_queue_destroy_etc g_st_queue_slave_to_master return err code:%d", ul_ret);
             return ul_ret;
         }
     }
 
 #ifdef _PRE_DEBUG_MODE
     /* 打印日志信息 */
-    frw_ipc_log_tx_print(&g_st_ipc_node[en_type].st_log);
-    frw_ipc_log_rx_print(&g_st_ipc_node[en_type].st_log);
+    frw_ipc_log_tx_print_etc(&g_st_ipc_node[en_type].st_log);
+    frw_ipc_log_rx_print_etc(&g_st_ipc_node[en_type].st_log);
 
     /* 退出日志模块 */
-    ul_ret = frw_ipc_log_exit(&g_st_ipc_node[en_type].st_log);
+    ul_ret = frw_ipc_log_exit_etc(&g_st_ipc_node[en_type].st_log);
     if (OAL_UNLIKELY(OAL_SUCC != ul_ret))
     {
         return ul_ret;
@@ -520,7 +520,7 @@ OAL_STATIC oal_uint32  frw_ipc_send_inter_msg(oal_uint8  uc_msg_type,
     }
 
     /* 发送内部消息 */
-    ul_ret = frw_ipc_msg_queue_send(pst_msg_queue,
+    ul_ret = frw_ipc_msg_queue_send_etc(pst_msg_queue,
                                     pst_msg_mem_stru,
                                     g_st_ipc_node[en_type].en_tx_int_ctl,
                                     g_st_ipc_node[en_type].en_target_cpuid);
@@ -534,7 +534,7 @@ OAL_STATIC oal_uint32  frw_ipc_send_inter_msg(oal_uint8  uc_msg_type,
 
 #ifdef _PRE_DEBUG_MODE
     /* 发送日志 */
-    frw_ipc_log_send(&g_st_ipc_node[en_type].st_log,
+    frw_ipc_log_send_etc(&g_st_ipc_node[en_type].st_log,
                       g_st_ipc_node[en_type].us_seq_num_tx_expect,
                       g_st_ipc_node[en_type].en_target_cpuid,
                       uc_msg_type);
@@ -547,14 +547,14 @@ OAL_STATIC oal_uint32  frw_ipc_send_inter_msg(oal_uint8  uc_msg_type,
 }
 
 
-oal_uint32  frw_ipc_reset(oal_void)
+oal_uint32  frw_ipc_reset_etc(oal_void)
 {
     /* TBD */
     return OAL_SUCC;
 }
 
 
-oal_uint32  frw_ipc_smp_dispatch(oal_void *buf)
+oal_uint32  frw_ipc_smp_dispatch_etc(oal_void *buf)
 {
     /* TBD */
 
@@ -562,7 +562,7 @@ oal_uint32  frw_ipc_smp_dispatch(oal_void *buf)
 }
 
 
-oal_uint32  frw_ipc_smp_ordering(oal_void *buf)
+oal_uint32  frw_ipc_smp_ordering_etc(oal_void *buf)
 {
     /* TBD */
 
@@ -602,7 +602,7 @@ OAL_STATIC oal_uint32  frw_ipc_event_queue_empty(oal_void)
 }
 
 
-oal_uint32  frw_event_deploy_init(oal_void)
+oal_uint32  frw_event_deploy_init_etc(oal_void)
 {
     oal_uint32 ul_ret;
 
@@ -623,14 +623,14 @@ oal_uint32  frw_event_deploy_init(oal_void)
 
     /* 引入宏, 如果是按照CHIP,DEVICE,VAP方式，则注册frw_event_deploy_owner */
 
-    frw_event_deploy_register(frw_event_deploy_pipeline);
+    frw_event_deploy_register_etc(frw_event_deploy_pipeline);
 
     return OAL_SUCC;
 }
 
 
 
-oal_uint32  frw_event_deploy_exit(oal_void)
+oal_uint32  frw_event_deploy_exit_etc(oal_void)
 {
     oal_uint32 ul_ret;
 

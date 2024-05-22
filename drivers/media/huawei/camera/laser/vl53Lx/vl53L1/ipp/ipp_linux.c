@@ -41,6 +41,7 @@
 #include "stmvl53l1.h"
 
 #define IPP_ERR_CODE (VL53L1_ERROR_PLATFORM_SPECIFIC_START-1)
+extern int memcpy_s(void *dest, size_t destMax, const void *src, size_t count);
 
 static int stmvl53l1_ipp_do_wrapper(struct stmvl53l1_data *data,
 	struct ipp_work_t *pin, struct ipp_work_t *pout, int payload_out)
@@ -53,7 +54,7 @@ static int stmvl53l1_ipp_do_wrapper(struct stmvl53l1_data *data,
 		rc = IPP_ERR_CODE;
 		goto done;
 	}
-	BUG_ON(pin->payload > IPP_WORK_MAX_PAYLOAD);
+	WARN_ON(pin->payload > IPP_WORK_MAX_PAYLOAD);
 	stmvl531_ipp_tim_start(data);
 	rc = stmvl53l1_ipp_do(data, pin, pout);
 	if (rc != 0) {
@@ -66,12 +67,12 @@ static int stmvl53l1_ipp_do_wrapper(struct stmvl53l1_data *data,
 	if (pout->status) {
 		vl53l1_errmsg("ipp error status %d from user", pout->status);
 		if (pout->status >= stmvl53l1_ipp_status_proc_code)
-			rc = pout->status & (stmvl53l1_ipp_status_proc_code-1);
+			rc = (uint16_t)pout->status & (stmvl53l1_ipp_status_proc_code-1);
 		else
 			rc = IPP_ERR_CODE;
 		goto done;
 	}
-	BUG_ON(pout->payload > IPP_WORK_MAX_PAYLOAD);
+	WARN_ON(pout->payload > IPP_WORK_MAX_PAYLOAD);
 	if (pout->payload != payload_out) {
 		/* bad formated answer */
 		vl53l1_errmsg("bad payload %d != %d in ipp work back",
@@ -151,7 +152,7 @@ VL53L1_Error VL53L1_ipp_hist_process_data(
 		goto done;
 
 	/* copy output */
-	memcpy(presults, presults_ipp, sizeof(*presults));
+	memcpy_s(presults, sizeof(*presults), presults_ipp, sizeof(*presults));
 
 	rc = 0;
 done:
@@ -214,7 +215,7 @@ VL53L1_Error VL53L1_ipp_hist_ambient_dmax(
 		goto done;
 
 	/* copy output */
-	memcpy(pambient_dmax_mm, pambient_dmax_mm_ipp,
+	memcpy_s(pambient_dmax_mm, sizeof(*pambient_dmax_mm), pambient_dmax_mm_ipp,
 		sizeof(*pambient_dmax_mm));
 
 	rc = 0;
@@ -271,8 +272,8 @@ VL53L1_Error VL53L1_ipp_xtalk_calibration_process_data(
 		goto done;
 
 	/* copy output */
-	memcpy(pxtalk_shape, pxtalk_shape_ipp, sizeof(*pxtalk_shape));
-	memcpy(pxtalk_cal, pxtalk_cal_ipp, sizeof(*pxtalk_cal));
+	memcpy_s(pxtalk_shape, sizeof(*pxtalk_shape), pxtalk_shape_ipp, sizeof(*pxtalk_shape));
+	memcpy_s(pxtalk_cal, sizeof(*pxtalk_cal), pxtalk_cal_ipp, sizeof(*pxtalk_cal));
 
 	rc = 0;
 done:
@@ -333,7 +334,7 @@ VL53L1_Error VL53L1_ipp_generate_dual_reflectance_xtalk_samples(
 		goto done;
 
 	/* copy output */
-	memcpy(pxtalk_avg_samples, pxtalk_avg_samples_ipp,
+	memcpy_s(pxtalk_avg_samples, sizeof(*pxtalk_avg_samples), pxtalk_avg_samples_ipp,
 		sizeof(*pxtalk_avg_samples));
 
 	rc = 0;

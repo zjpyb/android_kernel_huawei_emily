@@ -2028,9 +2028,6 @@ oal_uint32  dmac_user_del(frw_event_mem_stru *pst_event_mem)
         OAM_ERROR_LOG0(pst_event->st_event_hdr.uc_vap_id, OAM_SF_CFG, "{dmac_user_del::pst_dmac_vap null.}");
         return OAL_ERR_CODE_PTR_NULL;
     }
-#ifdef _PRE_WLAN_FEATURE_BTCOEX
-    dmac_config_btcoex_disassoc_state_syn(&(pst_dmac_vap->st_vap_base_info));
-#endif
 
     /* 下发无效user idx，用mac地址查找user */
     if (MAC_INVALID_USER_ID == us_user_idx)
@@ -2203,6 +2200,9 @@ oal_uint32  dmac_user_del(frw_event_mem_stru *pst_event_mem)
 #else
     /* 非offload模式下，device下用户数已经在hmac侧--，这里不需要再判断返回值做用户数--动作 */
     dmac_user_free(us_user_idx);
+#endif
+#ifdef _PRE_WLAN_FEATURE_BTCOEX
+    dmac_config_btcoex_disassoc_state_syn(&(pst_dmac_vap->st_vap_base_info));
 #endif
 
 #if (_PRE_PRODUCT_ID == _PRE_PRODUCT_ID_HI1151)

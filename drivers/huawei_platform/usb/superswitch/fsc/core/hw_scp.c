@@ -28,7 +28,9 @@
 #include "../Platform_Linux/platform_helpers.h"
 #include "hw_scp.h"
 #include "core.h"
+#include "port.h"
 #include "../Platform_Linux/fusb3601_global.h"
+#include <huawei_platform/power/wired_channel_switch.h>
 #ifdef CONFIG_DIRECT_CHARGER
 #include <huawei_platform/power/direct_charger.h>
 #endif
@@ -77,7 +79,9 @@
 #define FUSB3601_DCD_TIMEOUT_DISABLE 0xef
 #define FUSB3601_DEVICE_TYPE 0xd6
 #define FUSB3601_SCP_EVENT_1 0x86
+#define FUSB3601_SCP_EVENT1_CC_PLGIN_DPDN_PLGIN 0x60
 #define FUSB3601_SCP_EVENT_2 0x87
+#define FUSB3601_SCP_EVENT2_ACK 0x20
 #define FUSB3601_SCP_EVENT_3 0x88
 #define FUSB3601_FM_CONTROL1 0xdc
 #define FUSB3601_MSM_EN_HIGH 0xfe
@@ -94,6 +98,8 @@
 
 static struct mutex FUSB3601_accp_detect_lock;
 static struct mutex FUSB3601_accp_adaptor_reg_lock;
+
+static int wired_channel_status = WIRED_CHANNEL_RESTORE;
 
 struct delayed_work m_work;
 static int FUSB3601_is_support_scp(void);
@@ -138,7 +144,7 @@ static int FUSB3601_fcp_stop_charge_config(void)
 int FUSB3601_vout_enable(int enable)
 {
 	int ret;
-	FSC_U8 data;
+	FSC_U8 data = 0;
 	struct fusb3601_chip* chip = fusb3601_GetChip();
 	struct Port *port;
 
@@ -187,35 +193,7 @@ int FUSB3601_msw_enable(int enable)
 	else
 		return -1;
 }
-/****************************************************************************
-  Function:     FUSB3601_chip_reset
-  Description:  reset hw_scp
-  Input:         NA
-  Output:       NA
-  Return:        0: success
-                -1: fail
-***************************************************************************/
-static int FUSB3601_chip_reset(void)
-{
-	int ret;
-	struct fusb3601_chip* chip = fusb3601_GetChip();
-	if (!chip) {
-		pr_err("FUSB  %s - Chip structure is NULL!\n", __func__);
-		return;
-	}
-	disable_irq(chip->gpio_IntN_irq);
-	FSC_U8 data = FUSB3601_CHIP_RESET;
-	ret = FUSB3601_fusb_I2C_WriteData(FUSB3601_SCP_ENABLE1, 1, &data);
-	if (ret) {
-		hwlog_info("superswitch reset happened\n");
-	}
-	msleep(1);
-	FUSB3601_core_initialize(&chip->port);
-	FUSB3601_scp_initialize();
-	enable_irq(chip->gpio_IntN_irq);
-	queue_work(chip->highpri_wq,&chip->sm_worker);
-	return 0;
-}
+
 static int FUSB3601_chip_reset_nothing(void)
 {
 	return 0;
@@ -284,7 +262,7 @@ static int FUSB3601_clear_event2_and_event3(void)
 void FUSB3601_dump_register(void)
 {
 	FSC_U8 i = 0;
-	FSC_U8 data;
+	FSC_U8 data = 0;
 	int ret;
 	for(i = 0x00; i <= 0x1f; ++i) {
 		ret = FUSB3601_fusb_I2C_ReadData(i,&data);
@@ -594,6 +572,21 @@ static int FUSB3601_accp_adapter_detect(void)
 			return 0;
 		}
 		msleep(ACCP_POLL_TIME);
+	}
+	ret = FUSB3601_fusb_I2C_ReadData(FUSB3601_SCP_EVENT_1, &data);
+	if (ret) {
+		if (data == FUSB3601_SCP_EVENT1_CC_PLGIN_DPDN_PLGIN) {
+			ret = FUSB3601_fusb_I2C_ReadData(FUSB3601_SCP_EVENT_2, &data);
+			if (ret) {
+				if (data & FUSB3601_SCP_EVENT2_ACK) {
+					data = 0x00;
+					ret = FUSB3601_fusb_I2C_WriteData(FUSB3601_SCP_ENABLE1, 1, &data);
+					if (ret) {
+						return -1;
+					}
+				}
+			}
+		}
 	}
 	FUSB3601_core_redo_bc12_limited(&chip->port);
 	return -1;
@@ -1064,6 +1057,10 @@ static int FUSB3601_scp_init(struct scp_init_data * sid)
 		hwlog_err("FUSB  %s - port structure is NULL!\n", __func__);
 		return -1;
 	}
+	FUSB3601_PDDisable(port);
+	port->registers_.AlertMskH.M_VBUS_ALRM_LO= 0;
+	FUSB3601_WriteRegisters(port, regALERTMSKH, 1);
+	FUSB3601_ClearInterrupt(port, regALERTH, MSK_I_VBUS_ALRM_LO);
 	if (get_dpd_enable()) {
 #ifdef CONFIG_USB_ANALOG_HS_INTERFACE
 		ret = FUSB3601_scp_get_adapter_vendor_id();
@@ -1074,9 +1071,7 @@ static int FUSB3601_scp_init(struct scp_init_data * sid)
 #endif
 		data = FUSB3601_SCP_ENABLE2_INIT;
 		ret = FUSB3601_fusb_I2C_WriteData(FUSB3601_SCP_ENABLE2, 1, &data);
-		FUSB3601_ReadRegister(port, regFM_CONTROL4);
-		port->registers_.FMControl4.VBUS_DETATCH_DET = 0;
-		FUSB3601_WriteRegister(port, regFM_CONTROL4);
+		FUSB3601_set_vbus_detach(port, VBUS_DETACH_DISABLE);
 		FUSB3601_ReadRegister(port, regFM_CONTROL4);
 		hwlog_info("%s:FM_CONTROL4 after writing is : [0x%x]\n", __func__, port->registers_.FMControl4);
 	}
@@ -1156,9 +1151,7 @@ static int FUSB3601_scp_exit(struct direct_charge_device* di)
 #endif
 		data = FUSB3601_DPD_DISABLE;
 		ret = FUSB3601_fusb_I2C_WriteData(FUSB3601_SCP_ENABLE2, 1, &data);
-		FUSB3601_ReadRegister(port, regFM_CONTROL4);
-		port->registers_.FMControl4.VBUS_DETATCH_DET = 1;
-		FUSB3601_WriteRegister(port, regFM_CONTROL4);
+		FUSB3601_set_vbus_detach(port, VBUS_DETACH_ENABLE);
 		FUSB3601_ReadRegister(port, regFM_CONTROL4);
 		hwlog_info("%s:FM_CONTROL4 after writing is : [0x%x]\n", __func__, port->registers_.FMControl4);
 		state_machine_need_resched = 1;
@@ -1449,11 +1442,17 @@ static enum hisi_charger_type FUSB3601_get_charger_type(void)
     return charger_type;
 }
 
-static int FUSB3601_scp_power_enable(int enable)
+static void FUSB3601_scp_set_direct_charge_mode(int mode)
 {
-	(void)enable;
-	return SUCC;
+	hwlog_info("[%s]mode is 0x%x \n", __func__, mode);
+	return;
 }
+
+static int FUSB3601_scp_get_adaptor_type(void)
+{
+	return LVC_MODE;
+}
+
 struct smart_charge_ops FUSB3601_scp_ops = {
     .is_support_scp = FUSB3601_is_support_scp,
     .scp_init = FUSB3601_scp_init,
@@ -1477,7 +1476,8 @@ struct smart_charge_ops FUSB3601_scp_ops = {
     .scp_get_adaptor_temp = FUSB3601_scp_get_adaptor_temp,
     .scp_get_adapter_vendor_id = FUSB3601_scp_get_adapter_vendor_id,
     .scp_get_usb_port_leakage_current_info = FUSB3601_scp_get_usb_port_leakage_current_info,
-    .scp_power_enable = FUSB3601_scp_power_enable,
+    .scp_set_direct_charge_mode = FUSB3601_scp_set_direct_charge_mode,
+    .scp_get_adaptor_type = FUSB3601_scp_get_adaptor_type,
 };
 #endif
 struct fcp_adapter_device_ops FUSB3601_fcp_ops = {
@@ -1497,6 +1497,48 @@ struct charge_switch_ops FUSB3601_switch_ops = {
 	.get_charger_type = FUSB3601_get_charger_type,
 	.is_water_intrused = NULL,
 };
+
+#ifdef CONFIG_SUPERSWITCH_FSC
+static int FUSB3601_chsw_set_wired_channel(int flag)
+{
+	int ret = 0;
+	if (WIRED_CHANNEL_CUTOFF == flag) {
+		hwlog_info("%s set fusb3601 en disable\n", __func__);
+		ret = FUSB3601_vout_enable(0);
+	} else {
+		hwlog_info("%s set fusb3601 en enable\n", __func__);
+		ret = FUSB3601_vout_enable(1);
+	}
+	if (!ret)
+		wired_channel_status = flag;
+	return ret;
+}
+static FUSB3601_chsw_get_wired_channel(void)
+{
+	return wired_channel_status;
+}
+static struct wired_chsw_device_ops chsw_ops = {
+	.get_wired_channel = FUSB3601_chsw_get_wired_channel,
+	.set_wired_channel = FUSB3601_chsw_set_wired_channel,
+};
+static int FUSB3601_wired_chsw_ops_register(void)
+{
+	int ret = 0;
+	struct fusb3601_chip* chip = fusb3601_GetChip();
+
+	if (chip->use_super_switch_cutoff_wired_channel) {
+		ret = wired_chsw_ops_register(&chsw_ops);
+		if (ret) {
+			hwlog_err("%s register fusb3601 switch ops failed!\n", __func__);
+			return -1;
+		}
+		hwlog_info("%s fusb3601 switch ops register success\n", __func__);
+	}
+	hwlog_info("%s++\n", __func__);
+
+	return ret;
+}
+#endif
 
 void FUSB3601_scp_initialize(void)
 {
@@ -1548,6 +1590,8 @@ void FUSB3601_charge_register_callback(void)
     {
         hwlog_info(" charge switch ops register success!\n");
     }
-
-    hwlog_info(" %s--!\n", __func__);
+#ifdef CONFIG_SUPERSWITCH_FSC
+	FUSB3601_wired_chsw_ops_register();
+#endif
+	hwlog_info(" %s--!\n", __func__);
 }

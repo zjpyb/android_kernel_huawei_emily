@@ -33,6 +33,7 @@ static struct sock *g_nlfd;
 
 /* save user space progress pid when user space netlink socket registering. */
 static unsigned int g_user_space_pid;
+static unsigned int g_native_space_pid;
 static struct task_struct *g_netlink_task;
 static int g_nb_module_state = NB_NETLINK_EXIT;
 
@@ -41,6 +42,7 @@ struct nb_event_info {
 	union {
 		struct vod_event vod_info;
 		struct ksi_event ksi_info;
+		struct native_event native_info;
 	};
 };
 static struct nb_event_info g_event_info;
@@ -82,6 +84,15 @@ void nb_notify_event(enum nb_evt_type event_type, void *data, int size)
 			g_event_info.type = event_type;
 			memcpy(&(g_event_info.ksi_info), data, size);
 			break;
+		case NBMSG_NATIVE_RTT:
+			if (sizeof(struct native_event) != size) {
+				hwlog_err("%s:wrong native state size %d\n", __func__, size);
+				spin_unlock_bh(&g_event_info_lock);
+				return;
+			}
+			g_event_info.type = event_type;
+			memcpy(&(g_event_info.native_info), data, size);
+			break;
 		default:
 			g_event_info.type = NBMSG_EVT_INVALID;
 			hwlog_err("%s:unsupported event type %d\n", __func__, event_type);
@@ -93,25 +104,51 @@ void nb_notify_event(enum nb_evt_type event_type, void *data, int size)
 	up(&g_event_sema);
 }
 
-void process_vod_requst(struct vod_requst *requst)
+void process_vod_request(struct vod_request *request)
 {
-	if (!requst)
+	if (!request)
 		return;
 
-	set_vod_enable(requst->nf_hook_enable, requst->nl_event_enable);
-	hwlog_info("%s:process_vod_requst hook=%d event=%d\n", __func__,
-		requst->nf_hook_enable, requst->nl_event_enable);
+	set_vod_enable(request->nf_hook_enable, request->nl_event_enable);
+	hwlog_info("%s:process_vod_request hook=%d event=%d\n", __func__,
+		request->nf_hook_enable, request->nl_event_enable);
 }
 
-void process_ksi_requst(struct ksi_requst *requst)
+void process_ksi_request(struct ksi_request *request)
 {
-	if (!requst)
+	if (!request)
 		return;
 
-	set_ksi_enable(requst->nf_hook_enable, requst->nl_event_enable);
-	hwlog_info("%s:process_ksi_requst hook=%d event=%d\n", __func__,
-		requst->nf_hook_enable, requst->nl_event_enable);
+	set_ksi_enable(request->nf_hook_enable, request->nl_event_enable);
+	hwlog_info("%s:process_ksi_request hook=%d event=%d\n", __func__,
+		request->nf_hook_enable, request->nl_event_enable);
 }
+
+void process_native_requst(struct native_requst *requst)
+{
+	struct native_event native_info;
+
+	hwlog_info("%s:request addr=%x\n", __func__,requst);
+	if (requst->len > MAX_RTT_LIST_LEN || requst->len < 0)
+		return;
+
+	get_rtt_list(&native_info, requst->len);
+	native_info.len = requst->len;
+	nb_notify_event(NBMSG_NATIVE_RTT, &native_info, sizeof(struct native_event));
+}
+
+#ifdef CONFIG_APP_QOE_AI_PREDICT
+void process_app_qoe_params_request(struct app_qoe_request *request)
+{
+	if (!request)
+		return;
+	if (request->msg_type == APP_QOE_MSG_RSRP_REQ) {
+		set_app_qoe_rsrp(request->rsrp, request->rsrq);
+	} else if (request->msg_type == APP_QOE_MSG_UID_REQ) {
+		set_app_qoe_uid(request->app_uid, request->report_period);
+	}
+}
+#endif
 
 static void nb_netlink_rcv(struct sk_buff *__skb)
 {
@@ -159,21 +196,41 @@ static void nb_netlink_rcv(struct sk_buff *__skb)
 				g_user_space_pid = 0;
 				break;
 			case NBMSG_VOD_REQ:
-				if (nlh->nlmsg_len < NLMSG_LENGTH(sizeof(struct vod_requst))) {
+				if (nlh->nlmsg_len < NLMSG_LENGTH(sizeof(struct vod_request))) {
 					hwlog_err("nb_netlink_rcv:invalid nlmsg_len %d of nlmsg_type %d\n",
 								nlh->nlmsg_len, nlh->nlmsg_type);
 					break;
 				}
-				process_vod_requst((struct vod_requst *)NLMSG_DATA(nlh));
+				process_vod_request((struct vod_request *)NLMSG_DATA(nlh));
 				break;
 			case NBMSG_KSI_REQ:
-				if (nlh->nlmsg_len < NLMSG_LENGTH(sizeof(struct ksi_requst))) {
+				if (nlh->nlmsg_len < NLMSG_LENGTH(sizeof(struct ksi_request))) {
 					hwlog_err("nb_netlink_rcv:invalid nlmsg_len %d of nlmsg_type %d\n",
 								nlh->nlmsg_len, nlh->nlmsg_type);
 					break;
 				}
-				process_ksi_requst((struct ksi_requst *)NLMSG_DATA(nlh));
+				process_ksi_request((struct ksi_request *)NLMSG_DATA(nlh));
 				break;
+			case NBMSG_NATIVE_REG:
+				g_native_space_pid = nlh->nlmsg_pid;
+				break;
+			case NBMSG_NATIVE_UNREG:
+				g_native_space_pid = 0;
+				break;
+			case NBMSG_NATIVE_GET_RTT:
+				process_native_requst((struct native_requst *)NLMSG_DATA(nlh));
+				break;
+#ifdef CONFIG_APP_QOE_AI_PREDICT
+			case NBMSG_APP_QOE_PARAMS_REQ: {
+				if (nlh->nlmsg_len < NLMSG_LENGTH(sizeof(struct app_qoe_request))) {
+					hwlog_err("nb_netlink_rcv:invalid nlmsg_len %d of nlmsg_type %d\n",
+								nlh->nlmsg_len, nlh->nlmsg_type);
+					break;
+				}
+				process_app_qoe_params_request((struct app_qoe_request *)NLMSG_DATA(nlh));
+				break;
+			}
+#endif
 			default:
 				hwlog_err("nb_netlink_rcv:invalid nlmsg_type %d\n", nlh->nlmsg_type);
 				break;
@@ -198,15 +255,18 @@ static int nb_netlink_thread(void *data)
 		g_event_info.type = NBMSG_EVT_INVALID;
 		spin_unlock_bh(&g_event_info_lock);
 
-		hwlog_err("%s:got event %d\n", __func__, event_info.type);
+		hwlog_info("%s:got event %d\n", __func__, event_info.type);
 
-		if (g_user_space_pid != 0) {
+		if ((g_user_space_pid != 0) || (g_native_space_pid != 0)) {
 			switch (event_info.type) {
 			case NBMSG_VOD_EVT:
 				__nb_notify_event(NBMSG_VOD_EVT, &event_info.vod_info, sizeof(struct vod_event));
 				break;
 			case NBMSG_KSI_EVT:
 				__nb_notify_event(NBMSG_KSI_EVT, &event_info.ksi_info, sizeof(struct ksi_event));
+				break;
+			case NBMSG_NATIVE_RTT:
+				__nb_notify_event(NBMSG_NATIVE_RTT, &event_info.native_info, sizeof(struct native_event));
 				break;
 			default:
 				hwlog_err("%s:unexpected event type %d\n", __func__, event_info.type);
@@ -269,7 +329,7 @@ static int __nb_notify_event(enum nb_evt_type event, void *src, int size)
 	struct vod_event *pdata = NULL;
 
 	mutex_lock(&nb_send_sem);
-	if (!g_user_space_pid || !g_nlfd) {
+	if ((!g_user_space_pid && !g_native_space_pid) || !g_nlfd) {
 		hwlog_err("%s: cannot notify event, pid = %d\n", __func__, g_user_space_pid);
 		ret = -1;
 		goto end;
@@ -293,7 +353,15 @@ static int __nb_notify_event(enum nb_evt_type event, void *src, int size)
 	memcpy(pdata, src, size);
 
 	/* skb will be freed in netlink_unicast */
-	ret = netlink_unicast(g_nlfd, skb, g_user_space_pid, MSG_DONTWAIT);
+	switch (event) {
+	case NBMSG_NATIVE_RTT:
+		ret = netlink_unicast(g_nlfd, skb, g_native_space_pid, MSG_DONTWAIT);
+		break;
+	default:
+		ret = netlink_unicast(g_nlfd, skb, g_user_space_pid, MSG_DONTWAIT);
+		break;
+	}
+
 	goto end;
 
 end:

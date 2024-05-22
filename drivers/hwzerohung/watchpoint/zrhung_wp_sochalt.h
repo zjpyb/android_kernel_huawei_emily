@@ -9,6 +9,7 @@ extern "C" {
 
 int wp_get_sochalt(zrhung_write_event* we);
 void get_sr_position_from_fastboot(char *dst, unsigned int max_dst_size);
+void zrhung_get_longpress_event(void);
 
 #ifdef __cplusplus
 }

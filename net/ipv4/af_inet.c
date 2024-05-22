@@ -73,7 +73,7 @@
 #include <linux/socket.h>
 #include <linux/in.h>
 #include <linux/kernel.h>
-#include <linux/module.h>
+#include <linux/kmod.h>
 #include <linux/sched.h>
 #include <linux/timer.h>
 #include <linux/string.h>
@@ -105,9 +105,6 @@
 #include <net/ip_fib.h>
 #include <net/inet_connection_sock.h>
 #include <net/tcp.h>
-#ifdef CONFIG_MPTCP
-#include <net/mptcp.h>
-#endif
 #include <net/udp.h>
 #include <net/udplite.h>
 #include <net/ping.h>
@@ -143,6 +140,14 @@ static inline int current_has_network(void)
 #include <huawei_platform/net/qtaguid_pid/qtaguid_pid.h>
 #endif
 
+#ifdef CONFIG_HW_HIDATA_HIMOS
+#include <huawei_platform/net/himos/hw_himos_tcp_stats.h>
+#endif
+#ifdef CONFIG_HW_DPIMARK_MODULE
+#include <huawei_platform/net/hw_dpi_mark/dpi_hw_hook.h>
+#endif
+
+
 int sysctl_local_reserved_ports_bind_ctrl __read_mostly = 0;
 int sysctl_local_reserved_ports_bind_pid  __read_mostly = 0;
 
@@ -172,10 +177,7 @@ void inet_sock_destruct(struct sock *sk)
 		pr_err("Attempt to release alive inet socket %p\n", sk);
 		return;
 	}
-#ifdef CONFIG_MPTCP
-	if (sock_flag(sk, SOCK_MPTCP))
-		mptcp_disable_static_key();
-#endif
+
 	WARN_ON(atomic_read(&sk->sk_rmem_alloc));
 	WARN_ON(atomic_read(&sk->sk_wmem_alloc));
 	WARN_ON(sk->sk_wmem_queued);
@@ -238,24 +240,19 @@ int inet_listen(struct socket *sock, int backlog)
 	 * we can only allow the backlog to be adjusted.
 	 */
 	if (old_state != TCP_LISTEN) {
-		/* Check special setups for testing purpose to enable TFO w/o
-		 * requiring TCP_FASTOPEN sockopt.
+		/* Enable TFO w/o requiring TCP_FASTOPEN socket option.
 		 * Note that only TCP sockets (SOCK_STREAM) will reach here.
-		 * Also fastopenq may already been allocated because this
-		 * socket was in TCP_LISTEN state previously but was
-		 * shutdown() (rather than close()).
+		 * Also fastopen backlog may already been set via the option
+		 * because the socket was in TCP_LISTEN state previously but
+		 * was shutdown() rather than close().
 		 */
-		if ((sysctl_tcp_fastopen & TFO_SERVER_ENABLE) != 0 &&
+		if ((sysctl_tcp_fastopen & TFO_SERVER_WO_SOCKOPT1) &&
+		    (sysctl_tcp_fastopen & TFO_SERVER_ENABLE) &&
 		    !inet_csk(sk)->icsk_accept_queue.fastopenq.max_qlen) {
-			if ((sysctl_tcp_fastopen & TFO_SERVER_WO_SOCKOPT1) != 0)
-				fastopen_queue_tune(sk, backlog);
-			else if ((sysctl_tcp_fastopen &
-				  TFO_SERVER_WO_SOCKOPT2) != 0)
-				fastopen_queue_tune(sk,
-				    ((uint)sysctl_tcp_fastopen) >> 16);
-
+			fastopen_queue_tune(sk, backlog);
 			tcp_fastopen_init_key_once(true);
 		}
+
 		err = inet_csk_listen_start(sk, backlog);
 		if (err)
 			goto out;
@@ -272,10 +269,9 @@ EXPORT_SYMBOL(inet_listen);
 /*
  *	Create an inet socket.
  */
-#ifndef CONFIG_MPTCP
-static
-#endif
-int inet_create(struct net *net, struct socket *sock, int protocol, int kern)
+
+static int inet_create(struct net *net, struct socket *sock, int protocol,
+		       int kern)
 {
 	struct sock *sk;
 	struct inet_protosw *answer;
@@ -387,6 +383,9 @@ lookup_protocol:
 #if defined(CONFIG_HUAWEI_BASTET) || defined(CONFIG_HUAWEI_XENGINE)
 	sk->acc_state   = 0;
 #endif
+#if defined(CONFIG_HUAWEI_BASTET)
+	sk->discard_duration   = 0;
+#endif
 	inet->uc_ttl	= -1;
 	inet->mc_loop	= 1;
 	inet->mc_ttl	= 1;
@@ -405,7 +404,11 @@ lookup_protocol:
 		 */
 		inet->inet_sport = htons(inet->inet_num);
 		/* Add to protocol hash chains. */
-		sk->sk_prot->hash(sk);
+		err = sk->sk_prot->hash(sk);
+		if (err) {
+			sk_common_release(sk);
+			goto out;
+		}
 	}
 
 	if (sk->sk_prot->init) {
@@ -417,6 +420,10 @@ out:
 #ifdef CONFIG_HW_QTAGUID_PID
 	if(!err)
 		qtaguid_pid_put(sk);
+#endif
+#ifdef CONFIG_HW_DPIMARK_MODULE
+	if (!err)
+		mplk_try_nw_bind_for_udp(sk);
 #endif
 	return err;
 out_rcu_unlock:
@@ -444,7 +451,6 @@ int inet_release(struct socket *sock)
 #ifdef CONFIG_NETFILTER_XT_MATCH_QTAGUID
 		qtaguid_untag(sock, true);
 #endif
-
 		/* Applications forget to leave groups before exiting */
 		ip_mc_drop_socket(sk);
 
@@ -581,9 +587,9 @@ EXPORT_SYMBOL(inet_dgram_connect);
 
 static long inet_wait_for_connect(struct sock *sk, long timeo, int writebias)
 {
-	DEFINE_WAIT(wait);
+	DEFINE_WAIT_FUNC(wait, woken_wake_function);
 
-	prepare_to_wait(sk_sleep(sk), &wait, TASK_INTERRUPTIBLE);
+	add_wait_queue(sk_sleep(sk), &wait);
 	sk->sk_write_pending += writebias;
 
 	/* Basic assumption: if someone sets sk->sk_err, he _must_
@@ -593,13 +599,12 @@ static long inet_wait_for_connect(struct sock *sk, long timeo, int writebias)
 	 */
 	while ((1 << sk->sk_state) & (TCPF_SYN_SENT | TCPF_SYN_RECV)) {
 		release_sock(sk);
-		timeo = schedule_timeout(timeo);
+		timeo = wait_woken(&wait, TASK_INTERRUPTIBLE, timeo);
 		lock_sock(sk);
 		if (signal_pending(current) || !timeo)
 			break;
-		prepare_to_wait(sk_sleep(sk), &wait, TASK_INTERRUPTIBLE);
 	}
-	finish_wait(sk_sleep(sk), &wait);
+	remove_wait_queue(sk_sleep(sk), &wait);
 	sk->sk_write_pending -= writebias;
 	return timeo;
 }
@@ -615,13 +620,24 @@ int __inet_stream_connect(struct socket *sock, struct sockaddr *uaddr,
 	int err;
 	long timeo;
 
-	if (addr_len < sizeof(uaddr->sa_family))
-		return -EINVAL;
+	/*
+	 * uaddr can be NULL and addr_len can be 0 if:
+	 * sk is a TCP fastopen active socket and
+	 * TCP_FASTOPEN_CONNECT sockopt is set and
+	 * we already have a valid cookie for this socket.
+	 * In this case, user can call write() after connect().
+	 * write() will invoke tcp_sendmsg_fastopen() which calls
+	 * __inet_stream_connect().
+	 */
+	if (uaddr) {
+		if (addr_len < sizeof(uaddr->sa_family))
+			return -EINVAL;
 
-	if (uaddr->sa_family == AF_UNSPEC) {
-		err = sk->sk_prot->disconnect(sk, flags);
-		sock->state = err ? SS_DISCONNECTING : SS_UNCONNECTED;
-		goto out;
+		if (uaddr->sa_family == AF_UNSPEC) {
+			err = sk->sk_prot->disconnect(sk, flags);
+			sock->state = err ? SS_DISCONNECTING : SS_UNCONNECTED;
+			goto out;
+		}
 	}
 
 	switch (sock->state) {
@@ -632,7 +648,10 @@ int __inet_stream_connect(struct socket *sock, struct sockaddr *uaddr,
 		err = -EISCONN;
 		goto out;
 	case SS_CONNECTING:
-		err = -EALREADY;
+		if (inet_sk(sk)->defer_connect)
+			err = -EINPROGRESS;
+		else
+			err = -EALREADY;
 		/* Fall out of switch with err, set for this state */
 		break;
 	case SS_UNCONNECTED:
@@ -645,6 +664,9 @@ int __inet_stream_connect(struct socket *sock, struct sockaddr *uaddr,
 			goto out;
 
 		sock->state = SS_CONNECTING;
+
+		if (!err && inet_sk(sk)->defer_connect)
+			goto out;
 
 		/* Just entered SS_CONNECTING state; the only
 		 * difference is that return value in non-blocking
@@ -723,23 +745,6 @@ int inet_accept(struct socket *sock, struct socket *newsock, int flags)
 	lock_sock(sk2);
 
 	sock_rps_record_flow(sk2);
-#ifdef CONFIG_MPTCP
-	if (sk2->sk_protocol == IPPROTO_TCP && mptcp(tcp_sk(sk2))) {
-		struct sock *sk_it = sk2;
-
-		mptcp_for_each_sk(tcp_sk(sk2)->mpcb, sk_it)
-			sock_rps_record_flow(sk_it);
-
-		if (tcp_sk(sk2)->mpcb->master_sk) {
-			sk_it = tcp_sk(sk2)->mpcb->master_sk;
-
-			write_lock_bh(&sk_it->sk_callback_lock);
-			sk_it->sk_wq = newsock->wq;
-			sk_it->sk_socket = newsock;
-			write_unlock_bh(&sk_it->sk_callback_lock);
-		}
-	}
-#endif
 	WARN_ON(!((1 << sk2->sk_state) &
 		  (TCPF_ESTABLISHED | TCPF_SYN_RECV |
 		  TCPF_CLOSE_WAIT | TCPF_CLOSE)));
@@ -789,6 +794,9 @@ EXPORT_SYMBOL(inet_getname);
 int inet_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
 {
 	struct sock *sk = sock->sk;
+#ifdef CONFIG_HW_DPIMARK_MODULE
+	int err;
+#endif
 
 	sock_rps_record_flow(sk);
 
@@ -796,7 +804,17 @@ int inet_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
 	if (!inet_sk(sk)->inet_num && !sk->sk_prot->no_autobind &&
 	    inet_autobind(sk))
 		return -EAGAIN;
-
+#ifdef CONFIG_HW_DPIMARK_MODULE
+	if (sk->sk_protocol == IPPROTO_UDP || sk->sk_protocol == IPPROTO_UDPLITE) {
+		err = mplk_sendmsg(sk);
+		if (err < 0)
+			return err;
+	}
+#endif
+#ifdef CONFIG_HW_HIDATA_HIMOS
+	if (sk->sk_protocol == IPPROTO_TCP)
+		himos_tcp_stats(sk, NULL, msg, 0, 1);
+#endif
 	return sk->sk_prot->sendmsg(sk, msg, size);
 }
 EXPORT_SYMBOL(inet_sendmsg);
@@ -825,6 +843,15 @@ int inet_recvmsg(struct socket *sock, struct msghdr *msg, size_t size,
 	struct sock *sk = sock->sk;
 	int addr_len = 0;
 	int err;
+#ifdef CONFIG_HW_DPIMARK_MODULE
+	int ret;
+#endif
+#ifdef CONFIG_HW_HIDATA_HIMOS
+	struct msghdr msg_backup;
+
+	if (msg)
+		msg_backup = *msg;
+#endif
 
 	sock_rps_record_flow(sk);
 
@@ -832,6 +859,20 @@ int inet_recvmsg(struct socket *sock, struct msghdr *msg, size_t size,
 				   flags & ~MSG_DONTWAIT, &addr_len);
 	if (err >= 0)
 		msg->msg_namelen = addr_len;
+
+#ifdef CONFIG_HW_HIDATA_HIMOS
+	if (err > 0 && sk->sk_protocol == IPPROTO_TCP) {
+		himos_tcp_stats(sk, &msg_backup, msg, err, 0);
+	}
+#endif
+#ifdef CONFIG_HW_DPIMARK_MODULE
+	if (sk->sk_protocol == IPPROTO_UDP || sk->sk_protocol == IPPROTO_UDPLITE) {
+		ret = mplk_recvmsg(sk);
+		if (ret < 0)
+			return ret;
+	}
+#endif
+
 	return err;
 }
 EXPORT_SYMBOL(inet_recvmsg);
@@ -981,6 +1022,8 @@ const struct proto_ops inet_stream_ops = {
 	.mmap		   = sock_no_mmap,
 	.sendpage	   = inet_sendpage,
 	.splice_read	   = tcp_splice_read,
+	.read_sock	   = tcp_read_sock,
+	.peek_len	   = tcp_peek_len,
 #ifdef CONFIG_COMPAT
 	.compat_setsockopt = compat_sock_common_setsockopt,
 	.compat_getsockopt = compat_sock_common_getsockopt,
@@ -1008,6 +1051,7 @@ const struct proto_ops inet_dgram_ops = {
 	.recvmsg	   = inet_recvmsg,
 	.mmap		   = sock_no_mmap,
 	.sendpage	   = inet_sendpage,
+	.set_peek_off	   = sk_set_peek_off,
 #ifdef CONFIG_COMPAT
 	.compat_setsockopt = compat_sock_common_setsockopt,
 	.compat_getsockopt = compat_sock_common_getsockopt,
@@ -1155,12 +1199,6 @@ void inet_unregister_protosw(struct inet_protosw *p)
 }
 EXPORT_SYMBOL(inet_unregister_protosw);
 
-/*
- *      Shall we try to damage output packets if routing dev changes?
- */
-
-int sysctl_ip_dynaddr __read_mostly;
-
 static int inet_sk_reselect_saddr(struct sock *sk)
 {
 	struct inet_sock *inet = inet_sk(sk);
@@ -1172,7 +1210,7 @@ static int inet_sk_reselect_saddr(struct sock *sk)
 	struct ip_options_rcu *inet_opt;
 
 	inet_opt = rcu_dereference_protected(inet->inet_opt,
-					     sock_owned_by_user(sk));
+					     lockdep_sock_is_held(sk));
 	if (inet_opt && inet_opt->opt.srr)
 		daddr = inet_opt->opt.faddr;
 
@@ -1191,7 +1229,7 @@ static int inet_sk_reselect_saddr(struct sock *sk)
 	if (new_saddr == old_saddr)
 		return 0;
 
-	if (sysctl_ip_dynaddr > 1) {
+	if (sock_net(sk)->ipv4.sysctl_ip_dynaddr > 1) {
 		pr_info("%s(): shifting inet->saddr from %pI4 to %pI4\n",
 			__func__, &old_saddr, &new_saddr);
 	}
@@ -1206,8 +1244,7 @@ static int inet_sk_reselect_saddr(struct sock *sk)
 	 * Besides that, it does not check for connection
 	 * uniqueness. Wait for troubles.
 	 */
-	__sk_prot_rehash(sk);
-	return 0;
+	return __sk_prot_rehash(sk);
 }
 
 int inet_sk_rebuild_header(struct sock *sk)
@@ -1247,7 +1284,7 @@ int inet_sk_rebuild_header(struct sock *sk)
 		 * Other protocols have to map its equivalent state to TCP_SYN_SENT.
 		 * DCCP maps its DCCP_REQUESTING state to TCP_SYN_SENT. -acme
 		 */
-		if (!sysctl_ip_dynaddr ||
+		if (!sock_net(sk)->ipv4.sysctl_ip_dynaddr ||
 		    sk->sk_state != TCP_SYN_SENT ||
 		    (sk->sk_userlocks & SOCK_BINDADDR_LOCK) ||
 		    (err = inet_sk_reselect_saddr(sk)) != 0)
@@ -1258,34 +1295,18 @@ int inet_sk_rebuild_header(struct sock *sk)
 }
 EXPORT_SYMBOL(inet_sk_rebuild_header);
 
-static struct sk_buff *inet_gso_segment(struct sk_buff *skb,
-					netdev_features_t features)
+struct sk_buff *inet_gso_segment(struct sk_buff *skb,
+				 netdev_features_t features)
 {
+	bool udpfrag = false, fixedid = false, gso_partial, encap;
 	struct sk_buff *segs = ERR_PTR(-EINVAL);
 	const struct net_offload *ops;
 	unsigned int offset = 0;
-	bool udpfrag, encap;
 	struct iphdr *iph;
-	int proto;
+	int proto, tot_len;
 	int nhoff;
 	int ihl;
 	int id;
-
-	if (unlikely(skb_shinfo(skb)->gso_type &
-		     ~(SKB_GSO_TCPV4 |
-		       SKB_GSO_UDP |
-		       SKB_GSO_DODGY |
-		       SKB_GSO_TCP_ECN |
-		       SKB_GSO_GRE |
-		       SKB_GSO_GRE_CSUM |
-		       SKB_GSO_IPIP |
-		       SKB_GSO_SIT |
-		       SKB_GSO_TCPV6 |
-		       SKB_GSO_UDP_TUNNEL |
-		       SKB_GSO_UDP_TUNNEL_CSUM |
-		       SKB_GSO_TUNNEL_REMCSUM |
-		       0)))
-		goto out;
 
 	skb_reset_network_header(skb);
 	nhoff = skb_network_header(skb) - skb_mac_header(skb);
@@ -1314,11 +1335,14 @@ static struct sk_buff *inet_gso_segment(struct sk_buff *skb,
 
 	segs = ERR_PTR(-EPROTONOSUPPORT);
 
-	if (skb->encapsulation &&
-	    skb_shinfo(skb)->gso_type & (SKB_GSO_SIT|SKB_GSO_IPIP))
-		udpfrag = proto == IPPROTO_UDP && encap;
-	else
-		udpfrag = proto == IPPROTO_UDP && !skb->encapsulation;
+	if (!skb->encapsulation || encap) {
+		udpfrag = !!(skb_shinfo(skb)->gso_type & SKB_GSO_UDP);
+		fixedid = !!(skb_shinfo(skb)->gso_type & SKB_GSO_TCP_FIXEDID);
+
+		/* fixed ID is invalid if DF bit is not set */
+		if (fixedid && !(ip_hdr(skb)->frag_off & htons(IP_DF)))
+			goto out;
+	}
 
 	ops = rcu_dereference(inet_offloads[proto]);
 	if (likely(ops && ops->callbacks.gso_segment))
@@ -1327,19 +1351,35 @@ static struct sk_buff *inet_gso_segment(struct sk_buff *skb,
 	if (IS_ERR_OR_NULL(segs))
 		goto out;
 
+	gso_partial = !!(skb_shinfo(segs)->gso_type & SKB_GSO_PARTIAL);
+
 	skb = segs;
 	do {
 		iph = (struct iphdr *)(skb_mac_header(skb) + nhoff);
 		if (udpfrag) {
-			iph->id = htons(id);
 			iph->frag_off = htons(offset >> 3);
 			if (skb->next)
 				iph->frag_off |= htons(IP_MF);
 			offset += skb->len - nhoff - ihl;
+			tot_len = skb->len - nhoff;
+		} else if (skb_is_gso(skb)) {
+			if (!fixedid) {
+				iph->id = htons(id);
+				id += skb_shinfo(skb)->gso_segs;
+			}
+
+			if (gso_partial)
+				tot_len = skb_shinfo(skb)->gso_size +
+					  SKB_GSO_CB(skb)->data_offset +
+					  skb->head - (unsigned char *)iph;
+			else
+				tot_len = skb->len - nhoff;
 		} else {
-			iph->id = htons(id++);
+			if (!fixedid)
+				iph->id = htons(id++);
+			tot_len = skb->len - nhoff;
 		}
-		iph->tot_len = htons(skb->len - nhoff);
+		iph->tot_len = htons(tot_len);
 		ip_send_check(iph);
 		if (encap)
 			skb_reset_inner_headers(skb);
@@ -1349,9 +1389,9 @@ static struct sk_buff *inet_gso_segment(struct sk_buff *skb,
 out:
 	return segs;
 }
+EXPORT_SYMBOL(inet_gso_segment);
 
-static struct sk_buff **inet_gro_receive(struct sk_buff **head,
-					 struct sk_buff *skb)
+struct sk_buff **inet_gro_receive(struct sk_buff **head, struct sk_buff *skb)
 {
 	const struct net_offload *ops;
 	struct sk_buff **pp = NULL;
@@ -1391,6 +1431,7 @@ static struct sk_buff **inet_gro_receive(struct sk_buff **head,
 
 	for (p = *head; p; p = p->next) {
 		struct iphdr *iph2;
+		u16 flush_id;
 
 		if (!NAPI_GRO_CB(p)->same_flow)
 			continue;
@@ -1414,16 +1455,36 @@ static struct sk_buff **inet_gro_receive(struct sk_buff **head,
 			(iph->tos ^ iph2->tos) |
 			((iph->frag_off ^ iph2->frag_off) & htons(IP_DF));
 
-		/* Save the IP ID check to be included later when we get to
-		 * the transport layer so only the inner most IP ID is checked.
-		 * This is because some GSO/TSO implementations do not
-		 * correctly increment the IP ID for the outer hdrs.
-		 */
-		NAPI_GRO_CB(p)->flush_id =
-			    ((u16)(ntohs(iph2->id) + NAPI_GRO_CB(p)->count) ^ id);
 		NAPI_GRO_CB(p)->flush |= flush;
+
+		/* We need to store of the IP ID check to be included later
+		 * when we can verify that this packet does in fact belong
+		 * to a given flow.
+		 */
+		flush_id = (u16)(id - ntohs(iph2->id));
+
+		/* This bit of code makes it much easier for us to identify
+		 * the cases where we are doing atomic vs non-atomic IP ID
+		 * checks.  Specifically an atomic check can return IP ID
+		 * values 0 - 0xFFFF, while a non-atomic check can only
+		 * return 0 or 0xFFFF.
+		 */
+		if (!NAPI_GRO_CB(p)->is_atomic ||
+		    !(iph->frag_off & htons(IP_DF))) {
+			flush_id ^= NAPI_GRO_CB(p)->count;
+			flush_id = flush_id ? 0xFFFF : 0;
+		}
+
+		/* If the previous IP ID value was based on an atomic
+		 * datagram we can overwrite the value and ignore it.
+		 */
+		if (NAPI_GRO_CB(skb)->is_atomic)
+			NAPI_GRO_CB(p)->flush_id = flush_id;
+		else
+			NAPI_GRO_CB(p)->flush_id |= flush_id;
 	}
 
+	NAPI_GRO_CB(skb)->is_atomic = !!(iph->frag_off & htons(IP_DF));
 	NAPI_GRO_CB(skb)->flush |= flush;
 	skb_set_network_header(skb, off);
 	/* The above will be needed by the transport layer if there is one
@@ -1446,6 +1507,7 @@ out:
 
 	return pp;
 }
+EXPORT_SYMBOL(inet_gro_receive);
 
 static struct sk_buff **ipip_gro_receive(struct sk_buff **head,
 					 struct sk_buff *skb)
@@ -1460,6 +1522,32 @@ static struct sk_buff **ipip_gro_receive(struct sk_buff **head,
 	return inet_gro_receive(head, skb);
 }
 
+#define SECONDS_PER_DAY	86400
+
+/* inet_current_timestamp - Return IP network timestamp
+ *
+ * Return milliseconds since midnight in network byte order.
+ */
+__be32 inet_current_timestamp(void)
+{
+	u32 secs;
+	u32 msecs;
+	struct timespec64 ts;
+
+	ktime_get_real_ts64(&ts);
+
+	/* Get secs since midnight. */
+	(void)div_u64_rem(ts.tv_sec, SECONDS_PER_DAY, &secs);
+	/* Convert to msecs. */
+	msecs = secs * MSEC_PER_SEC;
+	/* Convert nsec to msec. */
+	msecs += (u32)ts.tv_nsec / NSEC_PER_MSEC;
+
+	/* Convert to network byte order. */
+	return htonl(msecs);
+}
+EXPORT_SYMBOL(inet_current_timestamp);
+
 int inet_recv_error(struct sock *sk, struct msghdr *msg, int len, int *addr_len)
 {
 	if (sk->sk_family == AF_INET)
@@ -1471,7 +1559,7 @@ int inet_recv_error(struct sock *sk, struct msghdr *msg, int len, int *addr_len)
 	return -EINVAL;
 }
 
-static int inet_gro_complete(struct sk_buff *skb, int nhoff)
+int inet_gro_complete(struct sk_buff *skb, int nhoff)
 {
 	__be16 newlen = htons(skb->len - nhoff);
 	struct iphdr *iph = (struct iphdr *)(skb->data + nhoff);
@@ -1479,8 +1567,10 @@ static int inet_gro_complete(struct sk_buff *skb, int nhoff)
 	int proto = iph->protocol;
 	int err = -ENOSYS;
 
-	if (skb->encapsulation)
+	if (skb->encapsulation) {
+		skb_set_inner_protocol(skb, cpu_to_be16(ETH_P_IP));
 		skb_set_inner_network_header(skb, nhoff);
+	}
 
 	csum_replace2(&iph->check, iph->tot_len, newlen);
 	iph->tot_len = newlen;
@@ -1501,11 +1591,12 @@ out_unlock:
 
 	return err;
 }
+EXPORT_SYMBOL(inet_gro_complete);
 
 static int ipip_gro_complete(struct sk_buff *skb, int nhoff)
 {
 	skb->encapsulation = 1;
-	skb_shinfo(skb)->gso_type |= SKB_GSO_IPIP;
+	skb_shinfo(skb)->gso_type |= SKB_GSO_IPXIP4;
 	return inet_gro_complete(skb, nhoff);
 }
 
@@ -1713,6 +1804,21 @@ static __net_init int inet_init_net(struct net *net)
 	 */
 	net->ipv4.ping_group_range.range[0] = make_kgid(&init_user_ns, 1);
 	net->ipv4.ping_group_range.range[1] = make_kgid(&init_user_ns, 0);
+
+	/* Default values for sysctl-controlled parameters.
+	 * We set them here, in case sysctl is not compiled.
+	 */
+	net->ipv4.sysctl_ip_default_ttl = IPDEFTTL;
+	net->ipv4.sysctl_ip_dynaddr = 0;
+	net->ipv4.sysctl_ip_early_demux = 1;
+
+	/* Some igmp sysctl, whose values are always used */
+	net->ipv4.sysctl_igmp_max_memberships = 20;
+	net->ipv4.sysctl_igmp_max_msf = 10;
+	/* IGMP reports for link-local multicast groups are enabled by default */
+	net->ipv4.sysctl_igmp_llm_reports = 1;
+	net->ipv4.sysctl_igmp_qrv = 2;
+
 	return 0;
 }
 
@@ -1842,10 +1948,7 @@ static int __init inet_init(void)
 	 */
 
 	ip_init();
-#ifdef CONFIG_MPTCP
-	/* We must initialize MPTCP before TCP. */
-	mptcp_init();
-#endif
+
 	tcp_v4_init();
 
 	/* Setup TCP slab cache for open requests. */
@@ -1943,6 +2046,3 @@ static int __init ipv4_proc_init(void)
 	return 0;
 }
 #endif /* CONFIG_PROC_FS */
-
-MODULE_ALIAS_NETPROTO(PF_INET);
-

@@ -2501,6 +2501,9 @@ dhd_prot_reset(dhd_pub_t *dhd)
 		prot->pktid_map_handle_ioctl = NULL;
 	}
 #endif /* IOCTLRESP_USE_CONSTMEM */
+#if defined(CONFIG_DHD_USE_STATIC_BUF)
+	PKTFREE_ALL_STATIC(dhd->osh);
+#endif /* defined(CONFIG_DHD_USE_STATIC_BUF) */
 } /* dhd_prot_reset */
 
 
@@ -2580,7 +2583,7 @@ dhd_prot_packet_get(dhd_pub_t *dhd, uint32 pktid, uint8 pkttype, bool free_pktid
 {
 	void *PKTBUF;
 	dmaaddr_t pa;
-	uint32 len;
+	uint32 len = 0;
 	void *dmah;
 	void *secdma;
 
@@ -3398,8 +3401,8 @@ int BCMFASTPATH dhd_prot_txstatus_wakelock_timeout(dhd_pub_t *dhd)
 				prot->active_tx_count, prot->active_tx_last_jiffies, timeout));
 			prot->active_tx_count = 0;
 #ifdef HW_WIFI_DMD_LOG
-			hw_wifi_dsm_client_notify(DSM_WIFI_CMD52_ERROR ,
-			"Tx wake timeout. active_tx_count %d (%lu/%lu)\n", prot->active_tx_count, prot->active_tx_last_jiffies, timeout);
+			//hw_wifi_dsm_client_notify(DSM_WIFI_CMD52_ERROR ,
+			//"Tx wake timeout. active_tx_count %d (%lu/%lu)\n", prot->active_tx_count, prot->active_tx_last_jiffies, timeout);
 #endif
 			DHD_OS_WAKE_UNLOCK(dhd);
 		}
@@ -3420,7 +3423,7 @@ dhd_prot_txstatus_process(dhd_pub_t *dhd, void *msg)
 	uint32 pktid;
 	void *pkt = NULL;
 	dmaaddr_t pa;
-	uint32 len;
+	uint32 len = 0;
 	void *dmah;
 	void *secdma;
 #ifdef DEVICE_TX_STUCK_DETECT

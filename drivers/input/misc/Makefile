@@ -2,7 +2,7 @@
 # Makefile for the input misc drivers.
 #
 
-ifeq ($(CONFIG_HISI_POWERKEY),y)
+ifeq ($(CONFIG_HISI_POWERKEY_SSI),y)
 ifeq ($(TARGET_BUILD_VARIANT),eng)
 	CONFIG_INPUT_KEYCHORD := y
 	ccflags-y += -DINPUT_MINI_BUGREPORT_TRIGGER
@@ -10,16 +10,6 @@ endif
 ifeq ($(ENABLE_MINI_BUGREPORT),true)
 	CONFIG_INPUT_KEYCHORD := y
 	ccflags-y += -DINPUT_MINI_BUGREPORT_TRIGGER
-endif
-endif
-ifeq ($(CONFIG_HISI_POWERKEY_SPMI),y)
-ifeq ($(TARGET_BUILD_VARIANT),eng)
-        CONFIG_INPUT_KEYCHORD := y
-        CONFIG_MINI_BUGREPORT := y
-endif
-ifeq ($(ENABLE_MINI_BUGREPORT),true)
-        CONFIG_INPUT_KEYCHORD := y
-        CONFIG_MINI_BUGREPORT := y
 endif
 endif
 # Each configuration option enables a list of files.
@@ -37,6 +27,7 @@ obj-$(CONFIG_INPUT_APANEL)		+= apanel.o
 obj-$(CONFIG_INPUT_ARIZONA_HAPTICS)	+= arizona-haptics.o
 obj-$(CONFIG_INPUT_ATI_REMOTE2)		+= ati_remote2.o
 obj-$(CONFIG_INPUT_ATLAS_BTNS)		+= atlas_btns.o
+obj-$(CONFIG_INPUT_ATMEL_CAPTOUCH)	+= atmel_captouch.o
 obj-$(CONFIG_INPUT_BFIN_ROTARY)		+= bfin_rotary.o
 obj-$(CONFIG_INPUT_BMA150)		+= bma150.o
 obj-$(CONFIG_INPUT_CM109)		+= cm109.o
@@ -54,11 +45,12 @@ obj-$(CONFIG_INPUT_DRV2667_HAPTICS)	+= drv2667.o
 obj-$(CONFIG_INPUT_GP2A)		+= gp2ap002a00f.o
 obj-$(CONFIG_INPUT_GPIO_BEEPER)		+= gpio-beeper.o
 obj-$(CONFIG_INPUT_GPIO_TILT_POLLED)	+= gpio_tilt_polled.o
+obj-$(CONFIG_INPUT_GPIO_DECODER)	+= gpio_decoder.o
 obj-$(CONFIG_INPUT_GPIO)		+= gpio_event.o gpio_matrix.o gpio_input.o gpio_output.o gpio_axis.o
-obj-$(CONFIG_HISI_POWERKEY)	    += hisi_powerkey.o
-obj-$(CONFIG_HISI_POWERKEY_SPMI) 	+= hisi_powerkey_spmi.o
+obj-$(CONFIG_INPUT_HISI_POWERKEY)	+= hisi_powerkey.o
+obj-$(CONFIG_HISI_POWERKEY_SSI)		+= hisi_powerkey_ssi.o
+obj-$(CONFIG_HISI_POWERKEY_SPMI)	+= hisi_powerkey_spmi.o
 obj-$(CONFIG_HISI_POWERKEY_SPMI)	+= hisi_powerkey_event.o
-obj-$(CONFIG_MINI_BUGREPORT)		+= mini_bugreport_notifier.o
 obj-$(CONFIG_HP_SDC_RTC)		+= hp_sdc_rtc.o
 obj-$(CONFIG_INPUT_IMS_PCU)		+= ims-pcu.o
 obj-$(CONFIG_INPUT_IXP4XX_BEEPER)	+= ixp4xx-beeper.o
@@ -102,7 +94,5 @@ obj-$(CONFIG_INPUT_XEN_KBDDEV_FRONTEND)	+= xen-kbdfront.o
 obj-$(CONFIG_INPUT_YEALINK)		+= yealink.o
 obj-$(CONFIG_INPUT_IDEAPAD_SLIDEBAR)	+= ideapad_slidebar.o
 obj-$(CONFIG_HISI_VIBRATOR)		+= hisi_vibrator.o
-obj-$(CONFIG_HISI_PMIC_VIBRATOR)	+= hisi_pmic_vibrator.o
-
-EXTRA_CFLAGS += -Idrivers/hisi/tzdriver
-EXTRA_CFLAGS += -Idrivers/hisi/tzdriver/libhwsecurec
+obj-$(CONFIG_HISI_PMIC_VIBRATOR)        += hisi_pmic_vibrator.o
+obj-$(CONFIG_MINI_BUGREPORT)		+= mini_bugreport_notifier.o

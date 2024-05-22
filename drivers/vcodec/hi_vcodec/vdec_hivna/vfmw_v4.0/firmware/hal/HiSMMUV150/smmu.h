@@ -21,7 +21,11 @@ typedef enum {
 SINT32 SMMU_Init(VOID);
 VOID SMMU_DeInit(VOID);
 VOID SMMU_SetMasterReg(SMMU_MASTER_TYPE master_type, UINT8 secure_en, UINT8 mmu_en);
+#ifdef PLATFORM_HIVCODECV200
+VOID SMMU_SetMemCtlReg(VOID);
+#endif
 VOID SMMU_InitGlobalReg(VOID);
 VOID SMMU_IntServProc(VOID);
+VOID SMMU_ConfigSMR(VOID);
 
 #endif

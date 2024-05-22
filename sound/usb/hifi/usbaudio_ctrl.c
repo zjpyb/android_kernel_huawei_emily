@@ -243,8 +243,8 @@ int usbaudio_ctrl_set_pipein_interface(unsigned int running, unsigned int rate)
 				usbaudio_resume();
 			ret = usbaudio_hifi->ops->set_pipein_interface(usbaudio_hifi->chip, &usbaudio_hifi->pcms, running, rate);
 			usbaudio_hifi->up_rate = rate;
-			usbaudio_hifi->ops->setinterface_complete(SNDRV_PCM_STREAM_CAPTURE, running, ret, rate);
 		}
+		usbaudio_hifi->ops->setinterface_complete(SNDRV_PCM_STREAM_CAPTURE, running, ret, rate);
 	}
 	mutex_unlock(&connect_mutex);
 

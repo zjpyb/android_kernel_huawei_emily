@@ -21,11 +21,16 @@
 #ifndef BIT
 #define BIT(x)                          (1 << (x))
 #endif
-
+#define SCHARGER_V200_INFO
+#ifndef SCHARGER_V200_INFO
+#define SCHARGER_ERR(fmt,args...) do {} while (0)
+#define SCHARGER_EVT(fmt,args...) do {} while (0)
+#define SCHARGER_INF(fmt,args...) do {} while (0)
+#else
 #define SCHARGER_ERR(fmt,args...) do { printk(KERN_ERR    "[hisi_scharger]" fmt, ## args); } while (0)
 #define SCHARGER_EVT(fmt,args...) do { printk(KERN_WARNING"[hisi_scharger]" fmt, ## args); } while (0)
 #define SCHARGER_INF(fmt,args...) do { printk(KERN_INFO   "[hisi_scharger]" fmt, ## args); } while (0)
-
+#endif
 struct param {
     int bat_comp;
     int vclamp;

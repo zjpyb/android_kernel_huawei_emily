@@ -277,7 +277,7 @@ extern "C" {
 #else
 #define WLAN_MEM_EVENT_SIZE2                528              /* 注意: 事件内存长度包括4字节IPC头长度 */
 #endif
-#define WLAN_MEM_EVENT_CNT2                 6               /*hmac_main_init同步mac_chip_stru使用一次*/
+#define WLAN_MEM_EVENT_CNT2                 6               /*hmac_main_init_etc同步mac_chip_stru使用一次*/
 
 #define WLAN_WPS_IE_MAX_SIZE                WLAN_MEM_EVENT_SIZE2 - 32   /* 32表示事件自身占用的空间 */
 #ifdef _PRE_WLAN_FEATURE_HILINK

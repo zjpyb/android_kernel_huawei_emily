@@ -33,7 +33,7 @@
         BIT(SOC_SCTRL_SCINT_MASK1_ao_ipc_int1_START))
 #define IOMCU_WAKE_INT_MASK (BIT(SOC_SCTRL_SCINT_MASK_intr_iomcu_wdog_START) | \
         BIT(SOC_SCTRL_SCINT_MASK_intr_wakeup_iomcu_START))
-#define MODEM_INT_MASK (0x0000f210)
+#define MODEM_INT_MASK (0x0000f610)
 #define MODEM_DRX_INT_MASK (0x000080ff)
 #define HIFI_WAKE_INT_MASK (BIT(SOC_SCTRL_SCINT_MASK_intr_asp_ipc_arm_START) | \
        BIT(SOC_SCTRL_SCINT_MASK_intr_asp_watchdog_START))

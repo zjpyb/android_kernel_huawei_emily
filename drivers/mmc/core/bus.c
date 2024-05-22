@@ -27,7 +27,7 @@
 #include "sdio_cis.h"
 #include "bus.h"
 
-#define to_mmc_driver(d)       container_of(d, struct mmc_driver, drv)
+#define to_mmc_driver(d)	container_of(d, struct mmc_driver, drv)
 
 static ssize_t type_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
@@ -68,7 +68,7 @@ static int mmc_bus_match(struct device *dev, struct device_driver *drv)
 {
 #ifdef CONFIG_MMC_PASSWORDS
 	struct mmc_card *card = mmc_dev_to_card(dev);
-	
+
 	if ((card->type == MMC_TYPE_SD) && mmc_card_locked(card)) {
 		dev_dbg(&card->dev, "sd card is locked; binding is deferred\n");
 		return 0;
@@ -193,21 +193,13 @@ static int mmc_bus_suspend(struct device *dev)
 	}
 
 #ifdef CONFIG_MMC_BLOCK_DEFERRED_RESUME
-	if (mmc_card_sd(card) && mmc_bus_needs_resume(host)) {
+	if (mmc_card_support_deferred_resume(card) &&
+	    mmc_bus_needs_resume(host)) {
 		pr_err("[Deferred_resume] %s:%d--\n", __func__, __LINE__);
 		return 0;
 	}
 #endif
 	ret = host->bus_ops->suspend(host);
-	/*if bus_ops->suspend failed, need to pm_generic_resume*/
-#ifdef CONFIG_HISI_MMC
-	if (ret) {
-		pr_err("%s:%d bus_suspend failed ret=%d\n",
-			__func__, __LINE__, ret);
-		(void)pm_generic_resume(dev);
-	}
-#endif
-	printk("%s:%d %d--\n", __func__, __LINE__, ret);
 	if (ret)
 		pm_generic_resume(dev);
 
@@ -221,7 +213,8 @@ static int mmc_bus_resume(struct device *dev)
 	int ret;
 
 #ifdef CONFIG_MMC_BLOCK_DEFERRED_RESUME
-	if (mmc_card_sd(card) && mmc_bus_manual_resume(host)) {
+	if (mmc_card_support_deferred_resume(card) &&
+	    mmc_bus_manual_resume(host)) {
 		pr_err("[Deferred_resume] %s:%d ++\n", __func__, __LINE__);
 		host->bus_resume_flags |= MMC_BUSRESUME_NEEDS_RESUME;
 		goto skip_full_resume;
@@ -401,12 +394,13 @@ int mmc_add_card(struct mmc_card *card)
 			mmc_card_ddr52(card) ? "DDR " : "",
 			type);
 	} else {
-		pr_info("%s: new %s%s%s%s%s card at address %04x,manfid:0x%02x,date:%d/%d\n",
+		pr_info("%s: new %s%s%s%s%s%s card at address %04x,manfid:0x%02x,date:%d/%d\n",
 			mmc_hostname(card->host),
 			mmc_card_uhs(card) ? "ultra high speed " :
 			(mmc_card_hs(card) ? "high speed " : ""),
 			mmc_card_hs400(card) ? "HS400 " :
 			(mmc_card_hs200(card) ? "HS200 " : ""),
+			mmc_card_hs400es(card) ? "Enhanced strobe " : "",
 			mmc_card_ddr52(card) ? "DDR " : "",
 			uhs_bus_speed_mode, type, card->rca,card->cid.manfid,card->cid.year,card->cid.month);
 	}
@@ -417,6 +411,8 @@ int mmc_add_card(struct mmc_card *card)
 	mmc_init_context_info(card->host);
 
 	card->dev.of_node = mmc_of_find_child_device(card->host, 0);
+
+	device_enable_async_suspend(&card->dev);
 
 	ret = device_add(&card->dev);
 	if (ret)

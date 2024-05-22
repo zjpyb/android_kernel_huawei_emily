@@ -79,10 +79,8 @@ extern "C" {
 /* 向底软最大重传次数 */
 #define AT_NDIS_MAX_RESEND_TIMES            (60)
 
-/* Modified by s62952 for AT Project，2011-10-17,  Begin*/
 /*AT数据初始长度*/
 #define AT_INIT_DATA_LEN                    (0)
-/* Modified by s62952 for AT Project，2011-10-17,  end*/
 
 #define AT_MODEM_UL_DATA_BUFF_SIZE      (1536)
 #define AT_MODEM_UL_DATA_BUFF_NUM       (16)
@@ -217,11 +215,9 @@ extern AT_HSIC_CONTEXT_STRU                    g_astAtHsicCtx[];
 *****************************************************************************/
 
 extern VOS_INT OM_RcvDiagCmdFromPC(VOS_UINT8 ucPortNo, VOS_UINT8 *pData, VOS_UINT16 uslength);
-/* Modified by L60609 for AT Project，2011-10-20,  Begin*/
 #if (VOS_WIN32 == VOS_OS_VER)
 extern VOS_INT32 Sock_RecvCallbackRegister(VOS_UINT8 ucPortNo, pSockRecv pCallback);
 #endif
-/* Modified by L60609 for AT Project，2011-10-20,  End*/
 
 extern int  App_VcomRecvCallbackRegister(unsigned char  uPortNo, pComRecv pCallback);
 extern VOS_INT32 AT_AppComEst(VOS_VOID);

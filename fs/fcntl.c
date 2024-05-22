@@ -51,7 +51,8 @@ static int setfl(int fd, struct file * filp, unsigned long arg)
 	       if (arg & O_NDELAY)
 		   arg |= O_NONBLOCK;
 
-	if (arg & O_DIRECT) {
+	/* Pipe packetized mode is controlled by O_DIRECT flag */
+	if (!S_ISFIFO(filp->f_inode->i_mode) && (arg & O_DIRECT)) {
 		if (!filp->f_mapping || !filp->f_mapping->a_ops ||
 			!filp->f_mapping->a_ops->direct_IO)
 				return -EINVAL;
@@ -115,7 +116,7 @@ void f_setown(struct file *filp, unsigned long arg, int force)
 	if (who < 0) {
 		/* avoid overflow below */
 		if (who == INT_MIN)
-			return -EINVAL;
+			return;
 
 		type = PIDTYPE_PGID;
 		who = -who;

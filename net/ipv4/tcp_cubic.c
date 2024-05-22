@@ -411,11 +411,11 @@ static void hystart_update(struct sock *sk, u32 delay)
 			ca->last_ack = now;
 			if ((s32)(now - ca->round_start) > ca->delay_min >> 4) {
 				ca->found |= HYSTART_ACK_TRAIN;
-				NET_INC_STATS_BH(sock_net(sk),
-						 LINUX_MIB_TCPHYSTARTTRAINDETECT);
-				NET_ADD_STATS_BH(sock_net(sk),
-						 LINUX_MIB_TCPHYSTARTTRAINCWND,
-						 tp->snd_cwnd);
+				NET_INC_STATS(sock_net(sk),
+					      LINUX_MIB_TCPHYSTARTTRAINDETECT);
+				NET_ADD_STATS(sock_net(sk),
+					      LINUX_MIB_TCPHYSTARTTRAINCWND,
+					      tp->snd_cwnd);
 				tp->snd_ssthresh = tp->snd_cwnd;
 			}
 		}
@@ -432,11 +432,11 @@ static void hystart_update(struct sock *sk, u32 delay)
 			if (ca->curr_rtt > ca->delay_min +
 			    HYSTART_DELAY_THRESH(ca->delay_min >> 3)) {
 				ca->found |= HYSTART_DELAY;
-				NET_INC_STATS_BH(sock_net(sk),
-						 LINUX_MIB_TCPHYSTARTDELAYDETECT);
-				NET_ADD_STATS_BH(sock_net(sk),
-						 LINUX_MIB_TCPHYSTARTDELAYCWND,
-						 tp->snd_cwnd);
+				NET_INC_STATS(sock_net(sk),
+					      LINUX_MIB_TCPHYSTARTDELAYDETECT);
+				NET_ADD_STATS(sock_net(sk),
+					      LINUX_MIB_TCPHYSTARTDELAYCWND,
+					      tp->snd_cwnd);
 				tp->snd_ssthresh = tp->snd_cwnd;
 			}
 		}
@@ -446,33 +446,21 @@ static void hystart_update(struct sock *sk, u32 delay)
 /* Track delayed acknowledgment ratio using sliding window
  * ratio = (15*ratio + sample) / 16
  */
-#ifdef CONFIG_TCP_CONG_BBR
 static void bictcp_acked(struct sock *sk, const struct ack_sample *sample)
-#else
-static void bictcp_acked(struct sock *sk, u32 cnt, s32 rtt_us)
-#endif
 {
 	const struct tcp_sock *tp = tcp_sk(sk);
 	struct bictcp *ca = inet_csk_ca(sk);
 	u32 delay;
 
 	/* Some calls are for duplicates without timetamps */
-#ifdef CONFIG_TCP_CONG_BBR
 	if (sample->rtt_us < 0)
-#else
-	if (rtt_us < 0)
-#endif
 		return;
 
 	/* Discard delay samples right after fast recovery */
 	if (ca->epoch_start && (s32)(tcp_time_stamp - ca->epoch_start) < HZ)
 		return;
 
-#ifdef CONFIG_TCP_CONG_BBR
 	delay = (sample->rtt_us << 3) / USEC_PER_MSEC;
-#else
-	delay = (rtt_us << 3) / USEC_PER_MSEC;
-#endif
 	if (delay == 0)
 		delay = 1;
 
@@ -487,9 +475,6 @@ static void bictcp_acked(struct sock *sk, u32 cnt, s32 rtt_us)
 }
 
 static struct tcp_congestion_ops cubictcp __read_mostly = {
-#ifdef CONFIG_TCP_CONG_BBR
-	.flags		= TCP_CONG_NON_RESTRICTED,
-#endif
 	.init		= bictcp_init,
 	.ssthresh	= bictcp_recalc_ssthresh,
 	.cong_avoid	= bictcp_cong_avoid,

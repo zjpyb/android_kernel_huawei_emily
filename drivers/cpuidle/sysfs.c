@@ -18,7 +18,6 @@
 
 #include "cpuidle.h"
 
-/*lint -e421*/
 static unsigned int sysfs_switch;
 static int __init cpuidle_sysfs_setup(char *unused)
 {
@@ -614,6 +613,18 @@ int cpuidle_add_sysfs(struct cpuidle_device *dev)
 	struct device *cpu_dev = get_cpu_device((unsigned long)dev->cpu);
 	int error;
 
+	/*
+	 * Return if cpu_device is not setup for this CPU.
+	 *
+	 * This could happen if the arch did not set up cpu_device
+	 * since this CPU is not in cpu_present mask and the
+	 * driver did not send a correct CPU mask during registration.
+	 * Without this check we would end up passing bogus
+	 * value for &cpu_dev->kobj in kobject_init_and_add()
+	 */
+	if (!cpu_dev)
+		return -ENODEV;
+
 	kdev = kzalloc(sizeof(*kdev), GFP_KERNEL);
 	if (!kdev)
 		return -ENOMEM;
@@ -646,4 +657,3 @@ void cpuidle_remove_sysfs(struct cpuidle_device *dev)
 	wait_for_completion(&kdev->kobj_unregister);
 	kfree(kdev);
 }
-/*lint +e421*/

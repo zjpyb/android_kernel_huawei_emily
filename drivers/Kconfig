@@ -2,6 +2,8 @@ menu "Device Drivers"
 
 source "drivers/amba/Kconfig"
 
+source "drivers/bootdevice/Kconfig"
+
 source "drivers/base/Kconfig"
 source "drivers/bootdevice/Kconfig"
 source "drivers/bus/Kconfig"
@@ -90,10 +92,6 @@ source "drivers/media/Kconfig"
 
 source "drivers/vcodec/hi_vcodec/Kconfig"
 
-source "drivers/vcodec/imagination/D5500/Kconfig"
-
-source "drivers/vcodec/imagination/D5500_DRM/Kconfig"
-
 source "drivers/video/Kconfig"
 
 source "sound/Kconfig"
@@ -103,8 +101,6 @@ source "drivers/hid/Kconfig"
 source "drivers/usb/Kconfig"
 
 source "drivers/uwb/Kconfig"
-
-# source "drivers/mmc/Kconfig"
 
 source "drivers/mmc/Kconfig"
 
@@ -123,6 +119,8 @@ source "drivers/edac/Kconfig"
 source "drivers/rtc/Kconfig"
 
 source "drivers/dma/Kconfig"
+
+source "drivers/dma-buf/Kconfig"
 
 source "drivers/dca/Kconfig"
 
@@ -204,6 +202,8 @@ source "drivers/android/Kconfig"
 
 source "drivers/nvdimm/Kconfig"
 
+source "drivers/dax/Kconfig"
+
 source "drivers/nvmem/Kconfig"
 
 source "drivers/hwtracing/stm/Kconfig"
@@ -212,11 +212,15 @@ source "drivers/hwtracing/intel_th/Kconfig"
 
 source "drivers/fpga/Kconfig"
 
+source "drivers/tee/Kconfig"
+
 source "drivers/hisi/Kconfig"
 
 source "drivers/huawei_platform/Kconfig"
 
 source "drivers/dsm/Kconfig"
+
+source "drivers/wpa_dmd/Kconfig"
 
 source "drivers/log/Kconfig"
 
@@ -225,18 +229,27 @@ source "drivers/connectivity/Kconfig"
 source "drivers/contexthub/Kconfig"
 
 source "drivers/hwusb/Kconfig"
+
 source "drivers/hwbfm/Kconfig"
 
 source "drivers/hwzerohung/Kconfig"
+source "drivers/hwfdleak/Kconfig"
 source "drivers/hwnet/Kconfig"
+
 source "drivers/devkit/audiokit/Kconfig"
 
 source "drivers/spmi_hisi/Kconfig"
+
 source "drivers/devkit/lcdkit/Kconfig"
+
 source "drivers/devkit/tpkit/Kconfig"
+
 source "drivers/dubai/Kconfig"
+
 source "drivers/cpuload/Kconfig"
 
 source "drivers/mmonitor/Kconfig"
+
 source "drivers/cfi/Kconfig"
+
 endmenu

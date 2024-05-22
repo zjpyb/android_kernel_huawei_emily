@@ -22,6 +22,7 @@
 #include <linux/io.h>
 #include <linux/slab.h>
 #include <linux/hisi/hifreq_hotplug.h>
+#include <linux/version.h>
 
 #ifdef CONFIG_HISI_HW_VOTE_CPU_FREQ
 #include <linux/hisi/hisi_hw_vote.h>
@@ -315,10 +316,14 @@ void hisi_cpufreq_policy_cur_init(struct hvdev *cpu_hvdev, struct cpufreq_policy
 		goto exception;
 	}
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
 	ret = cpufreq_frequency_table_target(policy, policy->freq_table, freq_khz, CPUFREQ_RELATION_C, &index);
 	if (ret) {
 		goto exception;
 	}
+#else
+	index = cpufreq_frequency_table_target(policy, freq_khz, CPUFREQ_RELATION_C);
+#endif
 
 	policy->cur = policy->freq_table[index].frequency;
 	hisi_hv_set_freq(cpu_hvdev, policy->cur);/*update last freq in hv driver*/

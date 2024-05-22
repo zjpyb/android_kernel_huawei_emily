@@ -249,20 +249,7 @@ VOS_UINT32 At_QrySIMSlotPara(VOS_UINT8 ucIndex)
 
 }
 
-/*****************************************************************************
- Prototype      : At_Base16Decode
- Description    : ^HVSDH
- Input          : ucIndex --- 用户索引
- Output         :
- Return Value   : AT_XXX  --- ATC返回码
- Calls          : ---
- Called By      : ---
 
- History        : ---
-  1.Date        : 2013-03-20
-    Author      : g47350
-    Modification: Created function
-*****************************************************************************/
 VOS_UINT32 At_Base16Decode(VOS_CHAR *pcData, VOS_UINT32 ulDataLen, VOS_UINT8* pucDst)
 {
     VOS_UINT32 ulLen    = ulDataLen;
@@ -1353,20 +1340,7 @@ VOS_UINT32 AT_UiccAccessFileCnf(
     return AT_OK;
 }
 
-/********************************************************************
-  Function:       At_CrlaFilePathCheck
-  Description:    执行CRLA命令输入的<path>参数(文件路径进行检查)
-  Input:          TAF_UINT32 ulEfId:文件ID
-                  TAF_UINT8 *pucFilePath:文件路径
-                  TAF_UINT16 *pusPathLen:文件路径长度
-  Output:         无
-  Return:         AT_SUCCESS：成功，其他为失败
-  Others:
-  History        : ---
-  1.Date         : 2012-05-04
-    Author       : h59254
-    Modification : Created function
-********************************************************************/
+
 TAF_UINT32 At_CrlaFilePathCheck(
     TAF_UINT32                          ulEfId,
     TAF_UINT8                          *pucFilePath,
@@ -1443,18 +1417,7 @@ TAF_UINT32 At_CrlaFilePathCheck(
     return AT_SUCCESS;
 }
 
-/********************************************************************
-  Function:       At_CrlaApduParaCheck
-  Description:    执行CRLA命令输入的参数的匹配检查
-  Input:          无
-  Output:         无
-  Return:         AT_SUCCESS：成功，其他为失败
-  Others:
-  History        : ---
-  1.Date         : 2012-05-04
-    Author       : h59254
-    Modification : Created function
-********************************************************************/
+
 TAF_UINT32 At_CrlaApduParaCheck(VOS_VOID)
 {
     TAF_UINT16                          usFileTag;
@@ -1510,18 +1473,7 @@ TAF_UINT32 At_CrlaApduParaCheck(VOS_VOID)
 
 }
 
-/********************************************************************
-  Function:       At_CrlaFilePathParse
-  Description:    执行CRSM命令输入的路径进行解析
-  Input:          无
-  Output:         *pstCommand：CRSM命令的数据结构
-  Return:          AT_SUCCESS：成功，其他为失败
-  Others:
-  History        : ---
-  1.Date         : 2012-05-04
-    Author       : h59254
-    Modification : Created function
-********************************************************************/
+
 TAF_UINT32 At_CrlaFilePathParse(
     SI_PIH_CRLA_STRU                   *pstCommand
 )
@@ -1572,18 +1524,7 @@ TAF_UINT32 At_CrlaFilePathParse(
     return AT_SUCCESS;
 }
 
-/********************************************************************
-  Function:       At_CrlaParaStatusCheck
-  Description:    执行CRLA命令对STATUS命令的参数检查
-  Input:          无
-  Output:         *pstCommand：CRSM命令的数据结构
-  Return:          AT_SUCCESS：成功，其他为失败
-  Others:
-  History        : ---
-  1.Date         : 2012-05-04
-    Author       : h59254
-    Modification : Created function
-********************************************************************/
+
 TAF_UINT32 At_CrlaParaStatusCheck(
     SI_PIH_CRLA_STRU                   *pstCommand
 )
@@ -1607,18 +1548,7 @@ TAF_UINT32 At_CrlaParaStatusCheck(
     return At_CrlaFilePathParse(pstCommand);
 }
 
-/********************************************************************
-  Function:       At_CrlaParaReadBinaryCheck
-  Description:    执行CRLA命令对Read Binary命令的参数检查
-  Input:          无
-  Output:         *pstCommand：CRSM命令的数据结构
-  Return:          AT_SUCCESS：成功，其他为失败
-  Others:
-  History        : ---
-  1.Date         : 2012-05-04
-    Author       : h59254
-    Modification : Created function
-********************************************************************/
+
 TAF_UINT32 At_CrlaParaReadBinaryCheck(
     SI_PIH_CRLA_STRU                   *pstCommand
 )
@@ -1634,18 +1564,7 @@ TAF_UINT32 At_CrlaParaReadBinaryCheck(
     return At_CrlaFilePathParse(pstCommand);
 }
 
-/********************************************************************
-  Function:       At_CrlaParaReadRecordCheck
-  Description:    执行CRLA命令对Read Record的参数检查
-  Input:          无
-  Output:         *pstCommand：CRSM命令的数据结构
-  Return:         AT_SUCCESS：成功，其他为失败
-  Others:
-  History        : ---
-  1.Date         : 2012-05-04
-    Author       : h59254
-    Modification : Created function
-********************************************************************/
+
 TAF_UINT32 At_CrlaParaReadRecordCheck(
     SI_PIH_CRLA_STRU                   *pstCommand
 )

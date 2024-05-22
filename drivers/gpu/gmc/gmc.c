@@ -384,7 +384,7 @@ int gmc_register_device(struct gmc_ops *gmc_operations, struct gmc_device *devic
 	 */
 	array_size = ARRAY_SIZE(files);
 	for (i = 0; i < array_size; i++) {
-		struct proc_dir_entry *dir_entry = proc_create_data(files[i].name,S_IWUSR|S_IWGRP,device_dir_dentry,files[i].fops_p, device);
+		struct proc_dir_entry *dir_entry = proc_create_data(files[i].name,S_IWUSR|S_IRUSR|S_IWGRP,device_dir_dentry,files[i].fops_p, device);
 		if (!dir_entry) {
 			pr_err("Unable to create %s file\n", files[i].name);
 			goto error_cleanup_debugfs;

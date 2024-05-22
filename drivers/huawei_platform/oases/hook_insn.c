@@ -78,7 +78,7 @@ fail:
 		pi = pa + n;
 		oases_insn_free(pi, mod);
 	}
-    kfree(pa);
+	kfree(pa);
 	*insn = NULL;
 	return ret;
 }
@@ -92,7 +92,7 @@ int oases_insn_is_busy(struct oases_insn *insn, unsigned long addr)
 	}
 	if (insn->plt) {
 		off = addr - (unsigned long) insn->plt;
-		if (off <= 16) {
+		if (off <= OSAES_PLT_SIZE) {
 			return 1;
 		}
 	}

@@ -56,9 +56,9 @@ static int cistpl_vers_1(struct mmc_card *card, struct sdio_func *func,
 	for (i = 0; i < nr_strings; i++) {
 		buffer[i] = string;
 		/*cppcheck-suppress * */
-		strcpy(string, buf);/*lint !e64 !e421*/
+		strcpy(string, buf);/*lint !e421*/
 		string += strlen(string) + 1;
-		buf += strlen(buf) + 1;/*lint !e64*/
+		buf += strlen(buf) + 1;
 	}
 
 	if (func) {
@@ -178,8 +178,13 @@ static int cistpl_funce_func(struct mmc_card *card, struct sdio_func *func,
 	vsn = func->card->cccr.sdio_vsn;
 	min_size = (vsn == SDIO_SDIO_REV_1_00) ? 28 : 42;
 
-	if (size < min_size)
+	if (size == 28 && vsn == SDIO_SDIO_REV_1_10) {
+		pr_warn("%s: card has broken SDIO 1.1 CIS, forcing SDIO 1.0\n",
+			mmc_hostname(card->host));
+		vsn = SDIO_SDIO_REV_1_00;
+	} else if (size < min_size) {
 		return -EINVAL;
+	}
 
 	/* TPLFE_MAX_BLK_SIZE */
 	func->max_blksize = buf[12] | (buf[13] << 8);
@@ -224,6 +229,7 @@ static const struct cis_tpl cis_tpl_list[] = {
 	{	0x20,	4,	cistpl_manfid		},
 	{	0x21,	2,	/* cistpl_funcid */	},
 	{	0x22,	0,	cistpl_funce		},
+	{	0x91,	2,	/* cistpl_sdio_std */	},
 };
 
 static int sdio_read_cis(struct mmc_card *card, struct sdio_func *func)
@@ -282,7 +288,7 @@ static int sdio_read_cis(struct mmc_card *card, struct sdio_func *func)
 		if (tpl_link == 0xff)
 			break;
 
-		this = kzalloc(sizeof(*this) + tpl_link, GFP_KERNEL);
+		this = kmalloc(sizeof(*this) + tpl_link, GFP_KERNEL);
 		if (!this)
 			return -ENOMEM;
 

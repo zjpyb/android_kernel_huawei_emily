@@ -11,16 +11,6 @@
 #define D(format, arg...) pr_info("[sourcesink][%s]" format, __func__, ##arg)
 #endif
 
-#define SOURCESINK_MAX_BULK_LEN (PAGE_SIZE)
-
-struct isoc_test_case {
-	int pipe;
-
-	__u16 urb_num;
-	__u16 pkt_num;
-	__u16 pkt_len;
-};
-
 struct sourcesink {
 	struct usb_interface *intf;
 	struct usb_device *udev;
@@ -351,6 +341,14 @@ static const struct file_operations sourcesink_bulk_tx_fops = {
 	.release		= single_release,
 };
 
+struct isoc_test_case {
+	int pipe;
+
+	__u16 urb_num;
+	__u16 pkt_num;
+	__u16 pkt_len;
+};
+
 static int sourcesink_isoc_show(struct seq_file *s, void *unused)
 {
 	struct sourcesink	*ss = s->private;
@@ -368,9 +366,8 @@ static int sourcesink_isoc_open(struct inode *inode, struct file *file)
 static void sourcesink_isoc_irq(struct urb *urb)
 {
 	struct sourcesink *ss = urb->context;
-	D("%s !!!\n", dev_name(&ss->intf->dev));
-	D("actual %d\n", urb->actual_length);
-
+	D("[%s] sourcesink_isoc_irq called, actual_length %d\n",
+		dev_name(&ss->intf->dev), urb->actual_length);
 	usb_put_urb(urb);
 }
 
@@ -380,36 +377,28 @@ static int set_isoc_alt(struct sourcesink *ss)
 	struct usb_host_interface *altsetting = NULL;
 	struct usb_host_endpoint *isoc_in_ep = NULL;
 	struct usb_host_endpoint *isoc_out_ep = NULL;
-	unsigned i;
+	unsigned i, j;
 	int ret;
 
-	/* find the interface which contain isoc ep. */
+	/* find the altsetting which contain isoc ep. */
 	for (i = 0; i < intf->num_altsetting; i++) {
-		if (intf->altsetting[i].desc.bNumEndpoints == 4) {
-			altsetting = &intf->altsetting[i];
-			break;
+		altsetting = &intf->altsetting[i];
+		for (j = 0; j < altsetting->desc.bNumEndpoints; j++) {
+			if (usb_endpoint_is_isoc_in(&altsetting->endpoint[j].desc))
+				isoc_in_ep = &altsetting->endpoint[j];
+			if (usb_endpoint_is_isoc_out(&altsetting->endpoint[j].desc))
+				isoc_out_ep = &altsetting->endpoint[j];
 		}
+		if (isoc_in_ep || isoc_out_ep)
+			break;
 	}
 
-	if (!altsetting) {
+	if ((!isoc_in_ep) && (!isoc_out_ep)) {
 		D("can't find isoc altsetting\n");
 		return -1;
 	}
 
-	/* find isoc endpoint */
-	for (i = 0; i < altsetting->desc.bNumEndpoints; i++) {
-		if (usb_endpoint_is_isoc_in(&altsetting->endpoint[i].desc))
-			isoc_in_ep = &altsetting->endpoint[i];
-		if (usb_endpoint_is_isoc_out(&altsetting->endpoint[i].desc))
-			isoc_out_ep = &altsetting->endpoint[i];
-	}
-
-	if ((!isoc_in_ep) || (!isoc_out_ep)) {
-		D("can't find isoc ep\n");
-		return -1;
-	}
-
-	D("usb_set_interface: interface %d, altsetting %d\n",
+	D("usb_set_interface: interface %d, altsetting %d\n", /*[false alarm]:it is a false alarm*/
 			altsetting->desc.bInterfaceNumber,
 			altsetting->desc.bAlternateSetting);
 	ret = usb_set_interface(ss->udev, altsetting->desc.bInterfaceNumber,
@@ -444,21 +433,22 @@ static int submit_isoc_test(struct sourcesink *ss, struct isoc_test_case *test, 
 
 	}
 
-	if ((!isoc_in_ep) || (!isoc_out_ep)) {
+	if ((!isoc_in_ep && is_in) || (!isoc_out_ep && !is_in)) {
 		D("no isoc ep\n");
 		return -ENOENT;
 	}
 
-	D("isoc_in_ep 0x%02x, isoc_out_ep 0x%02x\n",
-			isoc_in_ep->desc.bEndpointAddress,
-			isoc_out_ep->desc.bEndpointAddress);
-
-	if (is_in)
+	if (is_in) {
+		D("isoc_in_ep 0x%02x\n", /*[false alarm]:it is a false alarm*/
+				isoc_in_ep->desc.bEndpointAddress);/*lint !e613*/
 		test->pipe = usb_rcvisocpipe(ss->udev,
-				isoc_in_ep->desc.bEndpointAddress);
-	else
+				isoc_in_ep->desc.bEndpointAddress);/*lint !e613*/
+	} else {
+		D("isoc_out_ep 0x%02x\n", /*[false alarm]:it is a false alarm*/
+				isoc_out_ep->desc.bEndpointAddress);/*lint !e613*/
 		test->pipe = usb_sndisocpipe(ss->udev,
-				isoc_out_ep->desc.bEndpointAddress);
+				isoc_out_ep->desc.bEndpointAddress);/*lint !e613*/
+	}
 
 	isoc_urb = usb_alloc_urb(1, GFP_KERNEL);
 	if (!isoc_urb) {
@@ -469,7 +459,7 @@ static int submit_isoc_test(struct sourcesink *ss, struct isoc_test_case *test, 
 	/* borrow the usb_fill_int_urb */
 	usb_fill_int_urb(isoc_urb, ss->udev, test->pipe, test, sizeof(*test),
 			sourcesink_isoc_irq, ss,
-			is_in ? isoc_in_ep->desc.bInterval : isoc_out_ep->desc.bInterval);
+			is_in ? isoc_in_ep->desc.bInterval : isoc_out_ep->desc.bInterval);/*lint !e613*/ /*[false alarm]:it is a false alarm*/
 	isoc_urb->number_of_packets = 1;
 	isoc_urb->iso_frame_desc[0].length = sizeof(*test);
 
@@ -547,24 +537,215 @@ static void parse_isoc_test_args(struct isoc_test_case *tx_test,
 	parse_isoc_tx_test_args(tx_test, buf, buf_len);
 }
 
+
+static inline struct usb_host_endpoint *find_isoc_ep(struct usb_interface *intf, bool is_in)
+{
+	struct usb_host_endpoint *isoc_in_ep = NULL;
+	struct usb_host_endpoint *isoc_out_ep = NULL;
+	unsigned i;
+
+	/* find isoc endpoint */
+	for (i = 0; i < intf->cur_altsetting->desc.bNumEndpoints; i++) {
+		if (usb_endpoint_is_isoc_in(&intf->cur_altsetting->endpoint[i].desc))
+			isoc_in_ep = &intf->cur_altsetting->endpoint[i];
+		if (usb_endpoint_is_isoc_out(&intf->cur_altsetting->endpoint[i].desc))
+			isoc_out_ep = &intf->cur_altsetting->endpoint[i];
+
+	}
+
+	if (is_in)
+		return isoc_in_ep;
+	else
+		return isoc_out_ep;
+}
+
+static unsigned long calc_interval(struct sourcesink *ss, bool is_in)
+{
+	struct usb_interface *intf = ss->intf;
+	struct usb_host_endpoint *isoc_ep = NULL;
+	unsigned long interval;
+
+	/* find isoc endpoint */
+	isoc_ep = find_isoc_ep(intf, is_in);
+	if (!isoc_ep) {
+		D("can't find %s isoc ep\n", is_in ? "in" : "out");
+		return 0;
+	}
+
+	interval = 1UL << (isoc_ep->desc.bInterval - 1);/*lint !e613*/
+
+	if (ss->udev->speed == USB_SPEED_FULL)
+		interval *= 125;
+	else if (ss->udev->speed == USB_SPEED_HIGH)
+		interval *= 1000;
+
+	return interval;
+}
+
+static unsigned int calc_mps(struct sourcesink *ss, bool is_in)
+{
+	struct usb_interface *intf = ss->intf;
+	struct usb_host_endpoint *isoc_ep = NULL;
+
+	/* find isoc endpoint */
+	isoc_ep = find_isoc_ep(intf, is_in);
+	if (!isoc_ep) {
+		D("can't find %s isoc ep\n", is_in ? "in" : "out");
+		return 0;
+	}
+
+
+	return le16_to_cpu(isoc_ep->desc.wMaxPacketSize);/*lint !e613*/
+}
+
 static void excute_isoc_test(struct sourcesink *ss,
 		struct isoc_test_case *tx_test,	struct isoc_test_case *rx_test)
 {
 	int ret;
+	unsigned long interval;
+	unsigned delay_ms;
+	unsigned tx_delay_ms = 0;
+	unsigned rx_delay_ms = 0;
 
 	if (rx_test->pkt_num != 0) {
 		ret = submit_isoc_test(ss, rx_test, true);
 		if (ret < 0) {
-			ss->control_rw_result = ret;
+			ss->isoc_test_result = ret;
 		}
+
+		interval = calc_interval(ss, true);
+		if (!interval) {
+			ss->isoc_test_result = -EINVAL;
+			return;
+		}
+		tx_delay_ms = (interval * rx_test->pkt_num * rx_test->urb_num)/1000;
 	}
 
 	if (tx_test->pkt_num != 0) {
 		ret = submit_isoc_test(ss, tx_test, false);
 		if (ret < 0) {
-			ss->control_rw_result = ret;
+			ss->isoc_test_result = ret;
 		}
+		interval = calc_interval(ss, false);
+		if (!interval) {
+			ss->isoc_test_result = -EINVAL;
+			return;
+		}
+		rx_delay_ms = (interval * rx_test->pkt_num * rx_test->urb_num)/1000;
 	}
+
+	delay_ms = (tx_delay_ms > rx_delay_ms) ? tx_delay_ms : rx_delay_ms;
+	D("Wait %d ms for transfer complete.\n", delay_ms);
+	msleep(delay_ms + 1000); /* wait more 1000ms */
+}
+
+struct isoc_test_case isoc_tcs[] = {
+	/* pipe, urb_num, pkt_num, pkt_len */
+	{0, 10000, 1, 64},
+	{0, 10000, 1, 65},
+	{0, 10000, 1, 512},
+	{0, 10000, 1, 1023},
+	{0, 10000, 1, 1024},
+
+	{0, 2000, 5, 64},
+	{0, 2000, 5, 65},
+	{0, 2000, 5, 512},
+	{0, 2000, 5, 1023},
+	{0, 2000, 5, 1024},
+
+	{0, 1000, 20, 64},
+	{0, 1000, 20, 65},
+	{0, 1000, 20, 512},
+	{0, 1000, 20, 1023},
+	{0, 1000, 20, 1024},
+
+	{0, 0, 0, 0},
+};
+
+static void __auto_isoc_test(struct sourcesink *ss, bool is_in)
+{
+	int ret;
+	unsigned long interval;
+	unsigned int mps;
+	unsigned delay_ms;
+	int i;
+
+	ret = set_isoc_alt(ss);
+	if (ret) {
+		ss->isoc_test_result = ret;
+		return;
+	}
+
+	interval = calc_interval(ss, is_in);
+	if (!interval) {
+		ss->isoc_test_result = -EINVAL;
+		return;
+	}
+
+	mps = calc_mps(ss, is_in);
+	if (!mps) {
+		ss->isoc_test_result = -EINVAL;
+		return;
+	}
+
+	/* do transfer */
+	for (i = 0; isoc_tcs[i].pkt_len != 0; i++) {
+		struct isoc_test_case *isoc_tc = &isoc_tcs[i];
+
+		if ((ss->udev->speed == USB_SPEED_FULL)
+				&& (isoc_tc->pkt_len >= 1024))
+			continue;
+
+		/* receive buffer must no less than mps,
+		 * transmit buffer must no more than mps. */
+		if (is_in) {
+			if (isoc_tc->pkt_len < mps)
+				continue;
+		} else {
+			if (isoc_tc->pkt_len > mps)
+				continue;
+		}
+
+		ret = submit_isoc_test(ss, isoc_tc, is_in);
+		if (ret < 0) {
+			ss->isoc_test_result = ret;
+			return;
+		}
+
+		D("interval %ld ms, mps %d\n", interval/1000, mps);
+		delay_ms = (interval * isoc_tc->pkt_num * isoc_tc->urb_num)/1000;
+		D("Wait %d ms for transfer complete.\n", delay_ms);
+		msleep(delay_ms + 1000); /* wait more 1000ms */
+	}
+}
+
+static int auto_isoc_test(struct sourcesink *ss, char *buf, int buf_len)
+{
+	int value;
+	int ret;
+	int i;
+	bool is_auto = false;
+
+	ret = parse_test_arg(buf, buf_len, "auto_rx=", &value);
+	if ((ret) && (value > 0)) {
+		for (i = 0; i < value; i++) {
+			__auto_isoc_test(ss, true);
+		}
+		is_auto = true;
+	}
+
+	ret = parse_test_arg(buf, buf_len, "auto_tx=", &value);
+	if ((ret) && (value > 0)) {
+		for (i = 0; i < value; i++) {
+			__auto_isoc_test(ss, false);
+		}
+		is_auto = true;
+	}
+
+	if (is_auto)
+		return 0;
+
+	return -ENOTSUPP;
 }
 
 static ssize_t sourcesink_isoc_write(struct file *file,
@@ -586,7 +767,12 @@ static ssize_t sourcesink_isoc_write(struct file *file,
 
 	mutex_lock(&ss->isoc_test_lock);
 
-	ss->control_rw_result = 0;
+	ss->isoc_test_result = 0;
+
+	/* try auto test */
+	ret = auto_isoc_test(ss, buf, buf_len);
+	if (ret != -ENOTSUPP)
+		goto done;
 
 	/* get the tx test case and rx test case */
 	parse_isoc_test_args(&tx_test, &rx_test, buf, buf_len);
@@ -595,17 +781,16 @@ static ssize_t sourcesink_isoc_write(struct file *file,
 	if ((rx_test.pkt_num != 0) || (tx_test.pkt_num != 0)) {
 		ret = set_isoc_alt(ss);
 		if (ret < 0) {
-			ss->control_rw_result = ret;
-			goto err;
+			ss->isoc_test_result = ret;
+			goto done;
 		}
 	}
 
 	excute_isoc_test(ss, &tx_test, &rx_test);
 
-	D("-\n");
-
-err:
+done:
 	mutex_unlock(&ss->isoc_test_lock);
+	D("-\n");
 
 	return count;
 }
@@ -794,411 +979,6 @@ static const struct file_operations sourcesink_control_write_fops = {
 	.release		= single_release,
 };
 
-#define NEW_SCHEM_FOR_SOURCESINK
-#ifdef NEW_SCHEM_FOR_SOURCESINK
-
-struct ss_test_case {
-	char *name;
-	void(*func)(struct sourcesink *, struct ss_test_case*);
-	int run;
-	int ret;
-};
-
-#define DEFINE_SS_TEST_CASE(_name, _func)		\
-	static struct ss_test_case _name = {		\
-		.name = #_name,				\
-		.func = _func,				\
-	}
-
-
-static int bulk_xfer_len[] = {
-	28,
-	64,
-	65,
-	512,
-
-	4096,
-	4096,
-	4096,
-	4096,
-
-	4096,
-	4096,
-	4096,
-	4096,
-
-	0,
-};
-static void bulk_tc_func(struct sourcesink *ss, struct ss_test_case *tc)
-{
-	struct usb_host_endpoint	*bulk_out_ep = NULL;
-	struct usb_host_endpoint	*bulk_in_ep = NULL;
-	int ret;
-	int i;
-
-	D("+\n");
-
-	ret = set_bulk_alt(ss, &bulk_out_ep, &bulk_in_ep);
-	if (ret < 0) {
-		D("set_bulk_alt failed, ret %d\n", ret);
-		tc->ret = ret;
-		return;
-	}
-
-	for (i = 0; bulk_xfer_len[i] != 0; i++) {
-		int len = bulk_xfer_len[i];
-		ret = submit_bulk_test(ss->udev, bulk_out_ep, len, 0);
-		if (ret) {
-			D("bulk out test failed %d\n", ret);
-			tc->ret = ret;
-			return;
-		}
-
-	}
-
-	for (i = 0; bulk_xfer_len[i] != 0; i++) {
-		int len = bulk_xfer_len[i];
-		D("len %d\n", len);
-		len = 4096;
-		ret = submit_bulk_test(ss->udev, bulk_in_ep, len, 0);
-		if (ret) {
-			D("bulk in test failed %d\n", ret);
-			tc->ret = ret;
-			return;
-		}
-
-	}
-
-	D("-\n");
-}
-DEFINE_SS_TEST_CASE(tc_bulk, bulk_tc_func);
-
-struct isoc_test_case isoc_tcs[] = {
-	/* pipe, urb_num, pkt_num, pkt_len */
-	{0, 10000, 1, 64},
-	{0, 10000, 1, 65},
-	{0, 10000, 1, 512},
-	{0, 10000, 1, 1023},
-	{0, 10000, 1, 1024},
-
-	{0, 2000, 5, 64},
-	{0, 2000, 5, 65},
-	{0, 2000, 5, 512},
-	{0, 2000, 5, 1023},
-	{0, 2000, 5, 1024},
-
-	{0, 1000, 20, 64},
-	{0, 1000, 20, 65},
-	{0, 1000, 20, 512},
-	{0, 1000, 20, 1023},
-	{0, 1000, 20, 1024},
-
-	{0, 0, 0, 0},
-};
-
-static unsigned long calc_interval(struct sourcesink *ss)
-{
-	struct usb_interface *intf = ss->intf;
-	struct usb_host_endpoint *isoc_in_ep = NULL;
-	struct usb_host_endpoint *isoc_out_ep = NULL;
-	unsigned i;
-	unsigned long interval;
-
-	/* find isoc endpoint */
-	for (i = 0; i < intf->cur_altsetting->desc.bNumEndpoints; i++) {
-		if (usb_endpoint_is_isoc_in(&intf->cur_altsetting->endpoint[i].desc))
-			isoc_in_ep = &intf->cur_altsetting->endpoint[i];
-		if (usb_endpoint_is_isoc_out(&intf->cur_altsetting->endpoint[i].desc))
-			isoc_out_ep = &intf->cur_altsetting->endpoint[i];
-
-	}
-
-	if ((!isoc_in_ep) || (!isoc_out_ep)) {
-		D("can't find isoc ep\n");
-		return 0;
-	}
-
-	interval = (1UL << (isoc_in_ep->desc.bInterval - 1));
-
-	if (ss->udev->speed == USB_SPEED_FULL)
-		interval *= 125;
-	else if (ss->udev->speed == USB_SPEED_HIGH)
-		interval *= 1000;
-
-	return interval;
-}
-
-
-static unsigned int calc_mps(struct sourcesink *ss)
-{
-	struct usb_interface *intf = ss->intf;
-	struct usb_host_endpoint *isoc_in_ep = NULL;
-	struct usb_host_endpoint *isoc_out_ep = NULL;
-	unsigned i;
-
-	/* find isoc endpoint */
-	for (i = 0; i < intf->cur_altsetting->desc.bNumEndpoints; i++) {
-		if (usb_endpoint_is_isoc_in(&intf->cur_altsetting->endpoint[i].desc))
-			isoc_in_ep = &intf->cur_altsetting->endpoint[i];
-		if (usb_endpoint_is_isoc_out(&intf->cur_altsetting->endpoint[i].desc))
-			isoc_out_ep = &intf->cur_altsetting->endpoint[i];
-
-	}
-
-	if ((!isoc_in_ep) || (!isoc_out_ep)) {
-		D("can't find isoc ep\n");
-		return 0;
-	}
-
-	return le16_to_cpu(isoc_in_ep->desc.wMaxPacketSize);
-}
-
-static void isoc_tc_func(struct sourcesink *ss, struct ss_test_case *tc)
-{
-	int ret;
-	unsigned long interval;
-	unsigned int mps;
-	unsigned delay_ms;
-	int i;
-	bool is_in;
-
-	ret = set_isoc_alt(ss);
-	if (ret) {
-		tc->ret = ret;
-		return;
-	}
-
-	interval = calc_interval(ss);
-	mps = calc_mps(ss);
-
-	/**/
-	is_in = false;
-	for (i = 0; isoc_tcs[i].pkt_len != 0; i++) {
-		struct isoc_test_case *isoc_tc = &isoc_tcs[i];
-
-		if ((ss->udev->speed == USB_SPEED_FULL)
-				&& (isoc_tc->pkt_len >= 1024))
-			continue;
-
-		if (isoc_tc->pkt_len > mps)
-			continue;
-
-		ret = submit_isoc_test(ss, isoc_tc, is_in);
-		if (ret < 0) {
-			tc->ret = ret;
-			return;
-		}
-
-		delay_ms = (interval * isoc_tc->pkt_num * isoc_tc->urb_num)/1000;
-		D("wait %d ms\n", delay_ms);
-		msleep(delay_ms);
-	}
-
-	/**/
-	is_in = true;
-	for (i = 0; isoc_tcs[i].pkt_len != 0; i++) {
-		struct isoc_test_case *isoc_tc = &isoc_tcs[i];
-
-		if ((ss->udev->speed == USB_SPEED_FULL)
-				&& (isoc_tc->pkt_len>= 1024))
-			continue;
-
-		if (isoc_tc->pkt_len < mps)
-			continue;
-
-		ret = submit_isoc_test(ss, isoc_tc, is_in);
-		if (ret < 0) {
-			tc->ret = ret;
-			return;
-		}
-
-		delay_ms = (interval * isoc_tc->pkt_num * isoc_tc->urb_num)/1000;
-		D("wait %d ms\n", delay_ms);
-		msleep(delay_ms);
-	}
-}
-
-DEFINE_SS_TEST_CASE(tc_isoc, isoc_tc_func);
-
-static void ctrl_write(struct sourcesink *ss, struct ss_test_case *tc,
-					char *buf, int size, int repeat)
-{
-	int i;
-	int actual;
-	bool is_read = false;
-
-	/* Write 1 byte */
-	size = 1;
-	for (i = 0; i < repeat; i++) {
-		actual = control_rw(ss, buf, size, is_read);
-		if (actual < 0) {
-			tc->ret = actual;
-			D("tc %s failed ret %d\n", tc->name, tc->ret);
-			break;
-		} else if (actual != size) {
-			tc->ret = -EPIPE;
-			D("tc %s failed short packet\n", tc->name);
-			break;
-		}
-	}
-}
-
-static void ctrl_write_tc_func(struct sourcesink *ss, struct ss_test_case *tc)
-{
-	char *buf;
-	int size = 1024;
-
-	buf = kzalloc(size, GFP_KERNEL);
-	if (!buf) {
-		tc->ret = -ENOMEM;
-		return;
-	}
-
-	memset(buf, SOURCESINK_CONTROL_WRITE_REQ, size);
-	tc->ret = 0;
-
-	ctrl_write(ss, tc, buf, 1, 1000);
-	ctrl_write(ss, tc, buf, 63, 1000);
-	ctrl_write(ss, tc, buf, 64, 1000);
-	ctrl_write(ss, tc, buf, 65, 1000);
-	ctrl_write(ss, tc, buf, 512, 1000);
-	ctrl_write(ss, tc, buf, 1024, 1000);
-
-	kfree(buf);
-}
-
-DEFINE_SS_TEST_CASE(tc_ctrl_write, ctrl_write_tc_func);
-
-static void ctrl_read(struct sourcesink *ss, struct ss_test_case *tc,
-					char *buf, int size, int repeat)
-{
-	int i;
-	int actual;
-	bool is_read = true;
-
-	/* Write 1 byte */
-	size = 1;
-	for (i = 0; i < repeat; i++) {
-		actual = control_rw(ss, buf, size, is_read);
-		if (actual < 0) {
-			tc->ret = actual;
-			D("tc %s failed ret %d\n", tc->name, tc->ret);
-			break;
-		} else if (actual != size) {
-			tc->ret = -EPIPE;
-			D("tc %s failed short packet\n", tc->name);
-			break;
-		}
-	}
-}
-
-static void ctrl_read_tc_func(struct sourcesink *ss, struct ss_test_case *tc)
-{
-	char *buf;
-
-	buf = kzalloc(1024, GFP_KERNEL);
-	if (!buf) {
-		tc->ret = -ENOMEM;
-		return;
-	}
-
-	tc->ret = 0;
-
-	ctrl_read(ss, tc, buf, 1, 1000);
-	ctrl_read(ss, tc, buf, 63, 1000);
-	ctrl_read(ss, tc, buf, 64, 1000);
-	ctrl_read(ss, tc, buf, 65, 1000);
-	ctrl_read(ss, tc, buf, 512, 1000);
-
-	kfree(buf);
-}
-DEFINE_SS_TEST_CASE(tc_ctrl_read, ctrl_read_tc_func);
-
-struct ss_test_case *ss_xfer[] = {
-	&tc_bulk,
-	&tc_isoc,
-	&tc_ctrl_read,
-	&tc_ctrl_write,
-	NULL,
-};
-
-void ss_test_case_bundle(struct sourcesink *ss)
-{
-	int i;
-
-	for (i = 0; ss_xfer[i] && ss_xfer[i]->run; i++) {
-		struct ss_test_case *tc = ss_xfer[i];
-
-		D("to %s \n", tc->name);
-		tc->ret = 0;
-		tc->func(ss, tc);
-	}
-}
-
-static ssize_t sourcesink_xfer_write(struct file *file,
-		const char __user *ubuf, size_t count, loff_t *ppos)
-{
-	struct seq_file		*s = file->private_data;
-	struct sourcesink	*ss = s->private;
-	char			buf[32] = {0};
-	int 			i;
-
-	D("+\n");
-
-	if (copy_from_user(&buf, ubuf, min_t(size_t, sizeof(buf) - 1, count)))
-		return -EFAULT;
-
-	for (i = 0; ss_xfer[i]; i++)
-		ss_xfer[i]->run = 0;
-
-	if (!strncmp(buf, "all", sizeof("all") - 1)) {
-		for (i = 0; ss_xfer[i]; i++)
-			ss_xfer[i]->run = 1;
-	} else if (!strncmp(buf, "ctrl", sizeof("ctrl") - 1)) {
-		tc_ctrl_read.run = 1;
-		tc_ctrl_write.run = 1;
-	} else if (!strncmp(buf, "bulk", sizeof("bulk") - 1))
-		tc_bulk.run = 1;
-	else if (!strncmp(buf, "isoc", sizeof("isoc") - 1))
-		tc_isoc.run = 1;
-
-	ss_test_case_bundle(ss);
-
-	D("-\n");
-
-	return count;
-}
-
-
-static int sourcesink_xfer_show(struct seq_file *s, void *unused)
-{
-	int i;
-
-	for (i = 0; ss_xfer[i] && ss_xfer[i]->run; i++) {
-		struct ss_test_case *tc = ss_xfer[i];
-
-		seq_printf(s, "tc: %s, result: %s\n", tc->name,
-				tc->ret ? "failed" : "pass");
-	}
-
-	return 0;
-}
-
-static int sourcesink_xfer_open(struct inode *inode, struct file *file)
-{
-	return single_open(file, sourcesink_xfer_show, inode->i_private);
-}
-
-static const struct file_operations sourcesink_xfer_fops = {
-	.open			= sourcesink_xfer_open,
-	.write			= sourcesink_xfer_write,
-	.read			= seq_read,
-	.llseek			= seq_lseek,
-	.release		= single_release,
-};
-
-#endif
-
 static int sourcesink_debugfs_init(struct sourcesink *ss)
 {
 	struct dentry		*root;
@@ -1208,6 +988,7 @@ static int sourcesink_debugfs_init(struct sourcesink *ss)
 
 	D("+\n");
 
+	/* Create dir for INTERFACE */
 	snprintf(name, sizeof(name) - 1, "sourcesink-%d",
 			ss->intf->cur_altsetting->desc.bInterfaceNumber);
 	D("name %s\n", name);
@@ -1222,10 +1003,12 @@ static int sourcesink_debugfs_init(struct sourcesink *ss)
 	D("create debugfs dir %s sucess.\n", name);
 	ss->debugfs_root = root;
 
-	//--------------------------------------------
-
+	/*
+	 * For Control transfer
+	 */
 	mutex_init(&ss->control_rw_lock);
 
+	/* Control read */
 	file = debugfs_create_file("control_read", S_IRUGO | S_IWUSR, root,
 			ss, &sourcesink_control_read_fops);
 	if (!file) {
@@ -1234,8 +1017,7 @@ static int sourcesink_debugfs_init(struct sourcesink *ss)
 		goto err1;
 	}
 
-	//--------------------------------------------
-
+	/* Control write */
 	file = debugfs_create_file("control_write", S_IRUGO | S_IWUSR, root,
 			ss, &sourcesink_control_write_fops);
 	if (!file) {
@@ -1244,8 +1026,9 @@ static int sourcesink_debugfs_init(struct sourcesink *ss)
 		goto err1;
 	}
 
-	//--------------------------------------------
-
+	/*
+	 * For isoc transfer
+	 */
 	mutex_init(&ss->isoc_test_lock);
 
 	file = debugfs_create_file("isoc_xfer", S_IRUGO | S_IWUSR, root,
@@ -1256,8 +1039,9 @@ static int sourcesink_debugfs_init(struct sourcesink *ss)
 		goto err1;
 	}
 
-	//--------------------------------------------
-
+	/*
+	 * For bulk transfer
+	 */
 	file = debugfs_create_file("bulk_xfer", S_IRUGO | S_IWUSR, root,
 			ss, &sourcesink_bulk_tx_fops);
 	if (!file) {
@@ -1265,16 +1049,6 @@ static int sourcesink_debugfs_init(struct sourcesink *ss)
 		ret = -ENOMEM;
 		goto err1;
 	}
-
-#ifdef NEW_SCHEM_FOR_SOURCESINK
-	file = debugfs_create_file("sourcesink_xfer", S_IRUGO | S_IWUSR, root,
-					ss, &sourcesink_xfer_fops);
-	if (!file) {
-		D("create sourcesink_xfer failed\n");
-		ret = -ENOMEM;
-		goto err1;
-	}
-#endif
 
 	D("-\n");
 	return 0;
@@ -1350,8 +1124,6 @@ static void usb_sourcesink_disconnect(struct usb_interface *intf)
 
 	D("-\n");
 }
-
-
 
 #ifdef CONFIG_PM
 static int usb_sourcesink_suspend(struct usb_interface *intf, pm_message_t message)

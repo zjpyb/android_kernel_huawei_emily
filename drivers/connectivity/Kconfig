@@ -24,6 +24,10 @@ config HI110X_DRIVER_PATH
 config HI11XX_DRIVER_PATH
 	string "Hi1103 Kernel Driver Path"
 	default "drivers/connectivity/hi11xx"
+config ARCH_KIRIN_PCIE
+    bool "kirin pcie interface support"
+    default n
+    depends on PCI
 
 config HI110X_GPS_REFCLK
   bool "Hisilicon 110X gps refclk feature"
@@ -50,7 +54,7 @@ endchoice
 
 config HI110X_GPS_SYNC
   bool "Hisilicon 110X gps sync feature"
-  default n
+  default y
   ---help---
     Hisilicon 110X gps sync feature temp default n till sync feature of other module complete
 endif

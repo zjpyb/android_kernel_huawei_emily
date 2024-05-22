@@ -246,7 +246,10 @@ exception_bcpu_dump_msg g_sdio_read_all[BFGX_PUB_REG_NUM + BFGX_SHARE_RAM_NUM + 
 
 uint8  g_plat_beatTimer_timeOut_reset_cfg = 0;
 extern struct oal_sdio* oal_alloc_sdio_stru(oal_void);
-
+#ifdef HI110X_HAL_MEMDUMP_ENABLE
+memdump_info_t bcpu_memdump_cfg;
+memdump_info_t wcpu_memdump_cfg;
+#endif
 /*****************************************************************************
   2 函数实现
 *****************************************************************************/
@@ -1571,7 +1574,7 @@ int32 bfgx_recv_dev_mem(uint8 *buf_ptr, uint16 count)
 
     return EXCEPTION_SUCCESS;
 }
-
+#ifndef HI110X_HAL_MEMDUMP_ENABLE
 
 int32 bfgx_store_stack_mem_to_file(void)
 {
@@ -1590,11 +1593,7 @@ int32 bfgx_store_stack_mem_to_file(void)
             continue;
         }
         OS_MEM_SET(filename, 0, sizeof(filename));
-#if (_PRE_HI110X_LOG_VERSION == _PRE_HI110X_LOG_V2)
-        snprintf(filename, sizeof(filename),"/data/log/hi110x/memdump/%s_%s.bin", UART_STORE_BFGX_STACK, pst_mem_info->file_name);
-#else
-        snprintf(filename, sizeof(filename),"/data/memdump/%s_%s.bin", UART_STORE_BFGX_STACK, pst_mem_info->file_name);
-#endif
+        snprintf(filename, sizeof(filename),BFGX_DUMP_PATH"/%s_%s.bin", UART_STORE_BFGX_STACK, pst_mem_info->file_name);
         /*打开文件，准备保存接收到的内存*/
         fp = filp_open(filename, O_RDWR | O_CREAT, 0664);
         if (IS_ERR_OR_NULL(fp))
@@ -1621,7 +1620,7 @@ int32 bfgx_store_stack_mem_to_file(void)
 
     return EXCEPTION_SUCCESS;
 }
-
+#endif
 
 void bfgx_dump_stack(void)
 {
@@ -1671,11 +1670,11 @@ void bfgx_dump_stack(void)
     {
         PS_PRINT_INFO("read bfgx stack success!\n");
     }
-
+#ifndef HI110X_HAL_MEMDUMP_ENABLE
     plat_wait_last_rotate_finish();
 
     bfgx_store_stack_mem_to_file();
-
+#endif
     return;
 }
 
@@ -1829,16 +1828,12 @@ int32 __store_wifi_mem_to_file(void)
     {
         block_size      = g_uart_read_wifi_mem_info[index].block_info[i].size;
         block_file_name = g_uart_read_wifi_mem_info[index].block_info[i].file_name;
-#if (_PRE_HI110X_LOG_VERSION == _PRE_HI110X_LOG_V2)
-        snprintf(filename, sizeof(filename),"/data/log/hi110x/memdump/%s_%s.bin", UART_STORE_WIFI_MEM, block_file_name);
-#else
-        snprintf(filename, sizeof(filename),"/data/memdump/%s_%s.bin", UART_STORE_WIFI_MEM, block_file_name);
-#endif
+        snprintf(filename, sizeof(filename),BFGX_DUMP_PATH"/%s_%s.bin", UART_STORE_WIFI_MEM, block_file_name);
         /*打开文件，准备保存接收到的内存*/
         fp = filp_open(filename, O_RDWR | O_CREAT, 0664);
         if (IS_ERR_OR_NULL(fp))
         {
-            PS_PRINT_ERR("create file error,fp = 0x%p\n", fp);
+            PS_PRINT_ERR("create file error,fp = 0x%p,filename:%s\n", fp, filename);
             return -EXCEPTION_FAIL;
         }
 
@@ -2125,11 +2120,7 @@ int32 sdio_get_and_save_data(exception_bcpu_dump_msg* sdio_read_info, uint32 cou
     for (i = 0; i < count; i++)
     {
         index = 0;
-#if (_PRE_HI110X_LOG_VERSION == _PRE_HI110X_LOG_V2)
-        snprintf(filename, sizeof(filename),"/data/log/hi110x/memdump/%s_%s.bin", SDIO_STORE_BFGX_REGMEM, sdio_read_info[i].file_name);
-#else
-        snprintf(filename, sizeof(filename),"/data/memdump/%s_%s.bin", SDIO_STORE_BFGX_REGMEM, sdio_read_info[i].file_name);
-#endif
+        snprintf(filename, sizeof(filename),BFGX_DUMP_PATH"/%s_%s.bin", SDIO_STORE_BFGX_REGMEM, sdio_read_info[i].file_name);
         /*准备文件空间*/
         fp = filp_open(filename, O_RDWR | O_CREAT, 0664);
         if (IS_ERR_OR_NULL(fp))
@@ -2273,7 +2264,7 @@ int32 debug_sdio_read_bfgx_reg_and_mem(uint32 which_mem)
     //去能exception设置,halt bcpu不引发DFR
     pst_exception_data->exception_reset_enable = PLAT_EXCEPTION_DISABLE;
 
-    plat_wait_last_rotate_finish();
+    //plat_wait_last_rotate_finish();
 
     //dump data
     switch (which_mem)
@@ -2297,7 +2288,7 @@ int32 debug_sdio_read_bfgx_reg_and_mem(uint32 which_mem)
     }
 
     /*send cmd to oam_hisi to rotate file*/
-    plat_send_rotate_cmd_2_app(CMD_READM_BFGX_SDIO);
+    //plat_send_rotate_cmd_2_app(CMD_READM_BFGX_SDIO);
 
     PS_PRINT_INFO("dump complete, recovery begin\n");
 
@@ -2401,7 +2392,7 @@ int32 debug_uart_read_wifi_mem(uint32 ul_lock)
         goto fail_return;
     }
 
-    plat_wait_last_rotate_finish();
+    //plat_wait_last_rotate_finish();
 
     for (i = 0; i < UART_WIFI_MEM_DUMP_BOTTOM; i++)
     {
@@ -2416,11 +2407,11 @@ int32 debug_uart_read_wifi_mem(uint32 ul_lock)
     if (read_mem_succ_count > 0)
     {
         /*send cmd to oam_hisi to rotate file*/
-        plat_send_rotate_cmd_2_app(CMD_READM_WIFI_UART);
+        //plat_send_rotate_cmd_2_app(CMD_READM_WIFI_UART);
     }
     else
     {
-        plat_rotate_finish_set();
+       // plat_rotate_finish_set();
     }
 
     post_to_visit_node(ps_core_d);
@@ -2719,5 +2710,122 @@ int32 plat_exception_reset_exit(void)
 }
 
 EXPORT_SYMBOL_GPL(plat_exception_reset_exit);
+#ifdef HI110X_HAL_MEMDUMP_ENABLE
+void plat_exception_dump_file_rotate_init(void)
+{
+    init_waitqueue_head(&bcpu_memdump_cfg.dump_type_wait);
+    skb_queue_head_init(&bcpu_memdump_cfg.dump_type_queue);
+    skb_queue_head_init(&bcpu_memdump_cfg.quenue);
+    init_waitqueue_head(&wcpu_memdump_cfg.dump_type_wait);
+    skb_queue_head_init(&wcpu_memdump_cfg.dump_type_queue);
+    skb_queue_head_init(&wcpu_memdump_cfg.quenue);
+    PS_PRINT_INFO("plat exception dump file rotate init success\n");
+}
 
+void excp_memdump_quenue_clear(memdump_info_t* memdump_t)
+{
+    struct sk_buff *skb = NULL;
+    while(NULL != (skb = skb_dequeue(&memdump_t->quenue)))
+    {
+        kfree_skb(skb);
+    }
+}
+int32 bfgx_memdump_quenue_clear(void)
+{
+    PS_PRINT_DBG("bfgx_memdump_quenue_clear\n");
+    excp_memdump_quenue_clear(&bcpu_memdump_cfg);
+    return 0;
+}
+void wifi_memdump_quenue_clear(void)
+{
+    PS_PRINT_DBG("wifi_memdump_quenue_clear\n");
+    excp_memdump_quenue_clear(&wcpu_memdump_cfg);
+}
+void bfgx_memdump_finish(void)
+{
+    bcpu_memdump_cfg.is_working =0;
+}
+void wifi_memdump_finish(void)
+{
+    wcpu_memdump_cfg.is_working =0;
+}
+int32 plat_excp_send_rotate_cmd_2_app(uint32 which_dump, memdump_info_t* memdump_info )
+{
+    struct sk_buff  *skb =NULL;
 
+    if (CMD_DUMP_BUFF <= which_dump)
+    {
+        PS_PRINT_WARNING("which dump:%d error\n", which_dump);
+        return -EINVAL;
+    }
+    if (skb_queue_len(&memdump_info->dump_type_queue) > MEMDUMP_ROTATE_QUEUE_MAX_LEN)
+    {
+        PS_PRINT_WARNING("too many dump type in queue,dispose type:%d", which_dump);
+        return -EINVAL;
+    }
+    skb = alloc_skb(sizeof(which_dump), GFP_KERNEL);
+    if( NULL == skb)
+    {
+        PS_PRINT_ERR("alloc errno skbuff failed! len=%d, errno=%x\n", (int32)sizeof(which_dump), which_dump);
+        return -EINVAL;
+    }
+    skb_put(skb, sizeof(which_dump));
+    *(uint32*)skb->data = which_dump;
+    skb_queue_tail(&memdump_info->dump_type_queue, skb);
+    PS_PRINT_INFO("save rotate cmd [%d] in queue\n", which_dump);
+    wake_up_interruptible(&memdump_info->dump_type_wait);
+    return 0;
+}
+int32 notice_hal_memdump(memdump_info_t* memdump_t, uint32 which_dump)
+{
+    PS_PRINT_FUNCTION_NAME;
+    if (memdump_t->is_working) {
+        PS_PRINT_ERR("is doing memdump\n");
+        return -1;
+    }
+    excp_memdump_quenue_clear(memdump_t);
+    plat_excp_send_rotate_cmd_2_app(which_dump, memdump_t);
+    memdump_t->is_working =1;
+    return 0;
+}
+int32 bfgx_notice_hal_memdump(void)
+{
+    return notice_hal_memdump(&bcpu_memdump_cfg, CMD_READM_BFGX_UART);
+}
+int32 wifi_notice_hal_memdump(void)
+{
+    return notice_hal_memdump(&wcpu_memdump_cfg, CMD_READM_WIFI_SDIO);
+}
+int32 excp_memdump_queue(uint8 *buf_ptr, uint16 count, memdump_info_t* memdump_t)
+{
+    struct sk_buff *skb = NULL;
+    PS_PRINT_DBG("[send] len:%d\n",count);
+    if (!memdump_t->is_working) {
+        PS_PRINT_ERR("excp_memdump_queue not allow\n");
+        return -EINVAL;;
+    }
+    if (NULL == buf_ptr)
+    {
+        PS_PRINT_ERR("buf_ptr is NULL\n");
+        return -EINVAL;
+    }
+    skb = alloc_skb(count, GFP_ATOMIC);
+    if (NULL == skb) {
+        PS_PRINT_ERR("can't allocate mem for new debug skb, len=%d\n", count);
+        return -EINVAL;
+    }
+    memcpy(skb_tail_pointer(skb), buf_ptr, count);
+    skb_put(skb, count);
+    skb_queue_tail(&memdump_t->quenue, skb);
+    PS_PRINT_WARNING("[excp_memdump_queue]qlen:%d,count:%d\n",memdump_t->quenue.qlen,count);
+    return 0;
+}
+int32 bfgx_memdump_enquenue(uint8 *buf_ptr, uint16 count)
+{
+    return excp_memdump_queue(buf_ptr, count, &bcpu_memdump_cfg);
+}
+int32 wifi_memdump_enquenue(uint8 *buf_ptr, uint16 count)
+{
+    return excp_memdump_queue(buf_ptr, count, &wcpu_memdump_cfg);
+}
+#endif

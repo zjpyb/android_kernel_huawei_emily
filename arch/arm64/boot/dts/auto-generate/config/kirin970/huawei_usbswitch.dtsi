@@ -10,9 +10,6 @@
 				usbid-enable = <1>;
 				fcp_support = <1>;
 				scp_support = <0>;
-				scp_need_extra_power = <0>;
-				boost_5v_use_common_gpio = <0>;
-				is_need_bst_ctrl = <0>;
 				mhl_detect_disable = <1>;
 				status = "disabled";
 			};
@@ -23,9 +20,6 @@
 				usbid-enable = <1>;
 				fcp_support = <0>;
 				scp_support = <0>;
-				scp_need_extra_power = <0>;
-				boost_5v_use_common_gpio = <0>;
-				is_need_bst_ctrl = <0>;
 				mhl_detect_disable = <1>;
 				status = "disabled";
 			};
@@ -38,9 +32,6 @@
 				usbid-enable = <1>;
 				fcp_support = <1>;
 				scp_support = <0>;
-				scp_need_extra_power = <0>;
-				boost_5v_use_common_gpio = <0>;
-				is_need_bst_ctrl = <0>;
 				mhl_detect_disable = <1>;
 				status = "disabled";
                        };

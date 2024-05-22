@@ -361,3 +361,11 @@
 #define JLID_GAME_APPEND_NET_LATENCY                          359
 #define JLID_TOUCH_RESPONSE_TIME                              360
 #define JLID_FREQ_LIMIT_INFO                                  361
+#define JLID_SEQ_JANK_FRAME_SKIP                              362
+#define JLID_EVENT_CLICK_DOWN                                 363
+#define JLID_EVENT_CLICK_UP                                   364
+#define JLID_APP_FRONZED_BEGIN                                365
+#define JLID_APP_FRONZED_END                                  366
+#define JLID_APP_UNFRONZED_BEGIN                              367
+#define JLID_APP_UNFRONZED_END                                368
+#define JLID_OTHER_FIELD_EXCEPTION                            369

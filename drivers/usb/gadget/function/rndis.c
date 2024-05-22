@@ -31,7 +31,6 @@
 #include <linux/slab.h>
 #include <linux/seq_file.h>
 #include <linux/netdevice.h>
-#include <linux/spinlock.h>
 
 #include <asm/io.h>
 #include <asm/byteorder.h>
@@ -694,9 +693,8 @@ static int rndis_reset_response(struct rndis_params *params,
 {
 	rndis_reset_cmplt_type *resp;
 	rndis_resp_t *r;
-
-	u32 length;
 	u8 *xbuf;
+	u32 length;
 
 	pr_info("%s\n", __func__);
 	/* drain the response queue */
@@ -941,7 +939,7 @@ struct rndis_params *rndis_register(void (*resp_avail)(void *v), void *v)
 	params->media_state = RNDIS_MEDIA_STATE_DISCONNECTED;
 	params->resp_avail = resp_avail;
 	params->v = v;
-	INIT_LIST_HEAD(&(params->resp_queue));
+	INIT_LIST_HEAD(&params->resp_queue);
 	pr_debug("%s: configNr = %d\n", __func__, i);
 
 	return params;
@@ -1042,13 +1040,10 @@ EXPORT_SYMBOL_GPL(rndis_add_hdr);
 
 void rndis_free_response(struct rndis_params *params, u8 *buf)
 {
-	rndis_resp_t *r;
-	struct list_head *act, *tmp;
+	rndis_resp_t *r, *n;
 
-	list_for_each_safe(act, tmp, &(params->resp_queue))
-	{
-		r = list_entry(act, rndis_resp_t, list);
-		if (r && r->buf == buf) {
+	list_for_each_entry_safe(r, n, &params->resp_queue, list) {
+		if (r->buf == buf) {
 			list_del(&r->list);
 			kfree(r);
 		}
@@ -1058,14 +1053,11 @@ EXPORT_SYMBOL_GPL(rndis_free_response);
 
 u8 *rndis_get_next_response(struct rndis_params *params, u32 *length)
 {
-	rndis_resp_t *r;
-	struct list_head *act, *tmp;
+	rndis_resp_t *r, *n;
 
 	if (!length) return NULL;
 
-	list_for_each_safe(act, tmp, &(params->resp_queue))
-	{
-		r = list_entry(act, rndis_resp_t, list);
+	list_for_each_entry_safe(r, n, &params->resp_queue, list) {
 		if (!r->send) {
 			r->send = 1;
 			*length = r->length;
@@ -1090,7 +1082,7 @@ static rndis_resp_t *rndis_add_response(struct rndis_params *params, u32 length)
 	r->send = 0;
 
 	spin_lock(&rndis_response_lock);
-	list_add_tail(&r->list, &(params->resp_queue));
+	list_add_tail(&r->list, &params->resp_queue);
 	spin_unlock(&rndis_response_lock);
 	return r;
 }

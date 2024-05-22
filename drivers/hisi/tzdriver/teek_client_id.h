@@ -75,18 +75,43 @@ phone secos
 vendor/thirdparty/secure_os/trustedcore/include/TEE/tee_common.h
 vendor/thirdparty/secure_os/trustedcore/platform/kirin/secureboot/secboot.h
 */
+
+#ifdef CONFIG_HISI_SECBOOT_IMG
 enum SVC_SECBOOT_IMG_TYPE {
-	MODEM,
-	HIFI,
-	DSP,
-	XDSP,
-	TAS,
-	WAS,
-	CAS,
-	MODEM_DTB,
+    MODEM,
+    DSP,
+    XDSP,
+    TAS,
+    WAS,
+    CAS,
+    MODEM_DTB,
+    NVM,
+    NVM_S,
+    MBN_R,
+    MBN_A,
+    MODEM_COLD_PATCH,
+    DSP_COLD_PATCH,
+    MODEM_CERT,
+    MAX_SOC_MODEM,
+    HIFI,
     ISP,
-	SOC_MAX
+    IVP,
+    SOC_MAX
 };
+#else
+enum SVC_SECBOOT_IMG_TYPE {
+    MODEM,
+    HIFI,
+    DSP,
+    XDSP,
+    TAS,
+    WAS,
+    CAS,
+    MODEM_DTB,
+    ISP,
+    SOC_MAX
+};
+#endif
 
 #endif
 

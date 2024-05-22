@@ -320,10 +320,8 @@
 #define ID_MSG_L4A_CERSSI_INQ_REQ       (0x00011026)
 #define ID_MSG_L4A_CERSSI_INQ_CNF       (0x00011027)
 
-/*begin_added by c64416 for lte wifi 20131013*/
 #define ID_MSG_L4A_ISMCOEXSET_REQ       (0x00011028)
 #define ID_MSG_L4A_ISMCOEXSET_CNF       (0x00011029)
-/*end_added by c64416 for lte wifi 20131013*/
 
 #define ID_MSG_L4A_RADVER_SET_REQ       (0x00011030)
 #define ID_MSG_L4A_RADVER_SET_CNF       (0x00011031)
@@ -2297,7 +2295,6 @@ typedef struct
 
 
 
-/*begin_added by c64416 for lte wifi 20131013*/
 /******************************************************************************
 √Ë ˆ:   ^ISMCOEX
 ID:
@@ -2336,7 +2333,6 @@ typedef struct
     VOS_UINT32                          ulErrorCode;
 } L4A_ISMCOEX_CNF_STRU;
 
-/*end_added by c64416 for lte wifi 20131013*/
 
 typedef L4A_COMM_REQ_STRU L4A_READ_LTECS_REQ_STRU;
 

@@ -43,7 +43,7 @@ static struct clk *mdm2gps_clk0 = NULL;
 static struct clk *mdm2gps_clk1 = NULL;
 static HI_GPS_INFO *hi_gps_info_t = NULL;
 
-int set_gps_ref_clk_enable_hi110x(bool enable, gps_modem_id_enum modem_id, gps_rat_mode_enum rat_mode);
+int set_gps_ref_clk_enable_hi110x_etc(bool enable, gps_modem_id_enum modem_id, gps_rat_mode_enum rat_mode);
 
 static ssize_t gps_write_proc_nstandby(struct file* filp, const char __user* buffer, size_t len, loff_t* off)
 {
@@ -65,17 +65,17 @@ static ssize_t gps_write_proc_nstandby(struct file* filp, const char __user* buf
     if (gps_nstandby == '0')
     {
         printk(KERN_INFO "[GPS] refclk disable.\n");
-        set_gps_ref_clk_enable_hi110x(false, 0, 0);
+        set_gps_ref_clk_enable_hi110x_etc(false, 0, 0);
     }
     else if (gps_nstandby == '1')
     {
         printk(KERN_INFO "[GPS] refclk SCPLL0 enable.\n");
-        set_gps_ref_clk_enable_hi110x(true, 0, 0);
+        set_gps_ref_clk_enable_hi110x_etc(true, 0, 0);
     }
     else if (gps_nstandby == '2')
     {
         printk(KERN_INFO "[GPS] refclk SCPLL1 enable.\n");
-        set_gps_ref_clk_enable_hi110x(true, 0, 4);
+        set_gps_ref_clk_enable_hi110x_etc(true, 0, 4);
     }
     else
     {
@@ -206,7 +206,7 @@ static int hi_gps_probe(struct platform_device *pdev)
     hi_gps_info_t = hi_gps_info;
 
 #ifdef CONFIG_HI110X_GPS_REFCLK_INTERFACE
-    register_gps_set_ref_clk_func((void*)set_gps_ref_clk_enable_hi110x);
+    register_gps_set_ref_clk_func((void*)set_gps_ref_clk_enable_hi110x_etc);
     printk(KERN_INFO "[GPS] gps register func pointer succ.\n");
 #endif
     return 0;
@@ -275,7 +275,7 @@ static struct platform_driver hi_gps_plat_driver = {
     },
 };
 
-int hi_gps_plat_init(void)
+int hi_gps_plat_init_etc(void)
 {
     int ret = -1;
 
@@ -288,19 +288,19 @@ int hi_gps_plat_init(void)
         }
         else
         {
-            printk(KERN_INFO "[GPS] hi_gps_plat_init ok! \n");
+            printk(KERN_INFO "[GPS] hi_gps_plat_init_etc ok! \n");
         }
     }
 
     return ret;
 }
 
-void hi_gps_plat_exit(void)
+void hi_gps_plat_exit_etc(void)
 {
     platform_driver_unregister(&hi_gps_plat_driver);
 }
 
-int set_gps_ref_clk_enable_hi110x(bool enable, gps_modem_id_enum modem_id, gps_rat_mode_enum rat_mode)
+int set_gps_ref_clk_enable_hi110x_etc(bool enable, gps_modem_id_enum modem_id, gps_rat_mode_enum rat_mode)
 {
     int ret = 0;
     struct clk *parent = NULL;

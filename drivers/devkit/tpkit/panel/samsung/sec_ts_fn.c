@@ -56,7 +56,7 @@ int sec_ts_glove_mode_enables(struct sec_ts_data *ts, bool enable)
 		goto glove_enable_err;
 	}
 
-	TS_LOG_ERR("%s: glove:%d, status:%x\n", __func__,
+	TS_LOG_INFO("%s: glove:%d, status:%x\n", __func__,
 		enable, ts->touch_functions);
 
 	return ret;
@@ -454,6 +454,10 @@ int run_self_delta_read_all(struct sec_ts_data *ts, struct sec_ts_test_mode *mod
 	mode->type = TYPE_NO_COMNOISE_DATA;
 	mode->frame_channel = TEST_MODE_READ_CHANNEL;
 	mode->allnode = TEST_MODE_ALL_NODE;
+
+	if(ts->ic_name == S6SY761X){
+		mode->type = TYPE_RAW_DATA;
+	}
 
 	return sec_ts_read_raw_data(ts, mode);
 }
@@ -985,6 +989,9 @@ int sec_ts_run_self_test(struct sec_ts_data *ts, struct ts_rawdata_info *info)
 		TS_LOG_ERR("%s: Touch is stopped!\n", __func__);
 		return -ENOMEM;
 	}
+	if(ts->ic_name == S6SY761X) {
+		wake_lock(&ts->wakelock);//add wakelock ,avoid i2c suspend
+	}
 	raw_count = ts->tx_count * ts->rx_count;
 	memset(info->result, 0, sizeof(info->result));
 
@@ -1061,6 +1068,9 @@ int sec_ts_run_self_test(struct sec_ts_data *ts, struct ts_rawdata_info *info)
 			__func__, img_ver[0], img_ver[1], img_ver[2], img_ver[3]);
 
 err_exit:
+	if(ts->ic_name == S6SY761X) {
+		wake_unlock(&ts->wakelock);//add wakelock ,avoid i2c suspend
+	}
 	snprintf(result_buff, SEC_CMD_STR_LEN,
 		"[%d,%d,%d],[%d,%d,%d],[%d,%d,%d],[%d,%d,%d];",
 		mode[SEC_TS_RAWCAP_TEST].avg, mode[SEC_TS_RAWCAP_TEST].max, mode[SEC_TS_RAWCAP_TEST].min,
@@ -1077,10 +1087,19 @@ err_exit:
 				__func__, result_buff);
 	}
 	ibuff_offset = strlen(result_buff);
-	snprintf(result_buff + ibuff_offset, SEC_CMD_STR_LEN - ibuff_offset, "%s-%s%s-%x.%x.%x.%x",
+
+	if(ts->ic_name == S6SY761X){
+		snprintf(result_buff + ibuff_offset, SEC_CMD_STR_LEN - ibuff_offset, "%s-%s%s-%x.%x.%x.%x",
+			ts->module_name, SEC_TS_VENDOR_NAME, ts->project_id,
+			img_ver[0], img_ver[1], img_ver[2], img_ver[3]);
+	} else {
+		snprintf(result_buff + ibuff_offset, SEC_CMD_STR_LEN - ibuff_offset, "%s-%s%s-%x.%x.%x.%x",
 			ts->module_name, SEC_TS_VENDOR_NAME, SEC_TS_HW_PROJECTID,
 			img_ver[0], img_ver[1], img_ver[2], img_ver[3]);
+	}
+
 	strncat(info->result, result_buff, TS_RAWDATA_RESULT_MAX-1);
+	TS_LOG_INFO("%s, %s\n", __func__, info->result);
 
 	return ret;
 }

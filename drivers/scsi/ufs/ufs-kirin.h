@@ -51,6 +51,8 @@
  */
 #define PCTRL_PERI_CTRL3_OFFSET	(0x010)
 #define UFS_TCXO_EN_WITH_MASK	(UFS_BIT(0) | UFS_BIT(16))
+#define PCTRL_PERI_STAT64_OFFSET	(0x18C)
+#define BIT_UFS_PSW_MEM_REPAIR_ACK_MASK	UFS_BIT(21)
 /*
  * pericrg specific define
  */
@@ -92,6 +94,7 @@
 /*
  * ufs sysctrl specific define
  */
+#define UFS_SYS_MEMORY_CTRL		(0x0)
 #define PSW_POWER_CTRL			(0x04)
 #define PHY_ISO_EN			(0x08)
 #define HC_LP_CTRL			(0x0C)
@@ -102,6 +105,7 @@
 #define PHY_RESET_STATUS		(0x28)
 #define PHY_MPX_TEST_CTRL		(0x30)
 #define PHY_MPX_TEST_OBSV		(0x34)
+#define UFS_SYS_MK2_CTRL		(0x50)
 #define UFS_SYSCTRL			(0x5C)
 #define UFS_DEVICE_RESET_CTRL           (0x60)
 #define UFS_CRG_UFS_CFG                 (0x7C)
@@ -110,13 +114,20 @@
 #define UFS_SYS_AXI_R_QOS_LMRT          (0x88)
 #define UFS_DEBUG_CTRL			(0xAC)
 #define UFS_DEBUG_STAT			(0xB0)
+#define UFS_PWM_COUNTER			(0xB8)
 #define UFS_IDLE_CONUTER		(0xBC)
-#define UFS_IDLE_CONUTER_CRUT	(0xC8)
-#define UFS_IDLE_CONUTER_CLR	(0xD4)
-#define UFS_SYS_UFS_POWER_GATING   (0xF4)
-#define UFS_SYS_PHY_SRAM_MEM_CTRL_S  (0xEC)
-#define UFS_SYS_PHY_SRAM_INIT_DONE (1 << 26)
-
+#define UFS_PWM_COUNTER_CURT		(0xC4)
+#define UFS_IDLE_CONUTER_CRUT		(0xC8)
+#define UFS_PWM_COUNTER_CLR		(0xD0)
+#define UFS_IDLE_CONUTER_CLR		(0xD4)
+#define UFS_PHY_FSM_STATE		(0xD8)
+#define UFS_DEV_TMT_COUNTER		(0xDC)
+#define UFS_DEV_TMT_COUNTER_CURR	(0xE0)
+#define UFS_DEV_TMT_COUNTER_CLR		(0xE4)
+#define UFS_SYS_UFS_POWER_GATING   	(0xF4)
+#define UFS_SYS_PHY_SRAM_MEM_CTRL_S  	(0xEC)
+#define UFS_SYS_PHY_SRAM_INIT_DONE 	(1 << 26)
+#define UFS_SYS_MEMORY_BP_CTRL		(0xF8)
 
 #define BIT_UFS_PSW_ISO_CTRL		(1 << 16)
 #define BIT_UFS_PSW_MTCMOS_EN		(1 << 0)
@@ -138,14 +149,58 @@
 #define MASK_UFS_SYSCRTL_BYPASS		(0x3F << 16)
 #define MASK_UFS_DEVICE_RESET		(0x1 << 16)
 #define BIT_UFS_DEVICE_RESET		(0x1)
-#define SRAM_EXT_LD_DONE_BIT	    (0x1 << 27)
-#define PHY_SRAM_BYPASS_BIT			(0x1 << 28)
-#define BIT_RX_DISABLE_OVR_EN_WR    (1 << 4)
-#define BIT_UFS_IDLE_CNT_TIMEOUT_MASK	(1 << 5)
+#define SRAM_EXT_LD_DONE_BIT	    	(0x1 << 27)
+#define PHY_SRAM_BYPASS_BIT		(0x1 << 28)
+#define BIT_RX_DISABLE_OVR_EN_WR    	(1 << 4)
+#define WDP_BYPASS_EC_BIT	(0x1 << 16)
+#define ULPH8_BYPASS_EC_BIT	(0x1 << 0)
+#define OVERALL_BYPASS_EC_BIT	(0x1 << 1)
+#define UFS_MEM_CTRL_MASK               (0xFFFF)
+#define UFS_MEM_CTRL_VAL                (0x850)
+#define UFS_BP_MEM_CTRL_MASK            (0xFFFF)
+#define UFS_BP_MEM_CTRL_VAL             (0x4858)
+
+#define PHY_START 0xC000
+/* UFS_DEBUG_CTRL */
+#define UFS_DEBUG_CTRL_DEFAULT_MASK	(BIT_UFS_PWM_CNT_INT_MASK |\
+                                         BIT_UFS_IDLE_CNT_TIMEOUT_MASK |\
+                                         BIT_UFS_DEV_TMT_CNT_MASK)
+#define BIT_UFS_PWM_CNT_EN		(1 << 2)
+#define BIT_UFS_PWM_CNT_INT_MASK	(1 << 3)
 #define BIT_UFS_IDLE_CNT_EN		(1 << 4)
-#define BIT_UFS_IDLE_CNT_TIMEOUT_MASK_STAT	(1 << 4)
-#define BIT_UFS_IDLE_TIMEOUT	(1 << 4)
-#define BIT_UFS_IDLE_CNT_TIMEOUT_CLR	(1 << 0)
+#define BIT_UFS_IDLE_CNT_TIMEOUT_MASK	(1 << 5)
+#define BIT_UFS_DEV_TMT_CNT_EN		(1 << 7)
+#define BIT_UFS_DEV_TMT_CNT_MASK	(1 << 8)
+
+/* UFS_DEBUG_STAT */
+#define BIT_UFS_PWM_INTR_RAW			(1 << 2)
+#define BIT_UFS_PWR_INTR			(1 << 3)
+#define BIT_UFS_IDLE_TIMEOUT			(1 << 4)
+#define BIT_UFS_IDLE_CNT_TIMEOUT_CLR		(1 << 0)
+#define BIT_UFS_DEV_TMT_INTR_RAW		(1 << 9)
+#define BIT_UFS_DEV_TMT_INTR			(1 << 10)
+
+/* UFS_PHY_FSM_STATE */
+#define TX0_FSM_STATE_CFG_OFFSET	(0)
+#define TX0_FSM_STATE_CFG_SHIFT		(4)
+
+#define TX1_FSM_STATE_CFG_OFFSET	(4)
+#define TX1_FSM_STATE_CFG_SHIFT		(4)
+
+#define RX0_FSM_STATE_ATTR_OFFSET	(8)
+#define RX0_FSM_STATE_ATTR_SHIFT	(4)
+
+#define RX1_FSM_STATE_ATTR_OFFSET	(12)
+#define RX1_FSM_STATE_ATTR_SHIFT	(4)
+
+#define UFS_PHY_STATE_DISABLED 		(0)
+#define UFS_PHY_STATE_HIBERN8 		(1)
+#define UFS_PHY_STATE_SLEEP 		(2)
+#define UFS_PHY_STATE_STALL 		(3)
+#define UFS_PHY_STATE_LSBURST 		(4)
+#define UFS_PHY_STATE_HSBURST 		(5)
+#define UFS_PHY_STATE_LINECFG 		(6)
+#define UFS_PHY_STATE_LINERESET 	(7)
 
 /*
  * KIRIN UFS HC specific Registers
@@ -203,6 +258,12 @@ enum {
 	UFSSYS_UFSAXI_W_QOS_LMTR		= 0x0084,
 	UFSSYS_UFSAXI_R_QOS_LMTR		= 0x0088,
 	UFSSYS_CRG_UFS_STAT			= 0x00A8,
+
+	UFSSYS_UFS_DEBUG_CTRL			= 0x00AC,
+	UFSSYS_UFS_DEBUG_STATE			= 0x00B0,
+	UFSSYS_PWM_TIMEOUT_TIMER		= 0x00B8,
+	UFSSYS_PWM_TIMEOUT_CURR_TIMER		= 0x00C4,
+	UFSSYS_UFS_PHY_STATE			= 0x00D8,
 };
 
 /*
@@ -237,8 +298,6 @@ enum {
 /* Now it is a test magic number */
 //#define RPMB_SVC_UFS_TEST		(0xc500bbb0)
 #define RPMB_SVC_UFS_TEST             (0xc600FFF5)
-
-#define UFS_AHIT_AUTOH8_TIMER           (0x1001)
 
 /*use #0~29 key index*/
 #ifdef CONFIG_SCSI_UFS_ENHANCED_INLINE_CRYPTO
@@ -275,13 +334,15 @@ enum {
 #define USE_RATE_B		UFS_BIT(1)
 #define BROKEN_FASTAUTO		UFS_BIT(2)
 #define USE_ONE_LANE		UFS_BIT(3)
-#define USE_AUTO_H8		UFS_BIT(4)
 #define BROKEN_CLK_GATE_BYPASS	UFS_BIT(5)
 #define USE_HISI_MPHY_TC	UFS_BIT(6)
 #define USE_HS_GEAR1		UFS_BIT(7)
 #define USE_HS_GEAR2		UFS_BIT(8)
 #define USE_HS_GEAR3		UFS_BIT(9)
 #define USE_HS_GEAR4		UFS_BIT(10)
+#define RX_CANNOT_DISABLE	UFS_BIT(11)
+#define DISABLE_UFS_PMRUNTIME	UFS_BIT(12)
+#define RX_VCO_VREF	 UFS_BIT(13)
 
 struct ufs_kirin_host {
 	struct ufs_hba *hba;
@@ -408,6 +469,7 @@ int ufs_kirin_suspend_before_set_link_state(struct ufs_hba *hba, enum ufs_pm_op 
 int ufs_kirin_resume_after_set_link_state(struct ufs_hba *hba, enum ufs_pm_op pm_op);
 int ufs_kirin_suspend(struct ufs_hba *hba, enum ufs_pm_op pm_op);
 int ufs_kirin_resume(struct ufs_hba *hba, enum ufs_pm_op pm_op);
+int ufs_update_hc_fw(struct ufs_hba *hba);
 #ifdef CONFIG_SCSI_UFS_HS_ERROR_RECOVER
 int ufs_kirin_get_pwr_by_sysctrl(struct ufs_hba *hba);
 #endif

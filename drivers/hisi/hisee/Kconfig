@@ -12,6 +12,20 @@ config HISEE_POWER_MANAGE_COUNT
 	help
 	  Hisi hisee driver
 
+config HISI_HISEE_SHUTDOWN_SWIPE
+	depends on HISI_HISEE
+	bool "Hisilicon hisee shutdown swipe"
+	default n
+	help
+	  whether to support hisee shutdown swipe
+
+config FAKE_HISEE_SHUTDOWN_SWIPE_SUPPORT
+	depends on HISI_HISEE_SHUTDOWN_SWIPE
+	bool "Hisilicon fake hisee shutdown swipe"
+	default n
+	help
+	  whether to support fake hisee shutdown swipe
+
 config HISEE_APPLET_APDU_TEST_OPTIMIZATION
 	depends on HISI_HISEE
 	bool "Hisilicon hisee applet apdu test optimize"
@@ -65,3 +79,31 @@ config HISEE_SUPPORT_8_COS
 	default n
 	help
 	  Hisi hisee driver used to support 8 cos.
+
+config HISI_HISEE_SUPPORT_CASDKEY
+	depends on HISI_HISEE
+	bool "Hisilicon hisee support CASD key"
+	default n
+	help
+	  whether hisee support CASD key
+
+config HISEE_SUPPORT_INSE_ENCRYPT
+	depends on HISI_HISEE
+	bool "Hisilicon hisee support inse encryption for bio, pin code and fingerprint."
+	default n
+	help
+	  whether hisee support inse encryption
+
+config HISEE_FACTORY_SECURITY_CHECK
+	depends on HISI_HISEE
+	bool "Hisilicon hisee support factory security check."
+	default n
+	help
+	  whether hisee support factory security check
+
+config HISEE_NFC_IRQ_SWITCH
+	depends on HISI_HISEE
+	bool "Hisilicon hisee support nfc irq switch."
+	default n
+	help
+	  whether hisee support nfc irq switch

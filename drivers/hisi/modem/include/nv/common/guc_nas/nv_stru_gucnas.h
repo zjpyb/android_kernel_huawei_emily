@@ -315,6 +315,21 @@ typedef struct
 
 typedef struct
 {
+    VOS_UINT8                           ucInternationalRoamEmcNotSelIms;
+    VOS_UINT8                           ucReserved1;
+    VOS_UINT8                           ucReserved2;
+    VOS_UINT8                           ucReserved3;
+    VOS_UINT8                           ucReserved4;
+    VOS_UINT8                           ucReserved5;
+    VOS_UINT8                           ucReserved6;
+    VOS_UINT8                           ucReserved7;
+}TAF_NVIM_SPM_EMC_CUSTOM_CFG_STRU;
+
+
+
+
+typedef struct
+{
     VOS_UINT8                           ucLteSmsEnable;                         /* LTE发送3GPP2短信特性控制 VOS_TURE:使能,VOS_FALSE:禁止 */
     TAF_LSMS_RESEND_FLAG_ENUM_UINT8     enResendFlag;                           /* 重发使能标志 */
     VOS_UINT8                           ucResendMax;                            /* 重试最大次数，默认最大1次 */
@@ -553,7 +568,6 @@ typedef struct
     VOS_UINT8                           aucRoamEnabledMccList[20];              /* 允许漫游的国家码列表 */
 }NAS_MMC_NVIM_LTE_INTERNATIONAL_ROAM_CFG_STRU;
 
-/* Added by l60609 for B060 Project, 2012-2-20, Begin   */
 
 typedef struct
 {
@@ -562,7 +576,6 @@ typedef struct
     VOS_UINT8                           ucReserve1;
     VOS_UINT8                           ucReserve2;
 }NAS_PREVENT_TEST_IMSI_REG_STRU;
-/* Added by l60609 for B060 Project, 2012-2-20, End   */
 
 
 typedef struct

@@ -1,7 +1,13 @@
 #ifndef MMC_QUEUE_H
 #define MMC_QUEUE_H
 
-#define MMC_REQ_SPECIAL_MASK	(REQ_DISCARD | REQ_FLUSH)
+static inline bool mmc_req_is_special(struct request *req)
+{
+	return req &&
+		(req_op(req) == REQ_OP_FLUSH ||
+		 req_op(req) == REQ_OP_DISCARD ||
+		 req_op(req) == REQ_OP_SECURE_ERASE);
+}
 
 struct request;
 struct task_struct;
@@ -50,10 +56,12 @@ struct mmc_queue {
 	struct task_struct	*thread;
 	struct semaphore	thread_sem;
 	volatile unsigned long	flags;
-#define MMC_QUEUE_SUSPENDED	(1 << 0)
-#define MMC_QUEUE_NEW_REQUEST	(1 << 1)
-#define MMC_QUEUE_SUSPENDED_BIT		(1 << 0)
-#define MMC_QUEUE_NEW_REQUEST_BIT	(1 << 1)
+
+/*#define MMC_QUEUE_SUSPENDED	(1 << 0)*/
+/*#define MMC_QUEUE_NEW_REQUEST	(1 << 1)*/
+/*We use set bit function to replace & to ensure multi-Progress accessing mmc_queue flags ok*/
+#define MMC_QUEUE_SUSPENDED_BIT		(0)
+#define MMC_QUEUE_NEW_REQUEST_BIT	(1)
 
 	int			(*issue_fn)(struct mmc_queue *, struct request *);
 	int			(*cmdq_issue_fn)(struct mmc_queue *, struct request *);

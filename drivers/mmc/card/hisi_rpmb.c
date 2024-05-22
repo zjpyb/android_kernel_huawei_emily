@@ -94,29 +94,26 @@ struct hisi_rpmb {
 extern long
 blk_scsi_kern_ioctl(unsigned int fd, unsigned int cmd, unsigned long arg);
 static struct hisi_rpmb hisi_rpmb;
-static int rpmb_support_device = BOOT_DEVICE_EMMC;
+static u64 rpmb_support_device = BOOT_DEVICE_EMMC;
 static int rpmb_drivers_init_status = RPMB_DRIVER_IS_NOT_READY;
 static int rpmb_device_init_status = RPMB_DEVICE_IS_NOT_READY;
 static int rpmb_key_status = KEY_NOT_READY;
-/*lint -e651 -e708 -e570 -e64 -e785*/
+
 DEFINE_MUTEX(rpmb_counter_lock);
 DEFINE_MUTEX(rpmb_ufs_cmd_lock);
 
-void print_frame_buf(char* name, void *buf, int len, int format){
-	pr_err("%s:\n",name);
-	int i;
-	for(i=0;i<len;i++){
-		if(i%format == 0)
-			pr_err("\n");
-		pr_err("%x ",*((char *)buf + i));
-	}
-	pr_err("\n----------------------------\n");
+static void print_frame_buf(char* name, void *buf, int len, int format) {
+	pr_err("%s \n", name);
+	print_hex_dump(KERN_ERR, "", DUMP_PREFIX_OFFSET, format, 1, buf,
+		len, false);
 }
 
-/*lint +e651 +e708 +e570 +e64 +e785*/
-/*lint -e715*/
-noinline int atfd_hisi_rpmb_smc(u64 function_id, u64 arg0, u64 arg1,  u64 arg2)
+noinline int atfd_hisi_rpmb_smc(u64 _function_id, u64 _arg0, u64 _arg1,  u64 _arg2)
 {
+    register u64 function_id asm("x0") = _function_id;
+    register u64 arg0 asm("x1") = _arg0;
+    register u64 arg1 asm("x2") = _arg1;
+    register u64 arg2 asm("x3") = _arg2;
     asm volatile(
             __asmeq("%0", "x0")
             __asmeq("%1", "x1")
@@ -128,7 +125,7 @@ noinline int atfd_hisi_rpmb_smc(u64 function_id, u64 arg0, u64 arg1,  u64 arg2)
 
     return (int)function_id;
 }
-/*lint +e715*/
+
 
 int rpmb_get_dev_ver(enum rpmb_version *ver)
 {
@@ -207,9 +204,7 @@ void mmc_rpmb_set_key(struct rpmb_request *shared_rpmb_request,
 	/*according to key frame request, caculate the status request*/
 	uint16_t status_frame_request_type = (uint16_t)(((be16_to_cpu(shared_rpmb_request->key_frame.request)) & 0xF000) | RPMB_REQ_STATUS);
 	memset(&shared_rpmb_request->status_frame, 0, sizeof(struct rpmb_frame));
-	/*lint -e778 -e572 -e845*/
 	shared_rpmb_request->status_frame.request = cpu_to_be16(status_frame_request_type);
-	/*lint +e778 +e572 +e845*/
 	mmc_rpmb_basic_request(0, &shared_rpmb_request->key_frame, rpmb_data, 0x1, true);
 	mmc_rpmb_status_request(1, &shared_rpmb_request->status_frame, rpmb_data, 0x1, false);
 	mmc_rpmb_result_request(2, &shared_rpmb_request->key_frame, rpmb_data, 0x1, false);
@@ -239,9 +234,7 @@ void mmc_rpmb_write_data(struct rpmb_request *shared_rpmb_request,
 	/*according to write frame request, caculate the status request*/
 	uint16_t status_frame_request_type = (uint16_t)(((be16_to_cpu(shared_rpmb_request->frame[0].request)) & 0xF000) | RPMB_REQ_STATUS);
 	memset(&shared_rpmb_request->status_frame, 0, sizeof(struct rpmb_frame));
-	/*lint -e778 -e572 -e845*/
 	shared_rpmb_request->status_frame.request = cpu_to_be16(status_frame_request_type);
-	/*lint +e778 +e572 +e845*/
 	mmc_rpmb_basic_request(0, &shared_rpmb_request->frame[0], rpmb_data, blocks_count, true);
 	mmc_rpmb_status_request(1, &shared_rpmb_request->status_frame, rpmb_data, 0x1, false);
 	mmc_rpmb_result_request(2, &shared_rpmb_request->frame[0], rpmb_data, 0x1, false);
@@ -461,9 +454,7 @@ void ufs_rpmb_set_key(struct rpmb_request *shared_rpmb_request,
 	/*according to key frame request, caculate the status request*/
 	uint16_t status_frame_request_type = (uint16_t)(((be16_to_cpu(shared_rpmb_request->key_frame.request)) & 0xF000) | RPMB_REQ_STATUS);
 	memset(&shared_rpmb_request->status_frame, 0, sizeof(struct rpmb_frame));
-	/*lint -e778 -e572 -e845*/
 	shared_rpmb_request->status_frame.request = cpu_to_be16(status_frame_request_type);
-	/*lint +e778 +e572 +e845*/
 	ufs_rpmb_basic_request(0, &shared_rpmb_request->key_frame, rpmb_data, 0x1, sense_buffer[0], transfer_frame[0]);
 	ufs_rpmb_status_request(1, &shared_rpmb_request->status_frame, rpmb_data, 0x1, sense_buffer[1], transfer_frame[1]);
 	ufs_rpmb_result_request(2, &shared_rpmb_request->key_frame, rpmb_data, 0x1, sense_buffer[2], transfer_frame[2]);
@@ -499,9 +490,7 @@ void ufs_rpmb_write_data(struct rpmb_request *shared_rpmb_request,
 	/*according to write frame request, caculate the status request*/
 	uint16_t status_frame_request_type = (uint16_t)(((be16_to_cpu(shared_rpmb_request->frame[0].request)) & 0xF000) | RPMB_REQ_STATUS);
 	memset(&shared_rpmb_request->status_frame, 0, sizeof(struct rpmb_frame));
-	/*lint -e778 -e572 -e845*/
 	shared_rpmb_request->status_frame.request = cpu_to_be16(status_frame_request_type);
-	/*lint +e778 +e572 +e845*/
 	ufs_rpmb_basic_request(0, &shared_rpmb_request->frame[0], rpmb_data, blocks_count, sense_buffer[0], transfer_frame[0]);
 	ufs_rpmb_status_request(1, &shared_rpmb_request->status_frame, rpmb_data, 0x1, sense_buffer[1], transfer_frame[1]);
 	ufs_rpmb_result_request(2, &shared_rpmb_request->frame[0], rpmb_data, 0x1, sense_buffer[2], transfer_frame[2]);
@@ -512,19 +501,23 @@ void ufs_rpmb_write_data(struct rpmb_request *shared_rpmb_request,
  * 2. RPMB_STATE_WR_CNT and result success but RESPONSE not valid
  * 3. RPMB_STATE_WR_DATA and all the emmc blocks have been written
  */
-/*lint -save -e455*/
 void emmc_rpmb_unlock_counterlock(struct rpmb_request *request,
 			 struct rpmb_frame *frame,
 			 int32_t result)
 {
 	if ((request->info.state == RPMB_STATE_WR_CNT && (result || (be16_to_cpu(frame->result) != RPMB_OK ||be16_to_cpu(frame->request) != RPMB_RESP_WCOUNTER))) ||
 	     (request->info.state == RPMB_STATE_WR_DATA && (0 == request->info.blks - (request->info.current_rqst.offset + request->info.current_rqst.blks)))) {
-		mutex_unlock(&rpmb_counter_lock);
+		mutex_unlock(&rpmb_counter_lock);/*lint !e455*/
 	}
 }
-/*lint -restore*/
 
-/*lint -save -e456 -e454*/
+/*
+ * This warning describes the "lock" exception used in
+ * the function, but according to the code The "lock"
+ * added to the function is normal and no additional
+ * modifications are required
+ */
+/*lint -e454 -e456*/
 static int32_t mmc_rpmb_work(struct rpmb_request *request)
 {
 	int32_t result;
@@ -657,7 +650,7 @@ free_alloc_buf:
 		kfree(rpmb_data);
 	return result;
 }
-/*lint -restore*/
+/*lint +e454 +e456*/
 #ifdef CONFIG_HISI_RPMB_TIME_DEBUG
 void hisi_hisee_time_stamp(enum rpmb_state state, unsigned int blks){
 	u64 temp_cost_time;
@@ -742,10 +735,10 @@ int32_t hisee_exception_to_reset_rpmb(void)
 	request->rpmb_exception_status = 0;
 	return 0;
 }
-/*lint -e715*/
+
 static void rpmb_work_routine(void)
 {
-	int32_t result;
+	int32_t result, ret;
 	struct rpmb_request *request = hisi_rpmb.rpmb_request;
 	/*No key, we do not send read and write request(hynix device not support no key to read more than 4K)*/
 	if(rpmb_key_status == KEY_NOT_READY){
@@ -768,14 +761,20 @@ static void rpmb_work_routine(void)
 	/*mark hisee rpmb request end time*/
 	hisi_hisee_time_stamp(request->info.state, request->info.current_rqst.blks);
 	#endif
-	/*lint -e571*/
 	hisi_rpmb.wake_up_condition = 0;
-	if(atfd_hisi_rpmb_smc((u64)RPMB_SVC_REQUEST_DONE, (u64)result, (u64)0, (u64)0))
-		pr_err("[%s]:rpmb request done from bl31 failed\n",__func__);
-	/*lint +e571*/
+
+	ret = atfd_hisi_rpmb_smc((u64)RPMB_SVC_REQUEST_DONE, (u64)(long)result, (u64)0, (u64)0);
+	if (ret) {
+		pr_err("[%s]:state %d,trans blks %d, rpmb request done from "
+		       "bl31 failed, "
+		       "ret 0x%x\n",
+			__func__, request->info.state,
+			request->info.current_rqst.blks, ret);
+		print_frame_buf("frame failed", (void *)&request->error_frame, 512, 16);
+	}
 	/*wake_unlock(&hisi_rpmb.wake_lock);*/
 }
-/*lint +e715*/
+
 /*
  * hisi_rpmb_active - handle rpmb request from ATF
  */
@@ -794,7 +793,6 @@ void hisi_rpmb_active(void)
 
 EXPORT_SYMBOL(hisi_rpmb_active);
 
-/*lint -e715 -e64 -e785*/
 #ifdef CONFIG_HISI_DEBUG_FS
 int get_rpmb_key_status(void);
 u32 get_rpmb_support_key_num(void);
@@ -889,8 +887,7 @@ static int rpmb_get_support_key_num_fops_get(void *data, u64 *val)
 
 DEFINE_SIMPLE_ATTRIBUTE(rpmb_get_support_key_num_fops, rpmb_get_support_key_num_fops_get, NULL, "%llu\n");
 
-/*lint +e715 +e64 +e785*/
-static int hisi_rpmb_debugfs_init(void)
+int hisi_rpmb_debugfs_init(void)
 {
 	/* debugfs for debug only */
 	struct dentry *debugfs_hisi_rpmb;
@@ -927,7 +924,7 @@ static int hisi_rpmb_debugfs_init(void)
 	debugfs_create_u64("test_time", S_IRUSR | S_IWUSR, debugfs_hisi_rpmb,
 			  &request->rpmb_debug.test_time);
 	debugfs_create_u32("key_id", S_IRUSR | S_IWUSR, debugfs_hisi_rpmb,
-			   &request->rpmb_debug.key_id);
+			   &request->rpmb_debug.key_num);
 	debugfs_create_u32("func_id", S_IRUSR | S_IWUSR, debugfs_hisi_rpmb,
 			   &request->rpmb_debug.func_id);
 	debugfs_create_u16("start", S_IRUSR | S_IWUSR, debugfs_hisi_rpmb,
@@ -949,7 +946,7 @@ static int hisi_rpmb_debugfs_init(void)
 EXPORT_SYMBOL(hisi_rpmb_debugfs_init);
 #endif
 #ifdef CONFIG_HISI_RPMB_TIME_DEBUG
-/*lint -e715 -e64 -e785*/
+
 static int clear_rpmb_max_time(void *data, u64 *val)
 {
 	struct rpmb_request *request = hisi_rpmb.rpmb_request;
@@ -984,7 +981,7 @@ static int read_rpmb_max_time(void *data, u64 *val)
 	return 0;
 }
 DEFINE_SIMPLE_ATTRIBUTE(read_rpmb_time_fops, read_rpmb_max_time, NULL, "%llu\n");
-/*lint +e715 +e64 +e785*/
+
 static void hisi_rpmb_time_stamp_debugfs_init(void){
 	/*create  */
 	struct dentry *debugfs_hisi_rpmb;
@@ -999,7 +996,7 @@ static void hisi_rpmb_time_stamp_debugfs_init(void){
 	debugfs_create_u16("print_enable", S_IRUSR | S_IWUSR, debugfs_hisi_rpmb,&g_time_debug);
 }
 #endif
-/*lint -e715*/
+
 static ssize_t mmc_rpmb_key_store(struct device *dev,
 				  struct device_attribute *attr,
 				  const char *buf,
@@ -1047,9 +1044,7 @@ static ssize_t mmc_rpmb_key_store(struct device *dev,
 	for (i = 0; i < WAIT_KEY_FRAME_TIMES; i++) {
 		if (request->key_frame_status == KEY_READY)
 			break;
-		/*lint -e778 -e774 -e747*/
 		mdelay(5);
-		/*lint +e778 +e774 +e747*/
 	}
 	if (i == WAIT_KEY_FRAME_TIMES) {
 		dev_err(dev, "wait for key frame ready timeout\n");
@@ -1134,9 +1129,7 @@ static ssize_t ufs_rpmb_key_store(struct device *dev,
 	for (i = 0; i < WAIT_KEY_FRAME_TIMES; i++) {
 		if (request->key_frame_status == KEY_READY)
 			break;
-		/*lint -e778 -e774 -e747*/
 		mdelay(5);
-		/*lint +e778 +e774 +e747*/
 	}
 	if (i == WAIT_KEY_FRAME_TIMES) {
 		dev_err(dev, "wait for key frame ready timeout\n");
@@ -1199,9 +1192,7 @@ static int32_t mmc_rpmb_key_status(void){
 	}
 
 	memset(frame, 0, sizeof(struct rpmb_frame));
-	/*lint -e778 -e572 -e845*/
 	frame->request = cpu_to_be16(RPMB_REQ_WCOUNTER);
-	/*lint +e778 +e572 +e845*/
 	mmc_rpmb_get_counter(request, rpmb_data);
 	ret = mmc_blk_ioctl_rpmb_cmd(RPMB_FUNC_ID_SE, blkdev, rpmb_data);
 	if (ret) {
@@ -1267,9 +1258,7 @@ static int32_t ufs_rpmb_key_status(void){
 	}
 
 	memset(frame, 0, sizeof(struct rpmb_frame));
-	/*lint -e778 -e572 -e845*/
 	frame->request = cpu_to_be16(RPMB_REQ_WCOUNTER);
-	/*lint +e778 +e572 +e845*/
 	ufs_rpmb_get_counter(request, rpmb_data, sense_buffer,
 			     transfer_frame);
 	ret = ufs_bsg_ioctl_rpmb_cmd(RPMB_FUNC_ID_SE, rpmb_data);
@@ -1371,14 +1360,14 @@ hisi_rpmb_key_show(struct device *dev, struct device_attribute *attr, char *buf)
 		strncpy(buf, "false", sizeof("false"));
 	return (ssize_t)strlen(buf);
 }
-/*lint +e715*/
+
 #define WAIT_INIT_TIMES 3000
 int get_rpmb_init_status(void)
 {
 	int i;
 	int32_t ret = 0;
 	/*lint -e501*/
-	mm_segment_t oldfs = get_fs();/*lint !e747*/
+	mm_segment_t oldfs = get_fs();
 	set_fs(get_ds());
 	/*lint +e501*/
 	for(i = 0;i < WAIT_INIT_TIMES;i++){
@@ -1404,12 +1393,12 @@ int get_rpmb_init_status(void)
 	}
 	return rpmb_drivers_init_status;
 }
-/*lint -e846 -e514 -e778 -e866 -e84*/
+
 static DEVICE_ATTR(rpmb_key,
 		   (S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP),
 		   hisi_rpmb_key_show,
 		   hisi_rpmb_key_store);
-/*lint +e846 +e514 +e778 +e866 +e84*/
+
 #define FRAME_BLOCK_COUNT 506
 static inline void hisi_ufs_read_frame_recombine(struct storage_blk_ioc_rpmb_data *storage_data)
 {
@@ -1507,7 +1496,7 @@ int hisi_ufs_rpmb_ioctl_cmd(enum func_id id, enum rpmb_op_type operation, struct
 		else
 			rpmb_data->data[i].buf =  storage_data->data[i].buf;
 	}
-	/*lint -e826*/
+
 	switch (operation) {
 	case RPMB_OP_RD:
 		ufs_rpmb_combine_cmd(&rpmb_data->data[0], true,
@@ -1551,7 +1540,7 @@ int hisi_ufs_rpmb_ioctl_cmd(enum func_id id, enum rpmb_op_type operation, struct
 			(struct rpmb_frame *)rpmb_data->data[2].buf, 0);
 		break;
 	}
-	/*lint +e826*/
+
 	ret = ufs_bsg_ioctl_rpmb_cmd(id, rpmb_data);
 
 	/*when Secure OS write multi blocks in HYNIX rpmb, it will timeout, memcpy to avoid the error*/
@@ -1706,8 +1695,8 @@ EXPORT_SYMBOL(get_mmc_card);
  *      data, please confirm copy all the retuning data not include write
  *command.
  */
+ /*lint -e429 -e593*/
 #if CONFIG_HISI_MMC_SECURE_RPMB
-/*lint -save -e715 -e429 -e593*/
 int mmc_blk_ioctl_rpmb_cmd(enum func_id id,
 			   struct block_device *bdev,
 			   struct mmc_blk_ioc_rpmb_data *rdata)
@@ -1722,11 +1711,6 @@ int mmc_blk_ioctl_rpmb_cmd(enum func_id id,
 	int err = 0, i = 0;
 	u32 status = 0;
 
-#if 0
-	/* The caller must have CAP_SYS_RAWIO */
-	if (!capable(CAP_SYS_RAWIO))
-		return -EPERM;
-#endif
 	md = mmc_blk_get(bdev->bd_disk);
 	/* make sure this is a rpmb partition */
 	if ((!md) || (!((unsigned int)md->area_type & (unsigned int)MMC_BLK_DATA_AREA_RPMB))) {
@@ -1849,9 +1833,8 @@ cmd_done:
 
 	return err;
 }
-/*lint -restore */
 #endif
-
+ /*lint +e429 +e593*/
 /* create a virtual device for dma_alloc */
 #define SECURE_STORAGE_NAME "secure_storage"
 #define RPMB_DEVICE_NAME "hisi_rpmb"
@@ -1866,9 +1849,7 @@ static int hisi_rpmb_device_init(void)
 	phys_addr_t bl31_smem_base =
 		HISI_SUB_RESERVED_BL31_SHARE_MEM_PHYMEM_BASE;
 	u32 data[2] = {0};
-	/*lint -e64*/
 	rpmb_class = class_create(THIS_MODULE, SECURE_STORAGE_NAME);
-	/*lint +e64*/
 	if (IS_ERR(rpmb_class))
 		return (int)PTR_ERR(rpmb_class);
 
@@ -1902,14 +1883,12 @@ static int hisi_rpmb_device_init(void)
 	hisi_rpmb.rpmb_request = ioremap_wc(rpmb_request_phy, mem_size);
 	if (!hisi_rpmb.rpmb_request)
 		goto err_node;
-
-	/*lint -e571*/
 	if (atfd_hisi_rpmb_smc((u64)RPMB_SVC_REQUEST_ADDR, rpmb_request_phy,
 			       (u64)rpmb_support_device, (u64)0x0)) {
 		pr_err("rpmb set shared memory address failed\n");
 		goto err_ioremap;
 	}
-	/*lint +e571*/
+
 	memcpy((void *)&rpmb_device_info, (const void *)hisi_rpmb.rpmb_request, sizeof(struct rpmb_config_info));
 
 	version = (enum rpmb_version)atfd_hisi_rpmb_smc(
@@ -1935,7 +1914,7 @@ err_class_destroy:
 	class_destroy(rpmb_class);
 	return -1;
 }
-/*lint -e715*/
+
 static int hisi_rpmb_work_thread(void *arg)
 {
 	set_freezable();
@@ -1945,7 +1924,7 @@ static int hisi_rpmb_work_thread(void *arg)
 	}
 	return 0;
 }
-/*lint +e715*/
+
 static int __init hisi_rpmb_init(void)
 {
 	struct sched_param param;

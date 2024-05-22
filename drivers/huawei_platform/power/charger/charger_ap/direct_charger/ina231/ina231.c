@@ -239,7 +239,7 @@ static int ina231_probe(struct i2c_client *client, const struct i2c_device_id *i
 	i2c_smbus_write_word_swapped(client, INA231_CONFIG, idata->config->config_sleep_in);
 
 	i2c_set_clientdata(client, idata);
-	ret = batinfo_ops_register(&ina231_ops);
+	ret = batinfo_lvc_ops_register(&ina231_ops);
 	if (ret)
 	{
 		hwlog_err("register ina231 ops failed!\n");

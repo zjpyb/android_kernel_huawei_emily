@@ -72,6 +72,9 @@
 #define PMIC_LDO2_INDEX     1
 #define PMIC_LDO3_INDEX     2
 
+#define PMIC_POWER_ON  1
+#define PMIC_POWER_OFF 0
+
 /* Internal data struct define */
 typedef enum {
     PMIC_POWER_CTRL = 0,
@@ -128,7 +131,7 @@ static int ncp6925_on(struct hisi_pmic_ctrl_t *pmic_ctrl, void *data);
 int hw_extern_pmic_config(int index, int voltage, int enable)
 {
     struct hisi_pmic_ctrl_t *pmic_ctrl = NULL;
-    if (pmic_extern_config_flag == 0) {
+    if (pmic_extern_config_flag == 0 && ncp6925_poweron == PMIC_POWER_ON) {
         cam_debug("using pmic extern config");
         pmic_ctrl = hisi_get_pmic_ctrl();
         if(pmic_ctrl != NULL) {
@@ -136,6 +139,10 @@ int hw_extern_pmic_config(int index, int voltage, int enable)
             pmic_ctrl->func_tbl->pmic_on(pmic_ctrl, 0);
         } else {
             cam_err("pmic_ctrl is NULL,just return");
+            return -1;
+        }
+        if (ncp6925_poweron != PMIC_POWER_ON) {
+            cam_err("ncp6925 do not power on, return");
             return -1;
         }
         return ncp6925_seq_config(&ncp6925_ctrl, (pmic_seq_index_t)index, (u32)voltage, enable);
@@ -248,7 +255,7 @@ static int ncp6925_init(struct hisi_pmic_ctrl_t *pmic_ctrl)
     ret = i2c_func->i2c_read(i2c_client, CHIP_REV, &device_id);
     if (ret < 0) {
         cam_err("%s: read CHIP_REV failed, ret = %d ", __func__, ret);
-        return ret;
+        goto err3;
     }
     cam_debug("%s device id=%d", __func__,
             device_id);
@@ -256,7 +263,7 @@ static int ncp6925_init(struct hisi_pmic_ctrl_t *pmic_ctrl)
     ret = i2c_func->i2c_read(i2c_client, EXTID, &external_id);
     if (ret < 0) {
         cam_err("%s: read EXTID failed, ret = %d ", __func__, ret);
-        return ret;
+        goto err3;
     }
     cam_debug("%s external id=%d", __func__,
             external_id);
@@ -264,7 +271,7 @@ static int ncp6925_init(struct hisi_pmic_ctrl_t *pmic_ctrl)
     ret = i2c_func->i2c_read(i2c_client, REARM_ID, &pdata->rearm_id);
     if (ret < 0) {
         cam_err("%s: read EXTID failed, ret = %d ", __func__, ret);
-        return ret;
+        goto err3;
     }
     cam_debug("%s rearm id=%d", __func__, pdata->rearm_id);
 
@@ -294,6 +301,8 @@ static int ncp6925_init(struct hisi_pmic_ctrl_t *pmic_ctrl)
     }
 
     return ret;
+err3:
+    gpio_free(pdata->pin[GPIO_CTRL_1]);
 err2:
     gpio_free(pdata->pin[GPIO_CTRL_0]);
 err1:
@@ -704,154 +713,14 @@ static int ncp6925_seq_config(struct hisi_pmic_ctrl_t *pmic_ctrl, pmic_seq_index
     return ret;
 }
 
-#if 0
-static int ncp6925_check(char *buf, unsigned long *param,
-        int num_of_par)
-{
-    char *token;
-    int base, cnt;
-
-    token = strsep(&buf, " ");
-
-    for (cnt = 0; cnt < num_of_par; cnt++)
-    {
-        if (token != NULL)
-        {
-            if ((token[1] == 'x') || (token[1] == 'X')) {
-                base = 16;
-            } else {
-                base = 10;
-            }
-
-            if (strict_strtoul(token, base, &param[cnt]) != 0) {
-                return -EINVAL;
-            }
-
-            token = strsep(&buf, " ");
-        }
-        else
-        {
-            return -EINVAL;
-        }
-    }
-    return 0;
-}
-
-static ssize_t ncp6925_show(struct device *dev,
-        struct device_attribute *attr,char *buf)
-{
-    int rc=0;
-    cam_info("enter %s", __func__);
-
-    snprintf(buf, MAX_ATTRIBUTE_BUFFER_SIZE, "mode=%d, data=%d.\n", cdata.mode, cdata.data);
-    rc = strlen(buf)+1;
-    return rc;
-}
-
-static ssize_t ncp6925_store(struct device *dev,
-        struct device_attribute *attr, const char *buf, size_t count)
-{
-    unsigned long param[2]={0};
-    int rc=0;
-    cam_info("enter %s", __func__);
-
-    rc = ncp6925_check((char *)buf, param, 2);
-    if (rc < 0) {
-        cam_err("%s failed to check param.", __func__);
-        return rc;
-    }
-
-    cdata.mode = (int)param[0];
-    cdata.data = (int)param[1];
-
-    cam_info("%s, mode %d data %d", __func__, cdata.mode, cdata.data);
-
-    ncp6925_seq_config(&ncp6925_ctrl, cdata.mode, cdata.data, 1);
-
-    return count;
-}
-
-static ssize_t ncp6925_reg_show(struct device *dev,
-        struct device_attribute *attr,char *buf)
-{
-    int rc=0;
-    cam_info("enter %s", __func__);
-
-    snprintf(buf, MAX_ATTRIBUTE_BUFFER_SIZE, "reg=%d, val=%d.\n", reg, val);
-    rc = strlen(buf)+1;
-    return rc;
-}
-
-
-static ssize_t ncp6925_reg_store(struct device *dev,
-        struct device_attribute *attr, const char *buf, size_t count)
-{
-    unsigned long param[2]={0};
-    int rc=0;
-    struct hisi_pmic_i2c_client *i2c_client;
-    struct hisi_pmic_i2c_fn_t *i2c_func;
-    cam_info("enter %s", __func__);
-
-    rc = ncp6925_check((char *)buf, param, 2);
-    if (rc < 0) {
-        cam_err("%s failed to check param.", __func__);
-        return rc;
-    }
-
-    i2c_client = ncp6925_ctrl.pmic_i2c_client;
-    i2c_func = ncp6925_ctrl.pmic_i2c_client->i2c_func_tbl;
-
-    reg = (u8)param[0];
-    val = (u8)param[1];
-
-    cam_info("%s, reg 0x%x val 0x%x", __func__, reg, val);
-
-    i2c_func->i2c_write(i2c_client, reg, val);
-
-    return count;
-}
-
-
-static struct device_attribute ncp6925_debug =
-__ATTR(debug_ctrl, 0664, ncp6925_show, ncp6925_store);
-
-static struct device_attribute ncp6925_reg =
-__ATTR(reg_ctrl, 0664, ncp6925_reg_show, ncp6925_reg_store);
-
-#endif
 
 
 static int ncp6925_register_attribute(struct hisi_pmic_ctrl_t *pmic_ctrl, struct device *dev)
 {
 
-#if 0
-    int rc = 0;
-    cam_info("%s enter.", __func__);
-    if (dev == NULL) {
-        cam_err("%s dev is null", __func__);
-        return -1;
-    }
-
-    rc = device_create_file(dev, &ncp6925_debug);
-    if (rc < 0) {
-        cam_err("%s failed to creat ctrol attribute.", __func__);
-        goto err_create_ncp6925_file;
-    }
-
-    rc = device_create_file(dev, &ncp6925_reg);
-    if (rc < 0) {
-        cam_err("%s failed to creat reg attribute.", __func__);
-        goto err_create_ncp6925_file;
-    }
-#endif
 
     return 0;
 
-#if 0
-err_create_ncp6925_file:
-    device_remove_file(dev, &ncp6925_debug);
-    return rc;
-#endif
 }
 
 

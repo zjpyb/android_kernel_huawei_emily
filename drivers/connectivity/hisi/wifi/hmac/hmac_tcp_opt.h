@@ -40,6 +40,7 @@ extern "C" {
 /*****************************************************************************
   4 全局变量声明
 *****************************************************************************/
+extern hmac_tcp_ack_opt_th_params g_st_tcp_ack_opt_th_params;
 
 
 /*****************************************************************************
@@ -93,8 +94,6 @@ oal_bool_enum_uint8 hmac_judge_tx_netbuf_is_tcp_ack(oal_ether_header_stru *ps_et
 oal_tcp_ack_type_enum_uint8  hmac_tcp_opt_rx_get_tcp_ack(oal_netbuf_stru *skb, hmac_vap_stru    *pst_hmac_vap, oal_uint16 *p_us_index, oal_uint8 dir);
 oal_tcp_ack_type_enum_uint8  hmac_tcp_opt_tx_get_tcp_ack(oal_netbuf_stru *skb, hmac_vap_stru    *pst_hmac_vap, oal_uint16 *p_us_index, oal_uint8 dir);
 oal_uint16 hmac_tcp_opt_tcp_ack_list_filter(hmac_vap_stru    *pst_hmac_vap, hmac_tcp_opt_queue type,hcc_chan_type dir, oal_netbuf_head_stru  *head);
-oal_uint16 hmac_tcp_opt_rx_tcp_ack_filter(void *hmac_device, hmac_tcp_opt_queue type,hcc_chan_type dir, void* data);
-oal_uint16 hmac_tcp_opt_tx_tcp_ack_filter(void *hmac_device, hmac_tcp_opt_queue type,hcc_chan_type dir, void* data);
 oal_uint32 hmac_tcp_opt_tcp_ack_filter(oal_netbuf_stru *skb, hmac_vap_stru    *pst_hmac_vap, hcc_chan_type dir);
 
 void hmac_trans_queue_filter(hmac_vap_stru    *pst_hmac_vap, oal_netbuf_head_stru  *head_t,
@@ -106,6 +105,8 @@ oal_bool_enum_uint8 hmac_tcp_ack_need_schedule(void);
 oal_void hmac_sched_transfer(void);
 oal_int32 hmac_set_hmac_tcp_ack_process_func(hmac_tcp_ack_process_func p_func);
 oal_int32 hmac_set_hmac_tcp_ack_need_schedule(hmac_tcp_ack_need_schedule_func p_func);
+oal_void hmac_tcp_ack_opt_switch_ctrol(oal_uint32 ul_count);
+
 
 /*****************************************************************************
   11 内联函数定义

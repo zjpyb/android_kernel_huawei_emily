@@ -45,6 +45,21 @@
 #define JPGDEC_CVDR_AXI_JPEG_LIMITER_NR_WR_0	(0x908)
 #define JPGDEC_CVDR_AXI_JPEG_LIMITER_NR_WR_1	(0x918)
 
+/*
+** JPEG Decode: atlant fpga cs
+*/
+#define JPGDEC_CVDR_AXI_JPEG_CVDR_CFG_CS			(0x0)
+#define JPGDEC_CVDR_AXI_JPEG_CVDR_WR_QOS_CFG_CS		(0xc)
+#define JPGDEC_CVDR_AXI_JPEG_CVDR_RD_QOS_CFG_CS		(0x10)
+#define JPGDEC_CVDR_AXI_JPEG_NR_RD_CFG_8_CS			(0x15B0)
+#define JPGDEC_CVDR_AXI_JPEG_LIMITER_NR_RD_8_CS		(0x15B8)
+#define JPGDEC_CVDR_AXI_JPEG_NR_RD_CFG_9_CS			(0x15C0)
+#define JPGDEC_CVDR_AXI_JPEG_LIMITER_NR_RD_9_CS		(0x15C8)
+#define JPGDEC_CVDR_AXI_JPEG_NR_WR_CFG_8_CS			(0x13B0)
+#define JPGDEC_CVDR_AXI_JPEG_NR_WR_CFG_9_CS			(0x13C0)
+#define JPGDEC_CVDR_AXI_JPEG_LIMITER_NR_WR_8_CS		(0x13B8)
+#define JPGDEC_CVDR_AXI_JPEG_LIMITER_NR_WR_9_CS		(0x13C8)
+
 
 /*******************************************************************************
 ** JPEG TOP
@@ -116,6 +131,8 @@
 #define JPGD_REG_HACMINTABLE	(0x340)
 #define JPGD_REG_HACBASETABLE	(0x380)
 #define JPGD_REG_HACSYMTABLE	(0x400)
+#define JPGD_REG_DEBUG_BASE	(0x800)
+#define JPGD_REG_DEBUG_RANGE	(16)
 
 /*
 **#define JPEG_DEC_QUANT_TABLE	0x200+0x4*qt_range
@@ -124,6 +141,66 @@
 **#define JPEG_DEC_HAC_BASE_TABLE	0x380+0x4*hac_range
 **#define JPEG_DEC_HAC_SYMBOL_TABLE	0x400+0x4*rs_range
 */
+
+/*
+** JPEG Decode: atlant fpga cs
+*/
+#define JPEG_DEC_START_CS  (0x0)       //once start,the decoder info will set to default value
+#define JPEG_DEC_PREFTCH_CTRL_CS   (0x4)
+#define JPEG_DEC_FRAME_SIZE_CS (0x10)
+#define JPEG_DEC_CROP_HORIZONTAL_CS    (0x14)
+#define JPEG_DEC_CROP_VERTICAL_CS  (0x18)
+#define JPEG_DEC_BITSTREAMS_START_H_CS   (0x20)
+#define JPEG_DEC_BITSTREAMS_START_L_CS   (0x24)
+#define JPEG_DEC_BITSTREAMS_END_H_CS (0x28)
+#define JPEG_DEC_BITSTREAMS_END_L_CS (0x2C)
+#define JPEG_DEC_FRAME_START_Y_CS  (0x30)
+#define JPEG_DEC_FRAME_STRIDE_Y_CS (0x34)
+#define JPEG_DEC_FRAME_START_C_CS  (0x38)
+#define JPEG_DEC_FRAME_STRIDE_C_CS (0x3C)
+#define JPEG_DEC_LBUF_START_ADDR_CS    (0x40)
+#define JPEG_DEC_OUTPUT_TYPE_CS    (0x50)
+#define JPEG_DEC_FREQ_SCALE_CS (0x54)
+#define JPEG_DEC_MIDDLE_FILTER_CS  (0x58)
+#define JPEG_DEC_SAMPLING_FACTOR_CS    (0x5C)
+#define JPEG_DEC_DRI_CS    (0x60)
+#define JPEG_DEC_OVER_TIME_THD_CS  (0x70)
+
+#define JPEG_DEC_HOR_PHASE0_COEF01_CS  (0x80)
+#define JPEG_DEC_HOR_PHASE0_COEF23_CS  (0x84)
+#define JPEG_DEC_HOR_PHASE0_COEF45_CS  (0x88)
+#define JPEG_DEC_HOR_PHASE0_COEF67_CS  (0x8C)
+#define JPEG_DEC_HOR_PHASE2_COEF01_CS  (0x90)
+#define JPEG_DEC_HOR_PHASE2_COEF23_CS  (0x94)
+#define JPEG_DEC_HOR_PHASE2_COEF45_CS  (0x98)
+#define JPEG_DEC_HOR_PHASE2_COEF67_CS  (0x9C)
+
+#define JPEG_DEC_VER_PHASE0_COEF01_CS  (0xA0)
+#define JPEG_DEC_VER_PHASE0_COEF23_CS  (0xA4)
+#define JPEG_DEC_VER_PHASE2_COEF01_CS  (0xA8)
+#define JPEG_DEC_VER_PHASE2_COEF23_CS  (0xAC)
+
+#define JPEG_DEC_CSC_IN_DC_COEF_CS (0xB0)
+#define JPEG_DEC_CSC_OUT_DC_COEF_CS    (0xB4)
+#define JPEG_DEC_CSC_TRANS_COEF0_CS    (0xB8)
+#define JPEG_DEC_CSC_TRANS_COEF1_CS    (0xBC)
+#define JPEG_DEC_CSC_TRANS_COEF2_CS    (0xC0)
+#define JPEG_DEC_CSC_TRANS_COEF3_CS    (0xC4)
+#define JPEG_DEC_CSC_TRANS_COEF4_CS    (0xC8)
+
+#define JPGD_REG_QUANT_CS  (0x200)
+#define JPGD_REG_HDCTABLE_CS   (0x300)
+#define JPGD_REG_HACMINTABLE_CS    (0x340)
+#define JPGD_REG_HACBASETABLE_CS   (0x380)
+#define JPGD_REG_HACSYMTABLE_CS    (0x400)
+
+/*
+ * **#define JPEG_DEC_QUANT_TABLE_CS   0x200+0x4*qt_range
+ * **#define JPEG_DEC_HDC_TABLE_CS 0x300+0x4*hdc_range
+ * **#define JPEG_DEC_HAC_MIN_TABLE_CS 0x340+0x4*hac_range
+ * **#define JPEG_DEC_HAC_BASE_TABLE_CS    0x380+0x4*hac_range
+ * **#define JPEG_DEC_HAC_SYMBOL_TABLE_CS  0x400+0x4*rs_range
+ * */
 
 /*
 ** jpu freq scale
@@ -155,6 +232,7 @@ typedef enum {
 */
 typedef enum {
 	HISI_KIRIN_970 = 1,
+	HISI_DSS_V500,
 	HISI_DSS_V501,
 	UNSUPPORT_PLATFORM,
 }jpeg_dec_platform;
@@ -165,7 +243,9 @@ typedef struct jpu_dec_reg {
 	uint32_t frame_size;
 	uint32_t crop_horizontal;
 	uint32_t crop_vertical;
+	uint32_t bitstreams_start_h;
 	uint32_t bitstreams_start;
+	uint32_t bitstreams_end_h;
 	uint32_t bitstreams_end;
 	uint32_t frame_start_y;
 	uint32_t frame_stride_y;

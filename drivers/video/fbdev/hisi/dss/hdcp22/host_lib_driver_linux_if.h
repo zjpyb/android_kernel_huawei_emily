@@ -151,6 +151,12 @@ typedef struct
    ESM_STATUS returned_status;
 } esm_hld_ioctl_get_te_info;
 
+typedef struct
+{
+    uint32_t hdcp_state;
+    ESM_STATUS returned_status;
+} esm_hld_ioctl_state_set;
+
 
 #define ESM_HLD_IOCTL_LOAD_CODE             _IOW(HISI_HDCP_IOCTL_MAGIC, 0x1, esm_hld_ioctl_load_code) // 1000
 #define ESM_HLD_IOCTL_GET_CODE_PHYS_ADDR    _IOW(HISI_HDCP_IOCTL_MAGIC, 0x2, esm_hld_ioctl_get_code_phys_addr) //1001
@@ -165,6 +171,7 @@ typedef struct
 
 #define ESM_HLD_IOCTL_ESM_START              _IOW(HISI_HDCP_IOCTL_MAGIC, 0xb, esm_hld_ioctl_esm_start)
 #define ESM_HLD_IOCTL_GET_TE_INFO               _IOW(HISI_HDCP_IOCTL_MAGIC, 0xc, esm_hld_ioctl_get_te_info)
+#define ESM_HLD_IOCTL_STATE_SET               _IOW(HISI_HDCP_IOCTL_MAGIC, 0xd, esm_hld_ioctl_state_set)
 
 void esm_driver_enable(int en);
 

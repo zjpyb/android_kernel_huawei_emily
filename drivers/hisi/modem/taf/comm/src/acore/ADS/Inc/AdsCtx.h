@@ -76,6 +76,8 @@
 #include <linux/spe/spe_interface.h>
 #include "mdrv_spe_wport.h"
 #endif /* CONFIG_BALONG_SPE */
+#include <linux/version.h>
+#include <linux/of_platform.h>
 #else
 #include "Linuxstub.h"
 #endif /* VOS_OS_VER == VOS_LINUX */
@@ -413,7 +415,12 @@ extern "C" {
 /* 获取IPF相关的上下文 */
 #define ADS_GET_IPF_CTX_PTR()           (&(g_stAdsCtx.stAdsIpfCtx))
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
 #define ADS_GET_IPF_DEV()               (&(g_stAdsCtx.stAdsIpfCtx.stDev))
+#else
+#define ADS_GET_IPF_DEV()               (g_pstDmaDev)
+#endif
+
 #define ADS_IMM_MEM_CB(pstImmZc)        ((ADS_IMM_MEM_CB_STRU *)((pstImmZc)->cb))
 
 #if (defined(CONFIG_BALONG_SPE))
@@ -587,7 +594,7 @@ typedef struct
 
 typedef struct
 {
-    VOS_UINT32                          ulRabId;                                /* Rab Id */    
+    VOS_UINT32                          ulRabId;                                /* Rab Id */
     VOS_UINT32                          ulExParam;                              /* RMNET数据接收扩展参数 */
     ADS_CDS_IPF_PKT_TYPE_ENUM_UINT8     enPktType;                              /* 数据包类型 */
     VOS_UINT8                           aucRsv[7];                              /* 保留 */
@@ -734,8 +741,9 @@ typedef struct
 
     VOS_UINT32                          ulTxWakeLockTmrLen;                     /* wake lock TX 超时配置 */
     VOS_UINT32                          ulRxWakeLockTmrLen;                     /* wake lock RX 超时配置 */
-
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
     struct device                       stDev;
+#endif
 #if (defined(CONFIG_BALONG_SPE))
     VOS_INT32                           lSpeWPort;
     ADS_IPF_MEM_POOL_CFG_STRU           stMemPoolCfg;
@@ -821,7 +829,9 @@ extern VOS_UINT32                       g_ulAdsDLTaskId;
 extern VOS_UINT32                       g_ulAdsULTaskReadyFlag;
 extern VOS_UINT32                       g_ulAdsDLTaskReadyFlag;
 extern ADS_CTX_STRU                     g_stAdsCtx;
-
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
+extern struct device                   *g_pstDmaDev;
+#endif
 
 /*****************************************************************************
   10 函数声明
@@ -942,6 +952,13 @@ VOS_VOID ADS_DL_ProcIpfFilterData(
 
 #if (FEATURE_ON == FEATURE_RNIC_NAPI_GRO)
 VOS_VOID ADS_RNIC_AdjNapiWeight(VOS_VOID);
+#endif
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
+VOS_INT32 ADS_PlatDevProbe(struct platform_device *pstDev);
+VOS_INT32 ADS_PlatDevRemove(struct platform_device *pstDev);
+VOS_INT32 __init ADS_PlatDevInit(void);
+VOS_VOID __exit ADS_PlatDevExit(void);
 #endif
 
 #if (VOS_OS_VER == VOS_WIN32)

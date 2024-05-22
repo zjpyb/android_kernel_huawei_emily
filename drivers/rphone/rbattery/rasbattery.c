@@ -14,17 +14,18 @@
 
 #define SIZE_DATA 10
 static int capacity = -1;
-static unsigned int *capacity_sum;
-static unsigned int *capacity_filter;
+static unsigned int *hook_capacity_sum;
+static unsigned int *hook_capacity_filter;
 #ifdef CONFIG_HISI_COUL
 void skip_pulling(unsigned int cap)
 {
 	int i = 0;
 
+	if (hook_capacity_filter == NULL)
+		return;
 	for (i = 0; i < SIZE_DATA; i++)
-		capacity_filter[i] = capacity;
-
-	*capacity_sum = 10*capacity;
+		hook_capacity_filter[i] = capacity;
+	*hook_capacity_sum = 10*capacity;
 }
 
 static int rasprobe_handler(hisi_battery_capacity) (struct rasprobe_instance
@@ -112,11 +113,9 @@ static int tool_init(void)
 {
 	ras_debugset(1);
 	ras_retn_iferr(ras_check());
-	capacity_sum = (unsigned int *)kallsyms_lookup_name("capacity_sum");
-	capacity_filter = (unsigned int *)
+	hook_capacity_sum = (unsigned int *)kallsyms_lookup_name("capacity_sum");
+	hook_capacity_filter = (unsigned int *)
 		kallsyms_lookup_name("capacity_filter");
-	if (!capacity_sum || !capacity_filter)
-		return -1;
 	ras_retn_iferr(register_rasprobes(probes, ARRAY_SIZE(probes)));
 	ras_retn_iferr(proc_init(MODULE_NAME, &proc_ops_name(rBattery), NULL));
 	return 0;

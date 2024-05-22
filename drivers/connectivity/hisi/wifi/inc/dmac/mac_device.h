@@ -205,7 +205,10 @@ typedef oal_uint8 mac_scan_state_enum_uint8;
 #define     MAC_FCS_TIMEOUT_JIFFY  2
 #define     MAC_FCS_DEFAULT_PROTECT_TIME_OUT    5120    /* us */
 #define     MAC_FCS_DEFAULT_PROTECT_TIME_OUT2   1024    /* us */
+#define     MAC_FCS_DEFAULT_PROTECT_TIME_OUT3   15000   /* us */
+
 #define     MAC_ONE_PACKET_TIME_OUT             1000
+#define     MAC_ONE_PACKET_TIME_OUT3            2000
 #define     MAC_FCS_CTS_MAX_DURATION            32767   /* us */
 
 /*
@@ -309,7 +312,8 @@ typedef struct tag_mac_fcs_mgr_stru
     oal_uint8                       uc_fcs_cnt;
     oal_spin_lock_stru              st_lock;
     mac_fcs_state_enum_uint8        en_fcs_state;
-    oal_uint8                       uc_resv[3];
+    hal_fcs_service_type_enum_uint8 en_fcs_service_type;
+    oal_uint8                       uc_resv[2];
     mac_fcs_cfg_stru               *pst_fcs_cfg;
     mac_fcs_notify_chain_stru       ast_notify_chain[MAC_FCS_NOTIFY_TYPE_BUTT];
 }mac_fcs_mgr_stru;
@@ -1552,6 +1556,16 @@ extern  mac_fcs_err_enum_uint8    mac_fcs_start(mac_fcs_mgr_stru *pst_fcs_mgr,
                                                 mac_fcs_cfg_stru *pst_fcs_cfg,
                                                 hal_one_packet_status_stru *pst_status,
                                                 oal_uint8 uc_fake_tx_q_id);
+
+extern mac_fcs_err_enum_uint8    mac_fcs_start_same_channel(
+                mac_fcs_mgr_stru            *pst_fcs_mgr,
+                mac_fcs_cfg_stru            *pst_fcs_cfg,
+                hal_one_packet_status_stru  *pst_status,
+                oal_uint8                    uc_fake_tx_q_id);
+extern mac_fcs_err_enum_uint8    mac_fcs_start_enhanced_same_channel(
+                mac_fcs_mgr_stru            *pst_fcs_mgr,
+                mac_fcs_cfg_stru            *pst_fcs_cfg);
+
 extern mac_fcs_err_enum_uint8    mac_fcs_start_enhanced(
                 mac_fcs_mgr_stru            *pst_fcs_mgr,
                 mac_fcs_cfg_stru            *pst_fcs_cfg);

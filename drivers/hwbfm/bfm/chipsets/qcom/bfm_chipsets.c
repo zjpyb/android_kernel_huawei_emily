@@ -40,10 +40,13 @@
 #define BFM_QCOM_RAMOOPS_BOOTFAIL_LOG_NAME "pmsg-ramoops-0"
 #define BFM_QCOM_WAIT_FOR_LOG_PART_TIMEOUT (40)
 
-#define BFM_QCOM_RAW_PART_NAME "pad0"
+#define BFM_QCOM_RAW_PART_NAME "bootfail_info"
 #define BFM_QCOM_RAW_LOG_MAGIC (0x12345678)
 #define BFM_QCOM_RAW_PART_OFFSET (512*1024)
 #define BFM_KMSG_TMP_BUF_LEN (3*1024*512)
+#define BFM_BOOT_UP_60_SECOND (60)
+#define BFM_TIME_S_TO_NS (1000*1000*1000)
+
 
 /*----local prototypes----------------------------------------------------------------*/
 
@@ -289,7 +292,7 @@ unsigned int bfmr_capture_log_from_system(char *buf, unsigned int buf_len, bfmr_
         {
             break;
         }
-    case LOG_TYPE_KMSG:
+    case LOG_TYPE_TEXT_KMSG:
         {
             bytes_captured = bfm_capture_kmsg_log(buf, buf_len);
             break;
@@ -300,7 +303,10 @@ unsigned int bfmr_capture_log_from_system(char *buf, unsigned int buf_len, bfmr_
         }
     case LOG_TYPE_BETA_APP_LOGCAT:
         {
-            bytes_captured = bfmr_capture_logcat_on_beta_version(buf, buf_len, BFM_LOGCAT_FILE_PATH);
+            if (bfm_is_beta_version())
+            {
+                bytes_captured = bfmr_capture_logcat_on_beta_version(buf, buf_len, BFM_LOGCAT_FILE_PATH);
+            }
             break;
         }
     case LOG_TYPE_CRITICAL_PROCESS_CRASH:
@@ -639,9 +645,14 @@ int bfm_capture_and_save_do_nothing_bootfail_log(bfm_process_bootfail_param_t *p
     case KERNEL_PRESS10S:
         {
             /*save_log_to_raw_part,then forward save log to log part in sbl1 and try_to_recovery*/
-            param->bootfail_time = (unsigned long long)bfm_hctosys(param->bootfail_time,false);
+            param->bootfail_time = (unsigned long long)bfm_hctosys(param->bootfail_time);
             param->dst_type = DST_RAW_PART;
             param->recovery_method = FRM_REBOOT;
+            param->bootup_time = sched_clock()/(BFM_TIME_S_TO_NS);
+            if(param->bootup_time < BFM_BOOT_UP_60_SECOND){
+                BFMR_PRINT_ERR("KERNEL_PRESS10S at param->bootup_time =%d\n", param->bootup_time);
+                return ret;
+            }
             (void)capture_and_save_bootfail_log_tmp(param);
             break;
         }
@@ -693,7 +704,7 @@ int bfm_platform_process_boot_fail(bfm_process_bootfail_param_t *param)
     }
     else
     {
-        param->bootfail_time = (unsigned long long)bfm_hctosys(param->bootfail_time,true);
+        param->bootfail_time = (unsigned long long)bfm_hctosys(param->bootfail_time);
         param->bootfail_can_only_be_processed_in_platform = 0;
         param->recovery_method = try_to_recovery(param->bootfail_time,
             param->bootfail_errno, param->boot_stage, param->suggested_recovery_method, NULL);
@@ -907,10 +918,10 @@ void bfmr_update_raw_log_info(bfmr_log_src_t *psrc, bfmr_log_dst_t *pdst, unsign
 {
     bfm_record_info_t *brit;
 
-    BFMR_PRINT_KEY_INFO("start+++logtype %d\n",psrc->log_type);
     if(!psrc || !psrc->log_save_context || !pdst)
       return;
 
+    BFMR_PRINT_KEY_INFO("start+++logtype %d\n",psrc->log_type);
     brit = (bfm_record_info_t *)(psrc->log_save_context);
 
     /*get file name*/

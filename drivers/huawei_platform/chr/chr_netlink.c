@@ -196,9 +196,7 @@ static int chr_netlink_thread(void *data)
 					g_chr_timer_state = CHR_TIMER_60;
 
 					chr_notify_event(CHR_SPEED_SLOW_EVENT,
-						g_user_space_pid,
-						netIfInfo_struct_ptr->src_addr,
-						NULL);
+						g_user_space_pid, 0xffffffff, NULL);
 				} else {
 					spin_unlock_bh(&dest_addr_timer_lock);
 				}
@@ -341,7 +339,7 @@ int chr_notify_event(int event, int pid,
 
 	/*skb will be freed in netlink_unicast*/
 	ret = netlink_unicast(g_chr_nlfd, skb, pid, MSG_DONTWAIT);
-	hwlog_info("%s:data speed is slow!srcaddr=0x%x\n", __func__, src_addr&IPV4ADDR_MASK);
+	hwlog_info("%s:data speed is slow! collateral information=0x%x\n", __func__, src_addr);
 	goto end;
 
 end:

@@ -1149,6 +1149,25 @@ static void hi6421v600_coul_get_ocv_level(u8 *level)
 	val &= SAVE_OCV_LEVEL;
 	*level = val >> OCV_LEVEL_SHIFT;
 }
+
+static int hi6421v600_coul_get_drained_battery_flag(void)
+{
+    u8 val = 0;
+    val = HI6421V600_REG_READ(DRAINED_BATTERY_FLAG_ADDR);
+    HI6421V600_COUL_INF("%s get reg value %d!!!\n", __FUNCTION__,val);
+    val &= DRAINED_BATTERY_FLAG_BIT;
+    return val;
+}
+
+static void hi6421v600_coul_clear_drained_battery_flag(void)
+{
+    u8 val = 0;
+    val = HI6421V600_REG_READ(DRAINED_BATTERY_FLAG_ADDR);
+    HI6421V600_REG_WRITE(DRAINED_BATTERY_FLAG_ADDR,val & (~DRAINED_BATTERY_FLAG_BIT));
+    val = HI6421V600_REG_READ(DRAINED_BATTERY_FLAG_ADDR);
+    HI6421V600_COUL_INF("%s after clear reg value %d!!!\n", __FUNCTION__,val);
+}
+
 #ifdef CONFIG_SYSFS
 
 static long g_reg_addr = 0;
@@ -1258,6 +1277,9 @@ struct coul_device_ops hi6421v600_coul_ops =
     .cali_auto_off		  = hi6421v600_coul_cancle_auto_cali,
     .save_ocv_level				  = hi6421v600_coul_save_ocv_level,
     .get_ocv_level				  = hi6421v600_coul_get_ocv_level,
+    .get_drained_battery_flag     = hi6421v600_coul_get_drained_battery_flag,
+    .clear_drained_battery_flag   = hi6421v600_coul_clear_drained_battery_flag,
+
 
 };
 

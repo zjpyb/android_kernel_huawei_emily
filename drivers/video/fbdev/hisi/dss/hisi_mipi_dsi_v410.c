@@ -18,14 +18,6 @@
 
 int mipi_dsi_ulps_cfg(struct hisi_fb_data_type *hisifd, int enable);
 
-struct dsi_phy_seq_info dphy_seq_info[] = {
-	{47, 94, 0, 7},
-	{94, 188, 0, 6},
-	{188, 375, 0, 5},
-	{375, 750, 0, 4},
-	{750, 1500, 0, 0}
-};
-
 /*lint -e834 */
 static uint32_t get_data_t_hs_prepare(struct hisi_fb_data_type *hisifd, uint32_t accuracy, uint32_t ui)
 {
@@ -1321,6 +1313,7 @@ static int mipi_dsi_off_sub(struct hisi_fb_data_type *hisifd, char __iomem *mipi
 
 	/* disable generate High Speed clock */
 	set_reg(mipi_dsi_base + MIPIDSI_LPCLK_CTRL_OFFSET, 0x0, 1, 0);
+	udelay(10);
 
 	/* shutdown d_phy */
 	set_reg(mipi_dsi_base +  MIPIDSI_PHY_RSTZ_OFFSET, 0x0, 3, 0);
@@ -1468,6 +1461,7 @@ int mipi_dsi_set_fastboot(struct platform_device *pdev)
 {
 	int ret = 0;
 	struct hisi_fb_data_type *hisifd = NULL;
+	struct hisi_panel_info *pinfo = NULL;
 
 	if (NULL == pdev) {
 		HISI_FB_ERR("pdev is NULL");
@@ -1484,6 +1478,16 @@ int mipi_dsi_set_fastboot(struct platform_device *pdev)
 	mipi_dsi_dphy_fastboot_fpga(hisifd);
 
 	mipi_dsi_clk_enable(hisifd);
+
+	pinfo = &(hisifd->panel_info);//lint !e838
+	if (pinfo && (pinfo->mipiclk_updt_support_new)) {
+		memset(&(pinfo->dsi_phy_ctrl), 0, sizeof(struct mipi_dsi_phy_ctrl));
+		if (pinfo->mipi.phy_mode == CPHY_MODE) {
+			get_dsi_cphy_ctrl(hisifd, &(pinfo->dsi_phy_ctrl));
+		} else {
+			get_dsi_dphy_ctrl(hisifd, &(pinfo->dsi_phy_ctrl));
+		}
+	}
 
 	ret = panel_next_set_fastboot(pdev);
 
@@ -2075,14 +2079,14 @@ static void mipi_dsi_set_cdphy_bit_clk_upt_video(struct hisi_fb_data_type *hisif
 	HISI_FB_DEBUG("fb%d -.\n", hisifd->index);
 }
 
-static bool check_pctrl_trstop_flag(struct hisi_fb_data_type *hisifd)
+static bool check_pctrl_trstop_flag(struct hisi_fb_data_type *hisifd, int time_count)
 {
 	bool is_ready = false;
 	int count;
 	uint32_t tmp = 0;
 
 	if (is_dual_mipi_panel(hisifd)) {
-		for(count = 0; count < 40; count++) {
+		for(count = 0; count < time_count; count++) {
 			tmp = inp32(hisifd->pctrl_base + PERI_STAT0);
 			if ((tmp & 0xC0000000) == 0xC0000000) {
 				is_ready = true;
@@ -2091,7 +2095,7 @@ static bool check_pctrl_trstop_flag(struct hisi_fb_data_type *hisifd)
 			udelay(2);
 		}
 	} else {
-		for(count = 0; count < 40; count++) {
+		for(count = 0; count < time_count; count++) {
 			tmp = inp32(hisifd->pctrl_base + PERI_STAT0);
 			if ((tmp & 0x80000000) == 0x80000000) {
 				is_ready = true;
@@ -2110,8 +2114,14 @@ int mipi_dsi_bit_clk_upt_isr_handler(struct hisi_fb_data_type *hisifd)
 	struct hisi_panel_info *pinfo;
 	uint32_t dsi_bit_clk_upt;
 	uint32_t stopstate_msk = 0;
-	bool is_ready;
+	bool is_ready = false;
 	uint8_t esd_enable;
+
+	struct timeval tv0;
+	struct timeval tv1;
+	uint32_t timediff = 0;
+	uint32_t vfp_time = 0;
+	uint64_t lane_byte_clk = 0;
 
 	if (NULL == hisifd) {
 		HISI_FB_ERR("hisifd is null!\n");
@@ -2129,13 +2139,28 @@ int mipi_dsi_bit_clk_upt_isr_handler(struct hisi_fb_data_type *hisifd)
 		return 0;
 	}
 
+	HISI_FB_DEBUG("fb%d +.\n", hisifd->index);
+
+	if (pinfo->mipiclk_updt_support_new) {
+		hisifb_get_timestamp(&tv0);
+		lane_byte_clk = hisifd->panel_info.dsi_phy_ctrl.lane_byte_clk;
+		if (hisifd->panel_info.mipi.phy_mode == CPHY_MODE) {
+			lane_byte_clk = hisifd->panel_info.dsi_phy_ctrl.lane_word_clk;
+		}
+		vfp_time = inp32(hisifd->mipi_dsi0_base + MIPIDSI_VID_HLINE_TIME_OFFSET) & 0x7fff;
+		if (lane_byte_clk != 0) {
+			vfp_time = vfp_time * (hisifd->panel_info.ldi.v_front_porch + 10) / ((uint32_t)(lane_byte_clk/1000000));
+		} else {
+			HISI_FB_ERR("vfp_time == 0.\n");
+			vfp_time = 80;//80us
+		}
+	}
+
 	esd_enable = pinfo->esd_enable;
 	if (is_mipi_video_panel(hisifd)) {
 		pinfo->esd_enable = 0;
 		disable_ldi(hisifd);
 	}
-
-	HISI_FB_DEBUG("fb%d +.\n", hisifd->index);
 
 	/* get new phy_ctrl value according to dsi_bit_clk_next */
 	if (hisifd->panel_info.mipi.lane_nums == DSI_4_LANES) {
@@ -2157,7 +2182,17 @@ int mipi_dsi_bit_clk_upt_isr_handler(struct hisi_fb_data_type *hisifd)
 	set_reg(hisifd->pctrl_base + PERI_CTRL33, 1, 1, 0);
 	set_reg(hisifd->pctrl_base + PERI_CTRL33, stopstate_msk, 5, 3);
 
-	is_ready = check_pctrl_trstop_flag(hisifd);
+	if (pinfo->mipiclk_updt_support_new) {
+		while ((!is_ready) && (timediff < vfp_time)) {
+			is_ready = check_pctrl_trstop_flag(hisifd, 10);
+			hisifb_get_timestamp(&tv1);
+			timediff = hisifb_timestamp_diff(&tv0, &tv1);
+		}
+		HISI_FB_INFO("timediff=%d us, vfp_time=%d us.\n", timediff, vfp_time);
+	} else {
+		is_ready = check_pctrl_trstop_flag(hisifd, 40);
+	}
+
 	set_reg(hisifd->pctrl_base + PERI_CTRL33, 0, 1, 0);
 	if (!is_ready) {
 		if (is_mipi_video_panel(hisifd)) {
@@ -2174,15 +2209,33 @@ int mipi_dsi_bit_clk_upt_isr_handler(struct hisi_fb_data_type *hisifd)
 			mipi_dsi_set_cdphy_bit_clk_upt_cmd(hisifd, hisifd->mipi_dsi1_base, &phy_ctrl);
 		}
 	} else {
-		mipi_dsi_set_cdphy_bit_clk_upt_video(hisifd, hisifd->mipi_dsi0_base, &phy_ctrl);
-		if (is_dual_mipi_panel(hisifd)) {
-			mipi_dsi_set_cdphy_bit_clk_upt_video(hisifd, hisifd->mipi_dsi1_base, &phy_ctrl);
+		if (pinfo->mipiclk_updt_support_new) {
+			set_reg(hisifd->mipi_dsi0_base + MIPIDSI_LPCLK_CTRL_OFFSET, 0x0, 1, 0);
+			mipi_dsi_set_cdphy_bit_clk_upt_video(hisifd, hisifd->mipi_dsi0_base, &phy_ctrl);
+			set_reg(hisifd->mipi_dsi0_base + MIPIDSI_LPCLK_CTRL_OFFSET, 0x1, 1, 0);
+			if (is_dual_mipi_panel(hisifd)) {
+				set_reg(hisifd->mipi_dsi1_base + MIPIDSI_LPCLK_CTRL_OFFSET, 0x0, 1, 0);
+				mipi_dsi_set_cdphy_bit_clk_upt_video(hisifd, hisifd->mipi_dsi1_base, &phy_ctrl);
+				set_reg(hisifd->mipi_dsi1_base + MIPIDSI_LPCLK_CTRL_OFFSET, 0x1, 1, 0);
+			}
+		} else {
+			mipi_dsi_set_cdphy_bit_clk_upt_video(hisifd, hisifd->mipi_dsi0_base, &phy_ctrl);
+			if (is_dual_mipi_panel(hisifd)) {
+				mipi_dsi_set_cdphy_bit_clk_upt_video(hisifd, hisifd->mipi_dsi1_base, &phy_ctrl);
+			}
 		}
+
+		//clear dsi
+		udelay(10);
+		set_reg(hisifd->mipi_dsi0_base + MIPIDSI_PWR_UP_OFFSET, 0x0, 1, 0);
+		udelay(5);
+		set_reg(hisifd->mipi_dsi0_base + MIPIDSI_PWR_UP_OFFSET, 0x1, 1, 0);
+
 		pinfo->esd_enable = esd_enable;
 		enable_ldi(hisifd);
 	}
 
-	HISI_FB_INFO("Mipi clk successfully changed from (%d)M switch to (%d)M.\n", pinfo->mipi.dsi_bit_clk, dsi_bit_clk_upt);
+	HISI_FB_INFO("Mipi clk successfully changed from (%d)M switch to (%d)M!\n", pinfo->mipi.dsi_bit_clk, dsi_bit_clk_upt);
 
 	pinfo->dsi_phy_ctrl = phy_ctrl;
 	pinfo->mipi.dsi_bit_clk = dsi_bit_clk_upt;

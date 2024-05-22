@@ -40,6 +40,7 @@ typedef signed long             oal_long;            /*数据前缀:i */
 
 /* linux错误码 */
 #define OAL_EFAIL               1   /* 内核通用错误返回值 -1 */
+#define OAL_EINTR               4   /*Interrupted system call*/
 #define OAL_EIO                 5   /* I/O error */
 #define OAL_ENOMEM              12  /* Out of memory */
 #define OAL_EFAUL               14  /* Bad address */
@@ -66,6 +67,8 @@ typedef signed long             oal_long;            /*数据前缀:i */
 #define PATCH_D
 #define PATCH_B
 #define DTCM_CB_D
+#define ITCM_EXT_T PATCH_T
+#define ITCM_EXT_T_PATCH
 #endif
 
 /*****************************************************************************
@@ -565,6 +568,7 @@ typedef enum
     OAL_ERR_CODE_ROAM_FRAMER_LEN                        = (OAL_ERR_CODE_ROAM_BASE + 7),      /* 帧长度错误   */
     OAL_ERR_CODE_ROAM_INVALID_VAP_STATUS                = (OAL_ERR_CODE_ROAM_BASE + 8),      /* 无效的VAP状态*/
     OAL_ERR_CODE_ROAM_HANDSHAKE_FAIL                    = (OAL_ERR_CODE_ROAM_BASE + 9),      /* 秘钥交互失败*/
+    OAL_ERR_CODE_ROAM_NO_RESPONSE                       = (OAL_ERR_CODE_ROAM_BASE + 10),     /* AUTH/REASSOC没有响应 */
 /* #endif //_PRE_WLAN_FEATURE_ROAM */
 
     /********************************* VoWiFi模块**********************************/

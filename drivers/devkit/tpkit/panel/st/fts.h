@@ -25,6 +25,9 @@
 #define FTS_POWER_ON     1
 #define FTS_POWER_OFF    0
 
+#define FTS_TRUE 1
+#define FTS_FALSE 0
+
 /****************** CONFIGURATION SECTION ******************/
 
 //**** CODE CONFIGURATION ****
@@ -246,6 +249,8 @@ struct fts_ts_info{
 	int iovdd_value;
 	int st_raw_limit_buf[RAWDATA_LIMIT_NUM];
 	char *fake_project_id;
+	int check_MutualRawGap_after_callibrate;
+	struct firmware *fw ;
 };
 
 

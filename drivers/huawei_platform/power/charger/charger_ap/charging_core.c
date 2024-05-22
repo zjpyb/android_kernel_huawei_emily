@@ -19,9 +19,8 @@
 #include <linux/of.h>
 #include <huawei_platform/log/hw_log.h>
 #include <linux/raid/pq.h>
+#ifdef CONFIG_HISI_COUL
 #include <linux/power/hisi/coul/hisi_coul_drv.h>
-#ifdef CONFIG_WIRELESS_CHARGER
-#include <huawei_platform/power/wireless_charger.h>
 #endif
 #include <charging_core.h>
 #ifdef CONFIG_TCPC_CLASS
@@ -649,24 +648,7 @@ struct charge_core_data *charge_core_get_params(void)
 
 	return &di->data;
 }
-#ifdef CONFIG_WIRELESS_CHARGER
-/**********************************************************
-*  Function:       charge_core_get_wireless_params
-*  Discription:    provide the wireless charge parameters
-*  Parameters:   NULL
-*  return value:  wireless charge parameters
-**********************************************************/
-struct wireless_core_data *charge_core_get_wireless_params(void)
-{
-	struct charge_core_info *di = g_core_info;
-	if (!di) {
-		hwlog_err("[%s], charge_core_info is NULL!\n", __func__);
-		return NULL;
-	}
 
-	return &di->wireless_data;
-}
-#endif
 /**********************************************************
 *  Function:       charge_core_battery_data
 *  Discription:    get the charge raw data from hisi_battery_data module
@@ -809,9 +791,6 @@ static int charge_core_parse_wireless_charge_para
 		(struct device_node* np, struct charge_core_info *di)
 {
 	int ret = 0;
-	unsigned int i = 0;
-	int array_len = 0;
-	u32 tmp_para[WIRELESS_PARA_TOTAL*WIRELESS_CORE_PARA_LEVEL];
 
 	ret = of_property_read_u32(np, "iin_wireless", &(di->data.iin_wireless));
 	if (ret) {
@@ -825,50 +804,6 @@ static int charge_core_parse_wireless_charge_para
 		return -EINVAL;
 	}
 	hwlog_info("ichg_wireless = %d\n", di->data.ichg_wireless);
-
-	/* wireless_charge para */
-	array_len = of_property_count_u32_elems(np, "wireless_para");
-	if ((array_len <= 0) ||(array_len % WIRELESS_PARA_TOTAL != 0)) {
-		di->wireless_data.total_type = 0;
-		hwlog_err("wireless_para is invaild, please check wireless_para number!!\n");
-	} else if (array_len > WIRELESS_PARA_TOTAL * WIRELESS_CORE_PARA_LEVEL) {
-		di->wireless_data.total_type = 0;
-		hwlog_err("wireless_para is too long(%d)!!\n" , array_len);
-	} else {
-		ret = of_property_read_u32_array(np, "wireless_para", tmp_para, array_len);
-		if (ret) {
-			di->wireless_data.total_type = 0;
-			hwlog_err("dts:get wireless_para fail!\n");
-		} else {
-			di->wireless_data.total_type = (int)(array_len / WIRELESS_PARA_TOTAL);
-			hwlog_info("wireless_total_type = %d\n", di->wireless_data.total_type);
-			for (i = 0; i < di->wireless_data.total_type; i++) {
-				/*lint !e64*//*(int) for pclint and can never be out of bounds*/
-				di->wireless_data.rx_cap[i].charger_type =
-							tmp_para[(u8)(WIRELESS_PARA_CHARGER_TYPE+WIRELESS_PARA_TOTAL*i)];
-				di->wireless_data.rx_cap[i].cable_detect =
-							tmp_para[(u8)(WIRELESS_PARA_CABLE_DETECT+WIRELESS_PARA_TOTAL*i)];
-				di->wireless_data.rx_cap[i].certification=
-							tmp_para[(u8)(WIRELESS_PARA_CERTIFICATION+WIRELESS_PARA_TOTAL*i)];
-				di->wireless_data.rx_cap[i].fast_chrg_flag =
-							tmp_para[(u8)(WIRELESS_PARA_FAST_CHRG_FLAG+WIRELESS_PARA_TOTAL*i)];
-				di->wireless_data.rx_cap[i].fast_vout_max =
-							tmp_para[(int)(WIRELESS_PARA_FAST_VOUT_MAX+WIRELESS_PARA_TOTAL*i)];
-				di->wireless_data.rx_cap[i].fast_iout_max =
-							tmp_para[(int)(WIRELESS_PARA_FAST_IOUT_MAX+WIRELESS_PARA_TOTAL*i)];
-				di->wireless_data.rx_cap[i].normal_vout_max =
-							tmp_para[(int)(WIRELESS_PARA_NORMAL_VOUT_MAX+WIRELESS_PARA_TOTAL*i)];
-				di->wireless_data.rx_cap[i].normal_iout_max =
-							tmp_para[(int)(WIRELESS_PARA_NORMAL_IOUT_MAX+WIRELESS_PARA_TOTAL*i)];
-				hwlog_info("wireless_para[%d], charger_type: 0x%-2x cable_detect: %d certification: %d fast_chrg_flag: %d "
-							"fast_vout_max: %-5d fast_iout_max: %-4d normal_vout_max: %-5d normal_iout_max: %-4d\n",
-							i, di->wireless_data.rx_cap[i].charger_type, di->wireless_data.rx_cap[i].cable_detect,
-							di->wireless_data.rx_cap[i].certification, di->wireless_data.rx_cap[i].fast_chrg_flag,
-							di->wireless_data.rx_cap[i].fast_vout_max, di->wireless_data.rx_cap[i].fast_iout_max,
-							di->wireless_data.rx_cap[i].normal_vout_max, di->wireless_data.rx_cap[i].normal_iout_max);
-			}
-		}
-	}
 	return ret;
 }
 #endif
@@ -1226,6 +1161,20 @@ static int charge_core_parse_dts(struct device_node *np,
 		return -EINVAL;
 	}
 	hwlog_info("typec high mode ibat curr = %d\n", di->data.ichg_typech);
+	/*ycable input current */
+	ret = of_property_read_u32(np, "ycable_iin_curr", &(di->data.ycable_iin_curr));
+	if (ret) {
+		hwlog_err("get ycable_iin_curr failed\n");
+		di->data.ycable_iin_curr = YCABLE_CURR_DEFAULT;
+	}
+	hwlog_info("ycable_iin_curr = %d\n", di->data.ycable_iin_curr);
+	/*ycable charge current */
+	ret = of_property_read_u32(np, "ycable_ichg_curr", &(di->data.ycable_ichg_curr));
+	if (ret) {
+		hwlog_err("get ycable_ichg_curr failed\n");
+		di->data.ycable_ichg_curr = YCABLE_CURR_DEFAULT;
+	}
+	hwlog_info("ycable_ichg_curr = %d\n", di->data.ycable_ichg_curr);
 
 	charge_core_parse_high_temp_limit(np, di);
 #ifdef CONFIG_WIRELESS_CHARGER

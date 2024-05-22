@@ -53,6 +53,7 @@
 
 #include <linux/vmalloc.h>
 #include <linux/device.h>
+#include <linux/of_platform.h>
 
 #include <linux/of_reserved_mem.h>
 #include <linux/of_fdt.h>
@@ -68,6 +69,7 @@ socp_mem_reserve_stru       g_stSocpMemReserve  = {NULL,0,0,0,0};
 u32  g_stDeflateSetMode ;
 
 extern u32 socp_version;
+u64 g_socp_dma_mask = (u64)(-1);
 
 void *socp_logbuffer_memremap(unsigned long phys_addr, size_t size);
 s32 deflate_set_compress_mode(SOCP_IND_MODE_ENUM eMode);
@@ -537,6 +539,8 @@ s32 socp_logbuffer_dmalloc(struct device_node* dev)
         size = aulDstChan[SOCP_DST_CHAN_CFG_SIZE];
     }
     memset_s(&dev1,sizeof(dev1),0,sizeof(dev1));
+    dma_set_mask_and_coherent(&dev1, g_socp_dma_mask);
+    of_dma_configure(&dev1, NULL);
     pucBuf =(u8 *) dma_alloc_coherent(&dev1, (size_t)size, &ulAddress, GFP_KERNEL);
 
     if(BSP_NULL == pucBuf)

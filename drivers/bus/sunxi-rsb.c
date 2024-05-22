@@ -178,6 +178,7 @@ static struct bus_type sunxi_rsb_bus = {
 	.match		= sunxi_rsb_device_match,
 	.probe		= sunxi_rsb_device_probe,
 	.remove		= sunxi_rsb_device_remove,
+	.uevent		= of_device_uevent_modalias,
 };
 
 static void sunxi_rsb_dev_release(struct device *dev)
@@ -330,7 +331,7 @@ static int sunxi_rsb_read(struct sunxi_rsb *rsb, u8 rtaddr, u8 addr,
 		cmd = RSB_CMD_RD32;
 		break;
 	default:
-		dev_err(rsb->dev, "Invalid access width: %d\n", len);
+		dev_err(rsb->dev, "Invalid access width: %zd\n", len);
 		return -EINVAL;
 	}
 
@@ -372,7 +373,7 @@ static int sunxi_rsb_write(struct sunxi_rsb *rsb, u8 rtaddr, u8 addr,
 		cmd = RSB_CMD_WR32;
 		break;
 	default:
-		dev_err(rsb->dev, "Invalid access width: %d\n", len);
+		dev_err(rsb->dev, "Invalid access width: %zd\n", len);
 		return -EINVAL;
 	}
 

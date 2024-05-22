@@ -1,6 +1,7 @@
 #ifndef _OASES_UTIL_H
 #define _OASES_UTIL_H
 
+#include <linux/kernel.h>
 #include <linux/types.h>
 #include <linux/printk.h>
 
@@ -28,7 +29,10 @@ struct oases_patch_info;
 int oases_is_null(const void *, int);
 int oases_valid_name(const char *id, int maxlen);
 
+void oases_module_lock(void);
+void oases_module_unlock(void);
 void *oases_ref_module(const char *name);
+int oases_ref_module_ptr(void *module);
 void oases_unref_module(void *module);
 
 static inline int oases_insn_patch_nosync(void* addr, u32 insn);
@@ -42,17 +46,12 @@ int oases_remove_patch(struct oases_patch_info *info);
 #include <linux/of.h>
 #include <asm/insn.h>
 #include <asm/cacheflush.h>
-
-#ifdef CONFIG_HISI_HHEE
 #include <linux/hisi/hisi_hhee.h>
-#endif
 
 static inline bool is_hkip_enabled(void) {
 	bool ret = false;
-#ifdef CONFIG_HISI_HHEE
 	if (HHEE_ENABLE == hhee_check_enable())
 		ret = true;
-#endif
 	return ret;
 }
 

@@ -13,6 +13,9 @@
 #ifndef HISI_OVERLAY_UTILS_H
 #define HISI_OVERLAY_UTILS_H
 
+#if defined (CONFIG_DRMDRIVER)
+#include <linux/hisi/hisi_drmdriver.h>
+#endif
 #include "hisi_fb.h"
 
 /*******************************************************************************
@@ -288,7 +291,7 @@ bool is_YUV_P_422(uint32_t format);
 bool is_RGBX(uint32_t format);
 bool isPixel10Bit2dma (int format);
 
-#if defined (CONFIG_HISI_FB_3660) || defined(CONFIG_HISI_FB_970) || defined(CONFIG_HISI_FB_V501)
+#if defined (CONFIG_HISI_FB_3660) || defined(CONFIG_HISI_FB_970) || defined(CONFIG_HISI_FB_V501) || defined(CONFIG_HISI_FB_V510)
 int hisi_dss_arsr1p_write_lsc_gain(struct hisi_fb_data_type *hisifd, bool enable_cmdlist,
 	char __iomem *addr, const uint32_t **p, int row, int col);
 int hisi_dss_arsr1p_write_coefs(struct hisi_fb_data_type *hisifd, bool enable_cmdlist,
@@ -296,7 +299,7 @@ int hisi_dss_arsr1p_write_coefs(struct hisi_fb_data_type *hisifd, bool enable_cm
 void hisi_dss_post_scf_init(char __iomem * dss_base, char __iomem *post_scf_base, dss_arsr1p_t *s_post_scf);
 void hisi_dss_post_scf_set_reg(struct hisi_fb_data_type *hisifd, char __iomem *post_scf_base, dss_arsr1p_t *s_post_scf);
 #endif
-#if defined (CONFIG_HISI_FB_3660) || defined(CONFIG_HISI_FB_970) || defined (CONFIG_HISI_FB_V320) || defined(CONFIG_HISI_FB_V501)
+#if defined (CONFIG_HISI_FB_3660) || defined(CONFIG_HISI_FB_970) || defined (CONFIG_HISI_FB_V320) || defined(CONFIG_HISI_FB_V501) || defined(CONFIG_HISI_FB_V510) || defined (CONFIG_HISI_FB_V330)
 /*arsr2p interface*/
 void hisi_dss_arsr2p_init(char __iomem * arsr2p_base, dss_arsr2p_t *s_arsr2p); //arsr2p init
 void hisi_dss_arsr2p_set_reg(struct hisi_fb_data_type *hisifd,
@@ -306,9 +309,14 @@ int hisi_dss_arsr2p_config(struct hisi_fb_data_type *hisifd, dss_layer_t *layer,
 void hisi_remove_mctl_mutex(struct hisi_fb_data_type *hisifd, int mctl_idx, uint32_t cmdlist_idxs);
 void hisi_dss_dpp_acm_gm_set_reg(struct hisi_fb_data_type *hisifd);
 #endif
-#if defined (CONFIG_HISI_FB_V320)
+#if defined (CONFIG_HISI_FB_V320) || defined (CONFIG_HISI_FB_V330)
 void hisi_dss_post_scf_set_reg(struct hisi_fb_data_type *hisifd, char __iomem *post_scf_base, dss_scl_t *s_post_scf);
 void hisi_dss_post_scf_init(char __iomem * dss_base, char __iomem *post_scf_base, dss_scl_t *s_post_scf);
+#endif
+#if defined(CONFIG_HISI_FB_V501)
+void clear_xcc_table(struct hisi_fb_data_type *hisifd);
+void restore_xcc_table(struct hisi_fb_data_type *hisifd);
+void hisifb_masklayer_backlight_notify_handler(struct work_struct *work);
 #endif
 
 #endif /* HISI_OVERLAY_UTILS_H */

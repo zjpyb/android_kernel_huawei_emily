@@ -25,6 +25,8 @@ const struct oases_patch_desc *oases_patch_desc_by_type(int type)
 	case OASES_FUNC_REP:
 		return &oases_func_rep_ops;
 #endif
+	case OASES_FUNC_PRE_POST:
+		return &oases_func_pre_post_ops;
 	case OASES_SUBFUNC_PRE:
 		return &oases_subfunc_pre_ops;
 	case OASES_SUBFUNC_POST:
@@ -33,6 +35,8 @@ const struct oases_patch_desc *oases_patch_desc_by_type(int type)
 	case OASES_SUBFUNC_REP:
 		return &oases_subfunc_rep_ops;
 #endif
+	case OASES_SUBFUNC_PRE_POST:
+		return &oases_subfunc_pre_post_ops;
 	}
 	return NULL;
 }

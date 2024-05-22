@@ -49,7 +49,7 @@ oal_profiling_rx_statistic_stru g_mips_rx_statistic;
 EXPORT_SYMBOL(g_mips_rx_statistic);
 #endif
 
-oal_thruput_bypass_enum_uint8 g_auc_thruput_bypass_enable[OAL_THRUPUT_BYPASS_BUTT] = {0};
+oal_thruput_bypass_enum_uint8 g_auc_thruput_bypass_enable_etc[OAL_THRUPUT_BYPASS_BUTT] = {0};
 
 /*****************************************************************************
   3 函数实现
@@ -768,26 +768,26 @@ EXPORT_SYMBOL(oal_profiling_mips_init);
 
 #endif
 
-oal_uint32 oal_get_thruput_bypass_enable(oal_thruput_bypass_enum_uint8 uc_bypass_type)
+oal_uint32 oal_get_thruput_bypass_enable_etc(oal_thruput_bypass_enum_uint8 uc_bypass_type)
 {
-    return g_auc_thruput_bypass_enable[uc_bypass_type];
+    return g_auc_thruput_bypass_enable_etc[uc_bypass_type];
 }
 
-oal_void oal_set_thruput_bypass_enable(oal_thruput_bypass_enum_uint8 uc_bypass_type, oal_uint8 uc_value)
+oal_void oal_set_thruput_bypass_enable_etc(oal_thruput_bypass_enum_uint8 uc_bypass_type, oal_uint8 uc_value)
 {
     if(OAL_THRUPUT_BYPASS_BUTT <= uc_bypass_type)
     {
-        //OAM_WARNING_LOG1(0, OAM_SF_ANY, "oal_get_thruput_bypass_enable::wrong thruput bypass type:%d.", uc_bypass_type);
+        //OAM_WARNING_LOG1(0, OAM_SF_ANY, "oal_get_thruput_bypass_enable_etc::wrong thruput bypass type:%d.", uc_bypass_type);
         /* 打印临时修改成PRINTK形式，后续51的oal和oam整合成一个ko后，放开OAL调用OAM的限制 */
-        OAL_IO_PRINT("oal_get_thruput_bypass_enable::wrong thruput bypass type:%d.\n", uc_bypass_type);
+        OAL_IO_PRINT("oal_get_thruput_bypass_enable_etc::wrong thruput bypass type:%d.\n", uc_bypass_type);
         return;
     }
-    g_auc_thruput_bypass_enable[uc_bypass_type] = uc_value;
+    g_auc_thruput_bypass_enable_etc[uc_bypass_type] = uc_value;
 }
 
 #ifndef _PRE_PC_LINT
-oal_module_symbol(oal_get_thruput_bypass_enable);
-oal_module_symbol(oal_set_thruput_bypass_enable);
+oal_module_symbol(oal_get_thruput_bypass_enable_etc);
+oal_module_symbol(oal_set_thruput_bypass_enable_etc);
 #endif
 
 #ifdef __cplusplus

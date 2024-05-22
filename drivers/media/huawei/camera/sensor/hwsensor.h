@@ -50,12 +50,23 @@ typedef struct _tag_hwsensor_vtbl {
 	int (*csi_disable)(hwsensor_intf_t *);
 	int (*sensor_register_attribute)(hwsensor_intf_t *, struct device *);
     int (*ois_wpb_ctrl)(hwsensor_intf_t *, int state);
+    int (*otp_config)(hwsensor_intf_t *, void *);
+    int (*otp_get)(hwsensor_intf_t *, hwsensor_config_otp_t *);
+    int (*otp_update)(hwsensor_intf_t *, hwsensor_config_otp_t *);
+    int (*get_thermal)(hwsensor_intf_t *,void *);
 }hwsensor_vtbl_t;
 
 typedef struct _tag_hwsensor_intf
 {
     hwsensor_vtbl_t*                            vtbl;
 } hwsensor_intf_t;
+
+static inline int
+hwsensor_intf_otp_config(hwsensor_intf_t *hsi,
+                         void __user* argp)
+{
+    return hsi->vtbl->otp_config(hsi,argp);
+}
 
 static inline int
 hwsensor_intf_config(hwsensor_intf_t* hsi,

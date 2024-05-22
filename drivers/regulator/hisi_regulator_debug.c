@@ -51,6 +51,9 @@
 #include "hisi_regulator_debug.h"
 #endif
 
+#include <linux/hisi/hisi_log.h>
+#define HISI_LOG_TAG HISI_PMIC_REGULATOR_DEBUG_TAG
+
 extern struct list_head *get_regulator_list(void);
 
 #ifdef CONFIG_HISI_REGULATOR_TRACE
@@ -160,6 +163,7 @@ int set_regulator_voltage(char *ldo_name, unsigned int vol_value)
 	const struct regulator_ops *ops;
 	unsigned int selector;
 	int ret;
+	int len;
 	struct list_head *regulator_list = get_regulator_list();
 	if ((NULL == regulator_list) || (NULL == ldo_name)) {
 		pr_info("regulator_list is NULL or voltage value is invalid\n\r");
@@ -176,7 +180,8 @@ int set_regulator_voltage(char *ldo_name, unsigned int vol_value)
 			pr_info("Couldnot find your ldo name\n\r");
 			return -1;
 		}
-		if (strncmp(rdev->constraints->name, ldo_name, strlen(ldo_name)) == 0) {
+		len = strlen(rdev->constraints->name) > strlen(ldo_name) ? strlen(rdev->constraints->name) : strlen(ldo_name);
+		if (strncmp(rdev->constraints->name, ldo_name, len) == 0) {
 			ret = ops->set_voltage(rdev, vol_value, vol_value, &selector);
 			if (ret) {
 				pr_info("voltage set fail\n\r");
@@ -365,6 +370,8 @@ static int track_regulator_rdr_register(struct rdr_register_module_result *resul
 	return ret;
 }
 
+#define ALIGN8(size) ((size/8)*8)
+
 int regulator_percpu_buffer_init(u8 *addr, u32 size, u32 fieldcnt, u32 magic_number, u32 ratio[][8], BUF_TYPE_EN buf_type)
 {
 	int i, ret;
@@ -389,6 +396,8 @@ int regulator_percpu_buffer_init(u8 *addr, u32 size, u32 fieldcnt, u32 magic_num
 		pr_info("[%s], ratio[%d][%d] = [%d]\n", __func__, (cpu_num - 1), i, ratio[cpu_num - 1][i]);
 
 		g_regulator_track_addr->percpu_length[i] = g_regulator_track_addr->buffer_size / 16 * ratio[cpu_num - 1][i];
+		g_regulator_track_addr->percpu_length[i] = ALIGN8(g_regulator_track_addr->percpu_length[i]);
+
 		if (0 == i) {
 			g_regulator_track_addr->percpu_addr[0] = g_regulator_track_addr->buffer_addr + sizeof(pc_record_info);
 		} else {

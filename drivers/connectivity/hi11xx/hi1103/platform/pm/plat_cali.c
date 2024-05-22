@@ -25,8 +25,8 @@
 *****************************************************************************/
 
 /*保存校准数据的buf*/
-oal_uint8 *g_pucCaliDataBuf      = NULL;  /* 03 wifi校准数据 */
-oal_uint8  g_uc_netdev_is_open   = OAL_FALSE;
+oal_uint8 *g_pucCaliDataBuf_etc      = NULL;  /* 03 wifi校准数据 */
+oal_uint8  g_uc_netdev_is_open_etc   = OAL_FALSE;
 oal_uint32 g_ul_cali_update_channel_info = 0;
 
 
@@ -98,7 +98,7 @@ int32 g_aul_bfgx_cust_ini_data[BFGX_BT_CUST_INI_SIZE/4] = {0};
 *****************************************************************************/
 
 
-oal_int32 get_cali_count(oal_uint32 *count)
+oal_int32 get_cali_count_etc(oal_uint32 *count)
 {
     if (NULL == count)
     {
@@ -123,7 +123,7 @@ oal_int32 bfgx_nv_data_init(void)
 
     oal_uint8 bt_cal_nvram_tmp[OAL_BT_NVRAM_DATA_LENGTH];
 
-    l_ret = read_conf_from_nvram(bt_cal_nvram_tmp, OAL_BT_NVRAM_DATA_LENGTH,
+    l_ret = read_conf_from_nvram_etc(bt_cal_nvram_tmp, OAL_BT_NVRAM_DATA_LENGTH,
                                     OAL_BT_NVRAM_NUMBER, OAL_BT_NVRAM_NAME);
     if (l_ret != INI_SUCC)
     {
@@ -182,13 +182,13 @@ int32 hi1102_get_bfgx_cali_data(oal_uint8 *buf, oal_uint32 *len, oal_uint32 buf_
         return -EFAIL;
     }
 
-    if (NULL == g_pucCaliDataBuf)
+    if (NULL == g_pucCaliDataBuf_etc)
     {
-        PS_PRINT_ERR("g_pucCaliDataBuf is NULL\n");
+        PS_PRINT_ERR("g_pucCaliDataBuf_etc is NULL\n");
         return -EFAIL;
     }
 
-    pst_cali_data = (oal_cali_param_stru *)g_pucCaliDataBuf;
+    pst_cali_data = (oal_cali_param_stru *)g_pucCaliDataBuf_etc;
     OS_MEM_CPY(buf, (oal_uint8 *)&(pst_cali_data->st_bfgn_cali_data), bfgx_cali_data_len);
     *len = bfgx_cali_data_len;
 
@@ -201,7 +201,7 @@ int32 hi1102_get_bfgx_cali_data(oal_uint8 *buf, oal_uint32 *len, oal_uint32 buf_
     ************************************************************************************/
 
     /******************************* WIFI 5G使能检查标志位 ******************************/
-    result = get_cust_conf_int32(INI_MODU_WIFI, CHECK_5G_ENABLE, &wifi_5g_enable_info);
+    result = get_cust_conf_int32_etc(INI_MODU_WIFI, CHECK_5G_ENABLE, &wifi_5g_enable_info);
     if (0 > result)
     {
         PS_PRINT_WARNING("host get wifi 5g enable info fail\n");
@@ -219,7 +219,7 @@ int32 hi1102_get_bfgx_cali_data(oal_uint8 *buf, oal_uint32 *len, oal_uint32 buf_
     }
 
     /******************************** bfgx异常处理结束检查标志位 *********************************/
-    if (is_bfgx_exception())
+    if (is_bfgx_exception_etc())
     {
         cali_addition.ul_excep_reboot = SYS_EXCEP_REBOOT;
     }
@@ -283,7 +283,7 @@ int32 hi1103_get_bfgx_cali_data(oal_uint8 *buf, oal_uint32 *len, oal_uint32 buf_
 }
 
 
-int32 get_bfgx_cali_data(oal_uint8 *buf, oal_uint32 *len, oal_uint32 buf_len)
+int32 get_bfgx_cali_data_etc(oal_uint8 *buf, oal_uint32 *len, oal_uint32 buf_len)
 {
     oal_int32 l_subchip_type = get_hi110x_subchip_type();
 
@@ -303,18 +303,18 @@ int32 get_bfgx_cali_data(oal_uint8 *buf, oal_uint32 *len, oal_uint32 buf_len)
 }
 
 
-void *get_cali_data_buf_addr(void)
+void *get_cali_data_buf_addr_etc(void)
 {
-    return g_pucCaliDataBuf;
+    return g_pucCaliDataBuf_etc;
 }
 
-EXPORT_SYMBOL(get_cali_data_buf_addr);
-EXPORT_SYMBOL(g_uc_netdev_is_open);
+EXPORT_SYMBOL(get_cali_data_buf_addr_etc);
+EXPORT_SYMBOL(g_uc_netdev_is_open_etc);
 EXPORT_SYMBOL(g_ul_cali_update_channel_info);
 
 
 
-void *wifi_get_bfgx_cali_data_buf_addr(uint32 *pul_len)
+void *wifi_get_bfgx_rc_data_buf_addr(uint32 *pul_len)
 {
     bfgx_cali_data_stru *pst_bfgx_cali_buf = NULL;
 
@@ -331,7 +331,7 @@ void *wifi_get_bfgx_cali_data_buf_addr(uint32 *pul_len)
     return pst_bfgx_cali_buf->auc_wifi_rc_code_data;
 }
 
-EXPORT_SYMBOL(wifi_get_bfgx_cali_data_buf_addr);
+EXPORT_SYMBOL(wifi_get_bfgx_rc_data_buf_addr);
 
 
 void *wifi_get_bt_cali_data_buf(uint32 *pul_len)
@@ -412,7 +412,7 @@ void *bfgx_get_cust_ini_data_buf(uint32 *pul_len)
 }
 
 
-void plat_bfgx_cali_data_test(void)
+void plat_bfgx_cali_data_test_etc(void)
 {
     bfgx_cali_data_stru *pst_cali_data = NULL;
     oal_uint32 *p_test = NULL;
@@ -422,7 +422,7 @@ void plat_bfgx_cali_data_test(void)
     pst_cali_data = (bfgx_cali_data_stru *)bfgx_get_cali_data_buf(&count);
     if (NULL == pst_cali_data)
     {
-        PS_PRINT_ERR("get_cali_data_buf_addr failed\n");
+        PS_PRINT_ERR("get_cali_data_buf_addr_etc failed\n");
         return;
     }
 
@@ -438,7 +438,7 @@ void plat_bfgx_cali_data_test(void)
 }
 
 
-oal_int32 cali_data_buf_malloc(void)
+oal_int32 cali_data_buf_malloc_etc(void)
 {
     oal_uint8 *buffer = NULL;
     oal_uint32 ul_buffer_len;
@@ -453,17 +453,17 @@ oal_int32 cali_data_buf_malloc(void)
 
     if (NULL == buffer)
     {
-        PS_PRINT_ERR("malloc for g_pucCaliDataBuf fail\n");
+        PS_PRINT_ERR("malloc for g_pucCaliDataBuf_etc fail\n");
         return -EFAIL;
     }
-    g_pucCaliDataBuf = buffer;
-    OAL_MEMZERO(g_pucCaliDataBuf, ul_buffer_len);
+    g_pucCaliDataBuf_etc = buffer;
+    OAL_MEMZERO(g_pucCaliDataBuf_etc, ul_buffer_len);
 
     buffer = (oal_uint8 *)OS_KZALLOC_GFP(BFGX_CALI_DATA_BUF_LEN);
     if (NULL == buffer)
     {
-        OS_MEM_KFREE(g_pucCaliDataBuf);
-        g_pucCaliDataBuf = NULL;
+        OS_MEM_KFREE(g_pucCaliDataBuf_etc);
+        g_pucCaliDataBuf_etc = NULL;
         PS_PRINT_ERR("malloc for g_pucBfgxCaliDataBuf fail\n");
         return -EFAIL;
     }
@@ -471,19 +471,19 @@ oal_int32 cali_data_buf_malloc(void)
 
     init_completion(&g_st_cali_recv_done);
 
-    //plat_bfgx_cali_data_test();
+    //plat_bfgx_cali_data_test_etc();
 
     return SUCC;
 }
 
 
-void cali_data_buf_free(void)
+void cali_data_buf_free_etc(void)
 {
-    if (NULL != g_pucCaliDataBuf)
+    if (NULL != g_pucCaliDataBuf_etc)
     {
-        OS_MEM_KFREE(g_pucCaliDataBuf);
+        OS_MEM_KFREE(g_pucCaliDataBuf_etc);
     }
-    g_pucCaliDataBuf = NULL;
+    g_pucCaliDataBuf_etc = NULL;
 
     if (NULL != g_pucBfgxCaliDataBuf)
     {
@@ -523,7 +523,7 @@ int32 bfgx_cust_ini_init(void)
         l_ori_val = g_ast_bfgx_ini_config_cmd[i].init_value;
 
         /* 获取ini的配置值 */
-        l_ret = get_cust_conf_int32(INI_MODU_DEV_BT, g_ast_bfgx_ini_config_cmd[i].name, &l_cfg_value);
+        l_ret = get_cust_conf_int32_etc(INI_MODU_DEV_BT, g_ast_bfgx_ini_config_cmd[i].name, &l_cfg_value);
         if (INI_FAILED == l_ret)
         {
             g_aul_bfgx_cust_ini_data[i] = l_ori_val;
@@ -549,11 +549,47 @@ int32 bfgx_cust_ini_init(void)
 }
 
 
+int32 bfgx_customize_init(void)
+{
+    int32  ret = 0;
+
+    /*申请用于保存校准数据的buffer*/
+    ret = cali_data_buf_malloc_etc();
+    if(OAL_SUCC != ret)
+    {
+        PS_PRINT_ERR("alloc cali data buf fail\n");
+        return INI_FAILED;
+    }
+
+    ret = bfgx_cust_ini_init();
+    if (OAL_SUCC != ret)
+    {
+       PS_PRINT_ERR("bfgx ini init fail!\n");
+       cali_data_buf_free_etc();
+       return INI_FAILED;
+    }
+
+#ifdef HISI_NVRAM_SUPPORT
+    ret = bfgx_nv_data_init();
+    if (OAL_SUCC != ret)
+    {
+       PS_PRINT_ERR("bfgx nv data init fail!\n");
+       cali_data_buf_free_etc();
+       return INI_FAILED;
+    }
+#endif
+
+    return INI_SUCC;
+}
+
+
 oal_int32 bfgx_cali_data_init(void)
 {
     int32  ret = 0;
     static uint32 cali_flag = 0;
-    struct pm_drv_data *pm_data = pm_get_drvdata();
+    struct ps_core_s *ps_core_d = NULL;
+    struct st_bfgx_data *pst_bfgx_data = NULL;
+    struct pm_drv_data *pm_data = pm_get_drvdata_etc();
 
     PS_PRINT_INFO("%s\n", __func__);
 
@@ -572,23 +608,21 @@ oal_int32 bfgx_cali_data_init(void)
        return OAL_FAIL;
     }
 
-    ret = bfgx_cust_ini_init();
-    if (OAL_SUCC != ret)
+    ps_get_core_reference_etc(&ps_core_d);
+    if (unlikely(NULL == ps_core_d))
     {
-       PS_PRINT_ERR("bfgx ini init fail!\n");
-       return OAL_FAIL;
+        PS_PRINT_ERR("ps_core_d is NULL\n");
+        return OAL_FAIL;
     }
-
-    #ifdef HISI_NVRAM_SUPPORT
-    ret = bfgx_nv_data_init();
-    if (OAL_SUCC != ret)
-    {
-       PS_PRINT_ERR("bfgx nv data init fail!\n");
-       return OAL_FAIL;
-    }
-    #endif
 
     mutex_lock(&pm_data->host_mutex);
+
+    pst_bfgx_data = &ps_core_d->bfgx_info[BFGX_BT];
+    if (POWER_STATE_OPEN == atomic_read(&pst_bfgx_data->subsys_state))
+    {
+        PS_PRINT_WARNING("%s has opened! ignore bfgx cali!\n", g_bfgx_subsys_name_etc[BFGX_BT]);
+        goto open_fail;
+    }
 
     ret = hw_bfgx_open(BFGX_BT);
     if (SUCC != ret)

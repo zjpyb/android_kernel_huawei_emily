@@ -43,6 +43,7 @@
 #include <linux/gpio.h>
 #include <linux/of_gpio.h>
 #include <linux/pinctrl/consumer.h>
+#include <soc_acpu_baseaddr_interface.h>
 
 #if defined CONFIG_HISI_SPI
 #include <linux/of_address.h>
@@ -50,6 +51,8 @@
 #include <linux/hwspinlock.h>
 #include "../hwspinlock/hwspinlock_internal.h"
 #endif
+
+#define DBG_DMAC_BASE_ADDR SOC_ACPU_PERI_DMAC_BASE_ADDR
 
 /*
  * This macro is used to define some register default values.
@@ -357,13 +360,6 @@ struct vendor_data {
  * @clk: outgoing clock "SPICLK" for the SPI bus
  * @master: SPI framework hookup
  * @master_info: controller-specific data from machine setup
- * @kworker: thread struct for message pump
- * @kworker_task: pointer to task for message pump kworker thread
- * @pump_messages: work struct for scheduling work to the message pump
- * @queue_lock: spinlock to syncronise access to message queue
- * @queue: message queue
- * @busy: message pump is busy
- * @running: message pump is running
  * @pump_transfers: Tasklet used in Interrupt Transfer mode
  * @cur_msg: Pointer to current spi_message being processed
  * @cur_transfer: Pointer to current spi_transfer
@@ -433,6 +429,8 @@ struct pl022 {
 	int dmacheck_addr;
 	struct hwspinlock *spi_hwspin_lock;
 	struct dev_pin_info pins;
+	spinlock_t sync_spinlock;
+	int sync_locked;
 
 #endif
 	int cur_cs;
@@ -977,6 +975,22 @@ static void setup_dma_scatter(struct pl022 *pl022,
 	BUG_ON(bytesleft);
 }
 
+void txdma_callback(void *dma_param, int bit)
+{
+	struct pl022 *pl022 = dma_param;
+
+	pl022->master->tx_chan_no = bit;
+	return;
+}
+
+void rxdma_callback(void *dma_param, int bit)
+{
+	struct pl022 *pl022 = dma_param;
+
+	pl022->master->rx_chan_no = bit;
+	return;
+}
+
 /**
  * configure_dma - configures the channels for the next transfer
  * @pl022: SSP driver's private data structure
@@ -1167,6 +1181,12 @@ static int configure_dma(struct pl022 *pl022)
 	/* Put the callback on the RX transfer only, that should finish last */
 	rxdesc->callback = dma_callback;
 	rxdesc->callback_param = pl022;
+	rxchan->dmas_callback = rxdma_callback;
+	rxchan->dmas_callback_param = pl022;
+	txchan->dmas_callback = txdma_callback;
+	txchan->dmas_callback_param = pl022;
+	pl022->master->tx_chan_no = 0;
+	pl022->master->rx_chan_no = 0;
 
 	/* Submit and fire RX and TX with TX last so we're ready to read! */
 	dmaengine_submit(rxdesc);
@@ -1323,6 +1343,147 @@ static inline int pl022_dma_probe(struct pl022 *pl022)
 
 static inline void pl022_dma_remove(struct pl022 *pl022)
 {
+}
+#endif
+
+#if defined CONFIG_HISI_SPI
+static void spi_free_msg_list(struct spi_master *master)
+{
+	unsigned long 		flags;
+	struct spi_message	*cur_msg;
+
+	spin_lock_irqsave(&master->queue_lock, flags);
+	while (!list_empty(&master->queue)) {
+		cur_msg = list_first_entry(&master->queue, struct spi_message, queue);
+		list_del_init(&cur_msg->queue);
+	}
+	spin_unlock_irqrestore(&master->queue_lock, flags);
+}
+
+void pl022_resume_spi(struct spi_master *master)
+{
+	struct pl022 *pl022 = spi_master_get_devdata(master);
+
+	writew(DISABLE_ALL_INTERRUPTS, SSP_IMSC(pl022->virtbase));
+
+	spi_free_msg_list(master);
+
+	master->cur_msg = NULL;
+	master->busy = false;
+	master->idling = false;
+	kfree(master->dummy_rx);
+	master->dummy_rx = NULL;
+	kfree(master->dummy_tx);
+	master->dummy_tx = NULL;
+	if (master->unprepare_transfer_hardware &&
+		master->unprepare_transfer_hardware(master))
+		dev_err(&master->dev,
+			"failed to unprepare transfer hardware\n");
+	if (master->auto_runtime_pm) {
+		mutex_lock(&master->msg_mutex);
+		pm_runtime_mark_last_busy(master->dev.parent);
+		pm_runtime_put_autosuspend(master->dev.parent);
+		mutex_unlock(&master->msg_mutex);
+
+	}
+
+	return;
+}
+
+void show_spi_register(struct spi_master *master)
+{
+	struct pl022 *pl022 = spi_master_get_devdata(master);
+
+	dev_err(&pl022->adev->dev, "SSP_CR0 = 0x%x\n", readw(SSP_CR0(pl022->virtbase)));
+	dev_err(&pl022->adev->dev, "SSP_CR1 = 0x%x\n", readw(SSP_CR1(pl022->virtbase)));
+	dev_err(&pl022->adev->dev, "SSP_DR = 0x%x\n", readw(SSP_DR(pl022->virtbase)));
+	dev_err(&pl022->adev->dev, "SSP_SR = 0x%x\n", readw(SSP_SR(pl022->virtbase)));
+	dev_err(&pl022->adev->dev, "SSP_CPSR = 0x%x\n", readw(SSP_CPSR(pl022->virtbase)));
+	dev_err(&pl022->adev->dev, "SSP_IMSC = 0x%x\n", readw(SSP_IMSC(pl022->virtbase)));
+	dev_err(&pl022->adev->dev, "SSP_RIS = 0x%x\n", readw(SSP_RIS(pl022->virtbase)));
+	dev_err(&pl022->adev->dev, "SSP_MIS = 0x%x\n", readw(SSP_MIS(pl022->virtbase)));
+	dev_err(&pl022->adev->dev, "SSP_DMACR = 0x%x\n", readw(SSP_DMACR(pl022->virtbase)));
+	dev_err(&pl022->adev->dev, "SSP_TXFIFOCR = 0x%x\n", readw(SSP_TXFIFOCR(pl022->virtbase)));
+	dev_err(&pl022->adev->dev, "SSP_RXFIFOCR = 0x%x\n", readw(SSP_RXFIFOCR(pl022->virtbase)));
+	dev_err(&pl022->adev->dev, "SSP_CSR = 0x%x\n", readw(SSP_CSR(pl022->virtbase)));
+	dev_err(&pl022->adev->dev, "SSP_ITCR = 0x%x\n", readw(SSP_ITCR(pl022->virtbase)));
+	dev_err(&pl022->adev->dev, "SSP_ITIP = 0x%x\n", readw(SSP_ITIP(pl022->virtbase)));
+	dev_err(&pl022->adev->dev, "SSP_ITOP = 0x%x\n", readw(SSP_ITOP(pl022->virtbase)));
+	dev_err(&pl022->adev->dev, "SSP_TDR = 0x%x\n", readw(SSP_TDR(pl022->virtbase)));
+	dev_err(&pl022->adev->dev, "SSP_PID0 = 0x%x\n", readw(SSP_PID0(pl022->virtbase)));
+	dev_err(&pl022->adev->dev, "SSP_PID1 = 0x%x\n", readw(SSP_PID1(pl022->virtbase)));
+	dev_err(&pl022->adev->dev, "SSP_PID2 = 0x%x\n", readw(SSP_PID2(pl022->virtbase)));
+	dev_err(&pl022->adev->dev, "SSP_PID3 = 0x%x\n", readw(SSP_PID3(pl022->virtbase)));
+	dev_err(&pl022->adev->dev, "SSP_CID0 = 0x%x\n", readw(SSP_CID0(pl022->virtbase)));
+	dev_err(&pl022->adev->dev, "SSP_CID1 = 0x%x\n", readw(SSP_CID1(pl022->virtbase)));
+	dev_err(&pl022->adev->dev, "SSP_CID2 = 0x%x\n", readw(SSP_CID2(pl022->virtbase)));
+	dev_err(&pl022->adev->dev, "SSP_CID3 = 0x%x\n", readw(SSP_CID3(pl022->virtbase)));
+	dev_err(&pl022->adev->dev, "SSP_ICR = 0x%x\n", readw(SSP_ICR(pl022->virtbase)));
+}
+
+void show_dma_register(struct spi_master *master, int channel_id)
+{
+	void __iomem	 *base;
+	struct pl022 *pl022 = spi_master_get_devdata(master);
+
+	base = devm_ioremap(&master->dev, DBG_DMAC_BASE_ADDR, 4096);
+	dev_err(&master->dev, "channel_id: %d, spi:0x%x\n", channel_id, (unsigned int)pl022->phybase);
+	dev_err(&master->dev, "show dma register.\n");
+	dev_err(&master->dev, "INT_STAT : 0x%x \n", readl(base));
+	dev_err(&master->dev, "INT_TC1 : 0x%x \n", readl(base + 0x4));
+	dev_err(&master->dev, "INT_TC2 : 0x%x \n", readl(base + 0x8));
+	dev_err(&master->dev, "INT_ERR1 : 0x%x \n", readl(base + 0xc));
+	dev_err(&master->dev, "INT_ERR2 : 0x%x \n", readl(base + 0x10));
+	dev_err(&master->dev, "INT_ERR3 : 0x%x \n", readl(base + 0x14));
+	dev_err(&master->dev, "INT_TC1_RAW : 0x%x \n", readl(base + 0x600));
+	dev_err(&master->dev, "INT_TC2_RAW : 0x%x \n", readl(base + 0x608));
+	dev_err(&master->dev, "INT_ERR1_RAW : 0x%x \n", readl(base + 0x610));
+	dev_err(&master->dev, "INT_ERR2_RAW : 0x%x \n", readl(base + 0x618));
+	dev_err(&master->dev, "INT_ERR3_RAW : 0x%x \n", readl(base + 0x620));
+	dev_err(&master->dev, "CH_STAT : 0x%x \n", readl(base + 0x690));
+	dev_err(&master->dev, "SEC_CTRL : 0x%x \n", readl(base + 0x694));
+	dev_err(&master->dev, "DMA_CTRL : 0x%x \n", readl(base + 0x698));
+	dev_err(&master->dev, "CX_CURR_CNT0 : 0x%x \n", readl(base + 0x404 + 0x20 * channel_id));
+	dev_err(&master->dev, "CX_CURENT_SRC_ADDR_L: 0x%x \n", readl(base + 0x408 + 0x20 * channel_id));
+	dev_err(&master->dev, "CX_CURENT_SRC_ADDR_H: 0x%x \n", readl(base + 0x40c + 0x20 * channel_id));
+	dev_err(&master->dev, "CX_CURENT_DST_ADDR_L: 0x%x \n", readl(base + 0x410 + 0x20 * channel_id));
+	dev_err(&master->dev, "CX_CURENT_DST_ADDR_H: 0x%x \n", readl(base + 0x414 + 0x20 * channel_id));
+	dev_err(&master->dev, "CX_LLI_L : 0x%x \n", readl(base + 0x800 + 0x40 * channel_id));
+	dev_err(&master->dev, "CX_LLI_H : 0x%x \n", readl(base + 0x804 + 0x40 * channel_id));
+	dev_err(&master->dev, "CX_CNT0 : 0x%x \n", readl(base + 0x81c + 0x40 * channel_id));
+	dev_err(&master->dev, "CX_SRC_ADDR_L : 0x%x \n", readl(base + 0x820 + 0x40 * channel_id));
+	dev_err(&master->dev, "CX_SRC_ADDR_H : 0x%x \n", readl(base + 0x824 + 0x40 * channel_id));
+	dev_err(&master->dev, "CX_DST_ADDR_L : 0x%x \n", readl(base + 0x828 + 0x40 * channel_id));
+	dev_err(&master->dev, "CX_DST_ADDR_H : 0x%x \n", readl(base + 0x82c + 0x40 * channel_id));
+	dev_err(&master->dev, "CX_CONFIG : 0x%x \n", readl(base + 0x830 + 0x40 * channel_id));
+	dev_err(&master->dev, "CX_AXI_CONFIG : 0x%x \n", readl(base + 0x834 + 0x40 * channel_id));
+
+	return;
+}
+
+bool spi_use_dma_transmode(struct spi_message *msg)
+{
+	struct chip_data *cur_chip = spi_get_ctldata(msg->spi);
+
+	if (!cur_chip) {
+		return false;
+	}
+
+	if ((DMA_TRANSFER == cur_chip->xfer_type) && (true == cur_chip->enable_dma)) {
+		return true;
+	}
+
+	return false;
+}
+
+void pl022_resume_all(struct spi_master *master)
+{
+	struct pl022 *pl022 = spi_master_get_devdata(master);
+
+	pl022_resume_spi(master);
+	terminate_dma(pl022);
+
+	return;
 }
 #endif
 
@@ -1582,6 +1743,9 @@ static void do_interrupt_dma_transfer(struct pl022 *pl022)
 		giveback(pl022);
 		return;
 	}
+#if defined CONFIG_HISI_SPI
+	mutex_lock(&pl022->master->msg_mutex);
+#endif
 	/* If we're using DMA, set up DMA here */
 	if (pl022->cur_chip->enable_dma) {
 		/* Configure DMA transfer */
@@ -1598,6 +1762,9 @@ err_config_dma:
 	writew((readw(SSP_CR1(pl022->virtbase)) | SSP_CR1_MASK_SSE),
 	       SSP_CR1(pl022->virtbase));
 	writew(irqflags, SSP_IMSC(pl022->virtbase));
+#if defined CONFIG_HISI_SPI
+	mutex_unlock(&pl022->master->msg_mutex);
+#endif
 }
 
 static void do_polling_transfer(struct pl022 *pl022)
@@ -1607,6 +1774,13 @@ static void do_polling_transfer(struct pl022 *pl022)
 	struct spi_transfer *previous = NULL;
 	struct chip_data *chip;
 	unsigned long time, timeout;
+#if defined CONFIG_HISI_SPI
+	unsigned long flags = 0;
+
+	if (pl022->sync_locked) {
+		spin_lock_irqsave(&pl022->sync_spinlock, flags);
+	}
+#endif
 
 	chip = pl022->cur_chip;
 	message = pl022->cur_msg;
@@ -1656,7 +1830,13 @@ static void do_polling_transfer(struct pl022 *pl022)
 				message->state = STATE_ERROR;
 				goto out;
 			}
+#if defined CONFIG_HISI_SPI
+			if (!pl022->sync_locked) {
+				cpu_relax();
+			}
+#else
 			cpu_relax();
+#endif
 		}
 
 		/* Update total byte transferred */
@@ -1674,6 +1854,11 @@ out:
 		message->status = -EIO;
 
 	giveback(pl022);
+#if defined CONFIG_HISI_SPI
+	if (pl022->sync_locked) {
+		spin_unlock_irqrestore(&pl022->sync_spinlock, flags);
+	}
+#endif
 	return;
 }
 
@@ -2311,6 +2496,13 @@ static int pl022_probe(struct amba_device *adev, const struct amba_id *id)
 	} else {
 		pl022->dmacheck_addr = 0;
 	}
+
+	if (of_property_read_u32(np, "sync-spinlock", &pl022->sync_locked))
+		pl022->sync_locked = 0;
+	if (pl022->sync_locked) {
+		spin_lock_init(&pl022->sync_spinlock);
+	}
+
 #endif
 	/*
 	 * Bus Number Which has been Assigned to this SSP controller

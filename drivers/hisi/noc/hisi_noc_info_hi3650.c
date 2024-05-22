@@ -15,6 +15,8 @@
 #include <linux/string.h>
 
 #include <hisi_noc_info.h>
+#include <linux/hisi/hisi_log.h>
+#define HISI_LOG_TAG HISI_NOC_TAG
 
 #define CFG_INITFLOW_ARRAY_SIZE			22
 #define CFG_TARGETFLOW_ARRAY_SIZE		33

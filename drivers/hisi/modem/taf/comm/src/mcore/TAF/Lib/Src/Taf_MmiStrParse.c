@@ -72,7 +72,6 @@
 
 #define MN_MMI_BS_MAX_ENTRY (sizeof(f_stMmiBSInfo)/sizeof(MN_MMI_BS_TABLE_STRU))
 
-/* Added by f62575 for SS FDN&Call Control, 2013-05-06, begin */
 /* 通用补充业务操作码映射表: 第一列补充业务操作码对应的MMI字符串，第二列补充业务操作码 */
 MN_MMI_SS_OP_Tbl_STRU                   g_astTafMmiOporationTypeTbl[] = {
                                                     {"**", TAF_MMI_REGISTER_SS,    {0, 0, 0, 0, 0, 0, 0}},
@@ -81,7 +80,6 @@ MN_MMI_SS_OP_Tbl_STRU                   g_astTafMmiOporationTypeTbl[] = {
                                                     {"*#", TAF_MMI_INTERROGATE_SS, {0, 0, 0, 0, 0, 0, 0}},
                                                     {"##", TAF_MMI_ERASE_SS,       {0, 0, 0, 0, 0, 0, 0}},
                                                   };
-/* Added by f62575 for SS FDN&Call Control, 2013-05-06, end */
 
 /*****************************************************************************
   4 类型定义
@@ -174,7 +172,6 @@ MN_CALL_CLIR_CFG_ENUM_U8  f_enClirOperate = MN_CALL_CLIR_AS_SUBS;
 /*****************************************************************************
   6 函数实现
 *****************************************************************************/
-/* Added by f62575 for SS FDN&Call Control, 2013-5-20, begin */
 
 
 VOS_UINT32 MMI_GetOporationTypeTblSize(VOS_VOID)
@@ -223,7 +220,6 @@ MN_MMI_SC_TABLE_STRU *MMI_GetSCTblAddr(VOS_VOID)
 {
     return f_stMmiScInfo;
 }
-/* Added by f62575 for SS FDN&Call Control, 2013-5-20, end */
 
 
 LOCAL VOS_UINT32 MMI_AtoI(
@@ -802,13 +798,11 @@ VOS_UINT32 MMI_FillInRegisterSSPara(
         }
         else
         {
-            /* Modified by f62575 for SS FDN&Call Control, 2013-05-06, begin */
             /* Delete TAF_ALL_BARRING_SS_CODE密码相关操作 */
             if (0 == VOS_StrNLen((VOS_CHAR *)pstScSiPara->acSib, MN_MMI_MAX_SIB_LEN))
             {
                 return MN_ERR_NO_ERROR;
             }
-            /* Modified by f62575 for SS FDN&Call Control, 2013-05-06, end */
         }
         if (VOS_OK != MMI_TransMmiBsCodeToNetBsCode(ucNetSsCode,
                                                     pstScSiPara,
@@ -868,13 +862,11 @@ VOS_UINT32 MMI_FillInEraseSSPara(
         }
         else
         {
-            /* Modified by f62575 for SS FDN&Call Control, 2013-05-06, begin */
             /* Delete TAF_ALL_BARRING_SS_CODE密码相关操作 */
             if (0 == VOS_StrNLen((VOS_CHAR *)pstScSiPara->acSib, MN_MMI_MAX_SIB_LEN))
             {
                 return MN_ERR_NO_ERROR;
             }
-            /* Modified by f62575 for SS FDN&Call Control, 2013-05-06, end */
         }
         if (VOS_OK != MMI_TransMmiBsCodeToNetBsCode(ucNetSsCode,
                                                     pstScSiPara,
@@ -903,7 +895,6 @@ VOS_UINT32 MMI_FillInActivateSSPara(
     TAF_SS_ACTIVATESS_REQ_STRU          *pstActivateSsReq;
     VOS_UINT8                           ucNetBsCode;
     VOS_UINT8                           ucNetBsType;
-    /* Added by f62575 for SS FDN&Call Control, 2013-05-06, begin */
     VOS_UINT32                          ulPasswordLen;
 
     /*
@@ -919,7 +910,6 @@ VOS_UINT32 MMI_FillInActivateSSPara(
         }
 
     }
-    /* Added by f62575 for SS FDN&Call Control, 2013-05-06, end */
 
     pstActivateSsReq = &pMmiOpParam->ActivateSsReq;
 
@@ -947,7 +937,6 @@ VOS_UINT32 MMI_FillInActivateSSPara(
         }
         else
         {
-            /* Modified by f62575 for SS FDN&Call Control, 2013-05-06, begin */
             /* 保存密码到激活消息参数结构 */
             ulPasswordLen = VOS_StrNLen((VOS_CHAR *)pstScSiPara->acSia, MN_MMI_MAX_SIA_LEN);
             if (TAF_SS_MAX_PASSWORD_LEN != ulPasswordLen)
@@ -965,7 +954,6 @@ VOS_UINT32 MMI_FillInActivateSSPara(
             {
                 return MN_ERR_NO_ERROR;
             }
-            /* Modified by f62575 for SS FDN&Call Control, 2013-05-06, end */
 
         }
 
@@ -1027,9 +1015,7 @@ VOS_UINT32 MMI_FillInDeactivateSSPara(
     TAF_SS_DEACTIVATESS_REQ_STRU        *pstDeactivateSsReq;
     VOS_UINT8                           ucNetBsCode;
     VOS_UINT8                           ucNetBsType;
-    /* Added by f62575 for SS FDN&Call Control, 2013-05-06, begin */
     VOS_UINT32                          ulPasswordLen;
-    /* Added by f62575 for SS FDN&Call Control, 2013-05-06, end */
 
     pstDeactivateSsReq = &pMmiOpParam->DeactivateSsReq;
 
@@ -1057,7 +1043,6 @@ VOS_UINT32 MMI_FillInDeactivateSSPara(
         }
         else
         {
-            /* Modified by f62575 for SS FDN&Call Control, 2013-05-06, begin */
             /* 保存密码到去激活消息参数结构 */
             ulPasswordLen = VOS_StrNLen((VOS_CHAR *)pstScSiPara->acSia, MN_MMI_MAX_SIA_LEN);
             if (TAF_SS_MAX_PASSWORD_LEN != ulPasswordLen)
@@ -1070,7 +1055,6 @@ VOS_UINT32 MMI_FillInDeactivateSSPara(
                        pstScSiPara->acSia,
                        TAF_SS_MAX_PASSWORD_LEN);
             pMmiOpParam->DeactivateSsReq.OP_Password = VOS_TRUE;
-           /* Modified by f62575 for SS FDN&Call Control, 2013-05-06, end */
 
             if (0 == VOS_StrNLen((VOS_CHAR *)pstScSiPara->acSib, MN_MMI_MAX_SIB_LEN))
             {
@@ -1130,9 +1114,7 @@ VOS_UINT32 MMI_FillInInterrogateSSPara(
         }
         else
         {
-            /* Delete by f62575 for SS FDN&Call Control, 2013-05-06, begin */
             /* Delete TAF_MMI_GET_PASSWD密码相关操作 */
-            /* Delete by f62575 for SS FDN&Call Control, 2013-05-06, end */
             if (0 == VOS_StrNLen((VOS_CHAR *)pstScSiPara->acSib, MN_MMI_MAX_SIB_LEN))
             {
                 return MN_ERR_NO_ERROR;
@@ -1175,8 +1157,6 @@ VOS_UINT32 MMI_FillInProcessUssdReqPara(
 
     TAF_MEM_SET_S(pstProcessUssdReq, sizeof(TAF_SS_PROCESS_USS_REQ_STRU), 0x00, sizeof(TAF_SS_PROCESS_USS_REQ_STRU));
 
-    /* Deleted by z60575 for TQE, 2013-8-3 begin */
-    /* Deleted by z60575 for TQE, 2013-8-3 end */
 
     pstProcessUssdReq->DatacodingScheme = pstMmiOpParam->ProcessUssdReq.DatacodingScheme;
 
@@ -1266,11 +1246,6 @@ LOCAL VOS_UINT32 MMI_FillInCallOrigPara(
     VOS_UINT8                           ucNetSsCode
 )
 {
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
-
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, end */
-
-
     switch(pMmiOpParam->MmiOperationType)
     {
     case TAF_MMI_REGISTER_SS:
@@ -1300,13 +1275,11 @@ LOCAL VOS_UINT32 MMI_FillInCallOrigPara(
                                                    pMmiOpParam);
         break;
 
-     /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
      case TAF_MMI_DEACTIVATE_CCBS:
         *pulErrCode = MMI_FillInDeactivateCCBSPara(pstScSiPara,
                                                    pMmiOpParam,
                                                    ucNetSsCode);
         break;
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, end */
 
     default:
         break;
@@ -1325,9 +1298,7 @@ LOCAL VOS_UINT32 MMI_FillInCallOrigPara(
     VOS_UINT8                           *pucNetSsCode
 )
 {
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
     /* 获取特性控制NV地址 */
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, end */
 
     if (VOS_FALSE == MMI_DecodeScAndSi(pInMmiStr, pMmiOpParam, pstScSiPara, ppOutRestMmiStr))
     {
@@ -1345,7 +1316,6 @@ LOCAL VOS_UINT32 MMI_FillInCallOrigPara(
         pMmiOpParam->MmiOperationType = TAF_MMI_PROCESS_USSD_REQ;
     }
 
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
     if ((TAF_MMI_DEACTIVATE_SS == pMmiOpParam->MmiOperationType) && (TAF_CCBS_A_SS_CODE == *pucNetSsCode))
     {
         pMmiOpParam->MmiOperationType = TAF_MMI_DEACTIVATE_CCBS;
@@ -1358,7 +1328,6 @@ LOCAL VOS_UINT32 MMI_FillInCallOrigPara(
     {
         ;
     }
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, end */
 
     return VOS_TRUE;
 
@@ -1378,10 +1347,8 @@ LOCAL VOS_UINT32 MMI_FillInCallOrigPara(
     MN_MMI_SC_SI_PARA_STRU              stScSiPara;
     VOS_UINT8                           ucNetSsCode = TAF_ALL_SS_CODE;
     VOS_UINT16                          i = 0;
-    /* Added by f62575 for SS FDN&Call Control, 2013-05-06, begin */
     VOS_UINT32                          ulTableSize;
     MN_MMI_SS_OP_Tbl_STRU              *pstOperationType    = VOS_NULL_PTR;
-    /* Added by f62575 for SS FDN&Call Control, 2013-05-06, end */
 
     *pulErrCode = MN_ERR_NO_ERROR;
     TAF_MEM_SET_S(acOpType, sizeof(acOpType), 0x00, sizeof(acOpType));
@@ -1392,7 +1359,6 @@ LOCAL VOS_UINT32 MMI_FillInCallOrigPara(
         acOpType[i] = pInMmiStr[i];
     }
 
-    /* Modified by f62575 for SS FDN&Call Control, 2013-05-06, begin */
     ulTableSize         = MMI_GetOporationTypeTblSize();
     pstOperationType  = MMI_GetOporationTypeTblAddr();
     for (i = 0; i < ulTableSize; i++)
@@ -1409,7 +1375,6 @@ LOCAL VOS_UINT32 MMI_FillInCallOrigPara(
 
         pstOperationType++;
     }
-    /* Modified by f62575 for SS FDN&Call Control, 2013-05-06, end */
 
     if (VOS_FALSE == bMatch)
     {
@@ -1552,7 +1517,6 @@ TAF_UINT32 MN_MmiStringParse(
     TAF_UINT32                          ulStrLen;
 
 
-    /* Modified by z60575 for TQE, 2013-8-3 begin */
     if (VOS_NULL_PTR == pInMmiStr)
     {
         MN_ERR_LOG("MN_MmiStringParse: Input Invalid Param");
@@ -1567,7 +1531,6 @@ TAF_UINT32 MN_MmiStringParse(
         MN_ERR_LOG("MN_MmiStringParse: Input Invalid Param");
         return MN_ERR_INVALIDPARM;
     }
-    /* Modified by z60575 for TQE, 2013-8-3 end */
 
     TAF_MEM_SET_S(pMmiOpParam, sizeof(MN_MMI_OPERATION_PARAM_STRU), 0x00, sizeof(MN_MMI_OPERATION_PARAM_STRU));
 
@@ -1584,9 +1547,7 @@ TAF_UINT32 MN_MmiStringParse(
                                            ppOutRestMmiStr,
                                            pMmiOpParam))
     {
-        /* Deleted by f62575 for SS FDN&Call Control, 2013-05-06, begin */
         /* 作为独立的解码函数，不应与AT模块的业务功能耦合，删除AT模块业务全局变量的赋值操作 */
-        /* Deleted by f62575 for SS FDN&Call Control, 2013-05-06, end */
         return MN_ERR_NO_ERROR;
     }
 

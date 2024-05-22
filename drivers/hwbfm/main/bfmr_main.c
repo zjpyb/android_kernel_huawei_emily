@@ -156,7 +156,7 @@ static void __exit bfmr_exit(void)
     return 0;
 }
 
-module_init(bfmr_init);
+fs_initcall(bfmr_init);
 module_exit(bfmr_exit);
 MODULE_LICENSE("GPL");
 

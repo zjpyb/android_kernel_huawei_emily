@@ -65,7 +65,7 @@ oal_uint32  oal_fsm_create(oal_void                   *p_oshandle,         /*×´Ì
 
     /* strncpy fsm name */
     ul_loop = 0;
-    while((p_name[ul_loop] != '\0') && (ul_loop < OAL_FSM_MAX_NAME -1)) {
+    while((ul_loop < OAL_FSM_MAX_NAME -1) && (p_name[ul_loop] != '\0')) {
         pst_oal_fsm->uc_name[ul_loop] = p_name[ul_loop];
         ul_loop++;
     }

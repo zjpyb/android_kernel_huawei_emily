@@ -30,7 +30,6 @@
 #define HISI_ECO_MODE_DISABLE		(0)
 
 typedef int (*pmic_ocp_callback)(char *);
-extern int hisi_pmic_special_ocp_register(char *power_name, pmic_ocp_callback handler);
 
 struct irq_mask_info {
 	int start_addr;
@@ -95,6 +94,7 @@ int hisi_pmic_array_read(int addr, char *buff, unsigned int len);
 int hisi_pmic_array_write(int addr, char *buff, unsigned int len);
 extern int hisi_get_pmic_irq_byname(unsigned int pmic_irq_list);
 extern int hisi_pmic_get_vbus_status(void);
+extern int hisi_pmic_special_ocp_register(char *power_name, pmic_ocp_callback handler);
 #if defined(CONFIG_HISI_DIEID)
 u32 hisi_pmic_read_sub_pmu(u8 sid ,int reg);
 void hisi_pmic_write_sub_pmu(u8 sid ,int reg, u32 val);
@@ -111,6 +111,7 @@ static inline int hisi_pmic_array_read(int addr, char *buff, unsigned int len) {
 static inline int hisi_pmic_array_write(int addr, char *buff, unsigned int len) { return 0; }
 static inline int hisi_get_pmic_irq_byname(unsigned int pmic_irq_list) { return -1; }
 static inline int hisi_pmic_get_vbus_status(void) { return 1; }
+static inline int hisi_pmic_special_ocp_register(char *power_name, pmic_ocp_callback handler){ return 0; }
 static inline u32 hisi_pmic_read_sub_pmu(u8 sid ,int reg) { return 0; }
 static inline void hisi_pmic_write_sub_pmu(u8 sid ,int reg, u32 val) {}
 static inline int hisi_pmic_get_dieid(char *dieid){ return 0;}

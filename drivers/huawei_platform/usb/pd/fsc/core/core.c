@@ -323,3 +323,15 @@ FSC_BOOL core_is_c2a_cable(void)
 {
     return c2a_cable;
 }
+
+int core_cc_disable(FSC_BOOL disabled)
+{
+	if(disabled == FALSE){
+		SetStateUnattached();
+	} else {
+		clearState();
+		Registers.Control.TOGGLE = 0;                                   // Disable the toggle state machine
+		DeviceWrite(regControl2, 1, &Registers.Control.byte[2]);       // Commit the control state
+	}
+	return 0;
+}

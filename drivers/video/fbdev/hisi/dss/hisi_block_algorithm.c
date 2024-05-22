@@ -197,7 +197,7 @@ int block_fix_scf_constraint(dss_overlay_t *pov_req, dss_overlay_block_t *pov_h_
 		}
 
 		if ((g_dss_version_tag == FB_ACCEL_HI366x) ||
-			((g_dss_version_tag & (FB_ACCEL_KIRIN970 | FB_ACCEL_DSSV501))
+			((g_dss_version_tag & (FB_ACCEL_KIRIN970 | FB_ACCEL_DSSV501 | FB_ACCEL_DSSV510 | FB_ACCEL_DSSV320 | FB_ACCEL_DSSV330))
 			&& (layer->need_cap & CAP_2D_SHARPNESS))) {
 			if (scf_layer_num >= MAX_OFFLINE_LAYER_NUMBER) {
 				HISI_FB_ERR("layer number in offline [%d] is more than scf moudle [%d]\n",
@@ -458,10 +458,10 @@ static int create_h_v_block_layer(dss_layer_t *h_layer, dss_layer_t *h_v_layer,
 	int input_span = 0;
 	uint32_t output_startpos = 0; //relative to overlay plane
 	uint32_t output_span = 0;
-	int h_ratio = 0;
-	int acc_hscl = 0;
-	int scf_read_start = 0;
-	int scf_read_end = 0;
+	uint32_t h_ratio = 0;
+	uint32_t acc_hscl = 0;
+	uint32_t scf_read_start = 0;
+	uint32_t scf_read_end = 0;
 	dss_rect_t rect_transform = {0};
 	dss_rect_t src_rect = {0};
 	int scf_int = 0;
@@ -520,7 +520,7 @@ static int create_h_v_block_layer(dss_layer_t *h_layer, dss_layer_t *h_v_layer,
 
 		//h_ratio=(arsr_input_width*65536+65536-ihleft)/(arsr_output_width+1)
 		h_ratio = (DSS_WIDTH(src_rect.w) * ARSR2P_INC_FACTOR + ARSR2P_INC_FACTOR - acc_hscl) /
-			h_layer->dst_rect.w;
+			h_layer->dst_rect.w;//lint !e573
 
 		//starti = ceil( starto *((double)(ihinc))/(65536.0) - overlapH
 		scf_int = output_startpos * h_ratio/ARSR2P_INC_FACTOR;
@@ -540,9 +540,9 @@ static int create_h_v_block_layer(dss_layer_t *h_layer, dss_layer_t *h_v_layer,
 			scf_read_start = 0;
 			scf_read_end = scf_in_end + ARSR2P_OVERLAPH - 1;
 		} else {
-			scf_read_start = scf_in_start - ARSR2P_OVERLAPH;
-			if (scf_read_start < 0)
-				scf_read_start = 0;
+			scf_read_start = 0;
+			if (scf_in_start > ARSR2P_OVERLAPH)
+				scf_read_start = scf_in_start - ARSR2P_OVERLAPH;
 
 			if (last_block == 1) { //last block of this layer
 				scf_read_end = DSS_WIDTH(src_rect.w);
@@ -552,7 +552,7 @@ static int create_h_v_block_layer(dss_layer_t *h_layer, dss_layer_t *h_v_layer,
 			}
 		}
 
-		if (scf_read_end > DSS_WIDTH(src_rect.w))
+		if (scf_read_end > DSS_WIDTH(src_rect.w))  //lint !e574
 			scf_read_end = DSS_WIDTH(src_rect.w);
 
 		input_startpos = scf_read_start;
@@ -595,7 +595,7 @@ static int create_h_v_block_layer(dss_layer_t *h_layer, dss_layer_t *h_v_layer,
 		}
 
 		h_ratio = (DSS_WIDTH(h_layer->src_rect.w) * SCF_INC_FACTOR + SCF_INC_FACTOR / 2 - acc_hscl) /
-			DSS_WIDTH(h_layer->dst_rect.w);
+			DSS_WIDTH(h_layer->dst_rect.w);//lint !e573
 
 		scf_in_start = output_startpos * h_ratio / SCF_INC_FACTOR;
 		scf_in_end = DSS_WIDTH(output_startpos + output_span) * h_ratio / SCF_INC_FACTOR;
@@ -609,10 +609,10 @@ static int create_h_v_block_layer(dss_layer_t *h_layer, dss_layer_t *h_v_layer,
 			scf_read_start = 0;
 			scf_read_end = scf_in_end + SCF_INPUT_OV;
 		} else {
-			scf_read_start= scf_in_start - SCF_INPUT_OV;
-			if (scf_read_start < 0)
-				scf_read_start = 0;
-			acc_hscl = (int)(output_startpos * h_ratio - scf_read_start * SCF_INC_FACTOR);
+			scf_read_start = 0;
+			if (scf_in_start > SCF_INPUT_OV)
+				scf_read_start = scf_in_start - SCF_INPUT_OV;
+			acc_hscl = output_startpos * h_ratio - scf_read_start * SCF_INC_FACTOR;
 
 			if (last_block == 1) { //last block of this layer
 				scf_read_end = DSS_WIDTH(h_layer->src_rect.w);
@@ -621,7 +621,7 @@ static int create_h_v_block_layer(dss_layer_t *h_layer, dss_layer_t *h_v_layer,
 			}
 		}
 
-		if (scf_read_end > DSS_WIDTH(h_layer->src_rect.w))
+		if (scf_read_end > DSS_WIDTH(h_layer->src_rect.w)) //lint !e574
 			scf_read_end = DSS_WIDTH(h_layer->src_rect.w);
 
 		input_startpos = scf_read_start;
@@ -672,10 +672,10 @@ static int wb_create_h_v_block_layer(dss_overlay_t *pov_req_h_v, dss_layer_t *h_
 	int input_span;
 	uint32_t output_startpos; //relative to overlay plane
 	uint32_t output_span;
-	int h_ratio = 0;
-	int acc_hscl = 0;
-	int scf_read_start = 0;
-	int scf_read_end = 0;
+	uint32_t h_ratio = 0;
+	uint32_t acc_hscl = 0;
+	uint32_t scf_read_start = 0;
+	uint32_t scf_read_end = 0;
 	dss_rect_t rect_transform = {0};
 	int first_block; //is the first block of this layer
 	int last_block; //is the last block of this layer
@@ -697,7 +697,7 @@ static int wb_create_h_v_block_layer(dss_overlay_t *pov_req_h_v, dss_layer_t *h_
 
 	if (h_layer->src_rect.w != h_layer->dst_rect.w) {
 		h_ratio = (DSS_WIDTH(h_layer->src_rect.w) * SCF_INC_FACTOR + SCF_INC_FACTOR / 2 - acc_hscl) /
-			DSS_WIDTH(h_layer->dst_rect.w);
+			DSS_WIDTH(h_layer->dst_rect.w);//lint !e573
 
 		scf_in_start = output_startpos * h_ratio / SCF_INC_FACTOR;
 		scf_in_end = DSS_WIDTH(output_startpos + output_span) * h_ratio / SCF_INC_FACTOR;
@@ -711,9 +711,9 @@ static int wb_create_h_v_block_layer(dss_overlay_t *pov_req_h_v, dss_layer_t *h_
 			scf_read_start = 0;
 			scf_read_end = scf_in_end + SCF_INPUT_OV;
 		} else {
-			scf_read_start= scf_in_start - SCF_INPUT_OV;
-			if (scf_read_start < 0)
-				scf_read_start = 0;
+			scf_read_start = 0;
+			if (scf_in_start > SCF_INPUT_OV)
+				scf_read_start = scf_in_start - SCF_INPUT_OV;
 			acc_hscl = output_startpos * h_ratio - scf_read_start * SCF_INC_FACTOR;
 
 			if (last_block == 1) { //last block of this layer
@@ -723,7 +723,7 @@ static int wb_create_h_v_block_layer(dss_overlay_t *pov_req_h_v, dss_layer_t *h_
 			}
 		}
 
-		if (scf_read_end > DSS_WIDTH(h_layer->src_rect.w)) {
+		if (scf_read_end > DSS_WIDTH(h_layer->src_rect.w)) { //lint !e574
 			scf_read_end = DSS_WIDTH(h_layer->src_rect.w);
 		}
 

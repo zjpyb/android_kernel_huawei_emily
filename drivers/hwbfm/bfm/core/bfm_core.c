@@ -39,8 +39,13 @@
 #include <chipset_common/bfmr/bfm/core/bfm_core.h>
 #include <chipset_common/bfmr/bfm/chipsets/bfm_chipsets.h>
 #include <chipset_common/bfmr/bfm/core/bfm_timer.h>
+#include <chipset_common/bfmr/bfm/core/bfm_stage_info.h>
 #include <chipset_common/bfmr/bfr/core/bfr_core.h>
 #include <chipset_common/bfmr/abns/abns_shutdown.h>
+
+#include <linux/rtc.h>
+#include <linux/cpu.h>
+
 
 
 /*----local macroes------------------------------------------------------------------*/
@@ -123,7 +128,6 @@
 #define BFM_USER_MAX_TOLERANT_BOOTTIME_IN_SECOND (60)
 #define BFM_BOOTUP_SLOWLY_THRESHOLD_IN_SECOND (5 * 60)
 
-
 /*----local prototypes----------------------------------------------------------------*/
 
 typedef struct
@@ -144,7 +148,6 @@ typedef struct
     bfmr_boot_stage_e boot_stage;
     long long log_size_allowed;
 } bfm_log_size_param_t;
-
 
 /*----global variables-----------------------------------------------------------------*/
 
@@ -196,7 +199,6 @@ static int bfm_capture_and_save_framework_bootfail_log(bfmr_log_dst_t *pdst,
 static bool bfm_is_log_existed(unsigned long long rtc_time, unsigned int bootfail_errno);
 static int bfm_capture_and_save_bootfail_log(bfm_process_bootfail_param_t *pparam);
 static void bfm_process_after_save_bootfail_log(void);
-static char* bfm_get_boot_stage_name(unsigned int boot_stage);
 static char* bfm_get_boot_fail_no_desc(bfmr_bootfail_errno_e bootfail_errno, bfm_process_bootfail_param_t *pparam);
 static int bfm_save_bootfail_info_txt(bfmr_log_dst_t *pdst,
     bfmr_log_src_t *psrc,
@@ -228,7 +230,6 @@ static void bfm_merge_bootfail_logs(bfm_bootfail_log_info_t *pbootfail_log_info)
 static void bfm_delete_user_unsensible_bootfail_logs(bfm_bootfail_log_info_t *pbootfail_log_info);
 static int bfm_traverse_log_root_dir(bfm_bootfail_log_info_t *pbootfail_log_info);
 static void bfm_user_space_process_read_its_own_file(bfm_process_bootfail_param_t *pparam);
-
 
 /*----local variables-----------------------------------------------------------------*/
 
@@ -349,6 +350,7 @@ static bfm_boot_fail_no_desc_t s_bootfail_errno_desc[] =
     {BL2_FASTBOOT_S_LOADLPMCU_FAIL, "bl2 load lpmcu failed"},
     {BL2_FASTBOOT_S_IMG_VERIFY_FAIL, "bl2 image verify failed"},
     {BL2_FASTBOOT_S_SOC_TEMP_ERR, "bl2 soc tmp err"},
+    {BL2_PL1_BAT_LOW_POWER, "battery low power"},
     {KERNEL_AP_PANIC, "kernel ap panic"},
     {KERNEL_EMMC_INIT_FAIL, "kernel emm init failed"},
     {KERNEL_AP_WDT, "kernel ap wdt"},
@@ -415,9 +417,11 @@ static bfm_boot_fail_no_desc_t s_bootfail_errno_desc[] =
     {PREBOOT_BROADCAST_FAIL, "preboot broadcast failed"},
     {VM_OAT_FILE_DAMAGED, "ota file damaged"},
     {PACKAGE_MANAGER_SETTING_FILE_DAMAGED, "package manager setting file damaged"},
+    {BFM_HARDWARE_FAULT, "hardware-fault"},
     {BOOTUP_SLOWLY, "bootup slowly"},
     {POWEROFF_ABNORMAL, "power off abnormally"},
 };
+
 
 static bfmr_bootfail_errno_e s_sensible_bootfail_with_reboot_recovery[] = {
     KERNEL_PRESS10S,
@@ -451,8 +455,40 @@ static bool s_is_bootup_successfully = false;
 
 static bool s_is_process_boot_success = false;
 
+#define SIG_TO_INIT      40
+#define SIG_INT_VALUE 1234
+
 
 /*----function definitions--------------------------------------------------------------*/
+
+
+void bfm_send_signal_to_init(void)
+{
+    int pid = 1;
+    int ret;
+    struct siginfo info;
+    struct task_struct *t;
+
+    info.si_signo = SIG_TO_INIT;
+    info.si_code = SI_QUEUE;
+    info.si_int = SIG_INT_VALUE;
+
+    rcu_read_lock();
+    t = find_task_by_vpid(pid);
+    if (t == NULL) {
+        BFMR_PRINT_ERR("Init dump: no such pid\n");
+        rcu_read_unlock();
+    }
+    else {
+        rcu_read_unlock();
+        ret = send_sig_info(SIG_TO_INIT, &info, t);
+        if (ret < 0) {
+            BFMR_PRINT_ERR("Init dump: error sending signal\n");
+        } else {
+            BFMR_PRINT_ERR("Init dump: sending signal success\n");
+        }
+    }
+}
 
 static void bfmr_get_critical_process_name(const char *kmsg, size_t kmsg_size, char *pbuf, size_t buf_size)
 {
@@ -535,44 +571,6 @@ static char* bfm_get_boot_fail_no_desc(bfmr_bootfail_errno_e bootfail_errno, bfm
     return "unknown";
 }
 
-
-static char* bfm_get_boot_stage_name(unsigned int boot_stage)
-{
-    char *boot_stage_name = NULL;
-
-    if (bfmr_is_bl1_stage(boot_stage))/*lint !e648 */
-    {
-        boot_stage_name = "BL1";
-    }
-    else if (bfmr_is_bl2_stage(boot_stage))/*lint !e648 */
-    {
-        boot_stage_name = "BL2";
-    }
-    else if (bfmr_is_kernel_stage(boot_stage))/*lint !e648 */
-    {
-        boot_stage_name = "kernel";
-    }
-    else if (bfmr_is_native_stage(boot_stage))/*lint !e648 */
-    {
-            boot_stage_name = "native";
-    }
-    else if (bfmr_is_android_framework_stage(boot_stage))/*lint !e648 */
-    {
-        boot_stage_name = "framework";
-    }
-    else if (bfmr_is_boot_success(boot_stage))/*lint !e648 */
-    {
-        boot_stage_name = "boot-success";
-    }
-    else
-    {
-        boot_stage_name = "unknown";
-    }
-
-    return boot_stage_name;
-}
-
-
 static int bfm_get_fs_state(const char *pmount_point, struct statfs *pstatfsbuf)
 {
     mm_segment_t old_fs;
@@ -592,7 +590,6 @@ static int bfm_get_fs_state(const char *pmount_point, struct statfs *pstatfsbuf)
 
     return ret;
 }
-
 
 static int bfm_save_bootfail_info_txt(bfmr_log_dst_t *pdst, bfmr_log_src_t *psrc, bfm_process_bootfail_param_t *pparam)
 {
@@ -647,6 +644,14 @@ static int bfm_save_bootfail_info_txt(bfmr_log_dst_t *pdst, bfmr_log_src_t *psrc
         record_count_str, pparam->is_bootup_successfully ? "yes" : "no",
         record_count_str, pparam->reboot_type,
         bfm_get_bootlock_value_from_cmdline());
+
+    if ((bytes_formatted < (BFMR_TEMP_BUF_LEN - 1)) &&
+        ((BOOTUP_SLOWLY == pparam->bootfail_errno) || (KERNEL_BOOT_TIMEOUT == pparam->bootfail_errno)))
+    {
+        BFMR_PRINT_KEY_INFO("Record boot stages information.\n");
+        bytes_formatted += bfm_save_stages_info_txt((char*)(pdata + bytes_formatted), (BFMR_TEMP_BUF_LEN - bytes_formatted));
+    }
+
     switch (pdst->type)
     {
     case DST_FILE:
@@ -1469,7 +1474,7 @@ __out:
 
 static int bfm_process_upper_layer_boot_fail(void *param)
 {
-    bfm_process_bootfail_param_t *pparam = (bfm_process_bootfail_param_t*)param;
+    bfm_process_bootfail_param_t *pparam =  (bfm_process_bootfail_param_t*)param;
 
     if (unlikely(NULL == param))
     {
@@ -1511,13 +1516,13 @@ static int bfm_process_upper_layer_boot_fail(void *param)
     }
 
 __out:
-    if (NULL != pparam->user_space_log_buf)
-    {
-        bfmr_free(pparam->user_space_log_buf);
-    }
 
-    if (NULL != param)
+    if (NULL != pparam)
     {
+        if (NULL != pparam->user_space_log_buf)
+        {
+            bfmr_free(pparam->user_space_log_buf);
+        }
         bfmr_free(param);
     }
     msleep(BFM_SAVE_LOG_INTERVAL_FOR_EACH_LOG);
@@ -1599,7 +1604,8 @@ int boot_fail_err(bfmr_bootfail_errno_e bootfail_errno,
     bfmr_get_boot_stage(&boot_stage);
     if (bfmr_is_boot_success(boot_stage))
     {
-        if ((CRITICAL_SERVICE_FAIL_TO_START != bootfail_errno) && (BOOTUP_SLOWLY != bootfail_errno))
+        if ((CRITICAL_SERVICE_FAIL_TO_START != bootfail_errno) && (BOOTUP_SLOWLY != bootfail_errno)
+            && (BFM_HARDWARE_FAULT != bootfail_errno))
         {
             BFMR_PRINT_ERR("Error: can't set errno [%x] after device boot success!\n", (unsigned int)bootfail_errno);
             goto __out;
@@ -1675,6 +1681,7 @@ __out:
 }
 
 
+
 /**
     @function: int bfmr_set_boot_stage(bfmr_detail_boot_stage_e boot_stage)
     @brief: get current boot stage during boot process.
@@ -1689,6 +1696,18 @@ int bfmr_set_boot_stage(bfmr_detail_boot_stage_e boot_stage)
 {
     mutex_lock(&s_process_boot_stage_mutex);
     (void)bfm_set_boot_stage(boot_stage);
+
+    //record the start time of boot stage, only before bootup successful
+    if (false == s_is_bootup_successfully)
+    {
+        bfm_stage_info_t stage_info = {0};
+
+        stage_info.stage      = boot_stage;
+        stage_info.start_time = bfmr_get_bootup_time();
+
+        bfm_add_stage_info(&stage_info);
+    }
+
     if (bfmr_is_boot_success(boot_stage))
     {
         BFMR_PRINT_KEY_INFO("boot success!\n");
@@ -1764,10 +1783,12 @@ static int bfm_update_recovery_info_for_each_log(bfm_bootfail_log_info_t *pbootf
             ? ("%s" BFM_RCV_FILE_CONTENT_FORMAT) : (BFM_TEXT_LOG_SEPRATOR_WITHOUT_FIRST_NEWLINE BFM_RCV_FILE_CONTENT_FORMAT),
             (1 == pbootfail_log_info->real_recovery_info.record_count) ? ("") : (time),
             record_count_str, bfr_get_recovery_method_desc(pbootfail_log_info->real_recovery_info.recovery_method[i]),
-            record_count_str, ((pbootfail_log_info->real_recovery_info.record_count == (i + 1))
+            record_count_str, (((pbootfail_log_info->real_recovery_info.record_count == (i + 1))
+            || (bfmr_is_boot_success(pbootfail_log_info->real_recovery_info.boot_fail_stage[i])))
             ? BFM_RECOVERY_SUCCESS_STR : BFM_RECOVERY_FAIL_STR),
             record_count_str, pbootfail_log_info->real_recovery_info.recovery_method[i],
-            record_count_str, ((pbootfail_log_info->real_recovery_info.record_count == (i + 1))
+            record_count_str, (((pbootfail_log_info->real_recovery_info.record_count == (i + 1))
+            || (bfmr_is_boot_success(pbootfail_log_info->real_recovery_info.boot_fail_stage[i])))
             ? (BFM_RECOVERY_SUCCESS_INT_VALUE) : (BFM_RECOVERY_FAIL_INT_VALUE)));
     }
 
@@ -2318,10 +2339,13 @@ static int bfm_notify_boot_success(void *param)
         BFMR_PRINT_ERR("bootup time[%dS] is too long.\n", bootup_time);
         boot_fail_err(BOOTUP_SLOWLY, DO_NOTHING, NULL);
     }
-    s_is_bootup_successfully = true;
+    else
+    {
+        //once if boot success, free boot stage info resource
+        bfm_deinit_stage_info();
+    }
 
-    /* 5. set abnormal shutdown flag */
-    bfmr_set_abns_flag(BOOT_FLAG_FAIL);
+    s_is_bootup_successfully = true;
 
     return 0;
 }
@@ -2513,33 +2537,40 @@ static int bfmr_capture_and_save_log(bfmr_log_src_t *src, bfmr_log_dst_t *dst, b
 
     bytes_read = bfmr_capture_log_from_system(s_log_type_buffer_info[i].buf,
         s_log_type_buffer_info[i].buf_len, src, 0);/*lint !e661 */
-    switch (dst->type)
+    if (bfmr_is_oversea_commercail_version())
     {
-    case DST_FILE:
+        BFMR_PRINT_ERR("Note: logs of oversea commercail version can't be saved!\n");
+    }
+    else
+    {
+        switch (dst->type)
         {
-            bfmr_save_log_to_fs(dst->dst_info.filename, s_log_type_buffer_info[i].buf, bytes_read, 0);/*lint !e661 */
-            break;
-        }
-    case DST_RAW_PART:
-        {
-            if (dst->dst_info.raw_part.offset >=0) 
+        case DST_FILE:
             {
-                bfmr_save_log_to_raw_part(dst->dst_info.raw_part.raw_part_name,
-                    (unsigned long long)dst->dst_info.raw_part.offset,
-                    s_log_type_buffer_info[i].buf, bytes_read);/*lint !e661 */
-                bfmr_update_raw_log_info(src, dst, bytes_read);
+                bfmr_save_log_to_fs(dst->dst_info.filename, s_log_type_buffer_info[i].buf, bytes_read, 0);/*lint !e661 */
+                break;
             }
-            else
+        case DST_RAW_PART:
             {
-                BFMR_PRINT_ERR("dst->dst_info.raw_part.offset is negative [%d]\n", dst->dst_info.raw_part.offset);
+                if (dst->dst_info.raw_part.offset >=0)
+                {
+                    bfmr_save_log_to_raw_part(dst->dst_info.raw_part.raw_part_name,
+                        (unsigned long long)dst->dst_info.raw_part.offset,
+                        s_log_type_buffer_info[i].buf, bytes_read);/*lint !e661 */
+                    bfmr_update_raw_log_info(src, dst, bytes_read);
+                }
+                else
+                {
+                    BFMR_PRINT_ERR("dst->dst_info.raw_part.offset is negative [%d]\n", dst->dst_info.raw_part.offset);
+                }
+                break;
             }
-            break;
-        }
-    case DST_MEMORY_BUFFER:
-    default:
-        {
-            bfmr_save_log_to_mem_buffer(dst->dst_info.buffer.addr, dst->dst_info.buffer.len, s_log_type_buffer_info[i].buf, bytes_read);/*lint !e661 */
-            break;
+        case DST_MEMORY_BUFFER:
+        default:
+            {
+                bfmr_save_log_to_mem_buffer(dst->dst_info.buffer.addr, dst->dst_info.buffer.len, s_log_type_buffer_info[i].buf, bytes_read);/*lint !e661 */
+                break;
+            }
         }
     }
 
@@ -2810,17 +2841,17 @@ static int bfm_process_bottom_layer_boot_fail(void *param)
     if (0 != ret)
     {
         BFMR_PRINT_ERR("Failed to save bottom layer bootfail log!\n");
-        goto __out;      
+        goto __out;
     }
 
 __out:
     if (i < count)
     {
-		if(NULL != s_log_type_buffer_info[i].buf)
-		{
+        if(NULL != s_log_type_buffer_info[i].buf)
+        {
             bfmr_free(s_log_type_buffer_info[i].buf);
             s_log_type_buffer_info[i].buf = NULL;
-		}
+        }
     }
     bfmr_free(param);
     mutex_unlock(&s_process_boot_fail_mutex);
@@ -2848,6 +2879,89 @@ static int bfmr_capture_and_save_bottom_layer_boot_fail_log(void)
         BFMR_PRINT_ERR("Failed to create thread to save bottom layer bootfail log!\n");
         return -1;
     }
+
+    return 0;
+}
+
+
+/* this function can not be invoked in interrupt context */
+static int bfm_process_ocp_excp(bfmr_hardware_fault_type_e fault_type, ocp_excp_info_t *pexcp_info)
+{
+    bfmr_bootfail_addl_info_t *paddl_info = NULL;
+    bfmr_get_hw_fault_info_param_t *pfault_info_param = NULL;
+    int fault_times = 0;
+
+    if (unlikely(NULL == pexcp_info))
+    {
+        BFMR_PRINT_INVALID_PARAMS("pexcp_info: %p\n", pexcp_info);
+        return -1;
+    }
+
+    paddl_info = (bfmr_bootfail_addl_info_t *)bfmr_malloc(sizeof(bfmr_bootfail_addl_info_t));
+    if (NULL == paddl_info)
+    {
+        BFMR_PRINT_ERR("bfmr_malloc failed!\n");
+        goto __out;
+    }
+    memset(paddl_info, 0, sizeof(bfmr_bootfail_addl_info_t));
+
+    pfault_info_param = (bfmr_get_hw_fault_info_param_t *)bfmr_malloc(sizeof(bfmr_get_hw_fault_info_param_t));
+    if (NULL == pfault_info_param)
+    {
+        BFMR_PRINT_ERR("bfmr_malloc failed!\n");
+        goto __out;
+    }
+    memset((void *)pfault_info_param, 0, sizeof(bfmr_get_hw_fault_info_param_t));
+
+    pfault_info_param->fault_stage = HW_FAULT_STAGE_AFTER_BOOT_SUCCESS;
+    memcpy(&pfault_info_param->hw_excp_info.ocp_excp_info, pexcp_info, sizeof(ocp_excp_info_t));
+    memcpy(paddl_info->detail_info, pexcp_info->ldo_num, BFMR_MIN(sizeof(paddl_info->detail_info) - 1, strlen(pexcp_info->ldo_num)));
+    paddl_info->hardware_fault_type = HW_FAULT_OCP;
+    if (s_is_bootup_successfully)
+    {
+        mutex_lock(&s_process_boot_fail_mutex);
+        fault_times = bfr_get_hardware_fault_times(pfault_info_param);
+        mutex_unlock(&s_process_boot_fail_mutex);
+        if (0 == fault_times)
+        {
+            boot_fail_err(BFM_HARDWARE_FAULT, DO_NOTHING, paddl_info);
+        }
+        else
+        {
+            BFMR_PRINT_KEY_INFO("BFM has processed OCP after boot-success one time!\n");
+        }
+
+        goto __out;
+    }
+
+    pfault_info_param->fault_stage = HW_FAULT_STAGE_DURING_BOOTUP;
+    mutex_lock(&s_process_boot_fail_mutex);
+    fault_times = bfr_get_hardware_fault_times(pfault_info_param);
+    mutex_unlock(&s_process_boot_fail_mutex);
+    switch (fault_times)
+    {
+    case 0:
+        {
+            BFMR_PRINT_KEY_INFO("%s has ocp once!\n", pexcp_info->ldo_num);
+            boot_fail_err(BFM_HARDWARE_FAULT, NO_SUGGESTION, paddl_info);
+            break;
+        }
+    case 1:
+        {
+            BFMR_PRINT_KEY_INFO("%s has ocp twice!\n", pexcp_info->ldo_num);
+            boot_fail_err(BFM_HARDWARE_FAULT, DO_NOTHING, paddl_info);
+            break;
+        }
+    default:
+        {
+            BFMR_PRINT_KEY_INFO("BFM has processed the same OCP during bootup!\n");
+            break;
+        }
+    }
+
+__out:
+    bfmr_free(paddl_info);
+    bfmr_free(pfault_info_param);
 
     return 0;
 }
@@ -2882,8 +2996,10 @@ int bfm_init(void)
     }
 
     (void)bfm_init_boot_timer();
+    (void)bfm_init_stage_info();
     memset((void *)&chipsets_init_param, 0, sizeof(bfm_chipsets_init_param_t));
     chipsets_init_param.log_saving_param.capture_and_save_bootfail_log = bfm_capture_and_save_bootfail_log;
+    chipsets_init_param.process_ocp_excp = bfm_process_ocp_excp;
     bfm_chipsets_init(&chipsets_init_param);
     bfmr_capture_and_save_bottom_layer_boot_fail_log();
 

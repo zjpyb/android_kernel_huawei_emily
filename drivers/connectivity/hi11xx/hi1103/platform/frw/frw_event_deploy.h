@@ -161,8 +161,8 @@ OAL_STATIC OAL_INLINE oal_uint8 *frw_ipc_get_header(frw_ipc_msg_mem_stru *pst_ip
     return pst_ipc_mem_msg->puc_data;
 }
 
-extern oal_uint32  frw_event_deploy_init(oal_void);
-extern oal_uint32  frw_event_deploy_exit(oal_void);
+extern oal_uint32  frw_event_deploy_init_etc(oal_void);
+extern oal_uint32  frw_event_deploy_exit_etc(oal_void);
 
 
 #ifdef __cplusplus

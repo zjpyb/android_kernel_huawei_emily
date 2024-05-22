@@ -3,10 +3,6 @@
 /*****************************************************************************
 1 头文件包含
 *****************************************************************************/
-#include "drv_mailbox_cfg.h"
-#include "drv_mailbox_platform.h"
-#include "drv_mailbox_debug.h"
-#include "drv_mailbox_gut.h"
 #include <asm/io.h>
 #include <linux/module.h>
 #include <linux/moduleparam.h>
@@ -25,6 +21,12 @@
 #include <asm/io.h>
 #include <linux/mm.h>
 
+#include "drv_mailbox_cfg.h"
+#include "drv_mailbox_platform.h"
+#include "drv_mailbox_debug.h"
+#include "drv_mailbox_gut.h"
+#include "hifi_lpp.h"
+
 extern int logMsg(char *fmt, ...);
 /*****************************************************************************
 可维可测信息中包含的C文件编号宏定义
@@ -32,7 +34,6 @@ extern int logMsg(char *fmt, ...);
 #undef	_MAILBOX_FILE_
 #define _MAILBOX_FILE_	 "gut"
 
-#define SLICE_REG 0xFFF0A534
 #define mem_remap_nocache(phys_addr, size) mem_remap_type(phys_addr, size, pgprot_writecombine(PAGE_KERNEL))
 /*****************************************************************************
 2 全局变量定义
@@ -836,7 +837,7 @@ MAILBOX_GLOBAL int mailbox_init(void)
 //mailbox_ifc_test_init();
 
 //fixme: there isn't go to unremap
-	g_slice_reg = (void*)ioremap(SLICE_REG, 0x4);
+	g_slice_reg = (void*)ioremap(SYS_TIME_STAMP_REG, 0x4);
 	if (NULL == g_slice_reg) {
 		printk("ioremap of slice reg fail.\n");
 	}

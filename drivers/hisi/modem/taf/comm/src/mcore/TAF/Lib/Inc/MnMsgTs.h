@@ -195,7 +195,6 @@ extern "C" {
 
 #if (OSA_CPU_ACPU == VOS_OSA_CPU)
 #include "AtMntn.h"
-/* Added by f62575 for AT Project, 2011-10-24, begin */
 #define MN_INFO_LOG(str)                    TAF_LOG(WUEPS_PID_AT, 0, PS_LOG_LEVEL_INFO, str)
 #define MN_NORM_LOG(str)                    TAF_LOG(WUEPS_PID_AT, 0, PS_LOG_LEVEL_NORMAL, str)
 #define MN_WARN_LOG(str)                    TAF_LOG(WUEPS_PID_AT, 0, PS_LOG_LEVEL_WARNING, str)
@@ -210,7 +209,6 @@ extern "C" {
 #define MN_WARN_LOG1(str, x)                TAF_LOG1(WUEPS_PID_AT, 0, PS_LOG_LEVEL_WARNING, str, x)
 #define MN_WARN_LOG2(str, x1,x2)            TAF_LOG2(WUEPS_PID_AT, 0, PS_LOG_LEVEL_WARNING, str,x1,x2)
 #define MN_ERR_LOG1(str, x)                 TAF_LOG1(WUEPS_PID_AT, 0, PS_LOG_LEVEL_ERROR, str, x)
-/* Added by f62575 for AT Project, 2011-10-24, end */
 #endif
 
 
@@ -262,11 +260,8 @@ extern "C" {
 /*****************************************************************************
   4 接口函数声明
 *****************************************************************************/
-/* Added by f62575 for AT Project, 2011-10-24, begin */
 
-/* Deleted by f62575 for V9R1 STK升级, 2013-6-26, begin */
 /* Deleted MN_UnPack7Bit */
-/* Deleted by f62575 for V9R1 STK升级, 2013-6-26, end */
 
 
 
@@ -278,11 +273,6 @@ TAF_UINT32 MN_ChkNumType(
 TAF_UINT32 MN_ChkNumPlan(
     MN_MSG_NPI_ENUM_U8                  enNumPlan
 );
-
-
-
-
-/* Added by f62575 for AT Project, 2011-10-24, end */
 
 
 
@@ -308,9 +298,7 @@ VOS_VOID MN_MSG_EncodeTpRd(
     VOS_UINT8                          *pucTpFo
 );
 
-/* Deleted by f62575 for V9R1 STK升级, 2013-6-26, begin */
 /* Deleted MN_Pack7Bit */
-/* Deleted by f62575 for V9R1 STK升级, 2013-6-26, end */
 
 #if ((VOS_OS_VER == VOS_WIN32) || (VOS_OS_VER == VOS_NUCLEUS))
 #pragma pack()

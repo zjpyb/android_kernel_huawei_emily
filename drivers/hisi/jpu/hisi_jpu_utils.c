@@ -11,8 +11,11 @@
 *
 */
 #include <linux/delay.h>
+#include <linux/version.h>
 #include <media/camera/jpeg/jpeg_base.h>
+#include "hisifb_ion.h"
 #include "hisi_jpu.h"
+#include <linux/device.h>
 
 #define MAX_INPUT_DATA_LEN (8192*8192*4)
 
@@ -90,6 +93,7 @@ static int hisi_sample_size_hal2jpu(int val)
 		ret = -1;
 		break;
 	}
+	HISI_JPU_INFO("sample size(%d)!\n", val);
 
 	return ret;
 }
@@ -507,8 +511,10 @@ int hisijpu_clk_enable(struct hisi_jpu_data_type *hisijd)
 	}
 
 	if (hisijd->jpu_support_platform == HISI_KIRIN_970) {
+		HISI_JPU_DEBUG("jpg func clk default rate is: %ld.\n", JPG_FUNC_CLK_DEFAULT_RATE);
 		ret = jpeg_dec_set_rate(hisijd->jpg_func_clk, JPG_FUNC_CLK_DEFAULT_RATE);
-	}else if (hisijd->jpu_support_platform == HISI_DSS_V501) {
+	}else if (hisijd->jpu_support_platform == HISI_DSS_V500
+		|| hisijd->jpu_support_platform == HISI_DSS_V501) {
 		HISI_JPU_DEBUG("jpg func clk default rate is: %ld.\n", JPG_FUNC_CLK_DEFAULT_RATE_V501);
 		ret = jpeg_dec_set_rate(hisijd->jpg_func_clk, JPG_FUNC_CLK_DEFAULT_RATE_V501);
 	}else {
@@ -533,14 +539,13 @@ int hisijpu_clk_enable(struct hisi_jpu_data_type *hisijd)
 
 TRY_LOW_FREQ:
 
-	if (hisijd->jpu_support_platform == HISI_KIRIN_970) {
-		HISI_JPU_DEBUG("jpg func clk low freq rate is: %ld.\n", JPG_FUNC_CLK_PD_RATE);
-		ret = jpeg_dec_set_rate(hisijd->jpg_func_clk, JPG_FUNC_CLK_PD_RATE);
-	}else if (hisijd->jpu_support_platform == HISI_DSS_V501) {
-		HISI_JPU_DEBUG("jpg func clk low freq rate is: %ld.\n", JPG_FUNC_CLK_PD_RATE_V501);
-		ret = jpeg_dec_set_rate(hisijd->jpg_func_clk, JPG_FUNC_CLK_PD_RATE_V501);
-	}else {
-		HISI_JPU_ERR("jpg_func_clk set clk failed, unsupport platform!\n");
+
+	if (hisijd->jpu_support_platform == HISI_DSS_V501) {
+		HISI_JPU_INFO("jpg func clk low freq rate is: %ld.\n", JPG_FUNC_CLK_LOW_TEMP_V501);
+		ret = jpeg_dec_set_rate(hisijd->jpg_func_clk, JPG_FUNC_CLK_LOW_TEMP_V501);
+	} else {
+		HISI_JPU_INFO("jpg func clk low freq rate is: %ld.\n", JPG_FUNC_CLK_LOW_TEMP);
+		ret = jpeg_dec_set_rate(hisijd->jpg_func_clk, JPG_FUNC_CLK_LOW_TEMP);
 	}
 
 	if (ret) {
@@ -577,14 +582,7 @@ int hisijpu_clk_disable(struct hisi_jpu_data_type *hisijd)
 
 	jpeg_dec_clk_disable_unprepare(hisijd->jpg_func_clk);
 
-	if (hisijd->jpu_support_platform == HISI_KIRIN_970) {
-		ret = jpeg_dec_set_rate(hisijd->jpg_func_clk, JPG_FUNC_CLK_PD_RATE);
-	}else if (hisijd->jpu_support_platform == HISI_DSS_V501) {
-		ret = jpeg_dec_set_rate(hisijd->jpg_func_clk, JPG_FUNC_CLK_PD_RATE_V501);
-	}else {
-		HISI_JPU_ERR("jpg_func_clk set clk failed, unsupport platform!\n");
-		return -EINVAL;
-	}
+	ret = jpeg_dec_set_rate(hisijd->jpg_func_clk, JPG_FUNC_CLK_PD_RATE);
 
 	if (ret != 0) {
 	    HISI_JPU_ERR("fail to set power down rate, ret=%d!\n", ret);
@@ -622,7 +620,7 @@ static int hisi_jpu_lb_alloc(struct hisi_jpu_data_type *hisijd)
 	int ret = 0;
 	size_t lb_size = 0;
 
-	if (!hisijd) {
+	if (!hisijd || !(hisijd->pdev)) {
 		HISI_JPU_ERR("hisijd is NULL!\n");
 		return -EINVAL;
 	}
@@ -665,7 +663,6 @@ static int hisi_jpu_lb_alloc(struct hisi_jpu_data_type *hisijd)
 	}
 
 	HISI_JPU_INFO("lb_size=%zu, hisijd->lb_addr 0x%x\n",lb_size, hisijd->lb_addr);
-
 	return 0;
 
 err_addr:
@@ -705,7 +702,7 @@ int hisi_jpu_register(struct hisi_jpu_data_type *hisijd)
 {
 	int ret = 0;
 
-	if (!hisijd) {
+	if (!hisijd || !hisijd->pdev) {
 		HISI_JPU_ERR("hisijd is NULL!\n");
 		return -EINVAL;
 	}
@@ -717,26 +714,27 @@ int hisi_jpu_register(struct hisi_jpu_data_type *hisijd)
 	hisijd->power_on = false;
 	hisijd->jpu_res_initialized = false;
 	hisijd->ion_client = hisi_ion_client_create(HISI_JPU_ION_CLIENT_NAME);
+
 	if (IS_ERR_OR_NULL(hisijd->ion_client)) {
-		HISI_JPU_ERR("failed to create ion client!\n");
+		dev_err(&hisijd->pdev->dev, "failed to create ion client!\n");
 		return -ENOMEM;
 	}
 
 	ret = hisijpu_enable_iommu(hisijd);
 	if (ret != 0) {
-		HISI_JPU_ERR("hisijpu_enable_iommu failed!\n");
+		dev_err(&hisijd->pdev->dev, "hisijpu_enable_iommu failed!\n");
 		return ret;
 	}
 
 	ret = hisi_jpu_lb_alloc(hisijd);
 	if (ret != 0) {
-		HISI_JPU_ERR("hisi_jpu_lb_alloc failed!\n");
+		dev_err(&hisijd->pdev->dev, "hisi_jpu_lb_alloc failed!\n");
 		return ret;
 	}
 
 	ret = hisijpu_irq_request(hisijd);
 	if (ret) {
-		HISI_JPU_ERR("hisijpu_irq_request failed!");
+		dev_err(&hisijd->pdev->dev, "hisijpu_irq_request failed!");
 		return ret;
 	}
 
@@ -751,16 +749,18 @@ int hisi_jpu_unregister(struct hisi_jpu_data_type *hisijd)
 		HISI_JPU_ERR("hisijd is NULL!\n");
 		return -EINVAL;
 	}
-
+	if (!hisijd->pdev) {
+		return -EINVAL;
+	}
 	ret = hisijpu_irq_disable(hisijd);
 	if (ret) {
-		HISI_JPU_ERR("hisijpu_irq_disable failed!\n");
+		dev_err(&hisijd->pdev->dev, "hisijpu_irq_disable failed!\n");
 		return -EINVAL;
 	}
 
 	ret = hisijpu_irq_free(hisijd);
 	if (ret) {
-		HISI_JPU_ERR("hisijpu_irq_free failed!\n");
+		dev_err(&hisijd->pdev->dev, "hisijpu_irq_free failed!\n");
 		return -EINVAL;
 	}
 
@@ -818,13 +818,23 @@ void hisi_jpu_dec_normal_reset(struct hisi_jpu_data_type *hisijd)
 		return;
 	}
 
-	hisijpu_set_reg(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_RD_CFG_1, 0x1, 1, 25);
-	ret = hisijpu_check_reg_state(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_RD_CFG_1, 0x01000000);
-	if (ret) {
-		HISI_JPU_ERR("fail to wait JPGDEC_CVDR_AXI_JPEG_NR_RD_CFG_1!\n");
-	}
+	if(hisijd->jpu_support_platform == HISI_DSS_V501) {
+		hisijpu_set_reg(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_RD_CFG_8_CS, 0x1, 1, 25);
+		ret = hisijpu_check_reg_state(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_RD_CFG_8_CS, 0x01000000);
+		if (ret) {
+			HISI_JPU_ERR("fail to wait JPGDEC_CVDR_AXI_JPEG_NR_RD_CFG_8_CS!\n");
+		}
 
-	hisijpu_set_reg(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_RD_CFG_1, 0x0, 1, 25);
+		hisijpu_set_reg(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_RD_CFG_8_CS, 0x0, 1, 25);
+	} else {
+		hisijpu_set_reg(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_RD_CFG_1, 0x1, 1, 25);
+		ret = hisijpu_check_reg_state(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_RD_CFG_1, 0x01000000);
+		if (ret) {
+			HISI_JPU_ERR("fail to wait JPGDEC_CVDR_AXI_JPEG_NR_RD_CFG_1!\n");
+		}
+
+		hisijpu_set_reg(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_RD_CFG_1, 0x0, 1, 25);
+	}
 }
 
 void hisi_jpu_dec_error_reset(struct hisi_jpu_data_type *hisijd)
@@ -838,37 +848,64 @@ void hisi_jpu_dec_error_reset(struct hisi_jpu_data_type *hisijd)
 
 	/* step1 */
 	hisijpu_set_reg(hisijd->jpu_top_base + JPGDEC_CRG_CFG1, 0x00010000, 32, 0);
-	hisijpu_set_reg(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_RD_CFG_1, 0x1, 1, 25);
-	hisijpu_set_reg(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_RD_CFG_2, 0x1, 1, 25);
-	hisijpu_set_reg(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_WR_CFG_0, 0x1, 1, 25);
-	hisijpu_set_reg(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_WR_CFG_1, 0x1, 1, 25);
+	if(hisijd->jpu_support_platform == HISI_DSS_V501) {
+		hisijpu_set_reg(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_RD_CFG_8_CS, 0x1, 1, 25);
+		hisijpu_set_reg(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_RD_CFG_9_CS, 0x1, 1, 25);
+		hisijpu_set_reg(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_WR_CFG_8_CS, 0x1, 1, 25);
+		hisijpu_set_reg(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_WR_CFG_9_CS, 0x1, 1, 25);
+	} else {
+		hisijpu_set_reg(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_RD_CFG_1, 0x1, 1, 25);
+		hisijpu_set_reg(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_RD_CFG_2, 0x1, 1, 25);
+		hisijpu_set_reg(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_WR_CFG_0, 0x1, 1, 25);
+		hisijpu_set_reg(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_WR_CFG_1, 0x1, 1, 25);
+	}
 
 	/* step2 */
 	ret = hisijpu_check_reg_state(hisijd->jpu_top_base + JPGDEC_RO_STATE, 0x2);
 	if(ret) {
 		HISI_JPU_ERR("fail to wait JPGDEC_RO_STATE!\n");
 	}
+	if(hisijd->jpu_support_platform == HISI_DSS_V501) {
+		ret = hisijpu_check_reg_state(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_RD_CFG_8_CS, 0x01000000);
+		if(ret) {
+			HISI_JPU_ERR("fail to wait JPGDEC_CVDR_AXI_JPEG_NR_RD_CFG_8_CS!\n");
+		}
 
-	ret = hisijpu_check_reg_state(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_RD_CFG_1, 0x01000000);
-	if(ret) {
-		HISI_JPU_ERR("fail to wait JPGDEC_CVDR_AXI_JPEG_NR_RD_CFG_1!\n");
+		ret = hisijpu_check_reg_state(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_RD_CFG_9_CS, 0x01000000);
+		if(ret) {
+			HISI_JPU_ERR("fail to wait JPGDEC_CVDR_AXI_JPEG_NR_RD_CFG_9_CS!\n");
+		}
+
+		ret = hisijpu_check_reg_state(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_WR_CFG_8_CS, 0x01000000);
+		if(ret) {
+			HISI_JPU_ERR("fail to wait JPGDEC_CVDR_AXI_JPEG_NR_WR_CFG_8_CS!\n");
+		}
+
+		ret = hisijpu_check_reg_state(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_WR_CFG_9_CS, 0x01000000);
+		if(ret) {
+			HISI_JPU_ERR("fail to wait JPGDEC_CVDR_AXI_JPEG_NR_WR_CFG_9_CS!\n");
+		}
+	} else {
+		ret = hisijpu_check_reg_state(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_RD_CFG_1, 0x01000000);
+		if(ret) {
+			HISI_JPU_ERR("fail to wait JPGDEC_CVDR_AXI_JPEG_NR_RD_CFG_1!\n");
+		}
+
+		ret = hisijpu_check_reg_state(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_RD_CFG_2, 0x01000000);
+		if(ret) {
+			HISI_JPU_ERR("fail to wait JPGDEC_CVDR_AXI_JPEG_NR_RD_CFG_2!\n");
+		}
+
+		ret = hisijpu_check_reg_state(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_WR_CFG_0, 0x01000000);
+		if(ret) {
+			HISI_JPU_ERR("fail to wait JPGDEC_CVDR_AXI_JPEG_NR_WR_CFG_0!\n");
+		}
+
+		ret = hisijpu_check_reg_state(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_WR_CFG_1, 0x01000000);
+		if(ret) {
+			HISI_JPU_ERR("fail to wait JPGDEC_CVDR_AXI_JPEG_NR_WR_CFG_1!\n");
+		}
 	}
-
-	ret = hisijpu_check_reg_state(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_RD_CFG_2, 0x01000000);
-	if(ret) {
-		HISI_JPU_ERR("fail to wait JPGDEC_CVDR_AXI_JPEG_NR_RD_CFG_2!\n");
-	}
-
-	ret = hisijpu_check_reg_state(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_WR_CFG_0, 0x01000000);
-	if(ret) {
-		HISI_JPU_ERR("fail to wait JPGDEC_CVDR_AXI_JPEG_NR_WR_CFG_0!\n");
-	}
-
-	ret = hisijpu_check_reg_state(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_WR_CFG_1, 0x01000000);
-	if(ret) {
-		HISI_JPU_ERR("fail to wait JPGDEC_CVDR_AXI_JPEG_NR_WR_CFG_1!\n");
-	}
-
 	/* step3,read bit0 is 1*/
 	hisijpu_set_reg(hisijd->jpu_top_base + JPGDEC_CRG_CFG1, 1, 1, 0);
 	ret = hisijpu_check_reg_state(hisijd->jpu_top_base + JPGDEC_CRG_CFG1, 0x1);
@@ -877,10 +914,17 @@ void hisi_jpu_dec_error_reset(struct hisi_jpu_data_type *hisijd)
 	}
 
 	/* step4 */
-	hisijpu_set_reg(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_RD_CFG_1, 0x0, 1, 25);
-	hisijpu_set_reg(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_RD_CFG_2, 0x0, 1, 25);
-	hisijpu_set_reg(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_WR_CFG_0, 0x0, 1, 25);
-	hisijpu_set_reg(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_WR_CFG_1, 0x0, 1, 25);
+	if(hisijd->jpu_support_platform == HISI_DSS_V501) {
+		hisijpu_set_reg(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_RD_CFG_8_CS, 0x0, 1, 25);
+		hisijpu_set_reg(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_RD_CFG_9_CS, 0x0, 1, 25);
+		hisijpu_set_reg(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_WR_CFG_8_CS, 0x0, 1, 25);
+		hisijpu_set_reg(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_WR_CFG_9_CS, 0x0, 1, 25);
+	} else {
+		hisijpu_set_reg(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_RD_CFG_1, 0x0, 1, 25);
+		hisijpu_set_reg(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_RD_CFG_2, 0x0, 1, 25);
+		hisijpu_set_reg(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_WR_CFG_0, 0x0, 1, 25);
+		hisijpu_set_reg(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_WR_CFG_1, 0x0, 1, 25);
+	}
 	hisijpu_set_reg(hisijd->jpu_top_base + JPGDEC_CRG_CFG1, 0x0, 32, 0);
 }
 
@@ -897,6 +941,7 @@ void hisijpu_smmu_on(struct hisi_jpu_data_type *hisijd)
 
 	HISI_JPU_DEBUG("+.\n");
 
+	HISI_JPU_DEBUG("CONFIG_JPU_SMMU_ENABLE.\n");
 	/*
 	** Set global mode:
 	** SMMU_SCR_S.glb_nscfg = 0x3
@@ -1084,43 +1129,87 @@ static int hisi_jpu_dec_reg_default(struct hisi_jpu_data_type *hisijd)
 	/* cppcheck-suppress * */
 	memset(jpu_dec_reg, 0, sizeof(jpu_dec_reg_t));
 
-	jpu_dec_reg->dec_start = inp32(jpu_dec_base + JPEG_DEC_START);
-	jpu_dec_reg->preftch_ctrl = inp32(jpu_dec_base + JPEG_DEC_PREFTCH_CTRL);
-	jpu_dec_reg->frame_size = inp32(jpu_dec_base + JPEG_DEC_FRAME_SIZE);
-	jpu_dec_reg->crop_horizontal = inp32(jpu_dec_base + JPEG_DEC_CROP_HORIZONTAL);
-	jpu_dec_reg->crop_vertical = inp32(jpu_dec_base + JPEG_DEC_CROP_VERTICAL);
-	jpu_dec_reg->bitstreams_start = inp32(jpu_dec_base + JPEG_DEC_BITSTREAMS_START);
-	jpu_dec_reg->bitstreams_end = inp32(jpu_dec_base + JPEG_DEC_BITSTREAMS_END);
-	jpu_dec_reg->frame_start_y = inp32(jpu_dec_base + JPEG_DEC_FRAME_START_Y);
-	jpu_dec_reg->frame_stride_y = inp32(jpu_dec_base + JPEG_DEC_FRAME_STRIDE_Y);
-	jpu_dec_reg->frame_start_c = inp32(jpu_dec_base + JPEG_DEC_FRAME_START_C);
-	jpu_dec_reg->frame_stride_c = inp32(jpu_dec_base + JPEG_DEC_FRAME_STRIDE_C);
-	jpu_dec_reg->lbuf_start_addr = inp32(jpu_dec_base + JPEG_DEC_LBUF_START_ADDR);
-	jpu_dec_reg->output_type = inp32(jpu_dec_base + JPEG_DEC_OUTPUT_TYPE);
-	jpu_dec_reg->freq_scale = inp32(jpu_dec_base + JPEG_DEC_FREQ_SCALE);
-	jpu_dec_reg->middle_filter = inp32(jpu_dec_base + JPEG_DEC_MIDDLE_FILTER);
-	jpu_dec_reg->sampling_factor = inp32(jpu_dec_base + JPEG_DEC_SAMPLING_FACTOR);
-	jpu_dec_reg->dri = inp32(jpu_dec_base + JPEG_DEC_DRI);
-	jpu_dec_reg->over_time_thd = inp32(jpu_dec_base + JPEG_DEC_OVER_TIME_THD);
-	jpu_dec_reg->hor_phase0_coef01 = inp32(jpu_dec_base + JPEG_DEC_HOR_PHASE0_COEF01);
-	jpu_dec_reg->hor_phase0_coef23 = inp32(jpu_dec_base + JPEG_DEC_HOR_PHASE0_COEF23);
-	jpu_dec_reg->hor_phase0_coef45 = inp32(jpu_dec_base + JPEG_DEC_HOR_PHASE0_COEF45);
-	jpu_dec_reg->hor_phase0_coef67 = inp32(jpu_dec_base + JPEG_DEC_HOR_PHASE0_COEF67);
-	jpu_dec_reg->hor_phase2_coef01 = inp32(jpu_dec_base + JPEG_DEC_HOR_PHASE2_COEF01);
-	jpu_dec_reg->hor_phase2_coef23 = inp32(jpu_dec_base + JPEG_DEC_HOR_PHASE2_COEF23);
-	jpu_dec_reg->hor_phase2_coef45 = inp32(jpu_dec_base + JPEG_DEC_HOR_PHASE2_COEF45);
-	jpu_dec_reg->hor_phase2_coef67 = inp32(jpu_dec_base + JPEG_DEC_HOR_PHASE2_COEF67);
-	jpu_dec_reg->ver_phase0_coef01 = inp32(jpu_dec_base + JPEG_DEC_VER_PHASE0_COEF01);
-	jpu_dec_reg->ver_phase0_coef23 = inp32(jpu_dec_base + JPEG_DEC_VER_PHASE0_COEF23);
-	jpu_dec_reg->ver_phase2_coef01 = inp32(jpu_dec_base + JPEG_DEC_VER_PHASE2_COEF01);
-	jpu_dec_reg->ver_phase2_coef23 = inp32(jpu_dec_base + JPEG_DEC_VER_PHASE2_COEF23);
-	jpu_dec_reg->csc_in_dc_coef = inp32(jpu_dec_base + JPEG_DEC_CSC_IN_DC_COEF);
-	jpu_dec_reg->csc_out_dc_coef = inp32(jpu_dec_base + JPEG_DEC_CSC_OUT_DC_COEF);
-	jpu_dec_reg->csc_trans_coef0 = inp32(jpu_dec_base + JPEG_DEC_CSC_TRANS_COEF0);
-	jpu_dec_reg->csc_trans_coef1 = inp32(jpu_dec_base + JPEG_DEC_CSC_TRANS_COEF1);
-	jpu_dec_reg->csc_trans_coef2 = inp32(jpu_dec_base + JPEG_DEC_CSC_TRANS_COEF2);
-	jpu_dec_reg->csc_trans_coef3 = inp32(jpu_dec_base + JPEG_DEC_CSC_TRANS_COEF3);
-	jpu_dec_reg->csc_trans_coef4 = inp32(jpu_dec_base + JPEG_DEC_CSC_TRANS_COEF4);
+	if(hisijd->jpu_support_platform == HISI_DSS_V501) {
+		jpu_dec_reg->dec_start = inp32(jpu_dec_base + JPEG_DEC_START_CS);
+		jpu_dec_reg->preftch_ctrl = inp32(jpu_dec_base + JPEG_DEC_PREFTCH_CTRL_CS);
+		jpu_dec_reg->frame_size = inp32(jpu_dec_base + JPEG_DEC_FRAME_SIZE_CS);
+		jpu_dec_reg->crop_horizontal = inp32(jpu_dec_base + JPEG_DEC_CROP_HORIZONTAL_CS);
+		jpu_dec_reg->crop_vertical = inp32(jpu_dec_base + JPEG_DEC_CROP_VERTICAL_CS);
+		jpu_dec_reg->bitstreams_start_h = inp32(jpu_dec_base + JPEG_DEC_BITSTREAMS_START_H_CS);
+		jpu_dec_reg->bitstreams_start = inp32(jpu_dec_base + JPEG_DEC_BITSTREAMS_START_L_CS);
+		jpu_dec_reg->bitstreams_end_h = inp32(jpu_dec_base + JPEG_DEC_BITSTREAMS_END_H_CS);
+		jpu_dec_reg->bitstreams_end = inp32(jpu_dec_base + JPEG_DEC_BITSTREAMS_END_L_CS);
+		jpu_dec_reg->frame_start_y = inp32(jpu_dec_base + JPEG_DEC_FRAME_START_Y_CS);
+		jpu_dec_reg->frame_stride_y = inp32(jpu_dec_base + JPEG_DEC_FRAME_STRIDE_Y_CS);
+		jpu_dec_reg->frame_start_c = inp32(jpu_dec_base + JPEG_DEC_FRAME_START_C_CS);
+		jpu_dec_reg->frame_stride_c = inp32(jpu_dec_base + JPEG_DEC_FRAME_STRIDE_C_CS);
+		jpu_dec_reg->lbuf_start_addr = inp32(jpu_dec_base + JPEG_DEC_LBUF_START_ADDR_CS);
+		jpu_dec_reg->output_type = inp32(jpu_dec_base + JPEG_DEC_OUTPUT_TYPE_CS);
+		jpu_dec_reg->freq_scale = inp32(jpu_dec_base + JPEG_DEC_FREQ_SCALE_CS);
+		jpu_dec_reg->middle_filter = inp32(jpu_dec_base + JPEG_DEC_MIDDLE_FILTER_CS);
+		jpu_dec_reg->sampling_factor = inp32(jpu_dec_base + JPEG_DEC_SAMPLING_FACTOR_CS);
+		jpu_dec_reg->dri = inp32(jpu_dec_base + JPEG_DEC_DRI_CS);
+		jpu_dec_reg->over_time_thd = inp32(jpu_dec_base + JPEG_DEC_OVER_TIME_THD_CS);
+		jpu_dec_reg->hor_phase0_coef01 = inp32(jpu_dec_base + JPEG_DEC_HOR_PHASE0_COEF01_CS);
+		jpu_dec_reg->hor_phase0_coef23 = inp32(jpu_dec_base + JPEG_DEC_HOR_PHASE0_COEF23_CS);
+		jpu_dec_reg->hor_phase0_coef45 = inp32(jpu_dec_base + JPEG_DEC_HOR_PHASE0_COEF45_CS);
+		jpu_dec_reg->hor_phase0_coef67 = inp32(jpu_dec_base + JPEG_DEC_HOR_PHASE0_COEF67_CS);
+		jpu_dec_reg->hor_phase2_coef01 = inp32(jpu_dec_base + JPEG_DEC_HOR_PHASE2_COEF01_CS);
+		jpu_dec_reg->hor_phase2_coef23 = inp32(jpu_dec_base + JPEG_DEC_HOR_PHASE2_COEF23_CS);
+		jpu_dec_reg->hor_phase2_coef45 = inp32(jpu_dec_base + JPEG_DEC_HOR_PHASE2_COEF45_CS);
+		jpu_dec_reg->hor_phase2_coef67 = inp32(jpu_dec_base + JPEG_DEC_HOR_PHASE2_COEF67_CS);
+		jpu_dec_reg->ver_phase0_coef01 = inp32(jpu_dec_base + JPEG_DEC_VER_PHASE0_COEF01_CS);
+		jpu_dec_reg->ver_phase0_coef23 = inp32(jpu_dec_base + JPEG_DEC_VER_PHASE0_COEF23_CS);
+		jpu_dec_reg->ver_phase2_coef01 = inp32(jpu_dec_base + JPEG_DEC_VER_PHASE2_COEF01_CS);
+		jpu_dec_reg->ver_phase2_coef23 = inp32(jpu_dec_base + JPEG_DEC_VER_PHASE2_COEF23_CS);
+		jpu_dec_reg->csc_in_dc_coef = inp32(jpu_dec_base + JPEG_DEC_CSC_IN_DC_COEF_CS);
+		jpu_dec_reg->csc_out_dc_coef = inp32(jpu_dec_base + JPEG_DEC_CSC_OUT_DC_COEF_CS);
+		jpu_dec_reg->csc_trans_coef0 = inp32(jpu_dec_base + JPEG_DEC_CSC_TRANS_COEF0_CS);
+		jpu_dec_reg->csc_trans_coef1 = inp32(jpu_dec_base + JPEG_DEC_CSC_TRANS_COEF1_CS);
+		jpu_dec_reg->csc_trans_coef2 = inp32(jpu_dec_base + JPEG_DEC_CSC_TRANS_COEF2_CS);
+		jpu_dec_reg->csc_trans_coef3 = inp32(jpu_dec_base + JPEG_DEC_CSC_TRANS_COEF3_CS);
+		jpu_dec_reg->csc_trans_coef4 = inp32(jpu_dec_base + JPEG_DEC_CSC_TRANS_COEF4_CS);
+
+	} else {
+		jpu_dec_reg->dec_start = inp32(jpu_dec_base + JPEG_DEC_START);
+		jpu_dec_reg->preftch_ctrl = inp32(jpu_dec_base + JPEG_DEC_PREFTCH_CTRL);
+		jpu_dec_reg->frame_size = inp32(jpu_dec_base + JPEG_DEC_FRAME_SIZE);
+		jpu_dec_reg->crop_horizontal = inp32(jpu_dec_base + JPEG_DEC_CROP_HORIZONTAL);
+		jpu_dec_reg->crop_vertical = inp32(jpu_dec_base + JPEG_DEC_CROP_VERTICAL);
+		jpu_dec_reg->bitstreams_start = inp32(jpu_dec_base + JPEG_DEC_BITSTREAMS_START);
+		jpu_dec_reg->bitstreams_end = inp32(jpu_dec_base + JPEG_DEC_BITSTREAMS_END);
+		jpu_dec_reg->frame_start_y = inp32(jpu_dec_base + JPEG_DEC_FRAME_START_Y);
+		jpu_dec_reg->frame_stride_y = inp32(jpu_dec_base + JPEG_DEC_FRAME_STRIDE_Y);
+		jpu_dec_reg->frame_start_c = inp32(jpu_dec_base + JPEG_DEC_FRAME_START_C);
+		jpu_dec_reg->frame_stride_c = inp32(jpu_dec_base + JPEG_DEC_FRAME_STRIDE_C);
+		jpu_dec_reg->lbuf_start_addr = inp32(jpu_dec_base + JPEG_DEC_LBUF_START_ADDR);
+		jpu_dec_reg->output_type = inp32(jpu_dec_base + JPEG_DEC_OUTPUT_TYPE);
+		jpu_dec_reg->freq_scale = inp32(jpu_dec_base + JPEG_DEC_FREQ_SCALE);
+		jpu_dec_reg->middle_filter = inp32(jpu_dec_base + JPEG_DEC_MIDDLE_FILTER);
+		jpu_dec_reg->sampling_factor = inp32(jpu_dec_base + JPEG_DEC_SAMPLING_FACTOR);
+		jpu_dec_reg->dri = inp32(jpu_dec_base + JPEG_DEC_DRI);
+		jpu_dec_reg->over_time_thd = inp32(jpu_dec_base + JPEG_DEC_OVER_TIME_THD);
+		jpu_dec_reg->hor_phase0_coef01 = inp32(jpu_dec_base + JPEG_DEC_HOR_PHASE0_COEF01);
+		jpu_dec_reg->hor_phase0_coef23 = inp32(jpu_dec_base + JPEG_DEC_HOR_PHASE0_COEF23);
+		jpu_dec_reg->hor_phase0_coef45 = inp32(jpu_dec_base + JPEG_DEC_HOR_PHASE0_COEF45);
+		jpu_dec_reg->hor_phase0_coef67 = inp32(jpu_dec_base + JPEG_DEC_HOR_PHASE0_COEF67);
+		jpu_dec_reg->hor_phase2_coef01 = inp32(jpu_dec_base + JPEG_DEC_HOR_PHASE2_COEF01);
+		jpu_dec_reg->hor_phase2_coef23 = inp32(jpu_dec_base + JPEG_DEC_HOR_PHASE2_COEF23);
+		jpu_dec_reg->hor_phase2_coef45 = inp32(jpu_dec_base + JPEG_DEC_HOR_PHASE2_COEF45);
+		jpu_dec_reg->hor_phase2_coef67 = inp32(jpu_dec_base + JPEG_DEC_HOR_PHASE2_COEF67);
+		jpu_dec_reg->ver_phase0_coef01 = inp32(jpu_dec_base + JPEG_DEC_VER_PHASE0_COEF01);
+		jpu_dec_reg->ver_phase0_coef23 = inp32(jpu_dec_base + JPEG_DEC_VER_PHASE0_COEF23);
+		jpu_dec_reg->ver_phase2_coef01 = inp32(jpu_dec_base + JPEG_DEC_VER_PHASE2_COEF01);
+		jpu_dec_reg->ver_phase2_coef23 = inp32(jpu_dec_base + JPEG_DEC_VER_PHASE2_COEF23);
+		jpu_dec_reg->csc_in_dc_coef = inp32(jpu_dec_base + JPEG_DEC_CSC_IN_DC_COEF);
+		jpu_dec_reg->csc_out_dc_coef = inp32(jpu_dec_base + JPEG_DEC_CSC_OUT_DC_COEF);
+		jpu_dec_reg->csc_trans_coef0 = inp32(jpu_dec_base + JPEG_DEC_CSC_TRANS_COEF0);
+		jpu_dec_reg->csc_trans_coef1 = inp32(jpu_dec_base + JPEG_DEC_CSC_TRANS_COEF1);
+		jpu_dec_reg->csc_trans_coef2 = inp32(jpu_dec_base + JPEG_DEC_CSC_TRANS_COEF2);
+		jpu_dec_reg->csc_trans_coef3 = inp32(jpu_dec_base + JPEG_DEC_CSC_TRANS_COEF3);
+		jpu_dec_reg->csc_trans_coef4 = inp32(jpu_dec_base + JPEG_DEC_CSC_TRANS_COEF4);
+
+	}
 
 	return 0;
 }
@@ -1149,8 +1238,11 @@ static int hisi_jpu_dec_set_cvdr(struct hisi_jpu_data_type *hisijd)
 		HISI_JPU_ERR("jpu_cvdr_base is NULL!\n");
 		return -EINVAL;
 	}
+	if(hisijd->jpu_support_platform == HISI_DSS_V501) {
+		outp32(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_CVDR_CFG_CS, 0x070f2000);
 
-	outp32(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_CVDR_CFG, 0x070f2000);
+		outp32(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_WR_CFG_8_CS, 0x80060000);
+		outp32(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_WR_CFG_9_CS, 0x80060000);
 
 	if (hisijd->jpu_support_platform == HISI_KIRIN_970) {
 		outp32(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_WR_CFG_0, 0x80000000);
@@ -1159,18 +1251,40 @@ static int hisi_jpu_dec_set_cvdr(struct hisi_jpu_data_type *hisijd)
 		outp32(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_WR_CFG_0, 0x80060000);
 		outp32(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_WR_CFG_1, 0x80060000);
 	}
+		/* Wr_qos_max:0x1;wr_qos_threshold_01_start:0x1;wr_qos_threshold_01_stop:0x1,WR_QOS&RD_QOS encode will also set this */
+		outp32(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_CVDR_WR_QOS_CFG_CS, 0x10333311);
+		outp32(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_CVDR_RD_QOS_CFG_CS, 0x10333311);
 
-	/* Wr_qos_max:0x1;wr_qos_threshold_01_start:0x1;wr_qos_threshold_01_stop:0x1,WR_QOS&RD_QOS encode will also set this */
-	outp32(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_CVDR_WR_QOS_CFG, 0x10333311);
-	outp32(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_CVDR_RD_QOS_CFG, 0x10333311);
+		/* NRRD1 */
+		outp32(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_LIMITER_NR_RD_8_CS, 0xf002222);
+		outp32(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_RD_CFG_8_CS, 0x80060080);
 
-	/* NRRD1 */
-	outp32(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_LIMITER_NR_RD_1, 0xf002222);
-	outp32(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_RD_CFG_1, 0x80060080);
+		/* NRRD2 */
+		outp32(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_LIMITER_NR_RD_9_CS, 0xf003333);
+		outp32(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_RD_CFG_9_CS, 0x80060080);
+	} else {
+		outp32(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_CVDR_CFG, 0x070f2000);
 
-	/* NRRD2 */
-	outp32(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_LIMITER_NR_RD_2, 0xf003333);
-	outp32(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_RD_CFG_2, 0x80060080);
+		if (hisijd->jpu_support_platform == HISI_KIRIN_970) {
+			outp32(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_WR_CFG_0, 0x80000000);
+			outp32(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_WR_CFG_1, 0x80000000);
+		}else if (hisijd->jpu_support_platform == HISI_DSS_V500) {
+			outp32(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_WR_CFG_0, 0x80060000);
+			outp32(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_WR_CFG_1, 0x80060000);
+		}
+
+		/* Wr_qos_max:0x1;wr_qos_threshold_01_start:0x1;wr_qos_threshold_01_stop:0x1,WR_QOS&RD_QOS encode will also set this */
+		outp32(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_CVDR_WR_QOS_CFG, 0x10333311);
+		outp32(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_CVDR_RD_QOS_CFG, 0x10333311);
+
+		/* NRRD1 */
+		outp32(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_LIMITER_NR_RD_1, 0xf002222);
+		outp32(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_RD_CFG_1, 0x80060080);
+
+		/* NRRD2 */
+		outp32(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_LIMITER_NR_RD_2, 0xf003333);
+		outp32(hisijd->jpu_cvdr_base + JPGDEC_CVDR_AXI_JPEG_NR_RD_CFG_2, 0x80060080);
+	}
 
 	return 0;
 }
@@ -1221,7 +1335,9 @@ static int hisi_jpu_dec_set_reg(struct hisi_jpu_data_type *hisijd, jpu_dec_reg_t
 		"frame_size=%d\n"
 		"crop_horizontal=%d\n"
 		"crop_vertical=%d\n"
+		"bitstreams_start_h=%d\n"
 		"bitstreams_start=%d\n"
+		"bitstreams_end_h=%d\n"
 		"bitstreams_end=%d\n"
 		"frame_start_y=%d\n"
 		"frame_stride_y=%d\n"
@@ -1258,7 +1374,9 @@ static int hisi_jpu_dec_set_reg(struct hisi_jpu_data_type *hisijd, jpu_dec_reg_t
 		jpu_dec_reg->frame_size,
 		jpu_dec_reg->crop_horizontal,
 		jpu_dec_reg->crop_vertical,
+		jpu_dec_reg->bitstreams_start_h,
 		jpu_dec_reg->bitstreams_start,
+		jpu_dec_reg->bitstreams_end_h,
 		jpu_dec_reg->bitstreams_end,
 		jpu_dec_reg->frame_start_y,
 		jpu_dec_reg->frame_stride_y,
@@ -1292,45 +1410,90 @@ static int hisi_jpu_dec_set_reg(struct hisi_jpu_data_type *hisijd, jpu_dec_reg_t
 		jpu_dec_reg->csc_trans_coef4);
 	}
 
-	outp32(jpu_dec_base + JPEG_DEC_PREFTCH_CTRL, jpu_dec_reg->preftch_ctrl);
-	outp32(jpu_dec_base + JPEG_DEC_FRAME_SIZE, jpu_dec_reg->frame_size);
-	outp32(jpu_dec_base + JPEG_DEC_CROP_HORIZONTAL, jpu_dec_reg->crop_horizontal);
-	outp32(jpu_dec_base + JPEG_DEC_CROP_VERTICAL, jpu_dec_reg->crop_vertical);
-	outp32(jpu_dec_base + JPEG_DEC_BITSTREAMS_START, jpu_dec_reg->bitstreams_start);
-	outp32(jpu_dec_base + JPEG_DEC_BITSTREAMS_END, jpu_dec_reg->bitstreams_end);
-	outp32(jpu_dec_base + JPEG_DEC_FRAME_START_Y, jpu_dec_reg->frame_start_y);
-	outp32(jpu_dec_base + JPEG_DEC_FRAME_STRIDE_Y, jpu_dec_reg->frame_stride_y);
-	outp32(jpu_dec_base + JPEG_DEC_FRAME_START_C, jpu_dec_reg->frame_start_c);
-	outp32(jpu_dec_base + JPEG_DEC_FRAME_STRIDE_C, jpu_dec_reg->frame_stride_c);
-	outp32(jpu_dec_base + JPEG_DEC_LBUF_START_ADDR, jpu_dec_reg->lbuf_start_addr);
-	outp32(jpu_dec_base + JPEG_DEC_OUTPUT_TYPE, jpu_dec_reg->output_type);
-	outp32(jpu_dec_base + JPEG_DEC_FREQ_SCALE, jpu_dec_reg->freq_scale);
-	outp32(jpu_dec_base + JPEG_DEC_MIDDLE_FILTER, jpu_dec_reg->middle_filter);
-	outp32(jpu_dec_base + JPEG_DEC_SAMPLING_FACTOR, jpu_dec_reg->sampling_factor);
-	outp32(jpu_dec_base + JPEG_DEC_DRI, jpu_dec_reg->dri);
-	outp32(jpu_dec_base + JPEG_DEC_OVER_TIME_THD, jpu_dec_reg->over_time_thd);
-	outp32(jpu_dec_base + JPEG_DEC_HOR_PHASE0_COEF01, jpu_dec_reg->hor_phase0_coef01);
-	outp32(jpu_dec_base + JPEG_DEC_HOR_PHASE0_COEF23, jpu_dec_reg->hor_phase0_coef23);
-	outp32(jpu_dec_base + JPEG_DEC_HOR_PHASE0_COEF45, jpu_dec_reg->hor_phase0_coef45);
-	outp32(jpu_dec_base + JPEG_DEC_HOR_PHASE0_COEF67, jpu_dec_reg->hor_phase0_coef67);
-	outp32(jpu_dec_base + JPEG_DEC_HOR_PHASE2_COEF01, jpu_dec_reg->hor_phase2_coef01);
-	outp32(jpu_dec_base + JPEG_DEC_HOR_PHASE2_COEF23, jpu_dec_reg->hor_phase2_coef23);
-	outp32(jpu_dec_base + JPEG_DEC_HOR_PHASE2_COEF45, jpu_dec_reg->hor_phase2_coef45);
-	outp32(jpu_dec_base + JPEG_DEC_HOR_PHASE2_COEF67, jpu_dec_reg->hor_phase2_coef67);
-	outp32(jpu_dec_base + JPEG_DEC_VER_PHASE0_COEF01, jpu_dec_reg->ver_phase0_coef01);
-	outp32(jpu_dec_base + JPEG_DEC_VER_PHASE0_COEF23, jpu_dec_reg->ver_phase0_coef23);
-	outp32(jpu_dec_base + JPEG_DEC_VER_PHASE2_COEF01, jpu_dec_reg->ver_phase2_coef01);
-	outp32(jpu_dec_base + JPEG_DEC_VER_PHASE2_COEF23, jpu_dec_reg->ver_phase2_coef23);
-	outp32(jpu_dec_base + JPEG_DEC_CSC_IN_DC_COEF, jpu_dec_reg->csc_in_dc_coef);
-	outp32(jpu_dec_base + JPEG_DEC_CSC_OUT_DC_COEF, jpu_dec_reg->csc_out_dc_coef);
-	outp32(jpu_dec_base + JPEG_DEC_CSC_TRANS_COEF0, jpu_dec_reg->csc_trans_coef0);
-	outp32(jpu_dec_base + JPEG_DEC_CSC_TRANS_COEF1, jpu_dec_reg->csc_trans_coef1);
-	outp32(jpu_dec_base + JPEG_DEC_CSC_TRANS_COEF2, jpu_dec_reg->csc_trans_coef2);
-	outp32(jpu_dec_base + JPEG_DEC_CSC_TRANS_COEF3, jpu_dec_reg->csc_trans_coef3);
-	outp32(jpu_dec_base + JPEG_DEC_CSC_TRANS_COEF4, jpu_dec_reg->csc_trans_coef4);
+	if(hisijd->jpu_support_platform == HISI_DSS_V501) {
+		outp32(jpu_dec_base + JPEG_DEC_PREFTCH_CTRL_CS, jpu_dec_reg->preftch_ctrl);
+		outp32(jpu_dec_base + JPEG_DEC_FRAME_SIZE_CS, jpu_dec_reg->frame_size);
+		outp32(jpu_dec_base + JPEG_DEC_CROP_HORIZONTAL_CS, jpu_dec_reg->crop_horizontal);
+		outp32(jpu_dec_base + JPEG_DEC_CROP_VERTICAL_CS, jpu_dec_reg->crop_vertical);
+		outp32(jpu_dec_base + JPEG_DEC_BITSTREAMS_START_H_CS, jpu_dec_reg->bitstreams_start_h);
+		outp32(jpu_dec_base + JPEG_DEC_BITSTREAMS_START_L_CS, jpu_dec_reg->bitstreams_start);
+		outp32(jpu_dec_base + JPEG_DEC_BITSTREAMS_END_H_CS, jpu_dec_reg->bitstreams_end_h);
+		outp32(jpu_dec_base + JPEG_DEC_BITSTREAMS_END_L_CS, jpu_dec_reg->bitstreams_end);
+		outp32(jpu_dec_base + JPEG_DEC_FRAME_START_Y_CS, jpu_dec_reg->frame_start_y);
+		outp32(jpu_dec_base + JPEG_DEC_FRAME_STRIDE_Y_CS, jpu_dec_reg->frame_stride_y);
+		outp32(jpu_dec_base + JPEG_DEC_FRAME_START_C_CS, jpu_dec_reg->frame_start_c);
+		outp32(jpu_dec_base + JPEG_DEC_FRAME_STRIDE_C_CS, jpu_dec_reg->frame_stride_c);
+		outp32(jpu_dec_base + JPEG_DEC_LBUF_START_ADDR_CS, jpu_dec_reg->lbuf_start_addr);
+		outp32(jpu_dec_base + JPEG_DEC_OUTPUT_TYPE_CS, jpu_dec_reg->output_type);
+		outp32(jpu_dec_base + JPEG_DEC_FREQ_SCALE_CS, jpu_dec_reg->freq_scale);
+		outp32(jpu_dec_base + JPEG_DEC_MIDDLE_FILTER_CS, jpu_dec_reg->middle_filter);
+		outp32(jpu_dec_base + JPEG_DEC_SAMPLING_FACTOR_CS, jpu_dec_reg->sampling_factor);
+		outp32(jpu_dec_base + JPEG_DEC_DRI_CS, jpu_dec_reg->dri);
+		outp32(jpu_dec_base + JPEG_DEC_OVER_TIME_THD_CS, jpu_dec_reg->over_time_thd);
+		outp32(jpu_dec_base + JPEG_DEC_HOR_PHASE0_COEF01_CS, jpu_dec_reg->hor_phase0_coef01);
+		outp32(jpu_dec_base + JPEG_DEC_HOR_PHASE0_COEF23_CS, jpu_dec_reg->hor_phase0_coef23);
+		outp32(jpu_dec_base + JPEG_DEC_HOR_PHASE0_COEF45_CS, jpu_dec_reg->hor_phase0_coef45);
+		outp32(jpu_dec_base + JPEG_DEC_HOR_PHASE0_COEF67_CS, jpu_dec_reg->hor_phase0_coef67);
+		outp32(jpu_dec_base + JPEG_DEC_HOR_PHASE2_COEF01_CS, jpu_dec_reg->hor_phase2_coef01);
+		outp32(jpu_dec_base + JPEG_DEC_HOR_PHASE2_COEF23_CS, jpu_dec_reg->hor_phase2_coef23);
+		outp32(jpu_dec_base + JPEG_DEC_HOR_PHASE2_COEF45_CS, jpu_dec_reg->hor_phase2_coef45);
+		outp32(jpu_dec_base + JPEG_DEC_HOR_PHASE2_COEF67_CS, jpu_dec_reg->hor_phase2_coef67);
+		outp32(jpu_dec_base + JPEG_DEC_VER_PHASE0_COEF01_CS, jpu_dec_reg->ver_phase0_coef01);
+		outp32(jpu_dec_base + JPEG_DEC_VER_PHASE0_COEF23_CS, jpu_dec_reg->ver_phase0_coef23);
+		outp32(jpu_dec_base + JPEG_DEC_VER_PHASE2_COEF01_CS, jpu_dec_reg->ver_phase2_coef01);
+		outp32(jpu_dec_base + JPEG_DEC_VER_PHASE2_COEF23_CS, jpu_dec_reg->ver_phase2_coef23);
+		outp32(jpu_dec_base + JPEG_DEC_CSC_IN_DC_COEF_CS, jpu_dec_reg->csc_in_dc_coef);
+		outp32(jpu_dec_base + JPEG_DEC_CSC_OUT_DC_COEF_CS, jpu_dec_reg->csc_out_dc_coef);
+		outp32(jpu_dec_base + JPEG_DEC_CSC_TRANS_COEF0_CS, jpu_dec_reg->csc_trans_coef0);
+		outp32(jpu_dec_base + JPEG_DEC_CSC_TRANS_COEF1_CS, jpu_dec_reg->csc_trans_coef1);
+		outp32(jpu_dec_base + JPEG_DEC_CSC_TRANS_COEF2_CS, jpu_dec_reg->csc_trans_coef2);
+		outp32(jpu_dec_base + JPEG_DEC_CSC_TRANS_COEF3_CS, jpu_dec_reg->csc_trans_coef3);
+		outp32(jpu_dec_base + JPEG_DEC_CSC_TRANS_COEF4_CS, jpu_dec_reg->csc_trans_coef4);
 
-	/* to make sure start reg set at last */
-	outp32(jpu_dec_base + JPEG_DEC_START, 0x80000001);
+		/* to make sure start reg set at last */
+		outp32(jpu_dec_base + JPEG_DEC_START_CS, 0x80000001);
+	} else {
+		outp32(jpu_dec_base + JPEG_DEC_PREFTCH_CTRL, jpu_dec_reg->preftch_ctrl);
+		outp32(jpu_dec_base + JPEG_DEC_FRAME_SIZE, jpu_dec_reg->frame_size);
+		outp32(jpu_dec_base + JPEG_DEC_CROP_HORIZONTAL, jpu_dec_reg->crop_horizontal);
+		outp32(jpu_dec_base + JPEG_DEC_CROP_VERTICAL, jpu_dec_reg->crop_vertical);
+		outp32(jpu_dec_base + JPEG_DEC_BITSTREAMS_START, jpu_dec_reg->bitstreams_start);
+		outp32(jpu_dec_base + JPEG_DEC_BITSTREAMS_END, jpu_dec_reg->bitstreams_end);
+		outp32(jpu_dec_base + JPEG_DEC_FRAME_START_Y, jpu_dec_reg->frame_start_y);
+		outp32(jpu_dec_base + JPEG_DEC_FRAME_STRIDE_Y, jpu_dec_reg->frame_stride_y);
+		outp32(jpu_dec_base + JPEG_DEC_FRAME_START_C, jpu_dec_reg->frame_start_c);
+		outp32(jpu_dec_base + JPEG_DEC_FRAME_STRIDE_C, jpu_dec_reg->frame_stride_c);
+		outp32(jpu_dec_base + JPEG_DEC_LBUF_START_ADDR, jpu_dec_reg->lbuf_start_addr);
+		outp32(jpu_dec_base + JPEG_DEC_OUTPUT_TYPE, jpu_dec_reg->output_type);
+		outp32(jpu_dec_base + JPEG_DEC_FREQ_SCALE, jpu_dec_reg->freq_scale);
+		outp32(jpu_dec_base + JPEG_DEC_MIDDLE_FILTER, jpu_dec_reg->middle_filter);
+		outp32(jpu_dec_base + JPEG_DEC_SAMPLING_FACTOR, jpu_dec_reg->sampling_factor);
+		outp32(jpu_dec_base + JPEG_DEC_DRI, jpu_dec_reg->dri);
+		outp32(jpu_dec_base + JPEG_DEC_OVER_TIME_THD, jpu_dec_reg->over_time_thd);
+		outp32(jpu_dec_base + JPEG_DEC_HOR_PHASE0_COEF01, jpu_dec_reg->hor_phase0_coef01);
+		outp32(jpu_dec_base + JPEG_DEC_HOR_PHASE0_COEF23, jpu_dec_reg->hor_phase0_coef23);
+		outp32(jpu_dec_base + JPEG_DEC_HOR_PHASE0_COEF45, jpu_dec_reg->hor_phase0_coef45);
+		outp32(jpu_dec_base + JPEG_DEC_HOR_PHASE0_COEF67, jpu_dec_reg->hor_phase0_coef67);
+		outp32(jpu_dec_base + JPEG_DEC_HOR_PHASE2_COEF01, jpu_dec_reg->hor_phase2_coef01);
+		outp32(jpu_dec_base + JPEG_DEC_HOR_PHASE2_COEF23, jpu_dec_reg->hor_phase2_coef23);
+		outp32(jpu_dec_base + JPEG_DEC_HOR_PHASE2_COEF45, jpu_dec_reg->hor_phase2_coef45);
+		outp32(jpu_dec_base + JPEG_DEC_HOR_PHASE2_COEF67, jpu_dec_reg->hor_phase2_coef67);
+		outp32(jpu_dec_base + JPEG_DEC_VER_PHASE0_COEF01, jpu_dec_reg->ver_phase0_coef01);
+		outp32(jpu_dec_base + JPEG_DEC_VER_PHASE0_COEF23, jpu_dec_reg->ver_phase0_coef23);
+		outp32(jpu_dec_base + JPEG_DEC_VER_PHASE2_COEF01, jpu_dec_reg->ver_phase2_coef01);
+		outp32(jpu_dec_base + JPEG_DEC_VER_PHASE2_COEF23, jpu_dec_reg->ver_phase2_coef23);
+		outp32(jpu_dec_base + JPEG_DEC_CSC_IN_DC_COEF, jpu_dec_reg->csc_in_dc_coef);
+		outp32(jpu_dec_base + JPEG_DEC_CSC_OUT_DC_COEF, jpu_dec_reg->csc_out_dc_coef);
+		outp32(jpu_dec_base + JPEG_DEC_CSC_TRANS_COEF0, jpu_dec_reg->csc_trans_coef0);
+		outp32(jpu_dec_base + JPEG_DEC_CSC_TRANS_COEF1, jpu_dec_reg->csc_trans_coef1);
+		outp32(jpu_dec_base + JPEG_DEC_CSC_TRANS_COEF2, jpu_dec_reg->csc_trans_coef2);
+		outp32(jpu_dec_base + JPEG_DEC_CSC_TRANS_COEF3, jpu_dec_reg->csc_trans_coef3);
+		outp32(jpu_dec_base + JPEG_DEC_CSC_TRANS_COEF4, jpu_dec_reg->csc_trans_coef4);
+
+		/* to make sure start reg set at last */
+		outp32(jpu_dec_base + JPEG_DEC_START, 0x80000001);
+
+	}
 
 	return 0;
 }
@@ -1402,7 +1565,7 @@ void hisijpu_dump_info(struct jpu_data*  jpu_info)
 	for (j = 0; j < MAX_DCT_SIZE; j++) {
 		HISI_JPU_DEBUG("qvalue %d\n", jpu_info->qvalue[j]);
 	}
- }
+}
 
 static int hisijpu_check_format(jpu_data_t *jpu_req)
 {
@@ -1424,7 +1587,6 @@ static int hisijpu_check_format(jpu_data_t *jpu_req)
 
 	return 0;
 }
-
 static int hisi_jpu_check_inbuff_par(jpu_data_t *jpu_req)
 {
 	if (!jpu_req) {
@@ -1475,7 +1637,7 @@ static long hisi_jpu_check_inbuff_addr(struct hisi_jpu_data_type *hisijd, jpu_da
 	unsigned long buf_addr = 0;
 	bool succ = true;
 
-	if (!hisijd) {
+	if (!hisijd || !(hisijd->pdev)) {
 		HISI_JPU_ERR("hisijd is NULL!\n");
 		return -EINVAL;
 	}
@@ -1508,7 +1670,11 @@ static long hisi_jpu_check_inbuff_addr(struct hisi_jpu_data_type *hisijd, jpu_da
 	memset(&iommu_in_format, 0, sizeof(struct iommu_map_format));
 
 	//check input buffer addr
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0)
+	inhnd = ion_import_dma_buf_fd(hisijd->ion_client, jpu_req->in_sharefd);
+#else
 	inhnd = ion_import_dma_buf(hisijd->ion_client, jpu_req->in_sharefd);
+#endif
 	if (IS_ERR(inhnd)) {
 		HISI_JPU_ERR("inhnd ion_import_dma_buf fail ! \n");
 		inhnd = NULL;
@@ -1527,7 +1693,7 @@ static long hisi_jpu_check_inbuff_addr(struct hisi_jpu_data_type *hisijd, jpu_da
 			ion_unmap_iommu(hisijd->ion_client, inhnd);
 		}
 	} else {
-		if (ion_phys(hisijd->ion_client, inhnd, &buf_addr, &buf_len)) {
+		if (hisifb_ion_phys(hisijd->ion_client, inhnd, &(hisijd->pdev->dev), &buf_addr, &buf_len)) {
 			HISI_JPU_ERR("inhnd ion_phys fail ! \n");
 			succ = false;
 		} else {
@@ -1631,7 +1797,7 @@ static long hisi_jpu_check_outbuff_addr(struct hisi_jpu_data_type *hisijd, jpu_d
 	unsigned long buf_addr = 0;
 	bool succ = true;
 
-	if (!hisijd) {
+	if (!hisijd || !(hisijd->pdev)) {
 		HISI_JPU_ERR("hisijd is NULL!\n");
 		return -EINVAL;
 	}
@@ -1663,7 +1829,11 @@ static long hisi_jpu_check_outbuff_addr(struct hisi_jpu_data_type *hisijd, jpu_d
 	memset(&iommu_out_format, 0, sizeof(struct iommu_map_format));
 
 	//check output buffer addr
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0)
+	outhnd = ion_import_dma_buf_fd(hisijd->ion_client, jpu_req->out_sharefd);
+#else
 	outhnd = ion_import_dma_buf(hisijd->ion_client, jpu_req->out_sharefd);
+#endif
 	if (IS_ERR(outhnd)) {
 		HISI_JPU_ERR("outhnd ion_import_dma_buf fail ! \n");
 		outhnd = NULL;
@@ -1682,7 +1852,7 @@ static long hisi_jpu_check_outbuff_addr(struct hisi_jpu_data_type *hisijd, jpu_d
 			ion_unmap_iommu(hisijd->ion_client, outhnd);
 		}
 	} else {
-		if (ion_phys(hisijd->ion_client, outhnd, &buf_addr, &buf_len)) {
+		if (hisifb_ion_phys(hisijd->ion_client, outhnd, &(hisijd->pdev->dev), &buf_addr, &buf_len)) {
 			HISI_JPU_ERR("outhnd ion_phys fail ! \n");
 			succ = false;
 		} else {
@@ -1709,6 +1879,7 @@ static int hisijpu_check_region_decode_info(jpu_data_t *jpu_req)
 	}
 
 	if (jpu_req->decode_mode < HISI_JPEG_DECODE_MODE_REGION) {
+		HISI_JPU_INFO("in full decode, decode mode %d \n", jpu_req->decode_mode);
 		return 0;
 	}
 
@@ -1771,7 +1942,7 @@ static int hisijpu_check_full_decode_info(jpu_data_t *jpu_req)
 	}
 
 	if (HISI_JPEG_DECODE_MODE_FULL_SUB < jpu_req->decode_mode) {
-		HISI_JPU_INFO("decode_mode %d\n", jpu_req->decode_mode);
+		HISI_JPU_INFO("in region decode, decode_mode %d\n", jpu_req->decode_mode);
 		return 0;
 	}
 
@@ -1866,11 +2037,13 @@ static int hisijpu_check_userdata(struct hisi_jpu_data_type *hisijd, jpu_data_t 
 		return -EINVAL;
 	}
 
-	/* is format can handle for chip limit*/
-	ret = hisijpu_check_format(jpu_req);
-	if (ret) {
-		HISI_JPU_ERR("this format not support 8 sample\n");
-		return -EINVAL;
+	if(hisijd->jpu_support_platform != HISI_DSS_V501) {
+		/* is format can handle for chip limit*/
+		ret = hisijpu_check_format(jpu_req);
+		if (ret) {
+			HISI_JPU_ERR("this format not support 8 sample\n");
+			return -EINVAL;
+		}
 	}
 
 	ret = hisijpu_check_buffers(hisijd, jpu_req);
@@ -1899,6 +2072,15 @@ static int hisijpu_check_userdata(struct hisi_jpu_data_type *hisijd, jpu_data_t 
 		jpu_req->in_img_format, jpu_req->out_color_format, jpu_req->sample_rate);
 
 	return 0;
+}
+
+void hisi_jpu_dump_reg(struct hisi_jpu_data_type *hisijd)
+{
+	int i = 0;
+	HISI_JPU_INFO("dump debug_reg: \n");
+	for (i = 0; i < JPGD_REG_DEBUG_RANGE; i++) {
+		HISI_JPU_INFO("JPEG_DEC_DEBUG_INFO offset @ %d, val:0x%x\n", 0x4*i, inp32(hisijd->jpu_dec_base + JPGD_REG_DEBUG_BASE + 0x4*i));
+	}
 }
 
 int hisijpu_job_exec(struct hisi_jpu_data_type *hisijd, void __user *argp)
@@ -1953,7 +2135,6 @@ int hisijpu_job_exec(struct hisi_jpu_data_type *hisijd, void __user *argp)
 		ret = -EINVAL;
 		goto err_out;
 	}
-
 	if (!hisijd->jpu_res_initialized) {
 		ret = hisi_jpu_dec_reg_default(hisijd);
 		if (ret) {
@@ -1987,7 +2168,7 @@ int hisijpu_job_exec(struct hisi_jpu_data_type *hisijd, void __user *argp)
 
 	/* prefetch control */
 	pjpu_dec_reg->preftch_ctrl = jpu_set_bits32(pjpu_dec_reg->preftch_ctrl,
-		jpu_req->smmu_enable ? 0x0 : 0x1, 1, 0);
+		jpu_req->smmu_enable ? 0x0 : 0x1, 32, 0);
 	/* define reset interval */
 	pjpu_dec_reg->dri = jpu_set_bits32(pjpu_dec_reg->dri,
 		jpu_req->restart_interval, 32, 0);
@@ -1997,8 +2178,14 @@ int hisijpu_job_exec(struct hisi_jpu_data_type *hisijd, void __user *argp)
 		((jpu_req->pix_width - 1) | ((jpu_req->pix_height - 1) << 16)), 32, 0);
 
 	/* input bitstreams addr */
+	if(hisijd->jpu_support_platform == HISI_DSS_V501) {
+		pjpu_dec_reg->bitstreams_start_h = (jpu_req->start_addr >> 32) & 0x3;
+	}
 	pjpu_dec_reg->bitstreams_start = jpu_set_bits32(pjpu_dec_reg->bitstreams_start,
 		(uint32_t)jpu_req->start_addr, 32, 0);
+	if(hisijd->jpu_support_platform == HISI_DSS_V501) {
+		pjpu_dec_reg->bitstreams_end_h = (jpu_req->end_addr >> 32) & 0x3;
+	}
 	pjpu_dec_reg->bitstreams_end = jpu_set_bits32(pjpu_dec_reg->bitstreams_end,
 		(uint32_t)jpu_req->end_addr, 32, 0);
 
@@ -2089,6 +2276,7 @@ int hisijpu_job_exec(struct hisi_jpu_data_type *hisijd, void __user *argp)
 	ret = hisi_jpu_dec_done_config(hisijd, jpu_req);
 	if (ret != 0) {
 		HISI_JPU_ERR("hisi_jpu_dec_done_config failed! ret = %d\n", ret);
+		hisi_jpu_dump_reg(hisijd);
 	}
 
 err_out:

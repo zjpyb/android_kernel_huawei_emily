@@ -42,9 +42,7 @@
 #include <net/transp_v6.h>
 #endif
 #include <net/ip_fib.h>
-#ifdef CONFIG_MPTCP
-#include <net/mptcp.h>
-#endif
+
 #include <linux/errqueue.h>
 #include <asm/uaccess.h>
 
@@ -139,7 +137,7 @@ static void ip_cmsg_recv_dstaddr(struct msghdr *msg, struct sk_buff *skb)
 	const struct iphdr *iph = ip_hdr(skb);
 	__be16 *ports = (__be16 *)skb_transport_header(skb);
 
-	if (skb_transport_offset(skb) + 4 > skb->len)
+	if (skb_transport_offset(skb) + 4 > (int)skb->len)
 		return;
 
 	/* All current transport protocols have the port numbers in the
@@ -223,11 +221,12 @@ void ip_cmsg_recv_offset(struct msghdr *msg, struct sk_buff *skb,
 }
 EXPORT_SYMBOL(ip_cmsg_recv_offset);
 
-int ip_cmsg_send(struct net *net, struct msghdr *msg, struct ipcm_cookie *ipc,
+int ip_cmsg_send(struct sock *sk, struct msghdr *msg, struct ipcm_cookie *ipc,
 		 bool allow_ipv6)
 {
 	int err, val;
 	struct cmsghdr *cmsg;
+	struct net *net = sock_net(sk);
 
 	for_each_cmsghdr(cmsg, msg) {
 		if (!CMSG_OK(msg, cmsg))
@@ -243,11 +242,19 @@ int ip_cmsg_send(struct net *net, struct msghdr *msg, struct ipcm_cookie *ipc,
 			src_info = (struct in6_pktinfo *)CMSG_DATA(cmsg);
 			if (!ipv6_addr_v4mapped(&src_info->ipi6_addr))
 				return -EINVAL;
-			ipc->oif = src_info->ipi6_ifindex;
+			if (src_info->ipi6_ifindex)
+				ipc->oif = src_info->ipi6_ifindex;
 			ipc->addr = src_info->ipi6_addr.s6_addr32[3];
 			continue;
 		}
 #endif
+		if (cmsg->cmsg_level == SOL_SOCKET) {
+			err = __sock_cmsg_send(sk, msg, cmsg, &ipc->sockc);
+			if (err)
+				return err;
+			continue;
+		}
+
 		if (cmsg->cmsg_level != SOL_IP)
 			continue;
 		switch (cmsg->cmsg_type) {
@@ -266,7 +273,8 @@ int ip_cmsg_send(struct net *net, struct msghdr *msg, struct ipcm_cookie *ipc,
 			if (cmsg->cmsg_len != CMSG_LEN(sizeof(struct in_pktinfo)))
 				return -EINVAL;
 			info = (struct in_pktinfo *)CMSG_DATA(cmsg);
-			ipc->oif = info->ipi_ifindex;
+			if (info->ipi_ifindex)
+				ipc->oif = info->ipi_ifindex;
 			ipc->addr = info->ipi_spec_dst.s_addr;
 			break;
 		}
@@ -279,9 +287,12 @@ int ip_cmsg_send(struct net *net, struct msghdr *msg, struct ipcm_cookie *ipc,
 			ipc->ttl = val;
 			break;
 		case IP_TOS:
-			if (cmsg->cmsg_len != CMSG_LEN(sizeof(int)))
+			if (cmsg->cmsg_len == CMSG_LEN(sizeof(int)))
+				val = *(int *)CMSG_DATA(cmsg);
+			else if (cmsg->cmsg_len == CMSG_LEN(sizeof(u8)))
+				val = *(u8 *)CMSG_DATA(cmsg);
+			else
 				return -EINVAL;
-			val = *(int *)CMSG_DATA(cmsg);
 			if (val < 0 || val > 255)
 				return -EINVAL;
 			ipc->tos = val;
@@ -465,16 +476,15 @@ static bool ipv4_datagram_support_cmsg(const struct sock *sk,
 		return false;
 
 	/* Support IP_PKTINFO on tstamp packets if requested, to correlate
-	 * timestamp with egress dev. Not possible for packets without dev
+	 * timestamp with egress dev. Not possible for packets without iif
 	 * or without payload (SOF_TIMESTAMPING_OPT_TSONLY).
 	 */
-	if ((!(sk->sk_tsflags & SOF_TIMESTAMPING_OPT_CMSG)) ||
-	    (!skb->dev))
+	info = PKTINFO_SKB_CB(skb);
+	if (!(sk->sk_tsflags & SOF_TIMESTAMPING_OPT_CMSG) ||
+	    !info->ipi_ifindex)
 		return false;
 
-	info = PKTINFO_SKB_CB(skb);
 	info->ipi_spec_dst.s_addr = ip_hdr(skb)->saddr;
-	info->ipi_ifindex = skb->dev->ifindex;
 	return true;
 }
 
@@ -506,9 +516,10 @@ int ip_recv_error(struct sock *sk, struct msghdr *msg, int len, int *addr_len)
 		copied = len;
 	}
 	err = skb_copy_datagram_msg(skb, 0, msg, copied);
-	if (err)
-		goto out_free_skb;
-
+	if (unlikely(err)) {
+		kfree_skb(skb);
+		return err;
+	}
 	sock_recv_timestamp(msg, sk, skb);
 
 	serr = SKB_EXT_ERR(skb);
@@ -540,8 +551,7 @@ int ip_recv_error(struct sock *sk, struct msghdr *msg, int len, int *addr_len)
 	msg->msg_flags |= MSG_ERRQUEUE;
 	err = copied;
 
-out_free_skb:
-	kfree_skb(skb);
+	consume_skb(skb);
 out:
 	return err;
 }
@@ -577,6 +587,7 @@ static int do_ip_setsockopt(struct sock *sk, int level,
 			    int optname, char __user *optval, unsigned int optlen)
 {
 	struct inet_sock *inet = inet_sk(sk);
+	struct net *net = sock_net(sk);
 	int val = 0, err;
 	bool needs_rtnl = setsockopt_needs_rtnl(optname);
 
@@ -638,7 +649,7 @@ static int do_ip_setsockopt(struct sock *sk, int level,
 		if (err)
 			break;
 		old = rcu_dereference_protected(inet->inet_opt,
-						sock_owned_by_user(sk));
+						lockdep_sock_is_held(sk));
 		if (inet->is_icsk) {
 			struct inet_connection_sock *icsk = inet_csk(sk);
 #if IS_ENABLED(CONFIG_IPV6)
@@ -725,20 +736,6 @@ static int do_ip_setsockopt(struct sock *sk, int level,
 			inet->tos = val;
 			sk->sk_priority = rt_tos2priority(val);
 			sk_dst_reset(sk);
-#ifdef CONFIG_MPTCP
-			/* Update TOS on mptcp subflow */
-			if (is_meta_sk(sk)) {
-				struct sock *sk_it;
-
-				mptcp_for_each_sk(tcp_sk(sk)->mpcb, sk_it) {
-					if (inet_sk(sk_it)->tos != inet_sk(sk)->tos) {
-						inet_sk(sk_it)->tos = inet_sk(sk)->tos;
-						sk_it->sk_priority = sk->sk_priority;
-						sk_dst_reset(sk_it);
-					}
-				}
-			}
-#endif
 		}
 		break;
 	case IP_TTL:
@@ -935,7 +932,7 @@ static int do_ip_setsockopt(struct sock *sk, int level,
 		}
 		/* numsrc >= (1G-4) overflow in 32 bits */
 		if (msf->imsf_numsrc >= 0x3ffffffcU ||
-		    msf->imsf_numsrc > sysctl_igmp_max_msf) {
+		    msf->imsf_numsrc > net->ipv4.sysctl_igmp_max_msf) {
 			kfree(msf);
 			err = -ENOBUFS;
 			break;
@@ -1090,7 +1087,7 @@ static int do_ip_setsockopt(struct sock *sk, int level,
 
 		/* numsrc >= (4G-140)/128 overflow in 32 bits */
 		if (gsf->gf_numsrc >= 0x1ffffff ||
-		    gsf->gf_numsrc > sysctl_igmp_max_msf) {
+		    gsf->gf_numsrc > net->ipv4.sysctl_igmp_max_msf) {
 			err = -ENOBUFS;
 			goto mc_msf_out;
 		}
@@ -1207,7 +1204,18 @@ void ipv4_pktinfo_prepare(const struct sock *sk, struct sk_buff *skb)
 		       ipv6_sk_rxinfo(sk);
 
 	if (prepare && skb_rtable(skb)) {
-		pktinfo->ipi_ifindex = inet_iif(skb);
+		/* skb->cb is overloaded: prior to this point it is IP{6}CB
+		 * which has interface index (iif) as the first member of the
+		 * underlying inet{6}_skb_parm struct. This code then overlays
+		 * PKTINFO_SKB_CB and in_pktinfo also has iif as the first
+		 * element so the iif is picked up from the prior IPCB. If iif
+		 * is the loopback interface, then return the sending interface
+		 * (e.g., process binds socket to eth0 for Tx which is
+		 * redirected to loopback in the rtable/dst).
+		 */
+		if (pktinfo->ipi_ifindex == LOOPBACK_IFINDEX)
+			pktinfo->ipi_ifindex = inet_iif(skb);
+
 		pktinfo->ipi_spec_dst.s_addr = fib_compute_spec_dst(skb);
 	} else {
 		pktinfo->ipi_ifindex = 0;
@@ -1237,11 +1245,8 @@ int ip_setsockopt(struct sock *sk, int level,
 	if (err == -ENOPROTOOPT && optname != IP_HDRINCL &&
 			optname != IP_IPSEC_POLICY &&
 			optname != IP_XFRM_POLICY &&
-			!ip_mroute_opt(optname)) {
-		lock_sock(sk);
+			!ip_mroute_opt(optname))
 		err = nf_setsockopt(sk, PF_INET, optname, optval, optlen);
-		release_sock(sk);
-	}
 #endif
 	return err;
 }
@@ -1266,12 +1271,9 @@ int compat_ip_setsockopt(struct sock *sk, int level, int optname,
 	if (err == -ENOPROTOOPT && optname != IP_HDRINCL &&
 			optname != IP_IPSEC_POLICY &&
 			optname != IP_XFRM_POLICY &&
-			!ip_mroute_opt(optname)) {
-		lock_sock(sk);
-		err = compat_nf_setsockopt(sk, PF_INET, optname,
-					   optval, optlen);
-		release_sock(sk);
-	}
+			!ip_mroute_opt(optname))
+		err = compat_nf_setsockopt(sk, PF_INET, optname, optval,
+					   optlen);
 #endif
 	return err;
 }
@@ -1324,7 +1326,7 @@ static int do_ip_getsockopt(struct sock *sk, int level, int optname,
 		struct ip_options_rcu *inet_opt;
 
 		inet_opt = rcu_dereference_protected(inet->inet_opt,
-						     sock_owned_by_user(sk));
+						     lockdep_sock_is_held(sk));
 		opt->optlen = 0;
 		if (inet_opt)
 			memcpy(optbuf, &inet_opt->opt,
@@ -1372,10 +1374,13 @@ static int do_ip_getsockopt(struct sock *sk, int level, int optname,
 		val = inet->tos;
 		break;
 	case IP_TTL:
+	{
+		struct net *net = sock_net(sk);
 		val = (inet->uc_ttl == -1 ?
-		       sysctl_ip_default_ttl :
+		       net->ipv4.sysctl_ip_default_ttl :
 		       inet->uc_ttl);
 		break;
+	}
 	case IP_HDRINCL:
 		val = inet->hdrincl;
 		break;
@@ -1549,10 +1554,7 @@ int ip_getsockopt(struct sock *sk, int level,
 		if (get_user(len, optlen))
 			return -EFAULT;
 
-		lock_sock(sk);
-		err = nf_getsockopt(sk, PF_INET, optname, optval,
-				&len);
-		release_sock(sk);
+		err = nf_getsockopt(sk, PF_INET, optname, optval, &len);
 		if (err >= 0)
 			err = put_user(len, optlen);
 		return err;
@@ -1584,9 +1586,7 @@ int compat_ip_getsockopt(struct sock *sk, int level, int optname,
 		if (get_user(len, optlen))
 			return -EFAULT;
 
-		lock_sock(sk);
 		err = compat_nf_getsockopt(sk, PF_INET, optname, optval, &len);
-		release_sock(sk);
 		if (err >= 0)
 			err = put_user(len, optlen);
 		return err;

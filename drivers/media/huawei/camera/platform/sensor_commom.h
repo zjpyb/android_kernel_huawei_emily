@@ -31,6 +31,7 @@
 #include <linux/pinctrl/consumer.h>
 #include <media/v4l2-subdev.h>
 #include <media/huawei/extisp_cfg.h>
+#include <media/huawei/camera.h>
 #include "../sensor/hwsensor.h"
 #include "../cam_log.h"
 
@@ -81,6 +82,11 @@ struct sensor_cfg_data;
 #define LDO_VOLTAGE_1P13V           1130000
 #define LDO_VOLTAGE_1P145V          1145000
 #define LDO_VOLTAGE_1P2V            1200000
+#define LDO_VOLTAGE_1P24V            1240000
+#define LDO_VOLTAGE_1P26V            1260000
+#define LDO_VOLTAGE_1P28V            1280000
+#define LDO_VOLTAGE_1P3V            1300000
+#define LDO_VOLTAGE_1P205V          1205000
 #define LDO_VOLTAGE_1P25V           1250000
 #define LDO_VOLTAGE_1P27V           1270000
 #define LDO_VOLTAGE_1P5V            1500000
@@ -181,6 +187,8 @@ enum sensor_power_seq_type_t {
     SENSOR_AFVDD,
     SENSOR_AFVDD_EN,
     SENSOR_DRVVDD,
+    SENSOR_BVDD, /* using for buck vdd voltage control */
+    SENSOR_RXDPHY_CLK,
 };
 
 enum sensor_power_pmic_type_t {
@@ -249,7 +257,9 @@ typedef struct _sensor_power_t {
 typedef enum {
     CSI_INDEX_0 = 0,
     CSI_INDEX_1,
-    CSI_INDEX_CNT,
+    CSI_INDEX_2,
+    CSI_INDEX_3,
+    CSI_INDEX_MAX,
 } csi_index_t;
 
 
@@ -296,6 +306,7 @@ typedef enum {
     LDO_MIPI_SW_EN,
     LDO_AFVDD,
     LDO_DRVVDD,
+    LDO_BVDD,/*buck vdd*/
     LDO_MAX,
 } ldo_index_t;
 
@@ -366,11 +377,19 @@ typedef struct _tag_hwsensor_board_info
     int extisp_type;
 
     unsigned int mclk;
+    unsigned int phy_clk_freq;
+    unsigned int phy_clk_num;
+    struct clk *phy_clk[CSI_INDEX_MAX];
     unsigned int ldo_diverse;/*this is used to distinguish different dvdd voltage values for main camera sensors*/
     int csi_id[2];
     int i2c_id[2];
     int module_type;
     int flash_pos_type;//0-alone 1-mix
+    int reset_type;
+    int topology_type;//hardware topology type for structured light
+
+	int            phyinfo_valid;
+	phy_info_t     phyinfo;
 } hwsensor_board_info_t;
 
 struct hisi_sensor_awb_otp {
@@ -434,5 +453,8 @@ void rpmsg_sensor_unregister(void *ptr_sensor);
 int rpmsg_sensor_register(struct platform_device *pdev, void *psensor);
 int do_sensor_power_on(int index, const char *name);
 int do_sensor_power_off(int index, const char *name);
+int hw_sensor_get_dt_power_setting_data(struct platform_device *pdev, sensor_t *sensor);
+int hw_sensor_get_thermal(const char *name,int *temp);
+
 
 #endif

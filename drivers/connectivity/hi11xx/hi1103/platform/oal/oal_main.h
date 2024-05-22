@@ -63,10 +63,10 @@ extern oal_uint8  g_auc_wlan_service_device_per_chip[WLAN_SERVICE_DEVICE_MAX_NUM
 /*****************************************************************************
   10 º¯ÊýÉùÃ÷
 *****************************************************************************/
-extern oal_int32  oal_main_init(oal_void);
-extern oal_void  oal_main_exit(oal_void);
-extern oal_uint32 oal_chip_get_version(oal_void);
-extern oal_uint8 oal_chip_get_device_num(oal_uint32 ul_chip_ver);
+extern oal_int32  oal_main_init_etc(oal_void);
+extern oal_void  oal_main_exit_etc(oal_void);
+extern oal_uint32 oal_chip_get_version_etc(oal_void);
+extern oal_uint8 oal_chip_get_device_num_etc(oal_uint32 ul_chip_ver);
 extern oal_uint8 oal_board_get_service_vap_start_id(oal_void);
 
 #ifdef __cplusplus

@@ -17,9 +17,10 @@
 #include <linux/string.h>
 #include <linux/platform_device.h>
 #include <linux/device.h>
+#include <linux/printk.h>
 #include <linux/kernel.h>
 #include <asm/bug.h>
-
+#include <linux/hisi/hisi_log.h>
 
 #ifndef MAX
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
@@ -53,7 +54,8 @@
 #define FALSE 0
 #endif
 
-
+#define HISI_JPU_TAG "hisijpu"
+#define HISI_LOG_TAG  HISI_JPU_TAG
 /*--------------------------------------------------------------------------*/
 extern uint32_t hisi_jpu_msg_level;
 
@@ -70,34 +72,34 @@ extern uint32_t hisi_jpu_msg_level;
  */
 #define HISI_JPU_EMERG(msg, ...)    \
 	do { if (hisi_jpu_msg_level > 0)  \
-		printk(KERN_EMERG "[hisijpu]%s: "msg, __func__, ## __VA_ARGS__); } while (0)
+		pr_info("%s: "msg, __func__, ## __VA_ARGS__); } while (0)
 #define HISI_JPU_ALERT(msg, ...)    \
 	do { if (hisi_jpu_msg_level > 1)  \
-		printk(KERN_ALERT "[hisijpu]%s: "msg, __func__, ## __VA_ARGS__); } while (0)
+		pr_info("%s: "msg, __func__, ## __VA_ARGS__); } while (0)
 #define HISI_JPU_CRIT(msg, ...)    \
 	do { if (hisi_jpu_msg_level > 2)  \
-		printk(KERN_CRIT "[hisijpu]%s: "msg, __func__, ## __VA_ARGS__); } while (0)
+		pr_info("%s: "msg, __func__, ## __VA_ARGS__); } while (0)
 #define HISI_JPU_ERR(msg, ...)    \
 	do { if (hisi_jpu_msg_level > 3)  \
-		printk(KERN_ERR "[hisijpu]%s: "msg, __func__, ## __VA_ARGS__); } while (0)
+		pr_info("%s: "msg, __func__, ## __VA_ARGS__); } while (0)
 #define HISI_JPU_WARNING(msg, ...)    \
 	do { if (hisi_jpu_msg_level > 4)  \
-		printk(KERN_WARNING "[hisijpu]%s: "msg, __func__, ## __VA_ARGS__); } while (0)
+		pr_info("%s: "msg, __func__, ## __VA_ARGS__); } while (0)
 #define HISI_JPU_NOTICE(msg, ...)    \
 	do { if (hisi_jpu_msg_level > 5)  \
-		printk(KERN_NOTICE "[hisijpu]%s: "msg, __func__, ## __VA_ARGS__); } while (0)
+		pr_info("%s: "msg, __func__, ## __VA_ARGS__); } while (0)
 #define HISI_JPU_INFO(msg, ...)    \
 	do { if (hisi_jpu_msg_level > 6)  \
-		printk(KERN_INFO "[hisijpu]%s: "msg, __func__, ## __VA_ARGS__); } while (0)
+		pr_info("%s: "msg, __func__, ## __VA_ARGS__); } while (0)
 #define HISI_JPU_DEBUG(msg, ...)    \
 	do { if (hisi_jpu_msg_level > 7)  \
-		printk(KERN_INFO "[hisijpu]%s: "msg, __func__, ## __VA_ARGS__); } while (0)
+		pr_info("%s: "msg, __func__, ## __VA_ARGS__); } while (0)
 
 //printk(KERN_DEBUG "[hisijpu]%s: "msg, __func__, ## __VA_ARGS__);
 
 #define assert(expr) \
 	if(!(expr)) { \
-		printk(KERN_ERR "[hisijpu]: assertion failed! %s,%s,%s,line=%d\n",\
+		pr_err("assertion failed! %s,%s,%s,line=%d\n",\
 			#expr, __FILE__, __func__, __LINE__); \
 	}
 
@@ -111,7 +113,7 @@ extern uint32_t hisi_jpu_msg_level;
 #define outp32(addr, val) \
 	do {\
 		writel(val, addr);\
-		printk("writel(0x%x, 0x%x);\n", val, addr);\
+		pr_info("writel(0x%x, 0x%x);\n", val, addr);\
 	} while (0)
 #else
 #define outp32(addr, val) writel(val, addr)

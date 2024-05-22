@@ -19,9 +19,7 @@
 
 
 #include <linux/skbuff.h>
-#ifdef CONFIG_TCP_CONG_BBR
 #include <linux/win_minmax.h>
-#endif
 #include <net/sock.h>
 #include <net/inet_connection_sock.h>
 #include <net/inet_timewait_sock.h>
@@ -35,9 +33,14 @@ static inline struct tcphdr *tcp_hdr(const struct sk_buff *skb)
 	return (struct tcphdr *)skb_transport_header(skb);
 }
 
+static inline unsigned int __tcp_hdrlen(const struct tcphdr *th)
+{
+	return th->doff * 4;
+}
+
 static inline unsigned int tcp_hdrlen(const struct sk_buff *skb)
 {
-	return tcp_hdr(skb)->doff * 4;
+	return __tcp_hdrlen(tcp_hdr(skb));
 }
 
 static inline struct tcphdr *inner_tcp_hdr(const struct sk_buff *skb)
@@ -62,8 +65,13 @@ static inline unsigned int tcp_optlen(const struct sk_buff *skb)
 
 /* TCP Fast Open Cookie as stored in memory */
 struct tcp_fastopen_cookie {
+	union {
+		u8	val[TCP_FASTOPEN_COOKIE_MAX];
+#if IS_ENABLED(CONFIG_IPV6)
+		struct in6_addr addr;
+#endif
+	};
 	s8	len;
-	u8	val[TCP_FASTOPEN_COOKIE_MAX];
 	bool	exp;	/* In RFC6994 experimental option format */
 };
 
@@ -77,60 +85,6 @@ struct tcp_sack_block {
 	u32	start_seq;
 	u32	end_seq;
 };
-
-#ifdef CONFIG_MPTCP
-struct tcp_out_options {
-	u16	options;	/* bit field of OPTION_* */
-	u8	ws;		/* window scale, 0 to disable */
-	u8	num_sack_blocks;/* number of SACK blocks to include */
-	u8	hash_size;	/* bytes in hash_location */
-	u16	mss;		/* 0 to disable */
-	__u8	*hash_location;	/* temporary pointer, overloaded */
-	__u32	tsval, tsecr;	/* need to include OPTION_TS */
-	struct tcp_fastopen_cookie *fastopen_cookie;	/* Fast open cookie */
-	u16	mptcp_options;	/* bit field of MPTCP related OPTION_* */
-	u8	dss_csum:1,	/* dss-checksum required? */
-		add_addr_v4:1,
-		add_addr_v6:1,
-		mptcp_ver:4;
-
-	union {
-		struct {
-			__u64	sender_key;	/* sender's key for mptcp */
-			__u64	receiver_key;	/* receiver's key for mptcp */
-		} mp_capable;
-
-		struct {
-			__u64	sender_truncated_mac;
-			__u32	sender_nonce;
-					/* random number of the sender */
-			__u32	token;	/* token for mptcp */
-			u8	low_prio:1;
-		} mp_join_syns;
-	};
-
-	struct {
-		__u64 trunc_mac;
-		struct in_addr addr;
-		u16 port;
-		u8 addr_id;
-	} add_addr4;
-
-	struct {
-		__u64 trunc_mac;
-		struct in6_addr addr;
-		u16 port;
-		u8 addr_id;
-	} add_addr6;
-
-	u16	remove_addrs;	/* list of address id */
-	u8	addr_id;	/* address id (mp_join or add_address) */
-};
-
-struct mptcp_cb;
-struct mptcp_tcp_sock;
-struct tcp_md5sig_key;
-#endif /* CONFIG_MPTCP */
 
 /*These are used to set the sack_ok field in struct tcp_options_received */
 #define TCP_SACK_SEEN     (1 << 0)   /*1 = peer is SACK capable, */
@@ -213,12 +167,18 @@ struct tcp_sock {
 	u32	segs_in;	/* RFC4898 tcpEStatsPerfSegsIn
 				 * total number of segments in.
 				 */
+	u32	data_segs_in;	/* RFC4898 tcpEStatsPerfDataSegsIn
+				 * total number of data segments in.
+				 */
  	u32	rcv_nxt;	/* What we want to receive next 	*/
 	u32	copied_seq;	/* Head of yet unread data		*/
 	u32	rcv_wup;	/* rcv_nxt on last window update sent	*/
  	u32	snd_nxt;	/* Next sequence we send		*/
 	u32	segs_out;	/* RFC4898 tcpEStatsPerfSegsOut
 				 * The total number of segments sent.
+				 */
+	u32	data_segs_out;	/* RFC4898 tcpEStatsPerfDataSegsOut
+				 * total number of data segments sent.
 				 */
 	u64	bytes_acked;	/* RFC4898 tcpEStatsAppHCThruOctetsAcked
 				 * sum(delta(snd_una)), or how many bytes
@@ -261,12 +221,10 @@ struct tcp_sock {
 		u8 reord;    /* reordering detected */
 	} rack;
 	u16	advmss;		/* Advertised MSS			*/
-#ifdef CONFIG_TCP_CONG_BBR
 	u8	rate_app_limited:1,  /* rate_{delivered,interval_us} limited? */
-		unused:7;
-#else
-	u8	unused;
-#endif
+		fastopen_connect:1, /* FASTOPEN_CONNECT sockopt */
+		is_sack_reneg:1,    /* in recovery from loss with SACK reneg? */
+		unused:5;
 	u8	nonagle     : 4,/* Disable Nagle algorithm?             */
 		thin_lto    : 1,/* Use linear timeouts for thin streams */
 		thin_dupack : 1,/* Fast retransmit on first dupack      */
@@ -288,14 +246,8 @@ struct tcp_sock {
 	u32	mdev_max_us;	/* maximal mdev for the last rtt period	*/
 	u32	rttvar_us;	/* smoothed mdev_max			*/
 	u32	rtt_seq;	/* sequence number to update rttvar	*/
-#ifdef CONFIG_TCP_CONG_BBR
 	struct  minmax rtt_min;
 
-#else
-	struct rtt_meas {
-		u32 rtt, ts;    /* RTT in usec and sampling time in jiffies. */
-	} rtt_min[3];
-#endif
 	u32	packets_out;	/* Packets which are "in flight"	*/
 	u32	retrans_out;	/* Retransmitted packets out		*/
 	u32	max_packets_out;  /* max packets_out in last window */
@@ -325,7 +277,6 @@ struct tcp_sock {
 	u32	prr_delivered;	/* Number of newly delivered packets to
 				 * receiver in Recovery. */
 	u32	prr_out;	/* Total number of pkts sent during Recovery. */
-#ifdef CONFIG_TCP_CONG_BBR
 	u32	delivered;	/* Total data packets delivered incl. rexmits */
 	u32	lost;		/* Total data packets lost incl. rexmits */
 	u32	app_limited;	/* limited until "delivered" reaches this val */
@@ -333,7 +284,6 @@ struct tcp_sock {
 	struct skb_mstamp delivered_mstamp; /* time we reached "delivered" */
 	u32	rate_delivered;    /* saved rate sample: packets delivered */
 	u32	rate_interval_us;  /* saved rate sample: time elapsed */
-#endif
 
  	u32	rcv_wnd;	/* Current receiver window		*/
 	u32	write_seq;	/* Tail(+1) of data held in tcp send buffer */
@@ -343,18 +293,19 @@ struct tcp_sock {
 	u32	sacked_out;	/* SACK'd packets			*/
 	u32	fackets_out;	/* FACK'd packets			*/
 
-#ifdef CONFIG_TCP_CONG_BBR
-	struct hrtimer	pacing_timer;
+#ifdef CONFIG_TCP_NODELAY
+	u16	nodelay_size;	/* packet size by delayed */
+	u8	nodelay;	/* Auto tcp no delay is disabled */
+	u8	pingpong;	/* send msg count without response */
 #endif
 
 	/* from STCP, retrans queue hinting */
 	struct sk_buff* lost_skb_hint;
 	struct sk_buff *retransmit_skb_hint;
 
-	/* OOO segments go in this list. Note that socket lock must be held,
-	 * as we do not use sk_buff_head lock.
-	 */
-	struct sk_buff_head	out_of_order_queue;
+	/* OOO segments go in this rbtree. Socket lock must be held. */
+	struct rb_root	out_of_order_queue;
+	struct sk_buff	*ooo_last_skb; /* cache rb_last(out_of_order_queue) */
 
 	/* SACKs data, these 2 need to be together (see tcp_options_write) */
 	struct tcp_sack_block duplicate_sack[1]; /* D-SACK block */
@@ -399,7 +350,7 @@ struct tcp_sock {
 
 /* Receiver queue space */
 	struct {
-		int	space;
+		u32	space;
 		u32	seq;
 		u32	time;
 #ifdef CONFIG_TCP_AUTOTUNING
@@ -450,43 +401,6 @@ struct tcp_sock {
 	u8 first_data_flag;
 	u8 data_net_flag;
 #endif
-#ifdef CONFIG_MPTCP
-	/* MPTCP/TCP-specific callbacks */
-	const struct tcp_sock_ops	*ops;
-
-	struct mptcp_cb		*mpcb;
-	struct sock		*meta_sk;
-	/* We keep these flags even if CONFIG_MPTCP is not checked, because
-	 * it allows checking MPTCP capability just by checking the mpc flag,
-	 * rather than adding ifdefs everywhere.
-	 */
-	u32     mpc:1,          /* Other end is multipath capable */
-		inside_tk_table:1, /* Is the tcp_sock inside the token-table? */
-		send_mp_fclose:1,
-		request_mptcp:1, /* Did we send out an MP_CAPABLE?
-				  * (this speeds up mptcp_doit() in tcp_recvmsg)
-				  */
-		pf:1, /* Potentially Failed state: when this flag is set, we
-		       * stop using the subflow
-		       */
-		mp_killed:1, /* Killed with a tcp_done in mptcp? */
-		was_meta_sk:1,	/* This was a meta sk (in case of reuse) */
-		is_master_sk:1,
-		close_it:1,	/* Must close socket in mptcp_data_ready? */
-		closing:1,
-		mptcp_ver:4,
-		mptcp_sched_setsockopt:1,
-		mptcp_pm_setsockopt:1,
-		record_master_info:1;
-	struct mptcp_tcp_sock *mptcp;
-#define MPTCP_SCHED_NAME_MAX 16
-#define MPTCP_PM_NAME_MAX 16
-	struct hlist_nulls_node tk_table;
-	u32		mptcp_loc_token;
-	u64		mptcp_loc_key;
-	char		mptcp_sched_name[MPTCP_SCHED_NAME_MAX];
-	char		mptcp_pm_name[MPTCP_PM_NAME_MAX];
-#endif /* CONFIG_MPTCP */
 };
 
 enum tsq_flags {
@@ -498,13 +412,6 @@ enum tsq_flags {
 	TCP_MTU_REDUCED_DEFERRED,  /* tcp_v{4|6}_err() could not call
 				    * tcp_v{4|6}_mtu_reduced()
 				    */
-#ifdef CONFIG_HW_CROSSLAYER_OPT
-	TCP_CROSSLAYER_RECOVERY_DEFERRED, /* aspen_crosslayer_recovery() found socket was owned */
-#endif
-#ifdef CONFIG_MPTCP
-	MPTCP_PATH_MANAGER_DEFERRED, /* MPTCP deferred creation of new subflows */
-	MPTCP_SUB_DEFERRED, /* A subflow got deferred - process them */
-#endif /* CONFIG_MPTCP */
 };
 
 static inline struct tcp_sock *tcp_sk(const struct sock *sk)
@@ -527,9 +434,6 @@ struct tcp_timewait_sock {
 #ifdef CONFIG_TCP_MD5SIG
 	struct tcp_md5sig_key	  *tw_md5_key;
 #endif
-#ifdef CONFIG_MPTCP
-	struct mptcp_tw		  *mptcp_tw;
-#endif /* CONFIG_MPTCP */
 };
 
 static inline struct tcp_timewait_sock *tcp_twsk(const struct sock *sk)

@@ -12,22 +12,20 @@
 #include <linux/of.h>
 #include <linux/platform_device.h>
 #include <huawei_platform/log/hw_log.h>
-#include <dsm/dsm_pub.h>
+
+#include <huawei_platform/power/power_dsm.h>
+
 #include <cpu_buck.h>
+#ifdef CONFIG_HISI_COUL
 #include <linux/power/hisi/coul/hisi_coul_drv.h>
+#endif
 
 #define HWLOG_TAG cpu_buck
 HWLOG_REGIST();
 
 extern int g_fault_happened = 0;
-static struct dsm_client *cpu_buck_client = NULL;
 static struct cpu_buck_smaple* g_cbs = NULL;
 
-static struct dsm_dev dsm_cpu_buck = {
-	.name = "dsm_cpu_buck",
-	.fops = NULL,
-	.buff_size = 1024,
-};
 void str_to_reg(char* str, char* reg, int size)
 {
 	char high;
@@ -109,15 +107,15 @@ static void cpu_buck_work(struct work_struct *work)
 		{
 			if ((cbs->cbi[i].error_mask & cbs->reg[cbs->cbi[i].reg_number]) == cbs->cbi[i].error_mask)
 			{
-				if (!dsm_client_ocuppy(cpu_buck_client))
+				if (!dsm_client_ocuppy(power_dsm_get_dclient(POWER_DSM_CPU_BUCK)))
 				{
 					hwlog_info("CPU BUCK EXCEPTION! \n");
 					already_notified = true;
 					hwlog_info("HI6422v200 PMU1:cpu_buck_number = 0; PMU2:cpu_buck_number = 1; \n");
 					hwlog_info("cpu_buck_number = %d, record and notify: %s\n", cbs->cpu_buck_number,cbs->cbi[i].error_info);
 					update_err_msg(&(cbs->cbi[i]));
-					dsm_client_record(cpu_buck_client, "cpu_buck_number =  %d;cpu_buck %s happened!\n", cbs->cpu_buck_number,cbs->cbi[i].error_info);
-					dsm_client_notify(cpu_buck_client, ERROR_NO_CPU_BUCK_BASE + cbs->cbi[i].err_no);
+					dsm_client_record(power_dsm_get_dclient(POWER_DSM_CPU_BUCK), "cpu_buck_number =  %d;cpu_buck %s happened!\n", cbs->cpu_buck_number,cbs->cbi[i].error_info);
+					dsm_client_notify(power_dsm_get_dclient(POWER_DSM_CPU_BUCK), ERROR_NO_CPU_BUCK_BASE + cbs->cbi[i].err_no);
 					break;
 				}
 			}
@@ -145,17 +143,7 @@ static int cpu_buck_probe(struct platform_device *pdev)
 		hwlog_err("di is NULL\n");
 		return -ENOMEM;
 	}
-	if (!cpu_buck_client)
-	{
-		cpu_buck_client = dsm_register_client(&dsm_cpu_buck);
-	}
-	if (NULL == cpu_buck_client)
-	{
-		hwlog_err("cpu_buck register dsm fail\n");
-		kfree(di);
-		di = NULL;
-		return -1;
-	}
+
 	INIT_DELAYED_WORK(&di->cpu_buck_delayed_work, cpu_buck_work);
 	schedule_delayed_work(&di->cpu_buck_delayed_work, 10);
 	hwlog_info("cpu_buck probe ok!\n");

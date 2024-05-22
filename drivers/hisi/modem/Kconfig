@@ -5,6 +5,12 @@ config HISI_BALONG_MODEM
 	help
 	Hisilicon ap+modem config support.
 
+config HISI_BALONG_EXTRA_MODEM
+	bool "Hisilicon ap+ extra_modem config"
+	default n
+	help
+	Hisilicon A+B config support
+	
 config HISI_BALONG_MODEM_HI3650
 	bool "Hisilicon ap+modem config"
 	default n

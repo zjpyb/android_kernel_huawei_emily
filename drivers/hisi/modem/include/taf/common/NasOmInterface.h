@@ -206,11 +206,7 @@ typedef enum
     NAS_OM_EVENT_TIMER_OPERATION_START      = 75,
     NAS_OM_EVENT_TIMER_OPERATION_STOP       = 76,
     NAS_OM_EVENT_TIMER_OPERATION_EXPIRED    = 77,
-
-    /* Added by z60575 for PA_STAR, 2013-7-19 begin */
     NAS_OM_EVENT_PA_STAR_ABNORMAL           = 78,
-    /* Added by z60575 for PA_STAR, 2013-7-19 end */
-
     NAS_OM_EVENT_SMS_MT_FAIL                = 79,
 
     NAS_OM_EVENT_1X_SYS_ACQUIRE_SUCCESS     = 80,

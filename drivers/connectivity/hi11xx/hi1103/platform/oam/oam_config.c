@@ -17,19 +17,19 @@ extern "C" {
 /*****************************************************************************
   2 全局变量定义
 *****************************************************************************/
-oam_customize_stru g_oam_customize;
+oam_customize_stru g_oam_customize_etc;
 
 
 /*****************************************************************************
   3 函数实现
 *****************************************************************************/
-oal_void  oam_register_init_hook(oam_msg_moduleid_enum_uint8 en_moduleid,  p_oam_customize_init_func p_func)
+oal_void  oam_register_init_hook_etc(oam_msg_moduleid_enum_uint8 en_moduleid,  p_oam_customize_init_func p_func)
 {
-    g_oam_customize.customize_init[en_moduleid] = p_func;
+    g_oam_customize_etc.customize_init[en_moduleid] = p_func;
 }
 
 
-oal_int32  oam_cfg_get_one_item(
+oal_int32  oam_cfg_get_one_item_etc(
                                            oal_int8   *pc_cfg_data_buf,
                                            oal_int8   *pc_section,
                                            oal_int8   *pc_key,
@@ -53,7 +53,7 @@ oal_int32  oam_cfg_get_one_item(
     pc_section_addr = oal_strstr(pc_cfg_data_buf, pc_section);
     if (OAL_PTR_NULL == pc_section_addr)
     {
-        OAL_IO_PRINT("oam_cfg_get_one_item::section not found!\n");
+        OAL_IO_PRINT("oam_cfg_get_one_item_etc::section not found!\n");
         return OAL_ERR_CODE_PTR_NULL;
     }
 
@@ -61,7 +61,7 @@ oal_int32  oam_cfg_get_one_item(
     pc_key_addr = oal_strstr(pc_section_addr, pc_key);
     if (OAL_PTR_NULL == pc_key_addr)
     {
-        OAL_IO_PRINT("oam_cfg_get_one_item::key not found!\n");
+        OAL_IO_PRINT("oam_cfg_get_one_item_etc::key not found!\n");
         return OAL_ERR_CODE_PTR_NULL;
     }
 
@@ -77,7 +77,7 @@ oal_int32  oam_cfg_get_one_item(
         pc_key_addr = oal_strstr(pc_equal_sign_addr, pc_key);
         if (OAL_PTR_NULL == pc_key_addr)
         {
-            OAL_IO_PRINT("oam_cfg_get_one_item::key not found!\n");
+            OAL_IO_PRINT("oam_cfg_get_one_item_etc::key not found!\n");
             return OAL_ERR_CODE_PTR_NULL;
         }
 
@@ -105,7 +105,7 @@ oal_int32  oam_cfg_get_one_item(
 
 
 
-oal_int32  oam_cfg_read_file_to_buf(
+oal_int32  oam_cfg_read_file_to_buf_etc(
                                                     oal_int8   *pc_cfg_data_buf,
                                                     oal_uint32  ul_file_size)
 {
@@ -131,7 +131,7 @@ oal_int32  oam_cfg_read_file_to_buf(
 }
 
 
-oal_uint32  oam_cfg_decrypt_all_item(
+oal_uint32  oam_cfg_decrypt_all_item_etc(
                                               oal_aes_key_stru *pst_aes_key,
                                               oal_int8         *pc_ciphertext,
                                               oal_int8         *pc_plaintext,
@@ -145,13 +145,13 @@ oal_uint32  oam_cfg_decrypt_all_item(
     /* AES加密块的大小是16字节，如果密文长度不是16的倍数，则不能正确解密 */
     if (0 != (ul_cipher_len % OAL_AES_BLOCK_SIZE))
     {
-        OAL_IO_PRINT("oam_cfg_decrypt_all_item::ciphertext length invalid!\n");
+        OAL_IO_PRINT("oam_cfg_decrypt_all_item_etc::ciphertext length invalid!\n");
         return OAL_FAIL;
     }
 
     if (0 == ul_cipher_len)
     {
-        OAL_IO_PRINT("oam_cfg_decrypt_all_item::ciphertext length is 0!\n");
+        OAL_IO_PRINT("oam_cfg_decrypt_all_item_etc::ciphertext length is 0!\n");
         return OAL_FAIL;
     }
 
@@ -161,7 +161,7 @@ oal_uint32  oam_cfg_decrypt_all_item(
 
     while (ul_loop < ul_round)
     {
-        oal_aes_decrypt(pst_aes_key, puc_plain_tmp, puc_cipher_tmp);
+        oal_aes_decrypt_etc(pst_aes_key, puc_plain_tmp, puc_cipher_tmp);
 
         ul_loop++;
         puc_cipher_tmp += OAL_AES_BLOCK_SIZE;
@@ -173,10 +173,10 @@ oal_uint32  oam_cfg_decrypt_all_item(
 
 
 /*lint -e19*/
-oal_module_symbol(oam_register_init_hook);
-oal_module_symbol(oam_cfg_get_one_item);
-oal_module_symbol(oam_cfg_read_file_to_buf);
-oal_module_symbol(oam_cfg_decrypt_all_item);
+oal_module_symbol(oam_register_init_hook_etc);
+oal_module_symbol(oam_cfg_get_one_item_etc);
+oal_module_symbol(oam_cfg_read_file_to_buf_etc);
+oal_module_symbol(oam_cfg_decrypt_all_item_etc);
 
 
 

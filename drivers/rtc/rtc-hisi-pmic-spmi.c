@@ -23,6 +23,9 @@
 #include <linux/of_irq.h>
 #include <linux/hisi-spmi.h>
 #include <linux/of_hisi_spmi.h>
+#ifdef CONFIG_HUAWEI_DSM
+#include <dsm/dsm_pub.h>
+#endif
 #ifdef CONFIG_HISI_RTC_SECURE_FEATURE
 #include <linux/mtd/hisi_nve_interface.h>
 #define  NVE_RTC_NUM             (272)
@@ -60,6 +63,12 @@
 /*lint -e750 +esym(750,*) */
 #define SOC_RTCALARM_INT   0x1
 
+#ifdef CONFIG_HUAWEI_DSM
+#define DSM_RTC_BUF_SIZE (256)
+#define DSM_RTC_PMU_READCOUNT_ERROR_NUM (925005000)
+#define DSM_RTC_SET_RTC_TMIE_WARNING_NUM (925005001)
+#endif
+
 struct hisi_rtc_dev {
 	struct rtc_device *rtc_dev;
 
@@ -83,6 +92,59 @@ struct hisi_rtc_dev {
 #endif
 };
 
+#ifdef CONFIG_HUAWEI_DSM
+struct dsm_client *get_rtc_dsm_client(void);
+unsigned long lastTime = 0;
+
+#define rtc_dsm_report(err_no,fmt,args...)\
+do{\
+	if(get_rtc_dsm_client()){\
+		if(!dsm_client_ocuppy(get_rtc_dsm_client())){\
+			dsm_client_record(get_rtc_dsm_client(), fmt, ##args); \
+			dsm_client_notify(get_rtc_dsm_client(), err_no); \
+			printk(KERN_INFO "[RTC DSM]rtc dsm report err = %d\n",err_no);\
+		}else\
+		    printk(KERN_ERR "[RTC DSM]rtc dsm is busy err = %d\n",err_no);\
+	}else\
+		 printk(KERN_ERR "[RTC DSM]rtc dsm client is null\n");\
+}while(0)
+struct dsm_dev dsm_rtc =
+{
+	.name = "dsm_kirin_rtc",
+	.device_name = "rtc",
+	.fops = NULL,
+	.buff_size = DSM_RTC_BUF_SIZE,
+};
+
+static struct dsm_client *rtc_dsm_client = NULL;
+
+struct dsm_client *get_rtc_dsm_client(void)
+{
+	return rtc_dsm_client;
+}
+
+static void rtc_register_dsm_client(void)
+{
+	if (rtc_dsm_client)
+		return;
+
+	rtc_dsm_client = dsm_register_client(&dsm_rtc);
+	if (!rtc_dsm_client){
+		 printk(KERN_ERR"[RTC DSM]Rtc dsm register failed\n");
+	}
+
+	return;
+}
+
+int dsm_rtc_valid_tm(struct rtc_time *tm)
+{
+	if (tm->tm_year < 75)
+		return -EINVAL;
+
+	return 0;
+}
+#endif
+
 #ifdef CONFIG_HISI_RTC_SECURE_FEATURE
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 13, 0))
 enum pmu_rtc_ops {
@@ -94,9 +156,13 @@ enum pmu_rtc_ops {
 };
 
 #define RTC_REGISTER_FN_ID             (0xc500ddd0)
-noinline int atfd_hisi_service_rtc_smc(u64 function_id, u64 arg0, u64 arg1,
-				       u64 arg2)
+noinline int atfd_hisi_service_rtc_smc(u64 _function_id, u64 _arg0, u64 _arg1,
+				       u64 _arg2)
 {
+	register u64 function_id asm("x0") = _function_id;
+	register u64 arg0 asm("x1") = _arg0;
+	register u64 arg1 asm("x2") = _arg1;
+	register u64 arg2 asm("x3") = _arg2;
 	asm volatile (__asmeq("%0", "x0")
 		      __asmeq("%1", "x1")
 		      __asmeq("%2", "x2")
@@ -113,6 +179,7 @@ static struct hisi_rtc_dev *ldata;
 
 static unsigned int get_pd_charge_flag(void);
 static unsigned int pd_charge_flag;
+
 
 #ifdef CONFIG_HISI_RTC_TEST
 static bool rtc_poweroff_alarm_test;
@@ -283,12 +350,26 @@ void hisi_pmu_rtc_readtime(struct rtc_time *tm)
 
 unsigned long hisi_pmu_rtc_readcount(void)
 {
+#ifdef CONFIG_HUAWEI_DSM
+	unsigned long time;
+#endif
 	struct hisi_rtc_dev *data = hisi_rtc_ldata_get();
 	if (NULL == data) {
 		printk(KERN_ERR "[%s]data is NULL !\n", __func__);
 		return 0;
 	}
+#ifdef CONFIG_HUAWEI_DSM
+	time =  hisi_pmu_rtc_read_bulk(data->pmu_rtc_baseaddr + PMU_RTC_DR);
+	if (lastTime > time){
+		/* DMD RTC PRINT INFO */
+		rtc_dsm_report(DSM_RTC_PMU_READCOUNT_ERROR_NUM, "Pmu rtc readcount error, time : %u, lasttime : %u\n", time, lastTime);
+	}
+	lastTime = time;
+
+	return time;
+#else
 	return hisi_pmu_rtc_read_bulk(data->pmu_rtc_baseaddr + PMU_RTC_DR);
+#endif
 }
 
 #ifdef CONFIG_HISI_PMU_RTC_READCOUNT
@@ -394,6 +475,13 @@ static int hisi_soc_rtc_set_time(struct device *dev, struct rtc_time *tm)
 		printk(KERN_ERR "[%s]Time is invalid\n", __func__);
 		return err;
 	}
+#ifdef CONFIG_HUAWEI_DSM
+	err = dsm_rtc_valid_tm(tm);
+	if (err != 0){
+		/* DSM RTC SET TIME ERROR */
+		rtc_dsm_report(DSM_RTC_SET_RTC_TMIE_WARNING_NUM, "Soc rtc set time error, time : %d-%d-%d-%d-%d-%d\n", (tm->tm_year + 1900),(tm->tm_mon+1), tm->tm_mday, tm->tm_hour, tm->tm_min, tm->tm_sec);
+	}
+#endif
 	rtc_tm_to_time(tm, &time);
 
 	writel(time, ldata->soc_rtc_baseaddr + SOC_RTC_LR);
@@ -746,6 +834,10 @@ static int hisi_rtc_probe(struct spmi_device *pdev)
 #endif
 
 	INIT_WORK(&ldata->rtc_alarm_work, rtc_alarm_notify_work);
+
+#ifdef CONFIG_HUAWEI_DSM
+	 rtc_register_dsm_client();
+#endif
 
 	printk(KERN_INFO "HISI PMU RTC Init End----------------\n");
 

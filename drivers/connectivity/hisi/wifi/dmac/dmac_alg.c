@@ -1265,15 +1265,9 @@ oal_uint32  dmac_alg_get_user_priv_stru(
         if (MAC_USER_STATE_ASSOC != pst_user->en_user_asoc_state)
         {
            OAM_WARNING_LOG4(pst_user->uc_vap_id, OAM_SF_ANY,
-                            "{dmac_alg_get_user_priv_stru:: us_assoc_id=%d, en_user_asoc_state=%d, user mac: %2x:%2x}",
+                            "{dmac_alg_get_user_priv_stru:: us_assoc_id=%d, en_user_asoc_state=%d, user mac XX:XX:XX:XX:%2X:%2X}",
                             pst_user->us_assoc_id,
                             pst_user->en_user_asoc_state,
-                            pst_user->auc_user_mac_addr[0],
-                            pst_user->auc_user_mac_addr[1]);
-           OAM_WARNING_LOG4(pst_user->uc_vap_id, OAM_SF_ANY,
-                            "{dmac_alg_get_user_priv_stru:: user mac:%2x:%2x:%2x:%2x}",
-                            pst_user->auc_user_mac_addr[2],
-                            pst_user->auc_user_mac_addr[3],
                             pst_user->auc_user_mac_addr[4],
                             pst_user->auc_user_mac_addr[5]);
         }

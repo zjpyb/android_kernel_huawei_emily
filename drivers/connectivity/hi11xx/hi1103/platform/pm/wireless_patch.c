@@ -105,7 +105,7 @@ extern int32 pm_uart_set_baudrate(int64 baudrate);
 int32 pm_uart_set_baudrate(int64 baudrate)
 {
     /*get platform driver data*/
-    struct pm_drv_data *pm_data = pm_get_drvdata();
+    struct pm_drv_data *pm_data = pm_get_drvdata_etc();
     if (NULL == pm_data)
     {
         PS_PRINT_ERR("pm_data is NULL!\n");
@@ -521,7 +521,7 @@ int32 uart_recv_data(const uint8 *data, int32 len)
 }
 
 /*****************************************************************************
- Prototype    : read_msg
+ Prototype    : read_msg_etc
  Description  : read msg
  Input        : uint8 *data
                 int32 len
@@ -649,7 +649,7 @@ int32 read_msg_t(uint8 *data, int32 len, int32 type)
 
 
 /*****************************************************************************
-Prototype    : send_msg
+Prototype    : send_msg_etc
 Description  : send message to device,by sdio or uart
 Input        : uint8 *data
                int32 len
@@ -691,7 +691,7 @@ int32 send_msg_t(uint8 *data, int32 len, int32 type)
 }
 
 /*****************************************************************************
- Prototype    : recv_expect_result
+ Prototype    : recv_expect_result_etc
  Description  : receive result form device
  Input        : uint8 expect
                 int32 type
@@ -998,7 +998,7 @@ int32 patch_down_file(uint8 *puc_file, int32 type)
     }
 
 //    auc_buf = OS_KMALLOC_GFP(READ_PATCH_BUF_LEN);
-//    auc_buf = g_pucDataBuf;
+//    auc_buf = g_pucDataBuf_etc;
     if (NULL == g_pucDataBuf_t)
     {
         filp_close(fp, NULL);
@@ -1010,7 +1010,7 @@ int32 patch_down_file(uint8 *puc_file, int32 type)
     g_index = 1;
     while(1)
     {
-//        OS_MEM_SET(g_pucDataBuf, 0, READ_PATCH_BUF_LEN);
+//        OS_MEM_SET(g_pucDataBuf_etc, 0, READ_PATCH_BUF_LEN);
 #if 1
         l_len = patch_read_patch(g_pucDataBuf_t, READ_PATCH_BUF_LEN, fp);
 #else
@@ -1366,7 +1366,7 @@ int32 patch_number_type(uint8 *Key, uint8 *Value, int32 type)
         }
         PS_PRINT_DBG("change baudrate\n");
         msleep(1);
-        //recv_expect_result(MSG_FORM_DRV_A, type);
+        //recv_expect_result_etc(MSG_FORM_DRV_A, type);
 
         num = patch_string_to_num(Value);
 
@@ -2526,11 +2526,11 @@ int32 patch_init(int32 type)
         g_pucDataBuf_t = OS_KMALLOC_GFP(READ_PATCH_BUF_LEN);
         if(NULL == g_pucDataBuf_t)
         {
-            PS_PRINT_ERR("g_pucDataBuf KMALLOC failed");
+            PS_PRINT_ERR("g_pucDataBuf_etc KMALLOC failed");
             g_pucDataBuf_t = NULL;
             return -EFAIL;
         } else {
-            PS_PRINT_DBG("g_pucDataBuf KMALLOC succ");
+            PS_PRINT_DBG("g_pucDataBuf_etc KMALLOC succ");
         }
     }
     return SUCC;

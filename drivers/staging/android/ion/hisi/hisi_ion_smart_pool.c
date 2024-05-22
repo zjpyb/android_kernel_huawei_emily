@@ -28,6 +28,7 @@
 #include <linux/module.h>
 #include <linux/kthread.h>
 #include <linux/kernel.h>
+#include <linux/version.h>
 
 #include "ion.h"
 #include "hisi_ion_smart_pool.h"
@@ -309,8 +310,13 @@ struct ion_smart_pool *ion_smart_pool_create(void)
 		return NULL;
 	}
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
 	if (ion_system_heap_create_pools(smart_pool->pools,
 				graphic_buffer_flag))
+#else
+	if (ion_system_heap_create_pools(smart_pool->pools,
+				false, graphic_buffer_flag))
+#endif
 		goto free_heap;
 
 	init_waitqueue_head(&smart_pool_wait);

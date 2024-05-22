@@ -26,6 +26,7 @@
 #include <linux/delay.h>
 
 #include "goodix_ts.h"
+#include "goodix_dts.h"
 
 #define GT9XX_FW_NAME "gt9xx.BIN"
 
@@ -2224,6 +2225,8 @@ int gup_chip_reinit(struct goodix_ts_data *ts)
     if (ts->tools_support)
         init_wr_node();
 
+    goodix_param_init();
+
     /* init config data, normal/glove/hoslter config data */
     ret = goodix_init_configs(ts);
     if (ret < 0) {
@@ -2241,8 +2244,6 @@ int gup_chip_reinit(struct goodix_ts_data *ts)
 #ifdef ROI
     goodix_ts_roi_init(&ts->roi);
 #endif
-
-    goodix_param_init();
 
     ret = goodix_get_fw_data();
     if (ret < 0) {

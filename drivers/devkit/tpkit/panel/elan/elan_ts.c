@@ -17,7 +17,7 @@
 #include "elan_ts.h"
 #include "elan_mmi.h"
 #include "../../huawei_ts_kit_api.h"
-#include "../../../lcdkit/include/lcdkit_panel.h"
+#include "../../../lcdkit/lcdkit1.0/include/lcdkit_panel.h"
 
 static int elan_ktf_chip_detect(struct ts_kit_platform_data *platform_data);
 static int elan_ktf_init_chip(void);
@@ -29,6 +29,7 @@ static int elan_ktf_fw_update_sd(void);
 static int elan_ktf_hw_reset(void);
 static int elan_ktf_core_suspend(void);
 static int elan_ktf_core_resume(void);
+static void elan_chip_shutdown(void);
 static int elan_ktf_parse_dts(struct device_node *device, struct ts_kit_device_data *chip_data);
 static int elan_config_gpio(void);
 static int elan_before_suspend(void);
@@ -39,6 +40,9 @@ static int i2c_communicate_check(void);
 static int elan_ktf_get_info(struct ts_chip_info_param* info);
 static int elan_read_fw_info(void);
 static int elan_chip_get_capacitance_test_type(struct ts_test_type_info *info);
+static int rawdata_proc_elan_printf(struct seq_file *m, struct ts_rawdata_info *info,
+					int range_size, int row_size);
+static atomic_t last_pen_inrange_status = ATOMIC_INIT(TS_PEN_OUT_RANGE); //remember the last pen inrange status
 extern u8 cypress_ts_kit_color[TP_COLOR_SIZE];
 struct elan_ktf_ts_data *elan_ts=NULL;
 enum TP_MODE
@@ -79,6 +83,8 @@ struct ts_device_ops ts_kit_elan_ops = {
 	.chip_get_rawdata = elan_ktf_get_rawdata,
 	.chip_get_info = elan_ktf_get_info,
 	.chip_get_capacitance_test_type = elan_chip_get_capacitance_test_type,
+	.chip_special_rawdata_proc_printf = rawdata_proc_elan_printf,
+	.chip_shutdown = elan_chip_shutdown,
  };
 
 static int tp_module_test_init(struct ts_rawdata_info* info)
@@ -106,6 +112,7 @@ static int tp_module_test_init(struct ts_rawdata_info* info)
 
 	info->buff[0]=elan_ts->rx_num;
 	info->buff[1]=elan_ts->tx_num;
+	info->used_size += 2;
 	ret = disable_finger_report();
 	if (ret) {
 		TS_LOG_ERR("[elan]:disable_finger_report fail!\n");
@@ -138,7 +145,7 @@ static int elan_ktf_get_rawdata(struct ts_rawdata_info* info, struct ts_cmd_node
 	char txrx_short_test_result[ResultMaxLen]={0};
 	char adc_mean_low_boundary_test_result[ResultMaxLen]={0};
 
-	TS_LOG_INFO("--->>elan module test start1.12<<---\n");
+	TS_LOG_INFO("--->>elan module test start<<---\n");
 	if ((!info)||(!elan_ts)||(!elan_ts->elan_chip_data)) {
 		TS_LOG_ERR("[elan]:%s,info is null\n",__func__);
 		return -EINVAL;
@@ -179,7 +186,7 @@ static int elan_ktf_get_rawdata(struct ts_rawdata_info* info, struct ts_cmd_node
 	}
 
 	/*elan mmi step 4 normal adc mean test*/
-	ret=elan_mean_value_check(adc_mean_low_boundary_test_result);
+	ret=elan_mean_value_check(adc_mean_low_boundary_test_result,info);
 	if(ret){
 		TS_LOG_ERR("[elan]:get normaL adc[2] fail\n");
 		goto TEST_EXIT;
@@ -200,7 +207,7 @@ static int elan_ktf_get_rawdata(struct ts_rawdata_info* info, struct ts_cmd_node
 	}
 
 	/*elan mmi step 6 txrx short test*/
-	ret=elan_txrx_short_check(txrx_short_test_result);
+	ret=elan_txrx_short_check(txrx_short_test_result,info);
 	if(ret){
 		TS_LOG_ERR("[elan]:get tx rx short data fail\n");
 		goto TEST_EXIT;
@@ -221,6 +228,62 @@ TEST_EXIT:
 	atomic_set(&elan_ts->tp_mode, TP_NORMAL);
 	elan_ktf_hw_reset();
 	TS_LOG_ERR("[elan]%s,end!,%s\n", __func__,info->result);
+	return NO_ERR;
+}
+
+int rawdata_proc_elan_printf(struct seq_file *m, struct ts_rawdata_info *info,
+					int range_size, int row_size)
+{
+	int index = 0;
+	int index1 = 0;
+
+	if((0 == range_size) || (0 == row_size) || (!info)) {
+		TS_LOG_ERR("%s  range_size OR row_size is 0 OR info is NULL\n", __func__);
+		return -EINVAL;
+	}
+
+	for (index = 0; row_size * index + 2 < (2+row_size*range_size*3); index++) {
+		if (0 == index) {
+			seq_printf(m, "noisedata begin\n");	/*print the title */
+		}
+		for (index1 = 0; index1 < row_size; index1++) {
+			seq_printf(m, "%d,", info->buff[2 + row_size * index + index1]);	/*print oneline */
+		}
+		/*index1 = 0;*/
+		seq_printf(m, "\n ");
+
+		if ((range_size - 1) == index) {
+			seq_printf(m, "noisedata end\n");
+			seq_printf(m, "normal adc begin\n");
+		} else if ((range_size*2 - 1) == index){
+			seq_printf(m, "normal adc end\n");
+			seq_printf(m, "normal adc2 begin\n");
+		}
+	}
+	seq_printf(m, "normal adc2 end\n");
+	if (info->used_size > (2+row_size*range_size*3))
+	{
+		seq_printf(m, "rx short begin\n");
+		for (index1 = 0;index1 < (row_size + range_size)*2; index1++)
+		{
+			seq_printf(m, "%d,", info->buff[2 + row_size * range_size*3 + index1]);
+			if (index1 == (row_size - 1)) {
+				seq_printf(m, "\n ");
+				seq_printf(m, "rx short end\n");
+				seq_printf(m, "tx short begin\n");
+			} else if (index1 == (row_size + range_size - 1)) {
+				seq_printf(m, "\n ");
+				seq_printf(m, "tx short end\n");
+				seq_printf(m, "rx short2 begin\n");
+			} else if (index1 == (row_size*2 + range_size - 1)) {
+				seq_printf(m, "\n ");
+				seq_printf(m, "rx short2 end\n");
+				seq_printf(m, "tx short2 begin\n");
+			}
+		}
+		seq_printf(m, "\n ");
+		seq_printf(m, "tx short2 end\n");
+	}
 	return NO_ERR;
 }
 
@@ -422,7 +485,7 @@ static int elan_config_gpio(void)
 
 	if (gpio_is_valid(elan_ts->reset_gpio))
 	{
-		err = gpio_direction_output(elan_ts->reset_gpio,1);
+		err = gpio_direction_output(elan_ts->reset_gpio,0);
 		if (err) {
 			TS_LOG_ERR("[elan]:unable to set direction for gpio [%d]\n",elan_ts->reset_gpio);
 			return -EINVAL;
@@ -550,6 +613,11 @@ static int elan_ktf_ts_recv_data(u8 *pbuf)
 	}
 	if (buf[REPORT_ID_BYTE]==FINGER_REPORT_ID) {
 		fingernum = buf[CUR_FINGER_NUM_BYTE];
+		if(fingernum > MAX_FINGER_SIZE)
+		{
+			TS_LOG_ERR("[elan]:invalid finger num\n");
+			return -EINVAL;
+		}
 		elan_ts->cur_finger_num = fingernum;
 		recv_count_max = (fingernum/2) + ((fingernum%2) != 0);
 		for(recv_count = 1;recv_count < recv_count_max;recv_count++)
@@ -624,9 +692,16 @@ static void parse_pen_point(struct ts_pens *pointinfo,u8 *pbuf, struct ts_cmd_no
 		pointinfo->tool.y = y;
 		pointinfo->tool.pressure = p;
 		pointinfo->tool.pen_inrange_status=pen_down&0x1;
+		TS_LOG_DEBUG("[elan]:report pen coord: x = %d, y = %d, pressure = %d, pen_inrange_status = %d\n", lcm_max_x - x, y, p, pen_down&0x1);
+		if(!elan_ts->pen_detected){
+			TS_LOG_INFO("[elan]:pen is detected!\n");
+			elan_ts->pen_detected = true;
+		}
 	} else {
 		pointinfo->tool.tip_status = 0;
 		pointinfo->tool.pen_inrange_status=0;
+		TS_LOG_INFO("[elan]:pen is exit!\n");
+		elan_ts->pen_detected = false;
 	}
 	return;
 }
@@ -885,6 +960,47 @@ retry_updata:
 	return NO_ERR;
 }
 
+static int elan_get_lcd_panel_info(void)
+{
+	struct device_node *dev_node = NULL;
+	char *lcd_type = NULL;
+
+	dev_node = of_find_compatible_node(NULL, NULL, LCD_PANEL_TYPE_DEVICE_NODE_NAME);
+	if (!dev_node) {
+		TS_LOG_ERR("[elan]:%s: NOT found device node[%s]!\n", __func__, LCD_PANEL_TYPE_DEVICE_NODE_NAME);
+		return -EINVAL;
+	}
+
+	lcd_type = (char*)of_get_property(dev_node, "lcd_panel_type", NULL);
+	if(!lcd_type){
+		TS_LOG_ERR("[elan]:%s: Get lcd panel type faile!\n", __func__);
+		return -EINVAL ;
+	}
+
+	strncpy(elan_ts->lcd_panel_info, lcd_type, LCD_PANEL_INFO_MAX_LEN-1);
+	TS_LOG_INFO("[elan]:lcd_panel_info = %s.\n", elan_ts->lcd_panel_info);
+
+	return 0;
+}
+
+static int  elan_get_lcd_module_name(void)
+{
+	char temp[LCD_PANEL_INFO_MAX_LEN] = {0};
+	int i = 0;
+
+	strncpy(temp, elan_ts->lcd_panel_info, LCD_PANEL_INFO_MAX_LEN-1);
+	for(i=0;i<(LCD_PANEL_INFO_MAX_LEN-1) && (i < (MAX_STR_LEN-1));i++)
+	{
+		if(temp[i] == '_') {
+			break;
+		}
+		elan_ts->lcd_module_name[i] = tolower(temp[i]);
+	}
+	TS_LOG_INFO("[elan]:lcd_module_name = %s.\n", elan_ts->lcd_module_name);
+
+	return 0;
+}
+
 static int elan_ktf_fw_update_sd(void)
 {
 	char filename[MAX_NAME_LEN]={0};
@@ -917,8 +1033,15 @@ static int elan_ktf_fw_update_boot(char *file_name)
 		return -EINVAL;
 	}
 	TS_LOG_INFO("[elan]:%s: enter!\n", __func__);
-
+	err = elan_get_lcd_panel_info();
+	if (err < 0) {
+		TS_LOG_ERR("[elan]:elan_get_lcd_panel_info fail\n");
+		return -EINVAL;
+	}
+	elan_get_lcd_module_name();
 	strncat(file_name,elan_ts->project_id,sizeof(elan_ts->project_id));
+	strncat(file_name,"_",strlen("_"));
+	strncat(file_name,elan_ts->lcd_module_name,strlen(elan_ts->lcd_module_name));
 	strncat(file_name,FW_SUFFIX,strlen(FW_SUFFIX));
 	snprintf(file_path,strlen(file_name)+strlen("ts/")+1,"ts/%s",file_name);
 	TS_LOG_INFO("[elan]:start to request firmware %s,%s\n", file_name,file_path);
@@ -950,6 +1073,7 @@ static int elan_ktf_fw_update_boot(char *file_name)
 		TS_LOG_INFO("[elan]:fw ver is new don't need updata!\n");
 	}
 	TS_LOG_INFO("[elan]:%s: end!\n", __func__);
+	release_firmware(fw_entry);
 exit:
 	return NO_ERR;
 }
@@ -1025,6 +1149,14 @@ static int elan_ktf_parse_dts(struct device_node *device, struct ts_kit_device_d
 	}
 	mutex_init(&chip_data->device_call_lock);
 	elan_ts->elan_chip_data->is_direct_proc_cmd=false;
+
+	ret = of_property_read_u32(device, "provide_panel_id_suppot", &chip_data->provide_panel_id_support);
+	if (ret) {
+		TS_LOG_ERR("[elan]:Not define provide_panel_id_suppot in Dts\n");
+	} else {
+		TS_LOG_INFO("[elan]:provide_panel_id_support = %d\n", chip_data->provide_panel_id_support);
+	}
+
 	ret = of_property_read_u32(device,"elan,irq_config",&chip_data->irq_config);
 	if (ret) {
 		TS_LOG_ERR("[elan]:Not define irq_config in Dts\n");
@@ -1110,6 +1242,7 @@ ts_vci_out:
 			regulator_put(elan_ts->vdda);
 		}
 	}
+	return NO_ERR;
 }
 
 static int elan_power_gpio_request(void)
@@ -1200,7 +1333,8 @@ static int elan_power_on(void)
 		TS_LOG_ERR("[elan]%s:elan_ts is NULL\n",__func__);
 		return -EINVAL;
 	}
-
+	atomic_set(&last_pen_inrange_status, TS_PEN_OUT_RANGE);
+	(void)ts_event_notify(TS_PEN_OUT_RANGE); // notify pen out of range
 	/*set voltage for vddd and vdda*/
 	if (VCI_LDO_TYPE == elan_ts->elan_chip_data->vci_regulator_type) {
 		if (!IS_ERR(elan_ts->vdda)) {
@@ -1253,8 +1387,9 @@ static int elan_ktf_chip_detect(struct ts_kit_platform_data *platform_data)
 	elan_ts->elan_dev->dev.of_node = elan_ts->elan_chip_data->cnode;
 	elan_ts->elan_chip_client=platform_data;
 
-	elan_ts->elan_chip_data->is_new_oem_structure= 0;
-	elan_ts->elan_chip_data->is_parade_solution= 0;
+	elan_ts->elan_chip_data->is_new_oem_structure = 0;
+	elan_ts->elan_chip_data->is_parade_solution = 0;
+	elan_ts->elan_chip_data->is_ic_rawdata_proc_printf = 1;
 	elan_ts->reset_gpio=platform_data->reset_gpio;
 	elan_ts->int_gpio=platform_data->irq_gpio;
 	elan_ts->irq_id=gpio_to_irq(elan_ts->int_gpio);
@@ -1292,14 +1427,14 @@ static int elan_ktf_chip_detect(struct ts_kit_platform_data *platform_data)
 	ret = elan_power_on();
 	if (ret) {
 		TS_LOG_ERR("[elan]:%s, failed to enable power, rc = %d\n", __func__, ret);
-		goto free_power_gpio;
+		goto power_off;
 	}
-
+	msleep(1);//spec need
 	elan_ktf_hw_reset();
 	ret = i2c_communicate_check();
 	if (ret) {
 		TS_LOG_ERR("[elan]:%s:not find elan tp device, ret=%d\n", __func__, ret);
-		goto free_power_gpio;
+		goto power_off;
 	} else {
 		TS_LOG_INFO("[elan]:%s:find elan tp device\n", __func__);
 	}
@@ -1307,10 +1442,33 @@ static int elan_ktf_chip_detect(struct ts_kit_platform_data *platform_data)
 	ret = elan_ktf_parse_dts(elan_ts->elan_chip_data->cnode,elan_ts->elan_chip_data);
 	if (ret) {
 		TS_LOG_ERR("[elan]:elan_ktf_parse_dts fail\n");
-		return -EINVAL;
+		goto power_off;
 	}
 
 	return NO_ERR;
+power_off:
+	elants_reset_pin_low();
+	mdelay(2);//spec need
+	if (VCI_GPIO_TYPE == elan_ts->elan_chip_data->vci_regulator_type) {
+		if(elan_ts->elan_chip_data->vci_gpio_ctrl) {
+			gpio_direction_output(elan_ts->elan_chip_data->vci_gpio_ctrl, 0);
+		}
+	}
+	if (VDD_GPIO_TYPE == elan_ts->elan_chip_data->vddio_regulator_type) {
+		if (elan_ts->elan_chip_data->vddio_gpio_ctrl) {
+			gpio_direction_output(elan_ts->elan_chip_data->vddio_gpio_ctrl, 0);
+		}
+	}
+	if (VCI_LDO_TYPE == elan_ts->elan_chip_data->vci_regulator_type) {
+		if (!IS_ERR(elan_ts->vdda)) {
+			regulator_disable(elan_ts->vdda);
+		}
+	}
+	if (VDD_LDO_TYPE == elan_ts->elan_chip_data->vddio_regulator_type) {
+		if (!IS_ERR(elan_ts->vddd)) {
+			regulator_disable(elan_ts->vddd);
+		}
+	}
 free_power_gpio:
 	if (VCI_GPIO_TYPE == elan_ts->elan_chip_data->vci_regulator_type) {
 		if(elan_ts->elan_chip_data->vci_gpio_ctrl) {
@@ -1340,7 +1498,7 @@ exit:
 
 static int elan_project_color(void)
 {
-	int ret=0;
+	int ret=0,i=0;
 	u8 rsp_buf[ELAN_RECV_DATA_LEN]={0};
 	u8 test_cmd[ELAN_SEND_DATA_LEN] = {0x04,0x00,0x23,0x00,0x03,0x00,0x04,0x55,0x55,0x55,0x55};
 	u8 project_cmd[ELAN_SEND_DATA_LEN] = {0x04,0x00,0x23,0x00,0x03,0x00,0x06,0x59,0x00,0x80,0x80,0x00,0x40};
@@ -1353,14 +1511,21 @@ static int elan_project_color(void)
 		TS_LOG_ERR("[elan]:set test cmd fail!ret=%d\n",ret);
 		return -EINVAL;
 	}
-
+	msleep(15);//IC need
 	ret = elan_i2c_write(project_cmd,sizeof(project_cmd));
 	if (ret) {
 		TS_LOG_ERR("[elan]:elan_i2c_write project_cmd fail!ret=%d\n",ret);
 		return -EINVAL;
 	}
-
-	msleep(10);//IC need
+	for (i = 0;i < PROJECT_ID_POLL;i ++) {
+		msleep(10);//IC need
+		if (gpio_get_value(elan_ts->int_gpio) == 0) {
+			TS_LOG_INFO("[elan]:int is low!i=%d",i);
+			break;
+		} else {
+			TS_LOG_INFO("[elan]:int is high!");
+		}
+	}
 	ret = elan_i2c_read(NULL,0,rsp_buf,ELAN_RECV_DATA_LEN);
 	if (ret) {
 		TS_LOG_ERR("[elan]:i2c read data fail!\n");
@@ -1436,7 +1601,7 @@ static int elan_ktf_init_chip(void)
 {
 	int ret=NO_ERR;
 	TS_LOG_INFO("[ELAN]:%s\n", __func__);
-	if (!elan_ts) {
+	if ((!elan_ts)||(!elan_ts->elan_chip_client)) {
 		TS_LOG_ERR("[elan]%s:elan_ts is NULL\n",__func__);
 		return -EINVAL;
 	}
@@ -1462,6 +1627,9 @@ static int elan_ktf_init_chip(void)
 		TS_LOG_ERR("[elan]:read project id and color fail\n");
 		return ret;
 	}
+	/*provide panel_id for sensor,panel_id is high byte *10 + low byte*/
+	elan_ts->elan_chip_client->panel_id = (elan_ts->project_id[ELAN_PANEL_ID_START_BIT] - '0') * 10 + elan_ts->project_id[ELAN_PANEL_ID_START_BIT + 1] - '0';
+	TS_LOG_INFO("%s: panel_id=%d\n", __func__, elan_ts->elan_chip_client->panel_id);
 	if(atomic_read(&elan_ts->tp_mode)==TP_NORMAL)
 	{
 		ret=elan_read_fw_info();
@@ -1475,9 +1643,13 @@ static int elan_ktf_init_chip(void)
 			elan_ts->finger_x_resolution = (elan_ts->tx_num - 1)*FINGER_OSR;
 			elan_ts->pen_y_resolution = (elan_ts->rx_num - 1)*PEN_OSR;
 			elan_ts->pen_x_resolution = (elan_ts->tx_num - 1)*PEN_OSR;
+		} else {
+			TS_LOG_ERR("[elan]:read tx rx num fail!\n");
+			return -EINVAL;
 		}
 	}
 	elan_ts->sd_fw_updata=false;
+	elan_ts->pen_detected=false;
 	return NO_ERR;
  }
 
@@ -1569,6 +1741,14 @@ static int elan_ktf_irq_bottom_half(struct ts_cmd_node *in_cmd,struct ts_cmd_nod
 			pens->tool.tool_type = BTN_TOOL_PEN;
 			out_cmd->command = TS_REPORT_PEN;
 			parse_pen_point(pens, buf, out_cmd);
+			if (pens->tool.pen_inrange_status != atomic_read(&last_pen_inrange_status)){
+				atomic_set(&last_pen_inrange_status, pens->tool.pen_inrange_status);
+				if (TS_PEN_OUT_RANGE < pens->tool.pen_inrange_status) {
+					(void)ts_event_notify(TS_PEN_IN_RANGE);
+				} else {
+					(void)ts_event_notify(TS_PEN_OUT_RANGE);
+				}
+			}
 			break;
 		default:
 			TS_LOG_INFO("[elan]:unknow report id:%0x,%0x,%0x,%0x\n",buf[0],buf[2],buf[4],buf[5]);  //0th len 2th id 4,5th other
@@ -1637,6 +1817,37 @@ static int elan_ktf_core_resume(void)
 	return rc;
 }
 
+static void elan_chip_shutdown(void)
+{
+	TS_LOG_INFO("[elan]:%s: enter\n", __func__);
+	elants_reset_pin_low();
+	mdelay(2);//spec need
+	if (VCI_GPIO_TYPE == elan_ts->elan_chip_data->vci_regulator_type) {
+		if(elan_ts->elan_chip_data->vci_gpio_ctrl) {
+			gpio_direction_output(elan_ts->elan_chip_data->vci_gpio_ctrl, 0);
+			gpio_free(elan_ts->elan_chip_data->vci_gpio_ctrl);
+		}
+	}
+	if (VDD_GPIO_TYPE == elan_ts->elan_chip_data->vddio_regulator_type) {
+		if (elan_ts->elan_chip_data->vddio_gpio_ctrl) {
+			gpio_direction_output(elan_ts->elan_chip_data->vddio_gpio_ctrl, 0);
+			gpio_free(elan_ts->elan_chip_data->vddio_gpio_ctrl);
+		}
+	}
+	if (VCI_LDO_TYPE == elan_ts->elan_chip_data->vci_regulator_type) {
+		if (!IS_ERR(elan_ts->vdda)) {
+			regulator_disable(elan_ts->vdda);
+		}
+	}
+	if (VDD_LDO_TYPE == elan_ts->elan_chip_data->vddio_regulator_type) {
+		if (!IS_ERR(elan_ts->vddd)) {
+			regulator_disable(elan_ts->vddd);
+		}
+	}
+	elan_regulator_put();
+
+	return;
+}
 static int __init elan_ktf_ts_init(void)
 {
 	bool found = false;

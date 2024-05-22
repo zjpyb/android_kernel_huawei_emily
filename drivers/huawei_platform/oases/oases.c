@@ -29,7 +29,7 @@
 #define OASES_MIN_PATCH_SIZE sizeof(struct oases_patch_header)
 
 #define	OASES_IOCTL_BASE 0xBB
-#define OASES_IOCTL_REMOVE_PATCH	_IOW(OASES_IOCTL_BASE, 1, struct oases_unpatch)
+#define OASES_IOCTL_REMOVE_PATCH _IOW(OASES_IOCTL_BASE, 1, struct oases_unpatch)
 
 #ifdef CONFIG_HISI_HHEE
 unsigned long oases_hkip_token;
@@ -113,8 +113,8 @@ static long oases_ioctl(struct file *filp, unsigned int cmd,
 {
 	int ret;
 
-	oases_debug("accept cmds: OASES_IOCTL_REMOVE_PATCH:%#lx\n", OASES_IOCTL_REMOVE_PATCH);
-	oases_debug("received cmd: %#x\n", cmd);
+	oases_debug("OASES_IOCTL_REMOVE_PATCH=%#lx, cmd=%#x\n",
+			(long)OASES_IOCTL_REMOVE_PATCH, cmd);
 
 	switch (cmd) {
 	case OASES_IOCTL_REMOVE_PATCH:
@@ -131,12 +131,14 @@ static long oases_ioctl(struct file *filp, unsigned int cmd,
 	return ret;
 }
 
+#if defined(__aarch64__) && defined(CONFIG_COMPAT)
 static long oases_compat_ioctl(struct file *filp, unsigned int cmd,
 		unsigned long arg)
 {
 	/* current oases ioctl/compat_ioctl shares the same cmds/args */
 	return oases_ioctl(filp, cmd, arg);
 }
+#endif
 
 static int oases_release(struct inode *inode, struct file *filp)
 {
@@ -150,7 +152,7 @@ static const struct file_operations oases_fops =
 	.write = oases_write,
 	.open = oases_open,
 	.unlocked_ioctl = oases_ioctl,
-#ifdef CONFIG_COMPAT
+#if defined(__aarch64__) && defined(CONFIG_COMPAT)
 	.compat_ioctl = oases_compat_ioctl,
 #endif
 	.release = oases_release,
@@ -224,7 +226,7 @@ static int __init oases_init(void)
 	}
 #endif
 
-	oases_debug("oases_init success\n");
+	oases_info("oases_init success\n");
 	return 0;
 
 init_keys_fail:

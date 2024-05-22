@@ -187,7 +187,7 @@ static int mmc_ffu_simple_transfer(struct mmc_card *card,
 static int mmc_ffu_map_sg(struct mmc_ffu_mem *mem, unsigned long size,
 	struct scatterlist *sglist, unsigned int max_segs,
 	unsigned int max_seg_sz, unsigned int *sg_len,
-	unsigned int min_sg_len)
+	int min_sg_len)
 {
 	struct scatterlist *sg = NULL;
 	unsigned int i;
@@ -254,7 +254,6 @@ static void mmc_ffu_free_mem(struct mmc_ffu_mem *mem)
 	if (mem->arr) {
 		kfree(mem->arr);
 	}
-	kfree(mem);
 }
 
 /*
@@ -262,8 +261,7 @@ static void mmc_ffu_free_mem(struct mmc_ffu_mem *mem)
  */
 static int mmc_ffu_area_cleanup(struct mmc_ffu_area *area)
 {
-	if (area->sg)
-		kfree(area->sg);
+	kfree(area->sg);
 	mmc_ffu_free_mem(area->mem);
 
 	return 0;
@@ -367,8 +365,8 @@ out_free:
 static int mmc_ffu_area_init(struct mmc_ffu_area *area, struct mmc_card *card,
 	u8 *data, unsigned int size)
 {
-	int ret,  length;
-	unsigned int i, copy_length;
+	int ret, i, length;
+	unsigned int copy_length;
 
 	area->max_segs = card->host->max_segs;
 	area->max_seg_sz = card->host->max_seg_size & ~(CARD_BLOCK_SIZE - 1);
@@ -407,7 +405,7 @@ static int mmc_ffu_area_init(struct mmc_ffu_area *area, struct mmc_card *card,
 		length += copy_length;
 	}
 
-	area->sg = kzalloc(sizeof(struct scatterlist) * area->max_segs,
+	area->sg = kmalloc(sizeof(struct scatterlist) * area->max_segs,
 		GFP_KERNEL);
 	if (!area->sg) {
 		ret = -ENOMEM;
@@ -418,7 +416,8 @@ static int mmc_ffu_area_init(struct mmc_ffu_area *area, struct mmc_card *card,
 			area->max_segs, area->max_seg_sz, &area->sg_len, 1);
 
 	if (ret != 0) {
-		pr_err("FFU: %s: ret = %d\n", __func__, ret);
+        pr_err("FFU: %s: ret = %d\n", __func__, ret);
+
 		goto out_free;
     }
 
@@ -451,8 +450,8 @@ static int mmc_ffu_write(struct mmc_card *card, u8 *src, u32 arg,
 	rc = mmc_ffu_simple_transfer(card, mem.sg, mem.sg_len, arg,
 		size / CARD_BLOCK_SIZE, CARD_BLOCK_SIZE, 1);
 
-	mmc_ffu_area_cleanup(&mem);
 exit:
+	mmc_ffu_area_cleanup(&mem);
 	return rc;
 }
 /* Flush all scheduled work from the MMC work queue.
@@ -659,7 +658,7 @@ int mmc_ffu_install(struct mmc_card *card)
 
 			if (!ffu_data_len) {
 				err = -EPERM;
-				goto free_ext_csd;
+				goto free_ext_csd;;
 			}
 
 			/* set device to FFU mode */

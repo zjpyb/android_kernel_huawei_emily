@@ -29,7 +29,6 @@
 #define PGCACHE_DUMP_HEAD_LINE		"[PGCACHE_LOG],"
 
 #ifdef CONFIG_HISI_PAGECACHE_DEBUG
-extern unsigned int ufs_dump;
 extern unsigned int pagecache_dump;
 extern struct fs_pagecache_info *pagecache_info;
 

@@ -19,6 +19,9 @@
 
 /* Maximum slave identifier */
 #define SPMI_MAX_SLAVE_ID		16
+#define HISI_SPMI_FN_MAIN_ID          0xc500eee0u
+#define SPMI_READ                     0x00
+#define SPMI_WRITE                    0x01
 
 /* SPMI Commands */
 enum spmi_commands {
@@ -42,6 +45,8 @@ struct spmi_device;
 struct spmi_controller {
 	struct device		dev;
 	unsigned int		nr;
+	bool 			always_sec;
+	spinlock_t		sec_lock;
 	struct completion	dev_released;
 	int		(*read_cmd)(struct spmi_controller *,
 				u8 opcode, u8 sid, u16 addr, u8 bc, u8 *buf);

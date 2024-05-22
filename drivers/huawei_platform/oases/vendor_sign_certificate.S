@@ -1,11 +1,8 @@
-#include <linux/export.h>
+	.section ".data","aw"
 
-#define GLOBAL(name)	\
-	.globl VMLINUX_SYMBOL(name);	\
-	VMLINUX_SYMBOL(name):
+	.global vendor_sign_certificate_list
+	.global vendor_sign_certificate_list_end
 
-	.section ".init.data","aw"
-
-GLOBAL(vendor_sign_certificate_list)
+vendor_sign_certificate_list:
 	.incbin "vendor_key.x509"
-GLOBAL(vendor_sign_certificate_list_end)
+vendor_sign_certificate_list_end:

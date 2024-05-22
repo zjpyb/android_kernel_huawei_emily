@@ -131,8 +131,10 @@ static int wl_cfgvendor_send_cmd_reply(struct wiphy *wiphy,
 		return -ENOMEM;
 	}
 
-	/* Push the data to the skb */
-	nla_put_nohdr(skb, len, data);
+    /* Push the data to the skb */
+    if(data){
+        nla_put_nohdr(skb, len, data);
+    }
 
 	return cfg80211_vendor_cmd_reply(skb);
 }
@@ -826,7 +828,7 @@ static int wl_cfgvendor_hotlist_cfg(struct wiphy *wiphy,
 			case GSCAN_ATTRIBUTE_HOTLIST_BSSID_COUNT:
 				if (nla_len(iter) != sizeof(uint32)) {
 					WL_DBG(("type:%d length:%d not matching.\n",
-						type, nla_len(inner)));
+						type, nla_len(iter)));
 					err = -EINVAL;
 					goto exit;
 				}
@@ -928,7 +930,7 @@ static int wl_cfgvendor_hotlist_cfg(struct wiphy *wiphy,
 #ifdef BCM_PATCH_2016_12_2017_01
 				if (nla_len(iter) != sizeof(uint8)) {
 					WL_DBG(("type:%d length:%d not matching.\n",
-						type, nla_len(inner)));
+						type, nla_len(iter)));
 					err = -EINVAL;
 					goto exit;
 				}
@@ -943,7 +945,7 @@ static int wl_cfgvendor_hotlist_cfg(struct wiphy *wiphy,
 #ifdef BCM_PATCH_2016_12_2017_01
 				if (nla_len(iter) != sizeof(uint32)) {
 					WL_DBG(("type:%d length:%d not matching.\n",
-						type, nla_len(inner)));
+						type, nla_len(iter)));
 					err = -EINVAL;
 					goto exit;
 				}
@@ -985,7 +987,7 @@ static int wl_cfgvendor_epno_cfg(struct wiphy *wiphy,
 	int err = 0;
 	struct bcm_cfg80211 *cfg = wiphy_priv(wiphy);
 	dhd_pno_ssid_t *ssid_elem;
-	int tmp, tmp1, tmp2, type, num = 0;
+	int tmp, tmp1, tmp2, type = 0, num = 0;
 	const struct nlattr *outer, *inner, *iter;
 	uint32 cnt_ssid = 0;
 	wl_pfn_ssid_params_t params;
@@ -1896,6 +1898,7 @@ static int wl_cfgvendor_set_ssid_whitelist(struct wiphy *wiphy,
 					err = -ENOMEM;
 					goto exit;
 				}
+				memset(ssid_whitelist, 0, mem_needed);
 				ssid_whitelist->ssid_count = num;
 				break;
 			case GSCAN_ATTRIBUTE_WL_SSID_FLUSH:
@@ -1921,9 +1924,10 @@ static int wl_cfgvendor_set_ssid_whitelist(struct wiphy *wiphy,
 							case GSCAN_ATTRIBUTE_WHITELIST_SSID:
 								memcpy(ssid_elem->SSID,
 									nla_data(iter2),
-									ssid_elem->SSID_len ?
+									((ssid_elem->SSID_len > 0) &&
+									(ssid_elem->SSID_len < DOT11_MAX_SSID_LEN)) ?
 									ssid_elem->SSID_len:
-									DOT11_MAX_SSID_LEN);
+									DOT11_MAX_SSID_LEN - 1);
 								break;
 							case GSCAN_ATTRIBUTE_WL_SSID_LEN:
 								ssid_elem->SSID_len = (uint8)
@@ -2121,6 +2125,7 @@ wl_cfgvendor_rtt_set_config(struct wiphy *wiphy, struct wireless_dev *wdev,
 	feature_set = dhd_dev_get_feature_set(bcmcfg_to_prmry_ndev(cfg));
 
 	WL_DBG(("In\n"));
+	memset(&rtt_param, 0, sizeof(rtt_param));
 	err = dhd_dev_rtt_register_noti_callback(wdev->netdev, wdev, wl_cfgvendor_rtt_evt);
 	if (err < 0) {
 		WL_ERR(("failed to register rtt_noti_callback\n"));
@@ -2132,7 +2137,6 @@ wl_cfgvendor_rtt_set_config(struct wiphy *wiphy, struct wireless_dev *wdev,
 		goto exit;
 	}
 
-	memset(&rtt_param, 0, sizeof(rtt_param));
 #ifdef BCM_PATCH_2016_12_2017_01
 	if (len <= 0) {
 		err = BCME_ERROR;
@@ -2292,7 +2296,9 @@ wl_cfgvendor_rtt_set_config(struct wiphy *wiphy, struct wireless_dev *wdev,
 	}
 exit:
 	/* free the target info list */
-	kfree(rtt_param.target_info);
+	if (NULL != rtt_param.target_info) {
+		kfree(rtt_param.target_info);
+	}
 #ifdef BCM_PATCH_2016_12_2017_01
 	rtt_param.target_info = NULL;
 #endif
@@ -2434,6 +2440,7 @@ exit:
 }
 
 #endif /* RTT_SUPPORT */
+#ifndef BCM_PATCH_CVE_2017_13292_13303
 static int wl_cfgvendor_priv_string_handler(struct wiphy *wiphy,
 	struct wireless_dev *wdev, const void  *data, int len)
 {
@@ -2463,6 +2470,7 @@ static int wl_cfgvendor_priv_string_handler(struct wiphy *wiphy,
 
 	return err;
 }
+#endif
 
 #ifdef LINKSTAT_SUPPORT
 #define NUM_RATE 32
@@ -2704,7 +2712,7 @@ static int wl_cfgvendor_dbg_get_mem_dump(struct wiphy *wiphy,
 	int buf_len = 0;
 	void __user *user_buf = NULL;
 	const struct nlattr *iter;
-	char *mem_buf;
+	char *mem_buf = NULL;
 	struct sk_buff *skb;
 	struct bcm_cfg80211 *cfg = wiphy_priv(wiphy);
 
@@ -2758,7 +2766,9 @@ static int wl_cfgvendor_dbg_get_mem_dump(struct wiphy *wiphy,
 	}
 
 free_mem:
-	vfree(mem_buf);
+	if (NULL != mem_buf) {
+		vfree(mem_buf);
+	}
 exit:
 	return ret;
 }
@@ -3212,6 +3222,7 @@ exit:
 
 
 static const struct wiphy_vendor_command wl_vendor_cmds [] = {
+#ifndef BCM_PATCH_CVE_2017_13292_13303
 	{
 		{
 			.vendor_id = OUI_BRCM,
@@ -3220,6 +3231,7 @@ static const struct wiphy_vendor_command wl_vendor_cmds [] = {
 		.flags = WIPHY_VENDOR_CMD_NEED_WDEV | WIPHY_VENDOR_CMD_NEED_NETDEV,
 		.doit = wl_cfgvendor_priv_string_handler
 	},
+#endif
 #ifdef GSCAN_SUPPORT
 	{
 		{

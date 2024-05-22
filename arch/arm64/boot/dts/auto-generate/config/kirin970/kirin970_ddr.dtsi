@@ -75,6 +75,11 @@
 			status = "ok";
 		};
 */
+		ddr_tracking {
+			compatible = "hisilicon,ddr_tracking";
+			reg = <0x0 0x8E1CE800 0x0 0x400>;
+			status = "disabled";
+		};
 		ddr: ddr@fffc0000 {
                        #address-cells = <2>;
                        #size-cells = <2>;

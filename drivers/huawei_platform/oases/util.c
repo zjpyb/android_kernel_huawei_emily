@@ -18,14 +18,34 @@
 #include <linux/version.h>
 #include <asm/uaccess.h>
 #include <asm/cacheflush.h>
-#include <asm/insn.h>
 #include <asm/stacktrace.h>
 #include <asm/irq.h>
+
+#ifdef __arm__
+#include <asm/mach/map.h>
+#include <asm/memory.h>
+#include <linux/io.h>
+#include <linux/vmalloc.h>
+/* for struct mem_type */
+#include <asm/tlb.h>
+#include "../../../arch/arm/mm/mm.h"
+#else
+#include <asm/insn.h>
+#endif
 
 #include "util.h"
 #include "patch_info.h"
 #include "patch_base.h"
 #include "plts.h"
+
+#if PAGE_SIZE != 4096
+#error "Only support PAGE_SIZE=4096"
+#endif
+
+/* MT_MEMORY changed to MT_MEMORY_RWX */
+#ifndef MT_MEMORY
+#define MT_MEMORY MT_MEMORY_RWX
+#endif
 
 int oases_is_null(const void *data, int size)
 {
@@ -71,25 +91,44 @@ int oases_valid_name(const char *id, int max_len)
 	return 0;
 }
 
+void oases_module_lock(void)
+{
+#ifdef CONFIG_MODULES
+	mutex_lock(&module_mutex);
+#endif
+}
+
+void oases_module_unlock(void)
+{
+#ifdef CONFIG_MODULES
+	mutex_unlock(&module_mutex);
+#endif
+}
+
 void *oases_ref_module(const char *name)
 {
 #if IS_ENABLED(CONFIG_MODULES)
 	struct module *mod;
 
-	mutex_lock(&module_mutex);
 	mod = find_module(name);
 	if (mod == NULL) {
-		goto fail;
+		return NULL;
 	}
 	if (!try_module_get(mod)) {
-		mod = NULL;
-		goto fail;
+		return NULL;
 	}
-fail:
-	mutex_unlock(&module_mutex);
 	return mod;
 #else
 	return NULL;
+#endif
+}
+
+int oases_ref_module_ptr(void *module)
+{
+#if IS_ENABLED(CONFIG_MODULES)
+	return try_module_get(module);
+#else
+	return 1;
 #endif
 }
 
@@ -147,6 +186,28 @@ static int remove_stack_verify(struct stackframe *frame, void *verify)
 	return 0;
 }
 
+/*
+ * This function's prototype of aarch64 version changed from [4.5,
+ * and msm/hisi backported it from [4.4, but not mtk. as for arm,
+ * nothing changed.
+ */
+static void oases_walk_stackframe(struct task_struct *t,
+	struct stackframe *frame, int (*remove_stack_verify)(struct stackframe *frame, void *verify),
+	struct oases_stack_verify_info *info)
+{
+#ifdef __arm__
+	walk_stackframe(frame, remove_stack_verify, info);
+#else
+#if ((LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0)) \
+		|| ((LINUX_VERSION_CODE < KERNEL_VERSION(4, 5, 0)) \
+				&& IS_ENABLED(CONFIG_MEDIATEK_SOLUTION)))
+	walk_stackframe(frame, remove_stack_verify, info);
+#else
+	walk_stackframe(t, frame, remove_stack_verify, info);
+#endif
+#endif
+}
+
 static int oases_remove_safe(void *verify)
 {
 	struct task_struct *g, *t;
@@ -184,11 +245,7 @@ static int oases_remove_safe(void *verify)
 		frame.fp = thread_saved_fp(t);
 		frame.sp = thread_saved_sp(t);
 		frame.pc = thread_saved_pc(t);
-#if LINUX_VERSION_CODE <= KERNEL_VERSION(4, 3, 255)
-		walk_stackframe(&frame, remove_stack_verify, info);
-#else
-		walk_stackframe(t, &frame, remove_stack_verify, info);
-#endif
+		oases_walk_stackframe(t, &frame, remove_stack_verify, info);
 		if (info->ret) {
 			oases_debug("find patch address in stack\n");
 			return -EBUSY;
@@ -214,10 +271,73 @@ int oases_remove_patch(struct oases_patch_info *info)
 	return ret;
 }
 
+/*
+ * bypass kernel memory write protection in this function.
+ */
+#ifdef CONFIG_HISI_HHEE
+static inline int oases_insn_patch_nosync(void* addr, u32 insn)
+#else
+static int oases_insn_patch_nosync(void* addr, u32 insn)
+#endif
+{
+#if defined(__aarch64__)
+	oases_debug("addr:0x%pK, insn:%x\n", addr, insn);
+#ifdef CONFIG_HISI_HHEE
+	if (is_hkip_enabled()) {
+		oases_debug("calling hkip patch text\n");
+		aarch64_insn_patch_text_hkip(addr, insn);
+		return 0;
+	}
+#endif
+	return aarch64_insn_patch_text_nosync(addr, insn);
+#else
+	int err;
+	unsigned long virt = ((unsigned long)addr) & PAGE_MASK;
+	unsigned long offset = ((unsigned long)addr) & (PAGE_SIZE - 1);
+	unsigned long phys;
+	const struct mem_type *mt;
+	struct vm_struct *vm;
+
+	oases_debug("addr:0x%pK, insn:%x\n", addr, insn);
+	/* align */
+	if (((unsigned long)addr) & ((1UL < 2) - 1))
+		return -EINVAL;
+	/* cross page */
+	if (offset > (PAGE_SIZE - sizeof(int)))
+		return -EINVAL;
+	mt = get_mem_type(MT_MEMORY);
+	if (mt == NULL)
+		return -EIO;
+	vm = get_vm_area(PAGE_SIZE, VM_IOREMAP);
+	if (vm == NULL)
+		return -ENOMEM;
+	if (core_kernel_text((unsigned long)addr)) {
+		phys = __virt_to_phys((unsigned long)virt);
+	} else {
+		phys = __pfn_to_phys(vmalloc_to_pfn((void *)virt));
+	}
+	oases_debug("virt %pK => phys %pK\n", (void *)virt, (void *)phys);
+	virt = (unsigned long) vm->addr;
+	err = ioremap_page_range(virt, virt + PAGE_SIZE, phys, __pgprot(mt->prot_pte));
+	oases_debug("phys %pK => virt %pK, %d\n", (void *)phys, (void *)virt, err);
+	if (err) {
+		vunmap((void *)virt);
+		return err;
+	}
+	flush_cache_vmap(virt, virt + PAGE_SIZE);
+	*((volatile u32 *)(virt + offset)) = insn;
+	flush_icache_range(virt + offset, virt + offset + sizeof(insn));
+	vunmap((void *)virt);
+	flush_icache_range((unsigned long)addr, (unsigned long)addr + sizeof(insn));
+	return 0;
+#endif
+}
+
 static int oases_unpatch_safe(void *info)
 {
 	struct oases_patch_info *patch = info;
 	struct oases_patch_addr *addr = &patch->addresses;
+	void (*disable)(void) = NULL;
 	int ret = 0, i;
 
 	for (i = 0; i < addr->i_key && !ret; i++) {
@@ -225,6 +345,10 @@ static int oases_unpatch_safe(void *info)
 	}
 	if (ret != 0)
 		oases_error("oases_insn_patch_nosync index:%d fail ret: %d\n", --i, ret);
+
+	disable = patch->cbs.disable;
+	if (disable)
+		disable();
 
 	return ret;
 }
@@ -251,7 +375,7 @@ static int oases_poke_plts(void *addrs[], u32 insns[], int count)
 			return ret;
 		}
 		flush_icache_range((unsigned long)addrs[i],
-						   (unsigned long)addrs[i] + sizeof(insns[i]));
+				(unsigned long)addrs[i] + sizeof(insns[i]));
 	}
 	return 0;
 }
@@ -261,6 +385,7 @@ static int oases_patch_safe(void *info)
 	int ret = 0, i;
 	struct oases_patch_info *patch = info;
 	struct oases_patch_addr *addr = &patch->addresses;
+	void (*enable)(void) = NULL;
 
 	ret = oases_poke_plts(addr->addrs_plt, addr->new_insns_plt, addr->i_plt);
 	if (ret) {
@@ -269,8 +394,12 @@ static int oases_patch_safe(void *info)
 	}
 	for (i = 0; i < addr->i_key && !ret; i++) {
 		ret = oases_insn_patch_nosync(addr->addrs_key[i],
-									  addr->new_insns_key[i]);
+					addr->new_insns_key[i]);
 	}
+
+	enable = patch->cbs.enable;
+	if (enable)
+		enable();
 
 	return ret;
 }
@@ -284,31 +413,3 @@ int oases_insn_patch(struct oases_patch_info *info)
 		oases_error("write insn text fail\n");
 	return ret;
 }
-
-#ifdef CONFIG_HISI_HHEE
-/*
-* bypass kernel memory write protection in this function.
-*/
-static inline int oases_insn_patch_nosync(void* addr, u32 insn)
-{
-	oases_debug("addr:0x%pK, insn:%x\n", addr, insn);
-	if (is_hkip_enabled()) {
-		oases_debug("calling hkip patch text\n");
-		aarch64_insn_patch_text_hkip(addr, insn);
-		return 0;
-	} else {
-		return aarch64_insn_patch_text_nosync(addr, insn);
-	}
-}
-#else
-
-/*
- * bypass kernel memory write protection in this function.
- */
-static int inline oases_insn_patch_nosync(void* addr, u32 insn)
-{
-	oases_debug("addr:0x%pK, insn:%x\n", addr, insn);
-	return aarch64_insn_patch_text_nosync(addr, insn);
-}
-
-#endif

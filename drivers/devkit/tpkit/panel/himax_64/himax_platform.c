@@ -25,9 +25,7 @@ int i2c_himax_nc_read(uint8_t command, uint8_t *data, uint16_t length, uint16_t 
 	uint16_t addr_length = 0;
 	uint8_t cmd_input[1] = {0};
 	struct ts_bus_info *bops = NULL;
-	
-	//TS_LOG_INFO("%s: enter\n",__func__);
-	
+
 	if(data == NULL) {
 		return retval;
 	}
@@ -54,7 +52,7 @@ int i2c_himax_nc_write(uint8_t command,uint8_t *data, uint16_t length, uint16_t 
 	int retval = HX_ERR;
 	uint8_t buf[HX_I2C_MAX_SIZE] = {0};
 	struct ts_bus_info *bops = NULL;
-	
+
 	if(data == NULL) {
 		return retval;
 	}
@@ -65,8 +63,8 @@ int i2c_himax_nc_write(uint8_t command,uint8_t *data, uint16_t length, uint16_t 
 	}
 	bops = g_himax_nc_ts_data->tskit_himax_data->ts_platform_data->bops;
 
-        buf[0] = command;
-        memcpy(buf+1, data, length);
+	buf[0] = command;
+	memcpy(buf+1, data, length);
 
 	retval = bops->bus_write(buf,length+1);
 
@@ -87,7 +85,7 @@ void himax_burst_enable(uint8_t auto_add_4_byte)
 		TS_LOG_ERR("%s: i2c access fail!\n", __func__);
 		return;
 	}
-	
+
 	tmp_data[0] = (DATA_AHB | auto_add_4_byte);
 	if ( i2c_himax_nc_write(ADDR_AHB ,tmp_data, ONE_BYTE_CMD, sizeof(tmp_data), DEFAULT_RETRY_CNT) < 0) {
 		TS_LOG_ERR("%s: i2c access fail!\n", __func__);
@@ -102,7 +100,7 @@ void himax_flash_write_burst(uint8_t * reg_byte, uint8_t * write_data)
 	uint8_t data_byte[8] = {0};
 
 	for (i = 0; i < FOUR_BYTE_CMD; i++)
-	{ 
+	{
 		data_byte[i] = reg_byte[i];
 	}
 	for (j = 4; j < 2 * FOUR_BYTE_CMD; j++)
@@ -143,7 +141,7 @@ void himax_nc_register_read(uint8_t *read_addr, int read_length, uint8_t *read_d
 	int i = 0;
 	int address = 0;
 	uint8_t tmp_data[4] = {0};
-	
+
 	if(read_length > MAX_READ_LENTH)
 	{
 		TS_LOG_ERR("%s: read len over 256!\n", __func__);
@@ -202,18 +200,18 @@ void himax_register_write(uint8_t *write_addr, int write_length, uint8_t *write_
 int himax_nc_write_read_reg(uint8_t *tmp_addr,uint8_t *tmp_data,uint8_t hb,uint8_t lb)
 {
 	int cnt = 0;
-	
+
 	do{
 		himax_flash_write_burst(tmp_addr, tmp_data);
-		msleep(10);
+		msleep(HX_SLEEP_10MS);
 		himax_nc_register_read(tmp_addr, FOUR_BYTE_CMD, tmp_data);
 
 	}while((tmp_data[1] != hb && tmp_data[0] != lb) && cnt++ < 100);
-	
+
 	if(cnt == 99)
 		return -1;
-	
-	TS_LOG_INFO("Now register 0x%08X : high byte=0x%02X,low byte=0x%02X\n",tmp_addr[3],tmp_data[1],tmp_data[0]);
+
+	TS_LOG_DEBUG("Now register 0x%08X : high byte=0x%02X,low byte=0x%02X\n",tmp_addr[3],tmp_data[1],tmp_data[0]);
 	return NO_ERR;
 }
 

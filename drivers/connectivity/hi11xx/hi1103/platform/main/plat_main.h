@@ -68,8 +68,8 @@ extern "C" {
   10 º¯ÊýÉùÃ÷
 *****************************************************************************/
 
-extern oal_int32  plat_init(oal_void);
-extern oal_void plat_exit(oal_void);
+extern oal_int32  plat_init_etc(oal_void);
+extern oal_void plat_exit_etc(oal_void);
 
 
 

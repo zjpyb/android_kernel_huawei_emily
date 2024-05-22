@@ -36,8 +36,10 @@
 #include <media/v4l2-subdev.h>
 #include "hwois.h"
 
-//lint -save -e429
+//lint -save -e429 -e563
 #define SD2Ois(sd) container_of(sd, hw_ois_t, subdev)
+extern int strncpy_s(char *strDest, size_t destMax, const char *strSrc, size_t count);
+extern int snprintf_s(char* strDest, size_t destMax, size_t count, const char* format, ...);
 
 int hw_ois_get_dt_data(struct platform_device *pdev, ois_t *ois)
 {
@@ -103,7 +105,7 @@ int hw_ois_config(hw_ois_t *hw_ois, void *arg)
 		rc = hw_ois->intf->vtbl->ois_i2c_write(hw_ois->intf, arg);
 		break;
 	case CFG_OIS_GET_OIS_NAME:
-		strncpy(cdata->cfg.name, hw_ois->ois_info->ois_name,
+		strncpy_s(cdata->cfg.name, sizeof(cdata->cfg.name) - 1, hw_ois->ois_info->ois_name,
 			sizeof(cdata->cfg.name) - 1);
 		break;
 	case CFG_OIS_GET_SUPPORT_FLAG:
@@ -208,17 +210,13 @@ int hw_ois_register(struct platform_device *pdev,
 
 	v4l2_subdev_init(subdev, &s_subdev_ops_hw_ois);
 	subdev->internal_ops = &s_subdev_internal_ops_hw_ois;
-	snprintf(subdev->name, sizeof(subdev->name),
+	snprintf_s(subdev->name, sizeof(subdev->name),sizeof(subdev->name)-1,
 			"%s", hw_ois_info->ois_name);
 	subdev->flags |= V4L2_SUBDEV_FL_HAS_DEVNODE;
 	v4l2_set_subdevdata(subdev, pdev);
 
-	media_entity_init(&subdev->entity, 0, NULL, 0);
-	subdev->entity.type = MEDIA_ENT_T_V4L2_SUBDEV;
-	subdev->entity.group_id = HWCAM_SUBDEV_OIS;
-	subdev->entity.name = subdev->name;
-
-	hwcam_cfgdev_register_subdev(subdev);
+	init_subdev_media_entity(subdev,HWCAM_SUBDEV_OIS);
+	hwcam_cfgdev_register_subdev(subdev,HWCAM_SUBDEV_OIS);
 	hw_ois->intf = intf;
 	hw_ois->ois_info = hw_ois_info;
 	hw_ois->pdev = pdev;

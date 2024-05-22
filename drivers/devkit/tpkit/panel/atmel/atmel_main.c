@@ -2394,6 +2394,13 @@ static int atmel_parse_dts(struct device_node *device, struct ts_kit_device_data
 		error = -EINVAL;
 		goto err;
 	}
+	error =of_property_read_u32(device, "noise_debug_enable",&data->noise_debug_enable);
+	if (error) {
+		data->noise_debug_enable = 0;//not support noise debug
+		TS_LOG_ERR("Not support noise debug\n");
+	}
+	TS_LOG_INFO("noise_debug_enbale = %d.\n",data->noise_debug_enable);
+
 	error =of_property_read_u32(device, "support_get_tp_color",&data->support_get_tp_color);
 	if (error) {
 		data->support_get_tp_color = 0;//not support get tp color
@@ -3058,6 +3065,12 @@ static void mxt_proc_t100_message(struct mxt_data *data, u8 *message)
 	    (MXT_T100_TCHAUX_VECT, &data->tchcfg[MXT_T100_TCHAUX]))
 		cache->fingers[id].orientation = info.vec;
 
+	if(data->noise_debug_enable){
+		if (test_flag_8bit
+			(MXT_T100_TCHAUX_PEAK, &data->tchcfg[MXT_T100_TCHAUX]))
+			cache->fingers[id].pressure = info.peak;
+	}
+
 	TS_LOG_DEBUG
 	    ("finger[%u] status:%02X, x:%u, y:%u, pressure:%u, cur_finger_number:%u\n",
 	     id, cache->fingers[id].status, cache->fingers[id].x,
@@ -3154,6 +3167,17 @@ static void mxt_proc_t70_messages(struct mxt_data *data, u8 *msg)
 		     msg[0], msg[1]);
 	TS_LOG_DEBUG("T70 min report id= %d, data->hsyncstatus = %d\n",
 		     data->T70_reportid_min, data->hsyncstatus);
+
+	if(data->noise_debug_enable){
+		if ((data->T70_reportid_min + 1) == msg[0]) {  //T70 report ID 1 is for moisture mode reporting
+			if(msg[1] == 0x01){  //going to moisture mode
+				TS_LOG_INFO("mXT moisture mode\n");
+			}
+			else if(msg[1] == 0x03){ //return to normal mode
+				TS_LOG_INFO("mXT non-moisture mode\n");
+			}
+		}
+	}
 }
 
 static void increase_sta_cnt(u32 *pnum)
@@ -3191,6 +3215,27 @@ static void mxt_proc_t72_messages(struct mxt_data *data, u8 *msg)
 	struct feature_info *feature = &mxt_feature_list[MAX_GLOVE_CONF];
 
 	TS_LOG_DEBUG("T72 noise state1 = 0x%x state2 = 0x%x\n", msg[1], msg[2]);
+
+	if(data->noise_debug_enable){
+		if (msg[1] & MXT_T72_NOISE_SUPPRESSION_STATECHG) {
+			if ((msg[2] & MXT_T72_NOISE_SUPPRESSION_STATUS2STATE_MASK) ==
+			MXT_T72_NOISE_SUPPRESSION_VNOIS)
+			{
+				TS_LOG_INFO("mXT in Very Noise mode!\n");
+			}
+			else if ((msg[2] & MXT_T72_NOISE_SUPPRESSION_STATUS2STATE_MASK) ==
+			MXT_T72_NOISE_SUPPRESSION_NOIS)
+			{
+				TS_LOG_INFO("mXT in Noise mode!\n");
+			}
+			else if ((msg[2] & MXT_T72_NOISE_SUPPRESSION_STATUS2STATE_MASK) ==
+			MXT_T72_NOISE_SUPPRESSION_STAB)
+			{
+			TS_LOG_INFO("mXT in Stable mode!\n");
+			}
+			return;
+		}
+	}
 
 	if (msg[1] & MXT_T72_NOISE_SUPPRESSION_STATECHG) {
 		mxt_status_count(msg);

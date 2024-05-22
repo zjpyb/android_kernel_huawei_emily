@@ -177,7 +177,7 @@ int ts_kit_parse_csvfile(char *file_path, char *target_name, int32_t  *data, int
 		}
 	}
 	else {
-		TS_LOG_ERR("%s: ret=%d,read_ret=%d, buf=%p, stat.size=%lld\n", __func__, ret, read_ret, buf, stat.size);
+		TS_LOG_ERR("%s: ret=%d,read_ret=%d, buf=%pk, stat.size=%lld\n", __func__, ret, read_ret, buf, stat.size);
 		ret = -ENXIO;
 		goto exit_free;
 	}

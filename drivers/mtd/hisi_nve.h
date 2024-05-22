@@ -26,7 +26,7 @@
 #define NVE_BLOCK_SIZE	512
 #define NVE_NV_DATA_SIZE	104
 /* #define NV_DEVICE_NAME          "/dev/block/mmcblk0p7" */
-#define NV_DEVICE_NAME "/dev/block/bootdevice/by-name/nvme"
+#define NV_DEVICE_NAME "/dev/block/by-name/nvme"
 
 #define NV_INFO_LEN 1024
 /*

@@ -46,7 +46,7 @@ typedef struct
   2 全局变量定义
 *****************************************************************************/
 #if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
-void __iomem *g_l2cache_base;
+void __iomem *g_l2cache_base_etc;
 #endif
 
 #if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION) && defined(CONFIG_STACKTRACE) && (_PRE_PRODUCT_ID_HI1151 == _PRE_PRODUCT_ID) && (LINUX_VERSION_CODE >= KERNEL_VERSION(3,0,0))
@@ -126,7 +126,7 @@ DEFINE_GET_BUILD_VERSION_FUNC(oal);
 /*lint -restore*/
 
 
-oal_int32  ATTR_OAL_NO_FUNC_TRACE oal_main_init(oal_void)
+oal_int32  ATTR_OAL_NO_FUNC_TRACE oal_main_init_etc(oal_void)
 {
     oal_uint32  ul_rslt;
 
@@ -143,13 +143,13 @@ oal_int32  ATTR_OAL_NO_FUNC_TRACE oal_main_init(oal_void)
         return -OAL_EFAIL;
     }
 #endif
-  
+
 #ifdef _PRE_MEM_TRACE
     mem_trace_init();
 #endif
 
 #ifdef _PRE_CONFIG_CONN_HISI_SYSFS_SUPPORT
-    if(NULL == oal_conn_sysfs_root_obj_init())
+    if(NULL == oal_conn_sysfs_root_obj_init_etc())
     {
         OAL_IO_PRINT("hisi root sysfs init failed\n");
     }
@@ -161,11 +161,10 @@ oal_int32  ATTR_OAL_NO_FUNC_TRACE oal_main_init(oal_void)
     /*110X 驱动build in，内存池初始化上移到内核完成，保证大片内存申请成功*/
 #else
     /* 内存池初始化 */
-    ul_rslt = oal_mem_init_pool();
+    ul_rslt = oal_mem_init_pool_etc();
     if (ul_rslt != OAL_SUCC)
     {
-        OAL_IO_PRINT("oal_main_init: oal_mem_init_pool return error code: %d", ul_rslt);
-        OAL_BUG_ON(1);
+        OAL_IO_PRINT("oal_main_init_etc: oal_mem_init_pool_etc return error code: %d", ul_rslt);
         return -OAL_EFAIL;//lint !e527
     }
 #endif
@@ -176,28 +175,25 @@ oal_int32  ATTR_OAL_NO_FUNC_TRACE oal_main_init(oal_void)
     if (OAL_SUCC != ul_rslt)
     {
         /* 内存池卸载 */
-        oal_mem_exit();
-        OAL_BUG_ON(1);
+        oal_mem_exit_etc();
         return -OAL_EFAIL;//lint !e527
     }
 
     ul_rslt = oal_5115_pci_init();
     if (OAL_SUCC != ul_rslt)
     {
-        OAL_IO_PRINT("oal_main_init: oal_5115_pci_init return error code: %d", ul_rslt);
-        OAL_BUG_ON(1);
+        OAL_IO_PRINT("oal_main_init_etc: oal_5115_pci_init return error code: %d", ul_rslt);
         return -OAL_EFAIL;//lint !e527
     }
 #elif ((defined(_PRE_PRODUCT_ID_HI110X_HOST))||(defined(_PRE_PRODUCT_ID_HI110X_DEV)))
     /* Hi1102 SDIO总线初始化接口 TBD */
 
     /* 初始化: 总线上的chip数量增加1 */
-    oal_bus_init_chip_num();
-    ul_rslt = oal_bus_inc_chip_num();
+    oal_bus_init_chip_num_etc();
+    ul_rslt = oal_bus_inc_chip_num_etc();
     if(OAL_SUCC != ul_rslt)
     {
-         OAL_IO_PRINT("oal_pci_probe: oal_bus_inc_chip_num failed!\n");
-         OAL_BUG_ON(1);
+         OAL_IO_PRINT("oal_pci_probe: oal_bus_inc_chip_num_etc failed!\n");
          return -OAL_EIO;
     }
 #endif
@@ -212,27 +208,27 @@ oal_int32  ATTR_OAL_NO_FUNC_TRACE oal_main_init(oal_void)
     /* HCC初始化 */
     if (OAL_UNLIKELY(OAL_SUCC !=hcc_dev_init()))
     {
-        OAL_IO_PRINT("[ERROR]hcc_module_init return err null\n");
+        OAL_IO_PRINT("[ERROR]hcc_module_init_etc return err null\n");
         return -OAL_EFAIL;
     }
 #if defined(_PRE_PLAT_FEATURE_HI110X_PCIE) && defined(CONFIG_ARCH_SD56XX)
     /*5610 udp pcie chip test*/
-    hcc_enable(hcc_get_110x_handler(), OAL_FALSE);
+    hcc_enable_etc(hcc_get_110x_handler(), OAL_FALSE);
 #endif
 #endif
 
 #ifdef _PRE_CONFIG_HISI_CONN_SOFTWDFT
-    if(OAL_UNLIKELY(OAL_SUCC != oal_softwdt_init()))
+    if(OAL_UNLIKELY(OAL_SUCC != oal_softwdt_init_etc()))
     {
-        OAL_IO_PRINT("oal_softwdt_init init failed!\n");
+        OAL_IO_PRINT("oal_softwdt_init_etc init failed!\n");
         return -OAL_EFAIL;
     }
 #endif
 
 #ifdef _PRE_OAL_FEATURE_KEY_PROCESS_TRACE
-    if(OAL_UNLIKELY(OAL_SUCC != oal_dft_init()))
+    if(OAL_UNLIKELY(OAL_SUCC != oal_dft_init_etc()))
     {
-        OAL_IO_PRINT("oal_dft_init init failed!\n");
+        OAL_IO_PRINT("oal_dft_init_etc init failed!\n");
         return -OAL_EFAIL;
     }
 #endif
@@ -251,14 +247,14 @@ oal_int32  ATTR_OAL_NO_FUNC_TRACE oal_main_init(oal_void)
 }
 
 
-oal_void  ATTR_OAL_NO_FUNC_TRACE oal_main_exit(oal_void)
+oal_void  ATTR_OAL_NO_FUNC_TRACE oal_main_exit_etc(oal_void)
 {
 #ifdef _PRE_OAL_FEATURE_KEY_PROCESS_TRACE
-    oal_dft_exit();
+    oal_dft_exit_etc();
 #endif
 
 #ifdef _PRE_CONFIG_HISI_CONN_SOFTWDFT
-    oal_softwdt_exit();
+    oal_softwdt_exit_etc();
 #endif
 
 #if (_PRE_PRODUCT_ID_HI1151 == _PRE_PRODUCT_ID)
@@ -272,19 +268,19 @@ oal_void  ATTR_OAL_NO_FUNC_TRACE oal_main_exit(oal_void)
     /* Hi1102 SDIO总线exit接口(不下电) TBD */
 
     /* chip num初始化:0 */
-    oal_bus_init_chip_num();
+    oal_bus_init_chip_num_etc();
 #endif
 
 #if defined(_PRE_PRODUCT_ID_HI110X_HOST) && !defined(CONFIG_HI110X_KERNEL_MODULES_BUILD_SUPPORT) && defined(_PRE_CONFIG_CONN_HISI_SYSFS_SUPPORT)
     /*110X 驱动build in，内存池初始化上移到内核完成，保证大片内存申请成功*/
 #else
     /* 内存池卸载 */
-    oal_mem_exit();
+    oal_mem_exit_etc();
 #endif
 
 #ifdef _PRE_CONFIG_CONN_HISI_SYSFS_SUPPORT
-    oal_conn_sysfs_root_boot_obj_exit();
-    oal_conn_sysfs_root_obj_exit();
+    oal_conn_sysfs_root_boot_obj_exit_etc();
+    oal_conn_sysfs_root_obj_exit_etc();
 #endif
     oal_workqueue_exit();
 
@@ -313,7 +309,7 @@ void ATTR_OAL_NO_FUNC_TRACE __cyg_profile_func_exit(void *this_func, void *call_
 }
 #endif
 
-oal_uint32  oal_chip_get_version(oal_void)
+oal_uint32  oal_chip_get_version_etc(oal_void)
 {
     oal_uint32 ul_chip_ver = 0;
 
@@ -361,7 +357,7 @@ OAL_STATIC oal_uint8  oal_device_check_enable_num(oal_void)
 }
 
 
-oal_uint8 oal_chip_get_device_num(oal_uint32   ul_chip_ver)
+oal_uint8 oal_chip_get_device_num_etc(oal_uint32   ul_chip_ver)
 {
     oal_uint8   uc_device_nums = 0;
 
@@ -385,41 +381,41 @@ oal_uint8 oal_board_get_service_vap_start_id(oal_void)
     oal_uint8   uc_device_num_per_chip = oal_device_check_enable_num();
 
     /* 配置vap个数 = mac device个数,vap idx分配先配置vap,后业务vap */
-    return (WLAN_CHIP_MAX_NUM_PER_BOARD * uc_device_num_per_chip);
+    return (oal_uint8)(WLAN_CHIP_MAX_NUM_PER_BOARD * uc_device_num_per_chip);
 }
 
 #if defined(_PRE_PRODUCT_ID_HI110X_HOST)
 #ifndef WIN32
-oal_void hi_wlan_power_off(void)
+oal_void hi_wlan_power_off_etc(void)
 {
 #ifdef CONFIG_ARCH_SD56XX
 #else
-    hi_wlan_power_set(0);
+    hi_wlan_power_set_etc(0);
 #endif
 }
 
-oal_void save_nfc_lowpower_log(oal_void)
+oal_void save_nfc_lowpower_log_etc(oal_void)
 {
     /*读取nfc低电log数据,然后下电*/
-    save_nfc_lowpower_log_2_sdt();
-    hi_wlan_power_off();
+    save_nfc_lowpower_log_2_sdt_etc();
+    hi_wlan_power_off_etc();
 }
 #endif
 #endif
 
 /*lint -e578*//*lint -e19*/
 #if (_PRE_PRODUCT_ID_HI1151 ==_PRE_PRODUCT_ID)
-oal_module_init(oal_main_init);
-oal_module_exit(oal_main_exit);
+oal_module_init(oal_main_init_etc);
+oal_module_exit(oal_main_exit_etc);
 
 #endif
 oal_module_symbol(oal_dump_stack_str);
-oal_module_symbol(oal_chip_get_version);
-oal_module_symbol(oal_chip_get_device_num);
+oal_module_symbol(oal_chip_get_version_etc);
+oal_module_symbol(oal_chip_get_device_num_etc);
 oal_module_symbol(oal_board_get_service_vap_start_id);
-oal_module_symbol(oal_main_init);
-oal_module_symbol(oal_main_exit);
-oal_module_symbol(g_l2cache_base);
+oal_module_symbol(oal_main_init_etc);
+oal_module_symbol(oal_main_exit_etc);
+oal_module_symbol(g_l2cache_base_etc);
 oal_module_symbol(g_auc_wlan_service_device_per_chip);
 oal_module_license("GPL");
 

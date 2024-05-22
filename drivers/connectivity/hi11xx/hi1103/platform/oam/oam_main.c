@@ -25,37 +25,38 @@ extern "C" {
 #if defined(_PRE_PRODUCT_ID_HI110X_HOST)
 #include "oal_hcc_host_if.h"
 #endif
+#include "plat_pm_wlan.h"
 
 /*****************************************************************************
   2 全局变量定义
 *****************************************************************************/
 /* OAM模块统一使用的全局操作变量上下文，包括OAM其他子模块全局上下文 */
-oam_mng_ctx_stru    g_st_oam_mng_ctx;
+oam_mng_ctx_stru    g_st_oam_mng_ctx_etc;
 
 /* 打印类型函数定义 */
 OAL_STATIC oal_print_func g_pa_oam_print_type_func[OAM_OUTPUT_TYPE_BUTT]=
 {
-    oam_print_to_console,   /* OAM_OUTPUT_TYPE_CONSOLE 控制台输出 */
-    oam_print_to_file,      /* OAM_OUTPUT_TYPE_FS 写到文件系统 */
-    oam_print_to_sdt,       /* OAM_OUTPUT_TYPE_SDT 输出到SDT,上报字符串不宜大于2048 */
+    oam_print_to_console_etc,   /* OAM_OUTPUT_TYPE_CONSOLE 控制台输出 */
+    oam_print_to_file_etc,      /* OAM_OUTPUT_TYPE_FS 写到文件系统 */
+    oam_print_to_sdt_etc,       /* OAM_OUTPUT_TYPE_SDT 输出到SDT,上报字符串不宜大于2048 */
 };
 
 /* 用于和SDT工具交互的全局变量 */
-oam_sdt_func_hook_stru          g_st_oam_sdt_func_hook;
-oam_wal_func_hook_stru          g_st_oam_wal_func_hook;
-oam_sdt_stat_info_stru          g_st_sdt_stat_info;
+oam_sdt_func_hook_stru          g_st_oam_sdt_func_hook_etc;
+oam_wal_func_hook_stru          g_st_oam_wal_func_hook_etc;
+oam_sdt_stat_info_stru          g_st_sdt_stat_info_etc;
 
-oal_uint8 g_auc_bcast_addr[WLAN_MAC_ADDR_LEN] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+oal_uint8 g_auc_bcast_addr_etc[WLAN_MAC_ADDR_LEN] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 
 #ifdef _PRE_DEBUG_MODE  /* 调试特性默认开关状态 */
-oal_uint32          g_aul_debug_feature_switch[OAM_DEBUG_TYPE_BUTT] =
+oal_uint32          g_aul_debug_feature_switch_etc[OAM_DEBUG_TYPE_BUTT] =
 {
     OAL_SWITCH_OFF,   /* OAM_DEBUG_TYPE_ECHO_REG */
 };
 #endif
 
 /* 特性列表 */
-oam_software_feature_stru   gst_oam_feature_list[OAM_SOFTWARE_FEATURE_BUTT] =
+oam_software_feature_stru   gst_oam_feature_list_etc[OAM_SOFTWARE_FEATURE_BUTT] =
 {
     /*特性宏ID                  特性名缩写*/
     /* 0 */
@@ -190,12 +191,12 @@ oam_software_feature_stru   gst_oam_feature_list[OAM_SOFTWARE_FEATURE_BUTT] =
   3 函数实现
 *****************************************************************************/
 
-oal_uint32  oam_print(oal_int8 *pc_string)
+oal_uint32  oam_print_etc(oal_int8 *pc_string)
 {
     oam_output_type_enum_uint8 en_output_type;
     oal_uint32                 ul_rslt;
 
-    ul_rslt = oam_get_output_type(&en_output_type);
+    ul_rslt = oam_get_output_type_etc(&en_output_type);
     if (OAL_SUCC != ul_rslt)
     {
         return ul_rslt;
@@ -211,7 +212,7 @@ oal_uint32  oam_print(oal_int8 *pc_string)
 }
 
 
-oal_uint32 oam_print_to_console(oal_int8 *pc_string)
+oal_uint32 oam_print_to_console_etc(oal_int8 *pc_string)
 {
     if (OAL_UNLIKELY(OAL_PTR_NULL == pc_string))
     {
@@ -224,7 +225,7 @@ oal_uint32 oam_print_to_console(oal_int8 *pc_string)
 }
 
 
-oal_uint32   oam_print_to_file(oal_int8 *pc_string)
+oal_uint32   oam_print_to_file_etc(oal_int8 *pc_string)
 {
 #ifdef _PRE_WIFI_DMT
 
@@ -238,7 +239,7 @@ oal_uint32   oam_print_to_file(oal_int8 *pc_string)
         return OAL_ERR_CODE_PTR_NULL;
     }
 
-    f_event_file = oal_file_open_append(g_st_oam_mng_ctx.ac_file_path);
+    f_event_file = oal_file_open_append(g_st_oam_mng_ctx_etc.ac_file_path);
     if (OAL_UNLIKELY(OAL_FILE_FAIL == f_event_file))
     {
         OAM_IO_PRINTK("open file failed. \r\n");
@@ -271,7 +272,7 @@ oal_uint32   oam_print_to_file(oal_int8 *pc_string)
 }
 
 
-oal_uint32 oam_print_to_sdt(oal_int8 *pc_string)
+oal_uint32 oam_print_to_sdt_etc(oal_int8 *pc_string)
 {
     oal_netbuf_stru                *pst_skb;
     oal_uint32                      ul_ret       = OAL_SUCC;
@@ -282,7 +283,7 @@ oal_uint32 oam_print_to_sdt(oal_int8 *pc_string)
         return OAL_ERR_CODE_PTR_NULL;
     }
 
-    if (OAL_UNLIKELY(OAL_PTR_NULL == g_st_oam_sdt_func_hook.p_sdt_report_data_func))
+    if (OAL_UNLIKELY(OAL_PTR_NULL == g_st_oam_sdt_func_hook_etc.p_sdt_report_data_func))
     {
         return OAL_ERR_CODE_PTR_NULL;
     }
@@ -292,7 +293,7 @@ oal_uint32 oam_print_to_sdt(oal_int8 *pc_string)
 
     us_strlen = (us_strlen > OAM_REPORT_MAX_STRING_LEN) ? OAM_REPORT_MAX_STRING_LEN : us_strlen;
 
-    pst_skb = oam_alloc_data2sdt(us_strlen);
+    pst_skb = oam_alloc_data2sdt_etc(us_strlen);
     if (OAL_PTR_NULL == pst_skb)
     {
         return OAL_ERR_CODE_PTR_NULL;
@@ -303,29 +304,29 @@ oal_uint32 oam_print_to_sdt(oal_int8 *pc_string)
     oal_memcopy(oal_netbuf_data(pst_skb), pc_string, (oal_uint32)us_strlen);
 
     /* 下发至sdt接收队列，若队列满则串口输出 */
-    ul_ret = oam_report_data2sdt(pst_skb, OAM_DATA_TYPE_STRING, OAM_PRIMID_TYPE_OUTPUT_CONTENT);
+    ul_ret = oam_report_data2sdt_etc(pst_skb, OAM_DATA_TYPE_STRING, OAM_PRIMID_TYPE_OUTPUT_CONTENT);
 
     return ul_ret;
 }
 
 
-oal_uint32 oam_upload_log_to_sdt(oal_int8 *pc_string)
+oal_uint32 oam_upload_log_to_sdt_etc(oal_int8 *pc_string)
 {
     oal_netbuf_stru        *pst_skb;
     oal_uint32              ul_ret      = OAL_SUCC;
 
-    if (OAL_UNLIKELY(OAL_PTR_NULL == g_st_oam_sdt_func_hook.p_sdt_report_data_func))
+    if (OAL_UNLIKELY(OAL_PTR_NULL == g_st_oam_sdt_func_hook_etc.p_sdt_report_data_func))
     {
         return OAL_ERR_CODE_PTR_NULL;
     }
 
     if (OAL_PTR_NULL == pc_string)
     {
-        OAL_IO_PRINT("oam_upload_log_to_sdt::pc_string is null!\n");
+        OAL_IO_PRINT("oam_upload_log_to_sdt_etc::pc_string is null!\n");
         return OAL_ERR_CODE_PTR_NULL;
     }
 
-    pst_skb = oam_alloc_data2sdt(OAL_SIZEOF(oam_log_info_stru));
+    pst_skb = oam_alloc_data2sdt_etc(OAL_SIZEOF(oam_log_info_stru));
     if (OAL_PTR_NULL == pst_skb)
     {
         return OAL_ERR_CODE_PTR_NULL;
@@ -335,23 +336,23 @@ oal_uint32 oam_upload_log_to_sdt(oal_int8 *pc_string)
     oal_memcopy(oal_netbuf_data(pst_skb), pc_string, OAL_SIZEOF(oam_log_info_stru));
 
     /* 下发至sdt接收队列，若队列满则串口输出 */
-    ul_ret = oam_report_data2sdt(pst_skb, OAM_DATA_TYPE_LOG, OAM_PRIMID_TYPE_OUTPUT_CONTENT);
+    ul_ret = oam_report_data2sdt_etc(pst_skb, OAM_DATA_TYPE_LOG, OAM_PRIMID_TYPE_OUTPUT_CONTENT);
 
     return ul_ret;
 }
 
-oal_uint32 oam_upload_device_log_to_sdt(oal_uint8 *pc_string, oal_uint16 len)
+oal_uint32 oam_upload_device_log_to_sdt_etc(oal_uint8 *pc_string, oal_uint16 len)
 {
     oal_netbuf_stru        *pst_skb;
     oal_uint32              ul_ret      = OAL_SUCC;
 
     if (OAL_PTR_NULL == pc_string)
     {
-        OAL_IO_PRINT("oam_upload_log_to_sdt::pc_string is null!\n");
+        OAL_IO_PRINT("oam_upload_log_to_sdt_etc::pc_string is null!\n");
         return OAL_ERR_CODE_PTR_NULL;
     }
 
-    pst_skb = oam_alloc_data2sdt(len);
+    pst_skb = oam_alloc_data2sdt_etc(len);
     if (OAL_PTR_NULL == pst_skb)
     {
         OAL_IO_PRINT("alloc netbuf stru failed!\n");
@@ -362,13 +363,13 @@ oal_uint32 oam_upload_device_log_to_sdt(oal_uint8 *pc_string, oal_uint16 len)
     oal_memcopy(oal_netbuf_data(pst_skb), pc_string, len);
 
     /* 下发至sdt接收队列，若队列满则串口输出 */
-    ul_ret = oam_report_data2sdt(pst_skb, OAM_DATA_TYPE_DEVICE_LOG, OAM_PRIMID_TYPE_OUTPUT_CONTENT);
+    ul_ret = oam_report_data2sdt_etc(pst_skb, OAM_DATA_TYPE_DEVICE_LOG, OAM_PRIMID_TYPE_OUTPUT_CONTENT);
 
     return ul_ret;
 }
 
 
-oal_uint32 oam_send_device_data2sdt(oal_uint8* pc_string, oal_uint16 len)
+oal_uint32 oam_send_device_data2sdt_etc(oal_uint8* pc_string, oal_uint16 len)
 {
     oal_uint32 ul_ret = OAL_SUCC;
     if (NULL == pc_string)
@@ -376,46 +377,64 @@ oal_uint32 oam_send_device_data2sdt(oal_uint8* pc_string, oal_uint16 len)
         return OAL_EFAIL;
     }
 
-    ul_ret = oam_upload_device_log_to_sdt(pc_string, len);
+    ul_ret = oam_upload_device_log_to_sdt_etc(pc_string, len);
 
     return ul_ret;
 }
 
 #if defined(_PRE_PRODUCT_ID_HI110X_HOST)
-oal_int32 oam_rx_post_action_function(struct hcc_handler * hcc, oal_uint8 stype,
+oal_int32 oam_rx_post_action_function_etc(struct hcc_handler * hcc, oal_uint8 stype,
                                              hcc_netbuf_stru* pst_hcc_netbuf, oal_uint8 *pst_context)
 {
     oal_uint8   *puc_data;
     OAL_REFERENCE(pst_context);
     OAL_REFERENCE(hcc);
-    OAL_BUG_ON(NULL == pst_hcc_netbuf);
+
+    if(OAL_WARN_ON(NULL == pst_hcc_netbuf))
+    {
+         oal_print_hi11xx_log(HI11XX_LOG_ERR,"%s error: pst_hcc_netbuf is null",__FUNCTION__);
+         return OAL_FAIL;
+    };
 
     puc_data = oal_netbuf_data(pst_hcc_netbuf->pst_netbuf);
     if((DUMP_REG == stype) || (DUMP_MEM == stype))
     {
        //AL_IO_PRINT("receive dump msg  = %d\n", stype);
-        exception_bcpu_dump_recv(puc_data,pst_hcc_netbuf->pst_netbuf);
+        exception_bcpu_dump_recv_etc(puc_data,pst_hcc_netbuf->pst_netbuf);
         oal_netbuf_free(pst_hcc_netbuf->pst_netbuf);
         return OAL_SUCC;
     }
 
     /* 调用OAM接口*/
-    oam_send_device_data2sdt(puc_data, (oal_uint16)pst_hcc_netbuf->len);
+    oam_send_device_data2sdt_etc(puc_data, (oal_uint16)pst_hcc_netbuf->len);
 
     oal_netbuf_free(pst_hcc_netbuf->pst_netbuf);
     return OAL_SUCC;
 }
-oal_int32 chr_rx_post_action_function(struct hcc_handler * hcc, oal_uint8 stype,
+oal_int32 chr_rx_post_action_function_etc(struct hcc_handler * hcc, oal_uint8 stype,
                                              hcc_netbuf_stru* pst_hcc_netbuf, oal_uint8 *pst_context)
 {
     oal_uint8 *puc_data;
     OAL_REFERENCE(pst_context);
     OAL_REFERENCE(hcc);
-    OAL_BUG_ON(NULL == pst_hcc_netbuf);
+
+    if(OAL_WARN_ON(NULL == pst_hcc_netbuf))
+    {
+         oal_print_hi11xx_log(HI11XX_LOG_ERR,"%s error: pst_hcc_netbuf is null",__FUNCTION__);
+         return OAL_FAIL;
+    };
+
+#ifdef _PRE_WLAN_WAKEUP_SRC_PARSE
+    if(OAL_TRUE==wlan_pm_wkup_src_debug_get())
+    {
+        OAL_IO_PRINT("wifi_wake_src:rx chr error!\n");
+        wlan_pm_wkup_src_debug_set(OAL_FALSE);
+    }
+#endif
 
     puc_data = oal_netbuf_data(pst_hcc_netbuf->pst_netbuf);
 #ifdef _PRE_CONFIG_HW_CHR
-    chr_dev_exception_callback(puc_data, (oal_uint16)pst_hcc_netbuf->len);
+    chr_dev_exception_callback_etc(puc_data, (oal_uint16)pst_hcc_netbuf->len);
 #endif
     oal_netbuf_free(pst_hcc_netbuf->pst_netbuf);
     return OAL_SUCC;
@@ -424,29 +443,29 @@ oal_int32 chr_rx_post_action_function(struct hcc_handler * hcc, oal_uint8 stype,
 #endif
 
 
-oal_uint32  oam_get_output_type(oam_output_type_enum_uint8 *pen_output_type)
+oal_uint32  oam_get_output_type_etc(oam_output_type_enum_uint8 *pen_output_type)
 {
 
-    *pen_output_type = g_st_oam_mng_ctx.en_output_type;
+    *pen_output_type = g_st_oam_mng_ctx_etc.en_output_type;
 
     return OAL_SUCC;
 }
 
 
-oal_uint32  oam_set_output_type(oam_output_type_enum_uint8 en_output_type)
+oal_uint32  oam_set_output_type_etc(oam_output_type_enum_uint8 en_output_type)
 {
     if (en_output_type >= OAM_OUTPUT_TYPE_BUTT)
     {
         return OAL_ERR_CODE_INVALID_CONFIG;
     }
 
-    g_st_oam_mng_ctx.en_output_type = en_output_type;
+    g_st_oam_mng_ctx_etc.en_output_type = en_output_type;
 
     return OAL_SUCC;
 }
 
 
-oal_uint32  oam_set_file_path(oal_int8 *pc_file_path, oal_uint32 ul_length)
+oal_uint32  oam_set_file_path_etc(oal_int8 *pc_file_path, oal_uint32 ul_length)
 {
 #ifdef _PRE_WIFI_DMT
     oal_file_stru         *f_event_file;
@@ -463,10 +482,10 @@ oal_uint32  oam_set_file_path(oal_int8 *pc_file_path, oal_uint32 ul_length)
     }
 
     puc_file_path = DmtStub_GetDebugFilePath();
-    oal_memcopy(g_st_oam_mng_ctx.ac_file_path, puc_file_path, strlen(puc_file_path));
+    oal_memcopy(g_st_oam_mng_ctx_etc.ac_file_path, puc_file_path, strlen(puc_file_path));
 
     /* 以下操作是为了将上一次的日志文件清空 */
-    f_event_file = oal_file_open_rw(g_st_oam_mng_ctx.ac_file_path);
+    f_event_file = oal_file_open_rw(g_st_oam_mng_ctx_etc.ac_file_path);
 	if (OAL_FILE_FAIL == f_event_file)
     {
         return OAL_ERR_CODE_WRITE_FILE_FAIL;
@@ -489,7 +508,7 @@ oal_uint32  oam_set_file_path(oal_int8 *pc_file_path, oal_uint32 ul_length)
         return OAL_ERR_CODE_ARRAY_OVERFLOW;
     }
 
-    oal_memcopy(g_st_oam_mng_ctx.ac_file_path, pc_file_path, ul_length);
+    oal_memcopy(g_st_oam_mng_ctx_etc.ac_file_path, pc_file_path, ul_length);
 
 #endif
 
@@ -497,7 +516,7 @@ oal_uint32  oam_set_file_path(oal_int8 *pc_file_path, oal_uint32 ul_length)
 }
 
 
-oal_void  oam_dump_buff_by_hex(oal_uint8 *puc_buff, oal_int32 l_len, oal_int32 l_num)
+oal_void  oam_dump_buff_by_hex_etc(oal_uint8 *puc_buff, oal_int32 l_len, oal_int32 l_num)
 {
     oal_int32       l_loop;
 
@@ -518,51 +537,51 @@ oal_void  oam_dump_buff_by_hex(oal_uint8 *puc_buff, oal_int32 l_len, oal_int32 l
 OAL_STATIC oal_void oam_drv_func_hook_init(oal_void)
 {
     /* sdt侧对外钩子函数初始化 */
-    g_st_oam_sdt_func_hook.p_sdt_report_data_func       = OAL_PTR_NULL;
-    g_st_oam_sdt_func_hook.p_sdt_get_wq_len_func        = OAL_PTR_NULL;
+    g_st_oam_sdt_func_hook_etc.p_sdt_report_data_func       = OAL_PTR_NULL;
+    g_st_oam_sdt_func_hook_etc.p_sdt_get_wq_len_func        = OAL_PTR_NULL;
 
     /* wal侧对外钩子函数初始化 */
-    g_st_oam_wal_func_hook.p_wal_recv_cfg_data_func     = OAL_PTR_NULL;
-    g_st_oam_wal_func_hook.p_wal_recv_mem_data_func     = OAL_PTR_NULL;
-    g_st_oam_wal_func_hook.p_wal_recv_reg_data_func     = OAL_PTR_NULL;
-    g_st_oam_wal_func_hook.p_wal_recv_global_var_func   = OAL_PTR_NULL;
+    g_st_oam_wal_func_hook_etc.p_wal_recv_cfg_data_func     = OAL_PTR_NULL;
+    g_st_oam_wal_func_hook_etc.p_wal_recv_mem_data_func     = OAL_PTR_NULL;
+    g_st_oam_wal_func_hook_etc.p_wal_recv_reg_data_func     = OAL_PTR_NULL;
+    g_st_oam_wal_func_hook_etc.p_wal_recv_global_var_func   = OAL_PTR_NULL;
 }
 
 
-oal_void oam_sdt_func_fook_register(oam_sdt_func_hook_stru *pfun_st_oam_sdt_hook)
+oal_void oam_sdt_func_fook_register_etc(oam_sdt_func_hook_stru *pfun_st_oam_sdt_hook)
 {
-    g_st_oam_sdt_func_hook.p_sdt_report_data_func = pfun_st_oam_sdt_hook->p_sdt_report_data_func;
-    g_st_oam_sdt_func_hook.p_sdt_get_wq_len_func  = pfun_st_oam_sdt_hook->p_sdt_get_wq_len_func;
+    g_st_oam_sdt_func_hook_etc.p_sdt_report_data_func = pfun_st_oam_sdt_hook->p_sdt_report_data_func;
+    g_st_oam_sdt_func_hook_etc.p_sdt_get_wq_len_func  = pfun_st_oam_sdt_hook->p_sdt_get_wq_len_func;
 }
 
 
-oal_void oam_wal_func_fook_register(oam_wal_func_hook_stru *pfun_st_oam_wal_hook)
+oal_void oam_wal_func_fook_register_etc(oam_wal_func_hook_stru *pfun_st_oam_wal_hook)
 {
-    g_st_oam_wal_func_hook.p_wal_recv_cfg_data_func     = pfun_st_oam_wal_hook->p_wal_recv_cfg_data_func;
-    g_st_oam_wal_func_hook.p_wal_recv_mem_data_func     = pfun_st_oam_wal_hook->p_wal_recv_mem_data_func;
-    g_st_oam_wal_func_hook.p_wal_recv_reg_data_func     = pfun_st_oam_wal_hook->p_wal_recv_reg_data_func;
-    g_st_oam_wal_func_hook.p_wal_recv_global_var_func   = pfun_st_oam_wal_hook->p_wal_recv_global_var_func;
+    g_st_oam_wal_func_hook_etc.p_wal_recv_cfg_data_func     = pfun_st_oam_wal_hook->p_wal_recv_cfg_data_func;
+    g_st_oam_wal_func_hook_etc.p_wal_recv_mem_data_func     = pfun_st_oam_wal_hook->p_wal_recv_mem_data_func;
+    g_st_oam_wal_func_hook_etc.p_wal_recv_reg_data_func     = pfun_st_oam_wal_hook->p_wal_recv_reg_data_func;
+    g_st_oam_wal_func_hook_etc.p_wal_recv_global_var_func   = pfun_st_oam_wal_hook->p_wal_recv_global_var_func;
 #if defined(_PRE_WLAN_FEATURE_DATA_SAMPLE) || defined(_PRE_WLAN_FEATURE_PSD_ANALYSIS)
-    g_st_oam_wal_func_hook.p_wal_recv_sample_data_func  = pfun_st_oam_wal_hook->p_wal_recv_sample_data_func;
+    g_st_oam_wal_func_hook_etc.p_wal_recv_sample_data_func  = pfun_st_oam_wal_hook->p_wal_recv_sample_data_func;
 #endif
 #ifdef _PRE_WLAN_RF_AUTOCALI
-    g_st_oam_wal_func_hook.p_wal_recv_autocali_data_func  = pfun_st_oam_wal_hook->p_wal_recv_autocali_data_func;
+    g_st_oam_wal_func_hook_etc.p_wal_recv_autocali_data_func  = pfun_st_oam_wal_hook->p_wal_recv_autocali_data_func;
 #endif
 }
 
 
-oal_uint32  oam_filter_data2sdt(oam_data_type_enum_uint8 en_type)
+oal_uint32  oam_filter_data2sdt_etc(oam_data_type_enum_uint8 en_type)
 {
-    if (g_st_sdt_stat_info.ul_wq_len < WLAN_SDT_MSG_FLT_HIGH_THD)
+    if (g_st_sdt_stat_info_etc.ul_wq_len < WLAN_SDT_MSG_FLT_HIGH_THD)
     {
-        g_st_sdt_stat_info.en_filter_switch = OAL_FALSE;
+        g_st_sdt_stat_info_etc.en_filter_switch = OAL_FALSE;
         return OAM_FLT_PASS;
     }
-    else if ((g_st_sdt_stat_info.ul_wq_len >= WLAN_SDT_MSG_FLT_HIGH_THD)
-              && (g_st_sdt_stat_info.ul_wq_len < WLAN_SDT_MSG_QUEUE_MAX_LEN))
+    else if ((g_st_sdt_stat_info_etc.ul_wq_len >= WLAN_SDT_MSG_FLT_HIGH_THD)
+              && (g_st_sdt_stat_info_etc.ul_wq_len < WLAN_SDT_MSG_QUEUE_MAX_LEN))
     {
         /* 消息队列达到过滤上限，过滤非日志消息 */
-        g_st_sdt_stat_info.en_filter_switch = OAL_TRUE;
+        g_st_sdt_stat_info_etc.en_filter_switch = OAL_TRUE;
         return (((oal_uint8)OAM_DATA_TYPE_LOG) == en_type) ? OAM_FLT_PASS : OAM_FLT_DROP;/* [false alarm]:返回值为布尔值0或者1，不影响*/
     }
 
@@ -571,11 +590,11 @@ oal_uint32  oam_filter_data2sdt(oam_data_type_enum_uint8 en_type)
 }
 
 
-oal_netbuf_stru *oam_alloc_data2sdt(oal_uint16  us_data_len)
+oal_netbuf_stru *oam_alloc_data2sdt_etc(oal_uint16  us_data_len)
 {
     oal_netbuf_stru    *pst_netbuf = OAL_PTR_NULL;
 #if ((_PRE_OS_VERSION_RAW != _PRE_OS_VERSION) && (_PRE_OS_VERSION_WIN32_RAW != _PRE_OS_VERSION))
-    pst_netbuf = oal_mem_sdt_netbuf_alloc(us_data_len+WLAN_SDT_SKB_RESERVE_LEN, OAL_TRUE);
+    pst_netbuf = oal_mem_sdt_netbuf_alloc_etc(us_data_len+WLAN_SDT_SKB_RESERVE_LEN, OAL_TRUE);
     if (OAL_PTR_NULL == pst_netbuf)
     {
         return OAL_PTR_NULL;
@@ -589,25 +608,25 @@ oal_netbuf_stru *oam_alloc_data2sdt(oal_uint16  us_data_len)
 }
 
 
-oal_uint32 oam_report_data2sdt(oal_netbuf_stru *pst_netbuf,
+oal_uint32 oam_report_data2sdt_etc(oal_netbuf_stru *pst_netbuf,
                                oam_data_type_enum_uint8 en_type,
                                oam_primid_type_enum_uint8 en_prim)
 {
     /* 判断sdt发送消息队列是否已满，若满输出至串口 */
-    if (OAL_LIKELY(OAL_PTR_NULL != g_st_oam_sdt_func_hook.p_sdt_get_wq_len_func))
+    if (OAL_LIKELY(OAL_PTR_NULL != g_st_oam_sdt_func_hook_etc.p_sdt_get_wq_len_func))
     {
-        g_st_sdt_stat_info.ul_wq_len = (oal_uint32)g_st_oam_sdt_func_hook.p_sdt_get_wq_len_func();
+        g_st_sdt_stat_info_etc.ul_wq_len = (oal_uint32)g_st_oam_sdt_func_hook_etc.p_sdt_get_wq_len_func();
     }
 
-    if (OAM_FLT_PASS != oam_filter_data2sdt(en_type))
+    if (OAM_FLT_PASS != oam_filter_data2sdt_etc(en_type))
     {
         OAM_SDT_STAT_INCR(ul_filter_cnt);
-        oal_mem_sdt_netbuf_free(pst_netbuf, OAL_TRUE);
+        oal_mem_sdt_netbuf_free_etc(pst_netbuf, OAL_TRUE);
         //oal_netbuf_free(pst_netbuf);
 
         /* Note: 目前上层函数仅仅使用该返回值打印warning信息而已*/
 #if (_PRE_PRODUCT_ID == _PRE_PRODUCT_ID_HI1151)
-        if(0 != ((g_st_sdt_stat_info.ul_filter_cnt) % OAM_DATA2SDT_FAIL_COUNT))
+        if(0 != ((g_st_sdt_stat_info_etc.ul_filter_cnt) % OAM_DATA2SDT_FAIL_COUNT))
         {
             return OAL_SUCC;
         }
@@ -615,33 +634,33 @@ oal_uint32 oam_report_data2sdt(oal_netbuf_stru *pst_netbuf,
         return OAL_FAIL;
     }
 
-    if (OAL_UNLIKELY(OAL_PTR_NULL == g_st_oam_sdt_func_hook.p_sdt_report_data_func))
+    if (OAL_UNLIKELY(OAL_PTR_NULL == g_st_oam_sdt_func_hook_etc.p_sdt_report_data_func))
     {
-        OAL_IO_PRINT("oam_report_data2sdt p_sdt_report_data_func is NULL. \n");
+        OAL_IO_PRINT("oam_report_data2sdt_etc p_sdt_report_data_func is NULL. \n");
         return OAL_FAIL;
     }
 
-    g_st_oam_sdt_func_hook.p_sdt_report_data_func(pst_netbuf, en_type, en_prim);
+    g_st_oam_sdt_func_hook_etc.p_sdt_report_data_func(pst_netbuf, en_type, en_prim);
 
     return OAL_SUCC;
 }
 
 
-oal_void oam_sdt_func_fook_unregister(oal_void)
+oal_void oam_sdt_func_fook_unregister_etc(oal_void)
 {
     /* 函数指针赋值 */
-    g_st_oam_sdt_func_hook.p_sdt_report_data_func           = OAL_PTR_NULL;
-    g_st_oam_sdt_func_hook.p_sdt_get_wq_len_func            = OAL_PTR_NULL;
+    g_st_oam_sdt_func_hook_etc.p_sdt_report_data_func           = OAL_PTR_NULL;
+    g_st_oam_sdt_func_hook_etc.p_sdt_get_wq_len_func            = OAL_PTR_NULL;
 }
 
 
-oal_void oam_wal_func_fook_unregister(oal_void)
+oal_void oam_wal_func_fook_unregister_etc(oal_void)
 {
     /* 函数指针赋值 */
-    g_st_oam_wal_func_hook.p_wal_recv_cfg_data_func         = OAL_PTR_NULL;
-    g_st_oam_wal_func_hook.p_wal_recv_global_var_func       = OAL_PTR_NULL;
-    g_st_oam_wal_func_hook.p_wal_recv_mem_data_func         = OAL_PTR_NULL;
-    g_st_oam_wal_func_hook.p_wal_recv_reg_data_func         = OAL_PTR_NULL;
+    g_st_oam_wal_func_hook_etc.p_wal_recv_cfg_data_func         = OAL_PTR_NULL;
+    g_st_oam_wal_func_hook_etc.p_wal_recv_global_var_func       = OAL_PTR_NULL;
+    g_st_oam_wal_func_hook_etc.p_wal_recv_mem_data_func         = OAL_PTR_NULL;
+    g_st_oam_wal_func_hook_etc.p_wal_recv_reg_data_func         = OAL_PTR_NULL;
 }
 
 /*lint -save -e578 -e19 */
@@ -649,7 +668,7 @@ DEFINE_GET_BUILD_VERSION_FUNC(oam);
 /*lint -restore*/
 
 
-oal_int32  oam_main_init(oal_void)
+oal_int32  oam_main_init_etc(oal_void)
 {
     oal_uint32 ul_rslt;
 
@@ -660,38 +679,34 @@ oal_int32  oam_main_init(oal_void)
 #endif
 
     /* 初始化可维可测试FILE路径 */
-    ul_rslt = oam_set_file_path(WLAN_OAM_FILE_PATH, (OAL_STRLEN(WLAN_OAM_FILE_PATH) + 1));
+    ul_rslt = oam_set_file_path_etc(WLAN_OAM_FILE_PATH, (OAL_STRLEN(WLAN_OAM_FILE_PATH) + 1));
     if (OAL_SUCC != ul_rslt)
     {
-        OAL_IO_PRINT("oam_main_init call oam_set_file_path fail %d\n",ul_rslt);
-        OAL_BUG_ON(1);
+        OAL_IO_PRINT("oam_main_init_etc call oam_set_file_path_etc fail %d\n",ul_rslt);
         return -OAL_EFAIL;//lint !e527
     }
 
     /* 初始化可维可测输出方式 */
-    ul_rslt = oam_set_output_type(OAM_OUTPUT_TYPE_SDT);
+    ul_rslt = oam_set_output_type_etc(OAM_OUTPUT_TYPE_SDT);
     if (OAL_SUCC != ul_rslt)
     {
-        OAL_IO_PRINT("oam_main_init call oam_set_output_type fail %d\n",ul_rslt);
-        OAL_BUG_ON(1);
+        OAL_IO_PRINT("oam_main_init_etc call oam_set_output_type_etc fail %d\n",ul_rslt);
         return -OAL_EFAIL;//lint !e527
     }
 
     /* 完成LOG模块的初始化操作 */
-    ul_rslt = oam_log_init();
+    ul_rslt = oam_log_init_etc();
     if (OAL_SUCC != ul_rslt)
     {
-        OAL_IO_PRINT("oam_main_init call oam_log_init fail %d\n",ul_rslt);
-        OAL_BUG_ON(1);
+        OAL_IO_PRINT("oam_main_init_etc call oam_log_init_etc fail %d\n",ul_rslt);
         return -OAL_EFAIL;//lint !e527
     }
 
     /* 完成EVENT模块的初始化操作 */
-    ul_rslt = oam_event_init();
+    ul_rslt = oam_event_init_etc();
     if (OAL_SUCC != ul_rslt)
     {
-        OAL_IO_PRINT("oam_main_init call oam_event_init fail %d\n",ul_rslt);
-        OAL_BUG_ON(1);
+        OAL_IO_PRINT("oam_main_init_etc call oam_event_init_etc fail %d\n",ul_rslt);
         return -OAL_EFAIL;//lint !e527
     }
 
@@ -703,8 +718,7 @@ oal_int32  oam_main_init(oal_void)
     ul_rslt = oam_profiling_init();
     if (OAL_SUCC != ul_rslt)
     {
-        OAL_IO_PRINT("oam_main_init call oam_profiling_init fail %d\n",ul_rslt);
-        OAL_BUG_ON(1);
+        OAL_IO_PRINT("oam_main_init_etc call oam_profiling_init fail %d\n",ul_rslt);
         return -OAL_EFAIL;
     }
 #endif
@@ -713,53 +727,52 @@ oal_int32  oam_main_init(oal_void)
     oam_drv_func_hook_init();
 
     /* 统计模块初始化 */
-    oam_statistics_init();
+    oam_statistics_init_etc();
 
 /*TBD，待命令触发定制化初始操作*/
 #if 0
     /* 从配置文件中获取配置信息，保存到OAM内部结构中 */
     for (ul_counter= 0; ul_counter < OM_MODULEID_BUTT; ul_counter++)
     {
-        if (OAL_PTR_NULL != g_oam_customize.customize_init[ul_counter])
+        if (OAL_PTR_NULL != g_oam_customize_etc.customize_init[ul_counter])
         {
-            g_oam_customize.customize_init[ul_counter]();
+            g_oam_customize_etc.customize_init[ul_counter]();
         }
     }
 #endif
 
 #ifdef _PRE_WLAN_DFT_REG
-    oam_reg_init();
+    oam_reg_init_etc();
 #endif
 
 #if ((_PRE_OS_VERSION_RAW != _PRE_OS_VERSION) && (_PRE_OS_VERSION_WIN32_RAW != _PRE_OS_VERSION))
         /* ??netlink */
  #if (_PRE_PRODUCT_ID == _PRE_PRODUCT_ID_HI1151)
     /* 所用的端口号在系统中已被占用，02无法使用这个接口，需要修改 TBD */
-        ul_rslt = oam_netlink_kernel_create();
+        ul_rslt = oam_netlink_kernel_create_etc();
         if (OAL_SUCC != ul_rslt)
         {
-            OAL_IO_PRINT("oam_main_init call oam_netlink_kernel_create fail %d\n",ul_rslt);
-            OAL_BUG_ON(1);
+            OAL_IO_PRINT("oam_main_init_etc call oam_netlink_kernel_create_etc fail %d\n",ul_rslt);
             return -OAL_EFAIL;//lint !e527
         }
  #endif
 #endif
 #if defined(_PRE_PRODUCT_ID_HI110X_HOST)
-    hcc_rx_register(hcc_get_110x_handler(),HCC_ACTION_TYPE_OAM,oam_rx_post_action_function,NULL);
-    hcc_rx_register(hcc_get_110x_handler(),HCC_ACTION_TYPE_CHR,chr_rx_post_action_function,NULL);
+    hcc_rx_register_etc(hcc_get_110x_handler(),HCC_ACTION_TYPE_OAM,oam_rx_post_action_function_etc,NULL);
+    hcc_rx_register_etc(hcc_get_110x_handler(),HCC_ACTION_TYPE_CHR,chr_rx_post_action_function_etc,NULL);
 #endif
     return OAL_SUCC;
 }
 
 
-oal_void  oam_main_exit(oal_void)
+oal_void  oam_main_exit_etc(oal_void)
 {
 
     /* 初始化5115timer，用于代码中获取高精度时间戳 */
     oal_5115timer_exit();
 
 #ifdef _PRE_WLAN_DFT_REG
-    oam_reg_exit();
+    oam_reg_exit_etc();
 #endif
     /* 去注册全局变量读写总接口 */
 
@@ -772,7 +785,7 @@ oal_void  oam_main_exit(oal_void)
     #if (_PRE_PRODUCT_ID == _PRE_PRODUCT_ID_HI1151)
        /* 所用的端口号在系统中已被占用，02无法使用这个接口，需要修改 TBD */
 
-        oam_netlink_kernel_release();
+        oam_netlink_kernel_release_etc();
     #endif
 #endif
 
@@ -781,33 +794,33 @@ oal_void  oam_main_exit(oal_void)
 
 /*lint -e578*//*lint -e19*/
 #if (_PRE_PRODUCT_ID_HI1151==_PRE_PRODUCT_ID)
-oal_module_init(oam_main_init);
-oal_module_exit(oam_main_exit);
+oal_module_init(oam_main_init_etc);
+oal_module_exit(oam_main_exit_etc);
 #endif
 /*lint -e19*/
-oal_module_symbol(oam_main_init);
-oal_module_symbol(oam_main_exit);
-oal_module_symbol(oam_send_device_data2sdt);
-oal_module_symbol(oam_set_file_path);
-oal_module_symbol(oam_set_output_type);
-oal_module_symbol(oam_get_output_type);
-oal_module_symbol(oam_print);
-oal_module_symbol(g_st_oam_mng_ctx);
-oal_module_symbol(oam_dump_buff_by_hex);
-oal_module_symbol(g_st_oam_sdt_func_hook);
-oal_module_symbol(g_st_oam_wal_func_hook);
-oal_module_symbol(oam_sdt_func_fook_register);
-oal_module_symbol(oam_sdt_func_fook_unregister);
-oal_module_symbol(oam_wal_func_fook_register);
-oal_module_symbol(oam_wal_func_fook_unregister);
-oal_module_symbol(oam_report_data2sdt);
-oal_module_symbol(g_st_sdt_stat_info);
-oal_module_symbol(oam_alloc_data2sdt);
-oal_module_symbol(gst_oam_feature_list);
-oal_module_symbol(g_auc_bcast_addr);
+oal_module_symbol(oam_main_init_etc);
+oal_module_symbol(oam_main_exit_etc);
+oal_module_symbol(oam_send_device_data2sdt_etc);
+oal_module_symbol(oam_set_file_path_etc);
+oal_module_symbol(oam_set_output_type_etc);
+oal_module_symbol(oam_get_output_type_etc);
+oal_module_symbol(oam_print_etc);
+oal_module_symbol(g_st_oam_mng_ctx_etc);
+oal_module_symbol(oam_dump_buff_by_hex_etc);
+oal_module_symbol(g_st_oam_sdt_func_hook_etc);
+oal_module_symbol(g_st_oam_wal_func_hook_etc);
+oal_module_symbol(oam_sdt_func_fook_register_etc);
+oal_module_symbol(oam_sdt_func_fook_unregister_etc);
+oal_module_symbol(oam_wal_func_fook_register_etc);
+oal_module_symbol(oam_wal_func_fook_unregister_etc);
+oal_module_symbol(oam_report_data2sdt_etc);
+oal_module_symbol(g_st_sdt_stat_info_etc);
+oal_module_symbol(oam_alloc_data2sdt_etc);
+oal_module_symbol(gst_oam_feature_list_etc);
+oal_module_symbol(g_auc_bcast_addr_etc);
 
 #ifdef _PRE_DEBUG_MODE
-oal_module_symbol(g_aul_debug_feature_switch);
+oal_module_symbol(g_aul_debug_feature_switch_etc);
 #endif
 
 oal_module_license("GPL");

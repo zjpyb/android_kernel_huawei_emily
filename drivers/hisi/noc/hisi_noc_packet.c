@@ -14,6 +14,8 @@
 #include <linux/printk.h>
 #include <linux/bug.h>
 #include <linux/delay.h>
+#include <linux/hisi/hisi_log.h>
+#define HISI_LOG_TAG HISI_NOC_TAG
 #include "hisi_noc_packet.h"
 
 void noc_set_bit(void __iomem *base, unsigned int offset, unsigned int bit)

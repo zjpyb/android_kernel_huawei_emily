@@ -61,7 +61,7 @@
 ********************************************************************************
 *
 */
-//lint -save -e647 -e569
+//lint -save -e647 -e569 -e571
 
 
 
@@ -4243,7 +4243,7 @@ VL53L1_Error VL53L1_dynamic_xtalk_correction_calc_required_samples(
 	temp64a = do_division_u((temp64a * 1000), peak_duration_us);
 	temp64a = do_division_u((temp64a * 1000), peak_duration_us);
 
-	temp64z = pconfig->noise_margin * pxmonitor->VL53L1_PRM_00004;
+	temp64z = (uint64_t)pconfig->noise_margin * (uint64_t)pxmonitor->VL53L1_PRM_00004;
 	temp64a = temp64a * 1000 * 256;
 	temp64a = do_division_u(temp64a, temp64z);
 	temp64a = temp64a * 1000 * 256;
@@ -4360,7 +4360,7 @@ VL53L1_Error VL53L1_dynamic_xtalk_correction_calc_new_xtalk(
 				orig_xtalk_offset);
 		pconfig->x_gradient_scaler = x_gradient_scaler;
 		y_gradient_scaler = (int16_t)do_division_s(
-				(((int32_t)orig_y_gradient) << 6),
+				(((uint32_t)orig_y_gradient) << 6),
 				orig_xtalk_offset);
 		pconfig->y_gradient_scaler = y_gradient_scaler;
 	}

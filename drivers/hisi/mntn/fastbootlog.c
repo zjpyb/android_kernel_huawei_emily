@@ -35,6 +35,9 @@
 #include <linux/vmalloc.h>	/* For vmalloc */
 #include <global_ddr_map.h>
 #include <linux/module.h>
+#include <linux/hisi/hisi_log.h>
+#define HISI_LOG_TAG HISI_FASTBOOTLOG_TAG
+#include "blackbox/rdr_print.h"
 
 #define FASTBOOT_DUMP_LOG_ADDR			HISI_SUB_RESERVED_FASTBOOT_LOG_PYHMEM_BASE
 #define FASTBOOT_DUMP_LOG_SIZE			HISI_SUB_RESERVED_FASTBOOT_LOG_PYHMEM_SIZE
@@ -63,7 +66,7 @@ static ssize_t last_fastbootlog_dump_file_read(struct file *file,
 	ssize_t copy;
 
 	if (*off > (loff_t)s_last_fastbootlog_size) {
-		printk(KERN_ERR "%s: read offset error\n", __func__);
+		BB_PRINT_ERR("%s: read offset error\n", __func__);
 		return 0;
 	}
 
@@ -75,7 +78,7 @@ static ssize_t last_fastbootlog_dump_file_read(struct file *file,
 	copy = (ssize_t) min(bytes, (size_t) (s_last_fastbootlog_size - *off));
 
 	if (copy_to_user(userbuf, s_last_fastbootlog_buff + *off, copy)) {
-		printk(KERN_ERR "%s: copy to user error\n", __func__);
+		BB_PRINT_ERR("%s: copy to user error\n", __func__);
 		copy = -EFAULT;
 		goto copy_err;
 	}
@@ -94,7 +97,7 @@ static ssize_t fastbootlog_dump_file_read(struct file *file,
 	ssize_t copy;
 
 	if (*off > (loff_t)s_fastbootlog_size) {
-		printk(KERN_ERR "%s: read offset error\n", __func__);
+		BB_PRINT_ERR("%s: read offset error\n", __func__);
 		return 0;
 	}
 
@@ -106,7 +109,7 @@ static ssize_t fastbootlog_dump_file_read(struct file *file,
 	copy = (ssize_t) min(bytes, (size_t) (s_fastbootlog_size - *off));
 
 	if (copy_to_user(userbuf, s_fastbootlog_buff + *off, copy)) {
-		printk(KERN_ERR "%s: copy to user error\n", __func__);
+		BB_PRINT_ERR("%s: copy to user error\n", __func__);
 		copy = -EFAULT;
 		goto copy_err;
 	}
@@ -134,7 +137,7 @@ static void bootloader_logger_dump(char *start, unsigned int size,
 	if (!p)
 		return;
 
-	printk(KERN_INFO "*****************************"
+	pr_info("*****************************"
 	       "%s_bootloader_log begin"
 	       "*****************************\n", str);
 	for (i = 0; i < size; i++) {
@@ -142,20 +145,33 @@ static void bootloader_logger_dump(char *start, unsigned int size,
 			start[i] = ' ';
 		if (start[i] == '\n') {
 			start[i] = '\0';
-			printk(KERN_INFO "%s_bootloader_log: %s\n", str, p);
+			pr_info("%s_bootloader_log: %s\n", str, p);
 			start[i] = '\n';
 			p = &start[i + 1]; /*lint !e679*/
 		}
 	}
-	printk(KERN_INFO "******************************"
+	pr_info("******************************"
 	       "%s_bootloader_log end" "******************************\n", str);
+}
+
+void hisi_dump_bootkmsg(void)
+{
+	if (s_last_fastbootlog_buff) {
+		bootloader_logger_dump(s_last_fastbootlog_buff,
+				       s_last_fastbootlog_size, "last");
+	}
+
+	if (s_fastbootlog_buff) {
+		bootloader_logger_dump(s_fastbootlog_buff, s_fastbootlog_size,
+				       "current");
+	}
 }
 
 static void check_fastbootlog_head(struct fastbootlog_head *head,
 				   int *need_dump_whole)
 {
 	if (head->magic != FASTBOOT_MAGIC_1 && head->magic != FASTBOOT_MAGIC_2) {
-		printk(KERN_INFO "%s: fastbootlog magic number incorrect\n",
+		BB_PRINT_ERR("%s: fastbootlog magic number incorrect\n",
 		       __func__);
 		*need_dump_whole = 1;
 		return;
@@ -165,7 +181,7 @@ static void check_fastbootlog_head(struct fastbootlog_head *head,
 	    || head->lastlog_start < sizeof(struct fastbootlog_head)
 	    || head->lastlog_offset >= FASTBOOT_DUMP_LOG_SIZE
 	    || head->lastlog_offset < sizeof(struct fastbootlog_head)) {
-		printk(KERN_INFO "%s: last fastbootlog offset incorrect\n",
+		BB_PRINT_ERR("%s: last fastbootlog offset incorrect\n",
 		       __func__);
 		*need_dump_whole = 1;
 		return;
@@ -175,7 +191,7 @@ static void check_fastbootlog_head(struct fastbootlog_head *head,
 	    || head->log_start < sizeof(struct fastbootlog_head)
 	    || head->log_offset >= FASTBOOT_DUMP_LOG_SIZE
 	    || head->log_offset < sizeof(struct fastbootlog_head)) {
-		printk(KERN_INFO "%s: fastbootlog offset incorrect\n",
+		BB_PRINT_ERR("%s: fastbootlog offset incorrect\n",
 		       __func__);
 		*need_dump_whole = 1;
 		return;
@@ -211,7 +227,7 @@ static int __init fastbootlog_dump_init(void)
 		    ioremap_wc(FASTBOOT_DUMP_LOG_ADDR, FASTBOOT_DUMP_LOG_SIZE);
 	}
 	if (!fastbootlog_buff) {
-		printk(KERN_ERR
+		BB_PRINT_ERR(
 		       "%s: fail to get the virtual address of fastbootlog\n",
 		       __func__);
 		return -1;
@@ -234,7 +250,7 @@ static int __init fastbootlog_dump_init(void)
 
 		s_last_fastbootlog_buff = vmalloc(lastlog_size);
 		if (!s_last_fastbootlog_buff) {
-			printk(KERN_ERR
+			BB_PRINT_ERR(
 			       "%s: fail to vmalloc %#x bytes s_last_fastbootlog_buff\n",
 			       __func__, lastlog_size);
 			ret = -1;
@@ -250,7 +266,7 @@ static int __init fastbootlog_dump_init(void)
 		if (lastlog_size > 0) {
 			s_last_fastbootlog_buff = vmalloc(lastlog_size);
 			if (!s_last_fastbootlog_buff) {
-				printk(KERN_ERR
+				BB_PRINT_ERR(
 				       "%s: fail to vmalloc %#x bytes s_last_fastbootlog_buff\n",
 				       __func__, lastlog_size);
 				ret = -1;
@@ -270,7 +286,7 @@ static int __init fastbootlog_dump_init(void)
 
 		s_fastbootlog_buff = vmalloc(log_size);
 		if (!s_fastbootlog_buff) {
-			printk(KERN_ERR
+			BB_PRINT_ERR(
 			       "%s: fail to vmalloc %#x bytes s_fastbootlog_buff\n",
 			       __func__, log_size);
 			ret = -1;
@@ -286,7 +302,7 @@ static int __init fastbootlog_dump_init(void)
 		if (log_size > 0) {
 			s_fastbootlog_buff = vmalloc(log_size);
 			if (!s_fastbootlog_buff) {
-				printk(KERN_ERR
+				BB_PRINT_ERR(
 				       "%s: fail to vmalloc %#x bytes s_fastbootlog_buff\n",
 				       __func__, log_size);
 				ret = -1;
@@ -303,16 +319,12 @@ out:
 	}
 
 	if (s_last_fastbootlog_buff) {
-		bootloader_logger_dump(s_last_fastbootlog_buff,
-				       s_last_fastbootlog_size, "last");
 		balong_create_log_proc_entry("last_fastboot_log",
 					     S_IRUSR | S_IRGRP,
 					     &last_fastbootlog_dump_file_fops,
 					     NULL);
 	}
 	if (s_fastbootlog_buff) {
-		bootloader_logger_dump(s_fastbootlog_buff, s_fastbootlog_size,
-				       "current");
 		balong_create_log_proc_entry("fastboot_log", S_IRUSR | S_IRGRP,
 					     &fastbootlog_dump_file_fops, NULL);
 	}

@@ -128,6 +128,8 @@ void hisi_bc_dplus_pulldown(struct hisi_dwc3_device *hisi_dwc)
 
 	usb_dbg("+\n");
 
+	/* enable BC */
+	writel(BC_CTRL1_BC_MODE, base + BC_CTRL1);
 	reg = readl(base + BC_CTRL0);
 	reg |= ((1u << 7) | (1u << 8));
 	writel(reg, base + BC_CTRL0);
@@ -145,6 +147,8 @@ void hisi_bc_dplus_pullup(struct hisi_dwc3_device *hisi_dwc)
 	reg = readl(base + BC_CTRL0);
 	reg &= (~((1u << 7) | (1u << 8)));
 	writel(reg, base + BC_CTRL0);
+	/* disable BC */
+	writel((readl(base + BC_CTRL1) & ~BC_CTRL1_BC_MODE), base + BC_CTRL1);
 
 	usb_dbg("-\n");
 }

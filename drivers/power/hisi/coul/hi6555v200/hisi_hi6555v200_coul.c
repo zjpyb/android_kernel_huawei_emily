@@ -1131,7 +1131,14 @@ static void hi6555v200_coul_cancle_auto_cali(void)
 	udelay(110);
 	HI6555V200_REG_WRITE(HI6555V200_CLJ_CTRL,val);
 }
-
+static int hi6555v200_coul_get_drained_battery_flag(void)
+{
+    return 0;
+}
+static void hi6555v200_coul_clear_drained_battery_flag(void)
+{
+    return;
+}
 #ifdef CONFIG_SYSFS
 
 static long g_reg_addr = 0;
@@ -1241,6 +1248,8 @@ struct coul_device_ops hi6555v200_coul_ops =
     .cali_auto_off               = hi6555v200_coul_cancle_auto_cali,
     .save_ocv_level               = hi6555v200_coul_save_ocv_level,
     .get_ocv_level                = hi6555v200_coul_get_ocv_level,
+    .get_drained_battery_flag     = hi6555v200_coul_get_drained_battery_flag,
+    .clear_drained_battery_flag   = hi6555v200_coul_clear_drained_battery_flag,
 
 };
 

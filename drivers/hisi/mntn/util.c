@@ -32,6 +32,9 @@
 #include <linux/uaccess.h>	/* For copy_to_user */
 #include <linux/pstore_ram.h>
 #include <linux/delay.h>
+#include <linux/hisi/hisi_log.h>
+#define HISI_LOG_TAG HISI_UTIL_TAG
+#include "blackbox/rdr_print.h"
 
 static char himntn[HIMNTN_VALID_SIZE + 1] = { '\0' };
 
@@ -82,7 +85,7 @@ static int __init early_parse_himntn_cmdline(char *himntn_cmdline)
 {
 	memset(himntn, 0x0, HIMNTN_VALID_SIZE + 1);
 	if (strlen(himntn_cmdline) > HIMNTN_VALID_SIZE) {
-		printk(KERN_ERR "error: invalid himn cmdline size!\n");
+		BB_PRINT_ERR("error: invalid himn cmdline size!\n");
 		return -1;
 	}
 	memcpy(himntn, himntn_cmdline, strlen(himntn_cmdline));
@@ -140,6 +143,7 @@ static struct proc_dir_entry *proc_balong_entry;	/*proc/balong */
 static struct proc_dir_entry *proc_balong_stats_entry;	/*proc/balong/stats */
 static struct proc_dir_entry *proc_balong_memory_entry;	/*proc/balong/memory */
 static struct proc_dir_entry *proc_balong_log_entry;	/*proc/balong/log */
+static struct proc_dir_entry *proc_balong_pstore;	/*proc/balong/pstore */
 static int __init balong_proc_fs_init(void)
 {
 	proc_balong_entry = proc_mkdir("balong", NULL);
@@ -160,6 +164,11 @@ static int __init balong_proc_fs_init(void)
 	proc_balong_log_entry = proc_mkdir("log", proc_balong_entry);
 	if (!proc_balong_log_entry) {
 		panic("cannot create balong log proc entry");
+	}
+
+	proc_balong_pstore = proc_mkdir("pstore", proc_balong_entry);
+	if (!proc_balong_pstore) {
+		panic("cannot create balong pstore proc entry");
 	}
 	return 0;
 }
@@ -209,4 +218,5 @@ EXPORT_SYMBOL(balong_remove_ ## NAME ## _proc_entry);
 CREATE_PROC_ENTRY_DECLARE(stats, proc_balong_stats_entry)
     CREATE_PROC_ENTRY_DECLARE(memory, proc_balong_memory_entry)
     CREATE_PROC_ENTRY_DECLARE(log, proc_balong_log_entry)
+    CREATE_PROC_ENTRY_DECLARE(pstore, proc_balong_pstore)
 

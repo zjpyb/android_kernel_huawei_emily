@@ -592,6 +592,9 @@ static ssize_t nfcc_calibration_show(struct device *dev, struct device_attribute
 		return -EINVAL;
 	}
 	cal_len = cali_info[0];
+	if (cal_len >= TEL_HUAWEI_NV_NFCCAL_LEGTH){
+		cal_len = TEL_HUAWEI_NV_NFCCAL_LEGTH-1;
+	}
 	for (i = 0; i < cal_len + 1; i ++) {
 		snprintf(&cali_str[i*2], 3, "%02X", cali_info[i]);
 	}
@@ -836,7 +839,7 @@ void init_nfc_info_data(struct huawei_nfc_data *p_nfc_data) {
 
 	if (p_nfc_data == NULL) {
 		hwlog_err("%s: para p_nfc_data or dev is null\n", __func__);
-		return -1;
+		return;
 	}
 	memset(p_nfc_data, 0, sizeof(struct huawei_nfc_data));
 

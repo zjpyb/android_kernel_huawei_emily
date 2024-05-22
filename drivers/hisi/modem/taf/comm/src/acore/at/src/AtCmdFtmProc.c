@@ -55,9 +55,7 @@
 #include "ATCmdProc.h"
 #include "AtMtaInterface.h"
 
-/* Added by z60575 for LOG35_TL, 2013-8-9 begin */
 #include "msp_diag.h"
-/* Added by z60575 for LOG35_TL, 2013-8-9 end */
 
 #include "AtTestParaCmd.h"
 

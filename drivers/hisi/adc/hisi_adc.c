@@ -247,33 +247,35 @@ exit:
  */
 int hisi_adc_get_adc(int adc_channel)
 {
-	int ret = 0;
+	int ret = 0, value = 0;
 
 	mutex_lock(&hisi_adc_dev->mutex);
 
 	ret = hisi_adc_send_wait(adc_channel, ADC_IPC_DATA);
-
+	value = hisi_adc_dev->info.value;
 	hisi_adc_dev->info.channel = ADC_RESULT_ERR;
+
 	mutex_unlock(&hisi_adc_dev->mutex);
 	if (1 == g_hkadc_debug)
-		pr_info("%s value %d;ret %d\n", __func__, hisi_adc_dev->info.value, ret);
+		pr_info("%s value %d;ret %d\n", __func__, value, ret);
 
-	return ret ? ret : hisi_adc_dev->info.value;
+	return ret ? ret : value;
 }
 EXPORT_SYMBOL(hisi_adc_get_adc);
 
 int hisi_adc_get_current(int adc_channel)
 {
-	int ret = 0;
+	int ret = 0, value = 0;
 
 	mutex_lock(&hisi_adc_dev->mutex);
 
 	ret = hisi_adc_send_wait(adc_channel, ADC_IPC_CURRENT);
+	value = hisi_adc_dev->info.value;
 	hisi_adc_dev->info.channel = ADC_RESULT_ERR;
 
 	mutex_unlock(&hisi_adc_dev->mutex);
 
-	return ret ? ret : hisi_adc_dev->info.value;
+	return ret ? ret : value;
 }
 EXPORT_SYMBOL(hisi_adc_get_current);
 

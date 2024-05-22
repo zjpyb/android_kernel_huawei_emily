@@ -19,6 +19,7 @@
 #include <linux/hisi/hisi_ion.h>
 #include <linux/version.h>
 #include <linux/hisi/page_tracker.h>
+#include <linux/slub_def.h>
 
 #include "lowmem_killer.h"
 
@@ -70,7 +71,7 @@ static void dump_tasks(bool verbose)
 		tsk_oom_adj = task->signal->oom_score_adj;
 		if (!verbose && tsk_oom_adj &&
 		    (tsk_oom_adj <= LMK_SERVICE_ADJ) &&
-		    (get_mm_rss(task->mm) < LMK_PRT_TSK_RSS)) {
+		    (get_mm_rss(task->mm) + get_mm_counter(task->mm, MM_SWAPENTS) < LMK_PRT_TSK_RSS)) {
 			task_unlock(task);
 			continue;
 		}
@@ -105,6 +106,7 @@ static void lowmem_dump(struct work_struct *work)
 	dump_tasks(verbose);
 	ksm_show_stats();
 	hisi_ion_memory_info(verbose);
+	show_slab(verbose);
 	if (verbose)
 		page_tracker_wake_up();
 	mutex_unlock(&lowmem_dump_mutex);

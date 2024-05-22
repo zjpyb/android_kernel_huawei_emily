@@ -151,6 +151,11 @@ extern struct noc_mid_info noc_mid_ATLA[];
 extern struct noc_dump_reg noc_dump_reg_list_ATLA[];
 extern const struct noc_busid_initflow hisi_filter_initflow_ATLA[];
 
+extern const struct noc_bus_info noc_buses_info_ORLA[];
+extern struct noc_mid_info noc_mid_ORLA[];
+extern struct noc_dump_reg noc_dump_reg_list_ORLA[];
+extern const struct noc_busid_initflow hisi_filter_initflow_ORLA[];
+
 extern const struct noc_bus_info noc_buses_info_kirin970[];
 extern struct noc_mid_info noc_mid_kirin970[];
 extern struct noc_dump_reg noc_dump_reg_list_kirin970[];
@@ -160,6 +165,11 @@ extern const struct noc_bus_info noc_buses_info_MIA[];
 extern struct noc_mid_info noc_mid_MIA[];
 extern struct noc_dump_reg noc_dump_reg_list_MIA[];
 extern const struct noc_busid_initflow hisi_filter_initflow_MIA[];
+
+extern const struct noc_bus_info noc_buses_info_PHOE_es[];
+extern struct noc_mid_info noc_mid_PHOE_es[];
+extern struct noc_dump_reg noc_dump_reg_list_PHOE_es[];
+extern const struct noc_busid_initflow hisi_filter_initflow_PHOE_es[];
 
 int noc_set_buses_info(unsigned int info_index);
 void noc_get_mid_info(unsigned int bus_id, struct noc_mid_info **pt_info,
@@ -190,6 +200,11 @@ extern void hisi_noc_get_array_size_ATLA(unsigned int *bus_info_size,
 		                 unsigned int *dump_list_size);
 extern void hisi_noc_get_array_size_MIA(unsigned int *bus_info_size,
 					     unsigned int *dump_list_size);
+extern void hisi_noc_get_array_size_ORLA(unsigned int *bus_info_size,
+		                 unsigned int *dump_list_size);
+extern void hisi_noc_get_array_size_PHOE_es(unsigned int *bus_info_size,
+					     unsigned int *dump_list_size);
+
 extern unsigned int hisi_noc_clock_enable(struct hisi_noc_device *noc_dev,
 					  struct noc_node *node);
 extern unsigned int hisi_noc_clock_enable_hi3650(struct hisi_noc_device
@@ -214,6 +229,12 @@ extern unsigned int hisi_noc_clock_enable_kirin970(struct hisi_noc_device
 						   *noc_dev,
 						   struct noc_node *node);
 extern unsigned int hisi_noc_clock_enable_MIA(struct hisi_noc_device
+						   *noc_dev,
+						   struct noc_node *node);
+extern unsigned int hisi_noc_clock_enable_ORLA(struct hisi_noc_device
+		                      *noc_dev,
+		                      struct noc_node *node);
+extern unsigned int hisi_noc_clock_enable_PHOE_es(struct hisi_noc_device
 						   *noc_dev,
 						   struct noc_node *node);
 #endif

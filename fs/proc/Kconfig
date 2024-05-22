@@ -50,7 +50,6 @@ config TASK_PROTECT_LRU
 	help
 	  Protect lru of task support. It's between normal lru and mlock,
 	  that means we will reclaim protect lru pages as late as possible.
-
 config PROC_SYSCTL
 	bool "Sysctl support (/proc/sys)" if EXPERT
 	depends on PROC_FS
@@ -90,3 +89,10 @@ config PROC_CHILDREN
 	  Say Y if you are running any user-space software which takes benefit from
 	  this interface. For example, rkt is such a piece of software.
 source "fs/proc/hisi/Kconfig"
+
+config PROC_UID
+	bool "Include /proc/uid/ files"
+	default y
+	depends on PROC_FS && RT_MUTEXES
+	help
+	Provides aggregated per-uid information under /proc/uid.

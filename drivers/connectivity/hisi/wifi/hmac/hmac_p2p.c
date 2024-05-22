@@ -198,7 +198,7 @@ oal_uint32 hmac_p2p_get_home_channel(mac_vap_stru                     *pst_mac_v
 
     *pul_home_channel           = ul_home_channel;
     *pen_home_channel_bandwidth = en_home_channel_bandwidth;
-    
+
     return OAL_SUCC;
 }
 

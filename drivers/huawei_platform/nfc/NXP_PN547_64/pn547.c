@@ -65,6 +65,7 @@ static struct wake_lock wlock_read;
 static int firmware_update;
 static int nfc_switch_state;
 static int nfc_at_result;
+long nfc_get_rssi = 0;
 static char g_nfc_nxp_config_name[MAX_CONFIG_NAME_SIZE];
 static char g_nfc_brcm_conf_name[MAX_CONFIG_NAME_SIZE];
 static char g_nfc_chip_type[MAX_NFC_CHIP_TYPE_SIZE];
@@ -79,6 +80,7 @@ static int g_nfcservice_lock;
 static int g_nfc_close_type;
 static int g_nfc_single_channel;
 static int g_nfc_card_num;
+static int g_nfc_ese_num;
 static int g_wake_lock_timeout = WAKE_LOCK_TIMEOUT_DISABLE;
 static int g_nfc_ese_type = NFC_WITHOUT_ESE; /* record ese type wired to nfcc by dts */
 static int g_nfc_activated_se_info; /* record activated se info when nfc enable process */
@@ -564,6 +566,19 @@ void set_nfc_card_num(void)
 	return;
 }
 
+void set_nfc_ese_num(void)
+{
+    int ret = -1;
+
+    ret = nfc_get_dts_config_u32("nfc_ese_num", "nfc_ese_num", &g_nfc_ese_num);
+    if (ret != 0) {
+        g_nfc_ese_num = 1;
+        hwlog_err("%s: can't get nfc ese num config!\n", __func__);
+    }
+
+    return;
+}
+
 static int pn547_bulk_enable(struct  pn547_dev *pdev)
 {
 	int ret = 0;
@@ -715,7 +730,7 @@ static int pn547_enable_nfc(struct pn547_dev *pdev)
 /*lint -save -e* */
 static void pn547_disable_irq(struct pn547_dev *pn547_dev)
 {
-	unsigned int flags;
+	unsigned long flags;
 
 	spin_lock_irqsave(&pn547_dev->irq_enabled_lock, flags);
 	if (pn547_dev->irq_enabled) {
@@ -1316,6 +1331,62 @@ static ssize_t nfc_at_result_show(struct device *dev, struct device_attribute *a
 	return (ssize_t)(snprintf(buf, sizeof(nfc_at_result)+1, "%d", nfc_at_result));
 }
 
+static ssize_t nfc_get_rssi_store(struct device *dev, struct device_attribute *attr,
+            const char *buf, size_t count)
+{
+#if 0
+    long num;
+    hwlog_info("start:%s:%s,%d\n", __func__, buf, nfc_get_rssi);
+    num = simple_strtol(buf, NULL, 0);
+    if (num < -65535)
+    {
+        return -1;
+    }
+
+    nfc_get_rssi = num;
+    hwlog_info("end  :%s:%s,%d\n", __func__, buf, nfc_get_rssi);
+
+    return (ssize_t)count;
+#endif
+#if 1
+    int i = 0;
+    int flag = 1;
+    nfc_get_rssi = 0;
+    //hwlog_info("%s:%s,%d, %d\n", __func__, buf, nfc_get_rssi, count);
+    if(buf!=NULL)
+    {
+        if (buf[0] == '-')
+        {
+            flag = -1;
+            i++;
+        }
+        while (buf[i] != '\0')
+        {
+            //hwlog_info("%s:%s,%d,%d, %d\n", __func__, buf,i, nfc_get_rssi, count);
+            nfc_get_rssi=(long)(nfc_get_rssi*10) + (buf[i]-CHAR_0); /*file storage str*/
+            i++;
+        }
+        nfc_get_rssi = flag * nfc_get_rssi;
+    }
+    //hwlog_info("%s:%s,%d, %d\n", __func__, buf, nfc_get_rssi, count);
+    return (ssize_t)count;
+#endif    
+ #if 0
+    hwlog_info("%s:%s,%d, %d\n", __func__, buf, nfc_get_rssi, count);
+    if(buf!=NULL)
+    {
+        nfc_get_rssi=buf[0]-CHAR_0; /*file storage str*/
+    }
+    hwlog_info("%s:%s,%d, %d\n", __func__, buf, nfc_get_rssi, count);
+    return (ssize_t)count;
+#endif    
+}
+
+static ssize_t nfc_get_rssi_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    hwlog_info("%s:%s,%d\n", __func__, buf, nfc_get_rssi);
+    return (ssize_t)(snprintf(buf, 256, "%d", nfc_get_rssi));
+}
 
 
 static ssize_t nxp_config_name_store(struct device *dev, struct device_attribute *attr,
@@ -1454,6 +1525,12 @@ static ssize_t nfc_card_num_show(struct device *dev, struct device_attribute *at
 {
 	return (ssize_t)(snprintf(buf, MAX_ATTRIBUTE_BUFFER_SIZE-1, "%d\n", (unsigned char)g_nfc_card_num));
 }
+
+static ssize_t nfc_ese_num_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    return (ssize_t)(snprintf(buf, MAX_ATTRIBUTE_BUFFER_SIZE-1, "%d\n", (unsigned char)g_nfc_ese_num));
+}
+
 static ssize_t nfc_fw_version_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	int ret = -1;
@@ -1473,6 +1550,15 @@ static ssize_t nfc_chip_type_show(struct device *dev, struct device_attribute *a
 {
 	return (ssize_t)(snprintf(buf, strlen(g_nfc_chip_type)+1, "%s", g_nfc_chip_type));
 }
+
+static ssize_t nfc_chip_type_store(struct device *dev, struct device_attribute *attr,
+             const char *buf, size_t count)
+{
+    hwlog_err("%s: %s count=%d\n", __func__, buf, count);
+    strncpy(g_nfc_chip_type, buf, MAX_NFC_CHIP_TYPE_SIZE-1);
+    return (ssize_t)count;
+}
+
 
 static ssize_t nfcservice_lock_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
@@ -1556,6 +1642,18 @@ static ssize_t nfc_wired_ese_info_show(struct device *dev, struct device_attribu
 	return (ssize_t)(snprintf(buf, MAX_ATTRIBUTE_BUFFER_SIZE-1, "%d", g_nfc_ese_type));
 }
 
+static ssize_t nfc_wired_ese_info_store(struct device *dev, struct device_attribute *attr,
+             const char *buf, size_t count)
+{
+        int val = 0;
+        if (sscanf(buf, "%1d", &val) == 1) {
+               g_nfc_ese_type = val;
+        } else {
+               hwlog_err("%s: set g_nfc_ese_type  error\n", __func__);
+        }
+        hwlog_info("%s: g_nfc_ese_type:%d\n", __func__,g_nfc_ese_type);
+        return (ssize_t)count;
+}
 static ssize_t nfc_activated_se_info_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	return (ssize_t)(snprintf(buf, MAX_ATTRIBUTE_BUFFER_SIZE-1, "%d", g_nfc_activated_se_info));
@@ -1650,6 +1748,123 @@ static ssize_t nfc_clk_src_show(struct device *dev, struct device_attribute *att
 	return (ssize_t)(snprintf(buf, MAX_ATTRIBUTE_BUFFER_SIZE-1, "%d", g_nfc_clk_src));
 }
 
+
+
+static int recovery_close_nfc(struct i2c_client *client, struct  pn547_dev *pdev)
+{
+	int ret;
+	int nfc_rece_length = 40;
+
+	unsigned char recvBuf[40] = {0};
+
+	const  char send_reset[] = {0x20, 0x00, 0x01, 0x00};
+	const  char init_cmd[] = {0x20, 0x01, 0x00};
+
+	unsigned char set_ven_config[] = {0x20,0x02,0x05,0x01,0xA0,0x07,0x01,0x02};
+	unsigned char get_ven_config[] = {0x40,0x02,0x02,0x00,0x00};
+
+	/*hardware reset*/
+	/* power on */
+	nfc_gpio_set_value(pdev->firm_gpio, 0);
+	ret = pn547_bulk_enable(pdev);
+	if (ret < 0) {
+		hwlog_err("%s: regulator_enable failed, ret:%d\n", __func__, ret);
+		goto failed;
+	}
+	msleep(20);
+
+	/* power off */
+	ret = pn547_bulk_disable(pdev);
+	if (ret < 0) {
+		hwlog_err("%s: regulator_disable failed, ret:%d\n", __func__, ret);
+		goto failed;
+	}
+	msleep(60);
+
+	/* power on */
+	ret = pn547_bulk_enable(pdev);
+	if (ret < 0) {
+		hwlog_err("%s: regulator_enable failed, ret:%d\n", __func__, ret);
+		goto failed;
+	}
+	msleep(20);
+
+	/*write CORE_RESET_CMD*/
+	ret = pn547_i2c_write(pdev, send_reset, sizeof(send_reset));
+	if (ret < 0) {
+		hwlog_err("%s: pn547_i2c_write failed, ret:%d\n", __func__, ret);
+		goto failed;
+	}
+	/*read response*/
+	ret = pn547_i2c_read(pdev, recvBuf, nfc_rece_length);
+	if (ret < 0) {
+		hwlog_err("%s: pn547_i2c_read failed, ret:%d\n", __func__, ret);
+		goto failed;
+	}
+
+	udelay(500);
+	/*write CORE_INIT_CMD*/
+	ret = pn547_i2c_write(pdev, init_cmd, sizeof(init_cmd));
+	if (ret < 0) {
+		hwlog_err("%s: pn547_i2c_write failed, ret:%d\n", __func__, ret);
+		goto failed;
+	}
+	/*read response*/
+	ret = pn547_i2c_read(pdev, recvBuf, nfc_rece_length);
+	if (ret < 0) {
+		hwlog_err("%s: pn547_i2c_read failed, ret:%d\n", __func__, ret);
+		goto failed;
+	}
+
+	msleep(10);
+
+	/*write set_ven_config*/
+	ret = pn547_i2c_write(pdev, set_ven_config, sizeof(set_ven_config));
+	if (ret < 0) {
+		hwlog_err("%s: pn547_i2c_write failed, ret:%d\n", __func__, ret);
+		goto failed;
+	}
+	/*read response*/
+	ret = pn547_i2c_read(pdev, recvBuf, nfc_rece_length);
+	if (ret < 0) {
+		hwlog_err("%s: pn547_i2c_read failed, ret:%d\n", __func__, ret);
+		goto failed;
+	}
+
+	return 0;
+failed:
+	return -1;
+}
+
+
+static ssize_t nfc_recovery_close_nfc_store(struct device *dev, struct device_attribute *attr,
+            const char *buf, size_t count)
+{
+    return (ssize_t)count;
+}
+
+static ssize_t nfc_recovery_close_nfc_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    int status = -1;
+	struct i2c_client *i2c_client_dev = container_of(dev, struct i2c_client, dev);
+	struct pn547_dev *pn547_dev;
+	pn547_dev = i2c_get_clientdata(i2c_client_dev);
+	if (pn547_dev == NULL) {
+		hwlog_err("%s: pn547_dev == NULL!\n", __func__);
+		return status;
+	}
+	hwlog_info("%s: enter!\n", __func__);
+	status = recovery_close_nfc(i2c_client_dev, pn547_dev);
+	if (status < 0) {
+		hwlog_err("%s: check_sim_status error!\n", __func__);
+	}
+	hwlog_info("%s: status=%d\n", __func__, status);
+	return (ssize_t)(snprintf(buf, MAX_ATTRIBUTE_BUFFER_SIZE-1, "%d\n", status));
+}
+
+
+
+
 static struct device_attribute pn547_attr[] = {
 
 	__ATTR(nfc_fwupdate, 0664, nfc_fwupdate_show, nfc_fwupdate_store),
@@ -1660,19 +1875,24 @@ static struct device_attribute pn547_attr[] = {
 	__ATTR(rd_nfc_sim_status, 0444, rd_nfc_sim_status_show, NULL),
 	__ATTR(nfc_enable_status, 0664, nfc_enable_status_show, nfc_enable_status_store),
 	__ATTR(nfc_card_num, 0444, nfc_card_num_show, NULL),
-	__ATTR(nfc_chip_type, 0444, nfc_chip_type_show, NULL),
+    __ATTR(nfc_ese_num, 0444, nfc_ese_num_show, NULL),
+    __ATTR(nfc_chip_type, 0664, nfc_chip_type_show, nfc_chip_type_store),
 	__ATTR(nfc_fw_version, 0444, nfc_fw_version_show, NULL),
 	__ATTR(nfcservice_lock, 0664, nfcservice_lock_show, nfcservice_lock_store),
 	__ATTR(nfc_svdd_sw, 0664, nfc_svdd_sw_show, nfc_svdd_sw_store),
 	__ATTR(nfc_close_type, 0664, nfc_close_type_show, nfc_close_type_store),
 	__ATTR(nfc_single_channel, 0444, nfc_single_channel_show, NULL),
-	__ATTR(nfc_wired_ese_type, 0444, nfc_wired_ese_info_show, NULL),
+    __ATTR(nfc_wired_ese_type, 0664, nfc_wired_ese_info_show, nfc_wired_ese_info_store),
 	__ATTR(nfc_activated_se_info, 0664, nfc_activated_se_info_show, nfc_activated_se_info_store),
 	__ATTR(nfc_hal_dmd, 0664, nfc_hal_dmd_info_show, nfc_hal_dmd_info_store),
 	__ATTR(nfc_calibration, 0444, nfc_calibration_show, NULL),
 	__ATTR(nfc_clk_src, 0444, nfc_clk_src_show, NULL),
 	__ATTR(nfc_switch_state, 0664, nfc_switch_state_show, nfc_switch_state_store),
 	__ATTR(nfc_at_result, 0664, nfc_at_result_show, nfc_at_result_store),
+        /*start : recovery close nfc  2018-03-20*/
+        __ATTR(nfc_recovery_close_nfc, 0664, nfc_recovery_close_nfc_show, nfc_recovery_close_nfc_store),
+        /*end   : recovery close nfc  2018-03-20*/
+        __ATTR(nfc_get_rssi, 0664, nfc_get_rssi_show, nfc_get_rssi_store),
 };
 /*lint -restore*/
 /*lint -save -e* */
@@ -1704,7 +1924,7 @@ static int remove_sysfs_interfaces(struct device *dev)
 
 	return 0;
 }
-static int nfc_ven_low_beforepwd(struct notifier_block *this, unsigned int code,
+static int nfc_ven_low_beforepwd(struct notifier_block *this, unsigned long code,
 				void *unused)
 {
 	int retval = 0;
@@ -2173,6 +2393,7 @@ static int pn547_probe(struct i2c_client *client,
 	set_nfc_chip_type_name();
 	set_nfc_single_channel();
 	set_nfc_card_num();
+    set_nfc_ese_num();
 
 	hwlog_info("[%s,%d]: probe end !\n", __func__, __LINE__);
 

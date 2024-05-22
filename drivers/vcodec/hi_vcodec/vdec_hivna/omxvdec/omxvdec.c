@@ -24,6 +24,7 @@
 
 #define PCTRL_PERI              (0xE8A090A4)
 #define PCTRL_PERI_SATA0        (0xE8A090BC)
+#define INVALID_IDX             (-1)
 
 static HI_S32 gIsNormalInit = 0;
 
@@ -77,19 +78,22 @@ static HI_S32 omxvdec_get_file_index(struct file *file)
 {
 	HI_S32 index;
 	for (index = 0; index < MAX_OPEN_COUNT; index++) {
-		if ((g_VdecMapInfo[index].file != HI_NULL) && (file == g_VdecMapInfo[index].file))
-			break;
+		if (file == g_VdecMapInfo[index].file) {
+			return index;
+		}
 	}
-	if (index == MAX_OPEN_COUNT) {
-		dprint(PRN_FATAL, "%s this file is not exist \n", __func__);
-		return HI_FAILURE;
-	}
-	return index;
+
+	return INVALID_IDX;
 }
 
 static ssize_t omxvdec_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 #ifdef USER_DISABLE_VDEC_PROC
+	if (buf == HI_NULL) {
+		dprint(PRN_FATAL, "%s buf is null \n", __func__);
+		return 0;
+	}
+
 	return snprintf(buf, PAGE_SIZE, "0x%pK\n", (void *)(uintptr_t)gSmmuPageBase); /* unsafe_function_ignore: snprintf */
 #else
 	return 0;
@@ -242,11 +246,40 @@ exit:
 	return ret;
 }
 
+static HI_BOOL omxvdec_is_heif_scene(VDEC_MEM_INFO *mem_info)
+{
+	MEM_BUFFER_S *vdh_mem = NULL;
+	if (!mem_info) {
+		return HI_FALSE;
+	}
+
+	vdh_mem = mem_info->vdh;
+	if (SCENE_HEIF == vdh_mem->scene) {
+		return HI_TRUE;
+	}
+
+	return HI_FALSE;
+}
+
+static HI_S32 omxvdec_get_opened_index(void)
+{
+	HI_S32 index;
+
+	for (index = 0; index < MAX_OPEN_COUNT; index++) {
+		if (g_VdecMapInfo[index].file != HI_NULL) {
+			return index;
+		}
+	}
+
+	return INVALID_IDX;
+}
+
 static HI_S32 omxvdec_release(struct inode *inode, struct file *file)
 {
 	OMXVDEC_ENTRY *omxvdec = HI_NULL;
 	HI_S32 ret = HI_SUCCESS;
 	HI_S32 index;
+	HI_S32 opened_index;
 
 	omxvdec = file->private_data;
 	if (omxvdec == HI_NULL) {
@@ -258,22 +291,40 @@ static HI_S32 omxvdec_release(struct inode *inode, struct file *file)
 	VDEC_MUTEX_LOCK(&omxvdec->vdec_mutex_scd);
 	VDEC_MUTEX_LOCK(&omxvdec->vdec_mutex_vdh);
 
-	if (file->private_data == HI_NULL) {
-		dprint(PRN_FATAL, "%s: invalid file->private_data is null\n", __func__);
-		ret = -EFAULT;
-		goto exit;
-	}
 	/* release file info */
 	index = omxvdec_get_file_index(file);
-	if (index == HI_FAILURE) {
+	if (INVALID_IDX == index) {
 		dprint(PRN_FATAL, "%s file is not open\n", __func__);
 		ret = -EFAULT;
 		goto exit;
 	}
+#ifdef MSG_POOL_ADDR_CHECK
+	if (omxvdec_is_heif_scene(&g_VdecMapInfo[index])) {
+		VCTRL_VDHUnmapMessagePool(&(g_VdecMapInfo[index].vdh[VDH_SHAREFD_MESSAGE_POOL]));
+		memset(&(g_VdecMapInfo[index].vdh[VDH_SHAREFD_MESSAGE_POOL]), 0,  /* unsafe_function_ignore: memset */
+			sizeof(g_VdecMapInfo[index].vdh[VDH_SHAREFD_MESSAGE_POOL]));
+	}
+#endif
+
+	memset(&g_VdecMapInfo[index], 0, sizeof(g_VdecMapInfo[index])); /* unsafe_function_ignore: memset */
+
 	if (omxvdec->open_count > 0)
 		omxvdec->open_count--;
 
-	if (omxvdec->open_count == 0) {
+	/* set its own clock rate when only 1 open instance */
+	if (1 == omxvdec->open_count) {
+		opened_index = omxvdec_get_opened_index();
+		if (INVALID_IDX == opened_index) {
+			dprint(PRN_FATAL, "get opened index fail\n");
+			ret = -EFAULT;
+			goto exit;
+		}
+		ret = VDEC_Regulator_SetClkRate(g_VdecMapInfo[opened_index].clk_rate);
+		if (ret != HI_SUCCESS) {
+			dprint(PRN_FATAL, "VDEC_Regulator_SetClkRate faied, clock rate: %d\n",
+				g_VdecMapInfo[opened_index].clk_rate);
+		}
+	} else if (0 == omxvdec->open_count) {
 #ifdef MSG_POOL_ADDR_CHECK
 		VCTRL_VDHUnmapMessagePool(&(omxvdec->com_msg_pool));
 		memset(&(omxvdec->com_msg_pool), 0, sizeof(omxvdec->com_msg_pool)); /* unsafe_function_ignore: memset */
@@ -281,16 +332,22 @@ static HI_S32 omxvdec_release(struct inode *inode, struct file *file)
 		VCTRL_CloseVfmw();
 		VDEC_Regulator_Disable();
 		VDEC_MEM_Exit();
-		gIsNormalInit = 0;
+		if (omxvdec->device_locked) {
+			VDEC_MUTEX_UNLOCK(&omxvdec->vdec_mutex_sec_vdh);
+			VDEC_MUTEX_UNLOCK(&omxvdec->vdec_mutex_sec_scd);
+			omxvdec->device_locked = HI_FALSE;
+		}
+		gIsNormalInit = 0;   //lint !e456
 	}
-	memset(&g_VdecMapInfo[index], 0, sizeof(g_VdecMapInfo[index])); /* unsafe_function_ignore: memset */
+
 	file->private_data = HI_NULL;
 
-	dprint(PRN_ALWS, "exit %s , open_count : %d\n", __func__, omxvdec->open_count);
 exit:
 	VDEC_MUTEX_UNLOCK(&omxvdec->vdec_mutex_vdh);
 	VDEC_MUTEX_UNLOCK(&omxvdec->vdec_mutex_scd);
 	VDEC_MUTEX_UNLOCK(&omxvdec->omxvdec_mutex);
+
+	dprint(PRN_ALWS, "exit %s , open_count : %d\n", __func__, omxvdec->open_count);
 
 	return ret;
 }
@@ -364,8 +421,12 @@ static long omxvdec_ioctl_common(struct file *file, unsigned int cmd, unsigned l
 
 	CHECK_RETURN(omxvdec != HI_NULL, "omxvdec is null");
 
-	ret = omxvdec_compat_get_data(type, u_arg, &vdec_msg);
-	CHECK_RETURN(ret == HI_SUCCESS, "compat data get failed");
+	memset(&vdec_msg, 0, sizeof(vdec_msg)); /* unsafe_function_ignore: memset */
+
+	if ((cmd != VDEC_IOCTL_UNLOCK_HW) && (cmd != VDEC_IOCTL_LOCK_HW)) {
+		ret = omxvdec_compat_get_data(type, u_arg, &vdec_msg);
+		CHECK_RETURN(ret == HI_SUCCESS, "compat data get failed");
+	}
 
 	switch (cmd) {
 	case VDEC_IOCTL_SET_CLK_RATE:
@@ -379,20 +440,30 @@ static long omxvdec_ioctl_common(struct file *file, unsigned int cmd, unsigned l
 		VDEC_MUTEX_LOCK(&omxvdec->vdec_mutex_scd);
 		VDEC_MUTEX_LOCK(&omxvdec->vdec_mutex_vdh);
 		fd_index = omxvdec_get_file_index(file);
-		if (fd_index == HI_FAILURE) {
-			dprint(PRN_FATAL, "%s file is wrong\n", __func__);
+		if (INVALID_IDX == fd_index) {
 			VDEC_MUTEX_UNLOCK(&omxvdec->vdec_mutex_vdh);
 			VDEC_MUTEX_UNLOCK(&omxvdec->vdec_mutex_scd);
 			VDEC_MUTEX_UNLOCK(&omxvdec->omxvdec_mutex);
+			dprint(PRN_FATAL, "%s file is wrong\n", __func__);
+
 			return -EIO;
 		}
+        // record clk_rate  for each instance
+		g_VdecMapInfo[fd_index].clk_rate = clk_rate;
+
+		if (omxvdec->open_count > 1) {
+			clk_rate = VDEC_CLK_RATE_HIGH;
+		}
+
 		if (VDEC_Regulator_SetClkRate(clk_rate) != HI_SUCCESS) {
-			dprint(PRN_FATAL, "VDEC_Regulator_SetClkRate faied\n");
 			VDEC_MUTEX_UNLOCK(&omxvdec->vdec_mutex_vdh);
 			VDEC_MUTEX_UNLOCK(&omxvdec->vdec_mutex_scd);
 			VDEC_MUTEX_UNLOCK(&omxvdec->omxvdec_mutex);
+			dprint(PRN_FATAL, "VDEC_Regulator_SetClkRate faied\n");
+
 			return HI_FAILURE;
 		}
+
 		VDEC_MUTEX_UNLOCK(&omxvdec->vdec_mutex_vdh);
 		VDEC_MUTEX_UNLOCK(&omxvdec->vdec_mutex_scd);
 		VDEC_MUTEX_UNLOCK(&omxvdec->omxvdec_mutex);
@@ -407,25 +478,29 @@ static long omxvdec_ioctl_common(struct file *file, unsigned int cmd, unsigned l
 			return -EFAULT;
 		}
 
+		VDEC_MUTEX_LOCK(&omxvdec->vdec_mutex_sec_vdh);
 		VDEC_MUTEX_LOCK(&omxvdec->vdec_mutex_vdh);
 		fd_index = omxvdec_get_file_index(file);
-		if (fd_index == HI_FAILURE) {
+		if (INVALID_IDX == fd_index) {
 			dprint(PRN_FATAL, "%s file is wrong\n", __func__);
 			VDEC_MUTEX_UNLOCK(&omxvdec->vdec_mutex_vdh);
+			VDEC_MUTEX_UNLOCK(&omxvdec->vdec_mutex_sec_vdh);
 			return -EIO;
 		}
 
 		dsb(sy);
 
 		ret = VCTRL_VDMHal_Process(&vdm_reg_cfg, &vdm_state_reg,
-					&(g_VdecMapInfo[fd_index].vdh[0]), &(omxvdec->com_msg_pool));
+			&(g_VdecMapInfo[fd_index].vdh[0]), &(omxvdec->com_msg_pool));
 		if (ret != HI_SUCCESS) {
 			dprint(PRN_FATAL, "VCTRL_VDMHal_Process failed\n");
 			VDEC_MUTEX_UNLOCK(&omxvdec->vdec_mutex_vdh);
+			VDEC_MUTEX_UNLOCK(&omxvdec->vdec_mutex_sec_vdh);
 			return -EIO;
 		}
 
 		VDEC_MUTEX_UNLOCK(&omxvdec->vdec_mutex_vdh);
+		VDEC_MUTEX_UNLOCK(&omxvdec->vdec_mutex_sec_vdh);
 		if (copy_to_user(vdec_msg.out, &vdm_state_reg, sizeof(vdm_state_reg))) {
 			dprint(PRN_FATAL, "VDEC_IOCTL_VDM_PROC : copy_to_user failed\n");
 			return -EFAULT;
@@ -434,16 +509,19 @@ static long omxvdec_ioctl_common(struct file *file, unsigned int cmd, unsigned l
 
 	case VDEC_IOCTL_GET_VDM_HWSTATE:
 		CHECK_PARA_SIZE_RETURN(sizeof(vdm_is_run), vdec_msg.out_size, "VDEC_IOCTL_GET_VDM_HWSTATE");
+		VDEC_MUTEX_LOCK(&omxvdec->vdec_mutex_sec_vdh);
 		VDEC_MUTEX_LOCK(&omxvdec->vdec_mutex_vdh);
 		fd_index = omxvdec_get_file_index(file);
-		if (fd_index == HI_FAILURE) {
+		if (INVALID_IDX == fd_index) {
 			dprint(PRN_FATAL, "%s file is wrong\n", __func__);
 			VDEC_MUTEX_UNLOCK(&omxvdec->vdec_mutex_vdh);
+			VDEC_MUTEX_UNLOCK(&omxvdec->vdec_mutex_sec_vdh);
 			return -EIO;
 		}
 		vdm_is_run = VCTRL_VDMHAL_IsRun();
 
 		VDEC_MUTEX_UNLOCK(&omxvdec->vdec_mutex_vdh);
+		VDEC_MUTEX_UNLOCK(&omxvdec->vdec_mutex_sec_vdh);
 		if (copy_to_user(vdec_msg.out, &vdm_is_run, sizeof(vdm_is_run))) {
 			dprint(PRN_FATAL, "VDEC_IOCTL_GET_VDM_HWSTATE : copy_to_user failed\n");
 			return -EFAULT;
@@ -458,11 +536,13 @@ static long omxvdec_ioctl_common(struct file *file, unsigned int cmd, unsigned l
 			return -EFAULT;
 		}
 
+		VDEC_MUTEX_LOCK(&omxvdec->vdec_mutex_sec_scd);
 		VDEC_MUTEX_LOCK(&omxvdec->vdec_mutex_scd);
 		fd_index = omxvdec_get_file_index(file);
-		if (fd_index == HI_FAILURE) {
-			dprint(PRN_FATAL, "%s file is wrong\n", __func__);
+		if (INVALID_IDX == fd_index) {
 			VDEC_MUTEX_UNLOCK(&omxvdec->vdec_mutex_scd);
+			VDEC_MUTEX_UNLOCK(&omxvdec->vdec_mutex_sec_scd);
+			dprint(PRN_FATAL, "%s file is wrong\n", __func__);
 			return -EIO;
 		}
 
@@ -472,15 +552,37 @@ static long omxvdec_ioctl_common(struct file *file, unsigned int cmd, unsigned l
 		if (ret != HI_SUCCESS) {
 			dprint(PRN_FATAL, "VCTRL_SCDHal_Process failed\n");
 			VDEC_MUTEX_UNLOCK(&omxvdec->vdec_mutex_scd);
+			VDEC_MUTEX_UNLOCK(&omxvdec->vdec_mutex_sec_scd);
 			return -EIO;
 		}
 
 		VDEC_MUTEX_UNLOCK(&omxvdec->vdec_mutex_scd);
+		VDEC_MUTEX_UNLOCK(&omxvdec->vdec_mutex_sec_scd);
 		if (copy_to_user(vdec_msg.out, &scd_state_reg, sizeof(scd_state_reg))) {
 			dprint(PRN_FATAL, "VDEC_IOCTL_SCD_PROC : copy_to_user failed\n");
 			return -EFAULT;
 		}
 		break;
+	/*lint -e454 -e456 -e455*/
+	case VDEC_IOCTL_LOCK_HW:
+		CHECK_SCENE_EQ_RETURN(x_scene == HI_FALSE, "lock hw error");
+		if (omxvdec->device_locked) {
+			dprint(PRN_ALWS, "hw have locked\n");
+		}
+		VDEC_MUTEX_LOCK(&omxvdec->vdec_mutex_sec_scd);
+		VDEC_MUTEX_LOCK(&omxvdec->vdec_mutex_sec_vdh);
+		omxvdec->device_locked = HI_TRUE;
+		break;
+
+	case VDEC_IOCTL_UNLOCK_HW:
+		CHECK_SCENE_EQ_RETURN(x_scene == HI_FALSE, "unlock hw error");
+		if (omxvdec->device_locked) {
+			VDEC_MUTEX_UNLOCK(&omxvdec->vdec_mutex_sec_vdh);
+			VDEC_MUTEX_UNLOCK(&omxvdec->vdec_mutex_sec_scd);
+			omxvdec->device_locked = HI_FALSE;
+		}
+		break;
+	/*lint +e454 +e456 +e455*/
 
 	default:
 		/* could not handle ioctl */
@@ -488,7 +590,7 @@ static long omxvdec_ioctl_common(struct file *file, unsigned int cmd, unsigned l
 		return -ENOTTY;
 	}
 
-	return 0;
+	return 0;    //lint !e454
 }
 
 static long omxvdec_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
@@ -644,6 +746,8 @@ static HI_S32 omxvdec_probe(struct platform_device *pltdev)
 	VDEC_INIT_MUTEX(&g_OmxVdecEntry.omxvdec_mutex);
 	VDEC_INIT_MUTEX(&g_OmxVdecEntry.vdec_mutex_scd);
 	VDEC_INIT_MUTEX(&g_OmxVdecEntry.vdec_mutex_vdh);
+	VDEC_INIT_MUTEX(&g_OmxVdecEntry.vdec_mutex_sec_scd);
+	VDEC_INIT_MUTEX(&g_OmxVdecEntry.vdec_mutex_sec_vdh);
 
 	ret = VDEC_MEM_Probe();
 	if (ret != HI_SUCCESS)
@@ -700,7 +804,7 @@ static HI_S32 omxvdec_suspend(struct platform_device *pltdev, pm_message_t state
 {
 	SINT32 ret;
 
-	dprint(PRN_ALWS, "%s enter\n", __func__);
+	dprint(PRN_ALWS, "%s +\n", __func__);
 
 	if (gIsNormalInit != 0)
 		VCTRL_Suspend();
@@ -709,7 +813,7 @@ static HI_S32 omxvdec_suspend(struct platform_device *pltdev, pm_message_t state
 	if (ret != HI_SUCCESS)
 		dprint(PRN_FATAL, "%s disable regulator failed\n", __func__);
 
-	dprint(PRN_ALWS, "%s success\n", __func__);
+	dprint(PRN_ALWS, "%s -\n", __func__);
 
 	return HI_SUCCESS;
 }
@@ -719,7 +823,7 @@ static HI_S32 omxvdec_resume(struct platform_device *pltdev)
 	SINT32 ret;
 	CLK_RATE_E resume_clk = VDEC_CLK_RATE_NORMAL;
 
-	dprint(PRN_ALWS, "%s enter\n", __func__);
+	dprint(PRN_ALWS, "%s +\n", __func__);
 	VDEC_Regulator_GetClkRate(&resume_clk);
 
 	if (gIsNormalInit != 0) {
@@ -738,14 +842,9 @@ static HI_S32 omxvdec_resume(struct platform_device *pltdev)
 		VCTRL_Resume();
 	}
 
-	dprint(PRN_ALWS, "%s success\n", __func__);
+	dprint(PRN_ALWS, "%s -\n", __func__);
 
 	return HI_SUCCESS;
-}
-
-static HI_VOID omxvdec_device_release(struct device *dev)
-{
-	return;
 }
 
 static struct platform_driver omxvdec_driver = {
@@ -761,38 +860,17 @@ static struct platform_driver omxvdec_driver = {
 	},
 };
 
-static struct platform_device omxvdec_device = {
-
-	.name = g_OmxVdecDrvName,
-	.id   = -1,
-	.dev  = {
-		.platform_data = NULL,
-		.release       = omxvdec_device_release,
-	},
-};
-
 HI_S32 __init OMXVDEC_DRV_ModInit(HI_VOID)
 {
-	HI_S32 ret;
-
-	ret = platform_device_register(&omxvdec_device);
-	if (ret < 0) {
-		dprint(PRN_FATAL, "%s call platform_device_register failed\n", __func__);
+	int ret = platform_driver_register(&omxvdec_driver);
+	if (ret) {
+		dprint(PRN_FATAL, "%s register platform driver failed\n", __func__);
 		return ret;
 	}
 
-	ret = platform_driver_register(&omxvdec_driver);
-	if (ret < 0) {
-		dprint(PRN_FATAL, "%s call platform_driver_register failed\n", __func__);
-		goto exit;
-	}
 #ifdef MODULE
 	dprint(PRN_ALWS, "Load hi_omxvdec.ko :%d success\n", OMXVDEC_VERSION);
 #endif
-
-	return HI_SUCCESS;
-exit:
-	platform_device_unregister(&omxvdec_device);
 
 	return ret;
 }
@@ -800,7 +878,6 @@ exit:
 HI_VOID __exit OMXVDEC_DRV_ModExit(HI_VOID)
 {
 	platform_driver_unregister(&omxvdec_driver);
-	platform_device_unregister(&omxvdec_device);
 
 #ifdef MODULE
 	dprint(PRN_ALWS, "Unload hi_omxvdec.ko : %d success\n", OMXVDEC_VERSION);
@@ -814,3 +891,4 @@ module_exit(OMXVDEC_DRV_ModExit);
 MODULE_AUTHOR("gaoyajun@hisilicon.com");
 MODULE_DESCRIPTION("vdec driver");
 MODULE_LICENSE("GPL");
+

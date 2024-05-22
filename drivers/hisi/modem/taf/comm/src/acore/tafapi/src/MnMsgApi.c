@@ -164,9 +164,7 @@ VOS_UINT32 MSG_SendAppReq(
     pstAppReq->ulSenderCpuId = VOS_LOCAL_CPUID;
     pstAppReq->ulSenderPid = WUEPS_PID_AT;
     pstAppReq->ulReceiverCpuId = VOS_LOCAL_CPUID;
-    /* Modified by l60609 for DSDA Phase II, 2012-12-24, Begin */
     pstAppReq->ulReceiverPid = AT_GetDestPid(clientId, I0_WUEPS_PID_TAF);
-    /* Modified by l60609 for DSDA Phase II, 2012-12-24, End */
     pstAppReq->usMsgName = enMsgType;
     pstAppReq->aucReserve1[0] = 0;
     pstAppReq->aucReserve1[1] = 0;
@@ -188,7 +186,6 @@ VOS_UINT32 MSG_SendAppReq(
     return MN_ERR_NO_ERROR;
 }
 
-/* Added by f62575 for AT Project，2011-10-03,  Begin*/
 
 VOS_UINT32 MN_MSG_ReqStub(
     MN_CLIENT_ID_T                      clientId,
@@ -212,7 +209,6 @@ VOS_UINT32 MN_MSG_ReqStub(
 
     return ulRet;
 }
-/* Added by f62575 for AT Project，2011-10-03,  End*/
 
 
 VOS_UINT32   MN_MSG_SetLinkCtrl(
@@ -643,7 +639,6 @@ VOS_UINT32   MN_MSG_DeleteStaRpt(
         return MN_ERR_NULLPTR;
     }
 
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
     if ((MN_MSG_MEM_STORE_SIM != pstDeleteParam->enMemStore)
      && (MN_MSG_MEM_STORE_NV != pstDeleteParam->enMemStore))
     {
@@ -656,7 +651,6 @@ VOS_UINT32   MN_MSG_DeleteStaRpt(
         AT_WARN_LOG("MN_MSG_DeleteStaRpt:Invalid enMemStore");
         return MN_ERR_INVALIDPARM;
     }
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, end */
 
     if ((MN_MSG_DELETE_SINGLE != pstDeleteParam->enDeleteType)
      && (MN_MSG_DELETE_ALL != pstDeleteParam->enDeleteType))
@@ -1032,7 +1026,6 @@ VOS_UINT32   MN_MSG_GetMoMsgIndex(
         return MN_ERR_NULLPTR;
     }
 
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
     if ((MN_MSG_MEM_STORE_SIM != pstStaRptParm->enMemStore)
      && (MN_MSG_MEM_STORE_NV != pstStaRptParm->enMemStore))
     {
@@ -1045,7 +1038,6 @@ VOS_UINT32   MN_MSG_GetMoMsgIndex(
         AT_WARN_LOG("MN_MSG_GetMoMsgFromStaRpt:Invalid enMemStore2");
         return MN_ERR_INVALIDPARM;
     }
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, end */
 
     ulRet = MSG_SendAppReq(MN_MSG_MSGTYPE_GET_MOMSG_FROMSTARPT,
                            clientId,

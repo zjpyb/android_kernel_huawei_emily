@@ -172,6 +172,7 @@ static int do_iommu_domain_map(struct ion_iommu_domain *ion_domain,
 	int ret;
 	unsigned long phys_len, iova_size;
 	unsigned long iova_start;
+	unsigned long iova_alloc_sz;
 
 	struct gen_pool *pool;
 	struct iommu_domain *domain;
@@ -214,8 +215,15 @@ static int do_iommu_domain_map(struct ion_iommu_domain *ion_domain,
 		iova_size = phys_len;
 	}
 
+	iova_alloc_sz = iova_size;
+#ifdef CONFIG_HISI_IOMMU_IOVA_DEBUG
+	if ((!format->is_tile) && IS_ALIGNED(iova_size, ion_domain->range.align)) {
+		pr_err("enter CONFIG_HISI_IOMMU_IOVA_DEBUG\n");
+		iova_alloc_sz += ion_domain->range.align;
+	}
+#endif
 	/* Limit not exceeding 2G */
-	if (MAX_IOVA_SIZE_2G < iova_size) {
+	if (MAX_IOVA_SIZE_2G < iova_alloc_sz) {
 		pr_err("[%s]hisi_alloc_iova alloc size more than 2G(0x%lx).\n",__func__, iova_size);
 		return -EINVAL;
 	}
@@ -223,17 +231,17 @@ static int do_iommu_domain_map(struct ion_iommu_domain *ion_domain,
 	/* alloc iova */
 	pool = ion_domain->iova_pool;
 	domain = ion_domain->domain;
-	iova_start = hisi_alloc_iova(pool, iova_size, ion_domain->range.align);
+	iova_start = hisi_alloc_iova(pool, iova_alloc_sz, ion_domain->range.align);
 	if (!iova_start) {
 		pr_err("[%s]hisi_alloc_iova alloc size 0x%lx failed!"
 		        "hisi ion pool avail 0x%lx\n",
-			__func__, iova_size, gen_pool_avail(pool));
+			__func__, iova_alloc_sz, gen_pool_avail(pool));
 		return -EINVAL;
 	}
 
-	if (MAX_IOVA_START_ADDR_4G < (iova_start + iova_size)) {
+	if (MAX_IOVA_START_ADDR_4G < (iova_start + iova_alloc_sz)) {
 		pr_err("hisi iommu can not deal with iova 0x%lx size 0x%lx\n",
-			iova_start, iova_size);
+			iova_start, iova_alloc_sz);
 	}
 
 	/* do map */
@@ -252,7 +260,7 @@ static int do_iommu_domain_map(struct ion_iommu_domain *ion_domain,
 	if (ret != iova_size) {
 		pr_err("[%s]map failed!iova_start = %lx, iova_size = %lx\n",
 			__func__, iova_start, iova_size);
-		hisi_free_iova(pool, iova_start, iova_size);
+		hisi_free_iova(pool, iova_start, iova_alloc_sz);
 		return ret;
 	}
 
@@ -291,6 +299,7 @@ static int do_iommu_domain_unmap(struct map_result *result)
 {
 	int ret;
 	unsigned long unmaped_size;
+	unsigned long iova_alloc_sz = result->iova_size;
 	struct ion_iommu_domain *ion_domain = ion_iommu_domain;
 	struct gen_pool *pool = ion_domain->iova_pool;
 
@@ -316,13 +325,18 @@ static int do_iommu_domain_unmap(struct map_result *result)
 	}
 	/* free iova */
 	if (pool) {
+#ifdef CONFIG_HISI_IOMMU_IOVA_DEBUG
+		if ((!result->is_tile) &&
+				IS_ALIGNED(result->iova_size, ion_domain->range.align))
+			iova_alloc_sz += ion_domain->range.align;
+#endif
 		ret = addr_in_gen_pool(pool, result->iova_start,
-			result->iova_size);
+				iova_alloc_sz);
 		if(!ret) {
 			pr_err("[%s]illegal para!!iova = %lx, size = %lx\n",
-					__func__, result->iova_start, result->iova_size);
+				__func__, result->iova_start, iova_alloc_sz);
 		}
-		hisi_free_iova(pool, result->iova_start, result->iova_size);
+		hisi_free_iova(pool, result->iova_start, iova_alloc_sz);
 	}
 	return 0;
 }

@@ -14240,6 +14240,31 @@ OAL_STATIC oal_uint32  wal_hipriv_get_all_reg_value(oal_net_device_stru *pst_net
 
 #endif
 
+
+extern oal_uint8    g_sk_pacing_shift;
+OAL_STATIC oal_uint32 wal_hipriv_sk_pacing_shift(oal_net_device_stru *pst_net_dev, oal_int8 *pc_param)
+{
+    oal_uint32                 ul_ret;
+    oal_uint32                 ul_off_set;
+    oal_int8                   ac_name[WAL_HIPRIV_CMD_NAME_MAX_LEN];
+
+    ul_ret = wal_get_cmd_one_arg(pc_param, ac_name, &ul_off_set);
+
+    if (OAL_SUCC == ul_ret)
+    {
+        g_sk_pacing_shift  = (oal_uint8)oal_atoi(ac_name);
+    }
+    else
+    {
+        OAM_WARNING_LOG1(0, OAM_SF_ROAM, "{wal_hipriv_sk_pacing_shift::input parameter error[%d]}", ul_ret);
+        return ul_ret;
+    }
+
+    OAM_WARNING_LOG1(0, OAM_SF_ROAM, "{wal_hipriv_sk_pacing_shift::set sk pacing shift [%d]}", g_sk_pacing_shift);
+    return OAL_SUCC;
+}
+
+
 OAL_CONST wal_hipriv_cmd_entry_stru  g_ast_hipriv_cmd_debug[] =
 {
     /***********************调试命令***********************/
@@ -14740,6 +14765,7 @@ OAL_CONST wal_hipriv_cmd_entry_stru  g_ast_hipriv_cmd_debug[] =
     {"chip_check",      wal_hipriv_chip_check},                  /* 芯片自检 */
     {"cfg_cw_signal",   wal_hipriv_send_cw_signal},               /* 发送单音信号:         hipriv "wlan0 cfg_cw_signal   <value>" */
 #endif
+    {"sk_pacing_shift", wal_hipriv_sk_pacing_shift},            /* 设置sk_pacing_shift  hipriv "wlan0 sk_pacing_shift <value>" */
 };
 
 oal_uint32 wal_hipriv_get_debug_cmd_size(oal_void)

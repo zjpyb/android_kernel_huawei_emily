@@ -18,6 +18,15 @@ oases_handler_func_post_start:
 .balign 4
 oases_handler_func_post_end:
 
+.global oases_handler_func_pre_post_start
+.global oases_handler_func_pre_post_end
+
+.balign 4
+oases_handler_func_pre_post_start:
+.incbin "inlinehook_func_pre_post.bin"
+.balign 4
+oases_handler_func_pre_post_end:
+
 .global oases_handler_subfunc_pre_start
 .global oases_handler_subfunc_pre_end
 

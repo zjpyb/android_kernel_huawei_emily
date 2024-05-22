@@ -17,94 +17,183 @@
 *	return value: 0: scp pre operate success
 *	              -1:scp pre operate fail
 **********************************************************/
-#include <huawei_platform/log/hw_log.h>
-#include <linux/gpio.h>
-#include <linux/of.h>
-#include <linux/of_gpio.h>
-#include <linux/wakelock.h>
-#include <linux/power/hisi/coul/hisi_coul_drv.h>
-#include <linux/power/hisi/hisi_bci_battery.h>
 #include <huawei_platform/power/direct_charger.h>
-#include <huawei_platform/power/huawei_charger.h>
-#include <huawei_platform/power/vbat_ovp.h>
-#ifdef CONFIG_TCPC_CLASS
-#include <huawei_platform/usb/hw_pd_dev.h>
-#endif
-#ifdef CONFIG_HUAWEI_HW_DEV_DCT
-#include <huawei_platform/devdetect/hw_dev_dec.h>
-#endif
-#if defined CONFIG_HUAWEI_DSM
-#include <dsm/dsm_pub.h>
-#endif
-#ifdef CONFIG_HUAWEI_USB_SHORT_CIRCUIT_PROTECT
-#include <huawei_platform/power/usb_short_circuit_protect.h>
-#endif
-#ifdef CONFIG_SUPERSWITCH_FSC
-#include <huawei_platform/usb/superswitch/fsc/core/hw_scp.h>
-#endif
-#ifdef CONFIG_WIRELESS_CHARGER
-#include <huawei_platform/power/wireless_charger.h>
-#endif
+#include <huawei_platform/power/wired_channel_switch.h>
+#include <linux/random.h>
+#include <huawei_platform/power/power_mesg.h>
+#include <huawei_platform/usb/hw_usb.h>
+
+#define DC_AF_INFO_NL_OPS_NUM			1
+#define DC_AF_WAIT_CT_TIMEOUT		1000
+#define DC_AF_KEY_LEN     (SCP_ADAPTOR_DIGEST_LEN*2+1)
 #define HWLOG_TAG direct_charge
-#include "huawei_platform/dp_aux_switch/dp_aux_switch.h"
+HWLOG_REGIST();
+
+static struct direct_charge_device *g_di;
+static int g_power_ct_service_ready;
+static u8 dc_af_key[DC_AF_KEY_LEN];
+static u8 random_local[SCP_ADAPTOR_RANDOM_NUM_HI_LEN];
+static u8 random_remote[SCP_ADAPTOR_RANDOM_NUM_HI_LEN];
+static u8 remote_hash[SCP_ADAPTOR_DIGEST_LEN];
+struct smart_charge_ops* g_scp_ops;
+struct scp_power_supply_ops* g_scp_ps_ops;
+struct direct_charge_cable_detect_ops* g_cable_detect_ops;
+static bool not_support_direct;
 
 /*PT set adator test result*/
 extern void chg_set_adaptor_test_result(enum adaptor_name charger_type, enum test_state result);
-/*lint -save -e* */
-HWLOG_REGIST();
-
-ATOMIC_NOTIFIER_HEAD(direct_charge_fault_notifier_list);
-static struct wake_lock direct_charge_lock;
-static struct direct_charge_device *g_di;
-static enum scp_stage_type scp_stage = SCP_STAGE_DEFAULT;
-struct smart_charge_ops* g_scp_ops;
-struct loadswitch_ops* g_ls_ops;
-struct batinfo_ops* g_bi_ops;
-struct direct_charge_cable_detect_ops* g_cable_detect_ops;
-static int scp_stop_charging_complete_flag = 1;
-static char dc_err_dsm_buff[CHARGE_DMDLOG_SIZE] = { 0 };
-
-static int battery_temp_handler(int temp);
-static int cutoff_normal_flag = 0;
-static int quick_charge_flag = 0;
-static int super_charge_flag = 0;
-static int scp_adaptor_detect_flag = 0;
-struct dc_volt_para_info orig_volt_para[DC_VOLT_LEVEL];
 extern int pd_dpm_notify_direct_charge_status(bool dc);
+extern int coul_get_battery_voltage_uv(void);
+static int battery_temp_handler(int temp);
 int pmic_vbus_irq_is_enabled(void);
+static long c_offset_a;
+static long c_offset_b;
 
-/*lint -restore*/
+static inline void direct_charge_entry_func(struct direct_charge_device *di, int mode, int type)
+{
+	di->adaptor_test_result_type = type;
+	di->scp_ops->scp_set_direct_charge_mode(mode);
+	di->scp_mode = mode;
+	direct_charge_set_di(di);
+	chg_set_adaptor_test_result(type,DETECT_SUCC);
+	if (SC_MODE == mode)
+		direct_charge_sc_check();
+	else if (LVC_MODE == mode)
+		direct_charge_lvc_check();
+	return;
+}
+static int __init early_parse_direct_charger_cmdline(char * p)
+{
+	char *token;
 
-int get_quick_charge_flag(void)
-{
-	return quick_charge_flag;
-}
-int get_super_charge_flag(void)
-{
-	return super_charge_flag;
-}
-static void direct_charge_send_quick_charge_uevent(void)
-{
-	quick_charge_flag = 1;
-	super_charge_flag = 0;
-	direct_charger_connect_send_uevent();
-}
-static void direct_charge_send_super_charge_uevent(void)
-{
-	quick_charge_flag = 0;
-	super_charge_flag = 1;
-	direct_charger_connect_send_uevent();
-}
-static void direct_charge_send_normal_charge_uevent(void)
-{
-	quick_charge_flag = 0;
-	super_charge_flag = 0;
-	direct_charger_connect_send_uevent();
+	if (NULL == p)
+	{
+		hwlog_err("NULL point in [%s]\n", __func__);
+		return -1;
+	}
+	hwlog_info("%s:p=%s\n", __func__, p);
+
+	token = strsep(&p, ",");
+	if (NULL != token)
+	{
+		if (kstrtoul(token, 10, &c_offset_a) != 0)
+			return -1;
+	}
+	token = strsep(&p, ",");
+	if (NULL != token)
+	{
+		if (kstrtoul(token, 10, &c_offset_b) != 0)
+			return -1;
+	}
+
+	hwlog_info("%s:c_offset_a=%d,c_offset_b=%d\n", __func__, c_offset_a, c_offset_b);
+	if (c_offset_a < C_OFFSET_A_MIN || c_offset_a > C_OFFSET_A_MAX)
+	{
+		c_offset_a = 0;
+		hwlog_err("%s:c_offset_a invalid.\n", __func__);
+		return -1;
+	}
+
+	return 0;
 }
 
-int direct_charge_get_cutoff_normal_flag(void)
+early_param("direct_charger", early_parse_direct_charger_cmdline);
+
+void direct_charge_get_g_scp_ops(struct smart_charge_ops **ops)
 {
-	return cutoff_normal_flag;
+	*ops = g_scp_ops;
+}
+
+void direct_charge_get_g_scp_ps_ops(struct scp_power_supply_ops **ops)
+{
+	*ops = g_scp_ps_ops;
+}
+
+void direct_charge_get_g_cable_detect_ops(struct direct_charge_cable_detect_ops **ops)
+{
+	*ops = g_cable_detect_ops;
+}
+
+bool direct_charge_check_sc_mode(void)
+{
+	struct direct_charge_device *di = g_di;
+	if (di == NULL)
+	{
+		return false;
+	}
+	return (scp_get_stage_status() >= SCP_STAGE_CHARGE_INIT);
+}
+
+void direct_charge_check(void)
+{
+	int lvc_ret = 0;
+	int sc_ret = 0;
+	int adap_mode = UNDEFINED_MODE;
+	int local_mode= 0;
+	struct direct_charge_device *lvc_di = NULL;
+	struct direct_charge_device *sc_di = NULL;
+	enum charge_done_type charge_done_status = get_charge_done_type();
+
+	if (CHARGE_DONE == charge_done_status) {
+		hwlog_info("charge done!");
+		return;
+	}
+
+	lvc_ret = direct_charge_get_lvc_di(&lvc_di);
+	sc_ret = direct_charge_get_sc_di(&sc_di);
+
+	if (lvc_ret && sc_ret) {
+		hwlog_info("local does not support direct_charge!");
+		return;
+	}
+
+	if (sc_di) {
+		if (SCP_STAGE_CHARGE_DONE == sc_di->scp_stage) {
+			hwlog_info("sc charge done!");
+			return;
+		}
+	}
+
+	if(lvc_di) {
+		if (SCP_STAGE_CHARGE_DONE == lvc_di->scp_stage) {
+			hwlog_info("lvc charge done!");
+			return;
+		}
+	}
+
+	local_mode = direct_charge_get_local_mode();
+	scp_adaptor_type_detect(&adap_mode);
+
+	if(UNDEFINED_MODE == adap_mode)
+	{
+		hwlog_info("undefined adaptor mode!");
+		return;
+	}
+	hwlog_info("direct_charge [adaptor mode] = [%d], [local mode] = [%d]!\n", adap_mode, local_mode);
+
+	if (((local_mode & adap_mode) & SC_MODE) && sc_di && !sc_di->dc_err_report_flag) {
+		not_support_direct = false;
+		direct_charge_entry_func(sc_di, SC_MODE, TYPE_SC);
+	} else if (((local_mode & adap_mode) & LVC_MODE) && lvc_di && !lvc_di->dc_err_report_flag) {
+		not_support_direct = false;
+		direct_charge_entry_func(lvc_di, LVC_MODE, TYPE_SCP);
+	} else {
+		not_support_direct = true;
+		hwlog_info("neither sc nor lvc matched!");
+	}
+
+	return;
+}
+void direct_charge_set_di(struct direct_charge_device *di)
+{
+	if (di != NULL)
+	{
+		g_di = di;
+	}
+	else
+	{
+		hwlog_err("direct_charge_set_di fail!\n");
+	}
 }
 
 int cable_detect_ops_register(struct direct_charge_cable_detect_ops* ops)
@@ -138,35 +227,103 @@ int scp_ops_register(struct smart_charge_ops* ops)
 	return ret;
 }
 
-int loadswitch_ops_register(struct loadswitch_ops* ops)
+int scp_power_supply_ops_register(struct scp_power_supply_ops* ops)
 {
 	int ret = 0;
 
 	if (ops != NULL)
 	{
-		g_ls_ops = ops;
+		g_scp_ps_ops = ops;
 	}
 	else
 	{
-		hwlog_err("ls ops register fail!\n");
+		hwlog_err("scp power ops register fail!\n");
 		ret = -EPERM;
 	}
 	return ret;
 }
 
-int batinfo_ops_register(struct batinfo_ops* ops)
-{
-	int ret = 0;
 
-	if (ops != NULL)
+int get_quick_charge_flag(void)
+{
+	struct direct_charge_device *di = NULL;
+	if (NULL == g_di)
 	{
-		g_bi_ops = ops;
+		hwlog_err("%s g_di is NULL\n", __func__);
+		return 0;
 	}
-	else {
-		hwlog_err("batinfo ops register fail!\n");
-		ret = -EPERM;
+	di = g_di;
+
+	return di->quick_charge_flag;
+}
+int get_super_charge_flag(void)
+{
+	struct direct_charge_device *di = NULL;
+	if (NULL == g_di)
+	{
+		hwlog_err("%s g_di is NULL\n", __func__);
+		return 0;
 	}
-	return ret;
+	di = g_di;
+
+	return di->super_charge_flag;
+}
+void direct_charge_send_quick_charge_uevent(void)
+{
+	struct direct_charge_device *di = NULL;
+	if (NULL == g_di)
+	{
+		hwlog_err("%s g_di is NULL\n", __func__);
+		return;
+	}
+	di = g_di;
+
+	di->quick_charge_flag = 1;
+	di->super_charge_flag = 0;
+	direct_charger_connect_send_uevent();
+}
+static void direct_charge_send_super_charge_uevent(void)
+{
+	struct direct_charge_device *di = NULL;
+	if (NULL == g_di)
+	{
+		hwlog_err("%s g_di is NULL\n", __func__);
+		return;
+	}
+
+	di = g_di;
+
+	di->quick_charge_flag = 0;
+	di->super_charge_flag = 1;
+	direct_charger_connect_send_uevent();
+}
+void direct_charge_send_normal_charge_uevent(void)
+{
+	struct direct_charge_device *di = NULL;
+	if (NULL == g_di)
+	{
+		hwlog_err("%s g_di is NULL\n", __func__);
+		return;
+	}
+
+	di = g_di;
+
+	di->quick_charge_flag = 0;
+	di->super_charge_flag = 0;
+	direct_charger_connect_send_uevent();
+}
+
+int direct_charge_get_cutoff_normal_flag(void)
+{
+	struct direct_charge_device *di = NULL;
+	if (NULL == g_di)
+	{
+		hwlog_err("%s g_di is NULL\n", __func__);
+		return 0;
+	}
+	di = g_di;
+
+	return di->cutoff_normal_flag;
 }
 
 /**********************************************************
@@ -175,10 +332,18 @@ int batinfo_ops_register(struct batinfo_ops* ops)
 *  Parameters:   NULL
 *  return value:  NULL
 **********************************************************/
-static void direct_charge_wake_lock(void)
+void direct_charge_wake_lock(void)
 {
-	if (!wake_lock_active(&direct_charge_lock)) {
-		wake_lock(&direct_charge_lock);
+	struct direct_charge_device *di = NULL;
+	if (NULL == g_di)
+	{
+		hwlog_err("%s g_di is NULL\n", __func__);
+		return;
+	}
+	di = g_di;
+
+	if (!wake_lock_active(&di->direct_charge_lock)) {
+		wake_lock(&di->direct_charge_lock);
 		hwlog_info("direct_charge wake lock\n");
 	}
 }
@@ -189,18 +354,34 @@ static void direct_charge_wake_lock(void)
 *  Parameters:   NULL
 *  return value:  NULL
 **********************************************************/
-static void direct_charge_wake_unlock(void)
+void direct_charge_wake_unlock(void)
 {
-	if (wake_lock_active(&direct_charge_lock)) {
-		wake_unlock(&direct_charge_lock);
+	struct direct_charge_device *di = NULL;
+	if (NULL == g_di)
+	{
+		hwlog_err("%s g_di is NULL\n", __func__);
+		return;
+	}
+	di = g_di;
+
+	if (wake_lock_active(&di->direct_charge_lock)) {
+		wake_unlock(&di->direct_charge_lock);
 		hwlog_info("direct_charge wake unlock\n");
 	}
 }
+
 int is_in_scp_charging_stage(void)
 {
 	int ret = 0;
+	struct direct_charge_device *di = NULL;
+	if (NULL == g_di)
+	{
+		hwlog_err("%s g_di is NULL\n", __func__);
+		return NOT_IN_SCP_CHARGING_STAGE;
+	}
+	di = g_di;
 
-	if (SCP_STAGE_CHARGING == scp_stage)
+	if (SCP_STAGE_CHARGING == di->scp_stage)
 	{
 		hwlog_info("in direct charge progress!\n");
 		return IN_SCP_CHARGING_STAGE;
@@ -215,7 +396,14 @@ int is_in_scp_charging_stage(void)
 **********************************************************/
 enum scp_stage_type scp_get_stage_status(void)
 {
-	return scp_stage;
+	struct direct_charge_device *di = NULL;
+	if (NULL == g_di)
+	{
+		hwlog_err("%s g_di is NULL\n", __func__);
+		return SCP_STAGE_DEFAULT;
+	}
+	di = g_di;
+	return di->scp_stage;
 }
 
 /**********************************************************
@@ -224,52 +412,30 @@ enum scp_stage_type scp_get_stage_status(void)
 *  Parameters:     stage type
 *  return value:   NULL
 **********************************************************/
-static void scp_set_stage_status(enum scp_stage_type stage_type)
+void scp_set_stage_status(enum scp_stage_type stage_type)
 {
-	scp_stage = stage_type;
+	struct direct_charge_device *di = NULL;
+	if (NULL == g_di)
+	{
+		hwlog_err("%s g_di is NULL\n", __func__);
+		return;
+	}
+	di = g_di;
+	di->scp_stage = stage_type;
 }
-static int is_direct_charge_ops_valid(struct direct_charge_device *di)
-{
-	if (NULL == di)
-	{
-		hwlog_err("[%s]:di is NULL!\n", __func__);
-		return INVALID;
-	}
-	if ((NULL == di->scp_ops) || (NULL == di->scp_ops->is_support_scp)
-		||(NULL	== di->scp_ops->scp_init) || (NULL == di->scp_ops->scp_adaptor_detect)
-		||(NULL	== di->scp_ops->scp_set_adaptor_voltage) || (NULL == di->scp_ops->scp_get_adaptor_voltage)
-		||(NULL	== di->scp_ops->scp_get_adaptor_current) || (NULL == di->scp_ops->scp_set_adaptor_current)
-		||(NULL	== di->scp_ops->scp_adaptor_reset) || (NULL == di->scp_ops->scp_chip_reset)
-		||(NULL	== di->scp_ops->scp_stop_charge_config)	|| (NULL == di->scp_ops->scp_get_adaptor_status)
-		||(NULL	== di->scp_ops->scp_get_chip_status) || (NULL == di->scp_ops->scp_exit)
-		||(NULL == di->scp_ops->scp_get_adaptor_max_current) || (NULL == di->scp_ops->scp_cable_detect)
-		||(NULL == di->scp_ops->scp_get_adapter_vendor_id )|| (NULL == di->scp_ops->scp_power_enable))
-	{
-		hwlog_err("scp ops is null!\n");
-		return	INVALID;
-	}
 
-	if ((NULL == di->ls_ops) || (NULL == di->ls_ops->ls_init) || (NULL == di->ls_ops->ls_exit)
-		|| (NULL == di->ls_ops->is_ls_close) || (NULL == di->ls_ops->get_ls_id) || (NULL == di->ls_ops->ls_enable)
-		||(NULL == di->ls_ops->watchdog_config_ms))
-	{
-		hwlog_err("ls ops is null!\n");
-		return	INVALID;
-	}
-
-	if ((NULL == di->bi_ops) || (NULL == di->bi_ops->get_bat_current) || (NULL == di->bi_ops->exit)
-		|| (NULL == di->bi_ops->get_bat_btb_voltage) || (NULL == di->bi_ops->get_vbus_voltage))
-	{
-		hwlog_err("bi ops is null!\n");
-		return	INVALID;
-	}
-	return	VALID;
-}
-static int get_bat_voltage(struct direct_charge_device* di)
+int get_bat_voltage(void)
 {
 	int btb_vol = 0;
 	int package_vol = 0;
 	char tmp_buf[ERR_NO_STRING_SIZE] = { 0 };
+	struct direct_charge_device *di = NULL;
+	if (NULL == g_di)
+	{
+		hwlog_err("%s g_di is NULL\n", __func__);
+		return 0;
+	}
+	di = g_di;
 
 	btb_vol = di->bi_ops->get_bat_btb_voltage();
 	package_vol = di->bi_ops->get_bat_package_voltage();
@@ -277,94 +443,139 @@ static int get_bat_voltage(struct direct_charge_device* di)
 	{
 		snprintf(tmp_buf, sizeof(tmp_buf), "[%s]:error\n", __func__);
 		hwlog_err("%s", tmp_buf);
-		strncat(dc_err_dsm_buff, tmp_buf, strlen(tmp_buf));
+		strncat(di->dc_err_dsm_buff, tmp_buf, strlen(tmp_buf));
 		di->scp_stop_charging_flag_error = 1;
 		return 0;
 	}
 
-	return btb_vol > package_vol ? btb_vol : package_vol;
+	return btb_vol < package_vol ? btb_vol : package_vol;
 }
 
-static int get_bat_current(struct direct_charge_device* di)
+int get_bat_current(void)
 {
 	int bat_curr = 0;
 	int ret;
+	s64 temp = 0;
 	char tmp_buf[ERR_NO_STRING_SIZE] = { 0 };
+	struct direct_charge_device *di = NULL;
+	if (NULL == g_di)
+	{
+		hwlog_err("%s g_di is NULL\n", __func__);
+		return -1;
+	}
+	di = g_di;
 
 	ret = di->bi_ops->get_bat_current(&bat_curr);
 	if (ret < 0)
 	{
 		snprintf(tmp_buf, sizeof(tmp_buf), "[%s]:error\n", __func__);
 		hwlog_err("%s", tmp_buf);
-		strncat(dc_err_dsm_buff, tmp_buf, strlen(tmp_buf));
+		strncat(di->dc_err_dsm_buff, tmp_buf, strlen(tmp_buf));
 		di->scp_stop_charging_flag_error = 1;
 	}
+
+	hwlog_info("%s:befor cali current: bat_curr = %d\n", __func__, bat_curr);
+	if (c_offset_a != 0)
+	{
+		temp = bat_curr * (s64)(c_offset_a) + c_offset_b;
+		bat_curr = (int)div_s64(temp, 1000000);
+		hwlog_info("%s:after cali current: bat_curr = %d c_offset_a = %d,c_offset_b = %d\n", __func__, bat_curr, c_offset_a, c_offset_b);
+	}
+
 	return bat_curr;
 }
 
 int get_ls_vbus(void)
 {
-	struct direct_charge_device *di = g_di;
 	int vbus = 0;
 	int ret;
 	char tmp_buf[ERR_NO_STRING_SIZE] = { 0 };
+	struct direct_charge_device *di = NULL;
+	if (NULL == g_di)
+	{
+		hwlog_err("%s g_di is NULL\n", __func__);
+		return -1;
+	}
+	di = g_di;
 
 	ret = di->bi_ops->get_vbus_voltage(&vbus);
 	if (ret < 0)
 	{
 		snprintf(tmp_buf, sizeof(tmp_buf), "[%s]:error\n", __func__);
 		hwlog_err("%s", tmp_buf);
-		strncat(dc_err_dsm_buff, tmp_buf, strlen(tmp_buf));
+		strncat(di->dc_err_dsm_buff, tmp_buf, strlen(tmp_buf));
 		di->scp_stop_charging_flag_error = 1;
 	}
 	return vbus;
 }
 
-static int get_ls_ibus(struct direct_charge_device *di)
+int get_ls_ibus(void)
 {
 	int ibus = 0;
 	int ret;
 	char tmp_buf[ERR_NO_STRING_SIZE] = { 0 };
+	struct direct_charge_device *di = NULL;
+	if (NULL == g_di)
+	{
+		hwlog_err("%s g_di is NULL\n", __func__);
+		return -1;
+	}
+	di = g_di;
 
 	ret = di->bi_ops->get_ls_ibus(&ibus);
 	if (ret < 0)
 	{
 		snprintf(tmp_buf, sizeof(tmp_buf), "[%s]:error\n", __func__);
 		hwlog_err("%s", tmp_buf);
-		strncat(dc_err_dsm_buff, tmp_buf, strlen(tmp_buf));
+		strncat(di->dc_err_dsm_buff, tmp_buf, strlen(tmp_buf));
 		di->scp_stop_charging_flag_error = 1;
 	}
+
 	return ibus;
 }
 
-static int get_ls_temp(struct direct_charge_device *di)
+int get_ls_temp(void)
 {
 	int temp = 0;
 	int ret;
 	char tmp_buf[ERR_NO_STRING_SIZE] = { 0 };
+	struct direct_charge_device *di = NULL;
+	if (NULL == g_di)
+	{
+		hwlog_err("%s g_di is NULL\n", __func__);
+		return -1;
+	}
+	di = g_di;
 
 	ret = di->bi_ops->get_ls_temp(&temp);
 	if (ret < 0)
 	{
 		snprintf(tmp_buf, sizeof(tmp_buf), "[%s]:error\n", __func__);
 		hwlog_err("%s", tmp_buf);
-		strncat(dc_err_dsm_buff, tmp_buf, strlen(tmp_buf));
+		strncat(di->dc_err_dsm_buff, tmp_buf, strlen(tmp_buf));
 		di->scp_stop_charging_flag_error = 1;
 	}
 	return temp;
 }
 
-static int is_ls_close(struct direct_charge_device *di)
+int is_ls_close(void)
 {
 	int ret;
 	char tmp_buf[ERR_NO_STRING_SIZE] = { 0 };
+	struct direct_charge_device *di = NULL;
+	if (NULL == g_di)
+	{
+		hwlog_err("%s g_di is NULL\n", __func__);
+		return 1;
+	}
+	di = g_di;
 
 	ret = di->ls_ops->is_ls_close();
 	if (ret)
 	{
 		snprintf(tmp_buf, sizeof(tmp_buf), "[%s]:ls is close\n", __func__);
 		hwlog_err("%s", tmp_buf);
-		strncat(dc_err_dsm_buff, tmp_buf, strlen(tmp_buf));
+		strncat(di->dc_err_dsm_buff, tmp_buf, strlen(tmp_buf));
 		di->scp_stop_charging_flag_error = 1;
 		return 1;
 	}
@@ -372,51 +583,77 @@ static int is_ls_close(struct direct_charge_device *di)
 }
 void scp_set_stop_charging_flag(int flag)
 {
-	struct direct_charge_device *di = g_di;
-	if (!di) {
-		hwlog_err("[%s]:di is null, return\n", __func__);
+	struct direct_charge_device *di = NULL;
+	if (NULL == g_di)
+	{
+		hwlog_err("%s g_di is NULL\n", __func__);
 		return;
 	}
+	di = g_di;
 	di->scp_stop_charging_flag_error = flag;
 }
 
 int is_scp_stop_charging_complete(void)
 {
-	return (1 == scp_stop_charging_complete_flag);
+	struct direct_charge_device *di = NULL;
+	if (NULL == g_di)
+	{
+		hwlog_err("%s g_di is NULL\n", __func__);
+		return 1;
+	}
+	di = g_di;
+	return (1 == di->scp_stop_charging_complete_flag);
 }
 
-static int get_adaptor_voltage(struct direct_charge_device* di)
+int get_adaptor_voltage(void)
 {
 	int adaptor_vol = -1;
 	char tmp_buf[ERR_NO_STRING_SIZE] = { 0 };
+	struct direct_charge_device *di = NULL;
+	if (NULL == g_di)
+	{
+		hwlog_err("%s g_di is NULL\n", __func__);
+		return -1;
+	}
+	di = g_di;
 
 	if(di->scp_stop_charging_flag_error)
+	{
+		hwlog_err("%s scp_stop_charging_flag_error\n", __func__);
 		return -1;
+	}
 	if (di->scp_ops->scp_get_adaptor_voltage)
 	{
- 		adaptor_vol = di->scp_ops->scp_get_adaptor_voltage();
+		adaptor_vol = di->scp_ops->scp_get_adaptor_voltage();
 		if (adaptor_vol < 0)
 		{
 			snprintf(tmp_buf, sizeof(tmp_buf), "[%s]:error\n", __func__);
 			hwlog_err("%s", tmp_buf);
-			strncat(dc_err_dsm_buff, tmp_buf, strlen(tmp_buf));
+			strncat(di->dc_err_dsm_buff, tmp_buf, strlen(tmp_buf));
 			di->scp_stop_charging_flag_error = 1;
 		}
 	}
 	return adaptor_vol;
 }
 
-static int get_adaptor_current(struct direct_charge_device* di)
+int get_adaptor_current(void)
 {
 	int adaptor_cur = -1;
 	char tmp_buf[ERR_NO_STRING_SIZE] = { 0 };
+	struct direct_charge_device *di = NULL;
+	if (NULL == g_di)
+	{
+		hwlog_err("%s g_di is NULL\n", __func__);
+		return -1;
+	}
+	di = g_di;
 
 	if(di->scp_stop_charging_flag_error)
 		return -1;
 	switch(di->adaptor_vendor_id)
 	{
 		case IWATT_ADAPTER:
-			adaptor_cur = get_ls_ibus(di);
+			adaptor_cur = get_ls_ibus();
 			return adaptor_cur;
 		default:
 			if (di->scp_ops->scp_get_adaptor_current)
@@ -426,21 +663,28 @@ static int get_adaptor_current(struct direct_charge_device* di)
 				{
 					snprintf(tmp_buf, sizeof(tmp_buf), "[%s]:error\n", __func__);
 					hwlog_err("%s", tmp_buf);
-					strncat(dc_err_dsm_buff, tmp_buf, strlen(tmp_buf));
+					strncat(di->dc_err_dsm_buff, tmp_buf, strlen(tmp_buf));
 					di->scp_stop_charging_flag_error = 1;
 				}
 			}
 			return adaptor_cur;
 	}
 }
-static int get_adaptor_current_for_vbat_ovp(struct direct_charge_device* di)
+int get_adaptor_current_for_vbat_ovp(void)
 {
 	int adaptor_cur = -1;
+	struct direct_charge_device *di = NULL;
+	if (NULL == g_di)
+	{
+		hwlog_err("%s g_di is NULL\n", __func__);
+		return -1;
+	}
+	di = g_di;
 
 	switch(di->adaptor_vendor_id)
 	{
 		case IWATT_ADAPTER:
-			adaptor_cur = get_ls_ibus(di);
+			adaptor_cur = get_ls_ibus();
 			return adaptor_cur;
 		default:
 			if (di->scp_ops->scp_get_adaptor_current)
@@ -452,10 +696,17 @@ static int get_adaptor_current_for_vbat_ovp(struct direct_charge_device* di)
 }
 
 
-static int get_adaptor_current_set(struct direct_charge_device* di)
+int get_adaptor_current_set(void)
 {
 	int adaptor_cur_set = -1;
 	char tmp_buf[ERR_NO_STRING_SIZE] = { 0 };
+	struct direct_charge_device *di = NULL;
+	if (NULL == g_di)
+	{
+		hwlog_err("%s g_di is NULL\n", __func__);
+		return -1;
+	}
+	di = g_di;
 
 	if(di->scp_stop_charging_flag_error)
 		return -1;
@@ -466,17 +717,24 @@ static int get_adaptor_current_set(struct direct_charge_device* di)
 		{
 			snprintf(tmp_buf, sizeof(tmp_buf), "[%s]:error\n", __func__);
 			hwlog_err("%s", tmp_buf);
-			strncat(dc_err_dsm_buff, tmp_buf, strlen(tmp_buf));
+			strncat(di->dc_err_dsm_buff, tmp_buf, strlen(tmp_buf));
 			di->scp_stop_charging_flag_error = 1;
 		}
 	}
 	return adaptor_cur_set;
 }
 
-static int get_adaptor_max_current(struct direct_charge_device* di)
+int get_adaptor_max_current(void)
 {
 	int adaptor_max_cur = -1;
 	char tmp_buf[ERR_NO_STRING_SIZE] = { 0 };
+	struct direct_charge_device *di = NULL;
+	if (NULL == g_di)
+	{
+		hwlog_err("%s g_di is NULL\n", __func__);
+		return -1;
+	}
+	di = g_di;
 
 	if(di->scp_stop_charging_flag_error)
 		return -1;
@@ -487,17 +745,24 @@ static int get_adaptor_max_current(struct direct_charge_device* di)
 		{
 			snprintf(tmp_buf, sizeof(tmp_buf), "[%s]:error\n", __func__);
 			hwlog_err("%s", tmp_buf);
-			strncat(dc_err_dsm_buff, tmp_buf, strlen(tmp_buf));
+			strncat(di->dc_err_dsm_buff, tmp_buf, strlen(tmp_buf));
 			di->scp_stop_charging_flag_error = 1;
 		}
 	}
 	return adaptor_max_cur;
 }
 
-static void set_adaptor_voltage(struct direct_charge_device* di)
+void set_adaptor_voltage(void)
 {
 	int ret = -1;
 	char tmp_buf[ERR_NO_STRING_SIZE] = { 0 };
+	struct direct_charge_device *di = NULL;
+	if (NULL == g_di)
+	{
+		hwlog_err("%s g_di is NULL\n", __func__);
+		return;
+	}
+	di = g_di;
 
 	if(di->scp_stop_charging_flag_error)
 		return;
@@ -513,16 +778,23 @@ static void set_adaptor_voltage(struct direct_charge_device* di)
 		{
 			snprintf(tmp_buf, sizeof(tmp_buf), "[%s]:error\n", __func__);
 			hwlog_err("%s", tmp_buf);
-			strncat(dc_err_dsm_buff, tmp_buf, strlen(tmp_buf));
+			strncat(di->dc_err_dsm_buff, tmp_buf, strlen(tmp_buf));
 			di->scp_stop_charging_flag_error = 1;
 		}
 	}
 }
 
-static void set_adaptor_current(struct direct_charge_device* di)
+void set_adaptor_current(void)
 {
 	int ret = -1;
 	char tmp_buf[ERR_NO_STRING_SIZE] = { 0 };
+	struct direct_charge_device *di = NULL;
+	if (NULL == g_di)
+	{
+		hwlog_err("%s g_di is NULL\n", __func__);
+		return ;
+	}
+	di = g_di;
 
 	if(di->scp_stop_charging_flag_error)
 		return;
@@ -538,17 +810,24 @@ static void set_adaptor_current(struct direct_charge_device* di)
 		{
 			snprintf(tmp_buf, sizeof(tmp_buf), "[%s]:error\n", __func__);
 			hwlog_err("%s", tmp_buf);
-			strncat(dc_err_dsm_buff, tmp_buf, strlen(tmp_buf));
+			strncat(di->dc_err_dsm_buff, tmp_buf, strlen(tmp_buf));
 			di->scp_stop_charging_flag_error = 1;
 		}
 	}
 }
 
-static int get_adaptor_temp(struct direct_charge_device* di)
+int get_adaptor_temp(void)
 {
 	int ret = -1;
 	int temp = 0;
 	char tmp_buf[ERR_NO_STRING_SIZE] = { 0 };
+	struct direct_charge_device *di = NULL;
+	if (NULL == g_di)
+	{
+		hwlog_err("%s g_di is NULL\n", __func__);
+		return 0;
+	}
+	di = g_di;
 
 	if(di->scp_stop_charging_flag_error)
 		return 0;
@@ -559,27 +838,41 @@ static int get_adaptor_temp(struct direct_charge_device* di)
 		{
 			snprintf(tmp_buf, sizeof(tmp_buf), "[%s]:error\n", __func__);
 			hwlog_err("%s", tmp_buf);
-			strncat(dc_err_dsm_buff, tmp_buf, strlen(tmp_buf));
+			strncat(di->dc_err_dsm_buff, tmp_buf, strlen(tmp_buf));
 			di->scp_stop_charging_flag_error = 1;
 		}
 	}
 	return temp;
 }
-static int can_battery_temp_do_direct_charge(struct direct_charge_device *di)
+int can_battery_temp_do_direct_charge(void)
 {
 	int bat_temp = hisi_battery_temperature();
 	int bat_temp_cur_max = battery_temp_handler(bat_temp);
+	struct direct_charge_device *di = NULL;
+	if (NULL == g_di)
+	{
+		hwlog_err("%s g_di is NULL\n", __func__);
+		return 0;
+	}
+	di = g_di;
 
 	if (0 == bat_temp_cur_max)
 	{
 		hwlog_info("%s : temp = %d, can not do direct charging \n", __func__, bat_temp);
 		return 0;
 	}
-	return	1;
+	return 1;
 }
-static int can_battery_vol_do_direct_charge(struct direct_charge_device *di)
+int can_battery_vol_do_direct_charge(void)
 {
 	int bat_vol = hisi_battery_voltage();
+	struct direct_charge_device *di = NULL;
+	if (NULL == g_di)
+	{
+		hwlog_err("%s g_di is NULL\n", __func__);
+		return 0;
+	}
+	di = g_di;
 
 	if (bat_vol < di->min_dc_bat_vol || bat_vol > di->max_dc_bat_vol)
 	{
@@ -589,7 +882,7 @@ static int can_battery_vol_do_direct_charge(struct direct_charge_device *di)
 	return	1;
 }
 
-static int scp_retry_pre_operate(enum scp_retry_operate_type type, struct direct_charge_device *di)
+int scp_retry_pre_operate(enum scp_retry_operate_type type, struct direct_charge_device *di)
 {
 	int ret	= -1;
 
@@ -623,11 +916,18 @@ static int scp_retry_pre_operate(enum scp_retry_operate_type type, struct direct
 	return ret;
 }
 
-static void scp_power_control(struct direct_charge_device* di, int enable)
+void scp_power_control(int enable)
 {
-	int ret;
+	int ret = 0;
+	struct direct_charge_device *di = NULL;
+	if (NULL == g_di)
+	{
+		hwlog_err("%s g_di is NULL\n", __func__);
+		return ;
+	}
+	di = g_di;
 	/* power control for SCP communication */
-	ret = di->scp_ops->scp_power_enable(enable);
+	ret = di->scp_ps_ops->scp_power_enable(enable);
 	if(ret)
 	{
 		hwlog_err("[%s]:fail, status = %d!\n", __func__,enable);
@@ -636,51 +936,68 @@ static void scp_power_control(struct direct_charge_device* di, int enable)
 	hwlog_err("[%s]: success, status = %d!\n", __func__,enable);
 	return;
 }
-static int restore_normal_charge(struct direct_charge_device* di)
-{
-	int ret;
 
+int restore_normal_charge(void)
+{
+	int ret = SUCC;
+	struct direct_charge_device *di = NULL;
+	if (NULL == g_di)
+	{
+		hwlog_err("%s g_di is NULL\n", __func__);
+		return FAIL;
+	}
+	di = g_di;
+	hwlog_err("%s \n", __func__);
 	msleep(WAIT_LS_DISCHARGE); /*need to wait loadswitch discharge*/
 	/*no need to check the return val, here when ovp_en set fail ,we do note return*/
-	dp_aux_ldo_supply_disable(DP_AUX_LDO_CTRL_DIRECT_CHARGE);
-	ret = gpio_direction_input(di->ovp_en);
+	hw_usb_ldo_supply_disable(HW_USB_LDO_CTRL_DIRECT_CHARGE);
+
+	ret = wired_chsw_set_wired_channel(WIRED_CHANNEL_RESTORE);
 	if (ret)
 		ret = FAIL;
 	else
 		ret = SUCC;
+
 	if (pmic_vbus_irq_is_enabled()) {
 		restore_pluggin_pluggout_interrupt();
 	}
 	return ret;
 }
-static int cutoff_normal_charge(struct direct_charge_device* di)
+int cutoff_normal_charge(void)
 {
 	int ret = SUCC;
-
+	struct direct_charge_device *di = NULL;
+	if (NULL == g_di)
+	{
+		hwlog_err("%s g_di is NULL\n", __func__);
+		return -1;
+	}
+	di = g_di;
 	if (pmic_vbus_irq_is_enabled()) {
-		cutoff_normal_flag = 1;
+		di->cutoff_normal_flag = 1;
 		ignore_pluggin_and_pluggout_interrupt();
 	}
-	dp_aux_ldo_supply_enable(DP_AUX_LDO_CTRL_DIRECT_CHARGE);
-	if (di->use_gpio_for_ovp_en) {
-		if (di->scp_work_on_charger) {
-			scp_power_control(di, ENABLE);
-			charge_set_hiz_enable(SET_HIZ_ENABLE);
-		}
-		msleep(100);
-		/*no need to check the return val, here when ovp_en set fail ,we still return succ*/
-		gpio_direction_output(di->ovp_en, 1);
-	} else {
-#ifdef CONFIG_SUPERSWITCH_FSC
-		ret = FUSB3601_vout_enable(0);
-#endif
+	hw_usb_ldo_supply_enable(HW_USB_LDO_CTRL_DIRECT_CHARGE);
+	if (di->scp_work_on_charger) {
+		scp_power_control(ENABLE);
+		charge_set_hiz_enable(HIZ_MODE_ENABLE);
 	}
+	msleep(100);
+	ret = wired_chsw_set_wired_channel(WIRED_CHANNEL_CUTOFF);
+	hwlog_err("%s \n", __func__);
+
 	return ret;
 }
 int scp_adaptor_set_output_enable(int enable)
 {
 	int ret, i;
-	struct direct_charge_device *di = g_di;
+	struct direct_charge_device *di = NULL;
+	if (NULL == g_di)
+	{
+		hwlog_err("%s g_di is NULL\n", __func__);
+		return -1;
+	}
+	di = g_di;
 
     	for (i = 0; i < 3; i++) {
 		ret = di->scp_ops->scp_adaptor_output_enable(enable);
@@ -692,11 +1009,10 @@ int scp_adaptor_set_output_enable(int enable)
 	}
 	return ret;
 }
-int scp_adaptor_detect(void)
+int _scp_adaptor_detect(struct direct_charge_device *di)
 {
 	int ret;
 	int i;
-	struct direct_charge_device *di = g_di;
 
 	if (NULL == di || NULL == di->scp_ops || NULL == di->scp_ops->scp_adaptor_detect)
 	{
@@ -744,9 +1060,16 @@ int scp_adaptor_detect(void)
 	hwlog_info("%s : scp adaptor detect ret = %d \n", __func__, ret);
 	return ret;
 }
-static void direct_charge_double_56k_cable_detect(struct direct_charge_device *di)
+void direct_charge_double_56k_cable_detect(void)
 {
 	int ret;
+	struct direct_charge_device *di = NULL;
+	if (NULL == g_di)
+	{
+		hwlog_err("%s g_di is NULL\n", __func__);
+		return ;
+	}
+	di = g_di;
 	if (NULL == di || NULL == di->direct_charge_cable_detect || NULL == di->direct_charge_cable_detect->direct_charge_cable_detect) {
 		hwlog_err("[%s]NULL direct charge cable detect ops!\n", __func__);
 		scp_set_stage_status(SCP_STAGE_DEFAULT);
@@ -756,6 +1079,7 @@ static void direct_charge_double_56k_cable_detect(struct direct_charge_device *d
 		return;
 	}
 	ret = di->direct_charge_cable_detect->direct_charge_cable_detect();
+
 	if (ret) {
 		di->cc_cable_detect_ok = 0;
 		di->full_path_res_threshold = di->full_path_res_max;
@@ -768,88 +1092,327 @@ static void direct_charge_double_56k_cable_detect(struct direct_charge_device *d
 	}
 
 }
-static void scp_adaptor_and_cable_detect(struct direct_charge_device *di)
-{
-	int ret;
 
-	ret = scp_adaptor_detect();
+int scp_adaptor_detect(void)
+{
+	int ret = 0;
+	struct direct_charge_device *di = NULL;
+	if (NULL == g_di)
+	{
+		hwlog_err("%s g_di is NULL\n", __func__);
+		return -1;
+	}
+	di = g_di;
+	ret = _scp_adaptor_detect(di);
 	/*try again in the next loop*/
 	if (SCP_ADAPTOR_DETECT_SUCC != ret) {
 		scp_set_stage_status(SCP_STAGE_DEFAULT);
-		return;
+		return -1;
 	}
-	scp_adaptor_detect_flag = SCP_ADAPTOR_DETECT;
-	chg_set_adaptor_test_result(TYPE_SCP,DETECT_SUCC);
-	/*if detect result is other charger, in the next loop, we will not try again*/
+	chg_set_adaptor_test_result(di->adaptor_test_result_type,DETECT_SUCC);
+	return 0;
+}
 
-	if (di->scp_cable_detect_enable) {
-		ret = di->scp_ops->scp_cable_detect();
-		if (ret)
-			hwlog_err("%s : cable detect fail = %d\n", __func__, ret);
-	}
-	direct_charge_double_56k_cable_detect(di);
-	if (SUCC == ret)
+int scp_adaptor_type_detect(int *mode)
+{
+	int adaptor_support = 0;
+	int ret = 0;
+	struct direct_charge_device *di = NULL;
+	if (NULL == g_di)
 	{
-		ret = di->scp_ops->scp_get_adaptor_info(&(di->adp_info));
-		if (ret)
-		{
-			hwlog_err("get adaptor info failed\n");
-		}
-		di->adaptor_vendor_id = di->scp_ops->scp_get_adapter_vendor_id();
-		if (di->adaptor_vendor_id < 0)
-		{
-			hwlog_err("get adaptor vendor id failed\n");
-			scp_set_stage_status(SCP_STAGE_DEFAULT);
-			return;
-		}
-		hwlog_info("b_adp_type= 0x%x\n", di->adp_info.b_adp_type);
-		hwlog_info("vendor_id_h= 0x%x\n", di->adp_info.vendor_id_h);
-		hwlog_info("vendor_id_l= 0x%x\n", di->adp_info.vendor_id_l);
-		hwlog_info("module_id_h= 0x%x\n", di->adp_info.module_id_h);
-		hwlog_info("module_id_l= 0x%x\n", di->adp_info.module_id_l);
-		hwlog_info("serrial_no_h= 0x%x\n", di->adp_info.serrial_no_h);
-		hwlog_info("serrial_no_l= 0x%x\n", di->adp_info.serrial_no_l);
-		hwlog_info("pchip_id= 0x%x\n", di->adp_info.pchip_id);
-		hwlog_info("hwver= 0x%x\n", di->adp_info.hwver);
-		hwlog_info("fwver_h= 0x%x\n", di->adp_info.fwver_h);
-		hwlog_info("fwver_l= 0x%x\n", di->adp_info.fwver_l);
-		hwlog_info("adaptor_vendor_id= 0x%x\n", di->adaptor_vendor_id);
-		scp_set_stage_status(SCP_STAGE_SWITCH_DETECT);
+		hwlog_err("%s g_di is NULL\n", __func__);
+		return -1;
 	}
+	di = g_di;
+
+	di->direct_charge_succ_flag = DIRECT_CHARGE_ERROR_ADAPTOR_DETECT;
+	ret = _scp_adaptor_detect(di);
+
+	if (ret != 0)
+	{
+		hwlog_info("%s:scp_adaptor_detect fail!\n",__func__);
+		scp_set_stage_status(SCP_STAGE_DEFAULT);
+		return -1;
+	}
+
+	adaptor_support = di->scp_ops->scp_get_adaptor_type();
+	*mode = adaptor_support;
+	return 0;
 }
 
 
-static int do_adpator_voltage_accuracy_check(struct direct_charge_device *di)
+void scp_cable_detect(void)
+{
+	int ret = 0;
+	struct direct_charge_device *di = NULL;
+	if (NULL == g_di)
+	{
+		hwlog_err("%s g_di is NULL\n", __func__);
+		return ;
+	}
+	di = g_di;
+	direct_charge_double_56k_cable_detect();
+
+	ret = di->scp_ops->scp_get_adaptor_info(&(di->adp_info));
+	if (ret)
+	{
+		hwlog_err("get adaptor info failed\n");
+		return;
+	}
+	di->adaptor_vendor_id = di->scp_ops->scp_get_adapter_vendor_id();
+	if (di->adaptor_vendor_id < 0)
+	{
+		hwlog_err("get adaptor vendor id failed\n");
+		scp_set_stage_status(SCP_STAGE_DEFAULT);
+		return;
+	}
+	hwlog_info("b_adp_type= 0x%x\n", di->adp_info.b_adp_type);
+	hwlog_info("vendor_id_h= 0x%x\n", di->adp_info.vendor_id_h);
+	hwlog_info("vendor_id_l= 0x%x\n", di->adp_info.vendor_id_l);
+	hwlog_info("module_id_h= 0x%x\n", di->adp_info.module_id_h);
+	hwlog_info("module_id_l= 0x%x\n", di->adp_info.module_id_l);
+	hwlog_info("serrial_no_h= 0x%x\n", di->adp_info.serrial_no_h);
+	hwlog_info("serrial_no_l= 0x%x\n", di->adp_info.serrial_no_l);
+	hwlog_info("pchip_id= 0x%x\n", di->adp_info.pchip_id);
+	hwlog_info("hwver= 0x%x\n", di->adp_info.hwver);
+	hwlog_info("fwver_h= 0x%x\n", di->adp_info.fwver_h);
+	hwlog_info("fwver_l= 0x%x\n", di->adp_info.fwver_l);
+	hwlog_info("adaptor_vendor_id= 0x%x\n", di->adaptor_vendor_id);
+	scp_set_stage_status(SCP_STAGE_SWITCH_DETECT);
+}
+
+static int direct_charge_af_srv_on_cb(void)
+{
+	g_power_ct_service_ready = 1;
+	return 0;
+}
+
+static int direct_charge_af_cb(unsigned char version, void * data, int len)
+{
+	struct direct_charge_device *di = g_di;
+
+	if (NULL == di)
+	{
+		hwlog_err("%s g_di is NULL\n", __func__);
+		return -1;
+	}
+
+	if (len != 1)
+		return -1;
+
+	di->dc_antifake_result = *(int *) data;
+	complete(&di->dc_af_completion);
+	hwlog_info("direct_charge_af_cb called! dc_antifake_result = %d\n", di->dc_antifake_result);
+	return 0;
+}
+
+static const easy_cbs_t dc_af_ops[DC_AF_INFO_NL_OPS_NUM] = {
+	{
+		.cmd = POWER_CMD_ADAPTOR_ANTIFAKE_HASH,
+		.doit = direct_charge_af_cb,
+	}
+};
+
+static power_mesg_node_t dc_af_info_node = {
+	.target = POWERCT_PORT,
+	.name = "DC_AF",
+	.ops = dc_af_ops,
+	.n_ops = DC_AF_INFO_NL_OPS_NUM,
+	.srv_on_cb = direct_charge_af_srv_on_cb,
+};
+
+static int direct_charge_af_calc_hash(void)
+{
+	struct direct_charge_device *di = g_di;
+
+	if (NULL == di)
+	{
+		hwlog_err("%s g_di is NULL\n", __func__);
+		return -1;
+	}
+
+	/*if power ct service not ready , we asume the powerct serivce is dead, return hash calc ok anyway*/
+	if (0 == g_power_ct_service_ready) {
+		hwlog_err("%s g_power_ct_service not ready\n", __func__);
+		return 0;
+	}
+
+	hwlog_info("%s. start\n", __func__);
+
+#ifdef CONFIG_HUAWEI_POWER_MESG_INTERFACE
+	if(power_easy_send(&dc_af_info_node, POWER_CMD_ADAPTOR_ANTIFAKE_HASH, 0,
+                           dc_af_key, DC_AF_KEY_LEN)) {
+		hwlog_err("mesg send failed in %s.\n", __func__);
+	}
+#endif
+
+	if (!wait_for_completion_timeout(&di->dc_af_completion, DC_AF_WAIT_CT_TIMEOUT)) {
+		/*if time out happend, we asume the powerct serivce is dead, return hash calc ok anyway*/
+		hwlog_err("wait_for_completion_timeout timeout!!! %s.\n", __func__);
+		return 0;
+	}
+	hwlog_info("%s. end\n", __func__);
+
+	/*if not timeout , base on the hash calc result return the antifake result*/
+	if (di->dc_antifake_result == 0) {
+		hwlog_err("%s. dc_antifake_result = %d\n", __func__, di->dc_antifake_result);
+		return -1;
+	} else {
+		hwlog_info("%s. dc_antifake_result = %d\n", __func__, di->dc_antifake_result);
+		return 0;
+	}
+}
+
+int direct_charge_gen_nl_init(struct platform_device *pdev)
+{
+	int ret = 0;
+	struct direct_charge_device *di = g_di;
+
+	if (NULL == di)
+	{
+		hwlog_err("%s g_di is NULL\n", __func__);
+		return -1;
+	}
+
+	if (!di->adaptor_antifake_check_enable)
+		return 0;
+
+#ifdef CONFIG_HUAWEI_POWER_MESG_INTERFACE
+	ret = power_easy_node_register(&dc_af_info_node);
+	if(ret) {
+		hwlog_err("power_genl_add_op failed!\n");
+	}
+#endif
+
+	return ret;
+}
+
+int do_adpator_antifake_check(void)
+{
+	int ret = 0;
+	int val = 0;
+	int j;
+	int max_retry_count = 3;
+
+	struct direct_charge_device *di = NULL;
+
+	if (NULL == g_di)
+	{
+		hwlog_err("%s g_di is NULL\n", __func__);
+		return -1;
+	}
+	di = g_di;
+
+	if (!di->adaptor_antifake_check_enable)
+		return 0;
+
+	memset(dc_af_key, 0x00, DC_AF_KEY_LEN);
+	memset(random_local, 0x00, SCP_ADAPTOR_RANDOM_NUM_HI_LEN);
+	memset(random_remote, 0x00, SCP_ADAPTOR_RANDOM_NUM_HI_LEN);
+	memset(remote_hash, 0x00, SCP_ADAPTOR_DIGEST_LEN);
+
+	ret = di->scp_ops->scp_set_adaptor_encrypt_enable(di->adaptor_antifake_key_index);
+	if (ret)
+	{
+		return -1;
+	}
+
+	ret = di->scp_ops->scp_get_adaptor_encrypt_enable();
+	if (ret)
+	{
+		goto err;
+	}
+
+	for (j = 0; j < sizeof(random_local); j++)
+	{
+		get_random_bytes(&random_local[j], sizeof(u8));
+	}
+
+	ret = di->scp_ops->scp_set_adaptor_random_num(random_local);
+	if (ret)
+	{
+		goto err;
+	}
+
+	ret = di->scp_ops->scp_get_adaptor_encrypt_completed();
+	if (ret)
+	{
+		goto err;
+	}
+
+	ret = di->scp_ops->scp_get_adaptor_random_num(random_remote);
+	if (ret)
+	{
+		goto err;
+	}
+
+	for (j = 0; j < max_retry_count; j++)
+	{
+		ret = di->scp_ops->scp_get_adaptor_encrypted_value(remote_hash);
+		if (!ret)
+			break;
+	}
+
+	if (j >= max_retry_count)
+	{
+		hwlog_err("%s scp_get_adaptor_encrypted_value exceed max retry count\n", __func__);
+		goto err;
+	}
+
+	memcpy(dc_af_key, random_local, SCP_ADAPTOR_RANDOM_NUM_LO_LEN);
+	memcpy(dc_af_key + SCP_ADAPTOR_RANDOM_NUM_LO_LEN, random_remote, SCP_ADAPTOR_RANDOM_NUM_HI_LEN);
+	memcpy(dc_af_key + SCP_ADAPTOR_RANDOM_NUM_LO_LEN+SCP_ADAPTOR_RANDOM_NUM_HI_LEN, remote_hash, SCP_ADAPTOR_DIGEST_LEN);
+	dc_af_key[SCP_ADAPTOR_RANDOM_NUM_LO_LEN+SCP_ADAPTOR_RANDOM_NUM_HI_LEN+SCP_ADAPTOR_DIGEST_LEN] = di->adaptor_antifake_key_index;
+
+	ret = direct_charge_af_calc_hash();
+	if (ret)
+	{
+		goto err;
+	}
+
+err:
+	ret |= di->scp_ops->scp_set_adaptor_encrypt_enable(SCP_ADAPTOR_KEY_INDEX_RELEASE);
+	if (ret)
+	{
+		return -1;
+	}
+	return 0;
+}
+
+int do_adpator_voltage_accuracy_check(void)
 {
 	int adp_vol;
 	int vol_err;
 	int i;
 	int ret;
-	int bat_curr;
 	char buf[1024] = { 0 };
 	char dsm_buf[CHARGE_DMDLOG_SIZE] = { 0 };
 	char tmp_buf[ERR_NO_STRING_SIZE] = { 0 };
 
-	di->adaptor_vset = 4400;
-	set_adaptor_voltage(di);
-	usleep_range(500000,501000);
-	ret = di->bi_ops->get_bat_current(&bat_curr);/*keep communication with the adaptor within 1 second*/
-	if (ret)
+	struct direct_charge_device *di = NULL;
+	if (NULL == g_di)
 	{
-		hwlog_err("get_bat_current fail!\n");
+		hwlog_err("%s g_di is NULL\n", __func__);
+		return -1;
 	}
-	hwlog_info("To keep communication with the adaptor:bat_curr = %d!\n",bat_curr);
+	di = g_di;
+
+	di->adaptor_vset = di->init_adapter_vset;
+	set_adaptor_voltage();
+	usleep_range(500000,501000);
+	get_bat_current(); /*keep communication with the adaptor within 1 second*/
+
 	for (i = 0; i < 3; ++i)
 	{
-		adp_vol = get_adaptor_voltage(di);
+		adp_vol = get_adaptor_voltage();
 		if (adp_vol < 0)
 		{
 			snprintf(tmp_buf, sizeof(tmp_buf), "%s: get adptor voltage(%dmV) fail!\n", __func__, adp_vol);
-			strncat(dc_err_dsm_buff, tmp_buf, strlen(tmp_buf));
+			strncat(di->dc_err_dsm_buff, tmp_buf, strlen(tmp_buf));
 			hwlog_err("%s", tmp_buf);
 			return -1;
 		}
-		vol_err = adp_vol - 4400;
+		vol_err = adp_vol - di->adaptor_vset;
 		if (vol_err < 0)
 			vol_err = -vol_err;
 		snprintf(tmp_buf, sizeof(tmp_buf),
@@ -862,14 +1425,14 @@ static int do_adpator_voltage_accuracy_check(struct direct_charge_device *di)
 			snprintf(tmp_buf, sizeof(tmp_buf), "Verr(%d) > Verr_th(%d)\n",
 				vol_err, di->vol_err_th);
 			strncat(dsm_buf, tmp_buf, strlen(tmp_buf));
-			strncat(dc_err_dsm_buff, dsm_buf, strlen(dsm_buf));
-			dsm_report(DSM_DIRECT_CHARGE_VOL_ACCURACY, dsm_buf);
+			strncat(di->dc_err_dsm_buff, dsm_buf, strlen(dsm_buf));
+			power_dsm_dmd_report(POWER_DSM_BATTERY, DSM_DIRECT_CHARGE_VOL_ACCURACY, dsm_buf);
 			return -1;
 		}
 	}
 	return 0;
 }
-static int do_full_path_resistance_check(struct direct_charge_device *di)
+int do_full_path_resistance_check(void)
 {
 	int adp_vol;
 	int iadapt;
@@ -883,21 +1446,29 @@ static int do_full_path_resistance_check(struct direct_charge_device *di)
 	char dsm_buf[CHARGE_DMDLOG_SIZE] = { 0 };
 	char tmp_buf[ERR_NO_STRING_SIZE] = { 0 };
 
+	struct direct_charge_device *di = NULL;
+	if (NULL == g_di)
+	{
+		hwlog_err("%s g_di is NULL\n", __func__);
+		return -1;
+	}
+	di = g_di;
+
 	usleep_range(500000,501000);
-	adp_vol = get_adaptor_voltage(di); /*keep communication with the adaptor within 1 second*/
+	adp_vol = get_adaptor_voltage(); /*keep communication with the adaptor within 1 second*/
 	if (adp_vol < 0)
 	{
 		snprintf(tmp_buf, sizeof(tmp_buf), "%s: get adptor voltage fail, adp_vol = %d\n", __func__, adp_vol);
 		hwlog_err("%s", tmp_buf);
-		strncat(dc_err_dsm_buff, tmp_buf, strlen(tmp_buf));
+		strncat(di->dc_err_dsm_buff, tmp_buf, strlen(tmp_buf));
 		return -1;
 	}
-	ret = is_ls_close(di);/*keep communication with loadswitchwithin 1 second*/
+	ret = is_ls_close();/*keep communication with loadswitchwithin 1 second*/
 	if (ret)
 	{
 		snprintf(tmp_buf, sizeof(tmp_buf), "%s: ls is close!\n", __func__);
 		hwlog_err("%s", tmp_buf);
-		strncat(dc_err_dsm_buff, tmp_buf, strlen(tmp_buf));
+		strncat(di->dc_err_dsm_buff, tmp_buf, strlen(tmp_buf));
 		return -1;
 	}
 	usleep_range(400000,401000);
@@ -908,7 +1479,7 @@ static int do_full_path_resistance_check(struct direct_charge_device *di)
 		{
 			snprintf(tmp_buf, sizeof(tmp_buf), "%s:get ibus fail, ls_ibus = %d\n", __func__, ibus);
 			hwlog_err("%s", tmp_buf);
-			strncat(dc_err_dsm_buff, tmp_buf, strlen(tmp_buf));
+			strncat(di->dc_err_dsm_buff, tmp_buf, strlen(tmp_buf));
 			return -1;
 		}
 		ret = di->bi_ops->get_vbus_voltage(&vbus_vol);
@@ -916,23 +1487,23 @@ static int do_full_path_resistance_check(struct direct_charge_device *di)
 		{
 			snprintf(tmp_buf, sizeof(tmp_buf), "%s:get vbus vol fail, vbus = %d\n", __func__, vbus_vol);
 			hwlog_err("%s", tmp_buf);
-			strncat(dc_err_dsm_buff, tmp_buf, strlen(tmp_buf));
+			strncat(di->dc_err_dsm_buff, tmp_buf, strlen(tmp_buf));
 			return -1;
 		}
-		adp_vol = get_adaptor_voltage(di);
+		adp_vol = get_adaptor_voltage();
 		if (adp_vol < 0)
 		{
 			snprintf(tmp_buf, sizeof(tmp_buf), "%s: get adptor voltage fail, adp_vol = %d\n", __func__, adp_vol);
 			hwlog_err("%s", tmp_buf);
-			strncat(dc_err_dsm_buff, tmp_buf, strlen(tmp_buf));
+			strncat(di->dc_err_dsm_buff, tmp_buf, strlen(tmp_buf));
 			return -1;
 		}
-		iadapt = get_adaptor_current(di);
+		iadapt = get_adaptor_current();
 		if (iadapt < 0)
 		{
 			snprintf(tmp_buf, sizeof(tmp_buf), "%s: get adptor current fail, iadapt = %d\n", __func__, iadapt);
 			hwlog_err("%s", tmp_buf);
-			strncat(dc_err_dsm_buff, tmp_buf, strlen(tmp_buf));
+			strncat(di->dc_err_dsm_buff, tmp_buf, strlen(tmp_buf));
 			return -1;
 		}
 		delta_vol = adp_vol - vbus_vol;
@@ -951,7 +1522,10 @@ static int do_full_path_resistance_check(struct direct_charge_device *di)
 	{
 		if (0 == di->cc_cable_detect_ok)
 		{
-			direct_charge_send_quick_charge_uevent();
+			if (di->dc_volt_ratio >= 2)
+				direct_charge_send_super_charge_uevent();
+			else
+				direct_charge_send_quick_charge_uevent();
 		}
 		return 0;
 	}
@@ -962,22 +1536,30 @@ static int do_full_path_resistance_check(struct direct_charge_device *di)
 			r, -di->full_path_res_threshold, di->full_path_res_threshold);
 		hwlog_err("%s", tmp_buf);
 		strncat(dsm_buf, tmp_buf, strlen(tmp_buf));
-		dsm_report(DSM_DIRECT_CHARGE_FULL_PATH_RESISTANCE, dsm_buf);
-		strncat(dc_err_dsm_buff, dsm_buf, strlen(dsm_buf));
+		power_dsm_dmd_report(POWER_DSM_BATTERY, DSM_DIRECT_CHARGE_FULL_PATH_RESISTANCE, dsm_buf);
+		strncat(di->dc_err_dsm_buff, dsm_buf, strlen(dsm_buf));
 	}
 	return -1;
 }
-static int do_usb_port_leakage_current_check(struct direct_charge_device *di)
+int do_usb_port_leakage_current_check(void)
 {
 	int iadapt;
 	int  leak_current;
 	char tmp_buf[ERR_NO_STRING_SIZE] = { 0 };
 
+	struct direct_charge_device *di = NULL;
+	if (NULL == g_di)
+	{
+		hwlog_err("%s g_di is NULL\n", __func__);
+		return -1;
+	}
+	di = g_di;
+
 	switch(di->adaptor_vendor_id)
 	{
 		case IWATT_ADAPTER:
 			di->adaptor_iset = 400;
-			set_adaptor_current(di);
+			set_adaptor_current();
 			msleep(100);
 			leak_current = di->scp_ops->scp_get_usb_port_leakage_current_info();
 			if (leak_current)
@@ -988,8 +1570,8 @@ static int do_usb_port_leakage_current_check(struct direct_charge_device *di)
 			}
 			return 0;
 		default:
-			iadapt = get_adaptor_current(di);
-			hwlog_info("[%s]:iadapt = %d, charger_vbus_vol = %d, ls_ibus = %d\n", __func__, iadapt, get_charger_vbus_vol(), get_ls_ibus(di));
+			iadapt = get_adaptor_current();
+			hwlog_info("[%s]:iadapt = %d, charger_vbus_vol = %d, ls_ibus = %d\n", __func__, iadapt, get_charger_vbus_vol(), get_ls_ibus());
 			if (iadapt < 0)
 			{
 				hwlog_err("get adptor current fail!\n");
@@ -1006,11 +1588,13 @@ static int do_usb_port_leakage_current_check(struct direct_charge_device *di)
 
 FuncEnd:
 	hwlog_err("%s", tmp_buf);
-	strncat(dc_err_dsm_buff, tmp_buf, strlen(tmp_buf));
-	dsm_report(DSM_DIRECT_CHARGE_USB_PORT_LEAKAGE_CURRENT, tmp_buf);
+	if (1 == di->cc_cable_detect_ok) {
+		strncat(di->dc_err_dsm_buff, tmp_buf, strlen(tmp_buf));
+		power_dsm_dmd_report(POWER_DSM_BATTERY, DSM_DIRECT_CHARGE_USB_PORT_LEAKAGE_CURRENT, tmp_buf);
+	}
 	return -1;
 }
-static int open_direct_charge_path(struct direct_charge_device *di)
+int open_direct_charge_path(void)
 {
 	int bat_vol;
 	int ls_ibus;
@@ -1019,16 +1603,25 @@ static int open_direct_charge_path(struct direct_charge_device *di)
 	char tmp_buf[ERR_NO_STRING_SIZE] = { 0 };
 	int bat_capacity;
 
-	bat_capacity = hisi_battery_capacity();
-	bat_vol = get_bat_voltage(di);
-	di->adaptor_vset = bat_vol + ADAPTER_VOL_DIFFRENCE_300_MV;
-	if (MAX_ADAPTER_VOL_4400_MV < di->adaptor_vset)
+	struct direct_charge_device *di = NULL;
+	if (NULL == g_di)
 	{
-		di->adaptor_vset = MAX_ADAPTER_VOL_4400_MV;
+		hwlog_err("%s g_di is NULL\n", __func__);
+		return -1;
+	}
+	di = g_di;
+
+	bat_capacity = hisi_battery_capacity();
+	bat_vol = get_bat_voltage();
+
+	di->adaptor_vset = bat_vol * di->dc_volt_ratio + di->init_delt_vset;
+	if (di->max_adaptor_vset < di->adaptor_vset)
+	{
+		di->adaptor_vset = di->max_adaptor_vset;
 	}
 	di->adaptor_iset = CURRENT_SET_FOR_RES_DETECT_1000_MA;
-	set_adaptor_voltage(di);
-	set_adaptor_current(di);
+	set_adaptor_voltage();
+	set_adaptor_current();
 	msleep(50);
 	ret = di->ls_ops->ls_enable(1);
 	if (ret)
@@ -1037,12 +1630,12 @@ static int open_direct_charge_path(struct direct_charge_device *di)
 		goto FuncEnd;
 	}
 	msleep(10);
-	ls_ibus = get_ls_ibus(di);
+	ls_ibus = get_ls_ibus();
 	hwlog_info("%s:ls_ibus = %d!\n",__func__,ls_ibus);
 	while (MIN_CURRENT_FOR_RES_DETECT_800_MA > ls_ibus)
 	{
-		bat_vol = get_bat_voltage(di);
-		if (MAX_VOL_FOR_BATTERY_4360_MV < bat_vol)
+		bat_vol = get_bat_voltage();
+		if (di->max_dc_bat_vol < bat_vol)
 		{
 			snprintf(tmp_buf, sizeof(tmp_buf), "%s: adaptor_vset(%d) too high, ls_ibus = %d\n",
 				__func__, bat_vol, ls_ibus);
@@ -1056,18 +1649,18 @@ static int open_direct_charge_path(struct direct_charge_device *di)
 				__func__, ls_ibus);
 			goto FuncEnd;
 		}
-		di->adaptor_vset += MIN_ADAPTER_VOL_STEP_20_MV;
+		di->adaptor_vset += di->vstep;
 		hwlog_info("%s:adaptor_vset = %d!\n",__func__,di->adaptor_vset);
-		set_adaptor_voltage(di);
+		set_adaptor_voltage();
 		msleep(5);
-		ls_ibus = get_ls_ibus(di);
+		ls_ibus = get_ls_ibus();
 		hwlog_info("%s:ls_ibus = %d!\n",__func__,ls_ibus);
 	}
 	return 0;
 
 FuncEnd:
 	hwlog_err("%s", tmp_buf);
-	strncat(dc_err_dsm_buff, tmp_buf, strlen(tmp_buf));
+	strncat(di->dc_err_dsm_buff, tmp_buf, strlen(tmp_buf));
 	if(bat_capacity >= BATTERY_CAPACITY_HIGH_TH)
 	{
 		di->dc_open_retry_cnt += 1;
@@ -1075,32 +1668,39 @@ FuncEnd:
 	}
 	return -1;
 }
-static int scp_security_check(struct direct_charge_device *di)
+int scp_security_check(void)
 {
 	int ret;
+	struct direct_charge_device *di = NULL;
+	if (NULL == g_di)
+	{
+		hwlog_err("%s g_di is NULL\n", __func__);
+		return -1;
+	}
+	di = g_di;
 	di->direct_charge_succ_flag = DIRECT_CHARGE_ERROR_ADAPTOR_VOLTAGE_ACCURACY;
-	ret = do_adpator_voltage_accuracy_check(di);
+	ret = do_adpator_voltage_accuracy_check();
 	if (ret)
 	{
 		hwlog_err("adaptor voltage accuracy check fail!\n");
 		return -1;
 	}
 	di->direct_charge_succ_flag = DIRECT_CHARGE_ERROR_USB_PORT_LEAKAGE_CURRENT;
-	ret = do_usb_port_leakage_current_check(di);
+	ret = do_usb_port_leakage_current_check();
 	if (ret)
 	{
 		hwlog_err("usb port leakage current check fail!\n");
 		return -1;
 	}
 	di->direct_charge_succ_flag = DIRECT_CHARGE_ERROR_OPEN_CHARGE_PATH;
-	ret = open_direct_charge_path(di);
+	ret = open_direct_charge_path();
 	if (ret)
 	{
 		hwlog_err("open direct charge path fail!\n");
 		return -1;
 	}
 	di->direct_charge_succ_flag = DIRECT_CHARGE_ERROR_FULL_REISISTANCE;
-	ret = do_full_path_resistance_check(di);
+	ret = do_full_path_resistance_check();
 	if (ret)
 	{
 		hwlog_err("full path resiststance check fail!\n");
@@ -1110,8 +1710,15 @@ static int scp_security_check(struct direct_charge_device *di)
 }
 
 
-static int is_support_scp(struct direct_charge_device* di)
+int is_support_scp(void)
 {
+	struct direct_charge_device *di = NULL;
+	if (NULL == g_di)
+	{
+		hwlog_err("%s g_di is NULL\n", __func__);
+		return -1;
+	}
+	di = g_di;
 	/*check	whether	support	scp detect*/
 	if (di->scp_ops && di->scp_ops->is_support_scp)
 	{
@@ -1126,17 +1733,24 @@ static int is_support_scp(struct direct_charge_device* di)
 	}
 	return 1;
 }
-static int scp_direct_charge_init(struct direct_charge_device* di)
+int scp_direct_charge_init(void)
 {
-	int ret;
 	struct scp_init_data sid;
+	char tmp_buf[ERR_NO_STRING_SIZE] = { 0 };
+	int ret;
+	struct direct_charge_device *di = NULL;
+
+	if (NULL == g_di)
+	{
+		hwlog_err("%s g_di is NULL\n", __func__);
+		return -1;
+	}
+	di = g_di;
 	sid.scp_mode_enable = 1;
 	sid.vset_boundary = di->max_adaptor_vset;
 	sid.iset_boundary = di->max_adaptor_iset;
-	sid.init_adaptor_voltage = 4400;
+	sid.init_adaptor_voltage = di->init_adapter_vset;
 	sid.watchdog_timer = 3;
-	char tmp_buf[ERR_NO_STRING_SIZE] = { 0 };
-
 	pd_dpm_notify_direct_charge_status(true);
 	ret = di->scp_ops->scp_init(&sid);
 	if (ret)
@@ -1161,17 +1775,122 @@ static int scp_direct_charge_init(struct direct_charge_device* di)
 FuncEnd:
 	pd_dpm_notify_direct_charge_status(false);
 	hwlog_err("%s", tmp_buf);
-	strncat(dc_err_dsm_buff, tmp_buf, strlen(tmp_buf));
+	strncat(di->dc_err_dsm_buff, tmp_buf, strlen(tmp_buf));
 	return FAIL;
 }
-static void scp_stop_charging(void)
+
+int set_direct_charger_disable_flags(int val, int type)
+{
+	int i;
+	int disable = 0;
+	struct direct_charge_device *lvc_di = NULL;
+	struct direct_charge_device *sc_di = NULL;
+
+	direct_charge_get_lvc_di(&lvc_di);
+	direct_charge_get_sc_di(&sc_di);
+
+	if(!lvc_di && !sc_di) {
+		hwlog_err("NULL direct_charge_device pointer found in %s.\n", __func__);
+		return -1;
+	}
+
+	if(type < 0 || type >= __MAX_DISABLE_DIRECT_CHAGER){
+		hwlog_err("set direct charger to %d with wrong type(%d) in %s.\n",
+					val, type, __func__);
+		return -1;
+	}
+
+	if (lvc_di) {
+		lvc_di->sysfs_disable_charger[type] = val;
+		for( i = 0; i < __MAX_DISABLE_DIRECT_CHAGER; i++){
+			disable |= lvc_di->sysfs_disable_charger[i];
+		}
+		lvc_di->sysfs_enable_charger = !disable;
+	}
+
+	if (sc_di) {
+		sc_di->sysfs_disable_charger[type] = val;
+		for( i = 0; i < __MAX_DISABLE_DIRECT_CHAGER; i++){
+			disable |= sc_di->sysfs_disable_charger[i];
+		}
+		sc_di->sysfs_enable_charger = !disable;
+	}
+
+	return 0;
+}
+
+static int get_vbus_vbat(int *vbus, int *vbat)
+{
+	int ret = 0;
+	int vbus_tmp, vbat_tmp;
+	struct direct_charge_device *di = NULL;
+	if (NULL == g_di)
+	{
+		hwlog_err("%s g_di is NULL\n", __func__);
+		return -1;
+	}
+	di = g_di;
+
+	if (di->ls_ops->ls_status)
+	{
+		if (0 != di->ls_ops->ls_status())
+		{
+			msleep(DIRECT_CHARGER_LS_RECOVERY_DELAY);
+			*vbus = get_charger_vbus_vol();
+			*vbat = coul_get_battery_voltage_uv();
+			*vbat = *vbat / DIRECT_CHARGER_COUL_CURRENT_UNIT_DEVIDE;
+			hwlog_err("%s: ls(sc) fatal error!!!  vbus = %d  vbat = %d!\n", __func__, *vbus, *vbat);
+			return 0;
+		}
+	}
+
+	ret = di->bi_ops->get_vbus_voltage(vbus);
+	if (ret)
+	{
+		hwlog_err("[%s]: get vbus vol fail!\n", __func__);
+	}
+	*vbat = get_bat_voltage();
+	hwlog_info("%s:ls vbus = %d  vbat = %d!\n", __func__, *vbus, *vbat);
+
+	return 0;
+}
+
+void scp_stop_charging_para_reset(struct direct_charge_device* di)
+{
+	if (di) {
+		di->error_cnt = 0;
+		di->otp_cnt = 0;
+		di->adaptor_otp_cnt = 0;
+		di->reverse_ocp_cnt = 0;
+		di->dc_open_retry_cnt = 0;
+		di->full_path_resistance = ERROR_RESISTANCE;
+		di->direct_charge_succ_flag = DIRECT_CHARGE_ERROR_ADAPTOR_DETECT;
+		di->quick_charge_flag = 0;
+		di->super_charge_flag = 0;
+		di->cc_cable_detect_ok = 0;
+		di->dc_err_report_flag = FALSE;
+		di->sc_conv_ocp_count = 0;
+		memset(di->dc_err_dsm_buff, 0, sizeof(di->dc_err_dsm_buff));
+	}
+}
+
+void scp_stop_charging(void)
 {
 	int ret;
-	struct direct_charge_device *di = g_di;
 	int vbus_vol = 0;
 	int vbat;
+	struct direct_charge_device *lvc_di = NULL;
+	struct direct_charge_device *sc_di = NULL;
+	struct direct_charge_device *di = NULL;
 
-	scp_adaptor_detect_flag = SCP_ADAPTOR_NOT_DETECT;
+	if (NULL == g_di)
+	{
+		hwlog_err("%s g_di is NULL\n", __func__);
+		return ;
+	}
+	di = g_di;
+
+	di->scp_adaptor_detect_flag = SCP_ADAPTOR_NOT_DETECT;
 	if (di->scp_stop_charging_flag_error)
 	{
 		di->error_cnt += 1;
@@ -1184,6 +1903,12 @@ static void scp_stop_charging(void)
 	{
 		scp_set_stage_status(SCP_STAGE_CHARGE_DONE);
 	}
+#ifdef CONFIG_WIRELESS_CHARGER
+	extern bool wireless_tx_get_tx_open_flag(void);
+	if (wireless_tx_get_tx_open_flag() == true) {
+		set_direct_charger_disable_flags(DIRECT_CHARGER_SET_DISABLE_FLAGS, DIRECT_CHARGER_WIRELESS_TX);
+	}
+#endif
 	ret = di->ls_ops->ls_enable(0);
 	if (ret)
 	{
@@ -1197,8 +1922,8 @@ static void scp_stop_charging(void)
 	}
 	if (di->scp_work_on_charger)
 	{
-		scp_power_control(di, DISABLE);
-		charge_set_hiz_enable(SET_HIZ_DISABLE);
+		scp_power_control(DISABLE);
+		charge_set_hiz_enable(HIZ_MODE_DISABLE);
 	}
 	if (di->ls_ops->ls_discharge)
 	{
@@ -1215,37 +1940,38 @@ static void scp_stop_charging(void)
 	if (pmic_vbus_irq_is_enabled()) {
 		direct_charger_disconnect_update_charger_type();
 	}
-	if (FAIL == restore_normal_charge(di))
+	if (FAIL == restore_normal_charge())
 	{
 		hwlog_info("%s: restore normal charge fail!\n", __func__);
 	}
 	ret = di->ls_ops->ls_discharge(0);
 	msleep(20);
-	ret = di->bi_ops->get_vbus_voltage(&vbus_vol);
-	if (ret)
-	{
-		hwlog_err("[%s]: get vbus vol fail!\n", __func__);
-	}
-	hwlog_info("%s: vbus_vol = %d!\n", __func__, vbus_vol);
-	vbat = get_bat_voltage(di);
-	hwlog_info("%s: vbat = %d!\n", __func__, vbat);
+
+	get_vbus_vbat(&vbus_vol, &vbat);
 
 	if ((vbus_vol < VBUS_ON_THRESHOLD) || (vbat - vbus_vol) > VBAT_VBUS_DIFFERENCE)
 	{
 		hwlog_info("%s: vbat - vbus_vol = %d!\n", __func__, vbat - vbus_vol);
-		if (!strstr(saved_command_line, "androidboot.swtype=factory")) {
-			di->sysfs_enable_charger = 1;
-		}
-		di->error_cnt = 0;
-		di->dc_open_retry_cnt = 0;
 		hwlog_info("%s:direct charger disconnect!\n", __func__);
-		di->full_path_resistance = ERROR_RESISTANCE;
-		di->direct_charge_succ_flag = DIRECT_CHARGE_ERROR_ADAPTOR_DETECT;
-		quick_charge_flag = 0;
-		super_charge_flag = 0;
+
+		direct_charge_get_lvc_di(&lvc_di);
+		direct_charge_get_sc_di(&sc_di);
+
+		if(!lvc_di && !sc_di) {
+			hwlog_err("NULL direct_charge_device pointer found in %s.\n", __func__);
+			return;
+		}
+
+		if (!strstr(saved_command_line, "androidboot.swtype=factory")) {
+			set_direct_charger_disable_flags(DIRECT_CHARGER_CLEAR_DISABLE_FLAGS,
+                                             DIRECT_CHARGER_SYS_NODE);
+		}
+
+		set_direct_charger_disable_flags
+			(DIRECT_CHARGER_CLEAR_DISABLE_FLAGS, DIRECT_CHARGER_WIRELESS_TX);
+		scp_stop_charging_para_reset(lvc_di);
+		scp_stop_charging_para_reset(sc_di);
 		direct_charger_disconnect_send_uevent();
-		di->dc_err_report_flag = FALSE;
-		memset(dc_err_dsm_buff, 0, sizeof(dc_err_dsm_buff));
 #ifdef CONFIG_WIRELESS_CHARGER
 		direct_charger_disconnect_event();
 #endif
@@ -1289,85 +2015,226 @@ static void scp_stop_charging(void)
 	di->ibat_abnormal_cnt = 0;
 	di->max_adaptor_cur = 0;
 	direct_charge_wake_unlock();
-	di->cc_cable_detect_ok = 0;
-	scp_stop_charging_complete_flag = 1;
+	di->scp_stop_charging_complete_flag = 1;
+	di->adaptor_test_result_type = TYPE_OTHER;
+	di->scp_mode = UNDEFINED_MODE;
 }
 
 /*lint -save -e* */
-static void direct_charge_parse_volt_para(struct device_node* np, struct direct_charge_device* di)
+void direct_charge_parse_resist_para(struct device_node* np, struct direct_charge_device* di)
 {
-	int ret, i, array_len, idata;
-	const char *volt_para_string = NULL;
+	int array_len, i = 0, ret = 0, idata = 0;
+	const char *resist_para_string;
 
-	array_len = of_property_count_strings(np, "volt_para");
-	di->stage_size = array_len / DC_PARA_TOTAL;
-	hwlog_info("stage_size = %d\n", di->stage_size);
-	if ((array_len <= 0) || (array_len % DC_PARA_TOTAL != 0)) {
-		hwlog_err("volt_para is invaild,please check volt_para number!!\n");
+	array_len = of_property_count_strings(np, "resist_para");
+	if ((array_len <= 0) || (array_len % DC_RESIST_TOTAL != 0))
+	{
+		hwlog_err("resist_para is invaild,please check resist_para number!!\n");
 		return;
 	}
-	if (array_len > DC_VOLT_LEVEL * DC_PARA_TOTAL) {
-		array_len = DC_VOLT_LEVEL * DC_PARA_TOTAL;
-		hwlog_err("volt_para is too long,use only front %d paras!!\n", array_len);
+
+	if (array_len > DC_RESIST_LEVEL * DC_RESIST_TOTAL)
+	{
+		array_len = DC_RESIST_LEVEL * DC_RESIST_TOTAL;
+		hwlog_err("resist_para is too long,use only front %d paras!!\n", array_len);
 		return;
 	}
-	for (i = 0; i < array_len; i++) {
-		ret = of_property_read_string_index(np, "volt_para", i, &volt_para_string);
-		if (ret) {
-			hwlog_err("get volt_para failed\n");
+
+	for (i = 0; i < array_len; i++)
+	{
+		ret = of_property_read_string_index(np, "resist_para", i, &resist_para_string);
+		if (ret)
+		{
+			hwlog_err("get resist_para failed\n");
 			return;
 		}
 
-		idata = simple_strtol(volt_para_string, NULL, STRTOL_MAX_LEN);
-		switch (i % DC_PARA_TOTAL) {
-		case DC_PARA_VOL_TH:
-			if (idata < 0) {
-				hwlog_err ("the volt_para vol_th is out of range!!\n");
-				return;
-			}
-#ifdef CONFIG_SCHARGER_V300
-			if (TRUE == is_hi6523_cv_limit())
-				idata -= HI6523_CV_CUT;
-#endif
-			orig_volt_para[i / (DC_PARA_TOTAL)].vol_th = idata;
+		idata = simple_strtol(resist_para_string, NULL, 10);
+		switch (i % DC_RESIST_TOTAL) {
+		case DC_RESIST_MIN:
+			di->resist_para[i / (DC_RESIST_TOTAL)].resist_min = idata;
 			break;
-		case DC_PARA_CUR_TH_HIGH:
-			if (idata < 0) {
-				hwlog_err ("the volt_para cur_th_high is out of range!!\n");
-				return;
-			}
-			orig_volt_para[i / (DC_PARA_TOTAL)].cur_th_high = idata;
+		case DC_RESIST_MAX:
+			di->resist_para[i / (DC_RESIST_TOTAL)].resist_max = idata;
 			break;
-		case DC_PARA_CUR_TH_LOW:
-			if (idata < 0) {
-				hwlog_err ("the volt_para cur_th_low is out of range!!\n");
-				return;
-			}
-			orig_volt_para[i / (DC_PARA_TOTAL)].cur_th_low = idata;
+		case DC_RESIST_CUR_MAX:
+			di->resist_para[i / (DC_RESIST_TOTAL)].resist_cur_max = idata;
 			break;
 		default:
-			hwlog_err("get volt_para failed\n");
+			hwlog_err("get resist_para failed\n");
 			return;
 		}
-	}
-
-	for (i = 0; i < di->stage_size; i++) {
-		di->volt_para[i].vol_th = orig_volt_para[i].vol_th;
-		di->volt_para[i].cur_th_high = orig_volt_para[i].cur_th_high;
-		di->volt_para[i].cur_th_low = orig_volt_para[i].cur_th_low;
-		hwlog_info("orig_volt_para[%d], vol_th:%d, cur_th_high:%d, cur_th_low:%d\n", \
-				i, di->volt_para[i].vol_th, di->volt_para[i].cur_th_high, di->volt_para[i].cur_th_low);
+		hwlog_info("di->resist_para[%d][%d] = %d\n", i / (DC_RESIST_TOTAL), i % (DC_RESIST_TOTAL), idata);
 	}
 }
 
-static int direct_charge_parse_dts(struct device_node* np, struct direct_charge_device* di)
+void direct_charge_parse_bat_para(struct device_node* np, struct direct_charge_device* di)
+{
+	int array_len, i = 0, j = 0, k = 0, ret = 0, idata = 0;
+	const char *bat_para_string;
+
+	di->stage_group_cur = 0;
+
+	array_len = of_property_count_strings(np, "bat_para");
+
+	hwlog_err("array_len = %d\n", array_len);
+	if ((array_len <= 0) || (array_len % DC_PARA_BAT_TOTAL != 0)) {
+		di->stage_group_size = 1;
+		di->orig_volt_para_p[0].bat_info.temp_high = 45;
+		di->orig_volt_para_p[0].bat_info.temp_low = 10;
+		strncpy(di->orig_volt_para_p[0].bat_info.batid, "default", DC_BAT_BRAND_LEN_MAX-1);
+		strncpy(di->orig_volt_para_p[0].bat_info.volt_para_index, "volt_para", DC_VOLT_NODE_LEN_MAX-1);
+		hwlog_err("bat_para is invaild,please check volt_para number!!\n");
+		return;
+	}
+
+	if (array_len > DC_VOLT_GROUP_MAX * DC_PARA_BAT_TOTAL) {
+		array_len = DC_VOLT_GROUP_MAX * DC_PARA_BAT_TOTAL;
+		hwlog_err("bat_para is too long,use only front %d paras!!\n", array_len);
+	}
+
+	di->stage_group_size = array_len / DC_PARA_BAT_TOTAL;
+	for (i = 0; i < array_len; i++) {
+		ret = of_property_read_string_index(np, "bat_para", i, &bat_para_string);
+		if (ret) {
+			hwlog_err("get bat_para failed\n");
+			return;
+		}
+
+		j = i % DC_PARA_BAT_TOTAL;
+		k = i / DC_PARA_BAT_TOTAL;
+
+		switch (j) {
+			case DC_PARA_BAT_ID:
+				strncpy(di->orig_volt_para_p[k].bat_info.batid, bat_para_string, DC_BAT_BRAND_LEN_MAX-1);
+				break;
+			case DC_PARA_TEMP_HIGH:
+				idata = simple_strtol(bat_para_string, NULL, STRTOL_MAX_LEN);
+				if (idata < 0 || idata > 50) {
+					hwlog_err ("the bat_para temp_high is out of range!!\n");
+					return;
+				}
+				di->orig_volt_para_p[k].bat_info.temp_high = idata;
+				break;
+			case DC_PARA_TEMP_LOW:
+				idata = simple_strtol(bat_para_string, NULL, STRTOL_MAX_LEN);
+				if (idata < 0 || idata > 50) {
+					hwlog_err ("the bat_para temp_low is out of range!!\n");
+					return;
+				}
+				di->orig_volt_para_p[k].bat_info.temp_low = idata;
+				break;
+			case DC_PARA_INDEX:
+				strncpy(di->orig_volt_para_p[k].bat_info.volt_para_index, bat_para_string, DC_VOLT_NODE_LEN_MAX-1);
+				break;
+			default:
+				hwlog_err("get bat_para failed\n");
+				return;
+		}
+	}
+
+	for (i = 0; i < di->stage_group_size; i++) {
+			hwlog_info(" orig_volt_para[%d], batid:%s, temp_high:%d, temp_low:%d, volt_para_index:%s\n", \
+					i, di->orig_volt_para_p[i].bat_info.batid, di->orig_volt_para_p[i].bat_info.temp_high, di->orig_volt_para_p[i].bat_info.temp_low, di->orig_volt_para_p[i].bat_info.volt_para_index);
+	}
+
+	hwlog_info("stage_group_size = %d\n", di->stage_group_size);
+}
+void direct_charge_parse_volt_para(struct device_node* np, struct direct_charge_device* di)
+{
+	int ret, i, j, array_len, idata;
+	const char *volt_para_string = NULL;
+	di->stage_size = 0;
+
+	for (j = 0; j < di->stage_group_size; j++) {
+		array_len = of_property_count_strings(np, di->orig_volt_para_p[j].bat_info.volt_para_index);
+		di->orig_volt_para_p[j].stage_size = array_len / DC_PARA_VOLT_TOTAL;
+		hwlog_info("stage_size[%d] = %d\n", j, di->orig_volt_para_p[j].stage_size);
+
+		if ((array_len <= 0) || (array_len % DC_PARA_VOLT_TOTAL != 0)) {
+			hwlog_err("volt_para is invaild,please check volt_para number!!\n");
+			return;
+		}
+
+		if (array_len > DC_VOLT_LEVEL * DC_PARA_VOLT_TOTAL) {
+			array_len = DC_VOLT_LEVEL * DC_PARA_VOLT_TOTAL;
+			hwlog_err("volt_para is too long,use only front %d paras!!\n", array_len);
+			return;
+		}
+
+		for (i = 0; i < array_len; i++) {
+			ret = of_property_read_string_index(np, di->orig_volt_para_p[j].bat_info.volt_para_index, i, &volt_para_string);
+			if (ret) {
+				hwlog_err("get volt_para failed\n");
+				return;
+			}
+
+			idata = simple_strtol(volt_para_string, NULL, STRTOL_MAX_LEN);
+			if (idata < 0) {
+				hwlog_err ("the volt_para_string idata is out of range!!\n");
+				return;
+			}
+			switch (i % DC_PARA_VOLT_TOTAL) {
+			case DC_PARA_VOL_TH:
+#ifdef CONFIG_SCHARGER_V300
+				if (TRUE == is_hi6523_cv_limit())
+					idata -= HI6523_CV_CUT;
+#endif
+				di->orig_volt_para_p[j].volt_info[i / (DC_PARA_VOLT_TOTAL)].vol_th = idata;
+				break;
+			case DC_PARA_CUR_TH_HIGH:
+				di->orig_volt_para_p[j].volt_info[i / (DC_PARA_VOLT_TOTAL)].cur_th_high = idata;
+				break;
+			case DC_PARA_CUR_TH_LOW:
+				di->orig_volt_para_p[j].volt_info[i / (DC_PARA_VOLT_TOTAL)].cur_th_low = idata;
+				break;
+			default:
+				hwlog_err("get volt_para failed\n");
+				return;
+			}
+		}
+
+		di->orig_volt_para_p[j].bat_info.parse_ok = 1;
+		for (i = 0; i < di->orig_volt_para_p[j].stage_size; i++) {
+			hwlog_info("orig_volt_para[%d], vol_th:%d, cur_th_high:%d, cur_th_low:%d\n", \
+					i, di->orig_volt_para_p[j].volt_info[i].vol_th, di->orig_volt_para_p[j].volt_info[i].cur_th_high, di->orig_volt_para_p[j].volt_info[i].cur_th_low);
+		}
+	}
+	di->stage_size = di->orig_volt_para_p[0].stage_size;
+}
+
+int direct_charge_parse_dts(struct device_node* np, struct direct_charge_device* di)
 {
 	int ret = 0;
 	int i = 0;
 	int array_len = 0;
 	int idata = 0;
 	const char *chrg_data_string = NULL;
+	int iin_therm_default = 0;
 
+	ret = of_property_read_u32(np, "dc_volt_ratio", &(di->dc_volt_ratio));
+	if (ret)
+	{
+		di->dc_volt_ratio = 1;
+		hwlog_err("dc_volt_ratio failed ! \n");
+	}
+	hwlog_info("dc_volt_ratio = %d\n", di->dc_volt_ratio);
+
+	ret = of_property_read_u32(np, "init_adapter_vset", &(di->init_adapter_vset));
+	if (ret)
+	{
+		hwlog_err("init_adapter_vset failed\n");
+		di->init_adapter_vset = 4400;
+	}
+	hwlog_info("init_adapter_vset = %d\n", di->init_adapter_vset);
+
+	ret = of_property_read_u32(np, "init_delt_vset", &(di->init_delt_vset));
+	if (ret)
+	{
+		hwlog_err("init_delt_vset failed  \n");
+		di->init_delt_vset = 300;
+	}
+	hwlog_info("init_delt_vset = %d\n", di->init_delt_vset);
 
 	ret = of_property_read_u32(np, "scp_work_on_charger", &(di->scp_work_on_charger));
 	if (ret)
@@ -1376,21 +2243,7 @@ static int direct_charge_parse_dts(struct device_node* np, struct direct_charge_
 		return -EINVAL;
 	}
 	hwlog_info("scp_work_on_charger = %d\n", di->scp_work_on_charger);
-	ret = of_property_read_u32(np, "use_gpio_for_ovp_en", &(di->use_gpio_for_ovp_en));
-	if (ret)
-	{
-		hwlog_err("use_gpio_for_ovp_en failed\n");
-		return -EINVAL;
-	}
-	hwlog_info("use_gpio_for_ovp_en = %d\n", di->use_gpio_for_ovp_en);
-	if (di->use_gpio_for_ovp_en) {
-		di->ovp_en = of_get_named_gpio(np, "ovp_en", 0);
-		hwlog_info("ovp_en = %d\n", di->ovp_en);
-		if (!gpio_is_valid(di->ovp_en)) {
-			hwlog_err("ovp_en is not valid\n");
-			return -EINVAL;
-		}
-	}
+
 	ret = of_property_read_u32(np, "standard_cable_full_path_res_max", &(di->standard_cable_full_path_res_max));
 	if (ret)
 	{
@@ -1409,9 +2262,16 @@ static int direct_charge_parse_dts(struct device_node* np, struct direct_charge_
 	if (ret)
 	{
 		hwlog_err("get use_5A failed\n");
-		return -EINVAL;
+		di->use_5A= 0;
 	}
 	hwlog_info("use_5A = %d\n", di->use_5A);
+	ret = of_property_read_u32(np, "use_8A", &(di->use_8A));
+        if (ret)
+        {
+                hwlog_err("get use_8A failed\n");
+                di->use_8A= 0;
+        }
+        hwlog_info("use_8A = %d\n", di->use_8A);
 	ret = of_property_read_u32(np, "max_tadapt", &(di->max_tadapt));
 	if (ret)
 	{
@@ -1426,13 +2286,6 @@ static int direct_charge_parse_dts(struct device_node* np, struct direct_charge_
 		return -EINVAL;
 	}
 	hwlog_info("max_tls = %d\n", di->max_tls);
-	ret = of_property_read_u32(np, "scp_cable_detect_enable", &(di->scp_cable_detect_enable));
-	if (ret)
-	{
-		hwlog_err("get scp_cable_detect_enable failed\n");
-		return -EINVAL;
-	}
-	hwlog_info("scp_cable_detect_enable = %d\n", di->scp_cable_detect_enable);
 	ret = of_property_read_u32(np, "ibat_abnormal_th", &(di->ibat_abnormal_th));
 	if (ret)
 	{
@@ -1534,7 +2387,33 @@ static int direct_charge_parse_dts(struct device_node* np, struct direct_charge_
 		hwlog_err("get cc_cable_detect_enable failed\n");
 	}
 	hwlog_info("cc_cable_detect_enable = %d\n", di->cc_cable_detect_enable);
+	ret = of_property_read_u32(np, "adaptor_antifake_check_enable", &(di->adaptor_antifake_check_enable));
+	if (ret || di->adaptor_antifake_check_enable != 1)
+	{
+		di->adaptor_antifake_check_enable = 0;
+		hwlog_err("get adaptor_antifake_check_enable failed\n");
+	}
+	else
+	{
+		ret = of_property_read_u32(np, "adaptor_antifake_key_index", &(di->adaptor_antifake_key_index));
+		if (ret)
+		{
+			di->adaptor_antifake_key_index = 1;
+			hwlog_err("get adaptor_antifake_key_index failed\n");
+		}
+
+		/*in factory mode , we set public key as default key, otherwise we get key index from dts*/
+		if (strstr(saved_command_line, "androidboot.swtype=factory")) {
+			di->adaptor_antifake_key_index = 1;
+		}
+
+		hwlog_info("adaptor_antifake_key_index = %d\n", di->adaptor_antifake_key_index);
+	}
+	hwlog_info("adaptor_antifake_check_enable = %d\n", di->adaptor_antifake_check_enable);
+
+	direct_charge_parse_bat_para(np, di);
 	direct_charge_parse_volt_para(np, di);
+	direct_charge_parse_resist_para(np, di);
 	array_len = of_property_count_strings(np, "temp_para");
 	if ((array_len <= 0) || (array_len % DC_TEMP_TOTAL != 0))
 	{
@@ -1565,6 +2444,7 @@ static int direct_charge_parse_dts(struct device_node* np, struct direct_charge_
 			break;
 		case DC_CUR_MAX:
 			di->temp_para[i / (DC_TEMP_TOTAL)].cur_max = idata;
+			iin_therm_default = idata > iin_therm_default ? idata : iin_therm_default;
 			break;
 		default:
 			hwlog_err("get temp_para failed\n");
@@ -1572,12 +2452,16 @@ static int direct_charge_parse_dts(struct device_node* np, struct direct_charge_
 		}
 		hwlog_info("di->temp_para[%d][%d] = %d\n", i / (DC_TEMP_TOTAL), i % (DC_TEMP_TOTAL), idata);
 	}
+
+	di->iin_thermal_default = iin_therm_default;
+	hwlog_info("iin_thermal_default = %d.\n", di->iin_thermal_default);
+
 	for (i = 0; i < 2*DC_VOLT_LEVEL; ++i)
 	{
 		di->stage_need_to_jump[i] = -1;
 	}
 	array_len = of_property_count_strings(np, "stage_need_to_jump");
-	if ((array_len <= 0) || (array_len > 2*di->stage_size))
+	if (array_len <= 0)
 	{
 		hwlog_err("invalid stage need to jump!!\n");
 		return -EINVAL;
@@ -1591,7 +2475,7 @@ static int direct_charge_parse_dts(struct device_node* np, struct direct_charge_
 			return -EINVAL;
 		}
 		idata = simple_strtol(chrg_data_string, NULL, 10);
-		if (idata < -1 || idata > 2*di->stage_size)
+		if (idata < -1)
 		{
 			hwlog_err("stage_need_to_jump:[%d] is out of range!!\n", idata);
 			return -EINVAL;
@@ -1601,12 +2485,19 @@ static int direct_charge_parse_dts(struct device_node* np, struct direct_charge_
 	}
 	return ret;
 }
+
 /*lint -restore*/
 
-static int jump_stage_if_need(int cur_stage)
+int jump_stage_if_need(int cur_stage)
 {
 	int i;
-	struct direct_charge_device *di = g_di;
+	struct direct_charge_device *di = NULL;
+	if (NULL == g_di)
+	{
+		hwlog_err("%s g_di is NULL\n", __func__);
+		return -1;
+	}
+	di = g_di;
 
 	for (i = 0; i < 2*di->stage_size; ++i)
 	{
@@ -1627,16 +2518,24 @@ static int jump_stage_if_need(int cur_stage)
 }
 
 /*lint -save -e* */
-static void select_direct_charge_stage(struct direct_charge_device* di)
+void select_direct_charge_stage(void)
 {
 	int i;
 	int vbat_th;
 	int cur_stage = 0;
-	int stage_size = di->stage_size;
-	int vbat = get_bat_voltage(di);
-	int ibat = get_bat_current(di);
-	int iadaptor = get_adaptor_current(di);
+	int stage_size = 0;
+	int vbat = get_bat_voltage();
+	int ibat = get_bat_current();
+	int iadaptor = get_adaptor_current();
 	char tmp_buf[ERR_NO_STRING_SIZE] = { 0 };
+	struct direct_charge_device *di = NULL;
+	if (NULL == g_di)
+	{
+		hwlog_err("%s g_di is NULL\n", __func__);
+		return ;
+	}
+	di = g_di;
+	stage_size = di->stage_size;
 
 	di->vbat = vbat;
 	di->ibat = ibat;
@@ -1653,7 +2552,7 @@ static void select_direct_charge_stage(struct direct_charge_device* di)
 		di->scp_stop_charging_flag_error = 1;
 		snprintf(tmp_buf, sizeof(tmp_buf),"%s: ibat abnormal, stop direct charge\n", __func__);
 		hwlog_err("%s", tmp_buf);
-		strncat(dc_err_dsm_buff, tmp_buf, strlen(tmp_buf));
+		strncat(di->dc_err_dsm_buff, tmp_buf, strlen(tmp_buf));
 		return;
 	}
 	di->pre_stage = di->cur_stage;
@@ -1697,11 +2596,38 @@ static void select_direct_charge_stage(struct direct_charge_device* di)
 	}
 }
 /*lint -restore*/
-
-static int battery_temp_handler(int temp)
+int direct_charge_resistance_handler(int res)
 {
 	int i;
-	struct direct_charge_device *di = g_di;
+	struct direct_charge_device *di = NULL;
+	if (NULL == g_di)
+	{
+		hwlog_err("%s g_di is NULL\n", __func__);
+		return -1;
+	}
+	di = g_di;
+
+	for (i = 0; i < DC_RESIST_LEVEL; ++i)
+	{
+		if (res >= di->resist_para[i].resist_min && res < di->resist_para[i].resist_max)
+		{
+			return di->resist_para[i].resist_cur_max;
+		}
+	}
+	hwlog_err("error res = %d\n",res);
+	return 0;
+}
+
+int battery_temp_handler(int temp)
+{
+	int i;
+	struct direct_charge_device *di = NULL;
+	if (NULL == g_di)
+	{
+		hwlog_err("%s g_di is NULL\n", __func__);
+		return -1;
+	}
+	di = g_di;
 
 	for (i = 0; i < DC_TEMP_LEVEL; ++i)
 	{
@@ -1713,22 +2639,79 @@ static int battery_temp_handler(int temp)
 	hwlog_err("error temp = %d\n",temp);
 	return 0;
 }
-static void select_direct_charge_param(struct direct_charge_device* di)
+
+void select_direct_charge_stage_param(void)
+{
+	int i;
+	int tbatt = 0;
+	char* batt_brand = NULL;
+	struct direct_charge_device *di = NULL;
+
+	di = g_di;
+
+	if (NULL == di)
+	{
+		hwlog_err("%s di is NULL\n", __func__);
+		return;
+	}
+
+	batt_brand = hisi_battery_brand();
+	tbatt = hisi_battery_temperature();
+
+	hwlog_info("batt_brand = %s, tbatt = %d, di->stage_group_size = %d\n", batt_brand, tbatt, di->stage_group_size);
+
+	for (i = 0; i < di->stage_group_size; i++)
+	{
+		if (di->orig_volt_para_p[i].bat_info.parse_ok) {
+			if (strstr(batt_brand, di->orig_volt_para_p[i].bat_info.batid)) {
+				if (tbatt < di->orig_volt_para_p[i].bat_info.temp_high && tbatt >= di->orig_volt_para_p[i].bat_info.temp_low) {
+					di->stage_group_cur = i;
+					di->stage_size = di->orig_volt_para_p[i].stage_size;
+					memcpy(di->volt_para, di->orig_volt_para_p[i].volt_info, sizeof(di->volt_para));
+					memcpy(di->orig_volt_para, di->orig_volt_para_p[i].volt_info, sizeof(di->orig_volt_para));
+					hwlog_info("stage_group_cur= %d, batid = %s, temp high = %d, temp low = %d\n",  \
+							i, di->orig_volt_para_p[i].bat_info.batid, di->orig_volt_para_p[i].bat_info.temp_high, di->orig_volt_para_p[i].bat_info.temp_low);
+					return;
+				}
+			}
+		}
+	}
+
+	di->stage_group_cur = 0;
+	di->stage_size = di->orig_volt_para_p[0].stage_size;
+	memcpy(di->volt_para, di->orig_volt_para_p[0].volt_info, sizeof(di->volt_para));
+	memcpy(di->orig_volt_para, di->orig_volt_para_p[0].volt_info, sizeof(di->orig_volt_para));
+}
+void select_direct_charge_param(void)
 {
 	int cur_th_high;
 	int max_adaptor_cur;
 	int vbat_th;
 	int bat_temp_cur_max;
+	int full_path_resist_cur_max;
+	int full_path_resistance;
 	int bat_temp = hisi_battery_temperature();
 
-	direct_charge_double_56k_cable_detect(di);
+	struct direct_charge_device *di = NULL;
+	if (NULL == g_di)
+	{
+		hwlog_err("%s g_di is NULL\n", __func__);
+		return;
+	}
+	di = g_di;
+
+	direct_charge_double_56k_cable_detect();
 	bat_temp_cur_max = battery_temp_handler(bat_temp);
 	if (0 == bat_temp_cur_max)
 	{
 		hwlog_info("%s : temp = %d, can not do direct charging \n", __func__, bat_temp);
 		di->scp_stop_charging_flag_info = 1;
 	}
-	max_adaptor_cur = get_adaptor_max_current(di);
+
+	full_path_resistance = di->full_path_resistance >= 0 ? di->full_path_resistance : -di->full_path_resistance;
+	full_path_resist_cur_max = direct_charge_resistance_handler(full_path_resistance);
+
+	max_adaptor_cur = get_adaptor_max_current();
 	if (max_adaptor_cur < 0)
 		return;
 	if(di->use_5A)
@@ -1738,6 +2721,13 @@ static void select_direct_charge_param(struct direct_charge_device* di)
 			max_adaptor_cur = di->volt_para[0].cur_th_high;
 		}
 	}
+	if(di->use_8A)
+        {
+                if (max_adaptor_cur == 4000)
+                {
+                        max_adaptor_cur = di->volt_para[0].cur_th_high;
+                }
+        }
 	if (max_adaptor_cur != di->max_adaptor_cur)
 	{
 		hwlog_info("%s : max_adaptor_cur = %d\n", __func__, max_adaptor_cur);
@@ -1757,15 +2747,27 @@ static void select_direct_charge_param(struct direct_charge_device* di)
 		hwlog_info("[%s]:cc_check_result = %d ,after_cc_check_cur_th_high = %d\n", __func__,di->cc_cable_detect_ok,cur_th_high);
 	}
 	cur_th_high = cur_th_high >  bat_temp_cur_max ? bat_temp_cur_max : cur_th_high;
-	cur_th_high = cur_th_high >  max_adaptor_cur ? max_adaptor_cur : cur_th_high;
+
+	if (0 != full_path_resist_cur_max && di->cc_cable_detect_ok == 0)
+	{
+		cur_th_high = cur_th_high >  full_path_resist_cur_max ? full_path_resist_cur_max : cur_th_high;
+	}
+
+	cur_th_high = cur_th_high >  di->dc_volt_ratio * max_adaptor_cur ? di->dc_volt_ratio * max_adaptor_cur : cur_th_high;
 	di->cur_ibat_th_high = cur_th_high > di->sysfs_iin_thermal ? di->sysfs_iin_thermal: cur_th_high;
 	di->cur_ibat_th_low = di->volt_para[di->cur_stage/2].cur_th_low;
 }
-static void battery_aging_safe_policy(struct direct_charge_device* di)
+void battery_aging_safe_policy(struct direct_charge_device *di)
 {
 	int ret, i, cur_level;
 	static int last_level = BASP_PARA_LEVEL;
 	AGING_SAFE_POLICY_TYPE basp = {0};
+
+	if (NULL == di)
+	{
+		hwlog_err("%s direct_charge_device is NULL\n", __func__);
+		return ;
+	}
 
 	ret = hisi_battery_aging_safe_policy(&basp);
 	if (ret) {
@@ -1777,29 +2779,29 @@ static void battery_aging_safe_policy(struct direct_charge_device* di)
 
 	if (cur_level != last_level) {
 		di->volt_para[di->stage_size -1].vol_th =
-			orig_volt_para[di->stage_size -1].vol_th - basp.dc_volt_dec;
+			di->orig_volt_para[di->stage_size -1].vol_th - basp.dc_volt_dec;
 		for (i = 0; i < di->stage_size -1; i++) {
-			di->volt_para[i].vol_th = orig_volt_para[i].vol_th < di->volt_para[di->stage_size -1].vol_th\
-								? orig_volt_para[i].vol_th : di->volt_para[di->stage_size -1].vol_th;
+			di->volt_para[i].vol_th = di->orig_volt_para[i].vol_th < di->volt_para[di->stage_size -1].vol_th\
+								? di->orig_volt_para[i].vol_th : di->volt_para[di->stage_size -1].vol_th;
 		}
 		switch (basp.cur_ratio_policy) {
 		case BASP_RATIO_POLICY_ALL:
 			di->volt_para[di->stage_size -1].cur_th_high =
-						orig_volt_para[di->stage_size -1].cur_th_high * basp.cur_ratio/BASP_PARA_SCALE;
+						di->orig_volt_para[di->stage_size -1].cur_th_high * basp.cur_ratio/BASP_PARA_SCALE;
 			di->volt_para[di->stage_size -1].cur_th_low =
-						orig_volt_para[di->stage_size -1].cur_th_low;
+						di->orig_volt_para[di->stage_size -1].cur_th_low;
 			for (i = 0; i < di->stage_size -1; i++) {
-				di->volt_para[i].cur_th_high = orig_volt_para[i].cur_th_high * basp.cur_ratio /BASP_PARA_SCALE;
-				di->volt_para[i].cur_th_low = orig_volt_para[i].cur_th_low * basp.cur_ratio /BASP_PARA_SCALE;
+				di->volt_para[i].cur_th_high = di->orig_volt_para[i].cur_th_high * basp.cur_ratio /BASP_PARA_SCALE;
+				di->volt_para[i].cur_th_low = di->orig_volt_para[i].cur_th_low * basp.cur_ratio /BASP_PARA_SCALE;
 			}
 			break;
 		case BASP_RATIO_POLICY_MAX:
-			di->volt_para[0].cur_th_high = orig_volt_para[0].cur_th_high * basp.cur_ratio /BASP_PARA_SCALE;
-			di->volt_para[0].cur_th_low = orig_volt_para[0].cur_th_low;
+			di->volt_para[0].cur_th_high = di->orig_volt_para[0].cur_th_high * basp.cur_ratio /BASP_PARA_SCALE;
+			di->volt_para[0].cur_th_low = di->orig_volt_para[0].cur_th_low;
 			for (i = 1; i < di->stage_size;i++) {
-				di->volt_para[i].cur_th_high = orig_volt_para[i].cur_th_high <= di->volt_para[0].cur_th_high ?
-							orig_volt_para[i].cur_th_high : di->volt_para[0].cur_th_high;
-				di->volt_para[i].cur_th_low = orig_volt_para[i].cur_th_low;
+				di->volt_para[i].cur_th_high = di->orig_volt_para[i].cur_th_high <= di->volt_para[0].cur_th_high ?
+							di->orig_volt_para[i].cur_th_high : di->volt_para[0].cur_th_high;
+				di->volt_para[i].cur_th_low = di->orig_volt_para[i].cur_th_low;
 			}
 			break;
 		default:
@@ -1812,27 +2814,32 @@ static void battery_aging_safe_policy(struct direct_charge_device* di)
 				i, di->volt_para[i].vol_th, di->volt_para[i].cur_th_high, di->volt_para[i].cur_th_low);
 		}
 	}
-
 	return;
 }
-static void direct_charge_regulation(struct direct_charge_device* di)
+void direct_charge_regulation(void)
 {
 	char buf[ERR_NO_STRING_SIZE] = { 0 };
 	int ret;
+	struct direct_charge_device *di = NULL;
+	if (NULL == g_di)
+	{
+		hwlog_err("%s g_di is NULL\n", __func__);
+		return ;
+	}
+	di = g_di;
+	int iadapt = get_adaptor_current();
+	int iadapt_set = get_adaptor_current_set();
+	di->vadapt = get_adaptor_voltage();
+	di->tadapt = get_adaptor_temp();
+	di->ls_ibus = get_ls_ibus();
+	di->ls_vbus = get_ls_vbus();
+	di->tls = get_ls_temp();
+	di->iadapt = iadapt;
 	int vbat = di->vbat;
 	int ibat = di->ibat;
 	int vbat_sh = di->cur_vbat_th;
 	int ibat_sh_high = di->cur_ibat_th_high;
 	int ibat_sh_low = di->cur_ibat_th_low;
-	int iadapt = get_adaptor_current(di);
-	int iadapt_set = get_adaptor_current_set(di);
-
-	di->vadapt = get_adaptor_voltage(di);
-	di->tadapt = get_adaptor_temp(di);
-	di->iadapt = iadapt;
-	di->ls_ibus = get_ls_ibus(di);
-	di->ls_vbus = get_ls_vbus();
-	di->tls = get_ls_temp(di);
 
 	hwlog_info("cur_stage = %d vbat = %d ibat = %d vbat_sh = %d ibat_sh_high = %d ibat_sh_low = %d vadp = %d iadap = %d ls_vbus = %d ls_ibus = %d iadapt_set = %d tadapt = %d tls = %d!\n",
 			di->cur_stage, vbat, ibat, vbat_sh, ibat_sh_high, ibat_sh_low, di->vadapt, iadapt, di->ls_vbus, di->ls_ibus, iadapt_set, di->tadapt, di->tls);
@@ -1840,7 +2847,7 @@ static void direct_charge_regulation(struct direct_charge_device* di)
 	{
 		snprintf(buf, sizeof(buf), "%s: tls = %d > %d, stop direct_charge!\n", __func__, di->tls, di->max_tls);
 		hwlog_err("%s", buf);
-		strncat(dc_err_dsm_buff, buf, strlen(buf));
+		strncat(di->dc_err_dsm_buff, buf, strlen(buf));
 		di->scp_stop_charging_flag_error = 1;
 		return;
 	}
@@ -1848,12 +2855,16 @@ static void direct_charge_regulation(struct direct_charge_device* di)
 	{
 		snprintf(buf, sizeof(buf), "%s: tadapt(%d) > [%d], stop direct_charge!\n", __func__, di->tadapt, di->max_tadapt);
 		hwlog_err("%s", buf);
-		strncat(dc_err_dsm_buff, buf, strlen(buf));
-		dsm_report(DSM_DIRECT_CHARGE_ADAPTER_OTP, buf);
+		di->adaptor_otp_cnt++;
+		strncat(di->dc_err_dsm_buff, buf, strlen(buf));
+		if (di->adaptor_otp_cnt >= ADAPTOR_OTP_CNT) {
+			di->adaptor_otp_cnt = ADAPTOR_OTP_CNT;
+			power_dsm_dmd_report(POWER_DSM_BATTERY, DSM_DIRECT_CHARGE_ADAPTER_OTP, buf);
+		}
 		di->scp_stop_charging_flag_error = 1;
 		return;
 	}
-	ret = is_ls_close(di);/*keep communication with loadswitchwithin 1 second*/
+	ret = is_ls_close();/*keep communication with loadswitchwithin 1 second*/
 	if (ret)
 	{
 		hwlog_err("ls is close!\n");
@@ -1863,20 +2874,20 @@ static void direct_charge_regulation(struct direct_charge_device* di)
 	{
 		if (vbat > vbat_sh)
 		{
-			di->adaptor_vset += vbat_sh - vbat;
-			set_adaptor_voltage(di);
+			di->adaptor_vset += di->dc_volt_ratio * (vbat_sh - vbat);
+			set_adaptor_voltage();
 			return;
 		}
-		if (iadapt > ibat_sh_high)
+		if (iadapt > ibat_sh_high/di->dc_volt_ratio)
 		{
 			di->adaptor_vset -= di->vstep;
-			set_adaptor_voltage(di);
+			set_adaptor_voltage();
 			return;
 		}
 		if (ibat > ibat_sh_high)
 		{
 			di->adaptor_vset -= di->vstep;
-			set_adaptor_voltage(di);
+			set_adaptor_voltage();
 			return;
 		}
 		if (ibat > ibat_sh_high - di->delta_err)
@@ -1884,40 +2895,40 @@ static void direct_charge_regulation(struct direct_charge_device* di)
 			hwlog_info("do nothing!\n");
 			return;
 		}
-		if (di->adaptor_iset < ibat_sh_high - 1000)
+		if (di->adaptor_iset < (ibat_sh_high - 1000)/di->dc_volt_ratio)
 		{
-			di->adaptor_iset += 1000;
-			set_adaptor_current(di);
+			di->adaptor_iset += 1000/di->dc_volt_ratio;
+			set_adaptor_current();
 			return;
 		}
-		else if (di->adaptor_iset < ibat_sh_high)
+		else if (di->adaptor_iset < ibat_sh_high/di->dc_volt_ratio)
 		{
 			di->adaptor_iset = ibat_sh_high;
-			set_adaptor_current(di);
+			set_adaptor_current();
 			return;
 		}
 		else
 		{
-			if (iadapt < ibat_sh_high - di->delta_err)
+			if (iadapt < (ibat_sh_high - di->delta_err)/di->dc_volt_ratio)
 			{
 				di->adaptor_vset += di->vstep;
-				set_adaptor_voltage(di);
+				set_adaptor_voltage();
 				return;
 			}
 		}
 	}
 	else
 	{
-		if (iadapt > ibat_sh_high)
+		if (iadapt > ibat_sh_high/di->dc_volt_ratio)
 		{
 			di->adaptor_vset -= di->vstep;
-			set_adaptor_voltage(di);
+			set_adaptor_voltage();
 			return;
 		}
 		if (ibat > ibat_sh_high)
 		{
 			di->adaptor_vset -= di->vstep;
-			set_adaptor_voltage(di);
+			set_adaptor_voltage();
 			return;
 		}
 		if (ibat > ibat_sh_high - di->delta_err)
@@ -1925,24 +2936,24 @@ static void direct_charge_regulation(struct direct_charge_device* di)
 			hwlog_info("do nothing!\n");
 			return;
 		}
-		if (di->adaptor_iset < ibat_sh_high - 1000)
+		if (di->adaptor_iset < (ibat_sh_high - 1000)/di->dc_volt_ratio)
 		{
-			di->adaptor_iset += 1000;
-			set_adaptor_current(di);
+			di->adaptor_iset += 1000/di->dc_volt_ratio;
+			set_adaptor_current();
 			return;
 		}
-		else if (di->adaptor_iset < ibat_sh_high)
+		else if (di->adaptor_iset < ibat_sh_high/di->dc_volt_ratio)
 		{
-			di->adaptor_iset = ibat_sh_high;
-			set_adaptor_current(di);
+			di->adaptor_iset = ibat_sh_high/di->dc_volt_ratio;
+			set_adaptor_current();
 			return;
 		}
 		else
 		{
-			if (iadapt < ibat_sh_high - di->delta_err)
+			if (iadapt < (ibat_sh_high - di->delta_err)/di->dc_volt_ratio)
 			{
 				di->adaptor_vset += di->vstep;
-				set_adaptor_voltage(di);
+				set_adaptor_voltage();
 				return;
 			}
 		}
@@ -1951,7 +2962,7 @@ static void direct_charge_regulation(struct direct_charge_device* di)
 }
 
 /*lint -save -e* */
-static void charge_control_work(struct work_struct *work)
+void charge_control_work(struct work_struct *work)
 {
 	struct direct_charge_device *di = container_of(work,struct direct_charge_device, charge_control_work);
 	int interval = di->charge_control_interval;
@@ -1969,14 +2980,14 @@ static void charge_control_work(struct work_struct *work)
 		scp_stop_charging();
 		return;
 	}
-	direct_charge_regulation(di);
+	direct_charge_regulation();
 
 	hrtimer_start(&di->charge_control_timer, ktime_set(interval/MSEC_PER_SEC, (interval % MSEC_PER_SEC) * USEC_PER_SEC), HRTIMER_MODE_REL);
 }
 /*lint -restore*/
 
 /*lint -save -e* */
-static void threshold_caculation_work(struct work_struct *work)
+void threshold_caculation_work(struct work_struct *work)
 {
 	struct direct_charge_device *di = container_of(work,struct direct_charge_device, threshold_caculation_work);
 	int interval = di->threshold_caculation_interval;
@@ -1987,8 +2998,8 @@ static void threshold_caculation_work(struct work_struct *work)
 		return;
 	}
 	battery_aging_safe_policy(di);
-	select_direct_charge_stage(di);
-	select_direct_charge_param(di);
+	select_direct_charge_stage();
+	select_direct_charge_param();
 	if (2*di->stage_size == di->cur_stage)
 	{
 		hwlog_info("direct charge done, stop threshold_caculation!\n");
@@ -1998,7 +3009,7 @@ static void threshold_caculation_work(struct work_struct *work)
 }
 /*lint -restore*/
 
-static void kick_watchdog_work(struct work_struct *work)
+void kick_watchdog_work(struct work_struct *work)
 {
 	struct direct_charge_device *di = container_of(work,struct direct_charge_device, kick_watchdog_work);
 	int interval = KICK_WATCHDOG_TIME;//kich watchdog timer;
@@ -2016,17 +3027,16 @@ static void kick_watchdog_work(struct work_struct *work)
 		return;
 	}
 
-	ret = di->bi_ops->get_bat_current(&bat_curr);/*keep communication with the adaptor within 1 second*/
-	if (ret)
-	{
-		hwlog_err("get_bat_current fail!\n");
-	}
-	hwlog_info("To keep communication with ls : bat_curr = %d!\n", bat_curr);
+        if(di->ls_ops->kick_watchdog)
+                di->ls_ops->kick_watchdog();
+
+	get_bat_current(); /*keep communication with the adaptor within 1 second*/
+
 	hrtimer_start(&di->kick_watchdog_timer, ktime_set(interval/MSEC_PER_SEC, (interval % MSEC_PER_SEC) * USEC_PER_SEC), HRTIMER_MODE_REL);
 }
 
 /*lint -save -e* */
-static enum hrtimer_restart threshold_caculation_timer_func(struct hrtimer *timer)
+enum hrtimer_restart threshold_caculation_timer_func(struct hrtimer *timer)
 {
 	struct direct_charge_device *di;
 
@@ -2035,7 +3045,7 @@ static enum hrtimer_restart threshold_caculation_timer_func(struct hrtimer *time
 	return HRTIMER_NORESTART;
 }
 
-static enum hrtimer_restart charge_control_timer_func(struct hrtimer *timer)
+enum hrtimer_restart charge_control_timer_func(struct hrtimer *timer)
 {
 	struct direct_charge_device *di;
 
@@ -2045,7 +3055,7 @@ static enum hrtimer_restart charge_control_timer_func(struct hrtimer *timer)
 }
 /*lint -restore*/
 
-static enum hrtimer_restart kick_watchdog_timer_func(struct hrtimer *timer)
+enum hrtimer_restart kick_watchdog_timer_func(struct hrtimer *timer)
 {
 	struct direct_charge_device *di;
 
@@ -2054,11 +3064,39 @@ static enum hrtimer_restart kick_watchdog_timer_func(struct hrtimer *timer)
 	return HRTIMER_NORESTART;
 }
 
-static void scp_start_charging(struct direct_charge_device *di)
+int direct_charge_fault_notifier_call(struct notifier_block *fault_nb, unsigned long event, void *data)
+{
+	struct direct_charge_device *di = container_of(fault_nb, struct direct_charge_device, fault_nb);
+	enum scp_stage_type stage = scp_get_stage_status();
+
+	if (stage < SCP_STAGE_SECURITY_CHECK || stage == SCP_STAGE_CHARGE_DONE)
+	{
+		hwlog_err("notify event:%d when direct charge not initialized, so ignored!\n", di->charge_fault);
+		return NOTIFY_OK;
+	}
+	di->charge_fault = (enum charge_fault_type)event;
+	di->fault_data = (struct nty_data*)data;
+	schedule_work(&di->fault_work);
+	return NOTIFY_OK;
+}
+/*lint -restore*/
+
+void scp_start_charging(void)
 {
 	int interval;
+	struct direct_charge_device *di = NULL;
 
 	hwlog_info("%s \n",__func__);
+
+	if (NULL == g_di)
+	{
+		hwlog_err("%s g_di is NULL\n", __func__);
+		return ;
+	}
+	di = g_di;
+
+	hisi_coul_charger_event_rcv(VCHRG_START_AC_CHARGING_EVENT);
+
 	direct_charge_wake_lock();
 	if (di->first_cc_stage_timer_in_min)
 	{
@@ -2066,10 +3104,16 @@ static void scp_start_charging(struct direct_charge_device *di)
 		hwlog_info("%s start timing\n",__func__);
 		di->first_cc_stage_timeout = jiffies + msecs_to_jiffies(di->first_cc_stage_timer_in_min*60*MSEC_PER_SEC);
 	}
-	select_direct_charge_stage(di);
-	chg_set_adaptor_test_result(TYPE_SCP,PROTOCOL_FINISH_SUCC);
+	select_direct_charge_stage_param();
+	select_direct_charge_stage();
+	if (di->cur_stage == 0) {
+		di->volt_para[0].cur_th_high -= di->sc_conv_ocp_count * 500;
+		hwlog_info("%s sc_conv_ocp_count = %d, cur_th_high[0] = %d \n",__func__, di->sc_conv_ocp_count, di->volt_para[0].cur_th_high);
+	}
+	chg_set_adaptor_test_result(di->adaptor_test_result_type,PROTOCOL_FINISH_SUCC);
 	scp_set_stage_status(SCP_STAGE_CHARGING);
-	select_direct_charge_param(di);
+	select_direct_charge_param();
+        di->ls_ops->watchdog_config_ms(WATCHDOG_TIMEOUT);
 	interval = di->charge_control_interval;
 	hrtimer_start(&di->charge_control_timer, ktime_set(interval/MSEC_PER_SEC, (interval % MSEC_PER_SEC) * USEC_PER_SEC), HRTIMER_MODE_REL);
 	interval = di->threshold_caculation_interval;
@@ -2082,18 +3126,30 @@ void vbat_ovp_exit_direct_charge(int enable_charge)
 {
 	int i = 0;
 	int ibus = 0;
-	struct direct_charge_device *di = g_di;
+	struct direct_charge_device *di = NULL;
+	if (NULL == g_di)
+	{
+		hwlog_err("%s g_di is NULL\n", __func__);
+		return ;
+	}
+	di = g_di;
 
 	di->vbat_ovp_enable_charger = enable_charge;
 	hwlog_info("%s: vbat_ovp_enable_charger = %d \n",__func__,di->vbat_ovp_enable_charger);
 }
 
-static int vbat_ovp_scp_exit(void)
+int vbat_ovp_scp_exit(void)
 {
 	int ret;
 	int val;
-	struct direct_charge_device *di = g_di;
 	int vbus_vol = 0;
+	struct direct_charge_device *di = NULL;
+	if (NULL == g_di)
+	{
+		hwlog_err("%s g_di is NULL\n", __func__);
+		return;
+	}
+	di = g_di;
 	val = di->ls_ops->ls_enable(0);
 	if (val)
 	{
@@ -2137,8 +3193,8 @@ static int vbat_ovp_scp_exit(void)
 	}
 	if (di->scp_work_on_charger)
 	{
-		scp_power_control(di, DISABLE);
-		charge_set_hiz_enable(SET_HIZ_ENABLE);
+		scp_power_control(DISABLE);
+		charge_set_hiz_enable(HIZ_MODE_ENABLE);
 	}
 	val = di->ls_ops->ls_exit();
 	if (val)
@@ -2154,11 +3210,17 @@ static int vbat_ovp_scp_exit(void)
 }
 int vbat_ovp_scp_handle(void)
 {
-	struct direct_charge_device *di = g_di;
 	int timeout;
 	int ret;
 	int adaptor_vol;
 	int iadaptor;
+	struct direct_charge_device *di = NULL;
+	if (NULL == g_di)
+	{
+		hwlog_err("%s g_di is NULL\n", __func__);
+		return -1;
+	}
+	di = g_di;
 
 	if (0 != is_direct_charge_ops_valid(di))
 	{
@@ -2168,7 +3230,7 @@ int vbat_ovp_scp_handle(void)
 	di->adaptor_vendor_id = di->scp_ops->scp_get_adapter_vendor_id();
 	di->adaptor_vset = 4300;
 	di->adaptor_iset = 2000;
-	ret = scp_direct_charge_init(di);
+	ret = scp_direct_charge_init();
 	if (ret)
 	{
 		hwlog_err("%s:scp_direct_charge_init fail\n", __func__);
@@ -2190,7 +3252,7 @@ int vbat_ovp_scp_handle(void)
 		ret = vbat_ovp_scp_exit();
 		return ret;
 	}
-	iadaptor= get_adaptor_current_for_vbat_ovp(di);
+	iadaptor= get_adaptor_current_for_vbat_ovp();
 	if (iadaptor < 0)
 	{
 		hwlog_err("%s:scp_get_iadaptor fail\n", __func__);
@@ -2245,7 +3307,7 @@ int vbat_ovp_scp_handle(void)
 			ret = vbat_ovp_scp_exit();
 			return ret;
 		}
-		iadaptor= get_adaptor_current_for_vbat_ovp(di);
+		iadaptor= get_adaptor_current_for_vbat_ovp();
 		if (iadaptor < 0)
 		{
 			hwlog_err("%s:scp_get_iadaptor fail\n", __func__);
@@ -2258,775 +3320,186 @@ int vbat_ovp_scp_handle(void)
 }
 int is_direct_charge_failed(void)
 {
-	struct direct_charge_device *di = g_di;
+	int lvc_ret = 0;
+	int sc_ret = 0;
+	struct direct_charge_device *lvc_di = NULL;
+	struct direct_charge_device *sc_di = NULL;
 
-	if (NULL == di)
-	{
-		return 0;
+	lvc_ret = direct_charge_get_lvc_di(&lvc_di);
+	sc_ret = direct_charge_get_sc_di(&sc_di);
+
+	if (!lvc_ret) {
+		if (lvc_di->error_cnt >= DC_ERR_CNT_MAX || not_support_direct) {
+			hwlog_info("lvc exceed error retry max! \n");
+			return 1;
+		} else {
+			return 0;
+		}
 	}
-	if (di->error_cnt >= DC_ERR_CNT_MAX)
-	{
-		return 1;
+
+	if (!sc_ret) {
+		if (sc_di->error_cnt >= DC_ERR_CNT_MAX || not_support_direct) {
+			hwlog_info("sc exceed error retry max! \n");
+			return 1;
+		} else {
+			return 0;
+		}
 	}
+
 	return 0;
 }
-
-void direct_charge_check(void)
+int is_direct_charge_ops_valid(struct direct_charge_device *di)
 {
-	struct direct_charge_device *di = g_di;
-	enum charge_done_type charge_done_status = get_charge_done_type();
+	if (NULL == di)
+	{
+		hwlog_err("direct_charge_device is null!\n");
+		return	INVALID;
+	}
 
-	if (INVALID == is_direct_charge_ops_valid(di))
+	if ((NULL == di->scp_ops) || (NULL == di->scp_ops->is_support_scp)
+		||(NULL	== di->scp_ops->scp_init) || (NULL == di->scp_ops->scp_adaptor_detect)
+		||(NULL	== di->scp_ops->scp_set_adaptor_voltage) || (NULL == di->scp_ops->scp_get_adaptor_voltage)
+		||(NULL	== di->scp_ops->scp_get_adaptor_current) || (NULL == di->scp_ops->scp_set_adaptor_current)
+		||(NULL	== di->scp_ops->scp_adaptor_reset) || (NULL == di->scp_ops->scp_chip_reset)
+		||(NULL	== di->scp_ops->scp_stop_charge_config)	|| (NULL == di->scp_ops->scp_get_adaptor_status)
+		||(NULL	== di->scp_ops->scp_get_chip_status) || (NULL == di->scp_ops->scp_exit)
+		||(NULL == di->scp_ops->scp_get_adaptor_max_current) || (NULL == di->scp_ops->scp_cable_detect)
+		||(NULL == di->scp_ops->scp_get_adapter_vendor_id ) )
 	{
-		hwlog_err("%s : NULL pointer \n", __func__);
-		return;
+		hwlog_err("scp ops is null!\n");
+		return	INVALID;
 	}
-	if ((SCP_STAGE_CHARGE_DONE == scp_stage) || (CHARGE_DONE == charge_done_status))
+
+	if ((NULL == di->scp_ps_ops) || (NULL == di->scp_ps_ops->scp_power_enable))
 	{
-		hwlog_err("%s : scp_stage = %d,charge_done_status = %d\n", __func__, scp_stage, charge_done_status);
-		return;
+		hwlog_err("scp ps ops is null!\n");
+		return	INVALID;
 	}
-	if (di->error_cnt >= DC_ERR_CNT_MAX)
+
+	if ((NULL == di->ls_ops) || (NULL == di->ls_ops->ls_init) || (NULL == di->ls_ops->ls_exit)
+		|| (NULL == di->ls_ops->is_ls_close) || (NULL == di->ls_ops->get_ls_id) || (NULL == di->ls_ops->ls_enable)
+		||(NULL == di->ls_ops->watchdog_config_ms))
 	{
-		hwlog_info("%s error exceed %d times, direct charge is disabled\n", __func__, DC_ERR_CNT_MAX);
-		di->direct_charge_succ_flag = DIRECT_CHARGE_ERROR_CHARGE_DISABLED;
-		direct_charge_send_normal_charge_uevent();
-		if (FALSE == di->dc_err_report_flag && di->dc_open_retry_cnt <= DC_OPEN_RETRY_CNT_MAX) {
-			hwlog_err("%s", dc_err_dsm_buff);
-			dsm_report(DSM_DIRECT_CHARGE_ERR, dc_err_dsm_buff);
-			memset(dc_err_dsm_buff, 0, sizeof(dc_err_dsm_buff));
-			di->dc_err_report_flag = TRUE;
-		}
-		return;
+		hwlog_err("ls ops is null!\n");
+		return	INVALID;
 	}
-	if (0 == di->sysfs_enable_charger ||0 == di->vbat_ovp_enable_charger)
+
+	if ((NULL == di->bi_ops) || (NULL == di->bi_ops->get_bat_current) || (NULL == di->bi_ops->exit)
+		|| (NULL == di->bi_ops->get_bat_btb_voltage) || (NULL == di->bi_ops->get_vbus_voltage))
 	{
-		hwlog_info("%s direct_charge is disabled\n",__func__);
-		di->direct_charge_succ_flag = DIRECT_CHARGE_ERROR_CHARGE_DISABLED;
-		direct_charge_send_normal_charge_uevent();
-		return;
+		hwlog_err("bi ops is null!\n");
+		return	INVALID;
 	}
-	if (SCP_STAGE_DEFAULT == scp_get_stage_status())
-	{
-		if (is_support_scp(di))
-		{
-			hwlog_err("%s : not support scp \n", __func__);
-			return;
-		}
-	}
-#ifdef  CONFIG_HUAWEI_USB_SHORT_CIRCUIT_PROTECT
-	if (is_in_uscp_mode()) {
-		scp_set_stage_status(SCP_STAGE_DEFAULT);
-		hwlog_err("%s direct_charge is disabled by uscp\n",__func__);
-		di->direct_charge_succ_flag = DIRECT_CHARGE_ERROR_CHARGE_DISABLED;
-		return;
-	}
-#endif
-	if (SCP_STAGE_ADAPTER_DETECT == scp_get_stage_status())
-	{
-		di->direct_charge_succ_flag = DIRECT_CHARGE_ERROR_ADAPTOR_DETECT;
-		scp_adaptor_and_cable_detect(di);
-	}
-	if (!can_battery_temp_do_direct_charge(di))
-	{
-		di->direct_charge_succ_flag = DIRECT_CHARGE_ERROR_BAT_TEMP;
-		scp_set_stage_status(SCP_STAGE_DEFAULT);
-		hwlog_err("temp out of range, try next loop!\n");
-		return;
-	}
-	if (!can_battery_vol_do_direct_charge(di))
-	{
-		di->direct_charge_succ_flag = DIRECT_CHARGE_ERROR_BAT_VOL;
-		scp_set_stage_status(SCP_STAGE_DEFAULT);
-		hwlog_err("volt out of range, try next loop!\n");
-		return;
-	}
-	if(SCP_STAGE_SWITCH_DETECT == scp_get_stage_status())
-	{
-		scp_stop_charging_complete_flag = 0;
-		di->direct_charge_succ_flag = DIRECT_CHARGE_ERROR_SWITCH;
-		if (SUCC == cutoff_normal_charge(di))
-		{
-			scp_set_stage_status(SCP_STAGE_CHARGE_INIT);
-		}
-		else
-		{
-			hwlog_err("%s : switch to direct charge failed \n", __func__);
-			di->scp_stop_charging_flag_error =1;
-			scp_stop_charging();
-		}
-	}
-	if (SCP_STAGE_CHARGE_INIT == scp_get_stage_status())
-	{
-		di->direct_charge_succ_flag = DIRECT_CHARGE_ERROR_INIT;
-		if (SUCC == scp_direct_charge_init(di))
-		{
-			scp_set_stage_status(SCP_STAGE_SECURITY_CHECK);
-		}
-		else
-		{
-			hwlog_err("%s : direct_charge init failed \n", __func__);
-			di->scp_stop_charging_flag_error =1;
-			scp_stop_charging();
-		}
-	}
-	if (SCP_STAGE_SECURITY_CHECK == scp_get_stage_status())
-	{
-		if (0 == scp_security_check(di))
-		{
-			scp_set_stage_status(SCP_STAGE_SUCCESS);
-		}
-		else
-		{
-			hwlog_err("%s : scp security check fail	\n", __func__);
-			di->scp_stop_charging_flag_error =1;
-			scp_stop_charging();
-		}
-	}
-	if (SCP_STAGE_SUCCESS == scp_get_stage_status())
-	{
-		di->direct_charge_succ_flag = DIRECT_CHARGE_SUCC;
-		scp_start_charging(di);
-	}
-	if (SCP_STAGE_CHARGING == scp_get_stage_status())
-	{
-		hwlog_info("%s : in direct charge process\n", __func__);
-	}
-	hwlog_info("[%s]direct charge stage  %s !!! \n", __func__, scp_check_stage[scp_get_stage_status()]);
+	return	VALID;
 }
-/*lint -restore*/
+
+static int direct_charge_mode = 0;
+
+void direct_charge_or_set_local_mode(int dc_mode)
+{
+	direct_charge_mode |=  dc_mode;
+	return;
+}
+
+void direct_charge_and_set_local_mode(int dc_mode)
+{
+	direct_charge_mode &=  dc_mode;
+	return;
+}
+
+int direct_charge_get_local_mode(void)
+{
+	return direct_charge_mode;
+}
+enum direct_charge_mode direct_charge_get_adaptor_mode(void)
+{
+	if (g_di) {
+		return g_di->scp_mode;
+	} else {
+		return UNDEFINED_MODE;
+	}
+}
 
 /*lint -save -e* */
 void direct_charge_update_cutoff_flag(void)
 {
-	struct direct_charge_device *di = g_di;
-	if(NULL == di)
+	struct direct_charge_device *di = NULL;
+	if (NULL == g_di)
+	{
+		hwlog_err("%s g_di is NULL\n", __func__);
 		return;
-	if (pmic_vbus_irq_is_enabled() && cutoff_normal_flag){
-		hwlog_info("[%s]cutoff_normal_flag = %d ! \n", __func__, cutoff_normal_flag);
-		cutoff_normal_flag = 0;
+	}
+	di = g_di;
+
+	if (pmic_vbus_irq_is_enabled() && di->cutoff_normal_flag){
+		hwlog_info("[%s]cutoff_normal_flag = %d ! \n", __func__, di->cutoff_normal_flag);
+		di->cutoff_normal_flag = 0;
 	} else {
-		quick_charge_flag = 0;
-		super_charge_flag = 0;
+		di->quick_charge_flag = 0;
+		di->super_charge_flag = 0;
 		di->error_cnt = 0;
 	}
 }
 void direct_charge_set_scp_stage_default(void)
 {
+	struct direct_charge_device *di = NULL;
+	if (NULL == g_di)
+	{
+		hwlog_err("%s g_di is NULL\n", __func__);
+		return ;
+	}
+	di = g_di;
 	scp_set_stage_status(SCP_STAGE_DEFAULT);
-	hwlog_info("[%s]cutoff_normal_flag = %d, scp_stage = %d ! \n", __func__,cutoff_normal_flag, scp_stage);
+	hwlog_info("[%s]cutoff_normal_flag = %d, scp_stage = %d ! \n", __func__,di->cutoff_normal_flag, di->scp_stage);
+}
+
+void direct_charge_stop_charging_para_reset(struct direct_charge_device *di)
+{
+	if (di) {
+		di->full_path_resistance = ERROR_RESISTANCE;
+		di->direct_charge_succ_flag = DIRECT_CHARGE_ERROR_ADAPTOR_DETECT;
+		di->scp_stop_charging_flag_error = 0;
+		di->scp_stop_charging_flag_info = 0;
+		di->cur_stage = 0;
+		di->pre_stage = 0;
+		di->vbat = 0;
+		di->ibat = 0;
+		di->vadapt = 0;
+		di->iadapt = 0;
+		di->ls_vbus = 0;
+		di->ls_ibus = 0;
+		di->compensate_v = 0;
+		di->cc_cable_detect_ok = 0;
+		di->ibat_abnormal_cnt = 0;
+		di->max_adaptor_cur = 0;
+		di->dc_open_retry_cnt = 0;
+		di->otp_cnt = 0;
+		di->adaptor_otp_cnt = 0;
+		di->reverse_ocp_cnt = 0;
+		di->dc_err_report_flag = FALSE;
+		memset(di->dc_err_dsm_buff, 0, sizeof(di->dc_err_dsm_buff));
+	}
 }
 
 void direct_charge_stop_charging(void)
 {
-	struct direct_charge_device *di = g_di;
-	if(NULL == di)
-		return;
+	struct direct_charge_device *lvc_di = NULL;
+	struct direct_charge_device *sc_di = NULL;
 
-	di->full_path_resistance = ERROR_RESISTANCE;
-	di->direct_charge_succ_flag = DIRECT_CHARGE_ERROR_ADAPTOR_DETECT;
-	di->scp_stop_charging_flag_error = 0;
-	di->scp_stop_charging_flag_info = 0;
-	di->cur_stage = 0;
-	di->pre_stage = 0;
-	di->vbat = 0;
-	di->ibat = 0;
-	di->vadapt = 0;
-	di->iadapt = 0;
-	di->ls_vbus = 0;
-	di->ls_ibus = 0;
-	di->compensate_v = 0;
-	di->cc_cable_detect_ok = 0;
+	direct_charge_get_lvc_di(&lvc_di);
+	direct_charge_get_sc_di(&sc_di);
+
+	if(!lvc_di && !sc_di) {
+			hwlog_err("NULL direct_charge_device pointer found in %s.\n", __func__);
+			return;
+	}
+
 	if (!strstr(saved_command_line, "androidboot.swtype=factory")) {
-		di->sysfs_enable_charger = 1;
+		set_direct_charger_disable_flags(DIRECT_CHARGER_CLEAR_DISABLE_FLAGS,
+                                         DIRECT_CHARGER_SYS_NODE);
 	}
-	di->ibat_abnormal_cnt = 0;
-	di->max_adaptor_cur = 0;
-	di->dc_open_retry_cnt = 0;
-	di->dc_err_report_flag = FALSE;
-	memset(dc_err_dsm_buff, 0, sizeof(dc_err_dsm_buff));
+
+	direct_charge_stop_charging_para_reset(lvc_di);
+	direct_charge_stop_charging_para_reset(sc_di);
 }
 /*lint -restore*/
-
-#ifdef CONFIG_SYSFS
-#define DIRECT_CHARGE_SYSFS_FIELD(_name, n, m, store)                \
-{                                                   \
-    .attr = __ATTR(_name, m, direct_charge_sysfs_show, store),    \
-    .name = DIRECT_CHARGE_SYSFS_##n,          \
-}
-
-#define DIRECT_CHARGE_SYSFS_FIELD_RW(_name, n)               \
-	DIRECT_CHARGE_SYSFS_FIELD(_name, n, S_IWUSR | S_IRUGO, direct_charge_sysfs_store)
-
-#define DIRECT_CHARGE_SYSFS_FIELD_RO(_name, n)               \
-	DIRECT_CHARGE_SYSFS_FIELD(_name, n, S_IRUGO, NULL)
-
-static ssize_t direct_charge_sysfs_show(struct device *dev,
-				 struct device_attribute *attr, char *buf);
-static ssize_t direct_charge_sysfs_store(struct device *dev,
-				  struct device_attribute *attr,
-				  const char *buf, size_t count);
-
-struct direct_charge_sysfs_field_info {
-	struct device_attribute attr;
-	u8 name;
-};
-
-static struct direct_charge_sysfs_field_info direct_charge_sysfs_field_tbl[] = {
-	DIRECT_CHARGE_SYSFS_FIELD_RW(enable_charger, ENABLE_CHARGER),
-	DIRECT_CHARGE_SYSFS_FIELD_RW(iin_thermal, IIN_THERMAL),
-	DIRECT_CHARGE_SYSFS_FIELD_RO(adaptor_detect, ADAPTOR_DETECT),
-	DIRECT_CHARGE_SYSFS_FIELD_RO(loadswitch_id, LOADSWITCH_ID),
-	DIRECT_CHARGE_SYSFS_FIELD_RO(loadswitch_name, LOADSWITCH_NAME),
-	DIRECT_CHARGE_SYSFS_FIELD_RO(vbat, VBAT),
-	DIRECT_CHARGE_SYSFS_FIELD_RO(ibat, IBAT),
-	DIRECT_CHARGE_SYSFS_FIELD_RO(vadapt, VADAPT),
-	DIRECT_CHARGE_SYSFS_FIELD_RO(iadapt, IADAPT),
-	DIRECT_CHARGE_SYSFS_FIELD_RO(ls_vbus, LS_VBUS),
-	DIRECT_CHARGE_SYSFS_FIELD_RO(ls_ibus, LS_IBUS),
-	DIRECT_CHARGE_SYSFS_FIELD_RO(full_path_resistance, FULL_PATH_RESISTANCE),
-	DIRECT_CHARGE_SYSFS_FIELD_RO(direct_charge_succ, DIRECT_CHARGE_SUCC),
-};
-
-static struct attribute *direct_charge_sysfs_attrs[ARRAY_SIZE(direct_charge_sysfs_field_tbl) + 1];
-
-static const struct attribute_group direct_charge_sysfs_attr_group = {
-	.attrs = direct_charge_sysfs_attrs,
-};
-
-/**********************************************************
-*  Function:       direct_charge_sysfs_init_attrs
-*  Description:    initialize direct_charge_sysfs_attrs[] for direct_charge attribute
-*  Parameters:   NULL
-*  return value:  NULL
-**********************************************************/
-static void direct_charge_sysfs_init_attrs(void)
-{
-	int i, limit = ARRAY_SIZE(direct_charge_sysfs_field_tbl);
-
-	for (i = 0; i < limit; i++) {
-		direct_charge_sysfs_attrs[i] = &direct_charge_sysfs_field_tbl[i].attr.attr;
-	}
-	direct_charge_sysfs_attrs[limit] = NULL;	/* Has additional entry for this */
-}
-
-/**********************************************************
-*  Function:       direct_charge_sysfs_field_lookup
-*  Description:    get the current device_attribute from direct_charge_sysfs_field_tbl by attr's name
-*  Parameters:   name:device attribute name
-*  return value:  direct_charge_sysfs_field_tbl[]
-**********************************************************/
-static struct direct_charge_sysfs_field_info *direct_charge_sysfs_field_lookup(const char *name)
-{
-	int i, limit = ARRAY_SIZE(direct_charge_sysfs_field_tbl);
-
-	for (i = 0; i < limit; i++) {
-		if (!strncmp
-		    (name, direct_charge_sysfs_field_tbl[i].attr.attr.name,
-		     strlen(name)))
-			break;
-	}
-	if (i >= limit)
-		return NULL;
-
-	return &direct_charge_sysfs_field_tbl[i];
-}
-/**********************************************************
-*  Function:       direct_charge_sysfs_show
-*  Description:    show the value for all direct charge device's node
-*  Parameters:   dev:device
-*                      attr:device_attribute
-*                      buf:string of node value
-*  return value:  0-sucess or others-fail
-**********************************************************/
-static ssize_t direct_charge_sysfs_show(struct device *dev,
-				 struct device_attribute *attr, char *buf)
-{
-	struct direct_charge_sysfs_field_info *info = NULL;
-	struct direct_charge_device *di = dev_get_drvdata(dev);
-	enum usb_charger_type type = charge_get_charger_type();
-	int ret;
-
-	info = direct_charge_sysfs_field_lookup(attr->attr.name);
-	if (!info)
-		return -EINVAL;
-
-	switch (info->name) {
-	case DIRECT_CHARGE_SYSFS_ENABLE_CHARGER:
-		return snprintf(buf, PAGE_SIZE, "%d\n", di->sysfs_enable_charger);
-	case DIRECT_CHARGE_SYSFS_IIN_THERMAL:
-		return snprintf(buf, PAGE_SIZE, "%d\n", di->sysfs_iin_thermal);
-	case DIRECT_CHARGE_SYSFS_ADAPTOR_DETECT:
-		ret = SCP_ADAPTOR_DETECT_FAIL;
-		if (INVALID == is_direct_charge_ops_valid(di))
-		{
-			hwlog_err("(%s)invalid ops\n", __func__);
-			return snprintf(buf, PAGE_SIZE, "%d\n", ret);
-		}
-		if(di->scp_ops->is_support_scp())
-		{
-			hwlog_err("(%s)not support scp\n", __func__);
-			return snprintf(buf, PAGE_SIZE, "%d\n", ret);
-		}
-		if ((CHARGER_TYPE_STANDARD == type) ||
-			((CHARGER_REMOVED == type) && (IN_SCP_CHARGING_STAGE == is_in_scp_charging_stage())))
-		{
-			if (SCP_ADAPTOR_DETECT == scp_adaptor_detect_flag)
-			{
-				ret = 0;
-			}else{
-				ret = ADAPTOR_SCP_DETECT_FAIL;
-			}
-			hwlog_info("(%s)adaptor_detect = %d\n", __func__, ret);
-		}
-		return snprintf(buf, PAGE_SIZE, "%d\n", ret);
-	case DIRECT_CHARGE_SYSFS_LOADSWITCH_ID:
-		return snprintf(buf, PAGE_SIZE, "%d\n", di->ls_id);
-	case DIRECT_CHARGE_SYSFS_LOADSWITCH_NAME:
-		return snprintf(buf, PAGE_SIZE, "%s\n", NULL == di->ls_name ? "ERROR" : di->ls_name);
-	case DIRECT_CHARGE_SYSFS_VBAT:
-		return snprintf(buf, PAGE_SIZE, "%d\n", di->vbat);
-	case DIRECT_CHARGE_SYSFS_IBAT:
-		return snprintf(buf, PAGE_SIZE, "%d\n", di->ibat);
-	case DIRECT_CHARGE_SYSFS_VADAPT:
-		return snprintf(buf, PAGE_SIZE, "%d\n", di->vadapt);
-	case DIRECT_CHARGE_SYSFS_IADAPT:
-		return snprintf(buf, PAGE_SIZE, "%d\n", di->iadapt);
-	case DIRECT_CHARGE_SYSFS_LS_VBUS:
-		return snprintf(buf, PAGE_SIZE, "%d\n", di->ls_vbus);
-	case DIRECT_CHARGE_SYSFS_LS_IBUS:
-		return snprintf(buf, PAGE_SIZE, "%d\n", di->ls_ibus);
-	case DIRECT_CHARGE_SYSFS_FULL_PATH_RESISTANCE:
-		return snprintf(buf, PAGE_SIZE, "%d\n", di->full_path_resistance);
-	case DIRECT_CHARGE_SYSFS_DIRECT_CHARGE_SUCC:
-		hwlog_info("(%s)direct_charge_succ_flag = %d\n", __func__, di->direct_charge_succ_flag);
-		return snprintf(buf, PAGE_SIZE, "%d\n", di->direct_charge_succ_flag);
-	default:
-		hwlog_err("(%s)NODE ERR!!HAVE NO THIS NODE:(%d)\n", __func__, info->name);
-		break;
-	}
-	return 0;
-}
-/**********************************************************
-*  Function:       direct_charge_sysfs_store
-*  Description:    set the value for charge_data's node which is can be written
-*  Parameters:   dev:device
-*                      attr:device_attribute
-*                      buf:string of node value
-*                      count:unused
-*  return value:  0-sucess or others-fail
-**********************************************************/
-static ssize_t direct_charge_sysfs_store(struct device *dev,
-				  struct device_attribute *attr,
-				  const char *buf, size_t count)
-{
-	struct direct_charge_sysfs_field_info *info = NULL;
-	struct direct_charge_device *di = dev_get_drvdata(dev);
-	long val = 0;
-
-	info = direct_charge_sysfs_field_lookup(attr->attr.name);
-	if (!info)
-		return -EINVAL;
-
-	switch (info->name) {
-	case DIRECT_CHARGE_SYSFS_ENABLE_CHARGER:
-		if ((strict_strtol(buf, 10, &val) < 0) || (val < 0) || (val > 1))
-			return -EINVAL;
-		di->sysfs_enable_charger = val;
-		hwlog_info("set enable_charger = %d\n", di->sysfs_enable_charger);
-		break;
-	case DIRECT_CHARGE_SYSFS_IIN_THERMAL:
-		if ((strict_strtol(buf, 10, &val) < 0) || (val < 0) || (val > 8000))
-			return -EINVAL;
-		hwlog_info("set iin_thermal = %ld\n", val);
-		if (0 == val)
-		{
-			di->sysfs_iin_thermal = di->volt_para[0].cur_th_high;
-		}
-		else if (val < di->volt_para[di->stage_size - 1].cur_th_low)
-		{
-			hwlog_info("iin_thermal = %ld < %d, ignored\n", val, di->volt_para[di->stage_size - 1].cur_th_low);
-			return -EINVAL;
-		}
-		else
-		{
-			di->sysfs_iin_thermal = val;
-		}
-		break;
-	default:
-		hwlog_err("(%s)NODE ERR!!HAVE NO THIS NODE:(%d)\n", __func__, info->name);
-		break;
-	}
-	return count;
-}
-
-/**********************************************************
-*  Function:       direct_charge_sysfs_create_group
-*  Description:    create the direct charge device sysfs group
-*  Parameters:   di:direct_charge_device
-*  return value:  0-sucess or others-fail
-**********************************************************/
-static int direct_charge_sysfs_create_group(struct direct_charge_device *di)
-{
-	direct_charge_sysfs_init_attrs();
-	return sysfs_create_group(&di->dev->kobj, &direct_charge_sysfs_attr_group);
-}
-
-/**********************************************************
-*  Function:       direct_charge_sysfs_remove_group
-*  Description:    remove the direct_charge device sysfs group
-*  Parameters:   di:direct_charge_device
-*  return value:  NULL
-**********************************************************/
-
-/*lint -save -e* */
-static inline void direct_charge_sysfs_remove_group(struct direct_charge_device *di)
-{
-	sysfs_remove_group(&di->dev->kobj, &direct_charge_sysfs_attr_group);
-}
-#else
-static int direct_charge_sysfs_create_group(struct direct_charge_device *di)
-{
-	return 0;
-}
-
-static inline void direct_charge_sysfs_remove_group(struct direct_charge_device *di)
-{
-}
-#endif
-/*lint -restore*/
-
-/*lint -save -e* */
-static void direct_charge_fault_work(struct work_struct *work)
-{
-	char buf[512] = { 0 };
-	char reg_info[512] = { 0 };
-	int bat_capacity = 0;
-	struct direct_charge_device *di = container_of(work, struct direct_charge_device, fault_work);
-	struct nty_data* data = di->fault_data;
-
-	di->scp_stop_charging_flag_error = 1;
-	snprintf(reg_info, sizeof(reg_info), "charge_fault = %d, addr = 0x%x, event1 = 0x%x, event2 = 0x%x\n",
-		di->charge_fault, data->addr, data->event1, data->event2);
-	strncat(dc_err_dsm_buff, reg_info, strlen(reg_info));
-	switch (di->charge_fault) {
-	case DIRECT_CHARGE_FAULT_VBUS_OVP:
-		hwlog_err("vbus ovp happened!\n");
-		snprintf(buf, sizeof(buf), "vbus ovp happened\n");
-		strncat(buf, reg_info, strlen(reg_info));
-		dsm_report(DSM_DIRECT_CHARGE_VBUS_OVP, buf);
-		break;
-	case DIRECT_CHARGE_FAULT_REVERSE_OCP:
-		bat_capacity = hisi_battery_capacity();
-		hwlog_err("reverse ocp happened! battery capacity is %d \n", bat_capacity);
-		snprintf(buf, sizeof(buf), "reverse ocp happened\n");
-		strncat(buf, reg_info, strlen(reg_info));
-		if(bat_capacity < BATTERY_CAPACITY_HIGH_TH){
-			dsm_report(DSM_DIRECT_CHARGE_REVERSE_OCP, buf);
-		}else{
-			hwlog_err("battery capacity is over threshold, dsm not report!\n");
-		}
-		break;
-	case DIRECT_CHARGE_FAULT_OTP:
-		hwlog_err("otp happened!\n");
-		snprintf(buf, sizeof(buf), "otp happened\n");
-		strncat(buf, reg_info, strlen(reg_info));
-		dsm_report(DSM_DIRECT_CHARGE_OTP, buf);
-		break;
-	case DIRECT_CHARGE_FAULT_INPUT_OCP:
-		hwlog_err("input ocp happened!\n");
-		snprintf(buf, sizeof(buf), "input ocp happened\n");
-		strncat(buf, reg_info, strlen(reg_info));
-		dsm_report(DSM_DIRECT_CHARGE_INPUT_OCP, buf);
-		break;
-	case DIRECT_CHARGE_FAULT_VDROP_OVP:
-		hwlog_err("vdrop ovp happened!\n");
-		snprintf(buf, sizeof(buf), "vdrop ovp happened\n");
-		strncat(buf, reg_info, strlen(reg_info));
-		//dsm_report(DSM_DIRECT_CHARGE_VDROP_OVP, buf);
-		break;
-	default:
-		hwlog_err("unknow fault: %d happened!\n", di->charge_fault);
-		break;
-	}
-}
-
-static int direct_charge_fault_notifier_call(struct notifier_block *fault_nb, unsigned long event, void *data)
-{
-	struct direct_charge_device *di = container_of(fault_nb, struct direct_charge_device, fault_nb);
-	enum scp_stage_type stage = scp_get_stage_status();
-
-	if (stage < SCP_STAGE_SECURITY_CHECK || stage == SCP_STAGE_CHARGE_DONE)
-	{
-		hwlog_err("notify event:%d when direct charge not initialized, so ignored!\n", di->charge_fault);
-		return NOTIFY_OK;
-	}
-	di->charge_fault = (enum charge_fault_type)event;
-	di->fault_data = (struct nty_data*)data;
-	schedule_work(&di->fault_work);
-	return NOTIFY_OK;
-}
-/*lint -restore*/
-
-/*lint -save -e* */
-static int direct_charge_probe(struct platform_device	*pdev)
-{
-	int ret = 0;
-	struct direct_charge_device *di;
-	struct class *power_class = NULL;
-	struct device_node *np = NULL;
-
-	di = kzalloc(sizeof(*di), GFP_KERNEL);
-	if (!di)
-	{
-		hwlog_err("alloc di failed\n");
-		return	-ENOMEM;
-	}
-	di->dev = &pdev->dev;
-	np = di->dev->of_node;
-	ret = direct_charge_parse_dts(np, di);
-	if (ret)
-	{
-		hwlog_err("parse dts fail\n");
-		goto fail_0;
-	}
-	battery_aging_safe_policy(di);
-	di->scp_ops = g_scp_ops;
-	di->vbat_ovp_enable_charger = 1;
-	di->ls_ops = g_ls_ops;
-	di->bi_ops = g_bi_ops;
-	di->direct_charge_cable_detect = g_cable_detect_ops;
-	di->sysfs_enable_charger = 1;
-	di->sysfs_iin_thermal = di->volt_para[0].cur_th_high;
-	di->max_adaptor_iset = di->volt_para[0].cur_th_high;
-	di->direct_charge_succ_flag = DIRECT_CHARGE_ERROR_ADAPTOR_DETECT;
-	if ((NULL == di->scp_ops) || (NULL == di->ls_ops) || (NULL == di->bi_ops))
-	if (INVALID == is_direct_charge_ops_valid(di))
-	{
-		hwlog_err("direct charge ops is	NULL!\n");
-		ret = -EINVAL;
-		goto fail_0;
-	}
-	if (di->use_gpio_for_ovp_en) {
-		ret = gpio_request(di->ovp_en, "ovp_en");
-		if (ret) {
-			hwlog_err("could not request ovp_en,ret = %d\n",ret);
-			//ret = -ENOMEM;
-			//goto fail_0;
-		}
-		ret = gpio_direction_input(di->ovp_en);/*avoid ovp_en to hiz mode*/
-		if (ret) {
-			hwlog_err("could not set ovp_en input\n");
-			//ret = -ENOMEM;
-			//goto free_scp_power_en;
-		}
-	}
-
-	platform_set_drvdata(pdev, di);
-
-
-	di->direct_charge_wq = create_singlethread_workqueue("direct_charge_wq");
-	di->direct_charge_watchdog_wq = create_singlethread_workqueue("direct_charge_watchdog_wq");
-
-	wake_lock_init(&direct_charge_lock, WAKE_LOCK_SUSPEND, "direct_charge_wakelock");
-	INIT_WORK(&di->threshold_caculation_work, threshold_caculation_work);
-	INIT_WORK(&di->charge_control_work, charge_control_work);
-	INIT_WORK(&di->fault_work, direct_charge_fault_work);
-	INIT_WORK(&di->kick_watchdog_work, kick_watchdog_work);
-
-
-	hrtimer_init(&di->threshold_caculation_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
-	di->threshold_caculation_timer.function	= threshold_caculation_timer_func;
-
-	hrtimer_init(&di->charge_control_timer,	CLOCK_MONOTONIC, HRTIMER_MODE_REL);
-	di->charge_control_timer.function = charge_control_timer_func;
-
-	hrtimer_init(&di->kick_watchdog_timer,	CLOCK_MONOTONIC, HRTIMER_MODE_REL);
-	di->kick_watchdog_timer.function = kick_watchdog_timer_func;
-
-	ret = direct_charge_sysfs_create_group(di);
-	if (ret)
-		hwlog_err("can't create	charge sysfs entries\n");
-	power_class = hw_power_get_class();
-	if (power_class)
-	{
-		if (charge_dev == NULL)
-			charge_dev = device_create(power_class,	NULL, 0, NULL, "charger");
-		ret = sysfs_create_link(&charge_dev->kobj, &di->dev->kobj, "direct_charger");
-		if (ret)
-		{
-			hwlog_err("create link to direct_charger fail.\n");
-			goto free_ovp_en;
-		}
-	}
-	g_di = di;
-
-	di->fault_nb.notifier_call = direct_charge_fault_notifier_call;
-	ret = atomic_notifier_chain_register(&direct_charge_fault_notifier_list, &di->fault_nb);
-	if (ret < 0)
-	{
-		hwlog_err("direct_charge_fault_register_notifier failed\n");
-		goto free_sysfs_group;
-	}
-#ifdef CONFIG_HUAWEI_HW_DEV_DCT
-	ret = di->ls_ops->ls_init();
-	di->ls_id = di->ls_ops->get_ls_id();
-	if (di->ls_id < 0 || di->ls_id >= LOADSWITCH_TOTAL)
-	{
-		hwlog_err("error loadswitch id info\n");
-		di->ls_id = LOADSWITCH_TOTAL;
-	}
-	di->ls_name = loadswitch_name[di->ls_id];
-	hwlog_info("loadswitch id = %d(%s)\n", di->ls_id, di->ls_name);
-	ret |= di->ls_ops->ls_exit();
-	if (ret)
-	{
-		hwlog_err("dev_check for loadswitch fail.\n");
-	}
-	else
-	{
-		set_hw_dev_flag(DEV_I2C_LOADSWITCH);
-		hwlog_info("dev_check for loadswitch succ.\n");
-	}
-#endif
-	hwlog_info("direct charger probe ok!\n");
-	return	0;
-
-free_sysfs_group:
-	direct_charge_sysfs_remove_group(di);
-free_ovp_en:
-	gpio_free(di->ovp_en);
-fail_0:
-	kfree(di);
-	di = NULL;
-	return	ret;
-}
-
-/**********************************************************
-*	Function: direct_charge_remove
-*	Description: direct_charge module remove
-*	Parameters: pdev:platform_device
-*	return value: NULL
-**********************************************************/
-static int direct_charge_remove(struct platform_device *pdev)
-{
-	struct direct_charge_device *di = platform_get_drvdata(pdev);
-
-	hwlog_info("%s ++\n", __func__);
-	if (NULL == di)
-	{
-		hwlog_err("[%s]di is NULL!\n", __func__);
-		return -ENODEV;
-	}
-
-	hwlog_info("%s	--\n", __func__);
-
-	return 0;
-}
-/**********************************************************
-*	Function: direct_charge_shutdown
-*	Description: direct_charge module shutdown
-*	Parameters: pdev:platform_device
-*	return value: NULL
-**********************************************************/
-static void direct_charge_shutdown(struct platform_device *pdev)
-{
-	struct direct_charge_device *di = platform_get_drvdata(pdev);
-
-	hwlog_info("%s ++\n", __func__);
-	if (NULL == di)
-	{
-		hwlog_err("[%s]di is NULL!\n", __func__);
-		return;
-	}
-
-	hwlog_info("%s	--\n", __func__);
-
-	return;
-}
-
-#ifdef	CONFIG_PM
-/**********************************************************
-*	Function: direct_charge_suspend
-*	Description: direct charge module suspend
-*	Parameters: pdev:platform_device
-*		    state:unused
-*	return	value: 0-sucess	or others-fail
-**********************************************************/
-static int direct_charge_suspend(struct	platform_device	*pdev, pm_message_t state)
-{
-	hwlog_info("%s ++\n", __func__);
-
-	hwlog_info("%s --\n", __func__);
-
-	return	0;
-}
-
-/**********************************************************
-*	Function: direct charge_resume
-*	Description: direct charge module resume
-*	Parameters: pdev:platform_device
-*	return	value: 0-sucess	or others-fail
-**********************************************************/
-static int direct_charge_resume(struct	platform_device	*pdev)
-{
-	hwlog_info("%s	++\n", __func__);
-
-	hwlog_info("%s --\n", __func__);
-
-	return	0;
-}
-#endif	/* CONFIG_PM */
-
-static struct of_device_id direct_charge_match_table[] = {
-	{
-		.compatible = "direct_charger",
-		.data = NULL,
-	},
-	{
-	},
-};
-
-static struct platform_driver direct_charge_driver = {
-	.probe = direct_charge_probe,
-	.remove	= direct_charge_remove,
-#ifdef	CONFIG_PM
-	.suspend = direct_charge_suspend,
-	.resume	= direct_charge_resume,
-#endif
-	.shutdown = direct_charge_shutdown,
-	.driver	= {
-		.name = "direct_charger",
-		.owner = THIS_MODULE,
-		.of_match_table	= of_match_ptr(direct_charge_match_table),
-	},
-};
-
-/**********************************************************
-*	Function: direct_charge_init
-*	Description: direct charge module initialization
-*	Parameters: NULL
-*	return value: 0-sucess or others-fail
-**********************************************************/
-static int __init direct_charge_init(void)
-{
-	return platform_driver_register(&direct_charge_driver);
-}
-
-/**********************************************************
-*	Function: direct_charge_exit
-*	Description: direct charge module exit
-*	Parameters: NULL
-*	return	value:	NULL
-**********************************************************/
-static void __exit direct_charge_exit(void)
-{
-	platform_driver_unregister(&direct_charge_driver);
-}
-/*lint -restore*/
-
-late_initcall(direct_charge_init);
-module_exit(direct_charge_exit);
-MODULE_LICENSE("GPL");
-MODULE_DESCRIPTION("direct charger module driver");
-MODULE_AUTHOR("HUAWEI Inc");

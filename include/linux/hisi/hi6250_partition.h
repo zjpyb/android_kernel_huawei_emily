@@ -42,27 +42,27 @@ static const struct partition partition_table_emmc[] =
     {PART_ERECOVERY_RAMDISK, 392*1024,  32*1024,  EMMC_USER_PART},/* erecovery_ramdisk 32M  p28*/
     {PART_ERECOVERY_VENDOR,  424*1024,  16*1024,  EMMC_USER_PART},/* erecovery_vendor 16M   p29*/
     {PART_KERNEL,            440*1024,  24*1024,  EMMC_USER_PART},/* kernel          24M    p30*/
-    {PART_RAMDISK,           464*1024,  16*1024,  EMMC_USER_PART},/* ramdisk         16M    p31*/
-    {PART_RECOVERY_RAMDISK,  480*1024,  32*1024,  EMMC_USER_PART},/* recovery_ramdisk 32M   p32*/
-    {PART_RECOVERY_VENDOR,   512*1024,  16*1024,  EMMC_USER_PART},/* recovery_vendor 16M    p33*/
-    {PART_DTS,               528*1024,  28*1024,  EMMC_USER_PART}, /* dtimage          28M  p34*/
-    {PART_DTO,               556*1024,  4*1024,  EMMC_USER_PART}, /* dtoimage          4M  p35*/
-    {PART_MODEM_FW,          560*1024,  96*1024,  EMMC_USER_PART}, /* modem_fw         96M  p36*/
-    {PART_RECOVERY_VBMETA, 656*1024,  1*1024,   EMMC_USER_PART}, /* recovery_vbmeta   1M   p37*/
-    {PART_ERECOVERY_VBMETA,657*1024,  1*1024,   EMMC_USER_PART}, /* erecovery_vbmeta  1M   p38*/
-    {PART_RESERVED8,         658*1024,  2*1024,   EMMC_USER_PART}, /* reserved8        2M   p39*/
-    {PART_DFX,               660*1024,  16*1024,  EMMC_USER_PART}, /* dfx              16M  p40*/
-    {PART_VBMETA,         676*1024,  4*1024,   EMMC_USER_PART}, /* PART_VBMETA        4M   p41*/
-    {PART_CACHE,             680*1024,  128*1024, EMMC_USER_PART}, /* cache            128M p42*/
-    {PART_ODM,               808*1024,  128*1024, EMMC_USER_PART}, /* odm              128M p43*/
-    {PART_HISITEST0,         936*1024,  2*1024,   EMMC_USER_PART}, /* hisitest0        2M   p44*/
-    {PART_HISITEST1,         938*1024,  2*1024,   EMMC_USER_PART}, /* hisitest1        2M   p45*/
-    {PART_HISITEST2,         940*1024,  4*1024,   EMMC_USER_PART}, /* hisitest2        4M   p46*/
+    {PART_ENG_SYSTEM_A,      464*1024,  12*1024,  EMMC_USER_PART},/* eng_system        12M    p31*/
+    {PART_RECOVERY_RAMDISK,  476*1024,  32*1024,  EMMC_USER_PART},/* recovery_ramdisk 32M   p32*/
+    {PART_RECOVERY_VENDOR,   508*1024,  16*1024,  EMMC_USER_PART},/* recovery_vendor 16M    p33*/
+    {PART_DTS,               524*1024,  28*1024,  EMMC_USER_PART}, /* dtimage          28M  p34*/
+    {PART_DTO,               552*1024,  4*1024,  EMMC_USER_PART}, /* dtoimage          4M  p35*/
+    {PART_MODEM_FW,          556*1024,  96*1024,  EMMC_USER_PART}, /* modem_fw         96M  p36*/
+    {PART_RECOVERY_VBMETA, 652*1024,  1*1024,   EMMC_USER_PART}, /* recovery_vbmeta   1M   p37*/
+    {PART_ERECOVERY_VBMETA,653*1024,  1*1024,   EMMC_USER_PART}, /* erecovery_vbmeta  1M   p38*/
+    {PART_ENG_VENDOR_A,      654*1024,  12*1024,   EMMC_USER_PART}, /* eng_vendor     12M   p39*/
+    {PART_DFX,               666*1024,  16*1024,  EMMC_USER_PART}, /* dfx              16M  p40*/
+    {PART_VBMETA,            682*1024,  4*1024,   EMMC_USER_PART}, /* PART_VBMETA        4M   p41*/
+    {PART_CACHE,             686*1024,  128*1024, EMMC_USER_PART}, /* cache            128M p42*/
+    {PART_ODM,               814*1024,  128*1024, EMMC_USER_PART}, /* odm              128M p43*/
+    {PART_HISITEST0,         942*1024,  2*1024,   EMMC_USER_PART}, /* hisitest0        2M   p44*/
+    {PART_HISITEST1,         944*1024,  2*1024,   EMMC_USER_PART}, /* hisitest1        2M   p45*/
+    {PART_HISITEST2,         946*1024,  4*1024,   EMMC_USER_PART}, /* hisitest2        4M   p46*/
 #if (defined(CONFIG_MARKET_OVERSEA) || defined(CONFIG_MARKET_INTERNAL) || defined(CONFIG_MARKET_16G_OVERSEA) || defined(CONFIG_MARKET_16G_INTERNAL))
-    {PART_PATCH,             944*1024,  32*1024,  EMMC_USER_PART}, /* patch            32M  p47*/
-    {PART_BOOTFAIL_INFO,     976*1024,  2*1024,   EMMC_USER_PART}, /* bootfail_info    2M   p48*/
-    {PART_RRECORD,           978*1024,  16*1024,  EMMC_USER_PART}, /* rrecord          16M  p49*/
-    {PART_RESERVED9,         994*1024,  30*1024,  EMMC_USER_PART}, /* reserved9        30M  p50*/
+    {PART_PATCH,             950*1024,  32*1024,  EMMC_USER_PART}, /* patch            32M  p47*/
+    {PART_BOOTFAIL_INFO,     982*1024,  2*1024,   EMMC_USER_PART}, /* bootfail_info    2M   p48*/
+    {PART_RRECORD,           984*1024,  16*1024,  EMMC_USER_PART}, /* rrecord          16M  p49*/
+    {PART_RESERVED9,         1000*1024,  24*1024,  EMMC_USER_PART}, /* reserved9        24M  p50*/
 #endif
 #ifdef CONFIG_MARKET_OVERSEA
 #ifdef CONFIG_PARTITION_ROMUPGRADE_HI6250
@@ -111,10 +111,10 @@ static const struct partition partition_table_emmc[] =
     {PART_PRODUCT,           4752*1024, 192*1024, EMMC_USER_PART}, /* product          192M  p55*/
     {PART_USERDATA,          4944*1024, 4096*1024,EMMC_USER_PART}, /* userdata         4096M p56*/
 #elif defined CONFIG_MARKET_BERLIN_OVERSEA
-    {PART_PATCH,             944*1024,  32*1024,  EMMC_USER_PART}, /* patch             32M   p47*/
-    {PART_BOOTFAIL_INFO,     976*1024,  2*1024,   EMMC_USER_PART}, /* bootfail_info     2M    p48*/
-    {PART_RRECORD,           978*1024,  16*1024,  EMMC_USER_PART}, /* rrecord           16M   p49*/
-    {PART_RESERVED9,         994*1024,  14*1024,  EMMC_USER_PART}, /* reserved9         14M   p50*/
+    {PART_PATCH,             950*1024,  32*1024,  EMMC_USER_PART}, /* patch             32M   p47*/
+    {PART_BOOTFAIL_INFO,     982*1024,  2*1024,   EMMC_USER_PART}, /* bootfail_info     2M    p48*/
+    {PART_RRECORD,           984*1024,  16*1024,  EMMC_USER_PART}, /* rrecord           16M   p49*/
+    {PART_RESERVED9,         1000*1024,  8*1024,  EMMC_USER_PART}, /* reserved9         8M   p50*/
     {PART_SYSTEM,            1008*1024, 3008*1024,EMMC_USER_PART}, /* system            3008M p51*/
     {PART_CUST,              4016*1024, 192*1024, EMMC_USER_PART}, /* cust              192M  p52*/
     {PART_VERSION,           4208*1024, 32*1024,  EMMC_USER_PART}, /* version           24M   p53*/
@@ -122,10 +122,10 @@ static const struct partition partition_table_emmc[] =
     {PART_PRODUCT,           4848*1024, 192*1024, EMMC_USER_PART}, /* product           200M  p55*/
     {PART_USERDATA,          5040*1024, 4096*1024,EMMC_USER_PART}, /* userdata          4096M p56*/
 #elif defined CONFIG_MARKET_BERLIN_INTERNAL
-    {PART_PATCH,             944*1024,  32*1024,  EMMC_USER_PART}, /* patch             32M   p47*/
-    {PART_BOOTFAIL_INFO,     976*1024,  2*1024,   EMMC_USER_PART}, /* bootfail_info     2M    p48*/
-    {PART_RRECORD,           978*1024,  16*1024,  EMMC_USER_PART}, /* rrecord           16M   p49*/
-    {PART_RESERVED9,         994*1024,  14*1024,  EMMC_USER_PART}, /* reserved9         14M   p50*/
+    {PART_PATCH,             950*1024,  32*1024,  EMMC_USER_PART}, /* patch             32M   p47*/
+    {PART_BOOTFAIL_INFO,     982*1024,  2*1024,   EMMC_USER_PART}, /* bootfail_info     2M    p48*/
+    {PART_RRECORD,           984*1024,  16*1024,  EMMC_USER_PART}, /* rrecord           16M   p49*/
+    {PART_RESERVED9,         1000*1024,  8*1024,  EMMC_USER_PART}, /* reserved9         8M   p50*/
     {PART_SYSTEM,            1008*1024, 2688*1024,EMMC_USER_PART}, /* system            2688M p51*/
     {PART_CUST,              3696*1024, 192*1024, EMMC_USER_PART}, /* cust              192M  p52*/
     {PART_VERSION,           3888*1024, 32*1024,  EMMC_USER_PART}, /* version           32M   p53*/
@@ -133,10 +133,10 @@ static const struct partition partition_table_emmc[] =
     {PART_PRODUCT,           4528*1024, 192*1024, EMMC_USER_PART}, /* product           192M  p55*/
     {PART_USERDATA,          4720*1024, 4096*1024,EMMC_USER_PART}, /* userdata          4096M p56*/
 #elif defined CONFIG_MARKET_FULL_OVERSEA
-    {PART_PATCH,             944*1024,  32*1024,  EMMC_USER_PART}, /* patch             32M   p47*/
-    {PART_BOOTFAIL_INFO,     976*1024,  2*1024,   EMMC_USER_PART}, /* bootfail_info     2M    p48*/
-    {PART_RRECORD,           978*1024,  16*1024,  EMMC_USER_PART}, /* rrecord           16M   p49*/
-    {PART_RESERVED9,         994*1024,  14*1024,  EMMC_USER_PART}, /* reserved9         14M   p50*/
+    {PART_PATCH,             950*1024,  32*1024,  EMMC_USER_PART}, /* patch             32M   p47*/
+    {PART_BOOTFAIL_INFO,     982*1024,  2*1024,   EMMC_USER_PART}, /* bootfail_info     2M    p48*/
+    {PART_RRECORD,           984*1024,  16*1024,  EMMC_USER_PART}, /* rrecord           16M   p49*/
+    {PART_RESERVED9,         1000*1024, 8*1024,  EMMC_USER_PART}, /* reserved9          8M   p50*/
     {PART_SYSTEM,            1008*1024, 5632*1024,EMMC_USER_PART}, /* system            5632M p51*/
     {PART_CUST,              6640*1024, 192*1024, EMMC_USER_PART}, /* cust              192M  p52*/
     {PART_VERSION,           6832*1024, 32*1024,  EMMC_USER_PART}, /* version           32M   p53*/
@@ -144,10 +144,10 @@ static const struct partition partition_table_emmc[] =
     {PART_PRODUCT,           7648*1024, 192*1024, EMMC_USER_PART}, /* product           192M  p55*/
     {PART_USERDATA,          7840*1024, 4096*1024,EMMC_USER_PART}, /* userdata          4096M p56*/
 #elif defined CONFIG_MARKET_FULL_INTERNAL
-    {PART_PATCH,             944*1024,  32*1024,  EMMC_USER_PART}, /* patch             32M   p47*/
-    {PART_BOOTFAIL_INFO,     976*1024,  2*1024,   EMMC_USER_PART}, /* bootfail_info     2M    p48*/
-    {PART_RRECORD,           978*1024,  16*1024,  EMMC_USER_PART}, /* rrecord           16M   p49*/
-    {PART_RESERVED9,         994*1024,  14*1024,  EMMC_USER_PART}, /* reserved9         14M   p50*/
+    {PART_PATCH,             950*1024,  32*1024,  EMMC_USER_PART}, /* patch             32M   p47*/
+    {PART_BOOTFAIL_INFO,     982*1024,  2*1024,   EMMC_USER_PART}, /* bootfail_info     2M    p48*/
+    {PART_RRECORD,           984*1024,  16*1024,  EMMC_USER_PART}, /* rrecord           16M   p49*/
+    {PART_RESERVED9,         1000*1024,  8*1024,  EMMC_USER_PART}, /* reserved9         8M   p50*/
     {PART_SYSTEM,            1008*1024, 4752*1024,EMMC_USER_PART}, /* system            4752M p51*/
     {PART_CUST,              5760*1024, 192*1024, EMMC_USER_PART}, /* cust              192M  p52*/
     {PART_VERSION,           5952*1024, 32*1024,  EMMC_USER_PART}, /* version           32M   p53*/
@@ -156,10 +156,10 @@ static const struct partition partition_table_emmc[] =
     {PART_USERDATA,          6960*1024, 4096*1024,EMMC_USER_PART}, /* userdata          4096M p56*/
 #else
 #ifdef CONFIG_VENDORIMAGE_FILE_SYSTEM_TYPE
-    {PART_PATCH,             944*1024,  32*1024,  EMMC_USER_PART}, /* patch             32M   p47*/
-    {PART_BOOTFAIL_INFO,     976*1024,  2*1024,   EMMC_USER_PART}, /* bootfail_info     2M    p48*/
-    {PART_RRECORD,           978*1024,  16*1024,  EMMC_USER_PART}, /* rrecord           16M   p49*/
-    {PART_RESERVED9,         994*1024,  14*1024,  EMMC_USER_PART}, /* reserved9         14M   p50*/
+    {PART_PATCH,             950*1024,  32*1024,  EMMC_USER_PART}, /* patch             32M   p47*/
+    {PART_BOOTFAIL_INFO,     982*1024,  2*1024,   EMMC_USER_PART}, /* bootfail_info     2M    p48*/
+    {PART_RRECORD,           984*1024,  16*1024,  EMMC_USER_PART}, /* rrecord           16M   p49*/
+    {PART_RESERVED9,         1000*1024,  8*1024,  EMMC_USER_PART}, /* reserved9         8M   p50*/
     {PART_SYSTEM,            1008*1024, 1984*1024,EMMC_USER_PART}, /* system            1984M p51*/
     {PART_CUST,              2992*1024, 192*1024, EMMC_USER_PART}, /* cust              192M  p52*/
     {PART_VERSION,           3184*1024, 32*1024,  EMMC_USER_PART}, /* version           32M   p53*/
@@ -167,10 +167,10 @@ static const struct partition partition_table_emmc[] =
     {PART_PRODUCT,           3824*1024, 192*1024, EMMC_USER_PART}, /* product           192M  p55*/
     {PART_USERDATA,          4016*1024, 4096*1024,EMMC_USER_PART}, /* userdata          4096M p56*/
 #else
-    {PART_PATCH,             944*1024,  32*1024,  EMMC_USER_PART}, /* patch             32M   p47*/
-    {PART_BOOTFAIL_INFO,     976*1024,  2*1024,   EMMC_USER_PART}, /* bootfail_info     2M    p48*/
-    {PART_RRECORD,           978*1024,  16*1024,  EMMC_USER_PART}, /* rrecord           16M   p49*/
-    {PART_RESERVED9,         994*1024,  14*1024,  EMMC_USER_PART}, /* reserved9         14M   p50*/
+    {PART_PATCH,             950*1024,  32*1024,  EMMC_USER_PART}, /* patch             32M   p47*/
+    {PART_BOOTFAIL_INFO,     982*1024,  2*1024,   EMMC_USER_PART}, /* bootfail_info     2M    p48*/
+    {PART_RRECORD,           984*1024,  16*1024,  EMMC_USER_PART}, /* rrecord           16M   p49*/
+    {PART_RESERVED9,         1000*1024,  8*1024,  EMMC_USER_PART}, /* reserved9         8M   p50*/
     {PART_SYSTEM,            1008*1024, 1984*1024,EMMC_USER_PART}, /* system            1984M p51*/
     {PART_CUST,              2992*1024, 192*1024, EMMC_USER_PART}, /* cust              192M  p52*/
     {PART_VERSION,           3184*1024, 32*1024,  EMMC_USER_PART}, /* version           32M   p53*/

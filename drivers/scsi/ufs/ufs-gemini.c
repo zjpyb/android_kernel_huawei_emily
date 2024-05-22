@@ -11,6 +11,9 @@
  * GNU General Public License for more details.
  *
  */
+
+#define pr_fmt(fmt) "ufshcd :" fmt
+
 #include <linux/types.h>
 #include <linux/gpio.h>
 #include <soc_sctrl_interface.h>
@@ -561,13 +564,9 @@ int ufs_kirin_link_startup_post_change(struct ufs_hba *hba)
 		ufs_sys_ctrl_clr_bits(host, MASK_UFS_SYSCRTL_BYPASS, UFS_SYSCTRL);
 	}
 
-	if (host->caps & USE_AUTO_H8) {
+	if (host->hba->caps & UFSHCD_CAP_AUTO_HIBERN8)
 		/* disable power-gating in auto hibernate 8 */
 		ufshcd_rmwl(hba, LP_AH8_PGE, 0, UFS_REG_OCPTHRTL);
-
-		/* enable auto H8 */
-		ufshcd_writel(hba, UFS_AHIT_AUTOH8_TIMER, REG_CONTROLLER_AHIT);
-	}
 
 	ufshcd_dme_set(hba, UIC_ARG_MIB(0xd09a), 0x80000000); /* select received symbol cnt */
 	ufshcd_dme_set(hba, UIC_ARG_MIB(0xd09c), 0x00000005); /* reset counter0 and enable */
@@ -670,7 +669,11 @@ re_check:
 					/* transfer error masks to sticky bits */
 					hba->ufshcd_state = UFSHCD_STATE_EH_SCHEDULED;
 					hba->force_host_reset = 1;
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
 					queue_kthread_work(&hba->eh_worker, &hba->eh_work);
+#else
+					kthread_queue_work(&hba->eh_worker, &hba->eh_work);
+#endif
 					spin_unlock_irqrestore(hba->host->host_lock, flags);
 					msleep(4000);
 				}
@@ -692,7 +695,7 @@ void ufs_kirin_pwr_change_pre_change(struct ufs_hba *hba)
 
 	pr_info("device manufacturer_id is 0x%x\n", hba->manufacturer_id);
 
-	if (UFS_VENDOR_HYNIX == hba->manufacturer_id) {
+	if (UFS_VENDOR_SKHYNIX == hba->manufacturer_id) {
 		pr_info("H**** device must set VS_DebugSaveConfigTime 0x10\n");
 		ufshcd_dme_set(hba, UIC_ARG_MIB((u32)0xD0A0), 0x10); /* VS_DebugSaveConfigTime */
 		ufshcd_dme_set(hba, UIC_ARG_MIB(0x1556), 0x48); /* sync length */

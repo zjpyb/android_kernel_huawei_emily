@@ -33,6 +33,10 @@
 
 #include <trace/events/thermal.h>
 
+#ifdef CONFIG_HISI_DRG
+#include <linux/hisi/hisi_drg.h>
+#endif
+
 #ifdef CONFIG_HISI_IPA_THERMAL
 #include <trace/events/thermal_power_allocator.h>
 #ifdef CONFIG_HISI_THERMAL_SPM
@@ -99,7 +103,7 @@ struct power_table {
  *	cpufreq frequencies.
  * @allowed_cpus: all the cpus involved for this cpufreq_cooling_device.
  * @node: list_head to link all cpufreq_cooling_device together.
- * @last_load: load measured by the latest call to cpufreq_get_actual_power()
+ * @last_load: load measured by the latest call to cpufreq_get_requested_power()
  * @time_in_idle: previous reading of the absolute time that this cpu was idle
  * @time_in_idle_timestamp: wall time of the last invocation of
  *	get_cpu_idle_time_us()
@@ -621,6 +625,9 @@ static int cpufreq_set_cur_state(struct thermal_cooling_device *cdev,
 #ifdef CONFIG_HISI_IPA_THERMAL
 	g_ipa_freq_limit[cur_cluster] = clip_freq;
 #endif
+#ifdef CONFIG_HISI_DRG
+	drg_cpufreq_cooling_update(cpu, clip_freq);
+#endif
 	cpufreq_update_policy(cpu);
 
 	return 0;
@@ -724,7 +731,7 @@ static int cpufreq_get_requested_power(struct thermal_cooling_device *cdev,
 	dynamic_power = get_dynamic_power(cpufreq_device, freq);
 	ret = get_static_power(cpufreq_device, tz, freq, &static_power);
 	if (ret) {
-		kfree(load_cpu);
+		kfree(load_cpu);/*lint !e668*/
 		return ret;
 	}
 
@@ -872,10 +879,20 @@ static int cpufreq_power2state(struct thermal_cooling_device *cdev,
 }
 
 /* Bind cpufreq callbacks to thermal cooling device ops */
+
 static struct thermal_cooling_device_ops cpufreq_cooling_ops = {
 	.get_max_state = cpufreq_get_max_state,
 	.get_cur_state = cpufreq_get_cur_state,
 	.set_cur_state = cpufreq_set_cur_state,
+};
+
+static struct thermal_cooling_device_ops cpufreq_power_cooling_ops = {
+	.get_max_state		= cpufreq_get_max_state,
+	.get_cur_state		= cpufreq_get_cur_state,
+	.set_cur_state		= cpufreq_set_cur_state,
+	.get_requested_power	= cpufreq_get_requested_power,
+	.state2power		= cpufreq_state2power,
+	.power2state		= cpufreq_power2state,
 };
 
 /* Notifier for cpufreq policy change */
@@ -1015,27 +1032,40 @@ __cpufreq_cooling_register(struct device_node *np,
 			const struct cpumask *clip_cpus, u32 capacitance,
 			get_static_t plat_static_func)
 {
+	struct cpufreq_policy *policy;
 	struct thermal_cooling_device *cool_dev;
 	struct cpufreq_cooling_device *cpufreq_dev;
 	char dev_name[THERMAL_NAME_LENGTH];/*lint !e578*/
 	struct cpufreq_frequency_table *pos, *table;
+	struct cpumask temp_mask;
 	unsigned int freq, i, num_cpus;
 	int ret;
+	struct thermal_cooling_device_ops *cooling_ops;
 #ifdef CONFIG_HISI_THERMAL_SPM
 	int cpu_id;
 	enum ipa_actor actor;
 	u32 power;
 #endif
 
-	table = cpufreq_frequency_get_table(cpumask_first(clip_cpus));
-	if (!table) {
-		pr_debug("%s: CPUFreq table not found\n", __func__);
+	cpumask_and(&temp_mask, clip_cpus, cpu_online_mask);
+	policy = cpufreq_cpu_get(cpumask_first(&temp_mask));
+	if (!policy) {
+		pr_debug("%s: CPUFreq policy not found\n", __func__);
 		return ERR_PTR(-EPROBE_DEFER);
 	}
 
+	table = policy->freq_table;
+	if (!table) {
+		pr_debug("%s: CPUFreq table not found\n", __func__);
+		cool_dev = ERR_PTR(-ENODEV);
+		goto put_policy;
+	}
+
 	cpufreq_dev = kzalloc(sizeof(*cpufreq_dev), GFP_KERNEL);
-	if (!cpufreq_dev)
-		return ERR_PTR(-ENOMEM);
+	if (!cpufreq_dev) {
+		cool_dev = ERR_PTR(-ENOMEM);
+		goto put_policy;
+	}
 
 	num_cpus = cpumask_weight(clip_cpus);
 	cpufreq_dev->time_in_idle = kcalloc(num_cpus,
@@ -1071,10 +1101,6 @@ __cpufreq_cooling_register(struct device_node *np,
 	cpumask_copy(&cpufreq_dev->allowed_cpus, clip_cpus);
 
 	if (capacitance) {
-		cpufreq_cooling_ops.get_requested_power =
-			cpufreq_get_requested_power;
-		cpufreq_cooling_ops.state2power = cpufreq_state2power;
-		cpufreq_cooling_ops.power2state = cpufreq_power2state;
 		cpufreq_dev->plat_get_static_power = plat_static_func;
 
 		ret = build_dyn_power_table(cpufreq_dev, capacitance);
@@ -1082,6 +1108,10 @@ __cpufreq_cooling_register(struct device_node *np,
 			cool_dev = ERR_PTR(ret);
 			goto free_table;
 		}
+
+		cooling_ops = &cpufreq_power_cooling_ops;
+	} else {
+		cooling_ops = &cpufreq_cooling_ops;
 	}
 
 	ret = get_idr(&cpufreq_idr, &cpufreq_dev->id);
@@ -1106,7 +1136,7 @@ __cpufreq_cooling_register(struct device_node *np,
 		 cpufreq_dev->id);
 
 	cool_dev = thermal_of_cooling_device_register(np, dev_name, cpufreq_dev,
-						      &cpufreq_cooling_ops);
+						      cooling_ops);
 	if (IS_ERR(cool_dev))
 		goto remove_idr;
 
@@ -1133,7 +1163,7 @@ __cpufreq_cooling_register(struct device_node *np,
 	cpufreq_power2freq(cool_dev, power, &profile_freq[actor]);
 	pr_err("IPA: actor: %d, freq: %d\n", actor, profile_freq[actor]);
 #endif
-	return cool_dev;/*lint !e593*/
+	goto put_policy;
 
 remove_idr:
 	release_idr(&cpufreq_idr, cpufreq_dev->id);
@@ -1147,8 +1177,10 @@ free_time_in_idle:
 	kfree(cpufreq_dev->time_in_idle);
 free_cdev:
 	kfree(cpufreq_dev);
+put_policy:
+	cpufreq_cpu_put(policy);
 
-	return cool_dev;
+	return cool_dev;/*lint !e593*/
 }
 
 /**

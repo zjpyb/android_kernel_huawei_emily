@@ -21,9 +21,10 @@
 		ranges;
 
 		logo-buffer {
-			reg = <0x0 0xDC00000 0x0 0x3000000>;
+			reg = <0x0 0x10600000 0x0 0x3000000>;
 			status = "disabled";
 		};
+
 		/* for supersonic */
 		supersonic {
 			reg = <0x0 0x13600000 0x0 0xA00000>;
@@ -32,8 +33,13 @@
 			status = "disabled";
 		};
 
+		pgtable_mem:iommu_pgtable {
+			reg = <0x0 0x14000000 0x0 0x200000>;
+			no-map;
+		};
+
 		hhee {
-			reg = <0x0 0x14000000 0x0 0x800000>;
+			reg = <0x0 0x14200000 0x0 0x600000>;
 			no-map;
 			status = "ok";
 		};
@@ -123,6 +129,7 @@
 		sec_camera {
 			reg = <0x0 0x8CA00000 0x0 0xB00000>;
 			no-map;
+			status = "ok";
 		};
 
 		hifi-base {

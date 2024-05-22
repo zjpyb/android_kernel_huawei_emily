@@ -246,7 +246,6 @@
 				hisilicon,valid-idle-mask = <0x09>;
 			};
 
-
 			ldo24: ldo24@2A {
 				compatible = "hisilicon-hisi-ldo";
 				regulator-always-on;

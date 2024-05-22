@@ -100,7 +100,7 @@ static int rt_ldo_detect_pos = REAR_POS;
 static struct mutex  ldo_lock;
 extern int strncpy_s(char *strDest, size_t destMax, const char *strSrc, size_t count);
 extern int memset_s(void *dest, size_t destMax, int c, size_t count);
-
+extern int memcpy_s(void *dest, size_t destMax, const void *src, size_t count);
 static ssize_t rear_sensor_freq_gear_store(struct device *dev,
     struct device_attribute *attr, const char *buf, size_t count)
 {
@@ -382,7 +382,7 @@ struct device_attribute *attr,char *buf)
     }else{
         p_ldo = &(camerafs_ldo[FRONT_POS]);
     }
-    memcpy((cam_ldo *)buf, p_ldo, buflen);
+    memcpy_s((cam_ldo *)buf,buflen, p_ldo, buflen);
     mutex_unlock(&ldo_lock);
     cam_info("Exit : %s\n", __func__);
     return buflen;

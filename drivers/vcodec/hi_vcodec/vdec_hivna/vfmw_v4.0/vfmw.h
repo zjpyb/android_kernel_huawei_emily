@@ -106,6 +106,7 @@ typedef struct {
 	UINT32 VdhRegRange;
 	UINT64 SmmuPageBaseAddr;
 	UINT32 PERICRG_RegBaseAddr;
+	UINT32 VdecQosMode;
 } VFMW_DTS_CONFIG_S;
 
 #endif    // __VDEC_FIRMWARE_H__

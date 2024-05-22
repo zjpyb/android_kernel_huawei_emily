@@ -157,9 +157,7 @@ typedef struct
 {
     VOS_MSG_HEADER                                                              /* 消息头 */    /* _H2ASN_Skip */
     ADS_MSG_ID_ENUM_UINT32              enMsgId;                                /* 消息ID */    /* _H2ASN_Skip */
-    /* Added by l60609 for DSDA PhaseII, 2012-12-13, begin */
     MODEM_ID_ENUM_UINT16                enModemId;                              /* Modem Id*/
-    /* Added by l60609 for DSDA PhaseII, 2012-12-13, end */
     VOS_UINT8                           ucRabId;                                /* Rab Id*/
     ADS_PDP_STATUS_ENUM_UINT8           enPdpStatus;                            /* PDP状态*/
     ADS_QCI_TYPE_ENUM_UINT8             enQciType;                              /* QCI */

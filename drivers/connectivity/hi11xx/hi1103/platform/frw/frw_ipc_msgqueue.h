@@ -133,19 +133,19 @@ typedef struct
 /*****************************************************************************
   10 º¯ÊýÉùÃ÷
 *****************************************************************************/
-extern oal_uint32  frw_ipc_msg_queue_init(frw_ipc_msg_queue_stru *pst_msg_queue, oal_uint32 ul_queue_len);
-extern oal_uint32  frw_ipc_msg_queue_destroy(frw_ipc_msg_queue_stru *pst_msg_queue);
-extern oal_uint32  frw_ipc_msg_queue_recv(oal_void *p_arg);
-extern oal_uint32  frw_ipc_msg_queue_send(frw_ipc_msg_queue_stru *pst_ipc_tx_msg_queue, frw_ipc_msg_mem_stru *pst_msg_input, oal_uint8 uc_flags, oal_uint8 uc_cpuid);
-extern oal_uint32  frw_ipc_msg_queue_register_callback(frw_ipc_msg_callback_stru *p_ipc_msg_handler);
-extern oal_uint32  frw_ipc_log_exit(frw_ipc_log_stru *pst_log);
-extern oal_uint32  frw_ipc_log_init(frw_ipc_log_stru *pst_log);
-extern oal_uint32  frw_ipc_log_recv_alarm(frw_ipc_log_stru *pst_log, oal_uint32 ul_lost);
-extern oal_uint32  frw_ipc_log_send_alarm(frw_ipc_log_stru *pst_log);
-extern oal_uint32  frw_ipc_log_send(frw_ipc_log_stru *pst_log, oal_uint16 us_seq_num, oal_uint8 uc_target_cpuid, oal_uint8 uc_msg_type);
-extern oal_uint32  frw_ipc_log_recv(frw_ipc_log_stru *pst_log, oal_uint16 us_seq_num, oal_uint8 uc_target_cpuid, oal_uint8 uc_msg_type);
-extern oal_uint32  frw_ipc_log_tx_print(frw_ipc_log_stru *pst_log);
-extern oal_uint32  frw_ipc_log_rx_print(frw_ipc_log_stru *pst_log);
+extern oal_uint32  frw_ipc_msg_queue_init_etc(frw_ipc_msg_queue_stru *pst_msg_queue, oal_uint32 ul_queue_len);
+extern oal_uint32  frw_ipc_msg_queue_destroy_etc(frw_ipc_msg_queue_stru *pst_msg_queue);
+extern oal_uint32  frw_ipc_msg_queue_recv_etc(oal_void *p_arg);
+extern oal_uint32  frw_ipc_msg_queue_send_etc(frw_ipc_msg_queue_stru *pst_ipc_tx_msg_queue, frw_ipc_msg_mem_stru *pst_msg_input, oal_uint8 uc_flags, oal_uint8 uc_cpuid);
+extern oal_uint32  frw_ipc_msg_queue_register_callback_etc(frw_ipc_msg_callback_stru *p_ipc_msg_handler);
+extern oal_uint32  frw_ipc_log_exit_etc(frw_ipc_log_stru *pst_log);
+extern oal_uint32  frw_ipc_log_init_etc(frw_ipc_log_stru *pst_log);
+extern oal_uint32  frw_ipc_log_recv_alarm_etc(frw_ipc_log_stru *pst_log, oal_uint32 ul_lost);
+extern oal_uint32  frw_ipc_log_send_alarm_etc(frw_ipc_log_stru *pst_log);
+extern oal_uint32  frw_ipc_log_send_etc(frw_ipc_log_stru *pst_log, oal_uint16 us_seq_num, oal_uint8 uc_target_cpuid, oal_uint8 uc_msg_type);
+extern oal_uint32  frw_ipc_log_recv_etc(frw_ipc_log_stru *pst_log, oal_uint16 us_seq_num, oal_uint8 uc_target_cpuid, oal_uint8 uc_msg_type);
+extern oal_uint32  frw_ipc_log_tx_print_etc(frw_ipc_log_stru *pst_log);
+extern oal_uint32  frw_ipc_log_rx_print_etc(frw_ipc_log_stru *pst_log);
 
 
 

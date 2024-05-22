@@ -28,8 +28,6 @@
 
 #include <asm/probes.h>
 
-#define stack_pointer(regs)             ((regs)->sp)
-
 struct prev_kprobe {
 	struct kprobe *kp;
 	unsigned int status;

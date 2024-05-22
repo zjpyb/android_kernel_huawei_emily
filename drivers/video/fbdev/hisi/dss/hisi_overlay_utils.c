@@ -15,12 +15,13 @@
 #include "hisi_overlay_utils.h"
 #include "hisi_display_effect.h"
 #include "hisi_dpe_utils.h"
+#include "hisi_ovl_online_wb.h"
 // 128 bytes
 #define SMMU_RW_ERR_ADDR_SIZE	(128)
+static uint32_t vactive_timeout_count = 0;
 
 static struct dss_comm_mmbuf_info g_primary_online_mmbuf[DSS_CHN_MAX_DEFINE] = {{0}};
 static struct dss_comm_mmbuf_info g_external_online_mmbuf[DSS_CHN_MAX_DEFINE] = {{0}};
-static uint32_t vactive_timeout_count = 0;
 
 static inline bool hisi_dss_is_sharpness_support(int32_t width, int32_t height)
 {
@@ -1553,7 +1554,7 @@ int hisi_dss_mif_config(struct hisi_fb_data_type *hisifd,
 		if (need_cap & (CAP_AFBCD | CAP_AFBCE | CAP_HFBCD | CAP_HFBCE)) {
 			invalid_sel = 0;
 		} else {
-			invalid_sel = hisi_dss_mif_get_invalid_sel(img,transform, v_scaling_factor, ((need_cap & CAP_TILE) ? 1 : 0), rdma_stretch_enable);
+			invalid_sel = hisi_dss_mif_get_invalid_sel(img, transform, v_scaling_factor, ((need_cap & CAP_TILE) ? 1 : 0), rdma_stretch_enable);
 		}
 
 		mif->mif_ctrl1 = set_bits32(mif->mif_ctrl1, 0x0, 1, 5);
@@ -2270,7 +2271,7 @@ static int hisi_dss_rdma_mask_pos_set(dss_rdma_oft_pos rdma_oft_pos,dss_rdma_mas
 
 		if ((rdma_mask_pos->rdma_mask_x0 <= rdma_oft_pos.rdma_oft_x0) || (rdma_mask_pos->rdma_mask_x1 >= rdma_oft_pos.rdma_oft_x1)
 			|| (rdma_mask_pos->rdma_mask_y0 <= rdma_oft_pos.rdma_oft_y0) || (rdma_mask_pos->rdma_mask_y1 >= rdma_oft_pos.rdma_oft_y1)) {
-			 src_rect_mask_enable = false;
+			 *src_rect_mask_enable = false;
 			 rdma_mask_pos->rdma_mask_x0 = 0;
 			 rdma_mask_pos->rdma_mask_y0 = 0;
 			 rdma_mask_pos->rdma_mask_x1 = 0;
@@ -5863,7 +5864,9 @@ int hisi_dss_module_default(struct hisi_fb_data_type *hisifd)
 			hisi_dss_scl_init(dss_module->scl_base[i], &(dss_module->scl[i]));
 		}
 
+
 		module_base = DSS_POST_SCF_OFFSET;
+
 		if (module_base != 0) {
 			dss_module->post_scf_base = dss_base + module_base;
 			hisi_dss_post_scf_init(dss_base, dss_module->post_scf_base, &(dss_module->post_scf));
@@ -6363,7 +6366,6 @@ err_return:
 }
 /*lint +e438 +e550*/
 
-
 void hisi_dss_unflow_handler(struct hisi_fb_data_type *hisifd,
 	dss_overlay_t *pov_req, bool unmask)
 {
@@ -6760,12 +6762,19 @@ static void hisifb_dss_on(struct hisi_fb_data_type *hisifd, int enable_cmdlist)
 		return;
 	}
 
+	if (hisifd->index == MEDIACOMMON_PANEL_IDX) {
+		hisi_mdc_mif_on(hisifd);
+		hisi_mdc_smmu_on(hisifd);
+		// scl coef load
+		hisi_mdc_scl_coef_on(hisifd, false, SCL_COEF_YUV_IDX);//lint !e747
+		return;
+	}
 	HISI_FB_DEBUG("fb%d, +.\n", hisifd->index);
 
 	down(&hisi_dss_mmbuf_sem);
 
 	prev_refcount = dss_sr_refcount++;
-	if ((!prev_refcount) && (hisifd->index != MEDIACOMMON_PANEL_IDX)) {
+	if (!prev_refcount) {
 		// dss qos on
 		hisi_dss_qos_on(hisifd);
 		// mmbuf on
@@ -6780,13 +6789,6 @@ static void hisifb_dss_on(struct hisi_fb_data_type *hisifd, int enable_cmdlist)
 		if (enable_cmdlist) {
 			hisi_dss_cmdlist_qos_on(hisifd);
 		}
-	}
-
-	if (hisifd->index == MEDIACOMMON_PANEL_IDX) {
-		hisi_mdc_mif_on(hisifd);
-		hisi_mdc_smmu_on(hisifd);
-		// scl coef load
-		hisi_mdc_scl_coef_on(hisifd, false, SCL_COEF_YUV_IDX);//lint !e747
 	}
 	up(&hisi_dss_mmbuf_sem);
 
@@ -6803,6 +6805,9 @@ static void hisifb_dss_off(struct hisi_fb_data_type *hisifd, bool is_lp)
 		return;
 	}
 
+	if (hisifd->index == MEDIACOMMON_PANEL_IDX) {
+		return;
+	}
 	HISI_FB_DEBUG("fb%d, +.\n", hisifd->index);
 
 	down(&hisi_dss_mmbuf_sem);
@@ -7131,6 +7136,9 @@ void hisi_dss_mmbuf_on(struct hisi_fb_data_type *hisifd)
 	}
 
 	if (g_dss_version_tag == FB_ACCEL_DSSV501) {
+		return;
+	}
+	if (g_dss_version_tag == FB_ACCEL_DSSV510) {
 		return;
 	}
 
@@ -7562,6 +7570,7 @@ int hisi_overlay_off(struct hisi_fb_data_type *hisifd)
 	}
 
 	hisifd->ldi_data_gate_en = 0;
+	hisifd->masklayer_maxbacklight_flag = false;
 
 	memset(&(hisifd->ov_block_infos_prev_prev), 0,
 		HISI_DSS_OV_BLOCK_NUMS * sizeof(dss_overlay_block_t));
@@ -7716,6 +7725,7 @@ int hisi_overlay_ioctl_handler(struct hisi_fb_data_type *hisifd,
 				hisifb_display_effect_blc_cabc_update(hisifd);
 			}
 		}
+
 		break;
 	case HISIFB_OV_OFFLINE_PLAY:
 		if (hisifd->ov_offline_play) {
@@ -7777,6 +7787,7 @@ int hisi_overlay_init(struct hisi_fb_data_type *hisifd)
 	hisifd->frame_update_flag = 0;
 
 	hisifd->online_play_count = 0;
+	hisifd->masklayer_maxbacklight_flag = false;
 
 	memset(&hisifd->ov_req, 0, sizeof(dss_overlay_t));
 	hisifd->ov_req.release_fence = -1;
@@ -7805,8 +7816,8 @@ int hisi_overlay_init(struct hisi_fb_data_type *hisifd)
 	hisifd->rch2_ce_end_wq = NULL;
 	hisifd->rch4_ce_end_wq = NULL;
 	hisifd->dpp_ce_end_wq = NULL;
+	hisifd->masklayer_backlight_notify_wq = NULL;
 	hisifd->hiace_end_wq = NULL;
-
 	if ((hisifd->index == PRIMARY_PANEL_IDX) ||
 		(hisifd->index == EXTERNAL_PANEL_IDX && !hisifd->panel_info.fake_external) ){
 		snprintf(wq_name, 128, "fb%d_dss_debug", hisifd->index);
@@ -7835,6 +7846,7 @@ int hisi_overlay_init(struct hisi_fb_data_type *hisifd)
 			INIT_WORK(&hisifd->dpp_ce_end_work, hisi_dpp_ace_end_handle_func);
 		}
 
+
 		if (hisifd->panel_info.hiace_support) {
 			snprintf(wq_name, 128, "fb%d_hiace_end", hisifd->index);
 			hisifd->hiace_end_wq = create_singlethread_workqueue(wq_name);
@@ -7858,6 +7870,9 @@ int hisi_overlay_init(struct hisi_fb_data_type *hisifd)
 		hisifd->crc_isr_handler = NULL;
 
 		hisi_effect_init(hisifd);
+
+
+
 	} else if (hisifd->index == EXTERNAL_PANEL_IDX) {
 		hisifd->set_reg = hisifb_set_reg;
 		hisifd->ov_online_play = hisi_ov_online_play;
@@ -7882,7 +7897,6 @@ int hisi_overlay_init(struct hisi_fb_data_type *hisifd)
 		if (!hisi_mdc_resource_init(hisifd, g_dss_version_tag)) {
 			HISI_FB_INFO("mdc channel manager init success!\n");
 		}
-
 	} else if (hisifd->index == MEDIACOMMON_PANEL_IDX) {
 		hisifd->set_reg = hisi_cmdlist_set_reg;
 		hisifd->ov_online_play = NULL;
@@ -7961,6 +7975,7 @@ int hisi_overlay_deinit(struct hisi_fb_data_type *hisifd)
 	//mmbuf deinit
 	hisi_dss_mmbuf_deinit(hisifd);
 
+
 	return 0;
 }
 
@@ -7976,9 +7991,10 @@ void hisi_vactive0_start_isr_handler(struct hisi_fb_data_type *hisifd)
 
 	if (is_mipi_cmd_panel(hisifd) && (hisifd->frame_update_flag == 0)) {
 		hisifd->vactive0_start_flag = 1;
+
+		/* disable ldi in hiace enable scene for performance low latency */
 		if ((hisifd->secure_ctrl.secure_status == hisifd->secure_ctrl.secure_event) &&
-			(hisifd->secure_ctrl.secure_status == DSS_SEC_IDLE) &&
-			!hisifb_display_effect_is_need_ace(hisifd)) {
+			(hisifd->secure_ctrl.secure_status == DSS_SEC_IDLE)) {
 			disable_ldi(hisifd);
 		}
 	} else {
@@ -7998,6 +8014,7 @@ void hisi_vactive0_start_isr_handler(struct hisi_fb_data_type *hisifd)
 			(ktime_to_ns(vsync_ctrl->vactive_timestamp) - ktime_to_ns(pre_vactive_timestamp)));
 	}
 }
+/*lint -e436 -e438 -e527*/
 
 int hisi_vactive0_start_config(struct hisi_fb_data_type *hisifd, dss_overlay_t *pov_req)
 {
@@ -8284,7 +8301,18 @@ int hisi_vactive0_start_config(struct hisi_fb_data_type *hisifd, dss_overlay_t *
 				"cmdlist_idxs=0x%x!\n",
 				hisifd->index, ret, hisifd->vactive0_start_flag, pov_req_dump->frame_no,
 				hisifb_timestamp_diff(&tv0, &tv1), cmdlist_idxs);
-
+			s_vactive0_timeout_count++;
+			if (s_vactive0_timeout_count >= VACTIVE0_TIMEOUT_EXPIRE_COUNT) {
+				if (lcd_dclient && !dsm_client_ocuppy(lcd_dclient)) {
+					dsm_client_record(lcd_dclient, "fb%d, 1wait_for vactive0_start_flag timeout!ret = %d, "
+						"vactive0_start_flag = %d, frame_no = %u, TIMESTAMP_DIFF is %u us,"
+						"cmdlist_idxs = 0x%x!\n",
+						hisifd->index, ret, hisifd->vactive0_start_flag, pov_req_dump->frame_no,
+						hisifb_timestamp_diff(&tv0, &tv1), cmdlist_idxs);
+					dsm_client_notify(lcd_dclient, DSM_LCD_VACTIVE_TIMEOUT_ERROR_NO);
+				}
+				s_vactive0_timeout_count = 0;
+			}
 			if (g_debug_ovl_online_composer_hold) {
 				dumpDssOverlay(hisifd, pov_req_dump);
 				hisi_cmdlist_dump_all_node(hisifd, NULL, cmdlist_idxs);
@@ -8295,6 +8323,7 @@ int hisi_vactive0_start_config(struct hisi_fb_data_type *hisifd, dss_overlay_t *
 
 			ret = 0;
 		} else {
+			s_vactive0_timeout_count = 0;
 			ret = 0;
 		}
 	}
@@ -8425,14 +8454,12 @@ void hisi_ldi_underflow_handle_func(struct work_struct *work)
 		HISI_FB_ERR("fb%d, hisi_cmdlist_get_cmdlist_idxs pov_req_prev_prev failed! ret = %d\n", hisifd->index, ret);
 	}
 
-	if (g_dss_version_tag == FB_ACCEL_KIRIN970) {
-		hisifb_activate_vsync(hisifd);
-		hisi_cmdlist_config_reset(hisifd, &(hisifd->ov_req_prev), cmdlist_idxs_prev | cmdlist_idxs_prev_prev);
-		hisifb_deactivate_vsync(hisifd);
-		up(&hisifd->blank_sem0);
-		return;
-	}
-
+	hisifb_activate_vsync(hisifd);
+	hisi_cmdlist_config_reset(hisifd, &(hisifd->ov_req_prev), cmdlist_idxs_prev | cmdlist_idxs_prev_prev);
+	hisifb_deactivate_vsync(hisifd);
+	hisifb_pipe_clk_set_underflow_flag(hisifd, false);
+	up(&hisifd->blank_sem0);
+	return;
 
 	hisifb_activate_vsync(hisifd);
 
@@ -8462,5 +8489,6 @@ void hisi_ldi_underflow_handle_func(struct work_struct *work)
 	HISI_FB_INFO("fb%d, -. cmdlist_idxs_prev = 0x%x, cmdlist_idxs_prev_prev = 0x%x\n", hisifd->index, cmdlist_idxs_prev, cmdlist_idxs_prev_prev);
 }
 
+/*lint +e436 +e438 +e527*/
 /*lint +e778 +e732 +845 +774 +e438*/
 

@@ -12,6 +12,9 @@
 #include <linux/hisi/rdr_hisi_platform.h>
 #include <linux/hisi/hisi_bootup_keypoint.h>
 #include <linux/hisi/hisi_powerkey_event.h>
+#include "../rdr_print.h"
+#include <linux/hisi/hisi_log.h>
+#define HISI_LOG_TAG HISI_BLACKBOX_TAG
 
 static u32 reboot_reason_flag;
 
@@ -38,7 +41,7 @@ int rdr_press_key_to_fastboot(struct notifier_block *nb,
 				== VOL_UPDOWN_PRESS) {
 			gpio_key_vol_updown_press_set_zero();
 			if (is_gpio_key_vol_updown_pressed()) {
-				pr_err("[%s]Powerkey+VolUp_key+VolDn_key\n", __func__);
+				BB_PRINT_PN("[%s]Powerkey+VolUp_key+VolDn_key\n", __func__);
 				rdr_syserr_process_for_ap(MODID_AP_S_COMBINATIONKEY, 0, 0);
 			}
 		}
@@ -50,13 +53,15 @@ int rdr_press_key_to_fastboot(struct notifier_block *nb,
 
 void rdr_long_press_powerkey(void)
 {
+	u32 reboot_reason = get_reboot_reason();
+
+	set_reboot_reason(AP_S_PRESS6S);
 	if (STAGE_BOOTUP_END != get_boot_keypoint()) {
-		pr_err("press6s in boot\n");
+		BB_PRINT_PN("press6s in boot\n");
 		save_log_to_dfx_tempbuffer(AP_S_PRESS6S);
 		sys_sync();
 	}else {
-		reboot_reason_flag = get_reboot_reason();
-		set_reboot_reason(AP_S_PRESS6S);
-		pr_err("press6s:reboot_reason_flag=%u\n", reboot_reason_flag);
+		reboot_reason_flag = reboot_reason;
+		BB_PRINT_PN("press6s:reboot_reason_flag=%u\n", reboot_reason_flag);
 	}
 }

@@ -4,6 +4,7 @@
 menuconfig BLOCK
        bool "Enable the block layer" if EXPERT
        default y
+       select SBITMAP
        help
 	 Provide block layer support for the kernel.
 
@@ -33,7 +34,7 @@ config LBDAF
 	  This option is required to support the full capacity of large
 	  (2TB+) block devices, including RAID, disk, Network Block Device,
 	  Logical Volume Manager (LVM) and loopback.
-
+	
 	  This option also enables support for single files larger than
 	  2TB.
 
@@ -119,17 +120,6 @@ config BLK_CMDLINE_PARSER
 
 	See Documentation/block/cmdline-partition.txt for more information.
 
-config BLOCK_COMPAT
-        bool
-        depends on BLOCK && COMPAT
-        default y
-
-config BLK_MQ_REFCOUNT
-	bool "blk-mq reference count"
-	depends on BLOCK
-	default n
-	help
-	  Blk-mq reference count mechanism instead of percpu-refcount.
 
 config HISI_BLOCK_FREQUENCE_CONTROL
         bool "add ddr frequence request base on block layer."
@@ -141,78 +131,37 @@ config MMC_BLOCK_IOMMU_64BIT
         depends on BLOCK
         default n
         help
-          Blk-setting will use address >4G for IOMMU.
+        Blk-setting will use address >4G for IOMMU.
 
-config HISI_BLK_CORE
-	bool "hisi blk core feature"
+config HISI_BLK
+	bool "HISI Block feature"
 	depends on BLOCK
 	default n
 	help
-		hisi block core feature
-
-config HISI_MANUAL_BKOPS
-	bool "hisi manual BKOPS feature"
-	depends on HISI_BLK_CORE
+		HISI Block feature
+		
+config HISI_BLK_DEBUG
+	bool "HISI Block Debug Mode"
+	depends on HISI_BLK
 	default n
 	help
-		manual BKOPS feature for NAND flash based storage devices
+		HISI Block Debug Mode
 
-
-config HISI_BLK_MQ
-	bool "hisi blk-mq"
-	depends on BLOCK
-	depends on HISI_BLK_CORE
+config HISI_BK_OPS
+	bool "HISI BKOPS"
+	depends on HISI_BLK
+	default n
 	help
-	  hisi block multi queue
-
-config HISI_MQ_DEBUG
-	bool "HISI Multi Queue Debug"
-	depends on BLOCK
-	depends on HISI_BLK_CORE
-	depends on HISI_BLK_MQ
-	default n
-
-config HISI_MQ_DISPATCH_DECISION
-	bool "HISI Multi Queue dispatch strategy"
-	depends on BLOCK
-	depends on HISI_BLK_CORE
-	depends on HISI_BLK_MQ
-	default n
-
-config HISI_MQ_USING_HOQ
-	bool "HISI blk using Head Of Queue"
-	depends on BLOCK
-	depends on HISI_BLK_CORE
-	depends on HISI_BLK_MQ
-	default n
-
-config HISI_MQ_USING_CP
-	bool "HISI blk using Command Priority"
-	depends on BLOCK
-	depends on HISI_BLK_CORE
-	depends on HISI_BLK_MQ
-	default n
-
-config HISI_IO_LATENCY_TRACE
-	bool "HISI IO LATENCY trace"
-	depends on BLOCK
-	depends on HISI_BLK_CORE
-	default n
-
-config HISI_BLK_FLUSH_REDUCE
-	bool "HISI FLUSH REDUCE"
-	depends on BLOCK
-	depends on HISI_BLK_CORE
-	default n
-
-config HISI_BLK_FUNCTION_TEST
-	bool "HISI BLOCK FUNCTION TEST"
-	depends on BLOCK
-	default n
+		HISI BKOPS feature
 
 config HISI_PARTITION
         bool "hisi partition"
         default n
+
+config HW_SYSTEM_WR_PROTECT
+	bool "write protection function of system partitions."
+	depends on BLOCK
+	default n
 
 config HISI_PARTITION_HI3650
         bool "hi3650 partition"
@@ -235,19 +184,26 @@ config HISI_PARTITION_HI3660
         help
            config partition for hi3660 platform
 
-config HISI_PARTITION_LIBRA
-        bool "libra partition"
+config HISI_PARTITION_CAPRICORN
+        bool "capricorn partition"
         depends on HISI_PARTITION
         default n
         help
-           config partition for libra platform
+          config partition for capricorn platform
+
+config HISI_PARTITION_LIBRA
+	bool "libra partition"
+	depends on HISI_PARTITION
+	default n
+	help
+	  config partition for libra platform
 
 config HISI_PARTITION_KIRIN970
         bool "kirin970 partition"
         depends on HISI_PARTITION
         default n
         help
-           config partition for kirin970 platform
+	  config partition for kirin970 platform
 
 config HISI_PARTITION_CANCER
         bool "cancer partition"
@@ -256,38 +212,29 @@ config HISI_PARTITION_CANCER
         help
            config partition for cancer platform
 
-config HW_SYSTEM_WR_PROTECT
-	bool "write protection function of system partitions."
+config HISI_PARTITION_TAURUS
+        bool "taurus partition"
+        depends on HISI_PARTITION
+        default n
+        help
+           config partition for taurus platform
+
+config MMC_BLOCK_IOMMU_64BIT
+	bool "Block bounce limit"
 	depends on BLOCK
+	default n
+	help
+	Blk-setting will use address >4G for IOMMU.
+
+config HISI_PARTITION
+	bool "hisi partition"
 	default n
 
 config HISI_AB_PARTITION
-	bool "AB partition support"
-	default n
-	help
-	  Say Y here if storage uses ab partition table.
-config HISI_BLK_INLINE_CRYPTO
-	bool "Hisi HW inline crytpo support"
-	depends on BLOCK
-	depends on FS_ENCRYPTION
-	default n
-
-	help
-	 Provide block support for HW inline crytpo support.
-
-	 Select this if you want to use Hardware Crypto Engine
-	 and using its interface for some special cryto func.
-
-	 If unsure, say N, hehe!
-
-config BLK_QUEUE_USR_CTRL
-	bool "block queue ctrl interface for userspace"
-	depends on BLOCK
-	default n
-
-source block/Kconfig.iosched
-
-endif # BLOCK
+        bool "AB partition support"
+        default n
+        help
+          Say Y here if storage uses ab partition table.
 
 menu "Partition Types"
 
@@ -295,3 +242,16 @@ source "block/partitions/Kconfig"
 
 endmenu
 
+endif # BLOCK
+
+config BLOCK_COMPAT
+	bool
+	depends on BLOCK && COMPAT
+	default y
+
+config BLK_MQ_PCI
+	bool
+	depends on BLOCK && PCI
+	default y
+
+source block/Kconfig.iosched

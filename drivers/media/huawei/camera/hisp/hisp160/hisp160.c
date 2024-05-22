@@ -55,12 +55,7 @@
 #include <linux/iommu.h>
 #include <linux/mutex.h>
 
-
-//add for HiLOGE
-#include <linux/hisi/hilog.h>
 //lint -save -e740
-#define HILOG_CAMERA_MODULE_NAME       "Camera"
-#define HILOG_CAMERA_SUBMODULE_NAME    "FW_Interaction"
 #define HISP_MSG_LOG_MOD 100
 
 DEFINE_MUTEX(hisi_rpmsg_service_mutex);
@@ -106,7 +101,11 @@ enum {
  *@end
  */
 struct rpmsg_hisp160_service {
-	struct rpmsg_channel *rpdev;
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
+    struct rpmsg_device *rpdev;
+#else
+    struct rpmsg_channel *rpdev;
+#endif
 	struct mutex send_lock;
 	struct mutex recv_lock;
 	struct completion *comp;
@@ -117,7 +116,6 @@ struct rpmsg_hisp160_service {
 	int state;
 	char recv_count;
 };
-
 
 //#define SUPPORT_IRIS_SMP
 enum hisp160_mem_pool_attr
@@ -264,10 +262,6 @@ void hisp160_set_timestamp(unsigned int *timestampH, unsigned int *timestampL)
 	fw_micro_second =
 		(micro_second / MICROSECOND_PER_SECOND + s_timeval.tv_sec) * MICROSECOND_PER_SECOND
 		+ ((micro_second % MICROSECOND_PER_SECOND) + s_timeval.tv_usec);//lint !e737
-#if 0
-	//do_gettimeofday(&s_timeval);
-	//fw_micro_second= s_timeval.tv_sec * MICROSECOND_PER_SECOND + s_timeval.tv_usec;
-#endif
 
 	*timestampH = (u32)(fw_micro_second >>32 & 0xFFFFFFFF);
 	*timestampL = (u32)(fw_micro_second & 0xFFFFFFFF);
@@ -363,49 +357,16 @@ static void hisp160_save_rpmsg_data(void *data, int len)
  *is POWER_REQ, and will send a POWER_RSP to isp
  *after power request done.
  *********************************************/
-#if 0
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
 static void
-hisp160_power_req(hisp_msg_t *msg, int len)
-{
-	struct rpmsg_hisp160_service *hisi_serv = rpmsg_local.hisi_isp_serv;
-
-	cam_info("Enter %s\n", __func__);
-	if (NULL == hisi_serv){
-		cam_err("func %s: hisi_serv is NULL",__func__);
-		return;
-	}
-	if (NULL == msg){
-		cam_err("func %s: msg is NULL",__func__);
-		return;
-	}
-#if 0
-	hisp_assert(POWER_REQ == msg->api_name);
-	hisp_assert(HISP_SERV_FIRST_RECV != hisi_serv->recv_count);
-
-	switch (msg->u.req_power.power_req_nr) {
-		/*TODO: power up csi/DPHY/sensor according to isp req*/
-	default:
-		cam_info("%s invalid req_power!\n", __func__);
-		break;
-	}
-	msg->api_name = POWER_RSP;
-#endif
-#ifdef FAKE_FW
-	fake_rpmsg_send(hisi_serv->rpdev, (void *)msg, len);
+hisp160_rpmsg_ept_cb(struct rpmsg_device *rpdev,
+              void *data, int len, void *priv, u32 src)
 #else
-	if (0 != rpmsg_send_offchannel(hisi_serv->rpdev, hisi_serv->ept->addr,
-		hisi_serv->dst, (void *)msg, len)){
-		cam_err("func %s failed  \n", __func__);
-		return;
-	}
-#endif
-	cam_info("%s Not implement yet ....\n", __func__);
-}
-#endif
-
 static void
 hisp160_rpmsg_ept_cb(struct rpmsg_channel *rpdev,
-			 void *data, int len, void *priv, u32 src)
+              void *data, int len, void *priv, u32 src)
+#endif
 {
 	struct rpmsg_hisp160_service *hisi_serv = rpmsg_local.hisi_isp_serv;
 	hisp_msg_t *msg = NULL;
@@ -477,39 +438,51 @@ static int hisp160_unmap_a7isp_addr(void *cfg)
 
 static int hisp160_get_a7isp_addr(void *cfg)
 {
+    int ret = -ENODEV;
 #ifdef CONFIG_HISI_CAMERA_ISP_SECURE
     struct hisp_cfg_data *pcfg = NULL;
     struct scatterlist *sg;
     struct sg_table *table;
-	struct ion_handle* hdl = NULL;
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
+    struct dma_buf *buf = NULL;
+    struct dma_buf_attachment *attach = NULL;
+#else
+    struct ion_handle* hdl = NULL;
+#endif
+    if (NULL == cfg){
+        cam_err("func %s: cfg is NULL",__func__);
+        return -1;
+    }
+    pcfg = (struct hisp_cfg_data *)cfg;
 
-	if (NULL == cfg){
-		cam_err("func %s: cfg is NULL",__func__);
-		return -1;
-	}
-	pcfg = (struct hisp_cfg_data *)cfg;
+    mutex_lock(&hisi_rpmsg_service_mutex);
 
-	mutex_lock(&hisi_rpmsg_service_mutex);
-	if (IS_ERR_OR_NULL(s_hisp160.ion_client)) {
-		cam_err("func %s: s_hisp160.ion_client is NULL or ERR",__func__);
-		goto err_ion_client;
-	}
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
+    ret = hisp_get_sg_table(pcfg->param.sharedFd,&(s_hisp160.pdev->dev),&buf,&attach,&table);
+    if(ret < 0){
+       cam_err("func %s: get_sg_table failed",__func__);
+       goto err_ion_client;
+    }
+#else
+    if (IS_ERR_OR_NULL(s_hisp160.ion_client)) {
+        cam_err("func %s: s_hisp160.ion_client is NULL or ERR",__func__);
+        goto err_ion_client;
+    }
 
     hdl = ion_import_dma_buf(s_hisp160.ion_client, pcfg->param.sharedFd);
-	if (IS_ERR_OR_NULL(hdl)) {
-		cam_err("failed to create ion handle!");
-		goto err_ion_client;
-	}
+    if (IS_ERR_OR_NULL(hdl)) {
+        cam_err("failed to create ion handle!");
+        goto err_ion_client;
+    }
 
-	cam_info("func %s: import ok",__func__);
-
+    cam_info("func %s: import ok",__func__);
     table = ion_sg_table(s_hisp160.ion_client, hdl);
     if (IS_ERR_OR_NULL(table)) {
         cam_err("%s Failed : ion_sg_table.%lu\n", __func__, PTR_ERR(table));
         goto err_ion_sg_table;
     }
-
-	cam_info("func %s: ion_sg_table ok",__func__);
+    cam_info("func %s: ion_sg_table ok",__func__);
+#endif
 
     sg = table->sgl;
 
@@ -518,16 +491,17 @@ static int hisp160_get_a7isp_addr(void *cfg)
 
     cam_info("func %s: a8 %x",__func__, pcfg->param.moduleAddr);
 
-    ion_free(s_hisp160.ion_client, hdl);
-    mutex_unlock(&hisi_rpmsg_service_mutex);
-    return 0;
-
+    ret = 0;
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
+    hisp_free_dma_buf(&buf,&attach,&table);
+#else
 err_ion_sg_table:
     ion_free(s_hisp160.ion_client, hdl);
+#endif
 err_ion_client:
     mutex_unlock(&hisi_rpmsg_service_mutex);
 #endif
-    return -ENODEV;
+    return ret;
 }
 
 static int check_buffer_vaild(struct ion_client * client, struct ion_handle *ionhnd, unsigned int vaild_addr, unsigned int vaild_size)
@@ -556,6 +530,7 @@ static int check_buffer_vaild(struct ion_client * client, struct ion_handle *ion
 
 static int hisp160_init_r8isp_memory_pool(void *cfg)
 {
+    int ret = -ENODEV;
     int ipool;
     struct hisp_cfg_data *pcfg;
     struct scatterlist *sg;
@@ -563,6 +538,10 @@ static int hisp160_init_r8isp_memory_pool(void *cfg)
     struct ion_handle* hdl = NULL;
     struct ion_client *ion_client;
     enum mapType enMapType;
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
+	struct dma_buf *buf = NULL;
+	struct dma_buf_attachment *attach = NULL;
+#endif
 
     if (NULL == cfg){
         cam_err("func %s: cfg is NULL",__func__);
@@ -623,7 +602,11 @@ static int hisp160_init_r8isp_memory_pool(void *cfg)
         goto err_ion_client;
     }
 
-    hdl = ion_import_dma_buf(ion_client, (int)(pcfg->param.sharedFd));
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
+	hdl = ion_import_dma_buf_fd(ion_client, (int)(pcfg->param.sharedFd));
+#else
+	hdl = ion_import_dma_buf(ion_client, (int)(pcfg->param.sharedFd));
+#endif
     if (IS_ERR_OR_NULL(hdl)) {
         cam_err("failed to create ion handle!");
         goto err_ion_client;
@@ -634,12 +617,19 @@ static int hisp160_init_r8isp_memory_pool(void *cfg)
         goto err_ion_sg_table;
     }
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
+	ret = hisp_get_sg_table(pcfg->param.sharedFd,&(s_hisp160.pdev->dev),&buf,&attach,&table);
+	if(ret < 0){
+		cam_err("func %s: get_sg_table failed",__func__);
+		goto err_ion_sg_table;
+	}
+#else
     table = ion_sg_table(ion_client, hdl);
     if (IS_ERR_OR_NULL(table)) {
         cam_err("%s Failed : ion_sg_table.%lu\n", __func__, PTR_ERR(table));
         goto err_ion_sg_table;
     }
-
+#endif
     sg = table->sgl;
 
     if(ipool == MEM_POOL_ATTR_READ_WRITE_CACHE_OFF_LINE){
@@ -670,15 +660,15 @@ static int hisp160_init_r8isp_memory_pool(void *cfg)
 
     cam_info("func %s: r8_iova_pool_base=0x%x",__func__, s_hisp160.mem_pool[ipool].r8_iova);
 
-    ion_free(ion_client, hdl);
-    mutex_unlock(&hisi_rpmsg_service_mutex);
-    return 0;
-
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
+    hisp_free_dma_buf(&buf,&attach,&table);
+#endif
+    ret = 0;
 err_ion_sg_table:
     ion_free(ion_client, hdl);
 err_ion_client:
     mutex_unlock(&hisi_rpmsg_service_mutex);
-    return -ENODEV;
+    return ret;
 }
 
 static int hisp160_deinit_r8isp_memory_pool(void *cfg)
@@ -956,11 +946,11 @@ static int hisp160_mem_pool_pre_init(void)
         {
             case MEM_POOL_ATTR_READ_WRITE_CACHE:
             case MEM_POOL_ATTR_READ_WRITE_CACHE_OFF_LINE:
-                prot = POOL_IOMMU_READ | POOL_IOMMU_WRITE|POOL_IOMMU_CACHE;
+                prot = IOMMU_READ | IOMMU_WRITE | IOMMU_CACHE;
                 break;
 
             case MEM_POOL_ATTR_READ_WRITE_SECURITY:
-                prot = POOL_IOMMU_READ | POOL_IOMMU_WRITE|POOL_IOMMU_CACHE|POOL_IOMMU_SEC;
+                prot = IOMMU_READ | IOMMU_WRITE | IOMMU_CACHE | IOMMU_SEC;
                 break;
 
             default:
@@ -1091,15 +1081,23 @@ case HISP_CONFIG_ISP_TURBO:
     rc = hisp_set_clk_rate(VIVOBUS_CLK, 600000000);
     rc = hisp_set_clk_rate(ISPFUNC_CLK, 554000000);
     break;
+case HISP_CONFIG_ISP_NORMAL:
+    cam_info("%s HISP_CONFIG_ISP_NORMAL", __func__);
+    rc = hisp_set_clk_rate(VIVOBUS_CLK, 400000000);
+    rc = hisp_set_clk_rate(ISPFUNC_CLK, 480000000);
+    break;
 case HISP_CONFIG_ISP_LOWPOWER:
     cam_info("%s HISP_CONFIG_ISP_LOWPOWER", __func__);
     rc = hisp_set_clk_rate(VIVOBUS_CLK, 300000000);
     rc = hisp_set_clk_rate(ISPFUNC_CLK, 300000000);
     break;
-
 case HISP_CONFIG_R8_TURBO:
     cam_info("%s HISP_CONFIG_R8_TURBO", __func__);
     rc = hisp_set_clk_rate(ISPCPU_CLK,  900000000);
+    break;
+case HISP_CONFIG_R8_NORMAL:
+    cam_info("%s HISP_CONFIG_R8_NORMAL", __func__);
+    rc = hisp_set_clk_rate(ISPCPU_CLK,  830000000);
     break;
 case HISP_CONFIG_R8_LOWPOWER:
     cam_info("%s HISP_CONFIG_R8_TURBO", __func__);
@@ -1123,9 +1121,12 @@ static int hisp160_power_on(hisp_intf_t *i)
 	uint32_t timeout = hw_is_fpga_board() ? 60000 : 15000;
 
 	struct rpmsg_hisp160_service *hisi_serv = NULL;
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
+    struct rpmsg_channel_info chinfo = {
+        .src = RPMSG_ADDR_ANY,
+    };
+#endif
 	if (NULL == i){
-		HiLOGE(HILOG_CAMERA_MODULE_NAME, HILOG_CAMERA_SUBMODULE_NAME,
-				"func %s: i is NULL",__func__);
 		return -1;
 	}
 	hi = I2HI(i);
@@ -1145,8 +1146,6 @@ static int hisp160_power_on(hisp_intf_t *i)
 			if (!IS_ERR(hi->dt.pinctrl_default)) {
 				rc = pinctrl_select_state(hi->dt.pinctrl, hi->dt.pinctrl_default);
 				if (0 != rc) {
-					HiLOGE(HILOG_CAMERA_MODULE_NAME, HILOG_CAMERA_SUBMODULE_NAME,
-							"could not set pins to default state.\n");
 					goto FAILED_RET;
 				}
 			}
@@ -1155,17 +1154,12 @@ static int hisp160_power_on(hisp_intf_t *i)
         hisp_rpmsgrefs_reset();
 		rc = hisi_isp_rproc_enable();
 		if (rc != 0) {
-			HiLOGE(HILOG_CAMERA_MODULE_NAME, HILOG_CAMERA_SUBMODULE_NAME,
-					"Failed: hisi_isp_rproc_enable.%d!\n", rc);
 			goto FAILED_RET;
 		}
 		rproc_enabled = true;
 
 		rc  = wait_for_completion_timeout(&channel_sync, msecs_to_jiffies(timeout));
 		if (0 == rc ) {
-			HiLOGE(HILOG_CAMERA_MODULE_NAME, HILOG_CAMERA_SUBMODULE_NAME,
-					"Boot failed: wait_for_completion_interruptible_timeout"
-					" timed out, ret.%d!\n", rc);
 			rc = -ETIME;
 			hisi_isp_boot_stat_dump();
 			goto FAILED_RET;
@@ -1182,19 +1176,20 @@ static int hisp160_power_on(hisp_intf_t *i)
 	remote_processor_up = true;
 	hisi_serv = rpmsg_local.hisi_isp_serv;
 	if (!hisi_serv) {
-		HiLOGE(HILOG_CAMERA_MODULE_NAME, HILOG_CAMERA_SUBMODULE_NAME,
-				"failed: hisi_serv does not exist!\n");
 		rc = -ENODEV;
 		goto FAILED_RET;
 	}
 
 	/*assign a new, unique, local address and associate instance with it */
-	hisi_serv->ept =
-		rpmsg_create_ept(hisi_serv->rpdev, hisp160_rpmsg_ept_cb, hisi_serv,
-				 RPMSG_ADDR_ANY);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
+    hisi_serv->ept = rpmsg_create_ept(hisi_serv->rpdev, hisp160_rpmsg_ept_cb, hisi_serv,
+              chinfo);
+#else
+hisi_serv->ept =
+rpmsg_create_ept(hisi_serv->rpdev, hisp160_rpmsg_ept_cb, hisi_serv,
+              RPMSG_ADDR_ANY);
+#endif
 	if (!hisi_serv->ept) {
-		HiLOGE(HILOG_CAMERA_MODULE_NAME, HILOG_CAMERA_SUBMODULE_NAME, "failed: create ept!\n");
-		hisi_serv->state = RPMSG_FAIL;
 		rc = -ENOMEM;
 		goto FAILED_RET;
 	}
@@ -1262,8 +1257,6 @@ static int hisp160_power_off(hisp_intf_t *i)
 	unsigned long current_jiffies = jiffies;
 	struct rpmsg_hisp160_service *hisi_serv = NULL;
 	if (NULL == i){
-		HiLOGE(HILOG_CAMERA_MODULE_NAME, HILOG_CAMERA_SUBMODULE_NAME,
-				"func %s: i is NULL",__func__);
 		return -1;
 	}
 	hi = I2HI(i);
@@ -1272,23 +1265,17 @@ static int hisp160_power_off(hisp_intf_t *i)
 
 	/*check the remote processor boot flow */
 	if (false == remote_processor_up) {
-		HiLOGE(HILOG_CAMERA_MODULE_NAME, HILOG_CAMERA_SUBMODULE_NAME,
-				"failed: rproc boot failure: BOOT_FAILURE!\n");
 		rc = -EPERM;
 		goto RET;
 	}
 
 	hisi_serv = rpmsg_local.hisi_isp_serv;
 	if (!hisi_serv) {
-		HiLOGE(HILOG_CAMERA_MODULE_NAME, HILOG_CAMERA_SUBMODULE_NAME,
-				"failed: hisi_serv does not exist!\n");
 		rc = -ENODEV;
 		goto RET;
 	}
 
 	if (RPMSG_FAIL == hisi_serv->state) {
-		HiLOGE(HILOG_CAMERA_MODULE_NAME, HILOG_CAMERA_SUBMODULE_NAME,
-				"failed: hisi_serv->state is RPMSG_FAIL!\n");
 		rc = -EFAULT;
 		goto RET;
 	}
@@ -1296,44 +1283,25 @@ static int hisp160_power_off(hisp_intf_t *i)
 	mutex_lock(&hisi_rpmsg_service_mutex);
 
 	if (!hisi_serv->ept) {
-		HiLOGE(HILOG_CAMERA_MODULE_NAME, HILOG_CAMERA_SUBMODULE_NAME,
-				"failed: hisi_serv->ept is NULL!\n");
 		rc = -ENODEV;
 		goto UNLOCK_RET;
 	}
 	rpmsg_destroy_ept(hisi_serv->ept);
+	hisi_serv->ept = NULL;
 
 	hisi_serv->state = RPMSG_UNCONNECTED;
 	hisi_serv->recv_count = HISP_SERV_FIRST_RECV;
 
 	if (atomic_read((&hi->opened))) {
 
-#if 0
-		rc = rpmsg_reset_device();
-		if (rc != 0) {
-			cam_err("%s() %d failed: rpmsg_reset_device ret is %d!\n", __func__,
-					__LINE__, rc);
-		}
-
-		/*todo: release resources here */
-		/*
-		 *If state == fail, remote processor crashed, so don't send it
-		 *any message.
-		 */
-		hisi_rproc_flush();
-		hisi_isp_rproc_device_disable();
-		//print_rpmsg_vq_msg();
-#else
 		hisi_isp_rproc_disable();
-#endif
 
 
 		if (!hw_is_fpga_board()) {
 			if (!IS_ERR(hi->dt.pinctrl_idle)) {
 				rc = pinctrl_select_state(hi->dt.pinctrl, hi->dt.pinctrl_idle);
 				if (0 != rc) {
-					HiLOGE(HILOG_CAMERA_MODULE_NAME, HILOG_CAMERA_SUBMODULE_NAME,
-							"could not set pins to default state.");
+            // Empty.
 				}
 			}
 		}
@@ -1367,7 +1335,11 @@ RET:
 	return rc;
 }
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
+static void hisp160_rpmsg_remove(struct rpmsg_device *rpdev)
+#else
 static void hisp160_rpmsg_remove(struct rpmsg_channel *rpdev)
+#endif
 {
 	struct rpmsg_hisp160_service *hisi_serv = dev_get_drvdata(&rpdev->dev);
 
@@ -1390,9 +1362,15 @@ static void hisp160_rpmsg_remove(struct rpmsg_channel *rpdev)
 	cam_notice("rpmsg hisi driver is removed\n");
 }
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
+static void
+hisp160_rpmsg_driver_cb(struct rpmsg_device *rpdev,
+            void *data, int len, void *priv, u32 src)
+#else
 static void
 hisp160_rpmsg_driver_cb(struct rpmsg_channel *rpdev,
-			void *data, int len, void *priv, u32 src)
+            void *data, int len, void *priv, u32 src)
+#endif
 {
 	cam_info("%s enter ....\n", __func__);
 	cam_warn("%s() %d uhm, unexpected message!\n", __func__,
@@ -1430,7 +1408,7 @@ hisp160_send_rpmsg(hisp_intf_t *i, hisp_msg_t *from_user, size_t len)
 
 	if (!hisi_serv->ept) {
 		cam_err("%s() %d failed:hisi_serv->ept does not exist!\n", __func__,
-				__LINE__);
+			__LINE__);
 		rc = -ENODEV;
 		goto RET;
 	}
@@ -1445,10 +1423,18 @@ hisp160_send_rpmsg(hisp_intf_t *i, hisp_msg_t *from_user, size_t len)
 			goto UNLOCK_RET;
 		}
 
-		rc = rpmsg_send_offchannel(hisi_serv->rpdev,
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
+		rc = rpmsg_send_offchannel(hisi_serv->ept,
 					   hisi_serv->ept->addr,
 					   hisi_serv->rpdev->dst, (void *)msg,
 					   len);
+#else
+        rc = rpmsg_send_offchannel(hisi_serv->rpdev,
+					   hisi_serv->ept->addr,
+					   hisi_serv->rpdev->dst, (void *)msg,
+					   len);
+#endif
+
 		if (rc) {
 			cam_err("%s() %d failed: first rpmsg_send_offchannel ret is %d!\n", __func__,
 				__LINE__, rc);
@@ -1457,8 +1443,14 @@ hisp160_send_rpmsg(hisp_intf_t *i, hisp_msg_t *from_user, size_t len)
 		goto UNLOCK_RET;
 	}
 
-	rc = rpmsg_send_offchannel(hisi_serv->rpdev, hisi_serv->ept->addr,
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
+	rc = rpmsg_send_offchannel(hisi_serv->ept, hisi_serv->ept->addr,
 				   hisi_serv->dst, (void *)msg, len);
+#else
+    rc = rpmsg_send_offchannel(hisi_serv->rpdev, hisi_serv->ept->addr,
+				   hisi_serv->dst, (void *)msg, len);
+#endif
+
 	if (rc) {
 		cam_err("%s() %d failed: rpmsg_send_offchannel ret is %d!\n", __func__,
 			__LINE__, rc);
@@ -1645,7 +1637,11 @@ static ssize_t hisp_ddr_freq_store(struct device *dev,
 }
 
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
+static int32_t hisp160_rpmsg_probe(struct rpmsg_device *rpdev)
+#else
 static int32_t hisp160_rpmsg_probe(struct rpmsg_channel *rpdev)
+#endif
 {
 	int32_t ret = 0;
 	struct rpmsg_hisp160_service *hisi_serv = NULL;

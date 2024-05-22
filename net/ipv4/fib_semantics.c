@@ -640,6 +640,11 @@ int fib_nh_match(struct fib_config *cfg, struct fib_info *fi)
 					    fi->fib_nh, cfg))
 			    return 1;
 		}
+#ifdef CONFIG_IP_ROUTE_CLASSID
+		if (cfg->fc_flow &&
+		    cfg->fc_flow != fi->fib_nh->nh_tclassid)
+			return 1;
+#endif
 		if ((!cfg->fc_oif || cfg->fc_oif == fi->fib_nh->nh_oif) &&
 		    (!cfg->fc_gw  || cfg->fc_gw == fi->fib_nh->nh_gw))
 			return 0;
@@ -1062,6 +1067,7 @@ struct fib_info *fib_create_info(struct fib_config *cfg)
 	fi->fib_priority = cfg->fc_priority;
 	fi->fib_prefsrc = cfg->fc_prefsrc;
 	fi->fib_type = cfg->fc_type;
+	fi->fib_tb_id = cfg->fc_table;
 
 	fi->fib_nhs = nhs;
 	change_nexthops(fi) {
@@ -1345,18 +1351,21 @@ nla_put_failure:
  *   referring to it.
  * - device went down -> we must shutdown all nexthops going via it.
  */
-int fib_sync_down_addr(struct net *net, __be32 local)
+int fib_sync_down_addr(struct net_device *dev, __be32 local)
 {
 	int ret = 0;
 	unsigned int hash = fib_laddr_hashfn(local);
 	struct hlist_head *head = &fib_info_laddrhash[hash];
+	struct net *net = dev_net(dev);
+	int tb_id = l3mdev_fib_table(dev);
 	struct fib_info *fi;
 
 	if (!fib_info_laddrhash || local == 0)
 		return 0;
 
 	hlist_for_each_entry(fi, head, fib_lhash) {
-		if (!net_eq(fi->fib_net, net))
+		if (!net_eq(fi->fib_net, net) ||
+		    fi->fib_tb_id != tb_id)
 			continue;
 		if (fi->fib_prefsrc == local) {
 			fi->fib_flags |= RTNH_F_DEAD;
@@ -1575,21 +1584,48 @@ int fib_sync_up(struct net_device *dev, unsigned int nh_flags)
 }
 
 #ifdef CONFIG_IP_ROUTE_MULTIPATH
+static bool fib_good_nh(const struct fib_nh *nh)
+{
+	int state = NUD_REACHABLE;
+
+	if (nh->nh_scope == RT_SCOPE_LINK) {
+		struct neighbour *n;
+
+		rcu_read_lock_bh();
+
+		n = __ipv4_neigh_lookup_noref(nh->nh_dev,
+					      (__force u32)nh->nh_gw);
+		if (n)
+			state = n->nud_state;
+
+		rcu_read_unlock_bh();
+	}
+
+	return !!(state & NUD_VALID);
+}
 
 void fib_select_multipath(struct fib_result *res, int hash)
 {
 	struct fib_info *fi = res->fi;
+	struct net *net = fi->fib_net;
+	bool first = false;
 
 	for_nexthops(fi) {
+		if (net->ipv4.sysctl_fib_multipath_use_neigh) {
+			if (!fib_good_nh(nh))
+				continue;
+			if (!first) {
+				res->nh_sel = nhsel;
+				first = true;
+			}
+		}
+
 		if (hash > atomic_read(&nh->nh_upper_bound))
 			continue;
 
 		res->nh_sel = nhsel;
 		return;
 	} endfor_nexthops(fi);
-
-	/* Race condition: route has just become dead. */
-	res->nh_sel = 0;
 }
 #endif
 

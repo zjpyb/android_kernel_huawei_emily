@@ -72,10 +72,9 @@ struct f_ncm {
 	struct net_device		*netdev;
 
 	/* For multi-frame NDP TX */
-	struct sk_buff			*skb_tx_nth;
-	struct sk_buff			*skb_tx_ndp;
 	struct sk_buff			*skb_tx_data;
-
+	struct sk_buff			*skb_tx_ndp;
+	struct sk_buff			*skb_tx_nth;
 	u16				ndp_dgram_count;
 	bool				timer_force_tx;
 	struct tasklet_struct		tx_tasklet;
@@ -121,7 +120,6 @@ static inline unsigned ncm_bitrate(struct usb_gadget *g)
  */
 #define NTB_OUT_SIZE		16368
 #define USB_OUT_BUFFER_SIZE	16384
-
 
 /* Allocation for storing the NDP, 32 should suffice for a
  * 16k packet. This allows a maximum of 32 * 507 Byte packets to
@@ -874,6 +872,8 @@ static int ncm_set_alt(struct usb_function *f, unsigned intf, unsigned alt)
 			 */
 			ncm->port.is_zlp_ok =
 				gadget_is_zlp_supported(cdev->gadget);
+			ncm->port.no_skb_reserve =
+				gadget_avoids_skb_reserve(cdev->gadget);
 			ncm->port.cdc_filter = DEFAULT_FILTER;
 			DBG(cdev, "activate ncm\n");
 			net = gether_connect(&ncm->port);
@@ -967,9 +967,9 @@ static struct sk_buff *ncm_wrap_ntb(struct gether *port,
 	struct f_ncm	*ncm = func_to_ncm(&port->func);
 	struct sk_buff	*skb2 = NULL;
 	unsigned		ncb_len;
-	__le16		*ntb_nth;
-	__le16		*ntb_ndp;
 	__le16		*ntb_data;
+	__le16		*ntb_ndp;
+	__le16		*ntb_nth;
 	unsigned	dgram_pad;
 	unsigned	ndp_pad;
 
@@ -1385,7 +1385,13 @@ static int ncm_bind(struct usb_configuration *c, struct usb_function *f)
 	 */
 	if (!ncm_opts->bound) {
 		mutex_lock(&ncm_opts->lock);
+#ifdef CONFIG_HISI_USB_CONFIGFS
+		gether_set_gadget_without_set_netdev(ncm_opts->net,
+				cdev->gadget);
+		SET_NETDEV_DEV(ncm_opts->net, &ncm_opts->dev);
+#else
 		gether_set_gadget(ncm_opts->net, cdev->gadget);
+#endif
 		status = gether_register_netdev(ncm_opts->net);
 		mutex_unlock(&ncm_opts->lock);
 		if (status)
@@ -1461,18 +1467,13 @@ static int ncm_bind(struct usb_configuration *c, struct usb_function *f)
 	hs_ncm_notify_desc.bEndpointAddress =
 		fs_ncm_notify_desc.bEndpointAddress;
 
-#ifdef CONFIG_HISI_USB_FUNC_ADD_SS_DESC
 	ss_ncm_in_desc.bEndpointAddress = fs_ncm_in_desc.bEndpointAddress;
 	ss_ncm_out_desc.bEndpointAddress = fs_ncm_out_desc.bEndpointAddress;
 	ss_ncm_notify_desc.bEndpointAddress =
 		fs_ncm_notify_desc.bEndpointAddress;
 
 	status = usb_assign_descriptors(f, ncm_fs_function, ncm_hs_function,
-			ncm_ss_function, ncm_ss_function);
-#else
-	status = usb_assign_descriptors(f, ncm_fs_function, ncm_hs_function,
-			NULL, NULL);
-#endif
+			ncm_ss_function, NULL);
 	if (status)
 		goto fail;
 
@@ -1490,6 +1491,7 @@ static int ncm_bind(struct usb_configuration *c, struct usb_function *f)
 	ncm->task_timer.function = ncm_tx_timeout;
 
 	DBG(cdev, "CDC Network: %s speed IN/%s OUT/%s NOTIFY/%s\n",
+			gadget_is_superspeed(c->cdev->gadget) ? "super" :
 			gadget_is_dualspeed(c->cdev->gadget) ? "dual" : "full",
 			ncm->port.in_ep->name, ncm->port.out_ep->name,
 			ncm->notify->name);
@@ -1550,13 +1552,27 @@ static void ncm_free_inst(struct usb_function_instance *f)
 		gether_cleanup(netdev_priv(opts->net));
 	else
 		free_netdev(opts->net);
+
+#ifdef CONFIG_HISI_USB_CONFIGFS
+	device_unregister(&opts->dev);
+#endif
+
 	kfree(opts);
+}
+
+static void hisi_ncm_nop_release(struct device *dev)
+{
+	dev_vdbg(dev, "%s\n", __func__);
 }
 
 static struct usb_function_instance *ncm_alloc_inst(void)
 {
 	struct f_ncm_opts *opts;
+#ifdef CONFIG_HISI_USB_CONFIGFS
+	int ret;
 
+	pr_info("%s:in\n", __func__);
+#endif
 	opts = kzalloc(sizeof(*opts), GFP_KERNEL);
 	if (!opts)
 		return ERR_PTR(-ENOMEM);
@@ -1575,6 +1591,18 @@ static struct usb_function_instance *ncm_alloc_inst(void)
 
 	config_group_init_type_name(&opts->func_inst.group, "", &ncm_func_type);
 
+#ifdef CONFIG_HISI_USB_CONFIGFS
+	dev_set_name(&opts->dev, "ncm_opts");
+	opts->dev.release = hisi_ncm_nop_release;
+	ret = device_register(&opts->dev);
+	if (ret) {
+		free_netdev(opts->net);
+		kfree(opts);
+		return ERR_PTR(ret);
+	}
+
+	pr_info("%s:out\n", __func__);
+#endif
 	return &opts->func_inst;
 }
 
@@ -1600,9 +1628,9 @@ static void ncm_free(struct usb_function *f)
 	gether_get_host_addr(opts->net, host_addr, ADDR_LEN);
 	qmult = gether_get_qmult(opts->net);
 
-	if (opts->bound) {
+	if (opts->bound)
 		gether_cleanup(netdev_priv(opts->net));
-	} else
+	else
 		free_netdev(opts->net);
 	opts->bound = false;
 

@@ -42,6 +42,10 @@
 #include <linux/../../kernel/sched/sched.h>
 #include <linux/../../kernel/workqueue_internal.h>
 #include <linux/hisi/rdr_hisi_platform.h>
+#include <linux/version.h>
+#include <linux/hisi/util.h>
+#include <linux/hisi/hisi_log.h>
+#define HISI_LOG_TAG HISI_SP805_WDT_TAG
 
 /* default timeout in seconds */
 #define DEFAULT_TIMEOUT     60
@@ -67,8 +71,13 @@
 #define UNLOCK      0x1ACCE551
 #define LOCK        0x00000001
 
+/* wdt aging test, default 120s to be reset */
+#define AGING_WDT_TIMEOUT 240
 
-static int disable_wdt_flag;
+#undef CONFIG_HISI_AGING_WDT
+#ifdef CONFIG_HISI_AGING_WDT
+static bool disable_wdt_flag;
+#endif
 static struct sp805_wdt *g_wdt;
 static struct syscore_ops sp805_wdt_syscore_ops;
 void __iomem *wdt_base;
@@ -262,11 +271,13 @@ unsigned int get_wdt_kick_time(void)
 	return g_wdt->kick_time;
 }
 
-void set_wdt_disable_flag(int iflag)
+#ifdef CONFIG_HISI_AGING_WDT
+void set_wdt_disable_flag(bool iflag)
 {
 	disable_wdt_flag = iflag;
 	return;
 }
+#endif
 
 static int sp805_wdt_rdr_init(void)
 {
@@ -365,12 +376,18 @@ void sp805_wdt_dump(void)
 
 	/* check if the watchdog work timer in running state */
 	timer = &(wdt->hisi_wdt_delayed_work.timer);
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 76))
 	pr_crit("timer 0x%p: next 0x%p pprev 0x%p expires %lu jiffies %lu "
 		"sec_to_jiffies %lu flags 0x%x slacks %d.\n",
 		timer, timer->entry.next, timer->entry.pprev, timer->expires,
 		jiffies, msecs_to_jiffies(1000), timer->flags, timer->slack
-	);
-
+		);
+#else
+	pr_crit("timer 0x%p: next 0x%p pprev 0x%p expires %lu jiffies %lu "
+		"sec_to_jiffies %lu flags 0x%x.\n",
+		timer, timer->entry.next, timer->entry.pprev, timer->expires,
+		jiffies, msecs_to_jiffies(1000), timer->flags);
+#endif
 	return;
 }
 
@@ -382,10 +399,16 @@ static void hisi_wdt_mond(struct work_struct *work)
 	u64 kickslice = get_32k_abs_timer_value();
 	struct rq *rq;/*lint !e578 */
 
-	if (1 == disable_wdt_flag) {
+#ifdef CONFIG_HISI_AGING_WDT
+	if (true == disable_wdt_flag) {
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 76))
 		dev_err(wdt->wdd.dev, "disable wdt ok!!!!!\n");
+#else
+		dev_err(&wdt->adev->dev, "disable wdt ok!!!!!\n");
+#endif
 		return;
 	}
+#endif
 	wdt_ping(&wdt->wdd);
 
 	rdr_set_wdt_kick_slice(kickslice);
@@ -402,11 +425,68 @@ static void hisi_wdt_mond(struct work_struct *work)
 				   &wdt->hisi_wdt_delayed_work,
 				   msecs_to_jiffies(wdt->kick_time * 1000));
 	}
-
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 76))
 	dev_info(wdt->wdd.dev, "watchdog kick now 32K %llu rqclock %llu ret %d\n",
 		kickslice, (rq ? rq->clock : 0), ret);
+#else
+	dev_info(&wdt->adev->dev, "watchdog kick now 32K %llu rqclock %llu ret %d\n",
+		kickslice, (rq ? rq->clock : 0), ret);
+#endif
+
+	watchdog_check_hardlockup_sp805();
 
 	return;
+}
+
+#ifdef CONFIG_HISI_RPROC
+static void m3_wdt_timeout_notify(unsigned int default_timeout)
+{
+	int msg[2], ret;
+
+/* ask mcu reset its wdt timeout value  start */
+/*
+如下PSCI_MSG_TYPE_M3_WDTTIMEOUT 等宏定义，如下三个文件要保持一致:
+kernel\drivers\watchdog\sp805_wdt.c
+kernel\drivers\hisi\mntn\blackbox\platform_lpm3\rdr_hisi_lpm3.c
+vendor\hisi\confidential\lpmcu\include\psci.h
+*/
+#include <linux/hisi/ipc_msg.h>
+#define PSCI_MSG_TYPE_M3_WDTTIMEOUT IPC_CMD(OBJ_AP, OBJ_LPM3, CMD_INQUIRY, 1)
+	msg[0] = PSCI_MSG_TYPE_M3_WDTTIMEOUT;
+	msg[1] = default_timeout;
+	ret = RPROC_ASYNC_SEND(HISI_RPROC_LPM3_MBX17, (mbox_msg_t *) msg, 2);
+	if (ret != 0) {
+		pr_err
+		    ("RPROC_ASYNC_SEND failed! return 0x%x, msg:(0x%x 0x%x)\n",
+		     ret, msg[0], msg[1]);
+	}
+/* end */
+}
+#else
+static inline void m3_wdt_timeout_notify(unsigned int default_timeout){return;}
+#endif
+
+static int sp805_wdt_get_timeout(struct amba_device *adev, unsigned int *default_timeout)
+{
+	struct device_node *np;
+	int ret;
+
+	np = of_find_compatible_node(NULL, NULL, "arm,sp805");
+	if (IS_ERR(np)) {
+		dev_err(&adev->dev, "Can not find sp805 node\n");
+		return (-ENOENT);
+	}
+
+	ret =
+	    of_property_read_u32_index(np, "default-timeout", 0,
+				       default_timeout);
+	if (ret) {
+		dev_warn(&adev->dev,
+			"find default-timeout property fail, Use the default value: %ds\n",
+			DEFAULT_TIMEOUT);
+		*default_timeout = DEFAULT_TIMEOUT;
+	}
+	return 0;
 }
 
 /*lint -save -e429*/
@@ -415,8 +495,6 @@ static int sp805_wdt_probe(struct amba_device *adev, const struct amba_id *id)
 	struct sp805_wdt *wdt;
 	int ret = 0;
 
-	int msg[2];
-	struct device_node *np;
 	unsigned int default_timeout;
 
 	dev_info(&adev->dev, "sp805_wdt_probe enter \n");
@@ -449,43 +527,22 @@ static int sp805_wdt_probe(struct amba_device *adev, const struct amba_id *id)
 	watchdog_set_nowayout(&wdt->wdd, nowayout);
 	watchdog_set_drvdata(&wdt->wdd, wdt);
 
-	np = of_find_compatible_node(NULL, NULL, "arm,sp805");
-	if (IS_ERR(np)) {
-		dev_err(&adev->dev, "Can not find sp805 node\n");
-		ret = -ENOENT;
+	ret = sp805_wdt_get_timeout(adev, &default_timeout);
+	if (ret) {
 		goto err;
 	}
 
-	ret =
-	    of_property_read_u32_index(np, "default-timeout", 0,
-				       &default_timeout);
-	if (ret) {
-		dev_warn(&adev->dev,
-			"find default-timeout property fail, Use the default value: %ds\n",
-			DEFAULT_TIMEOUT);
-		default_timeout = DEFAULT_TIMEOUT;
+#ifdef CONFIG_HISI_AGING_WDT
+	if (check_himntn(HIMNTN_AGING_WDT)) {
+		wdt_setload(&wdt->wdd, AGING_WDT_TIMEOUT);
+	} else {
+		wdt_setload(&wdt->wdd, default_timeout);
 	}
+#else
 	wdt_setload(&wdt->wdd, default_timeout);
-#ifdef CONFIG_HISI_RPROC
-/* ask mcu reset its wdt timeout value  start */
-/*
-如下PSCI_MSG_TYPE_M3_WDTTIMEOUT 等宏定义，如下三个文件要保持一致:
-kernel\drivers\watchdog\sp805_wdt.c
-kernel\drivers\hisi\mntn\blackbox\platform_lpm3\rdr_hisi_lpm3.c
-vendor\hisi\confidential\lpmcu\include\psci.h
-*/
-#include <linux/hisi/ipc_msg.h>
-#define PSCI_MSG_TYPE_M3_WDTTIMEOUT IPC_CMD(OBJ_AP, OBJ_LPM3, CMD_INQUIRY, 1)
-	msg[0] = PSCI_MSG_TYPE_M3_WDTTIMEOUT;
-	msg[1] = default_timeout;
-	ret = RPROC_ASYNC_SEND(HISI_RPROC_LPM3_MBX17, (mbox_msg_t *) msg, 2);
-	if (ret != 0) {
-		pr_err
-		    ("RPROC_ASYNC_SEND failed! return 0x%x, msg:(0x%x 0x%x)\n",
-		     ret, msg[0], msg[1]);
-	}
-/* end */
 #endif
+
+	m3_wdt_timeout_notify(default_timeout);
 
 	if ((default_timeout >> 1) < WDG_FEED_MOMENT_ADJUST) {
 		wdt->kick_time = (default_timeout >> 1) - 1;
@@ -496,7 +553,15 @@ vendor\hisi\confidential\lpmcu\include\psci.h
 	}
 
 	wdt_ping(&wdt->wdd);
+
+#ifdef CONFIG_HISI_AGING_WDT
+	if (check_himntn(HIMNTN_AGING_WDT)) {
+		set_wdt_disable_flag(true);
+	}
+#endif
+
 	INIT_DELAYED_WORK(&wdt->hisi_wdt_delayed_work, hisi_wdt_mond);
+
 	wdt->hisi_wdt_wq = alloc_workqueue("wdt_wq", WQ_MEM_RECLAIM | WQ_HIGHPRI, 1);
 	if (NULL == wdt->hisi_wdt_wq) {
 		dev_err(&adev->dev, "alloc workqueue failed\n");
@@ -528,6 +593,9 @@ vendor\hisi\confidential\lpmcu\include\psci.h
 	if (sp805_wdt_rdr_init()) {
 		dev_err(&adev->dev, " register sp805_wdt_rdr_init failed.\n");
 	}
+
+	watchdog_lockup_panic_config();
+	watchdog_set_thresh((int)(default_timeout >> 1));
 
 	dev_info(&adev->dev, "registration successful\n");
 	return 0;
@@ -562,7 +630,7 @@ static int sp805_wdt_suspend(void)
 	struct sp805_wdt *wdt = g_wdt;
 	int ret = 0;
 
-	printk(KERN_INFO "%s+.\n", __func__);
+	pr_info("%s+.\n", __func__);
 
 	if (watchdog_active(&wdt->wdd) || wdt->active) {
 #ifdef CONFIG_HISI_SR_AP_WATCHDOG
@@ -579,7 +647,7 @@ static int sp805_wdt_suspend(void)
 		cancel_delayed_work(&wdt->hisi_wdt_delayed_work);
 	}
 
-	printk(KERN_INFO "%s-. ret=%d\n", __func__, ret);
+	pr_info("%s-. ret=%d\n", __func__, ret);
 
 	return ret;
 }
@@ -589,7 +657,7 @@ static void sp805_wdt_resume(void)
 	struct sp805_wdt *wdt = g_wdt;
 	int ret = 0;
 
-	printk(KERN_INFO "%s+.\n", __func__);
+	pr_info("%s+.\n", __func__);
 
 	if (watchdog_active(&wdt->wdd) || !wdt->active) {
 		if (cpu_online(0)) {
@@ -602,7 +670,7 @@ static void sp805_wdt_resume(void)
 		ret = wdt_enable(&wdt->wdd);
 	}
 
-	printk(KERN_INFO "%s-. ret=%d\n", __func__, ret);
+	pr_info("%s-. ret=%d\n", __func__, ret);
 
 	return;
 }

@@ -22,6 +22,11 @@
 #include <linux/hisi/rdr_hisi_ap_hook.h>
 
 #include <linux/hisi/rdr_hisi_ap_ringbuffer.h>
+#include <linux/hisi/hisi_bbox_diaginfo.h>
+#include <asm/compiler.h>
+#include "../rdr_print.h"
+#include <linux/hisi/hisi_log.h>
+#define HISI_LOG_TAG HISI_BLACKBOX_TAG
 
 
 static unsigned char *g_hook_buffer_addr[HK_MAX] = { 0 };
@@ -38,8 +43,12 @@ static const char *g_hook_trace_pattern[HK_MAX] = {
 	"cpu_onoff::ktime,cpu,on",	/*CPU_ONOFF */
 	"syscall::ktime,syscall,cpu,dir",	/*SYSCALL*/
 	"hung_task::ktime,timeout,pid,comm",	/*HUNG_TASK */
-	"tasklet::ktime,action,cpu,dir" /*TASKLET*/
+	"tasklet::ktime,action,cpu,dir", /*TASKLET*/
+	"diaginfo::Time,Module,Error_ID,Log_Level,Fault_Type,Data", /*diaginfo*/
 };
+
+/* default opened hook id for each case */
+static hook_type g_hisi_defopen_hook_id[] = {HK_IRQ, HK_CPUIDLE, HK_CPU_ONOFF};
 
 static atomic_t g_hisi_ap_hook_on[HK_MAX] = { ATOMIC_INIT(0) };
 static u32 g_hisi_last_irqs[NR_CPUS] = { 0 };
@@ -51,7 +60,7 @@ arch_timer_func_ptr g_arch_timer_func_ptr;
 int register_arch_timer_func_ptr(arch_timer_func_ptr func)
 {
 	if (IS_ERR_OR_NULL(func)) {
-		printk(KERN_ERR
+		BB_PRINT_ERR(
 		       "[%s], arch_timer_func_ptr [0x%pK] is invalid!\n",
 		       __func__, func);
 		return -EINVAL;
@@ -65,7 +74,7 @@ int single_buffer_init(unsigned char **addr, unsigned int size, hook_type hk,
 {
 	unsigned int min_size = sizeof(struct hisiap_ringbuffer_s) + fieldcnt;
 	if (hk >= HK_MAX) {
-		printk(KERN_ERR "[%s], argument hook_type [%d] is invalid!\n",
+		BB_PRINT_ERR("[%s], argument hook_type [%d] is invalid!\n",
 		       __func__, hk);
 		return -EINVAL;
 	}
@@ -73,13 +82,13 @@ int single_buffer_init(unsigned char **addr, unsigned int size, hook_type hk,
 	if(size < min_size) {
 		g_hook_buffer_addr[hk] = 0;
 		*addr = 0;
-		printk(KERN_ERR "[%s], argument size [0x%x] is invalid!\n",
+		BB_PRINT_ERR("[%s], argument size [0x%x] is invalid!\n",
 		       __func__, size);
 		return 0;
 	}
 	g_hook_buffer_addr[hk] = (*addr);
 
-	printk(KERN_DEBUG
+	BB_PRINT_DBG(
 	       "hisiap_ringbuffer_init: g_hook_trace_pattern[%d]: %s\n", hk,
 	       g_hook_trace_pattern[hk]);
 	return hisiap_ringbuffer_init((struct hisiap_ringbuffer_s *)(*addr), size,
@@ -94,7 +103,7 @@ int percpu_buffer_init(percpu_buffer_info *buffer_info, u32 ratio[][8],	/* HERE:
 	percpu_buffer_info *buffer = buffer_info;
 
 	for (i = 0; i < cpu_num; i++) {
-		printk(KERN_DEBUG "[%s], ratio[%d][%d] = [%d]\n", __func__,
+		BB_PRINT_DBG("[%s], ratio[%d][%d] = [%d]\n", __func__,
 		       (cpu_num - 1), i, ratio[cpu_num - 1][i]);
 		buffer->percpu_length[i] =
 			(buffer->buffer_size - cpu_num * gap) / 16 *
@@ -108,7 +117,7 @@ int percpu_buffer_init(percpu_buffer_info *buffer_info, u32 ratio[][8],	/* HERE:
 			    buffer->percpu_length[i - 1] + gap;
 		}
 
-		printk(KERN_DEBUG
+		BB_PRINT_DBG(
 		       "[%s], [%u]: percpu_addr [0x%pK], percpu_length [0x%x], fieldcnt [%d]\n",
 		       __func__, i, buffer->percpu_addr[i],
 		       buffer->percpu_length[i], fieldcnt);
@@ -119,7 +128,7 @@ int percpu_buffer_init(percpu_buffer_info *buffer_info, u32 ratio[][8],	/* HERE:
 					   buffer->percpu_length[i], fieldcnt,
 					   keys);
 		if (ret) {
-			printk(KERN_ERR
+			BB_PRINT_ERR(
 			       "[%s], cpu [%d] ringbuffer init failed!\n",
 			       __func__, i);
 			return ret;
@@ -134,11 +143,11 @@ int hook_percpu_buffer_init(percpu_buffer_info *buffer_info,
 {
 	u64 min_size;
 	u32 cpu_num = num_possible_cpus();
-	printk(KERN_INFO "[%s], num_online_cpus [%d] !\n", __func__,
+	pr_info("[%s], num_online_cpus [%d] !\n", __func__,
 	       num_online_cpus());
 
 	if (IS_ERR_OR_NULL(addr) || IS_ERR_OR_NULL(buffer_info)) {
-		printk(KERN_ERR
+		BB_PRINT_ERR(
 		       "[%s], buffer_info [0x%pK] buffer_addr [0x%pK], buffer_size [0x%x]\n",
 		       __func__, buffer_info, addr, size);
 		return -EINVAL;
@@ -150,19 +159,19 @@ int hook_percpu_buffer_init(percpu_buffer_info *buffer_info,
 		g_hook_percpu_buffer[hk] = buffer_info;
 		g_hook_percpu_buffer[hk]->buffer_addr = 0;
 		g_hook_percpu_buffer[hk]->buffer_size = 0;
-		printk(KERN_ERR
+		BB_PRINT_ERR(
 		       "[%s], buffer_info [0x%pK] buffer_addr [0x%pK], buffer_size [0x%x]\n",
 		       __func__, buffer_info, addr, size);
 		return 0;
 	}
 
 	if (hk >= HK_PERCPU_TAG) {
-		printk(KERN_ERR "[%s], hook_type [%d] is invalid!\n", __func__,
+		BB_PRINT_ERR("[%s], hook_type [%d] is invalid!\n", __func__,
 		       hk);
 		return -EINVAL;
 	}
 
-	printk(KERN_INFO "[%s], buffer_addr [0x%pK], buffer_size [0x%x].\n",
+	pr_info("[%s], buffer_addr [0x%pK], buffer_size [0x%x].\n",
 	       __func__, addr, size);
 
 	g_hook_buffer_addr[hk] = addr;
@@ -263,7 +272,7 @@ int mem_alloc_buffer_init(percpu_buffer_info *buffer_info, unsigned char *addr,
 	{4, 3, 3, 2, 1, 1, 1, 1}
 	};
 
-	printk(KERN_INFO "[%s], memstart_addr [0x%lx] sizeof(mem_allocator_info)[%d]!\n",
+	pr_info("[%s], memstart_addr [0x%lx] sizeof(mem_allocator_info)[%d]!\n",
 			__func__, (unsigned long)memstart_addr, (int)sizeof(mem_allocator_info));
 
 	return hook_percpu_buffer_init(buffer_info, addr, size,
@@ -285,7 +294,7 @@ int ion_alloc_buffer_init(percpu_buffer_info *buffer_info, unsigned char *addr,
 	{4, 3, 3, 2, 1, 1, 1, 1}
 	};
 
-	printk(KERN_INFO "[%s], memstart_addr [0x%lx] sizeof(ion_allocator_info)[%d]!\n",
+	pr_info("[%s], memstart_addr [0x%lx] sizeof(ion_allocator_info)[%d]!\n",
 			__func__, (unsigned long)memstart_addr, (int)sizeof(ion_allocator_info));
 
 	return hook_percpu_buffer_init(buffer_info, addr, size,
@@ -330,6 +339,11 @@ int hung_task_buffer_init(unsigned char **addr, unsigned int size)
 int tasklet_buffer_init(unsigned char **addr, unsigned int size)
 {
 	return single_buffer_init(addr, size, HK_TASKLET, sizeof(tasklet_info));
+}
+
+int diaginfo_buffer_init(unsigned char **addr, unsigned int size)
+{
+	return single_buffer_init(addr, size, HK_DIAGINFO, DIAGINFO_STRING_MAX_LEN);
 }
 
 /*******************************************************************************
@@ -426,7 +440,6 @@ void cpuidle_stat_hook(u32 dir)
 	hisiap_ringbuffer_write((struct hisiap_ringbuffer_s *)
 				g_hook_percpu_buffer[HK_CPUIDLE]->percpu_addr[cpu],
 				(u8 *)&info);
-
 }
 EXPORT_SYMBOL(cpuidle_stat_hook);
 
@@ -574,6 +587,29 @@ asmlinkage void worker_hook(u64 address, u32 dir)
 EXPORT_SYMBOL(worker_hook);
 
 
+
+/*******************************************************************************
+Function:       hisi_ap_defopen_hook_install
+Description:	default oepned hook install
+Input:		    NA
+Output:		    NA
+Return:		    NA
+********************************************************************************/
+void hisi_ap_defopen_hook_install(void)
+{
+	hook_type hk;
+	u32       i, size;
+
+	size = sizeof(g_hisi_defopen_hook_id)/sizeof(typeof(g_hisi_defopen_hook_id[0]));
+	for (i = 0; i < size; i++) {
+		hk = g_hisi_defopen_hook_id[i];
+		if (g_hook_buffer_addr[hk]) {
+			atomic_set(&g_hisi_ap_hook_on[hk], 1);/*lint !e1058 */
+			BB_PRINT_DBG("[%s], hook [%d] is installed!\n", __func__, hk);
+		}
+	}
+}
+
 /*******************************************************************************
 Function:       hisi_ap_hook_install
 Description:	安装钩子；
@@ -584,14 +620,14 @@ Return:		    0:安装成功，<0:安装失败
 int hisi_ap_hook_install(hook_type hk)
 {
 	if (hk >= HK_MAX) {
-		printk(KERN_ERR "[%s], hook type [%d] is invalid!\n", __func__,
+		BB_PRINT_ERR("[%s], hook type [%d] is invalid!\n", __func__,
 		       hk);
 		return -EINVAL;
 	}
 
 	if (g_hook_buffer_addr[hk]) {
 		atomic_set(&g_hisi_ap_hook_on[hk], 1);/*lint !e1058 */
-		printk(KERN_DEBUG "[%s], hook [%d] is installed!\n", __func__, hk);
+		BB_PRINT_DBG("[%s], hook [%d] is installed!\n", __func__, hk);
 	}
 
 	return 0;
@@ -607,13 +643,13 @@ Return:		    0:卸载成功，<0:卸载失败
 int hisi_ap_hook_uninstall(hook_type hk)
 {
 	if (hk >= HK_MAX) {
-		printk(KERN_ERR "[%s], hook type [%d] is invalid!\n", __func__,
+		BB_PRINT_ERR("[%s], hook type [%d] is invalid!\n", __func__,
 		       hk);
 		return -EINVAL;
 	}
 
 	atomic_set(&g_hisi_ap_hook_on[hk], 0);/*lint !e1058 */
-	printk(KERN_DEBUG "[%s], hook [%d] is uninstalled!\n", __func__, hk);
+	BB_PRINT_DBG("[%s], hook [%d] is uninstalled!\n", __func__, hk);
 
 	return 0;
 }
@@ -681,67 +717,7 @@ static struct notifier_block __refdata hot_cpu_notifier = {
 	.notifier_call = hot_cpu_callback,
 };
 
-/*lint -e607 -e1058*/
-/*macro func B*/
-/* cppcheck-suppress * */
-#define HOOK_SYSFS_SWITCH(name, hook_type) \
-static ssize_t show_hook_switch_##name(struct kobject *kobj, struct kobj_attribute *attr, char *buf)\
-{\
-	int ret = 0;\
-	mutex_lock(&hook_switch_mutex);\
-	ret = snprintf(buf, PAGE_SIZE, "%d\n", atomic_read(&g_hisi_ap_hook_on[hook_type]));\
-	mutex_unlock(&hook_switch_mutex);\
-	return ret;\
-} \
-\
-static ssize_t store_hook_switch_##name(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count)\
-{\
-	int ret = 0;\
-	int input;\
-	ret = kstrtoint(buf, 10, &input);\
-	if ((ret != 0) || (input > 1) || (input < 0)) {\
-		return -EINVAL;\
-	} \
-	if (!g_hook_buffer_addr[hook_type]) {\
-		printk(KERN_ERR "[%s], g_hook_buffer_addr [%d] is null!\n", __func__, hook_type);\
-		return -EINVAL;\
-	} \
-	mutex_lock(&hook_switch_mutex);\
-	atomic_set(&g_hisi_ap_hook_on[hook_type], input);\
-	mutex_unlock(&hook_switch_mutex);\
-	return 1;\
-} \
-static struct kobj_attribute hook_##name##_attr =\
-__ATTR(name, (S_IRUGO | S_IWUSR), show_hook_switch_##name, store_hook_switch_##name);
-/*macro func E*/
 
-/*钩子功能sysfs开关*/
-HOOK_SYSFS_SWITCH(irq, HK_IRQ);
-HOOK_SYSFS_SWITCH(task, HK_TASK);
-HOOK_SYSFS_SWITCH(cpuidle, HK_CPUIDLE);
-HOOK_SYSFS_SWITCH(cpuonoff, HK_CPU_ONOFF);
-HOOK_SYSFS_SWITCH(syscall, HK_SYSCALL);
-HOOK_SYSFS_SWITCH(hungtask, HK_HUNGTASK);
-HOOK_SYSFS_SWITCH(tasklet, HK_TASKLET);
-HOOK_SYSFS_SWITCH(worker, HK_WORKER);
-HOOK_SYSFS_SWITCH(time, HK_TIME);
-/*lint +e607  +e1058*/
-
-static const struct attribute *hook_switch_attrs[] = {
-	&hook_irq_attr.attr,
-	&hook_task_attr.attr,
-	&hook_cpuidle_attr.attr,
-	&hook_cpuonoff_attr.attr,
-	&hook_syscall_attr.attr,
-	&hook_hungtask_attr.attr,
-	&hook_tasklet_attr.attr,
-	&hook_worker_attr.attr,
-	&hook_time_attr.attr,
-	NULL
-};
-
-static struct kobject *mntn_kobj;
-static struct kobject *switch_kobj;
 static int __init hisi_ap_hook_init(void)
 {
 	mutex_init(&hook_switch_mutex);
@@ -753,19 +729,7 @@ static int __init hisi_ap_hook_init(void)
 	while (kernel_kobj == NULL)
 		msleep(500);
 
-	mntn_kobj = kobject_create_and_add("mntn", kernel_kobj);
-	if (!mntn_kobj) {
-		printk(KERN_ERR "[%s], create mntn failed...", __func__);
-		return -ENOMEM;
-	}
-
-	switch_kobj = kobject_create_and_add("switch", mntn_kobj);
-	if (!switch_kobj) {
-		printk(KERN_ERR "[%s], create switch failed...", __func__);
-		return -ENOMEM;
-	}
-
-	return sysfs_create_files(switch_kobj, hook_switch_attrs);
+	return 0;
 }
 
 postcore_initcall(hisi_ap_hook_init);

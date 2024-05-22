@@ -11,7 +11,6 @@
 /*****************************************************************************
   2 Define macro
 *****************************************************************************/
-#define SNPRINT_LIMIT_TO_KERNEL   (512)
 #define DEV_SW_MARK_STR_BFGX            ("@DEV_SW_VERSION_BFGX")
 #define DEV_SW_MARK_STR_WIFI            ("@DEV_SW_VERSION_WIFI")
 #define DEV_SW_VERSION_HEAD5BYTE        ("HI1103")
@@ -61,23 +60,25 @@ typedef struct
 /*****************************************************************************
   4 EXTERN VARIABLE
 *****************************************************************************/
-extern struct kobject *g_sysfs_hi110x_bfgx;
-extern int32 g_plat_loglevel;
-extern int32 g_bug_on_enable;
+extern struct kobject *g_sysfs_hi110x_bfgx_etc;
+extern int32 g_plat_loglevel_etc;
+extern int32 g_bug_on_enable_etc;
 
 #ifdef PLATFORM_DEBUG_ENABLE
-extern int32 g_uart_rx_dump;
+extern int32 g_uart_rx_dump_etc;
 #endif
 
 /*****************************************************************************
   5 EXTERN FUNCTION
 *****************************************************************************/
-extern int32 bfgx_user_ctrl_init(void);
-extern void bfgx_user_ctrl_exit(void);
-extern int32 plat_send_rotate_cmd_2_app(uint32 which_dump);
-extern void plat_wait_last_rotate_finish(void);
-extern void plat_rotate_finish_set(void);
-extern void plat_exception_dump_file_rotate_init(void);
+extern int32 bfgx_user_ctrl_init_etc(void);
+extern void bfgx_user_ctrl_exit_etc(void);
+#ifndef HI110X_HAL_MEMDUMP_ENABLE
+extern int32 plat_send_rotate_cmd_2_app_etc(uint32 which_dump);
+extern void plat_wait_last_rotate_finish_etc(void);
+extern void plat_rotate_finish_set_etc(void);
+#endif
+extern void plat_exception_dump_file_rotate_init_etc(void);
 
 #endif
 

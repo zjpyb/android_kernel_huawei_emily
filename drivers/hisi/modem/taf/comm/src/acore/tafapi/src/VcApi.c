@@ -447,7 +447,6 @@ VOS_UINT32 APP_VC_GetMuteStatus(
     return VOS_OK;
 }
 
-/* Added by L47619 for VOICE_LOOP, 2013/07/05, begin */
 
 VOS_UINT32 APP_VC_SetModemLoop(
     VOS_UINT16                          usClientId,
@@ -494,7 +493,6 @@ VOS_UINT32 APP_VC_SetModemLoop(
 
     return VOS_OK;
 }
-/* Added by L47619 for VOICE_LOOP, 2013/07/05, end */
 
 
 VOS_UINT32 APP_VC_SendVcHifiResetNtf(

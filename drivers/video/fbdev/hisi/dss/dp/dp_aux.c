@@ -17,7 +17,7 @@
 static void dptx_aux_clear_data(struct dp_ctrl *dptx)
 {
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return;
 	}
 
@@ -33,12 +33,12 @@ static int dptx_aux_read_data(struct dp_ctrl *dptx, uint8_t *bytes, uint32_t len
 	uint32_t *data;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return -EINVAL;
 	}
 
 	if (bytes == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return -EINVAL;
 	}
 
@@ -61,12 +61,12 @@ static int dptx_aux_write_data(struct dp_ctrl *dptx, uint8_t const *bytes,
 	memset(data, 0, sizeof(uint32_t) * 4);
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return -EINVAL;
 	}
 
 	if (bytes == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return -EINVAL;
 	}
 
@@ -102,12 +102,12 @@ static int dptx_aux_rw(struct dp_ctrl *dptx,
 	uint32_t br;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return -EINVAL;
 	}
 
 	if (bytes == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return -EINVAL;
 	}
 
@@ -115,15 +115,15 @@ again:
 	mdelay(1);
 	tries++;
 	if (tries > 100) {
-		HISI_FB_ERR("AUX exceeded retries\n");
+		HISI_FB_ERR("[DP] AUX exceeded retries\n");
 		return -EAGAIN;
 	}
 
-	HISI_FB_DEBUG("device addr=0x%08x, len=%d, try=%d\n",
+	HISI_FB_DEBUG("[DP] device addr=0x%08x, len=%d, try=%d\n",
 					addr, len, tries);
 
 	if ((len > 16) || (len == 0)) {
-		 HISI_FB_ERR("AUX read/write len must be 1-15, len=%d\n", len);
+		 HISI_FB_ERR("[DP] AUX read/write len must be 1-15, len=%d\n", len);
 		return -EINVAL;
 	}
 
@@ -162,12 +162,12 @@ again:
 	}
 
 	if (retval == -ESHUTDOWN) {
-		HISI_FB_INFO("AUX aborted on driver shutdown\n");
+		HISI_FB_INFO("[DP] AUX aborted on driver shutdown\n");
 		return retval;
 	}
 
 	if (atomic_read(&dptx->aux.abort)) {
-		HISI_FB_INFO("AUX aborted\n");
+		HISI_FB_INFO("[DP] AUX aborted\n");
 		return -ETIMEDOUT;
 	}
 
@@ -179,23 +179,23 @@ again:
 
 	switch (status) {
 	case DPTX_AUX_STS_STATUS_ACK:
-		HISI_FB_DEBUG("AUX Success\n");
+		HISI_FB_DEBUG("[DP] AUX Success\n");
 		if (br == 0) {
-			HISI_FB_ERR("BR=0, Retry\n");
+			HISI_FB_ERR("[DP] BR=0, Retry\n");
 			dptx_soft_reset(dptx, DPTX_SRST_CTRL_AUX);
 			goto again;
 		}
 		break;
 	case DPTX_AUX_STS_STATUS_NACK:
 	case DPTX_AUX_STS_STATUS_I2C_NACK:
-		HISI_FB_INFO("AUX Nack\n");
+		HISI_FB_INFO("[DP] AUX Nack\n");
 		return -ECONNREFUSED;
 	case DPTX_AUX_STS_STATUS_I2C_DEFER:
 	case DPTX_AUX_STS_STATUS_DEFER:
-		HISI_FB_INFO("AUX Defer\n");
+		HISI_FB_INFO("[DP] AUX Defer\n");
 		goto again;
 	default:
-		HISI_FB_ERR("AUX Status Invalid\n");
+		HISI_FB_ERR("[DP] AUX Status Invalid\n");
 		dptx_soft_reset(dptx, DPTX_SRST_CTRL_AUX);
 		goto again;
 	}
@@ -217,12 +217,12 @@ int dptx_aux_rw_bytes(struct dp_ctrl *dptx,
 	uint32_t i;
 
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return -EINVAL;
 	}
 
 	if (bytes == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return -EINVAL;
 	}
 
@@ -255,12 +255,12 @@ int dptx_read_bytes_from_i2c(struct dp_ctrl *dptx,
 			     uint32_t len)
 {
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return -EINVAL;
 	}
 
 	if (bytes == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return -EINVAL;
 	}
 
@@ -274,12 +274,12 @@ int dptx_write_bytes_to_i2c(struct dp_ctrl *dptx,
 			    uint32_t len)
 {
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return -EINVAL;
 	}
 
 	if (bytes == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return -EINVAL;
 	}
 	return dptx_aux_rw_bytes(dptx, false, true,
@@ -292,12 +292,12 @@ int __dptx_read_bytes_from_dpcd(struct dp_ctrl *dptx,
 				uint32_t len)
 {
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return -EINVAL;
 	}
 
 	if (bytes == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return -EINVAL;
 	}
 	return dptx_aux_rw_bytes(dptx, true, false,
@@ -310,12 +310,12 @@ int __dptx_write_bytes_to_dpcd(struct dp_ctrl *dptx,
 			       uint32_t len)
 {
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return -EINVAL;
 	}
 
 	if (bytes == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return -EINVAL;
 	}
 	return dptx_aux_rw_bytes(dptx, false, false,
@@ -325,12 +325,12 @@ int __dptx_write_bytes_to_dpcd(struct dp_ctrl *dptx,
 int __dptx_read_dpcd(struct dp_ctrl *dptx, uint32_t addr, uint8_t *byte)
 {
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return -EINVAL;
 	}
 
 	if (byte == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return -EINVAL;
 	}
 	return __dptx_read_bytes_from_dpcd(dptx, addr, byte, 1);
@@ -339,7 +339,7 @@ int __dptx_read_dpcd(struct dp_ctrl *dptx, uint32_t addr, uint8_t *byte)
 int __dptx_write_dpcd(struct dp_ctrl *dptx, uint32_t addr, uint8_t byte)
 {
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return -EINVAL;
 	}
 
@@ -349,12 +349,12 @@ int __dptx_write_dpcd(struct dp_ctrl *dptx, uint32_t addr, uint8_t byte)
 int dptx_read_dpcd(struct dp_ctrl *dptx, uint32_t addr, uint8_t *byte)
 {
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return -EINVAL;
 	}
 
 	if (byte == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return -EINVAL;
 	}
 	return __dptx_read_dpcd(dptx, addr, byte);
@@ -363,7 +363,7 @@ int dptx_read_dpcd(struct dp_ctrl *dptx, uint32_t addr, uint8_t *byte)
 int dptx_write_dpcd(struct dp_ctrl *dptx, uint32_t addr, uint8_t byte)
 {
 	if (dptx == NULL) {
-		HISI_FB_ERR("NULL Pointer\n");
+		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return -EINVAL;
 	}
 

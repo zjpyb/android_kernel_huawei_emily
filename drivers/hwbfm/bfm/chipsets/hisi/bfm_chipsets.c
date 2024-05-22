@@ -33,8 +33,10 @@
 #include <chipset_common/bfmr/common/bfmr_common.h>
 #include <chipset_common/bfmr/bfm/chipsets/bfm_chipsets.h>
 #include <chipset_common/hwbfm/hw_boot_fail_core.h>
-#include <log/log_usertype/log-usertype.h>
 #include "bfm_hisi_dmd_info_priv.h"
+#include <linux/notifier.h>
+#include <linux/kthread.h>
+#include <linux/mfd/hisi_pmic_mntn.h>
 
 
 /*----local macroes------------------------------------------------------------------*/
@@ -57,7 +59,6 @@
 #define BFM_HISI_RAMOOPS_BOOTFAIL_LOG_NAME "pmsg-ramoops-0"
 
 #define BFM_HISI_WAIT_FOR_LOG_PART_TIMEOUT (40)
-#define BFM_HISI_WAIT_FOR_VERSION_PART_TIMEOUT (40)
 #define BFM_BFI_PART_MAX_COUNT (2)
 
 #define BFM_MAX_U32 (0xFFFFFFFFU)
@@ -127,6 +128,7 @@ typedef enum
     MODID_BFM_FRAMEWORK_LEVEL_END,
     MODID_BFM_FRAMEWORK_PACKAGE_MANAGER_SETTING_FILE_DAMAGED,
     MODID_BFM_BOOTUP_SLOWLY,
+    MODID_BFM_HARDWARE_FAULT,
     MODID_BFM_END              = HISI_BB_MOD_BFM_END
 } bfm_hisi_modid_for_bfmr;
 
@@ -152,6 +154,12 @@ typedef struct fastboot_log_header
     unsigned int log_start;
     unsigned int log_offset;
 } fastboot_log_header_t;
+
+typedef struct
+{
+    bfmr_hardware_fault_type_e bfmr_fault_type;
+    unsigned long hisi_fault_type;
+} bfmr_hw_fault_map_table_t;
 
 
 /*----local variables-----------------------------------------------------------------*/
@@ -243,6 +251,7 @@ static bfmr_bootfail_errno_to_hisi_modid_t s_bfmr_errno_to_hisi_modid_map_tbl[] 
     {VM_OAT_FILE_DAMAGED, MODID_BFM_FRAMEWORK_VM_OAT_FILE_DAMAGED},
     {PACKAGE_MANAGER_SETTING_FILE_DAMAGED, MODID_BFM_FRAMEWORK_PACKAGE_MANAGER_SETTING_FILE_DAMAGED},
     {BOOTUP_SLOWLY, MODID_BFM_BOOTUP_SLOWLY},
+    {BFM_HARDWARE_FAULT, MODID_BFM_HARDWARE_FAULT},
 
     //TBD: add more bootErrNo from kernel and application level.
 };
@@ -282,13 +291,24 @@ struct rdr_exception_info_s s_rdr_excetion_info_for_bfmr[] = {
         (u32)RDR_REENTRANT_DISALLOW, 0, 0, (u32)RDR_UPLOAD_YES, "bfm", "bfm-boot-TO",
         0, 0, 0
     },
+    {
+        {0, 0}, (u32)MODID_BFM_HARDWARE_FAULT, (u32)MODID_BFM_HARDWARE_FAULT, RDR_ERR,
+        RDR_REBOOT_NOW, RDR_AP | RDR_BFM, RDR_AP, RDR_AP,
+        (u32)RDR_REENTRANT_DISALLOW, (u32)BFM_S_BOOT_TIMEOUT, 0, (u32)RDR_UPLOAD_YES, "bfm", "bfm-boot-TO",
+        0, 0, 0
+    },
 };
 
 static DEFINE_SEMAPHORE(s_process_bottom_layer_boot_fail_sem);
 static char *s_bottom_layer_log_buf = NULL;
 static bfm_process_bootfail_param_t s_process_bootfail_param;
 static bfm_bootfail_log_saving_param_t s_bootfail_log_saving_param;
+static bfm_process_ocp_excp_param_t s_process_ocp_excp_param;
 static bool s_chipsets_is_bootup_successfully = false;
+static struct semaphore s_process_ocp_sem;
+static bfmr_hw_fault_map_table_t s_hw_fault_map_table[] = {
+    {HW_FAULT_OCP, HISI_PMIC_OCP_EVENT},
+};
 
 
 /*----global variables-----------------------------------------------------------------*/
@@ -313,7 +333,6 @@ static int bfm_register_callbacks_to_rdr(void);
 static void bfm_reregister_exceptions_to_rdr(unsigned int modid, unsigned int exec_type);
 static void bfm_register_exceptions_to_rdr(void);
 static unsigned int bfm_get_hisi_modid_according_to_bootfail_errno(bfmr_bootfail_errno_e bootfail_errno);
-static unsigned int bfm_get_bootfail_errno_according_to_hisi_modid(u32 hisi_modid);
 static int bfm_read_bfi_part_header(bfm_bfi_header_info_t *pbfi_header_info);
 static int bfm_update_bfi_part_header(bfm_bfi_header_info_t *pbfi_header_info);
 static int bfm_get_rtc_time_of_latest_bootail_log_from_dfx_part(u64 *prtc_time);
@@ -329,8 +348,6 @@ static unsigned int bfmr_capture_logcat_on_beta_version(char *buf, unsigned int 
 static unsigned int bfmr_capture_beta_kmsg(char *buf, unsigned int buf_len, char *src_log_file_path);
 static unsigned int bfmr_capture_critical_process_crash_log(char *buf, unsigned int buf_len, char *src_log_file_path);
 static unsigned int bfmr_capture_fixed_framework_bootfail_log(char *buf, unsigned int buf_len, char *src_log_file_path);
-static long long bfm_get_print_time_in_us(char *plog_start_addr, char *pkmsg);
-static long long bfm_get_power_key_press_time_in_us(char *plog_start_addr, char *power_key_press_log);
 static bool bfm_is_valid_long_press_bootfail_log(char *log_add, unsigned int log_len,
     char *pfastboot_log_add, unsigned int fastboot_log_len);
 static int bfm_save_bootfail_log_to_fs_immediately(
@@ -348,6 +365,7 @@ static unsigned int bfm_get_text_kmsg(char *pbuf, unsigned int buf_size, bfmr_lo
 static int bfm_add_bfi_info(bfm_bfi_member_info_t *pbfi_memeber, unsigned int bfi_memeber_len);
 static int bfm_update_save_flag_in_bfi(bfm_bfi_member_info_t *pbfi_info);
 static void bfm_sort_dfx_log_by_create_time(struct dfx_head_info *pdfx_head_info, char **paddr_buf, size_t addr_count);
+static int bfm_process_ocp_callback(struct notifier_block *self, unsigned long val, void *data);
 
 
 /*----function definitions--------------------------------------------------------------*/
@@ -559,32 +577,6 @@ static unsigned int bfmr_capture_fixed_framework_bootfail_log(char *buf, unsigne
     return bfm_read_file(buf, buf_len, src_log_file_path, 1);
 }
 
-static unsigned int bfm_get_version_type(void)
-{
-    int i;
-    unsigned int user_flag = 0;
-
-    for (i = 0; i < BFM_HISI_WAIT_FOR_VERSION_PART_TIMEOUT; i++)
-    {
-        user_flag = get_logusertype_flag();
-        if (0 != user_flag)
-        {
-            break;
-        }
-        msleep(1000);
-    }
-
-    return user_flag;
-}
-
-
-bool bfm_is_beta_version(void)
-{
-    unsigned int usertype = bfm_get_version_type();
-
-    return ((BETA_USER == usertype) || (OVERSEA_USER == usertype));
-}
-
 
 static unsigned int bfm_get_text_kmsg(char *pbuf, unsigned int buf_size, bfmr_log_src_t *src)
 {
@@ -630,7 +622,7 @@ static unsigned int bfm_copy_user_log(char *buf, unsigned int buf_len, bfm_proce
 
     if (unlikely((NULL == buf) || (NULL == pparam) || (NULL == pparam->user_space_log_buf)))
     {
-        BFMR_PRINT_INVALID_PARAMS("buf: %p, pparam: %p, user_space_log_buf: %p\n", buf, pparam, pparam->user_space_log_buf);
+        BFMR_PRINT_INVALID_PARAMS("invalid parameter!\n");
         return 0U;
     }
 
@@ -1030,37 +1022,6 @@ __out:
 }
 
 
-static long long bfm_get_print_time_in_us(char *plog_start_addr, char *pkmsg)
-{
-    bfm_kernel_print_time_t print_time_local = {0};
-
-    if (unlikely((NULL == pkmsg)))
-    {
-        BFMR_PRINT_INVALID_PARAMS("power_key_press_log is NULL\n");
-        return 0LL;
-    }
-
-    memset((void *)&print_time_local, 0, sizeof(print_time_local));
-    while (pkmsg >= plog_start_addr)
-    {
-        if ('\n' == *pkmsg)
-        {
-            sscanf(pkmsg + 1, "[%lld.%llds]", &print_time_local.integer_part, &print_time_local.decimal_part);
-            break;
-        }
-        pkmsg--;
-    }
-
-    return (BFM_US_PER_SEC * print_time_local.integer_part + print_time_local.decimal_part);
-}
-
-
-static long long bfm_get_power_key_press_time_in_us(char *plog_start_addr, char *power_key_press_log)
-{
-    return bfm_get_print_time_in_us(plog_start_addr, power_key_press_log);
-}
-
-
 static unsigned int bfm_get_latest_fastboot_log(char *pdst, unsigned int dst_size,
     char *pfastboot_log_add, unsigned int fastboot_log_len)
 {
@@ -1102,12 +1063,11 @@ static bool bfm_is_valid_long_press_bootfail_log(char *log_add, unsigned int log
     char *pfastboot_log_add, unsigned int fastboot_log_len)
 {
     char *ptemp = NULL;
-    char *pkey_press_log = NULL;
-    long long key_press_time = 0LL;
     unsigned int total_log_size = 0;
-    unsigned int new_log_size = 0;
-    struct persistent_ram_buffer *log_header = (struct persistent_ram_buffer *)log_add;
     bool is_valid_long_press_bootfail_log = true;
+    unsigned int keyword_len = strlen(BFM_POWERDOWN_CHARGE_KEYWORD);
+    unsigned int usefull_log_len = 0U;
+    char *plog = NULL;
 
     if (unlikely((NULL == log_add) || (0U == log_len) || (NULL == pfastboot_log_add) || (0U == fastboot_log_len)))
     {
@@ -1115,8 +1075,8 @@ static bool bfm_is_valid_long_press_bootfail_log(char *log_add, unsigned int log
         goto __out;
     }
 
-    total_log_size = BFMR_MIN(log_header->size, LAST_KMSG_SIZE - sizeof(struct persistent_ram_buffer));
-    new_log_size = BFMR_MIN(total_log_size, log_header->start);
+    /* alloc buffer */
+    total_log_size = BFMR_MIN(fastboot_log_len, FASTBOOTLOG_SIZE);
     ptemp = (char *)bfmr_malloc((unsigned long)(total_log_size + 1));
     if (NULL == ptemp)
     {
@@ -1125,50 +1085,19 @@ static bool bfm_is_valid_long_press_bootfail_log(char *log_add, unsigned int log
     }
     memset((void *)ptemp, 0, (unsigned long)(total_log_size + 1));
 
-    log_add += sizeof(struct persistent_ram_buffer);
-    memcpy(ptemp, log_add + new_log_size, (unsigned long)(total_log_size - new_log_size));
-    memcpy(ptemp + (total_log_size - new_log_size), log_add, (unsigned long)new_log_size);
-    pkey_press_log = bfmr_reverse_find_string(ptemp, BFM_HISI_PWR_KEY_PRESS_KEYWORD);
-    if (NULL != pkey_press_log)
+    /* get usefull fastboot log and find the powerdown charge keyword */
+    usefull_log_len = bfm_get_latest_fastboot_log(ptemp, total_log_size, pfastboot_log_add, fastboot_log_len);
+    plog = ptemp;
+    while (usefull_log_len > keyword_len)
     {
-        key_press_time = bfm_get_power_key_press_time_in_us(ptemp, pkey_press_log);
-    }
-
-    BFMR_PRINT_KEY_INFO("The long press occurs @%lldms!\n", key_press_time / (BFM_MS_PER_SEC));
-    is_valid_long_press_bootfail_log = (key_press_time <= BFM_BOOT_SUCCESS_TIME_IN_KENREL) ? (false) : (true);
-
-    /* check validity of log in fastboot_log further */
-    if (is_valid_long_press_bootfail_log)
-    {
-        unsigned int keyword_len = strlen(BFM_POWERDOWN_CHARGE_KEYWORD);
-        unsigned int usefull_log_len = 0U;
-        char *plog = NULL;
-
-        /* alloc buffer */
-        bfmr_free(ptemp);
-        total_log_size = BFMR_MIN(fastboot_log_len, FASTBOOTLOG_SIZE);
-        ptemp = (char *)bfmr_malloc((unsigned long)(total_log_size + 1));
-        if (NULL == ptemp)
+        if (0 == memcmp(plog, BFM_POWERDOWN_CHARGE_KEYWORD, keyword_len))
         {
-            BFMR_PRINT_ERR("bfmr_malloc failed!\n");
-            goto __out;
+            BFMR_PRINT_ERR("This is powerdown charge log!\n");
+            is_valid_long_press_bootfail_log = false;
+            break;
         }
-        memset((void *)ptemp, 0, (unsigned long)(total_log_size + 1));
-
-        /* get usefull fastboot log and find the powerdown charge keyword */
-        usefull_log_len = bfm_get_latest_fastboot_log(ptemp, total_log_size, pfastboot_log_add, fastboot_log_len);
-        plog = ptemp;
-        while (usefull_log_len > keyword_len)
-        {
-            if (0 == memcmp(plog, BFM_POWERDOWN_CHARGE_KEYWORD, keyword_len))
-            {
-                BFMR_PRINT_ERR("This is powerdown charge log!\n");
-                is_valid_long_press_bootfail_log = false;
-                break;
-            }
-            plog++;
-            usefull_log_len--;
-        }
+        plog++;
+        usefull_log_len--;
     }
 
 __out:
@@ -2020,25 +1949,6 @@ static unsigned int bfm_get_hisi_modid_according_to_bootfail_errno(bfmr_bootfail
 }
 
 
-static unsigned int bfm_get_bootfail_errno_according_to_hisi_modid(u32 hisi_modid)
-{
-    unsigned int i;
-    unsigned int size = sizeof(s_bfmr_errno_to_hisi_modid_map_tbl) / sizeof(s_bfmr_errno_to_hisi_modid_map_tbl[0]);
-
-    for (i = 0; i < size; i++)
-    {
-        if (hisi_modid == s_bfmr_errno_to_hisi_modid_map_tbl[i].hisi_modid) 
-        {
-            return s_bfmr_errno_to_hisi_modid_map_tbl[i].bootfail_errno;
-        }
-    }
-
-    BFMR_PRINT_ERR("hisi_modid: 0x%x has no bootfail_errno!\n", hisi_modid);
-
-    return (unsigned int)-1;
-}
-
-
 static int bfm_read_bfi_part_header(bfm_bfi_header_info_t *pbfi_header_info)
 {
     int ret = -1;
@@ -2440,6 +2350,39 @@ __out:
 }
 
 
+static const char *bfm_get_hardware_fault_type(bfmr_hardware_fault_type_e fault_type)
+{
+    switch (fault_type)
+    {
+    case HW_FAULT_OCP:
+    default:
+        {
+            return "ocp";
+        }
+    }
+
+    return "";
+}
+
+
+static void bfm_format_hardware_excp_detail_info(bfmr_hardware_fault_type_e fault_type,
+    bfmr_detail_boot_stage_e boot_stage,
+    const char *poriginal_detail,
+    char *pdetail_info_out,
+    size_t pdetail_info_out_buf_len)
+{
+    if (unlikely((NULL == poriginal_detail) || (NULL == pdetail_info_out)))
+    {
+        BFMR_PRINT_INVALID_PARAMS("poriginal_detail: %p, pdetail_info_out: %p\n", poriginal_detail, pdetail_info_out);
+        return;
+    }
+
+    snprintf(pdetail_info_out, pdetail_info_out_buf_len - 1, "%s_%s_%s_%s",
+        bfm_get_platform_name(), bfm_get_boot_stage_name(boot_stage),
+        bfm_get_hardware_fault_type(fault_type), poriginal_detail);
+}
+
+
 static void bfm_save_log_to_bfi_part(u32 hisi_modid, bfm_process_bootfail_param_t *param)
 {
     u64 rtc_time_of_latest_log;
@@ -2493,12 +2436,18 @@ static void bfm_save_log_to_bfi_part(u32 hisi_modid, bfm_process_bootfail_param_
         pbfi_member_info->bfmErrNo, param->suggested_recovery_method);
     pbfi_member_info->rcvMethod = try_to_recovery(pbfi_member_info->rtcValue,
         pbfi_member_info->bfmErrNo, pbfi_member_info->bfmStageCode,
-        param->suggested_recovery_method, NULL);
+        param->suggested_recovery_method, param->addl_info.detail_info);
     param->recovery_method = pbfi_member_info->rcvResult;
     pbfi_member_info->rcvResult = 0;
     pbfi_member_info->suggested_recovery_method = param->suggested_recovery_method;
     pbfi_member_info->is_bootup_successfully = s_chipsets_is_bootup_successfully ? (~0) : (0U);
     pbfi_member_info->reboot_type = hisi_modid;
+    if (BFM_HARDWARE_FAULT == param->bootfail_errno)
+    {
+        bfm_format_hardware_excp_detail_info(param->addl_info.hardware_fault_type, param->boot_stage,
+            param->addl_info.detail_info, pbfi_member_info->excepInfo, sizeof(pbfi_member_info->excepInfo));
+    }
+
     if (pbfi_member_info->bfmErrNo > KERNEL_ERRNO_START)
     {
         unsigned int  count = 0;
@@ -2848,9 +2797,119 @@ int bfm_get_kmsg_log_header_size(void)
 }
 
 
+static struct notifier_block ocp_event_nb = {
+    .notifier_call = bfm_process_ocp_callback,
+    .priority	= INT_MAX,
+};
+
+
+static int bfm_process_ocp_boot_fail_func(void *param)
+{
+    BFMR_PRINT_KEY_INFO("param: %p\n", param);
+    while (1)
+    {
+        int i = 0;
+
+        if (0 != down_interruptible(&s_process_ocp_sem))
+        {
+            continue;
+		}
+
+        for (i = 0; i < (sizeof(s_process_ocp_excp_param.ocp_excp_info) / sizeof(s_process_ocp_excp_param.ocp_excp_info[0])); i++)
+        {
+            if (down_trylock(&(s_process_ocp_excp_param.ocp_excp_info[i].sem)))
+            {
+                continue;
+            }
+
+            if ((NULL != s_process_ocp_excp_param.process_ocp_excp)
+                && (0 != strcmp(s_process_ocp_excp_param.ocp_excp_info[i].excp_info.ldo_num, "")))
+            {
+                s_process_ocp_excp_param.process_ocp_excp(s_process_ocp_excp_param.ocp_excp_info[i].fault_type,
+                    &s_process_ocp_excp_param.ocp_excp_info[i].excp_info);
+                memset(&s_process_ocp_excp_param.ocp_excp_info[i].excp_info, 0, sizeof(ocp_excp_info_t));
+            }
+            up(&(s_process_ocp_excp_param.ocp_excp_info[i].sem));
+        }
+    }
+
+    return 0;
+}
+
+
+
+static int bfm_process_ocp_boot_fail(void)
+{
+    int ret = -1;
+    struct task_struct *tsk;
+    bfm_ocp_boot_fail_test_param_t *ptest_param = NULL;
+
+    ret = hisi_pmic_mntn_register_notifier(&ocp_event_nb);
+    if (0 != ret)
+    {
+        BFMR_PRINT_ERR("ocp_event_nb register fail!\n");
+        return -1;
+    }
+
+    tsk = kthread_run(bfm_process_ocp_boot_fail_func, NULL, "process_ocp");
+    if (IS_ERR(tsk))
+    {
+        BFMR_PRINT_ERR("Failed to create thread to process OCP exception!\n");
+        return -1;
+    }
+
+    return 0;
+}
+
+static bfmr_hardware_fault_type_e bfm_get_bfmr_fault_type(unsigned long hisi_fault_type)
+{
+    size_t i = 0;
+    size_t count = sizeof(s_hw_fault_map_table) / sizeof(s_hw_fault_map_table[0]);
+
+    for (i = 0; i < count; i++)
+    {
+        if (hisi_fault_type == s_hw_fault_map_table[i].hisi_fault_type)
+        {
+            return s_hw_fault_map_table[i].bfmr_fault_type;
+        }
+    }
+
+    return HW_FAULT_OCP;
+}
+
+static int bfm_process_ocp_callback(struct notifier_block *self, unsigned long val, void *data)
+{
+    int i = 0;
+
+    for (i = 0; i < (sizeof(s_process_ocp_excp_param.ocp_excp_info) / sizeof(s_process_ocp_excp_param.ocp_excp_info[0])); i++)
+    {
+        if (down_trylock(&(s_process_ocp_excp_param.ocp_excp_info[i].sem)))
+        {
+            BFMR_PRINT_ERR("There's an OCP is being processed!\n");
+            continue;
+        }
+
+        if (0 == strcmp(s_process_ocp_excp_param.ocp_excp_info[i].excp_info.ldo_num, ""))
+        {
+            memset((void *)&s_process_ocp_excp_param.ocp_excp_info[i].excp_info, 0x0, sizeof(ocp_excp_info_t));
+            memcpy((void *)&s_process_ocp_excp_param.ocp_excp_info[i].excp_info, data, sizeof(ocp_excp_info_t));
+            s_process_ocp_excp_param.ocp_excp_info[i].fault_type = bfm_get_bfmr_fault_type(val);
+            up(&(s_process_ocp_excp_param.ocp_excp_info[i].sem));
+            break;
+        }
+        up(&(s_process_ocp_excp_param.ocp_excp_info[i].sem));
+    }
+
+    up(&s_process_ocp_sem);
+
+    return NOTIFY_DONE;
+}
+
+
 int bfm_chipsets_init(bfm_chipsets_init_param_t *param)
 {
     int ret = 0;
+    int i = 0;
 
     if (unlikely((NULL == param)))
     {
@@ -2869,6 +2928,15 @@ int bfm_chipsets_init(bfm_chipsets_init_param_t *param)
     memset((void *)&s_bootfail_log_saving_param, 0, sizeof(bfm_bootfail_log_saving_param_t));
     memcpy((void *)&s_bootfail_log_saving_param, (void *)&param->log_saving_param,
         sizeof(bfm_bootfail_log_saving_param_t));
+    memset((void *)&s_process_ocp_excp_param, 0, sizeof(bfm_process_ocp_excp_param_t));
+    memcpy((void *)&s_process_ocp_excp_param.process_ocp_excp, (void *)&param->process_ocp_excp,
+        sizeof(param->process_ocp_excp));
+    for (i = 0; i < sizeof(s_process_ocp_excp_param.ocp_excp_info) / sizeof(s_process_ocp_excp_param.ocp_excp_info[0]); i++)
+    {
+        sema_init(&s_process_ocp_excp_param.ocp_excp_info[i].sem, 1);
+    }
+	sema_init(&s_process_ocp_sem, 0);
+    (void)bfm_process_ocp_boot_fail();
     BFMR_PRINT_EXIT();
 
     return 0;

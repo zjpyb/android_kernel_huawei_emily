@@ -460,13 +460,11 @@ TAF_UINT32 At_DataStreamPreProc (TAF_UINT8 ucIndex,TAF_UINT8 DataMode,TAF_UINT8*
         case AT_CSD_DATA_MODE:
             break;
 
-        /* Modified by L60609 for AT Project，2011-10-04,  Begin*/
         /*调用OM提供的各端口接收数据函数发送数据，不需要再区分数据模式*/
         case AT_DIAG_DATA_MODE:
         case AT_OM_DATA_MODE:
             At_OmDataProc(gastAtClientTab[ucIndex].ucPortNo, pData,usLen);
             break;
-        /* Modified by L60609 for AT Project，2011-10-04,  End*/
 
         default:
             AT_WARN_LOG("At_DataStreamPreProc DataMode Wrong!");
@@ -475,7 +473,6 @@ TAF_UINT32 At_DataStreamPreProc (TAF_UINT8 ucIndex,TAF_UINT8 DataMode,TAF_UINT8*
     return AT_SUCCESS;
 }
 
-/* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
 
 VOS_UINT32  AT_CsdDataModeRcvModemMsc(
     VOS_UINT8                           ucIndex
@@ -493,9 +490,7 @@ VOS_UINT32  AT_CsdDataModeRcvModemMsc(
     /* 查询当前的呼叫状态信息，如果有VIDEO类型的呼叫，则挂断该呼叫，目前由于不会存在多个VIDEO呼叫，
        因此找到一个VIDEO类型的呼叫执行完毕后，即可退出 */
 
-    /* Modified by l60609 for DSDA PhaseIII, 2013-3-13, begin */
     ulRlst          = TAF_AGENT_GetCallInfoReq(ucIndex, &ucNumOfCalls, astCallInfos);
-    /* Modified by l60609 for DSDA PhaseIII, 2013-3-13, end */
 
     if(VOS_OK == ulRlst)
     {
@@ -816,7 +811,6 @@ VOS_UINT32 AT_ModemStatusPreProc(
 
     return AT_SUCCESS;
 }
-/* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, end */
 
 
 VOS_VOID AT_ModemSetCtlStatus(
@@ -1034,7 +1028,6 @@ VOS_UINT32 AT_ModemGetUlDataBuf(
     TAF_MEM_SET_S(&stCtlParam, sizeof(stCtlParam), 0x00, sizeof(stCtlParam));
 
 
-    /* Modified by L60609 for PS Project，2011-12-06,  Begin*/
 
     /* 获取底软上行数据buffer */
     ulResult = mdrv_udi_ioctl(g_alAtUdiHandle[ucIndex], ACM_IOCTL_GET_RD_BUFF, &stCtlParam);
@@ -1058,7 +1051,6 @@ VOS_UINT32 AT_ModemGetUlDataBuf(
 
     *ppstBuf = (IMM_ZC_STRU *)stCtlParam.pVirAddr;
 
-    /* Modified by L60609 for PS Project，2011-12-06,  End*/
     return AT_SUCCESS;
 }
 
@@ -1069,7 +1061,6 @@ VOS_UINT32 At_ModemDataInd(
     IMM_ZC_STRU                        *pstData
 )
 {
-    /* Modified by L60609 for PS Project，2011-12-06,  Begin*/
     AT_DCE_MSC_STRU                     stMscStru;
     VOS_UINT32                          ulRet;
     /* pData为数据内容指针 */
@@ -1147,9 +1138,7 @@ VOS_UINT32 At_ModemDataInd(
             PPP_PullRawDataEvent(gastAtClientTab[ucIndex].usPppId, pstData);
             return AT_SUCCESS;
 
-        /* Modified by s62952 for AT Project，2011-10-17,  Begin*/
         case AT_CSD_DATA_MODE:
-         /* Modified by s62952 for AT Project，2011-10-17,  end*/
 
         default:
             AT_WARN_LOG("At_ModemDataInd: DataMode Wrong!");
@@ -1158,7 +1147,6 @@ VOS_UINT32 At_ModemDataInd(
 
     /*释放内存*/
     AT_ModemFreeUlDataBuf(ucIndex, pstData);
-    /* Modified by L60609 for PS Project，2011-12-06,  End*/
     return AT_SUCCESS;
 }
 
@@ -1199,13 +1187,11 @@ VOS_UINT32 AT_ModemFreeUlDataBuf(
     ACM_WR_ASYNC_INFO                   stCtlParam;
     VOS_INT32                           ulResult;
 
-    /* Modified by L60609 for PS Project，2011-12-06,  Begin*/
     /* 填写需要释放的内存指针 */
     stCtlParam.pVirAddr = (VOS_CHAR*)pstBuf;
     stCtlParam.pPhyAddr = VOS_NULL_PTR;
     stCtlParam.u32Size  = 0;
     stCtlParam.pDrvPriv = VOS_NULL_PTR;
-    /* Modified by L60609 for PS Project，2011-12-06,  End*/
 
     ulResult = mdrv_udi_ioctl(g_alAtUdiHandle[ucIndex], ACM_IOCTL_RETURN_BUFF, &stCtlParam);
 
@@ -1229,10 +1215,8 @@ VOS_VOID AT_ModemFreeDlDataBuf(
 {
     AT_MODEM_DBG_DL_FREE_BUFF_NUM(1);
 
-    /* Modified by L60609 for PS Project，2011-12-06,  Begin*/
     /* 释放pstBuf */
     IMM_ZcFree(pstBuf);
-    /* Modified by L60609 for PS Project，2011-12-06,  End*/
     return;
 }
 
@@ -1285,7 +1269,6 @@ VOS_UINT32 AT_SendDataToModem(
 
     pstData = VOS_NULL_PTR;
 
-    /* Modified by L60609 for PS Project, 2011-12-06,  Begin*/
     pstData = IMM_ZcStaticAlloc((VOS_UINT16)usLen);
 
     if (VOS_NULL_PTR == pstData)
@@ -1294,9 +1277,7 @@ VOS_UINT32 AT_SendDataToModem(
     }
 
     /*此步骤不能少，用来偏移数据尾指针*/
-    /* Modified by l60609 for AP适配项目 ，2012-08-30 Begin */
     pstZcPutData = (VOS_CHAR *)IMM_ZcPut(pstData, usLen);
-    /* Modified by l60609 for AP适配项目 ，2012-08-30 End */
 
     TAF_MEM_CPY_S(pstZcPutData, usLen, pucDataBuf, usLen);
 
@@ -1305,7 +1286,6 @@ VOS_UINT32 AT_SendDataToModem(
     {
         return AT_FAILURE;
     }
-    /* Modified by L60609 for PS Project, 2011-12-06,  End*/
 
     return AT_SUCCESS;
 }
@@ -1385,7 +1365,6 @@ VOS_VOID AT_UsbModemReadDataCB( VOS_VOID )
 
     AT_MODEM_DBG_UL_DATA_READ_CB_NUM(1);
 
-    /* Modified by L60609 for PS Project，2011-12-06,  Begin*/
     if (AT_SUCCESS == AT_ModemGetUlDataBuf(ucIndex, &pstBuf))
     {
 
@@ -1395,7 +1374,6 @@ VOS_VOID AT_UsbModemReadDataCB( VOS_VOID )
         /* 根据设备当前模式，分发上行数据 */
         At_ModemDataInd(ucIndex, ucDlci, pstBuf);
     }
-    /* Modified by L60609 for PS Project，2011-12-06,  End*/
 
     return;
 }
@@ -1539,11 +1517,8 @@ VOS_INT At_RcvFromUsbCom(
 {
     VOS_UINT8                           ucIndex;
     VOS_UINT32                          ulRet;
-    /* Added by L60609 for MUX，2012-08-08,  Begin */
     VOS_UINT32                          ulMuxUserFlg;
     VOS_UINT32                          ulHsicUserFlg;
-    /* Added by L60609 for MUX，2012-08-08,  End */
-
     if (VOS_TRUE == g_ulAtUsbDebugFlag)
     {
         (VOS_VOID)vos_printf("At_RcvFromUsbCom: PortNo = %d, length = %d, data = %s\r\n", ucPortNo, uslength, pData);
@@ -1564,7 +1539,6 @@ VOS_INT At_RcvFromUsbCom(
     /*PCUI和CTRL共用*/
     for (ucIndex = 0; ucIndex < AT_MAX_CLIENT_NUM; ucIndex++)
     {
-        /* Modified by L60609 for MUX，2012-08-03,  Begin */
         ulMuxUserFlg = AT_CheckMuxUser(ucIndex);
         ulHsicUserFlg = AT_CheckHsicUser(ucIndex);
 
@@ -1583,7 +1557,6 @@ VOS_INT At_RcvFromUsbCom(
                 }
             }
         }
-        /* Modified by L60609 for MUX，2012-08-03,  End */
     }
 
     if (VOS_TRUE == g_ulAtUsbDebugFlag)
@@ -1625,7 +1598,6 @@ VOS_INT At_RcvFromUsbCom(
 
 VOS_UINT32 At_UsbPcuiEst(VOS_UINT8 ucPortNo)
 {
-    /* Modified by L60609 for AT Project，2011-10-04,  Begin*/
     VOS_UINT8                           ucIndex;
 
     if (AT_USB_COM_PORT_NO != ucPortNo)
@@ -1655,16 +1627,11 @@ VOS_UINT32 At_UsbPcuiEst(VOS_UINT8 ucPortNo)
     gastAtClientTab[ucIndex].CmdCurrentOpt   = AT_CMD_CURRENT_OPT_BUTT;
     g_stParseContext[ucIndex].ucClientStatus = AT_FW_CLIENT_STATUS_READY;
 
-    /* Modified by L60609 for AT Project，2011-10-14,  Begin*/
     /*向DMS注册从串口中获取数据的回调函数*/
     (VOS_VOID)DMS_COM_RCV_CALLBACK_REGI(ucPortNo, (pComRecv)At_RcvFromUsbCom);
 
 
-    /* Modified by L60609 for AT Project，2011-10-14,  End*/
-
     AT_LOG1("At_UsbPcuiEst ucIndex:",ucIndex);
-
-    /* Modified by L60609 for AT Project，2011-10-04,  End*/
     return VOS_OK;
 }
 
@@ -1672,7 +1639,6 @@ VOS_UINT32 At_UsbPcuiEst(VOS_UINT8 ucPortNo)
 
 VOS_UINT32 At_UsbCtrEst(VOS_UINT8 ucPortNo)
 {
-    /* Modified by L60609 for AT Project，2011-10-04,  Begin*/
     VOS_UINT8                           ucIndex;
 
 
@@ -1706,8 +1672,6 @@ VOS_UINT32 At_UsbCtrEst(VOS_UINT8 ucPortNo)
 
     /*向底软DMS从串口中获取数据的回调函数*/
     (VOS_VOID)DMS_COM_RCV_CALLBACK_REGI(ucPortNo, (pComRecv)At_RcvFromUsbCom);
-    /* Modified by L60609 for AT Project，2011-10-14,  End*/
-
     return VOS_OK;
 }
 
@@ -2283,10 +2247,8 @@ VOS_INT32 AT_SockComEst(VOS_UINT8 ucPortNo)
     gastAtClientTab[ucIndex].CmdCurrentOpt   = AT_CMD_CURRENT_OPT_BUTT;
     g_stParseContext[ucIndex].ucClientStatus = AT_FW_CLIENT_STATUS_READY;
 
-    /* Modified by s62952 for AT Project，2011-10-17,  Begin*/
     /*向DMS注册从串口中获取数据的回调函数*/
     (VOS_VOID)mdrv_CPM_LogicRcvReg(CPM_AT_COMM,(CBTCPM_RCV_FUNC)AT_RcvFromSock);
-    /* Modified by s62952 for AT Project，2011-10-17,  end*/
 
     return VOS_OK;
 }
@@ -2350,7 +2312,6 @@ VOS_INT AT_RcvFromAppSock(
 
 VOS_INT32 AT_AppSockComEst(VOS_UINT8 ucPortNo)
 {
-    /* Modified by L60609 for AT Project，2011-10-04,  Begin*/
     VOS_UINT8                           ucIndex;
 
     ucIndex = AT_CLIENT_TAB_APPSOCK_INDEX;
@@ -2378,17 +2339,12 @@ VOS_INT32 AT_AppSockComEst(VOS_UINT8 ucPortNo)
     gastAtClientTab[ucIndex].CmdCurrentOpt   = AT_CMD_CURRENT_OPT_BUTT;
     g_stParseContext[ucIndex].ucClientStatus = AT_FW_CLIENT_STATUS_READY;
 
-    /* Modified by s62952 for AT Project，2011-10-17,  Begin*/
     /*向DMS注册从串口中获取数据的回调函数*/
     (VOS_VOID)App_VcomRecvCallbackRegister(ucPortNo, (pComRecv)AT_RcvFromAppSock);
-    /* Modified by s62952 for AT Project，2011-10-17,  end*/
-
-    /* Modified by L60609 for AT Project，2011-10-04,  End*/
 
     return VOS_OK;
 }
 
-/* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
 
 VOS_UINT32 At_UsbGetWwanMode(VOS_VOID)
 {
@@ -2491,7 +2447,6 @@ VOS_INT AT_RcvFromNdisCom(
 
 VOS_UINT32 AT_UsbNdisEst(VOS_VOID)
 {
-    /* Modified by L60609 for AT Project，2011-10-04,  Begin*/
     VOS_UINT8                           ucIndex;
 
     ucIndex = AT_CLIENT_TAB_NDIS_INDEX;
@@ -2551,7 +2506,6 @@ VOS_VOID AT_OpenUsbNdis(VOS_VOID)
         return;
     }
     /*lint +e732*/
-    /* Modified by L60609 for AT Project，2011-10-04,  End*/
 
     return;
 }
@@ -2572,25 +2526,20 @@ VOS_VOID AT_CloseUsbNdis(VOS_VOID)
     return;
 }
 
-/* Added by L60609 for MUX，2012-08-03,  Begin */
 
 VOS_UINT8 AT_GetMuxSupportFlg(VOS_VOID)
 {
-    /* Modified by l60609 for DSDA Phase III, 2013-3-4, Begin */
     return AT_GetCommCtxAddr()->stMuxCtx.ucMuxSupportFlg;
-    /* Modified by l60609 for DSDA Phase III, 2013-3-4, End */
 }
 
 
 VOS_VOID AT_SetMuxSupportFlg(VOS_UINT8 ucMuxSupportFlg)
 {
-    /* Modified by l60609 for DSDA Phase III, 2013-3-4, Begin */
     AT_COMM_CTX_STRU                   *pstCommCtx = VOS_NULL_PTR;
 
     pstCommCtx = AT_GetCommCtxAddr();
 
     pstCommCtx->stMuxCtx.ucMuxSupportFlg = ucMuxSupportFlg;
-    /* Modified by l60609 for DSDA Phase III, 2013-3-4, End */
 }
 
 
@@ -2639,7 +2588,6 @@ VOS_UINT32 AT_GetMuxDlciFromClientIdx(
 {
     VOS_UINT8                           ucLoop;
 
-    /* Modified by l60609 for DSDA Phase III, 2013-3-4, Begin */
     for (ucLoop = 0; ucLoop < AT_MUX_AT_CHANNEL_MAX; ucLoop++)
     {
         if (ucIndex == AT_GetCommCtxAddr()->stMuxCtx.astMuxClientTab[ucLoop].enAtClientTabIdx)
@@ -2648,7 +2596,6 @@ VOS_UINT32 AT_GetMuxDlciFromClientIdx(
             break;
         }
     }
-    /* Modified by l60609 for DSDA Phase III, 2013-3-4, End */
 
     if (ucLoop >= AT_MUX_AT_CHANNEL_MAX)
     {
@@ -2780,7 +2727,6 @@ VOS_UINT32 AT_SendMuxSelResultData(
 )
 {
     VOS_UINT8                           ucLoop;
-    /* Modified by l60609 for DSDA Phase III, 2013-2-25, Begin */
     AT_COMM_CTX_STRU                   *pCommCtx = VOS_NULL_PTR;
 
     pCommCtx = AT_GetCommCtxAddr();
@@ -2804,7 +2750,6 @@ VOS_UINT32 AT_SendMuxSelResultData(
     {
         return VOS_ERR;
     }
-    /* Modified by l60609 for DSDA Phase III, 2013-2-25, End */
 
     AT_SendMuxResultData(ucIndex, pData, usLen);
 
@@ -2992,7 +2937,6 @@ VOS_UINT32 AT_CheckHsicUser(VOS_UINT8 ucIndex)
 
 }
 
-/* Added by l60609 for AP适配项目 ，2012-09-10 Begin */
 
 VOS_UINT32 AT_CheckAppUser(VOS_UINT8 ucIndex)
 {
@@ -3004,7 +2948,6 @@ VOS_UINT32 AT_CheckAppUser(VOS_UINT8 ucIndex)
     return VOS_TRUE;
 
 }
-/* Added by l60609 for AP适配项目 ，2012-09-10 End */
 
 
 VOS_UINT32 AT_CheckNdisUser(VOS_UINT8 ucIndex)

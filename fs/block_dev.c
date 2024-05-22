@@ -29,6 +29,8 @@
 #include <linux/log2.h>
 #include <linux/cleancache.h>
 #include <linux/dax.h>
+#include <linux/badblocks.h>
+#include <linux/falloc.h>
 #include <asm/uaccess.h>
 #include "internal.h"
 
@@ -49,6 +51,18 @@ struct block_device *I_BDEV(struct inode *inode)
 	return &BDEV_I(inode)->bdev;
 }
 EXPORT_SYMBOL(I_BDEV);
+
+void __vfs_msg(struct super_block *sb, const char *prefix, const char *fmt, ...)
+{
+	struct va_format vaf;
+	va_list args;
+
+	va_start(args, fmt);
+	vaf.fmt = fmt;
+	vaf.va = &args;
+	printk_ratelimited("%sVFS (%s): %pV\n", prefix, sb->s_id, &vaf);
+	va_end(args);
+}
 
 static void bdev_write_inode(struct block_device *bdev)
 {
@@ -75,7 +89,7 @@ void kill_bdev(struct block_device *bdev)
 {
 	struct address_space *mapping = bdev->bd_inode->i_mapping;
 
-	if (mapping->nrpages == 0 && mapping->nrshadows == 0)
+	if (mapping->nrpages == 0 && mapping->nrexceptional == 0)
 		return;
 
 	invalidate_bh_lrus();
@@ -155,16 +169,69 @@ blkdev_get_block(struct inode *inode, sector_t iblock,
 	return 0;
 }
 
+static struct inode *bdev_file_inode(struct file *file)
+{
+	return file->f_mapping->host;
+}
+
+#ifdef CONFIG_F2FS_CHECK_FS
+atomic_t f2fs_mounted;
+struct bdev_access_info bdev_access_info;
+
+static int need_report(struct block_device *bdev, int *ro)
+{
+	int report = 0;
+
+	if (!bdev || !atomic_read(&f2fs_mounted))
+		return 0;
+	spin_lock(&bdev_access_info.lock);
+	report = (bdev->bd_super &&
+			  !strcmp(bdev->bd_super->s_type->name, "f2fs"));
+	if (ro && report && bdev->bd_super->s_flags & MS_RDONLY)
+		*ro = 1;
+	spin_unlock(&bdev_access_info.lock);
+
+	return report;
+}
+
+void print_bdev_access_info(void)
+{
+	struct access_timestamp *at;
+	int i = 0;
+
+	pr_err("F2FS-fs: device open %d times:\n",
+		atomic_read(&bdev_access_info.open_cnt));
+	spin_lock(&bdev_access_info.lock);
+	list_for_each_entry(at, &bdev_access_info.access_list, list)
+		pr_err("F2FS-fs: [%d] open at %ld", i++, at->time.tv_sec);
+	spin_unlock(&bdev_access_info.lock);
+}
+#else
+void print_bdev_access_info(void) { }
+#endif
+EXPORT_SYMBOL(print_bdev_access_info);
+
 static ssize_t
-blkdev_direct_IO(struct kiocb *iocb, struct iov_iter *iter, loff_t offset)
+blkdev_direct_IO(struct kiocb *iocb, struct iov_iter *iter)
 {
 	struct file *file = iocb->ki_filp;
-	struct inode *inode = file->f_mapping->host;
+	struct inode *inode = bdev_file_inode(file);
+#ifdef CONFIG_F2FS_CHECK_FS
+	struct block_device *bdev = I_BDEV(inode);
+	int ro = 0;
 
-	if (IS_DAX(inode))
-		return dax_do_io(iocb, inode, iter, offset, blkdev_get_block,
-				NULL, DIO_SKIP_DIO_COUNT);
-	return __blockdev_direct_IO(iocb, inode, I_BDEV(inode), iter, offset,
+	if (iov_iter_rw(iter) == WRITE && need_report(bdev, &ro)) {
+		pr_err("F2FS-fs: %s: f2fs is already mounted, do not "
+			"write it directly at pos %llx len %zx\n",
+			__func__, iocb->ki_pos, iov_iter_count(iter));
+		print_bdev_access_info();
+		if (ro)
+			WARN_ON(1);
+		else
+			BUG_ON(1);
+	}
+#endif
+	return __blockdev_direct_IO(iocb, inode, I_BDEV(inode), iter,
 				    blkdev_get_block, NULL, NULL,
 				    DIO_SKIP_DIO_COUNT);
 }
@@ -230,7 +297,8 @@ struct super_block *freeze_bdev(struct block_device *bdev)
 		 * thaw_bdev drops it.
 		 */
 		sb = get_super(bdev);
-		drop_super(sb);
+		if (sb)
+			drop_super(sb);
 		mutex_unlock(&bdev->bd_fsfreeze_mutex);
 		return sb;
 	}
@@ -282,14 +350,11 @@ int thaw_bdev(struct block_device *bdev, struct super_block *sb)
 		error = sb->s_op->thaw_super(sb);
 	else
 		error = thaw_super(sb);
-	if (error) {
+	if (error)
 		bdev->bd_fsfreeze_count++;
-		mutex_unlock(&bdev->bd_fsfreeze_mutex);
-		return error;
-	}
 out:
 	mutex_unlock(&bdev->bd_fsfreeze_mutex);
-	return 0;
+	return error;
 }
 EXPORT_SYMBOL(thaw_bdev);
 
@@ -313,6 +378,22 @@ static int blkdev_write_begin(struct file *file, struct address_space *mapping,
 			loff_t pos, unsigned len, unsigned flags,
 			struct page **pagep, void **fsdata)
 {
+#ifdef CONFIG_F2FS_CHECK_FS
+	struct block_device *bdev = I_BDEV(bdev_file_inode(file));
+	int ro = 0;
+
+	if (need_report(bdev, &ro)) {
+		pr_err("F2FS-fs: %s: f2fs is already mounted, do not write it "
+			"directly at pos %#llx len %x\n", __func__, pos, len);
+		print_bdev_access_info();
+		if (ro)
+			WARN_ON(1);
+		else
+			BUG_ON(1);
+
+	}
+#endif
+
 	return block_write_begin(mapping, pos, len, flags, pagep,
 				 blkdev_get_block);
 }
@@ -325,7 +406,7 @@ static int blkdev_write_end(struct file *file, struct address_space *mapping,
 	ret = block_write_end(file, mapping, pos, len, copied, page, fsdata);
 
 	unlock_page(page);
-	page_cache_release(page);
+	put_page(page);
 
 	return ret;
 }
@@ -337,18 +418,18 @@ static int blkdev_write_end(struct file *file, struct address_space *mapping,
  */
 static loff_t block_llseek(struct file *file, loff_t offset, int whence)
 {
-	struct inode *bd_inode = file->f_mapping->host;
+	struct inode *bd_inode = bdev_file_inode(file);
 	loff_t retval;
 
-	mutex_lock(&bd_inode->i_mutex);
+	inode_lock(bd_inode);
 	retval = fixed_size_llseek(file, offset, whence, i_size_read(bd_inode));
-	mutex_unlock(&bd_inode->i_mutex);
+	inode_unlock(bd_inode);
 	return retval;
 }
 	
 int blkdev_fsync(struct file *filp, loff_t start, loff_t end, int datasync)
 {
-	struct inode *bd_inode = filp->f_mapping->host;
+	struct inode *bd_inode = bdev_file_inode(filp);
 	struct block_device *bdev = I_BDEV(bd_inode);
 	int error;
 	
@@ -394,10 +475,10 @@ int bdev_read_page(struct block_device *bdev, sector_t sector,
 	if (!ops->rw_page || bdev_get_integrity(bdev))
 		return result;
 
-	result = blk_queue_enter(bdev->bd_queue, GFP_KERNEL);
+	result = blk_queue_enter(bdev->bd_queue, false);
 	if (result)
 		return result;
-	result = ops->rw_page(bdev, sector + get_start_sect(bdev), page, READ);
+	result = ops->rw_page(bdev, sector + get_start_sect(bdev), page, false);
 	blk_queue_exit(bdev->bd_queue);
 	return result;
 }
@@ -426,21 +507,22 @@ int bdev_write_page(struct block_device *bdev, sector_t sector,
 			struct page *page, struct writeback_control *wbc)
 {
 	int result;
-	int rw = wbc_to_write_cmd(wbc);
 	const struct block_device_operations *ops = bdev->bd_disk->fops;
 
 	if (!ops->rw_page || bdev_get_integrity(bdev))
 		return -EOPNOTSUPP;
-	result = blk_queue_enter(bdev->bd_queue, GFP_KERNEL);
+	result = blk_queue_enter(bdev->bd_queue, false);
 	if (result)
 		return result;
 
 	set_page_writeback(page);
-	result = ops->rw_page(bdev, sector + get_start_sect(bdev), page, rw);
-	if (result)
+	result = ops->rw_page(bdev, sector + get_start_sect(bdev), page, true);
+	if (result) {
 		end_page_writeback(page);
-	else
+	} else {
+		clean_page_buffers(page);
 		unlock_page(page);
+	}
 	blk_queue_exit(bdev->bd_queue);
 	return result;
 }
@@ -449,10 +531,7 @@ EXPORT_SYMBOL_GPL(bdev_write_page);
 /**
  * bdev_direct_access() - Get the address for directly-accessibly memory
  * @bdev: The device containing the memory
- * @sector: The offset within the device
- * @addr: Where to put the address of the memory
- * @pfn: The Page Frame Number for the memory
- * @size: The number of bytes requested
+ * @dax: control and output parameters for ->direct_access
  *
  * If a block device is made up of directly addressable memory, this function
  * will tell the caller the PFN and the address of the memory.  The address
@@ -463,10 +542,10 @@ EXPORT_SYMBOL_GPL(bdev_write_page);
  * Return: negative errno if an error occurs, otherwise the number of bytes
  * accessible at this address.
  */
-long bdev_direct_access(struct block_device *bdev, sector_t sector,
-			void __pmem **addr, unsigned long *pfn, long size)
+long bdev_direct_access(struct block_device *bdev, struct blk_dax_ctl *dax)
 {
-	long avail;
+	sector_t sector = dax->sector;
+	long avail, size = dax->size;
 	const struct block_device_operations *ops = bdev->bd_disk->fops;
 
 	/*
@@ -477,7 +556,7 @@ long bdev_direct_access(struct block_device *bdev, sector_t sector,
 
 	if (size < 0)
 		return size;
-	if (!ops->direct_access)
+	if (!blk_queue_dax(bdev_get_queue(bdev)) || !ops->direct_access)
 		return -EOPNOTSUPP;
 	if ((sector + DIV_ROUND_UP(size, 512)) >
 					part_nr_sects_read(bdev->bd_part))
@@ -485,12 +564,83 @@ long bdev_direct_access(struct block_device *bdev, sector_t sector,
 	sector += get_start_sect(bdev);
 	if (sector % (PAGE_SIZE / 512))
 		return -EINVAL;
-	avail = ops->direct_access(bdev, sector, addr, pfn);
+	avail = ops->direct_access(bdev, sector, &dax->addr, &dax->pfn, size);
 	if (!avail)
 		return -ERANGE;
+	if (avail > 0 && avail & ~PAGE_MASK)
+		return -ENXIO;
 	return min(avail, size);
 }
 EXPORT_SYMBOL_GPL(bdev_direct_access);
+
+/**
+ * bdev_dax_supported() - Check if the device supports dax for filesystem
+ * @sb: The superblock of the device
+ * @blocksize: The block size of the device
+ *
+ * This is a library function for filesystems to check if the block device
+ * can be mounted with dax option.
+ *
+ * Return: negative errno if unsupported, 0 if supported.
+ */
+int bdev_dax_supported(struct super_block *sb, int blocksize)
+{
+	struct blk_dax_ctl dax = {
+		.sector = 0,
+		.size = PAGE_SIZE,
+	};
+	int err;
+
+	if (blocksize != PAGE_SIZE) {
+		vfs_msg(sb, KERN_ERR, "error: unsupported blocksize for dax");
+		return -EINVAL;
+	}
+
+	err = bdev_direct_access(sb->s_bdev, &dax);
+	if (err < 0) {
+		switch (err) {
+		case -EOPNOTSUPP:
+			vfs_msg(sb, KERN_ERR,
+				"error: device does not support dax");
+			break;
+		case -EINVAL:
+			vfs_msg(sb, KERN_ERR,
+				"error: unaligned partition for dax");
+			break;
+		default:
+			vfs_msg(sb, KERN_ERR,
+				"error: dax access failed (%d)", err);
+		}
+		return err;
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(bdev_dax_supported);
+
+/**
+ * bdev_dax_capable() - Return if the raw device is capable for dax
+ * @bdev: The device for raw block device access
+ */
+bool bdev_dax_capable(struct block_device *bdev)
+{
+	struct blk_dax_ctl dax = {
+		.size = PAGE_SIZE,
+	};
+
+	if (!IS_ENABLED(CONFIG_FS_DAX))
+		return false;
+
+	dax.sector = 0;
+	if (bdev_direct_access(bdev, &dax) < 0)
+		return false;
+
+	dax.sector = bdev->bd_part->nr_sects - (PAGE_SIZE / 512);
+	if (bdev_direct_access(bdev, &dax) < 0)
+		return false;
+
+	return true;
+}
 
 /*
  * pseudo-fs
@@ -527,7 +677,6 @@ static void init_once(void *foo)
 
 	memset(bdev, 0, sizeof(*bdev));
 	mutex_init(&bdev->bd_mutex);
-	INIT_LIST_HEAD(&bdev->bd_inodes);
 	INIT_LIST_HEAD(&bdev->bd_list);
 #ifdef CONFIG_SYSFS
 	INIT_LIST_HEAD(&bdev->bd_holder_disks);
@@ -538,24 +687,13 @@ static void init_once(void *foo)
 	mutex_init(&bdev->bd_fsfreeze_mutex);
 }
 
-static inline void __bd_forget(struct inode *inode)
-{
-	list_del_init(&inode->i_devices);
-	inode->i_bdev = NULL;
-	inode->i_mapping = &inode->i_data;
-}
-
 static void bdev_evict_inode(struct inode *inode)
 {
 	struct block_device *bdev = &BDEV_I(inode)->bdev;
-	struct list_head *p;
 	truncate_inode_pages_final(&inode->i_data);
 	invalidate_inode_buffers(inode); /* is it needed here? */
 	clear_inode(inode);
 	spin_lock(&bdev_lock);
-	while ( (p = bdev->bd_inodes.next) != &bdev->bd_inodes ) {
-		__bd_forget(list_entry(p, struct inode, i_devices));
-	}
 	list_del_init(&bdev->bd_list);
 	spin_unlock(&bdev_lock);
 	if (bdev->bd_bdi != &noop_backing_dev_info) {
@@ -575,7 +713,11 @@ static const struct super_operations bdev_sops = {
 static struct dentry *bd_mount(struct file_system_type *fs_type,
 	int flags, const char *dev_name, void *data)
 {
-	return mount_pseudo(fs_type, "bdev:", &bdev_sops, NULL, BDEVFS_MAGIC);
+	struct dentry *dent;
+	dent = mount_pseudo(fs_type, "bdev:", &bdev_sops, NULL, BDEVFS_MAGIC);
+	if (!IS_ERR(dent))
+		dent->d_sb->s_iflags |= SB_I_CGROUPWB;
+	return dent;
 }
 
 static struct file_system_type bd_type = {
@@ -592,9 +734,16 @@ void __init bdev_cache_init(void)
 	int err;
 	static struct vfsmount *bd_mnt;
 
+#ifdef CONFIG_F2FS_CHECK_FS
+	atomic_set(&f2fs_mounted, 0);
+	INIT_LIST_HEAD(&bdev_access_info.access_list);
+	atomic_set(&bdev_access_info.open_cnt, 0);
+	spin_lock_init(&bdev_access_info.lock);
+#endif
+
 	bdev_cachep = kmem_cache_create("bdev_cache", sizeof(struct bdev_inode),
 			0, (SLAB_HWCACHE_ALIGN|SLAB_RECLAIM_ACCOUNT|
-				SLAB_MEM_SPREAD|SLAB_PANIC),
+				SLAB_MEM_SPREAD|SLAB_ACCOUNT|SLAB_PANIC),
 			init_once);
 	err = register_filesystem(&bd_type);
 	if (err)
@@ -660,7 +809,7 @@ struct block_device *bdget(dev_t dev)
 		bdev->bd_contains = NULL;
 		bdev->bd_super = NULL;
 		bdev->bd_inode = inode;
-		bdev->bd_block_size = (1 << inode->i_blkbits);
+		bdev->bd_block_size = i_blocksize(inode);
 		bdev->bd_part_count = 0;
 		bdev->bd_invalidated = 0;
 		inode->i_mode = S_IFBLK;
@@ -715,7 +864,7 @@ static struct block_device *bd_acquire(struct inode *inode)
 	spin_lock(&bdev_lock);
 	bdev = inode->i_bdev;
 	if (bdev) {
-		ihold(bdev->bd_inode);
+		bdgrab(bdev);
 		spin_unlock(&bdev_lock);
 		return bdev;
 	}
@@ -731,10 +880,9 @@ static struct block_device *bd_acquire(struct inode *inode)
 			 * So, we can access it via ->i_mapping always
 			 * without igrab().
 			 */
-			ihold(bdev->bd_inode);
+			bdgrab(bdev);
 			inode->i_bdev = bdev;
 			inode->i_mapping = bdev->bd_inode->i_mapping;
-			list_add(&inode->i_devices, &bdev->bd_inodes);
 		}
 		spin_unlock(&bdev_lock);
 	}
@@ -750,11 +898,12 @@ void bd_forget(struct inode *inode)
 	spin_lock(&bdev_lock);
 	if (!sb_is_blkdev_sb(inode->i_sb))
 		bdev = inode->i_bdev;
-	__bd_forget(inode);
+	inode->i_bdev = NULL;
+	inode->i_mapping = &inode->i_data;
 	spin_unlock(&bdev_lock);
 
 	if (bdev)
-		iput(bdev->bd_inode);
+		bdput(bdev);
 }
 
 /**
@@ -1061,12 +1210,9 @@ EXPORT_SYMBOL_GPL(bd_unlink_disk_holder);
 static void flush_disk(struct block_device *bdev, bool kill_dirty)
 {
 	if (__invalidate_device(bdev, kill_dirty)) {
-		char name[BDEVNAME_SIZE] = "";
-
-		if (bdev->bd_disk)
-			disk_name(bdev->bd_disk, 0, name);
 		printk(KERN_WARNING "VFS: busy inodes on changed media or "
-		       "resized disk %s\n", name);
+		       "resized disk %s\n",
+		       bdev->bd_disk ? bdev->bd_disk->disk_name : "");
 	}
 
 	if (!bdev->bd_disk)
@@ -1090,12 +1236,9 @@ void check_disk_size_change(struct gendisk *disk, struct block_device *bdev)
 	disk_size = (loff_t)get_capacity(disk) << 9;
 	bdev_size = i_size_read(bdev->bd_inode);
 	if (disk_size != bdev_size) {
-		char name[BDEVNAME_SIZE];
-
-		disk_name(disk, 0, name);
 		printk(KERN_INFO
 		       "%s: detected capacity change from %lld to %lld\n",
-		       name, bdev_size, disk_size);
+		       disk->disk_name, bdev_size, disk_size);
 		i_size_write(bdev->bd_inode, disk_size);
 		flush_disk(bdev, false);
 	}
@@ -1162,10 +1305,10 @@ void bd_set_size(struct block_device *bdev, loff_t size)
 {
 	unsigned bsize = bdev_logical_block_size(bdev);
 
-	mutex_lock(&bdev->bd_inode->i_mutex);
+	inode_lock(bdev->bd_inode);
 	i_size_write(bdev->bd_inode, size);
-	mutex_unlock(&bdev->bd_inode->i_mutex);
-	while (bsize < PAGE_CACHE_SIZE) {
+	inode_unlock(bdev->bd_inode);
+	while (bsize < PAGE_SIZE) {
 		if (size & bsize)
 			break;
 		bsize <<= 1;
@@ -1221,7 +1364,6 @@ static int __blkdev_get(struct block_device *bdev, fmode_t mode, int for_part)
 		bdev->bd_disk = disk;
 		bdev->bd_queue = disk->queue;
 		bdev->bd_contains = bdev;
-		bdev->bd_inode->i_flags = disk->fops->direct_access ? S_DAX : 0;
 		if (!partno) {
 			ret = -ENXIO;
 			bdev->bd_part = disk_get_part(disk, partno);
@@ -1263,6 +1405,7 @@ static int __blkdev_get(struct block_device *bdev, fmode_t mode, int for_part)
 				else if (ret == -ENOMEDIUM)
 					invalidate_partitions(disk, bdev);
 			}
+
 			if (ret)
 				goto out_clear;
 		} else {
@@ -1283,17 +1426,10 @@ static int __blkdev_get(struct block_device *bdev, fmode_t mode, int for_part)
 				goto out_clear;
 			}
 			bd_set_size(bdev, (loff_t)bdev->bd_part->nr_sects << 9);
-			/*
-			 * If the partition is not aligned on a page
-			 * boundary, we can't do dax I/O to it.
-			 */
-			if ((bdev->bd_part->start_sect % (PAGE_SIZE / 512)) ||
-			    (bdev->bd_part->nr_sects % (PAGE_SIZE / 512)))
-				bdev->bd_inode->i_flags &= ~S_DAX;
 		}
 
 		if (bdev->bd_bdi == &noop_backing_dev_info)
-			bdev->bd_bdi = bdi_get(disk->queue->backing_dev_info);
+                        bdev->bd_bdi = bdi_get(disk->queue->backing_dev_info);
 	} else {
 		if (bdev->bd_contains == bdev) {
 			ret = 0;
@@ -1502,7 +1638,7 @@ struct block_device *blkdev_get_by_dev(dev_t dev, fmode_t mode, void *holder)
 	return bdev;
 }
 EXPORT_SYMBOL(blkdev_get_by_dev);
-
+/*lint -save -e429*/
 static int blkdev_open(struct inode * inode, struct file * filp)
 {
 	struct block_device *bdev;
@@ -1526,11 +1662,30 @@ static int blkdev_open(struct inode * inode, struct file * filp)
 	if (bdev == NULL)
 		return -ENOMEM;
 
+#ifdef CONFIG_F2FS_CHECK_FS
+	if ((filp->f_flags & O_ACCMODE) != O_RDONLY && need_report(bdev, NULL)) {
+		struct access_timestamp *at;
+
+		at = kmalloc(sizeof(struct access_timestamp), GFP_NOFS);
+		atomic_inc(&bdev_access_info.open_cnt);
+		if (at) {
+			at->time = current_kernel_time();
+			spin_lock(&bdev_access_info.lock);
+			list_add_tail(&at->list, &bdev_access_info.access_list);
+			spin_unlock(&bdev_access_info.lock);
+		}
+		pr_err("F2FS-fs: %s: f2fs is already mounted, do not open"
+				" it directly\n", __func__);
+		print_bdev_access_info();
+		WARN_ON(1);
+	}
+#endif
+
 	filp->f_mapping = bdev->bd_inode->i_mapping;
 
 	return blkdev_get(bdev, filp->f_mode, filp);
 }
-
+/*lint -restore*/
 static void __blkdev_put(struct block_device *bdev, fmode_t mode, int for_part)
 {
 	struct gendisk *disk = bdev->bd_disk;
@@ -1626,15 +1781,39 @@ EXPORT_SYMBOL(blkdev_put);
 
 static int blkdev_close(struct inode * inode, struct file * filp)
 {
-	struct block_device *bdev = I_BDEV(filp->f_mapping->host);
+	struct block_device *bdev = I_BDEV(bdev_file_inode(filp));
 	blkdev_put(bdev, filp->f_mode);
 	return 0;
 }
 
+#ifdef CONFIG_F2FS_CHECK_FS
+#define WR_IOCTL(cmd) ((cmd) == BLKDISCARD || (cmd) == BLKSECDISCARD ||\
+		       (cmd) == BLKZEROOUT)
+#endif
+
 static long block_ioctl(struct file *file, unsigned cmd, unsigned long arg)
 {
-	struct block_device *bdev = I_BDEV(file->f_mapping->host);
+	struct block_device *bdev = I_BDEV(bdev_file_inode(file));
 	fmode_t mode = file->f_mode;
+
+#ifdef CONFIG_F2FS_CHECK_FS
+	int ro = 0;
+	if (WR_IOCTL(cmd) && need_report(bdev, &ro)) {
+		uint64_t range[2];
+		if (copy_from_user(range, (void __user *)arg, sizeof(range))) {
+			range[0] = 0;
+			range[1] = 0;
+		}
+		pr_err("F2FS-fs: %s: f2fs is already mounted, do not ioctl it "
+			"directly cmd %d pos %llx len %llx\n", __func__, cmd,
+			range[0], range[1]);
+		print_bdev_access_info();
+		if (ro)
+			WARN_ON(1);
+		else
+			BUG_ON(1);
+	}
+#endif
 
 	/*
 	 * O_NDELAY can be altered using fcntl(.., F_SETFL, ..), so we have
@@ -1658,7 +1837,7 @@ static long block_ioctl(struct file *file, unsigned cmd, unsigned long arg)
 ssize_t blkdev_write_iter(struct kiocb *iocb, struct iov_iter *from)
 {
 	struct file *file = iocb->ki_filp;
-	struct inode *bd_inode = file->f_mapping->host;
+	struct inode *bd_inode = bdev_file_inode(file);
 	loff_t size = i_size_read(bd_inode);
 	struct blk_plug plug;
 	ssize_t ret;
@@ -1676,12 +1855,8 @@ ssize_t blkdev_write_iter(struct kiocb *iocb, struct iov_iter *from)
 
 	blk_start_plug(&plug);
 	ret = __generic_file_write_iter(iocb, from);
-	if (ret > 0) {
-		ssize_t err;
-		err = generic_write_sync(file, iocb->ki_pos - ret, ret);
-		if (err < 0)
-			ret = err;
-	}
+	if (ret > 0)
+		ret = generic_write_sync(iocb, ret);
 	blk_finish_plug(&plug);
 	return ret;
 }
@@ -1690,7 +1865,7 @@ EXPORT_SYMBOL_GPL(blkdev_write_iter);
 ssize_t blkdev_read_iter(struct kiocb *iocb, struct iov_iter *to)
 {
 	struct file *file = iocb->ki_filp;
-	struct inode *bd_inode = file->f_mapping->host;
+	struct inode *bd_inode = bdev_file_inode(file);
 	loff_t size = i_size_read(bd_inode);
 	loff_t pos = iocb->ki_pos;
 
@@ -1717,17 +1892,103 @@ static int blkdev_releasepage(struct page *page, gfp_t wait)
 	return try_to_free_buffers(page);
 }
 
+static int blkdev_writepages(struct address_space *mapping,
+			     struct writeback_control *wbc)
+{
+	if (dax_mapping(mapping)) {
+		struct block_device *bdev = I_BDEV(mapping->host);
+
+		return dax_writeback_mapping_range(mapping, bdev, wbc);
+	}
+	return generic_writepages(mapping, wbc);
+}
+
 static const struct address_space_operations def_blk_aops = {
 	.readpage	= blkdev_readpage,
 	.readpages	= blkdev_readpages,
 	.writepage	= blkdev_writepage,
 	.write_begin	= blkdev_write_begin,
 	.write_end	= blkdev_write_end,
-	.writepages	= generic_writepages,
+	.writepages	= blkdev_writepages,
 	.releasepage	= blkdev_releasepage,
 	.direct_IO	= blkdev_direct_IO,
 	.is_dirty_writeback = buffer_check_dirty_writeback,
 };
+
+#define	BLKDEV_FALLOC_FL_SUPPORTED					\
+		(FALLOC_FL_KEEP_SIZE | FALLOC_FL_PUNCH_HOLE |		\
+		 FALLOC_FL_ZERO_RANGE | FALLOC_FL_NO_HIDE_STALE)
+
+static long blkdev_fallocate(struct file *file, int mode, loff_t start,
+			     loff_t len)
+{
+	struct block_device *bdev = I_BDEV(bdev_file_inode(file));
+	struct request_queue *q = bdev_get_queue(bdev);
+	struct address_space *mapping;
+	loff_t end = start + len - 1;
+	loff_t isize;
+	int error;
+
+	/* Fail if we don't recognize the flags. */
+	if (mode & ~BLKDEV_FALLOC_FL_SUPPORTED)
+		return -EOPNOTSUPP;
+
+	/* Don't go off the end of the device. */
+	isize = i_size_read(bdev->bd_inode);
+	if (start >= isize)
+		return -EINVAL;
+	if (end >= isize) {
+		if (mode & FALLOC_FL_KEEP_SIZE) {
+			len = isize - start;
+			end = start + len - 1;
+		} else
+			return -EINVAL;
+	}
+
+	/*
+	 * Don't allow IO that isn't aligned to logical block size.
+	 */
+	if ((start | len) & (bdev_logical_block_size(bdev) - 1))
+		return -EINVAL;
+
+	/* Invalidate the page cache, including dirty pages. */
+	mapping = bdev->bd_inode->i_mapping;
+	truncate_inode_pages_range(mapping, start, end);
+
+	switch (mode) {
+	case FALLOC_FL_ZERO_RANGE:
+	case FALLOC_FL_ZERO_RANGE | FALLOC_FL_KEEP_SIZE:
+		error = blkdev_issue_zeroout(bdev, start >> 9, len >> 9,
+					    GFP_KERNEL, false);
+		break;
+	case FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE:
+		/* Only punch if the device can do zeroing discard. */
+		if (!blk_queue_discard(q) || !q->limits.discard_zeroes_data)
+			return -EOPNOTSUPP;
+		error = blkdev_issue_discard(bdev, start >> 9, len >> 9,
+					     GFP_KERNEL, 0);
+		break;
+	case FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE | FALLOC_FL_NO_HIDE_STALE:
+		if (!blk_queue_discard(q))
+			return -EOPNOTSUPP;
+		error = blkdev_issue_discard(bdev, start >> 9, len >> 9,
+					     GFP_KERNEL, 0);
+		break;
+	default:
+		return -EOPNOTSUPP;
+	}
+	if (error)
+		return error;
+
+	/*
+	 * Invalidate again; if someone wandered in and dirtied a page,
+	 * the caller will be given -EBUSY.  The third argument is
+	 * inclusive, so the rounding here is safe.
+	 */
+	return invalidate_inode_pages2_range(mapping,
+					     start >> PAGE_SHIFT,
+					     end >> PAGE_SHIFT);
+}
 
 const struct file_operations def_blk_fops = {
 	.open		= blkdev_open,
@@ -1743,6 +2004,7 @@ const struct file_operations def_blk_fops = {
 #endif
 	.splice_read	= generic_file_splice_read,
 	.splice_write	= iter_file_splice_write,
+	.fallocate	= blkdev_fallocate,
 };
 
 int ioctl_by_bdev(struct block_device *bdev, unsigned cmd, unsigned long arg)
@@ -1784,7 +2046,7 @@ struct block_device *lookup_bdev(const char *pathname)
 	if (!S_ISBLK(inode->i_mode))
 		goto fail;
 	error = -EACCES;
-	if (path.mnt->mnt_flags & MNT_NODEV)
+	if (!may_open_dev(&path))
 		goto fail;
 	error = -ENOMEM;
 	bdev = bd_acquire(inode);
@@ -1848,7 +2110,6 @@ void iterate_bdevs(void (*func)(struct block_device *, void *), void *arg)
 		 */
 		iput(old_inode);
 		old_inode = inode;
-
 		bdev = I_BDEV(inode);
 
 		mutex_lock(&bdev->bd_mutex);

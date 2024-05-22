@@ -108,7 +108,7 @@ static bool klp_is_patch_registered(struct klp_patch *patch)
 
 static bool klp_initialized(void)
 {
-	return klp_root_kobj;
+	return !!klp_root_kobj;
 }
 
 struct klp_find_arg {
@@ -671,7 +671,9 @@ static ssize_t enabled_show(struct kobject *kobj,
 	return snprintf(buf, PAGE_SIZE-1, "%d\n", patch->state);
 }
 
-static struct kobj_attribute enabled_kobj_attr = __ATTR_RW(enabled);
+static struct kobj_attribute enabled_kobj_attr =
+	__ATTR(enabled, S_IWUSR | S_IWGRP | S_IRUGO, enabled_show, enabled_store);
+
 static struct attribute *klp_patch_attrs[] = {
 	&enabled_kobj_attr.attr,
 	NULL

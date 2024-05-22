@@ -259,7 +259,7 @@ extern "C" {
 #define OAL_RSSI_SIGNAL_MIN      -103     /*上报RSSI下边界*/
 #define OAL_RSSI_SIGNAL_MAX      5        /*上报RSSI上边界*/
 #define OAL_SNR_INIT_VALUE       0x7F     /* SNR上报的初始值 */
-#define OAL_RSSI_INIT_VALUE      (-127)   /* RSSI的初始值 */
+#define OAL_RSSI_INIT_VALUE      (-128)   /* RSSI的初始值 */
 
 #define OAL_IPV6_ADDR_LEN 16
 
@@ -357,13 +357,28 @@ struct _hwifi_panic_log_
 *****************************************************************************/
 #ifdef _PRE_CONFIG_HISI_PANIC_DUMP_SUPPORT
 
-extern oal_void hwifi_panic_log_register(hwifi_panic_log* log, void* data);
-extern oal_void hwifi_panic_log_dump(char* print_level);
+extern oal_void hwifi_panic_log_register_etc(hwifi_panic_log* log, void* data);
+extern oal_void hwifi_panic_log_dump_etc(char* print_level);
 #else
-OAL_STATIC OAL_INLINE oal_void hwifi_panic_log_dump(char* print_level)
+OAL_STATIC OAL_INLINE oal_void hwifi_panic_log_dump_etc(char* print_level)
 {
 }
 #endif
+
+
+OAL_STATIC OAL_INLINE oal_void oal_print_inject_check_stack(oal_void)
+{
+#if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
+    char trinity_name[50];
+    memset(trinity_name, 0, sizeof(trinity_name));
+    memcpy(trinity_name, current->comm, OAL_STRLEN("trinity"));
+    if(unlikely(!memcmp((void*)"trinity", (void*)trinity_name, OAL_STRLEN("trinity"))))
+    {
+        /*Debug*/
+        WARN_ON(1);
+    }
+#endif
+}
 
 
 OAL_STATIC OAL_INLINE oal_uint8  oal_strtohex(const oal_int8 *c_string)
@@ -462,6 +477,15 @@ OAL_STATIC OAL_INLINE oal_int  oal_memcmp(OAL_CONST oal_void *p_buf1, OAL_CONST 
 OAL_STATIC OAL_INLINE oal_int  oal_strncmp(OAL_CONST oal_int8 *p_buf1, OAL_CONST oal_int8 *p_buf2, oal_uint32 ul_count)
 {
     return OAL_STRNCMP(p_buf1, p_buf2, ul_count);
+}
+
+OAL_STATIC OAL_INLINE oal_int  oal_strncasecmp(OAL_CONST oal_int8 *p_buf1, OAL_CONST oal_int8 *p_buf2, oal_uint32 ul_count)
+{
+#if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
+    return OAL_STRNCASECMP(p_buf1, p_buf2, ul_count);
+#else
+    return OAL_STRNCMP(p_buf1, p_buf2, ul_count); /* windows still use strncmp */
+#endif
 }
 
 

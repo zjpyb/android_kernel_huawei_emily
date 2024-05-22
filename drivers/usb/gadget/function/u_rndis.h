@@ -23,9 +23,11 @@ struct f_rndis_opts {
 	u32				vendor_id;
 	const char			*manufacturer;
 	struct net_device		*net;
+	struct device			dev;
 	bool				bound;
 	bool				borrowed_net;
 
+	struct config_group		*rndis_interf_group;
 	struct usb_os_desc		rndis_os_desc;
 	char				rndis_ext_compat_id[16];
 

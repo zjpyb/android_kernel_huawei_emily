@@ -59,6 +59,13 @@ bool hisi_cluster_cpu_all_pwrdn(void)
 }
 EXPORT_SYMBOL(hisi_cluster_cpu_all_pwrdn);
 
+static struct cpumask pending_idle_cpumask;
+
+static void kick_cpu_sync(int cpu)
+{
+	smp_send_reschedule(cpu);
+}
+
 static void __iomem *idle_flag_addr[NR_CPUS] = {0};
 static u32 idle_flag_bit[NR_CPUS] = {0};
 
@@ -159,6 +166,95 @@ static int hisi_enter_idle_state(struct cpuidle_device *dev,
 
 	return ret ? -1 : idx;
 }
+
+static int hisi_enter_coupled_idle_state(struct cpuidle_device *dev,
+				struct cpuidle_driver *drv, int idx)
+{
+	int ret;
+	int cpu;
+	int pending_cpu;
+
+	if ((dev == NULL) || (drv == NULL)) {
+		idx = -1;
+		return idx;
+	}
+	if (need_resched()) {
+		return idx;
+	}
+
+	if (cpu_on_hotplug) {
+		idx = 0;
+	}
+
+	if (!idx) {
+		cpu_do_idle();
+		return idx;
+	}
+
+
+	cpu = dev->cpu;
+	if (idx == (drv->state_count - 1)) {
+		spin_lock(&idle_spin_lock);
+		cpumask_set_cpu(cpu, &idle_cpus_mask);
+		smp_wmb();
+
+		if (cpumask_subset(drv->cpumask, &idle_cpus_mask)) {
+			pending_cpu = cpumask_first(&pending_idle_cpumask);
+			if (pending_cpu < nr_cpu_ids && pending_cpu != cpu) {
+				cpumask_clear_cpu(pending_cpu, &pending_idle_cpumask);
+				smp_wmb();
+				kick_cpu_sync(pending_cpu);
+			}
+		} else {
+			/* pending bit */
+			cpumask_set_cpu(cpu, &pending_idle_cpumask);
+			smp_wmb();
+			spin_unlock(&idle_spin_lock);
+
+			cpu_do_idle();
+
+			spin_lock(&idle_spin_lock);
+			cpumask_clear_cpu(cpu, &idle_cpus_mask);
+			smp_wmb();
+			spin_unlock(&idle_spin_lock);
+
+			return idx;
+		}
+		spin_unlock(&idle_spin_lock);
+
+	}
+
+	ret = cpu_pm_enter();
+	if (!ret) {
+#ifdef CONFIG_ARCH_HISI
+		local_fiq_disable();
+#endif
+		 /*
+		* Pass idle state index to cpu_suspend which in turn will
+		* call the CPU ops suspend protocol with idle index as a
+		* parameter.
+		*/
+		ret = arm_cpuidle_suspend(idx);
+#ifdef CONFIG_HISI_CORESIGHT_TRACE
+		/*Restore ETM registers */
+		_etm4_cpuilde_restore();
+#endif
+#ifdef CONFIG_ARCH_HISI
+		local_fiq_enable();
+#endif
+		cpu_pm_exit();
+	}
+
+	if (idx == (drv->state_count - 1)) {
+		spin_lock(&idle_spin_lock);
+		cpumask_clear_cpu(cpu, &idle_cpus_mask);
+		smp_wmb();
+		spin_unlock(&idle_spin_lock);
+	}
+
+	return ret ? -1 : idx;
+}
+
 /*lint -e64 -e785 -e651*/
 static struct cpuidle_driver hisi_little_cluster_idle_driver = {
 	.name = "hisi_little_cluster_idle",
@@ -223,6 +319,8 @@ static struct cpuidle_driver hisi_big_cluster_idle_driver = {
 static const struct of_device_id arm64_idle_state_match[] __initconst = {
 	{ .compatible = "arm,idle-state",
 	  .data = hisi_enter_idle_state },
+	{ .compatible = "arm,coupled-idle-state",
+	  .data = hisi_enter_coupled_idle_state },
 	{ },
 };
 /*lint +e64 +e785 +e651*/
@@ -409,6 +507,7 @@ static int __init hisi_idle_init(void)
 	}
 	spin_lock_init(&idle_spin_lock);
 	cpumask_clear(&idle_cpus_mask);
+	cpumask_clear(&pending_idle_cpumask);
 
 	ret = hisi_multidrv_idle_init(&hisi_little_cluster_idle_driver, LITTLE_CLUSTER_ID);
 	if (ret) {

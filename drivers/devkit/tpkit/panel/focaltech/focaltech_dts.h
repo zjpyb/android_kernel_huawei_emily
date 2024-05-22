@@ -10,6 +10,7 @@
 #define FTS_THRESHOLD_IN_CSV_FILE	1
 
 #define FTS_CHIP_NAME		"fts"
+#define FTS_CHIP_NAME_LEN	3
 #define HUAWEI_TS_KIT		"huawei,ts_kit"
 
 #define FTS_IRQ_GPIO		"attn_gpio"
@@ -22,9 +23,12 @@
 #define FTS_VBUS		"fts-io"
 #define FTS_IC_TYPES		"ic_type"
 #define FTS_IS_IN_CELL		"is_in_cell"
+#define FTS_CHARGER_SUPPORTED		"charger_supported"
+#define FTS_CHARGER_SWITCH_ADDR		"charger_switch_addr"
 #define FTS_WD_CHECK		"need_wd_check_status"
 #define FTS_CHECK_STATUS_WATCHDOG_TIMEOUT		"check_status_watchdog_timeout"
 #define FTS_PRAM_PROJECTID_ADDR		"pram_projectid_addr"
+#define FTS_PROJECT_ATM 					"project_atm"
 #define FTS_X_MAX		"x_max"
 #define FTS_Y_MAX		"y_max"
 #define FTS_X_MAX_MT		"x_max_mt"
@@ -44,6 +48,7 @@
 #define FTS_ROI_SUPPORTED			"roi_supported"
 #define FTS_ROI_SWITCH_ADDR		"roi_switch_addr"
 #define FTS_ROI_PKG_NUM_ADDR	"roi_pkg_num_addr"
+#define FTS_PALM_IRON_SUPPORT	"palm_iron_support"
 
 #define FTS_VCI_LDO_VALUE		"vci_value"
 #define FTS_VDDIO_LDO_VALUE		"vddio_value"
@@ -72,6 +77,10 @@
 #define FTS_LCD_NOISE_DATA_TEST		"lcd_noise_data_test"
 #define FTS_OPENTEST_CHARGE_TIME	"opentest_charge_time"
 #define FTS_OPENTEST_RESET_TIME		"opentest_reset_time"
+#define FTS_CB_TEST_POINT_BY_POINT	"cb_test_point_by_point"
+#define FTS_OPEN_TEST_POINT_BY_POINT	"open_test_cb_point_by_point"
+#define FTS_SHORT_TEST_POINT_BY_POINT "short_test_point_by_point"
+#define FTS_HIDE_PLAIN_LCD_LOG		"hide_plain_lcd_log"
 
 #define FTS_IN_CSV_FILE			"threshold,in_csv_file"
 #define DTS_RAW_DATA_MIN		"threshold,raw_data_min"
@@ -87,10 +96,20 @@
 #define DTS_SCAP_RAW_DATA_MAX         "threshold,scap_raw_data_max"
 #define DTS_RAW_DATA_MIN_ARRAY		"threshold,raw_data_min_array"
 #define DTS_RAW_DATA_MAX_ARRAY		"threshold,raw_data_max_array"
+#define DTS_CB_TEST_MIN_ARRAY			"threshold,cb_test_min_array"
+#define DTS_CB_TEST_MAX_ARRAY			"threshold,cb_test_max_array"
+#define DTS_OPEN_TEST_CB_MIN_ARRAY	"threshold,open_test_cb_min_array"
+#define DTS_OPEN_TEST_CB_MAX_ARRAY	"threshold,open_test_cb_max_array"
+#define DTS_SHORT_CIRCUIT_RES_MIN_ARRAY	"threshold,short_circuit_min_array"
 #define DTS_ROW_COLUMN_DELTA_MAX_ARRAY		"threshold,row_column_delta_max_array"
 
 #define FTS_CB_TEST_CSV			"cb_test_threshold"
 #define FTS_SCAP_RAW_FATA_CSV		"scap_raw_data_threshold"
+#define FTS_RAWDATA_TEST_CSV			"rawdata_test_threshold"
+#define FTS_OPEN_TEST_CSV			"open_test_threshold"
+#define FTS_CB_UNIFORMITY_TEST_CSV			"cb_uniformity_test_threshold"
+#define FTS_CB_INCREASE_CSV			"cb_increase_test_threshold"
+#define IS_IC_RAWDATA_PROC_PRINTF	"is_ic_rawdata_proc_printf"
 
 #define FTS_TEST_TYPE_DEFAULT	"Normalize_type:judge_last_result"
 
@@ -103,7 +122,12 @@
 #define FTS_FW_NEED_DISTINGUISH_LCD	"fts,need_distinguish_lcd"
 #define FTS_TOUCH_SWITCH_FLAG	"touch_switch_flag"
 #define FTS_TOUCH_SWITCH_GAME_REG	"touch_switch_game_reg"
-
+#define FTS_TOUCH_SWITCH_SCENE_REG	"touch_switch_scene_reg"
+#define FTS_TOUCH_SWITCH_FM_REG	"touch_switch_fm_reg"
+#define PROJECT_ATM                   1
+#define FTS_FW_UPDATE_DURATION_CHECK	"fw_update_duration_check"
+#define FTS_USE_PINCTRL			"fts_use_pinctrl"
+#define FTS_READ_DEBUG_REG_AND_DIFFER	"read_debug_reg_and_differ"
 int focal_get_vendor_name_from_dts(const char *project_id,
 	char *vendor_name, size_t size);
 

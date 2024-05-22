@@ -30,6 +30,8 @@
 #define FHD_LCD_HIGHT  1920
 #define FHD_LCD_JISUAN  2088
 
+#define SYNAPTCS_SHORTMULTI_SPACE 0x7FFFFFFF
+
 #ifndef _SYNAPTICS_DSX_RMI4_H_
 #define _SYNAPTICS_DSX_RMI4_H_
 
@@ -130,7 +132,7 @@
 #define NOISE_RECORD_NUM_MAX 10000
 
 #define F35_WRITE_LENGTH_MAX 65535
-
+#define I2C_WRITE_DATA_LIMIT 6000  //limit length of synaptics_rmi4_i2c_write
 /**
  * struct synaptics_rmi4_platform_data - contains the rmi4 platform data
  * @irq_number: irq number

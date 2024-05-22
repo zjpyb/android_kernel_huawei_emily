@@ -35,6 +35,9 @@
 #include <linux/of_fdt.h>
 #include <asm/cputype.h>
 #include <asm/topology.h>
+#include <linux/version.h>
+
+#include <asm/cacheflush.h>
 
 #ifdef CONFIG_HISI_SMARTPOOL_OPT
 #include "hisi/hisi_ion_smart_pool.h"
@@ -46,6 +49,8 @@
 #include <linux/hisi/hisi_idle_sleep.h>
 
 #define MAX_HISI_ION_DYNAMIC_AREA_NAME_LEN  64
+#define HISI_ION_FLUSH_ALL_CPUS_CACHES_THRESHOLD  (0x1000000) /*16MB*/
+
 struct hisi_ion_dynamic_area {
 	phys_addr_t    base;
 	unsigned long  size;
@@ -80,6 +85,7 @@ static struct ion_device *idev;
 static int num_heaps;
 static struct ion_heap **heaps;
 static struct ion_platform_heap **heaps_data;
+struct platform_device *hisi_ion_pdev;
 
 #define MAX_HISI_ION_DYNAMIC_AREA_NUM  5
 static struct hisi_ion_dynamic_area  ion_dynamic_area_table[MAX_HISI_ION_DYNAMIC_AREA_NUM];
@@ -156,6 +162,10 @@ static int  hisi_ion_reserve_area(struct reserved_mem *rmem)
 RESERVEDMEM_OF_DECLARE(hisi_ion, "hisi_ion", hisi_ion_reserve_area); /*lint !e611 */
 struct ion_device *get_ion_device(void) {
 	return idev;
+}
+
+struct platform_device *get_hisi_ion_platform_device(void) {
+	return hisi_ion_pdev;
 }
 
 #ifdef CONFIG_HISI_SPECIAL_SCENE_POOL
@@ -240,6 +250,72 @@ struct ion_client *hisi_ion_client_create(const char *name)
 }
 EXPORT_SYMBOL(hisi_ion_client_create);
 
+static int check_vaddr_bounds(struct mm_struct *mm, unsigned long start, unsigned long length)
+{
+	struct vm_area_struct *vma = NULL;
+	if (start >= start + length) {
+		pr_err("%s,addr is overflow!\n", __func__);
+		return -EINVAL;
+	}
+
+	if (!access_ok(VERIFY_WRITE, start, length)) {
+		pr_err("%s,addr can not access!\n", __func__);
+		return -EINVAL;
+	}
+
+	if (!PAGE_ALIGNED(start) || !PAGE_ALIGNED(length)) {
+		pr_err("%s,PAGE_ALIGNED!\n", __func__);
+		return -EINVAL;
+	}
+
+	vma = find_vma(mm, start);
+	if (!vma) {
+		pr_err("%s,vma is null!\n", __func__);
+		return -EINVAL;
+	}
+
+	if (start + length > vma->vm_end) {
+		pr_err("%s,start + length > vma->vm_end(0x%lx)!\n", __func__, vma->vm_end);
+		return -EINVAL;
+	}
+	return 0;
+}
+
+static int ion_do_cache_op(struct ion_client *client, struct ion_handle *handle,
+					unsigned long uaddr, unsigned long length,unsigned int cmd)
+{
+	int ret = -EINVAL;
+	unsigned long flags = 0;
+
+	ret = ion_handle_get_flags(client, handle, &flags);
+	if (ret) {
+		pr_err("%s ion_handle_get_flags fail!\n", __func__);
+		return -EINVAL;
+	}
+	if (!ION_IS_CACHED(flags)) {
+		pr_err("%s ION is noncached!\n", __func__);
+		return 0;
+	}
+
+	switch (cmd) {
+	case ION_HISI_CLEAN_CACHES:
+		uaccess_ttbr0_enable();
+		__dma_map_area((void *)uaddr, length, DMA_BIDIRECTIONAL);
+		uaccess_ttbr0_disable();
+		break;
+
+	case ION_HISI_INV_CACHES:
+		uaccess_ttbr0_enable();
+		__dma_unmap_area((void *)uaddr, length, DMA_FROM_DEVICE);
+		uaccess_ttbr0_disable();
+		break;
+
+	default:
+		return -EINVAL;
+	}
+	return ret;
+}
+
 static long hisi_ion_custom_ioctl(struct ion_client *client,
 				unsigned int cmd,
 				unsigned long arg)
@@ -247,6 +323,7 @@ static long hisi_ion_custom_ioctl(struct ion_client *client,
 	int ret = 0;
 
 	switch (cmd) {
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
 	case ION_HISI_CUSTOM_PHYS:
 	{
 		struct ion_phys_data data;
@@ -279,34 +356,9 @@ static long hisi_ion_custom_ioctl(struct ion_client *client,
 		}
 		ion_free(client, handle);
 
-		break;
+		return ret;
 	}
-	case ION_HISI_CUSTOM_SET_FLAG:
-	{
-		struct ion_flag_data data;
-		struct ion_handle *handle;
-
-		if (copy_from_user(&data, (void __user *)arg,
-				sizeof(data))) {
-			return -EFAULT;
-		}
-		if ((data.flags != 0) &&
-		    (data.flags != (ION_FLAG_CACHED |
-				    ION_FLAG_CACHED_NEEDS_SYNC))) {
-			return -EINVAL;
-		}
-		handle = ion_import_dma_buf(client, data.shared_fd);
-
-		if (IS_ERR(handle)) {
-			pr_err("ION_HISI_CUSTOM_SET_FLAG error handle\n");
-			return -EINVAL;
-		}
-
-		ret = ion_change_flags(client, handle, data.flags);
-		ion_free(client, handle);/*lint !e668 */
-
-		break;
-	}
+#endif
 
 #ifdef CONFIG_HISI_SMARTPOOL_OPT
 	case ION_HISI_CUSTOM_SET_SMART_POOL_INFO:
@@ -319,7 +371,7 @@ static long hisi_ion_custom_ioctl(struct ion_client *client,
 		}
 		if (smart_pool_info.water_mark < MAX_POOL_SIZE)
 			ion_smart_set_water_mark(smart_pool_info.water_mark);
-		break;
+		return ret;
 	}
 #endif
 
@@ -341,9 +393,8 @@ static long hisi_ion_custom_ioctl(struct ion_client *client,
 		pool = ion_get_scene_pool(ion_get_system_heap());
 		ion_scene_pool_wakeup_process(pool, F_WAKEUP_AUTOFREE,
 					      &scene_pool_info);
-		break;
+		return ret;
 	}
-
 	case ION_HISI_CUSTOM_SPECIAL_SCENE_EXIT:
 	{
 		struct ion_special_scene_pool_info_data scene_pool_info
@@ -352,136 +403,76 @@ static long hisi_ion_custom_ioctl(struct ion_client *client,
 
 		ion_scene_pool_wakeup_process(pool, F_FORCE_STOP,
 					      &scene_pool_info);
-		break;
+		return ret;
 	}
 #endif
 
 	case ION_HISI_CLEAN_CACHES:
 	case ION_HISI_CLEAN_INV_CACHES:
-	{
-		struct ion_flush_data data;
-
-		if (copy_from_user(&data, (void __user *)arg,
-				sizeof(data))) {
-			return -EFAULT;
-		}
-		ret = ion_sync_for_device(client, data.fd);
-		break;
-	}
 	case ION_HISI_INV_CACHES:
 	{
 		struct ion_flush_data data;
+		unsigned long start, length;
+		struct ion_handle *handle = NULL;
+		struct mm_struct *mm;
 
 		if (copy_from_user(&data, (void __user *)arg,
 				sizeof(data))) {
-			return -EFAULT;
-		}
-		ret = ion_sync_for_cpu(client, data.fd);
-		break;
-	}
-	default:
-		return -ENOTTY;
-	}
-
-	return ret;
-}
-
-#ifdef CONFIG_COMPAT
-
-struct compat_ion_flush_data {
-	compat_int_t fd;
-	compat_ulong_t vaddr;
-	compat_int_t offset;
-	compat_int_t length;
-};
-
-static int compat_get_ion_flush_data(struct compat_ion_flush_data __user
-		*data32, struct ion_flush_data __user *data)
-{
-	compat_int_t fd;
-	compat_ulong_t vaddr;
-	compat_int_t offset;
-	compat_int_t length;
-	int err;
-
-	err = get_user(fd, &data32->fd);
-	err |= put_user(fd, &data->fd);
-	err |= get_user(vaddr, &data32->vaddr);
-	err |= put_user(vaddr, &data->vaddr);
-	err |= get_user(offset, &data32->offset);
-	err |= put_user(offset, &data->offset);
-	err |= get_user(length, &data32->length);
-	err |= put_user(length, &data->length);
-
-	return err;
-}
-
-static int compat_put_ion_flush_data(struct compat_ion_flush_data __user
-				     *data32,
-				     struct ion_flush_data __user *data)
-{
-	compat_int_t fd;
-	compat_ulong_t vaddr;
-	compat_int_t offset;
-	compat_int_t length;
-	int err;
-
-	err = get_user(fd, &data->fd);
-	err |= put_user(fd, &data32->fd);
-	err |= get_user(vaddr, &data->vaddr);
-	err |= put_user(vaddr, &data32->vaddr);
-	err |= get_user(offset, &data->offset);
-	err |= put_user(offset, &data32->offset);
-	err |= get_user(length, &data->length);
-	err |= put_user(length, &data32->length);
-
-	return err;
-}
-
-static long __attribute__((unused)) compat_hisi_ion_custom_ioctl(
-				struct ion_client *client,
-				unsigned int cmd,
-				unsigned long arg)
-{
-	int ret = 0;
-
-	switch (cmd) {
-	case ION_HISI_CUSTOM_PHYS:
-		return hisi_ion_custom_ioctl(client, cmd, arg);
-	case ION_HISI_CLEAN_CACHES:
-	case ION_HISI_INV_CACHES:
-	case ION_HISI_CLEAN_INV_CACHES:
-	{
-		struct compat_ion_flush_data __user *data32;
-		struct ion_flush_data __user *data;
-		int err;
-
-		data32 = compat_ptr(arg);
-		data = compat_alloc_user_space(sizeof(*data));
-		if (data == NULL) {
-			pr_err("compat_alloc_user_space failed!\n");
+			pr_err("%s: copy_from_user fail\n",__func__);
 			return -EFAULT;
 		}
 
-		err = compat_get_ion_flush_data(data32, data);
-		if (err) {
-			pr_err("compat_get_ion_flush_data failed!\n");
-			return err;
+		start = (unsigned long)data.vaddr + data.offset;
+		if ((unsigned long)data.vaddr > start) {
+			pr_err("%s:  overflow start:0x%lx!\n", __func__, start);
+			return -EINVAL;
 		}
+		length = data.length;
 
-		ret = hisi_ion_custom_ioctl(client, cmd, (unsigned long)data);
-
-		err = compat_put_ion_flush_data(data32, data);
-
-		return ret ? ret : err;
-
-	}
-	default:
-		return -ENOTTY;
-	}
-}
-
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
+		handle = ion_import_dma_buf(client, data.fd);
+#else
+		handle = ion_import_dma_buf_fd(client, data.fd);
 #endif
+		if (IS_ERR(handle)) {
+			pr_err("%s: Could not import handle: %pK, fd:%d\n",
+				__func__, handle, data.fd);
+			return -EINVAL;
+		}
+
+		if (length >= HISI_ION_FLUSH_ALL_CPUS_CACHES_THRESHOLD) {
+			ion_flush_all_cpus_caches();
+			ion_free(client, handle);
+			return 0;
+		}
+
+		mm = get_task_mm(current);
+		if (!mm) {
+			pr_err("%s: Invalid thread: %d\n", __func__, data.fd);
+			ion_free(client, handle);
+			return -EINVAL;
+		}
+
+		down_read(&mm->mmap_sem);
+		if (check_vaddr_bounds(mm, start, length)) {
+			pr_err("%s: invalid virt 0x%lx 0x%lx\n", __func__, start, length);
+			up_read(&mm->mmap_sem);
+			mmput(mm);
+			ion_free(client, handle);
+			return -EINVAL;
+		}
+
+		ret = ion_do_cache_op(client, handle, start, length, cmd);
+		up_read(&mm->mmap_sem);
+		mmput(mm);
+		ion_free(client, handle);
+		return ret;
+	}
+	default:
+		pr_info("%s: Invalidate CMD(0x%x)\n", __func__, cmd);
+		return -ENOTTY;
+	}
+}
 
 static int get_type_by_name(const char *name, enum ion_heap_type *type)
 {
@@ -637,6 +628,8 @@ static int hisi_ion_probe(struct platform_device *pdev)
 	int i;
 	int err;
 	static struct ion_platform_heap *p_heap;
+
+	hisi_ion_pdev = pdev;
 
 	idev = ion_device_create(hisi_ion_custom_ioctl);
 	err = hisi_set_platform_data(pdev);

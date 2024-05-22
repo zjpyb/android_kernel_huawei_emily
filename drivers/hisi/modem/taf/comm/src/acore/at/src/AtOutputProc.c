@@ -175,10 +175,8 @@ const AT_RETURN_TAB_TYPE_STRU gastAtReturnCodeTab[]=
     {AT_CME_SERVICE_NOT_PROVISIONED,                       {(VOS_UINT8*)"171", (VOS_UINT8*)"Service not provisioned"       }  },
 
     /* 3GPP 27007 9.2.3 Also all other values below 256 are reserved */
-    /* Added by L60609 for V7R1C50 AT&T&DCM, 2012-6-16, begin */
     {AT_CME_PDP_ACT_LIMIT,                                 {(TAF_UINT8*)"300", (TAF_UINT8*)"PDP ACT LIMIT"                            }  },
     {AT_CME_NET_SEL_MENU_DISABLE,                          {(TAF_UINT8*)"301", (TAF_UINT8*)"NETWORK SELECTION MENU DISABLE"           }  },
-    /* Added by L60609 for V7R1C50 AT&T&DCM, 2012-6-16, end */
 
     {AT_CME_CS_IMS_SERV_EXIST,                             {(TAF_UINT8*)"302", (TAF_UINT8*)"CS SERVICE EXIST"                         }  },
 
@@ -195,8 +193,6 @@ const AT_RETURN_TAB_TYPE_STRU gastAtReturnCodeTab[]=
     {AT_CME_NO_RF,                                         {(TAF_UINT8*)"310"  ,(TAF_UINT8*)"NO RF"                          }  },
 
     {AT_CME_IMS_OPEN_LTE_NOT_SUPPORT,                      {(TAF_UINT8*)"311"  ,(TAF_UINT8*)"IMS Open,LTE Not Support"       }  },
-
-    /* Added by c64416 for AT Project 2011-10-23  Begin */
     {AT_CME_APN_LEN_ILLEGAL,                               {(VOS_UINT8*)"700", (VOS_UINT8*)"APN length illegal"              }  },
     {AT_CME_APN_SYNTACTICAL_ERROR,                         {(VOS_UINT8*)"701", (VOS_UINT8*)"APN syntactical error"           }  },
     {AT_CME_SET_APN_BEFORE_SET_AUTH,                       {(VOS_UINT8*)"702", (VOS_UINT8*)"set APN before set auth"         }  },
@@ -213,7 +209,6 @@ const AT_RETURN_TAB_TYPE_STRU gastAtReturnCodeTab[]=
     {AT_CME_PDN_TYPE_ILLEGAL,                              {(VOS_UINT8*)"713", (VOS_UINT8*)"PDN type illegal"                }  },
     {AT_CME_IPV4_ADDR_ALLOC_TYPE_ILLEGAL,                  {(VOS_UINT8*)"714", (VOS_UINT8*)"IPV4 address alloc type illegal" }  },
     {AT_CME_LINK_CID_INVALID,                              {(VOS_UINT8*)"715", (VOS_UINT8*)"link cid invalid"                }  },
-    /* Added by c64416 for AT Project 2011-10-23  End*/
     {AT_CME_NO_SUCH_ELEMENT,                               {(VOS_UINT8*)"716", (VOS_UINT8*)"no such element"                 }  },
     {AT_CME_MISSING_RESOURCE,                              {(VOS_UINT8*)"717", (VOS_UINT8*)"missing resource"                }  },
 
@@ -263,8 +258,6 @@ const AT_RETURN_TAB_TYPE_STRU gastAtReturnCodeTab[]=
     {AT_PHYNUM_TYPE_ERR,                                   {(VOS_UINT8*)"2", (VOS_UINT8*)"Physical Number type error"        }  },
     {AT_SIMLOCK_PLMN_NUM_ERR,                              {(VOS_UINT8*)"2", (VOS_UINT8*)"Simlock Plmn num invalid"          }  },
     {AT_SIMLOCK_PLMN_MNC_LEN_ERR,                          {(VOS_UINT8*)"3", (VOS_UINT8*)"Simlock Plmn MNC len Err"          }  },
-
-    /* Added by c64416 for AT Project 2011-10-23  Begin */
     {AT_DEVICE_NOT_SUPPORT,                                {(VOS_UINT8*)"500", (VOS_UINT8*)"Undone",                            }},
     {AT_DEVICE_ERR_UNKNOWN,                                {(VOS_UINT8*)"501", (VOS_UINT8*)"Unknown error",                     }},
     {AT_DEVICE_INVALID_PARAMETERS,                         {(VOS_UINT8*)"502", (VOS_UINT8*)"Invalid parameters",                }},
@@ -311,8 +304,6 @@ const AT_RETURN_TAB_TYPE_STRU gastAtReturnCodeTab[]=
     {AT_DEVICE_CLOSE_UL_CHAN_FAILURE,                      {(VOS_UINT8*)"560", (VOS_UINT8*)"Close TX Transmitter Failure",      }},
     {AT_DEVICE_CLOSE_DL_CHAN_FAILURE,                      {(VOS_UINT8*)"561", (VOS_UINT8*)"Close RX Transmitter Failure",      }},
     {AT_DEVICE_NV_DATA_INVALID,                            {(VOS_UINT8*)"562", (VOS_UINT8*)"NV DATA INVALID",                   }},
-    /* Added by c64416 for AT Project 2011-10-23  End*/
-
     {AT_PERSONALIZATION_ERR_BEGIN,                          {VOS_NULL_PTR     , VOS_NULL_PTR                                     } },
     {AT_PERSONALIZATION_IDENTIFY_FAIL,                      {(VOS_UINT8*)"301", (VOS_UINT8*)"Identify failure",                  } },
     {AT_PERSONALIZATION_SIGNATURE_FAIL,                     {(VOS_UINT8*)"302", (VOS_UINT8*)"Signature verification failed",     } },
@@ -494,8 +485,6 @@ const AT_SUB_SYS_MODE_CONNECT_RATE_PAIR_STRU gastSubSysModeConnectRateArr[] =
 /*****************************************************************************
    3 函数、变量声明
 *****************************************************************************/
-/* Modified by L60609 for AT Project，2011-10-20,  Begin*/
-/* Modified by L60609 for AT Project，2011-10-20,  Begin*/
 
 
 /*****************************************************************************
@@ -505,16 +494,10 @@ const AT_SUB_SYS_MODE_CONNECT_RATE_PAIR_STRU gastSubSysModeConnectRateArr[] =
 
 TAF_UINT32 At_SendData(TAF_UINT8 ucIndex,TAF_UINT8 ucType,TAF_UINT8* pData,TAF_UINT16 usLen)
 {
-
-    /* Added by L60609 for MUX，2012-08-06,  Begin */
     VOS_UINT32                          ulHsicUserFlg;
     VOS_UINT32                          ulMuxUserFlg;
-    /* Added by L60609 for MUX，2012-08-06,  End */
-
-    /* Added by L60609 for MUX，2012-08-06,  Begin */
     ulHsicUserFlg = AT_CheckHsicUser(ucIndex);
     ulMuxUserFlg  = AT_CheckMuxUser(ucIndex);
-    /* Added by L60609 for MUX，2012-08-06,  End */
 
     /* 检查 输入参数，如果失败，返回错误； */
     /* 根据当前用户业务类型，把数据发送到指定的接口 */
@@ -532,7 +515,6 @@ TAF_UINT32 At_SendData(TAF_UINT8 ucIndex,TAF_UINT8 ucType,TAF_UINT8* pData,TAF_U
         return AT_FAILURE;
     }
 
-/* Added by S62952 for IPV6, 2011-07-19, begin */
 
     if (AT_DATA_STOP_STATE == gastAtClientTab[ucIndex].DataState)
     {
@@ -548,29 +530,23 @@ TAF_UINT32 At_SendData(TAF_UINT8 ucIndex,TAF_UINT8 ucType,TAF_UINT8* pData,TAF_U
         if (AT_USBCOM_USER == gastAtClientTab[ucIndex].UserType)
         {
             /*向USB COM口发送数据*/
-            /* Modified by L60609 for AT Project，2011-10-15,  Begin*/
             DMS_COM_SEND(AT_USB_COM_PORT_NO, pData, usLen);
             AT_MNTN_TraceCmdResult(ucIndex, pData, usLen);
-            /* Modified by L60609 for AT Project，2011-10-15,  End*/
             return AT_SUCCESS;
         }
         /* 向VCOM口发送数据 */
         else if (AT_APP_USER == gastAtClientTab[ucIndex].UserType)
         {
-            /* Modified by L60609 for AT Project，2011-10-18,  Begin*/
             APP_VCOM_Send(gastAtClientTab[ucIndex].ucPortNo, pData, usLen);
             return AT_SUCCESS;
-            /* Modified by L60609 for AT Project，2011-10-18,  End*/
         }
         else if (AT_SOCK_USER == gastAtClientTab[ucIndex].UserType)
         {
-            /* Modified by L60609 for AT Project，2011-10-18,  Begin*/
             if (BSP_MODULE_SUPPORT == mdrv_misc_support_check(BSP_MODULE_TYPE_WIFI))
             {
                 mdrv_CPM_ComSend(CPM_AT_COMM, pData, VOS_NULL_PTR, usLen);
                 return AT_SUCCESS;
             }
-            /* Modified by L60609 for AT Project，2011-10-18,  End*/
          }
         else if (AT_CTR_USER == gastAtClientTab[ucIndex].UserType)
         {
@@ -585,37 +561,28 @@ TAF_UINT32 At_SendData(TAF_UINT8 ucIndex,TAF_UINT8 ucType,TAF_UINT8* pData,TAF_U
             AT_MNTN_TraceCmdResult(ucIndex, pData, usLen);
             return AT_SUCCESS;
         }
-        /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
         else if (AT_MODEM_USER == gastAtClientTab[ucIndex].UserType)
         {
-            /* Modified by S62952 for AT Project，2011-10-18,  Begin*/
             return AT_SendDataToModem(ucIndex, pData, usLen);
-            /* Modified by S62952 for AT Project，2011-10-18,  END*/
         }
-        /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, end */
         else if (AT_NDIS_USER == gastAtClientTab[ucIndex].UserType)
         {
             /* NDIS AT口目前实现中暂无数据发送,若从该口发送数据,则3直接返回AT_FAILURE */
             return AT_FAILURE;
         }
-        /* Modified by L60609 for MUX，2012-08-13,  Begin */
         else if (VOS_TRUE == ulHsicUserFlg)
-        /* Modified by L60609 for MUX，2012-08-13,  End */
         {
         }
-        /* Added by L60609 for MUX，2012-08-06,  Begin */
         else if (VOS_TRUE == ulMuxUserFlg)
         {
             return AT_SendMuxResultData(ucIndex, pData, usLen);
         }
-        /* Added by L60609 for MUX，2012-08-06,  End */
         else
         {
             return AT_FAILURE;
         }
         return AT_FAILURE;
     }
- /* Added by S62952 for IPV6, 2011-07-19, end */
 }
 
 
@@ -627,15 +594,11 @@ VOS_VOID  AT_DisplayResultData (
 )
 {
 
-    /* Added by L60609 for MUX，2012-08-06,  Begin */
     VOS_UINT32                          ulHsicUserFlg;
     VOS_UINT32                          ulMuxUserFlg;
-    /* Added by L60609 for MUX，2012-08-06,  End */
 
-    /* Added by L60609 for MUX，2012-08-06,  Begin */
     ulHsicUserFlg = AT_CheckHsicUser(ucIndex);
     ulMuxUserFlg  = AT_CheckMuxUser(ucIndex);
-    /* Added by L60609 for MUX，2012-08-06,  End */
 
     /*如果是数传状态，直接返回*/
     if (AT_DATA_START_STATE == gastAtClientTab[ucIndex].DataState)
@@ -667,13 +630,11 @@ VOS_VOID  AT_DisplayResultData (
     {
         DMS_COM_SEND(AT_PCUI2_PORT_NO, gstAtSendDataBuffer, usLen);
     }
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, begin */
     /*选择MODEM口*/
     else if (AT_MODEM_USER == gastAtClientTab[ucIndex].UserType)
     {
         AT_SendDataToModem(ucIndex, gstAtSendDataBuffer, usLen);
     }
-    /* Modified by s62952 for BalongV300R002 Build优化项目 2012-02-28, end */
     else if (AT_APP_USER == gastAtClientTab[ucIndex].UserType)
     {
         APP_VCOM_Send(gastAtClientTab[ucIndex].ucPortNo, gstAtSendDataBuffer, usLen);
@@ -693,17 +654,13 @@ VOS_VOID  AT_DisplayResultData (
     {
         AT_UART_SendDlData(ucIndex, gstAtSendDataBuffer, usLen);
     }
-    /* Modified by L60609 for MUX，2012-08-13,  Begin */
     else if(VOS_TRUE == ulHsicUserFlg)
-    /* Modified by L60609 for MUX，2012-08-13,  End */
     {
     }
-    /* Added by L60609 for MUX，2012-08-06,  Begin */
     else if (VOS_TRUE == ulMuxUserFlg)
     {
         AT_SendMuxResultData(ucIndex, gstAtSendDataBuffer, usLen);
     }
-    /* Added by L60609 for MUX，2012-08-06,  End */
     else
     {
         ;
@@ -719,17 +676,10 @@ VOS_VOID AT_DisplaySelResultData(
 )
 {
     VOS_UINT8                           ucLoop;
-    /* Added by L60609 for MUX，2012-08-06,  Begin */
     VOS_UINT32                          ulHsicUserFlg;
     VOS_UINT32                          ulMuxUserFlg;
-    /* Added by L60609 for MUX，2012-08-06,  End */
-
-    /* Added by L60609 for MUX，2012-08-06,  Begin */
     ulHsicUserFlg = AT_CheckHsicUser(ucIndex);
     ulMuxUserFlg  = AT_CheckMuxUser(ucIndex);
-    /* Added by L60609 for MUX，2012-08-06,  End */
-
-    /* Added by S62952 for IPV6, 2011-07-19, begin */
 
     if ( (AT_CMD_MODE == gastAtClientTab[ucIndex].Mode)
       || (AT_ONLINE_CMD_MODE == gastAtClientTab[ucIndex].Mode) )
@@ -764,51 +714,40 @@ VOS_VOID AT_DisplaySelResultData(
             /* 选择modem口 */
             if (1 == gucAtPortSel)
             {
-                /* Modified by S62952 for AT Project，2011-10-18,  Begin*/
                 AT_SendDataToModem(ucIndex, gstAtSendDataBuffer, usLen);
-                /* Modified by S62952 for AT Project，2011-10-18,  END*/
             }
         }
         else if (AT_APP_USER == gastAtClientTab[ucIndex].UserType)
         {
-            /* Modified by L60609 for AT Project，2011-10-18,  Begin*/
             APP_VCOM_Send(gastAtClientTab[ucIndex].ucPortNo, gstAtSendDataBuffer, usLen);
-            /* Modified by L60609 for AT Project，2011-10-18,  end*/
         }
         else if (AT_SOCK_USER == gastAtClientTab[ucIndex].UserType)
         {
             if (BSP_MODULE_SUPPORT == mdrv_misc_support_check(BSP_MODULE_TYPE_WIFI))
             {
-            /* Modified by L60609 for AT Project，2011-10-18,  Begin*/
                 mdrv_CPM_ComSend(CPM_AT_COMM, gstAtSendDataBuffer, VOS_NULL_PTR, usLen);
-            /* Modified by L60609 for AT Project，2011-10-18,  End*/
             }
         }
         else if (AT_NDIS_USER == gastAtClientTab[ucIndex].UserType)
         {
             DMS_COM_SEND(AT_NDIS_PORT_NO,gstAtSendDataBuffer, (VOS_UINT32)usLen);
         }
-        /* Modified by L60609 for MUX，2012-08-13,  Begin */
         else if (VOS_TRUE == ulHsicUserFlg)
-        /* Modified by L60609 for MUX，2012-08-13,  End */
         {
             /* 判断是否允许从该HSIC AT端口主动上报AT命令 */
             for (ucLoop = 0; ucLoop < AT_HSIC_AT_CHANNEL_MAX; ucLoop++)
             {
             }
         }
-        /* Added by L60609 for MUX，2012-08-06,  Begin */
         else if (VOS_TRUE == ulMuxUserFlg)
         {
             AT_SendMuxSelResultData(ucIndex, gstAtSendDataBuffer, usLen);
         }
-        /* Added by L60609 for MUX，2012-08-06,  End */
         else
         {
             ;
         }
     }
-    /* Added by S62952 for IPV6, 2011-07-19, end */
     return;
 }
 
@@ -830,9 +769,7 @@ VOS_VOID At_BufferorSendResultData(
     ulBufferLength = gstAtCombineSendData[ucIndex].usBufLen + usLength;
 
     /* 若缓冲区存储空间不够用则将当前已缓存信息输出 */
-    /* Modified by f62575 for SS FDN&Call Control, 2013-05-06, begin */
     if (ulBufferLength > AT_CMD_OUTPUT_MAX_LEN)
-    /* Modified by f62575 for SS FDN&Call Control, 2013-05-06, end */
     {
         At_SendResultData(ucIndex,
                           gstAtCombineSendData[ucIndex].aucBuffer,
@@ -881,9 +818,7 @@ VOS_VOID AT_SendBroadCastResultData(
 
     for (ucCount = 0; ucCount < AT_MAX_CLIENT_NUM; ucCount++ )
     {
-        /* Modified by l60609 for DSDA Phase III, 2013-2-21, Begin */
         pstAtClientCtx = AT_GetClientCtxAddr(ucCount);
-        /* Modified by l60609 for DSDA Phase III, 2013-2-21, End */
 
         /* 该端口未使用 */
         if (AT_CLIENT_NULL == gastAtClientTab[ucCount].ucUsed)
@@ -953,13 +888,11 @@ VOS_VOID At_SendResultData(
         /* 通过ucIndex获取端口类型 */
     AT_MNTN_TraceCmdResult(ucIndex, pData, usLen);
 
-    /* Modified by l60609 for DSDA Phase II, 2012-12-17, Begin */
     if (AT_IS_BROADCAST_CLIENT_INDEX(ucIndex))
     {
         AT_SendBroadCastResultData(ucIndex, pData, usLen);
         AT_MNTN_TraceRPTPORT();
     }
-    /* Modified by l60609 for DSDA Phase II, 2012-12-17, End */
     else
     {
         if (AT_MAX_CLIENT_NUM <= ucIndex)
@@ -991,25 +924,7 @@ VOS_VOID At_SendResultData(
     return;
 }
 
-/*****************************************************************************
- Prototype      : At_JudgeCombineCmdSubSequentProcess
- Description    : 根据命令的返回结果来判断后续命令的处理
-                  1.若后续无命令，则直接返回
-                  2.若返回结果为错误，但后续还有命令，则终止后续命令的处理，并做相应的
-                    清空操作
-                  3.若返回结果为正确，且后续还有命令，则继续执行后续命令
- Input          : ucIndex    --- 索引号
-                  ReturnCode --- 返回码
- Output         : TAF_UINT32
- Return Value   : ---
- Calls          : ---
- Called By      : At_FormatResultData
 
- History        : ---
-  1.Date        : 2009-05-30
-    Author      : L47619
-    Modification: Created function
-*****************************************************************************/
 TAF_UINT32  At_JudgeCombineCmdSubSequentProcess(TAF_UINT8 ucIndex, TAF_UINT32 ReturnCode)
 {
     /* 判读是否有未处理完成的命令 */
@@ -1682,10 +1597,7 @@ VOS_VOID At_ContinueSubCmd_AtVentireType(
         gstAtCombineSendData[ucIndex].usBufLen += usLength;
     }
 
-    /* Added by c64416 for AT Project 2011-10-20  Begin */
     AT_ParseCmdOver(ucIndex);
-    /* Added by c64416 for AT Project 2011-10-20  End*/
-
 }
 
 VOS_VOID At_FinishAllCmdOrAbortSubCmd_AtVBreviteType(
@@ -1791,9 +1703,7 @@ VOS_VOID At_ContinueSubCmd_AtVBreviteType(
         }
     }
 
-    /* Added by c64416 for AT Project 2011-10-20  Begin */
     AT_ParseCmdOver(ucIndex);
-    /* Added by c64416 for AT Project 2011-10-20  End*/
 }
 
 VOS_UINT32 At_ProcReturnCode(

@@ -32,5 +32,12 @@
 			model = "H28S7Q302BMR";
 			rev = "H202";
 		};
+
+		Hynix_03 {
+			compatible = "white";
+			manufacturer_id = <0x1AD>;
+			model = "H28S7Q302BMR";
+			rev = "H204";
+		};
 	};
 };

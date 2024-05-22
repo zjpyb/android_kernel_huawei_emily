@@ -1279,7 +1279,6 @@ VOS_VOID AT_ReadIpv6CapabilityNV( VOS_VOID )
     return;
 }
 
-/* Added by l60609 for V9R1 IPv6&TAF/SM Project, 2013-4-24, begin */
 
 VOS_VOID AT_ReadIpv6BackProcExtCauseNV(VOS_VOID)
 {
@@ -1350,7 +1349,6 @@ VOS_VOID AT_ReadIpv6AddrTestModeCfgNV(VOS_VOID)
     return;
 }
 
-/* Added by l60609 for V9R1 IPv6&TAF/SM Project, 2013-4-24, end */
 
 
 VOS_VOID AT_ReadSharePdpInfoNV(VOS_VOID)
@@ -1425,10 +1423,8 @@ VOS_VOID  AT_ReadPsNV(VOS_VOID)
     /* 读取IPV6能力的NV, 目前IPV6能力只能支持到IPV4V6_OVER_ONE_PDP */
     AT_ReadIpv6CapabilityNV();
 
-    /* Added by l60609 for V9R1 IPv6&TAF/SM Project, 2013-4-24, begin */
     /* 读取IPv6回退处理扩展原因值 */
     AT_ReadIpv6BackProcExtCauseNV();
-    /* Added by l60609 for V9R1 IPv6&TAF/SM Project, 2013-4-24, end */
 
     AT_ReadIpv6AddrTestModeCfgNV();
 
@@ -1938,7 +1934,7 @@ VOS_UINT32  At_PidInit(enum VOS_INIT_PHASE_DEFINE enPhase)
             At_RegisterExPrivateCmdTable();
             At_RegisterDeviceCmdTable();
             At_RegisterDeviceCmdTLTable();
-            At_RegisterTLCmdTable();                  /* ADDED by c64416 for V9R1/V7R1 AT, 2013/09/18 */
+            At_RegisterTLCmdTable();
             /* 装备初始化 */
             AT_InitDeviceCmd();
 

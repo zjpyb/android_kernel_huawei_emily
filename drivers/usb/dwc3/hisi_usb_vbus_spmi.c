@@ -23,14 +23,14 @@ static const struct usb_vbus_ops spmi_vbus_ops = {
 static int hisi_usb_spmi_vbus_probe(struct spmi_device *pdev)
 {
 	int ret;
-	printk(KERN_ERR "[%s]+\n", __func__);
+	pr_info("[%s]+\n", __func__);
 
 	ret = hisi_usb_vbus_request_irq(pdev, &spmi_vbus_ops);
 	if (ret) {
 		pr_err("usb spmi request irq failed: [%d] \n", ret);
 	}
 
-	printk(KERN_ERR "[%s]-\n", __func__);
+	pr_info("[%s]-\n", __func__);
 
 	return ret;
 }

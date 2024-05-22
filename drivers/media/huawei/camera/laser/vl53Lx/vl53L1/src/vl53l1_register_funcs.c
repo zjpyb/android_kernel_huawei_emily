@@ -330,7 +330,7 @@ VL53L1_Error VL53L1_i2c_encode_customer_nvm_managed(
 		2,
 		pbuffer +  15);
 	VL53L1_i2c_encode_int16_t(
-		pdata->algo__part_to_part_range_offset_mm & 0x1FFF,
+		(uint16_t)pdata->algo__part_to_part_range_offset_mm & 0x1FFF,
 		2,
 		pbuffer +  17);
 	VL53L1_i2c_encode_int16_t(

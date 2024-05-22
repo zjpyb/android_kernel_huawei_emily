@@ -1262,8 +1262,8 @@ oal_uint32  oal_mem_free_enhanced(
 
 #ifdef _PRE_DEBUG_MODE
     pst_mem->ul_alloc_core_id[pst_mem->uc_user_cnt - 1]    = 0;
-    pst_mem->ul_alloc_file_id[pst_mem->uc_user_cnt - 1]    = 0;
-    pst_mem->ul_alloc_line_num[pst_mem->uc_user_cnt - 1]   = 0;
+    pst_mem->ul_alloc_file_id[pst_mem->uc_user_cnt - 1]    = ul_file_id;
+    pst_mem->ul_alloc_line_num[pst_mem->uc_user_cnt - 1]   = ul_line_num;
     pst_mem->ul_alloc_time_stamp[pst_mem->uc_user_cnt - 1] = 0;
 #endif
 
@@ -1489,7 +1489,8 @@ oal_uint32  oal_mem_free(
                 oal_uint8     uc_lock)
 {
     oal_mem_stru   *pst_mem;
-    oal_uint32     ul_data;
+    oal_uint32      ul_data;
+    oal_uint32      ul_ret;
 
     if (OAL_UNLIKELY(OAL_PTR_NULL == p_data))
     {
@@ -1504,7 +1505,20 @@ oal_uint32  oal_mem_free(
         OAL_IO_PRINT("oal_mem_free mem covered 0x%x \n", ul_data);
         return OAL_FAIL;
     }
-    return oal_mem_free_enhanced(ul_file_id, ul_line_num, pst_mem, uc_lock);
+
+    ul_ret = oal_mem_free_enhanced(ul_file_id, ul_line_num, pst_mem, uc_lock);
+    if (OAL_UNLIKELY(ul_ret != OAL_SUCC))
+    {
+#if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
+        OAM_ERROR_LOG1(0, OAM_SF_ANY, "oal_mem_free failed, ul_ret %d", ul_ret);
+#ifdef _PRE_DEBUG_MODE
+        OAM_ERROR_LOG4(0, OAM_SF_ANY, "oal_mem_free failed, last free file_id %d, line_num %d, current free file_id %d, line_num %d",
+                            pst_mem->ul_alloc_file_id[0], pst_mem->ul_alloc_line_num[0], ul_file_id, ul_line_num);
+#endif
+#endif
+    }
+
+    return ul_ret;
 }
 
 

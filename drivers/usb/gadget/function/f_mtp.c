@@ -119,7 +119,7 @@ struct mtp_dev {
 	uint16_t xfer_command;
 	uint32_t xfer_transaction_id;
 	int xfer_result;
-	uint32_t bulk_buffer_size;
+	u32 bulk_buffer_size;
 };
 
 static struct usb_interface_descriptor mtp_interface_desc = {
@@ -512,7 +512,7 @@ static int mtp_create_bulk_endpoints(struct mtp_dev *dev,
 	for (i = 0; i < TX_REQ_MAX; i++) {
 		req = mtp_request_new(dev->ep_in, dev->bulk_buffer_size);
 		if (!req) {
-			printk("there is no %d buf,so we need alloc 16K\n",
+			pr_err("there is no %d buf,so we need alloc 16K\n",
 					dev->bulk_buffer_size);
 			dev->bulk_buffer_size = MTP_BULK_DEFAULT_BUFFER_SIZE;
 			req = mtp_request_new(dev->ep_in, dev->bulk_buffer_size);
@@ -525,7 +525,7 @@ static int mtp_create_bulk_endpoints(struct mtp_dev *dev,
 	for (i = 0; i < RX_REQ_MAX; i++) {
 		req = mtp_request_new(dev->ep_out, dev->bulk_buffer_size);
 		if (!req) {
-			printk("there is no %d buf,so we need alloc 16K\n",
+			pr_err("there is no %d buf,so we need alloc 16K\n",
 					dev->bulk_buffer_size);
 			dev->bulk_buffer_size = MTP_BULK_DEFAULT_BUFFER_SIZE;
 			req = mtp_request_new(dev->ep_out, dev->bulk_buffer_size);
@@ -577,7 +577,7 @@ static ssize_t mtp_read(struct file *fp, char __user *buf,
 	spin_lock_irq(&dev->lock);
 	if (dev->ep_out->desc) {
 		len = usb_ep_align_maybe(cdev->gadget, dev->ep_out, count);
-		if (len > MTP_BULK_BUFFER_SIZE) {
+		if (len > dev->bulk_buffer_size) {
 			spin_unlock_irq(&dev->lock);
 			return -EINVAL;
 		}
@@ -595,7 +595,7 @@ static ssize_t mtp_read(struct file *fp, char __user *buf,
 requeue_req:
 	/* queue a request */
 	req = dev->rx_req[0];
-	req->length = count;
+	req->length = len;
 	dev->rx_done = 0;
 	ret = usb_ep_queue(dev->ep_out, req, GFP_KERNEL);
 	if (ret < 0) {
@@ -751,7 +751,7 @@ static void send_file_work(struct work_struct *data)
 	loff_t offset;
 	int64_t count;
 	int ret;
-	unsigned xfer, hdr_size;
+	u32 xfer, hdr_size;
 	int r = 0;
 	int sendZLP = 0;
 
@@ -862,7 +862,7 @@ static void receive_file_work(struct work_struct *data)
 	struct usb_request *read_req = NULL, *write_req = NULL;
 	struct file *filp;
 	loff_t offset;
-	int64_t count;
+	int64_t count, len;
 	int ret, cur_buf = 0;
 	int r = 0;
 
@@ -885,8 +885,10 @@ static void receive_file_work(struct work_struct *data)
 			read_req = dev->rx_req[cur_buf];
 			cur_buf = (cur_buf + 1) % RX_REQ_MAX;
 
-			read_req->length = (count > dev->bulk_buffer_size
-					? dev->bulk_buffer_size : count);
+			len = usb_ep_align_maybe(cdev->gadget, dev->ep_out, count);
+			if (len > dev->bulk_buffer_size)
+				len = dev->bulk_buffer_size;
+			read_req->length = len;
 			dev->rx_done = 0;
 			ret = usb_ep_queue(dev->ep_out, read_req, GFP_KERNEL);
 			if (ret < 0) {
@@ -1283,7 +1285,7 @@ mtp_function_bind(struct usb_configuration *c, struct usb_function *f)
 		gadget_is_superspeed_plus(c->cdev->gadget) ? "super-plus" :
 		gadget_is_superspeed(c->cdev->gadget) ? "super" :
 		(gadget_is_dualspeed(c->cdev->gadget) ? "dual" : "full"),
-		f->name, dev->ep_in->name, dev->ep_out->name,dev->bulk_buffer_size);
+		f->name, dev->ep_in->name, dev->ep_out->name, dev->bulk_buffer_size);
 	return 0;
 }
 
@@ -1294,6 +1296,7 @@ mtp_function_unbind(struct usb_configuration *c, struct usb_function *f)
 	struct usb_request *req;
 	int i;
 
+	/* flush wq before unbind */
 	flush_workqueue(dev->wq);
 
 	mtp_string_defs[INTERFACE_STRING_INDEX].id = 0;
@@ -1490,7 +1493,6 @@ static void mtp_free_inst(struct usb_function_instance *fi)
 	fi_mtp = to_fi_mtp(fi);
 	kfree(fi_mtp->name);
 	mtp_cleanup();
-	kfree(fi_mtp->mtp_os_desc.group.default_groups);
 	kfree(fi_mtp);
 }
 
@@ -1511,8 +1513,6 @@ struct usb_function_instance *alloc_inst_mtp_ptp(bool mtp_config)
 	INIT_LIST_HEAD(&fi_mtp->mtp_os_desc.ext_prop);
 	descs[0] = &fi_mtp->mtp_os_desc;
 	names[0] = "MTP";
-	usb_os_desc_prepare_interf_dir(&fi_mtp->func_inst.group, 1,
-					descs, names, THIS_MODULE);
 
 	if (mtp_config) {
 		ret = mtp_setup_configfs(fi_mtp);
@@ -1526,6 +1526,8 @@ struct usb_function_instance *alloc_inst_mtp_ptp(bool mtp_config)
 
 	config_group_init_type_name(&fi_mtp->func_inst.group,
 					"", &mtp_func_type);
+	usb_os_desc_prepare_interf_dir(&fi_mtp->func_inst.group, 1,
+					descs, names, THIS_MODULE);
 
 	return  &fi_mtp->func_inst;
 }

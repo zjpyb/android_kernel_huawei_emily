@@ -55,6 +55,8 @@ struct fd_reg_array
 {
     uint32_t                                    length;
     uint32_t                                    *values;
+    uint32_t                                    img_share_fd;
+    uint32_t                                    ipu_share_fd;
 };
 
 /**
@@ -119,9 +121,19 @@ typedef struct _IPU_MAPS_va
     unsigned long tmeMap_va;
     unsigned long img_size_Y;
     unsigned long img_size_UV;
+    uint32_t      img_share_fd;
+    uint32_t      ipu_share_fd;
 } IO_IPU_MAPS_va;
 
 #define AHFD_SET_MASTER_VA             _IOW('v',  AHFD_BASE_IOC + 7, struct _IPU_MAPS_va)
+
+struct fd_ion_buffer_info
+{
+    int shared_fd;
+    unsigned long phys_addr;
+};
+
+#define AHFD_GET_ION_BUFFER            _IOWR('v',  AHFD_BASE_IOC + 8, struct fd_ion_buffer_info)
 
 #endif
 

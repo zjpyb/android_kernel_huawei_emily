@@ -108,7 +108,7 @@ static const char* sh_reset_reasons[] =
 	"SH_FAULT_REDETECT",
 	"SH_FAULT_PANIC",
 	"SH_FAULT_NOC",
-	"SH_FAULT_EXP_BOTTOM",
+	"SH_FAULT_EXP_BOTTOM", //also use as unknow dump
 };
 
 static int get_watchdog_base(void)
@@ -536,6 +536,19 @@ extern char* rdr_get_timestamp(void);
 #ifdef CONFIG_HISI_BB
 extern u64 rdr_get_tick(void);
 #endif
+
+static int get_dump_reason_idx(void)
+{
+	if (pConfigOnDDr->dump_config.reason >= ARRAY_SIZE(sh_reset_reasons))
+	{
+		return ARRAY_SIZE(sh_reset_reasons) - 1;
+	}
+	else
+	{
+		return pConfigOnDDr->dump_config.reason;
+	}
+}
+
 static int write_sh_dump_history(void)
 {
 	int ret = 0;
@@ -567,7 +580,7 @@ static int write_sh_dump_history(void)
 	//write history file
 	memset(buf, 0, HISTORY_LOG_SIZE);
 	snprintf(buf, HISTORY_LOG_SIZE, "reason [%s], [%02d], time [%s]\n",
-	     sh_reset_reasons[pConfigOnDDr->dump_config.reason], g_dump_index, date);
+	     sh_reset_reasons[get_dump_reason_idx()], g_dump_index, date);
 	sh_savebuf2fs(g_dump_dir, "history.log", buf, strlen(buf), 1);
 	return ret;
 }
@@ -603,7 +616,7 @@ static int write_sh_dump_file(void)
 	memset(path, 0, PATH_MAXLEN);
 	snprintf(path, PATH_MAXLEN, "sensorhub-%02d.dmp", g_dump_index);
 	hwlog_info("%s: write sensorhub dump  file %s\n", __func__, path);
-	hwlog_err("sensorhub recovery source is %s\n", sh_reset_reasons[pConfigOnDDr->dump_config.reason]);
+	hwlog_err("sensorhub recovery source is %s\n", sh_reset_reasons[get_dump_reason_idx()]);
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0))
 	flush_cache_all();
 #endif
@@ -660,6 +673,7 @@ static int rdr_sh_thread(void* arg)
 	            mdelay(1);
 	        }
 	        hwlog_warn(" ===========sensorhub dump finished==========\n");
+	        hwlog_warn("dump reason idx %d\n", pConfigOnDDr->dump_config.reason);
 	        //write to fs
 	        save_sh_dump_file();
 	        //free buff
@@ -871,11 +885,6 @@ static int sensorhub_panic_notify(struct notifier_block *nb, unsigned long actio
 
 int sensorhub_noc_notify(int value)
 {
-	if(value <= 1){
-	    hwlog_warn("%s :read err,no need recovery iomcu\n", __func__);
-	    return 0;
-	}
-
 	hwlog_warn("%s start\n", __func__);
 	iom3_need_recovery(SENSORHUB_MODID, SH_FAULT_NOC);
 	wait_for_completion(&sensorhub_rdr_completion);
@@ -1102,7 +1111,7 @@ int iom3_need_recovery(int modid, exp_source_t f)
 		if (g_enable_dump && g_dump_extend_size && !g_sensorhub_extend_dump_buff)
 		{
 			g_sensorhub_extend_dump_buff = kmalloc(g_dump_extend_size, GFP_KERNEL);
-			hwlog_warn("%s alloc pages logic %p phy addr %p\n", __func__, g_sensorhub_extend_dump_buff, (void *)virt_to_phys(g_sensorhub_extend_dump_buff));
+			hwlog_warn("%s alloc pages logic %pK phy addr %pK \n", __func__, g_sensorhub_extend_dump_buff, (void *)virt_to_phys(g_sensorhub_extend_dump_buff));
 
 			if (g_sensorhub_extend_dump_buff)
 			{

@@ -45,8 +45,10 @@ struct peri_volt_ops {
 struct peri_volt_poll {
 	const char			*name;
 	unsigned int		dev_id;
+	unsigned int		perivolt_avs_ip;
 	void __iomem		*addr;
 	void __iomem		*addr_0; /*lpmcu poll reg*/
+	void __iomem		*sysreg_base; /*lpmcu pmctrl reg*/
 	unsigned int		bitsmask;
 	unsigned int		bitsshift;
 	const struct peri_volt_ops   *ops;

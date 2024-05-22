@@ -38,6 +38,8 @@
 #define AIRPRESS_CALIDATA_NV_SIZE  4
 #define CAP_PROX_CALIDATA_NV_NUM  310
 #define CAP_PROX_CALIDATA_NV_SIZE  28
+#define TP_COLOR_NV_NUM 16
+#define TP_COLOR_NV_SIZE 15
 #define pinhole_para_size (10)
 #define TMD2745_PARA_SIZE (10)
 #define RPR531_PARA_SIZE (16)
@@ -45,6 +47,8 @@
 #define DEFAULT_TPLCD (0)
 #define LG_TPLCD (1)
 #define JDI_TPLCD (2)
+#define TRULY_TPLCD (2)
+#define MUTTO_TPLCD (3)
 
 #define WHITE	0xE1
 #define BLACK	0xD2
@@ -98,7 +102,7 @@ typedef struct _APDS9251_ALS_PARA_TABLE {
 	uint8_t phone_version;
 	uint8_t tp_lcd_manufacture;
 	uint8_t tp_color;
-	s16 apds251_para[21];	/*give to apds251 rgb sensor use,output lux and cct will use these par*/
+	s16 apds251_para[23];	/*give to apds251 rgb sensor use,output lux and cct will use these par*/
 } APDS9251_ALS_PARA_TABLE;	/*the apds251_para size must small SENSOR_PLATFORM_EXTEND_DATA_SIZE*/
 
 typedef struct _RPR531_ALS_PARA_TABLE{
@@ -375,6 +379,38 @@ struct ps_platform_data {
 	int threshold_value;
 	int rdata_under_sun;
 	uint8_t ps_extend_data[SENSOR_PLATFORM_EXTEND_DATA_SIZE];
+};
+
+struct ps_extend_platform_data {
+	uint8_t external_ir_mode_flag;
+	uint8_t external_ir_avg_algo;
+	int external_ir_calibrate_noise_max;
+	int external_ir_calibrate_noise_min;
+	int external_ir_calibrate_far_threshold_max;
+	int external_ir_calibrate_far_threshold_min;
+	int external_ir_calibrate_near_threshold_max;
+	int external_ir_calibrate_near_threshold_min;
+	int external_ir_calibrate_pwindows_max;
+	int external_ir_calibrate_pwindows_min;
+	int external_ir_calibrate_pwave_max;
+	int external_ir_calibrate_pwave_min;
+	int min_proximity_value;
+	int pwindows_value;
+	int pwave_value;
+	int threshold_value;
+};
+
+struct ps_external_ir_param {
+	int external_ir;
+	int internal_ir_min_proximity_value;
+	int external_ir_min_proximity_value;
+	int internal_ir_pwindows_value;
+	int external_ir_pwindows_value;
+	int internal_ir_pwave_value;
+	int external_ir_pwave_value;
+	int internal_ir_threshold_value;
+	int external_ir_threshold_value;
+	int external_ir_enable_gpio;
 };
 
 struct airpress_platform_data {

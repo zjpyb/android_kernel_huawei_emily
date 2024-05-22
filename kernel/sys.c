@@ -1190,10 +1190,6 @@ SYSCALL_DEFINE1(newuname, struct new_utsname __user *, name)
 		errno = -EFAULT;
 	if (!errno && override_architecture(name))
 		errno = -EFAULT;
-	if (!errno && is_compat_task() &&
-	    copy_to_user(name->machine, "armv7l", strlen("armv7l") + 1))
-		errno = -EFAULT;
-
 	return errno;
 }
 
@@ -2266,7 +2262,6 @@ SYSCALL_DEFINE5(prctl, int, option, unsigned long, arg2, unsigned long, arg3,
 		unsigned long, arg4, unsigned long, arg5)
 {
 	struct task_struct *me = current;
-	struct task_struct *tsk;
 	unsigned char comm[sizeof(me->comm)];
 	long error;
 
@@ -2415,26 +2410,6 @@ SYSCALL_DEFINE5(prctl, int, option, unsigned long, arg2, unsigned long, arg3,
 	case PR_GET_TID_ADDRESS:
 		error = prctl_get_tid_address(me, (int __user **)arg2);
 		break;
-	case PR_SET_TIMERSLACK_PID:
-		if (task_pid_vnr(current) != (pid_t)arg3 &&
-				!capable(CAP_SYS_NICE))
-			return -EPERM;
-		rcu_read_lock();
-		tsk = find_task_by_vpid((pid_t)arg3);
-		if (tsk == NULL) {
-			rcu_read_unlock();
-			return -EINVAL;
-		}
-		get_task_struct(tsk);
-		rcu_read_unlock();
-		if (arg2 <= 0)
-			tsk->timer_slack_ns =
-				tsk->default_timer_slack_ns;
-		else
-			tsk->timer_slack_ns = arg2;
-		put_task_struct(tsk);
-		error = 0;
-		break;
 	case PR_SET_CHILD_SUBREAPER:
 		me->signal->is_child_subreaper = !!arg2;
 		break;
@@ -2460,7 +2435,8 @@ SYSCALL_DEFINE5(prctl, int, option, unsigned long, arg2, unsigned long, arg3,
 	case PR_SET_THP_DISABLE:
 		if (arg3 || arg4 || arg5)
 			return -EINVAL;
-		down_write(&me->mm->mmap_sem);
+		if (down_write_killable(&me->mm->mmap_sem))
+			return -EINTR;
 		if (arg2)
 			me->mm->def_flags |= VM_NOHUGEPAGE;
 		else

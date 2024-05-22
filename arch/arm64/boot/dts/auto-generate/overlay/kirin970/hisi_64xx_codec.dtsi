@@ -48,7 +48,9 @@
 				hisilicon,hs_4_pole_max_voltage = <2650>;
 				hisilicon,btn_play_min_voltage = <0>;
 				hisilicon,btn_play_max_voltage = <100>;
-				hisilicon,btn_volume_up_min_voltage = <130>;
+				hisilicon,btn_voice_assistant_min_voltage = <110>;
+				hisilicon,btn_voice_assistant_max_voltage = <180>;
+				hisilicon,btn_volume_up_min_voltage = <181>;
 				hisilicon,btn_volume_up_max_voltage = <320>;
 				hisilicon,btn_volume_down_min_voltage = <320>;
 				hisilicon,btn_volume_down_max_voltage = <700>;

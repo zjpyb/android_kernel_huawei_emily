@@ -83,6 +83,8 @@ static void DataInit(struct gp2ap01vt00f_data *data);
 static void ReadRangeData(struct gp2ap01vt00f_data *data);
 static void gp2ap01vt00f_cancel_handler(struct gp2ap01vt00f_data *data);
 
+extern int memcpy_s(void *dest, size_t destMax, const void *src, size_t count);
+extern int strncpy_s(char *strDest, size_t destMax, const char *strSrc, size_t count);
 static int gp2ap01vt00f_i2c_read(u8 reg, unsigned char *rbuf, int len, struct i2c_client *client)
 {
     int err = -1;
@@ -304,11 +306,12 @@ static int gp2ap01vt00f_laser_get_data(struct gp2ap01vt00f_data *data,
 		void* p)
 {
     unsigned int rtncount = 80;
-    hwlaser_RangingData_L0_t rangeData;
+    hwlaser_RangingData_L0_t rangeData = {0};
     hwlaser_RangingData_t* udata = NULL;
 
     if(data ==NULL ||p==NULL)
         return -1;
+    rangeData.RangeDMaxMilliMeter = 0;
     udata = (hwlaser_RangingData_t*) p;
     rangeData.RangeMilliMeter = data->range_mm;
     rangeData.SignalRateRtnMegaCps = data->ret_sig;
@@ -322,7 +325,7 @@ static int gp2ap01vt00f_laser_get_data(struct gp2ap01vt00f_data *data,
         laser_info("laser debug: distance =%d, status=%d", data->range_mm, data->error_status);
     }
     data->fracount++;
-    memcpy(&(udata->u.dataL0), &rangeData, sizeof(hwlaser_RangingData_L0_t));
+    memcpy_s(&(udata->u.dataL0), sizeof(hwlaser_RangingData_L0_t), &rangeData, sizeof(hwlaser_RangingData_L0_t));
     udata->v.dataExtL0.SignalRtnCounts20ns = data->ret_sig2;
     return 0;
 }
@@ -488,8 +491,7 @@ static int32_t GP2AP01VT_approximate_sin(uint32_t range)
     } else {
         indx = 14;
     }
-    if(indx>14)
-        return 0;
+
     ret = coeffC * (coeffAB[indx][0] * rangeConvX + coeffAB[indx][1] + 5) /10 ;
     return ret;
 }
@@ -554,8 +556,7 @@ static int32_t GP2AP01VT_approximate_exp(uint32_t range)
     } else {
         indx = 16;
     }
-    if(indx > 16)
-        return 0;
+
     ret = (coeffAB[indx][0]*(int32_t)range + coeffAB[indx][1]) / 1000;
     if (ret < 0)
         ret = 0;
@@ -876,9 +877,6 @@ static void gp2ap01vt00f_int_work_func(struct work_struct *work)
     }    
     data = container_of((struct delayed_work *)work,
                                         struct gp2ap01vt00f_data, gp2ap01vt00f_int_work);
-    if (data == NULL) {
-        return;
-    }
 
     do_gettimeofday(&tv);
 
@@ -953,11 +951,12 @@ static int gp2ap01vt00f_laser_get_set_cal_data(struct gp2ap01vt00f_data* data, h
 static int gp2ap01vt00f_get_id(struct gp2ap01vt00f_data* data, hwlaser_status_t *laser_status)
 {
     int rc = -EINVAL;
+    char* laser_name = "gp2ap01vt";
     if(NULL == data || NULL == laser_status)
         return rc;
     laser_info("laser get chip id ioctl\n");
     if(data->init_flag == 1){
-        strncpy(laser_status->name, "gp2ap01vt", HWLASER_NAME_SIZE-1);
+        strncpy_s(laser_status->name, HWLASER_NAME_SIZE-1,laser_name, strlen(laser_name)+1);
         laser_status->status = 0;
     }else {
         laser_status->status = -1;
@@ -1086,8 +1085,8 @@ long gp2ap01vt00f_laser_ioctl(void *hw_data, unsigned int cmd, void  *p)
     switch (cmd) {
         case HWLASER_IOCTL_GET_INFO:
             pinfo = (hwlaser_info_t *)p;
-            strncpy(pinfo->name, "gp2ap01vt00f", HWLASER_NAME_SIZE-1);
-            strncpy(pinfo->product_name, "ALPS", HWLASER_NAME_SIZE-1);
+            strncpy_s(pinfo->name, HWLASER_NAME_SIZE-1, "gp2ap01vt00f", HWLASER_NAME_SIZE-1);
+            strncpy_s(pinfo->product_name, HWLASER_NAME_SIZE-1, "ALPS", HWLASER_NAME_SIZE-1);
             pinfo->version = HWLASER_SHARP_L0_VERSION;
             pinfo->ap_pos = HWLASER_POS_AP;
             break;

@@ -18,12 +18,15 @@
 #ifndef 	_LINUX_NVT_TOUCH_H
 #define		_LINUX_NVT_TOUCH_H
 
+#include <linux/spi/spi.h>
 #include <linux/i2c.h>
 #include <linux/input.h>
 
 #ifdef CONFIG_HAS_EARLYSUSPEND
 #include <linux/earlysuspend.h>
 #endif
+
+#include "nt36xxx_mem_map.h"
 #include "../../huawei_ts_kit.h"
 //---GPIO number---
 #define NVTTOUCH_RST_PIN 980
@@ -52,7 +55,7 @@
 
 //---Touch info.---
 #define TOUCH_MAX_WIDTH 1080
-#define TOUCH_MAX_HEIGHT 1920
+#define TOUCH_MAX_HEIGHT 2310
 #define TOUCH_MAX_FINGER_NUM 10
 #define TOUCH_KEY_NUM 0
 #define ONE_SIZE 1
@@ -67,6 +70,11 @@ extern const uint16_t touch_key_array[TOUCH_KEY_NUM];
 
 #define BOOT_UPDATE_FIRMWARE 0
 #define BOOT_UPDATE_FIRMWARE_NAME "novatek_ts_fw.bin"
+#define NOVATEK_FW_MANUAL_UPDATE_FILE_NAME	"ts/touch_screen_firmware.bin"
+#define NOVATEK_MP_MANUAL_UPDATE_FILE_NAME	"ts/touch_screen_mp.bin"
+
+//---ESD Protect.---
+#define NVT_TOUCH_WDT_RECOVERY 1
 
 #define PROJECT_ID_LEN 9
 #define SUSPEND_CMD_BUF_SIZE	2
@@ -78,7 +86,8 @@ struct nvt_ts_data {
 	struct platform_device *ts_dev;
 	struct regulator *tp_vci;
 	struct regulator *tp_vddio;
-	
+	char fw_name[MAX_STR_LEN * 4];
+	char fw_name_mp[MAX_STR_LEN * 4];
 #ifndef CONFIG_OF
 	struct iomux_block *tp_gpio_block;
 	struct block_config *tp_gpio_block_config;
@@ -87,9 +96,9 @@ struct nvt_ts_data {
 	struct pinctrl_state *pins_default;
 	struct pinctrl_state *pins_idle;
 #endif
-	struct mutex i2c_mutex;
-	struct mutex mp_mutex;
+	struct mutex bus_mutex;
 	struct i2c_client *client;
+	struct spi_device *spi;
 	struct input_dev *input_dev;
 	struct work_struct nvt_work;
 	struct delayed_work nvt_fwu_work;
@@ -109,6 +118,7 @@ struct nvt_ts_data {
 	uint32_t irq_flags;
 	int32_t reset_gpio;
 	uint32_t support_aft;
+	uint32_t wx_support;
 	uint32_t reset_flags;
 	int32_t disp_rst_gpio;
 	uint32_t disp_rst_flags;
@@ -121,6 +131,8 @@ struct nvt_ts_data {
 	uint32_t i2c_retry_time;
 	bool criteria_threshold_flag;
 	bool nvttddi_channel_flag;
+	uint32_t *IC_X_CFG_SIZE;
+	uint32_t *IC_Y_CFG_SIZE;
 	uint32_t *NvtTddi_X_Channel;
 	uint32_t *NvtTddi_Y_Channel;
 	uint32_t *PS_Config_Lmt_FW_CC_P;
@@ -138,13 +150,23 @@ struct nvt_ts_data {
 	uint32_t *PS_Config_Lmt_Open_Rawdata_N_A;
 	uint32_t *NVT_TDDI_AIN_X;
 	uint32_t *NVT_TDDI_AIN_Y;
+	struct mutex lock;
 	struct nvt_ts_mem_map *mmap;
 	uint8_t carrier_system;
+	uint8_t rbuf[1025];
 	uint8_t power_sleep_mode;
 	uint32_t nvt_chip_id_partone;
 	uint32_t nvt_chip_id_parttwo;
 	uint32_t nvt_chip_id_partthree;
 	bool gesture_module;
+	const char *default_project_id;
+	int use_dma_download_firmware;
+	int use_pinctrl;
+	int tp_status_report_support;
+	uint16_t abnormal_status;
+	int in_suspend;
+	int rawdate_pointer_to_pointer;
+	enum ts_bus_type btype;
 };
 
 #if NVT_TOUCH_PROC
@@ -154,45 +176,40 @@ struct nvt_flash_data{
 };
 #endif
 
-struct nvt_ts_mem_map {
-	uint32_t EVENT_BUF_ADDR;
-	uint32_t RAW_PIPE0_ADDR;
-	uint32_t RAW_PIPE0_Q_ADDR;
-	uint32_t RAW_PIPE1_ADDR;
-	uint32_t RAW_PIPE1_Q_ADDR;
-	uint32_t BASELINE_ADDR;
-	uint32_t BASELINE_Q_ADDR;
-	uint32_t BASELINE_BTN_ADDR;
-	uint32_t BASELINE_BTN_Q_ADDR;
-	uint32_t DIFF_PIPE0_ADDR;
-	uint32_t DIFF_PIPE0_Q_ADDR;
-	uint32_t DIFF_PIPE1_ADDR;
-	uint32_t DIFF_PIPE1_Q_ADDR;
-	uint32_t RAW_BTN_PIPE0_ADDR;
-	uint32_t RAW_BTN_PIPE0_Q_ADDR;
-	uint32_t RAW_BTN_PIPE1_ADDR;
-	uint32_t RAW_BTN_PIPE1_Q_ADDR;
-	uint32_t DIFF_BTN_PIPE0_ADDR;
-	uint32_t DIFF_BTN_PIPE0_Q_ADDR;
-	uint32_t DIFF_BTN_PIPE1_ADDR;
-	uint32_t DIFF_BTN_PIPE1_Q_ADDR;
-	uint32_t READ_FLASH_CHECKSUM_ADDR;
-	uint32_t RW_FLASH_DATA_ADDR;
-};
-
-
 typedef enum {
 	RESET_STATE_INIT = 0xA0,// IC reset
 	RESET_STATE_REK,		// ReK baseline
 	RESET_STATE_REK_FINISH,	// baseline is ready
-	RESET_STATE_NORMAL_RUN	// normal run
+	RESET_STATE_NORMAL_RUN,	// normal run
+	RESET_STATE_MAX  = 0xAF
 } RST_COMPLETE_STATE;
+
+typedef enum {
+    EVENT_MAP_HOST_CMD                      = 0x50,
+    EVENT_MAP_HANDSHAKING_or_SUB_CMD_BYTE   = 0x51,
+    EVENT_MAP_RESET_COMPLETE                = 0x60,
+    EVENT_MAP_FWINFO                        = 0x78,
+    EVENT_MAP_PROJECTID                     = 0x9A,
+} SPI_EVENT_MAP;
+
+//---SPI READ/WRITE---
+#define SPI_WRITE_MASK(a)	(a | 0x80)
+#define SPI_READ_MASK(a)	(a & 0x7F)
+
+#define DUMMY_BYTES (1)
+#define NVT_TANSFER_LEN		(PAGE_SIZE << 4)
+
+typedef enum {
+	NVTWRITE = 0,
+	NVTREAD  = 1
+} NVT_SPI_RW;
+
 #define LOW_EIGHT_BITS(x)			((x)&0xFF)
 #define MIDDLE_EIGHT_BITS(x)		(((x)&0xFF00)>>8)
 #define HIGHT_EIGHT_BITS(x)			(((x)&0xFF0000)>>16)
 #define NVTTDDI_ERR	-1
-#define  IC_X_CFG_SIZE	18
-#define  IC_Y_CFG_SIZE	32
+#define NVTTDDI_IC_X_CFG_SIZE	18
+#define NVTTDDI_IC_Y_CFG_SIZE	32
 #define NVT_TDDI_IC_ARRAY_SIZE	40
 #define NVTTDDI_X_CHANNEL_NUM	18
 #define NVTTDDI_Y_CHANNEL_NUM	30
@@ -233,4 +250,54 @@ typedef enum {
 #define FLAG_EXIST	1
 #define U8_MIN		0
 #define U8_MAX		0xFF
+enum {
+	BIT0_GND_CONNECTION = 0,
+	BIT1_TX_SNS_CH,
+	BIT2_RX_SNS_CH,
+	BIT3_PIXEL_SNS,
+	BIT4_DISPLAY_NOISE,
+	BIT5_CHARGER_NOISE,
+	BIT6_CHARGER_NOISE_HOP,
+	BIT7_CHARGER_NOISE_EX,
+	BIT8_SELF_CAP_NOISE,
+	BIT9_MUTUAL_CAP_NOISE,
+	BIT10_HIGH_TEMP,
+	BIT11_LOW_TEMP,
+	BIT12_LARGE_BENDING,
+	BIT13_RESERVED,
+	BIT14_RESERVED,
+	BIT15_RESERVED,
+	BIT_MAX,
+};
+
+struct dmd_report_charger_status{
+	int charge_CHARGER_NOISE_HOP;
+	int charge_CHARGER_NOISE_EX;
+};
+struct tp_status_and_count{
+	int bit_status;
+	unsigned int bit_count;
+};
+
+//---extern functions---
+int32_t novatek_ts_kit_read(uint16_t i2c_addr, uint8_t *buf, uint16_t len);
+int32_t novatek_ts_kit_write(uint16_t i2c_addr, uint8_t *buf, uint16_t len);
+void nvt_kit_bootloader_reset(void);
+void nvt_kit_sw_reset(void);
+void nvt_kit_sw_reset_idle(void);
+void nvt_boot_ready(void);
+void nvt_bld_crc_enable(void);
+void nvt_fw_crc_enable(void);
+int32_t nvt_kit_check_fw_reset_state(RST_COMPLETE_STATE check_reset_state);
+int8_t nvt_kit_get_fw_info(void);
+int32_t nvt_kit_clear_fw_status(void);
+int32_t nvt_kit_check_fw_status(void);
+
+int32_t nvt_set_page(uint32_t addr);
+int32_t nvt_write_addr(uint32_t addr, uint8_t data);
+
+int32_t nvt_kit_fw_update_boot(char *file_name);
+int32_t nvt_kit_fw_update_boot_spi(char *file_name);
+void Boot_Update_Firmware(struct work_struct *work);
+
 #endif /* _LINUX_NVT_TOUCH_H */

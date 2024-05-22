@@ -30,7 +30,7 @@ int tcpm_shutdown(struct tcpc_device *tcpc_dev)
 		tcpci_disable_vbus_control(tcpc_dev);
 #endif	/* CONFIG_TCPC_SHUTDOWN_VBUS_DISABLE */
 
-	if (tcpc_dev->ops->deinit)
+	if (tcpc_dev->ops->deinit && tcpc_dev->pd_port.pd_connected)
 		tcpc_dev->ops->deinit(tcpc_dev);
 
 	return 0;
@@ -498,6 +498,28 @@ int tcpm_get_sink_cap(
 }
 EXPORT_SYMBOL(tcpm_get_sink_cap);
 
+int tcpm_get_local_sink_cap(
+	struct tcpc_device *tcpc_dev, struct local_sink_cap *cap)
+{
+	int i;
+	pd_port_t *pd_port = &tcpc_dev->pd_port;
+	pd_port_power_caps *snk_cap = &pd_port->local_snk_cap;
+	struct dpm_pdo_info_t sink;
+
+	if (!pd_port->pd_prev_connected)
+		return TCPM_ERROR_NO_PD_CONNECTED;
+
+	for(i = 0; i < snk_cap->nr; i++) {
+		dpm_extract_pdo_info(snk_cap->pdos[i], &sink);
+		cap[i].mv = sink.vmin;
+		cap[i].ma = sink.ma;
+		cap[i].uw = sink.uw;
+	}
+
+	return TCPM_SUCCESS;
+}
+EXPORT_SYMBOL(tcpm_get_local_sink_cap);
+
 int tcpm_bist_cm2(struct tcpc_device *tcpc_dev)
 {
 	bool ret;
@@ -767,5 +789,14 @@ int tcpm_notify_vbus_stable(
 }
 EXPORT_SYMBOL(tcpm_notify_vbus_stable);
 
+#ifdef CONFIG_POGO_PIN
+int tcpm_typec_disable_function(
+        struct tcpc_device *tcpc_dev, bool disable)
+{
+	if (disable)
+		return tcpc_typec_disable(tcpc_dev);
 
+	return tcpc_typec_enable(tcpc_dev);
+}
+#endif
 #endif /* CONFIG_USB_POWER_DELIVERY */

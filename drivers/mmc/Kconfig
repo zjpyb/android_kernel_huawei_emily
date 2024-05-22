@@ -41,8 +41,8 @@ config HISI_MMC_SECURE_RPMB
          HMAC calucation will be done in secure wolrd.
 
 config HISI_RPMB_TIME_DEBUG
-		bool "HISI STORAGE RPMB TIME DEBUG"
-		help
+	bool "HISI STORAGE RPMB TIME DEBUG"
+	help
          Enable HISI STORAGE RPMB TIME DEGUG.
 
 config HISI_MMC_FLUSH_REDUCE
@@ -60,11 +60,11 @@ config HISI_MMC_FLUSH_REDUCE_WHITE_LIST
 	   Enable this config will enfore white list check on eMMC devices for flush reduce
 
 config HISI_MMC_MANUAL_BKOPS
-    bool "MMC manual BKOPS support"
-    depends on HISI_MANUAL_BKOPS
-    default n
-    help
-     MMC manual BKOPS support
+	bool "MMC manual BKOPS support"
+	depends on HISI_BK_OPS
+	default n
+	help
+	 MMC manual BKOPS support
 
  config HUAWEI_SDCARD_DSM
 	bool "Listen sdcard kernel err"

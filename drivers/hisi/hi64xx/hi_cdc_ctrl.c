@@ -559,7 +559,10 @@ void hi_cdcctrl_pm_get(void)
 {
 	int pm_ret = 0;
 
-	BUG_ON(cdc_ctrl_priv == NULL);
+	if (!cdc_ctrl_priv) {
+		pr_err("[%s:%d] cdc ctrl priv is null\n", __FUNCTION__, __LINE__);
+		return;
+	}
 
 	if (cdc_ctrl_priv->cdc_ctrl.pm_runtime_support) {
 		pm_ret = pm_runtime_get_sync(cdc_ctrl_priv->cdc_ctrl.dev);
@@ -573,7 +576,10 @@ EXPORT_SYMBOL(hi_cdcctrl_pm_get);
 
 void hi_cdcctrl_pm_put(void)
 {
-	BUG_ON(cdc_ctrl_priv == NULL);
+	if (!cdc_ctrl_priv) {
+		pr_err("[%s:%d] cdc ctrl priv is null\n", __FUNCTION__, __LINE__);
+		return;
+	}
 
 	if (cdc_ctrl_priv->cdc_ctrl.pm_runtime_support) {
 		pm_runtime_mark_last_busy(cdc_ctrl_priv->cdc_ctrl.dev);

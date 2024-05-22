@@ -52,6 +52,8 @@
 #include <linux/of_gpio.h>
 #endif
 
+#define HX_ERR -1
+#define POWER_TYPE_GPIO 0
 #define HIMAX_DRIVER_VER "0.0.12.0"
 
 #define HIMAX_CORE_NAME "Himax852x"
@@ -65,7 +67,8 @@
 #define MODULE_NAME "auo"
 #define PRODUCE_ID "CHOP41170"
 
-#define HX_FW_NAME "chopin_hx8529f_auo_fw.bin"
+#define HX_FW_NAME_HX8529F "chopin_hx8529f_auo_fw.bin"
+#define HX_FW_NAME_HX852X "ts/touch_screen_firmware.bin"
 #define HX_FW_SNIFF ".bin"
 
 #define HX_HAND_SHAKING_READ_MAX_SIZE 	1
@@ -103,6 +106,27 @@
 #define GPIO_1V8_DISABLE 0
 #define HW_RST_FLAT_ENABLE 1
 
+#define SHIFT_ONE_BYTE	8
+#define SHIFT_TWO_BYTE	16
+#define SHIFT_THREE_BYTE	24
+#define HX_MASK_VALUE 0x000000FF
+
+#define TS_WAKE_LOCK_TIMEOUT 5*HZ
+#define DOUBLE_CLICK_WAKEUP  		(0x80)
+#define SPECIFIC_LETTER_W  			(0x0b)
+#define SPECIFIC_LETTER_M			(0x07)
+#define SPECIFIC_LETTER_E			(0x0c)
+#define SPECIFIC_LETTER_C 			(0x05)
+#define LETTER_LOCUS_NUM 	6
+#define LINEAR_LOCUS_NUM 	2
+#define GEST_PTLG_ID_LEN    	4
+#define GEST_PTLG_HDR_LEN  	4
+#define GEST_PTLG_HDR_ID1   			 0xCC
+#define GEST_PTLG_HDR_ID2   			 0x44
+#define GEST_PT_MAX_NUM     			 128
+#define IS_APP_ENABLE_GESTURE(x)  ((u32)(1<<x))
+
+
 enum himax_hand_shaking_result{
 	HX_HAND_SHAKING_RUNNING=0,
 	HX_HAND_SHAKING_STOP,
@@ -118,10 +142,17 @@ enum himax_HW_reset_eunm{
 	HX_INT_EN=true,
 	HX_INT_DISABLE=false,
 };
+#define HX_SELFTEST_EN	1
+#define HX_SELFTEST_DIS		0
+#define CHK_FC_FLG_SET		1
+#define CHK_FC_FLG_RLS		0
+#define CRC_PASS_WD			0
+#define MAX_RAW_VAL			255
 #define HX_SLEEP_5S			5000
 #define HX_SLEEP_3S			3000
 #define HX_SLEEP_1S			1000
 #define HX_SLEEP_2S			2000
+#define HX_SLEEP_500MS		500
 #define HX_SLEEP_200MS		200
 #define HX_SLEEP_120MS		120
 #define HX_SLEEP_100MS		100
@@ -154,6 +185,7 @@ enum himax_HW_reset_eunm{
 #define	HX_REG_CLOSE_FLASH_RELOAD	0x9B
 #define	HX_REG_FLASH_MODE			0xF4
 #define	HX_REG_FLASH_MANUAL_MODE	0x42
+#define	HX852XES_REG_FLASH_MANUAL_MODE	0x35
 #define	HX_REG_FLASH_MANUAL_ON		0x01
 #define	HX_REG_FLASH_MANUAL_OFF		0x00
 #define	HX_REG_SET_FLASH_EN			0x43//HX_REG_SET_FLASH_EN
@@ -179,6 +211,9 @@ R44:
 #define	HX_REG_FLASH_CRC_SEL		0x94
 #define	HX_REG_SET_OSC_4_PUMP		0xa6
 
+#define	HX8527_RX_NUM				14
+#define	HX8527_TX_NUM	 			29
+#define	HX8527_MAX_PT				10
 
 #define	HX8529_RX_NUM				38
 #define	HX8529_TX_NUM	 			24
@@ -234,6 +269,9 @@ R44:
 
 #define SHIFTBITS 5
 #define FLASH_SIZE 65536
+
+#define FW_UPDATE_BOOT	0
+#define FW_UPDATE_SD	1
 
 #ifdef CONFIG_HUAWEI_DSM
 
@@ -366,11 +404,16 @@ struct himax_ts_data {
 	int (*power)(int on);
 	int pre_finger_data[10][2];
 
+	int power_support;
+	int power_type_sel;
+
 	struct device *dev;
 	struct input_dev *input_dev;
 	struct himax_i2c_platform_data *pdata;
 	struct himax_virtual_key *button;
 	struct wake_lock ts_flash_wake_lock;
+	struct regulator *vddd;
+	struct regulator *vdda;
 
 #if defined(CONFIG_FB)
 	struct notifier_block fb_notif;
@@ -396,8 +439,8 @@ struct himax_ts_data {
 	struct ts_kit_device_data *tskit_himax_data;
 	struct platform_device *ts_dev;
 //===raw data
-	struct workqueue_struct *himax_wq;
-	struct work_struct work;
+	struct workqueue_struct *hx_raw_wq;
+	struct work_struct hx_raw_work;
 	struct hrtimer timer;
 //========
 	int rst_gpio;
@@ -406,6 +449,7 @@ struct himax_ts_data {
 	uint8_t support_get_tp_color;/*for tp color */
 
 	bool firmware_updating;
+	uint32_t p2p_test_sel;
 };
 
 struct himax_touching_data
@@ -494,7 +538,7 @@ enum himax_event_id {
 	extern void setFlashBuffer(void);
 	extern void freeFlashBuffer(void);
 	extern void setSysOperation(uint8_t operation);
-	extern void himax_ts_flash_work_func(struct work_struct *work);
+	extern void (*himax_ts_flash_work_func)(struct work_struct *work);
 #endif
 
 #endif
@@ -551,7 +595,7 @@ extern uint8_t HW_RESET_ACTIVATE;
 extern int i_update_FW(void);
 extern int himax_touch_sysfs_init(void);
 extern void himax_touch_sysfs_deinit(void);
-extern int himax_lock_flash(int enable);
+extern int (*himax_lock_flash)(int enable);
 extern int PowerOnSeq(struct himax_ts_data *ts);
 extern int himax_power_on_initCMD(void);
 
@@ -559,11 +603,12 @@ extern int himax_power_on_initCMD(void);
 extern int himax_hand_shaking(void);
 extern int himax_loadSensorConfig(void); ////need after reset
 extern int himax_input_register(struct himax_ts_data *ts);
-extern int fts_ctpm_fw_upgrade_with_fs(const unsigned char *fw, int len, bool change_iref);
-extern uint8_t himax_calculateChecksum(bool change_iref);    //need use FW_VER_MAJ_FLASH_ADDR
+extern int (*fts_ctpm_fw_upgrade_with_fs)(const unsigned char *fw, int len, bool change_iref);
+extern uint8_t (*himax_calculateChecksum)(bool change_iref);    //need use FW_VER_MAJ_FLASH_ADDR
 extern irqreturn_t himax_ts_thread(int irq, void *ptr);
 //used in factory test
 extern int himax_chip_self_test(void);
+extern void himax_get_rawdata_work(void);
 #ifdef CONFIG_HUAWEI_DSM
 extern int hmx_tp_report_dsm_err(int type, int err_numb);
 #endif

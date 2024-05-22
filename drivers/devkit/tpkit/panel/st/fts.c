@@ -102,6 +102,7 @@ extern struct ts_tui_data tee_tui_data;
 #define STATUS_FINGER_MODE 1
 #define BUFF_SEEK_BIT 1 //for buf[0] is real size
 
+int check_MutualRawResGap(void);
 struct fts_ts_info* fts_get_info(void)
 {
 	return fts_info;
@@ -156,8 +157,8 @@ static void st_set_event_to_fingers(struct fts_ts_info *info, int x, int y, int 
 {
 	struct ts_fingers *f_info = info->fingers_info;
 
-	TS_LOG_DEBUG("%s: x:%d, y:%d, z:%d, status:%d, touchId:%u, touchcount:%u\n",
-		__func__, x, y, pressure, status, touchId, touchcount);
+	TS_LOG_DEBUG("%s: z:%d, status:%d, touchId:%u, touchcount:%u\n",
+		__func__, pressure, status, touchId, touchcount);
 
 	if (touchId <= 0 || touchId >= 10){
 		touchId = 0;
@@ -1700,10 +1701,16 @@ static int fts_set_gpio(struct fts_ts_info *info) {
 static int st_calibrate(void)
 {
 	int ret = 0;
+	int i =0 ;
+	int reval = 0;
+	struct fts_ts_info *info = fts_get_info();
+	info->check_MutualRawGap_after_callibrate = FTS_TRUE;
+repeat:
 	/* inval is calibrate times and etc. msg */
 	ret = fts_system_reset();
 	if (ret < 0) {
 		TS_LOG_ERR("%s system reset fail\n", __func__);
+		info->check_MutualRawGap_after_callibrate = FTS_FALSE;
 		return ret;
 	}
 
@@ -1722,6 +1729,16 @@ static int st_calibrate(void)
 		TS_LOG_ERR("Cannot initialize the hardware device after st_calibration\n");
 	}
 
+	TS_LOG_INFO("%s:touch calibrate times :%d\n", __func__,i);
+	reval = check_MutualRawResGap();
+	if(reval){
+		if(i < 3){
+			i++;
+			goto repeat;
+		}
+	}
+
+	info->check_MutualRawGap_after_callibrate = FTS_FALSE;
 	return ret;
 }
 
@@ -2641,6 +2658,8 @@ static int st_get_testdata(struct ts_rawdata_info *info, struct ts_cmd_node *out
 	st_get_rawdata_aftertest(info,INIT_MP);
 	retval |= cleanUp(0);					//system reset
 	retval |= fts_mode_handler(fts_info, 0);			//enable the features and the sensing
+        msleep(500);
+	TS_LOG_INFO("%s:MS RAW DATA TESTsleep 500ms\n",__func__);
         retval |= fts_enable_force_key();                       //enable forcekey,because  fingerprint need this function in mmi
 	retval |= fts_enableInterrupt();
 	if (retval<0) {
@@ -2648,6 +2667,29 @@ static int st_get_testdata(struct ts_rawdata_info *info, struct ts_cmd_node *out
 		return retval;
 	}
 	return NO_ERR;
+}
+
+int check_MutualRawResGap(void)
+{
+	int ret = 0;
+	struct ts_rawdata_info *info = NULL;
+	info = (struct ts_rawdata_info *)vmalloc(sizeof(struct ts_rawdata_info));
+	if(!info){
+		TS_LOG_ERR(" %s:kzalloc failed\n", __func__);
+		return -ENOMEM;
+	}
+	memset(info, 0,sizeof(struct ts_rawdata_info) );
+	ret = st_get_testdata(info,NULL);
+	TS_LOG_INFO(" %s: %s\n", __func__,info->result);
+	if(strstr(info->result ,"-2F")){
+		TS_LOG_ERR("%s: check rawgap failed !\n", __func__);
+		ret = -EINVAL;
+	}
+	if(info){
+		vfree(info);
+		info = NULL;
+	}
+	return  ret;
 }
 
 

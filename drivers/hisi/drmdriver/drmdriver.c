@@ -25,8 +25,12 @@
  * data_len--the buffer size, unit is Bytes
  * sub_fun_id--the sub function id, started by 0x55bbcce0, the index increase one by one
 */
-noinline int atfd_hisi_service_access_register_smc(u64 main_fun_id, u64 buff_addr_phy, u64 data_len, u64 sub_fun_id)
+noinline int atfd_hisi_service_access_register_smc(u64 _main_fun_id, u64 _buff_addr_phy, u64 _data_len, u64 _sub_fun_id)
 {
+    register u64 main_fun_id asm("x0") = _main_fun_id;
+    register u64 buff_addr_phy asm("x1") = _buff_addr_phy;
+    register u64 data_len asm("x2") = _data_len;
+    register u64 sub_fun_id asm("x3") = _sub_fun_id;
     asm volatile(
             __asmeq("%0", "x0")
             __asmeq("%1", "x1")

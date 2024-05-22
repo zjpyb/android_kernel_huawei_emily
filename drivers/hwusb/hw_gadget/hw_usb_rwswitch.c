@@ -164,8 +164,10 @@ DEPENDENCIES : NA
 =========================================================================*/
 int hw_usb_port_mode_get(void)
 {
+	pr_info("current port_mode is %d\n",port_mode);
 	return port_mode;
 }
+EXPORT_SYMBOL(hw_usb_port_mode_get);
 
 static ssize_t switch_index_show(struct device *pdev, struct device_attribute *attr,
 			   char *buf)

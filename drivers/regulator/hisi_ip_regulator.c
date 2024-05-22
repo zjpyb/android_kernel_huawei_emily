@@ -112,6 +112,43 @@ enum ip_regulator_id {
 	ASP_ID,
 	ICS2_ID,
 };
+#elif defined CONFIG_PHOE_IP_PLATFORM
+enum ip_regulator_id {
+	MEDIA1_SUBSYS_ID = 0,
+	MEDIA2_SUBSYS_ID,
+	VIVOBUS_ID,
+	VCODECSUBSYS_ID,
+	DSSSUBSYS_ID,
+	ISPSUBSYS_ID,
+	IVP_ID,
+	VDEC_ID,
+	VENC_ID,
+	ICS_ID,
+	ISP_R8_ID,
+	G3D_ID,
+	ASP_ID,
+	NPU_ID,
+	VENC2_ID,
+	HIFACE_ID,
+};
+#elif defined CONFIG_IP_PLATFORM_COMMON
+enum ip_regulator_id {
+	MEDIA1_SUBSYS_ID = 0,
+	MEDIA2_SUBSYS_ID,
+	VIVOBUS_ID,
+	VCODECSUBSYS_ID,
+	DSSSUBSYS_ID,
+	ISPSUBSYS_ID,
+	IVP_ID,
+	VDEC_ID,
+	VENC_ID,
+	ISP_R8_ID,
+	ASP_ID,
+	G3D_ID,
+	ICS_ID,
+	ICS2_ID,
+	NPU_ID,
+};
 #else
 enum ip_regulator_id {
 	VIVOBUS_ID = 0,
@@ -166,12 +203,12 @@ struct hisi_regulator_ip {
 #ifdef CONFIG_HISI_NOC_HI3650_PLATFORM
 	const char *noc_node_name;
 #endif
-#if defined (CONFIG_BOST_IP_PLATFORM) || defined(CONFIG_MIA_IP_PLATFORM) || defined(CONFIG_ATLA_IP_PLATFORM)
+#if defined (CONFIG_BOST_IP_PLATFORM) || defined(CONFIG_MIA_IP_PLATFORM) || defined(CONFIG_ATLA_IP_PLATFORM) || defined(CONFIG_PHOE_IP_PLATFORM) || defined(CONFIG_IP_PLATFORM_COMMON)
 	u32 dss_boot_check[2];
 #endif
 };
 
-#if defined (CONFIG_BOST_IP_PLATFORM) || defined(CONFIG_MIA_IP_PLATFORM) || defined(CONFIG_ATLA_IP_PLATFORM)
+#if defined (CONFIG_BOST_IP_PLATFORM) || defined(CONFIG_MIA_IP_PLATFORM) || defined(CONFIG_ATLA_IP_PLATFORM) || defined(CONFIG_PHOE_IP_PLATFORM) || defined(CONFIG_IP_PLATFORM_COMMON)
 #define DSS_SOFTRESET_STATE_CHECK_BIT			0
 #else
 #define DSS_SOFTRESET_STATE_CHECK_BIT			SOC_CRGPERIPH_PERRSTEN3_ip_rst_dss_START
@@ -205,6 +242,25 @@ int hisi_regulator_freq_autodown_clk(int regulator_id, u32 flag)
 #if defined(CONFIG_ATLA_IP_PLATFORM)
 	case ICS_ID:
 		ret = hisi_freq_autodown_clk_set("icsbus", flag);
+		break;
+	case ICS2_ID:
+		ret = hisi_freq_autodown_clk_set("ics2bus", flag);
+		break;
+#endif
+#if defined(CONFIG_IP_PLATFORM_COMMON)
+	case NPU_ID:
+		ret = hisi_freq_autodown_clk_set("npubus", flag);
+		break;
+#endif
+#if defined(CONFIG_PHOE_IP_PLATFORM)
+	case NPU_ID:
+		ret = hisi_freq_autodown_clk_set("npubus", flag);
+		break;
+	case VENC2_ID:
+		ret = hisi_freq_autodown_clk_set("venc2bus", flag);
+		break;
+	case HIFACE_ID:
+		ret = hisi_freq_autodown_clk_set("hifacebus", flag);
 		break;
 #endif
 	default:
@@ -306,7 +362,7 @@ static int hisi_clock_state_check(struct hisi_regulator_ip *sreg)
 	IP_REGULATOR_DEBUG("<[%s]: end regulator_id=%d>\n", __func__, sreg->regulator_id);
 	return 0;
 }
-#if defined (CONFIG_BOST_IP_PLATFORM) || defined(CONFIG_MIA_IP_PLATFORM) || defined(CONFIG_ATLA_IP_PLATFORM)
+#if defined (CONFIG_BOST_IP_PLATFORM) || defined(CONFIG_MIA_IP_PLATFORM) || defined(CONFIG_ATLA_IP_PLATFORM) || defined(CONFIG_PHOE_IP_PLATFORM) || defined(CONFIG_IP_PLATFORM_COMMON)
 static int get_softreset_state(struct hisi_regulator_ip_core *pmic, struct hisi_regulator_ip *sreg, unsigned int value)
 {
 	int ret = 0;
@@ -477,8 +533,12 @@ static int hisi_ip_clock_work(struct hisi_regulator_ip *sreg, int flag)
 
 /**************************arm trust firmware****************************************/
 #define IP_REGULATOR_REGISTER_FN_ID          (0xc500fff0)
-noinline int atfd_hisi_service_ip_regulator_smc(u64 function_id, u64 arg0, u64 arg1, u64 arg2)
+noinline int atfd_hisi_service_ip_regulator_smc(u64 _function_id, u64 _arg0, u64 _arg1, u64 _arg2)
 {
+	register u64 function_id asm("x0") = _function_id;
+	register u64 arg0 asm("x1") = _arg0;
+	register u64 arg1 asm("x2") = _arg1;
+	register u64 arg2 asm("x3") = _arg2;
 	asm volatile(
 			__asmeq("%0", "x0")
 			__asmeq("%1", "x1")
@@ -708,7 +768,7 @@ static int hisi_ip_to_atf_disabled(struct regulator_dev *dev)
 	return ret;
 }
 /**************************lpmcu****************************************/
-#if defined(CONFIG_HISI_RPROC)
+#if defined(CONFIG_HISI_RPROC) || defined(CONFIG_HISI_IP_REGULATOR_IPC)
 static int hisi_ip_regulator_cmd_send(struct regulator_dev *dev, int cmd)
 {
 	struct hisi_regulator_ip *sreg = rdev_get_drvdata(dev);
@@ -866,7 +926,7 @@ static int hisi_dt_parse_ip_atf(struct hisi_regulator_ip *sreg,
 	struct device_node *np = NULL;
 	int id = 0, fake = 0, type = 0;
 	int ret = 0;
-#if defined (CONFIG_BOST_IP_PLATFORM) || defined(CONFIG_MIA_IP_PLATFORM) || defined(CONFIG_ATLA_IP_PLATFORM)
+#if defined (CONFIG_BOST_IP_PLATFORM) || defined(CONFIG_MIA_IP_PLATFORM) || defined(CONFIG_ATLA_IP_PLATFORM) || defined(CONFIG_PHOE_IP_PLATFORM) || defined(CONFIG_IP_PLATFORM_COMMON)
 	unsigned int register_info[2] = {0};
 #endif
 
@@ -986,7 +1046,7 @@ static int hisi_dt_parse_ip_atf(struct hisi_regulator_ip *sreg,
 		}
 	}
 
-#if defined (CONFIG_BOST_IP_PLATFORM) || defined(CONFIG_MIA_IP_PLATFORM) || defined(CONFIG_ATLA_IP_PLATFORM)
+#if defined (CONFIG_BOST_IP_PLATFORM) || defined(CONFIG_MIA_IP_PLATFORM) || defined(CONFIG_ATLA_IP_PLATFORM) || defined(CONFIG_PHOE_IP_PLATFORM) || defined(CONFIG_IP_PLATFORM_COMMON)
 	if ((DSSSUBSYS_ID == sreg->regulator_id)) {
 		of_property_read_u32_array(np, "hisilicon,hisi-regulator-dss-boot-check",
 							register_info, 2);
@@ -1127,7 +1187,7 @@ static ssize_t dbg_control_vcc_set_value(struct file *filp, const char __user *b
 	char tmp[128] = {0};
 	int index = 0;
 
-	if (count >= 128) {
+	if (count >= 128 || !buffer) {
 		pr_info("error! buffer size big than internal buffer\n");
 		return -EFAULT;
 	}

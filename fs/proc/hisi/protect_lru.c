@@ -25,9 +25,13 @@
 #include <asm/uaccess.h>
 #include <linux/module.h>
 #include <linux/mm.h>
+#include <linux/version.h>
 #include <linux/mm_inline.h>
 
 #include "../../../fs/proc/internal.h"
+#if(LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
+#include "../../../fs/internal.h"
+#endif
 #include <linux/hisi/protect_lru.h>
 
 #define MAX_BUFFER_LEN          256
@@ -50,7 +54,6 @@ void protect_lru_set_from_file(struct page *page)
 	struct inode *inode;
 	int num = 0;
 
-	/*lint -save -e730 -e676*/
 	if (unlikely(!protect_lru_enable))
 		return;
 
@@ -69,7 +72,11 @@ void protect_lru_set_from_file(struct page *page)
 		struct lruvec *lruvec;
 
 		zone = page_zone(page);
+#if(LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
+		lruvec = mem_cgroup_page_lruvec(page, zone->zone_pgdat);
+#else
 		lruvec = mem_cgroup_page_lruvec(page, zone);
+#endif
 		if (check_file_page(page)
 		    && lruvec->heads[num - 1].max_pages) {
 			SetPageActive(page);
@@ -77,7 +84,6 @@ void protect_lru_set_from_file(struct page *page)
 			set_page_num(page, num);
 		}
 	}
-	/*lint -restore*/
 }
 EXPORT_SYMBOL(protect_lru_set_from_file);
 
@@ -85,14 +91,17 @@ void protect_lru_set_from_process(struct page *page)
 {
 	struct mm_struct *mm = current->mm;
 
-	/*lint -save -e730 -e613*/
 	if (unlikely(protect_lru_enable && mm && (mm->protect != 0))) {
 		struct zone *zone;
 		struct lruvec *lruvec;
 		int num;
 
 		zone = page_zone(page);
+#if(LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
+		lruvec = mem_cgroup_page_lruvec(page, zone->zone_pgdat);
+#else
 		lruvec = mem_cgroup_page_lruvec(page, zone);
+#endif
 		num = mm->protect;
 		if (check_file_page(page)
 		    && lruvec->heads[num - 1].max_pages
@@ -102,13 +111,12 @@ void protect_lru_set_from_process(struct page *page)
 			set_page_num(page, num);
 		}
 	}
-	/*lint -restore*/
 }
 EXPORT_SYMBOL(protect_lru_set_from_process);
 
 void add_page_to_protect_lru_list(struct page *page, struct lruvec *lruvec, bool lru_head)
 {
-	int nr_pages, num = 0;
+	int nr_pages,num = 0,num_index = 0;
 	enum lru_list lru;
 	struct list_head *head;
 
@@ -116,7 +124,6 @@ void add_page_to_protect_lru_list(struct page *page, struct lruvec *lruvec, bool
 		return;
 
 	lru = page_lru(page);
-	/*lint -save -e64 -e730 -e737 -e679 -e644*/
 	if (unlikely(PageProtect(page))) {
 		nr_pages = hpage_nr_pages(page);
 		num = get_page_num(page) - 1;
@@ -132,14 +139,14 @@ void add_page_to_protect_lru_list(struct page *page, struct lruvec *lruvec, bool
 		list_move(&page->lru, head);
 	else if (unlikely(PageProtect(page))) {
 		/* Move to the tail for prot page */
-		head = &lruvec->heads[num + 1].protect_page[lru].lru;
+		num_index = num + 1;
+		head = &lruvec->heads[num_index].protect_page[lru].lru;
 		list_move_tail(&page->lru, head);
 	} else {
 		/* Move to the tail for normal page */
 		head = &lruvec->lists[lru];
 		list_move_tail(&page->lru, head);
 	}
-	/*lint -restore*/
 }
 EXPORT_SYMBOL(add_page_to_protect_lru_list);
 
@@ -151,7 +158,6 @@ void del_page_from_protect_lru_list(struct page *page, struct lruvec *lruvec)
 	if (!check_protect_page(page))
 		return;
 
-	/*lint -save -e64 -e730 -e737*/
 	if (unlikely(PageProtect(page))) {
 		lru = page_lru(page);
 		nr_pages = hpage_nr_pages(page);
@@ -159,7 +165,6 @@ void del_page_from_protect_lru_list(struct page *page, struct lruvec *lruvec)
 		lruvec->heads[num].pages -= nr_pages;
 		__mod_zone_page_state(page_zone(page),
 				NR_PROTECT_LRU_BASE + lru, -nr_pages);
-		/*lint -restore*/
 	}
 }
 EXPORT_SYMBOL(del_page_from_protect_lru_list);
@@ -171,9 +176,7 @@ void protect_lruvec_init(struct lruvec *lruvec)
 	int i;
 
 	for (i = 0; i < PROTECT_HEAD_MAX; i++) {
-		/*lint -save -e64*/
 		for_each_evictable_lru(lru) {
-		/*lint -restore*/
 			page = &lruvec->heads[i].protect_page[lru];
 			/*
 			 * The address is not from direct mapping,
@@ -205,14 +208,12 @@ int ioctl_protect_lru_set(struct file *filp, unsigned long arg)
 		goto out;
 	}
 
-	/*lint -save -e568 -e685 -e574 -e737*/
 	if (arg <= PROTECT_HEAD_END) {
 		inode->i_protect = (int)arg;
-		pr_info("protect_lru: set file %s, num=%lu\n",
+		pr_info("prot_lru: %s, %lu\n",
 			filp->f_path.dentry->d_name.name, arg);
 	} else
 		ret = -EINVAL;
-	/*lint -restore*/
 
 out:
 	return ret;
@@ -245,23 +246,26 @@ struct page *protect_lru_move_and_shrink(struct page *page)
 	struct lruvec *lruvec;
 	unsigned long flags;
 
-	/*lint -save -e730*/
 	if (unlikely(!protect_lru_enable))
 		return page;
-	/*lint -restore*/
 
 	if (!page)
 		return NULL;
 
 	zone = page_zone(page);
-	lruvec = mem_cgroup_page_lruvec(page, zone);
-
+#if(LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
+	lruvec = mem_cgroup_page_lruvec(page, zone->zone_pgdat);
 	if (protect_file_is_full(lruvec)) {
-		/*lint -save -e550 -e747*/
-		spin_lock_irqsave(&zone->lru_lock, flags);
+		spin_lock_irqsave(zone_lru_lock(zone),flags);
 		shrink_protect_file(lruvec, false);
-		/*lint -restore*/
-		spin_unlock_irqrestore(&zone->lru_lock, flags);
+		spin_unlock_irqrestore(zone_lru_lock(zone),flags);
+#else
+	lruvec = mem_cgroup_page_lruvec(page, zone);
+	if (protect_file_is_full(lruvec)) {
+		spin_lock_irqsave(&zone->lru_lock,flags);
+		shrink_protect_file(lruvec, false);
+		spin_unlock_irqrestore(&zone->lru_lock,flags);
+#endif
 	}
 
 	if (PageProtect(page))
@@ -302,19 +306,31 @@ static int sysctl_protect_max_mbytes_handler(struct ctl_table *table, int write,
 			for_each_populated_zone(zone) {
 				prot_pages = (u64)zone->managed_pages * total_prot_pages
 						/ totalram_pages;
-				lruvec = &zone->lruvec;
+#if(LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
+			  lruvec = &zone->zone_pgdat->lruvec;
+#else
+			  lruvec = &zone->lruvec;
+#endif
 				lruvec->heads[i].max_pages = prot_pages;
 			}
 		}
 
 		for_each_populated_zone(zone) {
+#if(LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
+			lruvec = &zone->zone_pgdat->lruvec;
+#else
 			lruvec = &zone->lruvec;
+#endif
 			while (protect_file_is_full(lruvec)) {
-				/*lint -save -e550 -e747*/
-				spin_lock_irqsave(&zone->lru_lock, flags);
+#if(LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
+		    spin_lock_irqsave(zone_lru_lock(zone),flags);
 				shrink_protect_file(lruvec, false);
-				/*lint -restore*/
-				spin_unlock_irqrestore(&zone->lru_lock, flags);
+		    spin_unlock_irqrestore(zone_lru_lock(zone),flags);
+#else
+		    spin_lock_irqsave(&zone->lru_lock,flags);
+				shrink_protect_file(lruvec, false);
+		    spin_unlock_irqrestore(&zone->lru_lock,flags);
+#endif
 				if (signal_pending(current))
 					return ret;
 				cond_resched();
@@ -339,7 +355,11 @@ static int sysctl_protect_cur_mbytes_handler(struct ctl_table *table, int write,
 	for (i = 0; i < PROTECT_HEAD_END; i++) {
 		protect_cur_mbytes[i] = 0;
 		for_each_populated_zone(zone) {
+#if(LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
+			lruvec = &zone->zone_pgdat->lruvec;
+#else
 			lruvec = &zone->lruvec;
+#endif
 			protect_cur_mbytes[i] += lruvec->heads[i].pages;
 		}
 		protect_cur_mbytes[i] >>= (20 - PAGE_SHIFT);
@@ -348,10 +368,9 @@ static int sysctl_protect_cur_mbytes_handler(struct ctl_table *table, int write,
 	return proc_doulongvec_minmax(table, write, buffer, length, ppos);
 }
 
-/*lint -save -e679 -e826 -e747*/
 void shrink_protect_file(struct lruvec *lruvec, bool force)
 {
-	int i, count;
+	int i, count,index = 0;
 	unsigned long cur, max;
 	struct list_head *head;
 	struct page *tail;
@@ -366,10 +385,11 @@ void shrink_protect_file(struct lruvec *lruvec, bool force)
 			continue;
 
 		/* Shrink the inactive list first */
-		head = &lruvec->heads[i + 1].protect_page[LRU_INACTIVE_FILE].lru;
+		index = i + 1;
+		head = &lruvec->heads[index].protect_page[LRU_INACTIVE_FILE].lru;
 		tail = list_entry(head->prev, struct page, lru);
 		if (PageReserved(tail))
-			head = &lruvec->heads[i + 1].protect_page[LRU_ACTIVE_FILE].lru;
+			head = &lruvec->heads[index].protect_page[LRU_ACTIVE_FILE].lru;
 
 		/* Move 32 tail pages every time */
 		count = SWAP_CLUSTER_MAX;
@@ -384,7 +404,7 @@ void shrink_protect_file(struct lruvec *lruvec, bool force)
 		}
 	}
 }
-/*lint -restore*/
+
 EXPORT_SYMBOL(shrink_protect_file);
 
 bool protect_file_is_full(struct lruvec *lruvec)
@@ -405,7 +425,6 @@ bool protect_file_is_full(struct lruvec *lruvec)
 EXPORT_SYMBOL(protect_file_is_full);
 
 struct ctl_table protect_lru_table[] = {
-/*lint -save -e785*/
 	{
 		.procname	= "protect_max_mbytes",
 		.data		= &protect_max_mbytes,
@@ -440,7 +459,6 @@ struct ctl_table protect_lru_table[] = {
 		.extra1		= &fifty,
 	},
 	{ }
-/*lint -restore*/
 };
 
 static int __init protect_lru_init(void)
@@ -456,7 +474,11 @@ static int __init protect_lru_init(void)
 		for_each_populated_zone(zone) {
 			prot_pages = (u64)zone->managed_pages * total_prot_pages
 					/ totalram_pages;
+#if(LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
+			lruvec = &zone->zone_pgdat->lruvec;
+#else
 			lruvec = &zone->lruvec;
+#endif
 			lruvec->heads[i].max_pages = prot_pages;
 		}
 	}
@@ -464,14 +486,12 @@ static int __init protect_lru_init(void)
 	return 0;
 }
 
-/*lint -e528 -esym(528,*)*/
 module_init(protect_lru_init);
-/*lint -e528 +esym(528,*)*/
 
 /*
  * Format: 'fd level path'
  * */
-/*lint -save -e838 -e732 -e747 -e713 -e715 -e438 -e550*/
+
 static ssize_t protect_write(struct file *file, const char __user * buffer,
                        size_t count, loff_t *ppos)
 {
@@ -481,7 +501,6 @@ static ssize_t protect_write(struct file *file, const char __user * buffer,
 	char *p = NULL, *start = NULL, *path = NULL, *pStrLevel = NULL;
 
 
-	pr_info("set protect lru:begin\n");
 	if (count > (sizeof(proctectData) - 1)) {
 		pr_err("set protect lru:error count too large\n");
 		return -EINVAL;
@@ -556,17 +575,13 @@ static ssize_t protect_write(struct file *file, const char __user * buffer,
 	}
 	fdput(f);
 
-	pr_info("set protect lru:end\n");
 	return count;
 }
-/*lint -restore*/
 
-/*lint -save -e785*/
 static const struct file_operations protect_proc_fops = {
 	.write  = protect_write,
 	.llseek = noop_llseek,
 };
-/*lint -restore*/
 
 static int __init proc_protect_init(void)
 {
@@ -574,6 +589,4 @@ static int __init proc_protect_init(void)
 	return 0;
 }
 
-/*lint -e528 -esym(528,*)*/
 fs_initcall(proc_protect_init);
-/*lint -e528 +esym(528,*)*/

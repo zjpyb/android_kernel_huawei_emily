@@ -158,7 +158,8 @@ static int mmc_ios_show(struct seq_file *s, void *data)
 		str = "mmc HS200";
 		break;
 	case MMC_TIMING_MMC_HS400:
-		str = "mmc HS400";
+		str = mmc_card_hs400es(host->card) ?
+			"mmc HS400 enhanced strobe" : "mmc HS400";
 		break;
 	default:
 		str = "invalid";
@@ -180,7 +181,7 @@ static int mmc_ios_show(struct seq_file *s, void *data)
 		str = "invalid";
 		break;
 	}
-	seq_printf(s, "signal voltage:\t%u (%s)\n", ios->chip_select, str);
+	seq_printf(s, "signal voltage:\t%u (%s)\n", ios->signal_voltage, str);
 
 	switch (ios->drv_type) {
 	case MMC_SET_DRIVER_TYPE_A:
@@ -230,7 +231,7 @@ static int mmc_clock_opt_set(void *data, u64 val)
 	struct mmc_host *host = data;
 
 	/* We need this check due to input value is u64 */
-	if (val > host->f_max)
+	if (val != 0 && (val > host->f_max || val < host->f_min))
 		return -EINVAL;
 
 	mmc_claim_host(host);
@@ -313,7 +314,7 @@ void mmc_remove_host_debugfs(struct mmc_host *host)
 static int mmc_dbg_card_status_get(void *data, u64 *val)
 {
 	struct mmc_card	*card = data;
-	u32		status;
+	u32		status = 0;
 	int		ret;
 
 	mmc_get_card(card);
@@ -339,7 +340,7 @@ static int mmc_ext_csd_open(struct inode *inode, struct file *filp)
 	u8 *ext_csd;
 	int err, i;
 
-	buf = kzalloc(EXT_CSD_STR_LEN + 1, GFP_KERNEL);
+	buf = kmalloc(EXT_CSD_STR_LEN + 1, GFP_KERNEL);
 	if (!buf)
 		return -ENOMEM;
 
@@ -354,7 +355,7 @@ static int mmc_ext_csd_open(struct inode *inode, struct file *filp)
 		n += sprintf(buf + n, "%02x", ext_csd[i]);/*lint !e421*/
 	/*cppcheck-suppress * */
 	n += sprintf(buf + n, "\n");/*lint !e421*/
-
+	
 	if(n != EXT_CSD_STR_LEN) {
 		err = -EINVAL;
 		goto out_free;
@@ -457,7 +458,6 @@ static ssize_t mmc_test_st_write(struct file *filp,
         return cnt;
     }
 
-	/*cppcheck-suppress * */
 	sscanf(ubuf, "%d", &value);
     card->host->test_status = value;
 

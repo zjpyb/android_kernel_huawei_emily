@@ -26,6 +26,9 @@
 #include <linux/mfd/hisi_pmic.h>
 
 #include <linux/of_device.h>
+#include <linux/hisi/hisi_log.h>
+
+#define HISI_LOG_TAG HISI_LED_TAG
 
 #ifdef CONFIG_HW_LED_CONFIG
 extern void led_config_get_current_setting(struct hisi_led_platform_data* hisi_leds);
@@ -192,15 +195,15 @@ static void hisi_led_set_enable(u8 brightness_set, u8 id)
     brightness_config.hisi_led_dr_ctl = hisi_led_dr_ctl | (0x1 << id);/*lint !e647*/
     brightness_config.hisi_led_dr_out_ctl = hisi_led_dr_out_ctl & LED_OUT_CTRL_VAL(id);/*lint !e502*/
 
-    printk(KERN_INFO "hisi_led_set_select_led, Led_id=[%d], brightness_set=%d,\n", id, brightness_set);
+    pr_info("hisi_led_set_select_led, Led_id=[%d], brightness_set=%d,\n", id, brightness_set);
 
 #ifdef CONFIG_HISI_LEDS_BLUE_TP_COLOR_SWITCH
-    printk(KERN_INFO "hisi_led_set_enable, flash_mode_config=%d,blue_tp_flash_flag=%d\n", flash_mode_config,blue_tp_flash_flag);
+    pr_info("hisi_led_set_enable, flash_mode_config=%d,blue_tp_flash_flag=%d\n", flash_mode_config,blue_tp_flash_flag);
     /* if need flash,then read tp color  */
     if((HISI_LED1 == id)&&(FLASH_MODE_HAVE_CONFIGERED == flash_mode_config))
     {
         tp_color = tp_color_provider();
-        printk(KERN_INFO "read tp color is tp_color:0x%x\n", tp_color);
+        pr_info("read tp color is tp_color:0x%x\n", tp_color);
 
         /* blue tp */
         if(BLUE == tp_color)
@@ -244,7 +247,7 @@ static void hisi_led_set_enable_blink(u8 brightness_set, u8 id)
     brightness_config.hisi_led_dr_ctl = hisi_led_dr_ctl | (0x1 << id);
     brightness_config.hisi_led_dr_out_ctl = hisi_led_dr_out_ctl & LED_OUT_CTRL_VAL(id);
 
-    printk(KERN_INFO "hisi_led_set_enable_blink, Led_id=[%d], brightness_set=%d\n", id, brightness_set);
+    pr_info("hisi_led_set_enable_blink, Led_id=[%d], brightness_set=%d\n", id, brightness_set);
 
     hisi_led_set_reg_write(&brightness_config);
 }
@@ -270,17 +273,17 @@ static int hisi_led_set(struct hisi_led_data *led, u8 brightness)
 	if (brightness == LED_OFF) {
 		/* set led off */
 		hisi_led_set_disable(id);
-		printk(KERN_INFO "[%s] off id is %d\n", __FUNCTION__, id);
+		pr_info("[%s] off id is %d\n", __FUNCTION__, id);
 	} else if (brightness == LED_FULL) {
 		/* set led brightness */
 		iset = hisi_leds.leds[id].each_maxdr_iset;
 		hisi_led_set_enable(iset, id);
-		printk(KERN_INFO "[%s] full id is %d, iset:%d\n", __FUNCTION__, id, iset);
+		pr_info("[%s] full id is %d, iset:%d\n", __FUNCTION__, id, iset);
 	} else {
-		printk(KERN_INFO "[%s] half id is %d\n", __FUNCTION__, id);
+		pr_info("[%s] half id is %d\n", __FUNCTION__, id);
 		/* set led half brightness */
 		hisi_led_set_enable(DR_BRIGHTNESS_HALF, id);
-		printk(KERN_INFO "[%s] half id is %d\n", __FUNCTION__, id);
+		pr_info("[%s] half id is %d\n", __FUNCTION__, id);
 	}
         break;
 	default:
@@ -372,7 +375,7 @@ static int hisi_led_set_blink(struct led_classdev *led_ldev,
 		set_time_on = hisi_led_get_time(*delay_on, DELAY_ON);
 		set_time_off = hisi_led_get_time(*delay_off, DELAY_OFF);
 		hisi_led_set_blink_reg_write(id, set_time_on | set_time_off);
-		printk(KERN_INFO "[%s] id is %d, delay-on:%ld, delay-off:%ld\n",
+		pr_info("[%s] id is %d, delay-on:%ld, delay-off:%ld\n",
 				__FUNCTION__, id, *delay_on, *delay_off);
 	} else {
 		pr_err("hisi_led_set_blink id:%d is error\n", id);
@@ -629,8 +632,6 @@ static int hisi_led_probe(struct platform_device *pdev)
 	return 0;
 
 err:
-	kfree(data);
-	data = NULL;
 	return ret;
 }
 
@@ -656,8 +657,6 @@ static int hisi_led_remove(struct platform_device *pdev)
 		led_classdev_unregister(&data->leds[i].ldev);
 	}
 
-	kfree(data);
-	data = NULL;
 	platform_set_drvdata(pdev, NULL);
 	return 0;
 }

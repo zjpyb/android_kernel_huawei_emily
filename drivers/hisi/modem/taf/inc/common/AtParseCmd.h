@@ -160,22 +160,18 @@ typedef enum
 typedef TAF_UINT32 (*pATChkCharFuncType)(TAF_UINT8);
 
 /* 子状态表类型：如果判断条件函数成功，则进入返回对应的子状态*/
-/*lint -e958 -e959 修改人:l60609;原因:64bit*/
 typedef struct
 {
     pATChkCharFuncType  pFuncName;                      /*    判断条件函数,如果成功，返回next_state*/
     AT_STATE_TYPE_ENUM next_state;                    /*    下一个状态 */
 }AT_SUB_STATE_STRU;
-/*lint +e958 +e959 修改人:l60609;原因:64bit*/
 
 /* 当前状态表类型：如果新状态等于当前状态，则进入对应的子状态表*/
-/*lint -e958 -e959 修改人:l60609;原因:64bit*/
 typedef struct
 {
     AT_STATE_TYPE_ENUM curr_state;                    /*当前状态*/
     AT_SUB_STATE_STRU  *pSubStateTab;             /*对应的子态表*/
 }AT_MAIN_STATE_STRU;
-/*lint +e958 +e959 修改人:l60609;原因:64bit*/
 
 /*****************************************************************************
   8 UNION定义

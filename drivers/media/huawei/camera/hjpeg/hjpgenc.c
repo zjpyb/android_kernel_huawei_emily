@@ -256,12 +256,8 @@ hjpeg_register(
     subdev->flags |= V4L2_SUBDEV_FL_HAS_DEVNODE;
     v4l2_set_subdevdata(subdev, pdev);
 
-    media_entity_init(&subdev->entity, 0, NULL, 0);
-    subdev->entity.type = MEDIA_ENT_T_V4L2_SUBDEV;
-    subdev->entity.group_id = HWCAM_SUBDEV_HJPEG;
-    subdev->entity.name = subdev->name;
-
-    hwcam_cfgdev_register_subdev(subdev);
+    init_subdev_media_entity(subdev,HWCAM_SUBDEV_HJPEG);
+    hwcam_cfgdev_register_subdev(subdev,HWCAM_SUBDEV_HJPEG);
     subdev->devnode->lock = &jpeg->lock;
 
     jpeg->intf = si;

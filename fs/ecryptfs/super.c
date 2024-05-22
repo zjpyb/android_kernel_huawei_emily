@@ -29,7 +29,6 @@
 #include <linux/slab.h>
 #include <linux/seq_file.h>
 #include <linux/file.h>
-#include <linux/crypto.h>
 #include <linux/statfs.h>
 #include <linux/magic.h>
 #include "ecryptfs_kernel.h"
@@ -56,7 +55,10 @@ static struct inode *ecryptfs_alloc_inode(struct super_block *sb)
 	inode_info = kmem_cache_alloc(ecryptfs_inode_info_cache, GFP_KERNEL);
 	if (unlikely(!inode_info))
 		goto out;
-	ecryptfs_init_crypt_stat(&inode_info->crypt_stat);
+	if (ecryptfs_init_crypt_stat(&inode_info->crypt_stat)) {
+		kmem_cache_free(ecryptfs_inode_info_cache, inode_info);
+		goto out;
+	}
 	mutex_init(&inode_info->lower_file_mutex);
 	atomic_set(&inode_info->lower_file_count, 0);
 	inode_info->lower_file = NULL;
@@ -168,8 +170,8 @@ static int ecryptfs_show_options(struct seq_file *m, struct dentry *root)
 		seq_printf(m, ",ecryptfs_key_bytes=%zd",
 			   mount_crypt_stat->global_default_cipher_key_size);
 #ifdef CONFIG_ECRYPT_FS_FILTER
-	if (mount_crypt_stat->flags & ECRYPTFS_ENABLE_FILTERING)
-		seq_printf(m, ",ecryptfs_enable_filtering");
+        if (mount_crypt_stat->flags & ECRYPTFS_ENABLE_FILTERING)
+                seq_printf(m, ",ecryptfs_enable_filtering");
 #endif
 	if (mount_crypt_stat->flags & ECRYPTFS_PLAINTEXT_PASSTHROUGH_ENABLED)
 		seq_printf(m, ",ecryptfs_passthrough");

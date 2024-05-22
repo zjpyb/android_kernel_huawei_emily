@@ -12,6 +12,8 @@
 
 #define HEVC_ONE_MSG_SLOT_LEN     (320)  // 64*5
 #define MAX_FRAME_NUM             (32)
+#define VDH_STREAM_BUF_CNT        (5)
+
 #ifdef VFMW_HEVC_SUPPORT
 #define USE_MSG_SLOT_SIZE         HEVC_ONE_MSG_SLOT_LEN
 #else
@@ -20,8 +22,8 @@
 typedef enum {
 	VDH_SHAREFD_MESSAGE_POOL = 0,
 	VDH_SHAREFD_STREAM_BUF   = 1,
-	VDH_SHAREFD_PMV_BUF      = 2,
-	VDH_SHAREFD_FRM_BUF      = 3,
+	VDH_SHAREFD_PMV_BUF      = (VDH_SHAREFD_STREAM_BUF + VDH_STREAM_BUF_CNT),
+	VDH_SHAREFD_FRM_BUF,
 	VDH_SHAREFD_MAX          = (VDH_SHAREFD_FRM_BUF + MAX_FRAME_NUM)
 }VDH_SHAREFD;
 typedef enum {
@@ -76,6 +78,7 @@ typedef struct {
 	VID_STD_E VidStd;
 	SINT32 ValidGroupNum0;
 	SINT32 vdh_share_fd[VDH_SHAREFD_MAX];
+	UINT32 vdhStreamBufNum;
 	UINT32 vdhFrmBufNum;
 	HI_BOOL IsFrmBufRemap;
 	HI_BOOL IsPmvBufRemap;

@@ -18,9 +18,11 @@ struct hisi_devfreq_data {
 #define GPU_DEFAULT_GOVERNOR	"mali_ondemand"
 #endif
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 13, 0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
+int hisi_devfreq_free_freq_table(struct device *dev, unsigned long **table);
+int hisi_devfreq_init_freq_table(struct device *dev, unsigned long **table);
+#else
 int hisi_devfreq_free_freq_table(struct device *dev, unsigned int **table);
-
 int hisi_devfreq_init_freq_table(struct device *dev, unsigned int **table);
 #endif
 

@@ -3,10 +3,13 @@
 
 #include <linux/types.h>
 #include <linux/stacktrace.h>
+#include <linux/stackdepot.h>
 #include <linux/hisi/page_tracker.h>
 
 struct pglist_data;
 struct page_ext_operations {
+	size_t offset;
+	size_t size;
 	bool (*need)(void);
 	void (*init)(void);
 };
@@ -43,12 +46,6 @@ enum page_ext_flags {
  */
 struct page_ext {
 	unsigned long flags;
-#ifdef CONFIG_PAGE_OWNER
-	unsigned int order;
-	gfp_t gfp_mask;
-	unsigned int nr_entries;
-	unsigned long trace_entries[8];
-#endif
 #ifdef CONFIG_HISI_PAGE_TRACKER
 	struct page_tracker page_tracker;
 #endif

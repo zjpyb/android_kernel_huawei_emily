@@ -221,8 +221,9 @@ bounce:
 	trace_block_bio_bounce(q, *bio_orig);
 
 	bio->bi_flags |= (1 << BIO_BOUNCED);
-#ifdef CONFIG_HISI_BLK_CORE
-	blk_bio_in_count_set(q,bio);
+
+#ifdef CONFIG_HISI_BLK
+	hisi_blk_queue_bounce(q, *bio_orig, bio);
 #endif
 
 	if (pool == page_pool) {

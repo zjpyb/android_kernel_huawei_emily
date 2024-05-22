@@ -9,7 +9,7 @@ extern "C" {
 #endif
 #endif
 
-extern RingBuffer *Static_RingBuffer_Init(void * ringbufferAddr);
+extern RingBuffer *Static_RingBuffer_Init(void * ringbufferAddr, int element_size, int element_cnt);
 
 extern unsigned int Static_RingBuffer_GetCount(void);
 

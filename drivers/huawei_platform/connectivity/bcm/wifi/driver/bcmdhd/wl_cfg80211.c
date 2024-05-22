@@ -1031,7 +1031,7 @@ wl_ap_start_ind(struct bcm_cfg80211 *cfg, bcm_struct_cfgdev *cfgdev,
 static s32
 wl_csa_complete_ind(struct bcm_cfg80211 *cfg, bcm_struct_cfgdev *cfgdev,
 	const wl_event_msg_t *e, void *data);
-#if ((LINUX_VERSION_CODE >= KERNEL_VERSION (3, 5, 0)) && (LINUX_VERSION_CODE <= (3, 7, \
+#if ((LINUX_VERSION_CODE >= KERNEL_VERSION (3, 5, 0)) && (LINUX_VERSION_CODE <= KERNEL_VERSION (3, 7, \
 	0)))
 struct chan_info {
 	int freq;
@@ -1074,6 +1074,25 @@ static s8 wl_dbg_estr[][WL_DBG_ESTR_MAX] = {
 };
 #endif				/* WL_DBG_LEVEL */
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 7, 0))
+#define CHAN2G(_channel, _freq, _flags) {			\
+	.band			= NL80211_BAND_2GHZ,		\
+	.center_freq		= (_freq),			\
+	.hw_value		= (_channel),			\
+	.flags			= (_flags),			\
+	.max_antenna_gain	= 0,				\
+	.max_power		= 30,				\
+}
+
+#define CHAN5G(_channel, _flags) {				\
+	.band			= NL80211_BAND_5GHZ,		\
+	.center_freq		= 5000 + (5 * (_channel)),	\
+	.hw_value		= (_channel),			\
+	.flags			= (_flags),			\
+	.max_antenna_gain	= 0,				\
+	.max_power		= 30,				\
+}
+#else
 #define CHAN2G(_channel, _freq, _flags) {			\
 	.band			= IEEE80211_BAND_2GHZ,		\
 	.center_freq		= (_freq),			\
@@ -1091,6 +1110,7 @@ static s8 wl_dbg_estr[][WL_DBG_ESTR_MAX] = {
 	.max_antenna_gain	= 0,				\
 	.max_power		= 30,				\
 }
+#endif
 
 #define RATE_TO_BASE100KBPS(rate)   (((rate) * 10) / 2)
 #define RATETAB_ENT(_rateid, _flags) \
@@ -1156,7 +1176,11 @@ static struct ieee80211_channel __wl_5ghz_a_channels[] = {
 };
 
 static struct ieee80211_supported_band __wl_band_2ghz = {
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 7, 0))
+	.band = NL80211_BAND_2GHZ,
+#else
 	.band = IEEE80211_BAND_2GHZ,
+#endif
 	.channels = __wl_2ghz_channels,
 	.n_channels = ARRAY_SIZE(__wl_2ghz_channels),
 	.bitrates = wl_g_rates,
@@ -1164,7 +1188,11 @@ static struct ieee80211_supported_band __wl_band_2ghz = {
 };
 
 static struct ieee80211_supported_band __wl_band_5ghz_a = {
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 7, 0))
+	.band = NL80211_BAND_5GHZ,
+#else
 	.band = IEEE80211_BAND_5GHZ,
+#endif
 	.channels = __wl_5ghz_a_channels,
 	.n_channels = ARRAY_SIZE(__wl_5ghz_a_channels),
 	.bitrates = wl_a_rates,
@@ -3112,7 +3140,11 @@ static void wl_scan_prep(struct wl_scan_params *params, struct cfg80211_scan_req
 				continue;
 			}
 #endif
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 7, 0))
+			if (request->channels[i]->band == NL80211_BAND_2GHZ) {
+#else
 			if (request->channels[i]->band == IEEE80211_BAND_2GHZ) {
+#endif
 #if defined(WL_HOST_BAND_MGMT) && defined(BRCM_RSDB)
 				if (cfg->curr_band == WLC_BAND_5G) {
 					WL_DBG(("In 5G only mode, omit 2G channel:%d\n", channel));
@@ -3177,12 +3209,12 @@ static void wl_scan_prep(struct wl_scan_params *params, struct cfg80211_scan_req
 				WL_SCAN(("%d: Broadcast scan\n", i));
 #endif
 			else
-#ifdef HW_LOG_PATCH1
-				hw_dhd_looplog("%s,", ssid.SSID);
-#else
-				WL_SCAN(("%d: scan  for  %s size =%d\n", i,
+//#ifdef HW_LOG_PATCH1
+//				hw_dhd_looplog("%s,", ssid.SSID);
+//#else
+				WL_ERR(("%d: scan  for  %s size =%d\n", i,
 				ssid.SSID, ssid.SSID_len));
-#endif
+//#endif
 			memcpy(ptr, &ssid, sizeof(wlc_ssid_t));
 			ptr += sizeof(wlc_ssid_t);
 		}
@@ -3263,6 +3295,7 @@ wl_run_escan(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 	bool is_first_init_2g_scan = false;
 #endif /* USE_INITIAL_2G_SCAN || USE_INITIAL_SHORT_DWELL_TIME */
 	p2p_scan_purpose_t	p2p_scan_purpose = P2P_SCAN_PURPOSE_MIN;
+	static int cnt = 0;
 
 	WL_DBG(("Enter \n"));
 
@@ -3525,8 +3558,25 @@ exit:
 		/* Don't print Error incase of Scan suppress */
 		if ((err == BCME_EPERM) && cfg->scan_suppressed)
 			WL_DBG(("Escan failed: Scan Suppressed \n"));
-		else
-			WL_ERR(("error (%d)\n", err));
+		else{
+			if (cfg) {
+				cnt++;
+				WL_ERR(("error (%d), cnt=%d\n", err, cnt));
+				if (cnt >= 4) {
+					dev = bcmcfg_to_prmry_ndev(cfg);
+					scb_val_t scbval;
+					memset(&scbval, 0, sizeof(scb_val_t));
+					wldev_ioctl(dev, WLC_DISASSOC, &scbval, sizeof(scb_val_t), true);
+					WL_ERR(("Send disassoc to break the busy dev=%p\n", dev));
+					cnt = 0;
+				}
+			} else{
+				WL_ERR(("cfg is null can not to send disassoc"));
+			}
+		}
+	}
+	else {
+		cnt = 0;
 	}
 	return err;
 }
@@ -3608,7 +3658,9 @@ wl_do_escan(struct bcm_cfg80211 *cfg, struct wiphy *wiphy, struct net_device *nd
                     dhd->hang_reason = HANG_REASON_WLC_DOWN;
 #endif
                     dhd_os_send_hang_message(dhd);
+#ifdef HW_WIFI_DMD_LOG
                     hw_wifi_dsm_client_notify(DSM_WIFI_WLC_SCAN_ERROR, "SCAN failed with WLC_DOWN\n");
+#endif
                 }
                 goto exit;
             }
@@ -5422,10 +5474,17 @@ wl_cfg80211_join_ibss(struct wiphy *wiphy, struct net_device *dev,
 		cfg->ibss_starter = true;
 	}
 	if (chan) {
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 7, 0))
+		if (chan->band == NL80211_BAND_5GHZ)
+			param[0] = WLC_BAND_5G;
+		else if (chan->band == NL80211_BAND_2GHZ)
+			param[0] = WLC_BAND_2G;
+#else
 		if (chan->band == IEEE80211_BAND_5GHZ)
 			param[0] = WLC_BAND_5G;
 		else if (chan->band == IEEE80211_BAND_2GHZ)
 			param[0] = WLC_BAND_2G;
+#endif
 		err = wldev_iovar_getint(dev, "bw_cap", param);
 		if (unlikely(err)) {
 			WL_ERR(("Get bw_cap Failed (%d)\n", err));
@@ -7654,6 +7713,7 @@ wl_cfg80211_get_key(struct wiphy *wiphy, struct net_device *dev,
 #endif
 		case WEP_ENABLED:
 			sec = wl_read_prof(cfg, dev, WL_PROF_SEC);
+			ASSERT(sec);
 			if (sec->cipher_pairwise & WLAN_CIPHER_SUITE_WEP40) {
 				params.cipher = WLAN_CIPHER_SUITE_WEP40;
 				WL_DBG(("WLAN_CIPHER_SUITE_WEP40\n"));
@@ -7745,6 +7805,7 @@ wl_cfg80211_get_station(struct wiphy *wiphy, struct net_device *dev,
 	u32 ekvr_channel;
 	u32 ekvr_opclass;
 	u32 ekvr_freq, band;
+	int pm = -1;
 #endif
 #ifndef  BRCM_RSDB
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 0, 0))
@@ -7755,7 +7816,15 @@ wl_cfg80211_get_station(struct wiphy *wiphy, struct net_device *dev,
 	s8 eabuf[ETHER_ADDR_STR_LEN];
 #endif
 #endif
+	if (cfg == NULL) {
+		WL_ERR(("%s : cfg is null\n", __FUNCTION__));
+		return BCME_ERROR;
+	}
 	dhd_pub_t *dhd =  (dhd_pub_t *)(cfg->pub);
+	if (dhd == NULL) {
+		WL_ERR(("%s : dhd is null\n", __FUNCTION__));
+		return BCME_ERROR;
+	}
 #ifdef  BRCM_RSDB
 	bool fw_assoc_state = FALSE;
 	u32 dhd_assoc_state = 0;
@@ -7875,9 +7944,18 @@ wl_cfg80211_get_station(struct wiphy *wiphy, struct net_device *dev,
 		fw_assoc_watchdog_started = FALSE;
 #endif
 		curmacp = wl_read_prof(cfg, dev, WL_PROF_BSSID);
+		ASSERT(curmacp);
 		if (memcmp(mac, curmacp, ETHER_ADDR_LEN)) {
 			WL_ERR(("Wrong Mac address: "MACDBG" != "MACDBG"\n",
 				MAC2STRDBG(mac), MAC2STRDBG(curmacp)));
+		}
+
+		if (dhd->early_suspended) {
+			err = wldev_ioctl(dev, WLC_GET_PM, &pm, sizeof(pm), true);
+			if (err) {
+				WL_ERR(("Could not get PM (%d)\n", err));
+			}
+			WL_ERR(("now pm is %d\n",pm));
 		}
 
 		/* Report the current tx rate */
@@ -7975,7 +8053,11 @@ wl_cfg80211_get_station(struct wiphy *wiphy, struct net_device *dev,
 			chload = dhd->chload;
 		}
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 7, 0))
+		band = (cfg->channel <= CH_MAX_2G_CHANNEL) ? NL80211_BAND_2GHZ : NL80211_BAND_5GHZ;
+#else
 		band = (cfg->channel <= CH_MAX_2G_CHANNEL) ? IEEE80211_BAND_2GHZ : IEEE80211_BAND_5GHZ;
+#endif
 		ekvr_freq = ieee80211_channel_to_frequency(cfg->channel, band);
 
 		/* The number below is about the frequency of Wi-Fi */
@@ -8088,6 +8170,60 @@ get_station_err:
 
 	return err;
 }
+
+#ifdef CONFIG_HW_GET_P2P_TX_RATE
+static s32
+wl_cfg80211_get_p2p_tx_rate(struct wiphy *wiphy, struct net_device *dev,
+	struct station_info *sinfo)
+{
+	struct bcm_cfg80211 *cfg = wiphy_priv(wiphy);
+	scb_val_t scb_val;
+	s32 rate = 0;
+	s32 err = 0;
+
+	RETURN_EIO_IF_NOT_UP(cfg);
+	WL_DBG(("wl_cfg80211_get_p2p_tx_rate\n")); //For Signal Poll block issue debug ccbc.
+
+	/* Report the current tx rate */
+	err = wldev_ioctl(dev, WLC_GET_RATE, &rate, sizeof(rate), false);
+	if (err) {
+		WL_ERR(("Could not get rate (%d)\n", err));
+	} else {
+#if defined(USE_DYNAMIC_MAXPKT_RXGLOM)
+		int rxpktglom;
+#endif
+		rate = dtoh32(rate);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 0, 0)) && defined(HW_KERNEL_4_0_ADAPTATION)
+		sinfo->filled |= BIT(NL80211_STA_INFO_TX_BITRATE);
+#else
+#ifndef  BRCM_RSDB
+		sinfo->filled |= STATION_INFO_TX_BITRATE;
+#else
+		sinfo->filled |= STA_INFO_BIT(INFO_TX_BITRATE);
+#endif
+#endif
+		sinfo->txrate.legacy = rate * 5;
+		WL_DBG(("Rate %d Mbps\n", (rate / 2)));
+#if defined(USE_DYNAMIC_MAXPKT_RXGLOM)
+		rxpktglom = ((rate/2) > 150) ? 20 : 10;
+
+		if (maxrxpktglom != rxpktglom) {
+			maxrxpktglom = rxpktglom;
+			WL_DBG(("Rate %d Mbps, update bus:maxtxpktglom=%d\n", (rate/2),
+				maxrxpktglom));
+			err = wldev_iovar_setbuf(dev, "bus:maxtxpktglom",
+				(char*)&maxrxpktglom, 4, cfg->ioctl_buf,
+				WLC_IOCTL_MAXLEN, NULL);
+			if (err < 0) {
+				WL_ERR(("set bus:maxtxpktglom failed, %d\n", err));
+			}
+		}
+#endif
+	}
+
+	return err;
+}
+#endif /* CONFIG_HW_GET_P2P_TX_RATE */
 
 static s32
 wl_cfg80211_set_power_mgmt(struct wiphy *wiphy, struct net_device *dev,
@@ -8264,7 +8400,14 @@ static s32 wl_cfg80211_suspend(struct wiphy *wiphy)
 #endif
 	spin_lock_irqsave(&cfg->cfgdrv_lock, flags);
 	if (cfg->scan_request) {
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 8, 0))
+		struct cfg80211_scan_info info = {
+			.aborted = true,
+		};
+		cfg80211_scan_done(cfg->scan_request, &info);
+#else
 		cfg80211_scan_done(cfg->scan_request, true);
+#endif
 		cfg->scan_request = NULL;
 	}
 	for_each_ndev(cfg, iter, next) {
@@ -9652,7 +9795,11 @@ wl_cfg80211_set_channel(struct wiphy *wiphy, struct net_device *dev,
 	}
 #endif /* WL11ULB */
 #endif
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 7, 0))
+	if (chan->band == NL80211_BAND_5GHZ) {
+#else
 	if (chan->band == IEEE80211_BAND_5GHZ) {
+#endif
 		param.band = WLC_BAND_5G;
 		err = wldev_iovar_getbuf(dev, "bw_cap", &param, sizeof(param),
 			cfg->ioctl_buf, WLC_IOCTL_SMLEN, &cfg->ioctl_buf_sync);
@@ -9677,8 +9824,11 @@ wl_cfg80211_set_channel(struct wiphy *wiphy, struct net_device *dev,
 				bw = WL_CHANSPEC_BW_20;
 
 		}
-
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 7, 0))
+	} else if (chan->band == NL80211_BAND_2GHZ)
+#else
 	} else if (chan->band == IEEE80211_BAND_2GHZ)
+#endif
 		bw = WL_CHANSPEC_BW_20;
 set_channel:
 #ifdef HW_SOFTAP_HT40
@@ -12687,7 +12837,11 @@ static int wl_cfg80211_dump_survey(struct wiphy *wiphy, struct net_device *ndev,
 	if (!(dhd->op_mode & DHD_FLAG_HOSTAP_MODE)) {
 		return -ENOENT;
 	}
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 7, 0))
+	band = wiphy->bands[NL80211_BAND_2GHZ];
+#else
 	band = wiphy->bands[IEEE80211_BAND_2GHZ];
+#endif
 	if (band && idx >= band->n_channels) {
 		idx -= band->n_channels;
 		band = NULL;
@@ -12695,7 +12849,11 @@ static int wl_cfg80211_dump_survey(struct wiphy *wiphy, struct net_device *ndev,
 
 	if (!band || idx >= band->n_channels) {
 		/* Move to 5G band */
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 7, 0))
+		band = wiphy->bands[NL80211_BAND_5GHZ];
+#else
 		band = wiphy->bands[IEEE80211_BAND_5GHZ];
+#endif
 		if (idx >= band->n_channels) {
 			return -ENOENT;
 		}
@@ -12796,6 +12954,9 @@ static struct cfg80211_ops wl_cfg80211_ops = {
 	.start_p2p_device = wl_cfgp2p_start_p2p_device,
 	.stop_p2p_device = wl_cfgp2p_stop_p2p_device,
 #endif /* WL_CFG80211_P2P_DEV_IF */
+#ifdef CONFIG_HW_GET_P2P_TX_RATE
+	.get_p2p_tx_rate = wl_cfg80211_get_p2p_tx_rate,
+#endif /* CONFIG_HW_GET_P2P_TX_RATE */
 	.scan = wl_cfg80211_scan,
 	.set_wiphy_params = wl_cfg80211_set_wiphy_params,
 	.join_ibss = wl_cfg80211_join_ibss,
@@ -12990,7 +13151,11 @@ static s32 wl_setup_wiphy(struct wireless_dev *wdev, struct device *sdiofunc_dev
 		ARRAY_SIZE(common_iface_combinations);
 #endif /* LINUX_VER >= 3.0 && (WL_IFACE_COMB_NUM_CHANNELS || WL_CFG80211_P2P_DEV_IF) */
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 7, 0))
+	wdev->wiphy->bands[NL80211_BAND_2GHZ] = &__wl_band_2ghz;
+#else
 	wdev->wiphy->bands[IEEE80211_BAND_2GHZ] = &__wl_band_2ghz;
+#endif
 
 	wdev->wiphy->signal_type = CFG80211_SIGNAL_TYPE_MBM;
 	wdev->wiphy->cipher_suites = __wl_cipher_suites;
@@ -13256,10 +13421,17 @@ static s32 wl_inform_single_bss(struct bcm_cfg80211 *cfg, struct wl_bss_info *bi
 	notif_bss_info->channel =
 		wf_chspec_ctlchan(wl_chspec_driver_to_host(bi->chanspec));
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 7, 0))
+	if (notif_bss_info->channel <= CH_MAX_2G_CHANNEL)
+		band = wiphy->bands[NL80211_BAND_2GHZ];
+	else
+		band = wiphy->bands[NL80211_BAND_5GHZ];
+#else
 	if (notif_bss_info->channel <= CH_MAX_2G_CHANNEL)
 		band = wiphy->bands[IEEE80211_BAND_2GHZ];
 	else
 		band = wiphy->bands[IEEE80211_BAND_5GHZ];
+#endif
 	if (!band) {
 		WL_ERR(("No valid band"));
 		kfree(notif_bss_info);
@@ -13539,10 +13711,17 @@ wl_notify_connect_status_ap(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 	}
 
 	channel = dtoh32(ci.hw_channel);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 7, 0))
+	if (channel <= CH_MAX_2G_CHANNEL)
+		band = wiphy->bands[NL80211_BAND_2GHZ];
+	else
+		band = wiphy->bands[NL80211_BAND_5GHZ];
+#else
 	if (channel <= CH_MAX_2G_CHANNEL)
 		band = wiphy->bands[IEEE80211_BAND_2GHZ];
 	else
 		band = wiphy->bands[IEEE80211_BAND_5GHZ];
+#endif
 	if (!band) {
 		WL_ERR(("No valid band"));
 		if (body)
@@ -13792,7 +13971,11 @@ wl_notify_connect_status_ibss(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 			return err;
 		}
 		chan = wf_chspec_ctlchan(wl_chspec_driver_to_host(chanspec));
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 7, 0))
+		band = (chan <= CH_MAX_2G_CHANNEL) ? NL80211_BAND_2GHZ : NL80211_BAND_5GHZ;
+#else
 		band = (chan <= CH_MAX_2G_CHANNEL) ? IEEE80211_BAND_2GHZ : IEEE80211_BAND_5GHZ;
+#endif
 		freq = ieee80211_channel_to_frequency(chan, band);
 		channel = ieee80211_get_channel(wiphy, freq);
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(3, 15, 0) */
@@ -13800,6 +13983,7 @@ wl_notify_connect_status_ibss(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 		if (wl_get_drv_status(cfg, CONNECTED, ndev)) {
 			/* ROAM or Redundant */
 			u8 *cur_bssid = wl_read_prof(cfg, ndev, WL_PROF_BSSID);
+			ASSERT(cur_bssid);
 			if (memcmp(cur_bssid, &e->addr, ETHER_ADDR_LEN) == 0) {
 				WL_DBG(("IBSS connected event from same BSSID("
 					MACDBG "), ignore it\n", MAC2STRDBG(cur_bssid)));
@@ -13955,6 +14139,12 @@ int wl_get_bss_info(struct bcm_cfg80211 *cfg, struct net_device *dev, uint8 *mac
 
 #if LINUX_VERSION_CODE == KERNEL_VERSION(2, 6, 38) && !defined(WL_COMPAT_WIRELESS)
 	freq = ieee80211_channel_to_frequency(channel);
+#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 7, 0))
+	if (channel > 14) {
+		freq = ieee80211_channel_to_frequency(channel, NL80211_BAND_5GHZ);
+	} else {
+		freq = ieee80211_channel_to_frequency(channel, NL80211_BAND_2GHZ);
+	}
 #else
 	if (channel > 14) {
 		freq = ieee80211_channel_to_frequency(channel, IEEE80211_BAND_5GHZ);
@@ -14203,6 +14393,7 @@ wl_hw_tim_event_handler(struct bcm_cfg80211 *cfg, bcm_struct_cfgdev *cfgdev,
         }
         mutex_unlock(&tim_event_mutex);
     }
+    return 0;
 }
 
 static int wifitim_seq_show(struct seq_file *seq, void *v)
@@ -14648,11 +14839,7 @@ wl_notify_connect_status(struct bcm_cfg80211 *cfg, bcm_struct_cfgdev *cfgdev,
 }
 
 #ifdef WL_TEM_CTRL
-#ifdef CONFIG_BCMDHD_PCIE
 #define HW_MAX_CHIP_TEM 100
-#else
-#define HW_MAX_CHIP_TEM 100
-#endif
 #define WLC_E_RESULT_TMPCTL 0
 #define WLC_E_RESULT_VOLS 1
 #define HW_MAX_CHIP_TEM_SPECIAL (107)
@@ -14666,7 +14853,7 @@ wl_notify_connect_status(struct bcm_cfg80211 *cfg, bcm_struct_cfgdev *cfgdev,
 struct hw_tem_ctrl_event{
     u16  duty;        /* Adjusted to the percentage */
     u16  decrease;    /* Duty cycle increase or decrease(1:decrease, 0:increase) */
-    u32  temperature; /* Current chipset temperature */
+    int32  temperature; /* Current chipset temperature */
 };
 
 struct hw_tem_ctrl_electric_event {
@@ -14700,6 +14887,7 @@ static u32  tem_ctrl_start_temperature = 0;
 static u16  tem_ctrl_min_duty = HW_TEM_CTRL_DUTY_END_PCT;
 static u64  tem_ctrl_nrate = 0;
 static u32  tem_ctrl_rssi = 0;
+static int32  tem_ctrl_tempthresh = 85;
 static u32  tem_ctrl_band = 2; /* 2: 2.4G, 5: 5G */
 static struct hw_tem_ctrl_electric_value tem_ctrl_elec_tmp = {0,0,0,0};
 static struct hw_tem_ctrl_electric_value tem_ctrl_elec_start_record = {0,0,0,0};
@@ -14785,6 +14973,17 @@ wl_hw_temp_dmd_get_start_info(struct net_device *dev) {
     }
 }
 
+void
+wl_hw_tem_get_tempthresh_info(struct net_device *dev) {
+    s32 err = 0;
+
+    err = wldev_iovar_getint(dev, "phy_tempthresh", &tem_ctrl_tempthresh);
+    if (err < 0) {
+        WL_ERR(("get tempthresh err: %d\n", err));
+        tem_ctrl_tempthresh = 85;
+    }
+}
+
 void wl_hw_tem_ctrl_event_report(void)
 {
     if(tem_ctrl_started){
@@ -14803,8 +15002,7 @@ void wl_hw_tem_ctrl_event_report(void)
                             tem_ctrl_elec_maxtemp_record.elec2, tem_ctrl_elec_maxtemp_record.elec3,
                             tem_ctrl_elec_maxtemp_record.elec4, tem_ctrl_max_temp_time);
         tmp_len += snprintf(dsm_buff+tmp_len, DSM_BUFF_SIZE_MAX-tmp_len, "MinDuty:%d@%s", tem_ctrl_min_duty, tem_ctrl_min_duty_time);
-        hw_wifi_dsm_client_notify(DSM_WIFI_WLC_GET_CHANNEL_ERROR, dsm_buff);
-	hw_wifi_dsm_client_notify(DSM_WIFI_TEM_CTRL_EVENT, dsm_buff);
+        hw_wifi_dsm_client_notify(DSM_WIFI_TEM_CTRL_EVENT, dsm_buff);
         WL_ERR(("dsm_buff:%s\n", dsm_buff));
 #endif
 	    static struct timeval tem_ctrl_cycle_end;
@@ -14835,6 +15033,73 @@ static void wl_hw_tem_ctrl_get_elec(struct hw_tem_ctrl_electric_value *elec_valu
     }
 }
 
+static void wl_hw_tem_ctrl_normal_event(struct hw_tem_ctrl_event *tem_ctl) {
+    if (NULL == tem_ctl) {
+        WL_ERR(("wl_hw_tem_ctrl_normal_event invalid param\n"));
+        return;
+    }
+    /* duty=10 count for chr */
+    if (HW_TEM_CTRL_MIN_DUTYCYCLE == tem_ctl->duty) {
+        tem_ctrl_min_duty_cnt++;
+    }
+    /* temperature count for chr when temperature is higher than HW_MAX_CHIP_TEM */
+    if (HW_MAX_CHIP_TEM <= tem_ctl->temperature) {
+        tem_ctrl_exceed_tem_cnt++;
+    }
+    /* check the maximum temperature */
+    if (tem_ctl->temperature > tem_ctrl_max_temperature) {
+        tem_ctrl_max_temperature = tem_ctl->temperature;
+        wl_hw_get_timestamp(tem_ctrl_max_temp_time, HW_TIMESTAMP_STR_SIZE, TS_TIME);
+        wl_hw_tem_ctrl_get_elec(&tem_ctrl_elec_maxtemp_record);
+        /* report when the temperature is higher than HW_MAX_CHIP_TEM and higher than the pre_max temperature */
+        if (HW_MAX_CHIP_TEM <= tem_ctl->temperature) {
+            char dsm_buff[DSM_BUFF_SIZE_MAX] = {0};
+            snprintf(dsm_buff, DSM_BUFF_SIZE_MAX, "MaxTemp reach %d(%d,%d,%d,%d) duty:%d\n", tem_ctl->temperature,
+                tem_ctrl_elec_maxtemp_record.elec1, tem_ctrl_elec_maxtemp_record.elec2,
+                tem_ctrl_elec_maxtemp_record.elec3, tem_ctrl_elec_maxtemp_record.elec4, tem_ctl->duty);
+            WL_ERR(("Reach max temp, dmd buff:%s\n", dsm_buff));
+#ifdef HW_WIFI_DMD_LOG
+            hw_wifi_dsm_client_notify(DSM_WIFI_CHIPSET_DAMAGE_WARNING, dsm_buff);
+#endif
+        }
+    }
+    /* check the minimum duty */
+    if (HW_TEM_CTRL_DECREASE == tem_ctl->decrease && tem_ctrl_min_duty > tem_ctl->duty) {
+        tem_ctrl_min_duty = tem_ctl->duty;
+        wl_hw_get_timestamp(tem_ctrl_min_duty_time, HW_TIMESTAMP_STR_SIZE, TS_TIME);
+    }
+    /* temperature control stop */
+    else if ((HW_TEM_CTRL_DUTY_END_PCT == tem_ctl->duty)&&(HW_TEM_CTRL_INCREASE == tem_ctl->decrease)) {
+        WL_ERR(("temperature control stops\n"));
+        wl_hw_tem_ctrl_event_report();
+    }
+    /* update duty */
+    tem_ctrl_pre_duty = tem_ctl->duty;
+}
+
+static void wl_hw_tem_ctrl_abnormal_event(struct hw_tem_ctrl_event *tem_ctl, struct bcm_cfg80211 *cfg) {
+    char dsm_buff[DSM_BUFF_SIZE_MAX] = {0};
+    struct hw_tem_ctrl_electric_value tem_ctrl_elec_error_record = {0,0,0,0};
+
+    if (NULL == tem_ctl) {
+        WL_ERR(("wl_hw_tem_ctrl_abnormal_event invalid param\n"));
+        return;
+    }
+    wl_hw_tem_ctrl_get_elec(&tem_ctrl_elec_error_record);
+    snprintf(dsm_buff, DSM_BUFF_SIZE_MAX, "duty = %d, decrease = %d, temperature = %d(%d,%d,%d,%d)\n",
+        tem_ctl->duty, tem_ctl->decrease, tem_ctl->temperature,
+        tem_ctrl_elec_error_record.elec1, tem_ctrl_elec_error_record.elec2,
+        tem_ctrl_elec_error_record.elec3, tem_ctrl_elec_error_record.elec4);
+    WL_ERR(("Error temp_ctrl_event, dmd buff:%s\n", dsm_buff));
+#ifdef HW_WIFI_DMD_LOG
+    dhd_pub_t *dhd =  (dhd_pub_t *)(cfg->pub);
+    if (dhd->op_mode & DHD_FLAG_STA_MODE){
+        hw_wifi_dsm_client_notify(DSM_WIFI_WLC_SET_PASSIVE_SCAN_ERROR, dsm_buff);
+    }
+#endif
+}
+
+
 /*
  * deal with WLC_E_TEM_CTRL_EVENT
  * WLC_E_TEM_CTRL_EVENT is received when duty cycle change or
@@ -14851,70 +15116,34 @@ wl_hw_tem_ctrl_event_handler(struct bcm_cfg80211 *cfg, bcm_struct_cfgdev *cfgdev
     struct net_device *ndev = cfgdev_to_wlc_ndev(cfgdev, cfg);
 
     if ((event == WLC_E_TEM_CTRL_EVENT) && (status == WLC_E_RESULT_TMPCTL)) {
-		tem_ctl = data;
+        tem_ctl = data;
+        wl_hw_tem_get_tempthresh_info(ndev);
+
         if ((e->datalen >= sizeof(struct hw_tem_ctrl_event)) && (tem_ctl)) {
+            /* Print tem_ctrl_event kernel log */
             WL_ERR(("current duty = %d, decrease=%d, temperature=%d\n",
-            tem_ctl->duty, tem_ctl->decrease, tem_ctl->temperature));
-			if(HW_TEM_CTRL_MIN_DUTYCYCLE == tem_ctl->duty)
-				tem_ctrl_min_duty_cnt++;
-
-            /* Record the maximum temperature */
-            if(tem_ctl->temperature > tem_ctrl_max_temperature) {
-                tem_ctrl_max_temperature = tem_ctl->temperature;
-
-				wl_hw_get_timestamp(tem_ctrl_max_temp_time, HW_TIMESTAMP_STR_SIZE, TS_TIME);
-                wl_hw_tem_ctrl_get_elec(&tem_ctrl_elec_maxtemp_record);
-#ifdef HW_WIFI_DMD_LOG
-                /* report when the temperature is higher than HW_MAX_CHIP_TEM */
-                if(HW_MAX_CHIP_TEM <= tem_ctl->temperature){
-                    char dsm_buff[DSM_BUFF_SIZE_MAX] = {0};
-                    snprintf(dsm_buff, DSM_BUFF_SIZE_MAX, "MaxTemp reach %d(%d,%d,%d,%d) duty:%d\n", tem_ctl->temperature,
-                            tem_ctrl_elec_maxtemp_record.elec1, tem_ctrl_elec_maxtemp_record.elec2,
-                            tem_ctrl_elec_maxtemp_record.elec3, tem_ctrl_elec_maxtemp_record.elec4, tem_ctl->duty);
-                    WL_ERR(("Reach max temp, dmd buff:%s\n", dsm_buff));
-                    if (HW_MAX_CHIP_TEM_SPECIAL == tem_ctl->temperature) {
-                        hw_wifi_dsm_client_notify(DSM_WIFI_WLC_SET_PASSIVE_SCAN_ERROR, dsm_buff);
-                    } else {
-                        hw_wifi_dsm_client_notify(DSM_WIFI_WLC_SET_SCANSUPPRESS_ERROR, dsm_buff);
-			hw_wifi_dsm_client_notify(DSM_WIFI_CHIPSET_DAMAGE_WARNING, dsm_buff);
-                    }
-                }
-#endif
-            }
+                tem_ctl->duty, tem_ctl->decrease, tem_ctl->temperature));
 
             /* temperature control start */
-           if((HW_TEM_CTRL_DUTY_START_PCT == tem_ctl->duty) && (HW_TEM_CTRL_DECREASE == tem_ctl->decrease)
-                && (HW_TEM_CTRL_DUTY_END_PCT == tem_ctrl_pre_duty)) {
+            if ((HW_TEM_CTRL_DUTY_START_PCT == tem_ctl->duty) && (HW_TEM_CTRL_DECREASE == tem_ctl->decrease)
+                && (HW_TEM_CTRL_DUTY_END_PCT == tem_ctrl_pre_duty)&&(tem_ctrl_tempthresh <= tem_ctl->temperature)) {
                 tem_ctrl_started = TRUE;
-				do_gettimeofday(&tem_ctrl_cycle_start);
+                do_gettimeofday(&tem_ctrl_cycle_start);
                 wl_hw_get_timestamp(tem_ctrl_start_time, HW_TIMESTAMP_STR_SIZE, TS_DATETIME);
                 WL_ERR(("tem_ctrl_start_time:%s\n", tem_ctrl_start_time));
-				tem_ctrl_band = (cfg->channel <= 14) ? 2 : 5;
+                tem_ctrl_band = (cfg->channel <= 14) ? 2 : 5;
                 tem_ctrl_start_temperature = tem_ctl->temperature;
                 wl_hw_tem_ctrl_get_elec(&tem_ctrl_elec_start_record);
                 wl_hw_temp_dmd_get_start_info(ndev);
             }
-            /* check minimum duty */
-            if (HW_TEM_CTRL_DECREASE == tem_ctl->decrease && tem_ctrl_min_duty > tem_ctl->duty) {
-                tem_ctrl_min_duty = tem_ctl->duty;
-                wl_hw_get_timestamp(tem_ctrl_min_duty_time, HW_TIMESTAMP_STR_SIZE, TS_TIME);
-            }
-            /* temperature control stop */
-            else if((HW_TEM_CTRL_DUTY_END_PCT == tem_ctl->duty)&&(HW_TEM_CTRL_INCREASE == tem_ctl->decrease)) {
-                wl_hw_tem_ctrl_event_report();
-            }
 
-			/* update duty */
-            tem_ctrl_pre_duty = tem_ctl->duty;
-#ifdef HW_WIFI_DMD_LOG
-            /* report when the temperature is higher than 90 */
-            if(HW_MAX_CHIP_TEM <= tem_ctl->temperature){
-		tem_ctrl_exceed_tem_cnt++;
-                char dsm_buff[DSM_BUFF_SIZE_MAX] = {0};
-                snprintf(dsm_buff, DSM_BUFF_SIZE_MAX, "wifi chipset tem upto %d degree\n", tem_ctl->temperature);
-                hw_wifi_dsm_client_notify(DSM_WIFI_WLC_SET_SCANSUPPRESS_ERROR, dsm_buff);
+            /* normal temperature control process */
+            if (tem_ctrl_started) {
+                wl_hw_tem_ctrl_normal_event(tem_ctl);
+            } else {
+                /* abnormal temperature control process */
+                wl_hw_tem_ctrl_abnormal_event(tem_ctl, cfg);
             }
-#endif
         }
     } else if ((event == WLC_E_TEM_CTRL_EVENT) && (status == WLC_E_RESULT_VOLS)) {
         tem_ctl_elec = data;
@@ -15375,6 +15604,30 @@ static s32 wl_get_assoc_ies(struct bcm_cfg80211 *cfg, struct net_device *ndev)
 	assoc_info.req_len = htod32(assoc_info.req_len);
 	assoc_info.resp_len = htod32(assoc_info.resp_len);
 	assoc_info.flags = htod32(assoc_info.flags);
+#ifdef BCM_PATCH_CVE_2017_13292_13303
+
+	if (assoc_info.req_len >
+		(MAX_REQ_LINE + sizeof(struct dot11_assoc_req) +
+		((assoc_info.flags & WLC_ASSOC_REQ_IS_REASSOC) ?
+		ETHER_ADDR_LEN : 0))) {
+		return BCME_BADLEN;
+	}
+	if ((assoc_info.req_len > 0) &&
+	    (assoc_info.req_len < (sizeof(struct dot11_assoc_req) +
+		((assoc_info.flags & WLC_ASSOC_REQ_IS_REASSOC) ?
+		ETHER_ADDR_LEN : 0)))) {
+		return BCME_BADLEN;
+	}
+	if (assoc_info.resp_len >
+		(MAX_REQ_LINE + sizeof(struct dot11_assoc_resp))) {
+		return BCME_BADLEN;
+	}
+	if ((assoc_info.resp_len > 0) &&
+		(assoc_info.resp_len < sizeof(struct dot11_assoc_resp))) {
+		return BCME_BADLEN;
+	}
+
+#endif
 	if (conn_info->req_ie_len) {
 		conn_info->req_ie_len = 0;
 		bzero(conn_info->req_ie, sizeof(conn_info->req_ie));
@@ -15585,6 +15838,7 @@ static s32 wl_update_bss_info(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 	ssid = (struct wlc_ssid *)wl_read_prof(cfg, ndev, WL_PROF_SSID);
 #endif /* BRCM_RSDB */
 	curbssid = wl_read_prof(cfg, ndev, WL_PROF_BSSID);
+	ASSERT(curbssid);
 #ifndef  BRCM_RSDB
 	bss = cfg80211_get_bss(wiphy, NULL, curbssid,
 		ssid->SSID, ssid->SSID_len, WLAN_CAPABILITY_ESS,
@@ -15628,6 +15882,9 @@ static s32 wl_update_bss_info(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 #ifdef  ROAM_CHANNEL_CACHE
 #if LINUX_VERSION_CODE == KERNEL_VERSION(2, 6, 38) && !defined(WL_COMPAT_WIRELESS)
 		freq = ieee80211_channel_to_frequency(channel);
+#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 7, 0))
+		band = (channel <= CH_MAX_2G_CHANNEL) ? NL80211_BAND_2GHZ : NL80211_BAND_5GHZ;
+		freq = ieee80211_channel_to_frequency(channel, band);
 #else
 		band = (channel <= CH_MAX_2G_CHANNEL) ? IEEE80211_BAND_2GHZ : IEEE80211_BAND_5GHZ;
 		freq = ieee80211_channel_to_frequency(channel, band);
@@ -15732,10 +15989,17 @@ wl_bss_roaming_done(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 #if (LINUX_VERSION_CODE > KERNEL_VERSION(2, 6, 39)) || defined(WL_COMPAT_WIRELESS)
 	/* channel info for cfg80211_roamed introduced in 2.6.39-rc1 */
 	channel = (u32 *)wl_read_prof(cfg, ndev, WL_PROF_CHAN);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 7, 0))
+	if (*channel <= CH_MAX_2G_CHANNEL)
+		band = wiphy->bands[NL80211_BAND_2GHZ];
+	else
+		band = wiphy->bands[NL80211_BAND_5GHZ];
+#else
 	if (*channel <= CH_MAX_2G_CHANNEL)
 		band = wiphy->bands[IEEE80211_BAND_2GHZ];
 	else
 		band = wiphy->bands[IEEE80211_BAND_5GHZ];
+#endif
 	freq = ieee80211_channel_to_frequency(*channel, band->band);
 	notify_channel = ieee80211_get_channel(wiphy, freq);
 #endif /* LINUX_VERSION > 2.6.39  || WL_COMPAT_WIRELESS */
@@ -16260,7 +16524,14 @@ scan_done_out:
 	del_timer_sync(&cfg->scan_timeout);
 	spin_lock_irqsave(&cfg->cfgdrv_lock, flags);
 	if (cfg->scan_request) {
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 8, 0))
+		struct cfg80211_scan_info info = {
+			.aborted = false,
+		};
+		cfg80211_scan_done(cfg->scan_request, &info);
+#else
 		cfg80211_scan_done(cfg->scan_request, false);
+#endif
 		cfg->scan_request = NULL;
 	}
 	spin_unlock_irqrestore(&cfg->cfgdrv_lock, flags);
@@ -16512,10 +16783,17 @@ wl_notify_rx_mgmt_frame(struct bcm_cfg80211 *cfg, bcm_struct_cfgdev *cfgdev,
 
 	ndev = cfgdev_to_wlc_ndev(cfgdev, cfg);
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 7, 0))
+	if (channel <= CH_MAX_2G_CHANNEL)
+		band = wiphy->bands[NL80211_BAND_2GHZ];
+	else
+		band = wiphy->bands[NL80211_BAND_5GHZ];
+#else
 	if (channel <= CH_MAX_2G_CHANNEL)
 		band = wiphy->bands[IEEE80211_BAND_2GHZ];
 	else
 		band = wiphy->bands[IEEE80211_BAND_5GHZ];
+#endif
 	if (!band) {
 		WL_ERR(("No valid band"));
 		return -EINVAL;
@@ -16811,9 +17089,14 @@ wl_notify_sched_scan_results(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 	struct ieee80211_channel *channel = NULL;
 	int channel_req = 0;
 	int band = 0;
+
+	if (data == NULL) {
+		WL_ERR(("%s :data is null\n", __FUNCTION__));
+		return BCME_ERROR;
+	}
+
 	struct wl_pfn_scanresults *pfn_result = (struct wl_pfn_scanresults *)data;
 	int n_pfn_results = pfn_result->count;
-
 	WL_DBG(("Enter\n"));
 
 #ifdef BCM_PATCH_CVE_2016_0801
@@ -17091,6 +17374,7 @@ wl_notify_vowifi_event(struct bcm_cfg80211 *cfg, bcm_struct_cfgdev *cfgdev,
 	/* send WLC_E_SET_SSID event */
 	cfg80211_drv_vowifi(ndev, GFP_KERNEL);
 
+	return 0;
 }
 #endif
 #ifdef HW_READ_FW_LOG
@@ -17148,6 +17432,7 @@ wl_notify_txfail_event(struct bcm_cfg80211 *cfg, bcm_struct_cfgdev *cfgdev,
 	WL_ERR(("wldev_get_link_speed return %d\n", error));
 	rate = rate/100;  /*unit: 100Kbps*/
 	WL_ERR(("txfail_event rssi = %d(dbm), rate = %d(100kbps), error = %d\n", rssi, rate, error));
+	return 0;
 }
 #endif
 
@@ -17320,7 +17605,7 @@ static s32 wl_create_event_handler(struct bcm_cfg80211 *cfg)
 	int ret = 0;
 	WL_DBG(("Enter \n"));
 	if(NULL == cfg)
-		return;
+		return -ENOMEM;
 
 	/* Do not use DHD in cfg driver */
 	cfg->event_tsk.thr_pid = -1;
@@ -17681,7 +17966,7 @@ static s32 wl_notify_escan_complete(struct bcm_cfg80211 *cfg,
 	if (timer_pending(&cfg->scan_timeout))
 		del_timer_sync(&cfg->scan_timeout);
 #if defined(ESCAN_RESULT_PATCH)
-	if (likely(cfg->scan_request)
+	if ((likely(cfg->scan_request)||likely(cfg->sched_scan_req))
 #ifdef BCM_PATCH_ESCAN_ABORTED_WLINFORMBSS
 		&& (!aborted)
 #endif /* BCM_PATCH_ESCAN_ABORTED_WLINFORMBSS */
@@ -17705,7 +17990,14 @@ static s32 wl_notify_escan_complete(struct bcm_cfg80211 *cfg,
 #else
 	if (likely(cfg->scan_request)) {
 #endif
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 8, 0))
+		struct cfg80211_scan_info info = {
+			.aborted = aborted,
+		};
+		cfg80211_scan_done(cfg->scan_request, &info);
+#else
 		cfg80211_scan_done(cfg->scan_request, aborted);
+#endif
 		cfg->scan_request = NULL;
 #ifdef  BRCM_RSDB
 		DHD_OS_SCAN_WAKE_UNLOCK((dhd_pub_t *)(cfg->pub));
@@ -19558,13 +19850,21 @@ static int wl_construct_reginfo(struct bcm_cfg80211 *cfg, s32 bw_cap)
 			band_chan_arr = __wl_2ghz_channels;
 			array_size = ARRAYSIZE(__wl_2ghz_channels);
 			n_cnt = &n_2g;
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 7, 0))
+			band = NL80211_BAND_2GHZ;
+#else
 			band = IEEE80211_BAND_2GHZ;
+#endif
 			ht40_allowed = (bw_cap  == WLC_N_BW_40ALL)? true : false;
 		} else if (CHSPEC_IS5G(c) && channel >= CH_MIN_5G_CHANNEL) {
 			band_chan_arr = __wl_5ghz_a_channels;
 			array_size = ARRAYSIZE(__wl_5ghz_a_channels);
 			n_cnt = &n_5g;
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 7, 0))
+			band = NL80211_BAND_5GHZ;
+#else
 			band = IEEE80211_BAND_5GHZ;
+#endif
 			ht40_allowed = (bw_cap  == WLC_N_BW_20ALL)? false : true;
 		} else {
 			WL_ERR(("Invalid channel Sepc. 0x%x.\n", c));
@@ -19614,7 +19914,11 @@ static int wl_construct_reginfo(struct bcm_cfg80211 *cfg, s32 bw_cap)
 			} else {
 				band_chan_arr[index].flags = IEEE80211_CHAN_NO_HT40;
 				if (!dfs_radar_disabled) {
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 7, 0))
+					if (band == NL80211_BAND_2GHZ)
+#else
 					if (band == IEEE80211_BAND_2GHZ)
+#endif
 						channel |= WL_CHANSPEC_BAND_2G;
 					else
 						channel |= WL_CHANSPEC_BAND_5G;
@@ -19682,7 +19986,11 @@ s32 wl_update_wiphybands(struct bcm_cfg80211 *cfg, bool notify)
 	bool rollback_lock = false;
 	s32 bw_cap = 0;
 	s32 cur_band = -1;
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 7, 0))
+	struct ieee80211_supported_band *bands[NUM_NL80211_BANDS] = {NULL, };
+#else
 	struct ieee80211_supported_band *bands[IEEE80211_NUM_BANDS] = {NULL, };
+#endif
 
 	if (cfg == NULL) {
 		cfg = g_bcm_cfg;
@@ -19784,9 +20092,15 @@ s32 wl_update_wiphybands(struct bcm_cfg80211 *cfg, bool notify)
 	for (i = 1; i <= nband && i < ARRAYSIZE(bandlist); i++) {
 		index = -1;
 		if (bandlist[i] == WLC_BAND_5G && __wl_band_5ghz_a.n_channels > 0) {
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 7, 0))
+			bands[NL80211_BAND_5GHZ] =
+				&__wl_band_5ghz_a;
+			index = NL80211_BAND_5GHZ;
+#else
 			bands[IEEE80211_BAND_5GHZ] =
 				&__wl_band_5ghz_a;
 			index = IEEE80211_BAND_5GHZ;
+#endif
 #ifndef  BRCM_RSDB
 			if (bw_cap == WLC_N_BW_40ALL || bw_cap == WLC_N_BW_20IN2G_40IN5G)
 				bands[index]->ht_cap.cap |= IEEE80211_HT_CAP_SGI_40;
@@ -19882,9 +20196,15 @@ s32 wl_update_wiphybands(struct bcm_cfg80211 *cfg, bool notify)
 #endif /* BRCM_RSDB */
 		}
 		else if (bandlist[i] == WLC_BAND_2G && __wl_band_2ghz.n_channels > 0) {
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 7, 0))
+			bands[NL80211_BAND_2GHZ] =
+				&__wl_band_2ghz;
+			index = NL80211_BAND_2GHZ;
+#else
 			bands[IEEE80211_BAND_2GHZ] =
 				&__wl_band_2ghz;
 			index = IEEE80211_BAND_2GHZ;
+#endif
 			if (bw_cap == WLC_N_BW_40ALL)
 				bands[index]->ht_cap.cap |= IEEE80211_HT_CAP_SGI_40;
 		}
@@ -19901,6 +20221,17 @@ s32 wl_update_wiphybands(struct bcm_cfg80211 *cfg, bool notify)
 
 	}
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 7, 0))
+	wiphy->bands[NL80211_BAND_2GHZ] = bands[NL80211_BAND_2GHZ];
+	wiphy->bands[NL80211_BAND_5GHZ] = bands[NL80211_BAND_5GHZ];
+
+	/* check if any bands populated otherwise makes 2Ghz as default */
+	if (wiphy->bands[NL80211_BAND_2GHZ] == NULL &&
+		wiphy->bands[NL80211_BAND_5GHZ] == NULL) {
+		/* Setup 2Ghz band as default */
+		wiphy->bands[NL80211_BAND_2GHZ] = &__wl_band_2ghz;
+	}
+#else
 	wiphy->bands[IEEE80211_BAND_2GHZ] = bands[IEEE80211_BAND_2GHZ];
 	wiphy->bands[IEEE80211_BAND_5GHZ] = bands[IEEE80211_BAND_5GHZ];
 
@@ -19910,6 +20241,7 @@ s32 wl_update_wiphybands(struct bcm_cfg80211 *cfg, bool notify)
 		/* Setup 2Ghz band as default */
 		wiphy->bands[IEEE80211_BAND_2GHZ] = &__wl_band_2ghz;
 	}
+#endif
 
 	if (notify)
 		wiphy_apply_custom_regulatory(wiphy, &brcm_regdom);
@@ -20067,7 +20399,14 @@ static s32 __wl_cfg80211_down(struct bcm_cfg80211 *cfg)
 
 	spin_lock_irqsave(&cfg->cfgdrv_lock, flags);
 	if (cfg->scan_request) {
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 8, 0))
+		struct cfg80211_scan_info info = {
+			.aborted = true,
+		};
+		cfg80211_scan_done(cfg->scan_request, &info);
+#else
 		cfg80211_scan_done(cfg->scan_request, true);
+#endif
 		cfg->scan_request = NULL;
 	}
 	spin_unlock_irqrestore(&cfg->cfgdrv_lock, flags);
@@ -20186,7 +20525,14 @@ _Pragma("GCC diagnostic pop")
 
 	spin_lock_irqsave(&cfg->cfgdrv_lock, flags);
 	if (cfg->scan_request) {
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 8, 0))
+		struct cfg80211_scan_info info = {
+			.aborted = true,
+		};
+		cfg80211_scan_done(cfg->scan_request, &info);
+#else
 		cfg80211_scan_done(cfg->scan_request, true);
+#endif
 		cfg->scan_request = NULL;
 	}
 	spin_unlock_irqrestore(&cfg->cfgdrv_lock, flags);
@@ -20852,10 +21198,17 @@ s32 wl_cfg80211_channel_to_freq(u32 channel)
 #else
 	{
 		u16 band = 0;
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 7, 0))
+		if (channel <= CH_MAX_2G_CHANNEL)
+			band = NL80211_BAND_2GHZ;
+		else
+			band = NL80211_BAND_5GHZ;
+#else
 		if (channel <= CH_MAX_2G_CHANNEL)
 			band = IEEE80211_BAND_2GHZ;
 		else
 			band = IEEE80211_BAND_5GHZ;
+#endif
 		freq = ieee80211_channel_to_frequency(channel, band);
 	}
 #endif
@@ -21578,7 +21931,11 @@ wl_cfg80211_get_best_channels(struct net_device *dev, char* cmd, int total_len)
 	}
 
 	if (CHANNEL_IS_2G(channel)) {
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 7, 0))
+		channel = ieee80211_channel_to_frequency(channel, NL80211_BAND_2GHZ);
+#else
 		channel = ieee80211_channel_to_frequency(channel, IEEE80211_BAND_2GHZ);
+#endif
 	} else {
 		WL_ERR(("invalid 2.4GHz channel, channel = %d\n", channel));
 		channel = 0;
@@ -21604,7 +21961,11 @@ wl_cfg80211_get_best_channels(struct net_device *dev, char* cmd, int total_len)
 	}
 
 	if (CHANNEL_IS_5G(channel)) {
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 7, 0))
+		channel = ieee80211_channel_to_frequency(channel, NL80211_BAND_5GHZ);
+#else
 		channel = ieee80211_channel_to_frequency(channel, IEEE80211_BAND_5GHZ);
+#endif
 	} else {
 		WL_ERR(("invalid 5GHz channel, channel = %d\n", channel));
 		channel = 0;
@@ -22955,7 +23316,14 @@ int wl_cfg80211_scan_stop(bcm_struct_cfgdev *cfgdev)
 #else
 	if (cfg->scan_request && cfg->scan_request->dev == cfgdev) {
 #endif
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 8, 0))
+		struct cfg80211_scan_info info = {
+			.aborted = true,
+		};
+		cfg80211_scan_done(cfg->scan_request, &info);
+#else
 		cfg80211_scan_done(cfg->scan_request, true);
+#endif
 		cfg->scan_request = NULL;
 		clear_flag = 1;
 	}
@@ -24722,5 +25090,6 @@ const wl_event_msg_t *e, void *data)
 
 	WL_ERR(("%s : Handle WLC_E_ANT_EVENT\n", __FUNCTION__));
 	cfg80211_drv_ant_grab(ndev, GFP_KERNEL);
+	return 0;
 }
 #endif

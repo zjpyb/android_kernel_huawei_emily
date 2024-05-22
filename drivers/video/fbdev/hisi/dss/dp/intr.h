@@ -20,7 +20,7 @@
 
 #define MAX_AUX_RETRY_COUNT 6
 #define MAX_EXT_BLOCKS 3
-#define AUX_RETRY_DELAY_TIME 500
+#define AUX_RETRY_DELAY_TIME 100
 #define DP_DMD_REPORT_SIZE 900
 
 extern uint32_t g_bit_hpd_status;

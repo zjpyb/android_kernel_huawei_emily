@@ -51,6 +51,13 @@ do {\
 #define SMARTPAKIT_REG_VALUE_M32    (0xFFFFFFFF)
 
 #define SMARTPAKIT_DELAY_US_TO_MS   (1000)
+#define I2C_STATUS_B64 (64)
+
+struct i2c_err_info {
+	unsigned int regs_num;
+	unsigned int err_count;
+	unsigned long int err_details;
+};
 
 typedef struct smartpakit_gpio_state {
 	unsigned int state;
@@ -144,6 +151,8 @@ typedef struct smartpakit_i2c_priv {
 
 	int probe_completed;
 
+	bool sync_irq_debounce_time;
+
 	// reset
 	unsigned int reset_debounce_wait_time;
 	smartpakit_gpio_reset_t *hw_reset;
@@ -169,8 +178,8 @@ typedef struct smartpakit_i2c_priv {
 	struct i2c_client *i2c;
 } smartpakit_i2c_priv_t;
 
-typedef struct smartpakit_priv smartpakit_priv_t;
-typedef struct smartpakit_pa_ctl_sequence smartpakit_pa_ctl_sequence_t;
+struct smartpakit_priv;
+struct smartpakit_pa_ctl_sequence;
 
 typedef struct smartpakit_i2c_ioctl_ops {
 	int (*hw_reset)(void *priv);
@@ -178,18 +187,19 @@ typedef struct smartpakit_i2c_ioctl_ops {
 	int (*read_regs)(void *priv, void __user *p);
 	int (*write_regs)(void *priv, void __user *p, int compat_mode);
 	int (*write_regs_all)(void *priv, void __user *p, int compat_mode);
-	int (*do_write_regs_all)(smartpakit_priv_t *pakit_priv, smartpakit_pa_ctl_sequence_t *sequence);
+	int (*do_write_regs_all)(struct smartpakit_priv *pakit_priv, struct smartpakit_pa_ctl_sequence *sequence);
 	int (*i2c_read)(struct i2c_client *i2c, char *rx_data, int length);
 	int (*i2c_write)(struct i2c_client *i2c, char *rx_data, int length);
 } smartpakit_i2c_ioctl_ops_t;
 
-// 0 reg node:   reg-addr   | mask | value     | delay | 0
+// 0 reg node:   w-reg-addr | mask | value     | delay | 0
 // 1 gpio node:  gpio-index | 0    | h/l state | delay | 1
 // 2 delay node: 0          | 0    | 0         | delay | 2
 // 3 skip node:  0          | 0    | 0         | 0     | 3
 // 4 rxorw node: w-reg-addr | mask | r-reg-addr| delay | 4, this mask is xor mask
+// 5 read node;  r-reg-addr | 0    | 0         | 0     | 5
 typedef enum smartpakit_param_node_type {
-	SMARTPAKIT_PARAM_NODE_TYPE_REG,
+	SMARTPAKIT_PARAM_NODE_TYPE_REG_WRITE,
 	SMARTPAKIT_PARAM_NODE_TYPE_GPIO,
 	// only delay time
 	SMARTPAKIT_PARAM_NODE_TYPE_DELAY,
@@ -197,6 +207,7 @@ typedef enum smartpakit_param_node_type {
 	// so, the number of regs must be an integer multiple of 2
 	SMARTPAKIT_PARAM_NODE_TYPE_SKIP,
 	SMARTPAKIT_PARAM_NODE_TYPE_REG_RXORW, // read, xor, write
+	SMARTPAKIT_PARAM_NODE_TYPE_REG_READ, //read reg
 
 	SMARTPAKIT_PARAM_NODE_TYPE_MAX,
 } smartpakit_param_node_type_t;

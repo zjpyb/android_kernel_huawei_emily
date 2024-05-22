@@ -66,6 +66,7 @@ void hisifb_set_backlight(struct hisi_fb_data_type *hisifd, uint32_t bkl_lvl, bo
 		}
 
 		pdata->set_backlight(hisifd->pdev, bkl_lvl);
+
 		if (hisifd->panel_info.bl_set_type & BL_SET_BY_MIPI) {
 			hisifb_set_vsync_activate_state(hisifd, false);
 			hisifb_deactivate_vsync(hisifd);
@@ -124,7 +125,14 @@ static void hisifb_bl_workqueue_handler(struct work_struct *work)
 			HISI_FB_INFO("[online_play_count = %d] set bl_updated = 1.\n", hisifd->online_play_count);
 		}
 		if (is_recovery_mode) {
-			hisifd->bl_level = hisifd->panel_info.bl_default;
+			/*
+			*fix the bug:recovery interface app can not set backlight successfully
+			*if backlight not be set at recovery,driver will set default value
+			*otherwise driver not set anymore
+			*/
+			if(hisifd->bl_level == 0) {
+				hisifd->bl_level = hisifd->panel_info.bl_default;
+			}
 		} else {
 			if (!is_fastboot_display_enable() && !is_no_fastboot_bl_enable) {
 				is_no_fastboot_bl_enable = 1;
@@ -267,7 +275,7 @@ void hisifb_backlight_register(struct platform_device *pdev)
 	}
 	hisifd = platform_get_drvdata(pdev);
 	if (NULL == hisifd) {
-		HISI_FB_ERR("hisifd is NULL");
+		dev_err(&pdev->dev, "hisifd is NULL");
 		return;
 	}
 
@@ -286,7 +294,7 @@ void hisifb_backlight_register(struct platform_device *pdev)
 	backlight_led.max_brightness = hisifd->panel_info.bl_max;
 	/* android supports only one lcd-backlight/lcd for now */
 	if (led_classdev_register(&pdev->dev, &backlight_led)) {
-		HISI_FB_ERR("led_classdev_register failed!\n");
+		dev_err(&pdev->dev, "led_classdev_register failed!\n");
 		return;
 	}
 
@@ -295,7 +303,7 @@ void hisifb_backlight_register(struct platform_device *pdev)
 		INIT_WORK(&(hisifd->backlight.sbl_work), hisifb_sbl_work);
 		hisifd->backlight.sbl_queue = create_singlethread_workqueue(K3_DSS_SBL_WORKQUEUE);
 		if (!hisifd->backlight.sbl_queue) {
-			HISI_FB_ERR("failed to create sbl_queue!\n");
+			dev_err(&pdev->dev, "failed to create sbl_queue!\n");
 			return ;
 		}
 	}
@@ -313,7 +321,7 @@ void hisifb_backlight_unregister(struct platform_device *pdev)
 	}
 	hisifd = platform_get_drvdata(pdev);
 	if (NULL == hisifd) {
-		HISI_FB_ERR("hisifd is NULL");
+		dev_err(&pdev->dev, "hisifd is NULL");
 		return;
 	}
 
@@ -326,4 +334,302 @@ void hisifb_backlight_unregister(struct platform_device *pdev)
 			hisifd->backlight.sbl_queue = NULL;
 		}
 	}
+}
+
+
+typedef struct
+{
+	unsigned long timestamp_jiffies;
+	int upper_bl_value;
+	int upper_bl_weber;
+	int device_bl_value;
+	int algo_delta_bl_value;
+} bl_flicker_detector_data;
+
+typedef struct
+{
+	display_engine_flicker_detector_config_t config;
+	bl_flicker_detector_data* ring_buffer;
+	int ring_buffer_length;
+	int ring_buffer_index;
+	int time_window_length_jiffies;
+
+	bool is_first_flag;
+	int upper_bl_value_cur;
+	int upper_bl_value_last;
+	int device_bl_value_last;
+	int algo_delta_bl_value_cur;
+} bl_flicker_detector_info;
+
+static bl_flicker_detector_info g_flicker_detector;
+
+static inline int ring_buffer_index_increase(int index, int size)
+{
+	return (++index > (size - 1) ? 0 : index);
+}
+
+static inline int ring_buffer_index_decrease(int index, int size)
+{
+	return (--index < 0 ? (size - 1) : index);
+}
+
+static void bl_flicker_detector_ring_buffer_add(bl_flicker_detector_data data)
+{
+	g_flicker_detector.ring_buffer_index
+		= ring_buffer_index_increase(g_flicker_detector.ring_buffer_index, g_flicker_detector.ring_buffer_length);
+	g_flicker_detector.ring_buffer[g_flicker_detector.ring_buffer_index] = data;
+}
+
+static void bl_flicker_detector_ring_buffer_get_weber_range(unsigned long jiffies_cur, int* weber_min, int* weber_max) {
+	int index = g_flicker_detector.ring_buffer_index;
+	unsigned long jiffies_threshold = jiffies_cur - g_flicker_detector.time_window_length_jiffies;
+	unsigned long jiffies_get = 0;
+	int min_get = 0;
+	int max_get = 0;
+	int weber = 0;
+	int len = 0;
+	if (NULL == weber_min || NULL == weber_max)
+	{
+		return;
+	}
+	for (len = 0; len < g_flicker_detector.ring_buffer_length; len++)
+	{
+		jiffies_get = g_flicker_detector.ring_buffer[index].timestamp_jiffies;
+		if (!jiffies_get || time_before(jiffies_get, jiffies_threshold))
+		{
+			break;
+		}
+		weber = g_flicker_detector.ring_buffer[index].upper_bl_weber;
+		min_get = min(min_get, weber);
+		max_get = max(max_get, weber);
+		index = ring_buffer_index_decrease(index, g_flicker_detector.ring_buffer_length);
+	}
+	*weber_min = min_get;
+	*weber_max = max_get;
+}
+
+static void bl_flicker_detector_ring_buffer_dump(unsigned long jiffies_cur)
+{
+	int index = g_flicker_detector.ring_buffer_index;
+	unsigned long jiffies_threshold = jiffies_cur - g_flicker_detector.time_window_length_jiffies;
+	unsigned long jiffies_get = 0;
+	int msecs_start = 0;
+	int len = 0;
+	int dump_index = 0;
+	int dump_len = 0;
+	for (len = 0; len < g_flicker_detector.ring_buffer_length; len++)
+	{
+		jiffies_get = g_flicker_detector.ring_buffer[index].timestamp_jiffies;
+		if (!jiffies_get || time_before(jiffies_get, jiffies_threshold))
+		{
+			break;
+		}
+		index = ring_buffer_index_decrease(index, g_flicker_detector.ring_buffer_length);
+	}
+	if (len == 0)
+	{
+		HISI_FB_WARNING("timestamp_jiffies load error\n");
+		return;
+	}
+	dump_index = ring_buffer_index_increase(index, g_flicker_detector.ring_buffer_length);
+	msecs_start = jiffies_to_msecs(g_flicker_detector.ring_buffer[dump_index].timestamp_jiffies);
+	while (++dump_len <= len)
+	{
+		HISI_FB_WARNING("^%d^%d^%d^%d\n",
+			jiffies_to_msecs(g_flicker_detector.ring_buffer[dump_index].timestamp_jiffies) - msecs_start,
+			g_flicker_detector.ring_buffer[dump_index].upper_bl_value,
+			g_flicker_detector.ring_buffer[dump_index].device_bl_value,
+			g_flicker_detector.ring_buffer[dump_index].algo_delta_bl_value);
+		dump_index = ring_buffer_index_increase(dump_index, g_flicker_detector.ring_buffer_length);
+	}
+}
+
+#define FLICKER_DETECTOR_WEBER_RESOLUTION 1000
+#define FLICKER_DETECTOR_WEBER_MAX   1000000
+#define FLICKER_DETECTOR_FIRST_BL_VALUE 10000
+
+static inline int bl_flicker_detector_calc_weber(int cur_level, int last_level)
+{
+	if (last_level == 0)
+	{
+		return FLICKER_DETECTOR_WEBER_MAX;
+	}
+	return FLICKER_DETECTOR_WEBER_RESOLUTION * (cur_level - last_level) / last_level;
+}
+
+static void bl_flicker_detector_save_first_data(unsigned long jiffies_cur)
+{
+	bl_flicker_detector_data data;
+	data.timestamp_jiffies = jiffies_cur;
+	data.upper_bl_value = FLICKER_DETECTOR_FIRST_BL_VALUE;
+	data.upper_bl_weber = -FLICKER_DETECTOR_WEBER_RESOLUTION;
+	data.device_bl_value = FLICKER_DETECTOR_FIRST_BL_VALUE;
+	data.algo_delta_bl_value = 0;
+	bl_flicker_detector_ring_buffer_add(data);
+}
+
+static void bl_flicker_detector_save_data(unsigned long jiffies_cur, int upper_bl_value, int device_bl_value, int algo_delta_bl_value)
+{
+	bl_flicker_detector_data data;
+	data.timestamp_jiffies = jiffies_cur;
+	data.upper_bl_value = upper_bl_value;
+	data.upper_bl_weber = bl_flicker_detector_calc_weber(upper_bl_value, g_flicker_detector.upper_bl_value_last);
+	data.device_bl_value = device_bl_value;
+	data.algo_delta_bl_value = algo_delta_bl_value;
+	bl_flicker_detector_ring_buffer_add(data);
+}
+
+static void bl_flicker_detector_calc_weber_threshold(unsigned long jiffies_cur, int* weber_threshold_min, int* weber_threshold_max)
+{
+	int weber_min = 0;
+	int weber_max = 0;
+	if (NULL == weber_threshold_min || NULL == weber_threshold_max)
+	{
+		return;
+	}
+	bl_flicker_detector_ring_buffer_get_weber_range(jiffies_cur, &weber_min, &weber_max);
+	weber_min = min(weber_min, 0);
+	weber_max = max(weber_max, 0);
+	weber_min -= g_flicker_detector.config.weber_threshold;
+	weber_max += g_flicker_detector.config.weber_threshold;
+	*weber_threshold_min = weber_min;
+	*weber_threshold_max = weber_max;
+}
+
+static bool bl_flicker_detector_skip_detect(int upper_level, int device_level)
+{
+	int delta = 0;
+	int delta_threshold = 1;
+	if (upper_level < g_flicker_detector.config.low_level_upper_bl_value_threshold)
+	{
+		delta_threshold = g_flicker_detector.config.low_level_device_bl_delta_threshold;
+	}
+	delta = device_level - g_flicker_detector.device_bl_value_last;
+	return abs(delta) <= delta_threshold;
+}
+
+#define FLICKER_DETECTOR_VALID_TIME_WINDOW_MS_MIN 500
+#define FLICKER_DETECTOR_VALID_TIME_WINDOW_MS_MAX 2000
+#define FLICKER_DETECTOR_VALID_WEBER_THRESHOLD_MIN 0
+#define FLICKER_DETECTOR_VALID_WEBER_THRESHOLD_MAX 500
+#define FLICKER_DETECTOR_BUFFER_LENGTH_PER_SECOND 100
+
+void bl_flicker_detector_init(display_engine_flicker_detector_config_t config)
+{
+	bl_flicker_detector_data* buffer = NULL;
+	int buffer_length = 0;
+	unsigned long buffer_size = 0;
+	if (g_flicker_detector.config.detect_enable)
+	{
+		HISI_FB_ERR("already inited!");
+		return;
+	}
+	if (!config.detect_enable)
+	{
+		HISI_FB_ERR("detect_enable=false, needn't init!");
+		return;
+	}
+	if (config.time_window_length_ms < FLICKER_DETECTOR_VALID_TIME_WINDOW_MS_MIN
+		|| config.time_window_length_ms > FLICKER_DETECTOR_VALID_TIME_WINDOW_MS_MAX)
+	{
+		HISI_FB_ERR("time_window_length_ms=%d out of range", config.time_window_length_ms);
+		return;
+	}
+	if (config.weber_threshold <= FLICKER_DETECTOR_VALID_WEBER_THRESHOLD_MIN
+		|| config.weber_threshold >= FLICKER_DETECTOR_VALID_WEBER_THRESHOLD_MAX)
+	{
+		HISI_FB_ERR("weber_threshold=%d out of range", config.weber_threshold);
+		return;
+	}
+	buffer_length = config.time_window_length_ms * FLICKER_DETECTOR_BUFFER_LENGTH_PER_SECOND / 1000;
+	buffer_size = sizeof(bl_flicker_detector_data) * buffer_length;
+	buffer = (bl_flicker_detector_data*)vmalloc(buffer_size);
+	if (NULL == buffer)
+	{
+		HISI_FB_ERR("vmalloc size %ld failed!", buffer_size);
+		return;
+	}
+
+	g_flicker_detector.config.dump_enable = config.dump_enable;
+	g_flicker_detector.config.time_window_length_ms = config.time_window_length_ms;
+	g_flicker_detector.config.weber_threshold = config.weber_threshold;
+	g_flicker_detector.config.low_level_upper_bl_value_threshold = config.low_level_upper_bl_value_threshold;
+	g_flicker_detector.config.low_level_device_bl_delta_threshold = config.low_level_device_bl_delta_threshold;
+
+	g_flicker_detector.ring_buffer = buffer;
+	g_flicker_detector.ring_buffer_length = buffer_length;
+	g_flicker_detector.time_window_length_jiffies = (int)msecs_to_jiffies(g_flicker_detector.config.time_window_length_ms);
+	g_flicker_detector.is_first_flag = true;
+
+	HISI_FB_INFO("window_length=%d, jiffies=%d, weber=%d, low_level_upper_bl=%d, low_level_device_delta=%d\n",
+		g_flicker_detector.config.time_window_length_ms,
+		g_flicker_detector.time_window_length_jiffies,
+		g_flicker_detector.config.weber_threshold,
+		g_flicker_detector.config.low_level_upper_bl_value_threshold,
+		g_flicker_detector.config.low_level_device_bl_delta_threshold);
+
+	g_flicker_detector.config.detect_enable = true;
+}
+
+void bl_flicker_detector_collect_upper_bl(int level)
+{
+	g_flicker_detector.upper_bl_value_cur = level;
+}
+
+void bl_flicker_detector_collect_algo_delta_bl(int level)
+{
+	g_flicker_detector.algo_delta_bl_value_cur = level;
+}
+
+void bl_flicker_detector_collect_device_bl(int level)
+{
+	unsigned long jiffies_cur = 0;
+	int upper_bl_value_cur = g_flicker_detector.upper_bl_value_cur;
+	int algo_delta_bl_value_cur = g_flicker_detector.algo_delta_bl_value_cur;
+	int device_bl_value_cur = level;
+	int device_bl_weber = 0;
+	int weber_threshold_min = 0;
+	int weber_threshold_max = 0;
+
+	if (!g_flicker_detector.config.detect_enable)
+	{
+		return;
+	}
+	jiffies_cur = jiffies;
+
+	if (g_flicker_detector.is_first_flag)
+	{
+		bl_flicker_detector_save_first_data(jiffies_cur);
+		g_flicker_detector.is_first_flag = false;
+	}
+
+	bl_flicker_detector_save_data(jiffies_cur, upper_bl_value_cur, device_bl_value_cur, algo_delta_bl_value_cur);
+
+	if (bl_flicker_detector_skip_detect(upper_bl_value_cur, device_bl_value_cur))
+	{
+		HISI_FB_DEBUG("upper=%d, device=%d, algo_delta=%d skip detect\n",
+			upper_bl_value_cur, device_bl_value_cur, algo_delta_bl_value_cur);
+		g_flicker_detector.upper_bl_value_last = g_flicker_detector.upper_bl_value_cur;
+		g_flicker_detector.device_bl_value_last = device_bl_value_cur;
+		return;
+	}
+	HISI_FB_DEBUG("upper=%d, device=%d, algo_delta=%d\n",
+		upper_bl_value_cur, device_bl_value_cur, algo_delta_bl_value_cur);
+
+	device_bl_weber = bl_flicker_detector_calc_weber(device_bl_value_cur, g_flicker_detector.device_bl_value_last);
+	bl_flicker_detector_calc_weber_threshold(jiffies_cur, &weber_threshold_min, &weber_threshold_max);
+	if (device_bl_weber < weber_threshold_min || device_bl_weber > weber_threshold_max)
+	{
+		HISI_FB_WARNING("flicker warning: upper %d->%d, device %d->%d, %d out of [%d, %d]\n",
+			g_flicker_detector.upper_bl_value_last, upper_bl_value_cur,
+			g_flicker_detector.device_bl_value_last, device_bl_value_cur,
+			device_bl_weber, weber_threshold_min, weber_threshold_max);
+		if (g_flicker_detector.config.dump_enable)
+		{
+			bl_flicker_detector_ring_buffer_dump(jiffies_cur);
+		}
+	}
+
+	g_flicker_detector.upper_bl_value_last = g_flicker_detector.upper_bl_value_cur;
+	g_flicker_detector.device_bl_value_last = device_bl_value_cur;
 }

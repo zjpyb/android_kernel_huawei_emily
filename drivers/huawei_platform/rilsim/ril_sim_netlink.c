@@ -195,13 +195,13 @@ static void kernel_ril_sim_receive(struct sk_buff *__skb)
     }
     else
     {
-        hwlog_err("%s: Invalid len message, skb->len: %d, nlh->nlmsg_len: %d\n", __func__, skb->len, nlh->nlmsg_len);
+        hwlog_err("%s: Invalid len message, skb->len: %d\n", __func__, skb->len);
     }
+    hwlog_info("%s: exit, skb->len: %d\n", __func__, skb->len);
 
     kfree_skb(skb);
     mutex_unlock(&ril_sim_receive_sem);
 
-    hwlog_info("%s: exit, skb->len: %d, nlh->nlmsg_len: %d\n", __func__, skb->len, nlh->nlmsg_len);
 }
 
 int ril_sim_send_get_pin_info_cnf(u32 pid, int slotId)

@@ -11,6 +11,9 @@
  * GNU General Public License for more details.
  *
  */
+
+#define pr_fmt(fmt) "ufshcd :" fmt
+
 #include <linux/types.h>
 #include <soc_sctrl_interface.h>
 #include <soc_ufs_sysctrl_interface.h>
@@ -131,17 +134,11 @@ void ufs_soc_init(struct ufs_hba *hba)
 	} else {
 		ufs_sys_ctrl_writel(host, MASK_UFS_DEVICE_RESET | 0,
 				    UFS_DEVICE_RESET_CTRL); /* reset device */
-		#if 1
 		ret = clk_prepare_enable(host->clk_ufsio_ref);
 		if (ret) {
 			pr_err("%s ,clk_prepare_enable failed\n", __func__);
 			return;
 		}
-		#else
-		writel((1 << SOC_SCTRL_SCPEREN4_gt_clk_ufsio_ref_START),
-		       SOC_SCTRL_SCPEREN4_ADDR(
-			   host->sysctrl)); /* open clock of device */
-		#endif
 
 		mdelay(1);
 
@@ -488,13 +485,9 @@ int ufs_kirin_link_startup_post_change(struct ufs_hba *hba)
 		ufs_sys_ctrl_clr_bits(host, MASK_UFS_SYSCRTL_BYPASS, UFS_SYSCTRL);
 	}
 
-	if (host->caps & USE_AUTO_H8) {
+	if (host->hba->caps & UFSHCD_CAP_AUTO_HIBERN8)
 		/* disable power-gating in auto hibernate 8 */
 		ufshcd_rmwl(hba, LP_AH8_PGE, 0, UFS_REG_OCPTHRTL);
-
-		/* enable auto H8 */
-		ufshcd_writel(hba, UFS_AHIT_AUTOH8_TIMER, REG_CONTROLLER_AHIT);
-	}
 
 	ufshcd_dme_set(hba, UIC_ARG_MIB(0xd09a), 0x80000000); /* select received symbol cnt */
 	ufshcd_dme_set(hba, UIC_ARG_MIB(0xd09c), 0x00000005); /* reset counter0 and enable */

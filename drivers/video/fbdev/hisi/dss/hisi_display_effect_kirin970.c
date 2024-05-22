@@ -343,6 +343,7 @@ void hisi_effect_deinit(struct hisi_fb_data_type *hisifd)
 		mutex_destroy(&g_rgbw_lock);
 	}
 
+	down(&hisifd->hiace_hist_lock_sem);/*avoid  using  mutex_lock() but hist_lock was destoried by mutex_destory in  hisi_effect_deinit*/
 	if (g_is_effect_init) {
 		g_is_effect_init = false;
 
@@ -361,6 +362,7 @@ void hisi_effect_deinit(struct hisi_fb_data_type *hisifd)
 			DEBUG_EFFECT_LOG("[effect] bypass\n");
 		}
 	}
+	up(&hisifd->hiace_hist_lock_sem);
 }
 
 static void hisifb_ce_service_init(void)
@@ -679,7 +681,8 @@ int hisifb_ce_service_get_hist(struct fb_info *info, void __user *argp)
 		wait_ret = wait_event_interruptible_timeout(service->wq_hist, service->new_hist || service->hist_stop, timeout);
 		lock_fb_info(info);
 		service->hist_stop = false;
-	} else {
+	}
+	if (!g_is_effect_init) {
 		HISI_FB_ERR("[effect] wq_hist uninit.\n");
 		return -EINVAL;
 	}
@@ -689,12 +692,18 @@ int hisifb_ce_service_get_hist(struct fb_info *info, void __user *argp)
 		count_delay(&delay_wait_hist, interval_wait_hist.stop - interval_wait_hist.start);
 	}
 
+	down(&hisifd->hiace_hist_lock_sem);/*avoid  using  mutex_lock() but hist_lock was destoried by mutex_destory in  hisi_effect_deinit*/
 	if (service->new_hist) {
 		time_interval_t interval_copy_hist = {0};
 		static delay_record_t delay_copy_hist = {"hist copy", 0, 0xFFFFFFFF, 0, 0};
 
 		service->new_hist = false;
 
+		if(!g_is_effect_init){
+			HISI_FB_ERR("[effect] wq_hist uninit here\n");
+			up(&hisifd->hiace_hist_lock_sem);
+			return -EINVAL;
+		}
 		mutex_lock(&hisifd->hiace_info.hist_lock);
 		if (g_debug_effect & DEBUG_EFFECT_DELAY) {
 			interval_copy_hist.start = get_timestamp_in_us();
@@ -712,6 +721,7 @@ int hisifb_ce_service_get_hist(struct fb_info *info, void __user *argp)
 	} else {
 		ret = handle_err_hist(info, wait_ret);
 	}
+	up(&hisifd->hiace_hist_lock_sem);
 
 	return ret;
 }
@@ -1019,8 +1029,8 @@ static int deltabl_process(struct hisi_fb_data_type *hisifd, int backlight_in)
 	int ret = 0;
 	int bl_min = (int)hisifd->panel_info.bl_min;
 	int bl_max = (int)hisifd->panel_info.bl_max;
-	bool HBMEnable = hisifd->de_info.amoled_param.HBMEnable;
-	bool AmoledDimingEnable = hisifd->de_info.amoled_param.AmoledDimingEnable;
+	bool HBMEnable = hisifd->de_info.amoled_param.HBMEnable ? true:false;
+	bool AmoledDimingEnable = hisifd->de_info.amoled_param.AmoledDimingEnable ? true:false;
 	int HBM_Threshold_BackLight = hisifd->de_info.amoled_param.HBM_Threshold_BackLight;
 	int HBM_Min_BackLight = hisifd->de_info.amoled_param.HBM_Min_BackLight;
 	int HBM_Max_BackLight = hisifd->de_info.amoled_param.HBM_Max_BackLight;
@@ -1070,8 +1080,8 @@ static int deltabl_process(struct hisi_fb_data_type *hisifd, int backlight_in)
 
 static void handle_first_deltabl(struct hisi_fb_data_type *hisifd, int backlight_in)
 {
-	bool HBMEnable = hisifd->de_info.amoled_param.HBMEnable;
-	bool AmoledDimingEnable = hisifd->de_info.amoled_param.AmoledDimingEnable;
+	bool HBMEnable = hisifd->de_info.amoled_param.HBMEnable ? true:false;
+	bool AmoledDimingEnable = hisifd->de_info.amoled_param.AmoledDimingEnable ? true:false;
 	int bl_min = (int)hisifd->panel_info.bl_min;
 	int bl_max = (int)hisifd->panel_info.bl_max;
 
@@ -1155,6 +1165,11 @@ bool hisifb_display_effect_fine_tune_backlight(struct hisi_fb_data_type *hisifd,
 		return false;
 	}
 
+	if (hisifd->panel_info.need_skip_delta) {
+		hisifd->panel_info.need_skip_delta = 0;
+		return changed;
+	}
+
 	handle_first_deltabl(hisifd,backlight_in);
 
 	/*if ((pinfo->hbm_support == 1) && (backlight_in <= (int)hisifd->panel_info.bl_min)) {
@@ -1165,6 +1180,13 @@ bool hisifb_display_effect_fine_tune_backlight(struct hisi_fb_data_type *hisifd,
 	if (hisifd->bl_level > 0) {
 		if (hisifb_display_effect_is_need_blc(hisifd)) {
 			int bl = MIN((int)hisifd->panel_info.bl_max, MAX((int)hisifd->panel_info.bl_min, backlight_in + hisifd->de_info.blc_delta));
+
+			if (hisifd->de_info.amoled_param.AmoledDimingEnable) {
+				if (backlight_in >= hisifd->de_info.amoled_param.Lowac_DBV_XCCThres && backlight_in <= hisifd->de_info.amoled_param.Lowac_DBVThres) {
+					bl = hisifd->de_info.amoled_param.Lowac_Fixed_DBVThres;
+				}
+			}
+
 			if (*backlight_out != bl) {
 				HISI_FB_DEBUG("[effect] delta:%d bl:%d(%d)->%d\n", hisifd->de_info.blc_delta, backlight_in, hisifd->bl_level, bl);
 				*backlight_out = bl;
@@ -2003,7 +2025,7 @@ int hisifb_use_dynamic_degamma(struct hisi_fb_data_type *hisifd, char __iomem *d
 
 }
 
-void hisifb_update_dynamic_gamma(struct hisi_fb_data_type *hisifd, const char* buffer, int len)
+void hisifb_update_dynamic_gamma(struct hisi_fb_data_type *hisifd, const char* buffer, size_t len)
 {
 	struct hisi_panel_info *pinfo = NULL;
 	if (hisifd == NULL || buffer == NULL) {
@@ -2377,7 +2399,7 @@ int hisi_effect_lcp_info_get(struct hisi_fb_data_type *hisifd, struct lcp_info *
 
 	pinfo = &(hisifd->panel_info);
 
-	if (hisifd->effect_ctl.lcp_gmp_support) {
+	if (hisifd->effect_ctl.lcp_gmp_support && (pinfo->gmp_lut_table_len == LCP_GMP_LUT_LENGTH)) {
 		ret = hisi_effect_copy_to_user(lcp->gmp_table_low32, pinfo->gmp_lut_table_low32bit, LCP_GMP_LUT_LENGTH);
 		if (ret) {
 			HISI_FB_ERR("fb%d, failed to copy gmp_table_low32 to user!\n", hisifd->index);
@@ -2391,7 +2413,7 @@ int hisi_effect_lcp_info_get(struct hisi_fb_data_type *hisifd, struct lcp_info *
 		}
 	}
 
-	if (hisifd->effect_ctl.lcp_xcc_support) {
+	if (hisifd->effect_ctl.lcp_xcc_support && (pinfo->xcc_table_len == LCP_XCC_LUT_LENGTH)) {
 		ret = hisi_effect_copy_to_user(lcp->xcc_table, pinfo->xcc_table, LCP_XCC_LUT_LENGTH);
 		if (ret) {
 			HISI_FB_ERR("fb%d, failed to copy xcc_table to user!\n", hisifd->index);
@@ -2399,7 +2421,7 @@ int hisi_effect_lcp_info_get(struct hisi_fb_data_type *hisifd, struct lcp_info *
 		}
 	}
 
-	if (hisifd->effect_ctl.lcp_igm_support) {
+	if (hisifd->effect_ctl.lcp_igm_support&& (pinfo->igm_lut_table_len == IGM_LUT_LEN)) {
 		ret = hisi_effect_copy_to_user(lcp->igm_r_table, pinfo->igm_lut_table_R, IGM_LUT_LEN);
 		if (ret) {
 			HISI_FB_ERR("fb%d, failed to copy igm_r_table to user!\n", hisifd->index);
@@ -2472,23 +2494,29 @@ int hisi_effect_gamma_info_get(struct hisi_fb_data_type *hisifd, struct gamma_in
 
 	pinfo = &(hisifd->panel_info);
 
-	gamma->para_mode = 0;
+	if (hisifd->effect_ctl.lcp_gmp_support && (pinfo->gamma_lut_table_len== GAMMA_LUT_LEN)) {
+		gamma->para_mode = 0;
 
-	ret = hisi_effect_copy_to_user(gamma->gamma_r_table, pinfo->gamma_lut_table_R, GAMMA_LUT_LEN);
-	if (ret) {
-		HISI_FB_ERR("fb%d, failed to copy gamma_r_table to user!\n", hisifd->index);
+		ret = hisi_effect_copy_to_user(gamma->gamma_r_table, pinfo->gamma_lut_table_R, GAMMA_LUT_LEN);
+		if (ret) {
+			HISI_FB_ERR("fb%d, failed to copy gamma_r_table to user!\n", hisifd->index);
+			goto err_ret;
+		}
+
+		ret = hisi_effect_copy_to_user(gamma->gamma_g_table, pinfo->gamma_lut_table_G, GAMMA_LUT_LEN);
+		if (ret) {
+			HISI_FB_ERR("fb%d, failed to copy gamma_g_table to user!\n", hisifd->index);
+			goto err_ret;
+		}
+
+		ret = hisi_effect_copy_to_user(gamma->gamma_b_table, pinfo->gamma_lut_table_B, GAMMA_LUT_LEN);
+		if (ret) {
+			HISI_FB_ERR("fb%d, failed to copy gamma_b_table to user!\n", hisifd->index);
+			goto err_ret;
+		}
 	}
 
-	ret = hisi_effect_copy_to_user(gamma->gamma_g_table, pinfo->gamma_lut_table_G, GAMMA_LUT_LEN);
-	if (ret) {
-		HISI_FB_ERR("fb%d, failed to copy gamma_g_table to user!\n", hisifd->index);
-	}
-
-	ret = hisi_effect_copy_to_user(gamma->gamma_b_table, pinfo->gamma_lut_table_B, GAMMA_LUT_LEN);
-	if (ret) {
-		HISI_FB_ERR("fb%d, failed to copy gamma_b_table to user!\n", hisifd->index);
-	}
-
+err_ret:
 	return ret;
 }
 #define ARSR2P_MAX_NUM 3
@@ -4141,12 +4169,10 @@ int hisifb_ce_service_enable_hiace(struct fb_info *info, void __user *argp)
 		return -1;
 	}
 	ret = (int)copy_from_user(&enable, argp, sizeof(enable));
-	HISI_FB_ERR("[effect] HIACE enable : %d, ret =%d \n", enable, ret);
 	if (ret) {
 		HISI_FB_ERR("[effect] arg is invalid");
 		return -EINVAL;
 	}
-	HISI_FB_ERR("[effect 2] HIACE enable : enable = %d, hiace_info.enable = %d	\n", enable, hisifd->hiace_info.enable);
 	mode = enable;
 	if (mode < 0) {
 		mode = 0;
@@ -4162,9 +4188,7 @@ int hisifb_ce_service_enable_hiace(struct fb_info *info, void __user *argp)
 			ce_info->to_stop_hdr = true;
 		}
 		enable_hiace(hisifd, mode);
-		HISI_FB_ERR("[effect 3] HIACE enable : mode %d", mode);
 	}
-	HISI_FB_ERR("[effect 5] HIACE enable : %d!!\n", enable);
 	return 0;
 }
 int hisifb_get_reg_val(struct fb_info *info, void __user *argp) {

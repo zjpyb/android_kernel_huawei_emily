@@ -92,9 +92,6 @@
 #define DEBUG	0
 #define VL53L1_LOG_ENABLE
 #endif
-#if 0
-#define FORCE_CONSOLE_DEBUG
-#endif
 
 extern int stmvl53l1_enable_debug;
 

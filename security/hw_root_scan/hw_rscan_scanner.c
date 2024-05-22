@@ -13,6 +13,7 @@
 #include "./include/hw_rscan_scanner.h"
 #include "./include/hw_rscan_utils.h"
 #include "./include/hw_rscan_whitelist.h"
+#include <chipset_common/security/hw_kernel_stp_interface.h>
 
 #define VAR_NOT_USED(variable)  do{(void)(variable);}while(0);
 #define KCODE_OFFSET 0
@@ -24,9 +25,10 @@ static DEFINE_MUTEX(scanner_lock);	/* lint -save -e64 -e785 -e708 -e570 */
 static DEFINE_MUTEX(whitelist_lock);	/* lint -save -e64 -e785 -e708 -e570 */
 static const char *TAG = "hw_rscan_scanner";
 static const char *DEFAULT_PROC = "/init";
-static int rs_load_whitelist = RSCAN_UNINIT;
-static int rs_whitelist_ready = RSCAN_UNINIT;
 static char *G_WHITELIST_PROC = RPROC_WHITE_LIST_STR;
+static int rs_data_init = RSCAN_UNINIT;
+int root_scan_hot_fix = 0;
+int ree_status = 0;
 
 struct rscan_skip_flags g_rscan_skip_flag = {
 	.skip_kcode = NOT_SKIP,
@@ -34,6 +36,7 @@ struct rscan_skip_flags g_rscan_skip_flag = {
 	.skip_se_hooks = NOT_SKIP,
 	.skip_se_status = NOT_SKIP,
 	.skip_rprocs = NOT_SKIP,
+	.skip_setid = NOT_SKIP,
 };
 
 static struct rscan_result_dynamic g_rscan_clean_scan_result;
@@ -45,8 +48,146 @@ struct fault_private {
 	size_t len;
 	char buf[500];
 };
-extern int is_rs_eng_enable(void);
 #endif
+
+static int rscan_trigger_by_stp(char *upload_rootproc)
+{
+	int scan_err_code = 0;
+	int root_masks = 0;
+	int dynamic_ops = 0;
+	int root_proc_length = 0;
+	struct rscan_result_dynamic *scan_result_buf = NULL;
+
+	scan_result_buf = vmalloc(sizeof(struct rscan_result_dynamic));
+	if (NULL == scan_result_buf) {
+		RSLogError(TAG, "no enough space for scan_result_buf");
+		mutex_unlock(&scanner_lock);
+		return -ENOSPC;
+	}
+	memset(scan_result_buf, 0, sizeof(struct rscan_result_dynamic));
+
+	dynamic_ops = RSOPID_ALL;
+	mutex_lock(&scanner_lock);
+	root_masks = rscan_dynamic(dynamic_ops, scan_result_buf,
+					&scan_err_code);
+	mutex_unlock(&scanner_lock);
+	if (0 != root_masks)
+		RSLogDebug(TAG, "root status trigger by stp is %d.", root_masks);
+
+	if (upload_rootproc != NULL && strlen(scan_result_buf->rprocs) > 0) {
+		root_proc_length = strnlen(scan_result_buf->rprocs, sizeof(scan_result_buf->rprocs));
+		if (root_proc_length >= RPROC_VALUE_LEN_MAX) {
+			root_proc_length = RPROC_VALUE_LEN_MAX - 1;
+			scan_result_buf->rprocs[RPROC_VALUE_LEN_MAX] = '\0';
+		}
+		strncpy(upload_rootproc, scan_result_buf->rprocs, RPROC_VALUE_LEN_MAX);
+	}
+
+	vfree(scan_result_buf);
+	scan_result_buf = NULL;
+
+	return root_masks;
+}
+
+static void set_stp_item(struct stp_item *item, uint id, unsigned char status, unsigned char credile, unsigned char version, char *name)
+{
+	if (!item) {
+		RSLogError(TAG,"stp item is NULL");
+		return;
+	}
+
+	item->id = id;
+	item->status = status;
+	item->credible = credile;
+	item->version = version;
+	strncpy(item->name, name, STP_ITEM_NAME_LEN);
+
+	return;
+}
+
+static int get_credible_of_item(int item_ree_status, int item_tee_status)
+{
+	if (item_ree_status == 0 && item_tee_status == 1) {
+		return STP_REFERENCE;
+	} else {
+		return STP_CREDIBLE;
+	}
+}
+static int need_to_upload(unsigned int masks, unsigned int mask, int ree_status, int tee_status, int flag)
+{
+	if (flag == 1)
+		return 1;
+
+	if ((masks & mask) && (ree_status != 0 || tee_status != 0))
+		return 1;
+	else
+		return 0;
+}
+
+/* flag = 0, just upload the abnormal items; flag = 1, upload all items */
+static void upload_to_stp(int ree_status, int tee_status, char *rootproc, unsigned int mask, int flag)
+{
+	int item_status = 0;
+	int item_version = 0;
+	int item_credible = STP_REFERENCE;
+	int item_tee_status = 0;
+	int ret = 0;
+	int need_upload = 0;
+	int i = 0;
+
+	struct stp_item item;
+
+	for (i = 0; i < MAX_NUM_OF_ITEM; ++i) {
+		item_status = check_status(ree_status, itembits[i].item_ree_bit);
+		item_tee_status = check_status(tee_status, itembits[i].item_tee_bit);
+		need_upload = need_to_upload(mask, itembits[i].item_ree_mask, item_status, item_tee_status, flag);
+		if (need_upload != 0) {
+			item_credible = get_credible_of_item(item_status, item_tee_status);
+			if ( i == ROOT_PROCS) {
+				/*
+				if (rootproc != NULL && strstr(rootproc, "adbd") != NULL)
+					item_credible = STP_CREDIBLE;
+				else
+					item_credible = STP_REFERENCE;
+				*/
+
+				item_credible = STP_REFERENCE;
+			}
+			if ( i == KCODE) {
+				if (item_credible == STP_REFERENCE && root_scan_hot_fix != 0)
+					item_credible = STP_CREDIBLE;
+			}
+			set_stp_item(&item, item_info[i].id, item_status, item_credible, item_version, item_info[i].name);
+			if ( i == ROOT_PROCS)
+				(void)kernel_stp_upload(item, rootproc);
+			else
+				(void)kernel_stp_upload(item, NULL);
+
+		}
+	}
+
+	return;
+}
+
+int stp_rscan_trigger()
+{
+	int ree_status;
+	int tee_status;
+	char *upload_rootproc;
+
+	upload_rootproc = (char *)kzalloc(RPROC_VALUE_LEN_MAX, GFP_KERNEL);
+	if (upload_rootproc == NULL)
+		RSLogError(TAG, "failed to alloc upload_rootproc");
+
+	ree_status = rscan_trigger_by_stp(upload_rootproc);
+	tee_status = get_tee_status();
+	upload_to_stp(ree_status, tee_status, upload_rootproc, RSOPID_ALL, 1);
+
+	if(upload_rootproc != NULL)
+		kfree(upload_rootproc);
+
+	return 0;
+}
 
 static int rscan_dynamic_raw_unlock(uint op_mask,
 					struct rscan_result_dynamic *result)
@@ -55,17 +196,20 @@ static int rscan_dynamic_raw_unlock(uint op_mask,
 	int error_code = 0;
 #ifdef CONFIG_HW_ROOT_SCAN_ENG_DEBUG
 	if(r_p_flag == 1) {
-	if(g_rscan_skip_flag.skip_kcode == SKIP) {
-		RSLogDebug(TAG, "skip kcode scan.");
+		if(g_rscan_skip_flag.skip_kcode == SKIP) {
+			RSLogDebug(TAG, "skip kcode scan.");
 		}
-	if(g_rscan_skip_flag.skip_syscall == SKIP) {
-		RSLogDebug(TAG, "skip syscall scan.");
+		if(g_rscan_skip_flag.skip_syscall == SKIP) {
+			RSLogDebug(TAG, "skip syscall scan.");
 		}
-	if(g_rscan_skip_flag.skip_se_hooks == SKIP) {
-		RSLogDebug(TAG, "skip se hooks scan.");
+		if(g_rscan_skip_flag.skip_se_hooks == SKIP) {
+			RSLogDebug(TAG, "skip se hooks scan.");
 		}
-	if(g_rscan_skip_flag.skip_se_status == SKIP) {
-		RSLogDebug(TAG, "skip se status scan.");
+		if(g_rscan_skip_flag.skip_se_status == SKIP) {
+			RSLogDebug(TAG, "skip se status scan.");
+		}
+		if(g_rscan_skip_flag.skip_setid == SKIP) {
+			RSLogDebug(TAG, "skip setid scan.");
 		}
 	}
 #endif
@@ -108,10 +252,14 @@ static int rscan_dynamic_raw_unlock(uint op_mask,
 #endif
 	}
 
+	if (op_mask & D_RSOPID_SETID) {
+		result->setid = get_setids();
+	}
+
 	return error_code;
 }
 
-/* return: mask of bad scans items result */
+/* return: mask of abnormal scans items result */
 int rscan_dynamic(uint op_mask, struct rscan_result_dynamic *result,
 							int *error_code)
 {
@@ -168,10 +316,19 @@ int rscan_dynamic(uint op_mask, struct rscan_result_dynamic *result,
 		}
 	}
 
+	if ((op_mask & D_RSOPID_SETID)
+		&& (g_rscan_skip_flag.skip_se_status == NOT_SKIP)
+		&& (result->setid !=
+				g_rscan_clean_scan_result.setid)) {
+		bad_mask |= D_RSOPID_SETID;
+		RSLogDebug(TAG, "SeLinux enforcing status is abnormal");
+	}
+
 	RSLogTrace(TAG, "root scan finished.");
 	return bad_mask;
 }
 
+/* just get the measurement, return the error mask */
 int rscan_dynamic_raw(uint op_mask, struct rscan_result_dynamic *result)
 {
 	int error_code = 0;
@@ -187,6 +344,30 @@ int rscan_dynamic_raw(uint op_mask, struct rscan_result_dynamic *result)
 
 	return error_code;
 }
+
+/* call by CA to send dynamic measurement and upload abnormal item */
+int rscan_dynamic_raw_and_upload(uint op_mask, struct rscan_result_dynamic *result) {
+	int ree_status = 0;
+	int tee_status = 0;
+	int error_code = 0;
+
+	if (NULL == result) {
+		RSLogError(TAG, "input parameter is invalid");
+		return -EINVAL;
+	}
+
+	mutex_lock(&scanner_lock);
+	ree_status = rscan_dynamic(op_mask, result, &error_code);
+	mutex_unlock(&scanner_lock);
+
+	tee_status = get_tee_status();
+	if (ree_status != 0 || tee_status != 0) {
+		upload_to_stp(ree_status, tee_status, NULL, op_mask, 0);
+	}
+
+	return error_code;
+}
+
 
 #ifdef CONFIG_ARCH_MSM
 int get_battery_status(int *is_charging, int *percentage)
@@ -297,6 +478,17 @@ int rscan_init_data(void)
 					sizeof(struct rscan_result_dynamic));
 
 	g_rscan_clean_scan_result.seenforcing = 1;
+	g_rscan_clean_scan_result.setid = get_setids();
+
+	ret = load_rproc_whitelist(g_rscan_clean_scan_result.rprocs,
+			sizeof(g_rscan_clean_scan_result.rprocs));
+	if (ret != 0
+		|| !init_rprocs_whitelist(g_rscan_clean_scan_result.rprocs)) {
+		RSLogError(TAG, "load root whitelist failed, rproc will skip");
+		strncpy(g_rscan_clean_scan_result.rprocs,
+				DEFAULT_PROC, strlen(DEFAULT_PROC));
+		g_rscan_skip_flag.skip_rprocs = SKIP;
+	}
 
 	ret = rscan_dynamic_raw(D_RSOPID_KCODE
 					| D_RSOPID_SYS_CALL
@@ -319,64 +511,15 @@ int rscan_init_data(void)
 		}
 	}
 
+	rs_data_init = RSCAN_INIT;
 	return 0;
 }
 
 int rscan_trigger(void)
 {
 	int result = 0;
-	int scan_err_code = 0;
-	int root_masks = 0;
-	int dynamic_ops = 0;
-	struct rscan_result_dynamic *scan_result_buf = NULL;
 
-#ifdef CONFIG_HW_ROOT_SCAN_ENG_DEBUG
-	if (RO_NORMAL != get_ro_secure() && RSCAN_INIT != is_rs_eng_enable()) {
-		RSLogTrace(TAG, "in engneering mode, root scan stopped");
-		return RSCAN_ERR_SECURE_MODE;
-	}
-#endif
-
-	if ( RSCAN_UNINIT == rs_load_whitelist) {
-		/* this moment rootscan.conf is ready */
-		rs_whitelist_ready = RSCAN_INIT;
-		result = load_rproc_whitelist(g_rscan_clean_scan_result.rprocs,
-					sizeof(g_rscan_clean_scan_result.rprocs));
-		if (result != 0
-			|| !init_rprocs_whitelist(g_rscan_clean_scan_result.rprocs)) {
-			RSLogError(TAG, "load root whitelist failed, rproc will skip");
-			strncpy(g_rscan_clean_scan_result.rprocs,
-					DEFAULT_PROC, strlen(DEFAULT_PROC));
-			g_rscan_skip_flag.skip_rprocs = SKIP;
-		}
-		rs_load_whitelist = RSCAN_INIT;
-	}
-
-	mutex_lock(&scanner_lock);
-	scan_result_buf = vmalloc(sizeof(struct rscan_result_dynamic));
-	if (NULL == scan_result_buf) {
-		RSLogError(TAG, "no enough space for scan_result_buf");
-		mutex_unlock(&scanner_lock);
-		return -ENOSPC;
-	}
-	memset(scan_result_buf, 0, sizeof(struct rscan_result_dynamic));
-
-	dynamic_ops = RSOPID_ALL;
-	root_masks = rscan_dynamic(dynamic_ops, scan_result_buf,
-					&scan_err_code);
-	if (0 != root_masks)
-		RSLogTrace(TAG, "root scan err code is normal");
-
-	result = rscan_data_upload(root_masks, scan_err_code, scan_result_buf);
-	if (0 != result)
-		RSLogError(TAG, "data upload failed, result is %d", result);
-
-	/* scan_result_buf never evaluates to NULL */
-	vfree(scan_result_buf);
-	scan_result_buf = NULL;
-
-	mutex_unlock(&scanner_lock);
-
+	result = stp_rscan_trigger();
 	RSLogTrace(TAG, "scan and upload finished. result: %d", result);
 	return result;
 }
@@ -452,13 +595,6 @@ int root_scan_pause(unsigned int op_mask, void *reserved)
 	int dynamic_ops = 0;
 	struct rscan_result_dynamic *scan_result_buf = NULL;
 
-#ifdef CONFIG_HW_ROOT_SCAN_ENG_DEBUG
-	if (RO_NORMAL != get_ro_secure() && RSCAN_INIT != is_rs_eng_enable()) {
-		RSLogTrace(TAG, "in engneering mode, root scan stopped");
-		return RSCAN_ERR_SECURE_MODE;
-	}
-#endif
-
 	struct timeval tv;
 
 	do_gettimeofday(&tv);
@@ -500,13 +636,7 @@ int root_scan_resume(unsigned int op_mask, void *reserved)
 
 	int result = 0;
 
-#ifdef CONFIG_HW_ROOT_SCAN_ENG_DEBUG
-	if (RO_NORMAL != get_ro_secure() && RSCAN_INIT != is_rs_eng_enable()) {
-		RSLogTrace(TAG, "in engneering mode, root scan stopped");
-		return RSCAN_ERR_SECURE_MODE;
-	}
-#endif
-
+	root_scan_hot_fix = 1;
 	struct timeval tv;
 
 	do_gettimeofday(&tv);

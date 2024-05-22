@@ -5,13 +5,20 @@
 
 #include "hi_type.h"
 
+typedef enum {
+	SCENE_VIDEO,
+	SCENE_HEIF,
+	SCENE_BUTT
+} VDEC_SCENE;
+
 typedef struct {
-	HI_U8    u8IsMapVirtual;
-	HI_U8    u8IsMapped;
-	HI_U32   u32ShareFd;
-	HI_U32   u32StartPhyAddr;
-	HI_U32   u32Size;
-	HI_VOID *pStartVirAddr;
+	HI_U8      u8IsMapVirtual;
+	HI_U8      u8IsMapped;
+	HI_U32     u32ShareFd;
+	HI_U32     u32StartPhyAddr;
+	HI_U32     u32Size;
+	VDEC_SCENE scene;
+	HI_VOID    *pStartVirAddr;
 } MEM_BUFFER_S;
 
 HI_S32   VDEC_MEM_Probe(HI_VOID);

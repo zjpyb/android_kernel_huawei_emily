@@ -559,7 +559,7 @@ extern void hw_dhd_looplog_end(void);
 #define CRC_16_SIZE     (sizeof(u16))
 #define OTP_BUF_SIZE    (SROM_MAX+CRC_16_SIZE)
 #define HW_OTP_CMD    "otpimage"
-#define HW_OTP_FILENAME "/data/misc/wifi/wifi_otp"
+#define HW_OTP_FILENAME "/data/vendor/wifi/wifi_otp"
 
 typedef struct _otp_check_info {
     int offset_start;

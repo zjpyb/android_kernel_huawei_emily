@@ -41,6 +41,16 @@
 #include <linux/mfd/hisi_pmic.h>
 #include <linux/hisi/hisi_powerkey_event.h>
 #include <linux/hisi/hisi_sp805_wdt.h>
+#include <linux/hisi/mntn_l3cache_ecc.h>
+#include <libhwsecurec/securec.h>
+#include <linux/version.h>
+#include <linux/hisi/hisi_pstore.h>
+#include <linux/hisi/hisi_bbox_diaginfo.h>
+#include <linux/watchdog.h>
+#include <mntn_subtype_exception.h>
+#include "../rdr_print.h"
+#include <linux/hisi/hisi_log.h>
+#define HISI_LOG_TAG HISI_BLACKBOX_TAG
 
 
 #define BUFFER_SIZE			128
@@ -93,7 +103,23 @@ rdr_e_callback e_callback;
 struct rdr_exception_info_s einfo[] = {
 	{{0, 0}, MODID_AP_S_PANIC, MODID_AP_S_PANIC, RDR_ERR,
 	 RDR_REBOOT_NOW, RDR_AP, RDR_AP, RDR_AP,
-	 (u32)RDR_REENTRANT_DISALLOW, (u32)AP_S_PANIC, 0, (u32)RDR_UPLOAD_YES, "ap", "ap",
+	 (u32)RDR_REENTRANT_DISALLOW, (u32)AP_S_PANIC, HI_APPANIC_RESERVED, (u32)RDR_UPLOAD_YES, "ap", "ap",
+	 0, 0, 0},
+	{{0, 0}, MODID_AP_S_L3CACHE_ECC, MODID_AP_S_L3CACHE_ECC, RDR_ERR,
+	 RDR_REBOOT_NOW, RDR_AP, RDR_AP, RDR_AP,
+	 (u32)RDR_REENTRANT_DISALLOW, (u32)AP_S_PANIC, HI_APPANIC_L3CACHE_ECC, (u32)RDR_UPLOAD_YES, "ap", "ap",
+	 0, 0, 0},
+	{{0, 0}, MODID_AP_S_PANIC_SOFTLOCKUP, MODID_AP_S_PANIC_SOFTLOCKUP, RDR_ERR,
+	 RDR_REBOOT_NOW, RDR_AP, RDR_AP, RDR_AP,
+	 (u32)RDR_REENTRANT_DISALLOW, (u32)AP_S_PANIC, HI_APPANIC_SOFTLOCKUP, (u32)RDR_UPLOAD_YES, "ap", "ap",
+	 0, 0, 0},
+	{{0, 0}, MODID_AP_S_PANIC_OTHERCPU_HARDLOCKUP, MODID_AP_S_PANIC_OTHERCPU_HARDLOCKUP, RDR_ERR,
+	 RDR_REBOOT_NOW, RDR_AP, RDR_AP, RDR_AP,
+	 (u32)RDR_REENTRANT_DISALLOW, (u32)AP_S_PANIC, HI_APPANIC_OHARDLOCKUP, (u32)RDR_UPLOAD_YES, "ap", "ap",
+	 0, 0, 0},
+	{{0, 0}, MODID_AP_S_PANIC_SP805_HARDLOCKUP, MODID_AP_S_PANIC_SP805_HARDLOCKUP, RDR_ERR,
+	 RDR_REBOOT_NOW, RDR_AP, RDR_AP, RDR_AP,
+	 (u32)RDR_REENTRANT_DISALLOW, (u32)AP_S_PANIC, HI_APPANIC_HARDLOCKUP, (u32)RDR_UPLOAD_YES, "ap", "ap",
 	 0, 0, 0},
 	{{0, 0}, MODID_AP_S_NOC, MODID_AP_S_NOC, RDR_ERR,
 	 RDR_REBOOT_NOW, RDR_AP, RDR_AP, RDR_AP,
@@ -140,6 +166,7 @@ static int rdr_hisiap_die_notify(struct notifier_block *nb,
 				 unsigned long event, void *pReg);
 static int save_exception_info(void *arg);
 static void get_product_version_work_fn(struct work_struct *work);
+static int rdr_copy_big_file_apend(char *dst, char *src);
 static int rdr_copy_file_apend(char *dst, char *src);
 
 static struct notifier_block acpu_panic_loop_block = {
@@ -205,7 +232,7 @@ static int get_ap_trace_mem_size_from_dts(void)
 	np = of_find_compatible_node(NULL, NULL,
 				     "hisilicon,rdr_ap_adapter");
 	if (!np) {
-		printk(KERN_ERR
+		BB_PRINT_ERR(
 		       "[%s], cannot find rdr_ap_adapter node in dts!\n",
 		       __func__);
 		return -ENODEV;
@@ -214,7 +241,7 @@ static int get_ap_trace_mem_size_from_dts(void)
 	ret = of_property_read_u32(np, "ap_trace_irq_size",
 				   &g_dump_buffer_size_tbl[i++]);
 	if (ret) {
-		printk(KERN_ERR
+		BB_PRINT_ERR(
 		       "[%s], cannot find ap_trace_irq_size in dts!\n",
 		       __func__);
 		return ret;
@@ -223,7 +250,7 @@ static int get_ap_trace_mem_size_from_dts(void)
 	ret = of_property_read_u32(np, "ap_trace_task_size",
 				   &g_dump_buffer_size_tbl[i++]);
 	if (ret) {
-		printk(KERN_ERR
+		BB_PRINT_ERR(
 		       "[%s], cannot find ap_trace_task_size in dts!\n",
 		       __func__);
 		return ret;
@@ -232,7 +259,7 @@ static int get_ap_trace_mem_size_from_dts(void)
 	ret = of_property_read_u32(np, "ap_trace_cpu_idle_size",
 				   &g_dump_buffer_size_tbl[i++]);
 	if (ret) {
-		printk(KERN_ERR
+		BB_PRINT_ERR(
 		       "[%s], cannot find ap_trace_cpu_idle_size in dts!\n",
 		       __func__);
 		return ret;
@@ -241,7 +268,7 @@ static int get_ap_trace_mem_size_from_dts(void)
 	ret = of_property_read_u32(np, "ap_trace_worker_size",
 				   &g_dump_buffer_size_tbl[i++]);
 	if (ret) {
-		printk(KERN_ERR
+		BB_PRINT_ERR(
 		       "[%s], cannot find ap_trace_worker_size in dts!\n",
 		       __func__);
 		return ret;
@@ -252,7 +279,7 @@ static int get_ap_trace_mem_size_from_dts(void)
 	ret = of_property_read_u32(np, "ap_trace_time_size",
 				   &g_dump_buffer_size_tbl[i++]);
 	if (ret) {
-		printk(KERN_ERR
+		BB_PRINT_ERR(
 		       "[%s], cannot find ap_trace_time_size in dts!\n",
 		       __func__);
 		return ret;
@@ -261,7 +288,7 @@ static int get_ap_trace_mem_size_from_dts(void)
 	ret = of_property_read_u32(np, "ap_trace_cpu_on_off_size",
 				   &g_dump_buffer_size_tbl[i++]);
 	if (ret) {
-		printk(KERN_ERR
+		BB_PRINT_ERR(
 		       "[%s], cannot find ap_trace_cpu_on_off_size in dts!\n",
 		       __func__);
 		return ret;
@@ -270,7 +297,7 @@ static int get_ap_trace_mem_size_from_dts(void)
 	ret = of_property_read_u32(np, "ap_trace_syscall_size",
 				   &g_dump_buffer_size_tbl[i++]);
 	if (ret) {
-		printk(KERN_ERR
+		BB_PRINT_ERR(
 		       "[%s], cannot find ap_trace_syscall_size in dts!\n",
 		       __func__);
 		return ret;
@@ -279,7 +306,7 @@ static int get_ap_trace_mem_size_from_dts(void)
 	ret = of_property_read_u32(np, "ap_trace_hung_task_size",
 				   &g_dump_buffer_size_tbl[i++]);
 	if (ret) {
-		printk(KERN_ERR
+		BB_PRINT_ERR(
 		       "[%s], cannot find ap_trace_hung_task_size in dts!\n",
 		       __func__);
 		return ret;
@@ -288,8 +315,17 @@ static int get_ap_trace_mem_size_from_dts(void)
 	ret = of_property_read_u32(np, "ap_trace_tasklet_size",
 				   &g_dump_buffer_size_tbl[i++]);
 	if (ret) {
-		printk(KERN_ERR
+		BB_PRINT_ERR(
 		       "[%s], cannot find ap_trace_tasklet_size in dts!\n",
+		       __func__);
+		return ret;
+	}
+
+	ret = of_property_read_u32(np, "ap_trace_diaginfo_size",
+				   &g_dump_buffer_size_tbl[i++]);
+	if (ret) {
+		BB_PRINT_ERR(
+		       "[%s], cannot find ap_trace_diaginfo_size in dts!\n",
 		       __func__);
 		return ret;
 	}
@@ -312,7 +348,7 @@ static int get_ap_dump_mem_modu_size_from_dts(void)
 	np = of_find_compatible_node(NULL, NULL,
 				     "hisilicon,rdr_ap_adapter");
 	if (!np) {
-		printk(KERN_ERR
+		BB_PRINT_ERR(
 		       "[%s], cannot find rdr_ap_adapter node in dts!\n",
 		       __func__);
 		return -ENODEV;
@@ -321,7 +357,7 @@ static int get_ap_dump_mem_modu_size_from_dts(void)
 	ret = of_property_read_u32(np, "ap_dump_mem_modu_noc_size",
 				   &g_dump_modu_mem_size_tbl[i++]);
 	if (ret) {
-		printk(KERN_ERR
+		BB_PRINT_ERR(
 		       "[%s], cannot find ap_dump_mem_modu_noc_size in dts!\n",
 		       __func__);
 		return ret;
@@ -330,7 +366,7 @@ static int get_ap_dump_mem_modu_size_from_dts(void)
 	ret = of_property_read_u32(np, "ap_dump_mem_modu_ddr_size",
 				   &g_dump_modu_mem_size_tbl[i++]);
 	if (ret) {
-		printk(KERN_ERR
+		BB_PRINT_ERR(
 		       "[%s], cannot find ap_dump_mem_modu_ddr_size in dts!\n",
 		       __func__);
 		return ret;
@@ -339,7 +375,7 @@ static int get_ap_dump_mem_modu_size_from_dts(void)
 	ret = of_property_read_u32(np, "ap_dump_mem_modu_gap_size",
 				   &g_dump_modu_mem_size_tbl[i++]);
 	if (ret) {
-		printk(KERN_ERR
+		BB_PRINT_ERR(
 		       "[%s], cannot find ap_dump_mem_modu_gap_size in dts!\n",
 		       __func__);
 		return ret;
@@ -363,7 +399,7 @@ static unsigned int get_ap_last_task_switch_from_dts(void)
 	np = of_find_compatible_node(NULL, NULL,
 				     "hisilicon,rdr_ap_adapter");
 	if (!np) {
-		printk(KERN_ERR
+		BB_PRINT_ERR(
 		       "[%s], cannot find rdr_ap_adapter node in dts!\n",
 		       __func__);
 		return 0;
@@ -372,7 +408,7 @@ static unsigned int get_ap_last_task_switch_from_dts(void)
 	ret = of_property_read_u32(np, "ap_last_task_switch",
 				   &ap_last_task_switch);
 	if (ret) {
-		printk(KERN_ERR
+		BB_PRINT_ERR(
 		       "[%s], cannot find ap_last_task_switch in dts!\n",
 		       __func__);
 		return 0;
@@ -421,7 +457,7 @@ void get_product_version(char *version, size_t count)
 	ssize_t length;
 
 	if (IS_ERR_OR_NULL(version)) {
-		printk(KERN_ERR "[%s], invalid para version [0x%pK]!\n",
+		BB_PRINT_ERR("[%s], invalid para version [0x%pK]!\n",
 		       __func__, version);
 		return;
 	}
@@ -435,7 +471,7 @@ void get_product_version(char *version, size_t count)
 
 	fp = filp_open(SYSTEM_BUILD_POP, O_RDONLY, FILE_LIMIT);
 	if (IS_ERR_OR_NULL(fp)) {
-		printk(KERN_ERR "[%s], open [%s] failed! err [%pK]\n",
+		BB_PRINT_ERR("[%s], open [%s] failed! err [%pK]\n",
 		       __func__, SYSTEM_BUILD_POP, fp);
 		return;
 	}
@@ -470,7 +506,7 @@ void get_product_version(char *version, size_t count)
 	}
 
 	filp_close(fp, NULL); /*lint !e668 */
-	printk(KERN_ERR "[%s], version [%s]!\n", __func__, version);
+	BB_PRINT_PN("[%s], version [%s]!\n", __func__, version);
 }
 
 void print_debug_info(void)
@@ -478,28 +514,28 @@ void print_debug_info(void)
 	int i;
 	regs_info *regs_info = g_rdr_ap_root->dump_regs_info; /*lint !e578*/
 
-	printk(KERN_INFO "=================AP_EH_ROOT================");
-	printk(KERN_INFO "[%s], dump_magic [0x%x]\n", __func__,
+	pr_info("=================AP_EH_ROOT================");
+	pr_info("[%s], dump_magic [0x%x]\n", __func__,
 	       g_rdr_ap_root->dump_magic);
-	printk(KERN_INFO "[%s], version [%s]\n", __func__,
+	pr_info("[%s], version [%s]\n", __func__,
 	       g_rdr_ap_root->version);
-	printk(KERN_INFO "[%s], modid [0x%x]\n", __func__,
+	pr_info("[%s], modid [0x%x]\n", __func__,
 	       g_rdr_ap_root->modid);
-	printk(KERN_INFO "[%s], e_exce_type [0x%x],\n", __func__,
+	pr_info("[%s], e_exce_type [0x%x],\n", __func__,
 	       g_rdr_ap_root->e_exce_type);
-	printk(KERN_INFO "[%s], e_exce_subtype [0x%x],\n", __func__,
+	pr_info("[%s], e_exce_subtype [0x%x],\n", __func__,
 	       g_rdr_ap_root->e_exce_subtype);
-	printk(KERN_INFO "[%s], coreid [0x%llx]\n", __func__,
+	pr_info("[%s], coreid [0x%llx]\n", __func__,
 	       g_rdr_ap_root->coreid);
-	printk(KERN_INFO "[%s], slice [%llu]\n", __func__,
+	pr_info("[%s], slice [%llu]\n", __func__,
 	       g_rdr_ap_root->slice);
-	printk(KERN_INFO "[%s], enter_times [0x%x]\n", __func__,
+	pr_info("[%s], enter_times [0x%x]\n", __func__,
 	       g_rdr_ap_root->enter_times);
-	printk(KERN_INFO "[%s], num_reg_regions [0x%x]\n", __func__,
+	pr_info("[%s], num_reg_regions [0x%x]\n", __func__,
 	       g_rdr_ap_root->num_reg_regions);
 
 	for (i = 0; (unsigned int)i < g_rdr_ap_root->num_reg_regions; i++) {
-		printk(KERN_INFO
+		pr_info(
 		       "[%s], reg_name [%s], reg_base [0x%pK], reg_size [0x%x], reg_dump_addr [0x%pK]\n",
 		       __func__, regs_info[i].reg_name,
 		       (void *)regs_info[i].reg_base,
@@ -513,7 +549,7 @@ static int check_addr_overflow(unsigned char *addr)
 	unsigned char *max_addr;
 
 	max_addr = g_rdr_ap_root->rdr_ap_area_map_addr +
-	    g_rdr_ap_root->ap_rdr_info.log_len;
+	    g_rdr_ap_root->ap_rdr_info.log_len - PMU_RESET_RECORD_DDR_AREA_SIZE;
 	if ((addr < g_rdr_ap_root->rdr_ap_area_map_addr)
 	    || (addr >= max_addr)) {
 		return 1;
@@ -529,11 +565,11 @@ static unsigned char *get_rdr_hisiap_dump_start_addr(void)
 
 	addr = g_rdr_ap_root->rdr_ap_area_map_addr +
 	    ALIGN(sizeof(AP_EH_ROOT), timers * SIZE_1K);
-	printk(KERN_INFO
+	pr_info(
 	       "[%s], aligned by %dK, dump_start_addr [0x%pK]\n",
 	       __func__, timers, addr);
 	if (check_addr_overflow(addr)) {
-		printk(KERN_ERR
+		BB_PRINT_ERR(
 		       "[%s], there is no space left for ap to dump!\n",
 		       __func__);
 		return NULL;
@@ -556,7 +592,7 @@ int io_resources_init(void)
 	np = of_find_compatible_node(NULL, NULL,
 				     "hisilicon,rdr_ap_adapter");
 	if (!np) {
-		printk(KERN_ERR
+		BB_PRINT_ERR(
 		       "[%s], cannot find rdr_ap_adapter node in dts!\n",
 		       __func__);
 		return -ENODEV;
@@ -565,14 +601,14 @@ int io_resources_init(void)
 	ret = of_property_read_u32(np, "reg-dump-regions",
 				   &g_rdr_ap_root->num_reg_regions);
 	if (ret) {
-		printk(KERN_ERR
+		BB_PRINT_ERR(
 		       "[%s], cannot find reg-dump-regions in dts!\n",
 		       __func__);
 		goto timer_ioinit;
 	}
 
 	if (0 == g_rdr_ap_root->num_reg_regions) {
-		printk(KERN_ERR
+		BB_PRINT_ERR(
 		       "[%s], reg-dump-regions in zero, so no reg resource to init.\n",
 		       __func__);
 		goto timer_ioinit;
@@ -580,7 +616,7 @@ int io_resources_init(void)
 
 	for (i = 0; (unsigned int)i < g_rdr_ap_root->num_reg_regions; i++) {
 		if (of_address_to_resource(np, i, &res)) {
-			printk(KERN_ERR
+			BB_PRINT_ERR(
 			       "[%s], of_address_to_resource [%d] fail!\n",
 			       __func__, i);
 			goto timer_ioinit;
@@ -592,24 +628,24 @@ int io_resources_init(void)
 		regs[i].reg_size = resource_size(&res);
 
 		if ( 0 == regs[i].reg_size ) {
-			printk(KERN_ERR
+			BB_PRINT_ERR(
 			       "[%s], [%s] registers size is 0, skip map!\n",
 			       __func__, (regs[i].reg_name));
 			goto reg_dump_addr_init;
 		}
 		regs[i].reg_map_addr = of_iomap(np, i);
-		printk(KERN_INFO
+		pr_info(
 		       "[%s], regs_info[%d].reg_name[%s], reg_base[0x%pK], reg_size[0x%x], map_addr[0x%pK]\n",
 		       __func__, i, regs[i].reg_name,
 		       (void *)regs[i].reg_base, regs[i].reg_size,
 		       regs[i].reg_map_addr);
 		if (!regs[i].reg_map_addr) {
-			printk(KERN_ERR
+			BB_PRINT_ERR(
 			       "[%s], unable to map [%s] registers\n",
 			       __func__, (regs[i].reg_name));
 			goto timer_ioinit;
 		}
-		printk(KERN_INFO "[%s], map [%s] registers ok\n",
+		pr_info("[%s], map [%s] registers ok\n",
 		       __func__, (regs[i].reg_name));
 reg_dump_addr_init:
 
@@ -617,7 +653,7 @@ reg_dump_addr_init:
 			regs[i].reg_dump_addr =
 			    get_rdr_hisiap_dump_start_addr();
 			if (IS_ERR_OR_NULL(regs[i].reg_dump_addr)) {
-				printk(KERN_ERR
+				BB_PRINT_ERR(
 				       "[%s], reg_dump_addr is invalid!\n",
 				       __func__);
 				goto timer_ioinit;
@@ -630,7 +666,7 @@ reg_dump_addr_init:
 
 	tmp = regs[i - 1].reg_dump_addr + regs[i - 1].reg_size;
 	if (check_addr_overflow(tmp)) {
-		printk(KERN_ERR
+		BB_PRINT_ERR(
 		       "[%s], there is no space left for ap to dump regs!\n",
 		       __func__);
 	}
@@ -640,7 +676,7 @@ timer_ioinit:
 	ret = of_property_read_u32_array(np, "ldrx2dbg-abs-timer",
 				       &data[0], 4);
 	if (ret) {
-		printk(KERN_ERR
+		BB_PRINT_ERR(
 		       "[%s], cannot find ldrx2dbg-abs-timer in dts!\n",
 		       __func__);
 		return ret;
@@ -648,7 +684,7 @@ timer_ioinit:
 
 	sctrl_map_addr = ioremap(data[0], data[1]);
 	if (NULL == sctrl_map_addr) {
-		printk(KERN_ERR
+		BB_PRINT_ERR(
 		       "[%s], cannot find ldrx2dbg-abs-timer in dts!\n",
 		       __func__);
 		return -EFAULT;
@@ -665,7 +701,7 @@ static unsigned int get_total_regdump_region_size(regs_info *regs_info)
 	u32 total = 0;
 
 	if (!regs_info) {
-		printk(KERN_ERR "[%s],\n", __func__);
+		BB_PRINT_ERR("[%s],\n", __func__);
 		return 0;
 	}
 
@@ -673,7 +709,7 @@ static unsigned int get_total_regdump_region_size(regs_info *regs_info)
 		total += regs_info[i].reg_size;
 	}
 
-	printk(KERN_INFO
+	pr_info(
 	       "[%s], num_reg_regions [%u], regdump size [0x%x]\n",
 	       __func__, g_rdr_ap_root->num_reg_regions, total);
 	return total;
@@ -684,115 +720,125 @@ int __init hook_buffer_alloc(void)
 {
 	int ret;
 
-	printk(KERN_INFO "[%s], irq_buffer_init start!\n", __func__);
+	pr_info("[%s], irq_buffer_init start!\n", __func__);
 	ret = irq_buffer_init(&g_rdr_ap_root->hook_percpu_buffer[HK_IRQ],
 			    g_rdr_ap_root->hook_buffer_addr[HK_IRQ],
 			    g_dump_buffer_size_tbl[HK_IRQ]);
 	if (ret) {
-		printk(KERN_ERR "[%s], irq_buffer_init failed!\n",
+		BB_PRINT_ERR("[%s], irq_buffer_init failed!\n",
 		       __func__);
 		return ret;
 	}
 
-	printk(KERN_INFO "[%s], task_buffer_init start!\n", __func__);
+	pr_info("[%s], task_buffer_init start!\n", __func__);
 	ret = task_buffer_init(&g_rdr_ap_root->hook_percpu_buffer[HK_TASK],
 			     g_rdr_ap_root->hook_buffer_addr[HK_TASK],
 			     g_dump_buffer_size_tbl[HK_TASK]);
 	if (ret) {
-		printk(KERN_ERR "[%s], task_buffer_init failed!\n",
+		BB_PRINT_ERR("[%s], task_buffer_init failed!\n",
 		       __func__);
 		return ret;
 	}
 
-	printk(KERN_INFO "[%s], cpuidle_buffer_init start!\n",
+	pr_info("[%s], cpuidle_buffer_init start!\n",
 	       __func__);
 	ret = cpuidle_buffer_init(&g_rdr_ap_root->hook_percpu_buffer[HK_CPUIDLE],
 				g_rdr_ap_root->hook_buffer_addr[HK_CPUIDLE],
 				g_dump_buffer_size_tbl[HK_CPUIDLE]);
 	if (ret) {
-		printk(KERN_ERR "[%s], cpuidle_buffer_init failed!\n",
+		BB_PRINT_ERR("[%s], cpuidle_buffer_init failed!\n",
 		       __func__);
 		return ret;
 	}
 
-	printk(KERN_INFO "[%s], worker_buffer_init start!\n", __func__);
+	pr_info("[%s], worker_buffer_init start!\n", __func__);
 	ret = worker_buffer_init(&g_rdr_ap_root->hook_percpu_buffer[HK_WORKER],
 			       g_rdr_ap_root->hook_buffer_addr[HK_WORKER],
 			       g_dump_buffer_size_tbl[HK_WORKER]);
 	if (ret) {
-		printk(KERN_ERR "[%s], worker_buffer_init failed!\n",
+		BB_PRINT_ERR("[%s], worker_buffer_init failed!\n",
 		       __func__);
 		return ret;
 	}
 
-	printk(KERN_INFO "[%s], mem_alloc_buffer_init start!\n",
+	pr_info("[%s], mem_alloc_buffer_init start!\n",
 	       __func__);
 	ret = mem_alloc_buffer_init(&g_rdr_ap_root->hook_percpu_buffer[HK_MEM_ALLOCATOR],
 			       g_rdr_ap_root->hook_buffer_addr[HK_MEM_ALLOCATOR],
 			       g_dump_buffer_size_tbl[HK_MEM_ALLOCATOR]);
 	if (ret) {
-		printk(KERN_ERR "[%s], mem_alloc_buffer_init failed!\n",
+		BB_PRINT_ERR("[%s], mem_alloc_buffer_init failed!\n",
 		       __func__);
 		return ret;
 	}
 
-	printk(KERN_INFO "[%s], ion_alloc_buffer_init start!\n",
+	pr_info("[%s], ion_alloc_buffer_init start!\n",
 	       __func__);
 	ret = ion_alloc_buffer_init(&g_rdr_ap_root->hook_percpu_buffer[HK_ION_ALLOCATOR],
 			       g_rdr_ap_root->hook_buffer_addr[HK_ION_ALLOCATOR],
 			       g_dump_buffer_size_tbl[HK_ION_ALLOCATOR]);
 	if (ret) {
-		printk(KERN_ERR "[%s], ion_alloc_buffer_init failed!\n",
+		BB_PRINT_ERR("[%s], ion_alloc_buffer_init failed!\n",
 		       __func__);
 		return ret;
 	}
 
-	printk(KERN_INFO "[%s], worker_buffer_init start!\n", __func__);
+	pr_info("[%s], worker_buffer_init start!\n", __func__);
 	ret = time_buffer_init(&g_rdr_ap_root->hook_percpu_buffer[HK_TIME],
 			       g_rdr_ap_root->hook_buffer_addr[HK_TIME],
 			       g_dump_buffer_size_tbl[HK_TIME]);
 	if (ret) {
-		printk(KERN_ERR "[%s], time_buffer_init failed!\n",
+		BB_PRINT_ERR("[%s], time_buffer_init failed!\n",
 		       __func__);
 		return ret;
 	}
 
-	printk(KERN_INFO "[%s], cpu_onoff_buffer_init start!\n",
+	pr_info("[%s], cpu_onoff_buffer_init start!\n",
 	       __func__);
 	ret = cpu_onoff_buffer_init(&g_rdr_ap_root->hook_buffer_addr[HK_CPU_ONOFF],
 				  g_dump_buffer_size_tbl[HK_CPU_ONOFF]);
 	if (ret) {
-		printk(KERN_ERR "[%s], cpu_onoff_buffer_init failed!\n",
+		BB_PRINT_ERR("[%s], cpu_onoff_buffer_init failed!\n",
 		       __func__);
 		return ret;
 	}
 
-	printk(KERN_INFO "[%s], syscall_buffer_init start!\n",
+	pr_info("[%s], syscall_buffer_init start!\n",
 	       __func__);
 	ret = syscall_buffer_init(&g_rdr_ap_root->hook_buffer_addr[HK_SYSCALL],
 				g_dump_buffer_size_tbl[HK_SYSCALL]);
 	if (ret) {
-		printk(KERN_ERR "[%s], syscall_buffer_init failed!\n",
+		BB_PRINT_ERR("[%s], syscall_buffer_init failed!\n",
 		       __func__);
 		return ret;
 	}
 
-	printk(KERN_INFO "[%s], hung_task_buffer_init start!\n",
+	pr_info("[%s], hung_task_buffer_init start!\n",
 	       __func__);
 	ret = hung_task_buffer_init(&g_rdr_ap_root->hook_buffer_addr[HK_HUNGTASK],
 				  g_dump_buffer_size_tbl[HK_HUNGTASK]);
 	if (ret) {
-		printk(KERN_ERR "[%s], hung_task_buffer_init failed!\n",
+		BB_PRINT_ERR("[%s], hung_task_buffer_init failed!\n",
 		       __func__);
 		return ret;
 	}
 
-	printk(KERN_INFO "[%s], tasklet_buffer_init start!\n",
+	pr_info("[%s], tasklet_buffer_init start!\n",
 	       __func__);
 	ret = tasklet_buffer_init(&g_rdr_ap_root->hook_buffer_addr[HK_TASKLET],
 				g_dump_buffer_size_tbl[HK_TASKLET]);
 	if (ret) {
-		printk(KERN_ERR "[%s], tasklet_buffer_init failed!\n",
+		BB_PRINT_ERR("[%s], tasklet_buffer_init failed!\n",
+		       __func__);
+		return ret;
+	}
+
+	pr_info("[%s], diaginfo_buffer_init start!\n",
+	       __func__);
+	ret = diaginfo_buffer_init(&g_rdr_ap_root->hook_buffer_addr[HK_DIAGINFO],
+				g_dump_buffer_size_tbl[HK_DIAGINFO]);
+	if (ret) {
+		BB_PRINT_ERR("[%s], diaginfo_buffer_init failed!\n",
 		       __func__);
 		return ret;
 	}
@@ -804,53 +850,55 @@ void rdr_hisiap_print_all_dump_addrs(void)
 {
 	int i;
 	if (IS_ERR_OR_NULL(g_rdr_ap_root)) {
-		printk(KERN_ERR
+		BB_PRINT_ERR(
 		       "[%s], g_rdr_ap_root [0x%pK] is invalid \n",
 		       __func__, g_rdr_ap_root);
 		return;
 	}
 
 	for (i = 0; (unsigned int)i < g_rdr_ap_root->num_reg_regions; i++) {
-		printk(KERN_INFO
+		pr_info(
 		       "[%s], reg_name [%s], reg_dump_addr [0x%pK] \n",
 		       __func__,
 		       g_rdr_ap_root->dump_regs_info[i].reg_name,
 		       g_rdr_ap_root->dump_regs_info[i].reg_dump_addr);
 	}
 
-	printk(KERN_INFO "[%s], rdr_ap_area_map_addr [0x%pK].\n",
+	pr_info("[%s], rdr_ap_area_map_addr [0x%pK].\n",
 	       __func__, g_rdr_ap_root->rdr_ap_area_map_addr);
-	printk(KERN_INFO "[%s], kirq_switch_addr [0x%pK].\n", __func__,
+	pr_info("[%s], kirq_switch_addr [0x%pK].\n", __func__,
 	       g_rdr_ap_root->hook_buffer_addr[HK_IRQ]);
-	printk(KERN_INFO "[%s], ktask_switch_addr [0x%pK].\n", __func__,
+	pr_info("[%s], ktask_switch_addr [0x%pK].\n", __func__,
 	       g_rdr_ap_root->hook_buffer_addr[HK_TASK]);
-	printk(KERN_INFO "[%s], cpu_on_off_addr [0x%pK].\n", __func__,
+	pr_info("[%s], cpu_on_off_addr [0x%pK].\n", __func__,
 	       g_rdr_ap_root->hook_buffer_addr[HK_CPU_ONOFF]);
-	printk(KERN_INFO "[%s], cpu_idle_stat_addr [0x%pK].\n", __func__,
+	pr_info("[%s], cpu_idle_stat_addr [0x%pK].\n", __func__,
 	       g_rdr_ap_root->hook_buffer_addr[HK_CPUIDLE]);
-	printk(KERN_INFO "[%s], worker_trace_addr [0x%pK].\n", __func__,
+	pr_info("[%s], worker_trace_addr [0x%pK].\n", __func__,
 	       g_rdr_ap_root->hook_buffer_addr[HK_WORKER]);
-	printk(KERN_INFO "[%s], mem_allocator_trace_addr [0x%pK].\n", __func__,
+	pr_info("[%s], mem_allocator_trace_addr [0x%pK].\n", __func__,
 	       g_rdr_ap_root->hook_buffer_addr[HK_MEM_ALLOCATOR]);
-	printk(KERN_INFO "[%s], ion_allocator_trace_addr [0x%pK].\n", __func__,
+	pr_info("[%s], ion_allocator_trace_addr [0x%pK].\n", __func__,
 	       g_rdr_ap_root->hook_buffer_addr[HK_ION_ALLOCATOR]);
-	printk(KERN_INFO "[%s], time_trace_addr [0x%pK].\n", __func__,
+	pr_info("[%s], time_trace_addr [0x%pK].\n", __func__,
 	       g_rdr_ap_root->hook_buffer_addr[HK_TIME]);
-	printk(KERN_INFO "[%s], syscall_trace_addr [0x%pK].\n", __func__,
+	pr_info("[%s], syscall_trace_addr [0x%pK].\n", __func__,
 	       g_rdr_ap_root->hook_buffer_addr[HK_SYSCALL]);
-	printk(KERN_INFO "[%s], hung_task_addr [0x%pK].\n", __func__,
+	pr_info("[%s], hung_task_addr [0x%pK].\n", __func__,
 	       g_rdr_ap_root->hook_buffer_addr[HK_HUNGTASK]);
-	printk(KERN_INFO "[%s], tasklet_trace_addr [0x%pK].\n", __func__,
+	pr_info("[%s], tasklet_trace_addr [0x%pK].\n", __func__,
 	       g_rdr_ap_root->hook_buffer_addr[HK_TASKLET]);
+	pr_info("[%s], diaginfo_trace_addr [0x%pK].\n", __func__,
+	       g_rdr_ap_root->hook_buffer_addr[HK_DIAGINFO]);
 
 	for (i = 0; i < NR_CPUS; i++) {
-		printk(KERN_INFO
+		pr_info(
 		       "[%s], last_task_stack_dump_addr[%d] [0x%pK].\n",
 		       __func__, i,
 		       g_rdr_ap_root->last_task_stack_dump_addr[i]);
 	}
 	for (i = 0; i < NR_CPUS; i++) {
-		printk(KERN_INFO
+		pr_info(
 		       "[%s], last_task_struct_dump_addr[%d] [0x%pK].\n",
 		       __func__, i,
 		       g_rdr_ap_root->last_task_struct_dump_addr[i]);
@@ -858,7 +906,7 @@ void rdr_hisiap_print_all_dump_addrs(void)
 
 	for (i = 0; i < MODU_MAX; i++) {
 		if (0 != g_rdr_ap_root->module_dump_info[i].dump_size) {
-			printk(KERN_INFO
+			pr_info(
 			       "[%s], module_dump_info[%d].dump_addr [0x%pK].\n",
 			       __func__, i,
 			       g_rdr_ap_root->module_dump_info[i].
@@ -884,7 +932,7 @@ void module_dump_mem_init(void)
 		if (check_addr_overflow
 		    (g_rdr_ap_root->module_dump_info[i].dump_addr +
 		     g_dump_modu_mem_size_tbl[i])) {
-			printk(KERN_ERR
+			BB_PRINT_ERR(
 			       "[%s], there is no enough space for modu [%d] to dump mem!\n",
 			       __func__, i);
 			break;
@@ -892,7 +940,7 @@ void module_dump_mem_init(void)
 		g_rdr_ap_root->module_dump_info[i].dump_size =
 		    g_dump_modu_mem_size_tbl[i];
 
-		printk(KERN_INFO
+		pr_info(
 		       "[%s], dump_addr [0x%pK] dump_size [0x%x]!\n",
 		       __func__,
 		       g_rdr_ap_root->module_dump_info[i].dump_addr,
@@ -946,12 +994,12 @@ static int __init ap_dump_buffer_init(void)
 
 	if (check_addr_overflow(g_rdr_ap_root->last_task_stack_dump_addr[NR_CPUS - 1] +
 	     last_task_stack_size)) {
-		printk(KERN_ERR
+		BB_PRINT_ERR(
 		       "[%s], there is no enough space for ap to dump!\n",
 		       __func__);
 		return -ENOSPC;
 	}
-	printk(KERN_INFO "[%s], module_dump_mem_init start.\n",
+	pr_info("[%s], module_dump_mem_init start.\n",
 	       __func__);
 	module_dump_mem_init();
 
@@ -1007,6 +1055,24 @@ u64 rdr_get_last_wdt_kick_slice(void)
 	return last_kick_slice;
 }
 
+void rdr_regs_memcpy(void *dest, const void *src, size_t len)
+{
+	size_t remain, mult, i;
+	u64    *u64_dst, *u64_src;
+
+	remain  = len % sizeof(u64);
+	mult    = len / sizeof(u64);
+	u64_dst = (u64 *)dest;
+	u64_src = (u64 *)src;
+
+	for (i = 0; i < mult; i++) {
+		*(u64_dst++) = *(u64_src++);
+	}
+
+	for (i = 0; i < remain; i++) {
+		*((u8 *)u64_dst + i) = *((u8 *)u64_src + i);
+	}
+}
 
 void regs_dump(void)
 {
@@ -1020,20 +1086,20 @@ void regs_dump(void)
 		if (IS_ERR_OR_NULL(regs_info[i].reg_map_addr)
 		    || IS_ERR_OR_NULL(regs_info[i].reg_dump_addr)) {
 			regs_info[i].reg_dump_addr = 0;
-			printk(KERN_ERR
+			BB_PRINT_ERR(
 			       "[%s], regs_info[%d].reg_map_addr [%pK] reg_dump_addr [%pK] invalid!\n",
 			       __func__, i, regs_info[i].reg_map_addr,
 			       regs_info[i].reg_dump_addr);
 			continue;
 		}
-		printk(KERN_INFO
+		pr_info(
 		       "[%s], memcpy [0x%x] size from regs_info[%d].reg_map_addr [%pK] to reg_dump_addr [%pK].\n",
 		       __func__, regs_info[i].reg_size, i,
 		       regs_info[i].reg_map_addr,
 		       regs_info[i].reg_dump_addr);
-		memcpy(regs_info[i].reg_dump_addr,
-			   regs_info[i].reg_map_addr,
-			   regs_info[i].reg_size);
+		rdr_regs_memcpy(regs_info[i].reg_dump_addr,
+		       regs_info[i].reg_map_addr,
+		       regs_info[i].reg_size);
 	}
 }
 
@@ -1043,27 +1109,27 @@ __no_sanitize_address void last_task_stack_dump(void)
 	unsigned char *dst = NULL;
 
 	if (!get_ap_last_task_switch_from_dts()) {
-		printk(KERN_ERR
+		BB_PRINT_ERR(
 		       "[%s], ap_last_task_switch is closed in dts!\n",
 		       __func__);
 		return;
 	}
 
 	if (!g_rdr_ap_root) {
-		pr_err("[%s]:g_rdr_ap_root is invalid\n", __func__);
+		BB_PRINT_ERR("[%s]:g_rdr_ap_root is invalid\n", __func__);
 		return;
 	}
 	for (i = 0; i < NR_CPUS; i++) {
 		dst = g_rdr_ap_root->last_task_struct_dump_addr[i];
 		if ((!dst)
 		    || (!g_last_task_ptr[i])) {
-			printk(KERN_ERR
+			BB_PRINT_ERR(
 			       "[%s], last_task_struct_dump_addr[%d] [0x%pK] is invalid!\n",
 			       __func__, i, dst);
 			continue;
 		}
 		if (!kern_addr_valid((unsigned long)g_last_task_ptr[i])) {
-			printk(KERN_ERR
+			BB_PRINT_ERR(
 			       "[%s], g_last_task_ptr[%d] [0x%pK] is invalid!\n",
 			       __func__, i, g_last_task_ptr[i]);
 			continue;
@@ -1074,14 +1140,14 @@ __no_sanitize_address void last_task_stack_dump(void)
 		dst = g_rdr_ap_root->last_task_stack_dump_addr[i];
 		if ((!dst)
 		    || (!g_last_task_ptr[i]->stack)) {
-			printk(KERN_ERR
+			BB_PRINT_ERR(
 			       "[%s], last_task_stack_dump_addr[%d] [0x%pK] is invalid!\n",
 			       __func__, i, dst);
 			continue;
 		}
 		if (!kern_addr_valid
 		    ((unsigned long)g_last_task_ptr[i]->stack)) {
-			printk(KERN_ERR
+			BB_PRINT_ERR(
 			       "[%s], g_last_task_ptr[%d] stack [0x%pK] is invalid!\n",
 			       __func__, i, g_last_task_ptr[i]->stack);
 			continue;
@@ -1098,7 +1164,7 @@ static int hisi_trace_hook_install(void)
 	for (hk = HK_IRQ; hk < HK_MAX; hk++) {
 		ret = hisi_ap_hook_install(hk);
 		if (ret) {
-			printk(KERN_ERR
+			BB_PRINT_ERR(
 			       "[%s], hook_type [%d] install failed!\n",
 			       __func__, hk);
 			return ret;
@@ -1117,16 +1183,16 @@ static void hisi_trace_hook_uninstall(void)
 
 static void get_product_version_work_fn(struct work_struct *work)
 {
-	printk(KERN_ERR "[%s], enter!\n", __func__);
+	BB_PRINT_PN("[%s], enter!\n", __func__);
 	if (!g_rdr_ap_root) {
-		printk(KERN_ERR "[%s], g_rdr_ap_root is NULL!\n",
+		BB_PRINT_ERR("[%s], g_rdr_ap_root is NULL!\n",
 		       __func__);
 		return;
 	}
 
 	get_product_version((char *)g_rdr_ap_root->version,
 			    PRODUCT_VERSION_LEN);
-	printk(KERN_ERR "[%s], exit!\n", __func__);
+	BB_PRINT_PN("[%s], exit!\n", __func__);
 }
 
 /*******************************************************************************
@@ -1143,30 +1209,30 @@ int register_module_dump_mem_func(rdr_hisiap_dump_func_ptr func,
 	int ret = -1;
 
 	if (modu >= MODU_MAX) {
-		printk(KERN_ERR "[%s], modu [%d] is invalid!\n",
+		BB_PRINT_ERR("[%s], modu [%d] is invalid!\n",
 		       __func__, modu);
 		return -EINVAL;
 	}
 
 	if (IS_ERR_OR_NULL(func)) {
-		printk(KERN_ERR "[%s], func [0x%pK] is invalid!\n",
+		BB_PRINT_ERR("[%s], func [0x%pK] is invalid!\n",
 		       __func__, func);
 		return -EINVAL;
 	}
 
 	if (IS_ERR_OR_NULL(module_name)) {
-		printk(KERN_ERR "[%s], module_name is invalid!\n",
+		BB_PRINT_ERR("[%s], module_name is invalid!\n",
 		       __func__);
 		return -EINVAL;
 	}
 
 	if (NULL == g_rdr_ap_root) {
-		printk(KERN_ERR "[%s], g_rdr_ap_root is null!\n",
+		BB_PRINT_ERR("[%s], g_rdr_ap_root is null!\n",
 		       __func__);
 		return -1;
 	}
 
-	printk(KERN_ERR "[%s], module_name [%s]\n", __func__,
+	BB_PRINT_PN("[%s], module_name [%s]\n", __func__,
 	       module_name);
 	mutex_lock(&dump_mem_mutex);
 	if (0 != g_rdr_ap_root->module_dump_info[modu].dump_size) {
@@ -1179,7 +1245,7 @@ int register_module_dump_mem_func(rdr_hisiap_dump_func_ptr func,
 	mutex_unlock(&dump_mem_mutex);
 
 	if (ret) {
-		printk(KERN_ERR
+		BB_PRINT_ERR(
 		       "[%s], func[0x%pK], size[%d], [%s] register failed!\n",
 		       __func__, func,
 		       g_rdr_ap_root->module_dump_info[modu].dump_size,
@@ -1201,13 +1267,13 @@ void save_module_dump_mem(void)
 	void *addr = NULL;
 	unsigned int size = 0;
 
-	printk(KERN_ERR "[%s], enter.\n", __func__);
+	BB_PRINT_PN("[%s], enter.\n", __func__);
 	for (i = 0; i < MODU_MAX; i++) {
 		if (NULL != g_rdr_ap_root->module_dump_info[i].dump_funcptr) {
 			addr = (void *)g_rdr_ap_root->module_dump_info[i].dump_addr;
 			size = g_rdr_ap_root->module_dump_info[i].dump_size;
 			if (!g_rdr_ap_root->module_dump_info[i].dump_funcptr(addr, size)) {
-				printk(KERN_ERR
+				BB_PRINT_ERR(
 				       "[%s], [%s] dump failed!\n",
 				       __func__,
 				       g_rdr_ap_root->module_dump_info[i].module_name);
@@ -1215,7 +1281,7 @@ void save_module_dump_mem(void)
 			}
 		}
 	}
-	printk(KERN_ERR "[%s], exit.\n", __func__);
+	BB_PRINT_PN("[%s], exit.\n", __func__);
 }
 
 /*****************************************************
@@ -1233,7 +1299,7 @@ static void get_device_platform(unsigned char *device_platform, size_t count)
 	}
 	else {
 		strncpy((char *)device_platform, "unknown", count);
-		printk(KERN_ERR "unrecognizable device_id? new or old product.\n");
+		BB_PRINT_ERR("unrecognizable device_id? new or old product.\n");
 	}
 	device_platform[count - 1] = '\0';
 }
@@ -1242,7 +1308,7 @@ int __init rdr_hisiap_dump_init(struct rdr_register_module_result *retinfo)
 {
 	int ret = 0;
 
-	printk(KERN_ERR "[%s], begin.\n", __func__);
+	BB_PRINT_PN("[%s], begin.\n", __func__);
 
 	g_rdr_ap_root = (AP_EH_ROOT *) g_hisiap_addr;
 	strncpy(g_log_path, g_rdr_ap_root->log_path, LOG_PATH_LEN - 1);
@@ -1261,64 +1327,69 @@ int __init rdr_hisiap_dump_init(struct rdr_register_module_result *retinfo)
 	g_rdr_ap_root->dump_magic = AP_DUMP_MAGIC;
 	g_rdr_ap_root->end_magic = AP_DUMP_END_MAGIC;
 
-	printk(KERN_ERR "[%s], io_resources_init start.\n", __func__);
+	BB_PRINT_PN("[%s], io_resources_init start.\n", __func__);
 	ret = io_resources_init();
 	if (ret) {
-		printk(KERN_ERR "[%s], io_resources_init failed!\n",
+		BB_PRINT_ERR("[%s], io_resources_init failed!\n",
 		       __func__);
 		return ret;
 	}
 
-	printk(KERN_ERR "[%s], get_ap_trace_mem_size_from_dts start.\n", __func__);
+	BB_PRINT_PN("[%s], get_ap_trace_mem_size_from_dts start.\n", __func__);
 	ret = get_ap_trace_mem_size_from_dts();
 	if (ret) {
-		printk(KERN_ERR "[%s], get_ap_trace_mem_size_from_dts failed!\n",
+		BB_PRINT_ERR("[%s], get_ap_trace_mem_size_from_dts failed!\n",
 		       __func__);
 		return ret;
 	}
 
-	printk(KERN_ERR "[%s], get_ap_dump_mem_modu_size_from_dts start.\n", __func__);
+	BB_PRINT_PN("[%s], get_ap_dump_mem_modu_size_from_dts start.\n", __func__);
 	ret = get_ap_dump_mem_modu_size_from_dts();
 	if (ret) {
-		printk(KERN_ERR "[%s], get_ap_dump_mem_modu_size_from_dts failed!\n",
+		BB_PRINT_ERR("[%s], get_ap_dump_mem_modu_size_from_dts failed!\n",
 		       __func__);
 		return ret;
 	}
 
-	printk(KERN_ERR "[%s], ap_dump_buffer_init start.\n", __func__);
+	BB_PRINT_PN("[%s], ap_dump_buffer_init start.\n", __func__);
 	ret = ap_dump_buffer_init();
 	if (ret) {
-		printk(KERN_ERR "[%s], ap_dump_buffer_init failed!\n",
+		BB_PRINT_ERR("[%s], ap_dump_buffer_init failed!\n",
 		       __func__);
 		return ret;
 	}
 
-	printk(KERN_ERR "[%s], register_arch_timer_func_ptr start.\n",
+	BB_PRINT_PN("[%s], register_arch_timer_func_ptr start.\n",
 	       __func__);
 	ret = register_arch_timer_func_ptr(get_32k_abs_timer_value);
 	if (ret) {
-		printk(KERN_ERR
+		BB_PRINT_ERR(
 		       "[%s], register_arch_timer_func_ptr failed!\n",
 		       __func__);
 		return ret;
 	}
 
 	if (check_himntn(HIMNTN_KERNEL_DUMP_ENABLE)) {	/* 轨迹是否生成保持和kernel dump一致 */
-		printk(KERN_ERR
-		       "[%s], hisi_trace_hook_install start.\n",
-		       __func__);
+		BB_PRINT_PN(
+			"[%s], hisi_trace_hook_install start.\n",
+			__func__);
 		ret = hisi_trace_hook_install();
 		if (ret) {
-			printk(KERN_ERR
-			       "[%s], hisi_trace_hook_install failed!\n",
-			       __func__);
+			BB_PRINT_ERR(
+				"[%s], hisi_trace_hook_install failed!\n",
+				__func__);
 			return ret;
 		}
+	} else {
+		BB_PRINT_PN(
+			"[%s], hisi_ap_defopen_hook_install start.\n",
+			__func__);
+		hisi_ap_defopen_hook_install();
 	}
 
 	schedule_delayed_work(&get_product_version_work, 0);
 
-	printk(KERN_ERR "[%s], end.\n", __func__);
+	BB_PRINT_PN("[%s], end.\n", __func__);
 	return ret;
 }
 
@@ -1335,11 +1406,11 @@ static void save_bl31_exc_memory(void)
 		(LOG_PATH_LEN - 1 - strlen(fullpath_arr)));
 	strncat(fullpath_arr, "/ap_log/",
 		(LOG_PATH_LEN - 1 - strlen(fullpath_arr)));
-	printk(KERN_ERR "%s: %s\n", __func__, fullpath_arr);
+	BB_PRINT_PN("%s: %s\n", __func__, fullpath_arr);
 
 	iret = mntn_filesys_create_dir(fullpath_arr, DIR_LIMIT);
 	if (0 != iret) {
-		printk(KERN_ERR "%s: iret is [%d]\n", __func__, iret);
+		BB_PRINT_ERR("%s: iret is [%d]\n", __func__, iret);
 		return;
 	}
 	len = strlen(fullpath_arr);
@@ -1348,7 +1419,7 @@ static void save_bl31_exc_memory(void)
 		(LOG_PATH_LEN - 1 - len));
 	iret = rdr_copy_file_apend(dst_str, SRC_BL31_MNTN_MEMORY);
 	if (iret) {
-		printk(KERN_ERR
+		BB_PRINT_ERR(
 		       "[%s], save bl31_mntn_memory.bin error, ret = %d\n",
 		       __func__, iret);
 	}
@@ -1368,11 +1439,11 @@ static void save_hhee_exc_memory(void)
 		((LOG_PATH_LEN - 1) - strlen(fullpath_arr)));
 	strncat(fullpath_arr, "/ap_log/",
 		((LOG_PATH_LEN - 1) - strlen(fullpath_arr)));
-	printk(KERN_ERR "%s: %s\n", __func__, fullpath_arr);
+	BB_PRINT_PN("%s: %s\n", __func__, fullpath_arr);
 
 	iret = mntn_filesys_create_dir(fullpath_arr, DIR_LIMIT);
 	if (0 != iret) {
-		printk(KERN_ERR "%s: iret is [%d]\n", __func__, iret);
+		BB_PRINT_ERR("%s: iret is [%d]\n", __func__, iret);
 		return;
 	}
 	len = strlen(fullpath_arr);
@@ -1381,7 +1452,7 @@ static void save_hhee_exc_memory(void)
 		((LOG_PATH_LEN - 1) - len));
 	iret = rdr_copy_file_apend(dst_str, SRC_HHEE_MNTN_MEMORY);
 	if (iret) {
-		printk(KERN_ERR
+		BB_PRINT_ERR(
 		       "[%s], save hhee_mntn_memory.bin error, ret = %d\n",
 		       __func__, iret);
 	}
@@ -1399,11 +1470,11 @@ static void save_lpmcu_exc_memory(void)
 	memset(fullpath_arr, 0, LOG_PATH_LEN);
 	strncat(fullpath_arr, g_log_path, ((LOG_PATH_LEN - 1) - strlen(fullpath_arr)));
 	strncat(fullpath_arr, "/lpmcu_log/", ((LOG_PATH_LEN - 1) - strlen(fullpath_arr)));
-	printk(KERN_ERR "%s: %s\n", __func__, fullpath_arr);
+	BB_PRINT_PN("%s: %s\n", __func__, fullpath_arr);
 
 	iret = mntn_filesys_create_dir(fullpath_arr, DIR_LIMIT);
 	if (0 != iret) {
-		printk(KERN_ERR "%s: iret is [%d]\n", __func__, iret);
+		BB_PRINT_ERR("%s: iret is [%d]\n", __func__, iret);
 		return;
 	}
 	len = strlen(fullpath_arr);
@@ -1412,7 +1483,7 @@ static void save_lpmcu_exc_memory(void)
 	       strlen("/lpmcu_ddr_memory.bin") + 1);
 	iret = rdr_copy_file_apend(dst_str, SRC_LPMCU_DDR_MEMORY);
 	if (iret) {
-		printk(KERN_ERR
+		BB_PRINT_ERR(
 		       "[%s], save lpmcu_ddr_memory.bin error, ret = %d\n",
 		       __func__, iret);
 	}
@@ -1435,7 +1506,7 @@ static void save_kernel_dump(void *arg)
 	memset(dst_str, 0, LOG_PATH_LEN);
 	memset(date, 0, DATATIME_MAXLEN);
 
-	printk("exce_dir is [%s]\n", exce_dir);
+	BB_PRINT_PN("exce_dir is [%s]\n", exce_dir);
 
 	/* 如果arg为真，表示是起线程保存kerneldump，此时要从内存中获取异常时间戳 */
 	if (arg && (LOG_PATH_LEN - 1 >= strlen(g_log_path))) {
@@ -1454,7 +1525,7 @@ static void save_kernel_dump(void *arg)
 	if (fd < 0) {
 		fd = sys_mkdir(exce_dir, DIR_LIMIT);
 		if (fd < 0) {
-			printk(KERN_ERR "%s %d\n", __func__, fd);
+			BB_PRINT_ERR("%s %d\n", __func__, fd);
 			goto out;
 		}
 	} else {
@@ -1464,7 +1535,7 @@ static void save_kernel_dump(void *arg)
 	strncat(exce_dir, date, ((LOG_PATH_LEN - 1) - strlen(exce_dir)));
 	fd = sys_mkdir(exce_dir, DIR_LIMIT);
 	if (fd < 0) {
-		printk(KERN_ERR "%s %d\n", __func__, fd);
+		BB_PRINT_ERR("%s %d\n", __func__, fd);
 		goto out;
 	}
 
@@ -1474,12 +1545,20 @@ static void save_kernel_dump(void *arg)
 	       strlen("/kerneldump_") + 1);
 
 	strncat(dst_str, date, ((LOG_PATH_LEN - 1) - strlen(dst_str)));
-	printk(KERN_ERR "%s: %s\n", __func__, dst_str);
+	BB_PRINT_PN("%s: %s\n", __func__, dst_str);
 
 	if (check_himntn(HIMNTN_KERNEL_DUMP_ENABLE)) {
-		ret = rdr_copy_file_apend(dst_str, SRC_KERNELDUMP);
+		/* On FPGA it will take half one hour to transfer kerneldump,
+		it's too slowly and useless to transfer kerneldump.
+		We just create the kerneldump file name. */ 
+		if (FPGA == g_bbox_fpga_flag) {
+			ret = rdr_copy_big_file_apend(dst_str, SRC_KERNELDUMP);
+		} else {
+			ret = rdr_copy_file_apend(dst_str, SRC_KERNELDUMP);
+		}
+
 		if (ret) {
-			printk(KERN_ERR
+			BB_PRINT_ERR(
 			       "[%s], save kerneldump error, ret = %d\n",
 			       __func__, ret);
 			goto out;
@@ -1506,14 +1585,14 @@ void read_dump_end(void)
 
 	fd = sys_open(SRC_DUMPEND, O_RDONLY, FILE_LIMIT);
 	if (fd < 0) {
-		pr_err("[%s]: open %s failed, return [%d]\n", __func__,
+		BB_PRINT_ERR("[%s]: open %s failed, return [%d]\n", __func__,
 				SRC_DUMPEND, fd);
 		return;
 	}
 
 	cnt = sys_read(fd, buf, SZ_4K / 4);
 	if (cnt < 0) {
-		pr_err("[%s]: read %s failed, return [%lld]\n",
+		BB_PRINT_ERR("[%s]: read %s failed, return [%lld]\n",
 				__func__, SRC_DUMPEND, cnt);
 		goto out;
 	}
@@ -1561,7 +1640,7 @@ int save_mntndump_log(void *arg)
 
 	ret = save_exception_info(arg);
 	if (ret) {
-		printk(KERN_ERR
+		BB_PRINT_ERR(
 			"save_exception_info fail, ret=%d\n", ret);
 	}
 
@@ -1597,6 +1676,13 @@ void save_hisiap_log(char *log_path, u32 modid)
 
 	path_root_len = strlen(PATH_ROOT);
 
+	/* reboot reason ap wdt which is error reported, means other failure result into ap wdt */
+	if (unlikely(0 == ap_awdt_analysis(&temp))) {
+		BB_PRINT_ERR("[%s], ap_awdt_analysis correct reboot reason [%s]!\n",
+			__func__, rdr_get_exception_type(temp.e_exce_type));
+		incorrect_reboot_reason_analysis(log_path, &temp);
+	}
+
 	/*if last save not done, need to add "last_save_not_done" in history.log*/
 	if (modid == BBOX_MODID_LAST_SAVE_NOT_DONE) {
 		is_save_done = false;
@@ -1608,7 +1694,7 @@ void save_hisiap_log(char *log_path, u32 modid)
 
 	ret = save_mntndump_log(NULL);
 	if (ret) {
-		printk(KERN_ERR "save_mntndump_log fail, ret=%d", ret);
+		BB_PRINT_ERR("save_mntndump_log fail, ret=%d", ret);
 	}
 
 	return;
@@ -1617,7 +1703,7 @@ void save_hisiap_log(char *log_path, u32 modid)
 void rdr_hisiap_dump_root_head(u32 modid, u32 etype, u64 coreid)
 {
 	if (!g_rdr_ap_root) {
-		printk(KERN_ERR "[%s], exit!\n", __func__);
+		BB_PRINT_ERR("[%s], exit!\n", __func__);
 		return;
 	}
 
@@ -1635,11 +1721,11 @@ void rdr_hisiap_dump(u32 modid, u32 etype,
 	unsigned long exception_info = 0;
 	unsigned long exception_info_len = 0;
 
-	printk(KERN_ERR "[%s], begin.\n", __func__);
-	printk(KERN_ERR "modid is 0x%x, etype is 0x%x\n", modid, etype);
+	BB_PRINT_PN("[%s], begin.\n", __func__);
+	BB_PRINT_PN("modid is 0x%x, etype is 0x%x\n", modid, etype);
 
 	if (!rdr_ap_init) {
-		printk(KERN_ERR "rdr_hisi_ap_adapter is not ready\n");
+		BB_PRINT_ERR("rdr_hisi_ap_adapter is not ready\n");
 		if (pfn_cb) {
 			pfn_cb(modid, coreid);
 		}
@@ -1648,7 +1734,7 @@ void rdr_hisiap_dump(u32 modid, u32 etype,
 
 	if (modid == RDR_MODID_AP_ABNORMAL_REBOOT
 	    || modid == BBOX_MODID_LAST_SAVE_NOT_DONE) {
-		printk("RDR_MODID_AP_ABNORMAL_REBOOT\n");
+		BB_PRINT_PN("RDR_MODID_AP_ABNORMAL_REBOOT\n");
 		if (log_path && check_himntn(HIMNTN_GOBAL_RESETLOG)) {
 			strncpy(g_log_path, log_path, LOG_PATH_LEN - 1);
 			g_log_path[LOG_PATH_LEN - 1] = '\0';
@@ -1672,14 +1758,14 @@ void rdr_hisiap_dump(u32 modid, u32 etype,
 		       RECORD_PC_STR_MAX_LENGTH);
 		memcpy(g_bbox_ap_record_pc->exception_info,
 		       (char *)exception_info, exception_info_len);
-		printk(KERN_ERR "exception_info is [%s],len is [%ld]\n",
+		BB_PRINT_PN("exception_info is [%s],len is [%ld]\n",
 		       (char *)exception_info, exception_info_len);
 		g_bbox_ap_record_pc->exception_info_len = exception_info_len;
 	}
 
-	printk("rdr_hisiap_dump modid[%x],etype[%x],coreid[%llx], log_path[%s]\n",
+	BB_PRINT_PN("rdr_hisiap_dump modid[%x],etype[%x],coreid[%llx], log_path[%s]\n",
 	     modid, etype, coreid, log_path);
-	printk(KERN_ERR "[%s], hisi_trace_hook_uninstall start!\n",
+	BB_PRINT_PN("[%s], hisi_trace_hook_uninstall start!\n",
 	       __func__);
 	hisi_trace_hook_uninstall();
 
@@ -1689,7 +1775,7 @@ void rdr_hisiap_dump(u32 modid, u32 etype,
 	g_rdr_ap_root->modid = modid;
 	g_rdr_ap_root->e_exce_type = etype;
 	g_rdr_ap_root->coreid = coreid;
-	printk("rdr_hisiap_dump log_path_ptr [%pK]\n",
+	BB_PRINT_PN("rdr_hisiap_dump log_path_ptr [%pK]\n",
 	       g_rdr_ap_root->log_path);
 	if (log_path) {
 		strncpy(g_rdr_ap_root->log_path, log_path,
@@ -1699,16 +1785,16 @@ void rdr_hisiap_dump(u32 modid, u32 etype,
 
 	g_rdr_ap_root->slice = get_32k_abs_timer_value();
 
-	printk(KERN_ERR "[%s], regs_dump start!\n", __func__);
+	BB_PRINT_PN("[%s], regs_dump start!\n", __func__);
 	regs_dump();
 
-	printk(KERN_ERR "[%s], last_task_stack_dump start!\n",
+	BB_PRINT_PN("[%s], last_task_stack_dump start!\n",
 	       __func__);
 	last_task_stack_dump();
 
 	g_rdr_ap_root->enter_times++;
 
-	printk(KERN_ERR "[%s], save_module_dump_mem start!\n",
+	BB_PRINT_PN("[%s], save_module_dump_mem start!\n",
 	       __func__);
 	save_module_dump_mem();
 
@@ -1716,7 +1802,7 @@ void rdr_hisiap_dump(u32 modid, u32 etype,
 
 	show_irq_register();
 out:
-	printk(KERN_ERR "[%s], exit!\n", __func__);
+	BB_PRINT_PN("[%s], exit!\n", __func__);
 	if (pfn_cb) {
 		pfn_cb(modid, coreid);
 	}
@@ -1730,7 +1816,7 @@ void hisiap_nmi_notify_lpm3(void)
 
 	addr = g_mi_notify_lpm3_addr;
 	if (!addr) {
-		printk(KERN_ERR "[%s]", __func__);
+		BB_PRINT_ERR("[%s]", __func__);
 		return;
 	}
 	value = readl((char *)addr);
@@ -1749,39 +1835,44 @@ void get_bbox_curtime_slice(void)
 	curtime = hisi_getcurtime();
 	curslice = get_32k_abs_timer_value();
 
-	printk(KERN_ERR
+	BB_PRINT_PN(
 	       "printk_time is %llu, 32k_abs_timer_value is %llu.\n",
 	       curtime, curslice);
 }
 
 void rdr_hisiap_reset(u32 modid, u32 etype, u64 coreid)
 {
-	printk("%s start\n", __func__);
+	u64 err1_status, err1_misc0;
+	BB_PRINT_PN("%s start\n", __func__);
 	get_bbox_curtime_slice();
 	if (!in_atomic() && !irqs_disabled() && !in_irq()) {
 		sys_sync();
 	}
-	blk_power_off_flush(BLK_FLUSH_NORMAL); /*Flush the storage device cache*/
+
+	blk_power_off_flush(0); /*Flush the storage device cache*/
+
 	if (AP_S_PANIC != etype) {
-		printk(KERN_ERR "etype is not panic\n");
+		BB_PRINT_PN("etype is not panic\n");
 		dump_stack();
 		preempt_disable();
 		smp_send_stop();
 	}
 
+	bbox_diaginfo_dump_lastmsg();
 	//HIMNTN_PANIC_INTO_LOOP will disbale ap reset.
 	if (check_himntn(HIMNTN_PANIC_INTO_LOOP) == 1) {
 		do {
 		} while (1);
 	}
-	pr_err("%s blk flush ok\n", __func__);
+	BB_PRINT_PN("%s blk flush ok\n", __func__);
 	flush_ftrace_buffer_cache();
 	mntn_show_stack_cpustall();
 	kmsg_dump(KMSG_DUMP_PANIC);
 	flush_cache_all();
 
+	l3cache_ecc_get_status(&err1_status, &err1_misc0, 1);
 	hisiap_nmi_notify_lpm3();
-	printk("%s end\n", __func__);
+	BB_PRINT_PN("%s end\n", __func__);
 
 	while (1)
 		;
@@ -1796,12 +1887,12 @@ int get_pmu_reset_base_addr(void)
 
 	np = of_find_compatible_node(NULL, NULL, "hisilicon,hisifb");
 	if (!np) {
-		printk("NOT FOUND device node 'hisilicon,hisifb'!\n");
+		BB_PRINT_ERR("NOT FOUND device node 'hisilicon,hisifb'!\n");
 		return -ENXIO;
 	}
 	ret = of_property_read_u32(np, "fpga_flag", &fpga_flag);
 	if (ret) {
-		printk("failed to get fpga_flag resource.\n");
+		BB_PRINT_ERR("failed to get fpga_flag resource.\n");
 		return -ENXIO;
 	}
 	if (fpga_flag == FPGA) {
@@ -1810,16 +1901,16 @@ int get_pmu_reset_base_addr(void)
 		g_pmu_reset_reg = (unsigned long long)
 			hisi_bbox_map(pmu_reset_reg_addr, 0x4);
 		if (!g_pmu_reset_reg) {
-			pr_err("get pmu reset reg error\n");
+			BB_PRINT_ERR("get pmu reset reg error\n");
 			return -1;
 		}
 		g_pmu_subtype_reg = (unsigned long long)
 			hisi_bbox_map(FPGA_EXCSUBTYPE_REG_ADDR, 0x4);
 		if (!g_pmu_subtype_reg) {
-			pr_err("get pmu subtype reg error\n");
+			BB_PRINT_ERR("get pmu subtype reg error\n");
 			return -1;
 		}
-		printk("pmu reset reg phy is 0x%llx\n", pmu_reset_reg_addr);
+		BB_PRINT_DBG("pmu reset reg phy is 0x%llx\n", pmu_reset_reg_addr);
 	}
 	return 0;
 }
@@ -1861,7 +1952,7 @@ void set_reboot_reason(unsigned int reboot_reason)
 	} else {
 		hisi_pmic_reg_write(PMU_RESET_REG_OFFSET, value);/*lint !e747*/
 	}
-	printk("[%s]:set reboot_reason is 0x%x\n", __func__, value);
+	BB_PRINT_PN("[%s]:set reboot_reason is 0x%x\n", __func__, value);
 
 }
 
@@ -1887,7 +1978,7 @@ unsigned int get_reboot_reason(void)
 void record_exce_type(struct rdr_exception_info_s *e_info)
 {
 	if (!e_info) {
-		printk(KERN_ERR "einfo is null\n");
+		BB_PRINT_ERR("einfo is null\n");
 		return;
 	}
 	set_reboot_reason(e_info->e_exce_type);
@@ -1902,7 +1993,7 @@ void hisiap_callback(u32 argc, void *argv)
 		ret = hisi_trace_hook_install();
 
 		if (ret) {
-			printk("[%s]\n", __func__);
+			BB_PRINT_ERR("[%s]\n", __func__);
 		}
 	}
 	return;
@@ -1916,7 +2007,7 @@ static void rdr_hisiap_register_exception(void)
 	for (i = 0;
 	     (unsigned int)i < sizeof(einfo) / sizeof(struct rdr_exception_info_s);
 	     i++) {
-		printk("register exception:%d", einfo[i].e_exce_type);
+		BB_PRINT_DBG("register exception:%d", einfo[i].e_exce_type);
 		einfo[i].e_callback = hisiap_callback;
 		if (0 == i) {
 			/* 注册AP core公共callback函数，其他core有通知ap core dump，则调用此callback函数，
@@ -1926,12 +2017,12 @@ static void rdr_hisiap_register_exception(void)
 		}
 		ret = rdr_register_exception(&einfo[i]);
 		if (ret == 0) {
-			printk(KERN_ERR
+			BB_PRINT_ERR(
 			       "rdr_register_exception fail, ret = [%d]\n",
 			       ret);
 		}
 	}
-	printk("[%s], end\n", __func__);
+	BB_PRINT_PN("[%s], end\n", __func__);
 }
 
 
@@ -1947,7 +2038,7 @@ static int rdr_hisiap_register_core(void)
 
 	ret = rdr_register_module_ops(coreid, &s_soc_ops, &retinfo);
 	if (ret < 0) {
-		printk(KERN_ERR
+		BB_PRINT_ERR(
 		       "rdr_register_module_ops fail, ret = [%d]\n",
 		       ret);
 		return ret;
@@ -1955,7 +2046,7 @@ static int rdr_hisiap_register_core(void)
 
 	ret = rdr_register_cleartext_ops(coreid, rdr_hisiap_cleartext_print);
 	if (ret < 0) {
-		printk(KERN_ERR
+		BB_PRINT_ERR(
 		       "rdr_register_cleartext_ops fail, ret = [%d]\n",
 		       ret);
 		return ret;
@@ -1975,6 +2066,41 @@ bool rdr_get_ap_init_done(void)
 }
 
 
+static int rdr_copy_big_file_apend(char *dst, char *src)
+{
+	long fddst, fdsrc;
+	int ret = 0;
+
+	if (NULL == dst || NULL == src) {
+		BB_PRINT_ERR("rdr:%s():dst(0x%pK) or src(0x%pK) is NULL.\n",
+		       __func__, dst, src);
+		return -1;
+	}
+
+	fdsrc = sys_open(src, O_RDONLY, FILE_LIMIT);
+	if (fdsrc < 0) {
+		BB_PRINT_ERR("rdr:%s():open %s failed, return [%ld]\n",
+		       __func__, src, fdsrc);
+		ret = -1;
+		goto out;
+	}
+	fddst =
+	    sys_open(dst, O_CREAT | O_WRONLY | O_APPEND, FILE_LIMIT);
+	if (fddst < 0) {
+		BB_PRINT_ERR("rdr:%s():open %s failed, return [%ld]\n",
+		       __func__, dst, fddst);
+		sys_close(fdsrc);
+		ret = -1;
+		goto out;
+	}
+
+	sys_close(fdsrc);
+	sys_close(fddst);
+out:
+	return ret;
+}
+
+
 static int rdr_copy_file_apend(char *dst, char *src)
 {
 	long fddst, fdsrc;
@@ -1983,14 +2109,14 @@ static int rdr_copy_file_apend(char *dst, char *src)
 	int ret = 0;
 
 	if (NULL == dst || NULL == src) {
-		pr_err("rdr:%s():dst(0x%pK) or src(0x%pK) is NULL.\n",
+		BB_PRINT_ERR("rdr:%s():dst(0x%pK) or src(0x%pK) is NULL.\n",
 		       __func__, dst, src);
 		return -1;
 	}
 
 	fdsrc = sys_open(src, O_RDONLY, FILE_LIMIT);
 	if (fdsrc < 0) {
-		pr_err("rdr:%s():open %s failed, return [%ld]\n",
+		BB_PRINT_ERR("rdr:%s():open %s failed, return [%ld]\n",
 		       __func__, src, fdsrc);
 		ret = -1;
 		goto out;
@@ -1998,7 +2124,7 @@ static int rdr_copy_file_apend(char *dst, char *src)
 	fddst =
 	    sys_open(dst, O_CREAT | O_WRONLY | O_APPEND, FILE_LIMIT);
 	if (fddst < 0) {
-		pr_err("rdr:%s():open %s failed, return [%ld]\n",
+		BB_PRINT_ERR("rdr:%s():open %s failed, return [%ld]\n",
 		       __func__, dst, fddst);
 		sys_close(fdsrc);
 		ret = -1;
@@ -2010,7 +2136,7 @@ static int rdr_copy_file_apend(char *dst, char *src)
 		if (cnt == 0)
 			break;
 		if (cnt < 0) {
-			pr_err
+			BB_PRINT_ERR
 			    ("rdr:%s():read %s failed, return [%ld]\n",
 			     __func__, src, cnt);
 			ret = -1;
@@ -2019,7 +2145,7 @@ static int rdr_copy_file_apend(char *dst, char *src)
 
 		cnt = sys_write(fddst, buf, SZ_4K / 4);
 		if (cnt <= 0) {
-			pr_err
+			BB_PRINT_ERR
 			    ("rdr:%s():write %s failed, return [%ld]\n",
 			     __func__, dst, cnt);
 			ret = -1;
@@ -2048,8 +2174,9 @@ static void save_pstore_info(char *dst_dir_str)
 	char dst_str[NEXT_LOG_PATH_LEN];
 	char fullpath_arr[LOG_PATH_LEN];
 
+	hisi_create_pstore_entry();
 	if (rdr_wait_partition(PSTORE_PATH, 60)) {
-		printk(KERN_ERR "pstore is not ready\n");
+		BB_PRINT_ERR("pstore is not ready\n");
 		return;
 	}
 
@@ -2059,7 +2186,7 @@ static void save_pstore_info(char *dst_dir_str)
 	/* 申请一块内存用于存储遍历/sys/fs/pstore/目录下所有文件的名字 */
 	pbuff = kmalloc(tmp_cnt, GFP_KERNEL);
 	if (NULL == pbuff) {
-		printk(KERN_ERR
+		BB_PRINT_ERR(
 		       "kmalloc tmp_cnt fail, tmp_cnt = [%d]\n",
 		       tmp_cnt);
 		return;
@@ -2079,7 +2206,7 @@ static void save_pstore_info(char *dst_dir_str)
 		strncat(fullpath_arr, PSTORE_PATH, ((LOG_PATH_LEN - 1) - strlen(fullpath_arr)));
 		len =
 		    strlen(pbuff + ((unsigned long)i * MNTN_FILESYS_PURE_DIR_NAME_LEN));/*lint !e571*/
-		printk("file is [%s]\n",
+		BB_PRINT_PN("file is [%s]\n",
 		       (pbuff + ((unsigned long)i * MNTN_FILESYS_PURE_DIR_NAME_LEN)));/*lint !e571*/
 		strncat(fullpath_arr,
 			(const char *)(pbuff + ((unsigned long)i * MNTN_FILESYS_PURE_DIR_NAME_LEN)),/*lint !e571*/
@@ -2109,29 +2236,13 @@ static void save_pstore_info(char *dst_dir_str)
 		/* 将源文件的内容拷贝到目的文件中 */
 		ret = rdr_copy_file_apend(dst_str, fullpath_arr);
 		if (ret) {
-			printk(KERN_ERR
+			BB_PRINT_ERR(
 			       "rdr_copy_file_apend [%s] fail, ret = [%d]\n",
 			       fullpath_arr, ret);
-			goto out;
-		}
-
-		/* 如果是console，则不需要删除源文件，否则删除 */
-		if (0 == strncmp((const char *)(pbuff + ((unsigned long)i * MNTN_FILESYS_PURE_DIR_NAME_LEN)),/*lint !e571*/
-			"console-ramoops",
-			strlen("console-ramoops")))
-			continue;
-
-		/* 删除源文件 */
-		ret = mntn_filesys_rm_file(fullpath_arr);
-		if (ret) {
-			printk(KERN_ERR
-			       "mntn_filesys_rm_file [%s] fail, ret = [%d]\n",
-			       fullpath_arr, ret);
-			goto out;
 		}
 	}
 
-out:
+	hisi_remove_pstore_entry();
 	kfree(pbuff);
 	return;
 }
@@ -2164,14 +2275,14 @@ static void save_fastboot_log(char *dst_dir_str)
 	ret = rdr_copy_file_apend(last_fastbootlog_path,
 				  LAST_FASTBOOT_LOG_FILE);
 	if (ret) {
-		printk("rdr_copy_file_apend [%s] fail, ret = [%d]\n",
+		BB_PRINT_ERR("rdr_copy_file_apend [%s] fail, ret = [%d]\n",
 		       LAST_FASTBOOT_LOG_FILE, ret);
 	}
 
 	/* 生成curr_fastbootlog文件 */
 	ret = rdr_copy_file_apend(fastbootlog_path, FASTBOOT_LOG_FILE);
 	if (ret) {
-		printk("rdr_copy_file_apend [%s] fail, ret = [%d]\n",
+		BB_PRINT_ERR("rdr_copy_file_apend [%s] fail, ret = [%d]\n",
 		       FASTBOOT_LOG_FILE, ret);
 	}
 
@@ -2193,22 +2304,22 @@ int save_exception_info(void *arg)
 	char dst_dir_str[DEST_LOG_PATH_LEN];
 	char default_dir[LOG_PATH_LEN];
 
-	printk("[%s], start\n", __func__);
+	BB_PRINT_PN("[%s], start\n", __func__);
 	ret = 0;
 
 	/* 从全局变量中获取此次异常的log目录路径 */
 	memset(exce_dir, 0, LOG_PATH_LEN);
 	if (LOG_PATH_LEN - 1 < strlen(g_log_path)) {
-		printk(KERN_ERR "g_log_path's len too large\n");
+		BB_PRINT_ERR("g_log_path's len too large\n");
 		return -1;
 	}
 	memcpy(exce_dir, g_log_path, strlen(g_log_path) + 1);
-	printk("exce_dir is [%s]\n", exce_dir);
+	BB_PRINT_PN("exce_dir is [%s]\n", exce_dir);
 
 	/* 打开异常目录，如果不存在则以当前时间为目录创建 */
 	fd = sys_open(exce_dir, O_DIRECTORY, 0);
 	if (fd < 0) {
-		printk(KERN_ERR
+		BB_PRINT_ERR(
 		       "sys_open exce_dir[%s] fail,fd = [%d]\n",
 		       exce_dir, fd);
 		memset(date, 0, DATATIME_MAXLEN);
@@ -2217,10 +2328,10 @@ int save_exception_info(void *arg)
 			 rdr_get_timestamp(), rdr_get_tick());
 		snprintf(default_dir, LOG_PATH_LEN, "%s%s", PATH_ROOT,
 			 date);
-		printk("default_dir is [%s]\n", default_dir);
+		BB_PRINT_PN("default_dir is [%s]\n", default_dir);
 		fd = sys_mkdir(default_dir, DIR_LIMIT);
 		if (fd < 0) {
-			printk(KERN_ERR
+			BB_PRINT_ERR(
 			       "sys_mkdir default_dir[%s] fail, fd = [%d]\n",
 			       default_dir, fd);
 			ret = -1;
@@ -2245,7 +2356,7 @@ int save_exception_info(void *arg)
 	if (fd < 0) {
 		fd = sys_mkdir(dst_dir_str, DIR_LIMIT);
 		if (fd < 0) {
-			printk(KERN_ERR
+			BB_PRINT_ERR(
 			       "sys_mkdir dst_dir_str[%s] fail, fd = [%d]\n",
 			       dst_dir_str, fd);
 			ret = -1;
@@ -2275,7 +2386,7 @@ int save_exception_info(void *arg)
 	ret = (int)bbox_chown((const char __user *)g_log_path, ROOT_UID,
 			      SYSTEM_GID, true);
 	if (ret) {
-		printk(KERN_ERR
+		BB_PRINT_ERR(
 		       "[%s], chown %s uid [%d] gid [%d] failed err [%d]!\n",
 		       __func__, PATH_ROOT, ROOT_UID, SYSTEM_GID, ret);
 	}
@@ -2321,8 +2432,18 @@ static int acpu_panic_loop_notify(struct notifier_block *nb,
 static int rdr_hisiap_panic_notify(struct notifier_block *nb,
 				   unsigned long event, void *buf)
 {
-	printk(KERN_ERR "[%s], ===> enter panic notify!\n", __func__);
-	rdr_syserr_process_for_ap(MODID_AP_S_PANIC, 0, 0);
+	BB_PRINT_PN("[%s], ===> enter panic notify!\n", __func__);
+
+	if (watchdog_softlockup_happen()) {
+		rdr_syserr_process_for_ap(MODID_AP_S_PANIC_SOFTLOCKUP, 0, 0);
+	} else if (watchdog_othercpu_hardlockup_happen()) {
+		rdr_syserr_process_for_ap(MODID_AP_S_PANIC_OTHERCPU_HARDLOCKUP, 0, 0);
+	} else if (watchdog_sp805_hardlockup_happen()) {
+		rdr_syserr_process_for_ap(MODID_AP_S_PANIC_SP805_HARDLOCKUP, 0, 0);
+	} else {
+		rdr_syserr_process_for_ap(MODID_AP_S_PANIC, 0, 0);
+	}
+
 	return 0;
 }
 
@@ -2338,35 +2459,33 @@ int __init rdr_hisiap_init(void)
 {
 	struct task_struct *recordTask = NULL;
 	u32 reboot_type = 0;
+	u32 bootup_keypoint = 0;
 	int ret = 0;
-	printk("%s init start\n", __func__);
+	BB_PRINT_PN("%s init start\n", __func__);
 
 	mutex_init(&dump_mem_mutex);
 
 	g_mi_notify_lpm3_addr = (u64)ioremap(NMI_NOTIFY_LPM3_ADDR, 0x4);
 	if (!g_mi_notify_lpm3_addr) {
-		printk(KERN_ERR "[%s]", __func__);
+		BB_PRINT_ERR("[%s]", __func__);
 		return -1;
 	}
-
-	if (get_pmu_reset_base_addr())
-		return -1;
 
 	rdr_hisiap_register_exception();
 	ret = rdr_hisiap_register_core();
 	if (ret) {
-		printk("%s rdr_hisiap_register_core fail, ret = [%d]\n",
+		BB_PRINT_ERR("%s rdr_hisiap_register_core fail, ret = [%d]\n",
 		       __func__, ret);
 		return ret;
 	}
 
 	ret = register_mntn_dump(MNTN_DUMP_PANIC, sizeof(AP_RECORD_PC) , (void **)&g_bbox_ap_record_pc);
 	if (ret) {
-		printk(KERN_ERR
+		BB_PRINT_ERR(
 		       "%s register g_bbox_ap_record_pc fail\n", __func__);
 	}
 	if (!g_bbox_ap_record_pc) {
-		printk(KERN_ERR
+		BB_PRINT_ERR(
 		       "%s g_bbox_ap_record_pc is NULLl\n", __func__);
 	}
 	g_hisiap_addr =
@@ -2374,24 +2493,26 @@ int __init rdr_hisiap_init(void)
 				PMU_RESET_RECORD_DDR_AREA_SIZE,
 				current_info.log_len - PMU_RESET_RECORD_DDR_AREA_SIZE);
 	if (!g_hisiap_addr) {
-		printk(KERN_ERR "hisi_bbox_map g_hisiap_addr fail\n");
+		BB_PRINT_ERR("hisi_bbox_map g_hisiap_addr fail\n");
 		return -1;
 	}
-	printk(KERN_ERR "[%s], retinfo: log_addr [0x%llx][0x%llx]",
+	BB_PRINT_PN("[%s], retinfo: log_addr [0x%llx][0x%llx]",
 	       __func__, current_info.log_addr, g_hisiap_addr);
 
 	ret = rdr_hisiap_dump_init(&current_info);
 	if (ret) {
-		printk("%s rdr_hisiap_dump_init fail, ret = [%d]\n",
+		BB_PRINT_ERR("%s rdr_hisiap_dump_init fail, ret = [%d]\n",
 		       __func__, ret);
 		return -1;
 	}
 	reboot_type = rdr_get_reboot_type();
+	bootup_keypoint = get_last_boot_keypoint();
 
 	if (REBOOT_REASON_LABEL1 > reboot_type
-	    && check_himntn(HIMNTN_GOBAL_RESETLOG)) {
+		&& (!(AP_S_PRESS6S == reboot_type && STAGE_BOOTUP_END != bootup_keypoint))
+		&& check_himntn(HIMNTN_GOBAL_RESETLOG)) {
 		recordTask = kthread_run(record_reason_task, NULL, "recordTask");
-		printk(KERN_INFO
+		pr_info(
 		       "%s: create record_reason_task, return %pK\n",
 		       __func__, recordTask);
 	}
@@ -2404,9 +2525,10 @@ int __init rdr_hisiap_init(void)
 	register_die_notifier(&rdr_hisiap_die_block);
 	hisi_powerkey_register_notifier(&rdr_hisiap_powerkey_block);
 	get_bbox_curtime_slice();
+	bbox_diaginfo_init();
 
 	rdr_ap_init = 1;
-	printk("%s init end\n", __func__);
+	BB_PRINT_PN("%s init end\n", __func__);
 
 	return 0;
 }

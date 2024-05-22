@@ -176,9 +176,7 @@ extern VOS_UINT32 AT_TestCpasPara(VOS_UINT8 ucIndex);
 extern VOS_UINT32 AT_TestCscbPara(VOS_UINT8 ucIndex);
 #endif
 
-/* Added by f62575 for AT Project, 2011-10-28, begin */
 extern VOS_UINT32 AT_TestCpmsPara(VOS_UINT8 ucIndex);
-/* Added by f62575 for AT Project, 2011-10-28, end */
 
 extern VOS_UINT32 At_TestCopsPara(TAF_UINT8 ucIndex);
 extern VOS_UINT32 At_TestCesqPara(VOS_UINT8 ucIndex);

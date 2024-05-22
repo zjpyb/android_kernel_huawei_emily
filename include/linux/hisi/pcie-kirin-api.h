@@ -20,7 +20,8 @@ enum kirin_pcie_event {
 	KIRIN_PCIE_EVENT_LINKDOWN = 0x2,		/* linkdown event */
 	KIRIN_PCIE_EVENT_WAKE = 0x4,	/* wake event*/
 	KIRIN_PCIE_EVENT_L1SS = 0x8,	/* l1ss event*/
-	KIRIN_PCIE_EVENT_MAX_INVALID = 0xF,	/* max invalid value*/
+	KIRIN_PCIE_EVENT_CPL_TIMEOUT = 0x10,	/* completion timeout event */
+	KIRIN_PCIE_EVENT_MAX_INVALID = 0x1F,	/* max invalid value*/
 };
 
 enum kirin_pcie_trigger {
@@ -58,42 +59,42 @@ int kirin_pcie_power_notifiy_register(u32 rc_id, int (*poweron)(void* data),
 				int (*poweroff)(void* data), void* data);
 
 #else
-static int kirin_pcie_register_event(struct kirin_pcie_register_event *reg)
+static inline int kirin_pcie_register_event(struct kirin_pcie_register_event *reg)
 {
 	return -EINVAL;
 }
 
-static int kirin_pcie_deregister_event(struct kirin_pcie_register_event *reg)
+static inline int kirin_pcie_deregister_event(struct kirin_pcie_register_event *reg)
 {
 	return -EINVAL;
 }
 
-static int kirin_pcie_pm_control(int power_ops, u32 rc_idx)
+static inline int kirin_pcie_pm_control(int power_ops, u32 rc_idx)
 {
 	return -EINVAL;
 }
 
-static int kirin_pcie_ep_off(u32 rc_idx)
+static inline int kirin_pcie_ep_off(u32 rc_idx)
 {
 	return -EINVAL;
 }
 
-static int kirin_pcie_lp_ctrl(u32 rc_idx, u32 enable)
+static inline int kirin_pcie_lp_ctrl(u32 rc_idx, u32 enable)
 {
 	return -EINVAL;
 }
 
-static int kirin_pcie_enumerate(u32 rc_idx)
+static inline int kirin_pcie_enumerate(u32 rc_idx)
 {
 	return -EINVAL;
 }
 
-static int pcie_ep_link_ltssm_notify(u32 rc_id, u32 link_status)
+static inline int pcie_ep_link_ltssm_notify(u32 rc_id, u32 link_status)
 {
 	return -EINVAL;
 }
 
-static int kirin_pcie_power_notifiy_register(u32 rc_id, int (*poweron)(void* data),
+static inline int kirin_pcie_power_notifiy_register(u32 rc_id, int (*poweron)(void* data),
 				int (*poweroff)(void* data), void* data)
 {
 	return -EINVAL;

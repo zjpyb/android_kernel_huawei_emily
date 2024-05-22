@@ -74,7 +74,6 @@ extern "C"{
 
 #define TAF_MMA_PNN_INFO_MAX_NUM                           (16)                /* AT模块要求MMA一次上报的PNN个数 */
 
-/* Added by f62575 for SS FDN&Call Control, 2013-05-06, begin */
 #define TAF_MMA_PLMN_MNC_TWO_BYTES                          (2)                 /* MNC的最大长度为3位，实际长度为2位或3位，可选 */
 
 /* 长短名长度宏TAF_PH_OPER_NAME_LONG从40扩展到100，A核一次查询上报的运营商名称信息需要减少*/
@@ -164,7 +163,6 @@ enum TAF_MMA_PLMN_MCC_DIGIT_OFFSET_ENUM
     TAF_MMA_PLMN_MCC_DIGIT3_OFFSET = 8,
     TAF_MMA_PLMN_MCC_DIGIT_OFFSET_BUTT
 };
-/* Added by f62575 for SS FDN&Call Control, 2013-05-06, end */
 
 /** ****************************************************************************
  * Name        : TAF_MMA_CDMA_CALL_TYPE_ENUM_UINT8
@@ -210,14 +208,12 @@ typedef VOS_UINT32 TAF_MMA_UPDATE_TYPEC_PDP_COUNT_ENUM_U32;
 #define   NAS_VERSION_LEN               (9)
 #define   NAS_IMSI_STR_LEN              (15)
 
-/* Added by f62575 for AT Project，2011-10-04,  Begin*/
 /* +CSQLVL 相关的宏定义 */
 #define AT_CSQLVL_MAX_NUM               (3)
 #define AT_CSQLVL_LEVEL_0               (0)
 #define AT_CSQLVL_LEVEL_1               (20)
 #define AT_CSQLVL_LEVEL_2               (40)
 #define AT_CSQLVL_LEVEL_3               (60)
-/* Added by f62575 for AT Project，2011-10-04,  End*/
 
 #define DRVAGENT_GPIOPL_MAX_LEN          (20)
 
@@ -239,12 +235,7 @@ typedef VOS_UINT32 TAF_MMA_UPDATE_TYPEC_PDP_COUNT_ENUM_U32;
 #define TAF_UTRANCTRL_UTRAN_MODE_FDD    (0)
 #define TAF_UTRANCTRL_UTRAN_MODE_TDD    (1)
 
-/* Modified by l60609 for DSDA Phase III, 2013-3-4, Begin */
-/* Added by L60609 for AT Project，2011-10-05,  Begin*/
 #define AT_HS_PARA_MAX_LENGTH           (9)
-/* Added by L60609 for AT Project，2011-10-05,  End*/
-/* Modified by l60609 for DSDA Phase III, 2013-3-4, End */
-
 #define TAF_MMA_UTRA_BLER_INVALID       (99)
 #define TAF_MMA_RSSI_LOWER_LIMIT        (-114)
 #define TAF_MMA_UTRA_RSCP_UNVALID       (-140)
@@ -380,8 +371,6 @@ enum TAF_MMA_MSG_TYPE_ENUM
     ID_TAF_MMA_CDMA_LOCINFO_QRY_REQ = TAF_MMA_MSG_ID_BASE + 0x54,                                         /* _H2ASN_MsgChoice TAF_MMA_CDMA_LOCINFO_QRY_REQ_STRU */
     ID_TAF_MMA_CDMA_LOCINFO_QRY_CNF = TAF_MMA_MSG_ID_BASE + 0x55,                                         /* _H2ASN_MsgChoice TAF_MMA_CDMA_LOCINFO_QRY_CNF_STRU */
     ID_TAF_MMA_CSID_IND = TAF_MMA_MSG_ID_BASE + 0x56,                                                     /* _H2ASN_MsgChoice TAF_MMA_CSIDNID_IND_STRU */
-
-    /* Added by k902809 for Iteration 11, 2015-3-20, begin */
     ID_TAF_MMA_AC_INFO_QRY_REQ = TAF_MMA_MSG_ID_BASE + 0x57,                                              /* _H2ASN_MsgChoice TAF_MMA_AC_INFO_QRY_REQ_STRU */
     ID_TAF_MMA_AC_INFO_QRY_CNF = TAF_MMA_MSG_ID_BASE + 0x58,                                              /* _H2ASN_MsgChoice TAF_MMA_AC_INFO_QRY_CNF_STRU */
     ID_TAF_MMA_AC_INFO_CHANGE_IND = TAF_MMA_MSG_ID_BASE + 0x59,                                           /* _H2ASN_MsgChoice TAF_MMA_AC_INFO_CHANGE_IND_STRU */
@@ -400,8 +389,6 @@ enum TAF_MMA_MSG_TYPE_ENUM
     ID_TAF_MMA_NET_SCAN_REQ = TAF_MMA_MSG_ID_BASE + 0x62,                                              /* _H2ASN_MsgChoice TAF_MMA_NET_SCAN_REQ_STRU */
     ID_TAF_MMA_NET_SCAN_CNF = TAF_MMA_MSG_ID_BASE + 0x63,                                                  /* _H2ASN_MsgChoice TAF_MMA_NET_SCAN_CNF_STRU */
     ID_TAF_MMA_NET_SCAN_ABORT_REQ = TAF_MMA_MSG_ID_BASE + 0x64,                                          /* _H2ASN_MsgChoice TAF_MMA_NET_SCAN_ABORT_REQ_STRU */
-    /* Added by k902809 for Iteration 11, Iteration 11 2015-3-20, end */
-
     ID_TAF_MMA_ACCESS_MODE_QRY_REQ = TAF_MMA_MSG_ID_BASE + 0x65,                                          /* _H2ASN_MsgChoice TAF_MMA_ACCESS_MODE_QRY_REQ_STRU */
     ID_TAF_MMA_ACCESS_MODE_QRY_CNF = TAF_MMA_MSG_ID_BASE + 0x66,                                          /* _H2ASN_MsgChoice TAF_MMA_ACCESS_MODE_QRY_CNF_STRU */
 
@@ -677,8 +664,6 @@ typedef VOS_UINT8 TAF_MMA_RAT_NO_CHANGE_CMD_TYPE_ENUM_UINT8;
 /*****************************************************************************
   7 STRUCT定义
 *****************************************************************************/
-/* Modified by l60609 for DSDA Phase III, 2013-3-4, Begin */
-/* Added by L60609 for AT Project，2011-10-05,  Begin*/
 /* AT处理MN_CALLBACK_CMD_CNF事件时所使用的数据结构 */
 typedef struct
 {
@@ -687,8 +672,6 @@ typedef struct
     TAF_UINT8                   ucRsv;
     TAF_UINT32                  ulErrorCode;
 }AT_CMD_CNF_EVENT;
-/* Added by L60609 for AT Project，2011-10-05,  End*/
-/* Modified by l60609 for DSDA Phase III, 2013-3-4, End */
 
 
 
@@ -709,7 +692,6 @@ typedef struct
     VOS_UINT8                           aucRsv[2];
 }AT_MMA_USIM_STATUS_IND_STRU;
 
-/* Added by f62575 for B050 Project, 2012-2-3, Begin   */
 /*****************************************************************************
  枚举名    : AT_MMA_SIMLOCK_STATUS_STRU
  结构说明  : AT与MMA AT_MMA_SIMLOCK_STATUS_STRU消息结构
@@ -721,7 +703,7 @@ typedef struct
     AT_APPCTRL_STRU                 stAtAppCtrl;
     VOS_BOOL                        bSimlockEnableFlg;
 }AT_MMA_SIMLOCK_STATUS_STRU;
-/* Added by f62575 for B050 Project, 2012-2-3, end   */
+
 
 
 enum  TAF_MMA_CELL_RESTRICTION_TYPE_ENUM
@@ -734,12 +716,6 @@ enum  TAF_MMA_CELL_RESTRICTION_TYPE_ENUM
 };
 typedef VOS_UINT8   TAF_MMA_CELL_RESTRICTION_TYPE_ENUM_UINT8;
 
-/* Deleted by k902809 for Iteration 11, 2015-3-26, begin */
-
-/* Deleted by k902809 for Iteration 11, Iteration 11 2015-3-26, end */
-/* Deleted by k902809 for Iteration 11, 2015-3-26, begin */
-
-/* Deleted by k902809 for Iteration 11, Iteration 11 2015-3-26, end */
 
 /*****************************************************************************
  枚举名    : MN_PH_CSQLVLEXT_BER_VALUE_ENUM
@@ -1797,7 +1773,6 @@ TAF_UINT8 ucCmdType, TAF_UINT8 ucPINType, TAF_UINT8 *pucOldPIN, TAF_UINT8 *pucNe
 #define TAF_SIM_PUK              1      /*PUK1*/
 #define TAF_SIM_PIN2             6      /*PIN2*/
 #define TAF_SIM_PUK2             7      /*PUK2*/
-/* Modified by L47619 for AP-Modem Personalisation Project, 2012/04/11, begin */
 #define TAF_PHSIM_PIN            8      /*PH-SIM PIN*/
 #define TAF_PHNET_PIN            9      /*PH-NET PIN*/
 #define TAF_PHNET_PUK            10     /*PH-NET PUK*/
@@ -1808,7 +1783,6 @@ TAF_UINT8 ucCmdType, TAF_UINT8 ucPINType, TAF_UINT8 *pucOldPIN, TAF_UINT8 *pucNe
 #define TAF_PHCP_PIN             15     /*PH-SP PIN*/
 #define TAF_PHCP_PUK             16     /*PH-SP PUK*/
 
-/* Modified by L47619 for AP-Modem Personalisation Project, 2012/04/11, end */
 #define TAF_SIM_NON              255    /*不确定操作PIN的类型时填入此值*/
 typedef TAF_UINT8 TAF_PH_PIN_TYPE;
 
@@ -1823,9 +1797,7 @@ typedef TAF_UINT8 TAF_PH_PIN_CMD_TYPE;
 /*新增PIN码查询功能*/
 #define TAF_PIN_QUERY           0x30   /*查询PIN码状态*/
 #define TAF_PIN_RemainTime      0x31
-/* Added by L47619 for AP-Modem Personalisation Project, 2012/04/12, begin */
 #define TAF_PIN2_QUERY          0x32   /*查询PIN2码状态*/
-/* Added by L47619 for AP-Modem Personalisation Project, 2012/04/12, end */
 #define TAF_PIN_CMD_NULL        0x00
 
 typedef struct
@@ -2143,13 +2115,11 @@ typedef struct
 /* 需要做64位和32位转换的频段 */
 #define TAF_PH_BAND_NEED_CHANGE_TO_64BIT    ( TAF_PH_BAND_WCDMA_VIII_900 | TAF_PH_BAND_WCDMA_IX_1700 | TAF_PH_BAND_WCDMA_XI_1500 | TAF_PH_BAND_WCDMA_XIX_850)
 
-/*lint -e958 -e959 修改人:l60609;原因:64bit*/
 typedef struct
 {
      VOS_UINT32                                   BandMask;             /*频带设置*/
      TAF_CHAR*                                    BandStr;              /*频带字符串*/
 }TAF_PH_BAND_NAME_STRU;
-/*lint +e958 +e959 修改人:l60609;原因:64bit*/
 
 #define TAF_DEVICE_AT_MAX_W_BAND_NUM   9  /*当前用户可设置的W频段范围号*/
 
@@ -2753,10 +2723,8 @@ typedef TAF_UINT8 TAF_PHONE_EVENT;
 #define MN_PH_EVT_ROAMING_IND               30  /* ROAMING上报 */
 #define TAF_PH_EVT_GET_CURRENT_ATTACH_STATUS_CNF  31 /*获取当前注册状态回复消息*/
 
-/* Added by L60609 for V7R1C50 AT&T&DCM, 2012-6-13, begin */
 /* MMA给AT上报事件，用于显示+PACSP1或者+PACSP0*/
 #define TAF_PH_EVT_NSM_STATUS_IND           (37)
-/* Added by L60609 for V7R1C50 AT&T&DCM, 2012-6-13, end */
 
 
 #define TAF_MMA_EVT_PS_INIT_RESULT_IND        (45)  /* 协议栈初始化结果指示消息 */
@@ -2906,9 +2874,6 @@ typedef struct
     VOS_UINT8                           acuReserved[3];
 }TAF_MMA_AUTO_RESEL_STUB_SET_REQ_STRU;
 
-/* Deleted by k902809 for Iteration 11, 2015-3-25, begin */
-
-/* Deleted by k902809 for Iteration 11, Iteration 11 2015-3-25, end */
 
 
 typedef struct
@@ -2957,9 +2922,7 @@ enum TAF_MMA_NET_SCAN_CAUSE_ENUM
 };
 typedef VOS_UINT8 TAF_MMA_NET_SCAN_CAUSE_ENUM_UINT8;
 
-/* Deleted by k902809 for Iteration 11, 2015-3-25, begin */
 
-/* Deleted by k902809 for Iteration 11, Iteration 11 2015-3-25, end */
 
 
 enum TAF_MMA_SET_BORDER_INFO_OPERATE_TYPE_ENUM
@@ -3092,10 +3055,7 @@ typedef struct
     TAF_UINT32                         OP_SysCfgBandGroup   : 1;
 
 
-    /* Added by L60609 for V7R1C50 AT&T&DCM, 2012-6-13, begin */
     TAF_UINT32                         OP_PlmnMode          : 1;
-    /* Added by L60609 for V7R1C50 AT&T&DCM, 2012-6-13, end */
-
     TAF_UINT32                         OP_CurPlmn           : 1;
 
     TAF_UINT32                         Op_CellAcInfo        : 1;
@@ -3133,9 +3093,7 @@ typedef struct
 
 
     VOS_UINT8                          ucRoamStatus;            /* 上报给应用的漫游状态 */
-    /* Added by L60609 for V7R1C50 AT&T&DCM, 2012-6-13, begin */
     VOS_UINT8                          ucPlmnMode;
-    /* Added by L60609 for V7R1C50 AT&T&DCM, 2012-6-13, end */
 
 
     VOS_UINT8                          aucCurcRptCfg[TAF_MMA_RPT_CFG_MAX_SIZE];         /* CURC设置的主动上报标识 */
@@ -3202,7 +3160,6 @@ typedef struct
     MN_PH_CSQLVLEXT_BER_VALUE_ENUM_UINT8      enBer;                            /* 比特误码率百分比，暂时不支持BER查询，填99*/
 }TAF_MMA_CSQLVLEXT_PARA_STRU;
 
-/* Added by f62575 for AT Project, 2011-10-04,  Begin */
 /*****************************************************************************
  结构名    : TAF_MMA_CSQLVL_PARA_STRU
  结构说明  : CSQLVL查询操作的结果上报结构
@@ -3213,7 +3170,7 @@ typedef struct
     VOS_UINT16                          usRscp;                                 /* RSCP 等级 */
     VOS_UINT16                          usLevel;                                /* RSCP 的绝对值 */
 }TAF_MMA_CSQLVL_PARA_STRU;
-/* Added by f62575 for AT Project, 2011-10-04,  End */
+
 
 
 enum AT_CPAM_RAT_PRIO_ENUM
@@ -3316,10 +3273,8 @@ enum MM_TEST_AT_CMD_ENUM
     MM_TEST_AT_CMD_PLMN_SEARCH_MODE     = 5,    /* 设定搜网模式, 只更新NV项 */
     MM_TEST_AT_CMD_SET_RAT_MODE         = 6,    /* 设定接入模式, 只更新NV项 */
 
-    /* Added by s46746 for CS/PS mode 1, 2012-6-19, begin */
     MM_TEST_AT_CMD_SET_ADDITIONAL_UPDATE_RESULT_IE = 7,    /* 设定ADDITIONAL_UPDATE_RESULT_IE */
     MM_TEST_AT_CMD_SET_LTE_UE_USAGE_SETTING        = 8,    /* 设定LTE_UE_USAGE_SETTING */
-    /* Added by s46746 for CS/PS mode 1, 2012-6-19, end */
 
     MM_TEST_AT_CMD_SET_GMM_DEALY_SUSPENDRSP        = 9,    /* 设定gmm延迟回复挂起结果给MMC */
 
@@ -3407,8 +3362,6 @@ typedef struct
     VOS_UINT32                          ulValidPlmnNum;                         /* 有效输出的运营商名称个数 */
 }TAF_MMA_CPOL_INFO_QUERY_REQ_STRU;
 
-/* Deleted by k902809 for Iteration 11, 2015-3-30, begin */
-/* Deleted by k902809 for Iteration 11, Iteration 11 2015-3-30, end */
 
 
 typedef struct
@@ -4297,13 +4250,6 @@ typedef struct
 }TAF_MMA_CDMA_ENTER_DORM_FOR_PRIOR_SYS_NTF_STRU;
 
 
-/* Deleted by k902809 for Iteration 11, 2015-3-25, begin */
-
-/* Deleted by k902809 for Iteration 11, Iteration 11 2015-3-25, end */
-/* Deleted by k902809 for Iteration 11, 2015-3-25, begin */
-
-/* Deleted by k902809 for Iteration 11, Iteration 11 2015-3-25, end */
-
 
 typedef struct
 {
@@ -5006,8 +4952,6 @@ typedef TAF_MMA_CERSSI_SET_REQ_STRU TAF_MMA_CIND_SET_REQ_STRU;
 
 
 typedef TAF_MMA_CERSSI_SET_CNF_STRU TAF_MMA_CIND_SET_CNF_STRU;
-
-/* Added by k902809 for Iteration 11, 2015-3-20, begin */
 
 
 typedef struct
@@ -7120,7 +7064,6 @@ VOS_UINT32 TAF_MMA_QryHandShakeReq(
     VOS_UINT8                           ucOpId
 );
 
-/* Added by k902809 for Iteration 11, 2015-3-23, begin */
 VOS_UINT32 TAF_MMA_QryAcInfoReq(
     VOS_UINT32                          ulModuleId,
     MN_CLIENT_ID_T                      usClientId,
@@ -7197,7 +7140,6 @@ VOS_UINT32 TAF_MMA_QryApPwrOnAndRegTimeReq(
     MN_OPERATION_ID_T                   ucOpId
 );
 
-/* Added by k902809 for Iteration 11, Iteration 11 2015-3-23, end */
 VOS_UINT32 TAF_MMA_QryCrpnReq(
     VOS_UINT32                          ulModuleId,
     VOS_UINT16                          usClientId,

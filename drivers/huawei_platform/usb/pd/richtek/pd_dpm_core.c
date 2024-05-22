@@ -21,9 +21,7 @@
 #include <huawei_platform/usb/pd/richtek/pd_dpm_core.h>
 #include <huawei_platform/usb/pd/richtek/rt1711h.h>
 #include "pd_dpm_prv.h"
-#ifdef CONFIG_HUAWEI_DSM
-#include <dsm/dsm_pub.h>
-#endif
+
 #define PD_DPM_POWER_18_W		18000000
 static int optional_max_power = 0;
 
@@ -215,14 +213,6 @@ static inline bool dpm_response_request(pd_port_t *pd_port, bool accept)
 
 /* ---- SNK ---- */
 
-struct dpm_pdo_info_t {
-	uint8_t type;
-	int vmin;
-	int vmax;
-	int uw;
-	int ma;
-};
-
 struct dpm_rdo_info_t {
 	uint8_t pos;
 	uint8_t type;
@@ -262,7 +252,7 @@ static inline bool dpm_is_valid_pdo_pair(struct dpm_pdo_info_t *sink,
 	return true;
 }
 
-static inline void dpm_extract_pdo_info(
+void dpm_extract_pdo_info(
 			uint32_t pdo, struct dpm_pdo_info_t *info)
 {
 	memset(info, 0, sizeof(struct dpm_pdo_info_t));
@@ -337,8 +327,6 @@ static bool dpm_find_match_req_info(struct dpm_rdo_info_t *req_info,
 
 		uw = dpm_calc_src_cap_power_uw(&source, &sink);
 
-		optional_max_power = (uw > optional_max_power) ? uw : optional_max_power;
-
 		overload = uw > max_uw;
 
 		if (caps & DPM_CAP_SNK_PREFER_LOW_VOLTAGE)
@@ -369,7 +357,7 @@ static bool dpm_find_match_req_info(struct dpm_rdo_info_t *req_info,
 			req_info->max_uw = sink.uw;
 			req_info->oper_uw = max_uw;
 		} else {
-			req_info->max_ma = sink.ma;
+			req_info->max_ma = MIN(sink.ma, source.ma);
 			req_info->oper_ma = MIN(sink.ma, source.ma);
 		}
 	}
@@ -403,6 +391,8 @@ static bool dpm_build_request_info(
 				max_uw = req_info->oper_uw;
 			else
 				max_uw = req_info->vmax * req_info->oper_ma;
+
+			optional_max_power = (max_uw > optional_max_power) ? max_uw : optional_max_power;
 
 			DPM_DBG("Find SrcCap%d(%s):%d mw\r\n",
 				req_info->pos, req_info->mismatch ?
@@ -536,9 +526,6 @@ void pd_dpm_snk_evaluate_caps(pd_port_t *pd_port, pd_event_t *pd_event)
 
 	if(pd_msg == NULL) {
 		snprintf(buf, sizeof(buf), "the pd_msg is NULL\n");
-#ifdef CONFIG_HUAWEI_DSM
-		rt_dsm_report(ERROR_RT_PD_MSG_NULL, buf);
-#endif
 		return;
 	}
 
@@ -656,9 +643,6 @@ void pd_dpm_src_evaluate_request(pd_port_t *pd_port, pd_event_t *pd_event)
 
 	if(pd_msg == NULL) {
 		snprintf(buf, sizeof(buf), "the pd_msg is NULL\n");
-#ifdef CONFIG_HUAWEI_DSM
-		rt_dsm_report(ERROR_RT_PD_MSG_NULL, buf);
-#endif
 		return;
 	}
 
@@ -847,9 +831,6 @@ static inline uint32_t dpm_vdm_get_svid(pd_event_t *pd_event)
 
 	if(pd_msg == NULL) {
 		snprintf(buf, sizeof(buf), "the pd_msg is NULL\n");
-#ifdef CONFIG_HUAWEI_DSM
-		rt_dsm_report(ERROR_RT_PD_MSG_NULL, buf);
-#endif
 		return 0;
 	}
 	return PD_VDO_VID(pd_msg->payload[0]);
@@ -857,17 +838,23 @@ static inline uint32_t dpm_vdm_get_svid(pd_event_t *pd_event)
 
 void pd_dpm_ufp_request_id_info(pd_port_t *pd_port, pd_event_t *pd_event)
 {
+#ifdef DPM_UFP_REQUEST_SUPPORT
 	pd_dpm_ufp_reply_request(pd_port, pd_event,
 			dpm_vdm_get_svid(pd_event) == USB_SID_PD);
+#else
+	pd_dpm_ufp_reply_request(pd_port, pd_event,
+			false);
+#endif
 }
 
 void pd_dpm_ufp_request_svid_info(pd_port_t *pd_port, pd_event_t *pd_event)
 {
 	bool ack = false;
 
+#ifdef DPM_UFP_REQUEST_SUPPORT
 	if (pd_is_support_modal_operation(pd_port))
 		ack = (dpm_vdm_get_svid(pd_event) == USB_SID_PD);
-
+#endif
 	pd_dpm_ufp_reply_request(pd_port, pd_event, ack);
 }
 
@@ -888,9 +875,6 @@ void pd_dpm_ufp_request_enter_mode(pd_port_t *pd_port, pd_event_t *pd_event)
 
 	if(pd_event->pd_msg == NULL) {
 		snprintf(buf, sizeof(buf), "the pd_msg is NULL\n");
-#ifdef CONFIG_HUAWEI_DSM
-		rt_dsm_report(ERROR_RT_PD_MSG_NULL, buf);
-#endif
 	}
 	dpm_vdm_get_svid_ops(pd_event, &svid, &ops);
 	ack = dpm_ufp_update_svid_data_enter_mode(pd_port, svid, ops);
@@ -925,15 +909,12 @@ int pd_dpm_ufp_response_svids(pd_port_t *pd_port, pd_event_t *pd_event)
 	uint8_t i = 0, j = 0, cnt = pd_port->svid_data_cnt;
 	char buf[1024] = { 0 };
 
-	if(pd_port->svid_data_cnt >= VDO_MAX_SVID_SIZE) {
+	if(pd_port->svid_data_cnt >= PD_SVID_DATA_NR) {
 		snprintf(buf, sizeof(buf), "the %d is over vdo max svid size\n", pd_port->svid_data_cnt);
-#ifdef CONFIG_HUAWEI_DSM
-		rt_dsm_report(ERROR_RT_OVER_VDO_MAX_SVID_SIZE, buf);
-#endif
 	}
 
-	if (unlikely(cnt >= VDO_MAX_SVID_SIZE))
-		cnt = VDO_MAX_SVID_SIZE;
+	if (unlikely(cnt >= PD_SVID_DATA_NR))
+		cnt = PD_SVID_DATA_NR;
 
 	while (i < cnt) {
 		svid_data = &pd_port->svid_data[i++];
@@ -1336,9 +1317,6 @@ void pd_dpm_dr_inform_sink_cap(pd_port_t *pd_port, pd_event_t *pd_event)
 	if (pd_event_msg_match(pd_event, PD_EVT_DATA_MSG, PD_DATA_SINK_CAP)) {
 		if(pd_msg == NULL) {
 			snprintf(buf, sizeof(buf), "the pd_msg is NULL\n");
-#ifdef CONFIG_HUAWEI_DSM
-			rt_dsm_report(ERROR_RT_PD_MSG_NULL, buf);
-#endif
 			return;
 		}
 		snk_cap->nr = PD_HEADER_CNT(pd_msg->msg_hdr);
@@ -1367,9 +1345,6 @@ void pd_dpm_dr_inform_source_cap(pd_port_t *pd_port, pd_event_t *pd_event)
 	if (pd_event_msg_match(pd_event, PD_EVT_DATA_MSG, PD_DATA_SOURCE_CAP)) {
 		if(pd_msg == NULL) {
 			snprintf(buf, sizeof(buf), "the pd_msg is NULL\n");
-#ifdef CONFIG_HUAWEI_DSM
-			rt_dsm_report(ERROR_RT_PD_MSG_NULL, buf);
-#endif
 			return;
 		}
 		src_cap->nr = PD_HEADER_CNT(pd_msg->msg_hdr);

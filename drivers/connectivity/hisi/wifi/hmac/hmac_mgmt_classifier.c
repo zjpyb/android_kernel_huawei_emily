@@ -499,7 +499,7 @@ OAL_STATIC mac_reason_code_enum_uint16 hmac_disassoc_reason_exchange(dmac_disaso
     {
         case DMAC_DISASOC_MISC_LINKLOSS:
         case DMAC_DISASOC_MISC_KEEPALIVE:
-            return  MAC_DISAS_LV_SS;
+            return  MAC_DEAUTH_LV_SS;
 
         case DMAC_DISASOC_MISC_CHANNEL_MISMATCH:
             return MAC_UNSPEC_REASON;

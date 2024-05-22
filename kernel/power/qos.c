@@ -164,6 +164,7 @@ static struct pm_qos_object memory_throughput_up_th_pm_qos = {
 	.name = "memory_throughput_up_threshold",
 };
 #endif
+
 #ifdef CONFIG_HISI_CPUDDR_FREQ_LINK
 static BLOCKING_NOTIFIER_HEAD(acpuddr_link_governor_level_notifier);
 static struct pm_qos_constraints acpuddr_link_gov_lvl_constraints = {
@@ -324,6 +325,7 @@ static const struct file_operations pm_qos_debug_fops = {
 	.release        = single_release,
 };
 
+/*lint -e616 -e571*/
 /**
  * pm_qos_update_target - manages the constraints list and calls the notifiers
  *  if needed
@@ -335,7 +337,6 @@ static const struct file_operations pm_qos_debug_fops = {
  * This function returns 1 if the aggregated constraint value has changed, 0
  *  otherwise.
  */
-/*lint -save -e571 */
 int pm_qos_update_target(struct pm_qos_constraints *c, struct plist_node *node,
 			 enum pm_qos_req_action action, int value)
 {
@@ -361,7 +362,7 @@ int pm_qos_update_target(struct pm_qos_constraints *c, struct plist_node *node,
 		 * changed
 		 */
 		plist_del(node, &c->list);
-	case PM_QOS_ADD_REQ:/*lint !e616 */
+	case PM_QOS_ADD_REQ:
 		plist_node_init(node, new_value);
 		plist_add(node, &c->list);
 		break;
@@ -381,13 +382,13 @@ int pm_qos_update_target(struct pm_qos_constraints *c, struct plist_node *node,
 		if (c->notifiers)
 			blocking_notifier_call_chain(c->notifiers,
 						     (unsigned long)curr_value,
-						     NULL);/*lint !e571 */
+						     NULL);
 	} else {
 		ret = 0;
 	}
 	return ret;
 }
-/*lint -restore */
+/*lint +e616 +e571*/
 
 /**
  * pm_qos_flags_remove_req - Remove device PM QoS flags request.
@@ -406,6 +407,7 @@ static void pm_qos_flags_remove_req(struct pm_qos_flags *pqf,
 	pqf->effective_flags = val;
 }
 
+/*lint -e616*/
 /**
  * pm_qos_update_flags - Update a set of PM QoS flags.
  * @pqf: Set of flags to update.
@@ -434,7 +436,7 @@ bool pm_qos_update_flags(struct pm_qos_flags *pqf,
 		break;
 	case PM_QOS_UPDATE_REQ:
 		pm_qos_flags_remove_req(pqf, req);
-	case PM_QOS_ADD_REQ:/*lint !e616 */
+	case PM_QOS_ADD_REQ:
 		req->flags = val;
 		INIT_LIST_HEAD(&req->node);
 		list_add_tail(&req->node, &pqf->list);
@@ -452,6 +454,7 @@ bool pm_qos_update_flags(struct pm_qos_flags *pqf,
 	trace_pm_qos_update_flags(action, prev_value, curr_value);
 	return prev_value != curr_value;
 }
+/*lint +e616*/
 
 /**
  * pm_qos_request - returns current system wide qos expectation
@@ -549,7 +552,16 @@ void pm_qos_update_request(struct pm_qos_request *req,
 		return;
 	}
 
-	cancel_delayed_work_sync(&req->work);
+	/*
+	 * This function may be called very early during boot, for example,
+	 * from of_clk_init(), where irq needs to stay disabled.
+	 * cancel_delayed_work_sync() assumes that irq is enabled on
+	 * invocation and re-enables it on return.  Avoid calling it until
+	 * workqueue is initialized.
+	 */
+	if (keventd_up())
+		cancel_delayed_work_sync(&req->work);
+
 	__pm_qos_update_request(req, new_value);
 }
 EXPORT_SYMBOL_GPL(pm_qos_update_request);

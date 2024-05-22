@@ -5,13 +5,14 @@
 
 /*lint -e774 -e697 -e838*/
 /*lint -e685 -e568 -e687 -e701 -e713 -e574 -e702 -e737*/
-HI_U32 gVencIsFPGA               = 0;
+HI_U32 gVencIsFPGA          = 0;
 HI_U32 gVeduIrqNumNorm      = 0;
-HI_U32 gVeduIrqNumPort        = 0;
-HI_U32 gVeduIrqNumSafe       = 0;
+HI_U32 gVeduIrqNumPort      = 0;
+HI_U32 gVeduIrqNumSafe      = 0;
 HI_U32 gVencRegBaseAddr     = 0;
-HI_U32 gVencRegRange           = 0;
-HI_U64 gSmmuPageBaseAddr = 0;
+HI_U32 gVencRegRange        = 0;
+HI_U64 gSmmuPageBaseAddr    = 0;
+HI_U32 gVencQosMode         = 0;
 
 U_FUNC_VCPI_RAWINT    g_hw_done_type ;
 VEDU_OSAL_EVENT     g_hw_done_event;
@@ -40,6 +41,8 @@ HI_S32 VENC_SetDtsConfig(VeduEfl_DTS_CONFIG_S *pDtsConfig)
 	gVencRegBaseAddr  = pDtsConfig->VencRegBaseAddr;
 	gVencRegRange     = pDtsConfig->VencRegRange;
 	gSmmuPageBaseAddr = pDtsConfig->SmmuPageBaseAddr;
+
+	gVencQosMode      = pDtsConfig->VencQosMode;
 
 	return HI_SUCCESS;
 }

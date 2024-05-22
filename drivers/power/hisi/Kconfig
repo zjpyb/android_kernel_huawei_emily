@@ -9,3 +9,4 @@ config HISI_BCI_BATTERY
 
 source "drivers/power/hisi/charger/Kconfig"
 source "drivers/power/hisi/coul/Kconfig"
+source "drivers/power/hisi/soh/Kconfig"

@@ -210,7 +210,6 @@ int hisi_mdc_chn_request(struct fb_info *info, void __user *argp)
 	struct hisi_fb_data_type *hisifd = NULL;
 	mdc_func_ops_t *mdc_ops = NULL;
 	mdc_ch_info_t chn_info;
-
 	if (NULL == info) {
 		HISI_FB_ERR("info null pointer!\n");
 		return -EINVAL;
@@ -231,7 +230,6 @@ int hisi_mdc_chn_request(struct fb_info *info, void __user *argp)
 		HISI_FB_ERR("argp null pointer!\n");
 		return -EINVAL;
 	}
-
 	mdc_ops = &(hisifd->mdc_ops);
 	ret = copy_from_user(&chn_info, argp, sizeof(mdc_ch_info_t));
 	if (ret) {
@@ -351,6 +349,7 @@ int hisi_mdc_resource_init(struct hisi_fb_data_type *hisifd, unsigned int platfo
 
 		case FB_ACCEL_DSSV320:
 		case FB_ACCEL_HI625x:
+		case FB_ACCEL_DSSV330:
 			mdc_ops->chan_num = 1;
 			mdc_ops->mdc_channel[0].cap_available = CAP_BASE | CAP_DIM \
 				| CAP_SCL | CAP_YUV_PACKAGE \
@@ -378,6 +377,8 @@ int hisi_mdc_resource_init(struct hisi_fb_data_type *hisifd, unsigned int platfo
 
 		case FB_ACCEL_KIRIN970:
 		case FB_ACCEL_DSSV501:
+		case FB_ACCEL_DSSV510:
+			/*for copybit*/
 			mdc_ops->chan_num = 2;
 			mdc_ops->mdc_channel[0].cap_available = CAP_BASE | CAP_DIM \
 				| CAP_YUV_PACKAGE | CAP_YUV_SEMI_PLANAR \
@@ -397,8 +398,6 @@ int hisi_mdc_resource_init(struct hisi_fb_data_type *hisifd, unsigned int platfo
 			mdc_ops->mdc_channel[1].ovl_idx = DSS_OVL3;
 			mdc_ops->mdc_channel[1].wb_composer_type = DSS_WB_COMPOSE_COPYBIT;
 			mdc_ops->mdc_channel[1].status = FREE;
-
-			// cppcheck-suppress *
 			break;
 
 		default:

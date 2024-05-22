@@ -223,7 +223,7 @@ int focal_prase_ic_config_dts(
 	struct ts_kit_device_data *dev_data)
 {
 	int ret = 0;
-
+	int project_atm = 0;
 	focal_of_property_read_u32_default(np, FTS_REBOOT_DELAY,
 		&dev_data->reset_delay, 200);
 
@@ -251,10 +251,25 @@ int focal_prase_ic_config_dts(
 	} else {
 		TS_LOG_INFO("%s, power control by LCD, nothing to do\n",__func__);
 	}
-
+	ret = of_property_read_u32(np, FTS_PROJECT_ATM, &project_atm);
+	if(ret){
+		project_atm = 0;
+		TS_LOG_INFO("%s:project_atm is not exist,use default value ret=%d\n", __func__, ret);
+	}
 	ret = of_property_read_u32(np, FTS_IC_TYPES, &dev_data->ic_type);
 	if (ret) {
 		TS_LOG_ERR("%s:get ic_type fail, ret=%d\n", __func__, ret);
+	}
+	if(project_atm == PROJECT_ATM){
+		if(g_tskit_ic_type == ONCELL){
+			dev_data->ic_type = FOCAL_FT5X46;
+		}
+		else if(g_tskit_ic_type == TDDI){
+			dev_data->ic_type = FOCAL_FT8716;
+		}
+		else{
+			TS_LOG_INFO("%s:tskit_ic_type is not exist, g_tskit_ic_type=%d\n", __func__, g_tskit_ic_type);
+		}
 	}
 	TS_LOG_INFO("%s: ic_type = %d\n", __func__, dev_data->ic_type);
 
@@ -291,7 +306,6 @@ static int focal_get_lcd_panel_info(void)
 	}
 
 	strncpy(focal_pdata->lcd_panel_info, lcd_type, LCD_PANEL_INFO_MAX_LEN-1);
-	TS_LOG_INFO("lcd_panel_info = %s.\n", focal_pdata->lcd_panel_info);
 
 	return 0;
 }
@@ -303,8 +317,13 @@ int focal_parse_dts(
 	int ret = 0;
 	int read_val = 0;
 	unsigned int value = 0;
+	int project_atm = 0;
 	const char *str_value = NULL;
 	struct ts_glove_info *glove_info = NULL;
+#if defined(HUAWEI_CHARGER_FB)
+	u32 tmpval = 0;
+	struct ts_charger_info *charger_info = NULL;
+#endif
 	struct ts_holster_info *holster_info = NULL;
 	struct ts_roi_info *roi_info = NULL;
 	struct ts_wakeup_gesture_enable_info *gesture_info = NULL;
@@ -330,12 +349,20 @@ int focal_parse_dts(
 		return -ENODATA;
 	}
 
+	ret = of_property_read_u32(np, FTS_PROJECT_ATM, &project_atm);
+	if(ret){
+		project_atm = 0;
+		TS_LOG_INFO("%s:project_atm is not exist, use default value ret=%d\n", __func__, ret);
+	}
 	ret = of_property_read_u32(np, FTS_PRAM_PROJECTID_ADDR, &focal_pdata->pram_projectid_addr);
 	if (ret) {
 		focal_pdata->pram_projectid_addr = FTS_BOOT_PROJ_CODE_ADDR2;
 		TS_LOG_INFO("%s:get pram_projectid_addr from dts failed ,use default FT8716 pram addr\n", __func__);
 	}
-
+	if((g_tskit_ic_type == TDDI) &&(project_atm == PROJECT_ATM))
+	{
+		focal_pdata->pram_projectid_addr = FTS_BOOT_PROJ_CODE_ADDR2;
+	}
 	/* get tp color flag */
 	ret = of_property_read_u32(np,  "support_get_tp_color", &focal_pdata->support_get_tp_color);
 	if (ret) {
@@ -356,6 +383,17 @@ int focal_parse_dts(
 	if (ret) {
 		focal_pdata->focal_device_data->is_in_cell = true;
 		TS_LOG_INFO("%s:get is_in_cell from dts failed ,use default \n", __func__);
+	}
+	if(project_atm == PROJECT_ATM){
+		if(g_tskit_ic_type == ONCELL){
+			focal_pdata->focal_device_data->is_in_cell = false;
+		}
+		else if(g_tskit_ic_type == TDDI){
+			focal_pdata->focal_device_data->is_in_cell = true;
+		}
+		else{
+			TS_LOG_INFO("%s:tskit_ic_type not exist, g_tskit_ic_type=%d\n", __func__, g_tskit_ic_type);
+		}
 	}
 	TS_LOG_INFO("%s:get is_in_cell from dts:%d \n", __func__, focal_pdata->focal_device_data->is_in_cell );
 
@@ -423,6 +461,13 @@ int focal_parse_dts(
 		TS_LOG_INFO("%s: get need_distinguish_lcd from dts failed, use default(0)\n", __func__);
 	}
 
+	ret = of_property_read_u32(np, FTS_PALM_IRON_SUPPORT, &focal_pdata->palm_iron_support);
+	if(ret){
+		focal_pdata->palm_iron_support = 0;
+		TS_LOG_INFO("%s: get palm_iron_support from dts failed, use default(0)\n", __func__);
+	}
+
+
 	ret = of_property_read_u32(np, FTS_FW_ONLY_DEPEND_ON_LCD, &focal_pdata->fw_only_depend_on_lcd);
 	if (ret) {
 		focal_pdata->fw_only_depend_on_lcd = 0;
@@ -431,6 +476,14 @@ int focal_parse_dts(
 
 	if (focal_pdata->need_distinguish_lcd) {
 		focal_get_lcd_panel_info();
+		ret = of_property_read_u32(np, FTS_HIDE_PLAIN_LCD_LOG, &focal_pdata->hide_plain_lcd_log);
+		if (ret) {
+			focal_pdata->hide_plain_lcd_log = 0;
+			TS_LOG_INFO("%s: get hide_plain_lcd_log from dts failed, use default(0)\n", __func__);
+		}
+		TS_LOG_INFO("%s: get hide_plain_lcd_log from is %d \n", __func__, focal_pdata->hide_plain_lcd_log);
+	
+
 	}
 
 	ret = of_property_read_u32(np, FTS_TOUCH_SWITCH_FLAG, &focal_pdata->focal_device_data->touch_switch_flag);
@@ -448,6 +501,55 @@ int focal_parse_dts(
 				TS_LOG_INFO("%s get touch_switch_game_reg from dts succ, use value(0x%x).\n", __func__, focal_pdata->touch_switch_game_reg);
 			}
 		}
+
+		if (TS_SWITCH_TYPE_SCENE == (focal_pdata->focal_device_data->touch_switch_flag & TS_SWITCH_TYPE_SCENE)) {
+			value = 0;
+			ret = of_property_read_u32(np, FTS_TOUCH_SWITCH_SCENE_REG, &value);
+			if (ret) {
+				TS_LOG_INFO("%s get touch_switch_scene_reg from dts failed, use default(0).\n", __func__);
+				focal_pdata->touch_switch_scene_reg = 0;
+			} else {
+				focal_pdata->touch_switch_scene_reg = (u8)(value & 0xFF);
+				TS_LOG_INFO("%s get touch_switch_scene_reg from dts succ, use value(0x%x).\n", __func__, focal_pdata->touch_switch_scene_reg);
+			}
+		}
+
+		if (TS_SWITCH_TYPE_FM == (focal_pdata->focal_device_data->touch_switch_flag & TS_SWITCH_TYPE_FM)) {
+			value = 0;
+			ret = of_property_read_u32(np, FTS_TOUCH_SWITCH_FM_REG, &value);
+			if (ret) {
+				TS_LOG_INFO("%s get touch_switch_scene_reg from dts failed, use default(0).\n", __func__);
+				focal_pdata->touch_switch_fm_reg = 0;
+			} else {
+				focal_pdata->touch_switch_fm_reg = (u8)(value & 0xFF);
+				TS_LOG_INFO("%s get touch_switch_scene_reg from dts succ, use value(0x%x).\n", __func__, focal_pdata->touch_switch_fm_reg);
+			}
+		}
+	}
+
+	ret = of_property_read_u32(np, FTS_USE_PINCTRL, &focal_pdata->fts_use_pinctrl);
+	if (ret) {
+		TS_LOG_INFO("%s get fts_use_pinctrl from dts failed, use default(0).\n", __func__);
+		focal_pdata->fts_use_pinctrl = 0;
+	}
+
+	ret = of_property_read_u32(np, FTS_FW_UPDATE_DURATION_CHECK, &focal_pdata->fw_update_duration_check);
+	if (ret) {
+		TS_LOG_INFO("%s get fw_update_duration_check from dts unsucceed, use default(0).\n", __func__);
+		focal_pdata->fw_update_duration_check = 0;
+	} else {
+		TS_LOG_INFO("%s get fw_update_duration_check from dts succeed, use cfg(%d ms).\n",
+				__func__, focal_pdata->fw_update_duration_check);
+	}
+
+	value = 0;
+	ret = of_property_read_u32(np, FTS_READ_DEBUG_REG_AND_DIFFER, &value);
+	if (ret) {
+		TS_LOG_INFO("%s get read_debug_reg_and_differ from dts unsucceed.\n", __func__);
+		focal_pdata->read_debug_reg_and_differ = 0;
+	} else {
+		focal_pdata->read_debug_reg_and_differ = (u8)(value & 0xFF);
+		TS_LOG_INFO("%s get read_debug_reg_and_differ = %d\n",__func__);
 	}
 
 	ret = of_property_read_u32(np, "aft_wxy_enable", &focal_pdata->aft_wxy_enable);
@@ -457,6 +559,17 @@ int focal_parse_dts(
 	} else {
 		TS_LOG_INFO("%s get aft_wxy_enable  = %d.\n", __func__, focal_pdata->aft_wxy_enable);
 	}
+
+#if defined(HUAWEI_CHARGER_FB)
+	charger_info = &(dev_data->ts_platform_data->feature_info.charger_info);
+	focal_of_property_read_u32_default(np, FTS_CHARGER_SUPPORTED, &tmpval, 0);
+	charger_info->charger_supported = (u8)tmpval;
+	if (charger_info->charger_supported) {
+		tmpval = 0;
+		focal_of_property_read_u32_default(np, FTS_CHARGER_SWITCH_ADDR, &tmpval , 0);
+		charger_info->charger_switch_addr = (u16)tmpval;
+	}
+#endif
 
 	/*
 	 * 0 is cover without glass,
@@ -504,6 +617,13 @@ int focal_parse_dts(
 	TS_LOG_INFO("%s:,roi_info=%d,roi_control_addr=0x%04x\n",__func__,
 		roi_info->roi_supported,
 		roi_info->roi_control_addr);
+	/*special proc printf*/
+	ret = of_property_read_u32(np, IS_IC_RAWDATA_PROC_PRINTF, (u32*)&focal_pdata->focal_device_data->is_ic_rawdata_proc_printf);
+	if (ret) {
+		focal_pdata->focal_device_data->is_ic_rawdata_proc_printf = false;
+		TS_LOG_INFO("%s:get is_ic_rawdata_proc_printf from dts failed ,use default \n", __func__);
+	}
+	TS_LOG_INFO("%s:get is_ic_rawdata_proc_printf from dts:%d \n", __func__, focal_pdata->focal_device_data->is_ic_rawdata_proc_printf );
 
 	return NO_ERR;
 }
@@ -524,10 +644,23 @@ static void focal_prase_test_item(struct device_node *np,
 	focal_of_property_read_u32_default(np, FTS_OPENTEST_RESET_TIME,
 		&params->opentest_reset_time, 0);
 
-	TS_LOG_INFO("%s:%s=%d, %s=%d, %s=%d\n", __func__,
+	focal_of_property_read_u32_default(np, FTS_CB_TEST_POINT_BY_POINT,
+		&params->cb_test_point_by_point, 0);
+
+	focal_of_property_read_u32_default(np, FTS_OPEN_TEST_POINT_BY_POINT,
+		&params->open_test_cb_point_by_point, 0);
+	focal_of_property_read_u32_default(np, FTS_SHORT_TEST_POINT_BY_POINT,
+		&params->short_test_point_by_point, 0);
+
+
+
+	TS_LOG_INFO("%s:%s=%d, %s=%d, %s=%d, %s=%d, %s=%d, %s=%d,\n", __func__,
 		"row_column_delta_test", params->row_column_delta,
 		"opentest_charge_time", params->opentest_charge_time,
-		"opentest_reset_time", params->opentest_reset_time);
+		"opentest_reset_time", params->opentest_reset_time,
+		"cb_test_point_by_point", params->cb_test_point_by_point,
+		"open_test_cb_point_by_point", params->open_test_cb_point_by_point,
+		"short_test_point_by_point", params->short_test_point_by_point);
 }
 
 static void focal_prase_test_threshold(
@@ -617,7 +750,11 @@ int focal_parse_cap_test_config(
 
 	if (FTS_THRESHOLD_IN_CSV_FILE == params->in_csv_file) {
 		TS_LOG_INFO("%s: cap threshold in csv file\n", __func__);
-		focal_prase_threshold_for_csv(fts_pdata->project_id, &params->threshold, params);
+		if (FOCAL_FT8201 == g_focal_dev_data->ic_type) {
+			focal_8201_prase_threshold_for_csv(fts_pdata->project_id, &params->threshold, params);
+		} else {
+			focal_prase_threshold_for_csv(fts_pdata->project_id, &params->threshold, params);
+		}
 	} else {
 		TS_LOG_INFO("%s: cap threshold in dts file\n", __func__);
 		focal_prase_test_threshold(np, &params->threshold);

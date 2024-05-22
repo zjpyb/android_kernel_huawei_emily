@@ -30,6 +30,7 @@ void FUSB3601_WriteSinkCapabilities(FSC_U8 *data, struct Port *port);
 void FUSB3601_ReadSinkRequestSettings(FSC_U8 *data, struct Port *port);
 void FUSB3601_WriteSinkRequestSettings(FSC_U8 *data, struct Port *port);
 void FUSB3601_ConfigurePortType(FSC_U8 Control, struct Port *port);
+void FUSB3601_ConfigurePortType_WithoutUnattach(FSC_U8 Control, struct Port *port);
 
 
 void FUSB3601_fusb_ProcessMsg(struct Port *port,
@@ -469,6 +470,77 @@ void FUSB3601_ConfigurePortType(FSC_U8 control,struct Port *port)
 	if (control & 0x80) {
 		port->tc_enabled_ = TRUE;
 	}
+}
+void FUSB3601_ConfigurePortType_WithoutUnattach(FSC_U8 control,struct Port *port)
+{
+	FSC_U8 value;
+	value = control & 0x03;
+	pr_info("%s +++ \n",__func__);
+
+	if (port->port_type_ != value) {
+		switch (value) {
+		case 1:
+#ifdef FSC_HAVE_SRC
+			port->port_type_= USBTypeC_Source;
+#endif /* FSC_HAVE_SRC */
+			break;
+		case 2:
+#ifdef FSC_HAVE_DRP
+			port->port_type_ = USBTypeC_DRP;
+#endif /* FSC_HAVE_DRP */
+			break;
+		default:
+#ifdef FSC_HAVE_SNK
+			port->port_type_ = USBTypeC_Sink;
+#endif /* FSC_HAVE_SNK */
+			break;
+		}
+	}
+#ifdef FSC_HAVE_ACC
+	if (((control & 0x04) >> 2) != port->acc_support_) {
+		port->acc_support_ = control & 0x04 ? TRUE : FALSE;
+	}
+#endif /* FSC_HAVE_ACC */
+#ifdef FSC_HAVE_DRP
+	if ((control & 0x08) && !port->src_preferred_) {
+		port->src_preferred_ = TRUE;
+	} else if (!(control & 0x08) && port->src_preferred_) {
+		port->src_preferred_ = FALSE;
+	}
+
+	if ((control & 0x40) && !port->snk_preferred_) {
+		port->snk_preferred_ = TRUE;
+	} else if (!(control & 0x40) && port->snk_preferred_) {
+		port->snk_preferred_ = FALSE;
+	}
+#endif /* FSC_HAVE_DRP */
+
+#ifdef FSC_HAVE_SRC
+	value = (control & 0x30) >> 4;
+	if (port->src_current_ != value) {
+		switch (value) {
+		case 1:
+			port->src_current_ = utccDefault;
+			break;
+		case 2:
+			port->src_current_ = utcc1p5A;
+			break;
+		case 3:
+			port->src_current_ = utcc3p0A;
+			break;
+		default:
+			port->src_current_ = utccOpen;
+			break;
+		}
+		FUSB3601_UpdateSourceCurrent(port, port->src_current_);
+	}
+#endif /* FSC_HAVE_SRC */
+
+	if (control & 0x80) {
+		port->tc_enabled_ = TRUE;
+	}
+
+	pr_info("%s --- \n",__func__);
 }
 void FUSB3601_ProcessTCPDControl(FSC_U8 *inMsgBuffer, FSC_U8 *outMsgBuffer,
                         struct Port *port)

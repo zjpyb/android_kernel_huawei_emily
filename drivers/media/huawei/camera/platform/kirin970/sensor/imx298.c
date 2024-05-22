@@ -54,15 +54,6 @@ static struct sensor_power_setting hw_imx298_power_setting[] = {
         .sensor_index = SENSOR_INDEX_INVALID,
         .delay = 0,
     },
-#if 0
-    //disable sub camera reset
-    {
-        .seq_type = SENSOR_SUSPEND2,
-        .config_val = SENSOR_GPIO_LOW,
-        .sensor_index = SENSOR_INDEX_INVALID,
-        .delay = 0,
-    },
-#endif
     //MCAM IOVDD 1.80V
     {
         .seq_type = SENSOR_IOVDD,
@@ -327,59 +318,12 @@ imx298_match_id(
         strncpy(cdata->cfg.name, sensor->board_info->name, DEVICE_NAME_SIZE-1);
         cdata->data = sensor->board_info->sensor_index;
     }
-#if 0 //delete no use line
-    if (cdata->data != SENSOR_INDEX_INVALID) {
-        hwsensor_writefile(sensor->board_info->sensor_index, cdata->cfg.name);
-        cam_info("%s, cdata->cfg.name = %s", __func__,cdata->cfg.name );
-    }
-#endif
     cam_info("%s cdata->data=%d", __func__, cdata->data);
 
     return 0;
 }
 
 
-#if 0
-static ssize_t imx298_powerctrl_show(struct device *dev,
-	struct device_attribute *attr,char *buf)
-{
-    cam_info("enter %s", __func__);
-    return 1;
-}
-static ssize_t imx298_powerctrl_store(struct device *dev,
-	struct device_attribute *attr, const char *buf, size_t count)
-{
-	int state = simple_strtol(buf, NULL, 10);
-	cam_info("enter %s, state %d", __func__, state);
-
-	if (state == POWER_ON)
-		imx298_power_up(&s_imx298.intf);
-	else
-		imx298_power_down(&s_imx298.intf);
-
-	return count;
-}
-
-
-static struct device_attribute imx298_powerctrl =
-    __ATTR(power_ctrl, 0664, imx298_powerctrl_show, imx298_powerctrl_store);
-
-int imx298_register_attribute(hwsensor_intf_t* intf, struct device* dev)
-{
-	int ret = 0;
-	cam_info("enter %s", __func__);
-
-	ret = device_create_file(dev, &imx298_powerctrl);
-	if (ret < 0) {
-		cam_err("%s failed to creat power ctrl attribute.", __func__);
-		goto err_create_power_ctrl;
-	}
-	return 0;
-err_create_power_ctrl:
-	device_remove_file(dev, &imx298_powerctrl);
-	return ret;
-}
-#endif
 
 static hwsensor_vtbl_t
 s_imx298_vtbl =

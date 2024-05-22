@@ -31,10 +31,10 @@ extern "C" {
 /*
  * 2 Global Variable Definition
  */
-int32 g_al_host_init_params[WLAN_CFG_INIT_BUTT] = {0};      /* ini定制化参数数组 */
-int32 g_al_dts_params[WLAN_CFG_DTS_BUTT] = {0};             /* dts定制化参数数组 */
+int32 g_al_host_init_params_etc[WLAN_CFG_INIT_BUTT] = {0};      /* ini定制化参数数组 */
+int32 g_al_dts_params_etc[WLAN_CFG_DTS_BUTT] = {0};             /* dts定制化参数数组 */
 uint16 g_aus_nv_params[NUM_OF_NV_PARAMS] = {0};              /* nv定制化参数数组 */
-int8  g_ac_country_code[COUNTRY_CODE_LEN] = "00";
+int8  g_ac_country_code_etc[COUNTRY_CODE_LEN] = "00";
 int8  g_chipid_cfg[MAX_CHIPID_COUNT][CHIPID_CFG_LEN] = {{0}};
 
 #if defined (_PRE_WLAN_FEATURE_RX_AGGR_EXTEND) || defined (_PRE_FEATURE_WAVEAPP_CLASSIFY)
@@ -47,7 +47,7 @@ uint16 g_us_mac_addr_num = 0;
 wlan_edca_mac_addr_stru g_edca_mac_addr_cfg[MAX_EDCA_MAC_ADDR_COUNT];//保存定制化中mac地址以及对应的be edca
 #endif
 
-uint8 g_auc_wifimac[MAC_LEN] = {0x00,0x00,0x00,0x00,0x00,0x00};
+uint8 g_auc_wifimac_etc[MAC_LEN] = {0x00,0x00,0x00,0x00,0x00,0x00};
 int32 g_al_nvram_init_params[NVRAM_PARAMS_INDEX_BUTT] = {0};
 wlan_customize_private_stru g_al_priv_cust_params[WLAN_CFG_PRIV_BUTT] = {{0,0}};  /* 私有定制化参数数组 */
 wlan_cust_country_code_ingore_flag_stru g_st_cust_country_code_ignore_flag = {0}; /* 定制化国家码配置 */
@@ -59,7 +59,7 @@ wlan_cust_country_code_ingore_flag_stru g_st_cust_country_code_ignore_flag = {0}
  * switch:                      ON                                  = 1
  * scan_orthogonal:             ROAM_SCAN_CHANNEL_ORG_BUTT          = 4
  */
-wlan_customize_stru g_st_wlan_customize = {
+wlan_customize_stru g_st_wlan_customize_etc = {
             64,             /* addba_buffer_size */
             1,              /* roam switch */
             4,              /* roam scan org */
@@ -716,358 +716,358 @@ OAL_STATIC oal_void original_value_for_dts_params(oal_void)
 {
 #ifdef _PRE_WLAN_RF_CALI_1151V2
     /* hi1151v2 校准定制化初始值 */
-    g_al_dts_params[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_0]        = 0x90221;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_1]        = 0x90221;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_2]        = 0x90221;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_3]        = 0x90221;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_4]        = 0x90221;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_5]        = 0x90221;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_6]        = 0x90221;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_7]        = 0x90221;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_8]        = 0x90221;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_9]        = 0x90221;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_10]       = 0x90221;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_11]       = 0x90221;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_12]       = 0x90221;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_13]       = 0x90221;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_14]       = 0x90221;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_15]       = 0x90221;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_16]       = 0x90221;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_17]       = 0x90221;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_18]       = 0x90221;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_19]       = 0x90221;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_20]       = 0x90221;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_21]       = 0x90221;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_22]       = 0x90221;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_23]       = 0x90221;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_24]       = 0x90221;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_25]       = 0x90221;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_26]       = 0x90221;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_27]       = 0x90221;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_28]       = 0x90221;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_29]       = 0x90221;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_30]       = 0x90221;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_31]       = 0x90221;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_0]        = 0x90221;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_1]        = 0x90221;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_2]        = 0x90221;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_3]        = 0x90221;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_4]        = 0x90221;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_5]        = 0x90221;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_6]        = 0x90221;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_7]        = 0x90221;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_8]        = 0x90221;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_9]        = 0x90221;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_10]       = 0x90221;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_11]       = 0x90221;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_12]       = 0x90221;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_13]       = 0x90221;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_14]       = 0x90221;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_15]       = 0x90221;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_16]       = 0x90221;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_17]       = 0x90221;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_18]       = 0x90221;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_19]       = 0x90221;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_20]       = 0x90221;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_21]       = 0x90221;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_22]       = 0x90221;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_23]       = 0x90221;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_24]       = 0x90221;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_25]       = 0x90221;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_26]       = 0x90221;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_27]       = 0x90221;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_28]       = 0x90221;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_29]       = 0x90221;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_30]       = 0x90221;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_1151V2_CALI_SEQ_31]       = 0x90221;
 
     /* hi1151v2 动态校准开关*/
-    g_al_dts_params[WLAN_CFG_DTS_DYN_CALI_DSCR_ITERVL]          = 0x0;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYN_CALI_DSCR_ITERVL]          = 0x0;
 #endif
 
     /* 校准 */
-    g_al_dts_params[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_2G_VAL_CHAN1]     = 0x228F1D70;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_2G_VAL_CHAN2]     = 0x228F228F;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_2G_VAL_CHAN3]     = 0x20002148;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_2G_VAL_CHAN4]     = 0x1EB81D70;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_2G_VAL_CHAN5]     = 0x1D70199A;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_2G_VAL_CHAN6]     = 0x1C291852;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_2G_VAL_CHAN7]     = 0x1D701852;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_2G_VAL_CHAN8]     = 0x1D70199A;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_2G_VAL_CHAN9]     = 0x1D701AE1;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_2G_VAL_CHAN10]    = 0x1C291D70;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_2G_VAL_CHAN11]    = 0x1D701EB8;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_2G_VAL_CHAN12]    = 0x1D701C29;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_2G_VAL_CHAN13]    = 0x1C2915C3;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_2G_VAL_CHAN1]     = 0x228F1D70;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_2G_VAL_CHAN2]     = 0x228F228F;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_2G_VAL_CHAN3]     = 0x20002148;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_2G_VAL_CHAN4]     = 0x1EB81D70;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_2G_VAL_CHAN5]     = 0x1D70199A;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_2G_VAL_CHAN6]     = 0x1C291852;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_2G_VAL_CHAN7]     = 0x1D701852;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_2G_VAL_CHAN8]     = 0x1D70199A;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_2G_VAL_CHAN9]     = 0x1D701AE1;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_2G_VAL_CHAN10]    = 0x1C291D70;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_2G_VAL_CHAN11]    = 0x1D701EB8;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_2G_VAL_CHAN12]    = 0x1D701C29;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_2G_VAL_CHAN13]    = 0x1C2915C3;
 
-    g_al_dts_params[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_2G_B40_VAL_CHAN1] = 0x228F1D70;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_2G_B40_VAL_CHAN2] = 0x228F228F;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_2G_B40_VAL_CHAN3] = 0x20002148;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_2G_B40_VAL_CHAN4] = 0x1EB81D70;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_2G_B40_VAL_CHAN5] = 0x1D70199A;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_2G_B40_VAL_CHAN6] = 0x1C291852;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_2G_B40_VAL_CHAN7] = 0x1D701852;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_2G_B40_VAL_CHAN8] = 0x1D70199A;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_2G_B40_VAL_CHAN9] = 0x1D701AE1;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_2G_B40_VAL_CHAN10]= 0x1C291D70;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_2G_B40_VAL_CHAN11]= 0x1D701EB8;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_2G_B40_VAL_CHAN12]= 0x1D701C29;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_2G_B40_VAL_CHAN13]= 0x1C2915C3;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_2G_B40_VAL_CHAN1] = 0x228F1D70;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_2G_B40_VAL_CHAN2] = 0x228F228F;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_2G_B40_VAL_CHAN3] = 0x20002148;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_2G_B40_VAL_CHAN4] = 0x1EB81D70;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_2G_B40_VAL_CHAN5] = 0x1D70199A;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_2G_B40_VAL_CHAN6] = 0x1C291852;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_2G_B40_VAL_CHAN7] = 0x1D701852;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_2G_B40_VAL_CHAN8] = 0x1D70199A;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_2G_B40_VAL_CHAN9] = 0x1D701AE1;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_2G_B40_VAL_CHAN10]= 0x1C291D70;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_2G_B40_VAL_CHAN11]= 0x1D701EB8;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_2G_B40_VAL_CHAN12]= 0x1D701C29;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_2G_B40_VAL_CHAN13]= 0x1C2915C3;
 
-    g_al_dts_params[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_5G_VAL_BAND1]     = 0x23D723D7;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_5G_VAL_BAND2]     = 0x266623D7;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_5G_VAL_BAND3]     = 0x23D7228F;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_5G_VAL_BAND4]     = 0x23D72148;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_5G_VAL_BAND5]     = 0x228F2000;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_5G_VAL_BAND6]     = 0x228F2000;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_5G_VAL_BAND7]     = 0x228F2000;
-    g_al_dts_params[WLAN_CFG_DTS_CALI_TONE_AMP_GRADE]                   = 0;
-    g_al_dts_params[WLAN_CFG_DTS_MIMO_POW_ADJUST]                       = 0;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_5G_VAL_BAND1]     = 0x23D723D7;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_5G_VAL_BAND2]     = 0x266623D7;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_5G_VAL_BAND3]     = 0x23D7228F;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_5G_VAL_BAND4]     = 0x23D72148;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_5G_VAL_BAND5]     = 0x228F2000;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_5G_VAL_BAND6]     = 0x228F2000;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_5G_VAL_BAND7]     = 0x228F2000;
+    g_al_dts_params_etc[WLAN_CFG_DTS_CALI_TONE_AMP_GRADE]                   = 0;
+    g_al_dts_params_etc[WLAN_CFG_DTS_MIMO_POW_ADJUST]                       = 0;
 
     /* 动态校准 */
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_C0_CHAN1]     = 0xE2FBFDF9;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_C0_CHAN2]     = 0xDEFD05F9;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_C0_CHAN3]     = 0xE40509F9;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_C0_CHAN4]     = 0xE00000FB;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_C0_CHAN5]     = 0xE0FBFDFB;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_C0_CHAN6]     = 0xE7FEF9F7;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_C0_CHAN7]     = 0xE70404F7;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_C0_CHAN8]     = 0xE70205F6;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_C0_CHAN9]     = 0xE702FDF0;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_C0_CHAN10]    = 0xE70705F6;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_C0_CHAN11]    = 0xEC0F0D07;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_C0_CHAN12]    = 0xD6F4F600;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_C0_CHAN13]    = 0xD3EFEE00;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_C0_CHAN1]     = 0xE2FBFDF9;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_C0_CHAN2]     = 0xDEFD05F9;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_C0_CHAN3]     = 0xE40509F9;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_C0_CHAN4]     = 0xE00000FB;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_C0_CHAN5]     = 0xE0FBFDFB;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_C0_CHAN6]     = 0xE7FEF9F7;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_C0_CHAN7]     = 0xE70404F7;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_C0_CHAN8]     = 0xE70205F6;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_C0_CHAN9]     = 0xE702FDF0;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_C0_CHAN10]    = 0xE70705F6;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_C0_CHAN11]    = 0xEC0F0D07;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_C0_CHAN12]    = 0xD6F4F600;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_C0_CHAN13]    = 0xD3EFEE00;
 
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_C1_CHAN1]     = 0xE70A09FA;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_C1_CHAN2]     = 0xEA0A00F3;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_C1_CHAN3]     = 0xE20A00F3;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_C1_CHAN4]     = 0xE20A00F2;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_C1_CHAN5]     = 0xE20500F4;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_C1_CHAN6]     = 0xE205FBF6;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_C1_CHAN7]     = 0xE20505F7;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_C1_CHAN8]     = 0xE20705F6;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_C1_CHAN9]     = 0xE20500EF;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_C1_CHAN10]    = 0xE20500EF;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_C1_CHAN11]    = 0xDDFDFBED;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_C1_CHAN12]    = 0xDDFDF9E7;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_C1_CHAN13]    = 0xDDF8F6EC;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_C1_CHAN1]     = 0xE70A09FA;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_C1_CHAN2]     = 0xEA0A00F3;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_C1_CHAN3]     = 0xE20A00F3;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_C1_CHAN4]     = 0xE20A00F2;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_C1_CHAN5]     = 0xE20500F4;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_C1_CHAN6]     = 0xE205FBF6;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_C1_CHAN7]     = 0xE20505F7;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_C1_CHAN8]     = 0xE20705F6;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_C1_CHAN9]     = 0xE20500EF;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_C1_CHAN10]    = 0xE20500EF;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_C1_CHAN11]    = 0xDDFDFBED;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_C1_CHAN12]    = 0xDDFDF9E7;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_C1_CHAN13]    = 0xDDF8F6EC;
 
 
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_B40_C0_CHAN1]     = 0xE2FBFDF9;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_B40_C0_CHAN2]     = 0xDEFD05F9;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_B40_C0_CHAN3]     = 0xE40509F9;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_B40_C0_CHAN4]     = 0xE00000FB;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_B40_C0_CHAN5]     = 0xE0FBFDFB;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_B40_C0_CHAN6]     = 0xE7FEF9F7;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_B40_C0_CHAN7]     = 0xE70404F7;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_B40_C0_CHAN8]     = 0xE70205F6;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_B40_C0_CHAN9]     = 0xE702FDF0;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_B40_C0_CHAN10]    = 0xE70705F6;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_B40_C0_CHAN11]    = 0xEC0F0D07;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_B40_C0_CHAN12]    = 0xD6F4F600;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_B40_C0_CHAN13]    = 0xD3EFEE00;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_B40_C0_CHAN1]     = 0xE2FBFDF9;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_B40_C0_CHAN2]     = 0xDEFD05F9;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_B40_C0_CHAN3]     = 0xE40509F9;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_B40_C0_CHAN4]     = 0xE00000FB;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_B40_C0_CHAN5]     = 0xE0FBFDFB;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_B40_C0_CHAN6]     = 0xE7FEF9F7;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_B40_C0_CHAN7]     = 0xE70404F7;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_B40_C0_CHAN8]     = 0xE70205F6;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_B40_C0_CHAN9]     = 0xE702FDF0;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_B40_C0_CHAN10]    = 0xE70705F6;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_B40_C0_CHAN11]    = 0xEC0F0D07;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_B40_C0_CHAN12]    = 0xD6F4F600;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_B40_C0_CHAN13]    = 0xD3EFEE00;
 
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_B40_C1_CHAN1]     = 0xE70A09FA;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_B40_C1_CHAN2]     = 0xEA0A00F3;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_B40_C1_CHAN3]     = 0xE20A00F3;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_B40_C1_CHAN4]     = 0xE20A00F2;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_B40_C1_CHAN5]     = 0xE20500F4;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_B40_C1_CHAN6]     = 0xE205FBF6;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_B40_C1_CHAN7]     = 0xE20505F7;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_B40_C1_CHAN8]     = 0xE20705F6;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_B40_C1_CHAN9]     = 0xE20500EF;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_B40_C1_CHAN10]    = 0xE20500EF;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_B40_C1_CHAN11]    = 0xDDFDFBED;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_B40_C1_CHAN12]    = 0xDDFDF9E7;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_B40_C1_CHAN13]    = 0xDDF8F6EC;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_B40_C1_CHAN1]     = 0xE70A09FA;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_B40_C1_CHAN2]     = 0xEA0A00F3;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_B40_C1_CHAN3]     = 0xE20A00F3;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_B40_C1_CHAN4]     = 0xE20A00F2;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_B40_C1_CHAN5]     = 0xE20500F4;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_B40_C1_CHAN6]     = 0xE205FBF6;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_B40_C1_CHAN7]     = 0xE20505F7;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_B40_C1_CHAN8]     = 0xE20705F6;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_B40_C1_CHAN9]     = 0xE20500EF;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_B40_C1_CHAN10]    = 0xE20500EF;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_B40_C1_CHAN11]    = 0xDDFDFBED;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_B40_C1_CHAN12]    = 0xDDFDF9E7;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_2G_B40_C1_CHAN13]    = 0xDDF8F6EC;
 
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_5G_C0_BAND1]     = 0x00000000;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_5G_C0_BAND2]     = 0x0000120C;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_5G_C0_BAND3]     = 0x0000110C;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_5G_C0_BAND4]     = 0x05051811;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_5G_C0_BAND5]     = 0x0002140F;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_5G_C0_BAND6]     = 0x0004110C;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_5G_C0_BAND7]     = 0x060E1C14;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_5G_C0_BAND1]     = 0x00000000;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_5G_C0_BAND2]     = 0x0000120C;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_5G_C0_BAND3]     = 0x0000110C;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_5G_C0_BAND4]     = 0x05051811;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_5G_C0_BAND5]     = 0x0002140F;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_5G_C0_BAND6]     = 0x0004110C;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_5G_C0_BAND7]     = 0x060E1C14;
 
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_5G_C1_BAND1]     = 0x00000000;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_5G_C1_BAND2]     = 0xF6F807FD;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_5G_C1_BAND3]     = 0xF3F40700;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_5G_C1_BAND4]     = 0xF6F80902;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_5G_C1_BAND5]     = 0xF4F60A00;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_5G_C1_BAND6]     = 0xF1F20700;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_5G_C1_BAND7]     = 0xF8F608FD;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_5G_C1_BAND1]     = 0x00000000;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_5G_C1_BAND2]     = 0xF6F807FD;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_5G_C1_BAND3]     = 0xF3F40700;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_5G_C1_BAND4]     = 0xF6F80902;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_5G_C1_BAND5]     = 0xF4F60A00;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_5G_C1_BAND6]     = 0xF1F20700;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_5G_C1_BAND7]     = 0xF8F608FD;
 
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_TXPOW_SPEC]      = 0x6166a5a0;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_EQUIP_TXPOW_LUT]                   = 0x00c8a078;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_SINGLE_STONE_TXPOW_SPEC]      = 0x6166a5a0;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_EQUIP_TXPOW_LUT]                   = 0x00c8a078;
 
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_POW_OFFSET_2G_C0]                 = 0x00000000;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_POW_OFFSET_2G_C1]                 = 0x00000000;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_POW_OFFSET_5G_C0_1]               = 0x00000000;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_POW_OFFSET_5G_C1_1]               = 0x00000000;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_POW_OFFSET_5G_C0_2]               = 0x00000000;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_POW_OFFSET_5G_C1_2]               = 0x00000000;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_POW_OFFSET_2G_C0]                 = 0x00000000;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_POW_OFFSET_2G_C1]                 = 0x00000000;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_POW_OFFSET_5G_C0_1]               = 0x00000000;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_POW_OFFSET_5G_C1_1]               = 0x00000000;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_POW_OFFSET_5G_C0_2]               = 0x00000000;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_POW_OFFSET_5G_C1_2]               = 0x00000000;
 
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_POLYNOMIAL_PARA_2G_BAND1_FST]     = 0x00000000;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_POLYNOMIAL_PARA_2G_BAND1_SND]     = 0xF6F807FD;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_POLYNOMIAL_PARA_2G_BAND1_TRD]     = 0xF3F40700;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_POLYNOMIAL_PARA_2G_BAND2_FST]     = 0x00000000;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_POLYNOMIAL_PARA_2G_BAND2_SND]     = 0xF6F807FD;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_POLYNOMIAL_PARA_2G_BAND2_TRD]     = 0xF3F40700;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_POLYNOMIAL_PARA_2G_BAND3_FST]     = 0x00000000;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_POLYNOMIAL_PARA_2G_BAND3_SND]     = 0xF6F807FD;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_POLYNOMIAL_PARA_2G_BAND3_TRD]     = 0xF3F40700;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_POLYNOMIAL_PARA_2G_BAND1_FST]     = 0x00000000;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_POLYNOMIAL_PARA_2G_BAND1_SND]     = 0xF6F807FD;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_POLYNOMIAL_PARA_2G_BAND1_TRD]     = 0xF3F40700;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_POLYNOMIAL_PARA_2G_BAND2_FST]     = 0x00000000;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_POLYNOMIAL_PARA_2G_BAND2_SND]     = 0xF6F807FD;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_POLYNOMIAL_PARA_2G_BAND2_TRD]     = 0xF3F40700;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_POLYNOMIAL_PARA_2G_BAND3_FST]     = 0x00000000;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_POLYNOMIAL_PARA_2G_BAND3_SND]     = 0xF6F807FD;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_POLYNOMIAL_PARA_2G_BAND3_TRD]     = 0xF3F40700;
 
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_POLYNOMIAL_PARA_5G_BAND1_FST]     = 0x00000000;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_POLYNOMIAL_PARA_5G_BAND1_SND]     = 0xF6F807FD;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_POLYNOMIAL_PARA_5G_BAND1_TRD]     = 0xF3F40700;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_POLYNOMIAL_PARA_5G_BAND2_FST]     = 0x00000000;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_POLYNOMIAL_PARA_5G_BAND2_SND]     = 0xF6F807FD;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_POLYNOMIAL_PARA_5G_BAND2_TRD]     = 0xF3F40700;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_POLYNOMIAL_PARA_5G_BAND3_FST]     = 0x00000000;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_POLYNOMIAL_PARA_5G_BAND3_SND]     = 0xF6F807FD;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_POLYNOMIAL_PARA_5G_BAND3_TRD]     = 0xF3F40700;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_POLYNOMIAL_PARA_5G_BAND4_FST]     = 0x00000000;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_POLYNOMIAL_PARA_5G_BAND4_SND]     = 0xF6F807FD;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_POLYNOMIAL_PARA_5G_BAND4_TRD]     = 0xF3F40700;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_POLYNOMIAL_PARA_5G_BAND5_FST]     = 0x00000000;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_POLYNOMIAL_PARA_5G_BAND5_SND]     = 0xF6F807FD;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_POLYNOMIAL_PARA_5G_BAND5_TRD]     = 0xF3F40700;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_POLYNOMIAL_PARA_5G_BAND6_FST]     = 0x00000000;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_POLYNOMIAL_PARA_5G_BAND6_SND]     = 0xF6F807FD;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_POLYNOMIAL_PARA_5G_BAND6_TRD]     = 0xF3F40700;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_POLYNOMIAL_PARA_5G_BAND7_FST]     = 0x00000000;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_POLYNOMIAL_PARA_5G_BAND7_SND]     = 0xF6F807FD;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_POLYNOMIAL_PARA_5G_BAND7_TRD]     = 0xF3F40700;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_POLYNOMIAL_PARA_5G_BAND1_FST]     = 0x00000000;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_POLYNOMIAL_PARA_5G_BAND1_SND]     = 0xF6F807FD;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_POLYNOMIAL_PARA_5G_BAND1_TRD]     = 0xF3F40700;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_POLYNOMIAL_PARA_5G_BAND2_FST]     = 0x00000000;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_POLYNOMIAL_PARA_5G_BAND2_SND]     = 0xF6F807FD;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_POLYNOMIAL_PARA_5G_BAND2_TRD]     = 0xF3F40700;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_POLYNOMIAL_PARA_5G_BAND3_FST]     = 0x00000000;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_POLYNOMIAL_PARA_5G_BAND3_SND]     = 0xF6F807FD;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_POLYNOMIAL_PARA_5G_BAND3_TRD]     = 0xF3F40700;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_POLYNOMIAL_PARA_5G_BAND4_FST]     = 0x00000000;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_POLYNOMIAL_PARA_5G_BAND4_SND]     = 0xF6F807FD;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_POLYNOMIAL_PARA_5G_BAND4_TRD]     = 0xF3F40700;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_POLYNOMIAL_PARA_5G_BAND5_FST]     = 0x00000000;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_POLYNOMIAL_PARA_5G_BAND5_SND]     = 0xF6F807FD;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_POLYNOMIAL_PARA_5G_BAND5_TRD]     = 0xF3F40700;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_POLYNOMIAL_PARA_5G_BAND6_FST]     = 0x00000000;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_POLYNOMIAL_PARA_5G_BAND6_SND]     = 0xF6F807FD;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_POLYNOMIAL_PARA_5G_BAND6_TRD]     = 0xF3F40700;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_POLYNOMIAL_PARA_5G_BAND7_FST]     = 0x00000000;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_POLYNOMIAL_PARA_5G_BAND7_SND]     = 0xF6F807FD;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_POLYNOMIAL_PARA_5G_BAND7_TRD]     = 0xF3F40700;
 
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_DBB_2G_PARA1]     = 0x8BFDAE11;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_DBB_2G_PARA2]     = 0xB41479F1;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_DBB_2G_PARA3]     = 0x7AF288FC;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_DBB_2G_PARA4]     = 0xAD10BE18;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_DBB_2G_PARA5]     = 0x7FF58AFD;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_DBB_2G_PARA1]     = 0x8BFDAE11;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_DBB_2G_PARA2]     = 0xB41479F1;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_DBB_2G_PARA3]     = 0x7AF288FC;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_DBB_2G_PARA4]     = 0xAD10BE18;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_DBB_2G_PARA5]     = 0x7FF58AFD;
 
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_DBB_5G_PARA1]     = 0xA6EAD701;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_DBB_5G_PARA2]     = 0x73CA94E0;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_DBB_5G_PARA3]     = 0xC8FAE506;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_DBB_5G_PARA4]     = 0x9FE6B3F0;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_DBB_5G_PARA5]     = 0xBFF6D901;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_DBB_5G_PARA6]     = 0xD60098E2;
-    g_al_dts_params[WLAN_CFG_DTS_DYNC_CALI_OFDM_DBB_5G_PARA7]     = 0x95E1BEF6;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_DBB_5G_PARA1]     = 0xA6EAD701;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_DBB_5G_PARA2]     = 0x73CA94E0;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_DBB_5G_PARA3]     = 0xC8FAE506;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_DBB_5G_PARA4]     = 0x9FE6B3F0;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_DBB_5G_PARA5]     = 0xBFF6D901;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_DBB_5G_PARA6]     = 0xD60098E2;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DYNC_CALI_OFDM_DBB_5G_PARA7]     = 0x95E1BEF6;
 
     /* DAC/LPF */
-    g_al_dts_params[WLAN_CFG_DTS_DAC_LPF_GAIN_2G_LEGACY_RATE_1]  = 0x11111111;
-    g_al_dts_params[WLAN_CFG_DTS_DAC_LPF_GAIN_2G_LEGACY_RATE_2]  = 0x00000000;
-    g_al_dts_params[WLAN_CFG_DTS_DAC_LPF_GAIN_2G_LEGACY_RATE_3]  = 0x21212121;
-    g_al_dts_params[WLAN_CFG_DTS_DAC_LPF_GAIN_2G_LEGACY_RATE_4]  = 0x21212121;
-    g_al_dts_params[WLAN_CFG_DTS_DAC_LPF_GAIN_5G_LEGACY_RATE_1]  = 0x00000000;
-    g_al_dts_params[WLAN_CFG_DTS_DAC_LPF_GAIN_5G_LEGACY_RATE_2]  = 0x00000000;
-    g_al_dts_params[WLAN_CFG_DTS_DAC_LPF_GAIN_2G_11AC_HT20_1]    = 0x11111111;
-    g_al_dts_params[WLAN_CFG_DTS_DAC_LPF_GAIN_2G_11AC_HT20_2]    = 0x21111111;
-    g_al_dts_params[WLAN_CFG_DTS_DAC_LPF_GAIN_2G_11AC_HT40_1]    = 0x11111111;
-    g_al_dts_params[WLAN_CFG_DTS_DAC_LPF_GAIN_2G_11AC_HT40_2]    = 0x21210101;
-    g_al_dts_params[WLAN_CFG_DTS_DAC_LPF_GAIN_5G_11AC_HT20_1]    = 0x00000000;
-    g_al_dts_params[WLAN_CFG_DTS_DAC_LPF_GAIN_5G_11AC_HT20_2]    = 0x00000000;
-    g_al_dts_params[WLAN_CFG_DTS_DAC_LPF_GAIN_5G_11AC_HT40_1]    = 0x00000000;
-    g_al_dts_params[WLAN_CFG_DTS_DAC_LPF_GAIN_5G_11AC_HT40_2]    = 0x10100000;
-    g_al_dts_params[WLAN_CFG_DTS_DAC_LPF_GAIN_5G_11AC_HT40_3]    = 0x00100000;
-    g_al_dts_params[WLAN_CFG_DTS_DAC_LPF_GAIN_5G_11AC_HT80_1]    = 0x10000000;
-    g_al_dts_params[WLAN_CFG_DTS_DAC_LPF_GAIN_5G_11AC_HT80_2]    = 0x10100000;
-    g_al_dts_params[WLAN_CFG_DTS_DAC_LPF_GAIN_5G_11AC_HT80_3]    = 0x00000000;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DAC_LPF_GAIN_2G_LEGACY_RATE_1]  = 0x11111111;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DAC_LPF_GAIN_2G_LEGACY_RATE_2]  = 0x00000000;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DAC_LPF_GAIN_2G_LEGACY_RATE_3]  = 0x21212121;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DAC_LPF_GAIN_2G_LEGACY_RATE_4]  = 0x21212121;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DAC_LPF_GAIN_5G_LEGACY_RATE_1]  = 0x00000000;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DAC_LPF_GAIN_5G_LEGACY_RATE_2]  = 0x00000000;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DAC_LPF_GAIN_2G_11AC_HT20_1]    = 0x11111111;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DAC_LPF_GAIN_2G_11AC_HT20_2]    = 0x21111111;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DAC_LPF_GAIN_2G_11AC_HT40_1]    = 0x11111111;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DAC_LPF_GAIN_2G_11AC_HT40_2]    = 0x21210101;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DAC_LPF_GAIN_5G_11AC_HT20_1]    = 0x00000000;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DAC_LPF_GAIN_5G_11AC_HT20_2]    = 0x00000000;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DAC_LPF_GAIN_5G_11AC_HT40_1]    = 0x00000000;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DAC_LPF_GAIN_5G_11AC_HT40_2]    = 0x10100000;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DAC_LPF_GAIN_5G_11AC_HT40_3]    = 0x00100000;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DAC_LPF_GAIN_5G_11AC_HT80_1]    = 0x10000000;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DAC_LPF_GAIN_5G_11AC_HT80_2]    = 0x10100000;
+    g_al_dts_params_etc[WLAN_CFG_DTS_DAC_LPF_GAIN_5G_11AC_HT80_3]    = 0x00000000;
 
     /* FCC认证 */
-    g_al_dts_params[WLAN_CFG_DTS_BAND_EDGE_LIMIT_2G_11G_TXPWR]                      = 150;
-    g_al_dts_params[WLAN_CFG_DTS_BAND_EDGE_LIMIT_2G_11N_HT20_TXPWR]                 = 150;
-    g_al_dts_params[WLAN_CFG_DTS_BAND_EDGE_LIMIT_2G_11N_HT40_TXPWR]                 = 150;
-    g_al_dts_params[WLAN_CFG_DTS_BAND_EDGE_LIMIT_5G_11A_HT20_VHT20_TXPWR]           = 150;
-    g_al_dts_params[WLAN_CFG_DTS_BAND_EDGE_LIMIT_5G_HT40_VHT40_TXPWR]               = 150;
-    g_al_dts_params[WLAN_CFG_DTS_BAND_EDGE_LIMIT_5G_VHT80_TXPWR]                    = 150;
-    g_al_dts_params[WLAN_CFG_DTS_BAND_EDGE_LIMIT_2G_11G_DBB_SCALING]                = 0x68;
-    g_al_dts_params[WLAN_CFG_DTS_BAND_EDGE_LIMIT_2G_11N_HT20_DBB_SCALING]           = 0x62;
-    g_al_dts_params[WLAN_CFG_DTS_BAND_EDGE_LIMIT_2G_11N_HT40_DBB_SCALING]           = 0x62;
-    g_al_dts_params[WLAN_CFG_DTS_BAND_EDGE_LIMIT_5G_11A_HT20_VHT20_DBB_SCALING]     = 0x68;/* 待定 */
-    g_al_dts_params[WLAN_CFG_DTS_BAND_EDGE_LIMIT_5G_HT40_VHT40_DBB_SCALING]         = 0x68;/* 待定 */
-    g_al_dts_params[WLAN_CFG_DTS_BAND_EDGE_LIMIT_5G_VHT80_DBB_SCALING]              = 0x68;/* 待定 */
+    g_al_dts_params_etc[WLAN_CFG_DTS_BAND_EDGE_LIMIT_2G_11G_TXPWR]                      = 150;
+    g_al_dts_params_etc[WLAN_CFG_DTS_BAND_EDGE_LIMIT_2G_11N_HT20_TXPWR]                 = 150;
+    g_al_dts_params_etc[WLAN_CFG_DTS_BAND_EDGE_LIMIT_2G_11N_HT40_TXPWR]                 = 150;
+    g_al_dts_params_etc[WLAN_CFG_DTS_BAND_EDGE_LIMIT_5G_11A_HT20_VHT20_TXPWR]           = 150;
+    g_al_dts_params_etc[WLAN_CFG_DTS_BAND_EDGE_LIMIT_5G_HT40_VHT40_TXPWR]               = 150;
+    g_al_dts_params_etc[WLAN_CFG_DTS_BAND_EDGE_LIMIT_5G_VHT80_TXPWR]                    = 150;
+    g_al_dts_params_etc[WLAN_CFG_DTS_BAND_EDGE_LIMIT_2G_11G_DBB_SCALING]                = 0x68;
+    g_al_dts_params_etc[WLAN_CFG_DTS_BAND_EDGE_LIMIT_2G_11N_HT20_DBB_SCALING]           = 0x62;
+    g_al_dts_params_etc[WLAN_CFG_DTS_BAND_EDGE_LIMIT_2G_11N_HT40_DBB_SCALING]           = 0x62;
+    g_al_dts_params_etc[WLAN_CFG_DTS_BAND_EDGE_LIMIT_5G_11A_HT20_VHT20_DBB_SCALING]     = 0x68;/* 待定 */
+    g_al_dts_params_etc[WLAN_CFG_DTS_BAND_EDGE_LIMIT_5G_HT40_VHT40_DBB_SCALING]         = 0x68;/* 待定 */
+    g_al_dts_params_etc[WLAN_CFG_DTS_BAND_EDGE_LIMIT_5G_VHT80_DBB_SCALING]              = 0x68;/* 待定 */
 
     /* RF PLL */
-    g_al_dts_params[WLAN_CFG_DTS_RF_PLL_PPM_2G]                                     = -57;
-    g_al_dts_params[WLAN_CFG_DTS_RF_PLL_PPM_5G]                                     = -57;
+    g_al_dts_params_etc[WLAN_CFG_DTS_RF_PLL_PPM_2G]                                     = -57;
+    g_al_dts_params_etc[WLAN_CFG_DTS_RF_PLL_PPM_5G]                                     = -57;
 }
 
 OAL_STATIC oal_void host_params_init_first(oal_void)
 {
     /* ROAM */
-    g_al_host_init_params[WLAN_CFG_INIT_ROAM_SWITCH]                       = 1;
-    g_al_host_init_params[WLAN_CFG_INIT_SCAN_ORTHOGONAL]                   = 4;
-    g_al_host_init_params[WLAN_CFG_INIT_TRIGGER_B]                         = -70;
-    g_al_host_init_params[WLAN_CFG_INIT_TRIGGER_A]                         = -70;
-    g_al_host_init_params[WLAN_CFG_INIT_DELTA_B]                           = 10;
-    g_al_host_init_params[WLAN_CFG_INIT_DELTA_A]                           = 10;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_ROAM_SWITCH]                       = 1;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_SCAN_ORTHOGONAL]                   = 4;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_TRIGGER_B]                         = -70;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_TRIGGER_A]                         = -70;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_DELTA_B]                           = 10;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_DELTA_A]                           = 10;
 
     /* 性能 */
-    g_al_host_init_params[WLAN_CFG_INIT_AMPDU_TX_MAX_NUM]                  = WLAN_AMPDU_TX_MAX_BUF_SIZE;
-    g_al_host_init_params[WLAN_CFG_INIT_USED_MEM_FOR_START]                = 45;
-    g_al_host_init_params[WLAN_CFG_INIT_USED_MEM_FOR_STOP]                 = 25;
-    g_al_host_init_params[WLAN_CFG_INIT_RX_ACK_LIMIT]                      = 10;
-    g_al_host_init_params[WLAN_CFG_INIT_SDIO_D2H_ASSEMBLE_COUNT]           = HISDIO_DEV2HOST_SCATT_MAX;
-    g_al_host_init_params[WLAN_CFG_INIT_SDIO_H2D_ASSEMBLE_COUNT]           = 8;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_AMPDU_TX_MAX_NUM]                  = WLAN_AMPDU_TX_MAX_BUF_SIZE;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_USED_MEM_FOR_START]                = 45;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_USED_MEM_FOR_STOP]                 = 25;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_RX_ACK_LIMIT]                      = 10;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_SDIO_D2H_ASSEMBLE_COUNT]           = HISDIO_DEV2HOST_SCATT_MAX;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_SDIO_H2D_ASSEMBLE_COUNT]           = 8;
 
     /* 自动调频 */
 #ifdef _PRE_WLAN_FEATURE_AUTO_FREQ
-    g_al_host_init_params[WLAN_CFG_INIT_PSS_THRESHOLD_LEVEL_0]             = PPS_VALUE_0;
-    g_al_host_init_params[WLAN_CFG_INIT_CPU_FREQ_LIMIT_LEVEL_0]            = CPU_MIN_FREQ_VALUE_0;
-    g_al_host_init_params[WLAN_CFG_INIT_DDR_FREQ_LIMIT_LEVEL_0]            = DDR_MIN_FREQ_VALUE_0;
-    g_al_host_init_params[WLAN_CFG_INIT_DEVICE_TYPE_LEVEL_0]               = FREQ_IDLE;
-    g_al_host_init_params[WLAN_CFG_INIT_PSS_THRESHOLD_LEVEL_1]             = PPS_VALUE_1;
-    g_al_host_init_params[WLAN_CFG_INIT_CPU_FREQ_LIMIT_LEVEL_1]            = CPU_MIN_FREQ_VALUE_1;
-    g_al_host_init_params[WLAN_CFG_INIT_DDR_FREQ_LIMIT_LEVEL_1]            = DDR_MIN_FREQ_VALUE_1;
-    g_al_host_init_params[WLAN_CFG_INIT_DEVICE_TYPE_LEVEL_1]               = FREQ_MIDIUM;
-    g_al_host_init_params[WLAN_CFG_INIT_PSS_THRESHOLD_LEVEL_2]             = PPS_VALUE_2;
-    g_al_host_init_params[WLAN_CFG_INIT_CPU_FREQ_LIMIT_LEVEL_2]            = CPU_MIN_FREQ_VALUE_2;
-    g_al_host_init_params[WLAN_CFG_INIT_DDR_FREQ_LIMIT_LEVEL_2]            = DDR_MIN_FREQ_VALUE_2;
-    g_al_host_init_params[WLAN_CFG_INIT_DEVICE_TYPE_LEVEL_2]               = FREQ_HIGHER;
-    g_al_host_init_params[WLAN_CFG_INIT_PSS_THRESHOLD_LEVEL_3]             = PPS_VALUE_3;
-    g_al_host_init_params[WLAN_CFG_INIT_CPU_FREQ_LIMIT_LEVEL_3]            = CPU_MIN_FREQ_VALUE_3;
-    g_al_host_init_params[WLAN_CFG_INIT_DDR_FREQ_LIMIT_LEVEL_3]            = DDR_MIN_FREQ_VALUE_3;
-    g_al_host_init_params[WLAN_CFG_INIT_DEVICE_TYPE_LEVEL_3]               = FREQ_HIGHEST;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_PSS_THRESHOLD_LEVEL_0]             = PPS_VALUE_0;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_CPU_FREQ_LIMIT_LEVEL_0]            = CPU_MIN_FREQ_VALUE_0;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_DDR_FREQ_LIMIT_LEVEL_0]            = DDR_MIN_FREQ_VALUE_0;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_DEVICE_TYPE_LEVEL_0]               = FREQ_IDLE;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_PSS_THRESHOLD_LEVEL_1]             = PPS_VALUE_1;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_CPU_FREQ_LIMIT_LEVEL_1]            = CPU_MIN_FREQ_VALUE_1;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_DDR_FREQ_LIMIT_LEVEL_1]            = DDR_MIN_FREQ_VALUE_1;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_DEVICE_TYPE_LEVEL_1]               = FREQ_MIDIUM;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_PSS_THRESHOLD_LEVEL_2]             = PPS_VALUE_2;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_CPU_FREQ_LIMIT_LEVEL_2]            = CPU_MIN_FREQ_VALUE_2;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_DDR_FREQ_LIMIT_LEVEL_2]            = DDR_MIN_FREQ_VALUE_2;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_DEVICE_TYPE_LEVEL_2]               = FREQ_HIGHER;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_PSS_THRESHOLD_LEVEL_3]             = PPS_VALUE_3;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_CPU_FREQ_LIMIT_LEVEL_3]            = CPU_MIN_FREQ_VALUE_3;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_DDR_FREQ_LIMIT_LEVEL_3]            = DDR_MIN_FREQ_VALUE_3;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_DEVICE_TYPE_LEVEL_3]               = FREQ_HIGHEST;
 #endif
     /* AP开tx amsdu */
-    g_al_host_init_params[WLAN_CFG_INIT_AP_TX_AMSDU]                       = 0;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_AP_TX_AMSDU]                       = 0;
      /* AP开rx amsdu */
-    g_al_host_init_params[WLAN_CFG_INIT_AP_RX_AMSDU]                       = 0;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_AP_RX_AMSDU]                       = 0;
     /* 低功耗 */
-    g_al_host_init_params[WLAN_CFG_INIT_POWERMGMT_SWITCH]                  = 0;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_POWERMGMT_SWITCH]                  = 0;
     /* 可维可测 */
     /* 日志级别 */
-    g_al_host_init_params[WLAN_CFG_INIT_LOGLEVEL]                          = OAM_LOG_LEVEL_WARNING;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_LOGLEVEL]                          = OAM_LOG_LEVEL_WARNING;
     /* 2G RF前端 */
-    g_al_host_init_params[WLAN_CFG_INIT_RF_LINE_TXRX_GAIN_DB_2G_BAND1_MULT4]    = -12;
-    g_al_host_init_params[WLAN_CFG_INIT_RF_LINE_TXRX_GAIN_DB_2G_BAND1_MULT10]   = -30;
-    g_al_host_init_params[WLAN_CFG_INIT_RF_LINE_TXRX_GAIN_DB_2G_BAND2_MULT4]    = -12;
-    g_al_host_init_params[WLAN_CFG_INIT_RF_LINE_TXRX_GAIN_DB_2G_BAND2_MULT10]   = -30;
-    g_al_host_init_params[WLAN_CFG_INIT_RF_LINE_TXRX_GAIN_DB_2G_BAND3_MULT4]    = -12;
-    g_al_host_init_params[WLAN_CFG_INIT_RF_LINE_TXRX_GAIN_DB_2G_BAND3_MULT10]   = -30;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_RF_LINE_TXRX_GAIN_DB_2G_BAND1_MULT4]    = -12;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_RF_LINE_TXRX_GAIN_DB_2G_BAND1_MULT10]   = -30;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_RF_LINE_TXRX_GAIN_DB_2G_BAND2_MULT4]    = -12;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_RF_LINE_TXRX_GAIN_DB_2G_BAND2_MULT10]   = -30;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_RF_LINE_TXRX_GAIN_DB_2G_BAND3_MULT4]    = -12;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_RF_LINE_TXRX_GAIN_DB_2G_BAND3_MULT10]   = -30;
     /* 5G RF前端 */
-    g_al_host_init_params[WLAN_CFG_INIT_RF_LINE_TXRX_GAIN_DB_5G_BAND1_MULT4]    = -8;
-    g_al_host_init_params[WLAN_CFG_INIT_RF_LINE_TXRX_GAIN_DB_5G_BAND1_MULT10]   = -20;
-    g_al_host_init_params[WLAN_CFG_INIT_RF_LINE_TXRX_GAIN_DB_5G_BAND2_MULT4]    = -8;
-    g_al_host_init_params[WLAN_CFG_INIT_RF_LINE_TXRX_GAIN_DB_5G_BAND2_MULT10]   = -20;
-    g_al_host_init_params[WLAN_CFG_INIT_RF_LINE_TXRX_GAIN_DB_5G_BAND3_MULT4]    = -8;
-    g_al_host_init_params[WLAN_CFG_INIT_RF_LINE_TXRX_GAIN_DB_5G_BAND3_MULT10]   = -20;
-    g_al_host_init_params[WLAN_CFG_INIT_RF_LINE_TXRX_GAIN_DB_5G_BAND4_MULT4]    = -8;
-    g_al_host_init_params[WLAN_CFG_INIT_RF_LINE_TXRX_GAIN_DB_5G_BAND4_MULT10]   = -20;
-    g_al_host_init_params[WLAN_CFG_INIT_RF_LINE_TXRX_GAIN_DB_5G_BAND5_MULT4]    = -8;
-    g_al_host_init_params[WLAN_CFG_INIT_RF_LINE_TXRX_GAIN_DB_5G_BAND5_MULT10]   = -20;
-    g_al_host_init_params[WLAN_CFG_INIT_RF_LINE_TXRX_GAIN_DB_5G_BAND6_MULT4]    = -8;
-    g_al_host_init_params[WLAN_CFG_INIT_RF_LINE_TXRX_GAIN_DB_5G_BAND6_MULT10]   = -20;
-    g_al_host_init_params[WLAN_CFG_INIT_RF_LINE_TXRX_GAIN_DB_5G_BAND7_MULT4]    = -8;
-    g_al_host_init_params[WLAN_CFG_INIT_RF_LINE_TXRX_GAIN_DB_5G_BAND7_MULT10]   = -20;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_RF_LINE_TXRX_GAIN_DB_5G_BAND1_MULT4]    = -8;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_RF_LINE_TXRX_GAIN_DB_5G_BAND1_MULT10]   = -20;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_RF_LINE_TXRX_GAIN_DB_5G_BAND2_MULT4]    = -8;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_RF_LINE_TXRX_GAIN_DB_5G_BAND2_MULT10]   = -20;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_RF_LINE_TXRX_GAIN_DB_5G_BAND3_MULT4]    = -8;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_RF_LINE_TXRX_GAIN_DB_5G_BAND3_MULT10]   = -20;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_RF_LINE_TXRX_GAIN_DB_5G_BAND4_MULT4]    = -8;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_RF_LINE_TXRX_GAIN_DB_5G_BAND4_MULT10]   = -20;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_RF_LINE_TXRX_GAIN_DB_5G_BAND5_MULT4]    = -8;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_RF_LINE_TXRX_GAIN_DB_5G_BAND5_MULT10]   = -20;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_RF_LINE_TXRX_GAIN_DB_5G_BAND6_MULT4]    = -8;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_RF_LINE_TXRX_GAIN_DB_5G_BAND6_MULT10]   = -20;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_RF_LINE_TXRX_GAIN_DB_5G_BAND7_MULT4]    = -8;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_RF_LINE_TXRX_GAIN_DB_5G_BAND7_MULT10]   = -20;
 
     /* fem */
-    g_al_host_init_params[WLAN_CFG_INIT_RF_LINE_RX_GAIN_DB_2G]             = -12;
-    g_al_host_init_params[WLAN_CFG_INIT_LNA_GAIN_DB_2G]                    = 20;
-    g_al_host_init_params[WLAN_CFG_INIT_RF_LINE_TX_GAIN_DB_2G]             = -12;
-    g_al_host_init_params[WLAN_CFG_INIT_EXT_SWITCH_ISEXIST_2G]             = 0;
-    g_al_host_init_params[WLAN_CFG_INIT_EXT_PA_ISEXIST_2G]                 = 0;
-    g_al_host_init_params[WLAN_CFG_INIT_EXT_LNA_ISEXIST_2G]                = 0;
-    g_al_host_init_params[WLAN_CFG_INIT_LNA_ON2OFF_TIME_NS_2G]             = 630;
-    g_al_host_init_params[WLAN_CFG_INIT_LNA_OFF2ON_TIME_NS_2G]             = 320;
-    g_al_host_init_params[WLAN_CFG_INIT_RF_LINE_RX_GAIN_DB_5G]             = -12;
-    g_al_host_init_params[WLAN_CFG_INIT_LNA_GAIN_DB_5G]                    = 20;
-    g_al_host_init_params[WLAN_CFG_INIT_RF_LINE_TX_GAIN_DB_5G]             = -12;
-    g_al_host_init_params[WLAN_CFG_INIT_EXT_SWITCH_ISEXIST_5G]             = 1;
-    g_al_host_init_params[WLAN_CFG_INIT_EXT_PA_ISEXIST_5G]                 = 1;
-    g_al_host_init_params[WLAN_CFG_INIT_EXT_LNA_ISEXIST_5G]                = 1;
-    g_al_host_init_params[WLAN_CFG_INIT_LNA_ON2OFF_TIME_NS_5G]             = 630;
-    g_al_host_init_params[WLAN_CFG_INIT_LNA_OFF2ON_TIME_NS_5G]             = 320;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_RF_LINE_RX_GAIN_DB_2G]             = -12;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_LNA_GAIN_DB_2G]                    = 20;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_RF_LINE_TX_GAIN_DB_2G]             = -12;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_EXT_SWITCH_ISEXIST_2G]             = 0;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_EXT_PA_ISEXIST_2G]                 = 0;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_EXT_LNA_ISEXIST_2G]                = 0;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_LNA_ON2OFF_TIME_NS_2G]             = 630;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_LNA_OFF2ON_TIME_NS_2G]             = 320;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_RF_LINE_RX_GAIN_DB_5G]             = -12;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_LNA_GAIN_DB_5G]                    = 20;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_RF_LINE_TX_GAIN_DB_5G]             = -12;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_EXT_SWITCH_ISEXIST_5G]             = 1;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_EXT_PA_ISEXIST_5G]                 = 1;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_EXT_LNA_ISEXIST_5G]                = 1;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_LNA_ON2OFF_TIME_NS_5G]             = 630;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_LNA_OFF2ON_TIME_NS_5G]             = 320;
 
     /* SCAN */
-    g_al_host_init_params[WLAN_CFG_INIT_RANDOM_MAC_ADDR_SCAN]              = 0;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_RANDOM_MAC_ADDR_SCAN]              = 0;
     /* 11AC2G */
-    g_al_host_init_params[WLAN_CFG_INIT_11AC2G_ENABLE]                     = 1;
-    g_al_host_init_params[WLAN_CFG_INIT_DISABLE_CAPAB_2GHT40]              = 0;
-    g_al_host_init_params[WLAN_CFG_INIT_DUAL_ANTENNA_ENABLE]               = 0;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_11AC2G_ENABLE]                     = 1;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_DISABLE_CAPAB_2GHT40]              = 0;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_DUAL_ANTENNA_ENABLE]               = 0;
     /* sta keepalive cnt th*/
-    g_al_host_init_params[WLAN_CFG_INIT_STA_KEEPALIVE_CNT_TH]              = 3;
-    g_al_host_init_params[WLAN_CFG_INIT_FAR_DIST_POW_GAIN_SWITCH]          = 1;
-    g_al_host_init_params[WLAN_CFG_INIT_FAR_DIST_DSSS_SCALE_PROMOTE_SWITCH]     = 1;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_STA_KEEPALIVE_CNT_TH]              = 3;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_FAR_DIST_POW_GAIN_SWITCH]          = 1;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_FAR_DIST_DSSS_SCALE_PROMOTE_SWITCH]     = 1;
 #if (_PRE_MULTI_CORE_MODE_OFFLOAD_DMAC != _PRE_MULTI_CORE_MODE)
     /* beacon country ie switch */
-    g_al_host_init_params[WLAN_CFG_INIT_BEACON_COUNTRY_IE_SWITCH]          = 1;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_BEACON_COUNTRY_IE_SWITCH]          = 1;
 #endif
-    g_al_host_init_params[WLAN_CFG_INIT_DELTA_CCA_ED_HIGH_20TH_2G]         = 0;
-    g_al_host_init_params[WLAN_CFG_INIT_DELTA_CCA_ED_HIGH_40TH_2G]         = 0;
-    g_al_host_init_params[WLAN_CFG_INIT_DELTA_CCA_ED_HIGH_20TH_5G]         = 0;
-    g_al_host_init_params[WLAN_CFG_INIT_DELTA_CCA_ED_HIGH_40TH_5G]         = 0;
-    g_al_host_init_params[WLAN_CFG_INIT_OBSS_RSSI_TH]                      = 0;
-    g_al_host_init_params[WLAN_CFG_INIT_DYN_BW_ENABLE]                     = 0;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_DELTA_CCA_ED_HIGH_20TH_2G]         = 0;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_DELTA_CCA_ED_HIGH_40TH_2G]         = 0;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_DELTA_CCA_ED_HIGH_20TH_5G]         = 0;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_DELTA_CCA_ED_HIGH_40TH_5G]         = 0;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_OBSS_RSSI_TH]                      = 0;
+    g_al_host_init_params_etc[WLAN_CFG_INIT_DYN_BW_ENABLE]                     = 0;
 }
 
 
@@ -1099,7 +1099,7 @@ regdomain_enum hwifi_get_regdomain_from_country_code(const countrycode_t country
 }
 
 
-int32 hwifi_is_regdomain_changed(const countrycode_t country_code_old, const countrycode_t country_code_new)
+int32 hwifi_is_regdomain_changed_etc(const countrycode_t country_code_old, const countrycode_t country_code_new)
 {
     return hwifi_get_regdomain_from_country_code(country_code_old, OAL_FALSE) != hwifi_get_regdomain_from_country_code(country_code_new, OAL_FALSE);
 }
@@ -1129,7 +1129,7 @@ OAL_STATIC int32 hwifi_get_plat_tag_from_country_code(const countrycode_t countr
 }
 
 
-int32 hwifi_fetch_ori_caldata(uint8* auc_caldata, int32 l_nvm_len)
+int32 hwifi_fetch_ori_caldata_etc(uint8* auc_caldata, int32 l_nvm_len)
 {
     int32 l_ret = INI_FAILED;
     int32 l_cfg_id;
@@ -1137,7 +1137,7 @@ int32 hwifi_fetch_ori_caldata(uint8* auc_caldata, int32 l_nvm_len)
 
     if (l_nvm_len != HISI_CUST_NVRAM_LEN)
     {
-        OAM_ERROR_LOG2(0, OAM_SF_ANY, "hwifi_fetch_ori_caldata atcmd[nv_len:%d] and plat_ini[nv_len:%d] model have different nvm lenth!!",
+        OAM_ERROR_LOG2(0, OAM_SF_ANY, "hwifi_fetch_ori_caldata_etc atcmd[nv_len:%d] and plat_ini[nv_len:%d] model have different nvm lenth!!",
                         l_nvm_len, HISI_CUST_NVRAM_LEN);
         return INI_FAILED;
     }
@@ -1146,15 +1146,15 @@ int32 hwifi_fetch_ori_caldata(uint8* auc_caldata, int32 l_nvm_len)
 
     for (l_cfg_id = NVRAM_PARAMS_INDEX_0; l_cfg_id < NVRAM_PARAMS_INDEX_BUTT; l_cfg_id++)
     {
-        l_ret = get_cust_conf_int32(INI_MODU_WIFI, g_ast_nvram_config_ini[l_cfg_id].name, &aul_nvram_params[l_cfg_id]);
+        l_ret = get_cust_conf_int32_etc(INI_MODU_WIFI, g_ast_nvram_config_ini[l_cfg_id].name, &aul_nvram_params[l_cfg_id]);
         if(INI_FAILED == l_ret)
         {
-            OAM_ERROR_LOG1(0, OAM_SF_ANY, "hwifi_fetch_ori_caldata read ori caldata %d from ini failed!", l_cfg_id);
+            OAM_ERROR_LOG1(0, OAM_SF_ANY, "hwifi_fetch_ori_caldata_etc read ori caldata %d from ini failed!", l_cfg_id);
             return INI_FAILED;
         }
     }
 
-    OAM_INFO_LOG0(0, OAM_SF_ANY, "hwifi_fetch_ori_caldata read ori caldata from ini success!");
+    OAM_INFO_LOG0(0, OAM_SF_ANY, "hwifi_fetch_ori_caldata_etc read ori caldata from ini success!");
     oal_memcopy(auc_caldata, aul_nvram_params, HISI_CUST_NVRAM_LEN);
 
     return INI_SUCC;
@@ -1180,7 +1180,7 @@ int32 hwifi_custom_adapt_device_ini_freq_param(oal_uint8 *puc_data, oal_uint32 *
 
     for(uc_index = 0, cfg_id = WLAN_CFG_INIT_PSS_THRESHOLD_LEVEL_0; uc_index < 4; uc_index++)
     {
-        l_val = hwifi_get_init_value(CUS_TAG_INI, cfg_id);
+        l_val = hwifi_get_init_value_etc(CUS_TAG_INI, cfg_id);
         if (PPS_VALUE_0 <= l_val && PPS_VALUE_3 >= l_val)
         {
             st_device_freq_data.st_device_data[uc_index].ul_speed_level = (oal_uint32)l_val;
@@ -1195,7 +1195,7 @@ int32 hwifi_custom_adapt_device_ini_freq_param(oal_uint8 *puc_data, oal_uint32 *
 
     for(uc_index = 0, cfg_id = WLAN_CFG_INIT_DEVICE_TYPE_LEVEL_0; uc_index < 4; uc_index++)
     {
-        l_val = hwifi_get_init_value(CUS_TAG_INI, cfg_id);
+        l_val = hwifi_get_init_value_etc(CUS_TAG_INI, cfg_id);
 
         if(FREQ_IDLE <= l_val && FREQ_HIGHEST >= l_val)
         {
@@ -1232,7 +1232,7 @@ OAL_STATIC int32 hwifi_config_init_nvram(void)
     int32 l_plat_tag;
 
     oal_memset(g_aus_nv_params, 0x00, sizeof(g_aus_nv_params));
-    l_plat_tag = hwifi_get_plat_tag_from_country_code((uint8*)hwifi_get_country_code());
+    l_plat_tag = hwifi_get_plat_tag_from_country_code((uint8*)hwifi_get_country_code_etc());
     OAM_WARNING_LOG1(0, OAM_SF_ANY, "hwifi_config_init_nvram plat_tag:0x%2x!", l_plat_tag);
 
     /* read nvm failed or data not exist or country_code updated, read ini:cust_spec > cust_common > default */
@@ -1240,7 +1240,7 @@ OAL_STATIC int32 hwifi_config_init_nvram(void)
 
     for (l_cfg_id = NVRAM_PARAMS_INDEX_0; l_cfg_id < NVRAM_PARAMS_INDEX_BUTT; l_cfg_id++)
     {
-        l_ret = get_cust_conf_int32(l_plat_tag, g_ast_nvram_config_ini[l_cfg_id].name, &aul_nvram_params[l_cfg_id]);
+        l_ret = get_cust_conf_int32_etc(l_plat_tag, g_ast_nvram_config_ini[l_cfg_id].name, &aul_nvram_params[l_cfg_id]);
         //OAM_WARNING_LOG2(0, OAM_SF_ANY, "{hwifi_config_init_nvram::l_cfg_id[%d], aul_nvram_params[l_cfg_id]=0x%x!}\r\n", l_cfg_id, aul_nvram_params[l_cfg_id]);
         if(INI_FAILED == l_ret)
         {
@@ -1267,7 +1267,7 @@ OAL_STATIC int32 hwifi_config_init_private_custom(void)
     for(l_cfg_id = 0; l_cfg_id < WLAN_CFG_PRIV_BUTT; l_cfg_id++)
     {
         /* 获取 private 的配置值 */
-        l_ret = get_cust_conf_int32(INI_MODU_WIFI, g_ast_wifi_config_priv[l_cfg_id].name, &(g_al_priv_cust_params[l_cfg_id].l_val));
+        l_ret = get_cust_conf_int32_etc(INI_MODU_WIFI, g_ast_wifi_config_priv[l_cfg_id].name, &(g_al_priv_cust_params[l_cfg_id].l_val));
 
         if (INI_FAILED == l_ret)
         {
@@ -1286,7 +1286,7 @@ OAL_STATIC int32 hwifi_config_init_private_custom(void)
 }
 
 
-int32 hwifi_config_init(int32 cus_tag)
+int32 hwifi_config_init_etc(int32 cus_tag)
 {
     int32               l_cfg_id;
     int32               l_ret = INI_FAILED;
@@ -1304,36 +1304,36 @@ int32 hwifi_config_init(int32 cus_tag)
         case CUS_TAG_INI:
             host_params_init_first();
             pgast_wifi_config = g_ast_wifi_config_cmds;
-            pgal_params = g_al_host_init_params;
+            pgal_params = g_al_host_init_params_etc;
             l_wlan_cfg_butt = WLAN_CFG_INIT_BUTT;
             break;
         case CUS_TAG_DTS:
             original_value_for_dts_params();
             pgast_wifi_config = g_ast_wifi_config_dts;
-            pgal_params = g_al_dts_params;
+            pgal_params = g_al_dts_params_etc;
             l_wlan_cfg_butt = WLAN_CFG_DTS_BUTT;
             break;
         case CUS_TAG_PRIV_INI:
             return hwifi_config_init_private_custom();
         default:
-            OAM_ERROR_LOG1(0, OAM_SF_ANY, "hwifi_config_init tag number[0x%x] not correct!", cus_tag);
+            OAM_ERROR_LOG1(0, OAM_SF_ANY, "hwifi_config_init_etc tag number[0x%x] not correct!", cus_tag);
             return INI_FAILED;
     }
 
     for(l_cfg_id = 0; l_cfg_id < l_wlan_cfg_butt; l_cfg_id++)
     {
         /* 获取ini的配置值 */
-        l_ret = get_cust_conf_int32(INI_MODU_WIFI, pgast_wifi_config[l_cfg_id].name, &l_cfg_value);
+        l_ret = get_cust_conf_int32_etc(INI_MODU_WIFI, pgast_wifi_config[l_cfg_id].name, &l_cfg_value);
 
         if (INI_FAILED == l_ret)
         {
-            OAM_WARNING_LOG2(0, OAM_SF_ANY, "hwifi_config_init read ini file failed cfg_id[%d]tag[%d]!", l_cfg_id, cus_tag);
+            OAM_WARNING_LOG2(0, OAM_SF_ANY, "hwifi_config_init_etc read ini file failed cfg_id[%d]tag[%d]!", l_cfg_id, cus_tag);
             continue;
         }
 
         l_ori_val = pgal_params[l_cfg_id];
         pgal_params[l_cfg_id] = l_cfg_value;
-        OAM_WARNING_LOG4(0, OAM_SF_ANY, "hwifi_config_init [id:%d tag:%d] changed from [%d]to[%d]", l_cfg_id, cus_tag, l_ori_val, pgal_params[l_cfg_id]);
+        OAM_WARNING_LOG4(0, OAM_SF_ANY, "hwifi_config_init_etc [id:%d tag:%d] changed from [%d]to[%d]", l_cfg_id, cus_tag, l_ori_val, pgal_params[l_cfg_id]);
     }
 
     return INI_SUCC;
@@ -1377,36 +1377,36 @@ OAL_STATIC int char2byte( char* strori, char* outbuf )
 }
 #endif
 
-int32 hwifi_get_mac_addr(uint8 *puc_buf)
+int32 hwifi_get_mac_addr_etc(uint8 *puc_buf)
 {
     return INI_SUCC;
 }
 
 /*lint -e661*/ /*lint -e662*/
-int32 hwifi_get_init_value(int32 cus_tag, int32 cfg_id)
+int32 hwifi_get_init_value_etc(int32 cus_tag, int32 cfg_id)
 {
     int32*              pgal_params = OAL_PTR_NULL;
     int32               l_wlan_cfg_butt;
 
     if (CUS_TAG_INI == cus_tag)
     {
-        pgal_params = &g_al_host_init_params[0];
+        pgal_params = &g_al_host_init_params_etc[0];
         l_wlan_cfg_butt = WLAN_CFG_INIT_BUTT;
     }
     else if (CUS_TAG_DTS == cus_tag)
     {
-        pgal_params = &g_al_dts_params[0];
+        pgal_params = &g_al_dts_params_etc[0];
         l_wlan_cfg_butt = WLAN_CFG_DTS_BUTT;
     }
     else
     {
-        OAM_ERROR_LOG1(0, OAM_SF_ANY, "hwifi_get_init_value tag number[0x%2x] not correct!", cus_tag);
+        OAM_ERROR_LOG1(0, OAM_SF_ANY, "hwifi_get_init_value_etc tag number[0x%2x] not correct!", cus_tag);
         return INI_FAILED;
     }
 
     if (0 > cfg_id || l_wlan_cfg_butt <= cfg_id)
     {
-        OAM_ERROR_LOG2(0, OAM_SF_ANY, "hwifi_get_init_value cfg id[%d] out of range, max cfg id is:%d", cfg_id, (l_wlan_cfg_butt - 1));
+        OAM_ERROR_LOG2(0, OAM_SF_ANY, "hwifi_get_init_value_etc cfg id[%d] out of range, max cfg id is:%d", cfg_id, (l_wlan_cfg_butt - 1));
         return INI_FAILED;
     }
     return pgal_params[cfg_id];
@@ -1432,47 +1432,47 @@ oal_int32 hwifi_get_init_priv_value(oal_int32 l_cfg_id, oal_int32 *pl_priv_value
 }
 
 
-int8* hwifi_get_country_code(void)
+int8* hwifi_get_country_code_etc(void)
 {
     /*Note:declaration of symbol "l_ret" hides symbol "l_ret"*/
     /*lint -e578*/
     int32 l_ret;
     /*lint +e578*/
 
-    if (g_ac_country_code[0] != '0' && g_ac_country_code[1] != '0')
+    if (g_ac_country_code_etc[0] != '0' && g_ac_country_code_etc[1] != '0')
     {
-        return g_ac_country_code;
+        return g_ac_country_code_etc;
     }
 
     /* 获取cust国家码 */
-    l_ret = get_cust_conf_string(INI_MODU_WIFI, STR_COUNTRY_CODE, g_ac_country_code, sizeof(g_ac_country_code)-1);
+    l_ret = get_cust_conf_string_etc(INI_MODU_WIFI, STR_COUNTRY_CODE, g_ac_country_code_etc, sizeof(g_ac_country_code_etc)-1);
 
     if(INI_FAILED == l_ret)
     {
-        OAM_WARNING_LOG0(0, OAM_SF_ANY, "hwifi_get_country_code read country code failed, check if it exists!");
-        strncpy(g_ac_country_code, "99", 2);
+        OAM_WARNING_LOG0(0, OAM_SF_ANY, "hwifi_get_country_code_etc read country code failed, check if it exists!");
+        strncpy(g_ac_country_code_etc, "99", 2);
     }
-    g_ac_country_code[2] = '\0';
+    g_ac_country_code_etc[2] = '\0';
 
-    return g_ac_country_code;
+    return g_ac_country_code_etc;
 }
 
 
-void hwifi_set_country_code(int8* country_code, const uint32 len)
+void hwifi_set_country_code_etc(int8* country_code, const uint32 len)
 {
     if (OAL_PTR_NULL == country_code || len != COUNTRY_CODE_LEN)
     {
-        OAM_ERROR_LOG0(0, OAM_SF_ANY, "hwifi_get_country_code ptr null or illegal len!");
+        OAM_ERROR_LOG0(0, OAM_SF_ANY, "hwifi_get_country_code_etc ptr null or illegal len!");
         return;
     }
 
-    oal_memcopy(g_ac_country_code, country_code, COUNTRY_CODE_LEN);
-    g_ac_country_code[2] = '\0';
+    oal_memcopy(g_ac_country_code_etc, country_code, COUNTRY_CODE_LEN);
+    g_ac_country_code_etc[2] = '\0';
 
     return;
 }
 
-uint16 *hwifi_get_nvram_params(void)
+uint16 *hwifi_get_nvram_params_etc(void)
 {
     return g_aus_nv_params;
 }
@@ -1488,7 +1488,7 @@ int hwifi_get_cfg_params(void)
     for(l_cfg_id = 0; l_cfg_id < WLAN_CFG_INIT_BUTT; ++l_cfg_id)
     {
         OAL_IO_PRINT("%s \t [config:%d]\n", g_ast_wifi_config_cmds[l_cfg_id].name,
-            g_al_host_init_params[l_cfg_id]);
+            g_al_host_init_params_etc[l_cfg_id]);
     }
 
     //CUS_TAG_NV
@@ -1504,7 +1504,7 @@ int hwifi_get_cfg_params(void)
     for(l_cfg_id = 0; l_cfg_id < WLAN_CFG_DTS_BUTT; ++l_cfg_id)
     {
         OAL_IO_PRINT("%s \t [config:%d]\n", g_ast_wifi_config_dts[l_cfg_id].name,
-            g_al_dts_params[l_cfg_id]);
+            g_al_dts_params_etc[l_cfg_id]);
     }
     return INI_SUCC;
 }
@@ -1527,7 +1527,7 @@ char* hwifi_get_chip_id_cfg(oal_uint8 uc_chip_id)
     OAL_MEMZERO(g_chipid_cfg[uc_chip_id],CHIPID_CFG_LEN);
 
     /* 获取chip id配置信息 */
-    l_ret = get_cust_conf_string(INI_MODU_WIFI, auc_var_name, g_chipid_cfg[uc_chip_id], CHIPID_CFG_LEN-1);
+    l_ret = get_cust_conf_string_etc(INI_MODU_WIFI, auc_var_name, g_chipid_cfg[uc_chip_id], CHIPID_CFG_LEN-1);
 
     if(INI_FAILED == l_ret)
     {
@@ -1550,7 +1550,7 @@ oal_int32 hwifi_get_custom_over_temp(oal_uint8 *puc_temp)
         OAM_WARNING_LOG0(0, OAM_SF_ANY, "hwifi_get_custom_over_temp :NULL  para !!");
         return OAL_FAIL;
     }
-    l_ret = get_cust_conf_int32(INI_MODU_WIFI, "software_over_temp_protect", &l_temp);
+    l_ret = get_cust_conf_int32_etc(INI_MODU_WIFI, "software_over_temp_protect", &l_temp);
     if (0 == l_ret)
     {
         if ((l_temp > 0) && (l_temp < 255))
@@ -1568,7 +1568,7 @@ oal_int32 hwifi_get_custom_over_temp(oal_uint8 *puc_temp)
 
         if (0 == l_ret)
         {
-            l_ret = get_cust_conf_int32(INI_MODU_WIFI, "hardware_over_temp_protect", &l_temp);
+            l_ret = get_cust_conf_int32_etc(INI_MODU_WIFI, "hardware_over_temp_protect", &l_temp);
             if ((l_temp > 0) && (l_temp < 255))
             {
                 *puc_temp = (oal_uint8)l_temp;
@@ -1603,7 +1603,7 @@ oal_void hwifi_get_wavap_mac_cfg(oal_void)
     for (i=0; i<MAX_IXIA_MAC_ADDR_COUNT; i++)
     {
         OAL_SPRINTF(auc_tmp_name, IXIA_MAC_ADDR_CFG_LEN, "ixia_mac_addr%d", i);
-        l_ret = get_cust_conf_string(INI_MODU_WIFI, auc_tmp_name, auc_mac_name, IXIA_MAC_ADDR_CFG_LEN-1);
+        l_ret = get_cust_conf_string_etc(INI_MODU_WIFI, auc_tmp_name, auc_mac_name, IXIA_MAC_ADDR_CFG_LEN-1);
         if(INI_FAILED == l_ret)
         {
             continue;
@@ -1671,7 +1671,7 @@ oal_void hwifi_get_edca_fix_cfg(oal_void)
     for (i=0; i<MAX_EDCA_MAC_ADDR_COUNT; i++)
     {
         OAL_SPRINTF(auc_tmp_name, MAC_ADDR_CFG_LEN, "edca_mac_addr%d", i);
-        l_ret = get_cust_conf_string(INI_MODU_WIFI, auc_tmp_name, auc_mac_name, MAC_ADDR_CFG_LEN-1);
+        l_ret = get_cust_conf_string_etc(INI_MODU_WIFI, auc_tmp_name, auc_mac_name, MAC_ADDR_CFG_LEN-1);
         if(INI_FAILED == l_ret)
         {
             continue;
@@ -1761,14 +1761,14 @@ oal_void* hwifi_get_up_down_edca(oal_uint8 *puc_mac_addr)
 #endif
 
 EXPORT_SYMBOL_GPL(g_st_cust_country_code_ignore_flag);
-EXPORT_SYMBOL_GPL(g_st_wlan_customize);
-EXPORT_SYMBOL_GPL(hwifi_config_init);
-EXPORT_SYMBOL_GPL(hwifi_get_mac_addr);
-EXPORT_SYMBOL_GPL(hwifi_get_init_value);
-EXPORT_SYMBOL_GPL(hwifi_get_country_code);
-EXPORT_SYMBOL_GPL(hwifi_get_nvram_params);
-EXPORT_SYMBOL_GPL(hwifi_fetch_ori_caldata);
-EXPORT_SYMBOL_GPL(hwifi_set_country_code);
+EXPORT_SYMBOL_GPL(g_st_wlan_customize_etc);
+EXPORT_SYMBOL_GPL(hwifi_config_init_etc);
+EXPORT_SYMBOL_GPL(hwifi_get_mac_addr_etc);
+EXPORT_SYMBOL_GPL(hwifi_get_init_value_etc);
+EXPORT_SYMBOL_GPL(hwifi_get_country_code_etc);
+EXPORT_SYMBOL_GPL(hwifi_get_nvram_params_etc);
+EXPORT_SYMBOL_GPL(hwifi_fetch_ori_caldata_etc);
+EXPORT_SYMBOL_GPL(hwifi_set_country_code_etc);
 EXPORT_SYMBOL_GPL(hwifi_get_chip_id_cfg);
 #ifdef _PRE_WLAN_MAC_ADDR_EDCA_FIX
 EXPORT_SYMBOL_GPL(hwifi_get_up_down_edca);
@@ -1784,7 +1784,7 @@ EXPORT_SYMBOL_GPL(hwifi_get_custom_over_temp);
 #endif
 
 EXPORT_SYMBOL_GPL(hwifi_get_regdomain_from_country_code);
-EXPORT_SYMBOL_GPL(hwifi_is_regdomain_changed);
+EXPORT_SYMBOL_GPL(hwifi_is_regdomain_changed_etc);
 EXPORT_SYMBOL_GPL(hwifi_get_cfg_params);
 #if (_PRE_MULTI_CORE_MODE_OFFLOAD_DMAC == _PRE_MULTI_CORE_MODE)
 EXPORT_SYMBOL_GPL(hwifi_custom_host_read_cfg_init);
@@ -1804,22 +1804,22 @@ int plat_main_init(void)
 
     OAL_RET_ON_MISMATCH(plat, -OAL_EFAIL);
 
-    ini_cfg_init();
-    hwifi_config_init(CUS_TAG_DTS);
-    hwifi_config_init(CUS_TAG_NV);
-    hwifi_config_init(CUS_TAG_INI);
+    ini_cfg_init_etc();
+    hwifi_config_init_etc(CUS_TAG_DTS);
+    hwifi_config_init_etc(CUS_TAG_NV);
+    hwifi_config_init_etc(CUS_TAG_INI);
 
     /******************************************** 性能 ********************************************/
-    l_val = hwifi_get_init_value(CUS_TAG_INI, WLAN_CFG_INIT_AMPDU_TX_MAX_NUM);
-    g_st_wlan_customize.ul_ampdu_tx_max_num = (WLAN_AMPDU_TX_MAX_NUM >= l_val && 1 <= l_val) ? (oal_uint32)l_val : g_st_wlan_customize.ul_ampdu_tx_max_num;
+    l_val = hwifi_get_init_value_etc(CUS_TAG_INI, WLAN_CFG_INIT_AMPDU_TX_MAX_NUM);
+    g_st_wlan_customize_etc.ul_ampdu_tx_max_num = (WLAN_AMPDU_TX_MAX_NUM >= l_val && 1 <= l_val) ? (oal_uint32)l_val : g_st_wlan_customize_etc.ul_ampdu_tx_max_num;
 
     /******************************************** 扫描 ********************************************/
-    l_val = hwifi_get_init_value(CUS_TAG_INI, WLAN_CFG_INIT_RANDOM_MAC_ADDR_SCAN);
-    g_st_wlan_customize.uc_random_mac_addr_scan = !!l_val;
+    l_val = hwifi_get_init_value_etc(CUS_TAG_INI, WLAN_CFG_INIT_RANDOM_MAC_ADDR_SCAN);
+    g_st_wlan_customize_etc.uc_random_mac_addr_scan = !!l_val;
 
     /******************************************** CAPABILITY ********************************************/
-    l_val = hwifi_get_init_value(CUS_TAG_INI, WLAN_CFG_INIT_DISABLE_CAPAB_2GHT40);
-    g_st_wlan_customize.uc_disable_capab_2ght40 = (oal_uint8)!!l_val;
+    l_val = hwifi_get_init_value_etc(CUS_TAG_INI, WLAN_CFG_INIT_DISABLE_CAPAB_2GHT40);
+    g_st_wlan_customize_etc.uc_disable_capab_2ght40 = (oal_uint8)!!l_val;
 #endif
 
     return OAL_SUCC;
@@ -1828,7 +1828,7 @@ int plat_main_init(void)
 void plat_main_exit(void)
 {
 #ifdef _PRE_PLAT_FEATURE_CUSTOMIZE
-    ini_cfg_exit();
+    ini_cfg_exit_etc();
 #endif
 }
 /* 导出符号 */

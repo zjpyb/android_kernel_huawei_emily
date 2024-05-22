@@ -16,13 +16,9 @@
 #include <linux/slab.h>
 #include <linux/devfreq.h>
 #include <linux/pm_qos.h>
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 13, 0))
 #include <linux/pm_opp.h>
 #include <linux/hisi/hisi_devfreq.h>
 #include "governor_pm_qos.h"
-#else
-#include <linux/opp.h>
-#endif
 #include <linux/clk.h>
 
 /*lint -save -e715 -e785 -e747*/
@@ -333,8 +329,8 @@ static int ddr_devfreq_target(struct device *dev, unsigned long *freq, u32 flags
 		"odd freq status.\n<Target: %09lu hz>\n<Status: %09lu hz>\n%s",
 		_freq, *freq, "--- freq table ---\n");
 	for (lev = 0; lev < devfreq->profile->max_state; lev++) {	//lint !e574 !e737
-		pr_err("<%d> %09u hz\n",
-			lev, devfreq->profile->freq_table[lev]);
+		pr_err("<%d> %09lu hz\n",
+			lev, (unsigned long)(devfreq->profile->freq_table[lev]));
 	}
 	pr_err("------- end ------\n");
 
@@ -378,6 +374,8 @@ static struct devfreq_dev_profile ddr_devfreq_dev_profile = {
 	.target			= ddr_devfreq_target,
 	.get_dev_status		= ddr_devfreq_get_dev_status,
 	.get_cur_freq		= ddr_devfreq_get_cur_status,
+	.freq_table		= NULL,
+	.max_state		= 0,
 };
 
 /*lint -e429*/
@@ -517,37 +515,27 @@ static int ddr_devfreq_probe(struct platform_device *pdev)
 	} else {
 		ddev->calc_vote_value = calc_vote_value_ipc;
 	}
-
-	if (dev_pm_opp_of_add_table(&pdev->dev) ||
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 13, 0))
-		hisi_devfreq_init_freq_table(&pdev->dev,
-			&ddr_devfreq_dev_profile.freq_table))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
+	if (dev_pm_opp_of_add_table(&pdev->dev))
 #else
-
-		opp_init_devfreq_table(&pdev->dev,
+	if (dev_pm_opp_of_add_table(&pdev->dev) ||
+		hisi_devfreq_init_freq_table(&pdev->dev,
 			&ddr_devfreq_dev_profile.freq_table))
 #endif
 	{
 		ddev->devfreq = NULL;
 	} else {
 		ddr_devfreq_dev_profile.initial_freq = clk_get_rate(ddev->get);
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
 		rcu_read_lock();
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 13, 0))
 		ddr_devfreq_dev_profile.max_state = dev_pm_opp_get_opp_count(&pdev->dev); /*lint !e732 */
-#else
-		ddr_devfreq_dev_profile.max_state = opp_get_opp_count(&pdev->dev);
-#endif
 		rcu_read_unlock();
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 13, 0))
-		ddev->devfreq = devm_devfreq_add_device(&pdev->dev,
-#else
-		ddev->devfreq = devfreq_add_device(&pdev->dev,
 #endif
+		ddev->devfreq = devm_devfreq_add_device(&pdev->dev,
 					&ddr_devfreq_dev_profile,
 					"pm_qos",
 					ddata);
 	}
-
 	if (IS_ERR_OR_NULL(ddev->devfreq)) {
 		pr_err("%s: %s %d, <%s>, Failed to init ddr devfreq_table\n",
 			MODULE_NAME, __func__, __LINE__, type);
@@ -575,13 +563,8 @@ static int ddr_devfreq_probe(struct platform_device *pdev)
 
 no_devfreq:
 	clk_put(ddev->get);
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 13, 0))
 	hisi_devfreq_free_freq_table(&pdev->dev,
             &ddr_devfreq_dev_profile.freq_table);
-#else
-	opp_free_devfreq_table(&pdev->dev,
-            &ddr_devfreq_dev_profile.freq_table);
-#endif
 no_clk2:
 	clk_put(ddev->set);
 no_clk1:
@@ -606,11 +589,7 @@ static int ddr_devfreq_remove(struct platform_device *pdev)
 	}
 	profile = ddev->devfreq->profile;
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 13, 0))
 	hisi_devfreq_free_freq_table(&pdev->dev, &profile->freq_table);
-#else
-	opp_free_devfreq_table(&pdev->dev, &profile->freq_table);
-#endif
 	devfreq_remove_device(ddev->devfreq);
 
 	platform_set_drvdata(pdev, NULL);

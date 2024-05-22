@@ -19,6 +19,7 @@
 
 #include "lcdkit_fb_util.h"
 
+
 #define MAX_BUF 60
 
 void set_reg(char __iomem *addr, uint32_t val, uint8_t bw, uint8_t bs)
@@ -190,6 +191,7 @@ int hisifb_ctrl_fastboot(struct hisi_fb_data_type *hisifd)
 	return ret;
 }
 
+
 int hisifb_ctrl_on(struct hisi_fb_data_type *hisifd)
 {
 	struct hisi_fb_panel_data *pdata = NULL;
@@ -208,9 +210,14 @@ int hisifb_ctrl_on(struct hisi_fb_data_type *hisifd)
 
 	if (pdata->on) {
 		ret = pdata->on(hisifd->pdev);
+		if (ret < 0) {
+			HISI_FB_ERR("regulator/clk on fail.\n");
+			return ret;
+		}
 	}
 
 	hisifb_vsync_resume(hisifd);
+
 
 	hisi_overlay_on(hisifd, false);
 
@@ -218,7 +225,6 @@ int hisifb_ctrl_on(struct hisi_fb_data_type *hisifd)
 		hrtimer_start(&hisifd->esd_ctrl.esd_hrtimer, ktime_set(ESD_CHECK_TIME_PERIOD / 1000,
 			(ESD_CHECK_TIME_PERIOD % 1000) * 1000000), HRTIMER_MODE_REL);
 	}
-
 
 	return ret;
 }
@@ -245,6 +251,7 @@ int hisifb_ctrl_off(struct hisi_fb_data_type *hisifd)
 	hisifb_vsync_suspend(hisifd);
 
 	hisi_overlay_off(hisifd);
+
 
 	if (pdata->off) {
 		ret = pdata->off(hisifd->pdev);
@@ -309,7 +316,7 @@ int hisifb_ctrl_esd(struct hisi_fb_data_type *hisifd)
 		return -EINVAL;
 	}
 
-	down(&hisifd->brightness_esd_sem);
+	down(&hisifd->power_esd_sem);
 
 	if (!hisifd->panel_power_on) {
 		HISI_FB_DEBUG("fb%d, panel power off!\n", hisifd->index);
@@ -325,7 +332,7 @@ int hisifb_ctrl_esd(struct hisi_fb_data_type *hisifd)
 	}
 
 err_out:
-	up(&hisifd->brightness_esd_sem);
+	up(&hisifd->power_esd_sem);
 
 	return ret;
 }
@@ -489,7 +496,7 @@ int hisifb_ctrl_dss_voltage_get(struct fb_info *info, void __user *argp)
 		return -EINVAL;
 	}
 	voltage_value = peri_get_volt(pvp);
-	dss_vote_cmd.dss_voltage_level = dpe_get_votage_level(hisifd, voltage_value);
+	dss_vote_cmd.dss_voltage_level = dpe_get_voltage_level(hisifd, voltage_value);
 	if (copy_to_user(argp, &dss_vote_cmd, sizeof(dss_vote_cmd_t))) {
 		HISI_FB_ERR("copy to user fail\n");
 		return -EFAULT;
@@ -549,7 +556,7 @@ int hisifb_ctrl_dss_voltage_set(struct fb_info *info, void __user *argp)
 		HISI_FB_ERR("copy_from_user failed!ret=%d!\n", ret);
 		return ret;
 	}
-	voltage_value = dpe_get_votage_value(hisifd, &dss_vote_cmd);
+	voltage_value = dpe_get_voltage_value(hisifd, &dss_vote_cmd);
 	if (voltage_value < 0) {
 		HISI_FB_ERR("get votage_value failed!\n");
 		return -EINVAL;
@@ -591,7 +598,7 @@ int hisifb_ctrl_dss_voltage_set(struct fb_info *info, void __user *argp)
 
 	voltage_value = peri_get_volt(pvp);
 
-	dss_vote_cmd.dss_voltage_level = dpe_get_votage_level(hisifd, voltage_value);
+	dss_vote_cmd.dss_voltage_level = dpe_get_voltage_level(hisifd, voltage_value);
 	if (copy_to_user(argp, &dss_vote_cmd, sizeof(dss_vote_cmd_t))) {
 		HISI_FB_ERR("copy to user fail\n");
 		return -EFAULT;
@@ -2052,6 +2059,14 @@ static ssize_t hisifb_lcd_support_mode_show(struct device *dev,
 		ret = pdata->lcd_support_mode_show(hisifd->pdev, buf);
 		hisifb_deactivate_vsync(hisifd);
 	}
+
+        /**
+         * support none if lower lcd_support_mode_show functions have not be returned
+         */
+        if (0 == ret) {
+            HISI_FB_WARNING("fb%d, support none!\n", hisifd->index);
+            ret = snprintf(buf, PAGE_SIZE, "%d\n", 0);
+        }
 err_out:
 	up(&hisifd->blank_sem);
 
@@ -3918,7 +3933,7 @@ static ssize_t hisifb_lcd_amoled_vr_mode_show(struct device *dev,
 	down(&hisifd->blank_sem);
 
 	if (!hisifd->panel_power_on) {
-		HISI_FB_ERR("fb%d, panel power off!\n", hisifd->index);
+		HISI_FB_INFO("fb%d, panel power off!\n", hisifd->index);
 		goto err_out;
 	}
 
@@ -4631,6 +4646,7 @@ static DEVICE_ATTR(alpm_setting, 0644, NULL, hisi_alpm_setting_store);
 
 void hisifb_sysfs_attrs_add(struct hisi_fb_data_type *hisifd)
 {
+
 	if (NULL == hisifd) {
 		HISI_FB_ERR("hisifd is NULL");
 		return;
@@ -4640,6 +4656,7 @@ void hisifb_sysfs_attrs_add(struct hisi_fb_data_type *hisifd)
 
 	if (hisifd->index == PRIMARY_PANEL_IDX) {
 		if (hisifd->sysfs_attrs_append_fnc) {
+
 			if(!get_lcdkit_support())
 			{
 				hisifd->sysfs_attrs_append_fnc(hisifd, &dev_attr_frame_update.attr);

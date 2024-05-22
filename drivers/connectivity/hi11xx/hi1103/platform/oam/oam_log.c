@@ -22,7 +22,7 @@ extern "C" {
   2 全局变量定义
 *****************************************************************************/
 #ifdef _PRE_DEBUG_MODE
-    oam_tx_complete_stat_stru   g_ast_tx_complete_stat[WLAN_DEVICE_SUPPORT_MAX_NUM_SPEC];
+    oam_tx_complete_stat_stru   g_ast_tx_complete_stat_etc[WLAN_DEVICE_SUPPORT_MAX_NUM_SPEC];
 #endif
 
 #if defined(_PRE_PRODUCT_ID_HI110X_HOST)
@@ -44,7 +44,7 @@ oam_pdt_log_stru      g_st_oam_product_log;
 
 
 
-oal_int32 OAL_PRINT2KERNEL(
+oal_int32 OAL_PRINT2KERNEL_etc(
         oal_uint32      ul_para,
         oal_uint16      us_line_no,
         oal_int8        *fmt,
@@ -66,7 +66,7 @@ oal_int32 OAL_PRINT2KERNEL(
         DECLARE_DFT_TRACE_KEY_INFO("oam error log", OAL_DFT_TRACE_OTHER);
     }
 
-    l_ret = snprintf(pc_buf,OAM_LOG_PRINT_DATA_LENGTH, KERN_DEBUG"[%s][vap:%d]%s [F:%d][L:%d]\n",
+    l_ret = snprintf(pc_buf,OAM_LOG_PRINT_DATA_LENGTH, KERN_DEBUG"%s[vap:%d]%s [F:%d][L:%d]\n",
         g_loglevel_string[clog_level],
         uc_vap_id,
         fmt,
@@ -89,7 +89,7 @@ oal_int32 OAL_PRINT2KERNEL(
 
 
 
-oal_uint32 oam_log_set_global_switch(oal_switch_enum_uint8 en_log_switch)
+oal_uint32 oam_log_set_global_switch_etc(oal_switch_enum_uint8 en_log_switch)
 {
     if (OAL_UNLIKELY(en_log_switch >= OAL_SWITCH_BUTT))
     {
@@ -97,7 +97,7 @@ oal_uint32 oam_log_set_global_switch(oal_switch_enum_uint8 en_log_switch)
         return OAL_FAIL;
     }
 
-    g_st_oam_mng_ctx.st_log_ctx.en_global_log_switch = en_log_switch;
+    g_st_oam_mng_ctx_etc.st_log_ctx.en_global_log_switch = en_log_switch;
 
     return OAL_SUCC;
 }
@@ -119,13 +119,13 @@ OAL_STATIC  oal_uint32 oam_log_set_ratelimit_switch(
         return OAL_ERR_CODE_CONFIG_EXCEED_SPEC;
     }
 
-    g_st_oam_mng_ctx.st_log_ctx.st_ratelimit[en_ratelimit_type].en_ratelimit_switch = en_log_switch;
+    g_st_oam_mng_ctx_etc.st_log_ctx.st_ratelimit[en_ratelimit_type].en_ratelimit_switch = en_log_switch;
 
     return OAL_SUCC;
 }
 
 
-oal_uint32 oam_log_get_ratelimit_switch(
+oal_uint32 oam_log_get_ratelimit_switch_etc(
                 oam_ratelimit_type_enum_uint8  en_ratelimit_type,
                 oal_switch_enum_uint8 *pen_log_switch)
 {
@@ -141,7 +141,7 @@ oal_uint32 oam_log_get_ratelimit_switch(
         return OAL_ERR_CODE_PTR_NULL;
     }
 
-    *pen_log_switch = g_st_oam_mng_ctx.st_log_ctx.st_ratelimit[en_ratelimit_type].en_ratelimit_switch;
+    *pen_log_switch = g_st_oam_mng_ctx_etc.st_log_ctx.st_ratelimit[en_ratelimit_type].en_ratelimit_switch;
 
     return OAL_SUCC;
 }
@@ -166,7 +166,7 @@ OAL_STATIC  oal_uint32 oam_log_set_ratelimit_intervel(
         return OAL_ERR_CODE_CONFIG_EXCEED_SPEC;
     }
 
-    g_st_oam_mng_ctx.st_log_ctx.st_ratelimit[en_ratelimit_type].ul_interval = ul_interval * OAL_TIME_HZ;
+    g_st_oam_mng_ctx_etc.st_log_ctx.st_ratelimit[en_ratelimit_type].ul_interval = ul_interval * OAL_TIME_HZ;
 
     return OAL_SUCC;
 }
@@ -191,13 +191,13 @@ OAL_STATIC  oal_uint32 oam_log_set_ratelimit_burst(
         return OAL_ERR_CODE_CONFIG_EXCEED_SPEC;
     }
 
-    g_st_oam_mng_ctx.st_log_ctx.st_ratelimit[en_ratelimit_type].ul_burst = ul_burst;
+    g_st_oam_mng_ctx_etc.st_log_ctx.st_ratelimit[en_ratelimit_type].ul_burst = ul_burst;
 
     return OAL_SUCC;
 }
 
 
-oal_uint32 oam_log_set_ratelimit_param(
+oal_uint32 oam_log_set_ratelimit_param_etc(
                 oam_ratelimit_type_enum_uint8  en_ratelimit_type,
                 oam_ratelimit_stru *pst_printk_ratelimit)
 {
@@ -220,7 +220,7 @@ oal_uint32 oam_log_set_ratelimit_param(
 }
 
 
-oal_uint32 oam_log_get_ratelimit_param(
+oal_uint32 oam_log_get_ratelimit_param_etc(
                 oam_ratelimit_type_enum_uint8  en_ratelimit_type,
                 oam_ratelimit_stru *pst_printk_ratelimit)
 {
@@ -238,20 +238,20 @@ oal_uint32 oam_log_get_ratelimit_param(
         return OAL_ERR_CODE_PTR_NULL;
     }
 
-    oal_memcopy(pst_printk_ratelimit, &g_st_oam_mng_ctx.st_log_ctx.st_ratelimit[en_ratelimit_type],
+    oal_memcopy(pst_printk_ratelimit, &g_st_oam_mng_ctx_etc.st_log_ctx.st_ratelimit[en_ratelimit_type],
                 OAL_SIZEOF(oam_ratelimit_stru));
 
     return ul_ret;
 }
 
 
-oam_ratelimit_output_enum_uint8 oam_log_ratelimit(oam_ratelimit_type_enum_uint8 en_ratelimit_type )
+oam_ratelimit_output_enum_uint8 oam_log_ratelimit_etc(oam_ratelimit_type_enum_uint8 en_ratelimit_type )
 {
     oal_uint                            ui_flags;
     oam_ratelimit_stru                  *pst_ratelimit;
     oam_ratelimit_output_enum_uint8     en_ret = OAM_RATELIMIT_OUTPUT;
 
-    pst_ratelimit = &g_st_oam_mng_ctx.st_log_ctx.st_ratelimit[en_ratelimit_type];
+    pst_ratelimit = &g_st_oam_mng_ctx_etc.st_log_ctx.st_ratelimit[en_ratelimit_type];
 
     //判断流控开关状态
     if (OAL_SWITCH_OFF == pst_ratelimit->en_ratelimit_switch)
@@ -302,7 +302,7 @@ oam_ratelimit_output_enum_uint8 oam_log_ratelimit(oam_ratelimit_type_enum_uint8 
 
 
 
-oal_uint32 oam_log_set_vap_switch(oal_uint8 uc_vap_id,
+oal_uint32 oam_log_set_vap_switch_etc(oal_uint8 uc_vap_id,
                                          oal_switch_enum_uint8 en_log_switch)
 {
     if (OAL_UNLIKELY(uc_vap_id >= WLAN_VAP_SUPPORT_MAX_NUM_LIMIT))
@@ -317,13 +317,13 @@ oal_uint32 oam_log_set_vap_switch(oal_uint8 uc_vap_id,
         return OAL_ERR_CODE_CONFIG_EXCEED_SPEC;
     }
 
-    g_st_oam_mng_ctx.st_log_ctx.st_vap_log_info.aen_vap_log_switch[uc_vap_id] = en_log_switch;
+    g_st_oam_mng_ctx_etc.st_log_ctx.st_vap_log_info.aen_vap_log_switch[uc_vap_id] = en_log_switch;
 
     return OAL_SUCC;
 }
 
 
-oal_uint32 oam_log_set_vap_level(oal_uint8 uc_vap_id, oam_log_level_enum_uint8 en_log_level)
+oal_uint32 oam_log_set_vap_level_etc(oal_uint8 uc_vap_id, oam_log_level_enum_uint8 en_log_level)
 {
     oam_feature_enum_uint8       en_feature_idx;
 
@@ -334,19 +334,19 @@ oal_uint32 oam_log_set_vap_level(oal_uint8 uc_vap_id, oam_log_level_enum_uint8 e
     }
 
     /* 设置当前VAP的日志级别 */
-    g_st_oam_mng_ctx.st_log_ctx.st_vap_log_info.aen_vap_log_level[uc_vap_id] = en_log_level;
+    g_st_oam_mng_ctx_etc.st_log_ctx.st_vap_log_info.aen_vap_log_level[uc_vap_id] = en_log_level;
 
     /* 同时设置当前VAP下所有特性日志级别 */
     for (en_feature_idx = 0; en_feature_idx < OAM_SOFTWARE_FEATURE_BUTT; en_feature_idx++)
     {
-        oam_log_set_feature_level(uc_vap_id, en_feature_idx, en_log_level);
+        oam_log_set_feature_level_etc(uc_vap_id, en_feature_idx, en_log_level);
     }
 
     return OAL_SUCC;
 }
 
 
-oal_uint32 oam_log_get_vap_level(oal_uint8 uc_vap_id, oam_log_level_enum_uint8 *pen_log_level)
+oal_uint32 oam_log_get_vap_level_etc(oal_uint8 uc_vap_id, oam_log_level_enum_uint8 *pen_log_level)
 {
     if (OAL_UNLIKELY(uc_vap_id >= WLAN_VAP_SUPPORT_MAX_NUM_LIMIT))
     {
@@ -360,13 +360,13 @@ oal_uint32 oam_log_get_vap_level(oal_uint8 uc_vap_id, oam_log_level_enum_uint8 *
         return OAL_ERR_CODE_PTR_NULL;
     }
 
-    *pen_log_level = g_st_oam_mng_ctx.st_log_ctx.st_vap_log_info.aen_vap_log_level[uc_vap_id];
+    *pen_log_level = g_st_oam_mng_ctx_etc.st_log_ctx.st_vap_log_info.aen_vap_log_level[uc_vap_id];
 
     return OAL_SUCC;
 }
 
 
-oal_uint32 oam_log_set_feature_level(oal_uint8 uc_vap_id,
+oal_uint32 oam_log_set_feature_level_etc(oal_uint8 uc_vap_id,
                                            oam_feature_enum_uint8 en_feature_id,
                                            oam_log_level_enum_uint8 en_log_level)
 {
@@ -388,13 +388,13 @@ oal_uint32 oam_log_set_feature_level(oal_uint8 uc_vap_id,
         return OAL_ERR_CODE_CONFIG_EXCEED_SPEC;
     }
 
-    g_st_oam_mng_ctx.st_log_ctx.st_vap_log_info.aen_feature_log_level[uc_vap_id][en_feature_id] = en_log_level;
-    //OAL_IO_PRINT("oam_log_set_feature_level:: uc_vap_id=%u, en_feature_id=%u, en_log_level=%u\r\n", uc_vap_id, en_feature_id, en_log_level);
+    g_st_oam_mng_ctx_etc.st_log_ctx.st_vap_log_info.aen_feature_log_level[uc_vap_id][en_feature_id] = en_log_level;
+    //OAL_IO_PRINT("oam_log_set_feature_level_etc:: uc_vap_id=%u, en_feature_id=%u, en_log_level=%u\r\n", uc_vap_id, en_feature_id, en_log_level);
     return OAL_SUCC;
 }
 
 
-oal_uint32 oam_get_feature_id(oal_uint8 *puc_feature_name,
+oal_uint32 oam_get_feature_id_etc(oal_uint8 *puc_feature_name,
                                    oam_feature_enum_uint8 *puc_feature_id)
 {
     oam_feature_enum_uint8   en_feature_idx;
@@ -407,7 +407,7 @@ oal_uint32 oam_get_feature_id(oal_uint8 *puc_feature_name,
 
     for (en_feature_idx = 0; en_feature_idx < OAM_SOFTWARE_FEATURE_BUTT; en_feature_idx++)
     {
-        if (0 == oal_strcmp((oal_int8 *)gst_oam_feature_list[en_feature_idx].auc_feature_name_abbr, (oal_int8 *)puc_feature_name))
+        if (0 == oal_strcmp((oal_int8 *)gst_oam_feature_list_etc[en_feature_idx].auc_feature_name_abbr, (oal_int8 *)puc_feature_name))
         {
             *puc_feature_id = en_feature_idx;
             return OAL_SUCC;
@@ -418,7 +418,7 @@ oal_uint32 oam_get_feature_id(oal_uint8 *puc_feature_name,
 }
 
 
-oal_uint32 oam_get_feature_name( oam_feature_enum_uint8     en_feature_id,
+oal_uint32 oam_get_feature_name_etc( oam_feature_enum_uint8     en_feature_id,
                                       oal_uint8    *puc_feature_name,
                                       oal_uint8     uc_size)
 {
@@ -436,23 +436,23 @@ oal_uint32 oam_get_feature_name( oam_feature_enum_uint8     en_feature_id,
         return OAL_ERR_CODE_PTR_NULL;
     }
 
-    uc_feature_len = (oal_uint8)OAL_STRLEN((oal_int8*)gst_oam_feature_list[en_feature_id].auc_feature_name_abbr);
+    uc_feature_len = (oal_uint8)OAL_STRLEN((oal_int8*)gst_oam_feature_list_etc[en_feature_id].auc_feature_name_abbr);
     uc_size = (uc_size > uc_feature_len) ? uc_feature_len : uc_size;
 
-    oal_memcopy(puc_feature_name, gst_oam_feature_list[en_feature_id].auc_feature_name_abbr, uc_size);
+    oal_memcopy(puc_feature_name, gst_oam_feature_list_etc[en_feature_id].auc_feature_name_abbr, uc_size);
 
     return OAL_SUCC;
 }
 
 
-oal_uint32 oam_show_feature_list(oal_void)
+oal_uint32 oam_show_feature_list_etc(oal_void)
 {
     oam_feature_enum_uint8              en_feature_id;
 
     OAL_IO_PRINT("feature_list: \r\n");
     for (en_feature_id = 0; en_feature_id < OAM_SOFTWARE_FEATURE_BUTT; en_feature_id++)
     {
-        OAL_IO_PRINT("%s\r\n", gst_oam_feature_list[en_feature_id].auc_feature_name_abbr);
+        OAL_IO_PRINT("%s\r\n", gst_oam_feature_list_etc[en_feature_id].auc_feature_name_abbr);
     }
 
     return OAL_SUCC;
@@ -489,7 +489,7 @@ OAL_STATIC oal_uint32  oam_log_format_string(
     /* 获取系统TICK值 */
     ul_tick = (oal_uint32)OAL_TIME_GET_STAMP_MS();
 
-    oam_get_feature_name(en_feature_id, auc_feature_name, OAL_SIZEOF(auc_feature_name));
+    oam_get_feature_name_etc(en_feature_id, auc_feature_name, OAL_SIZEOF(auc_feature_name));
 
     /* 根据参数个数,将LOG信息保存到ac_file_data中 */
     switch (uc_param_cnt)
@@ -615,7 +615,7 @@ OAL_STATIC oal_uint32 oam_log_get_feature_level( oal_uint8 uc_vap_id,
         return OAL_ERR_CODE_PTR_NULL;
     }
 
-    *pen_log_level = g_st_oam_mng_ctx.st_log_ctx.st_vap_log_info.aen_feature_log_level[uc_vap_id][en_feature_id];
+    *pen_log_level = g_st_oam_mng_ctx_etc.st_log_ctx.st_vap_log_info.aen_feature_log_level[uc_vap_id][en_feature_id];
 
     return OAL_SUCC;
 }
@@ -629,7 +629,7 @@ OAL_STATIC oal_uint32 oam_log_get_global_switch(oal_switch_enum_uint8 *pen_log_s
         return OAL_ERR_CODE_PTR_NULL;
     }
 
-    *pen_log_switch = g_st_oam_mng_ctx.st_log_ctx.en_global_log_switch;
+    *pen_log_switch = g_st_oam_mng_ctx_etc.st_log_ctx.en_global_log_switch;
     return OAL_SUCC;
 }
 
@@ -649,7 +649,7 @@ OAL_STATIC oal_uint32 oam_log_get_vap_switch(oal_uint8 uc_vap_id,
         return OAL_ERR_CODE_PTR_NULL;
     }
 
-    *pen_log_switch = g_st_oam_mng_ctx.st_log_ctx.st_vap_log_info.aen_vap_log_switch[uc_vap_id];
+    *pen_log_switch = g_st_oam_mng_ctx_etc.st_log_ctx.st_vap_log_info.aen_vap_log_switch[uc_vap_id];
 
     return OAL_SUCC;
 }
@@ -738,13 +738,13 @@ OAL_STATIC oal_uint32  oam_log_print_to_console(
                           l_param3,
                           l_param4);
 
-    oam_print_to_console(ac_print_buff);
+    oam_print_to_console_etc(ac_print_buff);
 
     return OAL_SUCC;
 }
 
 
-oal_uint32  oam_log_print_to_file(
+oal_uint32  oam_log_print_to_file_etc(
                 oal_uint8                        uc_vap_id,
                 oam_feature_enum_uint8           en_feature_id,
                 oal_uint16                       us_file_id,
@@ -775,7 +775,7 @@ oal_uint32  oam_log_print_to_file(
                           l_param3,
                           l_param4);
 
-    ul_ret = oam_print_to_file(ac_output_data);
+    ul_ret = oam_print_to_file_etc(ac_output_data);
 
     if (OAL_SUCC != ul_ret)
     {
@@ -816,12 +816,12 @@ OAL_STATIC oal_uint32  oam_log_print_to_sdt(
 
     /* WARNING和ERROR级别流控 */
     if ((OAM_LOG_LEVEL_INFO != en_log_level)
-        && (OAM_RATELIMIT_NOT_OUTPUT == oam_log_ratelimit(OAM_RATELIMIT_TYPE_LOG)))
+        && (OAM_RATELIMIT_NOT_OUTPUT == oam_log_ratelimit_etc(OAM_RATELIMIT_TYPE_LOG)))
     {
         return OAL_SUCC;
     }
 
-    ul_ret = oam_upload_log_to_sdt((oal_int8 *)&st_log_info);
+    ul_ret = oam_upload_log_to_sdt_etc((oal_int8 *)&st_log_info);
 
     if (OAL_SUCC != ul_ret)
     {
@@ -865,7 +865,7 @@ OAL_STATIC oal_uint32  oam_log_print_n_param(oal_uint32                       ul
 #endif
 
     /* 若输出条件满足，判断输出方向 */
-    oam_get_output_type(&en_output_type);
+    oam_get_output_type_etc(&en_output_type);
     switch (en_output_type)
     {
         /* 输出至控制台 */
@@ -885,7 +885,7 @@ OAL_STATIC oal_uint32  oam_log_print_n_param(oal_uint32                       ul
 
         /* 输出至文件系统中 */
         case OAM_OUTPUT_TYPE_FS:
-            ul_ret =  oam_log_print_to_file(uc_vap_id,
+            ul_ret =  oam_log_print_to_file_etc(uc_vap_id,
                                             en_feature_id,
                                             us_file_id,
                                             us_line_num,
@@ -1176,7 +1176,7 @@ oal_void oam_report_product_log(oal_uint32 ul_para,
 #endif
 
 
-oal_uint32  oam_log_print0( oal_uint32  ul_para,
+oal_uint32  oam_log_print0_etc( oal_uint32  ul_para,
                                 oal_uint16  us_line_num,
                                 oal_int8    *pc_string)
 {
@@ -1184,7 +1184,7 @@ oal_uint32  oam_log_print0( oal_uint32  ul_para,
     if (OAL_SWITCH_ON == oam_get_log_switch(ul_para))
     {
     #ifdef _PRE_WLAN_DFT_LOG
-        OAL_PRINT2KERNEL(ul_para, us_line_num, pc_string, 0, 0, 0, 0);
+        OAL_PRINT2KERNEL_etc(ul_para, us_line_num, pc_string, 0, 0, 0, 0);
     #endif
         ul_ret = oam_log_print_n_param(ul_para, us_line_num, pc_string, 0, 0, 0, 0, 0);
     }
@@ -1197,7 +1197,7 @@ oal_uint32  oam_log_print0( oal_uint32  ul_para,
 }
 
 
-oal_uint32  oam_log_print1( oal_uint32  ul_para,
+oal_uint32  oam_log_print1_etc( oal_uint32  ul_para,
                                 oal_uint16  us_line_num,
                                 oal_int8    *pc_string,
                                 oal_uint    l_param1)
@@ -1206,7 +1206,7 @@ oal_uint32  oam_log_print1( oal_uint32  ul_para,
     if (OAL_SWITCH_ON == oam_get_log_switch(ul_para))
     {
     #ifdef _PRE_WLAN_DFT_LOG
-        OAL_PRINT2KERNEL(ul_para, us_line_num, pc_string, l_param1, 0, 0, 0);
+        OAL_PRINT2KERNEL_etc(ul_para, us_line_num, pc_string, l_param1, 0, 0, 0);
     #endif
         ul_ret = oam_log_print_n_param(ul_para, us_line_num,\
                                   pc_string, 1, (oal_int32)l_param1, 0, 0, 0);
@@ -1220,7 +1220,7 @@ oal_uint32  oam_log_print1( oal_uint32  ul_para,
 }
 
 
-oal_uint32  oam_log_print2( oal_uint32  ul_para,
+oal_uint32  oam_log_print2_etc( oal_uint32  ul_para,
                                 oal_uint16  us_line_num,
                                 oal_int8    *pc_string,
                                 oal_uint    l_param1,
@@ -1230,7 +1230,7 @@ oal_uint32  oam_log_print2( oal_uint32  ul_para,
     if (OAL_SWITCH_ON == oam_get_log_switch(ul_para))
     {
     #ifdef _PRE_WLAN_DFT_LOG
-        OAL_PRINT2KERNEL(ul_para, us_line_num, pc_string, l_param1, l_param2, 0, 0);
+        OAL_PRINT2KERNEL_etc(ul_para, us_line_num, pc_string, l_param1, l_param2, 0, 0);
     #endif
         ul_ret = oam_log_print_n_param(ul_para, us_line_num,\
                                  pc_string, 2, (oal_int32)l_param1, (oal_int32)l_param2, 0, 0);
@@ -1244,7 +1244,7 @@ oal_uint32  oam_log_print2( oal_uint32  ul_para,
 }
 
 
-oal_uint32  oam_log_print3( oal_uint32  ul_para,
+oal_uint32  oam_log_print3_etc( oal_uint32  ul_para,
                                 oal_uint16  us_line_num,
                                 oal_int8    *pc_string,
                                 oal_uint    l_param1,
@@ -1255,7 +1255,7 @@ oal_uint32  oam_log_print3( oal_uint32  ul_para,
     if (OAL_SWITCH_ON == oam_get_log_switch(ul_para))
     {
     #ifdef _PRE_WLAN_DFT_LOG
-        OAL_PRINT2KERNEL(ul_para, us_line_num, pc_string, l_param1, l_param2, l_param3, 0);
+        OAL_PRINT2KERNEL_etc(ul_para, us_line_num, pc_string, l_param1, l_param2, l_param3, 0);
     #endif
         ul_ret = oam_log_print_n_param(ul_para, us_line_num,\
                                  pc_string, 3, (oal_int32)l_param1, (oal_int32)l_param2, (oal_int32)l_param3, 0);
@@ -1269,7 +1269,7 @@ oal_uint32  oam_log_print3( oal_uint32  ul_para,
 }
 
 
-oal_uint32  oam_log_print4( oal_uint32  ul_para,
+oal_uint32  oam_log_print4_etc( oal_uint32  ul_para,
                                 oal_uint16  us_line_num,
                                 oal_int8    *pc_string,
                                 oal_uint    l_param1,
@@ -1281,7 +1281,7 @@ oal_uint32  oam_log_print4( oal_uint32  ul_para,
     if (OAL_SWITCH_ON == oam_get_log_switch(ul_para))
     {
     #ifdef _PRE_WLAN_DFT_LOG
-        OAL_PRINT2KERNEL(ul_para, us_line_num, pc_string, l_param1, l_param2, l_param3, l_param4);
+        OAL_PRINT2KERNEL_etc(ul_para, us_line_num, pc_string, l_param1, l_param2, l_param3, l_param4);
     #endif
         ul_ret = oam_log_print_n_param(ul_para, us_line_num,\
                                  pc_string, 4, (oal_int32)l_param1, (oal_int32)l_param2, (oal_int32)l_param3, (oal_int32)l_param4);
@@ -1316,7 +1316,7 @@ OAL_STATIC oal_uint32  oam_log_printk(
 }
 
 
-oal_uint32  oam_log_console_printk(
+oal_uint32  oam_log_console_printk_etc(
                 oal_uint16                       us_file_no,
                 oal_uint16                       us_line_num,
                 const oal_int8                  *pc_func_name,
@@ -1334,7 +1334,7 @@ oal_uint32  oam_log_console_printk(
     }
 
     /* 流控判断 */
-    if (OAM_RATELIMIT_NOT_OUTPUT == oam_log_ratelimit(OAM_RATELIMIT_TYPE_PRINTK))
+    if (OAM_RATELIMIT_NOT_OUTPUT == oam_log_ratelimit_etc(OAM_RATELIMIT_TYPE_PRINTK))
     {
         return OAL_SUCC;
     }
@@ -1349,16 +1349,16 @@ oal_uint32  oam_log_console_printk(
 }
 
 
-oal_uint32 oam_log_ratelimit_init(oal_void)
+oal_uint32 oam_log_ratelimit_init_etc(oal_void)
 {
     oal_uint32                          ul_ret = OAL_SUCC;
     oam_ratelimit_type_enum_uint8       en_type_idx;
 
-    OAL_MEMZERO(&g_st_oam_mng_ctx.st_log_ctx.st_ratelimit, OAL_SIZEOF(oam_ratelimit_stru) * OAM_RATELIMIT_TYPE_BUTT);
+    OAL_MEMZERO(&g_st_oam_mng_ctx_etc.st_log_ctx.st_ratelimit, OAL_SIZEOF(oam_ratelimit_stru) * OAM_RATELIMIT_TYPE_BUTT);
 
     for (en_type_idx = 0; en_type_idx < OAM_RATELIMIT_TYPE_BUTT; en_type_idx++)
     {
-        oal_spin_lock_init(&g_st_oam_mng_ctx.st_log_ctx.st_ratelimit[en_type_idx].spin_lock);
+        oal_spin_lock_init(&g_st_oam_mng_ctx_etc.st_log_ctx.st_ratelimit[en_type_idx].spin_lock);
         ul_ret += oam_log_set_ratelimit_switch(en_type_idx, OAL_SWITCH_OFF);
         ul_ret += oam_log_set_ratelimit_intervel(en_type_idx, OAM_RATELIMIT_DEFAULT_INTERVAL);
         ul_ret += oam_log_set_ratelimit_burst(en_type_idx, OAM_RATELIMIT_DEFAULT_BURST);
@@ -1366,24 +1366,24 @@ oal_uint32 oam_log_ratelimit_init(oal_void)
     return ul_ret;
 }
 
-oal_void oam_log_param_init(oal_void)
+oal_void oam_log_param_init_etc(oal_void)
 {
 #if defined(_PRE_PRODUCT_ID_HI110X_HOST)
 #ifdef CONFIG_PRINTK
     oal_int32 i;
     for(i = 0; i < OAM_LOG_LEVEL_BUTT; i++)
     {
-        g_loglevel_string[i] = "X";
+        g_loglevel_string[i] = KERN_DEBUG"[X][HI11XX]";
     }
-    g_loglevel_string[OAM_LOG_LEVEL_ERROR] = "E";
-    g_loglevel_string[OAM_LOG_LEVEL_WARNING] = "W";
-    g_loglevel_string[OAM_LOG_LEVEL_INFO] = "I";
+    g_loglevel_string[OAM_LOG_LEVEL_ERROR] = KERN_ERR"[E][HI11XX]";
+    g_loglevel_string[OAM_LOG_LEVEL_WARNING] = KERN_DEBUG"[W][HI11XX]";
+    g_loglevel_string[OAM_LOG_LEVEL_INFO] = KERN_DEBUG"[I][HI11XX]";
 #endif
 #endif
 }
 
 
-oal_uint32  oam_log_init(oal_void)
+oal_uint32  oam_log_init_etc(oal_void)
 {
     oal_uint8   uc_vap_idx;
     oal_uint32  ul_ret      = OAL_SUCC;
@@ -1398,10 +1398,10 @@ oal_uint32  oam_log_init(oal_void)
     oal_uint8   auc_feature_ont_collision[] = {};
 #endif
 
-    oam_log_param_init();
+    oam_log_param_init_etc();
 
     /* 日志全局开关默认为开 */
-    ul_ret = oam_log_set_global_switch(OAL_SWITCH_ON);
+    ul_ret = oam_log_set_global_switch_etc(OAL_SWITCH_ON);
 
     if (OAL_SUCC != ul_ret)
     {
@@ -1412,14 +1412,14 @@ oal_uint32  oam_log_init(oal_void)
     for (uc_vap_idx = 0; uc_vap_idx < WLAN_VAP_SUPPORT_MAX_NUM_LIMIT; uc_vap_idx++)
     {
         /* 设置VAP日志开关 */
-        ul_ret += oam_log_set_vap_switch(uc_vap_idx, OAL_SWITCH_ON);
+        ul_ret += oam_log_set_vap_switch_etc(uc_vap_idx, OAL_SWITCH_ON);
 
         /* 设置VAP日志级别 */
-        ul_ret += oam_log_set_vap_level(uc_vap_idx, OAM_LOG_DEFAULT_LEVEL);
+        ul_ret += oam_log_set_vap_level_etc(uc_vap_idx, OAM_LOG_DEFAULT_LEVEL);
 
 #if defined(_PRE_PRODUCT_ID_HI110X_DEV)
         /* 设置feature打印级别 */
-        ul_ret += oam_log_set_feature_level(uc_vap_idx, OAM_SF_WPA, OAM_LOG_LEVEL_INFO);
+        ul_ret += oam_log_set_feature_level_etc(uc_vap_idx, OAM_SF_WPA, OAM_LOG_LEVEL_INFO);
 #endif
         if (OAL_SUCC != ul_ret)
         {
@@ -1428,7 +1428,7 @@ oal_uint32  oam_log_init(oal_void)
     }
 
     /* printk日志流控初始化 */
-    ul_ret = oam_log_ratelimit_init();
+    ul_ret = oam_log_ratelimit_init_etc();
 
 #ifdef _PRE_WLAN_REPORT_PRODUCT_LOG
     //ont log 初始化，默认为OAM_ONT_LOG_DEFAULT_EVENT
@@ -1468,7 +1468,7 @@ oal_uint32  oam_log_init(oal_void)
 }
 
 
-oal_uint32 oam_exception_record(oal_uint8 uc_vap_id, oam_excp_type_enum_uint8 en_excp_id)
+oal_uint32 oam_exception_record_etc(oal_uint8 uc_vap_id, oam_excp_type_enum_uint8 en_excp_id)
 {
     if (OAL_UNLIKELY(uc_vap_id >= WLAN_VAP_SUPPORT_MAX_NUM_LIMIT))
     {
@@ -1482,18 +1482,18 @@ oal_uint32 oam_exception_record(oal_uint8 uc_vap_id, oam_excp_type_enum_uint8 en
         return OAL_ERR_CODE_CONFIG_EXCEED_SPEC;
     }
 
-    g_st_oam_mng_ctx.st_exception_ctx[uc_vap_id].ast_excp_record_tbl[en_excp_id].ul_record_cnt++;
+    g_st_oam_mng_ctx_etc.st_exception_ctx[uc_vap_id].ast_excp_record_tbl[en_excp_id].ul_record_cnt++;
 
     /* 已刷新，可上报 */
-    g_st_oam_mng_ctx.st_exception_ctx[uc_vap_id].en_status = OAM_EXCP_STATUS_REFRESHED;
+    g_st_oam_mng_ctx_etc.st_exception_ctx[uc_vap_id].en_status = OAM_EXCP_STATUS_REFRESHED;
 
-    g_st_oam_mng_ctx.st_exception_ctx[uc_vap_id].ast_excp_record_tbl[en_excp_id].en_status = OAM_EXCP_STATUS_REFRESHED;
+    g_st_oam_mng_ctx_etc.st_exception_ctx[uc_vap_id].ast_excp_record_tbl[en_excp_id].en_status = OAM_EXCP_STATUS_REFRESHED;
 
     return OAL_SUCC;
 }
 
 
-oal_uint32 oam_exception_stat_report(
+oal_uint32 oam_exception_stat_report_etc(
                 oal_uint8 uc_vap_id,
                 oam_excp_type_enum_uint8 en_excp_id,
                 oal_uint32 ul_cnt)
@@ -1665,7 +1665,7 @@ oal_uint32 oam_exception_stat_report(
 
 
 
-oal_void oam_exception_stat_handler(oal_uint8 en_moduleid, oal_uint8 uc_vap_idx)
+oal_void oam_exception_stat_handler_etc(oal_uint8 en_moduleid, oal_uint8 uc_vap_idx)
 {
     oam_excp_record_stru           *pst_excp_record;
     oam_excp_type_enum_uint8   en_excp_idx;
@@ -1675,25 +1675,25 @@ oal_void oam_exception_stat_handler(oal_uint8 en_moduleid, oal_uint8 uc_vap_idx)
         case OM_WIFI:
         {
             /* 当前VAP异常统计为0 */
-            if (OAM_EXCP_STATUS_REFRESHED != g_st_oam_mng_ctx.st_exception_ctx[uc_vap_idx].en_status)
+            if (OAM_EXCP_STATUS_REFRESHED != g_st_oam_mng_ctx_etc.st_exception_ctx[uc_vap_idx].en_status)
             {
             }
             else
             {
-                pst_excp_record = g_st_oam_mng_ctx.st_exception_ctx[uc_vap_idx].ast_excp_record_tbl;
+                pst_excp_record = g_st_oam_mng_ctx_etc.st_exception_ctx[uc_vap_idx].ast_excp_record_tbl;
 
                 for (en_excp_idx = 0; en_excp_idx < OAM_EXCP_TYPE_BUTT; en_excp_idx++)
                 {
                     /* 记录数已刷新 */
                     if (OAM_EXCP_STATUS_REFRESHED == pst_excp_record[en_excp_idx].en_status)
                     {
-                        oam_exception_stat_report(uc_vap_idx, en_excp_idx, pst_excp_record[en_excp_idx].ul_record_cnt);
-                        g_st_oam_mng_ctx.st_exception_ctx[uc_vap_idx].ast_excp_record_tbl[en_excp_idx].en_status = OAM_EXCP_STATUS_INIT;
+                        oam_exception_stat_report_etc(uc_vap_idx, en_excp_idx, pst_excp_record[en_excp_idx].ul_record_cnt);
+                        g_st_oam_mng_ctx_etc.st_exception_ctx[uc_vap_idx].ast_excp_record_tbl[en_excp_idx].en_status = OAM_EXCP_STATUS_INIT;
                     }
                 }
 
                 /* 已上报，置初始状态 */
-                g_st_oam_mng_ctx.st_exception_ctx[uc_vap_idx].en_status = OAM_EXCP_STATUS_INIT;
+                g_st_oam_mng_ctx_etc.st_exception_ctx[uc_vap_idx].en_status = OAM_EXCP_STATUS_INIT;
             }
         }
         break;
@@ -1706,32 +1706,32 @@ oal_void oam_exception_stat_handler(oal_uint8 en_moduleid, oal_uint8 uc_vap_idx)
 
 
 /*lint -e19*/
-oal_module_symbol(OAL_PRINT2KERNEL);
+oal_module_symbol(OAL_PRINT2KERNEL_etc);
 /*oal_module_symbol(OAL_PRINT_NLOGS);*/
 #ifdef _PRE_WLAN_REPORT_PRODUCT_LOG
 oal_module_symbol(oam_report_product_log);
 #endif
-oal_module_symbol(oam_log_print0);
-oal_module_symbol(oam_log_set_global_switch);
-oal_module_symbol(oam_log_set_vap_switch);
-oal_module_symbol(oam_log_set_vap_level);
-oal_module_symbol(oam_log_set_feature_level);
-oal_module_symbol(oam_log_console_printk);
-oal_module_symbol(oam_log_set_ratelimit_param);
-oal_module_symbol(oam_get_feature_id);
-oal_module_symbol(oam_log_get_vap_level);
-oal_module_symbol(oam_show_feature_list);
+oal_module_symbol(oam_log_print0_etc);
+oal_module_symbol(oam_log_set_global_switch_etc);
+oal_module_symbol(oam_log_set_vap_switch_etc);
+oal_module_symbol(oam_log_set_vap_level_etc);
+oal_module_symbol(oam_log_set_feature_level_etc);
+oal_module_symbol(oam_log_console_printk_etc);
+oal_module_symbol(oam_log_set_ratelimit_param_etc);
+oal_module_symbol(oam_get_feature_id_etc);
+oal_module_symbol(oam_log_get_vap_level_etc);
+oal_module_symbol(oam_show_feature_list_etc);
 
-oal_module_symbol(oam_log_print1);
-oal_module_symbol(oam_log_print2);
-oal_module_symbol(oam_log_print3);
-oal_module_symbol(oam_log_print4);
-oal_module_symbol(oam_exception_record);
-oal_module_symbol(oam_exception_stat_handler);
+oal_module_symbol(oam_log_print1_etc);
+oal_module_symbol(oam_log_print2_etc);
+oal_module_symbol(oam_log_print3_etc);
+oal_module_symbol(oam_log_print4_etc);
+oal_module_symbol(oam_exception_record_etc);
+oal_module_symbol(oam_exception_stat_handler_etc);
 
 
 #ifdef _PRE_DEBUG_MODE
-oal_module_symbol(g_ast_tx_complete_stat);
+oal_module_symbol(g_ast_tx_complete_stat_etc);
 #endif
 
 #ifdef _PRE_WLAN_REPORT_PRODUCT_LOG

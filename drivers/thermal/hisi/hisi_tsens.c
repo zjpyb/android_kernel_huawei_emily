@@ -132,8 +132,12 @@ ERROR:
 }
 
 /*lint -e715*/
-noinline int atfd_readtemp_smc(u64 function_id, u64 arg0, u64 arg1, u64 arg2)
+noinline int atfd_readtemp_smc(u64 _function_id, u64 _arg0, u64 _arg1, u64 _arg2)
 {
+	register u64 function_id asm("x0") = _function_id;
+	register u64 arg0 asm("x1") = _arg0;
+	register u64 arg1 asm("x2") = _arg1;
+	register u64 arg2 asm("x3") = _arg2;
 	asm volatile (
 		__asmeq("%0", "x0")
 		__asmeq("%1", "x1")

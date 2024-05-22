@@ -324,6 +324,7 @@ oal_void hmac_scan_clean_scan_record(hmac_scan_record_stru  *pst_scan_record)
     /* 2.其它信息清零 */
     OAL_MEMZERO(pst_scan_record, OAL_SIZEOF(hmac_scan_record_stru));
     pst_scan_record->en_scan_rsp_status = MAC_SCAN_STATUS_BUTT;     /* 初始化扫描完成时状态码为无效值 */
+    pst_scan_record->en_vap_last_state  = MAC_VAP_STATE_BUTT;       /* 必须置BUTT,否则aput停扫描会vap状态恢复错 */
 
     /* 3.重新初始化bss管理结果链表和锁 */
     pst_bss_mgmt = &(pst_scan_record->st_bss_mgmt);
@@ -999,7 +1000,7 @@ OAL_STATIC oal_void  hmac_scan_update_bss_list_11n(mac_bss_dscr_stru   *pst_bss_
 
     /* 11n */
     puc_ie = mac_find_ie(MAC_EID_HT_CAP, puc_frame_body + us_offset, us_frame_len - us_offset);
-    if ((OAL_PTR_NULL != puc_ie) && (puc_ie[1] >= 2))
+    if ((OAL_PTR_NULL != puc_ie) && (puc_ie[1] >= 2) && hmac_is_ht_mcs_set_valid(puc_ie))
     {
         /* puc_ie[2]是HT Capabilities Info的第1个字节 */
         pst_bss_dscr->en_ht_capable = OAL_TRUE;     /* 支持ht */
@@ -1423,20 +1424,21 @@ OAL_STATIC oal_uint32  hmac_scan_update_bss_dscr(hmac_scanned_bss_info   *pst_sc
     return OAL_SUCC;
 }
 
-oal_bool_enum_uint8 hmac_scan_need_update_old_scan_result(oal_uint8 uc_vap_id, hmac_scanned_bss_info *pst_new_bss, hmac_scanned_bss_info *pst_old_bss)
+
+OAL_STATIC oal_bool_enum_uint8 hmac_scan_need_update_timestamp(oal_uint8 uc_vap_id, hmac_scanned_bss_info *pst_new_bss, hmac_scanned_bss_info *pst_old_bss)
 {
     if (('\0' == pst_new_bss->st_bss_dscr_info.ac_ssid[0]) &&
            ('\0' != pst_old_bss->st_bss_dscr_info.ac_ssid[0]))
     {
-        /* 隐藏SSID，如果保存过此AP信息,且ssid不为空，此次通过BEACON帧扫描到此AP信息,且SSID为空，则不进行更新 */
-        OAM_WARNING_LOG3(uc_vap_id, OAM_SF_SCAN, "{hmac_scan_need_update_old_scan_result::find hide ssid:%.2x:%.2x:%.2x,ignore this update.}",
-                                pst_new_bss->st_bss_dscr_info.auc_bssid[3],
-                                pst_new_bss->st_bss_dscr_info.auc_bssid[4],
-                                pst_new_bss->st_bss_dscr_info.auc_bssid[5]);
         return OAL_FALSE;
     }
 
+    return OAL_TRUE;
+}
 
+
+oal_bool_enum_uint8 hmac_scan_need_update_old_scan_result(oal_uint8 uc_vap_id, hmac_scanned_bss_info *pst_new_bss, hmac_scanned_bss_info *pst_old_bss)
+{
     
     if ((WLAN_PROBE_RSP == ((mac_ieee80211_frame_stru *)pst_old_bss->st_bss_dscr_info.auc_mgmt_buff)->st_frame_control.bit_sub_type)
         && (WLAN_BEACON == ((mac_ieee80211_frame_stru *)pst_new_bss->st_bss_dscr_info.auc_mgmt_buff)->st_frame_control.bit_sub_type)
@@ -1566,6 +1568,20 @@ oal_uint32 hmac_scan_proc_scanned_bss(frw_event_mem_stru *pst_event_mem)
             OAM_INFO_LOG0(uc_vap_id, OAM_SF_SCAN, "{hmac_scan_proc_scanned_bss::update signal strength value.}");
             pst_new_scanned_bss->st_bss_dscr_info.c_rssi = pst_old_scanned_bss->st_bss_dscr_info.c_rssi;
         }
+    }
+
+    if (OAL_FALSE == hmac_scan_need_update_timestamp(uc_vap_id, pst_new_scanned_bss, pst_old_scanned_bss))
+    {
+        /*解锁*/
+        oal_spin_unlock(&(pst_bss_mgmt->st_lock));
+
+        /* 释放申请的存储bss信息的内存 */
+        oal_free(pst_new_scanned_bss);
+
+        /* 释放上报的bss信息和beacon或者probe rsp帧的内存 */
+        oal_netbuf_free(pst_bss_mgmt_netbuf);
+
+        return OAL_SUCC;
     }
 
     if (OAL_FALSE == hmac_scan_need_update_old_scan_result(uc_vap_id, pst_new_scanned_bss, pst_old_scanned_bss))
@@ -1874,6 +1890,7 @@ oal_void  hmac_scan_set_sour_mac_addr_in_probe_req(hmac_vap_stru        *pst_hma
                                                    oal_bool_enum_uint8   en_is_p2p0_scan)
 {
     mac_device_stru          *pst_mac_device = OAL_PTR_NULL;
+    hmac_device_stru         *pst_hmac_device = OAL_PTR_NULL;
 
     if((OAL_PTR_NULL == pst_hmac_vap) || (OAL_PTR_NULL == puc_sour_mac_addr))
     {
@@ -1886,6 +1903,14 @@ oal_void  hmac_scan_set_sour_mac_addr_in_probe_req(hmac_vap_stru        *pst_hma
     if (OAL_PTR_NULL == pst_mac_device)
     {
         OAM_WARNING_LOG0(0, OAM_SF_CFG, "{hmac_scan_set_sour_mac_addr_in_probe_req::pst_mac_device is null.}");
+        return;
+    }
+
+    pst_hmac_device = hmac_res_get_mac_dev(pst_hmac_vap->st_vap_base_info.uc_device_id);
+    if (OAL_PTR_NULL == pst_hmac_device)
+    {
+        OAM_WARNING_LOG1(0, OAM_SF_CFG, "{hmac_scan_set_sour_mac_addr_in_probe_req::pst_hmac_device is null. device_id %d}",
+                        pst_hmac_vap->st_vap_base_info.uc_device_id);
         return;
     }
 
@@ -1903,13 +1928,8 @@ oal_void  hmac_scan_set_sour_mac_addr_in_probe_req(hmac_vap_stru        *pst_hma
             && ((pst_mac_device->auc_mac_oui[0] != 0) || (pst_mac_device->auc_mac_oui[1] != 0) || (pst_mac_device->auc_mac_oui[2] != 0)))
         {
             /* Android 会在wps扫描或hilink连接的场景中,将mac oui清0 */
-            oal_random_ether_addr(puc_sour_mac_addr);
-            puc_sour_mac_addr[0] = pst_mac_device->auc_mac_oui[0] & 0xfe;  /*保证是单播mac*/
-            puc_sour_mac_addr[1] = pst_mac_device->auc_mac_oui[1];
-            puc_sour_mac_addr[2] = pst_mac_device->auc_mac_oui[2];
-
-            OAM_WARNING_LOG4(pst_hmac_vap->st_vap_base_info.uc_vap_id, OAM_SF_SCAN, "{hmac_scan_set_sour_mac_addr_in_probe_req::rand_mac_addr[%02X:XX:XX:%02X:%02X:%02X].}",
-                                 puc_sour_mac_addr[0], puc_sour_mac_addr[3], puc_sour_mac_addr[4], puc_sour_mac_addr[5]);
+            /* 更新随机mac 地址,使用下发随机MAC OUI 生成的随机mac 地址到本次扫描 */
+            oal_set_mac_addr(puc_sour_mac_addr, pst_hmac_device->st_scan_mgmt.auc_random_mac);
         }
         else
         {
@@ -2650,6 +2670,9 @@ oal_void  hmac_scan_init(hmac_device_stru *pst_hmac_device)
 
     /* 初始化 st_wiphy_mgmt 结构 */
     OAL_WAIT_QUEUE_INIT_HEAD(&(pst_scan_mgmt->st_wait_queue));
+
+    /* 初始化扫描生成随机MAC 地址 */
+    oal_random_ether_addr(pst_hmac_device->st_scan_mgmt.auc_random_mac);
 
 #if  defined(_PRE_WLAN_CHIP_TEST_ALG) && (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION) && defined(_PRE_DEBUG_MODE)
     hmac_scan_ct_init();

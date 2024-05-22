@@ -17,6 +17,8 @@
 #include <linux/of.h>
 
 #include <linux/hisi/rdr_pub.h>
+#include <linux/hisi/hisi_log.h>
+#define HISI_LOG_TAG HISI_BLACKBOX_TAG
 #include "rdr_inner.h"
 #include "rdr_print.h"
 #include "rdr_field.h"
@@ -154,11 +156,8 @@ void rdr_field_reboot_done(void)
 
 void rdr_field_top_init(void)
 {
-	u8 buildtime[RDR_BUILD_DATE_TIME_LEN];
-
 	BB_PRINT_START();
 
-	rdr_get_builddatetime(buildtime);
 	pbb->top_head.magic = FILE_MAGIC;
 	pbb->top_head.version = RDR_VERSION;
 	pbb->top_head.area_number = RDR_AREA_MAXIMUM;
@@ -187,14 +186,14 @@ int rdr_field_init(void)
 	pbb = hisi_bbox_map(rdr_reserved_phymem_addr(),
 			  rdr_reserved_phymem_size());
 	if (NULL == pbb) {
-		BB_PRINT_PN("hisi_bbox_map pbb faild.");
+		BB_PRINT_ERR("hisi_bbox_map pbb faild.");
 		ret = -1;
 		goto out;
 	}
 
 	tmp_pbb = vmalloc(rdr_reserved_phymem_size());
 	if (NULL == tmp_pbb) {
-		BB_PRINT_PN("vmalloc tmp_pbb faild.");
+		BB_PRINT_ERR("vmalloc tmp_pbb faild.");
 		ret = -1;
 		hisi_bbox_unmap(pbb);
 		pbb = NULL;
@@ -207,12 +206,12 @@ int rdr_field_init(void)
 
 	np = of_find_compatible_node(NULL, NULL, "hisilicon,hisifb");
 	if (!np) {
-		printk("NOT FOUND device node 'hisilicon,hisifb'!\n");
+		BB_PRINT_ERR("NOT FOUND device node 'hisilicon,hisifb'!\n");
 		return -ENXIO;
 	}
 	ret = of_property_read_u32(np, "fpga_flag", &fpga_flag);
 	if (ret) {
-		printk("failed to get fpga_flag resource.\n");
+		BB_PRINT_ERR("failed to get fpga_flag resource.\n");
 		return -ENXIO;
 	}
 	/* if the power_up of phone is the first time,

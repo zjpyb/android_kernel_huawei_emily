@@ -31,7 +31,7 @@ static struct plt_entry *plts_addr;
 
 static bool in_init(const struct module *mod, void *loc)
 {
-	return (u64)loc - (u64)mod->module_init < mod->init_size;
+	return (u64)loc - (u64)mod->init_layout.base < mod->init_layout.size;
 }
 
 u64 module_emit_plt_entry(struct module *mod, void *loc, const Elf64_Rela *rela,

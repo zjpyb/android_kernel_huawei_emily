@@ -46,9 +46,12 @@
 #ifdef FSC_DEBUG
 #include "Log.h"
 #endif // FSC_DEBUG
+static FSC_BOOL audio_debounce;
 
 #include <huawei_platform/usb/hw_pd_dev.h>
 #include "../Platform_Linux/platform_helpers.h"
+#include "../Platform_Linux/fusb30x_global.h"
+#include <linux/hisi/usb/hisi_hifi_usb.h>
 
 /////////////////////////////////////////////////////////////////////////////
 //      Variables accessible outside of the TypeC state machine
@@ -119,6 +122,7 @@ void TypeCTick(void)
 
 }
 
+extern void fusb30x_pd_dpm_set_hw_dock_svid_exist(FSC_BOOL exist);
 /////////////////////////////////////////////////////////////////////////////
 // Tick at 0.1ms
 /////////////////////////////////////////////////////////////////////////////
@@ -295,8 +299,39 @@ static void fusb_pd_dpm_hard_reset(void)
 	}
 	FSC_PRINT("%s--\n", __func__);
 }
+
+static void fusb_pd_dpm_set_voltage(void* client, int set_voltage)
+{
+	FSC_PRINT("%s++\n", __func__);
+
+	struct fusb30x_chip* chip = fusb30x_GetChip();
+	if (!chip) {
+		FSC_PRINT("%s Chip structure is NULL!\n", __func__);
+		return;
+	}
+
+	mutex_lock(&chip->thread_lock);
+	if(PolicyState == peSinkReady) {
+		SetPDLimitVoltage(set_voltage);
+		SetPolicyState(peSinkGetSourceCap);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
+		kthread_queue_work(&chip->main_worker, &chip->main_work);
+#else
+		queue_kthread_work(&chip->main_worker, &chip->main_work);
+#endif
+	}
+	mutex_unlock(&chip->thread_lock);
+
+	FSC_PRINT("%s--\n", __func__);
+}
+
+extern bool fusb30x_pd_dpm_get_hw_dock_svid_exist(void* client);
+extern void fusb30x_set_cc_mode(int mode);
 static struct pd_dpm_ops fusb_device_pd_dpm_ops = {
 	.pd_dpm_hard_reset = fusb_pd_dpm_hard_reset,
+	.pd_dpm_set_cc_mode = fusb30x_set_cc_mode,
+	.pd_dpm_get_hw_dock_svid_exist = fusb30x_pd_dpm_get_hw_dock_svid_exist,
+	.pd_dpm_set_voltage = fusb_pd_dpm_set_voltage,
 };
 
 void InitializeTypeC(void)
@@ -506,12 +541,32 @@ void StateMachineDelayUnattached(void)
 
 void StateMachineUnattached(void)
 {
-   g_Idle = TRUE;
+    g_Idle = TRUE;
+
+     if (Registers.Status.I_VBUSOK == 1)
+    {
+        if (Registers.Status.VBUSOK)
+        {
+            platform_start_timer(&CCDebounceTimer, 500);
+        } else {
+            platform_stop_timer(&CCDebounceTimer);
+            platform_notify_unattached_vbus_only();
+            return;
+	 }
+    }
+
+    if (CCDebounceTimer.expired == TRUE)
+    {
+        platform_stop_timer(&CCDebounceTimer);
+        platform_notify_attached_vbus_only();
+    }
+
     if (Registers.Status.I_TOGDONE)
     {
 	    platform_stop_timer(&LoopResetTimer);
         DeviceRead(regStatus1a, 1, &Registers.Status.byte[1]);                  // Read TOGSS
 		FSC_PRINT("FUSB %s, Toggle Reg: %x\n", __func__, Registers.Status.byte[1]);
+        pd_dpm_handle_pe_event(PD_DPM_PE_ABNORMAL_CC_CHANGE_HANDLER, NULL);
 
         switch (Registers.Status.TOGSS)
         {
@@ -740,8 +795,9 @@ void StateMachineAttachWaitSource(void)
 		platform_start_timer(&CCDebounceTimer, tCCDebounce);
 		pr_info("FUSB %s - Orientation Swap, Orient:%d\n", __func__, blnCCPinIsCC2);
     }
-    else if(CCDebounceTimer.expired == TRUE) {
-		platform_start_timer(&StateTimer, 10);
+    else if(cc && (VCONNTerm == CCTypeOpen)) {
+		SetStateDelayUnattached();
+		return;
     }
 
     if((Registers.Status.COMP == 0) && (CCDebounceTimer.expired == TRUE))
@@ -797,9 +853,10 @@ void StateMachineAttachedSink(void)
     if(Registers.Status.I_COMP_CHNG == 1)
     {
         FSC_PRINT("FUSB %s - IsPRSwap = %d, IsHardReset= %d\n", __func__, IsPRSwap, IsHardReset);
-        if ((!IsPRSwap) && (IsHardReset == FALSE) && !isVBUSOverVoltage(DetachThreshold))      // If VBUS is removed and we are not in the middle of a power role swap...
+        if ((!IsPRSwap) && (IsHardReset == FALSE) && isVBUSRemoved(VBUS_MDAC_3P78))      // If VBUS is removed and we are not in the middle of a power role swap...
         {
             SetStateDelayUnattached();                                              // Go to the unattached state
+            return;
         }
     }
 
@@ -817,14 +874,31 @@ void StateMachineAttachedSource(void)
 {
     switch(TypeCSubState)
     {
-		updateSourceMDACHigh();
         case 0:
-            if((loopCounter != 0) || (Registers.Status.I_COMP_CHNG == 1))
+            if((Registers.Status.I_BC_LVL == 1) && (PolicyState == peSourceDisabled))
             {
-                CCTermPrevious = DecodeCCTermination();
+                FSC_PRINT("FUSB %s : enter hisi_usb_check_hifi_usb_status\n", __func__);
+                hisi_usb_check_hifi_usb_status(HIFI_USB_TCPC);
+                FSC_PRINT("FUSB %s : exit hisi_usb_check_hifi_usb_status\n", __func__);
             }
-
-            if ((CCTermPrevious == CCTypeOpen) && (!IsPRSwap))                       // If the debounced CC pin is detected as open and we aren't in the middle of a PR_Swap
+            if((loopCounter != 0) || (Registers.Status.I_COMP_CHNG == 1))
+                CCTermPrevious = DecodeCCTermination();
+            if (CCTermPrevious == CCTypeOpen) 
+            {
+                if (audio_debounce == FALSE) {
+                    audio_debounce = TRUE;
+                    platform_start_timer(&PDDebounceTimer, tSourceDetach);
+                    FSC_PRINT("FUSB %s - tSourceDetach\n", __func__);
+                }
+            }
+            else {
+                if (audio_debounce == TRUE) {
+                    audio_debounce = FALSE;
+                    platform_stop_timer(&PDDebounceTimer);
+                    FSC_PRINT("FUSB %s - CC recovers before timeout\n", __func__);
+                }
+            }
+            if ((PDDebounceTimer.expired == TRUE)&&(!IsPRSwap))
             {
 #ifdef FSC_HAVE_DRP
                 if ((PortType == USBTypeC_DRP) && blnSrcPreferred){                  // Check to see if we need to go to the TryWait.SNK state...
@@ -837,9 +911,9 @@ void StateMachineAttachedSource(void)
                     platform_set_vconn(FALSE);
                     Registers.Switches.byte[0] = 0x03;                              // Disabled until vSafe0V
                     DeviceWrite(regSwitches0, 1, &Registers.Switches.byte[0]);
-					platform_delay_10us(500);
+                    platform_delay_10us(500);
 
-					SetStateDelayUnattached();
+                    SetStateDelayUnattached();
                 }
             }
             else if((platform_check_timer(&StateTimer) || PolicyHasContract) && (loopCounter != 0))                                                 // Reset loop counter and go Idle
@@ -847,7 +921,7 @@ void StateMachineAttachedSource(void)
                 loopCounter = 0;
                 Registers.Mask.M_COMP_CHNG = 0;
                 DeviceWrite(regMask, 1, &Registers.Mask.byte);
-				platform_notify_cc_orientation(blnCCPinIsCC2);
+                platform_notify_cc_orientation(blnCCPinIsCC2);
 #ifdef FSC_INTERRUPT_TRIGGERED
                 if((PolicyState == peSourceReady) || (USBPDEnabled == FALSE))
                 {
@@ -941,6 +1015,15 @@ void StateMachineDebugAccessorySource(void)
 void StateMachineAudioAccessory(void)
 {
 	g_Idle = TRUE;
+
+	if (Registers.Status.I_VBUSOK == 1) {
+		if (Registers.Status.VBUSOK) {
+			platform_notify_attached_vbus_only();
+		}
+		else {
+			platform_notify_unattached_vbus_only();
+		}
+	}
 
 	if (Registers.Status.I_COMP_CHNG) {
 		if(Registers.Status.COMP == 1) {
@@ -1449,6 +1532,9 @@ void SetStateUnattached(void)
     Registers.MaskAdv.M_TOGDONE = 0;
     DeviceWrite(regMaska, 1, &Registers.MaskAdv.byte[0]);
 
+    Registers.Mask.M_VBUSOK = 0;
+    DeviceWrite(regMask, 1, &Registers.Mask.byte);
+
 //    Registers.Switches.byte[0] = 0x03;                               // Enable the pull-downs on the CC pins
 //    DeviceWrite(regSwitches0, 1, &Registers.Switches.byte[0]);     // Commit the switch state
 
@@ -1487,11 +1573,7 @@ void SetStateAttachWaitSink(void)
     platform_enable_timer(TRUE);
 #endif
 
-    if(loopCounter++ > MAX_CABLE_LOOP)                                          // Swap toggle state machine current if looping
-    {
-        SetStateIllegalCable();
-        return;
-    }
+    loopCounter=1;
 
 
     ConnState = AttachWaitSink;                                                 // Set the state machine variable to AttachWait.Snk
@@ -1541,6 +1623,7 @@ void SetStateDebugAccessorySink(void)
     {
         platform_double_56k_cable();
     }
+    platform_notify_debug_accessory_snk(blnCCPinIsCC2);
     platform_set_timer(&StateTimer, tOrientedDebug);
 }
 #endif // FSC_HAVE_SNK
@@ -1554,11 +1637,7 @@ void SetStateAttachWaitSource(void)
     platform_enable_timer(TRUE);
 #endif // FSC_INTERRUPT_TRIGGERED
 
-    if(loopCounter++ > MAX_CABLE_LOOP)                                          // Swap toggle state machine current if looping
-    {
-        SetStateIllegalCable();
-        return;
-    }
+    loopCounter=1;
 
 
     Registers.Mask.M_COMP_CHNG = 0;
@@ -1626,6 +1705,7 @@ void SetStateAttachedSource(void)
 
 #endif  // FSC_INTERRUPT_TRIGGERED
     Registers.Mask.M_COMP_CHNG = 0;
+	Registers.Mask.M_BC_LVL = 0;
 	DeviceWrite(regMask, 1, &Registers.Mask.byte);
 
     ConnState = AttachedSource;                                                 // Set the state machine variable to Attached.Src
@@ -1638,6 +1718,8 @@ void SetStateAttachedSource(void)
 
     USBPDEnable(TRUE, TRUE);                                                    // Enable the USB PD state machine if applicable (no need to write to Device again), set as DFP
     platform_set_timer(&StateTimer, tIllegalCable);                                                 // Start dangling illegal cable timeout
+	platform_stop_timer(&PDDebounceTimer);
+	audio_debounce = FALSE;
 }
 #endif // FSC_HAVE_SRC
 
@@ -2507,6 +2589,19 @@ FSC_BOOL isVBUSOverVoltage(FSC_U8 vbusMDAC)
     return ret;
 }
 
+FSC_BOOL isVBUSRemoved(FSC_U8 vbusMDAC)
+{
+    FSC_U8 check_vbus_times = 5;//vbus check times
+    FSC_U8 i;
+
+    for (i = 0; i < check_vbus_times; i++) {
+        if (!isVBUSOverVoltage(vbusMDAC))
+            return TRUE;
+        platform_delay_10us(500);//deley 5ms
+    }
+    return FALSE;
+}
+
 void DetectCCPinSource(void)  //Patch for directly setting states
 {
     CCTermType CCTerm1;
@@ -2725,8 +2820,8 @@ void setStateSource(FSC_BOOL vconn)
         {
             Registers.Switches.byte[0] = 0xC4;                           // Enable CC pull-ups and CC1 measure
         }
-        if(vconn)
-        {
+        if(vconn && (VCONNTerm == CCTypeRa)) // CC1 and Ra
+	{
             Registers.Switches.VCONN_CC2 = 1;
             platform_set_vconn(TRUE);
         }
@@ -2741,7 +2836,7 @@ void setStateSource(FSC_BOOL vconn)
         {
             Registers.Switches.byte[0] = 0xC8;                           // Enable CC pull-ups and CC2 measure
         }
-        if(vconn)
+        if(vconn && (VCONNTerm == CCTypeRa))                            // CC2 and Ra
         {
             Registers.Switches.VCONN_CC1 = 1;
             platform_set_vconn(TRUE);
@@ -2849,6 +2944,7 @@ void clearState(void)
     platform_set_timer(&CCDebounceTimer, T_TIMER_DISABLE);                                     // Disable the 2nd level debounce timer                                    // Disable the toggle timer
     platform_set_timer(&PDFilterTimer, T_TIMER_DISABLE);  // Disable PD filter timer
     platform_notify_cc_orientation(NONE);
+    fusb30x_pd_dpm_set_hw_dock_svid_exist(false);
 #ifdef FSC_DEBUG
     WriteStateLog(&TypeCStateLog, ConnState,
                 platform_get_system_time(),

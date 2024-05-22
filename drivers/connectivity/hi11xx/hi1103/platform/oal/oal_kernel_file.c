@@ -32,7 +32,7 @@ extern "C" {
  *
  */
 
-oal_file* oal_kernel_file_open(oal_uint8 *file_path,oal_int32 ul_attribute)
+oal_file* oal_kernel_file_open_etc(oal_uint8 *file_path,oal_int32 ul_attribute)
 {
     oal_file* pst_file;
     pst_file = filp_open((oal_int8 *)file_path,ul_attribute,0777);
@@ -45,14 +45,18 @@ oal_file* oal_kernel_file_open(oal_uint8 *file_path,oal_int32 ul_attribute)
 }
 
 
-loff_t oal_kernel_file_size(oal_file *pst_file)
+loff_t oal_kernel_file_size_etc(oal_file *pst_file)
 {
     struct inode *pst_inode;
     loff_t        ul_fsize = 0;
 
     if(OAL_PTR_NULL != ((pst_file->f_path).dentry))
     {
+#if (LINUX_VERSION_CODE > KERNEL_VERSION(3,1,0))
+        pst_inode = file_inode(pst_file);
+#else
         pst_inode = ((pst_file->f_path).dentry)->d_inode;
+#endif
         ul_fsize = pst_inode->i_size;
     }
 
@@ -60,7 +64,7 @@ loff_t oal_kernel_file_size(oal_file *pst_file)
 }
 
 
-ssize_t oal_kernel_file_read(oal_file *pst_file, oal_uint8 *pst_buff, loff_t ul_fsize)
+ssize_t oal_kernel_file_read_etc(oal_file *pst_file, oal_uint8 *pst_buff, loff_t ul_fsize)
 {
     loff_t      *pos;
 
@@ -71,7 +75,7 @@ ssize_t oal_kernel_file_read(oal_file *pst_file, oal_uint8 *pst_buff, loff_t ul_
 
 
 
-oal_int oal_kernel_file_write(oal_file *pst_file,oal_uint8 *pst_buf,loff_t fsize)
+oal_int oal_kernel_file_write_etc(oal_file *pst_file,oal_uint8 *pst_buf,loff_t fsize)
 {
     loff_t *pst_pos = &(pst_file->f_pos);
 
@@ -81,7 +85,7 @@ oal_int oal_kernel_file_write(oal_file *pst_file,oal_uint8 *pst_buf,loff_t fsize
 }
 
 
-oal_int oal_kernel_file_print(oal_file *pst_file,const oal_int8 *pc_fmt,...)
+oal_int oal_kernel_file_print_etc(oal_file *pst_file,const oal_int8 *pc_fmt,...)
 {
 
     oal_int8                    auc_str_buf[OAL_PRINT_FORMAT_LENGTH];   /* 保存要打印的字符串 buffer used during I/O */
@@ -97,7 +101,7 @@ oal_int oal_kernel_file_print(oal_file *pst_file,const oal_int8 *pc_fmt,...)
     OAL_VSPRINTF(auc_str_buf, OAL_PRINT_FORMAT_LENGTH, pc_fmt, pc_args);
     OAL_VA_END(pc_args);
 
-    return oal_kernel_file_write(pst_file,(oal_uint8 *)auc_str_buf,OAL_STRLEN(auc_str_buf));
+    return oal_kernel_file_write_etc(pst_file,(oal_uint8 *)auc_str_buf,OAL_STRLEN(auc_str_buf));
 
 }
 #endif
@@ -107,7 +111,7 @@ oal_int oal_kernel_file_print(oal_file *pst_file,const oal_int8 *pc_fmt,...)
 OAL_STATIC oal_kobject* g_conn_syfs_root_object = NULL;
 OAL_STATIC oal_kobject* g_conn_syfs_root_boot_object = NULL;
 
-oal_kobject* oal_get_sysfs_root_object(oal_void)
+oal_kobject* oal_get_sysfs_root_object_etc(oal_void)
 {
     if(NULL != g_conn_syfs_root_object)
         return g_conn_syfs_root_object;
@@ -115,24 +119,24 @@ oal_kobject* oal_get_sysfs_root_object(oal_void)
     return g_conn_syfs_root_object;
 }
 
-oal_kobject* oal_get_sysfs_root_boot_object(oal_void)
+oal_kobject* oal_get_sysfs_root_boot_object_etc(oal_void)
 {
     OAL_STATIC oal_kobject* root_boot_object = NULL;
     if(g_conn_syfs_root_boot_object)
         return g_conn_syfs_root_boot_object;
-    root_boot_object = oal_get_sysfs_root_object();
+    root_boot_object = oal_get_sysfs_root_object_etc();
     if(NULL == root_boot_object)
         return NULL;
     g_conn_syfs_root_boot_object = kobject_create_and_add("boot", root_boot_object);
     return g_conn_syfs_root_boot_object;
 }
 
-oal_kobject* oal_conn_sysfs_root_obj_init(oal_void)
+oal_kobject* oal_conn_sysfs_root_obj_init_etc(oal_void)
 {
-    return oal_get_sysfs_root_object();
+    return oal_get_sysfs_root_object_etc();
 }
 
-oal_void oal_conn_sysfs_root_obj_exit(oal_void)
+oal_void oal_conn_sysfs_root_obj_exit_etc(oal_void)
 {
     if(NULL != g_conn_syfs_root_object)
     {
@@ -141,7 +145,7 @@ oal_void oal_conn_sysfs_root_obj_exit(oal_void)
     }
 }
 
-oal_void oal_conn_sysfs_root_boot_obj_exit(oal_void)
+oal_void oal_conn_sysfs_root_boot_obj_exit_etc(oal_void)
 {
     if(NULL != g_conn_syfs_root_boot_object)
     {
@@ -149,27 +153,27 @@ oal_void oal_conn_sysfs_root_boot_obj_exit(oal_void)
         g_conn_syfs_root_boot_object = NULL;
     }
 }
-oal_module_symbol(oal_get_sysfs_root_object);
-oal_module_symbol(oal_get_sysfs_root_boot_object);
-oal_module_symbol(oal_conn_sysfs_root_obj_exit);
-oal_module_symbol(oal_conn_sysfs_root_boot_obj_exit);
+oal_module_symbol(oal_get_sysfs_root_object_etc);
+oal_module_symbol(oal_get_sysfs_root_boot_object_etc);
+oal_module_symbol(oal_conn_sysfs_root_obj_exit_etc);
+oal_module_symbol(oal_conn_sysfs_root_boot_obj_exit_etc);
 #else
-oal_kobject* oal_get_sysfs_root_object(oal_void)
+oal_kobject* oal_get_sysfs_root_object_etc(oal_void)
 {
     return NULL;
 }
 
-oal_kobject* oal_conn_sysfs_root_obj_init(oal_void)
+oal_kobject* oal_conn_sysfs_root_obj_init_etc(oal_void)
 {
     return NULL;
 }
 
-oal_void oal_conn_sysfs_root_obj_exit(oal_void)
+oal_void oal_conn_sysfs_root_obj_exit_etc(oal_void)
 {
     return;
 }
 
-oal_void oal_conn_sysfs_root_boot_obj_exit(oal_void)
+oal_void oal_conn_sysfs_root_boot_obj_exit_etc(oal_void)
 {
     return;
 }
@@ -177,11 +181,11 @@ oal_void oal_conn_sysfs_root_boot_obj_exit(oal_void)
 
 
 /*lint -e19*/
-oal_module_symbol(oal_kernel_file_open);
-oal_module_symbol(oal_kernel_file_size);
-oal_module_symbol(oal_kernel_file_read);
-oal_module_symbol(oal_kernel_file_write);
-oal_module_symbol(oal_kernel_file_print);
+oal_module_symbol(oal_kernel_file_open_etc);
+oal_module_symbol(oal_kernel_file_size_etc);
+oal_module_symbol(oal_kernel_file_read_etc);
+oal_module_symbol(oal_kernel_file_write_etc);
+oal_module_symbol(oal_kernel_file_print_etc);
 oal_module_license("GPL");
 
 #ifdef __cplusplus

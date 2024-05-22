@@ -318,54 +318,6 @@ typedef uint8_t VL53L0_State;
  * @struct VL53L0_RangeData_t
  * @brief Range measurement data.
  */
-#if 0
-typedef struct {
-	uint32_t TimeStamp;			  /*!< 32-bit time stamp. */
-	uint32_t MeasurementTimeUsec;
-		/*!< Give the Measurement time needed by the device to do the
-		 * measurement.
-		 */
-
-
-	uint16_t RangeMilliMeter;	  /*!< range distance in millimeter. */
-
-	uint16_t RangeDMaxMilliMeter;
-		/*!< Tells what is the maximum detection distance of the device
-		 * in current setup and environment conditions (Filled when
-		 *	applicable)
-		 */
-
-	FixPoint1616_t SignalRateRtnMegaCps;
-		/*!< Return signal rate (MCPS)\n these is a 16.16 fix point
-		 *	value, which is effectively a measure of target
-		 *	 reflectance.
-		 */
-	FixPoint1616_t AmbientRateRtnMegaCps;
-		/*!< Return ambient rate (MCPS)\n these is a 16.16 fix point
-		 *	value, which is effectively a measure of the ambien
-		 *	t light.
-		 */
-
-	uint16_t EffectiveSpadRtnCount;
-		/*!< Return the effective SPAD count for the return signal.
-		 *	To obtain Real value it should be divided by 256
-		 */
-
-	uint8_t ZoneId;
-		/*!< Denotes which zone and range scheduler stage the range
-		 *	data relates to.
-		 */
-	uint8_t RangeFractionalPart;
-		/*!< Fractional part of range distance. Final value is a
-		 *	FixPoint168 value.
-		 */
-	uint8_t RangeStatus;
-		/*!< Range Status for the current measurement. This is device
-		 *	dependent. Value = 0 means value is valid.
-		 *	See \ref RangeStatusPage
-		 */
-} VL53L0_RangingMeasurementData_t;
-#endif
 
 typedef hwlaser_RangingData_L0_t VL53L0_RangingMeasurementData_t;
 

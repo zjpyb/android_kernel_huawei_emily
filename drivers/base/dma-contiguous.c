@@ -47,7 +47,7 @@ struct cma *dma_contiguous_default_area;
  * should use cma= kernel parameter.
  */
 static const phys_addr_t size_bytes = (phys_addr_t)CMA_SIZE_MBYTES * SZ_1M;
-static phys_addr_t size_cmdline = -1;
+static phys_addr_t size_cmdline = -1;/*lint !e570*/
 static phys_addr_t base_cmdline;
 static phys_addr_t limit_cmdline;
 
@@ -113,7 +113,7 @@ void __init dma_contiguous_reserve(phys_addr_t limit)
 
 	pr_debug("%s(limit %08lx)\n", __func__, (unsigned long)limit);
 
-	if (size_cmdline != -1) {
+	if (size_cmdline != -1) {/*lint !e650*/
 		selected_size = size_cmdline;
 		selected_base = base_cmdline;
 		selected_limit = min_not_zero(limit_cmdline, limit);

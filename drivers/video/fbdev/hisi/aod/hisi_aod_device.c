@@ -71,7 +71,6 @@ static int handle_sh_ipc = 0;
 aod_dss_ctrl_status_sh_t strl_cmd;
 
 extern struct ion_client *hisi_ion_client_create(const char *name);
-extern void __dma_map_area(const void *, size_t, int);
 extern int write_customize_cmd(const struct write_info *wr, struct read_info *rd, bool is_lock);
 extern int hisi_aod_inc_atomic(struct hisi_fb_data_type *hisifd);
 extern void hisi_aod_dec_atomic(struct hisi_fb_data_type *hisifd);
@@ -92,6 +91,60 @@ void sh_recovery_handler(void);
 int get_aod_support(void)
 {
 	return aod_support;
+}
+
+static int g_dmd_is_set_power_mode_record = 0;
+static int g_dmd_is_sensorhub_recovery_record = 0;
+int hisi_aod_report_dmd_err(AOD_DMD_TYPE_T type)
+{
+
+	if(type >= AOD_DMD_BUTT)
+	{
+		HISI_AOD_ERR(": aod dmd type undefined!\n");
+		return -1;
+	}
+	if ( NULL == lcd_dclient )
+	{
+		HISI_AOD_ERR(": there is no lcd_dclient!\n");
+		return -1;
+	}
+
+	/* try to get permission to use the buffer */
+	if (dsm_client_ocuppy(lcd_dclient))
+	{
+		/* buffer is busy */
+		HISI_AOD_ERR(": buffer is busy!\n");
+		return -1;
+	}
+
+	HISI_AOD_INFO(": entry!\n");
+
+	switch (type)
+	{
+		case AOD_DMD_SET_POWER_MODE_RECOVERY:
+			if(0 == g_dmd_is_set_power_mode_record)
+			{
+				g_dmd_is_set_power_mode_record ++;
+				dsm_client_record(lcd_dclient, "set power mode recovery, finger_down_status is %u.\n",
+					g_aod_data->finger_down_status);
+				dsm_client_notify(lcd_dclient, DSM_LCD_SET_POWER_MODE_RECOVERY_ERROR_NO);
+			}
+			break;
+		case AOD_DMD_SENSORHUB_RECOVERY:
+			if(0 == g_dmd_is_sensorhub_recovery_record)
+			{
+				g_dmd_is_sensorhub_recovery_record ++;
+				dsm_client_record(lcd_dclient, "sensorhub recovery, aod_status is %d .\n",
+					g_aod_data->aod_status);
+				dsm_client_notify(lcd_dclient, DSM_LCD_SENSORHUB_RECOVERY_ERROR_NO);
+			}
+			break;
+		default:
+			HISI_AOD_ERR(": aod dmd type undefined!\n");
+			break;
+	}
+
+	return 0;
 }
 
 extern void hisi_aod_schedule_wq(void);
@@ -128,8 +181,6 @@ static int hisi_aod_start_recovery_init(struct aod_data_t *aod_data)
 		HISI_AOD_ERR("aod_data NULL Pointer!\n");
 		return -EINVAL;
 	}
-
-	__dma_map_area(&aod_data->buff_virt, aod_data->smem_size, DMA_TO_DEVICE);
 
 	ret = hisi_aod_sensorhub_cmd_req(CMD_CMN_OPEN_REQ);
 	if(ret) {
@@ -178,8 +229,6 @@ static int hisi_aod_start_recovery_req(struct aod_data_t *aod_data)
 	}
 	up(&(aod_data->aod_status_sem));
 
-	__dma_map_area(&aod_data->buff_virt, aod_data->smem_size, DMA_TO_DEVICE);
-
 	ret = hisi_aod_start_req(&aod_data->start_config_mcu);
 	if(ret) {
 		HISI_AOD_ERR("hisi_aod_start_req fail\n");
@@ -199,6 +248,10 @@ static int sensorhub_recovery_notifier(struct notifier_block *nb, unsigned long 
 {
 	struct aod_data_t *aod_start_data = g_aod_data;
 
+	if(!aod_start_data){
+		HISI_AOD_ERR("g_aod_data is NULL!\n");
+		return -1;
+	}
 	/* prevent access the emmc now: */
 	HISI_AOD_INFO("iom3 status:%lu +\n", action);
 	switch (action) {
@@ -210,6 +263,10 @@ static int sensorhub_recovery_notifier(struct notifier_block *nb, unsigned long 
 	case IOM3_RECOVERY_3RD_DOING:
 		if(get_aod_support())
 		{
+			if(g_aod_data->aod_status == true)
+			{
+				hisi_aod_report_dmd_err(AOD_DMD_SENSORHUB_RECOVERY);
+			}
 			g_iom3_state_aod = 1;
 			sh_recovery_handler();
 			(void)hisi_aod_start_recovery_init(aod_start_data);
@@ -237,17 +294,26 @@ static struct notifier_block recovery_notify = {
 
 static ssize_t hisi_aod_read(struct file *file, char __user *buf, size_t count, loff_t *ppos)
 {
-	unsigned long p = *ppos;
+	unsigned long p = 0;
 	unsigned long totol_size = 0;
 	ssize_t cnt = 0;
-	struct aod_data_t *aod_data = (struct aod_data_t*)file->private_data;
-	aod_notif_t notify_data = aod_data->aod_notify_data;
+	struct aod_data_t *aod_data;
+	aod_notif_t notify_data;
 
-	if(NULL == aod_data) {
-		HISI_AOD_ERR("aod_data NULL Pointer!\n");
+	if((NULL == file)||(NULL == buf)||(NULL == ppos)) 
+	{
+		HISI_AOD_ERR("enter param is NULL Pointer!\n");
 		return -EINVAL;
 	}
 
+	p = *ppos;
+	aod_data = (struct aod_data_t*)file->private_data;
+	if(NULL == aod_data)
+	{
+		HISI_AOD_ERR("enter param is NULL Pointer!\n");
+		return -EINVAL;
+	}
+	notify_data = aod_data->aod_notify_data;
 	reinit_completion(&iom3_status_completion);
 	totol_size = sizeof(aod_notif_t);
 
@@ -301,7 +367,8 @@ static unsigned long hisi_aod_fb_alloc(struct aod_data_t *aod_data)
 		goto err_cma_alloc;
 	}
 
-	HISI_AOD_INFO("buff_phy is 0x%lx\n", aod_data->buff_phy);
+	HISI_AOD_INFO("buff_virt is 0x%llx ,buff_phy is 0x%llx\n",
+		aod_data->buff_virt, aod_data->buff_phy);
 
 	buf_addr = aod_data->buff_phy;
 	aod_data->fb_start_addr = buf_addr;
@@ -310,7 +377,7 @@ static unsigned long hisi_aod_fb_alloc(struct aod_data_t *aod_data)
 err_cma_alloc:
 	return 0;
 }
-/*lint -e454, -e533*/
+/*lint -e454, -e455, -e456, -e533*/
 int dss_sr_of_sh_callback(const pkt_header_t *cmd)
 {
 	aod_dss_ctrl_status_ap_t *ctrl_cmd;
@@ -405,9 +472,11 @@ int dss_sr_of_sh_callback(const pkt_header_t *cmd)
 	}
 
 	HISI_AOD_INFO("dss_sr_of_sh_callback exit!\n");
+	return 0;
 
 }
-/*lint +e454, +e533*/
+/*lint +e454, +e455, +e456, +e533*/
+/*lint -e455, -e456*/
 void aod_timer_process(void)
 {
 	//int ret = 0;
@@ -441,7 +510,7 @@ void sh_recovery_handler(void)
 
 	HISI_AOD_INFO("sh_recovery_handler enter!\n");
 	mutex_lock(&dss_on_off_lock);
-	if(dss_on_status & !dss_off_status)
+	if(dss_on_status && !dss_off_status)
 	{
 		del_timer(&my_timer);
 
@@ -470,10 +539,11 @@ void sh_recovery_handler(void)
 	HISI_AOD_INFO("sh_recovery_handler exit!\n");
 
 }
+/*lint +e455, +e456*/
 
 static void hisi_dump_time_config(aod_time_config_mcu_t *time_config)
 {
-	HISI_AOD_INFO("curr_time is %lu, time_zone is %d, sec_time_zone is %d, time_format is %d\n",
+	HISI_AOD_INFO("curr_time is %llu, time_zone is %d, sec_time_zone is %d, time_format is %d\n",
 		time_config->curr_time, time_config->time_zone, time_config->sec_time_zone,	time_config->time_format);
 }
 
@@ -494,7 +564,7 @@ static void hisi_dump_display_space(aod_display_spaces_mcu_t *display_space)
 
 static void hisi_dump_start_config(aod_start_config_mcu_t *start_config)
 {
-    int i = 0;
+    uint32_t i = 0;
 	HISI_AOD_INFO("intelli_switching is %d\n", start_config->intelli_switching);
 	HISI_AOD_INFO("aod_type is %d\n", start_config->aod_type);
 	HISI_AOD_INFO("fp_mode is %d\n", start_config->fp_mode);
@@ -502,7 +572,7 @@ static void hisi_dump_start_config(aod_start_config_mcu_t *start_config)
 
     for(i = 0; (i < start_config->dynamic_fb_count)&&(i < MAX_DYNAMIC_ALLOC_FB_COUNT); i++)
     {
-        HISI_AOD_INFO("dynamic_fb_addr[%d] is 0x%x\n", i, start_config->dynamic_fb_addr[i]);
+        HISI_AOD_INFO("dynamic_fb_addr[%u] is 0x%x\n", i, start_config->dynamic_fb_addr[i]);
     }
 	HISI_AOD_INFO("xstart is %d, ystart is %d\n", start_config->aod_pos.x_start, start_config->aod_pos.y_start);
 }
@@ -718,11 +788,11 @@ static int hisi_aod_set_time_req(aod_time_config_mcu_t *time_config)
 
 	return ret;
 }
-/*lint -e454, -e533*/
+/*lint -e454, -e456, -e533*/
 static int hisi_aod_start_req(aod_start_config_mcu_t *start_config)
 {
 	int ret = 0;
-    int i   = 0;
+    uint32_t i   = 0;
 	write_info_t pkg_ap;
 	read_info_t pkg_mcu;
 	aod_pkt_t pkt;
@@ -803,7 +873,9 @@ static int hisi_aod_start_req(aod_start_config_mcu_t *start_config)
 	HISI_AOD_INFO("-.\n");
 	return ret;
 }
-/*lint +e454, +e533*/
+/*lint +e454, +e533, +e456*/
+/*lint -e454, -e455*/
+//lint -efunc(456,455,454,*)
 static int hisi_aod_stop_req(aod_display_pos_t *display_pos)
 {
 	int ret = 0;
@@ -848,7 +920,7 @@ static int hisi_aod_stop_req(aod_display_pos_t *display_pos)
 	handle_sh_ipc = 0;
 	if (dss_on_status) {
 		del_timer(&my_timer);
-		hisi_sensorhub_aod_blank();
+		(void)hisi_sensorhub_aod_blank();
 		dss_on_status = 0;
 		dss_off_status = 1;
 		wake_unlock(&g_aod_data->wlock);
@@ -858,9 +930,8 @@ static int hisi_aod_stop_req(aod_display_pos_t *display_pos)
 	mutex_unlock(&(g_aod_data->aod_lock));
 	HISI_AOD_INFO("release aod_lock\n");
 
-	HISI_AOD_INFO("finger_down_status is %d", g_aod_data->finger_down_status);
-	if (g_aod_data->finger_down_status == 2 && hisi_aod_inc_atomic(hisifd))
-	{
+	HISI_AOD_INFO("finger_down_status is %d \n", g_aod_data->finger_down_status);
+	if (g_aod_data->finger_down_status == 2 && hisi_aod_inc_atomic(hisifd)){
 		HISI_AOD_INFO("in fast unlock mode\n");
 		mutex_lock(&(g_aod_data->aod_lock));
 		HISI_AOD_INFO("hold aod_lock\n");
@@ -871,6 +942,8 @@ static int hisi_aod_stop_req(aod_display_pos_t *display_pos)
 
 	return ret;
 }
+//lint +efunc(456,455,454,*)
+/*lint +e454, +e455*/
 
 
 int hisi_send_aod_stop(void)
@@ -996,7 +1069,7 @@ static int hisi_set_bitmap_size(struct aod_data_t *aod_data, void __user* arg)
 {
 	aod_bitmaps_size_ap_t bitmaps_size;
 	size_t bitmap_count = 0;
-	int i = 0;
+	uint32_t i = 0;
 
 	HISI_AOD_INFO("+.\n");
 
@@ -1022,7 +1095,7 @@ static int hisi_set_bitmap_size(struct aod_data_t *aod_data, void __user* arg)
 
 	for (i = 0; i < bitmap_count; i ++) {
 		if((bitmaps_size.bitmap_size[i].xres > aod_data->x_res) || (bitmaps_size.bitmap_size[i].yres > aod_data->y_res)) {
-			HISI_AOD_ERR("invalid bitmaps_size: i= %d, xres=%d,yres=%d\n", i,bitmaps_size.bitmap_size[i].xres,bitmaps_size.bitmap_size[i].yres);
+			HISI_AOD_ERR("invalid bitmaps_size: i= %u, xres=%d,yres=%d\n", i,bitmaps_size.bitmap_size[i].xres,bitmaps_size.bitmap_size[i].yres);
 			return -EINVAL;
 		}
 	}
@@ -1033,8 +1106,8 @@ static int hisi_set_bitmap_size(struct aod_data_t *aod_data, void __user* arg)
 	for (i = 0; i < bitmap_count; i ++) {
 		aod_data->bitmaps_size_mcu.bitmap_size[i].xres = bitmaps_size.bitmap_size[i].xres;
 		aod_data->bitmaps_size_mcu.bitmap_size[i].yres = bitmaps_size.bitmap_size[i].yres;
-		HISI_AOD_INFO("xres [%d] [%d].\n", i, aod_data->bitmaps_size_mcu.bitmap_size[i].xres);
-		HISI_AOD_INFO("yres [%d] [%d].\n", i, aod_data->bitmaps_size_mcu.bitmap_size[i].yres);
+		HISI_AOD_INFO("xres [%u] [%d].\n", i, aod_data->bitmaps_size_mcu.bitmap_size[i].xres);
+		HISI_AOD_INFO("yres [%u] [%d].\n", i, aod_data->bitmaps_size_mcu.bitmap_size[i].yres);
 	}
 
 	HISI_AOD_INFO("- .\n");
@@ -1092,7 +1165,7 @@ static int hisi_set_display_space(struct aod_data_t *aod_data, void __user* arg)
 {
 	aod_display_spaces_ap_t display_spaces;
 	size_t display_space_count = 0;
-	int i = 0;
+	uint32_t i = 0;
 	int ret;
 
 	HISI_AOD_INFO("+.\n");
@@ -1122,9 +1195,7 @@ static int hisi_set_display_space(struct aod_data_t *aod_data, void __user* arg)
 	display_space_count = display_spaces.display_space_count;
 
 	for (i = 0; i < display_space_count; i++) {
-		if((display_spaces.display_spaces[i].x_start < 0)
-			|| (display_spaces.display_spaces[i].y_size <= 0)
-			|| (display_spaces.display_spaces[i].y_start < 0)) {
+		if (display_spaces.display_spaces[i].y_size <= 0){
 			HISI_AOD_ERR("invalid parms:x_size=%d, x_start=%d,y_size=%d,y_start=%d\n",
 				display_spaces.display_spaces[i].x_size,
 				display_spaces.display_spaces[i].x_start,
@@ -1164,16 +1235,11 @@ static int start_config_par(aod_start_config_ap_t start_config, struct aod_data_
 		return -1;
 	}
 
-	if((start_config.intelli_switching < 0)
-		|| (start_config.fb_offset < 0)
-		|| (start_config.fb_offset >= aod_data->max_buf_size)
-		|| (start_config.bitmaps_offset < 0)
+	if( (start_config.fb_offset >= aod_data->max_buf_size)
 		|| (start_config.bitmaps_offset >= aod_data->max_buf_size)
 		|| (start_config.pixel_format < AOD_FB_PIXEL_FORMAT_RGB_565)
 		|| (start_config.pixel_format > AOD_FB_PIXEL_FORMAT_VYUY_422_Pkg)
-		|| (start_config.aod_pos.x_start < 0)
 		|| (start_config.aod_pos.x_start >= aod_data->x_res)
-		|| (start_config.aod_pos.y_start < 0)
 		|| (start_config.aod_pos.y_start >= aod_data->y_res)) {
 		HISI_AOD_ERR("invalid start_config:intelli_switching=%d,fb_offset=%d,bitmaps_offset=%d,pixel_format=%d,x_start=%d,y_start=%d\n",
 			start_config.intelli_switching,start_config.fb_offset,start_config.bitmaps_offset,
@@ -1219,7 +1285,6 @@ static int hisi_aod_start(struct aod_data_t *aod_data, void __user* arg)
 		return -EINVAL;
 	}
 
-	__dma_map_area(&aod_data->buff_virt, aod_data->smem_size, DMA_TO_DEVICE);
 
 	aod_data->aod_digits_addr = start_config.bitmaps_offset;
 	aod_data->set_config_mcu.fp_offset = start_config.fp_offset;
@@ -1297,7 +1362,6 @@ static int hisi_aod_pause(struct aod_data_t *aod_data, void __user* arg)
 }
 static int hisi_aod_set_finger_status(struct aod_data_t *aod_data, void __user* arg)
 {
-	int ret = 0;
 	aod_notify_finger_down_t finger_config;
 	if ((NULL == arg)||(NULL == aod_data))
 	{
@@ -1319,8 +1383,9 @@ static int hisi_aod_get_dynamic_fb(struct aod_data_t *aod_data, void __user* arg
 {
     struct ion_handle * handle = NULL;
     int ret = 0;
-    int i   = 0;
+    uint32_t i   = 0;
     unsigned long buf_addr;
+    uint32_t tmp = 0;
 	aod_dynamic_fb_space_t ion_fb_config;
 	if ((NULL == arg)||(NULL == aod_data))
     {
@@ -1344,19 +1409,25 @@ static int hisi_aod_get_dynamic_fb(struct aod_data_t *aod_data, void __user* arg
     HISI_AOD_ERR("dynamic_fb_count = (%d). \n",ion_fb_config.fb_count);
     for(i = 0; i < ion_fb_config.fb_count; i++)
     {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0)
+        handle = ion_import_dma_buf_fd(aod_data->ion_client, ion_fb_config.str_ion_fb[i].ion_buf_fb);
+#else
         handle = ion_import_dma_buf(aod_data->ion_client, ion_fb_config.str_ion_fb[i].ion_buf_fb);
+#endif
         if(NULL == handle)
         {
-            HISI_AOD_ERR("ion_import_dma_buf fail. ion_buf_fb %d, size %u, index %d!\n",
+            HISI_AOD_ERR("ion_import_dma_buf fail. ion_buf_fb %d, size %u, index %u!\n",
                 ion_fb_config.str_ion_fb[i].ion_buf_fb,
                 ion_fb_config.str_ion_fb[i].buf_size,
                 i);
             continue;
         }
-        ret = ion_phys(aod_data->ion_client, handle, &buf_addr, &(ion_fb_config.str_ion_fb[i].buf_size));
+
+        tmp = ion_fb_config.str_ion_fb[i].buf_size;
+        ret = hisifb_ion_phys(aod_data->ion_client, handle, aod_data->dev, &buf_addr,(size_t *)&tmp);
         if(ret < 0)
         {
-            HISI_AOD_ERR("ion_phys fail. ion_buf_fb %d, size %u, index %d!\n",
+            HISI_AOD_ERR("ion_phys fail. ion_buf_fb %d, size %u, index %u!\n",
                 ion_fb_config.str_ion_fb[i].ion_buf_fb,
                 ion_fb_config.str_ion_fb[i].buf_size,
                 i);
@@ -1364,7 +1435,7 @@ static int hisi_aod_get_dynamic_fb(struct aod_data_t *aod_data, void __user* arg
         }
         if(buf_addr > MAX_ADDR_FOR_SENSORHUB)
         {
-            HISI_AOD_ERR("phys addr(0x%lx) invalid. ion_buf_fb %d, size %u, index %d!\n",
+            HISI_AOD_ERR("phys addr(0x%lx) invalid. ion_buf_fb %d, size %u, index %u!\n",
                 buf_addr,
                 ion_fb_config.str_ion_fb[i].ion_buf_fb,
                 ion_fb_config.str_ion_fb[i].buf_size,
@@ -1375,7 +1446,7 @@ static int hisi_aod_get_dynamic_fb(struct aod_data_t *aod_data, void __user* arg
         aod_data->ion_dyn_handle[i] = handle;
         aod_data->start_config_mcu.dynamic_fb_addr[i] = (uint32_t)buf_addr;
         aod_data->ion_dynamic_alloc_flag = true;
-        HISI_AOD_ERR("dynamic_fb_addr[%d] = (0x%x) .ion_buf_fb[%d] = 0x%x , buf_size %d.\n",
+        HISI_AOD_ERR("dynamic_fb_addr[%u] = (0x%x) .ion_buf_fb[%u] = 0x%x , buf_size %d.\n",
             i, aod_data->start_config_mcu.dynamic_fb_addr[i],
             i, ion_fb_config.str_ion_fb[i].ion_buf_fb,
             ion_fb_config.str_ion_fb[i].buf_size);
@@ -1388,7 +1459,7 @@ static int hisi_aod_get_dynamic_fb(struct aod_data_t *aod_data, void __user* arg
 
 static int hisi_aod_free_dynamic_fb(struct aod_data_t *aod_data, void __user* arg)
 {
-    int i = 0;
+    uint32_t i = 0;
     if (NULL == aod_data)
     {
         HISI_AOD_ERR("aod_data NULL Pointer!\n");
@@ -1403,7 +1474,7 @@ static int hisi_aod_free_dynamic_fb(struct aod_data_t *aod_data, void __user* ar
     {
         ion_free(aod_data->ion_client, aod_data->ion_dyn_handle[i]);
         aod_data->ion_dyn_handle[i]         = NULL;
-        aod_data->start_config_mcu.dynamic_fb_addr[i] = NULL;
+        aod_data->start_config_mcu.dynamic_fb_addr[i] = 0;
     }
     aod_data->start_config_mcu.dynamic_fb_count = 0;
     aod_data->ion_dynamic_alloc_flag = false;
@@ -1451,8 +1522,6 @@ static int hisi_aod_resume(struct aod_data_t *aod_data, void __user* arg)
 	aod_data->start_config_mcu.intelli_switching = resume_config.intelli_switching;
 	aod_data->start_config_mcu.aod_type = resume_config.aod_type;
 	aod_data->start_config_mcu.fp_mode = resume_config.fp_mode;
-
-	__dma_map_area(&aod_data->buff_virt, aod_data->smem_size, DMA_TO_DEVICE);
 
 	ret = hisi_aod_start_req(&aod_data->start_config_mcu);
 	if(ret) {
@@ -1584,9 +1653,6 @@ static int hisi_end_updating(struct aod_data_t *aod_data, void __user* arg)
 		return -EINVAL;
 	}
 
-	 __dma_map_area(&aod_data->buff_virt, aod_data->smem_size, DMA_TO_DEVICE);
-
-
 	if(copy_from_user(&end_updating_pos, arg, sizeof(end_updating_pos)))
 		return -EFAULT;
 
@@ -1657,7 +1723,7 @@ static int hisi_aod_stop(struct aod_data_t *aod_data, void __user* arg)
 
 static int hisi_get_panel_info(struct aod_data_t *aod_data, void __user* arg)
 {
-	aod_screen_info_t screen_info;
+	aod_screen_info_t st_screen_info;
 
 	HISI_AOD_INFO("+.\n");
 
@@ -1671,11 +1737,11 @@ static int hisi_get_panel_info(struct aod_data_t *aod_data, void __user* arg)
 		return -EINVAL;
 	}
 
-	screen_info.pixel_format = AOD_FB_PIXEL_FORMAT_RGB_565;
-	screen_info.xres = aod_data->x_res;
-	screen_info.yres = aod_data->y_res;
+	st_screen_info.pixel_format = AOD_FB_PIXEL_FORMAT_RGB_565;
+	st_screen_info.xres = aod_data->x_res;
+	st_screen_info.yres = aod_data->y_res;
 
-	if(copy_to_user(arg, &screen_info, sizeof(screen_info)))
+	if(copy_to_user(arg, &st_screen_info, sizeof(st_screen_info)))
 		return -EFAULT;
 
 	HISI_AOD_INFO("-.\n");
@@ -1704,6 +1770,7 @@ static int hisi_free_buffer(struct aod_data_t *aod_data, void __user* arg)
 static long hisi_aod_ioctl(struct file* file, unsigned int cmd, unsigned long arg)
 {
 	int ret = 0;
+	void __user* argp = (void __user*)arg;
 	struct aod_data_t *aod_data = (struct aod_data_t*)file->private_data;
 
 	if(NULL == aod_data) {
@@ -1712,7 +1779,6 @@ static long hisi_aod_ioctl(struct file* file, unsigned int cmd, unsigned long ar
 	}
 
 	mutex_lock(&aod_data->ioctl_lock);
-	void __user* argp = (void __user*)arg;
 
 	switch (cmd) {
 	case AOD_IOCTL_AOD_SET_BITMAP_SIZE:
@@ -1853,6 +1919,7 @@ static int hisi_aod_trylock(struct aod_data_t *aod_data){
 		mdelay(HISI_AOD_TRYLOCK_WAITTIME);
 		retry_count++;
 		if (HISI_AOD_SET_POWER_MODE_TRYLOCK_TIMES == retry_count) {
+			hisi_aod_report_dmd_err(AOD_DMD_SET_POWER_MODE_RECOVERY);
 			mutex_lock(&aod_data->ioctl_lock);
 			HISI_AOD_INFO("aod force stop\n");
 			hisi_send_aod_stop();
@@ -1863,7 +1930,8 @@ static int hisi_aod_trylock(struct aod_data_t *aod_data){
 	return trylock_result;
 }
 
-//lint -efunc(456,*)
+/*lint -e454, -e455*/
+//lint -efunc(456,455,454,*)
 int hisi_aod_set_blank_mode(int blank_mode)
 {
 	struct aod_data_t *aod_data = g_aod_data;
@@ -1922,7 +1990,8 @@ int hisi_aod_set_blank_mode(int blank_mode)
 
 	return 0;
 }
-//lint +efunc(456,*)
+//lint +efunc(456,455,454,*)
+/*lint +e454, +e455*/
 
 bool hisi_aod_get_aod_status(void)
 {
@@ -1934,7 +2003,7 @@ bool hisi_aod_get_aod_status(void)
 static int hisi_aod_open(struct inode* inode, struct file* file)
 {
 	struct aod_data_t *aod_data = NULL;
-	int ret = NULL;
+	int ret = 0;
 
 	mutex_lock(&g_lock);
 	HISI_AOD_INFO("+.\n");
@@ -2086,7 +2155,7 @@ static int hisi_aod_probe(struct platform_device *pdev)
     for(i = 0; i < MAX_DYNAMIC_ALLOC_FB_COUNT; i++)
     {
        aod_data->ion_dyn_handle[i]         = NULL;
-       aod_data->start_config_mcu.dynamic_fb_addr[i] = NULL;
+       aod_data->start_config_mcu.dynamic_fb_addr[i] = 0;
     }
     aod_data->start_config_mcu.dynamic_fb_count = 0;
 
@@ -2100,11 +2169,10 @@ static int hisi_aod_probe(struct platform_device *pdev)
 
 
 	init_completion(&iom3_status_completion);
-	register_iom3_recovery_notifier(&recovery_notify);
 
 	init_timer(&my_timer);
 	//my_timer.expires = jiffies + 1000;
-	my_timer.function = aod_timer_process;
+	my_timer.function = (void *)aod_timer_process;
 	my_timer.data = 0;
 
 	np = of_find_compatible_node(NULL, NULL, "huawei,aod");
@@ -2141,7 +2209,7 @@ static int hisi_aod_probe(struct platform_device *pdev)
 
 	/*fb memory size*/
 	line_length = ALIGN_UP(aod_data->x_res * aod_data->bpp, 16);
-	fb_max_len = roundup(line_length * aod_data->y_res, PAGE_SIZE);
+	fb_max_len = roundup(line_length * aod_data->y_res, PAGE_SIZE);		//lint !e647
 
 	/*bitmap memory size*/
 	bitmaps_max_len = DIGITS_COUNT*fb_max_len;
@@ -2157,6 +2225,7 @@ static int hisi_aod_probe(struct platform_device *pdev)
 	sema_init(&(aod_data->aod_status_sem), 1);
 
 	g_aod_data = aod_data;
+	register_iom3_recovery_notifier(&recovery_notify);
 
 	return 0;
 

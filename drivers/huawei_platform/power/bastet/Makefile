@@ -15,8 +15,10 @@ obj-$(CONFIG_HUAWEI_BASTET) += \
 	bastet_filter.o \
 	bastet_hbm.o \
 
+obj-$(CONFIG_HUAWEI_BASTET_COMM_NEW) += bastet_comm.o
+
 ifneq ($(OBB_SEPARATE),true)
-ifdef CONFIG_HISI_BALONG_MODEM
+ifneq ($(CFG_HISI_MINI_AP),true)
 EXTRA_CFLAGS += -DCONFIG_HUAWEI_BASTET_COMM
 endif
 endif

@@ -43,6 +43,7 @@
 #define BFMR_TIMEOUT_VALUE_FOR_SHORT_TIMER ((u32)(1000 * 60 * 10)) /* unit: msec */
 #define BFMR_TIMEOUT_VALUE_FOR_LONG_TIMER ((u32)(1000 * 60 * 30)) /* unit: msec */
 #define BFMR_MAX_TIMEOUT_VALUE_FOR_ACTION_TIMER ((u32)(1000 * 60 * 30)) /* unit: msec */
+#define BFMR_VENDOR_HUAWEI_FLAG "/eng"
 
 
 /*----local prototypes---------------------------------------------------------------*/
@@ -121,7 +122,13 @@ static void bfm_check_boot_time(struct bfm_boot_timer_info *boot_timer_info)
             : (boot_timer_info->short_timer_timeout_value / (unsigned int)(1000 * 60)));
         boot_timer_info->boot_timer_count_task_should_run = false;
         mutex_unlock(&s_boot_timer_mutex);
-        boot_fail_err(KERNEL_BOOT_TIMEOUT, NO_SUGGESTION, NULL);
+
+        if (bfmr_is_dir_existed(BFMR_VENDOR_HUAWEI_FLAG))
+        {
+            bfm_send_signal_to_init();//for dump trace of init Process.
+
+            boot_fail_err(KERNEL_BOOT_TIMEOUT, NO_SUGGESTION, NULL);
+        }
     }
 
     list_for_each_entry(atimer, &action_timer_active_list, act_list) {
@@ -134,7 +141,13 @@ static void bfm_check_boot_time(struct bfm_boot_timer_info *boot_timer_info)
             BFMR_PRINT_SIMPLE_INFO("hwboot_timer: %s timer expired! boot fail!\n",atimer->action_name);
             boot_timer_info->boot_timer_count_task_should_run = false;
             mutex_unlock(&s_boot_timer_mutex);
-            boot_fail_err(KERNEL_BOOT_TIMEOUT, NO_SUGGESTION, NULL);
+
+            if (bfmr_is_dir_existed(BFMR_VENDOR_HUAWEI_FLAG))
+            {
+                bfm_send_signal_to_init();
+
+                boot_fail_err(KERNEL_BOOT_TIMEOUT, NO_SUGGESTION, NULL);
+            }
         }
     }
 }

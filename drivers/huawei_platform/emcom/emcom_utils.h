@@ -28,6 +28,16 @@ HWLOG_REGIST();
 #define EMCOM_DEBUG    1
 #define EMCOM_INFO     1
 
+/* network type */
+typedef enum
+{
+	NETWORK_TYPE_UNKNOWN = 0,
+	NETWORK_TYPE_2G,
+	NETWORK_TYPE_3G,
+	NETWORK_TYPE_4G,
+	NETWORK_TYPE_WIFI,
+} NETWORK_TYPE;
+
 typedef enum
 {
     MODEM_NOT_SUPPORT_EMCOM,

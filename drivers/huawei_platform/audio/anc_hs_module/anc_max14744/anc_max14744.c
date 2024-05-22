@@ -1520,14 +1520,18 @@ static long anc_max14744_ioctl(struct file *file, unsigned int cmd,
 	return (long)ret;
 }
 /*lint -restore*/
-
+#ifdef ANC_MAX14744_DEBUG
 static ssize_t anc_max14744_reg_list_show(struct device *dev,
 					  struct device_attribute *attr, char *buf)
 {
 	int value = 0;
 	int reg = 0;
-	char val_str[20];
+	char val_str[20] = {0};
 
+	if (NULL == buf) {
+		hwlog_info("%s : buf is null!\n", __func__);
+		return -EINVAL;
+	}
 	buf[0] = '\0';
 	for (reg = 0; reg <= 0x0C; reg++) {
 
@@ -1542,9 +1546,13 @@ static ssize_t anc_max14744_reg_list_show(struct device *dev,
 static ssize_t anc_max14744_adc_show(struct device *dev,
 				 struct device_attribute *attr, char *buf)
 {
-	char val_str[20];
+	char val_str[20] = {0};
 	int ear_pwr_h = 0, ear_pwr_l = 0;
 
+	if (NULL == buf) {
+		hwlog_info("%s : buf is null!\n", __func__);
+		return -EINVAL;
+	}
 	buf[0] = '\0';
 
 	ear_pwr_h = hisi_adc_get_value(g_anc_max14744_priv->channel_pwl_h);
@@ -1645,6 +1653,7 @@ static struct attribute *anc_max14744_attributes[] = {
 static const struct attribute_group anc_max14744_attr_group = {
 	.attrs = anc_max14744_attributes,
 };
+#endif
 
 /*lint -save -e* */
 static const struct regmap_config anc_max14744_regmap = {
@@ -1834,7 +1843,7 @@ static int anc_max14744_probe(struct i2c_client *client,
 	if (di->ldo_supply_used == true) {
 		di->anc_hs_vdd = devm_regulator_get(di->dev, anc_hs_vdd_name);
 		if (IS_ERR(di->anc_hs_vdd)) {
-			hwlog_err("%s: Couldn't get anc_hs_vdd regulator ip %p\n", __func__, di->anc_hs_vdd);
+			hwlog_err("%s: Couldn't get anc_hs_vdd regulator ip %pK\n", __func__, di->anc_hs_vdd);
 			di->anc_hs_vdd = NULL;
 			goto err_out;
 		}
@@ -1922,11 +1931,11 @@ static int anc_max14744_probe(struct i2c_client *client,
 	ret = pinctrl_select_state(p, pinctrl_def);
 	if (ret)
 		hwlog_err("could not set pins to default state.\n");
-
+#ifdef ANC_MAX14744_DEBUG
 	ret = sysfs_create_group(&client->dev.kobj, &anc_max14744_attr_group);
 	if (ret < 0)
 		hwlog_err("failed to register sysfs\n");
-
+#endif
 	/* create irq workqueue */
 	di->anc_hs_plugin_delay_wq =
 		create_singlethread_workqueue("anc_hs_plugin_delay_wq");
@@ -2062,7 +2071,9 @@ err_plugin_delay_wq:
 		destroy_workqueue(di->anc_hs_plugin_delay_wq);
 	}
 err_out_sysfs:
+#ifdef ANC_MAX14744_DEBUG
 	sysfs_remove_group(&client->dev.kobj, &anc_max14744_attr_group);
+#endif
 err_out:
 
 	if (ret < 0) {

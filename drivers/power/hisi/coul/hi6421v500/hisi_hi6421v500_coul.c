@@ -1159,6 +1159,14 @@ static void hi6421v500_coul_get_ocv_level(u8 *level)
 	val &= SAVE_OCV_LEVEL;
 	*level = val >> OCV_LEVEL_SHIFT;
 }
+static int hi6421v500_coul_get_drained_battery_flag(void)
+{
+    return 0;
+}
+static void hi6421v500_coul_clear_drained_battery_flag(void)
+{
+    return;
+}
 
 #ifdef CONFIG_SYSFS
 
@@ -1269,6 +1277,8 @@ struct coul_device_ops hi6421v500_coul_ops =
     .cali_auto_off              = hi6421v500_coul_auto_cali,
     .save_ocv_level				  = hi6421v500_coul_save_ocv_level,
     .get_ocv_level				  = hi6421v500_coul_get_ocv_level,
+    .get_drained_battery_flag     = hi6421v500_coul_get_drained_battery_flag,
+    .clear_drained_battery_flag   = hi6421v500_coul_clear_drained_battery_flag,
 };
 
 

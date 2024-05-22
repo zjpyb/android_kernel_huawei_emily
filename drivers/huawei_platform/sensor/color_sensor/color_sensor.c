@@ -22,7 +22,8 @@
 #include <linux/mtd/hisi_nve_interface.h>
 #include <huawei_platform/log/hw_log.h>
 
-#include "ams_tcs3430.h"
+//#include "rohm_bh1749.h"
+#include "color_sensor.h"
 
 #ifdef HWLOG_TAG
 #undef HWLOG_TAG
@@ -96,7 +97,7 @@ static ssize_t color_calibrate_show(struct device *dev, struct device_attribute 
 			     char *buf)
 {
 	color_sensor_output_para out_data ={0};
-	struct amsDriver_chip *chip;
+	struct colorDriver_chip *chip = NULL;
 	int ret = 0;
 	int i;
 	int size = 1;
@@ -106,6 +107,10 @@ static ssize_t color_calibrate_show(struct device *dev, struct device_attribute 
 		return -1;
 	}
 	chip = dev_get_drvdata(dev);
+	if(NULL == chip){
+		hwlog_err("[%s] input NULL!! \n", __func__);
+		return -1;
+	}
 
 	hwlog_info("[%s] in \n", __func__);
 	size = sizeof(color_sensor_output_para);
@@ -120,7 +125,7 @@ static ssize_t color_calibrate_store(struct device *dev, struct device_attribute
 {
 	color_sensor_input_para in_data;
 	bool state;
-	struct amsDriver_chip *chip;
+	struct colorDriver_chip *chip = NULL;
 
 	if(NULL == dev || NULL == attr || NULL == buf)
 	{
@@ -128,6 +133,10 @@ static ssize_t color_calibrate_store(struct device *dev, struct device_attribute
 		return -1;
 	}
 	chip = dev_get_drvdata(dev);
+	if(NULL == chip){
+		hwlog_err("[%s] input NULL!! \n", __func__);
+		return -1;
+	}
 
 	hwlog_info("[%s] color_sensor store in!! \n", __func__);
 
@@ -144,7 +153,7 @@ static ssize_t color_calibrate_store(struct device *dev, struct device_attribute
 static ssize_t color_enable_show(struct device *dev, struct device_attribute *attr,
 			      const char *buf)
 {
-	struct amsDriver_chip *chip;
+	struct colorDriver_chip *chip = NULL;
 	int state;
 
 	if(NULL == dev || NULL == attr || NULL == buf)
@@ -154,6 +163,11 @@ static ssize_t color_enable_show(struct device *dev, struct device_attribute *at
 	}
 
 	chip = dev_get_drvdata(dev);
+	if(NULL == chip){
+		hwlog_err("[%s] input NULL!! \n", __func__);
+		return -1;
+	}
+
 	chip->color_enable_show_state(chip, &state);
 
 	return snprintf(buf, ONE_SHOW_LEN, "%d\n", state);
@@ -162,8 +176,8 @@ static ssize_t color_enable_store(struct device *dev, struct device_attribute *a
 			      const char *buf, size_t size)
 {
 	color_sensor_input_para in_data;
-	struct amsDriver_chip *chip;
-	bool state;
+	struct colorDriver_chip *chip = NULL;
+	bool state = true;
 
 	if(NULL == dev || NULL == attr || NULL == buf)
 	{
@@ -172,6 +186,11 @@ static ssize_t color_enable_store(struct device *dev, struct device_attribute *a
 	}
 
 	chip = dev_get_drvdata(dev);
+	if(NULL == chip){
+		hwlog_err("[%s] input NULL!! \n", __func__);
+		return -1;
+	}
+
 	if (strtobool(buf, &state)) {
 		hwlog_err("[%s] Failed to strtobool enable state.\n", __func__);
 		return -EINVAL;
@@ -196,7 +215,7 @@ static ssize_t calibrate_timeout_show(struct device *dev,
 static ssize_t color_gain_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
-	struct amsDriver_chip *chip;
+	struct colorDriver_chip *chip = NULL;
 	int gain;
 
 	if(NULL == dev || NULL == attr || NULL == buf)
@@ -206,6 +225,11 @@ static ssize_t color_gain_show(struct device *dev,
 	}
 
 	chip = dev_get_drvdata(dev);
+	if(NULL == chip){
+		hwlog_err("[%s] input NULL!! \n", __func__);
+		return -1;
+	}
+
 	//gain = ams_tcs3430_getGain(chip->deviceCtx);
 	gain = chip->color_sensor_getGain(chip->deviceCtx);
 
@@ -215,7 +239,7 @@ static ssize_t color_gain_store(struct device *dev,
 				struct device_attribute *attr,
 				const char *buf, size_t size)
 {
-	struct amsDriver_chip *chip;
+	struct colorDriver_chip *chip = NULL;
 	unsigned long value = 0L;
 	int gain_value = 0;
 
@@ -226,6 +250,10 @@ static ssize_t color_gain_store(struct device *dev,
 	}
 
 	chip = dev_get_drvdata(dev);
+	if(NULL == chip){
+		hwlog_err("[%s] input NULL!! \n", __func__);
+		return -1;
+	}
 
 	if (strict_strtol(buf, 10, &value))
 		return -EINVAL;
@@ -255,7 +283,7 @@ static const struct attribute_group color_sensor_attr_groups[] = {
 	NULL,
 };
 
-int color_register(struct amsDriver_chip *chip)
+int color_register(struct colorDriver_chip *chip)
 {
 	if(NULL == chip)
 	{
@@ -273,11 +301,21 @@ int color_register(struct amsDriver_chip *chip)
 }
 EXPORT_SYMBOL_GPL(color_register);
 
-void color_unregister(struct amsDriver_chip *chip)
+void color_unregister(struct colorDriver_chip *chip)
 {
 	device_destroy(color_sensor_class, 0);
 }
 EXPORT_SYMBOL_GPL(color_unregister);
+
+int (*color_default_enable)(bool enable) = NULL;
+int color_sensor_enable(bool enable){
+	if(color_default_enable == NULL){
+		hwlog_err("ERR PARA\n");
+		return 0;
+	 }
+	return color_default_enable(enable);
+}
+EXPORT_SYMBOL_GPL(color_sensor_enable);
 
 static int color_sensor_init(void)
 {

@@ -343,6 +343,8 @@ struct psr_ctx_data {
 	uint16_t	valid_len;
 	uint16_t	reserved2;
 	void		*ac_state;
+	uint32_t	pkt_len;
+	uint8_t		reserved1[4];
 };
 
 struct psr_pkt_node {

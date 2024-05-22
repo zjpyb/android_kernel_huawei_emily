@@ -27,11 +27,14 @@
 #define REG_FLASH_FAULT_L	              0x0C
 
 #define STB_LV                                        0x80     //Flash mode trigger mode with strobe pin signal
+#define STR_MOD                                    0x40      // STR enable bit. 0 = software enable; 1 = hardware enable.
+#define STR_POL                                     0x20      // STR signal input active polarity. 0 = active low; 1 = active high.
 #define LED1_EN                                      0x10    //LED1 current source enable bit
 #define FLASH_MODE_CUR			        0x06    //Device mode setting bits flash mode
 #define TORCH_MODE_CUR		               0x04    //Device mode setting bits torch mode
 #define FS_SD                                          0x03    // Disable switching frequency stretching down from 1Mhz if VIN is close to VOUT
 #define FL_TIM                                         0xB0    // set Flash timer , 600ms
+#define LED_SD                                         0x08  // 0=reset LED_MOD and LED_EN to default value after flash or torch. 1= no reset.
 #define VBL_RUN                                      0x4F    // Low battery voltage setting, set 3.2v
 #define VBL_SD                                         0x1F   //Device disable when VIN is less than threshold set by VBL_RUN before flash
 #define LED_OTAD                                    0x80   //Adaptive thermal flash current control bit
@@ -40,6 +43,9 @@
 #define I_FL                                             0x18   //flash current:760.8mA
 #define I_TX                                             0x08   // I_TX:253.6mA   
 #define I_TOR                                           0x05   // torch current:158.5mA
+#define SW_FS                                           0x02   // switching frequency setting bits. 00=4MHZ, 01=3MHZ, 10=2MHZ, 11=1MHZ
+#define IL_PEAK                                        0x08   // inductor current limit setting bits. 00 = 1.9A, 01=2.8A, 10=3.6A,11 = 4.2A
+
 
 #define MP3331_FLASH_DEFAULT_CUR_LEV          24  //760mA
 #define MP3331_TORCH_DEFAULT_CUR_LEV         5    //158mA
@@ -194,19 +200,20 @@ static int hw_mp3331_exit(struct hw_flash_ctrl_t *flash_ctrl)
 	return 0;
 }
 
-static int hw_mp3331_flash_mode(struct hw_flash_ctrl_t *flash_ctrl, int data)
+static int hw_mp3331_flash_mode(struct hw_flash_ctrl_t *flash_ctrl, struct hw_flash_cfg_data* cdata)
 {
 	struct hw_flash_i2c_client *i2c_client;
 	struct hw_flash_i2c_fn_t *i2c_func;
 	struct hw_mp3331_private_data_t *pdata;
 	int current_level = 0;
 	int rc = 0;
+       unsigned char regval = 0;
 
-	cam_info("%s data=%d.\n", __func__, data);
-	if ((NULL == flash_ctrl) || (NULL == flash_ctrl->pdata) || (NULL == flash_ctrl->flash_i2c_client)) {
+	if ((NULL == flash_ctrl) || (NULL == flash_ctrl->pdata) || (NULL == flash_ctrl->flash_i2c_client) || (NULL == cdata)) {
 		cam_err("%s flash_ctrl is NULL.", __func__);
 		return -1;
 	}
+       cam_info("%s data=%d.\n", __func__, cdata->data);
 
 	i2c_client = flash_ctrl->flash_i2c_client;
 	i2c_func = flash_ctrl->flash_i2c_client->i2c_func_tbl;
@@ -217,11 +224,11 @@ static int hw_mp3331_flash_mode(struct hw_flash_ctrl_t *flash_ctrl, int data)
 	}
 	else
 	{
-		if( data > MP3331_FLASH_MAX_CUR_LEV * MP3331_CUR_STEP_LEV / 10){
+		if( cdata->data > MP3331_FLASH_MAX_CUR_LEV * MP3331_CUR_STEP_LEV / 10){
 		      current_level = MP3331_FLASH_DEFAULT_CUR_LEV;
 		}
 		else{
-		      current_level = hw_mp3331_find_match_current(data);
+		      current_level = hw_mp3331_find_match_current(cdata->data);
 		      if(current_level < 0){
                           current_level = MP3331_FLASH_DEFAULT_CUR_LEV;
 		      }
@@ -240,8 +247,14 @@ static int hw_mp3331_flash_mode(struct hw_flash_ctrl_t *flash_ctrl, int data)
 
 	loge_if_ret(i2c_func->i2c_write(i2c_client, REG_MODE_SET, STB_LV|FLASH_MODE_CUR) < 0);
 	loge_if_ret(i2c_func->i2c_write(i2c_client, REG_LED_FLASH_CUR_SET, current_level) < 0);
-	loge_if_ret(i2c_func->i2c_write(i2c_client, REG_FLASH_TIMER_SET, FL_TIM) < 0);
-	loge_if_ret(i2c_func->i2c_write(i2c_client, REG_MODE_SET, STB_LV|FLASH_MODE_CUR|LED1_EN) < 0);
+	loge_if_ret(i2c_func->i2c_write(i2c_client, REG_FLASH_TIMER_SET, FL_TIM|LED_SD|SW_FS) < 0);
+
+       regval = STB_LV|FLASH_MODE_CUR|LED1_EN;
+       if(FLASH_STROBE_MODE == cdata->mode){
+           regval = STB_LV|STR_MOD |STR_POL |FLASH_MODE_CUR|LED1_EN;
+       }
+
+       loge_if_ret(i2c_func->i2c_write(i2c_client, REG_MODE_SET, regval) < 0);
 
 	return rc;
 }
@@ -309,8 +322,9 @@ static int hw_mp3331_on(struct hw_flash_ctrl_t *flash_ctrl, void *data)
 
 	cam_info("%s mode=%d, level=%d.\n", __func__, cdata->mode, cdata->data);
 	mutex_lock(flash_ctrl->hw_flash_mutex);
-	if (FLASH_MODE == cdata->mode) {
-		rc = hw_mp3331_flash_mode(flash_ctrl, cdata->data);
+	if ((FLASH_MODE == cdata->mode)|| (FLASH_STROBE_MODE == cdata->mode)) // strobe is a trigger method of FLASH mode
+      {
+		rc = hw_mp3331_flash_mode(flash_ctrl, cdata);
 	} else {
 		rc = hw_mp3331_torch_mode(flash_ctrl, cdata->data);
 	}
@@ -326,6 +340,8 @@ static int hw_mp3331_off(struct hw_flash_ctrl_t *flash_ctrl)
 	struct hw_flash_i2c_client *i2c_client;
 	struct hw_flash_i2c_fn_t *i2c_func;
 	int rc = 0;
+      unsigned char fault_act = 0;
+      unsigned char fault_min = 0;
 
 	cam_debug("%s ernter.\n", __func__);
 	if ((NULL == flash_ctrl) || (NULL == flash_ctrl->flash_i2c_client) || (NULL == flash_ctrl->flash_i2c_client->i2c_func_tbl)) {
@@ -338,6 +354,10 @@ static int hw_mp3331_off(struct hw_flash_ctrl_t *flash_ctrl)
 	flash_ctrl->state.data = 0;
 	i2c_client = flash_ctrl->flash_i2c_client;
 	i2c_func = flash_ctrl->flash_i2c_client->i2c_func_tbl;
+
+       i2c_func->i2c_read(i2c_client, 0x08, &fault_act);
+       i2c_func->i2c_read(i2c_client, 0x09, &fault_min);
+       cam_info("%s fault_act=%d,fault_min=%d.", __func__,fault_act,fault_min);
 
 	/* clear error flag,resume chip */
 	rc = hw_mp3331_clear_err_and_unlock(flash_ctrl);
@@ -425,7 +445,7 @@ static int hw_mp3331_param_check(char *buf, unsigned long *param,
 	{
 		if (token != NULL)
 		{
-			if ((token[1] == 'x') || (token[1] == 'X')) {
+			if ((strlen(token) > 1)&& ((token[1] == 'x') || (token[1] == 'X'))) {
 				base = 16;
 			} else {
 				base = 10;
@@ -599,8 +619,8 @@ static int hw_mp3331_match(struct hw_flash_ctrl_t *flash_ctrl)
 	}
 
 	loge_if_ret(i2c_func->i2c_write(i2c_client, REG_MODE_SET, STB_LV) < 0);
-	loge_if_ret(i2c_func->i2c_write(i2c_client, REG_PEAK_CUR_SET, FS_SD) < 0);
-	loge_if_ret(i2c_func->i2c_write(i2c_client, REG_FLASH_TIMER_SET, FL_TIM) < 0);
+	loge_if_ret(i2c_func->i2c_write(i2c_client, REG_PEAK_CUR_SET, FS_SD|IL_PEAK) < 0);
+	loge_if_ret(i2c_func->i2c_write(i2c_client, REG_FLASH_TIMER_SET, FL_TIM|SW_FS) < 0);
 	loge_if_ret(i2c_func->i2c_write(i2c_client, REG_LOW_VLO_SET, VBL_RUN|VBL_SD) < 0);
 	loge_if_ret(i2c_func->i2c_write(i2c_client, REG_INDICATOR_SET, LED_OTAD|TUP_I|VTH_PAS) < 0);
 	loge_if_ret(i2c_func->i2c_write(i2c_client, REG_LED_FLASH_CUR_SET, I_FL) < 0);

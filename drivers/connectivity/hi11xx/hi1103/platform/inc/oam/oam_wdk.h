@@ -237,12 +237,15 @@ typedef enum
     OAM_FILE_ID_HMAC_11k_H              = 1413,
 #endif
 
+    OAM_FILE_ID_HMAC_11V_C              = 1414,
+    OAM_FILE_ID_HMAC_11V_H              = 1415,
+
 #ifdef _PRE_WLAN_FEATURE_CAR
-    OAM_FILE_ID_HMAC_CAR_C              = 1414,
-    OAM_FILE_ID_HMAC_CAR_H              = 1415,
+    OAM_FILE_ID_HMAC_CAR_C              = 1416,
+    OAM_FILE_ID_HMAC_CAR_H              = 1417,
 #endif
-    OAM_FILE_ID_HMAC_SINGLE_PROXYSTA_C  = 1416,
-    OAM_FILE_ID_HMAC_SINGLE_PROXYSTA_H  = 1417,
+    OAM_FILE_ID_HMAC_SINGLE_PROXYSTA_C  = 1418,
+    OAM_FILE_ID_HMAC_SINGLE_PROXYSTA_H  = 1419,
 
     /* DMAC */
     OAM_FILE_ID_DMAC_CSA_STA_C          = 1440,
@@ -255,7 +258,7 @@ typedef enum
     OAM_FILE_ID_DMAC_POWER_H            = 1445,
     OAM_FILE_ID_DMAC_BSD_C              = 1446,
     OAM_FILE_ID_DMAC_BSD_H              = 1447,
-#ifdef _PRE_WLAN_FEATURE_DFS_OPTIMIZE
+#if defined (_PRE_WLAN_FEATURE_DFS_OPTIMIZE) || defined (_PRE_WLAN_FEATURE_DFS_ENABLE)
     OAM_FILE_ID_DMAC_RADAR_C            = 1448,
     OAM_FILE_ID_DMAC_RADAR_H            = 1449,
 #endif
@@ -705,7 +708,7 @@ typedef enum
 
 
     /* DMAC rom»¯ÎÄ¼þ */
-#ifdef _PRE_WLAN_FEATURE_DFS_OPTIMIZE
+#if defined (_PRE_WLAN_FEATURE_DFS_OPTIMIZE) || defined (_PRE_WLAN_FEATURE_DFS_ENABLE)
     OAM_FILE_ID_DMAC_RADAR_ROM_C            = 2702,
 #endif
     OAM_FILE_ID_DMAC_MAIN_ROM_C             = 2703,
@@ -800,10 +803,13 @@ typedef enum
     OAM_FILE_ID_ALG_AUTORATE_ROM_C          = 3002,
 
 #ifdef _PRE_WLAN_FEATURE_QOS_ENHANCE
-        OAM_FILE_ID_DMAC_TX_QOS_ENHANCE_C      = 3003,
-        OAM_FILE_ID_DMAC_TX_QOS_ENHANCE_H      = 3004,
+    OAM_FILE_ID_DMAC_TX_QOS_ENHANCE_C       = 3003,
+    OAM_FILE_ID_DMAC_TX_QOS_ENHANCE_H       = 3004,
 #endif
-
+#ifdef _PRE_WLAN_FEATURE_APF
+    OAM_FILE_ID_DMAC_APF_C                  = 3005,
+    OAM_FILE_ID_DMAC_APF_H                  = 3006,
+#endif
     OAM_FILE_ID_BUTT
 }oam_file_id_enum;
 typedef oal_uint32 oam_file_id_enum_uint32;

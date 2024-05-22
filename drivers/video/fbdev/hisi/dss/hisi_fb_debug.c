@@ -12,7 +12,8 @@
 */
 
 #include "hisi_fb.h"
-
+#include "lcdkit_fb_util.h"
+#include "lcdkit_panel.h"
 /*
 ** for debug, S_IRUGO
 ** /sys/module/hisifb/parameters
@@ -40,9 +41,9 @@ int g_debug_ovl_online_composer_hold = 0;
 
 int g_debug_ovl_online_composer_return = 0;
 
-int g_debug_ovl_online_composer_timediff = 0;
+int g_debug_ovl_online_composer_timediff = 0x0;
 
-int g_debug_ovl_online_composer_time_threshold = 6000;  //us
+int g_debug_ovl_online_composer_time_threshold = 60000;  //us
 
 int g_debug_ovl_offline_composer = 0;
 
@@ -72,9 +73,9 @@ int g_dump_cmdlist_content = 0;
 
 int g_enable_ovl_cmdlist_online = 1;
 
-int g_video_idle_l3cache_ctrl = 0;
+int g_enable_video_idle_l3cache = 1;
 
-int g_enable_video_idle = 0;
+int g_debug_ovl_online_wb_count = 0;
 
 int g_smmu_global_bypass = 0;
 
@@ -94,6 +95,8 @@ int g_debug_ovl_credit_step = 0;
 
 int g_debug_layerbuf_sync = 0;
 
+int g_debug_offline_layerbuf_sync = 0;
+
 int g_debug_fence_timeline = 0;
 
 int g_enable_dss_idle = 1;
@@ -111,13 +114,13 @@ uint32_t g_mmbuf_addr_test = 0;
 uint32_t g_dump_sensorhub_aod_hwlock = 0;
 /* lint -restore */
 
-
 //lint -e305, -e514, -e84, -e21, -e846, -e778, -e866, -e708
 int g_dss_effect_sharpness1D_en = 1;
 
 int g_dss_effect_sharpness2D_en = 0;
 
 int g_dss_effect_acm_ce_en = 1;
+
 //lint +e305, +e514, +e84, +e21, +e846, +e778, +e866, +e708
 
 
@@ -142,6 +145,12 @@ void dss_underflow_debug_func(struct work_struct *work)
 	s64 underflow_msecs = 0;
 	static bool init_underflow_timestamp = false;
 	int i;
+	u32 dpp_dbg_value = 0;
+
+	if (NULL == work ) {
+		HISI_FB_ERR("work is NULL");
+		return;
+	}
 
 	if (!init_underflow_timestamp) {
 		underflow_timestamp[underflow_index] = ktime_get();
@@ -163,13 +172,14 @@ void dss_underflow_debug_func(struct work_struct *work)
 		HISI_FB_ERR("Get ddr clk failed");
 	}
 
-	if (work) {
-		hisifd = container_of(work, struct hisi_fb_data_type, dss_underflow_debug_work);
-		if (g_underflow_stop_perf_stat) {
-			dumpDssOverlay(hisifd, &hisifd->ov_req);
-		}
-	} else {
-		HISI_FB_ERR("Get hisifd failed");
+	hisifd = container_of(work, struct hisi_fb_data_type, dss_underflow_debug_work);
+	if (hisifd == NULL) {
+		HISI_FB_ERR("hisifd is NULL");
+		return;
+	}
+
+	if (g_underflow_stop_perf_stat) {
+		dumpDssOverlay(hisifd, &hisifd->ov_req);
 	}
 
 	HISI_FB_INFO("Current ddr is %lu\n", curr_ddr);
@@ -185,7 +195,14 @@ void dss_underflow_debug_func(struct work_struct *work)
 
 	if (lcd_dclient) {
 		if (!dsm_client_ocuppy(lcd_dclient)) {
-			dsm_client_record(lcd_dclient, "ldi underflow!\n");
+			if (hisifd->index == PRIMARY_PANEL_IDX) {
+				dpp_dbg_value = inp32(hisifd->dss_base + DSS_DPP_OFFSET + DPP_DBG_CNT);
+				dsm_client_record(lcd_dclient,"ldi underflow, curr_ddr = %u, frame_no = %d, dpp_dbg = 0x%x!\n",
+					curr_ddr, hisifd->ov_req.frame_no, dpp_dbg_value);
+			}
+			else {
+				dsm_client_record(lcd_dclient, "ldi underflow!\n");
+			}
 			dsm_client_notify(lcd_dclient, DSM_LCD_LDI_UNDERFLOW_NO);
 		}
 	}
@@ -193,6 +210,7 @@ void dss_underflow_debug_func(struct work_struct *work)
 
 void hisifb_debug_register(struct platform_device *pdev)
 {
+	struct lcdkit_panel_data *panel;
 	struct hisi_fb_data_type *hisifd = NULL;
 
 	if (NULL == pdev) {
@@ -201,19 +219,27 @@ void hisifb_debug_register(struct platform_device *pdev)
 	}
 	hisifd = platform_get_drvdata(pdev);
 	if (NULL == hisifd) {
-		HISI_FB_ERR("hisifd is NULL");
+		dev_err(&pdev->dev, "hisifd is NULL");
 		return;
 	}
 
 	// dsm lcd
 	if(!lcd_dclient) {
+        if (get_lcdkit_support() && PRIMARY_PANEL_IDX == hisifd->index) {
+            panel = lcdkit_get_panel_info();
+            if (panel && panel->panel_infos.panel_model) {
+                dsm_lcd.module_name = panel->panel_infos.panel_model;
+            }else if (panel && panel->panel_infos.panel_name) {
+                dsm_lcd.module_name = panel->panel_infos.panel_name;
+            }
+        }
 		lcd_dclient = dsm_register_client(&dsm_lcd);
 	}
 
 	// dss underflow debug
 	hisifd->dss_underflow_debug_workqueue = create_singlethread_workqueue("dss_underflow_debug");
 	if (!hisifd->dss_underflow_debug_workqueue) {
-		HISI_FB_ERR("fb%d, create dss underflow debug workqueue failed!\n", hisifd->index);
+		dev_err(&pdev->dev, "fb%d, create dss underflow debug workqueue failed!\n", hisifd->index);
 	} else {
 		INIT_WORK(&hisifd->dss_underflow_debug_work, dss_underflow_debug_func);
 	}
@@ -229,7 +255,7 @@ void hisifb_debug_unregister(struct platform_device *pdev)
 	}
 	hisifd = platform_get_drvdata(pdev);
 	if (NULL == hisifd) {
-		HISI_FB_ERR("hisifd is NULL");
+		dev_err(&pdev->dev, "hisifd is NULL");
 		return;
 	}
 }

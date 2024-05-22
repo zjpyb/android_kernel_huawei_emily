@@ -6,7 +6,6 @@
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
  */
-/*lint --e{750}*/
 #include "dw_mmc_hisi.h"
 
 #include <linux/bootdevice.h>
@@ -198,7 +197,7 @@ static int sd_reset_proc_show(struct seq_file *m, void *v)
 	return 0;
 }
 
-static ssize_t sd_modul_set_proc_write(struct file *p_file, const char __user * userbuf, size_t count, loff_t * ppos)/*lint !e40*/
+static ssize_t sd_modul_set_proc_write(struct file *p_file, const char __user * userbuf, size_t count, loff_t * ppos)
 {
 	char buf[8] = {0};
 
@@ -226,7 +225,7 @@ static ssize_t sd_modul_set_proc_write(struct file *p_file, const char __user * 
 	return (ssize_t)count;
 }
 
-static ssize_t sd_test_reset_proc_write(struct file *p_file, const char __user * userbuf, size_t count, loff_t * ppos)/*lint !e40*/
+static ssize_t sd_test_reset_proc_write(struct file *p_file, const char __user * userbuf, size_t count, loff_t * ppos)
 {
 	char buf[10] = {0};
 
@@ -259,7 +258,7 @@ static const struct file_operations sd_modul_set_proc_fops = {
 	.open		= sd_modul_proc_open,
 	.read		= seq_read,
 	.write          = sd_modul_set_proc_write,
-	.llseek		= seq_lseek,/*lint !e64 !e65*/
+	.llseek		= seq_lseek,
 	.release	= single_release,
 };
 
@@ -267,7 +266,7 @@ static const struct file_operations sd_test_reset_proc_fops = {
 	.open           = sd_reset_proc_open,
 	.read           = seq_read,
 	.write          = sd_test_reset_proc_write,
-	.llseek         = seq_lseek,/*lint !e64 !e65*/
+	.llseek         = seq_lseek,
 	.release        = single_release,
 };
 

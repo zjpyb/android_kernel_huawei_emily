@@ -6,3 +6,4 @@ endif
 ccflags-$(CONFIG_IVP_IVPV200) += -Idrivers/hisi/ivp/
 
 obj-$(CONFIG_IVP_IVPV200) += ivp_platform.o
+obj-$(CONFIG_IVP_IVPV200) += ivp_atf_subsys.o

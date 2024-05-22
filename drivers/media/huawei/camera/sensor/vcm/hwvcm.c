@@ -216,13 +216,8 @@ int hw_vcm_register(struct platform_device *pdev,
 	subdev->flags |= V4L2_SUBDEV_FL_HAS_DEVNODE;
 	v4l2_set_subdevdata(subdev, pdev);
 
-	media_entity_init(&subdev->entity, 0, NULL, 0);
-	subdev->entity.type = MEDIA_ENT_T_V4L2_SUBDEV;
-	subdev->entity.group_id = hw_vcm_info->index ? HWCAM_SUBDEV_VCM1
-			: HWCAM_SUBDEV_VCM0;
-	subdev->entity.name = subdev->name;
-
-	hwcam_cfgdev_register_subdev(subdev);
+	init_subdev_media_entity(subdev,hw_vcm_info->index ? HWCAM_SUBDEV_VCM1 : HWCAM_SUBDEV_VCM0);
+	hwcam_cfgdev_register_subdev(subdev,hw_vcm_info->index ? HWCAM_SUBDEV_VCM1 : HWCAM_SUBDEV_VCM0);
 	hw_vcm->intf = intf;
 	hw_vcm->vcm_info = hw_vcm_info;
 	hw_vcm->pdev = pdev;

@@ -38,7 +38,7 @@ oal_uint32  oam_alarm_get_switch(
         return OAL_ERR_CODE_ARRAY_OVERFLOW;
     }
 
-    *pen_switch_type = g_st_oam_mng_ctx.ast_alarm_ctx[uc_vap_id].en_alarm_switch;
+    *pen_switch_type = g_st_oam_mng_ctx_etc.ast_alarm_ctx[uc_vap_id].en_alarm_switch;
 
     return OAL_SUCC;
 }
@@ -58,7 +58,7 @@ oal_uint32  oam_alarm_set_switch(
         return OAL_ERR_CODE_ARRAY_OVERFLOW;
     }
 
-    g_st_oam_mng_ctx.ast_alarm_ctx[uc_vap_id].en_alarm_switch = en_switch_type;
+    g_st_oam_mng_ctx_etc.ast_alarm_ctx[uc_vap_id].en_alarm_switch = en_switch_type;
 
     return OAL_SUCC;
 }
@@ -120,7 +120,7 @@ OAL_STATIC oal_uint32  oam_alarm_print_to_std(
         return ul_rslt;
     }
 
-    ul_rslt = oam_print_to_console(ac_output_data);
+    ul_rslt = oam_print_to_console_etc(ac_output_data);
     if (OAL_SUCC != ul_rslt)
     {
         return ul_rslt;
@@ -152,7 +152,7 @@ OAL_STATIC oal_uint32  oam_alarm_print_to_file(
         return ul_rslt;
     }
 
-    ul_rslt = oam_print_to_file(ac_output_data);
+    ul_rslt = oam_print_to_file_etc(ac_output_data);
     if (OAL_SUCC != ul_rslt)
     {
         return ul_rslt;
@@ -184,7 +184,7 @@ OAL_STATIC oal_uint32  oam_alarm_print_to_sdt(
         return ul_rslt;
     }
 
-    ul_rslt = oam_upload_log_to_sdt(ac_output_data);
+    ul_rslt = oam_upload_log_to_sdt_etc(ac_output_data);
 
     if (OAL_SUCC != ul_rslt)
     {
@@ -215,12 +215,12 @@ oal_uint32  oam_alarm_report(
     }
 
     /* 对应VAP配置为不上报ALARM模式 */
-    if (OAL_SWITCH_OFF == g_st_oam_mng_ctx.ast_alarm_ctx[uc_vap_id].en_alarm_switch)
+    if (OAL_SWITCH_OFF == g_st_oam_mng_ctx_etc.ast_alarm_ctx[uc_vap_id].en_alarm_switch)
     {
         return OAL_SUCC;
     }
 
-    switch (g_st_oam_mng_ctx.en_output_type)
+    switch (g_st_oam_mng_ctx_etc.en_output_type)
     {
         /* 输出至控制台 */
         case OAM_OUTPUT_TYPE_CONSOLE:

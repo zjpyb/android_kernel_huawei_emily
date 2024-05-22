@@ -29,7 +29,11 @@
 
 #define INVALID_TEMP_VAL                (-999)
 #define INVALID_VOLTAGE_VAL             (-999)
-
+#define BATTERY_NORMAL_CUTOFF_VOL 3150
+#define DEFAULT_RPCB 10000 /*uohm*/
+#define POLAR_CALC_INTERVAL (200) /*ms*/
+ /* ma = ua/1000 = uas/s/1000 = uah*3600/s/1000 = uah*18/(s*5) */
+#define CC_UAS2MA(cc,time) (((cc) * 18) / ((time) * 5))
 enum HISI_COULOMETER_TYPE {
     COUL_HISI = 0,
     COUL_BQ27510,
@@ -89,6 +93,30 @@ struct coul_core_info_sh {
 	struct battery_aging_safe_policy basp_policy[BASP_LEVEL_CNT];
 };
 
+struct polar_calc_info {
+    long vol;
+    int curr_5s;
+    int curr_peak;
+    int ocv;
+    int ocv_old;
+    int ori_vol;
+    int ori_cur;
+    int err_a;
+    int sr_polar_vol1;
+    int sr_polar_vol0;
+    int sr_polar_err_a;
+    int polar_ocv;
+    int polar_ocv_time;
+};
+
+struct bat_ocv_info  {
+	unsigned int eco_vbat_reg;
+	unsigned int eco_ibat_reg;
+	int last_sample_time;
+    int now_sample_time;
+    s64 eco_cc_reg;
+};
+
 struct hisi_coul_ops {
     int (*is_coul_ready)(void);
     int (*is_battery_exist)(void);
@@ -98,6 +126,7 @@ struct hisi_coul_ops {
     int (*battery_voltage)(void);
     int (*battery_voltage_uv)(void);
     int (*battery_current)(void);
+    int (*battery_resistance)(void);
     int (*fifo_avg_current)(void);
     int (*battery_current_avg)(void);
     int (*battery_unfiltered_capacity)(void);
@@ -114,6 +143,7 @@ struct hisi_coul_ops {
     int (*battery_technology)(void);
     struct chrg_para_lut *(*battery_charge_params)(void);
     int (*battery_vbat_max)(void);
+    int (*battery_ifull)(void);
     int (*charger_event_rcv)(unsigned int);
     int (*battery_cycle_count)(void);
     int (*get_battery_limit_fcc)(void);
@@ -125,6 +155,18 @@ struct hisi_coul_ops {
     int (*get_soc_vary_flag)(int monitor_flag, int *deta_soc);
     int (*coul_low_temp_opt)(void);
     int (*battery_cc)(void);
+    int (*battery_fifo_curr)(unsigned int);
+    int (*battery_fifo_depth)(void);
+    int (*battery_ufcapacity_tenth)(void);
+    int (*convert_regval2ua)(unsigned int reg_val);
+    int (*convert_regval2uv)(unsigned int reg_val);
+    int (*convert_regval2temp)(unsigned int reg_val);
+    int (*convert_mv2regval)(int vol_mv);
+    int (*cal_uah_by_ocv)(int ocv_uv, int *ocv_soc_uAh);
+    int (*convert_temp_to_adc)(int temp);
+    int (*get_coul_calibration_status)(void);
+    int (*battery_removed_before_boot)(void);
+    int (*get_qmax)(void);
 };
 
 
@@ -138,6 +180,8 @@ extern char* hisi_battery_brand(void);
 extern int hisi_battery_id_voltage(void);
 extern int hisi_battery_voltage_uv(void);
 extern int hisi_battery_current(void);
+extern int hisi_battery_resistance(void);
+extern int hisi_get_coul_calibration_status(void);
 extern int hisi_coul_fifo_avg_current(void);
 extern int hisi_battery_current_avg(void);
 extern int hisi_battery_unfiltered_capacity(void);
@@ -152,6 +196,7 @@ extern int hisi_battery_health(void);
 extern int hisi_battery_capacity_level(void);
 extern int hisi_battery_technology(void);
 extern struct chrg_para_lut *hisi_battery_charge_params(void);
+extern int hisi_battery_ifull(void);
 extern int hisi_battery_vbat_max(void);
 extern int hisi_battery_cycle_count(void);
 extern int hisi_battery_get_limit_fcc(void);
@@ -166,5 +211,17 @@ extern int hisi_battery_soc_vary_flag(int monitor_flag, int *deta_soc);
 extern int hisi_battery_temperature_for_charger(void);
 extern int hisi_coul_low_temp_opt(void);
 extern int hisi_battery_cc(void);
+extern int hisi_coul_battery_fifo_depth(void);
+extern int hisi_coul_battery_ufcapacity_tenth(void);
+extern int hisi_coul_battery_fifo_curr(unsigned int index);
+extern int hisi_coul_convert_regval2ua(unsigned int reg_val);
+extern int hisi_coul_convert_regval2uv(unsigned int reg_val);
+extern int hisi_coul_convert_regval2temp(unsigned int reg_val);
+extern int hisi_coul_convert_mv2regval(int vol_mv);
+extern int hisi_coul_cal_uah_by_ocv(int ocv_uv, int *ocv_soc_uAh);
+extern int hisi_coul_convert_temp_to_adc(int temp);
+extern int hisi_battery_cc_uah(void);
+extern int hisi_battery_removed_before_boot(void);
+extern int hisi_battery_get_qmax(void);
 
 #endif

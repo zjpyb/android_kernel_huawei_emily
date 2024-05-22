@@ -171,6 +171,24 @@ void mipi_dsi_lread(uint32_t *out, char __iomem *dsi_base)
 	/* do something here*/
 }
 
+int mipi_dsi_cmd_is_read(struct dsi_cmd_desc *cm)
+{
+	int ret = 0;
+
+	switch (DSI_HDR_DTYPE(cm->dtype)) {
+		case DTYPE_GEN_READ:
+		case DTYPE_GEN_READ1:
+		case DTYPE_GEN_READ2:
+		case DTYPE_DCS_READ:
+			ret = 1;
+			break;
+		default:
+			ret = 0;
+			break;
+	}
+	return ret;
+}
+
 int mipi_dsi_lread_reg(uint32_t *out, struct dsi_cmd_desc *cm, uint32_t len, char *dsi_base)
 {
 	int ret = 0;
@@ -186,7 +204,7 @@ int mipi_dsi_lread_reg(uint32_t *out, struct dsi_cmd_desc *cm, uint32_t len, cha
 		return -1;
 	}
 
-	if (cm->dtype == DTYPE_GEN_READ || cm->dtype == DTYPE_GEN_READ1 || cm->dtype == DTYPE_GEN_READ2 || cm->dtype == DTYPE_DCS_READ) {
+	if (mipi_dsi_cmd_is_read(cm)) {
 		packet_size_cmd_set.dtype = DTYPE_MAX_PKTSIZE;
 		packet_size_cmd_set.vc = 0;
 		packet_size_cmd_set.dlen = len;
@@ -312,7 +330,9 @@ static void mipi_dsi_sread_request(struct dsi_cmd_desc *cm, char __iomem *dsi_ba
 	hdr |= DSI_HDR_VC(cm->vc);
 	hdr |= DSI_HDR_DATA1(cm->payload[0]);
 	hdr |= DSI_HDR_DATA2(0);
-	set_reg(dsi_base + MIPIDSI_GEN_HDR_OFFSET, hdr, 24, 0);
+	/*used for low power cmds trans under video mode*/
+	hdr |= cm->dtype & GEN_VID_LP_CMD;
+	set_reg(dsi_base + MIPIDSI_GEN_HDR_OFFSET, hdr, 25, 0);
 }
 
 static int mipi_dsi_read_add(uint32_t *out, struct dsi_cmd_desc *cm, char __iomem *dsi_base)
@@ -332,7 +352,7 @@ static int mipi_dsi_read_add(uint32_t *out, struct dsi_cmd_desc *cm, char __iome
 		return -EINVAL;
 	}
 
-	if (cm->dtype == DTYPE_DCS_READ) {
+	if (DSI_HDR_DTYPE(cm->dtype) == DTYPE_DCS_READ) {
 		mipi_dsi_sread_request(cm, dsi_base);
 
 		if (!mipi_dsi_read(out, dsi_base)) {
@@ -364,7 +384,8 @@ static int mipi_dsi_read_add(uint32_t *out, struct dsi_cmd_desc *cm, char __iome
 			return -1;
 		}
 		/*send read cmd to fifo*/
-		set_reg(dsi_base + MIPIDSI_GEN_HDR_OFFSET, ((cm->payload[0] << 8) | cm->dtype), 24, 0);
+		/*used for low power cmds trans under video mode*/
+		set_reg(dsi_base + MIPIDSI_GEN_HDR_OFFSET, ((cm->payload[0] << 8) | (cm->dtype & GEN_VID_LP_CMD)), 25, 0);
 
 		is_timeout = 1;
 		/*wait dsi read data*/

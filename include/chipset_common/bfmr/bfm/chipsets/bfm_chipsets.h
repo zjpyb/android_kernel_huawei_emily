@@ -148,6 +148,7 @@ typedef struct bfm_process_bootfail_param
 } bfm_process_bootfail_param_t;
 
 typedef int (*bfmr_capture_and_save_bootfail_log)(bfm_process_bootfail_param_t *param);
+typedef int (*bfmr_process_ocp_excp)(bfmr_hardware_fault_type_e fault_type, ocp_excp_info_t *pexcp_info);
 
 typedef struct
 {
@@ -156,8 +157,22 @@ typedef struct
 
 typedef struct
 {
+    bfmr_process_ocp_excp process_ocp_excp;
+    bfm_ocp_excp_info_t ocp_excp_info[10];
+} bfm_process_ocp_excp_param_t;
+
+typedef struct
+{
     bfm_bootfail_log_saving_param_t log_saving_param;
+    bfmr_process_ocp_excp process_ocp_excp;
 } bfm_chipsets_init_param_t;
+
+typedef struct bfm_ocp_boot_fail_test_param
+{
+    int sleep_time; /* ms */
+    int ldo_count; /* the total count of ldos to be test, such as 3 */
+    int ldo_initial_idx; /* the beginning idx of the ldo, such as 21 */
+} bfm_ocp_boot_fail_test_param_t;
 
 
 /*----export macroes-----------------------------------------------------------------*/
@@ -335,15 +350,28 @@ unsigned int bfm_get_dfx_log_length(void);
 */
 void bfmr_copy_data_from_dfx_to_bfmr_tmp_buffer(void);
 int bfm_get_kmsg_log_header_size(void);
-bool bfm_is_beta_version(void);
-int bfm_chipsets_init(bfm_chipsets_init_param_t *param);
-
 char* bfm_get_raw_part_name(void);
 int bfm_get_raw_part_offset(void);
 void bfmr_alloc_and_init_raw_log_info(bfm_process_bootfail_param_t *pparam, bfmr_log_dst_t *pdst);
 void bfmr_save_and_free_raw_log_info(bfm_process_bootfail_param_t *pparam);
 void bfmr_update_raw_log_info(bfmr_log_src_t *psrc, bfmr_log_dst_t *pdst, unsigned int bytes_read);
 unsigned int bfmr_capture_log_from_src_file(char *buf, unsigned int buf_len, char *src_log_path);
+
+/*
+* param must be the type of bfm_ocp_boot_fail_test_param_t
+* usage:
+* bfm_ocp_boot_fail_test_param_t *ptest_param = (bfm_ocp_boot_fail_test_param_t *)vmalloc(sizeof(bfm_ocp_boot_fail_test_param_t));
+* if (NULL != ptest_param)
+* {
+*     ptest_param->ldo_count = 3;
+*     ptest_param->ldo_initial_idx = 21;
+*     ptest_param->sleep_time = 45000;
+*     bfm_process_ocp_boot_fail_test((void *)ptest_param);
+*     vfree(ptest_param);
+* }
+*/
+int bfm_process_ocp_boot_fail_test(void *param);
+int bfm_chipsets_init(bfm_chipsets_init_param_t *param);
 
 #ifdef __cplusplus
 }

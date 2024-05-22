@@ -171,38 +171,38 @@ OAL_STATIC OAL_INLINE oal_void oal_sdio_release_host(struct oal_sdio *hi_sdio)
 
 
 
-oal_uint32 oal_sdio_get_large_pkt_free_cnt(struct oal_sdio *hi_sdio);
+oal_uint32 oal_sdio_get_large_pkt_free_cnt_etc(struct oal_sdio *hi_sdio);
 
-oal_void oal_netbuf_list_hex_dump(oal_netbuf_head_stru* head);
-oal_void oal_netbuf_hex_dump(oal_netbuf_stru* netbuf);
+oal_void oal_netbuf_list_hex_dump_etc(oal_netbuf_head_stru* head);
+oal_void oal_netbuf_hex_dump_etc(oal_netbuf_stru* netbuf);
 extern oal_int32 oal_wifi_platform_load_sdio(oal_void);
 extern oal_void  oal_wifi_platform_unload_sdio(oal_void);
 
 #ifdef CONFIG_MMC
 oal_void oal_sdio_info_show(struct oal_sdio *hi_sdio);
-oal_void oal_netbuf_list_hex_dump(oal_netbuf_head_stru* head);
-oal_void oal_netbuf_hex_dump(oal_netbuf_stru* netbuf);
-oal_int32 oal_sdio_build_rx_netbuf_list(struct oal_sdio *hi_sdio,
+oal_void oal_netbuf_list_hex_dump_etc(oal_netbuf_head_stru* head);
+oal_void oal_netbuf_hex_dump_etc(oal_netbuf_stru* netbuf);
+oal_int32 oal_sdio_build_rx_netbuf_list_etc(struct oal_sdio *hi_sdio,
                                              oal_netbuf_head_stru   * head);
 oal_int32 oal_sdio_func_probe(struct oal_sdio* hi_sdio);
-oal_void oal_sdio_func_remove(struct oal_sdio* hi_sdio);
+oal_void oal_sdio_func_remove_etc(struct oal_sdio* hi_sdio);
 
-oal_void  oal_sdio_credit_update_cb_register(struct oal_sdio *hi_sdio,hisdio_rx cb);
+oal_void  oal_sdio_credit_update_cb_register_etc(struct oal_sdio *hi_sdio,hisdio_rx cb);
 oal_int32 oal_sdio_extend_buf_get(struct oal_sdio *hi_sdio);
-extern oal_int32 oal_sdio_transfer_tx(struct oal_sdio *hi_sdio, oal_netbuf_stru* netbuf);
+extern oal_int32 oal_sdio_transfer_tx_etc(struct oal_sdio *hi_sdio, oal_netbuf_stru* netbuf);
 
-oal_int32 oal_sdio_transfer_netbuf_list(struct oal_sdio *hi_sdio,
+oal_int32 oal_sdio_transfer_netbuf_list_etc(struct oal_sdio *hi_sdio,
                                       oal_netbuf_head_stru * head,
                                       oal_int32 rw);
 
-extern struct oal_sdio*  oal_sdio_init_module(oal_void);
-extern oal_void  oal_sdio_exit_module(struct oal_sdio* hi_sdio);
+extern struct oal_sdio*  oal_sdio_init_module_etc(oal_void);
+extern oal_void  oal_sdio_exit_module_etc(struct oal_sdio* hi_sdio);
 
-oal_int32 oal_sdio_send_msg(hcc_bus* pst_bus, oal_uint32 val);
+oal_int32 oal_sdio_send_msg_etc(hcc_bus* pst_bus, oal_uint32 val);
 
 //extern struct oal_sdio* oal_get_sdio_default_handler(oal_void);
-extern oal_void oal_sdio_get_dev_pm_state(struct oal_sdio *hi_sdio,oal_uint* pst_ul_f1,oal_uint* pst_ul_f2,oal_uint* pst_ul_f3,oal_uint* pst_ul_f4);
-extern oal_uint32 oal_sdio_func_max_req_size(struct oal_sdio *pst_hi_sdio);
+extern oal_void oal_sdio_get_dev_pm_state_etc(struct oal_sdio *hi_sdio,oal_uint* pst_ul_f1,oal_uint* pst_ul_f2,oal_uint* pst_ul_f3,oal_uint* pst_ul_f4);
+extern oal_uint32 oal_sdio_func_max_req_size_etc(struct oal_sdio *pst_hi_sdio);
 extern oal_int32 oal_sdio_110x_working_check(oal_void);
 
 extern     struct oal_sdio  *_hi_sdio_;
@@ -218,7 +218,7 @@ OAL_STATIC OAL_INLINE struct oal_sdio* oal_get_sdio_default_handler(oal_void)
     return &hi_sdio_ut;
 }
 
-OAL_STATIC OAL_INLINE oal_uint32 oal_sdio_func_max_req_size(struct oal_sdio *pst_hi_sdio)
+OAL_STATIC OAL_INLINE oal_uint32 oal_sdio_func_max_req_size_etc(struct oal_sdio *pst_hi_sdio)
 {
     return 0;
 }
@@ -228,41 +228,41 @@ OAL_STATIC OAL_INLINE oal_void oal_sdio_info_show(struct oal_sdio *hi_sdio)
     return;
 }
 
-OAL_STATIC OAL_INLINE oal_int32 oal_sdio_send_msg(oal_void* hi_sdio, oal_uint32 val)
+OAL_STATIC OAL_INLINE oal_int32 oal_sdio_send_msg_etc(oal_void* hi_sdio, oal_uint32 val)
 {
     return OAL_SUCC;
 }
 
-OAL_STATIC OAL_INLINE oal_int32 oal_sdio_build_rx_netbuf_list(struct oal_sdio *hi_sdio,
+OAL_STATIC OAL_INLINE oal_int32 oal_sdio_build_rx_netbuf_list_etc(struct oal_sdio *hi_sdio,
                                              oal_netbuf_head_stru   * head)
 {
     return OAL_SUCC;
 }
 
-OAL_STATIC OAL_INLINE oal_void  oal_sdio_credit_update_cb_register(struct oal_sdio *hi_sdio, hisdio_rx cb)
+OAL_STATIC OAL_INLINE oal_void  oal_sdio_credit_update_cb_register_etc(struct oal_sdio *hi_sdio, hisdio_rx cb)
 {
     return;
 }
 
 
-OAL_STATIC OAL_INLINE oal_int32 oal_sdio_transfer_tx(struct oal_sdio *hi_sdio, oal_netbuf_stru* netbuf)
+OAL_STATIC OAL_INLINE oal_int32 oal_sdio_transfer_tx_etc(struct oal_sdio *hi_sdio, oal_netbuf_stru* netbuf)
 {
     return -OAL_FAIL;
 }
 
-OAL_STATIC OAL_INLINE oal_int32 oal_sdio_transfer_netbuf_list(struct oal_sdio *hi_sdio,
+OAL_STATIC OAL_INLINE oal_int32 oal_sdio_transfer_netbuf_list_etc(struct oal_sdio *hi_sdio,
                                       oal_netbuf_head_stru * head,
                                       oal_int32 rw)
 {
     return -OAL_FAIL;
 }
 
-OAL_STATIC OAL_INLINE struct oal_sdio*  oal_sdio_init_module(oal_void)
+OAL_STATIC OAL_INLINE struct oal_sdio*  oal_sdio_init_module_etc(oal_void)
 {
     return NULL;
 }
 
-OAL_STATIC OAL_INLINE oal_void oal_sdio_exit_module(struct oal_sdio* hi_sdio)
+OAL_STATIC OAL_INLINE oal_void oal_sdio_exit_module_etc(struct oal_sdio* hi_sdio)
 {
 }
 
@@ -272,11 +272,11 @@ OAL_STATIC OAL_INLINE oal_int32 oal_sdio_func_probe(struct oal_sdio* hi_sdio)
 		return -1;
 }
 
-OAL_STATIC OAL_INLINE oal_void oal_sdio_func_remove(struct oal_sdio* hi_sdio)
+OAL_STATIC OAL_INLINE oal_void oal_sdio_func_remove_etc(struct oal_sdio* hi_sdio)
 {
 }
 
-OAL_STATIC OAL_INLINE oal_void oal_sdio_get_dev_pm_state(struct oal_sdio *hi_sdio,
+OAL_STATIC OAL_INLINE oal_void oal_sdio_get_dev_pm_state_etc(struct oal_sdio *hi_sdio,
                                                                 oal_uint* pst_ul_f1,
                                                                 oal_uint* pst_ul_f2,
                                                                 oal_uint* pst_ul_f3,

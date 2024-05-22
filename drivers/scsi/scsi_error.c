@@ -468,15 +468,13 @@ static void scsi_report_sense(struct scsi_device *sdev,
  *	When a deferred error is detected the current command has
  *	not been executed and needs retrying.
  */
-static int scsi_check_sense(struct scsi_cmnd *scmd)
+int scsi_check_sense(struct scsi_cmnd *scmd)
 {
 	struct scsi_device *sdev = scmd->device;
 	struct scsi_sense_hdr sshdr;
 
 	if (! scsi_command_normalize_sense(scmd, &sshdr))
-	{
 		return FAILED;	/* no valid sense data */
-	}
 
 	scsi_report_sense(sdev, &sshdr);
 
@@ -645,6 +643,7 @@ static int scsi_check_sense(struct scsi_cmnd *scmd)
 		return SUCCESS;
 	}
 }
+EXPORT_SYMBOL_GPL(scsi_check_sense);
 
 static void scsi_handle_queue_ramp_up(struct scsi_device *sdev)
 {
@@ -1823,7 +1822,7 @@ int scsi_decide_disposition(struct scsi_cmnd *scmd)
 	 * up to the top level.
 	 */
 	if (!scsi_device_online(scmd->device)) {
-		SCSI_LOG_ERROR_RECOVERY(3, scmd_printk(KERN_INFO, scmd,
+		SCSI_LOG_ERROR_RECOVERY(5, scmd_printk(KERN_INFO, scmd,
 			"%s: device offline - report as SUCCESS\n", __func__));
 		return SUCCESS;
 	}

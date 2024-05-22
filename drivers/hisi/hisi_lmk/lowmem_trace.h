@@ -1,5 +1,5 @@
 #undef TRACE_SYSTEM
-#define TRACE_INCLUDE_PATH ../../drivers/hisi/hisi_lmk
+#define TRACE_INCLUDE_PATH ../../drivers/hisi/hisi_lmk /*lint !e773*/
 #define TRACE_SYSTEM hisi_lowmem
 #define TRACE_INCLUDE_FILE lowmem_trace
 

@@ -150,7 +150,11 @@ HI_S32 VDEC_MEM_MapKernel(HI_S32 share_fd, MEM_BUFFER_S * psMBuf)
 		goto err_exit;
 	}
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0)
+	handle = ion_import_dma_buf_fd(gIONClient, share_fd);
+#else
 	handle = ion_import_dma_buf(gIONClient, share_fd);
+#endif
 	if (IS_ERR_OR_NULL(handle)) {
 		dprint(PRN_ERROR, "%s: handle is error\n", __func__);
 		goto err_exit;
@@ -173,13 +177,8 @@ HI_S32 VDEC_MEM_MapKernel(HI_S32 share_fd, MEM_BUFFER_S * psMBuf)
 	phy_addr = ion_fmt.iova_start;
 	phy_size = (HI_U32)ion_fmt.iova_size;
 #else
-		/* Get phy address directly */
-	ret = ion_phys(gIONClient, handle, &phy_addr, &len);
-	if (ret) {
-		dprint(PRN_ERROR, "%s: ion_phys get failed\n", __func__);
-		goto err_exit2;
-	}
-	phy_size = (HI_U32)len;
+	dprint(PRN_ERROR, "%s: UNSMMU is not supported\n", __func__);
+	goto err_exit2;
 #endif
 
 	psMBuf->pStartVirAddr = virt_addr;

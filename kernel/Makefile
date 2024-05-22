@@ -9,13 +9,12 @@ obj-y     = fork.o exec_domain.o panic.o \
 	    extable.o params.o \
 	    kthread.o sys_ni.o nsproxy.o \
 	    notifier.o ksysfs.o cred.o reboot.o \
-	    async.o range.o smpboot.o
+	    async.o range.o smpboot.o ucount.o
 
 obj-$(CONFIG_MULTIUSER) += groups.o
 
 ifdef CONFIG_FUNCTION_TRACER
-# Do not trace debug files and internal ftrace files
-CFLAGS_REMOVE_cgroup-debug.o = $(CC_FLAGS_FTRACE)
+# Do not trace internal ftrace files
 CFLAGS_REMOVE_irq_work.o = $(CC_FLAGS_FTRACE)
 endif
 
@@ -30,9 +29,11 @@ KCOV_INSTRUMENT_extable.o := n
 KCOV_INSTRUMENT_kcov.o := n
 KASAN_SANITIZE_kcov.o := n
 
-
 # cond_syscall is currently not LTO compatible
 CFLAGS_sys_ni.o = $(DISABLE_LTO)
+
+# Don't instrument error handlers
+CFLAGS_cfi.o = $(DISABLE_CFI_CLANG)
 
 obj-y += sched/
 obj-y += locking/
@@ -90,6 +91,7 @@ obj-$(CONFIG_DETECT_HUAWEI_HUNG_TASK) += huawei_hung_task.o
 obj-$(CONFIG_DETECT_HUAWEI_HUNG_TASK) += huawei_init_watchdog.o
 obj-$(CONFIG_DETECT_HUNG_TASK) += hung_task.o
 obj-$(CONFIG_LOCKUP_DETECTOR) += watchdog.o
+obj-$(CONFIG_HARDLOCKUP_DETECTOR) += watchdog_hld.o
 obj-$(CONFIG_SECCOMP) += seccomp.o
 obj-$(CONFIG_RELAY) += relay.o
 obj-$(CONFIG_SYSCTL) += utsname_sysctl.o
@@ -97,9 +99,7 @@ obj-$(CONFIG_TASK_DELAY_ACCT) += delayacct.o
 obj-$(CONFIG_TASKSTATS) += taskstats.o tsacct.o
 obj-$(CONFIG_TRACEPOINTS) += tracepoint.o
 obj-$(CONFIG_LATENCYTOP) += latencytop.o
-obj-$(CONFIG_BINFMT_ELF) += elfcore.o
-obj-$(CONFIG_COMPAT_BINFMT_ELF) += elfcore.o
-obj-$(CONFIG_BINFMT_ELF_FDPIC) += elfcore.o
+obj-$(CONFIG_ELFCORE) += elfcore.o
 obj-$(CONFIG_FUNCTION_TRACER) += trace/
 obj-$(CONFIG_TRACING) += trace/
 obj-$(CONFIG_TRACE_CLOCK) += trace/
@@ -108,6 +108,7 @@ obj-$(CONFIG_TRACEPOINTS) += trace/
 obj-$(CONFIG_IRQ_WORK) += irq_work.o
 obj-$(CONFIG_CPU_PM) += cpu_pm.o
 obj-$(CONFIG_BPF) += bpf/
+obj-$(CONFIG_CFI_CLANG) += cfi.o
 
 obj-$(CONFIG_PERF_EVENTS) += events/
 
@@ -125,6 +126,8 @@ obj-$(CONFIG_HW_VIP_THREAD) += hwcfs/
 obj-$(CONFIG_HW_VIP_THREAD) += cpu_netlink/
 obj-$(CONFIG_HW_CPULOAD_NOTI) += cpu_netlink/
 obj-$(CONFIG_HW_IAWARE_THREAD_BOOST) += cpu_netlink/
+
+obj-$(CONFIG_HW_CGROUP_WORKINGSET) += cgroup_workingset.o
 
 $(obj)/configs.o: $(obj)/config_data.h
 

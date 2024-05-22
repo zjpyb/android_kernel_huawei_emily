@@ -17,6 +17,7 @@
 #include <linux/hisi/hisi_drmdriver.h>
 #include <linux/platform_data/remoteproc-hisi.h>
 #include <linux/of_reserved_mem.h>
+#include <linux/version.h>
 
 #define DTS_COMP_FSTCMA_NAME    "hisilicon,isp-fastboot-cma"
 
@@ -45,12 +46,9 @@ void *hisi_fstcma_alloc(dma_addr_t *dma_handle, size_t size, gfp_t flag)
         pr_err("%s: alloc failed.\n", __func__);
         return NULL;
     }
-    pr_info("%s: va.%pK, dma.0x%llx.\n", __func__, va, *dma_handle);
-
-    pr_info("%s: phys_to_virt(dma).0x%lx\n", __func__, (unsigned long)phys_to_virt(*dma_handle));
-    create_mapping_late((phys_addr_t)(*dma_handle), (unsigned long)phys_to_virt(*dma_handle),
-                        size, __pgprot(PROT_NORMAL_NC));
-
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
+    create_mapping_late((phys_addr_t)(*dma_handle), (unsigned long)phys_to_virt(*dma_handle), size, __pgprot(PROT_NORMAL_NC));
+#endif
     pr_info("%s: -\n", __func__);
     return va;
 }
@@ -62,13 +60,12 @@ void hisi_fstcma_free(void *va, dma_addr_t dma_handle, size_t size)
     pr_info("%s: +\n", __func__);
 
     if (va == NULL || dma_handle == 0) {
-        pr_info("%s: cma_va.%pK, cma_dma.0x%llx\n", __func__, va, dma_handle);
+        pr_info("%s: cma_va.%pK\n", __func__, va);
         return;
     }
-
-    create_mapping_late((phys_addr_t)dma_handle, (unsigned long)phys_to_virt(dma_handle),
-                        size, __pgprot(PROT_NORMAL));
-
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
+    create_mapping_late((phys_addr_t)dma_handle, (unsigned long)phys_to_virt(dma_handle), size, __pgprot(PROT_NORMAL));
+#endif
     dma_free_coherent(dev->device, size, va, dma_handle);
 
     pr_info("%s: -\n", __func__);

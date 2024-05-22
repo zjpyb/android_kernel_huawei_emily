@@ -360,6 +360,7 @@
 		hw,lcdkit-panel-fps-tscall-support = <0>;
 		hw,lcdkit-panel-dis-on-cmds-delay-margin-support = <0>;
 		hw,lcdkit-panel-snd-cmd-before-frame-support = <0>;
+		hw,lcdkit-panel-ts-resume-ctrl-mode = <0>;
 		hw,lcdkit-panel-dis-on-cmds-delay-margin-time = <40>;
 		hw,lcdkit-panel-lptohs-mipi-check-support = <0>;
 		hw,lcdkit-panel-acl-ctrl-support = <0>;
@@ -415,6 +416,8 @@
 		hw,lcdkit-panel-bl-type = <4>;
 		hw,lcdkit-panel-blmin = <15>;
 		hw,lcdkit-panel-blmax = <8820>;
+		hw,lcdkit-mask-delay-time-before-fp = <16666>;
+		hw,lcdkit-mask-delay-time-after-fp = <16666>;
 		hw,lcdkit-panel-bl-def = <4000>;
 		hw,lcdkit-panel-bl-maxnit = <730>;
 		hw,lcdkit-panel-getblmaxnit-type = <0>;
@@ -432,7 +435,9 @@
 		hw,lcdkit-is-hostprocessing = <0>;
 		hw,lcdkit-host-info-all-in-ddic = <1>;
 		hw,lcdkit-panel-dsi-upt-support = <0>;
+		hw,mipiclk-updt-support-new = <0>;
 		hw,lcdkit-panel-vsyn-ctr-type = <0>;
+		hw,lcdkit-panel-bl-pwm-preci-no-convert = <0>;
 		hw,lcdkit-panel-bl-pwm-preci-type = <2>;
 		hw,lcdkit-panel-bl-ic-ctrl-type = <1>;
 		hw,lcdkit-panel-fps-updt-only = <0>;
@@ -563,6 +568,9 @@
 		hw,lcdkit-imin-lcd-luminance = <3>;
 		hw,lcdkit-cfg-name = "/product/etc/display/effect/algorithm/hdr_engine.xml";
 		hw,lcdkit-effect-support-mode = <65537>;
+		hw,lcdkit-bl-support-mode = <0>;
+		hw,lcdkit-bl-enhance = <0>;
+		hw,lcdkit-bl-normal = <0>;
 		hw,lcdkit-delay-af-rst-off = <5>;
 		hw,lcdkit-h-back-porch = <66>;
 		hw,lcdkit-h-front-porch = <75>;
@@ -605,6 +613,7 @@
 		hw,lcdkit-delay-af-vsn-on = <5>;
 		hw,lcdkit-delay-af-lp11 = <10>;
 		hw,lcdkit-delay-af-tp-reset = <15>;
+		hw,lcdkit-tp-reset-before-lcd-reset = <0>;
 		hw,lcdkit-delay-af-vsn-off = <5>;
 		hw,lcdkit-delay-af-vsp-off = <5>;
 		hw,lcdkit-delay-af-bias-off = <0>;

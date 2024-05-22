@@ -57,8 +57,8 @@ static ulong ramoops_pmsg_size = MIN_MEM_SIZE;
 module_param_named(pmsg_size, ramoops_pmsg_size, ulong, 0400);
 MODULE_PARM_DESC(pmsg_size, "size of user space message log");
 
-static ulong mem_address;
-module_param(mem_address, ulong, 0400);
+static unsigned long long mem_address;
+module_param(mem_address, ullong, 0400);
 MODULE_PARM_DESC(mem_address,
 		"start of reserved RAM used to store oops/panic logs");
 
@@ -183,10 +183,10 @@ static bool prz_ok(struct persistent_ram_zone *prz)
 static ssize_t ramoops_pstore_read(u64 *id, enum pstore_type_id *type,
 				   int *count, struct timespec *time,
 				   char **buf, bool *compressed,
+				   ssize_t *ecc_notice_size,
 				   struct pstore_info *psi)
 {
 	ssize_t size;
-	ssize_t ecc_notice_size;
 	struct ramoops_context *cxt = psi->data;
 	struct persistent_ram_zone *prz = NULL;
 	int header_length = 0;
@@ -209,9 +209,10 @@ static ssize_t ramoops_pstore_read(u64 *id, enum pstore_type_id *type,
 		header_length = ramoops_read_kmsg_hdr(persistent_ram_old(prz),
 						      time, compressed);
 		/* Clear and skip this DMESG record if it has no valid header */
+		persistent_ram_zap(prz);
+
 		if (!header_length) {
 			persistent_ram_free_old(prz);
-			persistent_ram_zap(prz);
 			prz = NULL;
 		}
 	}
@@ -231,16 +232,16 @@ static ssize_t ramoops_pstore_read(u64 *id, enum pstore_type_id *type,
 	size = persistent_ram_old_size(prz) - header_length;
 
 	/* ECC correction notice */
-	ecc_notice_size = persistent_ram_ecc_string(prz, NULL, 0);
+	*ecc_notice_size = persistent_ram_ecc_string(prz, NULL, 0);
 
-	*buf = kmalloc(size + ecc_notice_size + 1, GFP_KERNEL);
+	*buf = kmalloc(size + *ecc_notice_size + 1, GFP_KERNEL);
 	if (*buf == NULL)
 		return -ENOMEM;
 
 	memcpy(*buf, (char *)persistent_ram_old(prz) + header_length, size);
-	persistent_ram_ecc_string(prz, *buf + size, ecc_notice_size + 1);
+	persistent_ram_ecc_string(prz, *buf + size, *ecc_notice_size + 1);
 
-	return size + ecc_notice_size;
+	return size;
 }
 
 static size_t ramoops_write_kmsg_hdr(struct persistent_ram_zone *prz,
@@ -488,12 +489,6 @@ static int ramoops_init_prz(struct device *dev, struct ramoops_context *cxt,
 	return 0;
 }
 
-void notrace ramoops_console_write_buf(const char *buf, size_t size)
-{
-	struct ramoops_context *cxt = &oops_cxt;
-	persistent_ram_write(cxt->cprz, buf, size);
-}
-
 static int ramoops_parse_dt_size(struct platform_device *pdev,
 		const char *propname, unsigned long *val)
 {
@@ -579,16 +574,22 @@ static int ramoops_parse_dt(struct platform_device *pdev,
 	return 0;
 }
 
+void notrace ramoops_console_write_buf(const char *buf, size_t size)
+{
+	struct ramoops_context *cxt = &oops_cxt;
+	persistent_ram_write(cxt->cprz, buf, size);
+}
+
 static int ramoops_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
-	struct ramoops_platform_data *pdata = pdev->dev.platform_data;
+	struct ramoops_platform_data *pdata = dev->platform_data;
 	struct ramoops_context *cxt = &oops_cxt;
 	size_t dump_mem_sz;
 	phys_addr_t paddr;
 	int err = -EINVAL;
 
-	if (dev->of_node && !pdata) {
+	if (dev_of_node(dev) && !pdata) {
 		pdata = devm_kzalloc(&pdev->dev, sizeof(*pdata), GFP_KERNEL);
 		if (!pdata) {
 			err = -ENOMEM;
@@ -665,12 +666,20 @@ static int ramoops_probe(struct platform_device *pdev)
 		cxt->pstore.bufsize = 1024; /* LOG_LINE_MAX */
 	cxt->pstore.bufsize = max(cxt->record_size, cxt->pstore.bufsize);
 	cxt->pstore.buf = kmalloc(cxt->pstore.bufsize, GFP_KERNEL);
-	spin_lock_init(&cxt->pstore.buf_lock);
 	if (!cxt->pstore.buf) {
 		pr_err("cannot allocate pstore buffer\n");
 		err = -ENOMEM;
 		goto fail_clear;
 	}
+	spin_lock_init(&cxt->pstore.buf_lock);
+
+	cxt->pstore.flags = PSTORE_FLAGS_DMESG;
+	if (cxt->console_size)
+		cxt->pstore.flags |= PSTORE_FLAGS_CONSOLE;
+	if (cxt->ftrace_size)
+		cxt->pstore.flags |= PSTORE_FLAGS_FTRACE;
+	if (cxt->pmsg_size)
+		cxt->pstore.flags |= PSTORE_FLAGS_PMSG;
 
 	err = pstore_register(&cxt->pstore);
 	if (err) {
@@ -700,11 +709,11 @@ fail_buf:
 	kfree(cxt->pstore.buf);
 fail_clear:
 	cxt->pstore.bufsize = 0;
-	kfree(cxt->mprz);
+	persistent_ram_free(cxt->mprz);
 fail_init_mprz:
-	kfree(cxt->fprz);
+	persistent_ram_free(cxt->fprz);
 fail_init_fprz:
-	kfree(cxt->cprz);
+	persistent_ram_free(cxt->cprz);
 fail_init_cprz:
 	ramoops_free_przs(cxt);
 fail_out:

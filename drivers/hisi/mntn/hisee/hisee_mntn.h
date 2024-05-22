@@ -12,7 +12,7 @@ typedef struct {
 typedef struct {
 	uint64_t addr;
 	uint64_t max_size;
-	uint64_t real_size;	
+	uint64_t real_size;
 } hlog_header;
 typedef enum {
 	MODID_HISEE_START = (unsigned int)HISI_BB_MOD_HISEE_START,
@@ -44,6 +44,7 @@ typedef enum {
 
 	/*only for exception records that are not happened to hisee itself, starts*/
 	MODID_SIMULATE_EXC_RPMB_KO,
+	MODID_SIMULATE_EXC_PD_SWIPE,
 	/*only for exception records that are not happened to hisee itself, ends*/
 	/* Please don't remove this comment,
 	These have to leave for E_HISEE_EXC_TYPE defined in Lpm3 module code*/
@@ -75,7 +76,7 @@ typedef enum {
 	HISEE_MSG_LOG_OUT,
 	HISEE_MSG_VOTE_RES,
 	/* kernel hisee mntn driver -> lpm3 */
-	HISEE_MNTN_TYPE,	
+	HISEE_MNTN_TYPE,
 	HISEE_TYPE_END
 } hisee_type;
 
@@ -93,7 +94,6 @@ typedef enum {
 
 typedef enum {
 	HISEE_STATUS_START,
-	
 	HISEE_TEST_IRQ,
 	HISEE_TEST_EXCEPTION,
 	HISEE_TEST_RECORD,

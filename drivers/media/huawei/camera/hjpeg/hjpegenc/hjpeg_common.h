@@ -31,6 +31,8 @@
 #include <linux/proc_fs.h>
 #include <linux/wait.h>
 
+//lint -save -e547
+
 //#include "cam_log.h"
 /** jpgenc head offset need write in the first 4 bytes of input buffer
 if JPGENC_HEAD_OFFSET small than 4, func jpgenc_add_header must be modify */
@@ -45,7 +47,9 @@ if JPGENC_HEAD_OFFSET small than 4, func jpgenc_add_header must be modify */
 #define MICROSECOND_PER_SECOND              (1000000)
 
 #define CHECK_ALIGN(value,align) (value%align == 0)
+#pragma GCC visibility push(default)
 #define ALIGN_DOWN(value, al) ((unsigned int )(value) & ~((al) - 1))
+#pragma GCC visibility pop
 
 #define MASK0(name)  (((unsigned int)1<<(name##_LEN))-1)
 #define MASK1(name)  ((((unsigned int)1<<(name##_LEN))-1) << (name##_OFFSET))
@@ -163,3 +167,4 @@ typedef struct _tag_hjpeg_hw_ctl
 }hjpeg_hw_ctl_t;
 
 #endif  // _INCLUDE_HJPEG_COMMON_H
+//lint -restore

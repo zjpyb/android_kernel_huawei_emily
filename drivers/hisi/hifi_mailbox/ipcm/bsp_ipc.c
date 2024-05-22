@@ -14,6 +14,7 @@
 
 
 #include "bsp_drv_ipc.h"
+#include "soc_acpu_baseaddr_interface.h"
 
 
 //#define USE_HIFI_IPC
@@ -46,8 +47,8 @@ spinlock_t g_ipc_int_lock = __SPIN_LOCK_UNLOCKED("ipc");
 #define K3_IPC_MODE_AUTOACK                 (0)
 
 /*************************************hifiϵͳipc******************************************/
-#define K3_SYS_IPC_BASE_ADDR_S      (unsigned long)(0xe896a000)
-#define K3_SYS_IPC_BASE_ADDR_NS    (unsigned long)(0xe896b000)
+#define K3_SYS_IPC_BASE_ADDR_S      (unsigned long)(SOC_ACPU_IPC_BASE_ADDR)
+#define K3_SYS_IPC_BASE_ADDR_NS     (unsigned long)(SOC_ACPU_IPC_NS_BASE_ADDR)
 #define K3_SYS_IPC_REG_SIZE     (0xA00)
 
 #define K3_IPC_LOCK(base)                          WORD_REF(base + 0xA00)

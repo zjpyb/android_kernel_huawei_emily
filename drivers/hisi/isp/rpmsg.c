@@ -25,7 +25,9 @@
 #include <uapi/linux/histarisp.h>
 #include <linux/platform_data/remoteproc-hisi.h>
 #include <linux/ion.h>
+#include <linux/dma-buf.h>
 #include <linux/hisi/hisi_ion.h>
+#include <linux/version.h>
 
 static int debug_mask = 0x3;
 #define rpmsg_err(fmt, args...) \
@@ -43,10 +45,37 @@ static int debug_mask = 0x3;
         if (debug_mask & 0x04) \
             printk(KERN_INFO "Rpmsg HISI Debug: [%s] " fmt, __func__, ##args); \
     } while (0)
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
+/**
+ * struct rpmsg_hdr - common header for all rpmsg messages
+ * @src: source address
+ * @dst: destination address
+ * @reserved: reserved for future use
+ * @len: length of payload (in bytes)
+ * @flags: message flags
+ * @data: @len bytes of message payload data
+ *
+ * Every message sent(/received) on the rpmsg bus begins with this header.
+ */
+struct rpmsg_hdr {
+	u32 src;
+	u32 dst;
+	u32 reserved;
+	u16 len;
+	u16 flags;
+	u8 data[0];
+} __packed;
+#endif
+
 struct rpmsg_hisi_service {
     struct cdev *cdev;
     struct device *dev;
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
+    struct rpmsg_device *rpdev;
+#else
     struct rpmsg_channel *rpdev;
+#endif
     struct list_head list;
     struct mutex lock;
 };
@@ -61,6 +90,12 @@ struct hisp_rpmsgrefs_s{
 }hisp_rpmsgrefs;
 static struct rpmsg_hisi_service hisi_isp_serv;
 static atomic_t instances;
+struct completion channel_sync;
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
+struct rpmsg_channel_info chinfo = {
+    .src = RPMSG_ADDR_ANY,
+};
+#endif
 
 int rpmsg_client_debug = INVALID_CLIENT;
 static unsigned long long get_hisitime(void)
@@ -122,7 +157,11 @@ void hisp_rpmsgrefs_reset(void)
     atomic_set(&dev->recvtask_refs, 0);
     dev->recvx_last = 0;
 }
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
+static int rpmsg_hisi_probe(struct rpmsg_device *rpdev)
+#else
 static int rpmsg_hisi_probe(struct rpmsg_channel *rpdev)
+#endif
 {
     struct rpmsg_hisi_service *hisi_serv = &hisi_isp_serv;
 
@@ -138,7 +177,11 @@ static int rpmsg_hisi_probe(struct rpmsg_channel *rpdev)
     return 0;
 }
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
+static void rpmsg_hisi_remove(struct rpmsg_device *rpdev)
+#else
 static void rpmsg_hisi_remove(struct rpmsg_channel *rpdev)
+#endif
 {
     struct rpmsg_hisi_service *hisi_serv = &hisi_isp_serv;
 
@@ -153,15 +196,18 @@ static void rpmsg_hisi_remove(struct rpmsg_channel *rpdev)
         mutex_unlock(&hisi_serv->lock);
         /* Maybe here need to debug, in case more exception case */
         rpmsg_err("rpmsg remove exception, instances = %d \n", atomic_read(&instances));
-        WARN_ON(1);
+        WARN_ON(1);/*lint !e548 */
     }
 
     rpmsg_info("Exit ...\n");
     return;
 }
 
-static void rpmsg_hisi_driver_cb(struct rpmsg_channel *rpdev, void *data,
-                        int len, void *priv, u32 src)
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
+static int rpmsg_hisi_driver_cb(struct rpmsg_device *rpdev, void *data, int len, void *priv, u32 src)
+#else
+static void rpmsg_hisi_driver_cb(struct rpmsg_channel *rpdev, void *data, int len, void *priv, u32 src)
+#endif
 {
     rpmsg_dbg("Enter ...\n");
     dev_warn(&rpdev->dev, "uhm, unexpected message\n");
@@ -169,6 +215,9 @@ static void rpmsg_hisi_driver_cb(struct rpmsg_channel *rpdev, void *data,
     print_hex_dump(KERN_DEBUG, __func__, DUMP_PREFIX_NONE, 16, 1,
                data, len,  true);
     rpmsg_dbg("Exit ...\n");
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
+    return 0;
+#endif
 }
 
 static struct rpmsg_device_id rpmsg_hisi_id_table[] = {

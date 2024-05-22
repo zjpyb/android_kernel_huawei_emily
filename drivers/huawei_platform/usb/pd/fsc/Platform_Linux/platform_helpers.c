@@ -15,7 +15,7 @@
 #include <linux/sched.h>
 #include <linux/kthread.h>
 #include <linux/irqflags.h>
-
+#include <linux/version.h>
 #include "fusb30x_global.h"                                                     // Chip structure access
 #include "../core/core.h"                                                       // Core access
 #include "platform_helpers.h"
@@ -109,7 +109,7 @@ static int fusb_get_dual_role_mode(void)
 	FSC_PRINT("%s +\n", __func__);
 	if (chip->orientation != NONE)
 	{
-		if (chip->sourceOrSink == SOURCE)
+		if (sourceOrSink == SOURCE)
 		{
 			mode = DUAL_ROLE_PROP_MODE_DFP;
 		}
@@ -122,7 +122,7 @@ static int fusb_get_dual_role_mode(void)
 	{
 		mode = DUAL_ROLE_PROP_MODE_NONE;
 	}
-	FSC_PRINT("%s - orientation %d, sourceOrSink %d, mode %d\n", __func__, chip->orientation, chip->sourceOrSink, mode);
+	FSC_PRINT("%s - orientation %d, sourceOrSink %d, mode %d\n", __func__, chip->orientation, sourceOrSink, mode);
 	return mode;
 }
 static int fusb_dual_role_get_prop(struct dual_role_phy_instance *dual_role,
@@ -1026,7 +1026,11 @@ enum hrtimer_restart _fusb_TimerHandler(struct hrtimer* timer)
     FSC_PRINT("FUSB  %s - Hard Reset Thread Started\n", __func__);
     //kthread_run(_send_hard_reset, (void*)&dummy, "hard_reset_thread");
     //wake_up_processs(chip->hard_reset_thread);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
+    kthread_queue_work(&chip->hardreset_worker, &chip->hardreset_work);
+#else
     queue_kthread_work(&chip->hardreset_worker, &chip->hardreset_work);
+#endif
     return HRTIMER_NORESTART;
 }
 
@@ -1069,7 +1073,11 @@ enum hrtimer_restart _fusb_force_state_timeout(struct hrtimer* timer)
     }
 
     FSC_PRINT("FUSB %s - Force State Timeout\n", __func__);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
+    kthread_queue_work(&chip->set_drp_worker, &chip->set_drp_work);
+#else
     queue_kthread_work(&chip->set_drp_worker, &chip->set_drp_work);
+#endif
 
     return HRTIMER_NORESTART;
 }
@@ -1090,7 +1098,11 @@ enum hrtimer_restart _fusb_vbus_timeout(struct hrtimer* timer)
     }
 
     FSC_PRINT("FUSB %s - Vbus Timeout\n", __func__);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
+    kthread_queue_work(&chip->vbus_timeout_worker, &chip->vbus_timeout_work);
+#else
     queue_kthread_work(&chip->vbus_timeout_worker, &chip->vbus_timeout_work);
+#endif
     return HRTIMER_NORESTART;
 }
 
@@ -1111,7 +1123,11 @@ enum hrtimer_restart _fusb_ccdebounce_timeout(struct hrtimer* timer)
 
     FSC_PRINT("FUSB %s - Timer Timeout\n", __func__);
     core_set_expire(CC_DEBOUNCE);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
+    kthread_queue_work(&chip->main_worker, &chip->main_work);
+#else
     queue_kthread_work(&chip->main_worker, &chip->main_work);
+#endif
 
     return HRTIMER_NORESTART;
 }
@@ -1134,7 +1150,11 @@ enum hrtimer_restart _fusb_pddebounce_timeout(struct hrtimer* timer)
     FSC_PRINT("FUSB %s - Timer Timeout\n", __func__);
 
     core_set_expire(PD_DEBOUNCE);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
+    kthread_queue_work(&chip->main_worker, &chip->main_work);
+#else
     queue_kthread_work(&chip->main_worker, &chip->main_work);
+#endif
 
     return HRTIMER_NORESTART;
 }
@@ -1157,7 +1177,11 @@ enum hrtimer_restart _fusb_statetimer_timeout(struct hrtimer* timer)
     FSC_PRINT("FUSB %s - Timer Timeout\n", __func__);
 
     core_set_expire(STATE_TIMER);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
+    kthread_queue_work(&chip->main_worker, &chip->main_work);
+#else
     queue_kthread_work(&chip->main_worker, &chip->main_work);
+#endif
 
     return HRTIMER_NORESTART;
 }
@@ -1180,7 +1204,11 @@ enum hrtimer_restart _fusb_policystatetimer_timeout(struct hrtimer* timer)
     FSC_PRINT("FUSB %s - Timer Timeout\n", __func__);
 
     core_set_expire(POLICY_STATE_TIMER);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
+    kthread_queue_work(&chip->main_worker, &chip->main_work);
+#else
     queue_kthread_work(&chip->main_worker, &chip->main_work);
+#endif
 
     return HRTIMER_NORESTART;
 }
@@ -1203,7 +1231,11 @@ enum hrtimer_restart _fusb_noresponsetimer_timeout(struct hrtimer* timer)
     FSC_PRINT("FUSB %s - Timer Timeout\n", __func__);
 
     core_set_expire(NO_RESPONSE_TIMER);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
+    kthread_queue_work(&chip->main_worker, &chip->main_work);
+#else
     queue_kthread_work(&chip->main_worker, &chip->main_work);
+#endif
 
     return HRTIMER_NORESTART;
 }
@@ -3669,6 +3701,9 @@ void fusb_InitChipData(void)
         chip->dp_enabled = of_property_read_bool(node, "dp_enabled");
         chip->product_type_ama = of_property_read_bool(node, "product_type_ama");
         chip->modal_operation_supported = of_property_read_bool(node, "modal_operation_supported");
+        chip->discover_mode_supported = of_property_read_bool(node, "discover_mode_supported");
+        chip->enter_mode_supported = of_property_read_bool(node, "enter_mode_supported");
+        chip->discover_svid_supported = of_property_read_bool(node, "discover_svid_supported");
     }
     else {
         pr_err("%s - Could not get vendor_info node\n", __func__);
@@ -3677,12 +3712,18 @@ void fusb_InitChipData(void)
         chip->dp_enabled = 0;
         chip->product_type_ama = 0;
         chip->modal_operation_supported =0;
+        chip->discover_mode_supported = 0;
+        chip->enter_mode_supported = 0;
+        chip->discover_svid_supported = 0;
     }
     pr_err("%s Device Tree Validation Check vconn_swap_to_on_supported: %d\n", __func__,chip->vconn_swap_to_on_supported);
-    pr_err("%s Device Tree Validation Check vconn_swap_to_on_supported: %d\n", __func__,chip->vconn_swap_to_off_supported);
-    pr_err("%s Device Tree Validation Check vconn_swap_to_on_supported: %d\n", __func__,chip->dp_enabled);
-    pr_err("%s Device Tree Validation Check vconn_swap_to_on_supported: %d\n", __func__,chip->product_type_ama);
-    pr_err("%s Device Tree Validation Check vconn_swap_to_on_supported: %d\n", __func__,chip->modal_operation_supported);
+    pr_err("%s Device Tree Validation Check vconn_swap_to_off_supported: %d\n", __func__,chip->vconn_swap_to_off_supported);
+    pr_err("%s Device Tree Validation Check dp_enabled: %d\n", __func__,chip->dp_enabled);
+    pr_err("%s Device Tree Validation Check product_type_ama: %d\n", __func__,chip->product_type_ama);
+    pr_err("%s Device Tree Validation Check modal_operation_supported: %d\n", __func__,chip->modal_operation_supported);
+    pr_err("%s Device Tree Validation Check discover_mode_supported: %d\n", __func__,chip->discover_mode_supported);
+    pr_err("%s Device Tree Validation Check enter_mode_supported: %d\n", __func__,chip->enter_mode_supported);
+    pr_err("%s Device Tree Validation Check discover_svid_supported: %d\n", __func__,chip->discover_svid_supported);
 
 #ifdef FSC_DEBUG
     chip->dbgTimerTicks = 0;
@@ -3809,7 +3850,7 @@ FSC_S32 fusb_EnableInterrupts(void)
     pr_debug("%s - Success: Requested INT_N IRQ: '%d'\n", __func__, chip->gpio_IntN_irq);
 
     /* Request threaded IRQ because we will likely sleep while handling the interrupt, trigger is active-low, don't handle concurrent interrupts */
-    ret = devm_request_threaded_irq(&chip->client->dev, chip->gpio_IntN_irq, NULL, _fusb_isr_intn, IRQF_ONESHOT | IRQF_TRIGGER_FALLING, FUSB_DT_INTERRUPT_INTN, chip);  // devm_* allocation/free handled by system
+    ret = devm_request_threaded_irq(&chip->client->dev, chip->gpio_IntN_irq, NULL, _fusb_isr_intn, IRQF_ONESHOT | IRQF_TRIGGER_FALLING | IRQF_NO_SUSPEND, FUSB_DT_INTERRUPT_INTN, chip);  // devm_* allocation/free handled by system
     if (ret)
     {
         dev_err(&chip->client->dev, "%s - Error: Unable to request threaded IRQ for INT_N GPIO! Error code: %d\n", __func__, ret);
@@ -3820,29 +3861,61 @@ FSC_S32 fusb_EnableInterrupts(void)
     enable_irq_wake(chip->gpio_IntN_irq);
 
     //B.Yang
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
+    kthread_init_worker(&chip->hardreset_worker);
+#else
     init_kthread_worker(&chip->hardreset_worker);
+#endif
     chip->hardreset_worker_task = kthread_run(kthread_worker_fn,
             &chip->hardreset_worker, "fusb302 hard reset");
     sched_setscheduler(chip->hardreset_worker_task, SCHED_FIFO, &param);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
+    kthread_init_work(&chip->hardreset_work, fusb302_hardreset_work_handler);
+#else
     init_kthread_work(&chip->hardreset_work, fusb302_hardreset_work_handler);
+#endif
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
+    kthread_init_worker(&chip->vbus_timeout_worker);
+#else
     init_kthread_worker(&chip->vbus_timeout_worker);
+#endif
     chip->vbus_timeout_worker_task = kthread_run(kthread_worker_fn,
 	    &chip->vbus_timeout_worker, "fusb302 vbus timeout");
     sched_setscheduler(chip->vbus_timeout_worker_task, SCHED_FIFO, &param);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
+    kthread_init_work(&chip->vbus_timeout_work, fusb302_vbus_timeout_work_handler);
+#else
     init_kthread_work(&chip->vbus_timeout_work, fusb302_vbus_timeout_work_handler);
+#endif
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
+    kthread_init_worker(&chip->main_worker);
+#else
     init_kthread_worker(&chip->main_worker);
+#endif
     chip->main_worker_task = kthread_run(kthread_worker_fn,
         &chip->main_worker, "fusb302 main worker");
     sched_setscheduler(chip->main_worker_task, SCHED_FIFO, &param);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
+    kthread_init_work(&chip->main_work, fusb302_main_work_handler);
+#else
     init_kthread_work(&chip->main_work, fusb302_main_work_handler);
+#endif
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
+    kthread_init_worker(&chip->set_drp_worker);
+#else
     init_kthread_worker(&chip->set_drp_worker);
+#endif
     chip->set_drp_worker_task = kthread_run(kthread_worker_fn,
         &chip->set_drp_worker, "fusb302 set drp worker");
     sched_setscheduler(chip->set_drp_worker_task, SCHED_FIFO, &param);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
+    kthread_init_work(&chip->set_drp_work, fusb302_set_drp_work_handler);
+#else
     init_kthread_work(&chip->set_drp_work, fusb302_set_drp_work_handler);
+#endif
 
     return 0;
 }

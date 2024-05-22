@@ -52,6 +52,7 @@
 #include "osl_types.h"
 #include "osl_bio.h"
 #include "osl_io.h"
+#include "securec.h"
 #include "bsp_rfile.h"
 #include "bsp_dspload.h"
 #include "bsp_dsp.h"
@@ -77,87 +78,6 @@
 *****************************************************************************/
 void dump_save_cphy_tcm(char *  dst_path)
 {
-    u8 * data;
-    bool flag = false;
-    char  file_name[128] = {0,};
-    struct bbe_dump_proc_flag *c_flag;
-    DUMP_FILE_CFG_STRU* cfg = dump_get_file_cfg();
-
-    if(DUMP_PHONE == dump_get_product_type() 
-        && DUMP_ACCESS_MDD_DDR_NON_SEC != dump_get_access_mdmddr_type())
-    {
-        return;            
-    }
-       
-
-    if(cfg->file_list.file_bits.cphy_tcm != 1)
-    {
-        return;
-    }
-
-    c_flag = (struct bbe_dump_proc_flag *)((unsigned long)SHM_BASE_ADDR + SHM_OFFSET_CDSP_FLAG);
-    if (SAVE_TCM_BEGIN == c_flag->dsp_dump_flag)
-    {
-        dump_fetal("carry xdsp tcm to ddr not finished!\n");
-        flag = true;
-    }
-    else if(SAVE_TCM_END == c_flag->dsp_dump_flag)
-    {
-        flag = true;
-    }
-    else
-    {
-        flag = false;
-    }
-
-    data = (u8 *)ioremap_wc(MDDR_FAMA(DDR_CBBE_IMAGE_ADDR),DDR_CBBE_IMAGE_SIZE);
-    if (NULL == data)
-    {
-        dump_fetal("ioremap DDR_CBBE_IMAGE_ADDR fail\n");
-        return;
-    }
-
-    /*满足DSP处于上电条件的情况下cphy_dtcm.bin的在所有版本中均需要保存*/
-    if (flag ==true)
-    {
-        /* coverity[HUAWEI DEFECT] */
-        memset(file_name, 0, sizeof(file_name));
-        /* coverity[HUAWEI DEFECT] */
-        snprintf(file_name, sizeof(file_name), "%scphy_dtcm.bin", dst_path);
-        file_name[127]='\0';
-        dump_save_file(file_name, data, CPHY_PUB_DTCM_SIZE);
-        dump_fetal("[dump]: save %s finished\n", file_name);
-    }
-
-    if(EDITION_INTERNAL_BETA != dump_get_edition_type())
-    {
-        iounmap(data);
-        return;
-    }
-
-    if (flag == true)
-    {
-        /* coverity[HUAWEI DEFECT] */
-        memset(file_name, 0, sizeof(file_name));
-        /* coverity[HUAWEI DEFECT] */
-        snprintf(file_name, sizeof(file_name), "%scphy_itcm.bin", dst_path);
-        file_name[127]='\0';
-        dump_save_file(file_name, data+CPHY_PUB_DTCM_SIZE, CPHY_PUB_ITCM_SIZE);
-        dump_fetal("[dump]: save %s finished\n", file_name);
-    }
-    else
-    {
-        /* coverity[HUAWEI DEFECT] */
-        memset(file_name, 0, sizeof(file_name));
-        /* coverity[HUAWEI DEFECT] */
-        snprintf(file_name, sizeof(file_name), "%scphy_ddr.bin", dst_path);
-        file_name[127]='\0';
-        dump_save_file(file_name, data, DDR_CBBE_IMAGE_SIZE);
-        dump_fetal("[dump]: save %s finished\n", file_name);
-    }
-    c_flag->dsp_dump_flag = 0;
-
-    iounmap(data);
     return;
 }
 

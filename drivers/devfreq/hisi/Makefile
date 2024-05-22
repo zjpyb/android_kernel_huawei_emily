@@ -8,6 +8,7 @@ obj-$(CONFIG_DEVFREQ_GOV_MEMLAT)    += governor_memlat.o
 obj-$(CONFIG_HISI_DEVFREQ_DEVBW)    += devfreq_devbw.o
 
 obj-$(CONFIG_ARM64_DSU_PCTRL_DEVFREQ)      += dsu_pctrl/
+obj-$(CONFIG_HISI_L3C_DEVFREQ)      	   += l3c_devfreq/
 
 ccflags-$(CONFIG_HISI_DEVFREQ)  += -Idrivers/devfreq \
 				   -I$(srctree)/drivers/hisi/tzdriver/libhwsecurec
